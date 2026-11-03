@@ -1,9 +1,7 @@
 use crate::state::Workspace;
 use crate::state::selection::Selection;
 use crate::ui::AppEvent;
-use crate::ui_command::{
-    NoArgs, SetToolLoadOverrideArgs, SimJumpToMoveArgs, SimJumpToOpStartArgs, UiCommand,
-};
+use crate::ui_command::{NoArgs, SimJumpToMoveArgs, SimJumpToOpStartArgs, UiCommand};
 
 use super::file_dialog::{AfterPick, Contents, FileDialogRequest};
 use super::{RsCamApp, eased_camera_write};
@@ -182,15 +180,13 @@ impl RsCamApp {
                 }
                 AppEvent::ExportCombinedGcode => {
                     // W5: the `_reporting` door, so the load outcome, the
-                    // machine-safety findings and the feeds cautions reach
-                    // the operator. The keyboard route has no pre-flight.
+                    // machine-safety findings, the finding warnings (K6) and
+                    // the feeds cautions reach the operator. The keyboard route has no pre-flight.
                     let state = self.controller.state();
                     let exported = crate::io::export::export_gcode_from_session_reporting(
                         state.session(),
                         &state.gui,
                         &state.simulation,
-                        state.gui.tool_load_overrides.as_policy(),
-                        state.gui.stale_export,
                     );
                     match exported.map(|e| self.notify_exported(e)) {
                         Ok(gcode) => {
@@ -225,8 +221,6 @@ impl RsCamApp {
                         &state.gui,
                         &state.simulation,
                         setup_id,
-                        state.gui.tool_load_overrides.as_policy(),
-                        state.gui.stale_export,
                     );
                     match exported.map(|e| self.notify_exported(e)) {
                         Ok(gcode) => {
@@ -419,17 +413,6 @@ impl RsCamApp {
                     }
                     UiCommand::CloseExportWizard(NoArgs) => {
                         self.controller.state_mut().show_export_wizard = false;
-                    }
-                    UiCommand::SetToolLoadOverride(SetToolLoadOverrideArgs {
-                        accept_unmodeled,
-                        accept_exceeded,
-                    }) => {
-                        let gui = &mut self.controller.state_mut().gui;
-                        gui.tool_load_overrides.accept_unmodeled = accept_unmodeled;
-                        gui.tool_load_overrides.accept_exceeded = accept_exceeded;
-                    }
-                    UiCommand::SetStaleExportPolicy(policy) => {
-                        self.controller.state_mut().gui.stale_export = policy;
                     }
                     UiCommand::ShowShortcuts(NoArgs) => {
                         self.controller.state_mut().show_shortcuts = true;

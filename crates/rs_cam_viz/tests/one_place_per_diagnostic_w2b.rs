@@ -350,9 +350,11 @@ fn assert_header(state: &mut AppState, id: ToolpathId, expected: &str, what: &st
 fn the_header_word_is_the_mcp_run_state_w2b() {
     let expected = |bad: State| match bad {
         State::Clean | State::ReachOn | State::BoundaryOn => "ready",
-        State::NoTool | State::FeedsUnset | State::WrongTool | State::FeedsUnsetRefused => {
-            "not_ready"
-        }
+        State::NoTool | State::FeedsUnset | State::FeedsUnsetRefused => "not_ready",
+        // K6 (decision E1): a wrong tool kind is a warning, so the op is
+        // ready, unless its generator cannot compute with the tool (the
+        // V-bit ops); the loop below asks core for that case.
+        State::WrongTool => "ready",
         State::Refused => "failed",
         State::StaleAfterEdit => "out_of_date",
     };
@@ -364,7 +366,22 @@ fn the_header_word_is_the_mcp_run_state_w2b() {
             }
             let (mut state, id) = fixture(family, bad);
             let what = format!("{} / {}", family.name(), bad.name());
-            assert_header(&mut state, id, expected(bad), &what);
+            let cannot_compute = state
+                .session()
+                .find_toolpath_config_by_id(id)
+                .and_then(|(_, tc)| {
+                    let tool = state.session().toolpath_tool(tc)?;
+                    tc.operation
+                        .op_type()
+                        .tool_cannot_compute(tool.tool_type.cutter_kind())
+                })
+                .is_some();
+            let word = if matches!(bad, State::WrongTool) && cannot_compute {
+                "not_ready"
+            } else {
+                expected(bad)
+            };
+            assert_header(&mut state, id, word, &what);
             checked += 1;
         }
     }

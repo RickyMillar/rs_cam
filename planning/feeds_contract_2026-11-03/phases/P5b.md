@@ -272,3 +272,43 @@ Checked at `40cf411a7`.
   corrected.
 - D4: map each `Basis` onto an existing `ProvKind`. Add a new kind only where no kind fits, and
   name it in the commit.
+
+## Operator ruling on the sketch (2026-11-03)
+
+The operator agreed to the sketch as drawn. D1: the Passes tab, above the depth and stepover
+rows. D2-D4 as the lead decided: lines only (binding edge solid), `Lineage` a required field on
+`ToolpathComputeResult`, `Basis` mapped onto the existing `ProvKind` kinds.
+
+## Operator ruling: live link (2026-11-03)
+
+- The ring can be dragged, not only clicked. The hover readout and the ring follow the pointer
+  on every frame (a lookup in the P5 `SpeedsMap` grid; no new Suggest run per frame).
+- The Feeds-tab nomogram follows the candidate ring: when a candidate exists for the toolpath,
+  the nomogram draws the speeds of that cut (chip lines, power line, recommended point). No
+  write until ⚡; Esc puts the ring back and the nomogram returns to the stored cut.
+- No speeds strip under the envelope (no extra text row).
+- Test: a GUI-state test that moves the candidate and asserts that the nomogram input reads the
+  candidate's (ap, ae), and that the session is unchanged until the apply event.
+
+## Operator ruling: one tab for the cut and its speeds (2026-11-03)
+
+The Feeds tab merges into the Passes tab, so the operator sees each adjustment beside its cut.
+`ToolpathTab::FeedsSpeeds` goes; the strip becomes Geometry, Passes, Heights, Linking
+(`ui/properties/mod.rs` `ToolpathTab::ALL`; the test `WANT` list in `ui/properties/tests.rs`).
+Order in the Passes tab, top to bottom (a diagram comes before its rows):
+
+1. The envelope plot (or the one-value bar), header `SAFE CUT` with the ⚡ chip.
+2. The feed × rpm nomogram (`ui/feeds/explore.rs` `draw_chart_c`), which follows the candidate
+   ring (live-link ruling above).
+3. The depth and stepover rows of the op editor.
+4. The feed, rpm and plunge rows, then the Suggest card (`ui/feeds/compare.rs`
+   `draw_recommendation`) with its one closed `Details`.
+
+Lead notes for the implementer:
+- Every link that opens the Feeds tab (an issue anchor `field_tab`, `placement.rs`; a ⚡ pill; MCP
+  `set_ui_view`; F216 memo refresh on every tab) must open Passes. Measure with
+  `rg -n "FeedsSpeeds" crates`.
+- The two charts must fit the inspector without a scroll at the default window size; if they do
+  not, the nomogram sits in a closed `Details` and opens when a candidate exists. Show the lead a
+  screenshot before the commit.
+- The no-text-clutter rule holds: the merge adds no sentence; it removes one tab.

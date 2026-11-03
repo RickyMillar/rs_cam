@@ -21,17 +21,30 @@ enum DiagnoseDepth {
     Gate,
 }
 
+/// K6 (lead decision 4): the toolpaths an export emits and the ones it
+/// leaves out, from [`ProjectSession::export_scope`].
+#[derive(Debug, Clone, Default, PartialEq, Eq)]
+pub struct ExportScope {
+    /// The enabled toolpaths with a current result, in scope order.
+    pub emitted: Vec<usize>,
+    /// The enabled toolpaths with no current result, and why.
+    pub left_out: Vec<(usize, String)>,
+}
+
 impl ProjectSession {
     /// **F067: the one checked export door.** The GUI, MCP and the CLI
     /// all emit through here, so one project state gives one program and
     /// one set of checks on every surface.
     ///
     /// In order:
-    /// 1. [`crate::gcode::emit_checked`]: the inch and controller
-    ///    compensation refusals, the load gate, the program. The post and
+    /// 1. K6 (ruling Q6): the warnings ([`Self::export_warnings`]) of the
+    ///    emitted toolpaths, the ops left out and the load report. No
+    ///    finding refuses; each warning prints one header comment.
+    /// 2. [`crate::gcode::emit_checked`]: the emit errors (inch units, a
+    ///    bad feed, controller compensation) and the program. The post and
     ///    the inter-setup retract come from THIS session's post config,
     ///    never from a caller's copy (F072).
-    /// 2. The machine-safety pass ([`validate_machine_safety`]) on the
+    /// 3. The machine-safety pass ([`validate_machine_safety`]) on the
     ///    program as emitted, BEFORE any rewrite, while the rapids are
     ///    still `G0`. The clearance plane is the emitted retract plane of
     ///    the toolpaths in `request.emitted`
@@ -40,33 +53,24 @@ impl ProjectSession {
     ///    writes rapids as feeds at the travel rate, so the cutting
     ///    ceiling would flag every rewritten rapid (T-9). The depth-floor
     ///    check stays off: no caller has a stock-bottom limit to hand it.
-    /// 3. The high-feedrate rapid→feed rewrite, when the post config asks
+    /// 4. The high-feedrate rapid→feed rewrite, when the post config asks
     ///    for it (`high_feedrate_mode`).
     ///
-    /// F033: before step 1, an emitted toolpath whose height planes break
-    /// the order refuses ([`crate::gcode::ExportRefusal::HeightOrder`],
-    /// [`Self::height_order_refusal`]).
-    ///
-    /// Until F067 only the GUI/MCP door ran 2 and 3, so the CLI emitted
+    /// Until F067 only the GUI/MCP door ran 3 and 4, so the CLI emitted
     /// `G0` rapids where the GUI emitted `G1` traverses, and no CLI file
     /// was safety-checked. The findings are advisory on every surface: no
     /// door refuses on them.
     ///
-    /// UX-7b: next, an emitted toolpath whose stored result cuts into its
-    /// model refuses ([`crate::gcode::ExportRefusal::CutsIntoModel`],
-    /// [`Self::model_gouge_refusal`]).
-    ///
-    /// G-CENTRECUT: next, an emitted toolpath whose simulation shows a tool
-    /// that does not cut at its centre pushing its centre into wood refuses
-    /// ([`crate::gcode::ExportRefusal::NonCentreCuttingDescent`]).
-    ///
     /// [`validate_machine_safety`]: crate::export::gcode_validator::validate_machine_safety
     /// [`emission_frame_clearance_z`]: crate::export::gcode_validator::emission_frame_clearance_z
+    ///
+    /// # Errors
+    /// [`crate::gcode::EmitError`] when the emitter cannot write a valid
+    /// program. No finding is an error.
     pub fn export_program(
         &self,
         request: crate::gcode::ExportRequest<'_>,
-    ) -> Result<crate::gcode::ExportedGcode, crate::gcode::ExportRefusal> {
-        use crate::diagnostics::{Gate, Stage};
+    ) -> Result<crate::gcode::ExportedGcode, crate::gcode::EmitError> {
         use crate::export::gcode_validator::{
             MachineSafety, Severity, emission_frame_clearance_z, validate_machine_safety,
         };
@@ -74,84 +78,16 @@ impl ProjectSession {
         let crate::gcode::ExportRequest {
             phases,
             emitted,
+            left_out,
             report,
-            policy,
             overlay,
         } = request;
-        // F033 (operator ruling 2): an emitted toolpath whose height planes
-        // break the order refuses the whole export, before any emit. The
-        // rows are the text of `HeightOrderRefusal`, which the edit doors
-        // and generation give too.
-        let height_rows: Vec<String> = emitted
-            .iter()
-            .filter_map(|idx| self.toolpath_configs.get(*idx))
-            .filter_map(|tc| self.height_order_refusal(tc))
-            .map(|refusal| refusal.to_string())
-            .collect();
-        if !height_rows.is_empty() && Gate::HeightRefuses.refuses_at(Stage::Export) {
-            return Err(crate::gcode::ExportRefusal::HeightOrder { rows: height_rows });
-        }
-        // UX-7b (SAFETY): an emitted toolpath whose stored result cuts into
-        // the mesh of its model refuses the whole export, on the same
-        // finding as the blocking diagnostic `safety.cuts_into_model`.
-        let gouge_rows: Vec<String> = emitted
-            .iter()
-            .filter_map(|idx| self.model_gouge_refusal(*idx))
-            .collect();
-        if !gouge_rows.is_empty() && Gate::GougeBlocks.refuses_at(Stage::Export) {
-            return Err(crate::gcode::ExportRefusal::CutsIntoModel { rows: gouge_rows });
-        }
-        // G-CENTRECUT (SAFETY): an emitted toolpath whose simulation shows a
-        // non-centre-cutting tool pushing its centre into wood refuses the
-        // whole export. No override.
-        if let Some(simulation) = self.simulation.as_ref() {
-            let ids: Vec<crate::ids::ToolpathId> = emitted
-                .iter()
-                .filter_map(|idx| self.toolpath_configs.get(*idx))
-                .map(|tc| tc.id)
-                .collect();
-            let rows =
-                crate::compute::simulate::non_centre_cutting_refusal_rows(simulation, &ids, |id| {
-                    self.toolpath_configs
-                        .iter()
-                        .find(|tc| tc.id == id)
-                        .map(|tc| tc.name.as_str())
-                });
-            if !rows.is_empty() && Gate::CentreCutDescent.refuses_at(Stage::Export) {
-                return Err(crate::gcode::ExportRefusal::NonCentreCuttingDescent { rows });
-            }
-        }
-        // D47 (G-RESTSTALE): the load gate judges the toolpaths the program
-        // emits. An enabled toolpath outside `emitted` (a CLI `--skip`, a
-        // setup the export leaves out) has no result, so the simulation did
-        // not carve it and the program does not cut it. Its row read
-        // `StaleSimulation` and refused the whole export.
-        let emitted_ids: Vec<crate::ids::ToolpathId> = emitted
-            .iter()
-            .filter_map(|idx| self.toolpath_configs.get(*idx))
-            .map(|tc| tc.id)
-            .collect();
-        let report = crate::tool_load::ToolLoadReport {
-            per_toolpath: report
-                .per_toolpath
-                .iter()
-                .filter(|verdict| emitted_ids.contains(&verdict.toolpath_id))
-                .cloned()
-                .collect(),
-        };
+        let warnings = self.export_warnings(&emitted, &left_out, report);
+        let load_outcome = self.export_load_findings(&emitted, report).outcome;
         let post_config = &self.post;
         let post = post_config.format.definition();
-        let crate::gcode::CheckedProgram {
-            mut gcode,
-            load_outcome,
-        } = crate::gcode::emit_checked(
-            &phases,
-            post,
-            post_config.safe_z,
-            &report,
-            policy,
-            overlay,
-        )?;
+        let mut gcode =
+            crate::gcode::emit_checked(&phases, post, post_config.safe_z, overlay, &warnings)?;
 
         let machine_safety = validate_machine_safety(
             &gcode,
@@ -183,19 +119,225 @@ impl ProjectSession {
             gcode,
             machine_safety,
             load_outcome,
+            warnings,
             feeds_cautions: self.feeds_cautions(emitted.iter().copied()),
         })
     }
 
+    /// D47 (G-RESTSTALE): the load findings of the toolpaths the program
+    /// emits. An enabled toolpath outside `emitted` (a CLI `--skip`, a
+    /// setup the export leaves out) has no result, so the simulation did
+    /// not carve it and the program does not cut it; its row would read
+    /// `StaleSimulation`.
+    fn export_load_findings(
+        &self,
+        emitted: &[usize],
+        report: &crate::tool_load::ToolLoadReport,
+    ) -> crate::gcode::LoadFindings {
+        let emitted_ids: Vec<crate::ids::ToolpathId> = emitted
+            .iter()
+            .filter_map(|idx| self.toolpath_configs.get(*idx))
+            .map(|tc| tc.id)
+            .collect();
+        crate::gcode::load_findings(&crate::tool_load::ToolLoadReport {
+            per_toolpath: report
+                .per_toolpath
+                .iter()
+                .filter(|verdict| emitted_ids.contains(&verdict.toolpath_id))
+                .cloned()
+                .collect(),
+        })
+    }
+
+    /// **K6 (CONTRACT K6, ruling Q6): every finding an export names.** The
+    /// export door, the GUI pre-flight chips and the MCP reply read this
+    /// one list. It walks [`crate::diagnostics::Gate::ALL`] with one
+    /// exhaustive `match`: each gate decides whether its finding is raised;
+    /// the id's `diag_ids!` row gives the danger. Nothing here refuses.
+    ///
+    /// `emitted` are the toolpath indices the program holds; `left_out` the
+    /// enabled ops in scope with no current result and the sentence that
+    /// says why ([`Self::export_scope`]); `report` the load report the
+    /// load rows read.
+    #[must_use]
+    pub fn export_warnings(
+        &self,
+        emitted: &[usize],
+        left_out: &[(usize, String)],
+        report: &crate::tool_load::ToolLoadReport,
+    ) -> Vec<crate::gcode::ExportWarning> {
+        use crate::diagnostics::{Gate, ids};
+        let name_at = |idx: usize| {
+            self.toolpath_configs
+                .get(idx)
+                .map_or_else(|| "?".to_owned(), |tc| tc.name.clone())
+        };
+        let name_of = |id: crate::ids::ToolpathId| {
+            self.toolpath_configs
+                .iter()
+                .find(|tc| tc.id == id)
+                .map_or_else(|| format!("toolpath {id}"), |tc| tc.name.clone())
+        };
+        let mut out: Vec<crate::gcode::ExportWarning> = Vec::new();
+        let mut push = |id: &'static str, toolpath: String, detail: String| {
+            if let Some(warning) = crate::gcode::ExportWarning::new(id, toolpath, detail) {
+                out.push(warning);
+            }
+        };
+        let load = self.export_load_findings(emitted, report);
+        for gate in Gate::ALL {
+            match gate {
+                Gate::HeightRefuses => {
+                    for tc in emitted.iter().filter_map(|i| self.toolpath_configs.get(*i)) {
+                        if let Some(found) = self.height_order_refusal(tc) {
+                            for violation in &found.violations {
+                                push(violation.id(), tc.name.clone(), found.to_string());
+                            }
+                        }
+                    }
+                }
+                Gate::GougeBlocks => {
+                    for &idx in emitted {
+                        if let Some(row) = self.model_gouge_refusal(idx) {
+                            push(ids::SAFETY_CUTS_INTO_MODEL, name_at(idx), row);
+                        }
+                    }
+                }
+                Gate::CentreCutPlunge => {
+                    for &idx in emitted {
+                        if let Some(plunge) = self
+                            .result_at(idx)
+                            .and_then(|r| r.stats.non_centre_cutting_plunge)
+                        {
+                            push(
+                                ids::SAFETY_NON_CENTRE_CUTTING_PLUNGE,
+                                name_at(idx),
+                                format!("Toolpath '{}': {plunge}", name_at(idx)),
+                            );
+                        }
+                    }
+                }
+                Gate::CentreCutDescent => {
+                    if let Some(simulation) = self.simulation.as_ref() {
+                        for tc in emitted.iter().filter_map(|i| self.toolpath_configs.get(*i)) {
+                            let rows = crate::compute::simulate::non_centre_cutting_refusal_rows(
+                                simulation,
+                                &[tc.id],
+                                |id| {
+                                    self.toolpath_configs
+                                        .iter()
+                                        .find(|t| t.id == id)
+                                        .map(|t| t.name.as_str())
+                                },
+                            );
+                            for row in rows {
+                                push(ids::SAFETY_NON_CENTRE_CUTTING_DESCENT, tc.name.clone(), row);
+                            }
+                        }
+                    }
+                }
+                Gate::LoadRowRefuses | Gate::LoadUnmodeled => {
+                    let unmodeled = matches!(gate, Gate::LoadUnmodeled);
+                    for row in load
+                        .rows
+                        .iter()
+                        .filter(|r| r.id.ends_with(".unmodeled") == unmodeled)
+                    {
+                        push(row.id, name_of(row.toolpath), row.detail.clone());
+                    }
+                }
+                Gate::NoCurrentResult => {
+                    for (idx, reason) in left_out {
+                        push(ids::EXPORT_OP_LEFT_OUT, name_at(*idx), reason.clone());
+                    }
+                }
+                Gate::GuiConfirm => {
+                    if let Some(simulation) = self.simulation.as_ref() {
+                        let evidence = crate::session::ProjectEvidence::from_simulation(simulation);
+                        for tc in emitted.iter().filter_map(|i| self.toolpath_configs.get(*i)) {
+                            let count = evidence
+                                .attributed_rapid_collisions()
+                                .iter()
+                                .filter(|hit| hit.toolpath.is_some_and(|(id, _)| id == tc.id))
+                                .count();
+                            if count > 0 {
+                                push(
+                                    ids::PROJECT_RAPID_COLLISION,
+                                    tc.name.clone(),
+                                    format!(
+                                        "Toolpath '{}': {count} rapid move(s) go through stock",
+                                        tc.name
+                                    ),
+                                );
+                            }
+                        }
+                    }
+                }
+                Gate::BuriedFace => {
+                    for &idx in emitted {
+                        if let Some(buried) = self.result_at(idx).and_then(|r| r.stats.buried_face)
+                        {
+                            push(ids::PRECOND_BURIED_FACE, name_at(idx), buried.to_string());
+                        }
+                    }
+                }
+                Gate::ToolKind => {
+                    for tc in emitted.iter().filter_map(|i| self.toolpath_configs.get(*i)) {
+                        let Some(tool) = self.toolpath_tool(tc) else {
+                            continue;
+                        };
+                        if let Some(text) = tc
+                            .operation
+                            .op_type()
+                            .tool_refusal(tool.tool_type.cutter_kind())
+                        {
+                            push(ids::COMPAT_TOOL_KIND_REFUSED, tc.name.clone(), text);
+                        }
+                    }
+                }
+            }
+        }
+        out
+    }
+
+    /// **K6 (lead decision 4): THE export scope rule.** Of the toolpaths in
+    /// `indices`, the enabled ones whose result `current` accepts are
+    /// emitted; every other enabled one is left out and named
+    /// (`export.op_left_out`) with the sentence `reason` gives. A disabled
+    /// toolpath is skipped. The core door ([`Self::export_gcode_checked`])
+    /// and the viz door (`io::export::emitted_toolpaths`) both call it.
+    pub fn export_scope(
+        &self,
+        indices: impl Iterator<Item = usize>,
+        current: impl Fn(usize) -> bool,
+        reason: impl Fn(usize) -> String,
+    ) -> ExportScope {
+        let mut scope = ExportScope::default();
+        for idx in indices {
+            let Some(tc) = self.toolpath_configs.get(idx) else {
+                continue;
+            };
+            if !tc.enabled {
+                continue;
+            }
+            if current(idx) {
+                scope.emitted.push(idx);
+            } else {
+                scope.left_out.push((idx, reason(idx)));
+            }
+        }
+        scope
+    }
+
     /// UX-7b (SAFETY): the export row of toolpath `index` when its stored
     /// result cuts into the mesh of its model, else `None`. The row is the
-    /// toolpath name and the finding sentence of the blocking diagnostic
-    /// `safety.cuts_into_model`.
+    /// toolpath name and the finding sentence of the diagnostic
+    /// `safety.cuts_into_model`. K6: the export warns on it.
     #[must_use]
     pub fn model_gouge_refusal(&self, index: usize) -> Option<String> {
         let finding = self.result_at(index)?.stats.model_gouge?;
-        // B2: a cut into the leave alone (a 3D Rough) is Caution, not a
-        // refusal.
+        // B2: a cut into the leave alone (a 3D Rough) is Caution, not an
+        // export warning.
         if !finding.blocks_export() {
             return None;
         }
@@ -207,35 +349,57 @@ impl ProjectSession {
     }
 
     /// Export every enabled toolpath that holds a session result, through
-    /// [`Self::export_program`]. The CLI and the core tests take this
-    /// door; the GUI and MCP build their own phases (they may emit an
-    /// edited operation's previous geometry) and take `export_program`.
+    /// [`Self::export_program`], with the load report built over
+    /// `sim_trace` ([`Self::build_tool_load_report`]). The CLI and the
+    /// core tests take this door; the GUI and MCP build their own phases
+    /// and take `export_program`.
     ///
-    /// The load gate reads [`Self::build_tool_load_report`] over
-    /// `sim_trace`. The overlay is the default with the controller options
-    /// of the session's post config and machine profile (G5-G7, G10).
+    /// # Errors
+    /// [`crate::gcode::EmitError`] only: no finding refuses (K6).
     #[instrument(skip(self, sim_trace))]
     pub fn export_gcode_checked(
         &self,
         sim_trace: Option<&crate::stock::simulation_cut::SimulationCutTrace>,
-        policy: crate::gcode::ToolLoadExportPolicy,
-    ) -> Result<crate::gcode::ExportedGcode, crate::gcode::ExportRefusal> {
+    ) -> Result<crate::gcode::ExportedGcode, crate::gcode::EmitError> {
+        let report = self.build_tool_load_report(sim_trace);
+        self.export_gcode_with_report(&report)
+    }
+
+    /// [`Self::export_gcode_checked`] with the load report the caller
+    /// gives. An enabled toolpath with no session result is left out and
+    /// named (K6, `export.op_left_out`). The overlay is the default with the
+    /// controller options of the session's post config and machine profile
+    /// (G5-G7, G10).
+    ///
+    /// # Errors
+    /// [`crate::gcode::EmitError`] only: no finding refuses (K6).
+    pub fn export_gcode_with_report(
+        &self,
+        report: &crate::tool_load::ToolLoadReport,
+    ) -> Result<crate::gcode::ExportedGcode, crate::gcode::EmitError> {
         use crate::gcode::{GcodePhase, PhaseTool};
 
-        let report = self.build_tool_load_report(sim_trace);
+        let scope = self.export_scope(
+            0..self.toolpath_configs.len(),
+            |idx| self.result_at(idx).is_some(),
+            |idx| {
+                format!(
+                    "'{}' has no current result: generate it",
+                    self.toolpath_configs
+                        .get(idx)
+                        .map_or("?", |tc| tc.name.as_str())
+                )
+            },
+        );
 
         // G-EXPORT-DATUM: re-express each toolpath in the shared export
         // datum BEFORE building phases, so the emitted program has one XY
         // zero across every setup. Owned here (not written back to the
         // session) so nothing downstream of generation is disturbed.
-        let emitted: Vec<(usize, std::borrow::Cow<'_, crate::toolpath::Toolpath>)> = self
-            .toolpath_configs
+        let emitted: Vec<(usize, std::borrow::Cow<'_, crate::toolpath::Toolpath>)> = scope
+            .emitted
             .iter()
-            .enumerate()
-            .filter_map(|(idx, tc)| {
-                if !tc.enabled {
-                    return None;
-                }
+            .filter_map(|&idx| {
                 let result = self.result_at(idx)?;
                 let shift = crate::gcode::export_datum_shift_for_toolpath(self, idx);
                 Some((
@@ -297,8 +461,8 @@ impl ProjectSession {
         self.export_program(crate::gcode::ExportRequest {
             phases,
             emitted: emitted.iter().map(|(idx, _)| *idx).collect(),
-            report: &report,
-            policy,
+            left_out: scope.left_out,
+            report,
             overlay: &overlay,
         })
     }

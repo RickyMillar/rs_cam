@@ -48,9 +48,6 @@ pub struct RunArgs {
     pub controller_waits_for_spindle: Option<bool>,
     pub mist_output: Option<bool>,
     pub native_drill_cycles: Option<bool>,
-    /// F051: the explicit tool-load overrides, the keys of MCP
-    /// `export_gcode`. Off by default: the export refuses.
-    pub tool_load: rs_cam_core::gcode::ToolLoadExportPolicy,
 }
 
 pub fn run_generic(args: &RunArgs) -> Result<()> {
@@ -251,12 +248,12 @@ pub fn run_generic(args: &RunArgs) -> Result<()> {
     }
 
     // `run` never simulates, so every trace-reading gate reads
-    // `SimulationRequired` (= unmodeled) and the export refuses unless the
-    // caller passes `--accept-unmodeled-tool-load` (F051: no silent
-    // override). F067: the one core door, so the machine-safety pass and
-    // the rapid rewrite run here as in the GUI.
+    // `SimulationRequired` (= unmodeled): the export warns on each row and
+    // the program header names them (K6, ruling Q6). F067: the one core
+    // door, so the machine-safety pass and the rapid rewrite run here as in
+    // the GUI.
     let exported = session
-        .export_gcode_checked(None, args.tool_load)
+        .export_gcode_checked(None)
         .map_err(|e| anyhow::anyhow!("exporting gcode: {e}"))?;
     // `run` writes no summary.json; the checks go to stderr.
     let (gcode, _summary) = crate::project::report_export_checks(exported);

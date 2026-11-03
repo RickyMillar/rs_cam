@@ -19,11 +19,17 @@
 //!    (`diagnose_toolpath_with_trace`, the MCP route) give the same
 //!    severity;
 //! 2. the MCP door (`SetToolpathHeights`), the GUI and CLI door
-//!    (`ReplaceToolpathConfig`) and generation refuse with ONE text;
-//! 3. the export door refuses with that text;
+//!    (`ReplaceToolpathConfig`) and generation take the stack, and THE rule
+//!    names the break with ONE text;
+//! 3. the export door writes the program and names each break id in the
+//!    result and the header;
 //! 4. the Heights tab gate (`admit_heights_edit`, which the rows and the
-//!    Auto buttons write through) and the diagram drag refuse the edit
-//!    before the write.
+//!    Auto buttons write through) and the diagram drag write the edit and
+//!    keep the break text as the row state.
+//!
+//! K6 (feeds contract P2, ruling Q6, lead decision 2026-11-03: the height
+//! edit door accepts the edit and warns): before P2 claims 2 to 4 were
+//! refusals. The one-rule claim (one text, one severity) is unchanged.
 //!
 //! Red proofs (inject, see red, revert) are in the F033 report.
 //!
@@ -54,13 +60,12 @@ use rs_cam_core::diagnostics::ids::{
     GEOM_BOTTOM_ABOVE_TOP_Z, GEOM_CLEARANCE_Z_BELOW_RETRACT_Z, GEOM_FEED_Z_BELOW_TOP_Z,
     GEOM_RETRACT_Z_BELOW_FEED_Z, GEOM_RETRACT_Z_BELOW_TOP_Z,
 };
-use rs_cam_core::gcode::ToolLoadExportPolicy;
 use rs_cam_core::geo::P3;
 use rs_cam_core::polygon::Polygon2;
 use rs_cam_core::session::{
     AddToolpathArgs, AdoptResultArgs, Command, LoadedModel, ProjectSession, ProjectSessionBuilder,
-    ReplaceToolpathConfigArgs, SessionError, SetToolpathHeightsArgs, ToolpathComputeResult,
-    ToolpathConfig, ToolpathHeights,
+    ReplaceToolpathConfigArgs, SetToolpathHeightsArgs, ToolpathComputeResult, ToolpathConfig,
+    ToolpathHeights,
 };
 use rs_cam_core::toolpath::Toolpath;
 use rs_cam_core::trace::toolpath_spans::AnnotatedToolpath;
@@ -125,6 +130,9 @@ fn pocket_config(heights: HeightsConfig) -> ToolpathConfig {
     if let OperationConfig::Pocket(cfg) = &mut op {
         cfg.floor = rs_cam_core::compute::floor::Floor::top(6.0);
     }
+    // K6: the order no longer refuses first, so the op states its feeds
+    // (S11) to reach generation.
+    rs_cam_core::compute::fixture_values::fill_unset(&mut op);
     ToolpathConfig {
         shoe: Default::default(),
         feeds_lock: Default::default(),
@@ -174,21 +182,13 @@ fn inverted() -> HeightsConfig {
     }
 }
 
-/// The one text of the refusal, from THE rule.
+/// The one text of the break, from THE rule.
 fn expected_text(session: &ProjectSession, idx: usize) -> String {
     let tc = &session.toolpath_configs()[idx];
     session
         .height_order_refusal(tc)
-        .expect("the inverted stack refuses")
+        .expect("the inverted stack is a break")
         .to_string()
-}
-
-fn refusal_text(result: Result<rs_cam_core::session::Effects, SessionError>) -> String {
-    match result {
-        Err(SessionError::HeightOrder(refusal)) => refusal.to_string(),
-        Err(other) => panic!("refused, but not by the order rule: {other}"),
-        Ok(_) => panic!("the door accepted an inverted stack"),
-    }
 }
 
 // ── arm 1: the badge and the diagnostic ────────────────────────────────
@@ -239,7 +239,7 @@ fn the_badge_and_the_diagnostic_give_one_severity_f033() {
 // ── arm 2: the edit doors and generation give one text ─────────────────
 
 #[test]
-fn every_door_refuses_an_inverted_stack_with_one_text_f033() {
+fn every_door_takes_an_inverted_stack_and_names_it_with_one_text_f033() {
     // The text from a stored inverted stack.
     let mut stored = session();
     let bad = add(&mut stored, inverted());
@@ -249,62 +249,48 @@ fn every_door_refuses_an_inverted_stack_with_one_text_f033() {
         "the text names the plane and the toolpath: {expected}"
     );
 
-    // Generation refuses with it.
-    let generated = stored.generate_toolpath(bad, &AtomicBool::new(false));
-    match generated {
-        Err(SessionError::HeightOrder(refusal)) => assert_eq!(refusal.to_string(), expected),
-        Err(other) => panic!("generation refused, but not by the order rule: {other}"),
-        Ok(_) => panic!("generation accepted an inverted stack"),
-    }
+    // K6: generation goes ahead; the rule still names the break.
+    stored
+        .generate_toolpath(bad, &AtomicBool::new(false))
+        .expect("no finding refuses generation");
+    assert_eq!(expected_text(&stored, bad), expected);
 
-    // The MCP door (`set_toolpath_heights` sends this row).
+    // The MCP door (`set_toolpath_heights` sends this row) takes the edit.
     let mut s = session();
     let idx = add(&mut s, HeightsConfig::default());
     assert_eq!(idx, bad, "both sessions hold one toolpath at one index");
-    let text = refusal_text(s.apply(Command::SetToolpathHeights(SetToolpathHeightsArgs {
-        index: idx,
-        heights: inverted(),
-    })));
-    assert_eq!(text, expected, "the MCP door");
-    assert_eq!(
-        s.toolpath_configs()[idx].heights,
-        HeightsConfig::default(),
-        "a refused edit writes nothing"
-    );
+    let _ = s
+        .apply(Command::SetToolpathHeights(SetToolpathHeightsArgs {
+            index: idx,
+            heights: inverted(),
+        }))
+        .expect("the MCP door takes the edit and warns");
+    assert_eq!(s.toolpath_configs()[idx].heights, inverted());
+    assert_eq!(expected_text(&s, idx), expected, "the MCP door");
 
     // The GUI panel and the CLI feeds apply (`ReplaceToolpathConfig`).
-    let mut candidate = s.toolpath_configs()[idx].clone();
+    let mut other = session();
+    let idx = add(&mut other, HeightsConfig::default());
+    let mut candidate = other.toolpath_configs()[idx].clone();
     candidate.heights = inverted();
-    let text = refusal_text(
-        s.apply(Command::ReplaceToolpathConfig(ReplaceToolpathConfigArgs {
+    let _ = other
+        .apply(Command::ReplaceToolpathConfig(ReplaceToolpathConfigArgs {
             index: idx,
             config: Box::new(candidate),
-        })),
-    );
-    assert_eq!(text, expected, "the GUI and CLI door");
-
-    // A stack that is already broken still takes an edit that adds no
-    // break, so the operator can fix it one plane at a time.
-    let mut fix = inverted();
-    fix.clearance_z = HeightMode::Manual(100.0);
-    let _ = stored
-        .apply(Command::SetToolpathHeights(SetToolpathHeightsArgs {
-            index: bad,
-            heights: fix,
         }))
-        .expect("an edit that adds no break is accepted");
+        .expect("the GUI and CLI door takes the edit and warns");
+    assert_eq!(expected_text(&other, idx), expected, "the GUI and CLI door");
 }
 
 // ── arm 3: the export door ──────────────────────────────────────────────
 
 #[test]
-fn the_export_door_refuses_an_inverted_stack_f033() {
+fn the_export_door_names_an_inverted_stack_f033() {
     let mut s = session();
     let idx = add(&mut s, inverted());
     let expected = expected_text(&s, idx);
 
-    // A result from before the edit (the GUI can export the previous
-    // geometry of an edited op): the door reads the config, not the path.
+    // A hand-built result: the door reads the config, not the path.
     let mut path = Toolpath::new();
     path.rapid_to(P3::new(0.0, 0.0, 25.0));
     path.feed_to(P3::new(5.0, 0.0, 12.0), 600.0);
@@ -325,26 +311,29 @@ fn the_export_door_refuses_an_inverted_stack_f033() {
         }))
         .expect("adopt the hand-built result");
 
-    let accept_all = ToolLoadExportPolicy {
-        accept_unmodeled: true,
-        accept_exceeded: true,
-    };
-    let refusal = s
-        .export_gcode_checked(None, accept_all)
-        .expect_err("the export door refuses an inverted stack");
-    let text = refusal.to_string();
+    let exported = s
+        .export_gcode_checked(None)
+        .expect("K6: the export door writes an inverted stack");
+    let warning = exported
+        .warnings
+        .iter()
+        .find(|w| w.id == GEOM_RETRACT_Z_BELOW_TOP_Z)
+        .expect("the export names the break");
     assert!(
-        text.contains(&expected),
-        "the export refusal carries the door text\nexport: {text}\ndoor: {expected}"
+        expected.contains(&warning.detail) || warning.detail.contains("Retract Z"),
+        "the warning carries the rule text\nexport: {}\nrule: {expected}",
+        warning.detail
     );
-    assert_eq!(
-        refusal.override_needed(),
-        None,
-        "no load override waives a height-order refusal"
+    assert!(
+        exported
+            .gcode
+            .lines()
+            .any(|l| l.contains("WARNING") && l.contains(GEOM_RETRACT_Z_BELOW_TOP_Z)),
+        "the header names the break"
     );
 }
 
-// ── arm 4: the Heights tab refuses at the edit ──────────────────────────
+// ── arm 4: the Heights tab writes the edit and warns ────────────────────
 
 fn context() -> egui::Context {
     let ctx = egui::Context::default();
@@ -357,7 +346,7 @@ fn context() -> egui::Context {
 
 /// The rows and the Auto buttons write through `admit_heights_edit`.
 #[test]
-fn the_heights_tab_refuses_an_edit_that_inverts_the_stack_f033() {
+fn the_heights_tab_writes_an_edit_that_inverts_the_stack_and_warns_f033() {
     let mut s = session();
     let idx = add(&mut s, HeightsConfig::default());
     let tc = s.toolpath_configs()[idx].clone();
@@ -377,10 +366,10 @@ fn the_heights_tab_refuses_an_edit_that_inverts_the_stack_f033() {
         ));
     });
     out.textures_delta.clear();
-    assert_eq!(written, Some(false), "the gate refuses the edit");
-    assert_eq!(heights, HeightsConfig::default(), "nothing is written");
-    // UI-09: the refusal text is GUI state, not egui memory.
-    let shown = refusal.text(0.0).expect("the gate keeps the refusal");
+    assert_eq!(written, Some(true), "K6: the gate writes the edit");
+    assert_eq!(heights, inverted(), "the edit is written");
+    // UI-09: the warning text is GUI state, not egui memory.
+    let shown = refusal.text(0.0).expect("the gate keeps the warning");
     assert!(shown.contains("Retract Z"), "{shown}");
 
     // Non-vacuity: an edit in order is written.
@@ -401,7 +390,7 @@ fn the_heights_tab_refuses_an_edit_that_inverts_the_stack_f033() {
     out.textures_delta.clear();
     assert_eq!(written, Some(true));
     assert_eq!(heights, fine);
-    assert_eq!(refusal.text(0.0), None, "an accepted edit clears it");
+    assert_eq!(refusal.text(0.0), None, "an edit in order clears it");
 }
 
 /// A waterline: retract 20 (the safe Z), top 9.8 (the stock top).
@@ -467,7 +456,7 @@ fn button(pos: egui::Pos2, pressed: bool) -> egui::Event {
 
 /// A drag of the Top line far up, past the retract plane, stops below it.
 #[test]
-fn the_diagram_drag_stops_at_the_retract_plane_f033() {
+fn the_diagram_drag_passes_the_retract_plane_f033() {
     let ctx = context();
     let mut heights = HeightsConfig::default();
     let auto = ToolpathHeights::from_context(&heights, waterline_ctx()).heights;
@@ -492,9 +481,11 @@ fn the_diagram_drag_stops_at_the_retract_plane_f033() {
         after.top_z,
         auto.top_z
     );
+    // K6: the drag is written past the retract plane; the badge and the
+    // row state name the break.
     assert!(
-        after.top_z <= after.retract_z,
-        "the drag put the Top Z ({}) above the Retract Z ({})",
+        after.top_z > after.retract_z,
+        "the drag stopped the Top Z ({}) at the Retract Z ({})",
         after.top_z,
         after.retract_z
     );
@@ -530,9 +521,7 @@ fn a_floor_above_the_top_is_left_to_the_floor_rule_f033() {
         "the order rule sees the floor above the top"
     );
     match s.generate_toolpath(idx, &AtomicBool::new(false)) {
-        Err(SessionError::HeightOrder(_)) | Ok(_) => {
-            panic!("the floor rule refuses first")
-        }
+        Ok(_) => panic!("the floor rule refuses: the ladder is empty"),
         Err(other) => assert!(
             other.to_string().contains("floor"),
             "the floor rule names the floor: {other}"
@@ -544,7 +533,8 @@ fn a_floor_above_the_top_is_left_to_the_floor_rule_f033() {
 
 /// F033b (lead ruling): the Waterline ladder includes its top
 /// (`Capabilities::ladder_includes_top`), so top = bottom is one level.
-/// The Heights tab gate writes it, and refuses a bottom above the top.
+/// The Heights tab gate writes it, and writes a bottom above the top with
+/// the break as its warning (K6).
 /// A Pocket ladder starts one pass below its top, so a Pocket floor at
 /// the top still refuses at generation.
 #[test]
@@ -581,7 +571,7 @@ fn a_top_included_ladder_takes_top_equal_to_bottom_f033b() {
     assert_eq!(written, Some(true), "the gate takes top = bottom");
     assert_eq!(heights, one_level);
 
-    // A bottom above the top still refuses at the gate.
+    // A bottom above the top is written, with the break as its warning.
     let above = HeightsConfig {
         bottom_z: HeightMode::Manual(Z_MM + 0.5),
         ..one_level
@@ -597,12 +587,13 @@ fn a_top_included_ladder_takes_top_equal_to_bottom_f033b() {
         ));
     });
     out.textures_delta.clear();
-    assert_eq!(
-        written,
-        Some(false),
-        "the gate refuses a bottom above the top"
+    assert_eq!(written, Some(true), "K6: the gate writes the edit");
+    assert_eq!(heights, above, "the edit is written");
+    assert!(
+        refusal.text(0.0).is_some_and(|t| t.contains("Bottom")),
+        "the gate keeps the break as the row state: {:?}",
+        refusal.text(0.0)
     );
-    assert_eq!(heights, one_level, "nothing is written");
 
     // Pocket: a floor at the top is top = bottom on a top-excluded ladder.
     let mut s = session();

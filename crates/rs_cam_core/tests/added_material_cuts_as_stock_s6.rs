@@ -118,13 +118,7 @@ impl Run {
     fn gcode_motion(&self) -> Vec<String> {
         let gcode = self
             .session
-            .export_gcode_checked(
-                Some(self.trace()),
-                rs_cam_core::gcode::ToolLoadExportPolicy {
-                    accept_unmodeled: true,
-                    accept_exceeded: true,
-                },
-            )
+            .export_gcode_checked(Some(self.trace()))
             .expect("the export runs")
             .gcode;
         gcode

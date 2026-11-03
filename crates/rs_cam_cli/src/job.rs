@@ -49,8 +49,7 @@ use rs_cam_core::{
     compute::{ModelUnits, build_cutter},
     dexel_stock::{StockCutDirection, TriDexelStock},
     gcode::{
-        CheckedProgram, CoolantMode, ExportPhases, GcodePhase, PhaseTool, PostFormat,
-        ToolLoadExportPolicy, WizardOverlay, emit_checked,
+        CoolantMode, ExportPhases, GcodePhase, PhaseTool, PostFormat, WizardOverlay, emit_checked,
     },
     geo::BoundingBox3,
     session::{
@@ -944,35 +943,18 @@ pub(crate) fn job_overlay(job_file: &JobFile) -> WizardOverlay {
 /// and `sweep`).
 ///
 /// F116 (not done): the job-file pipeline has no `ProjectSession`, so it
-/// passes an explicitly empty load report ("no load evaluation
-/// performed") and the default policy, and it runs neither the
-/// machine-safety pass nor the high-feedrate rewrite: both read the
-/// session (retract plane, machine feed limit, post config). The load
-/// outcome is still destructured, so a report that gains rows cannot be
-/// dropped here.
+/// judges no load and no finding (no warning line), and it runs neither
+/// the machine-safety pass nor the high-feedrate rewrite: both read the
+/// session (retract plane, machine feed limit, post config).
 pub(crate) fn emit_job_program(
     phases: &ExportPhases<'_>,
     post: &rs_cam_core::gcode::PostDefinition,
     safe_z: f64,
     overlay: &WizardOverlay,
 ) -> Result<String> {
-    let CheckedProgram {
-        gcode,
-        load_outcome,
-    } = emit_checked(
-        phases,
-        post,
-        safe_z,
-        &rs_cam_core::tool_load::ToolLoadReport {
-            per_toolpath: vec![],
-        },
-        ToolLoadExportPolicy::default(),
-        overlay,
-    )?;
-    if let Some(report) = load_outcome.report() {
-        warn!("{report}");
-    }
-    Ok(gcode)
+    // K6: the job file has no session, so no finding is judged here and
+    // the program header holds no warning line.
+    Ok(emit_checked(phases, post, safe_z, overlay, &[])?)
 }
 
 /// The emitter phase of one job operation.

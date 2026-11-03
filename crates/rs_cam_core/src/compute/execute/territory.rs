@@ -244,7 +244,7 @@ impl<'a> Territory<'a> {
     /// - the Pencil entry ramps (`PencilStock::remaining`);
     /// - `BuriedCurveFinding` (`curve::run_curve`).
     /// - the UX-1c buried-face check of a one-depth op
-    ///   (`prologue::refuse_buried_face`).
+    ///   (`prologue::buried_face`).
     ///
     /// A rest rule that compares the stock with the surface reads
     /// [`Self::reference_stock`].

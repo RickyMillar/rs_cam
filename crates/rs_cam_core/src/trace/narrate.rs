@@ -349,6 +349,11 @@ impl<'a> ToolpathNarrationContext<'a> {
             //  - model_gouge (UX-7b): a blocking diagnostic
             //    (`safety.cuts_into_model`) that names the deepest point.
             model_gouge: _,
+            //  - non_centre_cutting_plunge, buried_face (K6): warnings
+            //    (`safety.non_centre_cutting_plunge`,
+            //    `precondition.buried_face`) that name the entry or the face.
+            non_centre_cutting_plunge: _,
+            buried_face: _,
             relink,
             pencil_link,
         } = stats;

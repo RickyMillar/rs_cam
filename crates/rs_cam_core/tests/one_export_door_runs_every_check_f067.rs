@@ -13,8 +13,9 @@
 //! - the rewrite follows the session post config;
 //! - the machine-safety pass reads the program BEFORE the rewrite, so the
 //!   findings are the same with the rewrite on or off;
-//! - an override keeps the refusal it waived, and a refusal names the
-//!   override as each surface spells it;
+//! - K6 (ruling Q6): no load row refuses; each unmodelled row is a warning
+//!   with its id in the result and in the program header, and no warning
+//!   names an override (none exists);
 //! - the validator reads the canned-cycle fact from the post data (F214).
 
 #![expect(
@@ -27,7 +28,7 @@ use std::sync::Arc;
 use rs_cam_core::compute::catalog::OperationConfig;
 use rs_cam_core::compute::operation_configs::PocketConfig;
 use rs_cam_core::export::gcode_validator::{FindingKind, validate};
-use rs_cam_core::gcode::{ExportRefusal, LoadOverride, PostFormat, ToolLoadExportPolicy};
+use rs_cam_core::gcode::PostFormat;
 use rs_cam_core::geo::P3;
 use rs_cam_core::session::{
     AdoptResultArgs, Command, ProjectSession, SetPostConfigArgs, ToolpathComputeResult,
@@ -91,12 +92,6 @@ fn session(high_feedrate_mode: bool) -> ProjectSession {
     session
 }
 
-/// No simulation runs here, so every trace-reading gate is unmodelled.
-const ACCEPT_UNMODELED: ToolLoadExportPolicy = ToolLoadExportPolicy {
-    accept_unmodeled: true,
-    accept_exceeded: false,
-};
-
 fn has_g0(gcode: &str) -> bool {
     gcode
         .lines()
@@ -106,7 +101,7 @@ fn has_g0(gcode: &str) -> bool {
 #[test]
 fn the_core_door_rewrites_rapids_under_high_feedrate_mode() {
     let off = session(false)
-        .export_gcode_checked(None, ACCEPT_UNMODELED)
+        .export_gcode_checked(None)
         .expect("export, rewrite off");
     assert!(
         has_g0(&off.gcode),
@@ -117,7 +112,7 @@ fn the_core_door_rewrites_rapids_under_high_feedrate_mode() {
     let on_session = session(true);
     let feed = on_session.post_config().high_feedrate;
     let on = on_session
-        .export_gcode_checked(None, ACCEPT_UNMODELED)
+        .export_gcode_checked(None)
         .expect("export, rewrite on");
     assert!(
         !has_g0(&on.gcode),
@@ -137,10 +132,10 @@ fn the_core_door_rewrites_rapids_under_high_feedrate_mode() {
 #[test]
 fn the_safety_pass_reads_the_program_before_the_rewrite() {
     let off = session(false)
-        .export_gcode_checked(None, ACCEPT_UNMODELED)
+        .export_gcode_checked(None)
         .expect("export, rewrite off");
     let on = session(true)
-        .export_gcode_checked(None, ACCEPT_UNMODELED)
+        .export_gcode_checked(None)
         .expect("export, rewrite on");
     let low_rapids = |findings: &[rs_cam_core::export::gcode_validator::Finding]| {
         findings
@@ -160,41 +155,33 @@ fn the_safety_pass_reads_the_program_before_the_rewrite() {
     );
 }
 
+/// K6: no simulation runs here, so every trace-reading gate is
+/// unmodelled. The export writes the program and warns on each row; the
+/// header names each warning, and no text names an override.
 #[test]
-fn an_override_keeps_the_refusal_it_waived() {
-    let s = session(false);
-    let refusal = s
-        .export_gcode_checked(None, ToolLoadExportPolicy::default())
-        .expect_err("no simulation: the default policy refuses");
-    assert!(
-        matches!(refusal, ExportRefusal::LoadUnmodeled { .. }),
-        "{refusal:?}"
-    );
-    assert_eq!(
-        refusal.override_needed(),
-        Some(LoadOverride::AcceptUnmodeled)
-    );
-    let text = refusal.to_string();
-    for spelling in [
-        LoadOverride::AcceptUnmodeled.mcp_key(),
-        LoadOverride::AcceptUnmodeled.cli_flag(),
-        LoadOverride::AcceptUnmodeled.gui_label(),
-    ] {
-        assert!(text.contains(spelling), "names `{spelling}`: {text}");
+fn an_unmodelled_load_warns_and_the_header_names_it_k6() {
+    let exported = session(false)
+        .export_gcode_checked(None)
+        .expect("no simulation: the export still writes the program");
+    let unmodelled: Vec<_> = exported
+        .warnings
+        .iter()
+        .filter(|w| w.id.ends_with(".unmodeled"))
+        .collect();
+    assert!(!unmodelled.is_empty(), "{:?}", exported.warnings);
+    for warning in &unmodelled {
+        assert!(
+            exported.gcode.contains(&warning.header_line()),
+            "the header names `{}`:\n{}",
+            warning.id,
+            exported.gcode
+        );
+        assert!(
+            !warning.detail.contains("accept"),
+            "no warning names an override: {}",
+            warning.detail
+        );
     }
-    assert!(
-        !text.contains("accept_unmodeled=true"),
-        "no surface accepts the core field name: {text}"
-    );
-
-    let exported = s
-        .export_gcode_checked(None, ACCEPT_UNMODELED)
-        .expect("the override exports");
-    assert_eq!(
-        exported.load_outcome.overridden,
-        vec![refusal],
-        "the outcome records exactly the refusal the override waived"
-    );
 }
 
 /// F214: the validator reads `canned_drill_cycles` from the post data.

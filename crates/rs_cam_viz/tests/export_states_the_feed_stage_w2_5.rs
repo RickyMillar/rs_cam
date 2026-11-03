@@ -3,9 +3,9 @@
 //! The adaptive feed modulation pass reads one simulation's cut trace and
 //! writes the modulated path back into `session.results`. Export emits
 //! whichever path the slot holds. Before W2.5 nothing said which, nothing
-//! said when the simulation the feeds came from was gone, and under
-//! `StaleResultPolicy::AcceptPreviousGeometry` the viz export emitted the
-//! worker's pre-modulation copy with no word.
+//! said when the simulation the feeds came from was gone, and the viz
+//! export could emit the worker's pre-modulation copy with no word (K6
+//! removed that path: an op with no current result is left out and named).
 //!
 //! The ladder this file walks, on the AS001 pocket (the F-036b fixture):
 //!
@@ -23,9 +23,9 @@
 //!    both say run 1 is not the current run 3, and the export does not
 //!    refuse;
 //! 6. a machine edit keeps the result: a Pocket has no link stage (B7);
-//! 7. an edit that drops the result, exported under
-//!    `AcceptPreviousGeometry`: the worker copy carries planned feeds, and
-//!    the header says "as planned".
+//! 7. an edit that drops the result: K6 (lead decision 4) leaves the op
+//!    out and names it (`export.op_left_out`); no feed line is written for
+//!    it, so no stale feed reaches the file.
 //!
 //! Each step asserts the exact header line on the core door
 //! (`export_gcode_checked`) and the viz door (the one MCP and the GUI use).
@@ -47,7 +47,7 @@ use rs_cam_core::compute::config::{BoundaryConfig, DressupConfig, HeightsConfig,
 use rs_cam_core::compute::operation_configs::{PocketConfig, PocketPattern};
 use rs_cam_core::compute::stock_config::StockConfig;
 use rs_cam_core::compute::tool_config::{ToolConfig, ToolId, ToolType};
-use rs_cam_core::gcode::{CoolantMode, ToolLoadExportPolicy};
+use rs_cam_core::gcode::CoolantMode;
 use rs_cam_core::geo::P2;
 use rs_cam_core::ids::ToolpathId;
 use rs_cam_core::machine::kinematics::MachineKinematics;
@@ -60,7 +60,7 @@ use rs_cam_core::session::{
 };
 use rs_cam_core::trace::debug_trace::ToolpathDebugOptions;
 use rs_cam_viz::io::export::{ExportedGcode, export_gcode_from_session_reporting};
-use rs_cam_viz::state::runtime::{GuiState, StaleResultPolicy, ToolpathRuntime};
+use rs_cam_viz::state::runtime::{GuiState, ToolpathRuntime};
 use rs_cam_viz::state::simulation::SimulationState;
 use rs_cam_viz::state::toolpath::ToolpathResult;
 
@@ -69,11 +69,6 @@ const FROM_RUN_1: &str = "(feeds: modulated from simulation run 1)";
 const RUN_1_NOT_CURRENT: &str =
     "(feeds: modulated from simulation run 1; the current simulation is run 3)";
 const NO_SIMULATION: &str = "(feeds: modulated from simulation run 1; no simulation is current)";
-
-const PERMISSIVE: ToolLoadExportPolicy = ToolLoadExportPolicy {
-    accept_unmodeled: true,
-    accept_exceeded: true,
-};
 
 fn end_mill_6mm() -> ToolConfig {
     let mut tool = ToolConfig::new_default(ToolId::from_raw(0), ToolType::EndMill);
@@ -229,14 +224,13 @@ fn core_gcode(session: &ProjectSession) -> String {
             session
                 .simulation_result()
                 .and_then(|s| s.cut_trace.as_deref()),
-            PERMISSIVE,
         )
         .expect("the core door exports")
         .gcode
 }
 
-fn viz_export(session: &ProjectSession, gui: &GuiState, stale: StaleResultPolicy) -> ExportedGcode {
-    export_gcode_from_session_reporting(session, gui, &SimulationState::new(), PERMISSIVE, stale)
+fn viz_export(session: &ProjectSession, gui: &GuiState) -> ExportedGcode {
+    export_gcode_from_session_reporting(session, gui, &SimulationState::new())
         .expect("the viz door exports; a feeds caution never refuses")
 }
 
@@ -264,7 +258,7 @@ fn every_export_states_the_feed_stage_it_emits() {
     assert_eq!(session.simulation_run(), None);
     assert_eq!(session.feed_stage(0), Some(FeedStage::Planned));
     assert_eq!(feeds_line(&core_gcode(&session)), PLANNED);
-    let exported = viz_export(&session, &gui, StaleResultPolicy::Refuse);
+    let exported = viz_export(&session, &gui);
     assert_eq!(feeds_line(&exported.gcode), PLANNED);
     assert!(exported.feeds_cautions.is_empty());
 
@@ -277,7 +271,7 @@ fn every_export_states_the_feed_stage_it_emits() {
         "the AS001 pocket modulates under a kinematics block (F-036b AB2)"
     );
     assert_eq!(feeds_line(&core_gcode(&session)), FROM_RUN_1);
-    let exported = viz_export(&session, &gui, StaleResultPolicy::Refuse);
+    let exported = viz_export(&session, &gui);
     assert_eq!(feeds_line(&exported.gcode), FROM_RUN_1);
     assert!(exported.feeds_cautions.is_empty());
 
@@ -291,7 +285,7 @@ fn every_export_states_the_feed_stage_it_emits() {
         Some(FeedStage::ModulatedCurrent { simulation_run: 1 })
     );
     assert_eq!(feeds_line(&core_gcode(&session)), FROM_RUN_1);
-    let exported = viz_export(&session, &gui, StaleResultPolicy::Refuse);
+    let exported = viz_export(&session, &gui);
     assert_eq!(feeds_line(&exported.gcode), FROM_RUN_1);
     assert!(exported.feeds_cautions.is_empty());
 
@@ -308,10 +302,7 @@ fn every_export_states_the_feed_stage_it_emits() {
     assert!(session.result_at(0).is_some(), "the edit keeps the result");
     assert_eq!(session.simulation_run(), None);
     assert_eq!(feeds_line(&core_gcode(&session)), NO_SIMULATION);
-    assert_eq!(
-        feeds_line(&viz_export(&session, &gui, StaleResultPolicy::Refuse).gcode),
-        NO_SIMULATION
-    );
+    assert_eq!(feeds_line(&viz_export(&session, &gui).gcode), NO_SIMULATION);
 
     // 5. Simulated again with modulation off: run 3. Stated, not refused.
     simulate(&mut session, false);
@@ -324,7 +315,7 @@ fn every_export_states_the_feed_stage_it_emits() {
         })
     );
     assert_eq!(feeds_line(&core_gcode(&session)), RUN_1_NOT_CURRENT);
-    let exported = viz_export(&session, &gui, StaleResultPolicy::Refuse);
+    let exported = viz_export(&session, &gui);
     assert_eq!(feeds_line(&exported.gcode), RUN_1_NOT_CURRENT);
     assert_eq!(
         exported.feeds_cautions,
@@ -333,12 +324,7 @@ fn every_export_states_the_feed_stage_it_emits() {
                 .to_owned()
         ]
     );
-    let reply = rs_cam_viz::io::export::export_reply_text(
-        "G-code exported".to_owned(),
-        &exported.machine_safety,
-        &exported.load_outcome,
-        &exported.feeds_cautions,
-    );
+    let reply = rs_cam_viz::io::export::export_reply_text("G-code exported".to_owned(), &exported);
     assert!(
         reply.contains(
             "Feeds caution: 1 toolpath(s) emit feeds modulated from an earlier simulation."
@@ -360,8 +346,8 @@ fn every_export_states_the_feed_stage_it_emits() {
     assert_eq!(session.simulation_run(), None);
     assert_eq!(feeds_line(&core_gcode(&session)), NO_SIMULATION);
 
-    // 7. A tool edit drops the result. The accepted previous geometry is
-    // the worker copy, which no modulation wrote.
+    // 7. A tool edit drops the result. K6: the op is left out and named;
+    // the program holds no feed line for it.
     let tool_id = session.tools()[0].id.raw();
     let _ = session
         .apply(Command::InvalidateTool(InvalidateToolArgs {
@@ -369,7 +355,18 @@ fn every_export_states_the_feed_stage_it_emits() {
         }))
         .expect("the tool is in the session");
     assert!(session.result_at(0).is_none());
-    let exported = viz_export(&session, &gui, StaleResultPolicy::AcceptPreviousGeometry);
-    assert_eq!(feeds_line(&exported.gcode), PLANNED);
+    let exported = viz_export(&session, &gui);
+    assert!(
+        exported.warnings.iter().any(
+            |w| w.id == rs_cam_core::diagnostics::ids::EXPORT_OP_LEFT_OUT && w.toolpath == "Pocket"
+        ),
+        "the op with no result is named: {:?}",
+        exported.warnings
+    );
+    assert!(
+        !exported.gcode.lines().any(|l| l.starts_with("(feeds:")),
+        "no feed line for an op the export leaves out:\n{}",
+        exported.gcode
+    );
     assert!(exported.feeds_cautions.is_empty());
 }

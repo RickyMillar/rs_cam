@@ -88,9 +88,9 @@ pub use run_state::{
 // E5: one line of its own, so the re-export block above keeps its shape.
 pub use command::RuleOffersArgs;
 pub use compute::{
-    BoundaryCollapse, GenContext, GenObserver, GenerateToolpathHandle, LargerRestConsumer,
-    RecommendClearingStrategyHandle, ResolvedGenInputs, RestBoundaryRefusal, TriageSessionKey,
-    execute_generation, execute_job, execute_recommend_clearing_strategy,
+    BoundaryCollapse, ExportScope, GenContext, GenObserver, GenerateToolpathHandle,
+    LargerRestConsumer, RecommendClearingStrategyHandle, ResolvedGenInputs, RestBoundaryRefusal,
+    TriageSessionKey, execute_generation, execute_job, execute_recommend_clearing_strategy,
 };
 pub use cycle_time::{
     CycleTime, CycleTimeBasis, CycleTimeEvidence, MissingInput, MissingInputs,
@@ -263,9 +263,9 @@ pub enum SessionError {
     Simulation(#[from] SimulationError),
     /// Collision check error.
     CollisionCheck(#[from] CollisionCheckError),
-    /// F054: a checked G-code export refused
-    /// ([`ExportRefusal`](crate::gcode::ExportRefusal)).
-    Export(#[from] crate::gcode::ExportRefusal),
+    /// F054: the emitter could not write a valid program
+    /// ([`EmitError`](crate::gcode::EmitError)). K6: no finding refuses.
+    Export(#[from] crate::gcode::EmitError),
     /// Invalid parameter name or value.
     InvalidParam(String),
     /// Parsed TOML doesn't look like an rs_cam project.
@@ -396,11 +396,6 @@ pub enum SessionError {
     /// the stock, the machine, the head or a toolpath shoe. Every door of
     /// that entity and the project loader refuse with it and write nothing.
     OutOfDomain(#[source] crate::compute::domain::DomainRefusal),
-    /// F033 (operator ruling 2): an edit adds a refusing break of the
-    /// height-plane order, or generation reads a stack that holds one. The
-    /// door writes nothing. The export door refuses with the same text
-    /// (`ExportRefusal::HeightOrder`).
-    HeightOrder(heights::HeightOrderRefusal),
     /// F114: Suggest refuses the tool × operation pairing of the toolpath
     /// that `Command::ApplyFeeds` names. The row writes nothing.
     FeedsRefused(#[source] crate::feeds::FeedsError),
@@ -450,7 +445,6 @@ impl SessionError {
             | Self::UnknownSetupDatum { .. }
             | Self::DuplicateId { .. }
             | Self::OutOfDomain(_)
-            | Self::HeightOrder(_)
             | Self::FeedsRefused(_) => None,
         }
     }
@@ -603,7 +597,6 @@ impl std::fmt::Display for SessionError {
                  give each entry its own id."
             ),
             Self::OutOfDomain(refusal) => write!(f, "{refusal}"),
-            Self::HeightOrder(refusal) => write!(f, "{refusal}"),
             Self::FeedsRefused(refusal) => write!(f, "{refusal}"),
         }
     }

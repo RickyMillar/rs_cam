@@ -33,6 +33,7 @@ mod params;
 mod simulation;
 
 pub use diagnostics::TriageSessionKey;
+pub use export::ExportScope;
 pub use generation::{BoundaryCollapse, LargerRestConsumer, RestBoundaryRefusal};
 pub(crate) use params::strip_outer_quotes;
 
@@ -114,6 +115,10 @@ pub struct ResolvedGenInputs {
     /// end of a through cut; it reaches the generator through
     /// `ExecutionContext::through_cut_hold`.
     through_cut_hold: Option<crate::compute::toolpath_stats::ThroughCutHold>,
+    /// K6 (UX-1c, decision E1): the buried face of a one-depth op on fresh
+    /// stock (`ToolpathHeights::buried_face_refusal`). The job records it
+    /// (`GenerationFindings::buried_face`); generation goes ahead.
+    buried_face: Option<crate::compute::execute::BuriedFaceRefusal>,
     /// The setup's local<->global transform, hoisted off the
     /// `SetupEvalContext` alongside `emission_stock_bbox` above because
     /// `generate_toolpath` needs it and the context is scoped to this
@@ -727,21 +732,22 @@ impl JobPhases<'_, '_> {
         ),
         SessionError,
     > {
-        let (annotated, findings) = self.generate(cancel)?;
+        let (annotated, mut findings) = self.generate(cancel)?;
         let mut channels =
             crate::trace::transform_provenance::ReconcileSet::new(Some(semantic_recorder), None);
         let annotated = self.apply_dressups(annotated, &mut channels);
         let annotated = self.clip_and_split_entries(annotated, &mut channels)?;
-        // G-CENTRECUT (SAFETY): the ONE refusal check of the shared entry
-        // builders. An entry that had to plunge a non-centre-cutting tool
-        // straight into stock deeper than its protrusion stops the job.
-        if let Some(refusal) = annotated.produced.non_centre_cutting_refusal
-            && crate::diagnostics::Gate::CentreCutPlunge
-                .refuses_at(crate::diagnostics::Stage::Generate)
-        {
-            return Err(SessionError::Operation(
-                crate::compute::execute::OperationError::NonCentreCutting(refusal),
-            ));
+        // G-CENTRECUT (SAFETY): the ONE check of the shared entry builders.
+        // An entry that had to plunge a non-centre-cutting tool straight
+        // into stock deeper than its protrusion is recorded. K6 (ruling
+        // Q6): a warning (`safety.non_centre_cutting_plunge`); the job goes
+        // ahead.
+        if let Some(plunge) = annotated.produced.non_centre_cutting_refusal {
+            findings.record(&plunge);
+        }
+        // K6 (UX-1c): the fresh-stock buried face, from the heights rule.
+        if let Some(buried) = self.inputs.buried_face {
+            findings.record(&buried);
         }
         Ok((annotated, findings))
     }

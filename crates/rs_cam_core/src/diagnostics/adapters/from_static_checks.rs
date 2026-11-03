@@ -261,20 +261,30 @@ fn tool_op_compat_checks(
         });
     }
 
-    // W2.2: a tool the registry row refuses → the generator's own refusal
-    // text. The row's `tool_constraints` is the one source: the dispatch
-    // prologue refuses on the same `OperationType::tool_refusal`, so this
-    // finding fires exactly when generation would refuse. It replaced a
-    // hand list (end mill on Scallop, Unified Finish or Pencil) that missed
-    // Spiral Finish, the bull nose, the V-bit and the four V-bit operations.
+    // W2.2: a tool the registry row refuses → the refusal text. The row's
+    // `tool_constraints` is the one source. It replaced a hand list (end
+    // mill on Scallop, Unified Finish or Pencil) that missed Spiral Finish,
+    // the bull nose, the V-bit and the four V-bit operations. K6 (decision
+    // E1): `Blocking` only when the generator cannot compute with the tool
+    // (`OperationType::tool_cannot_compute`, the prologue's refusal); else a
+    // `Critical` warning and the op generates.
     if let Some(text) = op.op_type().tool_refusal(tool_type.cutter_kind()) {
+        let severity = if op
+            .op_type()
+            .tool_cannot_compute(tool_type.cutter_kind())
+            .is_some()
+        {
+            Severity::Blocking
+        } else {
+            Severity::Critical
+        };
         out.push(Diagnostic {
             id: DiagnosticId::from(ids::COMPAT_TOOL_KIND_REFUSED),
             scope: scope.clone(),
             // The wrong kind of tool is a fit fault, not a load fault: the
             // same category as the other refusals of the op.
             category: Category::Geometry,
-            severity: Severity::Critical,
+            severity,
             confidence: Confidence::Static,
             state: DiagnosticState::Current,
             source: Source::StaticValidation,
@@ -769,17 +779,10 @@ fn height_order_findings(
     op: &OperationConfig,
     h: &ResolvedHeights,
 ) -> Vec<Diagnostic> {
-    use crate::compute::config::HeightOrderViolation as V;
     crate::compute::config::height_order(op.op_type(), &h.planes(), h.stock_top_z)
         .into_iter()
         .map(|violation| {
-            let id = match violation {
-                V::ClearanceBelowRetract { .. } => ids::GEOM_CLEARANCE_Z_BELOW_RETRACT_Z,
-                V::RetractBelowTop { .. } => ids::GEOM_RETRACT_Z_BELOW_TOP_Z,
-                V::RetractBelowFeed { .. } => ids::GEOM_RETRACT_Z_BELOW_FEED_Z,
-                V::FeedBelowTop { .. } => ids::GEOM_FEED_Z_BELOW_TOP_Z,
-                V::BottomNotBelowTop { .. } => ids::GEOM_BOTTOM_ABOVE_TOP_Z,
-            };
+            let id = violation.id();
             Diagnostic {
                 id: DiagnosticId::from(id),
                 scope: scope.clone(),

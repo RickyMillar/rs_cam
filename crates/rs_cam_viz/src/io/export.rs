@@ -1,13 +1,13 @@
 use rs_cam_core::export::gcode_validator::{Finding, Severity};
 use rs_cam_core::gcode::{
-    ExportPhases, ExportRequest, GcodePhase, LoadPolicyOutcome, PhaseTool, ToolLoadExportPolicy,
+    ExportPhases, ExportRequest, ExportWarning, GcodePhase, LoadPolicyOutcome, PhaseTool,
     WizardOverlay, arrange_phases_by_setup,
 };
 use rs_cam_core::session::{FeedStage, ProjectSession};
 
 /// F067: the export result is core's, from the one session door
 /// (`ProjectSession::export_program`): the program, the machine-safety
-/// findings, the load outcome and the feeds cautions.
+/// findings, the load outcome, the warnings (K6) and the feeds cautions.
 pub use rs_cam_core::gcode::ExportedGcode;
 
 /// One toolpath an export emits: its index, its motion in the export
@@ -99,27 +99,45 @@ pub fn export_success_text(header: String, findings: &[Finding]) -> String {
 }
 
 /// The reply an export surface gives an agent: [`export_success_text`],
-/// then the load outcome (F051: the advisories and every override used),
-/// then the [`feeds_caution_report`] when there is one (W2.5, D10).
-pub fn export_reply_text(
+/// then the load advisories (F051), the warnings (K6: each finding the
+/// export names) and the [`feeds_caution_report`] when there is one
+/// (W2.5, D10).
+pub fn export_reply_text(header: String, exported: &ExportedGcode) -> String {
+    export_reply_text_parts(
+        header,
+        &exported.machine_safety,
+        &exported.load_outcome,
+        &exported.warnings,
+        &exported.feeds_cautions,
+    )
+}
+
+/// [`export_reply_text`] from the parts, for a reply that merges several
+/// files (MCP `split_setups`).
+pub fn export_reply_text_parts(
     header: String,
     findings: &[Finding],
     load_outcome: &LoadPolicyOutcome,
+    warnings: &[ExportWarning],
     feeds_cautions: &[String],
 ) -> String {
     let mut text = export_success_text(header, findings);
-    if let Some(report) = load_outcome.report() {
+    for report in [
+        load_outcome.report(),
+        rs_cam_core::gcode::warnings_report(warnings),
+        feeds_caution_report(feeds_cautions),
+    ]
+    .into_iter()
+    .flatten()
+    {
         text = format!("{text}\n{report}");
     }
-    match feeds_caution_report(feeds_cautions) {
-        Some(report) => format!("{text}\n{report}"),
-        None => text,
-    }
+    text
 }
 
 use crate::state::freshness::{FreshnessState, freshness_at};
 use crate::state::job::ToolConfig;
-use crate::state::runtime::{GuiState, StaleResultPolicy};
+use crate::state::runtime::GuiState;
 use crate::state::simulation::SimulationState;
 
 /// Pull the wizard's per-job overrides into a `WizardOverlay` for the
@@ -176,6 +194,14 @@ fn phase_tool_for_export(tool: &ToolConfig) -> PhaseTool<'_> {
     }
 }
 
+/// The toolpaths an export emits and the ones it leaves out.
+struct Emitted<'a> {
+    toolpaths: Vec<EmittedToolpath<'a>>,
+    /// K6: each enabled op in scope with no current result, and the
+    /// [`left_out_message`] that names it.
+    left_out: Vec<(usize, String)>,
+}
+
 /// G-EXPORT-DATUM (2026-08-19): collect each toolpath re-expressed in the
 /// shared export datum (stock-relative XY — see
 /// [`rs_cam_core::gcode::export_datum_shift_for_toolpath`]). Returned as an
@@ -188,178 +214,96 @@ fn phase_tool_for_export(tool: &ToolConfig) -> PhaseTool<'_> {
 ///
 /// # Which store the program is built from — G-MODEXPORT (2026-08-22)
 ///
-/// `session.results` is the owner. It is the store the F-036b/F-039
-/// adaptive feed-modulation post-pass writes
-/// ([`rs_cam_core::session::ProjectSession::modulate_simulation_trace`] →
-/// `apply_adaptive_feed_modulation` swaps the modulated
-/// `Arc<AnnotatedToolpath>` into it after every simulation, and into
-/// nothing else). Reading `gui.toolpath_rt[id].result` first — the compute
-/// worker's PRE-modulation output — is what made every GUI/MCP export
-/// carry commanded feeds while the export gate, which reads the
-/// (modulated) viz cut trace, graded a different schedule: measured live
-/// as a `Within` chipload verdict at ~443 mm/min over a file emitted at a
-/// flat F3000.
+/// `session.results` is the one store. It is the store the F-036b/F-039
+/// adaptive feed-modulation post-pass writes. Reading the compute worker's
+/// PRE-modulation output (`gui.toolpath_rt[id].result`) is what made
+/// every GUI/MCP export carry commanded feeds while the export gate graded
+/// a different schedule. The viz store is never read here.
 ///
-/// The viz store stays as a **fallback**, not as a second owner, because
-/// one divergence is genuinely reachable in the other direction:
-/// [`rs_cam_core::session::ProjectSession::invalidate_tool`] (a GUI tool
-/// param edit — `ui::properties::commit_tool_draft`) and
-/// `Command::RestoreToolpathSnapshot` drop `session.results` entries, while
-/// the viz store keeps its result so the UI can draw the stale toolpath.
-/// Nothing modulated exists for such a toolpath anyway, so falling back to
-/// the worker IR preserves the pre-fix behaviour exactly. Every other
-/// production write of `toolpath_rt[..].result` is immediately preceded by
-/// the F1_RCA sync into `session.results`
-/// (`controller/events/compute.rs::drain_compute_results`), so on the
-/// normal generate → simulate → export path the session slot is present
-/// and wins.
+/// # An op with no current result is left out and named — K6
 ///
-/// Sentried by `tests/modulated_feeds_reach_gcode_g_modexport.rs`, which
-/// asserts the emitted **F-words**, not the trace.
-///
-/// # An enabled op with no result refuses — G-EXPORTSKIP (2026-09-10)
-///
-/// Until this date the collect was a `filter_map`: an ENABLED toolpath
-/// with no result in either store dropped out and the program shipped
-/// without it, on every export surface, with no word to the operator
-/// (R05 §5). The reachable case is a rest op left `AwaitingPriorStock`
-/// by a `generate_all` that ran out of rounds; a never-generated op and
-/// an `Error` op are the other two shapes. Now every enabled op in scope
-/// with no result is a refusal that names it — see
-/// [`blocking_toolpaths`] — and a DISABLED op is still skipped, which
-/// is the intended meaning of "disabled".
-///
-/// # An EDITED op refuses too — G-STALEXPORT (2026-09-10)
-///
-/// The fallback described above is no longer silent. G-FRESHSTATE (F2.1)
-/// made every input edit drop the core result, which turned the viz
-/// store's copy — kept so the viewport can draw the old path — into the
-/// store the export would quietly fall back to, on far more routes than
-/// before. Drawing the previous geometry and CUTTING it are different
-/// permissions. The fallback is therefore no longer taken by default: an
-/// operation whose [`FreshnessState`] is not `Current` blocks the export
-/// and is named, and the previous geometry is emitted only under
-/// [`StaleResultPolicy::AcceptPreviousGeometry`], which the operator
-/// sets per export.
+/// G-EXPORTSKIP (2026-09-10) and G-STALEXPORT made an enabled op with no
+/// current result (never generated, generating, waiting on upstream
+/// stock, failed, or edited since it was generated) refuse the export.
+/// K6 (feeds contract P2, lead decision 4, ruling Q6): every surface
+/// exports the rest and names each such op (`export.op_left_out`), through
+/// core's one rule ([`ProjectSession::export_scope`]). A disabled op is
+/// skipped, the intended meaning of "disabled". The previous geometry of
+/// an edited op is never emitted.
 fn emitted_toolpaths<'a>(
     session: &'a ProjectSession,
     gui: &'a GuiState,
     indices: impl Iterator<Item = usize>,
-    stale: StaleResultPolicy,
-) -> Result<Vec<EmittedToolpath<'a>>, crate::error::VizError> {
-    let indices: Vec<usize> = indices.collect();
-    let blockers: Vec<BlockingToolpath> =
-        blocking_toolpaths(session, gui, indices.iter().copied(), stale)
-            .into_iter()
-            .filter(|b| !b.waived_by_operator)
-            .collect();
-    // K6: the export refuses while the column says so.
-    if !blockers.is_empty()
-        && rs_cam_core::diagnostics::Gate::NoCurrentResult
-            .refuses_at(rs_cam_core::diagnostics::Stage::Export)
-    {
-        return Err(crate::error::VizError::Export(blocking_refusal_text(
-            &blockers,
-        )));
-    }
-    Ok(indices
+) -> Emitted<'a> {
+    let scope = session.export_scope(
+        indices,
+        |idx| {
+            session.result_at(idx).is_some()
+                && freshness_at(session, gui, idx) == Some(FreshnessState::Current)
+        },
+        |idx| {
+            let name = session
+                .toolpath_configs()
+                .get(idx)
+                .map_or("?", |tc| tc.name.as_str());
+            let freshness = freshness_at(session, gui, idx).unwrap_or(FreshnessState::NoResult);
+            left_out_message(name, &freshness)
+        },
+    );
+    let toolpaths = scope
+        .emitted
         .into_iter()
         .filter_map(|idx| {
-            let tc = session.toolpath_configs().get(idx)?;
-            if !tc.enabled {
-                return None;
-            }
-            let (toolpath, feeds) = emitted_result_toolpath(session, gui, idx, tc, stale)?;
+            let result = session.result_at(idx)?;
+            let feeds = session.feed_stage_of(idx, &result.provenance);
             let shift = rs_cam_core::gcode::export_datum_shift_for_toolpath(session, idx);
             Some(EmittedToolpath {
                 index: idx,
-                toolpath: rs_cam_core::gcode::toolpath_in_export_datum(toolpath, shift),
+                toolpath: rs_cam_core::gcode::toolpath_in_export_datum(result.toolpath(), shift),
                 feeds,
             })
         })
-        .collect())
-}
-
-/// The one result-lookup the export reads: `session.results` first — the
-/// store the feed-modulation post-pass writes (see the G-MODEXPORT note
-/// on [`emitted_toolpaths`]) — and the viz store only when the operator
-/// has accepted the previous geometry for this export.
-///
-/// The second value is the feed stage of what it returns (W2.5, D10):
-/// the session slot's tag, or `Planned` for the viz-store copy, which no
-/// modulation pass writes.
-///
-/// `None` means the toolpath has nothing this export is allowed to emit.
-/// Under [`StaleResultPolicy::Refuse`] that includes an edited operation
-/// whose viz copy still exists; the caller has already refused it by
-/// name. Nothing modulated exists for such an operation (the modulation
-/// pass writes only into `session.results`, which the edit dropped), so
-/// what the acceptance emits is the compute worker's pre-modulation
-/// output, exactly as the pre-G-STALEXPORT fallback did.
-fn emitted_result_toolpath<'a>(
-    session: &'a ProjectSession,
-    gui: &'a GuiState,
-    idx: usize,
-    tc: &rs_cam_core::session::ToolpathConfig,
-    stale: StaleResultPolicy,
-) -> Option<(&'a rs_cam_core::toolpath::Toolpath, FeedStage)> {
-    if let Some(result) = session.result_at(idx) {
-        return Some((
-            result.toolpath(),
-            session.feed_stage_of(idx, &result.provenance),
-        ));
+        .collect();
+    Emitted {
+        toolpaths,
+        left_out: scope.left_out,
     }
-    if !stale.accepts_previous_geometry() {
-        return None;
-    }
-    Some((
-        gui.toolpath_rt.get(&tc.id)?.run.result()?.toolpath(),
-        FeedStage::Planned,
-    ))
 }
 
 /// An ENABLED toolpath inside an export scope whose result is not the
 /// answer for the configuration on screen: never generated, still
 /// generating, waiting on upstream stock, failed — or edited since it was
-/// generated (G-EXPORTSKIP, extended by G-STALEXPORT).
+/// generated (G-EXPORTSKIP, G-STALEXPORT).
 ///
-/// One row per such op. The export refuses on every row that is not
-/// `waived_by_operator`; the pre-flight modal lists all of them, blocking
-/// rows as failures and waived ones as cautions, printing the same
-/// `message` either way.
+/// K6: the export leaves each one out and names it
+/// (`export.op_left_out`); the pre-flight counts it in the Part chip and
+/// lists `message` on hover. The two print the same `message`.
 #[derive(Debug, Clone, PartialEq)]
-pub struct BlockingToolpath {
+pub struct LeftOutToolpath {
     /// Index into `session.toolpath_configs()`.
     pub index: usize,
     pub id: rs_cam_core::ToolpathId,
     pub name: String,
     /// Why it is not exportable, as every surface reads it.
     pub freshness: FreshnessState,
-    /// The operator-facing sentence, from [`blocking_toolpath_message`].
+    /// The operator-facing sentence, from [`left_out_message`].
     pub message: String,
-    /// True when the operator has accepted this row for this export, so
-    /// it does NOT block. Only an edited operation can be waived, and
-    /// only under [`StaleResultPolicy::AcceptPreviousGeometry`]: a
-    /// missing result cannot be waived, because there is no geometry to
-    /// emit in its place.
-    pub waived_by_operator: bool,
 }
 
-/// The one text builder for an operation the export cannot emit as the
-/// current answer. The export refusal, the pre-flight row and the MCP
-/// `export_gcode` reply all print exactly this, so no two surfaces can
-/// disagree about why an operation blocks.
+/// The one text builder for an operation the export leaves out. The
+/// export warning, the pre-flight hover and the MCP `export_gcode` reply
+/// all print exactly this, so no two surfaces can disagree about why an
+/// operation is left out.
 ///
-/// Keyed on [`FreshnessState`] since G-STALEXPORT. It used to take the
-/// raw [`ComputeStatus`](rs_cam_core::compute::config::ComputeStatus), which could not tell an operation that was
-/// never generated from one whose result belongs to a previous parameter
-/// set — both read `Done`/absent — and so had no sentence for the second.
-pub fn blocking_toolpath_message(name: &str, freshness: &FreshnessState) -> String {
+/// Keyed on [`FreshnessState`] since G-STALEXPORT: the raw compute status
+/// cannot tell an operation that was never generated from one whose result
+/// belongs to a previous parameter set.
+pub fn left_out_message(name: &str, freshness: &FreshnessState) -> String {
     match freshness {
         FreshnessState::EditedSince => format!(
             "'{name}' was edited after it was generated — the stored result is the \
              previous parameter set's geometry, not what the panel now shows; \
-             regenerate it, or accept the previous geometry to cut it as it was"
+             regenerate it to export it"
         ),
         FreshnessState::Regenerating => {
             format!("'{name}' is still generating — wait for it to finish")
@@ -369,7 +313,7 @@ pub fn blocking_toolpath_message(name: &str, freshness: &FreshnessState) -> Stri
         ),
         FreshnessState::Error(err) => format!("'{name}' failed to generate: {err}"),
         // `Current` never reaches here, and a `Disabled` op is skipped
-        // rather than blocking. Kept exhaustive so a new state has to
+        // rather than left out. Kept exhaustive so a new state has to
         // choose its sentence here.
         FreshnessState::Current | FreshnessState::NoResult | FreshnessState::Disabled => {
             format!("'{name}' is not generated")
@@ -377,53 +321,40 @@ pub fn blocking_toolpath_message(name: &str, freshness: &FreshnessState) -> Stri
     }
 }
 
-/// Every ENABLED toolpath in `indices` whose result is not current, in
-/// scope order, each marked with whether `stale` waives it. Empty means
-/// the export can proceed; a list of only waived rows also means it can.
-/// Disabled toolpaths and out-of-range indices are ignored.
-pub fn blocking_toolpaths(
+/// Every ENABLED toolpath in `indices` that the export leaves out, in
+/// scope order. Disabled toolpaths and out-of-range indices are ignored.
+pub fn left_out_toolpaths(
     session: &ProjectSession,
     gui: &GuiState,
     indices: impl Iterator<Item = usize>,
-    stale: StaleResultPolicy,
-) -> Vec<BlockingToolpath> {
-    indices
-        .filter_map(|idx| {
+) -> Vec<LeftOutToolpath> {
+    emitted_toolpaths(session, gui, indices)
+        .left_out
+        .into_iter()
+        .filter_map(|(idx, message)| {
             let tc = session.toolpath_configs().get(idx)?;
-            let freshness = freshness_at(session, gui, idx)?;
-            if matches!(
-                freshness,
-                FreshnessState::Current | FreshnessState::Disabled
-            ) {
-                return None;
-            }
-            // A waived row must still have geometry to emit. `EditedSince`
-            // carries a drawable viz result by construction; the check is
-            // here so the refusal and the emit cannot disagree if that
-            // ever stops being true.
-            let waived_by_operator = matches!(freshness, FreshnessState::EditedSince)
-                && emitted_result_toolpath(session, gui, idx, tc, stale).is_some();
-            Some(BlockingToolpath {
+            Some(LeftOutToolpath {
                 index: idx,
                 id: tc.id,
                 name: tc.name.clone(),
-                message: blocking_toolpath_message(&tc.name, &freshness),
-                freshness,
-                waived_by_operator,
+                freshness: freshness_at(session, gui, idx)?,
+                message,
             })
         })
         .collect()
 }
 
-/// The refusal an export surface returns for one or more blocking ops:
-/// their messages, in scope order, joined with `; `. Wrapped by
-/// `VizError::Export`, so the operator reads `Export failed: 'X' is …`.
-fn blocking_refusal_text(blockers: &[BlockingToolpath]) -> String {
-    blockers
-        .iter()
-        .map(|b| b.message.as_str())
-        .collect::<Vec<_>>()
-        .join("; ")
+/// K6: every warning the whole-project export would name, for the GUI
+/// pre-flight chips. One list with the export
+/// ([`ProjectSession::export_warnings`]); nothing is emitted.
+pub fn preflight_warnings(
+    session: &ProjectSession,
+    gui: &GuiState,
+    sim: &SimulationState,
+) -> Vec<ExportWarning> {
+    let emitted = emitted_toolpaths(session, gui, 0..session.toolpath_configs().len());
+    let indices: Vec<usize> = emitted.toolpaths.iter().map(|e| e.index).collect();
+    session.export_warnings(&indices, &emitted.left_out, &viz_load_report(session, sim))
 }
 
 fn gcode_phase_for_session_toolpath<'a>(
@@ -454,11 +385,11 @@ fn gcode_phase_for_session_toolpath<'a>(
     }
 }
 
-/// Build the tool-load report the checked export enforces the policy
-/// against (C1, 2026-06-11). Evaluated from the shared session + the
-/// viz-side cut trace — the same inputs the readiness panel and the MCP
-/// `tool_load_report` tool use, so what the user sees is what the gate
-/// enforces. The cut trace lives on viz `SimulationState`, not on
+/// Build the tool-load report the export reads its load warnings from (C1,
+/// 2026-06-11; K6: it warns, it does not refuse). Evaluated from the shared
+/// session + the viz-side cut trace — the same inputs the readiness panel
+/// and the MCP `tool_load_report` tool use, so what the user sees is what
+/// the export names. The cut trace lives on viz `SimulationState`, not on
 /// `session.simulation`, so the report reads it from there. The session
 /// memo answers, so the gate and the panels read one report.
 fn viz_load_report(
@@ -476,17 +407,21 @@ fn export_through_core(
     gui: &GuiState,
     sim: &SimulationState,
     phases: ExportPhases<'_>,
-    emitted: &[EmittedToolpath<'_>],
-    policy: ToolLoadExportPolicy,
+    emitted: &Emitted<'_>,
 ) -> Result<ExportedGcode, crate::error::VizError> {
+    if phases.phases().is_empty() && emitted.left_out.is_empty() {
+        return Err(crate::error::VizError::Export(
+            "No computed toolpaths to export".to_owned(),
+        ));
+    }
     let report = viz_load_report(session, sim);
     let overlay = overlay_for(session, gui);
     session
         .export_program(ExportRequest {
             phases,
-            emitted: emitted.iter().map(|e| e.index).collect(),
+            emitted: emitted.toolpaths.iter().map(|e| e.index).collect(),
+            left_out: emitted.left_out.clone(),
             report: &report,
-            policy,
             overlay: &overlay,
         })
         .map_err(|e| crate::error::VizError::Export(e.to_string()))
@@ -497,32 +432,13 @@ fn export_through_core(
 /// G3: the door puts an M0 pause between setups. The text only, for a
 /// preview or a test. A door that writes a file for an operator takes
 /// [`export_gcode_from_session_reporting`] and shows the load outcome, the
-/// machine-safety findings and the feeds cautions.
+/// warnings, the machine-safety findings and the feeds cautions.
 pub fn export_gcode_from_session(
     session: &ProjectSession,
     gui: &GuiState,
     sim: &SimulationState,
 ) -> Result<String, crate::error::VizError> {
-    export_gcode_from_session_with_policy(
-        session,
-        gui,
-        sim,
-        gui.tool_load_overrides.as_policy(),
-        gui.stale_export,
-    )
-}
-
-/// Same as [`export_gcode_from_session`], but lets the caller supply an
-/// explicit tool-load policy and stale-result policy instead of reading
-/// `gui.tool_load_overrides` / `gui.stale_export`.
-pub fn export_gcode_from_session_with_policy(
-    session: &ProjectSession,
-    gui: &GuiState,
-    sim: &SimulationState,
-    policy: ToolLoadExportPolicy,
-    stale: StaleResultPolicy,
-) -> Result<String, crate::error::VizError> {
-    export_gcode_from_session_reporting(session, gui, sim, policy, stale).map(text_only)
+    export_gcode_from_session_reporting(session, gui, sim).map(text_only)
 }
 
 /// The program text of an export, for a caller that shows nothing else.
@@ -533,13 +449,14 @@ fn text_only(exported: ExportedGcode) -> String {
         // a file for an operator takes a `_reporting` door instead.
         machine_safety: _,
         load_outcome: _,
+        warnings: _,
         feeds_cautions: _,
     } = exported;
     gcode
 }
 
-/// The same export as [`export_gcode_from_session_with_policy`], and it
-/// also hands back what the checks found (EDG-06, F051).
+/// The same export as [`export_gcode_from_session`], and it also hands
+/// back what the checks found (EDG-06, F051, K6).
 ///
 /// A caller that reports to an operator or to an agent takes this door,
 /// and must not re-run `validate_machine_safety` on the returned text:
@@ -549,14 +466,12 @@ pub fn export_gcode_from_session_reporting(
     session: &ProjectSession,
     gui: &GuiState,
     sim: &SimulationState,
-    policy: ToolLoadExportPolicy,
-    stale: StaleResultPolicy,
 ) -> Result<ExportedGcode, crate::error::VizError> {
-    let emitted = emitted_toolpaths(session, gui, 0..session.toolpath_configs().len(), stale)?;
+    let emitted = emitted_toolpaths(session, gui, 0..session.toolpath_configs().len());
     // G3 (SAFETY, 2026-10-08): two or more setups get an M0 pause between
     // them, through the core arrangement every single-file door shares.
     let arranged = arrange_phases_by_setup(session, |idx| {
-        let emitted = emitted.iter().find(|e| e.index == idx)?;
+        let emitted = emitted.toolpaths.iter().find(|e| e.index == idx)?;
         let tc = session.toolpath_configs().get(idx)?;
         Some(gcode_phase_for_session_toolpath(
             session,
@@ -565,13 +480,7 @@ pub fn export_gcode_from_session_reporting(
             emitted.feeds,
         ))
     });
-
-    if arranged.phases().is_empty() {
-        return Err(crate::error::VizError::Export(
-            "No computed toolpaths to export".to_owned(),
-        ));
-    }
-    export_through_core(session, gui, sim, arranged, &emitted, policy)
+    export_through_core(session, gui, sim, arranged, &emitted)
 }
 
 /// How many setups hold an enabled toolpath. A layout default and the MCP
@@ -599,8 +508,10 @@ pub struct SetupFile {
     pub gcode: String,
     /// What the machine-safety pass found in this file (EDG-06).
     pub machine_safety: Vec<Finding>,
-    /// F051: what the load gate let through for this file.
+    /// F051: the load advisories of this file.
     pub load_outcome: LoadPolicyOutcome,
+    /// K6: the warnings of this file (its header names each one).
+    pub warnings: Vec<ExportWarning>,
     /// W2.5: the feeds cautions of this file
     /// ([`ProjectSession::feeds_cautions`]).
     pub feeds_cautions: Vec<String>,
@@ -617,8 +528,6 @@ pub fn export_per_setup_files(
     session: &ProjectSession,
     gui: &GuiState,
     sim: &SimulationState,
-    policy: ToolLoadExportPolicy,
-    stale: StaleResultPolicy,
 ) -> Result<Vec<SetupFile>, crate::error::VizError> {
     let mut files: Vec<(rs_cam_core::ids::SetupId, String, ExportedGcode)> = Vec::new();
     for setup in session.list_setups() {
@@ -631,10 +540,8 @@ pub fn export_per_setup_files(
         if !has_enabled {
             continue;
         }
-        let exported = export_setup_gcode_from_session_reporting(
-            session, gui, sim, setup.id, policy, stale,
-        )
-        .map_err(|e| crate::error::VizError::Export(format!("setup '{}': {e}", setup.name)))?;
+        let exported = export_setup_gcode_from_session_reporting(session, gui, sim, setup.id)
+            .map_err(|e| crate::error::VizError::Export(format!("setup '{}': {e}", setup.name)))?;
         files.push((setup.id, setup.name.clone(), exported));
     }
     let post = session.post_config().format.definition();
@@ -657,6 +564,7 @@ pub fn export_per_setup_files(
                 gcode,
                 machine_safety,
                 load_outcome,
+                warnings,
                 feeds_cautions,
             } = exported;
             SetupFile {
@@ -676,6 +584,7 @@ pub fn export_per_setup_files(
                 name,
                 machine_safety,
                 load_outcome,
+                warnings,
                 feeds_cautions,
             }
         })
@@ -832,24 +741,15 @@ pub fn export_single_toolpath_reporting(
         )));
     }
 
-    // G-EXPORTSKIP / G-STALEXPORT: an enabled op whose result is not
-    // current is refused inside `emitted_toolpaths` with the shared text.
-    // The `first()` fallback is unreachable after that `?` and keeps the
-    // same sentence.
-    let emitted = emitted_toolpaths(session, gui, std::iter::once(tp_index), gui.stale_export)?;
-    let first = emitted.first().ok_or_else(|| {
-        let freshness = freshness_at(session, gui, tp_index).unwrap_or(FreshnessState::NoResult);
-        crate::error::VizError::Export(blocking_toolpath_message(&tc.name, &freshness))
-    })?;
-    let phase = gcode_phase_for_session_toolpath(session, tc, first.toolpath.as_ref(), first.feeds);
-    export_through_core(
-        session,
-        gui,
-        sim,
-        ExportPhases::OneSetup(vec![phase]),
-        &emitted,
-        gui.tool_load_overrides.as_policy(),
-    )
+    // K6: an enabled op whose result is not current is left out and named
+    // (`export.op_left_out`); the program then holds no phase.
+    let emitted = emitted_toolpaths(session, gui, std::iter::once(tp_index));
+    let phases: Vec<GcodePhase<'_>> = emitted
+        .toolpaths
+        .iter()
+        .map(|e| gcode_phase_for_session_toolpath(session, tc, e.toolpath.as_ref(), e.feeds))
+        .collect();
+    export_through_core(session, gui, sim, ExportPhases::OneSetup(phases), &emitted)
 }
 
 /// Export only the toolpaths from a single setup as G-code (session-based).
@@ -859,29 +759,7 @@ pub fn export_setup_gcode_from_session(
     sim: &SimulationState,
     setup_id: crate::state::job::SetupId,
 ) -> Result<String, crate::error::VizError> {
-    export_setup_gcode_from_session_with_policy(
-        session,
-        gui,
-        sim,
-        setup_id,
-        gui.tool_load_overrides.as_policy(),
-        gui.stale_export,
-    )
-}
-
-/// Same as [`export_setup_gcode_from_session`], but lets the caller supply
-/// explicit tool-load and stale-result policies (e.g. the MCP `accept_*`
-/// flags) instead of defaulting to the GUI's own.
-pub fn export_setup_gcode_from_session_with_policy(
-    session: &ProjectSession,
-    gui: &GuiState,
-    sim: &SimulationState,
-    setup_id: crate::state::job::SetupId,
-    policy: ToolLoadExportPolicy,
-    stale: StaleResultPolicy,
-) -> Result<String, crate::error::VizError> {
-    export_setup_gcode_from_session_reporting(session, gui, sim, setup_id, policy, stale)
-        .map(text_only)
+    export_setup_gcode_from_session_reporting(session, gui, sim, setup_id).map(text_only)
 }
 
 /// The same per-setup export, and it also hands back what the
@@ -893,8 +771,6 @@ pub fn export_setup_gcode_from_session_reporting(
     gui: &GuiState,
     sim: &SimulationState,
     setup_id: crate::state::job::SetupId,
-    policy: ToolLoadExportPolicy,
-    stale: StaleResultPolicy,
 ) -> Result<ExportedGcode, crate::error::VizError> {
     let setup = session
         .list_setups()
@@ -902,13 +778,9 @@ pub fn export_setup_gcode_from_session_reporting(
         .find(|s| s.id == setup_id)
         .ok_or_else(|| crate::error::VizError::Export(format!("Setup {setup_id:?} not found")))?;
 
-    let emitted = emitted_toolpaths(
-        session,
-        gui,
-        setup.toolpath_indices().iter().copied(),
-        stale,
-    )?;
+    let emitted = emitted_toolpaths(session, gui, setup.toolpath_indices().iter().copied());
     let phases: Vec<GcodePhase<'_>> = emitted
+        .toolpaths
         .iter()
         .filter_map(|e| {
             let tc = session.toolpath_configs().get(e.index)?;
@@ -921,18 +793,11 @@ pub fn export_setup_gcode_from_session_reporting(
         })
         .collect();
 
-    if phases.is_empty() {
+    if phases.is_empty() && emitted.left_out.is_empty() {
         return Err(crate::error::VizError::Export(format!(
             "No computed toolpaths in setup '{}'",
             setup.name,
         )));
     }
-    export_through_core(
-        session,
-        gui,
-        sim,
-        ExportPhases::OneSetup(phases),
-        &emitted,
-        policy,
-    )
+    export_through_core(session, gui, sim, ExportPhases::OneSetup(phases), &emitted)
 }

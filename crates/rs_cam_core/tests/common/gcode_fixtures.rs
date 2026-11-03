@@ -10,16 +10,15 @@
 //! cutter compensation). A refused pair has no golden file.
 
 use rs_cam_core::gcode::{
-    CoolantMode, ExportPhases, ExportRefusal, GcodePhase, GcodeSetupPhase, PhaseDrill, PhaseTool,
-    PostDefinition, PostFormat, ToolLoadExportPolicy, WizardOverlay, emit_checked, emitter,
-    program_builder,
+    CoolantMode, EmitError, ExportPhases, GcodePhase, GcodeSetupPhase, PhaseDrill, PhaseTool,
+    PostDefinition, PostFormat, WizardOverlay, emit_checked, emitter, program_builder,
 };
 use rs_cam_core::geo::P3;
 use rs_cam_core::toolpath::Toolpath;
 use std::path::PathBuf;
 
 /// One fixture builder.
-pub type FixtureFn = fn(&PostDefinition, &WizardOverlay) -> Result<String, ExportRefusal>;
+pub type FixtureFn = fn(&PostDefinition, &WizardOverlay) -> Result<String, EmitError>;
 
 /// The four shipped dialects, by golden file suffix.
 pub const DIALECTS: [(&str, PostFormat); 4] = [
@@ -42,20 +41,12 @@ pub fn golden_path(fixture: &str, dialect: &str) -> PathBuf {
     golden_dir().join(format!("{fixture}_{dialect}.nc"))
 }
 
-/// The fixtures have no project: pass the explicitly empty "no load
-/// evaluation performed" report (C1).
-fn no_load_evaluation() -> rs_cam_core::tool_load::ToolLoadReport {
-    rs_cam_core::tool_load::ToolLoadReport {
-        per_toolpath: vec![],
-    }
-}
-
 fn single(
     tp: &Toolpath,
     rpm: u32,
     post: &PostDefinition,
     overlay: &WizardOverlay,
-) -> Result<String, ExportRefusal> {
+) -> Result<String, EmitError> {
     let program = program_builder::build_single(tp, rpm);
     Ok(emitter::emit_program_with_overlay(&program, post, overlay))
 }
@@ -64,16 +55,15 @@ fn phased(
     phases: &[GcodePhase<'_>],
     post: &PostDefinition,
     overlay: &WizardOverlay,
-) -> Result<String, ExportRefusal> {
+) -> Result<String, EmitError> {
     emit_checked(
         &ExportPhases::OneSetup(phases.to_vec()),
         post,
         0.0,
-        &no_load_evaluation(),
-        ToolLoadExportPolicy::default(),
         overlay,
+        // The fixtures have no project, so no finding: no warning line.
+        &[],
     )
-    .map(|checked| checked.gcode)
 }
 
 fn multi(
@@ -81,16 +71,15 @@ fn multi(
     safe_z: f64,
     post: &PostDefinition,
     overlay: &WizardOverlay,
-) -> Result<String, ExportRefusal> {
+) -> Result<String, EmitError> {
     emit_checked(
         &ExportPhases::Setups(setups.to_vec()),
         post,
         safe_z,
-        &no_load_evaluation(),
-        ToolLoadExportPolicy::default(),
         overlay,
+        // The fixtures have no project, so no finding: no warning line.
+        &[],
     )
-    .map(|checked| checked.gcode)
 }
 
 /// Every fixture, by golden file stem.
@@ -119,10 +108,7 @@ pub const FIXTURES: &[(&str, FixtureFn)] = &[
 ];
 
 // ── F1 ────────────────────────────────────────────────────────────────
-pub fn f1_basic_lines(
-    post: &PostDefinition,
-    overlay: &WizardOverlay,
-) -> Result<String, ExportRefusal> {
+pub fn f1_basic_lines(post: &PostDefinition, overlay: &WizardOverlay) -> Result<String, EmitError> {
     let mut tp = Toolpath::new();
     tp.rapid_to(P3::new(0.0, 0.0, 5.0));
     tp.feed_to(P3::new(10.0, 0.0, -2.0), 600.0);
@@ -133,7 +119,7 @@ pub fn f1_basic_lines(
 }
 
 // ── F2 ────────────────────────────────────────────────────────────────
-pub fn f2_arcs_xy(post: &PostDefinition, overlay: &WizardOverlay) -> Result<String, ExportRefusal> {
+pub fn f2_arcs_xy(post: &PostDefinition, overlay: &WizardOverlay) -> Result<String, EmitError> {
     let mut tp = Toolpath::new();
     tp.rapid_to(P3::new(10.0, 0.0, 5.0));
     tp.feed_to(P3::new(10.0, 0.0, -2.0), 600.0);
@@ -147,7 +133,7 @@ pub fn f2_arcs_xy(post: &PostDefinition, overlay: &WizardOverlay) -> Result<Stri
 pub fn f3_helical_ramp(
     post: &PostDefinition,
     overlay: &WizardOverlay,
-) -> Result<String, ExportRefusal> {
+) -> Result<String, EmitError> {
     let mut tp = Toolpath::new();
     tp.rapid_to(P3::new(10.0, 0.0, 5.0));
     tp.feed_to(P3::new(10.0, 0.0, 0.0), 300.0);
@@ -163,7 +149,7 @@ pub fn f3_helical_ramp(
 pub fn f4_profile_multipass(
     post: &PostDefinition,
     overlay: &WizardOverlay,
-) -> Result<String, ExportRefusal> {
+) -> Result<String, EmitError> {
     let mut tp = Toolpath::new();
     for z in [-2.0, -4.0, -6.0] {
         tp.rapid_to(P3::new(0.0, 0.0, 5.0));
@@ -180,7 +166,7 @@ pub fn f4_profile_multipass(
 pub fn f5_two_tool_changes(
     post: &PostDefinition,
     overlay: &WizardOverlay,
-) -> Result<String, ExportRefusal> {
+) -> Result<String, EmitError> {
     let mut tp1 = Toolpath::new();
     tp1.rapid_to(P3::new(0.0, 0.0, 5.0));
     tp1.feed_to(P3::new(10.0, 0.0, -2.0), 600.0);
@@ -229,10 +215,7 @@ pub fn f5_two_tool_changes(
 }
 
 // ── F7  Full circle: end == start with IJK to centre ──────────────────
-pub fn f7_full_circle(
-    post: &PostDefinition,
-    overlay: &WizardOverlay,
-) -> Result<String, ExportRefusal> {
+pub fn f7_full_circle(post: &PostDefinition, overlay: &WizardOverlay) -> Result<String, EmitError> {
     let mut tp = Toolpath::new();
     tp.rapid_to(P3::new(10.0, 0.0, 5.0));
     tp.feed_to(P3::new(10.0, 0.0, -2.0), 300.0);
@@ -245,10 +228,7 @@ pub fn f7_full_circle(
 }
 
 // ── F8  Single-axis feed (X only) ─────────────────────────────────────
-pub fn f8_x_only_feed(
-    post: &PostDefinition,
-    overlay: &WizardOverlay,
-) -> Result<String, ExportRefusal> {
+pub fn f8_x_only_feed(post: &PostDefinition, overlay: &WizardOverlay) -> Result<String, EmitError> {
     let mut tp = Toolpath::new();
     tp.rapid_to(P3::new(0.0, 0.0, 5.0));
     tp.feed_to(P3::new(0.0, 0.0, -1.0), 200.0);
@@ -265,7 +245,7 @@ pub fn f8_x_only_feed(
 pub fn f9_ramp_into_arc(
     post: &PostDefinition,
     overlay: &WizardOverlay,
-) -> Result<String, ExportRefusal> {
+) -> Result<String, EmitError> {
     let mut tp = Toolpath::new();
     tp.rapid_to(P3::new(0.0, 0.0, 5.0));
     // Diagonal ramp from Z=0 down to Z=-2 over 10mm of X — entry move.
@@ -279,10 +259,7 @@ pub fn f9_ramp_into_arc(
 }
 
 // ── F10 Tiny arcs (sub-0.05mm radius) — arc-linearize candidate ───────
-pub fn f10_tiny_arcs(
-    post: &PostDefinition,
-    overlay: &WizardOverlay,
-) -> Result<String, ExportRefusal> {
+pub fn f10_tiny_arcs(post: &PostDefinition, overlay: &WizardOverlay) -> Result<String, EmitError> {
     let mut tp = Toolpath::new();
     tp.rapid_to(P3::new(0.0, 0.0, 5.0));
     tp.feed_to(P3::new(0.0, 0.0, -1.0), 200.0);
@@ -302,7 +279,7 @@ pub fn f10_tiny_arcs(
 pub fn f11_depth_step_boundary(
     post: &PostDefinition,
     overlay: &WizardOverlay,
-) -> Result<String, ExportRefusal> {
+) -> Result<String, EmitError> {
     let mut tp = Toolpath::new();
     // Three passes at exactly Z=-1.000, -2.000, -3.000. Tests that the
     // Z formatter doesn't drop trailing zeroes inconsistently across
@@ -322,7 +299,7 @@ pub fn f11_depth_step_boundary(
 pub fn f12_tool_change_at_z_zero(
     post: &PostDefinition,
     overlay: &WizardOverlay,
-) -> Result<String, ExportRefusal> {
+) -> Result<String, EmitError> {
     let mut tp1 = Toolpath::new();
     tp1.rapid_to(P3::new(0.0, 0.0, 5.0));
     tp1.feed_to(P3::new(10.0, 0.0, 0.0), 300.0);
@@ -374,7 +351,7 @@ pub fn f12_tool_change_at_z_zero(
 pub fn f13_climb_vs_conventional(
     post: &PostDefinition,
     overlay: &WizardOverlay,
-) -> Result<String, ExportRefusal> {
+) -> Result<String, EmitError> {
     // Conventional: counter-clockwise around perimeter (climb on the
     // outside of an outer profile when viewed from above).
     let mut tp_conv = Toolpath::new();
@@ -435,7 +412,7 @@ pub fn f13_climb_vs_conventional(
 pub fn f14_multi_line_pause_message(
     post: &PostDefinition,
     overlay: &WizardOverlay,
-) -> Result<String, ExportRefusal> {
+) -> Result<String, EmitError> {
     let mut tp1 = Toolpath::new();
     tp1.rapid_to(P3::new(0.0, 0.0, 5.0));
     tp1.feed_to(P3::new(10.0, 0.0, -2.0), 600.0);
@@ -497,7 +474,7 @@ pub fn f14_multi_line_pause_message(
 pub fn f15_embedded_newline_snippets(
     post: &PostDefinition,
     overlay: &WizardOverlay,
-) -> Result<String, ExportRefusal> {
+) -> Result<String, EmitError> {
     let mut tp = Toolpath::new();
     tp.rapid_to(P3::new(0.0, 0.0, 5.0));
     tp.feed_to(P3::new(10.0, 0.0, -2.0), 600.0);
@@ -528,7 +505,7 @@ pub fn f15_embedded_newline_snippets(
 pub fn f16_comp_round_trip(
     post: &PostDefinition,
     overlay: &WizardOverlay,
-) -> Result<String, ExportRefusal> {
+) -> Result<String, EmitError> {
     let mut tp = Toolpath::new();
     tp.rapid_to(P3::new(0.0, 0.0, 5.0));
     tp.feed_to(P3::new(0.0, 0.0, -2.0), 300.0);
@@ -561,10 +538,7 @@ pub fn f16_comp_round_trip(
 }
 
 // ── F6 ────────────────────────────────────────────────────────────────
-pub fn f6_two_setups(
-    post: &PostDefinition,
-    overlay: &WizardOverlay,
-) -> Result<String, ExportRefusal> {
+pub fn f6_two_setups(post: &PostDefinition, overlay: &WizardOverlay) -> Result<String, EmitError> {
     let mut tp1 = Toolpath::new();
     tp1.rapid_to(P3::new(0.0, 0.0, 5.0));
     tp1.feed_to(P3::new(10.0, 0.0, -2.0), 600.0);
@@ -660,7 +634,7 @@ fn drill_tp(cycle: rs_cam_core::ops::drill::DrillCycle) -> Toolpath {
 pub fn f17_drill_dwell_and_peck(
     post: &PostDefinition,
     overlay: &WizardOverlay,
-) -> Result<String, ExportRefusal> {
+) -> Result<String, EmitError> {
     use rs_cam_core::ops::drill::DrillCycle;
     let dwell_tp = drill_tp(DrillCycle::Dwell(0.5));
     let peck_tp = drill_tp(DrillCycle::Peck(2.5));
@@ -696,7 +670,7 @@ pub fn f17_drill_dwell_and_peck(
 pub fn f18_grblhal_options(
     post: &PostDefinition,
     overlay: &WizardOverlay,
-) -> Result<String, ExportRefusal> {
+) -> Result<String, EmitError> {
     use rs_cam_core::ops::drill::DrillCycle;
     let overlay = WizardOverlay {
         spindle_warmup_secs: 3,

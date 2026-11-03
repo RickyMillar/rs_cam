@@ -79,7 +79,7 @@ use std::sync::atomic::AtomicBool;
 use rs_cam_core::compute::StockConfig;
 use rs_cam_core::compute::catalog::{OperationConfig, OperationType};
 use rs_cam_core::compute::config::HeightMode;
-use rs_cam_core::compute::execute::{BuriedUnder, OperationError};
+use rs_cam_core::compute::execute::BuriedUnder;
 use rs_cam_core::compute::stock_config::{ModelKind, ModelUnits};
 use rs_cam_core::compute::tool_config::{ToolConfig, ToolType};
 use rs_cam_core::compute::transform::FaceUp;
@@ -519,21 +519,23 @@ fn a_concave_pick_refuses_and_a_convex_ring_cuts_rc() {
     );
 }
 
-/// Claim 6: fresh stock and an auto top refuse by the lowest item.
+/// Claim 6: fresh stock and an auto top are buried by the lowest item.
+/// K6 (ruling Q6, E1): the Chamfer generates and records the finding.
 #[test]
 fn a_fresh_auto_top_chamfer_is_buried_by_its_lowest_edge_rc() {
     let mut s = chamfer_session(HeightMode::Auto);
-    match generate(&mut s) {
-        Err(SessionError::Operation(OperationError::BuriedFace(refusal))) => {
-            assert_eq!(refusal.under, BuriedUnder::StockTop, "{refusal}");
-            assert!(
-                (refusal.buried_mm - 20.0).abs() < 1e-6,
-                "the Z 10 chains are 20 mm under the stock top: {refusal}"
-            );
-        }
-        Err(other) => panic!("want the buried refusal, got: {other}"),
-        Ok(_) => panic!("the Z 10 and Z 20 chains are under fresh stock"),
+    if let Err(other) = generate(&mut s) {
+        panic!("K6: a buried face does not refuse generation, got: {other}");
     }
+    let refusal = s
+        .result_at(0)
+        .and_then(|r| r.stats.buried_face)
+        .expect("the Z 10 and Z 20 chains are under fresh stock");
+    assert_eq!(refusal.under, BuriedUnder::StockTop, "{refusal}");
+    assert!(
+        (refusal.buried_mm - 20.0).abs() < 1e-6,
+        "the Z 10 chains are 20 mm under the stock top: {refusal}"
+    );
 }
 
 /// Claim 7: a Bottom setup refuses the model edges.

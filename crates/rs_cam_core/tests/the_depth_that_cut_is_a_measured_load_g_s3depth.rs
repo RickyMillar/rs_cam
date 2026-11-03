@@ -50,7 +50,7 @@ use rs_cam_core::feeds::{
     FeedsInput, OperationFamily, PassRole, SetupContext, SpindleStrategy, ToolGeometryHint,
     embedded_vendor_lut,
 };
-use rs_cam_core::gcode::{ToolLoadExportPolicy, enforce_load_policy};
+use rs_cam_core::gcode::load_findings;
 use rs_cam_core::ids::ToolpathId;
 use rs_cam_core::machine::MachineProfile;
 use rs_cam_core::material::{Material, WoodSpecies};
@@ -504,8 +504,8 @@ fn a_hand_set_depth_above_the_cap_exceeds_but_does_not_refuse_the_export() {
         row.bound
     );
     assert!(
-        !row.refuses_export(),
-        "a rule-of-thumb bound may not refuse an export"
+        !row.warns_on_export(),
+        "a rule-of-thumb bound may not warn on an export"
     );
     assert!(
         v.exceeded_criteria()
@@ -514,16 +514,19 @@ fn a_hand_set_depth_above_the_cap_exceeds_but_does_not_refuse_the_export() {
         "exceeded_criteria() must still LIST the depth row"
     );
 
-    let policy = ToolLoadExportPolicy {
-        accept_unmodeled: true,
-        accept_exceeded: false,
-    };
     let report = ToolLoadReport {
         per_toolpath: vec![v],
     };
-    let outcome = enforce_load_policy(&report, &policy)
-        .expect("a depth exceedance alone must not refuse the export");
-    let note = outcome
+    let found = load_findings(&report);
+    assert!(
+        !found
+            .rows
+            .iter()
+            .any(|row| row.id == rs_cam_core::diagnostics::ids::LOAD_DEPTH_EXCEEDS),
+        "a depth exceedance alone must not warn: {found:?}"
+    );
+    let note = found
+        .outcome
         .advisory_note()
         .expect("the export gate must still REPORT the exceedance");
     assert!(
@@ -537,11 +540,11 @@ fn a_hand_set_depth_above_the_cap_exceeds_but_does_not_refuse_the_export() {
 }
 
 /// The same report with a power exceedance beside it. Power's bound is
-/// the machine power curve, which DOES gate, so the export refuses —
-/// and the message names both rows, so the operator sees the whole
-/// picture and not just the half that stopped them.
+/// the machine power curve, which DOES gate, so the export warns on it
+/// (K6: no refusal), and the advisory names the depth row, so the
+/// operator sees the whole picture.
 #[test]
-fn a_power_exceedance_beside_the_depth_row_refuses_and_names_both() {
+fn a_power_exceedance_beside_the_depth_row_warns_and_names_both() {
     let trace = deep_trace();
     let mut v = milling_verdict(OperationType::Pocket, &trace);
     v.power = PowerVerdict::Exceeds {
@@ -556,20 +559,24 @@ fn a_power_exceedance_beside_the_depth_row_refuses_and_names_both() {
     let report = ToolLoadReport {
         per_toolpath: vec![v],
     };
-    let policy = ToolLoadExportPolicy {
-        accept_unmodeled: true,
-        accept_exceeded: false,
-    };
-    let err = enforce_load_policy(&report, &policy)
-        .expect_err("a power exceedance must refuse the export");
-    let msg = err.to_string();
+    let found = load_findings(&report);
+    let power = found
+        .rows
+        .iter()
+        .find(|row| row.id == rs_cam_core::diagnostics::ids::LOAD_POWER_EXCEEDS)
+        .expect("a power exceedance must warn");
     assert!(
-        msg.contains("spindle power"),
-        "the refusal must name what refused: {msg}"
+        power.detail.contains("spindle power"),
+        "the warning must name what gated: {}",
+        power.detail
     );
+    let note = found
+        .outcome
+        .advisory_note()
+        .expect("the depth row is an advisory");
     assert!(
-        msg.contains("depth of cut"),
-        "the refusal must also name what exceeded without refusing: {msg}"
+        note.contains("depth of cut"),
+        "the advisory must name what exceeded without gating: {note}"
     );
 }
 

@@ -254,7 +254,7 @@ fn readiness_says_current_and_names_the_edited_ones() {
 /// **The risk inverted.** It is no longer over-promising; it is a second
 /// surface explaining WHY an operation blocks, in its own words, and drifting
 /// from the one builder F2.3 gave export, pre-flight and MCP `export_gcode`
-/// (`io::export::blocking_toolpath_message`). Two texts for one refusal is
+/// (`io::export::left_out_message`). Two texts for one refusal is
 /// the shape of every defect this phase has closed: three freshness stores in
 /// R0.1, four workspace lists in G-WSMENU, two chip vocabularies here.
 ///
@@ -293,7 +293,7 @@ fn no_freshness_surface_writes_its_own_export_blocking_sentence() {
     ) {
         // A surface that calls the shared builder is using the one text by
         // construction; the rule is about surfaces that write their own.
-        if src.contains("blocking_toolpath_message") {
+        if src.contains("left_out_message") {
             continue;
         }
         for (number, line) in src.lines().enumerate() {
@@ -309,7 +309,7 @@ fn no_freshness_surface_writes_its_own_export_blocking_sentence() {
             }
             if let Some(claim) = BLOCKING_CLAIM.iter().find(|c| lower.contains(**c)) {
                 panic!(
-                    "{label}:{}: this surface writes its own export-blocking sentence                      (matched {claim:?}). That text has ONE home since F2.3 —                      `io::export::blocking_toolpath_message` — which export, the                      pre-flight modal and MCP `export_gcode` all share. Call it                      instead of writing a second wording that can drift from it:\n{line}",
+                    "{label}:{}: this surface writes its own export-blocking sentence                      (matched {claim:?}). That text has ONE home since F2.3 —                      `io::export::left_out_message` — which export, the                      pre-flight modal and MCP `export_gcode` all share. Call it                      instead of writing a second wording that can drift from it:\n{line}",
                     number + 1
                 );
             }
@@ -323,7 +323,7 @@ fn no_freshness_surface_writes_its_own_export_blocking_sentence() {
 fn the_shared_blocking_text_is_available_to_a_freshness_surface() {
     let src = include_str!("../src/io/export.rs");
     assert!(
-        src.contains("pub fn blocking_toolpath_message("),
+        src.contains("pub fn left_out_message("),
         "the one builder must stay public, or the rule above has no remedy"
     );
     assert!(

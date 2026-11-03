@@ -16,8 +16,13 @@
 //!    the export succeeds and emits op 0 only;
 //! 2. the same session with nothing skipped exports with no override too;
 //! 3. the gate is not weaker: an emitted operation edited after the
-//!    simulation still refuses with `StaleSimulation`, and the rows name
-//!    that operation only.
+//!    simulation still raises stale rows, and the rows name that operation
+//!    only.
+//!
+//! K6 (feeds contract P2, ruling Q6): no row refuses an export now. A stale
+//! row is an export warning (`load.*.unmodeled`); a skipped enabled op is
+//! left out and named (`export.op_left_out`). Each claim above holds on the
+//! warnings.
 
 #![expect(
     clippy::expect_used,
@@ -34,7 +39,7 @@ use common::tools::endmill_tool_config;
 
 use rs_cam_core::compute::catalog::OperationConfig;
 use rs_cam_core::compute::operation_configs::{Adaptive3dConfig, ClearingStrategy};
-use rs_cam_core::gcode::{ExportRefusal, ToolLoadExportPolicy};
+use rs_cam_core::gcode::{EmitError, ExportedGcode};
 use rs_cam_core::ids::{ToolId, ToolpathId};
 use rs_cam_core::session::{
     AddToolpathArgs, Command, ProjectSession, ProjectSessionBuilder, ReplaceToolpathConfigArgs,
@@ -113,13 +118,22 @@ fn simulate(session: &mut ProjectSession, skip_ids: Vec<ToolpathId>) {
         .expect("simulate");
 }
 
-fn export(session: &ProjectSession) -> Result<String, ExportRefusal> {
+fn export(session: &ProjectSession) -> Result<ExportedGcode, EmitError> {
     let trace = session
         .simulation_result()
         .and_then(|s| s.cut_trace.as_deref());
-    session
-        .export_gcode_checked(trace, ToolLoadExportPolicy::default())
-        .map(|exported| exported.gcode)
+    session.export_gcode_checked(trace)
+}
+
+/// The stale load rows of an export: an unmodelled row whose clause says
+/// the simulation is stale.
+fn stale_rows(exported: &ExportedGcode) -> Vec<String> {
+    exported
+        .warnings
+        .iter()
+        .filter(|w| w.id.ends_with(".unmodeled") && w.detail.contains("stale"))
+        .map(|w| w.detail.clone())
+        .collect()
 }
 
 #[test]
@@ -130,13 +144,29 @@ fn a_skipped_op_does_not_stale_the_export() {
     assert!(skipped.result_at(1).is_none(), "the skipped op generated");
     let skip_id = skipped.toolpath_configs()[1].id;
     simulate(&mut skipped, vec![skip_id]);
-    let gcode = match export(&skipped) {
-        Ok(gcode) => gcode,
+    let exported = match export(&skipped) {
+        Ok(exported) => exported,
         Err(refusal) => panic!("the export with a skipped op refused:\n{refusal}"),
     };
-    assert!(gcode.contains("rough"), "the program does not hold op 0");
     assert!(
-        !gcode.contains("skipped"),
+        stale_rows(&exported).is_empty(),
+        "the skipped op staled the export: {:?}",
+        exported.warnings
+    );
+    assert!(
+        exported.warnings.iter().any(|w| {
+            w.id == rs_cam_core::diagnostics::ids::EXPORT_OP_LEFT_OUT && w.toolpath == "skipped"
+        }),
+        "the export names the op it leaves out: {:?}",
+        exported.warnings
+    );
+    let gcode = exported.gcode;
+    assert!(gcode.contains("rough"), "the program does not hold op 0");
+    // K6: the header warning names the skipped op; no other line does.
+    assert!(
+        !gcode
+            .lines()
+            .any(|line| line.contains("skipped") && !line.contains("WARNING")),
         "the program holds the skipped op"
     );
 
@@ -146,11 +176,16 @@ fn a_skipped_op_does_not_stale_the_export() {
         generate(&mut all, index);
     }
     simulate(&mut all, Vec::new());
-    if let Err(refusal) = export(&all) {
-        panic!("the export with nothing skipped refused:\n{refusal}");
+    match export(&all) {
+        Ok(exported) => assert!(
+            stale_rows(&exported).is_empty(),
+            "nothing skipped, nothing stale: {:?}",
+            exported.warnings
+        ),
+        Err(refusal) => panic!("the export with nothing skipped refused:\n{refusal}"),
     }
 
-    // 3. An emitted op edited after the simulation still refuses as stale.
+    // 3. An emitted op edited after the simulation still reads as stale.
     // The edit drops the stored simulation, so the export is handed the
     // trace of the run before the edit, as the GUI holds its own copy.
     let old_trace = skipped
@@ -169,14 +204,12 @@ fn a_skipped_op_does_not_stale_the_export() {
         .expect("edit op 0");
     generate(&mut skipped, 0);
     let edited = format!("toolpath {}:", skipped.toolpath_configs()[0].id);
-    match skipped.export_gcode_checked(Some(&old_trace), ToolLoadExportPolicy::default()) {
-        Err(ExportRefusal::StaleSimulation { rows }) => assert!(
-            !rows.is_empty() && rows.iter().all(|row| row.contains(&edited)),
-            "the stale rows do not name the edited op only: {rows:?}"
-        ),
-        other => panic!(
-            "an edited emitted op did not refuse as stale: {:?}",
-            other.map(|exported| exported.gcode.len())
-        ),
-    }
+    let exported = skipped
+        .export_gcode_checked(Some(&old_trace))
+        .expect("no finding refuses the export");
+    let rows = stale_rows(&exported);
+    assert!(
+        !rows.is_empty() && rows.iter().all(|row| row.contains(&edited)),
+        "the stale rows do not name the edited op only: {rows:?}"
+    );
 }

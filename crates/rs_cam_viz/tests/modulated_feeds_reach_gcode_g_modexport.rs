@@ -28,16 +28,14 @@
 //!    BOTH stores (the F1_RCA sync), then a modulated variant swapped
 //!    into `session.results` ONLY (what the post-pass does). The emitted
 //!    F-words must be the modulated ones.
-//! 2. `viz_export_refuses_the_worker_result_when_the_session_slot_is_invalidated`
+//! 2. `viz_export_never_takes_the_worker_result_when_the_session_slot_is_invalidated`
 //!    — the other direction. `ProjectSession::invalidate_tool` (a GUI
 //!    tool-param edit, see `ui/properties::commit_tool_draft`) drops
 //!    `session.results` while the viz store keeps its result for the
 //!    stale display. Until G-STALEXPORT (2026-09-10) the export fell back
-//!    to that worker IR silently, and this test asserted it did; the
-//!    fallback is now taken only under
-//!    `StaleResultPolicy::AcceptPreviousGeometry`, so the default is a
-//!    refusal that names the operation, and the acceptance still emits
-//!    the pre-modulation feed it always did.
+//!    to that worker IR silently. K6 (lead decision 4): the export leaves
+//!    the op out and names it (`export.op_left_out`); the worker IR is
+//!    never emitted.
 
 #![expect(
     clippy::expect_used,
@@ -58,8 +56,8 @@ use rs_cam_core::session::{
 };
 use rs_cam_core::toolpath::Toolpath;
 use rs_cam_core::trace::toolpath_spans::AnnotatedToolpath;
-use rs_cam_viz::io::export::export_gcode_from_session_with_policy;
-use rs_cam_viz::state::runtime::{GuiState, StaleResultPolicy, ToolpathRuntime};
+use rs_cam_viz::io::export::export_gcode_from_session;
+use rs_cam_viz::state::runtime::{GuiState, ToolpathRuntime};
 use rs_cam_viz::state::simulation::SimulationState;
 use rs_cam_viz::state::toolpath::{OperationConfig, ToolpathResult};
 
@@ -174,10 +172,8 @@ fn build_state() -> (ProjectSession, GuiState, SimulationState) {
     gui.toolpath_rt.insert(tp_id, rt);
 
     // No simulation is run here, so every tool-load criterion reads
-    // Unmodeled(SimulationRequired) — accept it, as the export gate's
-    // override toggle does. The gate is covered elsewhere; this file is
-    // about which IR the emitter is handed.
-    gui.tool_load_overrides.accept_unmodeled = true;
+    // Unmodeled(SimulationRequired); the export warns on those rows. This
+    // file is about which IR the emitter is handed.
 
     (session, gui, SimulationState::new())
 }
@@ -209,26 +205,8 @@ fn f_words(gcode: &str) -> Vec<f64> {
     seen
 }
 
-fn export_with(
-    session: &ProjectSession,
-    gui: &GuiState,
-    sim: &SimulationState,
-    stale: StaleResultPolicy,
-) -> Result<String, rs_cam_viz::error::VizError> {
-    export_gcode_from_session_with_policy(
-        session,
-        gui,
-        sim,
-        rs_cam_core::gcode::ToolLoadExportPolicy {
-            accept_unmodeled: true,
-            accept_exceeded: true,
-        },
-        stale,
-    )
-}
-
 fn export(session: &ProjectSession, gui: &GuiState, sim: &SimulationState) -> String {
-    export_with(session, gui, sim, StaleResultPolicy::Refuse).expect("export succeeds")
+    export_gcode_from_session(session, gui, sim).expect("export succeeds")
 }
 
 #[test]
@@ -267,7 +245,7 @@ fn viz_export_emits_the_modulated_feed_schedule() {
 }
 
 #[test]
-fn viz_export_refuses_the_worker_result_when_the_session_slot_is_invalidated() {
+fn viz_export_never_takes_the_worker_result_when_the_session_slot_is_invalidated() {
     let (mut session, gui, sim) = build_state();
 
     // The reachable divergence: a GUI tool-param edit calls
@@ -285,31 +263,24 @@ fn viz_export_refuses_the_worker_result_when_the_session_slot_is_invalidated() {
          test is not exercising the fallback"
     );
 
-    // G-STALEXPORT: taking that worker IR is now a decision, not a
-    // default. The refusal names the operation and says what happened.
-    let refusal = export_with(&session, &gui, &sim, StaleResultPolicy::Refuse)
-        .expect_err("an edited operation must not export silently");
-    let text = refusal.to_string();
+    // K6: the op is left out and named; the worker IR is never emitted.
+    let exported =
+        rs_cam_viz::io::export::export_gcode_from_session_reporting(&session, &gui, &sim)
+            .expect("K6: the export writes the rest");
+    let text: Vec<&str> = exported
+        .warnings
+        .iter()
+        .filter(|w| w.id == rs_cam_core::diagnostics::ids::EXPORT_OP_LEFT_OUT)
+        .map(|w| w.detail.as_str())
+        .collect();
     assert!(
-        text.contains("Sample Path") && text.contains("edited after it was generated"),
-        "the refusal must name the operation and say why; got: {text}"
+        text.iter()
+            .any(|t| t.contains("Sample Path") && t.contains("edited after it was generated")),
+        "the warning must name the operation and say why; got: {text:?}"
     );
-
-    // Under the acceptance the worker IR is emitted, with exactly the
-    // pre-modulation feed it always carried.
-    let feeds = f_words(
-        &export_with(
-            &session,
-            &gui,
-            &sim,
-            StaleResultPolicy::AcceptPreviousGeometry,
-        )
-        .expect("the acceptance emits the previous geometry"),
-    );
-    assert_eq!(
-        feeds,
-        vec![COMMANDED_FEED],
-        "with the session slot invalidated the worker IR is the only \
-         result left; the acceptance emits it"
+    assert!(
+        f_words(&exported.gcode).is_empty(),
+        "the worker IR is never emitted: {:?}",
+        f_words(&exported.gcode)
     );
 }

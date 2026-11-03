@@ -27,9 +27,9 @@ pub(in crate::ui::properties) struct HeaderRow<'a> {
     /// The sentence of a blocked submit of a waiting rest op, when the GUI
     /// holds one (the hover of "Waiting").
     pub waiting_detail: Option<&'a str>,
-    /// F20: the hover of the first blocking finding of the stored result
-    /// (`placement::blocking_hover`).
-    pub blocking: Option<&'a str>,
+    /// F20, K6: the hover and the danger of the first warning finding of
+    /// the stored result (`placement::warning_hover`).
+    pub warning: Option<(&'a str, rs_cam_core::diagnostics::Danger)>,
     /// The move count of the stored result.
     pub moves: Option<usize>,
     pub feed_stage: Option<rs_cam_core::session::FeedStage>,
@@ -38,10 +38,10 @@ pub(in crate::ui::properties) struct HeaderRow<'a> {
 }
 
 impl HeaderRow<'_> {
-    /// True when the state word is the F20 safety signal "Done · BLOCKED".
-    fn is_blocked(&self) -> bool {
+    /// True when the state word is the F20 safety signal "Done · <danger>".
+    fn has_warning(&self) -> bool {
         matches!(self.run_state, Some(rs_cam_core::session::RunState::Done))
-            && self.blocking.is_some()
+            && self.warning.is_some()
     }
 
     /// The move count text: "old: N moves" on a result that is out of date.
@@ -63,12 +63,12 @@ impl HeaderRow<'_> {
     fn word(&self) -> (&'static str, egui::Color32, String) {
         use crate::ui::tokens;
         use rs_cam_core::session::RunState;
-        if self.is_blocked()
-            && let Some(hover) = self.blocking
+        if self.has_warning()
+            && let Some((hover, danger)) = self.warning
         {
             return (
-                crate::ui::toolpath_panel::BLOCKED_HEADER,
-                tokens::DANGER,
+                crate::ui::toolpath_panel::done_header(danger),
+                crate::ui::preflight::danger_role(danger).text(),
                 hover.to_owned(),
             );
         }
@@ -168,7 +168,8 @@ impl HeaderRow<'_> {
 /// From the right: the one button, the notes counter, then the move count
 /// as faint meta (its hover holds the feed stage and the caps). The state
 /// word takes the rest and truncates, except the F20 safety signal
-/// "Done · BLOCKED": it takes its full width first and the move count drops.
+/// "Done · <danger>" (K6): it takes its full width first and the move count
+/// drops.
 pub(in crate::ui::properties) fn draw_generate_row(
     ui: &mut egui::Ui,
     row: &HeaderRow<'_>,
@@ -182,7 +183,7 @@ pub(in crate::ui::properties) fn draw_generate_row(
         format!("{hover}\n{figures}")
     };
     StatusLine::new(word, colour, hover)
-        .keep_whole(row.is_blocked())
+        .keep_whole(row.has_warning())
         .meta(row.moves_text().map(|text| (text, figures)))
         .button(row.button())
         .notes(notes)

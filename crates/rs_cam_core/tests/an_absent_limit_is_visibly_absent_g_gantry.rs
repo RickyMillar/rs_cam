@@ -22,7 +22,6 @@
 //! any bound. S1 adds no physics and no constant.
 
 #![expect(
-    clippy::unwrap_used,
     clippy::expect_used,
     clippy::panic,
     clippy::indexing_slicing,
@@ -31,7 +30,7 @@
 
 use rs_cam_core::compute::catalog::OperationType;
 use rs_cam_core::compute::tool_config::ToolMaterial;
-use rs_cam_core::gcode::{ToolLoadExportPolicy, enforce_load_policy};
+use rs_cam_core::gcode::load_findings;
 use rs_cam_core::ids::ToolpathId;
 use rs_cam_core::machine::MachineProfile;
 use rs_cam_core::material::Material;
@@ -352,7 +351,7 @@ fn a_drill_without_drill_gates_still_buckets_as_not_applicable() {
 /// tier gates export by construction. This row must not: it has no
 /// bound, so it can never exceed one.
 #[test]
-fn the_gantry_row_never_refuses_an_export() {
+fn the_gantry_row_never_warns_on_an_export() {
     let v = milling_verdict();
     assert!(
         !v.exceeded_criteria()
@@ -367,16 +366,11 @@ fn the_gantry_row_never_refuses_an_export() {
         !report.any_exceeded(),
         "the fixture's modelled gates are within bounds"
     );
-    // Both overrides off — the strictest policy the export gate has.
-    let strict = ToolLoadExportPolicy {
-        accept_unmodeled: false,
-        accept_exceeded: false,
-    };
-    let outcome = enforce_load_policy(&report, &strict);
+    // K6: no row refuses; a known absence must not even warn.
+    let found = load_findings(&report);
     assert!(
-        outcome.is_ok(),
-        "a known absence must not refuse an export: {}",
-        outcome.unwrap_err()
+        found.rows.is_empty(),
+        "a known absence must not warn on an export: {found:?}"
     );
 }
 
@@ -464,13 +458,12 @@ fn a_fillable_not_implemented_row_is_not_a_known_absence() {
     let report = ToolLoadReport {
         per_toolpath: vec![v],
     };
-    let strict = ToolLoadExportPolicy {
-        accept_unmodeled: false,
-        accept_exceeded: false,
-    };
     assert!(
-        enforce_load_policy(&report, &strict).is_err(),
-        "the export gate must still refuse a report with no machine profile"
+        load_findings(&report)
+            .rows
+            .iter()
+            .any(|row| row.id == rs_cam_core::diagnostics::ids::LOAD_POWER_UNMODELED),
+        "the export must still warn on a report with no machine profile"
     );
 }
 

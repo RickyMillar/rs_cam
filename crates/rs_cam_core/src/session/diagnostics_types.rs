@@ -103,7 +103,8 @@ pub struct ToolpathDiagnostic {
 #[derive(Debug, Clone, Copy, PartialEq, Eq, PartialOrd, Ord)]
 pub enum VerdictSeverity {
     /// Holder/shank collision, rapid-through-stock collision — likely to
-    /// damage the part or the tool. Block export until resolved.
+    /// damage the part or the tool. K6 (ruling Q6): a Machine warning; the
+    /// export names it and the GUI Export button takes the Danger style.
     Critical,
     /// Gate exceeded, toolpath generated zero in-material cut, unsafe plunge —
     /// the operator must consciously decide before proceeding.

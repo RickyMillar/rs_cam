@@ -19,8 +19,8 @@ use crate::state::selection::Selection;
 use crate::ui::AppEvent;
 use crate::ui_command::{
     DeleteLibraryToolArgs, MoveLibraryToolArgs, NoArgs, RenameMachineInLibraryArgs,
-    RenameToolCatalogArgs, SetModelVisibilityArgs, SetToolLoadOverrideArgs, SimJumpToMoveArgs,
-    SimJumpToOpStartArgs, UiCommand, UpdateLibraryToolArgs,
+    RenameToolCatalogArgs, SetModelVisibilityArgs, SimJumpToMoveArgs, SimJumpToOpStartArgs,
+    UiCommand, UpdateLibraryToolArgs,
 };
 
 use super::AppController;
@@ -935,8 +935,6 @@ impl<B: ComputeBackend> AppController<B> {
                 }
                 UiCommand::SwitchWorkspace(_) => {}
                 UiCommand::ShowShortcuts(NoArgs) => {}
-                UiCommand::SetToolLoadOverride(SetToolLoadOverrideArgs { .. }) => {}
-                UiCommand::SetStaleExportPolicy(_) => {}
                 UiCommand::OpenExportWizard(NoArgs) => {}
                 UiCommand::CloseExportWizard(NoArgs) => {}
                 UiCommand::Quit(NoArgs) => {}

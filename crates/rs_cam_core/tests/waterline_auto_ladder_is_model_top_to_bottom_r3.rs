@@ -53,15 +53,14 @@ use rs_cam_core::compute::config::{
 };
 use rs_cam_core::compute::operation_configs::WaterlineConfig;
 use rs_cam_core::diagnostics::{Severity, ids};
-use rs_cam_core::gcode::ToolLoadExportPolicy;
 use rs_cam_core::geo::P3;
 use rs_cam_core::mesh::{TriangleMesh, make_test_hemisphere};
 use rs_cam_core::ops::waterline::{
     FLAT_FACE_NUDGE_MM, WaterlineLadder, waterline_ladder, waterline_z_levels,
 };
 use rs_cam_core::session::{
-    Command, HeightOrderRefusal, ProjectSession, ReplaceToolpathConfigArgs, SessionError,
-    SetToolpathHeightsArgs, ToolpathHeights,
+    Command, HeightOrderRefusal, ProjectSession, ReplaceToolpathConfigArgs, SetToolpathHeightsArgs,
+    ToolpathHeights,
 };
 
 const EPS: f64 = 1e-9;
@@ -311,14 +310,17 @@ fn waterline_session(heights: HeightsConfig) -> ProjectSession {
     session
 }
 
-/// The refusal of generation, or a panic when generation succeeds.
+/// K6 (ruling Q6): generation goes ahead on a broken stack; this is the
+/// height-order finding of the op it generated. Panics when generation
+/// fails or the stack holds no break.
 fn height_order_refusal(heights: HeightsConfig) -> HeightOrderRefusal {
     let mut session = waterline_session_unbuilt(heights);
     let cancel = AtomicBool::new(false);
     match session.generate_toolpath(0, &cancel) {
-        Err(SessionError::HeightOrder(refusal)) => refusal,
-        Err(e) => panic!("expected the height-order refusal, got {e}"),
-        Ok(_) => panic!("expected the height-order refusal, the op generated"),
+        Ok(_) => session
+            .height_order_refusal(&session.toolpath_configs()[0])
+            .unwrap_or_else(|| panic!("expected the height-order finding")),
+        Err(e) => panic!("no finding refuses generation (K6), got {e}"),
     }
 }
 
@@ -386,10 +388,10 @@ fn an_auto_waterline_ladders_the_model_and_records_a_clean_finding() {
 }
 
 /// The as-found Corne pin (top -1.37, bottom Auto = the model bottom 0.0)
-/// is an inverted stack. Since F033 (one height-order rule) generation
-/// refuses it before the ladder runs, with the numbers of the break.
+/// is an inverted stack. F033 (one height-order rule) names the break with
+/// its numbers; K6 (ruling Q6): generation goes ahead and warns.
 #[test]
-fn the_inverted_corne_pin_is_refused_at_generation_f033() {
+fn the_inverted_corne_pin_generates_and_names_the_break_f033() {
     let refusal = height_order_refusal(HeightsConfig {
         top_z: HeightMode::Manual(-1.37),
         ..HeightsConfig::default()
@@ -409,8 +411,8 @@ fn a_top_pinned_below_the_stock_bottom_gives_an_empty_ladder_and_the_finding() {
     // An ordered stack wholly below the stock bottom (Z 0): top -1.37,
     // bottom -2.37. Every planned level is dropped, nothing is cut, and
     // the empty ladder is reported. Before F033 this arm used the inverted
-    // Corne pin (top -1.37, bottom Auto 0.0); F033 now refuses that stack
-    // (`the_inverted_corne_pin_is_refused_at_generation_f033`).
+    // Corne pin (top -1.37, bottom Auto 0.0); F033 names that stack as a
+    // break (`the_inverted_corne_pin_generates_and_names_the_break_f033`).
     let session = waterline_session(HeightsConfig {
         top_z: HeightMode::Manual(-1.37),
         bottom_z: HeightMode::Manual(-2.37),
@@ -475,7 +477,7 @@ fn a_top_pinned_below_the_stock_bottom_gives_an_empty_ladder_and_the_finding() {
 /// F033b (lead ruling): the Waterline ladder includes its top, so a Top Z
 /// equal to the Bottom Z inside the part is one level. Every door takes
 /// it, generation cuts one contour, and the export door emits it. A bottom
-/// above the top still refuses.
+/// above the top is still a break (K6: a warning).
 #[test]
 fn a_top_equal_to_the_bottom_cuts_one_contour_f033b() {
     const Z_MM: f64 = 5.0;
@@ -540,20 +542,16 @@ fn a_top_equal_to_the_bottom_cuts_one_contour_f033b() {
     );
 
     // The export door emits it.
-    let accept_all = ToolLoadExportPolicy {
-        accept_unmodeled: true,
-        accept_exceeded: true,
-    };
     assert!(
         session
             .height_order_refusal(&session.toolpath_configs()[0])
             .is_none()
     );
     let _ = session
-        .export_gcode_checked(None, accept_all)
+        .export_gcode_checked(None)
         .expect("the export door emits top = bottom on Waterline");
 
-    // A bottom above the top still refuses on Waterline.
+    // A bottom above the top is still a break on Waterline.
     let refusal = height_order_refusal(HeightsConfig {
         top_z: HeightMode::Manual(Z_MM),
         bottom_z: HeightMode::Manual(Z_MM + 0.5),

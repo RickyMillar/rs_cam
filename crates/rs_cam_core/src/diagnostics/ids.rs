@@ -10,8 +10,7 @@
 //! repurpose an existing ID for a different rule even if the message
 //! is similar — IDs are wire-stable across MCP and snapshot tests.
 
-use super::consequence::{Danger, Gate, INFO, NOT_READY, RowKind, Stage, refuse, warn};
-use crate::gcode::LoadOverride;
+use super::consequence::{Danger, INFO, NOT_READY, RowKind, warn};
 
 /// Declares every diagnostic id once. Each row emits its `const` and an
 /// entry in [`ALL`], so an id cannot exist outside `ALL` (F162). Write a new
@@ -68,17 +67,24 @@ pub fn row_kind(id: &str) -> Option<RowKind> {
         .map(|(_, kind)| *kind)
 }
 
+/// CONTRACT K6: the danger of `id` when its row warns; `None` for an
+/// `Info` row, a missing input and an id that is not a row.
+#[must_use]
+pub fn warn_danger(id: &str) -> Option<Danger> {
+    row_kind(id).and_then(RowKind::warns)
+}
+
 diag_ids! {
     // ── Load gates ───────────────────────────────────────────────────────
-    pub const LOAD_CHIPLOAD_HIGH: &str = "load.chipload.high" => refuse(Danger::Tool, &[Stage::Export], Gate::LoadRowRefuses, Some(LoadOverride::AcceptExceeded));
-    pub const LOAD_CHIPLOAD_LOW: &str = "load.chipload.low" => refuse(Danger::Tool, &[Stage::Export], Gate::LoadRowRefuses, Some(LoadOverride::AcceptExceeded));
+    pub const LOAD_CHIPLOAD_HIGH: &str = "load.chipload.high" => warn(Danger::Tool);
+    pub const LOAD_CHIPLOAD_LOW: &str = "load.chipload.low" => warn(Danger::Tool);
     pub const LOAD_CHIPLOAD_WITHIN: &str = "load.chipload.within" => INFO;
     /// The chipload gate did not measure (`ChiploadVerdict::Unmodeled`: no
     /// simulation, stale simulation, no vendor band, or a row that the G1 size
     /// claim refused). Its own id, so a reader of ids alone never reads
     /// "within" for a gate that measured nothing (extrapolation P1 decision 6,
     /// as [`LOAD_DEPTH_UNMODELED`] for the depth gate).
-    pub const LOAD_CHIPLOAD_UNMODELED: &str = "load.chipload.unmodeled" => refuse(Danger::Tool, &[Stage::Export], Gate::LoadUnmodeled, Some(LoadOverride::AcceptUnmodeled));
+    pub const LOAD_CHIPLOAD_UNMODELED: &str = "load.chipload.unmodeled" => warn(Danger::Tool);
     /// T1.5 (census P-10) — the commanded feed-per-tooth sits above the
     /// matched vendor row's published maximum. This is the ONLY same-unit,
     /// same-stage comparison the chipload pipeline can make (both sides are
@@ -87,46 +93,46 @@ diag_ids! {
     /// a commanded value against an authored band, and does not observe the
     /// cut.
     pub const LOAD_CHIPLOAD_COMMANDED_ABOVE_BAND: &str = "load.chipload.commanded_above_band" => INFO;
-    pub const LOAD_POWER_EXCEEDS: &str = "load.power.exceeds" => refuse(Danger::Machine, &[Stage::Export], Gate::LoadRowRefuses, Some(LoadOverride::AcceptExceeded));
+    pub const LOAD_POWER_EXCEEDS: &str = "load.power.exceeds" => warn(Danger::Machine);
     pub const LOAD_POWER_WITHIN: &str = "load.power.within" => INFO;
     /// The power gate did not measure (`PowerVerdict::Unmodeled`: no
     /// simulation, no machine power, or a material with no force line, ruling
     /// B6). Its own id, so a reader of ids alone never reads "within" for a
     /// gate that measured nothing (as [`LOAD_DEPTH_UNMODELED`]).
-    pub const LOAD_POWER_UNMODELED: &str = "load.power.unmodeled" => refuse(Danger::Tool, &[Stage::Export], Gate::LoadUnmodeled, Some(LoadOverride::AcceptUnmodeled));
-    pub const LOAD_DEFLECTION_EXCEEDS: &str = "load.deflection.exceeds" => refuse(Danger::Tool, &[Stage::Export], Gate::LoadRowRefuses, Some(LoadOverride::AcceptExceeded));
+    pub const LOAD_POWER_UNMODELED: &str = "load.power.unmodeled" => warn(Danger::Tool);
+    pub const LOAD_DEFLECTION_EXCEEDS: &str = "load.deflection.exceeds" => warn(Danger::Tool);
     pub const LOAD_DEFLECTION_WITHIN: &str = "load.deflection.within" => INFO;
     /// The deflection gate did not measure (`DeflectionVerdict::Unmodeled`:
     /// for example a material with no force line, ruling B6). Its own id, so a
     /// reader of ids alone never reads "within" for a gate that measured
     /// nothing (as [`LOAD_DEPTH_UNMODELED`]).
-    pub const LOAD_DEFLECTION_UNMODELED: &str = "load.deflection.unmodeled" => refuse(Danger::Tool, &[Stage::Export], Gate::LoadUnmodeled, Some(LoadOverride::AcceptUnmodeled));
+    pub const LOAD_DEFLECTION_UNMODELED: &str = "load.deflection.unmodeled" => warn(Danger::Tool);
     /// The measured depth of cut is inside the machine rigidity cap
     /// (`tool_load::depth`, a roughing pass). Feeds matrix R2 (2026-09-23).
     pub const LOAD_DEPTH_WITHIN: &str = "load.depth.within" => INFO;
     /// The measured depth of cut is past the machine rigidity cap. The cap
-    /// is a rule of thumb, so this finding never refuses an export
+    /// is a rule of thumb, so the export lists it as an advisory, not a warning
     /// (EVIDENCE 5.1-15: before R2 no depth finding reached this list).
-    pub const LOAD_DEPTH_EXCEEDS: &str = "load.depth.exceeds" => refuse(Danger::Tool, &[Stage::Export], Gate::LoadRowRefuses, Some(LoadOverride::AcceptExceeded));
+    pub const LOAD_DEPTH_EXCEEDS: &str = "load.depth.exceeds" => warn(Danger::Tool);
     /// The measured depth of a finishing or semi-finishing pass, reported
     /// with no bound. Feeds matrix R2: no axial cap applies to that pass.
     pub const LOAD_DEPTH_REPORTED: &str = "load.depth.reported" => INFO;
     /// The depth gate did not measure (no simulation, stale simulation, no
     /// machine profile). Its own id, so a reader of ids alone never reads
     /// "within" for a gate that measured nothing (EVIDENCE 5.1-14).
-    pub const LOAD_DEPTH_UNMODELED: &str = "load.depth.unmodeled" => refuse(Danger::Tool, &[Stage::Export], Gate::LoadUnmodeled, Some(LoadOverride::AcceptUnmodeled));
+    pub const LOAD_DEPTH_UNMODELED: &str = "load.depth.unmodeled" => warn(Danger::Tool);
     /// S6 (stock changes, "cut as"): samples of an added material with
     /// `CutAs::OwnMaterial` and no force data. The gates do not judge them;
     /// the finding counts and names them per material.
     pub const LOAD_MATERIAL_NOT_JUDGED: &str = "load.material.not_judged" => INFO;
 
     // ── Drill gates ──────────────────────────────────────────────────────
-    pub const DRILL_CHIP_WELDING: &str = "drill.chip_welding" => refuse(Danger::Tool, &[Stage::Export], Gate::LoadRowRefuses, Some(LoadOverride::AcceptExceeded));
-    pub const DRILL_PECK_ADEQUACY: &str = "drill.peck_adequacy" => refuse(Danger::Tool, &[Stage::Export], Gate::LoadRowRefuses, Some(LoadOverride::AcceptExceeded));
-    pub const DRILL_PLUNGE_FEED: &str = "drill.plunge_feed" => refuse(Danger::Tool, &[Stage::Export], Gate::LoadRowRefuses, Some(LoadOverride::AcceptExceeded));
+    pub const DRILL_CHIP_WELDING: &str = "drill.chip_welding" => warn(Danger::Tool);
+    pub const DRILL_PECK_ADEQUACY: &str = "drill.peck_adequacy" => warn(Danger::Tool);
+    pub const DRILL_PLUNGE_FEED: &str = "drill.plunge_feed" => warn(Danger::Tool);
 
     // ── Project verdicts ─────────────────────────────────────────────────
-    pub const PROJECT_HOLDER_COLLISION: &str = "project.holder_collision" => refuse(Danger::Machine, &[Stage::Export], Gate::GuiConfirm, None);
+    pub const PROJECT_HOLDER_COLLISION: &str = "project.holder_collision" => warn(Danger::Machine);
     /// The holder/shank collision check could not answer for a toolpath.
     ///
     /// Deliberately NOT [`PROJECT_HOLDER_COLLISION`] (CMP-14): one rule says
@@ -134,7 +140,7 @@ diag_ids! {
     /// Collapsing them into one id is the measured-zero-against-not-measured
     /// defect the `diagnostics/` contract names.
     pub const PROJECT_HOLDER_CHECK_FAILED: &str = "project.holder_check_failed" => warn(Danger::Machine);
-    pub const PROJECT_RAPID_COLLISION: &str = "project.rapid_collision" => refuse(Danger::Machine, &[Stage::Export], Gate::GuiConfirm, None);
+    pub const PROJECT_RAPID_COLLISION: &str = "project.rapid_collision" => warn(Danger::Machine);
     /// K1: a move puts the tool (cutter, shank or holder) inside an obstacle
     /// of its setup: a fixture or a keep-out zone.
     pub const PROJECT_OBSTACLE_COLLISION: &str = "project.obstacle_collision" => warn(Danger::Machine);
@@ -280,14 +286,14 @@ diag_ids! {
     // ── Static geometric / tool-op checks ────────────────────────────────
     pub const GEOM_STEPOVER_EXCEEDS_DIAMETER: &str = "geom.stepover_exceeds_diameter" => warn(Danger::Tool);
     pub const GEOM_DPP_EXCEEDS_CUTTING_LENGTH: &str = "geom.dpp_exceeds_cutting_length" => warn(Danger::Tool);
-    pub const GEOM_BOTTOM_ABOVE_TOP_Z: &str = "geom.bottom_above_top_z" => refuse(Danger::Machine, &[Stage::Edit, Stage::Generate, Stage::Export], Gate::HeightRefuses, None);
+    pub const GEOM_BOTTOM_ABOVE_TOP_Z: &str = "geom.bottom_above_top_z" => warn(Danger::Machine);
     pub const GEOM_FEED_Z_BELOW_TOP_Z: &str = "geom.feed_z_below_top_z" => warn(Danger::Machine);
     pub const GEOM_RETRACT_Z_BELOW_FEED_Z: &str = "geom.retract_z_below_feed_z" => warn(Danger::Machine);
-    pub const GEOM_CLEARANCE_Z_BELOW_RETRACT_Z: &str = "geom.clearance_z_below_retract_z" => refuse(Danger::Machine, &[Stage::Edit, Stage::Generate, Stage::Export], Gate::HeightRefuses, None);
+    pub const GEOM_CLEARANCE_Z_BELOW_RETRACT_Z: &str = "geom.clearance_z_below_retract_z" => warn(Danger::Machine);
     /// F033: the retract plane is below the anchored Top Z, so the rapids
-    /// within the operation go through the material. Refuses the edit,
-    /// generation and export.
-    pub const GEOM_RETRACT_Z_BELOW_TOP_Z: &str = "geom.retract_z_below_top_z" => refuse(Danger::Machine, &[Stage::Edit, Stage::Generate, Stage::Export], Gate::HeightRefuses, None);
+    /// within the operation go through the material. K6: a Machine warning
+    /// on the edit, generation and export (it refused before P2).
+    pub const GEOM_RETRACT_Z_BELOW_TOP_Z: &str = "geom.retract_z_below_top_z" => warn(Danger::Machine);
     pub const GEOM_PLUNGE_EXCEEDS_FEED: &str = "geom.plunge_exceeds_feed" => warn(Danger::Part);
 
     /// A 2.5D operation's own depth dial puts its cut floor below the bottom of
@@ -429,8 +435,11 @@ diag_ids! {
 
     // ── Tool / operation compatibility ───────────────────────────────────
     /// W2.2: the operation's registry row refuses the tool kind
-    /// (`tool_constraints`). The message is the generator's refusal text.
-    pub const COMPAT_TOOL_KIND_REFUSED: &str = "compat.tool_kind_refused" => refuse(Danger::Part, &[Stage::Generate], Gate::ToolKind, None);
+    /// (`tool_constraints`). The message is the registry's refusal text.
+    /// K6 (decision E1): a Part warning (`Critical`) when the generator can
+    /// compute with the tool; `Blocking`, and generation stops, when it
+    /// cannot (the V-bit ops read the V angle).
+    pub const COMPAT_TOOL_KIND_REFUSED: &str = "compat.tool_kind_refused" => warn(Danger::Part);
     pub const COMPAT_BALL_NOSE_FLAT_CLEARING: &str = "compat.ball_nose_on_flat_clearing" => INFO;
     /// A Project Curve set to Point projection. The tool tip follows the
     /// surface Z under the curve and the tool body is not tested against the
@@ -494,8 +503,9 @@ diag_ids! {
     pub const PRECOND_SELECTION_EMPTY: &str = "precondition.selection_empty" => NOT_READY;
     /// UX-1c (operator ruling 2026-10-22, SAFETY): a Chamfer, V-Carve,
     /// Inlay or Inlay Plug on fresh stock takes a face pick below the stock
-    /// top, so generation will refuse (`OperationError::BuriedFace`).
-    pub const PRECOND_BURIED_FACE: &str = "precondition.buried_face" => refuse(Danger::Part, &[Stage::Generate], Gate::BuriedFace, None);
+    /// top. K6 (decision E1): a Part warning; the op generates and records
+    /// the finding (`ToolpathStats::buried_face`).
+    pub const PRECOND_BURIED_FACE: &str = "precondition.buried_face" => warn(Danger::Part);
     /// S11 (operator ruling 2026-10-23): a value with no derivation is not
     /// set (the floor, a depth of a drawing op, or the feeds of a tool with
     /// no feeds data), so generation will refuse. The message names each
@@ -508,18 +518,18 @@ diag_ids! {
     pub const PRECOND_NO_TOOL: &str = "precondition.no_tool" => NOT_READY;
     /// UX-7b (operator rulings 2026-10-22, SAFETY): the emitted moves of a
     /// 2.5D op cut into the mesh of its own model
-    /// (`compute::model_gouge`). Blocking: export refuses while it stands
-    /// (`ExportRefusal::CutsIntoModel`). B2: Caution when a 3D Rough cuts
+    /// (`compute::model_gouge`). Blocking in severity; K6: the export warns
+    /// on it while it stands (`Danger::Part`). B2: Caution when a 3D Rough cuts
     /// into its stock to leave only (`ModelGougeFinding::severity`).
-    pub const SAFETY_CUTS_INTO_MODEL: &str = "safety.cuts_into_model" => refuse(Danger::Part, &[Stage::Generate, Stage::Export], Gate::GougeBlocks, None);
+    pub const SAFETY_CUTS_INTO_MODEL: &str = "safety.cuts_into_model" => warn(Danger::Part);
     /// G-CENTRECUT (SAFETY): an entry had to plunge a tool that does not
     /// cut at its centre straight into stock deeper than its blade
     /// protrusion (`Produced::non_centre_cutting_refusal`).
-    pub const SAFETY_NON_CENTRE_CUTTING_PLUNGE: &str = "safety.non_centre_cutting_plunge" => refuse(Danger::Tool, &[Stage::Generate], Gate::CentreCutPlunge, None);
+    pub const SAFETY_NON_CENTRE_CUTTING_PLUNGE: &str = "safety.non_centre_cutting_plunge" => warn(Danger::Tool);
     /// G-CENTRECUT (SAFETY): the simulation shows a tool that does not cut
     /// at its centre going down into wood steeper than its limit angle
     /// (`compute::simulate::non_centre_cutting_refusal_rows`).
-    pub const SAFETY_NON_CENTRE_CUTTING_DESCENT: &str = "safety.non_centre_cutting_descent" => refuse(Danger::Tool, &[Stage::Export], Gate::CentreCutDescent, None);
+    pub const SAFETY_NON_CENTRE_CUTTING_DESCENT: &str = "safety.non_centre_cutting_descent" => warn(Danger::Tool);
     pub const PRECOND_PROJECT_CURVE_NO_CURVE: &str = "precondition.project_curve_no_curve" => NOT_READY;
     pub const PRECOND_PROJECT_CURVE_NO_SURFACE: &str = "precondition.project_curve_no_surface" => NOT_READY;
 
@@ -534,5 +544,5 @@ diag_ids! {
     // ── Export ───────────────────────────────────────────────────────────
     /// An enabled op has no current result, so the export leaves it out
     /// (G-EXPORTSKIP, G-STALEXPORT).
-    pub const EXPORT_OP_LEFT_OUT: &str = "export.op_left_out" => refuse(Danger::Part, &[Stage::Export], Gate::NoCurrentResult, None);
+    pub const EXPORT_OP_LEFT_OUT: &str = "export.op_left_out" => warn(Danger::Part);
 }

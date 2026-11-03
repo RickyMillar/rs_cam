@@ -14,8 +14,12 @@
 //!
 //! Two rules this file pins, and the second is the safety one:
 //!
-//! - an exceedance whose source does not gate is REPORTED, not refused;
-//! - an exceedance with NO source still refuses. Absence fails safe.
+//! - an exceedance whose source does not gate is REPORTED as an advisory;
+//! - an exceedance with NO source still warns. Absence fails safe.
+//!
+//! K6 (feeds contract P2, ruling Q6): no row refuses an export now. A row
+//! that gated becomes an export warning with its id; the advisory rule
+//! above is unchanged.
 //!
 //! The arms run through the pure decision helpers, with hand-built
 //! `CriterionStatus` rows. That is deliberate: `RigidityRuleOfThumb`
@@ -29,9 +33,8 @@
     reason = "test code: a panic is how a test reports a failure"
 )]
 
-use rs_cam_core::gcode::{
-    ToolLoadExportPolicy, enforce_exceedance_policy, enforce_load_policy, refusing_exceedances,
-};
+use rs_cam_core::diagnostics::ids;
+use rs_cam_core::gcode::{exceedance_findings, load_findings, warning_exceedances};
 use rs_cam_core::ids::ToolpathId;
 use rs_cam_core::tool_load::verdict::{
     BoundSource, CriterionKind, CriterionStatus, ExceededCriterion, LoadState, PowerVerdict,
@@ -125,22 +128,22 @@ fn within_row() -> CriterionStatus<'static> {
 
 // ── (a) the filter itself ────────────────────────────────────────────
 
-/// A rule of thumb does not refuse. A machine ceiling does. A bound
+/// A rule of thumb does not warn. A machine ceiling does. A bound
 /// with no source does, because absence must fail safe.
 #[test]
-fn only_a_bound_with_a_gating_source_refuses() {
+fn only_a_bound_with_a_gating_source_warns() {
     let criteria = vec![
         within_row(),
         weak_exceedance(),
         power_exceedance(),
         sourceless_exceedance(),
     ];
-    let refusing = refusing_exceedances(&criteria);
-    let kinds: Vec<CriterionKind> = refusing.iter().map(|s| s.kind).collect();
+    let warning = warning_exceedances(&criteria);
+    let kinds: Vec<CriterionKind> = warning.iter().map(|s| s.kind).collect();
     assert_eq!(
         kinds,
         vec![CriterionKind::Power, CriterionKind::Chipload],
-        "the power ceiling and the sourceless bound refuse; the rule of thumb does not"
+        "the power ceiling and the sourceless bound warn; the rule of thumb does not"
     );
     // Non-vacuity in both directions: the list held four rows, one of
     // which is not an exceedance at all.
@@ -155,12 +158,12 @@ fn only_a_bound_with_a_gating_source_refuses() {
 /// renderer and the gate cannot disagree about which rows are hard.
 #[test]
 fn the_row_predicate_agrees_with_the_filter() {
-    assert!(!weak_exceedance().refuses_export());
-    assert!(power_exceedance().refuses_export());
-    assert!(sourceless_exceedance().refuses_export());
+    assert!(!weak_exceedance().warns_on_export());
+    assert!(power_exceedance().warns_on_export());
+    assert!(sourceless_exceedance().warns_on_export());
     assert!(
-        !within_row().refuses_export(),
-        "a Within row refuses nothing"
+        !within_row().warns_on_export(),
+        "a Within row warns on nothing"
     );
 }
 
@@ -182,13 +185,18 @@ fn only_the_rule_of_thumb_declines_to_gate() {
 
 // ── (b) the decision, and what the operator reads ────────────────────
 
-/// A job whose only exceedance is weak exports, and the note names the
-/// row. Reported, not refused, is the whole ruling.
+/// A job whose only exceedance is weak warns on nothing, and the note
+/// names the row. Reported as an advisory is the whole ruling.
 #[test]
 fn a_weak_exceedance_alone_exports_and_is_still_reported() {
     let per = vec![(TP, vec![within_row(), weak_exceedance()])];
-    let outcome = enforce_exceedance_policy(&per, false).expect("a weak bound must not refuse");
-    let note = outcome
+    let found = exceedance_findings(&per);
+    assert!(
+        found.rows.is_empty(),
+        "a weak bound must not warn: {found:?}"
+    );
+    let note = found
+        .outcome
         .advisory_note()
         .expect("the operator must still be told");
     assert!(
@@ -209,74 +217,63 @@ fn a_weak_exceedance_alone_exports_and_is_still_reported() {
     );
     assert!(
         note.contains("rule of thumb"),
-        "the note says why it did not refuse: {note}"
+        "the note says why it did not warn: {note}"
     );
 }
 
-/// Add a power exceedance and the export is refused. The message names
-/// what refused AND what exceeded without refusing, so the operator
-/// sees both rather than one.
+/// Add a power exceedance and the export warns on it (K6: no refusal).
+/// The warning names what gated, and the advisory names what exceeded
+/// without gating, so the operator sees both rather than one.
 #[test]
-fn a_hard_exceedance_refuses_and_the_message_names_both() {
+fn a_hard_exceedance_warns_and_names_both() {
     let per = vec![(TP, vec![weak_exceedance(), power_exceedance()])];
-    let err = enforce_exceedance_policy(&per, false).expect_err("a power exceedance must refuse");
-    let msg = err.to_string();
-    assert!(msg.contains("refused"), "it is a refusal: {msg}");
+    let found = exceedance_findings(&per);
+    let row = found
+        .rows
+        .iter()
+        .find(|row| row.id == ids::LOAD_POWER_EXCEEDS)
+        .expect("a power exceedance must warn");
+    assert_eq!(found.rows.len(), 1, "only the power row gates: {found:?}");
     assert!(
-        msg.contains("power"),
-        "the message names what refused: {msg}"
+        row.detail.contains("power"),
+        "the warning names what gated: {}",
+        row.detail
     );
     assert!(
-        msg.contains("spindle power"),
-        "the message keeps the reason label: {msg}"
+        row.detail.contains("spindle power"),
+        "the warning keeps the reason label: {}",
+        row.detail
     );
-    assert!(
-        msg.contains("deflection"),
-        "the message also names what exceeded without refusing: {msg}"
-    );
-    assert!(
-        msg.contains("rule of thumb"),
-        "and says why that one did not refuse: {msg}"
-    );
-}
-
-/// With the override on, nothing refuses, and the weak row is still
-/// reported. The override is about danger, not about silence.
-#[test]
-fn the_override_never_hides_the_advisory() {
-    let per = vec![(TP, vec![weak_exceedance(), power_exceedance()])];
-    let outcome =
-        enforce_exceedance_policy(&per, true).expect("the override accepts the exceedance");
-    let note = outcome
+    let note = found
+        .outcome
         .advisory_note()
         .expect("the weak row is still reported");
-    assert!(note.contains("deflection"), "{note}");
-    // F051: the override keeps a record of what it waived.
-    assert_eq!(outcome.overridden.len(), 1, "{outcome:?}");
     assert!(
-        outcome
-            .overridden
-            .iter()
-            .all(|r| r.body().contains("power")),
-        "the record names the row the override waived: {outcome:?}"
+        note.contains("deflection"),
+        "the advisory names what exceeded without gating: {note}"
+    );
+    assert!(
+        note.contains("rule of thumb"),
+        "and says why that one did not warn: {note}"
     );
 }
 
-/// A clean list produces neither a refusal nor a note.
+/// A clean list produces neither a warning nor a note.
 #[test]
 fn nothing_exceeded_says_nothing() {
     let per = vec![(TP, vec![within_row()])];
-    let outcome = enforce_exceedance_policy(&per, false).expect("a clean list exports");
-    assert!(outcome.is_empty(), "silence is the right answer here");
+    let found = exceedance_findings(&per);
+    assert!(found.rows.is_empty(), "{found:?}");
+    assert!(found.outcome.is_empty(), "silence is the right answer here");
 }
 
-// ── (c) the shipped gate still refuses on the gates that gate ────────
+// ── (c) the shipped gate still warns on the gates that gate ──────────
 
 /// The anchor. Every arm above runs on hand-built rows; this one runs
-/// the shipped `enforce_load_policy` on a real report, so the file
-/// cannot pass while the export gate has stopped refusing.
+/// the shipped `load_findings` on a real report, so the file cannot pass
+/// while the export has stopped warning.
 #[test]
-fn the_shipped_gate_still_refuses_a_deflection_exceedance() {
+fn the_shipped_gate_still_warns_on_a_deflection_exceedance() {
     let report = ToolLoadReport {
         per_toolpath: vec![ToolpathLoadVerdict {
             toolpath_id: TP,
@@ -307,13 +304,13 @@ fn the_shipped_gate_still_refuses_a_deflection_exceedance() {
             material_split: None,
         }],
     };
-    let strict = ToolLoadExportPolicy {
-        accept_unmodeled: true,
-        accept_exceeded: false,
-    };
-    let err = enforce_load_policy(&report, &strict)
-        .expect_err("the deflection budget is a stated bound and must still refuse");
-    let msg = err.to_string();
+    let found = load_findings(&report);
+    let row = found
+        .rows
+        .iter()
+        .find(|row| row.id == ids::LOAD_DEFLECTION_EXCEEDS)
+        .expect("the deflection budget is a stated bound and must still warn");
+    let msg = &row.detail;
     assert!(msg.contains("toolpath 4"), "{msg}");
     assert!(msg.contains("deflection"), "{msg}");
 }

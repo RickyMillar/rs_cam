@@ -34,8 +34,9 @@
 
 use rs_cam_core::compute::catalog::{ItemUse, OperationType};
 use rs_cam_core::compute::config::BoundaryContainment;
-use rs_cam_core::compute::execute::GenerationFindings;
+use rs_cam_core::compute::execute::{BuriedFaceRefusal, BuriedUnder, GenerationFindings};
 use rs_cam_core::compute::model_gouge::ModelGougeFinding;
+use rs_cam_core::compute::tool_config::NonCentreCuttingRefusal;
 use rs_cam_core::compute::toolpath_stats::{
     BandHeightClip, BoundaryClipDroppedFinding, BuriedCurveFinding, ClaimsReferenceFinding,
     ClippedBandFinding, DerivedStepoverFinding, DroppedBandFinding, HeightClip,
@@ -317,6 +318,19 @@ fn every_finding_recorded() -> GenerationFindings {
             below_surface_mm: 5.0,
             at_wall: false,
         }),
+        // K6 (G-CENTRECUT). An entry plunge, so a dropped channel reads as
+        // `None`.
+        non_centre_cutting_plunge: Some(NonCentreCuttingRefusal {
+            at: P3::new(1.0, 2.0, -3.0),
+            depth_mm: 3.5,
+            max_plunge_depth_mm: 0.5,
+        }),
+        // K6 (UX-1c). A buried face, the same rule.
+        buried_face: Some(BuriedFaceRefusal {
+            op: "Chamfer",
+            buried_mm: 12.0,
+            under: BuriedUnder::StockTop,
+        }),
     }
 }
 
@@ -365,6 +379,8 @@ fn every_recorded_finding_survives_the_single_join() {
         monotone_cells,
         rest_levels,
         model_gouge,
+        non_centre_cutting_plunge,
+        buried_face,
         // NOT a finding: S-4's snapshot provenance arrives as the join's
         // fourth PARAMETER, because only the caller knows which
         // machined-stock snapshot the generator was handed. This arm passes
@@ -417,6 +433,11 @@ fn every_recorded_finding_survives_the_single_join() {
     assert_eq!(monotone_cells, findings.monotone_cells);
     assert_eq!(rest_levels, findings.rest_levels);
     assert_eq!(model_gouge, findings.model_gouge);
+    assert_eq!(
+        non_centre_cutting_plunge,
+        findings.non_centre_cutting_plunge
+    );
+    assert_eq!(buried_face, findings.buried_face);
 }
 
 /// (b) The join is `compute_stats_with_spans` PLUS findings — it does not

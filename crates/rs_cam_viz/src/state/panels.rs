@@ -199,19 +199,22 @@ pub struct PanelDrafts {
     /// panel's scale, join tolerance and "Join all within"), by widget id,
     /// while the field is dragged or has focus (ui09).
     pub number_drafts: NumberDrafts,
-    /// The last refused heights edit of the selected toolpath (F033). The
-    /// Heights tab draws it as the state of the row it edited.
+    /// The last heights edit of the selected toolpath that broke the plane
+    /// order (F033; K6: written and warned, not refused). The Heights tab
+    /// draws it as the state of the row it edited.
     pub heights_refusal: HeightsRefusal,
     /// G-C (D-2): the `⟲` badge of a containment the `Rest Regions` pick
     /// set to `Inside`, scoped to its toolpath.
     pub containment_autocorrect: ContainmentAutoCorrect,
 }
 
-/// The last refused heights edit (F033), which the Heights tab draws as the
-/// state of the row it edited for [`HeightsRefusal::SHOW_S`] seconds.
+/// The last heights edit that broke the plane order (F033), which the
+/// Heights tab draws as the state of the row it edited for
+/// [`HeightsRefusal::SHOW_S`] seconds. K6: the edit is written; this is its
+/// warning.
 ///
 /// The order gate (`ui::properties::admit_heights_edit`) writes it, and an
-/// accepted edit clears it. Before UI-09 it was held in egui memory under
+/// edit in order clears it. Before UI-09 it was held in egui memory under
 /// one global id. The slot holds the toolpath it belongs to, so the tab of
 /// another toolpath does not show it.
 #[derive(Debug, Default, Clone, PartialEq)]

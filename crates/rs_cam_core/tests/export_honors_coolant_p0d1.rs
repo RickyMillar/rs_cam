@@ -67,7 +67,7 @@ use std::sync::Arc;
 
 use rs_cam_core::compute::catalog::OperationConfig;
 use rs_cam_core::compute::operation_configs::PocketConfig;
-use rs_cam_core::gcode::{CoolantMode, ToolLoadExportPolicy};
+use rs_cam_core::gcode::CoolantMode;
 use rs_cam_core::geo::P3;
 use rs_cam_core::session::{AdoptResultArgs, Command, ProjectSession, ToolpathComputeResult};
 use rs_cam_core::toolpath::Toolpath;
@@ -135,12 +135,8 @@ fn session_with_coolant(coolant: CoolantMode) -> ProjectSession {
 }
 
 fn export(session: &ProjectSession) -> String {
-    let policy = ToolLoadExportPolicy {
-        accept_unmodeled: true,
-        accept_exceeded: true,
-    };
     session
-        .export_gcode_checked(None, policy)
+        .export_gcode_checked(None)
         .expect("the core door exports")
         .gcode
 }

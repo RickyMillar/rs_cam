@@ -2,8 +2,74 @@ use super::AppEvent;
 use crate::state::AppState;
 use crate::ui::readiness::{self, CheckStatus, CycleTimeBasisExt};
 use crate::ui::theme;
-use crate::ui_command::{SetToolLoadOverrideArgs, UiCommand};
+use crate::ui_command::UiCommand;
+use rs_cam_core::diagnostics::Danger;
+use rs_cam_core::gcode::ExportWarning;
 use rs_cam_core::tool_load::{ToolLoadReport, ToolpathLoadVerdict};
+
+/// K6 (ruling Q6): the count of the export warnings per [`Danger`], in
+/// chip order. One chip per danger with a count above zero; the hover
+/// lists `id · toolpath`.
+#[must_use]
+pub fn danger_counts(warnings: &[ExportWarning]) -> Vec<(Danger, usize)> {
+    Danger::ALL
+        .iter()
+        .map(|&danger| {
+            (
+                danger,
+                warnings.iter().filter(|w| w.danger == danger).count(),
+            )
+        })
+        .collect()
+}
+
+/// K6 (operator ruling on the mock, 2026-11-03): the Export button takes
+/// the Danger style while a Machine warning stands; one click is the
+/// confirm. Nothing else waits or blocks.
+#[must_use]
+pub fn export_asks_a_click(warnings: &[ExportWarning]) -> bool {
+    warnings.iter().any(|w| w.danger == Danger::Machine)
+}
+
+/// The chip role of a danger: the theme's role colours, no new colour.
+/// The pre-flight chips and the toolpath row (F20, K6) read this one map.
+#[must_use]
+pub fn danger_role(danger: Danger) -> crate::ui::components::Role {
+    use crate::ui::components::Role;
+    match danger {
+        Danger::Machine => Role::Danger,
+        Danger::Tool => Role::Caution,
+        Danger::Part => Role::Info,
+    }
+}
+
+/// K6: the chip row. Colour and count, no sentence; the hover lists the
+/// `id · toolpath` rows of the chip.
+fn draw_danger_chips(ui: &mut egui::Ui, warnings: &[ExportWarning]) {
+    let counts = danger_counts(warnings);
+    if counts.iter().all(|(_, n)| *n == 0) {
+        return;
+    }
+    ui.horizontal(|ui| {
+        for (danger, count) in counts {
+            if count == 0 {
+                continue;
+            }
+            let rows: Vec<String> = warnings
+                .iter()
+                .filter(|w| w.danger == danger)
+                .map(|w| format!("{} \u{00B7} {}", w.id, w.toolpath))
+                .collect();
+            ui.add(
+                crate::ui::components::StatusChip::new(
+                    format!("{} {count}", danger.label()),
+                    danger_role(danger),
+                )
+                .hover(rows.join("\n")),
+            );
+        }
+    });
+}
 
 /// Draw the pre-flight checklist modal. Returns true if still open.
 pub fn draw(ctx: &egui::Context, state: &AppState, events: &mut Vec<AppEvent>) -> bool {
@@ -35,41 +101,6 @@ pub fn draw(ctx: &egui::Context, state: &AppState, events: &mut Vec<AppEvent>) -
                 &mut still_open,
             );
 
-            // --- Operations that are not current (G-EXPORTSKIP,
-            // G-STALEXPORT) ---
-            // One row per ENABLED op whose result is not the answer for the
-            // configuration on screen, printing the same sentence the
-            // export refusal prints — one text builder
-            // (`io::export::blocking_toolpath_message`), three callers
-            // (here, the export, MCP `export_gcode`). Pre-fix the export
-            // silently skipped an ungenerated op and silently emitted an
-            // EDITED op's previous geometry, while this modal said
-            // "3/4 computed".
-            let blocking = crate::io::export::blocking_toolpaths(
-                state.session(),
-                &state.gui,
-                0..state.session().toolpath_configs().len(),
-                state.gui.stale_export,
-            );
-            for blocker in &blocking {
-                let (status, label) = if blocker.waived_by_operator {
-                    (CheckStatus::Warning, "Accepted — exports previous geometry")
-                } else {
-                    (CheckStatus::Fail, "Blocks export")
-                };
-                check_card(
-                    ui,
-                    status,
-                    label,
-                    &blocker.message,
-                    "Toolpaths",
-                    Some(AppEvent::Ui(UiCommand::SwitchWorkspace(
-                        crate::state::Workspace::Toolpaths,
-                    ))),
-                    events,
-                    &mut still_open,
-                );
-            }
             // W2.5 (D10): an op whose stored feeds were modulated from a
             // simulation the session no longer holds. A caution, never a
             // block; the export door reports the same lines.
@@ -90,10 +121,6 @@ pub fn draw(ctx: &egui::Context, state: &AppState, events: &mut Vec<AppEvent>) -
                     &mut still_open,
                 );
             }
-            let ungenerated_blocks = blocking.iter().any(|b| !b.waived_by_operator);
-            let any_edited_since = blocking
-                .iter()
-                .any(|b| b.freshness == crate::state::freshness::FreshnessState::EditedSince);
 
             // --- Simulation check ---
             let sim_status = readiness::simulation_check(state);
@@ -152,7 +179,8 @@ pub fn draw(ctx: &egui::Context, state: &AppState, events: &mut Vec<AppEvent>) -
             // sim state, not session.simulation)
             let load_report = readiness::load_report(state);
             let tool_load_status = readiness::tool_load_check(&load_report);
-            let tool_load_detail = tool_load_summary_detail(&load_report);
+            let tool_load_detail =
+                tool_load_summary_detail(&load_report, simulation_kept_no_trace(state));
             check_card(
                 ui,
                 tool_load_status,
@@ -224,103 +252,32 @@ pub fn draw(ctx: &egui::Context, state: &AppState, events: &mut Vec<AppEvent>) -
             ui.separator();
             ui.add_space(4.0);
 
-            // --- Tool-load override checkboxes (two distinct flags) ───────
-            let load_blocked_unmodeled = load_report.any_unmodeled();
-            let load_blocked_exceeded = load_report.any_exceeded();
-            if load_blocked_unmodeled || load_blocked_exceeded {
-                draw_tool_load_overrides(ui, state, &load_report, events);
-                ui.add_space(4.0);
-            }
-
-            // --- Edited-since acceptance (G-STALEXPORT) ---
-            if any_edited_since {
-                draw_stale_export_acceptance(ui, state, events);
-                ui.add_space(4.0);
-            }
-
-            // K6: the collisions ask for a confirm while the column says so.
-            let has_failures = (sim.checks.holder_collision_count > 0
-                || !sim.checks.rapid_collisions.is_empty())
-                && rs_cam_core::diagnostics::Gate::GuiConfirm
-                    .refuses_at(rs_cam_core::diagnostics::Stage::Export);
-
-            if has_failures {
-                ui.add_space(4.0);
-                let error_color = crate::ui::tokens::DANGER;
-                egui::Frame::default()
-                    .fill(crate::ui::tokens::TINT_DANGER)
-                    .stroke(egui::Stroke::new(1.5_f32, error_color))
-                    .inner_margin(8.0)
-                    .corner_radius(4)
-                    .show(ui, |ui| {
-                        ui.label(
-                            egui::RichText::new("\u{26A0} Exporting with unresolved collisions")
-                                .strong()
-                                .color(crate::ui::tokens::DANGER),
-                        );
-                        ui.add_space(4.0);
-                        // Use egui memory for checkbox state
-                        let confirm_id = egui::Id::new("preflight_export_confirm");
-                        let mut confirmed =
-                            ui.data(|d| d.get_temp::<bool>(confirm_id).unwrap_or(false));
-                        ui.checkbox(&mut confirmed, "I understand the risks");
-                        ui.data_mut(|d| d.insert_temp(confirm_id, confirmed));
-                    });
-                ui.add_space(4.0);
-            }
-
-            // The export gate would refuse with the current overrides:
-            // (Exceeds without `accept_exceeded`) or (Unmodeled without `accept_unmodeled`).
-            let overrides = state.gui.tool_load_overrides;
-            let load_gate_blocks = (load_blocked_exceeded && !overrides.accept_exceeded)
-                || (load_blocked_unmodeled && !overrides.accept_unmodeled);
-            // The export itself refuses on an ungenerated enabled op
-            // (G-EXPORTSKIP), so the button says so here instead of
-            // letting the click fail in the file dialog.
-            let export_blocked = load_gate_blocks || ungenerated_blocks;
+            // K6 (ruling Q6, the agreed mock): one chip row, then the
+            // button row. No finding refuses; an op with no current result
+            // is in the Part chip (`export.op_left_out`).
+            let warnings = crate::io::export::preflight_warnings(state.session(), &state.gui, sim);
+            draw_danger_chips(ui, &warnings);
+            // The holder check of the GUI (`RunCollisionCheck`) is not in the
+            // session's simulation, so its count asks for the click too.
+            let asks_a_click = export_asks_a_click(&warnings)
+                || sim.checks.holder_collision_count > 0
+                || !sim.checks.rapid_collisions.is_empty();
+            ui.add_space(4.0);
 
             ui.horizontal(|ui| {
-                if has_failures {
-                    let confirm_id = egui::Id::new("preflight_export_confirm");
-                    let confirmed = ui.data(|d| d.get_temp::<bool>(confirm_id).unwrap_or(false));
-                    // Exporting past a failed check is the most destructive
-                    // thing this product does, so it takes the Danger
-                    // variant. It carried two hand-mixed reds,
-                    // (180, 50, 40) and (80, 40, 40), which were the fourth
-                    // and fifth reds in a product whose palette has one.
-                    // The armed and unarmed states now differ by ENABLEMENT,
-                    // which is the channel that already gates the click,
-                    // rather than by a private shade.
-                    let btn = crate::ui::components::Button::danger("Export Anyway")
-                        .enabled(confirmed && !export_blocked);
-                    if ui.add(btn).clicked() {
-                        events.push(AppEvent::ExportGcodeConfirmed);
-                        still_open = false;
-                    }
-                } else {
-                    let btn = egui::Button::new("Export G-code");
-                    if ui.add_enabled(!export_blocked, btn).clicked() {
-                        events.push(AppEvent::ExportGcodeConfirmed);
-                        still_open = false;
-                    }
-                }
-
-                if load_gate_blocks {
-                    ui.label(
-                        egui::RichText::new("Tool-load gate blocks export")
-                            .small()
-                            .color(theme::ERROR),
-                    );
-                }
-                if ungenerated_blocks {
-                    ui.label(
-                        egui::RichText::new("Operations without a current result block export")
-                            .small()
-                            .color(theme::ERROR),
-                    );
-                }
-
                 if ui.button("Cancel").clicked() {
+                    still_open = false;
+                }
+                // Exporting past a machine warning is the most destructive
+                // thing this product does, so it takes the Danger variant;
+                // the one click is the confirm.
+                let btn = if asks_a_click {
+                    crate::ui::components::Button::danger("Export")
+                } else {
+                    crate::ui::components::Button::new("Export")
+                };
+                if ui.add(btn).clicked() {
+                    events.push(AppEvent::ExportGcodeConfirmed);
                     still_open = false;
                 }
             });
@@ -422,7 +379,10 @@ fn check_card(
     ui.add_space(2.0);
 }
 
-fn tool_load_summary_detail(report: &ToolLoadReport) -> String {
+/// The detail of the Tool load model card. U3: after a run with no cut
+/// trace, an unmodelled report names the missing trace
+/// ([`unmodeled_reason_label`]), not "simulation has not been run".
+fn tool_load_summary_detail(report: &ToolLoadReport, trace_less: bool) -> String {
     let total = report.per_toolpath.len();
     if total == 0 {
         return "No toolpaths to evaluate".to_owned();
@@ -443,139 +403,19 @@ fn tool_load_summary_detail(report: &ToolLoadReport) -> String {
             exceeded.len(),
             total
         )
+    } else if unmodeled > 0 && trace_less {
+        format!(
+            "{unmodeled} of {total} toolpath(s) have unmodeled criteria: {}",
+            unmodeled_reason_label(
+                &rs_cam_core::tool_load::UnmodeledReason::SimulationRequired,
+                true
+            )
+        )
     } else if unmodeled > 0 {
         format!("{unmodeled} of {total} toolpath(s) have unmodeled criteria")
     } else {
         format!("{total} toolpath(s) within all modeled bounds")
     }
-}
-
-/// Render the acceptance for operations edited since they were generated
-/// (G-STALEXPORT).
-///
-/// Separate from the tool-load overrides and never folded into them: the
-/// tool-load flags accept a predicted CONSEQUENCE of cutting the emitted
-/// geometry, and this one accepts emitting DIFFERENT geometry from the
-/// one the panel shows. The checkbox says that in those words rather than
-/// "export anyway", because that is the decision being made.
-fn draw_stale_export_acceptance(ui: &mut egui::Ui, state: &AppState, events: &mut Vec<AppEvent>) {
-    use crate::state::runtime::StaleResultPolicy;
-
-    egui::Frame::default()
-        .fill(crate::ui::tokens::TINT_CAUTION)
-        .stroke(egui::Stroke::new(1.5_f32, theme::WARNING))
-        .inner_margin(8.0)
-        .corner_radius(4)
-        .show(ui, |ui| {
-            ui.label(
-                egui::RichText::new("Edited since generation")
-                    .strong()
-                    .color(theme::WARNING),
-            );
-            ui.add_space(2.0);
-            ui.label(
-                egui::RichText::new(
-                    "The stored result for the operations above is the geometry from \
-                     before the edit. Regenerating them is the fix.",
-                )
-                .small()
-                .color(theme::TEXT_MUTED),
-            );
-            ui.add_space(4.0);
-            let mut accepted = state.gui.stale_export.accepts_previous_geometry();
-            if ui
-                .checkbox(
-                    &mut accepted,
-                    "Cut the PREVIOUS geometry — the file will not match the parameters on screen",
-                )
-                .changed()
-            {
-                events.push(AppEvent::Ui(UiCommand::SetStaleExportPolicy(if accepted {
-                    StaleResultPolicy::AcceptPreviousGeometry
-                } else {
-                    StaleResultPolicy::Refuse
-                })));
-            }
-        });
-}
-
-/// Render the tool-load override panel: per-criterion summary and the two
-/// distinct override checkboxes. Each checkbox bypasses a single class of
-/// refusal — they are deliberately not collapsed into a single "I accept the
-/// risk" toggle, because `Unmodeled` (we don't know) and `Exceeds` (we know
-/// it's bad) are different classes of acceptance.
-fn draw_tool_load_overrides(
-    ui: &mut egui::Ui,
-    state: &AppState,
-    report: &ToolLoadReport,
-    events: &mut Vec<AppEvent>,
-) {
-    let any_exceeded = report.any_exceeded();
-    let any_unmodeled = report.any_unmodeled();
-    let frame_color = if any_exceeded {
-        crate::ui::tokens::TINT_DANGER
-    } else {
-        crate::ui::tokens::TINT_CAUTION
-    };
-    let stroke_color = if any_exceeded {
-        theme::ERROR
-    } else {
-        theme::WARNING
-    };
-    egui::Frame::default()
-        .fill(frame_color)
-        .stroke(egui::Stroke::new(1.5_f32, stroke_color))
-        .inner_margin(8.0)
-        .corner_radius(4)
-        .show(ui, |ui| {
-            ui.label(
-                egui::RichText::new("Safety / Tool Load gate")
-                    .strong()
-                    .color(stroke_color),
-            );
-            ui.add_space(2.0);
-
-            // U3: a simulation with no cut trace is not "no simulation".
-            let trace_less = simulation_kept_no_trace(state);
-            for verdict in &report.per_toolpath {
-                if !verdict.any_exceeded() && !verdict.any_unmodeled() {
-                    continue;
-                }
-                let line = format_verdict_line(verdict, trace_less);
-                ui.label(egui::RichText::new(line).small().color(theme::TEXT_MUTED));
-            }
-            ui.add_space(4.0);
-
-            let mut overrides = state.gui.tool_load_overrides;
-            let mut changed = false;
-
-            if any_unmodeled {
-                let resp = ui.checkbox(
-                    &mut overrides.accept_unmodeled,
-                    "Accept unmodeled criteria (criterion could not be evaluated)",
-                );
-                if resp.changed() {
-                    changed = true;
-                }
-            }
-            if any_exceeded {
-                let resp = ui.checkbox(
-                    &mut overrides.accept_exceeded,
-                    "Accept EXCEEDED criteria (predicted to break tool / exceed power)",
-                );
-                if resp.changed() {
-                    changed = true;
-                }
-            }
-            if changed {
-                events.push(AppEvent::Ui(UiCommand::SetToolLoadOverride(
-                    SetToolLoadOverrideArgs {
-                        accept_unmodeled: overrides.accept_unmodeled,
-                        accept_exceeded: overrides.accept_exceeded,
-                    },
-                )));
-            }
-        });
 }
 
 /// A simulation result exists, and it holds no cut trace.
@@ -591,7 +431,7 @@ pub(crate) fn simulation_kept_no_trace(state: &AppState) -> bool {
         .is_some_and(|results| results.cut_trace.is_none())
 }
 
-/// The reason of an unmodelled criterion in the gate panel.
+/// The reason of an unmodelled criterion on the Tool load model card.
 ///
 /// F080: the clause is core's
 /// [`rs_cam_core::tool_load::UnmodeledReason::operator_text`]. One arm keeps
@@ -615,60 +455,12 @@ pub(crate) fn unmodeled_reason_label(
     }
 }
 
-fn format_verdict_line(verdict: &ToolpathLoadVerdict, trace_less: bool) -> String {
-    use rs_cam_core::tool_load::verdict::{
-        ChipSide, ChiploadVerdict, DeflectionVerdict, PowerVerdict,
-    };
-    let mut parts: Vec<String> = Vec::new();
-    match &verdict.chipload {
-        ChiploadVerdict::Exceeds { side, .. } => {
-            let label = match side {
-                ChipSide::Low => "ChiploadBurnRisk",
-                ChipSide::High => "ChiploadBreakageRisk",
-            };
-            parts.push(format!("advance/tooth: EXCEEDS ({label})"));
-        }
-        ChiploadVerdict::Unmodeled { reason } => {
-            parts.push(format!(
-                "advance/tooth: unmodeled ({})",
-                unmodeled_reason_label(reason, trace_less)
-            ));
-        }
-        ChiploadVerdict::Within { .. } => {}
-    }
-    match &verdict.power {
-        PowerVerdict::Exceeds { .. } => {
-            parts.push("power: EXCEEDS (SpindlePowerExceeded)".to_owned());
-        }
-        PowerVerdict::Unmodeled { reason } => {
-            parts.push(format!(
-                "power: unmodeled ({})",
-                unmodeled_reason_label(reason, trace_less)
-            ));
-        }
-        PowerVerdict::Within { .. } => {}
-    }
-    match &verdict.deflection {
-        DeflectionVerdict::Exceeds { .. } => {
-            parts.push("deflection: EXCEEDS (LongToolStiffnessUnsafe)".to_owned());
-        }
-        DeflectionVerdict::Unmodeled { reason } => {
-            parts.push(format!(
-                "deflection: unmodeled ({})",
-                unmodeled_reason_label(reason, trace_less)
-            ));
-        }
-        DeflectionVerdict::Within { .. } => {}
-    }
-    format!("TP {}: {}", verdict.toolpath_id, parts.join(" \u{00B7} "))
-}
-
 #[cfg(test)]
 mod tests {
     use super::unmodeled_reason_label;
     use rs_cam_core::tool_load::UnmodeledReason;
 
-    /// U3: after a run with no cut trace, the gate panel names the missing
+    /// U3: after a run with no cut trace, the Tool load card names the missing
     /// trace, not "simulation has not been run". It names no capture
     /// control: every run captures the trace (operator ruling 2026-10-02).
     #[test]
@@ -679,7 +471,7 @@ mod tests {
         assert!(text.contains("re-run the simulation"), "{text}");
     }
 
-    /// With no simulation the gate panel prints core's one clause (F080).
+    /// With no simulation the card prints core's one clause (F080).
     #[test]
     fn no_simulation_reads_the_core_clause() {
         assert_eq!(

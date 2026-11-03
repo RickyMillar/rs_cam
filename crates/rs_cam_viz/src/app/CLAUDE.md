@@ -27,9 +27,10 @@ The egui application, its per-frame work and the GUI-side MCP requests. The serv
 
 - An MCP mutation dispatches through the same command path as the UI. S11: `add_toolpath` drafts with core `draft_toolpath` and replies `unset` (R2/Q7: no `tool_index` = first fitting tool, reply `no_tool`; no `model_id` = the core model rule; `add_toolpath_via_gui` `model_id` = the selected model; parity `every_add_door_takes_one_model_and_tool_q7`); `get_toolpath_params` gives `unset`; `import_model` gives `stock_thickness_set`.
 - A setter stales the result. Regenerate before you export. Tool and model rebinding uses its own endpoint, not a generic setter.
-- Export refuses missing or stale enabled geometry, and an unsafe or unmodelled load verdict, unless
-  the caller accepts the override. An MCP export reports the machine-safety findings beside the path
-  it wrote: take `io::export`'s reporting door; do not re-run the validator.
+- K6 (ruling Q6): export refuses no finding and takes no override. It leaves out an enabled op with no
+  current result and names it (`export.op_left_out`), and names each warning in the reply and the
+  G-code header. An MCP export reports the machine-safety findings and the warnings beside the path it
+  wrote: take `io::export`'s reporting door; do not re-run the validator.
 - Use `generation_status` and `cancel_generation` for a long job. Do not queue a second generation.
 - An MCP screenshot is visual evidence, not a core test. Capture after the frame applied the view.
 - Read `mcp/CLAUDE.md` before you change the pump, the `mcp-server` thread or the winit host exit.

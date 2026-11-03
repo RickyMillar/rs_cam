@@ -469,8 +469,9 @@ impl HeightOrderViolation {
         },
     ];
 
-    /// True when this violation refuses the edit, generation and export.
-    /// THE severity split: change it here and every surface follows.
+    /// True when this violation is `Critical`: the edit, generation and
+    /// export name it as a Machine warning (K6, ruling Q6: it refused before
+    /// P2). THE severity split: change it here and every surface follows.
     ///
     /// Operator ruling 2 refuses an inverted stack. The retract, the top and
     /// the bottom reach the emitted motion, so a break between them refuses.
@@ -487,6 +488,20 @@ impl HeightOrderViolation {
             | Self::RetractBelowTop { .. }
             | Self::BottomNotBelowTop { .. } => true,
             Self::RetractBelowFeed { .. } | Self::FeedBelowTop { .. } => false,
+        }
+    }
+
+    /// The diagnostic id of this break (`diagnostics::ids`, the `geom.*`
+    /// rows). The diagnostics and the export warnings read it.
+    #[must_use]
+    pub const fn id(self) -> &'static str {
+        use crate::diagnostics::ids;
+        match self {
+            Self::ClearanceBelowRetract { .. } => ids::GEOM_CLEARANCE_Z_BELOW_RETRACT_Z,
+            Self::RetractBelowTop { .. } => ids::GEOM_RETRACT_Z_BELOW_TOP_Z,
+            Self::RetractBelowFeed { .. } => ids::GEOM_RETRACT_Z_BELOW_FEED_Z,
+            Self::FeedBelowTop { .. } => ids::GEOM_FEED_Z_BELOW_TOP_Z,
+            Self::BottomNotBelowTop { .. } => ids::GEOM_BOTTOM_ABOVE_TOP_Z,
         }
     }
 

@@ -27,8 +27,8 @@
 //! The live walk of the simulator (`RapidClearanceCheck` with the tool's
 //! limits) on hand-made moves over fresh stock: a 5 mm plunge and a 30 deg
 //! ramp into stock strike; a 0.8 mm plunge, a 5 deg ramp and a long descent
-//! in air do not. A centre-cutting tool never strikes. The export door
-//! refuses on a strike with no override.
+//! in air do not. A centre-cutting tool never strikes. K6 (ruling Q6): the
+//! export warns on a strike; nothing refuses.
 
 #![expect(
     clippy::expect_used,
@@ -119,7 +119,7 @@ fn rough_and_simulate(entry_style: Adaptive3dEntryStyle) -> rs_cam_core::session
 }
 
 /// The sentry: every entry style of a 3D Rough keeps the bulk bit inside
-/// its limits, and the export door does not refuse.
+/// its limits, and the export door does not warn on the centre.
 #[test]
 fn a_rough_with_a_non_centre_cutting_bit_keeps_its_limits() {
     for style in [
@@ -141,16 +141,16 @@ fn a_rough_with_a_non_centre_cutting_bit_keeps_its_limits() {
             sim.non_centre_cutting_descents.len(),
             sim.non_centre_cutting_descents.first()
         );
-        let refusal = session.export_gcode_checked(
-            sim.cut_trace.as_deref(),
-            rs_cam_core::gcode::ToolLoadExportPolicy::default(),
-        );
+        let exported = session
+            .export_gcode_checked(sim.cut_trace.as_deref())
+            .expect("the export writes the program");
         assert!(
-            !matches!(
-                refusal,
-                Err(rs_cam_core::gcode::ExportRefusal::NonCentreCuttingDescent { .. })
-            ),
-            "{style:?}: the export must not refuse on the centre"
+            !exported
+                .warnings
+                .iter()
+                .any(|w| w.id == rs_cam_core::diagnostics::ids::SAFETY_NON_CENTRE_CUTTING_DESCENT),
+            "{style:?}: the export must not warn on the centre: {:?}",
+            exported.warnings
         );
     }
 }
@@ -256,13 +256,22 @@ fn the_gate_sees_the_core_go_into_wood() {
     );
 }
 
-/// The export door refuses a simulation that holds a core strike, with no
-/// override.
+/// K6 (ruling Q6): a core strike in the simulation is a tool warning on
+/// the export, not a refusal, and its header line names the id. The K6
+/// sentry (`a_job_with_each_finding_exports_and_names_it_k6`) exports a
+/// project that holds one.
 #[test]
-fn a_core_strike_refuses_the_export_with_no_override() {
-    let refusal = rs_cam_core::gcode::ExportRefusal::NonCentreCuttingDescent {
-        rows: vec!["Toolpath 'x': a strike".to_owned()],
-    };
-    assert!(refusal.override_needed().is_none());
-    assert!(refusal.to_string().contains("does not cut at its centre"));
+fn a_core_strike_is_a_tool_warning_on_the_export() {
+    let warning = rs_cam_core::gcode::ExportWarning::new(
+        rs_cam_core::diagnostics::ids::SAFETY_NON_CENTRE_CUTTING_DESCENT,
+        "x",
+        "Toolpath 'x': a strike".to_owned(),
+    )
+    .expect("the descent row warns");
+    assert_eq!(warning.danger, rs_cam_core::diagnostics::Danger::Tool);
+    assert!(
+        warning
+            .header_line()
+            .contains(rs_cam_core::diagnostics::ids::SAFETY_NON_CENTRE_CUTTING_DESCENT)
+    );
 }

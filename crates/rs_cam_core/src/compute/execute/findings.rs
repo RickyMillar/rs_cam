@@ -426,6 +426,21 @@ impl RecordFindings for crate::compute::model_gouge::ModelGougeFinding {
     }
 }
 
+/// K6 (G-CENTRECUT): the entry plunge of a tool that does not cut at its
+/// centre. The first one stands; a later one does not overwrite it.
+impl RecordFindings for crate::compute::tool_config::NonCentreCuttingRefusal {
+    fn record_into(&self, findings: &mut GenerationFindings) {
+        findings.non_centre_cutting_plunge = findings.non_centre_cutting_plunge.or(Some(*self));
+    }
+}
+
+/// K6 (UX-1c): the buried face of a one-depth op. The first one stands.
+impl RecordFindings for crate::compute::execute::BuriedFaceRefusal {
+    fn record_into(&self, findings: &mut GenerationFindings) {
+        findings.buried_face = findings.buried_face.or(Some(*self));
+    }
+}
+
 /// The engagement (mm) at or below which a pass is reported as removing
 /// nothing (A4) — derived from the REFERENCE's own resolution, not dialled.
 ///

@@ -69,7 +69,7 @@ use crate::compute::config::{
     HeightContext, HeightMode, HeightOrderViolation, HeightReference, HeightsConfig,
     ResolvedHeights, added_refusals, height_order,
 };
-use crate::compute::execute::{BuriedFaceRefusal, BuriedUnder, OperationError};
+use crate::compute::execute::{BuriedFaceRefusal, BuriedUnder};
 use crate::compute::floor::{Floor, FloorRef, FloorReferences, FloorRefusal};
 use crate::mesh::TriangleMesh;
 use crate::session::{Effects, ProjectSession, SessionError, ToolpathConfig};
@@ -873,57 +873,10 @@ impl ProjectSession {
         })
     }
 
-    /// F033: the edit door of the height-plane order. `candidate` is the
-    /// config that an edit of toolpath `index` writes. The door refuses when
-    /// the candidate ADDS a refusing break of the order
-    /// ([`added_refusals`], less the floor break of an `OpFloor` op, which
-    /// the floor rule owns); a break that the stored config already holds
-    /// does not block an edit. `SetToolpathHeights` (MCP
-    /// `set_toolpath_heights`) and `ReplaceToolpathConfig` (the GUI panel,
-    /// the CLI feeds apply) call it before they write.
-    ///
-    /// A candidate whose heights do not resolve (a selection that refuses,
-    /// a model id that names no model) passes: generation refuses it with
-    /// that reason.
-    ///
-    /// # Errors
-    /// [`SessionError::HeightOrder`]. Nothing is written then.
-    pub(crate) fn height_order_door(
-        &self,
-        index: usize,
-        candidate: &ToolpathConfig,
-    ) -> Result<(), SessionError> {
-        let Ok(after) = self.toolpath_heights(candidate) else {
-            return Ok(());
-        };
-        let op = candidate.operation.op_type();
-        let after = after.height_order(&candidate.heights, op);
-        let before = self
-            .toolpath_configs
-            .get(index)
-            .and_then(|tc| {
-                self.toolpath_heights(tc)
-                    .ok()
-                    .map(|answer| answer.height_order(&tc.heights, tc.operation.op_type()))
-            })
-            .unwrap_or_default();
-        let added = door_refusals(op, &before, &after);
-        // K6: the door refuses while the column says so.
-        if added.is_empty()
-            || !crate::diagnostics::Gate::HeightRefuses.refuses_at(crate::diagnostics::Stage::Edit)
-        {
-            Ok(())
-        } else {
-            Err(SessionError::HeightOrder(HeightOrderRefusal {
-                toolpath: candidate.name.clone(),
-                violations: added,
-            }))
-        }
-    }
-
-    /// F033: the refusal of the height-plane order of `tc`, or `None`: every
-    /// refusing break of [`ToolpathHeights::height_order`]. The export door
-    /// reads it for each toolpath it emits.
+    /// F033: the height-plane order breaks of `tc`, or `None`: every
+    /// `Critical` break of [`ToolpathHeights::height_order`]. K6 (ruling
+    /// Q6): a warning; the export names one per break
+    /// (`ProjectSession::export_warnings`).
     #[must_use]
     pub fn height_order_refusal(&self, tc: &ToolpathConfig) -> Option<HeightOrderRefusal> {
         let answer = self.toolpath_heights(tc).ok()?;
@@ -946,13 +899,24 @@ impl ProjectSession {
     /// (`compute::floor::region_floors`), as `selection_status` refuses
     /// them. So this door does not refuse [`FloorRefusal::NoFace`] and
     /// [`FloorRefusal::AboveTop`] of that floor first.
+    ///
+    /// K6 (ruling Q6, decision E1): a buried face (UX-1c) and a break of the
+    /// height-plane order (F033) do not refuse. The buried face comes back
+    /// beside the heights; the job records it. The order breaks are read
+    /// from the config by the diagnostics and the export.
     pub(crate) fn generation_heights(
         &self,
         tc: &ToolpathConfig,
         ctx: &SetupEvalContext,
         setup_mesh: Option<&TriangleMesh>,
         planes: FacePlanes,
-    ) -> Result<ResolvedHeights, SessionError> {
+    ) -> Result<
+        (
+            ResolvedHeights,
+            Option<crate::compute::execute::BuriedFaceRefusal>,
+        ),
+        SessionError,
+    > {
         tc.floor_conflict()?;
         let answer = self.heights_in_setup(tc, ctx, setup_mesh, planes);
         let each_face = matches!(tc.operation.floor(), Some(Floor::EachFace { .. }));
@@ -985,36 +949,10 @@ impl ProjectSession {
             )));
         }
         // UX-1c (SAFETY): a face pick below the stock top on a one-depth op
-        // refuses on fresh stock. The prologue reads the standing material
-        // on "After previous ops".
-        if let Some(refusal) =
-            answer.buried_face_refusal(&tc.operation, &tc.heights, tc.stock_source)
-            && crate::diagnostics::Gate::BuriedFace.refuses_at(crate::diagnostics::Stage::Generate)
-        {
-            return Err(SessionError::Operation(OperationError::BuriedFace(refusal)));
-        }
-        // F033: a refusing break of the height-plane order refuses
-        // generation. Under each face the prologue owns a floor at the top,
-        // by item (P3.5, P3.7), so the bottom break is left to it.
-        let violations: Vec<HeightOrderViolation> = answer
-            .height_order(&tc.heights, tc.operation.op_type())
-            .into_iter()
-            .filter(|v| {
-                v.refuses()
-                    && !((each_face || each_hole)
-                        && matches!(v, HeightOrderViolation::BottomNotBelowTop { .. }))
-            })
-            .collect();
-        if !violations.is_empty()
-            && crate::diagnostics::Gate::HeightRefuses
-                .refuses_at(crate::diagnostics::Stage::Generate)
-        {
-            return Err(SessionError::HeightOrder(HeightOrderRefusal {
-                toolpath: tc.name.clone(),
-                violations,
-            }));
-        }
-        Ok(answer.heights)
+        // on fresh stock. K6: a warning; the prologue reads the standing
+        // material on "After previous ops".
+        let buried = answer.buried_face_refusal(&tc.operation, &tc.heights, tc.stock_source);
+        Ok((answer.heights, buried))
     }
 
     /// THE rule (see the module documentation). `setup_mesh` is the mesh

@@ -54,13 +54,71 @@ pub fn diagnostics_from_generation(
     out.extend(region_cap_truncated(toolpath_id, stats));
     out.extend(rest_levels_fallback(toolpath_id, stats));
     out.extend(cuts_into_model(toolpath_id, stats));
+    out.extend(non_centre_cutting_plunge(toolpath_id, stats));
+    out.extend(buried_face(toolpath_id, stats));
     out
+}
+
+/// K6 (G-CENTRECUT, SAFETY): an entry had to plunge a tool that does not
+/// cut at its centre straight into stock deeper than its blade protrusion.
+/// Before ruling Q6 generation refused; now the toolpath keeps the plunge
+/// and this `Critical` finding names it. Silent when no entry plunged.
+fn non_centre_cutting_plunge(toolpath_id: ToolpathId, stats: &ToolpathStats) -> Vec<Diagnostic> {
+    let Some(plunge) = stats.non_centre_cutting_plunge else {
+        return Vec::new();
+    };
+    let id = ids::SAFETY_NON_CENTRE_CUTTING_PLUNGE;
+    vec![Diagnostic {
+        id: DiagnosticId::from(id),
+        scope: Scope::Toolpath { id: toolpath_id },
+        category: Category::Safety,
+        severity: Severity::Critical,
+        // Read from the emitted entry and the stock at generation.
+        confidence: Confidence::Verified,
+        state: DiagnosticState::Current,
+        source: Source::StaticValidation,
+        face: crate::diagnostics::presentation::face(id),
+        anchor: crate::diagnostics::presentation::anchor(id),
+        message: format!("Entry plunge: {plunge}."),
+        evidence: None,
+        fix: None,
+        supersedes: vec![],
+        suppressed_diagnostics: vec![],
+    }]
+}
+
+/// K6 (UX-1c, SAFETY): on "Rest machining: from previous ops", material
+/// stands over the face of a one-depth op. Before ruling Q6 generation
+/// refused; now the op generates and this `Critical` finding names it.
+/// Silent when the face is clear. The fresh-stock case is the precondition
+/// adapter's (`ToolpathHeights::buried_face_refusal`).
+fn buried_face(toolpath_id: ToolpathId, stats: &ToolpathStats) -> Vec<Diagnostic> {
+    let Some(buried) = stats.buried_face else {
+        return Vec::new();
+    };
+    let id = ids::PRECOND_BURIED_FACE;
+    vec![Diagnostic {
+        id: DiagnosticId::from(id),
+        scope: Scope::Toolpath { id: toolpath_id },
+        category: Category::Safety,
+        severity: Severity::Critical,
+        confidence: Confidence::Verified,
+        state: DiagnosticState::Current,
+        source: Source::StaticValidation,
+        face: crate::diagnostics::presentation::face(id),
+        anchor: crate::diagnostics::presentation::anchor(id),
+        message: buried.to_string(),
+        evidence: None,
+        fix: None,
+        supersedes: vec![],
+        suppressed_diagnostics: vec![],
+    }]
 }
 
 /// UX-7b (SAFETY): the emitted moves cut into the mesh of the toolpath
 /// model. The verdict and the class are the guard's (`compute::model_gouge`,
 /// `ModelGougeFinding::severity`): `Blocking` when the tip cuts into the
-/// model, and export refuses on the same finding; `Caution` when a 3D Rough
+/// model, and the export warns on the same finding (K6); `Caution` when a 3D Rough
 /// cuts into its stock to leave only (B2). The evidence is the move and the
 /// tip of the deepest gouge, in the setup frame. Silent when the guard did
 /// not run or measured clean.

@@ -15,7 +15,7 @@ code by the symbol when the line has moved.
 | # | Decision | Blocks | State |
 |---|---|---|---|
 | D1 | Q6: do the refusals that exist today stay? **Ruled 2026-11-03: no. The program never refuses; every finding warns.** | P2 | RULED |
-| D2 | K2b envelope plot sketch (`phases/P5b.md`). | P5b | not asked |
+| D2 | K2b envelope plot sketch (`phases/P5b.md`). **Ruled 2026-11-03: agreed as drawn, on the Passes tab.** | P5b | RULED |
 | D3 | P0 D1 pin tool. **Ruled 2026-11-03: a longer-flute pin tool, the one the GUI pin template picks (`session/pins.rs`).** | P0 item 3 | RULED |
 | D4 | P0 D2 drill dwell. **Ruled 2026-11-03: delete `dwell_time`, add a retired-key row, migrate the 52 files by script; G82 keeps its fixed dwell.** | P0 item 4 | RULED |
 | D6 | P6 D3 tool library. **Ruled 2026-11-03: yes, the script migrates `~/.config/rs_cam/tools/` and keeps a `.bak` of each file.** | P6 | RULED |
@@ -28,11 +28,11 @@ code by the symbol when the line has moved.
 |---|---|---|---|---|
 | 0 Local fixes | `phases/P0.md` | DONE 2026-11-03 (FM1 re-blessed: 13 cells, TaperedBallNose 6.0 mdf; rough-score op 8 = 10 ramps, 9 led by a plunge; op 1 = 42 ramps, 2 real plunges) | see `git log` | |
 | 1 Wildcard lint | `phases/P1.md` | DONE 2026-11-03 (563 hits: 256 exhaustive, 307 `#[expect]`; no value moved) | see `git log` | |
-| 2 K6 consequence column, no refusals | `phases/P2.md` | IN PROGRESS (agent p2-impl, 2026-11-03; GUI mock agreed) | | two commits: A (column, no test change), then B |
+| 2 K6 consequence column, no refusals | `phases/P2.md` | DONE 2026-11-03 (A 4d69c2e3a: the column; B: no finding refuses; overrides deleted; G-code header warnings; GUI chips) | see `git log` | |
 | 3 K4 entry contract | `phases/P3.md` | NOT STARTED (needs P2: the `gcode_hash` baseline is blessed at the P2 commit; the perf session committed 98344a12f) | | |
 | 4 K1 `CutSpec` | `phases/P4.md` | DONE 2026-11-03 (25 rows state `cut_rule`; FM1 unchanged) | see `git log` | |
 | 5 K2 / K2b envelope | `phases/P5.md` | NOT STARTED (needs P4) | | |
-| 5b GUI envelope + K8 lineage | `phases/P5b.md` | NOT STARTED (D2, needs P5) | | |
+| 5b GUI envelope + K8 lineage | `phases/P5b.md` | NOT STARTED (sketch agreed; live link; Feeds tab merges into Passes; needs P5, P2, P3) | | |
 | 6 K3 `ToolFact` | `phases/P6.md` | NOT STARTED | | |
 | 7 K5 feasibility rules | `phases/P7.md` | NOT STARTED (needs P6) | | |
 | 8 Q1 / Q6 / Q8 | `phases/P8.md` | NOT STARTED (Q1 needs P9 changes 1-2 first) | | |

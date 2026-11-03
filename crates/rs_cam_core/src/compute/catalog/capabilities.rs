@@ -167,7 +167,7 @@ pub struct Capabilities<P = EntryProbe> {
 /// 2026-10-22, SAFETY). The guard reads the emitted cutting moves and the
 /// mesh of the op's OWN model (a STEP or an STL); a drawing has no mesh,
 /// so it never judges a DXF or SVG op. The guard keeps the toolpath and
-/// records a blocking finding; export refuses while it stands.
+/// records a blocking finding; the export warns on it while it stands (K6).
 #[derive(Debug, Clone, Copy, PartialEq, Eq)]
 pub enum ModelGougeRule {
     /// The tool tip must not go below the drop-cutter surface of the model

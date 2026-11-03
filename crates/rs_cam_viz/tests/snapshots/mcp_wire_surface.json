@@ -3502,21 +3502,6 @@
       "$schema": "https://json-schema.org/draft/2020-12/schema",
       "additionalProperties": false,
       "properties": {
-        "accept_exceeded_tool_load": {
-          "default": false,
-          "description": "Bypass the tool-load gate for criteria that returned `Exceeds`\n(the toolpath is predicted to break or burn the tool). Default\nfalse. Set this knowingly; it is the \"I accept that this toolpath\nwill damage tooling\" override and is recorded separately from\n`accept_unmodeled_tool_load`.",
-          "type": "boolean"
-        },
-        "accept_previous_geometry": {
-          "default": false,
-          "description": "Emit the PREVIOUS generation's geometry for any operation that was\nedited after it was generated, instead of refusing. Default false.\n\nWhat is being accepted: the file will cut the geometry from before\nthe edit, which is NOT what the operation's parameters now\ndescribe. Regenerating the operation is the fix; this flag exists\nfor the case where the operator knowingly wants the earlier\nprogram. It does NOT make a missing, failed or still-generating\nresult exportable — there is no geometry to put in its place.",
-          "type": "boolean"
-        },
-        "accept_unmodeled_tool_load": {
-          "default": false,
-          "description": "Bypass the tool-load gate for criteria that returned `Unmodeled`\n(e.g. no simulation run, no vendor data). Default false.",
-          "type": "boolean"
-        },
         "controller_waits_for_spindle": {
           "default": null,
           "description": "grblHAL: the controller waits for the spindle after M3 (`$394`\nspindle delay or `$340` at-speed), so the export writes no warm-up\ndwell. Omit to keep the project setting (default: from the machine\nprofile). A value given here is saved in the project's post block.",

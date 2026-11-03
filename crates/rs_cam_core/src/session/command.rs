@@ -3122,9 +3122,9 @@ impl ProjectSession {
                 // W6b (F030): every number of the op and the shoe is
                 // inside its domain.
                 crate::compute::domain::validate_toolpath(&config)?;
-                // F033: an edit that adds a refusing break of the
-                // height-plane order refuses before the write.
-                self.height_order_door(index, &config)?;
+                // F033, K6 (lead decision 2026-11-03): an edit that adds a
+                // break of the height-plane order is written; the
+                // diagnostics and the export name the break.
                 let mut dropped = None;
                 let mut effects = self.with_effects(Some(index), |session| {
                     let after = config.generation_inputs_signature();

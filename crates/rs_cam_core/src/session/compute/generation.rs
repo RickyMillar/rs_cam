@@ -221,7 +221,9 @@ impl ProjectSession {
         } else {
             (None, None)
         };
-        let heights = self.generation_heights(
+        // K6 (decision E1): a buried face on fresh stock is a warning; the
+        // job records it (`GenerationFindings::buried_face`).
+        let (heights, buried_face) = self.generation_heights(
             tc,
             &ctx,
             mesh.as_deref(),
@@ -504,6 +506,7 @@ impl ProjectSession {
             rest_top_z,
             rest_axial_step_mm,
             through_cut_hold,
+            buried_face,
         })
     }
 

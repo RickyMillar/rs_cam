@@ -1142,8 +1142,8 @@ fn a_field_finding_dots_the_tab_of_its_field_w2b() {
     }
 }
 
-/// FR-2 F22 (coordinator ruling): "Done · BLOCKED" is the F20 safety
-/// signal and never truncates. The Generate row gives it its full width
+/// FR-2 F22 (coordinator ruling): "Done · <danger>" (K6; "Done · BLOCKED"
+/// before P2) is the F20 safety signal and never truncates. The Generate row gives it its full width
 /// first; the move count drops, then the feed stage, when there is no
 /// room. Nothing paints past the row.
 ///
@@ -1179,19 +1179,19 @@ fn the_blocked_state_word_fits_its_slot_f22() {
         }),
         ..ToolpathStats::default()
     };
-    let finding = crate::ui::toolpath_panel::blocking_finding(
+    let (finding, danger) = crate::ui::toolpath_panel::warning_finding(
         Some(&stats),
         rs_cam_core::ToolpathId::from_raw(0),
     )
-    .expect("a gouge blocks");
-    let hover = super::placement::blocking_hover(&finding);
+    .expect("a gouge warns");
+    let hover = super::placement::warning_hover(&finding);
     let done = rs_cam_core::session::RunState::Done;
     let row = super::toolpath_panel::HeaderRow {
         run_state: Some(&done),
         can_run: true,
         manual_generation: false,
         waiting_detail: None,
-        blocking: Some(hover.as_str()),
+        warning: Some((hover.as_str(), danger)),
         moves: Some(12_345),
         feed_stage: Some(rs_cam_core::session::FeedStage::ModulatedSuperseded {
             simulation_run: 3,
@@ -1226,12 +1226,15 @@ fn the_blocked_state_word_fits_its_slot_f22() {
         }
         texts
     };
-    let blocked = crate::ui::toolpath_panel::BLOCKED_HEADER;
+    let blocked = crate::ui::toolpath_panel::done_header(danger);
     for width in [280.0, 200.0] {
         let texts = paint(width);
         let word: Vec<&(String, f32, bool)> = texts.iter().filter(|t| t.0 == blocked).collect();
         assert_eq!(word.len(), 1, "at {width}: one state word: {texts:?}");
-        assert!(!word[0].2, "at {width}: BLOCKED is not elided: {texts:?}");
+        assert!(
+            !word[0].2,
+            "at {width}: the state word is not elided: {texts:?}"
+        );
         let wide: Vec<&(String, f32, bool)> = texts.iter().filter(|t| t.1 > width + 1.0).collect();
         assert!(
             wide.is_empty(),

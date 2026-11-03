@@ -36,15 +36,18 @@
 //!
 //! What this file deliberately does NOT assert: any bound, any force
 //! and any physics. T-19 changes a message and nothing else.
+//!
+//! K6 (feeds contract P2, ruling Q6): no row refuses an export now. Each
+//! counting row is an export warning (`load.*.unmodeled`) whose detail is
+//! the line the refusal printed; the claims below hold on the warnings.
 
 #![expect(
-    clippy::unwrap_used,
     clippy::expect_used,
     clippy::indexing_slicing,
     reason = "test code: a panic is how a test reports a failure"
 )]
 
-use rs_cam_core::gcode::{ToolLoadExportPolicy, enforce_load_policy, refusing_unmodeled};
+use rs_cam_core::gcode::{load_findings, warning_unmodeled};
 use rs_cam_core::ids::ToolpathId;
 use rs_cam_core::machine::RigidityDepthCap;
 use rs_cam_core::material::Material;
@@ -216,13 +219,27 @@ fn drill_verdict() -> ToolpathLoadVerdict {
     }
 }
 
-fn refuse(verdict: ToolpathLoadVerdict) -> String {
+/// The warning lines the export gives for `verdict`, one per counting row,
+/// in criterion order. Panics when no row warns.
+fn warn(verdict: ToolpathLoadVerdict) -> String {
     let report = ToolLoadReport {
         per_toolpath: vec![verdict],
     };
-    enforce_load_policy(&report, &ToolLoadExportPolicy::default())
-        .expect_err("an unmodelled row must refuse under the default policy")
-        .to_string()
+    let rows = load_findings(&report).rows;
+    assert!(!rows.is_empty(), "an unmodelled row must warn");
+    rows.iter()
+        .map(|row| row.detail.as_str())
+        .collect::<Vec<_>>()
+        .join("\n")
+}
+
+/// True when the export warns on nothing for `verdict`.
+fn warns_on_nothing(verdict: ToolpathLoadVerdict) -> bool {
+    load_findings(&ToolLoadReport {
+        per_toolpath: vec![verdict],
+    })
+    .rows
+    .is_empty()
 }
 
 // ── (a) the row the old message could not name ───────────────────────
@@ -235,7 +252,7 @@ fn a_depth_only_refusal_names_the_depth_row_and_its_reason() {
     let v = depth_only_verdict();
     // Non-vacuity: exactly one row counts, and it is the depth row.
     let criteria = v.criteria();
-    let refusing = refusing_unmodeled(&criteria);
+    let refusing = warning_unmodeled(&criteria);
     let kinds: Vec<CriterionKind> = refusing.iter().map(|s| s.kind).collect();
     assert_eq!(
         kinds,
@@ -243,7 +260,7 @@ fn a_depth_only_refusal_names_the_depth_row_and_its_reason() {
         "the depth row is the only counting row in this fixture"
     );
 
-    let msg = refuse(v);
+    let msg = warn(v);
     assert!(msg.contains("toolpath 4"), "names the toolpath: {msg}");
     assert!(
         msg.contains("depth of cut"),
@@ -263,25 +280,23 @@ fn a_depth_only_refusal_names_the_depth_row_and_its_reason() {
     );
 }
 
-/// The first line is the one the gate has always printed. T-19 changes
-/// what sits after it. F061 (W5): the override hint names the override
-/// as each surface spells it (MCP key, CLI flag, GUI checkbox), not the
-/// core field `accept_unmodeled`, which no surface accepts.
+/// K6: each warning line names its row and carries its id; no line
+/// names an override, because no override exists.
 #[test]
-fn the_refusal_keeps_its_headline_and_its_override_hint() {
-    let msg = refuse(depth_only_verdict());
-    assert!(
-        msg.starts_with("G-code export refused: tool load not fully modeled for toolpath(s):\n"),
-        "headline unchanged: {msg}"
+fn the_warning_names_its_id_and_no_override() {
+    let report = ToolLoadReport {
+        per_toolpath: vec![depth_only_verdict()],
+    };
+    let rows = load_findings(&report).rows;
+    assert_eq!(rows.len(), 1, "{rows:?}");
+    assert_eq!(
+        rows[0].id,
+        rs_cam_core::diagnostics::ids::LOAD_DEPTH_UNMODELED
     );
-    let hint = rs_cam_core::gcode::LoadOverride::AcceptUnmodeled.spellings();
     assert!(
-        msg.ends_with(&format!("To acknowledge unmodeled criteria: {hint}.")),
-        "the override hint names every surface spelling: {msg}"
-    );
-    assert!(
-        !msg.contains("accept_unmodeled=true"),
-        "no surface accepts the core field name: {msg}"
+        !rows[0].detail.contains("accept"),
+        "no warning names an override: {}",
+        rows[0].detail
     );
 }
 
@@ -300,21 +315,16 @@ fn a_stale_trace_keeps_its_own_headline_and_names_its_row() {
         },
         depth_within(),
     );
-    let msg = refuse(v);
+    let msg = warn(v);
     assert!(
-        msg.starts_with("G-code export refused: cached simulation is stale"),
+        msg.contains("stale"),
         "a stale trace reads as stale, not as never simulated: {msg}"
     );
-    assert!(msg.contains("chipload"), "names the stale row: {msg}");
-    // F061 (W5): the stale hint names the unmodelled override as each
-    // surface spells it.
-    let hint = rs_cam_core::gcode::LoadOverride::AcceptUnmodeled.spellings();
     assert!(
-        msg.ends_with(&format!(
-            "To export against the stale evidence anyway: {hint}."
-        )),
-        "the stale override hint names every surface spelling: {msg}"
+        !msg.contains("simulation has not been run"),
+        "a stale trace is not a missing one: {msg}"
     );
+    assert!(msg.contains("chipload"), "names the stale row: {msg}");
 }
 
 // ── (b) every counting row, in criterion order ───────────────────────
@@ -326,7 +336,7 @@ fn a_stale_trace_keeps_its_own_headline_and_names_its_row() {
 fn a_refusal_names_every_counting_row_in_criterion_order() {
     let v = chipload_and_depth_verdict();
     let criteria = v.criteria();
-    let kinds: Vec<CriterionKind> = refusing_unmodeled(&criteria)
+    let kinds: Vec<CriterionKind> = warning_unmodeled(&criteria)
         .iter()
         .map(|s| s.kind)
         .collect();
@@ -336,7 +346,7 @@ fn a_refusal_names_every_counting_row_in_criterion_order() {
         "both rows count, chipload first"
     );
 
-    let msg = refuse(v);
+    let msg = warn(v);
     let chipload_at = msg.find("chipload").expect("the chipload row is named");
     let depth_at = msg.find("depth of cut").expect("the depth row is named");
     assert!(
@@ -370,22 +380,17 @@ fn the_gantry_row_alone_refuses_nothing_and_is_never_named() {
     assert_eq!(gantry.state, LoadState::Unmodeled);
     assert!(gantry.is_known_absence());
     assert!(
-        refusing_unmodeled(&criteria).is_empty(),
+        warning_unmodeled(&criteria).is_empty(),
         "a known absence is not a row an operator can act on"
     );
-    let report = ToolLoadReport {
-        per_toolpath: vec![fully_modelled_verdict()],
-    };
-    let outcome = enforce_load_policy(&report, &ToolLoadExportPolicy::default());
     assert!(
-        outcome.is_ok(),
-        "a known absence must not refuse an export: {}",
-        outcome.unwrap_err()
+        warns_on_nothing(fully_modelled_verdict()),
+        "a known absence must not warn on an export"
     );
 
     // And when another row refuses, the known absence stays out of the
     // message.
-    let msg = refuse(depth_only_verdict());
+    let msg = warn(depth_only_verdict());
     assert!(
         !msg.contains("gantry"),
         "a refusal must not name a row no action can fill: {msg}"
@@ -410,61 +415,31 @@ fn a_drill_cycle_with_its_gates_still_exports() {
         "all five milling rows read `NotApplicableForOp` on a drill cycle"
     );
     assert!(
-        refusing_unmodeled(&v.criteria()).is_empty(),
+        warning_unmodeled(&v.criteria()).is_empty(),
         "a drill cycle with measured drill gates needs no operator action"
     );
-    let report = ToolLoadReport {
-        per_toolpath: vec![drill_verdict()],
-    };
-    let outcome = enforce_load_policy(&report, &ToolLoadExportPolicy::default());
     assert!(
-        outcome.is_ok(),
-        "a drill cycle must still export: {}",
-        outcome.unwrap_err()
+        warns_on_nothing(drill_verdict()),
+        "a drill cycle with its gates measured warns on nothing"
     );
 }
 
 /// The optimizer path leaves `drill_gates` `None` on a drill toolpath.
-/// Nothing measured anything, so the gate refuses — exactly as it did
-/// before T-19.
+/// Nothing measured anything, so the export warns on each row (before
+/// K6 it refused).
 #[test]
-fn a_drill_cycle_without_its_gates_still_refuses() {
+fn a_drill_cycle_without_its_gates_still_warns() {
     let mut v = drill_verdict();
     v.drill_gates = None;
     assert_eq!(v.modeled_count(), 0, "fixture guard: nothing is modelled");
     assert!(
-        !refusing_unmodeled(&v.criteria()).is_empty(),
-        "a toolpath that measured nothing must refuse"
+        !warning_unmodeled(&v.criteria()).is_empty(),
+        "a toolpath that measured nothing must warn"
     );
-    let msg = refuse(v);
+    let msg = warn(v);
     assert!(
         msg.contains("not applicable to this operation"),
-        "the refusal states what each row said: {msg}"
-    );
-}
-
-// ── (e) the override still overrides ─────────────────────────────────
-
-/// `accept_unmodeled` accepts the same rows it always did. The
-/// override is about acknowledgement, not about a different decision.
-#[test]
-fn the_override_accepts_the_rows_the_gate_would_name() {
-    let report = ToolLoadReport {
-        per_toolpath: vec![chipload_and_depth_verdict()],
-    };
-    let accepted = ToolLoadExportPolicy {
-        accept_unmodeled: true,
-        accept_exceeded: false,
-    };
-    assert!(
-        enforce_load_policy(&report, &accepted).is_ok(),
-        "the acknowledged override must still export"
-    );
-    // The rows did not go away; only the refusal did.
-    assert_eq!(
-        refusing_unmodeled(&report.per_toolpath[0].criteria()).len(),
-        2,
-        "the override hides no row from the helper"
+        "the warning states what each row said: {msg}"
     );
 }
 
@@ -492,7 +467,7 @@ fn the_helper_refuses_exactly_where_any_unmodeled_says_it_must() {
     for (name, v) in &fixtures {
         let criteria = v.criteria();
         assert_eq!(
-            !refusing_unmodeled(&criteria).is_empty(),
+            !warning_unmodeled(&criteria).is_empty(),
             v.any_unmodeled(),
             "{name}: the message half and the decision half must agree"
         );
@@ -507,10 +482,10 @@ fn a_fully_modelled_report_passes() {
         per_toolpath: vec![fully_modelled_verdict()],
     };
     assert!(
-        enforce_load_policy(&report, &ToolLoadExportPolicy::default()).is_ok(),
-        "nothing in this fixture refuses"
+        load_findings(&report).rows.is_empty(),
+        "nothing in this fixture warns"
     );
-    assert!(refusing_unmodeled(&report.per_toolpath[0].criteria()).is_empty());
+    assert!(warning_unmodeled(&report.per_toolpath[0].criteria()).is_empty());
     assert_eq!(
         report.per_toolpath[0].modeled_count(),
         4,

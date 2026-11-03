@@ -202,7 +202,7 @@ fn controller_save_open_and_export_smoke() {
     // leaves (`drain_compute_results` inserts into the session and the
     // viz store together). Seeding only the viz store used to export
     // through the silent fallback; it now reads as an operation edited
-    // since it was generated, and the export refuses by name.
+    // since it was generated, and the export leaves it out by name (K6).
     let revision = controller.state.session().toolpath_revision_at(0);
     let _ = controller
         .state
@@ -237,21 +237,19 @@ fn controller_save_open_and_export_smoke() {
         drill_op: None,
     });
 
-    // C1 (2026-06-11): the export gate now enforces the tool-load policy
-    // on the viz path. This smoke test never simulates, so accept the
-    // Unmodeled(SimulationRequired) verdicts like a user would.
-    controller.state.gui.tool_load_overrides.accept_unmodeled = true;
-
+    // K6 (ruling Q6): this smoke test never simulates, so every load row
+    // reads Unmodeled(SimulationRequired). The export goes ahead and warns.
     let rs_cam_core::gcode::ExportedGcode {
         gcode,
         machine_safety: _,
-        load_outcome,
+        load_outcome: _,
+        warnings,
         feeds_cautions,
     } = controller.export_gcode_reporting().expect("export gcode");
     assert!(gcode.contains("G"));
     assert!(
-        !load_outcome.overridden.is_empty(),
-        "the export waived the unmodelled load, so the outcome must record it"
+        warnings.iter().any(|w| w.id.ends_with(".unmodeled")),
+        "the export names the unmodelled load rows: {warnings:?}"
     );
     assert!(feeds_cautions.is_empty(), "nothing here was modulated");
 
@@ -269,7 +267,19 @@ fn controller_save_open_and_export_smoke() {
         .open_job_from_path(&save_path)
         .expect("reopen saved job through controller");
 
-    assert!(controller.export_gcode_reporting().is_err());
+    // K6: a reopened project holds no result, so the export leaves each
+    // enabled op out and names it; it writes the header-only program.
+    let reopened = controller
+        .export_gcode_reporting()
+        .expect("K6: no finding refuses the export");
+    assert!(
+        reopened
+            .warnings
+            .iter()
+            .any(|w| w.id == rs_cam_core::diagnostics::ids::EXPORT_OP_LEFT_OUT),
+        "the op with no result is named: {:?}",
+        reopened.warnings
+    );
     assert!(controller.export_svg_preview().is_err());
 
     let setup = controller.export_setup_sheet_html();

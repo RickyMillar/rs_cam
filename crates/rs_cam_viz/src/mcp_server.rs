@@ -1109,7 +1109,7 @@ impl EmbeddedCamServer {
 
     #[tool(
         name = "export_gcode",
-        description = "Export G-code to a file path. Refuses if any toolpath has tool-load Exceeds or Unmodeled verdicts unless the corresponding accept flag is set. Also refuses, naming the operation, when an ENABLED toolpath's result is not the answer for its current parameters: no result (still waiting on upstream stock / failed to generate / not generated / still generating), or EDITED SINCE it was generated — regenerate it, disable it, or pass accept_previous_geometry to cut the geometry from before the edit. A disabled toolpath is skipped."
+        description = "Export G-code to a file path. No finding refuses the export (K6): the reply and the program header name each warning (danger, id, toolpath, face): height planes out of order, a cut into the model, a non-centre-cutting plunge or descent, a tool-load exceedance or an unmodelled load row, and an ENABLED operation left out because it has no current result (not generated, still generating, waiting on upstream stock, failed, or edited since it was generated). Only an emit error (inch units, a feed that is not above zero, controller compensation on a post without it) stops the file. A disabled toolpath is skipped."
     )]
     async fn export_gcode(&self, Parameters(param): Parameters<ExportParam>) -> String {
         Self::format_result(

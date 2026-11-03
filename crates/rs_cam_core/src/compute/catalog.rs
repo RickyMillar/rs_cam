@@ -564,6 +564,18 @@ impl OperationType {
             .refusal(self.spec().label, kind)
     }
 
+    /// K6 (decision E1): the tool refusal when the generator cannot compute
+    /// with a tool of this kind (a missing input, ruling Q10), else `None`.
+    /// A kind the row refuses but the generator can compute with is a
+    /// warning ([`Self::tool_refusal`], `compat.tool_kind_refused`).
+    pub fn tool_cannot_compute(self, kind: crate::feeds::CutterKind) -> Option<String> {
+        let constraints = self.registry_entry().tool_constraints;
+        if constraints.computes_with(kind) {
+            return None;
+        }
+        constraints.refusal(self.spec().label, kind)
+    }
+
     /// R2: the tool kinds the op needs, as words ("needs a flat end mill
     /// or a ball nose"), from the registry `tool_constraints`.
     pub fn needs_text(self) -> String {

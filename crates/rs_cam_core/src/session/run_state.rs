@@ -138,42 +138,23 @@ pub fn skips_automatic_generate(state: &RunState) -> bool {
     matches!(state, RunState::Disabled | RunState::NotReady { .. })
 }
 
-/// True when the finding refuses generation while it is current: a
-/// `Blocking` finding, or the tool-kind refusal (`Critical`, but the
-/// generator's own prologue refuses on the same `tool_refusal`, W2.2).
+/// True when the diagnostic refuses generation while it is current.
 ///
-/// K6: a finding refuses only while its column row refuses at
-/// [`crate::diagnostics::Stage::Generate`]; a missing input
-/// ([`crate::diagnostics::RowKind::NotReady`]) refuses
-/// when `Blocking`.
+/// K6 (ruling Q6, Q10): no finding refuses generation. Only a `Blocking`
+/// missing input does: a row of [`crate::diagnostics::RowKind::NotReady`]
+/// (an id with no row too), or the tool-kind row when the generator cannot
+/// compute with the tool (`Blocking` only then, decision E1; the prologue
+/// refuses on the same `OperationType::tool_cannot_compute`). A cut into the
+/// model is `Blocking` in severity and still refuses nothing (A5).
 #[must_use]
 pub fn refuses_generation(d: &Diagnostic) -> bool {
-    use crate::diagnostics::{Consequence, Gate, RowKind, Stage};
-    if d.state != DiagnosticState::Current {
+    use crate::diagnostics::RowKind;
+    if d.state != DiagnosticState::Current || d.severity != Severity::Blocking {
         return false;
     }
-    let blocking = d.severity == Severity::Blocking;
     match ids::row_kind(d.id.as_str()) {
-        Some(RowKind::NotReady) | None => blocking,
-        Some(RowKind::Finding(Consequence::Refuse { stages, gate, .. }))
-            if stages.contains(&Stage::Generate) =>
-        {
-            match gate {
-                Gate::ToolKind => true,
-                Gate::HeightRefuses
-                | Gate::GougeBlocks
-                | Gate::CentreCutPlunge
-                | Gate::CentreCutDescent
-                | Gate::LoadRowRefuses
-                | Gate::LoadUnmodeled
-                | Gate::NoCurrentResult
-                | Gate::GuiConfirm
-                | Gate::BuriedFace => blocking,
-            }
-        }
-        Some(RowKind::Finding(
-            Consequence::Refuse { .. } | Consequence::Warn(_) | Consequence::Info,
-        )) => false,
+        Some(RowKind::NotReady) | None => true,
+        Some(RowKind::Finding(_)) => d.id.as_str() == ids::COMPAT_TOOL_KIND_REFUSED,
     }
 }
 

@@ -170,12 +170,12 @@ fn a_deep_cut_reddens_the_depth_row_and_refuses_no_export_g_readylimits() {
          judged."
     );
 
-    let refusing = rs_cam_core::gcode::refusing_exceedances(&criteria);
+    let warning = rs_cam_core::gcode::warning_exceedances(&criteria);
     assert!(
-        !refusing.iter().any(|s| s.kind == CriterionKind::DepthOfCut),
-        "the exceeded depth row refused the export. Its bound is a rule of \
+        !warning.iter().any(|s| s.kind == CriterionKind::DepthOfCut),
+        "the exceeded depth row warned on the export. Its bound is a rule of \
          thumb with no published source, so it reports and does not gate \
-         (`BoundSource::gates_export`). Refusing rows were {:?}",
-        refusing.iter().map(|s| s.kind).collect::<Vec<_>>()
+         (`BoundSource::gates_export`). Warning rows were {:?}",
+        warning.iter().map(|s| s.kind).collect::<Vec<_>>()
     );
 }

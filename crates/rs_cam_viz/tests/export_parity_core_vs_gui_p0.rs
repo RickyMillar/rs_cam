@@ -12,16 +12,14 @@
 //!
 //! # The two doors
 //!
-//! - Core door: `rs_cam_core::gcode::export_gcode_checked(project,
-//!   sim_trace, policy)` — `crates/rs_cam_core/src/gcode/mod.rs:300`.
+//! - Core door: `rs_cam_core::gcode::export_gcode_checked(project)` — `crates/rs_cam_core/src/gcode/mod.rs:300`.
 //!   `ProjectSession::export_gcode_with_policy`
 //!   (`crates/rs_cam_core/src/session/compute.rs:4290`) wraps that door
 //!   and writes its string to a file. That wrapper forwards the
 //!   session's own cut trace, so it matches this file's `None` only
 //!   while the session holds no simulation — the state of this
 //!   fixture. This file calls the string-returning door.
-//! - GUI door: `export_gcode_from_session_with_policy(session, gui, sim,
-//!   policy, stale)` — `crates/rs_cam_viz/src/io/export.rs:403`.
+//! - GUI door: `export_gcode_from_session(session, gui, sim)` — `crates/rs_cam_viz/src/io/export.rs:403`.
 //!
 //! # A third door exists and this file does not cover it
 //!
@@ -54,9 +52,9 @@
 //!   post config. The test
 //!   `core_and_gui_export_agree_under_high_feedrate_mode` turns it on; the
 //!   other tests leave it false, which is `PostConfig::default()`.
-//! - Result store and refusal. The GUI door refuses an enabled
-//!   operation whose result is missing or stale (G-EXPORTSKIP,
-//!   G-STALEXPORT). The fixture gives every enabled operation a core
+//! - Result store and left-out ops. Both doors leave out an enabled
+//!   operation whose result is missing or stale and name it (G-EXPORTSKIP,
+//!   G-STALEXPORT, K6: one shared rule, `ProjectSession::export_scope`). The fixture gives every enabled operation a core
 //!   result and no `gui.toolpath_rt` entry, so `freshness` returns
 //!   `Current` (`state/freshness.rs:78-96`) and the door emits the same
 //!   toolpath the core door reads.
@@ -67,10 +65,9 @@
 //!
 //! Two more inputs are held equal by hand. The simulation trace is
 //! absent on both sides: `None` for the core door, `SimulationState::
-//! new()` for the GUI door. Both sides take one explicit
-//! `ToolLoadExportPolicy` with `accept_unmodeled` and `accept_exceeded`
-//! true. No simulation runs here, so every load criterion reads
-//! `Unmodeled`. Another file covers the gate.
+//! new()` for the GUI door. No simulation runs here, so every load
+//! criterion reads `Unmodeled`, and both doors write the same warning
+//! lines in the header (K6, ruling Q6: no finding refuses).
 //!
 //! # The emitter formats this file reads
 //!
@@ -146,7 +143,7 @@ use rs_cam_core::compute::catalog::OperationConfig;
 use rs_cam_core::compute::stock_config::{ModelKind, ModelUnits};
 use rs_cam_core::compute::tool_config::{ToolConfig, ToolId, ToolType};
 use rs_cam_core::compute::transform::FaceUp;
-use rs_cam_core::gcode::{CoolantMode, ToolLoadExportPolicy};
+use rs_cam_core::gcode::CoolantMode;
 use rs_cam_core::geo::P3;
 use rs_cam_core::mesh::make_test_flat;
 use rs_cam_core::session::{
@@ -155,8 +152,8 @@ use rs_cam_core::session::{
 };
 use rs_cam_core::toolpath::Toolpath;
 use rs_cam_core::trace::toolpath_spans::AnnotatedToolpath;
-use rs_cam_viz::io::export::export_gcode_from_session_with_policy;
-use rs_cam_viz::state::runtime::{GuiState, StaleResultPolicy};
+use rs_cam_viz::io::export::export_gcode_from_session;
+use rs_cam_viz::state::runtime::GuiState;
 use rs_cam_viz::state::simulation::SimulationState;
 
 const STOCK_X: f64 = 60.0;
@@ -321,30 +318,21 @@ fn build_state(last_coolant: CoolantMode) -> (ProjectSession, GuiState, Simulati
             .expect("insert core result");
     }
 
-    let mut gui = GuiState::new();
-    // The GUI gate reads the same absent trace the core door reads.
-    gui.tool_load_overrides.accept_unmodeled = true;
+    let gui = GuiState::new();
+    // The GUI door reads the same absent trace the core door reads.
 
     (session, gui, SimulationState::new())
 }
 
-fn policy() -> ToolLoadExportPolicy {
-    ToolLoadExportPolicy {
-        accept_unmodeled: true,
-        accept_exceeded: true,
-    }
-}
-
 fn core_export(session: &ProjectSession) -> String {
     session
-        .export_gcode_checked(None, policy())
+        .export_gcode_checked(None)
         .expect("core export")
         .gcode
 }
 
 fn gui_export(session: &ProjectSession, gui: &GuiState, sim: &SimulationState) -> String {
-    export_gcode_from_session_with_policy(session, gui, sim, policy(), StaleResultPolicy::Refuse)
-        .expect("gui export")
+    export_gcode_from_session(session, gui, sim).expect("gui export")
 }
 
 // ── Per-property extraction ───────────────────────────────────────

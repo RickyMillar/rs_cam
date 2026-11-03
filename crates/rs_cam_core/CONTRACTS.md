@@ -17,3 +17,13 @@ touches names it in its invariants.
   a `Stated` value. Suggest reads `CutSpec::todays_hints` through
   `operation_feeds_hints` (P4; Phase 5 deletes it). Sentries:
   `--test every_op_states_its_cut_k1`, `--doc cut_spec_refusals`.
+- K6: every finding states its consequence, and no finding refuses a job
+  (ruling Q6). Each `diag_ids!` row (`diagnostics/ids.rs`) ends
+  `=> warn(Danger::X)`, `=> INFO` or `=> NOT_READY` (a missing input, Q10);
+  a row with none does not compile. `diagnostics::Consequence` has no
+  refusing arm. Generation and every export door write the program and
+  carry `ExportWarning`s (`gcode/mod.rs`); the G-code header prints one
+  comment per warning. Only `EmitError` (`emit.*`) stops a file. Sentries:
+  `--test a_job_with_each_finding_exports_and_names_it_k6`, viz
+  `--test a_job_with_each_finding_exports_and_names_it_on_every_surface_k6`,
+  `--lib every_id_states_its_consequence_k6`, `--doc diag_ids`.

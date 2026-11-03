@@ -63,7 +63,7 @@ use std::sync::atomic::AtomicBool;
 use rs_cam_core::compute::StockConfig;
 use rs_cam_core::compute::catalog::{OperationConfig, OperationType};
 use rs_cam_core::compute::config::{HeightMode, StockSource};
-use rs_cam_core::compute::execute::{BuriedUnder, OperationError};
+use rs_cam_core::compute::execute::BuriedUnder;
 use rs_cam_core::compute::floor::Floor;
 use rs_cam_core::compute::stock_config::{ModelKind, ModelUnits};
 use rs_cam_core::compute::tool_config::{ToolConfig, ToolType};
@@ -424,21 +424,25 @@ fn a_rest_chamfer_after_pocket_and_waterline_chamferclear() {
         near_wall.is_finite() && near_wall <= 20.0 + SIM_CELL,
         "the trimmed run starts on clear stock: top {near_wall}"
     );
-    // KNOWN RED: the corner buries the free end of the Z 20 chain.
-    match generate(&mut s, 2) {
-        Err(SessionError::Operation(OperationError::BuriedFace(refusal))) => {
-            assert_eq!(refusal.under, BuriedUnder::StandingMaterial, "{refusal}");
-            assert!(
-                (refusal.buried_mm - 10.0).abs() < SIM_CELL,
-                "the corner stands 10 mm over the Z 20 edge: {refusal}"
-            );
-        }
-        Err(other) => panic!("want the buried refusal of the corner, got: {other}"),
-        Ok(_) => panic!(
-            "the rest Chamfer generates: the corner is cleared (R-D?). Re-pin this arm as \
-             \"generates\" and check the guard."
-        ),
+    // KNOWN RED: the corner buries the free end of the Z 20 chain. K6
+    // (ruling Q6, decision E1): the Chamfer generates and records it.
+    if let Err(other) = generate(&mut s, 2) {
+        panic!("K6: a buried face does not refuse generation, got: {other}");
     }
+    let refusal = s
+        .result_at(2)
+        .and_then(|r| r.stats.buried_face)
+        .unwrap_or_else(|| {
+            panic!(
+                "the rest Chamfer is not buried: the corner is cleared (R-D?). Re-pin this arm as \
+             \"clear\" and check the guard."
+            )
+        });
+    assert_eq!(refusal.under, BuriedUnder::StandingMaterial, "{refusal}");
+    assert!(
+        (refusal.buried_mm - 10.0).abs() < SIM_CELL,
+        "the corner stands 10 mm over the Z 20 edge: {refusal}"
+    );
 }
 
 /// Claim (c): a V-bit wide enough to reach a wall along all of an edge

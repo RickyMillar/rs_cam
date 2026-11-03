@@ -65,20 +65,11 @@ pub enum OperationError {
     /// the prologue guarantees is absent, and so on. The text names the
     /// defect.
     Internal(String),
-    /// UX-1c (operator ruling 2026-10-22, SAFETY): the picked face of a
-    /// `FaceTopRule::RefuseBuried` op (Chamfer, V-Carve, Inlay, Inlay
-    /// Plug) is below the material that stands at the start of the op.
-    BuriedFace(BuriedFaceRefusal),
     /// S11 (operator ruling 2026-10-23): a value with no derivation is not
     /// set (a depth of a drawing op, or the feeds of a tool with no feeds
     /// data). The op stays in the project; it refuses until the operator
     /// sets the value.
     NotSet(crate::compute::not_set::NotSet),
-    /// G-CENTRECUT (SAFETY): the tool does not cut at its centre, and a
-    /// shared entry builder could not keep it inside its limits: it must
-    /// plunge straight into stock deeper than the blade protrusion. The
-    /// session stage after generation (`JobPhases::run_stages`) refuses.
-    NonCentreCutting(crate::compute::tool_config::NonCentreCuttingRefusal),
 }
 
 impl From<crate::compute::not_set::NotSet> for OperationError {
@@ -102,7 +93,9 @@ pub enum BuriedUnder {
 /// below the material that stands at the start of the op. These ops cut
 /// one depth from the face plane, so the tool would go into the material
 /// by all of `buried_mm` in one pass. The text states the cause and the
-/// fix; it is the same on every surface (generation, the diagnostics).
+/// fix; it is the same on every surface (generation, the diagnostics, the
+/// export). K6 (ruling Q6, decision E1): a warning, not a refusal; the
+/// generator cuts and the result records it (`ToolpathStats::buried_face`).
 #[derive(Debug, Clone, Copy, PartialEq)]
 pub struct BuriedFaceRefusal {
     /// The op label (`OperationType::label`).
@@ -114,8 +107,8 @@ pub struct BuriedFaceRefusal {
 }
 
 impl BuriedFaceRefusal {
-    /// The smallest depth (mm) that refuses on fresh stock, so that a face
-    /// AT the stock top does not refuse. The value is the 0.01 mm epsilon
+    /// The smallest depth (mm) that counts as buried on fresh stock, so that
+    /// a face AT the stock top raises no finding. The value is the 0.01 mm epsilon
     /// that the UX-1c task states (lead, 2026-10-22).
     pub const STOCK_TOP_EPS_MM: f64 = 0.01;
 }
@@ -308,6 +301,15 @@ pub struct GenerationFindings {
     /// [`Self::boundary_clip_dropped`]. See
     /// [`crate::compute::model_gouge::ModelGougeFinding`].
     pub model_gouge: Option<crate::compute::model_gouge::ModelGougeFinding>,
+    /// K6 (G-CENTRECUT): the first entry that had to plunge a tool that does
+    /// not cut at its centre straight into stock deeper than its blade
+    /// protrusion. `None` = no such entry. A warning
+    /// (`safety.non_centre_cutting_plunge`); generation goes on (ruling Q6).
+    pub non_centre_cutting_plunge: Option<crate::compute::tool_config::NonCentreCuttingRefusal>,
+    /// K6 (UX-1c): the face top of a one-depth op is below the material
+    /// over its area. `None` = not buried. A warning
+    /// (`precondition.buried_face`); generation goes on (ruling Q6, E1).
+    pub buried_face: Option<BuriedFaceRefusal>,
 }
 
 impl std::fmt::Display for OperationError {
@@ -326,9 +328,7 @@ impl std::fmt::Display for OperationError {
                 crate::budget::format_bytes(*limit_bytes)
             ),
             Self::Selection(refusal) => write!(f, "{refusal}"),
-            Self::BuriedFace(refusal) => write!(f, "{refusal}"),
             Self::NotSet(not_set) => write!(f, "{not_set}"),
-            Self::NonCentreCutting(refusal) => write!(f, "Entry refused: {refusal}"),
             Self::InvalidParam(s) | Self::Internal(s) => write!(f, "{s}"),
         }
     }

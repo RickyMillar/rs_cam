@@ -578,12 +578,14 @@ struct ProjectSummary {
 }
 
 /// The program text and its `summary.json` record, or the refusal.
-type CheckedExport = Result<(String, GcodeExportSummary), rs_cam_core::gcode::ExportRefusal>;
+type CheckedExport = Result<(String, GcodeExportSummary), rs_cam_core::gcode::EmitError>;
 
 /// The G-code export of one `project` run in `summary.json` (F051, F067).
 #[derive(Clone, Serialize)]
 pub(crate) struct GcodeExportSummary {
-    /// The refusal text when the export refused; `null` when it wrote.
+    /// The emit error when the emitter could not write valid G-code (an
+    /// `emit.*` id: inch units, a bad feed, controller compensation);
+    /// `null` when it wrote. No finding refuses (K6, ruling Q6).
     refused: Option<String>,
     /// How many machine-safety findings the pass raised, and how many are
     /// at error severity. The pass runs before the rapid rewrite.
@@ -591,20 +593,21 @@ pub(crate) struct GcodeExportSummary {
     machine_safety_errors: usize,
     /// One line per criterion that exceeded a bound that may not refuse.
     load_advisories: Vec<String>,
-    /// The refusals an override flag waived for this export.
-    overrides_used: Vec<String>,
+    /// K6: one line per finding the export warns on, as the program
+    /// header prints it (`WARNING <danger> <id> <toolpath>: <face>`).
+    warnings: Vec<String>,
     /// W2.5: feeds modulated from a simulation the session no longer holds.
     feeds_cautions: Vec<String>,
 }
 
 impl GcodeExportSummary {
-    fn refused(refusal: &rs_cam_core::gcode::ExportRefusal) -> Self {
+    fn refused(refusal: &rs_cam_core::gcode::EmitError) -> Self {
         Self {
             refused: Some(refusal.to_string()),
             machine_safety_findings: 0,
             machine_safety_errors: 0,
             load_advisories: Vec::new(),
-            overrides_used: Vec::new(),
+            warnings: Vec::new(),
             feeds_cautions: Vec::new(),
         }
     }
@@ -628,6 +631,7 @@ pub(crate) fn report_export_checks(
         gcode,
         machine_safety,
         load_outcome,
+        warnings,
         feeds_cautions,
     } = exported;
     let errors = machine_safety
@@ -660,19 +664,22 @@ pub(crate) fn report_export_checks(
     if let Some(report) = load_outcome.report() {
         eprintln!("{report}");
     }
+    if let Some(report) = rs_cam_core::gcode::warnings_report(&warnings) {
+        eprintln!("{report}");
+    }
     for caution in &feeds_cautions {
         eprintln!("feeds caution: {caution}");
     }
-    let rs_cam_core::gcode::LoadPolicyOutcome {
-        advisories,
-        overridden,
-    } = load_outcome;
+    let rs_cam_core::gcode::LoadPolicyOutcome { advisories } = load_outcome;
     let summary = GcodeExportSummary {
         refused: None,
         machine_safety_findings: machine_safety.len(),
         machine_safety_errors: errors,
         load_advisories: advisories,
-        overrides_used: overridden.iter().map(|r| r.body()).collect(),
+        warnings: warnings
+            .iter()
+            .map(rs_cam_core::gcode::ExportWarning::header_line)
+            .collect(),
         feeds_cautions,
     };
     (gcode, summary)
@@ -797,7 +804,6 @@ pub fn run_project_command(
     resolution: Option<f64>,
     summary: bool,
     emit_gcode: Option<&Path>,
-    tool_load: rs_cam_core::gcode::ToolLoadExportPolicy,
     adaptive_feed_modulation: bool,
     modulation_strategy: rs_cam_core::dressup::feed_modulation::ModulationStrategy,
     modulation_feed_scale: f64,
@@ -1148,10 +1154,9 @@ pub fn run_project_command(
 
     // 9. Optional G-code emit (F-036c calibration helper), through the one
     // core door (F067): the machine-safety pass and the rapid rewrite run
-    // as in the GUI. F051: the overrides are the explicit flags
-    // `--accept-unmodeled-tool-load` / `--accept-exceeded-tool-load`; the
-    // default refuses. The outcome goes into `summary.json` before the
-    // file is written, so a refusal is still on record.
+    // as in the GUI. K6 (ruling Q6): no finding refuses; the warnings go
+    // into the program header and `summary.json`. Only an emit error
+    // (`EmitError`) stops the file, and it is still on record.
     let gcode_emit: Option<(&Path, CheckedExport)> = emit_gcode.map(|path| {
         let trace = session
             .simulation_result()
@@ -1159,7 +1164,7 @@ pub fn run_project_command(
         (
             path,
             session
-                .export_gcode_checked(trace, tool_load)
+                .export_gcode_checked(trace)
                 .map(report_export_checks),
         )
     });
@@ -1782,5 +1787,44 @@ mod tests {
         let (name, id) = (setup.name.clone(), setup.id.to_string());
         assert!(super::check_toolpath_filters(&session, &[], Some(&name)).is_ok());
         assert!(super::check_toolpath_filters(&session, &[], Some(&id)).is_ok());
+    }
+
+    /// K6 (feeds contract P2, ruling Q6): `project --emit-gcode` and `run`
+    /// take `export_gcode_checked`, then `report_export_checks`. The K6
+    /// project exports, and `summary.json` names each finding with the
+    /// header line of the program.
+    #[test]
+    #[expect(
+        clippy::panic,
+        reason = "test code: a panic is how a test reports a failure"
+    )]
+    fn the_summary_names_each_finding_k6() {
+        use rs_cam_core::diagnostics::ids;
+        let session = crate::k6_project::generated_and_simulated();
+        let trace = session
+            .simulation_result()
+            .and_then(|s| s.cut_trace.clone());
+        let exported = session.export_gcode_checked(trace.as_deref()).unwrap();
+        let (gcode, summary) = report_export_checks(exported);
+        assert!(summary.refused.is_none());
+        for id in [
+            ids::GEOM_CLEARANCE_Z_BELOW_RETRACT_Z,
+            ids::SAFETY_CUTS_INTO_MODEL,
+            ids::SAFETY_NON_CENTRE_CUTTING_PLUNGE,
+            ids::SAFETY_NON_CENTRE_CUTTING_DESCENT,
+            ids::EXPORT_OP_LEFT_OUT,
+        ] {
+            let line = summary
+                .warnings
+                .iter()
+                .find(|line| line.contains(id))
+                .unwrap_or_else(|| {
+                    panic!("summary.json does not name {id}: {:?}", summary.warnings)
+                });
+            assert!(
+                gcode.lines().any(|g| g.contains(line.as_str())),
+                "the program header does not hold `{line}`"
+            );
+        }
     }
 }

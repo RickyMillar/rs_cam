@@ -798,17 +798,6 @@ pub enum ToolChangeModeParam {
 pub struct ExportParam {
     /// Output file path for G-code
     pub path: String,
-    /// Bypass the tool-load gate for criteria that returned `Unmodeled`
-    /// (e.g. no simulation run, no vendor data). Default false.
-    #[serde(default)]
-    pub accept_unmodeled_tool_load: bool,
-    /// Bypass the tool-load gate for criteria that returned `Exceeds`
-    /// (the toolpath is predicted to break or burn the tool). Default
-    /// false. Set this knowingly; it is the "I accept that this toolpath
-    /// will damage tooling" override and is recorded separately from
-    /// `accept_unmodeled_tool_load`.
-    #[serde(default)]
-    pub accept_exceeded_tool_load: bool,
     /// Tool-change handling for this export: `pause` (M5, operator
     /// message, M0), `m6` (M5, message, `M6 T<n>`: the controller runs the
     /// change; grblHAL with `$341=3` probes each tool) or `suppress` (a
@@ -848,17 +837,6 @@ pub struct ExportParam {
     /// setting. A value given here is saved in the project's post block.
     #[serde(default)]
     pub native_drill_cycles: Option<bool>,
-    /// Emit the PREVIOUS generation's geometry for any operation that was
-    /// edited after it was generated, instead of refusing. Default false.
-    ///
-    /// What is being accepted: the file will cut the geometry from before
-    /// the edit, which is NOT what the operation's parameters now
-    /// describe. Regenerating the operation is the fix; this flag exists
-    /// for the case where the operator knowingly wants the earlier
-    /// program. It does NOT make a missing, failed or still-generating
-    /// result exportable — there is no geometry to put in its place.
-    #[serde(default)]
-    pub accept_previous_geometry: bool,
 }
 
 #[derive(Deserialize, schemars::JsonSchema, Default)]
@@ -3795,6 +3773,11 @@ pub fn build_info() -> serde_json::Value {
             // and `holes` carry `hole` (one row per hole, `label`
             // "Ø6 hole, 8 deep").
             "hole_rows",
+            // K6 (feeds contract P2, ruling Q6, 2026-11-03): no finding
+            // refuses `export_gcode`. The reply and the program header name
+            // each warning (`WARNING <danger> <id> <toolpath>: <face>`); the
+            // override keys are gone. Only an `emit.*` error stops a file.
+            "export_warnings",
             // TD3 B-5 (G-RESULTS): `get_diagnostics`' per-toolpath rows are
             // the core `ToolpathDiagnostic` — `op_kind`, per-toolpath
             // collision counts, and the report-only generation-finding

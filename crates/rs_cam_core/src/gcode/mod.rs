@@ -24,74 +24,14 @@ use serde::{Deserialize, Serialize};
 use std::borrow::Cow;
 use std::fmt::{Display, Write};
 
-/// The operator overrides of the tool-load export gate. Each flag waives
-/// a distinct class of refusal; the default refuses both.
-#[derive(Debug, Clone, Copy, Default, PartialEq, Eq)]
-pub struct ToolLoadExportPolicy {
-    pub accept_unmodeled: bool,
-    pub accept_exceeded: bool,
-}
-
-/// F061: the override that waives a load refusal, and how each surface
-/// spells it.
-///
-/// A refusal names the override the way the reader types it. The core
-/// field name (`accept_exceeded`) is accepted by no surface, so the text
-/// never prints it.
-#[derive(Debug, Clone, Copy, PartialEq, Eq)]
-pub enum LoadOverride {
-    /// Waives `Exceeds` rows whose bound may gate an export.
-    AcceptExceeded,
-    /// Waives `Unmodeled` rows, stale simulation included.
-    AcceptUnmodeled,
-}
-
-impl LoadOverride {
-    /// The MCP `export_gcode` key (`rs_cam_mcp::server::ExportGcodeParams`).
-    #[must_use]
-    pub const fn mcp_key(self) -> &'static str {
-        match self {
-            Self::AcceptExceeded => "accept_exceeded_tool_load",
-            Self::AcceptUnmodeled => "accept_unmodeled_tool_load",
-        }
-    }
-
-    /// The CLI flag, without the leading `--` (clap `long`). The `project`
-    /// and `run` subcommands name their flags from this.
-    #[must_use]
-    pub const fn cli_flag(self) -> &'static str {
-        match self {
-            Self::AcceptExceeded => "accept-exceeded-tool-load",
-            Self::AcceptUnmodeled => "accept-unmodeled-tool-load",
-        }
-    }
-
-    /// The start of the GUI pre-flight checkbox label (`ui/preflight.rs`).
-    #[must_use]
-    pub const fn gui_label(self) -> &'static str {
-        match self {
-            Self::AcceptExceeded => "Accept EXCEEDED criteria",
-            Self::AcceptUnmodeled => "Accept unmodeled criteria",
-        }
-    }
-
-    /// The sentence that names this override on every surface.
-    #[must_use]
-    pub fn spellings(self) -> String {
-        format!(
-            "MCP `{}: true`, CLI `--{}`, or the GUI pre-flight checkbox \"{}\"",
-            self.mcp_key(),
-            self.cli_flag(),
-            self.gui_label()
-        )
-    }
-}
-
-/// F061: why a checked G-code export refused. One variant per kind of
-/// refusal, so a surface can tell a load refusal it may override from a
-/// refusal no override waives.
+/// K6 (feeds contract P2, ruling Q10): why the emitter could not write a
+/// valid program. Not a finding: the program text itself would be wrong
+/// (a coordinate scale, a feed word, a cutter offset), so the export stops.
+/// No finding refuses a job (ruling Q6); this list does not grow with one.
+/// Each variant has an `emit.*` id ([`Self::id`]) that is not a
+/// `diag_ids!` row.
 #[derive(Debug, Clone, PartialEq, Eq)]
-pub enum ExportRefusal {
+pub enum EmitError {
     /// A1: the effective units are inch, which the emitter does not
     /// convert.
     InchUnits,
@@ -110,85 +50,44 @@ pub enum ExportRefusal {
         /// The operations that set compensation "In Control".
         operations: Vec<String>,
     },
-    /// S4: a criterion exceeded a bound that may refuse an export.
-    LoadExceeded {
-        /// One line per toolpath that refused.
-        refusing: Vec<String>,
-        /// The rows that exceeded a bound that may not refuse, printed
-        /// beside the refusal so the operator reads the whole picture.
-        advisories: Vec<String>,
-    },
-    /// T-19: a criterion could not be modelled.
-    LoadUnmodeled {
-        /// One line per refusing row: toolpath, kind and clause.
-        rows: Vec<String>,
-    },
-    /// PR-4: the simulation trace is stale, so the gates could not be
-    /// honoured against the current toolpaths.
-    StaleSimulation {
-        /// One line per refusing row.
-        rows: Vec<String>,
-    },
-    /// F033 (operator ruling 2): an emitted toolpath's height planes break
-    /// the order (`compute::config::height_order`). No override: fix the
-    /// heights.
-    HeightOrder {
-        /// One line per refusing toolpath: `session::HeightOrderRefusal`.
-        rows: Vec<String>,
-    },
-    /// UX-7b (SAFETY): an emitted toolpath cuts into the mesh of its own
-    /// model (`compute::model_gouge`, the blocking diagnostic
-    /// `safety.cuts_into_model`). No override: fix the floor or the
-    /// selection, and regenerate.
-    CutsIntoModel {
-        /// One line per refusing toolpath: its name and the finding.
-        rows: Vec<String>,
-    },
-    /// G-CENTRECUT (SAFETY): the simulation shows a tool that does not cut
-    /// at its centre going down into stock steeper than its limit angle or
-    /// plunging deeper than its blade protrusion
-    /// (`compute::simulate::non_centre_cutting_refusal_rows`). No override:
-    /// regenerate with an entry the tool can take.
-    NonCentreCuttingDescent {
-        /// One line per refusing toolpath: its name and the worst strike.
-        rows: Vec<String>,
-    },
 }
 
-impl ExportRefusal {
-    /// The override that waives this refusal, or `None` when no override
-    /// does (fix the project instead).
+impl EmitError {
+    /// Every id of [`Self::id`], in variant order.
+    pub const ALL_IDS: [&'static str; 3] = [
+        "emit.inch_units",
+        "emit.bad_feed",
+        "emit.controller_compensation",
+    ];
+
+    /// The stable id of this error. The names are not `diag_ids!` rows
+    /// (`emit_error_ids_are_not_finding_ids_k6`).
     #[must_use]
-    pub fn override_needed(&self) -> Option<LoadOverride> {
-        use crate::diagnostics::Gate;
-        // K6: a finding refusal reads its override from the column.
+    pub const fn id(&self) -> &'static str {
         match self {
-            Self::InchUnits | Self::BadFeed { .. } | Self::ControllerCompensation { .. } => None,
-            Self::HeightOrder { .. } => Gate::HeightRefuses.override_(),
-            Self::CutsIntoModel { .. } => Gate::GougeBlocks.override_(),
-            Self::NonCentreCuttingDescent { .. } => Gate::CentreCutDescent.override_(),
-            Self::LoadExceeded { .. } => Gate::LoadRowRefuses.override_(),
-            Self::LoadUnmodeled { .. } | Self::StaleSimulation { .. } => {
-                Gate::LoadUnmodeled.override_()
-            }
+            Self::InchUnits => Self::ALL_IDS[0],
+            Self::BadFeed { .. } => Self::ALL_IDS[1],
+            Self::ControllerCompensation { .. } => Self::ALL_IDS[2],
         }
     }
+}
 
-    /// The refusal text without the override sentence. A record of an
-    /// override that was used prints this.
-    #[must_use]
-    pub fn body(&self) -> String {
+impl Display for EmitError {
+    fn fmt(&self, f: &mut std::fmt::Formatter<'_>) -> std::fmt::Result {
         match self {
-            Self::InchUnits => "inch output not yet supported — coordinates are millimeters; \
-                 set units back to mm (G21) to export"
-                .to_owned(),
-            Self::BadFeed { operations } => format!(
+            Self::InchUnits => f.write_str(
+                "inch output not yet supported — coordinates are millimeters; \
+                 set units back to mm (G21) to export",
+            ),
+            Self::BadFeed { operations } => write!(
+                f,
                 "a cutting move has a feed that is not a finite number above zero in: {}. \
                  The file would command F0 or FNaN. Set the feed of the operation and \
                  regenerate",
                 operations.join(", ")
             ),
-            Self::ControllerCompensation { post, operations } => format!(
+            Self::ControllerCompensation { post, operations } => write!(
+                f,
                 "{post} has no cutter compensation (G41/G42), but {} set compensation to \
                  \"In Control\": {}. The cut would be off by the tool radius. \
                  Set the compensation to \"In Computer\" and regenerate",
@@ -199,98 +98,77 @@ impl ExportRefusal {
                 },
                 operations.join(", ")
             ),
-            Self::LoadExceeded {
-                refusing,
-                advisories,
-            } => {
-                let mut msg =
-                    String::from("G-code export refused: tool load exceeded on toolpath(s):\n");
-                for line in refusing {
-                    let _ = writeln!(msg, "{line}");
-                }
-                msg.push_str(&advisory_block(advisories));
-                msg.trim_end().to_owned()
-            }
-            Self::LoadUnmodeled { rows } => {
-                let mut msg = String::from(
-                    "G-code export refused: tool load not fully modeled for toolpath(s):\n",
-                );
-                for line in rows {
-                    let _ = writeln!(msg, "{line}");
-                }
-                msg.trim_end().to_owned()
-            }
-            Self::StaleSimulation { rows } => {
-                let mut msg = String::from(
-                    "G-code export refused: cached simulation is stale — re-run simulation \
-                     to verify load gates against current toolpath state.\n",
-                );
-                for line in rows {
-                    let _ = writeln!(msg, "{line}");
-                }
-                msg.trim_end().to_owned()
-            }
-            Self::HeightOrder { rows } => {
-                let mut msg =
-                    String::from("G-code export refused: the height planes are out of order:\n");
-                for line in rows {
-                    let _ = writeln!(msg, "{line}");
-                }
-                msg.trim_end().to_owned()
-            }
-            Self::CutsIntoModel { rows } => {
-                let mut msg =
-                    String::from("G-code export refused: a toolpath cuts into the model:\n");
-                for line in rows {
-                    let _ = writeln!(msg, "{line}");
-                }
-                msg.trim_end().to_owned()
-            }
-            Self::NonCentreCuttingDescent { rows } => {
-                let mut msg = String::from(
-                    "G-code export refused: a tool that does not cut at its centre goes \
-                     down into wood too steeply:\n",
-                );
-                for line in rows {
-                    let _ = writeln!(msg, "{line}");
-                }
-                msg.trim_end().to_owned()
-            }
         }
     }
 }
 
-impl Display for ExportRefusal {
-    fn fmt(&self, f: &mut std::fmt::Formatter<'_>) -> std::fmt::Result {
-        f.write_str(&self.body())?;
-        match self {
-            Self::InchUnits
-            | Self::BadFeed { .. }
-            | Self::ControllerCompensation { .. }
-            | Self::HeightOrder { .. }
-            | Self::CutsIntoModel { .. }
-            | Self::NonCentreCuttingDescent { .. } => Ok(()),
-            Self::LoadExceeded { .. } => write!(
-                f,
-                "\nTo override (a known-dangerous override): {}.",
-                LoadOverride::AcceptExceeded.spellings()
-            ),
-            Self::LoadUnmodeled { .. } => write!(
-                f,
-                "\nTo acknowledge unmodeled criteria: {}.",
-                LoadOverride::AcceptUnmodeled.spellings()
-            ),
-            Self::StaleSimulation { .. } => write!(
-                f,
-                "\nRun simulation, then export again. To export against the stale evidence \
-                 anyway: {}.",
-                LoadOverride::AcceptUnmodeled.spellings()
-            ),
-        }
+impl std::error::Error for EmitError {}
+
+/// K6 (CONTRACT K6, ruling Q6): one finding that the export names. Every
+/// export door returns the list ([`ExportedGcode::warnings`]), and the
+/// program header prints one comment per warning ([`Self::header_line`]).
+/// Only a `diag_ids!` row that warns makes one ([`Self::new`]); an `Info`
+/// row never prints.
+#[derive(Debug, Clone, PartialEq, Eq)]
+pub struct ExportWarning {
+    /// The `diag_ids!` id.
+    pub id: &'static str,
+    /// The name of the toolpath the finding is about.
+    pub toolpath: String,
+    /// What the finding can damage, from the id's row.
+    pub danger: crate::diagnostics::Danger,
+    /// The short face of the id (`diagnostics::presentation::face`).
+    pub face: String,
+    /// The detail: the line the refusal printed before K6.
+    pub detail: String,
+}
+
+impl ExportWarning {
+    /// The warning of `id` on `toolpath`, or `None` when the row of `id`
+    /// does not warn (an `Info` row, a missing input, no row).
+    #[must_use]
+    pub fn new(id: &'static str, toolpath: impl Into<String>, detail: String) -> Option<Self> {
+        let danger = crate::diagnostics::ids::warn_danger(id)?;
+        Some(Self {
+            id,
+            toolpath: toolpath.into(),
+            danger,
+            face: crate::diagnostics::presentation::face(id),
+            detail,
+        })
+    }
+
+    /// The comment text of the G-code header line:
+    /// `WARNING <danger> <id> <toolpath>: <face>`.
+    #[must_use]
+    pub fn header_line(&self) -> String {
+        format!(
+            "WARNING {} {} {}: {}",
+            self.danger.label(),
+            self.id,
+            self.toolpath,
+            self.face
+        )
     }
 }
 
-impl std::error::Error for ExportRefusal {}
+/// The text a surface prints for the export warnings: a count line, then
+/// one line per warning (the header line and the detail). `None` with no
+/// warning.
+#[must_use]
+pub fn warnings_report(warnings: &[ExportWarning]) -> Option<String> {
+    if warnings.is_empty() {
+        return None;
+    }
+    let mut text = format!(
+        "Export warnings ({}): the program was written; the header names each one.",
+        warnings.len()
+    );
+    for warning in warnings {
+        let _ = write!(text, "\n  {} — {}", warning.header_line(), warning.detail);
+    }
+    Some(text)
+}
 
 /// The advisory block: the header line and one line per advisory, or an
 /// empty string when there is none.
@@ -307,26 +185,25 @@ fn advisory_block(advisories: &[String]) -> String {
     block
 }
 
-/// F051: what the tool-load gate let through, and why.
+/// F051: the load rows that exceeded a bound that does not gate (a rule of
+/// thumb). They are advisories: the operator must still read them. K6: the
+/// rows that gate are export warnings ([`ExportWarning`]), not this list.
 ///
 /// Every export result carries one, and every door destructures it, so an
-/// advisory or a used override cannot be dropped the way `let _note`
-/// dropped it.
+/// advisory cannot be dropped the way `let _note` dropped it.
 #[must_use]
 #[derive(Debug, Clone, Default, PartialEq, Eq)]
 pub struct LoadPolicyOutcome {
-    /// One line per criterion that exceeded a bound that may not refuse
-    /// an export. The operator must still read them.
+    /// One line per criterion that exceeded a bound that may not gate an
+    /// export.
     pub advisories: Vec<String>,
-    /// The refusals an operator override waived for this export.
-    pub overridden: Vec<ExportRefusal>,
 }
 
 impl LoadPolicyOutcome {
-    /// True when the gate has nothing to report.
+    /// True when the outcome has nothing to report.
     #[must_use]
     pub fn is_empty(&self) -> bool {
-        self.advisories.is_empty() && self.overridden.is_empty()
+        self.advisories.is_empty()
     }
 
     /// The advisory block (header and lines), or `None` with no advisory.
@@ -336,38 +213,18 @@ impl LoadPolicyOutcome {
         (!block.is_empty()).then(|| block.trim_end().to_owned())
     }
 
-    /// The text a surface shows for this outcome: the advisory block, then
-    /// one block per override used. `None` when there is nothing to say.
+    /// The text a surface shows for this outcome: the advisory block.
+    /// `None` when there is nothing to say.
     #[must_use]
     pub fn report(&self) -> Option<String> {
-        let mut parts: Vec<String> = self.advisory_note().into_iter().collect();
-        for refusal in &self.overridden {
-            parts.push(format!(
-                "OVERRIDE USED — without it this export is refused:\n{}",
-                refusal.body()
-            ));
-        }
-        (!parts.is_empty()).then(|| parts.join("\n"))
+        self.advisory_note()
     }
 
     /// Add `other` to this outcome (a multi-file export reports one).
     pub fn merge(&mut self, other: Self) {
-        let Self {
-            advisories,
-            overridden,
-        } = other;
+        let Self { advisories } = other;
         self.advisories.extend(advisories);
-        self.overridden.extend(overridden);
     }
-}
-
-/// A checked emission with no session: the program and what the load gate
-/// let through. The CLI job pipeline and the session door read it.
-#[must_use]
-#[derive(Debug, Clone, PartialEq, Eq)]
-pub struct CheckedProgram {
-    pub gcode: String,
-    pub load_outcome: LoadPolicyOutcome,
 }
 
 /// F067: one finished export from the session door
@@ -383,24 +240,30 @@ pub struct ExportedGcode {
     /// pass ran BEFORE the rewrite, while the rapids were still `G0`. Do
     /// not re-run it on `gcode`. Empty is a clean pass.
     pub machine_safety: Vec<crate::export::gcode_validator::Finding>,
-    /// F051: the load gate's advisories and the overrides it used.
+    /// F051: the load advisories (rows whose bound does not gate).
     pub load_outcome: LoadPolicyOutcome,
+    /// K6: every finding the export names, in gate order. The program
+    /// header holds one comment line per warning. Empty is a clean export.
+    pub warnings: Vec<ExportWarning>,
     /// W2.5 (D10): one line per emitted toolpath whose feeds came from a
     /// simulation the session no longer holds. A caution, not a refusal.
     pub feeds_cautions: Vec<String>,
 }
 
 /// F067: what the session door emits — the phases, which toolpaths they
-/// are, the load report the gate reads, the policy and the overlay.
+/// are, the ops the export leaves out, the load report and the overlay.
 pub struct ExportRequest<'a> {
     /// The phases, arranged by setup.
     pub phases: ExportPhases<'a>,
     /// The toolpath index of each emitted phase. The machine-safety pass
     /// reads the retract plane of these toolpaths.
     pub emitted: Vec<usize>,
-    /// The report the load gate enforces `policy` against.
+    /// K6 (lead decision 4): each enabled op in scope with no current
+    /// result, with the sentence that says why. The export names each one
+    /// (`export.op_left_out`). `ProjectSession::export_scope` is the rule.
+    pub left_out: Vec<(usize, String)>,
+    /// The load report the export reads its load warnings from.
     pub report: &'a crate::tool_load::ToolLoadReport,
-    pub policy: ToolLoadExportPolicy,
     pub overlay: &'a WizardOverlay,
 }
 
@@ -577,14 +440,25 @@ fn emit_gcode_phased(phases: &[GcodePhase<'_>], post: &PostDefinition) -> String
 /// Same as `emit_gcode_phased`, but applies a `WizardOverlay` (WCS, units,
 /// spindle warmup) on top of the post's defaults. `WizardOverlay::default()`
 /// is byte-identical to the no-overlay path.
+#[cfg(test)]
 pub(crate) fn emit_gcode_phased_with_overlay(
     phases: &[GcodePhase<'_>],
     post: &PostDefinition,
     overlay: &WizardOverlay,
 ) -> String {
+    let program = phased_program(phases, post, overlay);
+    emitter::emit_program_with_overlay(&program, post, overlay)
+}
+
+/// The program of [`emit_gcode_phased_with_overlay`], before the emit.
+fn phased_program(
+    phases: &[GcodePhase<'_>],
+    post: &PostDefinition,
+    overlay: &WizardOverlay,
+) -> Program {
     let mut program = program_builder::build_phased_with(phases, build_options(post, overlay));
     prepend_t_collision_warnings(&mut program, phases.iter(), post, overlay);
-    emitter::emit_program_with_overlay(&program, post, overlay)
+    program
 }
 
 /// The builder choices one export takes from its post and overlay.
@@ -815,73 +689,86 @@ pub fn arrange_phases_by_setup<'a>(
     ExportPhases::Setups(groups)
 }
 
-/// **The exceeded criteria that may refuse a g-code export.** S4
-/// (2026-09-18).
+/// **The exceeded criteria that warn on a g-code export.** S4
+/// (2026-09-18); K6 (2026-11-03): they warn, they do not refuse.
 ///
 /// Pure, and public, so the rule is testable on hand-built rows. The
 /// decision keys on the bound's PROVENANCE
 /// ([`crate::tool_load::verdict::BoundSource::gates_export`]), never on
-/// the quantity: the reason `0.20 × D` may not refuse a job is that no
+/// the quantity: the reason `0.20 × D` may not gate a job is that no
 /// publication states it, not that it measures a depth.
 ///
-/// A row with NO source still refuses. Every shipped gate carries one,
-/// so an absent source is a gate that forgot, and an absence must fail
-/// safe.
+/// A row with NO source still warns. Every shipped gate carries one, so
+/// an absent source is a gate that forgot, and an absence must fail safe.
 #[must_use]
-pub fn refusing_exceedances<'a>(
+pub fn warning_exceedances<'a>(
     criteria: &'a [crate::tool_load::verdict::CriterionStatus<'a>],
 ) -> Vec<&'a crate::tool_load::verdict::CriterionStatus<'a>> {
     criteria
         .iter()
-        .filter(|status| status.refuses_export())
+        .filter(|status| status.warns_on_export())
         .collect()
 }
 
-/// **The whole exceedance half of the export policy, pure.** S4
-/// (2026-09-18).
+/// K6: one load row that the export names: the toolpath, the
+/// `diag_ids!` id and the line the refusal printed before K6.
+#[derive(Debug, Clone, PartialEq, Eq)]
+pub struct LoadWarningRow {
+    pub toolpath: crate::ids::ToolpathId,
+    pub id: &'static str,
+    pub detail: String,
+}
+
+/// K6: what the load half of an export names: the warning rows and the
+/// advisories (the exceedances whose bound does not gate).
+#[derive(Debug, Clone, Default, PartialEq, Eq)]
+pub struct LoadFindings {
+    pub outcome: LoadPolicyOutcome,
+    pub rows: Vec<LoadWarningRow>,
+}
+
+/// **The exceedance half of the export load findings, pure.** S4
+/// (2026-09-18); K6 (2026-11-03).
 ///
-/// `Err` refuses the export and names what refused, and also what
-/// exceeded without refusing. `Ok` exports; its
-/// [`LoadPolicyOutcome::advisories`] holds one line per criterion that
-/// exceeded a bound that may not gate, which the operator must still
-/// see. F051: under `accept_exceeded` the refusal the override waived is
-/// kept in [`LoadPolicyOutcome::overridden`], never discarded.
-///
-/// [`enforce_load_policy`] delegates to this. It is separate so the rule
-/// is testable on hand-built rows.
-pub fn enforce_exceedance_policy(
+/// One warning row per criterion that exceeded a bound that gates
+/// ([`warning_exceedances`]), and one advisory line per criterion that
+/// exceeded a bound that may not gate, which the operator must still see.
+/// Nothing refuses.
+#[must_use]
+pub fn exceedance_findings(
     per_toolpath: &[(
         crate::ids::ToolpathId,
         Vec<crate::tool_load::verdict::CriterionStatus<'_>>,
     )],
-    accept_exceeded: bool,
-) -> Result<LoadPolicyOutcome, ExportRefusal> {
+) -> LoadFindings {
     use crate::tool_load::verdict::LoadState;
 
-    let mut refusing: Vec<String> = Vec::new();
-    let mut advisories: Vec<String> = Vec::new();
+    let mut found = LoadFindings::default();
     for (id, criteria) in per_toolpath {
-        let refusing_rows = refusing_exceedances(criteria);
-        if !refusing_rows.is_empty() {
-            let reason_list: Vec<String> = refusing_rows
-                .iter()
-                .map(|status| match &status.exceeded {
-                    Some(ec) => format!("{}={}", ec.label, ec.reason_label),
-                    None => status.kind.label().to_owned(),
-                })
-                .collect();
-            refusing.push(format!("  toolpath {id}: {}", reason_list.join(", ")));
+        for status in warning_exceedances(criteria) {
+            let Some(finding) = status.finding_id() else {
+                continue;
+            };
+            let row = match &status.exceeded {
+                Some(ec) => format!("{}={}", ec.label, ec.reason_label),
+                None => status.kind.label().to_owned(),
+            };
+            found.rows.push(LoadWarningRow {
+                toolpath: *id,
+                id: finding,
+                detail: format!("toolpath {id}: {row}"),
+            });
         }
         for status in criteria
             .iter()
-            .filter(|s| s.state == LoadState::Exceeds && !s.refuses_export())
+            .filter(|s| s.state == LoadState::Exceeds && !s.warns_on_export())
         {
             // Every number here is formatted from the value it
             // describes. Nothing is typed into the string.
             let peak = status
                 .display_peak
                 .map_or_else(|| "not stated".to_owned(), |p| format!("{p:.4}"));
-            advisories.push(format!(
+            found.outcome.advisories.push(format!(
                 "  toolpath {id}: {}, peak {peak} {}, {}",
                 status.kind.label(),
                 status.unit,
@@ -889,48 +776,23 @@ pub fn enforce_exceedance_policy(
             ));
         }
     }
-
-    // K6: the rows refuse while the column says so.
-    if refusing.is_empty()
-        || !crate::diagnostics::Gate::LoadRowRefuses.refuses_at(crate::diagnostics::Stage::Export)
-    {
-        return Ok(LoadPolicyOutcome {
-            advisories,
-            overridden: Vec::new(),
-        });
-    }
-    if !accept_exceeded {
-        return Err(ExportRefusal::LoadExceeded {
-            refusing,
-            advisories,
-        });
-    }
-    Ok(LoadPolicyOutcome {
-        advisories,
-        // The advisories are already in the outcome; the record of the
-        // override holds the refusing lines only.
-        overridden: vec![ExportRefusal::LoadExceeded {
-            refusing,
-            advisories: Vec::new(),
-        }],
-    })
+    found
 }
 
 /// True for the drill-native gates, false for the milling gates. T-19
 /// (2026-09-18).
 ///
-/// [`refusing_unmodeled`] reads it to reproduce the drill partition
+/// [`warning_unmodeled`] reads it to reproduce the drill partition
 /// [`crate::tool_load::ToolpathLoadVerdict::any_unmodeled`] applies:
 /// drill rows exist in `criteria()` exactly when `drill_gates` is
 /// `Some`, so "the list holds a drill row" is the same test as
 /// "`drill_gates.is_some()`".
 ///
 /// The list names the DRILL kinds, never the milling ones, and the
-/// direction matters. A new milling gate takes the default arm, joins
-/// the milling partition and refuses like the four beside it, with no
-/// edit here. A new drill gate that nobody adds here reads as a milling
-/// gate, so the partition does not fire and the export refuses — the
-/// safe direction.
+/// direction matters. A new milling gate joins the milling partition and
+/// warns like the four beside it, with no edit here. A new drill gate
+/// that nobody adds here reads as a milling gate, so the partition does
+/// not fire and the export warns — the safe direction.
 fn is_drill_gate(kind: crate::tool_load::verdict::CriterionKind) -> bool {
     use crate::tool_load::verdict::CriterionKind;
     matches!(
@@ -941,19 +803,17 @@ fn is_drill_gate(kind: crate::tool_load::verdict::CriterionKind) -> bool {
     )
 }
 
-/// **The unmodelled criteria that refuse a g-code export.** T-19
-/// (2026-09-18).
+/// **The unmodelled criteria that warn on a g-code export.** T-19
+/// (2026-09-18); K6 (2026-11-03): they warn, they do not refuse.
 ///
 /// Pure, and public, so the rule is testable on hand-built rows. It is
-/// the unmodelled half's answer to [`refusing_exceedances`], and it
+/// the unmodelled half's answer to [`warning_exceedances`], and it
 /// derives from the same list: a gate added to
 /// [`crate::tool_load::ToolpathLoadVerdict::criteria`] participates
 /// here without an edit.
 ///
 /// Two rows do not count, and both exclusions are the ones
-/// [`crate::tool_load::ToolpathLoadVerdict::any_unmodeled`] already
-/// applies, so the decision this helper makes is the decision the gate
-/// made before it existed:
+/// [`crate::tool_load::ToolpathLoadVerdict::any_unmodeled`] applies:
 ///
 /// - a row [`crate::tool_load::verdict::CriterionStatus::is_known_absence`]
 ///   accepts — the gantry-push row, which no operator action can fill
@@ -961,12 +821,8 @@ fn is_drill_gate(kind: crate::tool_load::verdict::CriterionKind) -> bool {
 /// - every row, when the toolpath ran the drill gates and every milling
 ///   gate reported `NotApplicableForOp`. A drill cycle is not an
 ///   unmeasured milling cut.
-///
-/// Before T-19 the decision read this list and the MESSAGE enumerated
-/// chipload, power and deflection by hand. A toolpath whose only
-/// unmodelled row was the depth row refused and named no criterion.
 #[must_use]
-pub fn refusing_unmodeled<'a>(
+pub fn warning_unmodeled<'a>(
     criteria: &'a [crate::tool_load::verdict::CriterionStatus<'a>],
 ) -> Vec<&'a crate::tool_load::verdict::CriterionStatus<'a>> {
     use crate::tool_load::UnmodeledReason;
@@ -991,10 +847,9 @@ pub fn refusing_unmodeled<'a>(
 /// **The operator-facing clause for an unmodelled row.** T-19
 /// (2026-09-18).
 ///
-/// The refusal used to print `{:?}` — a Rust variant name in an operator's
-/// message. A vacuous row states its own clause; every other row prints
+/// A vacuous row states its own clause; every other row prints
 /// [`crate::tool_load::UnmodeledReason::operator_text`], the reason's one
-/// clause (F080).
+/// clause (F080). A stale trace reads "simulation trace is stale".
 fn unmodeled_clause(status: &crate::tool_load::verdict::CriterionStatus<'_>) -> String {
     let vacuity = status.vacuity_clause();
     if !vacuity.is_empty() {
@@ -1006,86 +861,43 @@ fn unmodeled_clause(status: &crate::tool_load::verdict::CriterionStatus<'_>) -> 
     )
 }
 
-/// **The whole unmodelled half of the export policy, pure.** T-19
-/// (2026-09-18).
+/// **The unmodelled half of the export load findings, pure.** T-19
+/// (2026-09-18); K6 (2026-11-03).
 ///
-/// `Err` refuses the export and names EVERY row it refused on, kind and
-/// clause. `Ok` means nothing unmodelled counts, or the operator accepted
-/// what does; F051: the accepted refusal is kept in
-/// [`LoadPolicyOutcome::overridden`].
-///
-/// [`enforce_load_policy`] delegates to this, the way it delegates the
-/// exceeded half to [`enforce_exceedance_policy`]. Both halves read the
-/// criterion tier from the same place, which is the whole of register
-/// item T-19.
-///
-/// The refusal kind distinguishes a stale simulation
-/// ([`ExportRefusal::StaleSimulation`]) from a missing one
-/// ([`ExportRefusal::LoadUnmodeled`]): they are different operator
-/// actions even though both refuse. A row reads stale only through
-/// [`crate::tool_load::UnmodeledReason::StaleSimulation`], which
-/// [`ProjectSession::build_tool_load_report`] writes onto the rows it
-/// invalidated.
-pub fn enforce_unmodeled_policy(
+/// One warning row per counting row ([`warning_unmodeled`]), kind and
+/// clause, in criterion order. A stale trace states it in the clause.
+#[must_use]
+pub fn unmodeled_findings(
     per_toolpath: &[(
         crate::ids::ToolpathId,
         Vec<crate::tool_load::verdict::CriterionStatus<'_>>,
     )],
-    accept_unmodeled: bool,
-) -> Result<LoadPolicyOutcome, ExportRefusal> {
-    use crate::tool_load::UnmodeledReason;
-
-    let mut rows: Vec<String> = Vec::new();
+) -> Vec<LoadWarningRow> {
+    let mut rows = Vec::new();
     for (id, criteria) in per_toolpath {
-        for status in refusing_unmodeled(criteria) {
-            rows.push(format!(
-                "  toolpath {id}: {}: {}",
-                status.kind.label(),
-                unmodeled_clause(status)
-            ));
+        for status in warning_unmodeled(criteria) {
+            let Some(finding) = status.finding_id() else {
+                continue;
+            };
+            rows.push(LoadWarningRow {
+                toolpath: *id,
+                id: finding,
+                detail: format!(
+                    "toolpath {id}: {}: {}",
+                    status.kind.label(),
+                    unmodeled_clause(status)
+                ),
+            });
         }
     }
-    // K6: the rows refuse while the column says so.
-    if rows.is_empty()
-        || !crate::diagnostics::Gate::LoadUnmodeled.refuses_at(crate::diagnostics::Stage::Export)
-    {
-        return Ok(LoadPolicyOutcome::default());
-    }
-    let any_stale = per_toolpath
-        .iter()
-        .flat_map(|(_, criteria)| criteria.iter())
-        .any(|s| matches!(s.unmodeled_reason, Some(UnmodeledReason::StaleSimulation)));
-    let refusal = if any_stale {
-        ExportRefusal::StaleSimulation { rows }
-    } else {
-        ExportRefusal::LoadUnmodeled { rows }
-    };
-    if !accept_unmodeled {
-        return Err(refusal);
-    }
-    Ok(LoadPolicyOutcome {
-        advisories: Vec::new(),
-        overridden: vec![refusal],
-    })
+    rows
 }
 
-/// Enforce a `ToolLoadExportPolicy` against a report. The refusal names
-/// each offending toolpath and criterion and the override as each surface
-/// spells it.
-///
-/// S4/F051: the `Ok` arm is the [`LoadPolicyOutcome`]: the advisories of
-/// the exceeded rows that may not refuse, and the refusals an override
-/// waived. The export goes ahead and the caller reports both.
-///
-/// T-19 (2026-09-18): this function decides nothing of its own. It
-/// builds the criterion tier once and hands it to both pure halves —
-/// [`enforce_exceedance_policy`] and [`enforce_unmodeled_policy`] — so
-/// the decision and the message cannot read a criterion from two
-/// different places.
-pub fn enforce_load_policy(
-    report: &crate::tool_load::ToolLoadReport,
-    policy: &ToolLoadExportPolicy,
-) -> Result<LoadPolicyOutcome, ExportRefusal> {
+/// The load findings of `report`: the exceedance rows and advisories, then
+/// the unmodelled rows. T-19: it builds the criterion tier once and hands
+/// it to both pure halves, so the rows and the text read one list.
+#[must_use]
+pub fn load_findings(report: &crate::tool_load::ToolLoadReport) -> LoadFindings {
     let per_toolpath: Vec<(
         crate::ids::ToolpathId,
         Vec<crate::tool_load::verdict::CriterionStatus<'_>>,
@@ -1094,34 +906,30 @@ pub fn enforce_load_policy(
         .iter()
         .map(|v| (v.toolpath_id, v.criteria()))
         .collect();
-    let mut outcome = enforce_exceedance_policy(&per_toolpath, policy.accept_exceeded)?;
-    outcome.merge(enforce_unmodeled_policy(
-        &per_toolpath,
-        policy.accept_unmodeled,
-    )?);
-    Ok(outcome)
+    let mut found = exceedance_findings(&per_toolpath);
+    found.rows.extend(unmodeled_findings(&per_toolpath));
+    found
 }
 
-/// The checked emit with no session: the A1/G1 refusals, the load gate,
-/// then the program.
+/// The checked emit with no session: the emit errors (A1, F005, G1), then
+/// the program with one header comment per warning.
 ///
-/// `report` is the tool-load report the gate enforces `policy` against
-/// (C1, 2026-06-11). It is deliberately **non-optional** so no caller
-/// can silently skip the gate. The session door
-/// ([`crate::session::ProjectSession::export_program`]) builds it from
-/// the session; the CLI job-file pipeline, which has no session, passes
-/// an explicitly empty report (`ToolLoadReport { per_toolpath: vec![] }`),
-/// which states at the call site that no evaluation was performed.
+/// `warnings` are the findings the caller judged (K6); the session door
+/// ([`crate::session::ProjectSession::export_program`]) passes
+/// `export_warnings`, and the CLI job-file pipeline, which has no session,
+/// passes none. Each prints one comment after `Statement::Preamble`
+/// ([`ExportWarning::header_line`]); with none the program is
+/// byte-identical to the program before K6.
 ///
 /// `safe_z` is the inter-setup retract of a [`ExportPhases::Setups`]
 /// program (the overlay's `safe_z_override` wins). A
 /// [`WizardOverlay::default`] is byte-identical to the no-overlay path.
 ///
-/// Enforces, in order:
+/// Refuses, in order, with an [`EmitError`]:
 /// 1. effective units must be mm (A1 — inch output is a cosmetic G20
 ///    today; refusing beats a silent 25.4× error),
-/// 2. no controller compensation on a post without it (G1),
-/// 3. `policy` against `report` (C1 — the tool-load gate).
+/// 2. no feed that is not a finite number above zero (F005),
+/// 3. no controller compensation on a post without it (G1).
 ///
 /// This runs no machine-safety pass and no rapid rewrite: both need the
 /// session (the retract plane, the machine feed limit, the post config).
@@ -1130,34 +938,47 @@ pub fn emit_checked(
     phases: &ExportPhases<'_>,
     post: &PostDefinition,
     safe_z: f64,
-    report: &crate::tool_load::ToolLoadReport,
-    policy: ToolLoadExportPolicy,
     overlay: &WizardOverlay,
-) -> Result<CheckedProgram, ExportRefusal> {
+    warnings: &[ExportWarning],
+) -> Result<String, EmitError> {
     refuse_inch_units(post, overlay)?;
     refuse_bad_feeds(phases.phases().into_iter())?;
     refuse_controller_compensation(phases.phases().into_iter(), post, overlay)?;
-    let load_outcome = enforce_load_policy(report, &policy)?;
-    let gcode = match phases {
-        ExportPhases::OneSetup(phases) => emit_gcode_phased_with_overlay(phases, post, overlay),
-        ExportPhases::Setups(setups) => {
-            emit_gcode_multi_setup_with_overlay(setups, post, safe_z, overlay)
-        }
+    let mut program = match phases {
+        ExportPhases::OneSetup(phases) => phased_program(phases, post, overlay),
+        ExportPhases::Setups(setups) => multi_setup_program(setups, post, safe_z, overlay),
     };
-    Ok(CheckedProgram {
-        gcode,
-        load_outcome,
-    })
+    insert_warning_header(&mut program, warnings);
+    Ok(emitter::emit_program_with_overlay(&program, post, overlay))
+}
+
+/// K6: one comment per warning directly after the first
+/// `Statement::Preamble` (the post preamble prints the first line
+/// "Generated by rs_cam"). No warning, no statement.
+fn insert_warning_header(program: &mut Program, warnings: &[ExportWarning]) {
+    if warnings.is_empty() {
+        return;
+    }
+    let at = program
+        .statements
+        .iter()
+        .position(|s| matches!(s, Statement::Preamble { .. }))
+        .map_or(0, |i| i + 1);
+    for (offset, warning) in warnings.iter().enumerate() {
+        program
+            .statements
+            .insert(at + offset, Statement::Comment(warning.header_line()));
+    }
 }
 
 /// A1 — inch output is not implemented: a units override to `Inch` only
 /// swaps the modal word (G21 → G20) while every coordinate stays in
 /// millimeters, a silent 25.4× scale error. Hard-refuse until a real
 /// conversion lands (backlogged).
-fn refuse_inch_units(post: &PostDefinition, overlay: &WizardOverlay) -> Result<(), ExportRefusal> {
+fn refuse_inch_units(post: &PostDefinition, overlay: &WizardOverlay) -> Result<(), EmitError> {
     let effective_units = overlay.units_override.unwrap_or(post.units);
     if effective_units == Units::Inch {
-        return Err(ExportRefusal::InchUnits);
+        return Err(EmitError::InchUnits);
     }
     Ok(())
 }
@@ -1168,7 +989,7 @@ fn refuse_inch_units(post: &PostDefinition, overlay: &WizardOverlay) -> Result<(
 /// before the bytes.
 fn refuse_bad_feeds<'a, 'b: 'a>(
     phases: impl Iterator<Item = &'a GcodePhase<'b>>,
-) -> Result<(), ExportRefusal> {
+) -> Result<(), EmitError> {
     use crate::toolpath::MoveType;
     let bad = |feed_rate: f64| !(feed_rate.is_finite() && feed_rate > 0.0);
     let operations: Vec<String> = phases
@@ -1185,7 +1006,7 @@ fn refuse_bad_feeds<'a, 'b: 'a>(
     if operations.is_empty() {
         return Ok(());
     }
-    Err(ExportRefusal::BadFeed { operations })
+    Err(EmitError::BadFeed { operations })
 }
 
 /// G1 (SAFETY, 2026-10-08): refuse a phase that asks the controller for
@@ -1200,7 +1021,7 @@ fn refuse_controller_compensation<'a, 'b: 'a>(
     phases: impl Iterator<Item = &'a GcodePhase<'b>>,
     post: &PostDefinition,
     overlay: &WizardOverlay,
-) -> Result<(), ExportRefusal> {
+) -> Result<(), EmitError> {
     let effective = overlay.applied_post(post);
     if effective.supports_cutter_comp {
         return Ok(());
@@ -1212,7 +1033,7 @@ fn refuse_controller_compensation<'a, 'b: 'a>(
     if operations.is_empty() {
         return Ok(());
     }
-    Err(ExportRefusal::ControllerCompensation {
+    Err(EmitError::ControllerCompensation {
         post: effective.name.clone(),
         operations,
     })
@@ -1280,12 +1101,24 @@ fn emit_gcode_multi_setup(
 /// overlay's `safe_z_override` (when set) replaces the `safe_z` argument
 /// for the inter-setup retract; WCS/units/warmup apply as in
 /// `emit_gcode_phased_with_overlay`.
+#[cfg(test)]
 pub(crate) fn emit_gcode_multi_setup_with_overlay(
     setups: &[GcodeSetupPhase<'_>],
     post: &PostDefinition,
     safe_z: f64,
     overlay: &WizardOverlay,
 ) -> String {
+    let program = multi_setup_program(setups, post, safe_z, overlay);
+    emitter::emit_program_with_overlay(&program, post, overlay)
+}
+
+/// The program of [`emit_gcode_multi_setup_with_overlay`], before the emit.
+fn multi_setup_program(
+    setups: &[GcodeSetupPhase<'_>],
+    post: &PostDefinition,
+    safe_z: f64,
+    overlay: &WizardOverlay,
+) -> Program {
     let effective_safe_z = overlay.safe_z_override.unwrap_or(safe_z);
     let mut program = program_builder::build_multi_setup_with(
         setups,
@@ -1298,7 +1131,7 @@ pub(crate) fn emit_gcode_multi_setup_with_overlay(
         post,
         overlay,
     );
-    emitter::emit_program_with_overlay(&program, post, overlay)
+    program
 }
 
 /// Replace G0 rapid moves with G1 at a high feedrate.
@@ -1554,7 +1387,7 @@ pub fn get_post_definition(name: &str) -> Option<&'static PostDefinition> {
 /// F121: the one copy. The validator (`export::gcode_validator`), the
 /// emitter and the program builder read it to scan the words of a line
 /// (A2 splice warnings, M-code denylist).
-pub(crate) fn strip_comments(line: &str) -> String {
+pub fn strip_comments(line: &str) -> String {
     let mut out = String::with_capacity(line.len());
     let mut depth: i32 = 0;
     for ch in line.chars() {
@@ -1569,10 +1402,28 @@ pub(crate) fn strip_comments(line: &str) -> String {
     out
 }
 
+/// K6: a program with every comment stripped ([`strip_comments`] per line)
+/// and the lines that held only a comment dropped. Two programs that differ
+/// only in comment lines (the K6 warning header) give the same text.
+#[must_use]
+pub fn program_without_comments(program: &str) -> String {
+    let mut out = String::with_capacity(program.len());
+    for line in program.lines() {
+        let code = strip_comments(line);
+        if code.trim().is_empty() {
+            continue;
+        }
+        out.push_str(&code);
+        out.push('\n');
+    }
+    out
+}
+
 #[cfg(test)]
 #[expect(
     clippy::unwrap_used,
     clippy::expect_used,
+    clippy::indexing_slicing,
     reason = "test code: a panic is how a test reports a failure"
 )]
 mod tests {
@@ -1581,43 +1432,35 @@ mod tests {
     use crate::ids::ToolpathId;
     use crate::toolpath::Toolpath;
 
-    /// The checked emit of one phase list, as text.
+    /// The checked emit of one phase list, as text, with no warning.
     fn checked_one(
         phases: &[GcodePhase<'_>],
         post: &PostDefinition,
-        report: &crate::tool_load::ToolLoadReport,
-        policy: ToolLoadExportPolicy,
         overlay: &WizardOverlay,
-    ) -> Result<String, ExportRefusal> {
+    ) -> Result<String, EmitError> {
         emit_checked(
             &ExportPhases::OneSetup(phases.to_vec()),
             post,
             0.0,
-            report,
-            policy,
             overlay,
+            &[],
         )
-        .map(|checked| checked.gcode)
     }
 
-    /// The checked emit of setup groups, as text.
+    /// The checked emit of setup groups, as text, with no warning.
     fn checked_setups(
         setups: &[GcodeSetupPhase<'_>],
         post: &PostDefinition,
         safe_z: f64,
-        report: &crate::tool_load::ToolLoadReport,
-        policy: ToolLoadExportPolicy,
         overlay: &WizardOverlay,
-    ) -> Result<String, ExportRefusal> {
+    ) -> Result<String, EmitError> {
         emit_checked(
             &ExportPhases::Setups(setups.to_vec()),
             post,
             safe_z,
-            report,
-            policy,
             overlay,
+            &[],
         )
-        .map(|checked| checked.gcode)
     }
 
     /// L7 (operator ruling, 2026-09-16): a trace with no `provenance`
@@ -1762,14 +1605,6 @@ mod tests {
         );
     }
 
-    /// "No load evaluation performed" report — what callers without a
-    /// `ProjectSession` (CLI job path, fixture captures) pass.
-    fn empty_report() -> crate::tool_load::ToolLoadReport {
-        crate::tool_load::ToolLoadReport {
-            per_toolpath: vec![],
-        }
-    }
-
     #[test]
     fn checked_phased_export_is_byte_identical_to_legacy_emitter() {
         let mut tp1 = Toolpath::new();
@@ -1816,14 +1651,8 @@ mod tests {
         ];
 
         let legacy = emit_gcode_phased(&phases, post::grbl());
-        let checked = checked_one(
-            &phases,
-            post::grbl(),
-            &empty_report(),
-            ToolLoadExportPolicy::default(),
-            &WizardOverlay::default(),
-        )
-        .expect("checked export should succeed");
+        let checked = checked_one(&phases, post::grbl(), &WizardOverlay::default())
+            .expect("checked export should succeed");
 
         assert_eq!(checked, legacy);
     }
@@ -1882,15 +1711,8 @@ mod tests {
         ];
 
         let legacy = emit_gcode_multi_setup(&setups, post::grbl(), 15.0);
-        let checked = checked_setups(
-            &setups,
-            post::grbl(),
-            15.0,
-            &empty_report(),
-            ToolLoadExportPolicy::default(),
-            &WizardOverlay::default(),
-        )
-        .expect("checked export should succeed");
+        let checked = checked_setups(&setups, post::grbl(), 15.0, &WizardOverlay::default())
+            .expect("checked export should succeed");
 
         assert_eq!(checked, legacy);
     }
@@ -2739,7 +2561,7 @@ mod tests {
         );
     }
 
-    // ----- enforce_load_policy negative tests -----
+    // ----- load_findings tests (K6: the rows warn, nothing refuses) -----
 
     use crate::tool_load::verdict::{
         ChipBounds, ChipBoundsSource, ChiploadMetric, ChiploadStatistic, DeflectionBounds,
@@ -2832,84 +2654,63 @@ mod tests {
         }
     }
 
+    /// K6: an exceedance whose bound gates is an export warning that names
+    /// the toolpath, the criterion and the reason (it refused before K6).
     #[test]
-    fn enforce_blocks_exceeded_by_default() {
+    fn an_exceedance_warns_and_names_its_row() {
         let report = report_with(
             chipload_within(0.05),
             power_not_implemented(),
             deflection_exceeds(10.0),
         );
-        let policy = ToolLoadExportPolicy::default();
-        let err =
-            enforce_load_policy(&report, &policy).expect_err("default policy must block Exceeds");
-        let msg = err.to_string();
+        let found = load_findings(&report);
+        let row = found
+            .rows
+            .iter()
+            .find(|r| r.id == crate::diagnostics::ids::LOAD_DEFLECTION_EXCEEDS)
+            .expect("the deflection exceedance warns");
+        let msg = &row.detail;
+        assert!(msg.contains("toolpath 4"), "names the toolpath: {msg}");
+        assert!(msg.contains("deflection"), "names the criterion: {msg}");
+        assert!(msg.contains("stiffness"), "names the reason: {msg}");
+        // The unmodelled rows of the same report warn beside it.
         assert!(
-            msg.contains("toolpath 4"),
-            "error names the toolpath: {msg}"
+            found
+                .rows
+                .iter()
+                .any(|r| r.id == crate::diagnostics::ids::LOAD_POWER_UNMODELED),
+            "{found:?}"
         );
-        assert!(
-            msg.contains("deflection"),
-            "error names the criterion: {msg}"
-        );
-        assert!(msg.contains("stiffness"), "error names the reason: {msg}");
     }
 
+    /// K6: an unmodelled row is an export warning that names the
+    /// toolpath and the criterion.
     #[test]
-    fn enforce_lets_exceeded_through_only_with_explicit_flag() {
-        // Same scenario, but with accept_exceeded=true. Note unmodeled is
-        // also true — if it weren't, the report's unmodeled chipload/power
-        // criteria would still block. Verify the two flags are distinct.
-        let report = report_with(
-            chipload_within(0.05),
-            power_not_implemented(),
-            deflection_exceeds(10.0),
-        );
-
-        // accept_unmodeled alone is NOT enough — Exceeds still blocks.
-        let policy_u = ToolLoadExportPolicy {
-            accept_unmodeled: true,
-            accept_exceeded: false,
-        };
-        assert!(
-            enforce_load_policy(&report, &policy_u).is_err(),
-            "accept_unmodeled alone must not bypass Exceeds"
-        );
-
-        // accept_exceeded alone bypasses Exceeds, but unmodeled still blocks
-        // (chipload+power are NotImplemented).
-        let policy_e = ToolLoadExportPolicy {
-            accept_unmodeled: false,
-            accept_exceeded: true,
-        };
-        assert!(
-            enforce_load_policy(&report, &policy_e).is_err(),
-            "Exceeds bypassed but Unmodeled still blocks"
-        );
-
-        // Both flags accept everything.
-        let policy_both = ToolLoadExportPolicy {
-            accept_unmodeled: true,
-            accept_exceeded: true,
-        };
-        assert!(enforce_load_policy(&report, &policy_both).is_ok());
-    }
-
-    #[test]
-    fn enforce_blocks_unmodeled_by_default() {
+    fn an_unmodelled_row_warns_and_names_its_row() {
         let report = report_with(
             chipload_unmodeled(UnmodeledReason::NotImplemented("phase 5".to_owned())),
             power_not_implemented(),
             deflection_within(3.0),
         );
-        let err = enforce_load_policy(&report, &ToolLoadExportPolicy::default())
-            .expect_err("Unmodeled must block by default");
-        let msg = err.to_string();
-        assert!(msg.contains("toolpath 4"), "names toolpath: {msg}");
-        assert!(msg.contains("chipload"), "names unmodeled criterion: {msg}");
+        let rows = load_findings(&report).rows;
+        let row = rows
+            .iter()
+            .find(|r| r.id == crate::diagnostics::ids::LOAD_CHIPLOAD_UNMODELED)
+            .expect("the unmodelled chipload warns");
+        assert!(
+            row.detail.contains("toolpath 4"),
+            "names toolpath: {}",
+            row.detail
+        );
+        assert!(
+            row.detail.contains("chipload"),
+            "names criterion: {}",
+            row.detail
+        );
     }
 
     #[test]
-    fn enforce_passes_when_all_within() {
+    fn findings_are_empty_when_all_within() {
         let report = report_with(
             chipload_within(0.05),
             PowerVerdict::Within {
@@ -2922,38 +2723,32 @@ mod tests {
             },
             deflection_within(3.5),
         );
+        let found = load_findings(&report);
         assert!(
-            enforce_load_policy(&report, &ToolLoadExportPolicy::default()).is_ok(),
-            "all-Within report must pass"
+            found.rows.is_empty() && found.outcome.is_empty(),
+            "an all-Within report names nothing: {found:?}"
         );
     }
 
     #[test]
-    fn enforce_distinguishes_unmodeled_reasons() {
-        // Different `Unmodeled` reasons produce different error messages so
+    fn findings_distinguish_unmodeled_reasons() {
+        // Different `Unmodeled` reasons produce different warning text so
         // the user knows whether to "run sim" vs "this material has no LUT".
-        let r1 = report_with(
-            chipload_unmodeled(UnmodeledReason::SimulationRequired),
-            power_not_implemented(),
-            deflection_within(3.0),
-        );
-        let r2 = report_with(
-            chipload_unmodeled(UnmodeledReason::NoVendorData),
-            power_not_implemented(),
-            deflection_within(3.0),
-        );
-        let m1 = enforce_load_policy(&r1, &ToolLoadExportPolicy::default())
-            .expect_err("blocks")
-            .to_string();
-        let m2 = enforce_load_policy(&r2, &ToolLoadExportPolicy::default())
-            .expect_err("blocks")
-            .to_string();
-        // T-19 (2026-09-18): the claim is unchanged and the words are
-        // not. These two lines read `{:?}` — `SimulationRequired` and
-        // `NoVendorData`, Rust variant names in an operator's refusal —
-        // which is the half of T-19 that printed a blank line for every
-        // criterion it did not enumerate. The message now words each
-        // reason, so the assertions read the words.
+        let text = |reason: UnmodeledReason| {
+            load_findings(&report_with(
+                chipload_unmodeled(reason),
+                power_not_implemented(),
+                deflection_within(3.0),
+            ))
+            .rows
+            .iter()
+            .map(|r| r.detail.clone())
+            .collect::<Vec<_>>()
+            .join("\n")
+        };
+        let m1 = text(UnmodeledReason::SimulationRequired);
+        let m2 = text(UnmodeledReason::NoVendorData);
+        // T-19: the text words each reason, never a Rust variant name.
         assert!(m1.contains("simulation has not been run"), "{m1}");
         assert!(
             m2.contains("no vendor LUT row for this tool/material combination"),
@@ -2975,8 +2770,7 @@ mod tests {
         }
     }
 
-    /// Report whose only failure is a modeled `Exceeds` — so only the
-    /// `accept_exceeded` flag is needed to override.
+    /// Report whose only failure is a modeled `Exceeds`.
     fn exceeds_only_report() -> ToolLoadReport {
         report_with(
             chipload_within(0.05),
@@ -2998,13 +2792,6 @@ mod tests {
     /// the only one before the bytes.
     #[test]
     fn a_feed_that_is_not_finite_above_zero_refuses_the_export() {
-        let permissive = ToolLoadExportPolicy {
-            accept_unmodeled: true,
-            accept_exceeded: true,
-        };
-        let report = crate::tool_load::ToolLoadReport {
-            per_toolpath: Vec::new(),
-        };
         fn phase(tp: &Toolpath) -> GcodePhase<'_> {
             GcodePhase {
                 toolpath: tp,
@@ -3024,22 +2811,26 @@ mod tests {
             let mut tp = Toolpath::new();
             tp.rapid_to(P3::new(0.0, 0.0, 10.0));
             tp.feed_to(P3::new(10.0, 0.0, 0.0), bad);
-            let err = checked_one(&[phase(&tp)], post::grbl(), &report, permissive, &overlay)
+            let err = checked_one(&[phase(&tp)], post::grbl(), &overlay)
                 .expect_err("a bad feed must refuse");
             assert!(
-                matches!(&err, ExportRefusal::BadFeed { operations } if operations == &["Op 0"]),
+                matches!(&err, EmitError::BadFeed { operations } if operations == &["Op 0"]),
                 "feed {bad}: {err}"
             );
         }
         let tp = one_phase_fixture();
-        let ok = checked_one(&[phase(&tp)], post::grbl(), &report, permissive, &overlay);
+        let ok = checked_one(&[phase(&tp)], post::grbl(), &overlay);
         assert!(ok.is_ok(), "a finite feed above zero exports: {ok:?}");
     }
 
+    /// K6: the warnings print one header comment each, directly after the
+    /// preamble block, on the one-setup and the multi-setup path;
+    /// with no warning the program is byte-identical, and the comment lines
+    /// are the only change.
     #[test]
-    fn phases_checked_blocks_exceeds_and_honours_accept_exceeded() {
+    fn the_warnings_print_after_the_preamble_k6() {
         let tp = one_phase_fixture();
-        let phases = vec![GcodePhase {
+        let phase = GcodePhase {
             toolpath: &tp,
             spindle_rpm: 18_000,
             label: "Op 0",
@@ -3050,76 +2841,73 @@ mod tests {
             controller_compensation: None,
             drill: None,
             feeds: None,
-        }];
-        let report = exceeds_only_report();
-
-        let err = checked_one(
-            &phases,
-            post::grbl(),
-            &report,
-            ToolLoadExportPolicy::default(),
-            &WizardOverlay::default(),
-        )
-        .expect_err("default policy must refuse an Exceeds report on the phases path");
-        assert!(err.to_string().contains("tool load exceeded"), "{err}");
-
-        let ok = checked_one(
-            &phases,
-            post::grbl(),
-            &report,
-            ToolLoadExportPolicy {
-                accept_unmodeled: false,
-                accept_exceeded: true,
-            },
-            &WizardOverlay::default(),
-        );
-        assert!(ok.is_ok(), "accept_exceeded=true must export: {ok:?}");
+        };
+        let found = load_findings(&exceeds_only_report());
+        let warnings: Vec<ExportWarning> = found
+            .rows
+            .iter()
+            .filter_map(|r| ExportWarning::new(r.id, "Op 0", r.detail.clone()))
+            .collect();
+        assert_eq!(warnings.len(), 1, "the deflection row warns: {found:?}");
+        let overlay = WizardOverlay::default();
+        let one = |w: &[ExportWarning]| {
+            emit_checked(
+                &ExportPhases::OneSetup(vec![phase.clone()]),
+                post::grbl(),
+                0.0,
+                &overlay,
+                w,
+            )
+            .expect("no warning refuses")
+        };
+        let multi = |w: &[ExportWarning]| {
+            emit_checked(
+                &ExportPhases::Setups(vec![GcodeSetupPhase {
+                    setup_label: "Top",
+                    phases: vec![phase.clone()],
+                    pause_message: None,
+                }]),
+                post::grbl(),
+                15.0,
+                &overlay,
+                w,
+            )
+            .expect("no warning refuses")
+        };
+        for (plain, warned) in [(one(&[]), one(&warnings)), (multi(&[]), multi(&warnings))] {
+            let line = format!("({})", warnings[0].header_line());
+            assert!(!plain.contains("WARNING"), "{plain}");
+            let lines: Vec<&str> = warned.lines().collect();
+            assert_eq!(lines[0], "(Generated by rs_cam)", "{warned}");
+            // Directly after the preamble block, which ends with the
+            // spindle start.
+            let at = lines
+                .iter()
+                .position(|l| *l == line)
+                .expect("the header line is in the program");
+            assert!(lines[at - 1].starts_with("M3"), "{warned}");
+            assert_eq!(
+                program_without_comments(&plain),
+                program_without_comments(&warned),
+                "the header adds comment lines only"
+            );
+            assert_eq!(warned.lines().count(), plain.lines().count() + 1);
+        }
     }
 
+    /// K6: an `Info` row and a missing input make no export warning.
     #[test]
-    fn multi_setup_checked_blocks_exceeds_and_honours_accept_exceeded() {
-        let tp = one_phase_fixture();
-        let setups = vec![GcodeSetupPhase {
-            setup_label: "Top",
-            phases: vec![GcodePhase {
-                toolpath: &tp,
-                spindle_rpm: 18_000,
-                label: "Op 0",
-                pre_gcode: None,
-                post_gcode: None,
-                tool: None,
-                coolant: CoolantMode::Off,
-                controller_compensation: None,
-                drill: None,
-                feeds: None,
-            }],
-            pause_message: None,
-        }];
-        let report = exceeds_only_report();
-
-        let err = checked_setups(
-            &setups,
-            post::grbl(),
-            15.0,
-            &report,
-            ToolLoadExportPolicy::default(),
-            &WizardOverlay::default(),
-        )
-        .expect_err("default policy must refuse an Exceeds report on the multi-setup path");
-        assert!(err.to_string().contains("tool load exceeded"), "{err}");
-
-        let ok = checked_setups(
-            &setups,
-            post::grbl(),
-            15.0,
-            &report,
-            ToolLoadExportPolicy {
-                accept_unmodeled: false,
-                accept_exceeded: true,
-            },
-            &WizardOverlay::default(),
+    fn an_info_row_makes_no_warning_k6() {
+        use crate::diagnostics::ids;
+        assert!(ExportWarning::new(ids::LOAD_POWER_WITHIN, "x", String::new()).is_none());
+        assert!(ExportWarning::new(ids::PRECOND_NO_TOOL, "x", String::new()).is_none());
+        let w =
+            ExportWarning::new(ids::LOAD_POWER_EXCEEDS, "x", String::new()).expect("a warn row");
+        assert_eq!(w.danger, crate::diagnostics::Danger::Machine);
+        assert_eq!(
+            w.header_line(),
+            format!("WARNING Machine load.power.exceeds x: {}", w.face)
         );
-        assert!(ok.is_ok(), "accept_exceeded=true must export: {ok:?}");
     }
 
     // ── A1: inch units hard-refuse ────────────────────────────────────
@@ -3143,14 +2931,8 @@ mod tests {
             units_override: Some(Units::Inch),
             ..Default::default()
         };
-        let err = checked_one(
-            &phases,
-            post::grbl(),
-            &empty_report(),
-            ToolLoadExportPolicy::default(),
-            &overlay,
-        )
-        .expect_err("inch override must refuse export");
+        let err = checked_one(&phases, post::grbl(), &overlay)
+            .expect_err("inch override must refuse export");
         assert!(
             err.to_string().contains("inch output not yet supported"),
             "{err}"
@@ -3162,15 +2944,8 @@ mod tests {
             phases,
             pause_message: None,
         }];
-        let err = checked_setups(
-            &setups,
-            post::grbl(),
-            15.0,
-            &empty_report(),
-            ToolLoadExportPolicy::default(),
-            &overlay,
-        )
-        .expect_err("inch override must refuse multi-setup export");
+        let err = checked_setups(&setups, post::grbl(), 15.0, &overlay)
+            .expect_err("inch override must refuse multi-setup export");
         assert!(
             err.to_string().contains("inch output not yet supported"),
             "{err}"
@@ -3271,16 +3046,9 @@ mod tests {
             drill: None,
             feeds: None,
         };
-        let policy = ToolLoadExportPolicy::default();
         for post_def in [post::grbl(), post::grblhal()] {
-            let err = checked_one(
-                &[phase()],
-                post_def,
-                &empty_report(),
-                policy,
-                &WizardOverlay::default(),
-            )
-            .expect_err("a post without comp must refuse In Control");
+            let err = checked_one(&[phase()], post_def, &WizardOverlay::default())
+                .expect_err("a post without comp must refuse In Control");
             let text = err.to_string();
             assert!(text.contains("Outer profile"), "names the op: {text}");
             assert!(text.contains("tool radius"), "says why: {text}");
@@ -3291,42 +3059,19 @@ mod tests {
                 pause_message: None,
             }];
             assert!(
-                checked_setups(
-                    &setups,
-                    post_def,
-                    10.0,
-                    &empty_report(),
-                    policy,
-                    &WizardOverlay::default()
-                )
-                .is_err(),
+                checked_setups(&setups, post_def, 10.0, &WizardOverlay::default()).is_err(),
                 "{}: the multi-setup door must refuse too",
                 post_def.name
             );
         }
         for post_def in [post::linuxcnc(), post::mach3()] {
-            let gcode = checked_one(
-                &[phase()],
-                post_def,
-                &empty_report(),
-                policy,
-                &WizardOverlay::default(),
-            )
-            .expect("a post with comp emits");
+            let gcode = checked_one(&[phase()], post_def, &WizardOverlay::default())
+                .expect("a post with comp emits");
             assert!(gcode.contains("G42 D1"), "{}: {gcode}", post_def.name);
         }
         // A phase without controller compensation is never refused.
         let mut plain = phase();
         plain.controller_compensation = None;
-        assert!(
-            checked_one(
-                &[plain],
-                post::grbl(),
-                &empty_report(),
-                policy,
-                &WizardOverlay::default()
-            )
-            .is_ok()
-        );
+        assert!(checked_one(&[plain], post::grbl(), &WizardOverlay::default()).is_ok());
     }
 }

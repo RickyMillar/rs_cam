@@ -488,6 +488,16 @@ impl ToolConstraintsDef {
         })
     }
 
+    /// K6 (ruling Q6, decision E1): true when the generator can compute with
+    /// a tool of this kind, even when the row refuses it. The ops whose only
+    /// kind is the V-bit (V-Carve, Inlay, Inlay Plug, Chamfer) read the V
+    /// angle, which only a V-bit carries (`ToolConfig::included_angle` is
+    /// checked for a V-bit only), so they cannot compute with another kind.
+    /// Every other op takes any `MillingCutter`: a wrong kind is a warning.
+    pub fn computes_with(&self, kind: CutterKind) -> bool {
+        self.allows(kind) || self.required_kinds != [CutterKind::VBit]
+    }
+
     /// R2: the tool kinds the op needs, as words for the no-tool state:
     /// "needs a flat end mill or a ball nose". With no kind list it is
     /// "needs a tool that is not a V-bit" or "needs a tool".

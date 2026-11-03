@@ -24,9 +24,12 @@ Z-first, and in a setup with an obstacle the toolpath starts at the plane (`a_sn
 - `PostFormat::from_token` reads only the `to_token` spellings; an unknown `[job.post] format` refuses (no GRBL fallback).
 - W2.5: every session door fills `GcodePhase::feeds` from the slot it emits
   (`FeedStage::statement`). The line follows the label. It states, never refuses.
-- F067: ONE door, `ProjectSession::export_program`: `emit_checked`, the machine-safety pass, then the rapid rewrite,
-  from the SESSION post config; `emit_checked` alone is for the session-less job file. F051/F061: destructure
-  `LoadPolicyOutcome { advisories, overridden }` with no `..`; `ExportRefusal` names `LoadOverride` spellings.
+- F067: ONE door, `ProjectSession::export_program`: the K6 warnings (`export_warnings`), `emit_checked`, the
+  machine-safety pass, then the rapid rewrite, from the SESSION post config; `emit_checked` alone is for the
+  session-less job file. K6 (ruling Q6): no finding refuses and no override exists. `EmitError` (inch units,
+  bad feed, controller compensation; `EmitError::id`, `emit.*`) is the only refusal. Each `ExportWarning`
+  prints one header comment after `Statement::Preamble`: `WARNING <danger> <id> <toolpath>: <face>`; no
+  warning, no line. F051: destructure `LoadPolicyOutcome { advisories }` with no `..`.
 - F121: the freshness rule and the load-report builder are `ProjectSession` methods (`sim_trace_is_fresh(_for)`,
   `build_tool_load_report`, in `session/compute/export.rs`). `strip_comments` (`mod.rs`) is the one comment stripper; the validator reads it.
 
@@ -34,7 +37,7 @@ Z-first, and in a setup with an obstacle the toolpath starts at the plane (`a_sn
 
 `cargo test -p rs_cam_core -q --test <name>`: `gcode_phase0_capture`, `post_format_round_trip_p1`,
 `export_honors_coolant_p0d1`, `export_datum_setup_frame`, `gcode_validator_baseline`,
-`one_export_door_runs_every_check_f067`.
+`one_export_door_runs_every_check_f067`, `a_job_with_each_finding_exports_and_names_it_k6`.
 
 ## Do not
 

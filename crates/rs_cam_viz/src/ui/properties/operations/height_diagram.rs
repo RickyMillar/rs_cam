@@ -215,15 +215,15 @@ pub fn round_pin(v: f64) -> f64 {
     if rounded == 0.0 { 0.0 } else { rounded }
 }
 
-/// F033 (operator ruling 2): write `draft` into `heights` unless THE core
-/// order rule refuses the edit (`ToolpathHeights::edit_refusal`: the draft
-/// adds a refusing break). The Heights rows, the Auto buttons and the
-/// diagram drag all write through this one gate, so a value that would
-/// invert the stack never reaches the config. A refused drag stops at the
-/// last accepted value. The refusal text and the key of the edited row are
-/// kept in `refusal` (GUI state, `state.panels.heights_refusal`, UI-09);
-/// the Heights tab draws them as the state of that row. Returns
-/// `true` when the draft was written.
+/// F033, K6 (lead decision 2026-11-03: the height edit door accepts the
+/// edit and warns): write `draft` into `heights`. The Heights rows, the
+/// Auto buttons and the diagram drag all write through this one gate. When
+/// THE core order rule names a break the edit adds
+/// (`ToolpathHeights::edit_refusal`), the edit is still written, and the
+/// warning text and the key of the edited row are kept in `refusal` (GUI
+/// state, `state.panels.heights_refusal`, UI-09); the Heights tab draws
+/// them as the state of that row, beside the badge. Returns `true` when
+/// the draft was written.
 pub fn admit_heights_edit(
     ui: &egui::Ui,
     heights: &mut HeightsConfig,
@@ -236,11 +236,7 @@ pub fn admit_heights_edit(
         return false;
     }
     match answer.edit_refusal(op_type, heights, &draft) {
-        None => {
-            *heights = draft;
-            refusal.clear();
-            true
-        }
+        None => refusal.clear(),
         Some(violations) => {
             let text = violations
                 .iter()
@@ -250,12 +246,13 @@ pub fn admit_heights_edit(
             let now = ui.input(|i| i.time);
             refusal.refuse(
                 edited_field(heights, &draft),
-                format!("Refused: {text}."),
+                format!("Out of order: {text}."),
                 now,
             );
-            false
         }
     }
+    *heights = draft;
+    true
 }
 
 /// W3d: the field key of the one row that `draft` changes from `heights`,
@@ -870,7 +867,7 @@ pub fn draw_height_diagram(
                 let field = height_field(&mut draft, idx);
                 if let HeightMode::Manual(v) = *field {
                     *field = HeightMode::Manual(round_pin(v));
-                    // F033: a rounding that crosses a plane is refused too.
+                    // F033, K6: a rounding that crosses a plane warns too.
                     let _ = admit_heights_edit(ui, heights, draft, answer, op_type, refusal);
                 }
             }

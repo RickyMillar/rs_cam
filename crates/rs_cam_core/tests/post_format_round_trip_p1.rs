@@ -55,7 +55,7 @@ use rs_cam_core::compute::config::{BoundaryConfig, DressupConfig, HeightsConfig,
 use rs_cam_core::compute::operation_configs::{PocketConfig, PocketPattern};
 use rs_cam_core::compute::stock_config::{ModelKind, ModelUnits, StockConfig};
 use rs_cam_core::compute::tool_config::{ToolConfig, ToolId, ToolType};
-use rs_cam_core::gcode::{CoolantMode, PostFormat, ToolLoadExportPolicy};
+use rs_cam_core::gcode::{CoolantMode, PostFormat};
 use rs_cam_core::ids::ToolpathId;
 use rs_cam_core::material::{Material, WoodSpecies};
 use rs_cam_core::session::{
@@ -230,13 +230,7 @@ fn reload_and_export(project_path: &Path) -> String {
         .expect("generate the reloaded pocket");
 
     session
-        .export_gcode_checked(
-            None,
-            ToolLoadExportPolicy {
-                accept_unmodeled: true,
-                accept_exceeded: true,
-            },
-        )
+        .export_gcode_checked(None)
         .expect("export the reloaded project")
         .gcode
 }

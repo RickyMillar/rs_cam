@@ -411,8 +411,9 @@ impl NonCentreCuttingLimits {
 
 /// G-CENTRECUT: an entry builder could not keep a non-centre-cutting tool
 /// inside its limits. It had to plunge straight into stock deeper than the
-/// blade protrusion. Generation refuses with this value
-/// (`OperationError::NonCentreCutting`).
+/// blade protrusion. K6 (ruling Q6): a warning, not a refusal; the job
+/// records it (`ToolpathStats::non_centre_cutting_plunge`,
+/// `safety.non_centre_cutting_plunge`).
 #[derive(Debug, Clone, Copy, PartialEq)]
 pub struct NonCentreCuttingRefusal {
     /// The plunge target, in the emission frame.

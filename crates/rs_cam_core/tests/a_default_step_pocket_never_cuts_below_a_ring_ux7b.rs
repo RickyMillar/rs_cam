@@ -26,11 +26,11 @@
 //!    "Each picked face" (defect 2).
 //! 3. Part 2 (the gouge guard): a Pocket on the Z 30 ring with the floor
 //!    `Top Z` 5 generates, gives the blocking diagnostic
-//!    `safety.cuts_into_model` (5 mm deep), and the export refuses
-//!    (`ExportRefusal::CutsIntoModel`).
+//!    `safety.cuts_into_model` (5 mm deep), and the export writes the
+//!    program and warns on it (K6, ruling Q6: no finding refuses).
 //! 4. A Profile on the Z 30 ring through the stock (the floor of the
 //!    default Profile before R-A) gives the same diagnostic and export
-//!    refusal. R-A (2026-10-23): the default Profile on a mesh model now
+//!    warning. R-A (2026-10-23): the default Profile on a mesh model now
 //!    cuts the part outline only (`a_mesh_model_gives_its_part_outline_ra`).
 //! 5. The tangent wall: a Pocket on the Z 20 ring, next to the Z 30 wall,
 //!    cuts inside the ring and measures clean; a move 0.2 mm into that
@@ -96,7 +96,7 @@ use rs_cam_core::compute::stock_config::{ModelKind, ModelUnits};
 use rs_cam_core::compute::tool_config::ToolConfig;
 use rs_cam_core::diagnostics::{Severity, ids};
 use rs_cam_core::feeds::suggest::StockContext;
-use rs_cam_core::gcode::{ExportRefusal, ToolLoadExportPolicy};
+use rs_cam_core::gcode::ExportWarning;
 use rs_cam_core::geo::P3;
 use rs_cam_core::ids::ModelId;
 use rs_cam_core::mesh::SpatialIndex;
@@ -282,12 +282,16 @@ fn gouge_diagnostics(
         .collect()
 }
 
-fn export_refusal(session: &ProjectSession) -> Option<ExportRefusal> {
-    let accept_all = ToolLoadExportPolicy {
-        accept_unmodeled: true,
-        accept_exceeded: true,
-    };
-    session.export_gcode_checked(None, accept_all).err()
+/// K6: the export writes the program; these are its cut-into-model
+/// warnings.
+fn gouge_warnings(session: &ProjectSession) -> Vec<ExportWarning> {
+    session
+        .export_gcode_checked(None)
+        .expect("no finding refuses the export")
+        .warnings
+        .into_iter()
+        .filter(|w| w.id == ids::SAFETY_CUTS_INTO_MODEL)
+        .collect()
 }
 
 /// Claim 1.
@@ -364,7 +368,7 @@ fn a_face_or_ring_pick_at_the_stock_default_floor_sets_each_face_ux7b() {
 
 /// Claim 3.
 #[test]
-fn a_pocket_below_the_z30_ring_is_blocked_ux7b() {
+fn a_pocket_below_the_z30_ring_is_warned_ux7b() {
     let mut s = stepped_session();
     let _ = add_drafted(&mut s, OperationType::Pocket);
     let ring = item_at(&s, ItemKind::Loop, 30.0);
@@ -386,17 +390,15 @@ fn a_pocket_below_the_z30_ring_is_blocked_ux7b() {
         "{}",
         diagnostics[0].message
     );
-    match export_refusal(&s) {
-        Some(ExportRefusal::CutsIntoModel { rows }) => assert_eq!(rows.len(), 1, "{rows:?}"),
-        other => panic!("want CutsIntoModel, got {other:?}"),
-    }
+    let warnings = gouge_warnings(&s);
+    assert_eq!(warnings.len(), 1, "{warnings:?}");
 }
 
 /// Claim 4 (defect 3). R-A: the default Profile takes the part outline
 /// only, so the ring is a pick, and the floor the old default wrote (the
 /// stock bottom, `Top` less the stock thickness) is stated.
 #[test]
-fn a_ring_profile_through_the_stock_is_blocked_ux7b() {
+fn a_ring_profile_through_the_stock_is_warned_ux7b() {
     let mut s = stepped_session();
     let _ = add_drafted(&mut s, OperationType::Profile);
     let ring = item_at(&s, ItemKind::Loop, 30.0);
@@ -413,10 +415,7 @@ fn a_ring_profile_through_the_stock_is_blocked_ux7b() {
         "{}",
         diagnostics[0].message
     );
-    assert!(matches!(
-        export_refusal(&s),
-        Some(ExportRefusal::CutsIntoModel { .. })
-    ));
+    assert_eq!(gouge_warnings(&s).len(), 1);
 }
 
 /// Claim 5: the tangent wall.
@@ -549,10 +548,7 @@ fn a_drill_gouges_only_below_the_floor_of_a_model_hole_ux7b() {
             .contains("Set the depth to 8.000 mm"),
         "the diagnostic carries the text"
     );
-    assert!(matches!(
-        export_refusal(&deep),
-        Some(ExportRefusal::CutsIntoModel { .. })
-    ));
+    assert_eq!(gouge_warnings(&deep).len(), 1);
 
     let mut to_floor = hole_session(8.0);
     let _ = generate(&mut to_floor, 0);

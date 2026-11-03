@@ -26,7 +26,6 @@
 
 #![expect(
     clippy::expect_used,
-    clippy::panic,
     clippy::indexing_slicing,
     reason = "test code: a panic is how a test reports a failure"
 )]
@@ -51,9 +50,8 @@ use rs_cam_viz::compute::{
     GenerationControl, LaneSnapshot, SimulationRequest, ToolpathSubmitOutcome,
 };
 use rs_cam_viz::controller::AppController;
-use rs_cam_viz::io::export::export_gcode_from_session_with_policy;
 use rs_cam_viz::state::freshness::{FreshnessState, freshness_at};
-use rs_cam_viz::state::runtime::{StaleResultPolicy, ToolpathRuntime};
+use rs_cam_viz::state::runtime::ToolpathRuntime;
 use rs_cam_viz::state::toolpath::ToolpathResult;
 use rs_cam_viz::ui::AppEvent;
 
@@ -119,13 +117,6 @@ fn viz_result(path: Toolpath) -> ToolpathResult {
         semantic_trace: None,
         debug_trace_path: None,
         drill_op: None,
-    }
-}
-
-fn policy() -> rs_cam_core::gcode::ToolLoadExportPolicy {
-    rs_cam_core::gcode::ToolLoadExportPolicy {
-        accept_unmodeled: true,
-        accept_exceeded: true,
     }
 }
 
@@ -235,15 +226,30 @@ fn feed_at(controller: &AppController<SilentBackend>, index: usize) -> Option<f6
         .feed_rate()
 }
 
-fn export(controller: &AppController<SilentBackend>) -> Result<String, String> {
-    export_gcode_from_session_with_policy(
+/// K6: the export of the controller's project. Every surface writes the
+/// rest; this is the text of each op it leaves out (`export.op_left_out`),
+/// and the program.
+fn export(controller: &AppController<SilentBackend>) -> (Vec<String>, String) {
+    let exported = rs_cam_viz::io::export::export_gcode_from_session_reporting(
         controller.state.session(),
         &controller.state.gui,
         &controller.state.simulation,
-        policy(),
-        StaleResultPolicy::Refuse,
     )
-    .map_err(|e| e.to_string())
+    .expect("K6: no finding refuses the export");
+    let left_out = exported
+        .warnings
+        .iter()
+        .filter(|w| w.id == rs_cam_core::diagnostics::ids::EXPORT_OP_LEFT_OUT)
+        .map(|w| w.detail.clone())
+        .collect();
+    (left_out, exported.gcode)
+}
+
+/// True when the program holds a line of op `name` that is not a warning.
+fn program_holds(gcode: &str, name: &str) -> bool {
+    gcode
+        .lines()
+        .any(|line| line.contains(name) && !line.contains("WARNING"))
 }
 
 fn f_words(gcode: &str) -> Vec<f64> {
@@ -283,7 +289,11 @@ fn assert_fixture_is_generated(controller: &AppController<SilentBackend>) {
         Some(FreshnessState::Current),
         "fixture: the lead operation must read Current before the Apply"
     );
-    let gcode = export(controller).expect("fixture: a generated project exports");
+    let (left_out, gcode) = export(controller);
+    assert!(
+        left_out.is_empty(),
+        "fixture: nothing is left out: {left_out:?}"
+    );
     assert!(
         f_words(&gcode).contains(&PREVIOUS_FEED),
         "fixture: the export must carry the previous feed word; got {:?}",
@@ -341,9 +351,9 @@ fn apply_feeds_all_drops_the_downstream_chain_n13() {
     );
 }
 
-/// The consequence the operator can be cut by: the file. Under
-/// `StaleResultPolicy::Refuse` the export must name the operation instead of
-/// emitting the program it is replacing.
+/// The consequence the operator can be cut by: the file. The export must
+/// leave the operation out and name it instead of emitting the program it
+/// is replacing (K6: the rest of the job is still written).
 #[test]
 fn apply_feeds_all_stales_the_export_n13() {
     let mut controller = build_controller();
@@ -351,23 +361,21 @@ fn apply_feeds_all_stales_the_export_n13() {
 
     controller.handle_internal_event(AppEvent::ApplyFeedsAll(id_at(&controller, 0)));
 
-    match export(&controller) {
-        Ok(gcode) => panic!(
-            "N13: the export succeeded after a feeds Apply and emitted the \
-             pre-apply feed words {:?} (the operation now asks for {:?}). \
-             The Apply funnel must drop the core result through \
-             invalidate_toolpath_inputs.",
-            f_words(&gcode),
-            feed_at(&controller, 0)
-        ),
-        Err(msg) => {
-            assert!(
-                msg.contains(&format!("'{LEAD_NAME}' was edited after it was generated")),
-                "the refusal must name the operation and say what happened; \
-                 got: {msg}"
-            );
-        }
-    }
+    let (left_out, gcode) = export(&controller);
+    assert!(
+        !program_holds(&gcode, LEAD_NAME),
+        "N13: the export emitted the pre-apply program of '{LEAD_NAME}' (feed \
+         words {:?}; the operation now asks for {:?}). The Apply funnel must \
+         drop the core result through invalidate_toolpath_inputs.",
+        f_words(&gcode),
+        feed_at(&controller, 0)
+    );
+    assert!(
+        left_out
+            .iter()
+            .any(|msg| msg.contains(&format!("'{LEAD_NAME}' was edited after it was generated"))),
+        "the warning must name the operation and say what happened; got: {left_out:?}"
+    );
 }
 
 // ── 2. The project rollup door ──────────────────────────────────────────
@@ -431,9 +439,10 @@ fn agent_apply_feeds_drops_the_cached_result_n13() {
         "N13: the MCP apply_feeds door left the core result in place. A \
          'speeds only' apply still changes the F word the file carries."
     );
+    let (left_out, gcode) = export(&controller);
     assert!(
-        export(&controller).is_err(),
+        !program_holds(&gcode, LEAD_NAME) && !left_out.is_empty(),
         "N13: the export emitted the pre-apply feed word after an agent \
-         apply_feeds call"
+         apply_feeds call; left out: {left_out:?}"
     );
 }

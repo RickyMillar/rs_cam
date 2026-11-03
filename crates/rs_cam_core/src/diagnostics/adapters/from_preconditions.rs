@@ -16,8 +16,9 @@
 //!   generator's own refusal sentence, from `selection_status`.
 //! - **Chamfer / V-Carve / Inlay / Inlay Plug** (UX-1c,
 //!   `PRECOND_BURIED_FACE`) — a face pick below the stock top on fresh
-//!   stock: the generator's own refusal sentence, from
-//!   `ToolpathHeights::buried_face_refusal`.
+//!   stock: the buried-face sentence, from
+//!   `ToolpathHeights::buried_face_refusal`. K6: a `Critical` warning; the
+//!   op generates.
 //! - **Every op** (S11, `PRECOND_NOT_SET`) — a value with no derivation
 //!   that is not set: the floor, a depth of a drawing op, or the feeds.
 //! - **Every op** (R2, `PRECOND_NO_TOOL`) — the op has no tool: the
@@ -74,10 +75,10 @@ pub struct PreconditionContext {
     /// of every other op that is not a Pin Drill is then
     /// `PRECOND_SELECTION_EMPTY`, not the refusal id.
     pub selection_empty: bool,
-    /// UX-1c: the refusal that generation gives for a face pick below the
-    /// stock top on a one-depth op on fresh stock
-    /// (`ToolpathHeights::buried_face_refusal`). `None` when the op does
-    /// not refuse.
+    /// UX-1c: the buried-face sentence for a face pick below the stock top
+    /// on a one-depth op on fresh stock
+    /// (`ToolpathHeights::buried_face_refusal`). `None` when the face is not
+    /// buried. K6: a warning, not a refusal.
     pub buried_face_refusal: Option<String>,
     /// S11: the refusal of every op while the stock thickness is not set
     /// (`ProjectSession::stock_thickness_refusal`). `None` when it is set.
@@ -269,20 +270,21 @@ fn not_set(scope: &Scope, op: &OperationConfig, ctx: &PreconditionContext) -> Op
 
 /// UX-1c (operator ruling 2026-10-22, SAFETY): a one-depth op on fresh
 /// stock whose face pick is below the stock top. The message is the
-/// generator's own refusal sentence (the cause and the fix).
+/// buried-face sentence (the cause and the fix). K6 (ruling Q6, E1): a
+/// warning; the op generates, so the severity is `Critical`, not `Blocking`.
 fn buried_face(scope: &Scope, ctx: &PreconditionContext) -> Option<Diagnostic> {
     let message = ctx.buried_face_refusal.as_ref()?;
     Some(Diagnostic {
         id: DiagnosticId::from(ids::PRECOND_BURIED_FACE),
         scope: scope.clone(),
         category: Category::Safety,
-        severity: Severity::Blocking,
+        severity: Severity::Critical,
         confidence: Confidence::Static,
         state: DiagnosticState::Current,
         source: Source::StaticValidation,
         face: crate::diagnostics::presentation::face(ids::PRECOND_BURIED_FACE),
         anchor: crate::diagnostics::presentation::anchor(ids::PRECOND_BURIED_FACE),
-        message: format!("{message} — generation will fail."),
+        message: format!("{message} — the op cuts into the material over the face."),
         evidence: None,
         fix: None,
         supersedes: vec![],

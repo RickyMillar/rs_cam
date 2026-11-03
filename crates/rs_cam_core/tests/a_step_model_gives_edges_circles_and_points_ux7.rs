@@ -64,7 +64,6 @@ use common::session::{single_op_session, toolpath_config};
 use common::tools::endmill_tool_config;
 use rs_cam_core::compute::StockConfig;
 use rs_cam_core::compute::catalog::OperationConfig;
-use rs_cam_core::compute::execute::{BuriedUnder, OperationError};
 use rs_cam_core::compute::operation_configs::{
     ChamferConfig, ChamferSide, DrillConfig, PocketConfig, ProfileConfig, TraceConfig,
 };
@@ -394,18 +393,40 @@ fn a_chamfer_and_a_trace_cut_step_edges_ux7() {
         );
         assert!(p[2] >= FLOOR_Z, "above the floor: {p:?}");
     }
-    // The floor circle, 8 mm below the fresh stock top: UX-1c refuses.
+    // The floor circle, 8 mm below the fresh stock top. K6 (ruling Q6,
+    // decision E1): the buried face is a warning, named before generation
+    // (`precondition.buried_face`, Critical). Generation then refuses the
+    // pick itself: a wall rises above the floor circle, so the edge is
+    // concave (a selection refusal, a missing input; before K6 the buried
+    // face refused first).
     let model = load(HOLE);
     let floor = find(&model, ItemKind::Circle, HOLE_XY, FLOOR_Z).clone();
     let mut session = single_op_session(hole_stock(RIM_Z), vbit(), model, "ux7 buried", chamfer);
     pick(&mut session, &floor);
+    let buried: Vec<_> = session
+        .diagnose_toolpath(0)
+        .expect("the toolpath diagnoses")
+        .into_iter()
+        .filter(|d| d.id.as_str() == rs_cam_core::diagnostics::ids::PRECOND_BURIED_FACE)
+        .collect();
+    assert_eq!(buried.len(), 1, "the buried floor circle is named");
+    assert_eq!(
+        buried[0].severity,
+        rs_cam_core::diagnostics::Severity::Critical
+    );
+    assert!(
+        buried[0]
+            .message
+            .contains(&format!("{:.1} mm below the stock top", RIM_Z - FLOOR_Z)),
+        "{}",
+        buried[0].message
+    );
     match generate(&mut session) {
-        Err(SessionError::Operation(OperationError::BuriedFace(refusal))) => {
-            assert_eq!(refusal.under, BuriedUnder::StockTop, "{refusal}");
-            assert!(near(refusal.buried_mm, RIM_Z - FLOOR_Z), "{refusal}");
+        Err(SessionError::Selection(refusal)) => {
+            assert!(refusal.to_string().contains("concave"), "{refusal}");
         }
-        Err(other) => panic!("want the buried-face refusal, got: {other}"),
-        Ok(_) => panic!("a Chamfer of the buried floor circle must refuse"),
+        Err(other) => panic!("want the concave-edge selection refusal, got: {other}"),
+        Ok(_) => panic!("a Chamfer of the concave floor circle must refuse the pick"),
     }
     // A Trace on the top edge Y 0, X 0..40.
     let model = load(HOLE);

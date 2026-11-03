@@ -356,7 +356,6 @@ fn write_trace_artifact(
 #[cfg(test)]
 #[expect(
     clippy::expect_used,
-    clippy::panic,
     clippy::indexing_slicing,
     reason = "test code: a panic is how a test reports a failure"
 )]
@@ -632,10 +631,11 @@ mod tests {
         );
     }
 
-    // --- Task C14: Scallop requires BallNose tool ---
+    // --- Task C14: Scallop takes a ball nose; K6 (decision E1): another
+    // kind is a warning, and the generator computes with it ---
 
     #[test]
-    fn scallop_rejects_non_ballnose_tool() {
+    fn scallop_with_a_non_ballnose_tool_generates_k6() {
         let OperationConfig::Scallop(cfg) =
             OperationConfig::new_default(crate::state::toolpath::OperationType::Scallop)
         else {
@@ -645,12 +645,11 @@ mod tests {
             .with_mesh(rs_cam_core::mesh::make_test_flat(40.0));
         let req = request(spec);
         let result = run_compute(&req).result;
-        let Err(error) = result else {
-            panic!("a flat end mill must not generate a scallop pass");
-        };
         assert!(
-            error.to_string().contains("Ball Nose"),
-            "Error should mention Ball Nose requirement; got {error}"
+            result.is_ok(),
+            "K6: a flat end mill on a scallop pass is a warning \
+             (`compat.tool_kind_refused`), not a refusal: {:?}",
+            result.err()
         );
     }
 

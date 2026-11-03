@@ -257,8 +257,8 @@ impl UnmodeledReason {
 ///
 /// The ruling stands on what S4 made true. The consequence of a weak input is
 /// carried by BEHAVIOUR now, not by a mark: a bound whose provenance cannot
-/// support a refusal does not refuse ([`BoundSource::gates_export`], read
-/// through [`CriterionStatus::refuses_export`]). So the face does not have to
+/// support a warning does not warn ([`BoundSource::gates_export`], read
+/// through [`CriterionStatus::warns_on_export`]). So the face does not have to
 /// carry it, and the detail the operator can act on — WHICH input is
 /// approximate — is what the hover states.
 ///
@@ -1130,14 +1130,15 @@ impl BoundSource {
         }
     }
 
-    /// **Whether an exceedance of this bound may refuse a g-code
-    /// export.** False only for [`BoundSource::RigidityRuleOfThumb`]
-    /// today.
+    /// **Whether an exceedance of this bound warns on a g-code export**
+    /// (K6: no row refuses). False only for
+    /// [`BoundSource::RigidityRuleOfThumb`] today; such a row is an
+    /// advisory.
     ///
-    /// The export gate reads this through
-    /// [`CriterionStatus::refuses_export`]. A row with NO source still
-    /// refuses: every shipped gate carries one, so an absent source is
-    /// a gate that forgot, and that must fail safe.
+    /// The export reads this through
+    /// [`CriterionStatus::warns_on_export`]. A row with NO source still
+    /// warns: every shipped gate carries one, so an absent source is a
+    /// gate that forgot, and that must fail safe.
     #[must_use]
     pub fn gates_export(&self) -> bool {
         !matches!(self, BoundSource::RigidityRuleOfThumb { .. })
@@ -1260,25 +1261,66 @@ impl CriterionStatus<'_> {
         }
     }
 
-    /// **True when this row exceeded a bound that may refuse a g-code
-    /// export.** S4 (2026-09-18).
+    /// **True when this row exceeded a bound that warns on a g-code
+    /// export.** S4 (2026-09-18); K6 (2026-11-03, ruling Q6): no row
+    /// refuses an export, so the gating rows warn and name their id.
     ///
     /// The decision keys on the bound's PROVENANCE, never on the
     /// quantity: see [`BoundSource::gates_export`]. A row with no
-    /// source still refuses, because every shipped gate carries one and
+    /// source still warns, because every shipped gate carries one and
     /// an absence must fail safe.
     ///
-    /// The export gate reads this through
-    /// [`crate::gcode::refusing_exceedances`]. A row this predicate
-    /// rejects is still REPORTED — it is not refused, and it is not
-    /// hidden.
+    /// The export reads this through
+    /// [`crate::gcode::warning_exceedances`]. A row this predicate
+    /// rejects is still REPORTED as an advisory — it is not hidden.
     #[must_use]
-    pub fn refuses_export(&self) -> bool {
+    pub fn warns_on_export(&self) -> bool {
         self.state == LoadState::Exceeds
             && self
                 .bound_source
                 .as_ref()
                 .is_none_or(BoundSource::gates_export)
+    }
+
+    /// K6: the diagnostic id of the export warning this row raises, or
+    /// `None` when it raises none: a `Within` row, the gantry-push row
+    /// (a known absence), or an exceedance whose bound does not gate
+    /// (an advisory, [`Self::warns_on_export`]).
+    #[must_use]
+    pub fn finding_id(&self) -> Option<&'static str> {
+        use crate::diagnostics::ids;
+        match self.state {
+            LoadState::Within => None,
+            LoadState::Exceeds if !self.warns_on_export() => None,
+            LoadState::Exceeds => match self.kind {
+                CriterionKind::Chipload => Some(
+                    if self.exceeded.as_ref().map(|e| e.reason_label)
+                        == Some(ExceededCriterion::chipload_burn().reason_label)
+                    {
+                        ids::LOAD_CHIPLOAD_LOW
+                    } else {
+                        ids::LOAD_CHIPLOAD_HIGH
+                    },
+                ),
+                CriterionKind::Power => Some(ids::LOAD_POWER_EXCEEDS),
+                CriterionKind::Deflection => Some(ids::LOAD_DEFLECTION_EXCEEDS),
+                CriterionKind::DepthOfCut => Some(ids::LOAD_DEPTH_EXCEEDS),
+                CriterionKind::GantryPush => None,
+                CriterionKind::DrillChipWelding => Some(ids::DRILL_CHIP_WELDING),
+                CriterionKind::DrillPeckAdequacy => Some(ids::DRILL_PECK_ADEQUACY),
+                CriterionKind::DrillPlungeFeed => Some(ids::DRILL_PLUNGE_FEED),
+            },
+            LoadState::Unmodeled => match self.kind {
+                CriterionKind::Chipload => Some(ids::LOAD_CHIPLOAD_UNMODELED),
+                CriterionKind::Power => Some(ids::LOAD_POWER_UNMODELED),
+                CriterionKind::Deflection => Some(ids::LOAD_DEFLECTION_UNMODELED),
+                CriterionKind::DepthOfCut => Some(ids::LOAD_DEPTH_UNMODELED),
+                CriterionKind::GantryPush => None,
+                CriterionKind::DrillChipWelding => Some(ids::DRILL_CHIP_WELDING),
+                CriterionKind::DrillPeckAdequacy => Some(ids::DRILL_PECK_ADEQUACY),
+                CriterionKind::DrillPlungeFeed => Some(ids::DRILL_PLUNGE_FEED),
+            },
+        }
     }
 }
 
@@ -1820,7 +1862,7 @@ pub enum PowerVerdict {
         /// `Option` and `#[serde(default)]` so an older serialized
         /// verdict still deserializes. `None` reads as "not stated" and
         /// fails safe at the export gate
-        /// ([`CriterionStatus::refuses_export`]).
+        /// ([`CriterionStatus::warns_on_export`]).
         #[serde(default, skip_serializing_if = "Option::is_none")]
         bound_source: Option<BoundSource>,
     },

@@ -43,10 +43,10 @@ use rs_cam_core::session::{
 use rs_cam_core::toolpath::Toolpath;
 use rs_cam_core::trace::toolpath_spans::AnnotatedToolpath;
 use rs_cam_viz::io::export::{
-    export_gcode_from_session_reporting, export_gcode_from_session_with_policy,
-    export_success_text, machine_safety_report,
+    export_gcode_from_session, export_gcode_from_session_reporting, export_success_text,
+    machine_safety_report,
 };
-use rs_cam_viz::state::runtime::{GuiState, StaleResultPolicy, ToolpathRuntime};
+use rs_cam_viz::state::runtime::{GuiState, ToolpathRuntime};
 use rs_cam_viz::state::simulation::SimulationState;
 use rs_cam_viz::state::toolpath::{OperationConfig, ToolpathResult};
 
@@ -178,16 +178,8 @@ fn build_state(safe_z: f64) -> (ProjectSession, GuiState, SimulationState) {
     // No simulation runs here, so every tool-load criterion reads
     // Unmodeled. The gate is covered elsewhere; this file is about what
     // the export surface says after a successful emit.
-    gui.tool_load_overrides.accept_unmodeled = true;
 
     (session, gui, SimulationState::new())
-}
-
-fn policy() -> rs_cam_core::gcode::ToolLoadExportPolicy {
-    rs_cam_core::gcode::ToolLoadExportPolicy {
-        accept_unmodeled: true,
-        accept_exceeded: true,
-    }
 }
 
 // -- 1. The findings reach the caller, and the reply names the error -----
@@ -198,14 +190,8 @@ fn an_mcp_export_that_trips_an_error_finding_names_it() {
     // plane (Z10, see `build_state`). The GUI value is not the plane.
     let (session, gui, sim) = build_state(60.0);
 
-    let exported = export_gcode_from_session_reporting(
-        &session,
-        &gui,
-        &sim,
-        policy(),
-        StaleResultPolicy::Refuse,
-    )
-    .expect("the export succeeds");
+    let exported =
+        export_gcode_from_session_reporting(&session, &gui, &sim).expect("the export succeeds");
 
     let errors: Vec<&Finding> = exported
         .machine_safety
@@ -258,22 +244,9 @@ fn a_clean_export_reports_exactly_the_text_it_always_did() {
 #[test]
 fn the_reporting_door_emits_the_same_program() {
     let (session, gui, sim) = build_state(60.0);
-    let plain = export_gcode_from_session_with_policy(
-        &session,
-        &gui,
-        &sim,
-        policy(),
-        StaleResultPolicy::Refuse,
-    )
-    .expect("the plain door exports");
-    let reporting = export_gcode_from_session_reporting(
-        &session,
-        &gui,
-        &sim,
-        policy(),
-        StaleResultPolicy::Refuse,
-    )
-    .expect("the reporting door exports");
+    let plain = export_gcode_from_session(&session, &gui, &sim).expect("the plain door exports");
+    let reporting = export_gcode_from_session_reporting(&session, &gui, &sim)
+        .expect("the reporting door exports");
     assert_eq!(
         plain, reporting.gcode,
         "the two export doors must emit one program"

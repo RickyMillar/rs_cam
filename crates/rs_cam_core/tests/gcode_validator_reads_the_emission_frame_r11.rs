@@ -132,15 +132,7 @@ fn export_program() -> (ProjectSession, String) {
         .expect("generate trace B");
 
     let gcode = session
-        .export_gcode_checked(
-            None,
-            rs_cam_core::gcode::ToolLoadExportPolicy {
-                // No simulation runs here, so every load gate reads
-                // `Unmodeled`. This file is about frames, not load.
-                accept_unmodeled: true,
-                accept_exceeded: true,
-            },
-        )
+        .export_gcode_checked(None)
         .expect("export the program")
         .gcode;
     (session, gcode)

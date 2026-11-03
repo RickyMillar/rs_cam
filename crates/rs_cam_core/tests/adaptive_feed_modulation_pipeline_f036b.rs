@@ -241,16 +241,11 @@ fn export_session_gcode(session: &ProjectSession) -> String {
     // gate enforcement. For the byte-identical test we want only the
     // emitted text — pass the most permissive policy so the gate
     // doesn't refuse a hardwood-pocket export.
-    let policy = rs_cam_core::gcode::ToolLoadExportPolicy {
-        accept_unmodeled: true,
-        accept_exceeded: true,
-    };
     session
         .export_gcode_checked(
             session
                 .simulation_result()
                 .and_then(|s| s.cut_trace.as_deref()),
-            policy,
         )
         .expect("export_gcode_checked succeeds on AS001 pocket")
         .gcode

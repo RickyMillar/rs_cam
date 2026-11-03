@@ -1227,6 +1227,11 @@ fn every_generator_polls_a_preset_cancel_flag_past_the_prologue() {
 /// each other kind through the real dispatch, with the registry's text
 /// (`OperationType::tool_refusal`), and admits each kind the row allows.
 /// Generated from `OperationType::ALL` x `CutterKind::ALL`: no hand list.
+///
+/// K6 (ruling Q6, decision E1): the dispatch refuses only a kind the
+/// generator cannot compute with (`ToolConstraintsDef::computes_with`: the
+/// V-bit ops); a kind the row refuses but the generator can compute with
+/// passes the prologue, and the static diagnostic warns on it.
 #[test]
 fn every_tool_refusal_is_the_registry_rows_through_the_dispatch() {
     let heights = test_heights();
@@ -1236,6 +1241,7 @@ fn every_tool_refusal_is_the_registry_rows_through_the_dispatch() {
     let index = SpatialIndex::build_auto(&mesh);
 
     let mut restricted = 0;
+    let mut cannot_compute = 0;
     for &op_type in OperationType::ALL {
         let tc = op_type.registry_entry().tool_constraints;
         let op = crate::compute::fixture_values::fixture_op(op_type);
@@ -1272,6 +1278,16 @@ fn every_tool_refusal_is_the_registry_rows_through_the_dispatch() {
             let expected = op_type
                 .tool_refusal(kind)
                 .unwrap_or_else(|| panic!("{op_type:?} x {kind:?}: no registry text"));
+            if tc.computes_with(kind) {
+                assert!(
+                    prologue::check_inputs(&ctx, &op).is_ok(),
+                    "{op_type:?} refused {kind:?}, which its generator can compute with"
+                );
+                assert_eq!(op_type.tool_cannot_compute(kind), None);
+                continue;
+            }
+            assert_eq!(op_type.tool_cannot_compute(kind), Some(expected.clone()));
+            cannot_compute += 1;
             match run_filled(&ctx, &op) {
                 Err(OperationError::InvalidTool(text)) => {
                     assert_eq!(text, expected, "{op_type:?} x {kind:?}");
@@ -1292,6 +1308,10 @@ fn every_tool_refusal_is_the_registry_rows_through_the_dispatch() {
         restricted > 0,
         "no row requires a tool kind; the test proves nothing"
     );
+    assert!(
+        cannot_compute > 0,
+        "no kind is refused for want of a V angle; the E1 arm proves nothing"
+    );
 }
 
 /// W2.2: the static diagnostic and the generator refuse the SAME tools,
@@ -1299,6 +1319,10 @@ fn every_tool_refusal_is_the_registry_rows_through_the_dispatch() {
 /// W2.2 the diagnostic carried its own list (an end mill on Scallop,
 /// Unified Finish or Pencil) and missed Spiral Finish, the bull nose, the
 /// V-bit and the four V-bit operations.
+///
+/// K6 (decision E1): the `Blocking` diagnostics are the generator's
+/// refusals (the kinds it cannot compute with); every other tool-kind
+/// diagnostic is a `Critical` warning, and the generator passes it.
 #[test]
 fn the_static_check_and_the_generator_refuse_the_same_tools() {
     let heights = test_heights();
@@ -1319,7 +1343,10 @@ fn the_static_check_and_the_generator_refuse_the_same_tools() {
                     None,
                 )
                 .into_iter()
-                .filter(|d| d.id.as_str() == crate::diagnostics::ids::COMPAT_TOOL_KIND_REFUSED)
+                .filter(|d| {
+                    d.id.as_str() == crate::diagnostics::ids::COMPAT_TOOL_KIND_REFUSED
+                        && d.severity == crate::diagnostics::Severity::Blocking
+                })
                 .map(|d| d.message)
                 .collect();
 

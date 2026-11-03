@@ -62,7 +62,7 @@ pub mod supersession;
 #[cfg(test)]
 mod tests;
 
-pub use consequence::{Consequence, Danger, Gate, RowKind, Stage};
+pub use consequence::{Consequence, Danger, Gate, RowKind};
 pub use diagnose::{
     ToolpathDiagnoseInputs, diagnose_project_diagnostics, diagnose_toolpath_inputs,
     diagnose_toolpath_with_no_tool,
@@ -121,7 +121,10 @@ pub enum Scope {
 ///
 /// Definitions:
 /// - **Blocking** — generation cannot proceed (geometry impossible,
-///   required input missing). UI shows red; export gate refuses.
+///   required input missing). UI shows red. K6 (ruling Q6): only a missing
+///   input refuses generation (`run_state::refuses_generation`); a finding
+///   at this rank (a cut into the model) is a warning, and no export
+///   refuses on it.
 /// - **Critical** — will break the tool, ruin the part, or violate
 ///   safety. Action required before run.
 /// - **Caution** — degrades quality or stresses the tool; the operator
@@ -154,7 +157,8 @@ impl Severity {
     }
 
     /// True for findings the user must look at before running. Used by
-    /// the export gate and the top-of-panel ribbon.
+    /// the top-of-panel ribbon. K6: the export reads the `diag_ids!`
+    /// column, not this rank, and refuses on none.
     pub fn is_actionable(self) -> bool {
         self.rank() >= Self::Caution.rank()
     }

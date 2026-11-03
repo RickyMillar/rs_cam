@@ -6,33 +6,25 @@
 //! can exist without it, so generation stops with a reason (ruling Q10).
 //! The `diag_ids!` macro does not compile a row with no column.
 //!
-//! The doors that refused a job before P2 read this column through
-//! [`Gate::refuses_at`], so the table and the doors cannot disagree.
+//! No finding refuses a job (ruling Q6): [`Consequence`] has no refusing
+//! arm. Generation and every export door carry the warnings with the
+//! output, and the G-code header names each one.
 
-use crate::gcode::LoadOverride;
-
-/// What a finding does to the job. CONTRACT K6.
+/// What a finding does to the job. CONTRACT K6. No arm refuses (ruling Q6).
 #[derive(Debug, Clone, Copy, PartialEq, Eq)]
 pub enum Consequence {
-    /// The finding refuses the job at each stage in `stages` while its
-    /// `gate` raises it. `override_` names the operator override that
-    /// waives it, when one does. Commit B of P2 deletes this arm.
-    Refuse {
-        danger: Danger,
-        stages: &'static [Stage],
-        gate: Gate,
-        override_: Option<LoadOverride>,
-    },
-    /// The job goes ahead, and every surface names the finding.
+    /// The job goes ahead, and every surface names the finding: the export
+    /// result, the G-code header and the GUI pre-flight chips.
     Warn(Danger),
-    /// The finding informs only.
+    /// The finding informs only. No surface prints it in the export.
     Info,
 }
 
-/// What a warning can damage.
-#[derive(Debug, Clone, Copy, PartialEq, Eq)]
+/// What a warning can damage. The GUI pre-flight draws one chip per value.
+#[derive(Debug, Clone, Copy, PartialEq, Eq, PartialOrd, Ord)]
 pub enum Danger {
-    /// The machine: a collision, a plane order, the spindle power.
+    /// The machine: a collision, a plane order, the spindle power. The GUI
+    /// Export button takes the Danger style while one stands.
     Machine,
     /// The tool: its load, its entry, its reach.
     Tool,
@@ -40,46 +32,55 @@ pub enum Danger {
     Part,
 }
 
-/// A stage of the job where a finding can refuse.
-#[derive(Debug, Clone, Copy, PartialEq, Eq)]
-pub enum Stage {
-    /// An edit door (the height edit of F033).
-    Edit,
-    /// Generation, and the run state of the next generate.
-    Generate,
-    /// The G-code export.
-    Export,
+impl Danger {
+    /// Every value, in the chip order of the GUI pre-flight.
+    pub const ALL: [Self; 3] = [Self::Machine, Self::Tool, Self::Part];
+
+    /// The word the G-code header and the reports print.
+    #[must_use]
+    pub const fn label(self) -> &'static str {
+        match self {
+            Self::Machine => "Machine",
+            Self::Tool => "Tool",
+            Self::Part => "Part",
+        }
+    }
 }
 
-/// The predicate that raises a finding at a door. It decides whether the
-/// finding is raised; the [`Consequence`] decides what the finding does.
+/// The predicate that raises a finding at an export door. It decides
+/// whether the finding is raised; the [`Consequence`] decides what the
+/// finding does. `ProjectSession::export_warnings` walks [`Gate::ALL`]
+/// with one exhaustive `match`, so a new gate does not compile until the
+/// export raises its findings.
 #[derive(Debug, Clone, Copy, PartialEq, Eq)]
 pub enum Gate {
-    /// `HeightOrderViolation::refuses` (F033).
+    /// `HeightOrderViolation::refuses` (F033): the `geom.*` order breaks.
     HeightRefuses,
     /// `ModelGougeFinding::blocks_export` (UX-7b).
     GougeBlocks,
-    /// `Produced::non_centre_cutting_refusal` is `Some` (G-CENTRECUT).
+    /// `ToolpathStats::non_centre_cutting_plunge` is `Some` (G-CENTRECUT).
     CentreCutPlunge,
     /// `non_centre_cutting_refusal_rows` is not empty (G-CENTRECUT).
     CentreCutDescent,
-    /// `CriterionStatus::refuses_export` (S4).
+    /// `CriterionStatus::warns_on_export` (S4).
     LoadRowRefuses,
-    /// `gcode::refusing_unmodeled` is not empty (T-19).
+    /// `gcode::warning_unmodeled` is not empty (T-19).
     LoadUnmodeled,
     /// An enabled op has no current result (G-EXPORTSKIP, G-STALEXPORT).
     NoCurrentResult,
-    /// The GUI pre-flight asks the operator to confirm (collisions).
+    /// A holder or rapid collision of the simulation; the GUI Export button
+    /// takes the Danger style.
     GuiConfirm,
     /// `ToolpathHeights::buried_face_refusal` or the prologue
     /// `refuse_buried_face` (UX-1c).
     BuriedFace,
-    /// `OperationType::tool_refusal` (W2.2).
+    /// `OperationType::tool_refusal` of a kind the generator can compute
+    /// with (W2.2, decision E1).
     ToolKind,
 }
 
 impl Gate {
-    /// Every gate, for a test that walks them.
+    /// Every gate, for the export walk and the tests.
     pub const ALL: [Self; 10] = [
         Self::HeightRefuses,
         Self::GougeBlocks,
@@ -92,34 +93,6 @@ impl Gate {
         Self::BuriedFace,
         Self::ToolKind,
     ];
-
-    /// True when a row that this gate raises refuses the job at `stage`.
-    #[must_use]
-    pub fn refuses_at(self, stage: Stage) -> bool {
-        super::ids::CONSEQUENCES.iter().any(|(_, row)| match row {
-            RowKind::Finding(Consequence::Refuse { stages, gate, .. }) => {
-                *gate == self && stages.contains(&stage)
-            }
-            RowKind::Finding(Consequence::Warn(_) | Consequence::Info) | RowKind::NotReady => false,
-        })
-    }
-
-    /// The override of the rows this gate raises, when one waives them.
-    #[must_use]
-    pub fn override_(self) -> Option<LoadOverride> {
-        super::ids::CONSEQUENCES
-            .iter()
-            .find_map(|(_, row)| match row {
-                RowKind::Finding(Consequence::Refuse {
-                    gate, override_, ..
-                }) if *gate == self => Some(*override_),
-                RowKind::Finding(
-                    Consequence::Refuse { .. } | Consequence::Warn(_) | Consequence::Info,
-                )
-                | RowKind::NotReady => None,
-            })
-            .flatten()
-    }
 }
 
 /// The column of one `diag_ids!` row.
@@ -132,26 +105,22 @@ pub enum RowKind {
     NotReady,
 }
 
+impl RowKind {
+    /// The danger of a row that warns; `None` for an `Info` row and a
+    /// missing input.
+    #[must_use]
+    pub const fn warns(self) -> Option<Danger> {
+        match self {
+            Self::Finding(Consequence::Warn(danger)) => Some(danger),
+            Self::Finding(Consequence::Info) | Self::NotReady => None,
+        }
+    }
+}
+
 /// A finding that warns. A `diag_ids!` row writes `=> warn(Danger::Tool)`.
 #[must_use]
 pub const fn warn(danger: Danger) -> RowKind {
     RowKind::Finding(Consequence::Warn(danger))
-}
-
-/// A finding that refuses at `stages` while `gate` raises it.
-#[must_use]
-pub const fn refuse(
-    danger: Danger,
-    stages: &'static [Stage],
-    gate: Gate,
-    override_: Option<LoadOverride>,
-) -> RowKind {
-    RowKind::Finding(Consequence::Refuse {
-        danger,
-        stages,
-        gate,
-        override_,
-    })
 }
 
 /// A finding that informs only.

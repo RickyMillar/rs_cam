@@ -41,7 +41,16 @@ or a test arm that panics: D1). No value, golden or G-code byte moved.
 Phase 4 landed 2026-11-03 (K1): `OperationConfig::cut_spec()` (25 arms, no
 wildcard) builds a `CutSpec`; each registry row states its `cut_rule`;
 `FeedsHints` is gone. Suggest reads today's three inputs through
-`CutSpec::todays_hints`, so FM1 did not move. Next: Phase 2 (K6, no refusals).
+`CutSpec::todays_hints`, so FM1 did not move. 
+Phase 2 landed 2026-11-03 (K6, ruling Q6): each diagnostic id states its
+consequence (`Warn(Danger)`, `Info`, or NotReady for a missing input). No
+finding refuses generation or export on any surface. `ToolLoadExportPolicy`,
+`LoadOverride`, the CLI `--accept-*` flags and the MCP override keys are gone.
+The G-code header prints one `WARNING <danger> <id> <toolpath>` line per
+warning; an op with no current result is left out with `export.op_left_out`.
+The GUI pre-flight shows one chip per danger; Export takes the Danger style
+for a Machine warning. Emit errors (`emit.*`) and missing inputs still stop.
+Next: Phase 3 (K4 entry contract).
 
 ## Update 2026-10-29 — viewport parity: phase 0 landed
 

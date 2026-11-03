@@ -1073,60 +1073,6 @@ pub fn reach_scale_note(map: &ReachMap, surface: &ReachSurface) -> String {
 
 // ── Project-level GUI state ───────────────────────────────────────────
 
-/// User-controlled overrides for the tool-load export gate. Each flag bypasses
-/// a *distinct* class of refusal — they are deliberately not collapsed into a
-/// single "I accept the risk" toggle. Default is the strict policy: refuse on
-/// either Exceeds or Unmodeled.
-#[derive(Default, Debug, Clone, Copy)]
-pub struct ToolLoadOverrides {
-    /// Bypass `Unmodeled` refusals (criterion couldn't be evaluated honestly).
-    pub accept_unmodeled: bool,
-    /// Bypass `Exceeds` refusals (criterion was modeled and predicted to break
-    /// the tool, exceed power, or have unsafe stickout).
-    pub accept_exceeded: bool,
-}
-
-impl ToolLoadOverrides {
-    /// Translate to the core policy struct consumed by `export_gcode_checked`.
-    pub fn as_policy(&self) -> rs_cam_core::gcode::ToolLoadExportPolicy {
-        rs_cam_core::gcode::ToolLoadExportPolicy {
-            accept_unmodeled: self.accept_unmodeled,
-            accept_exceeded: self.accept_exceeded,
-        }
-    }
-}
-
-/// Whether THIS export may emit an operation's PREVIOUS geometry — the
-/// result of the generation before the operator edited the operation.
-///
-/// Deliberately not a `bool`. An operator who overrides this gate is
-/// choosing to cut geometry that does not match the parameters on
-/// screen, and a bare `true` at a call site says none of that.
-///
-/// Off by default, and held here beside [`ToolLoadOverrides`] rather than
-/// in the project file: it is a decision about one export, not a property
-/// of the job, so it resets whenever a project is loaded (both loaders
-/// build a fresh `GuiState`). R0.1 §7 Q5 asked the operator to choose
-/// between this and a persisted project setting and has not been
-/// answered; this follows R0.1's own recommendation.
-#[derive(Debug, Clone, Copy, PartialEq, Eq, Default)]
-pub enum StaleResultPolicy {
-    /// The default. An operation edited since its last generation blocks
-    /// the export, and the refusal names it.
-    #[default]
-    Refuse,
-    /// Emit the previous generation's geometry for an edited operation.
-    /// The file will not match the parameters on screen.
-    AcceptPreviousGeometry,
-}
-
-impl StaleResultPolicy {
-    /// Whether an edited operation may be exported under this policy.
-    pub fn accepts_previous_geometry(self) -> bool {
-        matches!(self, Self::AcceptPreviousGeometry)
-    }
-}
-
 /// GUI-only project-level state.
 pub struct GuiState {
     pub file_path: Option<PathBuf>,
@@ -1134,12 +1080,6 @@ pub struct GuiState {
     pub edit_counter: u64,
     /// Per-toolpath GUI runtime state, keyed by toolpath semantic ID.
     pub toolpath_rt: HashMap<rs_cam_core::ToolpathId, ToolpathRuntime>,
-    /// User-toggled overrides for the tool-load export gate. Reset on project load.
-    pub tool_load_overrides: ToolLoadOverrides,
-    /// G-STALEXPORT: whether the next export may emit an edited
-    /// operation's previous geometry. Reset on project load, like
-    /// [`Self::tool_load_overrides`]; never written to the project file.
-    pub stale_export: StaleResultPolicy,
     /// Recently changed parameters from MCP, with timestamp for fade-out.
     /// Key: "toolpath_{id}_{param}" or "tool_{id}_{param}" or "stock_{param}"
     #[cfg(feature = "mcp")]
@@ -1199,8 +1139,6 @@ impl GuiState {
             dirty: false,
             edit_counter: 0,
             toolpath_rt: HashMap::new(),
-            tool_load_overrides: ToolLoadOverrides::default(),
-            stale_export: StaleResultPolicy::default(),
             #[cfg(feature = "mcp")]
             mcp_highlights: HashMap::new(),
             pending_toolpath_tab: None,

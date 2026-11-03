@@ -50,7 +50,6 @@
 
 use crate::render::camera::ViewPreset;
 use crate::state::job::{FaceUp, ToolConfig};
-use crate::state::runtime::StaleResultPolicy;
 use crate::state::selection::Selection;
 use crate::state::toolpath::ToolpathId;
 use crate::state::{ProjectFeedsSort, Workspace};
@@ -231,21 +230,6 @@ pub(crate) type SetFeedsProjectScatterArgs = bool;
 
 /// Whether every project rollup row is selected.
 pub(crate) type SetFeedsProjectSelectAllArgs = bool;
-
-/// Which export-gate verdicts the operator accepts.
-///
-/// The two flags are independent. `accept_unmodeled` bypasses only
-/// `Unmodeled` verdicts; `accept_exceeded` bypasses only `Exceeds`.
-#[derive(Debug, Clone, Copy, PartialEq, Eq)]
-pub struct SetToolLoadOverrideArgs {
-    /// Whether an unmodelled tool load may still export.
-    pub accept_unmodeled: bool,
-    /// Whether an exceeded tool load may still export.
-    pub accept_exceeded: bool,
-}
-
-/// Whether export emits the previous geometry of an edited operation.
-pub(crate) type SetStaleExportPolicyArgs = StaleResultPolicy;
 
 /// Which library tool to delete.
 #[derive(Debug, Clone, PartialEq, Eq)]
@@ -694,13 +678,6 @@ macro_rules! for_each_ui_command {
                  mcp: Reach::Skip("apply_feeds names the toolpath it writes"),
                  cli: Reach::Skip("the batch CLI draws no table"),
              }),
-            (UiCommand, SetToolLoadOverride, "set_tool_load_override",
-             SetToolLoadOverrideArgs, (),
-             Surfaces {
-                 gui: Reach::Reached,
-                 mcp: Reach::Skip("export_gcode carries both accept flags per call"),
-                 cli: Reach::Skip("the batch CLI carries its own export flags"),
-             }),
 
             // ── GUI job progress row ────────────────────────────────
             (UiCommand, CancelJobRun, "cancel_job_run", NoArgs, (),
@@ -710,16 +687,6 @@ macro_rules! for_each_ui_command {
                      "an MCP caller cancels its own job and draws no progress row",
                  ),
                  cli: Reach::Skip("the batch CLI draws no progress row"),
-             }),
-            // ── Export policy ───────────────────────────────────────
-            (UiCommand, SetStaleExportPolicy, "set_stale_export_policy",
-             SetStaleExportPolicyArgs, (),
-             Surfaces {
-                 gui: Reach::Reached,
-                 mcp: Reach::Skip(
-                     "export_gcode carries accept_previous_geometry per call",
-                 ),
-                 cli: Reach::Skip("the batch CLI carries its own export flags"),
              }),
 
             // ── Tool and machine library files (ruling 5) ───────────

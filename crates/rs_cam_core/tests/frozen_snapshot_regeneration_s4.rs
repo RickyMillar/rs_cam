@@ -111,7 +111,6 @@ use common::tools::ball_tool_config;
 use rs_cam_core::compute::catalog::OperationConfig;
 use rs_cam_core::compute::config::StockSource;
 use rs_cam_core::compute::operation_configs::{ClaimsReference, UnifiedFinishConfig};
-use rs_cam_core::gcode::ToolLoadExportPolicy;
 use rs_cam_core::session::{ProjectSession, ProjectSessionBuilder, SimulationOptions};
 
 /// Half-extent (mm) of the fixture surface.
@@ -321,13 +320,7 @@ fn snapshot_id(session: &ProjectSession, index: usize) -> SnapshotId {
 /// text can move because a *gate* moved.
 fn gcode_of(session: &ProjectSession) -> String {
     session
-        .export_gcode_checked(
-            None,
-            ToolLoadExportPolicy {
-                accept_unmodeled: true,
-                accept_exceeded: true,
-            },
-        )
+        .export_gcode_checked(None)
         .expect("export must succeed under an all-accepting policy")
         .gcode
 }

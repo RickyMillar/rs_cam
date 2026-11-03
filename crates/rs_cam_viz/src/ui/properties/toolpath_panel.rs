@@ -126,13 +126,15 @@ pub(super) fn draw_toolpath_panel(
     // count as faint meta, the notes counter.
     ui.add_space(4.0);
     let validation_errors = validate_toolpath(entry, validation);
-    // F20: the first blocking finding of the stored result.
-    let blocking = crate::ui::toolpath_panel::blocking_finding(
+    // F20, K6: the first warning finding of the stored result.
+    let warning = crate::ui::toolpath_panel::warning_finding(
         entry.run.result().map(|result| &result.stats),
         entry.id,
     );
     let notes: Vec<Notice> = placement.note_notices();
-    let blocking_hover = blocking.as_ref().map(super::placement::blocking_hover);
+    let warning_hover = warning
+        .as_ref()
+        .map(|(d, danger)| (super::placement::warning_hover(d), *danger));
     let header = HeaderRow {
         run_state: inputs.run_state.as_ref(),
         can_run: !tools.is_empty() && validation_errors.is_empty(),
@@ -143,7 +145,9 @@ pub(super) fn draw_toolpath_panel(
             }
             _ => None,
         },
-        blocking: blocking_hover.as_deref(),
+        warning: warning_hover
+            .as_ref()
+            .map(|(hover, danger)| (hover.as_str(), *danger)),
         moves: entry.run.result().map(|result| result.stats.move_count),
         feed_stage: inputs.feed_stage,
         caps: inputs.caps,

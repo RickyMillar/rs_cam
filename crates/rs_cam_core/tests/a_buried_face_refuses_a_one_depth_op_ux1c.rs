@@ -1,5 +1,11 @@
 //! UX-1c (SAFETY, operator ruling 2026-10-22): Chamfer, V-Carve, Inlay and
-//! Inlay Plug on a face below standing material refuse at generation.
+//! Inlay Plug on a face below standing material are named at generation.
+//!
+//! K6 (feeds contract P2, ruling Q6, decision E1): the generator can cut
+//! with a buried face, so the buried face is a warning: the op generates,
+//! the result records the finding (`ToolpathStats::buried_face`) and the
+//! diagnostics name it as `Critical`. Before P2 each claim below was a
+//! refusal; the texts and the cases are unchanged.
 //!
 //! # The defect
 //!
@@ -13,12 +19,12 @@
 //!
 //! For each of the four ops:
 //!
-//! 1. Fresh stock, the Z 20 face picked, stock top Z 32: generation refuses
-//!    with `OperationError::BuriedFace` and the ruling text ("The face is
+//! 1. Fresh stock, the Z 20 face picked, stock top Z 32: generation names it
+//!    with the `BuriedFace` finding and the ruling text ("The face is
 //!    12.0 mm below the stock top and no earlier op clears it. Clear it
 //!    first (Pocket or Face), or turn on "Rest machining: from previous ops"."). The
 //!    diagnostics state the same text before generation
-//!    (`precondition.buried_face`, `Blocking`).
+//!    (`precondition.buried_face`, `Critical`).
 //! 2. Fresh stock, the Z 30 face picked, stock top Z 30 (the face AT the
 //!    stock top): the op generates, and the diagnostics hold no
 //!    `precondition.buried_face`.
@@ -38,10 +44,10 @@
 //! (`a_face_top_never_starts_below_the_stock_top_ux1`), built in memory:
 //! up faces Z 30 (X 0..20), Z 20 (X 20..40), Z 10 (X 40..60), Y 0..40.
 //!
-//! Red proof: with the session refusal (`ToolpathHeights::buried_face_refusal`)
-//! returning `None`, every claim-1 arm fails (the op generates). With the
-//! prologue check (`prologue::refuse_buried_face`) returning `Ok(())`,
-//! every claim-4 arm fails.
+//! Red proof: with the session check (`ToolpathHeights::buried_face_refusal`)
+//! returning `None`, every claim-1 arm fails (no finding is recorded). With
+//! the prologue check (`prologue::buried_face`) returning `None`, every
+//! claim-4 arm fails.
 //!
 //! ```text
 //! cargo test -p rs_cam_core -q --test a_buried_face_refuses_a_one_depth_op_ux1c
@@ -66,7 +72,7 @@ use common::tools::endmill_tool_config;
 use rs_cam_core::compute::StockConfig;
 use rs_cam_core::compute::catalog::OperationConfig;
 use rs_cam_core::compute::config::{HeightMode, StockSource};
-use rs_cam_core::compute::execute::{BuriedUnder, OperationError};
+use rs_cam_core::compute::execute::BuriedUnder;
 use rs_cam_core::compute::floor::Floor;
 use rs_cam_core::compute::operation_configs::{
     ChamferConfig, InlayConfig, InlayPlugConfig, PocketConfig, VCarveConfig,
@@ -264,35 +270,45 @@ fn buried_face_diagnostics(session: &ProjectSession, index: usize) -> Vec<String
         .collect()
 }
 
-/// The refusal of a buried face, or a panic that names what came back.
+/// K6: the op generates, and its result records the buried face. The
+/// text of the finding, or a panic that names what came back.
 #[track_caller]
-fn expect_buried(outcome: Result<(), SessionError>, name: &str, under: BuriedUnder) -> String {
-    match outcome {
-        Err(SessionError::Operation(OperationError::BuriedFace(refusal))) => {
-            assert_eq!(refusal.under, under, "{name}: {refusal}");
-            refusal.to_string()
-        }
-        Err(other) => panic!("{name}: want the buried-face refusal, got: {other}"),
-        Ok(()) => panic!("{name}: generated; want the buried-face refusal"),
+fn expect_buried(
+    session: &mut ProjectSession,
+    index: usize,
+    name: &str,
+    under: BuriedUnder,
+) -> String {
+    if let Err(e) = generate(session, index) {
+        panic!("{name}: K6: a buried face does not refuse generation, got: {e}");
     }
+    let found = session
+        .result_at(index)
+        .and_then(|r| r.stats.buried_face)
+        .unwrap_or_else(|| panic!("{name}: generated, but the buried face is not recorded"));
+    assert_eq!(found.under, under, "{name}: {found}");
+    found.to_string()
 }
 
-/// Claim 1: fresh stock, the face 12 mm below the stock top, refuses with
-/// the ruling text on generation and in the diagnostics.
+/// Claim 1: fresh stock, the face 12 mm below the stock top, is named with
+/// the ruling text on generation and in the diagnostics (K6: the op still
+/// generates).
 #[test]
-fn a_buried_face_refuses_on_fresh_stock_ux1c() {
+fn a_buried_face_is_named_on_fresh_stock_ux1c() {
     for (name, op) in one_depth_ops() {
         let mut session = fresh_session(&op, FACE_Z20, 32.0, HeightMode::Auto);
         let static_texts = buried_face_diagnostics(&session, 0);
-        let text = expect_buried(generate(&mut session, 0), name, BuriedUnder::StockTop);
+        let text = expect_buried(&mut session, 0, name, BuriedUnder::StockTop);
         let want = format!(
             "{name}: the face is 12.0 mm below the stock top and no earlier op clears it. \
              Clear it first (Pocket or Face), or turn on \"Rest machining: from previous ops\"."
         );
-        assert_eq!(text, want, "{name}: the refusal text");
+        assert_eq!(text, want, "{name}: the finding text");
         assert_eq!(
             static_texts,
-            vec![format!("{want} — generation will fail.")],
+            vec![format!(
+                "{want} — the op cuts into the material over the face."
+            )],
             "{name}: the diagnostics state the generation text before generation"
         );
     }
@@ -311,7 +327,7 @@ fn a_face_at_the_stock_top_generates_ux1c() {
     }
 }
 
-/// A pinned top is the operator's statement: no refusal.
+/// A pinned top is the operator's statement: no finding.
 #[test]
 fn a_pinned_top_does_not_refuse_ux1c() {
     for (name, op) in one_depth_ops() {
@@ -375,16 +391,13 @@ fn a_cleared_face_generates_on_the_remaining_stock_ux1c() {
 }
 
 /// Claim 4: a Pocket that stops 6 mm above the face leaves material over
-/// it, and the op on "Rest machining: from previous ops" refuses on the standing material.
+/// it, and the op on "Rest machining: from previous ops" names the standing
+/// material (K6: it still generates).
 #[test]
-fn a_face_under_standing_material_refuses_on_the_remaining_stock_ux1c() {
+fn a_face_under_standing_material_is_named_on_the_remaining_stock_ux1c() {
     for (name, op) in one_depth_ops() {
         let mut session = cascade_above(&op);
-        let text = expect_buried(
-            generate(&mut session, 1),
-            name,
-            BuriedUnder::StandingMaterial,
-        );
+        let text = expect_buried(&mut session, 1, name, BuriedUnder::StandingMaterial);
         assert!(
             text.starts_with(&format!("{name}: the face is ")),
             "{name}: {text}"

@@ -195,15 +195,7 @@ fn export_two_setup_gcode() -> String {
         .expect("generate flipped-setup trace");
 
     session
-        .export_gcode_checked(
-            None,
-            rs_cam_core::gcode::ToolLoadExportPolicy {
-                // No simulation is run here — the load gates would all read
-                // `Unmodeled`. This test is about coordinates, not load.
-                accept_unmodeled: true,
-                accept_exceeded: true,
-            },
-        )
+        .export_gcode_checked(None)
         .expect("export two-setup G-code")
         .gcode
 }

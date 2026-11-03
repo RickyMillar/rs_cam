@@ -1,30 +1,29 @@
 //! G-EXPORTSKIP sentry (R05 §5, 2026-09-10) — an ENABLED operation with no
-//! result refuses the export by name; it is never skipped.
+//! result is never left out in silence.
 //!
 //! Until this fix `io::export::emitted_toolpaths` was a `filter_map` over
 //! the export scope: an enabled toolpath with no result in either store
-//! (`session.results`, then the `gui.toolpath_rt` fallback) returned `None`
-//! and the program was emitted without it. Nothing on any export surface
-//! said so. The operator read "Generated 3 toolpaths, 1 still waiting on
-//! upstream simulated stock", opened the wizard, and saved a file that ran
-//! three operations under a project that lists four. A rest op blocked on
-//! `AwaitingPriorStock` is the reachable case; a `Pending` op that was
-//! never generated and an `Error` op are the other two shapes.
+//! returned `None` and the program was emitted without it. Nothing on any
+//! export surface said so. A rest op blocked on `AwaitingPriorStock` is the
+//! reachable case; a `Pending` op that was never generated and an `Error`
+//! op are the other two shapes. From 2026-09-10 to K6 the export refused.
+//!
+//! K6 (feeds contract P2, lead decision 4, ruling Q6): no finding refuses
+//! a job. Every surface exports the rest and names the op it leaves out
+//! (`export.op_left_out`, `Danger::Part`), with one text per status.
 //!
 //! Three things this file pins:
 //!
-//! 1. Every whole-project / per-setup export entry point returns `Err`
-//!    naming the ungenerated op, with one text per status, and no program
-//!    string exists for a caller to write.
-//! 2. A DISABLED op with no result still exports fine — skipping a
-//!    disabled op is the intended behaviour, and it must not become a
-//!    refusal.
-//! 3. The preflight rows come from the same text builder the export
-//!    refusal uses, so the two surfaces cannot disagree.
+//! 1. Every whole-project / per-setup export entry point writes the
+//!    generated op, leaves out the ungenerated op, and names it in the
+//!    result and the program header, with one text per status.
+//! 2. A DISABLED op with no result is skipped with no warning — skipping a
+//!    disabled op is the intended behaviour.
+//! 3. The preflight rows come from the same text builder the warning uses,
+//!    so the two surfaces cannot disagree.
 
 #![expect(
     clippy::expect_used,
-    clippy::panic,
     clippy::indexing_slicing,
     reason = "test code: a panic is how a test reports a failure"
 )]
@@ -35,6 +34,8 @@ use std::time::{SystemTime, UNIX_EPOCH};
 
 use rs_cam_core::compute::stock_config::{ModelKind, ModelUnits};
 use rs_cam_core::compute::tool_config::{ToolConfig, ToolId, ToolType};
+use rs_cam_core::diagnostics::ids;
+use rs_cam_core::gcode::ExportedGcode;
 use rs_cam_core::geo::P3;
 use rs_cam_core::mesh::make_test_flat;
 use rs_cam_core::session::{
@@ -45,12 +46,12 @@ use rs_cam_core::toolpath::Toolpath;
 use rs_cam_core::trace::toolpath_spans::AnnotatedToolpath;
 use rs_cam_viz::error::VizError;
 use rs_cam_viz::io::export::{
-    blocking_toolpath_message, blocking_toolpaths, export_gcode_from_session,
-    export_gcode_from_session_with_policy, export_setup_gcode_from_session_with_policy,
+    export_gcode_from_session, export_gcode_from_session_reporting,
+    export_setup_gcode_from_session_reporting, left_out_message, left_out_toolpaths,
 };
 use rs_cam_viz::state::freshness::freshness_at;
 use rs_cam_viz::state::runtime::ToolpathRun;
-use rs_cam_viz::state::runtime::{GuiState, StaleResultPolicy, ToolpathRuntime};
+use rs_cam_viz::state::runtime::{GuiState, ToolpathRuntime};
 use rs_cam_viz::state::simulation::SimulationState;
 use rs_cam_viz::state::toolpath::{ComputeStatus, OperationConfig, ToolpathResult};
 
@@ -192,18 +193,10 @@ fn build_state(second: SecondOp) -> (ProjectSession, GuiState, SimulationState) 
     gui.toolpath_rt.insert(second_id, second_rt);
 
     // No simulation runs here, so every tool-load criterion reads
-    // Unmodeled(SimulationRequired). The gate is covered elsewhere; this
+    // Unmodeled(SimulationRequired). The export warns on those rows; this
     // file is about which operations the emitter is handed.
-    gui.tool_load_overrides.accept_unmodeled = true;
 
     (session, gui, SimulationState::new())
-}
-
-fn policy() -> rs_cam_core::gcode::ToolLoadExportPolicy {
-    rs_cam_core::gcode::ToolLoadExportPolicy {
-        accept_unmodeled: true,
-        accept_exceeded: true,
-    }
 }
 
 fn temp_path(name: &str) -> PathBuf {
@@ -215,21 +208,14 @@ fn temp_path(name: &str) -> PathBuf {
 }
 
 /// The shape every file-writing caller has (`app/export.rs::write_one`,
-/// MCP `export_gcode`): export, and write ONLY on `Ok`. Returns the export
-/// error so the caller can assert its text.
+/// MCP `export_gcode`): export, and write the program.
 fn export_and_write(
     session: &ProjectSession,
     gui: &GuiState,
     sim: &SimulationState,
     path: &std::path::Path,
 ) -> Result<(), VizError> {
-    let gcode = export_gcode_from_session_with_policy(
-        session,
-        gui,
-        sim,
-        policy(),
-        StaleResultPolicy::Refuse,
-    )?;
+    let gcode = export_gcode_from_session(session, gui, sim)?;
     std::fs::write(path, gcode).expect("write g-code");
     Ok(())
 }
@@ -242,64 +228,71 @@ fn awaiting_prior_stock() -> ComputeStatus {
     })
 }
 
-fn expect_export_error(result: Result<String, VizError>, surface: &str) -> String {
-    match result {
-        Ok(gcode) => panic!(
-            "G-EXPORTSKIP: {surface} emitted a program ({} lines) with an ENABLED \
-             ungenerated operation in scope — the op was silently skipped",
-            gcode.lines().count()
-        ),
-        Err(VizError::Export(msg)) => msg,
-        Err(other) => panic!("{surface}: expected VizError::Export, got {other:?}"),
-    }
+/// The text of each op-left-out warning of `exported`, joined with `; `.
+/// Panics when the export names no left-out op, or when the program holds
+/// the ungenerated op's label outside a warning line.
+fn left_out_text(exported: &ExportedGcode, surface: &str) -> String {
+    let rows: Vec<&str> = exported
+        .warnings
+        .iter()
+        .filter(|w| w.id == ids::EXPORT_OP_LEFT_OUT)
+        .map(|w| w.detail.as_str())
+        .collect();
+    assert!(
+        !rows.is_empty(),
+        "G-EXPORTSKIP: {surface} left the ENABLED ungenerated operation out in silence"
+    );
+    assert!(
+        exported
+            .gcode
+            .lines()
+            .any(|line| line.contains("WARNING") && line.contains(ids::EXPORT_OP_LEFT_OUT)),
+        "{surface}: the program header names the op left out"
+    );
+    assert!(
+        !exported
+            .gcode
+            .lines()
+            .any(|line| line.contains(UNGENERATED_NAME) && !line.contains("WARNING")),
+        "{surface}: the program holds the op it left out"
+    );
+    assert!(
+        exported.gcode.contains(GENERATED_NAME),
+        "{surface}: the generated op is still written"
+    );
+    rows.join("; ")
 }
 
-// ── 1. Refusal, one text per status ─────────────────────────────────────
+// ── 1. The op is left out and named, one text per status ────────────────
 
 #[test]
-fn export_refuses_an_enabled_pending_op_and_writes_no_file() {
+fn export_leaves_out_an_enabled_pending_op_and_names_it() {
     let (session, gui, sim) = build_state(SecondOp::Ungenerated(ComputeStatus::Pending));
     let path = temp_path("pending");
+    export_and_write(&session, &gui, &sim, &path).expect("K6: the export writes the rest");
+    let written = std::fs::read_to_string(&path).expect("read the written program");
+    let _ = std::fs::remove_file(&path);
+    assert!(written.contains("G1"), "the generated op is written");
 
-    let err = export_and_write(&session, &gui, &sim, &path)
-        .err()
-        .unwrap_or_else(|| {
-            let _ = std::fs::remove_file(&path);
-            panic!(
-                "G-EXPORTSKIP: export succeeded and wrote {} with an ENABLED, never-generated \
-                 operation in scope — '{UNGENERATED_NAME}' was silently skipped",
-                path.display()
-            )
-        });
-    assert!(
-        !path.exists(),
-        "no file may be produced when the export refuses"
-    );
-    let msg = err.to_string();
+    let exported = export_gcode_from_session_reporting(&session, &gui, &sim)
+        .expect("the export writes the rest");
+    let msg = left_out_text(&exported, "export_gcode_from_session_reporting");
     assert!(
         msg.contains(&format!("'{UNGENERATED_NAME}' is not generated")),
-        "the refusal must name the op and say it is not generated; got: {msg}"
+        "the warning must name the op and say it is not generated; got: {msg}"
     );
     assert!(
         !msg.contains(GENERATED_NAME),
-        "the refusal must not blame the generated op; got: {msg}"
+        "the warning must not blame the generated op; got: {msg}"
     );
 }
 
 #[test]
-fn export_refuses_an_op_awaiting_prior_stock_with_the_upstream_text() {
+fn export_names_an_op_awaiting_prior_stock_with_the_upstream_text() {
     let (session, gui, sim) = build_state(SecondOp::Ungenerated(awaiting_prior_stock()));
-
-    let msg = expect_export_error(
-        export_gcode_from_session_with_policy(
-            &session,
-            &gui,
-            &sim,
-            policy(),
-            StaleResultPolicy::Refuse,
-        ),
-        "export_gcode_from_session_with_policy",
-    );
+    let exported = export_gcode_from_session_reporting(&session, &gui, &sim)
+        .expect("the export writes the rest");
+    let msg = left_out_text(&exported, "export_gcode_from_session_reporting");
     assert!(
         msg.contains(&format!(
             "'{UNGENERATED_NAME}' is still waiting on upstream stock"
@@ -314,21 +307,13 @@ fn export_refuses_an_op_awaiting_prior_stock_with_the_upstream_text() {
 }
 
 #[test]
-fn export_refuses_an_errored_op_and_carries_the_generator_error() {
+fn export_names_an_errored_op_and_carries_the_generator_error() {
     let (session, gui, sim) = build_state(SecondOp::Ungenerated(ComputeStatus::Error(
         "offset collapsed on ring 3".to_owned(),
     )));
-
-    let msg = expect_export_error(
-        export_gcode_from_session_with_policy(
-            &session,
-            &gui,
-            &sim,
-            policy(),
-            StaleResultPolicy::Refuse,
-        ),
-        "export_gcode_from_session_with_policy",
-    );
+    let exported = export_gcode_from_session_reporting(&session, &gui, &sim)
+        .expect("the export writes the rest");
+    let msg = left_out_text(&exported, "export_gcode_from_session_reporting");
     assert!(
         msg.contains(&format!(
             "'{UNGENERATED_NAME}' failed to generate: offset collapsed on ring 3"
@@ -338,38 +323,25 @@ fn export_refuses_an_errored_op_and_carries_the_generator_error() {
 }
 
 /// The per-setup and combined entry points are what the PerSetup wizard
-/// layout and the MCP `split_setups` export write from. They must refuse
-/// too — otherwise the whole-project door refuses and the per-setup door
-/// still ships the short program.
+/// layout and the MCP `split_setups` export write from. Both name the op
+/// they leave out.
 #[test]
-fn per_setup_and_combined_exports_refuse_the_same_op() {
+fn per_setup_and_combined_exports_name_the_same_op() {
     let (session, gui, sim) = build_state(SecondOp::Ungenerated(awaiting_prior_stock()));
     let setup_id = session.list_setups()[0].id;
 
-    let per_setup = expect_export_error(
-        export_setup_gcode_from_session_with_policy(
-            &session,
-            &gui,
-            &sim,
-            setup_id,
-            policy(),
-            StaleResultPolicy::Refuse,
-        ),
-        "export_setup_gcode_from_session_with_policy",
-    );
+    let per_setup = export_setup_gcode_from_session_reporting(&session, &gui, &sim, setup_id)
+        .expect("the per-setup export writes the rest");
+    let per_setup = left_out_text(&per_setup, "export_setup_gcode_from_session_reporting");
     assert!(
         per_setup.contains(UNGENERATED_NAME),
-        "per-setup refusal must name the op; got: {per_setup}"
+        "the per-setup warning must name the op; got: {per_setup}"
     );
 
-    let combined = expect_export_error(
-        export_gcode_from_session(&session, &gui, &sim),
-        "export_gcode_from_session",
-    );
-    assert!(
-        combined.contains(UNGENERATED_NAME),
-        "combined refusal must name the op; got: {combined}"
-    );
+    let combined = export_gcode_from_session_reporting(&session, &gui, &sim)
+        .expect("the combined export writes the rest");
+    let combined = left_out_text(&combined, "export_gcode_from_session_reporting");
+    assert_eq!(combined, per_setup, "one text on both doors");
 }
 
 // ── 2. A disabled op is still skipped ───────────────────────────────────
@@ -380,7 +352,7 @@ fn a_disabled_op_with_no_result_is_skipped_and_the_export_succeeds() {
     let path = temp_path("disabled");
 
     export_and_write(&session, &gui, &sim, &path)
-        .expect("a disabled op with no result is an intended skip, not a refusal");
+        .expect("a disabled op with no result is an intended skip");
     let gcode = std::fs::read_to_string(&path).expect("read the written program");
     let _ = std::fs::remove_file(&path);
 
@@ -393,21 +365,26 @@ fn a_disabled_op_with_no_result_is_skipped_and_the_export_succeeds() {
         !gcode.contains(UNGENERATED_NAME),
         "the disabled op must not appear in the program; got:\n{gcode}"
     );
+    let exported = export_gcode_from_session_reporting(&session, &gui, &sim)
+        .expect("the export writes the program");
+    assert!(
+        !exported
+            .warnings
+            .iter()
+            .any(|w| w.id == ids::EXPORT_OP_LEFT_OUT),
+        "a disabled op is not left out: {:?}",
+        exported.warnings
+    );
 }
 
-// ── 3. The pre-flight rows and the refusal share one text ───────────────
+// ── 3. The pre-flight rows and the warning share one text ───────────────
 
-/// `ui/preflight.rs` draws one `Fail` card per row of
-/// `blocking_toolpaths` with `row.message` as its detail. The export
-/// refusal is those same messages joined. Assert the two agree for every
-/// status shape, and that the row list is empty when nothing blocks.
-///
-/// G-STALEXPORT renamed the builder and keyed it on `FreshnessState`
-/// instead of the raw `ComputeStatus`, because the status alone cannot
-/// tell a never-generated op from one whose result belongs to a previous
-/// parameter set. The three texts asserted here are unchanged.
+/// `ui/preflight.rs` counts one `Part` chip per row of `left_out_toolpaths`
+/// and lists `row.message` on hover. The export warning carries those same
+/// messages. Assert the two agree for every status shape, and that the row
+/// list is empty when nothing is left out.
 #[test]
-fn preflight_rows_carry_the_same_text_as_the_export_refusal() {
+fn preflight_rows_carry_the_same_text_as_the_export_warning() {
     for status in [
         ComputeStatus::Pending,
         awaiting_prior_stock(),
@@ -417,7 +394,7 @@ fn preflight_rows_carry_the_same_text_as_the_export_refusal() {
         let (session, gui, sim) = build_state(SecondOp::Ungenerated(status.clone()));
         let scope = 0..session.toolpath_configs().len();
 
-        let rows = blocking_toolpaths(&session, &gui, scope, StaleResultPolicy::Refuse);
+        let rows = left_out_toolpaths(&session, &gui, scope);
         assert_eq!(
             rows.len(),
             1,
@@ -432,43 +409,24 @@ fn preflight_rows_carry_the_same_text_as_the_export_refusal() {
         let freshness = freshness_at(&session, &gui, 1).expect("toolpath 1 exists");
         assert_eq!(
             row.message,
-            blocking_toolpath_message(UNGENERATED_NAME, &freshness),
+            left_out_message(UNGENERATED_NAME, &freshness),
             "[{label}] the row text IS the shared builder's text"
         );
-        assert!(
-            !row.waived_by_operator,
-            "[{label}] a missing result can never be waived — there is no \
-             geometry to put in its place"
-        );
 
-        let refusal = expect_export_error(
-            export_gcode_from_session_with_policy(
-                &session,
-                &gui,
-                &sim,
-                policy(),
-                StaleResultPolicy::Refuse,
-            ),
-            "export_gcode_from_session_with_policy",
-        );
-        assert!(
-            refusal.contains(&row.message),
-            "[{label}] the export refusal must print the pre-flight row's text verbatim; \
-             row: {:?}, refusal: {refusal:?}",
-            row.message
+        let exported = export_gcode_from_session_reporting(&session, &gui, &sim)
+            .expect("the export writes the rest");
+        let warning = left_out_text(&exported, "export_gcode_from_session_reporting");
+        assert_eq!(
+            warning, row.message,
+            "[{label}] the export warning prints the pre-flight row's text verbatim"
         );
     }
 
-    // Nothing blocks when the second op is disabled — no row, no refusal.
+    // Nothing is left out when the second op is disabled — no row.
     let (session, gui, _sim) = build_state(SecondOp::Disabled);
-    let rows = blocking_toolpaths(
-        &session,
-        &gui,
-        0..session.toolpath_configs().len(),
-        StaleResultPolicy::Refuse,
-    );
+    let rows = left_out_toolpaths(&session, &gui, 0..session.toolpath_configs().len());
     assert!(
         rows.is_empty(),
-        "a disabled op must not produce a blocking row; got {rows:?}"
+        "a disabled op must not produce a left-out row; got {rows:?}"
     );
 }

@@ -2441,6 +2441,9 @@ fn fake_result_with_regions(
             rest_levels: None,
             // Nor a model gouge guard (UX-7b).
             model_gouge: None,
+            // Nor an entry plunge or a buried face (K6).
+            non_centre_cutting_plunge: None,
+            buried_face: None,
             // Nor did it consume any machined stock.
             stock_snapshot: None,
             source_stock: None,

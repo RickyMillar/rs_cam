@@ -40,8 +40,7 @@ use rs_cam_core::toolpath::Toolpath;
 use rs_cam_core::trace::toolpath_spans::AnnotatedToolpath;
 use rs_cam_viz::error::VizError;
 use rs_cam_viz::io::export::{
-    export_gcode_from_session, export_gcode_from_session_with_policy,
-    export_setup_gcode_from_session, export_single_toolpath_from_session,
+    export_gcode_from_session, export_setup_gcode_from_session, export_single_toolpath_from_session,
 };
 use rs_cam_viz::state::job::SetupId;
 use rs_cam_viz::state::runtime::{GuiState, ToolpathRuntime};
@@ -79,7 +78,7 @@ fn temp_dir(name: &str) -> PathBuf {
 ///
 /// G-STALEXPORT: seeding only the viz store used to export through the
 /// silent fallback. It now reads as an operation edited since it was
-/// generated, and the export refuses by name — so a fixture that wants an
+/// generated, and the export leaves it out and names it (K6) — so a fixture that wants an
 /// exportable operation has to seed both.
 fn seed_generated_result(
     session: &mut ProjectSession,
@@ -186,12 +185,9 @@ fn build_session() -> (ProjectSession, GuiState, SimulationState) {
     let mut gui = GuiState::new();
     seed_generated_result(&mut session, &mut gui, tp_id, path);
 
-    // C1 (2026-06-11): the phase-level checked exports now enforce the
-    // tool-load gate. This harness never runs a simulation, so every
-    // criterion reads Unmodeled(SimulationRequired) — accept it, exactly
-    // as a user would via the export gate override toggle. The gate
-    // itself is covered by dedicated tests in core and below.
-    gui.tool_load_overrides.accept_unmodeled = true;
+    // This harness never runs a simulation, so every criterion reads
+    // Unmodeled(SimulationRequired). K6 (ruling Q6): the export warns on
+    // those rows and writes the program.
 
     (session, gui, SimulationState::new())
 }
@@ -345,7 +341,7 @@ fn wizard_inch_units_override_blocks_export() {
 /// viz-export entry point that the wizard's Save handler calls.
 #[test]
 fn default_wizard_state_does_not_mutate_export() {
-    use rs_cam_core::gcode::{ExportPhases, ToolLoadExportPolicy, emit_checked};
+    use rs_cam_core::gcode::{ExportPhases, emit_checked};
 
     let (session, gui, sim) = build_session();
     // build_session leaves WizardState at its default — no overrides set.
@@ -355,7 +351,10 @@ fn default_wizard_state_does_not_mutate_export() {
     assert_eq!(gui.wizard.spindle_warmup_secs, 0);
 
     // Exercise the same data path the wizard's Save dispatches through.
-    let with_overlay = export_gcode_from_session(&session, &gui, &sim).expect("export succeeds");
+    let exported =
+        rs_cam_viz::io::export::export_gcode_from_session_reporting(&session, &gui, &sim)
+            .expect("export succeeds");
+    let with_overlay = exported.gcode.clone();
 
     // Build the equivalent default-overlay export by hand to confirm the
     // helper isn't injecting anything unexpected. Both paths route
@@ -423,16 +422,12 @@ fn default_wizard_state_does_not_mutate_export() {
         &ExportPhases::OneSetup(phases),
         session.post_config().format.definition(),
         session.post_config().safe_z,
-        // No load evaluation on the hand-built baseline path (C1 — the
-        // report parameter is non-optional; empty = nothing evaluated).
-        &rs_cam_core::tool_load::ToolLoadReport {
-            per_toolpath: vec![],
-        },
-        ToolLoadExportPolicy::default(),
         &Default::default(),
+        // K6: the same warning lines the session door wrote, so the two
+        // programs differ only by the overlay.
+        &exported.warnings,
     )
-    .expect("baseline export succeeds")
-    .gcode;
+    .expect("baseline export succeeds");
 
     assert_eq!(
         with_overlay, baseline,
@@ -702,28 +697,18 @@ fn wizard_setup_pause_message_lands_in_emitted_gcode() {
     );
 }
 
-/// Roadmap A regression: the MCP export path must read the viz-side worker
-/// results (`gui.toolpath_rt[id].result`) rather than the empty
-/// `session.results`. The bug previously produced a 0-byte output file.
-/// This exercises the `_with_policy` variant the MCP wraps.
+/// Roadmap A regression: the MCP export path must emit the generated
+/// results. The bug previously produced a 0-byte output file. K6: the MCP
+/// door takes no policy; it is the reporting door.
 #[test]
-fn export_with_policy_emits_gcode_from_the_generated_results() {
+fn the_mcp_export_emits_gcode_from_the_generated_results() {
     let (session, gui, sim) = build_session();
-    let policy = rs_cam_core::gcode::ToolLoadExportPolicy {
-        accept_unmodeled: true,
-        accept_exceeded: true,
-    };
-    let gcode = export_gcode_from_session_with_policy(
-        &session,
-        &gui,
-        &sim,
-        policy,
-        rs_cam_viz::state::runtime::StaleResultPolicy::Refuse,
-    )
-    .expect("policy export succeeds");
+    let gcode = rs_cam_viz::io::export::export_gcode_from_session_reporting(&session, &gui, &sim)
+        .expect("the export succeeds")
+        .gcode;
     assert!(
         !gcode.is_empty(),
-        "policy export must not produce empty output"
+        "the export must not produce empty output"
     );
     assert!(
         gcode.contains("G1"),
@@ -954,14 +939,8 @@ fn per_setup_files_carry_one_header_g3() {
     let (mut session, gui, sim) = two_setup_session();
     for format in [PostFormat::Grbl, PostFormat::GrblHal] {
         set_post_format(&mut session, format);
-        let files = rs_cam_viz::io::export::export_per_setup_files(
-            &session,
-            &gui,
-            &sim,
-            gui.tool_load_overrides.as_policy(),
-            gui.stale_export,
-        )
-        .expect("per-setup export");
+        let files = rs_cam_viz::io::export::export_per_setup_files(&session, &gui, &sim)
+            .expect("per-setup export");
         assert_eq!(files.len(), 2, "one file per setup");
         let first = &files[0].gcode;
         let second = &files[1].gcode;
@@ -1022,14 +1001,8 @@ fn a_same_orientation_setup_says_same_position_not_turn() {
     path.feed_to(P3::new(20.0, 0.0, -1.0), 600.0);
     seed_generated_result(&mut session, &mut gui, tp_id, path);
     set_post_format(&mut session, PostFormat::GrblHal);
-    let files = rs_cam_viz::io::export::export_per_setup_files(
-        &session,
-        &gui,
-        &sim,
-        gui.tool_load_overrides.as_policy(),
-        gui.stale_export,
-    )
-    .expect("per-setup export");
+    let files = rs_cam_viz::io::export::export_per_setup_files(&session, &gui, &sim)
+        .expect("per-setup export");
     let second = &files[1].gcode;
     assert!(
         second.contains("(MSG,SAME POSITION as the previous file"),

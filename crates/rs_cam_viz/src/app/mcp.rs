@@ -798,9 +798,6 @@ impl super::RsCamApp {
 
     fn mcp_export_gcode(&mut self, param: &rs_cam_mcp::server::ExportParam) -> String {
         let path = param.path.as_str();
-        let accept_unmodeled_tool_load = param.accept_unmodeled_tool_load;
-        let accept_exceeded_tool_load = param.accept_exceeded_tool_load;
-        let accept_previous_geometry = param.accept_previous_geometry;
         // Apply the requested tool-change handling to the GUI wizard
         // before export so `overlay_for` picks it up — the MCP equivalent
         // of the export dialog's Tool change control.
@@ -863,29 +860,12 @@ impl super::RsCamApp {
         // now reads `session.results` — the store the feed-modulation
         // post-pass writes — so bytes and verdict describe one schedule.
         //
-        // G-EXPORTSKIP (2026-09-10): the same exporter refuses when an
-        // ENABLED toolpath has no result ("'X' is still waiting on upstream
-        // stock …" / "'X' failed to generate: …" / "'X' is not generated").
-        // Every `Err` arm below returns that text verbatim, so this tool
-        // and the GUI pre-flight modal name the same operation for the same
-        // reason. Pre-fix the op was silently dropped from the file.
-        //
-        // G-STALEXPORT (2026-09-10): and when an ENABLED toolpath was
-        // EDITED after it was generated. `accept_previous_geometry` waives
-        // that one case — never a missing result — and is passed here
-        // explicitly rather than read from `gui.stale_export`, so an
-        // automation client cannot inherit a checkbox a human left ticked
-        // in the pre-flight modal.
+        // K6 (ruling Q6): no finding refuses. An ENABLED toolpath with no
+        // current result (not generated, generating, waiting on upstream
+        // stock, failed, or edited since it was generated) is left out and
+        // the reply names it (`export.op_left_out`), as the GUI pre-flight
+        // does; no key waives anything.
         let state = self.controller.state();
-        let policy = rs_cam_core::gcode::ToolLoadExportPolicy {
-            accept_unmodeled: accept_unmodeled_tool_load,
-            accept_exceeded: accept_exceeded_tool_load,
-        };
-        let stale = if accept_previous_geometry {
-            crate::state::runtime::StaleResultPolicy::AcceptPreviousGeometry
-        } else {
-            crate::state::runtime::StaleResultPolicy::Refuse
-        };
 
         // Two-sided / multi-setup split: one self-contained file per setup,
         // each with a header naming the setup (+ a flip/re-zero reminder on
@@ -922,8 +902,6 @@ impl super::RsCamApp {
                     state.session(),
                     &state.gui,
                     &state.simulation,
-                    policy,
-                    stale,
                 ) {
                     Ok(files) => files,
                     Err(e) => return text(format!("Export failed: {e}")),
@@ -937,12 +915,15 @@ impl super::RsCamApp {
                     Vec::new();
                 // W2.5 (D10): the feeds cautions of every file, the same way.
                 let mut feeds_cautions: Vec<String> = Vec::new();
-                // F051: and the load outcome of every file.
+                // F051: and the load outcome of every file; K6: and the
+                // warnings of every file.
                 let mut load_outcome = rs_cam_core::gcode::LoadPolicyOutcome::default();
+                let mut warnings: Vec<rs_cam_core::gcode::ExportWarning> = Vec::new();
                 for (i, file) in files.into_iter().enumerate() {
                     machine_safety.extend(file.machine_safety);
                     feeds_cautions.extend(file.feeds_cautions);
                     load_outcome.merge(file.load_outcome);
+                    warnings.extend(file.warnings);
                     let safe_name: String = file
                         .name
                         .chars()
@@ -958,13 +939,14 @@ impl super::RsCamApp {
                     }
                     written.push(out_path.display().to_string());
                 }
-                return text(crate::io::export::export_reply_text(
+                return text(crate::io::export::export_reply_text_parts(
                     format!(
                         "Exported {total} per-setup G-code files:\n{}",
                         written.join("\n")
                     ),
                     &machine_safety,
                     &load_outcome,
+                    &warnings,
                     &feeds_cautions,
                 ));
             }
@@ -979,8 +961,6 @@ impl super::RsCamApp {
             state.session(),
             &state.gui,
             &state.simulation,
-            policy,
-            stale,
         ) {
             Ok(e) => e,
             Err(e) => return text(format!("Export failed: {e}")),
@@ -988,9 +968,7 @@ impl super::RsCamApp {
         match std::fs::write(Path::new(path), &exported.gcode) {
             Ok(()) => text(crate::io::export::export_reply_text(
                 format!("G-code exported to {path}"),
-                &exported.machine_safety,
-                &exported.load_outcome,
-                &exported.feeds_cautions,
+                &exported,
             )),
             Err(e) => text(format!("Export failed: {e}")),
         }

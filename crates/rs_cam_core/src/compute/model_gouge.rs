@@ -7,8 +7,8 @@
 //! the model. The guard reads the EMITTED cutting motion and the mesh of
 //! the op's own model, and gives a [`ModelGougeFinding`]. The session
 //! keeps the toolpath, so the operator can see it; the diagnostic is
-//! blocking, and export refuses while the finding stands
-//! (`ExportRefusal::CutsIntoModel`).
+//! blocking in severity, and the export names it as a warning while the
+//! finding stands (K6, ruling Q6: no finding refuses a job).
 //!
 //! The row states the rule ([`ModelGougeRule`]):
 //!
@@ -79,7 +79,7 @@
 //! The class: a sample below the limit cuts into the leave. It cuts into
 //! the model only when it is also below the model surface less the op
 //! tolerance (`ModelGougeFinding::below_surface_mm`). Only that case is
-//! Blocking and refuses the export; a cut into the leave alone is Caution
+//! Blocking and the export warns on it; a cut into the leave alone is Caution
 //! ([`ModelGougeFinding::severity`]). Under `Allowance` the limit and that
 //! surface differ by the leave at every sample, so the deepest sample below
 //! the limit is also the deepest below the surface.
@@ -249,8 +249,8 @@ impl ModelGougeFinding {
         self.gouging > 0
     }
 
-    /// True when the deepest sample cuts into the model itself: export
-    /// refuses (`ExportRefusal::CutsIntoModel`). Under every rule except
+    /// True when the deepest sample cuts into the model itself: the export
+    /// warns (`safety.cuts_into_model`, K6). Under every rule except
     /// `Allowance` this is [`Self::gouges`].
     #[must_use]
     pub fn blocks_export(&self) -> bool {
@@ -282,8 +282,8 @@ impl ModelGougeFinding {
                  positions cut deeper than the bevel. The deepest is {deep:.3} mm at X {x:.3} \
                  Y {y:.3}: the tool tip is at Z {z:.3}, and the bevel there may go down to Z \
                  {limit:.3}. {fix}. [Measured at generation on the emitted moves against the \
-                 mesh of the toolpath model, tolerance {tol} mm in Z; export refuses while \
-                 this stands.]",
+                 mesh of the toolpath model, tolerance {tol} mm in Z; the export warns \
+                 while this stands.]",
                 count = self.gouging,
                 judged = self.judged,
                 deep = self.deepest_mm,
@@ -313,9 +313,9 @@ impl ModelGougeFinding {
                 ""
             };
             let export = if blocks {
-                "export refuses while this stands"
+                "the export warns while this stands"
             } else {
-                "export does not refuse on it"
+                "the export does not warn on it"
             };
             return format!(
                 "{class}: {count} of {judged} sampled cutting positions go below the limit of \
@@ -352,7 +352,7 @@ impl ModelGougeFinding {
              go below the model surface. The deepest is {deep:.3} mm at X {x:.3} Y {y:.3}: \
              the tool tip is at Z {z:.3} and the model surface is at Z {surface:.3}. {fix}. \
              [Measured at generation on the emitted moves against the mesh of the toolpath \
-             model, tolerance {tol} mm in Z; export refuses while this stands.]",
+             model, tolerance {tol} mm in Z; the export warns while this stands.]",
             count = self.gouging,
             judged = self.judged,
             deep = self.deepest_mm,

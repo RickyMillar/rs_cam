@@ -115,6 +115,10 @@ pub fn compute_stats_with_spans(tp: &Toolpath, spans: Option<&[Span]>) -> Toolpa
         // UX-7b: same rule. The guard needs the model mesh, which a move
         // list does not carry.
         model_gouge: None,
+        // K6: same rule. The entry plunge and the buried face are judged
+        // at generation, against the stock.
+        non_centre_cutting_plunge: None,
+        buried_face: None,
         // A/M7 gate 1: this helper DOES see the move list, so the trip
         // TOTAL is always measured; the in/out split additionally needs
         // `spans` (see `compute_retract_trips`).
@@ -226,6 +230,8 @@ pub fn stats_with_findings(
         monotone_cells: _,
         rest_levels: _,
         model_gouge: _,
+        non_centre_cutting_plunge: _,
+        buried_face: _,
         // S-4: caller-owned, like the findings — the helper's honest `None`
         // is about to be replaced by the parameter.
         stock_snapshot: _,
@@ -259,6 +265,8 @@ pub fn stats_with_findings(
         monotone_cells,
         rest_levels,
         model_gouge,
+        non_centre_cutting_plunge,
+        buried_face,
     } = findings;
 
     // Guard 3: no `..Default::default()`.
@@ -293,6 +301,8 @@ pub fn stats_with_findings(
         monotone_cells,
         rest_levels,
         model_gouge,
+        non_centre_cutting_plunge,
+        buried_face,
         stock_snapshot,
         source_stock,
         planned_cycle_time_s,

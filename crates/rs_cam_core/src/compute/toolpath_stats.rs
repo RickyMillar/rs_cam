@@ -375,10 +375,18 @@ pub struct ToolpathStats {
     /// moves. `None` = not measured (the row is exempt, the toolpath model
     /// has no mesh, or the Profile compensates in the controller);
     /// `Some` with `gouging == 0` = measured clean. A gouge is a blocking
-    /// diagnostic (`safety.cuts_into_model`), and export refuses on it
-    /// (`ExportRefusal::CutsIntoModel`). See
+    /// diagnostic (`safety.cuts_into_model`), and the export warns on it
+    /// (K6). See
     /// [`crate::compute::model_gouge::ModelGougeFinding`].
     pub model_gouge: Option<crate::compute::model_gouge::ModelGougeFinding>,
+    /// K6 (G-CENTRECUT): the entry plunge of a tool that does not cut at its
+    /// centre, deeper than its blade protrusion. `None` = no such entry.
+    /// A warning (`safety.non_centre_cutting_plunge`).
+    pub non_centre_cutting_plunge: Option<crate::compute::tool_config::NonCentreCuttingRefusal>,
+    /// K6 (UX-1c): the face top of a one-depth op is below the material
+    /// over its area. `None` = not buried. A warning
+    /// (`precondition.buried_face`).
+    pub buried_face: Option<crate::compute::execute::BuriedFaceRefusal>,
     /// S-4 (G-BYTE): the identity of the machined-stock snapshot this
     /// generation consumed. See [`StockSnapshotStamp`].
     ///

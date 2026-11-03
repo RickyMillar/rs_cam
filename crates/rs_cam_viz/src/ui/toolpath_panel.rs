@@ -79,9 +79,9 @@ struct RuntimeSnapshot {
     /// What a worker is doing to this row now. A SEPARATE read from
     /// `freshness`, which keeps its seven arms.
     in_flight: Option<InFlight>,
-    /// F20 (SAFETY visibility): the message of the first blocking finding of
-    /// the stored result ([`blocking_finding`]), or `None`.
-    blocking: Option<String>,
+    /// F20 (SAFETY visibility), K6: the message and the danger of the first
+    /// warning finding of the stored result ([`warning_finding`]), or `None`.
+    warning: Option<(String, rs_cam_core::diagnostics::Danger)>,
 }
 
 /// One dependency, as the connector draws it.
@@ -363,16 +363,16 @@ pub fn draw(
                         has_result,
                     },
                 );
-                let blocking =
-                    blocking_finding(state.session().result_at(tp_idx).map(|r| &r.stats), card.id)
-                        .map(|d| d.message);
+                let warning =
+                    warning_finding(state.session().result_at(tp_idx).map(|r| &r.stats), card.id)
+                        .map(|(d, danger)| (d.message, danger));
                 let rt_snap = RuntimeSnapshot {
                     visible: rt.is_none_or(|r| r.visible),
                     has_result,
                     freshness: row_freshness,
                     edges_in: edges.remove(&card.id).unwrap_or_default(),
                     in_flight: flight,
-                    blocking,
+                    warning,
                 };
                 let geometry = draw_toolpath_card(ui, state, events, &card, &rt_snap, i, local_idx);
                 row_rects.push((card.id, geometry, rt_snap.edges_in));
@@ -737,7 +737,12 @@ fn draw_state_dot(
     // without a `Ui` (F2.2).
     let freshness = &rt.freshness;
     let flight = rt.in_flight;
-    let (status_text, status_role, hover) = row_status(freshness, rt.blocking.as_deref());
+    let (status_text, status_role, hover) = row_status(
+        freshness,
+        rt.warning
+            .as_ref()
+            .map(|(message, danger)| (message.as_str(), *danger)),
+    );
     // F2.2: driven by freshness, not `ComputeStatus::needs_generation()`,
     // which answers `false` for `Done` — and an edited operation keeps
     // `Done`, so the route was closed on precisely the card whose whole
@@ -1072,38 +1077,55 @@ fn compute_drop_index(response: &egui::Response, ui: &egui::Ui, count: usize) ->
 /// generation that produced the drawn geometry really did finish — so this
 /// chip used to read a confident green `OK` over geometry the project can no
 /// longer reproduce.
-/// F20 (SAFETY visibility, flow review FR-1): the first BLOCKING finding of
-/// a stored result, through the one generation adapter that the
-/// diagnostics ribbon reads (`diagnostics_from_generation`). Today that is
-/// `safety.cuts_into_model`: export refuses on it, so the row and the
-/// inspector header must not read "OK".
-pub fn blocking_finding(
+/// F20 (SAFETY visibility, flow review FR-1), K6 (ruling Q6): the first
+/// generation finding of a stored result that warns at `Critical` or above,
+/// with its danger, through the one generation adapter that the
+/// diagnostics ribbon reads (`diagnostics_from_generation`): a cut into the
+/// model, a non-centre-cutting plunge, a buried face. The export names it,
+/// so the row and the inspector header must not read "OK".
+pub fn warning_finding(
     stats: Option<&rs_cam_core::compute::toolpath_stats::ToolpathStats>,
     id: ToolpathId,
-) -> Option<rs_cam_core::diagnostics::Diagnostic> {
+) -> Option<(
+    rs_cam_core::diagnostics::Diagnostic,
+    rs_cam_core::diagnostics::Danger,
+)> {
+    use rs_cam_core::diagnostics::Severity;
     rs_cam_core::diagnostics::adapters::from_generation::diagnostics_from_generation(id, stats?)
         .into_iter()
-        .find(|d| d.severity == rs_cam_core::diagnostics::Severity::Blocking)
+        .find_map(|d| {
+            if !matches!(d.severity, Severity::Blocking | Severity::Critical) {
+                return None;
+            }
+            let danger = rs_cam_core::diagnostics::ids::warn_danger(d.id.as_str())?;
+            Some((d, danger))
+        })
 }
 
-/// The word of a row whose current result holds a blocking finding (F20).
-pub const BLOCKED_WORD: &str = "BLOCKED";
-
-/// The inspector header word of the same state (F20): the generation is
-/// done, and a blocking finding stands.
-pub const BLOCKED_HEADER: &str = "Done \u{00B7} BLOCKED";
+/// The inspector header word of a done result with a warning finding
+/// (F20, K6): "Done" and the chip word of its danger. No new word.
+#[must_use]
+pub const fn done_header(danger: rs_cam_core::diagnostics::Danger) -> &'static str {
+    use rs_cam_core::diagnostics::Danger;
+    match danger {
+        Danger::Machine => "Done \u{00B7} Machine",
+        Danger::Tool => "Done \u{00B7} Tool",
+        Danger::Part => "Done \u{00B7} Part",
+    }
+}
 
 /// The state of the row dot: [`status_chip`], except that a current result
-/// with a blocking finding (`blocking`, its message) reads [`BLOCKED_WORD`]
-/// in the danger role, with the message on hover (F20).
+/// with a warning finding (`warning`, its message and danger) reads the
+/// danger chip of the export dialog (`Danger::label`, `preflight::danger_role`),
+/// with the message on hover (F20, K6).
 pub fn row_status<'a>(
     freshness: &'a FreshnessState,
-    blocking: Option<&'a str>,
+    warning: Option<(&'a str, rs_cam_core::diagnostics::Danger)>,
 ) -> (&'static str, crate::ui::components::Role, Option<&'a str>) {
-    match (freshness, blocking) {
-        (FreshnessState::Current, Some(message)) => (
-            BLOCKED_WORD,
-            crate::ui::components::Role::Danger,
+    match (freshness, warning) {
+        (FreshnessState::Current, Some((message, danger))) => (
+            danger.label(),
+            crate::ui::preflight::danger_role(danger),
             Some(message),
         ),
         _ => status_chip(freshness),

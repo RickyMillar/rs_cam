@@ -12,7 +12,10 @@ Every panel, modal and workspace. `../app.rs` calls the `draw` of each surface o
 - `sim_*.rs` — the Simulation workspace, with `draw_trace_badge`. The inspector is the verdict line, then
   ONE `TabStrip`: Metrics (default, the charts first), Warnings (count badge), Navigate, Project (IC3).
   A card flips to a median line on a min-max band; `< >` opens it large. Span help is core `DebugSpanKind::help` (F017).
-- `readiness.rs`, `readiness_panel.rs`, `preflight.rs` — is this safe to cut?
+- `readiness.rs`, `readiness_panel.rs`, `preflight.rs` — is this safe to cut? K6 (ruling Q6): the pre-flight
+  refuses nothing. It draws the check cards, ONE chip row (`danger_counts`: a chip per `Danger`, colour and count,
+  hover lists `id · toolpath`) and ONE Export button, Danger style while a Machine warning stands
+  (`export_asks_a_click`); no checkbox (`a_job_with_each_finding_exports_and_names_it_on_every_surface_k6`).
   `shoe_list.rs` — the H2 run sheet; Readiness and the export wizard draw it.
 - `export_wizard.rs`, `pin_wizard.rs` (R4: two steps, the only pin editor), `multitool_planner.rs`, `*_modal.rs`.
 - `import_modal.rs` — the drawing import dialog (declared size, scale, result, join, report; S11: it asks the stock thickness while the stock has none, `ImportDialog::stock_z`). A number reads

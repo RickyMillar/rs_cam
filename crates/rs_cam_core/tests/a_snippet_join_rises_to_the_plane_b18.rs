@@ -46,7 +46,6 @@ use common::tools::endmill_tool_config;
 use rs_cam_core::compute::catalog::OperationConfig;
 use rs_cam_core::compute::config::{HeightMode, HeightsConfig, SAFE_Z_CLEARANCE_MM};
 use rs_cam_core::compute::operation_configs::TraceConfig;
-use rs_cam_core::gcode::ToolLoadExportPolicy;
 use rs_cam_core::ids::ObstacleId;
 use rs_cam_core::polygon::Polygon2;
 use rs_cam_core::session::{
@@ -128,16 +127,7 @@ fn session(clamp: bool) -> ProjectSession {
 }
 
 fn export(session: &ProjectSession) -> String {
-    session
-        .export_gcode_checked(
-            None,
-            ToolLoadExportPolicy {
-                accept_unmodeled: true,
-                accept_exceeded: true,
-            },
-        )
-        .expect("export")
-        .gcode
+    session.export_gcode_checked(None).expect("export").gcode
 }
 
 /// The X, Y and Z words of one G-code line, comments removed.

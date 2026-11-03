@@ -1038,8 +1038,7 @@ fn a_rest_drill_starts_each_hole_at_the_remaining_stock_top() {
 fn a_rest_drill_reads_back_as_native_canned_cycles() {
     use rs_cam_core::gcode::post::grblhal;
     use rs_cam_core::gcode::{
-        CoolantMode, ExportPhases, GcodePhase, PhaseDrill, ToolLoadExportPolicy, WizardOverlay,
-        emit_checked,
+        CoolantMode, ExportPhases, GcodePhase, PhaseDrill, WizardOverlay, emit_checked,
     };
     let op = drill(B_DEPTH);
     let OperationConfig::Drill(cfg) = &op else {
@@ -1089,14 +1088,10 @@ fn a_rest_drill_reads_back_as_native_canned_cycles() {
         &ExportPhases::OneSetup(vec![phase]),
         grblhal(),
         0.0,
-        &rs_cam_core::tool_load::ToolLoadReport {
-            per_toolpath: vec![],
-        },
-        ToolLoadExportPolicy::default(),
         &overlay,
+        &[],
     )
-    .expect("the rest drill exports")
-    .gcode;
+    .expect("the rest drill exports");
     assert!(
         !gcode.contains("native drill cycles not used"),
         "the rest drill must read back as plain drill holes:\n{gcode}"

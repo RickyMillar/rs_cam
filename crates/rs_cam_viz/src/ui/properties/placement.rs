@@ -183,15 +183,11 @@ impl<'a> Placement<'a> {
     }
 }
 
-/// The hover of the header Tool row while the stored result holds a
-/// blocking finding (F20): the face and the detail of `d`.
+/// The hover of the header state word while the stored result holds a
+/// warning finding (F20, K6): the face and the detail of `d`.
 #[must_use]
-pub(crate) fn blocking_hover(d: &Diagnostic) -> String {
-    format!(
-        "A blocking finding stands, so this toolpath does not go to G-code. {}\n{}",
-        d.face,
-        detail(d)
-    )
+pub(crate) fn warning_hover(d: &Diagnostic) -> String {
+    format!("The export names this warning. {}\n{}", d.face, detail(d))
 }
 
 /// The tab whose `PropRow` draws the field `key` for the op `config`, or

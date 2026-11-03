@@ -326,9 +326,10 @@ pub(super) fn check_inputs<'a>(
             notes,
         });
     }
-    if let Some(text) = op_type.tool_refusal(ctx.tool_cfg.tool_type.cutter_kind())
-        && crate::diagnostics::Gate::ToolKind.refuses_at(crate::diagnostics::Stage::Generate)
-    {
+    // K6 (decision E1): a tool kind the row refuses is a warning
+    // (`compat.tool_kind_refused`), except where the generator cannot
+    // compute with it (the V-bit ops read the V angle): a missing input.
+    if let Some(text) = op_type.tool_cannot_compute(ctx.tool_cfg.tool_type.cutter_kind()) {
         return Err(OperationError::InvalidTool(text));
     }
     let prepared = Prepared {
@@ -338,65 +339,58 @@ pub(super) fn check_inputs<'a>(
         region_ladders,
         hole_spans,
     };
-    if crate::diagnostics::Gate::BuriedFace.refuses_at(crate::diagnostics::Stage::Generate) {
-        refuse_buried_face(ctx, op, &prepared)?;
+    if let Some(buried) = buried_face(ctx, op, &prepared) {
+        ctx.record(&buried);
     }
     Ok(prepared)
 }
 
 /// UX-1c (operator ruling 2026-10-22, SAFETY): a one-depth op
 /// (`FaceTopRule::RefuseBuried`: V-Carve, Inlay, Inlay Plug; `RefuseBuriedEach`: Chamfer, per item) on
-/// the remaining stock refuses when material stands above its top over its
-/// area ([`standing_top_in_footprint`] with the tool radius). Its auto top
-/// under a face pick is the face top, and it cuts one depth from there, so
-/// standing material above the face buries the tool.
+/// the remaining stock is buried when material stands above its top over
+/// its area ([`standing_top_in_footprint`] with the tool radius). Its auto
+/// top under a face pick is the face top, and it cuts one depth from there,
+/// so standing material above the face buries the tool. K6 (ruling Q6,
+/// decision E1): the generator cuts all the same; the prologue records the
+/// finding (`GenerationFindings::buried_face`), and generation goes ahead.
 ///
-/// - Fresh stock (no remaining stock here): the session refuses a face
-///   below the stock top before the job starts
-///   (`ToolpathHeights::buried_face_refusal`); this check does nothing.
+/// - Fresh stock (no remaining stock here): the session reads a face below
+///   the stock top (`ToolpathHeights::buried_face_refusal`); this check
+///   gives `None`.
 /// - A pinned top is the operator's statement of where the op starts, so
-///   it does not refuse here.
+///   it gives `None`.
 /// - With no auto face top the top is the stock top, and no material
 ///   stands above it.
 /// - Material counts above `top_z + FRESH_MATERIAL_THRESHOLD_MM`, the floor
 ///   below which the simulator itself calls material absent. No evidence
-///   (no footprint cell on the grid) does not refuse.
-fn refuse_buried_face(
+///   (no footprint cell on the grid) gives `None`.
+fn buried_face(
     ctx: &ExecutionContext<'_>,
     op: &OperationConfig,
     prepared: &Prepared<'_>,
-) -> Result<(), OperationError> {
+) -> Option<BuriedFaceRefusal> {
     let each = match op.capabilities().face_top {
         FaceTopRule::RefuseBuried => false,
         FaceTopRule::RefuseBuriedEach => true,
-        FaceTopRule::HigherOfFaceAndStock | FaceTopRule::Face => return Ok(()),
+        FaceTopRule::HigherOfFaceAndStock | FaceTopRule::Face => return None,
     };
     if ctx.heights.top_pinned {
-        return Ok(());
+        return None;
     }
-    let Some(stock) = prepared.territory().unguarded_stock() else {
-        return Ok(());
-    };
-    let Some(items) = prepared.items() else {
-        return Ok(());
-    };
-    let Some(regions) = items.regions() else {
-        return Ok(());
-    };
+    let stock = prepared.territory().unguarded_stock()?;
+    let items = prepared.items()?;
+    let regions = items.regions()?;
     let top_z = ctx.heights.top_z;
     let tool_radius = ctx.tool_def.diameter() / 2.0;
-    let refusal = |material: f64, top: f64| {
-        OperationError::BuriedFace(BuriedFaceRefusal {
-            op: op.op_type().label(),
-            buried_mm: material - top,
-            under: BuriedUnder::StandingMaterial,
-        })
-    };
     let buried = |column: ColumnTop, top: f64| match column {
         ColumnTop::Top(material) if material > top + FRESH_MATERIAL_THRESHOLD_MM => {
-            Err(refusal(material, top))
+            Some(BuriedFaceRefusal {
+                op: op.op_type().label(),
+                buried_mm: material - top,
+                under: BuriedUnder::StandingMaterial,
+            })
         }
-        ColumnTop::Top(_) | ColumnTop::Empty | ColumnTop::NoEvidence => Ok(()),
+        ColumnTop::Top(_) | ColumnTop::Empty | ColumnTop::NoEvidence => None,
     };
     if !each {
         return buried(
@@ -410,10 +404,12 @@ fn refuse_buried_face(
     // band of a run that ends at a higher wall does not reach that wall.
     for (i, outline) in regions.as_slice().iter().enumerate() {
         let own_top = regions.plane_z(i).unwrap_or(top_z);
-        buried(
+        if let Some(found) = buried(
             standing_top_in_footprint(stock, std::slice::from_ref(outline), tool_radius),
             own_top,
-        )?;
+        ) {
+            return Some(found);
+        }
     }
     let reach = op.bevel_reach_mm().unwrap_or(tool_radius);
     for line in items
@@ -425,9 +421,11 @@ fn refuse_buried_face(
         } else {
             (&[], std::slice::from_ref(&line.line.exterior))
         };
-        buried(standing_top_in_band(stock, rings, paths, reach), line.z)?;
+        if let Some(found) = buried(standing_top_in_band(stock, rings, paths, reach), line.z) {
+            return Some(found);
+        }
     }
-    Ok(())
+    None
 }
 
 /// P3.5: the ladder of each closed area under the floor "each picked
@@ -579,7 +577,7 @@ fn grow_open_sides(
 /// Chamfer Clearance (operator ruling 2026-10-23): THE wall trim
 /// ([`clear_edge_walls`]) of the model edges of an `Edges` op, with the
 /// mesh of the op, its V-bit and its bevel. Each edge run stops short of a
-/// higher wall; [`refuse_buried_face`] and the adapter then read the
+/// higher wall; [`buried_face`] and the adapter then read the
 /// trimmed runs. With no mesh, no bevel or a tool that the op refuses,
 /// the trim does nothing (the tool check refuses after it).
 fn clear_edges(

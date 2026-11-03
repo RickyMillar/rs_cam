@@ -33,8 +33,6 @@ impl RsCamApp {
                     state.session(),
                     &state.gui,
                     &state.simulation,
-                    state.gui.tool_load_overrides.as_policy(),
-                    state.gui.stale_export,
                 ) {
                     Ok(e) => e,
                     Err(err) => {
@@ -46,10 +44,11 @@ impl RsCamApp {
                     gcode,
                     machine_safety,
                     load_outcome,
+                    warnings,
                     // The pre-flight modal shows the feeds cautions.
                     feeds_cautions: _,
                 } = exported;
-                self.notify_export_checks(&machine_safety, &load_outcome);
+                self.notify_export_checks(&machine_safety, &load_outcome, &warnings);
                 if !self.gate(&gcode, post_format, allow_errors) {
                     return;
                 }
@@ -121,8 +120,6 @@ impl RsCamApp {
             state.session(),
             &state.gui,
             &state.simulation,
-            state.gui.tool_load_overrides.as_policy(),
-            state.gui.stale_export,
         );
         match files {
             Ok(files) if files.is_empty() => {
@@ -141,9 +138,10 @@ impl RsCamApp {
                         gcode,
                         machine_safety,
                         load_outcome,
+                        warnings,
                         feeds_cautions: _,
                     } = file;
-                    self.notify_export_checks(&machine_safety, &load_outcome);
+                    self.notify_export_checks(&machine_safety, &load_outcome, &warnings);
                     out.push((name, gcode));
                 }
                 Ok(out)
@@ -179,9 +177,10 @@ impl RsCamApp {
                         gcode,
                         machine_safety,
                         load_outcome,
+                        warnings,
                         feeds_cautions: _,
                     } = exported;
-                    self.notify_export_checks(&machine_safety, &load_outcome);
+                    self.notify_export_checks(&machine_safety, &load_outcome, &warnings);
                     out.push((name, gcode));
                 }
                 Err(e) => {
@@ -200,19 +199,20 @@ impl RsCamApp {
         Ok(out)
     }
 
-    /// F051/EDG-06: show what the export checks found. The load outcome
-    /// (an advisory, or an override the operator used) and the
-    /// machine-safety findings each become one warning; a clean export
-    /// adds nothing. The pre-flight modal already shows the feeds
-    /// cautions.
+    /// F051/EDG-06/K6: show what the export checks found. The load
+    /// advisories, the machine-safety findings and the finding warnings
+    /// (K6) each become one warning; a clean export adds nothing. The
+    /// pre-flight modal already shows the feeds cautions.
     fn notify_export_checks(
         &mut self,
         machine_safety: &[rs_cam_core::export::gcode_validator::Finding],
         load_outcome: &rs_cam_core::gcode::LoadPolicyOutcome,
+        warnings: &[rs_cam_core::gcode::ExportWarning],
     ) {
         for report in [
             crate::io::export::machine_safety_report(machine_safety),
             load_outcome.report(),
+            rs_cam_core::gcode::warnings_report(warnings),
         ]
         .into_iter()
         .flatten()
@@ -232,9 +232,10 @@ impl RsCamApp {
             gcode,
             machine_safety,
             load_outcome,
+            warnings,
             feeds_cautions,
         } = exported;
-        self.notify_export_checks(&machine_safety, &load_outcome);
+        self.notify_export_checks(&machine_safety, &load_outcome, &warnings);
         if let Some(report) = crate::io::export::feeds_caution_report(&feeds_cautions) {
             tracing::warn!("{report}");
             self.controller
@@ -338,10 +339,11 @@ impl RsCamApp {
                     gcode,
                     machine_safety,
                     load_outcome,
+                    warnings,
                     // The pre-flight modal shows the feeds cautions.
                     feeds_cautions: _,
                 } = exported;
-                self.notify_export_checks(&machine_safety, &load_outcome);
+                self.notify_export_checks(&machine_safety, &load_outcome, &warnings);
                 let line_count = gcode.lines().count();
                 let mut total_moves = 0usize;
                 let mut cutting_dist = 0.0f64;

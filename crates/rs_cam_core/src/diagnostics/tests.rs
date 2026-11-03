@@ -65,21 +65,61 @@ fn every_id_states_its_consequence_k6() {
     assert!(ids::row_kind("no.such.id").is_none());
 }
 
-/// CONTRACT K6: each gate raises at least one row, so no gate is dead.
+/// CONTRACT K6 (ruling Q6): no row refuses. Each id of today's refusals
+/// warns, and the missing inputs are `NotReady`, not findings (Q10).
 #[test]
-fn each_gate_raises_a_row_k6() {
-    use crate::diagnostics::{Consequence, Gate, RowKind};
-    for gate in Gate::ALL {
-        let rows = ids::CONSEQUENCES
+fn every_former_refusal_warns_k6() {
+    use crate::diagnostics::{Consequence, Danger, RowKind};
+    for (id, danger) in [
+        (ids::GEOM_CLEARANCE_Z_BELOW_RETRACT_Z, Danger::Machine),
+        (ids::GEOM_RETRACT_Z_BELOW_TOP_Z, Danger::Machine),
+        (ids::GEOM_BOTTOM_ABOVE_TOP_Z, Danger::Machine),
+        (ids::SAFETY_CUTS_INTO_MODEL, Danger::Part),
+        (ids::SAFETY_NON_CENTRE_CUTTING_PLUNGE, Danger::Tool),
+        (ids::SAFETY_NON_CENTRE_CUTTING_DESCENT, Danger::Tool),
+        (ids::LOAD_CHIPLOAD_HIGH, Danger::Tool),
+        (ids::LOAD_POWER_EXCEEDS, Danger::Machine),
+        (ids::LOAD_CHIPLOAD_UNMODELED, Danger::Tool),
+        (ids::DRILL_CHIP_WELDING, Danger::Tool),
+        (ids::EXPORT_OP_LEFT_OUT, Danger::Part),
+        (ids::PROJECT_HOLDER_COLLISION, Danger::Machine),
+        (ids::PRECOND_BURIED_FACE, Danger::Part),
+        (ids::COMPAT_TOOL_KIND_REFUSED, Danger::Part),
+    ] {
+        assert_eq!(
+            ids::row_kind(id),
+            Some(RowKind::Finding(Consequence::Warn(danger))),
+            "{id}"
+        );
+    }
+    for id in [
+        ids::PRECOND_NOT_SET,
+        ids::PRECOND_NO_TOOL,
+        ids::REF_MODEL_MISSING,
+    ] {
+        assert_eq!(ids::row_kind(id), Some(RowKind::NotReady), "{id}");
+    }
+    // Non-vacuity: the column holds each kind of row.
+    assert!(
+        ids::CONSEQUENCES
             .iter()
-            .filter(|(_, row)| match row {
-                RowKind::Finding(Consequence::Refuse { gate: g, .. }) => *g == gate,
-                RowKind::Finding(Consequence::Warn(_) | Consequence::Info) | RowKind::NotReady => {
-                    false
-                }
-            })
-            .count();
-        assert!(rows > 0, "no row is raised by {gate:?}");
+            .any(|(_, row)| *row == RowKind::Finding(Consequence::Info))
+    );
+}
+
+/// K6: the emit error ids (`gcode::EmitError::id`) are not `diag_ids!`
+/// rows. An emit error is not a finding: the program text would be wrong.
+#[test]
+fn emit_error_ids_are_not_finding_ids_k6() {
+    let emit: Vec<&str> = crate::gcode::EmitError::ALL_IDS.to_vec();
+    assert_eq!(
+        emit.len(),
+        3,
+        "inch units, bad feed, controller compensation"
+    );
+    for id in &emit {
+        assert!(id.starts_with("emit."), "{id}");
+        assert!(!ids::ALL.contains(id), "{id} is a finding id too");
     }
 }
 
@@ -166,16 +206,7 @@ fn all_diagnostic_ids_reachable_in_adapter_source() {
     // started to read the whole id list). The list holds it so the scan
     // stays green; the check below fails the day an emitter lands, and
     // then this entry goes.
-    //
-    // K6 (feeds contract P2, commit A): the column names the three ids of
-    // today's refusals that had none. Commit B raises them and removes
-    // them here.
-    const KNOWN_ORPHANS: &[&str] = &[
-        "PROJECT_KINEMATIC_UTILIZATION",
-        "SAFETY_NON_CENTRE_CUTTING_PLUNGE",
-        "SAFETY_NON_CENTRE_CUTTING_DESCENT",
-        "EXPORT_OP_LEFT_OUT",
-    ];
+    const KNOWN_ORPHANS: &[&str] = &["PROJECT_KINEMATIC_UTILIZATION"];
     let mut missing = Vec::new();
     for (symbol, literal) in ids::NAMED {
         let reached = merged.contains(symbol) || merged.contains(&format!("\"{literal}\""));

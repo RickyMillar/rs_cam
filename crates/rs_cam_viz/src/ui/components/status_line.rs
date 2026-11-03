@@ -3,7 +3,7 @@
 //! One line, from the right edge: the one button, the notes counter
 //! ([`NotesCounter`]), then a faint meta text (the move count). The state
 //! word takes the width that is left and truncates. A word marked
-//! [`StatusLine::keep_whole`] (the F20 safety signal "Done · BLOCKED")
+//! [`StatusLine::keep_whole`] (the F20 safety signal "Done · <danger>", K6)
 //! never truncates: it takes its full width first, and the meta text drops.
 //! The line never grows the panel (FR-2 F22).
 

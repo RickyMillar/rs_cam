@@ -13,7 +13,6 @@ use common::session::{polygon_model, stock_under, toolpath_config};
 
 use rs_cam_core::compute::catalog::OperationConfig;
 use rs_cam_core::compute::operation_configs::TraceConfig;
-use rs_cam_core::gcode::ToolLoadExportPolicy;
 use rs_cam_core::geo::P2;
 use rs_cam_core::polygon::Polygon2;
 use rs_cam_core::session::{Command, ProjectSessionBuilder, SetToolpathEnabledArgs};
@@ -122,13 +121,7 @@ fn disabled_cached_toolpath_is_absent_from_checked_export() {
     );
 
     let gcode = session
-        .export_gcode_checked(
-            None,
-            ToolLoadExportPolicy {
-                accept_unmodeled: true,
-                accept_exceeded: true,
-            },
-        )
+        .export_gcode_checked(None)
         .expect("export with load gates explicitly accepted")
         .gcode;
 
@@ -173,13 +166,7 @@ fn disabled_cached_toolpath_is_absent_from_checked_export() {
     );
 
     let gcode = session
-        .export_gcode_checked(
-            None,
-            ToolLoadExportPolicy {
-                accept_unmodeled: true,
-                accept_exceeded: true,
-            },
-        )
+        .export_gcode_checked(None)
         .expect("export re-enabled cached trace with load gates explicitly accepted")
         .gcode;
 
