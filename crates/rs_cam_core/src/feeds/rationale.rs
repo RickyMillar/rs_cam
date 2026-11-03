@@ -168,6 +168,11 @@ pub enum RationaleReason {
     /// G10 (2026-09-25): the funnel ran the plunge rule again at the feed
     /// that ships, and the plunge moved.
     PlungeReDerived,
+    /// P5 (K2, D4): the apply accepted fields whose basis reads an
+    /// Unsourced rule.
+    UnsourcedRowsAccepted,
+    /// P5 (K2b, K6): the point sits outside the safe envelope.
+    OutsideEnvelope,
 }
 
 /// One row in the rationale tree the GUI / MCP renders alongside a
@@ -864,6 +869,39 @@ fn entry_for_warning(w: &SuggestWarning) -> RationaleEntry {
                 detail: Some(detail),
             }
         }
+        SuggestWarning::UnsourcedRowsAccepted { rows } => RationaleEntry {
+            param: RationaleParam::Feed,
+            reason: RationaleReason::UnsourcedRowsAccepted,
+            from_value: None,
+            to_value: None,
+            headline: format!("Apply accepted {} rule(s) with no source", rows.len()),
+            detail: Some(format!(
+                "The written values read rules that no file in the repo prints (F201): {}. \
+                 The apply is the acceptance (D4).",
+                rows.join(", ")
+            )),
+        },
+        SuggestWarning::OutsideEnvelope {
+            binding,
+            margin,
+            ap_mm,
+            ae_mm,
+        } => RationaleEntry {
+            param: RationaleParam::Dpp,
+            reason: RationaleReason::OutsideEnvelope,
+            from_value: None,
+            to_value: None,
+            headline: format!(
+                "Cut {ap_mm:.2} x {ae_mm:.2} mm is outside the safe envelope: {}",
+                binding.label()
+            ),
+            detail: Some(format!(
+                "The point is {:.0} % past the {} limit. The value is written; it is a warning \
+                 (ruling Q6).",
+                -margin * 100.0,
+                binding.label()
+            )),
+        },
         SuggestWarning::PlungeReDerived {
             from_mm_min,
             to_mm_min,

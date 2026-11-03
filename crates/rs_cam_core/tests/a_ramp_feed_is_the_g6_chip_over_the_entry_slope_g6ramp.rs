@@ -48,7 +48,7 @@
 //! - (f) every entry fallback writes `None` and states its reason, and a
 //!   cell with no G6 claim states why;
 //! - (g) a drill cycle files no record and has no field;
-//! - (h) a cut-geometry apply does not write the ramp, a speeds apply does;
+//! - (h) a speeds apply writes the ramp (P5 retired the geometry-only half);
 //! - (i) Suggest and the apply funnel give one number;
 //! - (j) the value rounds down;
 //! - (k) the provenance stamps.
@@ -66,10 +66,9 @@ use rs_cam_core::compute::operation_configs::Adaptive3dEntryStyle;
 use rs_cam_core::compute::tool_config::{ToolConfig, ToolId, ToolType};
 use rs_cam_core::feeds::ramp::{EntrySource, RampArm, RampBasis, RampFallback, SourcedRamp};
 use rs_cam_core::feeds::suggest::{
-    ApplyContext, ApplyScope, SuggestContext, SuggestForOperationInput, SuggestWarning,
-    SuggestedParams, apply, apply_cut_geometry_to_op, apply_speeds_to_op,
-    feeds_input_for_operation, feeds_preview_for_operation, feeds_result_for_operation,
-    suggest_for_operation,
+    ApplyContext, SuggestContext, SuggestForOperationInput, SuggestWarning, SuggestedParams, apply,
+    apply_speeds_to_op, feeds_input_for_operation, feeds_preview_for_operation,
+    feeds_result_for_operation, suggest_for_operation,
 };
 use rs_cam_core::feeds::{
     FeedsProvenance, ProvenanceSource, RampFeed, SpindleStrategy, ValueProvenance, calculate,
@@ -219,6 +218,8 @@ fn records(warnings: &[SuggestWarning]) -> Vec<(Option<f64>, &RampFeed)> {
             | SuggestWarning::EngagementReducedForAggressiveness { .. }
             | SuggestWarning::RpmLoweredForFeedCeiling { .. }
             | SuggestWarning::AggressivenessNotApplied { .. }
+            | SuggestWarning::UnsourcedRowsAccepted { .. }
+            | SuggestWarning::OutsideEnvelope { .. }
             | SuggestWarning::PlungeReDerived { .. } => None,
         })
         .collect()
@@ -520,7 +521,10 @@ fn a_drill_cycle_files_no_ramp_record_g6ramp() {
     }
 }
 
-/// (h) A cut-geometry apply leaves the ramp alone; a speeds apply writes it.
+/// (h) A speeds apply writes the ramp. Feeds contract P5: the half of this
+/// arm that ran the retired geometry-only chain door
+/// (`apply_cut_geometry_to_op`) is retired; no production door writes the
+/// geometry alone.
 #[test]
 fn only_a_speeds_apply_writes_the_ramp_g6ramp() {
     let machine = open_router();
@@ -538,22 +542,6 @@ fn only_a_speeds_apply_writes_the_ramp_g6ramp() {
     )
     .expect("the pocket cell ships");
     let pass_role = op.feeds_style().1;
-
-    let mut cut = op.clone();
-    let mut prov = FeedsProvenance::default();
-    let warnings = apply_cut_geometry_to_op(
-        &mut cut,
-        &mut prov,
-        &result,
-        &tool,
-        &machine,
-        &material,
-        pass_role,
-        context(Some(&dressups)),
-    );
-    assert_eq!(cut.ramp_feed_rate(), op.ramp_feed_rate());
-    assert!(records(&warnings).is_empty());
-    assert_eq!(prov.ramp_feed_rate, None);
 
     let mut speeds = op.clone();
     let mut prov = FeedsProvenance::default();
@@ -600,8 +588,7 @@ fn suggest_and_apply_write_one_ramp_number_g6ramp() {
         let mut applied = op.clone();
         let mut prov = FeedsProvenance::default();
         apply(
-            &rec,
-            ApplyScope::Both,
+            &rec.clone().accept_unsourced().0,
             &mut applied,
             &mut prov,
             ApplyContext {

@@ -41,9 +41,7 @@ use rs_cam_core::compute::tool_config::{ToolConfig, ToolId, ToolType};
 use rs_cam_core::machine::MachineProfile;
 use rs_cam_core::material::{Material, WoodSpecies};
 use rs_cam_core::polygon::Polygon2;
-use rs_cam_core::session::{
-    Command, LoadedModel, ProjectSessionBuilder, ReplaceToolpathConfigArgs, ToolpathConfig,
-};
+use rs_cam_core::session::{Command, LoadedModel, ProjectSessionBuilder, ToolpathConfig};
 use rs_cam_viz::state::AppState;
 use rs_cam_viz::state::runtime::ToolpathRuntime;
 use rs_cam_viz::state::selection::Selection;
@@ -123,52 +121,14 @@ fn fixture() -> AppState {
     state
 }
 
-/// `⚡ Apply all`, through the same core doors the controller's funnel
-/// uses: the preview, `suggest::apply` on a draft, and the command door.
+/// `⚡ Apply all`, through the core row the controller's funnel applies
+/// (F114): `Command::ApplyFeeds` with the envelope proposal (K2b, P5).
 fn apply_all(state: &mut AppState) {
-    use rs_cam_core::feeds::suggest::{
-        ApplyContext, ApplyScope, SuggestContext, apply, feeds_preview_for_operation,
-    };
-    let session = state.session();
-    let mut draft = session.toolpath_configs()[0].clone();
-    let tool = session.tools()[0].clone();
-    let machine = session.machine().clone();
-    let material = session.stock_config().material.clone();
-    let preview = feeds_preview_for_operation(
-        &draft.operation,
-        &tool,
-        &material,
-        &machine,
-        rs_cam_core::feeds::embedded_vendor_lut(),
-        session.post_config().spindle_strategy,
-    );
-    let rec = preview
-        .applicable()
-        .expect("the pocket pairing is applicable");
-    let model_bbox = session.model_bbox_by_id(draft.model_id);
-    let dressups = draft.dressups.clone();
-    let pass_role = draft.operation.feeds_style().1;
-    let _warnings = apply(
-        &rec,
-        ApplyScope::Both,
-        &mut draft.operation,
-        &mut draft.feeds_provenance,
-        ApplyContext {
-            tool: &tool,
-            machine: &machine,
-            material: &material,
-            pass_role,
-            suggest: SuggestContext {
-                model_bbox: model_bbox.as_ref(),
-                dressups: Some(&dressups),
-                ..SuggestContext::default()
-            },
-        },
-    );
     let _effects = state
-        .apply(Command::ReplaceToolpathConfig(ReplaceToolpathConfigArgs {
+        .apply(Command::ApplyFeeds(rs_cam_core::session::ApplyFeedsArgs {
             index: 0,
-            config: Box::new(draft),
+            pick: Some(rs_cam_core::feeds::envelope::PickRequest::Proposal),
+            explored: None,
         }))
         .expect("the apply writes through the command door");
 }
@@ -273,9 +233,9 @@ fn a_level_recommendation_is_not_drawn_ic2() {
 // ── arm 2 — derivation is behind a closed Details ───────────────────────
 
 /// Runs that only derivation rows paint, on this fixture.
-const DERIVATION_PREFIXES: [&str; 4] = [
-    // The aggressiveness dial record (the Suggest stage).
-    "Aggressiveness 0.85",
+// Feeds contract P5 (K2b): the aggressiveness dial record left the card;
+// no product door runs the dial (Suggest writes no geometry by itself).
+const DERIVATION_PREFIXES: [&str; 3] = [
     // The long-tool share (a repo rule).
     "Long tool",
     // The force line of generic hardwood (ruling B6).

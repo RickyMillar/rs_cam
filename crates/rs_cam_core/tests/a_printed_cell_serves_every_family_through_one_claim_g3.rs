@@ -188,6 +188,15 @@ fn transferred_mdf_v8_row(tip: f64) -> &'static str {
     }
 }
 
+/// Q3 (feeds contract P5, D2): which row wins the MDF tie of the v8 row and
+/// the Onsrud home row: the lower printed chip. At 3.175 mm that is the v8
+/// 3-flute row; at 6.35 mm it is the Onsrud 1/4 in row (0.127-0.1778
+/// against the v8 0.1778-0.2286). G1 orchestrator decision 5 reversed by
+/// operator ruling Q3: before P5 the id decided and the v8 row won both.
+fn mdf_v8_wins_q3(tip: f64) -> bool {
+    tip < 5.0
+}
+
 /// (b) The routed operations of the served families read the home row
 /// through one claim, with the home band.
 #[test]
@@ -206,6 +215,7 @@ fn the_home_row_serves_the_unprinted_families_through_one_claim_g3() {
     let mut checked = 0;
     let mut printed_wins = 0;
     let mut v8_wins = 0;
+    let mut mdf_home_wins = 0;
     for (tip, column) in [(3.175, "1_8"), (6.35, "1_4")] {
         let tool = tapered(tip);
         for (key, material) in &woods() {
@@ -236,25 +246,45 @@ fn the_home_row_serves_the_unprinted_families_through_one_claim_g3() {
                     )
                 {
                     // Operator ruling 2026-10-01: the v8 rule serves these
-                    // families, and in MDF its row wins the tie (see
-                    // `transferred_mdf_v8_row`).
+                    // families, and in MDF its row ties with the home row
+                    // (see `transferred_mdf_v8_row`). Operator ruling Q3
+                    // (feeds contract P5, D2): the lower printed chip wins
+                    // the tie, and the winner names the other row.
                     let v8_id = transferred_mdf_v8_row(tip);
+                    let (winner, other, home_family) = if mdf_v8_wins_q3(tip) {
+                        (
+                            v8_id,
+                            home_id.as_str(),
+                            (LutOperationFamily::Parallel, LutPassRole::Finish),
+                        )
+                    } else {
+                        (
+                            home_id.as_str(),
+                            v8_id,
+                            (LutOperationFamily::Pocket, LutPassRole::Roughing),
+                        )
+                    };
                     for row in both_rows(op, &tool, material) {
-                        assert_eq!(row.observation_id, v8_id, "{label}");
+                        assert_eq!(row.observation_id, winner, "{label}");
+                        assert_eq!(
+                            row.tied_with.as_ref().map(|r| r.id()),
+                            Some(other),
+                            "{label}: the Q3 winner names the other row"
+                        );
                         let claim = row
                             .family_basis
                             .claim()
                             .unwrap_or_else(|| panic!("{label}: the row must be Transferred"));
                         assert_eq!(claim.query.0, family, "{label}");
-                        assert_eq!(
-                            claim.home,
-                            (LutOperationFamily::Parallel, LutPassRole::Finish),
-                            "{label}"
-                        );
-                        assert_eq!(claim.source_rows, vec![v8_id.to_owned()], "{label}");
+                        assert_eq!(claim.home, home_family, "{label}");
+                        assert_eq!(claim.source_rows, vec![winner.to_owned()], "{label}");
                         assert!(row.size_basis.claim().is_none(), "{label}");
                         assert!(!row.size_basis.is_refused(), "{label}");
-                        v8_wins += 1;
+                        if winner == v8_id {
+                            v8_wins += 1;
+                        } else {
+                            mdf_home_wins += 1;
+                        }
                     }
                     continue;
                 }
@@ -287,10 +317,13 @@ fn the_home_row_serves_the_unprinted_families_through_one_claim_g3() {
     // MDF DropCutter cells (2 sizes x 2 resolvers = 4) read a printed row.
     // Operator ruling 2026-10-01: the MDF Profile, Waterline, SteepShallow,
     // Trace, Pencil and Scallop cells (2 sizes x 6 operations x 2 resolvers
-    // = 24) read the transferred Amana ZrN v8 row. Was `checked == 124`.
+    // = 24) read the row that wins the tie of the v8 row and the home row.
+    // Q3 (P5): the v8 row at 3.175 mm (12), the home row at 6.35 mm (12).
+    // Was `checked == 124`.
     assert_eq!(checked, 100);
     assert_eq!(printed_wins, 4);
-    assert_eq!(v8_wins, 24);
+    assert_eq!(v8_wins, 12);
+    assert_eq!(mdf_home_wins, 12);
 }
 
 /// (f) A3 step 3: one row per printed cell. For each rule, the rows of its

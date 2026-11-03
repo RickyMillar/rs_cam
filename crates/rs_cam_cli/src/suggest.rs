@@ -19,6 +19,13 @@
 //! operation holds no stepover, depth or rpm, `shipped_power` reads the
 //! calculator point, as the GUI does, and `point_source` names the source
 //! of `ae`, `ap` and the rpm. A Drill and a Pin Drill print `peck_depth`.
+//!
+//! Feeds contract P5 (K2b): `suggested` holds the speeds for the cut the
+//! op keeps (Suggest writes no geometry by itself). `envelope` is the safe
+//! envelope of the profile (`CutterOpProfile::envelope`), the JSON that MCP
+//! `get_safe_envelope` returns: the axes, the limits with law and basis, the
+//! speeds grid, the proposal and the operator's placement. `tied_rows`
+//! names both rows of a Q3 tie.
 
 use anyhow::{Context, Result};
 use serde_json::{Value, json};
@@ -134,6 +141,15 @@ fn profile_json(profile: &CutterOpProfile<'_>) -> Value {
             "support": { "headline": support_headline, "detail": support_detail },
             "plunge": { "headline": plunge_headline, "detail": plunge_detail },
             "ramp": { "headline": ramp_headline, "detail": ramp_detail },
+            "tied_rows": feeds.matched_lut_row.as_ref().and_then(|row| {
+                row.tied_with
+                    .as_ref()
+                    .map(|tie| vec![row.observation_id.clone(), tie.id().to_owned()])
+            }),
+        },
+        "envelope": match &profile.envelope {
+            Ok(envelope) => serde_json::to_value(envelope).unwrap_or(Value::Null),
+            Err(e) => json!({ "refused": e.to_string() }),
         },
         "rationale": rationale,
     })

@@ -34,7 +34,9 @@
 //! Three arms, because the first alone would pass on a build that warned
 //! about everything:
 //!
-//! 1. An operation with no `depth_per_pass` gets the warning.
+//! 1. An operation with no `depth_per_pass` gets the warning when an
+//!    envelope pick offers it a depth (feeds contract P5: the pick is the
+//!    production write of geometry), and is otherwise never offered one.
 //! 2. An operation that HAS one does NOT — the non-vacuity partner.
 //! 3. Under `ApplyScope::Speeds` neither warns, because not writing the
 //!    geometry is that scope's contract rather than a dropped value.
@@ -45,8 +47,9 @@
 
 use rs_cam_core::compute::catalog::{OperationConfig, OperationType};
 use rs_cam_core::compute::tool_config::{ToolConfig, ToolId, ToolType};
+use rs_cam_core::feeds::envelope::{EnvelopeAxes, EnvelopeInput, PickRequest, SafeEnvelope};
 use rs_cam_core::feeds::suggest::{
-    SuggestContext, SuggestWarning, apply_cut_geometry_to_op, apply_speeds_to_op,
+    OperationApplyInput, SuggestContext, SuggestWarning, apply_speeds_to_op, apply_to_operation,
     feeds_result_for_operation,
 };
 use rs_cam_core::feeds::{FeedsProvenance, FeedsResult};
@@ -100,36 +103,70 @@ fn not_held_for(warnings: &[SuggestWarning], param: &str) -> bool {
     })
 }
 
+/// Feeds contract P5 (K2b): the production write of cut geometry is the
+/// apply of an envelope pick (`Command::ApplyFeeds` with a pick). This arm
+/// ran the retired chain door (`apply_cut_geometry_to_op`) before. For each
+/// op, the pick writes the free axes of its envelope. An op that holds a
+/// depth per pass is not reported. An op that does not hold one is either
+/// not offered a depth (its envelope fixes the depth) or is reported: the
+/// pick never drops a depth silently.
 #[test]
 fn the_funnel_reports_a_depth_it_could_not_hold_g_notheld() {
     let session = ProjectSession::new_empty();
+    let material = &session.stock_config().material;
     let mut held = 0;
-    let mut refused = 0;
+    let mut not_offered = 0;
 
     for (op_type, tool_type) in fixtures() {
         let tool = ToolConfig::new_default(ToolId::from_raw(1), tool_type);
         let op = OperationConfig::new_default(op_type);
-        let Some(result) = try_recipe(&session, &tool, &op) else {
+        if try_recipe(&session, &tool, &op).is_none() {
+            continue;
+        }
+        let Ok(envelope) = SafeEnvelope::for_cut(EnvelopeInput {
+            operation: &op,
+            tool: &tool,
+            machine: session.machine(),
+            material,
+            lut: rs_cam_core::feeds::embedded_vendor_lut(),
+            spindle_strategy: session.post_config().spindle_strategy,
+            context: SuggestContext::default(),
+        }) else {
             continue;
         };
+        let depth_offered = matches!(
+            envelope.axes,
+            EnvelopeAxes::Plane { .. } | EnvelopeAxes::AxialBar { .. }
+        );
 
         // Ask the operation itself, rather than carrying a hand-written
         // list that would rot the first time a config gains the field.
         let mut probe = op.clone();
-        let holds_depth = probe.set_depth_per_pass(1.0);
+        // A drill holds the picked depth as its peck (K2b).
+        let holds_depth = probe.set_depth_per_pass(1.0)
+            || matches!(
+                op_type,
+                OperationType::Drill | OperationType::AlignmentPinDrill
+            );
 
         let mut applied = op.clone();
         let mut prov = FeedsProvenance::default();
-        let warnings = apply_cut_geometry_to_op(
+        let Ok(warnings) = apply_to_operation(
+            OperationApplyInput {
+                tool: &tool,
+                machine: session.machine(),
+                material,
+                spindle_strategy: session.post_config().spindle_strategy,
+                lut: rs_cam_core::feeds::embedded_vendor_lut(),
+                suggest: SuggestContext::default(),
+            },
+            Some(PickRequest::Proposal),
+            None,
             &mut applied,
             &mut prov,
-            &result,
-            &tool,
-            session.machine(),
-            &session.stock_config().material,
-            op.feeds_style().1,
-            SuggestContext::default(),
-        );
+        ) else {
+            continue;
+        };
 
         if holds_depth {
             held += 1;
@@ -137,25 +174,25 @@ fn the_funnel_reports_a_depth_it_could_not_hold_g_notheld() {
                 !not_held_for(&warnings, "depth_per_pass"),
                 "{op_type:?} holds depth_per_pass, yet the funnel reported it as not held"
             );
-        } else {
-            refused += 1;
+        } else if depth_offered {
             assert!(
                 not_held_for(&warnings, "depth_per_pass"),
-                "{op_type:?} has no depth_per_pass, yet the funnel applied cut geometry \
-                 and reported success. The recommendation was discarded silently — T-12."
+                "{op_type:?} has no depth_per_pass and its envelope offers a depth, yet the \
+                 pick reported success. The depth was discarded silently — T-12."
             );
+        } else {
+            not_offered += 1;
         }
     }
 
-    // Non-vacuity: both arms must actually have been exercised, or this
-    // test would pass on a build where every operation fell into one side.
+    // Non-vacuity: both arms must actually have been exercised.
     assert!(
         held >= 3,
         "only {held} operations exercised the holds-the-field arm"
     );
     assert!(
-        refused >= 3,
-        "only {refused} operations exercised the refuses-the-field arm"
+        not_offered >= 1,
+        "no operation without a depth per pass was checked"
     );
 }
 

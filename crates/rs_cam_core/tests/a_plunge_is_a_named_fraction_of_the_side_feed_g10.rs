@@ -19,7 +19,7 @@
 //! plunges at its feed.
 //!
 //! Before G10 the plunge was the material base for every family (with the
-//! tip cap on a ball or tapered ball), so arms (a)-(d), (h), (i) and (j)
+//! tip cap on a ball or tapered ball), so arms (a)-(d), (i) and (j)
 //! fail on the pre-G10 code: a 6 mm 2F flat in hardwood plunged about 700
 //! mm/min whatever its feed, and no `PlungeBasis` or `PlungeReDerived`
 //! existed.
@@ -34,8 +34,10 @@
 //!   rule";
 //! - (f) a 1 mm tapered tip: the tip cap binds, at 150 mm/min;
 //! - (g) a drill cycle plunges at its feed;
-//! - (h) where pass 9 moves the feed, the funnel runs the rule again and
-//!   files one `PlungeReDerived`;
+//! - (h) retired (feeds contract P5): it read pass 9 through the chain
+//!   door. In production the speeds are sized at the kept geometry, so
+//!   pass 9 does not move the feed; arm (i) pins the re-run of the rule at
+//!   a moved feed;
 //! - (i) an explored feed of 1200 on a 6 mm ball: 600;
 //! - (j) the provenance: `PublishedRule` on a claim, `RepoRule` on a bull;
 //! - (k) the flat rule's range is the `DRILL_RULES` range.
@@ -53,9 +55,8 @@ use rs_cam_core::compute::tool_config::{ToolConfig, ToolId, ToolType};
 use rs_cam_core::feeds::extrapolation::{DRILL_RULES, PLUNGE_RULES, PlungeKey};
 use rs_cam_core::feeds::plunge::{PLUNGE_BASE_RULE_TEXT, resolve_plunge};
 use rs_cam_core::feeds::suggest::{
-    ApplyContext, ApplyScope, SuggestContext, SuggestForOperationInput, SuggestWarning,
-    SuggestedParams, apply, feeds_input_for_operation, feeds_preview_for_operation,
-    suggest_for_operation,
+    ApplyContext, SuggestContext, SuggestForOperationInput, SuggestWarning, SuggestedParams, apply,
+    feeds_input_for_operation, feeds_preview_for_operation, suggest_for_operation,
 };
 use rs_cam_core::feeds::{
     FeedsProvenance, FeedsResult, PlungeBasis, PlungeBinding, ProvenanceSource, SpindleStrategy,
@@ -205,7 +206,9 @@ fn re_derived(warnings: &[SuggestWarning]) -> Vec<(f64, f64, PlungeBinding)> {
                 to_mm_min,
                 binding,
             } => Some((*from_mm_min, *to_mm_min, *binding)),
-            SuggestWarning::PlungeClampedToFeed { .. }
+            SuggestWarning::UnsourcedRowsAccepted { .. }
+            | SuggestWarning::OutsideEnvelope { .. }
+            | SuggestWarning::PlungeClampedToFeed { .. }
             | SuggestWarning::StepoverClampedToToolDiameter { .. }
             | SuggestWarning::RoughingDepthClampedToRigidity { .. }
             | SuggestWarning::DepthClampedToCuttingLength { .. }
@@ -431,59 +434,6 @@ fn a_drill_cycle_plunges_at_its_feed_g10() {
     }
 }
 
-/// (h) Where pass 9 re-derives the feed at the final depth, the funnel runs
-/// the plunge rule again at that feed and files one `PlungeReDerived`.
-///
-/// The grid is the flat claim's cells on the dial's roughing doors. Pass 9
-/// fires only where the final depth crosses a step of the depth ladder, so
-/// the arm checks every cell where it fires and requires at least one.
-#[test]
-fn the_funnel_runs_the_rule_again_at_the_rescaled_feed_g10() {
-    let mut fired = 0;
-    for op_type in [
-        OperationType::Pocket,
-        OperationType::Adaptive,
-        OperationType::Adaptive3d,
-    ] {
-        for (d, z) in [(3.175, 2), (6.0, 2), (6.0, 3)] {
-            for material in [hardwood(), softwood(), mdf()] {
-                let tool = flat(d, z);
-                let s = suggest(&op(op_type), &tool, &material);
-                let rescaled = s
-                    .warnings
-                    .iter()
-                    .any(|w| matches!(w, SuggestWarning::FeedRescaledToFinalGeometry { .. }));
-                if !rescaled {
-                    continue;
-                }
-                let feed = s.operation.feed_rate().expect("S11: the fixture sets it");
-                if (feed - s.feeds_result.feed_rate_mm_min).abs() < 1.0 {
-                    continue;
-                }
-                fired += 1;
-                let cell = format!("{op_type:?} {d} mm {z}F {material:?}");
-                assert_eq!(rule_id(&s.feeds_result.plunge), "g10_plunge_flat", "{cell}");
-                let expected = (feed / f64::from(z)).floor();
-                assert_eq!(
-                    s.operation.plunge_rate(),
-                    Some(expected),
-                    "{cell}: feed {feed}"
-                );
-                let records = re_derived(&s.warnings);
-                assert_eq!(records.len(), 1, "{cell}: {records:?}");
-                let (from, to, binding) = records[0];
-                assert_eq!(to, expected, "{cell}");
-                assert_eq!(from, s.feeds_result.plunge_rate_mm_min, "{cell}");
-                assert_eq!(binding, PlungeBinding::Rule, "{cell}");
-            }
-        }
-    }
-    assert!(
-        fired > 0,
-        "no cell of the grid re-derived its feed at pass 9"
-    );
-}
-
 /// (i) An explored feed of 1200 on a 6 mm ball: the plunge is 600.
 #[test]
 fn an_explored_feed_moves_the_plunge_with_it_g10() {
@@ -506,8 +456,7 @@ fn an_explored_feed_moves_the_plunge_with_it_g10() {
     let mut applied = operation.clone();
     let mut prov = FeedsProvenance::default();
     let warnings = apply(
-        &rec,
-        ApplyScope::Speeds,
+        &rec.clone().accept_unsourced().0,
         &mut applied,
         &mut prov,
         ApplyContext {

@@ -192,6 +192,15 @@ diag_ids! {
     /// `plunge_descent_mm`, which the crosses-standing rule above does not read.
     /// See [`crate::stock::sim_triage::entry_load_observation`].
     pub const PROJECT_ENTRY_LOAD: &str = "project.entry_load" => warn(Danger::Tool);
+    /// CONTRACT K2b (feeds contract P5, ruling Q6). The operator's point (a
+    /// stated depth and width, or a pick) sits outside the safe envelope of
+    /// the op: it crosses a limit (flute guard, deflection, power, slot,
+    /// rigidity, ...). The text names the binding `LimitKind` and the
+    /// margin. A warning: the program never refuses the job. `Danger::Tool`,
+    /// because each limit of the envelope protects the tool (its flute
+    /// length, its bend, its load); the spindle power limit protects the
+    /// tool from a stall too, and the export names it either way.
+    pub const PROJECT_OUTSIDE_ENVELOPE: &str = "project.outside_envelope" => warn(Danger::Tool);
     /// G-LINKPLOUGH (W1.1b, 2026-10-14). A fed LINK (`MoveIntent::Linking`)
     /// removes stock the planner meant it to cross in air or on cut ground, more
     /// than the pass itself takes. Before this rule nothing read a fed link

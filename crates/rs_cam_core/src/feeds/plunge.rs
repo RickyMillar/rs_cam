@@ -245,6 +245,53 @@ impl PlungeBasis {
     }
 }
 
+impl PlungeBasis {
+    /// CONTRACT K2 (feeds contract P5): the basis of the plunge that
+    /// `binding` sets at a feed whose basis is `feed`. A G10 claim names its
+    /// rule and the row that decides the feed; the material base names its
+    /// F201 row; the tip cap is a repo rule over the tool; a plunge at the
+    /// feed copies the feed's basis.
+    #[must_use]
+    pub(crate) fn basis(
+        &self,
+        binding: PlungeBinding,
+        feed: &super::Basis,
+        material_row: crate::material::FormulaConstant,
+    ) -> super::Basis {
+        use super::Basis;
+        use super::sourced::{ClaimKind, ClaimRef, RowRef};
+        match (self, binding) {
+            (Self::DrillCycle, _) | (_, PlungeBinding::Feed) => {
+                Basis::derived("plunge = feed", vec![feed.clone()])
+            }
+            (_, PlungeBinding::TipCap) => Basis::derived(
+                "ball tip cap (repo rule, tool_load::plunge_stress)",
+                vec![Basis::tool_fact()],
+            ),
+            (Self::Claimed { claim, .. }, PlungeBinding::Rule) => {
+                let row = feed
+                    .deciding_row()
+                    .cloned()
+                    .unwrap_or_else(|| RowRef(claim.rule.id.to_owned()));
+                Basis::derived(
+                    "G10 fraction x feed",
+                    vec![
+                        Basis::Claim(ClaimRef {
+                            kind: ClaimKind::PlungeG10,
+                            row,
+                            rule: claim.rule.id.to_owned(),
+                        }),
+                        feed.clone(),
+                    ],
+                )
+            }
+            (Self::MaterialBase { .. }, PlungeBinding::Rule) => {
+                Basis::derived("material plunge base", vec![Basis::Rule(material_row)])
+            }
+        }
+    }
+}
+
 /// The plunge basis of one calculator input (`calculate` step 8).
 ///
 /// 1. A drill cycle gives `DrillCycle`.

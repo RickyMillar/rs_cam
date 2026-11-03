@@ -326,7 +326,7 @@ fn a_tool_change_replaces_a_suggested_feed_and_keeps_a_typed_plunge_r1() {
     let mut stamps = config_b.feeds_provenance.clone();
     let _ = rs_cam_core::feeds::suggest::apply_to_operation(
         input,
-        rs_cam_core::feeds::suggest::ApplyScope::Speeds,
+        None,
         None,
         &mut expected,
         &mut stamps,

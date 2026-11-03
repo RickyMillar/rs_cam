@@ -409,51 +409,51 @@ fn a_surface_probe_reads_the_ops_own_leave() {
     }
 }
 
-/// The feeds hints read the op's own fields; every other op has none.
+/// The feeds hints read the op's own fields (feeds contract P5: the
+/// operator's cut, `CutSpec::calc_inputs`).
 #[test]
 fn the_feeds_hints_read_the_ops_own_fields() {
+    let d = 6.0;
     let set = |op: OperationType, field: &str| {
         let mut value = serde_json::to_value(OperationConfig::new_default(op)).unwrap();
         value["params"][field] = serde_json::json!(0.437);
         let cfg: OperationConfig = serde_json::from_value(value).unwrap();
-        operation_feeds_hints(&cfg)
+        operation_feeds_hints(&cfg, d)
     };
     for (op, field) in [
         (OperationType::Scallop, "scallop_height"),
         (OperationType::UnifiedFinish, "scallop_height"),
         (OperationType::DropCutter, "scallop_height"),
     ] {
-        let (axial, _, scallop) = set(op, field);
+        let (_, _, scallop) = set(op, field);
         assert_eq!(scallop, Some(0.437), "{op:?}");
-        assert_eq!(axial, None, "{op:?}");
     }
     for (op, field) in [
         (OperationType::Waterline, "z_step"),
         (OperationType::SteepShallow, "z_step"),
         (OperationType::VCarve, "max_depth"),
         (OperationType::RampFinish, "max_stepdown"),
+        (OperationType::Pocket, "depth_per_pass"),
+        (OperationType::Adaptive3d, "depth_per_pass"),
     ] {
-        let (axial, _, scallop) = set(op, field);
+        let (axial, _, _) = set(op, field);
         assert_eq!(axial, Some(0.437), "{op:?}");
-        assert_eq!(scallop, None, "{op:?}");
     }
-    let hinted = [
-        OperationType::Scallop,
-        OperationType::UnifiedFinish,
-        OperationType::DropCutter,
-        OperationType::Waterline,
-        OperationType::SteepShallow,
-        OperationType::VCarve,
-        OperationType::RampFinish,
-    ];
+    for (op, field) in [
+        (OperationType::Pocket, "stepover"),
+        (OperationType::Face, "stepover"),
+        (OperationType::HorizontalFinish, "stepover"),
+    ] {
+        let (_, radial, _) = set(op, field);
+        assert_eq!(radial, Some(0.437), "{op:?}");
+    }
     for &op in OperationType::ALL {
-        if hinted.contains(&op) {
-            continue;
-        }
-        let (axial, radial, scallop) = operation_feeds_hints(&OperationConfig::new_default(op));
-        assert_eq!(axial, None, "{op:?}");
-        assert_eq!(radial, None, "{op:?}");
-        assert_eq!(scallop, None, "{op:?}");
+        let cfg = OperationConfig::new_default(op);
+        assert_eq!(
+            operation_feeds_hints(&cfg, d),
+            cfg.cut_spec().calc_inputs(d),
+            "{op:?}"
+        );
     }
 }
 

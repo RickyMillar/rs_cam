@@ -42,14 +42,10 @@ use rs_cam_core::compute::catalog::{OperationConfig, OperationType};
 use rs_cam_core::compute::operation_configs::PocketConfig;
 use rs_cam_core::compute::tool_config::ToolMaterial;
 use rs_cam_core::compute::{ToolConfig, ToolId, ToolType};
-use rs_cam_core::feeds::suggest::{
-    ApplyContext, ApplyScope, FeedsPreview, SuggestContext, SuggestWarning,
-};
+use rs_cam_core::feeds::envelope::{EnvelopeInput, LimitKind, PickRequest, SafeEnvelope};
+use rs_cam_core::feeds::suggest::{OperationApplyInput, SuggestContext, apply_to_operation};
 use rs_cam_core::feeds::vendor_lut::{LutOperationFamily, LutPassRole};
-use rs_cam_core::feeds::{
-    FeedsInput, OperationFamily, PassRole, SetupContext, SpindleStrategy, ToolGeometryHint,
-    embedded_vendor_lut,
-};
+use rs_cam_core::feeds::{OperationFamily, PassRole, SpindleStrategy, embedded_vendor_lut};
 use rs_cam_core::gcode::load_findings;
 use rs_cam_core::ids::ToolpathId;
 use rs_cam_core::machine::MachineProfile;
@@ -669,9 +665,9 @@ fn the_measured_trace_varies_so_a_peak_means_something() {
 
 /// The Suggest clamp and the criterion now read ONE helper, so the cap
 /// the operator's recipe was lowered to and the cap the row draws
-/// against cannot disagree. This arm runs the whole Suggest door and
-/// asserts the clamp still fires at the helper's own number, bit for
-/// bit. Byte-identity of every other Suggest figure is carried by the
+/// against cannot disagree. This arm runs the production apply ("Apply
+/// all", feeds contract P5) and asserts the envelope's rigidity ceiling is
+/// the helper's own number, bit for bit. Byte-identity of every other Suggest figure is carried by the
 /// apply-door sentries this change re-runs.
 #[test]
 fn the_suggest_clamp_still_fires_at_the_helper_s_own_cap() {
@@ -699,43 +695,35 @@ fn the_suggest_clamp_still_fires_at_the_helper_s_own_cap() {
         ..PocketConfig::default()
     });
 
-    let input = FeedsInput {
-        tool_series: None,
-        tool_diameter: CLAMP_DIAMETER_MM,
-        flute_count: 2,
-        flute_length: 50.0,
-        shank_diameter: None,
-        tool_geometry: ToolGeometryHint::Flat,
-        material: &material,
+    // Feeds contract P5 (K2b): the production clamp is the envelope's
+    // rigidity ceiling, and "Apply all" ships the proposal at or under it.
+    // Before P5 this arm read the retired chain door (pass 4, then the dial).
+    let envelope = SafeEnvelope::for_cut(EnvelopeInput {
+        operation: &operation,
+        tool: &tool,
         machine: &machine,
-        operation: OperationFamily::Pocket,
-        operation_kind: None,
-        pass_role: PassRole::Roughing,
-        axial_depth_mm: Some(REQUESTED_DPP_MM),
-        radial_width_mm: Some(STEPOVER_MM),
-        target_scallop_mm: None,
-        vendor_lut: Some(embedded_vendor_lut()),
-        setup: SetupContext::default(),
+        material: &material,
+        lut: embedded_vendor_lut(),
         spindle_strategy: SpindleStrategy::MatchChart,
-    };
-    let preview = FeedsPreview::build(&input);
-    let rec = preview
-        .applicable()
-        .expect("a roughing pocket with a flat end mill is a runnable pairing");
+        context: SuggestContext::default(),
+    })
+    .expect("a roughing pocket with a flat end mill has an envelope");
     let mut provenance = rs_cam_core::feeds::FeedsProvenance::default();
-    let warnings = rs_cam_core::feeds::suggest::apply(
-        &rec,
-        ApplyScope::Both,
-        &mut operation,
-        &mut provenance,
-        ApplyContext {
+    apply_to_operation(
+        OperationApplyInput {
             tool: &tool,
             machine: &machine,
             material: &material,
-            pass_role: PassRole::Roughing,
+            spindle_strategy: SpindleStrategy::MatchChart,
+            lut: embedded_vendor_lut(),
             suggest: SuggestContext::default(),
         },
-    );
+        Some(PickRequest::Proposal),
+        None,
+        &mut operation,
+        &mut provenance,
+    )
+    .expect("a roughing pocket with a flat end mill is a runnable pairing");
 
     let expected = machine
         .rigidity
@@ -743,84 +731,19 @@ fn the_suggest_clamp_still_fires_at_the_helper_s_own_cap() {
         .expect("a pocket roughing pass carries an axial cap")
         .cap_mm();
 
-    let capped = warnings
-        .iter()
-        .find_map(|w| match w {
-            SuggestWarning::RoughingDepthClampedToRigidity { capped, .. } => Some(*capped),
-            SuggestWarning::PlungeClampedToFeed { .. }
-            | SuggestWarning::StepoverClampedToToolDiameter { .. }
-            | SuggestWarning::DepthClampedToCuttingLength { .. }
-            | SuggestWarning::PlungeEntryUnstableAtDpp { .. }
-            | SuggestWarning::DppCappedByDeflection { .. }
-            | SuggestWarning::DeflectionBackoffUnmodeled { .. }
-            | SuggestWarning::DeflectionBackoffFigureIsAFloor { .. }
-            | SuggestWarning::StepoverRaisedForRuntime { .. }
-            | SuggestWarning::FeedRaisedForChipload { .. }
-            | SuggestWarning::ChiploadStillLowAfterRecalibration { .. }
-            | SuggestWarning::StrategyRecommendedNotApplied { .. }
-            | SuggestWarning::AxialEnvelopeSafeBandEmpty { .. }
-            | SuggestWarning::AxialDocClampedByEnvelope { .. }
-            | SuggestWarning::AxialDocBelowBurnFloor { .. }
-            | SuggestWarning::ProjectCurveDepthInfeasible { .. }
-            | SuggestWarning::FinishEnvelopeAdvisory { .. }
-            | SuggestWarning::FeedRescaledToFinalGeometry { .. }
-            | SuggestWarning::FeedClampedToChiploadFloor { .. }
-            | SuggestWarning::PowerRecheckedAfterRescale { .. }
-            | SuggestWarning::CutGeometryFieldNotHeld { .. }
-            | SuggestWarning::EngagementReducedForAggressiveness { .. }
-            | SuggestWarning::RpmLoweredForFeedCeiling { .. }
-            | SuggestWarning::AggressivenessNotApplied { .. }
-            | SuggestWarning::RampFeed { .. }
-            | SuggestWarning::PlungeReDerived { .. } => None,
-        })
-        .expect("the rigidity clamp must still fire on this fixture");
+    let capped = envelope
+        .limit(LimitKind::Rigidity)
+        .and_then(|l| l.ap_ceiling_at(STEPOVER_MM))
+        .expect("the roughing envelope must carry the rigidity ceiling");
 
     assert_eq!(
         capped, expected,
         "the clamp and the criterion must read ONE cap"
     );
-    // Ruling R4 WP3 (2026-09-24): after the clamp, the aggressiveness dial
-    // (default 0.85) scales the depth down from the cap. Measured: 2.4 ->
-    // 1.8 mm. The dial record starts from the cap the helper returns.
     let shipped = operation.depth_per_pass().unwrap();
     assert!(
         shipped <= expected + 1e-12,
         "the shipped depth {shipped} is above the cap {expected}"
-    );
-    let dial = warnings.iter().find_map(|w| match w {
-        SuggestWarning::EngagementReducedForAggressiveness {
-            dpp_from, dpp_to, ..
-        } => Some((*dpp_from, *dpp_to)),
-        SuggestWarning::PlungeClampedToFeed { .. }
-        | SuggestWarning::StepoverClampedToToolDiameter { .. }
-        | SuggestWarning::RoughingDepthClampedToRigidity { .. }
-        | SuggestWarning::DepthClampedToCuttingLength { .. }
-        | SuggestWarning::PlungeEntryUnstableAtDpp { .. }
-        | SuggestWarning::DppCappedByDeflection { .. }
-        | SuggestWarning::DeflectionBackoffUnmodeled { .. }
-        | SuggestWarning::DeflectionBackoffFigureIsAFloor { .. }
-        | SuggestWarning::StepoverRaisedForRuntime { .. }
-        | SuggestWarning::FeedRaisedForChipload { .. }
-        | SuggestWarning::ChiploadStillLowAfterRecalibration { .. }
-        | SuggestWarning::StrategyRecommendedNotApplied { .. }
-        | SuggestWarning::AxialEnvelopeSafeBandEmpty { .. }
-        | SuggestWarning::AxialDocClampedByEnvelope { .. }
-        | SuggestWarning::AxialDocBelowBurnFloor { .. }
-        | SuggestWarning::ProjectCurveDepthInfeasible { .. }
-        | SuggestWarning::FinishEnvelopeAdvisory { .. }
-        | SuggestWarning::FeedRescaledToFinalGeometry { .. }
-        | SuggestWarning::FeedClampedToChiploadFloor { .. }
-        | SuggestWarning::PowerRecheckedAfterRescale { .. }
-        | SuggestWarning::CutGeometryFieldNotHeld { .. }
-        | SuggestWarning::RpmLoweredForFeedCeiling { .. }
-        | SuggestWarning::AggressivenessNotApplied { .. }
-        | SuggestWarning::RampFeed { .. }
-        | SuggestWarning::PlungeReDerived { .. } => None,
-    });
-    assert_eq!(
-        dial,
-        Some((Some(expected), Some(shipped))),
-        "the dial record must start from the helper's cap and end at the shipped depth"
     );
     assert!(
         REQUESTED_DPP_MM > expected,

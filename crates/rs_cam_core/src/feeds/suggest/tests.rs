@@ -8,11 +8,25 @@
 )]
 
 use super::axial_envelope::recompute_chipload_bounds_for_dpp;
-use super::invariants::{
-    DEFLECTION_BACKOFF_DPP_FLOOR_MM, DEFLECTION_BACKOFF_TARGET_UM,
-    STEPOVER_BACKOFF_DIAMETER_FRACTION, STEPOVER_BACKOFF_MAX_ITERATIONS,
-    STEPOVER_BACKOFF_TARGET_MOVES, enforce_invariants,
-};
+use super::invariants::{DEFLECTION_BACKOFF_TARGET_UM, enforce_invariants_at_fixed_geometry};
+
+/// The invariant chain of a speeds write on `operation` at the geometry it
+/// keeps (feeds contract P5: the geometry passes are deleted, so this is
+/// the whole chain). The calculator geometry is the operation's own, so
+/// pass 9 sees no move.
+fn fixed_chain(
+    operation: &mut OperationConfig,
+    tool: &ToolConfig,
+    machine: &MachineProfile,
+    material: &Material,
+    pass_role: PassRole,
+    context: SuggestContext<'_>,
+) -> Vec<SuggestWarning> {
+    let (stepover, dpp) = (operation.stepover(), operation.depth_per_pass());
+    enforce_invariants_at_fixed_geometry(
+        operation, tool, machine, material, pass_role, context, stepover, dpp,
+    )
+}
 use super::*;
 use crate::compute::operation_configs::{DropCutterConfig, PocketConfig};
 use crate::compute::tool_config::{ToolId, ToolType};
@@ -56,6 +70,7 @@ fn unpopulated_effective_diameter_skips_doc_derating() {
         material_label: String::new(),
         evidence_grade: crate::feeds::vendor_lut::EvidenceGrade::A,
         row_kind: crate::feeds::vendor_lut::ObservationKind::Exact,
+        tied_with: None,
     };
     let op = OperationConfig::new_default(OperationType::Pocket);
 
@@ -127,17 +142,20 @@ fn scallop_height_some_overrides_default_ae_factor() {
     );
 }
 
-/// S1: with no scallop target the legacy formula-based stepover is
-/// preserved — the scallop override must not engage, so the result
-/// stays the tiny `ae_factor`-derived value (well under the scallop
-/// path's 0.199 mm). Guards the F-037 smoke baseline.
+/// S1: with no scallop target the scallop override must not engage.
+/// Feeds contract P5 (K2): the calculator then reads the op's own stated
+/// stepover (`CutSpec::calc_inputs`), capped at the tool diameter, not
+/// the family `ae_factor` value. Re-pinned by P5; the F-037 smoke baseline
+/// reads the scallop path above.
 #[test]
 fn scallop_height_none_preserves_legacy_ae() {
-    let stepover = dropcutter_stepover(&dropcutter_op(None), &ball_tool(1.0));
+    let op = dropcutter_op(None);
+    let tool = ball_tool(1.0);
+    let stepover = dropcutter_stepover(&op, &tool);
+    let stated = op.stepover().expect("a DropCutter states its stepover");
     assert!(
-        stepover > 0.0 && stepover < 0.05,
-        "legacy DropCutter stepover on a 1 mm ball should stay small \
-             (formula-based), got {stepover}"
+        (stepover - stated.min(tool.diameter)).abs() < 1e-12,
+        "with no scallop the calculator reads the stated stepover {stated} capped at D, got {stepover}"
     );
 }
 
@@ -303,18 +321,26 @@ fn split_fixture() -> (
 fn apply_speeds_changes_speeds_leaves_cut_geometry() {
     let (base, result, tool, machine, material, role) = split_fixture();
 
+    // Feeds contract P5: "Apply all" (the envelope proposal) is the
+    // production write of geometry and speeds; it replaced the combined
+    // chain apply this test compared with.
     let mut both = base.clone();
     let mut both_prov = crate::feeds::FeedsProvenance::default();
-    apply_feeds_result_to_op(
+    apply_to_operation(
+        OperationApplyInput {
+            tool: &tool,
+            machine: &machine,
+            material: &material,
+            spindle_strategy: crate::feeds::SpindleStrategy::default(),
+            lut: &EMBEDDED_LUT,
+            suggest: SuggestContext::default(),
+        },
+        Some(crate::feeds::envelope::PickRequest::Proposal),
+        None,
         &mut both,
         &mut both_prov,
-        &result,
-        &tool,
-        &machine,
-        &material,
-        role,
-        SuggestContext::default(),
-    );
+    )
+    .expect("a flat on a pocket is a valid pairing");
 
     let mut speeds = base.clone();
     let mut speeds_prov = crate::feeds::FeedsProvenance::default();
@@ -331,7 +357,6 @@ fn apply_speeds_changes_speeds_leaves_cut_geometry() {
 
     // the speeds are written
     assert!(speeds_prov.feed_rate.is_some());
-    assert_eq!(speeds.spindle_rpm(), both.spindle_rpm());
     // cut geometry + its provenance untouched
     assert_eq!(speeds.as_params().stepover(), base.as_params().stepover());
     assert_eq!(
@@ -351,12 +376,21 @@ fn apply_speeds_changes_speeds_leaves_cut_geometry() {
     let mut at_both_geometry = base;
     at_both_geometry.set_stepover(both.stepover().expect("pocket carries a stepover"));
     at_both_geometry.set_depth_per_pass(both.depth_per_pass().expect("pocket carries a DPP"));
+    let result_at_both = feeds_result_for_operation(
+        &at_both_geometry,
+        &tool,
+        &material,
+        &machine,
+        &EMBEDDED_LUT,
+        crate::feeds::SpindleStrategy::default(),
+    )
+    .expect("a flat on a pocket is a valid pairing");
     let mut kept = at_both_geometry.clone();
     let mut kept_prov = crate::feeds::FeedsProvenance::default();
     apply_speeds_to_op(
         &mut kept,
         &mut kept_prov,
-        &result,
+        &result_at_both,
         &tool,
         &machine,
         &material,
@@ -375,52 +409,6 @@ fn apply_speeds_changes_speeds_leaves_cut_geometry() {
     assert_eq!(kept_prov.feed_rate, both_prov.feed_rate);
     assert_eq!(kept.stepover(), at_both_geometry.stepover());
     assert_eq!(kept.depth_per_pass(), at_both_geometry.depth_per_pass());
-}
-
-#[test]
-fn apply_cut_geometry_changes_geometry_leaves_speeds() {
-    let (base, result, tool, machine, material, role) = split_fixture();
-
-    let mut both = base.clone();
-    let mut both_prov = crate::feeds::FeedsProvenance::default();
-    apply_feeds_result_to_op(
-        &mut both,
-        &mut both_prov,
-        &result,
-        &tool,
-        &machine,
-        &material,
-        role,
-        SuggestContext::default(),
-    );
-
-    let mut geom = base.clone();
-    let mut geom_prov = crate::feeds::FeedsProvenance::default();
-    apply_cut_geometry_to_op(
-        &mut geom,
-        &mut geom_prov,
-        &result,
-        &tool,
-        &machine,
-        &material,
-        role,
-        SuggestContext::default(),
-    );
-
-    // geometry identical to the combined apply
-    assert_eq!(geom.as_params().stepover(), both.as_params().stepover());
-    assert_eq!(
-        geom.as_params().depth_per_pass(),
-        both.as_params().depth_per_pass()
-    );
-    assert_eq!(geom_prov.stepover, both_prov.stepover);
-    assert!(geom_prov.stepover.is_some());
-    // speeds + their provenance untouched
-    assert_eq!(geom.feed_rate(), base.feed_rate());
-    assert_eq!(geom.plunge_rate(), base.plunge_rate());
-    assert_eq!(geom.spindle_rpm(), base.spindle_rpm());
-    assert!(geom_prov.feed_rate.is_none());
-    assert!(geom_prov.spindle_rpm.is_none());
 }
 
 // ── Checkpoint I funnel (A-4, 2026-08-12) ──────────────────────────
@@ -507,11 +495,12 @@ fn preview_recommendation_is_bit_identical_to_validated_recipe() {
     }
 }
 
-/// [`apply`] with each scope must be indistinguishable from the three
-/// legacy entry points it now backs — the funnel was extended, not
-/// duplicated, and no recipe number may move (A-4 bar 2).
+/// [`apply`] with no pick must be indistinguishable from the speeds-only
+/// test door it backs (K2b, P5: the public apply writes the speeds for the
+/// geometry the op keeps; the chain doors are test doors). No recipe number
+/// may move (A-4 bar 2).
 #[test]
-fn apply_scope_matches_the_legacy_entry_points_exactly() {
+fn apply_matches_the_speeds_entry_point_exactly() {
     let (base, _unused, tool, machine, material, role) = split_fixture();
     let preview = preview_of(&base, &tool);
     let result = preview.recommended().clone();
@@ -524,59 +513,37 @@ fn apply_scope_matches_the_legacy_entry_points_exactly() {
         suggest: SuggestContext::default(),
     };
 
-    for scope in [
-        ApplyScope::Both,
-        ApplyScope::Speeds,
-        ApplyScope::CutGeometry,
-    ] {
-        let mut legacy_op = base.clone();
-        let mut legacy_prov = crate::feeds::FeedsProvenance::default();
-        let legacy = match scope {
-            ApplyScope::Both => apply_feeds_result_to_op,
-            ApplyScope::Speeds => apply_speeds_to_op,
-            ApplyScope::CutGeometry => apply_cut_geometry_to_op,
-        };
-        legacy(
-            &mut legacy_op,
-            &mut legacy_prov,
-            &result,
-            &tool,
-            &machine,
-            &material,
-            role,
-            SuggestContext::default(),
-        );
+    let mut legacy_op = base.clone();
+    let mut legacy_prov = crate::feeds::FeedsProvenance::default();
+    apply_speeds_to_op(
+        &mut legacy_op,
+        &mut legacy_prov,
+        &result,
+        &tool,
+        &machine,
+        &material,
+        role,
+        SuggestContext::default(),
+    );
 
-        let mut funnel_op = base.clone();
-        let mut funnel_prov = crate::feeds::FeedsProvenance::default();
-        apply(&rec, scope, &mut funnel_op, &mut funnel_prov, ctx);
+    let mut funnel_op = base.clone();
+    let mut funnel_prov = crate::feeds::FeedsProvenance::default();
+    let (complete, _) = rec.accept_unsourced();
+    apply(&complete, &mut funnel_op, &mut funnel_prov, ctx);
 
-        assert_eq!(
-            funnel_op.feed_rate(),
-            legacy_op.feed_rate(),
-            "{scope:?} feed"
-        );
-        assert_eq!(
-            funnel_op.plunge_rate(),
-            legacy_op.plunge_rate(),
-            "{scope:?} plunge"
-        );
-        assert_eq!(
-            funnel_op.spindle_rpm(),
-            legacy_op.spindle_rpm(),
-            "{scope:?} rpm"
-        );
-        assert_eq!(
-            funnel_op.as_params().stepover(),
-            legacy_op.as_params().stepover(),
-            "{scope:?} woc"
-        );
-        assert_eq!(
-            funnel_op.as_params().depth_per_pass(),
-            legacy_op.as_params().depth_per_pass(),
-            "{scope:?} doc"
-        );
-    }
+    assert_eq!(funnel_op.feed_rate(), legacy_op.feed_rate(), "feed");
+    assert_eq!(funnel_op.plunge_rate(), legacy_op.plunge_rate(), "plunge");
+    assert_eq!(funnel_op.spindle_rpm(), legacy_op.spindle_rpm(), "rpm");
+    assert_eq!(
+        funnel_op.as_params().stepover(),
+        base.as_params().stepover(),
+        "woc: no pick, no geometry write"
+    );
+    assert_eq!(
+        funnel_op.as_params().depth_per_pass(),
+        base.as_params().depth_per_pass(),
+        "doc: no pick, no geometry write"
+    );
 }
 
 /// The explored-point apply keeps the operator's dragged feed/RPM (the
@@ -595,8 +562,7 @@ fn explored_speeds_survive_the_funnel_but_still_get_clamped() {
     op.set_plunge_rate(900.0);
     let mut prov = crate::feeds::FeedsProvenance::default();
     let warnings = apply(
-        &rec,
-        ApplyScope::Speeds,
+        &rec.clone().accept_unsourced().0,
         &mut op,
         &mut prov,
         ApplyContext {
@@ -646,41 +612,6 @@ fn explored_speeds_survive_the_funnel_but_still_get_clamped() {
     );
 }
 
-/// [`resolve_operation_invariants`] is the funnel entry for a single-axis
-/// operator/optimizer edit (Checkpoint I-4, OPT-005). It must clamp, and
-/// it must NOT rewrite the accepted value.
-#[test]
-fn resolve_operation_invariants_clamps_an_axis_edit_without_re_solving_it() {
-    let (mut op, _result, tool, machine, material, role) = split_fixture();
-    // Optimizer suggests a stepover wider than the cutter.
-    op.set_stepover(tool.diameter * 3.0);
-    op.set_feed_rate(1234.0);
-    let warnings = resolve_operation_invariants(
-        &mut op,
-        &tool,
-        &machine,
-        &material,
-        role,
-        SuggestContext::default(),
-    );
-    assert_eq!(
-        op.as_params().stepover(),
-        Some(tool.diameter),
-        "stepover was not clamped to the cutter diameter"
-    );
-    assert!(
-        warnings
-            .iter()
-            .any(|w| matches!(w, SuggestWarning::StepoverClampedToToolDiameter { .. })),
-        "clamp ran without a warning: {warnings:?}"
-    );
-    assert_eq!(
-        op.feed_rate(),
-        Some(1234.0),
-        "the accepted feed was re-solved; the default context must leave it alone"
-    );
-}
-
 #[test]
 fn fallback_formula_path_is_used_without_matching_lut_row() {
     // 200 mm exceeds 10x the largest embedded flat-end pocket row
@@ -711,6 +642,9 @@ fn fallback_formula_path_is_used_without_matching_lut_row() {
 
 #[test]
 fn invariants_clamp_and_warn() {
+    // Feeds contract P5: the stepover, rigidity and cutting-length clamps
+    // (passes 2, 4, 5) are deleted; the envelope holds those limits. The
+    // speeds chain keeps pass 1 and never moves the geometry.
     let mut op = OperationConfig::Pocket(PocketConfig {
         feed_rate: Some(100.0),
         plunge_rate: Some(250.0),
@@ -718,20 +652,10 @@ fn invariants_clamp_and_warn() {
         depth_per_pass: 20.0,
         ..PocketConfig::default()
     });
-    let mut tool = tool(6.0);
-    tool.cutting_length = 1.0;
-    // Milling-Kc calibration (2026-06-17, milling factor 2.7):
-    // at the new_default 45 mm stickout the deflection back-off now
-    // clamps DOC to 0.512, below the cutting-length clamp (1.0) this
-    // invariant test asserts. Stiffen the tool (stickout 45 → 10 mm;
-    // δ ∝ stickout³ → ~0.011×) so the cutting-length clamp is the
-    // binding one and all four invariant warnings remain the thing
-    // under test.
-    tool.stickout = 10.0;
-    let mut machine = MachineProfile::default();
-    machine.rigidity.doc_roughing_factor = 0.25;
+    let tool = tool(6.0);
+    let machine = MachineProfile::default();
 
-    let warnings = enforce_invariants(
+    let warnings = fixed_chain(
         &mut op,
         &tool,
         &machine,
@@ -741,27 +665,20 @@ fn invariants_clamp_and_warn() {
     );
 
     assert_eq!(op.plunge_rate(), Some(100.0));
-    assert_eq!(op.stepover(), Some(6.0));
-    assert_eq!(op.depth_per_pass(), Some(1.0));
+    assert_eq!(
+        op.stepover(),
+        Some(12.0),
+        "the speeds chain moved the stepover"
+    );
+    assert_eq!(
+        op.depth_per_pass(),
+        Some(20.0),
+        "the speeds chain moved the depth"
+    );
     assert!(
         warnings
             .iter()
             .any(|w| matches!(w, SuggestWarning::PlungeClampedToFeed { .. }))
-    );
-    assert!(
-        warnings
-            .iter()
-            .any(|w| matches!(w, SuggestWarning::StepoverClampedToToolDiameter { .. }))
-    );
-    assert!(
-        warnings
-            .iter()
-            .any(|w| matches!(w, SuggestWarning::RoughingDepthClampedToRigidity { .. }))
-    );
-    assert!(
-        warnings
-            .iter()
-            .any(|w| matches!(w, SuggestWarning::DepthClampedToCuttingLength { .. }))
     );
 }
 
@@ -1074,63 +991,6 @@ fn drill_peck_depth_softwood_exceeds_hardwood() {
     );
 }
 
-/// Bug 1 (2026-06-02 audit, workflow `w39ma2j1y`): adaptive ops
-/// use `adaptive_doc_factor` (deep+narrow), not the
-/// conventional `doc_roughing_factor`. For a 6 mm bit on a wood
-/// router with `doc_roughing_factor=0.20` and
-/// `adaptive_doc_factor=1.50`, an Adaptive3d op with DOC=6 mm
-/// must not be clamped. Pre-fix the clamp stripped it to 1.2 mm,
-/// erasing the upstream `adaptive_doc_factor` floor and turning
-/// adaptive into "shallow conventional".
-#[test]
-fn adaptive_op_uses_adaptive_doc_factor_not_doc_roughing_factor() {
-    use crate::compute::operation_configs::Adaptive3dConfig;
-    let mut op = OperationConfig::Adaptive3d(Adaptive3dConfig {
-        feed_rate: Some(1000.0),
-        plunge_rate: Some(500.0),
-        stepover: 0.88,
-        depth_per_pass: 6.0,
-        ..Adaptive3dConfig::default()
-    });
-    let mut tool = ToolConfig::new_default(ToolId::from_raw(0), ToolType::EndMill);
-    tool.diameter = 6.0;
-    tool.cutting_length = 25.0;
-    // Milling-Kc calibration (2026-06-17, milling factor 2.7):
-    // at the new_default 45 mm stickout the deflection back-off now
-    // binds and clamps DOC=6 → 3.84, masking the DOC-factor logic this
-    // test isolates. Stiffen the tool (stickout 45 → 12 mm; δ ∝
-    // stickout³ → ~0.019×) so deflection doesn't interfere and the
-    // adaptive_doc_factor selection is the only thing under test.
-    tool.stickout = 12.0;
-    let mut machine = MachineProfile::default();
-    machine.rigidity.doc_roughing_factor = 0.20; // conventional
-    machine.rigidity.adaptive_doc_factor = 1.50; // adaptive can go deep
-
-    let warnings = enforce_invariants(
-        &mut op,
-        &tool,
-        &machine,
-        &Material::default(),
-        PassRole::Roughing,
-        SuggestContext::default(),
-    );
-
-    // DOC=6 mm is under adaptive_doc_factor*D=9 mm and under
-    // cutting_length=25 mm — should NOT clamp.
-    assert_eq!(
-        op.depth_per_pass(),
-        Some(6.0),
-        "Adaptive3d DOC=6 mm on 6 mm bit must not clamp (adaptive_doc_factor=1.5)"
-    );
-    assert!(
-        !warnings
-            .iter()
-            .any(|w| matches!(w, SuggestWarning::RoughingDepthClampedToRigidity { .. })),
-        "Adaptive3d DOC=6 mm must not trigger RoughingDepthClampedToRigidity \
-             (was Bug 1 — adaptive ops clamped by conventional factor)"
-    );
-}
-
 /// v1.3 combined-Suggest (2026-06-03 design doc § v1.3): when the
 /// LUT + rigidity-factor path writes a DPP > 0.5×D on an Adaptive3d
 /// op with `entry_style = Plunge`, the plunge-entry transient
@@ -1180,7 +1040,7 @@ fn plunge_entry_unstable_warning_fires_when_dpp_exceeds_half_diameter() {
         machine.rigidity.doc_roughing_factor = 0.20;
         machine.rigidity.adaptive_doc_factor = 1.50;
 
-        let warnings = enforce_invariants(
+        let warnings = fixed_chain(
             &mut op,
             &tool,
             &machine,
@@ -1248,7 +1108,7 @@ fn plunge_entry_unstable_does_not_fire_below_half_diameter() {
     machine.rigidity.doc_roughing_factor = 0.20;
     machine.rigidity.adaptive_doc_factor = 1.50;
 
-    let warnings = enforce_invariants(
+    let warnings = fixed_chain(
         &mut op,
         &tool,
         &machine,
@@ -1288,7 +1148,7 @@ fn plunge_entry_unstable_does_not_fire_for_helix_or_ramp() {
             entry_style: style,
             ..Adaptive3dConfig::default()
         });
-        let warnings = enforce_invariants(
+        let warnings = fixed_chain(
             &mut op,
             &tool,
             &machine,
@@ -1304,268 +1164,6 @@ fn plunge_entry_unstable_does_not_fire_for_helix_or_ramp() {
                  for style {style:?}"
         );
     }
-}
-
-/// Bug 1 counter-test: conventional Pocket op DOES still clamp to
-/// `doc_roughing_factor` — the fix is selective on feeds family,
-/// not a blanket relaxation.
-#[test]
-fn conventional_op_still_clamps_by_doc_roughing_factor() {
-    let mut op = OperationConfig::Pocket(PocketConfig {
-        feed_rate: Some(1000.0),
-        plunge_rate: Some(500.0),
-        stepover: 3.0,
-        depth_per_pass: 6.0,
-        ..PocketConfig::default()
-    });
-    let mut tool = ToolConfig::new_default(ToolId::from_raw(0), ToolType::EndMill);
-    tool.diameter = 6.0;
-    tool.cutting_length = 25.0;
-    // Milling-Kc calibration (2026-06-17, milling factor 2.7):
-    // at the new_default 45 mm stickout the deflection back-off now
-    // clamps DOC to 0.96, masking the doc_roughing_factor clamp (1.2)
-    // this counter-test isolates. Stiffen the tool (stickout 45 →
-    // 12 mm; δ ∝ stickout³ → ~0.019×) so the rigidity factor is the
-    // binding clamp again.
-    tool.stickout = 12.0;
-    let mut machine = MachineProfile::default();
-    machine.rigidity.doc_roughing_factor = 0.20;
-    machine.rigidity.adaptive_doc_factor = 1.50;
-
-    let warnings = enforce_invariants(
-        &mut op,
-        &tool,
-        &machine,
-        &Material::default(),
-        PassRole::Roughing,
-        SuggestContext::default(),
-    );
-
-    // Pocket on 6 mm bit: doc_roughing_factor*D = 1.2 mm cap.
-    let dpp = op.depth_per_pass().expect("dpp set after clamp");
-    assert!(
-        (dpp - 1.2).abs() < 1e-6,
-        "Pocket DOC must still clamp to doc_roughing_factor*D (1.2), got {dpp}"
-    );
-    assert!(
-        warnings
-            .iter()
-            .any(|w| matches!(w, SuggestWarning::RoughingDepthClampedToRigidity { .. })),
-        "Pocket DOC over conventional ceiling must still warn"
-    );
-}
-
-/// v1.1 combined-Suggest: deflection-aware DPP selection for the
-/// Wanaka Back Rough motivating case — 6 mm carbide endmill at 45 mm
-/// stickout in HardMaple, 9 mm commanded DPP. The Suggest pass must
-/// produce a *deflection-safe* DPP (predicted peak ≤ the 200 µm bound).
-///
-/// Deflection-model reconciliation (2026-06-17): the closed-form
-/// `predict_peak_deflection_um` now delegates its cantilever to the
-/// same integrated two-section model the axial envelope
-/// (`pick_axial_envelope` → `invert_deflection`) uses. The two no
-/// longer disagree, which changes *which mechanism* does the clamping
-/// and dissolves the old back-off convergence problem:
-///
-/// - The axial envelope finds the DPP where integrated δ = 200 µm
-///   (~6.57 mm at WOC 1.2 mm) and clamps the 9 mm command to it in one
-///   shot, emitting `AxialDocClampedByEnvelope { binding: "deflection" }`.
-/// - The back-off loop then evaluates the *same* integrated physics at
-///   that DPP, sees it is already at/under the 200 µm bound, and does
-///   nothing (0 iterations, no `DppCappedByDeflection`).
-///
-/// Pre-reconciliation the closed-form read ~3× hotter than the
-/// envelope's bound, so the back-off chased a phantom target down to
-/// ~2.15 mm and still bottomed out at ~350 µm against its 5-iteration
-/// cap. The fix is the envelope and predictor agreeing — the DPP is
-/// chosen correctly once, not thrashed. This is the sentry for "the
-/// Suggest pass lands the wanaka rough deflection-safe in one pass."
-#[test]
-fn deflection_machinery_caps_dpp_for_long_reach_tool() {
-    use crate::compute::operation_configs::{Adaptive3dConfig, Adaptive3dEntryStyle};
-    use crate::material::WoodSpecies;
-    // Deflection binds only on long/thin tools under the feed-aware
-    // literature-absolute force model. Long-reach 6 mm carbide endmill,
-    // 75 mm stickout, DPP 9 mm command, WOC 1.2 mm, feed 911 mm/min @
-    // 16 kRPM, HardMaple — the 9 mm command predicts past the 200 µm
-    // bound, so the axial-DOC envelope clamps it to the deflection-safe
-    // DPP in one shot (no phantom back-off thrash).
-    let mut op = OperationConfig::Adaptive3d(Adaptive3dConfig {
-        feed_rate: Some(911.0),
-        plunge_rate: Some(300.0),
-        stepover: 1.2,
-        depth_per_pass: 9.0,
-        spindle_rpm: Some(16_000),
-        // Helix entry so we don't also fire PlungeEntryUnstableAtDpp.
-        entry_style: Adaptive3dEntryStyle::Helix,
-        ..Adaptive3dConfig::default()
-    });
-    let mut tool = ToolConfig::new_default(ToolId::from_raw(0), ToolType::EndMill);
-    tool.diameter = 6.0;
-    tool.cutting_length = 25.0;
-    tool.stickout = 85.0;
-    tool.flute_count = 2;
-    let mut machine = MachineProfile::default();
-    // Pin the rigidity factors so the rigidity clamp does NOT
-    // pre-clamp DPP — we want to see the deflection machinery
-    // applied to the 9 mm starting point directly.
-    machine.rigidity.doc_roughing_factor = 0.20;
-    machine.rigidity.adaptive_doc_factor = 1.60; // 1.6 × 6 = 9.6 > 9, no rigidity clamp
-    let material = Material::SolidWood {
-        species: WoodSpecies::HardMaple,
-    };
-
-    let warnings = enforce_invariants(
-        &mut op,
-        &tool,
-        &machine,
-        &material,
-        PassRole::Roughing,
-        SuggestContext::default(),
-    );
-
-    let dpp_after = op.depth_per_pass().expect("dpp set");
-    // DPP is clamped below the 9 mm command, to the deflection-safe
-    // bound — in one shot, NOT thrashed down by a phantom-hot back-off.
-    assert!(
-        (4.0..9.0).contains(&dpp_after),
-        "DPP must be clamped to the deflection-safe bound (below the 9 mm command, not over-cut), got {dpp_after} mm"
-    );
-    // The whole point: the resulting DPP is deflection-safe. Predicted
-    // peak at the chosen DPP sits at/under the 200 µm bound (allow a
-    // hair of binary-search tolerance).
-    let predicted_after =
-        crate::feeds::predict::predict_peak_deflection_um(&op, &tool, &material, &machine)
-            .expect("a modelled end mill in hard maple must produce a figure")
-            .predicted_um;
-    assert!(
-        predicted_after <= 205.0,
-        "Suggest must land the wanaka rough deflection-safe (≤ 200 µm bound), \
-             got {predicted_after:.1} µm at DPP={dpp_after:.2} mm"
-    );
-    // And it genuinely backed off from the command: the 9 mm command
-    // predicts well over the bound.
-    let predicted_at_command = {
-        let mut probe = op.clone();
-        probe.set_depth_per_pass(9.0);
-        crate::feeds::predict::predict_peak_deflection_um(&probe, &tool, &material, &machine)
-            .expect("the 9 mm probe is modelled")
-            .predicted_um
-    };
-    assert!(
-        predicted_at_command > DEFLECTION_BACKOFF_TARGET_UM,
-        "the 9 mm command must exceed the 200 µm bound (otherwise nothing to clamp), got {predicted_at_command:.1} µm"
-    );
-    // The axial envelope is the mechanism that clamps it, bound by
-    // deflection. (The back-off loop is now a confirming no-op since
-    // it shares the envelope's physics — so we assert the envelope
-    // warning, not `DppCappedByDeflection`.)
-    let clamp = warnings.iter().find_map(|w| match w {
-        SuggestWarning::AxialDocClampedByEnvelope {
-            clamped_mm,
-            binding,
-            ..
-        } => Some((*clamped_mm, *binding)),
-        SuggestWarning::PlungeClampedToFeed { .. }
-        | SuggestWarning::StepoverClampedToToolDiameter { .. }
-        | SuggestWarning::RoughingDepthClampedToRigidity { .. }
-        | SuggestWarning::DepthClampedToCuttingLength { .. }
-        | SuggestWarning::PlungeEntryUnstableAtDpp { .. }
-        | SuggestWarning::DppCappedByDeflection { .. }
-        | SuggestWarning::DeflectionBackoffUnmodeled { .. }
-        | SuggestWarning::DeflectionBackoffFigureIsAFloor { .. }
-        | SuggestWarning::StepoverRaisedForRuntime { .. }
-        | SuggestWarning::FeedRaisedForChipload { .. }
-        | SuggestWarning::ChiploadStillLowAfterRecalibration { .. }
-        | SuggestWarning::StrategyRecommendedNotApplied { .. }
-        | SuggestWarning::AxialEnvelopeSafeBandEmpty { .. }
-        | SuggestWarning::AxialDocBelowBurnFloor { .. }
-        | SuggestWarning::ProjectCurveDepthInfeasible { .. }
-        | SuggestWarning::FinishEnvelopeAdvisory { .. }
-        | SuggestWarning::FeedRescaledToFinalGeometry { .. }
-        | SuggestWarning::FeedClampedToChiploadFloor { .. }
-        | SuggestWarning::PowerRecheckedAfterRescale { .. }
-        | SuggestWarning::CutGeometryFieldNotHeld { .. }
-        | SuggestWarning::EngagementReducedForAggressiveness { .. }
-        | SuggestWarning::RpmLoweredForFeedCeiling { .. }
-        | SuggestWarning::AggressivenessNotApplied { .. }
-        | SuggestWarning::RampFeed { .. }
-        | SuggestWarning::PlungeReDerived { .. } => None,
-    });
-    let (clamped_mm, binding) =
-        clamp.expect("AxialDocClampedByEnvelope must fire on the wanaka case");
-    assert_eq!(
-        binding, "deflection",
-        "the binding constraint must be deflection, got {binding}"
-    );
-    assert!(
-        (clamped_mm - dpp_after).abs() < 1e-9,
-        "envelope clamp value must match the post-Suggest DPP, got {clamped_mm} vs {dpp_after}"
-    );
-}
-
-/// v1.1 step 2 counter-test: a Finishing pass on the same
-/// tool/material does NOT trigger the back-off — deflection mostly
-/// threatens roughing engagement, and finishing passes already
-/// run shallow DPPs by design. Locking back-off to roughing keeps
-/// the suggest path symmetric with the existing
-/// `RoughingDepthClampedToRigidity` gate.
-#[test]
-fn deflection_back_off_skipped_for_finish_pass() {
-    use crate::compute::operation_configs::{Adaptive3dConfig, Adaptive3dEntryStyle};
-    use crate::material::WoodSpecies;
-    let mut op = OperationConfig::Adaptive3d(Adaptive3dConfig {
-        feed_rate: Some(911.0),
-        plunge_rate: Some(300.0),
-        stepover: 1.2,
-        depth_per_pass: 9.0,
-        spindle_rpm: Some(16_000),
-        entry_style: Adaptive3dEntryStyle::Helix,
-        ..Adaptive3dConfig::default()
-    });
-    let mut tool = ToolConfig::new_default(ToolId::from_raw(0), ToolType::EndMill);
-    tool.diameter = 6.0;
-    tool.cutting_length = 25.0;
-    // Milling-Kc calibration (2026-06-17, milling factor 2.7):
-    // the deflection force is now ~2.7× higher. At the original 45 mm
-    // stickout a 9 mm DPP exceeds the *role-agnostic* axial-envelope
-    // deflection ceiling (pick_axial_envelope, runs for all roles)
-    // and trims DPP to ~6.57 — NOT via the roughing-only back-off
-    // (backoff_dpp_for_deflection / DppCappedByDeflection), which
-    // this test verifies is skipped for finish. To keep that the only
-    // thing under test, stiffen the tool (stickout 45 → 18 mm; δ ∝
-    // stickout³ → ~0.064×) so 9 mm sits inside the deflection
-    // envelope and the DPP stays 9.0 untouched. Confirmed: the
-    // back-off path remains correctly roughing-only — this is the
-    // separate cutter-geometry envelope, not a finish-path
-    // regression.
-    tool.stickout = 18.0;
-    tool.flute_count = 2;
-    let machine = MachineProfile::default();
-    let material = Material::SolidWood {
-        species: WoodSpecies::HardMaple,
-    };
-
-    let warnings = enforce_invariants(
-        &mut op,
-        &tool,
-        &machine,
-        &material,
-        PassRole::Finish,
-        SuggestContext::default(),
-    );
-
-    assert_eq!(
-        op.depth_per_pass(),
-        Some(9.0),
-        "Finishing pass must not trigger deflection back-off (back-off is roughing-only)"
-    );
-    assert!(
-        !warnings
-            .iter()
-            .any(|w| matches!(w, SuggestWarning::DppCappedByDeflection { .. })),
-        "Finishing pass must not emit DppCappedByDeflection, got {warnings:?}"
-    );
 }
 
 /// SuggestContext plumbing invariant (2026-06-04 refactor): the
@@ -1652,382 +1250,6 @@ fn suggest_context_is_no_op_in_v1_1() {
     );
 }
 
-/// v1.1 step 2 floor: the loop must terminate at
-/// `DEFLECTION_BACKOFF_DPP_FLOOR_MM` even if the predicted
-/// deflection at that depth still exceeds the 200 µm target.
-/// Synthetic case: unrealistically long stickout (150 mm) on a
-/// 2 mm endmill in HardMaple — δ ∝ L³/d⁴ keeps prediction huge
-/// even at 0.5 mm DPP (the loop's floor). Pre-back-off DPP set to
-/// 1.0 mm so the 0.8-factor reduction reaches the floor in 3-4
-/// iterations rather than exhausting the 5-iteration max first.
-#[test]
-fn deflection_back_off_respects_05mm_floor() {
-    use crate::compute::operation_configs::{Adaptive3dConfig, Adaptive3dEntryStyle};
-    use crate::material::WoodSpecies;
-    let mut op = OperationConfig::Adaptive3d(Adaptive3dConfig {
-        feed_rate: Some(1500.0),
-        plunge_rate: Some(500.0),
-        stepover: 1.0,
-        // Start at 1.0 mm so 0.8^N drops to 0.5 in <5 iterations
-        // (log(0.5/1.0)/log(0.8) ≈ 3.1 steps). Otherwise the
-        // 5-iteration cap would dominate over the floor and we'd
-        // exit on iterations, not on the floor we're trying to
-        // exercise.
-        depth_per_pass: 1.0,
-        spindle_rpm: Some(16_000),
-        entry_style: Adaptive3dEntryStyle::Helix,
-        ..Adaptive3dConfig::default()
-    });
-    let mut tool = ToolConfig::new_default(ToolId::from_raw(0), ToolType::EndMill);
-    // Very small core diameter (2 mm → core 1.4 mm, I ≈ 0.19 mm⁴)
-    // combined with extreme stickout drives δ ∝ L³/d⁴ above the
-    // 200 µm threshold even at the 0.5 mm DPP floor.
-    tool.diameter = 2.0;
-    tool.cutting_length = 25.0;
-    tool.stickout = 220.0;
-    tool.flute_count = 2;
-    let mut machine = MachineProfile::default();
-    // Disable the rigidity clamp so 1.0 mm starting DPP survives
-    // to the back-off loop (1 < 2 × 0.20 = 0.4 would otherwise
-    // already clamp). The loop is what we're testing.
-    machine.rigidity.doc_roughing_factor = 5.0;
-    machine.rigidity.adaptive_doc_factor = 5.0;
-    let material = Material::SolidWood {
-        species: WoodSpecies::HardMaple,
-    };
-
-    let warnings = enforce_invariants(
-        &mut op,
-        &tool,
-        &machine,
-        &material,
-        PassRole::Roughing,
-        SuggestContext::default(),
-    );
-
-    // Phase 3 (Pass 0, axial-DOC envelope): the cutter-axial-constraints
-    // calculator runs the canonical deflection model via binary search,
-    // so for the same pathological inputs it now clamps DPP **below**
-    // the v1.1 back-off floor — the envelope is the more accurate
-    // constraint and it binds first. The v1.1 back-off then short-
-    // circuits because `current > FLOOR` is already false. Test asserts
-    // the new behaviour: envelope-clamped DPP < FLOOR + AxialDocClampedByEnvelope
-    // warning carries the deflection-binding signal.
-    let dpp_after = op.depth_per_pass().expect("dpp set");
-    assert!(
-        dpp_after < DEFLECTION_BACKOFF_DPP_FLOOR_MM,
-        "Phase 3 envelope must clamp DPP below the v1.1 back-off floor on \
-             pathological tools (2 mm × 150 mm stickout); got {dpp_after}"
-    );
-    let envelope_warning_present = warnings.iter().any(|w| {
-        matches!(
-            w,
-            SuggestWarning::AxialDocClampedByEnvelope {
-                binding: "deflection",
-                ..
-            } | SuggestWarning::AxialEnvelopeSafeBandEmpty { .. }
-        )
-    });
-    assert!(
-        envelope_warning_present,
-        "Phase 3 envelope must surface an Axial* warning when it clamps DPP, got {warnings:?}"
-    );
-}
-
-/// v1.2 combined-Suggest (2026-06-04 design doc § v1.2): Wanaka 3D
-/// Finish motivating case. A 2 mm-tip tapered-ball on a 140 × 150 mm
-/// stock with a 0.03 mm stepover (scallop-height math taken
-/// literally for a small tip radius) predicts millions of moves on
-/// the model envelope. The back-off must raise stepover until the
-/// predicted move count clears 500 k, and emit
-/// `StepoverRaisedForRuntime`.
-///
-/// The test calls `enforce_invariants` directly with a pre-written
-/// 0.03 mm stepover (the LUT scallop path that produced it isn't
-/// re-exercised here — `predict::tests::predict_move_count_zero_for_v_carve`
-/// guards the predictor itself and the LUT/scallop path is already
-/// covered by `scallop_height_some_overrides_default_ae_factor`).
-#[test]
-fn stepover_raised_for_wanaka_3d_finish_case() {
-    use crate::compute::operation_configs::DropCutterConfig;
-    let mut op = OperationConfig::DropCutter(DropCutterConfig {
-        stepover: 0.03,
-        feed_rate: Some(2000.0),
-        plunge_rate: Some(500.0),
-        scallop_height: Some(0.010),
-        ..DropCutterConfig::default()
-    });
-    let mut tool = ToolConfig::new_default(ToolId::from_raw(0), ToolType::TaperedBallNose);
-    tool.diameter = 4.0; // tip diameter 4 → tip radius 2 mm
-    tool.cutting_length = 25.0;
-    // Wanaka envelope: 140 × 150 × 12 mm. Even at the diameter ×
-    // 0.5 = 2 mm ceiling the predicted moves = (150/2) × (140/0.4)
-    // ≈ 26 250 — well below 500 k, so the loop should converge
-    // before bailing on the ceiling.
-    let bbox = crate::geo::BoundingBox3 {
-        min: crate::geo::P3::new(0.0, 0.0, -12.0),
-        max: crate::geo::P3::new(140.0, 150.0, 0.0),
-    };
-    let machine = MachineProfile::default();
-    let material = Material::default();
-    let context = SuggestContext {
-        model_bbox: Some(&bbox),
-        ..SuggestContext::default()
-    };
-
-    let warnings = enforce_invariants(
-        &mut op,
-        &tool,
-        &machine,
-        &material,
-        PassRole::Finish,
-        context,
-    );
-
-    let stepover_after = op.stepover().expect("stepover must remain set");
-    assert!(
-        stepover_after > 0.03,
-        "back-off must raise stepover above the 0.03 mm starting point, got {stepover_after}"
-    );
-    assert!(
-        stepover_after <= tool.diameter * STEPOVER_BACKOFF_DIAMETER_FRACTION + 1e-9,
-        "raised stepover must stay at or below tool.diameter × 0.5 = {} mm, got {stepover_after}",
-        tool.diameter * STEPOVER_BACKOFF_DIAMETER_FRACTION
-    );
-    // The final predicted move count must come down below the
-    // 500 k target (the back-off converged before the ceiling).
-    let moves_after = crate::feeds::predict::predict_move_count(&op, Some(&bbox), &tool);
-    assert!(
-        moves_after <= STEPOVER_BACKOFF_TARGET_MOVES,
-        "post-back-off move count must clear {STEPOVER_BACKOFF_TARGET_MOVES}, got {moves_after}"
-    );
-
-    let warning = warnings.iter().find_map(|w| match w {
-        SuggestWarning::StepoverRaisedForRuntime {
-            requested_mm,
-            raised_mm,
-            predicted_moves_at_requested,
-            predicted_moves_at_raised,
-            iterations,
-        } => Some((
-            *requested_mm,
-            *raised_mm,
-            *predicted_moves_at_requested,
-            *predicted_moves_at_raised,
-            *iterations,
-        )),
-        SuggestWarning::PlungeClampedToFeed { .. }
-        | SuggestWarning::StepoverClampedToToolDiameter { .. }
-        | SuggestWarning::RoughingDepthClampedToRigidity { .. }
-        | SuggestWarning::DepthClampedToCuttingLength { .. }
-        | SuggestWarning::PlungeEntryUnstableAtDpp { .. }
-        | SuggestWarning::DppCappedByDeflection { .. }
-        | SuggestWarning::DeflectionBackoffUnmodeled { .. }
-        | SuggestWarning::DeflectionBackoffFigureIsAFloor { .. }
-        | SuggestWarning::FeedRaisedForChipload { .. }
-        | SuggestWarning::ChiploadStillLowAfterRecalibration { .. }
-        | SuggestWarning::StrategyRecommendedNotApplied { .. }
-        | SuggestWarning::AxialEnvelopeSafeBandEmpty { .. }
-        | SuggestWarning::AxialDocClampedByEnvelope { .. }
-        | SuggestWarning::AxialDocBelowBurnFloor { .. }
-        | SuggestWarning::ProjectCurveDepthInfeasible { .. }
-        | SuggestWarning::FinishEnvelopeAdvisory { .. }
-        | SuggestWarning::FeedRescaledToFinalGeometry { .. }
-        | SuggestWarning::FeedClampedToChiploadFloor { .. }
-        | SuggestWarning::PowerRecheckedAfterRescale { .. }
-        | SuggestWarning::CutGeometryFieldNotHeld { .. }
-        | SuggestWarning::EngagementReducedForAggressiveness { .. }
-        | SuggestWarning::RpmLoweredForFeedCeiling { .. }
-        | SuggestWarning::AggressivenessNotApplied { .. }
-        | SuggestWarning::RampFeed { .. }
-        | SuggestWarning::PlungeReDerived { .. } => None,
-    });
-    let (
-        requested_mm,
-        raised_mm,
-        predicted_moves_at_requested,
-        predicted_moves_at_raised,
-        iterations,
-    ) = warning.expect("StepoverRaisedForRuntime must fire on Wanaka 3D Finish case");
-    assert!(
-        (requested_mm - 0.03).abs() < 1e-6,
-        "warning.requested_mm must capture the pre-back-off stepover, got {requested_mm}"
-    );
-    assert!(
-        (raised_mm - stepover_after).abs() < 1e-9,
-        "warning.raised_mm must match the post-back-off stepover, got {raised_mm} vs {stepover_after}"
-    );
-    assert!(
-        predicted_moves_at_requested > STEPOVER_BACKOFF_TARGET_MOVES,
-        "warning.predicted_moves_at_requested must exceed target (loop wouldn't have started otherwise), got {predicted_moves_at_requested}"
-    );
-    assert!(
-        predicted_moves_at_raised <= STEPOVER_BACKOFF_TARGET_MOVES,
-        "warning.predicted_moves_at_raised must clear target (no ceiling bail expected), got {predicted_moves_at_raised}"
-    );
-    assert!(
-        (1..=STEPOVER_BACKOFF_MAX_ITERATIONS).contains(&iterations),
-        "iterations must fall in [1, {}], got {iterations}",
-        STEPOVER_BACKOFF_MAX_ITERATIONS
-    );
-}
-
-/// v1.2 counter-test: when `context.model_bbox` is `None` the
-/// predictor returns 0 ("no constraint signal") and the back-off
-/// must short-circuit. Guards against the predictor being read
-/// pessimistically (treating None as "infinite envelope") and
-/// against `enforce_invariants` raising stepover when it has no
-/// envelope information to gate on.
-#[test]
-fn stepover_unchanged_when_model_bbox_unknown() {
-    use crate::compute::operation_configs::DropCutterConfig;
-    let mut op = OperationConfig::DropCutter(DropCutterConfig {
-        stepover: 0.03,
-        feed_rate: Some(2000.0),
-        plunge_rate: Some(500.0),
-        scallop_height: Some(0.010),
-        ..DropCutterConfig::default()
-    });
-    let mut tool = ToolConfig::new_default(ToolId::from_raw(0), ToolType::TaperedBallNose);
-    tool.diameter = 4.0;
-    tool.cutting_length = 25.0;
-    let machine = MachineProfile::default();
-    let material = Material::default();
-    // No model_bbox — the back-off must short-circuit on the
-    // predictor's 0 return.
-    let context = SuggestContext::default();
-
-    let warnings = enforce_invariants(
-        &mut op,
-        &tool,
-        &machine,
-        &material,
-        PassRole::Finish,
-        context,
-    );
-
-    assert_eq!(
-        op.stepover(),
-        Some(0.03),
-        "stepover must be left untouched when model_bbox is None (no constraint signal)"
-    );
-    assert!(
-        !warnings
-            .iter()
-            .any(|w| matches!(w, SuggestWarning::StepoverRaisedForRuntime { .. })),
-        "StepoverRaisedForRuntime must not fire without a model_bbox, got {warnings:?}"
-    );
-}
-
-/// v1.2 floor counter-test: when even raising stepover to
-/// `tool.diameter × 0.5` would not bring the predicted move count
-/// below the target, the loop must land on the diameter-fraction
-/// ceiling and emit the warning (the `predicted_moves_at_raised`
-/// field still exceeds the target — that's the "unmet gate" signal
-/// until the v2 surface adds a structured unmet-condition channel).
-///
-/// Synthetic case: enormous stock envelope (5 × 5 m DropCutter scan)
-/// on a small-tip tapered-ball. At the 0.5 × D ceiling the predicted
-/// move count is still in the millions.
-#[test]
-fn stepover_floor_caps_back_off() {
-    use crate::compute::operation_configs::DropCutterConfig;
-    // Start at a stepover where 1.5⁵ growth reaches the
-    // diameter-fraction ceiling before the iteration cap fires:
-    // tool.diameter=2.0 → ceiling=1.0. Starting at 0.3 mm,
-    // 0.3 × 1.5² = 0.675 (iter 2), × 1.5³ = 1.0125 (clamped to
-    // ceiling) on iter 3 — bails on ceiling, not on max iterations.
-    let mut op = OperationConfig::DropCutter(DropCutterConfig {
-        stepover: 0.3,
-        feed_rate: Some(2000.0),
-        plunge_rate: Some(500.0),
-        scallop_height: Some(0.010),
-        ..DropCutterConfig::default()
-    });
-    let mut tool = ToolConfig::new_default(ToolId::from_raw(0), ToolType::TaperedBallNose);
-    tool.diameter = 2.0; // tip diameter 2 → ceiling = 1.0 mm
-    tool.cutting_length = 25.0;
-    // 5 000 × 5 000 mm envelope. At ceiling 1.0 mm:
-    //   passes = 5000 / 1.0 = 5000
-    //   moves_per_pass = 5000 / (2.0 × 0.1) = 25 000
-    //   total ≈ 1.25 × 10⁸ — well above 500 k.
-    let bbox = crate::geo::BoundingBox3 {
-        min: crate::geo::P3::new(0.0, 0.0, -10.0),
-        max: crate::geo::P3::new(5000.0, 5000.0, 0.0),
-    };
-    let machine = MachineProfile::default();
-    let material = Material::default();
-    let context = SuggestContext {
-        model_bbox: Some(&bbox),
-        ..SuggestContext::default()
-    };
-
-    let warnings = enforce_invariants(
-        &mut op,
-        &tool,
-        &machine,
-        &material,
-        PassRole::Finish,
-        context,
-    );
-
-    let stepover_after = op.stepover().expect("stepover must be set");
-    let ceiling = tool.diameter * STEPOVER_BACKOFF_DIAMETER_FRACTION;
-    assert!(
-        (stepover_after - ceiling).abs() < 1e-6,
-        "back-off must land on the ceiling ({ceiling} mm) when target is unreachable, got {stepover_after}"
-    );
-    let warning = warnings
-        .iter()
-        .find_map(|w| match w {
-            SuggestWarning::StepoverRaisedForRuntime {
-                raised_mm,
-                predicted_moves_at_raised,
-                iterations,
-                ..
-            } => Some((*raised_mm, *predicted_moves_at_raised, *iterations)),
-            SuggestWarning::PlungeClampedToFeed { .. }
-            | SuggestWarning::StepoverClampedToToolDiameter { .. }
-            | SuggestWarning::RoughingDepthClampedToRigidity { .. }
-            | SuggestWarning::DepthClampedToCuttingLength { .. }
-            | SuggestWarning::PlungeEntryUnstableAtDpp { .. }
-            | SuggestWarning::DppCappedByDeflection { .. }
-            | SuggestWarning::DeflectionBackoffUnmodeled { .. }
-            | SuggestWarning::DeflectionBackoffFigureIsAFloor { .. }
-            | SuggestWarning::FeedRaisedForChipload { .. }
-            | SuggestWarning::ChiploadStillLowAfterRecalibration { .. }
-            | SuggestWarning::StrategyRecommendedNotApplied { .. }
-            | SuggestWarning::AxialEnvelopeSafeBandEmpty { .. }
-            | SuggestWarning::AxialDocClampedByEnvelope { .. }
-            | SuggestWarning::AxialDocBelowBurnFloor { .. }
-            | SuggestWarning::ProjectCurveDepthInfeasible { .. }
-            | SuggestWarning::FinishEnvelopeAdvisory { .. }
-            | SuggestWarning::FeedRescaledToFinalGeometry { .. }
-            | SuggestWarning::FeedClampedToChiploadFloor { .. }
-            | SuggestWarning::PowerRecheckedAfterRescale { .. }
-            | SuggestWarning::CutGeometryFieldNotHeld { .. }
-            | SuggestWarning::EngagementReducedForAggressiveness { .. }
-            | SuggestWarning::RpmLoweredForFeedCeiling { .. }
-            | SuggestWarning::AggressivenessNotApplied { .. }
-            | SuggestWarning::RampFeed { .. }
-            | SuggestWarning::PlungeReDerived { .. } => None,
-        })
-        .expect("warning must still fire when bailing on the diameter-fraction ceiling");
-    let (raised_mm, predicted_moves_at_raised, iterations) = warning;
-    assert!(
-        (raised_mm - ceiling).abs() < 1e-6,
-        "warning.raised_mm must equal the ceiling when loop bails, got {raised_mm}"
-    );
-    assert!(
-        predicted_moves_at_raised > STEPOVER_BACKOFF_TARGET_MOVES,
-        "warning.predicted_moves_at_raised must still exceed target to signal an unmet gate, got {predicted_moves_at_raised}"
-    );
-    assert!(
-        iterations < STEPOVER_BACKOFF_MAX_ITERATIONS,
-        "loop must bail on ceiling, not on max-iterations cap (iterations={iterations}, max={STEPOVER_BACKOFF_MAX_ITERATIONS})"
-    );
-}
-
 /// **RE-BASELINED 2026-08-13 — Checkpoint J-1 (was
 /// `feed_recalibration_raises_feed_for_wanaka_back_rough_case`).**
 ///
@@ -2080,7 +1302,7 @@ fn retired_lift_leaves_wanaka_back_rough_feed_untouched() {
     });
 
     let initial_feed = op.feed_rate().expect("S11: the fixture sets it");
-    let warnings = enforce_invariants(
+    let warnings = fixed_chain(
         &mut op,
         &tool,
         &machine,
@@ -2204,7 +1426,7 @@ fn retired_lift_fires_no_cap_on_a_deflection_bound_fixture() {
                  [190, {DEFLECTION_BACKOFF_TARGET_UM:.0}) µm — retune tool.stickout"
         );
 
-        let warnings = enforce_invariants(
+        let warnings = fixed_chain(
             &mut op,
             &tool,
             &machine,
@@ -2284,7 +1506,7 @@ fn retired_lift_reports_no_max_feed_shortfall() {
         max_mm_per_tooth: 0.20,
     });
 
-    let warnings = enforce_invariants(
+    let warnings = fixed_chain(
         &mut op,
         &tool,
         &machine,
@@ -2362,7 +1584,7 @@ fn feed_recalibration_skipped_when_already_in_band() {
     });
 
     let initial_feed = op.feed_rate().expect("S11: the fixture sets it");
-    let warnings = enforce_invariants(
+    let warnings = fixed_chain(
         &mut op,
         &tool,
         &machine,
@@ -2432,7 +1654,7 @@ fn suggest_never_writes_entry_style() {
                     entry_style: style,
                     ..Adaptive3dConfig::default()
                 });
-                let warnings = enforce_invariants(
+                let warnings = fixed_chain(
                     &mut op,
                     &tool,
                     &machine,
@@ -2491,7 +1713,7 @@ fn clearing_strategy_recommendation_is_warn_only() {
         species: crate::material::WoodSpecies::HardMaple,
     };
 
-    let warnings = enforce_invariants(
+    let warnings = fixed_chain(
         &mut op,
         &tool,
         &machine,
@@ -2537,6 +1759,8 @@ fn clearing_strategy_recommendation_is_warn_only() {
         | SuggestWarning::RpmLoweredForFeedCeiling { .. }
         | SuggestWarning::AggressivenessNotApplied { .. }
         | SuggestWarning::RampFeed { .. }
+        | SuggestWarning::UnsourcedRowsAccepted { .. }
+        | SuggestWarning::OutsideEnvelope { .. }
         | SuggestWarning::PlungeReDerived { .. } => None,
     });
     let (current, recommended, reason) = recommended
@@ -2586,7 +1810,7 @@ fn clearing_strategy_recommendation_skips() {
         let material = Material::SolidWood {
             species: crate::material::WoodSpecies::HardMaple,
         };
-        enforce_invariants(
+        fixed_chain(
             &mut op,
             &tool,
             &machine,
@@ -2639,68 +1863,72 @@ fn clearing_strategy_recommendation_skips() {
     );
 }
 
-/// PRE-Phase-1 coverage net (architectural refactor T1): every
-/// operation's feeds hints must be an *explicit decision*. The
-/// implementation now lives in the registry-layer
-/// [`Capabilities::feeds_hints`] exhaustive match (T3 replaced
-/// the old `_ => (None, None, None)` wildcard here); this net stays
-/// as the independent baseline guarding both the table and the tuple
-/// adapter.
+/// PRE-Phase-1 coverage net (architectural refactor T1), updated by the
+/// feeds contract P5 (K2): every operation's calculator inputs are an
+/// *explicit decision*. Since P5 the calculator reads the operator's cut
+/// (`CutSpec::calc_inputs`): the stated depth, the stated width (the tool
+/// diameter for a slot) and the scallop target. The family default is the
+/// fallback only where the spec states no value.
 ///
 /// The expected table below is an exhaustive match over
 /// `OperationConfig` with **no wildcard arm** — adding a new
 /// operation fails to compile here, forcing the author to decide
-/// (and record) what hints the new op feeds the calculator. Changing
-/// an existing op's hint plumbing fails the assert instead of
-/// silently rerouting the feeds suggestion.
+/// (and record) what the new op feeds the calculator. Changing an
+/// existing op's inputs fails the assert instead of silently rerouting
+/// the feeds suggestion.
 #[test]
 fn operation_feeds_hints_is_an_explicit_per_op_decision() {
     use crate::compute::catalog::OperationType;
+    // The tool diameter of the probe. A slot reads it as its width.
+    let d = 6.0;
+    let positive = |v: Option<f64>| v.filter(|v| *v > 0.0);
 
     for &op_type in OperationType::ALL {
         let config = OperationConfig::new_default(op_type);
-        let actual = operation_feeds_hints(&config);
+        let actual = operation_feeds_hints(&config, d);
 
         #[expect(clippy::match_same_arms, reason = "one arm per op = the point")]
         let expected: (Option<f64>, Option<f64>, Option<f64>) = match &config {
-            // Ops that feed operation-specific hints into the
-            // calculator (axial, radial, scallop):
-            OperationConfig::Scallop(cfg) => (None, None, Some(cfg.scallop_height)),
-            OperationConfig::UnifiedFinish(cfg) => (None, None, Some(cfg.scallop_height)),
-            OperationConfig::DropCutter(cfg) => (None, None, cfg.scallop_height),
-            OperationConfig::Waterline(cfg) => (Some(cfg.z_step), None, None),
-            OperationConfig::SteepShallow(cfg) => (Some(cfg.z_step), None, None),
-            OperationConfig::VCarve(cfg) => (cfg.max_depth, None, None),
-            OperationConfig::RampFinish(cfg) => (Some(cfg.max_stepdown), None, None),
-            // Ops that have explicitly DECIDED to provide no hints —
-            // the calculator falls back to LUT/diameter-factor
-            // defaults. Listed individually (not `_`) so each is a
-            // recorded decision:
-            OperationConfig::Face(_) => (None, None, None),
-            OperationConfig::Pocket(_) => (None, None, None),
-            OperationConfig::Profile(_) => (None, None, None),
-            OperationConfig::Adaptive(_) => (None, None, None),
-            OperationConfig::Inlay(_) => (None, None, None),
-            OperationConfig::InlayPlug(_) => (None, None, None),
-            OperationConfig::Zigzag(_) => (None, None, None),
-            OperationConfig::Trace(_) => (None, None, None),
+            OperationConfig::Face(c) => (Some(c.depth_per_pass), Some(c.stepover), None),
+            OperationConfig::Pocket(c) => (Some(c.depth_per_pass), Some(c.stepover), None),
+            OperationConfig::Profile(c) => (Some(c.depth_per_pass), Some(d), None),
+            OperationConfig::Adaptive(c) => (Some(c.depth_per_pass), Some(c.stepover), None),
+            OperationConfig::VCarve(c) => (positive(c.max_depth), None, None),
+            OperationConfig::Inlay(c) => (positive(c.pocket_depth), None, None),
+            OperationConfig::InlayPlug(c) => (Some(c.depth_per_pass), None, None),
+            OperationConfig::Zigzag(c) => (Some(c.depth_per_pass), Some(c.stepover), None),
+            OperationConfig::Trace(c) => (Some(c.depth_per_pass), Some(d), None),
             OperationConfig::Drill(_) => (None, None, None),
-            OperationConfig::Bore(_) => (None, None, None),
+            OperationConfig::Bore(_) => (None, Some(d), None),
             OperationConfig::Chamfer(_) => (None, None, None),
-            OperationConfig::Adaptive3d(_) => (None, None, None),
-            OperationConfig::Pencil(_) => (None, None, None),
-            OperationConfig::SpiralFinish(_) => (None, None, None),
+            OperationConfig::DropCutter(c) => match c.scallop_height {
+                Some(h) => (None, None, Some(h)),
+                None => (None, Some(c.stepover), None),
+            },
+            OperationConfig::Adaptive3d(c) => (Some(c.depth_per_pass), Some(c.stepover), None),
+            OperationConfig::Waterline(c) => (Some(c.z_step), None, None),
+            OperationConfig::Pencil(c) => {
+                if c.num_offset_passes > 1 {
+                    (None, Some(c.offset_stepover), None)
+                } else {
+                    (None, None, None)
+                }
+            }
+            OperationConfig::Scallop(c) => (None, None, Some(c.scallop_height)),
+            OperationConfig::UnifiedFinish(c) => (Some(c.z_step), None, Some(c.scallop_height)),
+            OperationConfig::SteepShallow(c) => (Some(c.z_step), Some(c.stepover), None),
+            OperationConfig::RampFinish(c) => (Some(c.max_stepdown), None, None),
+            OperationConfig::SpiralFinish(c) => (None, Some(c.stepover), None),
             OperationConfig::RadialFinish(_) => (None, None, None),
-            OperationConfig::HorizontalFinish(_) => (None, None, None),
-            OperationConfig::ProjectCurve(_) => (None, None, None),
+            OperationConfig::HorizontalFinish(c) => (None, Some(c.stepover), None),
+            OperationConfig::ProjectCurve(c) => (positive(c.depth), Some(d), None),
             OperationConfig::AlignmentPinDrill(_) => (None, None, None),
         };
 
         assert_eq!(
             actual, expected,
             "{op_type:?}: operation_feeds_hints changed — update \
-                 operation_feeds_hints AND this expected table deliberately \
-                 (this net guards the suggest.rs (None,None,None) wildcard)"
+                 CutSpec::calc_inputs AND this expected table deliberately"
         );
     }
 }

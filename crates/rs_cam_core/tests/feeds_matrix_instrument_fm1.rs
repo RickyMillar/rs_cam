@@ -300,6 +300,42 @@ fn add_time_op(op: OperationType, stock: &StockContext) -> OperationConfig {
     operation
 }
 
+/// The three K2b columns of a cell (feeds contract P5): the limit that
+/// lowers the proposal below the operator's point (empty when none does),
+/// and the proposal's depth and width.
+fn envelope_columns(
+    op: OperationType,
+    tool: &ToolConfig,
+    machine: &MachineProfile,
+    material: &Material,
+    stock: &StockContext,
+) -> [String; 3] {
+    let operation = add_time_op(op, stock);
+    match rs_cam_core::feeds::envelope::SafeEnvelope::for_cut(
+        rs_cam_core::feeds::envelope::EnvelopeInput {
+            operation: &operation,
+            tool,
+            machine,
+            material,
+            lut: &EMBEDDED_LUT,
+            spindle_strategy: SpindleStrategy::default(),
+            context: SuggestContext::default(),
+        },
+    ) {
+        Ok(env) => {
+            let p = env.proposal.get();
+            [
+                env.proposal_binding
+                    .map(|k| format!("{k:?}"))
+                    .unwrap_or_default(),
+                num(Some(p.ap_mm)),
+                num(Some(p.ae_mm)),
+            ]
+        }
+        Err(e) => [format!("refused: {e}"), String::new(), String::new()],
+    }
+}
+
 // ── CSV helpers (formatting only) ───────────────────────────────────────
 
 /// Quote a field when it holds a comma, a quote or a line break.
@@ -372,6 +408,8 @@ fn entry_columns(s: &SuggestedParams) -> [String; 6] {
         | SuggestWarning::EngagementReducedForAggressiveness { .. }
         | SuggestWarning::RpmLoweredForFeedCeiling { .. }
         | SuggestWarning::AggressivenessNotApplied { .. }
+        | SuggestWarning::UnsourcedRowsAccepted { .. }
+        | SuggestWarning::OutsideEnvelope { .. }
         | SuggestWarning::PlungeReDerived { .. } => None,
     });
     let arm = record.map_or_else(String::new, |(record, _)| record.arm_name().to_owned());
@@ -471,6 +509,10 @@ const MATRIX_HEADER: &[&str] = &[
     "ramp_feed_mm_min",
     "ramp_arm",
     "entry_notes",
+    // K2b (feeds contract P5): the safe envelope of the cell's op.
+    "binding_limit",
+    "proposal_ap_mm",
+    "proposal_ae_mm",
 ];
 
 fn support_columns(s: &FeedsSupport) -> (String, String) {
@@ -700,6 +742,7 @@ fn walk_matrix(
                             ));
                             fields.extend(force_line_columns(material, None, &tool));
                             fields.extend(std::iter::repeat_n(String::new(), 6));
+                            fields.extend(std::iter::repeat_n(String::new(), 3));
                             cells.push(Cell {
                                 kind,
                                 op,
@@ -820,6 +863,7 @@ fn walk_matrix(
                             fields.extend(cap_columns(machine, &s.operation, &tool));
                             fields.extend(force_line_columns(material, Some(&s.operation), &tool));
                             fields.extend(entry_columns(&s));
+                            fields.extend(envelope_columns(op, &tool, machine, material, &stock));
                             cells.push(Cell {
                                 kind,
                                 op,

@@ -684,6 +684,7 @@ impl<B: ComputeBackend> AppController<B> {
             planned: _,
             modulated,
             picks_dropped: _,
+            feeds_warnings: _,
         } = effects;
         let stored_trace = self
             .state

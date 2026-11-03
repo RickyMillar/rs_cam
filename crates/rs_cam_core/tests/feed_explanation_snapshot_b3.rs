@@ -140,7 +140,7 @@
 //! under parallel / finish as an assignment. A third `FAMILY_RULES` entry
 //! (`feeds/extrapolation/family.rs`, home (Parallel, Finish), serves
 //! Contour, Scallop and Trace) carries the printed Ø1 row to Scallop. So
-//! the old Scallop query matches [`PREMISE_ROW`], `Exact`, with the band
+//! the old Scallop query matches [`V8_ROW`], `Exact`, with the band
 //! printed x 25.4 (`amana_zrn_3d_v8.txt:9`), and the gate gives it the
 //! Parallel verdict. [`the_old_scallop_premise_ships_the_printed_tip_row`]
 //! pins that, and keeps a refusal pin for the same Ø1 tip in plywood,
@@ -191,6 +191,32 @@
 //! gate put it 12.4x further under. The conversion moved the reading to
 //! the correct unit; it did not move it to the correct side, because on
 //! this row both readings are on the low side.
+//!
+//! ## RE-PREMISED 2026-11-03: the Q3 winner (feeds contract P5)
+//!
+//! Operator ruling Q3 (P5, D2): on a tie after the score, the diameter, the
+//! transfer and the series rules, the lower printed chip wins, and the
+//! winner names the other row in `tied_with`. G1 orchestrator decision 5
+//! reversed by operator ruling Q3. On the Parallel premise the Amana ZrN
+//! v8 row ties with `spetool-tapered-hardwood-parallel-1000-2f` (both 1825),
+//! and the SpeTool row prints the lower chip, one value 0.001 in = 0.0254
+//! mm (`spetool_tapered.json`). So [`PREMISE_ROW`] is now the SpeTool row.
+//! A2 holds one printed value as a point: the band has no floor and its
+//! ceiling is 0.0254, source `VendorLutPointPreset`. The fixture's numbers
+//! do not move:
+//!
+//! | | Parallel, Amana v8 (to P5) | Parallel, SpeTool point (P5) |
+//! |---|---:|---:|
+//! | band | 0.01905–0.0508 | **none–0.0254** |
+//! | achieved 0.009153 | 48.0 % of MIN | **36.0 % of MAX**, no floor |
+//! | verdict | `Within` + burn advisory | **`Within` + burn advisory** |
+//! | commanded 0.0714 vs band max | 1.41x | **2.81x** |
+//!
+//! The Scallop query does not tie: the SpeTool row is not a candidate there
+//! (no family rule transfers it), and it reads the Amana v8 row through
+//! the v8 rule, with the printed band. So one Ø1 tapered tool reads two
+//! rows by finish family, and each verdict uses its own band. The lead
+//! names this an open data question (2026-11-03). Test 8 pins the split.
 //!
 //! A hand-checked arithmetic identity is not evidence a gate change can be
 //! re-measured against. This file re-derives the same identity **through
@@ -315,8 +341,18 @@ const OPERATION_KIND: OperationType = OperationType::DropCutter;
 const OPERATION_FAMILY: LutOperationFamily = LutOperationFamily::Parallel;
 const PASS_ROLE: LutPassRole = LutPassRole::Finish;
 
-/// The row the new premise matches.
-const PREMISE_ROW: &str = "amana-tapered-hardwood-parallel-1000-2f-zrn-v8";
+/// The row the new premise matches: the Q3 winner (P5, see the module
+/// header).
+const PREMISE_ROW: &str = "spetool-tapered-hardwood-parallel-1000-2f";
+
+/// The Amana ZrN v8 row. It ties with [`PREMISE_ROW`] on Parallel, and
+/// the v8 rule serves it to Scallop.
+const V8_ROW: &str = "amana-tapered-hardwood-parallel-1000-2f-zrn-v8";
+
+/// The SpeTool printed chip load per tooth, inches: one value, `0.001`
+/// (`data/vendor_lut/observations/spetool_tapered.json`, source_page
+/// "CHIPLOAD 0.001").
+const SPETOOL_PRINTED_IN: f64 = 0.001;
 
 /// Printed chip load per tooth, inches: `0.00075" - 0.002"`,
 /// `crates/rs_cam_core/data/vendor_lut/sources/amana_zrn_3d_v8.txt:9`
@@ -856,6 +892,8 @@ fn the_gate_observation_reconciles_to_the_two_labelled_stages() {
     // raw transfer ratio is 1.0 and the row is not extrapolated. The band
     // is the printed band, to the last digit.
     assert_eq!(e.row_id, PREMISE_ROW, "the premise row must match");
+    // RE-PREMISED 2026-11-03 (P5, Q3): the row is the SpeTool point, so
+    // the band below is a ceiling with no floor (module header).
     assert!(
         !e.extrapolated,
         "a row printed at the tip is not extrapolated (d-scale {}, h-scale {})",
@@ -867,20 +905,21 @@ fn the_gate_observation_reconciles_to_the_two_labelled_stages() {
         e.diameter_scale,
         e.hardness_scale
     );
-    let printed_min = PRINTED_MIN_IN * MM_PER_IN;
-    let printed_max = PRINTED_MAX_IN * MM_PER_IN;
+    // RE-PREMISED 2026-11-03 (P5, Q3). This read the Amana v8 band
+    // 0.00075"-0.002" = 0.01905-0.0508 mm, source `VendorLutMissingAe`.
+    // The SpeTool row prints one value, held as a point (A2).
+    let printed_point = SPETOOL_PRINTED_IN * MM_PER_IN;
     assert!(
-        (e.band_min_mm.expect("the printed row has a floor") / printed_min - 1.0).abs() < 1e-12
-            && (e.band_max_mm / printed_max - 1.0).abs() < 1e-12,
-        "the gate band must be the printed 0.00075\"-0.002\" = {printed_min}-{printed_max} mm \
-         (amana_zrn_3d_v8.txt:9; no scale, no depth de-rate at DOC/D 0.37); got {:?}-{}",
+        e.band_min_mm.is_none() && (e.band_max_mm / printed_point - 1.0).abs() < 1e-12,
+        "the gate band must be the printed point 0.001\" = {printed_point} mm as a ceiling \
+         with no floor (no scale, no depth de-rate at DOC/D 0.37); got {:?}-{}",
         e.band_min_mm,
         e.band_max_mm
     );
     assert_eq!(
         e.bounds_source,
-        ChipBoundsSource::VendorLutMissingAe,
-        "the printed row has no ae window (chipload.rs:650-651), so its low side is advisory"
+        ChipBoundsSource::VendorLutPointPreset,
+        "one printed value is a point (A2), so the low side has no printed floor"
     );
 
     // ── THE FLIP ────────────────────────────────────────────────────
@@ -927,50 +966,66 @@ fn the_gate_observation_reconciles_to_the_two_labelled_stages() {
     // fires. The finding moves with the band: the conversion put the
     // reading on the vendor's axis; on this row that axis says "too slow".
     // The side the pre-conversion reading took is kept below.
-    let band_min = e.band_min_mm.expect("row publishes a floor");
+    //
+    // RE-PREMISED 2026-11-03 (P5, Q3). The assertions above read the
+    // observation at 48.0 % of the Amana v8 floor 0.01905. The SpeTool
+    // point has no floor, so the position is read against its ceiling:
+    //     0.0714 x 0.1282 / 0.0254 = 36.0 % of MAX.
+    // The verdict stays `Within` and the burn advisory still fires.
+    assert!(
+        e.band_min_mm.is_none(),
+        "the point row prints no floor: {:?}",
+        e.band_min_mm
+    );
     let of_max = e.gate_observed_mm / e.band_max_mm;
-    let of_min = e.gate_observed_mm / band_min;
     assert_eq!(
         e.verdict_label,
         "Within",
-        "the operation is at {:.1} % of its band MINIMUM ({band_min:.6}); the low side of \
-         a row with no ae window is advisory, so the verdict must stay Within",
-        100.0 * of_min,
+        "the operation is at {:.1} % of its printed point ceiling ({:.6}), so the verdict \
+         must stay Within",
+        100.0 * of_max,
+        e.band_max_mm,
     );
     assert!(
         e.burn_advisory,
-        "the observation {:.9} is under the printed floor {band_min:.9}, so the demoted \
-         low-side trip must surface as a burn advisory (F3.3)",
+        "the observation {:.9} is low, so the burn advisory must surface (F3.3)",
         e.gate_observed_mm
     );
-    let expected_of_min = COMMANDED_FEED_MM_MIN / (f64::from(RPM) * f64::from(FLUTES))
+    let expected_of_max = COMMANDED_FEED_MM_MIN / (f64::from(RPM) * f64::from(FLUTES))
         * PREDICTED_FEED_FRACTION
-        / (PRINTED_MIN_IN * MM_PER_IN);
+        / (SPETOOL_PRINTED_IN * MM_PER_IN);
     assert!(
-        (of_min / expected_of_min - 1.0).abs() < 1e-9 && of_min < 1.0 && of_max < 1.0,
-        "observed {:.9} must sit at 0.0714 x 0.1282 / 0.01905 = {:.4} of the printed \
-         floor, under the band {band_min:.6}..{:.6}; got {of_min:.6} of min, {of_max:.6} of max",
+        (of_max / expected_of_max - 1.0).abs() < 1e-9 && of_max < 1.0,
+        "observed {:.9} must sit at 0.0714 x 0.1282 / 0.0254 = {:.4} of the printed \
+         point {:.6}; got {of_max:.6} of max",
         e.gate_observed_mm,
-        expected_of_min,
+        expected_of_max,
         e.band_max_mm,
     );
 
     // And the size of what was deleted, on the recorded row, as a number.
     let pre = e.pre_conversion_gate_observation();
     eprintln!(
-        "  FLIP: pre-conversion observed {pre:.9} = {:.1} % of band MIN {band_min:.6}; \
-         post-conversion observed {:.9} = {:.1} % of band MIN (Within + BURN advisory). \
+        "  FLIP: pre-conversion observed {pre:.9} = {:.1} % of the point {:.6}; \
+         post-conversion observed {:.9} = {:.1} % of it (Within + BURN advisory). \
          Deleted factor {:.6}x, read off the recorded row {RECORDED_ROW}. On the Scallop \
          premise (to 42192d6e) the post-conversion reading sat at 79 % of a \
-         0.005763-0.011525 band; on the printed Ø1 band both readings are under the floor.",
-        100.0 * pre / band_min,
+         0.005763-0.011525 band; on the Amana v8 band (to P5) both readings were under \
+         the floor 0.01905.",
+        100.0 * pre / e.band_max_mm,
+        e.band_max_mm,
         e.gate_observed_mm,
-        100.0 * of_min,
+        100.0 * of_max,
         e.lut_arc_factor,
     );
+    // RE-PREMISED 2026-11-03 (P5, Q3). This read `pre < band_min`: the
+    // pre-conversion reading sat under the Amana v8 floor. The point row
+    // has no floor; the exhibit now holds against the Amana v8 printed
+    // floor by number, and the conversion raised the reading.
     assert!(
-        pre < band_min,
-        "the exhibit only holds if the pre-conversion reading really was below the floor"
+        pre < PRINTED_MIN_IN * MM_PER_IN && pre < e.gate_observed_mm,
+        "the exhibit only holds if the pre-conversion reading really was below the v8 floor \
+         and below the converted reading"
     );
 }
 
@@ -1111,15 +1166,28 @@ fn the_gate_observation_and_the_band_are_now_the_same_quantity() {
     // assertions above) does not depend on the band; the side does. The
     // assertion below states the side the printed band gives, at its
     // exact position.
-    let min = e.band_min_mm.expect("row publishes a floor");
+    //
+    // RE-PREMISED 2026-11-03 (P5, Q3). This read the observation UNDER the
+    // Amana v8 floor 0.01905, at 0.0714 x 0.1282 / 0.01905 of it. The
+    // premise row is now the SpeTool point (module header): no floor. The
+    // side is now stated against the v8 floor by number, and the position
+    // against the point ceiling.
+    let min = PRINTED_MIN_IN * MM_PER_IN;
     let expected = e.commanded_fpt_mm * e.predicted_feed_factor;
     assert!(
+        e.band_min_mm.is_none(),
+        "the point row prints no floor: {:?}",
+        e.band_min_mm
+    );
+    assert!(
         e.gate_observed_mm < min
-            && (e.gate_observed_mm / min - expected / (PRINTED_MIN_IN * MM_PER_IN)).abs() < 1e-9,
-        "on the printed Ø1 band the observation {:.9} must sit UNDER the floor {min:.9}, at \
-         0.0714 x 0.1282 / 0.01905 = {:.4} of it",
+            && (e.gate_observed_mm / e.band_max_mm - expected / (SPETOOL_PRINTED_IN * MM_PER_IN))
+                .abs()
+                < 1e-9,
+        "the observation {:.9} must sit under the v8 floor {min:.9} and at \
+         0.0714 x 0.1282 / 0.0254 = {:.4} of the point ceiling",
         e.gate_observed_mm,
-        expected / (PRINTED_MIN_IN * MM_PER_IN)
+        expected / (SPETOOL_PRINTED_IN * MM_PER_IN)
     );
     // RE-PINNED 2026-08-06 (laws). This read
     //     assert!(e.gate_observed_mm > e.band_max_mm,
@@ -1174,12 +1242,17 @@ fn the_commanded_feed_per_tooth_is_never_compared_to_the_band() {
     // 0.0714 is 0.0714 / 0.0508 = 1.4055x over it. The claim keeps its
     // property (the commanded advance is over the band maximum) and is now
     // pinned at the exact printed ratio, so it cannot drift either way.
-    let expected_overshoot =
-        COMMANDED_FEED_MM_MIN / (f64::from(RPM) * f64::from(FLUTES)) / (PRINTED_MAX_IN * MM_PER_IN);
+    //
+    // RE-PREMISED 2026-11-03 (P5, Q3): the ceiling is the SpeTool point
+    // 0.001" = 0.0254 mm, so the overshoot is 0.0714 / 0.0254 = 2.8110x
+    // (was 1.4055x over the Amana v8 0.0508).
+    let expected_overshoot = COMMANDED_FEED_MM_MIN
+        / (f64::from(RPM) * f64::from(FLUTES))
+        / (SPETOOL_PRINTED_IN * MM_PER_IN);
     assert!(
         overshoot > 1.0 && (overshoot / expected_overshoot - 1.0).abs() < 1e-9,
         "the fixture must reproduce a commanded feed-per-tooth above the band max, at \
-         0.0714 / 0.0508 = {expected_overshoot:.4}x, or the missing comparison has nothing to \
+         0.0714 / 0.0254 = {expected_overshoot:.4}x, or the missing comparison has nothing to \
          surface; got {overshoot}x"
     );
     // This assertion has now been written three ways, and the third is
@@ -1411,14 +1484,16 @@ fn the_two_doc_ratio_diameters_only_diverge_for_v_bit_geometry() {
 /// "parallel / finish is an assignment" (the row notes,
 /// `amana_zrn_tapered_v8.json`). The v8 family rule
 /// (`feeds::extrapolation::FAMILY_RULES`, home (Parallel, Finish), serves
-/// Contour, Scallop and Trace) carries [`PREMISE_ROW`] to Scallop. So the
+/// Contour, Scallop and Trace) carries [`V8_ROW`] to Scallop. So the
 /// old premise now reads the printed tip row:
 ///
-/// - row [`PREMISE_ROW`], size basis `Exact` (row Ø1.0 = the tip key of
+/// - row [`V8_ROW`], size basis `Exact` (row Ø1.0 = the tip key of
 ///   ruling A1), family basis `Transferred` from (Parallel, Finish);
 /// - band = printed x 25.4 = 0.01905-0.0508 mm
-///   (`data/vendor_lut/sources/amana_zrn_3d_v8.txt:9`), the band of the
-///   Parallel premise, so the gate gives the Parallel verdict.
+///   (`data/vendor_lut/sources/amana_zrn_3d_v8.txt:9`). Until P5 this was
+///   the band of the Parallel premise, so the gate gave the Parallel
+///   verdict. Since P5 (Q3) the Parallel premise reads the SpeTool point,
+///   so the two verdicts differ and each uses its own band.
 ///
 /// The size rule did not move. A Ø1 tip whose only row is more than 2x its
 /// size still refuses: in Baltic birch plywood the v8 chart prints no row
@@ -1456,9 +1531,40 @@ fn the_old_scallop_premise_ships_the_printed_tip_row() {
         OPERATION_FAMILY,
         PASS_ROLE,
     );
+    // RE-PREMISED 2026-11-03 (P5, Q3). This read
+    //     assert_eq!(scallop, parallel, "one printed row and one band: ...");
+    // Parallel now reads the Q3 winner (the SpeTool point) and Scallop the
+    // Amana v8 transfer: two rows, and each verdict uses its own band.
+    let bounds = |v: &ChiploadVerdict| match v {
+        ChiploadVerdict::Within {
+            approach_to_max, ..
+        } => approach_to_max.bounds.clone(),
+        other => panic!("expected Within, got {other:?}"),
+    };
+    let (scallop_bounds, parallel_bounds) = (bounds(&scallop), bounds(&parallel));
+    assert!(
+        (scallop_bounds
+            .min_mm_per_tooth
+            .expect("the v8 row prints a minimum")
+            - PRINTED_MIN_IN * MM_PER_IN)
+            .abs()
+            < 1e-12
+            && (scallop_bounds.max_mm_per_tooth - PRINTED_MAX_IN * MM_PER_IN).abs() < 1e-12,
+        "Scallop judges on the v8 band: {scallop_bounds:?}"
+    );
+    assert!(
+        parallel_bounds.min_mm_per_tooth.is_none()
+            && (parallel_bounds.max_mm_per_tooth - SPETOOL_PRINTED_IN * MM_PER_IN).abs() < 1e-12
+            && parallel_bounds.source == ChipBoundsSource::VendorLutPointPreset,
+        "Parallel judges on the SpeTool point: {parallel_bounds:?}"
+    );
+    let parallel_row = matched_row_for(&tool(), TIP_DIAMETER_MM, OPERATION_FAMILY, PASS_ROLE)
+        .expect("the Parallel premise reads a row");
+    assert_eq!(parallel_row.observation_id, PREMISE_ROW);
     assert_eq!(
-        scallop, parallel,
-        "one printed row and one band: the Scallop verdict must be the Parallel verdict"
+        parallel_row.tied_with.as_ref().map(|r| r.id()),
+        Some(V8_ROW),
+        "the Q3 winner names the other row"
     );
 
     let tool = tool();
@@ -1469,7 +1575,7 @@ fn the_old_scallop_premise_ships_the_printed_tip_row() {
     );
     let row = matched_row_for(&tool, key, LutOperationFamily::Scallop, LutPassRole::Finish)
         .expect("the v8 family rule serves the printed tip row to Scallop");
-    assert_eq!(row.observation_id, PREMISE_ROW);
+    assert_eq!(row.observation_id, V8_ROW);
     assert_eq!(
         row.size_basis,
         SizeBasis::Exact,
@@ -1487,7 +1593,7 @@ fn the_old_scallop_premise_ships_the_printed_tip_row() {
         claim.query,
         (LutOperationFamily::Scallop, LutPassRole::Finish)
     );
-    assert_eq!(claim.source_rows, vec![PREMISE_ROW.to_owned()]);
+    assert_eq!(claim.source_rows, vec![V8_ROW.to_owned()]);
     let band_min = row.chip_load_min_mm.expect("the row prints a minimum");
     let band_max = row.chip_load_max_mm.expect("the row prints a maximum");
     assert!(

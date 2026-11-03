@@ -57,10 +57,35 @@ const SHANK_MM: f64 = 6.0;
 const DEPTH_MM: f64 = 2.0;
 const RPM: u32 = 18_000;
 const FLUTES: u32 = 2;
-/// The printed row that answers: Amana ZrN v8, 1.0 mm tip, 2 flutes.
-const ROW_ID: &str = "amana-tapered-hardwood-parallel-1000-2f-zrn-v8";
-/// That row's printed maximum (0.002 in/tooth).
-const ROW_MAX_MM: f64 = 0.0508;
+/// The printed row that answers: SpeTool, 1.0 mm tip, 2 flutes. Operator
+/// ruling Q3 (feeds contract P5, D2): it ties with the Amana ZrN v8 row
+/// after the score, the diameter, the transfer and the series rules, and
+/// the lower printed chip wins. This reverses G1 orchestrator decision 5.
+const ROW_ID: &str = "spetool-tapered-hardwood-parallel-1000-2f";
+/// The row it ties with, which `tied_with` names.
+const TIED_ROW_ID: &str = "amana-tapered-hardwood-parallel-1000-2f-zrn-v8";
+
+/// The printed maximum of a row (mm/tooth), read from the shipped table.
+fn printed_max_mm(id: &str) -> f64 {
+    embedded_vendor_lut()
+        .observations
+        .iter()
+        .find(|o| o.observation_id == id)
+        .expect("the row is in the shipped table")
+        .chipload_max_mm_tooth
+        .expect("the row prints a maximum")
+}
+
+/// The printed tip diameter of a row (mm), read from the shipped table.
+fn printed_diameter_mm(id: &str) -> f64 {
+    embedded_vendor_lut()
+        .observations
+        .iter()
+        .find(|o| o.observation_id == id)
+        .expect("the row is in the shipped table")
+        .diameter_mm
+        .expect("the row prints a diameter")
+}
 
 fn tool_config() -> ToolConfig {
     let mut t = ToolConfig::new_default(ToolId::from_raw(1), ToolType::TaperedBallNose);
@@ -218,6 +243,19 @@ fn a_tapered_row_is_read_at_the_tip_a1() {
     assert_eq!(recipe_row.observation_id, ROW_ID);
     assert_eq!(band.observation_id, ROW_ID);
     assert!((band.row_diameter_mm - TIP_MM).abs() < 1e-12);
+    // Q3: the winner names the row it tied with. Both rows print the chip
+    // at the same 1.0 mm tip, so the tip read holds on either row.
+    assert_eq!(
+        recipe_row.tied_with.as_ref().map(|r| r.id()),
+        Some(TIED_ROW_ID),
+        "the Q3 winner names the other row"
+    );
+    assert!((recipe_row.row_diameter_mm - TIP_MM).abs() < 1e-12);
+    assert!((printed_diameter_mm(TIED_ROW_ID) - TIP_MM).abs() < 1e-12);
+    assert!(
+        printed_max_mm(ROW_ID) < printed_max_mm(TIED_ROW_ID),
+        "Q3: the winner prints the lower chip"
+    );
     assert!(
         (band.diameter_scale - 1.0).abs() < 1e-12,
         "the key is the row's own tip, so no diameter scale applies: {}",
@@ -229,8 +267,9 @@ fn a_tapered_row_is_read_at_the_tip_a1() {
     let cap = depth_cap_diameter_mm(&cutter, DEPTH_MM);
     assert!((ladder - cone_mm).abs() < 1e-9, "{ladder} vs {cone_mm}");
     assert!((cap - cone_mm).abs() < 1e-9, "{cap} vs {cone_mm}");
-    let on_cone = ROW_MAX_MM * doc_derating_scale(DEPTH_MM / cone_mm);
-    let on_tip = ROW_MAX_MM * doc_derating_scale(DEPTH_MM / TIP_MM);
+    let row_max_mm = printed_max_mm(ROW_ID);
+    let on_cone = row_max_mm * doc_derating_scale(DEPTH_MM / cone_mm);
+    let on_tip = row_max_mm * doc_derating_scale(DEPTH_MM / TIP_MM);
     assert!(
         (on_cone - on_tip).abs() > 1e-3,
         "vacuous: the two de-rates must differ at this depth ({on_cone} vs {on_tip})"

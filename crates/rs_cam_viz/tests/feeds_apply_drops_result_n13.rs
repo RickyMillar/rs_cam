@@ -15,7 +15,7 @@
 //! G-FRESHSTATE closed for the GUI inspector, on the door the inspector does
 //! not use.
 //!
-//! One objection this file answers directly: an `ApplyScope::Speeds` apply
+//! One objection this file answers directly: a speeds apply (no pick)
 //! "does not change the cut", so it looks safe to keep the result. It is not.
 //! The feed word is baked into the generated motion, so a stale result emits
 //! the old `F` value from a program the operator believes carries the new
@@ -418,15 +418,13 @@ fn apply_feeds_project_drops_every_written_result_n13() {
 /// of the emitted motion, so the cached result is wrong all the same.
 #[test]
 fn agent_apply_feeds_drops_the_cached_result_n13() {
-    use rs_cam_core::feeds::suggest::ApplyScope;
-
     let mut controller = build_controller();
     assert_fixture_is_generated(&controller);
     let before = feed_at(&controller, 0);
     let id = id_at(&controller, 0);
 
     let _ = controller
-        .apply_feeds_recommendation(id, ApplyScope::Speeds)
+        .apply_feeds_recommendation(id, None)
         .expect("a Pocket on a flat end mill is a runnable pairing");
 
     assert_ne!(

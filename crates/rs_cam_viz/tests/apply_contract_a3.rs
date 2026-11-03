@@ -462,6 +462,11 @@ fn refused_pairing_with_a_geometry_dial_takes_no_write() {
 /// **exactly** the panel's speeds-apply plus the panel's cut-geometry apply.
 /// One recommendation, one funnel, two spellings of the same result.
 ///
+/// **Feeds contract P5 (K2b, ruling Q4):** `⚡ Apply all` is the apply of
+/// the envelope's proposal. The panel row it must equal is the ⚡ dry run of
+/// that pick (`preview_field_applies`), the numbers the recommended column
+/// prints; the speeds apply still writes no cut.
+///
 /// The plunge column of that table reads **793** from T-9 (`6a9330dc`)
 /// onward, which floors the plunge instead of rounding it to the nearest;
 /// `pocket_fixture_recipe_fingerprint_is_unmoved` carries the reason. This
@@ -477,16 +482,16 @@ fn modal_apply_all_writes_what_the_panel_writes() {
         "fixture op must carry both cut-geometry dials"
     );
 
-    // Panel: both buttons, on a clone of the same operation.
-    let mut panel_op = before.clone();
-    let mut panel_prov = rs_cam_core::feeds::FeedsProvenance::default();
+    // Feeds contract P5 (K2b): the panel's speeds apply writes no cut.
     let tool = tool_of(&controller);
     let session_machine = controller.state.session().machine().clone();
     let session_material = controller.state.session().stock_config().material.clone();
     let pass_role = before.feeds_style().1;
+    let mut speeds_op = before.clone();
+    let mut speeds_prov = rs_cam_core::feeds::FeedsProvenance::default();
     rs_cam_core::feeds::suggest::apply_speeds_to_op(
-        &mut panel_op,
-        &mut panel_prov,
+        &mut speeds_op,
+        &mut speeds_prov,
         &recipe,
         &tool,
         &session_machine,
@@ -494,19 +499,8 @@ fn modal_apply_all_writes_what_the_panel_writes() {
         pass_role,
         rs_cam_core::feeds::suggest::SuggestContext::default(),
     );
-    let speeds_only_woc = panel_op.stepover();
-    let speeds_only_doc = panel_op.depth_per_pass();
-    rs_cam_core::feeds::suggest::apply_cut_geometry_to_op(
-        &mut panel_op,
-        &mut panel_prov,
-        &recipe,
-        &tool,
-        &session_machine,
-        &session_material,
-        pass_role,
-        rs_cam_core::feeds::suggest::SuggestContext::default(),
-    );
-
+    let speeds_only_woc = speeds_op.stepover();
+    let speeds_only_doc = speeds_op.depth_per_pass();
     // The panel's speeds-apply still keeps its own promise.
     assert_eq!(
         speeds_only_woc,
@@ -518,6 +512,30 @@ fn modal_apply_all_writes_what_the_panel_writes() {
         before.depth_per_pass(),
         "the panel's speeds-apply moved DOC — that contract is supposed to be speed-only"
     );
+    // The panel's `⚡ Apply all` row: the dry run of the proposal pick, the
+    // numbers the recommended column prints (G-RECOMAPPLIED).
+    let previews = rs_cam_core::feeds::suggest::preview_field_applies(
+        &before,
+        &tool,
+        &session_machine,
+        &session_material,
+        rs_cam_core::feeds::embedded_vendor_lut(),
+        controller.state.session().post_config().spindle_strategy,
+        rs_cam_core::feeds::suggest::SuggestContext::default(),
+    );
+    let mut panel_op = before;
+    for field in [
+        rs_cam_core::feeds::FeedsField::FeedRate,
+        rs_cam_core::feeds::FeedsField::PlungeRate,
+        rs_cam_core::feeds::FeedsField::SpindleRpm,
+        rs_cam_core::feeds::FeedsField::Stepover,
+        rs_cam_core::feeds::FeedsField::DepthPerPass,
+    ] {
+        if let Some(p) = previews.get(field) {
+            let mut scratch = rs_cam_core::feeds::FeedsProvenance::default();
+            p.write_to(&mut panel_op, &mut scratch);
+        }
+    }
 
     // Modal: `⚡ Apply all` through the real handler.
     let id = id_at(&controller, 0);
@@ -612,30 +630,31 @@ fn surviving_apply_paths_produce_the_funnelled_doc_exactly() {
     let mut controller = controller_with(OperationType::Pocket);
     let recipe = panel_recipe(&controller).expect("valid pairing");
 
-    // Panel: `⚡ Apply cut geometry` (`properties/mod.rs:2032`).
-    let mut panel_op = op_of(&controller);
-    let mut prov = rs_cam_core::feeds::FeedsProvenance::default();
+    // Feeds contract P5 (K2b): the panel offers the DOC of the proposal
+    // pick (the ⚡ pill dry run); `⚡ Apply all` writes it.
+    let panel_op = op_of(&controller);
     let tool = tool_of(&controller);
     let machine = controller.state.session().machine().clone();
     let material = controller.state.session().stock_config().material.clone();
-    let pass_role = panel_op.feeds_style().1;
-    rs_cam_core::feeds::suggest::apply_cut_geometry_to_op(
-        &mut panel_op,
-        &mut prov,
-        &recipe,
+    let pill = rs_cam_core::feeds::suggest::preview_field_apply(
+        &panel_op,
         &tool,
         &machine,
         &material,
-        pass_role,
+        rs_cam_core::feeds::embedded_vendor_lut(),
+        controller.state.session().post_config().spindle_strategy,
         rs_cam_core::feeds::suggest::SuggestContext::default(),
-    );
+        rs_cam_core::feeds::FeedsField::DepthPerPass,
+    )
+    .expect("the funnel writes DOC on a Pocket");
+    let _ = &recipe;
 
     // Modal: the only DOC write it still has.
     let id = id_at(&controller, 0);
     controller.handle_internal_event(AppEvent::ApplyFeedsAll(id));
 
     let modal_doc = op_of(&controller).depth_per_pass().expect("pocket has DOC");
-    let panel_doc = panel_op.depth_per_pass().expect("pocket has DOC");
+    let panel_doc = pill.value;
     assert_eq!(
         modal_doc.to_bits(),
         panel_doc.to_bits(),
@@ -645,31 +664,16 @@ fn surviving_apply_paths_produce_the_funnelled_doc_exactly() {
     );
 }
 
-/// The funnelled counterpart, unchanged from A-3: the panel's cut-geometry
-/// apply writes the rounded, invariant-resolved value. Kept as-is because it
-/// was always a statement of correct behaviour — it is the surface the modal
-/// has now been made to match, so it is the one that must not move.
+/// The funnelled counterpart: the panel's geometry apply writes the rounded
+/// value. Feeds contract P5 (K2b): the production geometry write is "Apply
+/// all" (`AppEvent::ApplyFeedsAll`, the envelope proposal); before P5 this
+/// arm ran the retired chain door (`apply_cut_geometry_to_op`).
 #[test]
 fn panel_cut_geometry_apply_goes_through_the_invariant_funnel() {
-    let controller = controller_with(OperationType::Pocket);
-    let recipe = panel_recipe(&controller).expect("valid pairing");
-    let mut op = op_of(&controller);
-    let mut prov = rs_cam_core::feeds::FeedsProvenance::default();
-    let tool = tool_of(&controller);
-    let machine = controller.state.session().machine().clone();
-    let material = controller.state.session().stock_config().material.clone();
-    let pass_role = op.feeds_style().1;
-
-    rs_cam_core::feeds::suggest::apply_cut_geometry_to_op(
-        &mut op,
-        &mut prov,
-        &recipe,
-        &tool,
-        &machine,
-        &material,
-        pass_role,
-        rs_cam_core::feeds::suggest::SuggestContext::default(),
-    );
+    let mut controller = controller_with(OperationType::Pocket);
+    let id = id_at(&controller, 0);
+    controller.handle_internal_event(AppEvent::ApplyFeedsAll(id));
+    let op = op_of(&controller);
 
     let dpp = op.depth_per_pass().expect("pocket carries DOC");
     let rounded = rs_cam_core::feeds::suggest::round_suggestion_value(dpp, 0.001);
@@ -736,52 +740,48 @@ fn panel_cut_geometry_apply_goes_through_the_invariant_funnel() {
 /// Ø6.35 2F flat is inside the G10 flat claim (3.0-12.7 mm, 2-3 flutes), so
 /// the plunge is floor(feed / 2) = floor(3999 / 2) = 1999.
 ///
-/// This pins all five through the validated panel path, which is the path
-/// whose numbers the census recorded.
+/// **The RPM and the stepover moved with their cause: 11248 -> 15748 and
+/// 1.525 -> 1.369, feeds contract P5 (K1/K2, 2026-11-03).** The calculator
+/// reads the op's stated cut (`CutSpec::calc_inputs`: stepover 2.0, depth
+/// 1.5) in place of the Pocket family default (DOC 4.445). The depth tier
+/// of the stated depth is 1.0, so the chip per rev at the cutting ceiling is
+/// smaller and the RPM follows the feed down to 15748 only (measured). The
+/// chain door's dial re-solves the stepover at the new RPM to 1.369
+/// (measured). Feed, plunge and depth do not move. P5 took the chain out of
+/// every product door; these two test doors are the chain's own.
+///
+/// **Feeds contract P5 (K2b, 2026-11-03): the pin moved to the production
+/// door.** The five values above were pinned through the chain test doors
+/// (speeds, then the chain's geometry). P5 took the chain out of every
+/// door, so this arm pins "Apply all" (`AppEvent::ApplyFeedsAll`, the
+/// envelope proposal), the path the GUI button runs. The values are the
+/// measured output of that door. Feed, plunge and RPM equal the chain
+/// pin (3999 / 1999 / 15748). The stepover is the stated 2.0 (the chain's
+/// dial gave 1.369; no product door runs the dial). The depth is the
+/// proposal snapped once to the pass staircase: 1.0 (the chain gave 0.75).
 #[test]
 fn pocket_fixture_recipe_fingerprint_is_unmoved() {
-    let controller = controller_with(OperationType::Pocket);
-    let recipe = panel_recipe(&controller).expect("valid pairing");
-    let mut op = op_of(&controller);
-    let mut prov = rs_cam_core::feeds::FeedsProvenance::default();
-    let tool = tool_of(&controller);
-    let machine = controller.state.session().machine().clone();
-    let material = controller.state.session().stock_config().material.clone();
-    let pass_role = op.feeds_style().1;
-    let ctx = || rs_cam_core::feeds::suggest::SuggestContext::default();
+    /// The measured feed of "Apply all" (mm/min).
+    const FP_FEED: f64 = 3999.0;
+    /// The measured plunge (mm/min).
+    const FP_PLUNGE: f64 = 1999.0;
+    /// The measured RPM.
+    const FP_RPM: u32 = 15_748;
+    /// The measured stepover (mm).
+    const FP_WOC: f64 = 2.0;
+    /// The measured depth per pass (mm).
+    const FP_DOC: f64 = 1.0;
+    let mut controller = controller_with(OperationType::Pocket);
+    let id = id_at(&controller, 0);
+    controller.handle_internal_event(AppEvent::ApplyFeedsAll(id));
+    let op = op_of(&controller);
 
-    rs_cam_core::feeds::suggest::apply_speeds_to_op(
-        &mut op,
-        &mut prov,
-        &recipe,
-        &tool,
-        &machine,
-        &material,
-        pass_role,
-        ctx(),
-    );
-    rs_cam_core::feeds::suggest::apply_cut_geometry_to_op(
-        &mut op,
-        &mut prov,
-        &recipe,
-        &tool,
-        &machine,
-        &material,
-        pass_role,
-        ctx(),
-    );
-
-    assert_eq!(op.feed_rate(), Some(3999.0), "feed");
-    // T-9 (`6a9330dc`) floors the plunge instead of rounding it to the
-    // nearest, so this fixture's unrounded 793.75 ships as 793, not 794. The
-    // figure is re-derived from the cause; it is not a widened tolerance.
-    assert_eq!(op.plunge_rate(), Some(1999.0), "plunge");
-    assert_eq!(op.spindle_rpm(), Some(11_248), "rpm");
-    // 1.525 arrives as 1.5250000000000001 from the dial's solve; the pin
-    // is the value, not the bit pattern.
+    assert_eq!(op.feed_rate(), Some(FP_FEED), "feed");
+    assert_eq!(op.plunge_rate(), Some(FP_PLUNGE), "plunge");
+    assert_eq!(op.spindle_rpm(), Some(FP_RPM), "rpm");
     let woc = op.stepover().expect("woc");
-    assert!((woc - 1.525).abs() < 1e-9, "woc {woc}");
-    assert_eq!(op.depth_per_pass(), Some(0.75), "doc");
+    assert!((woc - FP_WOC).abs() < 1e-9, "woc {woc}");
+    assert_eq!(op.depth_per_pass(), Some(FP_DOC), "doc");
 }
 
 // ── the project batch is allowed to be partial, never quiet ────────────────
@@ -938,13 +938,13 @@ fn explore_apply_refuses_a_refused_pairing() {
 /// feeds-validated nor invariant-funnelled — an agent had the old modal's
 /// contract with none of its preview.
 ///
-/// The scope is the whole point of the tool, so all three arms are exercised
-/// here: `Speeds` must not move the cut, `CutGeometry` must not move the
-/// speeds, and `Both` moves both. Same guarantees the properties panel's two
-/// buttons give a human.
+/// Feeds contract P5 (K2b, ruling Q4): the public scope is gone. With no
+/// pick the apply writes the speeds and must not move the cut. With the
+/// proposal pick ("Apply all") it writes the envelope proposal, which never
+/// raises a stated value (K2), then the speeds at it.
 #[test]
 fn agent_apply_honours_its_declared_scope() {
-    use rs_cam_core::feeds::suggest::ApplyScope;
+    use rs_cam_core::feeds::envelope::PickRequest;
 
     let baseline = {
         let controller = controller_with(OperationType::Pocket);
@@ -954,52 +954,34 @@ fn agent_apply_honours_its_declared_scope() {
     let mut speeds = controller_with(OperationType::Pocket);
     let id = id_at(&speeds, 0);
     let _ = speeds
-        .apply_feeds_recommendation(id, ApplyScope::Speeds)
+        .apply_feeds_recommendation(id, None)
         .expect("valid pairing");
     let speeds_op = op_of(&speeds);
     assert_ne!(speeds_op.feed_rate(), baseline.feed_rate(), "speeds: feed");
     assert_eq!(
         (speeds_op.stepover(), speeds_op.depth_per_pass()),
         (baseline.stepover(), baseline.depth_per_pass()),
-        "scope 'speeds' changed the cut — the tool's central promise"
-    );
-
-    let mut cut = controller_with(OperationType::Pocket);
-    let id = id_at(&cut, 0);
-    let _ = cut
-        .apply_feeds_recommendation(id, ApplyScope::CutGeometry)
-        .expect("valid pairing");
-    let cut_op = op_of(&cut);
-    assert_ne!(
-        cut_op.depth_per_pass(),
-        baseline.depth_per_pass(),
-        "cut: DOC"
-    );
-    assert_eq!(
-        (
-            cut_op.feed_rate(),
-            cut_op.plunge_rate(),
-            cut_op.spindle_rpm()
-        ),
-        (
-            baseline.feed_rate(),
-            baseline.plunge_rate(),
-            baseline.spindle_rpm()
-        ),
-        "scope 'cut_geometry' changed the speeds"
+        "an apply with no pick changed the cut — the tool's central promise"
     );
 
     let mut both = controller_with(OperationType::Pocket);
     let id = id_at(&both, 0);
     let _ = both
-        .apply_feeds_recommendation(id, ApplyScope::Both)
+        .apply_feeds_recommendation(id, Some(PickRequest::Proposal))
         .expect("valid pairing");
     let both_op = op_of(&both);
-    assert_eq!(both_op.feed_rate(), speeds_op.feed_rate(), "both: feed");
-    assert_eq!(
-        both_op.depth_per_pass(),
-        cut_op.depth_per_pass(),
-        "both: DOC"
+    assert_ne!(both_op.feed_rate(), baseline.feed_rate(), "proposal: feed");
+    let dpp = both_op.depth_per_pass().expect("a pocket holds a DOC");
+    let stated_dpp = baseline.depth_per_pass().expect("a pocket holds a DOC");
+    assert!(
+        dpp <= stated_dpp + 1e-9,
+        "the proposal raised the DOC: {stated_dpp} -> {dpp}"
+    );
+    let so = both_op.stepover().expect("a pocket holds a stepover");
+    let stated_so = baseline.stepover().expect("a pocket holds a stepover");
+    assert!(
+        so <= stated_so + 1e-9,
+        "the proposal raised the stepover: {stated_so} -> {so}"
     );
 }
 
@@ -1008,13 +990,13 @@ fn agent_apply_honours_its_declared_scope() {
 /// "declined" will re-simulate and conclude the recommendation did nothing.
 #[test]
 fn agent_apply_returns_the_refusal_rather_than_a_silent_no_op() {
-    use rs_cam_core::feeds::suggest::ApplyScope;
+    use rs_cam_core::feeds::envelope::PickRequest;
 
     let mut controller = controller_with(OperationType::Scallop);
     let id = id_at(&controller, 0);
     let before = op_of(&controller);
     let err = controller
-        .apply_feeds_recommendation(id, ApplyScope::Both)
+        .apply_feeds_recommendation(id, Some(PickRequest::Proposal))
         .expect_err("a flat end mill on Scallop must be refused for an agent too");
     assert!(
         err.to_lowercase().contains("scallop") || err.to_lowercase().contains("tool"),
@@ -1053,27 +1035,30 @@ fn per_field_pill_offers_the_funnelled_doc_exactly() {
     let material = controller.state.session().stock_config().material.clone();
     let pass_role = op.feeds_style().1;
 
-    let mut panel_op = op.clone();
-    let mut panel_prov = rs_cam_core::feeds::FeedsProvenance::default();
-    rs_cam_core::feeds::suggest::apply_cut_geometry_to_op(
-        &mut panel_op,
-        &mut panel_prov,
-        &recipe,
-        &tool,
-        &machine,
-        &material,
-        pass_role,
-        rs_cam_core::feeds::suggest::SuggestContext::default(),
-    );
+    // Feeds contract P5 (K2b): the panel's `⚡ Apply all` picks the
+    // envelope proposal through the funnel; the pill is its dry run.
+    let mut panel = controller_with(OperationType::Pocket);
+    let id = id_at(&panel, 0);
+    let _ = panel
+        .apply_feeds_recommendation(
+            id,
+            Some(rs_cam_core::feeds::envelope::PickRequest::Proposal),
+        )
+        .expect("valid pairing");
+    let panel_op = op_of(&panel);
+    let panel_prov = panel.state.session().toolpath_configs()[0]
+        .feeds_provenance
+        .clone();
     let panel_doc = panel_op.depth_per_pass().expect("pocket has DOC");
+    let _ = (&machine, &material, pass_role);
 
     let pill = rs_cam_core::feeds::suggest::preview_field_apply(
         &op,
-        &recipe,
         &tool,
         &machine,
         &material,
-        pass_role,
+        rs_cam_core::feeds::embedded_vendor_lut(),
+        controller.state.session().post_config().spindle_strategy,
         rs_cam_core::feeds::suggest::SuggestContext::default(),
         rs_cam_core::feeds::FeedsField::DepthPerPass,
     )
@@ -1086,11 +1071,14 @@ fn per_field_pill_offers_the_funnelled_doc_exactly() {
         pill.value,
         pill.value / panel_doc
     );
-    let raw = rs_cam_core::feeds::suggest::round_suggestion_value(recipe.axial_depth_mm, 0.001);
-    assert_ne!(
-        pill.value.to_bits(),
-        raw.to_bits(),
-        "the pill still offers the raw calculator DOC ({raw} mm; pre-fix 4.445 vs 1.27)"
+    // P5 (K2): the calculator reads the stated DOC, so the raw value is
+    // the stated one; the pill never offers more than it.
+    let stated = op.depth_per_pass().expect("pocket has DOC");
+    assert!(
+        pill.value <= stated + 1e-9,
+        "the pill offers {} mm over the stated DOC {stated} mm (raw calculator {} mm)",
+        pill.value,
+        recipe.axial_depth_mm
     );
     assert_eq!(
         Some(&pill.provenance),

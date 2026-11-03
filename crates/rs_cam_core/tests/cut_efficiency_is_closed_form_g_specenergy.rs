@@ -209,6 +209,7 @@ fn operating_point(
         matched_lut_row: None,
         effective_diameter_mm: DIAMETER_MM,
         derates: FeedsDerates::default(),
+        bases: rs_cam_core::feeds::PointBases::not_computed(),
     }
 }
 

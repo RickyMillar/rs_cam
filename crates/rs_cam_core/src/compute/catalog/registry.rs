@@ -33,8 +33,8 @@ use super::schema::{
 };
 use super::{
     AxialRule, CutRule, EntryContract, EntryKind, EntrySet, GeometryRequirement, NoneEntry,
-    OperationFamily, OperationSpec, OperationType, PlungeFeedRule, PresentBasis, RadialRule,
-    RoleDefault, UiOperationFamily, UiProcessRole,
+    OperationFamily, OperationSpec, OperationType, PlungeFeedRule, RadialRule, RoleDefault,
+    UiOperationFamily, UiProcessRole,
 };
 
 /// K4 (feeds contract P3): the reason text of each `StraightPlunge` row.
@@ -105,7 +105,6 @@ pub(super) static REG_FACE: OpRegistryEntry = OpRegistryEntry {
         cut_rule: CutRule {
             radial: RadialRule::Stepover,
             axial: AxialRule::DepthPerPass,
-            calc_reads: PresentBasis::FamilyDefault,
         },
         move_count: MoveCountModel::FeatureDriven,
         doc_basis: DocBasis::DepthPerPass,
@@ -159,7 +158,6 @@ pub(super) static REG_POCKET: OpRegistryEntry = OpRegistryEntry {
         cut_rule: CutRule {
             radial: RadialRule::Stepover,
             axial: AxialRule::DepthPerPass,
-            calc_reads: PresentBasis::FamilyDefault,
         },
         move_count: MoveCountModel::PocketCell,
         doc_basis: DocBasis::DepthPerPass,
@@ -215,7 +213,6 @@ pub(super) static REG_PROFILE: OpRegistryEntry = OpRegistryEntry {
         cut_rule: CutRule {
             radial: RadialRule::Slot,
             axial: AxialRule::DepthPerPass,
-            calc_reads: PresentBasis::FamilyDefault,
         },
         move_count: MoveCountModel::FeatureDriven,
         doc_basis: DocBasis::DepthPerPass,
@@ -279,7 +276,6 @@ pub(super) static REG_ADAPTIVE: OpRegistryEntry = OpRegistryEntry {
         cut_rule: CutRule {
             radial: RadialRule::Stepover,
             axial: AxialRule::DepthPerPass,
-            calc_reads: PresentBasis::FamilyDefault,
         },
         move_count: MoveCountModel::Adaptive2d,
         doc_basis: DocBasis::DepthPerPass,
@@ -347,7 +343,6 @@ pub(super) static REG_VCARVE: OpRegistryEntry = OpRegistryEntry {
         cut_rule: CutRule {
             radial: RadialRule::Groove,
             axial: AxialRule::SurfaceCapped,
-            calc_reads: PresentBasis::AxialFromSpec,
         },
         move_count: MoveCountModel::FeatureDriven,
         doc_basis: DocBasis::VBitDepth,
@@ -411,7 +406,6 @@ pub(super) static REG_INLAY: OpRegistryEntry = OpRegistryEntry {
         cut_rule: CutRule {
             radial: RadialRule::Groove,
             axial: AxialRule::OnePass,
-            calc_reads: PresentBasis::FamilyDefault,
         },
         move_count: MoveCountModel::FeatureDriven,
         doc_basis: DocBasis::DepthPerPass,
@@ -475,7 +469,6 @@ pub(super) static REG_INLAY_PLUG: OpRegistryEntry = OpRegistryEntry {
         cut_rule: CutRule {
             radial: RadialRule::Groove,
             axial: AxialRule::DepthPerPass,
-            calc_reads: PresentBasis::FamilyDefault,
         },
         move_count: MoveCountModel::FeatureDriven,
         doc_basis: DocBasis::DepthPerPass,
@@ -529,7 +522,6 @@ pub(super) static REG_ZIGZAG: OpRegistryEntry = OpRegistryEntry {
         cut_rule: CutRule {
             radial: RadialRule::Stepover,
             axial: AxialRule::DepthPerPass,
-            calc_reads: PresentBasis::FamilyDefault,
         },
         move_count: MoveCountModel::Raster,
         doc_basis: DocBasis::DepthPerPass,
@@ -589,7 +581,6 @@ pub(super) static REG_TRACE: OpRegistryEntry = OpRegistryEntry {
         cut_rule: CutRule {
             radial: RadialRule::Slot,
             axial: AxialRule::DepthPerPass,
-            calc_reads: PresentBasis::FamilyDefault,
         },
         move_count: MoveCountModel::FeatureDriven,
         doc_basis: DocBasis::DepthPerPass,
@@ -649,7 +640,6 @@ pub(super) static REG_DRILL: OpRegistryEntry = OpRegistryEntry {
         cut_rule: CutRule {
             radial: RadialRule::NoRadial,
             axial: AxialRule::Peck,
-            calc_reads: PresentBasis::FamilyDefault,
         },
         move_count: MoveCountModel::FeatureDriven,
         doc_basis: DocBasis::PeckDepth,
@@ -730,7 +720,6 @@ pub(super) static REG_BORE: OpRegistryEntry = OpRegistryEntry {
         cut_rule: CutRule {
             radial: RadialRule::Slot,
             axial: AxialRule::HelixPitch,
-            calc_reads: PresentBasis::FamilyDefault,
         },
         move_count: MoveCountModel::FeatureDriven,
         doc_basis: DocBasis::DepthPerPass,
@@ -796,7 +785,6 @@ pub(super) static REG_CHAMFER: OpRegistryEntry = OpRegistryEntry {
         cut_rule: CutRule {
             radial: RadialRule::Groove,
             axial: AxialRule::ChamferWidth,
-            calc_reads: PresentBasis::FamilyDefault,
         },
         move_count: MoveCountModel::FeatureDriven,
         doc_basis: DocBasis::DepthPerPass,
@@ -857,7 +845,6 @@ pub(super) static REG_DROP_CUTTER: OpRegistryEntry = OpRegistryEntry {
         cut_rule: CutRule {
             radial: RadialRule::ScallopElseStepover,
             axial: AxialRule::Surface,
-            calc_reads: PresentBasis::ScallopFromSpec,
         },
         move_count: MoveCountModel::Raster,
         doc_basis: DocBasis::SurfaceHeights,
@@ -924,7 +911,6 @@ pub(super) static REG_ADAPTIVE3D: OpRegistryEntry = OpRegistryEntry {
         cut_rule: CutRule {
             radial: RadialRule::Stepover,
             axial: AxialRule::DepthPerPass,
-            calc_reads: PresentBasis::FamilyDefault,
         },
         move_count: MoveCountModel::Adaptive3d,
         doc_basis: DocBasis::DepthPerPass,
@@ -978,7 +964,6 @@ pub(super) static REG_WATERLINE: OpRegistryEntry = OpRegistryEntry {
         cut_rule: CutRule {
             radial: RadialRule::SurfaceFollow,
             axial: AxialRule::ZStep,
-            calc_reads: PresentBasis::AxialFromSpec,
         },
         move_count: MoveCountModel::Raster,
         doc_basis: DocBasis::SurfaceHeights,
@@ -1042,7 +1027,6 @@ pub(super) static REG_PENCIL: OpRegistryEntry = OpRegistryEntry {
         cut_rule: CutRule {
             radial: RadialRule::OffsetStepoverElseSurface,
             axial: AxialRule::Surface,
-            calc_reads: PresentBasis::FamilyDefault,
         },
         move_count: MoveCountModel::FeatureDriven,
         doc_basis: DocBasis::SurfaceHeights,
@@ -1099,7 +1083,6 @@ pub(super) static REG_SCALLOP: OpRegistryEntry = OpRegistryEntry {
         cut_rule: CutRule {
             radial: RadialRule::Scallop,
             axial: AxialRule::Surface,
-            calc_reads: PresentBasis::ScallopFromSpec,
         },
         move_count: MoveCountModel::Raster,
         doc_basis: DocBasis::SurfaceHeights,
@@ -1173,7 +1156,6 @@ pub(super) static REG_UNIFIED_FINISH: OpRegistryEntry = OpRegistryEntry {
         cut_rule: CutRule {
             radial: RadialRule::Scallop,
             axial: AxialRule::ZStep,
-            calc_reads: PresentBasis::ScallopFromSpec,
         },
         move_count: MoveCountModel::NotModelled,
         doc_basis: DocBasis::SurfaceHeights,
@@ -1231,7 +1213,6 @@ pub(super) static REG_STEEP_SHALLOW: OpRegistryEntry = OpRegistryEntry {
         cut_rule: CutRule {
             radial: RadialRule::Stepover,
             axial: AxialRule::ZStep,
-            calc_reads: PresentBasis::AxialFromSpec,
         },
         move_count: MoveCountModel::Raster,
         doc_basis: DocBasis::SurfaceHeights,
@@ -1287,7 +1268,6 @@ pub(super) static REG_RAMP_FINISH: OpRegistryEntry = OpRegistryEntry {
         cut_rule: CutRule {
             radial: RadialRule::SurfaceFollow,
             axial: AxialRule::SurfaceCapped,
-            calc_reads: PresentBasis::AxialFromSpec,
         },
         move_count: MoveCountModel::FeatureDriven,
         doc_basis: DocBasis::SurfaceHeights,
@@ -1348,7 +1328,6 @@ pub(super) static REG_SPIRAL_FINISH: OpRegistryEntry = OpRegistryEntry {
         cut_rule: CutRule {
             radial: RadialRule::Stepover,
             axial: AxialRule::Surface,
-            calc_reads: PresentBasis::FamilyDefault,
         },
         move_count: MoveCountModel::Raster,
         doc_basis: DocBasis::SurfaceHeights,
@@ -1402,7 +1381,6 @@ pub(super) static REG_RADIAL_FINISH: OpRegistryEntry = OpRegistryEntry {
         cut_rule: CutRule {
             radial: RadialRule::AngularStep,
             axial: AxialRule::Surface,
-            calc_reads: PresentBasis::FamilyDefault,
         },
         move_count: MoveCountModel::Raster,
         doc_basis: DocBasis::SurfaceHeights,
@@ -1463,7 +1441,6 @@ pub(super) static REG_HORIZONTAL_FINISH: OpRegistryEntry = OpRegistryEntry {
         cut_rule: CutRule {
             radial: RadialRule::Stepover,
             axial: AxialRule::Surface,
-            calc_reads: PresentBasis::FamilyDefault,
         },
         move_count: MoveCountModel::Raster,
         doc_basis: DocBasis::SurfaceHeights,
@@ -1522,7 +1499,6 @@ pub(super) static REG_PROJECT_CURVE: OpRegistryEntry = OpRegistryEntry {
         cut_rule: CutRule {
             radial: RadialRule::Slot,
             axial: AxialRule::OnePass,
-            calc_reads: PresentBasis::FamilyDefault,
         },
         move_count: MoveCountModel::FeatureDriven,
         doc_basis: DocBasis::CurveOnSurface,
@@ -1587,7 +1563,6 @@ pub(super) static REG_ALIGNMENT_PIN_DRILL: OpRegistryEntry = OpRegistryEntry {
         cut_rule: CutRule {
             radial: RadialRule::NoRadial,
             axial: AxialRule::Peck,
-            calc_reads: PresentBasis::FamilyDefault,
         },
         move_count: MoveCountModel::FeatureDriven,
         doc_basis: DocBasis::PeckDepth,

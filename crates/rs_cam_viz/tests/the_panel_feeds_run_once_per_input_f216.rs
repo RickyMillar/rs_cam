@@ -319,10 +319,10 @@ fn the_panel_runs_the_calculator_once_per_input_f216() {
 /// dry run (`ui::properties::pills::pill_previews`) through the panel.
 fn no_dry_run(
     _operation: &OperationConfig,
-    _result: &rs_cam_core::feeds::FeedsResult,
     _tool: &ToolConfig,
     _machine: &rs_cam_core::machine::MachineProfile,
     _material: &Material,
+    _spindle_strategy: SpindleStrategy,
     _model_bbox: Option<&BoundingBox3>,
 ) -> FieldApplyPreviews {
     FieldApplyPreviews::default()

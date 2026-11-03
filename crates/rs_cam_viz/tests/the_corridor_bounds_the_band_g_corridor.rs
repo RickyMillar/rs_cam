@@ -41,6 +41,12 @@
 //! Arm 4 carries those numbers, so the threshold can be checked without
 //! reading pixels.
 //!
+//! Feeds contract P5 (2026-11-03): the calculator reads the stated cut, so
+//! the fixture now states 0.70·D by 0.35·D. Re-measured at that cut: the
+//! stubby ceiling is 1.9676 mm/tooth against a chart top of 0.13335, and
+//! the thin ceiling is 0.04602 against 0.11667. The older pairs above and
+//! the stickout window below were not re-measured.
+//!
 //! So a line clamped to the top edge would read as *"you are near the force
 //! limit"*, false by two orders of magnitude. That is **absence rendered as
 //! a reading**, the failure shape this repository has met four times, most
@@ -166,6 +172,14 @@ const LONG_AND_THIN: Cutter = Cutter {
     stickout_mm: 120.0,
 };
 
+/// The stated depth per pass, as a fraction of the diameter: 4.20 mm at
+/// the Ø6 reference fixture (the cut in the module doc).
+const STATED_AP_PER_D: f64 = 4.20 / 6.0;
+
+/// The stated stepover, as a fraction of the diameter: 2.10 mm at the Ø6
+/// reference fixture (the cut in the module doc).
+const STATED_AE_PER_D: f64 = 2.10 / 6.0;
+
 fn fixture(cutter: &Cutter) -> AppState {
     let mut tool = ToolConfig::new_default(ToolId::from_raw(1), ToolType::EndMill);
     tool.diameter = cutter.diameter_mm;
@@ -183,6 +197,14 @@ fn fixture(cutter: &Cutter) -> AppState {
     if let OperationConfig::Pocket(config) = &mut operation {
         config.feed_rate = Some(1_291.0);
         config.spindle_rpm = Some(17_000);
+        // Feeds contract P5 (K2): the calculator reads the STATED cut, not
+        // a family default. The fixture states the cut this file measured
+        // on (4.20 DOC by 2.10 WOC at Ø6, so 0.70·D by 0.35·D). Without
+        // it the Pocket defaults (stepover 2.0, depth per pass 1.5) make
+        // the Ø2 cutter slot, the slot cap lowers the depth to 0.5, and the
+        // thin ceiling leaves the chart (measured 0.2572 against 0.11667).
+        config.depth_per_pass = STATED_AP_PER_D * cutter.diameter_mm;
+        config.stepover = STATED_AE_PER_D * cutter.diameter_mm;
     }
     let config = ToolpathConfig {
         shoe: Default::default(),

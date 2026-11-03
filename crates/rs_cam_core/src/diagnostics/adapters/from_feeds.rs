@@ -41,6 +41,9 @@ pub fn diagnostic_from_suggest_warning(
     tp_id: ToolpathId,
     w: &SuggestWarning,
 ) -> Option<Diagnostic> {
+    if let SuggestWarning::OutsideEnvelope { .. } = w {
+        return diagnostic_outside_envelope(tp_id, w);
+    }
     let SuggestWarning::EngagementReducedForAggressiveness {
         aggressiveness,
         target_met,
@@ -68,6 +71,31 @@ pub fn diagnostic_from_suggest_warning(
         source: Source::FeedsCalculator,
         face: crate::diagnostics::presentation::face(ids::FEEDS_AGGRESSIVENESS_ENGAGEMENT),
         anchor: crate::diagnostics::presentation::anchor(ids::FEEDS_AGGRESSIVENESS_ENGAGEMENT),
+        message: row.message(),
+        evidence: None,
+        fix: None,
+        supersedes: vec![],
+        suppressed_diagnostics: vec![],
+    })
+}
+
+/// CONTRACT K2b, K6 (P5): `project.outside_envelope`. The text names the
+/// binding limit and the margin (the rationale row's sentences).
+fn diagnostic_outside_envelope(tp_id: ToolpathId, w: &SuggestWarning) -> Option<Diagnostic> {
+    let row = crate::feeds::rationale::SuggestRationale::from_warnings(std::slice::from_ref(w))
+        .entries
+        .into_iter()
+        .next()?;
+    Some(Diagnostic {
+        id: DiagnosticId::from(ids::PROJECT_OUTSIDE_ENVELOPE),
+        scope: Scope::Toolpath { id: tp_id },
+        category: Category::ToolLoad,
+        severity: Severity::Caution,
+        confidence: Confidence::Static,
+        state: DiagnosticState::Current,
+        source: Source::FeedsCalculator,
+        face: crate::diagnostics::presentation::face(ids::PROJECT_OUTSIDE_ENVELOPE),
+        anchor: crate::diagnostics::presentation::anchor(ids::PROJECT_OUTSIDE_ENVELOPE),
         message: row.message(),
         evidence: None,
         fix: None,

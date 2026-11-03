@@ -161,11 +161,11 @@ pub(crate) fn build_card(
     let previews = preview.refusal().is_none().then(|| {
         rs_cam_core::feeds::suggest::preview_field_applies(
             operation,
-            preview.recommended(),
             tool,
             machine,
             material,
-            operation.feeds_style().1,
+            rs_cam_core::feeds::embedded_vendor_lut(),
+            spindle_strategy,
             context(),
         )
     });

@@ -1054,7 +1054,7 @@ impl<B: ComputeBackend> AppController<B> {
     fn apply_feeds_through_funnel(
         &mut self,
         toolpath_id: crate::state::toolpath::ToolpathId,
-        scope: rs_cam_core::feeds::suggest::ApplyScope,
+        pick: Option<rs_cam_core::feeds::envelope::PickRequest>,
         explored_speeds: Option<(f64, f64)>,
     ) -> Result<Effects, String> {
         let Some(idx) = self
@@ -1075,7 +1075,7 @@ impl<B: ComputeBackend> AppController<B> {
         // The MCP `apply_feeds` tool and the CLI apply the same row.
         let command = Command::ApplyFeeds(rs_cam_core::session::ApplyFeedsArgs {
             index: idx,
-            scope,
+            pick,
             explored: explored_speeds.map(|(feed_mm_min, rpm)| {
                 rs_cam_core::feeds::suggest::ExploredSpeeds { feed_mm_min, rpm }
             }),
@@ -1116,24 +1116,26 @@ impl<B: ComputeBackend> AppController<B> {
     pub fn apply_feeds_recommendation(
         &mut self,
         toolpath_id: crate::state::toolpath::ToolpathId,
-        scope: rs_cam_core::feeds::suggest::ApplyScope,
+        pick: Option<rs_cam_core::feeds::envelope::PickRequest>,
     ) -> Result<Effects, String> {
-        self.apply_feeds_through_funnel(toolpath_id, scope, None)
+        self.apply_feeds_through_funnel(toolpath_id, pick, None)
     }
 
     /// Apply every recommended Feeds value to the given toolpath in one
     /// transactional update — the modal's `⚡ Apply all`, and the project
     /// rollup's per-row Apply.
     ///
-    /// This writes DOC/WOC as well as the speeds, which is why both buttons
-    /// now say "changes the cut" on their face. On a refused pairing the modal
+    /// K2b (feeds contract P5): `⚡ Apply all` picks the envelope's
+    /// proposal (`PickRequest::Proposal`), so it writes DOC/WOC as well as the
+    /// speeds, which is why both buttons say "changes the cut" on their face.
+    /// The proposal never raises a stated value. On a refused pairing the modal
     /// draws the refusal instead of the button, so reaching this with an
     /// unrunnable pairing means the state moved under an open modal — it
     /// refuses and notifies rather than writing.
     fn apply_feeds_all(&mut self, toolpath_id: crate::state::toolpath::ToolpathId) {
         if let Err(why) = self.apply_feeds_through_funnel(
             toolpath_id,
-            rs_cam_core::feeds::suggest::ApplyScope::Both,
+            Some(rs_cam_core::feeds::envelope::PickRequest::Proposal),
             None,
         ) {
             self.push_notification(
@@ -1154,15 +1156,10 @@ impl<B: ComputeBackend> AppController<B> {
     /// and moves feed, plunge and RPM alone.
     ///
     /// Same funnel, same refusal rule, same staleness as
-    /// [`Self::apply_feeds_all`] — only the [`ApplyScope`] differs.
-    ///
-    /// [`ApplyScope`]: rs_cam_core::feeds::suggest::ApplyScope
+    /// [`Self::apply_feeds_all`]; it sends no pick (K2b: the speeds for the
+    /// cut the op keeps).
     fn apply_feeds_speeds(&mut self, toolpath_id: crate::state::toolpath::ToolpathId) {
-        if let Err(why) = self.apply_feeds_through_funnel(
-            toolpath_id,
-            rs_cam_core::feeds::suggest::ApplyScope::Speeds,
-            None,
-        ) {
+        if let Err(why) = self.apply_feeds_through_funnel(toolpath_id, None, None) {
             self.push_notification(
                 format!("Feeds not applied to toolpath {}: {why}", toolpath_id.raw()),
                 crate::controller::Severity::Warning,
@@ -1256,7 +1253,7 @@ impl<B: ComputeBackend> AppController<B> {
         for &id in ids {
             match self.apply_feeds_through_funnel(
                 id,
-                rs_cam_core::feeds::suggest::ApplyScope::Both,
+                Some(rs_cam_core::feeds::envelope::PickRequest::Proposal),
                 None,
             ) {
                 Ok(_) => applied += 1,
@@ -1298,9 +1295,9 @@ impl<B: ComputeBackend> AppController<B> {
     /// dragged values with a bare `set_feed_rate` / `set_spindle_rpm`, so a
     /// feed dragged below the operation's plunge rate left the machine
     /// plunging faster than it cut. It now goes through
-    /// `ApplyScope::Speeds`, which takes the clamps. The dragged values
+    /// the speeds apply (no pick), which takes the clamps. The dragged values
     /// themselves are **not** re-solved — see
-    /// `ApplicableRecommendation::with_explored_speeds` for why the chipload
+    /// `Recommendation::with_explored_speeds` for why the chipload
     /// band is dropped on this path.
     fn apply_feeds_explore(
         &mut self,
@@ -1308,11 +1305,9 @@ impl<B: ComputeBackend> AppController<B> {
         feed_mm_min: f64,
         rpm: f64,
     ) {
-        if let Err(why) = self.apply_feeds_through_funnel(
-            toolpath_id,
-            rs_cam_core::feeds::suggest::ApplyScope::Speeds,
-            Some((feed_mm_min, rpm)),
-        ) {
+        if let Err(why) =
+            self.apply_feeds_through_funnel(toolpath_id, None, Some((feed_mm_min, rpm)))
+        {
             self.push_notification(
                 format!(
                     "Explored values not applied to toolpath {}: {why}",

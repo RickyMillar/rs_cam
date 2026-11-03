@@ -1147,6 +1147,22 @@ fn suggest_line(warning: &SuggestWarning) -> Option<(String, bool)> {
         | SuggestWarning::FeedClampedToChiploadFloor { .. }
         | SuggestWarning::PowerRecheckedAfterRescale { .. }
         | SuggestWarning::CutGeometryFieldNotHeld { .. } => None,
+        // Feeds contract P5 (K2, D4): the card shows the rules with no
+        // source that the apply accepts, before the click.
+        SuggestWarning::UnsourcedRowsAccepted { rows } => {
+            Some((format!("No source: {}", rows.join(", ")), false))
+        }
+        // K2b, K6: the operator's point is outside the safe envelope.
+        SuggestWarning::OutsideEnvelope {
+            binding, margin, ..
+        } => Some((
+            format!(
+                "Outside the safe envelope: {:.0} % past the {}",
+                -margin * 100.0,
+                binding.label()
+            ),
+            true,
+        )),
     }
 }
 

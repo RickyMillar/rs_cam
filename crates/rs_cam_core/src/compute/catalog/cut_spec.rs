@@ -180,8 +180,6 @@ pub struct CutRule {
     pub radial: RadialRule,
     /// The rule of [`CutSpec::axial`].
     pub axial: AxialRule,
-    /// What the calculator reads from the spec today (P4).
-    pub calc_reads: PresentBasis,
 }
 
 /// The rule that gives [`Radial`].
@@ -230,31 +228,51 @@ pub enum AxialRule {
     SurfaceCapped,
 }
 
-/// P4 migration marker: what the calculator reads today. Phase 5 deletes
-/// it.
-#[derive(Debug, Clone, Copy, PartialEq, Eq)]
-pub enum PresentBasis {
-    /// No input from the spec: the calculator uses the family defaults.
-    FamilyDefault,
-    /// The axial depth from [`Axial::stated_mm`].
-    AxialFromSpec,
-    /// The scallop target from [`Radial::scallop_mm`].
-    ScallopFromSpec,
-}
-
 impl CutSpec {
-    /// P4 only: today's three calculator inputs, in the order
-    /// `(axial_depth, radial_width, scallop)`. Phase 5 deletes it. No op
-    /// sends a radial width today, so the second value is always `None`.
-    pub(crate) const fn todays_hints(
-        &self,
-        reads: PresentBasis,
-    ) -> (Option<f64>, Option<f64>, Option<f64>) {
-        match reads {
-            PresentBasis::FamilyDefault => (None, None, None),
-            PresentBasis::AxialFromSpec => (self.axial.stated_mm(), None, None),
-            PresentBasis::ScallopFromSpec => (None, None, self.radial.scallop_mm()),
-        }
+    /// CONTRACT K2 (feeds contract P5): the calculator inputs of the cut,
+    /// in the order `(axial_depth, radial_width, scallop)`. P5 replaces the
+    /// P4 marker `PresentBasis`: the calculator reads the operator's cut,
+    /// not a family default, wherever the spec states it.
+    ///
+    /// - The depth: a depth per pass, a Z step, a one-pass depth, or the
+    ///   operator's surface cap, when it is above zero. A peck, a helix
+    ///   pitch and a chamfer width are not a side-cut depth, so the
+    ///   calculator reads none for them.
+    /// - The width: a stepover, or the tool diameter for a slot. A groove,
+    ///   a surface width, an angular step and a drill give none.
+    /// - The scallop target, when the radial cut is a scallop.
+    #[must_use]
+    pub const fn calc_inputs(&self, diameter_mm: f64) -> (Option<f64>, Option<f64>, Option<f64>) {
+        let ap = match self.axial {
+            Axial::PerPass(s) | Axial::ZStep(s) => Some(s.mm()),
+            Axial::OnePass(s) | Axial::Surface { max: s } => match s {
+                Some(s) => Some(s.mm()),
+                None => None,
+            },
+            Axial::Peck(_) | Axial::HelixPitch(_) | Axial::ChamferWidth(_) => None,
+        };
+        // A depth at or below zero is an offset from a surface (Project
+        // Curve), not a cut depth: the calculator reads none.
+        let ap = match ap {
+            Some(v) if v > 0.0 => Some(v),
+            Some(_) | None => None,
+        };
+        let ae = match self.radial {
+            Radial::Width(s) => Some(s.mm()),
+            Radial::Slot => Some(diameter_mm),
+            Radial::Groove
+            | Radial::Scallop(_)
+            | Radial::AngularStep(_)
+            | Radial::SurfaceFollow
+            | Radial::Axial => None,
+        };
+        // A width at or below zero is not a cut width: the calculator reads
+        // none (the same rule as the depth above).
+        let ae = match ae {
+            Some(v) if v > 0.0 => Some(v),
+            Some(_) | None => None,
+        };
+        (ap, ae, self.radial.scallop_mm())
     }
 }
 
@@ -271,18 +289,17 @@ impl CutSpec {
 /// A row rule names every field (here `axial` is missing):
 ///
 /// ```compile_fail
-/// use rs_cam_core::compute::catalog::{CutRule, PresentBasis, RadialRule};
-/// let _ = CutRule { radial: RadialRule::Slot, calc_reads: PresentBasis::FamilyDefault };
+/// use rs_cam_core::compute::catalog::{CutRule, RadialRule};
+/// let _ = CutRule { radial: RadialRule::Slot };
 /// ```
 ///
 /// The sibling: the full literal compiles.
 ///
 /// ```
-/// use rs_cam_core::compute::catalog::{AxialRule, CutRule, PresentBasis, RadialRule};
+/// use rs_cam_core::compute::catalog::{AxialRule, CutRule, RadialRule};
 /// let _ = CutRule {
 ///     radial: RadialRule::Slot,
 ///     axial: AxialRule::DepthPerPass,
-///     calc_reads: PresentBasis::FamilyDefault,
 /// };
 /// ```
 ///

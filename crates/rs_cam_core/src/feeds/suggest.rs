@@ -12,26 +12,30 @@ use crate::machine::MachineProfile;
 use crate::material::Material;
 
 mod adaptive_entry;
-mod aggressiveness;
 mod apply;
 mod axial_envelope;
 mod invariants;
 
-#[cfg(test)]
-pub(crate) use apply::resolve_operation_invariants;
-pub use apply::{
-    ApplicableRecommendation, ApplyContext, ApplyScope, ExploredSpeeds, FeedsPreview,
-    FieldApplyPreview, FieldApplyPreviews, OperationApplyInput, apply, apply_drill_defaults,
-    apply_stock_defaults, apply_to_operation, feeds_preview_for_operation, operation_feeds_hints,
-    preview_field_applies, preview_field_apply,
-};
 #[cfg(any(test, feature = "test-support"))]
-pub use apply::{apply_cut_geometry_to_op, apply_feeds_result_to_op, apply_speeds_to_op};
+pub use apply::apply_speeds_to_op;
+pub(crate) use apply::peck_for_hole;
+pub use apply::{
+    ApplyContext, Complete, Completeness, ExploredSpeeds, FeedsPreview, FieldApplyPreview,
+    FieldApplyPreviews, OperationApplyInput, Partial, PickedGeometry, Recommendation, apply,
+    apply_drill_defaults, apply_stock_defaults, apply_to_operation, feeds_preview_for_operation,
+    operation_feeds_hints, preview_field_applies, preview_field_apply,
+};
 pub(crate) use axial_envelope::axial_envelope_for_operation;
 // The deflection back-off target, re-exported so `feeds::rationale` can
 // format the bound it renders from the constant the loop compares
 // against. The text cannot then drift from the number.
 pub(crate) use invariants::DEFLECTION_BACKOFF_TARGET_UM;
+// P5 (K2b): the F201 rows of the envelope's runtime and deflection limits,
+// and the rigidity cap, for `formula_constants` and the envelope.
+pub(crate) use invariants::{
+    DEFLECTION_BACKOFF_TARGET_ROW, STEPOVER_BACKOFF_DIAMETER_FRACTION_ROW,
+    STEPOVER_BACKOFF_TARGET_MOVES_ROW, rigidity_cap_mm,
+};
 
 /// Stock-derived values used by stock-aware operation defaults.
 #[derive(Debug, Clone, Copy, PartialEq)]
@@ -204,11 +208,10 @@ pub struct SuggestContext<'a> {
     /// [`rescale_feed_to_final_geometry`](adaptive_entry::rescale_feed_to_final_geometry).
     ///
     /// `None` means **there is no derivation point to reconcile against**,
-    /// and the rescale pass short-circuits. That is the correct answer for
-    /// `resolve_operation_invariants` (test-only), whose whole contract is "run the
-    /// safety clamps over a value a human or the optimizer chose, and do
-    /// not substitute a number of our own" — a hand-typed feed was never
-    /// derived from a chip-thinning term, so there is nothing to re-derive.
+    /// and the rescale pass short-circuits. That is the correct answer for a
+    /// drag-to-explore apply (`with_explored_speeds`): a hand-set feed was
+    /// never derived from a chip-thinning term, so there is nothing to
+    /// re-derive.
     pub calculator_operating_point: Option<CalculatorOperatingPoint>,
     /// v3.0b: caller-supplied policy threading through the
     /// orchestrator. Default = `SuggestPolicy::default()`.
@@ -762,6 +765,27 @@ pub enum SuggestWarning {
         /// straight-plunge caution. Each note is one card line.
         notes: crate::feeds::ramp::EntryNotes,
     },
+    /// CONTRACT K2 (feeds contract P5, lead decision D4): the apply wrote a
+    /// field whose basis reads an Unsourced rule (F201), and the apply is
+    /// the operator's acceptance of it. `rows` names each rule. The record
+    /// is the acceptance; the card shows the basis before the click.
+    UnsourcedRowsAccepted {
+        /// The F201 names of the Unsourced rules.
+        rows: Vec<String>,
+    },
+    /// CONTRACT K2b (ruling Q6, K6 `project.outside_envelope`): the picked
+    /// or the stated point sits outside the safe envelope. A warning; the
+    /// write goes ahead.
+    OutsideEnvelope {
+        /// The limit that the point crosses.
+        binding: crate::feeds::envelope::LimitKind,
+        /// The negative share of the limit (`-0.2`: 20 % past it).
+        margin: f64,
+        /// The depth of the point (mm).
+        ap_mm: f64,
+        /// The width of the point (mm).
+        ae_mm: f64,
+    },
     /// G10 (2026-09-25): the funnel ran the plunge rule again at the feed
     /// that ships. Pass 9, pass 10 or an explored feed moved the feed after
     /// the calculator, so the plunge moved too. Filed only when the plunge
@@ -951,12 +975,15 @@ pub fn suggest_for_operation(
     )?;
     let mut operation = input.operation.clone();
     let mut provenance = crate::feeds::FeedsProvenance::default();
-    // F042: the one write, `apply`, under `Both`. It writes the drill
-    // defaults too (F114). `feeds_result_for_operation` validated the
-    // pairing above, which is what `validated` requires.
-    let warnings = apply(
-        &ApplicableRecommendation::validated(&feeds_result),
-        ApplyScope::Both,
+    // F042: the one write, `apply`. K2b (ruling Q4, lead decision D1): a
+    // registry default at the add door is a stated value, so the door
+    // writes the speeds for the geometry the op keeps and no geometry.
+    // `feeds_result_for_operation` validated the pairing above, which is
+    // what `validated` requires. D4: the door accepts the Unsourced rows
+    // and records the warning that names them.
+    let (rec, accepted) = Recommendation::validated(&feeds_result).accept_unsourced();
+    let mut warnings = apply(
+        &rec,
         &mut operation,
         &mut provenance,
         ApplyContext {
@@ -967,6 +994,7 @@ pub fn suggest_for_operation(
             suggest: input.context,
         },
     );
+    warnings.extend(accepted);
     Ok(SuggestedParams {
         operation,
         feeds_result,
@@ -993,7 +1021,7 @@ pub fn feeds_input_for_operation<'a>(
     spindle_strategy: crate::feeds::SpindleStrategy,
 ) -> FeedsInput<'a> {
     let (family, role) = operation.feeds_style();
-    let (axial_hint, radial_hint, scallop_hint) = operation_feeds_hints(operation);
+    let (axial_hint, radial_hint, scallop_hint) = operation_feeds_hints(operation, tool.diameter);
     FeedsInput {
         // Ruling 2026-10-31: the cut direction declares the cutter series;
         // `UpCut` is a generic tool.

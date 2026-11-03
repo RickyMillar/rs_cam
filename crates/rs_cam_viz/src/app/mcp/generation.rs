@@ -159,6 +159,13 @@ pub fn suggest_basis_json(
         .as_ref()
         .and_then(|row| row.hardness_basis.card_text())
         .map(|(headline, detail)| serde_json::json!({ "headline": headline, "detail": detail }));
+    // Ruling Q3 (feeds contract P5): a score tie takes the lower printed
+    // chip; the reply names both rows, the winner first.
+    let tied_rows = feeds.matched_lut_row.as_ref().and_then(|row| {
+        row.tied_with
+            .as_ref()
+            .map(|tie| vec![row.observation_id.clone(), tie.id().to_owned()])
+    });
     let (ramp_source_headline, ramp_source_detail) = feeds.ramp.card_text();
     let (ramp_headline, ramp_detail) = ramp_record.map(|record| record.card_text()).unzip();
     let (plunge_headline, plunge_detail) = feeds.plunge.card_text();
@@ -174,6 +181,7 @@ pub fn suggest_basis_json(
         "headline": headline,
         "detail": detail,
         "hardness": hardness,
+        "tied_rows": tied_rows,
         "force_line": force_line,
         "plunge": {
             "source": {
@@ -877,13 +885,12 @@ impl RsCamApp {
     pub(super) fn mcp_apply_feeds(
         &mut self,
         index: usize,
-        scope: rs_cam_mcp::server::ApplyScopeParam,
+        pick: Option<rs_cam_mcp::server::PickParam>,
     ) -> String {
-        use rs_cam_core::feeds::suggest::ApplyScope;
         let before = self.mcp_diagnostic_snapshot();
         // F166: the wire takes the enum, so no token is parsed here.
-        let parsed = ApplyScope::from(scope);
-        let scope = scope.token();
+        let parsed = pick.map(rs_cam_core::feeds::envelope::PickRequest::from);
+        let pick_token = pick.map_or("none", rs_cam_mcp::server::PickParam::token);
         let Some(toolpath_id) = self
             .controller
             .state()
@@ -917,6 +924,41 @@ impl RsCamApp {
         // AND the downstream results the stock chain dropped. The old
         // helper named the edited index alone (N15).
         let stale: Vec<usize> = effects.stale.iter().copied().collect();
+        // D4: the apply accepts the rules with no source that the written
+        // values read; the reply names them. K6: a pick outside the
+        // envelope warns and names the binding limit.
+        let warnings = &effects.feeds_warnings;
+        let unsourced_rows: Vec<String> = warnings
+            .iter()
+            .filter_map(|w| {
+                if let rs_cam_core::feeds::suggest::SuggestWarning::UnsourcedRowsAccepted { rows } =
+                    w
+                {
+                    Some(rows.clone())
+                } else {
+                    None
+                }
+            })
+            .flatten()
+            .collect();
+        let outside_envelope = warnings.iter().find_map(|w| {
+            if let rs_cam_core::feeds::suggest::SuggestWarning::OutsideEnvelope {
+                binding,
+                margin,
+                ap_mm,
+                ae_mm,
+            } = w
+            {
+                Some(serde_json::json!({
+                    "binding": binding.label(),
+                    "margin": margin,
+                    "ap_mm": ap_mm,
+                    "ae_mm": ae_mm,
+                }))
+            } else {
+                None
+            }
+        });
         let applied = self
             .controller
             .state()
@@ -925,8 +967,10 @@ impl RsCamApp {
             .get(index)
             .map(|tc| {
                 serde_json::json!({
-                    "scope": scope,
-                    "changes_the_cut": !matches!(parsed, ApplyScope::Speeds),
+                    "pick": pick_token,
+                    "changes_the_cut": parsed.is_some(),
+                    "unsourced_rows": unsourced_rows,
+                    "outside_envelope": outside_envelope,
                     "feed_rate": tc.operation.feed_rate(),
                     "plunge_rate": tc.operation.plunge_rate(),
                     "spindle_rpm": tc.operation.spindle_rpm(),
@@ -936,20 +980,81 @@ impl RsCamApp {
                 })
             })
             .unwrap_or(serde_json::Value::Null);
-        let cut_note = if matches!(parsed, ApplyScope::Speeds) {
+        let cut_note = if parsed.is_none() {
             "Cut geometry (DOC/WOC) unchanged."
         } else {
             "CHANGED THE CUT (DOC/WOC) — re-simulate before trusting any gate verdict."
         };
         self.mcp_mutation_result(
             format!(
-                "Applied Feeds recommendation to toolpath {index} with scope '{scope}'. \
+                "Applied Feeds recommendation to toolpath {index} with pick '{pick_token}'. \
                  {cut_note} Regenerate to apply."
             ),
             applied,
             stale,
             &before,
         )
+    }
+
+    /// Feeds contract P5 (K2b): the safe envelope of the toolpath at
+    /// `index` as JSON. Read-only. The speeds grid is capped at
+    /// `response::MAX_SAFE_ENVELOPE_GRID_POINTS`, and a cut grid says so.
+    pub(super) fn mcp_get_safe_envelope(&self, index: usize) -> String {
+        let state = self.controller.state();
+        let Some(tc) = state.session().toolpath_config_at(index) else {
+            return json_str(serde_json::json!({
+                "error": format!("Toolpath index {index} not found")
+            }));
+        };
+        match state.session().safe_envelope(tc) {
+            None => json_str(serde_json::json!({
+                "error": format!(
+                    "Toolpath {} has no tool. Set one with `set_toolpath_tool`.",
+                    tc.id
+                ),
+            })),
+            Some(Err(e)) => json_str(serde_json::json!({
+                "toolpath_id": tc.id,
+                "toolpath_name": tc.name,
+                "error": format!("Suggest refused: {e}"),
+            })),
+            Some(Ok(envelope)) => {
+                let mut value = serde_json::to_value(&envelope).unwrap_or_default();
+                let cap = rs_cam_mcp::response::MAX_SAFE_ENVELOPE_GRID_POINTS;
+                let total = envelope.speeds.points.len();
+                if let Some(speeds) = value
+                    .get_mut("speeds")
+                    .and_then(serde_json::Value::as_object_mut)
+                {
+                    let points: Vec<serde_json::Value> = speeds
+                        .remove("points")
+                        .and_then(|p| match p {
+                            serde_json::Value::Array(points) => Some(points),
+                            serde_json::Value::Null
+                            | serde_json::Value::Bool(_)
+                            | serde_json::Value::Number(_)
+                            | serde_json::Value::String(_)
+                            | serde_json::Value::Object(_) => None,
+                        })
+                        .unwrap_or_default();
+                    let capped = rs_cam_mcp::response::CappedArray::from_parts(
+                        points.into_iter().take(cap).collect(),
+                        total,
+                        cap,
+                    );
+                    speeds.insert(
+                        "points".to_owned(),
+                        serde_json::Value::Array(capped.values().to_vec()),
+                    );
+                    capped.insert_keys("points", speeds);
+                }
+                json_str(serde_json::json!({
+                    "toolpath_id": tc.id,
+                    "toolpath_name": tc.name,
+                    "envelope": value,
+                }))
+            }
+        }
     }
 
     pub(super) fn mcp_generate_toolpath(

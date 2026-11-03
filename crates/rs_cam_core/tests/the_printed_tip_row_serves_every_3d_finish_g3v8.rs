@@ -23,6 +23,16 @@
 //! "Wood, MDF, Sign-Foam"). The family basis is `Printed` on the
 //! Parallel-family operations and `Transferred` from (Parallel, Finish) on
 //! the others.
+//!
+//! Operator ruling Q3 (feeds contract P5, D2): on the Parallel-family
+//! operations the SpeTool 1.0 mm row (`spetool-tapered-hardwood-parallel-
+//! 1000-2f`, one printed value 0.001 in = 0.0254 mm, held as a point, A2)
+//! ties with the v8 row, and the lower printed chip wins: those operations
+//! read the SpeTool row, and `tied_with` names the v8 row. G1 orchestrator
+//! decision 5 reversed by operator ruling Q3. The SpeTool row is not a
+//! candidate on Contour, Scallop and Trace (no family rule transfers it), so
+//! those operations still read the v8 row, Transferred. Open data question
+//! (lead, 2026-11-03): one Ø1 tapered tool reads two rows by finish family.
 
 #![expect(
     clippy::expect_used,
@@ -43,12 +53,16 @@ use rs_cam_core::feeds::{EMBEDDED_LUT, FeedsSupport, SpindleStrategy};
 use rs_cam_core::ids::ToolpathId;
 use rs_cam_core::machine::MachineProfile;
 use rs_cam_core::material::{Material, WoodSpecies};
-use rs_cam_core::tool_load::chip_target_for_toolpath;
+use rs_cam_core::tool_load::{ChipTarget, chip_target_for_toolpath};
 
 const TOL: f64 = 1e-12;
 
 /// The printed Ø1 2-flute hardwood row.
 const ROW: &str = "amana-tapered-hardwood-parallel-1000-2f-zrn-v8";
+/// The Q3 winner on the Parallel-family operations.
+const SPETOOL_ROW: &str = "spetool-tapered-hardwood-parallel-1000-2f";
+/// The SpeTool printed chip load per tooth, inches (one value).
+const SPETOOL_PRINTED_IN: f64 = 0.001;
 /// Printed chip load per tooth, inches, `amana_zrn_3d_v8.txt:9`.
 const PRINTED_MIN_IN: f64 = 0.000_75;
 const PRINTED_MAX_IN: f64 = 0.002;
@@ -107,6 +121,7 @@ fn a_one_millimetre_tapered_tip_reads_the_printed_band_on_every_3d_finish_g3v8()
     };
     let lo = PRINTED_MIN_IN * MM_PER_IN;
     let hi = PRINTED_MAX_IN * MM_PER_IN;
+    let spetool = SPETOOL_PRINTED_IN * MM_PER_IN;
     let mut checked = 0;
     for &(op, family) in FINISHES {
         let label = format!("{op:?}");
@@ -128,17 +143,33 @@ fn a_one_millimetre_tapered_tip_reads_the_printed_band_on_every_3d_finish_g3v8()
             .matched_lut_row
             .as_ref()
             .unwrap_or_else(|| panic!("{label}: a vendor row answered"));
-        assert_eq!(recipe.observation_id, ROW, "{label}");
         assert_eq!(recipe.size_basis, SizeBasis::Exact, "{label}");
-        assert!(
-            (recipe.chip_load_min_mm.expect("a printed minimum") - lo).abs() < TOL,
-            "{label}: {recipe:?}"
-        );
-        assert!(
-            (recipe.chip_load_max_mm.expect("a printed maximum") - hi).abs() < TOL,
-            "{label}: {recipe:?}"
-        );
-        if family == LutOperationFamily::Parallel {
+        let parallel = family == LutOperationFamily::Parallel;
+        if parallel {
+            // Q3: the SpeTool point wins and names the v8 row.
+            assert_eq!(recipe.observation_id, SPETOOL_ROW, "{label}");
+            assert_eq!(
+                recipe.tied_with.as_ref().map(|r| r.id()),
+                Some(ROW),
+                "{label}: the Q3 winner names the other row"
+            );
+            assert_eq!(recipe.chip_load_min_mm, None, "{label}: a point");
+            assert!(
+                (recipe.chip_load_max_mm.expect("a printed value") - spetool).abs() < TOL,
+                "{label}: {recipe:?}"
+            );
+        } else {
+            assert_eq!(recipe.observation_id, ROW, "{label}");
+            assert!(
+                (recipe.chip_load_min_mm.expect("a printed minimum") - lo).abs() < TOL,
+                "{label}: {recipe:?}"
+            );
+            assert!(
+                (recipe.chip_load_max_mm.expect("a printed maximum") - hi).abs() < TOL,
+                "{label}: {recipe:?}"
+            );
+        }
+        if parallel {
             assert_eq!(recipe.family_basis, FamilyBasis::Printed, "{label}");
         } else {
             let FeedsSupport::FamilyTransferred {
@@ -175,19 +206,31 @@ fn a_one_millimetre_tapered_tip_reads_the_printed_band_on_every_3d_finish_g3v8()
         assert_eq!(query.operation_family, family, "{label}");
         let env = find_best_chip_envelope_row(&EMBEDDED_LUT, &query, &input.tool_geometry)
             .unwrap_or_else(|| panic!("{label}: a chipload-bearing row matches"));
-        assert_eq!(env.observation_id, ROW, "{label}");
+        assert_eq!(env.observation_id, recipe.observation_id, "{label}");
         assert_eq!(env.size_basis, SizeBasis::Exact, "{label}");
         assert_eq!(env.chip_load_min_mm, recipe.chip_load_min_mm, "{label}");
         assert_eq!(env.chip_load_max_mm, recipe.chip_load_max_mm, "{label}");
 
         // The modulator's and the advisor's door (no simulation, so no
         // depth de-rate): the printed band.
-        let door =
+        let target =
             chip_target_for_toolpath(&material, &tool, &operation, ToolpathId::from_raw(0), None)
-                .and_then(|target| target.band_range())
+                .unwrap_or_else(|| panic!("{label}: the door gave no target"));
+        if parallel {
+            // A2: a point has no band; the door holds the printed point.
+            match target {
+                ChipTarget::Point(v) => {
+                    assert!((v - spetool).abs() < TOL, "{label}: {target:?}");
+                }
+                ChipTarget::Band(_) => panic!("{label}: a point row gave a band: {target:?}"),
+            }
+        } else {
+            let door = target
+                .band_range()
                 .unwrap_or_else(|| panic!("{label}: the door gave no band"));
-        assert!((door.start - lo).abs() < TOL, "{label}: {door:?}");
-        assert!((door.end - hi).abs() < TOL, "{label}: {door:?}");
+            assert!((door.start - lo).abs() < TOL, "{label}: {door:?}");
+            assert!((door.end - hi).abs() < TOL, "{label}: {door:?}");
+        }
         checked += 1;
     }
     // Non-vacuity: every operation in the table was checked.

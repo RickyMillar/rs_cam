@@ -543,6 +543,12 @@ pub enum McpRequestKind {
     GetSuggestRationale {
         index: usize,
     },
+    /// Feeds contract P5 (K2b): the safe envelope of the toolpath at
+    /// `index` as JSON (axes, limits with law and basis, the speeds grid,
+    /// the proposal and the operator's placement).
+    GetSafeEnvelope {
+        index: usize,
+    },
 
     InspectModel,
     InspectStock,
@@ -634,13 +640,14 @@ pub enum McpRequestKind {
         spec: rs_cam_mcp::server::PreviewTierMapParam,
     },
     /// Checkpoint I-5 (2026-08-12): apply the Feeds & Speeds recommendation
-    /// to one toolpath through the same funnel both GUI surfaces use, with
-    /// the scope stated explicitly ("speeds" / "cut_geometry" / "both").
-    /// Refuses — it does not silently no-op — when the tool × operation
-    /// pairing is one `validate_tool_for_operation` declines.
+    /// to one toolpath through the same funnel both GUI surfaces use.
+    /// K2b (P5): `pick: None` writes the speeds for the cut the op keeps; a
+    /// pick writes the envelope point, then the speeds at it. Refuses — it
+    /// does not silently no-op — when the tool × operation pairing is one
+    /// `validate_tool_for_operation` declines.
     ApplyFeeds {
         index: usize,
-        scope: rs_cam_mcp::server::ApplyScopeParam,
+        pick: Option<rs_cam_mcp::server::PickParam>,
     },
 
     // ── Compute (async — response sent when compute finishes) ────────

@@ -16,7 +16,7 @@ use rs_cam_core::compute::config::{BoundaryContainment, StockSource};
 use rs_cam_core::compute::tool_config::{ToolConfig, ToolId, ToolParamKey, ToolType};
 use rs_cam_core::compute::transform::{FaceUp, ZRotation};
 use rs_cam_core::feeds::SpindleStrategy;
-use rs_cam_core::feeds::suggest::ApplyScope;
+use rs_cam_core::feeds::envelope::PickRequest;
 use rs_cam_core::material::Material;
 use rs_cam_core::session::TierStrategy;
 use rs_cam_core::trace::toolpath_spans::SpanKind;
@@ -382,47 +382,59 @@ impl SpindleStrategyParam {
     }
 }
 
-/// Which dimensions `apply_feeds` writes: a mirror of core [`ApplyScope`].
-#[derive(Debug, Clone, Copy, PartialEq, Eq, Default, Deserialize, schemars::JsonSchema)]
+/// The envelope point that `apply_feeds` writes (feeds contract P5, K2b):
+/// a mirror of core [`PickRequest`]. With no pick, `apply_feeds` writes
+/// the speeds for the cut the op keeps and no geometry (ruling Q4).
+#[derive(Debug, Clone, Copy, PartialEq, Deserialize, schemars::JsonSchema)]
 #[serde(rename_all = "snake_case", deny_unknown_fields)]
 #[schemars(inline)]
-pub enum ApplyScopeParam {
-    /// Feed, plunge and RPM. The cut does not change.
-    #[default]
-    Speeds,
-    /// Stepover and depth of cut. THE CUT CHANGES.
-    CutGeometry,
-    /// Both halves in one transaction. The cut changes.
-    Both,
+pub enum PickParam {
+    /// The envelope's proposal: `min(stated, binding cap)` on each stated
+    /// axis. The GUI "Apply all".
+    Proposal,
+    /// A point of the (depth, width) plane, mm. A fixed axis keeps its
+    /// fixed value. A point outside the envelope is written and warns
+    /// (`project.outside_envelope`).
+    Point {
+        /// The depth per pass (mm).
+        ap_mm: f64,
+        /// The width (stepover, mm).
+        ae_mm: f64,
+    },
+    /// A drill peck depth (mm).
+    Peck {
+        /// The peck depth (mm).
+        mm: f64,
+    },
 }
 
-impl From<ApplyScopeParam> for ApplyScope {
-    fn from(p: ApplyScopeParam) -> Self {
+impl From<PickParam> for PickRequest {
+    fn from(p: PickParam) -> Self {
         match p {
-            ApplyScopeParam::Speeds => Self::Speeds,
-            ApplyScopeParam::CutGeometry => Self::CutGeometry,
-            ApplyScopeParam::Both => Self::Both,
+            PickParam::Proposal => Self::Proposal,
+            PickParam::Point { ap_mm, ae_mm } => Self::Point { ap_mm, ae_mm },
+            PickParam::Peck { mm } => Self::Peck(mm),
         }
     }
 }
 
-impl From<ApplyScope> for ApplyScopeParam {
-    fn from(s: ApplyScope) -> Self {
-        match s {
-            ApplyScope::Speeds => Self::Speeds,
-            ApplyScope::CutGeometry => Self::CutGeometry,
-            ApplyScope::Both => Self::Both,
+impl From<PickRequest> for PickParam {
+    fn from(r: PickRequest) -> Self {
+        match r {
+            PickRequest::Proposal => Self::Proposal,
+            PickRequest::Point { ap_mm, ae_mm } => Self::Point { ap_mm, ae_mm },
+            PickRequest::Peck(mm) => Self::Peck { mm },
         }
     }
 }
 
-impl ApplyScopeParam {
-    /// The wire token.
+impl PickParam {
+    /// The wire token of the variant.
     pub const fn token(self) -> &'static str {
         match self {
-            Self::Speeds => "speeds",
-            Self::CutGeometry => "cut_geometry",
-            Self::Both => "both",
+            Self::Proposal => "proposal",
+            Self::Point { .. } => "point",
+            Self::Peck { .. } => "peck",
         }
     }
 }
@@ -2964,22 +2976,16 @@ pub struct SetSpindleStrategyParam {
 pub struct ApplyFeedsParam {
     /// Toolpath index (0-based), as listed by `list_toolpaths`.
     pub index: usize,
-    /// Which dimensions to write. **Say what you mean** — the scope is the
-    /// whole safety vocabulary of this tool:
-    ///
-    /// - `"speeds"` — feed / plunge / RPM. "How fast". Does NOT change the
-    ///   cut, so the geometry you simulated stays the geometry you cut.
-    /// - `"cut_geometry"` — stepover / DOC. **CHANGES THE CUT**: the removed
-    ///   material, the engagement, the runtime and every gate verdict move
-    ///   with it. Re-simulate afterwards.
-    /// - `"both"` — both halves in one transaction. Also changes the cut.
-    ///
-    /// Defaults to `"speeds"`, the conservative choice: an omitted scope must
-    /// not silently rewrite geometry. Mirrors
-    /// `rs_cam_core::feeds::suggest::ApplyScope`; there is deliberately no
-    /// per-field scope.
+    /// The envelope point to write (K2b, ruling Q4). Omit it to write the
+    /// speeds (feed / plunge / RPM / ramp feed) for the cut the op keeps;
+    /// no geometry moves. `"proposal"` writes the envelope's proposal
+    /// (`get_safe_envelope`), then the speeds at it. `{"point": {"ap_mm",
+    /// "ae_mm"}}` writes that point; `{"peck": {"mm"}}` a drill peck. A pick
+    /// CHANGES THE CUT: re-simulate afterwards. The reply names the rules
+    /// with no source that the written values read (the apply is their
+    /// acceptance, decision D4).
     #[serde(default)]
-    pub scope: Option<ApplyScopeParam>,
+    pub pick: Option<PickParam>,
 }
 
 #[derive(Deserialize, schemars::JsonSchema, Default)]
@@ -3933,6 +3939,17 @@ pub fn build_info() -> serde_json::Value {
             // W1 (2026-10-30): `list_toolpaths` rows carry `run_state` (core
             // `toolpath_run_state`, the GUI header rule) and `next_action`.
             "toolpath_run_state",
+            // Feeds contract P5 (K2b): `get_safe_envelope` returns the safe
+            // envelope of a toolpath (axes, limits with law and basis, the
+            // speeds grid, the proposal, the operator's placement), and
+            // `get_suggest_rationale` `basis.tied_rows` names both rows of
+            // a Q3 tie.
+            "safe_envelope",
+            // P5: `apply_feeds` takes `pick` (`proposal`, `point`, `peck`);
+            // with no pick it writes the speeds for the cut the op keeps.
+            // `scope` is deleted (break). The reply carries
+            // `unsourced_rows` and `outside_envelope`.
+            "apply_feeds_pick",
         ],
     })
 }

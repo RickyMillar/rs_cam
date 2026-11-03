@@ -49,5 +49,12 @@ run the server; the live server, GUI dispatch and session ownership are in
 - W2b (2026-10-30): `PropertiesTabParam` is `geometry`, `passes`, `feeds`, `heights`, `linking`;
   `cut` and `dressup` are deleted (no-legacy ruling). `list_toolpaths` `run_state` gains `waiting`
   (`{"state": "waiting", "on": [ids]}`). The snapshot was re-blessed (the enum only).
+- Feeds contract P5 (2026-11-03, K2b): `ApplyScopeParam` is deleted (break, no alias).
+  `ApplyFeedsParam { index, pick: Option<PickParam> }`; `PickParam` (inline: `proposal`,
+  `point { ap_mm, ae_mm }`, `peck { mm }`) converts both ways with core `PickRequest` (F166).
+  No pick writes the speeds for the cut the op keeps. The reply carries `unsourced_rows` and
+  `outside_envelope`. New tool `get_safe_envelope { index }` (the grid cap is
+  `response::MAX_SAFE_ENVELOPE_GRID_POINTS`); `get_suggest_rationale` `basis.tied_rows`
+  (Q3). Feature tokens `safe_envelope`, `apply_feeds_pick`. The snapshot was re-blessed.
 - Verify with `cargo test -p rs_cam_mcp -q`; when a wire type changes, also run
   the relevant `rs_cam_viz` MCP integration tests.

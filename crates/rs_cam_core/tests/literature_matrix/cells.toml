@@ -21,8 +21,10 @@
 ##     CLOSED"), because a de-rate landed and the entry must be re-graded.
 ## The hidden 0.75 feed factor (removed by ruling R4 WP3) used to keep these
 ## cells clear; with it gone, the engine ships the vendor row's chipload and
-## the missing hardness / aluminium de-rate shows. Two entries carry it:
-## `flat_6mm_pocket_ipe_hardness` and `flat_6mm_pocket_al6061_lut`. A third,
+## the missing hardness / aluminium de-rate shows. One entry carries it:
+## `flat_6mm_pocket_ipe_hardness`. `flat_6mm_pocket_al6061_lut` carried it
+## until operator ruling Q3 (2026-11-03, feeds contract P5) closed it (see
+## that entry). A third,
 ## `flat_6mm_pocket_hdpe_thermal` (on an invariant, `known_gap` works there
 ## too: a FAILING invariant passes, a passing one fails), is a row-versus-
 ## literature disagreement that the machine feed ceiling hid until ruling
@@ -5563,11 +5565,16 @@ name = "chipload_below_rubbing_floor"
 expr = "feed_rate / (rpm * flutes) < 0.025"
 severity = "critical"
 
+# Re-graded 2026-11-03: KNOWN GAP CLOSED, not by a de-rate. Operator ruling
+# Q3 (2026-11-03, lower printed chip on a tie) moved the row from
+# `garr-142m-alum-slot-6000-flat-2f` (fpt 0.12) to
+# `garr-gp-alum-6000-flat-2f` (fpt 0.0405), which is under 0.080. The
+# anti-pattern is an ordinary one again: it must stay clear. The aluminium
+# de-rate on a wood router is still unsourced.
 [[cell.anti_patterns]]
 name = "al_chipload_undated_industrial"
 expr = "feed_rate / (rpm * flutes) > 0.080"
 severity = "major"
-known_gap = "no sourced aluminium-on-a-wood-router de-rate exists yet; the anti-pattern is the target"
 
 [[cell.anti_patterns]]
 name = "al_doc_woc_industrial_envelope"

@@ -95,14 +95,11 @@ use rs_cam_core::compute::stock_config::{ModelKind, ModelUnits, StockConfig};
 use rs_cam_core::compute::tool_config::{ToolConfig, ToolId, ToolType};
 use rs_cam_core::feeds::ramp::RampArm;
 use rs_cam_core::feeds::suggest::{
-    AggressivenessSkip, SuggestContext, SuggestForOperationInput, SuggestWarning,
-    suggest_for_operation,
+    SuggestContext, SuggestForOperationInput, SuggestWarning, suggest_for_operation,
 };
-use rs_cam_core::feeds::{
-    FeedsWarning, OperationFamily, PassRole, RampFeed, SpindleStrategy, embedded_vendor_lut,
-};
+use rs_cam_core::feeds::{FeedsWarning, RampFeed, embedded_vendor_lut};
 use rs_cam_core::machine::{MachineProfile, PowerModel};
-use rs_cam_core::material::{Material, PlywoodGrade, SheetGoodKind, WoodSpecies};
+use rs_cam_core::material::{Material, PlywoodGrade, WoodSpecies};
 use rs_cam_core::polygon::Polygon2;
 use rs_cam_core::session::{LoadedModel, ProjectSessionBuilder, ToolpathConfig};
 use rs_cam_viz::state::AppState;
@@ -208,6 +205,13 @@ fn classify_suggest(w: &SuggestWarning) -> (&'static str, Class) {
         SuggestWarning::PlungeEntryUnstableAtDpp { .. } => {
             ("PlungeEntryUnstableAtDpp", Class::NoNumberMoves)
         }
+        // Feeds contract P5 (K2, D4): the apply accepts rules with no
+        // source; K2b/K6: the point is outside the safe envelope. Neither
+        // moves a number; each reports a condition.
+        SuggestWarning::UnsourcedRowsAccepted { .. } => {
+            ("UnsourcedRowsAccepted", Class::NoNumberMoves)
+        }
+        SuggestWarning::OutsideEnvelope { .. } => ("OutsideEnvelope", Class::NoNumberMoves),
         SuggestWarning::DeflectionBackoffUnmodeled { .. } => {
             ("DeflectionBackoffUnmodeled", Class::NoNumberMoves)
         }
@@ -411,6 +415,8 @@ fn suggest_numbers(w: &SuggestWarning) -> Vec<String> {
         | SuggestWarning::FeedClampedToChiploadFloor { .. }
         | SuggestWarning::PowerRecheckedAfterRescale { .. }
         | SuggestWarning::CutGeometryFieldNotHeld { .. }
+        | SuggestWarning::UnsourcedRowsAccepted { .. }
+        | SuggestWarning::OutsideEnvelope { .. }
         | SuggestWarning::PlungeReDerived { .. } => {}
     }
     out
@@ -657,62 +663,6 @@ fn hardwood() -> Material {
     }
 }
 
-/// The first material, operation and tool type that ship a Suggest recipe
-/// and file the "no dial action" record `skip`. The search keeps the fixture
-/// valid when a row moves or R1 refuses a cell.
-fn first_skip_cell(
-    materials: &[Material],
-    skip: AggressivenessSkip,
-) -> (Material, OperationConfig, ToolConfig) {
-    let machine = MachineProfile::generic_wood_router();
-    for material in materials {
-        for &op in OperationType::ALL {
-            let operation = OperationConfig::new_default(op);
-            let (family, role) = operation.feeds_style();
-            let wanted = match skip {
-                AggressivenessSkip::Drill => family == OperationFamily::Drill,
-                AggressivenessSkip::FinishRole => {
-                    role == PassRole::Finish && family != OperationFamily::Drill
-                }
-            };
-            if !wanted {
-                continue;
-            }
-            for &tool_type in ToolType::ALL {
-                let mut tool = ToolConfig::new_default(ToolId::from_raw(1), tool_type);
-                // Ruling B5 (G6): the drill claim covers a flat end mill at
-                // 3.0-12.7 mm (widened 2026-09-25); the default end mill is
-                // 6.35 mm, already inside the range, but 6.0 mm keeps this
-                // fixture's original size.
-                if skip == AggressivenessSkip::Drill && tool_type == ToolType::EndMill {
-                    tool.diameter = 6.0;
-                }
-                let Ok(suggested) = suggest_for_operation(SuggestForOperationInput {
-                    operation: &operation,
-                    tool: &tool,
-                    machine: &machine,
-                    material,
-                    lut: embedded_vendor_lut(),
-                    spindle_strategy: SpindleStrategy::MatchChart,
-                    context: SuggestContext::default(),
-                }) else {
-                    continue;
-                };
-                let files_skip = suggested.warnings.iter().any(|w| {
-                    matches!(
-                        w,
-                        SuggestWarning::AggressivenessNotApplied { reason, .. } if *reason == skip
-                    )
-                });
-                if files_skip {
-                    return (material.clone(), operation, tool);
-                }
-            }
-        }
-    }
-    panic!("no operation and tool type in {materials:?} files the {skip:?} record");
-}
-
 fn cases() -> Vec<Case> {
     let mut slow_gantry = MachineProfile::generic_wood_router();
     slow_gantry.max_cutting_feed_mm_min = Some(200.0);
@@ -754,18 +704,10 @@ fn cases() -> Vec<Case> {
         config.spindle_rpm = Some(18_000);
     }
 
-    let softwood_plywood = Material::Plywood {
-        grade: PlywoodGrade::Softwood,
-    };
-    let hdf = Material::SheetGood {
-        kind: SheetGoodKind::Hdf,
-    };
-    let (finish_material, finish_op, finish_tool) = first_skip_cell(
-        &[hardwood(), softwood_plywood.clone()],
-        AggressivenessSkip::FinishRole,
-    );
-    let (drill_material, drill_op, drill_tool) =
-        first_skip_cell(&[softwood_plywood, hdf], AggressivenessSkip::Drill);
+    // Feeds contract P5 (K2b, ruling Q4): no product door runs the dial
+    // (pass 6b), so the two dial records (`EngagementReducedForAggressiveness`,
+    // `AggressivenessNotApplied`) left the card, and the finish and drill
+    // cells that filed the "no dial action" record went with them.
 
     let mut pocket_tool = ToolConfig::new_default(ToolId::from_raw(1), ToolType::EndMill);
     pocket_tool.diameter = 6.0;
@@ -789,7 +731,7 @@ fn cases() -> Vec<Case> {
             material: baltic_birch(),
             operation: adaptive_operation(),
             machine: None,
-            must_raise: &["LongToolDerate", "EngagementReducedForAggressiveness"],
+            must_raise: &["LongToolDerate"],
         },
         Case {
             name: "slow_gantry",
@@ -805,7 +747,10 @@ fn cases() -> Vec<Case> {
             material: hardwood(),
             operation: adaptive_operation(),
             machine: Some(weak_spindle),
-            must_raise: &["PowerLadderReducedCut"],
+            // P5 (K1/K2): the calculator reads the stated cut, so the
+            // ladder may not move the pinned depth or width; the cell raises
+            // the constraint record.
+            must_raise: &["PowerLimited"],
         },
         Case {
             name: "short_flute",
@@ -814,22 +759,6 @@ fn cases() -> Vec<Case> {
             operation: adaptive_operation(),
             machine: None,
             must_raise: &["DocExceedsFlute"],
-        },
-        Case {
-            name: "finish",
-            tool: finish_tool,
-            material: finish_material,
-            operation: finish_op,
-            machine: None,
-            must_raise: &["AggressivenessNotApplied"],
-        },
-        Case {
-            name: "drill",
-            tool: drill_tool,
-            material: drill_material,
-            operation: drill_op,
-            machine: None,
-            must_raise: &["AggressivenessNotApplied"],
         },
     ]
 }
@@ -844,38 +773,14 @@ fn every_stage_that_moves_a_number_is_on_the_card_g_visible() {
     for case in cases() {
         checked.extend(check(&case));
     }
-    // Non-vacuity across the file: the two dial records and the long-tool
-    // share were each found on a face.
-    for name in [
-        "RpmLoweredForFeedCeiling",
-        "EngagementReducedForAggressiveness",
-        "AggressivenessNotApplied",
-        "LongToolDerate",
-        "RampFeed",
-    ] {
+    // Non-vacuity across the file: the RPM follow-down, the long-tool share
+    // and the ramp were each found on a face. (P5: the dial records left.)
+    for name in ["RpmLoweredForFeedCeiling", "LongToolDerate", "RampFeed"] {
         assert!(
             checked.contains(&name),
             "no fixture checked {name} on the face; checked {checked:?}"
         );
     }
-}
-
-/// The dial line states the load target as a percent of the base, and the
-/// long-tool share inside it. On the adaptive cell that is
-/// 0.85 x 0.75 = 64 %.
-#[test]
-fn the_dial_line_names_the_long_tool_share_g_visible() {
-    let case = cases().remove(0);
-    let mut state = state_for(&case);
-    let texts = painted_text(&mut state);
-    let line = texts
-        .iter()
-        .find(|t| !t.contains('\n') && t.contains("Aggressiveness 0.85"))
-        .unwrap_or_else(|| panic!("no aggressiveness line on the face: {texts:?}"));
-    assert!(
-        line.contains("× 0.75 long tool = 64 %"),
-        "the dial line must name the long-tool share and the target: {line:?}"
-    );
 }
 
 /// G6 ramp (2026-09-25): the ramp line names the arm and θ. On the
@@ -924,6 +829,8 @@ fn the_ramp_line_names_the_arm_and_the_angle_g_visible() {
             | SuggestWarning::RpmLoweredForFeedCeiling { .. }
             | SuggestWarning::AggressivenessNotApplied { .. }
             | SuggestWarning::RampFeed { .. }
+            | SuggestWarning::UnsourcedRowsAccepted { .. }
+            | SuggestWarning::OutsideEnvelope { .. }
             | SuggestWarning::PlungeReDerived { .. } => None,
         })
         .unwrap_or_else(|| panic!("the pocket must ship a sourced ramp: {suggest:?}"));

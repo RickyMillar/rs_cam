@@ -56,7 +56,15 @@ Phase 3 landed 2026-11-03 (K4): each registry row states its `EntryContract`
 `MoveIntent::EntryApproach`; `Produced` carries one `EntryRecord` per entry.
 The 0.5 x first feed and the 500 mm/min fallback are Unsourced
 `FormulaConstant` rows (F201: 146). G-OPGOLDEN now hashes the G-code of each
-arm: no byte moved. Next: Phase 5 (K2/K2b envelope).
+arm: no byte moved. 
+Phase 5 landed 2026-11-04 (K2, K2b): every shipped number carries a `Basis`;
+Suggest returns a `SafeEnvelope` (limits, a speeds map, one proposal, the
+placement of the operator point). Apply writes speeds for the kept geometry
+and writes depth, stepover or peck only on a pick ("Apply all" = the
+proposal). The old geometry chain (passes 0, 2-6, 6b, the dial) is deleted.
+A score tie takes the lower printed chip (Q3). MCP: `get_safe_envelope`,
+`apply_feeds` takes `pick`. Open: D8 (P10 tool-derived defaults), D9 (the
+dial changes no number). Next: P6 (`ToolFact`), P5b (GUI envelope).
 
 ## Update 2026-10-29 — viewport parity: phase 0 landed
 

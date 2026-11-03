@@ -15,14 +15,20 @@
 //! The score, from `vendor_lookup::score_observation` over the two JSON rows:
 //! base 1000 + family 220 + derived 70 + grade b 30 + flutes 80 + diameter
 //! 200 + hardness 80 (1450 against 1450) + pass role 45 + material 100 =
-//! 1825 (no subfamily term: the query carries none). The tie goes to the
-//! smaller id (`beats`), so the Amana row wins. Decision 5 pins the id AND
-//! the band, and the SpeTool value lies inside the Amana band: the only
-//! two-vendor agreement at a micro size (EXTRAPOLATION_G1 §3.3).
+//! 1825 (no subfamily term: the query carries none).
+//!
+//! Operator ruling Q3 (feeds contract P5, D2) decides the tie: the lower
+//! printed chip wins, then the id, and the winner names the other row in
+//! `tied_with`. The SpeTool row (0.0254) is lower than the Amana band, so
+//! the SpeTool row wins. G1 orchestrator decision 5 reversed by operator
+//! ruling Q3: before P5 the smaller id won and the Amana row shipped. The
+//! SpeTool value still lies inside the Amana band: the only two-vendor
+//! agreement at a micro size (EXTRAPOLATION_G1 §3.3).
 //!
 //! The row is at the printed size, so its G1 basis is `Exact` and the arm is
 //! `VendorBacked`, not `Extrapolated`. Both scales are exactly 1.0
-//! (`1.0^0.61` and `(1450 / 1450)^0.5`), so the band ships as printed.
+//! (`1.0^0.61` and `(1450 / 1450)^0.5`), so the value ships as printed: one
+//! printed value, held as a point (A2), with no printed minimum.
 
 #![expect(
     clippy::unwrap_used,
@@ -79,22 +85,24 @@ fn tapered_geometry() -> ToolGeometryHint {
     }
 }
 
-/// The lookup picks the Amana row by id on a 1825 tie, at the printed band.
+/// The lookup picks the SpeTool row on a 1825 tie (Q3: the lower printed
+/// chip), names the Amana row, and ships the printed value.
 #[test]
-fn the_lookup_picks_the_printed_amana_tip_row_g1() {
+fn the_lookup_picks_the_lower_printed_tip_row_g1() {
     let lut = embedded_vendor_lut();
     let q = query();
     let row = lookup_best(lut, &q).expect("a printed 1.0 mm tapered hardwood row exists");
-    assert_eq!(row.observation_id, AMANA_ID);
+    assert_eq!(row.observation_id, SPETOOL_ID);
     assert_eq!(row.score, 1825);
+    assert_eq!(row.tied_with.as_ref().map(|r| r.id()), Some(AMANA_ID));
     assert_eq!(row.size_basis, SizeBasis::Exact);
-    assert!((row.chip_load_min_mm.unwrap() - BAND.0).abs() < 1e-12);
-    assert!((row.chip_load_max_mm.unwrap() - BAND.1).abs() < 1e-12);
+    assert_eq!(row.chip_load_min_mm, None);
+    assert!((row.chip_load_max_mm.unwrap() - SPETOOL_VALUE).abs() < 1e-12);
     assert!((row.chipload_diameter_scale - 1.0).abs() < 1e-12);
     assert!((row.chipload_hardness_scale - 1.0).abs() < 1e-12);
     assert!(!row.is_extrapolated);
-    // The A4 channel: the row says that hardwood is read from a shared
-    // "Wood, MDF, Sign-Foam" row, derived grade b.
+    // The A4 channel: the winning row says that hardwood is read from a
+    // shared "Wood, MDF, Sign-Foam" row, derived grade b.
     assert_eq!(row.material_label, A4_LABEL);
     assert_eq!(row.evidence_grade, EvidenceGrade::B);
     assert_eq!(row.row_kind, ObservationKind::Derived);
@@ -104,37 +112,41 @@ fn the_lookup_picks_the_printed_amana_tip_row_g1() {
     let geom = tapered_geometry();
     let recipe = find_best_row_for_geometry(lut, &q, &geom).unwrap();
     let envelope = find_best_chip_envelope_row(lut, &q, &geom).unwrap();
-    assert_eq!(recipe.observation_id, AMANA_ID);
-    assert_eq!(envelope.observation_id, AMANA_ID);
+    assert_eq!(recipe.observation_id, SPETOOL_ID);
+    assert_eq!(envelope.observation_id, SPETOOL_ID);
 }
 
-/// The tie is real: without the Amana row, the SpeTool row wins at the same
-/// 1825, and its printed value lies inside the Amana band.
+/// The tie is real: without the SpeTool row, the Amana row wins at the same
+/// 1825 with its printed band and its A4 label, and the SpeTool value lies
+/// inside that band.
 #[test]
 fn the_spetool_row_ties_and_lies_inside_the_amana_band_g1() {
-    let without_amana = VendorLut {
+    let without_spetool = VendorLut {
         observations: embedded_vendor_lut()
             .observations
             .iter()
-            .filter(|o| o.observation_id != AMANA_ID)
+            .filter(|o| o.observation_id != SPETOOL_ID)
             .cloned()
             .collect(),
     };
-    let row = lookup_best(&without_amana, &query()).expect("the SpeTool row matches");
-    assert_eq!(row.observation_id, SPETOOL_ID);
-    assert_eq!(row.score, 1825, "the two rows tie, so the id decides");
-    assert!(AMANA_ID < SPETOOL_ID, "the tie-break keeps the smaller id");
-    assert_eq!(row.chip_load_min_mm, None);
-    assert!((row.chip_load_max_mm.unwrap() - SPETOOL_VALUE).abs() < 1e-12);
+    let row = lookup_best(&without_spetool, &query()).expect("the Amana row matches");
+    assert_eq!(row.observation_id, AMANA_ID);
+    assert_eq!(row.score, 1825, "the two rows tie, so Q3 decides");
+    assert_eq!(row.tied_with, None, "no other row ties");
+    assert!((row.chip_load_min_mm.unwrap() - BAND.0).abs() < 1e-12);
+    assert!((row.chip_load_max_mm.unwrap() - BAND.1).abs() < 1e-12);
     assert!(
         (BAND.0..=BAND.1).contains(&SPETOOL_VALUE),
         "SpeTool {SPETOOL_VALUE} must lie inside the Amana band {BAND:?}"
     );
+    assert!(SPETOOL_VALUE < BAND.1, "Q3: the SpeTool chip is the lower");
     assert_eq!(row.material_label, A4_LABEL);
+    assert_eq!(row.evidence_grade, EvidenceGrade::B);
+    assert_eq!(row.row_kind, ObservationKind::Derived);
 }
 
-/// Suggest ships the printed row: `VendorBacked`, the Amana id, and the
-/// printed band before the depth de-rate.
+/// Suggest ships the printed row: `VendorBacked`, the SpeTool id (Q3), and
+/// the printed value before the depth de-rate.
 #[test]
 fn suggest_ships_the_printed_tip_row_g1() {
     let mut tool = ToolConfig::new_default(ToolId::from_raw(1), ToolType::TaperedBallNose);
@@ -168,15 +180,16 @@ fn suggest_ships_the_printed_tip_row_g1() {
     })
     .expect("the printed 1.0 mm tip row answers");
     assert_eq!(s.feeds_result.support, FeedsSupport::VendorBacked);
-    assert_eq!(s.feeds_result.vendor_source.as_deref(), Some(AMANA_ID));
+    assert_eq!(s.feeds_result.vendor_source.as_deref(), Some(SPETOOL_ID));
     let row = s
         .feeds_result
         .matched_lut_row
         .as_ref()
         .expect("a vendor row answered");
-    assert_eq!(row.observation_id, AMANA_ID);
+    assert_eq!(row.observation_id, SPETOOL_ID);
+    assert_eq!(row.tied_with.as_ref().map(|r| r.id()), Some(AMANA_ID));
     assert_eq!(row.size_basis, SizeBasis::Exact);
-    assert!((row.chip_load_min_mm.unwrap() - BAND.0).abs() < 1e-12);
-    assert!((row.chip_load_max_mm.unwrap() - BAND.1).abs() < 1e-12);
+    assert_eq!(row.chip_load_min_mm, None);
+    assert!((row.chip_load_max_mm.unwrap() - SPETOOL_VALUE).abs() < 1e-12);
     assert_eq!(row.material_label, A4_LABEL);
 }

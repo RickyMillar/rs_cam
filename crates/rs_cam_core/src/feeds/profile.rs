@@ -5,9 +5,9 @@
 //! production Suggest surface uses —
 //! [`crate::feeds::suggest::feeds_explain_for_operation`] +
 //! [`crate::feeds::suggest::suggest_for_operation`] — and bundles their
-//! outputs with the Phase-0 axial constraint envelope
-//! ([`crate::feeds::cutter_constraints`]) into one preflight view of a
-//! cutter × operation × material × machine combination.
+//! outputs with the safe envelope ([`crate::feeds::envelope::SafeEnvelope`],
+//! CONTRACT K2b; it folds in the Phase-0 axial constraint envelope) into one
+//! preflight view of a cutter × operation × material × machine combination.
 //!
 //! ## Boundaries (plan §3.2)
 //!
@@ -23,10 +23,10 @@
 use crate::compute::catalog::{OperationConfig, OperationSpec, OperationType};
 use crate::compute::cutter::build_cutter;
 use crate::compute::tool_config::ToolConfig;
-use crate::feeds::cutter_constraints::CutterAxialConstraints;
+use crate::feeds::envelope::{EnvelopeInput, SafeEnvelope};
 use crate::feeds::suggest::{
-    SuggestContext, SuggestForOperationInput, SuggestWarning, axial_envelope_for_operation,
-    feeds_explain_for_operation, suggest_for_operation,
+    SuggestContext, SuggestForOperationInput, SuggestWarning, feeds_explain_for_operation,
+    suggest_for_operation,
 };
 use crate::feeds::{CutterKind, FeedsError, FeedsExplain, FeedsResult, VendorLut};
 use crate::machine::MachineProfile;
@@ -45,21 +45,6 @@ use crate::tool::ToolDefinition;
 // field nothing reads costs more than deleting it. `predict_move_count`
 // keeps its live caller in `feeds::suggest::invariants`.
 
-/// Pre-sim constraint envelopes for the combination. Currently the
-/// Phase-0 axial-DOC envelope; radial joins when a radial builder
-/// ships.
-///
-/// Stays `pub`: it is the type of the `pub` field
-/// `CutterOpProfile::constraints`, so a crate-private form raises
-/// `private_interfaces`.
-#[derive(Debug, Clone)]
-pub struct ConstraintEnvelopes {
-    /// Axial-DOC envelope per the Suggest pass-0 routing
-    /// ([`axial_envelope_for_operation`]). `None` for ops outside the
-    /// routing (2D pocket/contour/drill etc.).
-    pub axial: Option<CutterAxialConstraints>,
-}
-
 /// Input for [`CutterOpProfile::for_combo`]. Field-for-field the same
 /// vocabulary as [`SuggestForOperationInput`]; the second lifetime
 /// keeps the context's stock/bbox borrows (typically locals at the
@@ -70,7 +55,8 @@ pub struct CutterOpProfileInput<'a, 'ctx> {
     pub tool: &'a ToolConfig,
     pub machine: &'a MachineProfile,
     pub material: &'a Material,
-    pub lut: &'a VendorLut,
+    /// The vendor table. `'static`: the envelope keeps it for a pick.
+    pub lut: &'static VendorLut,
     /// Spindle-RPM policy. See [`crate::feeds::SpindleStrategy`].
     pub spindle_strategy: crate::feeds::SpindleStrategy,
     /// Project-level context (model bbox, stock, policy). Consumed
@@ -115,12 +101,14 @@ pub struct CutterOpProfile<'a> {
     /// explain path renders a "would-have-produced" preview even for
     /// refused combinations.
     pub explain: FeedsExplain,
-    /// The operation with Suggest's recommendation written in (the
-    /// output of `suggest_for_operation`). `None` when refused.
+    /// The operation with Suggest's speeds written in (the output of
+    /// `suggest_for_operation`; K2b: the speeds for the geometry the op
+    /// keeps, no geometry). `None` when refused.
     pub suggested_operation: Option<OperationConfig>,
-    /// Pre-sim constraint envelopes at the recommended operating point
-    /// (or the input operating point when Suggest refused).
-    pub constraints: ConstraintEnvelopes,
+    /// CONTRACT K2b (feeds contract P5): the safe envelope of the op: the
+    /// limits, the speeds map, the proposal and the operator's placement.
+    /// It folds in the Phase-0 axial envelope (`ConstraintEnvelopes`).
+    pub envelope: Result<SafeEnvelope, FeedsError>,
     /// Suggest's invariant-pass warnings — identical to what the GUI
     /// Suggest button / `--apply-suggest` would surface. Empty when
     /// refused.
@@ -177,20 +165,15 @@ impl<'a> CutterOpProfile<'a> {
             Err(e) => (Err(e), None, None, Vec::new()),
         };
 
-        // Evaluate the envelope at the recommended operating point when
-        // available (post-invariant feeds/RPM/stepover/DPP), else at the
-        // input operating point.
-        let eval_op = suggested_operation.as_ref().unwrap_or(input.operation);
-        let matched_lut_row = feeds.as_ref().and_then(|f| f.matched_lut_row.as_ref());
-
-        let constraints = ConstraintEnvelopes {
-            axial: axial_envelope_for_operation(
-                eval_op,
-                input.tool,
-                input.material,
-                matched_lut_row,
-            ),
-        };
+        let envelope = SafeEnvelope::for_cut(EnvelopeInput {
+            operation: input.operation,
+            tool: input.tool,
+            machine: input.machine,
+            material: input.material,
+            lut: input.lut,
+            spindle_strategy: input.spindle_strategy,
+            context: input.context,
+        });
 
         Ok(Self {
             tool_cfg: input.tool,
@@ -205,7 +188,7 @@ impl<'a> CutterOpProfile<'a> {
             feeds,
             explain,
             suggested_operation,
-            constraints,
+            envelope,
             warnings,
         })
     }
@@ -321,30 +304,30 @@ mod tests {
         assert!(profile.explain.recommended.rpm > 0.0);
     }
 
-    /// Envelope routing: ops inside the Suggest pass-0 routing carry an
-    /// axial envelope; 2D pocket does not (mirrors
-    /// `axial_envelope_for_operation`'s `None` arm).
+    /// K2b: the profile carries the safe envelope; a refused pairing
+    /// carries the refusal (D6: a missing input is not a finding).
     #[test]
-    fn envelope_routing_matches_suggest_pass0() {
+    fn the_profile_carries_the_safe_envelope() {
         let tool = endmill_6mm();
         let machine = MachineProfile::default();
         let material = Material::default();
 
-        let adaptive3d = OperationConfig::new_default(OperationType::Adaptive3d);
-        let profile =
-            CutterOpProfile::for_combo(profile_input(&adaptive3d, &tool, &machine, &material))
-                .unwrap();
-        assert!(
-            profile.constraints.axial.is_some(),
-            "adaptive3d is inside the axial-envelope routing"
-        );
-
-        let pocket = OperationConfig::new_default(OperationType::Pocket);
+        let pocket = crate::compute::fixture_values::fixture_op(OperationType::Pocket);
         let profile =
             CutterOpProfile::for_combo(profile_input(&pocket, &tool, &machine, &material)).unwrap();
+        let env = profile.envelope.as_ref().expect("a pocket is backed");
         assert!(
-            profile.constraints.axial.is_none(),
-            "2D pocket is outside the axial-envelope routing"
+            env.limit(crate::feeds::envelope::LimitKind::FluteGuard)
+                .is_some()
+        );
+
+        let scallop = OperationConfig::new_default(OperationType::Scallop);
+        let profile =
+            CutterOpProfile::for_combo(profile_input(&scallop, &tool, &machine, &material))
+                .unwrap();
+        assert!(
+            profile.envelope.is_err(),
+            "flat endmill × scallop is refused"
         );
     }
 }

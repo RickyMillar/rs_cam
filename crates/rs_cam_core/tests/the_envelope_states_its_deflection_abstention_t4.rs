@@ -1,0 +1,128 @@
+//! **T-4 on the production envelope — the envelope states its deflection
+//! abstention.**
+//!
+//! `a_refused_deflection_is_not_a_zero_g_t4` pinned that the deflection
+//! back-off (pass 6) said so when it could not run: an unvalidated plastic
+//! filed `DeflectionBackoffUnmodeled` with its reason. Feeds contract P5
+//! deleted pass 6 (lead ruling, 2026-11-03), and the safe envelope holds the
+//! deflection limit now (`feeds::envelope`, the `Deflection` limit). Before
+//! this sentry the envelope dropped that limit with no word when the
+//! material has no force line, so an absence read as "no deflection limit".
+//!
+//! The arms, on a roughing pocket with a 6 mm carbide end mill:
+//!
+//! 1. Acrylic (no force line, ruling B6): the envelope carries a
+//!    `Deflection` limit whose edge is `Unmodelled`, and the reason is the
+//!    `DeflectionUnmodeled::MaterialUnvalidated` clause. The serialised
+//!    envelope (the MCP `get_safe_envelope` reply) carries the same entry.
+//! 2. Hard maple (a force line): the `Deflection` limit is modelled, an
+//!    `ap(ae)` curve. This is the non-vacuity partner of arm 1.
+//!
+//! The arms read the envelope through its serialised form, so the sentry
+//! compiles on the code before the fix and fails there.
+
+#![expect(
+    clippy::expect_used,
+    reason = "test code: a panic is how a test reports a failure"
+)]
+
+use rs_cam_core::compute::catalog::OperationConfig;
+use rs_cam_core::compute::operation_configs::PocketConfig;
+use rs_cam_core::compute::tool_config::{ToolConfig, ToolId, ToolType};
+use rs_cam_core::feeds::envelope::{EnvelopeInput, SafeEnvelope};
+use rs_cam_core::feeds::predict::DeflectionUnmodeled;
+use rs_cam_core::feeds::suggest::SuggestContext;
+use rs_cam_core::feeds::{SpindleStrategy, embedded_vendor_lut};
+use rs_cam_core::machine::MachineProfile;
+use rs_cam_core::material::{Material, PlasticFamily, WoodSpecies};
+
+/// A stubby carbide end mill: 6 mm, four flutes, 45 mm stickout (the t4
+/// fixture).
+fn carbide_endmill() -> ToolConfig {
+    let mut tool = ToolConfig::new_default(ToolId::from_raw(1), ToolType::EndMill);
+    tool.diameter = 6.0;
+    tool.cutting_length = 25.0;
+    tool.shaft_diameter = 6.0;
+    tool.shank_diameter = 6.0;
+    tool.stickout = 45.0;
+    tool.flute_count = 4;
+    tool
+}
+
+/// A roughing pocket that states its cut (the t4 fixture).
+fn roughing_pocket() -> OperationConfig {
+    OperationConfig::Pocket(PocketConfig {
+        floor: rs_cam_core::compute::floor::Floor::top(12.0),
+        depth_per_pass: 3.0,
+        stepover: 2.0,
+        feed_rate: Some(1800.0),
+        plunge_rate: Some(500.0),
+        spindle_rpm: Some(18_000),
+        ..PocketConfig::default()
+    })
+}
+
+/// The serialised `Deflection` limit of the envelope for `material`, as
+/// the MCP reply carries it.
+fn deflection_entry(material: &Material) -> Option<serde_json::Value> {
+    let op = roughing_pocket();
+    let tool = carbide_endmill();
+    let machine = MachineProfile::default();
+    let envelope = SafeEnvelope::for_cut(EnvelopeInput {
+        operation: &op,
+        tool: &tool,
+        machine: &machine,
+        material,
+        lut: embedded_vendor_lut(),
+        spindle_strategy: SpindleStrategy::MatchChart,
+        context: SuggestContext::default(),
+    })
+    .expect("a flat end mill on a roughing pocket has an envelope");
+    let json = serde_json::to_value(&envelope).expect("the envelope serialises");
+    json.get("boundary")
+        .and_then(serde_json::Value::as_array)
+        .and_then(|limits| {
+            limits
+                .iter()
+                .find(|l| l.get("kind").and_then(serde_json::Value::as_str) == Some("deflection"))
+                .cloned()
+        })
+}
+
+#[test]
+fn the_envelope_states_its_deflection_abstention_t4() {
+    let acrylic = Material::Plastic {
+        family: PlasticFamily::Acrylic,
+    };
+    let entry = deflection_entry(&acrylic).expect(
+        "an acrylic roughing envelope must carry a Deflection entry that states the \
+         abstention; it dropped the limit with no word",
+    );
+    let edge = entry.get("edge").expect("the entry has an edge");
+    assert_eq!(
+        edge.get("kind").and_then(serde_json::Value::as_str),
+        Some("unmodelled"),
+        "the Deflection entry must be Unmodelled: {entry}"
+    );
+    assert_eq!(
+        edge.get("reason").and_then(serde_json::Value::as_str),
+        Some(DeflectionUnmodeled::MaterialUnvalidated.clause()),
+        "the abstention must carry its reason: {entry}"
+    );
+}
+
+#[test]
+fn a_modelled_material_keeps_its_deflection_curve_t4() {
+    let maple = Material::SolidWood {
+        species: WoodSpecies::HardMaple,
+    };
+    let entry = deflection_entry(&maple).expect("hard maple carries a Deflection limit");
+    assert_eq!(
+        entry
+            .get("edge")
+            .and_then(|e| e.get("kind"))
+            .and_then(serde_json::Value::as_str),
+        Some("ap_curve"),
+        "a modelled material keeps the ap(ae) curve: {entry}"
+    );
+}

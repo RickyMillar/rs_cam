@@ -572,6 +572,20 @@ impl EmbeddedCamServer {
     }
 
     #[tool(
+        name = "get_safe_envelope",
+        description = "Feeds contract K2b: the safe envelope of the toolpath at `index`, the space of safe (depth, width) choices for this tool, machine and material. Returns `axes` (plane, axial_bar, radial_bar or fixed, with the spans), `boundary` (one limit per row: kind, law, basis and edge: an ap ceiling, a slot step, an ap(ae) curve, a floor, per_point, or unmodelled with its reason), `speeds` (the grid: ap, ae, rpm, feed, plunge, chip, power, available power, fits_power, rubbing, feed_capped; capped: `points_total_matching`, `points_returned`, `points_truncated`), `proposal` (the point Apply all writes, with its basis), `proposal_binding` (the limit that lowered it), `stated` (the operator's point) and `operator` (inside with a margin, or outside with the binding limit). Read it before `apply_feeds` with a pick. Does not mutate the project."
+    )]
+    async fn get_safe_envelope(
+        &self,
+        Parameters(IndexParam { index }): Parameters<IndexParam>,
+    ) -> String {
+        Self::format_result(
+            self.send_request(McpRequestKind::GetSafeEnvelope { index })
+                .await,
+        )
+    }
+
+    #[tool(
         name = "get_cut_trace",
         description = "Get simulation cut trace data: semantic summaries, structural span summaries, hotspots, issues, and (for drill toolpaths) drill_summaries. Run simulation first. Filter to a single toolpath via toolpath_id — that is the project-level ID from list_toolpaths, NOT the index; an id matching no toolpath is refused with the valid ids. Or filter to a structural span via span_kind (e.g. \"depth_pass\"), span_id (from inspect_spans), or pass_index (DepthPass payload, 0-based). Set include_drill_samples=true to also include the per-peck DrillSample stream. capped_move_count and capped_min_feed_mm_min count the moves with a feed cap (a load rule lowered the feed); capped_moves lists them (default 50), omitted when there are none. EVERY array is bounded: span_summaries and semantic_summaries default to 200, drill_samples to 500, and the whole response to 8 MiB. Each array reports <name>_total_matching / _returned / _truncated / _cap, so a shortened array always says so; a section dropped by the byte backstop is omitted, named in sections_not_computed, and sets complete=false — never rendered as an empty array. Narrow with the filters rather than raising the caps."
     )]
@@ -1523,18 +1537,15 @@ impl EmbeddedCamServer {
 
     #[tool(
         name = "apply_feeds",
-        description = "Apply the Feeds & Speeds recommendation to one toolpath through the SAME validated funnel both GUI surfaces use, with the scope stated explicitly. This is the only agent write that carries the engine's guarantees: (1) it REFUSES a tool x operation pairing `validate_tool_for_operation` declines (e.g. a flat end mill on a scallop finish) and returns the refusal instead of writing, and (2) the values written are invariant-resolved — the plunge-to-feed and stepover-to-diameter clamps, the rigidity and cutting-length depth clamps, the deflection back-off and the chipload recalibration all run, then the result is rounded. `scope` is REQUIRED reading: \"speeds\" writes feed/plunge/RPM and does NOT change the cut; \"cut_geometry\" writes stepover/DOC and DOES change the cut (re-simulate — engagement, runtime and every gate verdict move with it); \"both\" does both. Omitting it defaults to \"speeds\", the conservative choice. Contrast `set_toolpath_param`, which writes a raw number with no validation and no clamps — use that only when you mean to override the engine. Marks the toolpath stale; regenerate to apply."
+        description = "Apply the Feeds & Speeds recommendation to one toolpath through the SAME validated funnel the GUI uses. It REFUSES a tool x operation pairing `validate_tool_for_operation` declines (e.g. a flat end mill on a scallop finish) and returns the refusal instead of writing. Suggest never writes the cut by itself (K2b, ruling Q4): with no `pick` it writes the speeds (feed, plunge, RPM, ramp feed) for the cut the op keeps, and no geometry moves. `pick` writes a point of the safe envelope (`get_safe_envelope`), then the speeds at it: `\"proposal\"` (the envelope proposal, min(stated, binding cap): the GUI Apply all), `{\"point\": {\"ap_mm\": ..., \"ae_mm\": ...}}` or `{\"peck\": {\"mm\": ...}}`. A pick CHANGES THE CUT: re-simulate afterwards. A point outside the envelope is written and warns (`project.outside_envelope`, it names the binding limit). The reply names the rules with no source (F201) that the written values read; the apply is their acceptance. Contrast `set_toolpath_param`, which writes a raw number with no validation. Marks the toolpath stale; regenerate to apply."
     )]
     async fn apply_feeds(
         &self,
-        Parameters(ApplyFeedsParam { index, scope }): Parameters<ApplyFeedsParam>,
+        Parameters(ApplyFeedsParam { index, pick }): Parameters<ApplyFeedsParam>,
     ) -> String {
         Self::format_result(
-            self.send_request(McpRequestKind::ApplyFeeds {
-                index,
-                scope: scope.unwrap_or_default(),
-            })
-            .await,
+            self.send_request(McpRequestKind::ApplyFeeds { index, pick })
+                .await,
         )
     }
 

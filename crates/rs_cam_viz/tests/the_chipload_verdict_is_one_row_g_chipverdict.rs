@@ -615,11 +615,11 @@ fn door_figure(fixture: Fixture) -> Result<PowerFigure, PowerUnmodeled> {
     let model_bbox = state.session().model_bbox_by_id(tc.model_id);
     let previews = feeds::suggest::preview_field_applies(
         &tc.operation,
-        recommended,
         tool,
         state.session().machine(),
         &stock.material,
-        tc.operation.feeds_style().1,
+        feeds::embedded_vendor_lut(),
+        state.session().post_config().spindle_strategy,
         feeds::suggest::SuggestContext {
             model_bbox: model_bbox.as_ref(),
             ..feeds::suggest::SuggestContext::default()
@@ -885,18 +885,25 @@ fn shipped_recipe(
         feeds::SpindleStrategy::MatchChart,
     );
     let recommended = preview.applicable()?.result().clone();
-    let (_, pass_role) = operation.feeds_style();
+    // Feeds contract P5 (K2b): "Apply all" (the envelope proposal) is the
+    // production answer to the heavy cut; before P5 this ran the retired
+    // chain door.
     let mut provenance = feeds::FeedsProvenance::default();
-    feeds::suggest::apply_feeds_result_to_op(
+    feeds::suggest::apply_to_operation(
+        feeds::suggest::OperationApplyInput {
+            tool: &tool,
+            machine,
+            material: &stock.material,
+            spindle_strategy: feeds::SpindleStrategy::MatchChart,
+            lut: feeds::embedded_vendor_lut(),
+            suggest: feeds::suggest::SuggestContext::default(),
+        },
+        Some(feeds::envelope::PickRequest::Proposal),
+        None,
         &mut operation,
         &mut provenance,
-        &recommended,
-        &tool,
-        machine,
-        &stock.material,
-        pass_role,
-        feeds::suggest::SuggestContext::default(),
-    );
+    )
+    .ok()?;
 
     let figure = feeds::power_at_operating_point(
         &operation,
@@ -937,7 +944,9 @@ fn shipped_recipe(
 /// came from the retired force anchor with its 2.0 grain factor. On the B6
 /// force line the population reads min 0.2 %, median 3.2 %, p90 14.6 %,
 /// peak 31.5 % (measured). The operator ruled that a peak under half scale
-/// is correct: a wood router is seldom power-bound.
+/// is correct: a wood router is seldom power-bound. Those figures were
+/// measured through the chain door; feeds contract P5 moved the population
+/// to "Apply all", and they were not re-measured.
 ///
 /// The population is the review's, widened to every shipped species: three
 /// machine presets × ten species × Ø3/Ø6/Ø12 × three milling families.

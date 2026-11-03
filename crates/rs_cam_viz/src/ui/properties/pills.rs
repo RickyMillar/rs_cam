@@ -82,19 +82,21 @@ pub(super) fn suggestion_for<'a>(
 /// toolpath names no model with finite geometry.
 pub(super) fn pill_previews(
     operation: &rs_cam_core::compute::catalog::OperationConfig,
-    result: &FeedsResult,
     tool: &rs_cam_core::compute::tool_config::ToolConfig,
     machine: &rs_cam_core::machine::MachineProfile,
     material: &rs_cam_core::material::Material,
+    spindle_strategy: rs_cam_core::feeds::SpindleStrategy,
     model_bbox: Option<&rs_cam_core::geo::BoundingBox3>,
 ) -> FieldApplyPreviews {
+    // K2b (feeds contract P5): the pill offers what "Apply all" writes, the
+    // envelope proposal and the speeds at it (P5 card trap).
     preview_field_applies(
         operation,
-        result,
         tool,
         machine,
         material,
-        operation.feeds_style().1,
+        rs_cam_core::feeds::embedded_vendor_lut(),
+        spindle_strategy,
         // The stock is not carried here: this preview reads the
         // operation the panel already holds, and the wired Suggest
         // sites leave `SuggestContext::stock` empty too.
@@ -182,7 +184,14 @@ impl<'a> PillSuggestions<'a> {
         material: &rs_cam_core::material::Material,
         model_bbox: Option<&rs_cam_core::geo::BoundingBox3>,
     ) -> Self {
-        let previews = pill_previews(operation, result, tool, machine, material, model_bbox);
+        let previews = pill_previews(
+            operation,
+            tool,
+            machine,
+            material,
+            rs_cam_core::feeds::SpindleStrategy::default(),
+            model_bbox,
+        );
         Self {
             result,
             previews: Cow::Owned(previews),
@@ -273,9 +282,10 @@ mod tests {
     use rs_cam_core::material::{Material, WoodSpecies};
     use rs_cam_core::session::{Command, ProjectSession, SetMachineArgs};
 
-    /// The depth per pass the funnel applies on the demo pocket (mm). See
+    /// The depth per pass "Apply all" writes on the demo pocket (mm): the
+    /// safe envelope proposal (K2b, feeds contract P5). See
     /// `depth_per_pass_pill_offers_the_as_applied_value_and_greys_on_a_match`.
-    const DEMO_POCKET_APPLIED_DPP: f64 = 0.75;
+    const DEMO_POCKET_APPLIED_DPP: f64 = 1.0;
 
     /// The demo pocket of UX-R03-014: Ø6 two-flute flat end mill, fresh
     /// Pocket op, default stock / material / Generic Wood Router.
@@ -405,25 +415,53 @@ mod tests {
         let dpp = pills.depth_per_pass();
         assert!(dpp.suggestion.clamped);
         assert_eq!(dpp.field, Some(FeedsField::DepthPerPass));
+        // K2b (feeds contract P5): "Apply all" writes the envelope proposal,
+        // so the as-applied depth is the proposal of the safe envelope.
+        let envelope = rs_cam_core::feeds::envelope::SafeEnvelope::for_cut(
+            rs_cam_core::feeds::envelope::EnvelopeInput {
+                operation: &op,
+                tool: &tool,
+                machine: session.machine(),
+                material: &session.stock_config().material,
+                lut: rs_cam_core::feeds::embedded_vendor_lut(),
+                spindle_strategy: rs_cam_core::feeds::SpindleStrategy::default(),
+                context: rs_cam_core::feeds::suggest::SuggestContext::default(),
+            },
+        )
+        .expect("the demo pocket has an envelope");
+        let proposal = envelope.proposal.get().ap_mm;
+        // The depth snaps once to the realised step down (P5 card trap):
+        // the demo pocket is 3.0 deep, so 1.2 cuts in three passes of 1.0.
+        let total = op.total_depth().expect("the demo pocket states a depth");
+        let applied =
+            rs_cam_core::ops::depth::realised_step_down(total, proposal).unwrap_or(proposal);
         assert!(
-            (dpp.suggestion.recommended - DEMO_POCKET_APPLIED_DPP).abs() < 1e-9,
-            "pill offers {}",
+            near_match(applied, dpp.suggestion.recommended),
+            "pill offers {}, Apply all writes {applied}",
             dpp.suggestion.recommended
         );
         assert!(
-            (result.axial_depth_mm - 4.2).abs() < 1e-9,
-            "fixture drift: raw DOC {}",
-            result.axial_depth_mm
+            (applied - DEMO_POCKET_APPLIED_DPP).abs() < 1e-9,
+            "fixture drift: Apply all writes {applied}"
         );
-        // Configured at the as-applied value (what the add-time funnel
-        // writes on the demo seed).
+        // The stated depth is above the proposal: a binding limit lowered
+        // it. The pill compares against the proposal, not the stated depth.
+        let stated = op
+            .depth_per_pass()
+            .expect("a Pocket states a depth per pass");
         assert!(
-            near_match(DEMO_POCKET_APPLIED_DPP, dpp.suggestion.recommended),
+            envelope.proposal_binding.is_some() && stated > proposal,
+            "fixture drift: stated {stated}, proposal {proposal}, binding {:?}",
+            envelope.proposal_binding
+        );
+        // Configured at the as-applied value: the pill greys.
+        assert!(
+            near_match(applied, dpp.suggestion.recommended),
             "pill must be greyed"
         );
         assert!(
-            !near_match(DEMO_POCKET_APPLIED_DPP, result.axial_depth_mm),
-            "pre-fix comparison stayed lit"
+            !near_match(stated, dpp.suggestion.recommended),
+            "the pill offers the stated depth, not the proposal"
         );
     }
 

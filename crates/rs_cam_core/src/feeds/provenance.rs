@@ -17,8 +17,10 @@
 use serde::{Deserialize, Serialize};
 
 use super::ramp::{RampArm, RampFeed};
-use super::{ChiploadSource, FeedsResult};
+use super::sourced::ClaimKind;
+use super::{Basis, ChiploadSource, FeedsResult};
 use crate::compute::catalog::OperationConfig;
+use crate::material::ConstantSource;
 
 /// How a single stored feeds value came to be.
 ///
@@ -121,8 +123,9 @@ impl ValueProvenance {
         }
     }
 
-    /// Map the chipload's own origin onto the value(s) it derives (feed, plunge,
-    /// and the chipload itself).
+    /// The chipload's own origin, for a chip with no matched row to name
+    /// (the edge-radius floor). Every other stamp is a projection of the
+    /// basis ([`Self::of_basis`]).
     fn from_chipload_source(source: &ChiploadSource) -> Self {
         match source {
             ChiploadSource::VendorLut { observation_id } => {
@@ -130,6 +133,49 @@ impl ValueProvenance {
             }
             ChiploadSource::FormulaFallback => Self::formula(),
             ChiploadSource::EdgeRadiusFloor => Self::edge_radius_floor(),
+        }
+    }
+
+    /// CONTRACT K2 (feeds contract P5): the stamp of a value is a projection
+    /// of its [`Basis`], by one exhaustive `match`.
+    ///
+    /// - The operator: `Manual`; a pick on the envelope carries the
+    ///   reference `picked`.
+    /// - A printed row, or a claim on a row (G1, G2, G3, G6): `VendorLut`
+    ///   with the row id. A G10 claim: `PublishedRule` with the rule id.
+    /// - A named rule: `PublishedRule` when Cited, `RepoRule` when
+    ///   Unsourced, with the rule name.
+    /// - The machine profile: `Formula` with the field name.
+    /// - A law: the stamp of its first input when that is a vendor row,
+    ///   else `Formula` (the law is the repo's formula).
+    #[must_use]
+    pub fn of_basis(basis: &Basis) -> Self {
+        match basis {
+            Basis::Operator { law } => Self {
+                source: ProvenanceSource::Manual,
+                reference: (*law == crate::feeds::sourced::LAW_PICKED)
+                    .then(|| crate::feeds::sourced::LAW_PICKED.to_owned()),
+            },
+            Basis::Printed(row) => Self::vendor_lut(row.id()),
+            Basis::Claim(claim) => match claim.kind {
+                ClaimKind::PlungeG10 => Self::published_rule(claim.rule.clone()),
+                ClaimKind::SizeG1
+                | ClaimKind::HardnessG2
+                | ClaimKind::FamilyG3
+                | ClaimKind::DrillG6 => Self::vendor_lut(claim.row.id()),
+            },
+            Basis::Rule(constant) => match constant.source {
+                ConstantSource::Cited { .. } => Self::published_rule(constant.name.clone()),
+                ConstantSource::Unsourced { .. } => Self::repo_rule(constant.name.clone()),
+            },
+            Basis::Machine(field) => Self {
+                source: ProvenanceSource::Formula,
+                reference: Some(field.name().to_owned()),
+            },
+            Basis::Derived { from, .. } => match from.first().map(Self::of_basis) {
+                Some(first) if first.source == ProvenanceSource::VendorLut => first,
+                Some(_) | None => Self::formula(),
+            },
         }
     }
 }
@@ -172,37 +218,32 @@ impl FeedsProvenance {
         operation: &OperationConfig,
         rpm_written: bool,
     ) {
-        self.apply_suggested_subset(
-            result,
-            operation,
-            rpm_written,
-            crate::feeds::suggest::ApplyScope::Both,
-        );
+        self.apply_suggested_subset(result, operation, rpm_written, true, true);
     }
 
-    /// As [`Self::apply_suggested`] but stamps only the dimensions `scope`
-    /// writes: the SPEED dimensions (feed / plunge / RPM) under `Speeds` and
-    /// `Both`, the CUT dimensions (stepover / DOC) under `CutGeometry` and
-    /// `Both`. Backs the W3.1 speed-only / cut-only applies so a speed apply
-    /// never restamps the geometry provenance. F025: the scope is the enum,
-    /// not two positional bools, so a swap does not compile.
-    pub fn apply_suggested_subset(
+    /// As [`Self::apply_suggested`] but stamps only the dimensions a write
+    /// sets: the SPEED dimensions (feed / plunge / RPM) when `speeds`, the
+    /// CUT dimensions (stepover / DOC) when `geometry`. A speed apply never
+    /// restamps the geometry provenance. The apply funnel passes its
+    /// `ChainWrite` arm's two answers (P5: the public scope is gone).
+    pub(crate) fn apply_suggested_subset(
         &mut self,
         result: &FeedsResult,
         operation: &OperationConfig,
         rpm_written: bool,
-        scope: crate::feeds::suggest::ApplyScope,
+        speeds: bool,
+        geometry: bool,
     ) {
         let p = result.provenance();
         let params = operation.as_params();
-        if scope.writes_speeds() {
+        if speeds {
             self.feed_rate = p.feed_rate;
             self.plunge_rate = p.plunge_rate;
             if rpm_written {
                 self.spindle_rpm = p.spindle_rpm;
             }
         }
-        if scope.writes_geometry() {
+        if geometry {
             if params.stepover().is_some() {
                 self.stepover = p.stepover;
             }
@@ -350,34 +391,20 @@ impl FeedsResult {
     /// (`rpm_*`, `ap_*`, `ae_*` respectively), otherwise `Formula`. `scallop_height`
     /// is an operator input, never suggested, so it is left `None` here.
     pub fn provenance(&self) -> FeedsProvenance {
-        let chip = ValueProvenance::from_chipload_source(&self.chipload_source);
-
-        // A row that the G1 size claim refused is not a basis for any value
-        // (`calculate` takes the formula tuple for it), so it labels nothing
-        // `VendorLut`.
-        let row_vendor_or_formula = |row_supplies: bool| -> ValueProvenance {
-            match self.matched_lut_row.as_ref() {
-                Some(row) if row_supplies && !row.size_basis.is_refused() => {
-                    ValueProvenance::vendor_lut(row.observation_id.clone())
-                }
-                _ => ValueProvenance::formula(),
+        // P5 (K2): each stamp is a projection of the field's basis. The
+        // "a row with an `ap_*` field labels the depth `VendorLut`" guess is
+        // gone: the depth names the rule or the operator that set it.
+        let chip = match self.chipload_source {
+            ChiploadSource::EdgeRadiusFloor => {
+                ValueProvenance::from_chipload_source(&self.chipload_source)
+            }
+            ChiploadSource::VendorLut { .. } | ChiploadSource::FormulaFallback => {
+                ValueProvenance::of_basis(&self.bases.feed)
             }
         };
-
-        let rpm = row_vendor_or_formula(self.matched_lut_row.as_ref().is_some_and(|r| {
-            r.rpm_nominal.is_some() || r.rpm_min.is_some() || r.rpm_max.is_some()
-        }));
-        let doc = row_vendor_or_formula(self.matched_lut_row.as_ref().is_some_and(|r| {
-            r.ap_min_mm.is_some()
-                || r.ap_max_mm.is_some()
-                || r.ap_min_factor.is_some()
-                || r.ap_max_factor.is_some()
-        }));
-        let woc = row_vendor_or_formula(
-            self.matched_lut_row
-                .as_ref()
-                .is_some_and(|r| r.ae_min_mm.is_some() || r.ae_max_mm.is_some()),
-        );
+        let rpm = ValueProvenance::of_basis(&self.bases.rpm);
+        let doc = ValueProvenance::of_basis(&self.bases.ap);
+        let woc = ValueProvenance::of_basis(&self.bases.ae);
 
         let plunge = match super::plunge::resolve_plunge(&self.plunge, self.feed_rate_mm_min) {
             Some((_, binding)) => self.plunge.provenance(binding, chip.clone()),
@@ -442,6 +469,7 @@ mod tests {
             material_label: String::new(),
             evidence_grade: crate::feeds::vendor_lut::EvidenceGrade::A,
             row_kind: crate::feeds::vendor_lut::ObservationKind::Exact,
+            tied_with: None,
         }
     }
 
@@ -485,6 +513,7 @@ mod tests {
             matched_lut_row,
             effective_diameter_mm: 6.0,
             derates: FeedsDerates::default(),
+            bases: crate::feeds::PointBases::not_computed(),
         }
     }
 
@@ -495,7 +524,9 @@ mod tests {
         let mut row = lut_row();
         row.rpm_nominal = Some(18_000.0); // row publishes an RPM…
         // …but no ap_*/ae_* and chipload fell back to the formula.
-        let result = feeds_result(ChiploadSource::FormulaFallback, Some(row));
+        let mut result = feeds_result(ChiploadSource::FormulaFallback, Some(row));
+        // P5: the stamps are projections of the bases `calculate` writes.
+        result.bases.rpm = Basis::Printed(crate::feeds::sourced::RowRef("obs-123".to_owned()));
         let p = result.provenance();
 
         assert_eq!(p.feed_rate.unwrap().source, ProvenanceSource::Formula);
@@ -519,19 +550,32 @@ mod tests {
         let mut row = lut_row();
         row.ap_min_mm = Some(2.0);
         row.ae_max_mm = Some(3.0);
-        let result = feeds_result(
+        let mut result = feeds_result(
             ChiploadSource::VendorLut {
                 observation_id: "obs-123".to_owned(),
             },
             Some(row),
         );
+        let printed = Basis::Printed(crate::feeds::sourced::RowRef("obs-123".to_owned()));
+        result.bases.feed = Basis::derived(
+            "chip x RPM x Z x depth tier",
+            vec![Basis::derived("band midpoint", vec![printed])],
+        );
+        result.bases.ap = Basis::Rule(crate::material::FormulaConstant::unsourced(
+            "feeds.operation_default_profile.Pocket.Roughing.ap_factor",
+            0.7,
+            "no record",
+        ));
+        result.bases.ae = Basis::stated();
         let p = result.provenance();
         assert_eq!(p.feed_rate.unwrap().source, ProvenanceSource::VendorLut);
+        // P5 (K2): a row's `ap_*` field no longer labels the depth. The
+        // depth names the rule that set it, the width the operator.
         assert_eq!(
-            p.depth_per_pass.unwrap().source,
-            ProvenanceSource::VendorLut
+            p.depth_per_pass.unwrap(),
+            ValueProvenance::repo_rule("feeds.operation_default_profile.Pocket.Roughing.ap_factor")
         );
-        assert_eq!(p.stepover.unwrap().source, ProvenanceSource::VendorLut);
+        assert_eq!(p.stepover.unwrap().source, ProvenanceSource::Manual);
     }
 
     #[test]

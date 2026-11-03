@@ -25,8 +25,7 @@ pub use capabilities::{
 };
 
 pub use cut_spec::{
-    Axial, AxialRule, CutRule, CutSpec, FirstPass, Mm, PresentBasis, Radial, RadialRule, Stated,
-    TotalDepth,
+    Axial, AxialRule, CutRule, CutSpec, FirstPass, Mm, Radial, RadialRule, Stated, TotalDepth,
 };
 
 pub(crate) use entry_contract::entry_records;

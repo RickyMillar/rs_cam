@@ -1,7 +1,7 @@
 //! Engine adapter shim.
 //!
 //! Translates a `LiteratureCell` into the production Suggest pipeline
-//! (`feeds_result_for_operation` + `apply_feeds_result_to_op`) — i.e.
+//! (`feeds_result_for_operation` + `apply_speeds_to_op`) — i.e.
 //! the exact entry point GUI / CLI / MCP users hit — and packages the
 //! post-clamp engine output back into machinist-convention values + an
 //! expression `Bindings` map for the invariants.
@@ -20,7 +20,7 @@ use rs_cam_core::compute::operation_configs::{
 };
 use rs_cam_core::compute::tool_config::{ToolConfig, ToolId, ToolType};
 use rs_cam_core::feeds::suggest::{
-    apply_drill_defaults, apply_feeds_result_to_op, operation_feeds_hints,
+    apply_drill_defaults, apply_speeds_to_op, operation_feeds_hints,
 };
 use rs_cam_core::feeds::{
     self, FeedsInput, FeedsResult, OperationFamily, PassRole, SetupContext, SpindleStrategy,
@@ -267,8 +267,8 @@ fn build_tool(cell: &LiteratureCell, tool_type: ToolType) -> ToolConfig {
 /// `operation` string. The constructor branches on it to pick the right
 /// `*Config` variant; cell inputs (scallop height, max depth, drill
 /// depth) flow into the appropriate fields. The full Suggest pipeline
-/// then computes feed/RPM/DOC/WOC and writes them back via
-/// [`apply_feeds_result_to_op`].
+/// then computes feed/RPM and writes them back via
+/// [`apply_speeds_to_op`].
 fn build_operation(
     cell: &LiteratureCell,
     family: OperationFamily,
@@ -396,8 +396,8 @@ fn resolve_operation(op: &str) -> Result<(OperationFamily, PassRole), ShimError>
 
 /// Run the cell through the production Suggest pipeline and produce a
 /// snapshot. This is the exact code path GUI / CLI / MCP users hit, so
-/// rigidity clamps (`enforce_invariants`), drill defaults, and the
-/// `apply_feeds_result_to_op` write-back all participate.
+/// the speeds chain (`enforce_invariants_at_fixed_geometry`), drill defaults, and the
+/// `apply_speeds_to_op` write-back all participate.
 pub fn run_cell(cell: &LiteratureCell) -> Result<ShimSnapshot, ShimError> {
     let material = resolve_material(&cell.inputs.material)?;
     let mut snapshot = run_cell_in_material(cell, &material)?;
@@ -463,7 +463,7 @@ fn run_cell_in_material(
     let pinned_woc = cell.fixed_inputs.as_ref().and_then(|f| f.woc_pinned_mm());
 
     let tool_def = build_cutter(&tool).unwrap();
-    let (auto_axial, auto_radial, auto_scallop) = operation_feeds_hints(&operation);
+    let (auto_axial, auto_radial, auto_scallop) = operation_feeds_hints(&operation, tool.diameter);
     let feeds_input = FeedsInput {
         tool_series: None,
         tool_diameter: tool.diameter,
@@ -502,12 +502,14 @@ fn run_cell_in_material(
     }
     let result = feeds::calculate(&feeds_input);
 
-    // Apply the same post-clamp the GUI applies via Suggest so the
-    // snapshot matches production output exactly (rigidity clamp on
-    // DOC, plunge-to-feed clamp, stepover-to-diameter clamp).
+    // Apply the write the production add door applies, so the snapshot
+    // matches production output. Feeds contract P5 (K2b): the add door
+    // writes the speeds only; the op keeps its stated geometry, and the
+    // plunge-to-feed clamp still runs. Before P5 the shim ran the chain
+    // (rigidity and stepover clamps), which no production door runs.
     let mut op_clamped = operation;
     let mut provenance = rs_cam_core::feeds::FeedsProvenance::default();
-    let _warnings = apply_feeds_result_to_op(
+    let _warnings = apply_speeds_to_op(
         &mut op_clamped,
         &mut provenance,
         &result,
@@ -518,10 +520,8 @@ fn run_cell_in_material(
         rs_cam_core::feeds::suggest::SuggestContext::default(),
     );
 
-    // Defend the pins against `apply_feeds_result_to_op`'s
-    // unconditional `set_stepover` / `set_depth_per_pass` writes: if
-    // the cell pinned DOC/WOC, restore those values so the snapshot
-    // reflects the cell's operating point. The engine still
+    // The speeds-only write keeps the geometry; the pins are restored
+    // anyway, so the snapshot reflects the cell's operating point. The engine still
     // calculated RPM / chipload / power / MRR at the pinned operating
     // point above; we're just keeping the geometry consistent.
     if let Some(w) = pinned_woc {
@@ -531,7 +531,7 @@ fn run_cell_in_material(
         op_clamped.set_depth_per_pass(d);
     }
     // Drill ops still need their material-aware peck-depth fill-in;
-    // `apply_feeds_result_to_op` doesn't touch `peck_depth`, only the
+    // `apply_speeds_to_op` doesn't touch `peck_depth`, only the
     // generic feed/RPM/DOC fields. The GUI calls this via
     // `suggest_for_operation`; the shim opts into the same step so
     // drill cells see the same peck depth a user would.

@@ -14,9 +14,35 @@ touches names it in its invariants.
   config; the match names every variant. Each `REG_*` row states its
   `CutRule` (`Capabilities::cut_rule`); no type in
   `compute/catalog/cut_spec.rs` has `Default`, and only `compute/` can make
-  a `Stated` value. Suggest reads `CutSpec::todays_hints` through
-  `operation_feeds_hints` (P4; Phase 5 deletes it). Sentries:
-  `--test every_op_states_its_cut_k1`, `--doc cut_spec_refusals`.
+  a `Stated` value. Since P5 the calculator reads the operator's cut
+  (`CutSpec::calc_inputs`: the stated depth, the stated width, the tool
+  diameter for a slot, the scallop target) through `operation_feeds_hints`;
+  `PresentBasis` is gone. Sentries: `--test every_op_states_its_cut_k1`,
+  `--doc cut_spec_refusals`.
+- K2: every shipped number names its source. `feeds/sourced.rs`:
+  `Sourced<T>` (no public constructor; the owner of a rule builds it),
+  `Basis` (`Operator`, `Printed`, `Claim`, `Rule`, `Machine`, `Derived`),
+  the unit newtypes, the one cap API `lower_to_cap` (`min` only).
+  `FeedsResult::bases` holds one basis per shipped field; `FeedsProvenance`
+  is its projection (`ValueProvenance::of_basis`, one exhaustive `match`).
+  `apply` takes only `Recommendation<Complete>`; every apply door calls
+  `Recommendation::accept_unsourced` (lead decision D4) and files
+  `SuggestWarning::UnsourcedRowsAccepted`. Q3: a score tie takes the lower
+  printed chip; `LookupResult::tied_with` names the other row. Sentries:
+  `--test suggest_never_raises_a_stated_depth_k2`,
+  `--test a_tie_takes_the_lower_chip_and_names_both_q3`,
+  `--doc sourced_refusals`.
+- K2b: Suggest returns a space of safe choices. `feeds/envelope.rs`:
+  `SafeEnvelope::for_cut` (no other constructor) gives the axes from the
+  `CutSpec`, one `Limit { kind, law, basis, edge }` per limit, the
+  `SpeedsMap` grid (`ENVELOPE_GRID_N`, a lookup `speeds_at`), the proposal
+  (`min(stated, binding cap)`) and the operator's `Placement`. A geometry
+  write needs an `EnvelopePick`, made only by `SafeEnvelope::pick`;
+  `ApplyFeedsArgs { pick }` with `None` writes the speeds for the cut the op
+  keeps. A point outside is K6 `project.outside_envelope` (a warning).
+  Sentries: `--test apply_writes_speeds_unless_a_pick_k2b`,
+  `--test the_envelope_keeps_each_limit_k2b`,
+  `--test a_pick_outside_the_envelope_warns_k2b`, `--doc envelope_refusals`.
 - K4: every op states how it enters material. Each `REG_*` row states its
   `entry: EntryContract` (`Dressup`, `Planner`, `DescentIsCut`,
   `StraightPlunge { reason, feed }`; no `Default`; `EntrySet` is not empty),

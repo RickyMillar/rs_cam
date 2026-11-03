@@ -1176,12 +1176,18 @@ pub struct ReplaceToolpathConfigArgs {
 /// [`crate::feeds::suggest::apply_to_operation`] on a draft of the
 /// toolpath, and installs the draft through `ReplaceToolpathConfig`. A
 /// refused pairing is [`SessionError::FeedsRefused`] and writes nothing.
+///
+/// K2b (feeds contract P5, ruling Q4): with `pick: None` the row writes
+/// the speeds for the geometry the op keeps. With a pick, it builds the
+/// envelope, writes the picked geometry, then the speeds at it, and the
+/// stamps record the pick. No acceptance flag (lead decision D4): the
+/// apply is the acceptance of the Unsourced rows.
 #[derive(Debug, Clone, Copy, PartialEq)]
 pub struct ApplyFeedsArgs {
     /// The index of the toolpath the command writes.
     pub index: usize,
-    /// Which half of the recommendation the command writes.
-    pub scope: crate::feeds::suggest::ApplyScope,
+    /// The envelope point to write, or `None` for the speeds only.
+    pub pick: Option<crate::feeds::envelope::PickRequest>,
     /// The dragged explore-chart speeds, or `None` for the calculator's.
     pub explored: Option<crate::feeds::suggest::ExploredSpeeds>,
 }
@@ -1363,6 +1369,11 @@ pub struct Effects {
     /// no item on the new model goes. Each surface words it with
     /// [`Effects::picks_dropped_note`].
     pub picks_dropped: Option<DroppedPicks>,
+    /// The records of the Suggest apply (feeds contract P5), or empty. Only
+    /// `ApplyFeeds` fills it: the warning that names the Unsourced rows the
+    /// apply accepted (D4), and the `OutsideEnvelope` warning of a pick
+    /// outside the safe envelope (K6). Each surface reports them.
+    pub feeds_warnings: Vec<crate::feeds::suggest::SuggestWarning>,
 }
 
 /// What a model change dropped from the selections of one toolpath
@@ -3068,7 +3079,7 @@ impl ProjectSession {
             Command::ApplyFeeds(args) => {
                 let ApplyFeedsArgs {
                     index,
-                    scope,
+                    pick,
                     explored,
                 } = args;
                 let Some(mut draft) = self.toolpath_configs.get(index).cloned() else {
@@ -3086,9 +3097,9 @@ impl ProjectSession {
                     lut: crate::feeds::embedded_vendor_lut(),
                     suggest: slots.context(&draft.dressups),
                 };
-                crate::feeds::suggest::apply_to_operation(
+                let feeds_warnings = crate::feeds::suggest::apply_to_operation(
                     input,
-                    scope,
+                    pick,
                     explored,
                     &mut draft.operation,
                     &mut draft.feeds_provenance,
@@ -3096,10 +3107,25 @@ impl ProjectSession {
                 .map_err(SessionError::FeedsRefused)?;
                 // The draft goes in through the replace row, so its
                 // refusals and its signature-gated drop hold here too.
-                self.apply(Command::ReplaceToolpathConfig(ReplaceToolpathConfigArgs {
-                    index,
-                    config: Box::new(draft),
-                }))
+                let mut effects =
+                    self.apply(Command::ReplaceToolpathConfig(ReplaceToolpathConfigArgs {
+                        index,
+                        config: Box::new(draft),
+                    }))?;
+                // P5: the acceptance of the Unsourced rows and a pick outside
+                // the envelope are records of the apply; every surface reads
+                // them here.
+                effects.feeds_warnings = feeds_warnings
+                    .into_iter()
+                    .filter(|w| {
+                        matches!(
+                            w,
+                            crate::feeds::suggest::SuggestWarning::UnsourcedRowsAccepted { .. }
+                                | crate::feeds::suggest::SuggestWarning::OutsideEnvelope { .. }
+                        )
+                    })
+                    .collect();
+                Ok(effects)
             }
             Command::ReplaceToolpathConfig(args) => {
                 let ReplaceToolpathConfigArgs { index, mut config } = args;
@@ -3350,6 +3376,7 @@ impl ProjectSession {
             planned: None,
             modulated: BTreeSet::new(),
             picks_dropped: None,
+            feeds_warnings: Vec::new(),
         })
     }
 

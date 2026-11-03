@@ -877,7 +877,7 @@ impl ProjectSession {
     /// `spindle_rpm`, and `ramp_feed_rate` when the op has one) that is
     /// EMPTY, or that holds a value Suggest wrote
     /// ([`crate::feeds::ValueProvenance::is_suggested`]), takes the value of
-    /// the Apply funnel under `ApplyScope::Speeds`, the funnel that
+    /// the Apply funnel with no pick (the speeds only), the funnel that
     /// `Command::ApplyFeeds` runs, with the stamp of the funnel. A suggested
     /// value for the old tool is not a typed value, and it is wrong for the
     /// new tool.
@@ -951,14 +951,9 @@ impl ProjectSession {
         };
         let mut seeded = config.operation.clone();
         let mut stamps = config.feeds_provenance.clone();
-        let refused = crate::feeds::suggest::apply_to_operation(
-            input,
-            crate::feeds::suggest::ApplyScope::Speeds,
-            None,
-            &mut seeded,
-            &mut stamps,
-        )
-        .is_err();
+        let refused =
+            crate::feeds::suggest::apply_to_operation(input, None, None, &mut seeded, &mut stamps)
+                .is_err();
         let from = seeded.as_params();
         for (field, held) in held {
             if held {

@@ -1,0 +1,404 @@
+//! CONTRACT K2b (feeds contract P5): the envelope keeps each limit that the
+//! calculator and the invariant passes compute and then discard.
+//!
+//! For each `LimitKind` row of the P5 card table, one cell:
+//!
+//! - An edge on the stated axis (flute guard, vendor axial, rigidity, slot,
+//!   power, deflection, diameter): the operator states a point past it, the
+//!   proposal sits on that edge (`min(stated, cap)`), the envelope names the
+//!   limit as the binding one, and `Limit.basis` names its constant.
+//! - A floor (the move budget, the engagement floor): a proposal never
+//!   raises a stated value (K2), so the operator's point below the floor is
+//!   `Placement::Outside` with that limit, and the basis names the
+//!   constant.
+//! - The cutting length: the flute guard is 0.8 x the same length, so the
+//!   cutting-length edge always sits above the flute-guard edge. The sentry
+//!   holds that order and the basis.
+//! - A per-point limit (the chip band, the rubbing floor, the machine feed
+//!   cap): the speeds map judges it at each point; the envelope lists it
+//!   with its basis.
+//!
+//! The cells were found by a probe over ops, tools, machines and stated
+//! points (P5 report); each is a plain configuration here.
+
+#![expect(
+    clippy::expect_used,
+    clippy::panic,
+    reason = "test code: a panic is how a test reports a failure"
+)]
+
+use rs_cam_core::compute::catalog::OperationType;
+use rs_cam_core::compute::tool_config::{ToolConfig, ToolId, ToolType};
+use rs_cam_core::feeds::envelope::{Edge, EnvelopeInput, LimitKind, Placement, SafeEnvelope};
+use rs_cam_core::feeds::sourced::MachineField;
+use rs_cam_core::feeds::suggest::SuggestContext;
+use rs_cam_core::feeds::{Basis, SpindleStrategy, embedded_vendor_lut};
+use rs_cam_core::geo::{BoundingBox3, P3};
+use rs_cam_core::machine::MachineProfile;
+use rs_cam_core::material::{Material, WoodSpecies};
+
+fn softwood() -> Material {
+    Material::SolidWood {
+        species: WoodSpecies::GenericSoftwood,
+    }
+}
+
+fn oak() -> Material {
+    Material::SolidWood {
+        species: WoodSpecies::WhiteOak,
+    }
+}
+
+fn end_mill(d: f64, cutting_length: f64) -> ToolConfig {
+    let mut t = ToolConfig::new_default(ToolId::from_raw(0), ToolType::EndMill);
+    t.diameter = d;
+    t.cutting_length = cutting_length;
+    t
+}
+
+struct Cell<'a> {
+    op: OperationType,
+    tool: ToolConfig,
+    machine: MachineProfile,
+    material: Material,
+    dpp: f64,
+    stepover: f64,
+    bbox: Option<&'a BoundingBox3>,
+}
+
+fn envelope(cell: &Cell<'_>) -> SafeEnvelope {
+    let mut op = rs_cam_core::compute::fixture_values::fixture_op(cell.op);
+    assert!(
+        op.set_depth_per_pass(cell.dpp),
+        "{:?} holds a depth",
+        cell.op
+    );
+    assert!(
+        op.set_stepover(cell.stepover),
+        "{:?} holds a stepover",
+        cell.op
+    );
+    SafeEnvelope::for_cut(EnvelopeInput {
+        operation: &op,
+        tool: &cell.tool,
+        machine: &cell.machine,
+        material: &cell.material,
+        lut: embedded_vendor_lut(),
+        spindle_strategy: SpindleStrategy::default(),
+        context: SuggestContext {
+            model_bbox: cell.bbox,
+            ..SuggestContext::default()
+        },
+    })
+    .expect("the cell is backed")
+}
+
+/// The F201 names of the rules that a basis reads, in tree order.
+fn rule_names(b: &Basis) -> Vec<String> {
+    match b {
+        Basis::Rule(c) => vec![c.name.to_string()],
+        Basis::Derived { from, .. } => from.iter().flat_map(rule_names).collect(),
+        Basis::Operator { .. } | Basis::Printed(_) | Basis::Claim(_) | Basis::Machine(_) => {
+            Vec::new()
+        }
+    }
+}
+
+fn machine_fields(b: &Basis) -> Vec<MachineField> {
+    match b {
+        Basis::Machine(f) => vec![*f],
+        Basis::Derived { from, .. } => from.iter().flat_map(machine_fields).collect(),
+        Basis::Operator { .. } | Basis::Printed(_) | Basis::Claim(_) | Basis::Rule(_) => Vec::new(),
+    }
+}
+
+/// The proposal sits on the edge of `kind`, which binds it, and the
+/// proposal is below the operator's point.
+fn assert_binds(env: &SafeEnvelope, kind: LimitKind) {
+    assert_eq!(env.proposal_binding, Some(kind), "the binding limit");
+    let p = env.proposal.get();
+    let stated = env.stated.expect("the cell states both axes");
+    let limit = env.limit(kind).expect("the envelope keeps the limit");
+    match &limit.edge {
+        Edge::AeCeiling { mm } => {
+            assert!(
+                (p.ae_mm - mm).abs() < 1e-9,
+                "{kind:?}: ae {} not on {mm}",
+                p.ae_mm
+            );
+            assert!(
+                p.ae_mm < stated.ae_mm,
+                "{kind:?}: the proposal did not lower ae"
+            );
+        }
+        Edge::ApCeiling { .. } | Edge::ApCeilingAbove { .. } | Edge::ApCurve { .. } => {
+            let cap = limit
+                .ap_ceiling_at(p.ae_mm)
+                .expect("an ap edge at the proposal");
+            assert!(
+                (p.ap_mm - cap).abs() < 1e-9,
+                "{kind:?}: ap {} not on {cap}",
+                p.ap_mm
+            );
+            assert!(
+                p.ap_mm < stated.ap_mm,
+                "{kind:?}: the proposal did not lower ap"
+            );
+        }
+        Edge::ApFloor { .. } | Edge::AeFloor { .. } | Edge::PerPoint | Edge::Unmodelled { .. } => {
+            panic!("{kind:?}: not an edge that lowers a proposal")
+        }
+    }
+}
+
+#[test]
+fn the_flute_guard_binds_and_names_its_factor_k2b() {
+    let env = envelope(&Cell {
+        op: OperationType::Adaptive,
+        tool: end_mill(6.0, 10.0),
+        machine: MachineProfile::default(),
+        material: softwood(),
+        dpp: 9.0,
+        stepover: 0.5,
+        bbox: None,
+    });
+    assert_binds(&env, LimitKind::FluteGuard);
+    let names = rule_names(&env.limit(LimitKind::FluteGuard).expect("kept").basis);
+    assert!(
+        names.contains(&"feeds.calculate.flute_guard_factor".to_owned()),
+        "{names:?}"
+    );
+    // The cutting length is the same 10 mm; the guard is 0.8 x it, so the
+    // cutting-length edge sits above the guard and never binds first.
+    let guard = env
+        .limit(LimitKind::FluteGuard)
+        .and_then(|l| l.ap_ceiling_at(1.0));
+    let length = env
+        .limit(LimitKind::CuttingLength)
+        .and_then(|l| l.ap_ceiling_at(1.0));
+    assert!(
+        length > guard,
+        "cutting length {length:?} vs guard {guard:?}"
+    );
+    assert_eq!(
+        env.limit(LimitKind::CuttingLength).map(|l| l.basis.clone()),
+        Some(Basis::tool_fact())
+    );
+}
+
+#[test]
+fn the_vendor_axial_bound_binds_and_names_its_row_k2b() {
+    let env = envelope(&Cell {
+        op: OperationType::Adaptive3d,
+        tool: end_mill(6.0, 20.0),
+        machine: MachineProfile::default(),
+        material: softwood(),
+        dpp: 9.0,
+        stepover: 0.5,
+        bbox: None,
+    });
+    assert_binds(&env, LimitKind::VendorAxial);
+    let basis = &env.limit(LimitKind::VendorAxial).expect("kept").basis;
+    assert!(matches!(basis, Basis::Printed(_)), "{basis:?}");
+}
+
+#[test]
+fn the_rigidity_cap_binds_and_names_the_machine_k2b() {
+    let env = envelope(&Cell {
+        op: OperationType::Pocket,
+        tool: end_mill(6.0, 20.0),
+        machine: MachineProfile::default(),
+        material: softwood(),
+        dpp: 2.0,
+        stepover: 0.5,
+        bbox: None,
+    });
+    assert_binds(&env, LimitKind::Rigidity);
+    let basis = &env.limit(LimitKind::Rigidity).expect("kept").basis;
+    assert_eq!(machine_fields(basis), vec![MachineField::Rigidity]);
+}
+
+#[test]
+fn the_slot_rule_binds_and_names_its_constants_k2b() {
+    let env = envelope(&Cell {
+        op: OperationType::Adaptive,
+        tool: end_mill(6.0, 20.0),
+        machine: MachineProfile::default(),
+        material: softwood(),
+        dpp: 2.0,
+        stepover: 8.0,
+        bbox: None,
+    });
+    assert_binds(&env, LimitKind::Slot);
+    let names = rule_names(&env.limit(LimitKind::Slot).expect("kept").basis);
+    assert_eq!(
+        names,
+        vec![
+            "feeds.calculate.slotting_threshold_d".to_owned(),
+            "feeds.calculate.slotting_doc_cap_d".to_owned()
+        ]
+    );
+}
+
+#[test]
+fn the_tool_diameter_binds_the_width_k2b() {
+    let env = envelope(&Cell {
+        op: OperationType::Pocket,
+        tool: end_mill(6.0, 20.0),
+        machine: MachineProfile::default(),
+        material: softwood(),
+        dpp: 0.5,
+        stepover: 8.0,
+        bbox: None,
+    });
+    assert_binds(&env, LimitKind::Diameter);
+    assert_eq!(
+        env.limit(LimitKind::Diameter).map(|l| l.basis.clone()),
+        Some(Basis::tool_fact())
+    );
+}
+
+#[test]
+fn the_spindle_power_binds_and_names_the_curve_k2b() {
+    let env = envelope(&Cell {
+        op: OperationType::Adaptive,
+        tool: end_mill(12.0, 30.0),
+        machine: MachineProfile::default(),
+        material: oak(),
+        dpp: 15.0,
+        stepover: 8.0,
+        bbox: None,
+    });
+    assert_binds(&env, LimitKind::Power);
+    let basis = &env.limit(LimitKind::Power).expect("kept").basis;
+    assert_eq!(machine_fields(basis), vec![MachineField::PowerCurve]);
+}
+
+#[test]
+fn the_deflection_target_binds_and_names_its_constant_k2b() {
+    let mut tool = end_mill(12.0, 30.0);
+    tool.stickout = 50.0;
+    let env = envelope(&Cell {
+        op: OperationType::Adaptive,
+        tool,
+        machine: MachineProfile::shapeoko_vfd(),
+        material: oak(),
+        dpp: 15.0,
+        stepover: 5.0,
+        bbox: None,
+    });
+    assert_binds(&env, LimitKind::Deflection);
+    let names = rule_names(&env.limit(LimitKind::Deflection).expect("kept").basis);
+    assert_eq!(
+        names,
+        vec!["feeds.suggest.DEFLECTION_BACKOFF_TARGET_UM".to_owned()]
+    );
+}
+
+#[test]
+fn the_move_budget_is_a_floor_that_places_a_fine_stepover_outside_k2b() {
+    let bbox = BoundingBox3 {
+        min: P3::new(0.0, 0.0, -20.0),
+        max: P3::new(140.0, 150.0, 0.0),
+    };
+    let env = envelope(&Cell {
+        op: OperationType::Adaptive,
+        tool: end_mill(6.0, 20.0),
+        machine: MachineProfile::default(),
+        material: softwood(),
+        dpp: 0.5,
+        stepover: 0.02,
+        bbox: Some(&bbox),
+    });
+    let limit = env
+        .limit(LimitKind::Runtime)
+        .expect("the move budget is kept");
+    let Edge::AeFloor { mm } = limit.edge else {
+        panic!("the move budget is an ae floor: {:?}", limit.edge)
+    };
+    assert!(mm > 0.02, "floor {mm}");
+    assert!(
+        matches!(
+            env.operator,
+            Some(Placement::Outside {
+                binding: LimitKind::Runtime,
+                ..
+            })
+        ),
+        "{:?}",
+        env.operator
+    );
+    // K2: the proposal never raises the stated stepover to the floor.
+    assert!(env.proposal.get().ae_mm <= 0.02 + 1e-12);
+    let names = rule_names(&limit.basis);
+    assert!(
+        names.contains(&"feeds.suggest.STEPOVER_BACKOFF_TARGET_MOVES".to_owned()),
+        "{names:?}"
+    );
+}
+
+#[test]
+fn the_engagement_floor_places_a_tiny_depth_outside_k2b() {
+    let env = envelope(&Cell {
+        op: OperationType::Pocket,
+        tool: end_mill(6.0, 20.0),
+        machine: MachineProfile::default(),
+        material: softwood(),
+        dpp: 0.01,
+        stepover: 1.0,
+        bbox: None,
+    });
+    assert!(
+        matches!(
+            env.operator,
+            Some(Placement::Outside {
+                binding: LimitKind::EngagementFloor,
+                ..
+            })
+        ),
+        "{:?}",
+        env.operator
+    );
+    assert!(env.proposal.get().ap_mm <= 0.01 + 1e-12, "no raise (K2)");
+}
+
+#[test]
+fn the_per_point_limits_are_kept_with_their_basis_k2b() {
+    // A machine whose cutting-feed cap is far under the chip's feed: every
+    // grid point is held at the cap, and the chip falls under the rubbing
+    // floor.
+    let machine = MachineProfile {
+        max_cutting_feed_mm_min: Some(100.0),
+        ..MachineProfile::default()
+    };
+    let env = envelope(&Cell {
+        op: OperationType::Pocket,
+        tool: end_mill(6.0, 20.0),
+        machine,
+        material: softwood(),
+        dpp: 0.5,
+        stepover: 1.0,
+        bbox: None,
+    });
+    let band = env
+        .limit(LimitKind::ChipBand)
+        .expect("the chip band is kept");
+    assert!(matches!(band.basis, Basis::Printed(_)), "{:?}", band.basis);
+    let cap = env.limit(LimitKind::FeedCap).expect("the feed cap is kept");
+    assert_eq!(
+        machine_fields(&cap.basis),
+        vec![MachineField::CuttingFeedCap]
+    );
+    let rubbing = env
+        .limit(LimitKind::RubbingFloor)
+        .expect("the rubbing floor is kept");
+    assert!(
+        matches!(rubbing.basis, Basis::Printed(_) | Basis::Rule(_)),
+        "{:?}",
+        rubbing.basis
+    );
+    for l in [band, cap, rubbing] {
+        assert_eq!(l.edge, Edge::PerPoint, "{:?}", l.kind);
+    }
+    assert!(env.speeds.points.iter().all(|p| p.feed_capped));
+}

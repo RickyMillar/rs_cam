@@ -808,7 +808,7 @@ pub fn run_project_command(
     modulation_strategy: rs_cam_core::dressup::feed_modulation::ModulationStrategy,
     modulation_feed_scale: f64,
     inject_shapeoko_kinematics: bool,
-    apply_suggest: bool,
+    apply_suggest: Option<Option<rs_cam_core::feeds::envelope::PickRequest>>,
     spindle_strategy_override: Option<rs_cam_core::feeds::SpindleStrategy>,
     sim_artifact: bool,
 ) -> Result<()> {
@@ -889,8 +889,8 @@ pub fn run_project_command(
     // drill peck) through core's `Command::ApplyFeeds`, the row the GUI
     // and MCP apply (F114). Mutates the in-memory session only; the
     // project TOML on disk stays unchanged.
-    if apply_suggest {
-        apply_suggested_feeds_to_session(&mut session)?;
+    if let Some(pick) = apply_suggest {
+        apply_suggested_feeds_to_session(&mut session, pick)?;
     }
 
     // 2c-4. Walk the generation plan core owns, then run the closing
@@ -1305,12 +1305,19 @@ pub fn run_project_command(
 }
 
 /// Iterate every enabled toolpath in the session and apply core's
-/// `Command::ApplyFeeds` with `ApplyScope::Both` (F114) — the row the GUI
-/// modal and the MCP `apply_feeds` tool apply, so the three surfaces write
-/// the same configuration for the same state. Mutates the session in
-/// place; does NOT write back to the project file. Prints a before→after
-/// table to stderr so the operator can see what shifted.
-fn apply_suggested_feeds_to_session(session: &mut ProjectSession) -> Result<()> {
+/// `Command::ApplyFeeds` (F114) — the row the GUI card and the MCP
+/// `apply_feeds` tool apply, so the three surfaces write the same
+/// configuration for the same state. K2b (feeds contract P5): with `pick:
+/// None` the row writes the speeds for the cut each op keeps; with a pick it
+/// writes that envelope point first (`--apply-suggest-pick proposal`).
+/// Mutates the session in place; does NOT write back to the project file.
+/// Prints a before→after table to stderr so the operator can see what
+/// shifted, and each Unsourced rule or outside-envelope warning the apply
+/// filed.
+fn apply_suggested_feeds_to_session(
+    session: &mut ProjectSession,
+    pick: Option<rs_cam_core::feeds::envelope::PickRequest>,
+) -> Result<()> {
     // F114: before this the CLI ran `suggest_for_operation` and stamped
     // the provenance by hand, the GUI and MCP ran `suggest::apply` with
     // no stock slot and no drill defaults, and a Drill or
@@ -1337,12 +1344,21 @@ fn apply_suggested_feeds_to_session(session: &mut ProjectSession) -> Result<()> 
             session,
             Command::ApplyFeeds(rs_cam_core::session::ApplyFeedsArgs {
                 index: idx,
-                scope: rs_cam_core::feeds::suggest::ApplyScope::Both,
+                pick,
                 explored: None,
             }),
         );
         match outcome {
-            Ok(_) => {}
+            Ok(effects) => {
+                for w in &effects.feeds_warnings {
+                    let row = rs_cam_core::feeds::rationale::SuggestRationale::from_warnings(
+                        std::slice::from_ref(w),
+                    );
+                    for entry in row.entries {
+                        warn!(toolpath_id = before.id.raw(), "{}", entry.message());
+                    }
+                }
+            }
             Err(SessionError::FeedsRefused(e)) => {
                 warn!(
                     toolpath_id = before.id.raw(),

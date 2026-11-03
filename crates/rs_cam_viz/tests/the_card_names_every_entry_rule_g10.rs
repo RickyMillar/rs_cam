@@ -226,6 +226,8 @@ fn entry_notes(state: &AppState) -> Vec<EntryNote> {
             | SuggestWarning::EngagementReducedForAggressiveness { .. }
             | SuggestWarning::RpmLoweredForFeedCeiling { .. }
             | SuggestWarning::AggressivenessNotApplied { .. }
+            | SuggestWarning::UnsourcedRowsAccepted { .. }
+            | SuggestWarning::OutsideEnvelope { .. }
             | SuggestWarning::PlungeReDerived { .. } => None,
         })
         .expect("the fixture files one RampFeed record")
@@ -452,6 +454,8 @@ fn the_mcp_basis_carries_plunge_and_entry_g10() {
             | SuggestWarning::EngagementReducedForAggressiveness { .. }
             | SuggestWarning::RpmLoweredForFeedCeiling { .. }
             | SuggestWarning::AggressivenessNotApplied { .. }
+            | SuggestWarning::UnsourcedRowsAccepted { .. }
+            | SuggestWarning::OutsideEnvelope { .. }
             | SuggestWarning::PlungeReDerived { .. } => None,
         })
         .expect("the fixture files one RampFeed record");

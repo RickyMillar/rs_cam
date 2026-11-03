@@ -287,6 +287,10 @@ impl super::RsCamApp {
                 let resp = self.mcp_get_suggest_rationale(index);
                 let _ = response_tx.send(McpResponse { result: Ok(resp) });
             }
+            McpRequestKind::GetSafeEnvelope { index } => {
+                let resp = self.mcp_get_safe_envelope(index);
+                let _ = response_tx.send(McpResponse { result: Ok(resp) });
+            }
             McpRequestKind::InspectModel => {
                 let resp = self.mcp_inspect_model();
                 let _ = response_tx.send(McpResponse { result: Ok(resp) });
@@ -435,8 +439,8 @@ impl super::RsCamApp {
             McpRequestKind::PreviewTierMap { spec } => {
                 self.mcp_preview_tier_map(&spec, response_tx);
             }
-            McpRequestKind::ApplyFeeds { index, scope } => {
-                let resp = self.mcp_apply_feeds(index, scope);
+            McpRequestKind::ApplyFeeds { index, pick } => {
+                let resp = self.mcp_apply_feeds(index, pick);
                 let _ = response_tx.send(McpResponse { result: Ok(resp) });
             }
 

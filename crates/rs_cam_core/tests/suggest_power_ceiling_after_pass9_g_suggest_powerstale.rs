@@ -1,5 +1,11 @@
 //! G-SUGGEST-POWERSTALE — does the Step 6 power ceiling survive pass 9?
 //!
+//! Feeds contract P5 (2026-11-03): production no longer runs the chain
+//! (`enforce_invariants` with its geometry passes); "Apply all" writes the
+//! envelope proposal and the speeds sized at it. The arms below now measure
+//! that production write. `pass_nine_actually_moves_the_geometry` read the
+//! chain and is retired. The history below describes the chain.
+//!
 //! `feeds::calculate` Step 6 clamps the feed so the predicted spindle
 //! power stays inside the machine envelope. It computes that against the
 //! CALCULATOR's operating point: `required = predicted_power_kw(line,
@@ -149,7 +155,8 @@
 use rs_cam_core::compute::catalog::OperationConfig;
 use rs_cam_core::compute::operation_configs::PocketConfig;
 use rs_cam_core::compute::{ToolConfig, ToolId, ToolType};
-use rs_cam_core::feeds::suggest::{ApplyContext, ApplyScope, FeedsPreview, SuggestContext};
+use rs_cam_core::feeds::envelope::{EnvelopeInput, PickRequest, SafeEnvelope};
+use rs_cam_core::feeds::suggest::{OperationApplyInput, SuggestContext, apply_to_operation};
 use rs_cam_core::feeds::{
     FeedsInput, FeedsResult, FeedsWarning, OperationFamily, PassRole, SetupContext,
     SpindleStrategy, ToolGeometryHint, calculate, embedded_vendor_lut,
@@ -310,11 +317,13 @@ struct Shipped {
     ae_mm: f64,
 }
 
-/// Run the WHOLE funnel — `calculate` → `apply_feeds_subset` →
-/// `enforce_invariants` (which is where pass 9 lives) — and report what
-/// actually lands on the operation. Measuring the shipped operation, not
-/// the calculator's recommendation, is the entire point: the two are
-/// different numbers and only one of them reaches the machine.
+/// Run the production funnel — `Command::ApplyFeeds` with the envelope
+/// proposal ("Apply all", feeds contract P5, K2b) — and report what lands on
+/// the operation. Before P5 this ran the retired chain door
+/// (`enforce_invariants`, pass 9). The proposal lowers the requested depth
+/// to its binding cap, the write snaps it once, and the speeds are sized at
+/// the pick. Measuring the shipped operation, not the calculator's
+/// recommendation, is the entire point.
 fn run_funnel(machine: &MachineProfile, material: &Material) -> Shipped {
     run_funnel_at(machine, material, 2.0 * DIAMETER_MM)
 }
@@ -326,31 +335,40 @@ fn run_funnel_at(machine: &MachineProfile, material: &Material, requested_ap: f6
         cfg.depth_per_pass = requested_ap;
         cfg.floor = rs_cam_core::compute::floor::Floor::top(2.0 * requested_ap);
     }
+    let envelope = SafeEnvelope::for_cut(EnvelopeInput {
+        operation: &operation,
+        tool: &tool,
+        machine,
+        material,
+        lut: embedded_vendor_lut(),
+        spindle_strategy: SpindleStrategy::MatchChart,
+        context: SuggestContext::default(),
+    })
+    .expect("heavy pocket with a flat endmill has an envelope");
+    let recommended = envelope
+        .pick(PickRequest::Proposal)
+        .recommendation()
+        .result()
+        .clone();
     let mut provenance = rs_cam_core::feeds::FeedsProvenance::default();
-
-    let input = feeds_input(machine, material, requested_ap, DIAMETER_MM);
-    let preview = FeedsPreview::build(&input);
-    let rec = preview
-        .applicable()
-        .expect("heavy pocket with a flat endmill is a runnable pairing");
-    let recommended = rec.result().clone();
-
-    let _warnings = rs_cam_core::feeds::suggest::apply(
-        &rec,
-        ApplyScope::Both,
-        &mut operation,
-        &mut provenance,
-        ApplyContext {
+    apply_to_operation(
+        OperationApplyInput {
             tool: &tool,
             machine,
             material,
-            pass_role: PassRole::Roughing,
+            spindle_strategy: SpindleStrategy::MatchChart,
+            lut: embedded_vendor_lut(),
             suggest: SuggestContext::default(),
         },
-    );
+        Some(PickRequest::Proposal),
+        None,
+        &mut operation,
+        &mut provenance,
+    )
+    .expect("heavy pocket with a flat endmill is a runnable pairing");
 
     Shipped {
-        feed_mm_min: operation.feed_rate().expect("S11: the fixture sets it"),
+        feed_mm_min: operation.feed_rate().expect("S11: the apply writes it"),
         ap_mm: operation.depth_per_pass().unwrap_or(0.0),
         ae_mm: operation.stepover().unwrap_or(0.0),
         recommended,
@@ -412,28 +430,6 @@ fn the_fixture_actually_reaches_the_power_branch() {
          clamp, so the headline arm would pass regardless of pass 9. \
          warnings: {:?}",
         result.warnings
-    );
-}
-
-/// If `enforce_invariants` leaves the geometry alone, pass 9
-/// short-circuits (it only re-solves when a pass actually moved the
-/// stepover or depth_per_pass) and the headline arm proves nothing.
-#[test]
-fn pass_nine_actually_moves_the_geometry() {
-    let machine = underpowered_machine();
-    let material = Material::SolidWood {
-        species: WoodSpecies::WhiteOak,
-    };
-    let shipped = run_funnel(&machine, &material);
-
-    let moved = (shipped.ap_mm - 2.0 * DIAMETER_MM).abs() > 1e-6
-        || (shipped.ae_mm - DIAMETER_MM).abs() > 1e-6;
-    assert!(
-        moved,
-        "fixture is vacuous: enforce_invariants left the requested geometry \
-         untouched (ap {:.4} mm, ae {:.4} mm), so pass 9 never re-solved and \
-         the headline arm cannot observe the interaction it exists to test",
-        shipped.ap_mm, shipped.ae_mm
     );
 }
 

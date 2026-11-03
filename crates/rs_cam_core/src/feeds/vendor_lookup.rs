@@ -173,6 +173,11 @@ pub struct LookupResult {
     pub evidence_grade: EvidenceGrade,
     /// The matched row's kind (exact, derived or fallback).
     pub row_kind: ObservationKind,
+    /// Ruling Q3 (feeds contract P5): the row that tied with this row on
+    /// the score, the diameter, the transfer and the series rules. The
+    /// lower printed chip won the tie; the card and MCP name both rows.
+    /// `None` when no row tied.
+    pub tied_with: Option<crate::feeds::sourced::RowRef>,
 }
 
 /// The printed chipload of a matched row, classified (A2, point mode).
@@ -337,18 +342,17 @@ fn find_best_vbit_row_in(
         candidates.push((i, base_score + angle_bonus, diam_score, transferred));
     }
     let best = best_by_score(lut, criteria, candidates.iter().copied())?;
-    let (i, score, diameter_match_score, _) = prefer_series(lut, criteria, &candidates, best);
+    let chosen = prefer_series(lut, criteria, &candidates, best);
+    let tied_with = tied_row(lut, criteria, &candidates, chosen);
+    let (i, score, diameter_match_score, _) = chosen;
     #[expect(
         clippy::indexing_slicing,
         reason = "`i` was stored from a valid iteration over `lut.observations`"
     )]
     let obs = &lut.observations[i];
-    Some(build_result(
-        lut,
-        obs,
-        criteria,
-        score,
-        diameter_match_score,
+    Some(with_tie(
+        build_result(lut, obs, criteria, score, diameter_match_score),
+        tied_with,
     ))
 }
 
@@ -702,6 +706,7 @@ fn build_result(
         material_label: obs.material_label.clone(),
         evidence_grade: obs.evidence_grade,
         row_kind: obs.row_kind,
+        tied_with: None,
     }
 }
 
@@ -711,17 +716,20 @@ fn build_result(
 /// include list (or loading an external directory) could silently flip
 /// which vendor row drives a verdict.
 ///
-/// A3 (G3): each side is `(score, transferred, id)`. On an equal score, a
-/// row printed in the queried family beats a row that a family rule
-/// transfers (`extrapolation::transfer_rule`); after that the id decides.
-fn beats(
-    candidate: (i64, Option<f64>, bool, &str),
-    best: Option<(i64, Option<f64>, bool, &str)>,
-) -> bool {
-    let (candidate_score, candidate_distance, candidate_transferred, candidate_id) = candidate;
+/// A3 (G3): each side is `(score, distance, transferred, chip, id)`. On an
+/// equal score, a row printed in the queried family beats a row that a
+/// family rule transfers (`extrapolation::transfer_rule`).
+///
+/// Ruling Q3 (feeds contract P5, lead decision D2): after the series rule
+/// ([`prefer_series`]) and before the id, the lower printed chip wins. A
+/// row with no printed chip does not take part in this rule. The id
+/// decides last.
+fn beats(candidate: TieKey<'_>, best: Option<TieKey<'_>>) -> bool {
+    let (candidate_score, candidate_distance, candidate_transferred, candidate_chip, candidate_id) =
+        candidate;
     match best {
         None => true,
-        Some((best_score, best_distance, best_transferred, best_id)) => {
+        Some((best_score, best_distance, best_transferred, best_chip, best_id)) => {
             if candidate_score != best_score {
                 return candidate_score > best_score;
             }
@@ -738,9 +746,77 @@ fn beats(
             if candidate_transferred != best_transferred {
                 return !candidate_transferred;
             }
+            if let (Some(c), Some(b)) = (candidate_chip, best_chip)
+                && (c - b).abs() > 1e-12
+            {
+                return c < b;
+            }
             candidate_id < best_id
         }
     }
+}
+
+/// The order key of [`beats`]: score, diameter distance, transferred,
+/// printed chip (Q3), id.
+type TieKey<'a> = (i64, Option<f64>, bool, Option<f64>, &'a str);
+
+/// The printed chip that the Q3 rule compares: the row's chip midpoint,
+/// or `None` when the row prints no chip.
+fn printed_chip(obs: &VendorObservation) -> Option<f64> {
+    let chip = chipload_midpoint(obs);
+    (chip.is_finite() && chip > 0.0).then_some(chip)
+}
+
+/// The order key of one candidate.
+#[expect(
+    clippy::indexing_slicing,
+    reason = "every candidate index was taken from an iteration over `lut.observations`"
+)]
+fn tie_key<'a>(lut: &'a VendorLut, query: &LookupQuery, c: Candidate) -> TieKey<'a> {
+    let (i, score, _, transferred) = c;
+    let obs = &lut.observations[i];
+    (
+        score,
+        diameter_distance(query, obs),
+        transferred,
+        printed_chip(obs),
+        obs.observation_id.as_str(),
+    )
+}
+
+/// Ruling Q3: the best other candidate that ties with `chosen` on every
+/// rule before the chip (score, diameter distance, transfer, series rank).
+/// The result names it, so the card and MCP show both rows.
+#[expect(
+    clippy::indexing_slicing,
+    reason = "every candidate index was taken from an iteration over `lut.observations`"
+)]
+fn tied_row(
+    lut: &VendorLut,
+    query: &LookupQuery,
+    candidates: &[Candidate],
+    chosen: Candidate,
+) -> Option<crate::feeds::sourced::RowRef> {
+    let key = query.tool_subfamily.as_deref();
+    let rank = |i: usize| super::series::series_rank(key, &lut.observations[i]);
+    let (c_score, c_dist, c_transferred, _, _) = tie_key(lut, query, chosen);
+    let same_distance = |d: Option<f64>| match (d, c_dist) {
+        (Some(a), Some(b)) => (a - b).abs() <= 1e-12,
+        (None, None) => true,
+        (Some(_), None) | (None, Some(_)) => false,
+    };
+    let tied = candidates.iter().copied().filter(|c| {
+        let (score, dist, transferred, _, _) = tie_key(lut, query, *c);
+        c.0 != chosen.0
+            && score == c_score
+            && transferred == c_transferred
+            && same_distance(dist)
+            && rank(c.0) == rank(chosen.0)
+    });
+    let best = best_by_score(lut, query, tied)?;
+    Some(crate::feeds::sourced::RowRef(
+        lut.observations[best.0].observation_id.clone(),
+    ))
 }
 
 /// `|ln(query / row)|` for a row with a diameter, else `None`. The tie-break
@@ -770,10 +846,6 @@ fn lookup_best_where(
 type Candidate = (usize, i64, i64, bool);
 
 /// The best candidate by the score order of [`beats`].
-#[expect(
-    clippy::indexing_slicing,
-    reason = "every candidate index was taken from an iteration over `lut.observations`"
-)]
 fn best_by_score(
     lut: &VendorLut,
     query: &LookupQuery,
@@ -781,20 +853,7 @@ fn best_by_score(
 ) -> Option<Candidate> {
     let mut best: Option<Candidate> = None;
     for c in candidates {
-        let (i, score, _, transferred) = c;
-        let obs = &lut.observations[i];
-        if beats(
-            (
-                score,
-                diameter_distance(query, obs),
-                transferred,
-                obs.observation_id.as_str(),
-            ),
-            best.map(|(bi, s, _, t)| {
-                let b = &lut.observations[bi];
-                (s, diameter_distance(query, b), t, b.observation_id.as_str())
-            }),
-        ) {
+        if beats(tie_key(lut, query, c), best.map(|b| tie_key(lut, query, b))) {
             best = Some(c);
         }
     }
@@ -868,13 +927,27 @@ fn lookup_best_in(
         candidates.push((i, score, diam_score, transferred));
     }
     let best = best_by_score(lut, query, candidates.iter().copied())?;
-    let (i, score, diameter_match_score, _) = prefer_series(lut, query, &candidates, best);
+    let chosen = prefer_series(lut, query, &candidates, best);
+    let tied_with = tied_row(lut, query, &candidates, chosen);
+    let (i, score, diameter_match_score, _) = chosen;
     #[expect(
         clippy::indexing_slicing,
         reason = "`i` was stored from a valid iteration over `lut.observations`"
     )]
     let obs = &lut.observations[i];
-    Some(build_result(lut, obs, query, score, diameter_match_score))
+    Some(with_tie(
+        build_result(lut, obs, query, score, diameter_match_score),
+        tied_with,
+    ))
+}
+
+/// The result with the Q3 tie row set.
+fn with_tie(
+    mut result: LookupResult,
+    tied_with: Option<crate::feeds::sourced::RowRef>,
+) -> LookupResult {
+    result.tied_with = tied_with;
+    result
 }
 
 /// Group `MaterialFamily` into the categories a row may serve across.
@@ -1341,24 +1414,29 @@ mod tests {
         let result = lookup_best(&lut, &query).expect(
             "1mm tapered ball + softwood + parallel/finish should match a sub-1mm tapered-ball row",
         );
-        // Should match one of the ZrN sub-1mm rows.
-        assert!(
-            result.observation_id.contains("zrn"),
-            "expected match against ZrN sub-1mm row, got {}",
-            result.observation_id
-        );
-        // The 2-flute 1mm v8 tapered row wins at exact family, diameter and
-        // flute count. It must sort before the SpeTool row of the same cell.
-        assert_eq!(
-            result.observation_id, "amana-tapered-softwood-parallel-1000-2f-zrn-v8",
-            "expected the 1mm 2-flute ZrN v8 tapered row to win for a 1mm 2-flute query"
-        );
+        // Ruling Q3 (feeds contract P5): the ZrN v8 row and the SpeTool
+        // 1.0 mm row tie at 1825. Until P5 the smaller id won (the ZrN
+        // row). Now the lower printed chip wins, and the result names the
+        // other row, so the card shows both.
         assert_eq!(result.score, 1825);
-        // Chipload midpoint should match the published values: midpoint(0.01905, 0.0508).
-        let expected_mid = (0.01905 + 0.0508) / 2.0;
+        assert_eq!(
+            result.observation_id, "spetool-tapered-softwood-parallel-1000-2f",
+            "the lower printed chip wins the Q3 tie"
+        );
+        assert_eq!(
+            result
+                .tied_with
+                .as_ref()
+                .map(crate::feeds::sourced::RowRef::id),
+            Some("amana-tapered-softwood-parallel-1000-2f-zrn-v8"),
+            "the result names the ZrN v8 row that tied"
+        );
+        // The ZrN row prints midpoint(0.01905, 0.0508); the winner's chip is
+        // lower.
+        let zrn_mid = (0.01905 + 0.0508) / 2.0;
         assert!(
-            (result.chip_load_mm - expected_mid).abs() < 1e-4,
-            "expected chipload midpoint ~{expected_mid}, got {}",
+            result.chip_load_mm < zrn_mid,
+            "the winner's chip {} is not below the ZrN chip {zrn_mid}",
             result.chip_load_mm
         );
     }

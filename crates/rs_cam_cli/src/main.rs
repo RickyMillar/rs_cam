@@ -66,6 +66,23 @@ impl From<ModulationStrategy> for ModulationStrategyArg {
     }
 }
 
+/// The `project --apply-suggest-pick` token (feeds contract P5, K2b): the
+/// safe-envelope point that `--apply-suggest` writes. Only the proposal has
+/// a token; a point or a peck of the plane is a GUI or MCP pick.
+#[derive(Clone, Copy, Debug, PartialEq, Eq, ValueEnum)]
+#[value(rename_all = "snake_case")]
+enum SuggestPickArg {
+    Proposal,
+}
+
+impl From<SuggestPickArg> for rs_cam_core::feeds::envelope::PickRequest {
+    fn from(arg: SuggestPickArg) -> Self {
+        match arg {
+            SuggestPickArg::Proposal => Self::Proposal,
+        }
+    }
+}
+
 /// The `project --spindle-strategy` token of [`SpindleStrategy`]. The
 /// token is the core serde token (`match_chart`, `max_speed`), the one the
 /// project file holds.
@@ -387,15 +404,22 @@ enum Commands {
         inject_shapeoko_kinematics: bool,
 
         /// Apply LUT-suggested feeds/speeds to every enabled toolpath
-        /// before generation. Replaces each operation's feed_rate,
-        /// plunge_rate, stepover, depth_per_pass, and spindle_rpm
-        /// with feeds::suggest_for_operation output (vendor-LUT-driven,
-        /// machine-aware). Project file on disk is unchanged; only
-        /// the in-memory session before generate + emit. Pairs with
-        /// --emit-gcode for "what would suggest produce" without
-        /// editing the .toml.
+        /// before generation, through core's `Command::ApplyFeeds` (the
+        /// GUI and MCP row). K2b (feeds contract P5): it writes the speeds
+        /// (feed_rate, plunge_rate, spindle_rpm, ramp feed) for the cut
+        /// each operation keeps; the cut does not move. Project file on
+        /// disk is unchanged; only the in-memory session before generate
+        /// and emit. Pairs with --emit-gcode for "what would suggest
+        /// produce" without editing the .toml.
         #[arg(long)]
         apply_suggest: bool,
+
+        /// With --apply-suggest, also write a point of the safe envelope
+        /// before the speeds: `proposal` writes the envelope proposal
+        /// (min(stated, binding cap) on each stated axis; the GUI
+        /// "Apply all"). The cut changes.
+        #[arg(long, value_enum, requires = "apply_suggest")]
+        apply_suggest_pick: Option<SuggestPickArg>,
 
         /// Override the project's spindle policy for this run.
         /// "match_chart" (default in code; preserved when unset) uses
@@ -648,6 +672,7 @@ fn main() -> Result<()> {
             modulation_feed_scale,
             inject_shapeoko_kinematics,
             apply_suggest,
+            apply_suggest_pick,
             spindle_strategy,
             sim_artifact,
         } => {
@@ -668,7 +693,7 @@ fn main() -> Result<()> {
                 modulation_strategy.into(),
                 modulation_feed_scale,
                 inject_shapeoko_kinematics,
-                apply_suggest,
+                apply_suggest.then(|| apply_suggest_pick.map(Into::into)),
                 spindle_strategy.map(Into::into),
                 sim_artifact,
             )?;

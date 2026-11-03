@@ -57,9 +57,9 @@
 //!    `UnmodeledReason`, and every `clause()` is non-empty and unique. The
 //!    fixture list is checked against an exhaustive match with no wildcard,
 //!    so a ninth variant fails to compile rather than passing silently.
-//! 6. `the_backoff_states_its_abstention` — Suggest on an unvalidated
-//!    plastic roughing pocket emits `DeflectionBackoffUnmodeled` carrying
-//!    the reason, and the same operation in hard maple never emits it.
+//! 6. Retired by feeds contract P5 (2026-11-03):
+//!    `the_backoff_states_its_abstention` read the deflection back-off
+//!    (pass 6) through the chain door, and production no longer runs it.
 
 #![expect(
     clippy::expect_used,
@@ -75,10 +75,6 @@ use rs_cam_core::compute::tool_config::{ToolConfig, ToolId, ToolType};
 use rs_cam_core::feeds::predict::{
     DeflectionCaveat, DeflectionUnmodeled, predict_peak_deflection_um,
 };
-use rs_cam_core::feeds::suggest::{
-    SuggestContext, SuggestForOperationInput, SuggestWarning, suggest_for_operation,
-};
-use rs_cam_core::feeds::{SpindleStrategy, embedded_vendor_lut};
 use rs_cam_core::machine::MachineProfile;
 use rs_cam_core::material::force_line::ForceLineRefusal;
 use rs_cam_core::material::{Material, PlasticFamily, WoodSpecies};
@@ -387,82 +383,4 @@ fn the_two_vocabularies_agree() {
             ),
         }
     }
-}
-
-// ── 6. The back-off states its abstention ───────────────────────────────
-
-/// Run Suggest end to end and return the warnings it emitted.
-fn suggest_warnings(material: &Material) -> Vec<SuggestWarning> {
-    let tool = carbide_endmill();
-    let machine = MachineProfile::default();
-    let op = roughing_pocket(3.0);
-
-    suggest_for_operation(SuggestForOperationInput {
-        operation: &op,
-        tool: &tool,
-        machine: &machine,
-        material,
-        lut: embedded_vendor_lut(),
-        spindle_strategy: SpindleStrategy::MatchChart,
-        context: SuggestContext::default(),
-    })
-    .expect("a flat end mill on a pocket is a runnable pairing")
-    .warnings
-}
-
-#[test]
-fn the_backoff_states_its_abstention() {
-    let unmodelled = suggest_warnings(&acrylic());
-    let reason = unmodelled
-        .iter()
-        .find_map(|w| match w {
-            SuggestWarning::DeflectionBackoffUnmodeled { reason, .. } => Some(*reason),
-            SuggestWarning::PlungeClampedToFeed { .. }
-            | SuggestWarning::StepoverClampedToToolDiameter { .. }
-            | SuggestWarning::RoughingDepthClampedToRigidity { .. }
-            | SuggestWarning::DepthClampedToCuttingLength { .. }
-            | SuggestWarning::PlungeEntryUnstableAtDpp { .. }
-            | SuggestWarning::DppCappedByDeflection { .. }
-            | SuggestWarning::DeflectionBackoffFigureIsAFloor { .. }
-            | SuggestWarning::StepoverRaisedForRuntime { .. }
-            | SuggestWarning::FeedRaisedForChipload { .. }
-            | SuggestWarning::ChiploadStillLowAfterRecalibration { .. }
-            | SuggestWarning::StrategyRecommendedNotApplied { .. }
-            | SuggestWarning::AxialEnvelopeSafeBandEmpty { .. }
-            | SuggestWarning::AxialDocClampedByEnvelope { .. }
-            | SuggestWarning::AxialDocBelowBurnFloor { .. }
-            | SuggestWarning::ProjectCurveDepthInfeasible { .. }
-            | SuggestWarning::FinishEnvelopeAdvisory { .. }
-            | SuggestWarning::FeedRescaledToFinalGeometry { .. }
-            | SuggestWarning::FeedClampedToChiploadFloor { .. }
-            | SuggestWarning::PowerRecheckedAfterRescale { .. }
-            | SuggestWarning::CutGeometryFieldNotHeld { .. }
-            | SuggestWarning::EngagementReducedForAggressiveness { .. }
-            | SuggestWarning::RpmLoweredForFeedCeiling { .. }
-            | SuggestWarning::AggressivenessNotApplied { .. }
-            | SuggestWarning::RampFeed { .. }
-            | SuggestWarning::PlungeReDerived { .. } => None,
-        })
-        .unwrap_or_else(|| {
-            panic!(
-                "an unvalidated plastic on a roughing pocket must report that the deflection \
-                 back-off did not run; got warnings: {unmodelled:?}"
-            )
-        });
-    assert_eq!(
-        reason,
-        DeflectionUnmodeled::MaterialUnvalidated,
-        "the warning must carry the reason, not just the fact of an abstention"
-    );
-
-    // The counterpart. A modelled material must never produce the
-    // abstention — otherwise the arm above would pass on a build that
-    // abstained on everything.
-    let modelled = suggest_warnings(&hard_maple());
-    assert!(
-        !modelled
-            .iter()
-            .any(|w| matches!(w, SuggestWarning::DeflectionBackoffUnmodeled { .. })),
-        "hard maple carries a force line, so the back-off must run; got warnings: {modelled:?}"
-    );
 }

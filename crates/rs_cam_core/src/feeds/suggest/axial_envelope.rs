@@ -1,7 +1,6 @@
-//! The axial-DOC envelope: the cutter-axial-constraints policy, the
-//! per-operation envelope resolver, the envelope picker that reconciles a
-//! commanded DPP with the vendor band, and the chipload-bound recompute that
-//! follows a DPP rewrite.
+//! The axial-DOC envelope: the per-operation envelope resolver and the
+//! chipload-bound recompute at a depth that is not the calculator's. Feeds
+//! contract P5 deleted the policy and the picker (pass 0).
 //!
 //! Split out of `feeds/suggest.rs` by P4; every item is unchanged apart from
 //! its visibility and the `use` lines.
@@ -11,117 +10,14 @@ use crate::compute::tool_config::ToolConfig;
 use crate::feeds::{OperationFamily as FeedsOperationFamily, ToolGeometryHint};
 use crate::material::Material;
 
-use super::{SuggestContext, SuggestWarning};
-
-/// Apply policy C of `planning/cutter_axial_constraints_2026-06-06.md`
-/// §5.4 to a single axial value against the cutter-axial-constraints
-/// envelope.
-///
-/// - Value > `safe_max` → clamp down + emit `AxialDocClampedByEnvelope`.
-/// - Value < chipload-burn floor → leave value + emit `AxialDocBelowBurnFloor`
-///   (deliberate conservative pin respected).
-/// - SafeBandEmpty → emit `AxialEnvelopeSafeBandEmpty` and clamp to
-///   `safe_max` (the upper bound; lower bound is infeasible so further
-///   conservatism is pointless).
-/// - In-band → leave the value silently.
-///
-/// Returns the post-policy value plus the list of warnings to surface.
-fn apply_axial_envelope(
-    commanded_mm: f64,
-    envelope: &crate::feeds::cutter_constraints::CutterAxialConstraints,
-    op_kind: &'static str,
-    param_name: &'static str,
-) -> (f64, Vec<SuggestWarning>) {
-    use crate::feeds::cutter_constraints::AxialBindingConstraint;
-    let safe_max = envelope.safe_max_doc_mm();
-    let mut warnings = Vec::new();
-    let mut new_val = commanded_mm;
-
-    let binding_str = axial_binding_str(envelope.binding_constraint);
-
-    if matches!(
-        envelope.binding_constraint,
-        AxialBindingConstraint::SafeBandEmpty
-    ) {
-        let chipload_floor = envelope.min_doc_chipload_floor_mm.unwrap_or(0.0);
-        // SafeBandEmpty implies one of the upper bounds (Deflection / VendorAp /
-        // Scallop) is tighter than the floor; surface whichever is.
-        let safe_max_now = envelope.safe_max_doc_mm();
-        let inner_binding = if envelope
-            .max_doc_vendor_mm
-            .is_some_and(|v| (v - safe_max_now).abs() < 1.0e-9)
-        {
-            "vendor_ap"
-        } else if envelope
-            .max_doc_scallop_mm
-            .is_some_and(|v| (v - safe_max_now).abs() < 1.0e-9)
-        {
-            "scallop"
-        } else {
-            "deflection"
-        };
-        warnings.push(SuggestWarning::AxialEnvelopeSafeBandEmpty {
-            op_kind,
-            max_safe_doc_mm: safe_max,
-            chipload_floor_doc_mm: chipload_floor,
-            binding_upper: inner_binding,
-        });
-        if commanded_mm > safe_max && safe_max > 0.0 {
-            new_val = safe_max;
-            // No additional clamp warning — `AxialEnvelopeSafeBandEmpty`
-            // already names the situation.
-        }
-        return (new_val, warnings);
-    }
-
-    if commanded_mm > safe_max && safe_max > 0.0 {
-        new_val = safe_max;
-        warnings.push(SuggestWarning::AxialDocClampedByEnvelope {
-            op_kind,
-            param_name,
-            commanded_mm,
-            clamped_mm: safe_max,
-            binding: binding_str,
-        });
-        return (new_val, warnings);
-    }
-    if let Some(floor) = envelope.min_doc_chipload_floor_mm
-        && commanded_mm < floor
-        && floor > 0.0
-    {
-        warnings.push(SuggestWarning::AxialDocBelowBurnFloor {
-            op_kind,
-            param_name,
-            commanded_mm,
-            floor_mm: floor,
-        });
-    }
-    (new_val, warnings)
-}
-
-/// Stable string token for an [`AxialBindingConstraint`] — used in
-/// `SuggestWarning` payloads (and from there the rationale tree), so
-/// the mapping is pinned in one place.
-fn axial_binding_str(
-    binding: crate::feeds::cutter_constraints::AxialBindingConstraint,
-) -> &'static str {
-    use crate::feeds::cutter_constraints::AxialBindingConstraint;
-    match binding {
-        AxialBindingConstraint::Deflection => "deflection",
-        AxialBindingConstraint::VendorAp => "vendor_ap",
-        AxialBindingConstraint::Scallop => "scallop",
-        AxialBindingConstraint::SafeBandEmpty => "safe_band_empty",
-    }
-}
-
 /// Construct the axial-DOC constraint envelope for an operation at its
 /// current operating point (feed / RPM / stepover as configured), or
 /// `None` for ops outside the envelope routing.
 ///
-/// This is the env-construction half of [`pick_axial_envelope`] —
-/// extracted so [`crate::feeds::profile::CutterOpProfile`] surfaces the
-/// SAME envelope Suggest's pass 0 enforces, with per-op radial-WOC /
-/// finish-target / deflection-limit derivation in exactly one place.
+/// [`crate::feeds::profile::CutterOpProfile`] surfaces this envelope.
+/// Suggest's pass 0 (`pick_axial_envelope`) applied it to the op until feeds
+/// contract P5 deleted the pass; the safe envelope (`feeds::envelope`) holds
+/// its limits now.
 ///
 /// Routing (mirrors planning §5). W2.4: the registry row states each op's
 /// class (`Capabilities::axial_envelope`):
@@ -181,7 +77,7 @@ pub(crate) fn axial_envelope_for_operation(
             // model (triangular groove averages ½ width). The commanded
             // depth is the op's imposed axial depth (VCarve: `max_depth`).
             let geometry = tool_def.to_geometry_hint();
-            let depth = super::operation_feeds_hints(operation).0;
+            let depth = super::operation_feeds_hints(operation, tool.diameter).0;
             let radial_woc = match (geometry, depth) {
                 (
                     ToolGeometryHint::VBit {
@@ -236,121 +132,6 @@ pub(crate) fn axial_envelope_for_operation(
             ))
         }
     }
-}
-
-/// Pass 0 of [`enforce_invariants`] — unified axial-DOC envelope per
-/// `planning/cutter_axial_constraints_2026-06-06.md` §5.
-///
-/// Envelope construction (per-op radial WOC / target / limit routing)
-/// lives in [`axial_envelope_for_operation`]; this pass applies the
-/// policy to the operation:
-/// - `Adaptive3d` — picks `depth_per_pass` via policy C against the
-///   envelope. Mutates DPP when the commanded value is above
-///   `safe_max_doc_mm`.
-/// - `VCarve` — clamps `cfg.max_depth` via policy C. The V-bit
-///   engaged width at the candidate depth is the radial WOC.
-/// - `ProjectCurve` — warning-only feasibility check on `cfg.depth`.
-/// - Finish-3D (Scallop / UnifiedFinish / DropCutter / Waterline /
-///   SteepShallow / SpiralFinish / RadialFinish / HorizontalFinish) —
-///   emits `FinishEnvelopeAdvisory`; automatic `stock_to_leave` mutation is
-///   deferred until in-process stock at gen time lands (planning
-///   §5.1.1).
-///
-/// Returns `(warnings, dpp_mutated)` so `enforce_invariants` can run
-/// the chipload-bounds re-derivation step in §5.3 only when needed.
-pub(super) fn pick_axial_envelope(
-    operation: &mut OperationConfig,
-    tool: &ToolConfig,
-    material: &Material,
-    context: SuggestContext<'_>,
-) -> (Vec<SuggestWarning>, bool) {
-    let mut warnings = Vec::new();
-    let mut dpp_mutated = false;
-
-    let Some(env) =
-        axial_envelope_for_operation(operation, tool, material, context.matched_lut_row)
-    else {
-        return (warnings, dpp_mutated);
-    };
-
-    // F161/F183: the registry row's class picks the arm, so a new op with a
-    // class gets that class's pass and no `_ =>` arm hides it. The three
-    // rough classes write a field of one op's config: each holds exactly
-    // that op (pinned by `each_axial_envelope_class_names_the_op_its_arm_writes`).
-    let class = operation.capabilities().axial_envelope;
-    match class {
-        // `axial_envelope_for_operation` returns `None` for this class, so
-        // the function returned above.
-        AxialEnvelope::NotApplied => {}
-        AxialEnvelope::Roughing3d => {
-            if let OperationConfig::Adaptive3d(cfg) = operation {
-                let commanded = cfg.depth_per_pass;
-                let (new_dpp, ws) =
-                    apply_axial_envelope(commanded, &env, "adaptive3d", "depth_per_pass");
-                warnings.extend(ws);
-                if (new_dpp - commanded).abs() > 1.0e-6 {
-                    cfg.depth_per_pass = new_dpp;
-                    dpp_mutated = true;
-                }
-            }
-        }
-        AxialEnvelope::VBitGroove => {
-            // S11: an unset depth has nothing to clamp.
-            if let OperationConfig::VCarve(cfg) = operation
-                && let Some(commanded) = cfg.max_depth
-            {
-                let (new_depth, ws) = apply_axial_envelope(commanded, &env, "vcarve", "max_depth");
-                warnings.extend(ws);
-                if (new_depth - commanded).abs() > 1.0e-6 {
-                    cfg.max_depth = Some(new_depth);
-                    // VCarve `max_depth` is not the chipload-DPP — re-derivation
-                    // only matters for ops where DPP feeds back into the chip
-                    // geometry calculator. Leave `dpp_mutated` false here.
-                }
-            }
-        }
-        AxialEnvelope::CurveRough => {
-            if let OperationConfig::ProjectCurve(cfg) = operation
-                && let Some(depth) = cfg.depth
-            {
-                let safe_max = env.safe_max_doc_mm();
-                if depth > safe_max && safe_max > 0.0 {
-                    warnings.push(SuggestWarning::ProjectCurveDepthInfeasible {
-                        commanded_mm: depth,
-                        max_safe_mm: safe_max,
-                        binding: axial_binding_str(env.binding_constraint),
-                    });
-                }
-            }
-        }
-        // Finish-3D family — warning-only per planning §5.1.1. The op kind
-        // is the registry's kind token (the eight literals this replaced
-        // spelled the same strings).
-        AxialEnvelope::Finish3d => {
-            let op_kind = operation.op_type().kind_str();
-            let binding_str = axial_binding_str(env.binding_constraint);
-            // Only emit the advisory when the envelope actually carries a
-            // meaningful bound (safe max under 5×D is the sniff test —
-            // anything looser is "no binding" noise).
-            if env.safe_max_doc_mm() < tool.diameter * 5.0 {
-                warnings.push(SuggestWarning::FinishEnvelopeAdvisory {
-                    op_kind,
-                    max_safe_doc_mm: env.safe_max_doc_mm(),
-                    binding: binding_str,
-                });
-            }
-            if matches!(env.safe_band_is_empty(), Some(true)) {
-                warnings.push(SuggestWarning::AxialEnvelopeSafeBandEmpty {
-                    op_kind,
-                    max_safe_doc_mm: env.safe_max_doc_mm(),
-                    chipload_floor_doc_mm: env.min_doc_chipload_floor_mm.unwrap_or(0.0),
-                    binding_upper: binding_str,
-                });
-            }
-        }
-    }
-
-    (warnings, dpp_mutated)
 }
 
 /// Re-derive `chipload_bounds` after the axial-envelope pass mutated

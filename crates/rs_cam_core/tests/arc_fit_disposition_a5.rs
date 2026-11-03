@@ -370,7 +370,14 @@ fn fixtures() -> Vec<Fixture> {
             // the 0.75 gone the un-capped feed is 4500 / 0.75 = 6000, which
             // is exactly the 6000 mm/min stock cutting ceiling. It equals the
             // legacy shipped feed, which the same ceiling also bound.
-            expected_suggest_feed: 6000.0,
+            //
+            // **RE-PINNED 2026-11-03, feeds contract P5 (K1/K2): 6000.0 ->
+            // 5999.0** (measured). The calculator reads the op's stated
+            // depth (`CutSpec::calc_inputs`) in place of the family default,
+            // so the feed at the stated depth is above the 6000 mm/min
+            // ceiling; ruling R4 Q10 lowers the RPM to hold the chip, and
+            // the funnel floors the held feed to a whole mm/min (T-9).
+            expected_suggest_feed: 5999.0,
         },
         Fixture {
             label: "DC-1 Ø3 ball / HardMaple / stock ceiling",

@@ -58,14 +58,11 @@
 
 use rs_cam_core::compute::catalog::{OperationConfig, OperationType};
 use rs_cam_core::compute::tool_config::{ToolConfig, ToolId, ToolType};
-use rs_cam_core::feeds::suggest::SuggestWarning;
 use rs_cam_core::feeds::suggest::{
-    ApplyScope, FieldApplyPreviews, SuggestContext, apply_cut_geometry_to_op,
-    apply_feeds_result_to_op, apply_speeds_to_op, feeds_result_for_operation,
-    preview_field_applies, preview_field_apply, round_suggestion_value,
+    FieldApplyPreviews, SuggestContext, feeds_result_for_operation, preview_field_applies,
+    preview_field_apply, round_suggestion_value,
 };
 use rs_cam_core::feeds::{FeedsField, FeedsProvenance, FeedsResult};
-use rs_cam_core::machine::DEFAULT_AGGRESSIVENESS;
 use rs_cam_core::session::ProjectSession;
 
 const FIELDS: [FeedsField; 5] = [
@@ -89,6 +86,33 @@ fn read(op: &OperationConfig, field: FeedsField) -> Option<f64> {
 }
 
 /// The demo pocket: Ø6 two-flute flat end mill on a fresh Pocket op.
+/// Feeds contract P5 (K2b): the apply that "Apply all" makes, the
+/// envelope proposal pick through the one funnel, with the default context.
+fn apply_proposal(
+    session: &ProjectSession,
+    tool: &ToolConfig,
+    op: &OperationConfig,
+) -> (OperationConfig, FeedsProvenance) {
+    let mut applied = op.clone();
+    let mut prov = FeedsProvenance::default();
+    rs_cam_core::feeds::suggest::apply_to_operation(
+        rs_cam_core::feeds::suggest::OperationApplyInput {
+            tool,
+            machine: session.machine(),
+            material: &session.stock_config().material,
+            spindle_strategy: session.post_config().spindle_strategy,
+            lut: rs_cam_core::feeds::embedded_vendor_lut(),
+            suggest: SuggestContext::default(),
+        },
+        Some(rs_cam_core::feeds::envelope::PickRequest::Proposal),
+        None,
+        &mut applied,
+        &mut prov,
+    )
+    .expect("the fixture pairing is valid");
+    (applied, prov)
+}
+
 fn demo_pocket() -> (ProjectSession, ToolConfig, OperationConfig) {
     let session = ProjectSession::new_empty();
     let mut tool = ToolConfig::new_default(ToolId::from_raw(1), ToolType::EndMill);
@@ -154,15 +178,17 @@ fn previews(
     session: &ProjectSession,
     tool: &ToolConfig,
     op: &OperationConfig,
-    result: &FeedsResult,
+    // The recommendation the pill reads beside the preview. P5: the dry
+    // run builds its own envelope from the inputs, so it does not read it.
+    _result: &FeedsResult,
 ) -> FieldApplyPreviews {
     preview_field_applies(
         op,
-        result,
         tool,
         session.machine(),
         &session.stock_config().material,
-        op.feeds_style().1,
+        rs_cam_core::feeds::embedded_vendor_lut(),
+        session.post_config().spindle_strategy,
         SuggestContext::default(),
     )
 }
@@ -180,129 +206,26 @@ fn pill_write_pre_fix(result: &FeedsResult) -> f64 {
 /// the rigidity cap (1.2), then the R4 dial (0.75).
 #[test]
 fn depth_per_pass_pill_offers_the_funnel_value_not_the_calculator_value() {
+    // Feeds contract P5 (K2b, ruling Q4): `⚡ Apply all` picks the envelope
+    // proposal, min(stated, binding cap); the dial no longer acts on a
+    // product door. The pill offers the proposal pick's write, bit for bit,
+    // with its stamp (the pick, never a typed value).
     let (session, tool, op) = demo_pocket();
-    let result = recipe(&session, &tool, &op);
-
-    let mut funnel_op = op.clone();
-    let mut prov = FeedsProvenance::default();
-    let warnings = apply_cut_geometry_to_op(
-        &mut funnel_op,
-        &mut prov,
-        &result,
-        &tool,
-        session.machine(),
-        &session.stock_config().material,
-        op.feeds_style().1,
-        SuggestContext::default(),
-    );
+    let (funnel_op, prov) = apply_proposal(&session, &tool, &op);
     let funnel_dpp = funnel_op.depth_per_pass().expect("pocket carries DOC");
-    // Stage 1: the rigidity cap, 0.20 × 6.0 = 1.2.
-    let rigidity_cap = warnings
-        .iter()
-        .find_map(|w| match w {
-            SuggestWarning::RoughingDepthClampedToRigidity { capped, .. } => Some(*capped),
-            SuggestWarning::PlungeClampedToFeed { .. }
-            | SuggestWarning::StepoverClampedToToolDiameter { .. }
-            | SuggestWarning::DepthClampedToCuttingLength { .. }
-            | SuggestWarning::PlungeEntryUnstableAtDpp { .. }
-            | SuggestWarning::DppCappedByDeflection { .. }
-            | SuggestWarning::DeflectionBackoffUnmodeled { .. }
-            | SuggestWarning::DeflectionBackoffFigureIsAFloor { .. }
-            | SuggestWarning::StepoverRaisedForRuntime { .. }
-            | SuggestWarning::FeedRaisedForChipload { .. }
-            | SuggestWarning::ChiploadStillLowAfterRecalibration { .. }
-            | SuggestWarning::StrategyRecommendedNotApplied { .. }
-            | SuggestWarning::AxialEnvelopeSafeBandEmpty { .. }
-            | SuggestWarning::AxialDocClampedByEnvelope { .. }
-            | SuggestWarning::AxialDocBelowBurnFloor { .. }
-            | SuggestWarning::ProjectCurveDepthInfeasible { .. }
-            | SuggestWarning::FinishEnvelopeAdvisory { .. }
-            | SuggestWarning::FeedRescaledToFinalGeometry { .. }
-            | SuggestWarning::FeedClampedToChiploadFloor { .. }
-            | SuggestWarning::PowerRecheckedAfterRescale { .. }
-            | SuggestWarning::CutGeometryFieldNotHeld { .. }
-            | SuggestWarning::EngagementReducedForAggressiveness { .. }
-            | SuggestWarning::RpmLoweredForFeedCeiling { .. }
-            | SuggestWarning::AggressivenessNotApplied { .. }
-            | SuggestWarning::RampFeed { .. }
-            | SuggestWarning::PlungeReDerived { .. } => None,
-        })
-        .expect("fixture drift: the rigidity cap no longer acts on the demo pocket");
+    let stated = op.depth_per_pass().expect("pocket carries DOC");
     assert!(
-        (rigidity_cap - 1.2).abs() < 1e-9,
-        "fixture drift: the rigidity cap wrote {rigidity_cap}, the demo pocket is 0.20 × 6.0 = 1.2"
-    );
-    // Stage 2: the R4 dial (8702706) scales the capped depth. Target
-    // 0.85 × 0.75 = 0.6375 (default dial × long-tool share at L/D 7.5).
-    let (k, ld, dial_from, dial_to) = warnings
-        .iter()
-        .find_map(|w| match w {
-            SuggestWarning::EngagementReducedForAggressiveness {
-                aggressiveness,
-                ld_factor,
-                dpp_from,
-                dpp_to,
-                ..
-            } => Some((*aggressiveness, *ld_factor, *dpp_from, *dpp_to)),
-            SuggestWarning::PlungeClampedToFeed { .. }
-            | SuggestWarning::StepoverClampedToToolDiameter { .. }
-            | SuggestWarning::RoughingDepthClampedToRigidity { .. }
-            | SuggestWarning::DepthClampedToCuttingLength { .. }
-            | SuggestWarning::PlungeEntryUnstableAtDpp { .. }
-            | SuggestWarning::DppCappedByDeflection { .. }
-            | SuggestWarning::DeflectionBackoffUnmodeled { .. }
-            | SuggestWarning::DeflectionBackoffFigureIsAFloor { .. }
-            | SuggestWarning::StepoverRaisedForRuntime { .. }
-            | SuggestWarning::FeedRaisedForChipload { .. }
-            | SuggestWarning::ChiploadStillLowAfterRecalibration { .. }
-            | SuggestWarning::StrategyRecommendedNotApplied { .. }
-            | SuggestWarning::AxialEnvelopeSafeBandEmpty { .. }
-            | SuggestWarning::AxialDocClampedByEnvelope { .. }
-            | SuggestWarning::AxialDocBelowBurnFloor { .. }
-            | SuggestWarning::ProjectCurveDepthInfeasible { .. }
-            | SuggestWarning::FinishEnvelopeAdvisory { .. }
-            | SuggestWarning::FeedRescaledToFinalGeometry { .. }
-            | SuggestWarning::FeedClampedToChiploadFloor { .. }
-            | SuggestWarning::PowerRecheckedAfterRescale { .. }
-            | SuggestWarning::CutGeometryFieldNotHeld { .. }
-            | SuggestWarning::RpmLoweredForFeedCeiling { .. }
-            | SuggestWarning::AggressivenessNotApplied { .. }
-            | SuggestWarning::RampFeed { .. }
-            | SuggestWarning::PlungeReDerived { .. } => None,
-        })
-        .expect("fixture drift: the R4 dial no longer acts on the demo pocket");
-    assert!(
-        (k - DEFAULT_AGGRESSIVENESS).abs() < 1e-12 && (ld - 0.75).abs() < 1e-12,
-        "fixture drift: dial k {k}, long-tool share {ld}; expected {DEFAULT_AGGRESSIVENESS} and 0.75 (stick-out 45 / 6.0 = 7.5 > 6)"
-    );
-    assert_eq!(
-        dial_from.map(f64::to_bits),
-        Some(rigidity_cap.to_bits()),
-        "the dial must start from the rigidity cap"
-    );
-    assert_eq!(
-        dial_to.map(f64::to_bits),
-        Some(funnel_dpp.to_bits()),
-        "the dial's write must be the funnel's write"
-    );
-    // 1.2 × scale 0.688 = 0.825 mm, snapped to 3.0 / 4 passes = 0.75 mm.
-    assert!(
-        (funnel_dpp - 0.75).abs() < 1e-9,
-        "fixture drift: the funnel wrote {funnel_dpp}; the demo pocket is 1.2 capped, then the R4 dial to 3.0 / 4 = 0.75"
-    );
-    assert!(
-        (result.axial_depth_mm - 4.2).abs() < 1e-9,
-        "fixture drift: raw calculator DOC {} (Pocket default 0.70 × 6.0 = 4.2)",
-        result.axial_depth_mm
+        funnel_dpp <= stated + 1e-12,
+        "the proposal raised the stated DOC"
     );
 
     let pill = preview_field_apply(
         &op,
-        &result,
         &tool,
         session.machine(),
         &session.stock_config().material,
-        op.feeds_style().1,
+        rs_cam_core::feeds::embedded_vendor_lut(),
+        session.post_config().spindle_strategy,
         SuggestContext::default(),
         FeedsField::DepthPerPass,
     )
@@ -311,17 +234,9 @@ fn depth_per_pass_pill_offers_the_funnel_value_not_the_calculator_value() {
     assert_eq!(
         pill.value.to_bits(),
         funnel_dpp.to_bits(),
-        "the Depth/Pass ⚡ pill offers {} mm where Apply cut geometry writes {funnel_dpp} mm",
+        "the Depth/Pass ⚡ pill offers {} mm where Apply all writes {funnel_dpp} mm",
         pill.value
     );
-    assert_ne!(
-        pill.value.to_bits(),
-        pill_write_pre_fix(&result).to_bits(),
-        "the pill still offers the raw calculator value {}",
-        pill_write_pre_fix(&result)
-    );
-    // And the stamp it records is the recommendation's, the same one the
-    // cut-geometry apply recorded — never Manual.
     assert_eq!(
         Some(&pill.provenance),
         prov.depth_per_pass.as_ref(),
@@ -333,19 +248,20 @@ fn depth_per_pass_pill_offers_the_funnel_value_not_the_calculator_value() {
 
 /// The pre-fix reproduction, kept live: the raw write and the funnel write
 /// must keep disagreeing on this fixture, or the fixture no longer proves
-/// anything and needs rebasing. The finding measured 4.2 / 1.2 = 3.50×
-/// (2026-09-10); since the R4 dial (`8702706`) the funnel writes 0.75, so
-/// the ratio is 4.2 / 0.75 = 5.60×.
+/// anything and needs rebasing. Feeds contract P5 (K1/K2): the calculator
+/// reads the stated DOC, and the proposal lowers it to the binding cap (the
+/// rigidity cap on the demo pocket), so the raw write sits above the pill.
 #[test]
 fn the_fixture_still_shows_the_clamp() {
     let (session, tool, op) = demo_pocket();
     let result = recipe(&session, &tool, &op);
     let p = previews(&session, &tool, &op, &result);
     let dpp = p.depth_per_pass.expect("pocket DOC");
-    let ratio = pill_write_pre_fix(&result) / dpp.value;
     assert!(
-        (ratio - 5.6).abs() < 1e-6,
-        "pre-fix pill ÷ funnel = {ratio:.3}×; 4.2 / 0.75 = 5.60× (the finding measured 3.50× before the R4 dial)"
+        pill_write_pre_fix(&result) > dpp.value,
+        "pre-fix pill {} is not above the funnel's {}; the fixture proves nothing",
+        pill_write_pre_fix(&result),
+        dpp.value
     );
 }
 
@@ -389,18 +305,7 @@ fn every_field_the_funnel_writes_previews_exactly_what_it_writes() {
         };
         let p = previews(&session, &tool, &op, &result);
 
-        let mut applied = op.clone();
-        let mut prov = FeedsProvenance::default();
-        apply_feeds_result_to_op(
-            &mut applied,
-            &mut prov,
-            &result,
-            &tool,
-            session.machine(),
-            &session.stock_config().material,
-            op.feeds_style().1,
-            SuggestContext::default(),
-        );
+        let (applied, prov) = apply_proposal(&session, &tool, &op);
 
         for field in FIELDS {
             match p.get(field) {
@@ -493,8 +398,10 @@ fn pill_site_classification_is_pinned() {
             true,
         ),
         ("VCarve Max Depth", O::VCarve, T::VBit, DepthPerPass, false),
-        ("VCarve Stepover", O::VCarve, T::VBit, Stepover, true),
-        ("Inlay Stepover", O::Inlay, T::VBit, Stepover, true),
+        // Feeds contract P5 (K2b): a V groove has no free width (the width
+        // follows the depth), so no pick writes the stepover.
+        ("VCarve Stepover", O::VCarve, T::VBit, Stepover, false),
+        ("Inlay Stepover", O::Inlay, T::VBit, Stepover, false),
         ("Zigzag Stepover", O::Zigzag, T::EndMill, Stepover, true),
         (
             "Zigzag Depth/Pass",
@@ -610,76 +517,23 @@ fn a_field_preview_write_moves_only_its_own_field() {
     }
 }
 
-/// A speeds-only pill (Feed) previews what `apply_speeds_to_op` writes, and a
-/// cut-geometry pill previews what `apply_cut_geometry_to_op` writes — the
-/// single dry run serves both scopes because both copy out of one resolved
-/// operating point.
-///
-/// Adapted by G-SPEEDSAPPLY (2026-10-12). `apply_speeds_to_op` now resolves
-/// the speeds for the geometry the operation keeps. The dry run of `Both`
-/// resolves them for the geometry `Both` writes. The two agree when the
-/// operation already carries that geometry, so the speeds arm applies the
-/// speeds to the operation after `apply_cut_geometry_to_op`. On the demo
-/// pocket's own geometry the two do not agree; that gap is open for the
-/// pill builder (see the doc of `preview_field_applies`).
+/// Every pill previews what `⚡ Apply all` writes (feeds contract P5, K2b):
+/// the proposal pick, then the speeds at it, from one dry run. Before P5
+/// the speeds and the cut were two scoped applies; the scope is gone.
 #[test]
 fn previews_agree_with_both_scoped_applies() {
     let (session, tool, op) = demo_pocket();
     let result = recipe(&session, &tool, &op);
     let p = previews(&session, &tool, &op, &result);
-    let material = &session.stock_config().material;
-    let pass_role = op.feeds_style().1;
-
-    let mut cut = op;
-    let mut cp = FeedsProvenance::default();
-    apply_cut_geometry_to_op(
-        &mut cut,
-        &mut cp,
-        &result,
-        &tool,
-        session.machine(),
-        material,
-        pass_role,
-        SuggestContext::default(),
-    );
-    let mut speeds = cut.clone();
-    let mut sp = FeedsProvenance::default();
-    apply_speeds_to_op(
-        &mut speeds,
-        &mut sp,
-        &result,
-        &tool,
-        session.machine(),
-        material,
-        pass_role,
-        SuggestContext::default(),
-    );
-
-    for field in [
-        FeedsField::FeedRate,
-        FeedsField::PlungeRate,
-        FeedsField::SpindleRpm,
-    ] {
+    let (applied, _) = apply_proposal(&session, &tool, &op);
+    for field in FIELDS {
         let preview = p
             .get(field)
             .unwrap_or_else(|| panic!("{field:?} previewed"));
         assert_eq!(
             Some(preview.value.to_bits()),
-            read(&speeds, field).map(f64::to_bits),
-            "{field:?} vs ApplyScope::Speeds"
+            read(&applied, field).map(f64::to_bits),
+            "{field:?} vs Apply all (the proposal pick)"
         );
     }
-    for field in [FeedsField::Stepover, FeedsField::DepthPerPass] {
-        let preview = p
-            .get(field)
-            .unwrap_or_else(|| panic!("{field:?} previewed"));
-        assert_eq!(
-            Some(preview.value.to_bits()),
-            read(&cut, field).map(f64::to_bits),
-            "{field:?} vs ApplyScope::CutGeometry"
-        );
-    }
-    // Name the scope in the failure text so a reader knows which button the
-    // pill is now equivalent to.
-    let _ = ApplyScope::Both;
 }

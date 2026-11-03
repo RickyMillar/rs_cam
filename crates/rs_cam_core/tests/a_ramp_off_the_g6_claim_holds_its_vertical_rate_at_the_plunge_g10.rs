@@ -132,6 +132,8 @@ fn record(s: &SuggestedParams) -> (&RampFeed, &EntryNotes) {
             | SuggestWarning::EngagementReducedForAggressiveness { .. }
             | SuggestWarning::RpmLoweredForFeedCeiling { .. }
             | SuggestWarning::AggressivenessNotApplied { .. }
+            | SuggestWarning::UnsourcedRowsAccepted { .. }
+            | SuggestWarning::OutsideEnvelope { .. }
             | SuggestWarning::PlungeReDerived { .. } => None,
         })
         .collect();

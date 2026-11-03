@@ -1,0 +1,1503 @@
+//! CONTRACT K2b (feeds contract P5, ruling Q4): Suggest returns a space of
+//! safe choices, not one number.
+//!
+//! [`SafeEnvelope::for_cut`] is the one builder. It reads the op's
+//! [`CutSpec`](crate::compute::catalog::CutSpec) (K1) for the axes and the
+//! operator's point, and runs the closed-form calculator ([`calculate`]) on a
+//! sample grid. No generation and no simulation run here (ruling Q5).
+//!
+//! The envelope keeps the limits that the calculator and the invariant
+//! passes compute and then discard today: each is a [`Limit`] with its law
+//! and its [`Basis`]. It gives one proposal (`min(stated, binding cap)` on a
+//! stated axis; never a raise, K2) and the placement of the operator's
+//! point.
+//!
+//! A write of a geometry value needs an [`EnvelopePick`], and only
+//! [`SafeEnvelope::pick`] makes one. A point that the envelope did not
+//! compute cannot reach the apply funnel. The refusals of the compiler are
+//! `compile_fail` doctests on [`envelope_refusals`].
+
+use serde::Serialize;
+use serde::ser::SerializeMap;
+
+use crate::compute::catalog::{Axial, OperationConfig, Radial};
+use crate::compute::tool_config::ToolConfig;
+use crate::feeds::sourced::{
+    Basis, ChipMm, FeedMmMin, MachineField, PlungeMmMin, Rpm, Sourced, lower_to_cap,
+};
+use crate::feeds::suggest::{SuggestContext, feeds_input_for_operation};
+use crate::feeds::{
+    FeedsError, FeedsResult, FeedsWarning, MIN_AE_MM, MIN_AP_MM, OperationFamily, PassRole,
+    SpindleStrategy, ToolGeometryHint, VendorLut, calculate,
+};
+use crate::machine::MachineProfile;
+use crate::material::Material;
+
+/// The number of samples per free axis of the speeds grid.
+///
+/// A performance choice, not physics (lead decision D5): it needs no
+/// printed source. A plane has `ENVELOPE_GRID_N` x `ENVELOPE_GRID_N`
+/// points, a bar `ENVELOPE_GRID_N`. Each point is one closed-form
+/// `calculate` call; the `Power` edge adds at most
+/// `EDGE_BISECTION_STEPS` calls per width sample that it crosses.
+/// Measured 2026-11-03 on the operator's machine (debug build, the unit
+/// test `the_envelope_meets_its_time_budget`): one Pocket plane envelope,
+/// 64 points, 4 ms. The FM1 walk with one envelope per shipped cell (524)
+/// stays under its 1 s budget (0.88 s measured).
+pub const ENVELOPE_GRID_N: usize = 8;
+
+/// The time budget (ms, debug build) of one plane envelope, which the unit
+/// test `the_envelope_meets_its_time_budget` holds: about ten times the
+/// 4 ms measured, for a loaded machine. A performance number, not physics
+/// (D5).
+pub const ENVELOPE_TIME_BUDGET_MS: u128 = 50;
+
+/// The bisection steps that place a `Power` edge between two grid samples.
+/// Twelve halvings put the edge within 1/4096 of one grid step: a
+/// solver limit with a stated reason, not a formula constant.
+const EDGE_BISECTION_STEPS: usize = 12;
+
+/// The bisection steps of the `Runtime` floor (the move count is cheap).
+const RUNTIME_BISECTION_STEPS: usize = 32;
+
+/// One point of the (depth, width) plane.
+#[derive(Debug, Clone, Copy, PartialEq, Serialize)]
+pub struct CutPoint {
+    /// The axial depth per pass (mm).
+    pub ap_mm: f64,
+    /// The radial width (stepover, mm).
+    pub ae_mm: f64,
+}
+
+/// One axis of the envelope: the span that the grid covers.
+#[derive(Debug, Clone, Copy, PartialEq, Serialize)]
+pub struct AxisSpan {
+    /// The low end (mm).
+    pub min_mm: f64,
+    /// The high end (mm).
+    pub max_mm: f64,
+}
+
+/// Which of ap and ae the op can vary (from the `CutSpec`).
+#[derive(Debug, Clone, Copy, PartialEq, Serialize)]
+#[serde(tag = "kind", rename_all = "snake_case")]
+pub enum EnvelopeAxes {
+    /// Both free: a stepover (or a scallop width) and a depth per pass.
+    Plane {
+        /// The depth span.
+        ap: AxisSpan,
+        /// The width span.
+        ae: AxisSpan,
+    },
+    /// The depth is free; the width is fixed by the cut (a slot, a groove,
+    /// a drill, a surface-following width).
+    AxialBar {
+        /// The depth span.
+        ap: AxisSpan,
+        /// The fixed width (mm).
+        ae_mm: f64,
+    },
+    /// The width is free; the surface sets the depth.
+    RadialBar {
+        /// The width span.
+        ae: AxisSpan,
+        /// The fixed depth (mm).
+        ap_mm: f64,
+    },
+    /// Neither is free: the surface sets both.
+    Fixed {
+        /// The depth (mm).
+        ap_mm: f64,
+        /// The width (mm).
+        ae_mm: f64,
+    },
+}
+
+impl EnvelopeAxes {
+    const fn ap_free(&self) -> bool {
+        matches!(self, Self::Plane { .. } | Self::AxialBar { .. })
+    }
+
+    const fn ae_free(&self) -> bool {
+        matches!(self, Self::Plane { .. } | Self::RadialBar { .. })
+    }
+}
+
+/// The kind of a limit. One row per row of the P5 card table.
+#[derive(Debug, Clone, Copy, PartialEq, Eq, Serialize)]
+#[serde(rename_all = "snake_case")]
+pub enum LimitKind {
+    /// The flute guard: an `ap` ceiling.
+    FluteGuard,
+    /// The tool cutting length: an `ap` ceiling.
+    CuttingLength,
+    /// The vendor row's axial bound: an `ap` ceiling.
+    VendorAxial,
+    /// The machine rigidity cap (roughing): an `ap` ceiling.
+    Rigidity,
+    /// The slot rule: an `ap` ceiling where `ae` is above the threshold.
+    Slot,
+    /// The rated spindle power: an `ap(ae)` curve.
+    Power,
+    /// The tip deflection target (roughing): an `ap(ae)` curve.
+    Deflection,
+    /// The chipload band: judged per point.
+    ChipBand,
+    /// The rubbing floor: judged per point (it warns, never lifts).
+    RubbingFloor,
+    /// The machine cutting-feed cap: judged per point.
+    FeedCap,
+    /// The tool diameter: an `ae` ceiling.
+    Diameter,
+    /// The move budget: an `ae` floor (needs the model box).
+    Runtime,
+    /// The smallest engagement the calculator writes: the plot origin.
+    EngagementFloor,
+}
+
+impl LimitKind {
+    /// The name that the card, the warning and MCP print.
+    #[must_use]
+    pub const fn label(self) -> &'static str {
+        match self {
+            Self::FluteGuard => "flute guard",
+            Self::CuttingLength => "cutting length",
+            Self::VendorAxial => "vendor axial bound",
+            Self::Rigidity => "machine rigidity",
+            Self::Slot => "slot rule",
+            Self::Power => "spindle power",
+            Self::Deflection => "tool deflection",
+            Self::ChipBand => "chipload band",
+            Self::RubbingFloor => "rubbing floor",
+            Self::FeedCap => "machine feed cap",
+            Self::Diameter => "tool diameter",
+            Self::Runtime => "move budget",
+            Self::EngagementFloor => "engagement floor",
+        }
+    }
+}
+
+/// The shape of one limit on the (ap, ae) plane.
+#[derive(Debug, Clone, PartialEq, Serialize)]
+#[serde(tag = "kind", rename_all = "snake_case")]
+pub enum Edge {
+    /// `ap <= mm` for every `ae`.
+    ApCeiling {
+        /// The ceiling (mm).
+        mm: f64,
+    },
+    /// `ap <= mm` where `ae > ae_mm` (the slot step).
+    ApCeilingAbove {
+        /// The width above which the ceiling holds (mm).
+        ae_mm: f64,
+        /// The ceiling (mm).
+        mm: f64,
+    },
+    /// `ap <= f(ae)`: one `(ae, ap)` pair per sample, linear between them.
+    ApCurve {
+        /// The samples, ascending in `ae`.
+        points: Vec<[f64; 2]>,
+    },
+    /// `ap >= mm`.
+    ApFloor {
+        /// The floor (mm).
+        mm: f64,
+    },
+    /// `ae <= mm`.
+    AeCeiling {
+        /// The ceiling (mm).
+        mm: f64,
+    },
+    /// `ae >= mm`.
+    AeFloor {
+        /// The floor (mm).
+        mm: f64,
+    },
+    /// Judged per point of the [`SpeedsMap`]; no edge on the plane.
+    PerPoint,
+    /// The limit is not modelled for this cut, and `reason` says why (T-4:
+    /// an abstention is stated, never dropped and never read as "no
+    /// limit"). No edge on the plane.
+    Unmodelled {
+        /// The clause of the abstention.
+        reason: &'static str,
+    },
+}
+
+/// One limit of the envelope: its kind, its law and its basis.
+#[derive(Debug, Clone, PartialEq, Serialize)]
+pub struct Limit {
+    /// The kind.
+    pub kind: LimitKind,
+    /// The law, in a few words.
+    pub law: &'static str,
+    /// How the limit is known.
+    pub basis: Basis,
+    /// The shape on the plane.
+    pub edge: Edge,
+}
+
+impl Limit {
+    /// The `ap` ceiling of this limit at the width `ae_mm`, if it has one.
+    #[must_use]
+    pub fn ap_ceiling_at(&self, ae_mm: f64) -> Option<f64> {
+        match &self.edge {
+            Edge::ApCeiling { mm } => Some(*mm),
+            Edge::ApCeilingAbove { ae_mm: above, mm } => (ae_mm > *above).then_some(*mm),
+            Edge::ApCurve { points } => interpolate_curve(points, ae_mm),
+            Edge::ApFloor { .. }
+            | Edge::AeCeiling { .. }
+            | Edge::AeFloor { .. }
+            | Edge::PerPoint
+            | Edge::Unmodelled { .. } => None,
+        }
+    }
+
+    /// The signed margin of `p` against this limit, as a share of the
+    /// limit: positive inside, negative outside. `None` for a limit that
+    /// has no edge at `p`.
+    #[must_use]
+    pub fn margin(&self, p: CutPoint) -> Option<f64> {
+        let ceiling = |value: f64, cap: f64| (cap > 0.0).then(|| (cap - value) / cap);
+        let floor = |value: f64, low: f64| (low > 0.0).then(|| (value - low) / low);
+        match &self.edge {
+            Edge::ApCeiling { .. } | Edge::ApCeilingAbove { .. } | Edge::ApCurve { .. } => self
+                .ap_ceiling_at(p.ae_mm)
+                .and_then(|cap| ceiling(p.ap_mm, cap)),
+            Edge::ApFloor { mm } => floor(p.ap_mm, *mm),
+            Edge::AeCeiling { mm } => ceiling(p.ae_mm, *mm),
+            Edge::AeFloor { mm } => floor(p.ae_mm, *mm),
+            Edge::PerPoint | Edge::Unmodelled { .. } => None,
+        }
+    }
+}
+
+/// `ap` at `ae` on a curve of `(ae, ap)` samples: linear between samples,
+/// the end value outside them.
+fn interpolate_curve(points: &[[f64; 2]], ae_mm: f64) -> Option<f64> {
+    let first = points.first()?;
+    let last = points.last()?;
+    if ae_mm <= first[0] {
+        return Some(first[1]);
+    }
+    if ae_mm >= last[0] {
+        return Some(last[1]);
+    }
+    points.windows(2).find_map(|w| match w {
+        [a, b] if ae_mm >= a[0] && ae_mm <= b[0] => {
+            let span = b[0] - a[0];
+            let t = if span > 0.0 {
+                (ae_mm - a[0]) / span
+            } else {
+                0.0
+            };
+            Some(a[1] + t * (b[1] - a[1]))
+        }
+        _ => None,
+    })
+}
+
+/// Where a point sits against the boundary.
+#[derive(Debug, Clone, Copy, PartialEq, Serialize)]
+#[serde(tag = "kind", rename_all = "snake_case")]
+pub enum Placement {
+    /// Inside every edge. `margin` is the smallest share of a limit left.
+    Inside {
+        /// The smallest margin, a share of the limit.
+        margin: f64,
+    },
+    /// Outside an edge. `binding` is the limit crossed by the largest share;
+    /// `margin` is that (negative) share.
+    Outside {
+        /// The limit that the point crosses.
+        binding: LimitKind,
+        /// The negative share of the limit.
+        margin: f64,
+    },
+}
+
+/// One point of the speeds grid. Its values come from one closed-form
+/// `calculate` call at `(ap, ae)`.
+#[derive(Debug, Clone, PartialEq, Serialize)]
+pub struct SpeedsPoint {
+    /// The depth (mm).
+    pub ap_mm: f64,
+    /// The width (mm).
+    pub ae_mm: f64,
+    /// The spindle speed.
+    #[serde(serialize_with = "value_only")]
+    pub rpm: Sourced<Rpm>,
+    /// The side feed.
+    #[serde(serialize_with = "value_only")]
+    pub feed: Sourced<FeedMmMin>,
+    /// The plunge feed.
+    #[serde(serialize_with = "value_only")]
+    pub plunge: Sourced<PlungeMmMin>,
+    /// The advance per tooth.
+    #[serde(serialize_with = "value_only")]
+    pub chip: Sourced<ChipMm>,
+    /// The spindle power at the point (kW).
+    pub power_kw: f64,
+    /// The rated power at the point's RPM (kW).
+    pub available_kw: f64,
+    /// The full chip fits the rated power at the point.
+    pub fits_power: bool,
+    /// The commanded chip is under the rubbing floor (a warning).
+    pub rubbing: bool,
+    /// The machine feed cap holds the feed.
+    pub feed_capped: bool,
+}
+
+fn value_only<T: Serialize, S: serde::Serializer>(
+    v: &Sourced<T>,
+    serializer: S,
+) -> Result<S::Ok, S::Error> {
+    v.value().serialize(serializer)
+}
+
+impl SpeedsPoint {
+    fn from_result(ap_mm: f64, ae_mm: f64, r: &FeedsResult, flutes: u32) -> Self {
+        let feed_capped = r
+            .warnings
+            .iter()
+            .any(|w| matches!(w, FeedsWarning::FeedRateClamped { .. }));
+        let rubbing = r
+            .warnings
+            .iter()
+            .any(|w| matches!(w, FeedsWarning::ChiploadBelowRubbingFloor { .. }));
+        Self {
+            ap_mm,
+            ae_mm,
+            rpm: Sourced::new(Rpm(r.rpm), r.bases.rpm.clone()),
+            feed: Sourced::new(FeedMmMin(r.feed_rate_mm_min), r.bases.feed.clone()),
+            plunge: Sourced::new(PlungeMmMin(r.plunge_rate_mm_min), r.bases.plunge.clone()),
+            chip: Sourced::new(ChipMm(chip_of(r, flutes)), r.bases.chip.clone()),
+            power_kw: r.power_kw,
+            available_kw: r.available_power_kw,
+            fits_power: fits_power(r),
+            rubbing,
+            feed_capped,
+        }
+    }
+}
+
+/// The commanded advance per tooth of a result: feed / (RPM x Z).
+fn chip_of(r: &FeedsResult, flutes: u32) -> f64 {
+    let z = f64::from(flutes);
+    if r.rpm > 0.0 && z > 0.0 {
+        r.feed_rate_mm_min / (r.rpm * z)
+    } else {
+        0.0
+    }
+}
+
+/// The full chip fits the rated spindle power at the point: no feed cut by
+/// the power ladder, and the shipped power at or under the curve.
+fn fits_power(r: &FeedsResult) -> bool {
+    let fits_curve =
+        r.available_power_kw <= 0.0 || r.power_kw <= r.available_power_kw * (1.0 + 1e-9);
+    fits_curve && r.derates.power_limit >= 1.0
+}
+
+/// A cheap read of the speeds at any `(ap, ae)` (P5b: the GUI drags a
+/// candidate ring and reads this every frame).
+#[derive(Debug, Clone, Copy, PartialEq, Serialize)]
+pub struct SpeedsSample {
+    /// The spindle speed (rev/min).
+    pub rpm: f64,
+    /// The side feed (mm/min).
+    pub feed_mm_min: f64,
+    /// The plunge feed (mm/min).
+    pub plunge_mm_min: f64,
+    /// The spindle power (kW).
+    pub power_kw: f64,
+}
+
+/// `(ap, ae)` -> the speeds. A grid of [`SpeedsPoint`], row-major in `ae`
+/// then `ap`, with a bilinear lookup.
+#[derive(Debug, Clone, PartialEq, Serialize)]
+pub struct SpeedsMap {
+    /// The `ap` samples (mm), ascending.
+    pub aps: Vec<f64>,
+    /// The `ae` samples (mm), ascending.
+    pub aes: Vec<f64>,
+    /// `points[j * aps.len() + i]` is the point at `(aps[i], aes[j])`.
+    pub points: Vec<SpeedsPoint>,
+}
+
+impl SpeedsMap {
+    /// The point at grid index `(i, j)`.
+    #[must_use]
+    pub fn at(&self, i: usize, j: usize) -> Option<&SpeedsPoint> {
+        self.points.get(j * self.aps.len() + i)
+    }
+
+    /// The speeds at `(ap, ae)` by bilinear interpolation on the grid (the
+    /// end values outside it). No `calculate` call: a lookup.
+    #[must_use]
+    pub fn speeds_at(&self, ap_mm: f64, ae_mm: f64) -> Option<SpeedsSample> {
+        let (i0, i1, ti) = bracket(&self.aps, ap_mm)?;
+        let (j0, j1, tj) = bracket(&self.aes, ae_mm)?;
+        let p00 = self.at(i0, j0)?;
+        let p10 = self.at(i1, j0)?;
+        let p01 = self.at(i0, j1)?;
+        let p11 = self.at(i1, j1)?;
+        let lerp = |f: &dyn Fn(&SpeedsPoint) -> f64| {
+            let low = f(p00) + ti * (f(p10) - f(p00));
+            let high = f(p01) + ti * (f(p11) - f(p01));
+            low + tj * (high - low)
+        };
+        Some(SpeedsSample {
+            rpm: lerp(&|p| p.rpm.get().0),
+            feed_mm_min: lerp(&|p| p.feed.get().0),
+            plunge_mm_min: lerp(&|p| p.plunge.get().0),
+            power_kw: lerp(&|p| p.power_kw),
+        })
+    }
+}
+
+/// The two indices around `x` and the share between them.
+fn bracket(xs: &[f64], x: f64) -> Option<(usize, usize, f64)> {
+    let last = xs.len().checked_sub(1)?;
+    let first = *xs.first()?;
+    if xs.len() == 1 || x <= first {
+        return Some((0, 0, 0.0));
+    }
+    if x >= *xs.last()? {
+        return Some((last, last, 0.0));
+    }
+    let i = xs.iter().position(|v| *v >= x)?.max(1);
+    let (a, b) = (*xs.get(i - 1)?, *xs.get(i)?);
+    let t = if b > a { (x - a) / (b - a) } else { 0.0 };
+    Some((i - 1, i, t))
+}
+
+/// The inputs of [`SafeEnvelope::for_cut`]. The context lends the model box
+/// (the `Runtime` floor); the envelope keeps no borrow of it.
+#[derive(Clone, Copy)]
+pub struct EnvelopeInput<'a> {
+    /// The op, with the operator's values.
+    pub operation: &'a OperationConfig,
+    /// The tool.
+    pub tool: &'a ToolConfig,
+    /// The machine.
+    pub machine: &'a MachineProfile,
+    /// The stock material.
+    pub material: &'a Material,
+    /// The vendor table. The envelope keeps it for a pick off the grid.
+    pub lut: &'static VendorLut,
+    /// The spindle policy of the post.
+    pub spindle_strategy: SpindleStrategy,
+    /// The Suggest context (the model box).
+    pub context: SuggestContext<'a>,
+}
+
+/// The owned inputs that a pick off the grid needs.
+#[derive(Clone)]
+struct OwnedInputs {
+    operation: OperationConfig,
+    tool: ToolConfig,
+    machine: MachineProfile,
+    material: Material,
+    lut: &'static VendorLut,
+    spindle_strategy: SpindleStrategy,
+}
+
+impl std::fmt::Debug for OwnedInputs {
+    fn fmt(&self, f: &mut std::fmt::Formatter<'_>) -> std::fmt::Result {
+        f.debug_struct("OwnedInputs")
+            .field("operation", &self.operation.op_type())
+            .field("tool", &self.tool.id)
+            .finish_non_exhaustive()
+    }
+}
+
+impl OwnedInputs {
+    /// One closed-form `calculate` call at `p`. Both axes are given, so the
+    /// calculator reads no family default for them.
+    fn calc_at(&self, p: CutPoint) -> FeedsResult {
+        let mut input = feeds_input_for_operation(
+            &self.operation,
+            &self.tool,
+            &self.material,
+            &self.machine,
+            self.lut,
+            self.spindle_strategy,
+        );
+        input.axial_depth_mm = Some(p.ap_mm);
+        input.radial_width_mm = Some(p.ae_mm);
+        input.target_scallop_mm = None;
+        calculate(&input)
+    }
+}
+
+/// CONTRACT K2b. Built only by [`SafeEnvelope::for_cut`]; no public
+/// constructor and no `Default`.
+#[derive(Debug, Clone)]
+pub struct SafeEnvelope {
+    /// Which of ap and ae the op can vary.
+    pub axes: EnvelopeAxes,
+    /// Each limit with its law and its basis.
+    pub boundary: Vec<Limit>,
+    /// The speeds at each grid point.
+    pub speeds: SpeedsMap,
+    /// The one proposed point, with the reason it was chosen.
+    pub proposal: Sourced<CutPoint>,
+    /// The limit that lowered the proposal below the operator's point, if
+    /// one did.
+    pub proposal_binding: Option<LimitKind>,
+    /// The operator's stated point, when every free axis is stated.
+    pub stated: Option<CutPoint>,
+    /// Where the operator's stated point sits.
+    pub operator: Option<Placement>,
+    inputs: OwnedInputs,
+}
+
+impl Serialize for SafeEnvelope {
+    fn serialize<S: serde::Serializer>(&self, serializer: S) -> Result<S::Ok, S::Error> {
+        let mut map = serializer.serialize_map(None)?;
+        map.serialize_entry("axes", &self.axes)?;
+        map.serialize_entry("boundary", &self.boundary)?;
+        map.serialize_entry("speeds", &self.speeds)?;
+        map.serialize_entry("proposal", &self.proposal)?;
+        map.serialize_entry("proposal_binding", &self.proposal_binding)?;
+        map.serialize_entry("stated", &self.stated)?;
+        map.serialize_entry("operator", &self.operator)?;
+        map.end()
+    }
+}
+
+/// What a pick asks for. Every request gives a point; none is refused (Q6):
+/// a point outside the boundary gives `Placement::Outside` and the K6
+/// warning `project.outside_envelope`.
+#[derive(Debug, Clone, Copy, PartialEq)]
+pub enum PickRequest {
+    /// The envelope's proposal.
+    Proposal,
+    /// A point of the plane. A fixed axis keeps its fixed value.
+    Point {
+        /// The depth (mm).
+        ap_mm: f64,
+        /// The width (mm).
+        ae_mm: f64,
+    },
+    /// A drill peck depth (mm): the one free axis of a drill.
+    Peck(f64),
+}
+
+/// A point that the envelope computed. Built only by
+/// [`SafeEnvelope::pick`]; the speeds come from the envelope at the point.
+#[derive(Debug, Clone)]
+pub struct EnvelopePick<'env> {
+    envelope: &'env SafeEnvelope,
+    request: PickRequest,
+    point: Sourced<CutPoint>,
+    placement: Placement,
+    result: FeedsResult,
+}
+
+impl<'env> EnvelopePick<'env> {
+    /// The envelope that made the pick.
+    #[must_use]
+    pub const fn envelope(&self) -> &'env SafeEnvelope {
+        self.envelope
+    }
+
+    /// The request.
+    #[must_use]
+    pub const fn request(&self) -> PickRequest {
+        self.request
+    }
+
+    /// The picked point and its basis.
+    #[must_use]
+    pub const fn point(&self) -> &Sourced<CutPoint> {
+        &self.point
+    }
+
+    /// Where the point sits.
+    #[must_use]
+    pub const fn placement(&self) -> Placement {
+        self.placement
+    }
+
+    /// The calculator result at the point (one closed-form call).
+    #[must_use]
+    pub const fn result(&self) -> &FeedsResult {
+        &self.result
+    }
+
+    /// The axes of the envelope (which geometry fields a pick writes).
+    #[must_use]
+    pub const fn axes(&self) -> EnvelopeAxes {
+        self.envelope.axes
+    }
+}
+
+/// The operator's values of a `CutSpec`, and the axes they give.
+struct AxesPlan {
+    axes: EnvelopeAxes,
+    stated_ap: Option<f64>,
+    stated_ae: Option<f64>,
+    /// The free axis is a drill peck.
+    peck: bool,
+}
+
+impl SafeEnvelope {
+    /// Build the envelope of one op, tool, machine and material.
+    ///
+    /// # Errors
+    ///
+    /// [`FeedsError::ToolOutOfDomain`] for a tool that builds no cutter,
+    /// and the refusal of [`crate::feeds::validate_tool_for_operation`]
+    /// (D6: a missing input is not a finding).
+    pub fn for_cut(input: EnvelopeInput<'_>) -> Result<Self, FeedsError> {
+        input.tool.validate().map_err(FeedsError::ToolOutOfDomain)?;
+        let feeds_input = feeds_input_for_operation(
+            input.operation,
+            input.tool,
+            input.material,
+            input.machine,
+            input.lut,
+            input.spindle_strategy,
+        );
+        crate::feeds::validate_tool_for_operation(&feeds_input)?;
+        let inputs = OwnedInputs {
+            operation: input.operation.clone(),
+            tool: input.tool.clone(),
+            machine: input.machine.clone(),
+            material: input.material.clone(),
+            lut: input.lut,
+            spindle_strategy: input.spindle_strategy,
+        };
+        // The calculator at the op's own inputs: the family default of an
+        // unstated axis, and the matched row.
+        let base = calculate(&feeds_input);
+        let d = input.tool.diameter;
+        let plan = axes_plan(input.operation, input.tool, &base);
+        let (family, role) = input.operation.feeds_style();
+
+        let ap_samples = match plan.axes {
+            EnvelopeAxes::Plane { ap, .. } | EnvelopeAxes::AxialBar { ap, .. } => samples(ap),
+            EnvelopeAxes::RadialBar { ap_mm, .. } | EnvelopeAxes::Fixed { ap_mm, .. } => {
+                vec![ap_mm]
+            }
+        };
+        let ae_samples = match plan.axes {
+            EnvelopeAxes::Plane { ae, .. } | EnvelopeAxes::RadialBar { ae, .. } => samples(ae),
+            EnvelopeAxes::AxialBar { ae_mm, .. } | EnvelopeAxes::Fixed { ae_mm, .. } => {
+                vec![ae_mm]
+            }
+        };
+        let mut points = Vec::with_capacity(ap_samples.len() * ae_samples.len());
+        for &ae in &ae_samples {
+            for &ap in &ap_samples {
+                let r = inputs.calc_at(CutPoint {
+                    ap_mm: ap,
+                    ae_mm: ae,
+                });
+                points.push(SpeedsPoint::from_result(ap, ae, &r, input.tool.flute_count));
+            }
+        }
+        let speeds = SpeedsMap {
+            aps: ap_samples,
+            aes: ae_samples,
+            points,
+        };
+
+        let mut boundary = Vec::new();
+        geometric_limits(&mut boundary, &input, &base, &plan, family, role, d);
+        power_limit(&mut boundary, &inputs, &speeds, &plan);
+        deflection_limit(&mut boundary, &input, &speeds, &plan, role);
+        runtime_limit(&mut boundary, &input, &plan, d);
+        per_point_limits(&mut boundary, &base, &speeds);
+
+        let mut env = Self {
+            axes: plan.axes,
+            boundary,
+            speeds,
+            proposal: Sourced::new(
+                CutPoint {
+                    ap_mm: base.axial_depth_mm,
+                    ae_mm: base.radial_width_mm,
+                },
+                Basis::derived("not computed", Vec::new()),
+            ),
+            proposal_binding: None,
+            stated: None,
+            operator: None,
+            inputs,
+        };
+        let peck_rule = plan.peck.then(|| drill_peck_rule(&input)).flatten();
+        let (proposal, binding) = env.propose(&plan, &base, peck_rule);
+        env.proposal = proposal;
+        env.proposal_binding = binding;
+        env.stated = match (plan.axes, plan.stated_ap, plan.stated_ae) {
+            (EnvelopeAxes::Plane { .. }, Some(ap), Some(ae)) => Some(CutPoint {
+                ap_mm: ap,
+                ae_mm: ae,
+            }),
+            (EnvelopeAxes::AxialBar { ae_mm, .. }, Some(ap), _) => {
+                Some(CutPoint { ap_mm: ap, ae_mm })
+            }
+            (EnvelopeAxes::RadialBar { ap_mm, .. }, _, Some(ae)) => {
+                Some(CutPoint { ap_mm, ae_mm: ae })
+            }
+            (EnvelopeAxes::Fixed { ap_mm, ae_mm }, _, _) => Some(CutPoint { ap_mm, ae_mm }),
+            (
+                EnvelopeAxes::Plane { .. }
+                | EnvelopeAxes::AxialBar { .. }
+                | EnvelopeAxes::RadialBar { .. },
+                _,
+                _,
+            ) => None,
+        };
+        env.operator = env.stated.map(|p| env.placement_of(p));
+        Ok(env)
+    }
+
+    /// The lowest `ap` ceiling at the width `ae_mm`, and its limit.
+    #[must_use]
+    pub fn ap_ceiling_at(&self, ae_mm: f64) -> Option<(f64, LimitKind)> {
+        self.boundary
+            .iter()
+            .filter_map(|l| l.ap_ceiling_at(ae_mm).map(|c| (c, l.kind)))
+            .min_by(|a, b| a.0.total_cmp(&b.0))
+    }
+
+    /// The limit of `kind`, if the envelope has one.
+    #[must_use]
+    pub fn limit(&self, kind: LimitKind) -> Option<&Limit> {
+        self.boundary.iter().find(|l| l.kind == kind)
+    }
+
+    /// Where the point `p` sits against the boundary. A query for any
+    /// `(ap, ae)`; no `calculate` call.
+    #[must_use]
+    pub fn placement_of(&self, p: CutPoint) -> Placement {
+        let mut inside = f64::INFINITY;
+        let mut worst: Option<(f64, LimitKind)> = None;
+        for l in &self.boundary {
+            // A fixed axis is not the operator's choice: its edges do not
+            // place the point.
+            let on_fixed_axis = match l.edge {
+                Edge::ApCeiling { .. }
+                | Edge::ApCeilingAbove { .. }
+                | Edge::ApCurve { .. }
+                | Edge::ApFloor { .. } => !self.axes.ap_free(),
+                Edge::AeCeiling { .. } | Edge::AeFloor { .. } => !self.axes.ae_free(),
+                Edge::PerPoint | Edge::Unmodelled { .. } => true,
+            };
+            if on_fixed_axis {
+                continue;
+            }
+            let Some(m) = l.margin(p) else { continue };
+            if m < -1e-9 {
+                if worst.is_none_or(|(w, _)| m < w) {
+                    worst = Some((m, l.kind));
+                }
+            } else {
+                inside = inside.min(m);
+            }
+        }
+        match worst {
+            Some((margin, binding)) => Placement::Outside { binding, margin },
+            None => Placement::Inside {
+                margin: if inside.is_finite() { inside } else { 1.0 },
+            },
+        }
+    }
+
+    /// Pick a point. No request is refused (Q6). A point off the grid gets
+    /// one more closed-form `calculate` call, so its speeds still come from
+    /// the envelope.
+    #[must_use]
+    pub fn pick(&self, request: PickRequest) -> EnvelopePick<'_> {
+        let fixed = match self.axes {
+            EnvelopeAxes::Plane { .. } => None,
+            EnvelopeAxes::AxialBar { ae_mm, .. } => Some((None, Some(ae_mm))),
+            EnvelopeAxes::RadialBar { ap_mm, .. } => Some((Some(ap_mm), None)),
+            EnvelopeAxes::Fixed { ap_mm, ae_mm } => Some((Some(ap_mm), Some(ae_mm))),
+        };
+        let fix = |p: CutPoint| match fixed {
+            None => p,
+            Some((ap, ae)) => CutPoint {
+                ap_mm: ap.unwrap_or(p.ap_mm),
+                ae_mm: ae.unwrap_or(p.ae_mm),
+            },
+        };
+        let point = match request {
+            PickRequest::Proposal => self.proposal.clone(),
+            PickRequest::Point { ap_mm, ae_mm } => {
+                Sourced::new(fix(CutPoint { ap_mm, ae_mm }), Basis::picked())
+            }
+            PickRequest::Peck(mm) => Sourced::new(
+                fix(CutPoint {
+                    ap_mm: mm,
+                    ae_mm: self.proposal.get().ae_mm,
+                }),
+                Basis::picked(),
+            ),
+        };
+        let p = point.get();
+        EnvelopePick {
+            envelope: self,
+            request,
+            placement: self.placement_of(p),
+            result: self.inputs.calc_at(p),
+            point,
+        }
+    }
+
+    /// The proposal: `min(stated, binding cap)` on a stated axis (never a
+    /// raise, K2), the calculator's point on an unstated axis.
+    fn propose(
+        &self,
+        plan: &AxesPlan,
+        base: &FeedsResult,
+        peck_rule: Option<f64>,
+    ) -> (Sourced<CutPoint>, Option<LimitKind>) {
+        let ae_cap = self
+            .boundary
+            .iter()
+            .filter_map(|l| match l.edge {
+                Edge::AeCeiling { mm } => Some((mm, l)),
+                Edge::ApCeiling { .. }
+                | Edge::ApCeilingAbove { .. }
+                | Edge::ApCurve { .. }
+                | Edge::ApFloor { .. }
+                | Edge::AeFloor { .. }
+                | Edge::PerPoint
+                | Edge::Unmodelled { .. } => None,
+            })
+            .min_by(|a, b| a.0.total_cmp(&b.0));
+        let mut binding = None;
+        let ae = match (self.axes, plan.stated_ae) {
+            (EnvelopeAxes::Plane { .. } | EnvelopeAxes::RadialBar { .. }, Some(stated)) => {
+                let s = Sourced::new(stated, Basis::stated());
+                match ae_cap {
+                    Some((cap, l)) if cap < stated => {
+                        binding = Some(l.kind);
+                        lower_to_cap(s, cap, l.law, &l.basis)
+                    }
+                    Some(_) | None => s,
+                }
+            }
+            (EnvelopeAxes::Plane { .. } | EnvelopeAxes::RadialBar { .. }, None) => {
+                Sourced::new(base.radial_width_mm, base.bases.ae.clone())
+            }
+            (EnvelopeAxes::AxialBar { ae_mm, .. } | EnvelopeAxes::Fixed { ae_mm, .. }, _) => {
+                Sourced::new(ae_mm, Basis::derived("fixed by the cut", vec![]))
+            }
+        };
+        let ae_mm = ae.get();
+        let ap = match (self.axes, plan.stated_ap) {
+            (EnvelopeAxes::Plane { .. } | EnvelopeAxes::AxialBar { .. }, stated) => {
+                let s = match stated {
+                    Some(v) => Sourced::new(v, Basis::stated()),
+                    None => Sourced::new(base.axial_depth_mm, base.bases.ap.clone()),
+                };
+                // Card row 29: the peck proposal is the drill peck rule,
+                // lowered from the stated peck, never raised (K2).
+                let s = match peck_rule {
+                    Some(rule) => lower_to_cap(
+                        s,
+                        rule,
+                        "drill peck rule",
+                        &Basis::derived(DRILL_PECK_LAW, vec![Basis::tool_fact()]),
+                    ),
+                    None => s,
+                };
+                let cap = self
+                    .boundary
+                    .iter()
+                    .filter_map(|l| l.ap_ceiling_at(ae_mm).map(|c| (c, l)))
+                    .min_by(|a, b| a.0.total_cmp(&b.0));
+                match cap {
+                    Some((c, l)) if c < s.get() => {
+                        binding = Some(l.kind);
+                        lower_to_cap(s, c, l.law, &l.basis)
+                    }
+                    Some(_) | None => s,
+                }
+            }
+            (EnvelopeAxes::RadialBar { ap_mm, .. } | EnvelopeAxes::Fixed { ap_mm, .. }, _) => {
+                Sourced::new(ap_mm, Basis::derived("fixed by the cut", vec![]))
+            }
+        };
+        let point = CutPoint {
+            ap_mm: ap.get(),
+            ae_mm,
+        };
+        let basis = Basis::derived(
+            "proposal: min(stated, binding cap)",
+            vec![ap.basis().clone(), ae.basis().clone()],
+        );
+        (Sourced::new(point, basis), binding)
+    }
+}
+
+/// The law of the drill peck rule: half the Janka-banded per-peck maximum
+/// (`Material::drill_default_peck_depth_mm`), inside the schema range and
+/// under the hole (`apply::peck_for_hole`). A repo rule (ruling B5).
+const DRILL_PECK_LAW: &str = "half the per-peck maximum of the material (repo rule, ruling B5)";
+
+/// The drill peck rule of a drill op: the peck that the Suggest drill
+/// defaults give (card row 29). `None` for an op with no peck.
+fn drill_peck_rule(input: &EnvelopeInput<'_>) -> Option<f64> {
+    let d = input.tool.diameter;
+    if !d.is_finite() || d <= 0.0 {
+        return None;
+    }
+    let peck = input.material.drill_default_peck_depth_mm(d);
+    match input.operation {
+        OperationConfig::Drill(cfg) => Some(crate::feeds::suggest::peck_for_hole(
+            crate::compute::catalog::OperationType::Drill,
+            peck,
+            cfg.floor.depth_below_top(),
+        )),
+        OperationConfig::AlignmentPinDrill(cfg) => Some(crate::feeds::suggest::peck_for_hole(
+            crate::compute::catalog::OperationType::AlignmentPinDrill,
+            peck,
+            input
+                .context
+                .stock
+                .and_then(|s| s.stock_z)
+                .map(|z| z + cfg.spoilboard_penetration),
+        )),
+        OperationConfig::Face(_)
+        | OperationConfig::Pocket(_)
+        | OperationConfig::Profile(_)
+        | OperationConfig::Adaptive(_)
+        | OperationConfig::VCarve(_)
+        | OperationConfig::Inlay(_)
+        | OperationConfig::InlayPlug(_)
+        | OperationConfig::Zigzag(_)
+        | OperationConfig::Trace(_)
+        | OperationConfig::Bore(_)
+        | OperationConfig::Chamfer(_)
+        | OperationConfig::DropCutter(_)
+        | OperationConfig::Adaptive3d(_)
+        | OperationConfig::Waterline(_)
+        | OperationConfig::Pencil(_)
+        | OperationConfig::Scallop(_)
+        | OperationConfig::UnifiedFinish(_)
+        | OperationConfig::SteepShallow(_)
+        | OperationConfig::RampFinish(_)
+        | OperationConfig::SpiralFinish(_)
+        | OperationConfig::RadialFinish(_)
+        | OperationConfig::HorizontalFinish(_)
+        | OperationConfig::ProjectCurve(_) => None,
+    }
+}
+
+/// `ENVELOPE_GRID_N` evenly spaced samples of a span.
+fn samples(span: AxisSpan) -> Vec<f64> {
+    let n = ENVELOPE_GRID_N.max(2);
+    let step = (span.max_mm - span.min_mm) / (n - 1) as f64;
+    (0..n).map(|i| span.min_mm + step * i as f64).collect()
+}
+
+/// The axes and the operator's values of an op (from its `CutSpec`).
+fn axes_plan(operation: &OperationConfig, tool: &ToolConfig, base: &FeedsResult) -> AxesPlan {
+    let spec = operation.cut_spec();
+    let d = tool.diameter;
+    let ball_r = match tool.geometry_hint() {
+        ToolGeometryHint::Ball => d / 2.0,
+        ToolGeometryHint::TaperedBall { tip_radius, .. } => tip_radius,
+        ToolGeometryHint::Bull { corner_radius } => corner_radius,
+        ToolGeometryHint::Flat | ToolGeometryHint::VBit { .. } => 0.0,
+    };
+    // `Some(Some(v))`: free and stated; `Some(None)`: free, not stated;
+    // `None`: fixed at the value in the second slot.
+    let (radial_free, stated_ae, fixed_ae) = match spec.radial {
+        Radial::Width(s) => (true, Some(s.mm()), base.radial_width_mm),
+        Radial::Scallop(s) => {
+            let w = crate::feeds::geometry::scallop_stepover(ball_r, s.mm());
+            (true, w, w.unwrap_or(base.radial_width_mm))
+        }
+        Radial::Slot | Radial::Axial => (false, None, d),
+        Radial::Groove | Radial::AngularStep(_) | Radial::SurfaceFollow => {
+            (false, None, base.radial_width_mm)
+        }
+    };
+    let (axial_free, stated_ap, fixed_ap) = match spec.axial {
+        Axial::PerPass(s)
+        | Axial::ZStep(s)
+        | Axial::Peck(s)
+        | Axial::HelixPitch(s)
+        | Axial::ChamferWidth(s) => (true, Some(s.mm()), s.mm()),
+        Axial::OnePass(s) | Axial::Surface { max: s } => match (spec.axial, s) {
+            (_, Some(s)) => (true, Some(s.mm()), s.mm()),
+            (Axial::OnePass(_), None) => (true, None, base.axial_depth_mm),
+            (_, None) => (false, None, base.axial_depth_mm),
+        },
+    };
+    let flute = if tool.cutting_length > 0.0 {
+        tool.cutting_length
+    } else {
+        crate::feeds::flute_guard_of(0.0, d).0
+    };
+    let ap_span = AxisSpan {
+        min_mm: MIN_AP_MM,
+        max_mm: flute.max(stated_ap.unwrap_or(0.0)).max(MIN_AP_MM * 2.0),
+    };
+    let ae_span = AxisSpan {
+        min_mm: MIN_AE_MM,
+        max_mm: d.max(stated_ae.unwrap_or(0.0)).max(MIN_AE_MM * 2.0),
+    };
+    let axes = match (axial_free, radial_free) {
+        (true, true) => EnvelopeAxes::Plane {
+            ap: ap_span,
+            ae: ae_span,
+        },
+        (true, false) => EnvelopeAxes::AxialBar {
+            ap: ap_span,
+            ae_mm: fixed_ae,
+        },
+        (false, true) => EnvelopeAxes::RadialBar {
+            ae: ae_span,
+            ap_mm: fixed_ap,
+        },
+        (false, false) => EnvelopeAxes::Fixed {
+            ap_mm: fixed_ap,
+            ae_mm: fixed_ae,
+        },
+    };
+    AxesPlan {
+        axes,
+        stated_ap,
+        stated_ae,
+        peck: matches!(spec.axial, Axial::Peck(_)),
+    }
+}
+
+/// The closed-form edges: flute guard, cutting length, vendor axial,
+/// rigidity, slot, diameter, engagement floor.
+fn geometric_limits(
+    out: &mut Vec<Limit>,
+    input: &EnvelopeInput<'_>,
+    base: &FeedsResult,
+    plan: &AxesPlan,
+    family: OperationFamily,
+    role: PassRole,
+    d: f64,
+) {
+    let (guard, guard_basis) = crate::feeds::flute_guard_of(input.tool.cutting_length, d);
+    out.push(Limit {
+        kind: LimitKind::FluteGuard,
+        law: "0.8 x flute",
+        basis: guard_basis,
+        edge: Edge::ApCeiling { mm: guard },
+    });
+    if input.tool.cutting_length > 0.0 {
+        out.push(Limit {
+            kind: LimitKind::CuttingLength,
+            law: "tool cutting length",
+            basis: Basis::tool_fact(),
+            edge: Edge::ApCeiling {
+                mm: input.tool.cutting_length,
+            },
+        });
+    }
+    // Today's pass 0 scope: the ops that the registry routes to the axial
+    // envelope (`Capabilities::axial_envelope`).
+    if let Some(env) = crate::feeds::suggest::axial_envelope_for_operation(
+        input.operation,
+        input.tool,
+        input.material,
+        base.matched_lut_row.as_ref(),
+    ) && let (Some(mm), Some(row)) = (env.max_doc_vendor_mm, base.matched_lut_row.as_ref())
+    {
+        out.push(Limit {
+            kind: LimitKind::VendorAxial,
+            law: "vendor ap bound",
+            basis: Basis::Printed(crate::feeds::sourced::RowRef(row.observation_id.clone())),
+            edge: Edge::ApCeiling { mm },
+        });
+    }
+    let probe_depth = match plan.axes {
+        EnvelopeAxes::Plane { ap, .. } | EnvelopeAxes::AxialBar { ap, .. } => ap.max_mm,
+        EnvelopeAxes::RadialBar { ap_mm, .. } | EnvelopeAxes::Fixed { ap_mm, .. } => ap_mm,
+    };
+    if let Some(cap) =
+        crate::feeds::suggest::rigidity_cap_mm(family, input.tool, input.machine, role, probe_depth)
+    {
+        out.push(Limit {
+            kind: LimitKind::Rigidity,
+            law: "machine rigidity depth cap",
+            basis: Basis::Machine(MachineField::Rigidity),
+            edge: Edge::ApCeiling { mm: cap },
+        });
+    }
+    // A drill peck is a plunge: it cuts no side slot, so the slot rule does
+    // not bound it.
+    if !plan.peck {
+        let (threshold_d, cap_d, slot_basis) = crate::feeds::slot_rule();
+        out.push(Limit {
+            kind: LimitKind::Slot,
+            law: "slot: ap <= 0.25 D where ae > 0.85 D",
+            basis: slot_basis,
+            edge: Edge::ApCeilingAbove {
+                ae_mm: d * threshold_d,
+                mm: d * cap_d,
+            },
+        });
+    }
+    out.push(Limit {
+        kind: LimitKind::Diameter,
+        law: "ae <= D",
+        basis: Basis::tool_fact(),
+        edge: Edge::AeCeiling { mm: d },
+    });
+    out.push(Limit {
+        kind: LimitKind::EngagementFloor,
+        law: "smallest depth the calculator writes",
+        basis: Basis::derived("MIN_AP_MM", Vec::new()),
+        edge: Edge::ApFloor { mm: MIN_AP_MM },
+    });
+    out.push(Limit {
+        kind: LimitKind::EngagementFloor,
+        law: "smallest width the calculator writes",
+        basis: Basis::derived("MIN_AE_MM", Vec::new()),
+        edge: Edge::AeFloor { mm: MIN_AE_MM },
+    });
+}
+
+/// The rated-power edge: per width sample, the deepest `ap` at which the
+/// full chip fits the spindle curve. Between two grid samples the edge is
+/// placed by bisection with the calculator.
+fn power_limit(out: &mut Vec<Limit>, inputs: &OwnedInputs, speeds: &SpeedsMap, plan: &AxesPlan) {
+    if !plan.axes.ap_free() {
+        return;
+    }
+    let mut points = Vec::new();
+    for (j, &ae) in speeds.aes.iter().enumerate() {
+        let fits = |i: usize| speeds.at(i, j).is_some_and(|p| p.fits_power);
+        let Some(first_out) = (0..speeds.aps.len()).find(|&i| !fits(i)) else {
+            continue;
+        };
+        let (mut lo, mut hi) = match first_out.checked_sub(1) {
+            Some(i) => (
+                speeds.aps.get(i).copied().unwrap_or(MIN_AP_MM),
+                speeds.aps.get(first_out).copied().unwrap_or(MIN_AP_MM),
+            ),
+            None => (0.0, speeds.aps.first().copied().unwrap_or(MIN_AP_MM)),
+        };
+        for _ in 0..EDGE_BISECTION_STEPS {
+            let mid = 0.5 * (lo + hi);
+            if fits_power(&inputs.calc_at(CutPoint {
+                ap_mm: mid,
+                ae_mm: ae,
+            })) {
+                lo = mid;
+            } else {
+                hi = mid;
+            }
+        }
+        points.push([ae, lo]);
+    }
+    if points.is_empty() {
+        return;
+    }
+    // A width sample with no crossing has no edge in the span: the curve
+    // takes the top of the span there, so a crossing column stays exact.
+    let top = speeds.aps.last().copied().unwrap_or(MIN_AP_MM);
+    let mut curve: Vec<[f64; 2]> = speeds
+        .aes
+        .iter()
+        .map(|&ae| {
+            points
+                .iter()
+                .find(|p| (p[0] - ae).abs() < 1e-12)
+                .copied()
+                .unwrap_or([ae, top])
+        })
+        .collect();
+    curve.dedup_by(|a, b| (a[0] - b[0]).abs() < 1e-12);
+    out.push(Limit {
+        kind: LimitKind::Power,
+        law: "rated spindle power at the full chip",
+        basis: Basis::derived(
+            "two-term power model <= rated curve",
+            vec![Basis::Machine(MachineField::PowerCurve)],
+        ),
+        edge: Edge::ApCurve { points: curve },
+    });
+}
+
+/// The tip-deflection edge (roughing, as pass 6): per width sample, the
+/// deepest `ap` at the 200 µm target, by the one beam
+/// (`cutter_axial_constraints`).
+fn deflection_limit(
+    out: &mut Vec<Limit>,
+    input: &EnvelopeInput<'_>,
+    speeds: &SpeedsMap,
+    plan: &AxesPlan,
+    role: PassRole,
+) {
+    if !plan.axes.ap_free() || !matches!(role, PassRole::Roughing) {
+        return;
+    }
+    // T-4: the beam cannot answer. State the abstention with its reason.
+    // `cutter_axial_constraints` returns its upper search bracket when the
+    // beam refuses, which would read as a deep limit (an absence rendered
+    // as a reading), so the refusal is decided here first.
+    let unmodelled = |reason: crate::feeds::predict::DeflectionUnmodeled| Limit {
+        kind: LimitKind::Deflection,
+        law: "tip deflection <= 200 um",
+        basis: Basis::Rule(crate::feeds::suggest::DEFLECTION_BACKOFF_TARGET_ROW),
+        edge: Edge::Unmodelled {
+            reason: reason.clause(),
+        },
+    };
+    let Ok(tool_def) = crate::compute::cutter::build_cutter(input.tool) else {
+        out.push(unmodelled(
+            crate::feeds::predict::DeflectionUnmodeled::ToolOutOfDomain,
+        ));
+        return;
+    };
+    if input.material.force_line().is_err() {
+        out.push(unmodelled(
+            crate::feeds::predict::DeflectionUnmodeled::MaterialUnvalidated,
+        ));
+        return;
+    }
+    if !(input.tool.stickout.is_finite() && input.tool.stickout > 0.0) {
+        out.push(unmodelled(
+            crate::feeds::predict::DeflectionUnmodeled::NoStickout,
+        ));
+        return;
+    }
+    let mut curve = Vec::new();
+    for (j, &ae) in speeds.aes.iter().enumerate() {
+        // The chip at the shallowest sample: the largest chip of the column.
+        let Some(p) = speeds.at(0, j) else { continue };
+        let fz = p.chip.get().0;
+        let c = crate::feeds::cutter_constraints::cutter_axial_constraints(
+            &tool_def,
+            input.material,
+            ae.max(1.0e-3),
+            fz,
+            None,
+            None,
+            Some(crate::feeds::suggest::DEFLECTION_BACKOFF_TARGET_UM),
+        );
+        if c.max_doc_deflection_mm.is_finite() && c.max_doc_deflection_mm > 0.0 {
+            curve.push([ae, c.max_doc_deflection_mm]);
+        }
+    }
+    if curve.is_empty() {
+        return;
+    }
+    out.push(Limit {
+        kind: LimitKind::Deflection,
+        law: "tip deflection <= 200 um",
+        basis: Basis::derived(
+            "one beam (ToolDefinition::tip_deflection_mm)",
+            vec![Basis::Rule(
+                crate::feeds::suggest::DEFLECTION_BACKOFF_TARGET_ROW,
+            )],
+        ),
+        edge: Edge::ApCurve { points: curve },
+    });
+}
+
+/// The move-budget floor on the width (pass 3), when the context gives the
+/// model box and the op has a free stepover.
+fn runtime_limit(out: &mut Vec<Limit>, input: &EnvelopeInput<'_>, plan: &AxesPlan, d: f64) {
+    if !plan.axes.ae_free() || input.operation.stepover().is_none() {
+        return;
+    }
+    let Some(bbox) = input.context.model_bbox else {
+        return;
+    };
+    let target = crate::feeds::suggest::STEPOVER_BACKOFF_TARGET_MOVES_ROW.value;
+    let ceiling = d * crate::feeds::suggest::STEPOVER_BACKOFF_DIAMETER_FRACTION_ROW.value;
+    let moves_at = |s: f64| {
+        let mut op = input.operation.clone();
+        op.set_stepover(s);
+        crate::feeds::predict::predict_move_count(&op, Some(bbox), input.tool)
+    };
+    let within = |s: f64| {
+        #[expect(
+            clippy::cast_precision_loss,
+            reason = "a move count; the budget is 5e5, exact in an f64"
+        )]
+        let moves = moves_at(s) as f64;
+        moves <= target
+    };
+    if within(MIN_AE_MM) {
+        return;
+    }
+    let floor = if within(ceiling) {
+        let (mut lo, mut hi) = (MIN_AE_MM, ceiling);
+        for _ in 0..RUNTIME_BISECTION_STEPS {
+            let mid = 0.5 * (lo + hi);
+            if within(mid) {
+                hi = mid;
+            } else {
+                lo = mid;
+            }
+        }
+        hi
+    } else {
+        ceiling
+    };
+    out.push(Limit {
+        kind: LimitKind::Runtime,
+        law: "predicted moves <= the move budget",
+        basis: Basis::derived(
+            "move budget",
+            vec![
+                Basis::Rule(crate::feeds::suggest::STEPOVER_BACKOFF_TARGET_MOVES_ROW),
+                Basis::Rule(crate::feeds::suggest::STEPOVER_BACKOFF_DIAMETER_FRACTION_ROW),
+            ],
+        ),
+        edge: Edge::AeFloor { mm: floor },
+    });
+}
+
+/// The limits that the speeds map judges per point: the chipload band, the
+/// rubbing floor and the machine feed cap. Each is listed when a grid point
+/// meets it.
+fn per_point_limits(out: &mut Vec<Limit>, base: &FeedsResult, speeds: &SpeedsMap) {
+    if let Some(row) = base.matched_lut_row.as_ref()
+        && (base.chipload_bounds.is_some() || base.chipload_point_mm.is_some())
+    {
+        out.push(Limit {
+            kind: LimitKind::ChipBand,
+            law: "printed chip band at the depth",
+            basis: Basis::Printed(crate::feeds::sourced::RowRef(row.observation_id.clone())),
+            edge: Edge::PerPoint,
+        });
+    }
+    if speeds.points.iter().any(|p| p.rubbing) {
+        let (_, source) =
+            crate::feeds::rubbing_floor_at(base.chipload_bounds, base.chipload_point_mm);
+        let basis = match (source, base.matched_lut_row.as_ref()) {
+            (crate::feeds::RubbingFloorSource::RepoConstant, _) | (_, None) => {
+                Basis::Rule(crate::material::FormulaConstant::unsourced(
+                    "feeds.RUBBING_FLOOR_MM_TOOTH",
+                    crate::feeds::RUBBING_FLOOR_MM_TOOTH,
+                    "repo rule with no primary source (the doc says so)",
+                ))
+            }
+            (
+                crate::feeds::RubbingFloorSource::BandMinimum
+                | crate::feeds::RubbingFloorSource::BandMaximum
+                | crate::feeds::RubbingFloorSource::PrintedPoint,
+                Some(row),
+            ) => Basis::Printed(crate::feeds::sourced::RowRef(row.observation_id.clone())),
+        };
+        out.push(Limit {
+            kind: LimitKind::RubbingFloor,
+            law: "min(0.025, band min) per tooth (warns, never lifts)",
+            basis,
+            edge: Edge::PerPoint,
+        });
+    }
+    if speeds.points.iter().any(|p| p.feed_capped) {
+        out.push(Limit {
+            kind: LimitKind::FeedCap,
+            law: "machine cutting-feed ceiling",
+            basis: Basis::Machine(MachineField::CuttingFeedCap),
+            edge: Edge::PerPoint,
+        });
+    }
+}
+
+/// The K2b refusals of the compiler. Each `compile_fail` block has a
+/// sibling block that compiles.
+///
+/// Code cannot make an envelope pick without an envelope (the fields are
+/// private):
+///
+/// ```compile_fail
+/// use rs_cam_core::feeds::envelope::EnvelopePick;
+/// fn make() -> EnvelopePick<'static> {
+///     EnvelopePick { point: todo!(), placement: todo!(), result: todo!() }
+/// }
+/// ```
+///
+/// Code cannot make an envelope without `for_cut` (no `Default`):
+///
+/// ```compile_fail
+/// use rs_cam_core::feeds::envelope::SafeEnvelope;
+/// let _ = SafeEnvelope::default();
+/// ```
+///
+/// The sibling: an envelope picks a point, and the pick reads its result.
+///
+/// ```
+/// use rs_cam_core::feeds::envelope::{PickRequest, SafeEnvelope};
+/// fn read(env: &SafeEnvelope) -> f64 {
+///     env.pick(PickRequest::Proposal).result().feed_rate_mm_min
+/// }
+/// ```
+#[doc(hidden)]
+pub mod envelope_refusals {}
+
+#[cfg(test)]
+#[expect(
+    clippy::unwrap_used,
+    clippy::expect_used,
+    clippy::print_stdout,
+    reason = "test code: a panic is how a test reports a failure; the budget test prints its measurement"
+)]
+mod tests {
+    use super::*;
+    use crate::compute::catalog::OperationType;
+    use crate::compute::tool_config::{ToolId, ToolType};
+
+    fn pocket_envelope() -> SafeEnvelope {
+        let op = crate::compute::fixture_values::fixture_op(OperationType::Pocket);
+        let mut tool = ToolConfig::new_default(ToolId::from_raw(0), ToolType::EndMill);
+        tool.diameter = 6.0;
+        let machine = MachineProfile::default();
+        let material = Material::default();
+        SafeEnvelope::for_cut(EnvelopeInput {
+            operation: &op,
+            tool: &tool,
+            machine: &machine,
+            material: &material,
+            lut: crate::feeds::embedded_vendor_lut(),
+            spindle_strategy: SpindleStrategy::default(),
+            context: SuggestContext::default(),
+        })
+        .expect("a 6 mm end mill pocket is backed")
+    }
+
+    #[test]
+    fn the_envelope_meets_its_time_budget() {
+        // Warm the LUT before the clock starts.
+        let _ = pocket_envelope();
+        let start = std::time::Instant::now();
+        let env = pocket_envelope();
+        let ms = start.elapsed().as_millis();
+        println!(
+            "one Pocket plane envelope: {ms} ms, {} points",
+            env.speeds.points.len()
+        );
+        assert_eq!(env.speeds.points.len(), ENVELOPE_GRID_N * ENVELOPE_GRID_N);
+        assert!(ms <= ENVELOPE_TIME_BUDGET_MS, "{ms} ms over the budget");
+    }
+
+    #[test]
+    fn the_lookup_returns_the_grid_value_at_a_grid_point() {
+        let env = pocket_envelope();
+        let p = env.speeds.at(2, 3).unwrap();
+        let s = env.speeds.speeds_at(p.ap_mm, p.ae_mm).unwrap();
+        assert!((s.feed_mm_min - p.feed.get().0).abs() < 1e-9);
+        assert!((s.rpm - p.rpm.get().0).abs() < 1e-9);
+    }
+
+    #[test]
+    fn the_proposal_never_raises_a_stated_axis() {
+        let env = pocket_envelope();
+        let stated = env.stated.expect("a pocket states both axes");
+        let p = env.proposal.get();
+        assert!(p.ap_mm <= stated.ap_mm + 1e-12);
+        assert!(p.ae_mm <= stated.ae_mm + 1e-12);
+    }
+}

@@ -17,12 +17,14 @@
 //!
 //! The claims:
 //!
-//! 1. The same project and the same scope give byte-equal configurations
+//! 1. The same project and the same pick give byte-equal configurations
 //!    (operation and provenance, serialised) through both doors, for a
-//!    Pocket, a Drill and an AlignmentPinDrill, under every scope.
-//! 2. Under `Both` the Drill and the pin drill `peck_depth` move from the
-//!    registry default (the drill defaults run on the GUI door now). Under
-//!    `Speeds` the peck stays: the peck is cut geometry.
+//!    Pocket, a Drill and an AlignmentPinDrill, with the proposal pick and
+//!    with no pick (feeds contract P5, K2b: the public scope is gone).
+//! 2. With the proposal pick ("Apply all") the Drill and the pin drill
+//!    `peck_depth` take the drill peck rule, lowered from the stated peck
+//!    and never raised (K2); the rule runs on the GUI door. With no pick
+//!    the peck stays: the peck is cut geometry.
 //! 3. The pin drill peck is capped by the stock depth, so the stock slot
 //!    reaches the funnel.
 //! 4. A source scan: the CLI and the MCP arm reach the one funnel, and no
@@ -45,7 +47,7 @@ use rs_cam_core::compute::catalog::{OperationConfig, OperationType};
 use rs_cam_core::compute::config::StockSource;
 use rs_cam_core::compute::stock_config::StockConfig;
 use rs_cam_core::compute::tool_config::{ToolConfig, ToolId, ToolType};
-use rs_cam_core::feeds::suggest::ApplyScope;
+use rs_cam_core::feeds::envelope::PickRequest;
 use rs_cam_core::session::{
     ApplyFeedsArgs, Command, ProjectSession, ProjectSessionBuilder, ToolpathConfig,
 };
@@ -138,8 +140,8 @@ fn peck(op: &OperationConfig) -> Option<f64> {
     }
 }
 
-/// Apply `scope` to every toolpath through the GUI and MCP door.
-fn through_the_controller(scope: ApplyScope) -> ProjectSession {
+/// Apply `pick` to every toolpath through the GUI and MCP door.
+fn through_the_controller(pick: Option<PickRequest>) -> ProjectSession {
     let mut controller = AppController::new();
     controller.state.replace_session(session());
     let ids: Vec<_> = controller
@@ -151,20 +153,20 @@ fn through_the_controller(scope: ApplyScope) -> ProjectSession {
         .collect();
     for id in ids {
         let _ = controller
-            .apply_feeds_recommendation(id, scope)
+            .apply_feeds_recommendation(id, pick)
             .expect("a flat end mill runs every fixture op");
     }
     controller.state.session().clone()
 }
 
-/// Apply `scope` to every toolpath as the CLI does: the core row.
-fn through_the_core_row(scope: ApplyScope) -> ProjectSession {
+/// Apply `pick` to every toolpath as the CLI does: the core row.
+fn through_the_core_row(pick: Option<PickRequest>) -> ProjectSession {
     let mut s = session();
     for index in 0..s.toolpath_configs().len() {
         let _ = s
             .apply(Command::ApplyFeeds(ApplyFeedsArgs {
                 index,
-                scope,
+                pick,
                 explored: None,
             }))
             .expect("a flat end mill runs every fixture op");
@@ -175,11 +177,7 @@ fn through_the_core_row(scope: ApplyScope) -> ProjectSession {
 /// Claim 1: byte-equal configurations through both doors, every scope.
 #[test]
 fn every_surface_writes_the_same_configuration_f114() {
-    for scope in [
-        ApplyScope::Both,
-        ApplyScope::Speeds,
-        ApplyScope::CutGeometry,
-    ] {
+    for scope in [Some(PickRequest::Proposal), None] {
         let gui = through_the_controller(scope);
         let core = through_the_core_row(scope);
         let fresh = session();
@@ -204,18 +202,31 @@ fn every_surface_writes_the_same_configuration_f114() {
 #[test]
 fn the_drill_defaults_reach_every_surface_f114() {
     let fresh = session();
-    let both = through_the_controller(ApplyScope::Both);
-    let speeds = through_the_controller(ApplyScope::Speeds);
+    let both = through_the_controller(Some(PickRequest::Proposal));
+    let speeds = through_the_controller(None);
     let mut moved = 0_usize;
     for (index, (name, op_type)) in OPS.iter().enumerate() {
         let Some(default_peck) = peck(&fresh.toolpath_configs()[index].operation) else {
             continue;
         };
         let applied = peck(&both.toolpath_configs()[index].operation).unwrap();
+        // The drill peck rule with the stock slot (the proposal of card row
+        // 29), lowered from the stated peck and never raised (K2).
+        let mut rule = fresh.toolpath_configs()[index].operation.clone();
+        rs_cam_core::feeds::suggest::apply_drill_defaults(
+            &mut rule,
+            &fresh.tools()[0],
+            &fresh.stock_config().material,
+            Some(&rs_cam_core::feeds::suggest::StockContext::from_stock_bbox(
+                fresh.stock_bbox(),
+                fresh.stock_config().padding,
+            )),
+        );
+        let rule = peck(&rule).unwrap();
         assert!(
-            (applied - default_peck).abs() > 1e-9,
-            "{name}: Apply all left the peck at the registry default {default_peck}; \
-             the drill defaults did not run on the GUI door"
+            (applied - rule.min(default_peck)).abs() < 1e-9,
+            "{name}: Apply all wrote the peck {applied}, not min(stated {default_peck}, \
+             rule {rule}); the drill peck rule did not run on the GUI door"
         );
         let kept = peck(&speeds.toolpath_configs()[index].operation).unwrap();
         assert!(

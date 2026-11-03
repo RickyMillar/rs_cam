@@ -370,6 +370,8 @@ fn wanaka_suggest_baseline() {
                 | SuggestWarning::RpmLoweredForFeedCeiling { .. }
                 | SuggestWarning::AggressivenessNotApplied { .. }
                 | SuggestWarning::RampFeed { .. }
+                | SuggestWarning::UnsourcedRowsAccepted { .. }
+                | SuggestWarning::OutsideEnvelope { .. }
                 | SuggestWarning::PlungeReDerived { .. } => None,
             })
             .unwrap_or_else(|| {
@@ -608,6 +610,8 @@ fn wanaka_suggest_baseline() {
                 | SuggestWarning::RpmLoweredForFeedCeiling { .. }
                 | SuggestWarning::AggressivenessNotApplied { .. }
                 | SuggestWarning::RampFeed { .. }
+                | SuggestWarning::UnsourcedRowsAccepted { .. }
+                | SuggestWarning::OutsideEnvelope { .. }
                 | SuggestWarning::PlungeReDerived { .. } => None,
             })
             .unwrap_or_else(|| {
@@ -654,6 +658,10 @@ fn wanaka_suggest_baseline() {
                 | SuggestWarning::RampFeed { .. }
                 // G10 (2026-09-25): pass 9 moved the feed, so the funnel
                 // ran the plunge rule again at the feed that ships.
+                | SuggestWarning::UnsourcedRowsAccepted { .. }
+
+                | SuggestWarning::OutsideEnvelope { .. }
+
                 | SuggestWarning::PlungeReDerived { .. } => {}
                 other => {
                     panic!("{ctx}: unexpected SuggestWarning variant slipped through: {other:?}")
@@ -724,6 +732,8 @@ fn wanaka_suggest_baseline() {
                 | SuggestWarning::RpmLoweredForFeedCeiling { .. }
                 | SuggestWarning::AggressivenessNotApplied { .. }
                 | SuggestWarning::RampFeed { .. }
+                | SuggestWarning::UnsourcedRowsAccepted { .. }
+                | SuggestWarning::OutsideEnvelope { .. }
                 | SuggestWarning::PlungeReDerived { .. } => None,
             })
             .unwrap_or_else(|| panic!("{ctx}: the dial record must fire on Back Rough"));
@@ -803,6 +813,8 @@ fn wanaka_suggest_baseline() {
                 | SuggestWarning::RpmLoweredForFeedCeiling { .. }
                 | SuggestWarning::AggressivenessNotApplied { .. }
                 | SuggestWarning::RampFeed { .. }
+                | SuggestWarning::UnsourcedRowsAccepted { .. }
+                | SuggestWarning::OutsideEnvelope { .. }
                 | SuggestWarning::PlungeReDerived { .. } => None,
             })
             .unwrap_or_else(|| {
@@ -1063,6 +1075,10 @@ fn wanaka_suggest_baseline() {
                 | SuggestWarning::RampFeed { .. }
                 // G10 (2026-09-25): the plunge rule ran again at the feed
                 // that ships. ALLOWED where pass 9 or pass 10 moved the feed.
+                | SuggestWarning::UnsourcedRowsAccepted { .. }
+
+                | SuggestWarning::OutsideEnvelope { .. }
+
                 | SuggestWarning::PlungeReDerived { .. } => {}
                 // v3.3c: must NOT fire on Wanaka — both 3D-rough
                 // toolpaths pin `clearing_strategy = "agent_search"`,

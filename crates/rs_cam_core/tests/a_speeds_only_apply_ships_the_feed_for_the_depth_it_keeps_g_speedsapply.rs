@@ -20,16 +20,16 @@
 //! The arms:
 //!
 //! 1. A result sized at the kept depth (7.5 mm) ships its own feed, rounded
-//!    down to 1 mm/min, and the depth and the stepover stay. The combined
-//!    apply (`Both`) on the same operation clamps the depth and ships a
-//!    different feed, so the arm fails on the pre-fix funnel, whose
-//!    speeds-only feed was the feed of `Both`.
+//!    down to 1 mm/min, and the depth and the stepover stay. "Apply all"
+//!    (the envelope proposal; before feeds contract P5 the combined chain
+//!    apply `Both`) on the same operation lowers the depth and ships a
+//!    different feed.
 //! 2. The Suggest door's own result (the calculator picks the depth, as the
 //!    GUI "Apply recommended speeds" button does) ships a feed below the
-//!    feed of `Both`: the depth de-rate for 7.5 mm reached the feed.
-//! 3. Control: on an operation that already carries the geometry `Both`
-//!    writes (inside the rigidity cap), the speeds are bit-identical to the
-//!    speeds of `Both`. Here the old and the new behaviour agree.
+//!    feed of "Apply all": the depth de-rate for 7.5 mm reached the feed.
+//! 3. Control: on an operation that already carries the geometry "Apply
+//!    all" writes (inside the rigidity cap), the speeds are bit-identical
+//!    to the speeds of "Apply all".
 //!
 //! The tool and the stock are the fixture of the G-OPT5 sentry (the mini
 //! project, `planning/rivmap_block_job/testpiece_mini.toml`, tool 0 and the
@@ -44,8 +44,9 @@
 use rs_cam_core::compute::catalog::OperationConfig;
 use rs_cam_core::compute::operation_configs::PocketConfig;
 use rs_cam_core::compute::tool_config::{ToolConfig, ToolId, ToolType};
+use rs_cam_core::feeds::envelope::PickRequest;
 use rs_cam_core::feeds::suggest::{
-    SuggestContext, apply_cut_geometry_to_op, apply_feeds_result_to_op, apply_speeds_to_op,
+    OperationApplyInput, SuggestContext, apply_speeds_to_op, apply_to_operation,
     feeds_input_for_operation, feeds_result_for_operation, round_suggestion_value_down,
 };
 use rs_cam_core::feeds::{
@@ -158,35 +159,28 @@ impl Fixture {
         applied
     }
 
-    fn both(&self, op: &OperationConfig, result: &FeedsResult) -> OperationConfig {
+    /// "Apply all": `Command::ApplyFeeds` with the envelope proposal
+    /// (feeds contract P5, K2b). The proposal lowers the stated depth to its
+    /// binding cap and the speeds are sized at the pick. It replaced the
+    /// combined chain apply (`Both`) that this file compared with before P5.
+    fn apply_all(&self, op: &OperationConfig) -> OperationConfig {
         let mut applied = op.clone();
         let mut prov = FeedsProvenance::default();
-        apply_feeds_result_to_op(
+        apply_to_operation(
+            OperationApplyInput {
+                tool: &self.tool,
+                machine: &self.machine,
+                material: &self.material,
+                spindle_strategy: SpindleStrategy::default(),
+                lut: embedded_vendor_lut(),
+                suggest: SuggestContext::default(),
+            },
+            Some(PickRequest::Proposal),
+            None,
             &mut applied,
             &mut prov,
-            result,
-            &self.tool,
-            &self.machine,
-            &self.material,
-            op.feeds_style().1,
-            SuggestContext::default(),
-        );
-        applied
-    }
-
-    fn cut_geometry(&self, op: &OperationConfig, result: &FeedsResult) -> OperationConfig {
-        let mut applied = op.clone();
-        let mut prov = FeedsProvenance::default();
-        apply_cut_geometry_to_op(
-            &mut applied,
-            &mut prov,
-            result,
-            &self.tool,
-            &self.machine,
-            &self.material,
-            op.feeds_style().1,
-            SuggestContext::default(),
-        );
+        )
+        .expect("a flat end mill on a Pocket is a valid pairing");
         applied
     }
 }
@@ -236,20 +230,21 @@ fn a_speeds_only_apply_ships_the_calculator_feed_for_the_kept_depth_g_speedsappl
         "the RPM is the calculator's"
     );
 
-    // Non-vacuity: the combined apply on the same operation clamps the
-    // depth and ships another feed. Before G-SPEEDSAPPLY the speeds-only
-    // apply shipped exactly this feed (measured 3877.8 mm/min).
-    let both = f.both(&op, &result);
-    let both_dpp = both.depth_per_pass().expect("a pocket carries a DPP");
+    // Non-vacuity: "Apply all" on the same operation lowers the depth to
+    // the rigidity cap and ships another feed. Before G-SPEEDSAPPLY the
+    // speeds-only apply shipped the feed of the clamped depth (measured
+    // 3877.8 mm/min). Feeds contract P5: the clamp is the envelope proposal.
+    let all = f.apply_all(&op);
+    let all_dpp = all.depth_per_pass().expect("a pocket carries a DPP");
     assert!(
-        both_dpp <= RIGIDITY_CAP_MM + 1e-9,
-        "fixture drift: the combined apply no longer clamps the depth ({both_dpp} mm)"
+        all_dpp <= RIGIDITY_CAP_MM + 1e-9,
+        "fixture drift: Apply all no longer lowers the depth ({all_dpp} mm)"
     );
     assert!(
-        both.feed_rate() > applied.feed_rate(),
-        "the feed of the combined apply ({} mm/min, at {both_dpp} mm) must be \
-         above the feed for {DEEP_DPP_MM} mm ({} mm/min)",
-        both.feed_rate().expect("S11: the fixture sets it"),
+        all.feed_rate() > applied.feed_rate(),
+        "the feed of Apply all ({} mm/min, at {all_dpp} mm) must be above the feed \
+         for {DEEP_DPP_MM} mm ({} mm/min)",
+        all.feed_rate().expect("S11: the apply writes it"),
         applied.feed_rate().expect("S11: the fixture sets it")
     );
 }
@@ -262,40 +257,40 @@ fn the_door_result_is_derated_to_the_kept_depth_g_speedsapply() {
     let f = Fixture::new();
     let op = pocket(DEEP_DPP_MM);
     let result = f.door_result(&op);
+    // Feeds contract P5 (K2): the calculator reads the op's stated depth,
+    // not a family default, so the door result is sized at the kept depth
+    // (or under it, where a calculator cap such as the flute guard binds).
     assert!(
-        result.axial_depth_mm < DEEP_DPP_MM,
-        "fixture drift: the calculator picked {} mm, not a depth below the kept one",
+        result.axial_depth_mm <= DEEP_DPP_MM,
+        "the calculator picked {} mm, above the kept depth",
         result.axial_depth_mm
     );
 
     let applied = f.speeds(&op, &result);
-    let both = f.both(&op, &result);
+    let all = f.apply_all(&op);
 
     assert_eq!(applied.depth_per_pass(), Some(DEEP_DPP_MM));
     assert_eq!(applied.stepover(), Some(STEPOVER_MM));
     assert!(
-        applied.feed_rate() < both.feed_rate(),
+        applied.feed_rate() < all.feed_rate(),
         "the speeds-only feed ({} mm/min, for {DEEP_DPP_MM} mm) must be below the \
-         feed of the combined apply ({} mm/min, for {:?} mm)",
+         feed of Apply all ({} mm/min, for {:?} mm)",
         applied.feed_rate().expect("S11: the fixture sets it"),
-        both.feed_rate().expect("S11: the fixture sets it"),
-        both.depth_per_pass()
+        all.feed_rate().expect("S11: the apply writes it"),
+        all.depth_per_pass()
     );
 }
 
-/// Arm 3, the control: an operation that already carries the geometry `Both`
-/// writes, inside the rigidity cap. The speeds-only apply ships the speeds
-/// of `Both` bit for bit, as it did before G-SPEEDSAPPLY.
+/// Arm 3, the control: an operation that already carries the geometry
+/// "Apply all" writes (inside the rigidity cap). The speeds-only apply on
+/// it ships the speeds of "Apply all" bit for bit. Feeds contract P5:
+/// "Apply all" (the envelope proposal) replaced the combined chain apply.
 #[test]
 fn inside_the_cap_the_speeds_equal_the_combined_apply_g_speedsapply() {
     let f = Fixture::new();
     let deep = pocket(DEEP_DPP_MM);
-    let result = f.door_result(&deep);
-
-    // The operation at the geometry the funnel writes. Its speeds are still
-    // the fixture's own.
-    let at_funnel_geometry = f.cut_geometry(&deep, &result);
-    let dpp = at_funnel_geometry
+    let at_proposal = f.apply_all(&deep);
+    let dpp = at_proposal
         .depth_per_pass()
         .expect("a pocket carries a DPP");
     assert!(
@@ -303,27 +298,28 @@ fn inside_the_cap_the_speeds_equal_the_combined_apply_g_speedsapply() {
         "the control must sit inside the rigidity cap: {dpp} mm"
     );
 
-    let speeds = f.speeds(&at_funnel_geometry, &result);
-    let both = f.both(&at_funnel_geometry, &result);
+    let result = f.door_result(&at_proposal);
+    let speeds = f.speeds(&at_proposal, &result);
+    let again = f.apply_all(&at_proposal);
 
     assert_eq!(
         speeds.feed_rate().map(f64::to_bits),
-        both.feed_rate().map(f64::to_bits),
-        "feed: speeds-only {} vs combined {}",
+        again.feed_rate().map(f64::to_bits),
+        "feed: speeds-only {} vs Apply all {}",
         speeds.feed_rate().expect("S11: the fixture sets it"),
-        both.feed_rate().expect("S11: the fixture sets it")
+        again.feed_rate().expect("S11: the apply writes it")
     );
     assert_eq!(
         speeds.plunge_rate().map(f64::to_bits),
-        both.plunge_rate().map(f64::to_bits),
-        "plunge: speeds-only {} vs combined {}",
+        again.plunge_rate().map(f64::to_bits),
+        "plunge: speeds-only {} vs Apply all {}",
         speeds.plunge_rate().expect("S11: the fixture sets it"),
-        both.plunge_rate().expect("S11: the fixture sets it")
+        again.plunge_rate().expect("S11: the apply writes it")
     );
-    assert_eq!(speeds.spindle_rpm(), both.spindle_rpm(), "rpm");
-    assert_eq!(speeds.depth_per_pass(), at_funnel_geometry.depth_per_pass());
-    assert_eq!(speeds.stepover(), at_funnel_geometry.stepover());
-    // The combined apply writes the same geometry again.
-    assert_eq!(both.depth_per_pass(), at_funnel_geometry.depth_per_pass());
-    assert_eq!(both.stepover(), at_funnel_geometry.stepover());
+    assert_eq!(speeds.spindle_rpm(), again.spindle_rpm(), "rpm");
+    assert_eq!(speeds.depth_per_pass(), at_proposal.depth_per_pass());
+    assert_eq!(speeds.stepover(), at_proposal.stepover());
+    // Apply all on its own output writes the same geometry again.
+    assert_eq!(again.depth_per_pass(), at_proposal.depth_per_pass());
+    assert_eq!(again.stepover(), at_proposal.stepover());
 }

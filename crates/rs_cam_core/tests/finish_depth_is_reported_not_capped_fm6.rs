@@ -8,7 +8,9 @@
 //! - (a) a finishing or semi-finishing pass gets no axial ceiling. Suggest
 //!   ships its depth with no depth clamp warning, and the one cap producer
 //!   `RigidityProfile::depth_cap_mm` returns `None` for it;
-//! - (b) a roughing pass keeps the clamp, at the producer's own cap;
+//! - (b) a roughing pass keeps the cap, at the producer's own cap (feeds
+//!   contract P5: as the envelope's rigidity ceiling, which "Apply all"
+//!   ships at or under);
 //! - (c) on a tapered ball, Suggest and the post-simulation depth gate read
 //!   ONE diameter at the shipped depth: `feeds::geometry::depth_cap_diameter_mm`,
 //!   the engaged diameter (not the tip, not the shank). Before R2 the clamp
@@ -30,15 +32,16 @@
     reason = "test code: a panic is how a test reports a failure"
 )]
 
+use rs_cam_core::compute::catalog::OperationConfig;
 use rs_cam_core::compute::catalog::OperationType;
 use rs_cam_core::compute::cutter::build_cutter;
 use rs_cam_core::compute::tool_config::{ToolConfig, ToolId, ToolMaterial, ToolType};
 use rs_cam_core::diagnostics::adapters::from_tool_load::diagnostics_from_load_verdict;
 use rs_cam_core::diagnostics::{DiagnosticEvidence, DiagnosticState, Severity, ids};
+use rs_cam_core::feeds::envelope::{EnvelopeInput, LimitKind, PickRequest, SafeEnvelope};
 use rs_cam_core::feeds::geometry::{depth_cap_diameter_mm, feed_ladder_diameter_mm};
 use rs_cam_core::feeds::suggest::{
-    StockContext, SuggestContext, SuggestParamsInput, SuggestWarning, SuggestedParams,
-    suggest_params,
+    OperationApplyInput, StockContext, SuggestContext, SuggestWarning, apply_to_operation,
 };
 use rs_cam_core::feeds::vendor_lut::{LutOperationFamily, LutPassRole};
 use rs_cam_core::feeds::{EMBEDDED_LUT, OperationFamily, PassRole, SpindleStrategy};
@@ -93,30 +96,76 @@ fn tool_of(kind: ToolType, diameter: f64) -> ToolConfig {
     t
 }
 
-fn suggest(op: OperationType, tool: &ToolConfig) -> SuggestedParams {
+/// What "Apply all" ships for one cell, and the envelope it picked from.
+struct Shipped {
+    operation: OperationConfig,
+    envelope: SafeEnvelope,
+    warnings: Vec<SuggestWarning>,
+}
+
+/// Feeds contract P5 (K2b): "Apply all" (`Command::ApplyFeeds` with the
+/// envelope proposal) is the production write of the depth. The op states
+/// the depth the calculator chose before P5, the family default factor x D,
+/// read from its F201 row (no number typed here), so a roughing cell states
+/// a depth above its rigidity cap. Before P5 this file read the retired
+/// chain door.
+fn suggest(op: OperationType, tool: &ToolConfig) -> Shipped {
     let m = machine();
     let mat = softwood();
     let s = stock();
-    suggest_params(SuggestParamsInput {
-        op_type: op,
+    let mut operation = rs_cam_core::feeds::suggest::default_operation(op, &s);
+    let (family, role) = operation.feeds_style();
+    let row = format!("feeds.operation_default_profile.{family:?}.{role:?}.ap_factor");
+    if let Some(factor) = rs_cam_core::feeds::formula_constants()
+        .iter()
+        .find(|c| c.name == row.as_str())
+        .map(|c| c.value)
+    {
+        operation.set_depth_per_pass(tool.diameter * factor);
+    }
+    let context = SuggestContext {
+        stock: Some(&s),
+        ..SuggestContext::default()
+    };
+    let envelope = SafeEnvelope::for_cut(EnvelopeInput {
+        operation: &operation,
         tool,
         machine: &m,
         material: &mat,
         lut: &EMBEDDED_LUT,
-        stock_ctx: &s,
         spindle_strategy: SpindleStrategy::default(),
-        context: SuggestContext::default(),
+        context,
     })
-    .unwrap_or_else(|e| panic!("{op:?} on {:?} must ship a recipe: {e}", tool.tool_type))
+    .unwrap_or_else(|e| panic!("{op:?} on {:?} must have an envelope: {e}", tool.tool_type));
+    let mut provenance = rs_cam_core::feeds::FeedsProvenance::default();
+    let warnings = apply_to_operation(
+        OperationApplyInput {
+            tool,
+            machine: &m,
+            material: &mat,
+            spindle_strategy: SpindleStrategy::default(),
+            lut: &EMBEDDED_LUT,
+            suggest: context,
+        },
+        Some(PickRequest::Proposal),
+        None,
+        &mut operation,
+        &mut provenance,
+    )
+    .unwrap_or_else(|e| panic!("{op:?} on {:?} must ship a recipe: {e}", tool.tool_type));
+    Shipped {
+        operation,
+        envelope,
+        warnings,
+    }
 }
 
-fn is_depth_clamp(w: &SuggestWarning) -> bool {
-    matches!(
-        w,
-        SuggestWarning::RoughingDepthClampedToRigidity { .. }
-            | SuggestWarning::DepthClampedToCuttingLength { .. }
-            | SuggestWarning::AxialDocClampedByEnvelope { .. }
-    )
+/// The rigidity ceiling of the envelope at the op's stated width.
+fn rigidity_cap(s: &Shipped) -> Option<f64> {
+    let ae = s.operation.stepover().unwrap_or(0.0);
+    s.envelope
+        .limit(LimitKind::Rigidity)
+        .and_then(|l| l.ap_ceiling_at(ae))
 }
 
 fn sample(idx: usize, depth: f64) -> SimulationCutSample {
@@ -242,20 +291,26 @@ fn a_finishing_depth_ships_above_the_old_cap_with_no_clamp_fm6() {
             "{op:?}: the fixture is vacuous unless the shipped depth {dpp} mm is \
              above the pre-R2 finishing cap {old_cap} mm"
         );
-        let clamps: Vec<&SuggestWarning> =
-            s.warnings.iter().filter(|w| is_depth_clamp(w)).collect();
+        assert_eq!(
+            rigidity_cap(&s),
+            None,
+            "{op:?}: a finishing envelope must carry no rigidity ceiling"
+        );
         assert!(
-            clamps.is_empty(),
-            "{op:?}: a finishing depth must not be clamped, got {clamps:?}"
+            !s.warnings
+                .iter()
+                .any(|w| matches!(w, SuggestWarning::OutsideEnvelope { .. })),
+            "{op:?}: a finishing depth must not be reported outside: {:?}",
+            s.warnings
         );
     }
 }
 
 // ── (b) a roughing depth still clamps ───────────────────────────────────
 
-/// A Ø6 flat Pocket: the calculator asks for 4.2 mm, the clamp lowers it
-/// to the producer's own roughing cap, 0.2 × 6 = 1.2 mm on the default
-/// profile, bit for bit.
+/// A Ø6 flat Pocket: the op states 4.2 mm, the envelope's rigidity
+/// ceiling is the producer's own roughing cap, 0.2 × 6 = 1.2 mm on the
+/// default profile, bit for bit, and "Apply all" ships at or under it.
 #[test]
 fn a_roughing_depth_still_clamps_at_the_producer_s_cap_fm6() {
     let m = machine();
@@ -266,99 +321,30 @@ fn a_roughing_depth_still_clamps_at_the_producer_s_cap_fm6() {
         .depth_cap_mm(OperationFamily::Pocket, PassRole::Roughing, 6.0)
         .expect("a roughing pocket carries an axial cap")
         .cap_mm();
-    let (requested, capped) = s
-        .warnings
-        .iter()
-        .find_map(|w| match w {
-            SuggestWarning::RoughingDepthClampedToRigidity { requested, capped } => {
-                Some((*requested, *capped))
-            }
-            SuggestWarning::PlungeClampedToFeed { .. }
-            | SuggestWarning::StepoverClampedToToolDiameter { .. }
-            | SuggestWarning::DepthClampedToCuttingLength { .. }
-            | SuggestWarning::PlungeEntryUnstableAtDpp { .. }
-            | SuggestWarning::DppCappedByDeflection { .. }
-            | SuggestWarning::DeflectionBackoffUnmodeled { .. }
-            | SuggestWarning::DeflectionBackoffFigureIsAFloor { .. }
-            | SuggestWarning::StepoverRaisedForRuntime { .. }
-            | SuggestWarning::FeedRaisedForChipload { .. }
-            | SuggestWarning::ChiploadStillLowAfterRecalibration { .. }
-            | SuggestWarning::StrategyRecommendedNotApplied { .. }
-            | SuggestWarning::AxialEnvelopeSafeBandEmpty { .. }
-            | SuggestWarning::AxialDocClampedByEnvelope { .. }
-            | SuggestWarning::AxialDocBelowBurnFloor { .. }
-            | SuggestWarning::ProjectCurveDepthInfeasible { .. }
-            | SuggestWarning::FinishEnvelopeAdvisory { .. }
-            | SuggestWarning::FeedRescaledToFinalGeometry { .. }
-            | SuggestWarning::FeedClampedToChiploadFloor { .. }
-            | SuggestWarning::PowerRecheckedAfterRescale { .. }
-            | SuggestWarning::CutGeometryFieldNotHeld { .. }
-            | SuggestWarning::EngagementReducedForAggressiveness { .. }
-            | SuggestWarning::RpmLoweredForFeedCeiling { .. }
-            | SuggestWarning::AggressivenessNotApplied { .. }
-            | SuggestWarning::RampFeed { .. }
-            | SuggestWarning::PlungeReDerived { .. } => None,
-        })
-        .unwrap_or_else(|| panic!("the roughing clamp must fire, got {:?}", s.warnings));
-    assert!(
-        requested > expected,
-        "vacuous: {requested} is not above {expected}"
-    );
+    // Feeds contract P5: the envelope carries the producer's cap as its
+    // rigidity ceiling, and "Apply all" ships at or under it. The stated
+    // depth is above it, so the proposal is lowered (K2: never raised).
+    let capped = rigidity_cap(&s).expect("a roughing pocket envelope carries the rigidity cap");
     assert_eq!(
         capped, expected,
-        "the clamp must land on the producer's cap"
+        "the rigidity ceiling must be the producer's cap"
     );
-    // Ruling R4 WP3 (2026-09-24): the clamp still lands on the cap, and
-    // then the aggressiveness dial (default 0.85, x 0.75 long-tool share at
-    // the default 45 mm stickout = 0.6375) scales the depth down from it.
-    // Measured: 1.2 -> 0.8333 mm. The dial record starts from the cap, so
-    // the difference is on the card, not hidden.
+    let stated = s.envelope.stated.expect("the pocket states its cut").ap_mm;
+    assert!(
+        stated > expected,
+        "vacuous: {stated} is not above {expected}"
+    );
     let shipped = s.operation.depth_per_pass().expect("a pocket has a depth");
     assert!(
         shipped <= expected + 1e-12,
         "the shipped depth {shipped} is above the cap {expected}"
     );
-    let dial_from = s.warnings.iter().find_map(|w| match w {
-        SuggestWarning::EngagementReducedForAggressiveness {
-            dpp_from, dpp_to, ..
-        } => Some((*dpp_from, *dpp_to)),
-        SuggestWarning::PlungeClampedToFeed { .. }
-        | SuggestWarning::StepoverClampedToToolDiameter { .. }
-        | SuggestWarning::RoughingDepthClampedToRigidity { .. }
-        | SuggestWarning::DepthClampedToCuttingLength { .. }
-        | SuggestWarning::PlungeEntryUnstableAtDpp { .. }
-        | SuggestWarning::DppCappedByDeflection { .. }
-        | SuggestWarning::DeflectionBackoffUnmodeled { .. }
-        | SuggestWarning::DeflectionBackoffFigureIsAFloor { .. }
-        | SuggestWarning::StepoverRaisedForRuntime { .. }
-        | SuggestWarning::FeedRaisedForChipload { .. }
-        | SuggestWarning::ChiploadStillLowAfterRecalibration { .. }
-        | SuggestWarning::StrategyRecommendedNotApplied { .. }
-        | SuggestWarning::AxialEnvelopeSafeBandEmpty { .. }
-        | SuggestWarning::AxialDocClampedByEnvelope { .. }
-        | SuggestWarning::AxialDocBelowBurnFloor { .. }
-        | SuggestWarning::ProjectCurveDepthInfeasible { .. }
-        | SuggestWarning::FinishEnvelopeAdvisory { .. }
-        | SuggestWarning::FeedRescaledToFinalGeometry { .. }
-        | SuggestWarning::FeedClampedToChiploadFloor { .. }
-        | SuggestWarning::PowerRecheckedAfterRescale { .. }
-        | SuggestWarning::CutGeometryFieldNotHeld { .. }
-        | SuggestWarning::RpmLoweredForFeedCeiling { .. }
-        | SuggestWarning::AggressivenessNotApplied { .. }
-        | SuggestWarning::RampFeed { .. }
-        | SuggestWarning::PlungeReDerived { .. } => None,
-    });
-    assert_eq!(
-        dial_from,
-        Some((Some(expected), Some(shipped))),
-        "the dial record must start from the cap and end at the shipped depth"
-    );
 }
 
 // ── (c) one engaged diameter on a tapered ball ──────────────────────────
 
-/// A Ø3.175-tip tapered ball Pocket (7 deg, Ø6.175 shank). The clamp
-/// fires. Suggest's cap at the depth it ships and the gate's cap at a
+/// A Ø3.175-tip tapered ball Pocket (7 deg, Ø6.175 shank). The envelope's
+/// rigidity ceiling (feeds contract P5) at the depth it ships and the gate's cap at a
 /// measured peak equal to that depth are one number, from one diameter:
 /// `depth_cap_diameter_mm`, the engaged diameter at that depth. It is
 /// neither the tip nor the shank.
@@ -371,38 +357,8 @@ fn suggest_and_the_gate_read_one_engaged_diameter_on_a_tapered_ball_fm6() {
     let m = machine();
     let tool = tool_of(ToolType::TaperedBallNose, 3.175);
     let s = suggest(OperationType::Pocket, &tool);
-    let capped = s
-        .warnings
-        .iter()
-        .find_map(|w| match w {
-            SuggestWarning::RoughingDepthClampedToRigidity { capped, .. } => Some(*capped),
-            SuggestWarning::PlungeClampedToFeed { .. }
-            | SuggestWarning::StepoverClampedToToolDiameter { .. }
-            | SuggestWarning::DepthClampedToCuttingLength { .. }
-            | SuggestWarning::PlungeEntryUnstableAtDpp { .. }
-            | SuggestWarning::DppCappedByDeflection { .. }
-            | SuggestWarning::DeflectionBackoffUnmodeled { .. }
-            | SuggestWarning::DeflectionBackoffFigureIsAFloor { .. }
-            | SuggestWarning::StepoverRaisedForRuntime { .. }
-            | SuggestWarning::FeedRaisedForChipload { .. }
-            | SuggestWarning::ChiploadStillLowAfterRecalibration { .. }
-            | SuggestWarning::StrategyRecommendedNotApplied { .. }
-            | SuggestWarning::AxialEnvelopeSafeBandEmpty { .. }
-            | SuggestWarning::AxialDocClampedByEnvelope { .. }
-            | SuggestWarning::AxialDocBelowBurnFloor { .. }
-            | SuggestWarning::ProjectCurveDepthInfeasible { .. }
-            | SuggestWarning::FinishEnvelopeAdvisory { .. }
-            | SuggestWarning::FeedRescaledToFinalGeometry { .. }
-            | SuggestWarning::FeedClampedToChiploadFloor { .. }
-            | SuggestWarning::PowerRecheckedAfterRescale { .. }
-            | SuggestWarning::CutGeometryFieldNotHeld { .. }
-            | SuggestWarning::EngagementReducedForAggressiveness { .. }
-            | SuggestWarning::RpmLoweredForFeedCeiling { .. }
-            | SuggestWarning::AggressivenessNotApplied { .. }
-            | SuggestWarning::RampFeed { .. }
-            | SuggestWarning::PlungeReDerived { .. } => None,
-        })
-        .unwrap_or_else(|| panic!("the roughing clamp must fire, got {:?}", s.warnings));
+    let capped = rigidity_cap(&s)
+        .unwrap_or_else(|| panic!("the roughing envelope must carry a rigidity cap"));
     let shipped = s.operation.depth_per_pass().expect("a pocket has a DPP");
     assert!(
         shipped <= capped,

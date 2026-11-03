@@ -17,6 +17,7 @@
 
 pub mod cutter_constraints;
 pub mod efficiency;
+pub mod envelope;
 pub mod explain_payload;
 pub mod extrapolation;
 pub mod feed_explanation;
@@ -33,6 +34,7 @@ pub mod quantities;
 pub mod ramp;
 pub mod rationale;
 pub mod series;
+pub mod sourced;
 pub mod suggest;
 pub mod support;
 pub mod vendor_lookup;
@@ -58,6 +60,7 @@ pub use quantities::{
     CommandedFeedMmMin, VendorChiploadBand,
 };
 pub use ramp::{EntryGeometry, RampBasis, RampFallback, RampFeed};
+pub use sourced::{Basis, PointBases, Sourced};
 pub use support::{FeedsSupport, feeds_support};
 pub use vendor_lut::VendorLut;
 
@@ -563,6 +566,11 @@ pub struct FeedsResult {
     /// recommended feed. Lets the UI show *why* the recommended
     /// operating point sits where it does on the feed-RPM nomogram.
     pub derates: FeedsDerates,
+    /// CONTRACT K2 (feeds contract P5): the basis of each shipped field.
+    /// Each step of [`calculate`] that writes a field writes its basis in
+    /// the same statement. [`FeedsResult::provenance`] is a projection of
+    /// these bases.
+    pub bases: PointBases,
 }
 
 /// Per-step record of the chipload → feed pipeline. Each multiplier
@@ -1379,21 +1387,20 @@ const DRILL_TIER_LARGE_CEILING_RPM: FormulaConstant = FormulaConstant::unsourced
 ///   literature-matrix `flat_12mm_drill_oak_big` cell.
 #[must_use]
 pub(crate) fn drill_rpm_envelope_for_diameter(d_mm: f64) -> (f64, f64) {
+    let (floor, ceiling) = drill_rpm_tier_rows(d_mm);
+    (floor.value, ceiling.value)
+}
+
+/// The two F201 rows (floor, ceiling) of the drill RPM tier at `d_mm`: the
+/// rows that [`drill_rpm_envelope_for_diameter`] reads (P5: the basis of a
+/// drill RPM).
+fn drill_rpm_tier_rows(d_mm: f64) -> (FormulaConstant, FormulaConstant) {
     if d_mm <= DRILL_TIER_SMALL_MAX_D_MM.value {
-        (
-            DRILL_TIER_SMALL_FLOOR_RPM.value,
-            DRILL_TIER_SMALL_CEILING_RPM.value,
-        )
+        (DRILL_TIER_SMALL_FLOOR_RPM, DRILL_TIER_SMALL_CEILING_RPM)
     } else if d_mm <= DRILL_TIER_MID_MAX_D_MM.value {
-        (
-            DRILL_TIER_MID_FLOOR_RPM.value,
-            DRILL_TIER_MID_CEILING_RPM.value,
-        )
+        (DRILL_TIER_MID_FLOOR_RPM, DRILL_TIER_MID_CEILING_RPM)
     } else {
-        (
-            DRILL_TIER_LARGE_FLOOR_RPM.value,
-            DRILL_TIER_LARGE_CEILING_RPM.value,
-        )
+        (DRILL_TIER_LARGE_FLOOR_RPM, DRILL_TIER_LARGE_CEILING_RPM)
     }
 }
 
@@ -1495,12 +1502,66 @@ const MILLING_CEILING_LARGE_RPM: FormulaConstant = FormulaConstant::unsourced(
 /// with vendor `rpm_max` (when published) and the machine safety
 /// headroom via `.min()` — the lowest defensible cap wins.
 fn milling_rpm_ceiling_for_diameter(d_mm: f64) -> f64 {
+    milling_rpm_ceiling_row(d_mm).value
+}
+
+/// The F201 row of [`milling_rpm_ceiling_for_diameter`] at `d_mm` (P5: the
+/// basis of a tier-capped RPM).
+fn milling_rpm_ceiling_row(d_mm: f64) -> FormulaConstant {
     MILLING_CEILING_TIERS
         .iter()
         .find(|(max_d, _)| d_mm <= max_d.value)
-        .map_or(MILLING_CEILING_LARGE_RPM.value, |(_, ceiling)| {
-            ceiling.value
+        .map_or(MILLING_CEILING_LARGE_RPM, |(_, ceiling)| ceiling.clone())
+}
+
+/// The F201 row of [`MAX_SPINDLE_SPEEDUP`].
+const MAX_SPINDLE_SPEEDUP_ROW: FormulaConstant = FormulaConstant::unsourced(
+    "feeds.MAX_SPINDLE_SPEEDUP",
+    MAX_SPINDLE_SPEEDUP,
+    "the rough magnitude of a chart's rpm_max over rpm_nominal; no record in the repo",
+);
+
+/// The basis `b`, or a law over `b` and `cap` when a step moved the value
+/// from `before` to `after` (P5: each step writes its basis with its value).
+fn moved_basis(b: Basis, before: f64, after: f64, law: &'static str, cap: Basis) -> Basis {
+    if (after - before).abs() > 1e-12 {
+        Basis::derived(law, vec![b, cap])
+    } else {
+        b
+    }
+}
+
+/// The basis of a matched row's chip: the printed row, the band midpoint of
+/// the printed row, or the claim (G1, G2, G3, G6) that scaled it.
+fn chip_basis_of_row(row: &vendor_lookup::LookupResult) -> Basis {
+    use sourced::{ClaimKind, ClaimRef, RowRef};
+    let row_ref = RowRef(row.observation_id.clone());
+    let claim = |kind: ClaimKind, rule: &str| {
+        Basis::Claim(ClaimRef {
+            kind,
+            row: row_ref.clone(),
+            rule: rule.to_owned(),
         })
+    };
+    if row.drill_basis.claim().is_some() {
+        return claim(ClaimKind::DrillG6, "g6_drill");
+    }
+    if row.size_basis.claim().is_some() {
+        return claim(ClaimKind::SizeG1, "g1_size");
+    }
+    if (row.chipload_hardness_scale - 1.0).abs() > 1e-12 {
+        return claim(ClaimKind::HardnessG2, "g2_hardness");
+    }
+    if row.family_basis.claim().is_some() {
+        return claim(ClaimKind::FamilyG3, "g3_family");
+    }
+    match row.printed_chipload() {
+        vendor_lookup::PrintedChipload::Band { .. } => {
+            Basis::derived("band midpoint", vec![Basis::Printed(row_ref)])
+        }
+        vendor_lookup::PrintedChipload::Point { .. }
+        | vendor_lookup::PrintedChipload::Unpublished => Basis::Printed(row_ref),
+    }
 }
 
 /// Assemble the Suggest path's inputs to the canonical two-term power
@@ -1547,6 +1608,45 @@ const FLUTE_GUARD_NO_LENGTH_D: FormulaConstant = FormulaConstant::unsourced(
     2.0,
     "no comment and no record in the repo",
 );
+/// Step 4: the flute guard depth and its basis (P5: the calculator and the
+/// envelope read one rule).
+pub(crate) fn flute_guard_of(flute_length_mm: f64, d: f64) -> (f64, Basis) {
+    if flute_length_mm > 0.0 {
+        (
+            flute_length_mm * FLUTE_GUARD_FACTOR.value,
+            Basis::derived(
+                "0.8 x flute",
+                vec![Basis::Rule(FLUTE_GUARD_FACTOR), Basis::tool_fact()],
+            ),
+        )
+    } else {
+        (
+            d * FLUTE_GUARD_NO_LENGTH_D.value,
+            Basis::derived(
+                "2 x D (no flute length)",
+                vec![Basis::Rule(FLUTE_GUARD_NO_LENGTH_D), Basis::tool_fact()],
+            ),
+        )
+    }
+}
+
+/// Step 4b: the slot rule (threshold in diameters, depth cap in
+/// diameters) and its basis (P5: the calculator and the envelope read one
+/// rule).
+pub(crate) fn slot_rule() -> (f64, f64, Basis) {
+    (
+        SLOTTING_THRESHOLD.value,
+        SLOTTING_DOC_CAP.value,
+        Basis::derived(
+            "slot cap",
+            vec![
+                Basis::Rule(SLOTTING_THRESHOLD),
+                Basis::Rule(SLOTTING_DOC_CAP),
+            ],
+        ),
+    )
+}
+
 /// Step 4b: the radial width, in diameters, above which the cut is a slot.
 const SLOTTING_THRESHOLD: FormulaConstant = FormulaConstant::unsourced(
     "feeds.calculate.slotting_threshold_d",
@@ -1563,10 +1663,9 @@ const SLOTTING_DOC_CAP: FormulaConstant = FormulaConstant::unsourced(
 /// Main calculation entry point.
 /// Smallest axial depth the power ladder may propose (mm).
 ///
-/// Mirrors `suggest::DEFLECTION_BACKOFF_DPP_FLOOR_MM`, which bounds the
-/// deflection back-off for the same reason: without a floor a solver that
-/// cannot reach the budget walks the geometry to zero and ships a recipe that
-/// removes no material. When the floor binds, the cut stays over budget and
+/// Without a floor a solver that cannot reach the budget walks the geometry
+/// to zero and ships a recipe that removes no material. (The deleted
+/// deflection back-off had a 0.5 mm floor for the same reason.) When the floor binds, the cut stays over budget and
 /// the `PowerLimited` warning fires — the unmet-constraint signal, not a
 /// fabricated pass.
 const POWER_LADDER_AP_FLOOR_MM: f64 = 0.5;
@@ -1688,6 +1787,13 @@ pub fn calculate(input: &FeedsInput) -> FeedsResult {
     // one identifier. Collapsing them is census T2.4; until then, read
     // the shadow point before assuming which diameter a line means.
     let axial_doc_for_eff_d = input.axial_depth_mm.unwrap_or(d).max(0.0);
+    // P5 (K2): the depth that sets the SFM diameter is the operator's when
+    // the input states one, else the tool diameter (a tool fact).
+    let sfm_depth_basis = if input.axial_depth_mm.is_some() {
+        Basis::stated()
+    } else {
+        Basis::tool_fact()
+    };
     let effective_d = input.tool_geometry.engaged_diameter_at_doc(
         axial_doc_for_eff_d,
         d,
@@ -1695,12 +1801,27 @@ pub fn calculate(input: &FeedsInput) -> FeedsResult {
     );
 
     // --- Step 1: RPM ---
-    let ideal_rpm = if effective_d > 0.0 {
-        (material.base_cutting_speed_m_min() * 1000.0) / (std::f64::consts::PI * effective_d)
+    let (ideal_rpm, sfm_basis) = if effective_d > 0.0 {
+        let speed = material.base_cutting_speed_constant();
+        (
+            (speed.value * 1000.0) / (std::f64::consts::PI * effective_d),
+            Basis::derived(
+                "SFM at engaged diameter",
+                vec![Basis::Rule(speed), sfm_depth_basis],
+            ),
+        )
     } else {
-        FALLBACK_RPM.value
+        (FALLBACK_RPM.value, Basis::Rule(FALLBACK_RPM))
     };
     let mut rpm = machine.clamp_rpm(ideal_rpm);
+    let machine_rpm = || Basis::Machine(sourced::MachineField::SpindleRpm);
+    let mut rpm_basis = moved_basis(
+        sfm_basis,
+        ideal_rpm,
+        rpm,
+        "machine RPM range",
+        machine_rpm(),
+    );
 
     // Drill ops want a lower RPM band than milling regardless of D:
     // chip evacuation, not surface speed, is the limiting factor. The
@@ -1723,9 +1844,12 @@ pub fn calculate(input: &FeedsInput) -> FeedsResult {
     // — well above the 3-8k band (literature-matrix cell
     // flat_12mm_drill_oak_big: ceiling 8000, emitted 12000, +50%).
     if input.operation == OperationFamily::Drill {
-        let (floor, ceil) = drill_rpm_envelope_for_diameter(d);
-        rpm = rpm.clamp(floor, ceil);
+        let (floor_row, ceil_row) = drill_rpm_tier_rows(d);
+        let before = rpm;
+        rpm = rpm.clamp(floor_row.value, ceil_row.value);
         rpm = machine.clamp_rpm(rpm);
+        let tier = if before > rpm { ceil_row } else { floor_row };
+        rpm_basis = moved_basis(rpm_basis, before, rpm, "drill RPM tier", Basis::Rule(tier));
     }
 
     // --- Step 2: Chip load — vendor LUT first, formula fallback ---
@@ -1743,6 +1867,27 @@ pub fn calculate(input: &FeedsInput) -> FeedsResult {
     // serves (`support::support_for_lookup`). A claimed cell reads its
     // chip from the vendor row (`extrapolation::drill`).
     let formula_chipload = cl.k0 * effective_d.powf(cl.p) * (1.0 / feed_scale).powf(cl.q);
+    // P5 (K2): the formula chip names its three machine rows (F201).
+    let formula_chip_basis = {
+        let chip_load_claim = ConstantSource::Unsourced {
+            claim: "\"Soft wood baseline from Shapeoko empirical data\" (reference/, not in the repo)",
+        };
+        let row = |key: &'static str, value: f64| {
+            Basis::Rule(FormulaConstant {
+                name: std::borrow::Cow::Borrowed(key),
+                value,
+                source: chip_load_claim,
+            })
+        };
+        Basis::derived(
+            "formula chip k0 x De^p x (1/H)^q",
+            vec![
+                row("machine.ChipLoadFormula.default.k0", cl.k0),
+                row("machine.ChipLoadFormula.default.p", cl.p),
+                row("machine.ChipLoadFormula.default.q", cl.q),
+            ],
+        )
+    };
 
     // Sidecar: when the LUT lookup returns a match, stash the row so
     // FeedsResult can propagate it to the Suggest orchestrator's
@@ -1804,6 +1949,7 @@ pub fn calculate(input: &FeedsInput) -> FeedsResult {
         vendor_source,
         chipload_source,
         chipload_band_raw,
+        chip_basis,
     ) = if let support::RecipeRowLookup::Row {
         lut,
         query,
@@ -1812,6 +1958,7 @@ pub fn calculate(input: &FeedsInput) -> FeedsResult {
     {
         let result = *result;
         matched_lut_row = Some(result.clone());
+        let row_chip_basis = chip_basis_of_row(&result);
         let size_refused = result.size_basis.is_refused();
         // Read the printed point before `observation_id` moves out of `result`.
         let printed_point = result.printed_chipload().point_mm();
@@ -1866,6 +2013,7 @@ pub fn calculate(input: &FeedsInput) -> FeedsResult {
                 None,
                 ChiploadSource::FormulaFallback,
                 None,
+                formula_chip_basis,
             )
         } else if result.chip_load_mm > 0.0 {
             chipload_point_raw = printed_point;
@@ -1877,6 +2025,7 @@ pub fn calculate(input: &FeedsInput) -> FeedsResult {
                 Some(observation_id.clone()),
                 ChiploadSource::VendorLut { observation_id },
                 bounds,
+                row_chip_basis,
             )
         } else {
             // Checkpoint K (a3) — disclose the fallback. The RPM
@@ -1924,6 +2073,7 @@ pub fn calculate(input: &FeedsInput) -> FeedsResult {
                 Some(observation_id),
                 ChiploadSource::FormulaFallback,
                 bounds,
+                formula_chip_basis,
             )
         }
     } else {
@@ -1935,6 +2085,7 @@ pub fn calculate(input: &FeedsInput) -> FeedsResult {
             None,
             ChiploadSource::FormulaFallback,
             None,
+            formula_chip_basis,
         )
     };
 
@@ -1943,6 +2094,8 @@ pub fn calculate(input: &FeedsInput) -> FeedsResult {
     // `SpindleStrategy::MatchChart`.
     if let Some(v_rpm) = vendor_rpm {
         rpm = machine.clamp_rpm(v_rpm);
+        let printed = Basis::Printed(sourced::RowRef(vendor_source.clone().unwrap_or_default()));
+        rpm_basis = moved_basis(printed, v_rpm, rpm, "machine RPM range", machine_rpm());
     }
 
     // --- Step 2b: Spindle-speedup along the constant-chipload line ---
@@ -2007,7 +2160,15 @@ pub fn calculate(input: &FeedsInput) -> FeedsResult {
             let raw_speedup = ceiling / rpm;
             spindle_scale = raw_speedup.min(MAX_SPINDLE_SPEEDUP);
             spindle_scale_reason = SpindleScaleReason::MaxSpeedPolicy;
+            let before = rpm;
             rpm = machine.clamp_rpm(rpm * spindle_scale);
+            rpm_basis = moved_basis(
+                rpm_basis,
+                before,
+                rpm,
+                "max speed policy",
+                Basis::Rule(MAX_SPINDLE_SPEEDUP_ROW),
+            );
         }
     }
 
@@ -2038,7 +2199,8 @@ pub fn calculate(input: &FeedsInput) -> FeedsResult {
         // Skip V-bit / tapered ball — see Step 2b note: tier ceiling
         // is calibrated against nominal-D, but these geometries cut on
         // engaged-D, so the nominal-D tier is a false constraint here.
-        let tier_ceiling = milling_rpm_ceiling_for_diameter(d);
+        let tier_row = milling_rpm_ceiling_row(d);
+        let tier_ceiling = tier_row.value;
         if rpm > tier_ceiling {
             let pre_clamp = rpm;
             rpm = tier_ceiling;
@@ -2046,6 +2208,13 @@ pub fn calculate(input: &FeedsInput) -> FeedsResult {
             if pre_clamp > 0.0 && rpm < pre_clamp {
                 spindle_scale *= rpm / pre_clamp;
             }
+            rpm_basis = moved_basis(
+                rpm_basis,
+                pre_clamp,
+                rpm,
+                "milling RPM tier",
+                Basis::Rule(tier_row),
+            );
         }
     }
 
@@ -2063,18 +2232,27 @@ pub fn calculate(input: &FeedsInput) -> FeedsResult {
     // reports the actual speedup the engine kept, not the requested
     // one it then undid.
     if input.operation == OperationFamily::Drill {
-        let (floor, ceil) = drill_rpm_envelope_for_diameter(d);
+        let (floor_row, ceil_row) = drill_rpm_tier_rows(d);
         let pre_clamp = rpm;
-        rpm = rpm.clamp(floor, ceil);
+        rpm = rpm.clamp(floor_row.value, ceil_row.value);
         rpm = machine.clamp_rpm(rpm);
         if pre_clamp > 0.0 && rpm < pre_clamp {
             spindle_scale *= rpm / pre_clamp;
         }
+        let tier = if pre_clamp > rpm { ceil_row } else { floor_row };
+        rpm_basis = moved_basis(
+            rpm_basis,
+            pre_clamp,
+            rpm,
+            "drill RPM tier",
+            Basis::Rule(tier),
+        );
     }
 
     // --- Step 3: DOC/WOC from operation defaults ---
     let profile = operation_default_profile(input.operation, input.pass_role);
-    let (mut ap, mut ae) = default_engagement(d, &profile, input, machine);
+    let (mut ap, mut ae, mut ap_basis, mut ae_basis) =
+        default_engagement(d, &profile, input, machine);
 
     // --- Step 3b: Scallop-driven stepover for ball/tapered ball ---
     if let Some(target_scallop) = input.target_scallop_mm {
@@ -2090,6 +2268,10 @@ pub fn calculate(input: &FeedsInput) -> FeedsResult {
         if ball_r > 0.0 {
             if let Some(stepover) = geometry::scallop_stepover(ball_r, target_scallop) {
                 ae = stepover;
+                ae_basis = Basis::derived(
+                    "scallop stepover",
+                    vec![Basis::stated(), Basis::tool_fact()],
+                );
             } else {
                 warnings.push(FeedsWarning::ScallopInvalid {
                     target: target_scallop,
@@ -2102,30 +2284,47 @@ pub fn calculate(input: &FeedsInput) -> FeedsResult {
     // Apply user overrides
     if let Some(user_ap) = input.axial_depth_mm {
         ap = user_ap;
+        ap_basis = Basis::stated();
     }
     if let Some(user_ae) = input.radial_width_mm {
         ae = user_ae;
+        ae_basis = Basis::stated();
     }
 
     // --- Step 4: Flute guard ---
-    let flute_guard = if input.flute_length > 0.0 {
-        input.flute_length * FLUTE_GUARD_FACTOR.value
-    } else {
-        d * FLUTE_GUARD_NO_LENGTH_D.value
-    };
+    let (flute_guard, flute_guard_basis) = flute_guard_of(input.flute_length, d);
     if ap > flute_guard {
         warnings.push(FeedsWarning::DocExceedsFlute {
             requested: ap,
             capped: flute_guard,
         });
         ap = flute_guard;
+        ap_basis = Basis::derived("flute guard", vec![ap_basis, flute_guard_basis]);
     }
 
     // Ensure minimum engagement
+    let ap_before = ap;
     ap = ap.max(MIN_AP_MM);
+    ap_basis = moved_basis(
+        ap_basis,
+        ap_before,
+        ap,
+        "engagement floor",
+        Basis::derived("MIN_AP_MM", Vec::new()),
+    );
+    let ae_before = ae;
     ae = ae.max(MIN_AE_MM);
+    ae_basis = moved_basis(
+        ae_basis,
+        ae_before,
+        ae,
+        "engagement floor",
+        Basis::derived("MIN_AE_MM", Vec::new()),
+    );
     // Cap ae to tool diameter
+    let ae_before = ae;
     ae = ae.min(d);
+    ae_basis = moved_basis(ae_basis, ae_before, ae, "tool diameter", Basis::tool_fact());
 
     // --- Step 4b: Slotting detection ---
     if ae > d * SLOTTING_THRESHOLD.value {
@@ -2135,6 +2334,14 @@ pub fn calculate(input: &FeedsInput) -> FeedsResult {
                 doc_reduced_to: slotting_cap,
             });
             ap = slotting_cap;
+            ap_basis = Basis::derived(
+                "slot cap",
+                vec![
+                    ap_basis,
+                    Basis::Rule(SLOTTING_THRESHOLD),
+                    Basis::Rule(SLOTTING_DOC_CAP),
+                ],
+            );
         }
     }
 
@@ -2233,6 +2440,14 @@ pub fn calculate(input: &FeedsInput) -> FeedsResult {
     let depth_tier = geometry::depth_tier_multiplier(ap, ladder_d);
 
     let mut raw_feed = rpm * chip_load * input.flute_count as f64 * depth_tier;
+    let feed_law = |chip: &Basis, rpm_b: &Basis, ap_b: &Basis| {
+        Basis::derived(
+            "chip x RPM x Z x depth tier",
+            vec![chip.clone(), rpm_b.clone(), ap_b.clone()],
+        )
+    };
+    let power_curve = || Basis::Machine(sourced::MachineField::PowerCurve);
+    let feed_cap_basis = || Basis::Machine(sourced::MachineField::CuttingFeedCap);
 
     // --- Step 5b: Setup derates ---
     // The long-tool (L/D) share. Ruling R4 Q7 (2026-09-24): a long tool
@@ -2299,6 +2514,7 @@ pub fn calculate(input: &FeedsInput) -> FeedsResult {
     let mut ladder_ap_from: Option<f64> = None;
     let mut ladder_ae_from: Option<f64> = None;
     let mut ladder_feed_factor: Option<f64> = None;
+    let mut feed_power_cut = false;
 
     if let Ok(line) = material.force_line()
         && available_power > 0.0
@@ -2465,6 +2681,7 @@ pub fn calculate(input: &FeedsInput) -> FeedsResult {
                     rpm = candidate;
                     feed = raw_feed;
                     ladder_moved_rpm = true;
+                    rpm_basis = Basis::derived("power ladder RPM", vec![rpm_basis, power_curve()]);
                 }
             }
 
@@ -2487,6 +2704,7 @@ pub fn calculate(input: &FeedsInput) -> FeedsResult {
             {
                 ladder_ap_from = Some(ap);
                 ap = fitted;
+                ap_basis = Basis::derived("power ladder depth", vec![ap_basis, power_curve()]);
             }
             if required_at(rpm, ap, ae, raw_feed) > budget_at(rpm)
                 && input.radial_width_mm.is_none()
@@ -2497,6 +2715,7 @@ pub fn calculate(input: &FeedsInput) -> FeedsResult {
             {
                 ladder_ae_from = Some(ae);
                 ae = fitted;
+                ae_basis = Basis::derived("power ladder width", vec![ae_basis, power_curve()]);
             }
 
             // ── Rung 4: the feed, LAST ────────────────────────────────
@@ -2543,6 +2762,7 @@ pub fn calculate(input: &FeedsInput) -> FeedsResult {
                         power_factor = f;
                         raw_feed *= f;
                         ladder_feed_factor = Some(f);
+                        feed_power_cut = true;
                         still_required = required_at(rpm, ap, ae, raw_feed);
                     }
                 }
@@ -2586,6 +2806,11 @@ pub fn calculate(input: &FeedsInput) -> FeedsResult {
                 });
             }
         }
+    }
+
+    let mut feed_basis = feed_law(&chip_basis, &rpm_basis, &ap_basis);
+    if feed_power_cut {
+        feed_basis = Basis::derived("power ceiling", vec![feed_basis, power_curve()]);
     }
 
     // --- Step 7: Machine feed ceiling ---
@@ -2662,6 +2887,11 @@ pub fn calculate(input: &FeedsInput) -> FeedsResult {
             spindle_scale_reason = SpindleScaleReason::FeedCeiling;
             rpm = candidate;
             feed = chip_per_rev * rpm;
+            rpm_basis = Basis::derived("feed ceiling RPM", vec![rpm_basis, feed_cap_basis()]);
+            feed_basis = feed_law(&chip_basis, &rpm_basis, &ap_basis);
+            if feed_power_cut {
+                feed_basis = Basis::derived("power ceiling", vec![feed_basis, power_curve()]);
+            }
             let held = feed <= machine_cut_ceiling * (1.0 + 1e-12);
             warnings.push(FeedsWarning::RpmLoweredForFeedCeiling {
                 rpm_from,
@@ -2682,6 +2912,7 @@ pub fn calculate(input: &FeedsInput) -> FeedsResult {
             feed_clamp_factor = machine_cut_ceiling / feed;
         }
         feed = machine_cut_ceiling;
+        feed_basis = Basis::derived("feed cap", vec![feed_basis, feed_cap_basis()]);
     }
 
     // --- Step 8: Plunge rate (G10) ---
@@ -2695,6 +2926,7 @@ pub fn calculate(input: &FeedsInput) -> FeedsResult {
     // runs the rule again at the feed that ships.
     let plunge = material.plunge_rate_base(d);
     let plunge_basis = plunge::plunge_basis(input, plunge);
+    let material_plunge_row = material.plunge_rate_base_constant();
 
     // --- Step 8b: the sourced half of the ramp feed (G6 ramp) ---
     // The G6 drill claim gives the axial chip of a helix or ramp entry, or
@@ -2883,9 +3115,36 @@ pub fn calculate(input: &FeedsInput) -> FeedsResult {
                 }
             }
             feed = clamped;
+            feed_basis = Basis::derived("drill feed envelope", vec![feed_basis]);
         }
         plunge_rate = feed;
     }
+    // P5 (K2): the plunge basis at the final feed, the ramp basis, and the
+    // power basis.
+    let plunge_value_basis = match plunge::resolve_plunge(&plunge_basis, feed) {
+        Some((_, binding)) => plunge_basis.basis(binding, &feed_basis, material_plunge_row),
+        None => match plunge_basis {
+            plunge::PlungeBasis::DrillCycle => {
+                Basis::derived("plunge = feed", vec![feed_basis.clone()])
+            }
+            plunge::PlungeBasis::Claimed { .. } | plunge::PlungeBasis::MaterialBase { .. } => {
+                Basis::derived(
+                    "material plunge base",
+                    vec![Basis::Rule(material_plunge_row)],
+                )
+            }
+        },
+    };
+    let ramp_value_basis = match &ramp {
+        RampBasis::Sourced { drill, .. } => Basis::Claim(sourced::ClaimRef {
+            kind: sourced::ClaimKind::DrillG6,
+            row: sourced::RowRef(drill.side_row.clone()),
+            rule: "g6_ramp".to_owned(),
+        }),
+        RampBasis::NoChip { .. } => {
+            Basis::derived("ramp at the plunge", vec![plunge_value_basis.clone()])
+        }
+    };
 
     // Final power at actual feed. Materials without a force line
     // report 0.0 — the consumers that need a numeric headroom (charts /
@@ -2961,6 +3220,24 @@ pub fn calculate(input: &FeedsInput) -> FeedsResult {
         matched_lut_row,
         effective_diameter_mm: effective_d,
         derates,
+        bases: PointBases {
+            power: Basis::derived(
+                "two-term power model",
+                vec![
+                    feed_basis.clone(),
+                    ap_basis.clone(),
+                    ae_basis.clone(),
+                    rpm_basis.clone(),
+                ],
+            ),
+            rpm: rpm_basis,
+            chip: chip_basis,
+            feed: feed_basis,
+            plunge: plunge_value_basis,
+            ramp: ramp_value_basis,
+            ap: ap_basis,
+            ae: ae_basis,
+        },
     }
 }
 
@@ -3122,11 +3399,13 @@ pub fn formula_constants() -> Vec<FormulaConstant> {
         crate::compute::catalog::ENTRY_PLUNGE_FALLBACK_MM_MIN,
     ]);
     rows.extend([
-        FormulaConstant::unsourced(
-            "feeds.MAX_SPINDLE_SPEEDUP",
-            MAX_SPINDLE_SPEEDUP,
-            "the rough magnitude of a chart's rpm_max over rpm_nominal; no record in the repo",
-        ),
+        MAX_SPINDLE_SPEEDUP_ROW,
+        // P5 (K2b, card rows 25 and 27): the pass 3 move budget and the
+        // pass 6 deflection target and floor, the bases of the `Runtime`
+        // and `Deflection` limits of the envelope.
+        suggest::STEPOVER_BACKOFF_TARGET_MOVES_ROW,
+        suggest::STEPOVER_BACKOFF_DIAMETER_FRACTION_ROW,
+        suggest::DEFLECTION_BACKOFF_TARGET_ROW,
         FormulaConstant::unsourced(
             "feeds.RUBBING_FLOOR_MM_TOOTH",
             RUBBING_FLOOR_MM_TOOTH,
@@ -3365,14 +3644,41 @@ const SEMI_FINISH_TAPERED_AE: FormulaConstant = FormulaConstant::unsourced(
     FINISH_OVERRIDE_CLAIM,
 );
 
+/// The F201 row of one factor of [`operation_default_profile`] (P5: the
+/// basis of a family default). The name is the one that
+/// [`formula_constants`] lists.
+fn profile_row(family: OperationFamily, role: PassRole, axis: &str, value: f64) -> FormulaConstant {
+    FormulaConstant {
+        name: std::borrow::Cow::Owned(format!(
+            "feeds.operation_default_profile.{family:?}.{role:?}.{axis}_factor"
+        )),
+        value,
+        source: OPERATION_DEFAULT_PROFILE_SOURCE,
+    }
+}
+
+/// The family default engagement `(ap, ae)` and the basis of each
+/// (rows 8 to 12 of the P5 card).
 fn default_engagement(
     d: f64,
     profile: &DefaultProfile,
     input: &FeedsInput,
     machine: &MachineProfile,
-) -> (f64, f64) {
+) -> (f64, f64, Basis, Basis) {
     let mut ap_factor = profile.ap_factor;
     let mut ae_factor = profile.ae_factor;
+    let mut ap_basis = Basis::Rule(profile_row(
+        input.operation,
+        input.pass_role,
+        "ap",
+        ap_factor,
+    ));
+    let mut ae_basis = Basis::Rule(profile_row(
+        input.operation,
+        input.pass_role,
+        "ae",
+        ae_factor,
+    ));
 
     // --- Adaptive-specific engagement matrix per tool geometry ---
     // From reference calcs.rs: separate entries for Flat/Ball/TaperedBall.
@@ -3384,10 +3690,18 @@ fn default_engagement(
         if roughing || semi {
             let (ap_base, ae_base) = match input.tool_geometry {
                 ToolGeometryHint::Flat | ToolGeometryHint::Bull { .. } => {
+                    ap_basis = Basis::Rule(ADAPTIVE_FLAT_AP);
+                    ae_basis = Basis::Rule(ADAPTIVE_FLAT_AE);
                     (ADAPTIVE_FLAT_AP.value, ADAPTIVE_FLAT_AE.value)
                 }
-                ToolGeometryHint::Ball => (ADAPTIVE_BALL_AP.value, ADAPTIVE_BALL_AE.value),
+                ToolGeometryHint::Ball => {
+                    ap_basis = Basis::Rule(ADAPTIVE_BALL_AP);
+                    ae_basis = Basis::Rule(ADAPTIVE_BALL_AE);
+                    (ADAPTIVE_BALL_AP.value, ADAPTIVE_BALL_AE.value)
+                }
                 ToolGeometryHint::TaperedBall { .. } => {
+                    ap_basis = Basis::Rule(ADAPTIVE_TAPERED_AP);
+                    ae_basis = Basis::Rule(ADAPTIVE_TAPERED_AE);
                     (ADAPTIVE_TAPERED_AP.value, ADAPTIVE_TAPERED_AE.value)
                 }
                 ToolGeometryHint::VBit { .. } => (ap_factor, ae_factor),
@@ -3395,32 +3709,55 @@ fn default_engagement(
             ap_factor = if roughing {
                 ap_base
             } else {
+                ap_basis = Basis::derived(
+                    "adaptive semi-finish scale",
+                    vec![ap_basis, Basis::Rule(ADAPTIVE_SEMI_AP_SCALE)],
+                );
                 ap_base * ADAPTIVE_SEMI_AP_SCALE.value
             };
             ae_factor = if roughing {
                 ae_base
             } else {
+                ae_basis = Basis::derived(
+                    "adaptive semi-finish scale",
+                    vec![ae_basis, Basis::Rule(ADAPTIVE_SEMI_AE_SCALE)],
+                );
                 ae_base * ADAPTIVE_SEMI_AE_SCALE.value
             };
 
             // Multi-flute AE derate for adaptive (>= 3 flutes)
             if input.flute_count >= 3 {
                 ae_factor *= ADAPTIVE_MULTI_FLUTE_AE_SCALE.value;
+                ae_basis = Basis::derived(
+                    "adaptive flute scale",
+                    vec![ae_basis, Basis::Rule(ADAPTIVE_MULTI_FLUTE_AE_SCALE)],
+                );
             }
 
             // Feed-scale-dependent adaptive derates — harder materials
             // (higher factor) want shallower ap/ae; softer materials
             // can take a slightly more aggressive bite.
             let feed_scale = input.material.feed_scale_factor();
-            if feed_scale > ADAPTIVE_HARD_THRESHOLD.value {
-                ap_factor *= ADAPTIVE_HARD_AP_SCALE.value;
-                ae_factor *= ADAPTIVE_HARD_AE_SCALE.value;
+            let material_scale = if feed_scale > ADAPTIVE_HARD_THRESHOLD.value {
+                Some((ADAPTIVE_HARD_AP_SCALE, ADAPTIVE_HARD_AE_SCALE))
             } else if feed_scale > ADAPTIVE_MEDIUM_THRESHOLD.value {
-                ap_factor *= ADAPTIVE_MEDIUM_AP_SCALE.value;
-                ae_factor *= ADAPTIVE_MEDIUM_AE_SCALE.value;
+                Some((ADAPTIVE_MEDIUM_AP_SCALE, ADAPTIVE_MEDIUM_AE_SCALE))
             } else if feed_scale < ADAPTIVE_SOFT_THRESHOLD.value {
-                ap_factor *= ADAPTIVE_SOFT_AP_SCALE.value;
-                ae_factor *= ADAPTIVE_SOFT_AE_SCALE.value;
+                Some((ADAPTIVE_SOFT_AP_SCALE, ADAPTIVE_SOFT_AE_SCALE))
+            } else {
+                None
+            };
+            if let Some((ap_scale, ae_scale)) = material_scale {
+                ap_factor *= ap_scale.value;
+                ae_factor *= ae_scale.value;
+                ap_basis = Basis::derived(
+                    "adaptive material scale",
+                    vec![ap_basis, Basis::Rule(ap_scale)],
+                );
+                ae_basis = Basis::derived(
+                    "adaptive material scale",
+                    vec![ae_basis, Basis::Rule(ae_scale)],
+                );
             }
         }
 
@@ -3438,10 +3775,19 @@ fn default_engagement(
         // sits in the "light" bin (≤ 0.10 D — too narrow), wasting
         // cycle time without improving safety. See
         // `planning/PRE_OPTIMIZE_DEFAULTS_AUDIT.md` Fix 1.
-        ap_factor = ap_factor.max(
-            machine.rigidity.adaptive_doc_factor * profile.ap_factor
-                / ADAPTIVE_RIGIDITY_DOC_DIVISOR.value,
-        );
+        let rigidity_ap_floor = machine.rigidity.adaptive_doc_factor * profile.ap_factor
+            / ADAPTIVE_RIGIDITY_DOC_DIVISOR.value;
+        if rigidity_ap_floor > ap_factor {
+            ap_basis = Basis::derived(
+                "rigidity floor",
+                vec![
+                    Basis::Machine(sourced::MachineField::Rigidity),
+                    Basis::Rule(ADAPTIVE_RIGIDITY_DOC_DIVISOR),
+                    ap_basis,
+                ],
+            );
+        }
+        ap_factor = ap_factor.max(rigidity_ap_floor);
         // Wood-class match goes through Material::is_wood_class() so that
         // species-aware variants (SolidWoodByJanka — FPL Ch.5 species
         // library) qualify for the wood-router adaptive WOC floor.
@@ -3453,10 +3799,18 @@ fn default_engagement(
                 input.tool_geometry,
                 ToolGeometryHint::Flat | ToolGeometryHint::Bull { .. }
             );
+        let ae_before = ae_factor;
         if wood_class_flat_tool {
             ae_factor = ae_factor.max(machine.rigidity.adaptive_woc_factor);
         }
         ae_factor = ae_factor.min(machine.rigidity.adaptive_woc_factor);
+        ae_basis = moved_basis(
+            ae_basis,
+            ae_before,
+            ae_factor,
+            "rigidity width",
+            Basis::Machine(sourced::MachineField::Rigidity),
+        );
     }
 
     // --- Tool geometry adjustments for finishing operations ---
@@ -3468,6 +3822,8 @@ fn default_engagement(
         ) => {
             ap_factor = FINISH_BALL_AP.value;
             ae_factor = FINISH_BALL_AE.value;
+            ap_basis = Basis::Rule(FINISH_BALL_AP);
+            ae_basis = Basis::Rule(FINISH_BALL_AE);
         }
         (
             ToolGeometryHint::Ball,
@@ -3476,6 +3832,8 @@ fn default_engagement(
         ) => {
             ap_factor = SEMI_FINISH_BALL_AP.value;
             ae_factor = SEMI_FINISH_BALL_AE.value;
+            ap_basis = Basis::Rule(SEMI_FINISH_BALL_AP);
+            ae_basis = Basis::Rule(SEMI_FINISH_BALL_AE);
         }
         (
             ToolGeometryHint::TaperedBall { .. },
@@ -3484,6 +3842,8 @@ fn default_engagement(
         ) => {
             ap_factor = FINISH_TAPERED_AP.value;
             ae_factor = FINISH_TAPERED_AE.value;
+            ap_basis = Basis::Rule(FINISH_TAPERED_AP);
+            ae_basis = Basis::Rule(FINISH_TAPERED_AE);
         }
         (
             ToolGeometryHint::TaperedBall { .. },
@@ -3492,13 +3852,20 @@ fn default_engagement(
         ) => {
             ap_factor = SEMI_FINISH_TAPERED_AP.value;
             ae_factor = SEMI_FINISH_TAPERED_AE.value;
+            ap_basis = Basis::Rule(SEMI_FINISH_TAPERED_AP);
+            ae_basis = Basis::Rule(SEMI_FINISH_TAPERED_AE);
         }
         _ => {}
     }
 
     let ap = (d * ap_factor).max(0.05);
     let ae = (d * ae_factor).max(0.02);
-    (ap, ae)
+    (
+        ap,
+        ae,
+        Basis::derived("factor x D", vec![ap_basis, Basis::tool_fact()]),
+        Basis::derived("factor x D", vec![ae_basis, Basis::tool_fact()]),
+    )
 }
 
 /// CONTACT-CIRCLE diameter at axial depth `ap` — how wide the cutter

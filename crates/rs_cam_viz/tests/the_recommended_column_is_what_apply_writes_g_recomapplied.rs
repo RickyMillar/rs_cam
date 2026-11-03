@@ -321,10 +321,15 @@ fn the_recommended_column_is_what_apply_writes_g_recomapplied() {
         .unwrap_or_else(|| {
             panic!("no DOC hover carries `{calculator_clause}`; runs were {texts:#?}")
         });
+    // Feeds contract P5 (K2b): "Apply all" writes the envelope proposal;
+    // the dial no longer acts on a product door, so the hover names the
+    // funnel (the binding cap) as the cause.
     assert!(
-        hover.contains("the dial holds the load at") && hover.contains(&apply_clause),
-        "the DOC hover does not say that the dial moved the value and what \
-         Apply writes: {hover}"
+        (hover.contains("the dial holds the load at")
+            || hover.contains("the invariant funnel changes it"))
+            && hover.contains(&apply_clause),
+        "the DOC hover does not say what moved the value and what Apply \
+         writes: {hover}"
     );
 }
 
@@ -427,12 +432,15 @@ fn the_power_row_reads_the_applied_cut_g_recomapplied() {
         .filter(|t| t.contains('\n') && t.starts_with("Power"))
         .max_by_key(|t| t.len())
         .unwrap_or_else(|| panic!("the power row painted no hover; runs were {texts:#?}"));
+    // P5: the calculator reads the stated cut, so the calculator's power
+    // and the applied power can print the same percent; the hover then has
+    // no second sentence (`power_note`). When they differ, the sentence
+    // quotes the cut Apply writes.
     assert!(
-        hover.contains("Power: calculator")
-            && hover.contains("the dial holds the load at")
-            && hover.contains(&format!("so the cut Apply writes draws {expected:.1} %")),
-        "the power hover does not quote the calculator's cut beside the \
-         applied one: {hover}"
+        hover.contains(&format!("{expected:.1} %"))
+            && (!hover.contains("Power: calculator")
+                || hover.contains(&format!("so the cut Apply writes draws {expected:.1} %"))),
+        "the power hover does not quote the cut Apply writes: {hover}"
     );
 }
 

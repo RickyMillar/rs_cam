@@ -20,7 +20,7 @@
 //!    operator sets a tool ([`CHOOSE_A_TOOL_FIX`]).
 //! 3. The registry op (`OperationConfig::new_default`) with the stock
 //!    defaults (`feeds::suggest::apply_stock_defaults`), and Suggest under
-//!    `ApplyScope::Both` (`feeds::suggest::suggest_params`). With no feeds
+//!    the speeds only (`feeds::suggest::suggest_params`, K2b). With no feeds
 //!    data (`FeedsError::Unbacked`, ruling R1) or no tool, the op keeps no
 //!    feeds: they are not set, and generation refuses until the operator
 //!    sets them (S11).

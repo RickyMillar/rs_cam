@@ -30,7 +30,6 @@ use rs_cam_core::compute::catalog::{OperationConfig, OperationType};
 use rs_cam_core::compute::config::StockSource;
 use rs_cam_core::compute::stock_config::{ModelKind, ModelUnits};
 use rs_cam_core::compute::tool_config::{ToolConfig, ToolId, ToolType};
-use rs_cam_core::feeds::suggest::ApplyScope;
 use rs_cam_core::geo::P3;
 use rs_cam_core::mesh::make_test_flat;
 use rs_cam_core::session::{
@@ -182,7 +181,7 @@ fn a_feeds_apply_that_changes_nothing_stales_nothing_b19() {
         .operation
         .feed_rate();
     let first = controller
-        .apply_feeds_recommendation(id, ApplyScope::Speeds)
+        .apply_feeds_recommendation(id, None)
         .expect("a Pocket on a flat end mill is a runnable pairing");
     assert_ne!(
         controller.state.session().toolpath_configs()[0]
@@ -204,7 +203,7 @@ fn a_feeds_apply_that_changes_nothing_stales_nothing_b19() {
 
     // Claim 2: the second Apply changes no value and core stales nothing.
     let second = controller
-        .apply_feeds_recommendation(id, ApplyScope::Speeds)
+        .apply_feeds_recommendation(id, None)
         .expect("the same pairing applies again");
     assert_eq!(
         serde_json::to_string(&controller.state.session().toolpath_configs()[0].operation)

@@ -2343,6 +2343,33 @@ impl ProjectSession {
         .ok()
     }
 
+    /// CONTRACT K2b (feeds contract P5): the safe envelope of one toolpath,
+    /// with the same inputs as [`Self::cutter_op_profile`] (the one Suggest
+    /// context assembly, F114). MCP `get_safe_envelope`, the CLI `suggest`
+    /// command and the `project.outside_envelope` diagnostic read it.
+    ///
+    /// `None` when the toolpath has no tool; `Some(Err)` for a refused
+    /// pairing.
+    #[must_use]
+    pub fn safe_envelope(
+        &self,
+        tc: &ToolpathConfig,
+    ) -> Option<Result<crate::feeds::envelope::SafeEnvelope, crate::feeds::FeedsError>> {
+        let tool = self.toolpath_tool(tc)?;
+        let slots = self.suggest_slots(tc);
+        Some(crate::feeds::envelope::SafeEnvelope::for_cut(
+            crate::feeds::envelope::EnvelopeInput {
+                operation: &tc.operation,
+                tool,
+                machine: self.machine(),
+                material: &self.stock_config().material,
+                lut: crate::feeds::embedded_vendor_lut(),
+                spindle_strategy: self.post_config().spindle_strategy,
+                context: slots.context(&tc.dressups),
+            },
+        ))
+    }
+
     // ── Mutable accessors ─────────────────────────────────────────
     //
     // These provide raw mutable access for core-internal bulk operations.

@@ -239,11 +239,11 @@ fn door_point(fixture: &Fixture) -> ForceAtPoint {
     let model_bbox = state.session().model_bbox_by_id(tc.model_id);
     let previews = feeds::suggest::preview_field_applies(
         &tc.operation,
-        recommended,
         tool,
         state.session().machine(),
         &stock.material,
-        tc.operation.feeds_style().1,
+        feeds::embedded_vendor_lut(),
+        state.session().post_config().spindle_strategy,
         feeds::suggest::SuggestContext {
             model_bbox: model_bbox.as_ref(),
             ..feeds::suggest::SuggestContext::default()

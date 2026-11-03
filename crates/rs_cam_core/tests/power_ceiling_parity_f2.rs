@@ -368,11 +368,15 @@ fn the_power_ceiling_binds_on_no_shipped_fixture_b6() {
          record rather than widening this assertion.",
         100.0 * worst
     );
+    // RE-PINNED 2026-11-03, feeds contract P5 (K1/K2, measured): the
+    // calculator reads each fixture op's stated cut (`CutSpec::calc_inputs`)
+    // in place of the family default, so the peak is now 46.3 % on Makita
+    // RT0701C / Jarrah / Ø12. Still no shipped fixture is power-limited.
     // Non-vacuity: the sweep still measures a real load (the Ø12 slots in
-    // the dense woods). The peak is pinned to the measured 41.8 %.
+    // the dense woods). The peak is pinned to the measured 46.3 %.
     assert!(
-        (worst - 0.418).abs() < 0.005,
-        "peak utilisation {worst} left the record (41.8 %); re-take it"
+        (worst - 0.463).abs() < 0.005,
+        "peak utilisation {worst} at {worst_label} left the record (46.3 %); re-take it"
     );
 }
 

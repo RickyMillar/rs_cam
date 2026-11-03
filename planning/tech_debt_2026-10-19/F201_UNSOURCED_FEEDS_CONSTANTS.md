@@ -2,7 +2,7 @@
 
 Status: OPEN. Operator ruling 6 (2026-10-22), option B. The values stay.
 The sentry `every_feeds_formula_constant_states_its_source_f201` lists them
-and pins the count (146 unsourced, 3 cited; 144 before feeds contract P3). Option A (the formula path
+and pins the count (149 unsourced, 3 cited; 150 before the P5 chain ruling deleted the deflection back-off floor, 146 before feeds contract P5, 144 before P3). Option A (the formula path
 refuses an unsourced value) applies only if one of these values causes an
 issue.
 
@@ -37,7 +37,7 @@ re-bless the FM1 golden in the same commit (`feeds/CLAUDE.md`).
 | `material.DRILL_PLUNGE_CEILING_PLYWOOD_PER_MM` | 580 | same | same |
 | `material.DRILL_PLUNGE_CEILING_SHEET_PER_MM` | 720 | same | MDF/Laminate ramp down 90 in/min: 90 × 25.4 / 3.175 |
 
-## Unsourced rows (146)
+## Unsourced rows (149)
 
 `material/mod.rs` lines are the `const` definition. The function reads the
 value from that constant.
@@ -159,6 +159,21 @@ the values did not change. Phase 8 replaces the rule.
 |---|---|---|
 | `dressup.entry_plunge_rate.first_linear_feed_fraction` | 0.5 | `ENTRY_PLUNGE_FIRST_FEED_FRACTION` |
 | `dressup.entry_plunge_rate.fallback_mm_min` | 500 | `ENTRY_PLUNGE_FALLBACK_MM_MIN` |
+
+### Suggest back-off numbers (feeds contract P5, K2b)
+
+The pass 3 move budget and the pass 6 deflection target and floor are the
+bases of the `Runtime` and `Deflection` limits of the safe envelope
+(`feeds/envelope.rs`). P5 moved them into the registry (card rows 25 and
+27). The values did not change. The unit test
+`the_runtime_rows_hold_the_pass_3_numbers` holds each row equal to the
+constant that the pass reads.
+
+| Row | Value | Site |
+|---|---|---|
+| `feeds.suggest.STEPOVER_BACKOFF_TARGET_MOVES` | 500 000 | `suggest/invariants.rs` |
+| `feeds.suggest.STEPOVER_BACKOFF_DIAMETER_FRACTION` | 0.5 | `suggest/invariants.rs` |
+| `feeds.suggest.DEFLECTION_BACKOFF_TARGET_UM` | 200 | `suggest/invariants.rs` |
 
 ### Machine default (outside the F201 edit boundary)
 

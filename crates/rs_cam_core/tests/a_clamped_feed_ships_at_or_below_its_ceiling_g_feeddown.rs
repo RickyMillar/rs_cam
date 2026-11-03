@@ -41,8 +41,7 @@ use rs_cam_core::compute::catalog::OperationConfig;
 use rs_cam_core::compute::operation_configs::PocketConfig;
 use rs_cam_core::compute::{ToolConfig, ToolId, ToolType};
 use rs_cam_core::feeds::suggest::{
-    ApplyContext, ApplyScope, FeedsPreview, SuggestContext, round_suggestion_value,
-    round_suggestion_value_down,
+    ApplyContext, FeedsPreview, SuggestContext, round_suggestion_value, round_suggestion_value_down,
 };
 use rs_cam_core::feeds::{
     FeedsInput, FeedsWarning, OperationFamily, PassRole, SetupContext, SpindleStrategy,
@@ -149,8 +148,7 @@ fn run_funnel(machine: &MachineProfile, material: &Material) -> Option<Shipped> 
     let result = rec.result().clone();
 
     let _warnings = rs_cam_core::feeds::suggest::apply(
-        &rec,
-        ApplyScope::Both,
+        &rec.clone().accept_unsourced().0,
         &mut operation,
         &mut provenance,
         ApplyContext {

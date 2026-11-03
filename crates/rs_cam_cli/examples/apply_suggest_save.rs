@@ -102,7 +102,7 @@ fn main() -> Result<()> {
         };
 
         tc.operation = suggested.operation;
-        // v3.0d: spindle_rpm is now written by apply_feeds_result_to_op
+        // v3.0d: spindle_rpm is now written by the Suggest speeds write
         // itself, so no manual fixup needed here.
 
         let feed_after = tc.operation.feed_rate();

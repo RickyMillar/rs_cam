@@ -36,7 +36,19 @@ use rs_cam_core::material::{
 
 /// The pinned count of unsourced rows. Raise it only on purpose, in the same
 /// change that adds the row to the planning note.
-const PINNED_UNSOURCED_COUNT: usize = 146;
+///
+/// Feeds contract P5 (K2b, card rows 25 and 27) raised it from 146 to 150:
+/// `feeds.suggest.STEPOVER_BACKOFF_TARGET_MOVES`,
+/// `feeds.suggest.STEPOVER_BACKOFF_DIAMETER_FRACTION`,
+/// `feeds.suggest.DEFLECTION_BACKOFF_TARGET_UM` and
+/// `feeds.suggest.DEFLECTION_BACKOFF_DPP_FLOOR_MM`, the bases of the
+/// `Runtime` and `Deflection` limits of the envelope. Card rows 4 (the drill
+/// RPM tiers) and 17 (the L/D shares) had rows before P5.
+///
+/// The P5 chain ruling (lead, 2026-11-03) deleted the deflection back-off
+/// (pass 6) and its floor, so `feeds.suggest.DEFLECTION_BACKOFF_DPP_FLOOR_MM`
+/// left: 150 to 149.
+const PINNED_UNSOURCED_COUNT: usize = 149;
 
 fn repo_root() -> PathBuf {
     PathBuf::from(env!("CARGO_MANIFEST_DIR")).join("../..")

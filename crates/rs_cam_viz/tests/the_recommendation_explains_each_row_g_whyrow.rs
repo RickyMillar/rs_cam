@@ -102,6 +102,13 @@ fn fixture() -> AppState {
     if let OperationConfig::Adaptive3d(config) = &mut operation {
         config.feed_rate = Some(3_000.0);
         config.spindle_rpm = Some(18_000);
+        // Feeds contract P5 (K2): the calculator reads the STATED depth.
+        // The derate captions need a depth deep enough for the depth tier,
+        // so the fixture states the depth the calculator chose before P5:
+        // 1.20·D, `feeds.default_engagement.adaptive.flat_bull_ap` in
+        // `feeds/mod.rs` (measured depth tier ×0.95). At the Adaptive 3D
+        // default (3.0 mm) no tier fires and the caption has no line.
+        config.depth_per_pass = 1.20 * tool.diameter;
     }
     state_with(None, tool, material, operation)
 }

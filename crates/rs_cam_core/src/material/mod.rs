@@ -1332,26 +1332,32 @@ impl Material {
     /// Recommended base cutting surface speed in m/min.
     /// Used to derive initial RPM from tool diameter.
     pub fn base_cutting_speed_m_min(&self) -> f64 {
+        self.base_cutting_speed_constant().value
+    }
+
+    /// The F201 row of [`Self::base_cutting_speed_m_min`]: the named
+    /// constant that gives the surface speed (feeds contract P5, the basis
+    /// of the SFM RPM).
+    #[must_use]
+    pub fn base_cutting_speed_constant(&self) -> FormulaConstant {
         match self {
-            Material::SolidWood { .. } | Material::SolidWoodByJanka { .. } => {
-                SPEED_SOLID_WOOD.value
-            }
-            Material::Plywood { .. } => SPEED_PLYWOOD.value,
-            Material::SheetGood { .. } => SPEED_SHEET_GOOD.value,
-            Material::Plastic { .. } => SPEED_PLASTIC.value,
+            Material::SolidWood { .. } | Material::SolidWoodByJanka { .. } => SPEED_SOLID_WOOD,
+            Material::Plywood { .. } => SPEED_PLYWOOD,
+            Material::SheetGood { .. } => SPEED_SHEET_GOOD,
+            Material::Plastic { .. } => SPEED_PLASTIC,
             // Aluminum on a wood router is application-edge; this is a
             // conservative SFM placeholder, not validated machining
             // guidance. Real cutting-data lookup should always come
             // from the vendor LUT for aluminum operations.
-            Material::Aluminum { .. } => SPEED_ALUMINUM.value,
-            Material::Foam { .. } => SPEED_FOAM.value,
+            Material::Aluminum { .. } => SPEED_ALUMINUM,
+            Material::Foam { .. } => SPEED_FOAM,
             // Fiberglass cutting speed — conservative placeholder.
             // Vendor Garr GP-plastics row indicates SMM 79–157 m/min
             // for the composite line. Pick the midpoint as the
             // formula fallback SFM; real fiberglass jobs should
             // route through the LUT.
-            Material::Fiberglass { .. } => SPEED_FIBERGLASS.value,
-            Material::Custom { .. } => SPEED_CUSTOM.value,
+            Material::Fiberglass { .. } => SPEED_FIBERGLASS,
+            Material::Custom { .. } => SPEED_CUSTOM,
         }
     }
 
@@ -1366,6 +1372,21 @@ impl Material {
     /// workflow `w39ma2j1y`, fix #7). The 6 mm value is preserved
     /// exactly to keep existing recommendations stable; other
     /// diameters scale linearly.
+    /// The F201 row of the material baseline that [`Self::plunge_rate_base`]
+    /// scales (feeds contract P5, the basis of the material-base plunge).
+    #[must_use]
+    pub fn plunge_rate_base_constant(&self) -> FormulaConstant {
+        match self {
+            Material::SolidWood { .. } | Material::SolidWoodByJanka { .. } => PLUNGE_SOLID_WOOD,
+            Material::Plywood { .. } | Material::SheetGood { .. } => PLUNGE_BOARD,
+            Material::Plastic { .. } => PLUNGE_PLASTIC,
+            Material::Aluminum { .. } => PLUNGE_ALUMINUM,
+            Material::Foam { .. } => PLUNGE_FOAM,
+            Material::Fiberglass { .. } => PLUNGE_FIBERGLASS,
+            Material::Custom { .. } => PLUNGE_CUSTOM,
+        }
+    }
+
     pub fn plunge_rate_base(&self, tool_diameter_mm: f64) -> f64 {
         let h = self.feed_scale_factor();
         let baseline_at_6mm = match self {

@@ -867,6 +867,9 @@ impl ProjectSession {
     /// Returns `None` when no suggested field (feed, plunge, RPM, stepover,
     /// depth per pass) carries a Suggest source in `feeds_provenance`, so a
     /// hand-typed recipe gets no record of a calculation that did not occur.
+    /// Feeds contract P5 (K2b, K6): the `OutsideEnvelope` warning of a stated
+    /// point outside the safe envelope is added in every case, a typed value
+    /// included, so the GUI ribbon and MCP read one list.
     /// A speeds-only apply still gets the record: the dial computed an
     /// engagement that the operation does not hold, and the Caution says so.
     /// An operation that the operator rewrote in every
@@ -905,8 +908,28 @@ impl ProjectSession {
         ]
         .into_iter()
         .any(from_suggest);
+        // K2b, K6 (feeds contract P5, ruling Q6): a stated point outside the
+        // safe envelope is a warning that names the binding limit. A typed
+        // value gets it too, so it does not wait for a Suggest stamp. This
+        // helper is the one source of the GUI ribbon and of MCP.
+        let outside = self
+            .safe_envelope(tc)
+            .and_then(Result::ok)
+            .and_then(|envelope| match (envelope.stated, envelope.operator) {
+                (
+                    Some(point),
+                    Some(crate::feeds::envelope::Placement::Outside { binding, margin }),
+                ) => Some(crate::feeds::suggest::SuggestWarning::OutsideEnvelope {
+                    binding,
+                    margin,
+                    ap_mm: point.ap_mm,
+                    ae_mm: point.ae_mm,
+                }),
+                (Some(_) | None, Some(crate::feeds::envelope::Placement::Inside { .. }) | None)
+                | (None, Some(crate::feeds::envelope::Placement::Outside { .. })) => None,
+            });
         if !any_from_suggest {
-            return None;
+            return outside.map(|w| vec![w]);
         }
         let stock_ctx = StockContext::from_stock_bbox(self.stock_bbox(), self.stock.padding);
         let model_bboxes = self.collect_model_bboxes();
@@ -929,7 +952,11 @@ impl ProjectSession {
             },
         })
         .ok()
-        .map(|s| s.warnings)
+        .map(|s| {
+            let mut warnings = s.warnings;
+            warnings.extend(outside);
+            warnings
+        })
     }
 
     /// Project-wide diagnostics derived from the

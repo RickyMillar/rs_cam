@@ -31,7 +31,7 @@ use rs_cam_core::compute::catalog::OperationConfig;
 use rs_cam_core::compute::operation_configs::{Adaptive3dConfig, Adaptive3dEntryStyle};
 use rs_cam_core::compute::tool_config::{ToolConfig, ToolId, ToolType};
 use rs_cam_core::feeds::suggest::{
-    ApplyContext, ApplyScope, SuggestContext, SuggestForOperationInput, SuggestWarning, apply,
+    ApplyContext, SuggestContext, SuggestForOperationInput, SuggestWarning, apply,
     feeds_preview_for_operation, suggest_for_operation,
 };
 use rs_cam_core::feeds::{FeedsProvenance, SpindleStrategy, embedded_vendor_lut};
@@ -109,8 +109,7 @@ fn shipped(
     let mut applied = base.clone();
     let mut prov = FeedsProvenance::default();
     let warnings = apply(
-        &rec,
-        ApplyScope::Speeds,
+        &rec.clone().accept_unsourced().0,
         &mut applied,
         &mut prov,
         ApplyContext {

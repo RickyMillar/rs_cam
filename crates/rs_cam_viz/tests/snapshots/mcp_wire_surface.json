@@ -391,6 +391,29 @@
   },
   {
     "inputSchema": {
+      "$defs": {
+        "NonCentreCuttingGeometryParam": {
+          "additionalProperties": false,
+          "description": "Measured geometry of a non-centre-cutting tool.",
+          "properties": {
+            "blade_protrusion_mm": {
+              "description": "Blade protrusion below the centre core, mm.",
+              "format": "double",
+              "type": "number"
+            },
+            "centre_core_diameter_mm": {
+              "description": "Diameter of the uncut centre core, mm.",
+              "format": "double",
+              "type": "number"
+            }
+          },
+          "required": [
+            "centre_core_diameter_mm",
+            "blade_protrusion_mm"
+          ],
+          "type": "object"
+        }
+      },
       "$schema": "https://json-schema.org/draft/2020-12/schema",
       "additionalProperties": false,
       "properties": {
@@ -435,6 +458,17 @@
         "name": {
           "description": "Display name for the tool",
           "type": "string"
+        },
+        "non_centre_cutting": {
+          "anyOf": [
+            {
+              "$ref": "#/$defs/NonCentreCuttingGeometryParam"
+            },
+            {
+              "type": "null"
+            }
+          ],
+          "description": "Measured centre core and blade protrusion. Omit for a centre-cutting tool."
         },
         "shaft_diameter": {
           "description": "Cone-base / shaft diameter in mm — the cutting ENVELOPE for a\n`tapered_ball_nose` (`envelope_diameter()` takes the larger of\nthis and `diameter`). Default 6.35.",
@@ -700,25 +734,69 @@
           "minimum": 0,
           "type": "integer"
         },
-        "scope": {
+        "pick": {
           "anyOf": [
             {
-              "description": "Which dimensions `apply_feeds` writes: a mirror of core [`ApplyScope`].",
+              "description": "The envelope point that `apply_feeds` writes (feeds contract P5, K2b):\na mirror of core [`PickRequest`]. With no pick, `apply_feeds` writes\nthe speeds for the cut the op keeps and no geometry (ruling Q4).",
               "oneOf": [
                 {
-                  "const": "speeds",
-                  "description": "Feed, plunge and RPM. The cut does not change.",
+                  "const": "proposal",
+                  "description": "The envelope's proposal: `min(stated, binding cap)` on each stated\naxis. The GUI \"Apply all\".",
                   "type": "string"
                 },
                 {
-                  "const": "cut_geometry",
-                  "description": "Stepover and depth of cut. THE CUT CHANGES.",
-                  "type": "string"
+                  "additionalProperties": false,
+                  "description": "A point of the (depth, width) plane, mm. A fixed axis keeps its\nfixed value. A point outside the envelope is written and warns\n(`project.outside_envelope`).",
+                  "properties": {
+                    "point": {
+                      "additionalProperties": false,
+                      "properties": {
+                        "ae_mm": {
+                          "description": "The width (stepover, mm).",
+                          "format": "double",
+                          "type": "number"
+                        },
+                        "ap_mm": {
+                          "description": "The depth per pass (mm).",
+                          "format": "double",
+                          "type": "number"
+                        }
+                      },
+                      "required": [
+                        "ap_mm",
+                        "ae_mm"
+                      ],
+                      "type": "object"
+                    }
+                  },
+                  "required": [
+                    "point"
+                  ],
+                  "type": "object"
                 },
                 {
-                  "const": "both",
-                  "description": "Both halves in one transaction. The cut changes.",
-                  "type": "string"
+                  "additionalProperties": false,
+                  "description": "A drill peck depth (mm).",
+                  "properties": {
+                    "peck": {
+                      "additionalProperties": false,
+                      "properties": {
+                        "mm": {
+                          "description": "The peck depth (mm).",
+                          "format": "double",
+                          "type": "number"
+                        }
+                      },
+                      "required": [
+                        "mm"
+                      ],
+                      "type": "object"
+                    }
+                  },
+                  "required": [
+                    "peck"
+                  ],
+                  "type": "object"
                 }
               ]
             },
@@ -726,7 +804,7 @@
               "type": "null"
             }
           ],
-          "description": "Which dimensions to write. **Say what you mean** — the scope is the\nwhole safety vocabulary of this tool:\n\n- `\"speeds\"` — feed / plunge / RPM. \"How fast\". Does NOT change the\n  cut, so the geometry you simulated stays the geometry you cut.\n- `\"cut_geometry\"` — stepover / DOC. **CHANGES THE CUT**: the removed\n  material, the engagement, the runtime and every gate verdict move\n  with it. Re-simulate afterwards.\n- `\"both\"` — both halves in one transaction. Also changes the cut.\n\nDefaults to `\"speeds\"`, the conservative choice: an omitted scope must\nnot silently rewrite geometry. Mirrors\n`rs_cam_core::feeds::suggest::ApplyScope`; there is deliberately no\nper-field scope."
+          "description": "The envelope point to write (K2b, ruling Q4). Omit it to write the\nspeeds (feed / plunge / RPM / ramp feed) for the cut the op keeps;\nno geometry moves. `\"proposal\"` writes the envelope's proposal\n(`get_safe_envelope`), then the speeds at it. `{\"point\": {\"ap_mm\",\n\"ae_mm\"}}` writes that point; `{\"peck\": {\"mm\"}}` a drill peck. A pick\nCHANGES THE CUT: re-simulate afterwards. The reply names the rules\nwith no source that the written values read (the apply is their\nacceptance, decision D4)."
         }
       },
       "required": [
@@ -3948,6 +4026,26 @@
       "title": "IndexParam",
       "type": "object"
     },
+    "name": "get_safe_envelope"
+  },
+  {
+    "inputSchema": {
+      "$schema": "https://json-schema.org/draft/2020-12/schema",
+      "additionalProperties": false,
+      "properties": {
+        "index": {
+          "description": "Toolpath index (0-based)",
+          "format": "uint",
+          "minimum": 0,
+          "type": "integer"
+        }
+      },
+      "required": [
+        "index"
+      ],
+      "title": "IndexParam",
+      "type": "object"
+    },
     "name": "get_suggest_rationale"
   },
   {
@@ -6940,6 +7038,11 @@
             {
               "const": "size_units",
               "description": "The display unit: \"metric\" or \"imperial\". It changes no stored\nlength and invalidates nothing.",
+              "type": "string"
+            },
+            {
+              "const": "non_centre_cutting",
+              "description": "Measured non-centre-cutting geometry, or `null` for a centre-cutting tool.",
               "type": "string"
             }
           ]

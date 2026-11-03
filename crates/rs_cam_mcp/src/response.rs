@@ -574,6 +574,13 @@ impl BoundedResponse {
     }
 }
 
+/// The cap of the `speeds` grid of `get_safe_envelope` (feeds contract P5,
+/// K2b). The envelope samples `ENVELOPE_GRID_N` points per free axis, so a
+/// plane has the square of it: the cap holds one full grid, and a grid over
+/// it says so (`points_truncated`).
+pub const MAX_SAFE_ENVELOPE_GRID_POINTS: usize =
+    rs_cam_core::feeds::envelope::ENVELOPE_GRID_N * rs_cam_core::feeds::envelope::ENVELOPE_GRID_N;
+
 #[cfg(test)]
 #[expect(
     clippy::unwrap_used,

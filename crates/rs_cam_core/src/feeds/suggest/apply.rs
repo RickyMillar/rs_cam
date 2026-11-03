@@ -1,5 +1,4 @@
-//! The write-back side of Suggest: the apply scope, the funnel that resolves
-//! the whole recommended operating point and copies a subset back, the
+//! The write-back side of Suggest: the speeds write, the pick write, the
 //! per-field preview the inline pill reads, the preview / applicable-
 //! recommendation pair the Feeds modal holds, and the stock and drill
 //! defaults.
@@ -9,82 +8,27 @@
 
 use crate::compute::catalog::{OperationConfig, OperationType};
 use crate::compute::tool_config::ToolConfig;
+use crate::feeds::envelope::{CutPoint, EnvelopeAxes, EnvelopePick, PickRequest, Placement};
 use crate::feeds::{FeedsError, FeedsInput, FeedsResult, PassRole, VendorLut};
 use crate::machine::MachineProfile;
 use crate::material::Material;
 
-use super::invariants::{enforce_invariants, enforce_invariants_at_fixed_geometry};
+use super::invariants::enforce_invariants_at_fixed_geometry;
 use super::{
     CalculatorOperatingPoint, StockContext, SuggestContext, SuggestWarning,
     feeds_input_for_operation, round_suggestion_value, round_suggestion_value_down,
 };
 
-/// Which dimensions of a [`FeedsResult`] an apply writes back to the operation.
+/// Write the calculator's speeds (feed, plunge, RPM, ramp) to `operation`.
 ///
-/// W3.1 (IA cleanup) split the single apply into a SPEED path (feed / plunge /
-/// RPM — "how fast") and a CUT-geometry path (stepover / DOC — "how deep/wide,
-/// changes the cut"), so the Feeds UI can offer a speed-only "Apply recommended
-/// speeds" that never silently rewrites the cut geometry.
+/// K2b (feeds contract P5, ruling Q4): Suggest never writes geometry by
+/// itself. [`apply`] writes the geometry of an envelope pick first, then
+/// calls this. The lead ruling of 2026-11-03 deleted the geometry passes
+/// of the chain (0, 2-6, 6b) and the chain test doors.
 ///
-/// **There is deliberately no `Field` arm** (Checkpoint I-1, 2026-08-12). The
-/// Feeds & Speeds modal used to carry six per-field `Apply` buttons that wrote
-/// `FeedsExplain::recommended` straight into the operation, skipping
-/// [`enforce_invariants`] entirely; on the shipped default fixture that wrote a
-/// **4.445 mm** depth of cut where this funnel writes **1.27 mm** (3.50×). The
-/// ruling deleted those buttons rather than plumbing a per-field scope, so the
-/// scope vocabulary stays "how fast" / "changes the cut" — the two things a
-/// user can be told about — and every apply resolves the *whole* operating
-/// point before copying a subset back.
-///
-/// The surviving per-field affordance — the inline ⚡ pill — does not get a
-/// scope either. Since G-PILLCLAMP (2026-09-10) it reads its value from
-/// [`preview_field_applies`], a dry run of `Both` on a scratch clone, so it
-/// offers and writes the funnel's number for that one field. Since
-/// G-SPEEDSAPPLY (2026-10-12) a speed pill's value can differ from what
-/// `Speeds` writes; see [`preview_field_applies`].
-#[derive(Debug, Clone, Copy, PartialEq, Eq)]
-pub enum ApplyScope {
-    /// feed / plunge / RPM — "how fast". Never touches the cut geometry, and
-    /// resolves the speeds for the geometry the operation keeps
-    /// (G-SPEEDSAPPLY; see `apply_feeds_subset`).
-    Speeds,
-    /// stepover / DOC — "changes the cut". Never touches the speeds.
-    CutGeometry,
-    /// Both halves, in one transaction.
-    Both,
-}
-
-impl ApplyScope {
-    /// The scope writes feed, plunge and RPM (`Speeds`, `Both`).
-    #[must_use]
-    pub const fn writes_speeds(self) -> bool {
-        matches!(self, Self::Speeds | Self::Both)
-    }
-
-    /// The scope writes stepover and depth per pass (`CutGeometry`, `Both`).
-    #[must_use]
-    pub const fn writes_geometry(self) -> bool {
-        matches!(self, Self::CutGeometry | Self::Both)
-    }
-}
-
-/// Apply the calculator's recommendation to `operation`, writing back only the
-/// requested [`ApplyScope`].
-///
-/// Under `ApplyScope::Both` and `ApplyScope::CutGeometry` the recommended
-/// *full* operating point is run through `enforce_invariants` on a scratch
-/// clone — so the feed ↔ chipload ↔ DPP coupling is resolved against the
-/// complete recommended state — and then only the requested fields are copied
-/// into the real operation. A geometry-only apply is byte-identical to the
-/// combined apply for the fields it writes.
-///
-/// **The speeds-only rule (G-SPEEDSAPPLY, 2026-10-12).** Under
-/// `ApplyScope::Speeds` the apply does not write the depth per pass or the
-/// stepover, so the speeds it writes must be the speeds for the geometry the
-/// operation keeps. The geometry passes of the invariant chain (pass 0 the
-/// axial envelope, 2 and 3 the stepover clamps, 4 the rigidity clamp, 5 the
-/// cutting-length clamp, 6 the deflection back-off, 6b the dial) do not run:
-/// they must not move what this scope does not write. The operation's own
+/// **The speeds-only rule (G-SPEEDSAPPLY, 2026-10-12).** The apply does not
+/// write the depth per pass or the stepover, so the speeds it writes must be
+/// the speeds for the geometry the operation keeps. The operation's own
 /// geometry is the fixed input. The feed-side passes (1 plunge ≤ feed, 9 the
 /// feed rescale at the final geometry, 10 the power ceiling) and the
 /// warn-only passes read that geometry. Pass 9 compares the kept geometry
@@ -106,7 +50,7 @@ impl ApplyScope {
 /// under every scope.
 #[expect(
     clippy::too_many_arguments,
-    reason = "the canonical suggest funnel needs the operation, the provenance out-param, the result, tool/machine/material, pass_role, context, the apply subset and the speeds-explored flag together."
+    reason = "the canonical suggest funnel needs the operation, the provenance out-param, the result, tool/machine/material, pass_role, context and the speeds-explored flag together."
 )]
 fn apply_feeds_subset(
     operation: &mut OperationConfig,
@@ -117,7 +61,6 @@ fn apply_feeds_subset(
     material: &Material,
     pass_role: PassRole,
     context: SuggestContext<'_>,
-    subset: ApplyScope,
     speeds_explored: bool,
 ) -> Vec<SuggestWarning> {
     let mut scratch = operation.clone();
@@ -145,20 +88,15 @@ fn apply_feeds_subset(
     // writes above). The passes below can move them, never clear them.
     let scratch_feed = |op: &OperationConfig| op.feed_rate().unwrap_or(written_feed);
     let scratch_plunge = |op: &OperationConfig| op.plunge_rate().unwrap_or(written_plunge);
-    // T-12: both setters return `bool` so the caller can refuse instead of
-    // discarding the value — their doc comments say exactly that. Capture
-    // the refusals here and report them below, but ONLY when this call was
-    // asked to write the cut geometry. Under `ApplyScope::Speeds` not
-    // writing the depth is the contract, not a dropped recommendation.
-    //
-    // The two geometry fields keep the NEAREST rounding. Their clamps sit in
-    // `enforce_invariants`, which runs BELOW this point and moves geometry
-    // downward, so neither value is bound from above here — the direction
-    // T-9 is about. The depth is then snapped to the reachable staircase
-    // anyway, which dominates a 0.0005 mm rounding step.
+    // The calculator's geometry, rounded to the nearest 0.001 mm and snapped
+    // as a geometry write would be, is the pass 9 baseline. This write does
+    // not put it on the operation (G-SPEEDSAPPLY), so not holding it is the
+    // contract, not a dropped recommendation (T-12).
     let stepover_mm = round_suggestion_value(result.radial_width_mm, 0.001);
     let depth_mm = round_suggestion_value(result.axial_depth_mm, 0.001);
-    let stepover_held = scratch.set_stepover(stepover_mm);
+    // The calculator's geometry on the scratch is the pass 9 baseline only;
+    // the operation keeps its own (below).
+    let _ = scratch.set_stepover(stepover_mm);
     // Snap the proposal to a depth the machine will actually cut.
     //
     // Generation steps a 2.5D cut as `total / ceil(total / per_pass)`
@@ -180,7 +118,7 @@ fn apply_feeds_subset(
         Some(total) => crate::ops::depth::realised_step_down(total, depth_mm).unwrap_or(depth_mm),
         None => depth_mm,
     };
-    let depth_held = scratch.set_depth_per_pass(depth_mm);
+    let _ = scratch.set_depth_per_pass(depth_mm);
     // v3.0d (2026-06-04): also write the calculator's chosen RPM so the
     // rest of enforce_invariants reads a consistent operating point
     // instead of the operation's prior spindle_rpm value.
@@ -229,8 +167,8 @@ fn apply_feeds_subset(
     // own depth per pass and stepover back, the passes that move geometry do
     // not run, and pass 9 re-derives the feed from the calculator's geometry
     // (the values written above) to the kept geometry. See the doc of
-    // `apply_feeds_subset`. `Both` and `CutGeometry` take the full chain.
-    let mut warnings = if matches!(subset, ApplyScope::Speeds) {
+    // `apply_feeds_subset`.
+    let mut warnings = {
         let calculator_stepover = scratch.stepover();
         let calculator_dpp = scratch.depth_per_pass();
         if let Some(kept) = operation.stepover() {
@@ -249,23 +187,16 @@ fn apply_feeds_subset(
             calculator_stepover,
             calculator_dpp,
         )
-    } else {
-        enforce_invariants(&mut scratch, tool, machine, material, pass_role, enriched)
     };
 
-    let write_speeds = subset.writes_speeds();
-    let write_geometry = subset.writes_geometry();
     // G10 (2026-09-25): the plunge is a rule of the feed that ships. Pass 9,
     // pass 10 and an explored feed can move the feed after the calculator,
     // so the funnel runs the rule again at the final feed. It writes the
     // plunge only when the value moved by 1 mm/min or more, and files the
     // move. A drill cycle gives no value: its plunge is its feed. The ramp
     // below reads this plunge, so the plunge comes first.
-    let plunge_binding = if write_speeds {
-        crate::feeds::plunge::resolve_plunge(&result.plunge, scratch_feed(&scratch))
-    } else {
-        None
-    };
+    let plunge_binding =
+        crate::feeds::plunge::resolve_plunge(&result.plunge, scratch_feed(&scratch));
     if let Some((to_mm_min, binding)) = plunge_binding {
         let from_mm_min = scratch_plunge(&scratch);
         if (to_mm_min - from_mm_min).abs() >= 1.0 {
@@ -280,7 +211,7 @@ fn apply_feeds_subset(
     // Ruling R4 Q10 (2026-09-24): the calculator lowered the RPM to hold the
     // chip at the feed ceiling. When this apply writes that RPM, the card
     // gets a rationale row on the RPM entry.
-    if write_speeds && rpm_written {
+    if rpm_written {
         for w in &result.warnings {
             if let crate::feeds::FeedsWarning::RpmLoweredForFeedCeiling {
                 rpm_from,
@@ -306,7 +237,7 @@ fn apply_feeds_subset(
     // when this apply did not write the cut geometry. Since G-SPEEDSAPPLY
     // (2026-10-12) the only scope that does not write the geometry,
     // `Speeds`, does not run pass 6b, so no such record reaches this point.
-    if write_speeds {
+    {
         operation.set_feed_rate(scratch_feed(&scratch));
         operation.set_plunge_rate(scratch_plunge(&scratch));
         if rpm_written {
@@ -323,7 +254,7 @@ fn apply_feeds_subset(
     // the plunge that ships (Q2), and the record carries the entry notes
     // (Q6-Q10, Q12) of the operation that ships.
     let mut ramp_record = None;
-    if write_speeds {
+    {
         let from_mm_min = operation.ramp_feed_rate();
         let entry = crate::feeds::ramp::entry_geometry(operation, context.dressups, tool);
         let record = crate::feeds::ramp::resolve_ramp_feed(
@@ -345,39 +276,9 @@ fn apply_feeds_subset(
             });
         }
     }
-    if write_geometry {
-        if let Some(v) = scratch.as_params().stepover() {
-            operation.set_stepover(v);
-        }
-        if let Some(v) = scratch.as_params().depth_per_pass() {
-            operation.set_depth_per_pass(v);
-        }
-        // T-12: this call was asked to write the cut geometry, and the
-        // operation has no field to hold one of the values. Say so. The
-        // pre-T-12 funnel returned success here, so a caller that needed a
-        // shallower pass — the power derate does — could not tell the
-        // difference between "applied" and "silently dropped".
-        let op_kind = operation.op_type().name();
-        if !depth_held {
-            warnings.push(SuggestWarning::CutGeometryFieldNotHeld {
-                param_name: "depth_per_pass",
-                op_kind,
-                recommended_mm: depth_mm,
-            });
-        }
-        if !stepover_held {
-            warnings.push(SuggestWarning::CutGeometryFieldNotHeld {
-                param_name: "stepover",
-                op_kind,
-                recommended_mm: stepover_mm,
-            });
-        }
-    }
     // Stamp per-field provenance from what actually produced these values
-    // (W2.1), gated to the subset we wrote. enforce_invariants may have
-    // recalibrated feed/DPP, but the values remain suggest-derived, so the
-    // source labels still hold.
-    provenance.apply_suggested_subset(result, operation, rpm_written, subset);
+    // (W2.1): the speeds only.
+    provenance.apply_suggested_subset(result, operation, rpm_written, true, false);
     // G10: the plunge stamp names the term that binds at the feed that
     // ships, which can differ from the calculator's feed.
     if let Some((_, binding)) = plunge_binding
@@ -389,50 +290,6 @@ fn apply_feeds_subset(
         provenance.stamp_ramp(record);
     }
     warnings
-}
-
-/// Apply the full recommendation — both speeds and cut geometry — from a raw
-/// [`FeedsResult`]. F042: a test door (`test-support`, F085). It needs no
-/// [`ApplicableRecommendation`], so no production build can call it; every
-/// production write goes through [`apply`]. The three raw-result doors let
-/// an instrument pin a result it sized itself against the three scopes.
-///
-/// Values are rounded for UI-friendly display before clamping, matching the
-/// historical Suggest-button behaviour.
-///
-/// `context` carries project-level slots (model bbox, upstream leftover,
-/// strategy hint) used by gate-aware Suggest paths — v1.2 reads
-/// `context.model_bbox` to gate the runtime-sanity stepover back-off.
-/// Callers that don't have the context cheaply available should pass
-/// [`SuggestContext::default()`]; the back-off short-circuits to a no-op
-/// when `model_bbox` is `None`.
-#[expect(
-    clippy::too_many_arguments,
-    reason = "W2.1 added the `provenance` out-param for per-field stamping, so the funnel needs the operation, the provenance, the result, tool/machine/material, pass_role and context together."
-)]
-#[cfg(any(test, feature = "test-support"))]
-pub fn apply_feeds_result_to_op(
-    operation: &mut OperationConfig,
-    provenance: &mut crate::feeds::FeedsProvenance,
-    result: &FeedsResult,
-    tool: &ToolConfig,
-    machine: &MachineProfile,
-    material: &Material,
-    pass_role: PassRole,
-    context: SuggestContext<'_>,
-) -> Vec<SuggestWarning> {
-    apply_feeds_subset(
-        operation,
-        provenance,
-        result,
-        tool,
-        machine,
-        material,
-        pass_role,
-        context,
-        ApplyScope::Both,
-        false,
-    )
 }
 
 /// Apply only the recommended *speeds* (feed / plunge / RPM), leaving the cut
@@ -455,49 +312,7 @@ pub fn apply_speeds_to_op(
     context: SuggestContext<'_>,
 ) -> Vec<SuggestWarning> {
     apply_feeds_subset(
-        operation,
-        provenance,
-        result,
-        tool,
-        machine,
-        material,
-        pass_role,
-        context,
-        ApplyScope::Speeds,
-        false,
-    )
-}
-
-/// Apply only the recommended *cut geometry* (stepover / DOC), leaving the
-/// speeds and their provenance untouched. The attributed "Apply cut" action
-/// (W3.1) — kept distinct because changing DOC/WOC changes the cut. F042: a
-/// test door (`test-support`); production writes through [`apply`].
-#[expect(
-    clippy::too_many_arguments,
-    reason = "this door forwards the whole funnel argument list — operation, provenance, result, tool/machine/material, pass_role and context — to `apply_feeds_subset`, so it cannot carry fewer arguments."
-)]
-#[cfg(any(test, feature = "test-support"))]
-pub fn apply_cut_geometry_to_op(
-    operation: &mut OperationConfig,
-    provenance: &mut crate::feeds::FeedsProvenance,
-    result: &FeedsResult,
-    tool: &ToolConfig,
-    machine: &MachineProfile,
-    material: &Material,
-    pass_role: PassRole,
-    context: SuggestContext<'_>,
-) -> Vec<SuggestWarning> {
-    apply_feeds_subset(
-        operation,
-        provenance,
-        result,
-        tool,
-        machine,
-        material,
-        pass_role,
-        context,
-        ApplyScope::CutGeometry,
-        false,
+        operation, provenance, result, tool, machine, material, pass_role, context, false,
     )
 }
 
@@ -600,42 +415,44 @@ impl FieldApplyPreviews {
 
 /// Dry-run the apply funnel and read back every field it would write.
 ///
-/// Runs `apply_feeds_subset(ApplyScope::Both)` on a scratch clone of
-/// `operation` with a scratch provenance, then reads each field's value and
-/// stamp off the scratch. There is still no `ApplyScope::Field` arm (Checkpoint
-/// I-1): the whole operating point is resolved, and a single field is copied
-/// out of it — which is exactly what a per-field pill must offer.
-///
-/// G-SPEEDSAPPLY (2026-10-12) did not change this dry run. Its speeds are
-/// the speeds of `Both`, sized for the geometry `Both` writes. The Feeds
-/// card's recommended column (G-RECOMAPPLIED) needs exactly that. A speed
-/// pill keeps the operation's geometry, so on an operation whose geometry is
-/// not the geometry of `Both`, its value is not what `apply_speeds_to_op`
-/// writes. That gap is open for the pill builder in `rs_cam_viz`.
+/// P5 (K2b): the dry run is the apply of the envelope's proposal
+/// ([`PickRequest::Proposal`], the "Apply all" of every surface) on a
+/// scratch clone of `operation` with a scratch provenance. Each field's
+/// value and stamp are read off the scratch. So a ⚡ pill offers the number
+/// that "Apply all" writes, the proposal's depth and stepover and the speeds
+/// at that point (G-PILLCLAMP; P5 card trap: point the pills at the
+/// proposal). A refused pairing gives no previews.
 pub fn preview_field_applies(
     operation: &OperationConfig,
-    result: &FeedsResult,
     tool: &ToolConfig,
     machine: &MachineProfile,
     material: &Material,
-    pass_role: PassRole,
+    lut: &'static VendorLut,
+    spindle_strategy: crate::feeds::SpindleStrategy,
     context: SuggestContext<'_>,
 ) -> FieldApplyPreviews {
     use crate::feeds::FeedsField;
     let mut scratch = operation.clone();
     let mut prov = crate::feeds::FeedsProvenance::default();
-    apply_feeds_subset(
-        &mut scratch,
-        &mut prov,
-        result,
+    let input = OperationApplyInput {
         tool,
         machine,
         material,
-        pass_role,
-        context,
-        ApplyScope::Both,
-        false,
-    );
+        spindle_strategy,
+        lut,
+        suggest: context,
+    };
+    if apply_to_operation(
+        input,
+        Some(PickRequest::Proposal),
+        None,
+        &mut scratch,
+        &mut prov,
+    )
+    .is_err()
+    {
+        return FieldApplyPreviews::default();
+    }
     let slot = |field: FeedsField, value: Option<f64>| -> Option<FieldApplyPreview> {
         let value = value?;
         let provenance = prov.get(field)?.clone();
@@ -665,22 +482,28 @@ pub fn preview_field_applies(
 )]
 pub fn preview_field_apply(
     operation: &OperationConfig,
-    result: &FeedsResult,
     tool: &ToolConfig,
     machine: &MachineProfile,
     material: &Material,
-    pass_role: PassRole,
+    lut: &'static VendorLut,
+    spindle_strategy: crate::feeds::SpindleStrategy,
     context: SuggestContext<'_>,
     field: crate::feeds::FeedsField,
 ) -> Option<FieldApplyPreview> {
     preview_field_applies(
-        operation, result, tool, machine, material, pass_role, context,
+        operation,
+        tool,
+        machine,
+        material,
+        lut,
+        spindle_strategy,
+        context,
     )
     .get(field)
     .cloned()
 }
 
-// ── The one application funnel (Checkpoint I, 2026-08-12) ──────────────────
+// ── The one application funnel (Checkpoint I, 2026-08-12; K2, P5) ──────────
 //
 // A-3's census (`planning/review_2026-08-08/APPLY_CONTRACT_CENSUS.md`) found
 // thirteen GUI affordances writing a recommendation into an `OperationConfig`,
@@ -690,13 +513,12 @@ pub fn preview_field_apply(
 //
 // The repair is structural rather than defensive: the type a *preview* surface
 // holds ([`FeedsPreview`]) carries no method that can write, and the only way
-// to obtain something that can write ([`ApplicableRecommendation`]) is
-// [`FeedsPreview::applicable`], which returns `None` when
-// [`crate::feeds::validate_tool_for_operation`] refused. There is exactly one
-// write function ([`apply`]), and it always runs `enforce_invariants`.
-//
-// Checkpoint I-4 excluded the optimizer's candidate apply from this funnel.
-// The optimizer cull (2026-10-13) deleted that apply.
+// to obtain a recommendation is [`FeedsPreview::applicable`], which returns
+// `None` when [`crate::feeds::validate_tool_for_operation`] refused. CONTRACT
+// K2 (P5): that recommendation is `Recommendation<Partial>`, and [`apply`]
+// takes only `Recommendation<Complete>`. The one way between them is
+// [`Recommendation::accept_unsourced`] (lead decision D4: an apply on any
+// surface is the acceptance).
 
 /// A read-only feeds preview. Infallible by construction — buildable for any
 /// input, including a tool × operation pairing the engine refuses, because
@@ -744,15 +566,15 @@ impl FeedsPreview {
         self.refusal.as_ref()
     }
 
-    /// The only bridge from a preview to a write. `None` exactly when the
-    /// pairing was refused.
+    /// The only bridge from a preview to a recommendation. `None` exactly
+    /// when the pairing was refused.
     ///
     /// The recommendation handed back is `explain().recommended`, which is
     /// `calculate(input)` — bit-identical to what
     /// [`feeds_result_for_operation`](super::feeds_result_for_operation) returns for the same input, since both
     /// call the same calculator on the same [`FeedsInput`]. Pinned by
     /// `preview_recommendation_is_bit_identical_to_validated_recipe`.
-    pub fn applicable(&self) -> Option<ApplicableRecommendation<'_>> {
+    pub fn applicable(&self) -> Option<Recommendation<'_, Partial>> {
         self.try_applicable().ok()
     }
 
@@ -761,53 +583,140 @@ impl FeedsPreview {
     /// # Errors
     ///
     /// The recorded refusal, when the pairing was refused.
-    pub fn try_applicable(&self) -> Result<ApplicableRecommendation<'_>, FeedsError> {
+    pub fn try_applicable(&self) -> Result<Recommendation<'_, Partial>, FeedsError> {
         match &self.refusal {
             Some(refusal) => Err(refusal.clone()),
-            None => Ok(ApplicableRecommendation {
-                result: std::borrow::Cow::Borrowed(&self.explain.recommended),
-                speeds_explored: false,
-            }),
+            None => Ok(Recommendation::new(std::borrow::Cow::Borrowed(
+                &self.explain.recommended,
+            ))),
         }
     }
 }
 
-/// A recommendation that has passed [`crate::feeds::validate_tool_for_operation`].
+/// The completeness state of a [`Recommendation`]. Sealed: [`Partial`] and
+/// [`Complete`] are the only states.
+pub trait Completeness: sealed::Sealed {}
+
+mod sealed {
+    pub trait Sealed {}
+    impl Sealed for super::Partial {}
+    impl Sealed for super::Complete {}
+}
+
+/// A recommendation with a written field that reads an Unsourced rule, or
+/// one that no apply door has accepted yet. It shows on the card; it cannot
+/// be applied.
+#[derive(Debug, Clone, Copy, PartialEq, Eq)]
+pub struct Partial;
+
+/// A recommendation that [`apply`] takes: each written field has a basis
+/// that is not an Unsourced rule, or the apply door accepted the rows.
+#[derive(Debug, Clone, Copy, PartialEq, Eq)]
+pub struct Complete;
+
+impl Completeness for Partial {}
+impl Completeness for Complete {}
+
+/// The geometry of an envelope pick that a recommendation carries.
+#[derive(Debug, Clone, PartialEq)]
+pub struct PickedGeometry {
+    /// The point and its basis.
+    pub point: crate::feeds::Sourced<CutPoint>,
+    /// The axes of the envelope: which fields the pick writes.
+    pub axes: EnvelopeAxes,
+    /// Where the point sits.
+    pub placement: Placement,
+    /// The request that gave the point.
+    pub request: PickRequest,
+}
+
+/// CONTRACT K2. A validated recommendation in the state `S`.
 ///
-/// Constructible **only** via [`FeedsPreview::applicable`] — the field is
-/// private and there is no public constructor — so possession of one is proof
-/// that the pairing validated. It is the sole input to [`apply`].
+/// Constructible only through [`FeedsPreview::applicable`] (or the
+/// crate-private `validated` door after the same validation) and
+/// [`EnvelopePick::recommendation`]. [`apply`] takes only
+/// `Recommendation<Complete>`; the one way there is
+/// [`Recommendation::accept_unsourced`].
 #[derive(Debug, Clone)]
-pub struct ApplicableRecommendation<'a> {
+pub struct Recommendation<'a, S: Completeness> {
     result: std::borrow::Cow<'a, FeedsResult>,
-    /// Set by [`ApplicableRecommendation::with_explored_speeds`]: the feed and
-    /// RPM on `result` came off a chart the operator dragged, not out of
+    /// Set by [`Recommendation::with_explored_speeds`]: the feed and RPM on
+    /// `result` came off a chart the operator dragged, not out of
     /// [`crate::feeds::calculate`].
     ///
     /// Read by [`apply_feeds_subset`], which then withholds
     /// [`SuggestContext::calculator_operating_point`] so the pass-9 rescale
     /// finds no derivation to reconcile and leaves the dialled value alone.
     speeds_explored: bool,
+    /// The geometry of an envelope pick, if the recommendation came from one.
+    pick: Option<PickedGeometry>,
+    _state: std::marker::PhantomData<S>,
 }
 
-impl<'a> ApplicableRecommendation<'a> {
+impl<'a> Recommendation<'a, Partial> {
+    const fn new(result: std::borrow::Cow<'a, FeedsResult>) -> Self {
+        Self {
+            result,
+            speeds_explored: false,
+            pick: None,
+            _state: std::marker::PhantomData,
+        }
+    }
+
     /// F042: a recommendation for a result that
     /// [`super::feeds_result_for_operation`] returned. That door runs
     /// [`crate::feeds::validate_tool_for_operation`] before it calculates,
     /// so the result is validated. Crate-private: only that door's callers
     /// in `feeds::suggest` mint one this way.
-    pub(super) fn validated(result: &'a FeedsResult) -> Self {
-        Self {
-            result: std::borrow::Cow::Borrowed(result),
-            speeds_explored: false,
-        }
+    pub(super) const fn validated(result: &'a FeedsResult) -> Self {
+        Self::new(std::borrow::Cow::Borrowed(result))
     }
-}
 
-impl ApplicableRecommendation<'_> {
-    /// The validated operating point.
-    pub fn result(&self) -> &FeedsResult {
-        &self.result
+    /// The names of the Unsourced rules that the written fields read: the
+    /// RPM, the chip, the plunge and the ramp, and the picked geometry. The
+    /// feed is the chip x RPM x Z at the depth the operation keeps (pass 9),
+    /// so the chip and the RPM name its rules.
+    #[must_use]
+    pub fn unsourced_rows(&self) -> Vec<String> {
+        let b = &self.result.bases;
+        let mut rows: Vec<String> = Vec::new();
+        let mut take = |basis: &crate::feeds::Basis| {
+            for c in basis.unsourced_rules() {
+                let name = c.name.to_string();
+                if !rows.contains(&name) {
+                    rows.push(name);
+                }
+            }
+        };
+        take(&b.rpm);
+        take(&b.chip);
+        if !self.speeds_explored {
+            take(&b.plunge);
+            take(&b.ramp);
+        }
+        if let Some(pick) = &self.pick {
+            take(pick.point.basis());
+        }
+        rows
+    }
+
+    /// The one way from `Partial` to `Complete` (lead decision D4): every
+    /// apply door calls it. It returns the warning that names the
+    /// Unsourced rows, when there are any; the door records it with the
+    /// apply.
+    #[must_use]
+    pub fn accept_unsourced(self) -> (Recommendation<'a, Complete>, Option<SuggestWarning>) {
+        let rows = self.unsourced_rows();
+        let warning = (!rows.is_empty()).then_some(SuggestWarning::UnsourcedRowsAccepted { rows });
+        (
+            Recommendation {
+                result: self.result,
+                speeds_explored: self.speeds_explored,
+                pick: self.pick,
+                _state: std::marker::PhantomData,
+            },
+            warning,
+        )
     }
 
     /// Replace the two speed axes with an operator-chosen point, keeping the
@@ -820,16 +729,11 @@ impl ApplicableRecommendation<'_> {
     /// `recalibrate_feed_for_chipload` pass short-circuits without a band, so
     /// the funnel's clamps (plunge-to-feed, machine envelope, the DOC chain)
     /// still run while the feed the operator explicitly dialled is **not**
-    /// silently re-solved back to the band target. Applying an explored point
-    /// and then having the feed move on its own would be a new instance of
-    /// the defect this funnel closes, not a fix for it.
+    /// silently re-solved back to the band target.
     ///
-    /// The dropped band is **not** a general "do not touch this feed" signal
-    /// and must not be reused as one — a legitimate calculator result on an
-    /// RPM-only vendor row publishes no band either, and that feed does want
-    /// reconciling. So the 2026-08-19 pass-9 rescale keys off its own explicit
-    /// [`ApplicableRecommendation::speeds_explored`] flag, set here, rather
-    /// than inferring the operator's intent from an absent band.
+    /// The pass-9 rescale keys off the explicit `speeds_explored` flag, set
+    /// here, rather than inferring the operator's intent from an absent band.
+    /// P5 (K2): the dragged feed and RPM are the operator's values.
     #[must_use]
     pub fn with_explored_speeds(self, feed_mm_min: f64, rpm: f64) -> Self {
         let mut owned = self.result.into_owned();
@@ -839,10 +743,43 @@ impl ApplicableRecommendation<'_> {
         // A2: the point goes with the band. An explored feed is the
         // operator's, so no printed chipload describes it.
         owned.chipload_point_mm = None;
+        owned.bases.feed = crate::feeds::Basis::picked();
+        owned.bases.rpm = crate::feeds::Basis::picked();
+        owned.bases.chip = crate::feeds::Basis::picked();
         Self {
             result: std::borrow::Cow::Owned(owned),
             speeds_explored: true,
+            pick: self.pick,
+            _state: std::marker::PhantomData,
         }
+    }
+}
+
+impl<S: Completeness> Recommendation<'_, S> {
+    /// The validated operating point.
+    pub fn result(&self) -> &FeedsResult {
+        &self.result
+    }
+
+    /// The envelope pick that this recommendation writes, if any.
+    pub const fn pick(&self) -> Option<&PickedGeometry> {
+        self.pick.as_ref()
+    }
+}
+
+impl<'env> EnvelopePick<'env> {
+    /// The recommendation of this pick: the speeds at the point (one
+    /// closed-form `calculate` call of the envelope) and the point itself.
+    #[must_use]
+    pub fn recommendation(&self) -> Recommendation<'static, Partial> {
+        let mut rec = Recommendation::new(std::borrow::Cow::Owned(self.result().clone()));
+        rec.pick = Some(PickedGeometry {
+            point: self.point().clone(),
+            axes: self.axes(),
+            placement: self.placement(),
+            request: self.request(),
+        });
+        rec
     }
 }
 
@@ -861,31 +798,35 @@ pub struct ApplyContext<'a> {
     pub suggest: SuggestContext<'a>,
 }
 
-/// **The single write.** Every apply surface — the Feeds & Speeds modal,
-/// the modal's project batch, the MCP `apply_feeds` tool and the CLI
-/// `--apply-suggest` through `Command::ApplyFeeds` ([`apply_to_operation`]),
-/// and the add doors through [`super::suggest_for_operation`] — reaches an
-/// `OperationConfig` through here, and this always runs `enforce_invariants`.
+/// **The single write.** Every apply surface — the Feeds card, the MCP
+/// `apply_feeds` tool and the CLI `--apply-suggest` through
+/// `Command::ApplyFeeds` ([`apply_to_operation`]), and the add doors through
+/// [`super::suggest_for_operation`] — reaches an `OperationConfig` through
+/// here.
 ///
-/// Because the only `ApplicableRecommendation` in existence came out of a
-/// [`FeedsPreview`] whose validation succeeded (or out of
-/// [`ApplicableRecommendation::validated`], after the same validation), a
-/// refused pairing cannot reach this function at all; and because there is
-/// one function, a write cannot skip the clamps.
+/// CONTRACT K2b (ruling Q4, P5): the write never moves the geometry by
+/// itself.
 ///
-/// F114: a scope that writes the cut geometry also writes the drill-cycle
-/// defaults ([`apply_drill_defaults`]): the peck depth is cut geometry.
-/// Before F114 only the CLI wrote them, so a Drill or AlignmentPinDrill
-/// `peck_depth` differed by surface. `ctx.suggest.stock` gives the pin
-/// family its hole depth; with `None` the pin peck is not capped.
+/// 1. When the recommendation carries an [`EnvelopePick`], the picked
+///    depth and width are written first (the depth snaps once to the
+///    staircase the generator cuts; a drill takes the pick as its peck).
+///    The stamps record the pick (`Basis::Operator`, law "picked"). A point
+///    outside the boundary adds `SuggestWarning::OutsideEnvelope` (K6
+///    `project.outside_envelope`, a warning; Q6: no refusal).
+/// 2. The speeds are written for the geometry the operation now keeps
+///    (G-SPEEDSAPPLY: the geometry passes do not run; pass 9 reconciles the
+///    feed with the kept depth and width).
 pub fn apply(
-    rec: &ApplicableRecommendation<'_>,
-    scope: ApplyScope,
+    rec: &Recommendation<'_, Complete>,
     operation: &mut OperationConfig,
     provenance: &mut crate::feeds::FeedsProvenance,
     ctx: ApplyContext<'_>,
 ) -> Vec<SuggestWarning> {
-    let warnings = apply_feeds_subset(
+    let mut warnings = Vec::new();
+    if let Some(pick) = &rec.pick {
+        warnings.extend(write_pick(operation, provenance, pick, ctx));
+    }
+    warnings.extend(apply_feeds_subset(
         operation,
         provenance,
         rec.result(),
@@ -894,17 +835,172 @@ pub fn apply(
         ctx.material,
         ctx.pass_role,
         ctx.suggest,
-        scope,
         rec.speeds_explored,
+    ));
+    if let Some(pick) = &rec.pick
+        && let Placement::Outside { binding, margin } = pick.placement
+    {
+        let p = pick.point.get();
+        warnings.push(SuggestWarning::OutsideEnvelope {
+            binding,
+            margin,
+            ap_mm: p.ap_mm,
+            ae_mm: p.ae_mm,
+        });
+    }
+    warnings
+}
+
+/// A picked depth or width, rounded DOWN to 0.001 mm (K2: the write never
+/// ships above the picked point). The quotient takes a tolerance of 1e-6
+/// of a step, so a value that is a whole number of steps in decimal (1.2)
+/// but not in binary (1199.9999999999998 steps) keeps its value.
+fn pick_mm_down(mm: f64) -> f64 {
+    /// The step of a written geometry value (mm): the step of the funnel's
+    /// nearest rounding of the same fields.
+    const STEPS_PER_MM: f64 = 1000.0;
+    /// The tolerance of the quotient, in steps.
+    const STEP_TOLERANCE: f64 = 1.0e-6;
+    (mm * STEPS_PER_MM + STEP_TOLERANCE).floor() / STEPS_PER_MM
+}
+
+/// Write the geometry of an envelope pick: the free axes only.
+fn write_pick(
+    operation: &mut OperationConfig,
+    provenance: &mut crate::feeds::FeedsProvenance,
+    pick: &PickedGeometry,
+    ctx: ApplyContext<'_>,
+) -> Vec<SuggestWarning> {
+    use crate::compute::catalog::Radial;
+    let mut warnings = Vec::new();
+    let p = pick.point.get();
+    let stamp = crate::feeds::ValueProvenance::of_basis(&crate::feeds::Basis::picked());
+    let op_kind = operation.op_type().name();
+    let ap_free = matches!(
+        pick.axes,
+        EnvelopeAxes::Plane { .. } | EnvelopeAxes::AxialBar { .. }
     );
-    if scope.writes_geometry() {
-        apply_drill_defaults(operation, ctx.tool, ctx.material, ctx.suggest.stock);
+    let ae_free = matches!(
+        pick.axes,
+        EnvelopeAxes::Plane { .. } | EnvelopeAxes::RadialBar { .. }
+    );
+    if ae_free {
+        let radial = operation.cut_spec().radial;
+        let held = match radial {
+            // A scallop width: the chord height of the ball at the picked
+            // width (h = r - sqrt(r^2 - (ae/2)^2)) is the target that gives it.
+            Radial::Scallop(_) => {
+                let r = match ctx.tool.geometry_hint() {
+                    crate::feeds::ToolGeometryHint::Ball => ctx.tool.diameter / 2.0,
+                    crate::feeds::ToolGeometryHint::TaperedBall { tip_radius, .. } => tip_radius,
+                    crate::feeds::ToolGeometryHint::Bull { corner_radius } => corner_radius,
+                    crate::feeds::ToolGeometryHint::Flat
+                    | crate::feeds::ToolGeometryHint::VBit { .. } => 0.0,
+                };
+                let half = p.ae_mm / 2.0;
+                if r > half {
+                    operation.set_scallop_height(r - (r * r - half * half).sqrt());
+                    true
+                } else {
+                    false
+                }
+            }
+            Radial::Width(_)
+            | Radial::Slot
+            | Radial::Groove
+            | Radial::AngularStep(_)
+            | Radial::SurfaceFollow
+            | Radial::Axial => {
+                // K2 (P5): the write rounds DOWN, so a pick at a ceiling
+                // never ships above it (T-9 is the same rule for the feed).
+                let held = operation.set_stepover(pick_mm_down(p.ae_mm));
+                if held {
+                    provenance.stepover = Some(stamp.clone());
+                }
+                held
+            }
+        };
+        if !held {
+            warnings.push(SuggestWarning::CutGeometryFieldNotHeld {
+                param_name: "stepover",
+                op_kind,
+                recommended_mm: p.ae_mm,
+            });
+        }
+    }
+    if ap_free {
+        let held = match operation {
+            OperationConfig::Drill(cfg) => {
+                cfg.peck_depth =
+                    peck_for_hole(OperationType::Drill, p.ap_mm, cfg.floor.depth_below_top());
+                true
+            }
+            OperationConfig::AlignmentPinDrill(cfg) => {
+                cfg.peck_depth = peck_for_hole(
+                    OperationType::AlignmentPinDrill,
+                    p.ap_mm,
+                    ctx.suggest
+                        .stock
+                        .and_then(|s| s.stock_z)
+                        .map(|z| z + cfg.spoilboard_penetration),
+                );
+                true
+            }
+            OperationConfig::Face(_)
+            | OperationConfig::Pocket(_)
+            | OperationConfig::Profile(_)
+            | OperationConfig::Adaptive(_)
+            | OperationConfig::VCarve(_)
+            | OperationConfig::Inlay(_)
+            | OperationConfig::InlayPlug(_)
+            | OperationConfig::Zigzag(_)
+            | OperationConfig::Trace(_)
+            | OperationConfig::Bore(_)
+            | OperationConfig::Chamfer(_)
+            | OperationConfig::DropCutter(_)
+            | OperationConfig::Adaptive3d(_)
+            | OperationConfig::Waterline(_)
+            | OperationConfig::Pencil(_)
+            | OperationConfig::Scallop(_)
+            | OperationConfig::UnifiedFinish(_)
+            | OperationConfig::SteepShallow(_)
+            | OperationConfig::RampFinish(_)
+            | OperationConfig::SpiralFinish(_)
+            | OperationConfig::RadialFinish(_)
+            | OperationConfig::HorizontalFinish(_)
+            | OperationConfig::ProjectCurve(_) => {
+                // The snap applies once, to the picked value (P5 card
+                // trap): generation cuts `total / ceil(total / per_pass)`.
+                // K2 (P5): the write rounds DOWN, so a pick at a ceiling
+                // never ships above it (a nearest rounding raised a 0.43793
+                // mm rigidity cap to 0.438).
+                let depth = pick_mm_down(p.ap_mm);
+                let depth = match operation.total_depth() {
+                    Some(total) => {
+                        crate::ops::depth::realised_step_down(total, depth).unwrap_or(depth)
+                    }
+                    None => depth,
+                };
+                let held = operation.set_depth_per_pass(depth);
+                if held {
+                    provenance.depth_per_pass = Some(stamp);
+                }
+                held
+            }
+        };
+        if !held {
+            warnings.push(SuggestWarning::CutGeometryFieldNotHeld {
+                param_name: "depth_per_pass",
+                op_kind,
+                recommended_mm: p.ap_mm,
+            });
+        }
     }
     warnings
 }
 
 /// A feed and an RPM the operator dragged on the explore chart (the
-/// nomogram), for [`ApplicableRecommendation::with_explored_speeds`].
+/// nomogram), for [`Recommendation::with_explored_speeds`].
 #[derive(Debug, Clone, Copy, PartialEq)]
 pub struct ExploredSpeeds {
     /// The dragged feed, mm/min.
@@ -922,16 +1018,20 @@ pub struct OperationApplyInput<'a> {
     pub machine: &'a MachineProfile,
     pub material: &'a Material,
     pub spindle_strategy: crate::feeds::SpindleStrategy,
-    pub lut: &'a VendorLut,
+    pub lut: &'static VendorLut,
     /// The project slots: the model bbox, the stock and the dressups.
     pub suggest: SuggestContext<'a>,
 }
 
 /// F114: THE Apply-Suggest funnel for an existing operation. It builds the
-/// preview, refuses a pairing Suggest refuses, takes the explored speeds
-/// when given, and runs [`apply`] (which writes the drill defaults under a
-/// geometry scope). `Command::ApplyFeeds` calls it on a draft, so the GUI,
-/// MCP and CLI write the same values for the same state.
+/// preview, refuses a pairing Suggest refuses, builds the envelope and
+/// picks the point when `pick` is given (K2b), takes the explored speeds
+/// when given, accepts the Unsourced rows (D4) and runs [`apply`].
+/// `Command::ApplyFeeds` calls it on a draft, so the GUI, MCP and CLI write
+/// the same values for the same state.
+///
+/// With `pick: None` the funnel writes the speeds for the geometry the
+/// operation keeps and no geometry (Q4).
 ///
 /// # Errors
 ///
@@ -940,7 +1040,7 @@ pub struct OperationApplyInput<'a> {
 /// written then.
 pub fn apply_to_operation(
     input: OperationApplyInput<'_>,
-    scope: ApplyScope,
+    pick: Option<PickRequest>,
     explored: Option<ExploredSpeeds>,
     operation: &mut OperationConfig,
     provenance: &mut crate::feeds::FeedsProvenance,
@@ -955,14 +1055,37 @@ pub fn apply_to_operation(
         input.spindle_strategy,
     );
     let rec = preview.try_applicable()?;
+    let envelope = match pick {
+        Some(_) => Some(crate::feeds::envelope::SafeEnvelope::for_cut(
+            crate::feeds::envelope::EnvelopeInput {
+                operation,
+                tool: input.tool,
+                machine: input.machine,
+                material: input.material,
+                lut: input.lut,
+                spindle_strategy: input.spindle_strategy,
+                context: input.suggest,
+            },
+        )?),
+        None => None,
+    };
+    let rec = match (&envelope, pick) {
+        (Some(env), Some(request)) => env.pick(request).recommendation(),
+        (Some(_) | None, None | Some(_)) => Recommendation {
+            result: std::borrow::Cow::Owned(rec.result.into_owned()),
+            speeds_explored: rec.speeds_explored,
+            pick: rec.pick,
+            _state: std::marker::PhantomData,
+        },
+    };
     let rec = match explored {
         Some(speeds) => rec.with_explored_speeds(speeds.feed_mm_min, speeds.rpm),
         None => rec,
     };
+    let (rec, accepted) = rec.accept_unsourced();
     let pass_role = operation.feeds_style().1;
-    Ok(apply(
+    let mut warnings = apply(
         &rec,
-        scope,
         operation,
         provenance,
         ApplyContext {
@@ -972,33 +1095,9 @@ pub fn apply_to_operation(
             pass_role,
             suggest: input.suggest,
         },
-    ))
-}
-
-/// Run the funnel's **clamp stage** over an operation that has just been
-/// edited by hand or by the optimizer — an edit that is not a `FeedsResult`
-/// and therefore has nothing for [`apply`] to write.
-///
-/// Checkpoint I-4 routes `reoptimize_with_axis_override` (OPT-005, "accept
-/// this axis suggestion") through here. That path sets one of feed / RPM /
-/// stepover / DOC / scallop height to a value the optimizer *suggested* but
-/// never simulated, and before this it did so with no clamp at all.
-///
-/// The value itself is left alone — no rounding, no feed re-solve. Callers
-/// that want the chipload recalibration must populate
-/// `context.chipload_bounds`; with the default context that pass
-/// short-circuits, which is what an accepted operator choice should get: the
-/// safety clamps, not a substitute number.
-#[cfg(test)]
-pub(crate) fn resolve_operation_invariants(
-    operation: &mut OperationConfig,
-    tool: &ToolConfig,
-    machine: &MachineProfile,
-    material: &Material,
-    pass_role: PassRole,
-    context: SuggestContext<'_>,
-) -> Vec<SuggestWarning> {
-    enforce_invariants(operation, tool, machine, material, pass_role, context)
+    );
+    warnings.extend(accepted);
+    Ok(warnings)
 }
 
 /// Build a [`FeedsPreview`] for an operation in a project context — the
@@ -1144,7 +1243,7 @@ pub fn apply_drill_defaults(
 ///    This is the only case that writes a peck under the floor.
 ///
 /// A non-positive or non-finite depth counts as not known.
-fn peck_for_hole(op_type: OperationType, peck: f64, drill_depth: Option<f64>) -> f64 {
+pub(crate) fn peck_for_hole(op_type: OperationType, peck: f64, drill_depth: Option<f64>) -> f64 {
     let depth = drill_depth.filter(|d| d.is_finite() && *d > 0.0);
     let capped = depth.map_or(peck, |d| peck.min(d * 0.75));
     let Some(range) = OperationConfig::param_range_for_type(op_type, "peck_depth") else {
@@ -1213,15 +1312,16 @@ pub fn apply_stock_defaults(operation: &mut OperationConfig, ctx: &StockContext)
 /// Extract operation-specific hints for the feeds calculator.
 /// Returns `(axial_depth_hint, radial_width_hint, scallop_hint)`.
 ///
-/// Thin tuple adapter over CONTRACT K1 (feeds contract P4): the op builds
-/// its [`CutSpec`](crate::compute::catalog::CutSpec) with
-/// `OperationConfig::cut_spec`, and the row's
-/// [`CutRule::calc_reads`](crate::compute::catalog::CutRule::calc_reads)
-/// selects today's calculator inputs from it (`CutSpec::todays_hints`).
-/// Both matches name every variant; no wildcard arm is left.
+/// Thin tuple adapter over CONTRACT K1 and K2 (feeds contract P5): the op
+/// builds its [`CutSpec`](crate::compute::catalog::CutSpec) with
+/// `OperationConfig::cut_spec`, and
+/// [`CutSpec::calc_inputs`](crate::compute::catalog::CutSpec::calc_inputs)
+/// gives the operator's cut to the calculator: the stated depth, the stated
+/// width (the tool diameter for a slot) and the scallop target. Both
+/// matches name every variant; no wildcard arm is left.
 pub fn operation_feeds_hints(
     operation: &OperationConfig,
+    tool_diameter_mm: f64,
 ) -> (Option<f64>, Option<f64>, Option<f64>) {
-    let reads = operation.capabilities().cut_rule.calc_reads;
-    operation.cut_spec().todays_hints(reads)
+    operation.cut_spec().calc_inputs(tool_diameter_mm)
 }

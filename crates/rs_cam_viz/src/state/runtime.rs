@@ -349,13 +349,15 @@ impl SlotInputs for FeedsInputs<'_> {
 
 /// The funnel dry run the ⚡ pills offer (G-PILLCLAMP). The UI owns it
 /// (`ui::properties::pills::pill_previews`); the memo runs it after the
-/// calculator. The signature fixes what the dry run may read.
+/// calculator. The signature fixes what the dry run may read. Feeds
+/// contract P5 (K2b): the dry run is the apply of the envelope proposal,
+/// which builds the envelope from these inputs and the spindle policy.
 pub type PillDryRun = fn(
     &rs_cam_core::compute::catalog::OperationConfig,
-    &FeedsResult,
     &rs_cam_core::compute::tool_config::ToolConfig,
     &rs_cam_core::machine::MachineProfile,
     &rs_cam_core::material::Material,
+    rs_cam_core::feeds::SpindleStrategy,
     Option<&rs_cam_core::geo::BoundingBox3>,
 ) -> rs_cam_core::feeds::suggest::FieldApplyPreviews;
 
@@ -382,7 +384,14 @@ impl FeedsInputs<'_> {
             rs_cam_core::feeds::embedded_vendor_lut(),
             *spindle_strategy,
         )?;
-        let previews = dry_run(operation, &result, tool, machine, material, *model_bbox);
+        let previews = dry_run(
+            operation,
+            tool,
+            machine,
+            material,
+            *spindle_strategy,
+            *model_bbox,
+        );
         Ok((result, previews))
     }
 

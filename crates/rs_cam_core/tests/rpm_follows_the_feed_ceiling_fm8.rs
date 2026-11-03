@@ -323,6 +323,8 @@ fn suggest_ships_the_lowered_rpm_with_a_rationale_row_fm8() {
             | SuggestWarning::EngagementReducedForAggressiveness { .. }
             | SuggestWarning::AggressivenessNotApplied { .. }
             | SuggestWarning::RampFeed { .. }
+            | SuggestWarning::UnsourcedRowsAccepted { .. }
+            | SuggestWarning::OutsideEnvelope { .. }
             | SuggestWarning::PlungeReDerived { .. } => None,
         })
         .unwrap_or_else(|| panic!("{:?}", s.warnings));

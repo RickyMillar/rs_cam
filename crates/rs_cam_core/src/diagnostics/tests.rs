@@ -676,6 +676,7 @@ fn feeds_hint_emits_high_feed_ratio() {
         matched_lut_row: None,
         effective_diameter_mm: 6.0,
         derates: crate::feeds::FeedsDerates::default(),
+        bases: crate::feeds::PointBases::not_computed(),
     };
     let diags = adapters::from_feeds::heuristic_hints_from_recommendation(
         ToolpathId::from_raw(7),
@@ -1023,6 +1024,7 @@ fn fixture_feeds_result() -> crate::feeds::FeedsResult {
         matched_lut_row: None,
         effective_diameter_mm: 6.0,
         derates: crate::feeds::FeedsDerates::default(),
+        bases: crate::feeds::PointBases::not_computed(),
     }
 }
 

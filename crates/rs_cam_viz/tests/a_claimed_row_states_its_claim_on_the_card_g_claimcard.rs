@@ -31,11 +31,16 @@
 //! A 1.2 mm tapered ball tip, 2 flutes, on a 3D Finish (DropCutter, which
 //! routes to Parallel/Finish) in generic hardwood. After ruling A1 the lookup
 //! key is the 1.2 mm tip. No row prints 1.2 mm. The anchor is
-//! `amana-tapered-hardwood-parallel-1000-2f-zrn-v8` (derived, grade b): its
+//! `spetool-tapered-hardwood-parallel-1000-2f` (derived, grade b): its
 //! diameter term is `(1 - ln 1.2 / ln 2) · 200 ≈ 147`, above the 1.5875 mm
-//! row (≈ 119) and the SpeTool 1.5 mm row (≈ 136), and it ties the SpeTool
-//! 1.0 mm row, which sorts after it by id. The claim is form A, between the
-//! chart's printed 1.0 mm and 1.5875 mm 2-flute rows. The test reads the
+//! row (≈ 119) and the SpeTool 1.5 mm row (≈ 136), and it ties the Amana
+//! ZrN v8 1.0 mm row. Operator ruling Q3 (feeds contract P5, D2): the lower
+//! printed chip wins the tie (SpeTool 0.0254 against the Amana band
+//! 0.01905-0.0508), and the winner names the Amana row in `tied_with`. G1
+//! orchestrator decision 5 reversed by operator ruling Q3: before P5 the
+//! smaller id won and the Amana row was the anchor. Both rows carry the A4
+//! label. The claim is form A, between the chart's printed 1.0 mm and
+//! 1.5 mm 2-flute rows. The test reads the
 //! claim from the explain payload and pins only its shape, so a scale change
 //! in `extrapolation/size.rs` does not break it.
 //!
@@ -81,7 +86,10 @@ use rs_cam_viz::ui::{properties, tokens};
 const PANEL_WIDTH: f32 = 240.0;
 
 /// The anchor row (see the module docs).
-const ANCHOR_ID: &str = "amana-tapered-hardwood-parallel-1000-2f-zrn-v8";
+const ANCHOR_ID: &str = "spetool-tapered-hardwood-parallel-1000-2f";
+
+/// The row the anchor ties with (Q3), which `tied_with` names.
+const TIED_ID: &str = "amana-tapered-hardwood-parallel-1000-2f-zrn-v8";
 
 /// The A4 card sentence the anchor row carries (ruling A4).
 const A4_LABEL: &str = "Wood, MDF, Sign-Foam (one printed row); hardwood is not printed apart";
@@ -273,6 +281,11 @@ fn a_claimed_row_states_its_claim_and_its_a4_label_g_claimcard() {
 
     // Non-vacuity: the fixture IS a claimed, derived A4 cell.
     assert_eq!(row.observation_id, ANCHOR_ID, "{row:?}");
+    assert_eq!(
+        row.tied_with.as_ref().map(|r| r.id()),
+        Some(TIED_ID),
+        "the Q3 winner names the other row: {row:?}"
+    );
     assert_eq!(row.row_kind, ObservationKind::Derived, "{row:?}");
     assert_eq!(row.material_label, A4_LABEL, "{row:?}");
     let claim = row
