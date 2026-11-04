@@ -48,7 +48,15 @@ use rs_cam_core::material::{
 /// The P5 chain ruling (lead, 2026-11-03) deleted the deflection back-off
 /// (pass 6) and its floor, so `feeds.suggest.DEFLECTION_BACKOFF_DPP_FLOOR_MM`
 /// left: 150 to 149.
-const PINNED_UNSOURCED_COUNT: usize = 149;
+///
+/// Feeds contract P6 (K3, decision E4) raised it from 149 to 154: the legacy
+/// project-loader default of each tool fact, at which an `Unknown` fact
+/// plans: `compute.tool_config.LEGACY_DEFAULT_CUTTING_LENGTH_MM`,
+/// `compute.tool_config.LEGACY_DEFAULT_TAPER_HALF_ANGLE_DEG`,
+/// `compute.tool_config.LEGACY_DEFAULT_SHANK_DIAMETER_MM`,
+/// `compute.tool_config.LEGACY_DEFAULT_STICKOUT_MM` and
+/// `compute.tool_config.LEGACY_DEFAULT_FLUTE_COUNT`.
+const PINNED_UNSOURCED_COUNT: usize = 154;
 
 fn repo_root() -> PathBuf {
     PathBuf::from(env!("CARGO_MANIFEST_DIR")).join("../..")

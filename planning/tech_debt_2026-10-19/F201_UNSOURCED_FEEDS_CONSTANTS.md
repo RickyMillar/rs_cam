@@ -175,6 +175,20 @@ constant that the pass reads.
 | `feeds.suggest.STEPOVER_BACKOFF_DIAMETER_FRACTION` | 0.5 | `suggest/invariants.rs` |
 | `feeds.suggest.DEFLECTION_BACKOFF_TARGET_UM` | 200 | `suggest/invariants.rs` |
 
+### Tool-fact legacy defaults (feeds contract P6, K3, 2026-11-04)
+
+An `Unknown` tool fact plans at the project-loader default that the file
+format had before K3. The pin rose from 149 to 154. Claim: "the
+project-loader default before K3 (feeds contract P6)".
+
+| Row | Value | Site |
+|---|---|---|
+| `compute.tool_config.LEGACY_DEFAULT_CUTTING_LENGTH_MM` | 25.0 | `compute/tool_config.rs` |
+| `compute.tool_config.LEGACY_DEFAULT_TAPER_HALF_ANGLE_DEG` | 15.0 | `compute/tool_config.rs` |
+| `compute.tool_config.LEGACY_DEFAULT_SHANK_DIAMETER_MM` | 6.35 | `compute/tool_config.rs` |
+| `compute.tool_config.LEGACY_DEFAULT_STICKOUT_MM` | 45.0 | `compute/tool_config.rs` |
+| `compute.tool_config.LEGACY_DEFAULT_FLUTE_COUNT` | 2 | `compute/tool_config.rs` (a `u32`; the row holds it as f64) |
+
 ### Machine default (outside the F201 edit boundary)
 
 `machine/mod.rs:51` `ChipLoadFormula::default()`: k0 0.024, p 0.61,

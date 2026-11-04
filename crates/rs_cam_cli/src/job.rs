@@ -169,32 +169,54 @@ pub struct ToolDef {
     #[serde(skip_serializing_if = "Option::is_none")]
     pub number: Option<u32>,
     pub diameter: f64,
-    /// Number of cutting flutes (default: 2). Used for chipload calculation in diagnostics.
-    #[serde(skip_serializing_if = "Option::is_none")]
-    pub flute_count: Option<u32>,
+    /// K3: the number of cutting flutes, a fact table (`{ stated = 2 }`,
+    /// the catalogue or estimated form). Absent: `Unknown` (planning uses
+    /// the legacy default and the lineage warns).
+    #[serde(
+        default = "ToolFact::unknown",
+        skip_serializing_if = "ToolFact::is_unknown"
+    )]
+    pub flute_count: ToolFact<u32>,
     /// Corner radius for bull nose
     #[serde(skip_serializing_if = "Option::is_none")]
     pub corner_radius: Option<f64>,
     /// Included angle in degrees for V-bit
     #[serde(skip_serializing_if = "Option::is_none")]
     pub included_angle: Option<f64>,
-    /// Taper half-angle for tapered ball
-    #[serde(skip_serializing_if = "Option::is_none")]
-    pub taper_angle: Option<f64>,
+    /// K3: the taper half-angle of a tapered ball (degrees), a fact table.
+    /// Required for `tapered_ball_nose`.
+    #[serde(
+        default = "ToolFact::unknown",
+        skip_serializing_if = "ToolFact::is_unknown"
+    )]
+    pub taper_angle: ToolFact<f64>,
     /// Shaft diameter for tapered ball
     #[serde(skip_serializing_if = "Option::is_none")]
     pub shaft_diameter: Option<f64>,
-    /// Shank diameter above the cutting flutes (mm).
-    #[serde(skip_serializing_if = "Option::is_none")]
-    pub shank_diameter: Option<f64>,
-    /// The length from the holder face to the tip (mm). Empty: the
-    /// `ToolConfig::new_default` stickout, the value the op's session and
-    /// the job's simulation cutter both take (F116 step 1).
-    #[serde(default, skip_serializing_if = "Option::is_none")]
-    pub stickout: Option<f64>,
-    /// Measured centre core and blade protrusion. Omit for a centre-cutting tool.
-    #[serde(default, skip_serializing_if = "Option::is_none")]
-    pub non_centre_cutting: Option<rs_cam_core::compute::NonCentreCuttingGeometry>,
+    /// K3: the shank diameter above the cutting flutes (mm), a fact table.
+    #[serde(
+        default = "ToolFact::unknown",
+        skip_serializing_if = "ToolFact::is_unknown"
+    )]
+    pub shank_diameter: ToolFact<f64>,
+    /// K3: the length from the holder face to the tip (mm), a fact table.
+    /// Absent: `Unknown`, which the op's session and the job's simulation
+    /// cutter both plan at the legacy default (F116 step 1).
+    #[serde(
+        default = "ToolFact::unknown",
+        skip_serializing_if = "ToolFact::is_unknown"
+    )]
+    pub stickout: ToolFact<f64>,
+    /// K3: centre cutting, `{ stated = "yes" }` or `{ stated = "no",
+    /// centre_core_diameter_mm = .., blade_protrusion_mm = .. }`. Absent:
+    /// `Unknown` (the motion of a centre-cutting tool). The old key
+    /// `non_centre_cutting` refuses.
+    #[serde(
+        default = "ToolFact::unknown",
+        skip_serializing_if = "ToolFact::is_unknown",
+        with = "rs_cam_core::compute::tool_config::centre_cutting_serde"
+    )]
+    pub centre_cutting: ToolFact<rs_cam_core::compute::tool_config::CentreCutting>,
 }
 
 /// One `[[operation]]` table.
@@ -835,6 +857,7 @@ fn toolpath_bbox(toolpath: &Toolpath) -> BoundingBox3 {
 pub fn parse_job_file(path: &Path) -> Result<JobFile> {
     let content = std::fs::read_to_string(path)
         .context(format!("Failed to read job file: {}", path.display()))?;
+    check_job_tool_facts(&content)?;
     let job: JobFile = toml::from_str(&content).context("Failed to parse TOML job file")?;
 
     if job.operation.is_empty() {
@@ -873,10 +896,58 @@ pub fn parse_job_file(path: &Path) -> Result<JobFile> {
     Ok(job)
 }
 
+/// K3 (ruling Q9, lead decision D4): a job file follows the project-file
+/// rule. A tool fact as a bare value refuses, and the one message names
+/// every bare key (the job key `taper_angle` too) and the old key
+/// `non_centre_cutting`.
+fn check_job_tool_facts(content: &str) -> Result<()> {
+    let raw: toml::Value = toml::from_str(content).context("Failed to parse TOML job file")?;
+    let tools: Vec<(String, &toml::Value)> = raw
+        .get("tools")
+        .and_then(toml::Value::as_table)
+        .into_iter()
+        .flatten()
+        .map(|(name, t)| (format!("tools.{name}"), t))
+        .collect();
+    let mut bare = rs_cam_core::compute::tool_config::bare_fact_keys(
+        tools.iter().map(|(p, t)| (p.clone(), *t)),
+    );
+    bare.extend(
+        tools
+            .iter()
+            .filter(|(_, t)| t.get("taper_angle").is_some_and(|v| !v.is_table()))
+            .map(|(p, _)| format!("{p}.taper_angle")),
+    );
+    let mut parts = Vec::new();
+    if !bare.is_empty() {
+        parts.push(rs_cam_core::compute::tool_config::bare_facts_text(&bare));
+    }
+    let retired: Vec<String> = tools
+        .iter()
+        .filter(|(_, t)| t.get("non_centre_cutting").is_some())
+        .map(|(p, _)| format!("{p}.non_centre_cutting"))
+        .collect();
+    if !retired.is_empty() {
+        parts.push(format!(
+            "retired key {}: write centre_cutting = {{ stated = \"no\", centre_core_diameter_mm \
+             = .., blade_protrusion_mm = .. }} or {{ stated = \"yes\" }}",
+            retired.join(", ")
+        ));
+    }
+    if parts.is_empty() {
+        Ok(())
+    } else {
+        bail!("job file: {}", parts.join("; "))
+    }
+}
+
 // ── Tool construction ──────────────────────────────────────────────────
 
 /// Default cutting length when not specified in the job file.
 const DEFAULT_CUTTING_LENGTH_FACTOR: f64 = 4.0;
+
+/// K3: the basis of the job tool's flute length.
+const CUTTING_LENGTH_BASIS: &str = "job file: four times the diameter (no flute-length key)";
 
 /// The cutter of a job-file tool, for the job's own simulation and
 /// diagnostics.
@@ -1097,7 +1168,7 @@ fn tool_config_from_def(def: &ToolDef, name: &str) -> Result<ToolConfig> {
         ToolType::BullNose => &[("corner_radius", def.corner_radius)],
         ToolType::VBit => &[("included_angle", def.included_angle)],
         ToolType::TaperedBallNose => &[
-            ("taper_angle", def.taper_angle),
+            ("taper_angle", def.taper_angle.planning().map(|(v, _)| *v)),
             ("shaft_diameter", def.shaft_diameter),
         ],
     };
@@ -1116,34 +1187,31 @@ fn tool_config_from_def(def: &ToolDef, name: &str) -> Result<ToolConfig> {
     let mut tc = ToolConfig::new_default(ToolId::placeholder(), def.tool_type);
     tc.name = name.to_owned();
     tc.diameter = def.diameter;
-    tc.set_cutting_length(ToolFact::Stated(
+    // K3: the job file has no flute-length key; the length is an estimate.
+    tc.set_cutting_length(ToolFact::estimated(
         def.diameter * DEFAULT_CUTTING_LENGTH_FACTOR,
+        CUTTING_LENGTH_BASIS,
     ));
     if let Some(n) = def.number {
         tc.tool_number = n;
     }
-    if let Some(fc) = def.flute_count {
-        tc.set_flute_count(ToolFact::Stated(fc));
-    }
+    // K3: each fact as the job file states it; an absent key is Unknown.
+    tc.set_flute_count(def.flute_count.clone());
     if let Some(cr) = def.corner_radius {
         tc.corner_radius = cr;
     }
     if let Some(ia) = def.included_angle {
         tc.included_angle = ia;
     }
-    if let Some(ta) = def.taper_angle {
-        tc.set_taper_half_angle(ToolFact::Stated(ta));
+    if !def.taper_angle.is_unknown() {
+        tc.set_taper_half_angle(def.taper_angle.clone());
     }
     if let Some(sd) = def.shaft_diameter {
         tc.shaft_diameter = sd;
     }
-    if let Some(sd) = def.shank_diameter {
-        tc.set_shank_diameter(ToolFact::Stated(sd));
-    }
-    if let Some(stickout) = def.stickout {
-        tc.set_stickout(ToolFact::Stated(stickout));
-    }
-    tc.non_centre_cutting = def.non_centre_cutting;
+    tc.set_shank_diameter(def.shank_diameter.clone());
+    tc.set_stickout(def.stickout.clone());
+    tc.set_centre_cutting(def.centre_cutting.clone());
     Ok(tc)
 }
 
@@ -1819,14 +1887,14 @@ mod tests {
             tool_type: ToolType::EndMill,
             number: None,
             diameter: 6.0,
-            flute_count: None,
+            flute_count: ToolFact::Unknown,
             corner_radius: None,
             included_angle: None,
-            taper_angle: None,
+            taper_angle: ToolFact::Unknown,
             shaft_diameter: None,
-            shank_diameter: None,
-            stickout: None,
-            non_centre_cutting: None,
+            shank_diameter: ToolFact::Unknown,
+            stickout: ToolFact::Unknown,
+            centre_cutting: ToolFact::Unknown,
         }
     }
 
@@ -1837,7 +1905,7 @@ mod tests {
     #[test]
     fn f116_the_job_cutter_refuses_an_out_of_domain_tool() {
         let zero_flutes = ToolDef {
-            flute_count: Some(0),
+            flute_count: ToolFact::Stated(0),
             ..end_mill_def()
         };
         let err = cutter_of(&zero_flutes).err().map(|e| format!("{e:#}"));
@@ -1846,7 +1914,7 @@ mod tests {
             "{err:?}"
         );
         let negative_stickout = ToolDef {
-            stickout: Some(-1.0),
+            stickout: ToolFact::Stated(-1.0),
             ..end_mill_def()
         };
         assert!(cutter_of(&negative_stickout).is_err());
@@ -1864,15 +1932,19 @@ mod tests {
     #[test]
     fn non_centre_cutting_job_geometry_reaches_tool_config() {
         let def = ToolDef {
-            non_centre_cutting: Some(rs_cam_core::compute::NonCentreCuttingGeometry {
-                centre_core_diameter_mm: 3.0,
-                blade_protrusion_mm: 1.0,
-            }),
+            centre_cutting: ToolFact::Stated(rs_cam_core::compute::tool_config::CentreCutting::No(
+                rs_cam_core::compute::NonCentreCuttingGeometry {
+                    centre_core_diameter_mm: 3.0,
+                    blade_protrusion_mm: 1.0,
+                },
+            )),
             ..end_mill_def()
         };
         assert_eq!(
-            tool_config_from_def(&def, "t").unwrap().non_centre_cutting,
-            def.non_centre_cutting
+            tool_config_from_def(&def, "t")
+                .unwrap()
+                .centre_cutting_fact(),
+            &def.centre_cutting
         );
     }
 
@@ -1927,14 +1999,14 @@ mod tests {
             tool_type: ToolType::EndMill,
             number: None,
             diameter: 6.0,
-            flute_count: None,
+            flute_count: ToolFact::Unknown,
             corner_radius: None,
             included_angle: None,
-            taper_angle: None,
+            taper_angle: ToolFact::Unknown,
             shaft_diameter: None,
-            shank_diameter: None,
-            stickout: None,
-            non_centre_cutting: None,
+            shank_diameter: ToolFact::Unknown,
+            stickout: ToolFact::Unknown,
+            centre_cutting: ToolFact::Unknown,
         };
         let cutter = cutter_of(&flat_def).unwrap();
         assert!((cutter.radius() - 3.0).abs() < 1e-10);
@@ -1943,14 +2015,14 @@ mod tests {
             tool_type: ToolType::BallNose,
             number: None,
             diameter: 10.0,
-            flute_count: None,
+            flute_count: ToolFact::Unknown,
             corner_radius: None,
             included_angle: None,
-            taper_angle: None,
+            taper_angle: ToolFact::Unknown,
             shaft_diameter: None,
-            shank_diameter: None,
-            stickout: None,
-            non_centre_cutting: None,
+            shank_diameter: ToolFact::Unknown,
+            stickout: ToolFact::Unknown,
+            centre_cutting: ToolFact::Unknown,
         };
         let ball_cutter = cutter_of(&ball_def).unwrap();
         assert!((ball_cutter.radius() - 5.0).abs() < 1e-10);
@@ -1962,14 +2034,14 @@ mod tests {
             tool_type: ToolType::TaperedBallNose,
             number: None,
             diameter: 6.0,
-            flute_count: None,
+            flute_count: ToolFact::Unknown,
             corner_radius: None,
             included_angle: None,
-            taper_angle: Some(10.0),
+            taper_angle: ToolFact::Stated(10.0),
             shaft_diameter: Some(12.0),
-            shank_diameter: None,
-            stickout: None,
-            non_centre_cutting: None,
+            shank_diameter: ToolFact::Unknown,
+            stickout: ToolFact::Unknown,
+            centre_cutting: ToolFact::Unknown,
         };
         let tapered_cutter = cutter_of(&tapered_def).unwrap();
         // radius() should return shaft_diameter / 2.0 = 6.0

@@ -67,16 +67,16 @@ id = 0
 name = "6mm 2F flat"
 type = "end_mill"
 diameter = 6.0
-cutting_length = 25.0
+cutting_length = { estimated = 25.0, basis = "bare number before K3 (2026-11)" }
 helix_deg = 30.0
 corner_radius_mm = 0.0
 corner_radius = 0.0
 included_angle = 0.0
-taper_half_angle = 0.0
+taper_half_angle = { estimated = 0.0, basis = "bare number before K3 (2026-11)" }
 shaft_diameter = 0.0
-shank_diameter = 6.35
-stickout = 45.0
-flute_count = 2
+shank_diameter = { estimated = 6.35, basis = "bare number before K3 (2026-11)" }
+stickout = { estimated = 45.0, basis = "bare number before K3 (2026-11)" }
+flute_count = { estimated = 2, basis = "bare number before K3 (2026-11)" }
 tool_number = 1
 tool_material = "carbide"
 cut_direction = "up_cut"
@@ -88,16 +88,16 @@ id = 1
 name = "End Mill"
 type = "end_mill"
 diameter = 3.0
-cutting_length = 25.0
+cutting_length = { estimated = 25.0, basis = "bare number before K3 (2026-11)" }
 helix_deg = 30.0
 corner_radius_mm = 0.0
 corner_radius = 0.0
 included_angle = 0.0
-taper_half_angle = 0.0
+taper_half_angle = { estimated = 0.0, basis = "bare number before K3 (2026-11)" }
 shaft_diameter = 0.0
-shank_diameter = 6.35
-stickout = 45.0
-flute_count = 2
+shank_diameter = { estimated = 6.35, basis = "bare number before K3 (2026-11)" }
+stickout = { estimated = 45.0, basis = "bare number before K3 (2026-11)" }
+flute_count = { estimated = 2, basis = "bare number before K3 (2026-11)" }
 tool_number = 1
 tool_material = "carbide"
 cut_direction = "up_cut"

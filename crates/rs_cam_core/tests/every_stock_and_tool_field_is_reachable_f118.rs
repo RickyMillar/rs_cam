@@ -44,6 +44,10 @@ const TOOL_OWN_DOOR: &[(&str, &str)] = &[
     ),
     ("vendor", "ReplaceTool and add_tool_from_library"),
     ("product_id", "ReplaceTool and add_tool_from_library"),
+    (
+        "v_tip_diameter",
+        "the project file and the tool library (K3; P7 VTipFlat adds its door)",
+    ),
 ];
 
 /// Every field name of [`StockConfig`], by an exhaustive destructure.
@@ -159,10 +163,12 @@ fn every_tool_field_is_a_param_key_or_has_its_own_door() {
     let tool_names = tool_fields();
     let mut probe = ToolConfig::new_default(ToolId::from_raw(0), ToolType::EndMill);
     probe.size_units = Some(rs_cam_core::compute::tool_config::SizeUnits::Metric);
-    probe.non_centre_cutting = Some(rs_cam_core::compute::NonCentreCuttingGeometry {
-        centre_core_diameter_mm: 3.0,
-        blade_protrusion_mm: 1.0,
-    });
+    // K3: an `Unknown` fact writes no key, so the probe states every fact.
+    probe.set_centre_cutting(rs_cam_core::compute::tool_config::ToolFact::Stated(
+        rs_cam_core::compute::tool_config::CentreCutting::Yes,
+    ));
+    probe.set_v_tip_diameter(rs_cam_core::compute::tool_config::ToolFact::Stated(0.0));
+    probe.set_taper_half_angle(rs_cam_core::compute::tool_config::ToolFact::Stated(0.0));
     assert_names_are_serde_keys(
         &tool_names,
         &serde_json::to_value(&probe).expect("serialise the tool"),

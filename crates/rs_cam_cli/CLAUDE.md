@@ -29,7 +29,7 @@ parameter-sweep entry points. Read root `CLAUDE.md` first and
 - One vocabulary per concept across `job` TOML, `run` and MCP. A tool
   type is `ToolType`'s own serde token (`end_mill`, `ball_nose`,
   `bull_nose`, `v_bit`, `tapered_ball_nose`) on every surface; do not
-  add a CLI-only spelling. A job tool's optional `non_centre_cutting` object uses the core measurement shape; `run --tool-set non_centre_cutting=<JSON>` uses the generic setter.
+  add a CLI-only spelling. K3 (feeds contract P6): a job tool's facts (`flute_count`, `taper_angle`, `shank_diameter`, `stickout`, `centre_cutting`) take the project-file forms (`{ stated = .. }`, catalogue, estimated; an absent key is `Unknown`); a bare value and the old key `non_centre_cutting` refuse in one message (`check_job_tool_facts`); the flute length is `Estimated` (`DEFAULT_CUTTING_LENGTH_FACTOR`). `run --tool-set centre_cutting=<JSON>` uses the generic setter.
 - A named machine profile comes from `io::machine_library`, the library
   the GUI and MCP share. Do not add a hardcoded preset to a subcommand.
   The one exception is `nc-time` with no `--machine`: it keeps the

@@ -94,16 +94,16 @@ id = 0
 name = "6 mm flat end mill (the cavity; mech [strip].channel_tool_d), 30 mm stick-out"
 type = "end_mill"
 diameter = 6.0
-cutting_length = 30.0
+cutting_length = { estimated = 30.0, basis = "bare number before K3 (2026-11)" }
 helix_deg = 30.0
 corner_radius_mm = 0.0
 corner_radius = 0.0
 included_angle = 0.0
-taper_half_angle = 0.0
+taper_half_angle = { estimated = 0.0, basis = "bare number before K3 (2026-11)" }
 shaft_diameter = 6.0
-shank_diameter = 6.0
-stickout = 30.0
-flute_count = 2
+shank_diameter = { estimated = 6.0, basis = "bare number before K3 (2026-11)" }
+stickout = { estimated = 30.0, basis = "bare number before K3 (2026-11)" }
+flute_count = { estimated = 2, basis = "bare number before K3 (2026-11)" }
 tool_number = 1
 tool_material = "carbide"
 cut_direction = "up_cut"
@@ -117,16 +117,16 @@ id = 1
 name = "3 mm flat end mill, 2 flute, 3 mm shank, 30 mm stick-out"
 type = "end_mill"
 diameter = 3.0
-cutting_length = 30.0
+cutting_length = { estimated = 30.0, basis = "bare number before K3 (2026-11)" }
 helix_deg = 30.0
 corner_radius_mm = 0.0
 corner_radius = 0.0
 included_angle = 0.0
-taper_half_angle = 0.0
+taper_half_angle = { estimated = 0.0, basis = "bare number before K3 (2026-11)" }
 shaft_diameter = 3.0
-shank_diameter = 3.0
-stickout = 30.0
-flute_count = 2
+shank_diameter = { estimated = 3.0, basis = "bare number before K3 (2026-11)" }
+stickout = { estimated = 30.0, basis = "bare number before K3 (2026-11)" }
+flute_count = { estimated = 2, basis = "bare number before K3 (2026-11)" }
 tool_number = 2
 tool_material = "carbide"
 cut_direction = "up_cut"
@@ -140,16 +140,16 @@ id = 2
 name = "20 deg V-bit, 3.175 mm body and shank (measure), 25 mm stick-out (measure)"
 type = "v_bit"
 diameter = 3.175
-cutting_length = 9.003159889
+cutting_length = { estimated = 9.003159889, basis = "bare number before K3 (2026-11)" }
 helix_deg = 30.0
 corner_radius_mm = 0.0
 corner_radius = 0.0
 included_angle = 20.0
-taper_half_angle = 10.0
+taper_half_angle = { estimated = 10.0, basis = "bare number before K3 (2026-11)" }
 shaft_diameter = 3.175
-shank_diameter = 3.175
-stickout = 25.0
-flute_count = 1
+shank_diameter = { estimated = 3.175, basis = "bare number before K3 (2026-11)" }
+stickout = { estimated = 25.0, basis = "bare number before K3 (2026-11)" }
+flute_count = { estimated = 1, basis = "bare number before K3 (2026-11)" }
 tool_number = 3
 tool_material = "carbide"
 cut_direction = "up_cut"
@@ -163,16 +163,16 @@ id = 3
 name = "1/4 in 60 deg V-bit (day strip slit; mech check.txt)"
 type = "v_bit"
 diameter = 6.35
-cutting_length = 5.499261314
+cutting_length = { estimated = 5.499261314, basis = "bare number before K3 (2026-11)" }
 helix_deg = 30.0
 corner_radius_mm = 0.0
 corner_radius = 0.0
 included_angle = 60.0
-taper_half_angle = 30.0
+taper_half_angle = { estimated = 30.0, basis = "bare number before K3 (2026-11)" }
 shaft_diameter = 6.35
-shank_diameter = 6.35
-stickout = 25.0
-flute_count = 2
+shank_diameter = { estimated = 6.35, basis = "bare number before K3 (2026-11)" }
+stickout = { estimated = 25.0, basis = "bare number before K3 (2026-11)" }
+flute_count = { estimated = 2, basis = "bare number before K3 (2026-11)" }
 tool_number = 4
 tool_material = "carbide"
 cut_direction = "up_cut"
@@ -186,16 +186,16 @@ id = 4
 name = "End Mill 6.35 (front rough; rivmap350 tool 0)"
 type = "end_mill"
 diameter = 6.35
-cutting_length = 25.0
+cutting_length = { estimated = 25.0, basis = "bare number before K3 (2026-11)" }
 helix_deg = 30.0
 corner_radius_mm = 0.0
 corner_radius = 0.0
 included_angle = 0.0
-taper_half_angle = 0.0
+taper_half_angle = { estimated = 0.0, basis = "bare number before K3 (2026-11)" }
 shaft_diameter = 6.35
-shank_diameter = 6.35
-stickout = 45.0
-flute_count = 2
+shank_diameter = { estimated = 6.35, basis = "bare number before K3 (2026-11)" }
+stickout = { estimated = 45.0, basis = "bare number before K3 (2026-11)" }
+flute_count = { estimated = 2, basis = "bare number before K3 (2026-11)" }
 tool_number = 5
 tool_material = "carbide"
 cut_direction = "up_cut"
@@ -209,16 +209,16 @@ id = 5
 name = "R1.0mm x 3.175mm x 15mm 2F Tapered Ball"
 type = "tapered_ball_nose"
 diameter = 2.0
-cutting_length = 15.0
+cutting_length = { estimated = 15.0, basis = "bare number before K3 (2026-11)" }
 helix_deg = 30.0
 corner_radius_mm = 0.0
 corner_radius = 0.0
 included_angle = 90.0
-taper_half_angle = 2.2
+taper_half_angle = { estimated = 2.2, basis = "bare number before K3 (2026-11)" }
 shaft_diameter = 3.175
-shank_diameter = 3.175
-stickout = 30.0
-flute_count = 2
+shank_diameter = { estimated = 3.175, basis = "bare number before K3 (2026-11)" }
+stickout = { estimated = 30.0, basis = "bare number before K3 (2026-11)" }
+flute_count = { estimated = 2, basis = "bare number before K3 (2026-11)" }
 tool_number = 6
 tool_material = "carbide"
 cut_direction = "up_cut"

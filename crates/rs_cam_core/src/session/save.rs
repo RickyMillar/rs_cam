@@ -165,23 +165,26 @@ impl ProjectSession {
                 name: t.name.clone(),
                 tool_type: t.tool_type.serde_token().to_owned(),
                 diameter: t.diameter,
-                cutting_length: t.cutting_length_planning_mm(),
+                // K3: the save writes each fact in the form it holds;
+                // `Unknown` writes no key.
+                cutting_length: t.cutting_length_fact().clone(),
                 helix_deg: t.helix_deg,
                 corner_radius_mm: t.corner_radius_mm,
                 corner_radius: t.corner_radius,
                 included_angle: t.included_angle,
-                taper_half_angle: t.taper_half_angle_planning_deg(),
+                v_tip_diameter: t.v_tip_diameter_fact().clone(),
+                taper_half_angle: t.taper_half_angle_fact().clone(),
                 shaft_diameter: t.shaft_diameter,
-                shank_diameter: t.shank_diameter_planning_mm(),
-                stickout: t.stickout_planning_mm(),
-                flute_count: t.flute_count_planning(),
+                shank_diameter: t.shank_diameter_fact().clone(),
+                stickout: t.stickout_fact().clone(),
+                flute_count: t.flute_count_fact().clone(),
                 tool_number: Some(t.tool_number as usize),
                 tool_material: tool_material_to_key(t.tool_material),
                 cut_direction: cut_direction_to_key(t.cut_direction),
                 vendor: t.vendor.clone(),
                 product_id: t.product_id.clone(),
                 size_units: t.size_units,
-                non_centre_cutting: t.non_centre_cutting,
+                centre_cutting: t.centre_cutting_fact().clone(),
             })
             .collect();
 

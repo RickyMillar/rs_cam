@@ -30,7 +30,7 @@ writes each brief, reviews each diff by path and commits. The two file sets do n
    preference). It edits no crate code. Its result is the evidence for the operator ruling
    on chip thinning against N-8 (D11), which P11 steps 2-5 need.
 
-Order after both: P7, then P9 (one `Engagement`, heavy-tests: ask first), then P8 and P10,
+Order after both (P6 and P11 step 0 DONE 2026-11-04): P7, then P9 (one `Engagement`, heavy-tests: ask first), then P8 and P10,
 then P11 steps 1-6 (with P9 or after it).
 
 Prompt for the new session (paste after `/clear`):
@@ -72,7 +72,7 @@ Prompt for the new session (paste after `/clear`):
 | 5b GUI envelope + K8 lineage | `phases/P5b.md` | DONE 2026-11-04 (envelope plot on the Passes tab, drag + live nomogram; Feeds tab merged into Passes (4 tabs); `Lineage` is a required field of every toolpath result; MCP `get_toolpath_lineage`; FM1 and G-OPGOLDEN unchanged) | see `git log` | |
 | 5c Plot review fixes | `phases/P5c.md` | DONE 2026-11-04 (lines 4+4 labels -> 1-2 lines, 0 labels on rivmap100 3D Rough; frame = hard stops; candidate ring only on drag, proposal diamond only off Now; no DANGER; feed axis ticks) | see `git log` | Next: P5d |
 | 5d Plot review 2 | `phases/P5d.md` | DONE 2026-11-04 (every limit in view draws and is named; range holds every flat depth limit; one mark rule on both charts: white = setpoint, grey ghost = stored during a draft, quiet ACCENT = recommendation; names Vendor DOC k×D / Rigidity DOC / Slot DOC / Cut length; D tick paints, an off-step D names itself alone; ic1 3D Rough Passes cap 34 -> 35, one more depth tick row; operator approved the live screenshot) | see `git log` | |
-| 6 K3 `ToolFact` | `phases/P6.md` | IN PROGRESS: commits A and B DONE 2026-11-04 (A: the type, the `_planning_` readers, 175 read sites; B: private fields, 503 E0616 + 54 E0451, setters, `LEGACY_DEFAULT_*` consts; no number moved). C next (card decisions E1-E9) | see `git log` | Commit C (fact storage, TOML forms, Q9, migration) |
+| 6 K3 `ToolFact` | `phases/P6.md` | DONE 2026-11-04 (A: type, readers, builder; B: private fields, setters; C: `ToolFact` storage, TOML forms, Q9 refusal at all three loaders, doors, 136 files migrated; no number and no G-code byte moved; F201 149 -> 154) | see `git log` | |
 | 7 K5 feasibility rules | `phases/P7.md` | NOT STARTED (needs P6) | | |
 | 8 Q1 / Q6 / Q8 | `phases/P8.md` | NOT STARTED (Q1 needs P9 changes 1-2 first) | | |
 | 9 K7 one engagement | `phases/P9.md` | NOT STARTED (heavy-tests: ask first) | | |

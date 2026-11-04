@@ -352,6 +352,9 @@ pub enum SessionError {
     /// holds EVERY retired key in the file, not only the first. The table
     /// of retired keys is `project_file::RETIRED_KEYS`.
     RetiredKeys(Vec<RetiredKeyFound>),
+    /// K3 (ruling Q9): the project file holds a tool fact as a bare value.
+    /// The list names EVERY bare key in the file (the F034 style), by path.
+    BareToolFacts(Vec<String>),
     /// A toolpath in the project file has no `[setups.toolpaths.operation]`
     /// table, so it has no parameters. The loader refuses it.
     MissingOperation { setup: String, toolpath: String },
@@ -439,6 +442,7 @@ impl SessionError {
             | Self::StaleSimulation { .. }
             | Self::StockChangeRefused(_)
             | Self::RetiredKeys(_)
+            | Self::BareToolFacts(_)
             | Self::MissingOperation { .. }
             | Self::Selection(_)
             | Self::ToolOutOfDomain { .. }
@@ -570,6 +574,11 @@ impl std::fmt::Display for SessionError {
                 }
                 Ok(())
             }
+            Self::BareToolFacts(paths) => write!(
+                f,
+                "The project file: {}",
+                crate::compute::tool_config::bare_facts_text(paths)
+            ),
             Self::MissingOperation { setup, toolpath } => write!(
                 f,
                 "Toolpath '{toolpath}' in setup '{setup}' has no [setups.toolpaths.operation] \
@@ -2655,6 +2664,7 @@ impl ProjectSession {
 mod tests {
     use super::project_file::parse_tool_type;
     use super::*;
+    use crate::compute::tool_config::ToolFact;
 
     fn named_empty_job() -> ProjectJobSection {
         ProjectJobSection {
@@ -3010,7 +3020,7 @@ mod tests {
     fn unknown_tool_material_and_cut_direction_warn_fc0() {
         let load = |key: &str, token: &str| {
             let text = format!(
-                "name = \"T\"\ndiameter = 6.0\ncutting_length = 20.0\n{key} = \"{token}\"\n"
+                "name = \"T\"\ndiameter = 6.0\ncutting_length = {{ stated = 20.0 }}\n{key} = \"{token}\"\n"
             );
             let section: ProjectToolSection = toml::from_str(&text).expect("parse tool section");
             let mut warnings = Vec::new();
@@ -3053,23 +3063,24 @@ mod tests {
                 name: "Test EndMill".to_owned(),
                 tool_type: "end_mill".to_owned(),
                 diameter: 6.35,
-                cutting_length: 25.0,
+                cutting_length: ToolFact::Stated(25.0),
                 helix_deg: 30.0,
                 corner_radius_mm: 0.0,
                 corner_radius: 2.0,
                 included_angle: 90.0,
-                taper_half_angle: 15.0,
+                v_tip_diameter: ToolFact::Unknown,
+                taper_half_angle: ToolFact::Stated(15.0),
                 shaft_diameter: 6.35,
-                shank_diameter: 6.35,
-                stickout: 45.0,
-                flute_count: 2,
+                shank_diameter: ToolFact::Stated(6.35),
+                stickout: ToolFact::Stated(45.0),
+                flute_count: ToolFact::Stated(2),
                 tool_number: None,
                 tool_material: "carbide".to_owned(),
                 cut_direction: "up_cut".to_owned(),
                 vendor: String::new(),
                 product_id: String::new(),
                 size_units: None,
-                non_centre_cutting: None,
+                centre_cutting: ToolFact::Unknown,
             }],
             models: Vec::new(),
             setups: vec![ProjectSetupSection {

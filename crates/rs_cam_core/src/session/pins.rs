@@ -14,6 +14,14 @@ use crate::selection::CAD_ROUNDING_MM;
 
 use super::ProjectSession;
 
+/// K3: the basis of the pin-drill template's shank diameter.
+const PIN_DRILL_SHANK_BASIS: &str = "pin-drill template: the shank is the drill size";
+/// K3: the basis of the pin-drill template's flute length.
+const PIN_DRILL_REACH_BASIS: &str =
+    "pin-drill template: the flute reaches the stock height plus the spoilboard penetration";
+/// K3: the basis of the pin-drill template's stick-out.
+const PIN_DRILL_STICKOUT_BASIS: &str = "pin-drill template: at least the flute length";
+
 impl ProjectSession {
     /// The models that the pin placer and the wall check call the part
     /// when the operator has not chosen.
@@ -627,13 +635,17 @@ impl ProjectSession {
         tool.id = ToolId::placeholder();
         tool.diameter = diameter;
         tool.shaft_diameter = diameter;
-        tool.set_shank_diameter(ToolFact::Stated(diameter));
-        tool.set_cutting_length(ToolFact::Stated(
+        // K3 (feeds contract P6): the template derives these three facts
+        // from the drill size and the stock, so each is `Estimated`.
+        tool.set_shank_diameter(ToolFact::estimated(diameter, PIN_DRILL_SHANK_BASIS));
+        tool.set_cutting_length(ToolFact::estimated(
             tool.cutting_length_planning_mm().max(reach),
+            PIN_DRILL_REACH_BASIS,
         ));
-        tool.set_stickout(ToolFact::Stated(
+        tool.set_stickout(ToolFact::estimated(
             tool.stickout_planning_mm()
                 .max(tool.cutting_length_planning_mm()),
+            PIN_DRILL_STICKOUT_BASIS,
         ));
         tool.tool_number = self.tools.iter().map(|t| t.tool_number).max().unwrap_or(0) + 1;
         tool.name = if tool.tool_type == ToolType::VBit {

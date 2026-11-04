@@ -69,10 +69,14 @@ fn bulk_bit(non_centre_cutting: bool) -> ToolConfig {
     tool.set_stickout(ToolFact::Stated(45.0));
     tool.set_shank_diameter(ToolFact::Stated(12.0));
     tool.set_flute_count(ToolFact::Stated(2));
-    tool.non_centre_cutting = non_centre_cutting.then_some(NonCentreCuttingGeometry {
-        centre_core_diameter_mm: CORE_MM,
-        blade_protrusion_mm: PROTRUSION_MM,
-    });
+    if non_centre_cutting {
+        tool.set_centre_cutting(ToolFact::Stated(
+            rs_cam_core::compute::tool_config::CentreCutting::No(NonCentreCuttingGeometry {
+                centre_core_diameter_mm: CORE_MM,
+                blade_protrusion_mm: PROTRUSION_MM,
+            }),
+        ));
+    }
     tool
 }
 

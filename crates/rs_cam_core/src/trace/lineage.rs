@@ -7,10 +7,11 @@
 //! - the cut of the op ([`CutSpec`], K1);
 //! - the envelope pick, when the operator picked a point (K2b);
 //! - the stored feeds and speeds with their stamps ([`SpeedBases`]);
-//! - each tool fact that the op read ([`FactUse`]; the state is
-//!   [`FactState::NotRecorded`] until P6 gives `ToolFact`);
+//! - each tool fact that the op read ([`FactUse`]) with its kind
+//!   ([`FactKind`], K3: stated, catalogue, estimated or unknown);
 //! - the entry contract and the entries made ([`EntryLineage`], K4);
-//! - the K6 findings of the generation, each with its consequence;
+//! - the K6 findings of the generation, each with its consequence, and one
+//!   `tool.fact_unknown` warning per Unknown tool fact (K3, decision E5);
 //! - the K5 rule outcomes (empty until P7).
 //!
 //! The session builds it in `JobPhases::finish` from the persisted
@@ -45,7 +46,10 @@ use crate::compute::catalog::{
     Axial, CutSpec, EntryContract, EntryKind, EntryRecord, FirstPass, OperationConfig,
     OperationType, Radial, TotalDepth,
 };
-use crate::compute::tool_config::ToolConfig;
+use crate::compute::tool_config::{
+    FactKind, LEGACY_DEFAULT_SHANK_DIAMETER_MM, LEGACY_DEFAULT_TAPER_HALF_ANGLE_DEG, ToolConfig,
+    ToolType,
+};
 use crate::diagnostics::consequence::{Consequence, Danger, RowKind};
 use crate::feeds::provenance::{FeedsProvenance, ProvenanceSource, ValueProvenance};
 use crate::feeds::sourced::LAW_PICKED;
@@ -161,25 +165,64 @@ impl ToolFactKind {
             Self::Stickout => tool.stickout_planning_mm(),
         }
     }
+
+    /// How the fact is known (K3). The diameter is not a `ToolFact` in
+    /// this plan: it is `Stated` (decision E6).
+    fn kind_of(self, tool: &ToolConfig) -> FactKind {
+        match self {
+            Self::Diameter => FactKind::Stated,
+            Self::FluteCount => tool.flute_count_fact().kind(),
+            Self::FluteLength => tool.cutting_length_fact().kind(),
+            Self::Stickout => tool.stickout_fact().kind(),
+        }
+    }
 }
 
-/// How a tool fact is known. P6 (K3 `ToolFact`) adds the states.
-#[derive(Debug, Clone, Copy, PartialEq, Eq, Serialize)]
-#[serde(rename_all = "snake_case")]
-pub enum FactState {
-    /// The tool record holds the bare value; P6 records how it is known.
-    NotRecorded,
-}
-
-/// One tool fact that the op read, with its bare value.
+/// One tool fact that the op read: the value planning used and how it is
+/// known. An `Unknown` fact's value is its legacy loader default.
 #[derive(Debug, Clone, Copy, PartialEq, Serialize)]
 pub struct FactUse {
     /// The fact.
     pub fact: ToolFactKind,
-    /// The bare value.
+    /// The value planning used.
     pub value: f64,
-    /// How it is known.
-    pub state: FactState,
+    /// How it is known (K3).
+    pub state: FactKind,
+}
+
+/// K3 + K6 (decision E5): one `tool.fact_unknown` text per Unknown fact
+/// that the toolpath used: the facts of [`ToolFactKind::ALL`], the shank
+/// diameter, and the taper half-angle of a tapered tool. The centre-cutting
+/// and V tip facts warn in P7, not here.
+fn unknown_fact_texts(tool: &ToolConfig) -> Vec<String> {
+    let text = |name: &str, value: f64, unit: &str| {
+        let unit = if unit.is_empty() {
+            String::new()
+        } else {
+            format!(" {unit}")
+        };
+        format!("{name} Unknown: planned at the old default ({value}{unit})")
+    };
+    let mut out: Vec<String> = ToolFactKind::ALL
+        .iter()
+        .filter(|f| f.kind_of(tool) == FactKind::Unknown)
+        .map(|f| text(f.label(), f.value_of(tool), f.unit()))
+        .collect();
+    if tool.shank_diameter_fact().is_unknown() {
+        out.push(text(
+            "Shank diameter",
+            LEGACY_DEFAULT_SHANK_DIAMETER_MM,
+            "mm",
+        ));
+    }
+    if tool.tool_type == ToolType::TaperedBallNose && tool.taper_half_angle_fact().is_unknown() {
+        out.push(text(
+            "Taper half-angle",
+            LEGACY_DEFAULT_TAPER_HALF_ANGLE_DEG,
+            "deg",
+        ));
+    }
+    out
 }
 
 /// The entry contract of the op and the entries that the toolpath made.
@@ -212,6 +255,9 @@ pub struct FindingUse {
     /// The consequence of its `diag_ids!` row. `None` for an id that is
     /// not a finding row.
     pub consequence: Option<Consequence>,
+    /// The sentence of the finding, when the lineage writes it (K3
+    /// `tool.fact_unknown`: which fact, and the default it planned at).
+    pub detail: Option<String>,
 }
 
 /// The outcome of one K5 physical rule. P7 adds the variants; until then
@@ -285,12 +331,15 @@ impl Lineage {
                 fresh
             })
             .map(|id| FindingUse {
-                consequence: crate::diagnostics::ids::row_kind(&id).and_then(|k| match k {
-                    RowKind::Finding(c) => Some(c),
-                    RowKind::NotReady => None,
-                }),
+                consequence: consequence_of(&id),
                 id,
+                detail: None,
             })
+            .chain(unknown_fact_texts(tool).into_iter().map(|text| FindingUse {
+                id: crate::diagnostics::ids::TOOL_FACT_UNKNOWN.to_owned(),
+                consequence: consequence_of(crate::diagnostics::ids::TOOL_FACT_UNKNOWN),
+                detail: Some(text),
+            }))
             .collect();
         Self {
             cut: operation.cut_spec(),
@@ -301,7 +350,7 @@ impl Lineage {
                 .map(|f| FactUse {
                     fact: *f,
                     value: f.value_of(tool),
-                    state: FactState::NotRecorded,
+                    state: f.kind_of(tool),
                 })
                 .collect(),
             entry: EntryLineage {
@@ -360,10 +409,20 @@ impl Lineage {
             "findings": self.findings.iter().map(|f| json!({
                 "id": f.id,
                 "consequence": consequence_name(f.consequence),
+                "detail": f.detail,
             })).collect::<Vec<_>>(),
             "rules": Vec::<Value>::new(),
         })
     }
+}
+
+/// The consequence of the `diag_ids!` row of `id`; `None` for an id that is
+/// not a finding row.
+fn consequence_of(id: &str) -> Option<Consequence> {
+    crate::diagnostics::ids::row_kind(id).and_then(|k| match k {
+        RowKind::Finding(c) => Some(c),
+        RowKind::NotReady => None,
+    })
 }
 
 impl Serialize for Lineage {

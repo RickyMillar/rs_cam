@@ -325,8 +325,12 @@ enum AnalysisRequest {
     /// A simulation and its memory estimate for the ledger, in bytes.
     /// `None` means NOT ESTIMATED: the budget has no limit, so the submit
     /// does not spend the time to count.
-    Simulation(SimulationRequest, Option<u64>),
-    Collision(CollisionRequest),
+    ///
+    /// Both requests are boxed: each holds `ToolConfig`s, which K3 (feeds
+    /// contract P6) made larger, and the two sizes differ
+    /// (`large_enum_variant`).
+    Simulation(Box<SimulationRequest>, Option<u64>),
+    Collision(Box<CollisionRequest>),
 }
 
 /// One reach-map walk for the viewport overlay (P5).
@@ -1227,7 +1231,7 @@ impl ComputeBackend for ThreadedComputeBackend {
         let estimate = self.budget.budget().is_limited().then(|| {
             rs_cam_core::budget::estimate::SimulationNeed::of_request(&request.core).bytes()
         });
-        self.submit_analysis(AnalysisRequest::Simulation(request, estimate));
+        self.submit_analysis(AnalysisRequest::Simulation(Box::new(request), estimate));
     }
 
     fn memory_budget(&self) -> MemoryBudget {
@@ -1284,7 +1288,7 @@ impl ComputeBackend for ThreadedComputeBackend {
     }
 
     fn submit_collision(&mut self, request: CollisionRequest) {
-        self.submit_analysis(AnalysisRequest::Collision(request));
+        self.submit_analysis(AnalysisRequest::Collision(Box::new(request)));
     }
 
     /// Latest selection wins: only one answer is ever on screen, so an

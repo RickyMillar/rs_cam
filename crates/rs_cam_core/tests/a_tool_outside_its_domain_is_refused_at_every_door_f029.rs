@@ -103,11 +103,11 @@ fn invalid_non_centre_cutting_param_rolls_back() {
     let _ = session
         .apply(Command::SetToolParam(SetToolParamArgs {
             index: 0,
-            param: "non_centre_cutting".to_owned(),
+            param: "centre_cutting".to_owned(),
             value: valid,
         }))
         .unwrap();
-    let before = session.tools()[0].non_centre_cutting;
+    let before = session.tools()[0].non_centre_cutting_geometry();
     let invalid = serde_json::json!({
         "centre_core_diameter_mm": 7.0,
         "blade_protrusion_mm": 1.0,
@@ -116,12 +116,12 @@ fn invalid_non_centre_cutting_param_rolls_back() {
         session
             .apply(Command::SetToolParam(SetToolParamArgs {
                 index: 0,
-                param: "non_centre_cutting".to_owned(),
+                param: "centre_cutting".to_owned(),
                 value: invalid,
             }))
             .is_err()
     );
-    assert_eq!(session.tools()[0].non_centre_cutting, before);
+    assert_eq!(session.tools()[0].non_centre_cutting_geometry(), before);
     assert_eq!(
         before,
         Some(NonCentreCuttingGeometry {

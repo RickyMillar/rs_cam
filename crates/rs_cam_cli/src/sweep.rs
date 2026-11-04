@@ -398,6 +398,7 @@ fn simulate_and_export(
 mod tests {
     use super::resolve_base_value;
     use crate::job::JobFile;
+    use rs_cam_core::compute::tool_config::ToolFact;
     use rs_cam_core::compute::tool_config::ToolType;
 
     /// A job file with one adaptive3d operation. `min_region_cut_length_mm`
@@ -584,13 +585,13 @@ diagnostics_json = "diag.json"
 type = "end_mill"
 number = 3
 diameter = 6.35
-flute_count = 3
+flute_count = { stated = 3 }
 corner_radius = 0.5
 included_angle = 60.0
-taper_angle = 4.0
+taper_angle = { estimated = 4.0, basis = "a sweep test" }
 shaft_diameter = 3.0
-shank_diameter = 6.0
-stickout = 45.0
+shank_diameter = { catalogue = 6.0, source = "a sweep test row" }
+stickout = { stated = 45.0 }
 
 [[setup]]
 name = "front"
@@ -631,13 +632,25 @@ dogbone = true
         let back: JobFile = toml::from_str(&emitted).unwrap();
 
         let tool = back.tools.get("flat_6mm").unwrap();
-        assert_eq!(tool.shank_diameter, Some(6.0));
-        assert_eq!(tool.stickout, Some(45.0));
+        assert_eq!(
+            tool.shank_diameter,
+            ToolFact::Catalogue {
+                value: 6.0,
+                source: "a sweep test row".to_owned()
+            }
+        );
+        assert_eq!(tool.stickout, ToolFact::Stated(45.0));
         assert_eq!(tool.number, Some(3));
-        assert_eq!(tool.flute_count, Some(3));
+        assert_eq!(tool.flute_count, ToolFact::Stated(3));
         assert_eq!(tool.corner_radius, Some(0.5));
         assert_eq!(tool.included_angle, Some(60.0));
-        assert_eq!(tool.taper_angle, Some(4.0));
+        assert_eq!(
+            tool.taper_angle,
+            ToolFact::Estimated {
+                value: 4.0,
+                basis: "a sweep test".to_owned()
+            }
+        );
         assert_eq!(tool.shaft_diameter, Some(3.0));
         assert_eq!(tool.tool_type, ToolType::EndMill);
         assert_eq!(tool.diameter, 6.35);

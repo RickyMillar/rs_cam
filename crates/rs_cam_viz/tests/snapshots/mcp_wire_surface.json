@@ -417,6 +417,37 @@
       "$schema": "https://json-schema.org/draft/2020-12/schema",
       "additionalProperties": false,
       "properties": {
+        "centre_cutting": {
+          "anyOf": [
+            {
+              "description": "K3 centre cutting of `add_tool`: a stated fact.",
+              "oneOf": [
+                {
+                  "const": "yes",
+                  "description": "The tool cuts at its centre.",
+                  "type": "string"
+                },
+                {
+                  "additionalProperties": false,
+                  "description": "The tool does not cut at its centre: the measured geometry.",
+                  "properties": {
+                    "no": {
+                      "$ref": "#/$defs/NonCentreCuttingGeometryParam"
+                    }
+                  },
+                  "required": [
+                    "no"
+                  ],
+                  "type": "object"
+                }
+              ]
+            },
+            {
+              "type": "null"
+            }
+          ],
+          "description": "K3 centre cutting: \"yes\", or `{\"no\": {centre_core_diameter_mm,\nblade_protrusion_mm}}` (the measured centre core and blade\nprotrusion of a tool that does not cut at its centre). Omit it when\nit is not known (the motion of a centre-cutting tool)."
+        },
         "corner_radius": {
           "description": "**Required for `bull_nose`** — corner radius in mm. Must be > 0\nand <= diameter / 2 (a corner radius of exactly diameter/2 is a\nball nose). Refused when omitted.",
           "format": "double",
@@ -426,7 +457,7 @@
           ]
         },
         "cutting_length": {
-          "description": "Usable cutting-edge length in mm. Default 25.0 — CHECK IT\nagainst your real tool: it caps depth-of-cut and drives the\ndeflection model.",
+          "description": "Usable cutting-edge length in mm: it caps depth-of-cut and drives\nthe deflection model. Omit it when it is not known: the fact is then Unknown, planning uses the old loader default, and the toolpath lineage warns (`tool.fact_unknown`). A value given here is stated.",
           "format": "double",
           "type": [
             "number",
@@ -439,7 +470,7 @@
           "type": "number"
         },
         "flute_count": {
-          "description": "Flute count. Default 2.",
+          "description": "Flute count. Omit it when it is not known: the fact is then Unknown, planning uses the old loader default, and the toolpath lineage warns (`tool.fact_unknown`). A value given here is stated.",
           "format": "uint32",
           "minimum": 0,
           "type": [
@@ -459,17 +490,6 @@
           "description": "Display name for the tool",
           "type": "string"
         },
-        "non_centre_cutting": {
-          "anyOf": [
-            {
-              "$ref": "#/$defs/NonCentreCuttingGeometryParam"
-            },
-            {
-              "type": "null"
-            }
-          ],
-          "description": "Measured centre core and blade protrusion. Omit for a centre-cutting tool."
-        },
         "shaft_diameter": {
           "description": "Cone-base / shaft diameter in mm — the cutting ENVELOPE for a\n`tapered_ball_nose` (`envelope_diameter()` takes the larger of\nthis and `diameter`). Default 6.35.",
           "format": "double",
@@ -479,7 +499,7 @@
           ]
         },
         "shank_diameter": {
-          "description": "Shank diameter in mm (collision + machine collet check).\nDefault 6.35.",
+          "description": "Shank diameter in mm (collision + machine collet check).\nOmit it when it is not known: the fact is then Unknown, planning uses the old loader default, and the toolpath lineage warns (`tool.fact_unknown`). A value given here is stated.",
           "format": "double",
           "type": [
             "number",
@@ -510,7 +530,7 @@
           "description": "The unit the tool's size is SHOWN in: \"metric\" or \"imperial\". Omit\nto infer it from the name (an inch token such as `1/4\"` or `0.25in`\nselects imperial). Display only: every length here is still mm."
         },
         "stickout": {
-          "description": "Tool stickout from the holder in mm — drives the deflection\nmodel. Default 45.0.",
+          "description": "Tool stickout from the holder in mm — drives the deflection\nmodel. Omit it when it is not known: the fact is then Unknown, planning uses the old loader default, and the toolpath lineage warns (`tool.fact_unknown`). A value given here is stated.",
           "format": "double",
           "type": [
             "number",
@@ -7061,8 +7081,8 @@
               "type": "string"
             },
             {
-              "const": "non_centre_cutting",
-              "description": "Measured non-centre-cutting geometry, or `null` for a centre-cutting tool.",
+              "const": "centre_cutting",
+              "description": "K3 centre cutting: \"yes\", an object with `centre_core_diameter_mm`\nand `blade_protrusion_mm` (the tool does not cut at its centre), or\n`null` (not known). A value written here is stated.",
               "type": "string"
             }
           ]

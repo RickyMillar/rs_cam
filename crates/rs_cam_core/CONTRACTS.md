@@ -43,6 +43,17 @@ touches names it in its invariants.
   Sentries: `--test apply_writes_speeds_unless_a_pick_k2b`,
   `--test the_envelope_keeps_each_limit_k2b`,
   `--test a_pick_outside_the_envelope_warns_k2b`, `--doc envelope_refusals`.
+- K3: every tool fact states how it is known (rulings Q7, Q9). `compute/tool_fact.rs`:
+  `ToolFact<T> { Stated, Catalogue, Estimated, Unknown }` (no `Default`, no `Deref`)
+  and `CentreCutting { Yes, No(geometry) }`. The `ToolConfig` fact fields
+  (`cutting_length`, `taper_half_angle`, `shank_diameter`, `stickout`,
+  `flute_count`, `centre_cutting`, `v_tip_diameter`) are private; a reader takes
+  `<fact>_planning_..()` (an `Unknown` fact plans at its `LEGACY_DEFAULT_*`, an F201
+  Unsourced row) or `<fact>_fact()`. A file states each fact as a table; a bare
+  value refuses to load and one message names every bare key (project file, tool
+  library, CLI job file); an absent key is `Unknown`. Sentries:
+  `--test a_tool_fact_states_how_it_is_known_k3`, `--doc tool_fact` (`compile_fail`:
+  a read of a fact field, a `Default`, a `Deref`).
 - K8: every generated toolpath carries its lineage (ruling Q7). `trace/lineage.rs`:
   `Lineage { cut, pick, speeds, tool_facts, entry, findings, rules }` (no `Default`)
   is a required field of `ToolpathComputeResult` (`lineage: Arc<Lineage>`; lead
@@ -50,7 +61,9 @@ touches names it in its invariants.
   `Lineage::of` from the stored `FeedsProvenance` stamps (a "picked" stamp is the
   `PickRecord`), the tool, the entry contract, `Produced::entries` and the
   generation findings with their K6 consequence; it runs no calculator (Q5). A
-  tool fact is `FactState::NotRecorded` until P6; `rules` is empty until P7.
+  tool fact records its `FactKind` (K3; the diameter is `Stated`), and each
+  Unknown fact adds one `tool.fact_unknown` warning (the facts the lineage lists,
+  the shank diameter, and the taper of a tapered tool); `rules` is empty until P7.
   `Lineage::unrecorded` is the test door of a hand-built result. Surfaces: the
   inspector Lineage `Details`, MCP `get_toolpath_lineage`, CLI `summary.json`
   `lineage`. Sentries: `--test every_generated_toolpath_has_a_lineage_k8`,

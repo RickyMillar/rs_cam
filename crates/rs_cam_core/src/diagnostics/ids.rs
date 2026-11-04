@@ -467,6 +467,13 @@ diag_ids! {
     /// set-up, so no door refuses it. Caution tier, one finding per tool,
     /// `Scope::Tool`.
     pub const TOOL_STICKOUT_SHORTER_THAN_FLUTE: &str = "tool.stickout_shorter_than_flute" => warn(Danger::Tool);
+    /// K3 + K6 (feeds contract P6, decision E5): a tool fact that the
+    /// toolpath used is `Unknown`, so planning used the legacy loader
+    /// default (`LEGACY_DEFAULT_*`). One finding per Unknown fact per
+    /// toolpath, recorded in the lineage (`Lineage::of`): the flute length,
+    /// the flute count, the stick-out, the shank diameter, and the taper
+    /// half-angle of a tapered tool. A warning, not a refusal (ruling Q6).
+    pub const TOOL_FACT_UNKNOWN: &str = "tool.fact_unknown" => warn(Danger::Tool);
 
     // ── Surface quality / cycle-time hints ───────────────────────────────
     pub const QUALITY_STEPOVER_OVER_80_PCT: &str = "quality.stepover_over_80_pct_diameter" => INFO;

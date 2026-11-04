@@ -106,7 +106,7 @@ pub fn lineage_rows(l: &Lineage) -> Vec<LineageRow> {
             });
         }
     }
-    // The tool facts (K3: the state comes with P6).
+    // The tool facts (K3): the kind is on hover; no glyph (ruling Q7).
     for f in &l.tool_facts {
         let unit = f.fact.unit();
         let value = if unit.is_empty() {
@@ -118,7 +118,7 @@ pub fn lineage_rows(l: &Lineage) -> Vec<LineageRow> {
             name: f.fact.label().to_owned(),
             value,
             source: None,
-            hover: "The tool record. How the value is known is not recorded yet.".to_owned(),
+            hover: format!("The tool record: {}.", f.state.label()),
         });
     }
     // The entry (K4).
@@ -153,7 +153,12 @@ pub fn lineage_rows(l: &Lineage) -> Vec<LineageRow> {
             hover: l
                 .findings
                 .iter()
-                .map(|f| format!("{} ({})", f.id, consequence_name(f.consequence)))
+                .map(|f| match &f.detail {
+                    Some(detail) => {
+                        format!("{} ({}): {detail}", f.id, consequence_name(f.consequence))
+                    }
+                    None => format!("{} ({})", f.id, consequence_name(f.consequence)),
+                })
                 .collect::<Vec<_>>()
                 .join("\n"),
         });

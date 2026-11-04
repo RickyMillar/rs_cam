@@ -141,16 +141,16 @@ id = 0
 name = "3 mm flat end mill, 2 flute, 3 mm shank, 30 mm stick-out"
 type = "end_mill"
 diameter = 3.0
-cutting_length = 30.0
+cutting_length = { estimated = 30.0, basis = "bare number before K3 (2026-11)" }
 helix_deg = 30.0
 corner_radius_mm = 0.0
 corner_radius = 0.0
 included_angle = 0.0
-taper_half_angle = 0.0
+taper_half_angle = { estimated = 0.0, basis = "bare number before K3 (2026-11)" }
 shaft_diameter = 3.0
-shank_diameter = 3.0
-stickout = 30.0
-flute_count = 2
+shank_diameter = { estimated = 3.0, basis = "bare number before K3 (2026-11)" }
+stickout = { estimated = 30.0, basis = "bare number before K3 (2026-11)" }
+flute_count = { estimated = 2, basis = "bare number before K3 (2026-11)" }
 tool_number = 1
 tool_material = "carbide"
 cut_direction = "up_cut"
@@ -162,16 +162,16 @@ id = 1
 name = "1/4 in flat end mill, 2 flute, 3/4 in flute"
 type = "end_mill"
 diameter = 6.35
-cutting_length = 25.0
+cutting_length = { estimated = 25.0, basis = "bare number before K3 (2026-11)" }
 helix_deg = 30.0
 corner_radius_mm = 0.0
 corner_radius = 0.0
 included_angle = 0.0
-taper_half_angle = 0.0
+taper_half_angle = { estimated = 0.0, basis = "bare number before K3 (2026-11)" }
 shaft_diameter = 6.35
-shank_diameter = 6.35
-stickout = 25.0
-flute_count = 2
+shank_diameter = { estimated = 6.35, basis = "bare number before K3 (2026-11)" }
+stickout = { estimated = 25.0, basis = "bare number before K3 (2026-11)" }
+flute_count = { estimated = 2, basis = "bare number before K3 (2026-11)" }
 tool_number = 2
 tool_material = "carbide"
 cut_direction = "up_cut"
@@ -183,16 +183,16 @@ id = 2
 name = "1/8 in ball end mill, 2 flute"
 type = "ball_nose"
 diameter = 3.175
-cutting_length = 15.0
+cutting_length = { estimated = 15.0, basis = "bare number before K3 (2026-11)" }
 helix_deg = 30.0
 corner_radius_mm = 0.0
 corner_radius = 0.0
 included_angle = 0.0
-taper_half_angle = 0.0
+taper_half_angle = { estimated = 0.0, basis = "bare number before K3 (2026-11)" }
 shaft_diameter = 3.175
-shank_diameter = 3.175
-stickout = 15.0
-flute_count = 2
+shank_diameter = { estimated = 3.175, basis = "bare number before K3 (2026-11)" }
+stickout = { estimated = 15.0, basis = "bare number before K3 (2026-11)" }
+flute_count = { estimated = 2, basis = "bare number before K3 (2026-11)" }
 tool_number = 3
 tool_material = "carbide"
 cut_direction = "up_cut"
@@ -204,16 +204,16 @@ id = 3
 name = "6 mm twist drill, 118 deg point"
 type = "v_bit"
 diameter = 6.0
-cutting_length = 40.0
+cutting_length = { estimated = 40.0, basis = "bare number before K3 (2026-11)" }
 helix_deg = 30.0
 corner_radius_mm = 0.0
 corner_radius = 0.0
 included_angle = 118.0
-taper_half_angle = 0.0
+taper_half_angle = { estimated = 0.0, basis = "bare number before K3 (2026-11)" }
 shaft_diameter = 6.0
-shank_diameter = 6.0
-stickout = 45.0
-flute_count = 2
+shank_diameter = { estimated = 6.0, basis = "bare number before K3 (2026-11)" }
+stickout = { estimated = 45.0, basis = "bare number before K3 (2026-11)" }
+flute_count = { estimated = 2, basis = "bare number before K3 (2026-11)" }
 tool_number = 4
 tool_material = "carbide"
 cut_direction = "up_cut"
@@ -225,16 +225,16 @@ id = 4
 name = "DSA1F-D6.0-L25 6 mm flat, 1 flute"
 type = "end_mill"
 diameter = 6.0
-cutting_length = 25.0
+cutting_length = { estimated = 25.0, basis = "bare number before K3 (2026-11)" }
 helix_deg = 30.0
 corner_radius_mm = 0.0
 corner_radius = 0.0
 included_angle = 0.0
-taper_half_angle = 0.0
+taper_half_angle = { estimated = 0.0, basis = "bare number before K3 (2026-11)" }
 shaft_diameter = 6.0
-shank_diameter = 6.0
-stickout = 30.0
-flute_count = 1
+shank_diameter = { estimated = 6.0, basis = "bare number before K3 (2026-11)" }
+stickout = { estimated = 30.0, basis = "bare number before K3 (2026-11)" }
+flute_count = { estimated = 1, basis = "bare number before K3 (2026-11)" }
 tool_number = 5
 tool_material = "carbide"
 cut_direction = "up_cut"
@@ -247,16 +247,16 @@ id = 5
 name = "DSP1F-D3.1-L22 3.1 mm flat, 1 flute"
 type = "end_mill"
 diameter = 3.1
-cutting_length = 22.0
+cutting_length = { estimated = 22.0, basis = "bare number before K3 (2026-11)" }
 helix_deg = 30.0
 corner_radius_mm = 0.0
 corner_radius = 0.0
 included_angle = 0.0
-taper_half_angle = 0.0
+taper_half_angle = { estimated = 0.0, basis = "bare number before K3 (2026-11)" }
 shaft_diameter = 3.1
-shank_diameter = 3.175
-stickout = 27.0
-flute_count = 1
+shank_diameter = { estimated = 3.175, basis = "bare number before K3 (2026-11)" }
+stickout = { estimated = 27.0, basis = "bare number before K3 (2026-11)" }
+flute_count = { estimated = 1, basis = "bare number before K3 (2026-11)" }
 tool_number = 6
 tool_material = "carbide"
 cut_direction = "up_cut"
@@ -269,16 +269,16 @@ id = 6
 name = "P2B-R3.0-H6 6 mm ball (R3), 2 flute"
 type = "ball_nose"
 diameter = 6.0
-cutting_length = 6.0
+cutting_length = { estimated = 6.0, basis = "bare number before K3 (2026-11)" }
 helix_deg = 30.0
 corner_radius_mm = 0.0
 corner_radius = 0.0
 included_angle = 0.0
-taper_half_angle = 0.0
+taper_half_angle = { estimated = 0.0, basis = "bare number before K3 (2026-11)" }
 shaft_diameter = 6.0
-shank_diameter = 6.0
-stickout = 20.0
-flute_count = 2
+shank_diameter = { estimated = 6.0, basis = "bare number before K3 (2026-11)" }
+stickout = { estimated = 20.0, basis = "bare number before K3 (2026-11)" }
+flute_count = { estimated = 2, basis = "bare number before K3 (2026-11)" }
 tool_number = 7
 tool_material = "carbide"
 cut_direction = "up_cut"
@@ -291,16 +291,16 @@ id = 7
 name = "6 mm flat, long reach (pin holes)"
 type = "end_mill"
 diameter = 6.0
-cutting_length = 25.0
+cutting_length = { estimated = 25.0, basis = "bare number before K3 (2026-11)" }
 helix_deg = 30.0
 corner_radius_mm = 0.0
 corner_radius = 0.0
 included_angle = 0.0
-taper_half_angle = 0.0
+taper_half_angle = { estimated = 0.0, basis = "bare number before K3 (2026-11)" }
 shaft_diameter = 6.0
-shank_diameter = 6.0
-stickout = 36.0
-flute_count = 1
+shank_diameter = { estimated = 6.0, basis = "bare number before K3 (2026-11)" }
+stickout = { estimated = 36.0, basis = "bare number before K3 (2026-11)" }
+flute_count = { estimated = 1, basis = "bare number before K3 (2026-11)" }
 tool_number = 8
 tool_material = "carbide"
 cut_direction = "up_cut"

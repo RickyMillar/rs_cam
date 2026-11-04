@@ -43,6 +43,10 @@ pub enum ToolLibraryError {
     },
     #[error("failed to parse catalog {0:?}: {1}")]
     Parse(String, toml::de::Error),
+    /// K3 (ruling Q9): the catalog holds a tool fact as a bare value, or
+    /// the retired key `non_centre_cutting`. One refusal names every key.
+    #[error("catalog {catalog:?}: {text}")]
+    ToolFacts { catalog: String, text: String },
     #[error("failed to serialize catalog {0:?}: {1}")]
     Serialize(String, toml::ser::Error),
     /// F029: a tool in the catalog is outside its domain
@@ -112,12 +116,55 @@ pub fn load_from(dir: &Path, name: &str) -> Result<ToolCatalog, ToolLibraryError
         name: name.to_owned(),
         source,
     })?;
+    let raw: toml::Value =
+        toml::from_str(&text).map_err(|e| ToolLibraryError::Parse(name.to_owned(), e))?;
+    check_tool_facts(name, &raw)?;
     let catalog: ToolCatalog =
         toml::from_str(&text).map_err(|e| ToolLibraryError::Parse(name.to_owned(), e))?;
     for tool in &catalog.tools {
         check_tool(name, tool)?;
     }
     Ok(catalog)
+}
+
+/// K3 (ruling Q9): refuse a catalog with a bare tool fact or the retired key
+/// `non_centre_cutting`; the one text names every such key. The project file
+/// reads the same rule (`compute::tool_config::bare_fact_keys`).
+fn check_tool_facts(catalog: &str, raw: &toml::Value) -> Result<(), ToolLibraryError> {
+    let tools: Vec<(String, &toml::Value)> = raw
+        .get("tools")
+        .and_then(toml::Value::as_array)
+        .into_iter()
+        .flatten()
+        .enumerate()
+        .map(|(i, t)| (format!("tools[{i}]"), t))
+        .collect();
+    let mut parts = Vec::new();
+    let bare =
+        crate::compute::tool_config::bare_fact_keys(tools.iter().map(|(p, t)| (p.clone(), *t)));
+    if !bare.is_empty() {
+        parts.push(crate::compute::tool_config::bare_facts_text(&bare));
+    }
+    let retired: Vec<String> = tools
+        .iter()
+        .filter(|(_, t)| t.get("non_centre_cutting").is_some())
+        .map(|(p, _)| format!("{p}.non_centre_cutting"))
+        .collect();
+    if !retired.is_empty() {
+        parts.push(format!(
+            "retired key {}: write centre_cutting = {{ stated = \"no\", centre_core_diameter_mm = \
+             .., blade_protrusion_mm = .. }} or {{ stated = \"yes\" }}",
+            retired.join(", ")
+        ));
+    }
+    if parts.is_empty() {
+        Ok(())
+    } else {
+        Err(ToolLibraryError::ToolFacts {
+            catalog: catalog.to_owned(),
+            text: parts.join("; "),
+        })
+    }
 }
 
 /// F029: the check every catalog writer runs on the tool it writes, so a

@@ -64,16 +64,16 @@ id = 1
 name = "End Mill 6mm"
 type = "end_mill"
 diameter = 6.0
-cutting_length = 25.0
+cutting_length = { estimated = 25.0, basis = "bare number before K3 (2026-11)" }
 helix_deg = 30.0
 corner_radius_mm = 0.0
 corner_radius = 0.0
 included_angle = 90.0
-taper_half_angle = 15.0
+taper_half_angle = { estimated = 15.0, basis = "bare number before K3 (2026-11)" }
 shaft_diameter = 6.35
-shank_diameter = 6.35
-stickout = 45.0
-flute_count = 2
+shank_diameter = { estimated = 6.35, basis = "bare number before K3 (2026-11)" }
+stickout = { estimated = 45.0, basis = "bare number before K3 (2026-11)" }
+flute_count = { estimated = 2, basis = "bare number before K3 (2026-11)" }
 tool_number = 1
 tool_material = "carbide"
 cut_direction = "up_cut"
@@ -85,16 +85,16 @@ id = 2
 name = "Ball Nose 3mm"
 type = "ball_nose"
 diameter = 3.0
-cutting_length = 15.0
+cutting_length = { estimated = 15.0, basis = "bare number before K3 (2026-11)" }
 helix_deg = 30.0
 corner_radius_mm = 1.5
 corner_radius = 1.5
 included_angle = 90.0
-taper_half_angle = 15.0
+taper_half_angle = { estimated = 15.0, basis = "bare number before K3 (2026-11)" }
 shaft_diameter = 3.175
-shank_diameter = 3.175
-stickout = 25.0
-flute_count = 2
+shank_diameter = { estimated = 3.175, basis = "bare number before K3 (2026-11)" }
+stickout = { estimated = 25.0, basis = "bare number before K3 (2026-11)" }
+flute_count = { estimated = 2, basis = "bare number before K3 (2026-11)" }
 tool_number = 2
 tool_material = "carbide"
 cut_direction = "up_cut"

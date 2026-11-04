@@ -12,7 +12,7 @@ use super::{
 use crate::compute::catalog::OperationConfig;
 use crate::compute::config::{BoundaryConfig, DressupConfig, HeightsConfig, StockSource};
 use crate::compute::stock_config::{ModelKind, ModelUnits, StockConfig};
-use crate::compute::tool_config::{ToolConfig, ToolFact, ToolId, ToolType};
+use crate::compute::tool_config::{ToolConfig, ToolFact, ToolId, ToolRecord, ToolType};
 use crate::compute::transform::{FaceUp, ZRotation};
 use crate::gcode::CoolantMode;
 use crate::ids::{ModelId, SetupId};
@@ -188,6 +188,14 @@ const RETIRED_KEYS: &[RetiredKey] = &[
         key: "kc",
         replacement: "Removed (ruling B6): a custom material has no force line and no Kc. \
                       Delete the key",
+    },
+    RetiredKey {
+        table: &["tools", "[]"],
+        key: "non_centre_cutting",
+        replacement: "Removed (K3, feeds contract P6): write centre_cutting = { stated = \"no\", \
+                      centre_core_diameter_mm = .., blade_protrusion_mm = .. } for a tool that \
+                      does not cut at its centre, or { stated = \"yes\" }; with no key the tool \
+                      is not known to cut at its centre. Delete the key",
     },
     RetiredKey {
         table: &["tools", "[]"],
@@ -542,6 +550,24 @@ fn retired_op_entries(raw: &toml::Value) -> Vec<super::RetiredKeyFound> {
     found
 }
 
+/// K3 (ruling Q9): refuse a project file that holds a tool fact as a bare
+/// value. ONE refusal names every bare key in the file.
+fn check_bare_tool_facts(raw: &toml::Value) -> Result<(), SessionError> {
+    let tools = raw.get("tools").and_then(toml::Value::as_array);
+    let found = crate::compute::tool_config::bare_fact_keys(
+        tools
+            .into_iter()
+            .flatten()
+            .enumerate()
+            .map(|(i, t)| (format!("tools[{i}]"), t)),
+    );
+    if found.is_empty() {
+        Ok(())
+    } else {
+        Err(SessionError::BareToolFacts(found))
+    }
+}
+
 impl ProjectFile {
     /// Parse a project file from its text. This is the one text door:
     /// it refuses a format that is not 3 and a retired key
@@ -566,6 +592,7 @@ impl ProjectFile {
             return Err(SessionError::UnsupportedFormatVersion { found });
         }
         check_retired_keys(&raw)?;
+        check_bare_tool_facts(&raw)?;
         // The second parse keeps the line and column in a typed error.
         toml::from_str(text).map_err(|e| SessionError::TomlParse(e.to_string()))
     }
@@ -874,8 +901,11 @@ pub struct ProjectToolSection {
     pub tool_type: String,
     #[serde(default = "default_tool_diameter")]
     pub diameter: f64,
-    #[serde(default = "default_cutting_length")]
-    pub cutting_length: f64,
+    #[serde(
+        default = "ToolFact::unknown",
+        skip_serializing_if = "ToolFact::is_unknown"
+    )]
+    pub cutting_length: ToolFact<f64>,
     #[serde(default = "default_helix_deg")]
     pub helix_deg: f64,
     #[serde(default)]
@@ -884,16 +914,33 @@ pub struct ProjectToolSection {
     pub corner_radius: f64,
     #[serde(default = "default_included_angle")]
     pub included_angle: f64,
-    #[serde(default = "default_taper_half_angle")]
-    pub taper_half_angle: f64,
+    #[serde(
+        default = "ToolFact::unknown",
+        skip_serializing_if = "ToolFact::is_unknown"
+    )]
+    pub v_tip_diameter: ToolFact<f64>,
+    #[serde(
+        default = "ToolFact::unknown",
+        skip_serializing_if = "ToolFact::is_unknown"
+    )]
+    pub taper_half_angle: ToolFact<f64>,
     #[serde(default = "default_shaft_diameter")]
     pub shaft_diameter: f64,
-    #[serde(default = "default_shank_diameter")]
-    pub shank_diameter: f64,
-    #[serde(default = "default_stickout")]
-    pub stickout: f64,
-    #[serde(default = "default_flute_count")]
-    pub flute_count: u32,
+    #[serde(
+        default = "ToolFact::unknown",
+        skip_serializing_if = "ToolFact::is_unknown"
+    )]
+    pub shank_diameter: ToolFact<f64>,
+    #[serde(
+        default = "ToolFact::unknown",
+        skip_serializing_if = "ToolFact::is_unknown"
+    )]
+    pub stickout: ToolFact<f64>,
+    #[serde(
+        default = "ToolFact::unknown",
+        skip_serializing_if = "ToolFact::is_unknown"
+    )]
+    pub flute_count: ToolFact<u32>,
     #[serde(default)]
     pub tool_number: Option<usize>,
     #[serde(default = "default_tool_material")]
@@ -908,8 +955,16 @@ pub struct ProjectToolSection {
     /// "infer from the name". Display only: every length above is mm.
     #[serde(default, skip_serializing_if = "Option::is_none")]
     pub size_units: Option<crate::compute::tool_config::SizeUnits>,
-    #[serde(default, skip_serializing_if = "Option::is_none")]
-    pub non_centre_cutting: Option<crate::compute::NonCentreCuttingGeometry>,
+    /// K3: `{ stated = "yes" }` or `{ stated = "no", centre_core_diameter_mm
+    /// = .., blade_protrusion_mm = .. }` (or the catalogue and estimated
+    /// forms); an absent key is `Unknown`. The key `non_centre_cutting`
+    /// is retired (`RETIRED_KEYS`).
+    #[serde(
+        default = "ToolFact::unknown",
+        skip_serializing_if = "ToolFact::is_unknown",
+        with = "crate::compute::tool_config::centre_cutting_serde"
+    )]
+    pub centre_cutting: ToolFact<crate::compute::tool_config::CentreCutting>,
 }
 
 fn default_tool_name() -> String {
@@ -921,9 +976,6 @@ fn default_tool_type_str() -> String {
 fn default_tool_diameter() -> f64 {
     6.35
 }
-fn default_cutting_length() -> f64 {
-    crate::compute::tool_config::LEGACY_DEFAULT_CUTTING_LENGTH_MM
-}
 fn default_helix_deg() -> f64 {
     30.0
 }
@@ -933,20 +985,8 @@ fn default_corner_radius() -> f64 {
 fn default_included_angle() -> f64 {
     90.0
 }
-fn default_taper_half_angle() -> f64 {
-    crate::compute::tool_config::LEGACY_DEFAULT_TAPER_HALF_ANGLE_DEG
-}
 fn default_shaft_diameter() -> f64 {
     6.35
-}
-fn default_shank_diameter() -> f64 {
-    crate::compute::tool_config::LEGACY_DEFAULT_SHANK_DIAMETER_MM
-}
-fn default_stickout() -> f64 {
-    crate::compute::tool_config::LEGACY_DEFAULT_STICKOUT_MM
-}
-fn default_flute_count() -> u32 {
-    crate::compute::tool_config::LEGACY_DEFAULT_FLUTE_COUNT
 }
 fn default_tool_material() -> String {
     "carbide".to_owned()
@@ -1220,31 +1260,33 @@ pub(crate) fn tool_from_project_section(
     // A section with no id takes its position: the loader is the allocator.
     let tool_id = ts.id.unwrap_or(ToolId::mint(idx));
     let tool_number = ts.tool_number.unwrap_or(tool_id.raw() + 1) as u32;
-    // Feeds contract P6 (commit B): the fact fields are private, so the
-    // loader starts from `new_default` and writes EVERY field below (the
-    // `normalize_geometry` of `new_default` is overwritten). Commit C gives
-    // each fact the kind the file states; B writes `Stated`.
-    let tool_type = parse_tool_type(&ts.tool_type, &ts.name, warnings);
-    let mut tool = ToolConfig::new_default(tool_id, tool_type);
-    tool.name = ts.name.clone();
-    tool.tool_number = tool_number;
-    tool.diameter = ts.diameter;
-    tool.set_cutting_length(ToolFact::Stated(ts.cutting_length));
-    tool.helix_deg = ts.helix_deg;
-    tool.corner_radius_mm = ts.corner_radius_mm;
-    tool.corner_radius = ts.corner_radius;
-    tool.included_angle = ts.included_angle;
-    tool.set_taper_half_angle(ToolFact::Stated(ts.taper_half_angle));
-    tool.shaft_diameter = ts.shaft_diameter;
-    tool.set_shank_diameter(ToolFact::Stated(ts.shank_diameter));
-    tool.set_stickout(ToolFact::Stated(ts.stickout));
-    tool.set_flute_count(ToolFact::Stated(ts.flute_count));
-    tool.tool_material = parse_tool_material(&ts.tool_material, &ts.name, warnings);
-    tool.cut_direction = parse_cut_direction(&ts.cut_direction, &ts.name, warnings);
-    tool.vendor = ts.vendor.clone();
-    tool.product_id = ts.product_id.clone();
-    tool.size_units = ts.size_units;
-    tool.non_centre_cutting = ts.non_centre_cutting;
+    // K3 (feeds contract P6): each fact has the kind the file states. The
+    // record literal names every field (no `..`), so a new `ToolConfig`
+    // field does not compile here until the loader states it.
+    let tool = ToolConfig::from_record(ToolRecord {
+        id: tool_id,
+        name: ts.name.clone(),
+        tool_number,
+        tool_type: parse_tool_type(&ts.tool_type, &ts.name, warnings),
+        diameter: ts.diameter,
+        cutting_length: ts.cutting_length.clone(),
+        helix_deg: ts.helix_deg,
+        corner_radius_mm: ts.corner_radius_mm,
+        corner_radius: ts.corner_radius,
+        included_angle: ts.included_angle,
+        v_tip_diameter: ts.v_tip_diameter.clone(),
+        taper_half_angle: ts.taper_half_angle.clone(),
+        shaft_diameter: ts.shaft_diameter,
+        shank_diameter: ts.shank_diameter.clone(),
+        stickout: ts.stickout.clone(),
+        flute_count: ts.flute_count.clone(),
+        tool_material: parse_tool_material(&ts.tool_material, &ts.name, warnings),
+        cut_direction: parse_cut_direction(&ts.cut_direction, &ts.name, warnings),
+        vendor: ts.vendor.clone(),
+        product_id: ts.product_id.clone(),
+        size_units: ts.size_units,
+        centre_cutting: ts.centre_cutting.clone(),
+    });
     // FC0 item 7 (decision D4 = warn, ruling Q6): no refusal.
     if tool.stickout_shorter_than_flute() {
         warnings.push(ProjectLoadWarning::StickoutShorterThanFlute {

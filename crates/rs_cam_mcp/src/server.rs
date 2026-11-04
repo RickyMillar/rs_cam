@@ -1401,8 +1401,10 @@ pub enum ToolParamKeyParam {
     /// The display unit: "metric" or "imperial". It changes no stored
     /// length and invalidates nothing.
     SizeUnits,
-    /// Measured non-centre-cutting geometry, or `null` for a centre-cutting tool.
-    NonCentreCutting,
+    /// K3 centre cutting: "yes", an object with `centre_core_diameter_mm`
+    /// and `blade_protrusion_mm` (the tool does not cut at its centre), or
+    /// `null` (not known). A value written here is stated.
+    CentreCutting,
 }
 
 impl From<ToolParamKeyParam> for ToolParamKey {
@@ -1422,7 +1424,7 @@ impl From<ToolParamKeyParam> for ToolParamKey {
             ToolParamKeyParam::ToolMaterial => Self::ToolMaterial,
             ToolParamKeyParam::CutDirection => Self::CutDirection,
             ToolParamKeyParam::SizeUnits => Self::SizeUnits,
-            ToolParamKeyParam::NonCentreCutting => Self::NonCentreCutting,
+            ToolParamKeyParam::CentreCutting => Self::CentreCutting,
         }
     }
 }
@@ -1451,7 +1453,7 @@ impl From<ToolParamKey> for ToolParamKeyParam {
             ToolParamKey::ToolMaterial => Self::ToolMaterial,
             ToolParamKey::CutDirection => Self::CutDirection,
             ToolParamKey::SizeUnits => Self::SizeUnits,
-            ToolParamKey::NonCentreCutting => Self::NonCentreCutting,
+            ToolParamKey::CentreCutting => Self::CentreCutting,
         }
     }
 }
@@ -1673,21 +1675,20 @@ pub struct AddToolParam {
     /// and <= diameter / 2 (a corner radius of exactly diameter/2 is a
     /// ball nose). Refused when omitted.
     pub corner_radius: Option<f64>,
-    /// Flute count. Default 2.
+    /// Flute count. Omit it when it is not known: the fact is then Unknown, planning uses the old loader default, and the toolpath lineage warns (`tool.fact_unknown`). A value given here is stated.
     pub flute_count: Option<u32>,
-    /// Usable cutting-edge length in mm. Default 25.0 — CHECK IT
-    /// against your real tool: it caps depth-of-cut and drives the
-    /// deflection model.
+    /// Usable cutting-edge length in mm: it caps depth-of-cut and drives
+    /// the deflection model. Omit it when it is not known: the fact is then Unknown, planning uses the old loader default, and the toolpath lineage warns (`tool.fact_unknown`). A value given here is stated.
     pub cutting_length: Option<f64>,
     /// Cone-base / shaft diameter in mm — the cutting ENVELOPE for a
     /// `tapered_ball_nose` (`envelope_diameter()` takes the larger of
     /// this and `diameter`). Default 6.35.
     pub shaft_diameter: Option<f64>,
     /// Shank diameter in mm (collision + machine collet check).
-    /// Default 6.35.
+    /// Omit it when it is not known: the fact is then Unknown, planning uses the old loader default, and the toolpath lineage warns (`tool.fact_unknown`). A value given here is stated.
     pub shank_diameter: Option<f64>,
     /// Tool stickout from the holder in mm — drives the deflection
-    /// model. Default 45.0.
+    /// model. Omit it when it is not known: the fact is then Unknown, planning uses the old loader default, and the toolpath lineage warns (`tool.fact_unknown`). A value given here is stated.
     pub stickout: Option<f64>,
     /// G-code tool number for M6 output. Omit to auto-allocate the
     /// next free number in the project (distinct numbers are what make
@@ -1698,8 +1699,31 @@ pub struct AddToolParam {
     /// to infer it from the name (an inch token such as `1/4"` or `0.25in`
     /// selects imperial). Display only: every length here is still mm.
     pub size_units: Option<SizeUnitsParam>,
-    /// Measured centre core and blade protrusion. Omit for a centre-cutting tool.
-    pub non_centre_cutting: Option<NonCentreCuttingGeometryParam>,
+    /// K3 centre cutting: "yes", or `{"no": {centre_core_diameter_mm,
+    /// blade_protrusion_mm}}` (the measured centre core and blade
+    /// protrusion of a tool that does not cut at its centre). Omit it when
+    /// it is not known (the motion of a centre-cutting tool).
+    pub centre_cutting: Option<CentreCuttingParam>,
+}
+
+/// K3 centre cutting of `add_tool`: a stated fact.
+#[derive(Deserialize, schemars::JsonSchema, Clone, Debug, PartialEq)]
+#[serde(rename_all = "snake_case", deny_unknown_fields)]
+#[schemars(inline)]
+pub enum CentreCuttingParam {
+    /// The tool cuts at its centre.
+    Yes,
+    /// The tool does not cut at its centre: the measured geometry.
+    No(NonCentreCuttingGeometryParam),
+}
+
+impl From<CentreCuttingParam> for rs_cam_core::compute::tool_config::CentreCutting {
+    fn from(value: CentreCuttingParam) -> Self {
+        match value {
+            CentreCuttingParam::Yes => Self::Yes,
+            CentreCuttingParam::No(geometry) => Self::No(geometry.into()),
+        }
+    }
 }
 
 /// Measured geometry of a non-centre-cutting tool.
@@ -3589,10 +3613,11 @@ pub fn build_tool_config(spec: &AddToolParam) -> Result<BuiltTool, String> {
     config.name = spec.name.clone();
     config.diameter = spec.diameter;
 
-    // Rule 2 — clear the geometry this type does not own.
+    // Rule 2 — clear the geometry this type does not own. K3: a cleared
+    // taper half-angle is not a fact (`Unknown`).
     config.corner_radius = 0.0;
     config.included_angle = 0.0;
-    config.set_taper_half_angle(ToolFact::Stated(0.0));
+    config.set_taper_half_angle(ToolFact::Unknown);
 
     // Rule 1 — the defining geometry, per type.
     match tool_type {
@@ -3627,12 +3652,17 @@ pub fn build_tool_config(spec: &AddToolParam) -> Result<BuiltTool, String> {
     // Rule 3 — everything else: honour the override, name the default.
     let mut defaulted: Vec<&'static str> = Vec::new();
 
-    // K3 (feeds contract P6): a stated value is `ToolFact::Stated`.
+    // K3 (feeds contract P6): an omitted fact is `Unknown` (it plans at
+    // the legacy loader default and the lineage warns); it is still named
+    // in `defaulted`.
     macro_rules! apply_fact {
         ($setter:ident, $field:ident, $name:literal) => {
             match spec.$field {
                 Some(v) => config.$setter(ToolFact::Stated(v)),
-                None => defaulted.push($name),
+                None => {
+                    config.$setter(ToolFact::Unknown);
+                    defaulted.push($name);
+                }
             }
         };
     }
@@ -3649,7 +3679,11 @@ pub fn build_tool_config(spec: &AddToolParam) -> Result<BuiltTool, String> {
     // Display only, so never reported as defaulted: `None` infers the
     // unit from the name.
     config.size_units = spec.size_units.map(Into::into);
-    config.non_centre_cutting = spec.non_centre_cutting.clone().map(Into::into);
+    config.set_centre_cutting(
+        spec.centre_cutting
+            .clone()
+            .map_or(ToolFact::Unknown, |c| ToolFact::Stated(c.into())),
+    );
 
     config
         .validate()
@@ -4794,7 +4828,7 @@ mod tests {
         let built = build_tool_config(&add_tool_spec("end_mill", 6.0)).unwrap();
         assert_eq!(built.config.corner_radius, 0.0);
         assert_eq!(built.config.included_angle, 0.0);
-        assert_eq!(built.config.taper_half_angle_planning_deg(), 0.0);
+        assert!(built.config.taper_half_angle_fact().is_unknown());
 
         let spec = AddToolParam {
             taper_half_angle: Some(5.6),
@@ -4833,20 +4867,23 @@ mod tests {
     #[test]
     fn non_centre_cutting_reaches_the_tool_builder() {
         let spec = AddToolParam {
-            non_centre_cutting: Some(NonCentreCuttingGeometryParam {
+            centre_cutting: Some(CentreCuttingParam::No(NonCentreCuttingGeometryParam {
                 centre_core_diameter_mm: 3.0,
                 blade_protrusion_mm: 1.0,
-            }),
+            })),
             ..add_tool_spec("end_mill", 6.0)
         };
         let built = build_tool_config(&spec).unwrap();
         assert_eq!(
-            built.config.non_centre_cutting,
+            built.config.non_centre_cutting_geometry(),
             Some(rs_cam_core::compute::NonCentreCuttingGeometry {
                 centre_core_diameter_mm: 3.0,
                 blade_protrusion_mm: 1.0,
             })
         );
+        // K3: an omitted centre-cutting fact is Unknown, not "centre cutting".
+        let plain = build_tool_config(&add_tool_spec("end_mill", 6.0)).unwrap();
+        assert!(plain.config.centre_cutting_fact().is_unknown());
     }
 
     /// Defaults that remain are NAMED, so "25 mm of cutting length" can

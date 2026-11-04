@@ -91,6 +91,19 @@ session" section of `feeds_contract_2026-11-03/STATUS.md`. P11 (the
 engagement force model, chip first, limits that follow the feed) then needs
 the chip-thinning ruling (D11).
 
+Phase 6 (K3, `ToolFact`) landed in three commits (2026-11-04): A (db86f0b66)
+added the type, the `_planning_` readers and the test builder; B (7db25cb25)
+made the fact fields private behind setters; C stores each fact as a
+`ToolFact` (stated, catalogue, estimated or unknown). A bare number in a project
+file, a tool library or a CLI job file refuses to load, and one message names
+every bare key; `scripts/migrate_tool_facts_k3.py` rewrote 136 checked-in files
+(each bare fact became `estimated`). `centre_cutting` replaces
+`non_centre_cutting` (retired key); no key now means not known, not centre
+cutting. An unknown fact plans at its legacy loader default (five new F201
+Unsourced rows, pin 149 -> 154) and the lineage warns (`tool.fact_unknown`).
+The operator's `~/.config/rs_cam/tools/` catalogue waits for the lead
+(`--backup`).
+
 ## Update 2026-10-29 — viewport parity: phase 0 landed
 
 `planning/viewport_parity_2026-10-28/` (research REPORT.md, design A-F,

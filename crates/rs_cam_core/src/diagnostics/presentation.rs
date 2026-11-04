@@ -602,6 +602,11 @@ pub const TABLE: &[(&str, Anchor, &str)] = &[
         "Stick-out shorter than the flute",
     ),
     (
+        ids::TOOL_FACT_UNKNOWN,
+        TOOL,
+        "Tool fact unknown: planned at the old default",
+    ),
+    (
         ids::QUALITY_STEPOVER_OVER_80_PCT,
         NOTE,
         "Wide stepover can leave ridges",

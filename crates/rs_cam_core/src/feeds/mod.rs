@@ -3398,6 +3398,9 @@ pub fn formula_constants() -> Vec<FormulaConstant> {
         crate::compute::catalog::ENTRY_PLUNGE_FIRST_FEED_FRACTION,
         crate::compute::catalog::ENTRY_PLUNGE_FALLBACK_MM_MIN,
     ]);
+    // K3 (feeds contract P6, decision E4): the legacy loader default of
+    // each tool fact. An `Unknown` fact plans at it (`tool.fact_unknown`).
+    rows.extend(crate::compute::tool_config::LEGACY_DEFAULT_ROWS);
     rows.extend([
         MAX_SPINDLE_SPEEDUP_ROW,
         // P5 (K2b, card rows 25 and 27): the pass 3 move budget and the

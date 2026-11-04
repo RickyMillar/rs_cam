@@ -71,7 +71,7 @@ id = 0
 name = "6 mm End Mill"
 type = "end_mill"
 diameter = 6.0
-cutting_length = 20.0
+cutting_length = { stated = 20.0 }
 
 [[models]]
 id = 0

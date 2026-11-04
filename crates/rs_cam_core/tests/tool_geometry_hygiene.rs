@@ -125,16 +125,16 @@ name = "R0.5mm x 6mm x 20mm 2F Tapered Ball"
 tool_number = 6
 tool_type = "tapered_ball_nose"
 diameter = 1.0
-cutting_length = 20.0
+cutting_length = { stated = 20.0 }
 helix_deg = 30.0
 corner_radius_mm = 2.0
 corner_radius = 2.0
 included_angle = 90.0
-taper_half_angle = 7.1
+taper_half_angle = { stated = 7.1 }
 shaft_diameter = 6.0
-shank_diameter = 6.0
-stickout = 35.0
-flute_count = 2
+shank_diameter = { stated = 6.0 }
+stickout = { stated = 35.0 }
+flute_count = { stated = 2 }
 tool_material = "carbide"
 cut_direction = "up_cut"
 vendor = "endmill.com.au"

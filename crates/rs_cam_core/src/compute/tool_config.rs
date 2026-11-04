@@ -5,7 +5,11 @@ use crate::tool::size_units::{self, MM_PER_INCH};
 pub use crate::tool::{ToolDimension, ToolGeometryError};
 
 /// CONTRACT K3 (feeds contract P6): the tool-fact type lives in `tool_fact.rs`.
-pub use super::tool_fact::{CentreCutting, FactKind, ToolFact};
+pub use super::tool_fact::{
+    CentreCutting, FACT_FORMS, FACT_KEYS, FactKind, NEW_DEFAULT_BASIS, ToolFact, bare_fact_keys,
+    bare_facts_text, centre_cutting_serde,
+};
+use crate::material::FormulaConstant;
 
 /// The array of every variant of a unit enum, with a compile-time proof that
 /// the list is complete (F162). Write `all_variants!(Type: A, B, C)`; the
@@ -196,14 +200,14 @@ pub enum ToolParamKey {
     ToolMaterial,
     CutDirection,
     SizeUnits,
-    NonCentreCutting,
+    CentreCutting,
 }
 
 impl ToolParamKey {
     pub const ALL: &[ToolParamKey] = &crate::all_variants!(ToolParamKey:
         Diameter, CuttingLength, HelixDeg, CornerRadiusMm, CornerRadius,
         IncludedAngle, TaperHalfAngle, ShaftDiameter, ShankDiameter, Stickout,
-        FluteCount, ToolMaterial, CutDirection, SizeUnits, NonCentreCutting,
+        FluteCount, ToolMaterial, CutDirection, SizeUnits, CentreCutting,
     );
 
     /// The snake_case token: the serde form and the [`ToolConfig`] field
@@ -225,7 +229,7 @@ impl ToolParamKey {
             Self::ToolMaterial => "tool_material",
             Self::CutDirection => "cut_direction",
             Self::SizeUnits => "size_units",
-            Self::NonCentreCutting => "non_centre_cutting",
+            Self::CentreCutting => "centre_cutting",
         }
     }
 
@@ -252,6 +256,12 @@ impl ToolParamKey {
 
     /// Write `value` into the field of `tool` that this key names.
     ///
+    /// K3 (feeds contract P6): a tool fact written here is
+    /// `ToolFact::Stated` (an operator edit). `centre_cutting` takes
+    /// `"yes"`, an object with `centre_core_diameter_mm` and
+    /// `blade_protrusion_mm` (the tool does not cut at its centre), or `null`
+    /// (not known).
+    ///
     /// The write checks only the JSON type of `value`. The caller runs
     /// [`ToolConfig::validate`] on the result (F029), so a value outside
     /// its domain refuses there.
@@ -266,22 +276,41 @@ impl ToolParamKey {
                 .ok_or_else(|| format!("{} must be a number (got {value})", self.token()))?;
             Ok(())
         };
+        let stated = || -> Result<ToolFact<f64>, String> {
+            value
+                .as_f64()
+                .map(ToolFact::Stated)
+                .ok_or_else(|| format!("{} must be a number (got {value})", self.token()))
+        };
         match self {
             Self::Diameter => number(&mut tool.diameter),
-            Self::CuttingLength => number(&mut tool.cutting_length),
+            Self::CuttingLength => {
+                tool.set_cutting_length(stated()?);
+                Ok(())
+            }
             Self::HelixDeg => number(&mut tool.helix_deg),
             Self::CornerRadiusMm => number(&mut tool.corner_radius_mm),
             Self::CornerRadius => number(&mut tool.corner_radius),
             Self::IncludedAngle => number(&mut tool.included_angle),
-            Self::TaperHalfAngle => number(&mut tool.taper_half_angle),
+            Self::TaperHalfAngle => {
+                tool.set_taper_half_angle(stated()?);
+                Ok(())
+            }
             Self::ShaftDiameter => number(&mut tool.shaft_diameter),
-            Self::ShankDiameter => number(&mut tool.shank_diameter),
-            Self::Stickout => number(&mut tool.stickout),
+            Self::ShankDiameter => {
+                tool.set_shank_diameter(stated()?);
+                Ok(())
+            }
+            Self::Stickout => {
+                tool.set_stickout(stated()?);
+                Ok(())
+            }
             Self::FluteCount => {
-                tool.flute_count = value
+                let count = value
                     .as_u64()
                     .and_then(|v| u32::try_from(v).ok())
                     .ok_or_else(|| format!("flute_count must be a whole number (got {value})"))?;
+                tool.set_flute_count(ToolFact::Stated(count));
                 Ok(())
             }
             Self::ToolMaterial => {
@@ -305,13 +334,23 @@ impl ToolParamKey {
                 })?);
                 Ok(())
             }
-            Self::NonCentreCutting => {
-                tool.non_centre_cutting = serde_json::from_value(value.clone()).map_err(|e| {
-                    format!(
-                        "non_centre_cutting must be an object with centre_core_diameter_mm and \
-                         blade_protrusion_mm, or null (got {value}: {e})"
-                    )
-                })?;
+            Self::CentreCutting => {
+                let fact = if value.is_null() {
+                    ToolFact::Unknown
+                } else if value.as_str() == Some("yes") {
+                    ToolFact::Stated(CentreCutting::Yes)
+                } else {
+                    let geometry: NonCentreCuttingGeometry = serde_json::from_value(value.clone())
+                        .map_err(|e| {
+                            format!(
+                                "centre_cutting must be \"yes\", an object with \
+                                 centre_core_diameter_mm and blade_protrusion_mm (the tool does \
+                                 not cut at its centre), or null (not known) (got {value}: {e})"
+                            )
+                        })?;
+                    ToolFact::Stated(CentreCutting::No(geometry))
+                };
+                tool.set_centre_cutting(fact);
                 Ok(())
             }
         }
@@ -445,40 +484,73 @@ pub const NON_CENTRE_CUTTING_TOL_MM: f64 = 0.02;
 
 // ── K3 legacy loader defaults (feeds contract P6, decision E4) ─────────
 //
-// Copied from the `default_*` functions of `session/project_file.rs`,
-// which now return these constants. No file in the repo prints them;
-// commit C makes them F201 `FormulaConstant`s marked Unsourced.
+// The `default_*` functions of `session/project_file.rs` held these numbers
+// before K3 (moved by copy in commit B). An `Unknown` fact plans at its
+// default (`<fact>_planning_..()`), and the lineage marks it with a
+// `tool.fact_unknown` warning. No file in the repo prints them: each is an
+// F201 row marked Unsourced (`feeds::formula_constants`).
 
-/// The legacy project-loader default of the flute (cutting) length, mm (the old
-/// `session::project_file::default_cutting_length`). An `Unknown` fact plans at it.
+const LEGACY_DEFAULT_CLAIM: &str = "the project-loader default before K3 (feeds contract P6)";
+
+/// The legacy loader default of the flute (cutting) length, mm.
 pub const LEGACY_DEFAULT_CUTTING_LENGTH_MM: f64 = 25.0;
 
-/// The legacy project-loader default of the taper half-angle, degrees (the old
-/// `session::project_file::default_taper_half_angle`). An `Unknown` fact plans at it.
+/// F201: the legacy loader default of the flute (cutting) length, mm ([`LEGACY_DEFAULT_CUTTING_LENGTH_MM`]).
+pub const LEGACY_DEFAULT_CUTTING_LENGTH_MM_ROW: FormulaConstant = FormulaConstant::unsourced(
+    "compute.tool_config.LEGACY_DEFAULT_CUTTING_LENGTH_MM",
+    LEGACY_DEFAULT_CUTTING_LENGTH_MM,
+    LEGACY_DEFAULT_CLAIM,
+);
+
+/// The legacy loader default of the taper half-angle, degrees.
 pub const LEGACY_DEFAULT_TAPER_HALF_ANGLE_DEG: f64 = 15.0;
 
-/// The legacy project-loader default of the shank diameter, mm (the old
-/// `session::project_file::default_shank_diameter`). An `Unknown` fact plans at it.
+/// F201: the legacy loader default of the taper half-angle, degrees ([`LEGACY_DEFAULT_TAPER_HALF_ANGLE_DEG`]).
+pub const LEGACY_DEFAULT_TAPER_HALF_ANGLE_DEG_ROW: FormulaConstant = FormulaConstant::unsourced(
+    "compute.tool_config.LEGACY_DEFAULT_TAPER_HALF_ANGLE_DEG",
+    LEGACY_DEFAULT_TAPER_HALF_ANGLE_DEG,
+    LEGACY_DEFAULT_CLAIM,
+);
+
+/// The legacy loader default of the shank diameter, mm.
 pub const LEGACY_DEFAULT_SHANK_DIAMETER_MM: f64 = 6.35;
 
-/// The legacy project-loader default of the stick-out, mm (the old
-/// `session::project_file::default_stickout`). An `Unknown` fact plans at it.
+/// F201: the legacy loader default of the shank diameter, mm ([`LEGACY_DEFAULT_SHANK_DIAMETER_MM`]).
+pub const LEGACY_DEFAULT_SHANK_DIAMETER_MM_ROW: FormulaConstant = FormulaConstant::unsourced(
+    "compute.tool_config.LEGACY_DEFAULT_SHANK_DIAMETER_MM",
+    LEGACY_DEFAULT_SHANK_DIAMETER_MM,
+    LEGACY_DEFAULT_CLAIM,
+);
+
+/// The legacy loader default of the stick-out, mm.
 pub const LEGACY_DEFAULT_STICKOUT_MM: f64 = 45.0;
 
-/// The legacy project-loader default of the flute count (the old
-/// `session::project_file::default_flute_count`). An `Unknown` fact plans at it.
+/// F201: the legacy loader default of the stick-out, mm ([`LEGACY_DEFAULT_STICKOUT_MM`]).
+pub const LEGACY_DEFAULT_STICKOUT_MM_ROW: FormulaConstant = FormulaConstant::unsourced(
+    "compute.tool_config.LEGACY_DEFAULT_STICKOUT_MM",
+    LEGACY_DEFAULT_STICKOUT_MM,
+    LEGACY_DEFAULT_CLAIM,
+);
+
+/// The legacy loader default of the flute count. A count, so it is a `u32`;
+/// [`LEGACY_DEFAULT_FLUTE_COUNT_ROW`] holds the same number for F201 (a unit test holds the two equal).
 pub const LEGACY_DEFAULT_FLUTE_COUNT: u32 = 2;
 
-/// Commit B of P6: the stored value of a fact. `Unknown` gives the legacy
-/// loader default; commit C stores the fact and deletes this function.
-fn value_or_legacy<T>(fact: ToolFact<T>, legacy: T) -> T {
-    match fact {
-        ToolFact::Stated(value)
-        | ToolFact::Catalogue { value, .. }
-        | ToolFact::Estimated { value, .. } => value,
-        ToolFact::Unknown => legacy,
-    }
-}
+/// F201: the legacy loader default of the flute count.
+pub const LEGACY_DEFAULT_FLUTE_COUNT_ROW: FormulaConstant = FormulaConstant::unsourced(
+    "compute.tool_config.LEGACY_DEFAULT_FLUTE_COUNT",
+    LEGACY_DEFAULT_FLUTE_COUNT as f64,
+    LEGACY_DEFAULT_CLAIM,
+);
+
+/// The five F201 rows of the legacy loader defaults.
+pub const LEGACY_DEFAULT_ROWS: [FormulaConstant; 5] = [
+    LEGACY_DEFAULT_CUTTING_LENGTH_MM_ROW,
+    LEGACY_DEFAULT_TAPER_HALF_ANGLE_DEG_ROW,
+    LEGACY_DEFAULT_SHANK_DIAMETER_MM_ROW,
+    LEGACY_DEFAULT_STICKOUT_MM_ROW,
+    LEGACY_DEFAULT_FLUTE_COUNT_ROW,
+];
 
 /// Complete tool configuration.
 #[derive(Debug, Clone, PartialEq, Serialize, Deserialize)]
@@ -489,7 +561,12 @@ pub struct ToolConfig {
     pub tool_number: u32,
     pub tool_type: ToolType,
     pub diameter: f64,
-    cutting_length: f64,
+    /// K3: the flute (cutting) length, mm.
+    #[serde(
+        default = "ToolFact::unknown",
+        skip_serializing_if = "ToolFact::is_unknown"
+    )]
+    cutting_length: ToolFact<f64>,
     #[serde(default = "default_helix_deg")]
     pub helix_deg: f64,
     #[serde(default)]
@@ -498,14 +575,41 @@ pub struct ToolConfig {
     pub corner_radius: f64,
     // V-Bit (included angle in degrees)
     pub included_angle: f64,
+    /// K3: the V-bit tip flat diameter, mm. P6 adds the fact (Unknown by
+    /// default); P7 (VTipFlat) reads it.
+    #[serde(
+        default = "ToolFact::unknown",
+        skip_serializing_if = "ToolFact::is_unknown"
+    )]
+    v_tip_diameter: ToolFact<f64>,
     // Tapered Ball Nose (half-angle in degrees)
-    taper_half_angle: f64,
+    /// K3: the taper half-angle, degrees.
+    #[serde(
+        default = "ToolFact::unknown",
+        skip_serializing_if = "ToolFact::is_unknown"
+    )]
+    taper_half_angle: ToolFact<f64>,
     pub shaft_diameter: f64,
     // Shank / collision detection (H1: the holder is the machine head)
-    shank_diameter: f64,
-    stickout: f64,
+    /// K3: the shank diameter, mm.
+    #[serde(
+        default = "ToolFact::unknown",
+        skip_serializing_if = "ToolFact::is_unknown"
+    )]
+    shank_diameter: ToolFact<f64>,
+    /// K3: the stick-out from the holder face, mm.
+    #[serde(
+        default = "ToolFact::unknown",
+        skip_serializing_if = "ToolFact::is_unknown"
+    )]
+    stickout: ToolFact<f64>,
     // Cutting parameters (for feeds calculation)
-    flute_count: u32,
+    /// K3: the flute count.
+    #[serde(
+        default = "ToolFact::unknown",
+        skip_serializing_if = "ToolFact::is_unknown"
+    )]
+    flute_count: ToolFact<u32>,
     pub tool_material: ToolMaterial,
     pub cut_direction: BitCutDirection,
     // Optional vendor info
@@ -516,9 +620,100 @@ pub struct ToolConfig {
     /// display and entry convention only: every length above is in mm.
     #[serde(default, skip_serializing_if = "Option::is_none")]
     pub size_units: Option<SizeUnits>,
-    /// Measured centre core and blade protrusion. `None` means centre cutting.
-    #[serde(default, skip_serializing_if = "Option::is_none")]
-    pub non_centre_cutting: Option<NonCentreCuttingGeometry>,
+    /// K3: does the tool cut at its centre? `No` holds the measured centre
+    /// core and blade protrusion. `Unknown` plans as a centre-cutting tool
+    /// (the motion before K3); P7 (PlungeKnown) warns on it.
+    #[serde(
+        default = "ToolFact::unknown",
+        skip_serializing_if = "ToolFact::is_unknown",
+        with = "super::tool_fact::centre_cutting_serde"
+    )]
+    centre_cutting: ToolFact<CentreCutting>,
+}
+
+/// Every field of a [`ToolConfig`], for a loader (review note 1 of P6
+/// commit B). [`ToolConfig::from_record`] builds the tool with a struct
+/// literal and the loader writes a `ToolRecord` literal, both with no `..`,
+/// so a new field does not compile until each loader states it.
+#[derive(Debug, Clone, PartialEq)]
+pub struct ToolRecord {
+    pub id: ToolId,
+    pub name: String,
+    pub tool_number: u32,
+    pub tool_type: ToolType,
+    pub diameter: f64,
+    pub cutting_length: ToolFact<f64>,
+    pub helix_deg: f64,
+    pub corner_radius_mm: f64,
+    pub corner_radius: f64,
+    pub included_angle: f64,
+    pub v_tip_diameter: ToolFact<f64>,
+    pub taper_half_angle: ToolFact<f64>,
+    pub shaft_diameter: f64,
+    pub shank_diameter: ToolFact<f64>,
+    pub stickout: ToolFact<f64>,
+    pub flute_count: ToolFact<u32>,
+    pub tool_material: ToolMaterial,
+    pub cut_direction: BitCutDirection,
+    pub vendor: String,
+    pub product_id: String,
+    pub size_units: Option<SizeUnits>,
+    pub centre_cutting: ToolFact<CentreCutting>,
+}
+
+impl ToolConfig {
+    /// The tool of a loader's record: every field as the record states it.
+    #[must_use]
+    pub fn from_record(record: ToolRecord) -> Self {
+        let ToolRecord {
+            id,
+            name,
+            tool_number,
+            tool_type,
+            diameter,
+            cutting_length,
+            helix_deg,
+            corner_radius_mm,
+            corner_radius,
+            included_angle,
+            v_tip_diameter,
+            taper_half_angle,
+            shaft_diameter,
+            shank_diameter,
+            stickout,
+            flute_count,
+            tool_material,
+            cut_direction,
+            vendor,
+            product_id,
+            size_units,
+            centre_cutting,
+        } = record;
+        Self {
+            id,
+            name,
+            tool_number,
+            tool_type,
+            diameter,
+            cutting_length,
+            helix_deg,
+            corner_radius_mm,
+            corner_radius,
+            included_angle,
+            v_tip_diameter,
+            taper_half_angle,
+            shaft_diameter,
+            shank_diameter,
+            stickout,
+            flute_count,
+            tool_material,
+            cut_direction,
+            vendor,
+            product_id,
+            size_units,
+            centre_cutting,
+        }
+    }
 }
 
 fn default_helix_deg() -> f64 {
@@ -540,22 +735,23 @@ impl ToolConfig {
             tool_number: id.raw() as u32 + 1,
             tool_type,
             diameter,
-            cutting_length: 25.0,
+            cutting_length: ToolFact::estimated(25.0, NEW_DEFAULT_BASIS),
             helix_deg: default_helix_deg(),
             corner_radius_mm: 0.0,
             corner_radius: 2.0,
             included_angle: 90.0,
-            taper_half_angle: 15.0,
+            v_tip_diameter: ToolFact::Unknown,
+            taper_half_angle: ToolFact::estimated(15.0, NEW_DEFAULT_BASIS),
             shaft_diameter: 6.35,
-            shank_diameter: 6.35,
-            stickout: 45.0,
-            flute_count: 2,
+            shank_diameter: ToolFact::estimated(6.35, NEW_DEFAULT_BASIS),
+            stickout: ToolFact::estimated(45.0, NEW_DEFAULT_BASIS),
+            flute_count: ToolFact::estimated(2, NEW_DEFAULT_BASIS),
             tool_material: ToolMaterial::Carbide,
             cut_direction: BitCutDirection::UpCut,
             vendor: String::new(),
             product_id: String::new(),
             size_units: None,
-            non_centre_cutting: None,
+            centre_cutting: ToolFact::Unknown,
         };
         // The block above is the canonical geometry of each type, but
         // it was written type-AGNOSTICALLY: every tool got corner
@@ -571,66 +767,114 @@ impl ToolConfig {
 
     // ── K3 readers (feeds contract P6, decision E2) ────────────────────
     //
-    // The value that planning uses for each tool fact. Commit A: each
-    // reader returns the field. Commit C stores a `ToolFact` and the
-    // reader gives the stated, catalogue or estimated value, else the
-    // legacy loader default. Read a fact through these readers, not
-    // through the field.
+    // Two readers per fact. `<fact>_fact()` gives the fact with its kind
+    // (the lineage, the rules). `<fact>_planning_..()` gives the value that
+    // planning uses: the stated, catalogue or estimated value, else the
+    // legacy loader default (`LEGACY_DEFAULT_*`, the ONE default per fact).
+    // The lineage records the kind and warns on each `Unknown` fact
+    // (`tool.fact_unknown`), so a planning reader does not carry it.
 
     /// The stick-out (mm) that planning uses.
     pub fn stickout_planning_mm(&self) -> f64 {
-        self.stickout
+        self.stickout.value_or(LEGACY_DEFAULT_STICKOUT_MM)
     }
 
     /// The flute (cutting) length (mm) that planning uses.
     pub fn cutting_length_planning_mm(&self) -> f64 {
         self.cutting_length
+            .value_or(LEGACY_DEFAULT_CUTTING_LENGTH_MM)
     }
 
     /// The shank diameter (mm) that planning uses.
     pub fn shank_diameter_planning_mm(&self) -> f64 {
         self.shank_diameter
+            .value_or(LEGACY_DEFAULT_SHANK_DIAMETER_MM)
     }
 
     /// The taper half-angle (degrees) that planning uses.
     pub fn taper_half_angle_planning_deg(&self) -> f64 {
         self.taper_half_angle
+            .value_or(LEGACY_DEFAULT_TAPER_HALF_ANGLE_DEG)
     }
 
     /// The flute count that planning uses.
     pub fn flute_count_planning(&self) -> u32 {
-        self.flute_count
+        self.flute_count.value_or(LEGACY_DEFAULT_FLUTE_COUNT)
+    }
+
+    /// The stick-out fact.
+    pub fn stickout_fact(&self) -> &ToolFact<f64> {
+        &self.stickout
+    }
+
+    /// The flute (cutting) length fact.
+    pub fn cutting_length_fact(&self) -> &ToolFact<f64> {
+        &self.cutting_length
+    }
+
+    /// The shank diameter fact.
+    pub fn shank_diameter_fact(&self) -> &ToolFact<f64> {
+        &self.shank_diameter
+    }
+
+    /// The taper half-angle fact.
+    pub fn taper_half_angle_fact(&self) -> &ToolFact<f64> {
+        &self.taper_half_angle
+    }
+
+    /// The flute count fact.
+    pub fn flute_count_fact(&self) -> &ToolFact<u32> {
+        &self.flute_count
+    }
+
+    /// The centre-cutting fact.
+    pub fn centre_cutting_fact(&self) -> &ToolFact<CentreCutting> {
+        &self.centre_cutting
+    }
+
+    /// The V-bit tip flat diameter fact (P7 reads it).
+    pub fn v_tip_diameter_fact(&self) -> &ToolFact<f64> {
+        &self.v_tip_diameter
     }
 
     // ── K3 setters (feeds contract P6, decision E3) ─────────────────────
     //
-    // Commit B: each setter stores the value of the fact, and `Unknown`
-    // stores the legacy loader default. Commit C stores the fact itself.
-    // A GUI, MCP, CLI or session edit writes `ToolFact::Stated`.
+    // Each setter stores the fact. A GUI, MCP, CLI or session edit writes
+    // `ToolFact::Stated`; a loader writes the kind its file states.
 
     /// Set the stick-out (mm).
     pub fn set_stickout(&mut self, fact: ToolFact<f64>) {
-        self.stickout = value_or_legacy(fact, LEGACY_DEFAULT_STICKOUT_MM);
+        self.stickout = fact;
     }
 
     /// Set the flute (cutting) length (mm).
     pub fn set_cutting_length(&mut self, fact: ToolFact<f64>) {
-        self.cutting_length = value_or_legacy(fact, LEGACY_DEFAULT_CUTTING_LENGTH_MM);
+        self.cutting_length = fact;
     }
 
     /// Set the shank diameter (mm).
     pub fn set_shank_diameter(&mut self, fact: ToolFact<f64>) {
-        self.shank_diameter = value_or_legacy(fact, LEGACY_DEFAULT_SHANK_DIAMETER_MM);
+        self.shank_diameter = fact;
     }
 
     /// Set the taper half-angle (degrees).
     pub fn set_taper_half_angle(&mut self, fact: ToolFact<f64>) {
-        self.taper_half_angle = value_or_legacy(fact, LEGACY_DEFAULT_TAPER_HALF_ANGLE_DEG);
+        self.taper_half_angle = fact;
     }
 
     /// Set the flute count.
     pub fn set_flute_count(&mut self, fact: ToolFact<u32>) {
-        self.flute_count = value_or_legacy(fact, LEGACY_DEFAULT_FLUTE_COUNT);
+        self.flute_count = fact;
+    }
+
+    /// Set the centre-cutting fact.
+    pub fn set_centre_cutting(&mut self, fact: ToolFact<CentreCutting>) {
+        self.centre_cutting = fact;
+    }
+
+    /// Set the V-bit tip flat diameter (mm).
+    pub fn set_v_tip_diameter(&mut self, fact: ToolFact<f64>) {
+        self.v_tip_diameter = fact;
     }
 
     /// Stable equality key for de-duplicating tools within a catalog.
@@ -648,6 +892,11 @@ impl ToolConfig {
     ///   the tool is mounted, not what it is), `vendor`, `product_id` and
     ///   `size_units` (display only).
     ///
+    /// K3 (feeds contract P6): a fact enters the key by its planning value,
+    /// never by its kind: the same tool, measured or not, is one tool. IN:
+    /// `centre_cutting` (yes, no with its geometry, or unknown) and
+    /// `v_tip_diameter`.
+    ///
     /// The destructure names every field with no `..`, so a new
     /// `ToolConfig` field does not compile until someone puts it IN or OUT.
     /// Lengths format at 0.001 mm and angles at 0.01 degree, so a float
@@ -664,6 +913,7 @@ impl ToolConfig {
             corner_radius_mm,
             corner_radius,
             included_angle,
+            v_tip_diameter,
             taper_half_angle,
             shaft_diameter,
             shank_diameter,
@@ -674,22 +924,28 @@ impl ToolConfig {
             vendor: _,
             product_id: _,
             size_units: _,
-            non_centre_cutting,
+            centre_cutting,
         } = self;
-        let non_centre_cutting = non_centre_cutting.map_or_else(
-            || "centre_cutting".to_owned(),
-            |geometry| {
-                format!(
-                    "non_centre:{:.3}:{:.3}",
-                    geometry.centre_core_diameter_mm, geometry.blade_protrusion_mm
-                )
-            },
-        );
+        let cutting_length = cutting_length.value_or(LEGACY_DEFAULT_CUTTING_LENGTH_MM);
+        let taper_half_angle = taper_half_angle.value_or(LEGACY_DEFAULT_TAPER_HALF_ANGLE_DEG);
+        let shank_diameter = shank_diameter.value_or(LEGACY_DEFAULT_SHANK_DIAMETER_MM);
+        let flute_count = flute_count.value_or(LEGACY_DEFAULT_FLUTE_COUNT);
+        let v_tip = v_tip_diameter
+            .planning()
+            .map_or_else(|| "v_tip_unknown".to_owned(), |(v, _)| format!("{v:.3}"));
+        let non_centre_cutting = match centre_cutting.planning() {
+            None => "centre_unknown".to_owned(),
+            Some((CentreCutting::Yes, _)) => "centre_cutting".to_owned(),
+            Some((CentreCutting::No(geometry), _)) => format!(
+                "non_centre:{:.3}:{:.3}",
+                geometry.centre_core_diameter_mm, geometry.blade_protrusion_mm
+            ),
+        };
         format!(
             "{tool_type:?}|{diameter:.3}|{flute_count}|{cutting_length:.3}|{taper_half_angle:.2}|\
              {included_angle:.2}|{corner_radius:.3}|{corner_radius_mm:.3}|{shaft_diameter:.3}|\
              {shank_diameter:.3}|{helix_deg:.2}|{tool_material:?}|{cut_direction:?}|\
-             {non_centre_cutting}",
+             {non_centre_cutting}|{v_tip}",
         )
     }
 
@@ -713,7 +969,7 @@ impl ToolConfig {
         ToolDimension::FluteCount.check(f64::from(self.flute_count_planning()), d)?;
         ToolDimension::ShankDiameter.check(self.shank_diameter_planning_mm(), d)?;
         ToolDimension::Stickout.check(self.stickout_planning_mm(), d)?;
-        if let Some(geometry) = self.non_centre_cutting {
+        if let Some(geometry) = self.non_centre_cutting_geometry() {
             ToolDimension::CentreCoreDiameterMm.check(geometry.centre_core_diameter_mm, d)?;
             ToolDimension::BladeProtrusionMm.check(geometry.blade_protrusion_mm, d)?;
         }
@@ -751,9 +1007,21 @@ impl ToolConfig {
         )
     }
 
-    /// Limits for this non-centre-cutting tool, if it has measured geometry.
+    /// The measured geometry of a non-centre-cutting tool: `Some` only for
+    /// a `CentreCutting::No(..)` fact of any known kind. `Yes` and `Unknown`
+    /// give `None`; an `Unknown` tool plans as a centre-cutting tool (the
+    /// motion before K3), and P7 (PlungeKnown) warns on it.
+    pub fn non_centre_cutting_geometry(&self) -> Option<NonCentreCuttingGeometry> {
+        match self.centre_cutting.planning() {
+            Some((CentreCutting::No(geometry), _)) => Some(*geometry),
+            Some((CentreCutting::Yes, _)) | None => None,
+        }
+    }
+
+    /// Limits for this non-centre-cutting tool: `Some` only for a
+    /// `CentreCutting::No(..)` fact ([`Self::non_centre_cutting_geometry`]).
     pub fn non_centre_cutting_limits(&self) -> Option<NonCentreCuttingLimits> {
-        self.non_centre_cutting
+        self.non_centre_cutting_geometry()
             .map(NonCentreCuttingGeometry::limits)
     }
 
@@ -1347,18 +1615,28 @@ impl ToolGeometryField {
         )
     }
 
+    /// The value of this field on `tool`. K3: an `Unknown` taper half-angle
+    /// reads 0, the value of geometry the tool does not have.
     pub fn value_of(self, tool: &ToolConfig) -> f64 {
         match self {
             ToolGeometryField::CornerRadiusMm => tool.corner_radius_mm,
             ToolGeometryField::CornerRadius => tool.corner_radius,
             ToolGeometryField::IncludedAngle => tool.included_angle,
-            ToolGeometryField::TaperHalfAngle => tool.taper_half_angle_planning_deg(),
+            ToolGeometryField::TaperHalfAngle => tool.taper_half_angle.value_or(0.0),
             ToolGeometryField::ShaftDiameter => tool.shaft_diameter,
         }
     }
 
+    /// K3: a cleared taper half-angle is `Unknown` (no fact); every other
+    /// field is 0.
     fn clear_on(self, tool: &mut ToolConfig) {
-        self.set_on(tool, 0.0);
+        match self {
+            ToolGeometryField::TaperHalfAngle => tool.taper_half_angle = ToolFact::Unknown,
+            ToolGeometryField::CornerRadiusMm
+            | ToolGeometryField::CornerRadius
+            | ToolGeometryField::IncludedAngle
+            | ToolGeometryField::ShaftDiameter => self.set_on(tool, 0.0),
+        }
     }
 
     /// Write this field on `tool`.
@@ -1376,12 +1654,17 @@ impl ToolGeometryField {
     /// reachable from a combo box). See
     /// `ui/properties/tool.rs`'s type selector, which pairs
     /// [`ToolConfig::missing_defining_geometry`] with this.
+    ///
+    /// K3: the taper half-angle is a tool fact; the value comes from
+    /// `new_default`, so this writes it `Estimated` with that basis.
     pub fn set_on(self, tool: &mut ToolConfig, value: f64) {
         match self {
             ToolGeometryField::CornerRadiusMm => tool.corner_radius_mm = value,
             ToolGeometryField::CornerRadius => tool.corner_radius = value,
             ToolGeometryField::IncludedAngle => tool.included_angle = value,
-            ToolGeometryField::TaperHalfAngle => tool.taper_half_angle = value,
+            ToolGeometryField::TaperHalfAngle => {
+                tool.taper_half_angle = ToolFact::estimated(value, NEW_DEFAULT_BASIS);
+            }
             ToolGeometryField::ShaftDiameter => tool.shaft_diameter = value,
         }
     }
@@ -1885,8 +2168,9 @@ fn read_unit(chars: &[char], from: usize) -> (NameUnit, usize) {
 #[cfg(any(test, feature = "test-support"))]
 impl ToolConfig {
     /// The test-tool builder: it starts from [`Self::new_default`] and a
-    /// test states each fact in one call. Commit A: each setter writes the
-    /// plain field. Commit C makes each fact setter write `ToolFact::Stated`.
+    /// test states each fact in one call. Each fact setter writes
+    /// `ToolFact::Stated`; a fact with no setter call keeps its `new_default`
+    /// kind (`Estimated`, basis `new_default`).
     pub fn builder(id: ToolId, tool_type: ToolType) -> ToolConfigBuilder {
         ToolConfigBuilder {
             tool: Self::new_default(id, tool_type),
@@ -1915,6 +2199,7 @@ impl ToolConfig {
             corner_radius_mm: _,
             corner_radius: _,
             included_angle: _,
+            v_tip_diameter: _,
             taper_half_angle: _,
             shaft_diameter: _,
             shank_diameter: _,
@@ -1925,7 +2210,7 @@ impl ToolConfig {
             vendor: _,
             product_id: _,
             size_units: _,
-            non_centre_cutting: _,
+            centre_cutting: _,
         } = ToolConfig::new_default(ToolId::from_raw(0), ToolType::EndMill);
         vec![
             "id",
@@ -1938,6 +2223,7 @@ impl ToolConfig {
             "corner_radius_mm",
             "corner_radius",
             "included_angle",
+            "v_tip_diameter",
             "taper_half_angle",
             "shaft_diameter",
             "shank_diameter",
@@ -1948,7 +2234,7 @@ impl ToolConfig {
             "vendor",
             "product_id",
             "size_units",
-            "non_centre_cutting",
+            "centre_cutting",
         ]
     }
 }
@@ -2003,9 +2289,13 @@ impl ToolConfigBuilder {
         self
     }
 
-    /// The optional non-centre-cutting geometry, as the field holds it.
+    /// The non-centre-cutting geometry: `Some` states `CentreCutting::No`;
+    /// `None` leaves the fact `Unknown` (the motion of a centre-cutting
+    /// tool, as `None` gave before K3).
     pub fn non_centre_cutting(mut self, geometry: Option<NonCentreCuttingGeometry>) -> Self {
-        self.tool.non_centre_cutting = geometry;
+        self.tool.centre_cutting = geometry.map_or(ToolFact::Unknown, |g| {
+            ToolFact::Stated(CentreCutting::No(g))
+        });
         self
     }
 
@@ -2016,37 +2306,43 @@ impl ToolConfigBuilder {
 
     /// The flute (cutting) length, mm.
     pub fn flute_mm(mut self, cutting_length_mm: f64) -> Self {
-        self.tool.cutting_length = cutting_length_mm;
+        self.tool.cutting_length = ToolFact::Stated(cutting_length_mm);
         self
     }
 
     pub fn stickout_mm(mut self, stickout_mm: f64) -> Self {
-        self.tool.stickout = stickout_mm;
+        self.tool.stickout = ToolFact::Stated(stickout_mm);
         self
     }
 
     pub fn shank_mm(mut self, shank_diameter_mm: f64) -> Self {
-        self.tool.shank_diameter = shank_diameter_mm;
+        self.tool.shank_diameter = ToolFact::Stated(shank_diameter_mm);
         self
     }
 
     pub fn flutes(mut self, flute_count: u32) -> Self {
-        self.tool.flute_count = flute_count;
+        self.tool.flute_count = ToolFact::Stated(flute_count);
         self
     }
 
     pub fn taper_half_angle_deg(mut self, taper_half_angle_deg: f64) -> Self {
-        self.tool.taper_half_angle = taper_half_angle_deg;
+        self.tool.taper_half_angle = ToolFact::Stated(taper_half_angle_deg);
         self
     }
 
     /// The tool does not cut at its centre: the measured centre core
     /// diameter and blade protrusion, mm.
     pub fn non_centre(mut self, centre_core_diameter_mm: f64, blade_protrusion_mm: f64) -> Self {
-        self.tool.non_centre_cutting = Some(NonCentreCuttingGeometry {
+        self.tool.centre_cutting = ToolFact::Stated(CentreCutting::No(NonCentreCuttingGeometry {
             centre_core_diameter_mm,
             blade_protrusion_mm,
-        });
+        }));
+        self
+    }
+
+    /// The tool cuts at its centre (stated).
+    pub fn centre_cutting(mut self) -> Self {
+        self.tool.centre_cutting = ToolFact::Stated(CentreCutting::Yes);
         self
     }
 
@@ -2122,7 +2418,7 @@ mod tests {
         let mut flat = ToolConfig::new_default(ToolId::from_raw(0), ToolType::EndMill);
         flat.included_angle = 0.0;
         assert!(flat.validate().is_ok());
-        flat.flute_count = 0;
+        flat.flute_count = ToolFact::Stated(0);
         assert_eq!(
             flat.validate().map_err(|e| e.dimension),
             Err(ToolDimension::FluteCount)
@@ -2139,12 +2435,12 @@ mod tests {
     fn a_stickout_shorter_than_the_flute_warns_fc0() {
         const ID: &str = "tool.stickout_shorter_than_flute";
         let mut short = ToolConfig::new_default(ToolId::from_raw(0), ToolType::EndMill);
-        short.cutting_length = 25.0;
-        short.stickout = 20.0;
+        short.cutting_length = ToolFact::Stated(25.0);
+        short.stickout = ToolFact::Stated(20.0);
         assert!(short.validate().is_ok(), "D4: the program never refuses it");
 
         // The load warning.
-        let text = "name = \"Short\"\ndiameter = 6.0\ncutting_length = 25.0\nstickout = 20.0\n";
+        let text = "name = \"Short\"\ndiameter = 6.0\ncutting_length = { stated = 25.0 }\nstickout = { stated = 20.0 }\n";
         let section: crate::session::ProjectToolSection =
             toml::from_str(text).expect("parse tool section");
         let mut warnings = Vec::new();
@@ -2178,10 +2474,10 @@ mod tests {
 
         // Equal lengths and a zero stick-out: no finding, no refusal.
         let mut equal = short.clone();
-        equal.stickout = 25.0;
+        equal.stickout = ToolFact::Stated(25.0);
         assert!(findings(equal).is_empty(), "stick-out = flute is not short");
         let mut zero = short;
-        zero.stickout = 0.0;
+        zero.stickout = ToolFact::Stated(0.0);
         assert!(zero.validate().is_ok(), "a zero stick-out loads as before");
         assert!(findings(zero).is_empty(), "a zero stick-out is not stated");
     }
@@ -2302,14 +2598,14 @@ name = "Old"
 tool_number = 1
 tool_type = "end_mill"
 diameter = 6.0
-cutting_length = 20.0
+cutting_length = { stated = 20.0 }
 corner_radius = 2.0
 included_angle = 90.0
-taper_half_angle = 15.0
+taper_half_angle = { stated = 15.0 }
 shaft_diameter = 6.0
-shank_diameter = 6.0
-stickout = 40.0
-flute_count = 2
+shank_diameter = { stated = 6.0 }
+stickout = { stated = 40.0 }
+flute_count = { stated = 2 }
 tool_material = "carbide"
 cut_direction = "up_cut"
 vendor = ""
@@ -2328,7 +2624,7 @@ product_id = ""
         tool.corner_radius_mm = 0.5;
         tool.corner_radius = 2.0;
         tool.included_angle = 90.0;
-        tool.taper_half_angle = 15.0;
+        tool.taper_half_angle = ToolFact::Stated(15.0);
         tool.shaft_diameter = 6.35;
         tool
     }
@@ -2380,7 +2676,7 @@ product_id = ""
         let bull = ToolConfig::new_default(ToolId::from_raw(0), ToolType::BullNose);
         assert_eq!(bull.corner_radius, 2.0);
         let taper = ToolConfig::new_default(ToolId::from_raw(0), ToolType::TaperedBallNose);
-        assert_eq!(taper.taper_half_angle, 15.0);
+        assert_eq!(taper.taper_half_angle_planning_deg(), 15.0);
         assert_eq!(taper.shaft_diameter, 6.35);
     }
 
@@ -2408,10 +2704,10 @@ product_id = ""
         let mut tool = ToolConfig::new_default(ToolId::from_raw(2), ToolType::TaperedBallNose);
         tool.name = "Tapered Ball 2mm tip / 7° / 6mm shank".to_owned();
         tool.diameter = 1.0;
-        tool.taper_half_angle = 7.1;
+        tool.taper_half_angle = ToolFact::Stated(7.1);
         tool.shaft_diameter = 6.0;
-        tool.shank_diameter = 6.0;
-        tool.cutting_length = 20.0;
+        tool.shank_diameter = ToolFact::Stated(6.0);
+        tool.cutting_length = ToolFact::Stated(20.0);
 
         let found = tool.name_geometry_mismatches();
         assert_eq!(found.len(), 1, "expected one mismatch, got {found:?}");
@@ -2435,8 +2731,8 @@ product_id = ""
         tool.name = "R1.0mm x 6mm x 20mm 2F Tapered Ball".to_owned();
         tool.diameter = 1.0;
         tool.shaft_diameter = 6.0;
-        tool.shank_diameter = 6.0;
-        tool.cutting_length = 20.0;
+        tool.shank_diameter = ToolFact::Stated(6.0);
+        tool.cutting_length = ToolFact::Stated(20.0);
 
         let found = tool.name_geometry_mismatches();
         assert_eq!(found.len(), 1, "expected one mismatch, got {found:?}");
@@ -2487,8 +2783,8 @@ product_id = ""
         let mut tool = ToolConfig::new_default(ToolId::from_raw(0), ToolType::EndMill);
         tool.name = "6mm 2F Carbide End Mill".to_owned();
         tool.diameter = 3.175;
-        tool.cutting_length = 25.0;
-        tool.shank_diameter = 3.175;
+        tool.cutting_length = ToolFact::Stated(25.0);
+        tool.shank_diameter = ToolFact::Stated(3.175);
 
         let found = tool.name_geometry_mismatches();
         assert_eq!(found.len(), 1, "expected one mismatch, got {found:?}");
@@ -2520,7 +2816,7 @@ product_id = ""
         // half-angle) agrees — vendors write it both ways.
         let mut taper = ToolConfig::new_default(ToolId::from_raw(0), ToolType::TaperedBallNose);
         taper.name = "Tapered Ball 14.2 deg".to_owned();
-        taper.taper_half_angle = 7.1;
+        taper.taper_half_angle = ToolFact::Stated(7.1);
         assert!(taper.name_geometry_mismatches().is_empty());
     }
 
@@ -2531,9 +2827,9 @@ product_id = ""
         let mut tool = ToolConfig::new_default(ToolId::from_raw(0), ToolType::TaperedBallNose);
         tool.name = "Tapered Ball 1mm tip / 7° / 3mm shank".to_owned();
         tool.diameter = 1.0;
-        tool.taper_half_angle = 7.0;
+        tool.taper_half_angle = ToolFact::Stated(7.0);
         tool.shaft_diameter = 6.0;
-        tool.shank_diameter = 6.0;
+        tool.shank_diameter = ToolFact::Stated(6.0);
 
         let found = tool.name_geometry_mismatches();
         assert_eq!(found.len(), 1, "expected one mismatch, got {found:?}");
@@ -2558,9 +2854,9 @@ product_id = ""
 
         let mut taper = ToolConfig::new_default(ToolId::from_raw(0), ToolType::TaperedBallNose);
         taper.diameter = 2.0;
-        taper.shank_diameter = 6.0;
+        taper.shank_diameter = ToolFact::Stated(6.0);
         taper.shaft_diameter = 6.0;
-        taper.taper_half_angle = 5.7;
+        taper.taper_half_angle = ToolFact::Stated(5.7);
         assert_eq!(
             taper.size_label(),
             "tip \u{00D8}2.00 mm (R1.00), shank \u{00D8}6.00"
@@ -2625,10 +2921,10 @@ product_id = ""
             let mut tool = ToolConfig::new_default(ToolId::from_raw(0), tool_type);
             tool.name = name.to_owned();
             tool.diameter = agrees;
-            tool.shank_diameter = 6.0;
+            tool.shank_diameter = ToolFact::Stated(6.0);
             tool.shaft_diameter = 6.0_f64.max(agrees);
-            tool.cutting_length = 20.0;
-            tool.stickout = 35.0;
+            tool.cutting_length = ToolFact::Stated(20.0);
+            tool.stickout = ToolFact::Stated(35.0);
             assert!(
                 tool.name_tip_size_mismatch().is_none(),
                 "{name}: agreeing geometry raised {:?}",
@@ -2637,7 +2933,7 @@ product_id = ""
             // The disagreeing tool is really that size, shank included:
             // a lone figure that matches the shank is not a mismatch.
             tool.diameter = disagrees;
-            tool.shank_diameter = disagrees;
+            tool.shank_diameter = ToolFact::Stated(disagrees);
             let m = tool.name_tip_size_mismatch();
             assert!(m.is_some(), "{name}: Ø{disagrees} raised nothing");
             assert!(
@@ -2655,8 +2951,8 @@ product_id = ""
         tool.name = "R1.0mm x 6mm x 20mm 2F Tapered Ball".to_owned();
         tool.diameter = 1.0;
         tool.shaft_diameter = 6.0;
-        tool.shank_diameter = 6.0;
-        tool.cutting_length = 20.0;
+        tool.shank_diameter = ToolFact::Stated(6.0);
+        tool.cutting_length = ToolFact::Stated(20.0);
         let line = tool
             .name_tip_size_mismatch()
             .and_then(|m| m.caution_line())
@@ -2706,7 +3002,7 @@ product_id = ""
         let mut tool = ToolConfig::new_default(ToolId::from_raw(0), ToolType::EndMill);
         tool.name = "1/4\" 2F Downcut".to_owned();
         tool.diameter = 6.0;
-        tool.shank_diameter = 6.35;
+        tool.shank_diameter = ToolFact::Stated(6.35);
         let line = tool
             .name_tip_size_mismatch()
             .and_then(|m| m.caution_line())
@@ -2719,7 +3015,7 @@ product_id = ""
         // The reverse: "6mm" name on a Ø6.35 (1/4") tool.
         tool.name = "6mm 2F Carbide End Mill".to_owned();
         tool.diameter = 6.35;
-        tool.shank_diameter = 6.35;
+        tool.shank_diameter = ToolFact::Stated(6.35);
         let line = tool
             .name_tip_size_mismatch()
             .and_then(|m| m.caution_line())
@@ -2733,7 +3029,7 @@ product_id = ""
         // Same unit on both sides and the figure is the shank: quiet.
         tool.name = "1/4\" Upcut".to_owned();
         tool.diameter = 3.175;
-        tool.shank_diameter = 6.35;
+        tool.shank_diameter = ToolFact::Stated(6.35);
         assert!(tool.name_tip_size_mismatch().is_none());
     }
 
@@ -2796,7 +3092,7 @@ product_id = ""
         assert_eq!(ball.size_label(), "\u{00D8}6.35 mm (R3.17)");
 
         let mut taper = imperial(ToolType::TaperedBallNose, 1.5875);
-        taper.shank_diameter = 6.35;
+        taper.shank_diameter = ToolFact::Stated(6.35);
         assert_eq!(
             taper.size_label(),
             "tip \u{00D8}1/16\" (R1/32\", 1.59 mm), shank \u{00D8}1/4\""
@@ -2836,34 +3132,98 @@ product_id = ""
     #[test]
     fn non_centre_cutting_serde_and_limits() {
         let mut tool = ToolConfig::new_default(ToolId::from_raw(0), ToolType::EndMill);
-        tool.non_centre_cutting = Some(NonCentreCuttingGeometry {
-            centre_core_diameter_mm: 8.0,
-            blade_protrusion_mm: 1.0,
-        });
+        tool.set_centre_cutting(ToolFact::Stated(CentreCutting::No(
+            NonCentreCuttingGeometry {
+                centre_core_diameter_mm: 8.0,
+                blade_protrusion_mm: 1.0,
+            },
+        )));
         let limits = tool.non_centre_cutting_limits().unwrap();
         assert_eq!(limits.max_plunge_depth_mm, 1.0);
         assert!((limits.max_descent_angle_deg - 7.125_016_349).abs() < 1e-9);
         let json = serde_json::to_value(&tool).unwrap();
-        assert_eq!(json["non_centre_cutting"]["centre_core_diameter_mm"], 8.0);
+        assert_eq!(json["centre_cutting"]["stated"], "no");
+        assert_eq!(json["centre_cutting"]["centre_core_diameter_mm"], 8.0);
         let back: ToolConfig = serde_json::from_value(json).unwrap();
-        assert_eq!(back.non_centre_cutting, tool.non_centre_cutting);
+        assert_eq!(back.centre_cutting_fact(), tool.centre_cutting_fact());
+    }
+
+    /// K3: only a `No(..)` fact gives limits; `Yes` and `Unknown` give none
+    /// (an `Unknown` tool keeps the motion of a centre-cutting tool).
+    #[test]
+    fn only_a_no_fact_gives_non_centre_cutting_limits() {
+        let mut tool = ToolConfig::new_default(ToolId::from_raw(0), ToolType::EndMill);
+        assert!(tool.centre_cutting_fact().is_unknown());
+        assert!(tool.non_centre_cutting_limits().is_none());
+        tool.set_centre_cutting(ToolFact::Stated(CentreCutting::Yes));
+        assert!(tool.non_centre_cutting_limits().is_none());
+        tool.set_centre_cutting(ToolFact::estimated(
+            CentreCutting::No(NonCentreCuttingGeometry {
+                centre_core_diameter_mm: 3.0,
+                blade_protrusion_mm: 1.0,
+            }),
+            "test",
+        ));
+        assert!(tool.non_centre_cutting_limits().is_some());
+    }
+
+    /// K3 (decision E4): the `u32` flute-count default equals the value of
+    /// its F201 row, and each f64 default equals its row.
+    #[test]
+    fn each_legacy_default_equals_its_f201_row() {
+        assert_eq!(
+            f64::from(LEGACY_DEFAULT_FLUTE_COUNT),
+            LEGACY_DEFAULT_FLUTE_COUNT_ROW.value
+        );
+        assert_eq!(
+            LEGACY_DEFAULT_CUTTING_LENGTH_MM,
+            LEGACY_DEFAULT_CUTTING_LENGTH_MM_ROW.value
+        );
+        assert_eq!(
+            LEGACY_DEFAULT_TAPER_HALF_ANGLE_DEG,
+            LEGACY_DEFAULT_TAPER_HALF_ANGLE_DEG_ROW.value
+        );
+        assert_eq!(
+            LEGACY_DEFAULT_SHANK_DIAMETER_MM,
+            LEGACY_DEFAULT_SHANK_DIAMETER_MM_ROW.value
+        );
+        assert_eq!(
+            LEGACY_DEFAULT_STICKOUT_MM,
+            LEGACY_DEFAULT_STICKOUT_MM_ROW.value
+        );
+    }
+
+    /// K3: an `Unknown` fact plans at its legacy default; `new_default`
+    /// writes `Estimated` with the basis `new_default`.
+    #[test]
+    fn an_unknown_fact_plans_at_the_legacy_default() {
+        let mut tool = ToolConfig::new_default(ToolId::from_raw(0), ToolType::EndMill);
+        assert_eq!(tool.stickout_fact().kind(), FactKind::Estimated);
+        tool.set_stickout(ToolFact::Unknown);
+        tool.set_flute_count(ToolFact::Unknown);
+        assert_eq!(tool.stickout_planning_mm(), LEGACY_DEFAULT_STICKOUT_MM);
+        assert_eq!(tool.flute_count_planning(), LEGACY_DEFAULT_FLUTE_COUNT);
     }
 
     #[test]
     fn non_centre_cutting_domain_refuses_invalid_measurements() {
         let mut tool = ToolConfig::new_default(ToolId::from_raw(0), ToolType::EndMill);
-        tool.non_centre_cutting = Some(NonCentreCuttingGeometry {
-            centre_core_diameter_mm: tool.diameter,
-            blade_protrusion_mm: 0.0,
-        });
+        tool.set_centre_cutting(ToolFact::Stated(CentreCutting::No(
+            NonCentreCuttingGeometry {
+                centre_core_diameter_mm: tool.diameter,
+                blade_protrusion_mm: 0.0,
+            },
+        )));
         assert_eq!(
             tool.validate().unwrap_err().dimension,
             ToolDimension::CentreCoreDiameterMm
         );
-        tool.non_centre_cutting = Some(NonCentreCuttingGeometry {
-            centre_core_diameter_mm: 3.0,
-            blade_protrusion_mm: -0.1,
-        });
+        tool.set_centre_cutting(ToolFact::Stated(CentreCutting::No(
+            NonCentreCuttingGeometry {
+                centre_core_diameter_mm: 3.0,
+                blade_protrusion_mm: -0.1,
+            },
+        )));
         assert_eq!(
             tool.validate().unwrap_err().dimension,
             ToolDimension::BladeProtrusionMm
@@ -2924,13 +3284,29 @@ product_id = ""
     #[test]
     fn non_centre_cutting_param_is_atomic() {
         let mut tool = ToolConfig::new_default(ToolId::from_raw(0), ToolType::EndMill);
-        tool.non_centre_cutting = Some(NonCentreCuttingGeometry {
-            centre_core_diameter_mm: 3.0,
-            blade_protrusion_mm: 1.0,
-        });
-        ToolParamKey::NonCentreCutting
+        tool.set_centre_cutting(ToolFact::Stated(CentreCutting::No(
+            NonCentreCuttingGeometry {
+                centre_core_diameter_mm: 3.0,
+                blade_protrusion_mm: 1.0,
+            },
+        )));
+        ToolParamKey::CentreCutting
             .write(&mut tool, &serde_json::Value::Null)
             .unwrap();
-        assert_eq!(tool.non_centre_cutting, None);
+        assert!(tool.centre_cutting_fact().is_unknown());
+        ToolParamKey::CentreCutting
+            .write(&mut tool, &serde_json::json!("yes"))
+            .unwrap();
+        assert_eq!(
+            tool.centre_cutting_fact(),
+            &ToolFact::Stated(CentreCutting::Yes)
+        );
+        ToolParamKey::CentreCutting
+            .write(
+                &mut tool,
+                &serde_json::json!({"centre_core_diameter_mm": 3.0, "blade_protrusion_mm": 1.0}),
+            )
+            .unwrap();
+        assert!(tool.non_centre_cutting_limits().is_some());
     }
 }

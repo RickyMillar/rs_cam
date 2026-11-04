@@ -39,7 +39,9 @@ use rs_cam_core::compute::config::{
     BoundaryConfig, DressupConfig, DressupEntryStyle, HeightMode, HeightsConfig, StockSource,
 };
 use rs_cam_core::compute::operation_configs::{FaceConfig, PocketConfig};
-use rs_cam_core::compute::tool_config::{NonCentreCuttingGeometry, ToolConfig, ToolId, ToolType};
+use rs_cam_core::compute::tool_config::{
+    CentreCutting, NonCentreCuttingGeometry, ToolConfig, ToolId, ToolType,
+};
 use rs_cam_core::gcode::CoolantMode;
 use rs_cam_core::geo::P2;
 use rs_cam_core::ids::{ModelId, ToolpathId};
@@ -110,10 +112,14 @@ fn end_mill(non_centre_cutting: bool) -> ToolConfig {
     tool.set_stickout(ToolFact::Stated(30.0));
     tool.set_shank_diameter(ToolFact::Stated(6.0));
     tool.set_flute_count(ToolFact::Stated(2));
-    tool.non_centre_cutting = non_centre_cutting.then_some(NonCentreCuttingGeometry {
-        centre_core_diameter_mm: 2.4,
-        blade_protrusion_mm: 0.5,
-    });
+    if non_centre_cutting {
+        tool.set_centre_cutting(ToolFact::Stated(CentreCutting::No(
+            NonCentreCuttingGeometry {
+                centre_core_diameter_mm: 2.4,
+                blade_protrusion_mm: 0.5,
+            },
+        )));
+    }
     tool
 }
 

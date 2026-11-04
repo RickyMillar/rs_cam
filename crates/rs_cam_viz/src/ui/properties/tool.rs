@@ -3,7 +3,7 @@ use crate::ui::components::UiExt as _;
 use crate::ui::components::ValueRow;
 use crate::ui::theme;
 use rs_cam_core::compute::tool_config::{
-    NonCentreCuttingGeometry, SizeUnits, ToolDimension, ToolFact,
+    CentreCutting, NonCentreCuttingGeometry, SizeUnits, ToolDimension, ToolFact,
 };
 
 /// The "Size in" choices, in the order the selector shows them.
@@ -386,17 +386,40 @@ pub(crate) fn draw_tool_fields(
     }
 
     ui.add_space(12.0);
-    let mut non_centre_cutting = tool.non_centre_cutting.is_some();
-    if ui
-        .checkbox(&mut non_centre_cutting, "Does not cut at centre")
-        .changed()
-    {
-        tool.non_centre_cutting = non_centre_cutting.then_some(NonCentreCuttingGeometry {
-            centre_core_diameter_mm: 0.0,
-            blade_protrusion_mm: 0.0,
+    // K3 (feeds contract P6): a three-way choice, yes / no / not known. A
+    // change writes `ToolFact::Stated`; "?" writes `Unknown`. "No" starts
+    // from the stored measurement, else an empty one for the rows below.
+    #[derive(Clone, Copy, PartialEq, Eq)]
+    enum Centre {
+        Yes,
+        No,
+        Unknown,
+    }
+    let stored = tool.centre_cutting_fact().planning().map(|(c, _)| *c);
+    let before = match stored {
+        Some(CentreCutting::Yes) => Centre::Yes,
+        Some(CentreCutting::No(_)) => Centre::No,
+        None => Centre::Unknown,
+    };
+    let mut choice = before;
+    ui.horizontal(|ui| {
+        ui.label("Cuts at centre:");
+        ui.selectable_value(&mut choice, Centre::Yes, "Yes");
+        ui.selectable_value(&mut choice, Centre::No, "No");
+        ui.selectable_value(&mut choice, Centre::Unknown, "?");
+    });
+    if choice != before {
+        tool.set_centre_cutting(match choice {
+            Centre::Yes => ToolFact::Stated(CentreCutting::Yes),
+            Centre::No => ToolFact::Stated(CentreCutting::No(NonCentreCuttingGeometry {
+                centre_core_diameter_mm: 0.0,
+                blade_protrusion_mm: 0.0,
+            })),
+            Centre::Unknown => ToolFact::Unknown,
         });
     }
-    if let Some(geometry) = &mut tool.non_centre_cutting {
+    if let Some(stored) = tool.non_centre_cutting_geometry() {
+        let mut geometry = stored;
         ui.param_grid("non_centre_cutting", |ui| {
             ValueRow::new(
                 "Centre core Ø:",
@@ -417,6 +440,9 @@ pub(crate) fn draw_tool_fields(
             .keep_existing()
             .show(ui);
         });
+        if geometry != stored {
+            tool.set_centre_cutting(ToolFact::Stated(CentreCutting::No(geometry)));
+        }
     }
 
     // Cross-section preview
