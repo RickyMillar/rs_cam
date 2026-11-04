@@ -36,7 +36,7 @@ code by the symbol when the line has moved.
 | 5 K2 / K2b envelope | `phases/P5.md` | DONE 2026-11-04 (Suggest writes geometry only on a pick; `SafeEnvelope`; Q3; FM1 re-blessed). Heavy FM1 subset and `wanaka_suggest_integration`: approved, run after the commit | see `git log` | |
 | 5b GUI envelope + K8 lineage | `phases/P5b.md` | DONE 2026-11-04 (envelope plot on the Passes tab, drag + live nomogram; Feeds tab merged into Passes (4 tabs); `Lineage` is a required field of every toolpath result; MCP `get_toolpath_lineage`; FM1 and G-OPGOLDEN unchanged) | see `git log` | |
 | 5c Plot review fixes | `phases/P5c.md` | DONE 2026-11-04 (lines 4+4 labels -> 1-2 lines, 0 labels on rivmap100 3D Rough; frame = hard stops; candidate ring only on drag, proposal diamond only off Now; no DANGER; feed axis ticks) | see `git log` | Next: P5d |
-| 5d Plot review 2 | `phases/P5d.md` | NOT STARTED (operator review of P5c round 2, 2026-11-04: show every limit with a label, quiet recommendation, one meaning for the white dot on both charts, clearer names). Do first in the next session. | | |
+| 5d Plot review 2 | `phases/P5d.md` | DONE 2026-11-04 (every limit in view draws and is named; range holds every flat depth limit; one mark rule on both charts: white = setpoint, grey ghost = stored during a draft, quiet ACCENT = recommendation; names Vendor DOC k×D / Rigidity DOC / Slot DOC / Cut length; D tick paints, an off-step D names itself alone; ic1 3D Rough Passes cap 34 -> 35, one more depth tick row; operator approved the live screenshot) | see `git log` | |
 | 6 K3 `ToolFact` | `phases/P6.md` | NOT STARTED | | |
 | 7 K5 feasibility rules | `phases/P7.md` | NOT STARTED (needs P6) | | |
 | 8 Q1 / Q6 / Q8 | `phases/P8.md` | NOT STARTED (Q1 needs P9 changes 1-2 first) | | |

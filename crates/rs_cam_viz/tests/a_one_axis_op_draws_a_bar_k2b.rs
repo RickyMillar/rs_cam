@@ -29,7 +29,7 @@ use envelope_k2b::{ctx, envelope_for, frame, texts};
 use rs_cam_core::compute::catalog::OperationType;
 use rs_cam_viz::state::panels::EnvelopeCandidates;
 use rs_cam_viz::ui::feeds::envelope::{
-    EnvelopeShape, TITLE_DEPTH, TITLE_PLANE, TITLE_WIDTH, short_label,
+    EnvelopeShape, TITLE_DEPTH, TITLE_PLANE, TITLE_WIDTH, limit_name,
 };
 
 #[test]
@@ -66,11 +66,12 @@ fn a_one_axis_op_draws_a_bar_k2b() {
                 } else {
                     None
                 };
+                // P5d D4: the bar names the limit as the plot does.
                 if let Some(kind) = ceiling {
+                    let name = limit_name(&env, kind);
                     assert!(
-                        painted.iter().any(|p| p == short_label(kind)),
-                        "{op:?}: the bar names `{}` at its end: {painted:?}",
-                        short_label(kind)
+                        painted.contains(&name),
+                        "{op:?}: the bar names `{name}` at its end: {painted:?}"
                     );
                 }
             }

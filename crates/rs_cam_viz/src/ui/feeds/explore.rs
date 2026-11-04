@@ -11,9 +11,15 @@
 //!
 //! W3k (operator, 2026-10-31) deleted the plot hover that held the legend,
 //! the headline and the sources: it was too large and covered the chart.
-//! Short labels on the chart ("Max feed", "Rubbing", "Recommended") name
-//! each limit and mark, and the hover is one line with the RPM, the feed
-//! and the chipload under the pointer. The chart has no zoom and no pan.
+//! Short labels on the chart ("Max feed", "Rubbing", "Now") name each
+//! limit and mark, and the hover is one line with the RPM, the feed and
+//! the chipload under the pointer. The chart has no zoom and no pan.
+//!
+//! P5d (operator, 2026-11-04: "the graphs should match"): the marks follow
+//! the rule of the envelope plot. The white dot is the setpoint that ⚡
+//! writes; a hollow ghost marks the stored speeds during a draft; the
+//! recommendation (the ring and the suggested line) is quiet ACCENT and
+//! does not move. The hover names the ring; no label paints for it.
 //!
 //! Every quantity here is a **commanded** advance per tooth,
 //! `feed / (rpm · flutes)` — this is a pre-simulation surface and has no
@@ -61,6 +67,7 @@ use rs_cam_core::feeds::FeedsExplain;
 use rs_cam_core::feeds::efficiency::CutEfficiency;
 use rs_cam_core::feeds::suggest::FeedsPreview;
 
+use super::envelope::{GHOST_RADIUS, OUTLINE_WIDTH, RECOMMENDATION_WIDTH, recommendation_color};
 use super::shared::{CurrentValues, OpFeeds, chart, nice_steps, vendor_band, wash};
 use crate::ui::{AppEvent, tokens};
 
@@ -87,15 +94,12 @@ const CORRIDOR_LINE_ALPHA: u8 = 150;
 /// The width of the corridor's two lines.
 const CORRIDOR_LINE_WIDTH: f32 = 1.0;
 
-/// The width of the ONE solid line at the suggested advance per tooth.
-const SUGGESTED_LINE_WIDTH: f32 = 1.5;
-
 /// The alpha of the two vendor-limit lines. They are the suggested line's
 /// colour at this alpha, so they read as fainter lines around it.
-const BAND_LIMIT_ALPHA: u8 = 90;
+pub(crate) const BAND_LIMIT_ALPHA: u8 = 90;
 
 /// The width of the two vendor-limit lines.
-const BAND_LIMIT_WIDTH: f32 = 1.0;
+pub(crate) const BAND_LIMIT_WIDTH: f32 = 1.0;
 
 /// The height of the inline chart: it fits the 340-point inspector under
 /// the speed rows (W3i). The window drew it at 280.
@@ -116,9 +120,10 @@ const AXIS_LABEL_GAP: f32 = 0.25;
 /// Feeds tab merged into Passes). The recommendation card draws under the
 /// speed rows ([`draw_recommendation_inline`]).
 ///
-/// `candidate` (P5b live link): the speeds of the candidate ring of the
-/// envelope plot, a lookup in the `SpeedsMap`. While it is `Some`, the
-/// recommended ring and the suggested chip line are the candidate's.
+/// `candidate` (P5b live link; P5d D3): the speeds that ⚡ writes for the
+/// draft of the envelope plot, a lookup in the `SpeedsMap`. While it is
+/// `Some`, the white dot sits at it and a ghost marks the stored speeds;
+/// the recommendation does not move.
 pub(crate) fn draw_inline(
     ui: &mut egui::Ui,
     op: &OpFeeds<'_>,
@@ -294,36 +299,32 @@ pub(crate) fn draw_chart_c(
     // row and a one-point row give `None`, and the chart draws no band line.
     let band = vendor_band(explain);
     // The suggested advance per tooth: the ray through the recommended
-    // ring. `None` when the recommendation has no RPM to divide by.
-    // P5b live link: a candidate of the envelope plot moves the ring and
-    // the chip line to the speeds of that cut.
-    let suggested = match candidate {
-        Some(c) => candidate_advance_mm(c, flutes),
-        None => suggested_advance_mm(explain),
-    };
+    // ring. `None` when the recommendation has no RPM to divide by. P5d D3:
+    // it stays at the recommendation during a draft (no blue mark moves).
+    let suggested = suggested_advance_mm(explain);
 
     // The marks, in plot coordinates: the label layout keeps clear of each.
-    let recommended = match candidate {
-        Some(c) => [c.rpm, c.feed_mm_min],
-        None => [
-            explain.recommended.rpm,
-            explain.recommended.feed_rate_mm_min,
-        ],
-    };
-    let now = match (current.spindle_rpm, current.feed_rate_mm_min) {
+    // P5d D3, one rule on both charts: the white dot is the setpoint that
+    // ⚡ writes (the draft's speeds while a draft exists, else the stored
+    // speeds); a hollow ghost marks the stored speeds only during a draft;
+    // the quiet ACCENT ring is the recommendation and never moves.
+    let recommended = [
+        explain.recommended.rpm,
+        explain.recommended.feed_rate_mm_min,
+    ];
+    let stored = match (current.spindle_rpm, current.feed_rate_mm_min) {
         (Some(rpm), Some(feed)) => Some([f64::from(rpm), feed]),
         _ => None,
     };
+    let now = candidate.map(|c| [c.rpm, c.feed_mm_min]).or(stored);
+    let ghost = candidate.and(stored);
     let target_chipload = explain.recommended.derates.target_chip_load_mm;
     let target = (target_chipload > 0.0 && explain.recommended.rpm > 0.0)
         .then_some([
             explain.recommended.rpm,
             target_chipload * explain.recommended.rpm * flutes,
         ])
-        .filter(|t| (t[1] - explain.recommended.feed_rate_mm_min).abs() > 1.0)
-        // The pre-derate target belongs to the stored cut, not to a
-        // candidate.
-        .filter(|_| candidate.is_none());
+        .filter(|t| (t[1] - explain.recommended.feed_rate_mm_min).abs() > 1.0);
 
     let mut hover_readout: Option<String> = None;
     // egui_plot 0.37 (`axis.rs`, `AXIS_LABEL_GAP` = 0.25) paints the
@@ -362,6 +363,9 @@ pub(crate) fn draw_chart_c(
                 // envelope plot. The axis grows past `Y_AXIS_MIN_WIDTH`
                 // when a name needs more room.
                 .y_grid_spacer(egui_plot::uniform_grid_spacer(|i| nice_steps(&i)))
+                // P5d D5: the RPM axis reads the same rule. The default
+                // log-10 grid named only "0" at the 240-point rail.
+                .x_grid_spacer(egui_plot::uniform_grid_spacer(|i| nice_steps(&i)))
                 // W3k: no navigation. W3i turned off drag, zoom and scroll,
                 // but egui_plot has three more doors, each on by default: a
                 // drag on the axis ticks zooms that axis, a right drag zooms
@@ -436,19 +440,16 @@ pub(crate) fn draw_chart_c(
                     }
                     // 1. The suggested advance per tooth: ONE solid iso-advance line,
                     //    clipped at the machine RPM cap and feed cap. It goes through
-                    //    the `Recommended` ring.
-                    //
-                    //    §2.6 rule 2: the vendor data is a RANGE or a VALUE, not a
-                    //    verdict, so these lines take a chart series colour and not
-                    //    the `OK` green.
+                    //    the `Recommended` ring. P5d D3: a recommendation mark, so it
+                    //    is quiet ACCENT at 1 point, as the ring is.
                     if let Some(cl) = suggested {
                         plot_ui.line(
                             Line::new(
                                 "",
                                 iso_line(cl, env.spindle_max_rpm, flutes, env.max_feed_mm_min),
                             )
-                            .color(chart::BAND)
-                            .width(SUGGESTED_LINE_WIDTH)
+                            .color(recommendation_color())
+                            .width(RECOMMENDATION_WIDTH)
                             .allow_hover(false),
                         );
                     }
@@ -530,34 +531,12 @@ pub(crate) fn draw_chart_c(
                         );
                     }
 
-                    // 6. The current operating point: the operator's own values.
-                    //    Ruling R23: an operator value is not a verdict, so the
-                    //    dot is neutral ink, not the danger red (W3k).
-                    if let Some(point) = now {
-                        plot_ui.points(
-                            Points::new("", vec![point])
-                                .shape(MarkerShape::Circle)
-                                .filled(true)
-                                .radius(NOW_RADIUS)
-                                .color(tokens::TEXT_STRONG)
-                                .allow_hover(false),
-                        );
-                    }
+                    // 6. The marks of P5d D3 (the recommended ring, the ghost
+                    //    and the white dot) paint after the plot, at an exact
+                    //    1-point outline: egui_plot strokes an outline marker
+                    //    at a fifth of its radius.
 
-                    // 7. The recommended operating point (after derates): an
-                    //    ACCENT outline ring (operator, 2026-10-31: "a blue outline
-                    //    dot"). The current dot shows inside it when the operation
-                    //    runs at the recommendation.
-                    plot_ui.points(
-                        Points::new("", vec![recommended])
-                            .shape(MarkerShape::Circle)
-                            .filled(false)
-                            .radius(RECOMMENDED_RADIUS)
-                            .color(tokens::ACCENT)
-                            .allow_hover(false),
-                    );
-
-                    // 8. The hover readout: one line, the RPM, the feed and the
+                    // 7. The hover readout: one line, the RPM, the feed and the
                     //    chipload under the pointer (W3k).
                     //
                     // The pointer must be ON the chart. `pointer_coordinate` also
@@ -607,8 +586,31 @@ pub(crate) fn draw_chart_c(
     let ring = |p: [f64; 2], radius: f32| {
         egui::Rect::from_center_size(at(p), egui::Vec2::splat(2.0 * radius + MARK_CLEARANCE))
     };
+    // The marks (P5d D3): the quiet ring at the recommendation (operator,
+    // 2026-11-04: "recommendations should be subtle"), the hollow ghost at
+    // the stored speeds during a draft, then the white dot at the setpoint
+    // (ruling R23: an operator value is neutral ink, not a verdict). The
+    // dot shows inside the ring when the operation runs at the
+    // recommendation.
+    let painter = ui.painter_at(frame);
+    let _ = painter.circle_stroke(
+        at(recommended),
+        RECOMMENDED_RADIUS,
+        egui::Stroke::new(RECOMMENDATION_WIDTH, recommendation_color()),
+    );
+    if let Some(point) = ghost {
+        let _ = painter.circle_stroke(
+            at(point),
+            GHOST_RADIUS,
+            egui::Stroke::new(OUTLINE_WIDTH, tokens::TEXT_MUTED),
+        );
+    }
+    if let Some(point) = now {
+        let _ = painter.circle_filled(at(point), NOW_RADIUS, tokens::TEXT_STRONG);
+    }
     let mut keep_clear = vec![ring(recommended, RECOMMENDED_RADIUS)];
     keep_clear.extend(now.map(|p| ring(p, NOW_RADIUS)));
+    keep_clear.extend(ghost.map(|p| ring(p, GHOST_RADIUS)));
     keep_clear.extend(target.map(|p| ring(p, TARGET_RADIUS)));
     // The crossing of the two machine walls.
     keep_clear.push(ring(
@@ -645,7 +647,7 @@ pub(crate) fn draw_chart_c(
         push_line(l.clone(), CORRIDOR_LINE_WIDTH, false);
     }
     if let Some(cl) = suggested {
-        push_line(iso_screen(cl), SUGGESTED_LINE_WIDTH, false);
+        push_line(iso_screen(cl), RECOMMENDATION_WIDTH, false);
     }
     if let Some((lo, hi)) = band {
         push_line(iso_screen(lo), BAND_LIMIT_WIDTH, true);
@@ -671,43 +673,36 @@ pub(crate) fn draw_chart_c(
         push_line(vec![at(t), at(recommended)], 1.5, false);
     }
 
-    // The labels in priority order: Recommended, the walls, the corridor,
-    // Now, Vendor range, Before derate. `MAX_LABELS` of them paint at most.
+    // The labels in priority order: the walls, the corridor, Now, Vendor
+    // range, Before derate. `MAX_LABELS` of them paint at most. P5d D3: the
+    // recommended ring has no painted label; the hover names it.
     let mut specs = vec![ChartLabel {
-        text: LABEL_RECOMMENDED,
-        color: tokens::ACCENT,
-        anchor: LabelAnchor::Mark {
-            center: at(recommended),
-            radius: RECOMMENDED_RADIUS,
-        },
-    }];
-    specs.push(ChartLabel {
-        text: LABEL_MAX_FEED,
+        text: LABEL_MAX_FEED.to_owned(),
         color: tokens::DANGER,
         anchor: LabelAnchor::Line(feed_wall.iter().copied().map(at).collect()),
-    });
+    }];
     specs.push(ChartLabel {
-        text: LABEL_MAX_RPM,
+        text: LABEL_MAX_RPM.to_owned(),
         color: tokens::DANGER,
         anchor: LabelAnchor::Line(rpm_wall.iter().copied().map(at).collect()),
     });
     if let Some(l) = floor_line {
         specs.push(ChartLabel {
-            text: LABEL_RUBBING,
+            text: LABEL_RUBBING.to_owned(),
             color: tokens::DANGER,
             anchor: LabelAnchor::Line(l),
         });
     }
     if let Some(l) = ceiling_line {
         specs.push(ChartLabel {
-            text: LABEL_CHIP_LIMIT,
+            text: LABEL_CHIP_LIMIT.to_owned(),
             color: tokens::DANGER,
             anchor: LabelAnchor::Line(l),
         });
     }
     if let Some(line) = min_line {
         specs.push(ChartLabel {
-            text: LABEL_MIN_RPM,
+            text: LABEL_MIN_RPM.to_owned(),
             color: tokens::CAUTION,
             anchor: LabelAnchor::Line(line),
         });
@@ -719,7 +714,7 @@ pub(crate) fn draw_chart_c(
         && at(point).distance(at(recommended)) > RECOMMENDED_RADIUS + NOW_RADIUS
     {
         specs.push(ChartLabel {
-            text: LABEL_NOW,
+            text: LABEL_NOW.to_owned(),
             color: tokens::TEXT_STRONG,
             anchor: LabelAnchor::Mark {
                 center: at(point),
@@ -731,14 +726,14 @@ pub(crate) fn draw_chart_c(
     // (the lower line first: the space under it is open more often).
     if let Some((lo, hi)) = band {
         specs.push(ChartLabel {
-            text: LABEL_VENDOR_RANGE,
+            text: LABEL_VENDOR_RANGE.to_owned(),
             color: chart::BAND,
             anchor: LabelAnchor::Lines(vec![iso_screen(lo), iso_screen(hi)]),
         });
     }
     if let Some(t) = target {
         specs.push(ChartLabel {
-            text: LABEL_BEFORE_DERATE,
+            text: LABEL_BEFORE_DERATE.to_owned(),
             color: tokens::TEXT_MUTED,
             anchor: LabelAnchor::Mark {
                 center: at(t),
@@ -751,9 +746,24 @@ pub(crate) fn draw_chart_c(
     #[cfg(test)]
     tests::record(frame, &placed, tokens::SIZE_CAPTION);
 
-    // W3k: the hover is one line at the pointer, only on the axes.
+    // W3k: the hover is one line at the pointer, only on the axes. P5d D3:
+    // on the recommended ring, a line above it names the ring.
+    let on_ring = plot_response
+        .response
+        .hover_pos()
+        .is_some_and(|p| p.distance(at(recommended)) <= RECOMMENDED_RADIUS + MARK_CLEARANCE);
     if let Some(text) = hover_readout {
         let _ = plot_response.response.on_hover_ui_at_pointer(|ui| {
+            if on_ring {
+                ui.add(
+                    egui::Label::new(
+                        egui::RichText::new(LABEL_RECOMMENDED)
+                            .small()
+                            .color(tokens::TEXT_BODY),
+                    )
+                    .extend(),
+                );
+            }
             ui.add(
                 egui::Label::new(egui::RichText::new(text).small().color(tokens::TEXT_STRONG))
                     .extend(),
@@ -793,7 +803,7 @@ pub(crate) fn place_labels(
         .map(|spec| {
             let size = ui
                 .painter()
-                .layout_no_wrap(spec.text.to_owned(), font.clone(), spec.color)
+                .layout_no_wrap(spec.text.clone(), font.clone(), spec.color)
                 .size();
             (spec, size + 2.0 * LABEL_PADDING)
         })
@@ -828,7 +838,7 @@ pub(crate) fn paint_labels(ui: &egui::Ui, frame: egui::Rect, placed: &[PlacedLab
             wash(tokens::SURFACE_OVERLAY, LABEL_BACKGROUND_ALPHA),
             egui::Stroke::NONE,
         ));
-        let galley = painter.layout_no_wrap(label.text.to_owned(), font.clone(), label.color);
+        let galley = painter.layout_no_wrap(label.text.clone(), font.clone(), label.color);
         let pos = label.quad.center - galley.size() / 2.0;
         let _ = painter.add(
             egui::epaint::TextShape::new(pos, galley, label.color)
@@ -988,7 +998,7 @@ pub(crate) const LABEL_BEFORE_DERATE: &str = "Before derate";
 
 /// One label to place: its text, its colour and what it names.
 pub(crate) struct ChartLabel {
-    pub(crate) text: &'static str,
+    pub(crate) text: String,
     pub(crate) color: egui::Color32,
     pub(crate) anchor: LabelAnchor,
 }
@@ -1018,7 +1028,7 @@ pub(crate) struct DrawnLine {
 /// One placed label.
 #[derive(Debug, Clone)]
 pub(crate) struct PlacedLabel {
-    pub(crate) text: &'static str,
+    pub(crate) text: String,
     pub(crate) color: egui::Color32,
     /// The background; the text is centred in it, at its angle.
     pub(crate) quad: Quad,
@@ -1282,7 +1292,7 @@ fn greedy_layout(
             placed.push((
                 i,
                 PlacedLabel {
-                    text: label.text,
+                    text: label.text.clone(),
                     color: label.color,
                     quad,
                     mark: match label.anchor {
@@ -1412,17 +1422,6 @@ fn suggested_advance_mm(explain: &FeedsExplain) -> Option<f64> {
         return None;
     }
     let cl = r.feed_rate_mm_min / (r.rpm * flutes);
-    (cl.is_finite() && cl > 0.0).then_some(cl)
-}
-
-/// The advance per tooth (mm/tooth) of a candidate of the envelope plot
-/// (P5b live link): its feed over its RPM and the flute count. `None` when
-/// there is no ray to draw.
-fn candidate_advance_mm(c: rs_cam_core::feeds::envelope::SpeedsSample, flutes: f64) -> Option<f64> {
-    if c.rpm <= 0.0 || flutes <= 0.0 {
-        return None;
-    }
-    let cl = c.feed_mm_min / (c.rpm * flutes);
     (cl.is_finite() && cl > 0.0).then_some(cl)
 }
 

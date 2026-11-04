@@ -11,9 +11,11 @@
 //! - P5c (operator review 2026-11-04): no ring at rest (the ghost of the
 //!   stored point exists only while a drag moves the dot), and a proposal
 //!   mark (an ACCENT diamond) only when the proposal is not at Now. P5b drew
-//!   the proposal as the ring, so a drag seemed to move the recommendation;
-//! - P5c round 2: one label per drawn edge, its short name, once, and every
-//!   drawn edge `tokens::TEXT_BODY` (`tokens::CAUTION` when Now crosses it);
+//!   the proposal as the ring, so a drag seemed to move the recommendation.
+//!   P5d D3: the diamond is quiet ACCENT (`recommendation_color`);
+//! - P5c round 2: one label per drawn edge, its short name, once. P5d D4:
+//!   the binding edge `tokens::TEXT_BODY`, every other edge
+//!   `tokens::TEXT_MUTED` (`tokens::CAUTION` when Now crosses it);
 //!   the edge that binds Now is among the drawn edges. P5b named each edge
 //!   and drew the binding edge in DANGER; P5c round 1 named none (decision
 //!   D2 kept: lines, no fill).
@@ -35,7 +37,9 @@ mod envelope_k2b;
 use envelope_k2b::{ctx, envelope_for, frame, solid, texts};
 use rs_cam_core::compute::catalog::OperationType;
 use rs_cam_viz::state::panels::EnvelopeCandidates;
-use rs_cam_viz::ui::feeds::envelope::{EnvelopeScene, EnvelopeShape, short_label};
+use rs_cam_viz::ui::feeds::envelope::{
+    EnvelopeScene, EnvelopeShape, limit_name, recommendation_color, short_label,
+};
 use rs_cam_viz::ui::tokens;
 
 /// The circles of a frame: (centre, radius, fill, stroke colour).
@@ -82,8 +86,14 @@ fn the_envelope_plot_marks_the_operator_and_the_proposal_k2b() {
             scene.edges
         );
     }
+    // P5d D4: the binding edge is TEXT_BODY, every other one TEXT_MUTED.
     for e in &scene.edges {
-        assert_eq!(scene.edge_color(e), tokens::TEXT_BODY, "{:?}", e.kind);
+        let want = if Some(e.kind) == scene.binding {
+            tokens::TEXT_BODY
+        } else {
+            tokens::TEXT_MUTED
+        };
+        assert_eq!(scene.edge_color(e), want, "{:?}", e.kind);
     }
 
     let ctx = ctx();
@@ -108,17 +118,29 @@ fn the_envelope_plot_marks_the_operator_and_the_proposal_k2b() {
     assert_eq!(dot_color, tokens::TEXT_STRONG, "R23: a neutral dot inside");
     assert!(!scene.proposal_shown, "the proposal is at Now: no mark");
 
-    // One label per drawn edge, its short name, once.
-    let names: Vec<&str> = env.boundary.iter().map(|l| short_label(l.kind)).collect();
+    // One label per drawn edge, its name, once (P5d D1: the edges that
+    // `drawn_edges` keeps; the frame top names its hard stop).
+    let names: Vec<String> = env
+        .boundary
+        .iter()
+        .flat_map(|l| [limit_name(&env, l.kind), short_label(l.kind).to_owned()])
+        .collect();
     let painted = texts(&f.shapes);
     let mut labels: Vec<&str> = painted
         .iter()
-        .map(String::as_str)
         .filter(|t| names.contains(t))
+        .map(String::as_str)
         .collect();
     labels.sort_unstable();
-    let mut want: Vec<&str> = scene.edges.iter().map(|e| short_label(e.kind)).collect();
+    let plot = f.response.frame.expect("a plot");
+    let mut want: Vec<&str> = scene
+        .drawn_edges(plot.size())
+        .iter()
+        .map(|e| e.label.as_str())
+        .chain(scene.top_label())
+        .collect();
     want.sort_unstable();
+    assert!(!want.is_empty(), "non-vacuity: a drawn edge");
     assert_eq!(labels, want, "one label per drawn edge");
 
     // The operator's point outside: a CAUTION dot, and the proposal is a
@@ -137,7 +159,7 @@ fn the_envelope_plot_marks_the_operator_and_the_proposal_k2b() {
         let want = if e.kind == binding {
             tokens::CAUTION
         } else {
-            tokens::TEXT_BODY
+            tokens::TEXT_MUTED
         };
         assert_eq!(scene.edge_color(e), want, "{:?}", e.kind);
     }
@@ -159,7 +181,11 @@ fn the_envelope_plot_marks_the_operator_and_the_proposal_k2b() {
         .expect("the plot has a frame");
     let diamond = diamonds(&f.shapes);
     assert_eq!(diamond.len(), 1, "one proposal mark: {diamond:?}");
-    assert_eq!(diamond[0].1, tokens::ACCENT, "an ACCENT proposal");
+    assert_eq!(
+        diamond[0].1,
+        recommendation_color(),
+        "P5d D3: a quiet proposal"
+    );
     assert!(
         diamond[0].0.distance(at) < 2.0,
         "the proposal mark at {:?}, the proposal at {at:?}",

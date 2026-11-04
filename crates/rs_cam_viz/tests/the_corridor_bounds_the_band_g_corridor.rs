@@ -110,9 +110,10 @@ const PANEL_WIDTH: f32 = 340.0;
 /// never reach the paint list.
 const CORRIDOR_LINE_ALPHA: u8 = 150;
 
-/// The suggested line's colour: `chart::BAND`, opaque.
+/// The suggested line's colour. P5d D3: a recommendation mark, quiet
+/// ACCENT (`envelope::recommendation_color`); it was `chart::BAND`, opaque.
 fn suggested_colour() -> egui::Color32 {
-    tokens::CHART_SERIES[1]
+    rs_cam_viz::ui::feeds::envelope::recommendation_color()
 }
 
 fn corridor_colour() -> egui::Color32 {

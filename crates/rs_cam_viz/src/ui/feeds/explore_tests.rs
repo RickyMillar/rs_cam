@@ -200,12 +200,10 @@ const MUST_PAINT: [&str; 3] = [
     super::LABEL_RUBBING,
 ];
 
-/// The labels that must paint at 340 beyond `MUST_PAINT`. At the 240 rail
-/// the plot is 152 points wide; with the spindle minimum wall at 8000 RPM
-/// "Recommended" (82 points) has no place beside the ring that crosses no
-/// line (it may cross only the faint vendor range lines), so it drops there
-/// and the blue ring stands alone.
-const MUST_PAINT_AT_340: [&str; 2] = [super::LABEL_RECOMMENDED, super::LABEL_MIN_RPM];
+/// The labels that must paint at 340 beyond `MUST_PAINT`. P5d D3: the
+/// recommended ring paints no label (the hover names it), so
+/// "Recommended" is not in this list.
+const MUST_PAINT_AT_340: [&str; 1] = [super::LABEL_MIN_RPM];
 
 /// The fixtures: (diameter, stickout, the labels it must paint beyond
 /// `MUST_PAINT`). On Ø2 at 120 mm the deflection ceiling is on the chart,
@@ -292,7 +290,7 @@ fn the_chart_labels_fit_at_340_and_240_w3k() {
                 label.text
             );
         }
-        let names: Vec<&str> = recorded.labels.iter().map(|l| l.text).collect();
+        let names: Vec<&str> = recorded.labels.iter().map(|l| l.text.as_str()).collect();
         let at_340: &[&str] = if width > 300.0 {
             &MUST_PAINT_AT_340
         } else {
@@ -316,7 +314,7 @@ fn the_chart_labels_fit_at_340_and_240_w3k() {
             );
             let painted = texts
                 .iter()
-                .find(|(t, _)| t == label.text)
+                .find(|(t, _)| *t == label.text)
                 .unwrap_or_else(|| panic!("at {width} `{}` did not paint", label.text));
             // An upright text sits inside its background. (The
             // `visual_bounding_rect` of a turned text ignores its angle.)

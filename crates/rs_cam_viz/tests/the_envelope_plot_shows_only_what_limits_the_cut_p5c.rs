@@ -6,9 +6,9 @@
 //!
 //! 1. A drag moves the white dot (the setpoint draft); a hollow
 //!    `TEXT_MUTED` ghost marks the stored point while the candidate exists,
-//!    and Esc puts the dot back. No mark that moves is blue: `ACCENT` is only
-//!    the proposal diamond, drawn when the proposal is not at the stored
-//!    point, and it stays where it is during the drag (operator: "dragging
+//!    and Esc puts the dot back. No mark that moves is blue: blue is only
+//!    the proposal diamond (P5d D3: quiet ACCENT, drawn when the proposal is
+//!    not at the setpoint), and it stays where it is during the drag (operator: "dragging
 //!    the dot drags the recommendation"; round 2: "I still see the
 //!    recommendation move (blue circle) not the setpoint (white)").
 //! 2. A drag that leaves the plot holds the candidate on the frame edge.
@@ -18,12 +18,11 @@
 //! 3. The frame is the hard stops: the width axis ends at the tool
 //!    diameter, the depth axis never goes past the cutting length or the
 //!    flute guard. No line is drawn for these limits (items 3, 4).
-//! 4. On the rivmap100 3D Rough envelope (the operator's review job), the
-//!    plot draws at most 2 lines (1 at the review point), each with ONE
-//!    label, its short name; the move budget is drawn only when it binds;
-//!    a line is `TEXT_BODY`, no line is DANGER red (items 5 to 7). P5b drew
-//!    4 lines and 4 labels in view on this job; P5c round 1 drew no label,
-//!    and the operator could not tell the lines apart.
+//! 4. On the rivmap100 3D Rough envelope (the operator's review job), each
+//!    drawn line has ONE label, its short name; no line is DANGER red
+//!    (items 5 to 7). P5d D1 (2026-11-04) reversed the P5c rule that drew
+//!    only a limit near a mark: every limit in view draws (3 lines here),
+//!    the binding one `TEXT_BODY`, the others `TEXT_MUTED`.
 //!
 //! Red before P5c: `EnvelopeScene` has no `candidate`, `proposal_shown` or
 //! `edge_color`; the P5b view range followed the candidate, so a drag at the
@@ -42,7 +41,7 @@ use rs_cam_core::compute::catalog::{OperationConfig, OperationType};
 use rs_cam_core::feeds::envelope::{CutPoint, Edge, LimitKind, Placement, SafeEnvelope};
 use rs_cam_viz::state::panels::EnvelopeCandidates;
 use rs_cam_viz::ui::feeds::envelope::{
-    EnvelopeResponse, EnvelopeScene, EnvelopeShape, draw_envelope, short_label,
+    EnvelopeResponse, EnvelopeScene, EnvelopeShape, draw_envelope, recommendation_color,
 };
 use rs_cam_viz::ui::tokens;
 
@@ -62,7 +61,7 @@ impl Marks {
         self.dots
             .iter()
             .chain(&self.rings)
-            .all(|(_, c)| *c != tokens::ACCENT)
+            .all(|(_, c)| *c != tokens::ACCENT && *c != recommendation_color())
     }
 }
 
@@ -304,7 +303,15 @@ fn a_drag_moves_the_candidate_and_never_the_proposal_p5c() {
     assert_eq!(scene.proposal, proposal_before, "the scene's proposal");
     let m = marks(&f.shapes);
     assert!(m.no_blue_circle(), "nothing blue moves: {m:?}");
-    assert!(m.diamonds.is_empty(), "still no proposal mark: {m:?}");
+    // P5d D3: the proposal diamond paints when the proposal is not at the
+    // setpoint; the draft moved the setpoint off it, so the quiet diamond
+    // now marks the proposal, which did not move.
+    assert_eq!(m.diamonds.len(), 1, "the quiet proposal mark: {m:?}");
+    assert_eq!(m.diamonds[0].1, recommendation_color(), "quiet ACCENT");
+    assert!(
+        m.diamonds[0].0.distance(screen(proposal_before)) < 2.0,
+        "the proposal mark stays at the proposal"
+    );
     assert_eq!(m.dots.len(), 1, "one white dot: {m:?}");
     assert_eq!(m.dots[0].1, tokens::TEXT_STRONG, "a white dot inside");
     assert!(
@@ -363,7 +370,12 @@ fn a_drag_moves_the_candidate_and_never_the_proposal_p5c() {
     let rest = settle(&ctx, &config, &env, &mut candidates);
     let at_rest = marks(&rest.shapes);
     assert_eq!(at_rest.diamonds.len(), 1, "one proposal mark: {at_rest:?}");
-    assert_eq!(at_rest.diamonds[0].1, tokens::ACCENT, "ACCENT proposal");
+    // P5d D3: the recommendation is quiet ACCENT.
+    assert_eq!(
+        at_rest.diamonds[0].1,
+        recommendation_color(),
+        "quiet proposal"
+    );
     assert!(at_rest.rings.is_empty(), "no ghost at rest");
     let r = rest.response;
     let screen = |p| r.screen_of(p, EnvelopeShape::Plane).expect("a frame");
@@ -499,8 +511,11 @@ fn the_frame_is_the_hard_stops_p5c() {
     assert_eq!(scene.on_frame(dot).ap_mm, scene.ap_range.1, "on the edge");
 }
 
+/// P5d D1 reversed the P5c "near a mark" rule of this arm: every limit
+/// whose edge enters the view draws, with ONE label; a line that runs along
+/// the frame draws none. The P5c arm drew at most 2 lines here.
 #[test]
-fn the_rivmap_rough_plot_draws_only_the_limits_near_the_cut_p5c() {
+fn the_rivmap_rough_plot_draws_every_limit_in_view_p5c() {
     let ctx = ctx();
     // The fixture's point, and the live point of the operator's review.
     for (tag, point) in [
@@ -509,41 +524,47 @@ fn the_rivmap_rough_plot_draws_only_the_limits_near_the_cut_p5c() {
     ] {
         let (config, env) = rivmap_rough(point);
         let scene = EnvelopeScene::of(&env, None);
-        let kinds: Vec<LimitKind> = scene.edges.iter().map(|e| e.kind).collect();
-        assert!(!kinds.is_empty(), "{tag}: non-vacuity: a line is drawn");
-        assert!(kinds.len() <= 2, "{tag}: at most 2 lines: {kinds:?}");
+        let mut candidates = EnvelopeCandidates::default();
+        let f = settle(&ctx, &config, &env, &mut candidates);
+        let plot = f.response.frame.expect("a plot");
+        let drawn = scene.drawn_edges(plot.size());
+        let mut kinds: Vec<LimitKind> = drawn.iter().map(|e| e.kind).collect();
+        kinds.sort_by_key(|k| format!("{k:?}"));
         assert!(
             !kinds.contains(&LimitKind::Diameter),
             "{tag}: D is the frame"
         );
-        if kinds.contains(&LimitKind::Runtime) {
-            assert_eq!(
-                scene.binding,
-                Some(LimitKind::Runtime),
-                "{tag}: the move budget is drawn only when it binds"
-            );
-        }
-        assert!(
-            kinds.contains(&LimitKind::VendorAxial),
-            "{tag}: the vendor max DOC binds this cut: {kinds:?}"
+        assert_eq!(
+            kinds,
+            vec![LimitKind::Rigidity, LimitKind::Slot, LimitKind::VendorAxial],
+            "{tag}: P5d D1, the vendor, rigidity and slot limits draw"
         );
-        // One label per drawn line: its short name, once (round 2).
-        let mut candidates = EnvelopeCandidates::default();
-        let f = settle(&ctx, &config, &env, &mut candidates);
-        let names: Vec<&str> = env.boundary.iter().map(|l| short_label(l.kind)).collect();
+        assert_eq!(
+            scene.binding,
+            Some(LimitKind::VendorAxial),
+            "{tag}: the vendor DOC binds this cut"
+        );
+        // One label per drawn line: its name, once (round 2; P5d D4).
+        let names: Vec<String> = scene.edges.iter().map(|e| e.label.clone()).collect();
         let painted = texts(&f.shapes);
         let mut labels: Vec<&str> = painted
             .iter()
-            .map(String::as_str)
             .filter(|t| names.contains(t))
+            .map(String::as_str)
             .collect();
         labels.sort_unstable();
-        let mut want: Vec<&str> = kinds.iter().map(|k| short_label(*k)).collect();
+        let mut want: Vec<&str> = drawn.iter().map(|e| e.label.as_str()).collect();
         want.sort_unstable();
         assert_eq!(labels, want, "{tag}: one label per drawn line");
-        // The colour rule: TEXT_BODY lines at rest, no DANGER.
-        for e in &scene.edges {
-            assert_eq!(scene.edge_color(e), tokens::TEXT_BODY, "{tag}: {e:?}");
+        // The colour rule (P5d D4): the binding line TEXT_BODY, the others
+        // TEXT_MUTED, no DANGER.
+        for e in &drawn {
+            let want = if Some(e.kind) == scene.binding {
+                tokens::TEXT_BODY
+            } else {
+                tokens::TEXT_MUTED
+            };
+            assert_eq!(scene.edge_color(e), want, "{tag}: {e:?}");
         }
         let colours = line_colours(&f.shapes);
         assert!(
@@ -555,28 +576,6 @@ fn the_rivmap_rough_plot_draws_only_the_limits_near_the_cut_p5c() {
             "{tag}: no DANGER line: {colours:?}"
         );
     }
-    // The review point draws one line: the vendor max DOC. The slot step
-    // (ae 5.1) is 0.47 of the view away from ae 2.303: not near.
-    let kinds_at = |ap: f64, ae: f64| -> Vec<LimitKind> {
-        let (_, env) = rivmap_rough(Some((ap, ae)));
-        EnvelopeScene::of(&env, None)
-            .edges
-            .iter()
-            .map(|e| e.kind)
-            .collect()
-    };
-    assert_eq!(
-        kinds_at(4.217, 2.303),
-        vec![LimitKind::VendorAxial],
-        "the review point draws the vendor max DOC only"
-    );
-    // A cut near the slot step (ae 4.217, 0.15 of the view from ae 5.1)
-    // draws the step too.
-    assert_eq!(
-        kinds_at(2.303, 4.217),
-        vec![LimitKind::VendorAxial, LimitKind::Slot],
-        "a cut near the slot step draws it"
-    );
 }
 
 #[test]

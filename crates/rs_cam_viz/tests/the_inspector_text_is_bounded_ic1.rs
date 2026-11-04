@@ -406,9 +406,13 @@ fn surfaces(state: &AppState) -> Vec<Surface> {
     // Measured Passes: Pocket 36, 3D Rough 34, 3D Finish 28 (each under the
     // old Passes + Feeds sum: 37, 34, 33). Geometry, Heights and Linking
     // keep their measure. Each cap is the measure, with no margin.
+    // P5d D2 (operator ruling 2026-11-04, "that could just be the size of
+    // the graph"): the 3D Rough depth axis holds every flat depth limit
+    // (Rigidity 9 mm, x 1.3), so it paints one more tick row ("10"):
+    // 3D Rough Passes 34 -> 35. The limit labels share rows with ticks.
     let caps: [(&str, [usize; 4]); 3] = [
         ("Pocket", [10, 36, 17, 22]),
-        ("3D Rough", [7, 34, 15, 15]),
+        ("3D Rough", [7, 35, 15, 15]),
         ("3D Finish", [9, 28, 16, 14]),
     ];
     for (name, tab_caps) in caps {
