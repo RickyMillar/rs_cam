@@ -859,6 +859,7 @@ fn warning_lines(warning: &rs_cam_core::feeds::FeedsWarning) -> (String, Option<
             rpm_floor,
             floor_source,
             held,
+            arms,
         } => (
             rs_cam_core::feeds::rpm_lowered_text(
                 *rpm_from,
@@ -867,6 +868,7 @@ fn warning_lines(warning: &rs_cam_core::feeds::FeedsWarning) -> (String, Option<
                 *rpm_floor,
                 *floor_source,
                 *held,
+                arms,
             ),
             None,
         ),

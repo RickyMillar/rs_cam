@@ -688,6 +688,8 @@ pub enum SuggestWarning {
         floor_source: crate::feeds::RpmFloorSource,
         /// `true` when the chipload is held in full.
         held: bool,
+        /// Q1 (P8): the two arms at the cap and the one that ships.
+        arms: crate::feeds::CapArms,
     },
     /// G6 ramp (2026-09-25): the entry feed Suggest wrote. One record per
     /// apply that wrote the speeds, on an operation with the field. The

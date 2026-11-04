@@ -18,6 +18,17 @@ UX sketch in K2b). Owner: the operator. Lead: this session.
 | Q10 | A missing input (unset depth or floor, no chip data, no tool, inch units, a zero feed) stops generation or emission with a reason. Only findings warn. | K6 `EmitError` and NotReady reasons stay outside the `Consequence` column. |
 | Q9 | Bare numbers in old project files: fail to load. Fast iteration; this is not a production build. | K3 loader refuses; the planning fixtures are migrated by a script in the same commit. |
 
+Lead decisions for P8 (2026-11-03, `phases/P8.md`):
+
+- Q1a: both arms inside the power curve ships arm L (lower rpm, same chip; R4 Q10). Both run at
+  the capped feed; L keeps the larger chip.
+- Q1b: the bisection walk is deleted; its middle rpm is not an arm.
+- Q1c: an arm with a chip under the rubbing floor is inside, with the R4 Q9 warning.
+- Q8a: the axial-chip bound applies to Project Curve only. Widening it to every flat-end plunge
+  with a G6 claim is a separate decision after the FM1 diff.
+- Q6: the GUI checkbox and "Export Anyway" go; a `Danger::Machine` warning may keep one confirm
+  click. The rest waits for an agreed mock (`phases/P8_Q6_MOCK.md`).
+
 Evidence: `planning/feeds_blind_review_2026-11-03/` (the review, `rootcause/INDEX.md` and six
 reports) and four research maps in `research/` (A op catalog, B feeds pipeline, C tool facts and
 feasibility, D IR, entries and findings). Every file:line below comes from those maps.

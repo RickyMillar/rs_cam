@@ -680,7 +680,39 @@ pub fn rpm_lowered_text(
     rpm_floor: f64,
     floor_source: RpmFloorSource,
     held: bool,
+    arms: &CapArms,
 ) -> String {
+    format!(
+        "{}; {}",
+        rpm_lowered_head(
+            rpm_from,
+            rpm_to,
+            feed_ceiling_mm_min,
+            rpm_floor,
+            floor_source,
+            held,
+            arms.shipped
+        ),
+        arms.text()
+    )
+}
+
+/// The first clause of [`rpm_lowered_text`].
+fn rpm_lowered_head(
+    rpm_from: f64,
+    rpm_to: f64,
+    feed_ceiling_mm_min: f64,
+    rpm_floor: f64,
+    floor_source: RpmFloorSource,
+    held: bool,
+    shipped: CapArm,
+) -> String {
+    if shipped == CapArm::SameRpmSmallerChip {
+        return format!(
+            "RPM held at {rpm_from:.0}: the chip is thinner at the {feed_ceiling_mm_min:.0} \
+             mm/min feed limit of the machine"
+        );
+    }
     let head = format!(
         "RPM lowered from {rpm_from:.0} to {rpm_to:.0} to keep the chip at the \
          {feed_ceiling_mm_min:.0} mm/min feed limit of the machine"
@@ -693,8 +725,8 @@ pub fn rpm_lowered_text(
             RpmFloorSource::MachineMinimum => "the lowest RPM of the machine",
         };
         format!(
-            "{head}; the RPM stops at {rpm_to:.0} ({floor} is {rpm_floor:.0}, or the spindle \
-             power limits a lower speed), so the chip is thinner at the feed limit"
+            "{head}; the RPM stops at {rpm_to:.0} ({floor} is {rpm_floor:.0}), so the chip is \
+             thinner at the feed limit"
         )
     }
 }
@@ -707,6 +739,163 @@ pub enum RpmFloorSource {
     RowRpmMin,
     /// The machine's minimum spindle speed (the row has no `rpm_min`).
     MachineMinimum,
+}
+
+/// Q1 (feeds contract P8, operator ruling 2026-11-03): the two arms that
+/// Step 7 compares when the cutting-feed cap binds. Both arms run at the
+/// capped feed.
+#[derive(Debug, Clone, Copy, PartialEq, Eq)]
+pub enum CapArm {
+    /// Arm L: the RPM comes down so the chip holds (ruling R4 Q10). The
+    /// RPM is the highest the spindle runs at or below `cap / chip per
+    /// rev`, not under the floor.
+    LowerRpmSameChip,
+    /// Arm S: the RPM holds and the chip is thinner at the cap.
+    SameRpmSmallerChip,
+}
+
+impl CapArm {
+    /// The arm in words, for the card.
+    #[must_use]
+    pub const fn label(self) -> &'static str {
+        match self {
+            Self::LowerRpmSameChip => "lower rpm, same chip",
+            Self::SameRpmSmallerChip => "same rpm, smaller chip",
+        }
+    }
+
+    /// The K2 law that the shipped RPM and feed name.
+    #[must_use]
+    pub const fn law(self) -> &'static str {
+        match self {
+            Self::LowerRpmSameChip => "Q1 cap arm: lower rpm, same chip",
+            Self::SameRpmSmallerChip => "Q1 cap arm: same rpm, smaller chip",
+        }
+    }
+}
+
+/// Q1: one arm at the cap and its power. `demand_kw` is
+/// [`cap_arm_demand_kw`]: the worst case of the pre-sim power set (K7) at
+/// the arm's RPM and feed; `available_kw` is `machine.power_at_rpm(rpm)`.
+#[derive(Debug, Clone, Copy, PartialEq)]
+pub struct ArmPower {
+    /// The arm.
+    pub arm: CapArm,
+    /// The RPM of the arm.
+    pub rpm: f64,
+    /// The feed of the arm (mm/min): the cap, or under it when arm L
+    /// cannot hold the chip.
+    pub feed: f64,
+    /// The power the cut needs (kW) and the case that sets it. `None` when
+    /// the material has no force line: the power is not modelled, and the
+    /// arm counts as inside.
+    pub demand: Option<(engagement::PowerCase, f64)>,
+    /// The power the spindle has at `rpm` (kW).
+    pub available_kw: f64,
+}
+
+impl ArmPower {
+    /// The demand in kW, when it is modelled.
+    #[must_use]
+    pub fn demand_kw(&self) -> Option<f64> {
+        self.demand.map(|(_, kw)| kw)
+    }
+
+    /// True when the arm is inside the power curve. A demand that is not
+    /// modelled is inside (no limit is known).
+    #[must_use]
+    pub fn inside(&self) -> bool {
+        match self.demand_kw() {
+            None => true,
+            Some(kw) => self.available_kw > 0.0 && kw <= self.available_kw,
+        }
+    }
+
+    /// How far the demand is over the available power (kW); 0 inside.
+    #[must_use]
+    pub fn exceedance_kw(&self) -> f64 {
+        self.demand_kw()
+            .map_or(0.0, |kw| (kw - self.available_kw.max(0.0)).max(0.0))
+    }
+}
+
+/// Q1: why Step 7 shipped its arm.
+#[derive(Debug, Clone, Copy, PartialEq, Eq)]
+pub enum CapArmReason {
+    /// Only the shipped arm is inside the power curve.
+    OnlyInside,
+    /// Both arms are inside: arm L ships (lead decision Q1a, R4 Q10 holds;
+    /// at the same feed L keeps the larger chip).
+    BothInside,
+    /// Neither arm is inside: the arm with the smaller exceedance ships,
+    /// and `FeedsWarning::PowerLimited` names the power limit.
+    NeitherInside,
+}
+
+/// Q1: the two arms Step 7 compared and the one it shipped. The card shows
+/// both demands and both available powers.
+#[derive(Debug, Clone, Copy, PartialEq)]
+pub struct CapArms {
+    /// Arm L.
+    pub lower: ArmPower,
+    /// Arm S.
+    pub same: ArmPower,
+    /// The arm that ships.
+    pub shipped: CapArm,
+    /// Why it ships.
+    pub reason: CapArmReason,
+}
+
+impl CapArms {
+    /// The shipped arm and its power.
+    #[must_use]
+    pub const fn shipped_power(&self) -> &ArmPower {
+        match self.shipped {
+            CapArm::LowerRpmSameChip => &self.lower,
+            CapArm::SameRpmSmallerChip => &self.same,
+        }
+    }
+
+    /// The card text: the arm that ships and the power of both arms, for
+    /// example "arm: lower rpm, same chip (both inside the power curve);
+    /// L 0.512 of 1.014 kW at 16219 rpm, S 0.498 of 1.125 kW at 18000 rpm".
+    #[must_use]
+    pub fn text(&self) -> String {
+        let why = match self.reason {
+            CapArmReason::OnlyInside => "the only arm inside the power curve",
+            CapArmReason::BothInside => "both inside the power curve",
+            CapArmReason::NeitherInside => "neither inside the power curve; the smaller exceedance",
+        };
+        let arm = |a: &ArmPower| match a.demand_kw() {
+            Some(kw) => format!("{kw:.3} of {:.3} kW at {:.0} rpm", a.available_kw, a.rpm),
+            None => format!("power not modelled at {:.0} rpm", a.rpm),
+        };
+        format!(
+            "arm: {} ({why}); L {}, S {}",
+            self.shipped.label(),
+            arm(&self.lower),
+            arm(&self.same)
+        )
+    }
+}
+
+/// Q1: pick the arm that ships. Exactly one inside: that one. Both
+/// inside: arm L (lead decision Q1a). Neither inside: the smaller
+/// exceedance, arm L on a tie.
+#[must_use]
+pub fn pick_cap_arm(lower: ArmPower, same: ArmPower) -> (ArmPower, CapArmReason) {
+    match (lower.inside(), same.inside()) {
+        (true, true) => (lower, CapArmReason::BothInside),
+        (true, false) => (lower, CapArmReason::OnlyInside),
+        (false, true) => (same, CapArmReason::OnlyInside),
+        (false, false) => {
+            if same.exceedance_kw() < lower.exceedance_kw() {
+                (same, CapArmReason::NeitherInside)
+            } else {
+                (lower, CapArmReason::NeitherInside)
+            }
+        }
+    }
 }
 
 /// What moved the spindle off the RPM the chart or formula chose.
@@ -819,9 +1008,12 @@ pub enum FeedsWarning {
         /// What set `rpm_floor`.
         floor_source: RpmFloorSource,
         /// `true` when the chipload is held in full; `false` when the floor
-        /// or the spindle power stopped the descent and the feed still sits
+        /// stopped the descent, or arm S shipped (Q1), and the feed sits
         /// on the ceiling with a thinner chip.
         held: bool,
+        /// Q1 (P8): the two arms and their power; `arms.shipped` is the arm
+        /// that ships. With arm S, `rpm_to` equals `rpm_from`.
+        arms: CapArms,
     },
     PowerLimited {
         required_kw: f64,
@@ -1621,6 +1813,25 @@ fn worst_case_power(
     input.power_cases.worst(ae, input.tool_diameter, |w| {
         power_model_terms(input, line, ap, w, effective_d, rpm).kw_at_feed(feed)
     })
+}
+
+/// Q1 (feeds contract P8): THE demand of a cap arm. The worst case of the
+/// K7 pre-sim set of the `CutSpec` (`FeedsInput::power_cases` at the stated
+/// `ap` and `ae`) at the arm's `rpm` and `feed`, through `Engagement`, with
+/// its case. `None` when the material has no force line.
+#[must_use]
+pub(crate) fn cap_arm_demand_kw(
+    input: &FeedsInput,
+    material: &Material,
+    ap: f64,
+    ae: f64,
+    effective_d: f64,
+    rpm: f64,
+    feed: f64,
+) -> Option<(engagement::PowerCase, f64)> {
+    let line = material.force_line().ok()?;
+    let (case, kw, _) = worst_case_power(input, line, ap, ae, effective_d, rpm, feed);
+    Some((case, kw))
 }
 
 /// Step 4: the depth cap as a share of the flute length.
@@ -2836,18 +3047,26 @@ pub fn calculate(input: &FeedsInput) -> FeedsResult {
     // F4: the calculator emits CUTTING feeds — the ceiling is the cutting
     // ceiling, not the gantry travel rate.
     //
-    // Ruling R4 Q10 (2026-09-24): when the ceiling binds, the RPM follows
-    // the feed down so the chipload holds, instead of the chip thinning at
-    // the same RPM. The descent walks the constant-chipload line (booked on
-    // `spindle_scale`, not on the chipload axis) and stops at the floor: the
-    // row's `rpm_min`, or the machine's minimum RPM when the row has none.
-    // A lower RPM also lowers a VFD's available power, so the power is
-    // re-checked at the new RPM, and the descent stops where the cut still
-    // fits the spindle. Whatever the descent cannot absorb is cut from the
-    // feed at the ceiling, as before. Drill cycles keep their own RPM
-    // follow-down (Step 9c).
+    // Q1 (feeds contract P8, operator ruling 2026-11-03; replaces ruling R4
+    // Q10 at the cap): when the ceiling binds, Step 7 builds two arms at the
+    // capped feed and compares them on the power curve.
+    //   - Arm L, "lower rpm, same chip": the RPM comes down to
+    //     `floor(ceiling / chip per rev)` (the highest the spindle runs at or
+    //     below it), not under the floor (the row's `rpm_min`, or the
+    //     machine's minimum RPM). This is the R4 Q10 descent.
+    //   - Arm S, "same rpm, smaller chip": the RPM holds; the feed sits on
+    //     the ceiling with a thinner chip.
+    // The demand of each arm is `cap_arm_demand_kw` (the worst case of the
+    // K7 pre-sim set of the `CutSpec`), the available power
+    // `machine.power_at_rpm`. Exactly one arm inside ships; both inside
+    // ships L (Q1a); neither inside ships the smaller exceedance and
+    // `PowerLimited` names the limit. The R4 bisection walk between the arms
+    // is deleted (Q1b): its middle RPM is a third arm the ruling does not
+    // name. An arm with a chip under the rubbing floor is inside; Step 9b
+    // warns (Q1c). Drill cycles keep their own RPM follow-down (Step 9c).
     let machine_cut_ceiling = machine.cutting_feed_ceiling_mm_min();
     let mut feed_clamp_factor = 1.0;
+    let mut shipped_cap_arm = None;
     if feed > machine_cut_ceiling
         && machine_cut_ceiling > 0.0
         && rpm > 0.0
@@ -2859,52 +3078,47 @@ pub fn calculate(input: &FeedsInput) -> FeedsResult {
             _ => (machine_min, RpmFloorSource::MachineMinimum),
         };
         let chip_per_rev = feed / rpm;
-        let fits_power = |rpm_c: f64, feed_c: f64| -> bool {
-            let Ok(line) = material.force_line() else {
-                return true;
-            };
-            let available = machine.power_at_rpm(rpm_c);
-            if available <= 0.0 {
-                return false;
-            }
-            worst_case_power(input, line, ap, ae, effective_d, rpm_c, feed_c).1 <= available
-        };
-        let feed_at = |rpm_c: f64| (chip_per_rev * rpm_c).min(machine_cut_ceiling);
         // The RPM at which the held chip lands on the ceiling, floored to a
         // whole rev/min (the apply funnel writes an integer RPM, and a
         // rounded-up RPM would lift the feed over the ceiling), then the
         // highest RPM the spindle can run at or below it, not under the
         // floor.
         let target = (machine_cut_ceiling / chip_per_rev).floor();
-        let mut candidate = machine.next_rpm_at_or_below(target.max(rpm_floor));
-        if candidate < rpm_floor {
-            candidate = machine.clamp_rpm(rpm_floor);
+        let mut rpm_l = machine.next_rpm_at_or_below(target.max(rpm_floor));
+        if rpm_l < rpm_floor {
+            rpm_l = machine.clamp_rpm(rpm_floor);
         }
-        // Power at the lower RPM: walk back up toward the old RPM until the
-        // cut fits. The old RPM with the feed on the ceiling is the cut
-        // Step 7 used to ship, so it is the upper end of the search.
-        if candidate < rpm && !fits_power(candidate, feed_at(candidate)) {
-            let (mut lo, mut hi) = (candidate, rpm);
-            for _ in 0..40 {
-                let mid = 0.5 * (lo + hi);
-                if fits_power(mid, feed_at(mid)) {
-                    hi = mid;
-                } else {
-                    lo = mid;
+        if rpm_l < rpm && rpm_l > 0.0 {
+            let arm = |which: CapArm, rpm_c: f64| {
+                let feed_c = (chip_per_rev * rpm_c).min(machine_cut_ceiling);
+                ArmPower {
+                    arm: which,
+                    rpm: rpm_c,
+                    feed: feed_c,
+                    demand: cap_arm_demand_kw(input, material, ap, ae, effective_d, rpm_c, feed_c),
+                    available_kw: machine.power_at_rpm(rpm_c),
                 }
-            }
-            candidate = machine.clamp_rpm(hi).max(candidate);
-            if candidate > rpm {
-                candidate = rpm;
-            }
-        }
-        if candidate < rpm && candidate > 0.0 {
+            };
+            let lower = arm(CapArm::LowerRpmSameChip, rpm_l);
+            let same = arm(CapArm::SameRpmSmallerChip, rpm);
+            let (shipped, reason) = pick_cap_arm(lower, same);
+            let arms = CapArms {
+                lower,
+                same,
+                shipped: shipped.arm,
+                reason,
+            };
             let rpm_from = rpm;
-            spindle_scale *= candidate / rpm;
-            spindle_scale_reason = SpindleScaleReason::FeedCeiling;
-            rpm = candidate;
-            feed = chip_per_rev * rpm;
-            rpm_basis = Basis::derived("feed ceiling RPM", vec![rpm_basis, feed_cap_basis()]);
+            rpm_basis = Basis::derived(
+                shipped.arm.law(),
+                vec![rpm_basis, feed_cap_basis(), power_curve()],
+            );
+            if shipped.arm == CapArm::LowerRpmSameChip {
+                spindle_scale *= rpm_l / rpm;
+                spindle_scale_reason = SpindleScaleReason::FeedCeiling;
+                rpm = rpm_l;
+                feed = chip_per_rev * rpm;
+            }
             feed_basis = feed_law(&chip_basis, &rpm_basis, &ap_basis);
             if feed_power_cut {
                 feed_basis = Basis::derived("power ceiling", vec![feed_basis, power_curve()]);
@@ -2917,7 +3131,23 @@ pub fn calculate(input: &FeedsInput) -> FeedsResult {
                 rpm_floor,
                 floor_source,
                 held,
+                arms,
             });
+            // Neither arm inside: one `Warn` names the power limit (Q6: a
+            // finding warns, never refuses). The Step 6 ladder may have
+            // filed it already; the job keeps one.
+            if reason == CapArmReason::NeitherInside
+                && !warnings
+                    .iter()
+                    .any(|w| matches!(w, FeedsWarning::PowerLimited { .. }))
+            {
+                power_limited = true;
+                warnings.push(FeedsWarning::PowerLimited {
+                    required_kw: shipped.demand_kw().unwrap_or(0.0),
+                    available_kw: shipped.available_kw,
+                });
+            }
+            shipped_cap_arm = Some(shipped.arm);
         }
     }
     if feed > machine_cut_ceiling {
@@ -2931,25 +3161,32 @@ pub fn calculate(input: &FeedsInput) -> FeedsResult {
         feed = machine_cut_ceiling;
         feed_basis = Basis::derived("feed cap", vec![feed_basis, feed_cap_basis()]);
     }
+    // K2: the shipped feed names the Q1 arm (its RPM basis names it too).
+    if let Some(arm) = shipped_cap_arm {
+        feed_basis = Basis::derived(arm.law(), vec![feed_basis, power_curve()]);
+    }
 
     // --- Step 8: Plunge rate (G10) ---
-    // The plunge is `min(rule, tip cap, F)` at the final feed of Step 7
+    // The plunge is `min(rule, tip cap, axial chip, F)` at the final feed of Step 7
     // (`feeds::plunge`). The rule is the G10 claim, a printed fraction of
     // the side feed (flat end mill F / Z, ball and tapered ball 0.50 F, 60°
     // V-bit F / 3; rulings Q4 and Q5). When no claim covers the tool, the
     // rule is the named repo rule: the material base below, scaled by the
     // diameter. The tip cap of a ball or a tapered ball is a named repo rule
-    // too (`tool_load::plunge_stress`, the one producer). The apply funnel
-    // runs the rule again at the feed that ships.
-    let plunge = material.plunge_rate_base(d);
-    let plunge_basis = plunge::plunge_basis(input, plunge);
-    let material_plunge_row = material.plunge_rate_base_constant();
-
+    // too (`tool_load::plunge_stress`, the one producer). Q8 (P8): an op
+    // whose entry contract is `StraightPlunge { feed: AxialChip }` (Project
+    // Curve) also takes `G6 axial chip x rpm x Z` where a G6 claim covers
+    // the tool, so the ramp basis (Step 8b) comes first. The apply funnel
+    // runs the rule again at the feed and the RPM that ship.
+    //
     // --- Step 8b: the sourced half of the ramp feed (G6 ramp) ---
     // The G6 drill claim gives the axial chip of a helix or ramp entry, or
     // the record says why there is none. The number needs θ and the shipped
     // feed and RPM, so `suggest::apply` resolves it. No clamp rule remains.
     let ramp = ramp::ramp_basis(input);
+    let plunge = material.plunge_rate_base(d);
+    let plunge_basis = plunge::plunge_basis(input, plunge, &ramp);
+    let material_plunge_row = material.plunge_rate_base_constant();
 
     // --- Step 9: no factor (ruling R4, 2026-09-24) ---
     //
@@ -2961,7 +3198,7 @@ pub fn calculate(input: &FeedsInput) -> FeedsResult {
     // is the G10 rule of Step 8 at this feed. A drill cycle gives no value
     // here; Step 9c sets its plunge to the drill feed.
     let mut plunge_rate =
-        plunge::resolve_plunge(&plunge_basis, feed).map_or(plunge, |(value, _)| value);
+        plunge::resolve_plunge(&plunge_basis, feed, rpm).map_or(plunge, |(value, _)| value);
 
     // --- Step 9b: Rubbing-floor warning on the final feed ---
     //
@@ -3137,7 +3374,7 @@ pub fn calculate(input: &FeedsInput) -> FeedsResult {
     }
     // P5 (K2): the plunge basis at the final feed, the ramp basis, and the
     // power basis.
-    let plunge_value_basis = match plunge::resolve_plunge(&plunge_basis, feed) {
+    let plunge_value_basis = match plunge::resolve_plunge(&plunge_basis, feed, rpm) {
         Some((_, binding)) => plunge_basis.basis(binding, &feed_basis, material_plunge_row),
         None => match plunge_basis {
             plunge::PlungeBasis::DrillCycle => {

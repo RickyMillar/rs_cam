@@ -116,6 +116,15 @@ cells moved; no rpm, feed or depth cell moved. Open: the inspector ribbon does
 not show the placement; the heavy FM1 sim CSV and `wanaka_suggest_integration`
 wait for the lead (G3).
 
+Phase 8 (Q1, Q8) implemented 2026-11-05 (agent; the lead reviews and
+commits). Q1: at the cutting-feed cap Step 7 compares arm L (lower rpm, same
+chip) and arm S (same rpm, smaller chip) on the power curve at the K7 worst
+case and ships the arm inside it; the bisection walk is deleted. Q8: the
+Project Curve row is `StraightPlunge { feed: AxialChip }`; Suggest writes
+`min(F / Z, G6 chip x rpm x Z)`. FM1: 6 Project Curve cells moved (plunge and
+its binding); no Q1 cell moved. Q6 waits for the operator on the mock
+`feeds_contract_2026-11-03/phases/P8_Q6_MOCK.md`.
+
 ## Update 2026-10-29 — viewport parity: phase 0 landed
 
 `planning/viewport_parity_2026-10-28/` (research REPORT.md, design A-F,

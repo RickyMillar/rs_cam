@@ -195,8 +195,11 @@ fn apply_feeds_subset(
     // plunge only when the value moved by 1 mm/min or more, and files the
     // move. A drill cycle gives no value: its plunge is its feed. The ramp
     // below reads this plunge, so the plunge comes first.
+    // Q8 (P8): the axial-chip bound of a Project Curve plunge reads the RPM
+    // that ships.
+    let shipped_rpm = scratch.spindle_rpm().map_or(result.rpm, f64::from);
     let plunge_binding =
-        crate::feeds::plunge::resolve_plunge(&result.plunge, scratch_feed(&scratch));
+        crate::feeds::plunge::resolve_plunge(&result.plunge, scratch_feed(&scratch), shipped_rpm);
     if let Some((to_mm_min, binding)) = plunge_binding {
         let from_mm_min = scratch_plunge(&scratch);
         if (to_mm_min - from_mm_min).abs() >= 1.0 {
@@ -220,6 +223,7 @@ fn apply_feeds_subset(
                 rpm_floor,
                 floor_source,
                 held,
+                arms,
             } = w
             {
                 warnings.push(SuggestWarning::RpmLoweredForFeedCeiling {
@@ -229,6 +233,7 @@ fn apply_feeds_subset(
                     rpm_floor: *rpm_floor,
                     floor_source: *floor_source,
                     held: *held,
+                    arms: *arms,
                 });
             }
         }

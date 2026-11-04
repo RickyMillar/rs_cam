@@ -298,6 +298,7 @@ fn feeds_warning_to_diagnostic(tp_id: ToolpathId, w: &FeedsWarning) -> Diagnosti
             rpm_floor,
             floor_source,
             held,
+            arms,
         } => Diagnostic {
             id: DiagnosticId::from(ids::FEEDS_RPM_LOWERED_FOR_CEILING),
             scope: Scope::Toolpath { id: tp_id },
@@ -309,7 +310,7 @@ fn feeds_warning_to_diagnostic(tp_id: ToolpathId, w: &FeedsWarning) -> Diagnosti
             face: crate::diagnostics::presentation::face(ids::FEEDS_RPM_LOWERED_FOR_CEILING),
             anchor: crate::diagnostics::presentation::anchor(ids::FEEDS_RPM_LOWERED_FOR_CEILING),
             message: format!(
-                "{}. The feed rate moves down with the RPM.",
+                "{}.{}",
                 crate::feeds::rpm_lowered_text(
                     *rpm_from,
                     *rpm_to,
@@ -317,7 +318,13 @@ fn feeds_warning_to_diagnostic(tp_id: ToolpathId, w: &FeedsWarning) -> Diagnosti
                     *rpm_floor,
                     *floor_source,
                     *held,
-                )
+                    arms,
+                ),
+                match arms.shipped {
+                    crate::feeds::CapArm::LowerRpmSameChip =>
+                        " The feed rate moves down with the RPM.",
+                    crate::feeds::CapArm::SameRpmSmallerChip => "",
+                }
             ),
             evidence: None,
             fix: None,

@@ -75,6 +75,10 @@ On R4_AGGRESSIVENESS_SPEC.md §5, in the spec's numbering:
 - Q9 floor threshold min(0.025, band min): yes.
 - Q10 RPM follows the feed down to hold the chip, bounded by the row and
   machine minimums: yes.
+  - Replaced at the feed cap by Q1 of 2026-11-03
+    (`planning/feeds_contract_2026-11-03/PLAN.md` section 0, phase P8): Step 7
+    compares "lower rpm, same chip" with "same rpm, smaller chip" on the power
+    curve and ships the arm inside it; both inside ships the Q10 arm.
 - Q11 one common scale on depth and width: yes.
 - Standing rule from the operator: **no invisible calculations or
   de-rates**. Every scale that moves a number shows on the card with its

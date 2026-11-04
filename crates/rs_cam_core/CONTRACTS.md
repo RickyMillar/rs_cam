@@ -69,7 +69,10 @@ touches names it in its invariants.
   `Engagement::lateral_force`. Pre-sim power is the maximum over `PowerCases`
   (`Nominal`, `PlannerCap` = 3D Rough `trochoid_cap_mult x ae` at most D, `Slot` =
   `FirstPass::Slot` or `Radial::Slot`), with its `PowerCase` on `FeedsResult` and
-  `PowerFigure`; the envelope power edge is drawn at that case. The simulation is
+  `PowerFigure`; the envelope power edge is drawn at that case. Q1 (P8): at the
+  cutting-feed cap Step 7 compares arm L and arm S on the power curve
+  (`cap_arm_demand_kw`, `pick_cap_arm`, `CapArms`) and ships the arm inside it
+  (sentry `--test the_power_curve_picks_the_arm_at_the_feed_cap_q1`). The simulation is
   placed, not fed back: `compute::simulate::envelope_placement` (the tenth shared
   decision, the gate population) places each sample against the envelope ceilings
   (`SafeEnvelope::placement_of_measured`: no floors; the `Diameter` ceiling is the
@@ -107,7 +110,10 @@ touches names it in its invariants.
   entry is `MoveIntent::EntryApproach`. `JobPhases::run_stages` builds
   `Produced::entries` (`EntryRecord`, private fields). The dressup entry
   plunge feed is `PlungeFeedRule::FirstLinearFeedFraction` (F201 rows,
-  Unsourced). Sentries: `--test every_op_states_its_entry_contract_k4`,
+  Unsourced). Q8 (P8): Project Curve is `StraightPlunge { feed:
+  PlungeFeedRule::AxialChip }`: Suggest writes `min(G10 rule, G6 axial chip x rpm
+  x Z)` where a G6 claim covers the tool (sentry
+  `--test project_curve_plunges_at_the_axial_chip_q8`). Sentries: `--test every_op_states_its_entry_contract_k4`,
   `--test an_air_lead_is_an_approach_not_a_plunge_k4`,
   `--doc entry_contract_refusals`, `--lib entry_contract_table_is_pinned`.
 - K5: every physical rule has the G-CENTRECUT shape (P7). `compute/feasibility.rs`:

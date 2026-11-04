@@ -654,6 +654,7 @@ fn entry_for_warning(w: &SuggestWarning) -> RationaleEntry {
             rpm_floor,
             floor_source,
             held,
+            arms,
         } => RationaleEntry {
             param: RationaleParam::Rpm,
             reason: RationaleReason::RpmLoweredForFeedCeiling,
@@ -666,12 +667,20 @@ fn entry_for_warning(w: &SuggestWarning) -> RationaleEntry {
                 *rpm_floor,
                 *floor_source,
                 *held,
+                arms,
             ),
-            detail: Some(
-                "The feed moves down with the RPM, so the feed per tooth stays at the \
-                 vendor value."
-                    .to_owned(),
-            ),
+            detail: Some(match arms.shipped {
+                crate::feeds::CapArm::LowerRpmSameChip => {
+                    "The feed moves down with the RPM, so the feed per tooth stays at the \
+                     vendor value."
+                        .to_owned()
+                }
+                crate::feeds::CapArm::SameRpmSmallerChip => {
+                    "The lower RPM is outside the power curve of the spindle, so the RPM \
+                     holds and the feed per tooth is thinner at the feed limit."
+                        .to_owned()
+                }
+            }),
         },
         SuggestWarning::RampFeed {
             from_mm_min,

@@ -19,6 +19,11 @@ full viz run at each commit; the non-heavy core integration run is the broad che
 binary runs only when a card's gate names it, one at a time, never the full heavy gate. A phase
 that needs an operator ruling stops at that point and records the question here.
 
+Questions for the operator (overnight):
+- P8 Q6 (collisions: one warning on every surface, the GUI "Export Anyway" step goes): the card
+  needs an operator-agreed mock first (no text clutter). The agent writes
+  `phases/P8_Q6_MOCK.md`; no Q6 code lands until the operator agrees it. Q1 and Q8 go ahead.
+
 ## Next session (hand-off by the lead, 2026-11-04, after P5d)
 
 Operator plan (2026-11-04): run two jobs in parallel, each by one Opus agent; the lead
@@ -84,7 +89,7 @@ Prompt for the new session (paste after `/clear`):
 | 5d Plot review 2 | `phases/P5d.md` | DONE 2026-11-04 (every limit in view draws and is named; range holds every flat depth limit; one mark rule on both charts: white = setpoint, grey ghost = stored during a draft, quiet ACCENT = recommendation; names Vendor DOC k×D / Rigidity DOC / Slot DOC / Cut length; D tick paints, an off-step D names itself alone; ic1 3D Rough Passes cap 34 -> 35, one more depth tick row; operator approved the live screenshot) | see `git log` | |
 | 6 K3 `ToolFact` | `phases/P6.md` | DONE 2026-11-04 (A: type, readers, builder; B: private fields, setters; C: `ToolFact` storage, TOML forms, Q9 refusal at all three loaders, doors, 136 files migrated; no number and no G-code byte moved; F201 149 -> 154) | see `git log` | |
 | 7 K5 feasibility rules | `phases/P7.md` | DONE 2026-11-04: A, B, A2 (D12 required facts), C (3D Rough cut, link and terrain ramp at the limit slope; wanaka op 1 core strikes 37 -> 0) | see `git log` | C |
-| 8 Q1 / Q6 / Q8 | `phases/P8.md` | NOT STARTED (Q1 needs P9 changes 1-2 first) | | |
+| 8 Q1 / Q6 / Q8 | `phases/P8.md` | Q1, Q8 DONE 2026-11-05; Q6 waits for the operator (`phases/P8_Q6_MOCK.md`) | see `git log` | Q6 |
 | 9 K7 one engagement | `phases/P9.md` | DONE 2026-11-04 (one `Engagement`; pre-sim power is the worst case with its name; the simulation is placed on the envelope, not fed back; open items in the card) | see `git log` | |
 | 10 Tool-derived geometry defaults (D8) | `phases/P10.md` | NOT STARTED (card drafted 2026-11-03; needs P5; lead answers its open points first) | | |
 | 11 Force model, chip first, feed-driven limits | `phases/P11.md` | Step 0 DONE 2026-11-04 (`research_p11_step0/`: verdict FAIL against the preregistered rule; best group W 67 %, best group D 7.3 %, wood force candidates 0 / 418; 21 claims hold). Steps 1-6 NOT STARTED (need D11) | see `git log` | D11 ruling; then steps 1-6 after P9 or with it |

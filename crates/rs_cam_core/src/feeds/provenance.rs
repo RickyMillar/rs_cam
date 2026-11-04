@@ -406,10 +406,11 @@ impl FeedsResult {
         let doc = ValueProvenance::of_basis(&self.bases.ap);
         let woc = ValueProvenance::of_basis(&self.bases.ae);
 
-        let plunge = match super::plunge::resolve_plunge(&self.plunge, self.feed_rate_mm_min) {
-            Some((_, binding)) => self.plunge.provenance(binding, chip.clone()),
-            None => chip.clone(),
-        };
+        let plunge =
+            match super::plunge::resolve_plunge(&self.plunge, self.feed_rate_mm_min, self.rpm) {
+                Some((_, binding)) => self.plunge.provenance(binding, chip.clone()),
+                None => chip.clone(),
+            };
 
         FeedsProvenance {
             feed_rate: Some(chip),
@@ -488,6 +489,7 @@ mod tests {
                 ),
                 base_mm_min: 400.0,
                 tip_cap: None,
+                axial: None,
             },
             ramp: crate::feeds::RampBasis::NoChip {
                 reason: crate::feeds::RampFallback::NoLut,

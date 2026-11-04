@@ -236,6 +236,14 @@ fn re_derived(warnings: &[SuggestWarning]) -> Vec<(f64, f64, PlungeBinding)> {
         .collect()
 }
 
+/// The RPM that ships: the axial-chip bound of a Project Curve plunge reads
+/// it (P8); the other ops ignore it.
+fn rpm(s: &SuggestedParams) -> f64 {
+    s.operation
+        .spindle_rpm()
+        .map_or(s.feeds_result.rpm, f64::from)
+}
+
 /// (a) A 6 mm 2F flat Pocket in hardwood on the generic router plunges at
 /// floor(F / 2), and the basis is the flat claim.
 #[test]
@@ -290,10 +298,10 @@ fn a_ball_plunges_at_half_the_feed_under_its_tip_cap_g10() {
         PlungeBinding::TipCap
     };
     assert_eq!(
-        resolve_plunge(&s.feeds_result.plunge, feed),
+        resolve_plunge(&s.feeds_result.plunge, feed, rpm(&s)),
         Some((expected, binding))
     );
-    let (headline, _) = s.feeds_result.plunge.card_text_at(feed);
+    let (headline, _) = s.feeds_result.plunge.card_text_at(feed, rpm(&s));
     assert!(
         headline.contains(&format!("set by {}", binding.label())),
         "{headline}"
@@ -408,7 +416,7 @@ fn a_one_millimetre_tapered_tip_is_held_by_the_tip_cap_g10() {
         "the cap must be the smaller term: {feed}"
     );
     assert_eq!(
-        resolve_plunge(&s.feeds_result.plunge, feed),
+        resolve_plunge(&s.feeds_result.plunge, feed, rpm(&s)),
         Some((150.0, PlungeBinding::TipCap))
     );
     assert!(s.operation.plunge_rate().expect("S11: the fixture sets it") <= 150.0);

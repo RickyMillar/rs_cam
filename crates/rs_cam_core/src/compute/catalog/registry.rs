@@ -1487,7 +1487,7 @@ pub(super) static REG_PROJECT_CURVE: OpRegistryEntry = OpRegistryEntry {
     dressup_policy: DressupPolicy::strip_all(PROJECT_CURVE_NO_ENTRY),
     entry: EntryContract::StraightPlunge {
         reason: PROJECT_CURVE_NO_ENTRY,
-        feed: PlungeFeedRule::OpPlungeRate,
+        feed: PlungeFeedRule::AxialChip,
     },
     policy: OpPolicy::MILLING,
     capabilities: Capabilities {

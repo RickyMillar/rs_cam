@@ -2215,11 +2215,18 @@ mod tests {
                 OperationType::VCarve
                 | OperationType::Inlay
                 | OperationType::InlayPlug
-                | OperationType::DropCutter
-                | OperationType::ProjectCurve => (
+                | OperationType::DropCutter => (
                     EntryContract::StraightPlunge {
                         reason: row.dressup_policy.strip_all_reason.unwrap_or_default(),
                         feed: PlungeFeedRule::OpPlungeRate,
+                    },
+                    true,
+                ),
+                // P8 (ruling Q8): the plunge is bound by the G6 axial chip.
+                OperationType::ProjectCurve => (
+                    EntryContract::StraightPlunge {
+                        reason: row.dressup_policy.strip_all_reason.unwrap_or_default(),
+                        feed: PlungeFeedRule::AxialChip,
                     },
                     true,
                 ),

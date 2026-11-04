@@ -53,10 +53,10 @@ pub enum EntryContract {
     /// A straight plunge is the only entry. The dressup entry style is
     /// None. `reason` is the text of the row.
     ///
-    /// G-CENTRECUT (lead decision D1, P3): for a tool that does not cut at
-    /// its centre, the dressup pipeline gives these entries the shared
-    /// fallback ramp. Phase 7 (K5 warnings) and Phase 8 (ruling Q8) decide
-    /// that rule again.
+    /// G-CENTRECUT (K5, P7 C; ruling Q8): the dressup fallback ramp does
+    /// not fire on this contract. A `No(..)` tool keeps its plunges and
+    /// warns on each one deeper than the blade protrusion; an `Unknown`
+    /// tool stops generation with the D12 reason.
     StraightPlunge {
         /// Why the op takes no dressup entry.
         reason: &'static str,
@@ -213,12 +213,19 @@ pub enum NoneEntry {
     StockAwarePlunge,
 }
 
-/// The plunge feeds of today, named. Phase 8 adds `AxialChip(ClaimRef)`
-/// (it needs K2).
+/// The plunge feeds, named.
 #[derive(Debug, Clone, Copy, PartialEq, Eq)]
 pub enum PlungeFeedRule {
     /// The plunge rate of the op.
     OpPlungeRate,
+    /// Feeds contract P8 (ruling Q8, lead decision Q8a): the plunge rate of
+    /// the op, which Suggest writes as `min(G10 rule, G6 axial chip x rpm x
+    /// Z)` where a G6 claim covers the tool (`feeds::plunge::AxialChipBound`),
+    /// else the G10 rule alone. The claim depends on the tool, so the row
+    /// states the rule and Suggest resolves the claim (the plan's
+    /// `AxialChip(ClaimRef)`). The generator reads `plunge_rate` as for
+    /// [`Self::OpPlungeRate`].
+    AxialChip,
     /// The feed of the dressup entry for the air lead and for the plunge
     /// fallback: the first linear feed of the toolpath times
     /// [`ENTRY_PLUNGE_FIRST_FEED_FRACTION`], else

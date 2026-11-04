@@ -104,6 +104,7 @@ fn lowered(r: &FeedsResult) -> Option<(f64, f64, f64, f64, RpmFloorSource, bool)
             rpm_floor,
             floor_source,
             held,
+            ..
         } => Some((
             *rpm_from,
             *rpm_to,

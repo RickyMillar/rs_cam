@@ -381,6 +381,7 @@ fn entry_columns(s: &SuggestedParams) -> [String; 6] {
     let binding = resolve_plunge(
         &r.plunge,
         s.operation.feed_rate().expect("S11: the fixture sets it"),
+        s.operation.spindle_rpm().map_or(r.rpm, f64::from),
     )
     .map_or_else(String::new, |(_, b)| format!("{b:?}"));
     let record = s.warnings.iter().find_map(|w| match w {
