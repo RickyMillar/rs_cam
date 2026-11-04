@@ -1,7 +1,7 @@
 //! **S1 — an absence must render as an absence, never as nothing at all.**
 //!
 //! The gantry push force is the one load this crate computes and never
-//! judges. `feeds::force::lateral_cutting_force` returns a number; no
+//! judges. `feeds::engagement::Engagement::edge_force` returns a number; no
 //! `MachineProfile` field states the axis thrust the gantry can deliver,
 //! so no bound exists to compare it against. Register item **T-10** holds
 //! the blocker: no maker publishes a thrust rating, and the ballpark

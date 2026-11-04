@@ -47,11 +47,13 @@ the full entry point. Read it first, then the files it names.
    known-red list in "Not in a phase"; no P10 regression.
 1. DONE 2026-11-05: **P8 Q6** (`phases/P8_Q6_MOCK.md` as drawn; sentry
    `a_collision_is_the_same_warning_on_every_surface_q6`; no new GUI text).
-2. **P11a** (steps 2 and 3, L4 and L5): the envelope defects D-A and D-B, then the engaged-edge
+2. DONE 2026-11-05: **P11a** (steps 2 and 3, L4 and L5): the envelope defects D-A and D-B, then the engaged-edge
    force as a method on `feeds/engagement.rs` `Engagement` (peak for lateral force and
    deflection, mean for power). Decide the two P9 open diameters (`phases/P11.md` "Open from
    P9"): every reader uses `Engagement::d_eng` at the cut depth.
-3. **P11b** (steps 1, 4, 5, 6; L1-L3, L6-L9): chip thinning in Suggest (Garr peak chip, finish
+3. **P11b** (steps 1, 4, 5, 6; L1-L3, L6-L9; plus the P11a item: a stated depth above the
+   flute guard or the slot cap still sizes the feed and power at the clamped depth in
+   `calculate` (`DepthClamps::Apply`); P11b sizes them at the stated depth and warns): chip thinning in Suggest (Garr peak chip, finish
    ops do not thin, no new cap), chip first (`doc_derating_scale` stops scaling the chip; the
    vendor 1/2/3 x D table becomes a visible limit), the envelope sized at the operator's chip,
    the source hunt, and the after-page `research_p11_step0/after/` (L9).
@@ -117,6 +119,14 @@ the full entry point. Read it first, then the files it names.
   The status bar, the live overlay, the overlay registry and `issue_triage` still read the GUI
   move list `sim.checks.rapid_collisions` (the Simulation workspace keeps the move count, as
   the mock states). The card's "simulation ran" test reads GUI state, not the session.
+- P11a: the reviewer list in `phases/P11.md` "Result P11a" (post-sim edge-sum cost 40.2 ->
+  40.8 s on the FM1 sim subset; `Edge::Unmodelled` names a modelled absence; two diameter
+  rules (`effective_diameter`, `engagement_radius`); one radius for a ball, taper or V-bit
+  edge (an upper bound); 16-step deflection scan; the unsourced 30 degree helix default now
+  reaches every force reader; modulator compliance at the toolpath peak depth; the deflection
+  gate reads `axial_engagement_mm`, the power gate `axial_doc_mm`; `efficiency.rs` specific
+  energy at the nominal diameter; a column over target at the shallowest depth draws an edge
+  at 0 mm). The `feeds::predict` wanaka back-rough fixture now reads 18.8 um (was about 48).
 - P10: the calculator's ap factors put the add-door default outside the repo's own envelope
   (option (a) measured: Rigidity 118 -> 134, VendorAxial 10 -> 33 FM1 cells), so the axial
   defaults scale today's 6 mm values instead. The radial and axial tables are Unsourced.
@@ -207,8 +217,11 @@ Those will already be fairly de-rated so our later deratings will just cut it do
    32 adaptive stepover cells at 0.20 D); P13 measures and names them.
 7. Lineage: store it in the project file, if it is not a memory sink. Measure the size first.
 
-Lead plan: P11b takes items 1-3 with L6 and L8. A new phase P13 (after P11b, before P12) takes
-items 4, 5, 7 (the lineage trace) and the result of 6.
+Lead plan (revised 2026-11-05): P11b stays L1-L9. A new phase P11c (after P11b) takes items
+1-3 and 6 (the slot cap into `RigidityProfile`, the stepover from the rigidity model, the depth
+margin with more than one source, the Shapeoko default named hobby grade). A new phase P13
+(after P11c, before P12) takes items 4, 5 and 7 (the vendor-row law, the industrial rows, the
+lineage trace stored in the project file).
 
 ## Phases
 
@@ -228,7 +241,7 @@ items 4, 5, 7 (the lineage trace) and the result of 6.
 | 8 Q1 / Q6 / Q8 | `phases/P8.md` | DONE 2026-11-05 (Q1, Q8; Q6 as the agreed mock: the rapid-collision card counts the core `project.rapid_collision` rows, one per toolpath, on the pre-flight and the Readiness panel; sentry `a_collision_is_the_same_warning_on_every_surface_q6`) | see `git log` | |
 | 9 K7 one engagement | `phases/P9.md` | DONE 2026-11-04 (one `Engagement`; pre-sim power is the worst case with its name; the simulation is placed on the envelope, not fed back; open items in the card) | see `git log` | |
 | 10 Tool-derived geometry defaults (D8) | `phases/P10.md` | DONE 2026-11-05 (no default without a tool; radial = the calculator's own width; axial k x D from today's 6 mm values; FM1 353 cells; G-code byte-identical) | 84bfeab68 | |
-| 11 Force model, chip first, feed-driven limits | `phases/P11.md` | Step 0 DONE 2026-11-04 (`research_p11_step0/`: verdict FAIL against the preregistered rule; best group W 67 %, best group D 7.3 %, wood force candidates 0 / 418; 21 claims hold). Steps 1-6 NOT STARTED; D11 ruled; decisions L1-L9 in the card | see `git log` | P11a, then P11b |
+| 11 Force model, chip first, feed-driven limits | `phases/P11.md` | Step 0 DONE 2026-11-04; **P11a DONE 2026-11-05** (D-A grid at the requested depth, D-B solved deflection edge, L5 engaged-edge force with the helix (peak for deflection, mean = power), every reader at `d_eng` of the cut depth; FM1: 430 `force_n` cells and 20 sim `deflection_peak_mm` cells, no feed/rpm/depth/power cell). P11b NOT STARTED | see `git log` | P11b |
 | 12 Hand-off for independent review | `phases/P12.md` | NOT STARTED (operator, 2026-11-04: last; another session verifies the output numbers against industry practice) | | after P11 |
 
 ## Not in a phase

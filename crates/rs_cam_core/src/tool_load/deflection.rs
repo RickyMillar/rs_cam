@@ -2,15 +2,12 @@
 //! under cutting load.
 //!
 //! For each cutting sample of the toolpath, computes the transverse
-//! cutting force from the canonical feed-aware affine model
-//! ([`crate::feeds::force::lateral_cutting_force`]):
-//!
-//! ```text
-//! F = axial_engagement_mm × (Ks · fz·sin θ_peak + F_edge)    [N]
-//! ```
-//!
-//! where the immersion angle ψ (→ θ_peak) is the sample's swept
-//! `arc_engagement_radians` and `fz` is its commanded chipload per tooth.
+//! cutting force: the PEAK resultant of the force line `Ks h + F_edge`
+//! summed over the engaged edge with the helix lag
+//! ([`crate::feeds::engagement::Engagement::edge_force`], feeds contract
+//! P11a, L5). The depth is the sample's `axial_engagement_mm`, the arc
+//! is its swept `arc_engagement_radians`, and `fz` is its effective chip
+//! per tooth.
 //! Then [`ToolDefinition::tip_deflection_mm`] integrates the stepped
 //! cantilever (shank + cutting region) using the per-cutter
 //! `lookup_diameter_at` profile, and returns the predicted tip
@@ -114,12 +111,23 @@ pub fn sample_tip_deflection_mm(
     if sample.is_air() || sample.axial_engagement_mm <= 0.0 {
         return None;
     }
-    // The swept engagement arc IS the immersion angle ψ — hand it to the
-    // canonical force model directly (no lossy arc→slab-width conversion).
+    // The swept engagement arc IS the immersion angle ψ. The engagement
+    // takes the width `r (1 - cos ψ)` at the engaged radius of the sample
+    // depth, the exact inverse of `immersion_angle` (P9 D-W), so ψ comes
+    // back unchanged.
     let immersion_rad = sample.arc_engagement_radians?;
     if immersion_rad <= 0.0 {
         return None;
     }
+    let ap = sample.axial_engagement_mm;
+    let r = crate::tool::MillingCutter::engagement_radius(tool, ap);
+    let engagement = crate::feeds::engagement::Engagement::from_tool_cut(
+        crate::feeds::envelope::CutPoint {
+            ap_mm: ap,
+            ae_mm: r * (1.0 - immersion_rad.clamp(0.0, std::f64::consts::PI).cos()),
+        },
+        tool,
+    );
     // Canonical feed-aware force + cantilever model lives in
     // `feeds::force`/`feeds::predict` so the pre-sim cutter-axial-
     // constraints envelope, the Suggest predictor, and this post-sim gate
@@ -131,8 +139,7 @@ pub fn sample_tip_deflection_mm(
     crate::feeds::predict::tip_deflection_from_engagement(
         tool,
         material,
-        sample.axial_engagement_mm,
-        immersion_rad,
+        &engagement,
         feed_per_tooth_mm,
     )
 }
@@ -581,11 +588,23 @@ mod tests {
         let s = cutting_sample(0, 0, 2.5, arc, 1200.0, 0.5);
         let via_gate =
             sample_tip_deflection_mm(&tool, &mat, &s, s.chipload_mm_per_tooth).expect("gate δ");
+        let arc_rad = s.arc_engagement_radians.expect("arc");
+        let r = crate::tool::MillingCutter::engagement_radius(&tool, s.axial_engagement_mm);
+        let engagement = crate::feeds::engagement::Engagement::from_tool_cut(
+            crate::feeds::envelope::CutPoint {
+                ap_mm: s.axial_engagement_mm,
+                ae_mm: r * (1.0 - arc_rad.cos()),
+            },
+            &tool,
+        );
+        assert!(
+            (engagement.psi_rad() - arc_rad).abs() < 1e-12,
+            "ψ round trip"
+        );
         let via_canonical = crate::feeds::predict::tip_deflection_from_engagement(
             &tool,
             &mat,
-            s.axial_engagement_mm,
-            s.arc_engagement_radians.expect("arc"),
+            &engagement,
             s.chipload_mm_per_tooth,
         )
         .expect("canonical δ");
@@ -638,14 +657,23 @@ mod tests {
             "long/thin tool at full commanded feed must Exceed; got {v_cmd:?}"
         );
 
-        // The optimizer's deflection-safe feed (affine inverse, full slot
-        // ⇒ sinθ_peak = 1), with a small margin so we land clearly Within.
+        // The optimizer's deflection-safe feed (the engaged-edge peak
+        // force cap, the solver the optimizer reads), with a small margin
+        // so we land clearly Within.
         let line = mat.force_line().expect("force line");
-        let (ks, f_edge) = (line.ks_n_per_mm2(), line.f_edge_n_per_mm());
         let e = tool.tool_material.youngs_modulus_n_per_mm2();
         let compliance = tool.tip_deflection_mm(1.0, ap, e);
         let budget_force = EXCEEDS_BOUND_MM / compliance;
-        let safe_fz = (budget_force / ap - f_edge) / ks;
+        let slot = crate::feeds::engagement::Engagement::from_tool_cut(
+            crate::feeds::envelope::CutPoint {
+                ap_mm: ap,
+                ae_mm: 3.0,
+            },
+            &tool,
+        );
+        let safe_fz = slot
+            .fz_cap_for_peak_force(line, tool.flute_count, budget_force)
+            .expect("a feed-down exists");
         let safe_feed = safe_fz * sample.spindle_rpm as f64 * sample.flute_count as f64 * 0.98;
         assert!(
             safe_feed > 0.0 && safe_feed < commanded_feed,

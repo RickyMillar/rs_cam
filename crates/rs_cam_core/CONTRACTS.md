@@ -81,8 +81,9 @@ touches names it in its invariants.
   `mrr_cross_section_mm2`. `PowerModelInputs` has private fields in the same file,
   so only `Engagement::power_inputs` builds it: the calculator Step 6, the
   operating-point door, the post-sim gate `sample_power_kw` and the modulator power
-  cap read one power for one cut; the deflection predictor reads
-  `Engagement::lateral_force`. Pre-sim power is the maximum over `PowerCases`
+  cap read one power for one cut. P11a (L5): every deflection reader reads the
+  PEAK resultant of `Engagement::edge_force` (the force line summed over the
+  engaged edge with the helix lag); its mean is the power model's. Pre-sim power is the maximum over `PowerCases`
   (`Nominal`, `PlannerCap` = 3D Rough `trochoid_cap_mult x ae` at most D, `Slot` =
   `FirstPass::Slot` or `Radial::Slot`), with its `PowerCase` on `FeedsResult` and
   `PowerFigure`; the envelope power edge is drawn at that case. Q1 (P8): at the

@@ -223,26 +223,72 @@ pub struct PerMoveEngagement {
     pub axial_doc_mm: f64,
 }
 
+/// Feeds contract P11a: the cutter facts that the deflection and power
+/// caps need to build one `feeds::engagement::Engagement` per move. The
+/// engaged diameter is `feeds::effective_diameter` at the MOVE depth (the
+/// open P9 diameter; it was the diameter at the toolpath's peak depth).
+#[derive(Debug, Clone, Copy, PartialEq)]
+pub struct ModulationCutter {
+    /// The cutter's shape: the chip section and the engaged diameter.
+    pub geometry: crate::feeds::ToolGeometryHint,
+    /// The nominal cutting diameter (mm).
+    pub diameter_mm: f64,
+    /// The shank diameter (mm); a tapered ball's engaged diameter stops
+    /// at it.
+    pub shank_diameter_mm: f64,
+    /// The helix angle (degrees): the lag of the engaged edge.
+    pub helix_deg: f64,
+}
+
+impl ModulationCutter {
+    /// The engaged diameter at the axial depth `ap_mm`.
+    #[must_use]
+    pub fn d_eng_at(&self, ap_mm: f64) -> f64 {
+        crate::feeds::effective_diameter(
+            self.geometry,
+            self.diameter_mm,
+            self.shank_diameter_mm,
+            ap_mm,
+        )
+    }
+
+    /// The one engagement of a move: depth `ap_mm`, width
+    /// `woc_fraction x d_eng`.
+    fn engagement(&self, ap_mm: f64, woc_fraction: f64) -> crate::feeds::engagement::Engagement {
+        let d_eng = self.d_eng_at(ap_mm);
+        crate::feeds::engagement::Engagement::from_cut(
+            crate::feeds::envelope::CutPoint {
+                ap_mm,
+                ae_mm: woc_fraction * d_eng.max(0.0),
+            },
+            self.geometry,
+            d_eng,
+            Some(self.helix_deg),
+        )
+    }
+}
+
 /// Optional deflection-cap inputs for the constrained-max solver.
 /// When `None` the deflection constraint is skipped (typical for
 /// unit tests and band-mid runs).
 ///
-/// These carry the **same feed-aware affine force model + beam compliance
-/// the post-sim deflection gate uses**, so the optimizer and gate agree on
-/// a cut. The lateral force is affine in feed per tooth
-/// `F = ap·(Ks·fz·sin θ_peak + F_edge)` and tip deflection is linear in
-/// force `δ = compliance · F`, so the solver inverts `δ ≤ bound` for the
-/// feed cap in closed form. `Ks`/`F_edge` come from
+/// These carry the **same engaged-edge force + beam compliance the
+/// post-sim deflection gate uses**, so the optimizer and gate agree on a
+/// cut. The lateral force is the PEAK resultant of the force line summed
+/// over the engaged edge (`Engagement::edge_force`, feeds contract P11a,
+/// L5), and tip deflection is linear in force `δ = compliance · F`. So
+/// the solver turns `δ ≤ bound` into a force budget and solves the feed
+/// cap (`Engagement::fz_cap_for_peak_force`). The line comes from
 /// [`crate::material::Material::force_line`]; `compliance` is evaluated
 /// once at the toolpath's peak axial DOC from the integrated two-section
 /// cantilever ([`crate::tool::ToolDefinition::tip_deflection_mm`]).
 #[derive(Debug, Clone, Copy, PartialEq)]
 pub struct DeflectionLimitInputs {
-    /// Affine force slope `Ks` (N/mm²) — the material's force line.
-    pub ks_n_per_mm2: f64,
-    /// Affine edge intercept `F_edge` (N per mm of axial engagement) — the
-    /// feed-independent force floor.
-    pub f_edge_n_per_mm: f64,
+    /// The material's force line (the line alone: deflection does not
+    /// read the grain factor).
+    pub line: crate::material::force_line::ForceLine,
+    /// The cutter facts of the engagement.
+    pub cutter: ModulationCutter,
     /// Tip deflection per newton of lateral force (mm/N), from the same
     /// integrated cantilever the gate uses, at the toolpath's peak axial
     /// DOC. Deflection is linear in force, so one scalar suffices.
@@ -263,12 +309,10 @@ pub struct PowerLimitInputs {
     /// pre-multiply (S2-9 in
     /// `planning/tool_kinematics_chipload_audit_2026-05-31.md`).
     pub line: crate::material::force_line::ForceLine,
-    /// Effective diameter at the engagement depth (mm).
-    pub engagement_diameter_mm: f64,
-    /// K7 (feeds contract P9): the cutter's shape, so the power cap reads
-    /// the cutter's own chip section (a V-bit removes half the rectangle),
-    /// the section Suggest and the post-sim gate read.
-    pub geometry: crate::feeds::ToolGeometryHint,
+    /// The cutter facts of the engagement: the chip section (K7, a V-bit
+    /// removes half the rectangle) and the engaged diameter at the move
+    /// depth (P11a).
+    pub cutter: ModulationCutter,
     /// Available spindle power × safety factor at the running RPM
     /// (kW). The constrained-max solver caps the feed so the predicted
     /// two-term power (`tool_load::power::PowerTerms`) stays inside
@@ -336,7 +380,7 @@ pub struct ModulationContext<'a> {
     /// F-039 — per-move axial DOC (mm) at full engagement. Used as
     /// the `axial_doc_mm` term when scaling deflection + power
     /// limits via `engagement.axial_doc_fraction`. Falls back to
-    /// `engagement_diameter_mm` when zero/None.
+    /// the power cutter's nominal diameter when zero/None.
     pub nominal_axial_doc_mm: f64,
     /// Phase 3 (2026-09-07) — the OPERATION's own plunge rate
     /// (mm/min). [`adaptive_feed_modulate`] caps a vertical-dominant
@@ -520,26 +564,27 @@ fn max_safe_feed_for_move(
     ));
 
     // 2. Deflection cap (feed-aware, gate-consistent). The lateral force
-    // is AFFINE in feed per tooth:
-    //   F = ap · (Ks · fz·sin θ_peak + F_edge),   cos ψ = 1 − 2·woc_frac
-    // and tip deflection is linear in force: δ = compliance · F. So solve
-    // δ ≤ bound for the feed cap in closed form — the same affine force
-    // model + beam compliance the post-sim deflection gate uses, so the
-    // optimizer and gate cannot disagree on the cut (unlike the old
-    // feed-blind `Kc·ap·ae` reference force this replaced).
+    // is the PEAK resultant engaged-edge force of the move's one
+    // engagement (P11a, L5), and tip deflection is linear in force:
+    // δ = compliance · F. So `δ ≤ bound` is the force budget
+    // `bound / compliance`, and the feed cap is solved from the same force
+    // model and beam compliance the post-sim deflection gate uses, so the
+    // optimizer and gate cannot disagree on the cut.
     if let Some(defl) = ctx.deflection_inputs {
         let axial_mm = effective_axial_mm(engagement, ctx);
-        // One solver, shared with the pre-simulation feeds chart: the
-        // closed-form inverse lives in `feeds::force`, not here. Two
-        // copies of one model drift apart.
-        match crate::feeds::force::chipload_cap_for_deflection_with_reason(
-            defl.ks_n_per_mm2,
-            defl.f_edge_n_per_mm,
-            defl.compliance_mm_per_n,
-            defl.max_tip_deflection_mm,
-            axial_mm,
-            woc_eff,
-        ) {
+        // One solver, shared with the inspector: the inverse lives on
+        // `feeds::engagement::Engagement`, not here. Two copies of one
+        // model drift apart.
+        let budget_n = if defl.compliance_mm_per_n > 0.0 {
+            defl.max_tip_deflection_mm / defl.compliance_mm_per_n
+        } else {
+            0.0
+        };
+        match defl
+            .cutter
+            .engagement(axial_mm, woc_eff)
+            .fz_cap_for_peak_force(defl.line, ctx.flute_count.max(1), budget_n)
+        {
             Ok(fz_cap) => {
                 let defl_cap = fz_cap * ctx.spindle_rpm * flutes;
                 limits.push((defl_cap, BindingConstraint::DeflectionMax));
@@ -581,26 +626,23 @@ fn max_safe_feed_for_move(
     {
         let axial_mm = effective_axial_mm(engagement, ctx);
         if axial_mm > 0.0 && woc_eff > 0.0 {
-            let radial_width = woc_eff * pow.engagement_diameter_mm.max(0.0);
+            // P11a: the engaged diameter at the move depth.
+            let radial_width = woc_eff * pow.cutter.d_eng_at(axial_mm).max(0.0);
             if radial_width > 0.0 {
                 // Callers pass the force line; `PowerTerms::of` applies
                 // its grain factor (S2-9), so the factor is one diff.
                 //
-                // K7 (feeds contract P9): the one engagement of the cut.
-                // ψ from the same `cos ψ = 1 − 2·woc_fraction` the
-                // deflection cap uses, and the cutter's own section, so the
-                // cap, Suggest and the gate read one power for one cut.
+                // K7 (feeds contract P9): the one engagement of the cut,
+                // the same one the deflection cap builds (P11a: at the
+                // engaged diameter of the move depth), and the cutter's
+                // own section, so the cap, Suggest and the gate read one
+                // power for one cut.
                 let terms = crate::tool_load::power::PowerTerms::of(
-                    crate::feeds::engagement::Engagement::from_cut(
-                        crate::feeds::envelope::CutPoint {
-                            ap_mm: axial_mm,
-                            ae_mm: radial_width,
-                        },
-                        pow.geometry,
-                        pow.engagement_diameter_mm,
-                        None,
-                    )
-                    .power_inputs(pow.line, ctx.spindle_rpm, flutes),
+                    pow.cutter.engagement(axial_mm, woc_eff).power_inputs(
+                        pow.line,
+                        ctx.spindle_rpm,
+                        flutes,
+                    ),
                 );
                 match terms.feed_for_kw(pow.available_kw) {
                     Some(pow_cap) => limits.push((pow_cap, BindingConstraint::PowerMax)),
@@ -741,10 +783,10 @@ fn effective_axial_mm(engagement: PerMoveEngagement, ctx: &ModulationContext<'_>
     // engagement diameter here is a proxy, not a measurement: it keeps the
     // pre-T-11 behaviour for legacy and analytical traces rather than
     // silently disabling both caps, and the caller treats a zero as an air
-    // move. The deflection cap carries no diameter (it works off compliance
-    // plus the affine coefficients), so only `power_inputs` contributes.
+    // move. Either cap's nominal diameter serves.
     ctx.power_inputs
-        .map(|p| p.engagement_diameter_mm)
+        .map(|p| p.cutter.diameter_mm)
+        .or(ctx.deflection_inputs.map(|d| d.cutter.diameter_mm))
         .unwrap_or(0.0)
 }
 
@@ -840,7 +882,7 @@ pub fn adaptive_feed_modulate(
 /// modulator. The session picks it per move through
 /// `SimulationCutTrace::effective_material_for_sample` (the main slot by
 /// time weight).
-#[derive(Debug, Clone, Copy, PartialEq, Default)]
+#[derive(Debug, Clone, PartialEq, Default)]
 pub enum MoveMaterial {
     /// The toolpath's material: the band and the caps of the
     /// [`ModulationContext`]. Every move of a project with no own-material
@@ -848,7 +890,8 @@ pub enum MoveMaterial {
     #[default]
     Toolpath,
     /// An own material: its band and its caps replace the context's.
-    Own(OwnMaterialInputs),
+    /// Boxed: the caps carry the cutter facts of the engagement (P11a).
+    Own(Box<OwnMaterialInputs>),
     /// Not judged (an own material with no force data): no band and no
     /// force cap, so the move keeps its commanded feed, clamped to the
     /// machine ceiling and the plunge guard (the bandless arm).
@@ -939,9 +982,9 @@ pub fn adaptive_feed_modulate_with_materials(
         // S6: an own-material move reads its own band and caps; a
         // not-judged move reads none. The default reads the context.
         let move_ctx_storage;
-        let ctx: &ModulationContext<'_> = match materials.get(i).copied().unwrap_or_default() {
-            MoveMaterial::Toolpath => ctx,
-            MoveMaterial::Own(own) => {
+        let ctx: &ModulationContext<'_> = match materials.get(i) {
+            None | Some(MoveMaterial::Toolpath) => ctx,
+            Some(MoveMaterial::Own(own)) => {
                 move_ctx_storage = ModulationContext {
                     chipload_band: own.chipload_band,
                     deflection_inputs: own.deflection_inputs,
@@ -950,7 +993,7 @@ pub fn adaptive_feed_modulate_with_materials(
                 };
                 &move_ctx_storage
             }
-            MoveMaterial::NotJudged => {
+            Some(MoveMaterial::NotJudged) => {
                 move_ctx_storage = ModulationContext {
                     chipload_band: None,
                     deflection_inputs: None,
@@ -1159,11 +1202,11 @@ mod tests {
 
         let low = ChiploadBand::new(0.005, 0.01).unwrap();
         let own = run(&vec![
-            MoveMaterial::Own(OwnMaterialInputs {
+            MoveMaterial::Own(Box::new(OwnMaterialInputs {
                 chipload_band: Some(low),
                 deflection_inputs: None,
                 power_inputs: None,
-            });
+            }));
             n
         ]);
         let not_judged = run(&vec![MoveMaterial::NotJudged; n]);
@@ -1233,13 +1276,13 @@ mod tests {
     }
 
     /// Step-3 convergence sentry: the feed-aware deflection cap is the
-    /// EXACT inverse of the affine force model — plugging the capped feed
-    /// back through `δ = compliance · ap · (Ks·fz·sinθ + F_edge)` lands on
-    /// the deflection bound. This is what makes the optimizer and the
+    /// EXACT inverse of the force model — plugging the capped feed back
+    /// through `δ = compliance · F_peak` (the engaged-edge peak force,
+    /// P11a) lands on the deflection bound. This is what makes the optimizer and the
     /// post-sim gate agree on a cut (they share the model now); the old
     /// `δ ∝ feed` scaling against a feed-blind reference force could not.
     #[test]
-    fn deflection_cap_inverts_affine_model_onto_the_bound() {
+    fn deflection_cap_inverts_the_force_model_onto_the_bound() {
         let k = shapeoko();
         let mut ctx = make_ctx(&k, band());
         ctx.strategy = ModulationStrategy::ConstrainedMax;
@@ -1248,16 +1291,23 @@ mod tests {
         // chipload-max feed would overshoot, so the affine SOLVE fires
         // (not the can't-satisfy floor branch).
         let bound = 0.2_f64;
-        let ks = 42.7_f64;
-        let f_edge = 4.53_f64;
-        let compliance = 0.015_f64; // mm/N
+        let line = oak_line();
+        // The compliance that puts the bound at the band midpoint chip
+        // (0.05 mm), so the solve lands inside the band, under the
+        // chipload-max cap and above its floor.
+        let at_mid = flat_cutter()
+            .engagement(2.0, 1.0)
+            .edge_force(line, 0.05, ctx.flute_count)
+            .unwrap()
+            .peak_resultant_n;
+        let compliance = bound / at_mid; // mm/N
         ctx.deflection_inputs = Some(DeflectionLimitInputs {
-            ks_n_per_mm2: ks,
-            f_edge_n_per_mm: f_edge,
+            line,
+            cutter: flat_cutter(),
             compliance_mm_per_n: compliance,
             max_tip_deflection_mm: bound,
         });
-        // Full slot, full axial: woc = 1 ⇒ θ_peak = π/2 (sin = 1), ap = 2.
+        // Full slot, full axial: woc = 1, ap = 2.
         let engagement = PerMoveEngagement {
             radial_woc_fraction: 1.0,
             axial_doc_fraction: 1.0,
@@ -1273,17 +1323,40 @@ mod tests {
             BindingConstraint::DeflectionMax,
             "deflection should bind on this long-reach tool; got {binding:?} at feed {feed_cap}"
         );
-        // Plug the capped feed back through the affine model + compliance.
+        // Plug the capped feed back through the engaged-edge force (P11a)
+        // and the compliance.
         let flutes = ctx.flute_count as f64;
         let fz = feed_cap / (ctx.spindle_rpm * flutes);
-        let ap = 2.0; // nominal × axial_doc_fraction
-        let force = ap * (ks * fz * 1.0 + f_edge); // sinθ_peak = 1 at full slot
+        let force = flat_cutter()
+            .engagement(2.0, 1.0)
+            .edge_force(line, fz, ctx.flute_count)
+            .unwrap()
+            .peak_resultant_n;
         let delta_mm = compliance * force;
         assert!(
-            (delta_mm - bound).abs() < 1.0e-3,
-            "capped feed must invert onto the deflection bound: δ={delta_mm:.4} mm vs bound {bound} \
+            (delta_mm - bound).abs() < 1.0e-9,
+            "capped feed must invert onto the deflection bound: δ={delta_mm:.6} mm vs bound {bound} \
              (feed {feed_cap:.1}, fz {fz:.4})"
         );
+    }
+
+    /// The white oak force line (Curti 2021, ruling B6).
+    fn oak_line() -> crate::material::force_line::ForceLine {
+        crate::material::Material::SolidWood {
+            species: crate::material::WoodSpecies::WhiteOak,
+        }
+        .force_line()
+        .unwrap()
+    }
+
+    /// A 6 mm flat end mill with a 30 degree helix.
+    fn flat_cutter() -> ModulationCutter {
+        ModulationCutter {
+            geometry: crate::feeds::ToolGeometryHint::Flat,
+            diameter_mm: 6.0,
+            shank_diameter_mm: 6.0,
+            helix_deg: 30.0,
+        }
     }
 
     /// All-air engagement: feed must stay byte-identical (no modulation
@@ -1726,8 +1799,8 @@ mod tests {
     }
 
     /// A2 ConstrainedMax: the deflection pin arm pins to the point. The
-    /// edge force alone is over budget (0.1 mm/N × 2 mm × 4.53 N/mm =
-    /// 0.906 mm > 0.2 mm), so the move pins to 1800 mm/min. The pin
+    /// edge force alone is over budget (0.1 mm/N × the slot's edge force
+    /// at 2 mm, far above 0.2 mm), so the move pins to 1800 mm/min. The pin
     /// value ties the chipload cap; the tag names deflection. At scale
     /// 0.7 the pin gets no floor: 1260 mm/min.
     #[test]
@@ -1736,8 +1809,8 @@ mod tests {
         let mut ctx = make_ctx(&k, ChiploadBand::point(0.05).unwrap());
         ctx.strategy = ModulationStrategy::ConstrainedMax;
         ctx.deflection_inputs = Some(DeflectionLimitInputs {
-            ks_n_per_mm2: 42.7,
-            f_edge_n_per_mm: 4.53,
+            line: oak_line(),
+            cutter: flat_cutter(),
             compliance_mm_per_n: 0.1,
             max_tip_deflection_mm: 0.2,
         });
@@ -1766,8 +1839,7 @@ mod tests {
         ctx.strategy = ModulationStrategy::ConstrainedMax;
         ctx.power_inputs = Some(PowerLimitInputs {
             line: crate::material::force_line::ForceLine::goli_2018_mdf(),
-            engagement_diameter_mm: 6.0,
-            geometry: crate::feeds::ToolGeometryHint::Flat,
+            cutter: flat_cutter(),
             available_kw: 0.001,
         });
         let (feed, binding) =

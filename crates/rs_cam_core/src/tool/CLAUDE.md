@@ -6,7 +6,7 @@ One module per cutter family. The trait and the shared radius queries live in
 ## Files
 
 - `mod.rs` — the cutter trait, `cusp_radius`, `cusp_radius_mm` and
-  `valley_radius_mm`, `edge_drop_by_profile`.
+  `valley_radius_mm`, `edge_drop_by_profile`, `helix_lag_rad` (one helix lag for the flutes in cut and the P11a engaged-edge force).
 - `flat.rs` (`FlatEndmill`), `ball.rs` (`BallEndmill`), `bullnose.rs` (`BullNoseEndmill`, toroidal), `tapered_ball.rs` (`TaperedBallEndmill`), `vbit.rs` (`VBitEndmill`).
 - `size_units.rs` — `SizeUnits` (mm or inch), inch fractions and the
   length entry parser. Display and entry only: every length stays in mm.

@@ -1409,7 +1409,11 @@ fn retired_lift_fires_no_cap_on_a_deflection_bound_fixture() {
         // Retuned 99.0 → 111.0 for B6. The Curti line for hard maple is
         // 0.69× the old anchor line, so 99.0 mm read 137.1 µm.
         // 99 × (195 / 137.1)^(1/3) = 111.3.
-        tool.set_stickout(ToolFact::Stated(111.0));
+        //
+        // Retuned 111.0 → 115.0 for P11a (L5). The peak engaged-edge force
+        // (helix lag) reads 173.8 µm at 111.0 mm.
+        // 111 × (195 / 173.8)^(1/3) = 115.3.
+        tool.set_stickout(ToolFact::Stated(115.0));
         tool.set_flute_count(ToolFact::Stated(2));
         let mut machine = MachineProfile::default();
         machine.rigidity.doc_roughing_factor = 0.20;

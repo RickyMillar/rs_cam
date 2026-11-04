@@ -10,8 +10,9 @@
 //!
 //! A modelled zero is unreachable. `tip_deflection_mm` returns 0.0 only
 //! when the stickout, the modulus or the force is zero, or when the load
-//! point sits at or below the tip; `lateral_cutting_force` returns a
-//! strictly positive force for positive inputs. So for any operating point
+//! point sits at or below the tip; the engaged-edge force
+//! (`Engagement::edge_force`, P11a) is strictly positive for positive
+//! inputs. So for any operating point
 //! that cleared the nine guards, `predicted_um > 0.0`. **Every 0.0 the
 //! function returned was an absence**, written in a notation that cannot
 //! say so.

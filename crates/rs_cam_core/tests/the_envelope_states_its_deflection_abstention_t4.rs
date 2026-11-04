@@ -15,8 +15,12 @@
 //!    `Deflection` limit whose edge is `Unmodelled`, and the reason is the
 //!    `DeflectionUnmodeled::MaterialUnvalidated` clause. The serialised
 //!    envelope (the MCP `get_safe_envelope` reply) carries the same entry.
-//! 2. Hard maple (a force line): the `Deflection` limit is modelled, an
-//!    `ap(ae)` curve. This is the non-vacuity partner of arm 1.
+//! 2. Hard maple (a force line) on a slender end mill (3 mm, flute 12,
+//!    stickout 30): the `Deflection` limit is modelled, an `ap(ae)` curve.
+//!    This is the non-vacuity partner of arm 1. P11a (D-B): the stubby
+//!    6 mm tool of arm 1 reaches no target depth below its flute, so its
+//!    entry states "no deflection limit below the flute" (before P11a it
+//!    drew the search bracket as a curve).
 //!
 //! The arms read the envelope through its serialised form, so the sentry
 //! compiles on the code before the fix and fails there.
@@ -63,15 +67,26 @@ fn roughing_pocket() -> OperationConfig {
     })
 }
 
-/// The serialised `Deflection` limit of the envelope for `material`, as
-/// the MCP reply carries it.
-fn deflection_entry(material: &Material) -> Option<serde_json::Value> {
+/// A slender carbide end mill: 3 mm, two flutes, flute 12, stickout 30.
+fn slender_endmill() -> ToolConfig {
+    let mut tool = ToolConfig::test_default(ToolId::from_raw(1), ToolType::EndMill);
+    tool.diameter = 3.0;
+    tool.set_cutting_length(ToolFact::Stated(12.0));
+    tool.shaft_diameter = 3.0;
+    tool.set_shank_diameter(ToolFact::Stated(3.0));
+    tool.set_stickout(ToolFact::Stated(30.0));
+    tool.set_flute_count(ToolFact::Stated(2));
+    tool
+}
+
+/// The serialised `Deflection` limit of the envelope for `material` and
+/// `tool`, as the MCP reply carries it.
+fn deflection_entry(material: &Material, tool: &ToolConfig) -> Option<serde_json::Value> {
     let op = roughing_pocket();
-    let tool = carbide_endmill();
     let machine = MachineProfile::default();
     let envelope = SafeEnvelope::for_cut(EnvelopeInput {
         operation: &op,
-        tool: &tool,
+        tool,
         machine: &machine,
         material,
         lut: embedded_vendor_lut(),
@@ -95,7 +110,7 @@ fn the_envelope_states_its_deflection_abstention_t4() {
     let acrylic = Material::Plastic {
         family: PlasticFamily::Acrylic,
     };
-    let entry = deflection_entry(&acrylic).expect(
+    let entry = deflection_entry(&acrylic, &carbide_endmill()).expect(
         "an acrylic roughing envelope must carry a Deflection entry that states the \
          abstention; it dropped the limit with no word",
     );
@@ -117,7 +132,8 @@ fn a_modelled_material_keeps_its_deflection_curve_t4() {
     let maple = Material::SolidWood {
         species: WoodSpecies::HardMaple,
     };
-    let entry = deflection_entry(&maple).expect("hard maple carries a Deflection limit");
+    let entry = deflection_entry(&maple, &slender_endmill())
+        .expect("hard maple carries a Deflection limit");
     assert_eq!(
         entry
             .get("edge")

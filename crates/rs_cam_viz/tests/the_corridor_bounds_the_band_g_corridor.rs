@@ -151,8 +151,9 @@ const STUBBY: Cutter = Cutter {
 ///
 /// - **Too compliant and the model refuses.** The budget force is
 ///   `EXCEEDS_BOUND_MM / C`, and the feed-independent edge force is
-///   `ap · F_edge`. When the second meets the first, no feed satisfies the
-///   bound and `chipload_cap_for_deflection` returns
+///   the edge term of the engaged-edge sum. When the second meets the
+///   first, no feed satisfies the bound and
+///   `Engagement::fz_cap_for_peak_force` (P11a) returns
 ///   `DeflectionCapRefusal::EdgeForceOverBudget`. At this fixture's cut
 ///   that is `C = 5.3908e-2`.
 /// - **Too stiff and the ceiling leaves the chart**, which is arm 2's case,

@@ -1981,6 +1981,24 @@ pub fn long_tool_load_share(stickout_mm: f64, diameter_mm: f64) -> f64 {
 }
 
 pub fn calculate(input: &FeedsInput) -> FeedsResult {
+    calculate_with(input, DepthClamps::Apply)
+}
+
+/// Feeds contract P11a (L4, D-A): what the calculator does with a depth
+/// above the flute guard (Step 4) or the slot cap (Step 4b).
+#[derive(Debug, Clone, Copy, PartialEq, Eq)]
+pub(crate) enum DepthClamps {
+    /// Lower the depth to the guard or the cap and warn
+    /// ([`calculate`]).
+    Apply,
+    /// Keep the requested depth. The envelope grid draws the guard and the
+    /// cap as limits, so every value of a grid point (feed, chip, power) is
+    /// at the depth it names. No clamp warning: no depth moved.
+    DrawnAsLimits,
+}
+
+/// [`calculate`] with the depth-clamp policy `clamps`.
+pub(crate) fn calculate_with(input: &FeedsInput, clamps: DepthClamps) -> FeedsResult {
     let mut warnings = Vec::new();
     let machine = input.machine;
     let material = input.material;
@@ -2530,7 +2548,7 @@ pub fn calculate(input: &FeedsInput) -> FeedsResult {
 
     // --- Step 4: Flute guard ---
     let (flute_guard, flute_guard_basis) = flute_guard_of(input.flute_length, d);
-    if ap > flute_guard {
+    if ap > flute_guard && clamps == DepthClamps::Apply {
         warnings.push(FeedsWarning::DocExceedsFlute {
             requested: ap,
             capped: flute_guard,
@@ -2566,7 +2584,7 @@ pub fn calculate(input: &FeedsInput) -> FeedsResult {
     // --- Step 4b: Slotting detection ---
     if ae > d * SLOTTING_THRESHOLD.value {
         let slotting_cap = d * SLOTTING_DOC_CAP.value;
-        if ap > slotting_cap {
+        if ap > slotting_cap && clamps == DepthClamps::Apply {
             warnings.push(FeedsWarning::SlottingDetected {
                 doc_reduced_to: slotting_cap,
             });

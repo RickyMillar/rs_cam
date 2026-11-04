@@ -466,7 +466,8 @@ as the record of what the engine read before B6.
 ### Feed-aware lateral cutting-force model (deflection)
 
 `crates/rs_cam_core/src/feeds/force.rs` (the canonical force the tip-deflection
-gate, Suggest predictor and axial-DOC envelope consume)
+gate, Suggest predictor and axial-DOC envelope consume; since P11a
+`feeds/engagement.rs`)
 replaced the feed-blind `F = Kc · ap · ae` with the feed-aware affine model
 `F_lat = ap · (Ks · fz·sin θ_peak + F_edge)`, `cos ψ = 1 − ae/r`. Sources
 (deep-research verification 2026-06-18, see
@@ -493,6 +494,18 @@ replaced the feed-blind `F = Kc · ap · ae` with the feed-aware affine model
 
 Magnitude is anchored to a single quasi-orthogonal study, so it is documented
 in-code as "approximate / verify on a test cut."
+
+Feeds contract P11a (decision L5, 2026-11-05) replaced the one-tooth peak
+form above with the engaged-edge sum of the same mechanistic model
+(`S100093611300054X`: the force per element at `h = fz·sin θ`, integrated over
+the engaged arc). `feeds::engagement::Engagement::edge_force` sums
+`dF = Ks·h + F_edge` over the engaged edge with the helix lag
+`lag(z) = z·tan(helix)/r` (the formula of `tool::helix_lag_rad`, which the
+flutes-in-cut count also reads). The integral over `z` is exact; the rotation
+is sampled. It gives the mean (power) and the peak resultant (deflection). The
+radial force ratio `K_r` has no printed wood source in the repo, so the element
+force is tangential only (`K_r = 0`). The reference model and its vendor test:
+`planning/feeds_contract_2026-11-03/research_p11_step0/model.py`.
 
 2026-05-29 ingest added three Amana charts as bundled runtime rows
 (`amana_vgroove_engraving.json`, `amana_compression.json`): the AMS-159

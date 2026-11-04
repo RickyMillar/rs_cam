@@ -12,7 +12,7 @@
 //!
 //! | Bound | What gates it | Cutters it applies to |
 //! |---|---|---|
-//! | `max_doc_deflection_mm` | Tip-deflection exceeds the operator's tolerance | All (binary search) |
+//! | `max_doc_deflection_mm` | Tip-deflection exceeds the operator's tolerance | All (scan, then bisection) |
 //! | `max_doc_vendor_mm` | LUT row's `ap_*_factor` × diameter OR `ap_*_mm` absolute, tighter wins | When a LUT row is supplied |
 //! | `max_doc_scallop_mm` | Axial-scallop height between Z-passes degrades finish | Ball / bull / tapered-ball |
 //! | `min_doc_chipload_floor_mm` | Arc-mean chip thickness collapses below LUT `chipload_min` (burn risk) | Ball / tapered-ball (flat chipload doesn't depend on DOC) |
@@ -30,14 +30,19 @@
 //! - V-bit: engaged diameter is `tip_d + 2 ap tan(α/2)` — engagement
 //!   radius grows linearly with ap, force is roughly quadratic.
 //!
-//! No closed form covers all four shapes. We use **monotone binary search**
-//! over `tip_deflection_from_engagement(tool, mat, ap, immersion, fz)`,
-//! bracketed by `[stickout × 1e-4, stickout × 0.95]`, converging to ±5 µm
-//! axial in ~25 iterations. The immersion angle (from `radial_woc` + the
-//! cutter radius) and `fz` are fixed across the search; the model is
-//! monotone in `ap` for fixed immersion/feed (force grows, lever arm
-//! shortens but the moment grows faster), so a single bisect always
-//! converges.
+//! No closed form covers all four shapes. Feeds contract P11a (L4, D-B)
+//! solves for the SHALLOWEST depth where the tip deflection meets the
+//! target. The search span is `[stickout × 1e-4, min(stickout × 0.95,
+//! flute)]`: it scans [`DEFLECTION_SCAN_STEPS`] depths for the first one
+//! over the target, then bisects that step to ±5 µm. Deflection is not
+//! monotone in `ap`: the force grows with `ap`, but the load point
+//! `stickout − ap/2` moves toward the collet (research_ae A2), so a scan
+//! comes before the bisection. At each depth the cut is one
+//! [`crate::feeds::engagement::Engagement`] (`from_tool_cut`): the arc
+//! ψ reads the engaged radius at that depth (it moves on a ball, a bull
+//! nose, a taper and a V-bit), and `fz` is fixed. When no depth in the
+//! span reaches the target, there is no deflection limit below the flute:
+//! the bound is `None`, never the bracket.
 //!
 //! ## Why not reuse [`super::predict::predict_peak_deflection_um`]
 //!
@@ -84,11 +89,19 @@ pub const DEFAULT_SCALLOP_TARGET_UM: f64 = 25.0;
 const BINSEARCH_LOWER_FRACTION: f64 = 1.0e-4;
 /// Upper fraction of stickout — anything above ~0.95× stickout puts
 /// the load on the collet face where the cantilever model degenerates.
+/// The span also stops at the flute length. P11a (D-B): the span is a
+/// search bracket, never a limit.
 const BINSEARCH_UPPER_FRACTION: f64 = 0.95;
+/// P11a (D-B): the depths of the first scan over the span. Deflection is
+/// not monotone in `ap`, so the solver takes the first scan step that
+/// crosses the target, then bisects it. A numerical step, not a formula
+/// constant: a crossing and recrossing inside one step (`span / 16`) is
+/// missed.
+pub const DEFLECTION_SCAN_STEPS: usize = 16;
 /// Stop the binary search once the interval shrinks to this many mm.
 /// 5 µm of axial is well below operator precision and the LUT's own
 /// resolution.
-const BINSEARCH_CONVERGENCE_MM: f64 = 0.005;
+pub const BINSEARCH_CONVERGENCE_MM: f64 = 0.005;
 /// Hard iteration cap as a runaway guard. The interval should converge
 /// in ~25 iterations; this is set well above that.
 const BINSEARCH_MAX_ITERATIONS: usize = 64;
@@ -105,9 +118,12 @@ const BINSEARCH_MAX_ITERATIONS: usize = 64;
 #[derive(Debug, Clone)]
 pub struct CutterAxialConstraints {
     /// Maximum axial DOC before predicted tip deflection exceeds
-    /// `deflection_limit_um`. Always populated (binary search over the
-    /// canonical [`crate::tool::ToolDefinition::tip_deflection_mm`]).
-    pub max_doc_deflection_mm: f64,
+    /// `deflection_limit_um`: the solved depth (scan and bisection over
+    /// the canonical [`crate::tool::ToolDefinition::tip_deflection_mm`]).
+    /// `Some(0.0)` when the shallowest depth is already over. `None` when
+    /// no depth below the flute reaches the target, or the model has no
+    /// signal (no chip, no force line, no stickout): no deflection limit.
+    pub max_doc_deflection_mm: Option<f64>,
     /// Maximum axial DOC the matched LUT row permits at this geometry.
     /// `min(ap_max_factor × diameter, ap_max_mm)` — see `combine_ap_bound`.
     /// `None` when no LUT row was supplied or the row carries no axial
@@ -134,6 +150,8 @@ pub struct CutterAxialConstraints {
 /// Identifies which bound is currently binding the envelope.
 #[derive(Debug, Clone, Copy, PartialEq, Eq)]
 pub enum AxialBindingConstraint {
+    /// No `max_doc_*` bound exists (P11a, D-B).
+    Unbounded,
     Deflection,
     VendorAp,
     Scallop,
@@ -144,16 +162,18 @@ pub enum AxialBindingConstraint {
 
 impl CutterAxialConstraints {
     /// Min over all populated `max_doc_*` fields — the value the consumer
-    /// should clamp commanded DOC to. Always ≥ 0.
-    pub fn safe_max_doc_mm(&self) -> f64 {
-        let mut min_val = self.max_doc_deflection_mm;
-        if let Some(v) = self.max_doc_vendor_mm {
-            min_val = min_val.min(v);
-        }
-        if let Some(v) = self.max_doc_scallop_mm {
-            min_val = min_val.min(v);
-        }
-        min_val.max(0.0)
+    /// should clamp commanded DOC to. Always ≥ 0. `None` when no bound
+    /// exists.
+    pub fn safe_max_doc_mm(&self) -> Option<f64> {
+        [
+            self.max_doc_deflection_mm,
+            self.max_doc_vendor_mm,
+            self.max_doc_scallop_mm,
+        ]
+        .into_iter()
+        .flatten()
+        .reduce(f64::min)
+        .map(|v| v.max(0.0))
     }
 
     /// `Some(true)` when no axial DOC satisfies both
@@ -162,7 +182,7 @@ impl CutterAxialConstraints {
     /// cutter or no LUT row).
     pub fn safe_band_is_empty(&self) -> Option<bool> {
         self.min_doc_chipload_floor_mm
-            .map(|floor| floor > self.safe_max_doc_mm())
+            .map(|floor| self.safe_max_doc_mm().is_some_and(|max| floor > max))
     }
 }
 
@@ -227,23 +247,23 @@ pub fn cutter_axial_constraints(
             min_doc_chipload_floor(tool, geometry, radial_woc_mm, feed_per_tooth_mm, cl_min)
         });
 
-    let mut binding = AxialBindingConstraint::Deflection;
-    let mut current_min = max_doc_deflection_mm;
-    if let Some(v) = max_doc_vendor_mm
-        && v < current_min
-    {
-        current_min = v;
-        binding = AxialBindingConstraint::VendorAp;
+    let mut binding = AxialBindingConstraint::Unbounded;
+    let mut current_min = f64::INFINITY;
+    for (bound, kind) in [
+        (max_doc_deflection_mm, AxialBindingConstraint::Deflection),
+        (max_doc_vendor_mm, AxialBindingConstraint::VendorAp),
+        (max_doc_scallop_mm, AxialBindingConstraint::Scallop),
+    ] {
+        if let Some(v) = bound
+            && v < current_min
+        {
+            current_min = v;
+            binding = kind;
+        }
     }
-    if let Some(v) = max_doc_scallop_mm
-        && v < current_min
-    {
-        current_min = v;
-        binding = AxialBindingConstraint::Scallop;
-    }
-    let safe_max = current_min.max(0.0);
     if let Some(floor) = min_doc_chipload_floor_mm
-        && floor > safe_max
+        && current_min.is_finite()
+        && floor > current_min.max(0.0)
     {
         binding = AxialBindingConstraint::SafeBandEmpty;
     }
@@ -257,87 +277,89 @@ pub fn cutter_axial_constraints(
     }
 }
 
-/// Binary search for the maximum axial DOC at which predicted tip
-/// deflection stays below `limit_um`.
+/// P11a (D-B): the shallowest axial DOC at which the predicted tip
+/// deflection meets `limit_um`.
 ///
-/// Returns 0 when even the smallest tested DOC exceeds the limit, and
-/// the upper bracket when even the largest tested DOC is still safe.
-/// Both are degenerate corners — the caller's `safe_max_doc_mm()` clamps
-/// to ≥ 0.
+/// - `Some(ap)`: the solved depth, to [`BINSEARCH_CONVERGENCE_MM`]. The
+///   deflection at `ap` is at most the limit; one convergence step deeper
+///   it is above.
+/// - `Some(0.0)`: the shallowest depth of the span is already over.
+/// - `None`: no depth in the span (up to the flute) reaches the limit, or
+///   the model has no signal (no chip, no width, no stickout, a refusal).
+///   The span bracket is never returned as a limit.
 fn invert_deflection(
     tool: &ToolDefinition,
     material: &Material,
     radial_woc_mm: f64,
     feed_per_tooth_mm: f64,
     limit_um: f64,
-) -> f64 {
+) -> Option<f64> {
     let limit_mm = limit_um * 1.0e-3;
     if radial_woc_mm <= 0.0 || feed_per_tooth_mm <= 0.0 || limit_mm <= 0.0 || tool.stickout <= 0.0 {
-        // No chipload signal ⇒ the feed-aware force model has no chip
-        // thickness to work from, so deflection cannot bound the axial
-        // DOC. Return the upper bracket (deflection doesn't bind).
-        return if feed_per_tooth_mm <= 0.0 && radial_woc_mm > 0.0 && tool.stickout > 0.0 {
-            tool.stickout * BINSEARCH_UPPER_FRACTION
-        } else {
-            0.0
-        };
+        // No chip, no width or no beam: the force model has nothing to
+        // bound the axial DOC with.
+        return None;
     }
-    // Immersion arc ψ is fixed across the axial binary search (it depends
-    // only on radial WOC and cutter radius); feed per tooth is likewise
-    // constant. The search varies axial DOC alone.
-    let immersion_rad = super::force::immersion_angle(radial_woc_mm, tool.radius());
+    let deflection_at = |ap: f64| {
+        let engagement = crate::feeds::engagement::Engagement::from_tool_cut(
+            crate::feeds::envelope::CutPoint {
+                ap_mm: ap,
+                ae_mm: radial_woc_mm,
+            },
+            tool,
+        );
+        super::predict::tip_deflection_from_engagement(
+            tool,
+            material,
+            &engagement,
+            feed_per_tooth_mm,
+        )
+    };
     let lower = tool.stickout * BINSEARCH_LOWER_FRACTION;
-    let upper = tool.stickout * BINSEARCH_UPPER_FRACTION;
-    // Sanity: lower bracket already over limit → no axial is safe.
-    let Some(d_lo) = super::predict::tip_deflection_from_engagement(
-        tool,
-        material,
-        lower,
-        immersion_rad,
-        feed_per_tooth_mm,
-    ) else {
-        // tip_deflection_from_engagement refused (material/Custom/stickout
-        // edge case) — the gate would also refuse for any sample, so the
-        // bound is "no signal". Return the upper bracket so deflection
-        // doesn't bind the safe max.
-        return upper;
-    };
-    if d_lo > limit_mm {
-        return 0.0;
+    let flute = tool.length();
+    let mut upper = tool.stickout * BINSEARCH_UPPER_FRACTION;
+    if flute.is_finite() && flute > lower {
+        upper = upper.min(flute);
     }
-    let Some(d_hi) = super::predict::tip_deflection_from_engagement(
-        tool,
-        material,
-        upper,
-        immersion_rad,
-        feed_per_tooth_mm,
-    ) else {
-        return upper;
-    };
-    if d_hi <= limit_mm {
-        return upper;
+    if upper <= lower {
+        return None;
     }
-
+    // A refusal at the shallowest depth (material, stickout) is no signal.
+    if deflection_at(lower)? > limit_mm {
+        return Some(0.0);
+    }
+    let steps = DEFLECTION_SCAN_STEPS.max(1);
+    let step = (upper - lower) / steps as f64;
     let mut lo = lower;
-    let mut hi = upper;
+    let mut hi = None;
+    for k in 1..=steps {
+        let ap = if k == steps {
+            upper
+        } else {
+            lower + step * k as f64
+        };
+        match deflection_at(ap) {
+            Some(d) if d <= limit_mm => lo = ap,
+            // Over the limit, or refused (a degenerate beam): the first
+            // depth past the target.
+            Some(_) | None => {
+                hi = Some(ap);
+                break;
+            }
+        }
+    }
+    let mut hi = hi?;
     for _ in 0..BINSEARCH_MAX_ITERATIONS {
         if hi - lo < BINSEARCH_CONVERGENCE_MM {
             break;
         }
         let mid = 0.5 * (lo + hi);
-        match super::predict::tip_deflection_from_engagement(
-            tool,
-            material,
-            mid,
-            immersion_rad,
-            feed_per_tooth_mm,
-        ) {
+        match deflection_at(mid) {
             Some(d) if d <= limit_mm => lo = mid,
-            // Either over-limit or refused: shrink upper.
-            _ => hi = mid,
+            Some(_) | None => hi = mid,
         }
     }
-    lo
+    Some(lo)
 }
 
 /// Combine the LUT row's diameter-scaling `ap_max_factor` with the
@@ -570,6 +592,32 @@ mod tests {
         }
     }
 
+    /// The forward model at `(ap, ae)`: one engagement of the built tool.
+    fn deflection(tool: &ToolDefinition, mat: &Material, ap: f64, ae: f64, fz: f64) -> f64 {
+        let engagement = crate::feeds::engagement::Engagement::from_tool_cut(
+            crate::feeds::envelope::CutPoint {
+                ap_mm: ap,
+                ae_mm: ae,
+            },
+            tool,
+        );
+        super::super::predict::tip_deflection_from_engagement(tool, mat, &engagement, fz)
+            .expect("forward deflection")
+    }
+
+    /// P11a (D-B): when no depth below the flute reaches the target, the
+    /// bound is absent, not the search bracket.
+    #[test]
+    fn no_root_below_the_flute_gives_no_bound() {
+        let tool = carbide_flat(6.0, 45.0);
+        let mat = hardwood();
+        // A target far above any deflection the 6 mm tool reaches.
+        let flute_depth = tool.length().min(45.0 * BINSEARCH_UPPER_FRACTION);
+        let at_flute = deflection(&tool, &mat, flute_depth, 1.0, 0.05);
+        let got = invert_deflection(&tool, &mat, 1.0, 0.05, 2.0 * at_flute * 1000.0);
+        assert_eq!(got, None, "no root: no bound");
+    }
+
     #[test]
     fn deflection_inversion_roundtrips_against_predict() {
         // Pick an axial, run forward to get deflection, then invert and
@@ -578,18 +626,11 @@ mod tests {
         let mat = hardwood();
         let radial = 1.0_f64;
         let fz = 0.05_f64;
-        let immersion = super::super::force::immersion_angle(radial, tool.radius());
         let probe_axial = 2.5_f64;
-        let forward = super::super::predict::tip_deflection_from_engagement(
-            &tool,
-            &mat,
-            probe_axial,
-            immersion,
-            fz,
-        )
-        .expect("forward deflection");
+        let forward = deflection(&tool, &mat, probe_axial, radial, fz);
         let limit_um = forward * 1000.0;
-        let inverted = invert_deflection(&tool, &mat, radial, fz, limit_um);
+        let inverted =
+            invert_deflection(&tool, &mat, radial, fz, limit_um).expect("a solved depth");
         let err = (inverted - probe_axial).abs();
         assert!(
             err < 0.05,
@@ -681,7 +722,7 @@ mod tests {
         let env =
             cutter_axial_constraints(&tool, &hardwood(), 1.0, 0.05, Some(&row), None, Some(200.0));
         assert_eq!(env.binding_constraint, AxialBindingConstraint::VendorAp);
-        assert!((env.safe_max_doc_mm() - 1.5).abs() < 1e-6);
+        assert!((env.safe_max_doc_mm().expect("a bound") - 1.5).abs() < 1e-6);
         assert!(env.safe_band_is_empty().is_none());
     }
 
@@ -695,23 +736,17 @@ mod tests {
         let mat = hardwood();
         let radial = 0.3_f64;
         let fz = 0.05_f64;
-        let immersion = super::super::force::immersion_angle(radial, tool.radius());
-        let d_at_1 =
-            super::super::predict::tip_deflection_from_engagement(&tool, &mat, 1.0, immersion, fz)
-                .expect("forward");
-        let d_at_2 =
-            super::super::predict::tip_deflection_from_engagement(&tool, &mat, 2.0, immersion, fz)
-                .expect("forward");
+        let d_at_1 = deflection(&tool, &mat, 1.0, radial, fz);
+        let d_at_2 = deflection(&tool, &mat, 2.0, radial, fz);
         assert!(
             d_at_2 > d_at_1,
             "monotonicity broken: ap=1 → {d_at_1} mm, ap=2 → {d_at_2} mm"
         );
         // Binary-search inversion at the deflection at ap=1.5 must land
         // between 1.0 and 2.0.
-        let d_at_1_5 =
-            super::super::predict::tip_deflection_from_engagement(&tool, &mat, 1.5, immersion, fz)
-                .expect("forward");
-        let ap_recovered = invert_deflection(&tool, &mat, radial, fz, d_at_1_5 * 1000.0);
+        let d_at_1_5 = deflection(&tool, &mat, 1.5, radial, fz);
+        let ap_recovered =
+            invert_deflection(&tool, &mat, radial, fz, d_at_1_5 * 1000.0).expect("a solved depth");
         assert!(
             (1.4..=1.6).contains(&ap_recovered),
             "tapered-ball binsearch did not recover ap≈1.5: got {ap_recovered}"
@@ -726,7 +761,12 @@ mod tests {
         // Since T-4 the closed-form predictor reads the same path and no
         // longer refuses one; its flute relief stays unmodelled and both
         // consumers carry that gap.
+        //
+        // P11a (D-B): the limit is half the deflection at the flute
+        // depth, so a root exists below the flute. The fixed 50 µm limit
+        // has no root below the 25 mm flute under the engaged-edge force.
         let tool = carbide_vbit();
+        let at_flute = deflection(&tool, &hardwood(), tool.length(), 0.5, 0.05);
         let env = cutter_axial_constraints(
             &tool,
             &hardwood(),
@@ -734,13 +774,13 @@ mod tests {
             0.05,
             None, // no LUT row
             Some(25.0),
-            Some(50.0),
+            Some(0.5 * at_flute * 1000.0),
         );
         assert!(env.max_doc_vendor_mm.is_none());
         assert!(env.max_doc_scallop_mm.is_none());
         assert!(
-            env.max_doc_deflection_mm > 0.0,
-            "V-bit deflection bound should be a real value, got {}",
+            env.max_doc_deflection_mm.is_some_and(|v| v > 0.0),
+            "V-bit deflection bound should be a real value, got {:?}",
             env.max_doc_deflection_mm
         );
         assert_eq!(env.binding_constraint, AxialBindingConstraint::Deflection);

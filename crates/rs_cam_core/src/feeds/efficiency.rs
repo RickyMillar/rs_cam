@@ -111,8 +111,8 @@ pub struct CutEfficiency {
     pub rubbing_floor_mm: f64,
     /// The largest advance per tooth (mm) that keeps the predicted tip
     /// deflection inside `EXCEEDS_BOUND_MM`, from
-    /// [`force::chipload_cap_for_deflection`]. `None` when the
-    /// deflection model refuses: no stickout, no axial DOC, no lateral
+    /// `Engagement::fz_cap_for_peak_force` (the peak engaged-edge force,
+    /// P11a). `None` when the deflection model refuses: no stickout, no axial DOC, no lateral
     /// engagement, or an edge force already over the budget.
     pub deflection_ceiling_mm: Option<f64>,
     /// `u(fz) / u(band midpoint)` — how much more energy this cut spends
@@ -236,13 +236,8 @@ pub fn cut_efficiency(
         .map(|mid| mid / advance_per_tooth_mm)
         .filter(|r| r.is_finite());
 
-    let deflection_ceiling_mm = deflection_chipload_ceiling_mm(
-        tool,
-        ks_n_per_mm2,
-        f_edge_n_per_mm,
-        axial_doc_mm,
-        radial_width_mm / diameter_mm,
-    );
+    let deflection_ceiling_mm =
+        deflection_chipload_ceiling_mm(tool, line, axial_doc_mm, radial_width_mm);
 
     let force_headroom = force_headroom(operation, tool, material, machine);
 
@@ -321,18 +316,20 @@ fn specific_energy(
 /// reads (`session::compute`), with the gate's own bound. So the inspector
 /// and the optimizer cannot disagree about the ceiling.
 ///
-/// `None` for every refusal — see [`force::chipload_cap_for_deflection`].
+/// `None` for every refusal — see
+/// [`crate::feeds::engagement::Engagement::fz_cap_for_peak_force`]. The
+/// cut is one engagement of the built tool at the engaged diameter of the
+/// cut depth (P11a, the open P9 diameters).
 fn deflection_chipload_ceiling_mm(
     tool: &ToolConfig,
-    ks_n_per_mm2: f64,
-    f_edge_n_per_mm: f64,
+    line: crate::material::force_line::ForceLine,
     axial_doc_mm: f64,
-    radial_woc_fraction: f64,
+    radial_width_mm: f64,
 ) -> Option<f64> {
     if !(axial_doc_mm.is_finite() && axial_doc_mm > 0.0) {
         return None;
     }
-    if !radial_woc_fraction.is_finite() {
+    if !radial_width_mm.is_finite() {
         return None;
     }
     // F029: a tool outside its domain has no deflection ceiling. The tool
@@ -340,14 +337,15 @@ fn deflection_chipload_ceiling_mm(
     let tool_def = crate::compute::cutter::build_cutter(tool).ok()?;
     let compliance =
         crate::tool_load::deflection::tip_compliance_mm_per_n(&tool_def, axial_doc_mm)?;
-    force::chipload_cap_for_deflection(
-        ks_n_per_mm2,
-        f_edge_n_per_mm,
-        compliance,
-        EXCEEDS_BOUND_MM,
-        axial_doc_mm,
-        radial_woc_fraction,
+    crate::feeds::engagement::Engagement::from_tool_cut(
+        crate::feeds::envelope::CutPoint {
+            ap_mm: axial_doc_mm,
+            ae_mm: radial_width_mm,
+        },
+        &tool_def,
     )
+    .fz_cap_for_peak_force(line, tool_def.flute_count, EXCEEDS_BOUND_MM / compliance)
+    .ok()
 }
 
 /// `1 − predicted_δ / EXCEEDS_BOUND`, or `None` when the predictor

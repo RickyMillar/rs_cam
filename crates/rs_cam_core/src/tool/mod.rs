@@ -218,6 +218,18 @@ pub enum EngagementError {
     OutOfRange { reason: String },
 }
 
+/// The helix lag (rad) of the cutting edge at the height `axial_mm` above
+/// the tip, on a cutter of radius `radius_mm` with the helix angle
+/// `helix_deg`: `axial tan(helix) / r`. The edge at that height trails
+/// the edge at the tip by this angle. At the full depth `ap` it is the
+/// helix wrap of the engaged edge. [`ChipGeometry`] (the flutes in cut)
+/// and the engaged-edge force (`feeds::engagement::Engagement::edge_force`)
+/// read this one formula.
+#[must_use]
+pub(crate) fn helix_lag_rad(axial_mm: f64, radius_mm: f64, helix_deg: f64) -> f64 {
+    axial_mm * helix_deg.to_radians().tan().abs() / radius_mm
+}
+
 pub(crate) fn flat_chip_geometry_for_radius(
     radius: f64,
     helix_deg: f64,
@@ -250,7 +262,7 @@ pub(crate) fn flat_chip_geometry_for_radius(
     let helix_rad = helix_deg.to_radians();
     let edge_engagement_length_mm = axial_doc_mm / helix_rad.cos().abs().max(1e-6);
     let flute_pitch = std::f64::consts::TAU / flute_count as f64;
-    let helix_wrap = axial_doc_mm * helix_rad.tan().abs() / radius;
+    let helix_wrap = helix_lag_rad(axial_doc_mm, radius, helix_deg);
     let instantaneous_flutes_in_cut =
         ((arc_engagement_radians + helix_wrap) / flute_pitch).clamp(0.0, flute_count as f64);
     Ok(ChipGeometry {
@@ -1385,7 +1397,8 @@ mod tests {
         // and nothing from the model internals:
         //   1. Wood force (Curti 2021 Table 5, helix 0, ruling B6):
         //      F = ap·(Ks_n·ρ·h + Int_n·ρ), h = fz·sin(θ_peak). At full
-        //      immersion θ_peak = π/2 ⇒ h = fz. Ks_n and Int_n are the
+        //      immersion θ_peak = π/2 ⇒ h = fz. With a straight flute this
+        //      is the peak of the engaged-edge sum (P11a). Ks_n and Int_n are the
         //      down-milling vertices of the printed quadratics, the upper
         //      envelope: c + b²/(4|a|).
         //   2. Textbook cantilever, point load at distance a from the clamp,
@@ -1397,14 +1410,13 @@ mod tests {
         let d = 6.0_f64;
         let l = 45.0_f64;
         // Uniform cylinder (cutting_length covers stickout) ⇒ the two-section
-        // integrator reduces to the single-section textbook beam.
-        let tool = ToolDefinition::new(
-            Box::new(FlatEndmill::new(d, l)),
-            d,
-            l,
-            2,
-            ToolMaterial::Carbide,
-        );
+        // integrator reduces to the single-section textbook beam. A
+        // straight flute (helix 0) puts the whole depth at one angle, so the
+        // engaged-edge peak force (P11a) is one tooth at `phi = pi/2`, the
+        // hand form below.
+        let mut cutter = FlatEndmill::new(d, l);
+        cutter.helix_deg = 0.0;
+        let tool = ToolDefinition::new(Box::new(cutter), d, l, 2, ToolMaterial::Carbide);
         let mat = Material::SolidWood {
             species: WoodSpecies::GenericHardwood,
         };
@@ -1430,8 +1442,19 @@ mod tests {
         let delta_hand_mm = force_hand * a * a * (3.0 * l - a) / (6.0 * e * i);
 
         // Production path (force model + integrated beam, the real code).
+        let engagement = crate::feeds::engagement::Engagement::from_tool_cut(
+            crate::feeds::envelope::CutPoint {
+                ap_mm: ap,
+                ae_mm: d,
+            },
+            &tool,
+        );
+        assert!(
+            (engagement.psi_rad() - immersion).abs() < 1e-12,
+            "a full slot"
+        );
         let delta_model_mm =
-            crate::feeds::predict::tip_deflection_from_engagement(&tool, &mat, ap, immersion, fz)
+            crate::feeds::predict::tip_deflection_from_engagement(&tool, &mat, &engagement, fz)
                 .expect("modeled deflection");
 
         let rel_err = (delta_model_mm - delta_hand_mm).abs() / delta_hand_mm;

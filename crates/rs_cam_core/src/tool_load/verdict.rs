@@ -546,8 +546,8 @@ impl ToolpathLoadVerdict {
     /// drill criteria muddying the test.
     ///
     /// S1 (2026-09-18) — the gantry-push row joins here, after
-    /// deflection. `feeds::force::lateral_cutting_force` computes the
-    /// push; no `MachineProfile` field states the thrust the gantry can
+    /// deflection. `feeds::engagement::Engagement::edge_force` computes
+    /// the push; no `MachineProfile` field states the thrust the gantry can
     /// deliver, so the row carries no number and no bound. It is
     /// [`gantry_push_criterion`], and it takes the drill arm when the
     /// three measured gates all took it — a drill has no lateral

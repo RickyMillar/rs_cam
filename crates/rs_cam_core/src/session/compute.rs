@@ -2234,7 +2234,19 @@ fn modulate_annotated_against_trace(
         .map(|s| s.axial_engagement_mm.max(0.0))
         .fold(0.0_f64, f64::max);
     let nominal_axial = if max_axial > 0.0 { max_axial } else { 0.0 };
-    let engagement_dia = tool_def.lookup_diameter_at(max_axial.max(0.0));
+    // P11a (the open P9 diameters): each cap builds the engagement of a
+    // move at the engaged diameter of THAT move's depth
+    // (`feeds::effective_diameter`), not at the toolpath's peak depth.
+    let cutter = crate::dressup::feed_modulation::ModulationCutter {
+        geometry: tool_cfg.geometry_hint(),
+        diameter_mm: tool_cfg.diameter,
+        shank_diameter_mm: if tool_cfg.shank_diameter_planning_mm() > 0.0 {
+            tool_cfg.shank_diameter_planning_mm()
+        } else {
+            tool_cfg.diameter
+        },
+        helix_deg: tool_cfg.helix_deg,
+    };
     let machine_profile = context.machine;
     let available_kw = machine_profile.power_at_rpm(spindle_rpm as f64);
     // The deflection and power caps of one material. Materials without a
@@ -2245,8 +2257,8 @@ fn modulate_annotated_against_trace(
     let force_inputs = |material: &crate::material::Material| {
         let line_opt = material.force_line().ok();
         // Feed-aware deflection cap: the optimizer solves its feed cap
-        // from the SAME affine force model (Ks/F_edge) and integrated
-        // beam compliance the post-sim deflection gate uses, so the two
+        // from the SAME engaged-edge force (P11a) and integrated beam
+        // compliance the post-sim deflection gate uses, so the two
         // agree on a cut. Compliance is δ-per-newton at the toolpath's
         // peak axial DOC; deflection is linear in force so one scalar
         // suffices.
@@ -2257,8 +2269,8 @@ fn modulate_annotated_against_trace(
                 max_axial.max(0.0),
             )?;
             Some(DeflectionLimitInputs {
-                ks_n_per_mm2: line.ks_n_per_mm2(),
-                f_edge_n_per_mm: line.f_edge_n_per_mm(),
+                line,
+                cutter,
                 compliance_mm_per_n: compliance,
                 max_tip_deflection_mm: crate::tool_load::deflection::EXCEEDS_BOUND_MM,
             })
@@ -2269,9 +2281,9 @@ fn modulate_annotated_against_trace(
                 // its grain factor internally so this site doesn't
                 // re-encode the multiplier.
                 line,
-                engagement_diameter_mm: engagement_dia,
-                // K7: the cutter's own section in the power cap.
-                geometry: tool_cfg.geometry_hint(),
+                // K7: the cutter's own section in the power cap; P11a: the
+                // engaged diameter at the move depth.
+                cutter,
                 available_kw,
             }),
             _ => None,
@@ -2383,7 +2395,7 @@ fn move_materials_for(
             let slot = MaterialSlot(u8::try_from(main).unwrap_or(0));
             match cut_trace.effective_material_for_slot(slot, stock) {
                 EffectiveMaterial::Judged(m) if m == stock => MoveMaterial::Toolpath,
-                EffectiveMaterial::Judged(own) => MoveMaterial::Own(own_inputs(own)),
+                EffectiveMaterial::Judged(own) => MoveMaterial::Own(Box::new(own_inputs(own))),
                 EffectiveMaterial::NotJudged(_) => MoveMaterial::NotJudged,
             }
         })

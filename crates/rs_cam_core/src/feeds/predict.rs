@@ -11,9 +11,10 @@
 //!
 //! ## Physics
 //!
-//! `F = ap · (Ks · fz·sin θ_peak + F_edge)` (N) — the material's one force
-//! line ([`Material::force_line`], ruling B6), the same form as the
-//! canonical sample-level force in
+//! `F` (N) is the PEAK resultant of the material's one force line
+//! ([`Material::force_line`], ruling B6) summed over the engaged edge with
+//! the helix lag ([`crate::feeds::engagement::Engagement::edge_force`],
+//! feeds contract P11a, L5), the same force as the sample-level force in
 //! [`crate::tool_load::deflection::sample_tip_deflection_mm`]. Deflection
 //! reads the line alone; the grain factor is power-scoped.
 //!
@@ -333,9 +334,8 @@ pub fn predict_peak_deflection_um(
     // HDF, particleboard, every plastic, aluminium, foam, fiberglass,
     // `Custom` and a species with no printed density — matches the
     // `MaterialUnvalidated` refusal in the post-sim gate. The force
-    // magnitude itself is recomputed inside
-    // `feeds::force::lateral_cutting_force`; here we only need the
-    // existence check for the early refusal.
+    // magnitude itself is computed by `Engagement::edge_force`; here we
+    // only need the existence check for the early refusal.
     if material.force_line().is_err() {
         tracing::debug!(
             reason = "material_unvalidated",
@@ -382,12 +382,8 @@ pub fn predict_peak_deflection_um(
     }
 
     // Chipload — surfaced in the breakdown for the rationale tree the
-    // back-off loop will render. Force F doesn't directly multiply by
-    // chipload (the canonical Kc·ap·ae form is the same one the
-    // post-sim sample-level force uses in
-    // `tool_load::deflection::sample_tip_deflection_mm`); chipload is
-    // a useful diagnostic when the back-off loop's DPP reduction needs
-    // an honest "why" string.
+    // back-off loop will render. The chip of each engaged edge element
+    // is `fz sin(phi)`, so the feed per tooth moves the force.
     let rpm = operation
         .spindle_rpm()
         .map_or(PREDICTOR_FALLBACK_RPM, |r| r as f64);
@@ -460,32 +456,42 @@ pub fn predict_peak_deflection_um(
     };
 
     // --- Cutting force (N) ---
-    // Feed-aware affine model: F = ap · (Ks · fz·sin θ_peak + F_edge),
-    // with θ_peak from the engagement arc ψ = immersion_angle(ae, r).
-    // The radial WOC enters through ψ (arc, not a linear width), and feed
-    // enters through the chip thickness — so the predictor forecasts the
-    // same force the post-sim gate measures. Surfaced in the breakdown
-    // for the rationale tree; the integrated model recomputes it from the
-    // same inputs, so the reported force can't drift from the one the
-    // deflection used. No grain anisotropy factor here: static deflection
-    // responds to mean force, not transient spikes.
-    //
-    // K7 (feeds contract P9): the cut is the one engagement. The predictor
-    // keeps the nominal diameter it always read (no deflection number moves
-    // in P9; the engaged-diameter question belongs to the P11 force model).
+    // L5 (feeds contract P11a): the PEAK resultant of the force line summed
+    // over the engaged edge with the helix lag
+    // (`Engagement::edge_force`). The radial WOC enters through the arc ψ,
+    // the feed through the chip of each edge element, and the depth through
+    // the engaged edge length and the helix wrap. The engaged diameter is
+    // `feeds::effective_diameter` at the cut depth (the open P9 diameter;
+    // equal to D on a flat end mill). The integrated model below reads the
+    // same engagement, so the reported force cannot drift from the one the
+    // deflection used.
+    let tool_def = crate::compute::cutter::build_cutter(tool)
+        .ok()
+        .ok_or(DeflectionUnmodeled::ToolOutOfDomain)?;
+    let d_eng = crate::feeds::effective_diameter(
+        tool.geometry_hint(),
+        diameter_mm,
+        if tool.shank_diameter_planning_mm() > 0.0 {
+            tool.shank_diameter_planning_mm()
+        } else {
+            diameter_mm
+        },
+        axial_doc_mm,
+    );
     let engagement = crate::feeds::engagement::Engagement::from_cut(
         crate::feeds::envelope::CutPoint {
             ap_mm: axial_doc_mm,
             ae_mm: radial_woc_mm,
         },
         tool.geometry_hint(),
-        diameter_mm,
+        d_eng,
         Some(tool.helix_deg),
     );
-    let immersion_rad = engagement.psi_rad();
-    let f_lateral_n = engagement
-        .lateral_force(material, chipload_per_tooth_mm)
-        .unwrap_or(0.0);
+    let f_lateral_n = material
+        .force_line()
+        .ok()
+        .and_then(|line| engagement.edge_force(line, chipload_per_tooth_mm, tool_def.flute_count))
+        .map_or(0.0, |f| f.peak_resultant_n);
 
     // Delegate the cantilever to the canonical integrated model. The
     // guards above cover every documented refusal of the delegate, so the
@@ -493,14 +499,10 @@ pub fn predict_peak_deflection_um(
     // figure out of the `Ok` branch, which must always carry a modelled
     // number. A figure of zero can only come from a load point at or
     // below the tip, which is the degenerate cantilever.
-    let tool_def = crate::compute::cutter::build_cutter(tool)
-        .ok()
-        .ok_or(DeflectionUnmodeled::ToolOutOfDomain)?;
     let predicted_um = match tip_deflection_from_engagement(
         &tool_def,
         material,
-        axial_doc_mm,
-        immersion_rad,
+        &engagement,
         chipload_per_tooth_mm,
     ) {
         Some(delta_mm) if delta_mm.is_finite() && delta_mm > 0.0 => delta_mm * 1000.0,
@@ -596,40 +598,38 @@ pub fn bending_diameter_mm(tool: &ToolConfig) -> f64 {
     }
 }
 
-/// Predicted tip deflection (mm) for an arbitrary engagement of `tool`
-/// in `material`. Shared canonical force + cantilever model: both the
-/// post-sim deflection gate
-/// ([`crate::tool_load::deflection::sample_tip_deflection_mm`]) and the
-/// pre-sim cutter-axial-constraints envelope
-/// ([`crate::feeds::cutter_constraints`]) route through here so they
-/// can't drift out of phase.
+/// Predicted tip deflection (mm) of `tool` in `material` for one cut.
+/// Shared canonical force + cantilever model: the post-sim deflection gate
+/// ([`crate::tool_load::deflection::sample_tip_deflection_mm`]), the
+/// pre-sim axial envelope ([`crate::feeds::cutter_constraints`]) and the
+/// predictor route through here, so they cannot drift out of phase.
 ///
-/// `axial_mm` is the axial DOC; `immersion_rad` is the engagement arc
-/// angle ψ (the post-sim gate hands in the sample's
-/// `arc_engagement_radians` directly; the predictor / envelope derive it
-/// from `ae/r` via [`crate::feeds::force::immersion_angle`]); `fz_mm` is
-/// feed per tooth. The force is the canonical feed-aware affine model in
-/// [`crate::feeds::force::lateral_cutting_force`] — `F_lat = ap · (Ks ·
-/// fz·sin θ_peak + F_edge)` — so every consumer reads the same physics
-/// and feed genuinely moves deflection.
+/// `engagement` is the cut: [`crate::feeds::engagement::Engagement::from_sample`]
+/// in the gate, `from_cut` or `from_tool_cut` before the simulation. Its
+/// `d_eng` and helix travel with it. `fz_mm` is the feed per tooth. The
+/// force is the PEAK resultant engaged-edge force
+/// ([`crate::feeds::engagement::Engagement::edge_force`], feeds contract
+/// P11a, L5); the load sits at `stickout - ap / 2`.
 ///
 /// Returns `None` on the cases the gate would refuse:
 /// - `material.force_line()` refuses (Custom, plywood, a species with no
 ///   printed density, and the other §3 materials of ruling B6).
 /// - Tool has zero stickout.
-/// - Inputs are non-positive.
+/// - Inputs are non-positive, or the engagement carries no helix.
 pub fn tip_deflection_from_engagement(
     tool: &crate::tool::ToolDefinition,
     material: &Material,
-    axial_mm: f64,
-    immersion_rad: f64,
+    engagement: &crate::feeds::engagement::Engagement,
     fz_mm: f64,
 ) -> Option<f64> {
-    if axial_mm <= 0.0 || immersion_rad <= 0.0 || fz_mm <= 0.0 || tool.stickout <= 0.0 {
+    let axial_mm = engagement.ap_mm();
+    if axial_mm <= 0.0 || engagement.psi_rad() <= 0.0 || fz_mm <= 0.0 || tool.stickout <= 0.0 {
         return None;
     }
-    let force_n =
-        crate::feeds::force::lateral_cutting_force(material, axial_mm, immersion_rad, fz_mm)?;
+    let line = material.force_line().ok()?;
+    let force_n = engagement
+        .edge_force(line, fz_mm, tool.flute_count)?
+        .peak_resultant_n;
     let e = tool.tool_material.youngs_modulus_n_per_mm2();
     Some(tool.tip_deflection_mm(force_n, axial_mm, e))
 }
@@ -927,6 +927,12 @@ mod tests {
         // `Kc·ap·ae` aggregate read ~316 µm here — ~4× the honest
         // instantaneous force, which is why the deflection gate used to
         // cry wolf on routine roughing.)
+        //
+        // P11a (L5): the force is now the peak resultant summed over the
+        // engaged edge with the helix lag. At ap 9 the 30 degree helix
+        // wraps the edge over 1.73 rad, so the narrow arc is cut by a short
+        // run of edge at each rotation: the predictor reads about 19 µm,
+        // 0.39 x the one-tooth 48 µm. Still Within (under 50 µm).
         let tool = carbide_endmill(6.0, 45.0, 25.0);
         let op = wanaka_adaptive_op(9.0, 1.2, 911.0, 16_000);
         let mat = hardwood();
@@ -936,8 +942,8 @@ mod tests {
         assert_eq!(pred.caveat, None, "a flat end mill carries no caveat");
         let um = pred.predicted_um;
         assert!(
-            (30.0..=70.0).contains(&um),
-            "stubby roughing endmill is deflection-safe (~48 µm Within) under the feed-aware force model; got {um:.1} µm"
+            (10.0..=50.0).contains(&um),
+            "stubby roughing endmill is deflection-safe (~19 µm Within) under the engaged-edge force model; got {um:.1} µm"
         );
         // Sanity: the breakdown should record the inputs we passed.
         assert!((pred.breakdown.axial_doc_mm - 9.0).abs() < 1e-9);

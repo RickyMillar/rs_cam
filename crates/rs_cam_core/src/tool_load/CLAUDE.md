@@ -28,6 +28,7 @@ Independent gates over a simulated cut. Entry: `tool_load::evaluate_toolpath`.
   force-line or grain-factor change needs the slow `--test` sims, not `--lib`.
 - F197: a stale trace rewrites a verdict through `ToolpathLoadVerdict::mark_simulation_stale` only; it
   destructures every field. F070: build a gate context with `ProjectSession::load_context_parts(..).ctx()`.
+- P11a (L5): the deflection gate reads the PEAK engaged-edge force of the sample (`Engagement::from_tool_cut` at `axial_engagement_mm` and the arc's width `r (1 - cos psi)`), through `feeds::predict::tip_deflection_from_engagement`; the power gate's mean is the same sum's mean.
 - F082: the deflection-cap compliance is `deflection::tip_compliance_mm_per_n`;
   Suggest's ceiling and the feed-modulation optimizer both read it. F080:
   `UnmodeledReason::operator_text` is the reason's one clause.

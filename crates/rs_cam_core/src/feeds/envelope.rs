@@ -537,6 +537,13 @@ impl std::fmt::Debug for OwnedInputs {
 impl OwnedInputs {
     /// One closed-form `calculate` call at `p`. Both axes are given, so the
     /// calculator reads no family default for them.
+    ///
+    /// Feeds contract P11a (L4, D-A): the calculator keeps the requested
+    /// depth (`DepthClamps::DrawnAsLimits`). The flute guard and the slot
+    /// cap are limits of the envelope, so the feed, the chip and the power
+    /// of the point are at the depth it names. A pick reads the same call,
+    /// so a pick outside the guard or the cap ships the speeds of the
+    /// depth it writes.
     fn calc_at(&self, p: CutPoint) -> FeedsResult {
         let mut input = feeds_input_for_operation(
             &self.operation,
@@ -549,7 +556,7 @@ impl OwnedInputs {
         input.axial_depth_mm = Some(p.ap_mm);
         input.radial_width_mm = Some(p.ae_mm);
         input.target_scallop_mm = None;
-        calculate(&input)
+        crate::feeds::calculate_with(&input, crate::feeds::DepthClamps::DrawnAsLimits)
     }
 }
 
@@ -1369,9 +1376,14 @@ fn power_limit(
     });
 }
 
+/// P11a (D-B): the reason of a `Deflection` entry when no depth below the
+/// flute reaches the target in any column.
+pub const NO_DEFLECTION_LIMIT_BELOW_THE_FLUTE: &str = "no deflection limit below the flute";
+
 /// The tip-deflection edge (roughing, as pass 6): per width sample, the
-/// deepest `ap` at the 200 µm target, by the one beam
-/// (`cutter_axial_constraints`).
+/// shallowest `ap` where the deflection meets the 200 µm target, by the
+/// one beam (`cutter_axial_constraints`). A column with no root below the
+/// flute adds no point (P11a, D-B).
 fn deflection_limit(
     out: &mut Vec<Limit>,
     input: &EnvelopeInput<'_>,
@@ -1412,7 +1424,7 @@ fn deflection_limit(
         ));
         return;
     }
-    let mut curve = Vec::new();
+    let mut columns: Vec<(f64, Option<f64>)> = Vec::new();
     for (j, &ae) in speeds.aes.iter().enumerate() {
         // The chip at the shallowest sample: the largest chip of the column.
         let Some(p) = speeds.at(0, j) else { continue };
@@ -1426,13 +1438,36 @@ fn deflection_limit(
             None,
             Some(crate::feeds::suggest::DEFLECTION_BACKOFF_TARGET_UM),
         );
-        if c.max_doc_deflection_mm.is_finite() && c.max_doc_deflection_mm > 0.0 {
-            curve.push([ae, c.max_doc_deflection_mm]);
-        }
+        // P11a (D-B): the solved depth, or `None` when no depth below the
+        // flute reaches the target. The search bracket is never drawn.
+        columns.push((
+            ae,
+            c.max_doc_deflection_mm
+                .filter(|v| v.is_finite() && *v >= 0.0),
+        ));
     }
-    if curve.is_empty() {
+    if columns.iter().all(|(_, mm)| mm.is_none()) {
+        // No column reaches the target below the flute: the limit is
+        // absent, and the envelope says so (an absence is stated, never
+        // dropped and never drawn as an edge).
+        out.push(Limit {
+            kind: LimitKind::Deflection,
+            law: "tip deflection <= 200 um",
+            basis: Basis::Rule(crate::feeds::suggest::DEFLECTION_BACKOFF_TARGET_ROW),
+            edge: Edge::Unmodelled {
+                reason: NO_DEFLECTION_LIMIT_BELOW_THE_FLUTE,
+            },
+        });
         return;
     }
+    // A column with no root has no edge in the span: the curve takes the
+    // top of the span there (the power edge's rule), so a crossing column
+    // stays exact.
+    let top = speeds.aps.last().copied().unwrap_or(MIN_AP_MM);
+    let curve: Vec<[f64; 2]> = columns
+        .into_iter()
+        .map(|(ae, mm)| [ae, mm.unwrap_or(top)])
+        .collect();
     out.push(Limit {
         kind: LimitKind::Deflection,
         law: "tip deflection <= 200 um",

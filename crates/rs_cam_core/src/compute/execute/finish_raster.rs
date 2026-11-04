@@ -433,15 +433,17 @@ fn wall_step_admits(
     if skin <= 0.0 {
         return true;
     }
-    let radius = crate::tool::MillingCutter::radius(tool);
-    crate::feeds::predict::tip_deflection_from_engagement(
+    // P11a: the one engagement of the wall step, at the engaged radius of
+    // its depth (the open P9 diameters).
+    let engagement = crate::feeds::engagement::Engagement::from_tool_cut(
+        crate::feeds::envelope::CutPoint {
+            ap_mm: ap,
+            ae_mm: skin,
+        },
         tool,
-        material,
-        ap,
-        crate::feeds::force::immersion_angle(skin, radius),
-        fz,
-    )
-    .is_some_and(|deflection| deflection <= crate::tool_load::deflection::WITHIN_BOUND_MM)
+    );
+    crate::feeds::predict::tip_deflection_from_engagement(tool, material, &engagement, fz)
+        .is_some_and(|deflection| deflection <= crate::tool_load::deflection::WITHIN_BOUND_MM)
 }
 
 impl WaterlinePass<'_> {

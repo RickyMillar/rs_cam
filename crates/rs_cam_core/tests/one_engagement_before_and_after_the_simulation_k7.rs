@@ -241,8 +241,15 @@ fn a_vbit_cut_has_one_section_in_the_modulator_and_the_gate() {
         deflection_inputs: None,
         power_inputs: Some(PowerLimitInputs {
             line,
-            engagement_diameter_mm: d_eng,
-            geometry: tool.geometry_hint(),
+            // P11a: the modulator reads the engaged diameter at the move
+            // depth (`feeds::effective_diameter`); the gate reads
+            // `engagement_radius`. One section and one diameter for a cut.
+            cutter: rs_cam_core::dressup::feed_modulation::ModulationCutter {
+                geometry: tool.geometry_hint(),
+                diameter_mm: tool.diameter,
+                shank_diameter_mm: tool.shank_diameter_planning_mm(),
+                helix_deg: tool.helix_deg,
+            },
             available_kw: budget,
         }),
         nominal_axial_doc_mm: ap,

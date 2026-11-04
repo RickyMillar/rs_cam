@@ -59,8 +59,10 @@ use rs_cam_core::compute::cutter::build_cutter;
 use rs_cam_core::compute::operation_configs::PocketConfig;
 use rs_cam_core::compute::tool_config::{ToolConfig, ToolId, ToolType};
 use rs_cam_core::feeds::efficiency::cut_efficiency;
+use rs_cam_core::feeds::engagement::Engagement;
 use rs_cam_core::feeds::engagement::PowerCase;
-use rs_cam_core::feeds::force::{immersion_angle, lateral_cutting_force};
+use rs_cam_core::feeds::envelope::CutPoint;
+use rs_cam_core::feeds::force::immersion_angle;
 use rs_cam_core::feeds::predict::{
     DeflectionUnmodeled, predict_peak_deflection_um, tip_deflection_from_engagement,
 };
@@ -715,21 +717,32 @@ fn every_consumer_reads_one_line() {
         let (ks, fe) = (line.ks_n_per_mm2(), line.f_edge_n_per_mm());
         let label = material.label();
 
-        // Deflection force: `F = ap · (Ks · fz · sin θ_peak + F_edge)`, with
-        // θ_peak = min(ψ, π/2).
-        let hand_force = ap * (ks * fz * psi.min(std::f64::consts::FRAC_PI_2).sin() + fe);
-        let force = lateral_cutting_force(&material, ap, psi, fz).expect("modelled force");
+        // Force (P11a, L5): the line summed over the engaged edge. Its mean
+        // is `ap Z / (2 pi) (Ks fz (1 - cos psi) + F_edge psi)`.
+        let tool_def = build_cutter(&tool).unwrap();
+        let engagement = Engagement::from_tool_cut(
+            CutPoint {
+                ap_mm: ap,
+                ae_mm: ae,
+            },
+            &tool_def,
+        );
+        let force = engagement
+            .edge_force(line, fz, FLUTES)
+            .expect("modelled force");
+        let hand_mean = ap * f64::from(FLUTES) / std::f64::consts::TAU
+            * (ks * fz * (1.0 - psi.cos()) + fe * psi);
         assert!(
-            rel_close(force, hand_force, 1e-12),
-            "{label}: force {force} N, hand {hand_force} N"
+            rel_close(force.mean_tangential_n, hand_mean, 1e-12),
+            "{label}: mean force {} N, hand {hand_mean} N",
+            force.mean_tangential_n
         );
 
-        // The deflection predictor bends the tool under the same force.
-        let tool_def = build_cutter(&tool).unwrap();
+        // The deflection predictor bends the tool under the peak force.
         let e = tool_def.tool_material.youngs_modulus_n_per_mm2();
-        let delta = tip_deflection_from_engagement(&tool_def, &material, ap, psi, fz)
+        let delta = tip_deflection_from_engagement(&tool_def, &material, &engagement, fz)
             .expect("modelled deflection");
-        let hand_delta = tool_def.tip_deflection_mm(hand_force, ap, e);
+        let hand_delta = tool_def.tip_deflection_mm(force.peak_resultant_n, ap, e);
         assert!(
             rel_close(delta, hand_delta, 1e-12) && delta > 0.0,
             "{label}: deflection {delta} mm, hand {hand_delta} mm"
@@ -795,13 +808,17 @@ fn every_consumer_abstains_on_plywood() {
         PlywoodGrade::HardwoodFaced,
     ] {
         let plywood = Material::Plywood { grade };
-        assert_eq!(
-            lateral_cutting_force(&plywood, ap, psi, fz),
-            None,
-            "{grade:?}"
+        assert!(plywood.force_line().is_err(), "{grade:?}");
+        let tool_def = build_cutter(&tool).unwrap();
+        let engagement = Engagement::from_tool_cut(
+            CutPoint {
+                ap_mm: ap,
+                ae_mm: ae,
+            },
+            &tool_def,
         );
         assert_eq!(
-            tip_deflection_from_engagement(&build_cutter(&tool).unwrap(), &plywood, ap, psi, fz),
+            tip_deflection_from_engagement(&tool_def, &plywood, &engagement, fz),
             None,
             "{grade:?}"
         );
@@ -830,7 +847,16 @@ fn every_consumer_abstains_on_plywood() {
 
     // Non-vacuity: the same calls answer on hardwood.
     let hardwood = solid(WoodSpecies::GenericHardwood);
-    assert!(lateral_cutting_force(&hardwood, ap, psi, fz).is_some());
+    let tool_def = build_cutter(&tool).unwrap();
+    let engagement = Engagement::from_tool_cut(
+        CutPoint {
+            ap_mm: ap,
+            ae_mm: ae,
+        },
+        &tool_def,
+    );
+    assert_eq!(engagement.psi_rad(), psi, "one immersion definition");
+    assert!(tip_deflection_from_engagement(&tool_def, &hardwood, &engagement, fz).is_some());
     assert!(power_at_operating_point(&op, &tool, &hardwood, &machine, None).is_ok());
     assert!(predict_peak_deflection_um(&op, &tool, &hardwood, &machine).is_ok());
 }

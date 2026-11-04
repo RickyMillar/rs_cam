@@ -277,15 +277,19 @@ fn the_spindle_power_binds_and_names_the_curve_k2b() {
 
 #[test]
 fn the_deflection_target_binds_and_names_its_constant_k2b() {
-    let mut tool = end_mill(12.0, 30.0);
-    tool.set_stickout(ToolFact::Stated(50.0));
+    // P11a (L5, D-A): the engaged-edge force bends the 50 mm Ø12 less,
+    // and the grid sizes power at the requested depth, so power binds
+    // there first. A longer stickout (80 mm) and a narrower cut keep the
+    // deflection edge the binding one.
+    let mut tool = end_mill(12.0, 40.0);
+    tool.set_stickout(ToolFact::Stated(80.0));
     let env = envelope(&Cell {
         op: OperationType::Adaptive,
         tool,
         machine: MachineProfile::shapeoko_vfd(),
         material: oak(),
         dpp: 15.0,
-        stepover: 5.0,
+        stepover: 2.0,
         bbox: None,
     });
     assert_binds(&env, LimitKind::Deflection);

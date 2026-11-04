@@ -804,15 +804,27 @@ fn walk_matrix(
                             let shipped_ap =
                                 s.operation.depth_per_pass().unwrap_or(r.axial_depth_mm);
                             let shipped_ae = s.operation.stepover().unwrap_or(r.radial_width_mm);
-                            let force_n = rs_cam_core::feeds::force::lateral_cutting_force(
-                                material,
-                                shipped_ap,
-                                rs_cam_core::feeds::force::immersion_angle(
-                                    shipped_ae,
-                                    tool.diameter / 2.0,
-                                ),
-                                shipped_fz,
-                            );
+                            // P11a (L5): the peak resultant engaged-edge
+                            // force of the shipped cut, at the engaged
+                            // diameter of the shipped depth.
+                            let force_n = rs_cam_core::compute::cutter::build_cutter(&tool)
+                                .ok()
+                                .and_then(|tool_def| {
+                                    let line = material.force_line().ok()?;
+                                    rs_cam_core::feeds::engagement::Engagement::from_tool_cut(
+                                        rs_cam_core::feeds::envelope::CutPoint {
+                                            ap_mm: shipped_ap,
+                                            ae_mm: shipped_ae,
+                                        },
+                                        &tool_def,
+                                    )
+                                    .edge_force(
+                                        line,
+                                        shipped_fz,
+                                        tool_def.flute_count,
+                                    )
+                                })
+                                .map(|f| f.peak_resultant_n);
                             fields.push(num(force_n));
                             let power_kw = rs_cam_core::feeds::power_at_operating_point(
                                 &s.operation,

@@ -94,8 +94,12 @@ fn ctx<'a>(k: &'a MachineKinematics, available_kw: f64) -> ModulationContext<'a>
             }
             .force_line()
             .expect("generic hardwood has a force line"),
-            engagement_diameter_mm: 6.0,
-            geometry: rs_cam_core::feeds::ToolGeometryHint::Flat,
+            cutter: rs_cam_core::dressup::feed_modulation::ModulationCutter {
+                geometry: rs_cam_core::feeds::ToolGeometryHint::Flat,
+                diameter_mm: 6.0,
+                shank_diameter_mm: 6.0,
+                helix_deg: 30.0,
+            },
             available_kw,
         }),
         // Deliberately DIFFERENT from every per-move depth this file uses.

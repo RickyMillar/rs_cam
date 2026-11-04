@@ -187,15 +187,23 @@ fn constrained_max_binds_on_deflection_for_long_tool() {
     let k = shapeoko();
     let mut ctx = ctx_basic(&k, band(0.02, 0.08));
     // Stiffness-limited small tool: 3 mm diameter, 60 mm stickout
-    // (L/D = 20). Feed-aware affine coefficients scaled to Kc ≈ 30
-    // (Ks = 49.95·30/35.1 ≈ 42.7, F_edge = 5.30·30/35.1 ≈ 4.53) and the
-    // beam compliance for a uniform 3 mm cantilever, load at ~59 mm:
-    // a²·(3L−a)/(6·E·I) ≈ 0.029 mm/N. At full chipload-max + 2 mm axial
-    // DOC + full slot the tip deflects ~0.47 mm > 0.2 mm, so DeflectionMax
-    // binds.
+    // (L/D = 20), the generic hardwood line, and the beam compliance for a
+    // uniform 3 mm cantilever, load at ~59 mm: a²·(3L−a)/(6·E·I) ≈
+    // 0.029 mm/N. At full chipload-max + 2 mm axial DOC + full slot the
+    // peak engaged-edge force (P11a) bends the tip past 0.2 mm, so
+    // DeflectionMax binds.
     ctx.deflection_inputs = Some(DeflectionLimitInputs {
-        ks_n_per_mm2: 42.7,
-        f_edge_n_per_mm: 4.53,
+        line: Material::SolidWood {
+            species: WoodSpecies::GenericHardwood,
+        }
+        .force_line()
+        .expect("generic hardwood has a force line"),
+        cutter: rs_cam_core::dressup::feed_modulation::ModulationCutter {
+            geometry: rs_cam_core::feeds::ToolGeometryHint::Flat,
+            diameter_mm: 3.0,
+            shank_diameter_mm: 3.0,
+            helix_deg: 30.0,
+        },
         compliance_mm_per_n: 0.029,
         max_tip_deflection_mm: 0.2,
     });
@@ -250,8 +258,12 @@ fn constrained_max_binds_on_power_for_low_rpm() {
         }
         .force_line()
         .expect("generic hardwood has a force line"),
-        engagement_diameter_mm: 6.0,
-        geometry: rs_cam_core::feeds::ToolGeometryHint::Flat,
+        cutter: rs_cam_core::dressup::feed_modulation::ModulationCutter {
+            geometry: rs_cam_core::feeds::ToolGeometryHint::Flat,
+            diameter_mm: 6.0,
+            shank_diameter_mm: 6.0,
+            helix_deg: 30.0,
+        },
         available_kw: 0.01,
     });
     let outcome = adaptive_feed_modulate(&mut tp, &engagements, &ctx).unwrap();
