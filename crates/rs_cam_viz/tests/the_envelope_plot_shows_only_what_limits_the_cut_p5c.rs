@@ -1,14 +1,16 @@
-//! P5c (feeds contract, operator review of P5b on 2026-11-04): the envelope
-//! plot shows only what limits the cut, and a drag moves only the
-//! candidate.
+//! P5c (feeds contract, operator review of P5b on 2026-11-04, and the live
+//! review of P5c, round 2): the envelope plot shows only what limits the
+//! cut, and a drag moves the setpoint, never the recommendation.
 //!
 //! # The claims
 //!
-//! 1. A drag moves the candidate ring; the proposal does not move. With the
-//!    operator's point inside, no proposal mark is drawn (the proposal is
-//!    at Now). With the operator's point outside, the proposal is a third
-//!    mark (an ACCENT diamond) and it stays where it is during the drag
-//!    (item 1: "dragging the dot drags the recommendation").
+//! 1. A drag moves the white dot (the setpoint draft); a hollow
+//!    `TEXT_MUTED` ghost marks the stored point while the candidate exists,
+//!    and Esc puts the dot back. No mark that moves is blue: `ACCENT` is only
+//!    the proposal diamond, drawn when the proposal is not at the stored
+//!    point, and it stays where it is during the drag (operator: "dragging
+//!    the dot drags the recommendation"; round 2: "I still see the
+//!    recommendation move (blue circle) not the setpoint (white)").
 //! 2. A drag that leaves the plot holds the candidate on the frame edge.
 //!    The view range does not change, and the scroll offset of the
 //!    inspector's scroll area does not change (item 2: "it just fires into
@@ -17,9 +19,11 @@
 //!    diameter, the depth axis never goes past the cutting length or the
 //!    flute guard. No line is drawn for these limits (items 3, 4).
 //! 4. On the rivmap100 3D Rough envelope (the operator's review job), the
-//!    plot draws at most 2 lines (1 at the review point) and no text label at rest; the move budget
-//!    is drawn only when it binds; no line is DANGER red (items 5 to 7).
-//!    P5b drew 4 lines and 4 labels in view on this job.
+//!    plot draws at most 2 lines (1 at the review point), each with ONE
+//!    label, its short name; the move budget is drawn only when it binds;
+//!    a line is `TEXT_BODY`, no line is DANGER red (items 5 to 7). P5b drew
+//!    4 lines and 4 labels in view on this job; P5c round 1 drew no label,
+//!    and the operator could not tell the lines apart.
 //!
 //! Red before P5c: `EnvelopeScene` has no `candidate`, `proposal_shown` or
 //! `edge_color`; the P5b view range followed the candidate, so a drag at the
@@ -42,12 +46,24 @@ use rs_cam_viz::ui::feeds::envelope::{
 };
 use rs_cam_viz::ui::tokens;
 
-/// The marks a frame painted: the unfilled circles (rings) and the closed
-/// four-point paths (diamonds), each with its centre and colour.
+/// The marks a frame painted: the filled circles (dots), the unfilled
+/// circles (rings: the ghost) and the closed four-point paths (diamonds),
+/// each with its centre and colour.
 #[derive(Debug, Default)]
 struct Marks {
+    dots: Vec<(egui::Pos2, egui::Color32)>,
     rings: Vec<(egui::Pos2, egui::Color32)>,
     diamonds: Vec<(egui::Pos2, egui::Color32)>,
+}
+
+impl Marks {
+    /// No circle is blue: blue marks only the recommendation.
+    fn no_blue_circle(&self) -> bool {
+        self.dots
+            .iter()
+            .chain(&self.rings)
+            .all(|(_, c)| *c != tokens::ACCENT)
+    }
 }
 
 #[expect(
@@ -60,7 +76,12 @@ fn marks(shapes: &[egui::epaint::ClippedShape]) -> Marks {
         egui::Shape::Circle(c) if c.fill == egui::Color32::TRANSPARENT => {
             out.rings.push((c.center, c.stroke.color));
         }
-        egui::Shape::Path(p) if p.closed && p.points.len() == 4 => {
+        egui::Shape::Circle(c) => out.dots.push((c.center, c.fill)),
+        egui::Shape::Path(p)
+            if p.closed
+                && p.points.len() == 4
+                && solid(&p.stroke.color) != egui::Color32::TRANSPARENT =>
+        {
             let n = p.points.len() as f32;
             let c = p
                 .points
@@ -234,8 +255,19 @@ fn a_drag_moves_the_candidate_and_never_the_proposal_p5c() {
     let mut candidates = EnvelopeCandidates::default();
     let rest = settle(&ctx, &config, &env, &mut candidates);
     let m = marks(&rest.shapes);
-    assert!(m.rings.is_empty(), "no candidate at rest: {m:?}");
+    assert!(m.rings.is_empty(), "no ghost at rest: {m:?}");
     assert!(m.diamonds.is_empty(), "no proposal mark inside: {m:?}");
+    let stated = env.stated.expect("fixture: a stated point");
+    let at_rest_dot = rest
+        .response
+        .screen_of(stated, EnvelopeShape::Plane)
+        .expect("a frame");
+    assert_eq!(m.dots.len(), 1, "one white dot: {m:?}");
+    assert_eq!(m.dots[0].1, tokens::TEXT_STRONG, "a white dot");
+    assert!(
+        m.dots[0].0.distance(at_rest_dot) < 2.0,
+        "at the stored point"
+    );
 
     let r = rest.response;
     let from = CutPoint {
@@ -256,7 +288,7 @@ fn a_drag_moves_the_candidate_and_never_the_proposal_p5c() {
         last.expect("frames").events.is_empty(),
         "a drag writes nothing"
     );
-    // The plot paints before it reads the pointer: the ring shows the
+    // The plot paints before it reads the pointer: the dot shows the
     // candidate on the next frame.
     let f = frame(&ctx, &config, Some(&env), &mut candidates, Vec::new());
     assert!(f.events.is_empty(), "a drag writes nothing: {:?}", f.events);
@@ -271,11 +303,48 @@ fn a_drag_moves_the_candidate_and_never_the_proposal_p5c() {
     let scene = EnvelopeScene::of(&env, Some(got));
     assert_eq!(scene.proposal, proposal_before, "the scene's proposal");
     let m = marks(&f.shapes);
-    assert_eq!(m.rings.len(), 1, "one candidate ring: {m:?}");
+    assert!(m.no_blue_circle(), "nothing blue moves: {m:?}");
     assert!(m.diamonds.is_empty(), "still no proposal mark: {m:?}");
+    assert_eq!(m.dots.len(), 1, "one white dot: {m:?}");
+    assert_eq!(m.dots[0].1, tokens::TEXT_STRONG, "a white dot inside");
     assert!(
-        m.rings[0].0.distance(screen(got)) < 2.0,
-        "the ring is at the candidate"
+        m.dots[0].0.distance(screen(got)) < 2.0,
+        "the white dot moved to the candidate"
+    );
+    assert_eq!(m.rings.len(), 1, "one ghost: {m:?}");
+    assert_eq!(m.rings[0].1, tokens::TEXT_MUTED, "a TEXT_MUTED ghost");
+    assert!(
+        m.rings[0].0.distance(at_rest_dot) < 2.0,
+        "the ghost marks the stored point"
+    );
+    // Esc puts the dot back: no ghost, the dot at the stored point. The
+    // button of the drag is still down; a release ends the drag first.
+    let _ = frame(
+        &ctx,
+        &config,
+        Some(&env),
+        &mut candidates,
+        vec![button(screen(to), false)],
+    );
+    let _ = frame(
+        &ctx,
+        &config,
+        Some(&env),
+        &mut candidates,
+        vec![egui::Event::Key {
+            key: egui::Key::Escape,
+            physical_key: None,
+            pressed: true,
+            repeat: false,
+            modifiers: egui::Modifiers::NONE,
+        }],
+    );
+    let m = marks(&frame(&ctx, &config, Some(&env), &mut candidates, Vec::new()).shapes);
+    assert!(candidates.get(ID).is_none(), "Esc drops the candidate");
+    assert!(m.rings.is_empty(), "no ghost after Esc: {m:?}");
+    assert!(
+        m.dots.len() == 1 && m.dots[0].0.distance(at_rest_dot) < 2.0,
+        "the dot is back at the stored point: {m:?}"
     );
 
     // 1b. The operator's point outside (the fixture Pocket states ap 1.5):
@@ -295,7 +364,7 @@ fn a_drag_moves_the_candidate_and_never_the_proposal_p5c() {
     let at_rest = marks(&rest.shapes);
     assert_eq!(at_rest.diamonds.len(), 1, "one proposal mark: {at_rest:?}");
     assert_eq!(at_rest.diamonds[0].1, tokens::ACCENT, "ACCENT proposal");
-    assert!(at_rest.rings.is_empty(), "no candidate at rest");
+    assert!(at_rest.rings.is_empty(), "no ghost at rest");
     let r = rest.response;
     let screen = |p| r.screen_of(p, EnvelopeShape::Plane).expect("a frame");
     let a = CutPoint {
@@ -324,7 +393,9 @@ fn a_drag_moves_the_candidate_and_never_the_proposal_p5c() {
         at_rest.diamonds[0].0,
         dragged.diamonds[0].0
     );
-    assert_eq!(dragged.rings.len(), 1, "one candidate ring: {dragged:?}");
+    assert_eq!(dragged.rings.len(), 1, "one ghost: {dragged:?}");
+    assert!(dragged.no_blue_circle(), "nothing blue moves: {dragged:?}");
+    assert_eq!(dragged.dots.len(), 1, "one dot: {dragged:?}");
 }
 
 /// One frame of the envelope inside a scroll area 200 points high with 800
@@ -456,23 +527,27 @@ fn the_rivmap_rough_plot_draws_only_the_limits_near_the_cut_p5c() {
             kinds.contains(&LimitKind::VendorAxial),
             "{tag}: the vendor max DOC binds this cut: {kinds:?}"
         );
-        // No text at rest: no limit name on the face.
+        // One label per drawn line: its short name, once (round 2).
         let mut candidates = EnvelopeCandidates::default();
         let f = settle(&ctx, &config, &env, &mut candidates);
         let names: Vec<&str> = env.boundary.iter().map(|l| short_label(l.kind)).collect();
         let painted = texts(&f.shapes);
-        let labels: Vec<&String> = painted
+        let mut labels: Vec<&str> = painted
             .iter()
-            .filter(|t| names.contains(&t.as_str()))
+            .map(String::as_str)
+            .filter(|t| names.contains(t))
             .collect();
-        assert!(labels.is_empty(), "{tag}: no label at rest: {labels:?}");
-        // The colour rule: neutral lines at rest, no DANGER.
+        labels.sort_unstable();
+        let mut want: Vec<&str> = kinds.iter().map(|k| short_label(*k)).collect();
+        want.sort_unstable();
+        assert_eq!(labels, want, "{tag}: one label per drawn line");
+        // The colour rule: TEXT_BODY lines at rest, no DANGER.
         for e in &scene.edges {
-            assert_eq!(scene.edge_color(e), tokens::TEXT_MUTED, "{tag}: {e:?}");
+            assert_eq!(scene.edge_color(e), tokens::TEXT_BODY, "{tag}: {e:?}");
         }
         let colours = line_colours(&f.shapes);
         assert!(
-            colours.contains(&tokens::TEXT_MUTED),
+            colours.contains(&tokens::TEXT_BODY),
             "{tag}: non-vacuity: a neutral line paints: {colours:?}"
         );
         assert!(
@@ -519,7 +594,7 @@ fn a_crossed_limit_and_the_candidate_turn_amber_p5c() {
         scene.candidate_outside(),
         "fixture: the candidate is outside"
     );
-    assert_eq!(scene.candidate_color(), tokens::CAUTION);
+    assert_eq!(scene.dot_color(), Some(tokens::CAUTION), "the dot is amber");
     let crossed: Vec<LimitKind> = scene
         .edges
         .iter()

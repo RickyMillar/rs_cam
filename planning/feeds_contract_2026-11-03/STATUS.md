@@ -71,6 +71,10 @@ code by the symbol when the line has moved.
 - P5c follow-ups (2026-11-04): the "6" tick at the frame edge D does not
   paint (egui_plot); at the 240 pt rail the nomogram RPM axis names only "0"
   and its "Now" / "Max RPM" labels touch (both predate P5c).
+  The nomogram "Recommended" label never paints (no place near the ring
+  clears the Max feed wall, the Max RPM wall and the suggested line); no
+  text names the blue ring. Fix: let that label cross the suggested line,
+  or widen `MARK_SCAN` with a leader.
 - Research (operator, 2026-11-04): stepover does not move the feeds and
   speeds, and a raised stepover does not lower the proposed depth. The operator
   expects a higher depth and a lower stepover to trade ("kind of cancel").

@@ -9,19 +9,21 @@
 //!   up. The frame is the hard stops (P5c): the width axis ends at the tool
 //!   diameter, and the depth axis never goes past the cutting length or the
 //!   flute guard. The plot draws only the limits that matter at the marks
-//!   (`EnvelopeScene::of`), with no text at rest. The hover names a limit.
-//!   No item is a filled region (G-CHARTLINES, decision D2).
+//!   (`EnvelopeScene::of`), each with its short name on the line (P5c
+//!   round 2). The hover names a limit too. No item is a filled region
+//!   (G-CHARTLINES, decision D2).
 //! - An op with one free value (a Trace or Project Curve depth, a drill
 //!   peck, a surface width) gets a bar of one row: it ends at the binding
 //!   limit, and the limit is named at its end.
 //! - An op with no free value draws nothing.
 //!
-//! The marks (ruling R23, P5c): the operator's stated point ("Now") is a
-//! neutral dot. The candidate is a ring; it exists only after a click or a
-//! drag, and Esc drops it. The proposal is a third mark, drawn only when it
-//! is not at Now (Now sits outside). A drag thus moves only the candidate;
-//! no recommendation seems to move. A point outside warns; nothing refuses
-//! it (ruling Q6).
+//! The marks (ruling R23; P5c round 2 after the operator's live review):
+//! the white dot is the setpoint. A click or a drag moves the dot itself:
+//! while a candidate exists, the dot sits at the candidate (a draft of the
+//! setpoint) and a hollow ghost marks the stored point. Esc returns the dot
+//! to the stored point; the ⚡ applies it. Blue marks only the
+//! recommendation: the proposal diamond, drawn when the proposal is not at
+//! the stored point. A point outside warns; nothing refuses it (ruling Q6).
 //!
 //! The live link (operator ruling 2026-11-03): a click or a drag moves the
 //! candidate (GUI state, `state::panels::EnvelopeCandidates`); the hover
@@ -41,7 +43,9 @@ use rs_cam_core::feeds::envelope::{
     SpeedsSample,
 };
 
-use super::shared::{axis_title_overhang, nice_steps};
+use super::shared::{
+    ChartLabel, DrawnLine, LabelAnchor, axis_title_overhang, nice_steps, paint_labels, place_labels,
+};
 use crate::state::panels::EnvelopeCandidates;
 use crate::ui::{AppEvent, tokens};
 
@@ -65,15 +69,26 @@ const Y_AXIS_MIN_WIDTH: f32 = 28.0;
 /// label in across it and hides it below the low end).
 const X_LABEL_SPACING: std::ops::RangeInclusive<f32> = 45.0..=60.0;
 
-/// The width of a limit line, in points.
-const LINE_WIDTH: f32 = 1.0;
+/// The width of a limit line, in points (P5c round 2: twice the 1-point
+/// grid line, so a limit reads above the grid).
+const LINE_WIDTH: f32 = 2.0;
 
-/// The width of a limit line that the candidate crosses, in points.
-const CROSSED_WIDTH: f32 = 1.5;
+/// The width of the outline of the ghost and the proposal diamond, in
+/// points.
+const OUTLINE_WIDTH: f32 = 1.5;
 
-/// The radius of the candidate ring, in points (the nomogram's
-/// `Recommended`).
-const RING_RADIUS: f32 = 7.0;
+/// The radius of the hollow ghost at the stored point, in points.
+const GHOST_RADIUS: f32 = 4.5;
+
+/// The room at each end of the bar, in points: the half width of the
+/// widest mark (the proposal diamond) and its outline.
+const BAR_END_ROOM: f32 = 7.0;
+
+/// The room a label keeps around a mark, in points.
+const MARK_CLEARANCE: f32 = 4.0;
+
+/// The width of the safe span of the bar, in points (a span, not a limit).
+const SPAN_WIDTH: f32 = 1.0;
 
 /// The radius of the proposal diamond, in points.
 const PROPOSAL_RADIUS: f32 = 6.0;
@@ -299,26 +314,35 @@ impl EnvelopeScene {
         matches!(self.candidate_placement, Some(Placement::Outside { .. }))
     }
 
-    // The colour rule of the envelope plot and the bar (P5c item 6):
+    // The colour rule of the envelope plot and the bar (P5c item 6; round 2
+    // after the operator's live review, 2026-11-04):
     //
-    // - A limit line is neutral grey (`tokens::TEXT_MUTED`). The plot draws
-    //   only the limits that matter, so a line needs no colour to stand out.
-    // - The candidate is `tokens::ACCENT`. The proposal mark is
-    //   `tokens::ACCENT` too, and a different shape (a diamond).
-    // - A line that the candidate (else Now) crosses, and the candidate
-    //   itself when it sits outside, are `tokens::CAUTION` (amber). Now is
-    //   a neutral dot (`tokens::TEXT_STRONG`), `tokens::CAUTION` outside.
+    // - The white dot is the setpoint (`tokens::TEXT_STRONG`). A drag moves
+    //   the dot itself: while a candidate exists the dot sits at the
+    //   candidate (a draft of the setpoint), and a hollow ghost
+    //   (`tokens::TEXT_MUTED` outline, no fill) marks the stored point.
+    // - Blue (`tokens::ACCENT`) is only the recommendation: the proposal
+    //   diamond, drawn when the proposal is not at the stored point. Blue
+    //   never marks the thing the operator drags.
+    // - A limit line is `tokens::TEXT_BODY`, `LINE_WIDTH` (2 points) wide,
+    //   over a grid in `tokens::BORDER`: each line reads above the grid. Its
+    //   label is the same colour.
+    // - A line that the dot crosses, and the dot when it sits outside, are
+    //   `tokens::CAUTION` (amber).
     // - No `tokens::DANGER` on this plot: an outside point warns, it is
     //   not refused (ruling Q6).
 
-    /// The colour of the candidate ring.
+    /// Where the white dot is: the candidate (a draft of the setpoint),
+    /// else the stored point.
     #[must_use]
-    pub const fn candidate_color(&self) -> egui::Color32 {
-        if self.candidate_outside() {
-            tokens::CAUTION
-        } else {
-            tokens::ACCENT
-        }
+    pub fn setpoint(&self) -> Option<CutPoint> {
+        self.candidate.or(self.dot.map(|(p, _)| p))
+    }
+
+    /// The hollow ghost at the stored point: only while a candidate exists.
+    #[must_use]
+    pub fn ghost(&self) -> Option<CutPoint> {
+        self.candidate.and(self.dot.map(|(p, _)| p))
     }
 
     /// The colour of the proposal mark.
@@ -327,25 +351,28 @@ impl EnvelopeScene {
         tokens::ACCENT
     }
 
-    /// The colour of the operator's dot.
+    /// The colour of the white dot: `tokens::CAUTION` when the dot (the
+    /// candidate, else the stored point) sits outside.
     #[must_use]
     pub fn dot_color(&self) -> Option<egui::Color32> {
-        self.dot.map(|(_, outside)| {
-            if outside {
-                tokens::CAUTION
-            } else {
-                tokens::TEXT_STRONG
-            }
+        let outside = match self.candidate {
+            Some(_) => Some(self.candidate_outside()),
+            None => self.dot.map(|(_, outside)| outside),
+        }?;
+        Some(if outside {
+            tokens::CAUTION
+        } else {
+            tokens::TEXT_STRONG
         })
     }
 
-    /// The colour of the line of `edge`.
+    /// The colour of the line of `edge`, and of its label.
     #[must_use]
     pub const fn edge_color(&self, edge: &SceneEdge) -> egui::Color32 {
         if edge.crossed {
             tokens::CAUTION
         } else {
-            tokens::TEXT_MUTED
+            tokens::TEXT_BODY
         }
     }
 
@@ -813,30 +840,20 @@ fn draw_plane(
                 // only 0 on it. A 1-2-5 step gives three or four names.
                 .x_grid_spacer(egui_plot::uniform_grid_spacer(|i| nice_steps(&i)))
                 .y_grid_spacer(egui_plot::uniform_grid_spacer(|i| nice_steps(&i)))
+                // P5c round 2: the grid in `tokens::BORDER`, under the limit
+                // lines (`tokens::TEXT_BODY`, 2 points). The default grid
+                // takes the text colour, and its strongest lines were
+                // brighter than the limits.
+                .grid_color(tokens::BORDER)
                 .sense(egui::Sense::click_and_drag())
                 .show(ui, |plot_ui| {
                     plot_ui.set_plot_bounds_x(ae_range.0..=ae_range.1);
                     plot_ui.set_plot_bounds_y(ap_range.0..=ap_range.1);
                     for edge in &scene.edges {
-                        let width = if edge.crossed {
-                            CROSSED_WIDTH
-                        } else {
-                            LINE_WIDTH
-                        };
                         plot_ui.line(
                             Line::new("", PlotPoints::from(edge.points.clone()))
                                 .color(scene.edge_color(edge))
-                                .width(width)
-                                .allow_hover(false),
-                        );
-                    }
-                    if let (Some((p, _)), Some(color)) = (scene.dot, scene.dot_color()) {
-                        plot_ui.points(
-                            Points::new("", xy(p))
-                                .shape(MarkerShape::Circle)
-                                .filled(true)
-                                .radius(DOT_RADIUS)
-                                .color(color)
+                                .width(LINE_WIDTH)
                                 .allow_hover(false),
                         );
                     }
@@ -850,13 +867,23 @@ fn draw_plane(
                                 .allow_hover(false),
                         );
                     }
-                    if let Some(c) = scene.candidate {
+                    if let Some(g) = scene.ghost() {
                         plot_ui.points(
-                            Points::new("", xy(c))
+                            Points::new("", xy(g))
                                 .shape(MarkerShape::Circle)
                                 .filled(false)
-                                .radius(RING_RADIUS)
-                                .color(scene.candidate_color())
+                                .radius(GHOST_RADIUS)
+                                .color(tokens::TEXT_MUTED)
+                                .allow_hover(false),
+                        );
+                    }
+                    if let (Some(p), Some(color)) = (scene.setpoint(), scene.dot_color()) {
+                        plot_ui.points(
+                            Points::new("", xy(p))
+                                .shape(MarkerShape::Circle)
+                                .filled(true)
+                                .radius(DOT_RADIUS)
+                                .color(color)
                                 .allow_hover(false),
                         );
                     }
@@ -882,8 +909,51 @@ fn draw_plane(
         candidates.set(toolpath_id, to_point(pos));
     }
 
+    // The labels (P5c round 2: the operator could not tell the lines apart
+    // without them): the short name of each drawn limit on its line, in the
+    // colour of the line, clear of the marks. The plot draws at most two
+    // lines, so it paints at most two labels.
+    let at_screen =
+        |p: [f64; 2]| transform.position_from_point(&egui_plot::PlotPoint::new(p[0], p[1]));
+    let mark_rect = |p: CutPoint, r: f32| {
+        let p = scene.on_frame(p);
+        egui::Rect::from_center_size(
+            at_screen([p.ae_mm, p.ap_mm]),
+            egui::Vec2::splat(2.0 * r + MARK_CLEARANCE),
+        )
+    };
+    let mut keep_clear: Vec<egui::Rect> = Vec::new();
+    keep_clear.extend(scene.setpoint().map(|p| mark_rect(p, DOT_RADIUS)));
+    keep_clear.extend(scene.ghost().map(|p| mark_rect(p, GHOST_RADIUS)));
+    if scene.proposal_shown {
+        keep_clear.push(mark_rect(scene.proposal, PROPOSAL_RADIUS));
+    }
+    let screen_edges: Vec<(&SceneEdge, Vec<egui::Pos2>)> = scene
+        .edges
+        .iter()
+        .map(|e| (e, e.points.iter().copied().map(at_screen).collect()))
+        .collect();
+    let lines: Vec<DrawnLine> = screen_edges
+        .iter()
+        .map(|(_, pts)| DrawnLine {
+            points: pts.clone(),
+            half_width: LINE_WIDTH / 2.0,
+            soft: false,
+        })
+        .collect();
+    let specs: Vec<ChartLabel> = screen_edges
+        .into_iter()
+        .map(|(e, pts)| ChartLabel {
+            text: short_label(e.kind),
+            color: scene.edge_color(e),
+            anchor: LabelAnchor::Line(pts),
+        })
+        .collect();
+    let placed = place_labels(ui, frame, &keep_clear, &lines, specs);
+    paint_labels(ui, frame, &placed);
+
     // The hover: the name of the limit line near the pointer, then the
-    // readout line. No text at rest (P5c item 5).
+    // readout line.
     if let Some(pos) = response.response.hover_pos()
         && frame.contains(pos)
     {
@@ -949,8 +1019,8 @@ fn screen_segment_distance(q: egui::Pos2, a: egui::Pos2, b: egui::Pos2) -> f32 {
 
 /// The one-value bar: a line from the low end to the binding limit, the
 /// limit named at its end, the marks on it (the rules of the plot: Now
-/// dot, candidate ring, proposal diamond when it is not at Now). Returns
-/// the bar rect.
+/// dot at the setpoint draft, ghost at the stored point while a candidate
+/// exists, proposal diamond when it is not at Now). Returns the bar rect.
 fn draw_bar(
     ui: &mut egui::Ui,
     toolpath_id: rs_cam_core::ToolpathId,
@@ -986,7 +1056,7 @@ fn draw_bar(
     let end_color = if crossed {
         tokens::CAUTION
     } else {
-        tokens::TEXT_MUTED
+        tokens::TEXT_BODY
     };
     let font = egui::FontId::proportional(tokens::SIZE_CAPTION);
     let label = end.map(|(_, kind)| short_label(kind));
@@ -1001,8 +1071,8 @@ fn draw_bar(
     let (row, response) =
         ui.allocate_exact_size(egui::vec2(width, BAR_HEIGHT), egui::Sense::click_and_drag());
     let bar = egui::Rect::from_min_max(
-        row.min + egui::vec2(RING_RADIUS, 0.0),
-        egui::pos2(row.right() - label_width - RING_RADIUS, row.bottom()),
+        row.min + egui::vec2(BAR_END_ROOM, 0.0),
+        egui::pos2(row.right() - label_width - BAR_END_ROOM, row.bottom()),
     );
     let x_of = |v: f64| {
         let t = ((v - range.0) / (range.1 - range.0)).clamp(0.0, 1.0) as f32;
@@ -1032,7 +1102,7 @@ fn draw_bar(
     let end_x = end.map_or(bar.right(), |(mm, _)| x_of(mm));
     // The safe span of the free value: a neutral line from the low end to
     // the binding limit.
-    let span = egui::Stroke::new(LINE_WIDTH, tokens::TEXT_MUTED);
+    let span = egui::Stroke::new(SPAN_WIDTH, tokens::TEXT_MUTED);
     let _ = painter.line_segment([egui::pos2(bar.left(), y), egui::pos2(end_x, y)], span);
     let _ = painter.line_segment(
         [
@@ -1042,10 +1112,9 @@ fn draw_bar(
         span,
     );
     if end.is_some() {
-        let width = if crossed { CROSSED_WIDTH } else { LINE_WIDTH };
         let _ = painter.line_segment(
             [egui::pos2(end_x, y - tick), egui::pos2(end_x, y + tick)],
-            egui::Stroke::new(width, end_color),
+            egui::Stroke::new(LINE_WIDTH, end_color),
         );
     }
     if let Some(text) = label {
@@ -1057,9 +1126,6 @@ fn draw_bar(
             end_color,
         );
     }
-    if let (Some((p, _)), Some(color)) = (scene.dot, scene.dot_color()) {
-        let _ = painter.circle_filled(egui::pos2(x_of(value(p)), y), DOT_RADIUS, color);
-    }
     if scene.proposal_shown {
         let c = egui::pos2(x_of(value(scene.proposal)), y);
         let r = PROPOSAL_RADIUS;
@@ -1070,15 +1136,18 @@ fn draw_bar(
                 c + egui::vec2(0.0, r),
                 c + egui::vec2(-r, 0.0),
             ],
-            egui::Stroke::new(CROSSED_WIDTH, scene.proposal_color()),
+            egui::Stroke::new(OUTLINE_WIDTH, scene.proposal_color()),
         ));
     }
-    if let Some(c) = scene.candidate {
+    if let Some(g) = scene.ghost() {
         let _ = painter.circle_stroke(
-            egui::pos2(x_of(value(c)), y),
-            RING_RADIUS,
-            egui::Stroke::new(CROSSED_WIDTH, scene.candidate_color()),
+            egui::pos2(x_of(value(g)), y),
+            GHOST_RADIUS,
+            egui::Stroke::new(OUTLINE_WIDTH, tokens::TEXT_MUTED),
         );
+    }
+    if let (Some(p), Some(color)) = (scene.setpoint(), scene.dot_color()) {
+        let _ = painter.circle_filled(egui::pos2(x_of(value(p)), y), DOT_RADIUS, color);
     }
     if (response.clicked() || response.dragged())
         && let Some(pos) = response.interact_pointer_pos()

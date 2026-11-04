@@ -8,14 +8,15 @@
 //!
 //! - one filled dot at the operator's stated point ("Now"), neutral ink
 //!   while the point sits inside (ruling R23), `tokens::CAUTION` outside;
-//! - P5c (operator review 2026-11-04): no candidate ring at rest (the ring
-//!   exists only after a click or a drag), and a proposal mark (an ACCENT
-//!   diamond) only when the proposal is not at Now. P5b drew the proposal
-//!   as the ring, so a drag seemed to move the recommendation;
-//! - P5c: no limit name at rest (the hover names a limit), and every drawn
-//!   edge neutral (`tokens::TEXT_MUTED`); the edge that binds Now is among
-//!   the drawn edges. P5b named each edge on the line and drew the binding
-//!   edge solid in DANGER (decision D2 kept: lines, no fill).
+//! - P5c (operator review 2026-11-04): no ring at rest (the ghost of the
+//!   stored point exists only while a drag moves the dot), and a proposal
+//!   mark (an ACCENT diamond) only when the proposal is not at Now. P5b drew
+//!   the proposal as the ring, so a drag seemed to move the recommendation;
+//! - P5c round 2: one label per drawn edge, its short name, once, and every
+//!   drawn edge `tokens::TEXT_BODY` (`tokens::CAUTION` when Now crosses it);
+//!   the edge that binds Now is among the drawn edges. P5b named each edge
+//!   and drew the binding edge in DANGER; P5c round 1 named none (decision
+//!   D2 kept: lines, no fill).
 //!
 //! The scene is a pure function of the envelope (`EnvelopeScene::of`), so
 //! the arms read it beside the painted shapes.
@@ -82,7 +83,7 @@ fn the_envelope_plot_marks_the_operator_and_the_proposal_k2b() {
         );
     }
     for e in &scene.edges {
-        assert_eq!(scene.edge_color(e), tokens::TEXT_MUTED, "{:?}", e.kind);
+        assert_eq!(scene.edge_color(e), tokens::TEXT_BODY, "{:?}", e.kind);
     }
 
     let ctx = ctx();
@@ -107,14 +108,18 @@ fn the_envelope_plot_marks_the_operator_and_the_proposal_k2b() {
     assert_eq!(dot_color, tokens::TEXT_STRONG, "R23: a neutral dot inside");
     assert!(!scene.proposal_shown, "the proposal is at Now: no mark");
 
-    // No limit name at rest.
+    // One label per drawn edge, its short name, once.
     let names: Vec<&str> = env.boundary.iter().map(|l| short_label(l.kind)).collect();
     let painted = texts(&f.shapes);
-    let labels: Vec<&String> = painted
+    let mut labels: Vec<&str> = painted
         .iter()
-        .filter(|t| names.contains(&t.as_str()))
+        .map(String::as_str)
+        .filter(|t| names.contains(t))
         .collect();
-    assert!(labels.is_empty(), "no limit name at rest: {labels:?}");
+    labels.sort_unstable();
+    let mut want: Vec<&str> = scene.edges.iter().map(|e| short_label(e.kind)).collect();
+    want.sort_unstable();
+    assert_eq!(labels, want, "one label per drawn edge");
 
     // The operator's point outside: a CAUTION dot, and the proposal is a
     // third mark at its own place
@@ -132,7 +137,7 @@ fn the_envelope_plot_marks_the_operator_and_the_proposal_k2b() {
         let want = if e.kind == binding {
             tokens::CAUTION
         } else {
-            tokens::TEXT_MUTED
+            tokens::TEXT_BODY
         };
         assert_eq!(scene.edge_color(e), want, "{:?}", e.kind);
     }
@@ -183,7 +188,11 @@ fn settle(
 fn diamonds(shapes: &[egui::epaint::ClippedShape]) -> Vec<(egui::Pos2, egui::Color32)> {
     let mut out = Vec::new();
     let mut walk = |s: &egui::Shape| match s {
-        egui::Shape::Path(p) if p.closed && p.points.len() == 4 => {
+        egui::Shape::Path(p)
+            if p.closed
+                && p.points.len() == 4
+                && solid(&p.stroke.color) != egui::Color32::TRANSPARENT =>
+        {
             let c = p
                 .points
                 .iter()
