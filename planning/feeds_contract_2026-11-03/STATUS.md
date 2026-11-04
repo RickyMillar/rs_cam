@@ -197,6 +197,14 @@ Those will already be fairly de-rated so our later deratings will just cut it do
    `impl Default for RigidityProfile` (the generic one; FM1 does not move), the presets and
    `validate.rs:284` read it. Open for the operator: the 2026-10-23 "no underived defaults"
    rule would give `RigidityProfile` no default at all.
+   **Ruled 2026-11-05 (operator): "let the default be about shapeoko. its probably a good
+   start.. but make it explicit that this number is 'hobby grade' vs 'industrial' or similar."**
+   Lead reading: one default set, the Shapeoko profile (`shapeoko_vfd_1500w_balanced`, 0.25 /
+   2.0 / 0.25 today in `RigidityProfile::default()`), named by a machine class (for example
+   `MachineClass::Hobby` against `Industrial`) that the GUI, MCP, the CLI and the lineage name
+   beside each value. The values stay Unsourced (the Shapeoko port) until a printed source
+   lands. `generic_wood_router` reads it. Cost: FM1 moves (the audit counts 280 cap cells and
+   32 adaptive stepover cells at 0.20 D); P13 measures and names them.
 7. Lineage: store it in the project file, if it is not a memory sink. Measure the size first.
 
 Lead plan: P11b takes items 1-3 with L6 and L8. A new phase P13 (after P11b, before P12) takes
