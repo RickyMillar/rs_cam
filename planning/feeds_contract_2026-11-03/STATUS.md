@@ -56,7 +56,7 @@ Prompt for the new session (paste after `/clear`):
 | D5 | P0 D3 Amana tapered 1/16" 2F rows. **Ruled 2026-11-03: the chip band from the printed IPM** (reverses the 2026-09-24 decision). | P0 item 5 | RULED |
 | D8 | Registry defaults after P5. **Ruled 2026-11-03 (operator): (b) tool-derived. An op has no geometry default without a tool; each geometry default is a fraction of the tool (example: stepover = k x D). Each k is a `FormulaConstant` with a printed source or marked Unsourced (no number from memory).** Until it lands, (a) holds: the built-in default warns and the operator picks the proposal. New phase P10. Evidence after P5 (a5ec62f44): 16 FM1 sim cells (Pocket, Profile, Ø6) exceed the depth rigidity cap at the fixed default depth per pass; 15 Face cells have stepover > D. | P10 | RULED |
 | D10 | P11 step 0, the validation study (read-only). **Go given 2026-11-04 (operator: start P6 and step 0 in parallel).** | P11 step 0 | RULED |
-| D11 | Chip thinning against N-8 (`planning/review_2026-08-04/CHIPLOAD_LITERATURE_VERDICT.md`): may Suggest apply radial chip thinning? Evidence: the P11 step 0 result. | P11 steps 2-5 | ASK THE OPERATOR after step 0 |
+| D11 | Chip thinning against N-8 (`planning/review_2026-08-04/CHIPLOAD_LITERATURE_VERDICT.md`): may Suggest apply radial chip thinning? Evidence: `research_p11_step0/REPORT.md` section 8 (step 0 FAIL: no wood row prints a width, so wood cannot test thinning; metal rows agree at 35-50 % D, disagree at 2.5 % D; the vendor depth table lets the force rise about 1.5x at 2 x D, so a force-held chip contradicts it). | P11 steps 2-5 | ASK THE OPERATOR (evidence ready 2026-11-04) |
 | D9 | The machine "aggressiveness" dial changes no number after P5 (pass 6b deleted; the slider, MCP and the explain payload only show it). Options: (a) remove the dial; (b) make it pick the proposal point inside the envelope (for example, how close to the binding edge); (c) keep it as a display. Lead recommends (b) in P5b or (a). | P5b | ASK THE OPERATOR |
 
 ## Phases
@@ -77,7 +77,7 @@ Prompt for the new session (paste after `/clear`):
 | 8 Q1 / Q6 / Q8 | `phases/P8.md` | NOT STARTED (Q1 needs P9 changes 1-2 first) | | |
 | 9 K7 one engagement | `phases/P9.md` | NOT STARTED (heavy-tests: ask first) | | |
 | 10 Tool-derived geometry defaults (D8) | `phases/P10.md` | NOT STARTED (card drafted 2026-11-03; needs P5; lead answers its open points first) | | |
-| 11 Force model, chip first, feed-driven limits | `phases/P11.md` | NOT STARTED (operator discussion 2026-11-04; step 0 go given 2026-11-04, runs in parallel with P6; steps 2-5 need D11) | | Step 0 now; the rest after P9 or with it |
+| 11 Force model, chip first, feed-driven limits | `phases/P11.md` | Step 0 DONE 2026-11-04 (`research_p11_step0/`: verdict FAIL against the preregistered rule; best group W 67 %, best group D 7.3 %, wood force candidates 0 / 418; 21 claims hold). Steps 1-6 NOT STARTED (need D11) | see `git log` | D11 ruling; then steps 1-6 after P9 or with it |
 
 ## Not in a phase
 

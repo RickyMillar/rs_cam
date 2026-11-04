@@ -1,0 +1,184 @@
+<!doctype html>
+<html lang="en">
+<head>
+<meta charset="utf-8">
+<meta name="viewport" content="width=device-width, initial-scale=1">
+<title>P11 Step 0 Validation</title>
+<style>
+:root{--bg:#fbfaf7;--fg:#1d1f22;--mut:#5f6670;--line:#d9d6cf;--card:#ffffff;--pass:#2f7d4f;--fail:#b3412f;--band:#c9dccf;--acc:#2b5d9b;--acc2:#b07a1c;--na:#9aa0a6}
+@media (prefers-color-scheme: dark){:root:not([data-theme="light"]){--bg:#16181b;--fg:#e7e5e0;--mut:#a3a9b1;--line:#34383e;--card:#1e2125;--pass:#5dbb83;--fail:#e2735f;--band:#2f4a3a;--acc:#7fa8e0;--acc2:#e0b25c;--na:#6d737a}}
+:root[data-theme="dark"]{--bg:#16181b;--fg:#e7e5e0;--mut:#a3a9b1;--line:#34383e;--card:#1e2125;--pass:#5dbb83;--fail:#e2735f;--band:#2f4a3a;--acc:#7fa8e0;--acc2:#e0b25c;--na:#6d737a}
+body{background:var(--bg);color:var(--fg);font:15px/1.5 system-ui,-apple-system,"Segoe UI",sans-serif;margin:0}
+main{max-width:980px;margin:0 auto;padding:24px 16px 64px}
+h1{font-size:1.5rem;margin:0 0 4px}h2{font-size:1.15rem;margin:32px 0 8px;border-bottom:1px solid var(--line);padding-bottom:4px}
+.mut{color:var(--mut)}.card{background:var(--card);border:1px solid var(--line);border-radius:8px;padding:12px 14px;margin:10px 0}
+.badge{display:inline-block;padding:2px 10px;border-radius:12px;font-weight:600;color:#fff}
+.fail{background:var(--fail)}.pass{background:var(--pass)}
+table{border-collapse:collapse;width:100%;font-size:13px}th,td{border-bottom:1px solid var(--line);padding:4px 6px;text-align:right}th:first-child,td:first-child{text-align:left}
+td.p{color:var(--pass);font-weight:600}td.f{color:var(--fail)}td.n{color:var(--na)}
+.scroll{overflow-x:auto}code{font-size:12.5px}
+.claim{border-left:3px solid var(--acc);padding-left:8px;margin:6px 0}
+.claim::before{content:attr(data-claim);font:600 11px ui-monospace,monospace;color:var(--acc);margin-right:6px}
+.ph{border-left-color:var(--acc2)}.ph::before{color:var(--acc2)}
+label{margin-right:12px;font-size:13px}input[type=range]{vertical-align:middle;width:140px}
+svg text{fill:var(--mut);font-size:11px}
+select{background:var(--card);color:var(--fg);border:1px solid var(--line);border-radius:4px;padding:2px 4px}
+</style>
+</head>
+<body>
+<main>
+<h1>P11 step 0: chip thinning and engagement force against the vendor rows</h1>
+<p class="mut">Read-only study, 2026-11-04. Script <code>model.py</code>, pass rule <code>PREREGISTRATION.md</code> (written before the run), checks <code>assert_claims.py</code>. Each claim carries an id; the assert script checks each id against <code>results.json</code>.</p>
+
+<div class="card">
+<p><b>Question.</b> Does one model (radial chip thinning plus a helix engagement force model) reproduce the vendor rows, with no constant tuned per row?</p>
+<p><b>Verdict:</b> <span class="badge fail" id="verdict"></span></p>
+<p class="claim" data-claim="C01">The verdict is FAIL. No candidate meets the pass rule (80 % of the cases in group W and 80 % in group D).</p>
+<p class="claim" data-claim="C04">In group W (printed width), the best candidates are I4 and C2: 4 of 6 cases (67 %).</p>
+<p class="claim" data-claim="C05">In group D (printed depth table), the best candidate is I3v: 34 of 466 cases (7.3 %).</p>
+<p class="claim" data-claim="C15">No candidate passes in any of the 13 sensitivity runs (helix, stickout, tolerance, assumed width, unsourced c).</p>
+</div>
+
+<h2>1. The data the rows give</h2>
+<p class="claim" data-claim="C03">286 flat-end rows have a chip and a diameter. Only 18 carry a printed width (Garr and Helical, aluminium and fibreglass). 20 carry a width that the repo wrote, not a vendor.</p>
+<p class="claim" data-claim="C16">84 rows print a feed (IPM) and an RPM. In all 84, feed / (rpm x z) is within 2.8 % of the stored chip (the chart rounds the IPM). The printed chip is the advance per tooth.</p>
+<p class="claim" data-claim="C02">Two groups can test a model. Group W: 7 cases where Garr or Helical print two widths for one tool (6 cases give a numeric depth for the force test). Group D: 466 cases from 233 rows that print the 1 / 2 / 3 x D depth table.</p>
+<p>The wood charts print no width (N-8). So the depth table is the only wood evidence. Assumption A1: the wood chart chip is for a slot at 1 x D.</p>
+
+<h2>2. The model</h2>
+<div class="card">
+<p>Engagement angle <code>psi = acos(1 - 2 ae / D)</code>. Peak chip <code>h_pk = fz sin(psi)</code> for <code>psi &lt; 90&deg;</code>, else <code>fz</code> (Garr; <code>feeds/geometry.rs:17-31</code>). Mean chip <code>h_m = fz (1 - cos psi) / psi</code>.</p>
+<p>Force per mm of edge <code>dF = Ks h + F_edge</code> (ruling B6). A ratio test needs only <code>c = F_edge / Ks</code>.</p>
+<p class="claim" data-claim="C17">c is 0.0785 mm for solid wood (Curti 2021; density cancels) and 0.1069 mm for MDF (Goli 2018). Plywood, HDF and particleboard borrow a value (Unsourced). Aluminium and plastics use c = 0 (Unsourced).</p>
+<p>The engaged-edge force sums <code>dF</code> over every edge element inside the arc, with the helix lag <code>z tan(beta) / r</code> (<code>tool/mod.rs:250-255</code>). Move the controls. The chart shows the tangential force (per unit Ks) over one flute pitch.</p>
+<div>
+<label>ae / D <input id="s_ae" type="range" min="0.02" max="1" step="0.01" value="0.2"> <span id="v_ae"></span></label>
+<label>ap / D <input id="s_ap" type="range" min="0.25" max="3" step="0.05" value="1"> <span id="v_ap"></span></label>
+<label>helix <input id="s_hx" type="range" min="0" max="45" step="1" value="30"> <span id="v_hx"></span></label>
+<label>fz mm <input id="s_fz" type="range" min="0.02" max="0.3" step="0.005" value="0.1"> <span id="v_fz"></span></label>
+<label>Z <select id="s_z"><option>1</option><option selected>2</option><option>3</option></select></label>
+<label>c <select id="s_c"><option value="0.0785">wood 0.0785</option><option value="0.1069">MDF 0.1069</option><option value="0">0 (shear)</option></select></label>
+</div>
+<svg id="fplot" viewBox="0 0 640 220" width="100%" role="img" aria-label="engaged edge force over one flute pitch"></svg>
+<p id="fout" class="mut"></p>
+</div>
+<p>The eight candidates each hold one quantity between the reference condition and the target condition, and solve for the target chip:</p>
+<table><tr><th>id</th><th>held quantity</th></tr>
+<tr><td>I1</td><td style="text-align:left">peak chip (radial chip thinning only)</td></tr>
+<tr><td>I2</td><td style="text-align:left">mean chip</td></tr>
+<tr><td>I3</td><td style="text-align:left">peak engaged-edge force (scalar sum, helix)</td></tr>
+<tr><td>I4</td><td style="text-align:left">mean engaged-edge force</td></tr>
+<tr><td>I3v</td><td style="text-align:left">peak tangential force resultant (vector sum, K_r = 0)</td></tr>
+<tr><td>I5</td><td style="text-align:left">tip deflection, stickout 3 x D (Unsourced)</td></tr>
+<tr><td>C1</td><td style="text-align:left">min(I1, I3): chip first, peak force cap (the P11 flow)</td></tr>
+<tr><td>C2</td><td style="text-align:left">min(I1, I4): chip first, mean force cap</td></tr></table>
+
+<h2>3. Group W: printed widths (Garr, Helical)</h2>
+<p class="mut">Reference chip = the slot (Garr) or traditional (Helical) band midpoint. Green = inside the printed band of the target row.</p>
+<div class="scroll"><table id="wtab"></table></div>
+<svg id="wplot" viewBox="0 0 640 300" width="100%" role="img" aria-label="group W predicted chips against printed bands"></svg>
+<p class="claim" data-claim="C20">Garr slot to profile (242M, 842M, A3): chip thinning gives the slot chip 0.06 mm, which is the floor of the profile band (0.06-0.12). It passes on the band edge. The printed midpoint rises 1.5 times; the strict ratio test fails.</p>
+<p class="claim" data-claim="C12">Garr A3 HEM (2 x D, 35 % D): chip thinning alone gives 0.063 mm. Garr prints 0.12-0.18 mm. The vendor raises the chip about twice as much as chip thinning explains.</p>
+<p class="claim" data-claim="C13">Garr A3 finish (2.5 % D): chip thinning gives 0.192 mm. Garr prints 0.06 mm, 3.2 times lower. Garr does not apply its own thinning rule to the finish row.</p>
+<p class="claim" data-claim="C14">Helical traditional to HEM: chip thinning gives 0.252 mm (+7.3 % against the printed 0.235). The peak-force candidate I3 gives 0.2245 mm (-4.5 %), inside the 5 % tolerance.</p>
+
+<h2>4. Group D: the 1 / 2 / 3 x D depth table</h2>
+<p class="mut">Each point is one row at 2 x D or 3 x D: the predicted chip ratio fz2 / fz1. The vendor prints 0.75 and 0.50 (dashed). Select a candidate and a material.</p>
+<label>candidate <select id="dc"></select></label>
+<label>material <select id="dm"><option value="">all</option></select></label>
+<svg id="dplot" viewBox="0 0 640 240" width="100%" role="img" aria-label="group D predicted ratio per row"></svg>
+<p id="dout" class="mut"></p>
+<p class="claim" data-claim="C06">On the 418 wood cases (hardwood, softwood, MDF, plywood, HDF, particleboard), I3, I4, I3v, C1 and C2 pass 0. I5 passes 16 and chip thinning (I1) passes 1. The few force passes are on aluminium and plastics, where c = 0 is Unsourced.</p>
+<p class="claim" data-claim="C21">The strict ratio test (predicted ratio within 0.10 of the printed ratio) is lower still: no candidate reaches 20 % of group D or more than 2 of 7 cases in group W.</p>
+<div class="scroll"><table id="ftab"></table></div>
+
+<h2>5. The lead's hand check: slot, 1 x D to 2 x D</h2>
+<p class="claim" data-claim="C07">The one-tooth peak model (<code>ap (Ks fz + F_edge)</code>, the <code>feeds/force.rs</code> form) at fz 0.131 mm in white oak needs an 80.0 % chip cut to hold its force from 1 x D to 2 x D. The hand check is confirmed.</p>
+<p class="claim" data-claim="C08">The engaged-edge forms give: peak scalar 78.2 %, mean 97.1 %, peak vector 61.1 %. Constant tip deflection at stickout 3 x D gives 11.2 %.</p>
+<p class="claim" data-claim="C09">The vendors print a 25 % cut. A pure shear line (c = 0) gives 50 %. The edge term makes the cut larger, not smaller.</p>
+<svg id="hplot" viewBox="0 0 640 200" width="100%" role="img" aria-label="chip cut needed per model"></svg>
+<p class="claim" data-claim="C10">Over the 209 wood rows at 2 x D (A1 slot), the peak-force cut has a median of 74.6 % (48.1 % to 100 %). The mean-force cut has a median of 92.6 %.</p>
+<p class="claim" data-claim="C11">Read the other way: the vendor 25 % step lets the peak engaged-edge force rise by a median of 1.51 times at 2 x D (1.26 to 1.83) and 1.72 times at 3 x D. The depth table does not hold the force.</p>
+
+<h2>6. Sensitivity</h2>
+<div class="scroll"><table id="stab"></table></div>
+
+<h2>7. Missing terms</h2>
+<ul>
+<li><b>Depth table (all vendors):</b> the rows let the force rise about 1.5 times at 2 x D. No held force, chip or peak chip explains it. The model lacks the reason for the step (the chart gives none) and the width at which the chart applies (N-8).</li>
+<li><b>Garr HEM and profile:</b> the vendor chip rises as the time in cut falls, more than chip thinning gives. The model lacks a heat or time-in-cut term.</li>
+<li><b>Garr finish:</b> the vendor holds a low chip at 2.5 % D. The model lacks a finish-quality term; a load model cannot give it.</li>
+</ul>
+
+<h2>8. Post hoc (not in the verdict)</h2>
+<p class="claim ph" data-claim="C18">Post hoc PH2: a chip in inverse proportion to the time in cut (psi / 2 pi) fits 4 of 7 group W cases. It fails Garr 142M, the Garr finish row and Helical. This idea came after the author saw the rows.</p>
+<p class="claim ph" data-claim="C19">Post hoc PH1: constant tip deflection gives the 25 % step at a stickout of 3.5 to 4 x D on six hardwood rows. The stickout of a vendor test is not in any row, so this fit has one free constant.</p>
+</main>
+<script>
+const DATA=/*DATA*/null;
+const CANDS=["I1","I2","I3","I4","I3v","I5","C1","C2"];
+const $=id=>document.getElementById(id);
+const css=v=>getComputedStyle(document.documentElement).getPropertyValue(v).trim();
+const pct=x=>x==null?"-":(100*x).toFixed(1)+" %";
+$("verdict").textContent=DATA.verdict;
+function svgEl(t,a,p){const e=document.createElementNS("http://www.w3.org/2000/svg",t);for(const k in a)e.setAttribute(k,a[k]);if(p)p.appendChild(e);return e}
+function txt(p,x,y,s,anchor){const t=svgEl("text",{x,y,"text-anchor":anchor||"start"},p);t.textContent=s;return t}
+// ---- interactive engaged-edge force
+function edgeForce(apD,aeD,hx,fz,Z,c){const D=6,r=3,ap=apD*D,ae=aeD*D;const psi=Math.acos(Math.max(-1,Math.min(1,1-2*ae/D)));
+ const NZ=200,NT=240,dz=ap/NZ,pitch=2*Math.PI/Z,t=Math.tan(hx*Math.PI/180)/r;const F=[];
+ for(let i=0;i<NT;i++){const th=i*pitch/NT;let s=0;for(let j=0;j<Z;j++)for(let k=0;k<NZ;k++){let ph=(th+j*pitch-(k+0.5)*dz*t)%(2*Math.PI);if(ph<0)ph+=2*Math.PI;if(ph<=psi)s+=(fz*Math.sin(ph)+c)*dz}F.push(s)}
+ return {F,psi,ap}}
+function drawForce(){const ae=+$("s_ae").value,ap=+$("s_ap").value,hx=+$("s_hx").value,fz=+$("s_fz").value,Z=+$("s_z").value,c=+$("s_c").value;
+ $("v_ae").textContent=ae.toFixed(2);$("v_ap").textContent=ap.toFixed(2);$("v_hx").textContent=hx+"°";$("v_fz").textContent=fz.toFixed(3);
+ const {F,psi,ap:apmm}=edgeForce(ap,ae,hx,fz,Z,c);const pk=Math.max(...F),mn=F.reduce((a,b)=>a+b,0)/F.length;
+ const one=apmm*(fz*Math.sin(Math.min(psi,Math.PI/2))+c);
+ const s=$("fplot");s.innerHTML="";const W=640,H=220,L=50,B=190,T=12;const ymax=Math.max(pk,one)*1.1||1;
+ svgEl("line",{x1:L,y1:B,x2:W-10,y2:B,stroke:css("--line")},s);svgEl("line",{x1:L,y1:T,x2:L,y2:B,stroke:css("--line")},s);
+ const X=i=>L+(W-10-L)*i/(F.length-1),Y=v=>B-(B-T)*v/ymax;
+ svgEl("polyline",{points:F.map((v,i)=>X(i)+","+Y(v)).join(" "),fill:"none",stroke:css("--acc"),"stroke-width":2},s);
+ svgEl("line",{x1:L,x2:W-10,y1:Y(mn),y2:Y(mn),stroke:css("--mut"),"stroke-dasharray":"4 3"},s);
+ svgEl("line",{x1:L,x2:W-10,y1:Y(one),y2:Y(one),stroke:css("--acc2"),"stroke-dasharray":"6 3"},s);
+ txt(s,W-12,Y(one)-4,"one-tooth peak model","end");txt(s,W-12,Y(mn)-4,"mean","end");txt(s,L,B+16,"rotation over one flute pitch");txt(s,4,T+8,ymax.toFixed(1));txt(s,4,B,"0");
+ const hpk=fz*(psi<Math.PI/2?Math.sin(psi):1),hm=fz*(1-Math.cos(psi))/psi;
+ $("fout").textContent=`psi ${(psi*180/Math.PI).toFixed(0)}°, peak chip ${hpk.toFixed(3)} mm (RCTF ${(fz/hpk).toFixed(2)}), mean chip ${hm.toFixed(3)} mm. Force per unit Ks: engaged-edge peak ${pk.toFixed(2)}, mean ${mn.toFixed(2)}, one-tooth model ${one.toFixed(2)} (${(one/mn).toFixed(2)} x mean).`}
+["s_ae","s_ap","s_hx","s_fz","s_z","s_c"].forEach(i=>$(i).addEventListener("input",drawForce));drawForce();
+// ---- group W
+(function(){const t=$("wtab");let h="<tr><th>case</th><th>ref chip</th><th>printed band</th>"+CANDS.map(c=>"<th>"+c+"</th>").join("")+"</tr>";
+ for(const c of DATA.W){h+=`<tr><td>${c.label}</td><td>${c.fz1.toFixed(3)}</td><td>${c.band[0]==null?"":c.band[0].toFixed(3)+"-"}${c.band[1].toFixed(3)}</td>`+
+  CANDS.map(k=>{const v=c.pred[k],p=c.passes[k];return `<td class="${p==null?"n":p?"p":"f"}">${v==null?"n/t":v.toFixed(3)}</td>`}).join("")+"</tr>"}
+ h+="<tr><th>passed</th><th></th><th></th>"+CANDS.map(k=>{const f=DATA.fractions.W[k];return `<th>${f.passed}/${f.n}</th>`}).join("")+"</tr>";t.innerHTML=h;
+ const s=$("wplot"),W=640,L=170,R=630,top=10,rowH=34;const xmax=0.3;const X=v=>L+(R-L)*Math.min(v,xmax)/xmax;
+ DATA.W.forEach((c,i)=>{const y=top+i*rowH+14;txt(s,4,y+4,c.label.replace("slot -> ","→ "));
+  const lo=c.band[0]==null?c.band[1]*0.95:c.band[0],hi=c.band[0]==null||c.band[0]==c.band[1]?c.band[1]*1.05:c.band[1];
+  svgEl("rect",{x:X(c.band[0]==c.band[1]?c.band[1]*0.95:lo),y:y-8,width:Math.max(2,X(hi)-X(c.band[0]==c.band[1]?c.band[1]*0.95:lo)),height:16,fill:css("--band")},s);
+  [["I1",css("--acc"),"circle"],["I3",css("--fail"),"rect"],["I4",css("--acc2"),"tri"]].forEach(([k,col,sh])=>{const v=c.pred[k];if(v==null)return;const x=X(v);
+   if(sh=="circle")svgEl("circle",{cx:x,cy:y,r:5,fill:col},s);else if(sh=="rect")svgEl("rect",{x:x-4,y:y-4,width:8,height:8,fill:col},s);else svgEl("path",{d:`M${x},${y-6}L${x+5},${y+4}L${x-5},${y+4}Z`,fill:col},s)})});
+ const yb=top+DATA.W.length*rowH+4;[0,0.1,0.2,0.3].forEach(v=>txt(s,X(v),yb+10,v.toFixed(1)+(v==0.3?"+ mm":""),"middle"));
+ txt(s,L,yb+24,"band = printed target; circle I1 chip thinning, square I3 peak force, triangle I4 mean force")})();
+// ---- group D
+(function(){const dc=$("dc"),dm=$("dm");CANDS.forEach(k=>{const o=document.createElement("option");o.textContent=k;if(k=="I3")o.selected=true;dc.appendChild(o)});
+ [...new Set(DATA.D.map(r=>r[2]))].sort().forEach(m=>{const o=document.createElement("option");o.value=m;o.textContent=m;dm.appendChild(o)});
+ function draw(){const ci=CANDS.indexOf(dc.value),mat=dm.value;const rows=DATA.D.filter(r=>!mat||r[2]==mat);const s=$("dplot");s.innerHTML="";
+  const W=640,L=40,R=630,T=10,B=200,Y=v=>B-(B-T)*Math.min(Math.max(v,0),1.2)/1.2;
+  [0,0.25,0.5,0.75,1,1.2].forEach(v=>{svgEl("line",{x1:L,x2:R,y1:Y(v),y2:Y(v),stroke:css("--line")},s);txt(s,4,Y(v)+4,v.toFixed(2))});
+  [0.75,0.5].forEach(v=>svgEl("line",{x1:L,x2:R,y1:Y(v),y2:Y(v),stroke:css("--fg"),"stroke-dasharray":"5 4"},s));
+  const n2=rows.filter(r=>r[4]==2),n3=rows.filter(r=>r[4]==3);
+  [[n2,L,(L+R)/2-10,"2 x D (vendor 0.75)"],[n3,(L+R)/2+10,R,"3 x D (vendor 0.50)"]].forEach(([rs,a,b,lab])=>{rs.forEach((r,i)=>{const x=a+(b-a)*(i+0.5)/Math.max(rs.length,1);const v=r[8][ci];
+   svgEl("circle",{cx:x,cy:Y(v==null?0:v),r:2.4,fill:r[9][ci]?css("--pass"):css("--fail")},s)});txt(s,(a+b)/2,B+16,lab,"middle")});
+  const p=rows.filter(r=>r[9][ci]).length;$("dout").textContent=`${dc.value}: ${p} of ${rows.length} cases inside the printed band (${pct(p/rows.length)}). Green = pass.`}
+ dc.onchange=draw;dm.onchange=draw;draw();
+ const mats=[...new Set(DATA.D.map(r=>r[2]))].sort();let h="<tr><th>material</th><th>cases</th>"+CANDS.map(c=>"<th>"+c+"</th>").join("")+"</tr>";
+ for(const m of mats){const rs=DATA.D.filter(r=>r[2]==m);h+=`<tr><td>${m}</td><td>${rs.length}</td>`+CANDS.map((k,i)=>{const p=rs.filter(r=>r[9][i]).length;return `<td class="${p?"p":"f"}">${p}</td>`}).join("")+"</tr>"}
+ $("ftab").innerHTML=h})();
+// ---- hand check
+(function(){const H=DATA.hand,s=$("hplot");const bars=[["vendor print",H.vendor_cut,css("--pass")],["pure shear (c = 0)",H.pure_shear_cut,css("--mut")],["one-tooth peak",H.one_tooth_cut,css("--acc2")],
+ ["engaged peak I3",H.cut.I3,css("--acc")],["engaged mean I4",H.cut.I4,css("--acc")],["engaged vector I3v",H.cut.I3v,css("--acc")],["deflection I5 (L 3D)",H.cut.I5,css("--acc")]];
+ const L=150,R=600;bars.forEach(([lab,v,col],i)=>{const y=8+i*26;txt(s,4,y+13,lab);svgEl("rect",{x:L,y,width:(R-L)*v,height:18,fill:col},s);txt(s,L+(R-L)*v+4,y+13,pct(v))})})();
+// ---- sensitivity
+(function(){let h="<tr><th>run</th><th>value</th>"+CANDS.map(c=>"<th>"+c+" W / D</th>").join("")+"<th>pass</th></tr>";
+ h+="<tr><td>primary</td><td></td>"+CANDS.map(k=>`<td>${pct(DATA.fractions.W[k].frac)} / ${pct(DATA.fractions.D[k].frac)}</td>`).join("")+"<td>none</td></tr>";
+ for(const r of DATA.sens)h+=`<tr><td>${r.name}</td><td>${r.value}</td>`+CANDS.map(k=>`<td>${pct(r.W[k])} / ${pct(r.D[k])}</td>`).join("")+`<td>${r.winners.length?r.winners.join(","):"none"}</td></tr>`;
+ $("stab").innerHTML=h})();
+</script>
+</body>
+</html>
