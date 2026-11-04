@@ -1,0 +1,176 @@
+<!doctype html>
+<html lang="en">
+<head>
+<meta charset="utf-8">
+<meta name="viewport" content="width=device-width, initial-scale=1">
+<title>Derate audit</title>
+<style>
+:root{--bg:#fbfaf7;--fg:#1d1f22;--mut:#5d6470;--line:#d9d6cf;--card:#ffffff;--acc:#2f5fa7;--vend:#2e7d4f;--shap:#b4561b;--mach:#7a4bb3;--blind:#a3333d;--law:#5d6470;--chip:#f1efe9}
+@media (prefers-color-scheme: dark){:root:not([data-theme="light"]){--bg:#16181b;--fg:#e6e3dc;--mut:#9aa1ab;--line:#33373d;--card:#1e2125;--acc:#7fa8e6;--vend:#6cc28f;--shap:#e59a62;--mach:#b79ae6;--blind:#e57b84;--law:#9aa1ab;--chip:#26292e}}
+:root[data-theme="dark"]{--bg:#16181b;--fg:#e6e3dc;--mut:#9aa1ab;--line:#33373d;--card:#1e2125;--acc:#7fa8e6;--vend:#6cc28f;--shap:#e59a62;--mach:#b79ae6;--blind:#e57b84;--law:#9aa1ab;--chip:#26292e}
+*{box-sizing:border-box}
+body{margin:0;background:var(--bg);color:var(--fg);font:15px/1.55 system-ui,-apple-system,"Segoe UI",sans-serif}
+main{max-width:1060px;margin:0 auto;padding:24px 16px 64px}
+h1{font-size:26px;margin:0 0 4px}h2{font-size:19px;margin:36px 0 10px;border-bottom:1px solid var(--line);padding-bottom:4px}h3{font-size:16px;margin:22px 0 8px}
+p,li{max-width:78ch}.mut{color:var(--mut)}
+code{font:13px/1.4 ui-monospace,SFMono-Regular,Menlo,monospace;background:var(--chip);padding:1px 4px;border-radius:4px}
+.legend{display:flex;flex-wrap:wrap;gap:10px;margin:12px 0}
+.legend span{display:inline-flex;align-items:center;gap:6px;font-size:13px}
+.sw{width:12px;height:12px;border-radius:3px;display:inline-block}
+.chain{display:flex;flex-wrap:wrap;align-items:stretch;gap:0;margin:8px 0 4px}
+.step{background:var(--card);border:1px solid var(--line);border-left:4px solid var(--law);border-radius:6px;padding:6px 9px;font-size:13px;min-width:120px;max-width:210px}
+.step b{display:block;font-size:13px}.step small{color:var(--mut);display:block}
+.arrow{align-self:center;color:var(--mut);padding:0 5px;font-size:16px}
+.v{border-left-color:var(--vend)}.s{border-left-color:var(--shap)}.m{border-left-color:var(--mach)}.x{border-left-color:var(--blind)}
+.fam{background:var(--card);border:1px solid var(--line);border-radius:8px;padding:12px 14px;margin:12px 0}
+.fam h3{margin-top:0}
+.row{display:grid;grid-template-columns:90px 1fr;gap:8px;align-items:start;margin:6px 0}
+.row>div:first-child{font-size:13px;color:var(--mut);padding-top:8px}
+table{border-collapse:collapse;width:100%;font-size:13.5px;margin:8px 0}
+th,td{border-bottom:1px solid var(--line);padding:6px 8px;text-align:left;vertical-align:top}
+th{color:var(--mut);font-weight:600}
+.tw{overflow-x:auto}
+.cid{font:11px ui-monospace,monospace;color:var(--acc);margin-left:4px;white-space:nowrap}
+.bar{height:16px;background:var(--chip);border-radius:3px;position:relative;min-width:120px}
+.bar i{position:absolute;left:0;top:0;bottom:0;border-radius:3px;background:var(--shap)}
+.bar.vend i{background:var(--vend)}.bar.mach i{background:var(--mach)}.bar.blind i{background:var(--blind)}
+.kpi{display:grid;grid-template-columns:repeat(auto-fit,minmax(180px,1fr));gap:10px;margin:12px 0}
+.kpi div{background:var(--card);border:1px solid var(--line);border-radius:8px;padding:10px 12px}
+.kpi b{display:block;font-size:22px}
+@media (max-width:600px){.row{grid-template-columns:1fr}.row>div:first-child{padding-top:0}.step{max-width:100%}}
+</style>
+</head>
+<body>
+<main>
+<h1>Derate audit</h1>
+<p class="mut">The chain from the vendor chip and the vendor depth to the shipped feed, rpm, stepover and depth, per op family. HEAD <code>0f55efda4</code>. Each mark like <span class="cid">[A01]</span> has one assert in <code>assert_claims.py</code> (run <code>python3 -I assert_claims.py</code>). Read-only research for the feeds contract (P11b, P12).</p>
+
+<div class="kpi">
+ <div><b>5 / 42</b>Shapeoko table cells that write a shipped number (all stepover; 0 depth, 0 feed) <span class="cid" data-claim="A07">[A07]</span></div>
+ <div><b>16 / 42</b>table cells on a pair that a registry row reaches <span class="cid" data-claim="A03">[A03]</span></div>
+ <div><b>0</b>light-machine factors on the vendor-backed feed <span class="cid" data-claim="E01">[E01]</span></div>
+ <div><b>0.213</b>formula-chip feed / vendor-row feed (60 FM1 cells) <span class="cid" data-claim="E08">[E08]</span></div>
+ <div><b>4 / 7</b>RigidityProfile fields that no code reads <span class="cid" data-claim="B01">[B01]</span></div>
+ <div><b>0</b>stored lineage records between a shipped number and its source <span class="cid" data-claim="G04">[G04]</span></div>
+</div>
+
+<h2>1. Answer</h2>
+<ul>
+<li>The vendor-backed feed is rpm x chip x Z x the printed depth tier (<code>feeds/mod.rs:2679</code>). The long-tool share and chip thinning are reported, not applied <span class="cid" data-claim="E01">[E01]</span>. The machine enters only as limits: rpm range, power curve, feed cap. Limits take the minimum; they do not multiply.</li>
+<li>The concern holds for geometry. Light-machine margins sit in four places: the Shapeoko table, machine-blind typed constants, <code>RigidityProfile</code> (itself a Shapeoko port <span class="cid" data-claim="B08">[B08]</span>), and the LUT filter <span class="cid" data-claim="F03">[F03]</span>.</li>
+<li>One true product of two Shapeoko ports exists: the formula chip times the formula surface speed, on the 60 FM1 cells with no vendor chip <span class="cid" data-claim="E05">[E05]</span>.</li>
+<li>Stored lineage is one stamp per field. The in-memory tree holds no numbers, and no surface prints it for the speeds <span class="cid" data-claim="G06">[G06]</span> <span class="cid" data-claim="G07">[G07]</span>.</li>
+</ul>
+
+<div class="legend">
+ <span><i class="sw" style="background:var(--vend)"></i>printed vendor source</span>
+ <span><i class="sw" style="background:var(--shap)"></i>Shapeoko port (Unsourced)</span>
+ <span><i class="sw" style="background:var(--mach)"></i>machine field</span>
+ <span><i class="sw" style="background:var(--blind)"></i>machine-blind typed margin (Unsourced)</span>
+ <span><i class="sw" style="background:var(--law)"></i>law / geometry</span>
+</div>
+
+<h2>2. The table and what reaches it</h2>
+<p><code>operation_default_profile</code> (<code>feeds/mod.rs:3513</code>) holds 21 rows, 42 factor cells. Source: "DOC/WOC matrix of reference/shapeoko_feeds_and_speeds calcs.rs (not in the repo)" <span class="cid" data-claim="A01">[A01]</span>. The 25 registry rows reach 8 (family, role) pairs; no op uses the Face family (the Face op reads Pocket) <span class="cid" data-claim="A02">[A02]</span>. The calculator reads the table only on an axis the op does not state <span class="cid" data-claim="A06">[A06]</span>. Every reached ap factor except Adaptive Roughing is at or below 1.0, so the depth tier stays 1.0 <span class="cid" data-claim="A05">[A05]</span>. Live width values: Pocket R 0.35, Trace F 0.02, Parallel F 0.03, Scallop F 0.025, Contour F 0.05 <span class="cid" data-claim="A04">[A04]</span>.</p>
+
+<h2>3. Chains per family</h2>
+<h3>Speeds (all milling families)</h3>
+<div class="chain">
+ <div class="step v"><b>vendor chip</b><small>row, G1/G2/G3 claims</small></div><span class="arrow">or</span>
+ <div class="step s"><b>formula chip</b><small>0.024 D^0.61 (1/H)^1.26, machine field <span class="cid" data-claim="E03">[E03]</span></small></div><span class="arrow">&times;</span>
+ <div class="step v"><b>vendor rpm</b><small>18 000 printed</small></div><span class="arrow">or</span>
+ <div class="step s"><b>SFM rpm</b><small>200 m/min wood <span class="cid" data-claim="E04">[E04]</span></small></div><span class="arrow">&times;</span>
+ <div class="step v"><b>depth tier</b><small>1 / 0.75 / 0.5 at 1/2/3 D <span class="cid" data-claim="C08">[C08]</span></small></div><span class="arrow">&rarr;</span>
+ <div class="step s"><b>rpm tiers, MaxSpeed 1.5</b><small>Unsourced <span class="cid" data-claim="E10">[E10]</span></small></div><span class="arrow">&rarr;</span>
+ <div class="step m"><b>power, feed cap</b><small>machine curve; min</small></div><span class="arrow">&rarr;</span>
+ <div class="step"><b>plunge, ramp</b><small>G10 / G6 claims</small></div><span class="arrow">&rarr;</span>
+ <div class="step"><b>rubbing floor 0.025</b><small>warns only <span class="cid" data-claim="E02">[E02]</span></small></div>
+</div>
+<p class="mut">The vendor depth rule is printed: Amana "Depth of Cut: 1 x Tool Diameter", Onsrud "1 x D Use recommended chip load" <span class="cid" data-claim="D04">[D04]</span>. rivmap100 Face 5 ships the row rpm 18 000 and chip 0.1311 (G2 scaled from 0.127); every axis is stated by the op <span class="cid" data-claim="E09">[E09]</span>.</p>
+
+<div class="fam"><h3>Clearing: Face, Pocket, Zigzag, Inlay plug, Bore (Pocket, Roughing)</h3>
+ <div class="row"><div>stepover</div><div class="chain"><div class="step s"><b>table ae 0.35 D</b><small>feeds/mod.rs:3529</small></div><span class="arrow">&rarr;</span><div class="step x"><b>stamp: table row</b><small>woc_roughing_factor unread</small></div></div></div>
+ <div class="row"><div>depth</div><div class="chain"><div class="step x"><b>add door 0.25 D</b><small>AXIAL_K_1_5_MM</small></div><span class="arrow">min</span><div class="step m"><b>doc_roughing_factor</b><small>0.20 / 0.25 D</small></div><span class="arrow">min</span><div class="step x"><b>slot cap 0.25 D</b><small>ae &gt; 0.85 D <span class="cid" data-claim="D01">[D01]</span></small></div><span class="arrow">min</span><div class="step x"><b>flute 0.8 x L</b><small><span class="cid" data-claim="D07">[D07]</span></small></div></div></div>
+ <p class="mut">FM1 6 mm 2F hardwood: stepover 2.1 (0.35 D) <span class="cid" data-claim="C05">[C05]</span>, depth 1.5 (0.25 D) <span class="cid" data-claim="D06">[D06]</span>.</p>
+</div>
+
+<div class="fam"><h3>Profile (Contour, Roughing; a slot, ae = D)</h3>
+ <div class="row"><div>width</div><div class="chain"><div class="step"><b>ae = D</b><small>Radial::Slot <span class="cid" data-claim="D02">[D02]</span></small></div></div></div>
+ <div class="row"><div>depth</div><div class="chain"><div class="step x"><b>add door 0.333 D</b><small>AXIAL_K_2_0_MM</small></div><span class="arrow">min</span><div class="step m"><b>doc_roughing_factor</b><small>0.20 / 0.25 D</small></div><span class="arrow">min</span><div class="step x"><b>slot cap 0.25 D</b><small>always binds a stiff machine</small></div></div></div>
+</div>
+
+<div class="fam"><h3>Adaptive: 2D Adaptive, 3D Adaptive (Adaptive, Roughing)</h3>
+ <div class="row"><div>stepover</div><div class="chain"><div class="step s"><b>table 0.12</b><small>replaced</small></div><span class="arrow">&rarr;</span><div class="step s"><b>ADAPTIVE_FLAT_AE 0.14</b><small><span class="cid" data-claim="C01">[C01]</span></small></div><span class="arrow">&times;</span><div class="step s"><b>0.85 (&ge;3 F) &times; material</b><small>white oak 0.95: 0.133 <span class="cid" data-claim="C03">[C03]</span></small></div><span class="arrow">&rarr;</span><div class="step m"><b>= adaptive_woc_factor</b><small>wood + flat: max then min <span class="cid" data-claim="C02">[C02]</span></small></div><span class="arrow">&rarr;</span><div class="step x"><b>stamp: 0.12 row</b><small>gd.rs:296 <span class="cid" data-claim="C06">[C06]</span></small></div></div></div>
+ <div class="row"><div>depth</div><div class="chain"><div class="step x"><b>add door 2/6 D, 3/6 D</b><small><span class="cid" data-claim="C09">[C09]</span></small></div><span class="arrow">min</span><div class="step m"><b>adaptive_doc_factor x D</b><small>depth_cap_mm <span class="cid" data-claim="B07">[B07]</span></small></div><span class="arrow">and</span><div class="step s"><b>floor adaptive_doc x 1.50 / 1.50</b><small>unstated ap only <span class="cid" data-claim="C07">[C07]</span></small></div></div></div>
+ <p class="mut">rivmap100 3D Rough (6 mm, white oak, adaptive_woc 0.2) ships stepover 1.2 <span class="cid" data-claim="C04">[C04]</span>.</p>
+</div>
+
+<div class="fam"><h3>Finishing: Waterline, Steep/Shallow (Contour); Parallel, Ramp, Radial, Horizontal (Parallel); Scallop, Unified, Spiral (Scallop)</h3>
+ <div class="row"><div>stepover</div><div class="chain"><div class="step"><b>scallop chord</b><small>ball tip, h set</small></div><span class="arrow">else</span><div class="step s"><b>table ae 0.03 / 0.025 / 0.05</b><small>ball override 0.025</small></div></div></div>
+ <div class="row"><div>depth</div><div class="chain"><div class="step x"><b>z_step 1/6 D, stepdown 0.5/6 D</b><small>no rigidity cap on a finish</small></div></div></div>
+</div>
+
+<div class="fam"><h3>Trace and engrave: VCarve, Inlay, Trace, Chamfer, Pencil, Project Curve (Trace, Finish)</h3>
+ <div class="row"><div>stepover</div><div class="chain"><div class="step s"><b>table ae 0.02 D</b></div></div></div>
+ <div class="row"><div>speeds</div><div class="chain"><div class="step s"><b>formula chip 0.0459</b><small>6 mm 2F hardwood</small></div><span class="arrow">&times;</span><div class="step s"><b>SFM rpm 10 610</b></div><span class="arrow">=</span><div class="step"><b>feed 973</b><small>FM1 <span class="cid" data-claim="E06">[E06]</span></small></div></div></div>
+</div>
+
+<div class="fam"><h3>Drill, Pin Drill</h3>
+ <div class="row"><div>peck</div><div class="chain"><div class="step x"><b>3/6 D</b><small>AXIAL_K_3_0_MM</small></div><span class="arrow">&middot;</span><div class="step s"><b>drill rpm tiers</b><small>Unsourced</small></div><span class="arrow">&middot;</span><div class="step v"><b>G6 side row x 1/Z</b></div></div></div>
+</div>
+
+<h2>4. Margins applied twice</h2>
+<p>Each bar is the shipped value as a share of the vendor value (1.0 = the printed vendor number).</p>
+<div class="tw"><table>
+<thead><tr><th>#</th><th>Where</th><th>Named case</th><th>Share of vendor</th><th>How</th></tr></thead>
+<tbody>
+<tr><td>M1</td><td>Shapeoko chip formula &times; Shapeoko SFM</td><td>6 mm 2F hardwood Trace (formula) against the vendor <em>roughing</em> row <code>amana-flat-hardwood-pocket-6000-2f-spektra</code> 0.127 mm at 18 000 rpm. The vendor prints no finish or trace chip for this tool, so the formula is the only source for that cell <span class="cid" data-claim="E07">[E07]</span></td><td>chip 0.361<div class="bar"><i style="width:36.1%"></i></div>feed 0.213<div class="bar"><i style="width:21.3%"></i></div></td><td>product <span class="cid" data-claim="E08">[E08]</span></td></tr>
+<tr><td>M2</td><td>slot cap 0.25 D (machine-blind) and <code>doc_roughing_factor</code></td><td>Profile 6 mm: generic 1.2 mm; Shapeoko presets and nz-wanaka-21 1.5 mm; a stiff machine at 0.5 D is still held at 1.5 mm <span class="cid" data-claim="D03">[D03]</span></td><td>0.20 / 0.25<div class="bar blind"><i style="width:25%"></i></div></td><td>min; the constant overrides the machine</td></tr>
+<tr><td>M3</td><td>vendor 1 x D, add-door k, rigidity cap</td><td>6 mm hardwood Pocket, generic: vendor 6 mm; the Shapeoko vendor's own hardwood print (Carbide 3D chart, Mahogany .1" on .25") = 0.4 D; the FM1 "hardwood" is Hard Maple, a different species <span class="cid" data-claim="D05">[D05]</span>; add door 1.5 mm; cap 1.2 mm</td><td>0.20 of vendor<div class="bar mach"><i style="width:20%"></i></div>0.5 of the Shapeoko chart<div class="bar mach"><i style="width:50%"></i></div></td><td>min</td></tr>
+<tr><td>M4</td><td>two formulas for the adaptive depth</td><td>generic 1.5 &times; 1.50 / 1.50 = 1.5 D; default 2.0 D</td><td>1.0 today<div class="bar"><i style="width:100%"></i></div></td><td>agree only while the table row equals the divisor</td></tr>
+<tr><td>M5</td><td>adaptive width chain</td><td>white oak 2F: 0.133, then 0.20</td><td>the machine raises it</td><td>no double on wood + flat; product under a ceiling elsewhere</td></tr>
+<tr><td>M6</td><td>Pocket width table 0.35 and <code>woc_roughing_factor</code></td><td>nz-wanaka-21 and the operator machine file state 0.4, "40-60 % of D" <span class="cid" data-claim="B05">[B05]</span> <span class="cid" data-claim="B06">[B06]</span></td><td>stated margin has no effect</td><td>field not read</td></tr>
+<tr><td>M7</td><td>LUT filter and the power curve</td><td>Freud 1/2" rows (0.46-0.69 mm/tooth) kept out "on a Shapeoko-class router"</td><td>rows absent</td><td>filter, then min</td></tr>
+<tr><td>M8</td><td>typed copies of the width rule</td><td><code>validate.rs:277</code> 0.15 D, <code>:284</code> 0.20 D <span class="cid" data-claim="F01">[F01]</span>; <code>predict.rs:260</code> 0.35, <code>:267</code> 0.3 <span class="cid" data-claim="F02">[F02]</span></td><td>duplicate</td><td>machine-blind</td></tr>
+</tbody></table></div>
+<p class="mut">Checked, not a double derate: IDC Woodcraft and Whiteside Fusion 360 rows are embedded, but 0 FM1 cells ship from them <span class="cid" data-claim="F04">[F04]</span>. The Amana adaptive ae bands are repo-authored <span class="cid" data-claim="F05">[F05]</span>.</p>
+
+<h3>RigidityProfile today</h3>
+<div class="tw"><table>
+<thead><tr><th>Field</th><th>default (serde) <span class="cid" data-claim="B03">[B03]</span></th><th>generic <span class="cid" data-claim="B02">[B02]</span></th><th>rivmap100</th><th>nz-wanaka-21</th><th>Reader</th></tr></thead>
+<tbody>
+<tr><td>doc_roughing_factor</td><td>0.25</td><td>0.20</td><td>0.2</td><td>0.25</td><td>depth_cap_mm</td></tr>
+<tr><td>adaptive_doc_factor</td><td>2.0</td><td>1.5</td><td>1.5</td><td>2.0</td><td>depth_cap_mm, the floor</td></tr>
+<tr><td>adaptive_woc_factor</td><td>0.25</td><td>0.20</td><td>0.2</td><td>0.2</td><td>calculator, predictor</td></tr>
+<tr><td>woc_roughing_factor</td><td>0.80</td><td>0.70</td><td>0.7</td><td>0.4</td><td>none</td></tr>
+<tr><td>doc_finishing_factor, woc_roughing_max_mm, woc_finishing_mm</td><td colspan="4">present in every file</td><td>none</td></tr>
+</tbody></table></div>
+<p class="mut">Both Shapeoko presets use the serde default <span class="cid" data-claim="B04">[B04]</span>.</p>
+
+<h2>5. Proposal</h2>
+<ul>
+<li>One place for the machine margin: <code>RigidityProfile</code>. The base is machine-neutral: vendor rows and the P11 model.</li>
+<li>Delete the table ap column and the Face rows; <code>depth_cap_mm</code> is the one adaptive depth (M4).</li>
+<li>Pocket width reads <code>woc_roughing_factor</code>; adaptive width reads <code>adaptive_woc_factor</code>; delete the <code>ADAPTIVE_*</code> width rows (M5, M6). L8.</li>
+<li>Move the slot cap into <code>RigidityProfile</code> (M2). L8.</li>
+<li>State <code>doc_roughing_factor</code> as a fraction of the vendor depth; the Shapeoko source is the Carbide 3D chart. The vendor 1/2/3 x D table becomes a visible limit. L6.</li>
+<li>Move the formula chip off the machine; replace SFM, rpm tiers and typed copies by sourced rules or reads of the one place. L8.</li>
+</ul>
+
+<h2>6. Lineage</h2>
+<div class="chain">
+ <div class="step"><b>calculate</b><small>Basis tree, law + children <span class="cid" data-claim="G01">[G01]</span></small></div><span class="arrow">&rarr;</span>
+ <div class="step x"><b>of_basis</b><small>one (source, reference)</small></div><span class="arrow">&rarr;</span>
+ <div class="step x"><b>Lineage::of</b><small>stamps only <span class="cid" data-claim="G05">[G05]</span></small></div><span class="arrow">&rarr;</span>
+ <div class="step"><b>MCP / CLI</b><small>get_toolpath_lineage, suggest <span class="cid" data-claim="G12">[G12]</span></small></div>
+</div>
+<ul>
+<li><code>MachineField::Rigidity</code> names no field and no value <span class="cid" data-claim="G02">[G02]</span>; <code>moved_basis</code> drops before and after <span class="cid" data-claim="G03">[G03]</span>.</li>
+<li>Missing leaves: the Janka feed scale in the formula chip <span class="cid" data-claim="G08">[G08]</span>; the depth tier value and pass 9 <span class="cid" data-claim="G09">[G09]</span>.</li>
+<li>Design: each multiplier writes value in, factor, value out; split the machine field; persist the tree (<code>Basis</code> has no Deserialize <span class="cid" data-claim="G13">[G13]</span>); expose it on MCP and the CLI.</li>
+<li>Size: 69 lines in 6 core files <span class="cid" data-claim="G10">[G10]</span>; <code>ValueProvenance</code> in 18 files, <code>Basis::</code> in 63, <code>MachineField::Rigidity</code> on 4 lines <span class="cid" data-claim="G11">[G11]</span>. Estimate 10-12 files, about 90 sites.</li>
+</ul>
+<p class="mut">Every other <code>path:line</code> that the report cites is checked against its symbol at <code>0f55efda4</code> <span class="cid" data-claim="H01">[H01]</span>. The operator machine file check (B06) skips on a machine without that file.</p>
+</main>
+</body>
+</html>

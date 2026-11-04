@@ -55,8 +55,12 @@ the full entry point. Read it first, then the files it names.
    ops do not thin, no new cap), chip first (`doc_derating_scale` stops scaling the chip; the
    vendor 1/2/3 x D table becomes a visible limit), the envelope sized at the operator's chip,
    the source hunt, and the after-page `research_p11_step0/after/` (L9).
-4. **The derate audit** (section below): the operator wants it run by a session; it can run in
-   parallel with P11 as read-only research.
+4. DONE 2026-11-05 (research): **the derate audit**, `research_derate/` (REPORT.md, index.html,
+   assert_claims.py 61/61). Headline: the vendor feed path has no light-machine factor; the
+   double margins are geometry (slot cap over `doc_roughing_factor`, depth stack 0.20 of the
+   vendor depth, unread `woc_roughing_factor`) and the Shapeoko chip formula x surface speed on
+   60 FM1 cells (feed 0.213 of the vendor row). Lineage today: 0 stored step records. Eight
+   operator questions in REPORT section 6. Its proposal overlaps P11b L6 and L8.
 5. **P12** (`phases/P12.md`): the hand-off folder `handoff/` for the independent review
    session. Include every reviewer item listed below.
 
