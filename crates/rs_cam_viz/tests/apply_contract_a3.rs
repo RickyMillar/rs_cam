@@ -709,8 +709,8 @@ fn panel_cut_geometry_apply_goes_through_the_invariant_funnel() {
 ///
 /// **The feed moved once more, with its cause: 3000 → 4000 at R4 WP3
 /// (2026-09-24).** The hidden ×0.75 safety factor left the calculator by the
-/// operator's ruling; the machine aggressiveness dial is the one margin and
-/// it scales the engagement, never the feed. The fixture's feed now lands on
+/// operator's ruling; the machine aggressiveness dial (deleted in D9) was
+/// the one margin then, and it scaled the engagement, never the feed. The fixture's feed now lands on
 /// the 4000 mm/min cutting ceiling itself (4572 clamped, no factor), and the
 /// plunge moved 793 → 1058 with it: the plunge carried the same factor and
 /// now ships the material base (ruling Q5; 1058.33 floored). The dial acts

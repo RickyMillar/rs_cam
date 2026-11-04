@@ -32,10 +32,8 @@ pub fn diagnostics_from_feeds_result(tp_id: ToolpathId, result: &FeedsResult) ->
 /// The diagnostic of one Suggest record, for the records that carry a rule
 /// id. `None` for every other [`SuggestWarning`]: those are rationale rows.
 ///
-/// Ruling R4 (2026-09-24): the aggressiveness record maps to
-/// `feeds.aggressiveness_engagement`. Severity `Info`; `Caution` when the
-/// target was not met or the dial is above 1.0. The message is the rationale
-/// row's headline and detail, so the card and the finding print one text.
+/// D9 (2026-11-04) removed the machine aggressiveness dial and its record;
+/// `project.outside_envelope` is the one record with a rule id.
 #[must_use]
 pub fn diagnostic_from_suggest_warning(
     tp_id: ToolpathId,
@@ -44,39 +42,7 @@ pub fn diagnostic_from_suggest_warning(
     if let SuggestWarning::OutsideEnvelope { .. } = w {
         return diagnostic_outside_envelope(tp_id, w);
     }
-    let SuggestWarning::EngagementReducedForAggressiveness {
-        aggressiveness,
-        target_met,
-        ..
-    } = w
-    else {
-        return None;
-    };
-    let row = crate::feeds::rationale::SuggestRationale::from_warnings(std::slice::from_ref(w))
-        .entries
-        .into_iter()
-        .next()?;
-    let severity = if !*target_met || *aggressiveness > 1.0 {
-        Severity::Caution
-    } else {
-        Severity::Info
-    };
-    Some(Diagnostic {
-        id: DiagnosticId::from(ids::FEEDS_AGGRESSIVENESS_ENGAGEMENT),
-        scope: Scope::Toolpath { id: tp_id },
-        category: Category::ToolLoad,
-        severity,
-        confidence: Confidence::Static,
-        state: DiagnosticState::Current,
-        source: Source::FeedsCalculator,
-        face: crate::diagnostics::presentation::face(ids::FEEDS_AGGRESSIVENESS_ENGAGEMENT),
-        anchor: crate::diagnostics::presentation::anchor(ids::FEEDS_AGGRESSIVENESS_ENGAGEMENT),
-        message: row.message(),
-        evidence: None,
-        fix: None,
-        supersedes: vec![],
-        suppressed_diagnostics: vec![],
-    })
+    None
 }
 
 /// CONTRACT K2b, K6 (P5): `project.outside_envelope`. The text names the

@@ -32,8 +32,8 @@
 //! One axis. [`power_at_operating_point`] reads the operation's feed and
 //! states the ceiling as the rated curve `power_at_rpm(rpm)`, the ceiling
 //! `tool_load::power::evaluate` compares against. Until ruling R4 (2026-09-24)
-//! both sides carried a `safety_factor`; the factor is gone (Q2), and the
-//! margin is the aggressiveness dial in Suggest pass 6b.
+//! both sides carried a `safety_factor`; the factor is gone (Q2). No load
+//! margin scales the ceiling.
 //!
 //! ## The force line
 //!

@@ -102,8 +102,8 @@ pub struct StockConfig {
     // P3 (2026-10-12): `flip_axis` is gone. It was a cache of the setups,
     // and a stale cache drew the wrong axis line. Every reader derives the
     // axis from the setups through [`Self::pin_flip_map`].
-    // Ruling R4 Q8 (2026-09-24): `workholding_rigidity` is gone. The machine
-    // aggressiveness dial is the one load margin.
+    // Ruling R4 Q8 (2026-09-24): `workholding_rigidity` is gone. Machine
+    // rigidity is `MachineProfile::rigidity`.
     // The project loader refuses an old file that holds either key
     // (`session::project_file::RETIRED_KEYS`).
 }

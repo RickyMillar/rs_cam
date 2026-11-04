@@ -1460,9 +1460,9 @@ fn test_setup_derate_long_overhang() {
         spindle_strategy: crate::feeds::SpindleStrategy::default(),
     });
 
-    // Ruling R4 Q7 (2026-09-24): the L/D share (0.75 above 6 x D) lowers the
-    // aggressiveness dial's load target in Suggest pass 6b. It does NOT cut
-    // the feed any more, so the ratio is 1.0 and the share is on the record.
+    // Ruling R4 Q7 (2026-09-24): the L/D share (0.75 above 6 x D) does NOT
+    // cut the feed any more, so the ratio is 1.0 and the share is on the
+    // record.
     let ratio = long.feed_rate_mm_min / normal.feed_rate_mm_min;
     assert!(
         (ratio - 1.0).abs() < 1e-12,

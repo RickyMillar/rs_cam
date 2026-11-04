@@ -6,8 +6,8 @@
 //! The Feeds card's `current → recommended · Δ vs current` rail printed the
 //! RAW calculator DOC and WOC (`explain.recommended.axial_depth_mm`,
 //! `radial_width_mm`). `⚡ Apply all` writes the values after
-//! `enforce_invariants`, and since the aggressiveness dial (Suggest pass 6b)
-//! that funnel scales them by one common factor. On a Ø6 hardwood pocket the
+//! `enforce_invariants`, and that funnel (in 2026-09 with the aggressiveness
+//! dial, deleted by D9) moved them. On a Ø6 hardwood pocket the
 //! column read "DOC 0.81 mm → 4.20 mm ↑ 5.17×", and Apply wrote 0.81 mm
 //! again. The ⚡ pills had the same defect once and read the funnel's dry run
 //! since G-PILLCLAMP; the card now reads the same dry run.
@@ -18,7 +18,7 @@
 //!    the stepover that `⚡ Apply all` then writes.
 //! 2. The cell separates the two: the raw calculator value differs from the
 //!    applied value, so arm 1 is not vacuous.
-//! 3. The DOC hover keeps the calculator value and names the dial.
+//! 3. The DOC hover keeps the calculator value and names the funnel.
 //! 4. After the apply the Δ tag is "≈": the operation already carries the
 //!    recommendation.
 //! 5. The power row reads the same cut: its painted percent equals
@@ -54,9 +54,6 @@ use rs_cam_viz::ui::{AppEvent, properties, tokens};
 
 /// The Simulation workspace's right rail, the narrowest the Feeds tab holds.
 const PANEL_WIDTH: f32 = 240.0;
-
-/// The operator's dial setting on the screenshot.
-const AGGRESSIVENESS: f64 = 0.85;
 
 /// The row prints two decimals, so a value within half a step prints the
 /// same. The small margin absorbs the binary representation of 0.005.
@@ -96,8 +93,7 @@ fn controller() -> AppController<SilentBackend> {
     tool.diameter = 6.0;
     tool.set_flute_count(ToolFact::Stated(2));
 
-    let mut machine = MachineProfile::generic_wood_router();
-    machine.aggressiveness = AGGRESSIVENESS;
+    let machine = MachineProfile::generic_wood_router();
 
     let stock = StockConfig {
         material: Material::SolidWood {
@@ -313,7 +309,7 @@ fn the_recommended_column_is_what_apply_writes_g_recomapplied() {
         );
     }
 
-    // Arm 3: the hover keeps the calculator value and names the dial.
+    // Arm 3: the hover keeps the calculator value and names the funnel.
     let calculator_clause = format!("calculator {:.2} mm", raw.axial_depth_mm);
     let apply_clause = format!("so Apply writes {applied_doc:.2} mm");
     let hover = texts
@@ -322,13 +318,10 @@ fn the_recommended_column_is_what_apply_writes_g_recomapplied() {
         .unwrap_or_else(|| {
             panic!("no DOC hover carries `{calculator_clause}`; runs were {texts:#?}")
         });
-    // Feeds contract P5 (K2b): "Apply all" writes the envelope proposal;
-    // the dial no longer acts on a product door, so the hover names the
-    // funnel (the binding cap) as the cause.
+    // Feeds contract P5 (K2b): "Apply all" writes the envelope proposal,
+    // so the hover names the funnel (the binding cap) as the cause.
     assert!(
-        (hover.contains("the dial holds the load at")
-            || hover.contains("the invariant funnel changes it"))
-            && hover.contains(&apply_clause),
+        hover.contains("the invariant funnel changes it") && hover.contains(&apply_clause),
         "the DOC hover does not say what moved the value and what Apply \
          writes: {hover}"
     );

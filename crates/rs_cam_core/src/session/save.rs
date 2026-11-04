@@ -495,7 +495,7 @@ mod tests {
                 "[job.stock]\n",
                 "workholding_rigidity = \"Medium\"\n",
                 "job.stock.workholding_rigidity",
-                "aggressiveness",
+                "job.machine.rigidity",
             ),
             (
                 "[setups.toolpaths.dressups]\n",

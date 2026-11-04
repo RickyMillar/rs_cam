@@ -4,7 +4,7 @@
 //! ## RE-PINNED 2026-09-24 — ruling R4 Q8: no feed factor is left on the cell
 //!
 //! Ruling R4 Q8 deleted the workholding rigidity and its 0.85 / 1.00 / 1.03
-//! feed factor. The machine aggressiveness dial is the one load margin. The
+//! feed factor. Machine rigidity is `MachineProfile::rigidity`. The
 //! moved cell lost its `Low` workholding, because the selector is gone.
 //! Predicted chain:
 //!

@@ -114,8 +114,8 @@ impl BindingConstraint {
 ///   touched moves whose binding constraint matched each variant.
 ///   Sums to ≤ 1.0 (rounding); variants with zero share are omitted.
 /// - `feed_scale`: the multiplier the run applied to the binding feed
-///   limit (1.0 = at-limit; 0.7 = 70 %; etc.). It is not the machine
-///   dial `MachineProfile::aggressiveness`.
+///   limit (1.0 = at-limit; 0.7 = 70 %; etc.). No machine field scales
+///   it.
 /// - `strategy`: which algorithm produced this summary (band-mid or
 ///   constrained-max). `BandMid` rolls up `binding_constraint_distribution`
 ///   from the same six-variant enum but its bindings collapse to the

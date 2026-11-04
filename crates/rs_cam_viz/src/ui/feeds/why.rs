@@ -45,8 +45,8 @@
 //! panel's operating-point card, after a sim (Checkpoint H2, 2026-08-08).
 
 use rs_cam_core::feeds::extrapolation::{Claim, HardnessBasis};
-use rs_cam_core::feeds::rationale::{AGGRESSIVENESS_ABOVE_BASE_TEXT, SuggestRationale};
-use rs_cam_core::feeds::suggest::{AggressivenessShortfall, FeedRecalibrationCap, SuggestWarning};
+use rs_cam_core::feeds::rationale::SuggestRationale;
+use rs_cam_core::feeds::suggest::{FeedRecalibrationCap, SuggestWarning};
 use rs_cam_core::feeds::vendor_lookup::vbit_key_text;
 use rs_cam_core::feeds::vendor_lut::ObservationKind;
 use rs_cam_core::feeds::{
@@ -159,14 +159,9 @@ fn applied_lines(
     if shown == raw {
         return;
     }
-    match applied.dial_load_pct(field) {
-        Some(pct) => out.push_str(&format!(
-            "calculator {raw}; the dial holds the load at {pct:.0} %, so Apply writes {shown}.\n"
-        )),
-        None => out.push_str(&format!(
-            "calculator {raw}; the invariant funnel changes it, so Apply writes {shown}.\n"
-        )),
-    }
+    out.push_str(&format!(
+        "calculator {raw}; the invariant funnel changes it, so Apply writes {shown}.\n"
+    ));
 }
 
 fn explain_rpm(out: &mut String, explain: &FeedsExplain, applied: &AppliedRecipe) {
@@ -378,8 +373,8 @@ fn explain_advance(out: &mut String, explain: &FeedsExplain, applied: &AppliedRe
     let mut moved: Vec<String> = Vec::new();
     // Ruling R4 (2026-09-24): the machine safety factor is gone, and the
     // long-tool share is a load target, not a feed factor (Q7). Neither is
-    // in this list; the long-tool line and the aggressiveness line on the
-    // card state them. The workholding factor is gone (Q8).
+    // in this list; the long-tool line on the card states it. The
+    // workholding factor is gone (Q8), and the dial is gone (D9).
     for (label, value) in [
         ("depth tier", d.depth_tier),
         ("power limit", d.power_limit),
@@ -400,8 +395,7 @@ fn explain_advance(out: &mut String, explain: &FeedsExplain, applied: &AppliedRe
 
     if d.ld_overhang < 1.0 - UNITY_TOLERANCE {
         out.push_str(&format!(
-            "The long-tool share ×{:.2} does not change the feed. It lowers the \
-             aggressiveness load target; the depth and the stepover carry it.\n",
+            "The long-tool share ×{:.2} does not change the feed.\n",
             d.ld_overhang
         ));
     }
@@ -491,7 +485,7 @@ fn applied_note(out: &mut String, applied: &AppliedRecipe, field: FeedsField) {
 
 /// Where the DOC and WOC rows get their value (G-RECOMAPPLIED).
 const APPLIED_NOTE: &str = "The row shows what `⚡ Apply all` writes: the calculator value \
-     after the invariant funnel (the rigidity cap and the aggressiveness dial).";
+     after the invariant funnel (the rigidity cap).";
 
 // ── What stays on the page ───────────────────────────────────────────
 
@@ -853,10 +847,7 @@ fn warning_lines(warning: &rs_cam_core::feeds::FeedsWarning) -> (String, Option<
                  {ratio:.1} × Ø{diameter_mm} mm)"
             ),
             Some(
-                "A repo rule with no source (ruling R4 WP1): a stickout above 6 x D \
-                 lowers the aggressiveness load target. The depth and the stepover \
-                 carry it; the feed does not change."
-                    .to_owned(),
+                "A repo rule with no source (ruling R4 WP1). The feed does not change.".to_owned(),
             ),
         ),
         // Ruling R4 Q10 (2026-09-24): the RPM follows the feed ceiling down
@@ -987,91 +978,6 @@ pub(crate) fn warning_rows(explain: &FeedsExplain) -> Vec<Placement> {
 /// list.
 fn suggest_line(warning: &SuggestWarning) -> Option<(String, bool)> {
     match warning {
-        SuggestWarning::EngagementReducedForAggressiveness {
-            aggressiveness,
-            ld_factor,
-            target_share,
-            dpp_from,
-            dpp_to,
-            stepover_from,
-            stepover_to,
-            force_n_before,
-            force_n_after,
-            power_kw_before,
-            power_kw_after,
-            section_mm2_before,
-            section_mm2_after,
-            target_met,
-            shortfall,
-            applied,
-            ..
-        } => {
-            let pct = target_share * 100.0;
-            let head = if (ld_factor - 1.0).abs() > UNITY_TOLERANCE {
-                format!(
-                    "Aggressiveness {aggressiveness:.2} (× {ld_factor:.2} long tool = {pct:.0} %)"
-                )
-            } else {
-                format!("Aggressiveness {aggressiveness:.2} (= {pct:.0} %)")
-            };
-            let mut cut = Vec::new();
-            if let (Some(a), Some(b)) = (dpp_from, dpp_to) {
-                cut.push(format!("depth {a:.2} → {b:.2} mm"));
-            }
-            if let (Some(a), Some(b)) = (stepover_from, stepover_to) {
-                cut.push(format!("stepover {a:.2} → {b:.2} mm"));
-            }
-            let mut load = Vec::new();
-            if let (Some(a), Some(b)) = (force_n_before, force_n_after) {
-                load.push(format!("force {a:.0} → {b:.0} N"));
-            }
-            if let (Some(a), Some(b)) = (power_kw_before, power_kw_after) {
-                load.push(format!("power {a:.2} → {b:.2} kW"));
-            }
-            if let (Some(a), Some(b)) = (section_mm2_before, section_mm2_after) {
-                load.push(format!(
-                    "chip section {a:.2} → {b:.2} mm² (proxy, no measured force line)"
-                ));
-            }
-            let mut line = head;
-            if !cut.is_empty() {
-                line.push_str(&format!(": {}", cut.join(", ")));
-            }
-            if !load.is_empty() {
-                line.push_str(&format!("; {}", load.join(", ")));
-            }
-            let above_base = *target_share > 1.0;
-            if above_base {
-                line.push_str(&format!(". Caution, {AGGRESSIVENESS_ABOVE_BASE_TEXT}"));
-            }
-            if !target_met {
-                let reason = match shortfall {
-                    Some(AggressivenessShortfall::LeverFloor) | None => {
-                        "the depth and the stepover are at their floors; the feed is not cut"
-                    }
-                    Some(AggressivenessShortfall::EngagementCap) => {
-                        "the depth and the stepover are at their caps"
-                    }
-                    Some(AggressivenessShortfall::NoLever) => {
-                        "this operation has no depth or stepover to change"
-                    }
-                };
-                line.push_str(&format!("; target not met: {reason}"));
-            }
-            if !applied {
-                line.push_str(&format!(
-                    ". Apply the cut geometry to hold the load at {pct:.0} %"
-                ));
-            }
-            Some((line, above_base || !target_met))
-        }
-        SuggestWarning::AggressivenessNotApplied {
-            aggressiveness,
-            reason,
-        } => Some((
-            format!("Aggressiveness {aggressiveness:.2}: {}", reason.card_text()),
-            false,
-        )),
         SuggestWarning::FeedRescaledToFinalGeometry {
             requested_mm_per_min,
             rescaled_mm_per_min,
@@ -1168,12 +1074,10 @@ fn suggest_line(warning: &SuggestWarning) -> Option<(String, bool)> {
 
 /// The Suggest stages that move a number, one row each.
 ///
-/// Ruling R4 (2026-09-24): the aggressiveness dial and the feed re-derive
-/// at the final depth change the recipe, so each has a row. Round 2: the
-/// rows are derivation and go in `Details`. Only a dial line that states a
-/// problem (a target above the base, or a target not met) stays on the
-/// face, as one status line. Any other Caution keeps the warning mark and
-/// the Caution tone inside `Details`. The ramp record gives one row, then
+/// Ruling R4 (2026-09-24): the feed re-derive at the final depth changes
+/// the recipe, so it has a row. Round 2: the rows are derivation and go in
+/// `Details`. A Caution keeps the warning mark and the Caution tone inside
+/// `Details`. The ramp record gives one row, then
 /// one row per entry note (G10); each note's rule is on its hover.
 pub(crate) fn suggest_rows(warnings: &[SuggestWarning]) -> Vec<Placement> {
     let mut out = Vec::new();
@@ -1181,14 +1085,7 @@ pub(crate) fn suggest_rows(warnings: &[SuggestWarning]) -> Vec<Placement> {
         let Some((line, is_caution)) = suggest_line(warning) else {
             continue;
         };
-        let problem = is_caution
-            && matches!(
-                warning,
-                SuggestWarning::EngagementReducedForAggressiveness { .. }
-            );
-        if problem {
-            out.push(Placement::Problem(caution(format!("⚠ {line}"))));
-        } else {
+        {
             let mut row = stage_record(line, is_caution);
             if let SuggestWarning::RampFeed { record, .. } = warning {
                 let (_, detail) = record.card_text();

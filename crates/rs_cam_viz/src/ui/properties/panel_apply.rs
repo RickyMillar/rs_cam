@@ -384,9 +384,7 @@ pub(super) fn machine_panel_fields_moved(
     draft: &rs_cam_core::machine::MachineProfile,
     stored: &rs_cam_core::machine::MachineProfile,
 ) -> bool {
-    draft.max_feed_mm_min != stored.max_feed_mm_min
-        || draft.max_shank_mm != stored.max_shank_mm
-        || draft.aggressiveness != stored.aggressiveness
+    draft.max_feed_mm_min != stored.max_feed_mm_min || draft.max_shank_mm != stored.max_shank_mm
 }
 
 /// Install a whole machine profile through `Command::SetMachine`.

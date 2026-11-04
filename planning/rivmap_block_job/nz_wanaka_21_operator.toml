@@ -54,7 +54,6 @@ controller_waits_for_spindle = true
 name = "Shapeoko Pro XXL (Scylla grblHAL, H100 1.5 kW VFD, $$ 2026-10-15)"
 max_feed_mm_min = 15000.0
 max_shank_mm = 7.0
-aggressiveness = 0.85
 
 [job.machine.spindle.Variable]
 min_rpm = 6000.0

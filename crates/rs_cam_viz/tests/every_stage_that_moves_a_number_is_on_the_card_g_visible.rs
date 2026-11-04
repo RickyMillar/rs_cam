@@ -30,8 +30,7 @@
 //!
 //! - `adaptive_long_tool`: the `the_recommendation_explains_each_row_g_whyrow`
 //!   cell, a Ø6 flat `Adaptive3d` in Baltic birch on the default stickout
-//!   45 mm (7.5 x D). Raises `LongToolDerate` and
-//!   `EngagementReducedForAggressiveness` (0.85 x 0.75 = 64 %).
+//!   45 mm (7.5 x D). Raises `LongToolDerate`.
 //! - `feed_ceiling_rpm`: a Ø6 flat pocket in generic hardwood on the generic
 //!   router. The feed 18 000 x 0.127 x 2 = 4572 mm/min passes the 4000
 //!   ceiling, so the RPM follows it down, 18 000 -> 15 748 (ruling R4 Q10).
@@ -46,14 +45,6 @@
 //!   birch until ruling B6: plywood has no force line, so no power.
 //! - `short_flute`: the adaptive cell on a tool with 2 mm of flute. Raises
 //!   `DocExceedsFlute`.
-//! - `finish`: the first Finish-role operation and tool type that ships a
-//!   recipe, in generic hardwood, else softwood plywood. Raises
-//!   `AggressivenessNotApplied` (`FinishRole`).
-//! - `drill`: the first drill operation and tool type that ships a recipe in
-//!   softwood plywood, else HDF. Since ruling B5 (G6, 2026-09-24, range
-//!   widened 2026-09-25) a drill ships only through the drill claim (a 2- or
-//!   3-flute flat end mill at 3.0-12.7 mm), so the search gives a drill a
-//!   6.0 mm end mill. Raises `AggressivenessNotApplied` (`Drill`).
 //!
 //! # `OnTheFace` variants that no fixture here is known to raise
 //!
@@ -161,12 +152,6 @@ fn classify_feeds(w: &FeedsWarning) -> (&'static str, Class) {
 /// Every Suggest record, classified. Exhaustive by design.
 fn classify_suggest(w: &SuggestWarning) -> (&'static str, Class) {
     match w {
-        SuggestWarning::EngagementReducedForAggressiveness { .. } => {
-            ("EngagementReducedForAggressiveness", Class::OnTheFace)
-        }
-        SuggestWarning::AggressivenessNotApplied { .. } => {
-            ("AggressivenessNotApplied", Class::OnTheFace)
-        }
         SuggestWarning::FeedRescaledToFinalGeometry { .. } => {
             ("FeedRescaledToFinalGeometry", Class::OnTheFace)
         }
@@ -332,36 +317,6 @@ fn feeds_numbers(w: &FeedsWarning) -> Vec<String> {
 fn suggest_numbers(w: &SuggestWarning) -> Vec<String> {
     let mut out = Vec::new();
     match w {
-        SuggestWarning::EngagementReducedForAggressiveness {
-            aggressiveness,
-            target_share,
-            dpp_from,
-            dpp_to,
-            stepover_from,
-            stepover_to,
-            force_n_before,
-            force_n_after,
-            power_kw_before,
-            power_kw_after,
-            section_mm2_before,
-            section_mm2_after,
-            ..
-        } => {
-            out.push(format!("Aggressiveness {}", at(*aggressiveness, 2)));
-            out.push(format!("{} %", at(target_share * 100.0, 0)));
-            pair(&mut out, *dpp_from, *dpp_to, 2);
-            pair(&mut out, *stepover_from, *stepover_to, 2);
-            pair(&mut out, *force_n_before, *force_n_after, 0);
-            pair(&mut out, *power_kw_before, *power_kw_after, 2);
-            pair(&mut out, *section_mm2_before, *section_mm2_after, 2);
-        }
-        SuggestWarning::AggressivenessNotApplied {
-            aggressiveness,
-            reason,
-        } => {
-            out.push(format!("Aggressiveness {}", at(*aggressiveness, 2)));
-            out.push(reason.card_text().to_owned());
-        }
         SuggestWarning::FeedRescaledToFinalGeometry {
             requested_mm_per_min,
             rescaled_mm_per_min,
@@ -706,9 +661,9 @@ fn cases() -> Vec<Case> {
     }
 
     // Feeds contract P5 (K2b, ruling Q4): no product door runs the dial
-    // (pass 6b), so the two dial records (`EngagementReducedForAggressiveness`,
-    // `AggressivenessNotApplied`) left the card, and the finish and drill
-    // cells that filed the "no dial action" record went with them.
+    // (pass 6b), so the two dial records left the card, and the finish and
+    // drill cells that filed the "no dial action" record went with them. D9
+    // (2026-11-04) deleted the records and the dial.
 
     let mut pocket_tool = ToolConfig::test_default(ToolId::from_raw(1), ToolType::EndMill);
     pocket_tool.diameter = 6.0;
@@ -826,9 +781,7 @@ fn the_ramp_line_names_the_arm_and_the_angle_g_visible() {
             | SuggestWarning::FeedClampedToChiploadFloor { .. }
             | SuggestWarning::PowerRecheckedAfterRescale { .. }
             | SuggestWarning::CutGeometryFieldNotHeld { .. }
-            | SuggestWarning::EngagementReducedForAggressiveness { .. }
             | SuggestWarning::RpmLoweredForFeedCeiling { .. }
-            | SuggestWarning::AggressivenessNotApplied { .. }
             | SuggestWarning::RampFeed { .. }
             | SuggestWarning::UnsourcedRowsAccepted { .. }
             | SuggestWarning::OutsideEnvelope { .. }

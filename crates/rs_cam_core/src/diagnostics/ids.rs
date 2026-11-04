@@ -267,13 +267,8 @@ diag_ids! {
     pub const FEEDS_CHIPLOAD_BELOW_FLOOR: &str = "feeds.chipload_below_floor" => warn(Danger::Part);
     /// The long-tool (L/D) share lowered the load target, a repo rule with no
     /// source (ruling R4 WP1, 2026-09-23; a load share since Q7, 2026-09-24).
-    /// Info: the record of a share the dial applies; the feed does not take it.
+    /// Info: the record of the share; the feed does not take it.
     pub const FEEDS_LONG_TOOL_DERATE: &str = "feeds.long_tool_derate" => INFO;
-    /// Suggest pass 6b, the machine aggressiveness dial, changed the depth per
-    /// pass and the stepover to hold the load at the dial's fraction (ruling R4,
-    /// 2026-09-24). Info; Caution when the target was not met or the dial is
-    /// above 1.0.
-    pub const FEEDS_AGGRESSIVENESS_ENGAGEMENT: &str = "feeds.aggressiveness_engagement" => warn(Danger::Part);
     /// The machine cutting-feed ceiling bound, and the RPM came down to hold
     /// the chipload (ruling R4 Q10, 2026-09-24). Info.
     pub const FEEDS_RPM_LOWERED_FOR_CEILING: &str = "feeds.rpm_lowered_for_ceiling" => INFO;

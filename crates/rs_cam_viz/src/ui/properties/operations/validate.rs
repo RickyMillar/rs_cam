@@ -490,9 +490,9 @@ pub fn profile_through_cut(
 ///
 /// `suggest_warnings` is the record of the Suggest run behind the recipe,
 /// from `ProjectSession::suggest_warnings_for_toolpath` (the call the MCP
-/// surface makes too). Ruling R4 (2026-09-24): the aggressiveness record
-/// becomes `feeds.aggressiveness_engagement` here, so no Suggest calculation
-/// is invisible in the ribbon.
+/// surface makes too). A record with a rule id (`project.outside_envelope`)
+/// becomes a diagnostic here, so no Suggest calculation is invisible in the
+/// ribbon.
 #[expect(
     clippy::too_many_arguments,
     reason = "the ribbon reads eight independent inputs of one toolpath. The snapshot owns three of them, and the panel borrows its entry mutably while it reads the others, so one struct would not remove a parameter."

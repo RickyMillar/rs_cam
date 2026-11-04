@@ -575,12 +575,8 @@ fn wanaka_suggest_baseline() {
                 | SuggestWarning::AxialDocClampedByEnvelope { .. }
                 | SuggestWarning::FeedRescaledToFinalGeometry { .. }
                 | SuggestWarning::ChiploadStillLowAfterRecalibration { .. }
-                // Ruling R4 WP3 (2026-09-24): the aggressiveness dial. Pinned
-                // below as the Wanaka baseline for the dial.
-                | SuggestWarning::EngagementReducedForAggressiveness { .. }
                 // Ruling R4 Q10 (2026-09-24): the RPM follows the feed ceiling.
                 | SuggestWarning::RpmLoweredForFeedCeiling { .. }
-                | SuggestWarning::AggressivenessNotApplied { .. }
                 // G6 ramp (2026-09-25): one record per apply that writes
                 // the speeds, on an operation with the field.
                 | SuggestWarning::RampFeed { .. }
@@ -884,15 +880,8 @@ fn wanaka_suggest_baseline() {
                 // the operation can offer. Suppressing it here would
                 // re-create the silence T-12 exists to remove.
                 SuggestWarning::CutGeometryFieldNotHeld { .. } => {}
-                // Ruling R4 WP3 (2026-09-24): the aggressiveness dial
-                // (default 0.85) files one record per roughing Suggest,
-                // and a "no dial action" record per finish or drill. Both
-                // are EXPECTED on Wanaka. The mechanism is pinned by
-                // tests/the_dial_holds_the_load_and_never_cuts_the_feed_fm7.rs.
-                SuggestWarning::EngagementReducedForAggressiveness { .. }
-                | SuggestWarning::AggressivenessNotApplied { .. }
                 // Ruling R4 Q10 (2026-09-24): allowed where the ceiling binds.
-                | SuggestWarning::RpmLoweredForFeedCeiling { .. }
+                SuggestWarning::RpmLoweredForFeedCeiling { .. }
                 // G6 ramp (2026-09-25): the entry feed record, EXPECTED on
                 // every speeds apply of an operation with the field.
                 | SuggestWarning::RampFeed { .. }

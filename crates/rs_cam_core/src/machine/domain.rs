@@ -17,9 +17,6 @@
 //! - `max_junction_velocity_mm_min` is `>= 0`: it caps the corner speed,
 //!   and `0` stops at every corner;
 //! - `max_shank_mm` is a diameter, so `> 0`;
-//! - `aggressiveness` scales the Suggest load target, so `> 0`: at `0`
-//!   no load is allowed. A value above 1 warns and does not refuse
-//!   (ruling R4 Q3);
 //! - the head `mount_mm`, a part `height_mm`, the shoe `normal_gap_mm` and
 //!   a stated shoe `gap_mm` are lengths, so `>= 0`; a part `diameter_mm`
 //!   is `> 0`; a shoe travel end is a signed position from the holder
@@ -45,8 +42,6 @@ pub enum MachineDimension {
     MaxCuttingFeed,
     /// The largest shank the spindle holds, mm.
     MaxShank,
-    /// The Suggest load target.
-    Aggressiveness,
     /// The scalar acceleration, mm/s².
     Acceleration,
     /// A per-axis acceleration, mm/s².
@@ -78,7 +73,6 @@ impl MachineDimension {
             Self::MaxFeed => "max_feed_mm_min",
             Self::MaxCuttingFeed => "max_cutting_feed_mm_min",
             Self::MaxShank => "max_shank_mm",
-            Self::Aggressiveness => "aggressiveness",
             Self::Acceleration => "kinematics.acceleration_mm_s2",
             Self::AxisAcceleration => "kinematics.acceleration_xyz_mm_s2",
             Self::AxisMaxRate => "kinematics.max_rate_xyz_mm_min",
@@ -96,7 +90,6 @@ impl MachineDimension {
             Self::MaxFeed
             | Self::MaxCuttingFeed
             | Self::MaxShank
-            | Self::Aggressiveness
             | Self::Acceleration
             | Self::AxisAcceleration
             | Self::AxisMaxRate
@@ -117,7 +110,6 @@ impl MachineDimension {
         match self {
             Self::MaxFeed => 100.0..=30000.0,
             Self::MaxShank => 1.0..=25.0,
-            Self::Aggressiveness => super::AGGRESSIVENESS_MIN..=super::AGGRESSIVENESS_MAX,
             Self::Acceleration | Self::AxisAcceleration => 10.0..=20000.0,
             Self::JunctionDeviation => 0.001..=1.0,
             Self::Jerk => 1.0..=100_000.0,
@@ -261,7 +253,6 @@ mod tests {
     fn the_ui_range_is_not_a_domain() {
         assert!(!MachineDimension::MaxFeed.ui_range().contains(&50_000.0));
         assert!(MachineDimension::MaxFeed.check(50_000.0, None).is_ok());
-        assert!(MachineDimension::Aggressiveness.check(2.0, None).is_ok());
         assert!(HeadDimension::PartDiameter.violation(2000.0).is_none());
         assert!(HeadDimension::TravelEnd.violation(-900.0).is_none());
     }

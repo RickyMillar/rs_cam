@@ -33,9 +33,6 @@ pub struct MachineEnvelope {
     pub max_feed_mm_min: f64,
     /// Rated (or constant) power in kW — used as the headroom ceiling.
     pub max_power_kw: f64,
-    /// The machine aggressiveness dial: the load target as a fraction of
-    /// the base engagement (ruling R4). Not a feed factor.
-    pub aggressiveness: f64,
 }
 
 impl MachineEnvelope {
@@ -51,7 +48,6 @@ impl MachineEnvelope {
             // F4: the explain envelope describes cutting-feed bounds.
             max_feed_mm_min: machine.cutting_ceiling().mm_min(),
             max_power_kw,
-            aggressiveness: machine.aggressiveness,
         }
     }
 }
@@ -301,7 +297,6 @@ mod tests {
         assert_eq!(env.spindle_min_rpm, min_rpm);
         assert_eq!(env.spindle_max_rpm, max_rpm);
         assert_eq!(env.max_feed_mm_min, mach.max_feed_mm_min);
-        assert_eq!(env.aggressiveness, mach.aggressiveness);
     }
 
     #[test]

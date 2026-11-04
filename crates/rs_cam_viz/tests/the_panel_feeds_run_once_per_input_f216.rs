@@ -279,7 +279,7 @@ fn the_panel_runs_the_calculator_once_per_input_f216() {
 
     // The machine.
     let mut machine = state.session().machine().clone();
-    machine.aggressiveness = 0.6;
+    machine.max_shank_mm += 1.0;
     apply(
         &mut state,
         Command::SetMachine(SetMachineArgs {
@@ -372,7 +372,7 @@ fn every_feeds_input_moves_the_memo_key_f216() {
         grade: PlywoodGrade::HardwoodFaced,
     };
     let mut moved_machine = machine.clone();
-    moved_machine.aggressiveness = 0.6;
+    moved_machine.max_shank_mm += 1.0;
     let moved_bbox = BoundingBox3 {
         min: P3::new(0.0, 0.0, -10.0),
         max: P3::new(80.0, 40.0, 0.0),

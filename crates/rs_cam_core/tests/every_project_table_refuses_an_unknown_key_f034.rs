@@ -223,7 +223,16 @@ fn a_retired_key_in_a_closed_table_keeps_its_message_f034() {
     for (path, key, word) in [
         (&[][..], "toolpaths", "[[setups.toolpaths]]"),
         (&["job"][..], "machine_ref", "snapshot"),
-        (&["job", "machine"][..], "safety_factor", "aggressiveness"),
+        (
+            &["job", "machine"][..],
+            "safety_factor",
+            "job.machine.rigidity",
+        ),
+        (
+            &["job", "machine"][..],
+            "aggressiveness",
+            "job.machine.rigidity",
+        ),
         (
             &["job", "stock", "material", "Custom"][..],
             "kc",

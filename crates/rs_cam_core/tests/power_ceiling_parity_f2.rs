@@ -96,7 +96,7 @@
 //! Ruling R4 Q2 removed `safety_factor`. The gate's ceiling and Suggest's
 //! ceiling are both the rated curve `power_at_rpm(rpm)`, and the feed takes
 //! no factor at Step 9. The parity claims (tests 1, 2, 3, 6) hold on that one
-//! axis; the margin is the aggressiveness dial in Suggest pass 6b. With no
+//! axis; no load margin scales it (D9 removed the dial). With no
 //! factor the edge term no longer counts `1 / 0.75` times against the budget
 //! (old condition `edge / 0.75 + shear <= P`, new `edge + shear <= P`), so the
 //! power-limited set of test 4 can only shrink. Measured: 3 -> 2 fixtures

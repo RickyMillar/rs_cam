@@ -582,7 +582,6 @@ impl RsCamApp {
             "max_feed_mm_min": machine.max_feed_mm_min,
             "cutting_feed_ceiling_mm_min": machine.cutting_feed_ceiling_mm_min(),
             "max_shank_mm": machine.max_shank_mm,
-            "aggressiveness": machine.aggressiveness,
             "spindle": spindle,
             "power": power,
             "kinematics": kinematics,

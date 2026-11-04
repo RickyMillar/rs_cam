@@ -404,11 +404,6 @@ pub const TABLE: &[(&str, Anchor, &str)] = &[
         "Long tool: load target lowered",
     ),
     (
-        ids::FEEDS_AGGRESSIVENESS_ENGAGEMENT,
-        OP,
-        "Cut made smaller for the aggressiveness",
-    ),
-    (
         ids::FEEDS_RPM_LOWERED_FOR_CEILING,
         NOTE,
         "RPM lowered to fit the feed limit",

@@ -255,29 +255,6 @@ pub struct MachineProfile {
     pub max_cutting_feed_mm_min: Option<f64>,
     pub max_shank_mm: f64,
     pub rigidity: RigidityProfile,
-    /// The machine aggressiveness dial (ruling R4, 2026-09-24). It sets the
-    /// LOAD of a Suggest recipe as a fraction of the load at the base
-    /// engagement. The chipload does not move: Suggest makes the depth per
-    /// pass and the stepover smaller (one common scale) until the predicted
-    /// lateral force and spindle power are at or below this fraction of
-    /// their base values. See `feeds::suggest::aggressiveness`.
-    ///
-    /// - Default [`DEFAULT_AGGRESSIVENESS`] (0.85, operator ruling Q1).
-    /// - Range for the panel slider: [`AGGRESSIVENESS_MIN`] to
-    ///   [`AGGRESSIVENESS_MAX`] (0.50 to 1.50).
-    /// - 1.00: no dial action. Above 1.00 Suggest raises the engagement
-    ///   inside the existing clamps and files a Caution (ruling Q3: warn,
-    ///   do not refuse).
-    ///
-    /// It is not a feed factor and not a power fraction. The spindle power
-    /// ceiling is the rated curve [`Self::power_at_rpm`] (ruling Q2).
-    ///
-    /// Serde: a file without the key loads the default. The old key
-    /// `safety_factor` (a feed factor of 0.75 or 0.80) refuses on load
-    /// (F034, `deny_unknown_fields`; the project loader names it through
-    /// `RETIRED_KEYS`); there is no alias (ruling 2026-09-16).
-    #[serde(default = "default_aggressiveness")]
-    pub aggressiveness: f64,
     /// Linear-axis kinematics limits used by the F-034 cycle-time
     /// integrator. **`None` for every built-in preset** — the absence
     /// of kinematics IS the feature flag for F-034. When `Some`, the
@@ -605,20 +582,6 @@ impl Default for MachineProfile {
     }
 }
 
-/// The default machine aggressiveness (operator ruling R4 Q1, 2026-09-24).
-pub const DEFAULT_AGGRESSIVENESS: f64 = 0.85;
-
-/// The lowest aggressiveness the machine panel offers.
-pub const AGGRESSIVENESS_MIN: f64 = 0.50;
-
-/// The highest aggressiveness the machine panel offers. Values above 1.00
-/// raise the engagement above the base and file a Caution (ruling Q3).
-pub const AGGRESSIVENESS_MAX: f64 = 1.50;
-
-fn default_aggressiveness() -> f64 {
-    DEFAULT_AGGRESSIVENESS
-}
-
 /// F4 — conservative cutting-feed cap used when a profile doesn't set
 /// `max_cutting_feed_mm_min` explicitly. 6 000 mm/min sits above every
 /// vendor wood-routing recommendation in the embedded literature net
@@ -643,7 +606,6 @@ impl MachineProfile {
             D::MaxCuttingFeed.check(cap, None)?;
         }
         D::MaxShank.check(self.max_shank_mm, None)?;
-        D::Aggressiveness.check(self.aggressiveness, None)?;
         if let Some(kinematics) = &self.kinematics {
             kinematics.validate()?;
         }
@@ -731,7 +693,6 @@ impl MachineProfile {
                 adaptive_doc_factor: 1.5,
                 adaptive_woc_factor: 0.20,
             },
-            aggressiveness: DEFAULT_AGGRESSIVENESS,
             // F-034: presets ship with `None` to keep runtime
             // behavior byte-identical. Callers opt in by setting
             // this field on the active profile.
@@ -762,11 +723,6 @@ impl MachineProfile {
             max_cutting_feed_mm_min: None,
             max_shank_mm: 7.0,
             rigidity: RigidityProfile::default(),
-            // Until ruling R4 (2026-09-24) the Shapeoko presets carried a
-            // FEED factor of 0.80 here. The dial is a load target, not a
-            // feed factor, so 0.80 has no meaning under it; the presets
-            // take the default.
-            aggressiveness: DEFAULT_AGGRESSIVENESS,
             kinematics: None,
             controller: None,
             head: head::MachineHead::default(),
@@ -790,11 +746,6 @@ impl MachineProfile {
             max_cutting_feed_mm_min: None,
             max_shank_mm: 6.35,
             rigidity: RigidityProfile::default(),
-            // Until ruling R4 (2026-09-24) the Shapeoko presets carried a
-            // FEED factor of 0.80 here. The dial is a load target, not a
-            // feed factor, so 0.80 has no meaning under it; the presets
-            // take the default.
-            aggressiveness: DEFAULT_AGGRESSIVENESS,
             kinematics: None,
             controller: None,
             head: head::MachineHead::default(),
@@ -989,26 +940,18 @@ mod tests {
         assert_eq!(m.clamp_rpm(50000.0), 30000.0);
     }
 
-    /// Ruling R4 (2026-09-24): every preset carries the default dial, and
-    /// the default sits inside the panel range.
-    #[test]
-    fn every_preset_carries_the_default_aggressiveness() {
-        assert!((AGGRESSIVENESS_MIN..=AGGRESSIVENESS_MAX).contains(&DEFAULT_AGGRESSIVENESS));
-        for (_, p) in MachineProfile::presets() {
-            assert_eq!(p.aggressiveness, DEFAULT_AGGRESSIVENESS);
-        }
-    }
-
     /// Ruling R4 (2026-09-24) and F034: a profile written with the old
-    /// key `safety_factor` refuses (no key is ignored). A profile with
-    /// neither key takes the default.
+    /// key `safety_factor` refuses (no key is ignored). D9 (2026-11-04):
+    /// the old key `aggressiveness` refuses too.
     #[test]
     fn the_old_safety_factor_key_is_refused_on_load() {
         let mut value = serde_json::to_value(MachineProfile::generic_wood_router()).unwrap();
-        let obj = value.as_object_mut().unwrap();
-        obj.remove("aggressiveness");
-        let defaulted: MachineProfile = serde_json::from_value(value.clone()).unwrap();
-        assert_eq!(defaulted.aggressiveness, DEFAULT_AGGRESSIVENESS);
+        let mut dial = value.clone();
+        dial.as_object_mut()
+            .unwrap()
+            .insert("aggressiveness".to_owned(), serde_json::json!(0.85));
+        let err = serde_json::from_value::<MachineProfile>(dial).unwrap_err();
+        assert!(err.to_string().contains("aggressiveness"), "{err}");
         value
             .as_object_mut()
             .unwrap()

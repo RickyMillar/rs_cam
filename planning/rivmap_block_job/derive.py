@@ -386,8 +386,7 @@ def machine_tables(feeds: dict) -> str:
         "# (the $$ capture: $120/$121/$122 = 500/500/270 mm/s2, $110/$111/$112 = 10000/10000/1000\n"
         "# mm/min, $11 = 0.020). Source: crates/rs_cam_core/src/machine/{mod,kinematics}.rs.\n"
         + table("job.machine", {"name": "Shapeoko XXL (1.5 kW VFD, $$ 2026-05-26)",
-                                "max_feed_mm_min": 10000.0, "max_shank_mm": 7.0,
-                                "aggressiveness": 0.85})
+                                "max_feed_mm_min": 10000.0, "max_shank_mm": 7.0})
         + table("job.machine.spindle.Variable", {"min_rpm": 6000.0, "max_rpm": 24000.0})
         + table("job.machine.power.VfdConstantTorque", {"rated_power_kw": 1.5, "rated_rpm": 24000.0})
         + table("job.machine.chip_load", {"k0": 0.024, "p": 0.61, "q": 1.26})

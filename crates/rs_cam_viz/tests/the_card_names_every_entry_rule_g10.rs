@@ -224,9 +224,7 @@ fn entry_notes(state: &AppState) -> Vec<EntryNote> {
             | SuggestWarning::FeedClampedToChiploadFloor { .. }
             | SuggestWarning::PowerRecheckedAfterRescale { .. }
             | SuggestWarning::CutGeometryFieldNotHeld { .. }
-            | SuggestWarning::EngagementReducedForAggressiveness { .. }
             | SuggestWarning::RpmLoweredForFeedCeiling { .. }
-            | SuggestWarning::AggressivenessNotApplied { .. }
             | SuggestWarning::UnsourcedRowsAccepted { .. }
             | SuggestWarning::OutsideEnvelope { .. }
             | SuggestWarning::PlungeReDerived { .. } => None,
@@ -452,9 +450,7 @@ fn the_mcp_basis_carries_plunge_and_entry_g10() {
             | SuggestWarning::FeedClampedToChiploadFloor { .. }
             | SuggestWarning::PowerRecheckedAfterRescale { .. }
             | SuggestWarning::CutGeometryFieldNotHeld { .. }
-            | SuggestWarning::EngagementReducedForAggressiveness { .. }
             | SuggestWarning::RpmLoweredForFeedCeiling { .. }
-            | SuggestWarning::AggressivenessNotApplied { .. }
             | SuggestWarning::UnsourcedRowsAccepted { .. }
             | SuggestWarning::OutsideEnvelope { .. }
             | SuggestWarning::PlungeReDerived { .. } => None,

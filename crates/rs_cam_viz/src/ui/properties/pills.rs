@@ -386,8 +386,9 @@ mod tests {
     /// the configured value already at that value the near-match test greys
     /// it.
     ///
-    /// Ruling R4 WP3 (2026-09-24): the funnel now runs the aggressiveness
-    /// dial (Suggest pass 6b) after the rigidity cap. The chain:
+    /// History, ruling R4 WP3 (2026-09-24): the funnel ran the aggressiveness
+    /// dial (Suggest pass 6b, deleted in P5; the dial went in D9) after the
+    /// rigidity cap. The chain was:
     ///
     /// * the rigidity cap gives 0.2 x 6 = 1.2 mm, the base depth;
     /// * the dial target is k x L/D share = 0.85 x 0.75 = 0.6375 (the default

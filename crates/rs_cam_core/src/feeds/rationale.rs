@@ -17,9 +17,7 @@
 
 use serde::{Deserialize, Serialize};
 
-use crate::feeds::suggest::{
-    AggressivenessShortfall, DEFLECTION_BACKOFF_TARGET_UM, FeedRecalibrationCap, SuggestWarning,
-};
+use crate::feeds::suggest::{DEFLECTION_BACKOFF_TARGET_UM, FeedRecalibrationCap, SuggestWarning};
 
 /// **The report-tier label on the two chipload-recalibration entries**
 /// (`ChiploadTarget`, `ChiploadCapBound`).
@@ -151,13 +149,6 @@ pub enum RationaleReason {
     /// ceiling at the geometry the operation ships, after pass 9 had
     /// re-derived the feed, and lowered the feed onto that ceiling.
     PowerCeilingAfterRescale,
-    /// Ruling R4 (2026-09-24): Suggest pass 6b, the machine aggressiveness
-    /// dial, changed the depth per pass and the stepover to hold the load at
-    /// the dial's fraction. The chipload did not change.
-    Aggressiveness,
-    /// Ruling R4 (2026-09-24): the aggressiveness dial did not act on this
-    /// operation (a Finish pass or a drill). The entry reports a NON-change.
-    AggressivenessNotApplied,
     /// Ruling R4 Q10 (2026-09-24): the RPM came down to hold the chipload
     /// at the machine feed ceiling.
     RpmLoweredForFeedCeiling,
@@ -226,11 +217,10 @@ impl SuggestRationale {
     /// Materialize a rationale tree from the warning vector returned
     /// by `apply` / `suggest_for_operation`.
     ///
-    /// One warning gives one entry, except the aggressiveness record, which
-    /// gives one row for the depth per pass and one for the stepover.
+    /// One warning gives one entry.
     pub fn from_warnings(warnings: &[SuggestWarning]) -> Self {
         Self {
-            entries: warnings.iter().flat_map(entries_for_warning).collect(),
+            entries: warnings.iter().map(entry_for_warning).collect(),
         }
     }
 
@@ -244,142 +234,6 @@ impl SuggestRationale {
 /// Exhaustive match — adding a new [`SuggestWarning`] variant is a
 /// compile error here, which is by design. The renderer surface
 /// stays in lock-step with the warning enum.
-/// The rationale rows of one warning. See [`SuggestRationale::from_warnings`].
-fn entries_for_warning(w: &SuggestWarning) -> Vec<RationaleEntry> {
-    match aggressiveness_rows(w) {
-        Some((first, second)) => std::iter::once(first).chain(second).collect(),
-        None => vec![entry_for_warning(w)],
-    }
-}
-
-/// The card text of the aggressiveness dial when the target is above 1.0
-/// (ruling R4 Q3). Every surface prints this one string.
-pub const AGGRESSIVENESS_ABOVE_BASE_TEXT: &str =
-    "above 1.0: the load target exceeds the full-engagement base";
-
-/// The rows of the aggressiveness record: the depth-per-pass row first, then
-/// the stepover row when that lever exists. `None` for every other warning.
-fn aggressiveness_rows(w: &SuggestWarning) -> Option<(RationaleEntry, Option<RationaleEntry>)> {
-    let SuggestWarning::EngagementReducedForAggressiveness {
-        aggressiveness,
-        ld_factor,
-        target_share,
-        scale,
-        dpp_from,
-        dpp_to,
-        stepover_from,
-        stepover_to,
-        force_n_before,
-        force_n_after,
-        power_kw_before,
-        power_kw_after,
-        section_mm2_before,
-        section_mm2_after,
-        target_met,
-        shortfall,
-        applied,
-    } = w
-    else {
-        return None;
-    };
-    let pct = target_share * 100.0;
-    let mut loads = Vec::new();
-    if let (Some(a), Some(b)) = (force_n_before, force_n_after) {
-        loads.push(format!("force {a:.1} -> {b:.1} N"));
-    }
-    if let (Some(a), Some(b)) = (power_kw_before, power_kw_after) {
-        loads.push(format!("power {a:.3} -> {b:.3} kW"));
-    }
-    if let (Some(a), Some(b)) = (section_mm2_before, section_mm2_after) {
-        loads.push(format!(
-            "chip area {a:.3} -> {b:.3} mm² (an estimate: no measured cutting force for \
-             this material)"
-        ));
-    }
-    let loads = if loads.is_empty() {
-        "no load estimate".to_owned()
-    } else {
-        loads.join(", ")
-    };
-    let target = if (*ld_factor - 1.0).abs() > 1e-12 {
-        format!(
-            "aggressiveness {aggressiveness:.2} \u{00D7} long-tool factor {ld_pct:.0} % = \
-             load target {pct:.1} %",
-            ld_pct = ld_factor * 100.0
-        )
-    } else {
-        format!("aggressiveness {aggressiveness:.2}: load target {pct:.1} %")
-    };
-    // The detail tail after the load-target clause. Each row picks its own
-    // opener below: a headline that already states `{target}` must not get
-    // it again in its detail (audit WRONG #1, 2026-10-02).
-    let mut tail = format!(
-        "of the full cut: the depth and the stepover both scale to {scale_pct:.0} %, then \
-         the depth rounds to a step the generator can cut; {loads}. The chipload does not \
-         change. The dial does not change the plunge rate.",
-        scale_pct = scale * 100.0
-    );
-    if *target_share > 1.0 {
-        tail.push_str(&format!(" Caution, {AGGRESSIVENESS_ABOVE_BASE_TEXT}."));
-    }
-    if !*target_met {
-        tail.push_str(match shortfall {
-            Some(AggressivenessShortfall::LeverFloor) | None => {
-                " Target not met: the depth and the stepover are at their floors. The feed is \
-                 not cut to close the gap."
-            }
-            Some(AggressivenessShortfall::EngagementCap) => {
-                " Target not reached: the depth and the stepover are at their caps (rigidity, \
-                 flute length, one diameter, rated power)."
-            }
-            Some(AggressivenessShortfall::NoLever) => {
-                " Target not met: this operation has no depth or stepover for the dial to \
-                 change."
-            }
-        });
-    }
-    let row = |param: RationaleParam, name: &str, from: Option<f64>, to: Option<f64>| {
-        let headline = match (from, to, *applied) {
-            (Some(f), Some(t), true) => {
-                format!("{name} {f:.3} -> {t:.3} mm: {target}")
-            }
-            (Some(_), Some(t), false) => {
-                format!("{name}: apply the cut geometry ({t:.3} mm) to hold the load at {pct:.0} %")
-            }
-            _ => format!("{name}: no change; {target}"),
-        };
-        // The detail must read alone (a hover line, an MCP field), so it
-        // keeps a full sentence when the headline already has the formula.
-        let detail = if headline.contains(&target) {
-            format!("The load target is a share {tail}")
-        } else {
-            format!("{target} {tail}")
-        };
-        RationaleEntry {
-            param,
-            reason: RationaleReason::Aggressiveness,
-            from_value: from,
-            // Nothing was written under a speeds-only apply.
-            to_value: to.filter(|_| *applied),
-            headline,
-            detail: Some(detail),
-        }
-    };
-    let width_row = stepover_from.is_some().then(|| {
-        row(
-            RationaleParam::Stepover,
-            "Stepover",
-            *stepover_from,
-            *stepover_to,
-        )
-    });
-    if dpp_from.is_some() || width_row.is_none() {
-        let depth_row = row(RationaleParam::Dpp, "Depth per pass", *dpp_from, *dpp_to);
-        return Some((depth_row, width_row));
-    }
-    width_row.map(|width| (width, None))
-}
-
 fn entry_for_warning(w: &SuggestWarning) -> RationaleEntry {
     match w {
         SuggestWarning::CutGeometryFieldNotHeld {
@@ -793,20 +647,6 @@ fn entry_for_warning(w: &SuggestWarning) -> RationaleEntry {
                 )
             }),
         },
-        // Ruling R4 (2026-09-24). `entries_for_warning` gives this warning
-        // two rows; a caller of this single-row function gets the first.
-        SuggestWarning::EngagementReducedForAggressiveness { .. } => aggressiveness_rows(w)
-            .map_or_else(
-                || RationaleEntry {
-                    param: RationaleParam::Dpp,
-                    reason: RationaleReason::Aggressiveness,
-                    from_value: None,
-                    to_value: None,
-                    headline: "Aggressiveness".to_owned(),
-                    detail: None,
-                },
-                |(first, _)| first,
-            ),
         SuggestWarning::RpmLoweredForFeedCeiling {
             rpm_from,
             rpm_to,
@@ -832,20 +672,6 @@ fn entry_for_warning(w: &SuggestWarning) -> RationaleEntry {
                  vendor value."
                     .to_owned(),
             ),
-        },
-        SuggestWarning::AggressivenessNotApplied {
-            aggressiveness,
-            reason,
-        } => RationaleEntry {
-            param: RationaleParam::Dpp,
-            reason: RationaleReason::AggressivenessNotApplied,
-            from_value: None,
-            to_value: None,
-            headline: reason.card_text().to_owned(),
-            detail: Some(format!(
-                "Machine aggressiveness {aggressiveness:.2} did not change this operation. The \
-                 dial does not change the plunge rate."
-            )),
         },
         SuggestWarning::RampFeed {
             from_mm_min,
@@ -1230,71 +1056,6 @@ mod tests {
         }
     }
 
-    fn aggressiveness_warning(ld_factor: f64, applied: bool, dpp_to: f64) -> SuggestWarning {
-        SuggestWarning::EngagementReducedForAggressiveness {
-            aggressiveness: 0.85,
-            ld_factor,
-            target_share: 0.85 * ld_factor,
-            scale: 0.681,
-            dpp_from: Some(6.35),
-            dpp_to: Some(dpp_to),
-            stepover_from: Some(3.0),
-            stepover_to: Some(2.1),
-            force_n_before: Some(120.0),
-            force_n_after: Some(80.0),
-            power_kw_before: Some(0.9),
-            power_kw_after: Some(0.6),
-            section_mm2_before: None,
-            section_mm2_after: None,
-            target_met: true,
-            shortfall: None,
-            applied,
-        }
-    }
-
-    /// Audit WRONG #1 (2026-10-02). The ribbon printed "load target 63.7 %
-    /// aggressiveness 0.85 x long-tool share 0.75 = load target 63.7 %": the
-    /// headline ended with the load-target formula and the detail began with
-    /// it. Every aggressiveness row now states the formula once in
-    /// `message()`, and each detail still carries a full sentence.
-    #[test]
-    fn the_aggressiveness_message_states_the_load_target_once() {
-        let formula = "aggressiveness 0.85 \u{00D7} long-tool factor 75 % = load target 63.7 %";
-        for (tag, w) in [
-            ("applied", aggressiveness_warning(0.75, true, 4.325)),
-            ("speeds-only", aggressiveness_warning(0.75, false, 4.325)),
-            ("no change", aggressiveness_warning(0.75, true, 6.35)),
-        ] {
-            let entries = SuggestRationale::from_warnings(&[w]).entries;
-            assert_eq!(entries.len(), 2, "{tag}: a depth row and a stepover row");
-            for entry in &entries {
-                let message = entry.message();
-                assert_eq!(
-                    message.matches(formula).count(),
-                    1,
-                    "{tag}: the load-target formula must occur once: {message}"
-                );
-                assert_no_repeated_clause(&message);
-                let detail = entry.detail.as_deref().unwrap_or_default();
-                assert!(
-                    detail.contains("of the full cut"),
-                    "{tag}: the detail must still name the base: {detail}"
-                );
-            }
-        }
-        // The ld = 1 wording ("aggressiveness 0.85: load target 85.0 %").
-        let w = aggressiveness_warning(1.0, true, 4.325);
-        for entry in SuggestRationale::from_warnings(&[w]).entries {
-            let message = entry.message();
-            assert_eq!(
-                message.matches("load target 85.0 %").count(),
-                1,
-                "the load target must occur once: {message}"
-            );
-            assert_no_repeated_clause(&message);
-        }
-    }
-
     /// The joined text of every round-trip fixture in this module states
     /// each clause once.
     #[test]
@@ -1308,8 +1069,6 @@ mod tests {
                 requested: 8.0,
                 capped: 6.0,
             },
-            aggressiveness_warning(0.75, true, 4.325),
-            aggressiveness_warning(0.75, false, 4.325),
         ];
         for entry in SuggestRationale::from_warnings(&warnings).entries {
             assert_no_repeated_clause(&entry.message());

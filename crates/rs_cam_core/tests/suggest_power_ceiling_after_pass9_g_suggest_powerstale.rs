@@ -255,10 +255,7 @@ fn underpowered_machine() -> MachineProfile {
     machine.name = "SYNTHETIC 0.22 kW (test only)".to_owned();
     machine.power = rs_cam_core::machine::PowerModel::ConstantPower { power_kw: 0.22 };
     // Ruling R4 (2026-09-24): this fixture tests the Step 6 / pass 9 / pass 10
-    // power interaction, not the aggressiveness dial. The dial at 1.0 keeps
-    // pass 6b out of the geometry (it would scale the depth and the stepover
-    // before pass 9 runs).
-    machine.aggressiveness = 1.0;
+    // power interaction. D9 (2026-11-04) removed the aggressiveness dial.
     machine
 }
 

@@ -205,7 +205,7 @@ pub(crate) fn draw_recommendation(
         .as_deref()
         .map(SuggestRationale::from_warnings);
     let previews = card.previews.clone();
-    let applied = AppliedRecipe::new(previews, suggest_warnings.as_deref());
+    let applied = AppliedRecipe::new(previews);
     draw_inspector_comparison(
         ui,
         current,
@@ -301,7 +301,7 @@ pub(crate) fn draw_inspector_comparison(
     .map(rs_cam_core::feeds::AdvancePerToothMm::mm);
     // G-FEEDSLABEL (UX-R03-005), G-RECOMAPPLIED (2026-09-24): the
     // recommended DOC / WOC are the values `⚡ Apply all` writes, after
-    // `enforce_invariants` and the aggressiveness dial. Until 2026-09-24 the
+    // `enforce_invariants`. Until 2026-09-24 the
     // column printed the raw calculator values. On a Ø6 hardwood pocket it
     // recommended 4.20 mm of DOC where the apply wrote 0.81 mm. Each row's
     // hover keeps the calculator value. The advance row prints
@@ -1020,8 +1020,8 @@ fn power_hover(figure: &PowerFigure, source: &BoundSource) -> String {
          Evaluated at the cut `\u{26A1} Apply all` writes: depth of cut \
          {:.3} mm, width of cut {:.3} mm, {:.0} rpm, feed {:.0} mm/min. The \
          bar describes the depth that WILL be cut, not the depth the \
-         calculator sized its feed at \u{2014} the rigidity clamp and the \
-         aggressiveness dial can lower one without moving the other.",
+         calculator sized its feed at \u{2014} the rigidity clamp can lower \
+         one without moving the other.",
         figure.required_kw,
         figure.available_kw,
         power_face(figure),

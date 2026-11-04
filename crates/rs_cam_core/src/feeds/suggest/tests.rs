@@ -1756,9 +1756,7 @@ fn clearing_strategy_recommendation_is_warn_only() {
         | SuggestWarning::FeedClampedToChiploadFloor { .. }
         | SuggestWarning::PowerRecheckedAfterRescale { .. }
         | SuggestWarning::CutGeometryFieldNotHeld { .. }
-        | SuggestWarning::EngagementReducedForAggressiveness { .. }
         | SuggestWarning::RpmLoweredForFeedCeiling { .. }
-        | SuggestWarning::AggressivenessNotApplied { .. }
         | SuggestWarning::RampFeed { .. }
         | SuggestWarning::UnsourcedRowsAccepted { .. }
         | SuggestWarning::OutsideEnvelope { .. }

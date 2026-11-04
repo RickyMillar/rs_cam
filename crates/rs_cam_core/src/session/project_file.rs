@@ -111,8 +111,8 @@ const RETIRED_KEYS: &[RetiredKey] = &[
     RetiredKey {
         table: &["job", "stock"],
         key: "workholding_rigidity",
-        replacement: "Removed (ruling R4 Q8): the machine aggressiveness dial is the one load \
-                      margin. Delete the key",
+        replacement: "Removed (ruling R4 Q8): machine rigidity is job.machine.rigidity. \
+                      Delete the key",
     },
     RetiredKey {
         table: &["setups", "[]", "toolpaths", "[]", "dressups"],
@@ -180,8 +180,14 @@ const RETIRED_KEYS: &[RetiredKey] = &[
     RetiredKey {
         table: &["job", "machine"],
         key: "safety_factor",
-        replacement: "Removed (ruling R4): the machine aggressiveness dial \
-                      (job.machine.aggressiveness) is the one load margin. Delete the key",
+        replacement: "Removed (ruling R4): machine rigidity is job.machine.rigidity. \
+                      Delete the key",
+    },
+    RetiredKey {
+        table: &["job", "machine"],
+        key: "aggressiveness",
+        replacement: "Removed (D9, 2026-11-04): the aggressiveness dial is gone; machine \
+                      rigidity is job.machine.rigidity. Delete the key",
     },
     RetiredKey {
         table: &["job", "stock", "material", "Custom"],

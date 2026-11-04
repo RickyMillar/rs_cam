@@ -321,9 +321,8 @@ pub struct ModulationContext<'a> {
     /// applies the chipload-min floor. `1.0` emits at the binding limit;
     /// `0.7` emits at 70 % of it. `BandMid` ignores it.
     ///
-    /// Not the machine dial: `MachineProfile::aggressiveness` is a load
-    /// target for Suggest. This value is a plain multiplier on the
-    /// modulator's output feed (ruling R4 Q6, 2026-09-24).
+    /// A plain multiplier on the modulator's output feed (ruling R4 Q6,
+    /// 2026-09-24). No machine field scales it.
     pub feed_scale: f64,
     /// F-039 — optional deflection-cap inputs (see
     /// [`DeflectionLimitInputs`]). `None` disables the constraint.

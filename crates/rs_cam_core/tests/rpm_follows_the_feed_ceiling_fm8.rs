@@ -321,8 +321,6 @@ fn suggest_ships_the_lowered_rpm_with_a_rationale_row_fm8() {
             | SuggestWarning::FeedClampedToChiploadFloor { .. }
             | SuggestWarning::PowerRecheckedAfterRescale { .. }
             | SuggestWarning::CutGeometryFieldNotHeld { .. }
-            | SuggestWarning::EngagementReducedForAggressiveness { .. }
-            | SuggestWarning::AggressivenessNotApplied { .. }
             | SuggestWarning::RampFeed { .. }
             | SuggestWarning::UnsourcedRowsAccepted { .. }
             | SuggestWarning::OutsideEnvelope { .. }

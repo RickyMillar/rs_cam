@@ -406,9 +406,7 @@ fn entry_columns(s: &SuggestedParams) -> [String; 6] {
         | SuggestWarning::FeedClampedToChiploadFloor { .. }
         | SuggestWarning::PowerRecheckedAfterRescale { .. }
         | SuggestWarning::CutGeometryFieldNotHeld { .. }
-        | SuggestWarning::EngagementReducedForAggressiveness { .. }
         | SuggestWarning::RpmLoweredForFeedCeiling { .. }
-        | SuggestWarning::AggressivenessNotApplied { .. }
         | SuggestWarning::UnsourcedRowsAccepted { .. }
         | SuggestWarning::OutsideEnvelope { .. }
         | SuggestWarning::PlungeReDerived { .. } => None,
@@ -636,8 +634,8 @@ fn recipe_diagnostics(s: &SuggestedParams, tool: &ToolConfig) -> Vec<Diagnostic>
         s.operation.depth_per_pass(),
         r,
     ));
-    // Ruling R4: the Suggest records that carry a rule id (the
-    // aggressiveness record) are diagnostics too.
+    // Ruling R4: the Suggest records that carry a rule id
+    // (`project.outside_envelope`) are diagnostics too.
     out.extend(
         s.warnings
             .iter()

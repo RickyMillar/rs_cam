@@ -131,8 +131,9 @@ pub enum SuggestScope {
 /// Ruling R4 (2026-09-24) deleted the `aggressiveness` field and its enum
 /// `SuggestAggressiveness` (Conservative / Default / Speed). It placed the
 /// chipload inside the band, and it was inert since 2026-08-13. The ruling
-/// holds the chipload at the band midpoint times the depth ladder; the one
-/// meaning of "aggressiveness" is now `MachineProfile::aggressiveness`.
+/// holds the chipload at the band midpoint times the depth ladder. D9
+/// (2026-11-04) removed the machine dial too; machine rigidity is
+/// `MachineProfile::rigidity`.
 #[derive(Debug, Clone, Copy, Default, PartialEq, Eq)]
 pub struct SuggestPolicy {
     /// How aggressively to rewrite strategy fields. See [`SuggestScope`].
@@ -669,60 +670,6 @@ pub enum SuggestWarning {
         /// The value the calculator produced and the operation discarded.
         recommended_mm: f64,
     },
-    /// Ruling R4 (2026-09-24): Suggest pass 6b, the machine aggressiveness
-    /// dial, changed the engagement to hold the load at a fraction of the
-    /// load at the base engagement. The chipload did not change.
-    ///
-    /// The target is `k_eff = aggressiveness × ld_factor` (ruling Q7: the
-    /// long-tool share lowers the target, it does not cut the feed). Below
-    /// 1.0 the pass makes the depth per pass and the stepover smaller by one
-    /// common scale (Q11). Above 1.0 (Q3) it makes them larger, inside the
-    /// rigidity depth cap, the flute length and a stepover of one diameter.
-    ///
-    /// A `*_from` / `*_to` pair is `Some` exactly when that lever exists and
-    /// the pass evaluated it. The two load models are the lateral force
-    /// (`feeds::force`) and the spindle power (`tool_load::power`). When both
-    /// refuse (no primary-source `Kc`), the chip cross-section is the proxy.
-    ///
-    /// Sentry: `tests/the_dial_holds_the_load_and_never_cuts_the_feed_fm7.rs`.
-    EngagementReducedForAggressiveness {
-        /// `MachineProfile::aggressiveness`.
-        aggressiveness: f64,
-        /// The long-tool share of the target, `feeds::long_tool_load_share`.
-        ld_factor: f64,
-        /// `aggressiveness × ld_factor`, the load fraction the pass aimed at.
-        target_share: f64,
-        /// The common scale the pass applied to every lever.
-        scale: f64,
-        /// Depth per pass before and after (mm).
-        dpp_from: Option<f64>,
-        dpp_to: Option<f64>,
-        /// Stepover before and after (mm).
-        stepover_from: Option<f64>,
-        stepover_to: Option<f64>,
-        /// Peak lateral cutting force before and after (N).
-        force_n_before: Option<f64>,
-        force_n_after: Option<f64>,
-        /// Spindle power before and after (kW).
-        power_kw_before: Option<f64>,
-        power_kw_after: Option<f64>,
-        /// The chip cross-section proxy before and after (mm²). `Some` only
-        /// when both load models refuse.
-        section_mm2_before: Option<f64>,
-        section_mm2_after: Option<f64>,
-        /// `true` when every modelled load is at or below `target_share` x
-        /// its base value (below 1.0), or reached it (above 1.0).
-        target_met: bool,
-        /// Why the target was not met, when it was not.
-        shortfall: Option<AggressivenessShortfall>,
-        /// `false` when the operation does not carry the engagement the
-        /// pass computed. The card then says "Apply the cut geometry to hold
-        /// the load at N %" (spec §2.5). The speeds-only apply
-        /// (`ApplyScope::Speeds`) set it to `false` until G-SPEEDSAPPLY
-        /// (2026-10-12); that apply now does not run the pass, so every
-        /// producer today writes `true`.
-        applied: bool,
-    },
     /// Ruling R4 Q10 (2026-09-24): the calculator's Step 7 lowered the RPM
     /// to hold the chipload at the machine feed ceiling
     /// ([`crate::feeds::FeedsWarning::RpmLoweredForFeedCeiling`]). This is
@@ -741,15 +688,6 @@ pub enum SuggestWarning {
         floor_source: crate::feeds::RpmFloorSource,
         /// `true` when the chipload is held in full.
         held: bool,
-    },
-    /// Ruling R4 (2026-09-24): the aggressiveness dial did not act on this
-    /// operation, and why. The engagement is unchanged. This record exists
-    /// so that the card states it (the "no invisible calculations" rule).
-    AggressivenessNotApplied {
-        /// `MachineProfile::aggressiveness`.
-        aggressiveness: f64,
-        /// Why the dial did not act.
-        reason: AggressivenessSkip,
     },
     /// G6 ramp (2026-09-25): the entry feed Suggest wrote. One record per
     /// apply that wrote the speeds, on an operation with the field. The
@@ -798,45 +736,6 @@ pub enum SuggestWarning {
         /// The term that sets the plunge that ships.
         binding: crate::feeds::plunge::PlungeBinding,
     },
-}
-
-/// Why the aggressiveness dial did not act (ruling R4, 2026-09-24).
-#[derive(Debug, Clone, Copy, PartialEq, Eq)]
-pub enum AggressivenessSkip {
-    /// A Finish pass (ruling Q4). The finish depth is the stock allowance and
-    /// the finish width is the scallop target. The deflection check decides.
-    FinishRole,
-    /// A drill cycle (ruling Q5). A plunge is full-width axial; there is no
-    /// engagement lever. The plunge rule sets the plunge (G10).
-    Drill,
-}
-
-impl AggressivenessSkip {
-    /// The card text, one sentence. Every surface prints this.
-    #[must_use]
-    pub const fn card_text(self) -> &'static str {
-        match self {
-            Self::FinishRole => "Finish: no dial action; deflection decides.",
-            Self::Drill => "Plunge: the plunge rule; the dial does not act.",
-        }
-    }
-}
-
-/// Why the aggressiveness dial did not meet its load target (ruling R4).
-#[derive(Debug, Clone, Copy, PartialEq, Eq)]
-pub enum AggressivenessShortfall {
-    /// Below 1.0: every lever reached its floor (0.05 mm depth, 0.02 mm
-    /// stepover) and the load is still above the target. The feed is not
-    /// cut to close the gap.
-    LeverFloor,
-    /// Above 1.0: every lever reached its cap (the rigidity depth cap, the
-    /// flute length, a stepover of one diameter, a deflection back-off
-    /// depth, or the rated spindle power) before the load reached the
-    /// target.
-    EngagementCap,
-    /// The operation has no depth-per-pass field and no free stepover (a
-    /// scallop target set it), so the dial has no lever.
-    NoLever,
 }
 
 /// Reason the v2 step 2 feed-up recalibration terminated early

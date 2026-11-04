@@ -74,8 +74,6 @@ pub enum MachineField {
     CuttingFeedCap,
     /// `MachineProfile::rigidity`: the depth caps and adaptive factors.
     Rigidity,
-    /// `MachineProfile::aggressiveness`: the load dial.
-    Aggressiveness,
 }
 
 impl MachineField {
@@ -87,7 +85,6 @@ impl MachineField {
             Self::PowerCurve => "machine.power_at_rpm",
             Self::CuttingFeedCap => "machine.cutting_feed_ceiling_mm_min",
             Self::Rigidity => "machine.rigidity",
-            Self::Aggressiveness => "machine.aggressiveness",
         }
     }
 }

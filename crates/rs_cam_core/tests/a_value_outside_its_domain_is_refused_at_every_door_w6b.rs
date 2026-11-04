@@ -386,7 +386,7 @@ fn set_stock_config_refuses() {
 fn set_machine_refuses() {
     let mut s = session();
     let machine = MachineProfile {
-        aggressiveness: 0.0,
+        max_shank_mm: 0.0,
         ..MachineProfile::default()
     };
     assert!(matches!(

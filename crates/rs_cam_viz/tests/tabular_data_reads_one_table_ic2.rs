@@ -59,8 +59,7 @@ fn fixture() -> AppState {
     let mut tool = ToolConfig::test_default(ToolId::from_raw(1), ToolType::EndMill);
     tool.diameter = 6.0;
     tool.set_flute_count(ToolFact::Stated(2));
-    let mut machine = MachineProfile::generic_wood_router();
-    machine.aggressiveness = 0.85;
+    let machine = MachineProfile::generic_wood_router();
     let stock = StockConfig {
         material: Material::SolidWood {
             species: WoodSpecies::GenericHardwood,

@@ -327,8 +327,8 @@ pub enum PassRole {
 /// Setup context for derating feeds based on physical setup conditions.
 ///
 /// **The workholding rigidity is gone (ruling R4 Q8, 2026-09-24).** It was an
-/// unsourced feed scale (0.85 / 1.00 / 1.03). The machine aggressiveness dial
-/// (`MachineProfile::aggressiveness`) is the one load margin.
+/// unsourced feed scale (0.85 / 1.00 / 1.03). Machine rigidity is
+/// `MachineProfile::rigidity`.
 #[derive(Default)]
 pub struct SetupContext {
     /// Tool overhang from collet face (mm). Used for L/D derate.
@@ -623,10 +623,9 @@ pub struct FeedsDerates {
     /// 4 x D stickout, 0.75 above 6 x D (repo rule, unsourced).
     ///
     /// **Not a feed factor since ruling R4 Q7 (2026-09-24).** The feed does
-    /// not take it. Suggest pass 6b multiplies the machine aggressiveness by
-    /// it (`k_eff = k × ld`), so a long tool gets a lower load target and a
-    /// smaller engagement, not a thinner chip. It is therefore NOT part of
-    /// [`Self::combined_factor`].
+    /// not take it; the share is a reported record. It is therefore NOT part
+    /// of [`Self::combined_factor`]. Suggest pass 6b, which read it, is
+    /// deleted (P5), and D9 (2026-11-04) removed the machine dial.
     pub ld_overhang: f64,
     /// Power-limit factor (≤ 1.0). Applied when the calc had to back
     /// off feed to stay within the spindle's power envelope.
@@ -896,9 +895,8 @@ pub enum FeedsWarning {
     ///
     /// A stickout above 4 x D gives the share 0.88. A stickout above 6 x D
     /// gives 0.75. The rule is a repo rule and it is unsourced. Since Q7 the
-    /// feed does not take the share: Suggest pass 6b lowers the load target
-    /// to `aggressiveness × factor`, so the depth per pass and the stepover
-    /// get smaller and the chipload stays. The warning is the visible record.
+    /// feed does not take the share, and the chipload stays. The warning is
+    /// the visible record.
     LongToolDerate {
         /// The tool stickout from the holder (mm).
         stickout_mm: f64,
@@ -1725,9 +1723,8 @@ const LD_MODERATE_SHARE: f64 = 0.88;
 
 /// The long-tool share of the load target for a stickout and a diameter
 /// (ruling R4 Q7, 2026-09-24): 0.75 above 6 x D, 0.88 above 4 x D, else 1.0.
-/// A repo rule with no source. `feeds::calculate` Step 5b reports it and
-/// Suggest pass 6b multiplies the aggressiveness by it. It never multiplies
-/// the feed.
+/// A repo rule with no source. `feeds::calculate` Step 5b reports it. It
+/// never multiplies the feed.
 #[must_use]
 pub fn long_tool_load_share(stickout_mm: f64, diameter_mm: f64) -> f64 {
     if !(stickout_mm.is_finite() && diameter_mm.is_finite()) || diameter_mm <= 0.0 {
@@ -2451,9 +2448,8 @@ pub fn calculate(input: &FeedsInput) -> FeedsResult {
 
     // --- Step 5b: Setup derates ---
     // The long-tool (L/D) share. Ruling R4 Q7 (2026-09-24): a long tool
-    // bends more under force, and force is what the aggressiveness dial
-    // holds, so the share lowers the dial's load target in Suggest pass 6b.
-    // The feed does NOT take it. The warning is the visible record.
+    // bends more under force. The feed does NOT take the share. The warning
+    // is the visible record.
     let ld_factor = if let Some(overhang) = input.setup.tool_overhang_mm {
         let ld_ratio = overhang / d;
         let factor = long_tool_load_share(overhang, d);
@@ -2492,9 +2488,8 @@ pub fn calculate(input: &FeedsInput) -> FeedsResult {
     // fraction. Until R4 it was `power_at_rpm × safety_factor`, and Step 9
     // multiplied the feed by the same factor, so this step had to state its
     // clamp on a "commanded" axis (F-2, R1). With the factor gone the raw
-    // feed IS the commanded feed, and there is one axis. The margin is the
-    // aggressiveness dial: Suggest pass 6b holds the predicted power at or
-    // below `aggressiveness × P0`.
+    // feed IS the commanded feed, and there is one axis. No load margin
+    // scales the ceiling (D9, 2026-11-04, removed the machine dial).
     //
     // Measured before R4 (tests/power_ceiling_parity_f2.rs): the branch
     // fires on Ø12 slots in Jarrah and Ipe, where the edge term is largest.
@@ -2938,10 +2933,9 @@ pub fn calculate(input: &FeedsInput) -> FeedsResult {
     //
     // Until R4 this step multiplied the feed, the plunge and the ramp by
     // `machine.safety_factor` (0.75), the "hidden 25 %". The factor is gone.
-    // The feed ships the band chipload times the published depth ladder; the
-    // aggressiveness dial holds the LOAD through the engagement (Suggest pass
-    // 6b). The plunge takes no factor either (ruling Q5): a plunge is
-    // full-width axial, so the dial has no engagement lever on it. The plunge
+    // The feed ships the band chipload times the published depth ladder. The
+    // plunge takes no factor either (ruling Q5): a plunge is full-width
+    // axial, so no engagement lever acts on it. The plunge
     // is the G10 rule of Step 8 at this feed. A drill cycle gives no value
     // here; Step 9c sets its plunge to the drill feed.
     let mut plunge_rate =

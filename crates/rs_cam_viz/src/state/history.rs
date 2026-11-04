@@ -151,7 +151,7 @@ pub struct UndoHistory {
     /// draft that predates it.
     pub stock_draft: Option<StockConfig>,
     /// WP6 — the machine panel's scratch copy. One draft serves the
-    /// specs grid, the aggressiveness slider and the kinematics grid;
+    /// specs grid and the kinematics grid;
     /// each applies its own command from it.
     pub machine_draft: Option<MachineProfile>,
     /// WP6 — the setup panel's scratch copy, with the setup it belongs

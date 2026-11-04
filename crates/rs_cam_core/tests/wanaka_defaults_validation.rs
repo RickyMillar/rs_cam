@@ -20,9 +20,9 @@ use rs_cam_core::machine::MachineProfile;
 use rs_cam_core::material::{Material, WoodSpecies};
 
 /// The Wanaka100 machine profile (Generic Wood Router): 0.8 kW
-/// constant power, 8k–24k spindle, `adaptive_woc_factor = 0.20`,
-/// aggressiveness 0.85 since ruling R4 (it carried `safety_factor = 0.75`
-/// in the assessment session).
+/// constant power, 8k–24k spindle, `adaptive_woc_factor = 0.20` (it
+/// carried `safety_factor = 0.75` in the assessment session; ruling R4
+/// removed it, and D9 removed the aggressiveness dial).
 fn wanaka_machine() -> MachineProfile {
     MachineProfile::generic_wood_router()
 }

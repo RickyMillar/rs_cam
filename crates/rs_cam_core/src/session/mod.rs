@@ -1740,8 +1740,7 @@ pub struct SimulationOptions {
     /// default — Fusion HSM 100 %). `0.7` = back off 30 % for
     /// safety margin. `1.1` = push 10 % past the limit (NOT
     /// recommended; chipload-min still applies). Ignored when
-    /// `modulation_strategy == BandMid`. This is not the machine dial
-    /// `MachineProfile::aggressiveness` (ruling R4 Q6, 2026-09-24).
+    /// `modulation_strategy == BandMid` (ruling R4 Q6, 2026-09-24).
     pub modulation_feed_scale: f64,
 }
 

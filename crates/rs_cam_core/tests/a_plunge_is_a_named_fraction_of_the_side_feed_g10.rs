@@ -230,9 +230,7 @@ fn re_derived(warnings: &[SuggestWarning]) -> Vec<(f64, f64, PlungeBinding)> {
             | SuggestWarning::FeedClampedToChiploadFloor { .. }
             | SuggestWarning::PowerRecheckedAfterRescale { .. }
             | SuggestWarning::CutGeometryFieldNotHeld { .. }
-            | SuggestWarning::EngagementReducedForAggressiveness { .. }
             | SuggestWarning::RpmLoweredForFeedCeiling { .. }
-            | SuggestWarning::AggressivenessNotApplied { .. }
             | SuggestWarning::RampFeed { .. } => None,
         })
         .collect()

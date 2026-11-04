@@ -69,9 +69,8 @@ pub struct ToolpathDiagnoseInputs<'a> {
     /// pre-sim heuristic hints are emitted.
     pub feeds_result: Option<&'a FeedsResult>,
     /// The records of the Suggest run behind this recipe. When present,
-    /// each record that carries a rule id (ruling R4: the aggressiveness
-    /// record, `feeds.aggressiveness_engagement`) becomes a diagnostic, so
-    /// no Suggest calculation is invisible. `None` when the caller has no
+    /// each record that carries a rule id (`project.outside_envelope`)
+    /// becomes a diagnostic, so no Suggest calculation is invisible. `None` when the caller has no
     /// Suggest run in hand.
     pub suggest_warnings: Option<&'a [SuggestWarning]>,
     /// Sim-backed verdict for this toolpath. When present, supersedes
@@ -110,7 +109,7 @@ pub struct ToolpathDiagnoseInputs<'a> {
 /// 2. stale-default defects (per-rule, carries a fix)
 /// 3. feeds-calculator warnings (`FeedsResult::warnings`)
 /// 4. feeds heuristic hints (`feed_vs_lut`, etc.)
-/// 5. Suggest records with a rule id (`feeds.aggressiveness_engagement`)
+/// 5. Suggest records with a rule id (`project.outside_envelope`)
 /// 6. tool-load gates (sim-backed)
 /// 7. generation-time findings (standing material)
 ///
