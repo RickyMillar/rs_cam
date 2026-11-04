@@ -84,6 +84,9 @@ pub fn draw(ctx: &egui::Context, state: &AppState, events: &mut Vec<AppEvent>) -
             ui.add_space(4.0);
 
             let sim = &state.simulation;
+            // K6 (ruling Q6, the agreed mock): the export warnings. The
+            // rapid-collision card and the chip row read this one list.
+            let warnings = crate::io::export::preflight_warnings(state.session(), &state.gui, sim);
 
             // --- Operations check ---
             let (ops_status, computed_count, enabled_count) = readiness::operations_check(state);
@@ -139,14 +142,10 @@ pub fn draw(ctx: &egui::Context, state: &AppState, events: &mut Vec<AppEvent>) -
             );
 
             // --- Rapid collisions check ---
-            let rapid_status = readiness::rapid_collision_check(state);
-            let rapid_detail = if !sim.has_results() {
-                "Run simulation first".to_owned()
-            } else if sim.checks.rapid_collisions.is_empty() {
-                "None detected".to_owned()
-            } else {
-                format!("{} detected", sim.checks.rapid_collisions.len())
-            };
+            // Q6: the count of `project.rapid_collision` rows (toolpaths),
+            // the unit of the MCP export text and the CLI summary.
+            let rapid_status = readiness::rapid_collision_check(state, &warnings);
+            let rapid_detail = readiness::rapid_collision_detail(state, &warnings);
             check_card(
                 ui,
                 rapid_status,
@@ -255,13 +254,12 @@ pub fn draw(ctx: &egui::Context, state: &AppState, events: &mut Vec<AppEvent>) -
             // K6 (ruling Q6, the agreed mock): one chip row, then the
             // button row. No finding refuses; an op with no current result
             // is in the Part chip (`export.op_left_out`).
-            let warnings = crate::io::export::preflight_warnings(state.session(), &state.gui, sim);
             draw_danger_chips(ui, &warnings);
             // The holder check of the GUI (`RunCollisionCheck`) is not in the
-            // session's simulation, so its count asks for the click too.
-            let asks_a_click = export_asks_a_click(&warnings)
-                || sim.checks.holder_collision_count > 0
-                || !sim.checks.rapid_collisions.is_empty();
+            // session's simulation, so its count asks for the click too. A
+            // rapid collision is a `project.rapid_collision` row (Q6).
+            let asks_a_click =
+                export_asks_a_click(&warnings) || sim.checks.holder_collision_count > 0;
             ui.add_space(4.0);
 
             ui.horizontal(|ui| {

@@ -106,7 +106,10 @@ pub fn draw(ui: &mut egui::Ui, state: &AppState, events: &mut Vec<AppEvent>) {
     // headline verdict is the worst of them.
     let (ops_status, computed, enabled) = readiness::operations_check(state);
     let sim_status = readiness::simulation_check(state);
-    let rapid_status = readiness::rapid_collision_check(state);
+    // Q6: the rapid-collision row reads the export warnings, the rows the
+    // pre-flight card, the MCP export text and the CLI summary give.
+    let export_warnings = crate::io::export::preflight_warnings(state.session(), &state.gui, sim);
+    let rapid_status = readiness::rapid_collision_check(state, &export_warnings);
     let holder_status = readiness::holder_clearance_check(state);
     let report = readiness::load_report(state);
     let load_status = readiness::tool_load_check(&report);
@@ -167,13 +170,7 @@ pub fn draw(ui: &mut egui::Ui, state: &AppState, events: &mut Vec<AppEvent>) {
             };
             check_row(ui, sim_status, "Simulation", &sim_detail);
 
-            let rapid_detail = if !sim.has_results() {
-                "Run simulation first".to_owned()
-            } else if sim.checks.rapid_collisions.is_empty() {
-                "None detected".to_owned()
-            } else {
-                format!("{} detected", sim.checks.rapid_collisions.len())
-            };
+            let rapid_detail = readiness::rapid_collision_detail(state, &export_warnings);
             check_row(ui, rapid_status, "Rapid collisions", &rapid_detail);
 
             // F2.12 — one derivation, shared with the pre-flight gate. This

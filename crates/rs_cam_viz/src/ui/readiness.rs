@@ -36,6 +36,7 @@ use crate::state::AppState;
 use crate::state::runtime::GuiState;
 use crate::state::simulation::HolderCheckScope;
 use rs_cam_core::ToolpathId;
+use rs_cam_core::gcode::ExportWarning;
 use rs_cam_core::session::{ProjectSession, Query, QueryAnswer, ToolpathCycleTimeArgs};
 use rs_cam_core::stock::simulation_cut::SimulationCutTrace;
 use rs_cam_core::tool_load::ToolLoadReport;
@@ -184,15 +185,43 @@ pub fn simulation_check(state: &AppState) -> CheckStatus {
     }
 }
 
-/// Rapid-traverse collisions — Fail on any, Warning until a sim has run.
-pub fn rapid_collision_check(state: &AppState) -> CheckStatus {
-    let sim = &state.simulation;
-    if !sim.has_results() {
+/// Q6 (feeds contract P8): the count of toolpaths with a rapid collision.
+/// It counts the core `project.rapid_collision` rows of the export
+/// warnings (one row per toolpath). The MCP export text and the CLI
+/// `summary.json` give the same rows.
+#[must_use]
+pub fn rapid_collision_rows(warnings: &[ExportWarning]) -> usize {
+    warnings
+        .iter()
+        .filter(|w| w.id == rs_cam_core::diagnostics::ids::PROJECT_RAPID_COLLISION)
+        .count()
+}
+
+/// Rapid-traverse collisions: Fail on any `project.rapid_collision` row,
+/// Warning until a simulation has run. `warnings` are the pre-flight
+/// warnings (`io::export::preflight_warnings`), so the card reads the
+/// rows the export names (Q6).
+pub fn rapid_collision_check(state: &AppState, warnings: &[ExportWarning]) -> CheckStatus {
+    if !state.simulation.has_results() {
         CheckStatus::Warning
-    } else if sim.checks.rapid_collisions.is_empty() {
+    } else if rapid_collision_rows(warnings) == 0 {
         CheckStatus::Pass
     } else {
         CheckStatus::Fail
+    }
+}
+
+/// The detail text of the rapid-collision row. The pre-flight card and the
+/// Readiness panel read it. The unit is the toolpath (Q6), not the move.
+/// The move list stays in the Simulation workspace.
+pub fn rapid_collision_detail(state: &AppState, warnings: &[ExportWarning]) -> String {
+    if !state.simulation.has_results() {
+        return "Run simulation first".to_owned();
+    }
+    match rapid_collision_rows(warnings) {
+        0 => "None detected".to_owned(),
+        1 => "1 toolpath".to_owned(),
+        n => format!("{n} toolpaths"),
     }
 }
 
@@ -225,9 +254,9 @@ pub fn rapid_collision_check(state: &AppState) -> CheckStatus {
 /// measured slightly earlier, and a feed-rate edit cannot move a holder out
 /// of a clamp. De-escalating it to `Warning` would turn red into amber on the
 /// one row an operator scans for red, so it stays `Fail` and the detail says
-/// the evidence is old. This also keeps the row and the export gate in
-/// agreement: `preflight.rs` computes `has_failures` from the raw collision
-/// count, which a stale strike still trips.
+/// the evidence is old. This also keeps the row and the Export button in
+/// agreement: `preflight.rs` gives the button the Danger style on the raw
+/// holder collision count, and a stale strike keeps that count.
 ///
 /// **F2.13, G-HOLDERSCOPE — the row must not overstate its SCOPE either.**
 /// `AppController::request_collision_check` examines ONE toolpath: the first

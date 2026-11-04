@@ -45,8 +45,8 @@ the full entry point. Read it first, then the files it names.
 
 0. Done: the P10 integration run finished after the commit. 31 targets fail, all on the
    known-red list in "Not in a phase"; no P10 regression.
-1. **P8 Q6** (small, GUI): build `phases/P8_Q6_MOCK.md` as drawn. Sentry
-   `a_collision_is_the_same_warning_on_every_surface_q6`. No new GUI text.
+1. DONE 2026-11-05: **P8 Q6** (`phases/P8_Q6_MOCK.md` as drawn; sentry
+   `a_collision_is_the_same_warning_on_every_surface_q6`; no new GUI text).
 2. **P11a** (steps 2 and 3, L4 and L5): the envelope defects D-A and D-B, then the engaged-edge
    force as a method on `feeds/engagement.rs` `Engagement` (peak for lateral force and
    deflection, mean for power). Decide the two P9 open diameters (`phases/P11.md` "Open from
@@ -109,6 +109,10 @@ the full entry point. Read it first, then the files it names.
   ladder fault).
 - P8: the warning keeps the name `RpmLoweredForFeedCeiling` when arm S ships; the two plunge
   terms name two rows; a material with no force line counts an arm as inside.
+- P8 Q6: the Readiness panel now builds the export warnings each frame (new frame cost).
+  The status bar, the live overlay, the overlay registry and `issue_triage` still read the GUI
+  move list `sim.checks.rapid_collisions` (the Simulation workspace keeps the move count, as
+  the mock states). The card's "simulation ran" test reads GUI state, not the session.
 - P10: the calculator's ap factors put the add-door default outside the repo's own envelope
   (option (a) measured: Rigidity 118 -> 134, VendorAxial 10 -> 33 FM1 cells), so the axial
   defaults scale today's 6 mm values instead. The radial and axial tables are Unsourced.
@@ -185,7 +189,7 @@ Those will already be fairly de-rated so our later deratings will just cut it do
 | 5d Plot review 2 | `phases/P5d.md` | DONE 2026-11-04 (every limit in view draws and is named; range holds every flat depth limit; one mark rule on both charts: white = setpoint, grey ghost = stored during a draft, quiet ACCENT = recommendation; names Vendor DOC k×D / Rigidity DOC / Slot DOC / Cut length; D tick paints, an off-step D names itself alone; ic1 3D Rough Passes cap 34 -> 35, one more depth tick row; operator approved the live screenshot) | see `git log` | |
 | 6 K3 `ToolFact` | `phases/P6.md` | DONE 2026-11-04 (A: type, readers, builder; B: private fields, setters; C: `ToolFact` storage, TOML forms, Q9 refusal at all three loaders, doors, 136 files migrated; no number and no G-code byte moved; F201 149 -> 154) | see `git log` | |
 | 7 K5 feasibility rules | `phases/P7.md` | DONE 2026-11-04: A, B, A2 (D12 required facts), C (3D Rough cut, link and terrain ramp at the limit slope; wanaka op 1 core strikes 37 -> 0) | see `git log` | C |
-| 8 Q1 / Q6 / Q8 | `phases/P8.md` | Q1, Q8 DONE 2026-11-05; Q6 waits for the operator (`phases/P8_Q6_MOCK.md`) | see `git log` | Q6 |
+| 8 Q1 / Q6 / Q8 | `phases/P8.md` | DONE 2026-11-05 (Q1, Q8; Q6 as the agreed mock: the rapid-collision card counts the core `project.rapid_collision` rows, one per toolpath, on the pre-flight and the Readiness panel; sentry `a_collision_is_the_same_warning_on_every_surface_q6`) | see `git log` | |
 | 9 K7 one engagement | `phases/P9.md` | DONE 2026-11-04 (one `Engagement`; pre-sim power is the worst case with its name; the simulation is placed on the envelope, not fed back; open items in the card) | see `git log` | |
 | 10 Tool-derived geometry defaults (D8) | `phases/P10.md` | DONE 2026-11-05 (no default without a tool; radial = the calculator's own width; axial k x D from today's 6 mm values; FM1 353 cells; G-code byte-identical) | 84bfeab68 | |
 | 11 Force model, chip first, feed-driven limits | `phases/P11.md` | Step 0 DONE 2026-11-04 (`research_p11_step0/`: verdict FAIL against the preregistered rule; best group W 67 %, best group D 7.3 %, wood force candidates 0 / 418; 21 claims hold). Steps 1-6 NOT STARTED; D11 ruled; decisions L1-L9 in the card | see `git log` | P11a, then P11b |
