@@ -178,6 +178,24 @@ Those will already be fairly de-rated so our later deratings will just cut it do
 | D12 | Unknown centre cutting / V tip. **Ruled 2026-11-04 (operator): they are required inputs; only Stated (or a printed Catalogue row) counts; an op with an Unknown or Estimated fact stops with a reason.** PlungeKnown is deleted from P7. | P7 | RULED |
 | D9 | The machine aggressiveness dial. **Ruled 2026-11-04 (operator): remove it** ("before it was a generic slider to represent machine rigidity"); machine rigidity stays in `machine::RigidityProfile`. Before removal: list every reader (`rg -il aggressiveness crates`: feed modulation, tool_load verdict, machine, diagnostics, save) and show which numbers it still moves; a reader that moves a number reads `RigidityProfile` instead or its change is named. Old files: the key joins the retired keys. | P5b follow-up | DONE 2026-11-04 (`phases/D9.md`: no number moved) |
 
+
+### D13: derate audit rulings (operator, 2026-11-05; questions in `research_derate/REPORT.md` section 6)
+
+1. Depth margin: a typed margin needs more than one source, not only Shapeoko. The operator
+   states that 0.2 is the Fusion 360 default (an operator statement; find a printed source).
+2. Pocket stepover: `woc_roughing_factor` is hard for people to understand. Prefer a stepover
+   computed from the rigidity model (as the other limits are), not a typed factor.
+3. Slot cap: move it into `RigidityProfile` (operator: "sounds like it should").
+4. The 60 formula-chip cells: a law fitted to the vendor rows.
+5. Load the `industrial_only/` rows. Intent: the vendor rows are baselines; the math must agree
+   with them (same as D11). They are evidence for the model, not a lookup to ship from.
+6. The two rigidity default sets (0.25 / 2.0 / 0.25 against 0.20 / 1.5 / 0.20): an agent
+   researches it (`research_derate/RIGIDITY_DEFAULTS.md`).
+7. Lineage: store it in the project file, if it is not a memory sink. Measure the size first.
+
+Lead plan: P11b takes items 1-3 with L6 and L8. A new phase P13 (after P11b, before P12) takes
+items 4, 5, 7 (the lineage trace) and the result of 6.
+
 ## Phases
 
 | Phase | Card | State | Commit | Next action |
