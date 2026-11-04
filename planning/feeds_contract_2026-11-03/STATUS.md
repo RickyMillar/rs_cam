@@ -43,12 +43,8 @@ the full entry point. Read it first, then the files it names.
 
 ### Order for the next session
 
-0. **Check the P10 integration run first.** The lead's non-heavy core integration run was
-   still running at the hand-off. Its list of failed targets lands in
-   `/tmp/claude-1001/-home-ricky-personal-repos-rs-cam/de8a2fb6-ce6f-4bbe-b983-2a7e0fcb0153/scratchpad/integP10b.txt`
-   (if the file is gone, run `scripts/cargo_lane.sh test -p rs_cam_core -q --tests --no-fail-fast`;
-   it took about 30 minutes on a shared machine). Compare it with the known-red list in "Not in a
-   phase". A target not on that list is a P10 regression: fix it before the next phase.
+0. Done: the P10 integration run finished after the commit. 31 targets fail, all on the
+   known-red list in "Not in a phase"; no P10 regression.
 1. **P8 Q6** (small, GUI): build `phases/P8_Q6_MOCK.md` as drawn. Sentry
    `a_collision_is_the_same_warning_on_every_surface_q6`. No new GUI text.
 2. **P11a** (steps 2 and 3, L4 and L5): the envelope defects D-A and D-B, then the engaged-edge
