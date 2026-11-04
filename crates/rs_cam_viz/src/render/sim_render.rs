@@ -631,11 +631,11 @@ impl ToolGeometry {
         };
         Self {
             radius: (tool.diameter / 2.0) as f32,
-            cutting_length: tool.cutting_length as f32,
+            cutting_length: tool.cutting_length_planning_mm() as f32,
             shape,
             corner_radius: tool.corner_radius as f32,
             included_angle: tool.included_angle as f32,
-            taper_half_angle: tool.taper_half_angle as f32,
+            taper_half_angle: tool.taper_half_angle_planning_deg() as f32,
         }
     }
 }

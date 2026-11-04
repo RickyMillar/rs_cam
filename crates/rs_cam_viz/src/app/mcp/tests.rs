@@ -55,7 +55,7 @@ fn narration_tool_lookup_refuses_where_the_parent_took_another_tool() {
          nothing",
     );
     assert!(
-        (parent.diameter - 1.0).abs() > 4.0 && parent.flute_count != 4,
+        (parent.diameter - 1.0).abs() > 4.0 && parent.flute_count_planning() != 4,
         "the fixture must make the substitution VISIBLE — a fallback to a tool with the \
          same geometry would be harmless and would not demonstrate the defect",
     );

@@ -75,11 +75,11 @@ fn tool_of(kind: ToolType, diameter: f64) -> ToolConfig {
     t.cutting_length = (diameter * 3.0).max(6.0);
     t.shank_diameter = diameter.max(3.175);
     t.shaft_diameter = diameter.max(3.175);
-    t.stickout = t.cutting_length + 6.0;
+    t.stickout = t.cutting_length_planning_mm() + 6.0;
     if matches!(kind, ToolType::TaperedBallNose) {
         t.taper_half_angle = 7.0;
         t.shank_diameter = (diameter + 3.0).max(6.0);
-        t.shaft_diameter = t.shank_diameter;
+        t.shaft_diameter = t.shank_diameter_planning_mm();
     }
     t
 }

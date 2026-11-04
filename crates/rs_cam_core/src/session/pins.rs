@@ -627,8 +627,10 @@ impl ProjectSession {
         tool.diameter = diameter;
         tool.shaft_diameter = diameter;
         tool.shank_diameter = diameter;
-        tool.cutting_length = tool.cutting_length.max(reach);
-        tool.stickout = tool.stickout.max(tool.cutting_length);
+        tool.cutting_length = tool.cutting_length_planning_mm().max(reach);
+        tool.stickout = tool
+            .stickout_planning_mm()
+            .max(tool.cutting_length_planning_mm());
         tool.tool_number = self.tools.iter().map(|t| t.tool_number).max().unwrap_or(0) + 1;
         tool.name = if tool.tool_type == ToolType::VBit {
             format!(

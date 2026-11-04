@@ -252,7 +252,7 @@ fn tool_of(kind: ToolType, diameter: f64) -> ToolConfig {
     t.cutting_length = (diameter * 3.0).max(12.0);
     t.shank_diameter = diameter.max(3.0);
     t.shaft_diameter = diameter.max(3.0);
-    t.stickout = t.cutting_length + 8.0;
+    t.stickout = t.cutting_length_planning_mm() + 8.0;
     if matches!(kind, ToolType::VBit) {
         t.included_angle = 60.0;
     }

@@ -174,7 +174,7 @@ pub fn cut_efficiency(
     let radial_width_mm = result.radial_width_mm;
     let axial_doc_mm = result.axial_depth_mm;
 
-    let advance_per_tooth_mm = commanded_advance_per_tooth_mm(result, tool.flute_count)?;
+    let advance_per_tooth_mm = commanded_advance_per_tooth_mm(result, tool.flute_count_planning())?;
     let immersion_rad = force::immersion_angle(radial_width_mm, diameter_mm / 2.0);
 
     let specific_energy_j_per_mm3 = specific_energy(

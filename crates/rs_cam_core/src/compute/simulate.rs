@@ -290,7 +290,7 @@ pub fn entry_tool_fields(
 ) -> Result<(Arc<ToolDefinition>, u32, String), crate::tool::ToolGeometryError> {
     Ok((
         Arc::new(crate::compute::cutter::build_cutter(tool)?),
-        tool.flute_count,
+        tool.flute_count_planning(),
         tool.summary(),
     ))
 }

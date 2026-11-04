@@ -75,10 +75,9 @@ pub fn tapered_cutter(
 /// Ball-nose `ToolConfig` at `ToolId(0)`, everything but the diameter left at
 /// `new_default`.
 pub fn ball_tool_config(diameter_mm: f64) -> ToolConfig {
-    ToolConfig {
-        diameter: diameter_mm,
-        ..ToolConfig::new_default(ToolId::from_raw(0), ToolType::BallNose)
-    }
+    ToolConfig::builder(ToolId::from_raw(0), ToolType::BallNose)
+        .diameter(diameter_mm)
+        .build()
 }
 
 /// Tapered-ball `ToolConfig` — the class where `radius()` (envelope) and
@@ -89,12 +88,11 @@ pub fn tapered_ball_tool_config(
     taper_half_angle_deg: f64,
     shaft_diameter_mm: f64,
 ) -> ToolConfig {
-    ToolConfig {
-        diameter: tip_diameter_mm,
-        taper_half_angle: taper_half_angle_deg,
-        shaft_diameter: shaft_diameter_mm,
-        ..ToolConfig::new_default(ToolId::from_raw(0), ToolType::TaperedBallNose)
-    }
+    ToolConfig::builder(ToolId::from_raw(0), ToolType::TaperedBallNose)
+        .diameter(tip_diameter_mm)
+        .taper_half_angle_deg(taper_half_angle_deg)
+        .shaft_mm(shaft_diameter_mm)
+        .build()
 }
 
 /// Flat end mill `ToolConfig` at `ToolId(0)`.
@@ -103,8 +101,7 @@ pub fn tapered_ball_tool_config(
 /// shank/stickout/flute dimensions the F-### sentries depend on; this one
 /// changes nothing but the diameter.
 pub fn endmill_tool_config(diameter_mm: f64) -> ToolConfig {
-    ToolConfig {
-        diameter: diameter_mm,
-        ..ToolConfig::new_default(ToolId::from_raw(0), ToolType::EndMill)
-    }
+    ToolConfig::builder(ToolId::from_raw(0), ToolType::EndMill)
+        .diameter(diameter_mm)
+        .build()
 }

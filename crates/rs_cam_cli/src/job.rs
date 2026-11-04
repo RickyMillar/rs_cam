@@ -1041,7 +1041,7 @@ pub fn execute_job(job: &JobFile, job_dir: &Path, debug_trace: bool) -> Result<J
         );
         let tool_config = tool_config_from_def(tool_def, &op.tool)?;
         let phase_cutter = phase_cutter(&tool_config)?;
-        let flute_count = tool_config.flute_count;
+        let flute_count = tool_config.flute_count_planning();
         phases.push(OpResult {
             toolpath: tp,
             cutter: phase_cutter,
@@ -1851,8 +1851,11 @@ mod tests {
         // The job cutter is the session tool: the same stickout and flutes.
         let tool = tool_config_from_def(&end_mill_def(), "t").unwrap();
         let cutter = cutter_of(&end_mill_def()).unwrap();
-        assert_eq!(cutter.stickout.to_bits(), tool.stickout.to_bits());
-        assert_eq!(cutter.flute_count, tool.flute_count);
+        assert_eq!(
+            cutter.stickout.to_bits(),
+            tool.stickout_planning_mm().to_bits()
+        );
+        assert_eq!(cutter.flute_count, tool.flute_count_planning());
     }
 
     #[test]

@@ -85,26 +85,27 @@ pub fn diameters(kind: ToolType) -> &'static [f64] {
 
 /// The FM1 tool builder.
 pub fn tool_of(kind: ToolType, diameter: f64, flutes: u32) -> ToolConfig {
-    let mut t = ToolConfig::new_default(ToolId::from_raw(1), kind);
-    t.diameter = diameter;
-    t.flute_count = flutes;
-    t.cutting_length = (diameter * 3.0).max(12.0);
-    t.shank_diameter = diameter.max(3.0);
-    t.shaft_diameter = diameter.max(3.0);
-    t.stickout = t.cutting_length + 8.0;
+    let cutting_length = (diameter * 3.0).max(12.0);
+    let mut t = ToolConfig::builder(ToolId::from_raw(1), kind)
+        .diameter(diameter)
+        .flutes(flutes)
+        .flute_mm(cutting_length)
+        .shank_mm(diameter.max(3.0))
+        .shaft_mm(diameter.max(3.0))
+        .stickout_mm(cutting_length + 8.0);
     if matches!(kind, ToolType::BullNose) {
-        t.corner_radius = diameter * 0.15;
-        t.corner_radius_mm = diameter * 0.15;
+        t = t
+            .corner_radius(diameter * 0.15)
+            .corner_radius_mm(diameter * 0.15);
     }
     if matches!(kind, ToolType::TaperedBallNose) {
-        t.taper_half_angle = 7.0;
-        t.shank_diameter = (diameter + 3.0).max(6.0);
-        t.shaft_diameter = t.shank_diameter;
+        let shank = (diameter + 3.0).max(6.0);
+        t = t.taper_half_angle_deg(7.0).shank_mm(shank).shaft_mm(shank);
     }
     if matches!(kind, ToolType::VBit) {
-        t.included_angle = 60.0;
+        t = t.included_angle_deg(60.0);
     }
-    t
+    t.build()
 }
 
 /// The FM1 stock.

@@ -68,7 +68,7 @@ pub fn build_drill_op_for_config(
     use crate::ops::drill_op::{DrillHole, DrillOp, HoleSource, ToolProfile};
 
     let tool_diameter_mm = tool_def.radius() * 2.0;
-    let flute_count = tool_cfg.flute_count;
+    let flute_count = tool_cfg.flute_count_planning();
     // The prologue's two steps: the view, then the hole fit (P6.5, O-3).
     let holes_of = || {
         let item_use = op.capabilities().item_use;

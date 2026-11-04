@@ -126,7 +126,7 @@ impl RsCamApp {
                     .spindle_rpm()
                     .unwrap_or(state.session().post_config().spindle_speed),
             ),
-            flute_count: Some(tool_config.flute_count),
+            flute_count: Some(tool_config.flute_count_planning()),
             // B7 divergence 1: the shared expression. Core used op-type
             // alone (blind to a generator that emits Drilling moves without
             // declaring a drill op type); this side used op-type OR ANY

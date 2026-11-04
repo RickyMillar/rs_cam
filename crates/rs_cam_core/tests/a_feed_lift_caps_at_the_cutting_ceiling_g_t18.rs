@@ -119,9 +119,9 @@ fn pocket_rough(machine: &MachineProfile, tool: &ToolConfig) -> FeedsResult {
     calculate(&FeedsInput {
         tool_series: None,
         tool_diameter: tool.diameter,
-        flute_count: tool.flute_count,
-        flute_length: tool.cutting_length,
-        shank_diameter: Some(tool.shank_diameter),
+        flute_count: tool.flute_count_planning(),
+        flute_length: tool.cutting_length_planning_mm(),
+        shank_diameter: Some(tool.shank_diameter_planning_mm()),
         tool_geometry: ToolGeometryHint::Flat,
         material: &material,
         machine,
@@ -133,7 +133,7 @@ fn pocket_rough(machine: &MachineProfile, tool: &ToolConfig) -> FeedsResult {
         target_scallop_mm: None,
         vendor_lut: Some(embedded_vendor_lut()),
         setup: SetupContext {
-            tool_overhang_mm: Some(tool.stickout),
+            tool_overhang_mm: Some(tool.stickout_planning_mm()),
         },
         spindle_strategy: SpindleStrategy::MatchChart,
     })
@@ -145,9 +145,9 @@ fn drill_cycle(machine: &MachineProfile, tool: &ToolConfig) -> FeedsResult {
     calculate(&FeedsInput {
         tool_series: None,
         tool_diameter: tool.diameter,
-        flute_count: tool.flute_count,
-        flute_length: tool.cutting_length,
-        shank_diameter: Some(tool.shank_diameter),
+        flute_count: tool.flute_count_planning(),
+        flute_length: tool.cutting_length_planning_mm(),
+        shank_diameter: Some(tool.shank_diameter_planning_mm()),
         tool_geometry: ToolGeometryHint::Flat,
         material: &material,
         machine,
@@ -159,7 +159,7 @@ fn drill_cycle(machine: &MachineProfile, tool: &ToolConfig) -> FeedsResult {
         target_scallop_mm: None,
         vendor_lut: Some(embedded_vendor_lut()),
         setup: SetupContext {
-            tool_overhang_mm: Some(tool.stickout),
+            tool_overhang_mm: Some(tool.stickout_planning_mm()),
         },
         spindle_strategy: SpindleStrategy::MatchChart,
     })

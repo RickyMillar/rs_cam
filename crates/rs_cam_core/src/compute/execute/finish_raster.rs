@@ -364,13 +364,14 @@ pub(crate) fn generate_waterline(
     // else the helix keeps every ring (the W1 ladder).
     let wall = match (ctx.material, ctx.rest_axial_step_mm, cfg.spindle_rpm) {
         (Some(material), Some(max_step_mm), Some(rpm))
-            if rpm > 0 && ctx.tool_cfg.flute_count > 0 =>
+            if rpm > 0 && ctx.tool_cfg.flute_count_planning() > 0 =>
         {
             Some(WallInputs {
                 material,
                 max_step_mm,
                 // The feed per tooth: feed / (rpm x flutes).
-                fz_mm: params.feed_rate / (f64::from(rpm) * f64::from(ctx.tool_cfg.flute_count)),
+                fz_mm: params.feed_rate
+                    / (f64::from(rpm) * f64::from(ctx.tool_cfg.flute_count_planning())),
             })
         }
         _ => None,

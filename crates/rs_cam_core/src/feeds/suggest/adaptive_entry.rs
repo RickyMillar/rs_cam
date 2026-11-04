@@ -161,7 +161,7 @@ fn geometry_feed_factor(geom: ToolGeometryHint, tool: &ToolConfig, _ae_mm: f64, 
         geom,
         ap_mm,
         tool.diameter,
-        tool.shank_diameter,
+        tool.shank_diameter_planning_mm(),
     );
     crate::feeds::geometry::depth_tier_multiplier(ap_mm, ladder_d)
 }
@@ -288,7 +288,7 @@ pub(super) fn rescale_feed_to_final_geometry(
         return warnings;
     }
 
-    let flutes = f64::from(tool.flute_count.max(1));
+    let flutes = f64::from(tool.flute_count_planning().max(1));
     // Work in advance per tooth where we can — see the RPM note above. When
     // the operation carries no RPM the terms cancel identically in feed units,
     // which is the same statement one algebraic step earlier.

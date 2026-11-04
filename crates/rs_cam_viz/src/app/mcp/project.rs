@@ -117,9 +117,9 @@ impl RsCamApp {
                     "diameter_mm": t.diameter,
                     "size_label": t.size_label(),
                     "size_units": t.effective_size_units(),
-                    "flutes": t.flute_count,
-                    "cutting_length_mm": t.cutting_length,
-                    "shank_diameter_mm": t.shank_diameter,
+                    "flutes": t.flute_count_planning(),
+                    "cutting_length_mm": t.cutting_length_planning_mm(),
+                    "shank_diameter_mm": t.shank_diameter_planning_mm(),
                 });
                 if let Some(obj) = row.as_object_mut() {
                     use crate::state::job::ToolType;
@@ -133,7 +133,7 @@ impl RsCamApp {
                         ToolType::TaperedBallNose => {
                             obj.insert(
                                 "taper_half_angle_deg".to_owned(),
-                                serde_json::json!(t.taper_half_angle),
+                                serde_json::json!(t.taper_half_angle_planning_deg()),
                             );
                             obj.insert(
                                 "shaft_diameter_mm".to_owned(),

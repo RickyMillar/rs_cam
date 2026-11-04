@@ -4,6 +4,9 @@ pub use crate::tool::size_units::SizeUnits;
 use crate::tool::size_units::{self, MM_PER_INCH};
 pub use crate::tool::{ToolDimension, ToolGeometryError};
 
+/// CONTRACT K3 (feeds contract P6): the tool-fact type lives in `tool_fact.rs`.
+pub use super::tool_fact::{CentreCutting, FactKind, ToolFact};
+
 /// The array of every variant of a unit enum, with a compile-time proof that
 /// the list is complete (F162). Write `all_variants!(Type: A, B, C)`; the
 /// macro gives `[Type::A, Type::B, Type::C]`. It also holds an exhaustive
@@ -529,6 +532,39 @@ impl ToolConfig {
         tool
     }
 
+    // ── K3 readers (feeds contract P6, decision E2) ────────────────────
+    //
+    // The value that planning uses for each tool fact. Commit A: each
+    // reader returns the field. Commit C stores a `ToolFact` and the
+    // reader gives the stated, catalogue or estimated value, else the
+    // legacy loader default. Read a fact through these readers, not
+    // through the field.
+
+    /// The stick-out (mm) that planning uses.
+    pub fn stickout_planning_mm(&self) -> f64 {
+        self.stickout
+    }
+
+    /// The flute (cutting) length (mm) that planning uses.
+    pub fn cutting_length_planning_mm(&self) -> f64 {
+        self.cutting_length
+    }
+
+    /// The shank diameter (mm) that planning uses.
+    pub fn shank_diameter_planning_mm(&self) -> f64 {
+        self.shank_diameter
+    }
+
+    /// The taper half-angle (degrees) that planning uses.
+    pub fn taper_half_angle_planning_deg(&self) -> f64 {
+        self.taper_half_angle
+    }
+
+    /// The flute count that planning uses.
+    pub fn flute_count_planning(&self) -> u32 {
+        self.flute_count
+    }
+
     /// F029 step 1: the one domain check of a tool record.
     ///
     /// Every door that creates or changes a tool calls it: the session
@@ -544,11 +580,11 @@ impl ToolConfig {
     pub fn validate(&self) -> Result<(), ToolGeometryError> {
         let d = self.diameter;
         ToolDimension::Diameter.check(d, d)?;
-        ToolDimension::CuttingLength.check(self.cutting_length, d)?;
+        ToolDimension::CuttingLength.check(self.cutting_length_planning_mm(), d)?;
         ToolDimension::HelixDeg.check(self.helix_deg, d)?;
-        ToolDimension::FluteCount.check(f64::from(self.flute_count), d)?;
-        ToolDimension::ShankDiameter.check(self.shank_diameter, d)?;
-        ToolDimension::Stickout.check(self.stickout, d)?;
+        ToolDimension::FluteCount.check(f64::from(self.flute_count_planning()), d)?;
+        ToolDimension::ShankDiameter.check(self.shank_diameter_planning_mm(), d)?;
+        ToolDimension::Stickout.check(self.stickout_planning_mm(), d)?;
         if let Some(geometry) = self.non_centre_cutting {
             ToolDimension::CentreCoreDiameterMm.check(geometry.centre_core_diameter_mm, d)?;
             ToolDimension::BladeProtrusionMm.check(geometry.blade_protrusion_mm, d)?;
@@ -559,7 +595,7 @@ impl ToolConfig {
             ToolType::BullNose => ToolDimension::CornerRadius.check(self.corner_radius, d),
             ToolType::VBit => ToolDimension::IncludedAngle.check(self.included_angle, d),
             ToolType::TaperedBallNose => {
-                ToolDimension::TaperHalfAngle.check(self.taper_half_angle, d)?;
+                ToolDimension::TaperHalfAngle.check(self.taper_half_angle_planning_deg(), d)?;
                 ToolDimension::ShaftDiameter.check(self.shaft_diameter, d)
             }
         }
@@ -572,7 +608,8 @@ impl ToolConfig {
     /// stick-out of 0 is "not stated" (the deflection gate abstains on it)
     /// and gives `false`.
     pub fn stickout_shorter_than_flute(&self) -> bool {
-        self.stickout > 0.0 && self.stickout < self.cutting_length
+        self.stickout_planning_mm() > 0.0
+            && self.stickout_planning_mm() < self.cutting_length_planning_mm()
     }
 
     /// The sentence of [`Self::stickout_shorter_than_flute`]. It names
@@ -581,7 +618,8 @@ impl ToolConfig {
         format!(
             "The stick-out (stickout = {} mm) is shorter than the flute (cutting_length = {} mm): \
              part of the flute is inside the collet. Check both values.",
-            self.stickout, self.cutting_length
+            self.stickout_planning_mm(),
+            self.cutting_length_planning_mm()
         )
     }
 
@@ -613,7 +651,7 @@ impl ToolConfig {
             },
             ToolType::TaperedBallNose => ToolGeometryHint::TaperedBall {
                 tip_radius: self.diameter / 2.0,
-                taper_angle_deg: self.taper_half_angle,
+                taper_angle_deg: self.taper_half_angle_planning_deg(),
             },
         }
     }
@@ -643,7 +681,7 @@ impl ToolConfig {
             ToolType::TaperedBallNose => format!(
                 "{} {size}, {:.1}\u{00B0} half-angle",
                 self.tool_type.label(),
-                self.taper_half_angle
+                self.taper_half_angle_planning_deg()
             ),
             ToolType::EndMill | ToolType::BallNose | ToolType::BullNose | ToolType::VBit => {
                 format!("{} {size}", self.tool_type.label())
@@ -688,7 +726,7 @@ impl ToolConfig {
             ToolType::TaperedBallNose => format!(
                 "Tapered ball R{} \u{00B7} {:.1}\u{00B0}",
                 length(d / 2.0),
-                self.taper_half_angle
+                self.taper_half_angle_planning_deg()
             ),
         }
     }
@@ -794,8 +832,8 @@ impl ToolConfig {
     /// The diameter above the cutting tip that the size label calls the
     /// shank: the collet shank when it is set, else the cone base.
     fn upper_diameter_mm(&self) -> f64 {
-        if self.shank_diameter > 0.0 {
-            self.shank_diameter
+        if self.shank_diameter_planning_mm() > 0.0 {
+            self.shank_diameter_planning_mm()
         } else {
             self.envelope_diameter()
         }
@@ -1039,21 +1077,21 @@ impl ToolConfig {
                 // On a tapered ball the cone base and the shank are the
                 // same stated figure often enough that either reading
                 // counts as agreement.
-                let mut candidates = vec![self.shank_diameter];
+                let mut candidates = vec![self.shank_diameter_planning_mm()];
                 if self.tool_type == ToolType::TaperedBallNose {
                     candidates.push(self.shaft_diameter);
                 }
                 Some(NameClaim {
                     quantity: NamedQuantity::ShankDiameter,
                     candidates,
-                    reported: self.shank_diameter,
+                    reported: self.shank_diameter_planning_mm(),
                     field: "shank_diameter",
                 })
             }
             NameRole::CuttingLength => Some(NameClaim {
                 quantity: NamedQuantity::CuttingLength,
-                candidates: vec![self.cutting_length],
-                reported: self.cutting_length,
+                candidates: vec![self.cutting_length_planning_mm()],
+                reported: self.cutting_length_planning_mm(),
                 field: "cutting_length",
             }),
         }
@@ -1076,11 +1114,11 @@ impl ToolConfig {
                 // Vendors quote a taper per-side or as the full
                 // included cone; both readings count.
                 candidates: vec![
-                    self.taper_half_angle,
-                    self.taper_half_angle * 2.0,
+                    self.taper_half_angle_planning_deg(),
+                    self.taper_half_angle_planning_deg() * 2.0,
                     self.helix_deg,
                 ],
-                reported: self.taper_half_angle,
+                reported: self.taper_half_angle_planning_deg(),
                 field: "taper_half_angle",
             }),
             ToolType::EndMill | ToolType::BallNose | ToolType::BullNose => None,
@@ -1095,9 +1133,9 @@ impl ToolConfig {
         let mut candidates = vec![
             self.diameter,
             self.envelope_diameter(),
-            self.cutting_length,
-            self.shank_diameter,
-            self.stickout,
+            self.cutting_length_planning_mm(),
+            self.shank_diameter_planning_mm(),
+            self.stickout_planning_mm(),
         ];
         // Plus the length geometry this type owns — which is exactly
         // what `normalize_geometry` leaves behind.
@@ -1186,7 +1224,7 @@ impl ToolGeometryField {
             ToolGeometryField::CornerRadiusMm => tool.corner_radius_mm,
             ToolGeometryField::CornerRadius => tool.corner_radius,
             ToolGeometryField::IncludedAngle => tool.included_angle,
-            ToolGeometryField::TaperHalfAngle => tool.taper_half_angle,
+            ToolGeometryField::TaperHalfAngle => tool.taper_half_angle_planning_deg(),
             ToolGeometryField::ShaftDiameter => tool.shaft_diameter,
         }
     }
@@ -1712,6 +1750,105 @@ fn read_unit(chars: &[char], from: usize) -> (NameUnit, usize) {
         return (NameUnit::Degrees, j);
     }
     (NameUnit::None, from)
+}
+
+// ── The test-tool builder (feeds contract P6 step 8) ─────────────────────
+
+#[cfg(any(test, feature = "test-support"))]
+impl ToolConfig {
+    /// The test-tool builder: it starts from [`Self::new_default`] and a
+    /// test states each fact in one call. Commit A: each setter writes the
+    /// plain field. Commit C makes each fact setter write `ToolFact::Stated`.
+    pub fn builder(id: ToolId, tool_type: ToolType) -> ToolConfigBuilder {
+        ToolConfigBuilder {
+            tool: Self::new_default(id, tool_type),
+        }
+    }
+}
+
+/// See [`ToolConfig::builder`]. Test and `test-support` builds only.
+#[cfg(any(test, feature = "test-support"))]
+#[derive(Debug, Clone)]
+#[must_use]
+pub struct ToolConfigBuilder {
+    tool: ToolConfig,
+}
+
+#[cfg(any(test, feature = "test-support"))]
+impl ToolConfigBuilder {
+    pub fn name(mut self, name: &str) -> Self {
+        name.clone_into(&mut self.tool.name);
+        self
+    }
+
+    pub fn diameter(mut self, diameter_mm: f64) -> Self {
+        self.tool.diameter = diameter_mm;
+        self
+    }
+
+    /// The flute (cutting) length, mm.
+    pub fn flute_mm(mut self, cutting_length_mm: f64) -> Self {
+        self.tool.cutting_length = cutting_length_mm;
+        self
+    }
+
+    pub fn stickout_mm(mut self, stickout_mm: f64) -> Self {
+        self.tool.stickout = stickout_mm;
+        self
+    }
+
+    pub fn shank_mm(mut self, shank_diameter_mm: f64) -> Self {
+        self.tool.shank_diameter = shank_diameter_mm;
+        self
+    }
+
+    pub fn flutes(mut self, flute_count: u32) -> Self {
+        self.tool.flute_count = flute_count;
+        self
+    }
+
+    pub fn taper_half_angle_deg(mut self, taper_half_angle_deg: f64) -> Self {
+        self.tool.taper_half_angle = taper_half_angle_deg;
+        self
+    }
+
+    /// The tool does not cut at its centre: the measured centre core
+    /// diameter and blade protrusion, mm.
+    pub fn non_centre(mut self, centre_core_diameter_mm: f64, blade_protrusion_mm: f64) -> Self {
+        self.tool.non_centre_cutting = Some(NonCentreCuttingGeometry {
+            centre_core_diameter_mm,
+            blade_protrusion_mm,
+        });
+        self
+    }
+
+    /// The tapered-ball shaft (cone base) diameter, mm.
+    pub fn shaft_mm(mut self, shaft_diameter_mm: f64) -> Self {
+        self.tool.shaft_diameter = shaft_diameter_mm;
+        self
+    }
+
+    /// The bull-nose corner radius (`corner_radius`), mm.
+    pub fn corner_radius(mut self, corner_radius: f64) -> Self {
+        self.tool.corner_radius = corner_radius;
+        self
+    }
+
+    /// The end-mill corner radius (`corner_radius_mm`), mm.
+    pub fn corner_radius_mm(mut self, corner_radius_mm: f64) -> Self {
+        self.tool.corner_radius_mm = corner_radius_mm;
+        self
+    }
+
+    /// The V-bit included angle, degrees.
+    pub fn included_angle_deg(mut self, included_angle_deg: f64) -> Self {
+        self.tool.included_angle = included_angle_deg;
+        self
+    }
+
+    pub fn build(self) -> ToolConfig {
+        self.tool
+    }
 }
 
 #[cfg(test)]

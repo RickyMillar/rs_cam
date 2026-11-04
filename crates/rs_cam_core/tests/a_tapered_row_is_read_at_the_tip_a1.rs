@@ -169,9 +169,9 @@ fn a_tapered_row_is_read_at_the_tip_a1() {
     let input = FeedsInput {
         tool_series: None,
         tool_diameter: tool.diameter,
-        flute_count: tool.flute_count,
-        flute_length: tool.cutting_length,
-        shank_diameter: Some(tool.shank_diameter),
+        flute_count: tool.flute_count_planning(),
+        flute_length: tool.cutting_length_planning_mm(),
+        shank_diameter: Some(tool.shank_diameter_planning_mm()),
         tool_geometry: hint,
         material: &material,
         machine: &machine,
@@ -194,7 +194,12 @@ fn a_tapered_row_is_read_at_the_tip_a1() {
     );
 
     // 2. The two key helpers agree on this tool, and both give the tip.
-    let hint_key = lut_key_diameter_mm(hint, DEPTH_MM, tool.diameter, tool.shank_diameter);
+    let hint_key = lut_key_diameter_mm(
+        hint,
+        DEPTH_MM,
+        tool.diameter,
+        tool.shank_diameter_planning_mm(),
+    );
     let cutter_key = lut_key_diameter_for_cutter(&cutter, DEPTH_MM);
     assert!((hint_key - TIP_MM).abs() < 1e-12, "{hint_key}");
     assert!((cutter_key - TIP_MM).abs() < 1e-12, "{cutter_key}");
@@ -263,7 +268,12 @@ fn a_tapered_row_is_read_at_the_tip_a1() {
     );
 
     // 5. The depth half of R2 stands: the de-rate divides by the cone.
-    let ladder = feed_ladder_diameter_mm(hint, DEPTH_MM, tool.diameter, tool.shank_diameter);
+    let ladder = feed_ladder_diameter_mm(
+        hint,
+        DEPTH_MM,
+        tool.diameter,
+        tool.shank_diameter_planning_mm(),
+    );
     let cap = depth_cap_diameter_mm(&cutter, DEPTH_MM);
     assert!((ladder - cone_mm).abs() < 1e-9, "{ladder} vs {cone_mm}");
     assert!((cap - cone_mm).abs() < 1e-9, "{cap} vs {cone_mm}");

@@ -517,7 +517,7 @@ fn depth_checks(scope: &Scope, op: &OperationConfig, tool: &ToolConfig) -> Vec<D
         return out;
     };
 
-    if tool.cutting_length > 0.0 && dpp > tool.cutting_length {
+    if tool.cutting_length_planning_mm() > 0.0 && dpp > tool.cutting_length_planning_mm() {
         out.push(Diagnostic {
             id: DiagnosticId::from(ids::GEOM_DPP_EXCEEDS_CUTTING_LENGTH),
             scope: scope.clone(),
@@ -531,13 +531,13 @@ fn depth_checks(scope: &Scope, op: &OperationConfig, tool: &ToolConfig) -> Vec<D
             message: format!(
                 "The depth per pass ({dpp:.1} mm) is more than the cutting length ({:.1} mm). \
                  The tool shank touches the material.",
-                tool.cutting_length
+                tool.cutting_length_planning_mm()
             ),
             evidence: Some(DiagnosticEvidence::GeometryCompare {
                 lhs_label: "depth_per_pass".to_owned(),
                 lhs_value: dpp,
                 rhs_label: "cutting_length".to_owned(),
-                rhs_value: tool.cutting_length,
+                rhs_value: tool.cutting_length_planning_mm(),
                 unit: "mm".to_owned(),
             }),
             fix: None,

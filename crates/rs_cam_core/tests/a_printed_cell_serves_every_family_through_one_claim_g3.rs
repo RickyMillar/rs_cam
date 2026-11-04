@@ -91,8 +91,8 @@ fn tapered(tip_mm: f64) -> ToolConfig {
     t.cutting_length = (tip_mm * 3.0).max(12.0);
     t.taper_half_angle = 7.0;
     t.shank_diameter = (tip_mm + 3.0).max(6.0);
-    t.shaft_diameter = t.shank_diameter;
-    t.stickout = t.cutting_length + 8.0;
+    t.shaft_diameter = t.shank_diameter_planning_mm();
+    t.stickout = t.cutting_length_planning_mm() + 8.0;
     t
 }
 
@@ -106,8 +106,8 @@ fn bull(d: f64) -> ToolConfig {
     t.corner_radius_mm = d / 4.0;
     t.cutting_length = (d * 3.0).max(12.0);
     t.shank_diameter = d.max(6.0);
-    t.shaft_diameter = t.shank_diameter;
-    t.stickout = t.cutting_length + 8.0;
+    t.shaft_diameter = t.shank_diameter_planning_mm();
+    t.stickout = t.cutting_length_planning_mm() + 8.0;
     t
 }
 

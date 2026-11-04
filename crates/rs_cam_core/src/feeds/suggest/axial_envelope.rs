@@ -47,7 +47,7 @@ pub(crate) fn axial_envelope_for_operation(
     let tool_def = build_cutter(tool).ok()?;
     let radial = operation.stepover();
     let rpm = operation.spindle_rpm().unwrap_or(0) as f64;
-    let flute_count = tool.flute_count.max(1) as f64;
+    let flute_count = tool.flute_count_planning().max(1) as f64;
     // S11: an unset feed gives no chip (0, as no RPM does).
     let feed_per_tooth_mm = match operation.feed_rate() {
         Some(feed) if rpm > 0.0 => feed / (rpm * flute_count),

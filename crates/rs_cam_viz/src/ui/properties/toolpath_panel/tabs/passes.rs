@@ -197,7 +197,7 @@ pub(in crate::ui::properties) fn draw_passes_tab(
     draw_speed_controls(
         ui,
         entry,
-        tool.map(|t| t.flute_count),
+        tool.map(|t| t.flute_count_planning()),
         &inputs.machine,
         fields,
     );

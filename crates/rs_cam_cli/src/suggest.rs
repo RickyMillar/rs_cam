@@ -182,7 +182,7 @@ fn record_json(
                     "name": p.tool_cfg.name,
                     "tool_type": p.tool_cfg.tool_type,
                     "diameter": p.tool_cfg.diameter,
-                    "flute_count": p.tool_cfg.flute_count,
+                    "flute_count": p.tool_cfg.flute_count_planning(),
                 }),
             );
             match &p.feasibility {

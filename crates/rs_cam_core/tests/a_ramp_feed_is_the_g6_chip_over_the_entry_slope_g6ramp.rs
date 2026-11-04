@@ -111,7 +111,7 @@ fn tool_of(kind: ToolType, diameter: f64, flutes: u32) -> ToolConfig {
     t.cutting_length = (diameter * 4.0).max(12.0);
     t.shank_diameter = diameter.max(3.175);
     t.shaft_diameter = diameter.max(3.175);
-    t.stickout = t.cutting_length + 8.0;
+    t.stickout = t.cutting_length_planning_mm() + 8.0;
     if matches!(kind, ToolType::BullNose) {
         t.corner_radius = 0.5;
         t.corner_radius_mm = 0.5;

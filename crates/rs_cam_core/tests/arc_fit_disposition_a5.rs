@@ -624,7 +624,7 @@ fn suggest_read(session: &ProjectSession, fx: &Fixture) -> SuggestRead {
         feeds_rpm: feeds.rpm,
         authored_rpm: fx.rpm,
         cutting_ceiling: session.machine().cutting_feed_ceiling_mm_min(),
-        flutes: fx.tool.flute_count,
+        flutes: fx.tool.flute_count_planning(),
         rpm: suggested
             .spindle_rpm()
             .unwrap_or_else(|| feeds.rpm.round() as u32),

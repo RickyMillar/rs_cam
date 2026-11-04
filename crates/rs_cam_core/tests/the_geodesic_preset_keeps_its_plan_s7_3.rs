@@ -67,7 +67,7 @@ fn fixture(project: &str) -> (Polygon2, FlatEndmill) {
         .expect("the fixture holds the 6 mm end mill");
     (
         outline,
-        FlatEndmill::new(tool.diameter, tool.cutting_length),
+        FlatEndmill::new(tool.diameter, tool.cutting_length_planning_mm()),
     )
 }
 

@@ -112,7 +112,7 @@ fn ball(diameter: f64) -> ToolConfig {
     t.cutting_length = (diameter * 3.0).max(6.0);
     t.shank_diameter = diameter.max(3.175);
     t.shaft_diameter = diameter.max(3.175);
-    t.stickout = t.cutting_length + 6.0;
+    t.stickout = t.cutting_length_planning_mm() + 6.0;
     t
 }
 

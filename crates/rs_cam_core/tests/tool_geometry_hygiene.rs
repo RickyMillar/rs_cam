@@ -151,7 +151,7 @@ product_id = ""
     assert_eq!(tool.corner_radius_mm.max(tool.corner_radius), 0.0);
 
     // The geometry that DEFINES a tapered ball is untouched.
-    assert_eq!(tool.taper_half_angle, 7.1);
+    assert_eq!(tool.taper_half_angle_planning_deg(), 7.1);
     assert_eq!(tool.shaft_diameter, 6.0);
     assert_eq!(tool.diameter, 1.0);
     assert!(tool.missing_defining_geometry().is_empty());
@@ -231,7 +231,7 @@ fn switching_type_in_place_reports_the_geometry_it_now_needs() {
 
     // Refilled from the type's own defaults, it is a complete tool.
     let defaults = ToolConfig::new_default(tool.id, ToolType::TaperedBallNose);
-    tool.taper_half_angle = defaults.taper_half_angle;
+    tool.taper_half_angle = defaults.taper_half_angle_planning_deg();
     tool.shaft_diameter = defaults.shaft_diameter;
     assert!(tool.missing_defining_geometry().is_empty());
 }

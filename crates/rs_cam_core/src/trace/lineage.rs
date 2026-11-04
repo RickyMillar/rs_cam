@@ -156,9 +156,9 @@ impl ToolFactKind {
     fn value_of(self, tool: &ToolConfig) -> f64 {
         match self {
             Self::Diameter => tool.diameter,
-            Self::FluteCount => f64::from(tool.flute_count),
-            Self::FluteLength => tool.cutting_length,
-            Self::Stickout => tool.stickout,
+            Self::FluteCount => f64::from(tool.flute_count_planning()),
+            Self::FluteLength => tool.cutting_length_planning_mm(),
+            Self::Stickout => tool.stickout_planning_mm(),
         }
     }
 }

@@ -2005,7 +2005,7 @@ fn modulate_annotated_against_trace(
         adaptive_feed_modulate_with_materials,
     };
 
-    let flute_count = tool_cfg.flute_count.max(1);
+    let flute_count = tool_cfg.flute_count_planning().max(1);
     let spindle_rpm = operation
         .spindle_rpm()
         .unwrap_or(context.default_spindle_rpm);

@@ -660,7 +660,7 @@ impl ProjectSession {
                     .spindle_rpm()
                     .unwrap_or(self.post.spindle_speed),
             ),
-            flute_count: Some(tool.flute_count),
+            flute_count: Some(tool.flute_count_planning()),
             // B7 divergence 1, resolved 2026-08-06: the intent-aware
             // expression is now shared with the GUI's narration via
             // `is_drill_cycle_for_narration`, so the two readers can no

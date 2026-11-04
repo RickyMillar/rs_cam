@@ -178,7 +178,7 @@ impl ProjectSession {
                                 .collect();
                             crate::compute::shoe::solve_gap(
                                 head,
-                                tool.stickout,
+                                tool.stickout_planning_mm(),
                                 &obstacles,
                                 &stock,
                                 &joined,

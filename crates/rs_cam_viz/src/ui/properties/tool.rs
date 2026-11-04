@@ -257,7 +257,7 @@ pub(crate) fn draw_tool_fields(
         // UI-10: an integer field. `ValueRow` edits an `f64`, and a
         // temporary f64 would change what a partial edit commits.
         ui.label("Flutes:");
-        let mut flutes_i = tool.flute_count as i32;
+        let mut flutes_i = tool.flute_count_planning() as i32;
         if ui
             .add(
                 egui::DragValue::new(&mut flutes_i)

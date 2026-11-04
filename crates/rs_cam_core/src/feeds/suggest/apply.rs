@@ -262,7 +262,7 @@ fn apply_feeds_subset(
             entry,
             scratch_feed(operation),
             operation.spindle_rpm(),
-            tool.flute_count,
+            tool.flute_count_planning(),
             scratch_plunge(operation),
         );
         if operation.as_params_mut().set_ramp_feed_rate(record.value()) {

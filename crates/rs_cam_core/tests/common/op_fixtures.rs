@@ -128,7 +128,7 @@ pub fn tool_for(op: OperationType) -> ToolConfig {
         .required_kinds
         .first()
         .map_or(ToolType::EndMill, |k| k.tool_type());
-    ToolConfig::new_default(ToolId::from_raw(0), kind)
+    ToolConfig::builder(ToolId::from_raw(0), kind).build()
 }
 
 /// True when the op runs on the mesh fixture.

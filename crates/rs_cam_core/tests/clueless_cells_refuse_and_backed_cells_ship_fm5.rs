@@ -101,7 +101,7 @@ fn clueless_cells_refuse_with_the_judgement_reason_fm5() {
     drill_tool.cutting_length = 38.0;
     drill_tool.shank_diameter = 15.875;
     drill_tool.shaft_diameter = 15.875;
-    drill_tool.stickout = drill_tool.cutting_length + 8.0;
+    drill_tool.stickout = drill_tool.cutting_length_planning_mm() + 8.0;
     let drill = suggest_tool(OperationType::Drill, &drill_tool, &hardwood())
         .expect_err("a 15.875 mm flat plunge is outside the G6 claim's 3.0-12.7 mm");
     match &drill {
@@ -269,8 +269,8 @@ fn tapered(tip_mm: f64) -> ToolConfig {
     t.cutting_length = (tip_mm * 3.0).max(12.0);
     t.taper_half_angle = 7.0;
     t.shank_diameter = (tip_mm + 3.0).max(6.0);
-    t.shaft_diameter = t.shank_diameter;
-    t.stickout = t.cutting_length + 8.0;
+    t.shaft_diameter = t.shank_diameter_planning_mm();
+    t.stickout = t.cutting_length_planning_mm() + 8.0;
     t
 }
 

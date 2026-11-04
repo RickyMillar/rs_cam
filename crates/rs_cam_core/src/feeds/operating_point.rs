@@ -330,8 +330,8 @@ fn resolve_operating_point(
     };
 
     let geom = tool.geometry_hint();
-    let shank = if usable(tool.shank_diameter) {
-        tool.shank_diameter
+    let shank = if usable(tool.shank_diameter_planning_mm()) {
+        tool.shank_diameter_planning_mm()
     } else {
         tool.diameter
     };
@@ -340,7 +340,7 @@ fn resolve_operating_point(
         return Err(PowerUnmodeled::NoEngagementDiameter);
     }
 
-    let flute_count = f64::from(tool.flute_count.max(1));
+    let flute_count = f64::from(tool.flute_count_planning().max(1));
     let immersion_rad = crate::feeds::force::immersion_angle(ae_mm, effective_d / 2.0);
     // Every input above is finite and positive, so the mean chip exists;
     // a degenerate arc reads as a zero chip, which is below any range.

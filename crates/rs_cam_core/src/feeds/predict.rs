@@ -391,7 +391,7 @@ pub fn predict_peak_deflection_um(
     let rpm = operation
         .spindle_rpm()
         .map_or(PREDICTOR_FALLBACK_RPM, |r| r as f64);
-    let flute_count = tool.flute_count.max(1) as f64;
+    let flute_count = tool.flute_count_planning().max(1) as f64;
     // S11: an unset feed gives no chipload (0, as a non-finite feed did).
     let chipload_per_tooth_mm = match operation.feed_rate() {
         Some(feed_rate) if rpm > 0.0 && flute_count > 0.0 && feed_rate.is_finite() => {
@@ -419,7 +419,7 @@ pub fn predict_peak_deflection_um(
     // never used. Until T-4 there was one — `cutting_length + 5 mm` — and
     // the refusal then came out of the delegate as a bare zero. One
     // guard, one number, one exit.
-    let stickout_mm = tool.stickout;
+    let stickout_mm = tool.stickout_planning_mm();
     if !(stickout_mm.is_finite() && stickout_mm > 0.0) {
         tracing::debug!(
             reason = "no_stickout",

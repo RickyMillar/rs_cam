@@ -206,7 +206,7 @@ fn tool_of(kind: ToolType, diameter: f64, flutes: u32) -> ToolConfig {
     t.cutting_length = (diameter * 3.0).max(12.0);
     t.shank_diameter = diameter.max(3.0);
     t.shaft_diameter = diameter.max(3.0);
-    t.stickout = t.cutting_length + 8.0;
+    t.stickout = t.cutting_length_planning_mm() + 8.0;
     if matches!(kind, ToolType::BullNose) {
         t.corner_radius = diameter * 0.15;
         t.corner_radius_mm = diameter * 0.15;
@@ -216,7 +216,7 @@ fn tool_of(kind: ToolType, diameter: f64, flutes: u32) -> ToolConfig {
         // panics when it is not.
         t.taper_half_angle = 7.0;
         t.shank_diameter = (diameter + 3.0).max(6.0);
-        t.shaft_diameter = t.shank_diameter;
+        t.shaft_diameter = t.shank_diameter_planning_mm();
     }
     if matches!(kind, ToolType::VBit) {
         t.included_angle = 60.0;

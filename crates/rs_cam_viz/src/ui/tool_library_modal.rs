@@ -324,7 +324,9 @@ fn draw_catalog_panel(
 /// convention of `ToolConfig::size_label`), flutes, taper.
 fn row_summary(tool: &ToolConfig) -> String {
     let taper = match tool.tool_type {
-        ToolType::TaperedBallNose => format!(" · {:.1}° taper", tool.taper_half_angle),
+        ToolType::TaperedBallNose => {
+            format!(" · {:.1}° taper", tool.taper_half_angle_planning_deg())
+        }
         ToolType::EndMill | ToolType::BallNose | ToolType::BullNose | ToolType::VBit => {
             String::new()
         }
@@ -333,7 +335,7 @@ fn row_summary(tool: &ToolConfig) -> String {
         "{} · {} · {}F{taper}",
         tool.tool_type.label(),
         tool.size_label(),
-        tool.flute_count
+        tool.flute_count_planning()
     )
 }
 
@@ -469,9 +471,9 @@ fn draw_readonly_grid(ui: &mut egui::Ui, tool: &ToolConfig) {
         row(
             ui,
             "Cutting length",
-            format!("{:.2} mm", tool.cutting_length),
+            format!("{:.2} mm", tool.cutting_length_planning_mm()),
         );
-        row(ui, "Flutes", tool.flute_count.to_string());
+        row(ui, "Flutes", tool.flute_count_planning().to_string());
         match tool.tool_type {
             ToolType::VBit => {
                 row(ui, "Included angle", format!("{:.1}°", tool.included_angle));
@@ -480,7 +482,7 @@ fn draw_readonly_grid(ui: &mut egui::Ui, tool: &ToolConfig) {
                 row(
                     ui,
                     "Taper half-angle",
-                    format!("{:.2}°", tool.taper_half_angle),
+                    format!("{:.2}°", tool.taper_half_angle_planning_deg()),
                 );
                 row(
                     ui,
@@ -496,7 +498,7 @@ fn draw_readonly_grid(ui: &mut egui::Ui, tool: &ToolConfig) {
         row(
             ui,
             "Shank \u{00D8} (in collet)",
-            format!("{:.3} mm", tool.shank_diameter),
+            format!("{:.3} mm", tool.shank_diameter_planning_mm()),
         );
         row(ui, "Material", tool.tool_material.label().to_owned());
         row(ui, "Cut direction", tool.cut_direction.label().to_owned());

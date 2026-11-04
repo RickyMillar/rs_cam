@@ -1027,9 +1027,9 @@ pub fn feeds_input_for_operation<'a>(
         // `UpCut` is a generic tool.
         tool_series: crate::feeds::series::ToolSeries::for_cut_direction(tool.cut_direction),
         tool_diameter: tool.diameter,
-        flute_count: tool.flute_count,
-        flute_length: tool.cutting_length,
-        shank_diameter: Some(tool.shank_diameter),
+        flute_count: tool.flute_count_planning(),
+        flute_length: tool.cutting_length_planning_mm(),
+        shank_diameter: Some(tool.shank_diameter_planning_mm()),
         tool_geometry: tool.geometry_hint(),
         material,
         machine,
@@ -1046,7 +1046,7 @@ pub fn feeds_input_for_operation<'a>(
         target_scallop_mm: scallop_hint,
         vendor_lut: Some(lut),
         setup: SetupContext {
-            tool_overhang_mm: Some(tool.stickout),
+            tool_overhang_mm: Some(tool.stickout_planning_mm()),
         },
         spindle_strategy,
     }

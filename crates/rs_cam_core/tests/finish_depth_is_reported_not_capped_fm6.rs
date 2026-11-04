@@ -87,11 +87,11 @@ fn tool_of(kind: ToolType, diameter: f64) -> ToolConfig {
     t.cutting_length = (diameter * 3.0).max(12.0);
     t.shank_diameter = diameter.max(3.0);
     t.shaft_diameter = diameter.max(3.0);
-    t.stickout = t.cutting_length + 8.0;
+    t.stickout = t.cutting_length_planning_mm() + 8.0;
     if matches!(kind, ToolType::TaperedBallNose) {
         t.taper_half_angle = 7.0;
         t.shank_diameter = (diameter + 3.0).max(6.0);
-        t.shaft_diameter = t.shank_diameter;
+        t.shaft_diameter = t.shank_diameter_planning_mm();
     }
     t
 }
@@ -420,7 +420,7 @@ fn the_feed_ladder_and_the_gate_read_the_cone_diameter_fm6() {
         cutter.geometry_hint(),
         DEPTH_MM,
         tool.diameter,
-        tool.shank_diameter,
+        tool.shank_diameter_planning_mm(),
     );
     assert!(
         (ladder - engaged).abs() < 1e-9,

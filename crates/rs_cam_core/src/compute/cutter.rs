@@ -13,34 +13,40 @@ pub fn build_cutter(tool: &ToolConfig) -> Result<ToolDefinition, ToolGeometryErr
     tool.validate()?;
     let cutter: Box<dyn MillingCutter> = match tool.tool_type {
         ToolType::EndMill => {
-            let mut cutter = FlatEndmill::new(tool.diameter, tool.cutting_length);
+            let mut cutter = FlatEndmill::new(tool.diameter, tool.cutting_length_planning_mm());
             cutter.helix_deg = tool.helix_deg;
             cutter.corner_radius_mm = tool.corner_radius_mm;
             Box::new(cutter)
         }
         ToolType::BallNose => {
-            let mut cutter = BallEndmill::new(tool.diameter, tool.cutting_length);
+            let mut cutter = BallEndmill::new(tool.diameter, tool.cutting_length_planning_mm());
             cutter.helix_deg = tool.helix_deg;
             Box::new(cutter)
         }
         ToolType::BullNose => {
-            let mut cutter =
-                BullNoseEndmill::new(tool.diameter, tool.corner_radius, tool.cutting_length)?;
+            let mut cutter = BullNoseEndmill::new(
+                tool.diameter,
+                tool.corner_radius,
+                tool.cutting_length_planning_mm(),
+            )?;
             cutter.helix_deg = tool.helix_deg;
             Box::new(cutter)
         }
         ToolType::VBit => {
-            let mut cutter =
-                VBitEndmill::new(tool.diameter, tool.included_angle, tool.cutting_length)?;
+            let mut cutter = VBitEndmill::new(
+                tool.diameter,
+                tool.included_angle,
+                tool.cutting_length_planning_mm(),
+            )?;
             cutter.helix_deg = tool.helix_deg;
             Box::new(cutter)
         }
         ToolType::TaperedBallNose => {
             let mut cutter = TaperedBallEndmill::new(
                 tool.diameter,
-                tool.taper_half_angle,
+                tool.taper_half_angle_planning_deg(),
                 tool.shaft_diameter,
-                tool.cutting_length,
+                tool.cutting_length_planning_mm(),
             )?;
             cutter.helix_deg = tool.helix_deg;
             Box::new(cutter)
@@ -48,9 +54,9 @@ pub fn build_cutter(tool: &ToolConfig) -> Result<ToolDefinition, ToolGeometryErr
     };
     Ok(ToolDefinition::new(
         cutter,
-        tool.shank_diameter,
-        tool.stickout,
-        tool.flute_count,
+        tool.shank_diameter_planning_mm(),
+        tool.stickout_planning_mm(),
+        tool.flute_count_planning(),
         tool.tool_material,
     )
     .with_cut_direction(tool.cut_direction)

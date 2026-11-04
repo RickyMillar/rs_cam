@@ -893,7 +893,7 @@ fn modulated_path_never_emits_below_min_chipload() {
         .spindle_rpm()
         .map(f64::from)
         .unwrap_or(18_000.0);
-    let flutes = f64::from(tool.flute_count.max(1));
+    let flutes = f64::from(tool.flute_count_planning().max(1));
     let commanded_feed = tc.operation.feed_rate().expect("S11: the fixture sets it");
 
     let mut modulated_moves = 0usize;

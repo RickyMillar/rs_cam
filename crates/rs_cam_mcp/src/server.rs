@@ -4794,14 +4794,14 @@ mod tests {
         let built = build_tool_config(&add_tool_spec("end_mill", 6.0)).unwrap();
         assert_eq!(built.config.corner_radius, 0.0);
         assert_eq!(built.config.included_angle, 0.0);
-        assert_eq!(built.config.taper_half_angle, 0.0);
+        assert_eq!(built.config.taper_half_angle_planning_deg(), 0.0);
 
         let spec = AddToolParam {
             taper_half_angle: Some(5.6),
             ..add_tool_spec("tapered_ball_nose", 3.0)
         };
         let built = build_tool_config(&spec).unwrap();
-        assert_eq!(built.config.taper_half_angle, 5.6);
+        assert_eq!(built.config.taper_half_angle_planning_deg(), 5.6);
         assert_eq!(built.config.included_angle, 0.0);
         assert_eq!(built.config.corner_radius, 0.0);
     }
@@ -4875,9 +4875,9 @@ mod tests {
             ..add_tool_spec("end_mill", 6.0)
         };
         let built = build_tool_config(&spec).unwrap();
-        assert_eq!(built.config.cutting_length, 32.0);
-        assert_eq!(built.config.flute_count, 3);
-        assert_eq!(built.config.stickout, 28.0);
+        assert_eq!(built.config.cutting_length_planning_mm(), 32.0);
+        assert_eq!(built.config.flute_count_planning(), 3);
+        assert_eq!(built.config.stickout_planning_mm(), 28.0);
         for field in ["cutting_length", "flute_count", "stickout"] {
             assert!(
                 !built.defaulted.contains(&field),

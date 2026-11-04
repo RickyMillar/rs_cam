@@ -346,7 +346,7 @@ tr:nth-child(even) {{ background: #24242e; }}
                 escape_html(&tool.name),
                 tool.tool_type.label(),
                 escape_html(&tool.size_label()),
-                tool.cutting_length,
+                tool.cutting_length_planning_mm(),
             ),
         );
     }

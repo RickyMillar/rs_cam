@@ -517,7 +517,8 @@ fn measured(cutter: &Cutter) -> (f64, Option<f64>, f64) {
     )
     .expect("generic softwood carries a primary-source Kc, so the efficiency answer exists");
     let feed_axis_max = preview.explain().machine.max_feed_mm_min * 1.05;
-    let chart_top_mm = feed_axis_max / (preview.recommended().rpm * f64::from(tool.flute_count));
+    let chart_top_mm =
+        feed_axis_max / (preview.recommended().rpm * f64::from(tool.flute_count_planning()));
     (
         efficiency.rubbing_floor_mm,
         efficiency.deflection_ceiling_mm,

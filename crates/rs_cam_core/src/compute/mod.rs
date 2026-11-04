@@ -34,6 +34,7 @@ pub mod stock_change_apply;
 pub mod stock_config;
 pub mod stock_domain;
 pub mod tool_config;
+mod tool_fact;
 pub mod toolpath_stats;
 pub mod transform;
 pub mod validate;

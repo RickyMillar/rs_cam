@@ -696,7 +696,12 @@ impl SafeEnvelope {
                     ap_mm: ap,
                     ae_mm: ae,
                 });
-                points.push(SpeedsPoint::from_result(ap, ae, &r, input.tool.flute_count));
+                points.push(SpeedsPoint::from_result(
+                    ap,
+                    ae,
+                    &r,
+                    input.tool.flute_count_planning(),
+                ));
             }
         }
         let speeds = SpeedsMap {
@@ -1033,8 +1038,8 @@ fn axes_plan(operation: &OperationConfig, tool: &ToolConfig, base: &FeedsResult)
             (_, None) => (false, None, base.axial_depth_mm),
         },
     };
-    let flute = if tool.cutting_length > 0.0 {
-        tool.cutting_length
+    let flute = if tool.cutting_length_planning_mm() > 0.0 {
+        tool.cutting_length_planning_mm()
     } else {
         crate::feeds::flute_guard_of(0.0, d).0
     };
@@ -1083,20 +1088,21 @@ fn geometric_limits(
     role: PassRole,
     d: f64,
 ) {
-    let (guard, guard_basis) = crate::feeds::flute_guard_of(input.tool.cutting_length, d);
+    let (guard, guard_basis) =
+        crate::feeds::flute_guard_of(input.tool.cutting_length_planning_mm(), d);
     out.push(Limit {
         kind: LimitKind::FluteGuard,
         law: "0.8 x flute",
         basis: guard_basis,
         edge: Edge::ApCeiling { mm: guard },
     });
-    if input.tool.cutting_length > 0.0 {
+    if input.tool.cutting_length_planning_mm() > 0.0 {
         out.push(Limit {
             kind: LimitKind::CuttingLength,
             law: "tool cutting length",
             basis: Basis::tool_fact(),
             edge: Edge::ApCeiling {
-                mm: input.tool.cutting_length,
+                mm: input.tool.cutting_length_planning_mm(),
             },
         });
     }
@@ -1263,7 +1269,7 @@ fn deflection_limit(
         ));
         return;
     }
-    if !(input.tool.stickout.is_finite() && input.tool.stickout > 0.0) {
+    if !(input.tool.stickout_planning_mm().is_finite() && input.tool.stickout_planning_mm() > 0.0) {
         out.push(unmodelled(
             crate::feeds::predict::DeflectionUnmodeled::NoStickout,
         ));

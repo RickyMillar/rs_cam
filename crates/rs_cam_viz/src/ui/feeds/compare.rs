@@ -82,7 +82,7 @@ pub(crate) fn current_values_for_operation(
         spindle_rpm: operation.spindle_rpm(),
         depth_per_pass: operation.depth_per_pass(),
         stepover: operation.stepover(),
-        flute_count: tool.flute_count,
+        flute_count: tool.flute_count_planning(),
         scallop_height: operation.scallop_height(),
         supports_scallop_override: matches!(
             operation.op_type(),

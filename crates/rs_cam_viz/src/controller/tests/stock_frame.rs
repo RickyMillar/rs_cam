@@ -78,7 +78,7 @@ fn controller_built_stock_bbox_drives_axial_engagement_within_commanded_doc_f024
                     ),
                     tool: Arc::new(build_cutter(&tool).unwrap()),
                     tool_id: rs_cam_core::compute::tool_config::ToolId::from_raw(0),
-                    flute_count: tool.flute_count,
+                    flute_count: tool.flute_count_planning(),
                     tool_summary: tool.summary(),
                     semantic_trace: None,
                     spindle_rpm: Some(18_000),
