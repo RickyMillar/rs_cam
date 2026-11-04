@@ -50,7 +50,7 @@ fn make_drill_toolpath(tool_id: usize, peck_depth: f64) -> ToolpathConfig {
             diameter: 4.0,
             spoilboard_penetration: 1.0,
             cycle: DrillCycleType::Peck,
-            peck_depth,
+            peck_depth: Some(peck_depth),
             feed_rate: Some(300.0),
             retract_z: 2.0,
             spindle_rpm: Some(18_000),

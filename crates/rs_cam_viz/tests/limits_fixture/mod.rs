@@ -167,7 +167,7 @@ pub fn simulated_state(cut: Cut) -> AppState {
         // Four passes at the shallow depth, two at the deep one, so both arms
         // run steady-state cutting rather than one entry move.
         floor: rs_cam_core::compute::floor::Floor::top(cap * 8.0 / 3.0),
-        depth_per_pass: dpp,
+        depth_per_pass: Some(dpp),
         // Inside the matched vendor chip band on both sides; see the
         // constant's own doc for the window it sits in.
         feed_rate: Some(BAND_FEED_MM_MIN),
@@ -177,6 +177,9 @@ pub fn simulated_state(cut: Cut) -> AppState {
         spindle_rpm: Some(18_000),
         ..PocketConfig::default()
     });
+    // P10: the fixture states the stepover the registry held before P10.
+    let mut operation = operation;
+    rs_cam_core::compute::fixture_values::fill_unset_geometry(&mut operation);
     let op_type = operation.op_type();
     let config = ToolpathConfig {
         shoe: Default::default(),

@@ -658,11 +658,19 @@ impl ProjectSession {
             Ok(s) => Ok((s.operation, s.provenance, None)),
             // Ruling R1 + S11: no feeds data. The op is added with the
             // registry and stock defaults and no feeds.
-            Err(e @ FeedsError::Unbacked { .. }) => Ok((
-                crate::feeds::suggest::default_operation(op_type, &stock_ctx),
-                FeedsProvenance::default(),
-                Some(e.to_string()),
-            )),
+            Err(e @ FeedsError::Unbacked { .. }) => {
+                // P10: the geometry rule needs no feeds data.
+                let (operation, stamps) = crate::feeds::suggest::default_operation_for_tool(
+                    op_type,
+                    &stock_ctx,
+                    crate::compute::geometry_default::RuleContext {
+                        tool,
+                        material: &self.stock.material,
+                        machine: &self.machine,
+                    },
+                );
+                Ok((operation, stamps, Some(e.to_string())))
+            }
             Err(e) => Err(e),
         }
     }

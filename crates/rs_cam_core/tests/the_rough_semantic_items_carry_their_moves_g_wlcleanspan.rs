@@ -66,8 +66,8 @@ fn check(strategy: ClearingStrategy, order: RegionOrdering, contour: bool) -> (I
     let op = toolpath_config(
         "rough",
         OperationConfig::Adaptive3d(Adaptive3dConfig {
-            stepover: 2.0,
-            depth_per_pass: 3.0,
+            stepover: Some(2.0),
+            depth_per_pass: Some(3.0),
             clearing_strategy: strategy,
             region_ordering: order,
             contour_each_level: contour,

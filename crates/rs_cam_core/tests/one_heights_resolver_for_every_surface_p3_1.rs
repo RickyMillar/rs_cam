@@ -205,7 +205,7 @@ fn session_with(
 fn pocket(depth: f64) -> OperationConfig {
     OperationConfig::Pocket(PocketConfig {
         floor: rs_cam_core::compute::floor::Floor::top(depth),
-        depth_per_pass: depth,
+        depth_per_pass: Some(depth),
         ..PocketConfig::default()
     })
 }
@@ -220,7 +220,7 @@ fn pocket_session(faces: &[u16], depth: f64, face_up: FaceUp) -> ProjectSession 
 /// A Drop Cutter on a dome STL whose Top Z reads the Model Top.
 fn model_top_session(face_up: FaceUp) -> ProjectSession {
     let op = OperationConfig::DropCutter(DropCutterConfig {
-        stepover: 1.0,
+        stepover: Some(1.0),
         ..DropCutterConfig::default()
     });
     let top = HeightMode::FromReference(ReferenceOffset {

@@ -237,9 +237,9 @@ fn pocket_through_session(polygon: Polygon2) -> rs_cam_core::toolpath::Toolpath 
         drawing: Default::default(),
     });
     let operation = OperationConfig::Pocket(PocketConfig {
-        stepover: 2.0,
+        stepover: Some(2.0),
         floor: rs_cam_core::compute::floor::Floor::top(3.0),
-        depth_per_pass: 3.0,
+        depth_per_pass: Some(3.0),
         feed_rate: Some(1000.0),
         plunge_rate: Some(500.0),
         climb: false,

@@ -521,7 +521,11 @@ fn restore_geometry(operation: &mut OperationConfig, planned: &OperationConfig) 
     match (&mut *operation, planned) {
         (OperationConfig::UnifiedFinish(out), OperationConfig::UnifiedFinish(want)) => {
             note("scallop_height", out.scallop_height, want.scallop_height);
-            note("raster_stepover", out.raster_stepover, want.raster_stepover);
+            note(
+                "raster_stepover",
+                out.raster_stepover.unwrap_or(f64::NAN),
+                want.raster_stepover.unwrap_or(f64::NAN),
+            );
             note("stock_to_leave", out.stock_to_leave, want.stock_to_leave);
             out.scallop_height = want.scallop_height;
             out.raster_stepover = want.raster_stepover;
@@ -540,14 +544,22 @@ fn restore_geometry(operation: &mut OperationConfig, planned: &OperationConfig) 
             out.slope_to = want.slope_to;
         }
         (OperationConfig::DropCutter(out), OperationConfig::DropCutter(want)) => {
-            note("stepover", out.stepover, want.stepover);
+            note(
+                "stepover",
+                out.stepover.unwrap_or(f64::NAN),
+                want.stepover.unwrap_or(f64::NAN),
+            );
             out.stepover = want.stepover;
             out.scallop_height = want.scallop_height;
         }
         (OperationConfig::Pencil(out), OperationConfig::Pencil(want)) => {
             // Suggest maps its stepover onto `offset_stepover`. Every pencil
             // dial but the four feed fields is the arm's: put them all back.
-            note("offset_stepover", out.offset_stepover, want.offset_stepover);
+            note(
+                "offset_stepover",
+                out.offset_stepover.unwrap_or(f64::NAN),
+                want.offset_stepover.unwrap_or(f64::NAN),
+            );
             note(
                 "num_offset_passes",
                 out.num_offset_passes as f64,
@@ -765,7 +777,7 @@ fn configure_arm(
             let mut op = OperationConfig::new_default(OperationType::DropCutter);
             match &mut op {
                 OperationConfig::DropCutter(d) => {
-                    d.stepover = stepover;
+                    d.stepover = Some(stepover);
                     d.scallop_height = Some(*cusp);
                     // The scallop op ran full slope range 0..90 too.
                     d.slope_from = 0.0;
@@ -902,7 +914,7 @@ fn configure_arm(
                 // above what the R1 reaches.
                 min_valley_depth: CUSP_MM,
                 num_offset_passes: passes,
-                offset_stepover,
+                offset_stepover: Some(offset_stepover),
                 ..PencilConfig::default()
             };
             // The GUI / MCP add route (`core_add_toolpath`,

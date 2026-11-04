@@ -1127,7 +1127,8 @@ fn axes_plan(operation: &OperationConfig, tool: &ToolConfig, base: &FeedsResult)
     // `Some(Some(v))`: free and stated; `Some(None)`: free, not stated;
     // `None`: fixed at the value in the second slot.
     let (radial_free, stated_ae, fixed_ae) = match spec.radial {
-        Radial::Width(s) => (true, Some(s.mm()), base.radial_width_mm),
+        // P10: an unset stepover is free and not stated.
+        Radial::Width(s) => (true, s.map(|s| s.mm()), base.radial_width_mm),
         Radial::Scallop(s) => {
             let w = crate::feeds::geometry::scallop_stepover(ball_r, s.mm());
             (true, w, w.unwrap_or(base.radial_width_mm))
@@ -1138,15 +1139,21 @@ fn axes_plan(operation: &OperationConfig, tool: &ToolConfig, base: &FeedsResult)
         }
     };
     let (axial_free, stated_ap, fixed_ap) = match spec.axial {
+        Axial::HelixPitch(s) | Axial::ChamferWidth(s) => (true, Some(s.mm()), s.mm()),
+        // P10: an unset per-pass depth, Z step or peck is free and not
+        // stated, as an unset one-pass depth (S11).
         Axial::PerPass(s)
         | Axial::ZStep(s)
         | Axial::Peck(s)
-        | Axial::HelixPitch(s)
-        | Axial::ChamferWidth(s) => (true, Some(s.mm()), s.mm()),
-        Axial::OnePass(s) | Axial::Surface { max: s } => match (spec.axial, s) {
+        | Axial::OnePass(s)
+        | Axial::Surface { max: s } => match (spec.axial, s) {
             (_, Some(s)) => (true, Some(s.mm()), s.mm()),
-            (Axial::OnePass(_), None) => (true, None, base.axial_depth_mm),
-            (_, None) => (false, None, base.axial_depth_mm),
+            (Axial::PerPass(_) | Axial::ZStep(_) | Axial::Peck(_) | Axial::OnePass(_), None) => {
+                (true, None, base.axial_depth_mm)
+            }
+            (Axial::Surface { .. } | Axial::HelixPitch(_) | Axial::ChamferWidth(_), None) => {
+                (false, None, base.axial_depth_mm)
+            }
         },
     };
     let flute = if tool.cutting_length_planning_mm() > 0.0 {

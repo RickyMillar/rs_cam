@@ -117,7 +117,9 @@ fn set_toolpath_param_stepover() {
     let _ = s.add_toolpath(0, make_tc(s.tools()[0].id.raw())).unwrap();
     let _ = s.set_toolpath_param(0, "stepover", json!(0.5)).unwrap();
     match &s.toolpath_configs()[0].operation {
-        OperationConfig::Pocket(cfg) => assert!((cfg.stepover - 0.5).abs() < 1e-9),
+        OperationConfig::Pocket(cfg) => {
+            assert!((cfg.stepover.unwrap_or(f64::NAN) - 0.5).abs() < 1e-9);
+        }
         _ => panic!("expected Pocket"),
     }
 }
@@ -134,7 +136,9 @@ fn set_toolpath_param_depth_per_pass() {
         .set_toolpath_param(0, "depth_per_pass", json!(1.5))
         .unwrap();
     match &s.toolpath_configs()[0].operation {
-        OperationConfig::Pocket(cfg) => assert!((cfg.depth_per_pass - 1.5).abs() < 1e-9),
+        OperationConfig::Pocket(cfg) => {
+            assert!((cfg.depth_per_pass.unwrap_or(f64::NAN) - 1.5).abs() < 1e-9);
+        }
         _ => panic!("expected Pocket"),
     }
 }
@@ -152,9 +156,11 @@ fn waterline_refuses_the_retired_depth_per_pass_alias_c1() {
     let mut s = make_session();
     let mut tc = make_tc(s.tools()[0].id.raw());
     tc.operation = OperationConfig::new_default(OperationType::Waterline);
+    // P10: the fixture states the Z step the registry held before P10.
+    crate::compute::fixture_values::fill_unset_geometry(&mut tc.operation);
     let _ = s.add_toolpath(0, tc).unwrap();
     let z_step = |s: &ProjectSession| match &s.toolpath_configs()[0].operation {
-        OperationConfig::Waterline(cfg) => cfg.z_step,
+        OperationConfig::Waterline(cfg) => cfg.z_step.unwrap_or(f64::NAN),
         _ => panic!("expected Waterline"),
     };
     let before = z_step(&s);
@@ -174,9 +180,11 @@ fn waterline_refuses_the_retired_depth_per_pass_alias_c1() {
 
     let mut ramp = make_tc(s.tools()[0].id.raw());
     ramp.operation = OperationConfig::new_default(OperationType::RampFinish);
+    // P10: the fixture states the step the registry held before P10.
+    crate::compute::fixture_values::fill_unset_geometry(&mut ramp.operation);
     let _ = s.add_toolpath(0, ramp).unwrap();
     let stepdown = |s: &ProjectSession| match &s.toolpath_configs()[1].operation {
-        OperationConfig::RampFinish(cfg) => cfg.max_stepdown,
+        OperationConfig::RampFinish(cfg) => cfg.max_stepdown.unwrap_or(f64::NAN),
         _ => panic!("expected RampFinish"),
     };
     let before = stepdown(&s);
@@ -224,14 +232,14 @@ fn set_toolpath_param_refuses_a_peck_depth_the_emitter_would_refuse() {
     let mut s = make_session();
     let mut tc = make_tc(s.tools()[0].id.raw());
     tc.operation = OperationConfig::Drill(DrillConfig {
-        peck_depth: 3.0,
+        peck_depth: Some(3.0),
         ..DrillConfig::default()
     });
     let _ = s.add_toolpath(0, tc).unwrap();
 
     let peck = |s: &ProjectSession| -> f64 {
         match &s.toolpath_configs()[0].operation {
-            OperationConfig::Drill(cfg) => cfg.peck_depth,
+            OperationConfig::Drill(cfg) => cfg.peck_depth.unwrap_or(f64::NAN),
             other => panic!("expected Drill, got {other:?}"),
         }
     };
@@ -2109,8 +2117,8 @@ fn terrain_adaptive3d_session(strategy: ClearingStrategy) -> ProjectSession {
         ramp_feed_rate: None,
         trochoid_cap_mult: 1.6,
         engagement_measure: crate::adaptive::EngagementMeasure::DiskArea,
-        stepover: 1.2,
-        depth_per_pass: 3.0,
+        stepover: Some(1.2),
+        depth_per_pass: Some(3.0),
         stock_to_leave_axial: 0.5,
         feed_rate: Some(2500.0),
         plunge_rate: Some(500.0),

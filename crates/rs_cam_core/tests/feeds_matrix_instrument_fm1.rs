@@ -241,7 +241,7 @@ fn suggest(
     material: &Material,
     stock: &StockContext,
 ) -> Result<SuggestedParams, rs_cam_core::feeds::FeedsError> {
-    let operation = add_time_op(op, stock);
+    let operation = add_time_op(op, stock, tool, machine, material);
     let dressups = rs_cam_core::compute::config::DressupConfig::for_op(op);
     rs_cam_core::feeds::suggest::suggest_for_operation(
         rs_cam_core::feeds::suggest::SuggestForOperationInput {
@@ -265,9 +265,27 @@ fn suggest(
 /// reads the depth of the op (the depth snap, the V-Carve axial hint), so
 /// the matrix fixture states the op that an add door gave before S11:
 /// `default_operation`, then those values. The RPM stays unset, as it was.
-fn add_time_op(op: OperationType, stock: &StockContext) -> OperationConfig {
+///
+/// P10 (operator ruling D8): the add door writes the geometry rule values of
+/// the cell's tool (`default_operation_for_tool`), so the cell reads the
+/// tool-derived stepover, depth, peck and Z step.
+fn add_time_op(
+    op: OperationType,
+    stock: &StockContext,
+    tool: &ToolConfig,
+    machine: &MachineProfile,
+    material: &Material,
+) -> OperationConfig {
     use rs_cam_core::compute::floor::Floor;
-    let mut operation = rs_cam_core::feeds::suggest::default_operation(op, stock);
+    let (mut operation, _) = rs_cam_core::feeds::suggest::default_operation_for_tool(
+        op,
+        stock,
+        rs_cam_core::compute::geometry_default::RuleContext {
+            tool,
+            material,
+            machine,
+        },
+    );
     let z = stock.stock_z.expect("the matrix stock has a thickness");
     match &mut operation {
         OperationConfig::Pocket(c) => c.floor = Floor::top((z * 0.5).min(5.0)),
@@ -311,7 +329,7 @@ fn envelope_columns(
     material: &Material,
     stock: &StockContext,
 ) -> [String; 3] {
-    let operation = add_time_op(op, stock);
+    let operation = add_time_op(op, stock, tool, machine, material);
     match rs_cam_core::feeds::envelope::SafeEnvelope::for_cut(
         rs_cam_core::feeds::envelope::EnvelopeInput {
             operation: &operation,
@@ -737,7 +755,7 @@ fn walk_matrix(
                             fields.extend(std::iter::repeat_n(String::new(), 4));
                             fields.extend(cap_columns(
                                 machine,
-                                &add_time_op(op, &stock_ctx()),
+                                &add_time_op(op, &stock_ctx(), &tool, machine, material),
                                 &tool,
                             ));
                             fields.extend(force_line_columns(material, None, &tool));

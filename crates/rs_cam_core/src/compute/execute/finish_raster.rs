@@ -152,7 +152,11 @@ pub(crate) fn generate_drop_cutter(
 ) -> Result<GeneratedToolpath, OperationError> {
     let cfg = config_guard!(op, DropCutter, "generate_drop_cutter");
     let pass = DropCutterPass {
-        stepover: cfg.stepover,
+        stepover: crate::compute::not_set::required_geometry(
+            cfg.stepover,
+            op.op_type().label(),
+            "stepover",
+        )?,
         min_z: cfg.min_z,
         stock_bottom_z: ctx.stock_bbox.min.z,
         hookup_mm: cfg.hookup_mm,
@@ -322,7 +326,7 @@ pub(crate) fn generate_waterline(
         surface.mesh,
         ctx.heights.top_z,
         ctx.heights.bottom_z,
-        cfg.z_step,
+        crate::compute::not_set::required_geometry(cfg.z_step, op.op_type().label(), "z_step")?,
         ctx.stock_bbox.min.z,
     );
     // W4 (D69 §4, operator ruling 2026-10-28): on a through part (the
@@ -338,7 +342,11 @@ pub(crate) fn generate_waterline(
         requested_top_z_mm: ctx.heights.top_z,
         requested_bottom_z_mm: ctx.heights.bottom_z,
         stock_bottom_z_mm: ctx.stock_bbox.min.z,
-        z_step_mm: cfg.z_step,
+        z_step_mm: crate::compute::not_set::required_geometry(
+            cfg.z_step,
+            op.op_type().label(),
+            "z_step",
+        )?,
         planned_levels: ladder.planned_levels,
         nudged_levels: ladder.nudged_levels,
         dropped_below_stock: ladder.dropped_below_stock,

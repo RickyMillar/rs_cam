@@ -150,7 +150,7 @@ fn session(face: u16, face_up: FaceUp) -> ProjectSession {
     let model_id = builder.add_model(part_model());
     let op = OperationConfig::Pocket(PocketConfig {
         floor: rs_cam_core::compute::floor::Floor::top(POCKET_DEPTH),
-        depth_per_pass: POCKET_DEPTH,
+        depth_per_pass: Some(POCKET_DEPTH),
         ..PocketConfig::default()
     });
     let cfg = toolpath_config(

@@ -13,6 +13,7 @@
 //! `standing_material::level_masks`). Split out of `compute/execute.rs` (P4).
 
 use crate::compute::catalog::{OperationConfig, RestUse};
+use crate::compute::not_set::required_geometry;
 use crate::compute::operation_configs::{
     CompensationType, PocketConfig, PocketPattern, ProfileConfig, RegionOrdering, TraceConfig,
 };
@@ -64,7 +65,7 @@ pub(crate) fn generate_zigzag(
 ) -> Result<GeneratedToolpath, OperationError> {
     let cfg = config_guard!(op, Zigzag, "generate_zigzag");
     let raster = ZigzagRaster {
-        stepover: cfg.stepover,
+        stepover: required_geometry(cfg.stepover, op.op_type().label(), "stepover")?,
         angle: cfg.angle,
         region_ordering: cfg.region_ordering,
         rest_use: op.capabilities().rest_use,
@@ -94,7 +95,11 @@ pub(crate) fn generate_trace(
                 op.op_type().label(),
                 "depth",
             )?,
-            depth_per_pass: cfg.depth_per_pass,
+            depth_per_pass: required_geometry(
+                cfg.depth_per_pass,
+                op.op_type().label(),
+                "depth_per_pass",
+            )?,
             feed_rate: feeds.feed_rate,
             plunge_rate: feeds.plunge_rate,
             safe_z: feeds.safe_z,
@@ -206,6 +211,7 @@ pub(crate) fn generate_pocket(
         PocketPattern::Contour => run_layered(
             &PocketContour {
                 cfg,
+                stepover: required_geometry(cfg.stepover, op.op_type().label(), "stepover")?,
                 rest_use,
                 feeds,
             },
@@ -214,7 +220,7 @@ pub(crate) fn generate_pocket(
         ),
         PocketPattern::Zigzag => run_layered(
             &ZigzagRaster {
-                stepover: cfg.stepover,
+                stepover: required_geometry(cfg.stepover, op.op_type().label(), "stepover")?,
                 angle: cfg.angle,
                 region_ordering: cfg.region_ordering,
                 rest_use,
@@ -230,6 +236,8 @@ pub(crate) fn generate_pocket(
 /// region.
 struct PocketContour<'a> {
     cfg: &'a PocketConfig,
+    /// The set stepover (P10: the prologue stops an unset one).
+    stepover: f64,
     rest_use: RestUse,
     feeds: LayerFeeds,
 }
@@ -262,7 +270,7 @@ impl LayeredOp for PocketContour<'_> {
             let (rings, report) = crate::ops::pocket::pocket_contours_reported_with_cancel(
                 piece,
                 layer.tool_radius,
-                self.cfg.stepover,
+                self.stepover,
                 layer.cancel,
             )?;
             reports.push(report);
@@ -283,7 +291,7 @@ impl LayeredOp for PocketContour<'_> {
             geometry,
             &crate::ops::pocket::PocketParams {
                 tool_radius: feeds.tool_radius,
-                stepover: self.cfg.stepover,
+                stepover: self.stepover,
                 cut_depth: level.z,
                 feed_rate: feeds.feed_rate,
                 plunge_rate: feeds.plunge_rate,
@@ -708,6 +716,9 @@ pub(crate) fn generate_face(
     op: &OperationConfig,
 ) -> Result<GeneratedToolpath, OperationError> {
     let cfg = config_guard!(op, Face, "generate_face");
+    let stepover = required_geometry(cfg.stepover, op.op_type().label(), "stepover")?;
+    let depth_per_pass =
+        required_geometry(cfg.depth_per_pass, op.op_type().label(), "depth_per_pass")?;
     let regions = prepared.regions()?;
     let tool_radius = ctx.tool_def.radius();
     let outlines: Vec<Polygon2> = regions
@@ -727,10 +738,12 @@ pub(crate) fn generate_face(
         .collect();
     let lattices = outlines
         .iter()
-        .map(|outline| crate::ops::face::FaceLattice::of_rect(outline, tool_radius, cfg.stepover))
+        .map(|outline| crate::ops::face::FaceLattice::of_rect(outline, tool_radius, stepover))
         .collect();
     let pass = FacePass {
         cfg,
+        stepover,
+        depth_per_pass,
         rest_use: op.capabilities().rest_use,
         outlines,
         lattices,
@@ -743,6 +756,10 @@ pub(crate) fn generate_face(
 /// pieces), cut at each level of the Face ladder.
 struct FacePass<'a> {
     cfg: &'a crate::compute::operation_configs::FaceConfig,
+    /// The set stepover and depth per pass (P10: the prologue stops an
+    /// unset one).
+    stepover: f64,
+    depth_per_pass: f64,
     rest_use: RestUse,
     /// The facing outlines: the stock rectangle grown by `stock_offset`,
     /// and each other region of the selection as it is.
@@ -782,7 +799,7 @@ impl FacePass<'_> {
             })
             .min_by(|(a, _), (b, _)| a.area().total_cmp(&b.area()))
             .map_or_else(
-                || crate::ops::face::FaceLattice::of_rect(outline, tool_radius, self.cfg.stepover),
+                || crate::ops::face::FaceLattice::of_rect(outline, tool_radius, self.stepover),
                 |(_, lattice)| *lattice,
             )
     }
@@ -829,7 +846,7 @@ impl LayeredOp for FacePass<'_> {
             ctx.heights.top_z,
             ctx.heights.depth_base_z,
             self.cfg.depth,
-            self.cfg.depth_per_pass,
+            self.depth_per_pass,
         ))
     }
 
@@ -841,7 +858,7 @@ impl LayeredOp for FacePass<'_> {
         let (lines, failures) = crate::ops::face::face_scan_lines_reported(
             region,
             layer.tool_radius,
-            self.cfg.stepover,
+            self.stepover,
             self.cfg.direction,
             self.lattice_for(layer.outline, layer.tool_radius),
         );
@@ -862,7 +879,7 @@ impl LayeredOp for FacePass<'_> {
                 geometry,
                 &crate::ops::zigzag::ZigzagParams {
                     tool_radius: feeds.tool_radius,
-                    stepover: self.cfg.stepover,
+                    stepover: self.stepover,
                     cut_depth: level.z,
                     feed_rate: feeds.feed_rate,
                     plunge_rate: feeds.plunge_rate,
@@ -883,6 +900,7 @@ pub(crate) fn generate_adaptive(
     op: &OperationConfig,
 ) -> Result<GeneratedToolpath, OperationError> {
     let cfg = config_guard!(op, Adaptive, "generate_adaptive");
+    let stepover = required_geometry(cfg.stepover, op.op_type().label(), "stepover")?;
     // Geometry selection P3.6 (ruling L-5): under the floor "each picked
     // face" each area steps its own ladder (`Prepared::region_ladders`), in
     // this loop, not in `run_layered`. One ladder (every other floor) is
@@ -951,7 +969,7 @@ pub(crate) fn generate_adaptive(
             };
             let params = crate::adaptive::AdaptiveParams {
                 tool_radius: ctx.tool_def.radius(),
-                stepover: cfg.stepover,
+                stepover,
                 cut_depth: z,
                 feed_rate: op.cut_feeds()?.feed_rate,
                 plunge_rate: op.cut_feeds()?.plunge_rate,

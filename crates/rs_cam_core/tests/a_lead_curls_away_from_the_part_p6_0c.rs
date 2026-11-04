@@ -138,7 +138,7 @@ fn profile(side: ProfileSide, climb: bool) -> OperationConfig {
         side,
         climb,
         floor: Floor::top(DEPTH),
-        depth_per_pass: DEPTH,
+        depth_per_pass: Some(DEPTH),
         tab_count: 0,
         finishing_passes: 0,
         ..ProfileConfig::default()
@@ -149,9 +149,9 @@ fn pocket(climb: bool) -> OperationConfig {
     OperationConfig::Pocket(PocketConfig {
         pattern: PocketPattern::Contour,
         climb,
-        stepover: 2.0,
+        stepover: Some(2.0),
         floor: Floor::top(DEPTH),
-        depth_per_pass: DEPTH,
+        depth_per_pass: Some(DEPTH),
         finishing_passes: 0,
         ..PocketConfig::default()
     })
@@ -160,7 +160,7 @@ fn pocket(climb: bool) -> OperationConfig {
 fn trace(compensation: TraceCompensation) -> OperationConfig {
     OperationConfig::Trace(TraceConfig {
         depth: Some(DEPTH),
-        depth_per_pass: DEPTH,
+        depth_per_pass: Some(DEPTH),
         compensation,
         ..TraceConfig::default()
     })

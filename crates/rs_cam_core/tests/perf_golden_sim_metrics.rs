@@ -409,9 +409,9 @@ fn fixture_session_2d() -> ProjectSession {
             "Pocket",
             OperationConfig::Pocket(PocketConfig {
                 ramp_feed_rate: None,
-                stepover: 3.0,
+                stepover: Some(3.0),
                 floor: rs_cam_core::compute::floor::Floor::top(6.0),
-                depth_per_pass: 3.0,
+                depth_per_pass: Some(3.0),
                 feed_rate: Some(1000.0),
                 plunge_rate: Some(400.0),
                 climb: true,
@@ -429,9 +429,9 @@ fn fixture_session_2d() -> ProjectSession {
             "Zigzag",
             OperationConfig::Zigzag(ZigzagConfig {
                 ramp_feed_rate: None,
-                stepover: 3.0,
+                stepover: Some(3.0),
                 floor: rs_cam_core::compute::floor::Floor::top(3.0),
-                depth_per_pass: 3.0,
+                depth_per_pass: Some(3.0),
                 feed_rate: Some(1000.0),
                 plunge_rate: Some(400.0),
                 angle: 45.0,
@@ -446,7 +446,7 @@ fn fixture_session_2d() -> ProjectSession {
                 ramp_feed_rate: None,
                 side: ProfileSide::Outside,
                 floor: rs_cam_core::compute::floor::Floor::top(6.0),
-                depth_per_pass: 3.0,
+                depth_per_pass: Some(3.0),
                 feed_rate: Some(1000.0),
                 plunge_rate: Some(400.0),
                 climb: true,
@@ -576,7 +576,7 @@ fn fixture_session_3d() -> ProjectSession {
 
     let drop_cutter = OperationConfig::DropCutter(DropCutterConfig {
         ramp_feed_rate: None,
-        stepover: 1.5,
+        stepover: Some(1.5),
         feed_rate: Some(1000.0),
         plunge_rate: Some(400.0),
         min_z: 0.0,
@@ -588,7 +588,7 @@ fn fixture_session_3d() -> ProjectSession {
     });
     let waterline = OperationConfig::Waterline(WaterlineConfig {
         ramp_feed_rate: None,
-        z_step: 1.5,
+        z_step: Some(1.5),
         sampling: 0.4,
         feed_rate: Some(1000.0),
         plunge_rate: Some(400.0),

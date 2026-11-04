@@ -76,7 +76,7 @@ fn heavy_dropcutter_spec(id: usize) -> RequestSpec {
     else {
         unreachable!("default op kind mismatch");
     };
-    cfg.stepover = 0.25;
+    cfg.stepover = Some(0.25);
     cfg.min_z = -5.0;
     let mut spec = RequestSpec::new(
         id,
@@ -96,7 +96,7 @@ fn waterline_spec(id: usize) -> RequestSpec {
     else {
         unreachable!("default op kind mismatch");
     };
-    cfg.z_step = 1.0;
+    cfg.z_step = Some(1.0);
     cfg.sampling = 1.0;
     let mut spec = RequestSpec::new(
         id,
@@ -116,7 +116,7 @@ fn adaptive3d_spec(id: usize) -> RequestSpec {
     else {
         unreachable!("default op kind mismatch");
     };
-    cfg.depth_per_pass = 2.0;
+    cfg.depth_per_pass = Some(2.0);
     cfg.detect_flat_areas = true;
     cfg.region_ordering = crate::state::toolpath::RegionOrdering::ByArea;
     let mut spec = RequestSpec::new(
@@ -236,7 +236,7 @@ fn ramp_finish_spec(id: usize) -> RequestSpec {
     else {
         unreachable!("default op kind mismatch");
     };
-    cfg.max_stepdown = 2.0;
+    cfg.max_stepdown = Some(2.0);
     cfg.sampling = 2.0;
     cfg.tolerance = 0.2;
     let mut spec = RequestSpec::new(
@@ -257,7 +257,7 @@ fn spiral_finish_spec(id: usize) -> RequestSpec {
     else {
         unreachable!("default op kind mismatch");
     };
-    cfg.stepover = 2.0;
+    cfg.stepover = Some(2.0);
     let mut spec = RequestSpec::new(
         id,
         &format!("Spiral finish {id}"),
@@ -296,7 +296,7 @@ fn horizontal_finish_spec(id: usize) -> RequestSpec {
     else {
         unreachable!("default op kind mismatch");
     };
-    cfg.stepover = 3.0;
+    cfg.stepover = Some(3.0);
     let mut spec = RequestSpec::new(
         id,
         &format!("Horizontal finish {id}"),

@@ -100,7 +100,7 @@ fn waterline(helical: bool) -> Toolpath {
         endmill_tool_config(TOOL_D),
         mesh_model(holed_plate(), "d69_holed_plate"),
         OperationConfig::Waterline(WaterlineConfig {
-            z_step: Z_STEP,
+            z_step: Some(Z_STEP),
             sampling: 0.5,
             helical,
             ..WaterlineConfig::default()

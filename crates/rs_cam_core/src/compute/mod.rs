@@ -18,6 +18,7 @@ pub mod feasibility;
 pub mod fixture_values;
 pub mod floor;
 pub mod generated_empty;
+pub mod geometry_default;
 pub mod model_gouge;
 pub mod not_set;
 pub mod obstacle;

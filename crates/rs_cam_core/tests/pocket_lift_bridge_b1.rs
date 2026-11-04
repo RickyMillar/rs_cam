@@ -119,9 +119,9 @@ fn build_pocket_session() -> ProjectSession {
 
     let pocket = PocketConfig {
         ramp_feed_rate: None,
-        stepover: 2.0,
+        stepover: Some(2.0),
         floor: rs_cam_core::compute::floor::Floor::top(12.0),
-        depth_per_pass: 4.2,
+        depth_per_pass: Some(4.2),
         feed_rate: Some(770.0),
         plunge_rate: Some(385.0),
         climb: true,

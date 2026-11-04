@@ -65,8 +65,8 @@ const TOOL_DIAMETER: f64 = 6.0;
 
 fn rough(strategy: ClearingStrategy) -> OperationConfig {
     OperationConfig::Adaptive3d(Adaptive3dConfig {
-        stepover: 2.0,
-        depth_per_pass: 3.0,
+        stepover: Some(2.0),
+        depth_per_pass: Some(3.0),
         clearing_strategy: strategy,
         ..Adaptive3dConfig::default()
     })

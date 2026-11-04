@@ -89,9 +89,55 @@ pub const fn fixture_floor(op_type: OperationType) -> Option<Floor> {
     }
 }
 
+/// The tool-derived geometry of each op before P10 (operator ruling D8):
+/// the fixed struct defaults that `OperationConfig::new_default` held. A
+/// fixture states them, so a fixture that read them cuts the same toolpath
+/// (G-OPGOLDEN does not move). No product door reads them.
+#[must_use]
+pub const fn fixture_geometry(op_type: OperationType) -> &'static [(&'static str, f64)] {
+    match op_type {
+        OperationType::Face => &[("stepover", 5.0), ("depth_per_pass", 1.0)],
+        OperationType::Trace => &[("depth_per_pass", 0.5)],
+        OperationType::Drill | OperationType::AlignmentPinDrill => &[("peck_depth", 3.0)],
+        OperationType::Pocket | OperationType::Zigzag => {
+            &[("stepover", 2.0), ("depth_per_pass", 1.5)]
+        }
+        OperationType::Profile => &[("depth_per_pass", 2.0)],
+        OperationType::Adaptive => &[("stepover", 2.0), ("depth_per_pass", 2.0)],
+        OperationType::VCarve => &[("stepover", 0.5)],
+        OperationType::Inlay => &[("stepover", 1.0)],
+        OperationType::InlayPlug => &[("stepover", 1.0), ("depth_per_pass", 1.5)],
+        OperationType::DropCutter
+        | OperationType::SpiralFinish
+        | OperationType::HorizontalFinish => &[("stepover", 1.0)],
+        OperationType::Adaptive3d => &[("stepover", 2.0), ("depth_per_pass", 3.0)],
+        OperationType::Waterline => &[("z_step", 1.0)],
+        OperationType::UnifiedFinish => &[("z_step", 1.0), ("raster_stepover", 1.0)],
+        OperationType::RampFinish => &[("max_stepdown", 0.5)],
+        OperationType::Pencil => &[("offset_stepover", 0.5)],
+        OperationType::SteepShallow => &[("stepover", 1.0), ("z_step", 1.0)],
+        OperationType::Bore
+        | OperationType::Chamfer
+        | OperationType::Scallop
+        | OperationType::RadialFinish
+        | OperationType::ProjectCurve => &[],
+    }
+}
+
+/// Fill each unset tool-derived field of `op` with [`fixture_geometry`].
+/// A set value stays.
+pub fn fill_unset_geometry(op: &mut OperationConfig) {
+    for &(field, value) in fixture_geometry(op.op_type()) {
+        if let Some(slot) = crate::compute::geometry_default::slot_mut(op, field) {
+            slot.get_or_insert(value);
+        }
+    }
+}
+
 /// Fill each unset value of `op` with the fixture value. A set value
 /// stays.
 pub fn fill_unset(op: &mut OperationConfig) {
+    fill_unset_geometry(op);
     let op_type = op.op_type();
     let (feed, plunge) = fixture_feeds(op_type);
     if op.feed_rate().is_none() {

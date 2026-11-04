@@ -96,7 +96,7 @@ fn a_pre_f2_project_loads_as_none_and_saves_without_the_keys() {
     // And the values that WERE on disk survive, so this is a round-trip and
     // not merely a defaulted struct.
     let reloaded: UnifiedFinishConfig = toml::from_str(&round_tripped).expect("reload");
-    assert!((reloaded.raster_stepover - 0.6).abs() < 1e-12);
+    assert_eq!(reloaded.raster_stepover, Some(0.6));
     assert!((reloaded.overlap_mm - 2.0).abs() < 1e-12);
     assert_eq!(reloaded.min_region_area_mm2, None);
     assert_eq!(reloaded.close_radius_mm, None);

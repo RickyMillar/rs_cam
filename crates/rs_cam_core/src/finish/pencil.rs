@@ -226,7 +226,9 @@ pub struct PencilParams {
 impl Default for PencilParams {
     fn default() -> Self {
         let config = crate::compute::operation_configs::PencilConfig::default();
-        config.params(
+        // P10: the config holds no offset stepover (a tool gives it). The
+        // kernel default keeps the value the config had before P10.
+        config.params_at(
             crate::compute::operation_configs::OpMotion {
                 // S11: the config holds no feed. The kernel default (read by
                 // kernel tests; every op caller sets the motion) keeps the
@@ -237,6 +239,7 @@ impl Default for PencilParams {
             },
             None,
             None,
+            0.5,
         )
     }
 }

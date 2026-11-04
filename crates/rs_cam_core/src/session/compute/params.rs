@@ -233,6 +233,19 @@ impl ProjectSession {
                     tc.operation.as_params_mut().unset_plunge_rate();
                 }
             }
+            // P10 (ruling D8): `null` clears a tool-derived stepover or depth
+            // per pass (the published default with no tool); generation
+            // then stops until a tool or the operator sets it.
+            "stepover" | "depth_per_pass"
+                if value.is_null() && tc.operation.param_names().contains(&param) =>
+            {
+                let slot = crate::compute::geometry_default::stamp_slot(&tc.operation, param);
+                match crate::compute::geometry_default::slot_mut(&mut tc.operation, param) {
+                    Some(field) => *field = None,
+                    None => return Err(unknown_param_error(&tc.operation, param)),
+                }
+                tc.feeds_provenance.clear(slot);
+            }
             "feed_rate" => {
                 let v = as_number(&value).ok_or_else(|| {
                     SessionError::InvalidParam("feed_rate must be a number".to_owned())
@@ -517,6 +530,17 @@ impl ProjectSession {
                 // the one operation check before it is written.
                 crate::compute::domain::validate_toolpath_operation(&tc.name, &new_op)?;
                 tc.operation = new_op;
+                // P10 (ruling D8): a hand-set tool-derived field (a peck, a
+                // Z step, an offset stepover) is an operator value, so a
+                // tool change keeps it.
+                if crate::compute::geometry_default::read_fields(&tc.operation)
+                    .iter()
+                    .any(|(field, value)| *field == param && value.is_some())
+                {
+                    let slot = crate::compute::geometry_default::stamp_slot(&tc.operation, param);
+                    tc.feeds_provenance
+                        .set(slot, crate::feeds::ValueProvenance::manual());
+                }
                 // G6 ramp: a hand-set entry feed is an override, as
                 // `feed_rate` is above.
                 if param == "ramp_feed_rate" {

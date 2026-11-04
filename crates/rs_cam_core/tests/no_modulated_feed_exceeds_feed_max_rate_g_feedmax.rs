@@ -99,9 +99,9 @@ fn modulated_pocket(feed_max_rate: Option<f64>) -> ProjectSession {
         "as001_pocket",
     ));
     let pocket = PocketConfig {
-        stepover: 2.0,
+        stepover: Some(2.0),
         floor: rs_cam_core::compute::floor::Floor::top(6.0),
-        depth_per_pass: 2.0,
+        depth_per_pass: Some(2.0),
         feed_rate: Some(COMMANDED_FEED),
         plunge_rate: Some(385.0),
         climb: true,

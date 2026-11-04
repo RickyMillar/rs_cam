@@ -111,8 +111,8 @@ fn build_session(origin_z: f64) -> ProjectSession {
     let model_id = builder.add_model(model);
 
     let adaptive = Adaptive3dConfig {
-        depth_per_pass: 2.0,
-        stepover: 2.0,
+        depth_per_pass: Some(2.0),
+        stepover: Some(2.0),
         ..Adaptive3dConfig::default()
     };
 

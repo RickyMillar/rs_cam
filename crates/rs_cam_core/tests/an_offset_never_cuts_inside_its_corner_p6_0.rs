@@ -117,7 +117,7 @@ fn profile(side: ProfileSide) -> OperationConfig {
     OperationConfig::Profile(ProfileConfig {
         side,
         floor: Floor::top(DEPTH),
-        depth_per_pass: DEPTH,
+        depth_per_pass: Some(DEPTH),
         tab_count: 0,
         finishing_passes: 0,
         ..ProfileConfig::default()
@@ -127,9 +127,9 @@ fn profile(side: ProfileSide) -> OperationConfig {
 fn pocket() -> OperationConfig {
     OperationConfig::Pocket(PocketConfig {
         pattern: PocketPattern::Contour,
-        stepover: 2.0,
+        stepover: Some(2.0),
         floor: Floor::top(DEPTH),
-        depth_per_pass: DEPTH,
+        depth_per_pass: Some(DEPTH),
         finishing_passes: 0,
         ..PocketConfig::default()
     })

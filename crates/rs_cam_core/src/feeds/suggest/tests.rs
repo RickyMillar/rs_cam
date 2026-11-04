@@ -103,10 +103,13 @@ fn ball_tool(diameter: f64) -> ToolConfig {
 
 /// DropCutter (3D Finish) operation with an optional scallop target.
 fn dropcutter_op(scallop_height: Option<f64>) -> OperationConfig {
-    OperationConfig::DropCutter(DropCutterConfig {
+    let mut op = OperationConfig::DropCutter(DropCutterConfig {
         scallop_height,
         ..DropCutterConfig::default()
-    })
+    });
+    // P10: the fixture states the stepover the registry held before P10.
+    crate::compute::fixture_values::fill_unset_geometry(&mut op);
+    op
 }
 
 /// Run the canonical feeds path for a DropCutter op + tool and return
@@ -649,8 +652,8 @@ fn invariants_clamp_and_warn() {
     let mut op = OperationConfig::Pocket(PocketConfig {
         feed_rate: Some(100.0),
         plunge_rate: Some(250.0),
-        stepover: 12.0,
-        depth_per_pass: 20.0,
+        stepover: Some(12.0),
+        depth_per_pass: Some(20.0),
         ..PocketConfig::default()
     });
     let tool = tool(6.0);
@@ -710,7 +713,7 @@ fn drill_peck_depth_scales_with_diameter_and_material() {
     // = 9.0 mm, then clamps to 0.75 × default depth (10 mm) = 7.5 mm.
     let mut op_3mm = OperationConfig::Drill(DrillConfig {
         cycle: DrillCycleType::Peck,
-        peck_depth: 3.0, // pre-fix hardcode value
+        peck_depth: Some(3.0), // pre-fix hardcode value
         // S11: the fixture states the 10 mm hole the claim reads.
         floor: crate::compute::floor::Floor::top(10.0),
         ..DrillConfig::default()
@@ -725,7 +728,7 @@ fn drill_peck_depth_scales_with_diameter_and_material() {
         reason = "test: an unexpected variant panics"
     )]
     let peck_3mm = match &op_3mm {
-        OperationConfig::Drill(cfg) => cfg.peck_depth,
+        OperationConfig::Drill(cfg) => cfg.peck_depth.unwrap_or(f64::NAN),
         _ => panic!("expected Drill"),
     };
     assert!(
@@ -738,7 +741,7 @@ fn drill_peck_depth_scales_with_diameter_and_material() {
     // clamped to 0.75 × 10 mm = 7.5 mm by the default depth.
     let mut op_12mm = OperationConfig::Drill(DrillConfig {
         cycle: DrillCycleType::Peck,
-        peck_depth: 3.0, // pre-fix hardcode value
+        peck_depth: Some(3.0), // pre-fix hardcode value
         // S11: the fixture states the 10 mm hole the claim reads.
         floor: crate::compute::floor::Floor::top(10.0),
         ..DrillConfig::default()
@@ -753,7 +756,7 @@ fn drill_peck_depth_scales_with_diameter_and_material() {
         reason = "test: an unexpected variant panics"
     )]
     let peck_12mm = match &op_12mm {
-        OperationConfig::Drill(cfg) => cfg.peck_depth,
+        OperationConfig::Drill(cfg) => cfg.peck_depth.unwrap_or(f64::NAN),
         _ => panic!("expected Drill"),
     };
     assert!(
@@ -819,13 +822,13 @@ fn alignment_pin_drill_peck_is_clamped_like_drill() {
         diameter: 6.0,
         spoilboard_penetration: 2.0,
         cycle: DrillCycleType::Peck,
-        peck_depth: 3.0,
+        peck_depth: Some(3.0),
         ..AlignmentPinDrillConfig::default()
     };
     let peck_of = |op: &OperationConfig| -> f64 {
         match op {
-            OperationConfig::AlignmentPinDrill(cfg) => cfg.peck_depth,
-            OperationConfig::Drill(cfg) => cfg.peck_depth,
+            OperationConfig::AlignmentPinDrill(cfg) => cfg.peck_depth.unwrap_or(f64::NAN),
+            OperationConfig::Drill(cfg) => cfg.peck_depth.unwrap_or(f64::NAN),
             other => panic!("expected a drill family op, got {other:?}"),
         }
     };
@@ -854,7 +857,7 @@ fn alignment_pin_drill_peck_is_clamped_like_drill() {
 
     let mut drill = OperationConfig::Drill(DrillConfig {
         cycle: DrillCycleType::Peck,
-        peck_depth: 3.0,
+        peck_depth: Some(3.0),
         floor: crate::compute::floor::Floor::Top { depth: hole_depth },
         ..DrillConfig::default()
     });
@@ -930,13 +933,13 @@ fn drill_peck_depth_softwood_exceeds_hardwood() {
     let peck_for = |material: &Material| -> f64 {
         let mut op = OperationConfig::Drill(DrillConfig {
             cycle: DrillCycleType::Peck,
-            peck_depth: 3.0,
+            peck_depth: Some(3.0),
             floor: crate::compute::floor::Floor::Top { depth: drill_depth },
             ..DrillConfig::default()
         });
         apply_drill_defaults(&mut op, &tool, material, None);
         match &op {
-            OperationConfig::Drill(cfg) => cfg.peck_depth,
+            OperationConfig::Drill(cfg) => cfg.peck_depth.unwrap_or(f64::NAN),
             _ => panic!("expected Drill"),
         }
     };
@@ -1021,8 +1024,8 @@ fn plunge_entry_unstable_warning_fires_when_dpp_exceeds_half_diameter() {
         let mut op = OperationConfig::Adaptive3d(Adaptive3dConfig {
             feed_rate: Some(1500.0),
             plunge_rate: Some(500.0),
-            stepover: 0.88,
-            depth_per_pass: *dpp,
+            stepover: Some(0.88),
+            depth_per_pass: Some(*dpp),
             entry_style: Adaptive3dEntryStyle::Plunge,
             ..Adaptive3dConfig::default()
         });
@@ -1097,8 +1100,8 @@ fn plunge_entry_unstable_does_not_fire_below_half_diameter() {
     let mut op = OperationConfig::Adaptive3d(Adaptive3dConfig {
         feed_rate: Some(1500.0),
         plunge_rate: Some(500.0),
-        stepover: 0.88,
-        depth_per_pass: 2.0,
+        stepover: Some(0.88),
+        depth_per_pass: Some(2.0),
         entry_style: Adaptive3dEntryStyle::Plunge,
         ..Adaptive3dConfig::default()
     });
@@ -1144,8 +1147,8 @@ fn plunge_entry_unstable_does_not_fire_for_helix_or_ramp() {
         let mut op = OperationConfig::Adaptive3d(Adaptive3dConfig {
             feed_rate: Some(1500.0),
             plunge_rate: Some(500.0),
-            stepover: 0.88,
-            depth_per_pass: 9.0,
+            stepover: Some(0.88),
+            depth_per_pass: Some(9.0),
             entry_style: style,
             ..Adaptive3dConfig::default()
         });
@@ -1273,10 +1276,10 @@ fn retired_lift_leaves_wanaka_back_rough_feed_untouched() {
     let mut op = OperationConfig::Adaptive3d(Adaptive3dConfig {
         feed_rate: Some(911.0),
         plunge_rate: Some(300.0),
-        stepover: 1.2,
+        stepover: Some(1.2),
         // Post-v1.1-back-off DPP. Helix entry so we don't also
         // fire PlungeEntryUnstableAtDpp.
-        depth_per_pass: 3.69,
+        depth_per_pass: Some(3.69),
         spindle_rpm: Some(16_000),
         entry_style: Adaptive3dEntryStyle::Helix,
         ..Adaptive3dConfig::default()
@@ -1385,8 +1388,8 @@ fn retired_lift_fires_no_cap_on_a_deflection_bound_fixture() {
         let mut op = OperationConfig::Adaptive3d(Adaptive3dConfig {
             feed_rate: Some(initial_feed),
             plunge_rate: Some(300.0),
-            stepover: 1.2,
-            depth_per_pass: 3.69,
+            stepover: Some(1.2),
+            depth_per_pass: Some(3.69),
             spindle_rpm: Some(16_000),
             entry_style: Adaptive3dEntryStyle::Helix,
             ..Adaptive3dConfig::default()
@@ -1480,8 +1483,8 @@ fn retired_lift_reports_no_max_feed_shortfall() {
     let mut op = OperationConfig::Adaptive3d(Adaptive3dConfig {
         feed_rate: Some(4000.0),
         plunge_rate: Some(300.0),
-        stepover: 1.2,
-        depth_per_pass: 2.0,
+        stepover: Some(1.2),
+        depth_per_pass: Some(2.0),
         spindle_rpm: Some(16_000),
         entry_style: Adaptive3dEntryStyle::Helix,
         ..Adaptive3dConfig::default()
@@ -1561,8 +1564,8 @@ fn feed_recalibration_skipped_when_already_in_band() {
     let mut op = OperationConfig::Adaptive3d(Adaptive3dConfig {
         feed_rate: Some(4000.0),
         plunge_rate: Some(500.0),
-        stepover: 1.2,
-        depth_per_pass: 2.0,
+        stepover: Some(1.2),
+        depth_per_pass: Some(2.0),
         spindle_rpm: Some(16_000),
         entry_style: Adaptive3dEntryStyle::Helix,
         ..Adaptive3dConfig::default()
@@ -1648,8 +1651,8 @@ fn suggest_never_writes_entry_style() {
         for scope in [SuggestScope::StrategyAndFeeds, SuggestScope::FeedsWithGates] {
             for model_bbox in [Some(&bbox), None] {
                 let mut op = OperationConfig::Adaptive3d(Adaptive3dConfig {
-                    depth_per_pass: 3.69,
-                    stepover: 1.2,
+                    depth_per_pass: Some(3.69),
+                    stepover: Some(1.2),
                     feed_rate: Some(911.0),
                     spindle_rpm: Some(16_000),
                     entry_style: style,
@@ -1698,8 +1701,8 @@ fn clearing_strategy_recommendation_is_warn_only() {
         max: crate::geo::P3::new(200.0, 150.0, 0.0),
     };
     let mut op = OperationConfig::Adaptive3d(Adaptive3dConfig {
-        depth_per_pass: 2.0,
-        stepover: 1.2,
+        depth_per_pass: Some(2.0),
+        stepover: Some(1.2),
         feed_rate: Some(911.0),
         spindle_rpm: Some(16_000),
         ..Adaptive3dConfig::default()
@@ -1793,8 +1796,8 @@ fn clearing_strategy_recommendation_skips() {
                model_bbox: Option<&crate::geo::BoundingBox3>|
      -> Vec<SuggestWarning> {
         let mut op = OperationConfig::Adaptive3d(Adaptive3dConfig {
-            depth_per_pass: 2.0,
-            stepover: 1.2,
+            depth_per_pass: Some(2.0),
+            stepover: Some(1.2),
             feed_rate: Some(911.0),
             spindle_rpm: Some(16_000),
             clearing_strategy: strategy,
@@ -1888,38 +1891,38 @@ fn operation_feeds_hints_is_an_explicit_per_op_decision() {
 
         #[expect(clippy::match_same_arms, reason = "one arm per op = the point")]
         let expected: (Option<f64>, Option<f64>, Option<f64>) = match &config {
-            OperationConfig::Face(c) => (Some(c.depth_per_pass), Some(c.stepover), None),
-            OperationConfig::Pocket(c) => (Some(c.depth_per_pass), Some(c.stepover), None),
-            OperationConfig::Profile(c) => (Some(c.depth_per_pass), Some(d), None),
-            OperationConfig::Adaptive(c) => (Some(c.depth_per_pass), Some(c.stepover), None),
+            OperationConfig::Face(c) => (c.depth_per_pass, c.stepover, None),
+            OperationConfig::Pocket(c) => (c.depth_per_pass, c.stepover, None),
+            OperationConfig::Profile(c) => (c.depth_per_pass, Some(d), None),
+            OperationConfig::Adaptive(c) => (c.depth_per_pass, c.stepover, None),
             OperationConfig::VCarve(c) => (positive(c.max_depth), None, None),
             OperationConfig::Inlay(c) => (positive(c.pocket_depth), None, None),
-            OperationConfig::InlayPlug(c) => (Some(c.depth_per_pass), None, None),
-            OperationConfig::Zigzag(c) => (Some(c.depth_per_pass), Some(c.stepover), None),
-            OperationConfig::Trace(c) => (Some(c.depth_per_pass), Some(d), None),
+            OperationConfig::InlayPlug(c) => (c.depth_per_pass, None, None),
+            OperationConfig::Zigzag(c) => (c.depth_per_pass, c.stepover, None),
+            OperationConfig::Trace(c) => (c.depth_per_pass, Some(d), None),
             OperationConfig::Drill(_) => (None, None, None),
             OperationConfig::Bore(_) => (None, Some(d), None),
             OperationConfig::Chamfer(_) => (None, None, None),
             OperationConfig::DropCutter(c) => match c.scallop_height {
                 Some(h) => (None, None, Some(h)),
-                None => (None, Some(c.stepover), None),
+                None => (None, c.stepover, None),
             },
-            OperationConfig::Adaptive3d(c) => (Some(c.depth_per_pass), Some(c.stepover), None),
-            OperationConfig::Waterline(c) => (Some(c.z_step), None, None),
+            OperationConfig::Adaptive3d(c) => (c.depth_per_pass, c.stepover, None),
+            OperationConfig::Waterline(c) => (c.z_step, None, None),
             OperationConfig::Pencil(c) => {
                 if c.num_offset_passes > 1 {
-                    (None, Some(c.offset_stepover), None)
+                    (None, c.offset_stepover, None)
                 } else {
                     (None, None, None)
                 }
             }
             OperationConfig::Scallop(c) => (None, None, Some(c.scallop_height)),
-            OperationConfig::UnifiedFinish(c) => (Some(c.z_step), None, Some(c.scallop_height)),
-            OperationConfig::SteepShallow(c) => (Some(c.z_step), Some(c.stepover), None),
-            OperationConfig::RampFinish(c) => (Some(c.max_stepdown), None, None),
-            OperationConfig::SpiralFinish(c) => (None, Some(c.stepover), None),
+            OperationConfig::UnifiedFinish(c) => (c.z_step, None, Some(c.scallop_height)),
+            OperationConfig::SteepShallow(c) => (c.z_step, c.stepover, None),
+            OperationConfig::RampFinish(c) => (c.max_stepdown, None, None),
+            OperationConfig::SpiralFinish(c) => (None, c.stepover, None),
             OperationConfig::RadialFinish(_) => (None, None, None),
-            OperationConfig::HorizontalFinish(c) => (None, Some(c.stepover), None),
+            OperationConfig::HorizontalFinish(c) => (None, c.stepover, None),
             OperationConfig::ProjectCurve(c) => (positive(c.depth), Some(d), None),
             OperationConfig::AlignmentPinDrill(_) => (None, None, None),
         };
@@ -1965,8 +1968,8 @@ fn a_suggested_peck_respects_the_schema_floor_b14() {
     let drill_floor = floor_of(OperationType::Drill);
     let pin_floor = floor_of(OperationType::AlignmentPinDrill);
     let peck_of = |op: &OperationConfig| match op {
-        OperationConfig::Drill(cfg) => cfg.peck_depth,
-        OperationConfig::AlignmentPinDrill(cfg) => cfg.peck_depth,
+        OperationConfig::Drill(cfg) => cfg.peck_depth.unwrap_or(f64::NAN),
+        OperationConfig::AlignmentPinDrill(cfg) => cfg.peck_depth.unwrap_or(f64::NAN),
         other => panic!("expected a drill family op, got {other:?}"),
     };
     let drill_at = |depth: f64| {

@@ -205,8 +205,8 @@ fn fixture(cutter: &Cutter) -> AppState {
         // it the Pocket defaults (stepover 2.0, depth per pass 1.5) make
         // the Ø2 cutter slot, the slot cap lowers the depth to 0.5, and the
         // thin ceiling leaves the chart (measured 0.2572 against 0.11667).
-        config.depth_per_pass = STATED_AP_PER_D * cutter.diameter_mm;
-        config.stepover = STATED_AE_PER_D * cutter.diameter_mm;
+        config.depth_per_pass = Some(STATED_AP_PER_D * cutter.diameter_mm);
+        config.stepover = Some(STATED_AE_PER_D * cutter.diameter_mm);
     }
     let config = ToolpathConfig {
         shoe: Default::default(),

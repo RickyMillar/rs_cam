@@ -85,8 +85,8 @@ fn generate(
         tolerance: 0.5,
         sampling: 1.0,
         scallop_height,
-        raster_stepover,
-        z_step,
+        raster_stepover: Some(raster_stepover),
+        z_step: Some(z_step),
         ..UnifiedFinishConfig::default()
     });
 

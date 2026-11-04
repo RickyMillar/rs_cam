@@ -1159,7 +1159,8 @@ mod tests {
         let mut checked = 0;
         for &op_type in OperationType::ALL {
             let mut op = OperationConfig::new_default(op_type);
-            if op.stepover().is_none() {
+            // P10: a new op holds no stepover value; the field is there.
+            if !op.as_params().has_stepover() {
                 continue;
             }
             checked += 1;

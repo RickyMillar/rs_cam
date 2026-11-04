@@ -74,7 +74,7 @@ fn pin_holes_land_where_the_stock_says_the_pins_are() {
         diameter: 6.0,
         spoilboard_penetration: 1.0,
         cycle: DrillCycleType::Simple,
-        peck_depth: 3.0,
+        peck_depth: Some(3.0),
         feed_rate: Some(300.0),
         retract_z: 2.0,
         spindle_rpm: None,

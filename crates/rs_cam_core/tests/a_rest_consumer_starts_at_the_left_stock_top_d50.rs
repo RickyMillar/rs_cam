@@ -60,8 +60,8 @@ const SIM_CELL: f64 = 0.5;
 
 fn rough(strategy: ClearingStrategy, leave: f64, depth_per_pass: f64) -> OperationConfig {
     OperationConfig::Adaptive3d(Adaptive3dConfig {
-        stepover: 2.0,
-        depth_per_pass,
+        stepover: Some(2.0),
+        depth_per_pass: Some(depth_per_pass),
         stock_to_leave_axial: leave,
         clearing_strategy: strategy,
         ..Adaptive3dConfig::default()

@@ -67,7 +67,7 @@ fn session() -> ProjectSession {
         mesh_model(height_field(HALF, 2.0, |_, _| FLOOR_Z), "Floor"),
         "3D Finish",
         OperationConfig::DropCutter(DropCutterConfig {
-            stepover: 4.0,
+            stepover: Some(4.0),
             min_z: FLOOR_Z - 5.0,
             ..DropCutterConfig::default()
         }),

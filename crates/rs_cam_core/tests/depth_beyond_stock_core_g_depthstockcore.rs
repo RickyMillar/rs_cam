@@ -105,7 +105,7 @@ fn snapshot(op_depth: f64) -> ResolvedHeights {
 fn pocket(depth: f64) -> OperationConfig {
     OperationConfig::Pocket(PocketConfig {
         floor: rs_cam_core::compute::floor::Floor::top(depth),
-        depth_per_pass: 2.0,
+        depth_per_pass: Some(2.0),
         ..PocketConfig::default()
     })
 }
@@ -308,9 +308,9 @@ fn pocket_session(depth: f64) -> ProjectSession {
         enabled: true,
         operation: OperationConfig::Pocket(PocketConfig {
             ramp_feed_rate: None,
-            stepover: 2.0,
+            stepover: Some(2.0),
             floor: rs_cam_core::compute::floor::Floor::top(depth),
-            depth_per_pass: 2.0,
+            depth_per_pass: Some(2.0),
             feed_rate: Some(770.0),
             plunge_rate: Some(385.0),
             climb: true,

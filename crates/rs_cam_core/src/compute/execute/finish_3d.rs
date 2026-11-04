@@ -42,7 +42,7 @@ pub(crate) fn generate_pencil(
             .map(crate::compute::cutter::build_cutter)
             .transpose()?,
         ctx.link_kinematics.clone(),
-    );
+    )?;
     let (tp, annotations, report) =
         crate::finish::pencil::pencil_toolpath_structured_annotated_with_cancel(
             m,
@@ -102,7 +102,7 @@ pub(crate) fn generate_unified_finish(
         feed_rate: op.cut_feeds()?.feed_rate,
         plunge_rate: op.cut_feeds()?.plunge_rate,
         safe_z: ctx.heights.retract_z,
-    });
+    })?;
     // F2: the `for_tool` derivation plus this op's own dials, built in ONE
     // place — `UnifiedFinishConfig::planner_params`, whose doc carries the
     // cusp-vs-envelope rule this line used to carry and the `None` =
@@ -303,7 +303,7 @@ pub(crate) fn generate_steep_shallow(
         feed_rate: op.cut_feeds()?.feed_rate,
         plunge_rate: op.cut_feeds()?.plunge_rate,
         safe_z: ctx.heights.retract_z,
-    });
+    })?;
     // W6.4.4: the composed op. Two concatenated passes, not one continuous
     // trace: the barriers of its `order_constraints` keep the halves in
     // their emitted order and keep the steep half's Z ladder, which is what
@@ -342,7 +342,7 @@ pub(crate) fn generate_ramp_finish(
 ) -> Result<GeneratedToolpath, OperationError> {
     let cfg = config_guard!(op, RampFinish, "generate_ramp_finish");
     let pass = RampPass {
-        params: cfg.params(op_motion(ctx, op)?),
+        params: cfg.params(op_motion(ctx, op)?)?,
     };
     run_height_field(&pass, ctx, prepared)
 }
@@ -411,7 +411,7 @@ pub(crate) fn generate_spiral_finish(
 ) -> Result<GeneratedToolpath, OperationError> {
     let cfg = config_guard!(op, SpiralFinish, "generate_spiral_finish");
     let pass = SpiralPass {
-        params: cfg.params(op_motion(ctx, op)?),
+        params: cfg.params(op_motion(ctx, op)?)?,
     };
     run_height_field(&pass, ctx, prepared)
 }
@@ -551,7 +551,7 @@ pub(crate) fn generate_horizontal_finish(
 ) -> Result<GeneratedToolpath, OperationError> {
     let cfg = config_guard!(op, HorizontalFinish, "generate_horizontal_finish");
     let pass = HorizontalPass {
-        params: cfg.params(op_motion(ctx, op)?),
+        params: cfg.params(op_motion(ctx, op)?)?,
     };
     run_height_field(&pass, ctx, prepared)
 }

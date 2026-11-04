@@ -220,8 +220,8 @@ fn unified_finish_op() -> OperationConfig {
         tolerance: 0.05,
         sampling: 0.25,
         scallop_height: 0.15,
-        raster_stepover: 1.5,
-        z_step: 1.5,
+        raster_stepover: Some(1.5),
+        z_step: Some(1.5),
         ..UnifiedFinishConfig::default()
     })
 }

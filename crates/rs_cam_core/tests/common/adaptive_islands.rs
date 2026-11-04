@@ -168,9 +168,9 @@ pub fn adaptive_session_with(
     entry_style: Option<rs_cam_core::compute::config::DressupEntryStyle>,
 ) -> ProjectSession {
     let cfg = AdaptiveConfig {
-        stepover: STEPOVER_MM,
+        stepover: Some(STEPOVER_MM),
         floor: rs_cam_core::compute::floor::Floor::top(6.0),
-        depth_per_pass: 3.0,
+        depth_per_pass: Some(3.0),
         feed_rate: Some(1500.0),
         plunge_rate: Some(500.0),
         ..AdaptiveConfig::default()

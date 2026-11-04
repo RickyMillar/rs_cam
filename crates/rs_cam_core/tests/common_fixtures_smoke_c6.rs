@@ -418,9 +418,9 @@ fn session_builders_drive_a_real_generation() {
         "Pocket",
         OperationConfig::Pocket(PocketConfig {
             ramp_feed_rate: None,
-            stepover: 2.0,
+            stepover: Some(2.0),
             floor: rs_cam_core::compute::floor::Floor::top(2.0),
-            depth_per_pass: 2.0,
+            depth_per_pass: Some(2.0),
             feed_rate: Some(800.0),
             plunge_rate: Some(400.0),
             climb: true,

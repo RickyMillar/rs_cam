@@ -143,9 +143,9 @@ fn build_as001_pocket_session(feed_rate: f64) -> ProjectSession {
         enabled: true,
         operation: OperationConfig::Pocket(PocketConfig {
             ramp_feed_rate: None,
-            stepover: 2.0,
+            stepover: Some(2.0),
             floor: rs_cam_core::compute::floor::Floor::top(6.0),
-            depth_per_pass: 2.0,
+            depth_per_pass: Some(2.0),
             feed_rate: Some(feed_rate),
             plunge_rate: Some(385.0),
             climb: true,

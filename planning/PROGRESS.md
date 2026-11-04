@@ -125,6 +125,23 @@ Project Curve row is `StraightPlunge { feed: AxialChip }`; Suggest writes
 its binding); no Q1 cell moved. Q6 waits for the operator on the mock
 `feeds_contract_2026-11-03/phases/P8_Q6_MOCK.md`.
 
+Phase 10 (ruling D8) implemented 2026-11-05 (agent; the lead reviews and
+commits). An op has no geometry default without a tool: the tool-derived
+fields are unset (S11) until a tool gives them, and generation stops with
+"set a tool". With a tool, each field is a rule of D on the registry row: a
+stepover is the width the calculator reads on an unstated axis
+(`feeds::default_radial_width`: the family `ae_factor` after the tool, flute,
+material and machine adjustments); an axial field is k x D
+with k = today's default / 6 mm (five Unsourced F201 rows, pin 154 -> 159); a
+ball finish with a set scallop height takes the chord `2 sqrt(2 R h - h^2)`.
+The add door writes the value with its rule stamp; a tool change moves a
+stamped value and keeps a typed one. FM1: 353 cells moved; Face
+`geom.stepover_exceeds_diameter` (Critical) 15 -> 0; inside the envelope 385
+-> 393. G-OPGOLDEN (fixtures state their values) shows only the known 46
+rows; rivmap100 and nz-wanaka-21 G-code are byte-identical. Finding for P12:
+the family `ap_factor` at the add door put more cells outside the envelope
+(Rigidity 118 -> 134, VendorAxial 10 -> 33), so the axial rule does not read it.
+
 ## Update 2026-10-29 — viewport parity: phase 0 landed
 
 `planning/viewport_parity_2026-10-28/` (research REPORT.md, design A-F,

@@ -70,8 +70,8 @@ fn rivmap_env(point: Option<(f64, f64)>) -> (OperationConfig, SafeEnvelope) {
         .expect("rivmap100 has the 3D Rough")
         .clone();
     if let (OperationConfig::Adaptive3d(c), Some((ap, ae))) = (&mut tc.operation, point) {
-        c.depth_per_pass = ap;
-        c.stepover = ae;
+        c.depth_per_pass = Some(ap);
+        c.stepover = Some(ae);
     }
     let env = session
         .safe_envelope(&tc)

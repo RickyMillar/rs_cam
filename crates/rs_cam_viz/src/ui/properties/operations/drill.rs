@@ -4,7 +4,7 @@ use rs_cam_core::session::HoleSelection;
 use crate::state::toolpath::{AlignmentPinDrillConfig, DrillConfig, DrillCycleType};
 
 use super::super::linking_dressup::{Fields, combo_param, plain_row};
-use super::super::{dv, dv_pill_opt, p};
+use super::super::{dv, dv_opt, dv_pill_opt, p};
 use crate::ui::components::OneLine;
 use rs_cam_core::compute::catalog::OperationType;
 
@@ -121,17 +121,19 @@ fn draw_drill_cycle_rows(
     ui: &mut egui::Ui,
     op: OperationType,
     cycle: DrillCycleType,
-    peck_depth: &mut f64,
+    peck_depth: &mut Option<f64>,
     retract_amount: Option<&mut f64>,
     fields: Fields<'_>,
 ) {
     if cycle_draws_peck(cycle) {
-        dv(
+        // P10: the tool gives the peck; with no tool it is not set.
+        dv_opt(
             ui,
             p(op, "peck_depth", "Peck depth"),
             peck_depth,
             " mm",
             0.5,
+            None,
             fields,
         );
     }

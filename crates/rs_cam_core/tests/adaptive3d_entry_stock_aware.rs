@@ -629,9 +629,9 @@ fn pocket_toolpath(style: Style) -> Toolpath {
         enabled: true,
         operation: OperationConfig::Pocket(PocketConfig {
             ramp_feed_rate: None,
-            stepover: 2.0,
+            stepover: Some(2.0),
             floor: rs_cam_core::compute::floor::Floor::top(12.0),
-            depth_per_pass: POCKET_DPP,
+            depth_per_pass: Some(POCKET_DPP),
             feed_rate: Some(770.0),
             plunge_rate: Some(385.0),
             climb: true,
@@ -726,8 +726,8 @@ fn session_terrain_rough(style: Style) -> Toolpath {
         Style::Ramp => Adaptive3dEntryStyle::Ramp,
     };
     let cfg = Adaptive3dConfig {
-        stepover: 1.2,
-        depth_per_pass: DPP,
+        stepover: Some(1.2),
+        depth_per_pass: Some(DPP),
         stock_to_leave_axial: 0.5,
         feed_rate: Some(2400.0),
         entry_style,

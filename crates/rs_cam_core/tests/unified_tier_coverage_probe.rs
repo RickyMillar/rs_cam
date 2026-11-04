@@ -157,11 +157,13 @@ fn unified_tier_coverage_probe() {
                 .clone();
             let cutter = build_cutter(&tool).unwrap();
             let index = SpatialIndex::build_auto(&mesh);
-            let params = cfg.params(OpMotion {
-                feed_rate: 1000.0,
-                plunge_rate: 500.0,
-                safe_z: 50.0,
-            });
+            let params = cfg
+                .params(OpMotion {
+                    feed_rate: 1000.0,
+                    plunge_rate: 500.0,
+                    safe_z: 50.0,
+                })
+                .expect("the project states the Z step");
             let planner = cfg.planner_params(cutter.cusp_radius_mm());
             let surface = build_classification_surface_with_sampler_and_cancel(
                 &mesh,

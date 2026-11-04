@@ -192,7 +192,7 @@ fn fixture(source: impl FnOnce(Ids) -> Option<BoundarySource>) -> Fixture {
     let face_id = builder.add_model(face_model());
 
     let op = OperationConfig::DropCutter(DropCutterConfig {
-        stepover: 1.0,
+        stepover: Some(1.0),
         ..DropCutterConfig::default()
     });
     let mut cfg = toolpath_config(

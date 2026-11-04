@@ -204,6 +204,15 @@ pub struct FeedsProvenance {
     /// [`Self::stamp_ramp`]; a hand edit stamps `Manual`.
     #[serde(default, skip_serializing_if = "Option::is_none")]
     pub ramp_feed_rate: Option<ValueProvenance>,
+    /// P10 (ruling D8): the peck depth of a drill cycle. The tool rule
+    /// stamps it (`compute::geometry_default`); a hand edit stamps `Manual`.
+    #[serde(default, skip_serializing_if = "Option::is_none")]
+    pub peck_depth: Option<ValueProvenance>,
+    /// P10: the `z_step` of an op whose depth-per-pass role is not
+    /// `z_step` (Steep and Shallow, Unified Finish). Waterline's `z_step`
+    /// IS its depth per pass, so it is stamped under `depth_per_pass`.
+    #[serde(default, skip_serializing_if = "Option::is_none")]
+    pub z_step: Option<ValueProvenance>,
 }
 
 impl FeedsProvenance {
@@ -300,6 +309,8 @@ impl FeedsProvenance {
             FeedsField::DepthPerPass => self.depth_per_pass.as_ref(),
             FeedsField::ScallopHeight => self.scallop_height.as_ref(),
             FeedsField::RampFeedRate => self.ramp_feed_rate.as_ref(),
+            FeedsField::PeckDepth => self.peck_depth.as_ref(),
+            FeedsField::ZStep => self.z_step.as_ref(),
         }
     }
 
@@ -343,6 +354,19 @@ impl FeedsProvenance {
         if o.ramp_feed_rate() != n.ramp_feed_rate() && self.ramp_feed_rate == old.ramp_feed_rate {
             self.ramp_feed_rate = manual();
         }
+        // P10: every tool-derived geometry field, by its stamp slot (a
+        // peck, a Z step, a single-pass Pencil offset stepover).
+        let old_fields = crate::compute::geometry_default::read_fields(old_op);
+        for (field, new_value) in crate::compute::geometry_default::read_fields(new_op) {
+            let old_value = old_fields
+                .iter()
+                .find(|(name, _)| *name == field)
+                .and_then(|(_, v)| *v);
+            let slot = crate::compute::geometry_default::stamp_slot(new_op, field);
+            if old_value != new_value && self.get(slot) == old.get(slot) {
+                self.set(slot, ValueProvenance::manual());
+            }
+        }
     }
 
     fn slot_mut(&mut self, field: FeedsField) -> &mut Option<ValueProvenance> {
@@ -354,6 +378,8 @@ impl FeedsProvenance {
             FeedsField::DepthPerPass => &mut self.depth_per_pass,
             FeedsField::ScallopHeight => &mut self.scallop_height,
             FeedsField::RampFeedRate => &mut self.ramp_feed_rate,
+            FeedsField::PeckDepth => &mut self.peck_depth,
+            FeedsField::ZStep => &mut self.z_step,
         }
     }
 }
@@ -376,6 +402,10 @@ pub enum FeedsField {
     /// The helix and ramp entry feed (G6 ramp). Suggest writes it through
     /// its own record, so no pill preview carries it.
     RampFeedRate,
+    /// P10: the peck depth of a drill cycle (the tool rule stamps it).
+    PeckDepth,
+    /// P10: the `z_step` of Steep and Shallow and Unified Finish.
+    ZStep,
 }
 
 impl FeedsResult {
@@ -422,6 +452,9 @@ impl FeedsResult {
             // The ramp needs θ and the shipped feed; the apply funnel stamps
             // it (`FeedsProvenance::stamp_ramp`).
             ramp_feed_rate: None,
+            // P10: the tool rule stamps these, never the calculator.
+            peck_depth: None,
+            z_step: None,
         }
     }
 }

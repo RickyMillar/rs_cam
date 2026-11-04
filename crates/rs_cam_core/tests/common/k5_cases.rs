@@ -115,7 +115,7 @@ pub fn op3_pin_drill() -> ToolpathConfig {
             diameter: 6.0,
             spoilboard_penetration: 4.5,
             cycle: DrillCycleType::Peck,
-            peck_depth: 6.0,
+            peck_depth: Some(6.0),
             feed_rate: Some(736.0),
             retract_z: 2.0,
             spindle_rpm: Some(10_610),

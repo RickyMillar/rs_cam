@@ -23,39 +23,133 @@ Questions for the operator (overnight):
 - P8 Q6 (collisions: one warning on every surface, the GUI "Export Anyway" step goes): the card
   needs an operator-agreed mock first (no text clutter). The agent writes
   `phases/P8_Q6_MOCK.md`; no Q6 code lands until the operator agrees it. Q1 and Q8 go ahead.
+  **Answered 2026-11-05 (operator): the mock is agreed; the card counts toolpaths.** Q6 may
+  now be built as `phases/P8_Q6_MOCK.md` states.
+- P11 L1/L2 (chip thinning): **operator 2026-11-05: yes, as planned** (thin roughing and
+  clearing ops; finish ops keep the band chip; no new cap).
 
-## Next session (hand-off by the lead, 2026-11-04, after P5d)
+## Next session (hand-off by the lead, 2026-11-05, after P10)
 
-Operator plan (2026-11-04): run two jobs in parallel, each by one Opus agent; the lead
-writes each brief, reviews each diff by path and commits. The two file sets do not overlap.
+The operator moves this work to a fresh session (new account, 2026-11-05). This section is
+the full entry point. Read it first, then the files it names.
 
-1. **P6 `ToolFact` (K3), the "enforce more" stream.** Card `phases/P6.md`. No number moves.
-   Before the brief:
-   - Check that the perf session no longer owns `crates/rs_cam_core/src/compute/simulate.rs`
-     (`git status`, `git log -3 -- <file>`; `planning/perf_sweep_2026-11-03/`).
-   - Check `git status -- planning/rivmap_block_job/`: the two toml files still had
-     uncommitted edits of another session on 2026-11-04. The migration script skips them
-     until those edits are committed; ask the operator if they stay uncommitted.
-   - The P6 heavy runs (core `--lib`, viz) can pass three minutes: ask the operator first.
-   - Then P7 (K5 feasibility rules) follows P6.
-2. **P11 step 0, the "change the model" stream (read-only research).** Card `phases/P11.md`
-   step 0. Operator go given 2026-11-04. Output folder `research_p11_step0/`: a script, an
-   HTML page and an assert script for each claim the page makes (operator working
-   preference). It edits no crate code. Its result is the evidence for the operator ruling
-   on chip thinning against N-8 (D11), which P11 steps 2-5 need.
+### Where it stands
 
-Order after both (P6 and P11 step 0 DONE 2026-11-04): P7, then P9 (one `Engagement`, heavy-tests: ask first), then P8 and P10,
-then P11 steps 1-6 (with P9 or after it).
+- DONE and committed: P0-P6, P7 (A, B, A2, C), D9, P9, P8 Q1 + Q8, P10. See the phase table
+  and the "Result" section at the end of each card. HEAD after P10: see `git log -1`.
+- Waiting: P8 Q6 (build it: the operator agreed the mock 2026-11-05, the card counts
+  toolpaths), P11 steps 1-6 (decisions L1-L9 written in `phases/P11.md`; L1-L3 confirmed by the
+  operator), P12 (hand-off for the review session), the derate audit (below).
 
-Prompt for the new session (paste after `/clear`):
+### Order for the next session
 
-> Continue the feeds contract. Read `planning/feeds_contract_2026-11-03/STATUS.md`
-> ("Next session" section first), then `PLAN.md` sections 0 and 10, then the cards
-> `phases/P6.md` and `phases/P11.md`. You are the lead: decide and verify; Opus agents
-> implement and never commit. Do the P6 pre-checks in STATUS, write the P6 design
-> decisions into the card, and brief one Opus agent for P6. In parallel, brief one Opus
-> agent for P11 step 0 (read-only research, output in `research_p11_step0/`). Review each
-> result by path, run the gates, and commit each with its own paths.
+1. **P8 Q6** (small, GUI): build `phases/P8_Q6_MOCK.md` as drawn. Sentry
+   `a_collision_is_the_same_warning_on_every_surface_q6`. No new GUI text.
+2. **P11a** (steps 2 and 3, L4 and L5): the envelope defects D-A and D-B, then the engaged-edge
+   force as a method on `feeds/engagement.rs` `Engagement` (peak for lateral force and
+   deflection, mean for power). Decide the two P9 open diameters (`phases/P11.md` "Open from
+   P9"): every reader uses `Engagement::d_eng` at the cut depth.
+3. **P11b** (steps 1, 4, 5, 6; L1-L3, L6-L9): chip thinning in Suggest (Garr peak chip, finish
+   ops do not thin, no new cap), chip first (`doc_derating_scale` stops scaling the chip; the
+   vendor 1/2/3 x D table becomes a visible limit), the envelope sized at the operator's chip,
+   the source hunt, and the after-page `research_p11_step0/after/` (L9).
+4. **The derate audit** (section below): the operator wants it run by a session; it can run in
+   parallel with P11 as read-only research.
+5. **P12** (`phases/P12.md`): the hand-off folder `handoff/` for the independent review
+   session. Include every reviewer item listed below.
+
+### Rules this session followed (keep them)
+
+- The lead decides and verifies; one Opus agent per phase implements and never commits. The
+  lead reviews each diff by path, runs the gate, and commits with explicit paths.
+- No tree-wide git. Other sessions share the tree. Leave alone `.mcp.json`,
+  `planning/adaptive_research_2026-10-23/**`, untracked `play/*.toml`, `.pi/`. Three files
+  carry known fmt diffs at HEAD (`rs_cam_mcp/src/server.rs`, `rs_cam_viz/src/ui/components/mod.rs`,
+  `rs_cam_viz/src/ui/properties/tests.rs`); an agent must not reformat them.
+- Every cargo command goes through `scripts/cargo_lane.sh`. viz tests with `-j 2`.
+- Runs the operator allows: core `--lib`, the full viz run, the non-heavy core integration run
+  (`test -p rs_cam_core --tests`), and a heavy binary only when a card names it (FM1 sim CSV:
+  `--features heavy-tests --test feeds_matrix_instrument_fm1`, about 20 s now;
+  `wanaka_suggest_integration`, a few seconds). Never the full heavy gate. Ask before any
+  other run over three minutes.
+- Never type a number from memory. Explain a model as HTML plus an assert script.
+- The lead gate scripts are in the old session scratchpad; copy the pattern: clippy full line;
+  the card's focused tests; the G-OPGOLDEN rows diffed against `opgolden_known_46_rows.txt`
+  (`SAME46`); core `--lib`; cli; mcp; viz `-j 2` (10 known red targets, listed below); fmt
+  (3 known files); the heavy FM1 compare when a feeds number moves; the non-heavy integration
+  run when many tests change (compare with the known-red list below).
+- Benchmarks for a change that may move G-code: release CLI at HEAD before the edit, then
+  after; rivmap100 (`planning/fixtures/rivmap100/rivmap100.toml`) and nz-wanaka-21
+  (`planning/rivmap_block_job/nz_wanaka_21.toml`), plain and `--apply-suggest`; report per op:
+  motion lines, F words, S words, header lines.
+
+### Known reds (all pre-existing; do not chase in a phase)
+
+- viz (10 targets): `an_unbacked_cell_still_adds_its_operation_fm5`, `effects_are_stamped_wp19`,
+  `folder_maps_name_real_files_f140`, `generate_all_skips_disabled_g_genalldisabled`,
+  `loose_executor_is_not_named_in_viz_wp12`, `new_3d_op_boundary_is_silhouette_plus_tool_r2`,
+  `panel_drafts_leave_egui_memory_ui09`, `the_gui_can_set_a_feed_g_fscontrol`,
+  `the_inspector_text_is_bounded_ic1`, `the_selection_section_writes_edits_only_p4_3`.
+- core: G-OPGOLDEN (46 rows), W4 check6, `_litmatrix_rubbing_floor_clamp`,
+  `a_clearing_cut_holds_the_pass_load_g_adaptpassload`, and the integration list under
+  "Known red in the non-heavy core integration run" in "Not in a phase".
+
+### Reviewer items collected so far (P12 must carry them)
+
+- P7 C: `cavalier_contours` panics 12 times (caught) in nz-wanaka-21 "Front 3D rough" on the new
+  remaining stock. Op 1 generation time 15 s -> 27-48 s.
+- D9: the words "long-tool share of the load target" stay; nothing reads that target.
+- P9: no noise floor on `project.sim_outside_envelope`; the placement reads the toolpath
+  material, not the per-sample material; the inspector "Measured" row needs a memo; the plot
+  draws no sim points; the 3D Rough planner cuts near-slot widths (4-5x the stepover) on the
+  opening cut of each level; FM1 sim: the Suggest recipe is outside its own envelope on 18 of
+  35 cells; rivmap100 "Face 5" states 0.812 mm per pass and cuts 2.00 mm in one level (a Face
+  ladder fault).
+- P8: the warning keeps the name `RpmLoweredForFeedCeiling` when arm S ships; the two plunge
+  terms name two rows; a material with no force line counts an arm as inside.
+- P10: the calculator's ap factors put the add-door default outside the repo's own envelope
+  (option (a) measured: Rigidity 118 -> 134, VendorAxial 10 -> 33 FM1 cells), so the axial
+  defaults scale today's 6 mm values instead. The radial and axial tables are Unsourced.
+- The stepover numbers: 0.12 x D (the Shapeoko profile table), 0.20 x D (`adaptive_woc_factor`,
+  from Fusion per the operator) and 0.15 x D (the stale check) are all typed with no source.
+
+### Prompt for the new session (paste after `/clear`)
+
+> Continue the feeds contract in /home/ricky/personal_repos/rs_cam. Read
+> `planning/feeds_contract_2026-11-03/STATUS.md` ("Next session" first, then "Work item for
+> the next session: the derate audit"), then `PLAN.md` sections 0 and 10, then the cards
+> `phases/P8_Q6_MOCK.md`, `phases/P11.md` and `phases/P12.md`. You are the lead: decide and
+> verify; Opus agents implement and never commit. Follow the order in "Next session". Brief
+> one Opus agent per phase, review each result by path, run the gate, and commit each with
+> its own paths. Start the derate audit as read-only research in parallel with P11a.
+
+## Work item for the next session: the derate audit (operator, 2026-11-05)
+
+The operator: "its a bit concerning shapeoko defaults are applied to the whole cam software.
+Those will already be fairly de-rated so our later deratings will just cut it down more."
+
+- `feeds/mod.rs` `operation_default_profile` (42 k x D rows) is a port of the Shapeoko
+  feeds-and-speeds `calcs.rs` (not in the repo; F201 `Unsourced`). It is a light-machine
+  table, and every machine profile reads it.
+- The calculator then applies more factors: the machine `RigidityProfile` (for example
+  `adaptive_woc_factor` 0.20, a rule of thumb, the operator says from Fusion; it overrides the
+  table's 0.12 for wood Adaptive at `feeds/mod.rs` `ae_factor.max(..)`), `doc_derating_scale`
+  (1/2/3 x D), the long-tool derate, the slot cap, the flute guard and the rubbing floor.
+  `compute/validate.rs` `check_wood_adaptive_stepover` warns below a typed 0.15 x D.
+- The task: trace the chain from the vendor chip and the vendor depth to the shipped feed, rpm,
+  stepover and depth for each op family. List each multiplier with its source (or Unsourced) and
+  its machine dependence. Find each place where a machine-specific margin is applied twice:
+  once in the light-machine table and once in `RigidityProfile`. Propose one place for the
+  machine margin (`RigidityProfile`) and a machine-neutral base table (from a printed vendor
+  source, or from the P11 model), with an HTML page and an assert script (operator rule).
+- P10 (the add-door geometry defaults) reads the same table. P11 L8 lists part of these
+  constants. P12 hands the numbers to the review session; this audit is a named part of it.
+- Operator (2026-11-05): "will it be easy to weave in lineage to programmatically see how all
+  variables came about?" Build the audit as that trace. Each multiplier in the chain writes one
+  step record (value in, factor, value out, source or Unsourced) into the existing K2 `Basis` /
+  K8 `Lineage`, so each shipped number has a tree down to a vendor row, a cited constant or an
+  Unsourced constant. Expose the tree through MCP and the CLI. First measure how deep
+  `Basis::Derived { from }` goes today.
 
 ## Open decisions
 
@@ -92,7 +186,7 @@ Prompt for the new session (paste after `/clear`):
 | 8 Q1 / Q6 / Q8 | `phases/P8.md` | Q1, Q8 DONE 2026-11-05; Q6 waits for the operator (`phases/P8_Q6_MOCK.md`) | see `git log` | Q6 |
 | 9 K7 one engagement | `phases/P9.md` | DONE 2026-11-04 (one `Engagement`; pre-sim power is the worst case with its name; the simulation is placed on the envelope, not fed back; open items in the card) | see `git log` | |
 | 10 Tool-derived geometry defaults (D8) | `phases/P10.md` | NOT STARTED (card drafted 2026-11-03; needs P5; lead answers its open points first) | | |
-| 11 Force model, chip first, feed-driven limits | `phases/P11.md` | Step 0 DONE 2026-11-04 (`research_p11_step0/`: verdict FAIL against the preregistered rule; best group W 67 %, best group D 7.3 %, wood force candidates 0 / 418; 21 claims hold). Steps 1-6 NOT STARTED (need D11) | see `git log` | D11 ruling; then steps 1-6 after P9 or with it |
+| 11 Force model, chip first, feed-driven limits | `phases/P11.md` | Step 0 DONE 2026-11-04 (`research_p11_step0/`: verdict FAIL against the preregistered rule; best group W 67 %, best group D 7.3 %, wood force candidates 0 / 418; 21 claims hold). Steps 1-6 NOT STARTED; D11 ruled; decisions L1-L9 in the card | see `git log` | P11a, then P11b |
 | 12 Hand-off for independent review | `phases/P12.md` | NOT STARTED (operator, 2026-11-04: last; another session verifies the output numbers against industry practice) | | after P11 |
 
 ## Not in a phase

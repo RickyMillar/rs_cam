@@ -56,7 +56,17 @@ use rs_cam_core::material::{
 /// `compute.tool_config.LEGACY_DEFAULT_SHANK_DIAMETER_MM`,
 /// `compute.tool_config.LEGACY_DEFAULT_STICKOUT_MM` and
 /// `compute.tool_config.LEGACY_DEFAULT_FLUTE_COUNT`.
-const PINNED_UNSOURCED_COUNT: usize = 154;
+///
+/// Feeds contract P10 (ruling D8, lead ruling on k) raised it from 154 to
+/// 159: the axial geometry rule of the add door, one row per distinct old
+/// default at the reference diameter 6 mm,
+/// `compute.geometry_default.AXIAL_K_0_5_MM`,
+/// `compute.geometry_default.AXIAL_K_1_0_MM`,
+/// `compute.geometry_default.AXIAL_K_1_5_MM`,
+/// `compute.geometry_default.AXIAL_K_2_0_MM` and
+/// `compute.geometry_default.AXIAL_K_3_0_MM`. The radial rule reads the
+/// family `ae_factor` rows, which were rows before P10.
+const PINNED_UNSOURCED_COUNT: usize = 159;
 
 fn repo_root() -> PathBuf {
     PathBuf::from(env!("CARGO_MANIFEST_DIR")).join("../..")

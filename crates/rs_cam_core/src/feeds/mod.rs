@@ -3657,6 +3657,8 @@ pub fn formula_constants() -> Vec<FormulaConstant> {
     // K3 (feeds contract P6, decision E4): the legacy loader default of
     // each tool fact. An `Unknown` fact plans at it (`tool.fact_unknown`).
     rows.extend(crate::compute::tool_config::LEGACY_DEFAULT_ROWS);
+    // P10 (ruling D8): the geometry rule rows of the add door.
+    rows.extend(crate::compute::geometry_default::formula_constants());
     rows.extend([
         MAX_SPINDLE_SPEEDUP_ROW,
         // P5 (K2b, card rows 25 and 27): the pass 3 move budget and the
@@ -3914,6 +3916,45 @@ fn profile_row(family: OperationFamily, role: PassRole, axis: &str, value: f64) 
         value,
         source: OPERATION_DEFAULT_PROFILE_SOURCE,
     }
+}
+
+/// The axis of a family default row ([`default_profile_row`]).
+#[derive(Debug, Clone, Copy, PartialEq, Eq)]
+pub enum ProfileAxisName {
+    /// `ap_factor`.
+    Ap,
+    /// `ae_factor`.
+    Ae,
+}
+
+/// P10 (ruling D8): the F201 row of the family default `k` of `family` and
+/// `role` on `axis`: the `operation_default_profile` row that the
+/// calculator reads on an unstated axis. The add door's geometry rule
+/// (`compute::geometry_default::KRow::FamilyProfile`) reads the same row.
+#[must_use]
+pub fn default_profile_row(
+    family: OperationFamily,
+    role: PassRole,
+    axis: ProfileAxisName,
+) -> FormulaConstant {
+    let profile = operation_default_profile(family, role);
+    match axis {
+        ProfileAxisName::Ap => profile_row(family, role, "ap", profile.ap_factor),
+        ProfileAxisName::Ae => profile_row(family, role, "ae", profile.ae_factor),
+    }
+}
+
+/// P10 (ruling D8, lead gate A): the radial width (mm) that `calculate`
+/// reads on an unstated radial axis, with its basis: the family `ae_factor`
+/// after the tool, flute, material and machine adjustments of
+/// [`default_engagement`], times D. The add door's stepover rule
+/// (`compute::geometry_default`) reads this ONE function, so a new op starts
+/// on the calculator's own width and no repo check warns on it.
+#[must_use]
+pub fn default_radial_width(input: &FeedsInput, machine: &MachineProfile) -> (f64, Basis) {
+    let profile = operation_default_profile(input.operation, input.pass_role);
+    let (_, ae, _, ae_basis) = default_engagement(input.tool_diameter, &profile, input, machine);
+    (ae, ae_basis)
 }
 
 /// The family default engagement `(ap, ae)` and the basis of each

@@ -196,7 +196,13 @@ The repo text or code explicitly references these algorithm families or techniqu
 - Douglas-Peucker simplification
 - nearest-neighbor plus 2-opt TSP ordering
 - radial chip thinning
-- constant-scallop-height formulas
+- constant-scallop-height formulas. The chord of a ball tip,
+  `stepover = 2 * sqrt(2*R*h - h^2)`, is printed in
+  `research/02_algorithms.md` section 8 and follows from the circle
+  `(s/2)^2 + (R - h)^2 = R^2`. Feeds contract P10 (ruling D8) uses it as the
+  tool rule of a finish stepover and a Z step on a ball or tapered-ball
+  tool (`compute::geometry_default::ToolRule::ScallopChordElse`, through
+  `finish::scallop_math::stepover_from_scallop_flat`)
 - marching-squares-style contour extraction
 - Kasa least-squares circle fitting for arc fitting
 - join (merge) tree of sublevel sets by union-find over sorted cells

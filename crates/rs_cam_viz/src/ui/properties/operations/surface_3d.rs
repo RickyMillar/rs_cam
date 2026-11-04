@@ -11,7 +11,7 @@ use super::super::linking_dressup::{
     Fields, check_in_row, check_param, combo_control, combo_in_row, combo_param, count_in_row,
     keyed_row, plain_row,
 };
-use super::super::{advanced, dv, dv_narrowed, dv_opt, dv_pill, p};
+use super::super::{advanced, dv, dv_narrowed, dv_opt, dv_pill_opt, p};
 use crate::ui::components::{DataRow, DataTable, ProvKind, Role, SuggestButton};
 use rs_cam_core::compute::catalog::OperationType;
 
@@ -22,7 +22,7 @@ pub(in crate::ui::properties) fn draw_dropcutter_params(
     fields: Fields<'_>,
 ) {
     let stepover_sugg = pills.map(PillSuggestions::stepover);
-    dv_pill(
+    dv_pill_opt(
         ui,
         p(OperationType::DropCutter, "stepover", "Stepover"),
         &mut cfg.stepover,
@@ -72,7 +72,7 @@ pub(in crate::ui::properties) fn draw_adaptive3d_params(
     // ContourSpiral "Optimal load" slider left with its strategy.
     let stepover_sugg = pills.map(PillSuggestions::stepover);
     let dpp_sugg = pills.map(PillSuggestions::depth_per_pass);
-    dv_pill(
+    dv_pill_opt(
         ui,
         p(OperationType::Adaptive3d, "stepover", "Stepover"),
         &mut cfg.stepover,
@@ -81,7 +81,7 @@ pub(in crate::ui::properties) fn draw_adaptive3d_params(
         stepover_sugg,
         fields,
     );
-    dv_pill(
+    dv_pill_opt(
         ui,
         p(OperationType::Adaptive3d, "depth_per_pass", "Depth/pass"),
         &mut cfg.depth_per_pass,
@@ -346,12 +346,13 @@ pub(in crate::ui::properties) fn draw_waterline_params(
     // Waterline: z_step is the axial pass spacing, but Step 3 LUT mapping
     // (axial_depth_mm) is calibrated for clearing DOC, not contour Z-step.
     // Leave Z Step alone; feed/plunge live on the Feeds tab (W3.2).
-    dv(
+    dv_opt(
         ui,
         p(OperationType::Waterline, "z_step", "Z step"),
         &mut cfg.z_step,
         " mm",
         0.1,
+        None,
         fields,
     );
     // W1b: the field is `helical`; the label names it, and the hover is
@@ -494,12 +495,13 @@ pub(in crate::ui::properties) fn draw_pencil_params(
         0.1,
         (OperationType::Pencil, "num_offset_passes"),
     );
-    dv(
+    dv_opt(
         ui,
         p(OperationType::Pencil, "offset_stepover", "Offset stepover"),
         &mut cfg.offset_stepover,
         " mm",
         0.1,
+        None,
         fields,
     );
     // Reference-tool rest gate: keep only valleys the pencil tool (the
@@ -943,7 +945,7 @@ pub(in crate::ui::properties) fn draw_unified_finish_params(
         0.01,
         fields,
     );
-    dv(
+    dv_opt(
         ui,
         p(
             OperationType::UnifiedFinish,
@@ -953,14 +955,16 @@ pub(in crate::ui::properties) fn draw_unified_finish_params(
         &mut cfg.raster_stepover,
         " mm",
         0.1,
+        None,
         fields,
     );
-    dv(
+    dv_opt(
         ui,
         p(OperationType::UnifiedFinish, "z_step", "Z step"),
         &mut cfg.z_step,
         " mm",
         0.1,
+        None,
         fields,
     );
     dv(
@@ -1047,7 +1051,7 @@ pub(in crate::ui::properties) fn draw_steep_shallow_params(
         1.0,
         fields,
     );
-    dv_pill(
+    dv_pill_opt(
         ui,
         p(OperationType::SteepShallow, "stepover", "Stepover"),
         &mut cfg.stepover,
@@ -1056,12 +1060,13 @@ pub(in crate::ui::properties) fn draw_steep_shallow_params(
         stepover_sugg,
         fields,
     );
-    dv(
+    dv_opt(
         ui,
         p(OperationType::SteepShallow, "z_step", "Z step"),
         &mut cfg.z_step,
         " mm",
         0.1,
+        None,
         fields,
     );
     dv(

@@ -81,13 +81,17 @@ fn params(tool: &FlatEndmill) -> AdaptiveParams {
         0.0
     };
     let (feed_rate, plunge_rate) = fixture_feeds(OperationType::Adaptive);
+    let stepover = cfg.stepover.expect("the fixture states the stepover");
+    let depth_per_pass = cfg
+        .depth_per_pass
+        .expect("the fixture states the depth per pass");
     AdaptiveParams {
         tool_radius: tool.diameter / 2.0,
-        stepover: cfg.stepover,
-        cut_depth: -cfg.depth_per_pass,
+        stepover,
+        cut_depth: -depth_per_pass,
         feed_rate,
         plunge_rate,
-        safe_z: cfg.depth_per_pass,
+        safe_z: depth_per_pass,
         tolerance: cfg.tolerance,
         slot_clearing: cfg.slot_clearing,
         min_cutting_radius: cfg.min_cutting_radius,

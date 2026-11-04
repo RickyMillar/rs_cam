@@ -112,7 +112,7 @@ fn stl_pocket() -> ProjectSession {
         "p4_7 pocket",
         OperationConfig::Pocket(PocketConfig {
             floor: rs_cam_core::compute::floor::Floor::top(POCKET_DEPTH),
-            depth_per_pass: POCKET_DEPTH,
+            depth_per_pass: Some(POCKET_DEPTH),
             ..PocketConfig::default()
         }),
         |_| {},

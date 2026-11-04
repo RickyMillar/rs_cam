@@ -235,14 +235,19 @@ struct RampSegmentRecord {
 impl Default for RampFinishParams {
     fn default() -> Self {
         let config = crate::compute::operation_configs::RampFinishConfig::default();
-        config.params(crate::compute::operation_configs::OpMotion {
-            // S11: the config holds no feed. The kernel default (read by
-            // kernel tests; every op caller sets the motion) keeps the
-            // feeds the config had before S11.
-            feed_rate: 1000.0,
-            plunge_rate: 500.0,
-            safe_z: 30.0,
-        })
+        // P10: the config holds no step (a tool gives it). The kernel
+        // default keeps the step the config had before P10.
+        config.params_at(
+            crate::compute::operation_configs::OpMotion {
+                // S11: the config holds no feed. The kernel default (read by
+                // kernel tests; every op caller sets the motion) keeps the
+                // feeds the config had before S11.
+                feed_rate: 1000.0,
+                plunge_rate: 500.0,
+                safe_z: 30.0,
+            },
+            0.5,
+        )
     }
 }
 

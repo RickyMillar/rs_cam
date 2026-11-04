@@ -109,7 +109,7 @@ fn fixture() -> AppState {
         // 1.20·D, `feeds.default_engagement.adaptive.flat_bull_ap` in
         // `feeds/mod.rs` (measured depth tier ×0.95). At the Adaptive 3D
         // default (3.0 mm) no tier fires and the caption has no line.
-        config.depth_per_pass = 1.20 * tool.diameter;
+        config.depth_per_pass = Some(1.20 * tool.diameter);
     }
     state_with(None, tool, material, operation)
 }

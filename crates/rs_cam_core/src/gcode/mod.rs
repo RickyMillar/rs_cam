@@ -395,15 +395,17 @@ impl PhaseDrill {
 pub fn phase_drill_for(tc: &crate::session::ToolpathConfig) -> Option<PhaseDrill> {
     use crate::compute::catalog::OperationConfig;
     match tc.operation {
+        // P10: a peck cycle with no peck has no result (the prologue
+        // stops it, and a setter drops the result), so it has no phase.
         OperationConfig::Drill(ref cfg) => Some(PhaseDrill {
-            cycle: cfg.cycle.to_core(cfg),
+            cycle: cfg.cycle.to_core(cfg).ok()?,
         }),
         // The pin config clamps the peck to the hole depth it derives at
         // generation time. The emitter needs the cycle kind and the dwell;
         // an unclamped peck only matters to a native G83 Q word, where a Q
         // above the hole depth is one peck.
         OperationConfig::AlignmentPinDrill(ref cfg) => Some(PhaseDrill {
-            cycle: cfg.drill_cycle(f64::INFINITY),
+            cycle: cfg.drill_cycle(f64::INFINITY).ok()?,
         }),
         OperationConfig::Face(_)
         | OperationConfig::Pocket(_)

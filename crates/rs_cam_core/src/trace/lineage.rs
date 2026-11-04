@@ -157,6 +157,12 @@ pub struct SpeedBases {
     pub plunge_rate: ValueUse,
     /// The helix and ramp entry feed (mm/min).
     pub ramp_feed_rate: ValueUse,
+    /// P10: the peck depth of a drill cycle (mm), with the stamp of its
+    /// tool rule or the operator.
+    pub peck_depth: ValueUse,
+    /// P10: the `z_step` of Steep and Shallow and Unified Finish (mm).
+    /// Waterline's `z_step` is its `depth_per_pass`.
+    pub z_step: ValueUse,
 }
 
 /// A tool fact that the op read.
@@ -351,6 +357,15 @@ impl Lineage {
             feed_rate: use_of(operation.feed_rate(), prov.feed_rate.as_ref()),
             plunge_rate: use_of(operation.plunge_rate(), prov.plunge_rate.as_ref()),
             ramp_feed_rate: use_of(operation.ramp_feed_rate(), prov.ramp_feed_rate.as_ref()),
+            peck_depth: use_of(
+                geometry_value(operation, "peck_depth"),
+                prov.peck_depth.as_ref(),
+            ),
+            z_step: if matches!(operation, OperationConfig::Waterline(_)) {
+                ValueUse::NONE
+            } else {
+                use_of(geometry_value(operation, "z_step"), prov.z_step.as_ref())
+            },
         };
         let picked = |u: &ValueUse| {
             u.basis
@@ -432,6 +447,8 @@ impl Lineage {
                 feed_rate: ValueUse::NONE,
                 plunge_rate: ValueUse::NONE,
                 ramp_feed_rate: ValueUse::NONE,
+                peck_depth: ValueUse::NONE,
+                z_step: ValueUse::NONE,
             },
             tool_facts: Vec::new(),
             entry: EntryLineage {
@@ -519,7 +536,7 @@ impl ValueUse {
 #[must_use]
 pub fn radial_text(r: Radial) -> (&'static str, Option<f64>) {
     match r {
-        Radial::Width(s) => ("stepover", Some(s.mm())),
+        Radial::Width(s) => ("stepover", s.map(|s| s.mm())),
         Radial::Slot => ("slot", None),
         Radial::Groove => ("groove", None),
         Radial::Scallop(s) => ("scallop", Some(s.mm())),
@@ -527,6 +544,15 @@ pub fn radial_text(r: Radial) -> (&'static str, Option<f64>) {
         Radial::SurfaceFollow => ("surface", None),
         Radial::Axial => ("none", None),
     }
+}
+
+/// P10: the value of the tool-derived field `field` of `operation`, when
+/// the op reads it.
+fn geometry_value(operation: &OperationConfig, field: &str) -> Option<f64> {
+    crate::compute::geometry_default::read_fields(operation)
+        .into_iter()
+        .find(|(name, _)| *name == field)
+        .and_then(|(_, value)| value)
 }
 
 /// The name and the stated value of the axial cut.
@@ -617,7 +643,9 @@ mod tests {
 
     #[test]
     fn a_picked_stamp_is_the_pick_record() {
-        let op = OperationConfig::new_default(OperationType::Pocket);
+        // P10: the fixture states the depth the registry held before P10.
+        let mut op = OperationConfig::new_default(OperationType::Pocket);
+        crate::compute::fixture_values::fill_unset_geometry(&mut op);
         let tool = ToolConfig::new_default(
             crate::ids::ToolId::from_raw(1),
             crate::compute::tool_config::ToolType::EndMill,

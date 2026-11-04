@@ -1833,9 +1833,11 @@ mod tests {
             let cfg = DrillConfig {
                 cycle,
                 feed_rate: Some(250.0),
+                // P10: the fixture states the peck the registry held.
+                peck_depth: Some(3.0),
                 ..DrillConfig::default()
             };
-            let core = cycle.to_core(&cfg);
+            let core = cycle.to_core(&cfg).expect("the peck is set");
             let tp = drill_toolpath(
                 &holes,
                 &DrillParams {

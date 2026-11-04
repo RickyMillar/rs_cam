@@ -282,7 +282,7 @@ fn raster() -> OperationConfig {
     // The slope filter splits each row into short runs, so the link stage
     // has junctions to join (the G-LINKVISIBLE drop-cutter fixture).
     OperationConfig::DropCutter(DropCutterConfig {
-        stepover: 0.5,
+        stepover: Some(0.5),
         slope_from: 0.0,
         slope_to: 20.0,
         hookup_mm: 3.0,

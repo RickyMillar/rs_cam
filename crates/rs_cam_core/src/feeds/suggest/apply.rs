@@ -381,6 +381,23 @@ impl FieldApplyPreview {
                     .as_params_mut()
                     .set_ramp_feed_rate(Some(self.value));
             }
+            // P10: no pill writes these; the arm writes the slot.
+            FeedsField::PeckDepth | FeedsField::ZStep => {
+                let field = match self.field {
+                    FeedsField::PeckDepth => "peck_depth",
+                    FeedsField::FeedRate
+                    | FeedsField::PlungeRate
+                    | FeedsField::SpindleRpm
+                    | FeedsField::Stepover
+                    | FeedsField::DepthPerPass
+                    | FeedsField::ScallopHeight
+                    | FeedsField::RampFeedRate
+                    | FeedsField::ZStep => "z_step",
+                };
+                if let Some(slot) = crate::compute::geometry_default::slot_mut(operation, field) {
+                    *slot = Some(self.value);
+                }
+            }
         }
         provenance.set(self.field, self.provenance.clone());
     }
@@ -414,6 +431,8 @@ impl FieldApplyPreviews {
             // Written by the funnel, but no pill offers it: the
             // `SuggestWarning::RampFeed` record carries the value.
             FeedsField::RampFeedRate => None,
+            // P10: the tool rule writes these, no pill.
+            FeedsField::PeckDepth | FeedsField::ZStep => None,
         }
     }
 }
@@ -936,19 +955,22 @@ fn write_pick(
     if ap_free {
         let held = match operation {
             OperationConfig::Drill(cfg) => {
-                cfg.peck_depth =
-                    peck_for_hole(OperationType::Drill, p.ap_mm, cfg.floor.depth_below_top());
+                cfg.peck_depth = Some(peck_for_hole(
+                    OperationType::Drill,
+                    p.ap_mm,
+                    cfg.floor.depth_below_top(),
+                ));
                 true
             }
             OperationConfig::AlignmentPinDrill(cfg) => {
-                cfg.peck_depth = peck_for_hole(
+                cfg.peck_depth = Some(peck_for_hole(
                     OperationType::AlignmentPinDrill,
                     p.ap_mm,
                     ctx.suggest
                         .stock
                         .and_then(|s| s.stock_z)
                         .map(|z| z + cfg.spoilboard_penetration),
-                );
+                ));
                 true
             }
             OperationConfig::Face(_)
@@ -1190,7 +1212,11 @@ pub fn apply_drill_defaults(
             // drill_depth values (e.g. 12 mm bit + 25 mm hole gives
             // 36 mm peck before clamping). Without this guard the
             // matrix `drill_no_peck_cycle` anti-pattern fires.
-            cfg.peck_depth = peck_for_hole(OperationType::Drill, peck, cfg.floor.depth_below_top());
+            cfg.peck_depth = Some(peck_for_hole(
+                OperationType::Drill,
+                peck,
+                cfg.floor.depth_below_top(),
+            ));
         }
         OperationConfig::AlignmentPinDrill(cfg) => {
             // Same clamp, same ceiling factor, against the depth this
@@ -1198,13 +1224,13 @@ pub fn apply_drill_defaults(
             // pin_drill`'s `let depth = stock_z + cfg.spoilboard_
             // penetration;` — if that expression moves, this one has to
             // move with it.
-            cfg.peck_depth = peck_for_hole(
+            cfg.peck_depth = Some(peck_for_hole(
                 OperationType::AlignmentPinDrill,
                 peck,
                 stock
                     .and_then(|ctx| ctx.stock_z)
                     .map(|z| z + cfg.spoilboard_penetration),
-            );
+            ));
         }
         // No drill peck: Suggest writes no peck for this op. A new
         // drill-like op fails to compile here.

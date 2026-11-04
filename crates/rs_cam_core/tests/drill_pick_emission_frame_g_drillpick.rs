@@ -140,7 +140,7 @@ fn hole_drill_op() -> OperationConfig {
     OperationConfig::Drill(DrillConfig {
         floor: rs_cam_core::compute::floor::Floor::Top { depth: 10.0 },
         cycle: DrillCycleType::Peck,
-        peck_depth: 3.0,
+        peck_depth: Some(3.0),
         selection: pick(),
         ..DrillConfig::default()
     })
@@ -151,7 +151,7 @@ fn pin_drill_op() -> OperationConfig {
         diameter: 6.0,
         spoilboard_penetration: 2.0,
         cycle: DrillCycleType::Peck,
-        peck_depth: 3.0,
+        peck_depth: Some(3.0),
         selection: pick(),
         ..AlignmentPinDrillConfig::default()
     })

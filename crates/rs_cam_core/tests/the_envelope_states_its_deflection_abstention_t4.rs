@@ -54,8 +54,8 @@ fn carbide_endmill() -> ToolConfig {
 fn roughing_pocket() -> OperationConfig {
     OperationConfig::Pocket(PocketConfig {
         floor: rs_cam_core::compute::floor::Floor::top(12.0),
-        depth_per_pass: 3.0,
-        stepover: 2.0,
+        depth_per_pass: Some(3.0),
+        stepover: Some(2.0),
         feed_rate: Some(1800.0),
         plunge_rate: Some(500.0),
         spindle_rpm: Some(18_000),

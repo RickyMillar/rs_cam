@@ -81,8 +81,8 @@ fn session(contour: bool) -> ProjectSession {
     let mut op = toolpath_config(
         "rough",
         OperationConfig::Adaptive3d(Adaptive3dConfig {
-            stepover: 2.0,
-            depth_per_pass: DEPTH_PER_PASS,
+            stepover: Some(2.0),
+            depth_per_pass: Some(DEPTH_PER_PASS),
             clearing_strategy: ClearingStrategy::ContourParallel,
             region_ordering: RegionOrdering::ByArea,
             contour_each_level: contour,

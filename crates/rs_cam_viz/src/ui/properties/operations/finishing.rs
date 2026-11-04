@@ -6,7 +6,7 @@ use crate::state::toolpath::{
 };
 
 use super::super::linking_dressup::{Fields, check_in_row, combo_in_row, plain_row};
-use super::super::{advanced, dv, dv_pill, p};
+use super::super::{advanced, dv, dv_opt, dv_pill_opt, p};
 use rs_cam_core::compute::catalog::OperationType;
 
 pub(in crate::ui::properties) fn draw_ramp_finish_params(
@@ -17,12 +17,13 @@ pub(in crate::ui::properties) fn draw_ramp_finish_params(
 ) {
     // Ramp finish: max_stepdown is a Z-step (geometry-driven, not LUT
     // axial DOC). No stepover field; feed/plunge live on the Feeds tab.
-    dv(
+    dv_opt(
         ui,
         p(OperationType::RampFinish, "max_stepdown", "Max stepdown"),
         &mut cfg.max_stepdown,
         " mm",
         0.1,
+        None,
         fields,
     );
     dv(
@@ -104,7 +105,7 @@ pub(in crate::ui::properties) fn draw_spiral_finish_params(
     fields: Fields<'_>,
 ) {
     let stepover_sugg = pills.map(PillSuggestions::stepover);
-    dv_pill(
+    dv_pill_opt(
         ui,
         p(OperationType::SpiralFinish, "stepover", "Stepover"),
         &mut cfg.stepover,
@@ -204,7 +205,7 @@ pub(in crate::ui::properties) fn draw_horizontal_finish_params(
         1.0,
         fields,
     );
-    dv_pill(
+    dv_pill_opt(
         ui,
         p(OperationType::HorizontalFinish, "stepover", "Stepover"),
         &mut cfg.stepover,

@@ -177,9 +177,9 @@ fn build_session(heights: HeightsConfig) -> ProjectSession {
         enabled: true,
         operation: OperationConfig::Pocket(PocketConfig {
             ramp_feed_rate: None,
-            stepover: 2.4,
+            stepover: Some(2.4),
             floor: rs_cam_core::compute::floor::Floor::top(4.0),
-            depth_per_pass: 2.0,
+            depth_per_pass: Some(2.0),
             feed_rate: Some(2400.0),
             plunge_rate: Some(600.0),
             climb: true,

@@ -271,9 +271,9 @@ fn endmill() -> ToolConfig {
 /// take away — which is what makes pass 9 fire.
 fn heavy_pocket() -> OperationConfig {
     OperationConfig::Pocket(PocketConfig {
-        stepover: DIAMETER_MM,
+        stepover: Some(DIAMETER_MM),
         floor: rs_cam_core::compute::floor::Floor::top(4.0 * DIAMETER_MM),
-        depth_per_pass: 2.0 * DIAMETER_MM,
+        depth_per_pass: Some(2.0 * DIAMETER_MM),
         feed_rate: Some(1000.0),
         plunge_rate: Some(500.0),
         climb: true,
@@ -331,7 +331,7 @@ fn run_funnel_at(machine: &MachineProfile, material: &Material, requested_ap: f6
     let tool = endmill();
     let mut operation = heavy_pocket();
     if let OperationConfig::Pocket(cfg) = &mut operation {
-        cfg.depth_per_pass = requested_ap;
+        cfg.depth_per_pass = Some(requested_ap);
         cfg.floor = rs_cam_core::compute::floor::Floor::top(2.0 * requested_ap);
     }
     let envelope = SafeEnvelope::for_cut(EnvelopeInput {

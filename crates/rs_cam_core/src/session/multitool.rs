@@ -1026,7 +1026,7 @@ fn plan_tier_operation(
         // band.
         scallop_height: spec.cusp_height_mm,
         raster_stepover: if stepover > 0.0 {
-            stepover
+            Some(stepover)
         } else {
             defaults.raster_stepover
         },
@@ -1036,7 +1036,7 @@ fn plan_tier_operation(
         // generic dial — against a 10–30 µm cusp everywhere else it reads
         // as the steep walls being abandoned (operator-observed 2026-08-27).
         z_step: if stepover > 0.0 {
-            stepover
+            Some(stepover)
         } else {
             defaults.z_step
         },
@@ -1746,8 +1746,8 @@ mod tests {
             panic!("planner emits unified_finish");
         };
         let expected = equal_cusp_stepover_mm(2.0, spec.cusp_height_mm);
-        assert!((cfg.z_step - expected).abs() < 1e-12);
-        assert!((cfg.raster_stepover - expected).abs() < 1e-12);
+        assert!((cfg.z_step.unwrap_or(f64::NAN) - expected).abs() < 1e-12);
+        assert!((cfg.raster_stepover.unwrap_or(f64::NAN) - expected).abs() < 1e-12);
     }
 
     /// The operator's separation (2026-09-03): a tier strategy changes the

@@ -2641,7 +2641,7 @@ mod tests {
         // levels of 0.88 mm.
         let pocket = OperationConfig::Pocket(PocketConfig {
             floor: crate::compute::floor::Floor::top(22.0),
-            depth_per_pass: 0.9,
+            depth_per_pass: Some(0.9),
             ..PocketConfig::default()
         });
         let step = commanded_step_mm(&pocket).expect("a pocket steps down");

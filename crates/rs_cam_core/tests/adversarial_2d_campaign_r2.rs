@@ -168,9 +168,9 @@ fn op_matrix(tool_d: f64) -> Vec<(&'static str, OperationConfig, ToolKind)> {
         (
             "pocket",
             OperationConfig::Pocket(PocketConfig {
-                stepover,
+                stepover: Some(stepover),
                 floor: rs_cam_core::compute::floor::Floor::top(DEPTH_MM),
-                depth_per_pass: DEPTH_MM,
+                depth_per_pass: Some(DEPTH_MM),
                 ..PocketConfig::default()
             }),
             ToolKind::EndMill,
@@ -178,9 +178,9 @@ fn op_matrix(tool_d: f64) -> Vec<(&'static str, OperationConfig, ToolKind)> {
         (
             "adaptive",
             OperationConfig::Adaptive(AdaptiveConfig {
-                stepover,
+                stepover: Some(stepover),
                 floor: rs_cam_core::compute::floor::Floor::top(DEPTH_MM),
-                depth_per_pass: DEPTH_MM,
+                depth_per_pass: Some(DEPTH_MM),
                 ..AdaptiveConfig::default()
             }),
             ToolKind::EndMill,
@@ -189,7 +189,7 @@ fn op_matrix(tool_d: f64) -> Vec<(&'static str, OperationConfig, ToolKind)> {
             "profile",
             OperationConfig::Profile(ProfileConfig {
                 floor: rs_cam_core::compute::floor::Floor::top(DEPTH_MM),
-                depth_per_pass: DEPTH_MM,
+                depth_per_pass: Some(DEPTH_MM),
                 ..ProfileConfig::default()
             }),
             ToolKind::EndMill,
@@ -198,7 +198,7 @@ fn op_matrix(tool_d: f64) -> Vec<(&'static str, OperationConfig, ToolKind)> {
             "trace",
             OperationConfig::Trace(TraceConfig {
                 depth: Some(DEPTH_MM),
-                depth_per_pass: DEPTH_MM,
+                depth_per_pass: Some(DEPTH_MM),
                 ..TraceConfig::default()
             }),
             ToolKind::EndMill,
@@ -206,9 +206,9 @@ fn op_matrix(tool_d: f64) -> Vec<(&'static str, OperationConfig, ToolKind)> {
         (
             "zigzag",
             OperationConfig::Zigzag(ZigzagConfig {
-                stepover,
+                stepover: Some(stepover),
                 floor: rs_cam_core::compute::floor::Floor::top(DEPTH_MM),
-                depth_per_pass: DEPTH_MM,
+                depth_per_pass: Some(DEPTH_MM),
                 ..ZigzagConfig::default()
             }),
             ToolKind::EndMill,
@@ -217,7 +217,7 @@ fn op_matrix(tool_d: f64) -> Vec<(&'static str, OperationConfig, ToolKind)> {
             "vcarve",
             OperationConfig::VCarve(VCarveConfig {
                 max_depth: Some(DEPTH_MM),
-                stepover,
+                stepover: Some(stepover),
                 ..VCarveConfig::default()
             }),
             ToolKind::VBit,
@@ -226,7 +226,7 @@ fn op_matrix(tool_d: f64) -> Vec<(&'static str, OperationConfig, ToolKind)> {
             "inlay",
             OperationConfig::Inlay(InlayConfig {
                 pocket_depth: Some(DEPTH_MM),
-                stepover,
+                stepover: Some(stepover),
                 ..InlayConfig::default()
             }),
             ToolKind::VBit,

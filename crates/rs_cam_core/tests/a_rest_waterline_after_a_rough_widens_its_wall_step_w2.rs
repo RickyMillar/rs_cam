@@ -114,7 +114,7 @@ fn session(material: Material) -> (ProjectSession, f64) {
     let mut waterline = toolpath_config(
         "waterline",
         OperationConfig::Waterline(WaterlineConfig {
-            z_step: Z_STEP,
+            z_step: Some(Z_STEP),
             sampling: 0.5,
             ..WaterlineConfig::default()
         }),

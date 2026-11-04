@@ -529,7 +529,7 @@ mod tests {
         let mut s = wood_session();
         let _ = s.add_tool(flat_em(6.0));
         let mut cfg = Adaptive3dConfig::default();
-        cfg.stepover = 0.7; // 0.117 D, well below 0.15 D floor (0.9)
+        cfg.stepover = Some(0.7); // 0.117 D, well below 0.15 D floor (0.9)
         let _ = s
             .add_toolpath(
                 0,
@@ -550,7 +550,7 @@ mod tests {
         let mut s = wood_session();
         let _ = s.add_tool(flat_em(6.0));
         let mut cfg = Adaptive3dConfig::default();
-        cfg.stepover = 1.2; // 0.20 D, at target
+        cfg.stepover = Some(1.2); // 0.20 D, at target
         let _ = s
             .add_toolpath(
                 0,
@@ -578,7 +578,7 @@ mod tests {
         let _ = s.set_stock_config(stock);
         let _ = s.add_tool(flat_em(6.0));
         let mut cfg = Adaptive3dConfig::default();
-        cfg.stepover = 0.7;
+        cfg.stepover = Some(0.7);
         let _ = s
             .add_toolpath(0, make_tp(0, "Rough", OperationConfig::Adaptive3d(cfg), 0))
             .unwrap();
@@ -597,7 +597,7 @@ mod tests {
         let mut s = wood_session();
         let _ = s.add_tool(flat_em(6.0));
         let mut cfg = PocketConfig::default();
-        cfg.stepover = 0.5;
+        cfg.stepover = Some(0.5);
         let _ = s
             .add_toolpath(0, make_tp(0, "Pocket", OperationConfig::Pocket(cfg), 0))
             .unwrap();
@@ -655,7 +655,7 @@ mod tests {
 
         // TP1: Adaptive3d with narrow stepover (wood).
         let mut tp1 = Adaptive3dConfig::default();
-        tp1.stepover = 0.7;
+        tp1.stepover = Some(0.7);
         let _ = s
             .add_toolpath(
                 0,
@@ -785,7 +785,7 @@ mod tests {
         let mut s = wood_session();
         let _ = s.add_tool(flat_em(6.0));
         let mut cfg = Adaptive3dConfig::default();
-        cfg.stepover = 1.2;
+        cfg.stepover = Some(1.2);
         cfg.plunge_rate = Some(500.0);
         let _ = s
             .add_toolpath(0, make_tp(0, "Clean", OperationConfig::Adaptive3d(cfg), 0))

@@ -317,8 +317,8 @@ fn the_segment_merge_still_cuts_the_move_count() {
             Adaptive3dConfig, Adaptive3dEntryStyle, ClearingStrategy, RegionOrdering as CfgOrdering,
         };
         let cfg = Adaptive3dConfig {
-            stepover: 2.4,
-            depth_per_pass: 4.0,
+            stepover: Some(2.4),
+            depth_per_pass: Some(4.0),
             stock_to_leave_axial: 0.5,
             entry_style: Adaptive3dEntryStyle::Helix,
             region_ordering: CfgOrdering::Global,

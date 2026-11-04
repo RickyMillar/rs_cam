@@ -232,9 +232,9 @@ fn no_milling_family_emits_a_drilling_tagged_move() {
             "pocket",
             OperationConfig::Pocket(PocketConfig {
                 ramp_feed_rate: None,
-                stepover: 3.0,
+                stepover: Some(3.0),
                 floor: rs_cam_core::compute::floor::Floor::top(6.0),
-                depth_per_pass: 3.0,
+                depth_per_pass: Some(3.0),
                 feed_rate: Some(1000.0),
                 plunge_rate: Some(400.0),
                 climb: true,
@@ -251,9 +251,9 @@ fn no_milling_family_emits_a_drilling_tagged_move() {
         (
             "adaptive",
             OperationConfig::Adaptive(AdaptiveConfig {
-                stepover: 2.0,
+                stepover: Some(2.0),
                 floor: rs_cam_core::compute::floor::Floor::top(6.0),
-                depth_per_pass: 3.0,
+                depth_per_pass: Some(3.0),
                 feed_rate: Some(1500.0),
                 plunge_rate: Some(500.0),
                 spindle_rpm: Some(18_000),
@@ -266,7 +266,7 @@ fn no_milling_family_emits_a_drilling_tagged_move() {
                 ramp_feed_rate: None,
                 side: ProfileSide::Outside,
                 floor: rs_cam_core::compute::floor::Floor::top(6.0),
-                depth_per_pass: 3.0,
+                depth_per_pass: Some(3.0),
                 feed_rate: Some(1000.0),
                 plunge_rate: Some(400.0),
                 climb: true,

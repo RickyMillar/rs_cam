@@ -986,7 +986,7 @@ fn a_session_ladder_hits_the_memo_on_its_second_round() {
         "Pocket 1",
         OperationConfig::Pocket(PocketConfig {
             floor: rs_cam_core::compute::floor::Floor::top(2.0),
-            depth_per_pass: 1.0,
+            depth_per_pass: Some(1.0),
             ..PocketConfig::default()
         }),
     );
@@ -998,7 +998,7 @@ fn a_session_ladder_hits_the_memo_on_its_second_round() {
         "Pocket 2",
         OperationConfig::Pocket(PocketConfig {
             floor: rs_cam_core::compute::floor::Floor::top(3.0),
-            depth_per_pass: 1.0,
+            depth_per_pass: Some(1.0),
             ..PocketConfig::default()
         }),
         rs_cam_core::ids::ToolId::from_raw(tool_id),

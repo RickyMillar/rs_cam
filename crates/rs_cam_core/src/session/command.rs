@@ -3140,6 +3140,9 @@ impl ProjectSession {
                 // check and before the signature read below, so the write
                 // is judged with the seeded values.
                 if old_tool != config.tool_id {
+                    // P10 (ruling D8): the geometry first, so the feeds seed
+                    // reads the geometry of the new tool.
+                    self.seed_geometry(&mut config);
                     self.seed_feeds(&mut config);
                 }
                 // P3.2: the GUI door refuses a pinned Bottom Z on an

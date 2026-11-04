@@ -189,6 +189,26 @@ project-loader default before K3 (feeds contract P6)".
 | `compute.tool_config.LEGACY_DEFAULT_STICKOUT_MM` | 45.0 | `compute/tool_config.rs` |
 | `compute.tool_config.LEGACY_DEFAULT_FLUTE_COUNT` | 2 | `compute/tool_config.rs` (a `u32`; the row holds it as f64) |
 
+### Axial geometry rules of the add door (feeds contract P10, ruling D8, 2026-11-05)
+
+A new op has no geometry default without a tool. An axial field (a depth
+per pass, a Z step on a tool with no ball tip, the Ramp Finish step, a peck)
+is `k x D`. No file in the repo prints an axial `k` for a default, so the
+lead ruled `k = today's default / 6 mm`: a 6 mm tool keeps the depth it had
+before P10. One row per distinct old default. The pin rose from 154 to 159.
+Claim: "today's X mm at reference D 6 mm; no record in the repo".
+
+| Row | Value | Fields | Site |
+|---|---|---|---|
+| `compute.geometry_default.AXIAL_K_0_5_MM` | 0.5 / 6 | Trace `depth_per_pass`, Ramp Finish `max_stepdown` | `compute/geometry_default.rs` |
+| `compute.geometry_default.AXIAL_K_1_0_MM` | 1.0 / 6 | Face `depth_per_pass`; Waterline, Steep and Shallow, Unified Finish `z_step` | `compute/geometry_default.rs` |
+| `compute.geometry_default.AXIAL_K_1_5_MM` | 1.5 / 6 | Pocket, Zigzag, Inlay plug `depth_per_pass` | `compute/geometry_default.rs` |
+| `compute.geometry_default.AXIAL_K_2_0_MM` | 2.0 / 6 | Profile, 2D Adaptive `depth_per_pass` | `compute/geometry_default.rs` |
+| `compute.geometry_default.AXIAL_K_3_0_MM` | 3.0 / 6 | 3D Rough `depth_per_pass`; Drill, Pin Drill `peck_depth` | `compute/geometry_default.rs` |
+
+The radial rule (every stepover) reads the family `ae_factor` rows of
+`feeds.operation_default_profile`, which were rows before P10.
+
 ### Machine default (outside the F201 edit boundary)
 
 `machine/mod.rs:51` `ChipLoadFormula::default()`: k0 0.024, p 0.61,

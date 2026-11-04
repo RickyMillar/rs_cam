@@ -388,7 +388,7 @@ fn span_coverage_cases() -> Vec<SpanCoverageCase> {
         let OperationConfig::Adaptive3d(cfg) = op else {
             unreachable!("default op kind mismatch");
         };
-        cfg.depth_per_pass = 4.0;
+        cfg.depth_per_pass = Some(4.0);
         cfg.detect_flat_areas = true;
         cfg.region_ordering = crate::compute::operation_configs::RegionOrdering::ByArea;
     });
@@ -400,14 +400,14 @@ fn span_coverage_cases() -> Vec<SpanCoverageCase> {
         let OperationConfig::DropCutter(cfg) = op else {
             unreachable!("default op kind mismatch");
         };
-        cfg.stepover = 2.0;
+        cfg.stepover = Some(2.0);
         cfg.min_z = -5.0;
     });
     let waterline = op_with_updates(OperationType::Waterline, |op| {
         let OperationConfig::Waterline(cfg) = op else {
             unreachable!("default op kind mismatch");
         };
-        cfg.z_step = 2.0;
+        cfg.z_step = Some(2.0);
         cfg.sampling = 1.0;
     });
     let scallop = op_with_updates(OperationType::Scallop, |op| {
@@ -422,7 +422,7 @@ fn span_coverage_cases() -> Vec<SpanCoverageCase> {
         let OperationConfig::RampFinish(cfg) = op else {
             unreachable!("default op kind mismatch");
         };
-        cfg.max_stepdown = 2.0;
+        cfg.max_stepdown = Some(2.0);
         cfg.sampling = 2.0;
         cfg.tolerance = 0.2;
     });
@@ -430,7 +430,7 @@ fn span_coverage_cases() -> Vec<SpanCoverageCase> {
         let OperationConfig::SpiralFinish(cfg) = op else {
             unreachable!("default op kind mismatch");
         };
-        cfg.stepover = 2.0;
+        cfg.stepover = Some(2.0);
     });
     let radial_finish = op_with_updates(OperationType::RadialFinish, |op| {
         let OperationConfig::RadialFinish(cfg) = op else {
@@ -443,7 +443,7 @@ fn span_coverage_cases() -> Vec<SpanCoverageCase> {
         let OperationConfig::HorizontalFinish(cfg) = op else {
             unreachable!("default op kind mismatch");
         };
-        cfg.stepover = 3.0;
+        cfg.stepover = Some(3.0);
     });
     let project_curve = op_with_updates(OperationType::ProjectCurve, |op| {
         let OperationConfig::ProjectCurve(cfg) = op else {
@@ -1058,13 +1058,13 @@ fn admitted_kind(op_type: OperationType) -> crate::feeds::CutterKind {
 /// ignores the flag still ends in test time.
 fn quick_config(op_type: OperationType) -> OperationConfig {
     op_with_updates(op_type, |op| match op {
-        OperationConfig::Adaptive3d(cfg) => cfg.depth_per_pass = 4.0,
+        OperationConfig::Adaptive3d(cfg) => cfg.depth_per_pass = Some(4.0),
         OperationConfig::DropCutter(cfg) => {
-            cfg.stepover = 2.0;
+            cfg.stepover = Some(2.0);
             cfg.min_z = -5.0;
         }
         OperationConfig::Waterline(cfg) => {
-            cfg.z_step = 2.0;
+            cfg.z_step = Some(2.0);
             cfg.sampling = 1.0;
         }
         OperationConfig::Face(_)
@@ -1884,6 +1884,10 @@ mod each_face_p3_5 {
     /// the session. The heights are those the session gives under that
     /// floor: the stock top, and the deepest face floor as the Bottom Z.
     pub fn run(op: &OperationConfig, items: Vec<Item>) -> Result<Toolpath, OperationError> {
+        // P10: the fixture states the geometry the registry held before P10.
+        let mut op = op.clone();
+        crate::compute::fixture_values::fill_unset_geometry(&mut op);
+        let op = &op;
         let tool_cfg = ToolConfig::test_default(ToolId::from_raw(0), ToolType::EndMill);
         let tool_def = build_cutter(&tool_cfg).unwrap();
         let heights = ResolvedHeights {

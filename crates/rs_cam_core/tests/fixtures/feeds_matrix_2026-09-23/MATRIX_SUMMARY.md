@@ -87,16 +87,12 @@ The support arm is one axis: `Refused` (Suggest returned an error), `VendorBacke
 | id | cells |
 |---|---|
 | `compat.ball_nose_on_flat_clearing` | 42 |
-| `efficiency.very_fine_stepover` | 4 |
-| `feeds.dpp_vs_lut` | 14 |
+| `efficiency.very_fine_stepover` | 86 |
 | `feeds.feed_clamped` | 22 |
 | `feeds.long_tool_derate` | 496 |
-| `feeds.rpm_lowered_for_ceiling` | 194 |
+| `feeds.rpm_lowered_for_ceiling` | 204 |
 | `feeds.shank_too_large` | 100 |
-| `feeds.slotting_detected` | 74 |
-| `feeds.stepover_vs_lut` | 14 |
-| `geom.stepover_exceeds_diameter` | 15 |
-| `quality.stepover_over_80_pct_diameter` | 15 |
+| `feeds.slotting_detected` | 60 |
 
 ## FeedsWarning variants (cells that carry each)
 
@@ -104,44 +100,44 @@ The support arm is one axis: `Refused` (Suggest returned an error), `VendorBacke
 |---|---|
 | `FeedRateClamped` | 22 |
 | `LongToolDerate` | 496 |
-| `RpmLoweredForFeedCeiling` | 194 |
+| `RpmLoweredForFeedCeiling` | 204 |
 | `ShankTooLarge` | 100 |
-| `SlottingDetected` | 74 |
+| `SlottingDetected` | 60 |
 
 ## SuggestWarning variants (cells that carry each)
 
 | id | cells |
 |---|---|
-| `PlungeEntryUnstableAtDpp` | 15 |
 | `RampFeed` | 508 |
-| `RpmLoweredForFeedCeiling` | 194 |
-| `UnsourcedRowsAccepted` | 417 |
+| `RpmLoweredForFeedCeiling` | 204 |
+| `UnsourcedRowsAccepted` | 413 |
 
 ## Simulation subset (`matrix_2026-09-23_sim.csv`)
 
 - 2D: Pocket, Profile, Adaptive on a 40 mm square polygon, stock 44 × 44 × 18 below z = 0; end_mill and bull_nose at 6 mm; the four materials.
 - 3D: a dome height field (top z = 0, flat base z = -8, 46 mm footprint) in the same stock; heights pinned to top 0 and bottom -8 on all 3D cells (`bottom_z: Auto` collapses a waterline band). Waterline, DropCutter, Adaptive3d with end_mill; Scallop and DropCutter with ball_nose and tapered_ball_nose; 6 mm; softwood and hardwood.
 - Simulation: resolution 1.0, metrics on, auto resolution off, other fields from `SimulationOptions::default()`. That default has `adaptive_feed_modulation: true`, so the post-simulation verdicts read the modulated feed, as the GUI default does.
-- Cells run: 35; errors: 0; left out (a fixed list, `sim_left_out`): 3; wall-clock of the subset: 20.5 s.
+- Cells run: 35; errors: 0; left out (a fixed list, `sim_left_out`): 3; wall-clock of the subset: 40.2 s.
 
 ## Post-simulation diagnostic ids (cells that fire each id)
 
 | id | cells |
 |---|---|
+| `efficiency.very_fine_stepover` | 3 |
 | `feeds.feed_clamped` | 2 |
 | `feeds.long_tool_derate` | 35 |
 | `feeds.rpm_lowered_for_ceiling` | 24 |
 | `feeds.shank_too_large` | 2 |
 | `feeds.slotting_detected` | 8 |
-| `load.chipload.unmodeled` | 22 |
-| `load.chipload.within` | 13 |
-| `load.deflection.unmodeled` | 6 |
-| `load.deflection.within` | 29 |
+| `load.chipload.unmodeled` | 24 |
+| `load.chipload.within` | 11 |
+| `load.deflection.unmodeled` | 8 |
+| `load.deflection.within` | 27 |
 | `load.depth.exceeds` | 16 |
 | `load.depth.reported` | 9 |
 | `load.depth.within` | 10 |
-| `load.power.unmodeled` | 6 |
-| `load.power.within` | 29 |
+| `load.power.unmodeled` | 8 |
+| `load.power.within` | 27 |
 | `project.sim_outside_envelope` | 18 |
 | `tool.flute_reach_within` | 35 |
 

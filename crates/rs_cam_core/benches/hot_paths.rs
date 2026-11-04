@@ -811,9 +811,9 @@ fn three_op_session() -> rs_cam_core::session::ProjectSession {
         "Pocket",
         OperationConfig::Pocket(PocketConfig {
             ramp_feed_rate: None,
-            stepover: 3.0,
+            stepover: Some(3.0),
             floor: rs_cam_core::compute::floor::Floor::top(6.0),
-            depth_per_pass: 3.0,
+            depth_per_pass: Some(3.0),
             feed_rate: Some(1000.0),
             plunge_rate: Some(400.0),
             climb: true,
@@ -831,9 +831,9 @@ fn three_op_session() -> rs_cam_core::session::ProjectSession {
         "Zigzag",
         OperationConfig::Zigzag(ZigzagConfig {
             ramp_feed_rate: None,
-            stepover: 3.0,
+            stepover: Some(3.0),
             floor: rs_cam_core::compute::floor::Floor::top(3.0),
-            depth_per_pass: 3.0,
+            depth_per_pass: Some(3.0),
             feed_rate: Some(1000.0),
             plunge_rate: Some(400.0),
             angle: 45.0,
@@ -847,7 +847,7 @@ fn three_op_session() -> rs_cam_core::session::ProjectSession {
         OperationConfig::Profile(ProfileConfig {
             side: ProfileSide::Outside,
             floor: rs_cam_core::compute::floor::Floor::top(6.0),
-            depth_per_pass: 3.0,
+            depth_per_pass: Some(3.0),
             feed_rate: Some(1000.0),
             plunge_rate: Some(400.0),
             // S11: the bench states its RPM (the post default before S11).

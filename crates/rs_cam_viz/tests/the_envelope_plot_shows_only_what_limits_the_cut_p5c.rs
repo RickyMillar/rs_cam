@@ -161,7 +161,7 @@ fn drag_frames(from: egui::Pos2, to: egui::Pos2) -> Vec<Vec<egui::Event>> {
 fn pocket_at_depth(ap_mm: f64) -> (OperationConfig, SafeEnvelope) {
     let mut config = rs_cam_core::compute::fixture_values::fixture_op(OperationType::Pocket);
     if let OperationConfig::Pocket(c) = &mut config {
-        c.depth_per_pass = ap_mm;
+        c.depth_per_pass = Some(ap_mm);
     }
     envelope_of(config).expect("the Pocket is backed")
 }
@@ -183,8 +183,8 @@ fn rivmap_rough(point: Option<(f64, f64)>) -> (OperationConfig, SafeEnvelope) {
         .expect("rivmap100 has the 3D Rough")
         .clone();
     if let (OperationConfig::Adaptive3d(c), Some((ap, ae))) = (&mut tc.operation, point) {
-        c.depth_per_pass = ap;
-        c.stepover = ae;
+        c.depth_per_pass = Some(ap);
+        c.stepover = Some(ae);
     }
     let env = session
         .safe_envelope(&tc)

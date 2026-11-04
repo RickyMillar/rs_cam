@@ -72,8 +72,8 @@ fn rough(
 ) -> (OperationConfig, BoundaryConfig, StockSource) {
     (
         OperationConfig::Adaptive3d(Adaptive3dConfig {
-            stepover: STEPOVER,
-            depth_per_pass: DEPTH_PER_PASS,
+            stepover: Some(STEPOVER),
+            depth_per_pass: Some(DEPTH_PER_PASS),
             stock_to_leave_axial: leave,
             clearing_strategy: ClearingStrategy::ContourParallel,
             contour_each_level,

@@ -857,8 +857,14 @@ pub trait OperationParams {
         false
     }
 
+    /// The stepover, or `None` when the config has no stepover field or
+    /// the field is not set (P10: a tool-derived field with no tool).
     fn stepover(&self) -> Option<f64> {
         None
+    }
+    /// True when this config has a stepover field (set or not).
+    fn has_stepover(&self) -> bool {
+        false
     }
     /// Write the stepover. Returns `false` when this config has no such
     /// field, so the caller can refuse instead of discarding the value.
@@ -866,8 +872,14 @@ pub trait OperationParams {
         false
     }
 
+    /// The depth per pass, or `None` when the config has no such field or
+    /// the field is not set (P10).
     fn depth_per_pass(&self) -> Option<f64> {
         None
+    }
+    /// True when this config has a depth-per-pass field (set or not).
+    fn has_depth_per_pass(&self) -> bool {
+        false
     }
 
     /// TOTAL depth of the cut (mm), when the operation carries one.
@@ -1144,20 +1156,21 @@ impl OperationConfig {
     pub fn cut_spec(&self) -> CutSpec {
         const SURFACE_DEPTH: &str = "the model sets the depth";
         let mm = |value: f64| Stated::new(Mm::new(value));
+        let set = |value: Option<f64>| value.map(mm);
         let known_or_unset = |depth: Option<f64>| match depth {
             Some(depth) => TotalDepth::Known(mm(depth)),
             None => TotalDepth::Unset,
         };
         match self {
             OperationConfig::Face(c) => CutSpec {
-                radial: Radial::Width(mm(c.stepover)),
-                axial: Axial::PerPass(mm(c.depth_per_pass)),
+                radial: Radial::Width(set(c.stepover)),
+                axial: Axial::PerPass(set(c.depth_per_pass)),
                 total: TotalDepth::Known(mm(c.depth)),
                 first_pass: FirstPass::NotSlot,
             },
             OperationConfig::Pocket(c) => CutSpec {
-                radial: Radial::Width(mm(c.stepover)),
-                axial: Axial::PerPass(mm(c.depth_per_pass)),
+                radial: Radial::Width(set(c.stepover)),
+                axial: Axial::PerPass(set(c.depth_per_pass)),
                 total: TotalDepth::FromHeights,
                 first_pass: FirstPass::Slot,
             },
@@ -1165,13 +1178,13 @@ impl OperationConfig {
             // every side has material on both sides.
             OperationConfig::Profile(c) => CutSpec {
                 radial: Radial::Slot,
-                axial: Axial::PerPass(mm(c.depth_per_pass)),
+                axial: Axial::PerPass(set(c.depth_per_pass)),
                 total: TotalDepth::FromHeights,
                 first_pass: FirstPass::Slot,
             },
             OperationConfig::Adaptive(c) => CutSpec {
-                radial: Radial::Width(mm(c.stepover)),
-                axial: Axial::PerPass(mm(c.depth_per_pass)),
+                radial: Radial::Width(set(c.stepover)),
+                axial: Axial::PerPass(set(c.depth_per_pass)),
                 total: TotalDepth::FromHeights,
                 first_pass: if c.slot_clearing {
                     FirstPass::Slot
@@ -1195,26 +1208,26 @@ impl OperationConfig {
             },
             OperationConfig::InlayPlug(c) => CutSpec {
                 radial: Radial::Groove,
-                axial: Axial::PerPass(mm(c.depth_per_pass)),
+                axial: Axial::PerPass(set(c.depth_per_pass)),
                 total: known_or_unset(c.total_cut_depth()),
                 first_pass: FirstPass::NotSlot,
             },
             OperationConfig::Zigzag(c) => CutSpec {
-                radial: Radial::Width(mm(c.stepover)),
-                axial: Axial::PerPass(mm(c.depth_per_pass)),
+                radial: Radial::Width(set(c.stepover)),
+                axial: Axial::PerPass(set(c.depth_per_pass)),
                 total: TotalDepth::FromHeights,
                 first_pass: FirstPass::Slot,
             },
             // D3: every compensation is a slot on the first pass.
             OperationConfig::Trace(c) => CutSpec {
                 radial: Radial::Slot,
-                axial: Axial::PerPass(mm(c.depth_per_pass)),
+                axial: Axial::PerPass(set(c.depth_per_pass)),
                 total: known_or_unset(c.depth),
                 first_pass: FirstPass::Slot,
             },
             OperationConfig::Drill(c) => CutSpec {
                 radial: Radial::Axial,
-                axial: Axial::Peck(mm(c.peck_depth)),
+                axial: Axial::Peck(set(c.peck_depth)),
                 total: TotalDepth::FromHeights,
                 first_pass: FirstPass::NotSlot,
             },
@@ -1234,21 +1247,21 @@ impl OperationConfig {
             OperationConfig::DropCutter(c) => CutSpec {
                 radial: match c.scallop_height {
                     Some(scallop) => Radial::Scallop(mm(scallop)),
-                    None => Radial::Width(mm(c.stepover)),
+                    None => Radial::Width(set(c.stepover)),
                 },
                 axial: Axial::Surface { max: None },
                 total: TotalDepth::None(SURFACE_DEPTH),
                 first_pass: FirstPass::NotSlot,
             },
             OperationConfig::Adaptive3d(c) => CutSpec {
-                radial: Radial::Width(mm(c.stepover)),
-                axial: Axial::PerPass(mm(c.depth_per_pass)),
+                radial: Radial::Width(set(c.stepover)),
+                axial: Axial::PerPass(set(c.depth_per_pass)),
                 total: TotalDepth::FromHeights,
                 first_pass: FirstPass::NotSlot,
             },
             OperationConfig::Waterline(c) => CutSpec {
                 radial: Radial::SurfaceFollow,
-                axial: Axial::ZStep(mm(c.z_step)),
+                axial: Axial::ZStep(set(c.z_step)),
                 total: TotalDepth::FromHeights,
                 first_pass: FirstPass::NotSlot,
             },
@@ -1256,7 +1269,7 @@ impl OperationConfig {
             // offsets (the `stepover()` gate of `PencilConfig`).
             OperationConfig::Pencil(c) => CutSpec {
                 radial: if c.num_offset_passes > 1 {
-                    Radial::Width(mm(c.offset_stepover))
+                    Radial::Width(set(c.offset_stepover))
                 } else {
                     Radial::SurfaceFollow
                 },
@@ -1272,26 +1285,26 @@ impl OperationConfig {
             },
             OperationConfig::UnifiedFinish(c) => CutSpec {
                 radial: Radial::Scallop(mm(c.scallop_height)),
-                axial: Axial::ZStep(mm(c.z_step)),
+                axial: Axial::ZStep(set(c.z_step)),
                 total: TotalDepth::FromHeights,
                 first_pass: FirstPass::NotSlot,
             },
             OperationConfig::SteepShallow(c) => CutSpec {
-                radial: Radial::Width(mm(c.stepover)),
-                axial: Axial::ZStep(mm(c.z_step)),
+                radial: Radial::Width(set(c.stepover)),
+                axial: Axial::ZStep(set(c.z_step)),
                 total: TotalDepth::None(SURFACE_DEPTH),
                 first_pass: FirstPass::NotSlot,
             },
             OperationConfig::RampFinish(c) => CutSpec {
                 radial: Radial::SurfaceFollow,
                 axial: Axial::Surface {
-                    max: Some(mm(c.max_stepdown)),
+                    max: set(c.max_stepdown),
                 },
                 total: TotalDepth::None(SURFACE_DEPTH),
                 first_pass: FirstPass::NotSlot,
             },
             OperationConfig::SpiralFinish(c) => CutSpec {
-                radial: Radial::Width(mm(c.stepover)),
+                radial: Radial::Width(set(c.stepover)),
                 axial: Axial::Surface { max: None },
                 total: TotalDepth::None(SURFACE_DEPTH),
                 first_pass: FirstPass::NotSlot,
@@ -1303,7 +1316,7 @@ impl OperationConfig {
                 first_pass: FirstPass::NotSlot,
             },
             OperationConfig::HorizontalFinish(c) => CutSpec {
-                radial: Radial::Width(mm(c.stepover)),
+                radial: Radial::Width(set(c.stepover)),
                 axial: Axial::Surface { max: None },
                 total: TotalDepth::None(SURFACE_DEPTH),
                 first_pass: FirstPass::NotSlot,
@@ -1317,7 +1330,7 @@ impl OperationConfig {
             },
             OperationConfig::AlignmentPinDrill(c) => CutSpec {
                 radial: Radial::Axial,
-                axial: Axial::Peck(mm(c.peck_depth)),
+                axial: Axial::Peck(set(c.peck_depth)),
                 total: TotalDepth::None("stock thickness plus spoilboard_penetration"),
                 first_pass: FirstPass::NotSlot,
             },
@@ -1846,21 +1859,31 @@ impl OperationConfig {
         fields
     }
 
+    /// P10 (ruling D8): the tool-derived geometry fields of this op that
+    /// are not set (`geometry_default::read_fields`). A field the op does
+    /// not read with its other settings (a Simple drill `peck_depth`) is
+    /// not named.
+    pub fn unset_geometry(&self) -> Vec<&'static str> {
+        crate::compute::geometry_default::unset_geometry(self)
+    }
+
     /// S11: every field of this op that is not set, in the order generation
-    /// refuses them: `floor` (an unset floor), the depths, the feeds. The
-    /// MCP replies list it as `unset`.
+    /// refuses them: `floor` (an unset floor), the depths, the tool-derived
+    /// geometry (P10), the feeds. The MCP replies list it as `unset`.
     pub fn unset_fields(&self) -> Vec<&'static str> {
         let mut fields = Vec::new();
         if self.floor().is_some_and(|floor| floor.is_unset()) {
             fields.push("floor");
         }
         fields.extend(self.unset_depths());
+        fields.extend(self.unset_geometry());
         fields.extend(self.unset_feeds());
         fields
     }
 
     /// S11 and ruling D12: why this op with `tool` stops for a value that
-    /// is not set, or `None`. A depth comes first, then a required tool
+    /// is not set, or `None`. A depth comes first, then a tool-derived
+    /// geometry value (P10), then a required tool
     /// fact ([`crate::compute::not_set::tool_facts_not_set`]), then the
     /// feeds. Generation, the session door and the diagnostics call it.
     pub fn not_set_for_tool(
@@ -1871,7 +1894,7 @@ impl OperationConfig {
         let not_set = self.not_set();
         if let Some(depth) = not_set
             .as_ref()
-            .filter(|not_set| not_set.kind == NotSetKind::Depth)
+            .filter(|not_set| matches!(not_set.kind, NotSetKind::Depth | NotSetKind::Geometry))
         {
             return Some(depth.clone());
         }
@@ -1890,6 +1913,15 @@ impl OperationConfig {
                 op,
                 kind: NotSetKind::Depth,
                 fields: depths,
+                tool: None,
+            });
+        }
+        let geometry = self.unset_geometry();
+        if !geometry.is_empty() {
+            return Some(NotSet {
+                op,
+                kind: NotSetKind::Geometry,
+                fields: geometry,
                 tool: None,
             });
         }
@@ -2200,30 +2232,36 @@ impl OperationConfig {
             DepthStepping::new(top_z, base_z - depth.abs(), step).all_levels()
         };
         let floor = heights.bottom_z;
+        // S11 and P10: an unset depth or an unset depth per pass gives no
+        // level (the prologue refuses it first, `OperationError::NotSet`).
         match self {
-            Self::Pocket(cfg) => {
-                floor_ladder(top_z, floor, cfg.depth_per_pass, cfg.finishing_passes)
-            }
-            Self::Profile(cfg) => {
-                floor_ladder(top_z, floor, cfg.depth_per_pass, cfg.finishing_passes)
-            }
-            Self::Adaptive(cfg) => floor_ladder(top_z, floor, cfg.depth_per_pass, 0),
-            Self::Zigzag(cfg) => floor_ladder(top_z, floor, cfg.depth_per_pass, 0),
-            // S11: an unset depth gives no level (the prologue refuses it
-            // first, `OperationError::NotSet`).
-            Self::Trace(cfg) => cfg
-                .depth
-                .map_or_else(Vec::new, |depth| uniform(depth, cfg.depth_per_pass)),
+            Self::Pocket(cfg) => cfg.depth_per_pass.map_or_else(Vec::new, |step| {
+                floor_ladder(top_z, floor, step, cfg.finishing_passes)
+            }),
+            Self::Profile(cfg) => cfg.depth_per_pass.map_or_else(Vec::new, |step| {
+                floor_ladder(top_z, floor, step, cfg.finishing_passes)
+            }),
+            Self::Adaptive(cfg) => cfg
+                .depth_per_pass
+                .map_or_else(Vec::new, |step| floor_ladder(top_z, floor, step, 0)),
+            Self::Zigzag(cfg) => cfg
+                .depth_per_pass
+                .map_or_else(Vec::new, |step| floor_ladder(top_z, floor, step, 0)),
+            Self::Trace(cfg) => match (cfg.depth, cfg.depth_per_pass) {
+                (Some(depth), Some(step)) => uniform(depth, step),
+                (None, _) | (_, None) => Vec::new(),
+            },
             // The plug kernel walks the same `z_ladder` arm over the same
             // total (`ops::inlay::inlay_plug_toolpath_with_cancel`).
-            Self::InlayPlug(cfg) => cfg
-                .total_cut_depth()
-                .map_or_else(Vec::new, |depth| uniform(depth, cfg.depth_per_pass)),
+            Self::InlayPlug(cfg) => match (cfg.total_cut_depth(), cfg.depth_per_pass) {
+                (Some(depth), Some(step)) => uniform(depth, step),
+                (None, _) | (_, None) => Vec::new(),
+            },
             // The one Face ladder (W3.3): the kernel and the Layered Face
             // read the same function.
-            Self::Face(cfg) => {
-                crate::ops::face::face_levels(top_z, base_z, cfg.depth, cfg.depth_per_pass)
-            }
+            Self::Face(cfg) => cfg.depth_per_pass.map_or_else(Vec::new, |step| {
+                crate::ops::face::face_levels(top_z, base_z, cfg.depth, step)
+            }),
             // No standard depth stepping. The 3D ops drive their own Z
             // ladder from the surface; VCarve, Chamfer and Inlay derive Z
             // from the cutter geometry; the two drilling ops are Z-only;

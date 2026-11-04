@@ -89,7 +89,7 @@ fn two_toolpaths_one_model() -> ProjectSession {
 
     for name in ["Finish A", "Finish B"] {
         let op = OperationConfig::DropCutter(DropCutterConfig {
-            stepover: 4.0,
+            stepover: Some(4.0),
             feed_rate: Some(1500.0),
             plunge_rate: Some(300.0),
             min_z: -DEPTH,
@@ -145,7 +145,7 @@ fn one_2d_toolpath(fixture: Option<Obstacle>) -> ProjectSession {
 
     let op = OperationConfig::Trace(TraceConfig {
         depth: Some(1.0),
-        depth_per_pass: 1.0,
+        depth_per_pass: Some(1.0),
         ..TraceConfig::default()
     });
     builder

@@ -688,9 +688,9 @@ fn the_suggest_clamp_still_fires_at_the_helper_s_own_cap() {
     tool.set_stickout(ToolFact::Stated(50.0));
 
     let mut operation = OperationConfig::Pocket(PocketConfig {
-        stepover: STEPOVER_MM,
+        stepover: Some(STEPOVER_MM),
         floor: rs_cam_core::compute::floor::Floor::top(2.0 * REQUESTED_DPP_MM),
-        depth_per_pass: REQUESTED_DPP_MM,
+        depth_per_pass: Some(REQUESTED_DPP_MM),
         feed_rate: Some(1000.0),
         plunge_rate: Some(400.0),
         ..PocketConfig::default()

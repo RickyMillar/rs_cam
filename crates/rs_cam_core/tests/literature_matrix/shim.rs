@@ -288,13 +288,13 @@ fn build_operation(
 
     match family {
         OperationFamily::Pocket => Ok(OperationConfig::Pocket(PocketConfig {
-            depth_per_pass: pinned_doc,
-            stepover: pinned_woc,
+            depth_per_pass: Some(pinned_doc),
+            stepover: Some(pinned_woc),
             ..PocketConfig::default()
         })),
         OperationFamily::Adaptive => Ok(OperationConfig::Adaptive(AdaptiveConfig {
-            depth_per_pass: pinned_doc,
-            stepover: pinned_woc,
+            depth_per_pass: Some(pinned_doc),
+            stepover: Some(pinned_woc),
             ..AdaptiveConfig::default()
         })),
         OperationFamily::Scallop => {
@@ -593,9 +593,9 @@ fn snapshot_from_clamped(
     match op {
         OperationConfig::Drill(cfg) => {
             let depth = cfg.floor.depth_below_top().unwrap_or(f64::NAN);
-            bindings.insert("peck_depth".into(), cfg.peck_depth);
+            bindings.insert("peck_depth".into(), cfg.peck_depth.unwrap_or(f64::NAN));
             bindings.insert("drill_depth".into(), depth);
-            bindings.insert("peck_over_d".into(), cfg.peck_depth / d);
+            bindings.insert("peck_over_d".into(), cfg.peck_depth.unwrap_or(f64::NAN) / d);
             bindings.insert("depth_over_d".into(), depth / d);
         }
         OperationConfig::VCarve(cfg) => {

@@ -67,7 +67,7 @@ fn square(x0: f64, y0: f64, side: f64) -> Polygon2 {
 fn trace_op() -> OperationConfig {
     OperationConfig::Trace(TraceConfig {
         depth: Some(4.0),
-        depth_per_pass: 2.0,
+        depth_per_pass: Some(2.0),
         ..TraceConfig::default()
     })
 }

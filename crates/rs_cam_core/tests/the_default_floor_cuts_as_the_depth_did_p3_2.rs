@@ -64,7 +64,7 @@ fn op(op_type: OperationType) -> (OperationConfig, usize) {
         OperationType::Pocket => (
             OperationConfig::Pocket(PocketConfig {
                 floor,
-                depth_per_pass: STEP,
+                depth_per_pass: Some(STEP),
                 finishing_passes: 1,
                 ..PocketConfig::default()
             }),
@@ -73,7 +73,7 @@ fn op(op_type: OperationType) -> (OperationConfig, usize) {
         OperationType::Profile => (
             OperationConfig::Profile(ProfileConfig {
                 floor,
-                depth_per_pass: STEP,
+                depth_per_pass: Some(STEP),
                 finishing_passes: 2,
                 ..ProfileConfig::default()
             }),
@@ -82,7 +82,7 @@ fn op(op_type: OperationType) -> (OperationConfig, usize) {
         OperationType::Zigzag => (
             OperationConfig::Zigzag(ZigzagConfig {
                 floor,
-                depth_per_pass: STEP,
+                depth_per_pass: Some(STEP),
                 ..ZigzagConfig::default()
             }),
             0,
@@ -90,7 +90,7 @@ fn op(op_type: OperationType) -> (OperationConfig, usize) {
         OperationType::Adaptive => (
             OperationConfig::Adaptive(AdaptiveConfig {
                 floor,
-                depth_per_pass: STEP,
+                depth_per_pass: Some(STEP),
                 ..AdaptiveConfig::default()
             }),
             0,

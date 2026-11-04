@@ -214,8 +214,8 @@ fn rough_tool() -> ToolConfig {
 
 fn adaptive3d_op(feed: f64, rpm: u32, stepover: f64, dpp: f64) -> OperationConfig {
     OperationConfig::Adaptive3d(Adaptive3dConfig {
-        stepover,
-        depth_per_pass: dpp,
+        stepover: Some(stepover),
+        depth_per_pass: Some(dpp),
         feed_rate: Some(feed),
         plunge_rate: Some(300.0),
         spindle_rpm: Some(rpm),
@@ -228,7 +228,7 @@ fn adaptive3d_op(feed: f64, rpm: u32, stepover: f64, dpp: f64) -> OperationConfi
 
 fn drop_cutter_op(feed: f64, rpm: u32, stepover: f64) -> OperationConfig {
     OperationConfig::DropCutter(DropCutterConfig {
-        stepover,
+        stepover: Some(stepover),
         feed_rate: Some(feed),
         plunge_rate: Some(300.0),
         spindle_rpm: Some(rpm),

@@ -473,7 +473,11 @@ fn dia_spiral_finish(op: &OperationConfig, ui: &mut egui::Ui) -> bool {
         return false;
     };
     let outward = cfg.direction == crate::state::toolpath::SpiralDirection::InsideOut;
-    draw_spiral_diagram(ui, cfg.stepover, outward);
+    // P10: no stepover (no tool), no diagram.
+    let Some(stepover) = cfg.stepover else {
+        return false;
+    };
+    draw_spiral_diagram(ui, stepover, outward);
     true
 }
 
@@ -489,7 +493,11 @@ fn dia_pencil(op: &OperationConfig, ui: &mut egui::Ui) -> bool {
     let OperationConfig::Pencil(cfg) = op else {
         return false;
     };
-    draw_pencil_diagram(ui, cfg.num_offset_passes, cfg.offset_stepover);
+    // P10: no offset stepover (no tool), no diagram.
+    let Some(offset_stepover) = cfg.offset_stepover else {
+        return false;
+    };
+    draw_pencil_diagram(ui, cfg.num_offset_passes, offset_stepover);
     true
 }
 
@@ -505,7 +513,11 @@ fn dia_ramp_finish(op: &OperationConfig, ui: &mut egui::Ui) -> bool {
     let OperationConfig::RampFinish(cfg) = op else {
         return false;
     };
-    draw_ramp_finish_diagram(ui, cfg.max_stepdown);
+    // P10: no step (no tool), no diagram.
+    let Some(max_stepdown) = cfg.max_stepdown else {
+        return false;
+    };
+    draw_ramp_finish_diagram(ui, max_stepdown);
     true
 }
 

@@ -39,10 +39,10 @@ use rs_cam_core::session::ProjectSession;
 /// The peck depth of a Drill or a Pin Drill. Other operations have none.
 fn peck_depth(op: &OperationConfig) -> Option<f64> {
     if let OperationConfig::Drill(cfg) = op {
-        return Some(cfg.peck_depth);
+        return cfg.peck_depth;
     }
     if let OperationConfig::AlignmentPinDrill(cfg) = op {
-        return Some(cfg.peck_depth);
+        return cfg.peck_depth;
     }
     None
 }

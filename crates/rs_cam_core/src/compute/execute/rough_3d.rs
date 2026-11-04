@@ -62,6 +62,16 @@ pub(crate) fn generate_adaptive3d(
             .map(|t| std::sync::Arc::new(t) as std::sync::Arc<dyn MillingCutter>);
     let rough = Adaptive3dRough {
         cfg,
+        stepover: crate::compute::not_set::required_geometry(
+            cfg.stepover,
+            op.op_type().label(),
+            "stepover",
+        )?,
+        depth_per_pass: crate::compute::not_set::required_geometry(
+            cfg.depth_per_pass,
+            op.op_type().label(),
+            "depth_per_pass",
+        )?,
         tool: ctx.tool_def,
         gouge_probe,
         feed_rate: op.cut_feeds()?.feed_rate,
@@ -75,6 +85,10 @@ pub(crate) fn generate_adaptive3d(
 /// The 3D Rough op: the config, the tool and the resolved rates.
 pub(crate) struct Adaptive3dRough<'a> {
     cfg: &'a Adaptive3dConfig,
+    /// The set stepover and depth per pass (P10: the prologue stops an
+    /// unset one).
+    stepover: f64,
+    depth_per_pass: f64,
     tool: &'a ToolDefinition,
     /// G-DRAPEGAP: the guard's reduced tool (`Adaptive3dGeometry::gouge_probe`).
     gouge_probe: Option<std::sync::Arc<dyn MillingCutter>>,
@@ -110,12 +124,15 @@ impl Adaptive3dRough<'_> {
         // the depth-of-cut, not the envelope radius — for tapered tools
         // these differ a lot. Floor at 0.01mm to keep stepover math safe
         // for degenerate (zero-tip) geometry.
-        let engagement_radius = self.tool.engagement_radius_mm(cfg.depth_per_pass).max(0.01);
+        let engagement_radius = self
+            .tool
+            .engagement_radius_mm(self.depth_per_pass)
+            .max(0.01);
         crate::adaptive3d::Adaptive3dParams {
             geometry: crate::adaptive3d::Adaptive3dGeometry {
                 tool_radius: engagement_radius,
                 envelope_radius: self.tool.envelope_radius_mm(),
-                stepover: cfg.stepover,
+                stepover: self.stepover,
                 tolerance: cfg.tolerance,
                 segment_merge_tolerance: inputs.segment_merge_tolerance,
                 min_cutting_radius: cfg.min_cutting_radius,
@@ -140,7 +157,7 @@ impl Adaptive3dRough<'_> {
                 gouge_probe: self.gouge_probe.clone(),
             },
             depth: crate::adaptive3d::Adaptive3dDepth {
-                depth_per_pass: cfg.depth_per_pass,
+                depth_per_pass: self.depth_per_pass,
                 stock_to_leave: adaptive3d_effective_stock_to_leave(cfg),
                 // `HEIGHTS.top = StockBox`: see `TopAnchor::StockBox`.
                 stock_top_z: inputs.top_z,

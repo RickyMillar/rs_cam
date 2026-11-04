@@ -279,8 +279,8 @@ fn the_planner_stock_is_never_below_the_emitted_path() {
 #[test]
 fn the_rough_rapids_into_no_stock() {
     let cfg = Adaptive3dConfig {
-        stepover: STEPOVER,
-        depth_per_pass: DPP,
+        stepover: Some(STEPOVER),
+        depth_per_pass: Some(DPP),
         stock_to_leave_axial: LEAVE,
         entry_style: Adaptive3dEntryStyle::Plunge,
         region_ordering: CfgOrdering::Global,

@@ -89,9 +89,9 @@ fn mini_oak() -> Material {
 /// funnel's depth staircase keeps 7.5 mm.
 fn pocket(depth_per_pass: f64) -> OperationConfig {
     OperationConfig::Pocket(PocketConfig {
-        stepover: STEPOVER_MM,
+        stepover: Some(STEPOVER_MM),
         floor: rs_cam_core::compute::floor::Floor::top(30.0),
-        depth_per_pass,
+        depth_per_pass: Some(depth_per_pass),
         feed_rate: Some(3877.0),
         plunge_rate: Some(1938.0),
         spindle_rpm: Some(18_000),

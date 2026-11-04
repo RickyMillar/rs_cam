@@ -118,7 +118,7 @@ fn build_vcarve_session() -> ProjectSession {
     let vcarve = VCarveConfig {
         ramp_feed_rate: None,
         max_depth: Some(3.0),
-        stepover: 0.5,
+        stepover: Some(0.5),
         feed_rate: Some(800.0),
         plunge_rate: Some(400.0),
         tolerance: 0.05,

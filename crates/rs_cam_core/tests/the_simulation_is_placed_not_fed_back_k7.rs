@@ -70,7 +70,7 @@ fn deep_pocket_session() -> ProjectSession {
     ));
     let op = OperationConfig::Pocket(PocketConfig {
         floor: Floor::Z { z: DEEP_FLOOR_Z },
-        depth_per_pass: 12.0,
+        depth_per_pass: Some(12.0),
         ..PocketConfig::default()
     });
     let cfg = common::session::toolpath_config("deep pocket", op, tool_id, model);
@@ -391,7 +391,7 @@ fn a_vbit_full_groove_is_not_judged_by_the_slot_rule() {
     tool.set_cutting_length(ToolFact::Stated(12.0));
     let op = OperationConfig::Trace(rs_cam_core::compute::operation_configs::TraceConfig {
         depth: Some(5.0),
-        depth_per_pass: 5.0,
+        depth_per_pass: Some(5.0),
         feed_rate: Some(1000.0),
         plunge_rate: Some(300.0),
         spindle_rpm: Some(16_000),

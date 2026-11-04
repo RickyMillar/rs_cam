@@ -66,9 +66,9 @@ fn flat(diameter: f64) -> ToolConfig {
 /// nominal cut.
 fn face(ap: f64, ae: f64) -> OperationConfig {
     OperationConfig::Face(FaceConfig {
-        stepover: ae,
+        stepover: Some(ae),
         depth: ap,
-        depth_per_pass: ap,
+        depth_per_pass: Some(ap),
         feed_rate: Some(FEED_MM_MIN),
         plunge_rate: Some(300.0),
         spindle_rpm: Some(RPM),

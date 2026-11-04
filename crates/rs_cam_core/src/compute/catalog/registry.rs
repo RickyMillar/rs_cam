@@ -95,6 +95,7 @@ pub(super) static REG_FACE: OpRegistryEntry = OpRegistryEntry {
     tool_constraints: ToolConstraintsDef::ANY_TOOL,
     dressup_policy: DressupPolicy::ANY_DRESSUP,
     entry: EntryContract::ANY_DRESSUP_FROM_ROLE,
+    geometry: crate::compute::geometry_default::FACE,
     policy: OpPolicy::MILLING,
     capabilities: Capabilities {
         transform: TRANSFORM_FACE,
@@ -148,6 +149,7 @@ pub(super) static REG_POCKET: OpRegistryEntry = OpRegistryEntry {
     tool_constraints: ToolConstraintsDef::ANY_TOOL,
     dressup_policy: DressupPolicy::ANY_DRESSUP,
     entry: EntryContract::ANY_DRESSUP_FROM_ROLE,
+    geometry: crate::compute::geometry_default::POCKET,
     policy: OpPolicy::MILLING,
     capabilities: Capabilities {
         transform: TRANSFORM_DEPTH_ORDER,
@@ -203,6 +205,7 @@ pub(super) static REG_PROFILE: OpRegistryEntry = OpRegistryEntry {
     tool_constraints: ToolConstraintsDef::ANY_TOOL,
     dressup_policy: DressupPolicy::ANY_DRESSUP,
     entry: EntryContract::ANY_DRESSUP_FROM_ROLE,
+    geometry: crate::compute::geometry_default::PROFILE,
     policy: OpPolicy::MILLING,
     capabilities: Capabilities {
         transform: TRANSFORM_PROFILE,
@@ -266,6 +269,7 @@ pub(super) static REG_ADAPTIVE: OpRegistryEntry = OpRegistryEntry {
         none_is: NoneEntry::StockAwarePlunge,
         own: None,
     },
+    geometry: crate::compute::geometry_default::ADAPTIVE,
     policy: OpPolicy::MILLING,
     capabilities: Capabilities {
         transform: TRANSFORM_ADAPTIVE_2D,
@@ -333,6 +337,7 @@ pub(super) static REG_VCARVE: OpRegistryEntry = OpRegistryEntry {
         reason: VCARVE_NO_ENTRY,
         feed: PlungeFeedRule::OpPlungeRate,
     },
+    geometry: crate::compute::geometry_default::STEPOVER_ONLY,
     policy: OpPolicy::MILLING,
     capabilities: Capabilities {
         transform: TRANSFORM_V_WIDTH,
@@ -396,6 +401,7 @@ pub(super) static REG_INLAY: OpRegistryEntry = OpRegistryEntry {
         reason: INLAY_NO_ENTRY,
         feed: PlungeFeedRule::OpPlungeRate,
     },
+    geometry: crate::compute::geometry_default::STEPOVER_ONLY,
     policy: OpPolicy::MILLING,
     capabilities: Capabilities {
         transform: TRANSFORM_V_WIDTH,
@@ -459,6 +465,7 @@ pub(super) static REG_INLAY_PLUG: OpRegistryEntry = OpRegistryEntry {
         reason: INLAY_PLUG_NO_ENTRY,
         feed: PlungeFeedRule::OpPlungeRate,
     },
+    geometry: crate::compute::geometry_default::POCKET,
     policy: OpPolicy::MILLING,
     capabilities: Capabilities {
         transform: TRANSFORM_V_WIDTH,
@@ -512,6 +519,7 @@ pub(super) static REG_ZIGZAG: OpRegistryEntry = OpRegistryEntry {
     tool_constraints: ToolConstraintsDef::ANY_TOOL,
     dressup_policy: DressupPolicy::ANY_DRESSUP,
     entry: EntryContract::ANY_DRESSUP_FROM_ROLE,
+    geometry: crate::compute::geometry_default::POCKET,
     policy: OpPolicy::MILLING,
     capabilities: Capabilities {
         transform: TRANSFORM_DEPTH_ORDER,
@@ -571,6 +579,7 @@ pub(super) static REG_TRACE: OpRegistryEntry = OpRegistryEntry {
         reason: TRACE_NO_ENTRY,
         feed: PlungeFeedRule::OpPlungeRate,
     },
+    geometry: crate::compute::geometry_default::TRACE,
     policy: OpPolicy::MILLING,
     capabilities: Capabilities {
         transform: TRANSFORM_TRACE,
@@ -628,6 +637,7 @@ pub(super) static REG_DRILL: OpRegistryEntry = OpRegistryEntry {
     // Roadmap B.5 — stock-based peck cycle: no entry style applies.
     dressup_policy: DressupPolicy::ANY_DRESSUP,
     entry: EntryContract::DescentIsCut,
+    geometry: crate::compute::geometry_default::DRILL,
     policy: OpPolicy::DRILLING,
     capabilities: Capabilities {
         transform: TRANSFORM_XY_INDEPENDENT,
@@ -710,6 +720,7 @@ pub(super) static REG_BORE: OpRegistryEntry = OpRegistryEntry {
          between the tool and the wall of the hole.",
     ),
     entry: EntryContract::DescentIsCut,
+    geometry: crate::compute::geometry_default::NONE,
     policy: OpPolicy::MILLING,
     capabilities: Capabilities {
         transform: TRANSFORM_XY_INDEPENDENT,
@@ -775,6 +786,7 @@ pub(super) static REG_CHAMFER: OpRegistryEntry = OpRegistryEntry {
     },
     dressup_policy: DressupPolicy::ANY_DRESSUP,
     entry: EntryContract::ANY_DRESSUP_FROM_ROLE,
+    geometry: crate::compute::geometry_default::NONE,
     policy: OpPolicy::MILLING,
     capabilities: Capabilities {
         transform: TRANSFORM_ORDERED_LINKABLE,
@@ -835,6 +847,7 @@ pub(super) static REG_DROP_CUTTER: OpRegistryEntry = OpRegistryEntry {
         reason: DROP_CUTTER_NO_ENTRY,
         feed: PlungeFeedRule::OpPlungeRate,
     },
+    geometry: crate::compute::geometry_default::FINISH,
     policy: OpPolicy::LATERAL_RASTER,
     capabilities: Capabilities {
         transform: TRANSFORM_XY_INDEPENDENT,
@@ -901,6 +914,7 @@ pub(super) static REG_ADAPTIVE3D: OpRegistryEntry = OpRegistryEntry {
             EntryKind::Helix,
         ]),
     },
+    geometry: crate::compute::geometry_default::ROUGH_3D,
     policy: OpPolicy::MILLING,
     capabilities: Capabilities {
         transform: TRANSFORM_ADAPTIVE_3D,
@@ -954,6 +968,7 @@ pub(super) static REG_WATERLINE: OpRegistryEntry = OpRegistryEntry {
     tool_constraints: ToolConstraintsDef::ANY_TOOL,
     dressup_policy: DressupPolicy::ANY_DRESSUP,
     entry: EntryContract::ANY_DRESSUP_FROM_ROLE,
+    geometry: crate::compute::geometry_default::WATERLINE,
     policy: OpPolicy::FEATURE_SELECTIVE,
     capabilities: Capabilities {
         transform: TRANSFORM_DEPTH_ORDER,
@@ -1017,6 +1032,7 @@ pub(super) static REG_PENCIL: OpRegistryEntry = OpRegistryEntry {
         none_is: NoneEntry::GeneratorPlunge,
         own: Some(EntrySet::of(&[EntryKind::Ramp])),
     },
+    geometry: crate::compute::geometry_default::PENCIL,
     policy: OpPolicy::FEATURE_SELECTIVE,
     capabilities: Capabilities {
         transform: TRANSFORM_ORDERED_LINKABLE,
@@ -1073,6 +1089,7 @@ pub(super) static REG_SCALLOP: OpRegistryEntry = OpRegistryEntry {
     },
     dressup_policy: DressupPolicy::ANY_DRESSUP,
     entry: EntryContract::ANY_DRESSUP_FROM_ROLE,
+    geometry: crate::compute::geometry_default::NONE,
     policy: OpPolicy::MILLING,
     capabilities: Capabilities {
         transform: TRANSFORM_CONTINUOUS,
@@ -1146,6 +1163,7 @@ pub(super) static REG_UNIFIED_FINISH: OpRegistryEntry = OpRegistryEntry {
     entry: EntryContract::Planner {
         kinds: EntrySet::of(&[EntryKind::Plunge]),
     },
+    geometry: crate::compute::geometry_default::UNIFIED,
     policy: OpPolicy::MILLING,
     capabilities: Capabilities {
         transform: TRANSFORM_BARRIERED_NODES,
@@ -1202,6 +1220,7 @@ pub(super) static REG_STEEP_SHALLOW: OpRegistryEntry = OpRegistryEntry {
     tool_constraints: ToolConstraintsDef::ANY_TOOL,
     dressup_policy: DressupPolicy::ANY_DRESSUP,
     entry: EntryContract::ANY_DRESSUP_FROM_ROLE,
+    geometry: crate::compute::geometry_default::STEEP_SHALLOW,
     policy: OpPolicy::LATERAL_RASTER,
     capabilities: Capabilities {
         transform: TRANSFORM_BARRIERED_NODES,
@@ -1258,6 +1277,7 @@ pub(super) static REG_RAMP_FINISH: OpRegistryEntry = OpRegistryEntry {
     tool_constraints: ToolConstraintsDef::ANY_TOOL,
     dressup_policy: DressupPolicy::ANY_DRESSUP,
     entry: EntryContract::ANY_DRESSUP_FROM_ROLE,
+    geometry: crate::compute::geometry_default::RAMP,
     policy: OpPolicy::MILLING,
     capabilities: Capabilities {
         transform: TRANSFORM_CONTINUOUS,
@@ -1318,6 +1338,7 @@ pub(super) static REG_SPIRAL_FINISH: OpRegistryEntry = OpRegistryEntry {
     },
     dressup_policy: DressupPolicy::ANY_DRESSUP,
     entry: EntryContract::ANY_DRESSUP_FROM_ROLE,
+    geometry: crate::compute::geometry_default::FINISH,
     policy: OpPolicy::LATERAL_RASTER,
     capabilities: Capabilities {
         transform: TRANSFORM_CONTINUOUS,
@@ -1371,6 +1392,7 @@ pub(super) static REG_RADIAL_FINISH: OpRegistryEntry = OpRegistryEntry {
     tool_constraints: ToolConstraintsDef::ANY_TOOL,
     dressup_policy: DressupPolicy::ANY_DRESSUP,
     entry: EntryContract::ANY_DRESSUP_FROM_ROLE,
+    geometry: crate::compute::geometry_default::NONE,
     policy: OpPolicy::MILLING,
     capabilities: Capabilities {
         transform: TRANSFORM_ORDERED_LINKABLE,
@@ -1424,6 +1446,7 @@ pub(super) static REG_HORIZONTAL_FINISH: OpRegistryEntry = OpRegistryEntry {
     tool_constraints: ToolConstraintsDef::ANY_TOOL,
     dressup_policy: DressupPolicy::ANY_DRESSUP,
     entry: EntryContract::ANY_DRESSUP_FROM_ROLE,
+    geometry: crate::compute::geometry_default::FINISH,
     policy: OpPolicy {
         // The only op that is both: a lateral raster pitch AND a
         // feature-selective empty. It cuts near-flat areas only, so a
@@ -1489,6 +1512,7 @@ pub(super) static REG_PROJECT_CURVE: OpRegistryEntry = OpRegistryEntry {
         reason: PROJECT_CURVE_NO_ENTRY,
         feed: PlungeFeedRule::AxialChip,
     },
+    geometry: crate::compute::geometry_default::NONE,
     policy: OpPolicy::MILLING,
     capabilities: Capabilities {
         transform: TRANSFORM_XY_INDEPENDENT,
@@ -1553,6 +1577,7 @@ pub(super) static REG_ALIGNMENT_PIN_DRILL: OpRegistryEntry = OpRegistryEntry {
     // warned on the product's own default.
     dressup_policy: DressupPolicy::ANY_DRESSUP,
     entry: EntryContract::DescentIsCut,
+    geometry: crate::compute::geometry_default::DRILL,
     policy: OpPolicy::DRILLING,
     capabilities: Capabilities {
         transform: TRANSFORM_XY_INDEPENDENT,

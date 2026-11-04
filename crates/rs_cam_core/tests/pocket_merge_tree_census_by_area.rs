@@ -268,7 +268,9 @@ fn pocket_merge_tree_census_on_the_rough() {
         .and_then(|m| m.mesh.clone())
         .expect("the rough's mesh");
     let index = SpatialIndex::build_auto(&mesh);
-    let r = cutter.engagement_radius_mm(cfg.depth_per_pass).max(0.01);
+    let r = cutter
+        .engagement_radius_mm(cfg.depth_per_pass.unwrap_or(f64::NAN))
+        .max(0.01);
     let cell = (r / 6.0).max(cfg.tolerance);
     let stock = session.stock_bbox();
     let bb = &mesh.bbox;

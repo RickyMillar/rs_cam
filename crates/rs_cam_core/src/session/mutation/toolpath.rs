@@ -858,6 +858,10 @@ impl ProjectSession {
         self.apply_first_tool_boundary(old_tool, &mut candidate);
         // R1: each empty or suggested feed field takes the Suggest value of
         // the new tool.
+        // P10 (ruling D8): each geometry field that holds its rule value
+        // (or no value) takes the rule value of the new tool, before the
+        // feeds seed reads it.
+        self.seed_geometry(&mut candidate);
         self.seed_feeds(&mut candidate);
         let enabled = candidate.enabled;
         if let Some(tc) = self.toolpath_configs.get_mut(index) {
@@ -868,6 +872,30 @@ impl ProjectSession {
         // `edit_toolpath_selection` and `set_heights_config`, not the
         // narrower `remove_result`.
         self.invalidate_result_chain(index, enabled);
+    }
+
+    /// P10 (operator ruling D8, lead change 3): THE seed of the geometry
+    /// fields on a tool change. Each tool-derived field (a stepover, a depth
+    /// per pass, a peck, a Z step) that is empty, or that holds the value
+    /// its rule wrote (its stamp is the rule's stamp), takes the rule value
+    /// of the new tool, with the stamp. A typed value (`Manual`), a pick
+    /// and a value with no stamp (an old file) stay. With no tool, nothing
+    /// changes. The tool doors call it before [`Self::seed_feeds`], so the
+    /// feeds follow the new geometry.
+    pub(crate) fn seed_geometry(&self, config: &mut ToolpathConfig) {
+        let Ok(tool) = self.tool_of(config) else {
+            return;
+        };
+        let _ = crate::compute::geometry_default::write_rule_values(
+            &mut config.operation,
+            &mut config.feeds_provenance,
+            crate::compute::geometry_default::RuleContext {
+                tool,
+                material: &self.stock.material,
+                machine: &self.machine,
+            },
+            crate::compute::geometry_default::Keep::StatedValues,
+        );
     }
 
     /// R1 (operator ruling 2026-10-30, lead follow-up): THE seed of the feed
@@ -979,9 +1007,11 @@ impl ProjectSession {
                 FeedsField::RampFeedRate => from
                     .ramp_feed_rate()
                     .is_some_and(|v| op.as_params_mut().set_ramp_feed_rate(Some(v))),
-                FeedsField::Stepover | FeedsField::DepthPerPass | FeedsField::ScallopHeight => {
-                    false
-                }
+                FeedsField::Stepover
+                | FeedsField::DepthPerPass
+                | FeedsField::ScallopHeight
+                | FeedsField::PeckDepth
+                | FeedsField::ZStep => false,
             };
             if written && let Some(stamp) = stamps.get(field).cloned() {
                 config.feeds_provenance.set(field, stamp);
@@ -1014,7 +1044,11 @@ impl ProjectSession {
             FeedsField::RampFeedRate => {
                 let _ = params.set_ramp_feed_rate(None);
             }
-            FeedsField::Stepover | FeedsField::DepthPerPass | FeedsField::ScallopHeight => return,
+            FeedsField::Stepover
+            | FeedsField::DepthPerPass
+            | FeedsField::ScallopHeight
+            | FeedsField::PeckDepth
+            | FeedsField::ZStep => return,
         }
         stamps.clear(field);
     }

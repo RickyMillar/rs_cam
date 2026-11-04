@@ -174,8 +174,8 @@ fn fast_two_d_generators_survive_search_space_corners() {
             "pocket@stepover-ceiling",
             OperationConfig::Pocket(PocketConfig {
                 floor: rs_cam_core::compute::floor::Floor::top(DEPTH_MM),
-                depth_per_pass: doc_floor(OperationType::Pocket),
-                stepover: TOOL_DIAMETER_MM,
+                depth_per_pass: Some(doc_floor(OperationType::Pocket)),
+                stepover: Some(TOOL_DIAMETER_MM),
                 ..PocketConfig::default()
             }),
         ),
@@ -183,8 +183,8 @@ fn fast_two_d_generators_survive_search_space_corners() {
             "adaptive@stepover-ceiling",
             OperationConfig::Adaptive(AdaptiveConfig {
                 floor: rs_cam_core::compute::floor::Floor::top(DEPTH_MM),
-                depth_per_pass: doc_floor(OperationType::Adaptive),
-                stepover: TOOL_DIAMETER_MM,
+                depth_per_pass: Some(doc_floor(OperationType::Adaptive)),
+                stepover: Some(TOOL_DIAMETER_MM),
                 ..AdaptiveConfig::default()
             }),
         ),
@@ -192,7 +192,7 @@ fn fast_two_d_generators_survive_search_space_corners() {
             "profile@floors",
             OperationConfig::Profile(ProfileConfig {
                 floor: rs_cam_core::compute::floor::Floor::top(DEPTH_MM),
-                depth_per_pass: doc_floor(OperationType::Profile),
+                depth_per_pass: Some(doc_floor(OperationType::Profile)),
                 ..ProfileConfig::default()
             }),
         ),
@@ -200,8 +200,8 @@ fn fast_two_d_generators_survive_search_space_corners() {
             "zigzag@floors",
             OperationConfig::Zigzag(ZigzagConfig {
                 floor: rs_cam_core::compute::floor::Floor::top(DEPTH_MM),
-                depth_per_pass: doc_floor(OperationType::Zigzag),
-                stepover: FLOOR_MM,
+                depth_per_pass: Some(doc_floor(OperationType::Zigzag)),
+                stepover: Some(FLOOR_MM),
                 ..ZigzagConfig::default()
             }),
         ),
@@ -209,7 +209,7 @@ fn fast_two_d_generators_survive_search_space_corners() {
             "trace@floors",
             OperationConfig::Trace(TraceConfig {
                 depth: Some(DEPTH_MM),
-                depth_per_pass: doc_floor(OperationType::Trace),
+                depth_per_pass: Some(doc_floor(OperationType::Trace)),
                 ..TraceConfig::default()
             }),
         ),
@@ -226,8 +226,8 @@ fn slow_two_d_clearing_at_stepover_floor() {
             "pocket@floors",
             OperationConfig::Pocket(PocketConfig {
                 floor: rs_cam_core::compute::floor::Floor::top(DEPTH_MM),
-                depth_per_pass: doc_floor(OperationType::Pocket),
-                stepover: FLOOR_MM,
+                depth_per_pass: Some(doc_floor(OperationType::Pocket)),
+                stepover: Some(FLOOR_MM),
                 ..PocketConfig::default()
             }),
         ),
@@ -235,8 +235,8 @@ fn slow_two_d_clearing_at_stepover_floor() {
             "adaptive@floors",
             OperationConfig::Adaptive(AdaptiveConfig {
                 floor: rs_cam_core::compute::floor::Floor::top(DEPTH_MM),
-                depth_per_pass: doc_floor(OperationType::Adaptive),
-                stepover: FLOOR_MM,
+                depth_per_pass: Some(doc_floor(OperationType::Adaptive)),
+                stepover: Some(FLOOR_MM),
                 ..AdaptiveConfig::default()
             }),
         ),
@@ -273,7 +273,7 @@ fn adaptive3d_generator_survives_search_space_floors() {
     // Z-level count (runtime, not a panic class); stepover is the axis
     // that produces degenerate offsets.
     let op = OperationConfig::Adaptive3d(Adaptive3dConfig {
-        stepover: FLOOR_MM,
+        stepover: Some(FLOOR_MM),
         ..Adaptive3dConfig::default()
     });
     let _ = session

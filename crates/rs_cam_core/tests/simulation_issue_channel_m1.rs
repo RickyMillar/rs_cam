@@ -170,7 +170,7 @@ fn issue_channel_census_synthetic_2d() {
             "pocket-real",
             OperationConfig::Pocket(PocketConfig {
                 floor: rs_cam_core::compute::floor::Floor::top(6.0),
-                depth_per_pass: 2.0,
+                depth_per_pass: Some(2.0),
                 ..PocketConfig::default()
             }),
         ),
@@ -178,7 +178,7 @@ fn issue_channel_census_synthetic_2d() {
             "pocket-recut-air",
             OperationConfig::Pocket(PocketConfig {
                 floor: rs_cam_core::compute::floor::Floor::top(6.0),
-                depth_per_pass: 2.0,
+                depth_per_pass: Some(2.0),
                 ..PocketConfig::default()
             }),
         ),
@@ -186,7 +186,7 @@ fn issue_channel_census_synthetic_2d() {
             "profile",
             OperationConfig::Profile(ProfileConfig {
                 floor: rs_cam_core::compute::floor::Floor::top(6.0),
-                depth_per_pass: 2.0,
+                depth_per_pass: Some(2.0),
                 ..ProfileConfig::default()
             }),
         ),
@@ -330,13 +330,13 @@ fn engagement_is_unmeasurable_below_the_fresh_material_floor() {
         floor: rs_cam_core::compute::floor::Floor::top(0.02),
         // W6b: the declared lower bound of `depth_per_pass`. The floor
         // above it keeps the cut to one 0.02 mm level.
-        depth_per_pass: 0.1,
+        depth_per_pass: Some(0.1),
         ..PocketConfig::default()
     });
     // Deep arm: identical geometry, 2.0 mm — well over it.
     let deep = OperationConfig::Pocket(PocketConfig {
         floor: rs_cam_core::compute::floor::Floor::top(2.0),
-        depth_per_pass: 2.0,
+        depth_per_pass: Some(2.0),
         ..PocketConfig::default()
     });
 

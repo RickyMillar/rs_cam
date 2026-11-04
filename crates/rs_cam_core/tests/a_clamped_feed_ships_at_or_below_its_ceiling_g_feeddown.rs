@@ -85,9 +85,9 @@ fn endmill() -> ToolConfig {
 /// ceilings have something to bind.
 fn heavy_pocket() -> OperationConfig {
     OperationConfig::Pocket(PocketConfig {
-        stepover: DIAMETER_MM,
+        stepover: Some(DIAMETER_MM),
         floor: rs_cam_core::compute::floor::Floor::top(4.0 * DIAMETER_MM),
-        depth_per_pass: 2.0 * DIAMETER_MM,
+        depth_per_pass: Some(2.0 * DIAMETER_MM),
         feed_rate: Some(1000.0),
         plunge_rate: Some(500.0),
         climb: true,

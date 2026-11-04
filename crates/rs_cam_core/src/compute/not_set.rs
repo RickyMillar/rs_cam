@@ -42,6 +42,11 @@ pub const NOT_SET_FIELDS: &[&str] = &[
     "depth",
     "max_depth",
     "pocket_depth",
+    "stepover",
+    "depth_per_pass",
+    "peck_depth",
+    "offset_stepover",
+    "z_step",
     "feed_rate",
     "plunge_rate",
     "spindle_rpm",
@@ -57,7 +62,14 @@ pub enum NotSetKind {
     /// A tool fact that must be known (ruling D12): centre cutting, and
     /// the tip of a V-bit. [`NotSet::tool`] names the tool.
     ToolFact,
+    /// A geometry value that only a tool gives (P10, ruling D8): a
+    /// stepover, a depth per pass, a peck, a Z step. The tool rule
+    /// (`compute::geometry_default`) writes it when the op has a tool.
+    Geometry,
 }
+
+/// The fix of a [`NotSetKind::Geometry`] stop (P10, rulings D8 and Q10).
+pub const SET_A_TOOL_TEXT: &str = "set a tool";
 
 /// An op refuses to generate: values with no derivation are not set (S11).
 #[derive(Debug, Clone, PartialEq, Eq)]
@@ -153,6 +165,10 @@ impl NotSet {
                 self.op,
                 tool_fact_sentences(&self.fields, self.tool.as_deref().unwrap_or("?"))
             ),
+            NotSetKind::Geometry => format!(
+                "{}: only a tool gives the {list}. Set a tool, or set the {list}.",
+                self.op
+            ),
         }
     }
 }
@@ -168,6 +184,12 @@ pub fn field_phrase(name: &str) -> &str {
         "feed_rate" => "feed rate",
         "plunge_rate" => "plunge rate",
         "spindle_rpm" => "spindle speed",
+        "depth_per_pass" => "depth per pass",
+        "peck_depth" => "peck depth",
+        "offset_stepover" => "offset stepover",
+        "z_step" => "Z step",
+        "max_stepdown" => "maximum step down",
+        "raster_stepover" => "raster stepover",
         other => other,
     }
 }
@@ -192,6 +214,11 @@ impl std::fmt::Display for NotSet {
                 "{}: {} (not set: {fields})",
                 self.op,
                 tool_fact_sentences(&self.fields, self.tool.as_deref().unwrap_or("?"))
+            ),
+            NotSetKind::Geometry => write!(
+                f,
+                "{}: {SET_A_TOOL_TEXT}: only a tool gives this value (not set: {fields})",
+                self.op
             ),
         }
     }
@@ -225,6 +252,27 @@ pub fn required_depth(
     value.ok_or_else(|| NotSet {
         op,
         kind: NotSetKind::Depth,
+        fields: vec![field],
+        tool: None,
+    })
+}
+
+/// P10 (ruling D8): the geometry `value` of the field `field` of the op
+/// labelled `op`, or the [`NotSet`] stop when it is not set. The prologue
+/// stops first; an adapter reads a tool-derived value through this door, so
+/// it never cuts an unset value.
+///
+/// # Errors
+///
+/// A [`NotSet`] of kind `Geometry` that names `field`.
+pub fn required_geometry(
+    value: Option<f64>,
+    op: &'static str,
+    field: &'static str,
+) -> Result<f64, NotSet> {
+    value.ok_or_else(|| NotSet {
+        op,
+        kind: NotSetKind::Geometry,
         fields: vec![field],
         tool: None,
     })

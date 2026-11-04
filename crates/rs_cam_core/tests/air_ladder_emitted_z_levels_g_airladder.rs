@@ -144,7 +144,7 @@ fn build_wanaka_shaped_rough() -> ProjectSession {
     // Only the two dials the wanaka rough actually differs from default on.
     // Leaving the rest alone keeps this a measurement of shipped behaviour.
     let adaptive = Adaptive3dConfig {
-        depth_per_pass: DEPTH_PER_PASS_MM,
+        depth_per_pass: Some(DEPTH_PER_PASS_MM),
         ..Adaptive3dConfig::default()
     };
 

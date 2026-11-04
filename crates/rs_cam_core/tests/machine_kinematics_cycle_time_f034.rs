@@ -87,9 +87,9 @@ fn build_pocket_session() -> ProjectSession {
         .expect("ux_2d_pocket ships a model");
     let pocket = PocketConfig {
         ramp_feed_rate: None,
-        stepover: 2.4,
+        stepover: Some(2.4),
         floor: rs_cam_core::compute::floor::Floor::top(3.0),
-        depth_per_pass: 1.5,
+        depth_per_pass: Some(1.5),
         feed_rate: Some(1500.0),
         plunge_rate: Some(500.0),
         climb: true,

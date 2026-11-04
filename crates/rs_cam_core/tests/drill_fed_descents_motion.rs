@@ -257,8 +257,13 @@ fn assert_motion_matches_schedule(case: &str, cfg: DrillConfig) {
             .floor
             .depth_below_top()
             .expect("the fixture floor is a depth below the top");
-    let expected =
-        rs_cam_core::ops::drill::fed_descents(cfg.cycle.to_core(&cfg), bottom_z, r_plane);
+    let expected = rs_cam_core::ops::drill::fed_descents(
+        cfg.cycle
+            .to_core(&cfg)
+            .expect("the fixture states the peck"),
+        bottom_z,
+        r_plane,
+    );
 
     println!("── {case}");
     println!(
@@ -350,7 +355,7 @@ fn peck_cycle_motion_matches_the_schedule_it_describes() {
         DrillConfig {
             floor: rs_cam_core::compute::floor::Floor::Top { depth: 10.0 },
             cycle: DrillCycleType::Peck,
-            peck_depth: 3.0,
+            peck_depth: Some(3.0),
             ..DrillConfig::default()
         },
     );
@@ -366,7 +371,7 @@ fn chip_break_cycle_motion_matches_the_schedule_it_describes() {
         DrillConfig {
             floor: rs_cam_core::compute::floor::Floor::Top { depth: 10.0 },
             cycle: DrillCycleType::ChipBreak,
-            peck_depth: 3.0,
+            peck_depth: Some(3.0),
             retract_amount: 0.5,
             ..DrillConfig::default()
         },
@@ -385,7 +390,7 @@ fn chip_break_with_retract_larger_than_peck_matches_the_schedule() {
         DrillConfig {
             floor: rs_cam_core::compute::floor::Floor::Top { depth: 10.0 },
             cycle: DrillCycleType::ChipBreak,
-            peck_depth: 2.0,
+            peck_depth: Some(2.0),
             retract_amount: 4.0,
             ..DrillConfig::default()
         },

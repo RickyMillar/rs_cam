@@ -85,8 +85,8 @@ fn bulk_18(centre: bool) -> ToolConfig {
 /// at its default reach.
 fn op1() -> OperationConfig {
     OperationConfig::Adaptive3d(Adaptive3dConfig {
-        stepover: 3.16,
-        depth_per_pass: 9.0,
+        stepover: Some(3.16),
+        depth_per_pass: Some(9.0),
         stock_to_leave_axial: 0.0,
         feed_rate: Some(4200.0),
         entry_style: Adaptive3dEntryStyle::Ramp,

@@ -90,9 +90,9 @@ const SNAPSHOT_EXTENT_MM: f64 = 10.0;
 
 fn pocket_op() -> OperationConfig {
     OperationConfig::Pocket(PocketConfig {
-        stepover: 2.0,
+        stepover: Some(2.0),
         floor: rs_cam_core::compute::floor::Floor::top(3.0),
-        depth_per_pass: 3.0,
+        depth_per_pass: Some(3.0),
         ..PocketConfig::default()
     })
 }

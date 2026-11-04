@@ -33,8 +33,8 @@ const KEY: &str = "contour_each_level";
 
 fn rough(contour: bool) -> OperationConfig {
     OperationConfig::Adaptive3d(Adaptive3dConfig {
-        stepover: 2.0,
-        depth_per_pass: 3.0,
+        stepover: Some(2.0),
+        depth_per_pass: Some(3.0),
         clearing_strategy: ClearingStrategy::ContourParallel,
         contour_each_level: contour,
         ..Adaptive3dConfig::default()

@@ -43,9 +43,7 @@ pub use tab_badges::{REST_MACHINING_LABEL, height_order_badge, rest_machining_ro
 // descendant such as `operations/boundary_2d.rs` (`super::super::dv`) or
 // `pills.rs` (`super::prov_from_chipload`) resolves through.
 use feeds_speeds::prov_from_chipload;
-use linking_dressup::{
-    advanced, dv, dv_narrowed, dv_opt, dv_pill, dv_pill_opt, p, through_cut_line,
-};
+use linking_dressup::{advanced, dv, dv_narrowed, dv_opt, dv_pill_opt, p, through_cut_line};
 use machine_panel::draw_machine_panel;
 use model_sim_panels::{draw_model_properties, draw_simulation_panel};
 use panel_apply::{

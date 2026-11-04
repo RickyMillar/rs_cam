@@ -45,9 +45,9 @@ fn flat(id: usize, diameter: f64) -> ToolConfig {
 /// The reference: a Face states its width and has no slot and no cap.
 fn face(ap: f64, ae: f64) -> OperationConfig {
     OperationConfig::Face(FaceConfig {
-        stepover: ae,
+        stepover: Some(ae),
         depth: ap,
-        depth_per_pass: ap,
+        depth_per_pass: Some(ap),
         feed_rate: Some(FEED_MM_MIN),
         plunge_rate: Some(300.0),
         spindle_rpm: Some(RPM),
@@ -66,8 +66,8 @@ fn a_pocket_ships_its_first_pass_slot() {
     let tool = flat(1, 6.0);
     let (ap, ae) = (2.0, 2.0);
     let pocket = OperationConfig::Pocket(PocketConfig {
-        stepover: ae,
-        depth_per_pass: ap,
+        stepover: Some(ae),
+        depth_per_pass: Some(ap),
         feed_rate: Some(FEED_MM_MIN),
         plunge_rate: Some(300.0),
         spindle_rpm: Some(RPM),
@@ -114,7 +114,7 @@ fn a_profile_states_its_slot_and_has_a_power() {
     let ap = 2.0;
     let profile =
         OperationConfig::Profile(rs_cam_core::compute::operation_configs::ProfileConfig {
-            depth_per_pass: ap,
+            depth_per_pass: Some(ap),
             feed_rate: Some(FEED_MM_MIN),
             plunge_rate: Some(300.0),
             spindle_rpm: Some(RPM),
@@ -136,15 +136,17 @@ fn an_op_one_rough_ships_the_planner_cap() {
     // Report 01 op 1: an 18 mm 2F flat end mill.
     let tool = flat(2, 18.0);
     let defaults = Adaptive3dConfig::default();
-    let rough = OperationConfig::Adaptive3d(Adaptive3dConfig {
+    let mut rough = OperationConfig::Adaptive3d(Adaptive3dConfig {
         feed_rate: Some(FEED_MM_MIN),
         plunge_rate: Some(300.0),
         spindle_rpm: Some(RPM),
         ..defaults
     });
+    // P10: the fixture states the geometry the registry held before P10.
+    rs_cam_core::compute::fixture_values::fill_unset_geometry(&mut rough);
     let (ap, ae, mult) = (
-        defaults.depth_per_pass,
-        defaults.stepover,
+        rough.depth_per_pass().expect("the fixture states a depth"),
+        rough.stepover().expect("the fixture states a stepover"),
         defaults.trochoid_cap_mult,
     );
     assert!(mult > 1.0, "non-vacuity: the cap widens the cut");

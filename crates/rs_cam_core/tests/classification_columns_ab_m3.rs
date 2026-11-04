@@ -238,8 +238,8 @@ fn ab_config(sampler: ClassificationSampler) -> UnifiedFinishConfig {
         // this tip. Spelled as the arithmetic so the parity is checkable.
         scallop_height: 0.3 * 0.3 / (8.0 * 0.5 * TIP_DIAMETER_MM),
         tolerance: 0.05,
-        raster_stepover: 0.3,
-        z_step: 0.3,
+        raster_stepover: Some(0.3),
+        z_step: Some(0.3),
         sampling: 0.5,
         stock_to_leave: 0.0,
         feed_rate: Some(3000.0),

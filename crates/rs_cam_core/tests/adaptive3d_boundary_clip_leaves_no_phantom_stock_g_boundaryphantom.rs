@@ -130,8 +130,8 @@ fn session(arm: Arm) -> ProjectSession {
     let band_id = builder.add_model(polygon_model(band, "machinable_edge_band"));
 
     let op = OperationConfig::Adaptive3d(Adaptive3dConfig {
-        stepover: STEPOVER,
-        depth_per_pass: arm.depth_per_pass,
+        stepover: Some(STEPOVER),
+        depth_per_pass: Some(arm.depth_per_pass),
         stock_to_leave_axial: LEAVE,
         entry_style: Adaptive3dEntryStyle::Plunge,
         region_ordering: RegionOrdering::Global,

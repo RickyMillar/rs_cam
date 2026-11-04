@@ -52,8 +52,14 @@ pub fn lineage_rows(l: &Lineage) -> Vec<LineageRow> {
     };
     // The cut (K1). A depth per pass and a stepover carry their stamps.
     if let Some(mm) = axial_mm {
+        // P10: a peck and the Z step of Steep and Shallow or Unified
+        // Finish carry their own stamp; Waterline's Z step is its depth per
+        // pass.
         let basis = match axial {
-            "depth per pass" | "z step" => Some(&s.depth_per_pass),
+            "depth per pass" => Some(&s.depth_per_pass),
+            "z step" if s.z_step.value.is_some() => Some(&s.z_step),
+            "z step" => Some(&s.depth_per_pass),
+            "peck" => Some(&s.peck_depth),
             _ => None,
         };
         rows.push(LineageRow {

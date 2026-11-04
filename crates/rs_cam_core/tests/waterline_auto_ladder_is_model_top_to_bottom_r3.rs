@@ -296,7 +296,7 @@ fn waterline_session_unbuilt(heights: HeightsConfig) -> ProjectSession {
         mesh_model(make_test_hemisphere(HEMI_RADIUS_MM, 6), "hemisphere"),
         "Waterline",
         OperationConfig::Waterline(WaterlineConfig {
-            z_step: 1.0,
+            z_step: Some(1.0),
             sampling: 0.5,
             ..WaterlineConfig::default()
         }),

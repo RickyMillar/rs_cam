@@ -211,19 +211,41 @@ impl DrillCycleType {
     /// The peck depth passes through [`clamp_peck_depth`] so the emitted
     /// cycle and the `DrillOp` summary built beside it (§6.E dual-rep)
     /// describe the same cycle — both consumers go through here.
-    pub fn to_core(self, cfg: &DrillConfig) -> crate::ops::drill::DrillCycle {
+    ///
+    /// # Errors
+    ///
+    /// P10: a peck cycle (Peck, ChipBreak) with an unset `peck_depth`.
+    pub fn to_core(
+        self,
+        cfg: &DrillConfig,
+    ) -> Result<crate::ops::drill::DrillCycle, crate::compute::not_set::NotSet> {
         use crate::ops::drill::DrillCycle;
         // A floor that is not a depth below the top (each hole floor, a Z)
         // states no one depth, so the peck is not clamped here.
-        let peck_depth = clamp_peck_depth(
-            cfg.peck_depth,
-            cfg.floor.depth_below_top().unwrap_or(f64::NAN),
-        );
-        match self {
+        let peck = || -> Result<f64, crate::compute::not_set::NotSet> {
+            Ok(clamp_peck_depth(
+                crate::compute::not_set::required_geometry(
+                    cfg.peck_depth,
+                    crate::compute::catalog::OperationType::Drill.label(),
+                    "peck_depth",
+                )?,
+                cfg.floor.depth_below_top().unwrap_or(f64::NAN),
+            ))
+        };
+        Ok(match self {
             Self::Simple => DrillCycle::Simple,
             Self::Dwell => DrillCycle::Dwell(DRILL_DWELL_S),
-            Self::Peck => DrillCycle::Peck(peck_depth),
-            Self::ChipBreak => DrillCycle::ChipBreak(peck_depth, cfg.retract_amount),
+            Self::Peck => DrillCycle::Peck(peck()?),
+            Self::ChipBreak => DrillCycle::ChipBreak(peck()?, cfg.retract_amount),
+        })
+    }
+
+    /// P10: true when the cycle reads `peck_depth` (Peck, ChipBreak).
+    #[must_use]
+    pub const fn reads_peck(self) -> bool {
+        match self {
+            Self::Peck | Self::ChipBreak => true,
+            Self::Simple | Self::Dwell => false,
         }
     }
 }
@@ -238,12 +260,18 @@ pub enum CompensationType {
 
 #[derive(Debug, Clone, Serialize, Deserialize, OpParams)]
 pub struct FaceConfig {
+    /// P10 (ruling D8): `None` until a tool gives the rule value
+    /// (`compute::geometry_default`) or the operator sets it.
+    #[serde(default, skip_serializing_if = "Option::is_none")]
     #[param(help = HELP_STEPOVER, range = 0.5..=100.0)]
-    pub stepover: f64,
+    pub stepover: Option<f64>,
     #[param(help = HELP_DEPTH, range = 0.0..=50.0)]
     pub depth: f64,
+    /// P10 (ruling D8): `None` until a tool gives the rule value
+    /// (`compute::geometry_default`) or the operator sets it.
+    #[serde(default, skip_serializing_if = "Option::is_none")]
     #[param(help = HELP_DEPTH_PER_PASS, range = 0.1..=20.0)]
-    pub depth_per_pass: f64,
+    pub depth_per_pass: Option<f64>,
     /// S11: `None` until Suggest or the operator sets it. Generation
     /// refuses an unset feed ("no feeds data for this tool").
     #[serde(default, skip_serializing_if = "Option::is_none")]
@@ -298,9 +326,9 @@ impl FaceConfig {
 impl Default for FaceConfig {
     fn default() -> Self {
         Self {
-            stepover: 5.0,
+            stepover: None,
             depth: 0.0,
-            depth_per_pass: 1.0,
+            depth_per_pass: None,
             feed_rate: None,
             plunge_rate: None,
             ramp_feed_rate: None,
@@ -319,8 +347,11 @@ pub struct TraceConfig {
     #[serde(default, skip_serializing_if = "Option::is_none")]
     #[param(help = HELP_DEPTH, range = 0.1..=50.0)]
     pub depth: Option<f64>,
+    /// P10 (ruling D8): `None` until a tool gives the rule value
+    /// (`compute::geometry_default`) or the operator sets it.
+    #[serde(default, skip_serializing_if = "Option::is_none")]
     #[param(help = HELP_DEPTH_PER_PASS, range = 0.1..=20.0)]
-    pub depth_per_pass: f64,
+    pub depth_per_pass: Option<f64>,
     /// S11: `None` until Suggest or the operator sets it. Generation
     /// refuses an unset feed ("no feeds data for this tool").
     #[serde(default, skip_serializing_if = "Option::is_none")]
@@ -362,7 +393,7 @@ impl Default for TraceConfig {
     fn default() -> Self {
         Self {
             depth: None,
-            depth_per_pass: 0.5,
+            depth_per_pass: None,
             feed_rate: None,
             plunge_rate: None,
             ramp_feed_rate: None,
@@ -385,8 +416,11 @@ pub struct DrillConfig {
     #[param(driver_set = DRIVER_SET_FLOOR)]
     pub floor: Floor,
     pub cycle: DrillCycleType,
+    /// P10 (ruling D8): `None` until a tool gives the rule value
+    /// (`compute::geometry_default`) or the operator sets it.
+    #[serde(default, skip_serializing_if = "Option::is_none")]
     #[param(help = HELP_PECK_DEPTH, min = 0.5, max = 50.0)]
-    pub peck_depth: f64,
+    pub peck_depth: Option<f64>,
     #[param(range = 0.1..=5.0)]
     pub retract_amount: f64,
     /// S11: `None` until Suggest or the operator sets it. Generation
@@ -437,7 +471,7 @@ impl Default for DrillConfig {
             // S11: no rule gives a floor for a drawing.
             floor: Floor::Unset,
             cycle: DrillCycleType::Peck,
-            peck_depth: 3.0,
+            peck_depth: None,
             retract_amount: 0.5,
             feed_rate: None,
             retract_z: 2.0,
@@ -694,8 +728,11 @@ pub struct AlignmentPinDrillConfig {
     )]
     pub spoilboard_penetration: f64,
     pub cycle: DrillCycleType,
+    /// P10 (ruling D8): `None` until a tool gives the rule value
+    /// (`compute::geometry_default`) or the operator sets it.
+    #[serde(default, skip_serializing_if = "Option::is_none")]
     #[param(help = HELP_PECK_DEPTH, min = 0.5, max = 50.0)]
-    pub peck_depth: f64,
+    pub peck_depth: Option<f64>,
     /// S11: `None` until Suggest or the operator sets it. Generation
     /// refuses an unset feed ("no feeds data for this tool").
     #[serde(default, skip_serializing_if = "Option::is_none")]
@@ -734,15 +771,31 @@ impl AlignmentPinDrillConfig {
     /// `execute.rs` consumers hand it in. It exists only to cap
     /// `peck_depth`; see [`clamp_peck_depth`] for why the cap is a clamp
     /// and not a refusal (G-WANAKA-PECK).
-    pub fn drill_cycle(&self, depth: f64) -> crate::ops::drill::DrillCycle {
+    ///
+    /// # Errors
+    ///
+    /// P10: a peck cycle with an unset `peck_depth`.
+    pub fn drill_cycle(
+        &self,
+        depth: f64,
+    ) -> Result<crate::ops::drill::DrillCycle, crate::compute::not_set::NotSet> {
         use crate::ops::drill::DrillCycle;
-        let peck_depth = clamp_peck_depth(self.peck_depth, depth);
-        match self.cycle {
+        let peck = || -> Result<f64, crate::compute::not_set::NotSet> {
+            Ok(clamp_peck_depth(
+                crate::compute::not_set::required_geometry(
+                    self.peck_depth,
+                    crate::compute::catalog::OperationType::AlignmentPinDrill.label(),
+                    "peck_depth",
+                )?,
+                depth,
+            ))
+        };
+        Ok(match self.cycle {
             DrillCycleType::Simple => DrillCycle::Simple,
             DrillCycleType::Dwell => DrillCycle::Dwell(DRILL_DWELL_S),
-            DrillCycleType::Peck => DrillCycle::Peck(peck_depth),
-            DrillCycleType::ChipBreak => DrillCycle::ChipBreak(peck_depth, 0.5),
-        }
+            DrillCycleType::Peck => DrillCycle::Peck(peck()?),
+            DrillCycleType::ChipBreak => DrillCycle::ChipBreak(peck()?, 0.5),
+        })
     }
 }
 
@@ -752,7 +805,7 @@ impl Default for AlignmentPinDrillConfig {
             diameter: crate::compute::alignment_pins::NOMINAL_DOWEL_MM,
             spoilboard_penetration: 2.0,
             cycle: DrillCycleType::Peck,
-            peck_depth: 3.0,
+            peck_depth: None,
             feed_rate: None,
             retract_z: 2.0,
             spindle_rpm: None,
@@ -882,16 +935,22 @@ const HELP_OPEN_PATHS: &str = "What the Pocket does with an open path: skip it (
 
 #[derive(Debug, Clone, Serialize, Deserialize, OpParams)]
 pub struct PocketConfig {
+    /// P10 (ruling D8): `None` until a tool gives the rule value
+    /// (`compute::geometry_default`) or the operator sets it.
+    #[serde(default, skip_serializing_if = "Option::is_none")]
     #[param(help = HELP_STEPOVER, range = 0.05..=50.0)]
-    pub stepover: f64,
+    pub stepover: Option<f64>,
     /// The floor and its reference (geometry selection P3.2, ruling D9).
     /// A file with no key loads `Floor::Unset` (S11): generation refuses
     /// until a floor is set.
     #[serde(default, skip_serializing_if = "Floor::is_unset")]
     #[param(driver_set = DRIVER_SET_FLOOR)]
     pub floor: Floor,
+    /// P10 (ruling D8): `None` until a tool gives the rule value
+    /// (`compute::geometry_default`) or the operator sets it.
+    #[serde(default, skip_serializing_if = "Option::is_none")]
     #[param(help = HELP_DEPTH_PER_PASS, range = 0.1..=50.0)]
-    pub depth_per_pass: f64,
+    pub depth_per_pass: Option<f64>,
     /// S11: `None` until Suggest or the operator sets it. Generation
     /// refuses an unset feed ("no feeds data for this tool").
     #[serde(default, skip_serializing_if = "Option::is_none")]
@@ -954,10 +1013,10 @@ pub struct PocketConfig {
 impl Default for PocketConfig {
     fn default() -> Self {
         Self {
-            stepover: 2.0,
+            stepover: None,
             // S11: no rule gives a floor for a drawing.
             floor: Floor::Unset,
-            depth_per_pass: 1.5,
+            depth_per_pass: None,
             feed_rate: None,
             plunge_rate: None,
             ramp_feed_rate: None,
@@ -983,8 +1042,11 @@ pub struct ProfileConfig {
     #[serde(default, skip_serializing_if = "Floor::is_unset")]
     #[param(driver_set = DRIVER_SET_FLOOR)]
     pub floor: Floor,
+    /// P10 (ruling D8): `None` until a tool gives the rule value
+    /// (`compute::geometry_default`) or the operator sets it.
+    #[serde(default, skip_serializing_if = "Option::is_none")]
     #[param(help = HELP_DEPTH_PER_PASS, range = 0.1..=50.0)]
-    pub depth_per_pass: f64,
+    pub depth_per_pass: Option<f64>,
     /// S11: `None` until Suggest or the operator sets it. Generation
     /// refuses an unset feed ("no feeds data for this tool").
     #[serde(default, skip_serializing_if = "Option::is_none")]
@@ -1072,7 +1134,7 @@ impl Default for ProfileConfig {
             side: ProfileSide::Outside,
             // S11: no rule gives a floor for a drawing.
             floor: Floor::Unset,
-            depth_per_pass: 2.0,
+            depth_per_pass: None,
             feed_rate: None,
             plunge_rate: None,
             ramp_feed_rate: None,
@@ -1092,16 +1154,22 @@ impl Default for ProfileConfig {
 
 #[derive(Debug, Clone, Serialize, Deserialize, OpParams)]
 pub struct AdaptiveConfig {
+    /// P10 (ruling D8): `None` until a tool gives the rule value
+    /// (`compute::geometry_default`) or the operator sets it.
+    #[serde(default, skip_serializing_if = "Option::is_none")]
     #[param(help = HELP_STEPOVER, range = 0.05..=50.0)]
-    pub stepover: f64,
+    pub stepover: Option<f64>,
     /// The floor and its reference (geometry selection P3.2, ruling D9).
     /// A file with no key loads `Floor::Unset` (S11): generation refuses
     /// until a floor is set.
     #[serde(default, skip_serializing_if = "Floor::is_unset")]
     #[param(driver_set = DRIVER_SET_FLOOR)]
     pub floor: Floor,
+    /// P10 (ruling D8): `None` until a tool gives the rule value
+    /// (`compute::geometry_default`) or the operator sets it.
+    #[serde(default, skip_serializing_if = "Option::is_none")]
     #[param(help = HELP_DEPTH_PER_PASS, range = 0.1..=50.0)]
-    pub depth_per_pass: f64,
+    pub depth_per_pass: Option<f64>,
     /// S11: `None` until Suggest or the operator sets it. Generation
     /// refuses an unset feed ("no feeds data for this tool").
     #[serde(default, skip_serializing_if = "Option::is_none")]
@@ -1172,10 +1240,10 @@ pub struct AdaptiveConfig {
 impl Default for AdaptiveConfig {
     fn default() -> Self {
         Self {
-            stepover: 2.0,
+            stepover: None,
             // S11: no rule gives a floor for a drawing.
             floor: Floor::Unset,
-            depth_per_pass: 2.0,
+            depth_per_pass: None,
             feed_rate: None,
             plunge_rate: None,
             ramp_feed_rate: None,
@@ -1203,8 +1271,11 @@ pub struct VCarveConfig {
         range = 0.1..=50.0,
     )]
     pub max_depth: Option<f64>,
+    /// P10 (ruling D8): `None` until a tool gives the rule value
+    /// (`compute::geometry_default`) or the operator sets it.
+    #[serde(default, skip_serializing_if = "Option::is_none")]
     #[param(help = HELP_STEPOVER, range = 0.01..=10.0)]
-    pub stepover: f64,
+    pub stepover: Option<f64>,
     /// S11: `None` until Suggest or the operator sets it. Generation
     /// refuses an unset feed ("no feeds data for this tool").
     #[serde(default, skip_serializing_if = "Option::is_none")]
@@ -1242,7 +1313,7 @@ impl Default for VCarveConfig {
     fn default() -> Self {
         Self {
             max_depth: None,
-            stepover: 0.5,
+            stepover: None,
             feed_rate: None,
             plunge_rate: None,
             ramp_feed_rate: None,
@@ -1318,12 +1389,15 @@ pub struct InlayConfig {
     pub floor_ridge: f64,
     /// Scan line spacing (mm) over the wall band. The walls do not depend
     /// on it; the first floor ring cuts the whole wall.
+    /// P10 (ruling D8): `None` until a tool gives the rule value
+    /// (`compute::geometry_default`) or the operator sets it.
+    #[serde(default, skip_serializing_if = "Option::is_none")]
     #[param(
         help = "Distance between scan lines over the wall band. The walls do not depend on it: the \
                 first floor ring cuts the whole wall.",
         range = 0.05..=50.0,
     )]
-    pub stepover: f64,
+    pub stepover: Option<f64>,
     /// S11: `None` until Suggest or the operator sets it. Generation
     /// refuses an unset feed ("no feeds data for this tool").
     #[serde(default, skip_serializing_if = "Option::is_none")]
@@ -1380,7 +1454,7 @@ impl Default for InlayConfig {
             floor_ridge: 0.5 * INLAY_GLUE_GAP_DEFAULT_MM,
             // The Inlay stepover before ruling R2. It sets only the wall
             // band scan, which carries the load and the narrow features.
-            stepover: 1.0,
+            stepover: None,
             feed_rate: None,
             plunge_rate: None,
             ramp_feed_rate: None,
@@ -1429,17 +1503,23 @@ pub struct InlayPlugConfig {
         range = 0.0..=100.0,
     )]
     pub outer_margin: f64,
+    /// P10 (ruling D8): `None` until a tool gives the rule value
+    /// (`compute::geometry_default`) or the operator sets it.
+    #[serde(default, skip_serializing_if = "Option::is_none")]
     #[param(
         help = "Max depth per pass of the V-bit through the background.",
         range = 0.1..=50.0,
     )]
-    pub depth_per_pass: f64,
+    pub depth_per_pass: Option<f64>,
+    /// P10 (ruling D8): `None` until a tool gives the rule value
+    /// (`compute::geometry_default`) or the operator sets it.
+    #[serde(default, skip_serializing_if = "Option::is_none")]
     #[param(
         help = "Distance between scan lines. The walls are exact at any stepover; only the \
                 background shows ridges.",
         range = 0.05..=50.0,
     )]
-    pub stepover: f64,
+    pub stepover: Option<f64>,
     /// S11: `None` until Suggest or the operator sets it. Generation
     /// refuses an unset feed ("no feeds data for this tool").
     #[serde(default, skip_serializing_if = "Option::is_none")]
@@ -1504,11 +1584,11 @@ impl Default for InlayPlugConfig {
             // An operator choice: a flat ring as wide as the proud height,
             // where the operator saws the plug free.
             outer_margin: INLAY_PLUG_WASTE_MM,
-            depth_per_pass: PocketConfig::default().depth_per_pass,
+            depth_per_pass: None,
             // Only the background (waste) shows ridges; the walls are exact
             // at any stepover. The value is the stepover of the Inlay op
             // before ruling R2.
-            stepover: 1.0,
+            stepover: None,
             feed_rate: None,
             plunge_rate: None,
             ramp_feed_rate: None,
@@ -1521,16 +1601,22 @@ impl Default for InlayPlugConfig {
 
 #[derive(Debug, Clone, Serialize, Deserialize, OpParams)]
 pub struct ZigzagConfig {
+    /// P10 (ruling D8): `None` until a tool gives the rule value
+    /// (`compute::geometry_default`) or the operator sets it.
+    #[serde(default, skip_serializing_if = "Option::is_none")]
     #[param(help = HELP_STEPOVER, range = 0.05..=50.0)]
-    pub stepover: f64,
+    pub stepover: Option<f64>,
     /// The floor and its reference (geometry selection P3.2, ruling D9).
     /// A file with no key loads `Floor::Unset` (S11): generation refuses
     /// until a floor is set.
     #[serde(default, skip_serializing_if = "Floor::is_unset")]
     #[param(driver_set = DRIVER_SET_FLOOR)]
     pub floor: Floor,
+    /// P10 (ruling D8): `None` until a tool gives the rule value
+    /// (`compute::geometry_default`) or the operator sets it.
+    #[serde(default, skip_serializing_if = "Option::is_none")]
     #[param(help = HELP_DEPTH_PER_PASS, range = 0.1..=50.0)]
-    pub depth_per_pass: f64,
+    pub depth_per_pass: Option<f64>,
     /// S11: `None` until Suggest or the operator sets it. Generation
     /// refuses an unset feed ("no feeds data for this tool").
     #[serde(default, skip_serializing_if = "Option::is_none")]
@@ -1572,10 +1658,10 @@ pub struct ZigzagConfig {
 impl Default for ZigzagConfig {
     fn default() -> Self {
         Self {
-            stepover: 2.0,
+            stepover: None,
             // S11: no rule gives a floor for a drawing.
             floor: Floor::Unset,
-            depth_per_pass: 1.5,
+            depth_per_pass: None,
             feed_rate: None,
             plunge_rate: None,
             ramp_feed_rate: None,
@@ -1589,8 +1675,11 @@ impl Default for ZigzagConfig {
 
 #[derive(Debug, Clone, Serialize, Deserialize, OpParams)]
 pub struct DropCutterConfig {
+    /// P10 (ruling D8): `None` until a tool gives the rule value
+    /// (`compute::geometry_default`) or the operator sets it.
+    #[serde(default, skip_serializing_if = "Option::is_none")]
     #[param(help = HELP_STEPOVER, range = 0.05..=50.0)]
-    pub stepover: f64,
+    pub stepover: Option<f64>,
     /// S11: `None` until Suggest or the operator sets it. Generation
     /// refuses an unset feed ("no feeds data for this tool").
     #[serde(default, skip_serializing_if = "Option::is_none")]
@@ -1659,7 +1748,7 @@ pub struct DropCutterConfig {
 impl Default for DropCutterConfig {
     fn default() -> Self {
         Self {
-            stepover: 1.0,
+            stepover: None,
             feed_rate: None,
             plunge_rate: None,
             ramp_feed_rate: None,
@@ -1677,10 +1766,16 @@ impl Default for DropCutterConfig {
 
 #[derive(Debug, Clone, Serialize, Deserialize, OpParams)]
 pub struct Adaptive3dConfig {
+    /// P10 (ruling D8): `None` until a tool gives the rule value
+    /// (`compute::geometry_default`) or the operator sets it.
+    #[serde(default, skip_serializing_if = "Option::is_none")]
     #[param(help = HELP_STEPOVER, range = 0.05..=50.0)]
-    pub stepover: f64,
+    pub stepover: Option<f64>,
+    /// P10 (ruling D8): `None` until a tool gives the rule value
+    /// (`compute::geometry_default`) or the operator sets it.
+    #[serde(default, skip_serializing_if = "Option::is_none")]
     #[param(help = HELP_DEPTH_PER_PASS, range = 0.1..=50.0)]
-    pub depth_per_pass: f64,
+    pub depth_per_pass: Option<f64>,
     /// Vertical leave allowance above the surface heightmap. The only
     /// leave-stock dial the `adaptive3d` planner applies, and since L2
     /// the only one it carries: the drop-cutter / dexel heightmap engine
@@ -1855,8 +1950,8 @@ fn default_min_region_cut_length_mm() -> f64 {
 impl Default for Adaptive3dConfig {
     fn default() -> Self {
         Self {
-            stepover: 2.0,
-            depth_per_pass: 3.0,
+            stepover: None,
+            depth_per_pass: None,
             stock_to_leave_axial: 0.5,
             feed_rate: None,
             plunge_rate: None,
@@ -1966,8 +2061,11 @@ fn default_waterline_helical() -> bool {
 
 #[derive(Debug, Clone, Serialize, Deserialize, OpParams)]
 pub struct WaterlineConfig {
+    /// P10 (ruling D8): `None` until a tool gives the rule value
+    /// (`compute::geometry_default`) or the operator sets it.
+    #[serde(default, skip_serializing_if = "Option::is_none")]
     #[param(help = HELP_Z_STEP, range = 0.05..=20.0)]
-    pub z_step: f64,
+    pub z_step: Option<f64>,
     #[param(help = HELP_SAMPLING, range = 0.1..=5.0)]
     pub sampling: f64,
     /// S11: `None` until Suggest or the operator sets it. Generation
@@ -2027,7 +2125,7 @@ pub struct WaterlineConfig {
 impl Default for WaterlineConfig {
     fn default() -> Self {
         Self {
-            z_step: 1.0,
+            z_step: None,
             sampling: 0.5,
             feed_rate: None,
             plunge_rate: None,
@@ -2061,11 +2159,14 @@ pub struct PencilConfig {
     pub hookup_distance: f64,
     #[param(range = 0.0..=10.0)]
     pub num_offset_passes: usize,
+    /// P10 (ruling D8): `None` until a tool gives the rule value
+    /// (`compute::geometry_default`) or the operator sets it.
+    #[serde(default, skip_serializing_if = "Option::is_none")]
     #[param(
         help = "Lateral step between offset cleanup passes around pencil traces.",
         range = 0.05..=10.0,
     )]
-    pub offset_stepover: f64,
+    pub offset_stepover: Option<f64>,
     #[param(help = HELP_SAMPLING, range = 0.1..=5.0)]
     pub sampling: f64,
     /// S11: `None` until Suggest or the operator sets it. Generation
@@ -2207,7 +2308,7 @@ impl Default for PencilConfig {
             min_cut_length: 2.0,
             hookup_distance: 5.0,
             num_offset_passes: 1,
-            offset_stepover: 0.5,
+            offset_stepover: None,
             sampling: 0.5,
             feed_rate: None,
             plunge_rate: None,
@@ -2235,19 +2336,38 @@ impl PencilConfig {
     /// The two borrowed arguments are what the config cannot hold: the R1
     /// reference cutter, resolved from the library tool the op names, and
     /// the machine envelope the link stage costs against.
-    #[must_use]
     pub fn params(
         &self,
         motion: OpMotion,
         reference_cutter: Option<crate::tool::ToolDefinition>,
         link_kinematics: Option<crate::machine::kinematics::LinkKinematics>,
+    ) -> Result<crate::finish::pencil::PencilParams, crate::compute::not_set::NotSet> {
+        // P10: the RestDepth detector routes against `cap x offset_stepover`
+        // at any pass count, so every pencil reads it.
+        let offset_stepover = crate::compute::not_set::required_geometry(
+            self.offset_stepover,
+            crate::compute::catalog::OperationType::Pencil.label(),
+            "offset_stepover",
+        )?;
+        Ok(self.params_at(motion, reference_cutter, link_kinematics, offset_stepover))
+    }
+
+    /// [`Self::params`] with the offset stepover `offset_stepover` (P10:
+    /// the caller holds a set value).
+    #[must_use]
+    pub fn params_at(
+        &self,
+        motion: OpMotion,
+        reference_cutter: Option<crate::tool::ToolDefinition>,
+        link_kinematics: Option<crate::machine::kinematics::LinkKinematics>,
+        offset_stepover: f64,
     ) -> crate::finish::pencil::PencilParams {
         crate::finish::pencil::PencilParams {
             bitangency_angle: self.bitangency_angle,
             min_cut_length: self.min_cut_length,
             hookup_distance: self.hookup_distance,
             num_offset_passes: self.num_offset_passes,
-            offset_stepover: self.offset_stepover,
+            offset_stepover,
             sampling: self.sampling,
             feed_rate: motion.feed_rate,
             plunge_rate: motion.plunge_rate,
@@ -2440,13 +2560,19 @@ pub struct UnifiedFinishConfig {
     pub scallop_height: f64,
     #[param(help = HELP_TOLERANCE, range = 0.01..=1.0)]
     pub tolerance: f64,
+    /// P10 (ruling D8): `None` until a tool gives the rule value
+    /// (`compute::geometry_default`) or the operator sets it.
+    #[serde(default, skip_serializing_if = "Option::is_none")]
     #[param(
         help = "Distance between raster passes in the shallow band.",
         range = 0.05..=50.0,
     )]
-    pub raster_stepover: f64,
+    pub raster_stepover: Option<f64>,
+    /// P10 (ruling D8): `None` until a tool gives the rule value
+    /// (`compute::geometry_default`) or the operator sets it.
+    #[serde(default, skip_serializing_if = "Option::is_none")]
     #[param(help = HELP_Z_STEP, range = 0.05..=20.0)]
-    pub z_step: f64,
+    pub z_step: Option<f64>,
     #[param(help = HELP_SAMPLING, range = 0.1..=5.0)]
     pub sampling: f64,
     /// Material left on the finished surface (mm), applied as a vertical
@@ -2731,8 +2857,8 @@ impl Default for UnifiedFinishConfig {
             overlap_mm: 2.0,
             scallop_height: 0.1,
             tolerance: 0.05,
-            raster_stepover: 1.0,
-            z_step: 1.0,
+            raster_stepover: None,
+            z_step: None,
             sampling: 0.5,
             stock_to_leave: 0.0,
             feed_rate: None,
@@ -2809,13 +2935,41 @@ impl UnifiedFinishConfig {
     /// forgotten: [`Self::planner_params`] takes the decomposition dials,
     /// and the claims dials are read by the operation adapter, which is the
     /// only layer that can see the stock in scope.
+    ///
+    /// # Errors
+    ///
+    /// P10: an unset `z_step` or `raster_stepover`.
+    pub fn params(
+        &self,
+        motion: OpMotion,
+    ) -> Result<crate::finish::unified_finish::UnifiedFinishParams, crate::compute::not_set::NotSet>
+    {
+        let label = crate::compute::catalog::OperationType::UnifiedFinish.label();
+        Ok(self.params_at(
+            motion,
+            crate::compute::not_set::required_geometry(self.z_step, label, "z_step")?,
+            crate::compute::not_set::required_geometry(
+                self.raster_stepover,
+                label,
+                "raster_stepover",
+            )?,
+        ))
+    }
+
+    /// [`Self::params`] with the Z step `z_step` and the raster stepover
+    /// `raster_stepover` (P10: the caller holds set values).
     #[must_use]
-    pub fn params(&self, motion: OpMotion) -> crate::finish::unified_finish::UnifiedFinishParams {
+    pub fn params_at(
+        &self,
+        motion: OpMotion,
+        z_step: f64,
+        raster_stepover: f64,
+    ) -> crate::finish::unified_finish::UnifiedFinishParams {
         crate::finish::unified_finish::UnifiedFinishParams {
             scallop_height: self.scallop_height,
             tolerance: self.tolerance,
-            raster_stepover: self.raster_stepover,
-            z_step: self.z_step,
+            raster_stepover,
+            z_step,
             sampling: self.sampling,
             stock_to_leave: self.stock_to_leave,
             feed_rate: motion.feed_rate,
@@ -2933,10 +3087,16 @@ pub struct SteepShallowConfig {
     )]
     pub wall_clearance: f64,
     pub steep_first: bool,
+    /// P10 (ruling D8): `None` until a tool gives the rule value
+    /// (`compute::geometry_default`) or the operator sets it.
+    #[serde(default, skip_serializing_if = "Option::is_none")]
     #[param(help = HELP_STEPOVER, range = 0.05..=50.0)]
-    pub stepover: f64,
+    pub stepover: Option<f64>,
+    /// P10 (ruling D8): `None` until a tool gives the rule value
+    /// (`compute::geometry_default`) or the operator sets it.
+    #[serde(default, skip_serializing_if = "Option::is_none")]
     #[param(help = HELP_Z_STEP, range = 0.05..=20.0)]
-    pub z_step: f64,
+    pub z_step: Option<f64>,
     /// S11: `None` until Suggest or the operator sets it. Generation
     /// refuses an unset feed ("no feeds data for this tool").
     #[serde(default, skip_serializing_if = "Option::is_none")]
@@ -2980,8 +3140,8 @@ impl Default for SteepShallowConfig {
             overlap_distance: 1.0,
             wall_clearance: 0.5,
             steep_first: true,
-            stepover: 1.0,
-            z_step: 1.0,
+            stepover: None,
+            z_step: None,
             feed_rate: None,
             plunge_rate: None,
             ramp_feed_rate: None,
@@ -2998,32 +3158,50 @@ impl Default for SteepShallowConfig {
 impl SteepShallowConfig {
     /// Build the [`crate::finish::steep_shallow::SteepShallowParams`] this
     /// operation bands with — the ONE translation site (FIN-02).
-    #[must_use]
-    pub fn params(&self, motion: OpMotion) -> crate::finish::steep_shallow::SteepShallowParams {
-        crate::finish::steep_shallow::SteepShallowParams {
+    ///
+    /// # Errors
+    ///
+    /// P10: an unset `stepover` or `z_step`.
+    pub fn params(
+        &self,
+        motion: OpMotion,
+    ) -> Result<crate::finish::steep_shallow::SteepShallowParams, crate::compute::not_set::NotSet>
+    {
+        Ok(crate::finish::steep_shallow::SteepShallowParams {
             threshold_angle: self.threshold_angle,
             overlap_distance: self.overlap_distance,
             wall_clearance: self.wall_clearance,
             steep_first: self.steep_first,
-            stepover: self.stepover,
-            z_step: self.z_step,
+            stepover: crate::compute::not_set::required_geometry(
+                self.stepover,
+                crate::compute::catalog::OperationType::SteepShallow.label(),
+                "stepover",
+            )?,
+            z_step: crate::compute::not_set::required_geometry(
+                self.z_step,
+                crate::compute::catalog::OperationType::SteepShallow.label(),
+                "z_step",
+            )?,
             feed_rate: motion.feed_rate,
             plunge_rate: motion.plunge_rate,
             safe_z: motion.safe_z,
             sampling: self.sampling,
             stock_to_leave: self.stock_to_leave,
             tolerance: self.tolerance,
-        }
+        })
     }
 }
 
 #[derive(Debug, Clone, Serialize, Deserialize, OpParams)]
 pub struct RampFinishConfig {
+    /// P10 (ruling D8): `None` until a tool gives the rule value
+    /// (`compute::geometry_default`) or the operator sets it.
+    #[serde(default, skip_serializing_if = "Option::is_none")]
     #[param(
         help = "Maximum Z step between ramp passes.",
         range = 0.05..=10.0,
     )]
-    pub max_stepdown: f64,
+    pub max_stepdown: Option<f64>,
     #[param(help = HELP_SLOPE_FROM, range = 0.0..=90.0)]
     pub slope_from: f64,
     #[param(help = HELP_SLOPE_TO, range = 0.0..=90.0)]
@@ -3060,7 +3238,7 @@ pub struct RampFinishConfig {
 impl Default for RampFinishConfig {
     fn default() -> Self {
         Self {
-            max_stepdown: 0.5,
+            max_stepdown: None,
             slope_from: 30.0,
             slope_to: 90.0,
             direction: CutDirection::Climb,
@@ -3079,10 +3257,34 @@ impl Default for RampFinishConfig {
 impl RampFinishConfig {
     /// Build the [`crate::finish::ramp_finish::RampFinishParams`] this
     /// operation ramps with — the ONE translation site (FIN-02).
+    ///
+    /// # Errors
+    ///
+    /// P10: an unset `max_stepdown`.
+    pub fn params(
+        &self,
+        motion: OpMotion,
+    ) -> Result<crate::finish::ramp_finish::RampFinishParams, crate::compute::not_set::NotSet> {
+        Ok(self.params_at(
+            motion,
+            crate::compute::not_set::required_geometry(
+                self.max_stepdown,
+                crate::compute::catalog::OperationType::RampFinish.label(),
+                "max_stepdown",
+            )?,
+        ))
+    }
+
+    /// [`Self::params`] with the step `max_stepdown` (P10: the caller holds
+    /// a set value).
     #[must_use]
-    pub fn params(&self, motion: OpMotion) -> crate::finish::ramp_finish::RampFinishParams {
+    pub fn params_at(
+        &self,
+        motion: OpMotion,
+        max_stepdown: f64,
+    ) -> crate::finish::ramp_finish::RampFinishParams {
         crate::finish::ramp_finish::RampFinishParams {
-            max_stepdown: self.max_stepdown,
+            max_stepdown,
             slope_from: self.slope_from,
             slope_to: self.slope_to,
             direction: self.direction,
@@ -3099,8 +3301,11 @@ impl RampFinishConfig {
 
 #[derive(Debug, Clone, Serialize, Deserialize, OpParams)]
 pub struct SpiralFinishConfig {
+    /// P10 (ruling D8): `None` until a tool gives the rule value
+    /// (`compute::geometry_default`) or the operator sets it.
+    #[serde(default, skip_serializing_if = "Option::is_none")]
     #[param(help = HELP_STEPOVER, range = 0.05..=20.0)]
-    pub stepover: f64,
+    pub stepover: Option<f64>,
     pub direction: SpiralDirection,
     /// S11: `None` until Suggest or the operator sets it. Generation
     /// refuses an unset feed ("no feeds data for this tool").
@@ -3128,7 +3333,7 @@ pub struct SpiralFinishConfig {
 impl Default for SpiralFinishConfig {
     fn default() -> Self {
         Self {
-            stepover: 1.0,
+            stepover: None,
             direction: SpiralDirection::InsideOut,
             feed_rate: None,
             plunge_rate: None,
@@ -3142,16 +3347,27 @@ impl Default for SpiralFinishConfig {
 impl SpiralFinishConfig {
     /// Build the [`crate::finish::spiral_finish::SpiralFinishParams`] this
     /// operation spirals with — the ONE translation site (FIN-02).
-    #[must_use]
-    pub fn params(&self, motion: OpMotion) -> crate::finish::spiral_finish::SpiralFinishParams {
-        crate::finish::spiral_finish::SpiralFinishParams {
-            stepover: self.stepover,
+    ///
+    /// # Errors
+    ///
+    /// P10: an unset `stepover`.
+    pub fn params(
+        &self,
+        motion: OpMotion,
+    ) -> Result<crate::finish::spiral_finish::SpiralFinishParams, crate::compute::not_set::NotSet>
+    {
+        Ok(crate::finish::spiral_finish::SpiralFinishParams {
+            stepover: crate::compute::not_set::required_geometry(
+                self.stepover,
+                crate::compute::catalog::OperationType::SpiralFinish.label(),
+                "stepover",
+            )?,
             direction: self.direction,
             feed_rate: motion.feed_rate,
             plunge_rate: motion.plunge_rate,
             safe_z: motion.safe_z,
             stock_to_leave: self.stock_to_leave,
-        }
+        })
     }
 }
 
@@ -3236,8 +3452,11 @@ pub struct HorizontalFinishConfig {
         range = 1.0..=30.0,
     )]
     pub angle_threshold: f64,
+    /// P10 (ruling D8): `None` until a tool gives the rule value
+    /// (`compute::geometry_default`) or the operator sets it.
+    #[serde(default, skip_serializing_if = "Option::is_none")]
     #[param(help = HELP_STEPOVER, range = 0.05..=20.0)]
-    pub stepover: f64,
+    pub stepover: Option<f64>,
     /// S11: `None` until Suggest or the operator sets it. Generation
     /// refuses an unset feed ("no feeds data for this tool").
     #[serde(default, skip_serializing_if = "Option::is_none")]
@@ -3265,7 +3484,7 @@ impl Default for HorizontalFinishConfig {
     fn default() -> Self {
         Self {
             angle_threshold: 5.0,
-            stepover: 1.0,
+            stepover: None,
             feed_rate: None,
             plunge_rate: None,
             ramp_feed_rate: None,
@@ -3279,19 +3498,25 @@ impl HorizontalFinishConfig {
     /// Build the
     /// [`crate::finish::horizontal_finish::HorizontalFinishParams`] this
     /// operation slices with — the ONE translation site (FIN-02).
-    #[must_use]
     pub fn params(
         &self,
         motion: OpMotion,
-    ) -> crate::finish::horizontal_finish::HorizontalFinishParams {
-        crate::finish::horizontal_finish::HorizontalFinishParams {
+    ) -> Result<
+        crate::finish::horizontal_finish::HorizontalFinishParams,
+        crate::compute::not_set::NotSet,
+    > {
+        Ok(crate::finish::horizontal_finish::HorizontalFinishParams {
             angle_threshold: self.angle_threshold,
-            stepover: self.stepover,
+            stepover: crate::compute::not_set::required_geometry(
+                self.stepover,
+                crate::compute::catalog::OperationType::HorizontalFinish.label(),
+                "stepover",
+            )?,
             feed_rate: motion.feed_rate,
             plunge_rate: motion.plunge_rate,
             safe_z: motion.safe_z,
             stock_to_leave: self.stock_to_leave,
-        }
+        })
     }
 }
 
@@ -3556,20 +3781,38 @@ macro_rules! op_role {
     (stepover: extra) => {};
     (stepover: $f:ident) => {
         fn stepover(&self) -> Option<f64> {
-            Some(self.$f)
+            self.$f
         }
         fn set_stepover(&mut self, value: f64) -> bool {
-            self.$f = value;
+            self.$f = Some(value);
+            true
+        }
+        fn has_stepover(&self) -> bool {
             true
         }
     };
     (depth_per_pass: none) => {};
-    (depth_per_pass: $f:ident) => {
+    (depth_per_pass: (plain $f:ident)) => {
         fn depth_per_pass(&self) -> Option<f64> {
             Some(self.$f)
         }
         fn set_depth_per_pass(&mut self, value: f64) -> bool {
             self.$f = value;
+            true
+        }
+        fn has_depth_per_pass(&self) -> bool {
+            true
+        }
+    };
+    (depth_per_pass: $f:ident) => {
+        fn depth_per_pass(&self) -> Option<f64> {
+            self.$f
+        }
+        fn set_depth_per_pass(&mut self, value: f64) -> bool {
+            self.$f = Some(value);
+            true
+        }
+        fn has_depth_per_pass(&self) -> bool {
             true
         }
     };
@@ -3633,7 +3876,7 @@ macro_rules! impl_operation_params {
             plunge_rate: $plunge:ident,
             ramp_feed_rate: $rf:ident,
             stepover: $so:ident,
-            depth_per_pass: $dpp:ident,
+            depth_per_pass: $dpp:tt,
             total_depth: $td:tt,
             $(scallop_height: $sh:ident,)?
             $(scallop_height_opt: $sho:ident,)?
@@ -3859,14 +4102,17 @@ impl_operation_params!(PencilConfig {
         /// field read — the one config the macro cannot declare.
         fn stepover(&self) -> Option<f64> {
             if self.num_offset_passes > 1 {
-                Some(self.offset_stepover)
+                self.offset_stepover
             } else {
                 None
             }
         }
         fn set_stepover(&mut self, value: f64) -> bool {
-            self.offset_stepover = value;
+            self.offset_stepover = Some(value);
             true
+        }
+        fn has_stepover(&self) -> bool {
+            self.num_offset_passes > 1
         }
     }
     depth_semantics: None

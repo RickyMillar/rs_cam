@@ -60,8 +60,8 @@ const LEAVE: f64 = 3.0;
 
 fn rough(stock_to_leave_axial: f64) -> OperationConfig {
     OperationConfig::Adaptive3d(Adaptive3dConfig {
-        stepover: 2.0,
-        depth_per_pass: LEAVE,
+        stepover: Some(2.0),
+        depth_per_pass: Some(LEAVE),
         stock_to_leave_axial,
         clearing_strategy: ClearingStrategy::ContourParallel,
         ..Adaptive3dConfig::default()
@@ -194,7 +194,7 @@ fn a_skipped_op_does_not_stale_the_export() {
         .expect("the cut trace of the run");
     let mut config = skipped.toolpath_configs()[0].clone();
     if let OperationConfig::Adaptive3d(params) = &mut config.operation {
-        params.stepover *= 0.5;
+        params.stepover = params.stepover.map(|s| s * 0.5);
     }
     let _ = skipped
         .apply(Command::ReplaceToolpathConfig(ReplaceToolpathConfigArgs {

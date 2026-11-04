@@ -379,9 +379,9 @@ pub fn flat_prior_model() -> LoadedModel {
 /// mesh rest arm, and the G-OPGOLDEN diff then names `adaptive3d/fresh` too.
 pub fn flat_prior_op() -> OperationConfig {
     OperationConfig::Pocket(PocketConfig {
-        stepover: PRIOR_POCKET_STEPOVER,
+        stepover: Some(PRIOR_POCKET_STEPOVER),
         floor: rs_cam_core::compute::floor::Floor::top(PRIOR_POCKET_DEPTH),
-        depth_per_pass: PRIOR_POCKET_DEPTH_PER_PASS,
+        depth_per_pass: Some(PRIOR_POCKET_DEPTH_PER_PASS),
         ..PocketConfig::default()
     })
 }
@@ -721,9 +721,9 @@ pub fn dressup_face(depth: f64) -> Toolpath {
         ..StockConfig::default()
     };
     let op = OperationConfig::Face(FaceConfig {
-        stepover: 4.0,
+        stepover: Some(4.0),
         depth,
-        depth_per_pass: 2.0,
+        depth_per_pass: Some(2.0),
         feed_rate: Some(1500.0),
         plunge_rate: Some(500.0),
         stock_offset: Some(0.0),

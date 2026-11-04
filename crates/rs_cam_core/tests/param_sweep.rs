@@ -1092,9 +1092,9 @@ const FACE_TOOL_DIAMETER: f64 = 12.7;
 
 fn default_face_params() -> FaceConfig {
     FaceConfig {
-        stepover: 5.0,
+        stepover: Some(5.0),
         depth: 0.0,
-        depth_per_pass: 1.0,
+        depth_per_pass: Some(1.0),
         feed_rate: Some(1500.0),
         plunge_rate: Some(500.0),
         stock_offset: Some(5.0),
@@ -1115,7 +1115,7 @@ fn sweep_face_stepover() {
         |ov| {
             let mut p = default_face_params();
             if let Some(v) = ov {
-                p.stepover = v.as_f64().unwrap();
+                p.stepover = Some(v.as_f64().unwrap());
             }
             face_via_session(p)
         },
@@ -1276,7 +1276,7 @@ const TRACE_TOOL_DIAMETER: f64 = 6.35;
 fn default_trace_params() -> TraceConfig {
     TraceConfig {
         depth: Some(1.0),
-        depth_per_pass: 0.5,
+        depth_per_pass: Some(0.5),
         feed_rate: Some(800.0),
         plunge_rate: Some(400.0),
         compensation: TraceCompensation::None,

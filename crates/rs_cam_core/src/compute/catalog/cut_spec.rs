@@ -76,8 +76,9 @@ pub struct CutSpec {
 /// The radial cut of an op.
 #[derive(Debug, Clone, Copy, PartialEq)]
 pub enum Radial {
-    /// The stepover that the operator set.
-    Width(Stated<Mm>),
+    /// The stepover that the operator set (or that the tool rule wrote,
+    /// P10). `None`: not set (no tool; P10 ruling D8).
+    Width(Option<Stated<Mm>>),
     /// The full tool diameter (ae = D).
     Slot,
     /// A V groove: the width follows the depth. The tool angle is not here,
@@ -112,14 +113,14 @@ impl Radial {
 /// The axial cut of an op.
 #[derive(Debug, Clone, Copy, PartialEq)]
 pub enum Axial {
-    /// The depth per pass that the operator set.
-    PerPass(Stated<Mm>),
-    /// The Z step between two levels.
-    ZStep(Stated<Mm>),
+    /// The depth per pass that the operator set. `None`: not set (P10).
+    PerPass(Option<Stated<Mm>>),
+    /// The Z step between two levels. `None`: not set (P10).
+    ZStep(Option<Stated<Mm>>),
     /// One pass to this depth. `None`: the depth is not set (S11).
     OnePass(Option<Stated<Mm>>),
-    /// The peck depth of a drill cycle.
-    Peck(Stated<Mm>),
+    /// The peck depth of a drill cycle. `None`: not set (P10).
+    Peck(Option<Stated<Mm>>),
     /// Bore: the Z drop of one helix turn (D2).
     HelixPitch(Stated<Mm>),
     /// Chamfer: the chamfer width (D2).
@@ -136,12 +137,12 @@ impl Axial {
     #[must_use]
     pub const fn stated_mm(&self) -> Option<f64> {
         match self {
+            Self::HelixPitch(s) | Self::ChamferWidth(s) => Some(s.mm()),
             Self::PerPass(s)
             | Self::ZStep(s)
             | Self::Peck(s)
-            | Self::HelixPitch(s)
-            | Self::ChamferWidth(s) => Some(s.mm()),
-            Self::OnePass(s) | Self::Surface { max: s } => match s {
+            | Self::OnePass(s)
+            | Self::Surface { max: s } => match s {
                 Some(s) => Some(s.mm()),
                 None => None,
             },
@@ -244,11 +245,12 @@ impl CutSpec {
     #[must_use]
     pub const fn calc_inputs(&self, diameter_mm: f64) -> (Option<f64>, Option<f64>, Option<f64>) {
         let ap = match self.axial {
-            Axial::PerPass(s) | Axial::ZStep(s) => Some(s.mm()),
-            Axial::OnePass(s) | Axial::Surface { max: s } => match s {
-                Some(s) => Some(s.mm()),
-                None => None,
-            },
+            Axial::PerPass(s) | Axial::ZStep(s) | Axial::OnePass(s) | Axial::Surface { max: s } => {
+                match s {
+                    Some(s) => Some(s.mm()),
+                    None => None,
+                }
+            }
             Axial::Peck(_) | Axial::HelixPitch(_) | Axial::ChamferWidth(_) => None,
         };
         // A depth at or below zero is an offset from a surface (Project
@@ -258,7 +260,8 @@ impl CutSpec {
             Some(_) | None => None,
         };
         let ae = match self.radial {
-            Radial::Width(s) => Some(s.mm()),
+            Radial::Width(Some(s)) => Some(s.mm()),
+            Radial::Width(None) => None,
             Radial::Slot => Some(diameter_mm),
             Radial::Groove
             | Radial::Scallop(_)
@@ -318,7 +321,7 @@ impl CutSpec {
 /// use rs_cam_core::compute::catalog::{Mm, OperationType, Radial};
 /// let _ = Mm::new(1.0);
 /// let spec = OperationConfig::new_default(OperationType::Face).cut_spec();
-/// let Radial::Width(stepover) = spec.radial else { return };
+/// let Radial::Width(Some(stepover)) = spec.radial else { return };
 /// let _: f64 = stepover.mm();
 /// ```
 ///

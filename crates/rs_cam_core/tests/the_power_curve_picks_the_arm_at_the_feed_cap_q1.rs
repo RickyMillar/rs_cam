@@ -51,8 +51,8 @@ fn op1_tool() -> ToolConfig {
 
 fn pocket(ap: f64) -> OperationConfig {
     OperationConfig::Pocket(PocketConfig {
-        depth_per_pass: ap,
-        stepover: 3.6,
+        depth_per_pass: Some(ap),
+        stepover: Some(3.6),
         ..PocketConfig::default()
     })
 }
@@ -124,9 +124,9 @@ fn expected(machine: &MachineProfile, material: &Material, ap: f64) -> Expected 
     let tool = op1_tool();
     let demand = |rpm: f64, feed: f64| {
         let face = OperationConfig::Face(FaceConfig {
-            stepover: tool.diameter,
+            stepover: Some(tool.diameter),
             depth: ap,
-            depth_per_pass: ap,
+            depth_per_pass: Some(ap),
             feed_rate: Some(feed),
             plunge_rate: Some(300.0),
             spindle_rpm: Some(rpm.round() as u32),

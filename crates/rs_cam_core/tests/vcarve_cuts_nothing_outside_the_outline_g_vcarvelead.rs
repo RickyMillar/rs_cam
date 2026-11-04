@@ -112,7 +112,7 @@ fn vbit() -> ToolConfig {
 /// where the lead-in was.
 fn vcarve_config() -> VCarveConfig {
     VCarveConfig {
-        stepover: 1.0,
+        stepover: Some(1.0),
         tolerance: 0.1,
         ..VCarveConfig::default()
     }

@@ -261,6 +261,12 @@ fn not_set(scope: &Scope, op: &OperationConfig, ctx: &PreconditionContext) -> Op
                 not_set.first_field().map_or(Anchor::Operation, field),
             ),
             NotSetKind::ToolFact => ("Tool fact not stated", Category::Safety, Anchor::Tool),
+            // P10 (D8): only a tool gives the value.
+            NotSetKind::Geometry => (
+                "Set a tool",
+                Category::Geometry,
+                not_set.first_field().map_or(Anchor::Operation, field),
+            ),
         };
         (not_set.detail(), face.to_owned(), anchor, category)
     };

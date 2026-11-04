@@ -115,8 +115,8 @@ fn carbide_vbit() -> ToolConfig {
 fn roughing_pocket(depth_per_pass: f64) -> OperationConfig {
     OperationConfig::Pocket(PocketConfig {
         floor: rs_cam_core::compute::floor::Floor::top(4.0 * depth_per_pass),
-        depth_per_pass,
-        stepover: 2.0,
+        depth_per_pass: Some(depth_per_pass),
+        stepover: Some(2.0),
         feed_rate: Some(1800.0),
         plunge_rate: Some(500.0),
         spindle_rpm: Some(18_000),

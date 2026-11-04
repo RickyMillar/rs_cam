@@ -58,13 +58,17 @@ use rs_cam_viz::controller::AppController;
 const STOCK_Z_MM: f64 = 12.0;
 
 fn toolpath(name: &str, op_type: OperationType) -> ToolpathConfig {
+    // P10: the fixture states the geometry (the peck) the registry held
+    // before P10.
+    let mut operation = OperationConfig::new_default(op_type);
+    rs_cam_core::compute::fixture_values::fill_unset_geometry(&mut operation);
     ToolpathConfig {
         shoe: Default::default(),
         feeds_lock: Default::default(),
         id: rs_cam_core::ToolpathId::from_raw(0),
         name: name.to_owned(),
         enabled: true,
-        operation: OperationConfig::new_default(op_type),
+        operation,
         dressups: Default::default(),
         heights: Default::default(),
         tool_id: Some(rs_cam_core::ids::ToolId::from_raw(1)),
@@ -112,8 +116,8 @@ fn written(session: &ProjectSession, index: usize) -> String {
 
 fn peck(op: &OperationConfig) -> Option<f64> {
     match op {
-        OperationConfig::Drill(cfg) => Some(cfg.peck_depth),
-        OperationConfig::AlignmentPinDrill(cfg) => Some(cfg.peck_depth),
+        OperationConfig::Drill(cfg) => cfg.peck_depth,
+        OperationConfig::AlignmentPinDrill(cfg) => cfg.peck_depth,
         OperationConfig::Face(_)
         | OperationConfig::Pocket(_)
         | OperationConfig::Profile(_)

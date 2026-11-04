@@ -246,7 +246,7 @@ fn face_session() -> ProjectSession {
     let mut cfg = toolpath_config(
         "sel7 drop",
         OperationConfig::DropCutter(DropCutterConfig {
-            stepover: 1.0,
+            stepover: Some(1.0),
             ..DropCutterConfig::default()
         }),
         tool_id,

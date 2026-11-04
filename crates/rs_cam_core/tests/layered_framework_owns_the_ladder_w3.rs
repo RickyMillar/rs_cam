@@ -136,9 +136,9 @@ fn pocket(pattern: PocketPattern) -> OperationConfig {
 
 fn ordered_pocket(pattern: PocketPattern, region_ordering: RegionOrdering) -> OperationConfig {
     OperationConfig::Pocket(PocketConfig {
-        stepover: 2.0,
+        stepover: Some(2.0),
         floor: rs_cam_core::compute::floor::Floor::top(DEPTH),
-        depth_per_pass: DPP,
+        depth_per_pass: Some(DPP),
         pattern,
         region_ordering,
         ..PocketConfig::default()
@@ -423,9 +423,9 @@ const TAB_H: f64 = 0.5;
 
 fn zigzag_op(region_ordering: RegionOrdering) -> OperationConfig {
     OperationConfig::Zigzag(ZigzagConfig {
-        stepover: 2.0,
+        stepover: Some(2.0),
         floor: rs_cam_core::compute::floor::Floor::top(DEPTH),
-        depth_per_pass: DPP,
+        depth_per_pass: Some(DPP),
         region_ordering,
         ..ZigzagConfig::default()
     })
@@ -436,7 +436,7 @@ fn zigzag_op(region_ordering: RegionOrdering) -> OperationConfig {
 fn trace_op(region_ordering: RegionOrdering) -> OperationConfig {
     OperationConfig::Trace(TraceConfig {
         depth: Some(DEPTH),
-        depth_per_pass: DPP,
+        depth_per_pass: Some(DPP),
         compensation: TraceCompensation::Right,
         region_ordering,
         ..TraceConfig::default()
@@ -446,7 +446,7 @@ fn trace_op(region_ordering: RegionOrdering) -> OperationConfig {
 fn profile_op(finishing_passes: usize, region_ordering: RegionOrdering) -> OperationConfig {
     OperationConfig::Profile(ProfileConfig {
         floor: rs_cam_core::compute::floor::Floor::top(DEPTH),
-        depth_per_pass: DPP,
+        depth_per_pass: Some(DPP),
         tab_count: TABS,
         tab_height: TAB_H,
         finishing_passes,

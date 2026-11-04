@@ -80,7 +80,7 @@ fn session(clamp: bool) -> ProjectSession {
         ));
         let op = OperationConfig::Trace(TraceConfig {
             depth: Some(1.0),
-            depth_per_pass: 1.0,
+            depth_per_pass: Some(1.0),
             ..TraceConfig::default()
         });
         let mut cfg = toolpath_config(

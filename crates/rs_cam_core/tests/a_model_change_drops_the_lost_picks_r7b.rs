@@ -117,7 +117,7 @@ fn session() -> ProjectSession {
     let step_id = builder.add_model(step);
     let _ = builder.add_model(stl);
     let op = OperationConfig::DropCutter(DropCutterConfig {
-        stepover: 1.0,
+        stepover: Some(1.0),
         ..DropCutterConfig::default()
     });
     let mut cfg = common::session::toolpath_config("face finish", op, tool_id, step_id);

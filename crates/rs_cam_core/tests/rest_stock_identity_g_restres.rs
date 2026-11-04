@@ -77,9 +77,9 @@ fn rest_op(k: usize) -> OperationConfig {
 
 fn pocket_to(depth: f64) -> OperationConfig {
     OperationConfig::Pocket(PocketConfig {
-        stepover: 2.0,
+        stepover: Some(2.0),
         floor: rs_cam_core::compute::floor::Floor::top(depth),
-        depth_per_pass: 3.0,
+        depth_per_pass: Some(3.0),
         ..PocketConfig::default()
     })
 }

@@ -206,7 +206,7 @@ fn stock() -> StockConfig {
 /// file.
 fn face_op() -> OperationConfig {
     OperationConfig::Face(FaceConfig {
-        stepover: STEPOVER,
+        stepover: Some(STEPOVER),
         stock_offset: Some(STOCK_OFFSET),
         ..FaceConfig::default()
     })
@@ -493,9 +493,9 @@ fn a_pocket_on_the_stock_clears_round_a_drawing_loop_p4_2() {
         "p4_2_island",
     ));
     let op = OperationConfig::Pocket(PocketConfig {
-        stepover: 1.0,
+        stepover: Some(1.0),
         floor: rs_cam_core::compute::floor::Floor::top(1.0),
-        depth_per_pass: 1.0,
+        depth_per_pass: Some(1.0),
         ..PocketConfig::default()
     });
     let mut cfg = toolpath_config(

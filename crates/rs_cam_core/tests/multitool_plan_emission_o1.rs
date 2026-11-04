@@ -280,7 +280,7 @@ fn every_tier_is_dialled_to_the_same_cusp() {
                     "held equal across tiers, and zero, so no seam prints a \
                      `stock_to_leave · Δcos θ` step"
                 );
-                cfg.raster_stepover
+                cfg.raster_stepover.unwrap_or(f64::NAN)
             }
             other => panic!("expected a unified finish, got {other:?}"),
         })

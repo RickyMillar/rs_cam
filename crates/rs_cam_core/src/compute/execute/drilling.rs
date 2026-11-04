@@ -107,7 +107,7 @@ pub fn build_drill_op_for_config(
                 hole_source: HoleSource::ModelDerived,
                 tool_profile: ToolProfile::Flat,
                 tool_diameter_mm,
-                cycle: cfg.cycle.to_core(cfg),
+                cycle: cfg.cycle.to_core(cfg).ok()?,
                 feed_rate_mm_min: cfg.feed_rate?,
                 spindle_rpm: cfg.spindle_rpm.unwrap_or(0),
                 flute_count,
@@ -125,7 +125,7 @@ pub fn build_drill_op_for_config(
             }
             let top_z = stock_bbox.max.z;
             let bottom_z = stock_bbox.min.z - cfg.spoilboard_penetration;
-            let cycle = cfg.drill_cycle(top_z - bottom_z);
+            let cycle = cfg.drill_cycle(top_z - bottom_z).ok()?;
             // Same expression `generate_alignment_pin_drill` passes to
             // `DrillParams::retract_z`, so the summary models the cycle
             // this op emits (R-2).
@@ -460,7 +460,7 @@ pub(crate) fn generate_drill(
     );
     let generated = generated_with_drill_spans(crate::ops::drill::drill_toolpath_at_holes(
         &holes,
-        cfg.cycle.to_core(cfg),
+        cfg.cycle.to_core(cfg)?,
         op.cut_feeds()?.feed_rate,
         ctx.heights.retract_z,
     ));
@@ -499,7 +499,7 @@ pub(crate) fn generate_alignment_pin_drill(
     }
     let stock_z = ctx.stock_bbox.max.z - ctx.stock_bbox.min.z;
     let depth = stock_z + cfg.spoilboard_penetration;
-    let cycle = cfg.drill_cycle(depth);
+    let cycle = cfg.drill_cycle(depth)?;
     let params = crate::ops::drill::DrillParams {
         depth,
         top_z: ctx.stock_bbox.max.z,

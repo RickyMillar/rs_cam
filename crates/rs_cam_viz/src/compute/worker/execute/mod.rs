@@ -438,7 +438,7 @@ mod tests {
         const DEPTH: f64 = 6.0;
         let cfg = ProfileConfig {
             floor: rs_cam_core::compute::floor::Floor::top(DEPTH),
-            depth_per_pass: 2.0,
+            depth_per_pass: Some(2.0),
             tab_count: 4,
             tab_width: 6.0,
             tab_height: 3.0,
@@ -479,7 +479,9 @@ mod tests {
         let depth_stepping = rs_cam_core::ops::depth::DepthStepping {
             start_z: 0.0,
             final_z,
-            max_step_down: cfg.depth_per_pass,
+            max_step_down: cfg
+                .depth_per_pass
+                .expect("the fixture states the depth per pass"),
             finishing_passes: cfg.finishing_passes,
         };
         let levels = depth_stepping.all_levels();
@@ -508,7 +510,7 @@ mod tests {
         // This test verifies that the viz -> core dispatch produces a non-empty result.
         let cfg = FaceConfig {
             direction: FaceDirection::OneWay,
-            stepover: 10.0,
+            stepover: Some(10.0),
             ..FaceConfig::default()
         };
         let (tp, _) = generated(polygon_spec(OperationConfig::Face(cfg), ToolType::EndMill));
@@ -531,7 +533,7 @@ mod tests {
         // rows below read it.
         let cfg = FaceConfig {
             direction: FaceDirection::Zigzag,
-            stepover: 10.0,
+            stepover: Some(10.0),
             feed_rate: Some(1500.0),
             ..FaceConfig::default()
         };
@@ -568,9 +570,9 @@ mod tests {
     fn zigzag_angle_uses_degrees_for_runtime_path() {
         let cfg = ZigzagConfig {
             angle: 90.0,
-            stepover: 6.0,
+            stepover: Some(6.0),
             floor: rs_cam_core::compute::floor::Floor::top(2.0),
-            depth_per_pass: 2.0,
+            depth_per_pass: Some(2.0),
             // S11: the fixture states its feed (the value before S11).
             feed_rate: Some(1000.0),
             ..ZigzagConfig::default()

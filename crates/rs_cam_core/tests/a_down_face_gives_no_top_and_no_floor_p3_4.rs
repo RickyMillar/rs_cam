@@ -206,7 +206,7 @@ fn boundary_session(faces: &[u16]) -> ProjectSession {
         offset: 0.0,
     };
     let op = OperationConfig::DropCutter(DropCutterConfig {
-        stepover: 1.0,
+        stepover: Some(1.0),
         ..DropCutterConfig::default()
     });
     let mut s = session_with(op, boundary, FaceUp::Top);
@@ -218,7 +218,7 @@ fn boundary_session(faces: &[u16]) -> ProjectSession {
 fn pocket_session(faces: &[u16], face_up: FaceUp) -> ProjectSession {
     let op = OperationConfig::Pocket(PocketConfig {
         floor: rs_cam_core::compute::floor::Floor::top(POCKET_DEPTH),
-        depth_per_pass: POCKET_DEPTH,
+        depth_per_pass: Some(POCKET_DEPTH),
         ..PocketConfig::default()
     });
     let mut s = session_with(op, BoundaryConfig::default(), face_up);
@@ -377,7 +377,7 @@ fn a_pocket_pick_of_the_down_face_refuses_on_a_top_setup() {
 fn a_profile_keeps_the_down_face_on_a_top_setup_r6a() {
     let op = OperationConfig::Profile(ProfileConfig {
         floor: rs_cam_core::compute::floor::Floor::EachFace { depth: 0.0 },
-        depth_per_pass: POCKET_DEPTH,
+        depth_per_pass: Some(POCKET_DEPTH),
         ..ProfileConfig::default()
     });
     let mut s = session_with(op, BoundaryConfig::default(), FaceUp::Top);

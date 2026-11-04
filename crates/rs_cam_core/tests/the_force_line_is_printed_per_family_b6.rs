@@ -59,6 +59,7 @@ use rs_cam_core::compute::cutter::build_cutter;
 use rs_cam_core::compute::operation_configs::PocketConfig;
 use rs_cam_core::compute::tool_config::{ToolConfig, ToolId, ToolType};
 use rs_cam_core::feeds::efficiency::cut_efficiency;
+use rs_cam_core::feeds::engagement::PowerCase;
 use rs_cam_core::feeds::force::{immersion_angle, lateral_cutting_force};
 use rs_cam_core::feeds::predict::{
     DeflectionUnmodeled, predict_peak_deflection_um, tip_deflection_from_engagement,
@@ -401,6 +402,14 @@ fn every_line_has_grain_factor_one_and_power_is_the_hand_formula() {
         None,
     )
     .expect("a hardwood pocket is a modelled cut");
+    // P9 (K7): a Pocket's first pass is a slot, so the figure ships the Slot
+    // case at ae = D; the hand formula reads the shipped case width.
+    assert_eq!(figure.case, PowerCase::Slot, "{figure:?}");
+    assert!(
+        rel_close(figure.case_ae_mm, DIAMETER_MM, 1e-12),
+        "{figure:?}"
+    );
+    let ae = figure.case_ae_mm;
     let psi = (1.0 - ae / (DIAMETER_MM / 2.0)).acos();
     // The grain factor rides on both terms; the loop above pins it at 1.0.
     let a = line.grain_factor();
@@ -634,9 +643,9 @@ fn endmill() -> ToolConfig {
 
 fn pocket(ap: f64, ae: f64, feed: f64, rpm: f64) -> OperationConfig {
     OperationConfig::Pocket(PocketConfig {
-        stepover: ae,
+        stepover: Some(ae),
         floor: rs_cam_core::compute::floor::Floor::top(4.0 * ap),
-        depth_per_pass: ap,
+        depth_per_pass: Some(ap),
         feed_rate: Some(feed),
         plunge_rate: Some(400.0),
         spindle_rpm: Some(rpm as u32),
@@ -660,7 +669,7 @@ fn operating_point(ap: f64, ae: f64, fz: f64, rpm: f64) -> FeedsResult {
         axial_depth_mm: ap,
         radial_width_mm: ae,
         power_kw: 0.0,
-        power_case: rs_cam_core::feeds::engagement::PowerCase::Nominal,
+        power_case: PowerCase::Nominal,
         available_power_kw: 0.8,
         power_limited: false,
         mrr_mm3_min: ap * ae * feed,
@@ -730,10 +739,15 @@ fn every_consumer_reads_one_line() {
         let figure =
             power_at_operating_point(&pocket(ap, ae, feed, rpm), &tool, &material, &machine, None)
                 .expect("modelled power");
-        let hand_kw = (ks * ap * ae * feed
+        // P9 (K7): the figure ships its worst case (a Pocket: the Slot case,
+        // ae = D); the hand formula reads the shipped case width.
+        assert_eq!(figure.case, PowerCase::Slot, "{label}: {figure:?}");
+        let case_ae = figure.case_ae_mm;
+        let case_psi = (1.0 - case_ae / (DIAMETER_MM / 2.0)).acos();
+        let hand_kw = (ks * ap * case_ae * feed
             + fe * ap
                 * (std::f64::consts::PI * DIAMETER_MM * rpm)
-                * (f64::from(FLUTES) * psi / std::f64::consts::TAU))
+                * (f64::from(FLUTES) * case_psi / std::f64::consts::TAU))
             / 60_000_000.0;
         assert!(
             rel_close(figure.required_kw, hand_kw, 1e-12),

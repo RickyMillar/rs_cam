@@ -130,11 +130,11 @@ fn hardwood() -> Material {
 
 fn pocket_op(dpp: f64) -> OperationConfig {
     OperationConfig::Pocket(PocketConfig {
-        stepover: STEPOVER_MM,
+        stepover: Some(STEPOVER_MM),
         // Two full passes, so `realised_step_down` snaps the depth to itself
         // and the entry value the invariants see is the requested one.
         floor: rs_cam_core::compute::floor::Floor::top(2.0 * dpp),
-        depth_per_pass: dpp,
+        depth_per_pass: Some(dpp),
         feed_rate: Some(1000.0),
         plunge_rate: Some(400.0),
         ..PocketConfig::default()

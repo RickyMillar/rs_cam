@@ -153,7 +153,7 @@ fn a_link_rises_to_the_plane_only_when_it_crosses_the_clamp_k3() {
         "Trace",
         OperationConfig::Trace(TraceConfig {
             depth: Some(1.0),
-            depth_per_pass: 1.0,
+            depth_per_pass: Some(1.0),
             ..TraceConfig::default()
         }),
     );
@@ -235,7 +235,7 @@ fn a_raster_beside_a_clamp_links_its_rows_on_one_side_k3() {
             mesh_model(height_field(HALF, 1.0, |_, _| -1.0), "Flat"),
             "3D Finish",
             OperationConfig::DropCutter(DropCutterConfig {
-                stepover: 1.0,
+                stepover: Some(1.0),
                 ..DropCutterConfig::default()
             }),
         )
@@ -281,9 +281,9 @@ fn a_face_beside_a_clamp_plans_around_it_k3() {
             polygon_model(vec![Polygon2::rectangle(-HALF, -HALF, HALF, HALF)], "Stock"),
             "Face",
             OperationConfig::Face(FaceConfig {
-                stepover: 3.0,
+                stepover: Some(3.0),
                 depth: 1.0,
-                depth_per_pass: 1.0,
+                depth_per_pass: Some(1.0),
                 ..FaceConfig::default()
             }),
         )
@@ -349,7 +349,7 @@ fn the_pre_clip_keeps_the_cells_the_holder_does_not_reach_k3() {
             mesh_model(height_field(HALF, 1.0, |_, _| SURFACE_Z), "Flat"),
             "3D Finish",
             OperationConfig::DropCutter(DropCutterConfig {
-                stepover: 1.0,
+                stepover: Some(1.0),
                 ..DropCutterConfig::default()
             }),
         )

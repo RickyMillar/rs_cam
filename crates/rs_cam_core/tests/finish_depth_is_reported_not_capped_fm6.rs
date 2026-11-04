@@ -115,6 +115,9 @@ fn suggest(op: OperationType, tool: &ToolConfig) -> Shipped {
     let mat = softwood();
     let s = stock();
     let mut operation = rs_cam_core::feeds::suggest::default_operation(op, &s);
+    // P10: the fixture states the geometry the registry held before P10;
+    // the depth below replaces the depth per pass.
+    rs_cam_core::compute::fixture_values::fill_unset_geometry(&mut operation);
     let (family, role) = operation.feeds_style();
     let row = format!("feeds.operation_default_profile.{family:?}.{role:?}.ap_factor");
     if let Some(factor) = rs_cam_core::feeds::formula_constants()

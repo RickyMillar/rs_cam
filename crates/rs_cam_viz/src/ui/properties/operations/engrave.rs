@@ -64,12 +64,13 @@ pub(in crate::ui::properties) fn draw_trace_params(
         None,
         fields,
     );
-    dv(
+    dv_opt(
         ui,
         p(OperationType::Trace, "depth_per_pass", "Depth/pass"),
         &mut cfg.depth_per_pass,
         " mm",
         0.1,
+        None,
         fields,
     );
     super::boundary_2d::region_ordering_row(ui, "trace_ord", &mut cfg.region_ordering);

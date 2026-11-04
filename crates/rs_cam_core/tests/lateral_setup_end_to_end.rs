@@ -240,8 +240,8 @@ fn toolpath_config(
 fn pocket_op() -> OperationConfig {
     OperationConfig::Pocket(PocketConfig {
         floor: rs_cam_core::compute::floor::Floor::top(POCKET_DEPTH),
-        depth_per_pass: 2.0,
-        stepover: 3.0,
+        depth_per_pass: Some(2.0),
+        stepover: Some(3.0),
         feed_rate: Some(1500.0),
         ..PocketConfig::default()
     })

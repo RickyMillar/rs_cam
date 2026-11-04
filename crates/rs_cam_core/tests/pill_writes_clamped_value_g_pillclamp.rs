@@ -82,6 +82,7 @@ fn read(op: &OperationConfig, field: FeedsField) -> Option<f64> {
         FeedsField::DepthPerPass => op.depth_per_pass(),
         FeedsField::ScallopHeight => op.scallop_height(),
         FeedsField::RampFeedRate => op.ramp_feed_rate(),
+        FeedsField::PeckDepth | FeedsField::ZStep => None,
     }
 }
 
@@ -117,7 +118,9 @@ fn demo_pocket() -> (ProjectSession, ToolConfig, OperationConfig) {
     let session = ProjectSession::new_empty();
     let mut tool = ToolConfig::test_default(ToolId::from_raw(1), ToolType::EndMill);
     tool.diameter = 6.0;
-    let op = OperationConfig::new_default(OperationType::Pocket);
+    // P10: the fixture states the geometry the registry held before P10.
+    let mut op = OperationConfig::new_default(OperationType::Pocket);
+    rs_cam_core::compute::fixture_values::fill_unset_geometry(&mut op);
     (session, tool, op)
 }
 

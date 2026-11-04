@@ -144,7 +144,7 @@ fn all_ops_session() -> ProjectSession {
 fn trace_op() -> OperationConfig {
     OperationConfig::Trace(TraceConfig {
         depth: Some(1.0),
-        depth_per_pass: 1.0,
+        depth_per_pass: Some(1.0),
         ..TraceConfig::default()
     })
 }
@@ -289,14 +289,14 @@ fn pencil_offset_stepover(op: &OperationConfig) -> f64 {
     let OperationConfig::Pencil(cfg) = op else {
         panic!("expected Pencil");
     };
-    cfg.offset_stepover
+    cfg.offset_stepover.unwrap_or(f64::NAN)
 }
 
 fn ramp_finish_max_stepdown(op: &OperationConfig) -> f64 {
     let OperationConfig::RampFinish(cfg) = op else {
         panic!("expected RampFinish");
     };
-    cfg.max_stepdown
+    cfg.max_stepdown.unwrap_or(f64::NAN)
 }
 
 /// Write the retired `alias` on a default `op`: the setter refuses and
@@ -309,13 +309,16 @@ fn alias_refuses_and_name_writes(
     value: f64,
     read: fn(&OperationConfig) -> f64,
 ) {
-    let before = read(&OperationConfig::new_default(op));
+    // P10: the fixture states the geometry the registry held before P10.
+    let mut fixture = OperationConfig::new_default(op);
+    rs_cam_core::compute::fixture_values::fill_unset_geometry(&mut fixture);
+    let before = read(&fixture);
     assert!(
         (before - value).abs() > 1e-12,
         "fixture: {op:?} must start away from the written value"
     );
 
-    let mut session = single_op("N5 alias", OperationConfig::new_default(op));
+    let mut session = single_op("N5 alias", fixture);
     let write = |session: &mut ProjectSession, param: &str| {
         session.apply(Command::SetToolpathParam(SetToolpathParamArgs {
             index: 0,
@@ -487,8 +490,8 @@ fn pocket_still_takes_a_stepover_and_stamps_manual_provenance() {
         panic!("expected Pocket");
     };
     assert!(
-        (cfg.stepover - 2.75).abs() < 1e-12,
-        "the write must land; got {}",
+        (cfg.stepover.unwrap_or(f64::NAN) - 2.75).abs() < 1e-12,
+        "the write must land; got {:?}",
         cfg.stepover
     );
     let stamp = tc

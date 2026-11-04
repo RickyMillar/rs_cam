@@ -101,9 +101,9 @@ const FEED_MULTIPLE_OF_CEILING: f64 = 4.0;
 
 fn pocket_op() -> OperationConfig {
     OperationConfig::Pocket(PocketConfig {
-        stepover: 2.0,
+        stepover: Some(2.0),
         floor: rs_cam_core::compute::floor::Floor::top(3.0),
-        depth_per_pass: 1.5,
+        depth_per_pass: Some(1.5),
         ..PocketConfig::default()
     })
 }

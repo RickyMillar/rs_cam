@@ -53,7 +53,7 @@ fn op_matrix() -> Vec<(&'static str, OperationConfig)> {
             "pocket",
             OperationConfig::Pocket(PocketConfig {
                 floor: rs_cam_core::compute::floor::Floor::top(6.0),
-                depth_per_pass: 2.0,
+                depth_per_pass: Some(2.0),
                 ..PocketConfig::default()
             }),
         ),
@@ -61,7 +61,7 @@ fn op_matrix() -> Vec<(&'static str, OperationConfig)> {
             "profile",
             OperationConfig::Profile(ProfileConfig {
                 floor: rs_cam_core::compute::floor::Floor::top(6.0),
-                depth_per_pass: 2.0,
+                depth_per_pass: Some(2.0),
                 ..ProfileConfig::default()
             }),
         ),
@@ -69,7 +69,7 @@ fn op_matrix() -> Vec<(&'static str, OperationConfig)> {
             "adaptive",
             OperationConfig::Adaptive(AdaptiveConfig {
                 floor: rs_cam_core::compute::floor::Floor::top(6.0),
-                depth_per_pass: 2.0,
+                depth_per_pass: Some(2.0),
                 ..AdaptiveConfig::default()
             }),
         ),
@@ -77,7 +77,7 @@ fn op_matrix() -> Vec<(&'static str, OperationConfig)> {
             "zigzag",
             OperationConfig::Zigzag(ZigzagConfig {
                 floor: rs_cam_core::compute::floor::Floor::top(6.0),
-                depth_per_pass: 2.0,
+                depth_per_pass: Some(2.0),
                 ..ZigzagConfig::default()
             }),
         ),
@@ -85,7 +85,7 @@ fn op_matrix() -> Vec<(&'static str, OperationConfig)> {
             "trace",
             OperationConfig::Trace(TraceConfig {
                 depth: Some(6.0),
-                depth_per_pass: 2.0,
+                depth_per_pass: Some(2.0),
                 ..TraceConfig::default()
             }),
         ),

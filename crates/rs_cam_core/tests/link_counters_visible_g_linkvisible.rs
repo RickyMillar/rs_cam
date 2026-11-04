@@ -152,7 +152,7 @@ fn drop_cutter_session(hookup_mm: f64) -> ProjectSession {
         ),
         "Drop Cutter",
         OperationConfig::DropCutter(DropCutterConfig {
-            stepover: 0.5,
+            stepover: Some(0.5),
             slope_from: 0.0,
             slope_to: 20.0,
             hookup_mm,
@@ -207,7 +207,7 @@ fn waterline_session(hookup_mm: f64) -> ProjectSession {
         ),
         "Waterline",
         OperationConfig::Waterline(WaterlineConfig {
-            z_step: 0.5,
+            z_step: Some(0.5),
             sampling: 0.3,
             hookup_mm,
             // The arm needs many fragments with near ends. The helical

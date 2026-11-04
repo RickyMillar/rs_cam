@@ -64,9 +64,9 @@ fn two_ops() -> ProjectSession {
     let pocket = toolpath_config(
         "Pocket",
         OperationConfig::Pocket(PocketConfig {
-            stepover: 2.0,
+            stepover: Some(2.0),
             floor: rs_cam_core::compute::floor::Floor::top(1.0),
-            depth_per_pass: 1.0,
+            depth_per_pass: Some(1.0),
             ..PocketConfig::default()
         }),
         rs_cam_core::ids::ToolId::from_raw(end_mill),
@@ -75,7 +75,7 @@ fn two_ops() -> ProjectSession {
     let mut drop_cutter = toolpath_config(
         "Drop Cutter",
         OperationConfig::DropCutter(DropCutterConfig {
-            stepover: 0.5,
+            stepover: Some(0.5),
             slope_from: 0.0,
             slope_to: 20.0,
             hookup_mm: 3.0,

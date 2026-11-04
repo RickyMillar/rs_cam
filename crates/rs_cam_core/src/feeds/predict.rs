@@ -888,8 +888,8 @@ mod tests {
     /// 911 mm/min, RPM 16 000, 2 flutes, HardMaple.
     fn wanaka_adaptive_op(dpp: f64, stepover: f64, feed: f64, rpm: u32) -> OperationConfig {
         OperationConfig::Adaptive(AdaptiveConfig {
-            depth_per_pass: dpp,
-            stepover,
+            depth_per_pass: Some(dpp),
+            stepover: Some(stepover),
             feed_rate: Some(feed),
             spindle_rpm: Some(rpm),
             ..AdaptiveConfig::default()
@@ -1002,8 +1002,8 @@ mod tests {
         // Pocket op so the predictor path doesn't apply the Adaptive
         // WOC fallback (we pass an explicit stepover anyway).
         let op = OperationConfig::Pocket(PocketConfig {
-            depth_per_pass: 2.0,
-            stepover: 1.0,
+            depth_per_pass: Some(2.0),
+            stepover: Some(1.0),
             feed_rate: Some(800.0),
             spindle_rpm: Some(16_000),
             ..PocketConfig::default()
@@ -1082,8 +1082,8 @@ mod tests {
         let mut pocket_tool = carbide_endmill(6.35, 25.0, 12.0);
         pocket_tool.tool_type = ToolType::EndMill;
         let pocket_op = OperationConfig::Pocket(PocketConfig {
-            stepover: 1.0,
-            depth_per_pass: 2.0,
+            stepover: Some(1.0),
+            depth_per_pass: Some(2.0),
             ..PocketConfig::default()
         });
         assert_eq!(
@@ -1118,8 +1118,8 @@ mod tests {
         let mut tool = carbide_endmill(6.35, 25.0, 12.0);
         tool.tool_type = ToolType::VBit;
         let op = OperationConfig::Pocket(PocketConfig {
-            depth_per_pass: 1.0,
-            stepover: 0.5,
+            depth_per_pass: Some(1.0),
+            stepover: Some(0.5),
             feed_rate: Some(600.0),
             spindle_rpm: Some(18_000),
             ..PocketConfig::default()

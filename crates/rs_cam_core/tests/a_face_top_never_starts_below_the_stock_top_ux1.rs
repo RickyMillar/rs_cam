@@ -214,7 +214,7 @@ fn profile_arm(name: &'static str, depth: f64) -> Arm {
         name,
         op: OperationConfig::Profile(ProfileConfig {
             floor: Floor::top(depth),
-            depth_per_pass: DEPTH_PER_PASS,
+            depth_per_pass: Some(DEPTH_PER_PASS),
             selection: Selection::empty(),
             ..ProfileConfig::default()
         }),
@@ -230,7 +230,7 @@ fn face_arm(name: &'static str) -> Arm {
         name,
         op: OperationConfig::Face(FaceConfig {
             depth: FACE_DEPTH,
-            depth_per_pass: FACE_DEPTH_PER_PASS,
+            depth_per_pass: Some(FACE_DEPTH_PER_PASS),
             selection: Selection::empty(),
             ..FaceConfig::default()
         }),
@@ -246,7 +246,7 @@ fn trace_arm(name: &'static str) -> Arm {
         name,
         op: OperationConfig::Trace(TraceConfig {
             depth: Some(TRACE_DEPTH),
-            depth_per_pass: TRACE_DEPTH_PER_PASS,
+            depth_per_pass: Some(TRACE_DEPTH_PER_PASS),
             selection: Selection::empty(),
             ..TraceConfig::default()
         }),

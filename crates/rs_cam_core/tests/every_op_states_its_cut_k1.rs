@@ -187,6 +187,15 @@ fn mm_of(params: &Value, field: &str) -> Option<f64> {
     params[field].as_f64()
 }
 
+/// P10: a tool-derived field is unset with no tool; the spec then holds
+/// `None`.
+fn optional_bits(spec: Option<f64>, params: &Value, field: &str, what: &str) {
+    match spec {
+        Some(v) => same_bits(v, mm_of(params, field), what),
+        None => assert!(params[field].is_null(), "{what}: {field} is set"),
+    }
+}
+
 fn same_bits(spec: f64, field: Option<f64>, what: &str) {
     let field = field.unwrap_or_else(|| panic!("{what}: the field is not set"));
     assert_eq!(spec.to_bits(), field.to_bits(), "{what}: {spec} != {field}");
@@ -196,7 +205,7 @@ fn check_radial(op: OperationType, rule: RadialRule, radial: Radial, params: &Va
     let what = format!("{op:?} radial {rule:?} {radial:?}");
     match (rule, radial) {
         (RadialRule::Stepover, Radial::Width(w)) => {
-            same_bits(w.mm(), mm_of(params, "stepover"), &what);
+            optional_bits(w.map(|w| w.mm()), params, "stepover", &what);
         }
         (RadialRule::Scallop, Radial::Scallop(s)) => {
             same_bits(s.mm(), mm_of(params, "scallop_height"), &what);
@@ -206,11 +215,11 @@ fn check_radial(op: OperationType, rule: RadialRule, radial: Radial, params: &Va
         }
         (RadialRule::ScallopElseStepover, Radial::Width(w)) => {
             assert!(params["scallop_height"].is_null(), "{what}: scallop set");
-            same_bits(w.mm(), mm_of(params, "stepover"), &what);
+            optional_bits(w.map(|w| w.mm()), params, "stepover", &what);
         }
         (RadialRule::OffsetStepoverElseSurface, Radial::Width(w)) => {
             assert!(params["num_offset_passes"].as_u64().unwrap() > 1, "{what}");
-            same_bits(w.mm(), mm_of(params, "offset_stepover"), &what);
+            optional_bits(w.map(|w| w.mm()), params, "offset_stepover", &what);
         }
         (RadialRule::OffsetStepoverElseSurface, Radial::SurfaceFollow) => {
             assert!(params["num_offset_passes"].as_u64().unwrap() <= 1, "{what}");
@@ -251,10 +260,14 @@ fn check_axial(op: OperationType, rule: AxialRule, axial: Axial, params: &Value)
     };
     match (rule, axial) {
         (AxialRule::DepthPerPass, Axial::PerPass(d)) => {
-            same_bits(d.mm(), mm_of(params, "depth_per_pass"), &what);
+            optional_bits(d.map(|d| d.mm()), params, "depth_per_pass", &what);
         }
-        (AxialRule::ZStep, Axial::ZStep(d)) => same_bits(d.mm(), mm_of(params, "z_step"), &what),
-        (AxialRule::Peck, Axial::Peck(d)) => same_bits(d.mm(), mm_of(params, "peck_depth"), &what),
+        (AxialRule::ZStep, Axial::ZStep(d)) => {
+            optional_bits(d.map(|d| d.mm()), params, "z_step", &what);
+        }
+        (AxialRule::Peck, Axial::Peck(d)) => {
+            optional_bits(d.map(|d| d.mm()), params, "peck_depth", &what);
+        }
         (AxialRule::HelixPitch, Axial::HelixPitch(d)) => {
             same_bits(d.mm(), mm_of(params, "pitch"), &what);
         }

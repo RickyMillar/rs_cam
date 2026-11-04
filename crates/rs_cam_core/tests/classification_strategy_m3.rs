@@ -768,11 +768,15 @@ fn the_unified_finish_op_defaults_to_the_production_sampler() {
     // The config pins no sampler; the params it builds run production.
     let cfg = UnifiedFinishConfig::default();
     assert_eq!(cfg.classification_sampler, None);
-    let built = cfg.params(rs_cam_core::compute::operation_configs::OpMotion {
-        feed_rate: 1000.0,
-        plunge_rate: 500.0,
-        safe_z: 50.0,
-    });
+    let built = cfg.params_at(
+        rs_cam_core::compute::operation_configs::OpMotion {
+            feed_rate: 1000.0,
+            plunge_rate: 500.0,
+            safe_z: 50.0,
+        },
+        1.0,
+        1.0,
+    );
     assert_eq!(
         built.classification_sampler,
         ClassificationSampler::PRODUCTION

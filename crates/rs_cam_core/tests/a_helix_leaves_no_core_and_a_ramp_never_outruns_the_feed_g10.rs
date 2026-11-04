@@ -96,8 +96,8 @@ fn pocket_op(ramp_feed: Option<f64>) -> OperationConfig {
     let mut op = OperationConfig::new_default(OperationType::Pocket);
     if let OperationConfig::Pocket(cfg) = &mut op {
         cfg.floor = rs_cam_core::compute::floor::Floor::top(POCKET_DEPTH);
-        cfg.depth_per_pass = POCKET_DEPTH;
-        cfg.stepover = 1.0;
+        cfg.depth_per_pass = Some(POCKET_DEPTH);
+        cfg.stepover = Some(1.0);
         cfg.feed_rate = Some(FEED);
         cfg.plunge_rate = Some(PLUNGE);
         cfg.ramp_feed_rate = ramp_feed;
@@ -357,8 +357,8 @@ fn a_dressup_entry_never_outruns_the_feed_g10() {
 
 fn adaptive3d_toolpath(style: Adaptive3dEntryStyle, helix_radius_factor: f64) -> Toolpath {
     let cfg = Adaptive3dConfig {
-        stepover: 2.0,
-        depth_per_pass: 8.0,
+        stepover: Some(2.0),
+        depth_per_pass: Some(8.0),
         stock_to_leave_axial: 0.5,
         feed_rate: Some(FEED),
         plunge_rate: Some(PLUNGE),

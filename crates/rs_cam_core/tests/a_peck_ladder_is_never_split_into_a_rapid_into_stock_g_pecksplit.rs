@@ -85,8 +85,8 @@ fn model_z(x: f64, y: f64) -> f64 {
 /// otherwise `top_z` is Auto (the stock top).
 fn session(pin_model_top: bool) -> ProjectSession {
     let cfg = Adaptive3dConfig {
-        stepover: 2.5,
-        depth_per_pass: 3.0,
+        stepover: Some(2.5),
+        depth_per_pass: Some(3.0),
         stock_to_leave_axial: 0.5,
         entry_style: Adaptive3dEntryStyle::Plunge,
         clearing_strategy: ClearingStrategy::ContourParallel,
@@ -259,7 +259,7 @@ fn the_fresh_split_target_is_the_stock_top_not_a_pinned_top() {
     const PINNED: f64 = 10.0;
     let cfg = AdaptiveConfig {
         floor: rs_cam_core::compute::floor::Floor::top(3.0),
-        depth_per_pass: 3.0,
+        depth_per_pass: Some(3.0),
         ..AdaptiveConfig::default()
     };
     let mut s = common::session::single_op_session_with(

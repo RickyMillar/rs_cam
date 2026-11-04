@@ -151,7 +151,7 @@ fn hole_op(depth: f64, peck_depth: f64) -> OperationConfig {
     OperationConfig::Drill(DrillConfig {
         floor: rs_cam_core::compute::floor::Floor::Top { depth },
         cycle: DrillCycleType::Peck,
-        peck_depth,
+        peck_depth: Some(peck_depth),
         ..DrillConfig::default()
     })
 }
@@ -206,7 +206,7 @@ fn the_pin_drill_pecks_no_deeper_than_the_pin_hole() {
         diameter: 6.0,
         spoilboard_penetration: SPOILBOARD,
         cycle: DrillCycleType::Peck,
-        peck_depth: 30.0,
+        peck_depth: Some(30.0),
         ..AlignmentPinDrillConfig::default()
     });
     let mut session = drill_session(op);

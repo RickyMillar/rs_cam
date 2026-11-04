@@ -1666,10 +1666,17 @@ mod tests {
     /// The 6 mm end mill of the 2D fixtures (`test_data/ux_2d_*.toml`).
     const R: f64 = 3.0;
 
-    /// The 2D Adaptive defaults (`AdaptiveConfig::default`).
+    /// The 2D Adaptive defaults (`AdaptiveConfig::default`), with the
+    /// stepover the fixture states (P10: `fixture_values`).
     fn op_defaults() -> (f64, f64) {
         let cfg = crate::compute::operation_configs::AdaptiveConfig::default();
-        (cfg.stepover, cfg.tolerance)
+        let stepover = crate::compute::fixture_values::fixture_geometry(
+            crate::compute::catalog::OperationType::Adaptive,
+        )
+        .iter()
+        .find_map(|&(field, v)| (field == "stepover").then_some(v))
+        .unwrap_or(f64::NAN);
+        (stepover, cfg.tolerance)
     }
 
     /// A circle of radius `radius` about `c`, with enough sides that a chord

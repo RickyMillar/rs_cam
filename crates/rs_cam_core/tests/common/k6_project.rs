@@ -160,7 +160,7 @@ fn config(
 
 fn pocket() -> OperationConfig {
     OperationConfig::Pocket(PocketConfig {
-        depth_per_pass: 6.0,
+        depth_per_pass: Some(6.0),
         feed_rate: Some(1000.0),
         ..PocketConfig::default()
     })
@@ -209,7 +209,7 @@ pub fn project() -> ProjectSession {
         NAMES[GOUGE],
         OperationConfig::Face(FaceConfig {
             depth: 1.0,
-            depth_per_pass: 1.0,
+            depth_per_pass: Some(1.0),
             feed_rate: Some(1000.0),
             ..FaceConfig::default()
         }),

@@ -26,36 +26,36 @@ impl StepoverPattern {
         match op {
             OperationConfig::Pocket(cfg) => Some(match cfg.pattern {
                 PocketPattern::Zigzag => Self::Zigzag {
-                    stepover: cfg.stepover,
+                    stepover: cfg.stepover?,
                     angle: cfg.angle,
                     one_way: false,
                 },
                 PocketPattern::Contour => Self::Contour {
-                    stepover: cfg.stepover,
+                    stepover: cfg.stepover?,
                 },
             }),
             OperationConfig::Face(cfg) => Some(Self::Zigzag {
-                stepover: cfg.stepover,
+                stepover: cfg.stepover?,
                 angle: 0.0,
                 one_way: cfg.direction == FaceDirection::OneWay,
             }),
             OperationConfig::Zigzag(cfg) => Some(Self::Zigzag {
-                stepover: cfg.stepover,
+                stepover: cfg.stepover?,
                 angle: cfg.angle,
                 one_way: false,
             }),
             OperationConfig::VCarve(cfg) => Some(Self::Zigzag {
-                stepover: cfg.stepover,
+                stepover: cfg.stepover?,
                 angle: 0.0,
                 one_way: false,
             }),
             OperationConfig::HorizontalFinish(cfg) => Some(Self::Zigzag {
-                stepover: cfg.stepover,
+                stepover: cfg.stepover?,
                 angle: 0.0,
                 one_way: false,
             }),
             OperationConfig::DropCutter(cfg) => Some(Self::Zigzag {
-                stepover: cfg.stepover,
+                stepover: cfg.stepover?,
                 angle: 0.0,
                 one_way: false,
             }),

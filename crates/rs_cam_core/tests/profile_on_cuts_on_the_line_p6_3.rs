@@ -108,7 +108,7 @@ fn on(climb: bool, tab_count: usize, tab_points: Vec<[f64; 2]>) -> ProfileConfig
     ProfileConfig {
         side: ProfileSide::On,
         floor: rs_cam_core::compute::floor::Floor::top(DEPTH),
-        depth_per_pass: DEPTH / 2.0,
+        depth_per_pass: Some(DEPTH / 2.0),
         climb,
         tab_count,
         tab_width: TAB_W,

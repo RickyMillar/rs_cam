@@ -10,7 +10,7 @@ use super::super::linking_dressup::{
     Fields, check_in_row, check_param, combo_control, combo_in_row, combo_param, count_in_row,
     count_param, plain_row,
 };
-use super::super::{advanced, dv, dv_opt, dv_pill, dv_pill_opt, p, through_cut_line};
+use super::super::{advanced, dv, dv_opt, dv_pill_opt, p, through_cut_line};
 use super::{DepthBeyondStock, ThroughCut, draw_tab_diagram};
 use crate::ui::components::{Button, OneLine, PropRow};
 use rs_cam_core::compute::catalog::OperationType;
@@ -43,7 +43,7 @@ pub(in crate::ui::properties) fn draw_face_params(
             ui.selectable_value(&mut cfg.direction, FaceDirection::Zigzag, "Zigzag");
         },
     );
-    dv_pill(
+    dv_pill_opt(
         ui,
         p(OperationType::Face, "stepover", "Stepover"),
         &mut cfg.stepover,
@@ -60,7 +60,7 @@ pub(in crate::ui::properties) fn draw_face_params(
         0.1,
         fields,
     );
-    dv_pill(
+    dv_pill_opt(
         ui,
         p(OperationType::Face, "depth_per_pass", "Depth/pass"),
         &mut cfg.depth_per_pass,
@@ -106,7 +106,7 @@ pub(in crate::ui::properties) fn draw_pocket_params(
             ui.selectable_value(&mut cfg.pattern, PocketPattern::Zigzag, "Zigzag");
         },
     );
-    dv_pill(
+    dv_pill_opt(
         ui,
         p(OperationType::Pocket, "stepover", "Stepover"),
         &mut cfg.stepover,
@@ -115,7 +115,7 @@ pub(in crate::ui::properties) fn draw_pocket_params(
         stepover_sugg,
         fields,
     );
-    dv_pill(
+    dv_pill_opt(
         ui,
         p(OperationType::Pocket, "depth_per_pass", "Depth/pass"),
         &mut cfg.depth_per_pass,
@@ -400,7 +400,7 @@ pub(in crate::ui::properties) fn draw_profile_params(
     let dpp_sugg = pills.map(PillSuggestions::depth_per_pass);
     profile_side_row(ui, cfg);
     through_cut_line(ui, through_cut);
-    dv_pill(
+    dv_pill_opt(
         ui,
         p(OperationType::Profile, "depth_per_pass", "Depth/pass"),
         &mut cfg.depth_per_pass,
@@ -575,7 +575,7 @@ pub(in crate::ui::properties) fn draw_adaptive_params(
 ) {
     let stepover_sugg = pills.map(PillSuggestions::stepover);
     let dpp_sugg = pills.map(PillSuggestions::depth_per_pass);
-    dv_pill(
+    dv_pill_opt(
         ui,
         p(OperationType::Adaptive, "stepover", "Stepover"),
         &mut cfg.stepover,
@@ -584,7 +584,7 @@ pub(in crate::ui::properties) fn draw_adaptive_params(
         stepover_sugg,
         fields,
     );
-    dv_pill(
+    dv_pill_opt(
         ui,
         p(OperationType::Adaptive, "depth_per_pass", "Depth/pass"),
         &mut cfg.depth_per_pass,
@@ -681,7 +681,7 @@ pub(in crate::ui::properties) fn draw_vcarve_params(
         max_depth_sugg,
         fields,
     );
-    dv_pill(
+    dv_pill_opt(
         ui,
         p(OperationType::VCarve, "stepover", "Stepover"),
         &mut cfg.stepover,
@@ -742,7 +742,7 @@ pub(in crate::ui::properties) fn draw_inlay_params(
         0.01,
         fields,
     );
-    dv_pill(
+    dv_pill_opt(
         ui,
         p(OperationType::Inlay, "stepover", "Stepover"),
         &mut cfg.stepover,
@@ -809,7 +809,7 @@ pub(in crate::ui::properties) fn draw_inlay_plug_params(
         0.1,
         fields,
     );
-    dv_pill(
+    dv_pill_opt(
         ui,
         p(OperationType::InlayPlug, "depth_per_pass", "Depth/pass"),
         &mut cfg.depth_per_pass,
@@ -818,7 +818,7 @@ pub(in crate::ui::properties) fn draw_inlay_plug_params(
         dpp_sugg,
         fields,
     );
-    dv_pill(
+    dv_pill_opt(
         ui,
         p(OperationType::InlayPlug, "stepover", "Stepover"),
         &mut cfg.stepover,
@@ -847,7 +847,7 @@ pub(in crate::ui::properties) fn draw_zigzag_params(
 ) {
     let stepover_sugg = pills.map(PillSuggestions::stepover);
     let dpp_sugg = pills.map(PillSuggestions::depth_per_pass);
-    dv_pill(
+    dv_pill_opt(
         ui,
         p(OperationType::Zigzag, "stepover", "Stepover"),
         &mut cfg.stepover,
@@ -856,7 +856,7 @@ pub(in crate::ui::properties) fn draw_zigzag_params(
         stepover_sugg,
         fields,
     );
-    dv_pill(
+    dv_pill_opt(
         ui,
         p(OperationType::Zigzag, "depth_per_pass", "Depth/pass"),
         &mut cfg.depth_per_pass,

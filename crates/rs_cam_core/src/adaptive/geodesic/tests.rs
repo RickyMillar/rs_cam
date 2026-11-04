@@ -123,10 +123,17 @@ fn law_next_radius(tool_radius: f64, stepover: f64, ceiling_width: f64, rho: f64
     (-b + (b * b + (rho + r).powi(2) - r * r).sqrt()).min(rho + stepover)
 }
 
-/// The 2D Adaptive defaults (`AdaptiveConfig::default`).
+/// The 2D Adaptive defaults (`AdaptiveConfig::default`), with the stepover
+/// the fixture states (P10: `fixture_values`).
 fn op_defaults() -> (f64, f64) {
     let cfg = crate::compute::operation_configs::AdaptiveConfig::default();
-    (cfg.stepover, cfg.tolerance)
+    let stepover = crate::compute::fixture_values::fixture_geometry(
+        crate::compute::catalog::OperationType::Adaptive,
+    )
+    .iter()
+    .find_map(|&(field, v)| (field == "stepover").then_some(v))
+    .unwrap_or(f64::NAN);
+    (stepover, cfg.tolerance)
 }
 
 /// A circle of radius `radius` about `c`, with enough sides that a chord

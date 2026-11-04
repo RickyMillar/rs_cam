@@ -84,7 +84,7 @@ fn profile(tab_count: usize, tab_points: Vec<[f64; 2]>) -> ProfileConfig {
     ProfileConfig {
         side: ProfileSide::Outside,
         floor: rs_cam_core::compute::floor::Floor::top(DEPTH),
-        depth_per_pass: DEPTH,
+        depth_per_pass: Some(DEPTH),
         tab_count,
         tab_width: W,
         tab_height: H,

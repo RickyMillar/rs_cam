@@ -153,12 +153,12 @@ fn pocket_session(dressups: DressupConfig) -> ProjectSession {
         enabled: true,
         operation: OperationConfig::Pocket(PocketConfig {
             ramp_feed_rate: None,
-            stepover: 2.0,
+            stepover: Some(2.0),
             floor: rs_cam_core::compute::floor::Floor::top(12.0),
             // The R03 depth per pass. The straight legs were 19.08 mm at
             // every DPP, so this value does not set the defect's size —
             // it only sets how many entries there are to check.
-            depth_per_pass: 1.2,
+            depth_per_pass: Some(1.2),
             feed_rate: Some(770.0),
             plunge_rate: Some(385.0),
             climb: true,

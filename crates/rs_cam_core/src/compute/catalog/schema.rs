@@ -648,6 +648,11 @@ pub struct OpRegistryEntry {
     /// one entry source: `DressupConfig::for_op`, `normalize_for_op` and
     /// the dressup pipeline read it.
     pub entry: super::EntryContract,
+    /// P10 (operator ruling D8): one rule per tool-derived geometry field
+    /// of the op (`compute::geometry_default`). A required field with no
+    /// `Default`: a new row does not compile without it. An op with no
+    /// tool-derived field states `&[]`.
+    pub geometry: &'static [crate::compute::geometry_default::GeometryDefault],
     /// The three per-op policies CMP-07 moved off `matches!` lists.
     pub policy: OpPolicy,
     /// W2.4: what the op can do and how each consumer must treat it. Read

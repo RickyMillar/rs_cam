@@ -506,9 +506,9 @@ fn flat_cases() -> Vec<FlatCase> {
             || {
                 OperationConfig::Pocket(PocketConfig {
                     ramp_feed_rate: None,
-                    stepover: 3.0,
+                    stepover: Some(3.0),
                     floor: rs_cam_core::compute::floor::Floor::top(6.0),
-                    depth_per_pass: 3.0,
+                    depth_per_pass: Some(3.0),
                     feed_rate: Some(1000.0),
                     plunge_rate: Some(400.0),
                     climb: true,
@@ -531,9 +531,9 @@ fn flat_cases() -> Vec<FlatCase> {
             || {
                 OperationConfig::Zigzag(ZigzagConfig {
                     ramp_feed_rate: None,
-                    stepover: 3.0,
+                    stepover: Some(3.0),
                     floor: rs_cam_core::compute::floor::Floor::top(3.0),
-                    depth_per_pass: 3.0,
+                    depth_per_pass: Some(3.0),
                     feed_rate: Some(1000.0),
                     plunge_rate: Some(400.0),
                     angle: 45.0,
@@ -550,9 +550,9 @@ fn flat_cases() -> Vec<FlatCase> {
             "2.5D clearing",
             || {
                 OperationConfig::Face(FaceConfig {
-                    stepover: 3.0,
+                    stepover: Some(3.0),
                     depth: 2.0,
-                    depth_per_pass: 2.0,
+                    depth_per_pass: Some(2.0),
                     feed_rate: Some(1500.0),
                     plunge_rate: Some(500.0),
                     spindle_rpm: Some(18_000),
@@ -566,9 +566,9 @@ fn flat_cases() -> Vec<FlatCase> {
             "2.5D clearing",
             || {
                 OperationConfig::Adaptive(AdaptiveConfig {
-                    stepover: 2.0,
+                    stepover: Some(2.0),
                     floor: rs_cam_core::compute::floor::Floor::top(6.0),
-                    depth_per_pass: 3.0,
+                    depth_per_pass: Some(3.0),
                     feed_rate: Some(1500.0),
                     plunge_rate: Some(500.0),
                     spindle_rpm: Some(18_000),
@@ -586,7 +586,7 @@ fn flat_cases() -> Vec<FlatCase> {
                     ramp_feed_rate: None,
                     side: ProfileSide::Outside,
                     floor: rs_cam_core::compute::floor::Floor::top(6.0),
-                    depth_per_pass: 3.0,
+                    depth_per_pass: Some(3.0),
                     feed_rate: Some(1000.0),
                     plunge_rate: Some(400.0),
                     climb: true,
@@ -611,7 +611,7 @@ fn flat_cases() -> Vec<FlatCase> {
             || {
                 OperationConfig::Trace(TraceConfig {
                     depth: Some(3.0),
-                    depth_per_pass: 1.5,
+                    depth_per_pass: Some(1.5),
                     feed_rate: Some(800.0),
                     plunge_rate: Some(400.0),
                     spindle_rpm: Some(18_000),
@@ -626,7 +626,7 @@ fn flat_cases() -> Vec<FlatCase> {
             || {
                 OperationConfig::VCarve(VCarveConfig {
                     max_depth: Some(4.0),
-                    stepover: 0.5,
+                    stepover: Some(0.5),
                     feed_rate: Some(800.0),
                     plunge_rate: Some(400.0),
                     spindle_rpm: Some(18_000),
@@ -682,7 +682,7 @@ fn hemi_cases() -> Vec<HemiCase> {
             || {
                 OperationConfig::DropCutter(DropCutterConfig {
                     ramp_feed_rate: None,
-                    stepover: 1.5,
+                    stepover: Some(1.5),
                     feed_rate: Some(1000.0),
                     plunge_rate: Some(400.0),
                     min_z: 0.0,
@@ -701,7 +701,7 @@ fn hemi_cases() -> Vec<HemiCase> {
             || {
                 OperationConfig::Waterline(WaterlineConfig {
                     ramp_feed_rate: None,
-                    z_step: 1.5,
+                    z_step: Some(1.5),
                     sampling: 0.4,
                     feed_rate: Some(1000.0),
                     plunge_rate: Some(400.0),
@@ -871,7 +871,7 @@ fn collect_rows() -> (Vec<Row>, Vec<String>) {
             Err(e) => skipped.push(format!("ProjectCurve @ cell {cell:.2}: {e}")),
         }
         let horizontal = OperationConfig::HorizontalFinish(HorizontalFinishConfig {
-            stepover: 1.0,
+            stepover: Some(1.0),
             feed_rate: Some(1000.0),
             plunge_rate: Some(500.0),
             spindle_rpm: Some(18_000),

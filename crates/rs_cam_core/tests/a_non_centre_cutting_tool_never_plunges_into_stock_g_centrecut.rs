@@ -84,8 +84,8 @@ fn bulk_bit(non_centre_cutting: bool) -> ToolConfig {
 /// generation and simulation.
 fn rough_and_simulate(entry_style: Adaptive3dEntryStyle) -> rs_cam_core::session::ProjectSession {
     let cfg = Adaptive3dConfig {
-        stepover: 6.0,
-        depth_per_pass: 6.0,
+        stepover: Some(6.0),
+        depth_per_pass: Some(6.0),
         stock_to_leave_axial: 0.5,
         feed_rate: Some(3000.0),
         entry_style,

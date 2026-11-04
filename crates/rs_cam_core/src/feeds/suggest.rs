@@ -827,11 +827,21 @@ pub struct SuggestForOperationInput<'a> {
 /// but the GUI / CLI / MCP Suggest buttons should surface the refusal
 /// to the user instead of writing a meaningless recipe into the op.
 pub fn suggest_params(input: SuggestParamsInput<'_>) -> Result<SuggestedParams, FeedsError> {
-    let operation = default_operation(input.op_type, input.stock_ctx);
+    // P10 (ruling D8): the add door writes the tool's geometry rule values
+    // first, so Suggest writes the speeds for that geometry.
+    let (operation, rule_stamps) = default_operation_for_tool(
+        input.op_type,
+        input.stock_ctx,
+        crate::compute::geometry_default::RuleContext {
+            tool: input.tool,
+            material: input.material,
+            machine: input.machine,
+        },
+    );
     // G6 ramp: an add door builds `DressupConfig::for_op(op_type)` after
     // this call, so the entry θ it will ship is known here.
     let default_dressups = crate::compute::config::DressupConfig::for_op(input.op_type);
-    suggest_for_operation(SuggestForOperationInput {
+    let mut suggested = suggest_for_operation(SuggestForOperationInput {
         operation: &operation,
         tool: input.tool,
         machine: input.machine,
@@ -842,7 +852,49 @@ pub fn suggest_params(input: SuggestParamsInput<'_>) -> Result<SuggestedParams, 
             dressups: input.context.dressups.or(Some(&default_dressups)),
             ..input.context
         },
-    })
+    })?;
+    merge_rule_stamps(&mut suggested.provenance, &rule_stamps);
+    Ok(suggested)
+}
+
+/// P10 (ruling D8): [`default_operation`] with the geometry rule values of
+/// the tool of `ctx` (`compute::geometry_default`), and the stamp of each.
+#[must_use]
+pub fn default_operation_for_tool(
+    op_type: OperationType,
+    stock_ctx: &StockContext,
+    ctx: crate::compute::geometry_default::RuleContext<'_>,
+) -> (OperationConfig, crate::feeds::FeedsProvenance) {
+    let mut operation = default_operation(op_type, stock_ctx);
+    let mut stamps = crate::feeds::FeedsProvenance::default();
+    let _ = crate::compute::geometry_default::write_rule_values(
+        &mut operation,
+        &mut stamps,
+        ctx,
+        crate::compute::geometry_default::Keep::Nothing,
+    );
+    (operation, stamps)
+}
+
+/// P10: copy each geometry stamp of `rule` into `into` where `into` has no
+/// stamp (the speeds-only funnel stamps no geometry).
+pub fn merge_rule_stamps(
+    into: &mut crate::feeds::FeedsProvenance,
+    rule: &crate::feeds::FeedsProvenance,
+) {
+    use crate::feeds::FeedsField;
+    for slot in [
+        FeedsField::Stepover,
+        FeedsField::DepthPerPass,
+        FeedsField::PeckDepth,
+        FeedsField::ZStep,
+    ] {
+        if into.get(slot).is_none()
+            && let Some(stamp) = rule.get(slot)
+        {
+            into.set(slot, stamp.clone());
+        }
+    }
 }
 
 /// The operation `suggest_params` starts from: the registry default with

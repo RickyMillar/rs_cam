@@ -69,7 +69,7 @@ fn the_envelope_plot_marks_the_operator_and_the_proposal_k2b() {
     let (fixture, _) = envelope_for(OperationType::Pocket).expect("the Pocket is backed");
     let mut inside = fixture;
     if let rs_cam_core::compute::catalog::OperationConfig::Pocket(c) = &mut inside {
-        c.depth_per_pass = 1.0;
+        c.depth_per_pass = Some(1.0);
     }
     let (config, env) = envelope_k2b::envelope_of(inside).expect("the Pocket is backed");
     let scene = EnvelopeScene::of(&env, None);

@@ -51,7 +51,7 @@ const WANAKA_STEPOVER_MM: f64 = 1.5;
 
 fn drop_cutter(stepover: f64, scallop_height: Option<f64>) -> OperationConfig {
     OperationConfig::DropCutter(DropCutterConfig {
-        stepover,
+        stepover: Some(stepover),
         scallop_height,
         ..DropCutterConfig::default()
     })

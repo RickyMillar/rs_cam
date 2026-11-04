@@ -139,7 +139,7 @@ fn drill_op() -> OperationConfig {
     OperationConfig::Drill(DrillConfig {
         floor: rs_cam_core::compute::floor::Floor::Top { depth: DEPTH },
         cycle: DrillCycleType::Peck,
-        peck_depth: 15.0,
+        peck_depth: Some(15.0),
         retract_z: 2.0,
         feed_rate: Some(2082.0),
         ..DrillConfig::default()

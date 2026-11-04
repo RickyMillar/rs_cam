@@ -210,7 +210,7 @@ fn session(boundary: BoundaryConfig, top: HeightMode, face_up: FaceUp) -> Projec
     let tool_id = builder.tools()[tool_idx].id.raw();
     let model_id = builder.add_model(part_model());
     let op = OperationConfig::DropCutter(DropCutterConfig {
-        stepover: 1.0,
+        stepover: Some(1.0),
         ..DropCutterConfig::default()
     });
     let mut cfg = toolpath_config(

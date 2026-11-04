@@ -192,7 +192,7 @@ const CLEAR_FLOOR_Z: f64 = 20.0;
 fn pocket(floor_z: f64, depth_per_pass: f64) -> OperationConfig {
     OperationConfig::Pocket(PocketConfig {
         floor: Floor::Z { z: floor_z },
-        depth_per_pass,
+        depth_per_pass: Some(depth_per_pass),
         ..PocketConfig::default()
     })
 }

@@ -80,8 +80,8 @@ fn build_as013_terrain_session() -> ProjectSession {
         ramp_feed_rate: None,
         trochoid_cap_mult: 1.6,
         engagement_measure: rs_cam_core::adaptive::EngagementMeasure::DiskArea,
-        stepover: 1.2,
-        depth_per_pass: 3.0,
+        stepover: Some(1.2),
+        depth_per_pass: Some(3.0),
         stock_to_leave_axial: 0.5,
         feed_rate: Some(2500.0),
         plunge_rate: Some(500.0),
@@ -190,7 +190,7 @@ fn adaptive3d_emitted_z_ladder_honours_commanded_depth_per_pass() {
         reason = "test: an unexpected variant panics"
     )]
     let commanded_dpp = match &session.toolpath_configs()[0].operation {
-        OperationConfig::Adaptive3d(cfg) => cfg.depth_per_pass,
+        OperationConfig::Adaptive3d(cfg) => cfg.depth_per_pass.unwrap_or(f64::NAN),
         other => panic!("fixture drift: toolpath 0 is not adaptive3d, got {other:?}"),
     };
 

@@ -57,6 +57,22 @@ touches names it in its invariants.
   (`compute::not_set`), as an unset depth does. Sentries:
   `--test a_tool_fact_states_how_it_is_known_k3`, `--doc tool_fact` (`compile_fail`:
   a read of a fact field, a `Default`, a `Deref`).
+- D8 (P10): no geometry default without a tool. The tool-derived fields
+  (`stepover`, `depth_per_pass`, `peck_depth`, `offset_stepover`, `z_step`,
+  Ramp Finish `max_stepdown`, Unified Finish `raster_stepover`) are
+  `Option` (S11 unset; generation stops with `NotSetKind::Geometry`, "set a
+  tool"). Each `REG_*` row states `geometry: &[GeometryDefault]` (a required
+  field) with one `ToolRule` per field (`compute/geometry_default.rs`):
+  `FractionOfD(KRow)`, k an F201 row (a stepover: the calculator's own width on an
+  unstated axis, `feeds::default_radial_width`, stamped with the family
+  `ae_factor` row; an axial field: `AXIAL_K_*`, today's default over 6 mm, Unsourced), or
+  `ScallopChordElse` (a ball tip with the op's set `scallop_height` h:
+  `2 sqrt(2 R h - h^2)`). `write_rule_values` is the one writer: the add door
+  (`default_operation_for_tool`) and the tool change (`seed_geometry`; a rule
+  stamp moves, a `Manual` stamp, a pick and no stamp stay). The stamp is
+  `ValueProvenance::of_basis(Basis::Rule(row))`; the lineage shows it.
+  Sentries: `--test every_geometry_default_is_a_fraction_of_the_tool_d8`,
+  `--test a_tool_change_moves_a_derived_geometry_value_d8`.
 - K7: one engagement definition before and after the simulation (P9, ruling
   Q5). `feeds/engagement.rs`: `Engagement { ap, ae, psi, d_eng, section, helix }`
   (private fields, accessors) is built only by `from_cut` (a planned cut: psi from
