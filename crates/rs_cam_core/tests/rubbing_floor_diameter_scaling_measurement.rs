@@ -694,6 +694,7 @@ fn sweep() -> Vec<Row> {
                         vendor_lut: Some(lut),
                         setup: SetupContext::default(),
                         spindle_strategy: SpindleStrategy::MatchChart,
+                        power_cases: rs_cam_core::feeds::engagement::PowerCases::NOMINAL,
                     };
                     let result = calculate(&input);
                     let divisor = result.rpm * f64::from(tool.flutes);

@@ -1008,16 +1008,19 @@ impl RsCamApp {
                 "error": format!("Toolpath index {index} not found")
             }));
         };
-        match state.session().result_at(index) {
+        // K7 (feeds contract P9): with a fresh trace (on the viz-side
+        // state), the lineage records the measured placement.
+        let evidence = super::diagnostics::viz_project_evidence(state);
+        match state.session().lineage_measured(index, evidence.cut_trace) {
             None => json_str(serde_json::json!({
                 "toolpath_id": tc.id,
                 "toolpath_name": tc.name,
                 "error": "The toolpath has no result. Generate it first.",
             })),
-            Some(result) => json_str(serde_json::json!({
+            Some(lineage) => json_str(serde_json::json!({
                 "toolpath_id": tc.id,
                 "toolpath_name": tc.name,
-                "lineage": result.lineage.to_json(),
+                "lineage": lineage.to_json(),
             })),
         }
     }

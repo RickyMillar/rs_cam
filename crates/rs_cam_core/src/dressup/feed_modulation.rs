@@ -64,7 +64,6 @@ use std::collections::BTreeMap;
 use crate::feeds::force::DeflectionCapRefusal;
 use crate::machine::CuttingCeilingMmMin;
 use crate::machine::kinematics::{MachineKinematics, predicted_feeds_for_toolpath};
-use crate::tool_load::power::PowerModelInputs;
 use crate::toolpath::{MoveIntent, MoveType, Toolpath};
 
 pub use crate::tool_load::BindingConstraint;
@@ -266,6 +265,10 @@ pub struct PowerLimitInputs {
     pub line: crate::material::force_line::ForceLine,
     /// Effective diameter at the engagement depth (mm).
     pub engagement_diameter_mm: f64,
+    /// K7 (feeds contract P9): the cutter's shape, so the power cap reads
+    /// the cutter's own chip section (a V-bit removes half the rectangle),
+    /// the section Suggest and the post-sim gate read.
+    pub geometry: crate::feeds::ToolGeometryHint,
     /// Available spindle power × safety factor at the running RPM
     /// (kW). The constrained-max solver caps the feed so the predicted
     /// two-term power (`tool_load::power::PowerTerms`) stays inside
@@ -583,21 +586,22 @@ fn max_safe_feed_for_move(
                 // Callers pass the force line; `PowerTerms::of` applies
                 // its grain factor (S2-9), so the factor is one diff.
                 //
+                // K7 (feeds contract P9): the one engagement of the cut.
                 // ψ from the same `cos ψ = 1 − 2·woc_fraction` the
-                // deflection cap uses — the modulator has one
-                // engagement definition, not two.
-                let terms = crate::tool_load::power::PowerTerms::of(PowerModelInputs {
-                    line: pow.line,
-                    cross_section_mm2: axial_mm * radial_width,
-                    axial_doc_mm: axial_mm,
-                    immersion_rad: crate::feeds::force::immersion_angle(
-                        radial_width,
-                        pow.engagement_diameter_mm / 2.0,
-                    ),
-                    engagement_diameter_mm: pow.engagement_diameter_mm,
-                    spindle_rpm: ctx.spindle_rpm,
-                    flute_count: flutes,
-                });
+                // deflection cap uses, and the cutter's own section, so the
+                // cap, Suggest and the gate read one power for one cut.
+                let terms = crate::tool_load::power::PowerTerms::of(
+                    crate::feeds::engagement::Engagement::from_cut(
+                        crate::feeds::envelope::CutPoint {
+                            ap_mm: axial_mm,
+                            ae_mm: radial_width,
+                        },
+                        pow.geometry,
+                        pow.engagement_diameter_mm,
+                        None,
+                    )
+                    .power_inputs(pow.line, ctx.spindle_rpm, flutes),
+                );
                 match terms.feed_for_kw(pow.available_kw) {
                     Some(pow_cap) => limits.push((pow_cap, BindingConstraint::PowerMax)),
                     None => {
@@ -1763,6 +1767,7 @@ mod tests {
         ctx.power_inputs = Some(PowerLimitInputs {
             line: crate::material::force_line::ForceLine::goli_2018_mdf(),
             engagement_diameter_mm: 6.0,
+            geometry: crate::feeds::ToolGeometryHint::Flat,
             available_kw: 0.001,
         });
         let (feed, binding) =

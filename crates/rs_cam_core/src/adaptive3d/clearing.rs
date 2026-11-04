@@ -45,6 +45,17 @@ pub(super) const MIN_CELLS_TO_CLEAR: u64 = 4;
 /// the default of the load-only `Adaptive3dConfig::trochoid_cap_mult`.
 const TROCHOID_CAP_MULT_3D: f64 = 1.6;
 
+/// The trochoid cap the planner holds for a configured value: the value
+/// when finite and positive, else [`TROCHOID_CAP_MULT_3D`]. K7 (feeds
+/// contract P9): the pre-sim power case `PlannerCap` reads this one rule.
+pub(crate) fn effective_trochoid_cap_mult(configured: f64) -> f64 {
+    if configured.is_finite() && configured > 0.0 {
+        configured
+    } else {
+        TROCHOID_CAP_MULT_3D
+    }
+}
+
 // ── Region detection ──────────────────────────────────────────────────
 
 /// A connected region of material detected by flood fill on the heightmap.
@@ -3785,11 +3796,7 @@ pub(super) fn clear_z_level_slice(
         // ContourSpiral (3D) used the spiral here until removal step R4.
         path_strategy: crate::adaptive::PathStrategy2d::Agent,
         // Not read by the agent planner; the guard keeps the value valid.
-        trochoid_cap_mult: if ctx.trochoid_cap_mult.is_finite() && ctx.trochoid_cap_mult > 0.0 {
-            ctx.trochoid_cap_mult
-        } else {
-            TROCHOID_CAP_MULT_3D
-        },
+        trochoid_cap_mult: effective_trochoid_cap_mult(ctx.trochoid_cap_mult),
         // Research C12: the arm plans under the 2D pass load and emits its
         // links as cuts (`plan_one_outline`).
         keep_down_links: crate::adaptive::KeepDownLinks::WithinPassLoad,

@@ -208,6 +208,7 @@ fn explain_with_a_row() -> FeedsExplain {
         vendor_lut: Some(embedded_vendor_lut()),
         setup: SetupContext::default(),
         spindle_strategy: SpindleStrategy::default(),
+        power_cases: rs_cam_core::feeds::engagement::PowerCases::NOMINAL,
     };
     let explain = explain_feeds(&input);
     assert!(

@@ -251,6 +251,7 @@ fn constrained_max_binds_on_power_for_low_rpm() {
         .force_line()
         .expect("generic hardwood has a force line"),
         engagement_diameter_mm: 6.0,
+        geometry: rs_cam_core::feeds::ToolGeometryHint::Flat,
         available_kw: 0.01,
     });
     let outcome = adaptive_feed_modulate(&mut tp, &engagements, &ctx).unwrap();

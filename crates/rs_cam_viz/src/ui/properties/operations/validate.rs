@@ -540,6 +540,11 @@ pub fn collect_diagnostics(
         // K5 ReachFlute: what a fresh simulation measured (core
         // `ProjectSession::flute_reach_measured`).
         flute_reach,
+        // K7 (feeds contract P9): the ribbon does not place the measured
+        // engagement yet; it needs a memo (the envelope costs a calculator
+        // grid). The export, the pre-flight and MCP read
+        // `ProjectSession::envelope_placement_measured`.
+        envelope_placement: None,
     };
     // G-DEPTHSTOCKCORE (F1.18): the depth-beyond-stock caution used to be
     // appended here from a second, GUI-side copy of the rule. Both copies

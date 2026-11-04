@@ -488,6 +488,7 @@ fn the_mdf_vcarve_rpm_stays_at_the_engaged_width_b4() {
         vendor_lut: Some(embedded_vendor_lut()),
         setup: SetupContext::default(),
         spindle_strategy: SpindleStrategy::MatchChart,
+        power_cases: rs_cam_core::feeds::engagement::PowerCases::NOMINAL,
     });
     let row = result
         .matched_lut_row
@@ -553,6 +554,7 @@ fn the_vbit_parallel_finish_cells_refuse_b4() {
                     vendor_lut: Some(embedded_vendor_lut()),
                     setup: SetupContext::default(),
                     spindle_strategy: SpindleStrategy::MatchChart,
+                    power_cases: rs_cam_core::feeds::engagement::PowerCases::NOMINAL,
                 });
                 match support {
                     FeedsSupport::Refuse { reason } => {
@@ -691,6 +693,7 @@ fn the_band_de_rate_follows_the_nominal_diameter_not_the_engaged_width_b4() {
             vendor_lut: Some(embedded_vendor_lut()),
             setup: SetupContext::default(),
             spindle_strategy: SpindleStrategy::MatchChart,
+            power_cases: rs_cam_core::feeds::engagement::PowerCases::NOMINAL,
         });
         // Non-vacuity: no clamp (the flute guard, the minimum engagement,
         // Step 4b slotting) moved `ap` away from the depth this test means

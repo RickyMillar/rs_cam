@@ -2270,6 +2270,8 @@ fn modulate_annotated_against_trace(
                 // re-encode the multiplier.
                 line,
                 engagement_diameter_mm: engagement_dia,
+                // K7: the cutter's own section in the power cap.
+                geometry: tool_cfg.geometry_hint(),
                 available_kw,
             }),
             _ => None,

@@ -57,6 +57,31 @@ touches names it in its invariants.
   (`compute::not_set`), as an unset depth does. Sentries:
   `--test a_tool_fact_states_how_it_is_known_k3`, `--doc tool_fact` (`compile_fail`:
   a read of a fact field, a `Default`, a `Deref`).
+- K7: one engagement definition before and after the simulation (P9, ruling
+  Q5). `feeds/engagement.rs`: `Engagement { ap, ae, psi, d_eng, section, helix }`
+  (private fields, accessors) is built only by `from_cut` (a planned cut: psi from
+  `immersion_angle`) and `from_sample` (a simulation sample: the geometric inverse
+  `ae = r (1 - cos psi)`, lead decision D-W); the section is the cutter's own
+  `mrr_cross_section_mm2`. `PowerModelInputs` has private fields in the same file,
+  so only `Engagement::power_inputs` builds it: the calculator Step 6, the
+  operating-point door, the post-sim gate `sample_power_kw` and the modulator power
+  cap read one power for one cut; the deflection predictor reads
+  `Engagement::lateral_force`. Pre-sim power is the maximum over `PowerCases`
+  (`Nominal`, `PlannerCap` = 3D Rough `trochoid_cap_mult x ae` at most D, `Slot` =
+  `FirstPass::Slot` or `Radial::Slot`), with its `PowerCase` on `FeedsResult` and
+  `PowerFigure`; the envelope power edge is drawn at that case. The simulation is
+  placed, not fed back: `compute::simulate::envelope_placement` (the tenth shared
+  decision, the gate population) places each sample against the envelope ceilings
+  (`SafeEnvelope::placement_of_measured`: no floors; the `Diameter` ceiling is the
+  engaged diameter `Engagement::d_eng`; a cone tool is not judged by the slot rule);
+  a point outside is `project.sim_outside_envelope` (a warning,
+  `Gate::SimOutsideEnvelope`; it supersedes the pre-sim `project.outside_envelope`),
+  and the K8 lineage records the measured peak, the case "measured" and the binding
+  limit (`ProjectSession::lineage_measured`, `Lineage::measured`). Sentries:
+  `--test one_engagement_before_and_after_the_simulation_k7`,
+  `--test pre_sim_power_ships_the_worst_case_k7`,
+  `--test the_simulation_is_placed_not_fed_back_k7`, `--doc engagement`
+  (`compile_fail`: an `Engagement` literal).
 - K8: every generated toolpath carries its lineage (ruling Q7). `trace/lineage.rs`:
   `Lineage { cut, pick, speeds, tool_facts, entry, findings, rules }` (no `Default`)
   is a required field of `ToolpathComputeResult` (`lineage: Arc<Lineage>`; lead
@@ -67,7 +92,8 @@ touches names it in its invariants.
   tool fact records its `FactKind` (K3; the diameter is `Stated`), and each
   Unknown fact adds one `tool.fact_unknown` warning (the facts the lineage lists,
   the shank diameter, and the taper of a tapered tool); `rules` holds the K5
-  `RuleResult` rows of the feasibility stage (P7).
+  `RuleResult` rows of the feasibility stage (P7); `measured` (K7, P9) holds what a fresh
+  simulation measured on the envelope, attached by `ProjectSession::lineage_measured`.
   `Lineage::unrecorded` is the test door of a hand-built result. Surfaces: the
   inspector Lineage `Details`, MCP `get_toolpath_lineage`, CLI `summary.json`
   `lineage`. Sentries: `--test every_generated_toolpath_has_a_lineage_k8`,

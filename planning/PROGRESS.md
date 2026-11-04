@@ -104,6 +104,18 @@ Unsourced rows, pin 149 -> 154) and the lineage warns (`tool.fact_unknown`).
 The operator's `~/.config/rs_cam/tools/` catalogue waits for the lead
 (`--backup`).
 
+Phase 9 (K7, one engagement) implemented 2026-11-04/05 (agent; the lead
+reviews and commits): `feeds::engagement::Engagement` (`from_cut`,
+`from_sample`) builds the power inputs of Suggest, the post-sim gate and the
+modulator power cap, so one cut has one power. The gate width of a measured arc
+is `r (1 - cos psi)` (D-W); a V-bit modulator cap reads the V section. Pre-sim
+power is the maximum over the nominal, slot and planner-cap cases and names its
+case. The simulation is placed on the envelope, not fed back (Q5):
+`project.sim_outside_envelope` warns. FM1: 127 `power_kw` and 51 `chip_regime`
+cells moved; no rpm, feed or depth cell moved. Open: the inspector ribbon does
+not show the placement; the heavy FM1 sim CSV and `wanaka_suggest_integration`
+wait for the lead (G3).
+
 ## Update 2026-10-29 — viewport parity: phase 0 landed
 
 `planning/viewport_parity_2026-10-28/` (research REPORT.md, design A-F,

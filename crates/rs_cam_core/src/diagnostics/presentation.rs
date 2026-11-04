@@ -336,6 +336,11 @@ pub const TABLE: &[(&str, Anchor, &str)] = &[
         f("depth_per_pass"),
         "Cut outside the safe envelope",
     ),
+    (
+        ids::PROJECT_SIM_OUTSIDE_ENVELOPE,
+        f("depth_per_pass"),
+        "Simulated cut outside the safe envelope",
+    ),
     (ids::PROJECT_LINK_CUTS_STOCK, OP, "Link move cuts stock"),
     (
         ids::PROJECT_ROUGH_LEAVES_ISLANDS,

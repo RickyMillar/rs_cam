@@ -1430,6 +1430,7 @@ fn the_two_doc_ratio_diameters_only_diverge_for_v_bit_geometry() {
                 vendor_lut: None,
                 setup: SetupContext::default(),
                 spindle_strategy: SpindleStrategy::default(),
+                power_cases: rs_cam_core::feeds::engagement::PowerCases::NOMINAL,
             });
             // The DOC that actually survived every clamp inside calculate.
             let ap = result.axial_depth_mm;

@@ -886,6 +886,166 @@ pub fn flute_overreach_row(result: &SimulationResult, id: ToolpathId) -> Option<
     ))
 }
 
+/// K7 (feeds contract P9): one measured point of a toolpath on its K2b
+/// envelope. The case is "measured": the engagement of a simulation sample
+/// ([`crate::feeds::engagement::Engagement::from_sample`]).
+#[derive(Debug, Clone, Copy, PartialEq, serde::Serialize)]
+pub struct MeasuredPoint {
+    /// The index of the sample in the cut trace.
+    pub sample_index: usize,
+    /// The toolpath's own move index.
+    pub move_index: usize,
+    /// The measured depth and width.
+    pub point: crate::feeds::envelope::CutPoint,
+    /// The power of the sample (kW) at its effective feed, the number the
+    /// power gate reads. `None` for a material with no force line.
+    pub power_kw: Option<f64>,
+    /// Where the point sits against the ceilings of the envelope.
+    pub placement: crate::feeds::envelope::Placement,
+    /// For a point outside: the value the binding limit judges and the
+    /// limit there.
+    pub judged: Option<crate::feeds::envelope::JudgedValue>,
+}
+
+/// K7 (feeds contract P9): the measured engagement of one toolpath placed
+/// against its K2b envelope. Ruling Q5: nothing here feeds Suggest; the
+/// diagnostics, the export and the lineage read it.
+#[derive(Debug, Clone, PartialEq, serde::Serialize)]
+pub struct EnvelopePlacement {
+    /// The steady-state cutting samples placed (the gate's population).
+    pub placed: usize,
+    /// The samples outside a ceiling of the envelope.
+    pub outside: usize,
+    /// The point that crosses a ceiling by the largest share.
+    pub worst: Option<MeasuredPoint>,
+    /// The point of the largest power.
+    pub peak: Option<MeasuredPoint>,
+}
+
+impl EnvelopePlacement {
+    /// The warning text when a point sits outside, else `None`. It names
+    /// the binding limit, the count and the worst point.
+    #[must_use]
+    pub fn outside_row(&self) -> Option<String> {
+        let worst = self.worst.filter(|_| self.outside > 0)?;
+        let crate::feeds::envelope::Placement::Outside { binding, margin } = worst.placement else {
+            return None;
+        };
+        let judged = worst.judged.map_or_else(String::new, |j| {
+            format!(
+                "; {} {:.2} mm against the limit {:.2} mm",
+                j.axis, j.measured_mm, j.limit_mm
+            )
+        });
+        Some(format!(
+            "the simulation measured {} of {} cutting samples outside the safe envelope; \
+             the worst crosses the {} by {:.0} % (move {}: depth {:.2} mm, width {:.2} mm{judged})",
+            self.outside,
+            self.placed,
+            binding.label(),
+            -margin * 100.0,
+            worst.move_index,
+            worst.point.ap_mm,
+            worst.point.ae_mm,
+        ))
+    }
+}
+
+/// K7 (feeds contract P9), the tenth shared decision: place the measured
+/// engagement of toolpath `ctx.toolpath_id` against `envelope`.
+///
+/// The population is the power gate's: a cutting sample with an arc that
+/// passes [`crate::tool_load::locality::is_steady_state_for_gate`] (never a
+/// second copy). Each sample is one
+/// [`crate::feeds::engagement::Engagement::from_sample`]; its power is
+/// [`crate::tool_load::power::sample_power_kw`] at the effective feed. The
+/// point is placed against the ceilings
+/// ([`crate::feeds::envelope::SafeEnvelope::placement_of_measured`]).
+/// The caller states that `trace` is fresh for the toolpath
+/// (`ProjectSession::envelope_placement_measured`).
+#[must_use]
+pub fn envelope_placement(
+    trace: &crate::stock::simulation_cut::SimulationCutTrace,
+    ctx: &crate::tool_load::ToolpathLoadContext<'_>,
+    envelope: &crate::feeds::envelope::SafeEnvelope,
+) -> EnvelopePlacement {
+    use crate::feeds::envelope::Placement;
+    let line = ctx.material.force_line().ok();
+    let span_lookup = ctx.spans.map(crate::tool_load::locality::SpanLookup::new);
+    let mut out = EnvelopePlacement {
+        placed: 0,
+        outside: 0,
+        worst: None,
+        peak: None,
+    };
+    // Lead decision (2026-11-05): a cone tool is judged at its engaged
+    // diameter and not by the slot rule (`placement_of_measured`).
+    let cone = match ctx.tool.geometry_hint() {
+        crate::feeds::ToolGeometryHint::VBit { .. }
+        | crate::feeds::ToolGeometryHint::TaperedBall { .. } => true,
+        crate::feeds::ToolGeometryHint::Flat
+        | crate::feeds::ToolGeometryHint::Ball
+        | crate::feeds::ToolGeometryHint::Bull { .. } => false,
+    };
+    let measured_tool = |d_eng_mm: f64| crate::feeds::envelope::MeasuredTool { d_eng_mm, cone };
+    for (i, s) in trace.samples.iter().enumerate() {
+        if s.toolpath_id != ctx.toolpath_id
+            || !crate::tool_load::locality::is_steady_state_for_gate(s, span_lookup.as_ref())
+        {
+            continue;
+        }
+        let Some(engagement) = crate::feeds::engagement::Engagement::from_sample(s, ctx.tool)
+        else {
+            continue;
+        };
+        let feed = crate::tool_load::effective_feed_for_sample(s, &trace.predicted_feeds);
+        let power_kw = line
+            .and_then(|line| crate::tool_load::power::sample_power_kw(ctx.tool, &line, s, feed));
+        let point = MeasuredPoint {
+            sample_index: i,
+            move_index: s.move_index,
+            point: engagement.cut_point(),
+            power_kw,
+            placement: envelope.placement_of_measured(
+                engagement.cut_point(),
+                measured_tool(engagement.d_eng_mm()),
+            ),
+            judged: None,
+        };
+        let point = match point.placement {
+            Placement::Outside { binding, .. } => MeasuredPoint {
+                judged: envelope.judged_value(
+                    binding,
+                    point.point,
+                    measured_tool(engagement.d_eng_mm()),
+                ),
+                ..point
+            },
+            Placement::Inside { .. } => point,
+        };
+        out.placed += 1;
+        if let Placement::Outside { margin, .. } = point.placement {
+            out.outside += 1;
+            let worse = match out.worst.map(|w| w.placement) {
+                Some(Placement::Outside { margin: m, .. }) => margin < m,
+                Some(Placement::Inside { .. }) | None => true,
+            };
+            if worse {
+                out.worst = Some(point);
+            }
+        }
+        let higher = match (power_kw, out.peak.and_then(|p| p.power_kw)) {
+            (Some(p), Some(q)) => p > q,
+            (Some(_), None) => true,
+            (None, Some(_) | None) => out.peak.is_none(),
+        };
+        if higher {
+            out.peak = Some(point);
+        }
+    }
+    out
+}
+
 /// G-CENTRECUT: one core strike ([`crate::stock::collision::NonCentreCuttingDescent`])
 /// and the toolpath it belongs to. `descent.move_index` is the toolpath's
 /// own move index.

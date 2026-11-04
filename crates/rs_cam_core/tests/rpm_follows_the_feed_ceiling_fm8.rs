@@ -87,6 +87,7 @@ fn ball_pocket(machine: &MachineProfile, lut: &VendorLut) -> FeedsResult {
         vendor_lut: Some(lut),
         setup: SetupContext::default(),
         spindle_strategy: SpindleStrategy::MatchChart,
+        power_cases: rs_cam_core::feeds::engagement::PowerCases::NOMINAL,
     })
 }
 

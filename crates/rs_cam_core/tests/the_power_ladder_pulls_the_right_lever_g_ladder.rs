@@ -72,6 +72,7 @@ fn recipe(machine: &MachineProfile, pinned_depth: Option<f64>) -> rs_cam_core::f
         vendor_lut: Some(embedded_vendor_lut()),
         setup: SetupContext::default(),
         spindle_strategy: SpindleStrategy::MatchChart,
+        power_cases: rs_cam_core::feeds::engagement::PowerCases::NOMINAL,
     })
 }
 

@@ -137,6 +137,7 @@ fn pocket_rough(machine: &MachineProfile, tool: &ToolConfig) -> FeedsResult {
             tool_overhang_mm: Some(tool.stickout_planning_mm()),
         },
         spindle_strategy: SpindleStrategy::MatchChart,
+        power_cases: rs_cam_core::feeds::engagement::PowerCases::NOMINAL,
     })
 }
 
@@ -163,6 +164,7 @@ fn drill_cycle(machine: &MachineProfile, tool: &ToolConfig) -> FeedsResult {
             tool_overhang_mm: Some(tool.stickout_planning_mm()),
         },
         spindle_strategy: SpindleStrategy::MatchChart,
+        power_cases: rs_cam_core::feeds::engagement::PowerCases::NOMINAL,
     })
 }
 

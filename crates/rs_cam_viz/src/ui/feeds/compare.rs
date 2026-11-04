@@ -1021,7 +1021,9 @@ fn power_hover(figure: &PowerFigure, source: &BoundSource) -> String {
          {:.3} mm, width of cut {:.3} mm, {:.0} rpm, feed {:.0} mm/min. The \
          bar describes the depth that WILL be cut, not the depth the \
          calculator sized its feed at \u{2014} the rigidity clamp can lower \
-         one without moving the other.",
+         one without moving the other.\n\n\
+         Power case: {} (width {:.3} mm), the largest of the cases the cut \
+         admits (K7).",
         figure.required_kw,
         figure.available_kw,
         power_face(figure),
@@ -1031,6 +1033,8 @@ fn power_hover(figure: &PowerFigure, source: &BoundSource) -> String {
         figure.ae_mm,
         figure.rpm,
         figure.feed_mm_min,
+        figure.case.label(),
+        figure.case_ae_mm,
     )
 }
 

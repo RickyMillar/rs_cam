@@ -69,49 +69,13 @@
 
 use crate::material::force_line::ForceLine;
 use crate::stock::simulation_cut::RadialEngagementClass;
-use crate::tool::MillingCutter;
 
 use super::locality::SpanLookup;
 use super::verdict::{Confidence, EntrySpike, PowerVerdict, SampleEvidence, UnmodeledReason};
 
-/// The feed-independent half of a power prediction: material, engaged
-/// geometry and spindle speed. Feed is supplied separately because the
-/// whole point of the two-term model is that only one term moves with
-/// it — see [`PowerTerms`].
-///
-/// `line` is the material's force line from `Material::force_line()`.
-/// [`PowerTerms::of`] applies its grain factor, so callers never
-/// pre-multiply.
-#[derive(Debug, Clone, Copy, PartialEq)]
-pub(crate) struct PowerModelInputs {
-    /// The material's force line.
-    pub line: ForceLine,
-    /// Shape-correct engaged chip cross-section (mm²) at this DOC + WOC
-    /// — `MillingCutter::mrr_cross_section_mm2` / the geometry hint's
-    /// equivalent. Rectangular slab for endmills, triangular for
-    /// V-bits. `cross_section × feed` is the MRR the shear term needs.
-    pub cross_section_mm2: f64,
-    /// Axial engagement `ap` (mm). `F_edge` is a force per mm of axial
-    /// engagement, so the edge term scales with this and NOT with the
-    /// cross-section. Kept plain (not divided by a taper's edge
-    /// obliquity) to stay consistent with `feeds::force`, which does
-    /// the same.
-    pub axial_doc_mm: f64,
-    /// Engagement (immersion) arc ψ (rad) — the simulator's
-    /// `arc_engagement_radians`, or
-    /// [`crate::feeds::force::immersion_angle`] from `ae/r`. Drives the
-    /// duty cycle `z·ψ/2π`: how much of each revolution a tooth spends
-    /// ploughing.
-    pub immersion_rad: f64,
-    /// Cutting diameter at the engaged depth (mm) — sets the cutting
-    /// velocity `Vc = π·D·n`. For a V-bit or tapered ball this is the
-    /// contact circle at the DOC, not the nominal shank.
-    pub engagement_diameter_mm: f64,
-    /// Spindle speed (rev/min).
-    pub spindle_rpm: f64,
-    /// Flute count `z`.
-    pub flute_count: f64,
-}
+/// K7 (feeds contract P9): the inputs are built only by
+/// [`crate::feeds::engagement::Engagement::power_inputs`].
+pub(crate) use crate::feeds::engagement::PowerModelInputs;
 
 /// A power prediction split by feed dependence: `P(feed) = shear·feed +
 /// edge`.
@@ -147,15 +111,13 @@ impl PowerTerms {
     /// the callers that can refuse already do so upstream on the same
     /// inputs.
     pub(crate) fn of(inputs: PowerModelInputs) -> Self {
-        let PowerModelInputs {
-            line,
-            cross_section_mm2,
-            axial_doc_mm,
-            immersion_rad,
-            engagement_diameter_mm,
-            spindle_rpm,
-            flute_count,
-        } = inputs;
+        let line = inputs.line();
+        let cross_section_mm2 = inputs.cross_section_mm2();
+        let axial_doc_mm = inputs.axial_doc_mm();
+        let immersion_rad = inputs.immersion_rad();
+        let engagement_diameter_mm = inputs.engagement_diameter_mm();
+        let spindle_rpm = inputs.spindle_rpm();
+        let flute_count = inputs.flute_count();
         let (ks, f_edge) = (line.ks_n_per_mm2(), line.f_edge_n_per_mm());
         let grain_factor = line.grain_factor();
 
@@ -260,50 +222,21 @@ pub fn sample_power_kw(
     sample: &crate::stock::simulation_cut::SimulationCutSample,
     feed_mm_min: f64,
 ) -> Option<f64> {
-    if sample.is_air() {
-        return None;
-    }
-    let arc = sample.arc_engagement_radians?;
-    // Power formula. Arc-equivalent radial slab width:
-    //   radial_width = (arc / π) × engagement_radius × 2
-    // For a half-engagement (arc = π/2), this gives `engagement_radius`.
-    // For a slot (arc = π), it gives 2× engagement_radius — the full
-    // tool diameter — which is the correct engaged width for slotting.
-    let engagement_radius = tool.engagement_radius(sample.axial_doc_mm).max(0.0);
-    let radial_width = (arc / std::f64::consts::PI) * engagement_radius * 2.0;
-    if radial_width <= 0.0 {
-        return None;
-    }
-    // Engaged chip cross-section is shape-dependent: rectangular slab
-    // for endmills, triangular groove for V-bits. The cutter owns that
-    // geometry; the gate owns the material + machine physics. Route
-    // through the canonical `predicted_power_kw` helper so this gate
-    // and the Suggest path (`feeds::calculate`) can't diverge.
-    //
-    // R1: the edge term needs the sample's own rotation and arc, not
-    // just its swept volume. `arc` IS ψ — the same immersion angle
-    // `dexel_stock::stamping` derived it from — and the engaged
-    // diameter is twice the engagement radius already computed above.
-    let cross_section_mm2 = tool.mrr_cross_section_mm2(sample.axial_doc_mm, radial_width);
+    // K7 (feeds contract P9): the one engagement of a sample. The width is
+    // the geometric inverse `ae = r (1 - cos psi)` of the measured arc (lead
+    // decision D-W), the same width Suggest and the modulator read for one
+    // cut; the section is the cutter's own (a V-bit removes half the
+    // rectangle). The old arc-equivalent slab `(psi / pi) x 2 r` is retired.
+    let engagement = crate::feeds::engagement::Engagement::from_sample(sample, tool)?;
+    // The sample's own flute count, falling back to the tool's when the
+    // trace left it at zero: a zero would silently zero the edge term.
+    let flute_count = if sample.flute_count > 0 {
+        f64::from(sample.flute_count)
+    } else {
+        f64::from(tool.flute_count)
+    };
     Some(predicted_power_kw(
-        PowerModelInputs {
-            line: *line,
-            cross_section_mm2,
-            axial_doc_mm: sample.axial_doc_mm,
-            immersion_rad: arc,
-            engagement_diameter_mm: engagement_radius * 2.0,
-            spindle_rpm: f64::from(sample.spindle_rpm),
-            // The sample's own flute count, falling back to the
-            // tool's when the trace left it at zero — a zero would
-            // silently zero the edge term, which is the
-            // absence-rendered-as-a-reading shape this model exists
-            // to remove.
-            flute_count: if sample.flute_count > 0 {
-                f64::from(sample.flute_count)
-            } else {
-                f64::from(tool.flute_count)
-            },
-        },
+        engagement.power_inputs(*line, f64::from(sample.spindle_rpm), flute_count),
         feed_mm_min,
     ))
 }
@@ -1175,15 +1108,16 @@ mod r1_two_term_model {
         .unwrap();
         let (d, ap, ae) = (6.0_f64, 4.20_f64, 2.10_f64);
         (
-            PowerModelInputs {
-                line,
-                cross_section_mm2: ap * ae,
-                axial_doc_mm: ap,
-                immersion_rad: crate::feeds::force::immersion_angle(ae, d / 2.0),
-                engagement_diameter_mm: d,
-                spindle_rpm: 17_000.0,
-                flute_count: 2.0,
-            },
+            crate::feeds::engagement::Engagement::from_cut(
+                crate::feeds::envelope::CutPoint {
+                    ap_mm: ap,
+                    ae_mm: ae,
+                },
+                crate::feeds::ToolGeometryHint::Flat,
+                d,
+                None,
+            )
+            .power_inputs(line, 17_000.0, 2.0),
             line,
         )
     }
@@ -1217,8 +1151,8 @@ mod r1_two_term_model {
         ];
         let mut previous_ratio = f64::INFINITY;
         for (fz, want_old, want_new, want_ratio) in expected {
-            let feed = fz * inputs.spindle_rpm * inputs.flute_count;
-            let old = linear_power_kw(line, inputs.cross_section_mm2, feed);
+            let feed = fz * inputs.spindle_rpm() * inputs.flute_count();
+            let old = linear_power_kw(line, inputs.cross_section_mm2(), feed);
             let new = terms.kw_at_feed(feed);
             assert!(
                 (old - want_old).abs() < 1e-5,
@@ -1252,7 +1186,7 @@ mod r1_two_term_model {
     fn halving_the_feed_does_not_halve_the_power() {
         let (inputs, line) = fixture();
         let terms = PowerTerms::of(inputs);
-        let feed = 0.0675 * inputs.spindle_rpm * inputs.flute_count;
+        let feed = 0.0675 * inputs.spindle_rpm() * inputs.flute_count();
 
         let full = terms.kw_at_feed(feed);
         let half = terms.kw_at_feed(feed / 2.0);
@@ -1270,8 +1204,8 @@ mod r1_two_term_model {
         assert!(terms.edge_kw > 0.0, "the fixture must have an edge term");
 
         // Non-vacuity against the baseline: the pre-R1 shape DID halve.
-        let old_full = linear_power_kw(line, inputs.cross_section_mm2, feed);
-        let old_half = linear_power_kw(line, inputs.cross_section_mm2, feed / 2.0);
+        let old_full = linear_power_kw(line, inputs.cross_section_mm2(), feed);
+        let old_half = linear_power_kw(line, inputs.cross_section_mm2(), feed / 2.0);
         assert!(
             (old_half / old_full - 0.5).abs() < 1e-12,
             "the stated baseline must be linear in feed, else the contrast is empty"
@@ -1284,10 +1218,19 @@ mod r1_two_term_model {
     fn rpm_moves_the_edge_term_and_not_the_shear_slope() {
         let (inputs, _) = fixture();
         let slow = PowerTerms::of(inputs);
-        let fast = PowerTerms::of(PowerModelInputs {
-            spindle_rpm: inputs.spindle_rpm * 2.0,
-            ..inputs
-        });
+        let (fixture_inputs, line) = fixture();
+        let fast = PowerTerms::of(
+            crate::feeds::engagement::Engagement::from_cut(
+                crate::feeds::envelope::CutPoint {
+                    ap_mm: fixture_inputs.axial_doc_mm(),
+                    ae_mm: 2.10,
+                },
+                crate::feeds::ToolGeometryHint::Flat,
+                fixture_inputs.engagement_diameter_mm(),
+                None,
+            )
+            .power_inputs(line, inputs.spindle_rpm() * 2.0, inputs.flute_count()),
+        );
         assert!(
             (fast.edge_kw - 2.0 * slow.edge_kw).abs() < 1e-12,
             "the edge term is linear in RPM through Vc"
@@ -1335,27 +1278,24 @@ mod r1_two_term_model {
     fn missing_engagement_inputs_drop_the_edge_term_rather_than_invent_one() {
         let (inputs, line) = fixture();
         let feed = 2000.0;
+        let engagement = crate::feeds::engagement::Engagement::from_cut(
+            crate::feeds::envelope::CutPoint {
+                ap_mm: inputs.axial_doc_mm(),
+                ae_mm: 2.10,
+            },
+            crate::feeds::ToolGeometryHint::Flat,
+            inputs.engagement_diameter_mm(),
+            None,
+        );
         for broken in [
-            PowerModelInputs {
-                immersion_rad: 0.0,
-                ..inputs
-            },
-            PowerModelInputs {
-                spindle_rpm: 0.0,
-                ..inputs
-            },
-            PowerModelInputs {
-                flute_count: 0.0,
-                ..inputs
-            },
-            PowerModelInputs {
-                engagement_diameter_mm: 0.0,
-                ..inputs
-            },
+            inputs.with_degenerate(Some(0.0), None),
+            engagement.power_inputs(line, 0.0, inputs.flute_count()),
+            engagement.power_inputs(line, inputs.spindle_rpm(), 0.0),
+            inputs.with_degenerate(None, Some(0.0)),
         ] {
             let terms = PowerTerms::of(broken);
             assert!(terms.edge_kw.abs() < 1e-18, "edge term must be zero");
-            let want = linear_power_kw(line, inputs.cross_section_mm2, feed);
+            let want = linear_power_kw(line, inputs.cross_section_mm2(), feed);
             assert!((terms.kw_at_feed(feed) - want).abs() < 1e-12);
         }
     }

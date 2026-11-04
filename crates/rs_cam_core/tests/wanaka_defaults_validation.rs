@@ -64,6 +64,7 @@ fn wanaka_adaptive3d_6mm_em_lands_stepover_at_target() {
             ..SetupContext::default()
         },
         spindle_strategy: rs_cam_core::feeds::SpindleStrategy::default(),
+        power_cases: rs_cam_core::feeds::engagement::PowerCases::NOMINAL,
     });
 
     assert!(
@@ -107,6 +108,7 @@ fn wanaka_1mm_tapered_ball_plunge_capped() {
                 ..SetupContext::default()
             },
             spindle_strategy: rs_cam_core::feeds::SpindleStrategy::default(),
+            power_cases: rs_cam_core::feeds::engagement::PowerCases::NOMINAL,
         });
 
         assert!(
@@ -146,6 +148,7 @@ fn wanaka_6mm_em_plunge_not_derated() {
             ..SetupContext::default()
         },
         spindle_strategy: rs_cam_core::feeds::SpindleStrategy::default(),
+        power_cases: rs_cam_core::feeds::engagement::PowerCases::NOMINAL,
     });
 
     // Generic Hardwood (hardness ~1.42) → plunge_rate_base ~700 mm/min, no

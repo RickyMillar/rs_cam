@@ -205,6 +205,7 @@ fn report_what_suggest_commands_for_a_relief_finish() {
             vendor_lut: Some(embedded_vendor_lut()),
             setup: SetupContext::default(),
             spindle_strategy: SpindleStrategy::MatchChart,
+            power_cases: rs_cam_core::feeds::engagement::PowerCases::NOMINAL,
         };
         let r = calculate(&input);
         let advance = if r.rpm > 0.0 {

@@ -490,6 +490,7 @@ fn run_cell_in_material(
             tool_overhang_mm: Some(tool.stickout_planning_mm()),
         },
         spindle_strategy: SpindleStrategy::MaxSpeed,
+        power_cases: rs_cam_core::feeds::engagement::PowerCases::NOMINAL,
     };
     // Run the engine's refusal check FIRST so this shim matches the
     // production Suggest paths (`suggest_for_operation` /

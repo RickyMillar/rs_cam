@@ -1098,10 +1098,19 @@ pub fn run_project_command(
                 // Carries the absence through. `total_collisions` no longer
                 // exists as a bare sum, because a sum cannot say "not checked".
                 collision_count: holder_collisions.map(|h| h + d.rapid_collision_count),
+                // K7 (feeds contract P9): the lineage records the measured
+                // placement when the run's trace is fresh.
                 lineage: session
                     .find_toolpath_config_by_id(d.toolpath_id)
-                    .and_then(|(index, _)| session.result_at(index))
-                    .map(|r| r.lineage.to_json()),
+                    .and_then(|(index, _)| {
+                        session.lineage_measured(
+                            index,
+                            session
+                                .simulation_result()
+                                .and_then(|sim| sim.cut_trace.as_deref()),
+                        )
+                    })
+                    .map(|l| l.to_json()),
             }
         })
         .collect();

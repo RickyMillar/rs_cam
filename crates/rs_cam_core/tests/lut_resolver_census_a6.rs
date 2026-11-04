@@ -608,6 +608,7 @@ fn refusal_asymmetry_through_calculate() -> (usize, usize) {
                         vendor_lut: Some(lut),
                         setup: SetupContext::default(),
                         spindle_strategy: SpindleStrategy::MatchChart,
+                        power_cases: rs_cam_core::feeds::engagement::PowerCases::NOMINAL,
                     })
                 };
                 // Pre-a4: no operation identity, so no routing, so

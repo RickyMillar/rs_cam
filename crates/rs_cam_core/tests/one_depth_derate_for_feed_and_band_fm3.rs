@@ -90,6 +90,7 @@ fn the_returned_band_carries_the_feed_depth_derate_fm3() {
         vendor_lut: Some(embedded_vendor_lut()),
         setup: SetupContext::default(),
         spindle_strategy: SpindleStrategy::MatchChart,
+        power_cases: rs_cam_core::feeds::engagement::PowerCases::NOMINAL,
     };
     let result = calculate(&input);
     let ratio = result.axial_depth_mm / D_MM;

@@ -495,6 +495,7 @@ mod tests {
             axial_depth_mm: 4.0,
             radial_width_mm: 1.0,
             power_kw: 0.3,
+            power_case: crate::feeds::engagement::PowerCase::Nominal,
             available_power_kw: 0.6,
             power_limited: false,
             mrr_mm3_min: 1200.0,

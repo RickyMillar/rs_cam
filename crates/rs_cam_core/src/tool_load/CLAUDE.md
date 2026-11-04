@@ -20,6 +20,7 @@ Independent gates over a simulated cut. Entry: `tool_load::evaluate_toolpath`.
 - The cutting load `L` of a pass (chip area over a full pass, per strip) is
   `load_fraction::chip_load_fraction` only (INTEGRATION_PLAN D5, Q1); it reads
   `mrr_cross_section_mm2`, as power does. Never write a second form.
+- K7 (P9): the power gate reads the one engagement, `feeds::engagement::Engagement::from_sample`: the width is the geometric inverse `ae = r (1 - cos psi)` of the measured arc (lead decision D-W), the section is the cutter's own; the arc-equivalent slab `(psi / pi) x 2 r` is retired. The simulation placement on the envelope (`compute::simulate::envelope_placement`) reads the same population (`is_steady_state_for_gate`) and `sample_power_kw`.
 - A gate with no population proved nothing; check the count. S6: a sample's
   material is `effective_material_for_sample`; split populations ONLY in `evaluate_toolpath`.
 - B6: power and deflection read `Material::force_line()`. Power is `line ×

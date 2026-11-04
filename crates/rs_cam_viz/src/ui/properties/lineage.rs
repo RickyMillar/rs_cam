@@ -163,6 +163,30 @@ pub fn lineage_rows(l: &Lineage) -> Vec<LineageRow> {
                 .join("\n"),
         });
     }
+    // K7 (feeds contract P9): what a fresh simulation measured, when the
+    // reader attached it. One row: the peak power and the crossed limit.
+    if let Some(m) = &l.measured {
+        let peak = m
+            .peak
+            .and_then(|p| p.power_kw)
+            .map_or_else(|| "no power".to_owned(), |kw| format!("{kw:.2} kW"));
+        let limit = m.binding.map_or("inside", |b| b.label());
+        rows.push(LineageRow {
+            name: "Measured".to_owned(),
+            value: format!("{peak} \u{00B7} {limit}"),
+            source: None,
+            hover: format!(
+                "Case {}: {} of {} cutting samples outside the safe envelope.{}",
+                m.case,
+                m.outside,
+                m.placed,
+                m.judged.map_or_else(String::new, |j| format!(
+                    " Worst: {} {:.2} mm against {:.2} mm.",
+                    j.axis, j.measured_mm, j.limit_mm
+                )),
+            ),
+        });
+    }
     rows
 }
 

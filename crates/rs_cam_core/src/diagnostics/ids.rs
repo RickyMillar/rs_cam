@@ -201,6 +201,10 @@ diag_ids! {
     /// length, its bend, its load); the spindle power limit protects the
     /// tool from a stall too, and the export names it either way.
     pub const PROJECT_OUTSIDE_ENVELOPE: &str = "project.outside_envelope" => warn(Danger::Tool);
+    /// K7 (feeds contract P9): a fresh simulation measured a cutting
+    /// sample outside a ceiling of the K2b envelope. The text names the
+    /// binding limit. A warning (ruling Q6); Suggest never reads it (Q5).
+    pub const PROJECT_SIM_OUTSIDE_ENVELOPE: &str = "project.sim_outside_envelope" => warn(Danger::Tool);
     /// G-LINKPLOUGH (W1.1b, 2026-10-14). A fed LINK (`MoveIntent::Linking`)
     /// removes stock the planner meant it to cross in air or on cut ground, more
     /// than the pass itself takes. Before this rule nothing read a fed link

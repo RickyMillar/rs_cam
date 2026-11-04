@@ -87,6 +87,7 @@ fn calc_3mm_pocket(material: &Material) -> rs_cam_core::feeds::FeedsResult {
         vendor_lut: Some(lut),
         setup: SetupContext::default(),
         spindle_strategy: SpindleStrategy::MaxSpeed,
+        power_cases: rs_cam_core::feeds::engagement::PowerCases::NOMINAL,
     })
 }
 

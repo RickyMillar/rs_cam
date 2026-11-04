@@ -60,6 +60,7 @@ fn pocket_input(d: f64, flutes: u32, species: WoodSpecies) -> FeedsInput<'static
         vendor_lut: Some(lut),
         setup: SetupContext::default(),
         spindle_strategy: SpindleStrategy::MaxSpeed,
+        power_cases: rs_cam_core::feeds::engagement::PowerCases::NOMINAL,
     }
 }
 
@@ -85,6 +86,7 @@ fn adaptive_input(d: f64, flutes: u32, species: WoodSpecies) -> FeedsInput<'stat
         vendor_lut: Some(lut),
         setup: SetupContext::default(),
         spindle_strategy: SpindleStrategy::MaxSpeed,
+        power_cases: rs_cam_core::feeds::engagement::PowerCases::NOMINAL,
     }
 }
 

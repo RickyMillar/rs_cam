@@ -256,6 +256,7 @@ fn calc_ipe_6mm(setup: SetupContext) -> rs_cam_core::feeds::FeedsResult {
         vendor_lut: Some(lut),
         setup,
         spindle_strategy: SpindleStrategy::MatchChart,
+        power_cases: rs_cam_core::feeds::engagement::PowerCases::NOMINAL,
     })
 }
 
@@ -417,6 +418,7 @@ fn calc_oak_6mm() -> rs_cam_core::feeds::FeedsResult {
         vendor_lut: Some(lut),
         setup: SetupContext::default(),
         spindle_strategy: SpindleStrategy::MatchChart,
+        power_cases: rs_cam_core::feeds::engagement::PowerCases::NOMINAL,
     })
 }
 

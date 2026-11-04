@@ -193,6 +193,7 @@ fn operating_point(
         axial_depth_mm: axial_doc_mm,
         radial_width_mm: radial_woc_mm,
         power_kw: 0.0,
+        power_case: rs_cam_core::feeds::engagement::PowerCase::Nominal,
         available_power_kw: 0.8,
         power_limited: false,
         mrr_mm3_min: axial_doc_mm * radial_woc_mm * feed,

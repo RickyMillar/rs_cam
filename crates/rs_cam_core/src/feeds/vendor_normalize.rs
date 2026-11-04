@@ -460,6 +460,7 @@ mod tests {
             vendor_lut: None,
             setup: Default::default(),
             spindle_strategy: crate::feeds::SpindleStrategy::default(),
+            power_cases: crate::feeds::engagement::PowerCases::NOMINAL,
         }
     }
 

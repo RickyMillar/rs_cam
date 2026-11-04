@@ -35,6 +35,7 @@ fn softwood_flat_6mm_pocket() -> FeedsInput<'static> {
         vendor_lut: None,
         setup: SetupContext::default(),
         spindle_strategy: crate::feeds::SpindleStrategy::default(),
+        power_cases: crate::feeds::engagement::PowerCases::NOMINAL,
     }
 }
 
@@ -128,6 +129,7 @@ fn test_adaptive_deeper_narrower_than_pocket() {
         vendor_lut: None,
         setup: SetupContext::default(),
         spindle_strategy: crate::feeds::SpindleStrategy::default(),
+        power_cases: crate::feeds::engagement::PowerCases::NOMINAL,
     });
     let pocket = calculate(&FeedsInput {
         tool_series: None,
@@ -147,6 +149,7 @@ fn test_adaptive_deeper_narrower_than_pocket() {
         vendor_lut: None,
         setup: SetupContext::default(),
         spindle_strategy: crate::feeds::SpindleStrategy::default(),
+        power_cases: crate::feeds::engagement::PowerCases::NOMINAL,
     });
 
     assert!(
@@ -199,6 +202,7 @@ fn test_roughing_deeper_than_finishing() {
             vendor_lut: None,
             setup: SetupContext::default(),
             spindle_strategy: crate::feeds::SpindleStrategy::default(),
+            power_cases: crate::feeds::engagement::PowerCases::NOMINAL,
         });
         let finish = calculate(&FeedsInput {
             tool_series: None,
@@ -218,6 +222,7 @@ fn test_roughing_deeper_than_finishing() {
             vendor_lut: None,
             setup: SetupContext::default(),
             spindle_strategy: crate::feeds::SpindleStrategy::default(),
+            power_cases: crate::feeds::engagement::PowerCases::NOMINAL,
         });
 
         assert!(
@@ -269,6 +274,7 @@ fn test_small_tapered_ball_plunge_derated() {
         vendor_lut: None,
         setup: SetupContext::default(),
         spindle_strategy: crate::feeds::SpindleStrategy::default(),
+        power_cases: crate::feeds::engagement::PowerCases::NOMINAL,
     });
 
     assert!(
@@ -311,6 +317,7 @@ fn test_flat_endmill_plunge_is_the_g10_flat_claim() {
         vendor_lut: None,
         setup: SetupContext::default(),
         spindle_strategy: crate::feeds::SpindleStrategy::default(),
+        power_cases: crate::feeds::engagement::PowerCases::NOMINAL,
     });
 
     // The G10 flat claim: plunge = floor(F / Z) at Z 2; no tip cap.
@@ -361,6 +368,7 @@ fn test_wood_adaptive_stepover_tracks_machine_factor() {
         vendor_lut: None,
         setup: SetupContext::default(),
         spindle_strategy: crate::feeds::SpindleStrategy::default(),
+        power_cases: crate::feeds::engagement::PowerCases::NOMINAL,
     });
 
     assert!(
@@ -401,6 +409,7 @@ fn test_metal_adaptive_stepover_keeps_metal_base() {
         vendor_lut: None,
         setup: SetupContext::default(),
         spindle_strategy: crate::feeds::SpindleStrategy::default(),
+        power_cases: crate::feeds::engagement::PowerCases::NOMINAL,
     });
 
     // Plastic is not wood-class; ae should sit below the
@@ -498,6 +507,7 @@ fn test_drill_family_rpm_in_drill_band() {
         vendor_lut: None,
         setup: SetupContext::default(),
         spindle_strategy: crate::feeds::SpindleStrategy::default(),
+        power_cases: crate::feeds::engagement::PowerCases::NOMINAL,
     });
 
     // RPM must sit inside the drill band, not the milling SFM result.
@@ -557,6 +567,7 @@ fn test_drill_feed_within_envelope_and_plunge_aliased() {
                 vendor_lut: None,
                 setup: SetupContext::default(),
                 spindle_strategy: crate::feeds::SpindleStrategy::default(),
+                power_cases: crate::feeds::engagement::PowerCases::NOMINAL,
             });
             assert_eq!(
                 result.plunge_rate_mm_min, result.feed_rate_mm_min,
@@ -612,6 +623,7 @@ fn test_drill_envelope_ceiling_drops_rpm_to_hold_chipload() {
         vendor_lut: None,
         setup: SetupContext::default(),
         spindle_strategy: crate::feeds::SpindleStrategy::default(),
+        power_cases: crate::feeds::engagement::PowerCases::NOMINAL,
     });
     let clamp_fired = result
         .warnings
@@ -678,6 +690,7 @@ fn test_drill_feed_clamp_emits_warning_when_binding() {
         vendor_lut: None,
         setup: SetupContext::default(),
         spindle_strategy: crate::feeds::SpindleStrategy::default(),
+        power_cases: crate::feeds::engagement::PowerCases::NOMINAL,
     });
     let ratio = result.feed_rate_mm_min / 2.0;
     let (lo, hi) = material.drill_plunge_feed_envelope_per_mm();
@@ -742,6 +755,7 @@ fn test_pocket_family_unaffected_by_drill_fix() {
         vendor_lut: None,
         setup: SetupContext::default(),
         spindle_strategy: crate::feeds::SpindleStrategy::default(),
+        power_cases: crate::feeds::engagement::PowerCases::NOMINAL,
     });
 
     // Pocket RPM is allowed to be >14k (milling SFM band).
@@ -799,6 +813,7 @@ fn test_vbit_rpm_uses_engaged_diameter() {
         vendor_lut: None,
         setup: SetupContext::default(),
         spindle_strategy: crate::feeds::SpindleStrategy::default(),
+        power_cases: crate::feeds::engagement::PowerCases::NOMINAL,
     });
 
     assert!(
@@ -843,6 +858,7 @@ fn test_flat_tool_rpm_chipload_unchanged_by_engaged_d() {
         vendor_lut: None,
         setup: SetupContext::default(),
         spindle_strategy: crate::feeds::SpindleStrategy::default(),
+        power_cases: crate::feeds::engagement::PowerCases::NOMINAL,
     });
 
     // Allow the machine-clamp the formula was about to be passed
@@ -889,6 +905,7 @@ fn test_wood_adaptive_stepover_solid_wood_by_janka_eastern_white_pine() {
         vendor_lut: None,
         setup: SetupContext::default(),
         spindle_strategy: crate::feeds::SpindleStrategy::default(),
+        power_cases: crate::feeds::engagement::PowerCases::NOMINAL,
     });
 
     assert!(
@@ -925,6 +942,7 @@ fn test_flute_guard_caps_doc() {
         vendor_lut: None,
         setup: SetupContext::default(),
         spindle_strategy: crate::feeds::SpindleStrategy::default(),
+        power_cases: crate::feeds::engagement::PowerCases::NOMINAL,
     });
 
     assert!(
@@ -967,6 +985,7 @@ fn test_power_limiting_on_low_power_machine() {
         vendor_lut: None,
         setup: SetupContext::default(),
         spindle_strategy: crate::feeds::SpindleStrategy::default(),
+        power_cases: crate::feeds::engagement::PowerCases::NOMINAL,
     });
 
     assert!(
@@ -1007,6 +1026,7 @@ fn test_scallop_stepover_used_for_ball_nose() {
         vendor_lut: None,
         setup: SetupContext::default(),
         spindle_strategy: crate::feeds::SpindleStrategy::default(),
+        power_cases: crate::feeds::engagement::PowerCases::NOMINAL,
     });
 
     // With 3mm ball radius, 0.03mm scallop → stepover should be small
@@ -1039,6 +1059,7 @@ fn test_machine_feed_clamp() {
         vendor_lut: None,
         setup: SetupContext::default(),
         spindle_strategy: crate::feeds::SpindleStrategy::default(),
+        power_cases: crate::feeds::engagement::PowerCases::NOMINAL,
     });
 
     // Ruling R4 (2026-09-24): no factor after the ceiling.
@@ -1079,6 +1100,7 @@ fn no_machine_factor_multiplies_the_feed() {
         vendor_lut: None,
         setup: SetupContext::default(),
         spindle_strategy: crate::feeds::SpindleStrategy::default(),
+        power_cases: crate::feeds::engagement::PowerCases::NOMINAL,
     });
 
     assert!(result.feed_rate_mm_min > 0.0);
@@ -1113,6 +1135,7 @@ fn test_slotting_detection() {
         vendor_lut: None,
         setup: SetupContext::default(),
         spindle_strategy: crate::feeds::SpindleStrategy::default(),
+        power_cases: crate::feeds::engagement::PowerCases::NOMINAL,
     });
 
     assert!(
@@ -1156,6 +1179,7 @@ fn test_lut_chipload_overrides_formula() {
         vendor_lut: Some(&lut),
         setup: SetupContext::default(),
         spindle_strategy: crate::feeds::SpindleStrategy::default(),
+        power_cases: crate::feeds::engagement::PowerCases::NOMINAL,
     });
     let without_lut = calculate(&FeedsInput {
         tool_series: None,
@@ -1175,6 +1199,7 @@ fn test_lut_chipload_overrides_formula() {
         vendor_lut: None,
         setup: SetupContext::default(),
         spindle_strategy: crate::feeds::SpindleStrategy::default(),
+        power_cases: crate::feeds::engagement::PowerCases::NOMINAL,
     });
 
     // Feeds matrix R5 (2026-09-23): the matched row is the printed Amana
@@ -1248,6 +1273,7 @@ fn chipload_bounds_derate_with_doc_ratio_for_milling() {
         vendor_lut: Some(&lut),
         setup: SetupContext::default(),
         spindle_strategy: crate::feeds::SpindleStrategy::default(),
+        power_cases: crate::feeds::engagement::PowerCases::NOMINAL,
     };
     let at_1x = calculate(&input);
     input.axial_depth_mm = Some(19.05); // 3×D ratio → scale 0.5
@@ -1304,6 +1330,7 @@ fn chipload_bounds_skip_doc_derating_for_drill_ops() {
         vendor_lut: Some(&lut),
         setup: SetupContext::default(),
         spindle_strategy: crate::feeds::SpindleStrategy::default(),
+        power_cases: crate::feeds::engagement::PowerCases::NOMINAL,
     };
     let shallow = calculate(&input);
     input.axial_depth_mm = Some(18.0);
@@ -1365,6 +1392,7 @@ fn test_lut_rpm_override_within_machine_range() {
         vendor_lut: Some(&lut),
         setup: SetupContext::default(),
         spindle_strategy: crate::feeds::SpindleStrategy::default(),
+        power_cases: crate::feeds::engagement::PowerCases::NOMINAL,
     });
 
     // Vendor RPM for amana 6mm softwood adaptive is 18000
@@ -1400,6 +1428,7 @@ fn test_no_lut_backward_compatible() {
         vendor_lut: None,
         setup: SetupContext::default(),
         spindle_strategy: crate::feeds::SpindleStrategy::default(),
+        power_cases: crate::feeds::engagement::PowerCases::NOMINAL,
     });
 
     assert!(result.vendor_source.is_none());
@@ -1436,6 +1465,7 @@ fn test_setup_derate_long_overhang() {
             tool_overhang_mm: Some(20.0), // L/D = 20/6 = 3.3, no derate
         },
         spindle_strategy: crate::feeds::SpindleStrategy::default(),
+        power_cases: crate::feeds::engagement::PowerCases::NOMINAL,
     });
 
     let long = calculate(&FeedsInput {
@@ -1458,6 +1488,7 @@ fn test_setup_derate_long_overhang() {
             tool_overhang_mm: Some(40.0), // L/D = 40/6 = 6.67, 25% derate
         },
         spindle_strategy: crate::feeds::SpindleStrategy::default(),
+        power_cases: crate::feeds::engagement::PowerCases::NOMINAL,
     });
 
     // Ruling R4 Q7 (2026-09-24): the L/D share (0.75 above 6 x D) does NOT
@@ -1499,6 +1530,7 @@ fn test_setup_derate_medium_overhang() {
             tool_overhang_mm: Some(20.0), // L/D = 3.3, no derate
         },
         spindle_strategy: crate::feeds::SpindleStrategy::default(),
+        power_cases: crate::feeds::engagement::PowerCases::NOMINAL,
     });
 
     let medium = calculate(&FeedsInput {
@@ -1521,6 +1553,7 @@ fn test_setup_derate_medium_overhang() {
             tool_overhang_mm: Some(30.0), // L/D = 30/6 = 5.0, 12% derate
         },
         spindle_strategy: crate::feeds::SpindleStrategy::default(),
+        power_cases: crate::feeds::engagement::PowerCases::NOMINAL,
     });
 
     // Ruling R4 Q7: the 0.88 share is a load target, not a feed factor.
@@ -1558,6 +1591,7 @@ fn test_lut_ball_nose_different_chipload_than_flat() {
         vendor_lut: Some(&lut),
         setup: SetupContext::default(),
         spindle_strategy: crate::feeds::SpindleStrategy::default(),
+        power_cases: crate::feeds::engagement::PowerCases::NOMINAL,
     });
     let ball = calculate(&FeedsInput {
         tool_series: None,
@@ -1577,6 +1611,7 @@ fn test_lut_ball_nose_different_chipload_than_flat() {
         vendor_lut: Some(&lut),
         setup: SetupContext::default(),
         spindle_strategy: crate::feeds::SpindleStrategy::default(),
+        power_cases: crate::feeds::engagement::PowerCases::NOMINAL,
     });
 
     // Ball nose finishing should have a different (lower) chipload than flat adaptive
@@ -1619,6 +1654,7 @@ fn test_lut_fallback_when_no_match() {
         vendor_lut: Some(&lut),
         setup: SetupContext::default(),
         spindle_strategy: crate::feeds::SpindleStrategy::default(),
+        power_cases: crate::feeds::engagement::PowerCases::NOMINAL,
     });
 
     // Foam maps to softwood in normalize, but with hardness 200 which is far from
@@ -1656,6 +1692,7 @@ fn spindle_strategy_max_speed_lifts_rpm_and_scales_feed() {
         vendor_lut: Some(&lut),
         setup: SetupContext::default(),
         spindle_strategy: SpindleStrategy::MatchChart,
+        power_cases: crate::feeds::engagement::PowerCases::NOMINAL,
     };
     let match_chart = calculate(&base);
     let max_speed = calculate(&FeedsInput {
@@ -1744,6 +1781,7 @@ fn spindle_strategy_max_speed_respects_hard_cap() {
         vendor_lut: Some(&lut),
         setup: SetupContext::default(),
         spindle_strategy: SpindleStrategy::MaxSpeed,
+        power_cases: crate::feeds::engagement::PowerCases::NOMINAL,
     });
     assert!(
         result.derates.spindle_scale <= MAX_SPINDLE_SPEEDUP + 1e-6,

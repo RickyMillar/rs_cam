@@ -228,6 +228,7 @@ fn observe(lut: &VendorLut) -> Vec<Observed> {
                                 vendor_lut: Some(lut),
                                 setup: SetupContext::default(),
                                 spindle_strategy: SpindleStrategy::default(),
+                                power_cases: rs_cam_core::feeds::engagement::PowerCases::NOMINAL,
                             };
                             let result = calculate(&input);
                             for w in &result.warnings {
@@ -408,6 +409,7 @@ fn tapered_ball_floor_lands_below_the_global_constant() {
         vendor_lut: Some(&lut),
         setup: SetupContext::default(),
         spindle_strategy: SpindleStrategy::default(),
+        power_cases: rs_cam_core::feeds::engagement::PowerCases::NOMINAL,
     };
 
     let query = rs_cam_core::feeds::vendor_normalize::to_lookup_query(&input)
@@ -564,6 +566,7 @@ fn the_fallback_lowers_the_floor_only_to_a_published_bound() {
                                 vendor_lut: Some(&lut),
                                 setup: SetupContext::default(),
                                 spindle_strategy: SpindleStrategy::default(),
+                                power_cases: rs_cam_core::feeds::engagement::PowerCases::NOMINAL,
                             };
                             let result = calculate(&input);
                             // Only the P1 shape: a recipe carrying no band of

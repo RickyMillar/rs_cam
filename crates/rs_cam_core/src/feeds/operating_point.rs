@@ -22,10 +22,13 @@
 //! Every caller solves through those two methods rather than rebuilding the
 //! model.
 //!
-//! Three places assemble the same `PowerTerms` from the same inputs:
-//! `feeds::calculate` Step 6 (through `power_model_terms`), Suggest pass 10
-//! (through this door), and this door itself. The post-simulation gate
-//! `tool_load::power::evaluate` reads the same terms from the trace.
+//! K7 (feeds contract P9): every reader builds its inputs through
+//! [`crate::feeds::engagement::Engagement`]: `feeds::calculate` Step 6
+//! (`power_model_terms`), this door, the post-simulation gate
+//! (`tool_load::power::sample_power_kw`, `Engagement::from_sample`) and the
+//! modulator power cap. This door ships the maximum over the op's
+//! [`crate::feeds::engagement::PowerCases`] and names the case
+//! ([`PowerFigure::case`]).
 //!
 //! ## The axis
 //!
@@ -53,11 +56,13 @@
 
 use crate::compute::catalog::OperationConfig;
 use crate::compute::tool_config::ToolConfig;
+use crate::feeds::engagement::{Engagement, PowerCase, PowerCases};
+use crate::feeds::envelope::CutPoint;
 use crate::feeds::suggest::CalculatorOperatingPoint;
 use crate::machine::MachineProfile;
 use crate::material::Material;
 use crate::material::force_line::{ForceAtPoint, mean_chip_mm};
-use crate::tool_load::power::{PowerModelInputs, PowerTerms};
+use crate::tool_load::power::PowerTerms;
 
 /// Why [`power_at_operating_point`] produced no power figure.
 ///
@@ -135,8 +140,17 @@ pub struct PowerFigure {
     /// The force line the figure was built from, at the mean chip of this
     /// operating point.
     pub force: ForceAtPoint,
-    /// The model this figure was built from. Private on purpose — see the
-    /// type doc.
+    /// K7 (feeds contract P9): the case of the pre-sim power set that
+    /// `required_kw` is the power of: the maximum over the cases the
+    /// operation's `CutSpec` admits ([`PowerCases::of_operation`]).
+    pub case: PowerCase,
+    /// The radial width (mm) of [`Self::case`]: `ae_mm` for the nominal
+    /// case, D for a slot, the capped width for the planner cap.
+    pub case_ae_mm: f64,
+    /// The model this figure was built from: the terms of [`Self::case`].
+    /// The widest case is the largest at every feed (both terms grow with
+    /// the width), so one set of terms answers every feed. Private on
+    /// purpose — see the type doc.
     terms: PowerTerms,
 }
 
@@ -211,24 +225,38 @@ pub fn power_at_operating_point(
 ) -> Result<PowerFigure, PowerUnmodeled> {
     let point = resolve_operating_point(operation, tool, material, Some(machine), fallback)?;
 
-    let terms = PowerTerms::of(PowerModelInputs {
-        line: point.force.line,
-        cross_section_mm2: point.cross_section_mm2,
-        axial_doc_mm: point.ap_mm,
-        immersion_rad: point.immersion_rad,
-        engagement_diameter_mm: point.effective_d,
-        spindle_rpm: point.rpm,
-        flute_count: point.flute_count,
-    });
+    // K7 change 3: the power of each case the CutSpec admits; the figure is
+    // the maximum, with its case name.
+    let terms_at = |ae: f64| {
+        PowerTerms::of(
+            Engagement::from_cut(
+                CutPoint {
+                    ap_mm: point.ap_mm,
+                    ae_mm: ae,
+                },
+                point.geometry,
+                point.effective_d,
+                Some(point.helix_deg),
+            )
+            .power_inputs(point.force.line, point.rpm, point.flute_count),
+        )
+    };
+    let (case, required_kw, case_ae_mm) =
+        PowerCases::of_operation(operation).worst(point.ae_mm, tool.diameter, |ae| {
+            terms_at(ae).kw_at_feed(point.feed_mm_min)
+        });
+    let terms = terms_at(case_ae_mm);
 
     Ok(PowerFigure {
-        required_kw: terms.kw_at_feed(point.feed_mm_min),
+        required_kw,
         available_kw: point.available_kw,
         ap_mm: point.ap_mm,
         ae_mm: point.ae_mm,
         rpm: point.rpm,
         feed_mm_min: point.feed_mm_min,
         force: point.force,
+        case,
+        case_ae_mm,
         terms,
     })
 }
@@ -267,8 +295,8 @@ struct ResolvedPoint {
     /// `power_at_rpm(rpm)`; 0.0 when no machine was given.
     available_kw: f64,
     effective_d: f64,
-    immersion_rad: f64,
-    cross_section_mm2: f64,
+    geometry: crate::feeds::ToolGeometryHint,
+    helix_deg: f64,
     flute_count: f64,
 }
 
@@ -292,9 +320,22 @@ fn resolve_operating_point(
         return Err(PowerUnmodeled::NoFeed);
     };
 
+    // K7 (feeds contract P9): a `Radial::Slot` op states its width, the
+    // tool diameter (K1 `CutSpec::calc_inputs`), so a Profile, a Trace or a
+    // Project Curve has a power figure without a fallback.
+    let slot_width = match operation.cut_spec().radial {
+        crate::compute::catalog::Radial::Slot => Some(tool.diameter),
+        crate::compute::catalog::Radial::Width(_)
+        | crate::compute::catalog::Radial::Groove
+        | crate::compute::catalog::Radial::Scallop(_)
+        | crate::compute::catalog::Radial::AngularStep(_)
+        | crate::compute::catalog::Radial::SurfaceFollow
+        | crate::compute::catalog::Radial::Axial => None,
+    };
     let Some(ae_mm) = operation
         .stepover()
         .filter(|v| usable(*v))
+        .or(slot_width.filter(|v| usable(*v)))
         .or_else(|| fallback.map(|c| c.radial_width_mm))
         .filter(|v| usable(*v))
     else {
@@ -341,7 +382,14 @@ fn resolve_operating_point(
     }
 
     let flute_count = f64::from(tool.flute_count_planning().max(1));
-    let immersion_rad = crate::feeds::force::immersion_angle(ae_mm, effective_d / 2.0);
+    // K7: psi of the stated cut, from the one engagement.
+    let immersion_rad = Engagement::from_cut(
+        CutPoint { ap_mm, ae_mm },
+        geom,
+        effective_d,
+        Some(tool.helix_deg),
+    )
+    .psi_rad();
     // Every input above is finite and positive, so the mean chip exists;
     // a degenerate arc reads as a zero chip, which is below any range.
     let fz_mm = feed_mm_min / (rpm * flute_count);
@@ -355,8 +403,8 @@ fn resolve_operating_point(
         rpm,
         available_kw,
         effective_d,
-        immersion_rad,
-        cross_section_mm2: geom.mrr_cross_section_mm2(ap_mm, ae_mm),
+        geometry: geom,
+        helix_deg: tool.helix_deg,
         flute_count,
     })
 }

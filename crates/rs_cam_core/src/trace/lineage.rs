@@ -76,6 +76,49 @@ pub struct Lineage {
     pub findings: Vec<FindingUse>,
     /// The K5 rule outcomes: one row per physical rule that warns.
     pub rules: Vec<RuleResult>,
+    /// K7 (feeds contract P9): what a fresh simulation measured, placed on
+    /// the K2b envelope. Generation records `None`; a reader with a fresh
+    /// trace attaches it (`ProjectSession::lineage_measured`). Ruling Q5:
+    /// Suggest reads none of it.
+    pub measured: Option<MeasuredLineage>,
+}
+
+/// K7 (feeds contract P9): the measured engagement of a toolpath on its
+/// envelope, as the lineage records it. The case is "measured".
+#[derive(Debug, Clone, PartialEq, Serialize)]
+pub struct MeasuredLineage {
+    /// Always "measured": the engagement of the simulation samples, not a
+    /// pre-sim case (nominal, slot, planner cap).
+    pub case: &'static str,
+    /// The steady-state cutting samples placed.
+    pub placed: usize,
+    /// The samples outside a ceiling of the envelope.
+    pub outside: usize,
+    /// The sample of the largest power: its cut, power and placement.
+    pub peak: Option<crate::compute::simulate::MeasuredPoint>,
+    /// The limit that the worst outside sample crosses, if one does.
+    pub binding: Option<crate::feeds::envelope::LimitKind>,
+    /// The value that limit judges at the worst sample, and the limit.
+    pub judged: Option<crate::feeds::envelope::JudgedValue>,
+}
+
+impl MeasuredLineage {
+    /// The lineage record of one placement.
+    #[must_use]
+    pub fn of(p: &crate::compute::simulate::EnvelopePlacement) -> Self {
+        let binding = p.worst.and_then(|w| match w.placement {
+            crate::feeds::envelope::Placement::Outside { binding, .. } => Some(binding),
+            crate::feeds::envelope::Placement::Inside { .. } => None,
+        });
+        Self {
+            case: "measured",
+            placed: p.placed,
+            outside: p.outside,
+            peak: p.peak,
+            binding,
+            judged: p.worst.and_then(|w| w.judged),
+        }
+    }
 }
 
 /// The envelope pick that the stored geometry records (K2b). The apply
@@ -359,6 +402,16 @@ impl Lineage {
             },
             findings,
             rules,
+            measured: None,
+        }
+    }
+
+    /// This lineage with what a fresh simulation measured (K7).
+    #[must_use]
+    pub fn with_measured(&self, measured: Option<MeasuredLineage>) -> Self {
+        Self {
+            measured,
+            ..self.clone()
         }
     }
 
@@ -387,6 +440,7 @@ impl Lineage {
             },
             findings: Vec::new(),
             rules: Vec::new(),
+            measured: None,
         }
     }
 
@@ -419,6 +473,7 @@ impl Lineage {
                 "limit": r.limit(),
                 "text": r.text(),
             })).collect::<Vec<_>>(),
+            "measured": self.measured,
         })
     }
 }

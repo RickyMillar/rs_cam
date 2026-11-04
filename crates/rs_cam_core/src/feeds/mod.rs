@@ -17,6 +17,7 @@
 
 pub mod cutter_constraints;
 pub mod efficiency;
+pub mod engagement;
 pub mod envelope;
 pub mod explain_payload;
 pub mod extrapolation;
@@ -428,6 +429,12 @@ pub struct FeedsInput<'a> {
     /// behaviour). `MaxSpeed` walks the constant-chipload line up to
     /// the spindle ceiling.
     pub spindle_strategy: SpindleStrategy,
+    /// K7 (feeds contract P9): the cases of the pre-sim power set. Step 6
+    /// and the published `power_kw` read the maximum over them. The
+    /// production builder (`suggest::feeds_input_for_operation`) reads the
+    /// op's `CutSpec`; a caller with no op states
+    /// [`engagement::PowerCases::NOMINAL`].
+    pub power_cases: engagement::PowerCases,
 }
 
 #[derive(Debug, Clone, PartialEq, Eq)]
@@ -491,6 +498,10 @@ pub struct FeedsResult {
     /// the SHIPPED figure calls
     /// [`crate::feeds::power_at_operating_point`] on the final operation.
     pub power_kw: f64,
+    /// K7 (feeds contract P9): the case of the pre-sim power set that
+    /// `power_kw` is the power of (the maximum over the cases that
+    /// [`FeedsInput::power_cases`] admits).
+    pub power_case: engagement::PowerCase,
     /// The ceiling `power_kw` is quoted against (kW): the rated spindle
     /// curve `power_at_rpm(rpm)`, the gate's own ceiling (ruling R4 Q2: no
     /// fraction).
@@ -1563,8 +1574,9 @@ fn chip_basis_of_row(row: &vendor_lookup::LookupResult) -> Basis {
 }
 
 /// Assemble the Suggest path's inputs to the canonical two-term power
-/// model (`tool_load::power`), so Step 6's clamp and the published
-/// `power_kw` are built from one expression rather than two.
+/// model (`tool_load::power`) at the width `ae`, through the one engagement
+/// (K7, `feeds::engagement::Engagement::from_cut`), so Step 6's clamp and
+/// the published `power_kw` are built from one expression.
 ///
 /// `effective_d` must be the CHIP-THINNING diameter — the circle that
 /// actually touches material at this DOC — because it sets both the
@@ -1574,23 +1586,40 @@ fn chip_basis_of_row(row: &vendor_lookup::LookupResult) -> Basis {
 fn power_model_terms(
     input: &FeedsInput,
     line: crate::material::force_line::ForceLine,
-    cross_section_mm2: f64,
     ap: f64,
     ae: f64,
     effective_d: f64,
     rpm: f64,
 ) -> crate::tool_load::power::PowerTerms {
-    crate::tool_load::power::PowerTerms::of(crate::tool_load::power::PowerModelInputs {
-        line,
-        cross_section_mm2,
-        axial_doc_mm: ap,
-        // One immersion-angle definition for the whole engine: the same
-        // `force::immersion_angle` the deflection cap and the modulator
-        // consume.
-        immersion_rad: force::immersion_angle(ae, effective_d / 2.0),
-        engagement_diameter_mm: effective_d,
-        spindle_rpm: rpm,
-        flute_count: f64::from(input.flute_count),
+    crate::tool_load::power::PowerTerms::of(
+        engagement::Engagement::from_cut(
+            envelope::CutPoint {
+                ap_mm: ap,
+                ae_mm: ae,
+            },
+            input.tool_geometry,
+            effective_d,
+            None,
+        )
+        .power_inputs(line, rpm, f64::from(input.flute_count)),
+    )
+}
+
+/// K7 change 3: the power (kW) at `feed` of the worst case of the pre-sim
+/// set (`FeedsInput::power_cases`) at the nominal width `ae`, with the case
+/// and its width. Both terms grow with the width, so the worst case is the
+/// widest one at every feed and RPM.
+fn worst_case_power(
+    input: &FeedsInput,
+    line: crate::material::force_line::ForceLine,
+    ap: f64,
+    ae: f64,
+    effective_d: f64,
+    rpm: f64,
+    feed: f64,
+) -> (engagement::PowerCase, f64, f64) {
+    input.power_cases.worst(ae, input.tool_diameter, |w| {
+        power_model_terms(input, line, ap, w, effective_d, rpm).kw_at_feed(feed)
     })
 }
 
@@ -2514,10 +2543,10 @@ pub fn calculate(input: &FeedsInput) -> FeedsResult {
     if let Ok(line) = material.force_line()
         && available_power > 0.0
     {
-        let cross_section = input.tool_geometry.mrr_cross_section_mm2(ap, ae);
-        let terms = power_model_terms(input, line, cross_section, ap, ae, effective_d, rpm);
-        // The power the recipe draws at the feed it ships.
-        let required_at_commanded = terms.kw_at_feed(raw_feed);
+        // The power the recipe draws at the feed it ships: the worst case
+        // of the pre-sim set (K7 change 3).
+        let (_, required_at_commanded, _) =
+            worst_case_power(input, line, ap, ae, effective_d, rpm, raw_feed);
         if required_at_commanded > gate_available_power {
             // `feed_for_kw` returns `None` when the feed-free edge term ALONE is
             // over the budget — the power-side twin of
@@ -2578,10 +2607,9 @@ pub fn calculate(input: &FeedsInput) -> FeedsResult {
             // IMPLEMENTATION_PLAN.md} and derate_levers.py.
 
             // Required kW at a candidate operating point.
+            // K7 change 3: every rung reads the worst case of the set.
             let required_at = |rpm_c: f64, ap_c: f64, ae_c: f64, feed_c: f64| -> f64 {
-                let cs = input.tool_geometry.mrr_cross_section_mm2(ap_c, ae_c);
-                power_model_terms(input, line, cs, ap_c, ae_c, effective_d, rpm_c)
-                    .kw_at_feed(feed_c)
+                worst_case_power(input, line, ap_c, ae_c, effective_d, rpm_c, feed_c).1
             };
             let budget_at = |rpm_c: f64| machine.power_at_rpm(rpm_c).max(0.0);
 
@@ -2734,15 +2762,11 @@ pub fn calculate(input: &FeedsInput) -> FeedsResult {
             let mut still_required = required_at(rpm, ap, ae, raw_feed);
             let still_available = budget_at(rpm);
             if still_required > still_available {
-                let terms_now = power_model_terms(
-                    input,
-                    line,
-                    input.tool_geometry.mrr_cross_section_mm2(ap, ae),
-                    ap,
-                    ae,
-                    effective_d,
-                    rpm,
-                );
+                // The terms of the worst case: the widest case is the
+                // largest at every feed, so its inversion is the cap.
+                let (_, _, worst_ae) =
+                    worst_case_power(input, line, ap, ae, effective_d, rpm, raw_feed);
+                let terms_now = power_model_terms(input, line, ap, worst_ae, effective_d, rpm);
                 // `None` means the feed-free edge term ALONE is over budget.
                 // No feed rescues that cut: thinning the chip leaves the
                 // ploughing power exactly where it was while driving the
@@ -2843,9 +2867,7 @@ pub fn calculate(input: &FeedsInput) -> FeedsResult {
             if available <= 0.0 {
                 return false;
             }
-            let cs = input.tool_geometry.mrr_cross_section_mm2(ap, ae);
-            power_model_terms(input, line, cs, ap, ae, effective_d, rpm_c).kw_at_feed(feed_c)
-                <= available
+            worst_case_power(input, line, ap, ae, effective_d, rpm_c, feed_c).1 <= available
         };
         let feed_at = |rpm_c: f64| (chip_per_rev * rpm_c).min(machine_cut_ceiling);
         // The RPM at which the held chip lands on the ceiling, floored to a
@@ -3145,12 +3167,14 @@ pub fn calculate(input: &FeedsInput) -> FeedsResult {
     // diagnostics) treat this as "unmodeled" rather than zero load.
     // Same canonical helper as Step 6 above so Suggest's reported
     // power matches the Sim verdict's prediction.
-    let actual_power = match material.force_line() {
+    // K7 change 3: the published power is the worst case of the set, and
+    // the result names the case.
+    let (power_case, actual_power) = match material.force_line() {
         Ok(line) => {
-            let cross_section = input.tool_geometry.mrr_cross_section_mm2(ap, ae);
-            power_model_terms(input, line, cross_section, ap, ae, effective_d, rpm).kw_at_feed(feed)
+            let (case, kw, _) = worst_case_power(input, line, ap, ae, effective_d, rpm, feed);
+            (case, kw)
         }
-        Err(_) => 0.0,
+        Err(_) => (engagement::PowerCase::Nominal, 0.0),
     };
     let mrr = ap * ae * feed;
 
@@ -3194,6 +3218,7 @@ pub fn calculate(input: &FeedsInput) -> FeedsResult {
         axial_depth_mm: ap,
         radial_width_mm: ae,
         power_kw: actual_power,
+        power_case,
         // F-2: the gate's ceiling, not the raw spindle curve — this is
         // the denominator `power_kw` (evaluated at the FINAL feed) is
         // rendered against. See the Step 6 axis note above. It is read at

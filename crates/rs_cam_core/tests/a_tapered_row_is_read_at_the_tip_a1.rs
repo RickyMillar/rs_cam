@@ -185,6 +185,7 @@ fn a_tapered_row_is_read_at_the_tip_a1() {
         vendor_lut: Some(lut),
         setup: SetupContext::default(),
         spindle_strategy: SpindleStrategy::default(),
+        power_cases: rs_cam_core::feeds::engagement::PowerCases::NOMINAL,
     };
     let suggest_key = vendor_normalize::to_lookup_query(&input)
         .expect("a tapered ball on a DropCutter routes to Parallel / Finish")

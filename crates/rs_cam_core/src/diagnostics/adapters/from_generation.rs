@@ -1043,6 +1043,32 @@ fn tip_float(toolpath_id: ToolpathId, stats: &ToolpathStats) -> Vec<Diagnostic> 
     }]
 }
 
+/// K7 (feeds contract P9): a fresh simulation measured a point outside the
+/// K2b envelope (`compute::simulate::envelope_placement`). One Caution per
+/// toolpath; the text names the binding limit. Ruling Q6: a warning.
+pub fn sim_outside_envelope(toolpath_id: ToolpathId, text: String) -> Diagnostic {
+    let id = ids::PROJECT_SIM_OUTSIDE_ENVELOPE;
+    Diagnostic {
+        id: DiagnosticId::from(id),
+        scope: Scope::Toolpath { id: toolpath_id },
+        category: Category::Safety,
+        severity: Severity::Caution,
+        // Measured on the carved stock of a fresh simulation.
+        confidence: Confidence::Verified,
+        state: DiagnosticState::Current,
+        source: Source::Simulation,
+        face: crate::diagnostics::presentation::face(id),
+        anchor: crate::diagnostics::presentation::anchor(id),
+        message: text,
+        evidence: None,
+        fix: None,
+        // Lead decision (iii), 2026-11-05: the measured placement stands for
+        // the pre-simulation placement of the stated cut (as the flute pair).
+        supersedes: vec![DiagnosticId::from(ids::PROJECT_OUTSIDE_ENVELOPE)],
+        suppressed_diagnostics: vec![],
+    }
+}
+
 /// K5 ReachFlute, the simulation stage (feeds contract P7 commit B): what a
 /// fresh simulation measured for the toolpath. An overreach is
 /// `tool.flute_overreach` (Caution); a clean run is

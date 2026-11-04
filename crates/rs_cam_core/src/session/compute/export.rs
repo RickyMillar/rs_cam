@@ -325,6 +325,20 @@ impl ProjectSession {
                         }
                     }
                 }
+                Gate::SimOutsideEnvelope => {
+                    for &idx in emitted {
+                        if let Some(text) = self
+                            .envelope_placement_measured(idx, sim_trace)
+                            .and_then(|p| p.outside_row())
+                        {
+                            push(
+                                ids::PROJECT_SIM_OUTSIDE_ENVELOPE,
+                                name_at(idx),
+                                format!("Toolpath '{}': {text}", name_at(idx)),
+                            );
+                        }
+                    }
+                }
                 Gate::FluteOverreach => {
                     for &idx in emitted {
                         if let Some(crate::compute::simulate::FluteReach::Over(text)) =
@@ -707,6 +721,8 @@ impl ProjectSession {
         let model_refs = self.model_ref_context_for_toolpath(tc);
         // K5 ReachFlute: the simulation stage, when a fresh run measured it.
         let flute_reach = self.flute_reach_measured(index, sim_trace);
+        // K7: the measured engagement on the envelope, when a fresh run has it.
+        let envelope_placement = self.envelope_placement_measured(index, sim_trace);
         // Generation-time findings ride on the stats of this toolpath's own
         // generated result. Absent until it has been generated, which is
         // exactly when there is nothing to report.
@@ -730,6 +746,7 @@ impl ProjectSession {
             model_refs: Some(&model_refs),
             stats,
             flute_reach: flute_reach.as_ref(),
+            envelope_placement: envelope_placement.as_ref(),
         };
         Ok(crate::diagnostics::diagnose_toolpath_inputs(&inputs))
     }
@@ -1127,6 +1144,51 @@ impl ProjectSession {
         let simulation = self.simulation.as_ref()?;
         let id = self.toolpath_config_at(index)?.id;
         Some(crate::compute::simulate::flute_reach(simulation, id))
+    }
+
+    /// K7 (feeds contract P9): the measured engagement of the toolpath at
+    /// `index` placed against its K2b envelope
+    /// ([`crate::compute::simulate::envelope_placement`], the tenth shared
+    /// decision), when `trace` is fresh for it. `None`: no fresh
+    /// simulation, no envelope (a refused pairing) or no load context.
+    /// Ruling Q5: Suggest never reads it; the diagnostics, the GUI, MCP and
+    /// the export read this one answer.
+    #[must_use]
+    pub fn envelope_placement_measured(
+        &self,
+        index: usize,
+        trace: Option<&SimulationCutTrace>,
+    ) -> Option<crate::compute::simulate::EnvelopePlacement> {
+        let trace = trace?;
+        if !self.sim_trace_is_fresh_for(trace, index) {
+            return None;
+        }
+        let tc = self.toolpath_config_at(index)?;
+        let envelope = self.safe_envelope(tc)?.ok()?;
+        let parts = self.load_context_parts(index)?;
+        Some(crate::compute::simulate::envelope_placement(
+            trace,
+            &parts.ctx(),
+            &envelope,
+        ))
+    }
+
+    /// K8 + K7 (feeds contract P9): the lineage of the toolpath at `index`
+    /// with what a fresh simulation measured on its envelope
+    /// ([`Self::envelope_placement_measured`]). `None` when the toolpath
+    /// has no result; `measured` is `None` with no fresh trace. MCP
+    /// `get_toolpath_lineage` and the CLI `summary.json` read it.
+    #[must_use]
+    pub fn lineage_measured(
+        &self,
+        index: usize,
+        trace: Option<&SimulationCutTrace>,
+    ) -> Option<crate::trace::lineage::Lineage> {
+        let result = self.result_at(index)?;
+        let measured = self
+            .envelope_placement_measured(index, trace)
+            .map(|p| crate::trace::lineage::MeasuredLineage::of(&p));
+        Some(result.lineage.with_measured(measured))
     }
 
     /// [`Self::sim_trace_is_fresh`] for ONE operation: its own provenance only.

@@ -111,6 +111,9 @@ fn profile_json(profile: &CutterOpProfile<'_>) -> Value {
             "ae_mm": p.ae_mm,
             "rpm": p.rpm,
             "feed_mm_min": p.feed_mm_min,
+            // K7 (feeds contract P9): the worst case of the pre-sim set.
+            "case": p.case.label(),
+            "case_ae_mm": p.case_ae_mm,
         }),
         Err(e) => json!({ "unmodeled": format!("{e:?}") }),
     };
@@ -123,6 +126,7 @@ fn profile_json(profile: &CutterOpProfile<'_>) -> Value {
             "axial_depth_mm": feeds.axial_depth_mm,
             "radial_width_mm": feeds.radial_width_mm,
             "power_kw": feeds.power_kw,
+            "power_case": feeds.power_case.label(),
             "available_power_kw": feeds.available_power_kw,
             "power_limited": feeds.power_limited,
             "mrr_mm3_min": feeds.mrr_mm3_min,

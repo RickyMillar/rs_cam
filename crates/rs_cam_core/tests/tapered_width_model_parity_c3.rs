@@ -178,6 +178,7 @@ fn tapered_finish_input<'a>(
         vendor_lut: None,
         setup: SetupContext::default(),
         spindle_strategy: SpindleStrategy::default(),
+        power_cases: rs_cam_core::feeds::engagement::PowerCases::NOMINAL,
     }
 }
 

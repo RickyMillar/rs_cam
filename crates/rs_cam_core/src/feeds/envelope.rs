@@ -297,6 +297,28 @@ fn interpolate_curve(points: &[[f64; 2]], ae_mm: f64) -> Option<f64> {
     })
 }
 
+/// K7: the facts of the tool that place a measured point
+/// ([`SafeEnvelope::placement_of_measured`]).
+#[derive(Debug, Clone, Copy, PartialEq)]
+pub struct MeasuredTool {
+    /// The engaged diameter at the sample depth (mm),
+    /// `Engagement::d_eng_mm`.
+    pub d_eng_mm: f64,
+    /// A cone tool (tapered ball, V-bit): the slot rule does not judge it.
+    pub cone: bool,
+}
+
+/// K7: the value of a point that one limit judges, and the limit there.
+#[derive(Debug, Clone, Copy, PartialEq, Serialize)]
+pub struct JudgedValue {
+    /// `"depth"` or `"width"`.
+    pub axis: &'static str,
+    /// The value of the point on that axis (mm).
+    pub measured_mm: f64,
+    /// The limit at the point (mm).
+    pub limit_mm: f64,
+}
+
 /// Where a point sits against the boundary.
 #[derive(Debug, Clone, Copy, PartialEq, Serialize)]
 #[serde(tag = "kind", rename_all = "snake_case")]
@@ -712,7 +734,7 @@ impl SafeEnvelope {
 
         let mut boundary = Vec::new();
         geometric_limits(&mut boundary, &input, &base, &plan, family, role, d);
-        power_limit(&mut boundary, &inputs, &speeds, &plan);
+        power_limit(&mut boundary, &inputs, &speeds, &plan, base.power_case);
         deflection_limit(&mut boundary, &input, &speeds, &plan, role);
         runtime_limit(&mut boundary, &input, &plan, d);
         per_point_limits(&mut boundary, &base, &speeds);
@@ -776,13 +798,102 @@ impl SafeEnvelope {
         self.boundary.iter().find(|l| l.kind == kind)
     }
 
+    /// K7 (feeds contract P9): the value of the measured point `p` that the
+    /// limit of `kind` judges, and the limit there, by the rules of
+    /// [`Self::placement_of_measured`]. `None` for a limit with no edge
+    /// (judged per point, or unmodelled), a limit that does not judge this
+    /// tool, or no limit of that kind.
+    #[must_use]
+    pub fn judged_value(
+        &self,
+        kind: LimitKind,
+        p: CutPoint,
+        tool: MeasuredTool,
+    ) -> Option<JudgedValue> {
+        let l = self.limit(kind)?;
+        let edge = Self::measured_edge(l, tool)?;
+        let judged = Limit { edge, ..l.clone() };
+        let (axis, measured_mm, limit_mm) = match judged.edge {
+            Edge::ApCeiling { .. } | Edge::ApCeilingAbove { .. } | Edge::ApCurve { .. } => {
+                ("depth", p.ap_mm, judged.ap_ceiling_at(p.ae_mm)?)
+            }
+            Edge::ApFloor { mm } => ("depth", p.ap_mm, mm),
+            Edge::AeCeiling { mm } | Edge::AeFloor { mm } => ("width", p.ae_mm, mm),
+            Edge::PerPoint | Edge::Unmodelled { .. } => return None,
+        };
+        Some(JudgedValue {
+            axis,
+            measured_mm,
+            limit_mm,
+        })
+    }
+
     /// Where the point `p` sits against the boundary. A query for any
     /// `(ap, ae)`; no `calculate` call.
     #[must_use]
     pub fn placement_of(&self, p: CutPoint) -> Placement {
+        self.place(p, None)
+    }
+
+    /// K7 (feeds contract P9): where a MEASURED point sits against the
+    /// ceilings of the boundary.
+    ///
+    /// - A floor (the move budget, the engagement floor) is a rule for the
+    ///   operator's stated point; a simulation sample with a lighter cut than
+    ///   the plan crosses no limit, so the floors do not place it.
+    /// - The `Diameter` ceiling is the engaged diameter at the sample depth
+    ///   (`tool.d_eng_mm`, from `Engagement::d_eng`), not the nominal
+    ///   diameter: a tapered ball or a V-bit cuts wider than its tip as the
+    ///   cone engages (lead decision, 2026-11-05). For a flat tool the two
+    ///   are equal.
+    /// - A cone tool is not judged by the `Slot` rule: the rule caps the
+    ///   depth of a flat end mill that cuts a full-width slot, and a V
+    ///   groove (or a tapered ball's cone) is always a full groove.
+    #[must_use]
+    pub fn placement_of_measured(&self, p: CutPoint, tool: MeasuredTool) -> Placement {
+        self.place(p, Some(tool))
+    }
+
+    /// The ceiling of `l` that a measured point of `tool` meets: the edge
+    /// itself, the `Diameter` ceiling at the engaged diameter, or `None`
+    /// for a limit that does not judge this tool.
+    fn measured_edge(l: &Limit, tool: MeasuredTool) -> Option<Edge> {
+        match (l.kind, &l.edge) {
+            (LimitKind::Slot, _) if tool.cone => None,
+            (LimitKind::Diameter, Edge::AeCeiling { .. }) => {
+                Some(Edge::AeCeiling { mm: tool.d_eng_mm })
+            }
+            (_, edge) => Some(edge.clone()),
+        }
+    }
+
+    fn place(&self, p: CutPoint, measured: Option<MeasuredTool>) -> Placement {
         let mut inside = f64::INFINITY;
         let mut worst: Option<(f64, LimitKind)> = None;
         for l in &self.boundary {
+            let judged;
+            let l = match measured {
+                None => l,
+                Some(tool) => match Self::measured_edge(l, tool) {
+                    None => continue,
+                    Some(edge) => {
+                        judged = Limit { edge, ..l.clone() };
+                        &judged
+                    }
+                },
+            };
+            let is_floor = match l.edge {
+                Edge::ApFloor { .. } | Edge::AeFloor { .. } => true,
+                Edge::ApCeiling { .. }
+                | Edge::ApCeilingAbove { .. }
+                | Edge::ApCurve { .. }
+                | Edge::AeCeiling { .. }
+                | Edge::PerPoint
+                | Edge::Unmodelled { .. } => false,
+            };
+            if measured.is_some() && is_floor {
+                continue;
+            }
             // A fixed axis is not the operator's choice: its edges do not
             // place the point.
             let on_fixed_axis = match l.edge {
@@ -1173,7 +1284,16 @@ fn geometric_limits(
 /// The rated-power edge: per width sample, the deepest `ap` at which the
 /// full chip fits the spindle curve. Between two grid samples the edge is
 /// placed by bisection with the calculator.
-fn power_limit(out: &mut Vec<Limit>, inputs: &OwnedInputs, speeds: &SpeedsMap, plan: &AxesPlan) {
+/// K7 change 3: the power edge is drawn at the worst case of the op's
+/// pre-sim set (the calculator's `power_kw` is that case at each sample),
+/// and its law names the case.
+fn power_limit(
+    out: &mut Vec<Limit>,
+    inputs: &OwnedInputs,
+    speeds: &SpeedsMap,
+    plan: &AxesPlan,
+    case: crate::feeds::engagement::PowerCase,
+) {
     if !plan.axes.ap_free() {
         return;
     }
@@ -1223,7 +1343,17 @@ fn power_limit(out: &mut Vec<Limit>, inputs: &OwnedInputs, speeds: &SpeedsMap, p
     curve.dedup_by(|a, b| (a[0] - b[0]).abs() < 1e-12);
     out.push(Limit {
         kind: LimitKind::Power,
-        law: "rated spindle power at the full chip",
+        law: match case {
+            crate::feeds::engagement::PowerCase::Nominal => {
+                "rated spindle power at the full chip (nominal case)"
+            }
+            crate::feeds::engagement::PowerCase::PlannerCap => {
+                "rated spindle power at the full chip (planner cap case)"
+            }
+            crate::feeds::engagement::PowerCase::Slot => {
+                "rated spindle power at the full chip (slot case)"
+            }
+        },
         basis: Basis::derived(
             "two-term power model <= rated curve",
             vec![Basis::Machine(MachineField::PowerCurve)],

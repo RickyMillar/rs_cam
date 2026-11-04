@@ -660,6 +660,7 @@ fn operating_point(ap: f64, ae: f64, fz: f64, rpm: f64) -> FeedsResult {
         axial_depth_mm: ap,
         radial_width_mm: ae,
         power_kw: 0.0,
+        power_case: rs_cam_core::feeds::engagement::PowerCase::Nominal,
         available_power_kw: 0.8,
         power_limited: false,
         mrr_mm3_min: ap * ae * feed,

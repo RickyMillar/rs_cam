@@ -948,6 +948,7 @@ pub fn feeds_input_for_operation<'a>(
             tool_overhang_mm: Some(tool.stickout_planning_mm()),
         },
         spindle_strategy,
+        power_cases: crate::feeds::engagement::PowerCases::of_operation(operation),
     }
 }
 

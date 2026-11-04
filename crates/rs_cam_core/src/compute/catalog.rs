@@ -1324,6 +1324,45 @@ impl OperationConfig {
         }
     }
 
+    /// K7 (feeds contract P9): the planner's engagement cap as a multiple of
+    /// the nominal width, for the pre-sim power case `PlannerCap`. Only 3D
+    /// Rough states one: the planner's value
+    /// (`adaptive3d::effective_trochoid_cap_mult` of
+    /// `Adaptive3dConfig::trochoid_cap_mult`; the folder file says the field
+    /// is load-only, and this read is a load read).
+    #[must_use]
+    pub fn planner_engagement_cap_mult(&self) -> Option<f64> {
+        match self {
+            OperationConfig::Adaptive3d(c) => Some(crate::adaptive3d::effective_trochoid_cap_mult(
+                c.trochoid_cap_mult,
+            )),
+            OperationConfig::Face(_)
+            | OperationConfig::Pocket(_)
+            | OperationConfig::Profile(_)
+            | OperationConfig::Adaptive(_)
+            | OperationConfig::VCarve(_)
+            | OperationConfig::Inlay(_)
+            | OperationConfig::InlayPlug(_)
+            | OperationConfig::Zigzag(_)
+            | OperationConfig::Trace(_)
+            | OperationConfig::Drill(_)
+            | OperationConfig::Bore(_)
+            | OperationConfig::Chamfer(_)
+            | OperationConfig::DropCutter(_)
+            | OperationConfig::Waterline(_)
+            | OperationConfig::Pencil(_)
+            | OperationConfig::Scallop(_)
+            | OperationConfig::UnifiedFinish(_)
+            | OperationConfig::SteepShallow(_)
+            | OperationConfig::RampFinish(_)
+            | OperationConfig::SpiralFinish(_)
+            | OperationConfig::RadialFinish(_)
+            | OperationConfig::HorizontalFinish(_)
+            | OperationConfig::ProjectCurve(_)
+            | OperationConfig::AlignmentPinDrill(_) => None,
+        }
+    }
+
     /// The row's [`EntryProbeRule`], resolved against this config.
     fn entry_probe(&self) -> EntryProbe {
         match self.op_type().capabilities().entry_probe {

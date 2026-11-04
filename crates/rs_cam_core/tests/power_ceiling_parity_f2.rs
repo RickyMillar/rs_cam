@@ -155,6 +155,7 @@ fn slot_cut(machine: &MachineProfile, species: WoodSpecies, diameter: f64) -> Fe
         vendor_lut: Some(embedded_vendor_lut()),
         setup: SetupContext::default(),
         spindle_strategy: SpindleStrategy::MatchChart,
+        power_cases: rs_cam_core::feeds::engagement::PowerCases::NOMINAL,
     })
 }
 
@@ -182,6 +183,7 @@ fn light_finish(machine: &MachineProfile) -> FeedsResult {
         vendor_lut: Some(embedded_vendor_lut()),
         setup: SetupContext::default(),
         spindle_strategy: SpindleStrategy::MatchChart,
+        power_cases: rs_cam_core::feeds::engagement::PowerCases::NOMINAL,
     })
 }
 

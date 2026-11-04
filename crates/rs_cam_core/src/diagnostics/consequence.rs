@@ -83,11 +83,14 @@ pub enum Gate {
     /// K5 ReachFlute, the simulation stage: a fresh simulation measured
     /// wood above the flute (`compute::simulate::flute_reach`).
     FluteOverreach,
+    /// K7 (feeds contract P9): a fresh simulation measured a point outside
+    /// the K2b envelope (`compute::simulate::envelope_placement`).
+    SimOutsideEnvelope,
 }
 
 impl Gate {
     /// Every gate, for the export walk and the tests.
-    pub const ALL: [Self; 12] = [
+    pub const ALL: [Self; 13] = [
         Self::HeightRefuses,
         Self::GougeBlocks,
         Self::CentreCutPlunge,
@@ -100,6 +103,7 @@ impl Gate {
         Self::ToolKind,
         Self::Feasibility,
         Self::FluteOverreach,
+        Self::SimOutsideEnvelope,
     ];
 }
 

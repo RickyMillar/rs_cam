@@ -469,14 +469,23 @@ pub fn predict_peak_deflection_um(
     // same inputs, so the reported force can't drift from the one the
     // deflection used. No grain anisotropy factor here: static deflection
     // responds to mean force, not transient spikes.
-    let immersion_rad = crate::feeds::force::immersion_angle(radial_woc_mm, diameter_mm / 2.0);
-    let f_lateral_n = crate::feeds::force::lateral_cutting_force(
-        material,
-        axial_doc_mm,
-        immersion_rad,
-        chipload_per_tooth_mm,
-    )
-    .unwrap_or(0.0);
+    //
+    // K7 (feeds contract P9): the cut is the one engagement. The predictor
+    // keeps the nominal diameter it always read (no deflection number moves
+    // in P9; the engaged-diameter question belongs to the P11 force model).
+    let engagement = crate::feeds::engagement::Engagement::from_cut(
+        crate::feeds::envelope::CutPoint {
+            ap_mm: axial_doc_mm,
+            ae_mm: radial_woc_mm,
+        },
+        tool.geometry_hint(),
+        diameter_mm,
+        Some(tool.helix_deg),
+    );
+    let immersion_rad = engagement.psi_rad();
+    let f_lateral_n = engagement
+        .lateral_force(material, chipload_per_tooth_mm)
+        .unwrap_or(0.0);
 
     // Delegate the cantilever to the canonical integrated model. The
     // guards above cover every documented refusal of the delegate, so the
