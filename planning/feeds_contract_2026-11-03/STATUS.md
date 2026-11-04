@@ -10,6 +10,15 @@ Start here in a new session:
 Citations in the cards are `path:line@40cf411a7` plus a symbol. Find the
 code by the symbol when the line has moved.
 
+## Overnight plan (operator, 2026-11-04 evening)
+
+The operator: "if you don't need me lets just polish this off." The lead runs the remaining list
+without the operator: P7 C -> D9 (remove the dial) -> P9 -> P8 -> P10 -> P11 steps 1-6 -> P12
+(hand-off). Lead reading of the run rule: the operator's earlier yes covers core `--lib` and the
+full viz run at each commit; the non-heavy core integration run is the broad check; a heavy
+binary runs only when a card's gate names it, one at a time, never the full heavy gate. A phase
+that needs an operator ruling stops at that point and records the question here.
+
 ## Next session (hand-off by the lead, 2026-11-04, after P5d)
 
 Operator plan (2026-11-04): run two jobs in parallel, each by one Opus agent; the lead
@@ -79,6 +88,7 @@ Prompt for the new session (paste after `/clear`):
 | 9 K7 one engagement | `phases/P9.md` | NOT STARTED (heavy-tests: ask first) | | |
 | 10 Tool-derived geometry defaults (D8) | `phases/P10.md` | NOT STARTED (card drafted 2026-11-03; needs P5; lead answers its open points first) | | |
 | 11 Force model, chip first, feed-driven limits | `phases/P11.md` | Step 0 DONE 2026-11-04 (`research_p11_step0/`: verdict FAIL against the preregistered rule; best group W 67 %, best group D 7.3 %, wood force candidates 0 / 418; 21 claims hold). Steps 1-6 NOT STARTED (need D11) | see `git log` | D11 ruling; then steps 1-6 after P9 or with it |
+| 12 Hand-off for independent review | `phases/P12.md` | NOT STARTED (operator, 2026-11-04: last; another session verifies the output numbers against industry practice) | | after P11 |
 
 ## Not in a phase
 
