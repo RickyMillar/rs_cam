@@ -51,6 +51,7 @@
 
 use rs_cam_core::compute::catalog::{OperationConfig, OperationType};
 use rs_cam_core::compute::config::DressupConfig;
+use rs_cam_core::compute::tool_config::ToolFact;
 use rs_cam_core::compute::tool_config::{ToolConfig, ToolId, ToolType};
 use rs_cam_core::feeds::extrapolation::{DRILL_RULES, PLUNGE_RULES, PlungeKey};
 use rs_cam_core::feeds::plunge::{PLUNGE_BASE_RULE_TEXT, resolve_plunge};
@@ -92,11 +93,11 @@ fn acrylic() -> Material {
 fn tool_of(kind: ToolType, diameter: f64, flutes: u32) -> ToolConfig {
     let mut t = ToolConfig::new_default(ToolId::from_raw(1), kind);
     t.diameter = diameter;
-    t.flute_count = flutes;
-    t.cutting_length = (diameter * 4.0).max(12.0);
-    t.shank_diameter = diameter.max(3.175);
+    t.set_flute_count(ToolFact::Stated(flutes));
+    t.set_cutting_length(ToolFact::Stated((diameter * 4.0).max(12.0)));
+    t.set_shank_diameter(ToolFact::Stated(diameter.max(3.175)));
     t.shaft_diameter = diameter.max(3.175);
-    t.stickout = t.cutting_length_planning_mm() + 8.0;
+    t.set_stickout(ToolFact::Stated(t.cutting_length_planning_mm() + 8.0));
     if matches!(kind, ToolType::BullNose) {
         t.corner_radius = 0.5;
         t.corner_radius_mm = 0.5;
@@ -116,8 +117,8 @@ fn ball(diameter: f64) -> ToolConfig {
 fn vbit(diameter: f64, angle_deg: f64) -> ToolConfig {
     let mut t = tool_of(ToolType::VBit, diameter, 2);
     t.included_angle = angle_deg;
-    t.cutting_length = 19.05;
-    t.stickout = 27.05;
+    t.set_cutting_length(ToolFact::Stated(19.05));
+    t.set_stickout(ToolFact::Stated(27.05));
     t
 }
 
@@ -125,11 +126,11 @@ fn vbit(diameter: f64, angle_deg: f64) -> ToolConfig {
 fn tapered(tip_mm: f64) -> ToolConfig {
     let mut t = ToolConfig::new_default(ToolId::from_raw(1), ToolType::TaperedBallNose);
     t.diameter = tip_mm;
-    t.taper_half_angle = 5.7;
+    t.set_taper_half_angle(ToolFact::Stated(5.7));
     t.shaft_diameter = 6.0;
-    t.shank_diameter = 6.0;
-    t.cutting_length = 20.0;
-    t.flute_count = 2;
+    t.set_shank_diameter(ToolFact::Stated(6.0));
+    t.set_cutting_length(ToolFact::Stated(20.0));
+    t.set_flute_count(ToolFact::Stated(2));
     t
 }
 

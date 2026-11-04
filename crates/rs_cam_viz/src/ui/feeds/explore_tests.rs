@@ -8,6 +8,7 @@
     reason = "test code: a panic is how a test reports a failure"
 )]
 
+use rs_cam_core::compute::tool_config::ToolFact;
 use std::cell::RefCell;
 use std::path::PathBuf;
 use std::sync::Arc;
@@ -53,8 +54,8 @@ pub(crate) fn record(frame: egui::Rect, labels: &[PlacedLabel], font_size: f32) 
 fn fixture(diameter: f64, stickout: f64) -> AppState {
     let mut tool = ToolConfig::new_default(ToolId::from_raw(1), ToolType::EndMill);
     tool.diameter = diameter;
-    tool.stickout = stickout;
-    tool.flute_count = 2;
+    tool.set_stickout(ToolFact::Stated(stickout));
+    tool.set_flute_count(ToolFact::Stated(2));
     let stock = StockConfig {
         material: Material::default(),
         ..Default::default()

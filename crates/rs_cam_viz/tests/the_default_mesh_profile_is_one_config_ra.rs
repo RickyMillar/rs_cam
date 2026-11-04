@@ -93,10 +93,11 @@ fn session() -> ProjectSession {
             auto_from_model: false,
             ..rs_cam_core::compute::StockConfig::default()
         })
-        .tool(ToolConfig {
-            diameter: 6.0,
-            ..ToolConfig::new_default(ToolId::from_raw(1), ToolType::EndMill)
-        });
+        .tool(
+            ToolConfig::builder(ToolId::from_raw(1), ToolType::EndMill)
+                .diameter(6.0)
+                .build(),
+        );
     let _ = builder.add_model(model);
     builder.build()
 }

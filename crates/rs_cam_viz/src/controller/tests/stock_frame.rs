@@ -2,6 +2,7 @@
 //! setup resolves in.
 
 use super::*;
+use rs_cam_core::compute::tool_config::ToolFact;
 
 /// F-024 (third-site fix, 2026-05-25): end-to-end regression that the viz
 /// worker simulation, when fed the controller-built world `stock_bbox`,
@@ -43,10 +44,10 @@ fn controller_built_stock_bbox_drives_axial_engagement_within_commanded_doc_f024
 
     let mut tool = ToolConfig::new_default(ToolId::from_raw(1), ToolType::EndMill);
     tool.diameter = 6.0;
-    tool.cutting_length = 25.0;
-    tool.shank_diameter = 6.35;
-    tool.stickout = 45.0;
-    tool.flute_count = 2;
+    tool.set_cutting_length(ToolFact::Stated(25.0));
+    tool.set_shank_diameter(ToolFact::Stated(6.35));
+    tool.set_stickout(ToolFact::Stated(45.0));
+    tool.set_flute_count(ToolFact::Stated(2));
     tool.name = "End Mill 6mm".to_owned();
 
     // First-pass-of-pocket-style linear cutting at world Z=-2. Same shape as
@@ -175,10 +176,10 @@ fn as001_pocket_heights_resolve_in_world_frame_for_identity_setup_f028() {
     // 6 mm endmill matching the AS001 fixture.
     let mut tool = ToolConfig::new_default(ToolId::from_raw(1), ToolType::EndMill);
     tool.diameter = 6.0;
-    tool.cutting_length = 25.0;
-    tool.shank_diameter = 6.35;
-    tool.stickout = 45.0;
-    tool.flute_count = 2;
+    tool.set_cutting_length(ToolFact::Stated(25.0));
+    tool.set_shank_diameter(ToolFact::Stated(6.35));
+    tool.set_stickout(ToolFact::Stated(45.0));
+    tool.set_flute_count(ToolFact::Stated(2));
     tool.name = "End Mill 6mm".to_owned();
     controller
         .state

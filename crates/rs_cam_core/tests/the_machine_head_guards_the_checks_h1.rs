@@ -52,12 +52,12 @@ const DEPTH: f64 = 70.0;
 const FLOOR_Z: f64 = -55.0;
 
 fn tool() -> ToolConfig {
-    ToolConfig {
-        cutting_length: 60.0,
-        shank_diameter: 6.0,
-        stickout: 60.0,
-        ..ball_tool_config(6.0)
-    }
+    ball_tool_config(6.0)
+        .to_builder()
+        .flute_mm(60.0)
+        .shank_mm(6.0)
+        .stickout_mm(60.0)
+        .build()
 }
 
 fn session() -> ProjectSession {
@@ -101,11 +101,13 @@ fn a_shelf_is_a_z_floor_under_the_highest_top_h1() {
         min: P3::new(0.0, 0.0, -100.0),
         max: P3::new(100.0, 100.0, 0.0),
     };
-    let cutter = rs_cam_core::compute::cutter::build_cutter(&ToolConfig {
-        cutting_length: 20.0,
-        stickout: 45.0,
-        ..ball_tool_config(6.0)
-    })
+    let cutter = rs_cam_core::compute::cutter::build_cutter(
+        &ball_tool_config(6.0)
+            .to_builder()
+            .flute_mm(20.0)
+            .stickout_mm(45.0)
+            .build(),
+    )
     .unwrap();
     let assembly = cutter.to_assembly(&HeadFit::fixed(&MachineHead::bare_collet()));
     let view = ObstacleSet::default()

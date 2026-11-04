@@ -324,64 +324,12 @@ pub fn create_library(name: &str) -> Result<PathBuf, ToolLibraryError> {
     create_in(&dir, name)
 }
 
-/// Stable equality key for de-duplicating tools within a catalog.
-///
-/// Policy (operator ruling, F176, 2026-10-19): the geometry and the
-/// material make a library tool distinct. Each field is IN or OUT:
-///
-/// - IN: every cutter dimension (`tool_type`, `diameter`,
-///   `cutting_length`, `helix_deg`, `corner_radius_mm`, `corner_radius`,
-///   `included_angle`, `taper_half_angle`, `shaft_diameter`), the
-///   `shank_diameter` (a fixed part of the physical tool: deflection,
-///   collision and the simulation cache read it), `flute_count`,
-///   `tool_material` and `cut_direction`.
-/// - OUT: `id` (project-local), `name`, `tool_number`, `stickout` (how
-///   the tool is mounted, not what it is), `vendor`, `product_id` and
-///   `size_units` (display only).
-///
-/// The destructure names every field with no `..`, so a new
-/// `ToolConfig` field does not compile until someone puts it IN or OUT.
-/// Lengths format at 0.001 mm and angles at 0.01 degree, so a float
-/// round trip through TOML does not split one tool into two.
+/// Stable equality key for de-duplicating tools within a catalog: the
+/// policy (F176) and the exhaustive destructure live in
+/// [`ToolConfig::library_dedupe_key`] (feeds contract P6: the fact fields
+/// are private to `compute/tool_config.rs`).
 fn dedupe_key(t: &ToolConfig) -> String {
-    let ToolConfig {
-        id: _,
-        name: _,
-        tool_number: _,
-        tool_type,
-        diameter,
-        cutting_length,
-        helix_deg,
-        corner_radius_mm,
-        corner_radius,
-        included_angle,
-        taper_half_angle,
-        shaft_diameter,
-        shank_diameter,
-        stickout: _,
-        flute_count,
-        tool_material,
-        cut_direction,
-        vendor: _,
-        product_id: _,
-        size_units: _,
-        non_centre_cutting,
-    } = t;
-    let non_centre_cutting = non_centre_cutting.map_or_else(
-        || "centre_cutting".to_owned(),
-        |geometry| {
-            format!(
-                "non_centre:{:.3}:{:.3}",
-                geometry.centre_core_diameter_mm, geometry.blade_protrusion_mm
-            )
-        },
-    );
-    format!(
-        "{tool_type:?}|{diameter:.3}|{flute_count}|{cutting_length:.3}|{taper_half_angle:.2}|\
-         {included_angle:.2}|{corner_radius:.3}|{corner_radius_mm:.3}|{shaft_diameter:.3}|\
-         {shank_diameter:.3}|{helix_deg:.2}|{tool_material:?}|{cut_direction:?}|\
-         {non_centre_cutting}",
-    )
+    t.library_dedupe_key()
 }
 
 /// Remove duplicate tools (by [`dedupe_key`]) from catalog `name` in
@@ -408,7 +356,7 @@ pub fn dedupe_library(name: &str) -> Result<ToolCatalog, ToolLibraryError> {
 )]
 mod tests {
     use super::*;
-    use crate::compute::tool_config::{ToolConfig, ToolId, ToolType};
+    use crate::compute::tool_config::{ToolConfig, ToolFact, ToolId, ToolType};
 
     fn temp_dir(tag: &str) -> PathBuf {
         let dir = std::env::temp_dir().join(format!("rs_cam_tool_lib_test_{tag}"));
@@ -595,7 +543,7 @@ mod tests {
     fn dedupe_key_ignores_name_stickout_and_catalog_metadata() {
         let a = tool("1/4 upcut", 6.35);
         let mut b = tool("quarter inch flat", 6.35);
-        b.stickout = a.stickout + 12.0;
+        b.set_stickout(ToolFact::Stated(a.stickout_planning_mm() + 12.0));
         b.tool_number = a.tool_number + 4;
         b.vendor = "Amana".to_owned();
         b.product_id = "46200".to_owned();
@@ -617,15 +565,21 @@ mod tests {
             ("corner_radius_mm", |t| t.corner_radius_mm = 0.5),
             ("corner_radius", |t| t.corner_radius = 0.5),
             ("shaft_diameter", |t| t.shaft_diameter = 8.0),
-            ("shank_diameter", |t| t.shank_diameter = 8.0),
+            ("shank_diameter", |t| {
+                t.set_shank_diameter(ToolFact::Stated(8.0));
+            }),
             ("helix_deg", |t| t.helix_deg = 45.0),
             ("cut_direction", |t| {
                 t.cut_direction = BitCutDirection::DownCut;
             }),
             ("included_angle", |t| t.included_angle = 60.0),
-            ("taper_half_angle", |t| t.taper_half_angle = 5.0),
-            ("flute_count", |t| t.flute_count = 3),
-            ("cutting_length", |t| t.cutting_length = 12.0),
+            ("taper_half_angle", |t| {
+                t.set_taper_half_angle(ToolFact::Stated(5.0));
+            }),
+            ("flute_count", |t| t.set_flute_count(ToolFact::Stated(3))),
+            ("cutting_length", |t| {
+                t.set_cutting_length(ToolFact::Stated(12.0));
+            }),
             ("diameter", |t| t.diameter = 8.0),
             ("tool_type", |t| t.tool_type = ToolType::BallNose),
         ];

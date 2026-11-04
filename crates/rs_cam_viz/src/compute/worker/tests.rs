@@ -8,6 +8,7 @@ use crate::state::toolpath::{
 };
 use rs_cam_core::compute::cutter::build_cutter;
 use rs_cam_core::compute::simulate::{SimGroupEntry, SimToolpathEntry};
+use rs_cam_core::compute::tool_config::ToolFact;
 use rs_cam_core::geo::{BoundingBox3, P3};
 use rs_cam_core::mesh::{make_test_flat, make_test_hemisphere};
 use rs_cam_core::polygon::Polygon2;
@@ -2452,10 +2453,10 @@ fn as001_viz_path_first_pass_axial_engagement_within_commanded_doc_f024() {
 
     let mut tool = ToolConfig::new_default(ToolId::from_raw(1), ToolType::EndMill);
     tool.diameter = 6.0;
-    tool.cutting_length = 25.0;
-    tool.shank_diameter = 6.35;
-    tool.stickout = 45.0;
-    tool.flute_count = 2;
+    tool.set_cutting_length(ToolFact::Stated(25.0));
+    tool.set_shank_diameter(ToolFact::Stated(6.35));
+    tool.set_stickout(ToolFact::Stated(45.0));
+    tool.set_flute_count(ToolFact::Stated(2));
     tool.name = "End Mill 6mm".to_owned();
 
     // World-frame stock: 100x100x12 with origin at (-10, -10, -12) — stock

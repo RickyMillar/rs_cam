@@ -2,7 +2,9 @@ use crate::state::job::{BitCutDirection, ToolConfig, ToolMaterial, ToolType};
 use crate::ui::components::UiExt as _;
 use crate::ui::components::ValueRow;
 use crate::ui::theme;
-use rs_cam_core::compute::tool_config::{NonCentreCuttingGeometry, SizeUnits, ToolDimension};
+use rs_cam_core::compute::tool_config::{
+    NonCentreCuttingGeometry, SizeUnits, ToolDimension, ToolFact,
+};
 
 /// The "Size in" choices, in the order the selector shows them.
 const SIZE_UNIT_CHOICES: &[(SizeUnits, &str)] = &[
@@ -243,15 +245,21 @@ pub(crate) fn draw_tool_fields(
         .keep_existing()
         .show(ui);
 
+        // K3 (feeds contract P6): the row edits a copy; a change writes
+        // `ToolFact::Stated`, and a frame with no change writes nothing.
+        let mut cutting_length = tool.cutting_length_planning_mm();
         ValueRow::new(
             "Cutting Length:",
-            &mut tool.cutting_length,
+            &mut cutting_length,
             " mm",
             0.5,
             ToolDimension::CuttingLength.ui_range(tool.diameter),
         )
         .keep_existing()
         .show(ui);
+        if cutting_length.to_bits() != tool.cutting_length_planning_mm().to_bits() {
+            tool.set_cutting_length(ToolFact::Stated(cutting_length));
+        }
 
         // Flute count (critical for feeds calculation).
         // UI-10: an integer field. `ValueRow` edits an `f64`, and a
@@ -266,7 +274,7 @@ pub(crate) fn draw_tool_fields(
             )
             .changed()
         {
-            tool.flute_count = flutes_i.max(1) as u32;
+            tool.set_flute_count(ToolFact::Stated(flutes_i.max(1) as u32));
         }
         ui.end_row();
 
@@ -336,15 +344,19 @@ pub(crate) fn draw_tool_fields(
                 .show(ui);
             }
             ToolType::TaperedBallNose => {
+                let mut taper_half_angle = tool.taper_half_angle_planning_deg();
                 ValueRow::new(
                     "Taper Half-Angle:",
-                    &mut tool.taper_half_angle,
+                    &mut taper_half_angle,
                     " deg",
                     0.5,
                     ToolDimension::TaperHalfAngle.ui_range(tool.diameter),
                 )
                 .keep_existing()
                 .show(ui);
+                if taper_half_angle.to_bits() != tool.taper_half_angle_planning_deg().to_bits() {
+                    tool.set_taper_half_angle(ToolFact::Stated(taper_half_angle));
+                }
                 // TOO-005: the tapered "shaft diameter" (taper top) used to
                 // sit here next to the holder "shank diameter", two near-
                 // identical names for different geometry. It now lives in its
@@ -421,20 +433,28 @@ pub(crate) fn draw_tool_fields(
             ui.param_grid("holder_params", |ui| {
                 // TOO-005: role-bearing label, distinct from the tapered
                 // "Upper shaft Ø" in the Cutter geometry group above.
+                let mut shank_diameter = tool.shank_diameter_planning_mm();
                 ValueRow::new(
                     "Shank \u{00D8} (in collet):",
-                    &mut tool.shank_diameter,
+                    &mut shank_diameter,
                     " mm",
                     0.1,
                     ToolDimension::ShankDiameter.ui_range(tool.diameter),
                 )
                 .keep_existing()
                 .show(ui);
+                if shank_diameter.to_bits() != tool.shank_diameter_planning_mm().to_bits() {
+                    tool.set_shank_diameter(ToolFact::Stated(shank_diameter));
+                }
 
                 let stickout_range = ToolDimension::Stickout.ui_range(tool.diameter);
-                ValueRow::new("Stickout:", &mut tool.stickout, " mm", 0.5, stickout_range)
+                let mut stickout = tool.stickout_planning_mm();
+                ValueRow::new("Stickout:", &mut stickout, " mm", 0.5, stickout_range)
                     .keep_existing()
                     .show(ui);
+                if stickout.to_bits() != tool.stickout_planning_mm().to_bits() {
+                    tool.set_stickout(ToolFact::Stated(stickout));
+                }
             });
         });
 

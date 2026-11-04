@@ -190,12 +190,11 @@ fn terrain(window_mm: f64) -> TriangleMesh {
 }
 
 fn tapered_ball_tool() -> ToolConfig {
-    ToolConfig {
-        diameter: TIP_DIAMETER_MM,
-        taper_half_angle: TAPER_HALF_ANGLE_DEG,
-        shaft_diameter: SHANK_DIAMETER_MM,
-        ..ToolConfig::new_default(ToolId::from_raw(0), ToolType::TaperedBallNose)
-    }
+    ToolConfig::builder(ToolId::from_raw(0), ToolType::TaperedBallNose)
+        .diameter(TIP_DIAMETER_MM)
+        .taper_half_angle_deg(TAPER_HALF_ANGLE_DEG)
+        .shaft_mm(SHANK_DIAMETER_MM)
+        .build()
 }
 
 /// Stock flush with the model's own bbox in Z, padded 2 mm in XY.

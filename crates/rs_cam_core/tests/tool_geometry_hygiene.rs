@@ -37,6 +37,7 @@
 )]
 
 use rs_cam_core::compute::cutter::build_cutter;
+use rs_cam_core::compute::tool_config::ToolFact;
 use rs_cam_core::compute::tool_config::{
     NamedQuantity, ToolConfig, ToolGeometryField, ToolId, ToolType,
 };
@@ -49,11 +50,11 @@ fn live_tapered_ball(name: &str, diameter: f64, taper_half_angle: f64, loc: f64)
     let mut tool = ToolConfig::new_default(ToolId::from_raw(1), ToolType::TaperedBallNose);
     tool.name = name.to_owned();
     tool.diameter = diameter;
-    tool.cutting_length = loc;
-    tool.taper_half_angle = taper_half_angle;
+    tool.set_cutting_length(ToolFact::Stated(loc));
+    tool.set_taper_half_angle(ToolFact::Stated(taper_half_angle));
     tool.shaft_diameter = 6.0;
-    tool.shank_diameter = 6.0;
-    tool.stickout = 35.0;
+    tool.set_shank_diameter(ToolFact::Stated(6.0));
+    tool.set_stickout(ToolFact::Stated(35.0));
     tool
 }
 
@@ -78,7 +79,7 @@ fn correct_vendor_names_raise_nothing() {
     let mut end_mill = ToolConfig::new_default(ToolId::from_raw(0), ToolType::EndMill);
     end_mill.name = "6mm 2F Carbide End Mill".to_owned();
     end_mill.diameter = 6.0;
-    end_mill.shank_diameter = 6.35;
+    end_mill.set_shank_diameter(ToolFact::Stated(6.35));
     let found = end_mill.name_geometry_mismatches();
     assert!(found.is_empty(), "unexpected {found:?}");
 }
@@ -170,7 +171,7 @@ fn normalizing_changes_no_cutter_geometry() {
         tool.corner_radius_mm = 0.5;
         tool.corner_radius = 2.0;
         tool.included_angle = 90.0;
-        tool.taper_half_angle = 15.0;
+        tool.set_taper_half_angle(ToolFact::Stated(15.0));
         tool.shaft_diameter = 6.35;
         // …except where the value defines the type, which a loader has
         // to leave alone for the tool to be that type at all.
@@ -231,7 +232,7 @@ fn switching_type_in_place_reports_the_geometry_it_now_needs() {
 
     // Refilled from the type's own defaults, it is a complete tool.
     let defaults = ToolConfig::new_default(tool.id, ToolType::TaperedBallNose);
-    tool.taper_half_angle = defaults.taper_half_angle_planning_deg();
+    tool.set_taper_half_angle(ToolFact::Stated(defaults.taper_half_angle_planning_deg()));
     tool.shaft_diameter = defaults.shaft_diameter;
     assert!(tool.missing_defining_geometry().is_empty());
 }

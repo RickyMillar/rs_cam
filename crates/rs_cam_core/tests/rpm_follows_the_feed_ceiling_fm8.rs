@@ -33,6 +33,7 @@
 )]
 
 use rs_cam_core::compute::catalog::OperationType;
+use rs_cam_core::compute::tool_config::ToolFact;
 use rs_cam_core::compute::{ToolConfig, ToolId, ToolType};
 use rs_cam_core::diagnostics::adapters::from_feeds::diagnostics_from_feeds_result;
 use rs_cam_core::diagnostics::{Severity, ids};
@@ -265,11 +266,11 @@ fn a_row_rpm_min_stops_the_descent_fm8() {
 fn suggest_ships_the_lowered_rpm_with_a_rationale_row_fm8() {
     let mut tool = ToolConfig::new_default(ToolId::from_raw(1), ToolType::EndMill);
     tool.diameter = 6.0;
-    tool.shank_diameter = 6.0;
+    tool.set_shank_diameter(ToolFact::Stated(6.0));
     tool.shaft_diameter = 6.0;
-    tool.cutting_length = 22.0;
-    tool.stickout = 20.0;
-    tool.flute_count = 2;
+    tool.set_cutting_length(ToolFact::Stated(22.0));
+    tool.set_stickout(ToolFact::Stated(20.0));
+    tool.set_flute_count(ToolFact::Stated(2));
     let machine = MachineProfile::generic_wood_router();
     let material = Material::SolidWood {
         species: WoodSpecies::GenericHardwood,

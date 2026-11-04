@@ -1,6 +1,7 @@
 use super::diagnostics::build_inspect_spans_response;
 use super::simulation::{CutTraceRequest, build_cut_trace_response};
 use super::*;
+use rs_cam_core::compute::tool_config::ToolFact;
 use rs_cam_core::compute::tool_config::{ToolConfig, ToolId, ToolType};
 use rs_cam_core::session::{AddToolpathArgs, Command, RemoveToolpathArgs};
 use rs_cam_core::trace::toolpath_spans::{RegionSpanRole, Span, SpanKind, SpanPayload};
@@ -18,11 +19,11 @@ fn two_tool_fixture() -> Vec<ToolConfig> {
     let mut a = ToolConfig::new_default(ToolId::from_raw(1), ToolType::EndMill);
     a.name = "Ø6 flat".to_owned();
     a.diameter = 6.0;
-    a.flute_count = 2;
+    a.set_flute_count(ToolFact::Stated(2));
     let mut b = ToolConfig::new_default(ToolId::from_raw(2), ToolType::BallNose);
     b.name = "Ø1 ball".to_owned();
     b.diameter = 1.0;
-    b.flute_count = 4;
+    b.set_flute_count(ToolFact::Stated(4));
     vec![a, b]
 }
 

@@ -97,11 +97,10 @@ fn stock() -> StockConfig {
 }
 
 fn vbit(included_angle_deg: f64) -> ToolConfig {
-    ToolConfig {
-        diameter: 12.7,
-        included_angle: included_angle_deg,
-        ..ToolConfig::new_default(ToolId::from_raw(0), ToolType::VBit)
-    }
+    ToolConfig::builder(ToolId::from_raw(0), ToolType::VBit)
+        .diameter(12.7)
+        .included_angle_deg(included_angle_deg)
+        .build()
 }
 
 fn chamfer() -> OperationConfig {

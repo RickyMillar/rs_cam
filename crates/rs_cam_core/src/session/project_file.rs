@@ -12,7 +12,7 @@ use super::{
 use crate::compute::catalog::OperationConfig;
 use crate::compute::config::{BoundaryConfig, DressupConfig, HeightsConfig, StockSource};
 use crate::compute::stock_config::{ModelKind, ModelUnits, StockConfig};
-use crate::compute::tool_config::{ToolConfig, ToolId, ToolType};
+use crate::compute::tool_config::{ToolConfig, ToolFact, ToolId, ToolType};
 use crate::compute::transform::{FaceUp, ZRotation};
 use crate::gcode::CoolantMode;
 use crate::ids::{ModelId, SetupId};
@@ -922,7 +922,7 @@ fn default_tool_diameter() -> f64 {
     6.35
 }
 fn default_cutting_length() -> f64 {
-    25.0
+    crate::compute::tool_config::LEGACY_DEFAULT_CUTTING_LENGTH_MM
 }
 fn default_helix_deg() -> f64 {
     30.0
@@ -934,19 +934,19 @@ fn default_included_angle() -> f64 {
     90.0
 }
 fn default_taper_half_angle() -> f64 {
-    15.0
+    crate::compute::tool_config::LEGACY_DEFAULT_TAPER_HALF_ANGLE_DEG
 }
 fn default_shaft_diameter() -> f64 {
     6.35
 }
 fn default_shank_diameter() -> f64 {
-    6.35
+    crate::compute::tool_config::LEGACY_DEFAULT_SHANK_DIAMETER_MM
 }
 fn default_stickout() -> f64 {
-    45.0
+    crate::compute::tool_config::LEGACY_DEFAULT_STICKOUT_MM
 }
 fn default_flute_count() -> u32 {
-    2
+    crate::compute::tool_config::LEGACY_DEFAULT_FLUTE_COUNT
 }
 fn default_tool_material() -> String {
     "carbide".to_owned()
@@ -1220,29 +1220,31 @@ pub(crate) fn tool_from_project_section(
     // A section with no id takes its position: the loader is the allocator.
     let tool_id = ts.id.unwrap_or(ToolId::mint(idx));
     let tool_number = ts.tool_number.unwrap_or(tool_id.raw() + 1) as u32;
-    let tool = ToolConfig {
-        id: tool_id,
-        name: ts.name.clone(),
-        tool_number,
-        tool_type: parse_tool_type(&ts.tool_type, &ts.name, warnings),
-        diameter: ts.diameter,
-        cutting_length: ts.cutting_length,
-        helix_deg: ts.helix_deg,
-        corner_radius_mm: ts.corner_radius_mm,
-        corner_radius: ts.corner_radius,
-        included_angle: ts.included_angle,
-        taper_half_angle: ts.taper_half_angle,
-        shaft_diameter: ts.shaft_diameter,
-        shank_diameter: ts.shank_diameter,
-        stickout: ts.stickout,
-        flute_count: ts.flute_count,
-        tool_material: parse_tool_material(&ts.tool_material, &ts.name, warnings),
-        cut_direction: parse_cut_direction(&ts.cut_direction, &ts.name, warnings),
-        vendor: ts.vendor.clone(),
-        product_id: ts.product_id.clone(),
-        size_units: ts.size_units,
-        non_centre_cutting: ts.non_centre_cutting,
-    };
+    // Feeds contract P6 (commit B): the fact fields are private, so the
+    // loader starts from `new_default` and writes EVERY field below (the
+    // `normalize_geometry` of `new_default` is overwritten). Commit C gives
+    // each fact the kind the file states; B writes `Stated`.
+    let tool_type = parse_tool_type(&ts.tool_type, &ts.name, warnings);
+    let mut tool = ToolConfig::new_default(tool_id, tool_type);
+    tool.name = ts.name.clone();
+    tool.tool_number = tool_number;
+    tool.diameter = ts.diameter;
+    tool.set_cutting_length(ToolFact::Stated(ts.cutting_length));
+    tool.helix_deg = ts.helix_deg;
+    tool.corner_radius_mm = ts.corner_radius_mm;
+    tool.corner_radius = ts.corner_radius;
+    tool.included_angle = ts.included_angle;
+    tool.set_taper_half_angle(ToolFact::Stated(ts.taper_half_angle));
+    tool.shaft_diameter = ts.shaft_diameter;
+    tool.set_shank_diameter(ToolFact::Stated(ts.shank_diameter));
+    tool.set_stickout(ToolFact::Stated(ts.stickout));
+    tool.set_flute_count(ToolFact::Stated(ts.flute_count));
+    tool.tool_material = parse_tool_material(&ts.tool_material, &ts.name, warnings);
+    tool.cut_direction = parse_cut_direction(&ts.cut_direction, &ts.name, warnings);
+    tool.vendor = ts.vendor.clone();
+    tool.product_id = ts.product_id.clone();
+    tool.size_units = ts.size_units;
+    tool.non_centre_cutting = ts.non_centre_cutting;
     // FC0 item 7 (decision D4 = warn, ruling Q6): no refusal.
     if tool.stickout_shorter_than_flute() {
         warnings.push(ProjectLoadWarning::StickoutShorterThanFlute {

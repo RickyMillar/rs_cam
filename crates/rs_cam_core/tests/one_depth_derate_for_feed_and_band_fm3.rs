@@ -137,11 +137,10 @@ fn pocket(dpp: f64) -> OperationConfig {
 }
 
 fn tool() -> ToolConfig {
-    ToolConfig {
-        diameter: D_MM,
-        cutting_length: 60.0,
-        ..ToolConfig::new_default(ToolId::from_raw(1), ToolType::EndMill)
-    }
+    ToolConfig::builder(ToolId::from_raw(1), ToolType::EndMill)
+        .diameter(D_MM)
+        .flute_mm(60.0)
+        .build()
 }
 
 fn beyond_table_severities(dpp: f64) -> Vec<Severity> {

@@ -31,6 +31,7 @@
 
 use rs_cam_core::compute::catalog::{OperationConfig, OperationType};
 use rs_cam_core::compute::operation_configs::DropCutterConfig;
+use rs_cam_core::compute::tool_config::ToolFact;
 use rs_cam_core::compute::tool_config::{ToolConfig, ToolId, ToolType};
 use rs_cam_core::feeds::ToolGeometryHint;
 use rs_cam_core::feeds::embedded_vendor_lut;
@@ -141,7 +142,7 @@ fn flat_drop_cutter_resolves_the_same_row_as_the_adaptive3d_rough() {
     // de-rate applies and the target is the resolved point itself.
     let mut tool = ToolConfig::new_default(ToolId::from_raw(0), ToolType::EndMill);
     tool.diameter = 6.0;
-    tool.flute_count = 2;
+    tool.set_flute_count(ToolFact::Stated(2));
     let material = Material::Plywood {
         grade: PlywoodGrade::BalticBirch,
     };

@@ -65,6 +65,7 @@
     reason = "test code: a panic is how a test reports a failure"
 )]
 
+use rs_cam_core::compute::tool_config::ToolFact;
 use std::path::PathBuf;
 use std::sync::Arc;
 
@@ -98,11 +99,11 @@ fn tapered_ball(tip_diameter: f64) -> ToolConfig {
     let mut tool = ToolConfig::new_default(ToolId::from_raw(1), ToolType::TaperedBallNose);
     tool.name = "Claim card tapered ball".to_owned();
     tool.diameter = tip_diameter;
-    tool.taper_half_angle = 5.7;
+    tool.set_taper_half_angle(ToolFact::Stated(5.7));
     tool.shaft_diameter = 6.0;
-    tool.shank_diameter = 6.0;
-    tool.cutting_length = 20.0;
-    tool.flute_count = 2;
+    tool.set_shank_diameter(ToolFact::Stated(6.0));
+    tool.set_cutting_length(ToolFact::Stated(20.0));
+    tool.set_flute_count(ToolFact::Stated(2));
     tool
 }
 
@@ -114,9 +115,9 @@ fn ball_nose(diameter: f64) -> ToolConfig {
     tool.name = "Cap card ball nose".to_owned();
     tool.diameter = diameter;
     tool.shaft_diameter = diameter;
-    tool.shank_diameter = diameter;
-    tool.cutting_length = 20.0;
-    tool.flute_count = 2;
+    tool.set_shank_diameter(ToolFact::Stated(diameter));
+    tool.set_cutting_length(ToolFact::Stated(20.0));
+    tool.set_flute_count(ToolFact::Stated(2));
     tool
 }
 
@@ -132,12 +133,12 @@ fn vbit_60deg(diameter: f64) -> ToolConfig {
     let mut tool = ToolConfig::new_default(ToolId::from_raw(1), ToolType::VBit);
     tool.name = "Claim card V-bit".to_owned();
     tool.diameter = diameter;
-    tool.flute_count = 2;
+    tool.set_flute_count(ToolFact::Stated(2));
     tool.included_angle = 60.0;
-    tool.cutting_length = 19.05;
-    tool.shank_diameter = diameter;
+    tool.set_cutting_length(ToolFact::Stated(19.05));
+    tool.set_shank_diameter(ToolFact::Stated(diameter));
     tool.shaft_diameter = diameter;
-    tool.stickout = 27.05;
+    tool.set_stickout(ToolFact::Stated(27.05));
     tool
 }
 

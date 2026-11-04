@@ -287,6 +287,7 @@ mod tests {
     use crate::compute::catalog::OperationConfig;
     use crate::compute::obstacle::{Obstacle, ObstacleGeometry};
     use crate::compute::operation_configs::PocketConfig;
+    use crate::compute::tool_config::ToolFact;
     use crate::compute::tool_config::{ToolConfig, ToolId, ToolType};
     use crate::compute::transform::FaceUp;
     use crate::ids::{ObstacleId, ToolpathId};
@@ -368,8 +369,8 @@ mod tests {
         let mut tool = ToolConfig::new_default(ToolId::from_raw(0), ToolType::BallNose);
         tool.name = "2mm Ball".to_owned();
         tool.diameter = 2.0;
-        tool.flute_count = 2;
-        tool.stickout = 20.0;
+        tool.set_flute_count(ToolFact::Stated(2));
+        tool.set_stickout(ToolFact::Stated(20.0));
         let _ = s.add_tool(tool);
 
         let path = temp_path("tool");
@@ -380,8 +381,8 @@ mod tests {
         let loaded_tool = &loaded.tools()[0];
         assert_eq!(loaded_tool.name, "2mm Ball");
         assert!((loaded_tool.diameter - 2.0).abs() < 1e-9);
-        assert_eq!(loaded_tool.flute_count, 2);
-        assert!((loaded_tool.stickout - 20.0).abs() < 1e-9);
+        assert_eq!(loaded_tool.flute_count_planning(), 2);
+        assert!((loaded_tool.stickout_planning_mm() - 20.0).abs() < 1e-9);
         assert!(matches!(loaded_tool.tool_type, ToolType::BallNose));
         cleanup(&path);
     }

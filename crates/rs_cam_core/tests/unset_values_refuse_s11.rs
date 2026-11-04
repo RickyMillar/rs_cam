@@ -173,10 +173,9 @@ fn generate_moves(s: &mut ProjectSession, index: usize) -> usize {
 }
 
 fn end_mill() -> ToolConfig {
-    ToolConfig {
-        diameter: 3.0,
-        ..ToolConfig::new_default(ToolId::from_raw(0), ToolType::EndMill)
-    }
+    ToolConfig::builder(ToolId::from_raw(0), ToolType::EndMill)
+        .diameter(3.0)
+        .build()
 }
 
 /// Claim 1.
@@ -261,10 +260,9 @@ fn a_new_trace_has_no_depth_and_refuses_s11() {
 /// Claim 3.
 #[test]
 fn an_unbacked_tool_refuses_with_the_feeds_text_s11() {
-    let ball = ToolConfig {
-        diameter: 6.35,
-        ..ToolConfig::new_default(ToolId::from_raw(0), ToolType::BallNose)
-    };
+    let ball = ToolConfig::builder(ToolId::from_raw(0), ToolType::BallNose)
+        .diameter(6.35)
+        .build();
     let mut s = drawing_session(ball);
     set_thickness(&mut s, THICKNESS_MM);
     set_material(

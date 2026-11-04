@@ -111,10 +111,11 @@ fn mini(with_pin_drill: bool) -> ProjectSession {
     let mut builder = ProjectSessionBuilder::new();
     // A 6 mm drill, as the op name says: P6.5 (O-3) drills a circle of the
     // tool size only.
-    builder.add_tool(ToolConfig {
-        diameter: DOWEL_D,
-        ..ToolConfig::new_default(ToolId::from_raw(0), ToolType::EndMill)
-    });
+    builder.add_tool(
+        ToolConfig::builder(ToolId::from_raw(0), ToolType::EndMill)
+            .diameter(DOWEL_D)
+            .build(),
+    );
     builder.add_model(dowel_drawing());
     let tool = builder.tools()[0].id.raw();
     let model = builder.models()[0].id;

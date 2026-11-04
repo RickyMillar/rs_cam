@@ -39,6 +39,7 @@
 
 use rs_cam_core::compute::catalog::OperationConfig;
 use rs_cam_core::compute::operation_configs::PocketConfig;
+use rs_cam_core::compute::tool_config::ToolFact;
 use rs_cam_core::compute::{ToolConfig, ToolId, ToolType};
 use rs_cam_core::feeds::suggest::{
     ApplyContext, FeedsPreview, SuggestContext, round_suggestion_value, round_suggestion_value_down,
@@ -76,7 +77,7 @@ const FEED_STEP_MM_MIN: f64 = 1.0;
 fn endmill() -> ToolConfig {
     let mut tool = ToolConfig::new_default(ToolId::from_raw(1), ToolType::EndMill);
     tool.diameter = DIAMETER_MM;
-    tool.flute_count = 2;
+    tool.set_flute_count(ToolFact::Stated(2));
     tool
 }
 

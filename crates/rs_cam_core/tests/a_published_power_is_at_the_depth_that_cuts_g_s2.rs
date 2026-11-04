@@ -79,6 +79,7 @@
 
 use rs_cam_core::compute::catalog::OperationConfig;
 use rs_cam_core::compute::operation_configs::{DrillConfig, PocketConfig};
+use rs_cam_core::compute::tool_config::ToolFact;
 use rs_cam_core::compute::{ToolConfig, ToolId, ToolType};
 use rs_cam_core::feeds::envelope::PickRequest;
 use rs_cam_core::feeds::suggest::{OperationApplyInput, SuggestContext, apply_to_operation};
@@ -111,13 +112,13 @@ const STEPOVER_MM: f64 = 4.0;
 fn tool() -> ToolConfig {
     let mut t = ToolConfig::new_default(ToolId::from_raw(1), ToolType::EndMill);
     t.diameter = DIAMETER_MM;
-    t.flute_count = FLUTES;
-    t.cutting_length = 50.0;
+    t.set_flute_count(ToolFact::Stated(FLUTES));
+    t.set_cutting_length(ToolFact::Stated(50.0));
     // Ruling R4 Q7 (2026-09-24): above 4 x D stickout the long-tool share
     // (0.88) lowers the dial's load target, so even at aggressiveness 1.0
     // pass 6b would scale the depth (measured 24 -> 20 mm here, 2.4 -> 1.8
     // in g_s2). 48 mm = 4.0 x D takes no share, and the dial stays out.
-    t.stickout = 48.0;
+    t.set_stickout(ToolFact::Stated(48.0));
     t
 }
 

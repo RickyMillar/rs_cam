@@ -62,6 +62,7 @@
 )]
 
 use rs_cam_core::compute::catalog::OperationType;
+use rs_cam_core::compute::tool_config::ToolFact;
 use rs_cam_core::compute::tool_config::{ToolConfig, ToolId, ToolType};
 use rs_cam_core::feeds::extrapolation::{ClaimResidual, SizeBasis, SizeForm, SpreadFamily};
 use rs_cam_core::feeds::suggest::{
@@ -255,12 +256,12 @@ fn a_one_flute_60_degree_vbit_gets_the_37_00_row_unscaled_g2() {
 fn vbit_tool(diameter: f64) -> ToolConfig {
     let mut tool = ToolConfig::new_default(ToolId::from_raw(1), ToolType::VBit);
     tool.diameter = diameter;
-    tool.flute_count = 2;
+    tool.set_flute_count(ToolFact::Stated(2));
     tool.included_angle = 60.0;
-    tool.cutting_length = 19.05;
-    tool.shank_diameter = diameter;
+    tool.set_cutting_length(ToolFact::Stated(19.05));
+    tool.set_shank_diameter(ToolFact::Stated(diameter));
     tool.shaft_diameter = diameter;
-    tool.stickout = 27.05;
+    tool.set_stickout(ToolFact::Stated(27.05));
     tool
 }
 

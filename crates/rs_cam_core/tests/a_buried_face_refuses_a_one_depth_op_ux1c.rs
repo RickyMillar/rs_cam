@@ -63,6 +63,7 @@
 
 mod common;
 
+use rs_cam_core::compute::tool_config::ToolFact;
 use std::path::PathBuf;
 use std::sync::Arc;
 use std::sync::atomic::AtomicBool;
@@ -162,11 +163,11 @@ fn stepped_block() -> LoadedModel {
 fn vbit() -> ToolConfig {
     let mut t = ToolConfig::new_default(ToolId::from_raw(0), ToolType::VBit);
     t.diameter = 12.7;
-    t.cutting_length = 11.0;
+    t.set_cutting_length(ToolFact::Stated(11.0));
     t.included_angle = 60.0;
-    t.shank_diameter = 6.35;
-    t.stickout = 30.0;
-    t.flute_count = 2;
+    t.set_shank_diameter(ToolFact::Stated(6.35));
+    t.set_stickout(ToolFact::Stated(30.0));
+    t.set_flute_count(ToolFact::Stated(2));
     t.name = "V-bit 60deg".to_owned();
     t
 }

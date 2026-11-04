@@ -59,6 +59,7 @@
 )]
 
 use rs_cam_core::compute::catalog::{OperationConfig, OperationType};
+use rs_cam_core::compute::tool_config::ToolFact;
 use rs_cam_core::compute::{ToolConfig, ToolId, ToolType};
 use rs_cam_core::feeds::extrapolation::{
     HardnessBasis, JankaFrom, SOFT_OVER_HARD_PRINTED_MAX, SoftHardCap, hardness_basis,
@@ -108,11 +109,11 @@ fn softwood() -> Material {
 fn ball(diameter: f64) -> ToolConfig {
     let mut t = ToolConfig::new_default(ToolId::from_raw(1), ToolType::BallNose);
     t.diameter = diameter;
-    t.flute_count = 2;
-    t.cutting_length = (diameter * 3.0).max(6.0);
-    t.shank_diameter = diameter.max(3.175);
+    t.set_flute_count(ToolFact::Stated(2));
+    t.set_cutting_length(ToolFact::Stated((diameter * 3.0).max(6.0)));
+    t.set_shank_diameter(ToolFact::Stated(diameter.max(3.175)));
     t.shaft_diameter = diameter.max(3.175);
-    t.stickout = t.cutting_length_planning_mm() + 6.0;
+    t.set_stickout(ToolFact::Stated(t.cutting_length_planning_mm() + 6.0));
     t
 }
 

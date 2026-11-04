@@ -459,10 +459,12 @@ fn a_tool_tangent_to_a_wall_is_clean_and_a_tool_in_it_is_not_ux7b() {
     let model = load(STEPPED);
     let mesh = model.mesh.as_deref().unwrap();
     let index = SpatialIndex::build_auto(mesh);
-    let reduced = rs_cam_core::compute::cutter::build_cutter(&ToolConfig {
-        diameter: TOOL_D - 2.0 * MODEL_GOUGE_TOL_MM,
-        ..endmill_tool_config(TOOL_D)
-    })
+    let reduced = rs_cam_core::compute::cutter::build_cutter(
+        &endmill_tool_config(TOOL_D)
+            .to_builder()
+            .diameter(TOOL_D - 2.0 * MODEL_GOUGE_TOL_MM)
+            .build(),
+    )
     .unwrap();
     let probe = GougeProbe {
         mesh,

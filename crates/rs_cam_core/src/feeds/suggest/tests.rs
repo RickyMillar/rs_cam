@@ -9,6 +9,7 @@
 
 use super::axial_envelope::recompute_chipload_bounds_for_dpp;
 use super::invariants::{DEFLECTION_BACKOFF_TARGET_UM, enforce_invariants_at_fixed_geometry};
+use crate::compute::tool_config::ToolFact;
 
 /// The invariant chain of a speeds write on `operation` at the geometry it
 /// keeps (feeds contract P5: the geometry passes are deleted, so this is
@@ -96,7 +97,7 @@ fn unpopulated_effective_diameter_skips_doc_derating() {
 fn ball_tool(diameter: f64) -> ToolConfig {
     let mut tool = ToolConfig::new_default(ToolId::from_raw(0), ToolType::BallNose);
     tool.diameter = diameter;
-    tool.cutting_length = 25.0;
+    tool.set_cutting_length(ToolFact::Stated(25.0));
     tool
 }
 
@@ -168,7 +169,7 @@ fn scallop_height_none_preserves_legacy_ae() {
 fn scallop_height_uses_tip_radius_for_tapered_ball() {
     let mut tapered = ToolConfig::new_default(ToolId::from_raw(0), ToolType::TaperedBallNose);
     tapered.diameter = 1.0; // tip diameter → tip radius 0.5 mm
-    tapered.cutting_length = 25.0;
+    tapered.set_cutting_length(ToolFact::Stated(25.0));
     let tapered_step = dropcutter_stepover(&dropcutter_op(Some(0.010)), &tapered);
     let ball_step = dropcutter_stepover(&dropcutter_op(Some(0.010)), &ball_tool(1.0));
     assert!(
@@ -190,7 +191,7 @@ fn stock_ctx() -> StockContext {
 fn tool(diameter: f64) -> ToolConfig {
     let mut tool = ToolConfig::new_default(ToolId::from_raw(0), ToolType::EndMill);
     tool.diameter = diameter;
-    tool.cutting_length = 25.0;
+    tool.set_cutting_length(ToolFact::Stated(25.0));
     tool
 }
 
@@ -1027,7 +1028,7 @@ fn plunge_entry_unstable_warning_fires_when_dpp_exceeds_half_diameter() {
         });
         let mut tool = ToolConfig::new_default(ToolId::from_raw(0), ToolType::EndMill);
         tool.diameter = 6.0;
-        tool.cutting_length = 25.0;
+        tool.set_cutting_length(ToolFact::Stated(25.0));
         // Milling-Kc calibration (2026-06-17, milling factor 2.7):
         // at the new_default 45 mm stickout the deflection back-off
         // now rewrites DPP, but this test asserts the v1.3 warning-only
@@ -1035,7 +1036,7 @@ fn plunge_entry_unstable_warning_fires_when_dpp_exceeds_half_diameter() {
         // without a rewrite). Stiffen the tool (stickout 45 → 12 mm; δ
         // ∝ stickout³ → ~0.019×) so deflection doesn't force a DPP
         // rewrite and the warning-only behaviour is what's under test.
-        tool.stickout = 12.0;
+        tool.set_stickout(ToolFact::Stated(12.0));
         let mut machine = MachineProfile::default();
         machine.rigidity.doc_roughing_factor = 0.20;
         machine.rigidity.adaptive_doc_factor = 1.50;
@@ -1103,7 +1104,7 @@ fn plunge_entry_unstable_does_not_fire_below_half_diameter() {
     });
     let mut tool = ToolConfig::new_default(ToolId::from_raw(0), ToolType::EndMill);
     tool.diameter = 6.0;
-    tool.cutting_length = 25.0;
+    tool.set_cutting_length(ToolFact::Stated(25.0));
     let mut machine = MachineProfile::default();
     machine.rigidity.doc_roughing_factor = 0.20;
     machine.rigidity.adaptive_doc_factor = 1.50;
@@ -1135,7 +1136,7 @@ fn plunge_entry_unstable_does_not_fire_for_helix_or_ramp() {
     use crate::compute::operation_configs::{Adaptive3dConfig, Adaptive3dEntryStyle};
     let mut tool = ToolConfig::new_default(ToolId::from_raw(0), ToolType::EndMill);
     tool.diameter = 6.0;
-    tool.cutting_length = 25.0;
+    tool.set_cutting_length(ToolFact::Stated(25.0));
     let mut machine = MachineProfile::default();
     machine.rigidity.adaptive_doc_factor = 1.50;
 
@@ -1282,12 +1283,12 @@ fn retired_lift_leaves_wanaka_back_rough_feed_untouched() {
     });
     let mut tool = ToolConfig::new_default(ToolId::from_raw(0), ToolType::EndMill);
     tool.diameter = 6.0;
-    tool.cutting_length = 25.0;
+    tool.set_cutting_length(ToolFact::Stated(25.0));
     // Stiffened (45 → 18 mm) by the pre-fix version so deflection left
     // the feed-up loop headroom. Kept so the fixture is bit-identical
     // to the one that produced 3456 mm/min.
-    tool.stickout = 18.0;
-    tool.flute_count = 2;
+    tool.set_stickout(ToolFact::Stated(18.0));
+    tool.set_flute_count(ToolFact::Stated(2));
     let mut machine = MachineProfile::default();
     // Disable the rigidity clamp at DPP=3.69 (3.69 < 1.6 × 6 = 9.6 is OK).
     machine.rigidity.doc_roughing_factor = 0.20;
@@ -1392,7 +1393,7 @@ fn retired_lift_fires_no_cap_on_a_deflection_bound_fixture() {
         });
         let mut tool = ToolConfig::new_default(ToolId::from_raw(0), ToolType::EndMill);
         tool.diameter = 6.0;
-        tool.cutting_length = 25.0;
+        tool.set_cutting_length(ToolFact::Stated(25.0));
         // δ ∝ stickout³ — this is the value that lands the prediction in the
         // (190, 200) µm window. Retune if the force physics shifts; the setup
         // guard below asserts the window.
@@ -1405,8 +1406,8 @@ fn retired_lift_fires_no_cap_on_a_deflection_bound_fixture() {
         // Retuned 99.0 → 111.0 for B6. The Curti line for hard maple is
         // 0.69× the old anchor line, so 99.0 mm read 137.1 µm.
         // 99 × (195 / 137.1)^(1/3) = 111.3.
-        tool.stickout = 111.0;
-        tool.flute_count = 2;
+        tool.set_stickout(ToolFact::Stated(111.0));
+        tool.set_flute_count(ToolFact::Stated(2));
         let mut machine = MachineProfile::default();
         machine.rigidity.doc_roughing_factor = 0.20;
         machine.rigidity.adaptive_doc_factor = 1.60;
@@ -1487,9 +1488,9 @@ fn retired_lift_reports_no_max_feed_shortfall() {
     });
     let mut tool = ToolConfig::new_default(ToolId::from_raw(0), ToolType::EndMill);
     tool.diameter = 6.0;
-    tool.cutting_length = 25.0;
-    tool.stickout = 25.0;
-    tool.flute_count = 2;
+    tool.set_cutting_length(ToolFact::Stated(25.0));
+    tool.set_stickout(ToolFact::Stated(25.0));
+    tool.set_flute_count(ToolFact::Stated(2));
     let mut machine = MachineProfile::default();
     machine.rigidity.doc_roughing_factor = 0.20;
     machine.rigidity.adaptive_doc_factor = 1.60;
@@ -1568,9 +1569,9 @@ fn feed_recalibration_skipped_when_already_in_band() {
     });
     let mut tool = ToolConfig::new_default(ToolId::from_raw(0), ToolType::EndMill);
     tool.diameter = 6.0;
-    tool.cutting_length = 25.0;
-    tool.stickout = 25.0;
-    tool.flute_count = 2;
+    tool.set_cutting_length(ToolFact::Stated(25.0));
+    tool.set_stickout(ToolFact::Stated(25.0));
+    tool.set_flute_count(ToolFact::Stated(2));
     let mut machine = MachineProfile::default();
     machine.rigidity.doc_roughing_factor = 0.20;
     machine.rigidity.adaptive_doc_factor = 1.60;
@@ -1630,11 +1631,11 @@ fn suggest_never_writes_entry_style() {
     };
     let mut tool = ToolConfig::new_default(ToolId::from_raw(0), ToolType::EndMill);
     tool.diameter = 6.0;
-    tool.cutting_length = 25.0;
+    tool.set_cutting_length(ToolFact::Stated(25.0));
     // A short stickout keeps the deflection back-off off at DPP 3.69 mm,
     // so DPP / D stays above 0.5.
-    tool.stickout = 30.0;
-    tool.flute_count = 2;
+    tool.set_stickout(ToolFact::Stated(30.0));
+    tool.set_flute_count(ToolFact::Stated(2));
     let machine = MachineProfile::default();
     let material = Material::SolidWood {
         species: crate::material::WoodSpecies::HardMaple,
@@ -1705,9 +1706,9 @@ fn clearing_strategy_recommendation_is_warn_only() {
     });
     let mut tool = ToolConfig::new_default(ToolId::from_raw(0), ToolType::EndMill);
     tool.diameter = 6.0;
-    tool.cutting_length = 25.0;
-    tool.stickout = 30.0;
-    tool.flute_count = 2;
+    tool.set_cutting_length(ToolFact::Stated(25.0));
+    tool.set_stickout(ToolFact::Stated(30.0));
+    tool.set_flute_count(ToolFact::Stated(2));
     let machine = MachineProfile::default();
     let material = Material::SolidWood {
         species: crate::material::WoodSpecies::HardMaple,
@@ -1803,9 +1804,9 @@ fn clearing_strategy_recommendation_skips() {
         });
         let mut tool = ToolConfig::new_default(ToolId::from_raw(0), ToolType::EndMill);
         tool.diameter = 6.0;
-        tool.cutting_length = 25.0;
-        tool.stickout = 30.0;
-        tool.flute_count = 2;
+        tool.set_cutting_length(ToolFact::Stated(25.0));
+        tool.set_stickout(ToolFact::Stated(30.0));
+        tool.set_flute_count(ToolFact::Stated(2));
         let machine = MachineProfile::default();
         let material = Material::SolidWood {
             species: crate::material::WoodSpecies::HardMaple,

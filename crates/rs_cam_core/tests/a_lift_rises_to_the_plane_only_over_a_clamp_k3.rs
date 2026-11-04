@@ -54,7 +54,6 @@ use rs_cam_core::compute::catalog::OperationConfig;
 use rs_cam_core::compute::config::SAFE_Z_CLEARANCE_MM;
 use rs_cam_core::compute::obstacle::{JoinStart, clip_annotated_to_obstacles};
 use rs_cam_core::compute::operation_configs::{DropCutterConfig, FaceConfig, TraceConfig};
-use rs_cam_core::compute::tool_config::ToolConfig;
 use rs_cam_core::ids::ObstacleId;
 use rs_cam_core::polygon::Polygon2;
 use rs_cam_core::session::{AddObstacleArgs, Command, Obstacle, ObstacleGeometry, ProjectSession};
@@ -337,12 +336,12 @@ fn the_pre_clip_keeps_the_cells_the_holder_does_not_reach_k3() {
     const SURFACE_Z: f64 = -1.0;
     const LOW_CLAMP_TOP: f64 = 5.0;
     const HOLDER_R: f64 = 12.5;
-    let tool = ToolConfig {
-        cutting_length: 8.0,
-        shank_diameter: 6.0,
-        stickout: 10.0,
-        ..ball_tool_config(6.0)
-    };
+    let tool = ball_tool_config(6.0)
+        .to_builder()
+        .flute_mm(8.0)
+        .shank_mm(6.0)
+        .stickout_mm(10.0)
+        .build();
     let session = || {
         single_op_session(
             stock_under(HALF, DEPTH),

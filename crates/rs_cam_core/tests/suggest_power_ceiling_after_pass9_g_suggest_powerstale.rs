@@ -154,6 +154,7 @@
 
 use rs_cam_core::compute::catalog::OperationConfig;
 use rs_cam_core::compute::operation_configs::PocketConfig;
+use rs_cam_core::compute::tool_config::ToolFact;
 use rs_cam_core::compute::{ToolConfig, ToolId, ToolType};
 use rs_cam_core::feeds::envelope::{EnvelopeInput, PickRequest, SafeEnvelope};
 use rs_cam_core::feeds::suggest::{OperationApplyInput, SuggestContext, apply_to_operation};
@@ -264,7 +265,7 @@ fn underpowered_machine() -> MachineProfile {
 fn endmill() -> ToolConfig {
     let mut tool = ToolConfig::new_default(ToolId::from_raw(1), ToolType::EndMill);
     tool.diameter = DIAMETER_MM;
-    tool.flute_count = 2;
+    tool.set_flute_count(ToolFact::Stated(2));
     tool
 }
 

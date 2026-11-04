@@ -72,7 +72,6 @@ use rs_cam_core::compute::config::{
 };
 use rs_cam_core::compute::operation_configs::{DrillConfig, DrillCycleType};
 use rs_cam_core::compute::stock_config::StockConfig;
-use rs_cam_core::compute::tool_config::ToolConfig;
 use rs_cam_core::session::{LoadedModel, ProjectSession, ProjectSessionBuilder, SimulationOptions};
 use rs_cam_core::toolpath::{MoveIntent, Toolpath};
 
@@ -194,10 +193,12 @@ fn session_with(dressups: fn(DressupConfig) -> DressupConfig, rings: usize) -> P
     let mut builder = ProjectSessionBuilder::new().stock(stock());
     // P6.5 (O-3): a Drill drills a circle of the tool size only, so the
     // tool is the size of the live holes.
-    let tool_idx = builder.add_tool(ToolConfig {
-        diameter: HOLE_DIAMETER,
-        ..make_endmill_6mm()
-    });
+    let tool_idx = builder.add_tool(
+        make_endmill_6mm()
+            .to_builder()
+            .diameter(HOLE_DIAMETER)
+            .build(),
+    );
     let tool_id = builder.tools()[tool_idx].id.raw();
     let model_id = builder.add_model(dxf_model(rings));
     let mut tc = toolpath_config(

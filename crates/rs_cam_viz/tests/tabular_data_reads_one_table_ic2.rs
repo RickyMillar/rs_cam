@@ -32,6 +32,7 @@
     reason = "test code: a panic is how a test reports a failure"
 )]
 
+use rs_cam_core::compute::tool_config::ToolFact;
 use std::path::{Path, PathBuf};
 use std::sync::Arc;
 
@@ -57,7 +58,7 @@ const PANEL_WIDTH: f32 = 280.0;
 fn fixture() -> AppState {
     let mut tool = ToolConfig::new_default(ToolId::from_raw(1), ToolType::EndMill);
     tool.diameter = 6.0;
-    tool.flute_count = 2;
+    tool.set_flute_count(ToolFact::Stated(2));
     let mut machine = MachineProfile::generic_wood_router();
     machine.aggressiveness = 0.85;
     let stock = StockConfig {

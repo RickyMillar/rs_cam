@@ -40,6 +40,7 @@
 
 use rs_cam_core::compute::catalog::{OperationConfig, OperationType};
 use rs_cam_core::compute::operation_configs::PocketConfig;
+use rs_cam_core::compute::tool_config::ToolFact;
 use rs_cam_core::compute::tool_config::ToolMaterial;
 use rs_cam_core::compute::{ToolConfig, ToolId, ToolType};
 use rs_cam_core::feeds::envelope::{EnvelopeInput, LimitKind, PickRequest, SafeEnvelope};
@@ -682,9 +683,9 @@ fn the_suggest_clamp_still_fires_at_the_helper_s_own_cap() {
 
     let mut tool = ToolConfig::new_default(ToolId::from_raw(1), ToolType::EndMill);
     tool.diameter = CLAMP_DIAMETER_MM;
-    tool.flute_count = 2;
-    tool.cutting_length = 50.0;
-    tool.stickout = 50.0;
+    tool.set_flute_count(ToolFact::Stated(2));
+    tool.set_cutting_length(ToolFact::Stated(50.0));
+    tool.set_stickout(ToolFact::Stated(50.0));
 
     let mut operation = OperationConfig::Pocket(PocketConfig {
         stepover: STEPOVER_MM,

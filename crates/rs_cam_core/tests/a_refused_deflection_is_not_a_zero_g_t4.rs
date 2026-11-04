@@ -67,6 +67,7 @@
     reason = "test code: a panic is how a test reports a failure"
 )]
 
+use rs_cam_core::compute::tool_config::ToolFact;
 use std::collections::BTreeSet;
 
 use rs_cam_core::compute::catalog::{OperationConfig, OperationType};
@@ -87,11 +88,11 @@ use rs_cam_core::tool_load::verdict::UnmodeledReason;
 fn carbide_endmill() -> ToolConfig {
     let mut tool = ToolConfig::new_default(ToolId::from_raw(1), ToolType::EndMill);
     tool.diameter = 6.0;
-    tool.cutting_length = 25.0;
+    tool.set_cutting_length(ToolFact::Stated(25.0));
     tool.shaft_diameter = 6.0;
-    tool.shank_diameter = 6.0;
-    tool.stickout = 45.0;
-    tool.flute_count = 4;
+    tool.set_shank_diameter(ToolFact::Stated(6.0));
+    tool.set_stickout(ToolFact::Stated(45.0));
+    tool.set_flute_count(ToolFact::Stated(4));
     tool
 }
 
@@ -100,12 +101,12 @@ fn carbide_endmill() -> ToolConfig {
 fn carbide_vbit() -> ToolConfig {
     let mut tool = ToolConfig::new_default(ToolId::from_raw(2), ToolType::VBit);
     tool.diameter = 6.0;
-    tool.cutting_length = 25.0;
+    tool.set_cutting_length(ToolFact::Stated(25.0));
     tool.shaft_diameter = 6.0;
-    tool.shank_diameter = 6.0;
-    tool.stickout = 45.0;
+    tool.set_shank_diameter(ToolFact::Stated(6.0));
+    tool.set_stickout(ToolFact::Stated(45.0));
     tool.included_angle = 60.0;
-    tool.flute_count = 2;
+    tool.set_flute_count(ToolFact::Stated(2));
     tool
 }
 
@@ -190,8 +191,8 @@ fn no_modelled_operating_point_yields_a_zero() {
                 let mut tool = carbide_endmill();
                 tool.diameter = diameter;
                 tool.shaft_diameter = diameter;
-                tool.shank_diameter = diameter;
-                tool.stickout = stickout;
+                tool.set_shank_diameter(ToolFact::Stated(diameter));
+                tool.set_stickout(ToolFact::Stated(stickout));
                 let op = roughing_pocket(dpp);
 
                 let prediction = predict_peak_deflection_um(&op, &tool, &material, &machine)

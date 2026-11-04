@@ -709,6 +709,7 @@ impl<'a> LayeredOp for WaterlinePass<'a> {
 )]
 mod tests {
     use super::wall_step_admits;
+    use crate::compute::tool_config::ToolFact;
     use crate::compute::tool_config::{ToolConfig, ToolType};
     use crate::ids::ToolId;
     use crate::material::{Material, WoodSpecies};
@@ -716,8 +717,8 @@ mod tests {
     fn endmill(diameter: f64, stickout: f64) -> crate::tool::ToolDefinition {
         let mut cfg = ToolConfig::new_default(ToolId::from_raw(0), ToolType::EndMill);
         cfg.diameter = diameter;
-        cfg.shank_diameter = diameter;
-        cfg.stickout = stickout;
+        cfg.set_shank_diameter(ToolFact::Stated(diameter));
+        cfg.set_stickout(ToolFact::Stated(stickout));
         crate::compute::cutter::build_cutter(&cfg).expect("a valid end mill")
     }
 

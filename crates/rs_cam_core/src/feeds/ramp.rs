@@ -979,6 +979,7 @@ pub fn entry_notes(
 mod tests {
     use super::*;
     use crate::compute::catalog::OperationType;
+    use crate::compute::tool_config::ToolFact;
     use crate::compute::tool_config::{ToolId, ToolType};
     use crate::feeds::extrapolation::{ClaimConfidence, DRILL_RULE_TEXT, Gap};
     use crate::feeds::vendor_lut::{LutOperationFamily, LutPassRole};
@@ -1312,7 +1313,7 @@ mod tests {
     fn tool(kind: ToolType, diameter: f64) -> ToolConfig {
         let mut t = ToolConfig::new_default(ToolId::from_raw(1), kind);
         t.diameter = diameter;
-        t.cutting_length = (diameter * 4.0).max(12.0);
+        t.set_cutting_length(ToolFact::Stated((diameter * 4.0).max(12.0)));
         if matches!(kind, ToolType::VBit) {
             t.included_angle = 60.0;
         }

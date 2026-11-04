@@ -364,6 +364,7 @@ mod tests {
     use crate::compute::operation_configs::{
         Adaptive3dConfig, DropCutterConfig, PocketConfig, ProjectCurveConfig, ProjectCurveDirection,
     };
+    use crate::compute::tool_config::ToolFact;
     use crate::compute::tool_config::{ToolConfig, ToolId, ToolType};
     use crate::gcode::CoolantMode;
     use crate::material::{Material, WoodSpecies};
@@ -405,7 +406,7 @@ mod tests {
         let mut t = ToolConfig::new_default(ToolId::from_raw(0), ToolType::TaperedBallNose);
         t.diameter = tip_d;
         t.shaft_diameter = (tip_d + 2.0).max(3.0);
-        t.taper_half_angle = 7.0;
+        t.set_taper_half_angle(ToolFact::Stated(7.0));
         t
     }
 

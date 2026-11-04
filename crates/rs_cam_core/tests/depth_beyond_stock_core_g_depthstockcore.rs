@@ -75,10 +75,9 @@ const STOCK_TOP_Z: f64 = 0.0;
 const STOCK_BOTTOM_Z: f64 = -18.0;
 
 fn flat_endmill() -> ToolConfig {
-    ToolConfig {
-        diameter: 6.0,
-        ..ToolConfig::new_default(ToolId::from_raw(1), ToolType::EndMill)
-    }
+    ToolConfig::builder(ToolId::from_raw(1), ToolType::EndMill)
+        .diameter(6.0)
+        .build()
 }
 
 /// A projected snapshot: `ResolvedHeights::from_context` on a bare

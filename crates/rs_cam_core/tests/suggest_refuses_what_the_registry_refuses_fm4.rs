@@ -23,6 +23,7 @@
 )]
 
 use rs_cam_core::compute::catalog::OperationType;
+use rs_cam_core::compute::tool_config::ToolFact;
 use rs_cam_core::compute::tool_config::{ToolConfig, ToolId, ToolType};
 use rs_cam_core::feeds::suggest::{
     StockContext, SuggestContext, SuggestParamsInput, SuggestedParams, suggest_params,
@@ -40,18 +41,18 @@ fn tool_of(kind: ToolType) -> ToolConfig {
     };
     let mut t = ToolConfig::new_default(ToolId::from_raw(1), kind);
     t.diameter = diameter;
-    t.flute_count = 2;
-    t.cutting_length = (diameter * 3.0).max(12.0);
-    t.shank_diameter = diameter.max(3.0);
+    t.set_flute_count(ToolFact::Stated(2));
+    t.set_cutting_length(ToolFact::Stated((diameter * 3.0).max(12.0)));
+    t.set_shank_diameter(ToolFact::Stated(diameter.max(3.0)));
     t.shaft_diameter = diameter.max(3.0);
-    t.stickout = t.cutting_length_planning_mm() + 8.0;
+    t.set_stickout(ToolFact::Stated(t.cutting_length_planning_mm() + 8.0));
     if matches!(kind, ToolType::BullNose) {
         t.corner_radius = diameter * 0.15;
         t.corner_radius_mm = diameter * 0.15;
     }
     if matches!(kind, ToolType::TaperedBallNose) {
-        t.taper_half_angle = 7.0;
-        t.shank_diameter = (diameter + 3.0).max(6.0);
+        t.set_taper_half_angle(ToolFact::Stated(7.0));
+        t.set_shank_diameter(ToolFact::Stated((diameter + 3.0).max(6.0)));
         t.shaft_diameter = t.shank_diameter_planning_mm();
     }
     if matches!(kind, ToolType::VBit) {

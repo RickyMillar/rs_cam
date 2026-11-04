@@ -21,6 +21,7 @@
 )]
 
 use rs_cam_core::compute::catalog::{OperationConfig, OperationType};
+use rs_cam_core::compute::tool_config::ToolFact;
 use rs_cam_core::compute::tool_config::{ToolConfig, ToolId, ToolType};
 use rs_cam_core::feeds::envelope::PickRequest;
 use rs_cam_core::feeds::suggest::{OperationApplyInput, SuggestContext, apply_to_operation};
@@ -34,9 +35,9 @@ const STATED_DPP_MM: f64 = 9.0;
 fn bulk_bit() -> ToolConfig {
     let mut tool = ToolConfig::new_default(ToolId::from_raw(0), ToolType::EndMill);
     tool.diameter = 18.0;
-    tool.flute_count = 2;
-    tool.cutting_length = 20.0;
-    tool.stickout = 25.0;
+    tool.set_flute_count(ToolFact::Stated(2));
+    tool.set_cutting_length(ToolFact::Stated(20.0));
+    tool.set_stickout(ToolFact::Stated(25.0));
     tool
 }
 

@@ -28,6 +28,7 @@
     reason = "test code: a panic is how a test reports a failure"
 )]
 
+use rs_cam_core::compute::tool_config::ToolFact;
 use std::path::PathBuf;
 use std::sync::Arc;
 use std::sync::atomic::AtomicBool;
@@ -105,10 +106,10 @@ fn end_mill(non_centre_cutting: bool) -> ToolConfig {
     }
     .to_owned();
     tool.diameter = 6.0;
-    tool.cutting_length = 20.0;
-    tool.stickout = 30.0;
-    tool.shank_diameter = 6.0;
-    tool.flute_count = 2;
+    tool.set_cutting_length(ToolFact::Stated(20.0));
+    tool.set_stickout(ToolFact::Stated(30.0));
+    tool.set_shank_diameter(ToolFact::Stated(6.0));
+    tool.set_flute_count(ToolFact::Stated(2));
     tool.non_centre_cutting = non_centre_cutting.then_some(NonCentreCuttingGeometry {
         centre_core_diameter_mm: 2.4,
         blade_protrusion_mm: 0.5,

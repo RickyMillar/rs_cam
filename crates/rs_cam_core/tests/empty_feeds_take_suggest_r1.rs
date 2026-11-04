@@ -102,18 +102,16 @@ fn add_tool(s: &mut ProjectSession, tool: ToolConfig) {
 }
 
 fn end_mill(diameter: f64) -> ToolConfig {
-    ToolConfig {
-        diameter,
-        ..ToolConfig::new_default(ToolId::from_raw(0), ToolType::EndMill)
-    }
+    ToolConfig::builder(ToolId::from_raw(0), ToolType::EndMill)
+        .diameter(diameter)
+        .build()
 }
 
 /// A ball nose in Baltic birch on a Pocket is an Unbacked cell (FM5).
 fn ball() -> ToolConfig {
-    ToolConfig {
-        diameter: 6.35,
-        ..ToolConfig::new_default(ToolId::from_raw(0), ToolType::BallNose)
-    }
+    ToolConfig::builder(ToolId::from_raw(0), ToolType::BallNose)
+        .diameter(6.35)
+        .build()
 }
 
 fn baltic_birch() -> Option<Material> {

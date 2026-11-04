@@ -173,18 +173,16 @@ fn circle(r: f64) -> Vec<P2> {
 }
 
 fn vbit(included_angle_deg: f64) -> ToolConfig {
-    ToolConfig {
-        diameter: 12.7,
-        included_angle: included_angle_deg,
-        ..ToolConfig::new_default(ToolId::from_raw(0), ToolType::VBit)
-    }
+    ToolConfig::builder(ToolId::from_raw(0), ToolType::VBit)
+        .diameter(12.7)
+        .included_angle_deg(included_angle_deg)
+        .build()
 }
 
 fn end_mill() -> ToolConfig {
-    ToolConfig {
-        diameter: END_MILL_D,
-        ..ToolConfig::new_default(ToolId::from_raw(0), ToolType::EndMill)
-    }
+    ToolConfig::builder(ToolId::from_raw(0), ToolType::EndMill)
+        .diameter(END_MILL_D)
+        .build()
 }
 
 fn pocket_op() -> OperationConfig {

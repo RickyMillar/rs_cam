@@ -57,6 +57,7 @@
 //! preset and shows its feed lands above the slow-ceiling cap, so the fixture
 //! machine discriminates and the arm above is not an accident of it.
 
+use rs_cam_core::compute::tool_config::ToolFact;
 use rs_cam_core::compute::tool_config::{ToolConfig, ToolId, ToolType};
 use rs_cam_core::feeds::{
     FeedsInput, FeedsResult, FeedsWarning, OperationFamily, PassRole, SetupContext,
@@ -90,11 +91,11 @@ fn white_oak() -> Material {
 fn flat_endmill_6mm() -> ToolConfig {
     let mut tool = ToolConfig::new_default(ToolId::from_raw(1), ToolType::EndMill);
     tool.diameter = 6.0;
-    tool.cutting_length = 25.0;
+    tool.set_cutting_length(ToolFact::Stated(25.0));
     tool.shaft_diameter = 6.0;
-    tool.shank_diameter = 6.0;
-    tool.stickout = 30.0;
-    tool.flute_count = 2;
+    tool.set_shank_diameter(ToolFact::Stated(6.0));
+    tool.set_stickout(ToolFact::Stated(30.0));
+    tool.set_flute_count(ToolFact::Stated(2));
     tool
 }
 
@@ -104,11 +105,11 @@ fn flat_endmill_6mm() -> ToolConfig {
 fn drill_12mm() -> ToolConfig {
     let mut tool = ToolConfig::new_default(ToolId::from_raw(2), ToolType::EndMill);
     tool.diameter = 12.0;
-    tool.cutting_length = 60.0;
+    tool.set_cutting_length(ToolFact::Stated(60.0));
     tool.shaft_diameter = 12.0;
-    tool.shank_diameter = 12.0;
-    tool.stickout = 70.0;
-    tool.flute_count = 2;
+    tool.set_shank_diameter(ToolFact::Stated(12.0));
+    tool.set_stickout(ToolFact::Stated(70.0));
+    tool.set_flute_count(ToolFact::Stated(2));
     tool
 }
 

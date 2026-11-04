@@ -72,10 +72,11 @@ fn stepped_session() -> ProjectSession {
         auto_from_model: false,
         ..StockConfig::default()
     });
-    let _ = builder.add_tool(ToolConfig {
-        diameter: 6.0,
-        ..ToolConfig::new_default(ToolId::from_raw(0), ToolType::EndMill)
-    });
+    let _ = builder.add_tool(
+        ToolConfig::builder(ToolId::from_raw(0), ToolType::EndMill)
+            .diameter(6.0)
+            .build(),
+    );
     let _ = builder.add_model(model);
     builder.build()
 }

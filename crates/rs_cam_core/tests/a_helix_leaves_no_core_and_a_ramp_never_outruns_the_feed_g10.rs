@@ -48,6 +48,7 @@
 
 mod common;
 
+use rs_cam_core::compute::tool_config::ToolFact;
 use std::path::{Path, PathBuf};
 
 use rs_cam_core::compute::catalog::{OperationConfig, OperationType};
@@ -80,8 +81,8 @@ const POCKET_DEPTH: f64 = 3.0;
 fn tool(kind: ToolType, diameter: f64) -> ToolConfig {
     let mut t = ToolConfig::new_default(ToolId::from_raw(0), kind);
     t.diameter = diameter;
-    t.cutting_length = 25.0;
-    t.flute_count = 2;
+    t.set_cutting_length(ToolFact::Stated(25.0));
+    t.set_flute_count(ToolFact::Stated(2));
     t
 }
 

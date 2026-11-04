@@ -14,6 +14,7 @@
     reason = "test code: a panic is how a test reports a failure"
 )]
 
+use rs_cam_core::compute::tool_config::ToolFact;
 use rs_cam_core::ids::ToolpathId;
 use std::sync::atomic::AtomicBool;
 
@@ -33,7 +34,7 @@ use rs_cam_core::trace::debug_trace::ToolpathDebugOptions;
 fn make_drill_tool(diameter: f64) -> ToolConfig {
     let mut tool = ToolConfig::new_default(ToolId::from_raw(0), ToolType::EndMill);
     tool.diameter = diameter;
-    tool.flute_count = 2;
+    tool.set_flute_count(ToolFact::Stated(2));
     tool.name = "Test Drill".to_owned();
     tool
 }

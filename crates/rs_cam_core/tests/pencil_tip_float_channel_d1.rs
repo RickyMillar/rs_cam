@@ -77,10 +77,9 @@ use rs_cam_core::trace::debug_trace::ToolpathDebugOptions;
 const BALL_DIAMETER_MM: f64 = 3.0;
 
 fn ball_tool() -> ToolConfig {
-    ToolConfig {
-        diameter: BALL_DIAMETER_MM,
-        ..ToolConfig::new_default(ToolId::from_raw(0), ToolType::BallNose)
-    }
+    ToolConfig::builder(ToolId::from_raw(0), ToolType::BallNose)
+        .diameter(BALL_DIAMETER_MM)
+        .build()
 }
 
 /// A 40 × 24 mm block, top at z = 0, with one straight trapezoidal groove

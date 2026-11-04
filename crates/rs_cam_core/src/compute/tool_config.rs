@@ -443,6 +443,43 @@ impl std::fmt::Display for NonCentreCuttingRefusal {
 /// planned depth and on a dexel height read.
 pub const NON_CENTRE_CUTTING_TOL_MM: f64 = 0.02;
 
+// ── K3 legacy loader defaults (feeds contract P6, decision E4) ─────────
+//
+// Copied from the `default_*` functions of `session/project_file.rs`,
+// which now return these constants. No file in the repo prints them;
+// commit C makes them F201 `FormulaConstant`s marked Unsourced.
+
+/// The legacy project-loader default of the flute (cutting) length, mm (the old
+/// `session::project_file::default_cutting_length`). An `Unknown` fact plans at it.
+pub const LEGACY_DEFAULT_CUTTING_LENGTH_MM: f64 = 25.0;
+
+/// The legacy project-loader default of the taper half-angle, degrees (the old
+/// `session::project_file::default_taper_half_angle`). An `Unknown` fact plans at it.
+pub const LEGACY_DEFAULT_TAPER_HALF_ANGLE_DEG: f64 = 15.0;
+
+/// The legacy project-loader default of the shank diameter, mm (the old
+/// `session::project_file::default_shank_diameter`). An `Unknown` fact plans at it.
+pub const LEGACY_DEFAULT_SHANK_DIAMETER_MM: f64 = 6.35;
+
+/// The legacy project-loader default of the stick-out, mm (the old
+/// `session::project_file::default_stickout`). An `Unknown` fact plans at it.
+pub const LEGACY_DEFAULT_STICKOUT_MM: f64 = 45.0;
+
+/// The legacy project-loader default of the flute count (the old
+/// `session::project_file::default_flute_count`). An `Unknown` fact plans at it.
+pub const LEGACY_DEFAULT_FLUTE_COUNT: u32 = 2;
+
+/// Commit B of P6: the stored value of a fact. `Unknown` gives the legacy
+/// loader default; commit C stores the fact and deletes this function.
+fn value_or_legacy<T>(fact: ToolFact<T>, legacy: T) -> T {
+    match fact {
+        ToolFact::Stated(value)
+        | ToolFact::Catalogue { value, .. }
+        | ToolFact::Estimated { value, .. } => value,
+        ToolFact::Unknown => legacy,
+    }
+}
+
 /// Complete tool configuration.
 #[derive(Debug, Clone, PartialEq, Serialize, Deserialize)]
 pub struct ToolConfig {
@@ -452,7 +489,7 @@ pub struct ToolConfig {
     pub tool_number: u32,
     pub tool_type: ToolType,
     pub diameter: f64,
-    pub cutting_length: f64,
+    cutting_length: f64,
     #[serde(default = "default_helix_deg")]
     pub helix_deg: f64,
     #[serde(default)]
@@ -462,13 +499,13 @@ pub struct ToolConfig {
     // V-Bit (included angle in degrees)
     pub included_angle: f64,
     // Tapered Ball Nose (half-angle in degrees)
-    pub taper_half_angle: f64,
+    taper_half_angle: f64,
     pub shaft_diameter: f64,
     // Shank / collision detection (H1: the holder is the machine head)
-    pub shank_diameter: f64,
-    pub stickout: f64,
+    shank_diameter: f64,
+    stickout: f64,
     // Cutting parameters (for feeds calculation)
-    pub flute_count: u32,
+    flute_count: u32,
     pub tool_material: ToolMaterial,
     pub cut_direction: BitCutDirection,
     // Optional vendor info
@@ -563,6 +600,97 @@ impl ToolConfig {
     /// The flute count that planning uses.
     pub fn flute_count_planning(&self) -> u32 {
         self.flute_count
+    }
+
+    // ── K3 setters (feeds contract P6, decision E3) ─────────────────────
+    //
+    // Commit B: each setter stores the value of the fact, and `Unknown`
+    // stores the legacy loader default. Commit C stores the fact itself.
+    // A GUI, MCP, CLI or session edit writes `ToolFact::Stated`.
+
+    /// Set the stick-out (mm).
+    pub fn set_stickout(&mut self, fact: ToolFact<f64>) {
+        self.stickout = value_or_legacy(fact, LEGACY_DEFAULT_STICKOUT_MM);
+    }
+
+    /// Set the flute (cutting) length (mm).
+    pub fn set_cutting_length(&mut self, fact: ToolFact<f64>) {
+        self.cutting_length = value_or_legacy(fact, LEGACY_DEFAULT_CUTTING_LENGTH_MM);
+    }
+
+    /// Set the shank diameter (mm).
+    pub fn set_shank_diameter(&mut self, fact: ToolFact<f64>) {
+        self.shank_diameter = value_or_legacy(fact, LEGACY_DEFAULT_SHANK_DIAMETER_MM);
+    }
+
+    /// Set the taper half-angle (degrees).
+    pub fn set_taper_half_angle(&mut self, fact: ToolFact<f64>) {
+        self.taper_half_angle = value_or_legacy(fact, LEGACY_DEFAULT_TAPER_HALF_ANGLE_DEG);
+    }
+
+    /// Set the flute count.
+    pub fn set_flute_count(&mut self, fact: ToolFact<u32>) {
+        self.flute_count = value_or_legacy(fact, LEGACY_DEFAULT_FLUTE_COUNT);
+    }
+
+    /// Stable equality key for de-duplicating tools within a catalog.
+    ///
+    /// Policy (operator ruling, F176, 2026-10-19): the geometry and the
+    /// material make a library tool distinct. Each field is IN or OUT:
+    ///
+    /// - IN: every cutter dimension (`tool_type`, `diameter`,
+    ///   `cutting_length`, `helix_deg`, `corner_radius_mm`, `corner_radius`,
+    ///   `included_angle`, `taper_half_angle`, `shaft_diameter`), the
+    ///   `shank_diameter` (a fixed part of the physical tool: deflection,
+    ///   collision and the simulation cache read it), `flute_count`,
+    ///   `tool_material` and `cut_direction`.
+    /// - OUT: `id` (project-local), `name`, `tool_number`, `stickout` (how
+    ///   the tool is mounted, not what it is), `vendor`, `product_id` and
+    ///   `size_units` (display only).
+    ///
+    /// The destructure names every field with no `..`, so a new
+    /// `ToolConfig` field does not compile until someone puts it IN or OUT.
+    /// Lengths format at 0.001 mm and angles at 0.01 degree, so a float
+    /// round trip through TOML does not split one tool into two.
+    pub(crate) fn library_dedupe_key(&self) -> String {
+        let ToolConfig {
+            id: _,
+            name: _,
+            tool_number: _,
+            tool_type,
+            diameter,
+            cutting_length,
+            helix_deg,
+            corner_radius_mm,
+            corner_radius,
+            included_angle,
+            taper_half_angle,
+            shaft_diameter,
+            shank_diameter,
+            stickout: _,
+            flute_count,
+            tool_material,
+            cut_direction,
+            vendor: _,
+            product_id: _,
+            size_units: _,
+            non_centre_cutting,
+        } = self;
+        let non_centre_cutting = non_centre_cutting.map_or_else(
+            || "centre_cutting".to_owned(),
+            |geometry| {
+                format!(
+                    "non_centre:{:.3}:{:.3}",
+                    geometry.centre_core_diameter_mm, geometry.blade_protrusion_mm
+                )
+            },
+        );
+        format!(
+            "{tool_type:?}|{diameter:.3}|{flute_count}|{cutting_length:.3}|{taper_half_angle:.2}|\
+             {included_angle:.2}|{corner_radius:.3}|{corner_radius_mm:.3}|{shaft_diameter:.3}|\
+             {shank_diameter:.3}|{helix_deg:.2}|{tool_material:?}|{cut_direction:?}|\
+             {non_centre_cutting}",
+        )
     }
 
     /// F029 step 1: the one domain check of a tool record.
@@ -1764,6 +1892,65 @@ impl ToolConfig {
             tool: Self::new_default(id, tool_type),
         }
     }
+
+    /// The builder that starts from this tool (a test that changes a few
+    /// facts of a helper's tool).
+    pub fn to_builder(self) -> ToolConfigBuilder {
+        ToolConfigBuilder { tool: self }
+    }
+
+    /// F118: every field name of `ToolConfig`, by an exhaustive destructure
+    /// with no `..`, so a new field does not compile until the F118 sentry
+    /// (`every_stock_and_tool_field_is_reachable_f118`) names it. It lives
+    /// here because the fact fields are private (feeds contract P6).
+    pub fn field_names() -> Vec<&'static str> {
+        let ToolConfig {
+            id: _,
+            name: _,
+            tool_number: _,
+            tool_type: _,
+            diameter: _,
+            cutting_length: _,
+            helix_deg: _,
+            corner_radius_mm: _,
+            corner_radius: _,
+            included_angle: _,
+            taper_half_angle: _,
+            shaft_diameter: _,
+            shank_diameter: _,
+            stickout: _,
+            flute_count: _,
+            tool_material: _,
+            cut_direction: _,
+            vendor: _,
+            product_id: _,
+            size_units: _,
+            non_centre_cutting: _,
+        } = ToolConfig::new_default(ToolId::from_raw(0), ToolType::EndMill);
+        vec![
+            "id",
+            "name",
+            "tool_number",
+            "tool_type",
+            "diameter",
+            "cutting_length",
+            "helix_deg",
+            "corner_radius_mm",
+            "corner_radius",
+            "included_angle",
+            "taper_half_angle",
+            "shaft_diameter",
+            "shank_diameter",
+            "stickout",
+            "flute_count",
+            "tool_material",
+            "cut_direction",
+            "vendor",
+            "product_id",
+            "size_units",
+            "non_centre_cutting",
+        ]
+    }
 }
 
 /// See [`ToolConfig::builder`]. Test and `test-support` builds only.
@@ -1776,8 +1963,49 @@ pub struct ToolConfigBuilder {
 
 #[cfg(any(test, feature = "test-support"))]
 impl ToolConfigBuilder {
-    pub fn name(mut self, name: &str) -> Self {
-        name.clone_into(&mut self.tool.name);
+    pub fn name(mut self, name: impl Into<String>) -> Self {
+        self.tool.name = name.into();
+        self
+    }
+
+    pub fn tool_number(mut self, tool_number: u32) -> Self {
+        self.tool.tool_number = tool_number;
+        self
+    }
+
+    pub fn helix_deg(mut self, helix_deg: f64) -> Self {
+        self.tool.helix_deg = helix_deg;
+        self
+    }
+
+    pub fn tool_material(mut self, tool_material: ToolMaterial) -> Self {
+        self.tool.tool_material = tool_material;
+        self
+    }
+
+    pub fn cut_direction(mut self, cut_direction: BitCutDirection) -> Self {
+        self.tool.cut_direction = cut_direction;
+        self
+    }
+
+    pub fn vendor(mut self, vendor: impl Into<String>) -> Self {
+        self.tool.vendor = vendor.into();
+        self
+    }
+
+    pub fn product_id(mut self, product_id: impl Into<String>) -> Self {
+        self.tool.product_id = product_id.into();
+        self
+    }
+
+    pub fn size_units(mut self, size_units: Option<SizeUnits>) -> Self {
+        self.tool.size_units = size_units;
+        self
+    }
+
+    /// The optional non-centre-cutting geometry, as the field holds it.
+    pub fn non_centre_cutting(mut self, geometry: Option<NonCentreCuttingGeometry>) -> Self {
+        self.tool.non_centre_cutting = geometry;
         self
     }
 

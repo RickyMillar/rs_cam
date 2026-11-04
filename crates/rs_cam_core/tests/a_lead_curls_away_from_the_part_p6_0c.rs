@@ -174,11 +174,10 @@ fn chamfer(side: ChamferSide) -> OperationConfig {
 }
 
 fn vbit() -> ToolConfig {
-    ToolConfig {
-        diameter: 12.7,
-        included_angle: 90.0,
-        ..ToolConfig::new_default(ToolId::from_raw(0), ToolType::VBit)
-    }
+    ToolConfig::builder(ToolId::from_raw(0), ToolType::VBit)
+        .diameter(12.7)
+        .included_angle_deg(90.0)
+        .build()
 }
 
 /// The op's default dressups with the lead on at its default radius.

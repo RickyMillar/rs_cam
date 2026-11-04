@@ -51,6 +51,7 @@
     reason = "test code: a panic is how a test reports a failure"
 )]
 
+use rs_cam_core::compute::tool_config::ToolFact;
 use std::path::{Path, PathBuf};
 
 use rs_cam_core::compute::catalog::OperationConfig;
@@ -624,10 +625,10 @@ fn endmill() -> ToolConfig {
     let mut tool = ToolConfig::new_default(ToolId::from_raw(0), ToolType::EndMill);
     tool.diameter = DIAMETER_MM;
     tool.shaft_diameter = DIAMETER_MM;
-    tool.shank_diameter = DIAMETER_MM;
-    tool.cutting_length = 22.0;
-    tool.stickout = 30.0;
-    tool.flute_count = FLUTES;
+    tool.set_shank_diameter(ToolFact::Stated(DIAMETER_MM));
+    tool.set_cutting_length(ToolFact::Stated(22.0));
+    tool.set_stickout(ToolFact::Stated(30.0));
+    tool.set_flute_count(ToolFact::Stated(FLUTES));
     tool
 }
 

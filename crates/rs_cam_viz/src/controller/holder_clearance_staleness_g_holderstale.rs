@@ -46,6 +46,7 @@
 //! `request_collision_check` and `drain_compute_results`, are `pub(crate)`.
 //! Nothing here starts a GUI or an MCP server.
 
+use rs_cam_core::compute::tool_config::ToolFact;
 use std::sync::Arc;
 
 use rs_cam_core::compute::catalog::{OperationConfig, OperationType};
@@ -312,7 +313,7 @@ fn edit_tool_stickout(controller: &mut AppController<ScriptedLane>) {
         .first()
         .expect("the fixture project carries one tool")
         .clone();
-    draft.stickout += 15.0;
+    draft.set_stickout(ToolFact::Stated(draft.stickout_planning_mm() + 15.0));
     crate::ui::properties::commit_tool_draft(&mut controller.state, ToolId::from_raw(1), draft);
 }
 

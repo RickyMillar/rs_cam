@@ -9,6 +9,7 @@
     reason = "test code: a panic is how a test reports a failure"
 )]
 
+use crate::compute::tool_config::ToolFact;
 use crate::geo::P3;
 use crate::session::{ProjectEvidence, VerdictKind, VerdictSeverity};
 
@@ -784,7 +785,7 @@ fn set_tool_param_flute_count() {
             &json!(4),
         )
         .unwrap();
-    assert_eq!(s.tools()[0].flute_count, 4);
+    assert_eq!(s.tools()[0].flute_count_planning(), 4);
 }
 
 #[test]
@@ -797,7 +798,7 @@ fn set_tool_param_stickout() {
             &json!(25.0),
         )
         .unwrap();
-    assert!((s.tools()[0].stickout - 25.0).abs() < 1e-9);
+    assert!((s.tools()[0].stickout_planning_mm() - 25.0).abs() < 1e-9);
 }
 
 #[test]
@@ -823,7 +824,7 @@ fn set_tool_param_cutting_length() {
             &json!(20.0),
         )
         .unwrap();
-    assert!((s.tools()[0].cutting_length - 20.0).abs() < 1e-9);
+    assert!((s.tools()[0].cutting_length_planning_mm() - 20.0).abs() < 1e-9);
 }
 
 #[test]
@@ -1967,7 +1968,7 @@ fn make_tapered_ball_tool(diameter: f64) -> ToolConfig {
     let mut t = ToolConfig::new_default(ToolId::from_raw(0), ToolType::TaperedBallNose);
     t.diameter = diameter; // tip diameter
     t.shaft_diameter = (diameter + 2.0).max(3.0);
-    t.taper_half_angle = 7.0;
+    t.set_taper_half_angle(ToolFact::Stated(7.0));
     t
 }
 

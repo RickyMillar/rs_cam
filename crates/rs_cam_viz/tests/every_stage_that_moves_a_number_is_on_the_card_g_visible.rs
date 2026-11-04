@@ -86,6 +86,7 @@
     reason = "test code: a panic is how a test reports a failure"
 )]
 
+use rs_cam_core::compute::tool_config::ToolFact;
 use std::path::PathBuf;
 use std::sync::Arc;
 
@@ -638,7 +639,7 @@ fn check(case: &Case) -> Vec<&'static str> {
 fn adaptive_tool() -> ToolConfig {
     let mut tool = ToolConfig::new_default(ToolId::from_raw(1), ToolType::EndMill);
     tool.diameter = 6.0;
-    tool.flute_count = 2;
+    tool.set_flute_count(ToolFact::Stated(2));
     tool
 }
 
@@ -689,15 +690,15 @@ fn cases() -> Vec<Case> {
     weak_spindle.power = PowerModel::ConstantPower { power_kw: 0.02 };
 
     let mut short_flute = adaptive_tool();
-    short_flute.cutting_length = 2.0;
+    short_flute.set_cutting_length(ToolFact::Stated(2.0));
 
     let mut profile_tool = ToolConfig::new_default(ToolId::from_raw(1), ToolType::EndMill);
     profile_tool.diameter = 3.175;
-    profile_tool.flute_count = 2;
-    profile_tool.cutting_length = 12.0;
-    profile_tool.shank_diameter = 3.175;
+    profile_tool.set_flute_count(ToolFact::Stated(2));
+    profile_tool.set_cutting_length(ToolFact::Stated(12.0));
+    profile_tool.set_shank_diameter(ToolFact::Stated(3.175));
     profile_tool.shaft_diameter = 3.175;
-    profile_tool.stickout = 20.0;
+    profile_tool.set_stickout(ToolFact::Stated(20.0));
     let mut profile = OperationConfig::Profile(Default::default());
     if let OperationConfig::Profile(config) = &mut profile {
         config.feed_rate = Some(3_000.0);

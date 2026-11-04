@@ -102,54 +102,11 @@ fn patch_fields() -> Vec<&'static str> {
     ]
 }
 
-/// Every field name of [`ToolConfig`], by an exhaustive destructure.
+/// Every field name of [`ToolConfig`], by the exhaustive destructure of
+/// [`ToolConfig::field_names`] (in `compute/tool_config.rs`: the fact fields
+/// are private, feeds contract P6).
 fn tool_fields() -> Vec<&'static str> {
-    let ToolConfig {
-        id: _,
-        name: _,
-        tool_number: _,
-        tool_type: _,
-        diameter: _,
-        cutting_length: _,
-        helix_deg: _,
-        corner_radius_mm: _,
-        corner_radius: _,
-        included_angle: _,
-        taper_half_angle: _,
-        shaft_diameter: _,
-        shank_diameter: _,
-        stickout: _,
-        flute_count: _,
-        tool_material: _,
-        cut_direction: _,
-        vendor: _,
-        product_id: _,
-        size_units: _,
-        non_centre_cutting: _,
-    } = ToolConfig::new_default(ToolId::from_raw(0), ToolType::EndMill);
-    vec![
-        "id",
-        "name",
-        "tool_number",
-        "tool_type",
-        "diameter",
-        "cutting_length",
-        "helix_deg",
-        "corner_radius_mm",
-        "corner_radius",
-        "included_angle",
-        "taper_half_angle",
-        "shaft_diameter",
-        "shank_diameter",
-        "stickout",
-        "flute_count",
-        "tool_material",
-        "cut_direction",
-        "vendor",
-        "product_id",
-        "size_units",
-        "non_centre_cutting",
-    ]
+    ToolConfig::field_names()
 }
 
 /// The name lists above are hand-written beside the destructure. Each

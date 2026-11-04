@@ -65,15 +65,14 @@ const LENGTH: f64 = 30.0;
 const CELL: f64 = 0.2;
 
 fn taper_config() -> ToolConfig {
-    ToolConfig {
-        diameter: TIP_DIAMETER,
-        taper_half_angle: HALF_ANGLE_DEG,
-        shaft_diameter: SHAFT_DIAMETER,
-        cutting_length: L_C,
-        shank_diameter: SHANK_DIAMETER,
-        stickout: 45.0,
-        ..ToolConfig::new_default(ToolId::from_raw(0), ToolType::TaperedBallNose)
-    }
+    ToolConfig::builder(ToolId::from_raw(0), ToolType::TaperedBallNose)
+        .diameter(TIP_DIAMETER)
+        .taper_half_angle_deg(HALF_ANGLE_DEG)
+        .shaft_mm(SHAFT_DIAMETER)
+        .flute_mm(L_C)
+        .shank_mm(SHANK_DIAMETER)
+        .stickout_mm(45.0)
+        .build()
 }
 
 /// The fine tool's shape, for `width_at_height`.

@@ -851,29 +851,27 @@ mod tests {
     use crate::material::{Material, WoodSpecies};
 
     fn carbide_endmill(diameter: f64, stickout: f64, cutting_length: f64) -> ToolConfig {
-        ToolConfig {
-            id: ToolId::from_raw(0),
-            name: "test endmill".to_owned(),
-            size_units: None,
-            tool_number: 1,
-            tool_type: ToolType::EndMill,
-            diameter,
-            cutting_length,
-            helix_deg: 30.0,
-            corner_radius_mm: 0.0,
-            corner_radius: 0.0,
-            included_angle: 90.0,
-            taper_half_angle: 15.0,
-            shaft_diameter: diameter,
-            shank_diameter: diameter,
-            stickout,
-            flute_count: 2,
-            tool_material: ToolMaterial::Carbide,
-            cut_direction: BitCutDirection::UpCut,
-            vendor: String::new(),
-            product_id: String::new(),
-            non_centre_cutting: None,
-        }
+        ToolConfig::builder(ToolId::from_raw(0), ToolType::EndMill)
+            .name("test endmill".to_owned())
+            .size_units(None)
+            .tool_number(1)
+            .diameter(diameter)
+            .flute_mm(cutting_length)
+            .helix_deg(30.0)
+            .corner_radius_mm(0.0)
+            .corner_radius(0.0)
+            .included_angle_deg(90.0)
+            .taper_half_angle_deg(15.0)
+            .shaft_mm(diameter)
+            .shank_mm(diameter)
+            .stickout_mm(stickout)
+            .flutes(2)
+            .tool_material(ToolMaterial::Carbide)
+            .cut_direction(BitCutDirection::UpCut)
+            .vendor(String::new())
+            .product_id(String::new())
+            .non_centre_cutting(None)
+            .build()
     }
 
     /// Wanaka Back Rough configuration — Adaptive op, 6 mm carbide

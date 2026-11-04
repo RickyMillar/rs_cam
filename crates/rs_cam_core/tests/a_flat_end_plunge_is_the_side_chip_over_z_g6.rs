@@ -55,6 +55,7 @@
 )]
 
 use rs_cam_core::compute::catalog::OperationType;
+use rs_cam_core::compute::tool_config::ToolFact;
 use rs_cam_core::compute::tool_config::{ToolConfig, ToolId, ToolType};
 use rs_cam_core::feeds::extrapolation::{DRILL_RULE_TEXT, Gap};
 use rs_cam_core::feeds::suggest::{
@@ -201,11 +202,11 @@ fn side_row_id(material: &str, d: f64, z: u32) -> String {
 fn tool_of(kind: ToolType, diameter: f64, flutes: u32) -> ToolConfig {
     let mut t = ToolConfig::new_default(ToolId::from_raw(1), kind);
     t.diameter = diameter;
-    t.flute_count = flutes;
-    t.cutting_length = (diameter * 4.0).max(12.0);
-    t.shank_diameter = diameter.max(3.175);
+    t.set_flute_count(ToolFact::Stated(flutes));
+    t.set_cutting_length(ToolFact::Stated((diameter * 4.0).max(12.0)));
+    t.set_shank_diameter(ToolFact::Stated(diameter.max(3.175)));
     t.shaft_diameter = diameter.max(3.175);
-    t.stickout = t.cutting_length_planning_mm() + 8.0;
+    t.set_stickout(ToolFact::Stated(t.cutting_length_planning_mm() + 8.0));
     if matches!(kind, ToolType::BullNose) {
         t.corner_radius = 0.5;
         t.corner_radius_mm = 0.5;
@@ -407,7 +408,7 @@ fn every_other_cutter_refuses_and_a_bull_never_reads_spektra_g6() {
         let tool = match kind {
             ToolType::TaperedBallNose | ToolType::VBit => {
                 let mut t = ToolConfig::new_default(ToolId::from_raw(1), kind);
-                t.flute_count = 2;
+                t.set_flute_count(ToolFact::Stated(2));
                 t
             }
             ToolType::EndMill | ToolType::BallNose | ToolType::BullNose => tool_of(kind, 6.0, 2),

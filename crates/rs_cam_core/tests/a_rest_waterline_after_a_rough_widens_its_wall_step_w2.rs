@@ -29,6 +29,7 @@
 
 mod common;
 
+use rs_cam_core::compute::tool_config::ToolFact;
 use std::sync::atomic::AtomicBool;
 
 use common::session::{mesh_model, pinned_heights, stock_over, toolpath_config};
@@ -91,7 +92,7 @@ fn session(material: Material) -> (ProjectSession, f64) {
     let mut builder = ProjectSessionBuilder::new().stock(stock);
     // A short stickout: a stiff tool, so the deflection check passes.
     let mut tool = endmill_tool_config(6.0);
-    tool.stickout = 20.0;
+    tool.set_stickout(ToolFact::Stated(20.0));
     let tool_idx = builder.add_tool(tool);
     let tool_id = rs_cam_core::ids::ToolId::from_raw(builder.tools()[tool_idx].id.raw());
     let model_id = builder.add_model(mesh_model(boss(BOSS_HALF), "w2b_boss"));

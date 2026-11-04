@@ -42,6 +42,7 @@
 
 mod common;
 
+use rs_cam_core::compute::tool_config::ToolFact;
 use std::time::Duration;
 
 use common::adversarial2d::{self as adv, CancelRecord, Fixture, Outcome, RunRecord, Validity};
@@ -135,10 +136,10 @@ fn stock_for(polys: &[Polygon2]) -> StockConfig {
 fn endmill(diameter: f64) -> ToolConfig {
     let mut t = ToolConfig::new_default(ToolId::from_raw(0), ToolType::EndMill);
     t.diameter = diameter;
-    t.cutting_length = 25.0;
-    t.shank_diameter = diameter;
-    t.stickout = 40.0;
-    t.flute_count = 2;
+    t.set_cutting_length(ToolFact::Stated(25.0));
+    t.set_shank_diameter(ToolFact::Stated(diameter));
+    t.set_stickout(ToolFact::Stated(40.0));
+    t.set_flute_count(ToolFact::Stated(2));
     t.name = format!("End Mill {diameter}mm");
     t
 }
@@ -150,11 +151,11 @@ fn endmill(diameter: f64) -> ToolConfig {
 fn vbit() -> ToolConfig {
     let mut t = ToolConfig::new_default(ToolId::from_raw(0), ToolType::VBit);
     t.diameter = 12.7;
-    t.cutting_length = 11.0;
+    t.set_cutting_length(ToolFact::Stated(11.0));
     t.included_angle = 60.0;
-    t.shank_diameter = 6.35;
-    t.stickout = 30.0;
-    t.flute_count = 2;
+    t.set_shank_diameter(ToolFact::Stated(6.35));
+    t.set_stickout(ToolFact::Stated(30.0));
+    t.set_flute_count(ToolFact::Stated(2));
     t.name = "V-bit 60deg".to_owned();
     t
 }

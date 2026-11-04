@@ -20,6 +20,7 @@
 )]
 
 use rs_cam_core::compute::catalog::OperationType;
+use rs_cam_core::compute::tool_config::ToolFact;
 use rs_cam_core::compute::tool_config::{ToolConfig, ToolId, ToolType};
 use rs_cam_core::feeds::suggest::feeds_result_for_operation;
 use rs_cam_core::feeds::{SpindleStrategy, embedded_vendor_lut};
@@ -33,7 +34,7 @@ const DOWNCUT_ROW: &str = "onsrud-hardwood-60-200-1_4-finish";
 fn a_tie_takes_the_lower_chip_and_names_both_rows_q3() {
     let mut tool = ToolConfig::new_default(ToolId::from_raw(0), ToolType::EndMill);
     tool.diameter = 6.0;
-    tool.flute_count = 2;
+    tool.set_flute_count(ToolFact::Stated(2));
     let op = rs_cam_core::compute::fixture_values::fixture_op(OperationType::Profile);
     let result = feeds_result_for_operation(
         &op,

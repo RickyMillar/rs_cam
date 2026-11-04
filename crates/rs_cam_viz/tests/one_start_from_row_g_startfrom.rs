@@ -28,6 +28,7 @@
     reason = "test code: a panic is how a test reports a failure"
 )]
 
+use rs_cam_core::compute::tool_config::ToolFact;
 use std::collections::BTreeSet;
 use std::path::PathBuf;
 use std::sync::Arc;
@@ -110,7 +111,7 @@ fn toolpath(id: usize, name: &str, operation: OperationConfig) -> ToolpathConfig
 fn state_from(configs: Vec<ToolpathConfig>) -> AppState {
     let mut tool = ToolConfig::new_default(ToolId::from_raw(1), ToolType::BallNose);
     tool.diameter = 6.0;
-    tool.flute_count = 2;
+    tool.set_flute_count(ToolFact::Stated(2));
     let mut builder = ProjectSessionBuilder::new()
         .stock(StockConfig::default())
         .tool(tool)

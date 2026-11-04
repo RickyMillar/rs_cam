@@ -62,6 +62,7 @@
 
 mod common;
 
+use rs_cam_core::compute::tool_config::ToolFact;
 use std::collections::{BTreeMap, BTreeSet, HashMap};
 use std::fmt::Write as _;
 use std::panic::{AssertUnwindSafe, catch_unwind};
@@ -202,11 +203,11 @@ fn diameter_reason(kind: ToolType) -> &'static str {
 fn tool_of(kind: ToolType, diameter: f64, flutes: u32) -> ToolConfig {
     let mut t = ToolConfig::new_default(ToolId::from_raw(1), kind);
     t.diameter = diameter;
-    t.flute_count = flutes;
-    t.cutting_length = (diameter * 3.0).max(12.0);
-    t.shank_diameter = diameter.max(3.0);
+    t.set_flute_count(ToolFact::Stated(flutes));
+    t.set_cutting_length(ToolFact::Stated((diameter * 3.0).max(12.0)));
+    t.set_shank_diameter(ToolFact::Stated(diameter.max(3.0)));
     t.shaft_diameter = diameter.max(3.0);
-    t.stickout = t.cutting_length_planning_mm() + 8.0;
+    t.set_stickout(ToolFact::Stated(t.cutting_length_planning_mm() + 8.0));
     if matches!(kind, ToolType::BullNose) {
         t.corner_radius = diameter * 0.15;
         t.corner_radius_mm = diameter * 0.15;
@@ -214,8 +215,8 @@ fn tool_of(kind: ToolType, diameter: f64, flutes: u32) -> ToolConfig {
     if matches!(kind, ToolType::TaperedBallNose) {
         // The shank must be larger than the tip: `tool/tapered_ball.rs`
         // panics when it is not.
-        t.taper_half_angle = 7.0;
-        t.shank_diameter = (diameter + 3.0).max(6.0);
+        t.set_taper_half_angle(ToolFact::Stated(7.0));
+        t.set_shank_diameter(ToolFact::Stated((diameter + 3.0).max(6.0)));
         t.shaft_diameter = t.shank_diameter_planning_mm();
     }
     if matches!(kind, ToolType::VBit) {

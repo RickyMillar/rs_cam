@@ -281,12 +281,11 @@ const TAPER_HALF_ANGLE_DEG: f64 = 7.0;
 const SHANK_DIAMETER_MM: f64 = 6.0;
 
 fn session_tool() -> ToolConfig {
-    ToolConfig {
-        diameter: TIP_DIAMETER_MM,
-        taper_half_angle: TAPER_HALF_ANGLE_DEG,
-        shaft_diameter: SHANK_DIAMETER_MM,
-        ..ToolConfig::new_default(ToolId::from_raw(0), ToolType::TaperedBallNose)
-    }
+    ToolConfig::builder(ToolId::from_raw(0), ToolType::TaperedBallNose)
+        .diameter(TIP_DIAMETER_MM)
+        .taper_half_angle_deg(TAPER_HALF_ANGLE_DEG)
+        .shaft_mm(SHANK_DIAMETER_MM)
+        .build()
 }
 
 /// `envelope_radius_mm()` for the shared tool — the footprint radius per the
@@ -1406,10 +1405,9 @@ fn h4_harness_arithmetic_sentry() {
     let mesh = tiny_groove();
     let stock = tiny_groove_stock();
     let heights = pinned_heights(0.0, -2.0);
-    let tool = ToolConfig {
-        diameter: 2.0,
-        ..ToolConfig::new_default(ToolId::from_raw(0), ToolType::BallNose)
-    };
+    let tool = ToolConfig::builder(ToolId::from_raw(0), ToolType::BallNose)
+        .diameter(2.0)
+        .build();
 
     let cfg = UnifiedFinishConfig {
         steep_threshold_deg: 45.0,

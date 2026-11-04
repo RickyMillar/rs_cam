@@ -56,6 +56,7 @@
 //! would prove the derivation rather than the wiring. Nothing here starts a
 //! GUI or an MCP server.
 
+use rs_cam_core::compute::tool_config::ToolFact;
 use std::sync::Arc;
 
 use rs_cam_core::compute::tool_config::{ToolConfig, ToolId, ToolType};
@@ -82,7 +83,7 @@ fn two_operation_job() -> AppController<ScriptedLane> {
     let mut controller = seeded_controller();
 
     let mut second_tool = ToolConfig::new_default(ToolId::from_raw(2), ToolType::EndMill);
-    second_tool.stickout += 20.0;
+    second_tool.set_stickout(ToolFact::Stated(second_tool.stickout_planning_mm() + 20.0));
     let mut tools = controller.state.session().tools().to_vec();
     tools.push(second_tool);
     let _ = controller

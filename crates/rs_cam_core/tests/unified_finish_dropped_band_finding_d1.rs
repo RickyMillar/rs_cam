@@ -77,12 +77,11 @@ const SHANK_DIAMETER_MM: f64 = 6.0;
 const TAPER_HALF_ANGLE_DEG: f64 = 7.0;
 
 fn tapered_ball_tool() -> ToolConfig {
-    ToolConfig {
-        diameter: TIP_DIAMETER_MM,
-        taper_half_angle: TAPER_HALF_ANGLE_DEG,
-        shaft_diameter: SHANK_DIAMETER_MM,
-        ..ToolConfig::new_default(ToolId::from_raw(0), ToolType::TaperedBallNose)
-    }
+    ToolConfig::builder(ToolId::from_raw(0), ToolType::TaperedBallNose)
+        .diameter(TIP_DIAMETER_MM)
+        .taper_half_angle_deg(TAPER_HALF_ANGLE_DEG)
+        .shaft_mm(SHANK_DIAMETER_MM)
+        .build()
 }
 
 fn extrude_profile(profile: &[(f64, f64)], y0: f64, y1: f64) -> TriangleMesh {

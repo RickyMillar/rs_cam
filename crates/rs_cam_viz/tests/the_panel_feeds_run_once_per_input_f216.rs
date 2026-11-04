@@ -29,6 +29,7 @@
     reason = "test code: a panic is how a test reports a failure"
 )]
 
+use rs_cam_core::compute::tool_config::ToolFact;
 use std::path::PathBuf;
 use std::sync::Arc;
 
@@ -65,7 +66,7 @@ fn ctx() -> egui::Context {
 fn tool() -> ToolConfig {
     let mut tool = ToolConfig::new_default(ToolId::from_raw(1), ToolType::EndMill);
     tool.diameter = 6.0;
-    tool.flute_count = 2;
+    tool.set_flute_count(ToolFact::Stated(2));
     tool
 }
 
@@ -366,7 +367,7 @@ fn every_feeds_input_moves_the_memo_key_f216() {
     let mut moved_op = operation.clone();
     moved_op.set_feed_rate(operation.feed_rate().expect("S11: the fixture sets it") + 100.0);
     let mut moved_tool = tool.clone();
-    moved_tool.flute_count = 3;
+    moved_tool.set_flute_count(ToolFact::Stated(3));
     let moved_material = Material::Plywood {
         grade: PlywoodGrade::HardwoodFaced,
     };

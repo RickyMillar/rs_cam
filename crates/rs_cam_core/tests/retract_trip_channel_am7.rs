@@ -197,12 +197,11 @@ fn two_groove_plateau() -> TriangleMesh {
 }
 
 fn tapered_ball_tool() -> ToolConfig {
-    ToolConfig {
-        diameter: 1.0,
-        taper_half_angle: 7.0,
-        shaft_diameter: 6.0,
-        ..ToolConfig::new_default(ToolId::from_raw(0), ToolType::TaperedBallNose)
-    }
+    ToolConfig::builder(ToolId::from_raw(0), ToolType::TaperedBallNose)
+        .diameter(1.0)
+        .taper_half_angle_deg(7.0)
+        .shaft_mm(6.0)
+        .build()
 }
 
 fn unified_finish_op() -> OperationConfig {

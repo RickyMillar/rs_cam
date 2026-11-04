@@ -258,10 +258,7 @@ fn an_svg_circle_drills_at_its_centre_and_the_outline_does_not() {
             Shape::Loop(_) | Shape::Path(_) | Shape::Point(_) | Shape::Face(_) => None,
         })
         .expect("the circle");
-    let tool = ToolConfig {
-        diameter,
-        ..make_endmill_6mm()
-    };
+    let tool = make_endmill_6mm().to_builder().diameter(diameter).build();
     let mut session = session_with_tool(model, drill_op(Selection::drawing()), tool);
     let cols = drilled_columns(&mut session, 0);
     assert_eq!(cols.len(), 1, "one hole, got columns {cols:?}");

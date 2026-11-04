@@ -40,6 +40,7 @@
     reason = "test code: a panic is how a test reports a failure; the test prints its measurements for the reader"
 )]
 
+use rs_cam_core::compute::tool_config::ToolFact;
 use std::path::PathBuf;
 use std::sync::Arc;
 use std::sync::atomic::AtomicBool;
@@ -160,10 +161,10 @@ fn flat_session(op: OperationConfig) -> ProjectSession {
     });
     let mut tool = ToolConfig::new_default(ToolId::from_raw(0), ToolType::EndMill);
     tool.diameter = 6.0;
-    tool.cutting_length = 25.0;
-    tool.shank_diameter = 6.35;
-    tool.stickout = 45.0;
-    tool.flute_count = 2;
+    tool.set_cutting_length(ToolFact::Stated(25.0));
+    tool.set_shank_diameter(ToolFact::Stated(6.35));
+    tool.set_stickout(ToolFact::Stated(45.0));
+    tool.set_flute_count(ToolFact::Stated(2));
     let tool_idx = builder.add_tool(tool);
     let tool_id = builder.tools()[tool_idx].id.raw();
 

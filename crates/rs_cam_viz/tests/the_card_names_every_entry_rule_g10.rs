@@ -35,6 +35,7 @@
     reason = "test code: a panic is how a test reports a failure"
 )]
 
+use rs_cam_core::compute::tool_config::ToolFact;
 use std::path::PathBuf;
 use std::sync::Arc;
 
@@ -60,11 +61,11 @@ fn tool_of(kind: ToolType, diameter: f64) -> ToolConfig {
     let mut tool = ToolConfig::new_default(ToolId::from_raw(1), kind);
     tool.name = "G10 card fixture".to_owned();
     tool.diameter = diameter;
-    tool.flute_count = 2;
-    tool.cutting_length = (diameter * 4.0).max(12.0);
-    tool.shank_diameter = diameter.max(3.175);
+    tool.set_flute_count(ToolFact::Stated(2));
+    tool.set_cutting_length(ToolFact::Stated((diameter * 4.0).max(12.0)));
+    tool.set_shank_diameter(ToolFact::Stated(diameter.max(3.175)));
     tool.shaft_diameter = diameter.max(3.175);
-    tool.stickout = tool.cutting_length_planning_mm() + 8.0;
+    tool.set_stickout(ToolFact::Stated(tool.cutting_length_planning_mm() + 8.0));
     if matches!(kind, ToolType::BullNose) {
         tool.corner_radius = 0.5;
         tool.corner_radius_mm = 0.5;

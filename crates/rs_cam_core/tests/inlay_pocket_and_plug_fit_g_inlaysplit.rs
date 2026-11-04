@@ -103,11 +103,10 @@ fn board() -> StockConfig {
 }
 
 fn vbit(included_angle_deg: f64) -> ToolConfig {
-    ToolConfig {
-        diameter: 12.7,
-        included_angle: included_angle_deg,
-        ..ToolConfig::new_default(ToolId::from_raw(0), ToolType::VBit)
-    }
+    ToolConfig::builder(ToolId::from_raw(0), ToolType::VBit)
+        .diameter(12.7)
+        .included_angle_deg(included_angle_deg)
+        .build()
 }
 
 fn simulate(session: &mut ProjectSession) -> Arc<TriDexelStock> {
@@ -519,10 +518,11 @@ fn e_inlay_plus_the_clipped_floor_pocket_make_the_whole_pocket() {
     let mut builder = ProjectSessionBuilder::new().stock(board());
     let vbit_idx = builder.add_tool(vbit(90.0));
     let vbit_id = builder.tools()[vbit_idx].id.raw();
-    let mill_idx = builder.add_tool(ToolConfig {
-        diameter: 4.0,
-        ..ToolConfig::new_default(ToolId::from_raw(1), ToolType::EndMill)
-    });
+    let mill_idx = builder.add_tool(
+        ToolConfig::builder(ToolId::from_raw(1), ToolType::EndMill)
+            .diameter(4.0)
+            .build(),
+    );
     let mill_id = builder.tools()[mill_idx].id.raw();
     let model_id = builder.add_model(polygon_model(vec![l_design()], "l"));
 

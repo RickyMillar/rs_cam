@@ -40,6 +40,7 @@
     reason = "test code: a panic is how a test reports a failure; the test prints its measurements for the reader"
 )]
 
+use rs_cam_core::compute::tool_config::ToolFact;
 use rs_cam_core::maps::grid::GridSpec;
 use rs_cam_core::maps::tier_islands::{
     BAND_RATIO_ADVISORY_BOUND, MAX_CLOSE_RAISES, TierIslandParams, extract_tier_islands,
@@ -895,7 +896,7 @@ fn rivmap350_tiered_finish_step0_preview() {
         .find(|t| t.id.raw() == RIVMAP_LADDER[1])
         .expect("the R1.0 taper")
         .clone();
-    short.cutting_length = 15.0;
+    short.set_cutting_length(ToolFact::Stated(15.0));
     short.name = format!("{} (L_c 15)", short.name);
     let created = session
         .apply(Command::AddTool(AddToolArgs {

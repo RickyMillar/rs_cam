@@ -58,21 +58,19 @@ fn hemisphere() -> (TriangleMesh, SpatialIndex) {
 }
 
 fn ball_tool() -> ToolConfig {
-    ToolConfig {
-        diameter: 3.0,
-        ..ToolConfig::new_default(ToolId::mint(1), ToolType::BallNose)
-    }
+    ToolConfig::builder(ToolId::mint(1), ToolType::BallNose)
+        .diameter(3.0)
+        .build()
 }
 
 /// Tapered ball: the tool class where `radius()` (shank) and
 /// `cusp_radius()` (tip) diverge, so band structure is the most sensitive.
 fn tapered_ball_tool() -> ToolConfig {
-    ToolConfig {
-        diameter: 1.5,
-        taper_half_angle: 10.0,
-        shaft_diameter: 6.0,
-        ..ToolConfig::new_default(ToolId::mint(2), ToolType::TaperedBallNose)
-    }
+    ToolConfig::builder(ToolId::mint(2), ToolType::TaperedBallNose)
+        .diameter(1.5)
+        .taper_half_angle_deg(10.0)
+        .shaft_mm(6.0)
+        .build()
 }
 
 fn unified_finish_op() -> OperationConfig {

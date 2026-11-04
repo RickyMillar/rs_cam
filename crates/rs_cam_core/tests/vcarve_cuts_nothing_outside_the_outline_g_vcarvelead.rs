@@ -101,11 +101,10 @@ fn board() -> StockConfig {
 
 /// A 90 deg V-bit: half angle 45 deg.
 fn vbit() -> ToolConfig {
-    ToolConfig {
-        diameter: 12.7,
-        included_angle: 90.0,
-        ..ToolConfig::new_default(ToolId::from_raw(0), ToolType::VBit)
-    }
+    ToolConfig::builder(ToolId::from_raw(0), ToolType::VBit)
+        .diameter(12.7)
+        .included_angle_deg(90.0)
+        .build()
 }
 
 /// The default config with a coarser scan (1 mm lines, 0.1 mm samples), so

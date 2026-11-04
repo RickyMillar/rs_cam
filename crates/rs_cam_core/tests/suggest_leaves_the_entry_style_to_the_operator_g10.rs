@@ -29,6 +29,7 @@
 
 use rs_cam_core::compute::catalog::OperationConfig;
 use rs_cam_core::compute::operation_configs::{Adaptive3dConfig, Adaptive3dEntryStyle};
+use rs_cam_core::compute::tool_config::ToolFact;
 use rs_cam_core::compute::tool_config::{ToolConfig, ToolId, ToolType};
 use rs_cam_core::feeds::suggest::{
     ApplyContext, SuggestContext, SuggestForOperationInput, SuggestWarning, apply,
@@ -44,9 +45,9 @@ const DPP_MM: f64 = 3.69;
 fn tool() -> ToolConfig {
     let mut tool = ToolConfig::new_default(ToolId::from_raw(0), ToolType::EndMill);
     tool.diameter = 6.0;
-    tool.cutting_length = 25.0;
-    tool.stickout = 30.0;
-    tool.flute_count = 2;
+    tool.set_cutting_length(ToolFact::Stated(25.0));
+    tool.set_stickout(ToolFact::Stated(30.0));
+    tool.set_flute_count(ToolFact::Stated(2));
     tool
 }
 

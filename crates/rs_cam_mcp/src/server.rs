@@ -13,7 +13,7 @@ use serde::Deserialize;
 
 use rs_cam_core::compute::catalog::OperationType;
 use rs_cam_core::compute::config::{BoundaryContainment, StockSource};
-use rs_cam_core::compute::tool_config::{ToolConfig, ToolId, ToolParamKey, ToolType};
+use rs_cam_core::compute::tool_config::{ToolConfig, ToolFact, ToolId, ToolParamKey, ToolType};
 use rs_cam_core::compute::transform::{FaceUp, ZRotation};
 use rs_cam_core::feeds::SpindleStrategy;
 use rs_cam_core::feeds::envelope::PickRequest;
@@ -3592,7 +3592,7 @@ pub fn build_tool_config(spec: &AddToolParam) -> Result<BuiltTool, String> {
     // Rule 2 — clear the geometry this type does not own.
     config.corner_radius = 0.0;
     config.included_angle = 0.0;
-    config.taper_half_angle = 0.0;
+    config.set_taper_half_angle(ToolFact::Stated(0.0));
 
     // Rule 1 — the defining geometry, per type.
     match tool_type {
@@ -3611,7 +3611,7 @@ pub fn build_tool_config(spec: &AddToolParam) -> Result<BuiltTool, String> {
                  5.6). No tool was added: guessing the taper would create a different cutter."
                     .to_owned()
             })?;
-            config.taper_half_angle = angle;
+            config.set_taper_half_angle(ToolFact::Stated(angle));
         }
         ToolType::BullNose => {
             let radius = spec.corner_radius.ok_or_else(|| {
@@ -3627,24 +3627,24 @@ pub fn build_tool_config(spec: &AddToolParam) -> Result<BuiltTool, String> {
     // Rule 3 — everything else: honour the override, name the default.
     let mut defaulted: Vec<&'static str> = Vec::new();
 
-    macro_rules! apply_f64 {
-        ($field:ident, $name:literal) => {
+    // K3 (feeds contract P6): a stated value is `ToolFact::Stated`.
+    macro_rules! apply_fact {
+        ($setter:ident, $field:ident, $name:literal) => {
             match spec.$field {
-                Some(v) => config.$field = v,
+                Some(v) => config.$setter(ToolFact::Stated(v)),
                 None => defaulted.push($name),
             }
         };
     }
 
-    apply_f64!(cutting_length, "cutting_length");
-    apply_f64!(shaft_diameter, "shaft_diameter");
-    apply_f64!(shank_diameter, "shank_diameter");
-    apply_f64!(stickout, "stickout");
-
-    match spec.flute_count {
-        Some(n) => config.flute_count = n,
-        None => defaulted.push("flute_count"),
+    apply_fact!(set_cutting_length, cutting_length, "cutting_length");
+    match spec.shaft_diameter {
+        Some(v) => config.shaft_diameter = v,
+        None => defaulted.push("shaft_diameter"),
     }
+    apply_fact!(set_shank_diameter, shank_diameter, "shank_diameter");
+    apply_fact!(set_stickout, stickout, "stickout");
+    apply_fact!(set_flute_count, flute_count, "flute_count");
 
     // Display only, so never reported as defaulted: `None` infers the
     // unit from the name.

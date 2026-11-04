@@ -144,17 +144,15 @@ fn assert_gui_is_the_draft(mut controller: AppController<SilentBackend>) -> Vec<
 
 #[test]
 fn the_gui_add_door_stores_the_core_draft_s11() {
-    let end_mill = ToolConfig {
-        diameter: 3.0,
-        ..ToolConfig::new_default(ToolId::from_raw(1), ToolType::EndMill)
-    };
+    let end_mill = ToolConfig::builder(ToolId::from_raw(1), ToolType::EndMill)
+        .diameter(3.0)
+        .build();
     let backed = seed(end_mill, Material::default());
     assert_eq!(assert_gui_is_the_draft(backed), vec!["floor"]);
 
-    let ball = ToolConfig {
-        diameter: 6.35,
-        ..ToolConfig::new_default(ToolId::from_raw(1), ToolType::BallNose)
-    };
+    let ball = ToolConfig::builder(ToolId::from_raw(1), ToolType::BallNose)
+        .diameter(6.35)
+        .build();
     let unbacked = seed(
         ball,
         Material::Plywood {

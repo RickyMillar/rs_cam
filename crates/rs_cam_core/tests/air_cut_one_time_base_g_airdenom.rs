@@ -37,6 +37,7 @@
     reason = "test code: a panic is how a test reports a failure"
 )]
 
+use rs_cam_core::compute::tool_config::ToolFact;
 use std::collections::BTreeMap;
 use std::f64::consts::TAU;
 use std::path::PathBuf;
@@ -69,10 +70,10 @@ use rs_cam_core::trace::debug_trace::ToolpathDebugOptions;
 fn make_endmill_6mm() -> ToolConfig {
     let mut tool = ToolConfig::new_default(ToolId::from_raw(0), ToolType::EndMill);
     tool.diameter = 6.0;
-    tool.cutting_length = 25.0;
-    tool.shank_diameter = 6.35;
-    tool.stickout = 45.0;
-    tool.flute_count = 2;
+    tool.set_cutting_length(ToolFact::Stated(25.0));
+    tool.set_shank_diameter(ToolFact::Stated(6.35));
+    tool.set_stickout(ToolFact::Stated(45.0));
+    tool.set_flute_count(ToolFact::Stated(2));
     tool.name = "End Mill 6mm (G-AIRDENOM test)".to_owned();
     tool
 }

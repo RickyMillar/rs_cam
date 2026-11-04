@@ -86,6 +86,7 @@
 
 use rs_cam_core::compute::catalog::{OperationConfig, OperationType};
 use rs_cam_core::compute::cutter::build_cutter;
+use rs_cam_core::compute::tool_config::ToolFact;
 use rs_cam_core::compute::{ToolConfig, ToolId, ToolType};
 use rs_cam_core::feeds::extrapolation::{ClaimResidual, SizeBasis, SizeForm, SpreadFamily};
 use rs_cam_core::feeds::geometry::{
@@ -141,12 +142,12 @@ const VBIT_HARDWOOD: &str = "No published figure backs the formula for a V-bit o
 fn vbit(diameter: f64) -> ToolConfig {
     let mut t = ToolConfig::new_default(ToolId::from_raw(1), ToolType::VBit);
     t.diameter = diameter;
-    t.flute_count = 2;
+    t.set_flute_count(ToolFact::Stated(2));
     t.included_angle = 60.0;
-    t.cutting_length = 19.05;
-    t.shank_diameter = diameter;
+    t.set_cutting_length(ToolFact::Stated(19.05));
+    t.set_shank_diameter(ToolFact::Stated(diameter));
     t.shaft_diameter = diameter;
-    t.stickout = 27.05;
+    t.set_stickout(ToolFact::Stated(27.05));
     t
 }
 
@@ -655,7 +656,7 @@ fn the_band_de_rate_follows_the_nominal_diameter_not_the_engaged_width_b4() {
     let d = 6.35;
     let mut tool = vbit(d);
     tool.included_angle = 15.0;
-    tool.flute_count = 1;
+    tool.set_flute_count(ToolFact::Stated(1));
     let material = softwood();
     let row_id = "amana-engrave-softwood-trace-15deg-1f";
     // A wide `ae` on a Trace op reads as a slot (Step 4b) and caps `ap` at

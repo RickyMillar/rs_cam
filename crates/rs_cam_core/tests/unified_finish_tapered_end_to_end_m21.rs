@@ -114,19 +114,17 @@ const TAPER_HALF_ANGLE_DEG: f64 = 7.0;
 const BALL_DIAMETER_MM: f64 = 3.0;
 
 fn tapered_ball_tool() -> ToolConfig {
-    ToolConfig {
-        diameter: TIP_DIAMETER_MM,
-        taper_half_angle: TAPER_HALF_ANGLE_DEG,
-        shaft_diameter: SHANK_DIAMETER_MM,
-        ..ToolConfig::new_default(ToolId::from_raw(0), ToolType::TaperedBallNose)
-    }
+    ToolConfig::builder(ToolId::from_raw(0), ToolType::TaperedBallNose)
+        .diameter(TIP_DIAMETER_MM)
+        .taper_half_angle_deg(TAPER_HALF_ANGLE_DEG)
+        .shaft_mm(SHANK_DIAMETER_MM)
+        .build()
 }
 
 fn ball_tool() -> ToolConfig {
-    ToolConfig {
-        diameter: BALL_DIAMETER_MM,
-        ..ToolConfig::new_default(ToolId::from_raw(0), ToolType::BallNose)
-    }
+    ToolConfig::builder(ToolId::from_raw(0), ToolType::BallNose)
+        .diameter(BALL_DIAMETER_MM)
+        .build()
 }
 
 // ── Mesh fixture ────────────────────────────────────────────────────────

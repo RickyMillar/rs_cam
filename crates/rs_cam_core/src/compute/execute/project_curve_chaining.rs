@@ -76,10 +76,9 @@ use std::sync::atomic::AtomicBool;
 /// file in-crate, and an in-crate module cannot reach `tests/common/`, so
 /// the four lines live here.
 fn endmill_tool_config(diameter_mm: f64) -> ToolConfig {
-    ToolConfig {
-        diameter: diameter_mm,
-        ..ToolConfig::new_default(ToolId::mint(0), ToolType::EndMill)
-    }
+    ToolConfig::builder(ToolId::mint(0), ToolType::EndMill)
+        .diameter(diameter_mm)
+        .build()
 }
 
 /// Ø2 flat engraver. Small enough that the conservative-ceiling disc stays

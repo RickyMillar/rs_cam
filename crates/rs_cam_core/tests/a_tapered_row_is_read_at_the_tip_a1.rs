@@ -29,6 +29,7 @@
 
 use rs_cam_core::compute::catalog::OperationType;
 use rs_cam_core::compute::cutter::build_cutter;
+use rs_cam_core::compute::tool_config::ToolFact;
 use rs_cam_core::compute::tool_config::{ToolConfig, ToolId, ToolType};
 use rs_cam_core::feeds::geometry::{
     depth_cap_diameter_mm, doc_derating_scale, feed_ladder_diameter_mm,
@@ -90,12 +91,12 @@ fn printed_diameter_mm(id: &str) -> f64 {
 fn tool_config() -> ToolConfig {
     let mut t = ToolConfig::new_default(ToolId::from_raw(1), ToolType::TaperedBallNose);
     t.diameter = TIP_MM;
-    t.flute_count = FLUTES;
-    t.taper_half_angle = 7.0;
-    t.cutting_length = 25.0;
-    t.shank_diameter = SHANK_MM;
+    t.set_flute_count(ToolFact::Stated(FLUTES));
+    t.set_taper_half_angle(ToolFact::Stated(7.0));
+    t.set_cutting_length(ToolFact::Stated(25.0));
+    t.set_shank_diameter(ToolFact::Stated(SHANK_MM));
     t.shaft_diameter = SHANK_MM;
-    t.stickout = 35.0;
+    t.set_stickout(ToolFact::Stated(35.0));
     t
 }
 

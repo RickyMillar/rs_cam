@@ -71,6 +71,7 @@
     reason = "test code: a panic is how a test reports a failure; the test prints its measurements for the reader"
 )]
 
+use rs_cam_core::compute::tool_config::ToolFact;
 use std::path::PathBuf;
 use std::sync::Arc;
 use std::sync::atomic::AtomicBool;
@@ -329,16 +330,16 @@ fn h1_tool() -> ToolConfig {
     let d = h1_diameter();
     t.name = format!("H1 {d}mm Ball Nose 2F (HYPOTHETICAL)");
     t.diameter = d;
-    t.cutting_length = 25.0;
+    t.set_cutting_length(ToolFact::Stated(25.0));
     t.helix_deg = 30.0;
     t.corner_radius_mm = 0.0;
     t.corner_radius = 0.0;
     t.included_angle = 90.0;
-    t.taper_half_angle = 15.0;
+    t.set_taper_half_angle(ToolFact::Stated(15.0));
     t.shaft_diameter = 6.35;
-    t.shank_diameter = 6.35;
-    t.stickout = 40.0;
-    t.flute_count = 2;
+    t.set_shank_diameter(ToolFact::Stated(6.35));
+    t.set_stickout(ToolFact::Stated(40.0));
+    t.set_flute_count(ToolFact::Stated(2));
     t.tool_number = 2;
     t.tool_material = ToolMaterial::Carbide;
     t.cut_direction = BitCutDirection::UpCut;

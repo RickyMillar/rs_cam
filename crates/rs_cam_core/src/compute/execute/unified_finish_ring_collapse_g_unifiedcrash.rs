@@ -58,12 +58,11 @@ fn hemisphere() -> (TriangleMesh, SpatialIndex) {
 /// The live project's tool: a tapered ball, where `radius()` (shank) and
 /// `cusp_radius()` (tip) diverge — the class the ring cascade is sized off.
 fn tapered_ball_tool() -> ToolConfig {
-    ToolConfig {
-        diameter: 1.5,
-        taper_half_angle: 10.0,
-        shaft_diameter: 6.0,
-        ..ToolConfig::new_default(ToolId::from_raw(2), ToolType::TaperedBallNose)
-    }
+    ToolConfig::builder(ToolId::from_raw(2), ToolType::TaperedBallNose)
+        .diameter(1.5)
+        .taper_half_angle_deg(10.0)
+        .shaft_mm(6.0)
+        .build()
 }
 
 /// Generate through the SAME entry point `session::compute::generate_toolpath`

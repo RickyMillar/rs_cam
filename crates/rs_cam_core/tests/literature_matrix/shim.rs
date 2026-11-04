@@ -18,6 +18,7 @@ use rs_cam_core::compute::build_cutter;
 use rs_cam_core::compute::operation_configs::{
     AdaptiveConfig, DrillConfig, PocketConfig, ScallopConfig, VCarveConfig,
 };
+use rs_cam_core::compute::tool_config::ToolFact;
 use rs_cam_core::compute::tool_config::{ToolConfig, ToolId, ToolType};
 use rs_cam_core::feeds::suggest::{
     apply_drill_defaults, apply_speeds_to_op, operation_feeds_hints,
@@ -235,16 +236,16 @@ fn build_tool(cell: &LiteratureCell, tool_type: ToolType) -> ToolConfig {
         }
     };
     t.diameter = tip_d;
-    t.flute_count = i.flute_count;
-    t.cutting_length = i.flute_length_mm.unwrap_or(20.0);
+    t.set_flute_count(ToolFact::Stated(i.flute_count));
+    t.set_cutting_length(ToolFact::Stated(i.flute_length_mm.unwrap_or(20.0)));
     if let Some(stickout) = i.stickout_mm {
-        t.stickout = stickout;
+        t.set_stickout(ToolFact::Stated(stickout));
     }
     // Default shank to the cell's diameter (shank for tapered cases,
     // tool diameter otherwise) — keeps the rigidity model honest for
     // small-shank cutters and preserves the shank context for tapered
     // tools where `t.diameter` was redirected to the tip above.
-    t.shank_diameter = i.diameter_mm;
+    t.set_shank_diameter(ToolFact::Stated(i.diameter_mm));
     t.shaft_diameter = i.diameter_mm;
     if let Some(cr) = i.corner_radius_mm {
         t.corner_radius_mm = cr;
@@ -254,7 +255,7 @@ fn build_tool(cell: &LiteratureCell, tool_type: ToolType) -> ToolConfig {
         t.included_angle = angle;
     }
     if let Some(half) = i.taper_half_angle_deg {
-        t.taper_half_angle = half;
+        t.set_taper_half_angle(ToolFact::Stated(half));
     }
     t
 }

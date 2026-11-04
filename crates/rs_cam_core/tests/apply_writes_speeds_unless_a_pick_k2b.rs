@@ -19,6 +19,7 @@
 )]
 
 use rs_cam_core::compute::catalog::{OperationConfig, OperationType};
+use rs_cam_core::compute::tool_config::ToolFact;
 use rs_cam_core::compute::tool_config::{ToolConfig, ToolId, ToolType};
 use rs_cam_core::feeds::suggest::{
     OperationApplyInput, StockContext, SuggestContext, apply_to_operation,
@@ -123,8 +124,8 @@ fn a_stated_face_stepover_stays_after_an_apply_k2b() {
     assert!(op.set_stepover(14.4), "a Face holds a stepover");
     let mut bit = tool(ToolType::EndMill);
     bit.diameter = 18.0;
-    bit.cutting_length = 20.0;
-    bit.stickout = 25.0;
+    bit.set_cutting_length(ToolFact::Stated(20.0));
+    bit.set_stickout(ToolFact::Stated(25.0));
     let out = apply_speeds(&op, &bit).expect("an 18 mm end mill on a Face is backed");
     assert_eq!(
         out.stepover(),

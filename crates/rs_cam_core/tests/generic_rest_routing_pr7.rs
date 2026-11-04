@@ -140,19 +140,17 @@ fn grooved_block(rim_half_width: f64, wall_deg: f64, depth: f64, skew: f64) -> T
 // ── Session wiring ──────────────────────────────────────────────────────
 
 fn tapered_ball_tool(id: usize) -> ToolConfig {
-    ToolConfig {
-        diameter: 1.0,
-        taper_half_angle: 7.0,
-        shaft_diameter: 6.0,
-        ..ToolConfig::new_default(ToolId::from_raw(id), ToolType::TaperedBallNose)
-    }
+    ToolConfig::builder(ToolId::from_raw(id), ToolType::TaperedBallNose)
+        .diameter(1.0)
+        .taper_half_angle_deg(7.0)
+        .shaft_mm(6.0)
+        .build()
 }
 
 fn ball_tool(id: usize, diameter: f64) -> ToolConfig {
-    ToolConfig {
-        diameter,
-        ..ToolConfig::new_default(ToolId::from_raw(id), ToolType::BallNose)
-    }
+    ToolConfig::builder(ToolId::from_raw(id), ToolType::BallNose)
+        .diameter(diameter)
+        .build()
 }
 
 fn mesh_model(mesh: TriangleMesh) -> LoadedModel {

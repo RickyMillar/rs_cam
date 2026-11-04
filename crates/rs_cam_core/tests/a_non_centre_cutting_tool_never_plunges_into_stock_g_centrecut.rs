@@ -38,6 +38,7 @@
 
 mod common;
 
+use rs_cam_core::compute::tool_config::ToolFact;
 use std::sync::atomic::AtomicBool;
 
 use rs_cam_core::compute::catalog::OperationConfig;
@@ -64,10 +65,10 @@ fn bulk_bit(non_centre_cutting: bool) -> ToolConfig {
     let mut tool = ToolConfig::new_default(ToolId::from_raw(0), ToolType::EndMill);
     tool.name = "18 mm 2F".to_owned();
     tool.diameter = 18.0;
-    tool.cutting_length = 30.0;
-    tool.stickout = 45.0;
-    tool.shank_diameter = 12.0;
-    tool.flute_count = 2;
+    tool.set_cutting_length(ToolFact::Stated(30.0));
+    tool.set_stickout(ToolFact::Stated(45.0));
+    tool.set_shank_diameter(ToolFact::Stated(12.0));
+    tool.set_flute_count(ToolFact::Stated(2));
     tool.non_centre_cutting = non_centre_cutting.then_some(NonCentreCuttingGeometry {
         centre_core_diameter_mm: CORE_MM,
         blade_protrusion_mm: PROTRUSION_MM,

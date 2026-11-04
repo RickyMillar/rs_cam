@@ -30,6 +30,7 @@
     reason = "test code: a panic is how a test reports a failure"
 )]
 
+use rs_cam_core::compute::tool_config::ToolFact;
 use std::path::PathBuf;
 use std::sync::Arc;
 
@@ -53,11 +54,11 @@ fn tapered_ball(diameter: f64) -> ToolConfig {
     let mut tool = ToolConfig::new_default(ToolId::from_raw(1), ToolType::TaperedBallNose);
     tool.name = R1_NAME.to_owned();
     tool.diameter = diameter;
-    tool.taper_half_angle = 5.7;
+    tool.set_taper_half_angle(ToolFact::Stated(5.7));
     tool.shaft_diameter = 6.0;
-    tool.shank_diameter = 6.0;
-    tool.cutting_length = 20.0;
-    tool.flute_count = 2;
+    tool.set_shank_diameter(ToolFact::Stated(6.0));
+    tool.set_cutting_length(ToolFact::Stated(20.0));
+    tool.set_flute_count(ToolFact::Stated(2));
     tool
 }
 
@@ -272,8 +273,8 @@ fn end_mill(name: &str, diameter: f64) -> ToolConfig {
     let mut tool = ToolConfig::new_default(ToolId::from_raw(1), ToolType::EndMill);
     tool.name = name.to_owned();
     tool.diameter = diameter;
-    tool.shank_diameter = 6.35;
-    tool.flute_count = 2;
+    tool.set_shank_diameter(ToolFact::Stated(6.35));
+    tool.set_flute_count(ToolFact::Stated(2));
     tool
 }
 

@@ -37,6 +37,7 @@
 )]
 
 use rs_cam_core::compute::catalog::OperationType;
+use rs_cam_core::compute::tool_config::ToolFact;
 use rs_cam_core::compute::{ToolConfig, ToolId, ToolType};
 use rs_cam_core::feeds::extrapolation::SizeBasis;
 use rs_cam_core::feeds::suggest::{
@@ -151,12 +152,12 @@ fn the_spetool_row_ties_and_lies_inside_the_amana_band_g1() {
 fn suggest_ships_the_printed_tip_row_g1() {
     let mut tool = ToolConfig::new_default(ToolId::from_raw(1), ToolType::TaperedBallNose);
     tool.diameter = 1.0;
-    tool.flute_count = 2;
-    tool.taper_half_angle = 7.0;
-    tool.cutting_length = 25.0;
-    tool.shank_diameter = 6.0;
+    tool.set_flute_count(ToolFact::Stated(2));
+    tool.set_taper_half_angle(ToolFact::Stated(7.0));
+    tool.set_cutting_length(ToolFact::Stated(25.0));
+    tool.set_shank_diameter(ToolFact::Stated(6.0));
     tool.shaft_diameter = 6.0;
-    tool.stickout = 35.0;
+    tool.set_stickout(ToolFact::Stated(35.0));
     let material = Material::SolidWood {
         species: WoodSpecies::GenericHardwood,
     };

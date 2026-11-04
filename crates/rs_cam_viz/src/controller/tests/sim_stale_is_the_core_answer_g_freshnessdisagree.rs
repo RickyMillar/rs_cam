@@ -36,6 +36,7 @@
 //! what the edit did.
 
 use super::*;
+use rs_cam_core::compute::tool_config::ToolFact;
 
 use crate::state::freshness::SimFreshness;
 
@@ -83,7 +84,7 @@ fn edit_the_tool(controller: &mut AppController<ScriptedBackend>) {
         .first()
         .expect("the fixture project carries one tool")
         .clone();
-    draft.stickout += 15.0;
+    draft.set_stickout(ToolFact::Stated(draft.stickout_planning_mm() + 15.0));
     crate::ui::properties::commit_tool_draft(&mut controller.state, ToolId::from_raw(1), draft);
     controller.discharge_panel_side_effects();
 }

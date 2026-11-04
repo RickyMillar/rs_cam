@@ -39,6 +39,7 @@
     reason = "test code: a panic is how a test reports a failure"
 )]
 
+use rs_cam_core::compute::tool_config::ToolFact;
 use std::path::{Path, PathBuf};
 use std::sync::Arc;
 
@@ -89,7 +90,7 @@ fn ctx() -> egui::Context {
 fn fixture() -> AppState {
     let mut tool = ToolConfig::new_default(ToolId::from_raw(1), ToolType::EndMill);
     tool.diameter = 6.0;
-    tool.flute_count = 2;
+    tool.set_flute_count(ToolFact::Stated(2));
 
     let material = Material::Plywood {
         grade: PlywoodGrade::BalticBirch,
@@ -134,11 +135,11 @@ fn fixture() -> AppState {
 fn floor_fixture() -> AppState {
     let mut tool = ToolConfig::new_default(ToolId::from_raw(1), ToolType::EndMill);
     tool.diameter = 3.175;
-    tool.flute_count = 2;
-    tool.cutting_length = 12.0;
-    tool.shank_diameter = 3.175;
+    tool.set_flute_count(ToolFact::Stated(2));
+    tool.set_cutting_length(ToolFact::Stated(12.0));
+    tool.set_shank_diameter(ToolFact::Stated(3.175));
     tool.shaft_diameter = 3.175;
-    tool.stickout = 20.0;
+    tool.set_stickout(ToolFact::Stated(20.0));
     let mut operation = OperationConfig::Profile(Default::default());
     if let OperationConfig::Profile(config) = &mut operation {
         config.feed_rate = Some(3_000.0);

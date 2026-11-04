@@ -43,6 +43,7 @@
 
 use rs_cam_core::compute::catalog::OperationConfig;
 use rs_cam_core::compute::operation_configs::PocketConfig;
+use rs_cam_core::compute::tool_config::ToolFact;
 use rs_cam_core::compute::tool_config::{ToolConfig, ToolId, ToolType};
 use rs_cam_core::feeds::envelope::PickRequest;
 use rs_cam_core::feeds::suggest::{
@@ -68,10 +69,10 @@ const RIGIDITY_CAP_MM: f64 = 0.25 * 3.0;
 fn mini_tool() -> ToolConfig {
     let mut tool = ToolConfig::new_default(ToolId::from_raw(0), ToolType::EndMill);
     tool.diameter = 3.0;
-    tool.flute_count = 2;
-    tool.cutting_length = 30.0;
-    tool.stickout = 30.0;
-    tool.shank_diameter = 3.0;
+    tool.set_flute_count(ToolFact::Stated(2));
+    tool.set_cutting_length(ToolFact::Stated(30.0));
+    tool.set_stickout(ToolFact::Stated(30.0));
+    tool.set_shank_diameter(ToolFact::Stated(3.0));
     tool
 }
 

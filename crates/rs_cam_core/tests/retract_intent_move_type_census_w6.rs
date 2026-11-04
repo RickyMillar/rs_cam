@@ -71,6 +71,7 @@
     reason = "test code: a panic is how a test reports a failure; the test prints its measurements for the reader"
 )]
 
+use rs_cam_core::compute::tool_config::ToolFact;
 use std::collections::{BTreeMap, BTreeSet};
 use std::path::PathBuf;
 use std::sync::Arc;
@@ -304,10 +305,10 @@ fn add_tool(
 ) -> usize {
     let mut tool = ToolConfig::new_default(ToolId::from_raw(0), kind);
     tool.diameter = diameter;
-    tool.cutting_length = 25.0;
-    tool.shank_diameter = 6.35;
-    tool.stickout = 45.0;
-    tool.flute_count = 2;
+    tool.set_cutting_length(ToolFact::Stated(25.0));
+    tool.set_shank_diameter(ToolFact::Stated(6.35));
+    tool.set_stickout(ToolFact::Stated(45.0));
+    tool.set_flute_count(ToolFact::Stated(2));
     tool.name = name.to_owned();
     let idx = builder.add_tool(tool);
     builder.tools()[idx].id.raw()

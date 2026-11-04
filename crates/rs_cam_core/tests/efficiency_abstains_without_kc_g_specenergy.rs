@@ -74,29 +74,27 @@ fn material_with_kc() -> Material {
 }
 
 fn endmill(stickout: f64) -> ToolConfig {
-    ToolConfig {
-        id: ToolId::from_raw(0),
-        name: "6 mm 2-flute flat".to_owned(),
-        tool_number: 1,
-        tool_type: ToolType::EndMill,
-        diameter: DIAMETER_MM,
-        cutting_length: 22.0,
-        helix_deg: 30.0,
-        corner_radius_mm: 0.0,
-        corner_radius: 0.0,
-        included_angle: 90.0,
-        taper_half_angle: 15.0,
-        shaft_diameter: DIAMETER_MM,
-        shank_diameter: DIAMETER_MM,
-        stickout,
-        flute_count: FLUTES,
-        tool_material: ToolMaterial::Carbide,
-        cut_direction: BitCutDirection::UpCut,
-        vendor: String::new(),
-        product_id: String::new(),
-        size_units: None,
-        non_centre_cutting: None,
-    }
+    ToolConfig::builder(ToolId::from_raw(0), ToolType::EndMill)
+        .name("6 mm 2-flute flat".to_owned())
+        .tool_number(1)
+        .diameter(DIAMETER_MM)
+        .flute_mm(22.0)
+        .helix_deg(30.0)
+        .corner_radius_mm(0.0)
+        .corner_radius(0.0)
+        .included_angle_deg(90.0)
+        .taper_half_angle_deg(15.0)
+        .shaft_mm(DIAMETER_MM)
+        .shank_mm(DIAMETER_MM)
+        .stickout_mm(stickout)
+        .flutes(FLUTES)
+        .tool_material(ToolMaterial::Carbide)
+        .cut_direction(BitCutDirection::UpCut)
+        .vendor(String::new())
+        .product_id(String::new())
+        .size_units(None)
+        .non_centre_cutting(None)
+        .build()
 }
 
 fn pocket_op() -> OperationConfig {

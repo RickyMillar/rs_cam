@@ -42,6 +42,7 @@
 )]
 
 use rs_cam_core::compute::catalog::OperationType;
+use rs_cam_core::compute::tool_config::ToolFact;
 use rs_cam_core::compute::tool_config::{ToolConfig, ToolId, ToolType};
 use rs_cam_core::feeds::suggest::{
     StockContext, SuggestContext, SuggestParamsInput, SuggestedParams, default_operation,
@@ -54,11 +55,11 @@ use rs_cam_core::material::{AluminumAlloy, Material, PlywoodGrade, SheetGoodKind
 fn tool_of(kind: ToolType) -> ToolConfig {
     let mut t = ToolConfig::new_default(ToolId::from_raw(1), kind);
     t.diameter = 6.35;
-    t.flute_count = 2;
-    t.cutting_length = 19.05;
-    t.shank_diameter = 6.35;
+    t.set_flute_count(ToolFact::Stated(2));
+    t.set_cutting_length(ToolFact::Stated(19.05));
+    t.set_shank_diameter(ToolFact::Stated(6.35));
     t.shaft_diameter = 6.35;
-    t.stickout = 27.05;
+    t.set_stickout(ToolFact::Stated(27.05));
     if matches!(kind, ToolType::BullNose) {
         t.corner_radius = 0.95;
         t.corner_radius_mm = 0.95;
@@ -98,10 +99,12 @@ fn hardwood() -> Material {
 fn clueless_cells_refuse_with_the_judgement_reason_fm5() {
     let mut drill_tool = tool_of(ToolType::EndMill);
     drill_tool.diameter = 15.875;
-    drill_tool.cutting_length = 38.0;
-    drill_tool.shank_diameter = 15.875;
+    drill_tool.set_cutting_length(ToolFact::Stated(38.0));
+    drill_tool.set_shank_diameter(ToolFact::Stated(15.875));
     drill_tool.shaft_diameter = 15.875;
-    drill_tool.stickout = drill_tool.cutting_length_planning_mm() + 8.0;
+    drill_tool.set_stickout(ToolFact::Stated(
+        drill_tool.cutting_length_planning_mm() + 8.0,
+    ));
     let drill = suggest_tool(OperationType::Drill, &drill_tool, &hardwood())
         .expect_err("a 15.875 mm flat plunge is outside the G6 claim's 3.0-12.7 mm");
     match &drill {
@@ -265,12 +268,12 @@ fn the_vbit_mdf_and_plywood_cells_refuse_with_the_g2_texts_fm5() {
 fn tapered(tip_mm: f64) -> ToolConfig {
     let mut t = ToolConfig::new_default(ToolId::from_raw(1), ToolType::TaperedBallNose);
     t.diameter = tip_mm;
-    t.flute_count = 2;
-    t.cutting_length = (tip_mm * 3.0).max(12.0);
-    t.taper_half_angle = 7.0;
-    t.shank_diameter = (tip_mm + 3.0).max(6.0);
+    t.set_flute_count(ToolFact::Stated(2));
+    t.set_cutting_length(ToolFact::Stated((tip_mm * 3.0).max(12.0)));
+    t.set_taper_half_angle(ToolFact::Stated(7.0));
+    t.set_shank_diameter(ToolFact::Stated((tip_mm + 3.0).max(6.0)));
     t.shaft_diameter = t.shank_diameter_planning_mm();
-    t.stickout = t.cutting_length_planning_mm() + 8.0;
+    t.set_stickout(ToolFact::Stated(t.cutting_length_planning_mm() + 8.0));
     t
 }
 

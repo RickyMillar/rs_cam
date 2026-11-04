@@ -82,6 +82,7 @@
     reason = "test code: a panic is how a test reports a failure"
 )]
 
+use rs_cam_core::compute::tool_config::ToolFact;
 use std::path::PathBuf;
 use std::sync::Arc;
 
@@ -184,8 +185,8 @@ const STATED_AE_PER_D: f64 = 2.10 / 6.0;
 fn fixture(cutter: &Cutter) -> AppState {
     let mut tool = ToolConfig::new_default(ToolId::from_raw(1), ToolType::EndMill);
     tool.diameter = cutter.diameter_mm;
-    tool.stickout = cutter.stickout_mm;
-    tool.flute_count = 2;
+    tool.set_stickout(ToolFact::Stated(cutter.stickout_mm));
+    tool.set_flute_count(ToolFact::Stated(2));
 
     // Generic softwood — the reference fixture's material, and the one the
     // measured 2.4315 mm/tooth ceiling was taken on.

@@ -8,6 +8,7 @@ use crate::compute::alignment_pins::{
     pin_setup_notes, pin_tool_findings, same_pin_diameter,
 };
 use crate::compute::catalog::OperationConfig;
+use crate::compute::tool_config::ToolFact;
 use crate::ids::ModelId;
 use crate::selection::CAD_ROUNDING_MM;
 
@@ -626,11 +627,14 @@ impl ProjectSession {
         tool.id = ToolId::placeholder();
         tool.diameter = diameter;
         tool.shaft_diameter = diameter;
-        tool.shank_diameter = diameter;
-        tool.cutting_length = tool.cutting_length_planning_mm().max(reach);
-        tool.stickout = tool
-            .stickout_planning_mm()
-            .max(tool.cutting_length_planning_mm());
+        tool.set_shank_diameter(ToolFact::Stated(diameter));
+        tool.set_cutting_length(ToolFact::Stated(
+            tool.cutting_length_planning_mm().max(reach),
+        ));
+        tool.set_stickout(ToolFact::Stated(
+            tool.stickout_planning_mm()
+                .max(tool.cutting_length_planning_mm()),
+        ));
         tool.tool_number = self.tools.iter().map(|t| t.tool_number).max().unwrap_or(0) + 1;
         tool.name = if tool.tool_type == ToolType::VBit {
             format!(

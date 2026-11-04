@@ -36,6 +36,7 @@
 //! keeps the registry default.
 
 use anyhow::{Context, Result, bail};
+use rs_cam_core::compute::tool_config::ToolFact;
 use serde::{Deserialize, Serialize};
 use std::collections::HashMap;
 use std::path::{Path, PathBuf};
@@ -1115,12 +1116,14 @@ fn tool_config_from_def(def: &ToolDef, name: &str) -> Result<ToolConfig> {
     let mut tc = ToolConfig::new_default(ToolId::placeholder(), def.tool_type);
     tc.name = name.to_owned();
     tc.diameter = def.diameter;
-    tc.cutting_length = def.diameter * DEFAULT_CUTTING_LENGTH_FACTOR;
+    tc.set_cutting_length(ToolFact::Stated(
+        def.diameter * DEFAULT_CUTTING_LENGTH_FACTOR,
+    ));
     if let Some(n) = def.number {
         tc.tool_number = n;
     }
     if let Some(fc) = def.flute_count {
-        tc.flute_count = fc;
+        tc.set_flute_count(ToolFact::Stated(fc));
     }
     if let Some(cr) = def.corner_radius {
         tc.corner_radius = cr;
@@ -1129,16 +1132,16 @@ fn tool_config_from_def(def: &ToolDef, name: &str) -> Result<ToolConfig> {
         tc.included_angle = ia;
     }
     if let Some(ta) = def.taper_angle {
-        tc.taper_half_angle = ta;
+        tc.set_taper_half_angle(ToolFact::Stated(ta));
     }
     if let Some(sd) = def.shaft_diameter {
         tc.shaft_diameter = sd;
     }
     if let Some(sd) = def.shank_diameter {
-        tc.shank_diameter = sd;
+        tc.set_shank_diameter(ToolFact::Stated(sd));
     }
     if let Some(stickout) = def.stickout {
-        tc.stickout = stickout;
+        tc.set_stickout(ToolFact::Stated(stickout));
     }
     tc.non_centre_cutting = def.non_centre_cutting;
     Ok(tc)

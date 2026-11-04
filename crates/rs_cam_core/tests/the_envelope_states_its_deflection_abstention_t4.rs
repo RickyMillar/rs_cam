@@ -28,6 +28,7 @@
 
 use rs_cam_core::compute::catalog::OperationConfig;
 use rs_cam_core::compute::operation_configs::PocketConfig;
+use rs_cam_core::compute::tool_config::ToolFact;
 use rs_cam_core::compute::tool_config::{ToolConfig, ToolId, ToolType};
 use rs_cam_core::feeds::envelope::{EnvelopeInput, SafeEnvelope};
 use rs_cam_core::feeds::predict::DeflectionUnmodeled;
@@ -41,11 +42,11 @@ use rs_cam_core::material::{Material, PlasticFamily, WoodSpecies};
 fn carbide_endmill() -> ToolConfig {
     let mut tool = ToolConfig::new_default(ToolId::from_raw(1), ToolType::EndMill);
     tool.diameter = 6.0;
-    tool.cutting_length = 25.0;
+    tool.set_cutting_length(ToolFact::Stated(25.0));
     tool.shaft_diameter = 6.0;
-    tool.shank_diameter = 6.0;
-    tool.stickout = 45.0;
-    tool.flute_count = 4;
+    tool.set_shank_diameter(ToolFact::Stated(6.0));
+    tool.set_stickout(ToolFact::Stated(45.0));
+    tool.set_flute_count(ToolFact::Stated(4));
     tool
 }
 

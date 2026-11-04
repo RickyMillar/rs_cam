@@ -72,12 +72,11 @@ const DIALLED_MM: f64 = 0.05;
 // ── Fixture ──────────────────────────────────────────────────────────────
 
 fn tapered_ball_tool() -> ToolConfig {
-    ToolConfig {
-        diameter: 1.0,
-        taper_half_angle: 7.0,
-        shaft_diameter: 6.0,
-        ..ToolConfig::new_default(ToolId::from_raw(0), ToolType::TaperedBallNose)
-    }
+    ToolConfig::builder(ToolId::from_raw(0), ToolType::TaperedBallNose)
+        .diameter(1.0)
+        .taper_half_angle_deg(7.0)
+        .shaft_mm(6.0)
+        .build()
 }
 
 fn extrude_profile(profile: &[(f64, f64)], y0: f64, y1: f64) -> TriangleMesh {

@@ -58,6 +58,7 @@
 )]
 
 use rs_cam_core::compute::catalog::{OperationConfig, OperationType};
+use rs_cam_core::compute::tool_config::ToolFact;
 use rs_cam_core::compute::{ToolConfig, ToolId, ToolType};
 use rs_cam_core::feeds::extrapolation::{
     FAMILY_RULE_TEXT, FAMILY_RULES, FamilyBasis, HardnessBasis,
@@ -87,12 +88,12 @@ const TOL: f64 = 1e-12;
 fn tapered(tip_mm: f64) -> ToolConfig {
     let mut t = ToolConfig::new_default(ToolId::from_raw(1), ToolType::TaperedBallNose);
     t.diameter = tip_mm;
-    t.flute_count = 2;
-    t.cutting_length = (tip_mm * 3.0).max(12.0);
-    t.taper_half_angle = 7.0;
-    t.shank_diameter = (tip_mm + 3.0).max(6.0);
+    t.set_flute_count(ToolFact::Stated(2));
+    t.set_cutting_length(ToolFact::Stated((tip_mm * 3.0).max(12.0)));
+    t.set_taper_half_angle(ToolFact::Stated(7.0));
+    t.set_shank_diameter(ToolFact::Stated((tip_mm + 3.0).max(6.0)));
     t.shaft_diameter = t.shank_diameter_planning_mm();
-    t.stickout = t.cutting_length_planning_mm() + 8.0;
+    t.set_stickout(ToolFact::Stated(t.cutting_length_planning_mm() + 8.0));
     t
 }
 
@@ -101,13 +102,13 @@ fn tapered(tip_mm: f64) -> ToolConfig {
 fn bull(d: f64) -> ToolConfig {
     let mut t = ToolConfig::new_default(ToolId::from_raw(1), ToolType::BullNose);
     t.diameter = d;
-    t.flute_count = 2;
+    t.set_flute_count(ToolFact::Stated(2));
     t.corner_radius = d / 4.0;
     t.corner_radius_mm = d / 4.0;
-    t.cutting_length = (d * 3.0).max(12.0);
-    t.shank_diameter = d.max(6.0);
+    t.set_cutting_length(ToolFact::Stated((d * 3.0).max(12.0)));
+    t.set_shank_diameter(ToolFact::Stated(d.max(6.0)));
     t.shaft_diameter = t.shank_diameter_planning_mm();
-    t.stickout = t.cutting_length_planning_mm() + 8.0;
+    t.set_stickout(ToolFact::Stated(t.cutting_length_planning_mm() + 8.0));
     t
 }
 
@@ -697,11 +698,11 @@ fn a_bull_finish_reads_the_home_row_through_two_claims_g3() {
 fn the_ball_finish_row_is_not_transferred_b3_pin_g3() {
     let mut tool = ToolConfig::new_default(ToolId::from_raw(1), ToolType::BallNose);
     tool.diameter = 3.175;
-    tool.flute_count = 2;
-    tool.cutting_length = 12.0;
-    tool.shank_diameter = 3.175;
+    tool.set_flute_count(ToolFact::Stated(2));
+    tool.set_cutting_length(ToolFact::Stated(12.0));
+    tool.set_shank_diameter(ToolFact::Stated(3.175));
     tool.shaft_diameter = 3.175;
-    tool.stickout = 20.0;
+    tool.set_stickout(ToolFact::Stated(20.0));
     let material = Material::SolidWood {
         species: WoodSpecies::GenericHardwood,
     };
@@ -755,7 +756,7 @@ fn a_plywood_bull_finish_refuses_and_a_vbit_curve_routes_to_trace_g3() {
 
     let mut vbit = ToolConfig::new_default(ToolId::from_raw(1), ToolType::VBit);
     vbit.diameter = 6.35;
-    vbit.flute_count = 2;
+    vbit.set_flute_count(ToolFact::Stated(2));
     vbit.included_angle = 60.0;
     let hardwood = Material::SolidWood {
         species: WoodSpecies::GenericHardwood,

@@ -58,6 +58,7 @@
 
 mod common;
 
+use rs_cam_core::compute::tool_config::ToolFact;
 use std::sync::atomic::AtomicBool;
 
 use common::session::{mesh_model, stock_over};
@@ -130,8 +131,8 @@ fn advisor_session() -> ProjectSession {
 fn ball_tool(diameter_mm: f64, name: &str) -> ToolConfig {
     let mut tool = ToolConfig::new_default(ToolId::from_raw(0), ToolType::BallNose);
     tool.diameter = diameter_mm;
-    tool.stickout = 25.0;
-    tool.flute_count = 2;
+    tool.set_stickout(ToolFact::Stated(25.0));
+    tool.set_flute_count(ToolFact::Stated(2));
     tool.name = name.to_owned();
     tool
 }

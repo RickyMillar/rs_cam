@@ -45,10 +45,9 @@ use rs_cam_core::compute::tool_config::{ToolConfig, ToolId, ToolType};
 use rs_cam_core::session::{AddBoreFromDrillArgs, Command, ProjectSession, ProjectSessionBuilder};
 
 fn tool(id: usize, tool_type: ToolType, diameter: f64) -> ToolConfig {
-    ToolConfig {
-        diameter,
-        ..ToolConfig::new_default(ToolId::from_raw(id), tool_type)
-    }
+    ToolConfig::builder(ToolId::from_raw(id), tool_type)
+        .diameter(diameter)
+        .build()
 }
 
 /// The drawing, the tools `tools` and a Drill on the first tool. The

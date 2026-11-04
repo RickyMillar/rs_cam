@@ -35,6 +35,7 @@
 //! exist, they look authoritative, and a per-flute function looks more precise
 //! than one constant. Arm 2 fails on any such change.
 
+use rs_cam_core::compute::tool_config::ToolFact;
 use rs_cam_core::compute::tool_config::{ToolConfig, ToolId, ToolMaterial, ToolType};
 use rs_cam_core::feeds::predict::{ENDMILL_EQUIVALENT_DIAMETER_FRACTION, bending_diameter_mm};
 use rs_cam_core::tool::{FlatEndmill, ToolDefinition};
@@ -84,7 +85,7 @@ fn every_fluted_shape_takes_the_fraction_g_bendeq() {
     for tool_type in [ToolType::EndMill, ToolType::BallNose, ToolType::BullNose] {
         let mut t = ToolConfig::new_default(ToolId::from_raw(1), tool_type);
         t.diameter = 6.0;
-        t.flute_count = 2;
+        t.set_flute_count(ToolFact::Stated(2));
         let got = bending_diameter_mm(&t);
         let want = ENDMILL_EQUIVALENT_DIAMETER_FRACTION * 6.0;
         assert!(
@@ -132,7 +133,7 @@ fn a_vbit_is_the_documented_exception_g_bendeq() {
     // citation, which would be a fabricated constant inside a safety guard.
     let mut t = ToolConfig::new_default(ToolId::from_raw(1), ToolType::VBit);
     t.diameter = 6.0;
-    t.flute_count = 2;
+    t.set_flute_count(ToolFact::Stated(2));
     let got = bending_diameter_mm(&t);
     assert!(
         got.abs() < 1e-9,

@@ -52,6 +52,7 @@
     reason = "The spread arm RECORDS its measurement as well as asserting on it; `--nocapture` is how the figure in V4_IMPLEMENTATION.md was taken."
 )]
 
+use rs_cam_core::compute::tool_config::ToolFact;
 use std::path::PathBuf;
 use std::sync::Arc;
 
@@ -229,8 +230,8 @@ fn no_kc() -> Fixture {
 fn state_for(fixture: Fixture) -> AppState {
     let mut tool = ToolConfig::new_default(ToolId::from_raw(1), fixture.tool_type);
     tool.diameter = fixture.diameter_mm;
-    tool.flute_count = 2;
-    tool.stickout = fixture.stickout_mm;
+    tool.set_flute_count(ToolFact::Stated(2));
+    tool.set_stickout(ToolFact::Stated(fixture.stickout_mm));
 
     let mut operation = fixture.operation;
     match &mut operation {
@@ -861,8 +862,8 @@ fn shipped_recipe(
     };
     let mut tool = ToolConfig::new_default(ToolId::from_raw(1), ToolType::EndMill);
     tool.diameter = diameter;
-    tool.flute_count = 2;
-    tool.stickout = 3.0 * diameter;
+    tool.set_flute_count(ToolFact::Stated(2));
+    tool.set_stickout(ToolFact::Stated(3.0 * diameter));
 
     // The heaviest cut the calculator will entertain for this tool — a
     // full-width slot at twice the diameter — is what the review's sweep

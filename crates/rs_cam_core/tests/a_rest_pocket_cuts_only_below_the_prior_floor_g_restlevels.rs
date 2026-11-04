@@ -1122,11 +1122,10 @@ const VBIT_ANGLE_DEG: f64 = 90.0;
 const FACE_ABOVE_CHAMFER_DEPTH: f64 = 1.0;
 
 fn vbit() -> ToolConfig {
-    ToolConfig {
-        diameter: 12.7,
-        included_angle: VBIT_ANGLE_DEG,
-        ..ToolConfig::new_default(ToolId::from_raw(0), ToolType::VBit)
-    }
+    ToolConfig::builder(ToolId::from_raw(0), ToolType::VBit)
+        .diameter(12.7)
+        .included_angle_deg(VBIT_ANGLE_DEG)
+        .build()
 }
 
 fn chamfer() -> OperationConfig {

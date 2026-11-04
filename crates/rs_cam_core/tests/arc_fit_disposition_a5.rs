@@ -115,6 +115,7 @@
 
 mod common;
 
+use rs_cam_core::compute::tool_config::ToolFact;
 use std::sync::atomic::AtomicBool;
 
 use common::meshes::height_field;
@@ -206,8 +207,8 @@ struct Fixture {
 
 fn rough_tool() -> ToolConfig {
     let mut t = endmill_tool_config(6.0);
-    t.stickout = 20.0;
-    t.flute_count = 2;
+    t.set_stickout(ToolFact::Stated(20.0));
+    t.set_flute_count(ToolFact::Stated(2));
     t
 }
 
@@ -238,20 +239,20 @@ fn drop_cutter_op(feed: f64, rpm: u32, stepover: f64) -> OperationConfig {
 
 fn fixtures() -> Vec<Fixture> {
     let mut a3d_2_tool = endmill_tool_config(8.0);
-    a3d_2_tool.stickout = 25.0;
-    a3d_2_tool.flute_count = 3;
+    a3d_2_tool.set_stickout(ToolFact::Stated(25.0));
+    a3d_2_tool.set_flute_count(ToolFact::Stated(3));
 
     let mut a3d_1_tool = endmill_tool_config(6.0);
-    a3d_1_tool.stickout = 18.0;
-    a3d_1_tool.flute_count = 2;
+    a3d_1_tool.set_stickout(ToolFact::Stated(18.0));
+    a3d_1_tool.set_flute_count(ToolFact::Stated(2));
 
     let mut dc_1_tool = ball_tool_config(3.0);
-    dc_1_tool.stickout = 20.0;
-    dc_1_tool.flute_count = 2;
+    dc_1_tool.set_stickout(ToolFact::Stated(20.0));
+    dc_1_tool.set_flute_count(ToolFact::Stated(2));
 
     let mut dc_2_tool = tapered_ball_tool_config(2.0, 7.0, 6.0);
-    dc_2_tool.stickout = 30.0;
-    dc_2_tool.flute_count = 2;
+    dc_2_tool.set_stickout(ToolFact::Stated(30.0));
+    dc_2_tool.set_flute_count(ToolFact::Stated(2));
 
     vec![
         // Uncapped: isolates the closed form, so the 1/ratio claim is

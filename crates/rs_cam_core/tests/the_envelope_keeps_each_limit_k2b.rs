@@ -28,6 +28,7 @@
 )]
 
 use rs_cam_core::compute::catalog::OperationType;
+use rs_cam_core::compute::tool_config::ToolFact;
 use rs_cam_core::compute::tool_config::{ToolConfig, ToolId, ToolType};
 use rs_cam_core::feeds::envelope::{Edge, EnvelopeInput, LimitKind, Placement, SafeEnvelope};
 use rs_cam_core::feeds::sourced::MachineField;
@@ -52,7 +53,7 @@ fn oak() -> Material {
 fn end_mill(d: f64, cutting_length: f64) -> ToolConfig {
     let mut t = ToolConfig::new_default(ToolId::from_raw(0), ToolType::EndMill);
     t.diameter = d;
-    t.cutting_length = cutting_length;
+    t.set_cutting_length(ToolFact::Stated(cutting_length));
     t
 }
 
@@ -277,7 +278,7 @@ fn the_spindle_power_binds_and_names_the_curve_k2b() {
 #[test]
 fn the_deflection_target_binds_and_names_its_constant_k2b() {
     let mut tool = end_mill(12.0, 30.0);
-    tool.stickout = 50.0;
+    tool.set_stickout(ToolFact::Stated(50.0));
     let env = envelope(&Cell {
         op: OperationType::Adaptive,
         tool,

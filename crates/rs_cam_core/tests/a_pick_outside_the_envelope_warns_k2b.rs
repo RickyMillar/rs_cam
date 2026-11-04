@@ -20,6 +20,7 @@
 )]
 
 use rs_cam_core::compute::catalog::{OperationConfig, OperationType};
+use rs_cam_core::compute::tool_config::ToolFact;
 use rs_cam_core::compute::tool_config::{ToolConfig, ToolId, ToolType};
 use rs_cam_core::diagnostics::adapters::from_feeds::diagnostic_from_suggest_warning;
 use rs_cam_core::diagnostics::ids;
@@ -44,7 +45,7 @@ const PICK_AE_MM: f64 = 0.5;
 fn tool() -> ToolConfig {
     let mut t = ToolConfig::new_default(ToolId::from_raw(0), ToolType::EndMill);
     t.diameter = 6.0;
-    t.cutting_length = 6.0;
+    t.set_cutting_length(ToolFact::Stated(6.0));
     t
 }
 

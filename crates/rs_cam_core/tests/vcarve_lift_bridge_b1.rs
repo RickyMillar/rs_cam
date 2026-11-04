@@ -19,6 +19,7 @@
     reason = "test code: a panic is how a test reports a failure; the test prints its measurements for the reader"
 )]
 
+use rs_cam_core::compute::tool_config::ToolFact;
 use rs_cam_core::ids::ToolpathId;
 use std::path::PathBuf;
 use std::sync::Arc;
@@ -62,11 +63,11 @@ fn five_point_star() -> Polygon2 {
 fn make_vbit_12_7mm_60deg() -> ToolConfig {
     let mut tool = ToolConfig::new_default(ToolId::from_raw(0), ToolType::VBit);
     tool.diameter = 12.7;
-    tool.cutting_length = 11.0;
+    tool.set_cutting_length(ToolFact::Stated(11.0));
     tool.included_angle = 60.0;
-    tool.shank_diameter = 6.35;
-    tool.stickout = 30.0;
-    tool.flute_count = 2;
+    tool.set_shank_diameter(ToolFact::Stated(6.35));
+    tool.set_stickout(ToolFact::Stated(30.0));
+    tool.set_flute_count(ToolFact::Stated(2));
     tool.name = "V-bit 60deg".to_owned();
     tool
 }

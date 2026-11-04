@@ -41,6 +41,7 @@
 )]
 
 use rs_cam_core::compute::catalog::{OperationConfig, OperationType};
+use rs_cam_core::compute::tool_config::ToolFact;
 use rs_cam_core::compute::{ToolConfig, ToolId, ToolType};
 use rs_cam_core::feeds::extrapolation::{FamilyBasis, SizeBasis};
 use rs_cam_core::feeds::suggest::{
@@ -73,12 +74,12 @@ const MM_PER_IN: f64 = 25.4;
 fn tapered_one_mm() -> ToolConfig {
     let mut t = ToolConfig::new_default(ToolId::from_raw(1), ToolType::TaperedBallNose);
     t.diameter = 1.0;
-    t.flute_count = 2;
-    t.cutting_length = 12.0;
-    t.taper_half_angle = 7.0;
-    t.shank_diameter = 6.0;
+    t.set_flute_count(ToolFact::Stated(2));
+    t.set_cutting_length(ToolFact::Stated(12.0));
+    t.set_taper_half_angle(ToolFact::Stated(7.0));
+    t.set_shank_diameter(ToolFact::Stated(6.0));
     t.shaft_diameter = 6.0;
-    t.stickout = 20.0;
+    t.set_stickout(ToolFact::Stated(20.0));
     t
 }
 

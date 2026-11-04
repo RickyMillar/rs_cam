@@ -16,6 +16,7 @@
     reason = "test code: a panic is how a test reports a failure; the test prints its measurements for the reader"
 )]
 
+use rs_cam_core::compute::tool_config::ToolFact;
 use std::path::PathBuf;
 use std::sync::atomic::AtomicBool;
 
@@ -31,11 +32,11 @@ fn r3_ball() -> ToolConfig {
     let mut t = ToolConfig::new_default(ToolId::from_raw(0), ToolType::BallNose);
     t.name = "R3 6mm Ball Nose 2F (HYPOTHETICAL)".to_owned();
     t.diameter = 6.0;
-    t.cutting_length = 25.0;
+    t.set_cutting_length(ToolFact::Stated(25.0));
     t.shaft_diameter = 6.0;
-    t.shank_diameter = 6.0;
-    t.stickout = 40.0;
-    t.flute_count = 2;
+    t.set_shank_diameter(ToolFact::Stated(6.0));
+    t.set_stickout(ToolFact::Stated(40.0));
+    t.set_flute_count(ToolFact::Stated(2));
     t.tool_material = ToolMaterial::Carbide;
     t.cut_direction = BitCutDirection::UpCut;
     t
