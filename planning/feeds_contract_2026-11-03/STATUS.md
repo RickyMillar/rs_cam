@@ -36,7 +36,7 @@ the full entry point. Read it first, then the files it names.
 ### Where it stands
 
 - DONE and committed: P0-P6, P7 (A, B, A2, C), D9, P9, P8 Q1 + Q8, P10. See the phase table
-  and the "Result" section at the end of each card. HEAD after P10: see `git log -1`.
+  and the "Result" section at the end of each card. P10 is 84bfeab68.
 - Waiting: P8 Q6 (build it: the operator agreed the mock 2026-11-05, the card counts
   toolpaths), P11 steps 1-6 (decisions L1-L9 written in `phases/P11.md`; L1-L3 confirmed by the
   operator), P12 (hand-off for the review session), the derate audit (below).
@@ -185,7 +185,7 @@ Those will already be fairly de-rated so our later deratings will just cut it do
 | 7 K5 feasibility rules | `phases/P7.md` | DONE 2026-11-04: A, B, A2 (D12 required facts), C (3D Rough cut, link and terrain ramp at the limit slope; wanaka op 1 core strikes 37 -> 0) | see `git log` | C |
 | 8 Q1 / Q6 / Q8 | `phases/P8.md` | Q1, Q8 DONE 2026-11-05; Q6 waits for the operator (`phases/P8_Q6_MOCK.md`) | see `git log` | Q6 |
 | 9 K7 one engagement | `phases/P9.md` | DONE 2026-11-04 (one `Engagement`; pre-sim power is the worst case with its name; the simulation is placed on the envelope, not fed back; open items in the card) | see `git log` | |
-| 10 Tool-derived geometry defaults (D8) | `phases/P10.md` | NOT STARTED (card drafted 2026-11-03; needs P5; lead answers its open points first) | | |
+| 10 Tool-derived geometry defaults (D8) | `phases/P10.md` | DONE 2026-11-05 (no default without a tool; radial = the calculator's own width; axial k x D from today's 6 mm values; FM1 353 cells; G-code byte-identical) | 84bfeab68 | |
 | 11 Force model, chip first, feed-driven limits | `phases/P11.md` | Step 0 DONE 2026-11-04 (`research_p11_step0/`: verdict FAIL against the preregistered rule; best group W 67 %, best group D 7.3 %, wood force candidates 0 / 418; 21 claims hold). Steps 1-6 NOT STARTED; D11 ruled; decisions L1-L9 in the card | see `git log` | P11a, then P11b |
 | 12 Hand-off for independent review | `phases/P12.md` | NOT STARTED (operator, 2026-11-04: last; another session verifies the output numbers against industry practice) | | after P11 |
 
