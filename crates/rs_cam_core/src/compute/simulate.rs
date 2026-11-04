@@ -826,6 +826,64 @@ pub struct SimulationResult {
     /// finding. Export refuses on any of them
     /// ([`non_centre_cutting_refusal_rows`]).
     pub non_centre_cutting_descents: Vec<ToolpathCoreDescent>,
+    /// K5 ReachFlute (feeds contract P7): every fed move where wood stands
+    /// over the tool tip higher than its flute length, inside the cutter
+    /// radius, at most one per move, in run order; a drill entry gives one
+    /// per hole. Empty for a toolpath = measured clean. The diagnostics and
+    /// the export read [`flute_overreach_row`] (the ninth shared decision).
+    pub flute_overreach: Vec<ToolpathFluteOverreach>,
+}
+
+/// K5 ReachFlute: one flute overreach
+/// ([`crate::stock::collision::FluteOverreach`]) and the toolpath it
+/// belongs to. `overreach.move_index` is the toolpath's own move index.
+#[derive(Debug, Clone, PartialEq)]
+pub struct ToolpathFluteOverreach {
+    pub toolpath_id: ToolpathId,
+    pub overreach: crate::stock::collision::FluteOverreach,
+}
+
+/// K5 ReachFlute: what a simulation measured for one toolpath it carved.
+#[derive(Debug, Clone, PartialEq, Eq)]
+pub enum FluteReach {
+    /// No wood stood over the tip above the flute: measured clean.
+    Within,
+    /// The row of [`flute_overreach_row`].
+    Over(String),
+}
+
+/// K5 ReachFlute, the ninth shared decision: what `result` measured for
+/// toolpath `id`. The caller states that the run carved the toolpath and
+/// is fresh for it (`ProjectSession::flute_reach_measured`).
+#[must_use]
+pub fn flute_reach(result: &SimulationResult, id: ToolpathId) -> FluteReach {
+    flute_overreach_row(result, id).map_or(FluteReach::Within, FluteReach::Over)
+}
+
+/// K5 ReachFlute: the row of the simulation for toolpath `id`, or `None`
+/// when the run recorded no flute overreach for it. The text gives the count and the worst overreach. The diagnostics
+/// (`tool.flute_overreach`) and the export door read it on every surface.
+pub fn flute_overreach_row(result: &SimulationResult, id: ToolpathId) -> Option<String> {
+    let hits: Vec<_> = result
+        .flute_overreach
+        .iter()
+        .filter(|hit| hit.toolpath_id == id)
+        .map(|hit| &hit.overreach)
+        .collect();
+    let worst = hits
+        .iter()
+        .max_by(|a, b| a.material_over_tip_mm.total_cmp(&b.material_over_tip_mm))?;
+    Some(format!(
+        "flute {:.2} mm: {} move(s) have wood over the tip above the flute, measured by the \
+         simulation (worst: move {} at X{:.3} Y{:.3} Z{:.3}, {:.2} mm of wood over the tip)",
+        worst.flute_length_mm,
+        hits.len(),
+        worst.move_index,
+        worst.position.x,
+        worst.position.y,
+        worst.position.z,
+        worst.material_over_tip_mm,
+    ))
 }
 
 /// G-CENTRECUT: one core strike ([`crate::stock::collision::NonCentreCuttingDescent`])
@@ -1421,6 +1479,7 @@ fn cold_prefix_state(request: &SimulationRequest, global_bbox: &BoundingBox3) ->
         rapid_collisions: Vec::new(),
         rapid_collision_move_indices: Vec::new(),
         non_centre_cutting_descents: Vec::new(),
+        flute_overreach: Vec::new(),
         prior_stocks: std::collections::HashMap::new(),
         global_drill_ops: Vec::new(),
         group_stock: None,
@@ -1784,6 +1843,21 @@ fn carve_entry(
         // `env.direction` is FromTop for every per-setup stock; the
         // global stock takes the group's real direction instead
         // (G-DRILLFLIP). See `CarveEnv::direction`.
+        // K5 ReachFlute: the analytic removal never enters the walk, so the
+        // holes are read here, against the stock before the drill carves.
+        run.flute_overreach.extend(
+            crate::stock::collision::drill_flute_overreach(
+                group_stock,
+                drill_op_arc,
+                entry.tool.length(),
+                entry_toolpath,
+            )
+            .into_iter()
+            .map(|overreach| ToolpathFluteOverreach {
+                toolpath_id: entry.id,
+                overreach,
+            }),
+        );
         group_stock.apply_drill_op(drill_op_arc, env.direction);
         group_drill_ops.push(Arc::clone(drill_op_arc));
         // PR2: emit per-peck drill samples + per-toolpath summary
@@ -1849,6 +1923,13 @@ fn carve_entry(
             )
             .map_err(|_cancelled| SimulationError::Cancelled)?;
         append_samples(&mut run.cut_samples, samples);
+        run.flute_overreach
+            .extend(rapid_check.take_flute_hits().into_iter().map(|overreach| {
+                ToolpathFluteOverreach {
+                    toolpath_id: entry.id,
+                    overreach,
+                }
+            }));
         let (rapid_hits, core_hits) = rapid_check.into_parts();
         collect_rapid_hits(
             rapid_hits,
@@ -2354,6 +2435,7 @@ where
         rapid_collisions,
         rapid_collision_move_indices,
         non_centre_cutting_descents,
+        flute_overreach,
         prior_stocks,
         global_drill_ops,
         group_stock: _,
@@ -2433,6 +2515,7 @@ where
         stock_change_volumes,
         obstacle_collisions,
         non_centre_cutting_descents,
+        flute_overreach,
     })
 }
 

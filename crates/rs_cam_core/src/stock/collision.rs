@@ -716,6 +716,80 @@ pub struct RapidClearanceCheck<'a> {
     /// ([`Self::core_descent_candidate`], [`Self::core_strike`]).
     core_limits: Option<crate::compute::tool_config::NonCentreCuttingLimits>,
     core_hits: Vec<NonCentreCuttingDescent>,
+    /// K5 ReachFlute (feeds contract P7): the flute length of the tool
+    /// (`MillingCutter::length`). The walk checks each fed move that can
+    /// reach more than this below the stock box top
+    /// ([`Self::flute_candidate`], [`Self::flute_strike`]).
+    flute_length_mm: f64,
+    flute_hits: Vec<FluteOverreach>,
+}
+
+/// K5 ReachFlute (feeds contract P7): a fed move where wood stands over the
+/// tool tip higher than the flute length, inside the cutter radius, as the
+/// stock stands before the move. The part of the tool above the flute
+/// meets wood. One per move (the first striking sample).
+#[derive(Debug, Clone, PartialEq)]
+pub struct FluteOverreach {
+    /// Index of the move in its toolpath.
+    pub move_index: usize,
+    /// The tool tip position at the striking sample (setup frame).
+    pub position: P3,
+    /// How high the wood inside the cutter radius stands above the tool
+    /// tip at that sample (mm). It is more than the flute length.
+    pub material_over_tip_mm: f64,
+    /// The flute length of the tool (mm).
+    pub flute_length_mm: f64,
+}
+
+/// K5 ReachFlute: the strike rule of one tip position. `Some(over)` when
+/// the wood inside `radius` around the tip stands higher over the tip than
+/// `flute_length_mm`, by more than the float slack of the stored ray tops.
+fn flute_over_tip(
+    stock: &crate::dexel_stock::TriDexelStock,
+    tip: P3,
+    radius: f64,
+    flute_length_mm: f64,
+) -> Option<f64> {
+    let top = stock.max_top_z_in_disc(tip.x, tip.y, radius)?;
+    let over = top - tip.z;
+    (over > flute_length_mm + low_channel_epsilon_mm(top)).then_some(over)
+}
+
+/// K5 ReachFlute for a drill entry, whose removal is analytic and never
+/// enters the replay walk: per hole, the wood that stands inside the drill
+/// radius over the hole bottom, read from `stock` before the drill carves.
+/// One record per hole that reaches past the flute; `move_index` is the
+/// lowest fed move of `toolpath` at the hole, else 0.
+#[must_use]
+pub fn drill_flute_overreach(
+    stock: &crate::dexel_stock::TriDexelStock,
+    drill: &crate::ops::drill_op::DrillOp,
+    flute_length_mm: f64,
+    toolpath: &crate::toolpath::Toolpath,
+) -> Vec<FluteOverreach> {
+    let radius = drill.tool_diameter_mm / 2.0;
+    drill
+        .holes
+        .iter()
+        .filter_map(|hole| {
+            let tip = P3::new(hole.xy[0], hole.xy[1], hole.bottom_z);
+            let over = flute_over_tip(stock, tip, radius, flute_length_mm)?;
+            let move_index = toolpath
+                .moves
+                .iter()
+                .enumerate()
+                .filter(|(_, m)| m.move_type != MoveType::Rapid)
+                .filter(|(_, m)| (m.target.x - tip.x).hypot(m.target.y - tip.y) <= radius)
+                .min_by(|(_, a), (_, b)| a.target.z.total_cmp(&b.target.z))
+                .map_or(0, |(i, _)| i);
+            Some(FluteOverreach {
+                move_index,
+                position: tip,
+                material_over_tip_mm: over,
+                flute_length_mm,
+            })
+        })
+        .collect()
 }
 
 /// G-CENTRECUT (SAFETY): a fed move where a tool that does not cut at its
@@ -759,7 +833,82 @@ impl<'a> RapidClearanceCheck<'a> {
             hits: Vec::new(),
             core_limits: cutter.non_centre_cutting(),
             core_hits: Vec::new(),
+            flute_length_mm: cutter.length(),
+            flute_hits: Vec::new(),
         }
+    }
+
+    /// K5 ReachFlute: is this fed move a candidate for a flute overreach?
+    /// Only a move whose tip goes more than the flute length below the
+    /// stock box top can have wood over the tip higher than the flute. The
+    /// test reads no cell, so a move that is not a candidate pays no
+    /// flush.
+    pub fn flute_candidate(
+        &self,
+        stock: &crate::dexel_stock::TriDexelStock,
+        start: P3,
+        end: P3,
+    ) -> bool {
+        start.z.min(end.z) < stock.stock_bbox.max.z - self.flute_length_mm
+    }
+
+    /// K5 ReachFlute: the height of the wood over the tool tip inside the
+    /// cutter `radius` and the tip position, where the wood stands higher
+    /// than the flute length, for a candidate move
+    /// ([`Self::flute_candidate`]) against `stock` as it stands before the
+    /// move. The samples are those of [`Self::core_strike`]: at most 1 mm
+    /// apart, no closer than one cell, the end included. `None`: no wood
+    /// reaches past the flute.
+    pub fn flute_strike(
+        &self,
+        stock: &crate::dexel_stock::TriDexelStock,
+        start: P3,
+        end: P3,
+        radius: f64,
+    ) -> Option<(f64, P3)> {
+        let dx = end.x - start.x;
+        let dy = end.y - start.y;
+        let dz = end.z - start.z;
+        let dxy = dx.hypot(dy);
+        let cell = stock.z_grid.cell_size;
+        let step = (radius / 2.0).min(1.0).max(cell);
+        let n = crate::util::steps::steps(dxy, step).unwrap_or(0).max(1);
+        let below = stock.stock_bbox.max.z - self.flute_length_mm;
+        for k in 1..=n {
+            let t = k as f64 / n as f64;
+            let tip = P3::new(start.x + dx * t, start.y + dy * t, start.z + dz * t);
+            if tip.z >= below {
+                continue;
+            }
+            if let Some(over) = flute_over_tip(stock, tip, radius, self.flute_length_mm) {
+                return Some((over, tip));
+            }
+        }
+        None
+    }
+
+    /// K5 ReachFlute: record a flute overreach of move `move_index`. One
+    /// record per move: a later window of the same arc move adds none.
+    pub fn record_flute(&mut self, move_index: usize, strike: (f64, P3)) {
+        if self
+            .flute_hits
+            .last()
+            .is_some_and(|hit| hit.move_index == move_index)
+        {
+            return;
+        }
+        let (material_over_tip_mm, position) = strike;
+        self.flute_hits.push(FluteOverreach {
+            move_index,
+            position,
+            material_over_tip_mm,
+            flute_length_mm: self.flute_length_mm,
+        });
+    }
+
+    /// K5 ReachFlute: take the flute overreaches recorded so far.
+    pub fn take_flute_hits(&mut self) -> Vec<FluteOverreach> {
+        std::mem::take(&mut self.flute_hits)
     }
 
     /// G-CENTRECUT: is this fed move a candidate for a core strike? Only

@@ -683,6 +683,7 @@ mod stock_material_legend_s5 {
                     stock_change_volumes,
                     obstacle_collisions: Vec::new(),
                     non_centre_cutting_descents: Vec::new(),
+                    flute_overreach: Vec::new(),
                 },
                 playback_data: Vec::new(),
                 cut_trace_path: None,

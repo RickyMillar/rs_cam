@@ -617,6 +617,16 @@ pub const TABLE: &[(&str, Anchor, &str)] = &[
         "Holder may reach the stock, by the stock box",
     ),
     (
+        ids::TOOL_FLUTE_OVERREACH,
+        TOOL,
+        "Wood above the flute, measured by the simulation",
+    ),
+    (
+        ids::TOOL_FLUTE_REACH_WITHIN,
+        NOTE,
+        "No wood above the flute, measured by the simulation",
+    ),
+    (
         ids::TOOL_V_TIP_UNMODELLED,
         TOOL,
         "V-bit cone disagrees with its flute",

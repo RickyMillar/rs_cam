@@ -185,6 +185,7 @@ fn full_material_simulation(
         stock_change_volumes: Vec::new(),
         obstacle_collisions: Vec::new(),
         non_centre_cutting_descents: Vec::new(),
+        flute_overreach: Vec::new(),
     }
 }
 

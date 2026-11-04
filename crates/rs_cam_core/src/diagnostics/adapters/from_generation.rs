@@ -1041,6 +1041,44 @@ fn tip_float(toolpath_id: ToolpathId, stats: &ToolpathStats) -> Vec<Diagnostic> 
     }]
 }
 
+/// K5 ReachFlute, the simulation stage (feeds contract P7 commit B): what a
+/// fresh simulation measured for the toolpath. An overreach is
+/// `tool.flute_overreach` (Caution); a clean run is
+/// `tool.flute_reach_within` (Info). Both are Current and supersede the
+/// pre-simulation `tool.reach_past_flute`, which reads the stock box: the
+/// one reducer ([`crate::diagnostics::apply_supersession`]) drops it.
+pub fn flute_reach_measured(
+    toolpath_id: ToolpathId,
+    reach: &crate::compute::simulate::FluteReach,
+) -> Diagnostic {
+    use crate::compute::simulate::FluteReach;
+    let (id, severity, message) = match reach {
+        FluteReach::Over(text) => (ids::TOOL_FLUTE_OVERREACH, Severity::Caution, text.clone()),
+        FluteReach::Within => (
+            ids::TOOL_FLUTE_REACH_WITHIN,
+            Severity::Info,
+            "The simulation measured no wood over the tip above the flute.".to_owned(),
+        ),
+    };
+    Diagnostic {
+        id: DiagnosticId::from(id),
+        scope: Scope::Toolpath { id: toolpath_id },
+        category: Category::Safety,
+        severity,
+        // Measured on the carved stock of a fresh simulation.
+        confidence: Confidence::Verified,
+        state: DiagnosticState::Current,
+        source: Source::Simulation,
+        face: crate::diagnostics::presentation::face(id),
+        anchor: crate::diagnostics::presentation::anchor(id),
+        message,
+        evidence: None,
+        fix: None,
+        supersedes: vec![DiagnosticId::from(ids::TOOL_REACH_PAST_FLUTE)],
+        suppressed_diagnostics: vec![],
+    }
+}
+
 #[cfg(test)]
 #[expect(
     clippy::indexing_slicing,

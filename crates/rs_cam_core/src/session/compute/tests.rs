@@ -1521,6 +1521,7 @@ fn diagnostics_ranks_verdicts_by_severity() {
         stock_change_volumes: Vec::new(),
         obstacle_collisions: Vec::new(),
         non_centre_cutting_descents: Vec::new(),
+        flute_overreach: Vec::new(),
     });
 
     let diag = s.diagnostics();
@@ -1604,6 +1605,7 @@ fn diagnostics_rapid_collision_verdict_carries_evidence() {
         stock_change_volumes: Vec::new(),
         obstacle_collisions: Vec::new(),
         non_centre_cutting_descents: Vec::new(),
+        flute_overreach: Vec::new(),
     });
 
     let diag = s.diagnostics();

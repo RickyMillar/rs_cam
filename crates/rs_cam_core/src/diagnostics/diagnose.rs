@@ -96,6 +96,11 @@ pub struct ToolpathDiagnoseInputs<'a> {
     /// does. `None` for callers without a session — the check is
     /// skipped rather than crashed.
     pub model_refs: Option<&'a ModelRefContext>,
+    /// K5 ReachFlute, the simulation stage: what a fresh simulation
+    /// measured (`ProjectSession::flute_reach_measured`). `None`: no fresh
+    /// run measured it, and the pre-simulation row stands. `Some` gives a
+    /// Current finding that supersedes `tool.reach_past_flute`.
+    pub flute_reach: Option<&'a crate::compute::simulate::FluteReach>,
 }
 
 /// Compute the unified diagnostic list for a single toolpath.
@@ -166,6 +171,12 @@ pub fn diagnose_toolpath_inputs(inputs: &ToolpathDiagnoseInputs<'_>) -> Vec<Diag
         out.extend(from_generation::diagnostics_from_generation(
             inputs.toolpath_id,
             stats,
+        ));
+    }
+    if let Some(reach) = inputs.flute_reach {
+        out.push(from_generation::flute_reach_measured(
+            inputs.toolpath_id,
+            reach,
         ));
     }
     // W1: a field anchor names a field this op draws, else the op.

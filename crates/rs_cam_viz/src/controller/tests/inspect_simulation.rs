@@ -131,6 +131,7 @@ fn simulation_results_land_on_pending_inspect_toolpath_start() {
                 stock_change_volumes: Vec::new(),
                 obstacle_collisions: Vec::new(),
                 non_centre_cutting_descents: Vec::new(),
+                flute_overreach: Vec::new(),
             },
             playback_data: Vec::new(),
             cut_trace_path: None,

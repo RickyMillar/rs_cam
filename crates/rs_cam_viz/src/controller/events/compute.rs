@@ -2729,5 +2729,7 @@ fn core_simulation_from_lane(
         obstacle_collisions: core.obstacle_collisions.clone(),
         // G-CENTRECUT: the export door refuses on these.
         non_centre_cutting_descents: core.non_centre_cutting_descents.clone(),
+        // K5 ReachFlute: the diagnostics and the export door read these.
+        flute_overreach: core.flute_overreach.clone(),
     }
 }

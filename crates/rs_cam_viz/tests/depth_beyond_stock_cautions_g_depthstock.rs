@@ -219,6 +219,7 @@ fn header_diagnostics(
         &snapshot.model_refs,
         snapshot.suggest_warnings.as_deref(),
         None,
+        None,
     )
 }
 

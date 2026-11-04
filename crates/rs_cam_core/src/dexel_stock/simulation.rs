@@ -644,12 +644,18 @@ impl TriDexelStock {
                 }
                 MoveType::Linear { feed_rate } => {
                     // G-CENTRECUT: a steep fed descent of a non-centre-cutting tool is
-                    // judged against the stock as it stands HERE, before its own stamp. The
-                    // flush is paid only on a candidate, as the rapid arm does.
-                    if rapid_check
-                        .as_deref()
-                        .is_some_and(|check| check.core_descent_candidate(start, end))
-                    {
+                    // judged against the stock as it stands HERE, before its own stamp. K5
+                    // ReachFlute: so is a move whose tip goes more than the flute below the
+                    // stock box top. The flush is paid only on a candidate, as the rapid arm
+                    // does; one flush serves both checks.
+                    let (core_candidate, flute_candidate) =
+                        rapid_check.as_deref().map_or((false, false), |check| {
+                            (
+                                check.core_descent_candidate(start, end),
+                                check.flute_candidate(self, start, end),
+                            )
+                        });
+                    if core_candidate || flute_candidate {
                         self.flush_pending_stamps(
                             lut,
                             radius,
@@ -663,10 +669,17 @@ impl TriDexelStock {
                             flute_length,
                             cancel,
                         )?;
-                        if let Some(check) = rapid_check.as_deref_mut()
-                            && let Some(strike) = check.core_strike(self, start, end)
-                        {
-                            check.record_core(move_index, start, end, strike);
+                        if let Some(check) = rapid_check.as_deref_mut() {
+                            if core_candidate
+                                && let Some(strike) = check.core_strike(self, start, end)
+                            {
+                                check.record_core(move_index, start, end, strike);
+                            }
+                            if flute_candidate
+                                && let Some(strike) = check.flute_strike(self, start, end, radius)
+                            {
+                                check.record_flute(move_index, strike);
+                            }
                         }
                     }
                     let first = samples.len();
@@ -715,12 +728,18 @@ impl TriDexelStock {
                     for window in arc_buf.windows(2) {
                         check_cancel(cancel)?;
                         // G-CENTRECUT: a steep fed descent of a non-centre-cutting tool is
-                        // judged against the stock as it stands HERE, before its own stamp. The
-                        // flush is paid only on a candidate, as the rapid arm does.
-                        if rapid_check
-                            .as_deref()
-                            .is_some_and(|check| check.core_descent_candidate(window[0], window[1]))
-                        {
+                        // judged against the stock as it stands HERE, before its own stamp. K5
+                        // ReachFlute: so is a move whose tip goes more than the flute below the
+                        // stock box top. The flush is paid only on a candidate, as the rapid arm
+                        // does; one flush serves both checks.
+                        let (core_candidate, flute_candidate) =
+                            rapid_check.as_deref().map_or((false, false), |check| {
+                                (
+                                    check.core_descent_candidate(window[0], window[1]),
+                                    check.flute_candidate(self, window[0], window[1]),
+                                )
+                            });
+                        if core_candidate || flute_candidate {
                             self.flush_pending_stamps(
                                 lut,
                                 radius,
@@ -734,10 +753,19 @@ impl TriDexelStock {
                                 flute_length,
                                 cancel,
                             )?;
-                            if let Some(check) = rapid_check.as_deref_mut()
-                                && let Some(strike) = check.core_strike(self, window[0], window[1])
-                            {
-                                check.record_core(move_index, window[0], window[1], strike);
+                            if let Some(check) = rapid_check.as_deref_mut() {
+                                if core_candidate
+                                    && let Some(strike) =
+                                        check.core_strike(self, window[0], window[1])
+                                {
+                                    check.record_core(move_index, window[0], window[1], strike);
+                                }
+                                if flute_candidate
+                                    && let Some(strike) =
+                                        check.flute_strike(self, window[0], window[1], radius)
+                                {
+                                    check.record_flute(move_index, strike);
+                                }
                             }
                         }
                         let first = samples.len();
@@ -795,12 +823,18 @@ impl TriDexelStock {
                     for window in arc_buf.windows(2) {
                         check_cancel(cancel)?;
                         // G-CENTRECUT: a steep fed descent of a non-centre-cutting tool is
-                        // judged against the stock as it stands HERE, before its own stamp. The
-                        // flush is paid only on a candidate, as the rapid arm does.
-                        if rapid_check
-                            .as_deref()
-                            .is_some_and(|check| check.core_descent_candidate(window[0], window[1]))
-                        {
+                        // judged against the stock as it stands HERE, before its own stamp. K5
+                        // ReachFlute: so is a move whose tip goes more than the flute below the
+                        // stock box top. The flush is paid only on a candidate, as the rapid arm
+                        // does; one flush serves both checks.
+                        let (core_candidate, flute_candidate) =
+                            rapid_check.as_deref().map_or((false, false), |check| {
+                                (
+                                    check.core_descent_candidate(window[0], window[1]),
+                                    check.flute_candidate(self, window[0], window[1]),
+                                )
+                            });
+                        if core_candidate || flute_candidate {
                             self.flush_pending_stamps(
                                 lut,
                                 radius,
@@ -814,10 +848,19 @@ impl TriDexelStock {
                                 flute_length,
                                 cancel,
                             )?;
-                            if let Some(check) = rapid_check.as_deref_mut()
-                                && let Some(strike) = check.core_strike(self, window[0], window[1])
-                            {
-                                check.record_core(move_index, window[0], window[1], strike);
+                            if let Some(check) = rapid_check.as_deref_mut() {
+                                if core_candidate
+                                    && let Some(strike) =
+                                        check.core_strike(self, window[0], window[1])
+                                {
+                                    check.record_core(move_index, window[0], window[1], strike);
+                                }
+                                if flute_candidate
+                                    && let Some(strike) =
+                                        check.flute_strike(self, window[0], window[1], radius)
+                                {
+                                    check.record_flute(move_index, strike);
+                                }
                             }
                         }
                         let first = samples.len();

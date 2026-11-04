@@ -524,6 +524,10 @@ pub(crate) struct ToolpathPanelInputs {
     /// The index of this toolpath's row in `load_report`, or `None` when
     /// the report holds no row for it (disabled, or no tool).
     pub load_verdict_index: Option<usize>,
+    /// K5 ReachFlute: what a fresh simulation measured for this toolpath
+    /// (core `ProjectSession::flute_reach_measured` with the GUI's cut
+    /// trace), or `None`.
+    pub flute_reach: Option<rs_cam_core::compute::simulate::FluteReach>,
     pub tab_override: Option<ToolpathTab>,
     /// The holes of a drill op as generation resolves them
     /// (`ProjectSession::hole_selection`, geometry selection P2.3c):
@@ -845,6 +849,13 @@ pub(crate) fn toolpath_panel_inputs(
         .per_toolpath
         .iter()
         .position(|v| v.toolpath_id == id);
+    let flute_reach = session
+        .toolpath_configs()
+        .iter()
+        .position(|tc| tc.id == id)
+        .and_then(|index| {
+            session.flute_reach_measured(index, sim_cut_trace.map(std::sync::Arc::as_ref))
+        });
 
     // P5 — the reach map for THIS toolpath, if the overlay is holding
     // one. An overlay pointed at another toolpath reads `Idle`: the
@@ -932,6 +943,7 @@ pub(crate) fn toolpath_panel_inputs(
         stale_default_defects,
         load_report,
         load_verdict_index,
+        flute_reach,
         tab_override,
         holes,
         pin_holes,

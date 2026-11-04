@@ -244,6 +244,7 @@ fn read_case(case: &Case) -> (Option<String>, Vec<Diagnostic>) {
         &snapshot.model_refs,
         snapshot.suggest_warnings.as_deref(),
         None,
+        None,
     );
     (row, header)
 }

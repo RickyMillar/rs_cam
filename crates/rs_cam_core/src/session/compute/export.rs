@@ -80,9 +80,10 @@ impl ProjectSession {
             emitted,
             left_out,
             report,
+            sim_trace,
             overlay,
         } = request;
-        let warnings = self.export_warnings(&emitted, &left_out, report);
+        let warnings = self.export_warnings(&emitted, &left_out, report, sim_trace);
         let load_outcome = self.export_load_findings(&emitted, report).outcome;
         let post_config = &self.post;
         let post = post_config.format.definition();
@@ -158,13 +159,15 @@ impl ProjectSession {
     /// `emitted` are the toolpath indices the program holds; `left_out` the
     /// enabled ops in scope with no current result and the sentence that
     /// says why ([`Self::export_scope`]); `report` the load report the
-    /// load rows read.
+    /// load rows read; `sim_trace` the cut trace that report was built
+    /// from (the K5 simulation rows read it for freshness).
     #[must_use]
     pub fn export_warnings(
         &self,
         emitted: &[usize],
         left_out: &[(usize, String)],
         report: &crate::tool_load::ToolLoadReport,
+        sim_trace: Option<&SimulationCutTrace>,
     ) -> Vec<crate::gcode::ExportWarning> {
         use crate::diagnostics::{Gate, ids};
         let name_at = |idx: usize| {
@@ -303,11 +306,32 @@ impl ProjectSession {
                         else {
                             continue;
                         };
-                        for row in report.rows() {
+                        // K5 ReachFlute: a fresh simulation measured the
+                        // flute reach, so its row (`Gate::FluteOverreach`)
+                        // stands for the pre-simulation one.
+                        let measured = self.flute_reach_measured(idx, sim_trace).is_some();
+                        for row in report.rows().iter().filter(|row| {
+                            !(measured
+                                && row.rule()
+                                    == crate::compute::feasibility::PhysicalRule::ReachFlute)
+                        }) {
                             push(
                                 row.id(),
                                 name_at(idx),
                                 format!("Toolpath '{}': {}", name_at(idx), row.text()),
+                            );
+                        }
+                    }
+                }
+                Gate::FluteOverreach => {
+                    for &idx in emitted {
+                        if let Some(crate::compute::simulate::FluteReach::Over(text)) =
+                            self.flute_reach_measured(idx, sim_trace)
+                        {
+                            push(
+                                ids::TOOL_FLUTE_OVERREACH,
+                                name_at(idx),
+                                format!("Toolpath '{}': {text}", name_at(idx)),
                             );
                         }
                     }
@@ -379,7 +403,7 @@ impl ProjectSession {
         sim_trace: Option<&crate::stock::simulation_cut::SimulationCutTrace>,
     ) -> Result<crate::gcode::ExportedGcode, crate::gcode::EmitError> {
         let report = self.build_tool_load_report(sim_trace);
-        self.export_gcode_with_report(&report)
+        self.export_gcode_with(&report, sim_trace)
     }
 
     /// [`Self::export_gcode_checked`] with the load report the caller
@@ -393,6 +417,20 @@ impl ProjectSession {
     pub fn export_gcode_with_report(
         &self,
         report: &crate::tool_load::ToolLoadReport,
+    ) -> Result<crate::gcode::ExportedGcode, crate::gcode::EmitError> {
+        let sim_trace = self
+            .simulation
+            .as_ref()
+            .and_then(|simulation| simulation.cut_trace.as_deref());
+        self.export_gcode_with(report, sim_trace)
+    }
+
+    /// [`Self::export_gcode_with_report`] with the cut trace the report was
+    /// built from (K5: the simulation rows read it for freshness).
+    fn export_gcode_with(
+        &self,
+        report: &crate::tool_load::ToolLoadReport,
+        sim_trace: Option<&SimulationCutTrace>,
     ) -> Result<crate::gcode::ExportedGcode, crate::gcode::EmitError> {
         use crate::gcode::{GcodePhase, PhaseTool};
 
@@ -480,6 +518,7 @@ impl ProjectSession {
             emitted: emitted.iter().map(|(idx, _)| *idx).collect(),
             left_out: scope.left_out,
             report,
+            sim_trace,
             overlay: &overlay,
         })
     }
@@ -664,6 +703,8 @@ impl ProjectSession {
             .flatten();
         let preconditions = self.precondition_context_for_toolpath(tc);
         let model_refs = self.model_ref_context_for_toolpath(tc);
+        // K5 ReachFlute: the simulation stage, when a fresh run measured it.
+        let flute_reach = self.flute_reach_measured(index, sim_trace);
         // Generation-time findings ride on the stats of this toolpath's own
         // generated result. Absent until it has been generated, which is
         // exactly when there is nothing to report.
@@ -686,6 +727,7 @@ impl ProjectSession {
             preconditions: Some(&preconditions),
             model_refs: Some(&model_refs),
             stats,
+            flute_reach: flute_reach.as_ref(),
         };
         Ok(crate::diagnostics::diagnose_toolpath_inputs(&inputs))
     }
@@ -1057,6 +1099,28 @@ impl ProjectSession {
             self.toolpath_config_at(index).is_none_or(|tc| !tc.enabled)
                 || self.sim_trace_is_fresh_for(trace, index)
         })
+    }
+
+    /// K5 ReachFlute (feeds contract P7 commit B): what the stored
+    /// simulation measured for the toolpath at `index`, when `trace` is
+    /// fresh for it ([`Self::sim_trace_is_fresh_for`]: the run carved this
+    /// result and the config has not moved). `None`: no fresh simulation
+    /// measured it, so the pre-simulation row ("by the stock box") stands.
+    /// The diagnostics, the GUI inspector and the export read this one
+    /// answer.
+    #[must_use]
+    pub fn flute_reach_measured(
+        &self,
+        index: usize,
+        trace: Option<&SimulationCutTrace>,
+    ) -> Option<crate::compute::simulate::FluteReach> {
+        let trace = trace?;
+        if !self.sim_trace_is_fresh_for(trace, index) {
+            return None;
+        }
+        let simulation = self.simulation.as_ref()?;
+        let id = self.toolpath_config_at(index)?.id;
+        Some(crate::compute::simulate::flute_reach(simulation, id))
     }
 
     /// [`Self::sim_trace_is_fresh`] for ONE operation: its own provenance only.

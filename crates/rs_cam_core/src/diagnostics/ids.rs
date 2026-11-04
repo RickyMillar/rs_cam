@@ -484,6 +484,16 @@ diag_ids! {
     /// earlier op removed the material: a Tool warning, no confirm click
     /// (lead decision). The simulation holder walk measures what touched.
     pub const TOOL_REACH_TO_HOLDER: &str = "tool.reach_to_holder" => warn(Danger::Tool);
+    /// K5 ReachFlute, the simulation stage (feeds contract P7 commit B):
+    /// the simulation measured wood over the tool tip above the flute
+    /// length (`SimulationResult::flute_overreach`). It supersedes the
+    /// pre-simulation `tool.reach_past_flute`. A warning (ruling Q6).
+    pub const TOOL_FLUTE_OVERREACH: &str = "tool.flute_overreach" => warn(Danger::Tool);
+    /// K5 ReachFlute, the simulation stage: a fresh simulation measured no
+    /// wood over the tip above the flute (measured clean). It supersedes
+    /// the pre-simulation `tool.reach_past_flute`, which reads the stock
+    /// box and can over-read where an earlier op removed the material.
+    pub const TOOL_FLUTE_REACH_WITHIN: &str = "tool.flute_reach_within" => INFO;
     /// K5 VTipFlat (feeds contract P7): the cone height of the stated flat
     /// tip of a V-bit disagrees with the flute length. A V-bit only. A
     /// warning (ruling Q6).

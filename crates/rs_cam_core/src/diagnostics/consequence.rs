@@ -80,11 +80,14 @@ pub enum Gate {
     /// A row of `ToolpathStats::feasibility` (K5, feeds contract P7): a
     /// physical rule warns on the emitted toolpath.
     Feasibility,
+    /// K5 ReachFlute, the simulation stage: a fresh simulation measured
+    /// wood above the flute (`compute::simulate::flute_reach`).
+    FluteOverreach,
 }
 
 impl Gate {
     /// Every gate, for the export walk and the tests.
-    pub const ALL: [Self; 11] = [
+    pub const ALL: [Self; 12] = [
         Self::HeightRefuses,
         Self::GougeBlocks,
         Self::CentreCutPlunge,
@@ -96,6 +99,7 @@ impl Gate {
         Self::BuriedFace,
         Self::ToolKind,
         Self::Feasibility,
+        Self::FluteOverreach,
     ];
 }
 

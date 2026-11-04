@@ -354,7 +354,12 @@ pub fn preflight_warnings(
 ) -> Vec<ExportWarning> {
     let emitted = emitted_toolpaths(session, gui, 0..session.toolpath_configs().len());
     let indices: Vec<usize> = emitted.toolpaths.iter().map(|e| e.index).collect();
-    session.export_warnings(&indices, &emitted.left_out, &viz_load_report(session, sim))
+    session.export_warnings(
+        &indices,
+        &emitted.left_out,
+        &viz_load_report(session, sim),
+        sim.cut_trace_arc().map(std::sync::Arc::as_ref),
+    )
 }
 
 fn gcode_phase_for_session_toolpath<'a>(
@@ -422,6 +427,9 @@ fn export_through_core(
             emitted: emitted.toolpaths.iter().map(|e| e.index).collect(),
             left_out: emitted.left_out.clone(),
             report: &report,
+            // K5: the trace the report was built from (freshness of the
+            // simulation rows).
+            sim_trace: sim.cut_trace_arc().map(std::sync::Arc::as_ref),
             overlay: &overlay,
         })
         .map_err(|e| crate::error::VizError::Export(e.to_string()))

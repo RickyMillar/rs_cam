@@ -264,6 +264,10 @@ pub struct ExportRequest<'a> {
     pub left_out: Vec<(usize, String)>,
     /// The load report the export reads its load warnings from.
     pub report: &'a crate::tool_load::ToolLoadReport,
+    /// The cut trace `report` was built from, or `None`. K5: the
+    /// simulation rows of a toolpath print only when this trace is fresh
+    /// for it.
+    pub sim_trace: Option<&'a crate::stock::simulation_cut::SimulationCutTrace>,
     pub overlay: &'a WizardOverlay,
 }
 

@@ -506,6 +506,7 @@ pub fn collect_diagnostics(
     model_refs: &rs_cam_core::diagnostics::diagnose::ModelRefContext,
     suggest_warnings: Option<&[rs_cam_core::feeds::suggest::SuggestWarning]>,
     load_verdict: Option<&rs_cam_core::tool_load::ToolpathLoadVerdict>,
+    flute_reach: Option<&rs_cam_core::compute::simulate::FluteReach>,
 ) -> Vec<rs_cam_core::diagnostics::Diagnostic> {
     // R2, W2b: an op with no tool takes THE no-tool list of core (the
     // session's list too), so its no-tool finding has a place.
@@ -536,6 +537,9 @@ pub fn collect_diagnostics(
         // pipeline already knew about. `None` before generation is honest:
         // nothing has been measured yet.
         stats: entry.run.result().map(|result| &result.stats),
+        // K5 ReachFlute: what a fresh simulation measured (core
+        // `ProjectSession::flute_reach_measured`).
+        flute_reach,
     };
     // G-DEPTHSTOCKCORE (F1.18): the depth-beyond-stock caution used to be
     // appended here from a second, GUI-side copy of the rule. Both copies
