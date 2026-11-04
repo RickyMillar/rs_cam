@@ -1405,6 +1405,10 @@ pub enum ToolParamKeyParam {
     /// and `blade_protrusion_mm` (the tool does not cut at its centre), or
     /// `null` (not known). A value written here is stated.
     CentreCutting,
+    /// D12: the flat tip diameter of a V-bit (mm, 0 for a sharp point), or
+    /// `null` (not known). A value written here is stated. A V-bit op stops
+    /// until it is stated.
+    VTipDiameter,
 }
 
 impl From<ToolParamKeyParam> for ToolParamKey {
@@ -1425,6 +1429,7 @@ impl From<ToolParamKeyParam> for ToolParamKey {
             ToolParamKeyParam::CutDirection => Self::CutDirection,
             ToolParamKeyParam::SizeUnits => Self::SizeUnits,
             ToolParamKeyParam::CentreCutting => Self::CentreCutting,
+            ToolParamKeyParam::VTipDiameter => Self::VTipDiameter,
         }
     }
 }
@@ -1454,6 +1459,7 @@ impl From<ToolParamKey> for ToolParamKeyParam {
             ToolParamKey::CutDirection => Self::CutDirection,
             ToolParamKey::SizeUnits => Self::SizeUnits,
             ToolParamKey::CentreCutting => Self::CentreCutting,
+            ToolParamKey::VTipDiameter => Self::VTipDiameter,
         }
     }
 }
@@ -1704,6 +1710,11 @@ pub struct AddToolParam {
     /// protrusion of a tool that does not cut at its centre). Omit it when
     /// it is not known (the motion of a centre-cutting tool).
     pub centre_cutting: Option<CentreCuttingParam>,
+    /// D12: the flat tip diameter of a `v_bit` in mm (0 for a sharp
+    /// point), the same form as `set_tool_param v_tip_diameter`. A value
+    /// given here is stated. Omit it when it is not known: a V-bit op then
+    /// stops until it is stated. It must be >= 0 and below the diameter.
+    pub v_tip_diameter: Option<f64>,
 }
 
 /// K3 centre cutting of `add_tool`: a stated fact.
@@ -3684,6 +3695,10 @@ pub fn build_tool_config(spec: &AddToolParam) -> Result<BuiltTool, String> {
             .clone()
             .map_or(ToolFact::Unknown, |c| ToolFact::Stated(c.into())),
     );
+    config.set_v_tip_diameter(
+        spec.v_tip_diameter
+            .map_or(ToolFact::Unknown, ToolFact::Stated),
+    );
 
     config
         .validate()
@@ -4884,6 +4899,33 @@ mod tests {
         // K3: an omitted centre-cutting fact is Unknown, not "centre cutting".
         let plain = build_tool_config(&add_tool_spec("end_mill", 6.0)).unwrap();
         assert!(plain.config.centre_cutting_fact().is_unknown());
+    }
+
+    /// D12 (P7 A2): `add_tool` takes the V tip in the `set_tool_param`
+    /// form: a number is stated, an omitted tip is Unknown, and a tip
+    /// outside `0 <= tip < diameter` is refused (F029).
+    #[test]
+    fn the_v_tip_reaches_the_tool_builder() {
+        let vbit = |tip: Option<f64>| AddToolParam {
+            included_angle: Some(60.0),
+            v_tip_diameter: tip,
+            ..add_tool_spec("v_bit", 6.0)
+        };
+        let built = build_tool_config(&vbit(Some(0.3))).unwrap();
+        assert_eq!(
+            built.config.v_tip_diameter_fact(),
+            &rs_cam_core::compute::tool_config::ToolFact::Stated(0.3)
+        );
+        let plain = build_tool_config(&vbit(None)).unwrap();
+        assert!(plain.config.v_tip_diameter_fact().is_unknown());
+        assert!(
+            build_tool_config(&vbit(Some(6.0))).is_err(),
+            "a tip as wide as the bit"
+        );
+        assert!(
+            build_tool_config(&vbit(Some(-0.1))).is_err(),
+            "a negative tip"
+        );
     }
 
     /// Defaults that remain are NAMED, so "25 mm of cutting length" can

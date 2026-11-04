@@ -65,7 +65,7 @@ fn make_tc(tool_id: usize, model_id: usize) -> ToolpathConfig {
 }
 
 fn make_tool() -> ToolConfig {
-    ToolConfig::new_default(
+    ToolConfig::test_default(
         ToolId::from_raw(0),
         crate::compute::tool_config::ToolType::EndMill,
     )

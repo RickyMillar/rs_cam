@@ -166,7 +166,7 @@ fn pinned(reference: HeightReference, offset: f64) -> HeightMode {
 
 /// One tool, one 2D model, an 18 mm board, one setup.
 fn session() -> ProjectSession {
-    let mut tool = ToolConfig::new_default(ToolId::from_raw(TOOL), ToolType::EndMill);
+    let mut tool = ToolConfig::test_default(ToolId::from_raw(TOOL), ToolType::EndMill);
     tool.diameter = 6.0;
     let stock = StockConfig {
         z: Some(STOCK_THICKNESS_MM),

@@ -97,7 +97,7 @@ fn viz_result(path: Toolpath) -> ToolpathResult {
 /// core cache and a drawable copy in the viz store, exactly as
 /// `drain_compute_results` leaves it.
 fn build_state() -> (ProjectSession, GuiState, SimulationState) {
-    let tool = ToolConfig::new_default(ToolId::from_raw(1), ToolType::EndMill);
+    let tool = ToolConfig::test_default(ToolId::from_raw(1), ToolType::EndMill);
     let mut builder = ProjectSessionBuilder::new().tool(tool);
     let _ = builder.add_model(LoadedModel {
         id: rs_cam_core::ids::ModelId::from_raw(0),

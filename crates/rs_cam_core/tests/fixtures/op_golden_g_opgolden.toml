@@ -181,7 +181,7 @@ bbox_max = [20.1, 12.1, 10.0]
 moves_hash = "7fdc7505b95cd13e"
 span_count = 10
 spans_hash = "ece33a8f21fa16f5"
-gcode_hash = "1d5fb19a67445a79"
+gcode_hash = "3e6d06f82f2060fe"
 
 ["chamfer/rest"]
 outcome = "ok"
@@ -196,7 +196,7 @@ bbox_max = [20.1, 12.1, 10.0]
 moves_hash = "69e243885421adf6"
 span_count = 10
 spans_hash = "ece33a8f21fa16f5"
-gcode_hash = "cc9226d268a937c6"
+gcode_hash = "0daa0440364ae17f"
 
 ["drill/fit_mixed"]
 outcome = "ok"
@@ -421,7 +421,7 @@ bbox_max = [19.95, 11.05, 10.0]
 moves_hash = "ff7a247ad9989a33"
 span_count = 268
 spans_hash = "10c4e9a7c7674909"
-gcode_hash = "5cdfb1a2bb06f57d"
+gcode_hash = "42b0b2a5457c46a7"
 
 ["inlay_plug/fresh"]
 outcome = "ok"
@@ -436,7 +436,7 @@ bbox_max = [26.0, 18.0, 10.0]
 moves_hash = "aa2061f206e3642b"
 span_count = 721
 spans_hash = "ca62681e8342ab89"
-gcode_hash = "edb443d041bcbc5d"
+gcode_hash = "83a9873dcf8f9dac"
 
 ["pencil/curvature"]
 outcome = "ok"
@@ -1285,7 +1285,7 @@ bbox_max = [19.95, 11.55, 10.0]
 moves_hash = "4c52863ee0d4e036"
 span_count = 145
 spans_hash = "9b3b6ef7f7cddc3d"
-gcode_hash = "d78ed32ca00e0e14"
+gcode_hash = "6a8a3f4061b849bd"
 
 ["waterline/fresh"]
 outcome = "ok"

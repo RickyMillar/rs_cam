@@ -201,7 +201,7 @@ fn floor_ops() -> Vec<OperationConfig> {
 /// the floor is written back after the pick (ruling Q2 sets "Each picked
 /// face" on the first face pick).
 fn session(operation: OperationConfig) -> ProjectSession {
-    let mut tool = ToolConfig::new_default(ToolId::from_raw(1), ToolType::EndMill);
+    let mut tool = ToolConfig::test_default(ToolId::from_raw(1), ToolType::EndMill);
     tool.diameter = 3.0;
     let mut builder = ProjectSessionBuilder::new()
         .stock(StockConfig {

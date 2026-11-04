@@ -150,7 +150,7 @@ fn toolpath() -> ToolpathConfig {
 /// drop.
 fn build_controller() -> AppController<SilentBackend> {
     let mut controller = AppController::with_backend(SilentBackend);
-    let mut builder = ProjectSessionBuilder::new().tool(ToolConfig::new_default(
+    let mut builder = ProjectSessionBuilder::new().tool(ToolConfig::test_default(
         ToolId::from_raw(1),
         ToolType::EndMill,
     ));
@@ -328,7 +328,7 @@ fn the_speeds_apply_refuses_a_refused_pairing() {
     let mut controller = AppController::with_backend(SilentBackend);
     // A flat end mill on Scallop: a zero tip radius makes the scallop-stepover
     // formula undefined, and the engine refuses the pairing outright.
-    let mut builder = ProjectSessionBuilder::new().tool(ToolConfig::new_default(
+    let mut builder = ProjectSessionBuilder::new().tool(ToolConfig::test_default(
         ToolId::from_raw(1),
         ToolType::EndMill,
     ));

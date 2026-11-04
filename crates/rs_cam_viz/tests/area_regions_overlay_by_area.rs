@@ -44,7 +44,7 @@ const MODEL: usize = 4;
 
 fn fresh_state() -> AppState {
     let mut state = AppState::new();
-    let mut tool = ToolConfig::new_default(ToolId::from_raw(TOOL), ToolType::EndMill);
+    let mut tool = ToolConfig::test_default(ToolId::from_raw(TOOL), ToolType::EndMill);
     tool.diameter = 6.0;
     state.replace_session(
         ProjectSessionBuilder::new()

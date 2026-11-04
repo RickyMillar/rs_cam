@@ -243,7 +243,7 @@ fn a_report_change_uploads_once_p4_4() {
         Default::default(),
     )
     .unwrap();
-    let mut tool = ToolConfig::new_default(ToolId::from_raw(1), ToolType::EndMill);
+    let mut tool = ToolConfig::test_default(ToolId::from_raw(1), ToolType::EndMill);
     tool.diameter = 3.0;
     let mut builder = ProjectSessionBuilder::new()
         .stock(StockConfig::default())

@@ -136,7 +136,7 @@ fn setup_id_of(session: &ProjectSession, position: usize) -> SetupId {
 /// the non-vacuity of the ordering rule.
 fn fixture() -> ProjectSession {
     let mut builder = ProjectSessionBuilder::new();
-    builder.add_tool(ToolConfig::new_default(
+    builder.add_tool(ToolConfig::test_default(
         ToolId::from_raw(0),
         ToolType::EndMill,
     ));

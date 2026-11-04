@@ -31,7 +31,7 @@ fn make_session() -> ProjectSession {
     let mut stock = s.stock_config().clone();
     crate::compute::fixture_values::fill_unset_stock(&mut stock);
     let _ = s.set_stock_config(stock).unwrap();
-    let tool = ToolConfig::new_default(ToolId::from_raw(0), ToolType::EndMill);
+    let tool = ToolConfig::test_default(ToolId::from_raw(0), ToolType::EndMill);
     let _ = s.add_tool(tool);
     s
 }
@@ -1967,7 +1967,7 @@ fn air_cut_offenders_suppresses_drill_ops_entirely() {
 // ── P2: plunge-stress gate at session level ──────────────────
 
 fn make_tapered_ball_tool(diameter: f64) -> ToolConfig {
-    let mut t = ToolConfig::new_default(ToolId::from_raw(0), ToolType::TaperedBallNose);
+    let mut t = ToolConfig::test_default(ToolId::from_raw(0), ToolType::TaperedBallNose);
     t.diameter = diameter; // tip diameter
     t.shaft_diameter = (diameter + 2.0).max(3.0);
     t.set_taper_half_angle(ToolFact::Stated(7.0));

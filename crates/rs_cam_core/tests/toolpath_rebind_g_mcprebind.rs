@@ -117,11 +117,11 @@ fn empty_model(name: &str) -> LoadedModel {
 /// models, one Pocket toolpath bound to tool 0 / model 0.
 fn seed() -> ProjectSession {
     let mut builder = ProjectSessionBuilder::new();
-    builder.add_tool(ToolConfig::new_default(
+    builder.add_tool(ToolConfig::test_default(
         ToolId::from_raw(0),
         ToolType::EndMill,
     ));
-    builder.add_tool(ToolConfig::new_default(
+    builder.add_tool(ToolConfig::test_default(
         ToolId::from_raw(0),
         ToolType::BallNose,
     ));
@@ -359,11 +359,11 @@ fn an_out_of_range_toolpath_index_is_refused_by_both_setters() {
 #[test]
 fn a_rebind_to_a_tool_the_operation_rejects_is_allowed_and_the_generator_still_refuses() {
     let mut builder = ProjectSessionBuilder::new();
-    builder.add_tool(ToolConfig::new_default(
+    builder.add_tool(ToolConfig::test_default(
         ToolId::from_raw(0),
         ToolType::BallNose,
     ));
-    builder.add_tool(ToolConfig::new_default(
+    builder.add_tool(ToolConfig::test_default(
         ToolId::from_raw(0),
         ToolType::EndMill,
     ));

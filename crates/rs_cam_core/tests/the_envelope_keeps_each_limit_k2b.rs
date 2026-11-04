@@ -51,7 +51,7 @@ fn oak() -> Material {
 }
 
 fn end_mill(d: f64, cutting_length: f64) -> ToolConfig {
-    let mut t = ToolConfig::new_default(ToolId::from_raw(0), ToolType::EndMill);
+    let mut t = ToolConfig::test_default(ToolId::from_raw(0), ToolType::EndMill);
     t.diameter = d;
     t.set_cutting_length(ToolFact::Stated(cutting_length));
     t

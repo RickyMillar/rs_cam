@@ -1820,8 +1820,28 @@ impl OperationConfig {
         fields
     }
 
+    /// S11 and ruling D12: why this op with `tool` stops for a value that
+    /// is not set, or `None`. A depth comes first, then a required tool
+    /// fact ([`crate::compute::not_set::tool_facts_not_set`]), then the
+    /// feeds. Generation, the session door and the diagnostics call it.
+    pub fn not_set_for_tool(
+        &self,
+        tool: &crate::compute::tool_config::ToolConfig,
+    ) -> Option<crate::compute::not_set::NotSet> {
+        use crate::compute::not_set::{NotSetKind, tool_facts_not_set};
+        let not_set = self.not_set();
+        if let Some(depth) = not_set
+            .as_ref()
+            .filter(|not_set| not_set.kind == NotSetKind::Depth)
+        {
+            return Some(depth.clone());
+        }
+        tool_facts_not_set(self.op_type().label(), tool).or(not_set)
+    }
+
     /// S11: why this op refuses to generate for a value that is not set,
-    /// or `None`. A depth comes first, then the feeds.
+    /// or `None`. A depth comes first, then the feeds. It reads no tool;
+    /// [`Self::not_set_for_tool`] adds the required tool facts (D12).
     pub fn not_set(&self) -> Option<crate::compute::not_set::NotSet> {
         use crate::compute::not_set::{NotSet, NotSetKind};
         let op = self.op_type().label();
@@ -1831,6 +1851,7 @@ impl OperationConfig {
                 op,
                 kind: NotSetKind::Depth,
                 fields: depths,
+                tool: None,
             });
         }
         let feeds = self.unset_feeds();
@@ -1838,6 +1859,7 @@ impl OperationConfig {
             op,
             kind: NotSetKind::Feeds,
             fields: feeds,
+            tool: None,
         })
     }
 
@@ -1868,6 +1890,7 @@ impl OperationConfig {
                 op: self.op_type().label(),
                 kind: NotSetKind::Feeds,
                 fields: self.unset_feeds(),
+                tool: None,
             }),
         }
     }

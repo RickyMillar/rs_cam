@@ -125,7 +125,7 @@ fn fake_result() -> rs_cam_core::session::ToolpathComputeResult {
 /// file adopts results through the door under test.
 fn fixture() -> ProjectSession {
     let mut builder = ProjectSessionBuilder::new();
-    builder.add_tool(ToolConfig::new_default(
+    builder.add_tool(ToolConfig::test_default(
         ToolId::from_raw(0),
         ToolType::EndMill,
     ));
@@ -355,7 +355,7 @@ fn every_producer_reports_the_dropped_set() {
     let mut s = fixture();
     let _ = s
         .apply(Command::AddTool(AddToolArgs {
-            tool: Box::new(ToolConfig::new_default(
+            tool: Box::new(ToolConfig::test_default(
                 ToolId::from_raw(0),
                 ToolType::BallNose,
             )),

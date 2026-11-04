@@ -137,7 +137,7 @@ fn toolpath(id: usize, name: &str, model_id: usize, operation: OperationConfig) 
 /// one Scallop (3D, `default_auto_regen` false) through the real save
 /// path, so the file shape is whatever the loader actually accepts.
 fn write_two_op_project() -> PathBuf {
-    let tool = ToolConfig::new_default(ToolId::from_raw(1), ToolType::BallNose);
+    let tool = ToolConfig::test_default(ToolId::from_raw(1), ToolType::BallNose);
     // S11: the drawing and the flat plate give no thickness; the fixture
     // states the 25 mm before S11.
     let mut builder = ProjectSessionBuilder::new()

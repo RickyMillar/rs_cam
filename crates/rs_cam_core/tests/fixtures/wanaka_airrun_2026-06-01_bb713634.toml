@@ -84,6 +84,7 @@ tool_material = "carbide"
 cut_direction = "up_cut"
 vendor = ""
 product_id = ""
+centre_cutting = { stated = "yes" }
 
 [[tools]]
 id = 3
@@ -105,6 +106,7 @@ tool_material = "carbide"
 cut_direction = "up_cut"
 vendor = ""
 product_id = ""
+centre_cutting = { stated = "yes" }
 
 [[tools]]
 id = 4
@@ -126,6 +128,7 @@ tool_material = "carbide"
 cut_direction = "up_cut"
 vendor = ""
 product_id = ""
+centre_cutting = { stated = "yes" }
 
 [[tools]]
 id = 5
@@ -147,6 +150,7 @@ tool_material = "carbide"
 cut_direction = "up_cut"
 vendor = "endmill.com.au"
 product_id = "TBN-R2.0-6-20"
+centre_cutting = { stated = "yes" }
 
 [[tools]]
 id = 6
@@ -168,6 +172,7 @@ tool_material = "carbide"
 cut_direction = "up_cut"
 vendor = "endmill.com.au"
 product_id = "TBN-R1.0-6-20"
+centre_cutting = { stated = "yes" }
 
 [[tools]]
 id = 7
@@ -189,6 +194,7 @@ tool_material = "carbide"
 cut_direction = "up_cut"
 vendor = "endmill.com.au"
 product_id = "TBN-R0.5-6-20"
+centre_cutting = { stated = "yes" }
 
 [[tools]]
 id = 8
@@ -210,6 +216,7 @@ tool_material = "carbide"
 cut_direction = "up_cut"
 vendor = "endmill.com.au"
 product_id = "TBN-R1.5-6-30.5"
+centre_cutting = { stated = "yes" }
 
 [[tools]]
 id = 9
@@ -231,6 +238,8 @@ tool_material = "carbide"
 cut_direction = "up_cut"
 vendor = ""
 product_id = ""
+centre_cutting = { stated = "yes" }
+v_tip_diameter = { stated = 0.0 }
 
 [[tools]]
 id = 10
@@ -252,6 +261,8 @@ tool_material = "carbide"
 cut_direction = "up_cut"
 vendor = ""
 product_id = ""
+centre_cutting = { stated = "yes" }
+v_tip_diameter = { stated = 0.0 }
 
 [[tools]]
 id = 11
@@ -273,6 +284,8 @@ tool_material = "carbide"
 cut_direction = "up_cut"
 vendor = ""
 product_id = ""
+centre_cutting = { stated = "yes" }
+v_tip_diameter = { stated = 0.0 }
 
 [[tools]]
 id = 12
@@ -294,6 +307,7 @@ tool_material = "carbide"
 cut_direction = "up_cut"
 vendor = ""
 product_id = ""
+centre_cutting = { stated = "yes" }
 
 [[tools]]
 id = 13
@@ -315,6 +329,7 @@ tool_material = "carbide"
 cut_direction = "up_cut"
 vendor = ""
 product_id = ""
+centre_cutting = { stated = "yes" }
 
 [[models]]
 id = 1

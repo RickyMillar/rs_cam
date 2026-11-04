@@ -109,6 +109,7 @@ tool_material = "carbide"
 cut_direction = "up_cut"
 vendor = ""
 product_id = ""
+centre_cutting = { stated = "yes" }
 
 
 # map.toml flat_3
@@ -132,6 +133,7 @@ tool_material = "carbide"
 cut_direction = "up_cut"
 vendor = ""
 product_id = ""
+centre_cutting = { stated = "yes" }
 
 
 # map.toml v20: cone = (body/2)/tan(angle/2) = 9.0032
@@ -155,6 +157,8 @@ tool_material = "carbide"
 cut_direction = "up_cut"
 vendor = ""
 product_id = ""
+centre_cutting = { stated = "yes" }
+v_tip_diameter = { stated = 0.3 }
 
 
 # mech check.txt slit line: 60 deg, 6.35 mm. Stick-out: measure (25 assumed, open item).
@@ -178,6 +182,8 @@ tool_material = "carbide"
 cut_direction = "up_cut"
 vendor = ""
 product_id = ""
+centre_cutting = { stated = "yes" }
+v_tip_diameter = { stated = 0.0 }
 
 
 # rivmap350.toml tool 0
@@ -201,6 +207,7 @@ tool_material = "carbide"
 cut_direction = "up_cut"
 vendor = ""
 product_id = ""
+centre_cutting = { stated = "yes" }
 
 
 # rivmap350.toml tool 5 (front finish)
@@ -224,6 +231,7 @@ tool_material = "carbide"
 cut_direction = "up_cut"
 vendor = "endmill.com.au"
 product_id = "TBN-R1.0-3.175-15"
+centre_cutting = { stated = "yes" }
 
 
 [[models]]

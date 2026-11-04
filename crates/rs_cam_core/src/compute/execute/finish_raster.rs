@@ -715,7 +715,7 @@ mod tests {
     use crate::material::{Material, WoodSpecies};
 
     fn endmill(diameter: f64, stickout: f64) -> crate::tool::ToolDefinition {
-        let mut cfg = ToolConfig::new_default(ToolId::from_raw(0), ToolType::EndMill);
+        let mut cfg = ToolConfig::test_default(ToolId::from_raw(0), ToolType::EndMill);
         cfg.diameter = diameter;
         cfg.set_shank_diameter(ToolFact::Stated(diameter));
         cfg.set_stickout(ToolFact::Stated(stickout));

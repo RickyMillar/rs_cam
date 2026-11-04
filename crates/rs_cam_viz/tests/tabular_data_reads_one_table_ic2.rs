@@ -56,7 +56,7 @@ const PANEL_WIDTH: f32 = 280.0;
 /// force line), and the generic router with the dial at 0.85. This is the
 /// `the_recommended_column_is_what_apply_writes_g_recomapplied` cell.
 fn fixture() -> AppState {
-    let mut tool = ToolConfig::new_default(ToolId::from_raw(1), ToolType::EndMill);
+    let mut tool = ToolConfig::test_default(ToolId::from_raw(1), ToolType::EndMill);
     tool.diameter = 6.0;
     tool.set_flute_count(ToolFact::Stated(2));
     let mut machine = MachineProfile::generic_wood_router();

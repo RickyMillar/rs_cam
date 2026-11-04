@@ -120,7 +120,7 @@ fn state_of(state: &AppState, id: &str) -> RowState {
 /// A Toolpaths state with one tool and one 2D model, and no toolpath.
 fn fresh_state() -> AppState {
     let mut state = AppState::new();
-    let mut tool = ToolConfig::new_default(ToolId::from_raw(TOOL), ToolType::EndMill);
+    let mut tool = ToolConfig::test_default(ToolId::from_raw(TOOL), ToolType::EndMill);
     tool.diameter = 6.0;
     state.replace_session(
         ProjectSessionBuilder::new()

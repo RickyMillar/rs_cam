@@ -118,7 +118,7 @@ fn tc(name: &str, stock_source: StockSource, tool_id: usize, model_id: usize) ->
 /// matter and not only a display one.
 fn fixture() -> ProjectSession {
     let mut builder = ProjectSessionBuilder::new();
-    builder.add_tool(ToolConfig::new_default(
+    builder.add_tool(ToolConfig::test_default(
         ToolId::from_raw(0),
         ToolType::EndMill,
     ));

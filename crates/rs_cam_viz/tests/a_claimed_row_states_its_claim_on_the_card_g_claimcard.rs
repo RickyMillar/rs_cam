@@ -96,7 +96,7 @@ const TIED_ID: &str = "amana-tapered-hardwood-parallel-1000-2f-zrn-v8";
 const A4_LABEL: &str = "Wood, MDF, Sign-Foam (one printed row); hardwood is not printed apart";
 
 fn tapered_ball(tip_diameter: f64) -> ToolConfig {
-    let mut tool = ToolConfig::new_default(ToolId::from_raw(1), ToolType::TaperedBallNose);
+    let mut tool = ToolConfig::test_default(ToolId::from_raw(1), ToolType::TaperedBallNose);
     tool.name = "Claim card tapered ball".to_owned();
     tool.diameter = tip_diameter;
     tool.set_taper_half_angle(ToolFact::Stated(5.7));
@@ -111,7 +111,7 @@ fn tapered_ball(tip_diameter: f64) -> ToolConfig {
 const CAP_ANCHOR_ID: &str = "amana-ball-hardwood-scallop-6000-2f";
 
 fn ball_nose(diameter: f64) -> ToolConfig {
-    let mut tool = ToolConfig::new_default(ToolId::from_raw(1), ToolType::BallNose);
+    let mut tool = ToolConfig::test_default(ToolId::from_raw(1), ToolType::BallNose);
     tool.name = "Cap card ball nose".to_owned();
     tool.diameter = diameter;
     tool.shaft_diameter = diameter;
@@ -130,7 +130,7 @@ const VBIT_KEY_TEXT: &str =
     "keyed at the printed angle 60 deg (the chart prints no cutting diameter)";
 
 fn vbit_60deg(diameter: f64) -> ToolConfig {
-    let mut tool = ToolConfig::new_default(ToolId::from_raw(1), ToolType::VBit);
+    let mut tool = ToolConfig::test_default(ToolId::from_raw(1), ToolType::VBit);
     tool.name = "Claim card V-bit".to_owned();
     tool.diameter = diameter;
     tool.set_flute_count(ToolFact::Stated(2));

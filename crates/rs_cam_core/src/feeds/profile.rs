@@ -209,7 +209,7 @@ mod tests {
     use crate::material::Material;
 
     fn endmill_6mm() -> ToolConfig {
-        let mut tool = ToolConfig::new_default(ToolId::from_raw(0), ToolType::EndMill);
+        let mut tool = ToolConfig::test_default(ToolId::from_raw(0), ToolType::EndMill);
         tool.diameter = 6.35;
         tool
     }

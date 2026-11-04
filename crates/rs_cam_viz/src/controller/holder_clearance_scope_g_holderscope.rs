@@ -82,7 +82,7 @@ use super::holder_clearance_staleness_g_holderstale::{
 fn two_operation_job() -> AppController<ScriptedLane> {
     let mut controller = seeded_controller();
 
-    let mut second_tool = ToolConfig::new_default(ToolId::from_raw(2), ToolType::EndMill);
+    let mut second_tool = ToolConfig::test_default(ToolId::from_raw(2), ToolType::EndMill);
     second_tool.set_stickout(ToolFact::Stated(second_tool.stickout_planning_mm() + 20.0));
     let mut tools = controller.state.session().tools().to_vec();
     tools.push(second_tool);

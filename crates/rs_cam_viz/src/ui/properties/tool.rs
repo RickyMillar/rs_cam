@@ -342,6 +342,23 @@ pub(crate) fn draw_tool_fields(
                 )
                 .keep_existing()
                 .show(ui);
+                // D12: the flat tip is a required fact of a V-bit. Empty
+                // until the operator states it (0 for a sharp point); an
+                // estimate shows empty too, because it does not count.
+                let stated_tip = tool.v_tip_diameter_fact().known().copied();
+                let mut tip = stated_tip;
+                crate::ui::components::OptionalValueRow::new(
+                    "Tip \u{00D8}:",
+                    &mut tip,
+                    " mm",
+                    0.05,
+                    ToolDimension::VTipDiameter.ui_range(tool.diameter),
+                )
+                .clearable()
+                .show(ui);
+                if tip != stated_tip {
+                    tool.set_v_tip_diameter(tip.map_or(ToolFact::Unknown, ToolFact::Stated));
+                }
             }
             ToolType::TaperedBallNose => {
                 let mut taper_half_angle = tool.taper_half_angle_planning_deg();
@@ -389,13 +406,14 @@ pub(crate) fn draw_tool_fields(
     // K3 (feeds contract P6): a three-way choice, yes / no / not known. A
     // change writes `ToolFact::Stated`; "?" writes `Unknown`. "No" starts
     // from the stored measurement, else an empty one for the rows below.
+    // D12: only a stated or catalogue fact counts, so an estimate shows "?".
     #[derive(Clone, Copy, PartialEq, Eq)]
     enum Centre {
         Yes,
         No,
         Unknown,
     }
-    let stored = tool.centre_cutting_fact().planning().map(|(c, _)| *c);
+    let stored = tool.centre_cutting_fact().known().copied();
     let before = match stored {
         Some(CentreCutting::Yes) => Centre::Yes,
         Some(CentreCutting::No(_)) => Centre::No,
@@ -411,10 +429,13 @@ pub(crate) fn draw_tool_fields(
     if choice != before {
         tool.set_centre_cutting(match choice {
             Centre::Yes => ToolFact::Stated(CentreCutting::Yes),
-            Centre::No => ToolFact::Stated(CentreCutting::No(NonCentreCuttingGeometry {
-                centre_core_diameter_mm: 0.0,
-                blade_protrusion_mm: 0.0,
-            })),
+            Centre::No => ToolFact::Stated(CentreCutting::No(
+                tool.non_centre_cutting_geometry()
+                    .unwrap_or(NonCentreCuttingGeometry {
+                        centre_core_diameter_mm: 0.0,
+                        blade_protrusion_mm: 0.0,
+                    }),
+            )),
             Centre::Unknown => ToolFact::Unknown,
         });
     }

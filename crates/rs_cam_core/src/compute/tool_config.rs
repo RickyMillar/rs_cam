@@ -201,13 +201,15 @@ pub enum ToolParamKey {
     CutDirection,
     SizeUnits,
     CentreCutting,
+    /// D12: the flat tip of a V-bit (`v_tip_diameter`).
+    VTipDiameter,
 }
 
 impl ToolParamKey {
     pub const ALL: &[ToolParamKey] = &crate::all_variants!(ToolParamKey:
         Diameter, CuttingLength, HelixDeg, CornerRadiusMm, CornerRadius,
         IncludedAngle, TaperHalfAngle, ShaftDiameter, ShankDiameter, Stickout,
-        FluteCount, ToolMaterial, CutDirection, SizeUnits, CentreCutting,
+        FluteCount, ToolMaterial, CutDirection, SizeUnits, CentreCutting, VTipDiameter,
     );
 
     /// The snake_case token: the serde form and the [`ToolConfig`] field
@@ -230,6 +232,7 @@ impl ToolParamKey {
             Self::CutDirection => "cut_direction",
             Self::SizeUnits => "size_units",
             Self::CentreCutting => "centre_cutting",
+            Self::VTipDiameter => "v_tip_diameter",
         }
     }
 
@@ -260,7 +263,8 @@ impl ToolParamKey {
     /// `ToolFact::Stated` (an operator edit). `centre_cutting` takes
     /// `"yes"`, an object with `centre_core_diameter_mm` and
     /// `blade_protrusion_mm` (the tool does not cut at its centre), or `null`
-    /// (not known).
+    /// (not known). `v_tip_diameter` takes a number (mm) or `null` (not
+    /// known).
     ///
     /// The write checks only the JSON type of `value`. The caller runs
     /// [`ToolConfig::validate`] on the result (F029), so a value outside
@@ -351,6 +355,15 @@ impl ToolParamKey {
                     ToolFact::Stated(CentreCutting::No(geometry))
                 };
                 tool.set_centre_cutting(fact);
+                Ok(())
+            }
+            Self::VTipDiameter => {
+                let fact = if value.is_null() {
+                    ToolFact::Unknown
+                } else {
+                    stated()?
+                };
+                tool.set_v_tip_diameter(fact);
                 Ok(())
             }
         }
@@ -988,7 +1001,16 @@ impl ToolConfig {
             ToolType::EndMill => ToolDimension::CornerRadiusMm.check(self.corner_radius_mm, d),
             ToolType::BallNose => Ok(()),
             ToolType::BullNose => ToolDimension::CornerRadius.check(self.corner_radius, d),
-            ToolType::VBit => ToolDimension::IncludedAngle.check(self.included_angle, d),
+            ToolType::VBit => {
+                ToolDimension::IncludedAngle.check(self.included_angle, d)?;
+                // P7 A2 (F029): a tip that `planning()` gives is in its
+                // domain, 0 <= tip < diameter. An Unknown tip is a missing
+                // input (D12), not a domain fault.
+                match self.v_tip_diameter.planning() {
+                    Some((tip, _)) => ToolDimension::VTipDiameter.check(*tip, d),
+                    None => Ok(()),
+                }
+            }
             ToolType::TaperedBallNose => {
                 ToolDimension::TaperHalfAngle.check(self.taper_half_angle_planning_deg(), d)?;
                 ToolDimension::ShaftDiameter.check(self.shaft_diameter, d)
@@ -2178,13 +2200,29 @@ fn read_unit(chars: &[char], from: usize) -> (NameUnit, usize) {
 
 #[cfg(any(test, feature = "test-support"))]
 impl ToolConfig {
-    /// The test-tool builder: it starts from [`Self::new_default`] and a
+    /// The test tool (feeds contract P7, ruling D12): [`Self::new_default`]
+    /// with the required facts stated, so a test tool is an explicit test
+    /// case: centre cutting `Stated(Yes)`, and a V-bit's tip `Stated(0.0)`
+    /// (a sharp point, the cutter `new_default` plans). A production tool
+    /// keeps them `Unknown` until the operator states them.
+    #[must_use]
+    pub fn test_default(id: ToolId, tool_type: ToolType) -> Self {
+        let mut tool = Self::new_default(id, tool_type);
+        tool.set_centre_cutting(ToolFact::Stated(CentreCutting::Yes));
+        if tool_type == ToolType::VBit {
+            tool.set_v_tip_diameter(ToolFact::Stated(0.0));
+        }
+        tool
+    }
+
+    /// The test-tool builder: it starts from [`Self::test_default`] and a
     /// test states each fact in one call. Each fact setter writes
-    /// `ToolFact::Stated`; a fact with no setter call keeps its `new_default`
-    /// kind (`Estimated`, basis `new_default`).
+    /// `ToolFact::Stated`; a fact with no setter call keeps its
+    /// `test_default` kind (`Estimated`, basis `new_default`, for the
+    /// numeric facts; `Stated` for centre cutting and the V tip).
     pub fn builder(id: ToolId, tool_type: ToolType) -> ToolConfigBuilder {
         ToolConfigBuilder {
-            tool: Self::new_default(id, tool_type),
+            tool: Self::test_default(id, tool_type),
         }
     }
 
@@ -2301,12 +2339,11 @@ impl ToolConfigBuilder {
     }
 
     /// The non-centre-cutting geometry: `Some` states `CentreCutting::No`;
-    /// `None` leaves the fact `Unknown` (the motion of a centre-cutting
-    /// tool, as `None` gave before K3).
+    /// `None` states `CentreCutting::Yes` (a test tool states its facts,
+    /// ruling D12; `None` meant a centre-cutting tool before K3).
     pub fn non_centre_cutting(mut self, geometry: Option<NonCentreCuttingGeometry>) -> Self {
-        self.tool.centre_cutting = geometry.map_or(ToolFact::Unknown, |g| {
-            ToolFact::Stated(CentreCutting::No(g))
-        });
+        self.tool.centre_cutting =
+            ToolFact::Stated(geometry.map_or(CentreCutting::Yes, CentreCutting::No));
         self
     }
 

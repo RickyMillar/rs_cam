@@ -83,7 +83,7 @@ fn state_with(back: Option<FaceUp>) -> AppState {
         ],
         ..StockConfig::default()
     };
-    let mut drill = ToolConfig::new_default(ToolId::from_raw(3), ToolType::VBit);
+    let mut drill = ToolConfig::test_default(ToolId::from_raw(3), ToolType::VBit);
     drill.diameter = 6.0;
     let mut builder = ProjectSessionBuilder::new()
         .stock(stock)

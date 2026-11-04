@@ -110,7 +110,7 @@ const STEPOVER_MM: f64 = 4.0;
 /// (0.8 × 50 = 40 mm) nor the cutting-length clamp (50 mm) reaches the
 /// requested 36 mm depth. All fixture choices, not model constants.
 fn tool() -> ToolConfig {
-    let mut t = ToolConfig::new_default(ToolId::from_raw(1), ToolType::EndMill);
+    let mut t = ToolConfig::test_default(ToolId::from_raw(1), ToolType::EndMill);
     t.diameter = DIAMETER_MM;
     t.set_flute_count(ToolFact::Stated(FLUTES));
     t.set_cutting_length(ToolFact::Stated(50.0));

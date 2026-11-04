@@ -58,7 +58,7 @@ use rs_cam_viz::ui::{properties, tokens};
 const PANEL_WIDTH: f32 = 280.0;
 
 fn tool_of(kind: ToolType, diameter: f64) -> ToolConfig {
-    let mut tool = ToolConfig::new_default(ToolId::from_raw(1), kind);
+    let mut tool = ToolConfig::test_default(ToolId::from_raw(1), kind);
     tool.name = "G10 card fixture".to_owned();
     tool.diameter = diameter;
     tool.set_flute_count(ToolFact::Stated(2));

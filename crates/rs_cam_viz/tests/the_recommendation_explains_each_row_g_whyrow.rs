@@ -88,7 +88,7 @@ fn ctx() -> egui::Context {
 }
 
 fn fixture() -> AppState {
-    let mut tool = ToolConfig::new_default(ToolId::from_raw(1), ToolType::EndMill);
+    let mut tool = ToolConfig::test_default(ToolId::from_raw(1), ToolType::EndMill);
     tool.diameter = 6.0;
     tool.set_flute_count(ToolFact::Stated(2));
 
@@ -133,7 +133,7 @@ fn fixture() -> AppState {
 /// 2026-09-24 rows (R5 moved its cell; ruling R4 WP2a changed the line), so
 /// the floor arm has its own cell, the one the UP4 sentry already proves.
 fn floor_fixture() -> AppState {
-    let mut tool = ToolConfig::new_default(ToolId::from_raw(1), ToolType::EndMill);
+    let mut tool = ToolConfig::test_default(ToolId::from_raw(1), ToolType::EndMill);
     tool.diameter = 3.175;
     tool.set_flute_count(ToolFact::Stated(2));
     tool.set_cutting_length(ToolFact::Stated(12.0));

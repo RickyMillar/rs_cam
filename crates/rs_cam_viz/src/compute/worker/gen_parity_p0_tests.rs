@@ -144,7 +144,7 @@ fn fixture(feed_optimization: bool) -> Fixture {
     let mut controller = AppController::with_backend(RecordingBackend {
         submitted: Arc::clone(&submitted),
     });
-    let tool = ToolConfig::new_default(ToolId::from_raw(1), ToolType::EndMill);
+    let tool = ToolConfig::test_default(ToolId::from_raw(1), ToolType::EndMill);
     // S11: a drawing has no thickness; the fixture states the 25 mm before
     // S11.
     let mut builder = ProjectSessionBuilder::new()

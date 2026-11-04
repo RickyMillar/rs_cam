@@ -161,7 +161,7 @@ fn stepped_block() -> LoadedModel {
 
 /// A 60° V-bit, 12.7 mm (the shipped V-Carve sentry tool).
 fn vbit() -> ToolConfig {
-    let mut t = ToolConfig::new_default(ToolId::from_raw(0), ToolType::VBit);
+    let mut t = ToolConfig::test_default(ToolId::from_raw(0), ToolType::VBit);
     t.diameter = 12.7;
     t.set_cutting_length(ToolFact::Stated(11.0));
     t.included_angle = 60.0;

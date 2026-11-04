@@ -51,7 +51,7 @@ const PANEL_WIDTH: f32 = 320.0;
 const R1_NAME: &str = "R1.0mm x 6mm x 20mm 2F Tapered Ball";
 
 fn tapered_ball(diameter: f64) -> ToolConfig {
-    let mut tool = ToolConfig::new_default(ToolId::from_raw(1), ToolType::TaperedBallNose);
+    let mut tool = ToolConfig::test_default(ToolId::from_raw(1), ToolType::TaperedBallNose);
     tool.name = R1_NAME.to_owned();
     tool.diameter = diameter;
     tool.set_taper_half_angle(ToolFact::Stated(5.7));
@@ -270,7 +270,7 @@ fn the_feeds_card_header_names_the_tip_g_toolsize() {
 // to keep that convention") ─────────────────────────────────────────────────
 
 fn end_mill(name: &str, diameter: f64) -> ToolConfig {
-    let mut tool = ToolConfig::new_default(ToolId::from_raw(1), ToolType::EndMill);
+    let mut tool = ToolConfig::test_default(ToolId::from_raw(1), ToolType::EndMill);
     tool.name = name.to_owned();
     tool.diameter = diameter;
     tool.set_shank_diameter(ToolFact::Stated(6.35));

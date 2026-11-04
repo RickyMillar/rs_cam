@@ -42,7 +42,7 @@ fn controller_built_stock_bbox_drives_axial_engagement_within_commanded_doc_f024
     };
     let session = ProjectSessionBuilder::new().stock(stock).build();
 
-    let mut tool = ToolConfig::new_default(ToolId::from_raw(1), ToolType::EndMill);
+    let mut tool = ToolConfig::test_default(ToolId::from_raw(1), ToolType::EndMill);
     tool.diameter = 6.0;
     tool.set_cutting_length(ToolFact::Stated(25.0));
     tool.set_shank_diameter(ToolFact::Stated(6.35));
@@ -174,7 +174,7 @@ fn as001_pocket_heights_resolve_in_world_frame_for_identity_setup_f028() {
     let mut controller = AppController::with_backend(CapturingBackend::default());
 
     // 6 mm endmill matching the AS001 fixture.
-    let mut tool = ToolConfig::new_default(ToolId::from_raw(1), ToolType::EndMill);
+    let mut tool = ToolConfig::test_default(ToolId::from_raw(1), ToolType::EndMill);
     tool.diameter = 6.0;
     tool.set_cutting_length(ToolFact::Stated(25.0));
     tool.set_shank_diameter(ToolFact::Stated(6.35));

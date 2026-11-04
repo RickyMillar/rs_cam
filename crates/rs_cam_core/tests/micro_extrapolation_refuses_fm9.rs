@@ -70,7 +70,7 @@ use rs_cam_core::machine::MachineProfile;
 use rs_cam_core::material::{Material, PlywoodGrade, WoodSpecies};
 
 fn tool_of(kind: ToolType, diameter: f64) -> ToolConfig {
-    let mut t = ToolConfig::new_default(ToolId::from_raw(1), kind);
+    let mut t = ToolConfig::test_default(ToolId::from_raw(1), kind);
     t.diameter = diameter;
     t.set_flute_count(ToolFact::Stated(2));
     t.set_cutting_length(ToolFact::Stated((diameter * 3.0).max(6.0)));

@@ -86,7 +86,7 @@ const TOL: f64 = 1e-12;
 
 /// A tapered ball with the tip `tip_mm` (the lookup key, ruling A1).
 fn tapered(tip_mm: f64) -> ToolConfig {
-    let mut t = ToolConfig::new_default(ToolId::from_raw(1), ToolType::TaperedBallNose);
+    let mut t = ToolConfig::test_default(ToolId::from_raw(1), ToolType::TaperedBallNose);
     t.diameter = tip_mm;
     t.set_flute_count(ToolFact::Stated(2));
     t.set_cutting_length(ToolFact::Stated((tip_mm * 3.0).max(12.0)));
@@ -100,7 +100,7 @@ fn tapered(tip_mm: f64) -> ToolConfig {
 /// A bull nose of diameter `d` with a corner radius of `d / 4` (the Amana
 /// 46460 and 46462 proportion; derived, see the row notes).
 fn bull(d: f64) -> ToolConfig {
-    let mut t = ToolConfig::new_default(ToolId::from_raw(1), ToolType::BullNose);
+    let mut t = ToolConfig::test_default(ToolId::from_raw(1), ToolType::BullNose);
     t.diameter = d;
     t.set_flute_count(ToolFact::Stated(2));
     t.corner_radius = d / 4.0;
@@ -696,7 +696,7 @@ fn a_bull_finish_reads_the_home_row_through_two_claims_g3() {
 /// DropCutter in hardwood keeps the derived row printed in its family.
 #[test]
 fn the_ball_finish_row_is_not_transferred_b3_pin_g3() {
-    let mut tool = ToolConfig::new_default(ToolId::from_raw(1), ToolType::BallNose);
+    let mut tool = ToolConfig::test_default(ToolId::from_raw(1), ToolType::BallNose);
     tool.diameter = 3.175;
     tool.set_flute_count(ToolFact::Stated(2));
     tool.set_cutting_length(ToolFact::Stated(12.0));
@@ -754,7 +754,7 @@ fn a_plywood_bull_finish_refuses_and_a_vbit_curve_routes_to_trace_g3() {
         }
     }
 
-    let mut vbit = ToolConfig::new_default(ToolId::from_raw(1), ToolType::VBit);
+    let mut vbit = ToolConfig::test_default(ToolId::from_raw(1), ToolType::VBit);
     vbit.diameter = 6.35;
     vbit.set_flute_count(ToolFact::Stated(2));
     vbit.included_angle = 60.0;

@@ -136,7 +136,7 @@ fn pocket(depth: f64) -> OperationConfig {
 /// The builder is returned unbuilt, so the caller adds its toolpath through
 /// the same door.
 fn session() -> ProjectSessionBuilder {
-    let mut tool = ToolConfig::new_default(ToolId::from_raw(TOOL), ToolType::EndMill);
+    let mut tool = ToolConfig::test_default(ToolId::from_raw(TOOL), ToolType::EndMill);
     tool.diameter = 6.0;
     let stock = StockConfig {
         z: Some(STOCK_THICKNESS_MM),

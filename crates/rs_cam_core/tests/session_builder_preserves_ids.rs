@@ -144,11 +144,11 @@ fn stock() -> StockConfig {
 fn built() -> rs_cam_core::session::ProjectSession {
     ProjectSessionBuilder::new()
         .stock(stock())
-        .tool(ToolConfig::new_default(
+        .tool(ToolConfig::test_default(
             ToolId::from_raw(TOOL_A),
             ToolType::EndMill,
         ))
-        .tool(ToolConfig::new_default(
+        .tool(ToolConfig::test_default(
             ToolId::from_raw(TOOL_B),
             ToolType::BallNose,
         ))
@@ -267,7 +267,7 @@ fn builder_raises_the_id_counters_above_every_supplied_id() {
     // INDEX, `add_model` reports the new model ID.
     let tool_index = session
         .apply(Command::AddTool(AddToolArgs {
-            tool: Box::new(ToolConfig::new_default(
+            tool: Box::new(ToolConfig::test_default(
                 ToolId::from_raw(0),
                 ToolType::EndMill,
             )),

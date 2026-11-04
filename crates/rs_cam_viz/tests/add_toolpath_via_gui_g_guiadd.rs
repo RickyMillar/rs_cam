@@ -176,11 +176,11 @@ fn flat_first_seed() -> AppController<SilentBackend> {
     let mut controller = AppController::with_backend(SilentBackend);
     controller.state.replace_session(
         ProjectSessionBuilder::new()
-            .tool(ToolConfig::new_default(
+            .tool(ToolConfig::test_default(
                 ToolId::from_raw(0),
                 ToolType::EndMill,
             ))
-            .tool(ToolConfig::new_default(
+            .tool(ToolConfig::test_default(
                 ToolId::from_raw(1),
                 ToolType::BallNose,
             ))
@@ -194,7 +194,7 @@ fn flat_only_seed() -> AppController<SilentBackend> {
     let mut controller = AppController::with_backend(SilentBackend);
     controller.state.replace_session(
         ProjectSessionBuilder::new()
-            .tool(ToolConfig::new_default(
+            .tool(ToolConfig::test_default(
                 ToolId::from_raw(0),
                 ToolType::EndMill,
             ))

@@ -658,7 +658,7 @@ fn an_stl_face_pocket_at_its_own_floor_is_clean_ux7b() {
 /// generates (the reduced probe shrinks its corner with it).
 #[test]
 fn a_full_radius_bull_nose_still_generates_ux7b() {
-    let mut tool = ToolConfig::new_default(
+    let mut tool = ToolConfig::test_default(
         rs_cam_core::compute::tool_config::ToolId::from_raw(0),
         rs_cam_core::compute::tool_config::ToolType::BullNose,
     );

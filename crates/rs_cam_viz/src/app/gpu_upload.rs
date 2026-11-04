@@ -854,7 +854,7 @@ mod tests {
                 auto_from_model: false,
                 ..StockConfig::default()
             };
-            let tool = ToolConfig::new_default(ToolId::from_raw(1), ToolType::EndMill);
+            let tool = ToolConfig::test_default(ToolId::from_raw(1), ToolType::EndMill);
             let mut builder = ProjectSessionBuilder::new().stock(stock).tool(tool);
             let model_id = builder.add_model(LoadedModel {
                 id: rs_cam_core::ids::ModelId::from_raw(0),

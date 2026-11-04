@@ -92,7 +92,7 @@ impl ComputeBackend for SilentBackend {
 /// The default stickout is 45 mm, L/D 7.5, so the long-tool share is 0.75
 /// and the dial's load target is 0.85 × 0.75 = 64 % of the base engagement.
 fn controller() -> AppController<SilentBackend> {
-    let mut tool = ToolConfig::new_default(ToolId::from_raw(1), ToolType::EndMill);
+    let mut tool = ToolConfig::test_default(ToolId::from_raw(1), ToolType::EndMill);
     tool.diameter = 6.0;
     tool.set_flute_count(ToolFact::Stated(2));
 

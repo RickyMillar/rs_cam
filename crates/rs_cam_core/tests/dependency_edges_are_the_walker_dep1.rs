@@ -251,11 +251,11 @@ fn id_of(session: &ProjectSession, index: usize) -> ToolpathId {
 /// Setup 2 is the non-vacuity of the setup scope.
 fn fixture() -> ProjectSession {
     let mut builder = ProjectSessionBuilder::new();
-    builder.add_tool(ToolConfig::new_default(
+    builder.add_tool(ToolConfig::test_default(
         ToolId::from_raw(0),
         ToolType::EndMill,
     ));
-    builder.add_tool(ToolConfig::new_default(
+    builder.add_tool(ToolConfig::test_default(
         ToolId::from_raw(1),
         ToolType::BallNose,
     ));
@@ -692,7 +692,7 @@ fn the_arms_drop_the_named_rows() {
 /// correctly from Setup 1's simulated stock.
 fn cross_setup_fixture() -> ProjectSession {
     let mut builder = ProjectSessionBuilder::new();
-    builder.add_tool(ToolConfig::new_default(
+    builder.add_tool(ToolConfig::test_default(
         ToolId::from_raw(0),
         ToolType::EndMill,
     ));

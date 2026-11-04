@@ -28,7 +28,7 @@ use rs_cam_core::tool::{
 };
 
 fn vbit(id: usize) -> ToolConfig {
-    let mut tool = ToolConfig::new_default(ToolId::from_raw(id), ToolType::VBit);
+    let mut tool = ToolConfig::test_default(ToolId::from_raw(id), ToolType::VBit);
     tool.name = "60 V".to_owned();
     tool.included_angle = 60.0;
     tool
@@ -91,7 +91,7 @@ fn set_tool_param_refuses_and_keeps_the_stored_tool() {
 #[test]
 fn invalid_non_centre_cutting_param_rolls_back() {
     let mut session = ProjectSessionBuilder::new()
-        .tool(ToolConfig::new_default(
+        .tool(ToolConfig::test_default(
             ToolId::from_raw(0),
             ToolType::EndMill,
         ))
@@ -201,6 +201,92 @@ fn the_tool_library_refuses_on_load_and_on_write() {
         Err(ToolLibraryError::InvalidTool { source, .. }) => {
             let ToolGeometryError { dimension, .. } = source;
             assert_eq!(dimension, ToolDimension::IncludedAngle);
+        }
+        other => panic!("expected InvalidTool, got {other:?}"),
+    }
+    let _ = std::fs::remove_dir_all(&dir);
+}
+
+/// P7 A2: the flat tip of a V-bit is in `0 <= tip < diameter` (at the
+/// diameter the cone has no height). A tip outside it is refused at every
+/// door, as the angle is: the cutter, `set_tool_param`, `AddTool`,
+/// `ReplaceTool`, the project loader and the tool library.
+#[test]
+fn a_v_tip_outside_its_domain_is_refused_at_every_door() {
+    use rs_cam_core::compute::tool_config::ToolFact;
+    let with_tip = |id: usize, tip: f64| {
+        let mut tool = vbit(id);
+        tool.set_v_tip_diameter(ToolFact::Stated(tip));
+        tool
+    };
+    let diameter = vbit(0).diameter;
+    let bad = with_tip(1, diameter);
+    let assert_refused_tip =
+        |result: Result<rs_cam_core::session::Effects, SessionError>| match result {
+            Err(SessionError::ToolOutOfDomain { error, .. }) => {
+                assert_eq!(error.dimension, ToolDimension::VTipDiameter);
+            }
+            other => panic!("expected the V tip refusal, got {other:?}"),
+        };
+
+    // The domain ends: 0 and a tip below the diameter are in; the diameter
+    // and a negative tip are out.
+    assert!(build_cutter(&with_tip(0, 0.0)).is_ok());
+    assert!(build_cutter(&with_tip(0, diameter / 2.0)).is_ok());
+    assert!(build_cutter(&bad).is_err());
+    assert!(build_cutter(&with_tip(0, -0.1)).is_err());
+
+    let mut session = session_with_vbit();
+    assert_refused_tip(session.apply(Command::SetToolParam(SetToolParamArgs {
+        index: 0,
+        param: "v_tip_diameter".to_owned(),
+        value: serde_json::json!(diameter),
+    })));
+    assert_eq!(
+        session.tools()[0].v_tip_diameter_fact(),
+        vbit(0).v_tip_diameter_fact(),
+        "nothing written"
+    );
+    assert_refused_tip(session.apply(Command::AddTool(AddToolArgs {
+        tool: Box::new(bad.clone()),
+    })));
+    assert_refused_tip(session.apply(Command::ReplaceTool(ReplaceToolArgs {
+        tool_id: rs_cam_core::ids::ToolId::from_raw(0),
+        config: Box::new(with_tip(0, diameter)),
+    })));
+    assert_eq!(session.tools().len(), 1, "nothing added");
+
+    let dir = std::env::temp_dir().join("rs_cam_f029_v_tip");
+    let _ = std::fs::remove_dir_all(&dir);
+    std::fs::create_dir_all(&dir).unwrap();
+    let path = dir.join("bad_tip.toml");
+    ProjectSessionBuilder::new()
+        .tool(bad.clone())
+        .build()
+        .save(&path)
+        .unwrap();
+    match ProjectSession::load(&path) {
+        Err(SessionError::ToolOutOfDomain { error, .. }) => {
+            assert_eq!(error.dimension, ToolDimension::VTipDiameter);
+        }
+        Err(other) => panic!("expected the V tip refusal, got {other}"),
+        Ok(_) => panic!("the loader accepted a V tip as wide as the bit"),
+    }
+    assert!(matches!(
+        tool_library::append_to(&dir, "vbits", bad.clone()),
+        Err(ToolLibraryError::InvalidTool { .. })
+    ));
+    tool_library::save_to(
+        &dir,
+        "vbits",
+        &ToolCatalog {
+            tools: vec![vbit(0), bad],
+        },
+    )
+    .unwrap();
+    match tool_library::load_from(&dir, "vbits") {
+        Err(ToolLibraryError::InvalidTool { source, .. }) => {
+            assert_eq!(source.dimension, ToolDimension::VTipDiameter);
         }
         other => panic!("expected InvalidTool, got {other:?}"),
     }

@@ -140,7 +140,7 @@ const VBIT_HARDWOOD: &str = "No published figure backs the formula for a V-bit o
 
 /// A 60 deg 2-flute pointed V-bit of `diameter` mm.
 fn vbit(diameter: f64) -> ToolConfig {
-    let mut t = ToolConfig::new_default(ToolId::from_raw(1), ToolType::VBit);
+    let mut t = ToolConfig::test_default(ToolId::from_raw(1), ToolType::VBit);
     t.diameter = diameter;
     t.set_flute_count(ToolFact::Stated(2));
     t.included_angle = 60.0;

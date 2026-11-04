@@ -1311,7 +1311,7 @@ mod tests {
     }
 
     fn tool(kind: ToolType, diameter: f64) -> ToolConfig {
-        let mut t = ToolConfig::new_default(ToolId::from_raw(1), kind);
+        let mut t = ToolConfig::test_default(ToolId::from_raw(1), kind);
         t.diameter = diameter;
         t.set_cutting_length(ToolFact::Stated((diameter * 4.0).max(12.0)));
         if matches!(kind, ToolType::VBit) {

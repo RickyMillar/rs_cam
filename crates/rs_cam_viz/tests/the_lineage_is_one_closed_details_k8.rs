@@ -56,7 +56,7 @@ fn generated_pocket_lineage() -> Lineage {
     };
     let mut builder = ProjectSessionBuilder::new()
         .stock(stock)
-        .tool(ToolConfig::new_default(
+        .tool(ToolConfig::test_default(
             ToolId::from_raw(1),
             ToolType::EndMill,
         ))

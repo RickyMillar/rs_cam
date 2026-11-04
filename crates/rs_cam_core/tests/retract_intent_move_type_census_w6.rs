@@ -303,7 +303,7 @@ fn add_tool(
     diameter: f64,
     name: &str,
 ) -> usize {
-    let mut tool = ToolConfig::new_default(ToolId::from_raw(0), kind);
+    let mut tool = ToolConfig::test_default(ToolId::from_raw(0), kind);
     tool.diameter = diameter;
     tool.set_cutting_length(ToolFact::Stated(25.0));
     tool.set_shank_diameter(ToolFact::Stated(6.35));

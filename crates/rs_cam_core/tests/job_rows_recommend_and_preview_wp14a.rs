@@ -129,7 +129,7 @@ fn advisor_session() -> ProjectSession {
 
 /// A ball-nose cutter record at the given diameter.
 fn ball_tool(diameter_mm: f64, name: &str) -> ToolConfig {
-    let mut tool = ToolConfig::new_default(ToolId::from_raw(0), ToolType::BallNose);
+    let mut tool = ToolConfig::test_default(ToolId::from_raw(0), ToolType::BallNose);
     tool.diameter = diameter_mm;
     tool.set_stickout(ToolFact::Stated(25.0));
     tool.set_flute_count(ToolFact::Stated(2));

@@ -135,7 +135,7 @@ fn controller() -> AppController<SilentBackend> {
             auto_from_model: false,
             ..StockConfig::default()
         })
-        .tool(ToolConfig::new_default(
+        .tool(ToolConfig::test_default(
             ToolId::from_raw(1),
             ToolType::EndMill,
         ));

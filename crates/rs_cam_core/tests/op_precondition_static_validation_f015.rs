@@ -141,7 +141,7 @@ fn has_id(diags: &[Diagnostic], id: &str) -> bool {
 fn project_curve_in_single_model_project_surfaces_blocking_diagnostic() {
     // Project has only a surface STL — no curve polygons anywhere.
     let mut builder = ProjectSessionBuilder::new();
-    let mut tool = ToolConfig::new_default(ToolId::from_raw(0), ToolType::EndMill);
+    let mut tool = ToolConfig::test_default(ToolId::from_raw(0), ToolType::EndMill);
     tool.diameter = 3.0;
     builder.add_tool(tool);
     let mid = builder.add_model(mesh_model(0));
@@ -177,7 +177,7 @@ fn project_curve_in_single_model_project_surfaces_blocking_diagnostic() {
 fn project_curve_without_any_surface_mesh_surfaces_blocking_diagnostic() {
     // Project has only a polygon model — no STL anywhere.
     let mut builder = ProjectSessionBuilder::new();
-    let mut tool = ToolConfig::new_default(ToolId::from_raw(0), ToolType::EndMill);
+    let mut tool = ToolConfig::test_default(ToolId::from_raw(0), ToolType::EndMill);
     tool.diameter = 3.0;
     builder.add_tool(tool);
     let mid = builder.add_model(polygon_model(0));
@@ -207,7 +207,7 @@ fn project_curve_without_any_surface_mesh_surfaces_blocking_diagnostic() {
 #[test]
 fn project_curve_with_curve_and_surface_models_is_silent() {
     let mut builder = ProjectSessionBuilder::new();
-    let mut tool = ToolConfig::new_default(ToolId::from_raw(0), ToolType::EndMill);
+    let mut tool = ToolConfig::test_default(ToolId::from_raw(0), ToolType::EndMill);
     tool.diameter = 3.0;
     builder.add_tool(tool);
     let curve_id = builder.add_model(polygon_model(0));
@@ -246,7 +246,7 @@ fn drill_op_against_mesh_only_model_surfaces_blocking_diagnostic() {
     // generate time with "No hole positions found"; the precondition
     // adapter must surface that before that point.
     let mut builder = ProjectSessionBuilder::new();
-    let mut tool = ToolConfig::new_default(ToolId::from_raw(0), ToolType::EndMill);
+    let mut tool = ToolConfig::test_default(ToolId::from_raw(0), ToolType::EndMill);
     tool.diameter = 3.0;
     builder.add_tool(tool);
     let mid = builder.add_model(mesh_model(0));
@@ -280,7 +280,7 @@ fn drill_op_against_mesh_only_model_surfaces_blocking_diagnostic() {
 #[test]
 fn drill_op_against_target_bearing_model_is_silent() {
     let mut builder = ProjectSessionBuilder::new();
-    let mut tool = ToolConfig::new_default(ToolId::from_raw(0), ToolType::EndMill);
+    let mut tool = ToolConfig::test_default(ToolId::from_raw(0), ToolType::EndMill);
     tool.diameter = 3.0;
     builder.add_tool(tool);
     let mid = builder.add_model(target_model(0));
@@ -312,7 +312,7 @@ fn drill_op_against_target_bearing_model_is_silent() {
 #[test]
 fn drill_op_against_polygon_only_model_fires_no_targets() {
     let mut builder = ProjectSessionBuilder::new();
-    let mut tool = ToolConfig::new_default(ToolId::from_raw(0), ToolType::EndMill);
+    let mut tool = ToolConfig::test_default(ToolId::from_raw(0), ToolType::EndMill);
     tool.diameter = 3.0;
     builder.add_tool(tool);
     let mid = builder.add_model(polygon_model(0));

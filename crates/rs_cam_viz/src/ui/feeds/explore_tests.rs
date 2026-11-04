@@ -52,7 +52,7 @@ pub(crate) fn record(frame: egui::Rect, labels: &[PlacedLabel], font_size: f32) 
 /// (the corridor sentry's fixture). Ø6 at 45 mm puts the deflection
 /// ceiling off the chart; Ø2 at 120 mm puts it on the chart.
 fn fixture(diameter: f64, stickout: f64) -> AppState {
-    let mut tool = ToolConfig::new_default(ToolId::from_raw(1), ToolType::EndMill);
+    let mut tool = ToolConfig::test_default(ToolId::from_raw(1), ToolType::EndMill);
     tool.diameter = diameter;
     tool.set_stickout(ToolFact::Stated(stickout));
     tool.set_flute_count(ToolFact::Stated(2));

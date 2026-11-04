@@ -157,7 +157,7 @@ fn toolpath(name: &str, op_type: OperationType, stock_source: StockSource) -> To
 /// `invalidate_result_chain` must reach.
 fn build_controller() -> AppController<SilentBackend> {
     let mut controller = AppController::with_backend(SilentBackend);
-    let tool = ToolConfig::new_default(ToolId::from_raw(1), ToolType::EndMill);
+    let tool = ToolConfig::test_default(ToolId::from_raw(1), ToolType::EndMill);
     let mut builder = ProjectSessionBuilder::new().tool(tool);
     let _ = builder.add_model(LoadedModel {
         id: rs_cam_core::ids::ModelId::from_raw(0),

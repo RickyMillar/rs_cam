@@ -62,7 +62,7 @@ const HALF: f64 = 30.0;
 const STOCK_TOP_Z: f64 = 12.0;
 
 fn bulk_bit(non_centre_cutting: bool) -> ToolConfig {
-    let mut tool = ToolConfig::new_default(ToolId::from_raw(0), ToolType::EndMill);
+    let mut tool = ToolConfig::test_default(ToolId::from_raw(0), ToolType::EndMill);
     tool.name = "18 mm 2F".to_owned();
     tool.diameter = 18.0;
     tool.set_cutting_length(ToolFact::Stated(30.0));

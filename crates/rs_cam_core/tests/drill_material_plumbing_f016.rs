@@ -60,7 +60,7 @@ fn build_drill_session(material: Material) -> ProjectSession {
     };
     builder = builder.stock(stock);
 
-    let mut tool = ToolConfig::new_default(ToolId::from_raw(0), ToolType::EndMill);
+    let mut tool = ToolConfig::test_default(ToolId::from_raw(0), ToolType::EndMill);
     tool.diameter = 4.0;
     let tool_idx = builder.add_tool(tool);
     let tool_id = builder.tools()[tool_idx].id.raw();

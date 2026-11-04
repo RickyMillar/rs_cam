@@ -217,7 +217,7 @@ fn sample_project_into<B: ComputeBackend>(controller: &mut AppController<B>) {
     // on an end mill with the core registry's tool refusal.
     // The name keeps the "Ball " prefix free for the planner ladder that
     // `planner_controller` adds and `tick_ball_tools` ticks.
-    let mut tool = ToolConfig::new_default(ToolId::from_raw(1), ToolType::BallNose);
+    let mut tool = ToolConfig::test_default(ToolId::from_raw(1), ToolType::BallNose);
     tool.name = "Sample tool".to_owned();
     // Every caller hands in a controller straight from `with_backend`, so the
     // builder replaces an empty session.
@@ -1052,7 +1052,7 @@ fn planner_controller() -> AppController<ScriptedBackend> {
     let mut controller = sample_controller();
     let mut tools = controller.state.session().tools().to_vec();
     for (raw_id, diameter) in [(2usize, 4.0f64), (3, 2.0)] {
-        let mut tool = ToolConfig::new_default(ToolId::from_raw(raw_id), ToolType::BallNose);
+        let mut tool = ToolConfig::test_default(ToolId::from_raw(raw_id), ToolType::BallNose);
         tool.name = format!("Ball {diameter}");
         tool.diameter = diameter;
         tools.push(tool);

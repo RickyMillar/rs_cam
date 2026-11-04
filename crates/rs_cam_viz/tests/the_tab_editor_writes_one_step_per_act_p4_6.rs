@@ -150,7 +150,7 @@ fn controller(
         auto_from_model: false,
         ..StockConfig::default()
     };
-    let mut tool = ToolConfig::new_default(ToolId::from_raw(1), ToolType::EndMill);
+    let mut tool = ToolConfig::test_default(ToolId::from_raw(1), ToolType::EndMill);
     tool.diameter = 6.0;
     let mut builder = ProjectSessionBuilder::new().stock(stock).tool(tool);
     let model_id = builder.add_model(LoadedModel {

@@ -118,8 +118,11 @@ fn controller() -> AppController<SilentBackend> {
         ..model(DRAWING, "drawing")
     };
     let session = ProjectSessionBuilder::new()
-        .tool(ToolConfig::new_default(ToolId::from_raw(0), ToolType::VBit))
-        .tool(ToolConfig::new_default(
+        .tool(ToolConfig::test_default(
+            ToolId::from_raw(0),
+            ToolType::VBit,
+        ))
+        .tool(ToolConfig::test_default(
             ToolId::from_raw(1),
             ToolType::EndMill,
         ))

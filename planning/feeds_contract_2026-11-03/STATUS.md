@@ -74,7 +74,7 @@ Prompt for the new session (paste after `/clear`):
 | 5c Plot review fixes | `phases/P5c.md` | DONE 2026-11-04 (lines 4+4 labels -> 1-2 lines, 0 labels on rivmap100 3D Rough; frame = hard stops; candidate ring only on drag, proposal diamond only off Now; no DANGER; feed axis ticks) | see `git log` | Next: P5d |
 | 5d Plot review 2 | `phases/P5d.md` | DONE 2026-11-04 (every limit in view draws and is named; range holds every flat depth limit; one mark rule on both charts: white = setpoint, grey ghost = stored during a draft, quiet ACCENT = recommendation; names Vendor DOC k×D / Rigidity DOC / Slot DOC / Cut length; D tick paints, an off-step D names itself alone; ic1 3D Rough Passes cap 34 -> 35, one more depth tick row; operator approved the live screenshot) | see `git log` | |
 | 6 K3 `ToolFact` | `phases/P6.md` | DONE 2026-11-04 (A: type, readers, builder; B: private fields, setters; C: `ToolFact` storage, TOML forms, Q9 refusal at all three loaders, doors, 136 files migrated; no number and no G-code byte moved; F201 149 -> 154) | see `git log` | |
-| 7 K5 feasibility rules | `phases/P7.md` | IN PROGRESS: A DONE (rule table, stage, reach and V-tip rows), B DONE 2026-11-04 (the simulation measures wood above the flute; it supersedes the stock-box row; cost below noise). Next: A2 (D12 required facts; the operator stated the tool facts, two 25 mm protrusions missing), C (3D Rough clamp) | see `git log` | A2, then C |
+| 7 K5 feasibility rules | `phases/P7.md` | IN PROGRESS: A, B, A2 DONE 2026-11-04 (A2: D12 required facts stop an op; V-tip door and domain; the operator's facts in 141 repo files). Next: C (3D Rough clamp) | see `git log` | C |
 | 8 Q1 / Q6 / Q8 | `phases/P8.md` | NOT STARTED (Q1 needs P9 changes 1-2 first) | | |
 | 9 K7 one engagement | `phases/P9.md` | NOT STARTED (heavy-tests: ask first) | | |
 | 10 Tool-derived geometry defaults (D8) | `phases/P10.md` | NOT STARTED (card drafted 2026-11-03; needs P5; lead answers its open points first) | | |
@@ -156,6 +156,23 @@ Prompt for the new session (paste after `/clear`):
   `rs_cam_core` `_litmatrix_rubbing_floor_clamp` is red at c0db8dcb6 (Ipe 6 mm
   Pocket: the winner is freud-solid-carbide-quarter-hardwood, the test expects
   amana-compression-wood-pocket-6350-2f; checked in a worktree by p5-impl).
+- Known red in the non-heavy core integration run (`test -p rs_cam_core --tests`), measured by
+  the lead 2026-11-04 at P7 A2, none caused by P6 or P7 (10 checked at 25e30c6cd in a worktree:
+  same failures, same numbers): 19 targets stop on S11 "feeds not set" in their own fixtures
+  (`adaptive3d_lift_bridge_b1`, `axial_engagement_vs_dpp_detector_f2`, `derived_stepover_pr6a`,
+  `drill_fed_descents_motion`, `drill_material_plumbing_f016`, `drill_runtime_survives_retime_n2`,
+  `identity_setup_emission_frame_audit`, `lateral_setup_end_to_end`,
+  `modulated_feeds_read_their_own_prefix_b5`, `pencil_tip_float_channel_d1`,
+  `pindrill_emission_frame_g_pindrill`, `retime_respects_no_kinematics_n7`,
+  `safe_z_emission_frame_g_safez_local`, `simulation_issue_channel_m1`, `tier_arcfit_burial_f4`,
+  `unified_finish_dropped_band_finding_d1`, `unified_finish_tapered_end_to_end_m21`); others:
+  `a_lead_curls_away_from_the_part_p6_0c`, `a_model_bottom_floor_reads_the_model_d1` (needs
+  `--features step`), `a_rapid_leaves_cut_depth_straight_up_g_adaptrapidlift`,
+  `a_rough_cuts_no_deeper_than_its_leave_g_roughgouge`, `a_signature_serialises_every_op_f065`,
+  `an_op_change_keeps_its_selection_p2_3`, `layered_framework_owns_the_ladder_w3`,
+  `perf_golden_sim_metrics` (Profile air cut 1.908 s vs golden 1.929 s), `setters_have_rows_wp15a`
+  (`bind_tool_impl`), `vendor_lut_sub_1mm`; plus the listed W4 check6, G-OPGOLDEN 46 rows,
+  `_litmatrix_rubbing_floor_clamp`, `a_clearing_cut_holds_the_pass_load_g_adaptpassload`.
 - G-OPGOLDEN has a `gcode_hash` per arm (P3). A field-only bless:
   `RS_CAM_BLESS_OPGOLDEN_FIELDS=<f,..>` (optional `RS_CAM_BLESS_OPGOLDEN_ARMS`).
   Never bless the fields of the 46 known rows; regenerate

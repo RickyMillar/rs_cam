@@ -14,8 +14,8 @@
 //!   length warns (`tool.v_tip_unmodelled`).
 //! - Only a `ToolType::VBit` has the rule (lead clarification): an end mill
 //!   on a V-capable op gives no row, whatever its tip fact holds.
-//! - Ruling D12: an `Unknown` tip is a missing input (commit A2), not a
-//!   finding of this rule, so it gives no row here.
+//! - Ruling D12: an `Unknown` tip is a missing input (commit A2): the op
+//!   stops, so no row exists.
 //!
 //! Both cone heights come from `(d/2 - tip/2) / tan(half angle)` in the
 //! test; no typed result. Ruling Q6: generation and export give output.
@@ -143,16 +143,25 @@ fn a_tip_whose_cone_disagrees_with_the_flute_warns() {
 }
 
 /// Ruling D12: an `Unknown` tip is a missing input (commit A2), not a
-/// finding of this rule.
+/// finding of this rule: the op stops before the rule runs, so no row
+/// exists. The stop itself is the D12 sentry's
+/// (`an_unstated_centre_cutting_stops_generation_d12`).
 #[test]
-fn an_unknown_tip_gives_no_row() {
+fn an_unknown_tip_stops_and_gives_no_row() {
     let mut tool = v20();
     tool.set_v_tip_diameter(ToolFact::Unknown);
-    let (session, index) = generated(OperationType::VCarve, tool);
-    assert!(
-        rule_texts(&session, index, ids::TOOL_V_TIP_UNMODELLED).is_empty(),
-        "an Unknown tip is not a VTipFlat row"
-    );
+    let (mut session, index) = common::op_fixtures::case_session(common::op_fixtures::CaseSpec {
+        name: "V rivers and lakes",
+        op: OperationConfig::new_default(OperationType::VCarve),
+        prior: common::op_fixtures::Prior::None,
+        stock_source: StockSource::Fresh,
+        frame: common::op_fixtures::Frame::TopUp,
+        fixture: common::op_fixtures::Fixture::Standard,
+        tool: Some(tool),
+    });
+    let outcome = session.generate_toolpath(index, &std::sync::atomic::AtomicBool::new(false));
+    assert!(outcome.is_err(), "an Unknown tip stops the op (D12)");
+    assert!(session.result_at(index).is_none(), "no result, so no row");
 }
 
 /// Only a V-bit has the rule. An end mill on Trace (an op that takes a
@@ -160,7 +169,7 @@ fn an_unknown_tip_gives_no_row() {
 /// with its flute.
 #[test]
 fn a_tool_that_is_not_a_v_bit_gives_no_row() {
-    let mut tool = ToolConfig::new_default(ToolId::from_raw(0), ToolType::EndMill);
+    let mut tool = ToolConfig::test_default(ToolId::from_raw(0), ToolType::EndMill);
     tool.set_centre_cutting(ToolFact::Stated(CentreCutting::Yes));
     tool.set_v_tip_diameter(ToolFact::Stated(0.0));
     let (session, index) = generated(OperationType::Trace, tool);

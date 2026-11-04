@@ -146,7 +146,7 @@ fn flip_writes_the_other_side_in_one_command_p6_7() {
 
 /// A Pocket over the line on a `face_up` setup, with no GUI.
 fn session(face_up: FaceUp, open_paths: OpenPaths) -> ProjectSession {
-    let mut tool = ToolConfig::new_default(ToolId::from_raw(h::TOOL), ToolType::EndMill);
+    let mut tool = ToolConfig::test_default(ToolId::from_raw(h::TOOL), ToolType::EndMill);
     tool.diameter = TOOL_D;
     let mut builder = ProjectSessionBuilder::new()
         .stock(board())

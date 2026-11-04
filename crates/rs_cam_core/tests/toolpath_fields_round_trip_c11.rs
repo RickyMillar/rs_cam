@@ -174,7 +174,7 @@ fn every_editable_toolpath_field_survives_a_save_and_a_load() {
     run(
         &mut session,
         Command::AddTool(AddToolArgs {
-            tool: Box::new(ToolConfig::new_default(
+            tool: Box::new(ToolConfig::test_default(
                 ToolId::from_raw(0),
                 ToolType::EndMill,
             )),
@@ -183,7 +183,7 @@ fn every_editable_toolpath_field_survives_a_save_and_a_load() {
     run(
         &mut session,
         Command::AddTool(AddToolArgs {
-            tool: Box::new(ToolConfig::new_default(
+            tool: Box::new(ToolConfig::test_default(
                 ToolId::from_raw(0),
                 ToolType::BallNose,
             )),

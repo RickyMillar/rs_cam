@@ -47,7 +47,7 @@ fn softwood() -> Material {
 }
 
 fn tool_of(kind: ToolType, diameter: f64, flutes: u32) -> ToolConfig {
-    let mut t = ToolConfig::new_default(ToolId::from_raw(1), kind);
+    let mut t = ToolConfig::test_default(ToolId::from_raw(1), kind);
     t.diameter = diameter;
     t.set_flute_count(ToolFact::Stated(flutes));
     t.set_cutting_length(ToolFact::Stated((diameter * 4.0).max(12.0)));

@@ -16,11 +16,11 @@ use rs_cam_core::trace::toolpath_spans::{RegionSpanRole, Span, SpanKind, SpanPay
 // reintroduces the fallback, which a one-off checkout would not.
 
 fn two_tool_fixture() -> Vec<ToolConfig> {
-    let mut a = ToolConfig::new_default(ToolId::from_raw(1), ToolType::EndMill);
+    let mut a = ToolConfig::test_default(ToolId::from_raw(1), ToolType::EndMill);
     a.name = "Ø6 flat".to_owned();
     a.diameter = 6.0;
     a.set_flute_count(ToolFact::Stated(2));
-    let mut b = ToolConfig::new_default(ToolId::from_raw(2), ToolType::BallNose);
+    let mut b = ToolConfig::test_default(ToolId::from_raw(2), ToolType::BallNose);
     b.name = "Ø1 ball".to_owned();
     b.diameter = 1.0;
     b.set_flute_count(ToolFact::Stated(4));

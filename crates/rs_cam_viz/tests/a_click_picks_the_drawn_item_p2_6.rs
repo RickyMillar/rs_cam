@@ -166,7 +166,7 @@ fn drill_controller(face_up: FaceUp, turn: ZRotation) -> AppController<SilentBac
     };
     let mut builder = ProjectSessionBuilder::new()
         .stock(stock)
-        .tool(ToolConfig::new_default(
+        .tool(ToolConfig::test_default(
             ToolId::from_raw(1),
             ToolType::EndMill,
         ));
@@ -370,7 +370,7 @@ fn a_click_on_a_drawn_face_picks_it_on_a_flipped_setup() {
     let mut builder =
         ProjectSessionBuilder::new()
             .stock(stock.clone())
-            .tool(ToolConfig::new_default(
+            .tool(ToolConfig::test_default(
                 ToolId::from_raw(1),
                 ToolType::EndMill,
             ));

@@ -383,7 +383,7 @@ mod tests {
             1,
             "Test",
             operation,
-            ToolConfig::new_default(ToolId::from_raw(1), tool_type),
+            ToolConfig::test_default(ToolId::from_raw(1), tool_type),
         )
     }
 

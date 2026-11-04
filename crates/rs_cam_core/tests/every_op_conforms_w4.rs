@@ -338,7 +338,7 @@ fn check1_a_preset_cancel_reaches_the_session_door_before_a_tool_refusal() {
         if refused.is_some() {
             with_refused_tool += 1;
         }
-        let tool = refused.map(|k| ToolConfig::new_default(ToolId::from_raw(0), k.tool_type()));
+        let tool = refused.map(|k| ToolConfig::test_default(ToolId::from_raw(0), k.tool_type()));
         let (mut session, index) = case_session(CaseSpec {
             tool,
             ..spec(key, op)

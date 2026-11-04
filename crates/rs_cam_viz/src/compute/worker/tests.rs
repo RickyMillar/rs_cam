@@ -43,7 +43,7 @@ fn pocket_spec(id: usize) -> RequestSpec {
         id,
         &format!("Pocket {id}"),
         OperationConfig::new_default(OperationType::Pocket),
-        ToolConfig::new_default(ToolId::from_raw(1), ToolType::EndMill),
+        ToolConfig::test_default(ToolId::from_raw(1), ToolType::EndMill),
     );
     spec.stock = board(25.0, 15.0);
     spec.dressups = DressupConfig::default();
@@ -82,7 +82,7 @@ fn heavy_dropcutter_spec(id: usize) -> RequestSpec {
         id,
         &format!("DropCutter {id}"),
         OperationConfig::DropCutter(cfg),
-        ToolConfig::new_default(ToolId::from_raw(1), ToolType::BallNose),
+        ToolConfig::test_default(ToolId::from_raw(1), ToolType::BallNose),
     )
     .with_mesh(make_test_flat(120.0));
     spec.stock = stock_between(P3::new(-60.0, -60.0, -5.0), P3::new(60.0, 60.0, 10.0));
@@ -102,7 +102,7 @@ fn waterline_spec(id: usize) -> RequestSpec {
         id,
         &format!("Waterline {id}"),
         OperationConfig::Waterline(cfg),
-        ToolConfig::new_default(ToolId::from_raw(1), ToolType::EndMill),
+        ToolConfig::test_default(ToolId::from_raw(1), ToolType::EndMill),
     )
     .with_mesh(make_test_flat(60.0));
     spec.stock = stock_between(P3::new(-30.0, -30.0, -5.0), P3::new(30.0, 30.0, 10.0));
@@ -123,7 +123,7 @@ fn adaptive3d_spec(id: usize) -> RequestSpec {
         id,
         &format!("Adaptive3d {id}"),
         OperationConfig::Adaptive3d(cfg),
-        ToolConfig::new_default(ToolId::from_raw(1), ToolType::EndMill),
+        ToolConfig::test_default(ToolId::from_raw(1), ToolType::EndMill),
     )
     .with_mesh(make_test_flat(60.0));
     spec.stock = stock_between(P3::new(-30.0, -30.0, -5.0), P3::new(30.0, 30.0, 10.0));
@@ -136,7 +136,7 @@ fn drill_spec(id: usize) -> RequestSpec {
         unreachable!("default op kind mismatch");
     };
     cfg.cycle = crate::state::toolpath::DrillCycleType::Peck;
-    let tool = ToolConfig::new_default(ToolId::from_raw(1), ToolType::EndMill);
+    let tool = ToolConfig::test_default(ToolId::from_raw(1), ToolType::EndMill);
     // P6.5 (O-3): a Drill drills a circle of the tool size only.
     let hole_diameter = tool.diameter;
     let mut spec = RequestSpec::new(
@@ -175,7 +175,7 @@ fn steep_shallow_spec(id: usize) -> RequestSpec {
         id,
         &format!("SteepShallow {id}"),
         OperationConfig::new_default(OperationType::SteepShallow),
-        ToolConfig::new_default(ToolId::from_raw(1), ToolType::BallNose),
+        ToolConfig::test_default(ToolId::from_raw(1), ToolType::BallNose),
     )
     .with_mesh(make_test_hemisphere(20.0, 16));
     spec.stock = stock_between(P3::new(-20.0, -20.0, -20.0), P3::new(20.0, 20.0, 20.0));
@@ -202,7 +202,7 @@ fn pencil_spec(id: usize) -> RequestSpec {
         id,
         &format!("Pencil {id}"),
         OperationConfig::new_default(OperationType::Pencil),
-        ToolConfig::new_default(ToolId::from_raw(1), ToolType::BallNose),
+        ToolConfig::test_default(ToolId::from_raw(1), ToolType::BallNose),
     )
     .with_mesh(make_v_groove_mesh(40.0, 6.0, 12.0));
     spec.stock = stock_between(P3::new(0.0, -15.0, -10.0), P3::new(40.0, 15.0, 10.0));
@@ -222,7 +222,7 @@ fn scallop_spec(id: usize) -> RequestSpec {
         id,
         &format!("Scallop {id}"),
         OperationConfig::Scallop(cfg),
-        ToolConfig::new_default(ToolId::from_raw(1), ToolType::BallNose),
+        ToolConfig::test_default(ToolId::from_raw(1), ToolType::BallNose),
     )
     .with_mesh(make_test_hemisphere(20.0, 16));
     spec.stock = stock_between(P3::new(-25.0, -25.0, -5.0), P3::new(25.0, 25.0, 25.0));
@@ -243,7 +243,7 @@ fn ramp_finish_spec(id: usize) -> RequestSpec {
         id,
         &format!("Ramp finish {id}"),
         OperationConfig::RampFinish(cfg),
-        ToolConfig::new_default(ToolId::from_raw(1), ToolType::BallNose),
+        ToolConfig::test_default(ToolId::from_raw(1), ToolType::BallNose),
     )
     .with_mesh(make_test_hemisphere(20.0, 16));
     spec.stock = stock_between(P3::new(-25.0, -25.0, -5.0), P3::new(25.0, 25.0, 25.0));
@@ -262,7 +262,7 @@ fn spiral_finish_spec(id: usize) -> RequestSpec {
         id,
         &format!("Spiral finish {id}"),
         OperationConfig::SpiralFinish(cfg),
-        ToolConfig::new_default(ToolId::from_raw(1), ToolType::BallNose),
+        ToolConfig::test_default(ToolId::from_raw(1), ToolType::BallNose),
     )
     .with_mesh(make_test_hemisphere(20.0, 16));
     spec.stock = stock_between(P3::new(-25.0, -25.0, -5.0), P3::new(25.0, 25.0, 25.0));
@@ -282,7 +282,7 @@ fn radial_finish_spec(id: usize) -> RequestSpec {
         id,
         &format!("Radial finish {id}"),
         OperationConfig::RadialFinish(cfg),
-        ToolConfig::new_default(ToolId::from_raw(1), ToolType::BallNose),
+        ToolConfig::test_default(ToolId::from_raw(1), ToolType::BallNose),
     )
     .with_mesh(make_test_flat(80.0));
     spec.stock = stock_between(P3::new(-40.0, -40.0, -5.0), P3::new(40.0, 40.0, 15.0));
@@ -301,7 +301,7 @@ fn horizontal_finish_spec(id: usize) -> RequestSpec {
         id,
         &format!("Horizontal finish {id}"),
         OperationConfig::HorizontalFinish(cfg),
-        ToolConfig::new_default(ToolId::from_raw(1), ToolType::BallNose),
+        ToolConfig::test_default(ToolId::from_raw(1), ToolType::BallNose),
     )
     .with_mesh(make_test_flat(80.0));
     spec.stock = stock_between(P3::new(-40.0, -40.0, -5.0), P3::new(40.0, 40.0, 15.0));
@@ -321,7 +321,7 @@ fn project_curve_spec(id: usize) -> RequestSpec {
         id,
         &format!("Project curve {id}"),
         OperationConfig::ProjectCurve(cfg),
-        ToolConfig::new_default(ToolId::from_raw(1), ToolType::BallNose),
+        ToolConfig::test_default(ToolId::from_raw(1), ToolType::BallNose),
     );
     spec.mesh = Some(make_test_hemisphere(20.0, 16));
     spec.polygons = Some(vec![
@@ -344,7 +344,7 @@ fn long_simulation_request() -> SimulationRequest {
 /// The stock bottom is at `z = -2`, so `layers` must be 10 or fewer.
 fn layered_simulation_request(layers: usize) -> SimulationRequest {
     assert!((1..=10).contains(&layers), "the stock holds 10 layers");
-    let tool = ToolConfig::new_default(ToolId::from_raw(1), ToolType::EndMill);
+    let tool = ToolConfig::test_default(ToolId::from_raw(1), ToolType::EndMill);
     let mut toolpath = Toolpath::new();
     toolpath.rapid_to(P3::new(0.0, 0.0, 5.0));
     for layer in 0..layers {
@@ -402,7 +402,7 @@ fn layered_simulation_request(layers: usize) -> SimulationRequest {
 }
 
 fn small_simulation_request_with_metrics() -> SimulationRequest {
-    let tool = ToolConfig::new_default(ToolId::from_raw(1), ToolType::EndMill);
+    let tool = ToolConfig::test_default(ToolId::from_raw(1), ToolType::EndMill);
     let mut toolpath = Toolpath::new();
     toolpath.rapid_to(P3::new(2.0, 2.0, 8.0));
     toolpath.feed_to(P3::new(2.0, 2.0, 4.0), 400.0);
@@ -790,7 +790,7 @@ fn semantic_trace_records_entry_params_and_boundary_clip() {
         Some(&serde_json::json!(
             DressupConfig::default()
                 .helix_radius_for(
-                    &rs_cam_core::compute::cutter::build_cutter(&ToolConfig::new_default(
+                    &rs_cam_core::compute::cutter::build_cutter(&ToolConfig::test_default(
                         ToolId::from_raw(1),
                         ToolType::EndMill
                     ))
@@ -1547,7 +1547,7 @@ fn analysis_requests_replace_stale_work() {
                 toolpath
             },
         )),
-        tool: ToolConfig::new_default(ToolId::from_raw(1), ToolType::EndMill),
+        tool: ToolConfig::test_default(ToolId::from_raw(1), ToolType::EndMill),
         mesh: Arc::new(make_test_flat(20.0)),
         obstacles: Arc::default(),
         join: rs_cam_core::compute::obstacle::JoinStart::Unknown,
@@ -1617,7 +1617,7 @@ fn cancel_all_marks_both_lanes_cancelling() {
 fn multi_setup_top_bottom_simulation() {
     use rs_cam_core::dexel_stock::StockCutDirection;
 
-    let tool = ToolConfig::new_default(ToolId::from_raw(1), ToolType::EndMill);
+    let tool = ToolConfig::test_default(ToolId::from_raw(1), ToolType::EndMill);
     // Tool diameter is 6.35mm (default endmill)
 
     // Stock: 50x50x20 at origin
@@ -1791,7 +1791,7 @@ fn multi_setup_top_bottom_simulation() {
 fn multi_setup_backward_scrub_uses_checkpoints() {
     use rs_cam_core::dexel_stock::StockCutDirection;
 
-    let tool = ToolConfig::new_default(ToolId::from_raw(1), ToolType::EndMill);
+    let tool = ToolConfig::test_default(ToolId::from_raw(1), ToolType::EndMill);
     let stock_bbox = BoundingBox3 {
         min: P3::new(0.0, 0.0, 0.0),
         max: P3::new(30.0, 30.0, 10.0),
@@ -2046,7 +2046,7 @@ fn playback_data_carries_drill_op_for_drill_toolpaths() {
     use rs_cam_core::ops::drill::DrillCycle;
     use rs_cam_core::ops::drill_op::{DrillHole, DrillOp, HoleSource, ToolProfile};
 
-    let tool = ToolConfig::new_default(ToolId::from_raw(1), ToolType::EndMill);
+    let tool = ToolConfig::test_default(ToolId::from_raw(1), ToolType::EndMill);
     // The toolpath here is a placeholder — drill TPs in the analytical path
     // still emit motion (plunge+retract per hole), but the analytical kernel
     // ignores it and operates on `DrillOp.holes` directly.
@@ -2154,7 +2154,7 @@ fn playback_data_drill_op_transforms_to_global_frame_in_flipped_setup() {
     use rs_cam_core::ops::drill::DrillCycle;
     use rs_cam_core::ops::drill_op::{DrillHole, DrillOp, HoleSource, ToolProfile};
 
-    let tool = ToolConfig::new_default(ToolId::from_raw(1), ToolType::EndMill);
+    let tool = ToolConfig::test_default(ToolId::from_raw(1), ToolType::EndMill);
     let mut tp = Toolpath::new();
     tp.rapid_to(P3::new(5.0, 5.0, 10.0));
     tp.feed_to(P3::new(5.0, 5.0, 4.0), 300.0);
@@ -2286,7 +2286,7 @@ fn a_lateral_setup_replays_in_its_own_frame_and_its_checkpoint_carries_the_cut()
         max: P3::new(20.0, 8.0, 10.0),
     };
 
-    let tool = ToolConfig::new_default(ToolId::from_raw(1), ToolType::EndMill);
+    let tool = ToolConfig::test_default(ToolId::from_raw(1), ToolType::EndMill);
     // A groove in the Front work plane, 2 mm down from the lateral top (10).
     let mut tp = Toolpath::new();
     tp.rapid_to(P3::new(5.0, 4.0, 12.0));
@@ -2451,7 +2451,7 @@ fn simulation_metrics_capture_emits_semantic_cut_summaries() {
 fn as001_viz_path_first_pass_axial_engagement_within_commanded_doc_f024() {
     use rs_cam_core::stock::simulation_cut::CutKinematics;
 
-    let mut tool = ToolConfig::new_default(ToolId::from_raw(1), ToolType::EndMill);
+    let mut tool = ToolConfig::test_default(ToolId::from_raw(1), ToolType::EndMill);
     tool.diameter = 6.0;
     tool.set_cutting_length(ToolFact::Stated(25.0));
     tool.set_shank_diameter(ToolFact::Stated(6.35));

@@ -79,7 +79,7 @@ const POCKET_HALF: f64 = 20.0;
 const POCKET_DEPTH: f64 = 3.0;
 
 fn tool(kind: ToolType, diameter: f64) -> ToolConfig {
-    let mut t = ToolConfig::new_default(ToolId::from_raw(0), kind);
+    let mut t = ToolConfig::test_default(ToolId::from_raw(0), kind);
     t.diameter = diameter;
     t.set_cutting_length(ToolFact::Stated(25.0));
     t.set_flute_count(ToolFact::Stated(2));

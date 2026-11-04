@@ -252,7 +252,7 @@ fn feeds_fixture_machine() -> MachineProfile {
 ///   "Advance per tooth below the rubbing floor". The engine does not lift
 ///   the feed (ruling R4 WP2a).
 fn feeds_fixture() -> AppState {
-    let mut tool = ToolConfig::new_default(ToolId::from_raw(1), ToolType::EndMill);
+    let mut tool = ToolConfig::test_default(ToolId::from_raw(1), ToolType::EndMill);
     tool.diameter = 3.175;
     tool.set_flute_count(ToolFact::Stated(2));
     tool.set_cutting_length(ToolFact::Stated(12.0));

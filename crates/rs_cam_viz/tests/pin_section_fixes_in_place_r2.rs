@@ -84,7 +84,7 @@ fn square_model(id: usize, name: &str, lo: f64, hi: f64) -> LoadedModel {
 }
 
 fn tool(id: usize, tool_type: ToolType, diameter: f64) -> ToolConfig {
-    let mut t = ToolConfig::new_default(ToolId::from_raw(id), tool_type);
+    let mut t = ToolConfig::test_default(ToolId::from_raw(id), tool_type);
     t.diameter = diameter;
     t
 }

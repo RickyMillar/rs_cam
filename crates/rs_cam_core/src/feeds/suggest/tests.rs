@@ -95,7 +95,7 @@ fn unpopulated_effective_diameter_skips_doc_derating() {
 
 /// Ball-nose tool of the given diameter (tip radius = diameter / 2).
 fn ball_tool(diameter: f64) -> ToolConfig {
-    let mut tool = ToolConfig::new_default(ToolId::from_raw(0), ToolType::BallNose);
+    let mut tool = ToolConfig::test_default(ToolId::from_raw(0), ToolType::BallNose);
     tool.diameter = diameter;
     tool.set_cutting_length(ToolFact::Stated(25.0));
     tool
@@ -167,7 +167,7 @@ fn scallop_height_none_preserves_legacy_ae() {
 /// ball for the same scallop target.
 #[test]
 fn scallop_height_uses_tip_radius_for_tapered_ball() {
-    let mut tapered = ToolConfig::new_default(ToolId::from_raw(0), ToolType::TaperedBallNose);
+    let mut tapered = ToolConfig::test_default(ToolId::from_raw(0), ToolType::TaperedBallNose);
     tapered.diameter = 1.0; // tip diameter → tip radius 0.5 mm
     tapered.set_cutting_length(ToolFact::Stated(25.0));
     let tapered_step = dropcutter_stepover(&dropcutter_op(Some(0.010)), &tapered);
@@ -189,7 +189,7 @@ fn stock_ctx() -> StockContext {
 }
 
 fn tool(diameter: f64) -> ToolConfig {
-    let mut tool = ToolConfig::new_default(ToolId::from_raw(0), ToolType::EndMill);
+    let mut tool = ToolConfig::test_default(ToolId::from_raw(0), ToolType::EndMill);
     tool.diameter = diameter;
     tool.set_cutting_length(ToolFact::Stated(25.0));
     tool
@@ -431,7 +431,7 @@ fn preview_of(op: &OperationConfig, tool: &ToolConfig) -> FeedsPreview {
 fn preview_for(op_type: OperationType) -> FeedsPreview {
     preview_of(
         &OperationConfig::new_default(op_type),
-        &ToolConfig::new_default(ToolId::from_raw(1), ToolType::EndMill),
+        &ToolConfig::test_default(ToolId::from_raw(1), ToolType::EndMill),
     )
 }
 
@@ -469,7 +469,7 @@ fn preview_refuses_to_yield_an_applicable_recommendation_when_validation_refused
 #[test]
 fn preview_recommendation_is_bit_identical_to_validated_recipe() {
     let op = OperationConfig::new_default(OperationType::Pocket);
-    let tool = ToolConfig::new_default(ToolId::from_raw(1), ToolType::EndMill);
+    let tool = ToolConfig::test_default(ToolId::from_raw(1), ToolType::EndMill);
     let recipe = feeds_result_for_operation(
         &op,
         &tool,
@@ -715,7 +715,7 @@ fn drill_peck_depth_scales_with_diameter_and_material() {
         floor: crate::compute::floor::Floor::top(10.0),
         ..DrillConfig::default()
     });
-    let mut tool_3mm = ToolConfig::new_default(ToolId::from_raw(0), ToolType::EndMill);
+    let mut tool_3mm = ToolConfig::test_default(ToolId::from_raw(0), ToolType::EndMill);
     tool_3mm.diameter = 3.0;
 
     apply_drill_defaults(&mut op_3mm, &tool_3mm, &material, None);
@@ -743,7 +743,7 @@ fn drill_peck_depth_scales_with_diameter_and_material() {
         floor: crate::compute::floor::Floor::top(10.0),
         ..DrillConfig::default()
     });
-    let mut tool_12mm = ToolConfig::new_default(ToolId::from_raw(0), ToolType::EndMill);
+    let mut tool_12mm = ToolConfig::test_default(ToolId::from_raw(0), ToolType::EndMill);
     tool_12mm.diameter = 12.0;
 
     apply_drill_defaults(&mut op_12mm, &tool_12mm, &material, None);
@@ -805,7 +805,7 @@ fn alignment_pin_drill_peck_is_clamped_like_drill() {
     let material = Material::SolidWood {
         species: WoodSpecies::GenericSoftwood,
     };
-    let mut tool = ToolConfig::new_default(ToolId::from_raw(0), ToolType::EndMill);
+    let mut tool = ToolConfig::test_default(ToolId::from_raw(0), ToolType::EndMill);
     tool.diameter = 6.0;
 
     // Softwood Ø6 Suggest default: 0.5 × 6.0 × 6.0 = 18.0 mm.
@@ -917,7 +917,7 @@ fn drill_peck_depth_softwood_exceeds_hardwood() {
     };
 
     let diameter = 6.0_f64;
-    let mut tool = ToolConfig::new_default(ToolId::from_raw(0), ToolType::EndMill);
+    let mut tool = ToolConfig::test_default(ToolId::from_raw(0), ToolType::EndMill);
     tool.diameter = diameter;
 
     // Use a deep hole so the per-material Suggest defaults stay
@@ -1026,7 +1026,7 @@ fn plunge_entry_unstable_warning_fires_when_dpp_exceeds_half_diameter() {
             entry_style: Adaptive3dEntryStyle::Plunge,
             ..Adaptive3dConfig::default()
         });
-        let mut tool = ToolConfig::new_default(ToolId::from_raw(0), ToolType::EndMill);
+        let mut tool = ToolConfig::test_default(ToolId::from_raw(0), ToolType::EndMill);
         tool.diameter = 6.0;
         tool.set_cutting_length(ToolFact::Stated(25.0));
         // Milling-Kc calibration (2026-06-17, milling factor 2.7):
@@ -1102,7 +1102,7 @@ fn plunge_entry_unstable_does_not_fire_below_half_diameter() {
         entry_style: Adaptive3dEntryStyle::Plunge,
         ..Adaptive3dConfig::default()
     });
-    let mut tool = ToolConfig::new_default(ToolId::from_raw(0), ToolType::EndMill);
+    let mut tool = ToolConfig::test_default(ToolId::from_raw(0), ToolType::EndMill);
     tool.diameter = 6.0;
     tool.set_cutting_length(ToolFact::Stated(25.0));
     let mut machine = MachineProfile::default();
@@ -1134,7 +1134,7 @@ fn plunge_entry_unstable_does_not_fire_below_half_diameter() {
 #[test]
 fn plunge_entry_unstable_does_not_fire_for_helix_or_ramp() {
     use crate::compute::operation_configs::{Adaptive3dConfig, Adaptive3dEntryStyle};
-    let mut tool = ToolConfig::new_default(ToolId::from_raw(0), ToolType::EndMill);
+    let mut tool = ToolConfig::test_default(ToolId::from_raw(0), ToolType::EndMill);
     tool.diameter = 6.0;
     tool.set_cutting_length(ToolFact::Stated(25.0));
     let mut machine = MachineProfile::default();
@@ -1281,7 +1281,7 @@ fn retired_lift_leaves_wanaka_back_rough_feed_untouched() {
         entry_style: Adaptive3dEntryStyle::Helix,
         ..Adaptive3dConfig::default()
     });
-    let mut tool = ToolConfig::new_default(ToolId::from_raw(0), ToolType::EndMill);
+    let mut tool = ToolConfig::test_default(ToolId::from_raw(0), ToolType::EndMill);
     tool.diameter = 6.0;
     tool.set_cutting_length(ToolFact::Stated(25.0));
     // Stiffened (45 → 18 mm) by the pre-fix version so deflection left
@@ -1391,7 +1391,7 @@ fn retired_lift_fires_no_cap_on_a_deflection_bound_fixture() {
             entry_style: Adaptive3dEntryStyle::Helix,
             ..Adaptive3dConfig::default()
         });
-        let mut tool = ToolConfig::new_default(ToolId::from_raw(0), ToolType::EndMill);
+        let mut tool = ToolConfig::test_default(ToolId::from_raw(0), ToolType::EndMill);
         tool.diameter = 6.0;
         tool.set_cutting_length(ToolFact::Stated(25.0));
         // δ ∝ stickout³ — this is the value that lands the prediction in the
@@ -1486,7 +1486,7 @@ fn retired_lift_reports_no_max_feed_shortfall() {
         entry_style: Adaptive3dEntryStyle::Helix,
         ..Adaptive3dConfig::default()
     });
-    let mut tool = ToolConfig::new_default(ToolId::from_raw(0), ToolType::EndMill);
+    let mut tool = ToolConfig::test_default(ToolId::from_raw(0), ToolType::EndMill);
     tool.diameter = 6.0;
     tool.set_cutting_length(ToolFact::Stated(25.0));
     tool.set_stickout(ToolFact::Stated(25.0));
@@ -1567,7 +1567,7 @@ fn feed_recalibration_skipped_when_already_in_band() {
         entry_style: Adaptive3dEntryStyle::Helix,
         ..Adaptive3dConfig::default()
     });
-    let mut tool = ToolConfig::new_default(ToolId::from_raw(0), ToolType::EndMill);
+    let mut tool = ToolConfig::test_default(ToolId::from_raw(0), ToolType::EndMill);
     tool.diameter = 6.0;
     tool.set_cutting_length(ToolFact::Stated(25.0));
     tool.set_stickout(ToolFact::Stated(25.0));
@@ -1629,7 +1629,7 @@ fn suggest_never_writes_entry_style() {
         min: crate::geo::P3::new(0.0, 0.0, -50.0),
         max: crate::geo::P3::new(140.0, 150.0, 0.0),
     };
-    let mut tool = ToolConfig::new_default(ToolId::from_raw(0), ToolType::EndMill);
+    let mut tool = ToolConfig::test_default(ToolId::from_raw(0), ToolType::EndMill);
     tool.diameter = 6.0;
     tool.set_cutting_length(ToolFact::Stated(25.0));
     // A short stickout keeps the deflection back-off off at DPP 3.69 mm,
@@ -1704,7 +1704,7 @@ fn clearing_strategy_recommendation_is_warn_only() {
         spindle_rpm: Some(16_000),
         ..Adaptive3dConfig::default()
     });
-    let mut tool = ToolConfig::new_default(ToolId::from_raw(0), ToolType::EndMill);
+    let mut tool = ToolConfig::test_default(ToolId::from_raw(0), ToolType::EndMill);
     tool.diameter = 6.0;
     tool.set_cutting_length(ToolFact::Stated(25.0));
     tool.set_stickout(ToolFact::Stated(30.0));
@@ -1802,7 +1802,7 @@ fn clearing_strategy_recommendation_skips() {
             clearing_strategy: strategy,
             ..Adaptive3dConfig::default()
         });
-        let mut tool = ToolConfig::new_default(ToolId::from_raw(0), ToolType::EndMill);
+        let mut tool = ToolConfig::test_default(ToolId::from_raw(0), ToolType::EndMill);
         tool.diameter = 6.0;
         tool.set_cutting_length(ToolFact::Stated(25.0));
         tool.set_stickout(ToolFact::Stated(30.0));
@@ -1952,7 +1952,7 @@ fn a_suggested_peck_respects_the_schema_floor_b14() {
     let material = Material::SolidWood {
         species: WoodSpecies::GenericSoftwood,
     };
-    let mut tool = ToolConfig::new_default(ToolId::from_raw(0), ToolType::EndMill);
+    let mut tool = ToolConfig::test_default(ToolId::from_raw(0), ToolType::EndMill);
     tool.diameter = 6.0;
     let floor_of = |op_type: OperationType| {
         let range = OperationConfig::param_range_for_type(op_type, "peck_depth")

@@ -575,7 +575,7 @@ pub fn case_session(spec: CaseSpec<'_>) -> (ProjectSession, usize) {
 
     if spec.prior == Prior::RestPrior {
         // The prior op: a flat end mill, which every fixture admits.
-        let prior_tool_idx = builder.add_tool(ToolConfig::new_default(
+        let prior_tool_idx = builder.add_tool(ToolConfig::test_default(
             ToolId::from_raw(0),
             ToolType::EndMill,
         ));
@@ -707,7 +707,7 @@ pub fn generated_op(
 /// stages. Before D3 these files called the deleted `face_toolpath` with
 /// the same dials.
 pub fn dressup_face(depth: f64) -> Toolpath {
-    let mut tool = ToolConfig::new_default(ToolId::from_raw(0), ToolType::EndMill);
+    let mut tool = ToolConfig::test_default(ToolId::from_raw(0), ToolType::EndMill);
     tool.diameter = 6.0;
     let stock = StockConfig {
         x: 40.0,

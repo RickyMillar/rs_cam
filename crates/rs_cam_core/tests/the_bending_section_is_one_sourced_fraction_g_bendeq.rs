@@ -83,7 +83,7 @@ fn every_fluted_shape_takes_the_fraction_g_bendeq() {
     // does not change it. Before T-17 a ball and a bull nose were modelled as
     // solid at full diameter.
     for tool_type in [ToolType::EndMill, ToolType::BallNose, ToolType::BullNose] {
-        let mut t = ToolConfig::new_default(ToolId::from_raw(1), tool_type);
+        let mut t = ToolConfig::test_default(ToolId::from_raw(1), tool_type);
         t.diameter = 6.0;
         t.set_flute_count(ToolFact::Stated(2));
         let got = bending_diameter_mm(&t);
@@ -131,7 +131,7 @@ fn a_vbit_is_the_documented_exception_g_bendeq() {
     // so it stays unmodelled. This arm exists so the gap stays DELIBERATE: it
     // fails if someone quietly extends the fraction to V-bits without a
     // citation, which would be a fabricated constant inside a safety guard.
-    let mut t = ToolConfig::new_default(ToolId::from_raw(1), ToolType::VBit);
+    let mut t = ToolConfig::test_default(ToolId::from_raw(1), ToolType::VBit);
     t.diameter = 6.0;
     t.set_flute_count(ToolFact::Stated(2));
     let got = bending_diameter_mm(&t);

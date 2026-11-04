@@ -76,7 +76,7 @@ fn session_of(model: LoadedModel, op: OperationType) -> ProjectSession {
         auto_from_model: false,
         ..StockConfig::default()
     };
-    let tool = ToolConfig::new_default(ToolId::from_raw(1), ToolType::EndMill);
+    let tool = ToolConfig::test_default(ToolId::from_raw(1), ToolType::EndMill);
     let mut builder = ProjectSessionBuilder::new().stock(stock).tool(tool);
     let model_id = builder.add_model(model);
     let mut operation = OperationConfig::new_default(op);

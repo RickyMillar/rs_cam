@@ -125,7 +125,7 @@ fn build_project_with_mist(dir: &Path, format: PostFormat, mist: Option<bool>) -
         }))
         .expect("the post row refuses nothing");
 
-    let mut tool = ToolConfig::new_default(ToolId::from_raw(0), ToolType::EndMill);
+    let mut tool = ToolConfig::test_default(ToolId::from_raw(0), ToolType::EndMill);
     tool.diameter = 6.0;
     tool.name = "End Mill 6mm (P-1)".to_owned();
     let tool_idx = session

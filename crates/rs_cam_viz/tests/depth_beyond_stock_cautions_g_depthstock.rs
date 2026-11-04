@@ -172,7 +172,7 @@ fn assert_pocket_pin_refuses(session: &mut ProjectSession, bottom_z: HeightMode)
 }
 
 fn session() -> ProjectSession {
-    let mut tool = ToolConfig::new_default(ToolId::from_raw(TOOL), ToolType::EndMill);
+    let mut tool = ToolConfig::test_default(ToolId::from_raw(TOOL), ToolType::EndMill);
     tool.diameter = 6.0;
     let stock = StockConfig {
         z: Some(STOCK_THICKNESS_MM),

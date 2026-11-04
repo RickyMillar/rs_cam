@@ -138,7 +138,7 @@ pub(super) fn toolpath(id: usize) -> ToolpathConfig {
 /// the obstacle-edit classes have something to move.
 pub(super) fn seeded_controller() -> AppController<ScriptedLane> {
     let mut controller = AppController::with_backend(ScriptedLane::default());
-    let tool = ToolConfig::new_default(ToolId::from_raw(1), ToolType::EndMill);
+    let tool = ToolConfig::test_default(ToolId::from_raw(1), ToolType::EndMill);
     let mut builder = ProjectSessionBuilder::new().tool(tool);
     let _ = builder.add_model(LoadedModel {
         id: rs_cam_core::ids::ModelId::from_raw(0),

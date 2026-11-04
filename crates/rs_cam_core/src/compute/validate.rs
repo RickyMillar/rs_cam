@@ -397,13 +397,13 @@ mod tests {
     }
 
     fn flat_em(diameter: f64) -> ToolConfig {
-        let mut t = ToolConfig::new_default(ToolId::from_raw(0), ToolType::EndMill);
+        let mut t = ToolConfig::test_default(ToolId::from_raw(0), ToolType::EndMill);
         t.diameter = diameter;
         t
     }
 
     fn tapered_ball(tip_d: f64) -> ToolConfig {
-        let mut t = ToolConfig::new_default(ToolId::from_raw(0), ToolType::TaperedBallNose);
+        let mut t = ToolConfig::test_default(ToolId::from_raw(0), ToolType::TaperedBallNose);
         t.diameter = tip_d;
         t.shaft_diameter = (tip_d + 2.0).max(3.0);
         t.set_taper_half_angle(ToolFact::Stated(7.0));

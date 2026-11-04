@@ -87,6 +87,7 @@ shank    = 3.0
 flutes   = 2
 reach    = 30.0
 role     = "back"
+centre_cutting = { stated = "yes" }
 
 [[tools]]
 id       = "flat_6.35"
@@ -97,6 +98,7 @@ shank    = 6.35
 flutes   = 2
 reach    = 25.0
 role     = "other"
+centre_cutting = { stated = "yes" }
 
 [[tools]]
 id       = "ball_3.18"
@@ -107,6 +109,7 @@ shank    = 3.175
 flutes   = 2
 reach    = 15.0
 role     = "front"
+centre_cutting = { stated = "yes" }
 
 [front]
 face_tool   = "flat_6.35"

@@ -1079,7 +1079,7 @@ mod tests {
     }
 
     fn sample_tool(id: ToolId, tool_type: ToolType, diameter: f64) -> ToolConfig {
-        let mut tool = ToolConfig::new_default(id, tool_type);
+        let mut tool = ToolConfig::test_default(id, tool_type);
         tool.diameter = diameter;
         tool
     }

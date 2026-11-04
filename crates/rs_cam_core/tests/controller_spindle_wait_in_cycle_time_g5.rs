@@ -38,12 +38,12 @@ fn session(controller: Option<ControllerSettings>) -> ProjectSession {
             controller,
             ..MachineProfile::default()
         });
-    let t1 = builder.add_tool(ToolConfig::new_default(
+    let t1 = builder.add_tool(ToolConfig::test_default(
         ToolId::from_raw(0),
         ToolType::EndMill,
     ));
     let t1 = builder.tools()[t1].id.raw();
-    let t2 = builder.add_tool(ToolConfig::new_default(
+    let t2 = builder.add_tool(ToolConfig::test_default(
         ToolId::from_raw(0),
         ToolType::EndMill,
     ));

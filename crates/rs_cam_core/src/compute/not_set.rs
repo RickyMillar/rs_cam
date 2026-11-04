@@ -16,6 +16,12 @@
 //!   `spindle_rpm` of every op. Suggest writes them when the tool has
 //!   feeds data; with no data the operator sets them.
 //!
+//! - A tool fact ([`NotSetKind::ToolFact`], feeds contract P7, ruling D12):
+//!   the tool's `centre_cutting`, and the `v_tip_diameter` of a V-bit, must
+//!   be stated or come from a catalogue row (`ToolFact::known`). An unknown
+//!   or estimated fact stops the op: nobody stated that the tool can plunge,
+//!   or what its tip is. [`tool_facts_not_set`] gives the stop.
+//!
 //! [`crate::compute::catalog::OperationConfig::not_set`] lists them, and
 //! [`crate::compute::catalog::OperationConfig::cut_feeds`] gives the set
 //! feeds to the generators.
@@ -48,6 +54,9 @@ pub enum NotSetKind {
     Depth,
     /// The feeds: Suggest had no data for the tool.
     Feeds,
+    /// A tool fact that must be known (ruling D12): centre cutting, and
+    /// the tip of a V-bit. [`NotSet::tool`] names the tool.
+    ToolFact,
 }
 
 /// An op refuses to generate: values with no derivation are not set (S11).
@@ -58,7 +67,57 @@ pub struct NotSet {
     /// What kind of value is not set.
     pub kind: NotSetKind,
     /// The parameter names that are not set, in schema order. Never empty.
+    /// For [`NotSetKind::ToolFact`]: the tool keys (`centre_cutting`,
+    /// `v_tip_diameter`, the `ToolParamKey` tokens).
     pub fields: Vec<&'static str>,
+    /// For [`NotSetKind::ToolFact`]: the tool, as "T6 (name)". `None` for
+    /// every other kind.
+    pub tool: Option<String>,
+}
+
+/// The tool keys of a [`NotSetKind::ToolFact`] stop, in this order.
+pub const CENTRE_CUTTING_KEY: &str = "centre_cutting";
+/// See [`CENTRE_CUTTING_KEY`].
+pub const V_TIP_DIAMETER_KEY: &str = "v_tip_diameter";
+
+/// Ruling D12 (feeds contract P7 commit A2): the stop of an op whose tool
+/// holds a required fact that is not known (`ToolFact::known`: stated, or a
+/// catalogue row). Every tool needs `centre_cutting`; a `ToolType::VBit`
+/// needs `v_tip_diameter` too. `None` when every required fact is known.
+#[must_use]
+pub fn tool_facts_not_set(
+    op: &'static str,
+    tool: &crate::compute::tool_config::ToolConfig,
+) -> Option<NotSet> {
+    let mut fields = Vec::new();
+    if tool.centre_cutting_fact().known().is_none() {
+        fields.push(CENTRE_CUTTING_KEY);
+    }
+    if tool.tool_type == crate::compute::tool_config::ToolType::VBit
+        && tool.v_tip_diameter_fact().known().is_none()
+    {
+        fields.push(V_TIP_DIAMETER_KEY);
+    }
+    (!fields.is_empty()).then(|| NotSet {
+        op,
+        kind: NotSetKind::ToolFact,
+        fields,
+        tool: Some(format!("T{} ({})", tool.tool_number, tool.name)),
+    })
+}
+
+/// The sentence of each tool fact of a [`NotSetKind::ToolFact`] stop, for
+/// the tool `tool` ("T6 (name)").
+fn tool_fact_sentences(fields: &[&'static str], tool: &str) -> String {
+    fields
+        .iter()
+        .map(|field| match *field {
+            CENTRE_CUTTING_KEY => format!("state centre cutting for tool {tool}: yes or no"),
+            V_TIP_DIAMETER_KEY => format!("state the tip diameter of V-bit {tool}"),
+            other => format!("state {other} for tool {tool}"),
+        })
+        .collect::<Vec<_>>()
+        .join("; ")
 }
 
 impl NotSet {
@@ -88,6 +147,11 @@ impl NotSet {
             NotSetKind::Feeds => format!(
                 "{}: no feed data for this tool. Set the {list} on the Feeds tab.",
                 self.op
+            ),
+            NotSetKind::ToolFact => format!(
+                "{}: {}.",
+                self.op,
+                tool_fact_sentences(&self.fields, self.tool.as_deref().unwrap_or("?"))
             ),
         }
     }
@@ -123,6 +187,12 @@ impl std::fmt::Display for NotSet {
                 self.op
             ),
             NotSetKind::Feeds => write!(f, "{}: {FEEDS_NOT_SET_TEXT} (not set: {fields})", self.op),
+            NotSetKind::ToolFact => write!(
+                f,
+                "{}: {} (not set: {fields})",
+                self.op,
+                tool_fact_sentences(&self.fields, self.tool.as_deref().unwrap_or("?"))
+            ),
         }
     }
 }
@@ -156,6 +226,7 @@ pub fn required_depth(
         op,
         kind: NotSetKind::Depth,
         fields: vec![field],
+        tool: None,
     })
 }
 

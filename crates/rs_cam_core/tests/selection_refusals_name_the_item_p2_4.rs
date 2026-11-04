@@ -375,7 +375,7 @@ fn not_a_convex_edge() {
         let edge = Item::at_z(SourceRef::ToolpathModel, None, Shape::Path(path), 0.0)
             .unwrap()
             .with_model_edge(ModelEdge { form, ring: false });
-        let mut vbit = rs_cam_core::compute::tool_config::ToolConfig::new_default(
+        let mut vbit = rs_cam_core::compute::tool_config::ToolConfig::test_default(
             ToolId::from_raw(0),
             ToolType::VBit,
         );

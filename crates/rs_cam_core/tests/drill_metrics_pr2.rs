@@ -32,7 +32,7 @@ use rs_cam_core::session::{
 use rs_cam_core::trace::debug_trace::ToolpathDebugOptions;
 
 fn make_drill_tool(diameter: f64) -> ToolConfig {
-    let mut tool = ToolConfig::new_default(ToolId::from_raw(0), ToolType::EndMill);
+    let mut tool = ToolConfig::test_default(ToolId::from_raw(0), ToolType::EndMill);
     tool.diameter = diameter;
     tool.set_flute_count(ToolFact::Stated(2));
     tool.name = "Test Drill".to_owned();

@@ -110,7 +110,7 @@ fn adopt(s: &mut ProjectSession, index: usize) {
 /// cached result. The pins start as `pins()`.
 fn session_with(ops: Vec<ToolpathConfig>) -> ProjectSession {
     let mut builder = ProjectSessionBuilder::new();
-    builder.add_tool(ToolConfig::new_default(
+    builder.add_tool(ToolConfig::test_default(
         ToolId::from_raw(0),
         ToolType::EndMill,
     ));

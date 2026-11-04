@@ -61,7 +61,7 @@ fn five_point_star() -> Polygon2 {
 }
 
 fn make_vbit_12_7mm_60deg() -> ToolConfig {
-    let mut tool = ToolConfig::new_default(ToolId::from_raw(0), ToolType::VBit);
+    let mut tool = ToolConfig::test_default(ToolId::from_raw(0), ToolType::VBit);
     tool.diameter = 12.7;
     tool.set_cutting_length(ToolFact::Stated(11.0));
     tool.included_angle = 60.0;

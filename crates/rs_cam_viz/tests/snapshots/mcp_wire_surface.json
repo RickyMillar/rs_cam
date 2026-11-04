@@ -564,6 +564,14 @@
             "tapered_ball_nose"
           ],
           "type": "string"
+        },
+        "v_tip_diameter": {
+          "description": "D12: the flat tip diameter of a `v_bit` in mm (0 for a sharp\npoint), the same form as `set_tool_param v_tip_diameter`. A value\ngiven here is stated. Omit it when it is not known: a V-bit op then\nstops until it is stated. It must be >= 0 and below the diameter.",
+          "format": "double",
+          "type": [
+            "number",
+            "null"
+          ]
         }
       },
       "required": [
@@ -7083,6 +7091,11 @@
             {
               "const": "centre_cutting",
               "description": "K3 centre cutting: \"yes\", an object with `centre_core_diameter_mm`\nand `blade_protrusion_mm` (the tool does not cut at its centre), or\n`null` (not known). A value written here is stated.",
+              "type": "string"
+            },
+            {
+              "const": "v_tip_diameter",
+              "description": "D12: the flat tip diameter of a V-bit (mm, 0 for a sharp point), or\n`null` (not known). A value written here is stated. A V-bit op stops\nuntil it is stated.",
               "type": "string"
             }
           ]

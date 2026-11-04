@@ -184,7 +184,7 @@ fn state_of(session: ProjectSession) -> AppState {
 }
 
 fn tool(diameter: f64) -> ToolConfig {
-    let mut tool = ToolConfig::new_default(ToolId::from_raw(h::TOOL), ToolType::EndMill);
+    let mut tool = ToolConfig::test_default(ToolId::from_raw(h::TOOL), ToolType::EndMill);
     tool.diameter = diameter;
     tool
 }

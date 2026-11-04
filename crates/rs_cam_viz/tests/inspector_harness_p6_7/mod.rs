@@ -87,7 +87,7 @@ pub fn state(
     stock: StockConfig,
     operation: OperationConfig,
 ) -> AppState {
-    let mut tool = ToolConfig::new_default(ToolId::from_raw(TOOL), ToolType::EndMill);
+    let mut tool = ToolConfig::test_default(ToolId::from_raw(TOOL), ToolType::EndMill);
     tool.diameter = tool_diameter;
     let mut builder = ProjectSessionBuilder::new()
         .stock(stock)

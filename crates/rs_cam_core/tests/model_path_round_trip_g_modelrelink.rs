@@ -277,7 +277,7 @@ fn invalidate_model_drops_every_dependent_and_leaves_others_alone() {
     }
 
     let mut builder = ProjectSessionBuilder::new();
-    builder.add_tool(ToolConfig::new_default(
+    builder.add_tool(ToolConfig::test_default(
         ToolId::from_raw(0),
         ToolType::EndMill,
     ));

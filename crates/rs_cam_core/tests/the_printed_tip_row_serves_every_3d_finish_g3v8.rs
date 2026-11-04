@@ -72,7 +72,7 @@ const MM_PER_IN: f64 = 25.4;
 
 /// A tapered ball with a Ø1 tip (the lookup key, ruling A1), 2 flutes.
 fn tapered_one_mm() -> ToolConfig {
-    let mut t = ToolConfig::new_default(ToolId::from_raw(1), ToolType::TaperedBallNose);
+    let mut t = ToolConfig::test_default(ToolId::from_raw(1), ToolType::TaperedBallNose);
     t.diameter = 1.0;
     t.set_flute_count(ToolFact::Stated(2));
     t.set_cutting_length(ToolFact::Stated(12.0));

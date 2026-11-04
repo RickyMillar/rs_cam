@@ -2271,7 +2271,7 @@ mod tests {
             }),
         ];
         let annotated = AnnotatedToolpath::with_spans(toolpath, spans);
-        let tool = build_cutter(&ToolConfig::new_default(
+        let tool = build_cutter(&ToolConfig::test_default(
             ToolId::from_raw(0),
             ToolType::EndMill,
         ))
@@ -2295,7 +2295,7 @@ mod tests {
         toolpath.feed_to(P3::new(10.0, 0.0, 2.0), 1000.0);
         toolpath.arc_cw_to(P3::new(20.0, 0.0, 2.0), 100.0, 0.0, 1000.0);
 
-        let tool = build_cutter(&ToolConfig::new_default(
+        let tool = build_cutter(&ToolConfig::test_default(
             ToolId::from_raw(0),
             ToolType::EndMill,
         ))
@@ -2411,7 +2411,7 @@ mod tests {
         toolpath.feed_to(P3::new(5.0, 0.0, 2.0), 1000.0);
         toolpath.feed_to(P3::new(6.0, 0.0, 2.0), 1000.0);
 
-        let tool = build_cutter(&ToolConfig::new_default(
+        let tool = build_cutter(&ToolConfig::test_default(
             ToolId::from_raw(0),
             ToolType::EndMill,
         ))
@@ -2442,7 +2442,7 @@ mod tests {
         toolpath.feed_to(P3::new(0.0, 0.0, 2.0), 1000.0);
         toolpath.feed_to(P3::new(1.0, 0.0, 2.0), 1000.0);
 
-        let tool = build_cutter(&ToolConfig::new_default(
+        let tool = build_cutter(&ToolConfig::test_default(
             ToolId::from_raw(0),
             ToolType::EndMill,
         ))

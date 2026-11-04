@@ -152,7 +152,7 @@ fn fixture() -> ProjectSession {
             auto_from_model: false,
             ..rs_cam_core::compute::StockConfig::default()
         })
-        .tool(ToolConfig::new_default(
+        .tool(ToolConfig::test_default(
             ToolId::from_raw(TOOL),
             ToolType::EndMill,
         ))

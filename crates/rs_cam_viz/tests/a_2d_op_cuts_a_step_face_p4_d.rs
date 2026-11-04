@@ -103,7 +103,7 @@ fn step_only_session() -> ProjectSession {
         auto_from_model: false,
         ..StockConfig::default()
     };
-    let mut tool = ToolConfig::new_default(ToolId::from_raw(1), ToolType::EndMill);
+    let mut tool = ToolConfig::test_default(ToolId::from_raw(1), ToolType::EndMill);
     tool.diameter = TOOL_DIAMETER;
     let mut builder = ProjectSessionBuilder::new().stock(stock).tool(tool);
     let _ = builder.add_model(model);

@@ -85,7 +85,7 @@ fn one_pocket_session() -> (
     use rs_cam_core::session::{LoadedModel, ProjectSessionBuilder, ToolpathConfig};
     use std::sync::Arc;
 
-    let tool = rs_cam_core::compute::tool_config::ToolConfig::new_default(
+    let tool = rs_cam_core::compute::tool_config::ToolConfig::test_default(
         rs_cam_core::compute::ToolId::from_raw(1),
         rs_cam_core::compute::tool_config::ToolType::EndMill,
     );
@@ -530,7 +530,7 @@ fn step_pocket_session() -> rs_cam_core::session::ProjectSession {
         Default::default(),
     )
     .expect("the STEP fixture loads");
-    let tool = rs_cam_core::compute::tool_config::ToolConfig::new_default(
+    let tool = rs_cam_core::compute::tool_config::ToolConfig::test_default(
         rs_cam_core::compute::ToolId::from_raw(1),
         rs_cam_core::compute::tool_config::ToolType::EndMill,
     );
@@ -745,7 +745,7 @@ fn holes_session() -> rs_cam_core::session::ProjectSession {
     };
     let mut items: Vec<Item> = (0..24).map(|i| circle(f64::from(i) * 12.0, 6.0)).collect();
     items.push(circle(400.0, 10.0));
-    let mut tool = rs_cam_core::compute::tool_config::ToolConfig::new_default(
+    let mut tool = rs_cam_core::compute::tool_config::ToolConfig::test_default(
         rs_cam_core::compute::ToolId::from_raw(1),
         rs_cam_core::compute::tool_config::ToolType::EndMill,
     );
@@ -1329,7 +1329,7 @@ fn one_hole_is_one_row_re() {
         Default::default(),
     )
     .unwrap();
-    let mut tool = rs_cam_core::compute::tool_config::ToolConfig::new_default(
+    let mut tool = rs_cam_core::compute::tool_config::ToolConfig::test_default(
         rs_cam_core::compute::ToolId::from_raw(1),
         rs_cam_core::compute::tool_config::ToolType::EndMill,
     );
@@ -1446,7 +1446,7 @@ fn the_part_outline_row_reads_part_outline_ra() {
         Default::default(),
     )
     .unwrap();
-    let mut tool = rs_cam_core::compute::tool_config::ToolConfig::new_default(
+    let mut tool = rs_cam_core::compute::tool_config::ToolConfig::test_default(
         rs_cam_core::compute::ToolId::from_raw(1),
         rs_cam_core::compute::tool_config::ToolType::EndMill,
     );
@@ -1549,9 +1549,9 @@ fn the_tool_picker_greys_refused_tools_r2() {
     use rs_cam_core::session::{AddToolpathArgs, Command, LoadedModel, ProjectSessionBuilder};
     use std::sync::Arc;
 
-    let v_bit = ToolConfig::new_default(rs_cam_core::compute::ToolId::from_raw(0), ToolType::VBit);
+    let v_bit = ToolConfig::test_default(rs_cam_core::compute::ToolId::from_raw(0), ToolType::VBit);
     let end_mill =
-        ToolConfig::new_default(rs_cam_core::compute::ToolId::from_raw(1), ToolType::EndMill);
+        ToolConfig::test_default(rs_cam_core::compute::ToolId::from_raw(1), ToolType::EndMill);
     let circle = Item::new(
         SourceRef::ToolpathModel,
         None,
@@ -2451,7 +2451,7 @@ fn one_op_session(
     use rs_cam_core::session::{LoadedModel, ProjectSessionBuilder, ToolpathConfig};
     use std::sync::Arc;
 
-    let tool = rs_cam_core::compute::tool_config::ToolConfig::new_default(
+    let tool = rs_cam_core::compute::tool_config::ToolConfig::test_default(
         rs_cam_core::compute::ToolId::from_raw(1),
         rs_cam_core::compute::tool_config::ToolType::EndMill,
     );

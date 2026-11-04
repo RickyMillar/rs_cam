@@ -264,7 +264,7 @@ fn a_row_rpm_min_stops_the_descent_fm8() {
 /// (d) through Suggest on the generic router's 4000 mm/min ceiling.
 #[test]
 fn suggest_ships_the_lowered_rpm_with_a_rationale_row_fm8() {
-    let mut tool = ToolConfig::new_default(ToolId::from_raw(1), ToolType::EndMill);
+    let mut tool = ToolConfig::test_default(ToolId::from_raw(1), ToolType::EndMill);
     tool.diameter = 6.0;
     tool.set_shank_diameter(ToolFact::Stated(6.0));
     tool.shaft_diameter = 6.0;

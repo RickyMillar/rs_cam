@@ -291,7 +291,7 @@ mod tests {
     /// Pocket op, default stock / material / Generic Wood Router.
     fn demo_pocket() -> (ProjectSession, ToolConfig, OperationConfig, FeedsResult) {
         let session = ProjectSession::new_empty();
-        let mut tool = ToolConfig::new_default(ToolId::from_raw(1), ToolType::EndMill);
+        let mut tool = ToolConfig::test_default(ToolId::from_raw(1), ToolType::EndMill);
         tool.diameter = 6.0;
         // S11: the fixture states the values before S11.
         let op_type = OperationType::Pocket;
@@ -362,7 +362,7 @@ mod tests {
                 machine: Box::new(machine),
             }))
             .expect("set the fixture machine");
-        let mut tool = ToolConfig::new_default(ToolId::from_raw(1), ToolType::EndMill);
+        let mut tool = ToolConfig::test_default(ToolId::from_raw(1), ToolType::EndMill);
         tool.diameter = 6.0;
         // S11: the fixture states the values before S11.
         let op_type = OperationType::Pocket;
@@ -589,7 +589,7 @@ mod tests {
         let session = ProjectSession::new_empty();
         // A 6 mm V-bit: the default 12.7 mm V-bit has no chart row within
         // the size law's window since ruling B4 keys a V-bit at its size.
-        let mut tool = ToolConfig::new_default(ToolId::from_raw(1), ToolType::VBit);
+        let mut tool = ToolConfig::test_default(ToolId::from_raw(1), ToolType::VBit);
         tool.diameter = 6.0;
         // S11: the fixture states the values before S11.
         let op_type = OperationType::VCarve;

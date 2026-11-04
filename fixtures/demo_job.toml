@@ -13,10 +13,12 @@ sim_resolution = 0.5
 [tools.flat_6mm]
 type = "end_mill"
 diameter = 6.35
+centre_cutting = { stated = "yes" }
 
 [tools.flat_3mm]
 type = "end_mill"
 diameter = 3.175
+centre_cutting = { stated = "yes" }
 
 # First: rough out the pocket with the bigger tool
 [[operation]]

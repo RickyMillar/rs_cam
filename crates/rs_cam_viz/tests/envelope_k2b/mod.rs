@@ -31,7 +31,7 @@ pub fn envelope_for(op: OperationType) -> Option<(OperationConfig, SafeEnvelope)
 /// [`envelope_for`] (P5c: a fixture op with an edited stated point).
 pub fn envelope_of(config: OperationConfig) -> Option<(OperationConfig, SafeEnvelope)> {
     for kind in [ToolType::EndMill, ToolType::BallNose, ToolType::VBit] {
-        let mut tool = ToolConfig::new_default(ToolId::from_raw(1), kind);
+        let mut tool = ToolConfig::test_default(ToolId::from_raw(1), kind);
         tool.diameter = 6.0;
         let machine = MachineProfile::default();
         let material = Material::default();

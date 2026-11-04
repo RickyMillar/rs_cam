@@ -106,7 +106,7 @@ fn pocket_op_with_unresolved_model_id_surfaces_blocking_diagnostic() {
     // loaded model. F-023 requires the unified diagnostic stream to
     // surface this, not just the GUI banner.
     let mut builder = ProjectSessionBuilder::new();
-    let mut tool = ToolConfig::new_default(ToolId::from_raw(0), ToolType::EndMill);
+    let mut tool = ToolConfig::test_default(ToolId::from_raw(0), ToolType::EndMill);
     tool.diameter = 3.0;
     builder.add_tool(tool);
     let mid = builder.add_model(polygon_model(0));
@@ -152,7 +152,7 @@ fn pocket_op_with_unresolved_model_id_surfaces_blocking_diagnostic() {
 #[test]
 fn pocket_op_with_resolved_model_id_emits_no_ref_diagnostic() {
     let mut builder = ProjectSessionBuilder::new();
-    let mut tool = ToolConfig::new_default(ToolId::from_raw(0), ToolType::EndMill);
+    let mut tool = ToolConfig::test_default(ToolId::from_raw(0), ToolType::EndMill);
     tool.diameter = 3.0;
     builder.add_tool(tool);
     let mid = builder.add_model(polygon_model(0));
@@ -185,7 +185,7 @@ fn face_op_with_unresolved_model_id_is_silent() {
     // Face is a stock-based op — it doesn't need a loaded model, so a
     // dangling model_id should NOT trip the ref check.
     let mut builder = ProjectSessionBuilder::new();
-    let mut tool = ToolConfig::new_default(ToolId::from_raw(0), ToolType::EndMill);
+    let mut tool = ToolConfig::test_default(ToolId::from_raw(0), ToolType::EndMill);
     tool.diameter = 3.0;
     builder.add_tool(tool);
     // No models loaded at all.

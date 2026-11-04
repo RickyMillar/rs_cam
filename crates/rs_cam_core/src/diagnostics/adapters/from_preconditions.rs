@@ -86,6 +86,11 @@ pub struct PreconditionContext {
     /// R2: the no-tool state of the op (`ProjectSession::no_tool_state`),
     /// or `None` when the op has a tool.
     pub no_tool_state: Option<String>,
+    /// S11 + ruling D12: the stop of the op with its tool
+    /// (`OperationConfig::not_set_for_tool`: a depth, a required tool fact,
+    /// the feeds), as generation gives it. `None` with no tool or nothing
+    /// unset; a caller with no tool falls back to `OperationConfig::not_set`.
+    pub not_set: Option<crate::compute::not_set::NotSet>,
 }
 
 #[derive(Debug, Clone, Copy, Default)]
@@ -241,12 +246,21 @@ fn not_set(scope: &Scope, op: &OperationConfig, ctx: &PreconditionContext) -> Op
             Category::Geometry,
         )
     } else {
-        let not_set = op.not_set()?;
-        let anchor = not_set.first_field().map_or(Anchor::Operation, field);
-        // The feeds are a tool-load fault, a depth a geometry fault.
-        let (face, category) = match not_set.kind {
-            NotSetKind::Depth => ("Depth not set", Category::Geometry),
-            NotSetKind::Feeds => ("Feed and spindle not set", Category::ToolLoad),
+        let not_set = ctx.not_set.clone().or_else(|| op.not_set())?;
+        // The feeds are a tool-load fault, a depth a geometry fault; a tool
+        // fact (D12) is a safety fault, and the tool holds its fix.
+        let (face, category, anchor) = match not_set.kind {
+            NotSetKind::Depth => (
+                "Depth not set",
+                Category::Geometry,
+                not_set.first_field().map_or(Anchor::Operation, field),
+            ),
+            NotSetKind::Feeds => (
+                "Feed and spindle not set",
+                Category::ToolLoad,
+                not_set.first_field().map_or(Anchor::Operation, field),
+            ),
+            NotSetKind::ToolFact => ("Tool fact not stated", Category::Safety, Anchor::Tool),
         };
         (not_set.detail(), face.to_owned(), anchor, category)
     };

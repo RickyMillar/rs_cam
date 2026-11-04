@@ -57,7 +57,7 @@ fn toolpath(name: &str, tool_id: usize) -> ToolpathConfig {
 /// global index of the op in setup 0.
 fn two_setups() -> (ProjectSession, usize) {
     let mut builder = ProjectSessionBuilder::new();
-    builder.add_tool(ToolConfig::new_default(
+    builder.add_tool(ToolConfig::test_default(
         ToolId::from_raw(0),
         ToolType::EndMill,
     ));

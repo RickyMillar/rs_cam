@@ -145,7 +145,7 @@ fn selection_controller() -> AppController<ScriptedBackend> {
         Default::default(),
     )
     .expect("the drawing loads");
-    let mut builder = ProjectSessionBuilder::new().tool(ToolConfig::new_default(
+    let mut builder = ProjectSessionBuilder::new().tool(ToolConfig::test_default(
         ToolId::from_raw(1),
         ToolType::EndMill,
     ));
@@ -490,7 +490,7 @@ mod an_stl_face_click_p4_7 {
         };
         let mut builder = ProjectSessionBuilder::new()
             .stock(stock)
-            .tool(ToolConfig::new_default(
+            .tool(ToolConfig::test_default(
                 ToolId::from_raw(1),
                 ToolType::EndMill,
             ));

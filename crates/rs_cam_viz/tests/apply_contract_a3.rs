@@ -113,7 +113,7 @@ fn controller_with(op_type: OperationType) -> AppController<SilentBackend> {
 /// file, so the arrangement must not run through it.
 fn controller_with_config(config: ToolpathConfig) -> AppController<SilentBackend> {
     let mut controller = AppController::with_backend(SilentBackend);
-    let mut builder = ProjectSessionBuilder::new().tool(ToolConfig::new_default(
+    let mut builder = ProjectSessionBuilder::new().tool(ToolConfig::test_default(
         ToolId::from_raw(1),
         ToolType::EndMill,
     ));

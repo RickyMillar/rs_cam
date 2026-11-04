@@ -160,7 +160,7 @@ fn long_session(op: OperationConfig, source: StockSource) -> (ProjectSession, us
     });
     let tool = builder.add_tool(tool_for(OperationType::SteepShallow));
     let tool_id = builder.tools()[tool].id.raw();
-    let rough_tool = builder.add_tool(ToolConfig::new_default(
+    let rough_tool = builder.add_tool(ToolConfig::test_default(
         ToolId::from_raw(0),
         ToolType::EndMill,
     ));

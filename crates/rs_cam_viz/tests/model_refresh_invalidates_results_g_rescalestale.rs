@@ -176,7 +176,7 @@ fn seeded(dir: &Path) -> (AppController<SilentBackend>, ModelId, PathBuf) {
                 auto_from_model: false,
                 ..rs_cam_core::compute::StockConfig::default()
             })
-            .tool(ToolConfig::new_default(
+            .tool(ToolConfig::test_default(
                 ToolId::from_raw(1),
                 ToolType::EndMill,
             ))
@@ -382,7 +382,7 @@ fn a_reload_drops_the_dependent_results_control() {
 #[test]
 fn a_step_rescale_changes_nothing_and_drops_nothing() {
     let mut controller = AppController::with_backend(SilentBackend);
-    let tool = ToolConfig::new_default(ToolId::from_raw(1), ToolType::EndMill);
+    let tool = ToolConfig::test_default(ToolId::from_raw(1), ToolType::EndMill);
     let mut builder = ProjectSessionBuilder::new().tool(tool);
 
     // The path is never read: the STEP arm returns before the import.

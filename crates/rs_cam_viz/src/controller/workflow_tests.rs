@@ -142,7 +142,7 @@ fn stl_model() -> LoadedModel {
 /// Build a controller with a STEP model and one tool, ready for toolpath creation.
 fn step_controller() -> AppController<ScriptedBackend> {
     let mut c = AppController::with_backend(ScriptedBackend::new());
-    let tool = ToolConfig::new_default(ToolId::from_raw(1), ToolType::EndMill);
+    let tool = ToolConfig::test_default(ToolId::from_raw(1), ToolType::EndMill);
     let mut builder = ProjectSessionBuilder::new().tool(tool);
     let model_id = builder.add_model(step_model());
     // model_id is the raw usize assigned by session
@@ -154,7 +154,7 @@ fn step_controller() -> AppController<ScriptedBackend> {
 /// Build a controller with an STL model and one tool.
 fn stl_controller() -> AppController<ScriptedBackend> {
     let mut c = AppController::with_backend(ScriptedBackend::new());
-    let tool = ToolConfig::new_default(ToolId::from_raw(1), ToolType::EndMill);
+    let tool = ToolConfig::test_default(ToolId::from_raw(1), ToolType::EndMill);
     let mut builder = ProjectSessionBuilder::new().tool(tool);
     let _ = builder.add_model(stl_model());
     c.state.replace_session(builder.build());
@@ -1050,7 +1050,7 @@ fn a_model_change_in_the_panel_drops_the_lost_picks_r7b() {
     use std::sync::atomic::AtomicBool;
 
     let mut c = AppController::with_backend(ScriptedBackend::new());
-    let tool = ToolConfig::new_default(ToolId::from_raw(1), ToolType::EndMill);
+    let tool = ToolConfig::test_default(ToolId::from_raw(1), ToolType::EndMill);
     let diameter = tool.diameter;
     let mut builder = ProjectSessionBuilder::new().tool(tool);
     let step = step_model();
@@ -1190,7 +1190,7 @@ fn a_dxf_draws_on_import_and_its_eye_hides_it_p4_d() {
     .expect("the DXF fixture loads");
     assert!(model.items.has_drawing(), "the case is a drawing");
     let mut c = AppController::with_backend(ScriptedBackend::new());
-    let tool = ToolConfig::new_default(ToolId::from_raw(1), ToolType::EndMill);
+    let tool = ToolConfig::test_default(ToolId::from_raw(1), ToolType::EndMill);
     let mut builder = ProjectSessionBuilder::new().tool(tool);
     let model_id = builder.add_model(model);
     c.state.replace_session(builder.build());
@@ -1256,7 +1256,7 @@ fn w5_project_round_trip_preserves_step_face_selection() {
     // Build a session with STEP model + face selection
     let model = step_model();
     let enriched = model.enriched_mesh.as_ref().unwrap().clone();
-    let tool = ToolConfig::new_default(ToolId::from_raw(1), ToolType::EndMill);
+    let tool = ToolConfig::test_default(ToolId::from_raw(1), ToolType::EndMill);
     let mut builder = ProjectSessionBuilder::new().tool(tool);
     let model_id = builder.add_model(model);
 

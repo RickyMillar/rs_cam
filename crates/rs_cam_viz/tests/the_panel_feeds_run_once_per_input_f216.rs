@@ -64,7 +64,7 @@ fn ctx() -> egui::Context {
 }
 
 fn tool() -> ToolConfig {
-    let mut tool = ToolConfig::new_default(ToolId::from_raw(1), ToolType::EndMill);
+    let mut tool = ToolConfig::test_default(ToolId::from_raw(1), ToolType::EndMill);
     tool.diameter = 6.0;
     tool.set_flute_count(ToolFact::Stated(2));
     tool

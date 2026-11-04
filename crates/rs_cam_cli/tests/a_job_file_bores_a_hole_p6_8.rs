@@ -66,6 +66,7 @@ output = "out.nc"
 
 [tools.flat]
 type = "end_mill"
+centre_cutting = {{ stated = "yes" }}
 diameter = {tool_d}
 
 [[operation]]

@@ -52,7 +52,7 @@ fn ctx() -> egui::Context {
 /// One tool, one 2D model, one toolpath, and the Dust shoe head with a
 /// travel range.
 fn fixture() -> AppState {
-    let mut tool = ToolConfig::new_default(ToolId::from_raw(1), ToolType::EndMill);
+    let mut tool = ToolConfig::test_default(ToolId::from_raw(1), ToolType::EndMill);
     tool.diameter = 6.0;
     let config = ToolpathConfig {
         shoe: Default::default(),

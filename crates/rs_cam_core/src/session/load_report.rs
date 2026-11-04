@@ -484,7 +484,7 @@ mod tests {
 
     fn session() -> ProjectSession {
         let mut s = ProjectSession::new_empty();
-        let _ = s.add_tool(ToolConfig::new_default(
+        let _ = s.add_tool(ToolConfig::test_default(
             ToolId::from_raw(0),
             ToolType::EndMill,
         ));

@@ -91,6 +91,7 @@ tool_material = "carbide"
 cut_direction = "up_cut"
 vendor = ""
 product_id = ""
+centre_cutting = { stated = "yes" }
 
 [[tools]]
 id = 1
@@ -112,6 +113,7 @@ tool_material = "carbide"
 cut_direction = "up_cut"
 vendor = "endmill.com.au"
 product_id = "TBN-R0.5-6-20"
+centre_cutting = { stated = "yes" }
 
 [[tools]]
 id = 2
@@ -133,6 +135,7 @@ tool_material = "carbide"
 cut_direction = "up_cut"
 vendor = "endmill.com.au"
 product_id = "TBN-R1.0-6-20"
+centre_cutting = { stated = "yes" }
 
 [[tools]]
 id = 3
@@ -154,6 +157,7 @@ tool_material = "carbide"
 cut_direction = "up_cut"
 vendor = "endmill.com.au"
 product_id = "TBN-R1.5-6-30.5"
+centre_cutting = { stated = "yes" }
 
 [[tools]]
 id = 4
@@ -175,6 +179,7 @@ tool_material = "carbide"
 cut_direction = "up_cut"
 vendor = "endmill.com.au"
 product_id = "TBN-R2.0-6-20"
+centre_cutting = { stated = "yes" }
 
 [[tools]]
 id = 5
@@ -196,6 +201,8 @@ tool_material = "carbide"
 cut_direction = "up_cut"
 vendor = ""
 product_id = ""
+centre_cutting = { stated = "yes" }
+v_tip_diameter = { stated = 0.0 }
 
 [[models]]
 id = 0

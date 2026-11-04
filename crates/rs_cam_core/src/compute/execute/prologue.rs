@@ -288,8 +288,9 @@ pub(super) fn prepare<'a>(
         return Err(OperationError::Cancelled);
     }
     // S11: a value with no derivation that is not set refuses before any
-    // geometry work: the op cannot cut with it.
-    if let Some(not_set) = op.not_set() {
+    // geometry work: the op cannot cut with it. D12: so does a required
+    // tool fact that is not known (centre cutting, the V tip).
+    if let Some(not_set) = op.not_set_for_tool(ctx.tool_cfg) {
         return Err(OperationError::NotSet(not_set));
     }
     check_inputs(ctx, op)

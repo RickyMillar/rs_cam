@@ -109,7 +109,7 @@ fn toolpath(id: usize, name: &str, operation: OperationConfig) -> ToolpathConfig
 
 /// An `AppState` whose selection is the first toolpath of `configs`.
 fn state_from(configs: Vec<ToolpathConfig>) -> AppState {
-    let mut tool = ToolConfig::new_default(ToolId::from_raw(1), ToolType::BallNose);
+    let mut tool = ToolConfig::test_default(ToolId::from_raw(1), ToolType::BallNose);
     tool.diameter = 6.0;
     tool.set_flute_count(ToolFact::Stated(2));
     let mut builder = ProjectSessionBuilder::new()

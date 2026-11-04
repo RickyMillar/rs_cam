@@ -684,7 +684,7 @@ mod pin_edit_one_door_p5 {
     /// the project names the tool that drills the 6 mm pin holes (P6, R1:
     /// the door reads `pin_drill_tool_for`, never `tools[0]`).
     fn add_drill_op(controller: &mut AppController<ScriptedBackend>, setup_index: usize) {
-        let mut drill = rs_cam_core::compute::tool_config::ToolConfig::new_default(
+        let mut drill = rs_cam_core::compute::tool_config::ToolConfig::test_default(
             ToolId::from_raw(0),
             ToolType::VBit,
         );
@@ -1182,7 +1182,7 @@ mod pin_edit_one_door_p5 {
     fn the_tool_chooser_binds_one_size_r2() {
         let mut controller = flipped_first_controller();
         let _ = set_pins(&mut controller, vec![AlignmentPin::new(10.0, 20.0, 6.0)]);
-        let mut second = rs_cam_core::compute::tool_config::ToolConfig::new_default(
+        let mut second = rs_cam_core::compute::tool_config::ToolConfig::test_default(
             ToolId::from_raw(0),
             ToolType::EndMill,
         );

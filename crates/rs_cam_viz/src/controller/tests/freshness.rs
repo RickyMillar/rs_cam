@@ -227,7 +227,7 @@ fn freshness_state_g_freshness_tool_and_model_reassignment_stale() {
     for row in ["tool", "model"] {
         let mut controller = sample_controller();
         let mut tools = controller.state.session().tools().to_vec();
-        tools.push(ToolConfig::new_default(
+        tools.push(ToolConfig::test_default(
             ToolId::from_raw(2),
             ToolType::EndMill,
         ));

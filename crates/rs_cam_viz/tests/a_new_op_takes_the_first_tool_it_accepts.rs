@@ -90,14 +90,14 @@ fn drawing() -> LoadedModel {
 
 /// The operator's V-bit: Ø6, 90°.
 fn v_bit(id: ToolId) -> ToolConfig {
-    let mut tool = ToolConfig::new_default(id, ToolType::VBit);
+    let mut tool = ToolConfig::test_default(id, ToolType::VBit);
     tool.name = "V-Bittest".to_owned();
     tool.diameter = 6.0;
     tool
 }
 
 fn end_mill(id: ToolId) -> ToolConfig {
-    let mut tool = ToolConfig::new_default(id, ToolType::EndMill);
+    let mut tool = ToolConfig::test_default(id, ToolType::EndMill);
     tool.diameter = 6.0;
     tool
 }

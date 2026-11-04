@@ -168,7 +168,7 @@ fn adopt(s: &mut ProjectSession, index: usize) {
 /// leaves. Both carry a cached result.
 fn fixture() -> ProjectSession {
     let mut builder = ProjectSessionBuilder::new();
-    builder.add_tool(ToolConfig::new_default(
+    builder.add_tool(ToolConfig::test_default(
         ToolId::from_raw(0),
         ToolType::EndMill,
     ));

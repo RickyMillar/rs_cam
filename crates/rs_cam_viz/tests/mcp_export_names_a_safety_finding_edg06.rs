@@ -127,7 +127,7 @@ fn toolpath_config(id: u32, name: &str) -> ToolpathConfig {
 /// the stock top, here world 0, in the program frame). The rapids at Z=5
 /// sit below that plane of Z10.
 fn build_state(safe_z: f64) -> (ProjectSession, GuiState, SimulationState) {
-    let tool = ToolConfig::new_default(ToolId::from_raw(1), ToolType::EndMill);
+    let tool = ToolConfig::test_default(ToolId::from_raw(1), ToolType::EndMill);
     let mut builder = ProjectSessionBuilder::new()
         .tool(tool)
         .name("edg06 sentry".to_owned());

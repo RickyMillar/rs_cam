@@ -715,7 +715,7 @@ fn adopt(
 fn session_for_toolpath_one() -> rs_cam_core::session::ProjectSession {
     use rs_cam_core::compute::tool_config::{ToolConfig, ToolId, ToolType};
     use rs_cam_core::session::{ProjectSessionBuilder, ToolpathConfig};
-    let mut builder = ProjectSessionBuilder::new().tool(ToolConfig::new_default(
+    let mut builder = ProjectSessionBuilder::new().tool(ToolConfig::test_default(
         ToolId::from_raw(1),
         ToolType::EndMill,
     ));

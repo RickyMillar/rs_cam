@@ -44,10 +44,6 @@ const TOOL_OWN_DOOR: &[(&str, &str)] = &[
     ),
     ("vendor", "ReplaceTool and add_tool_from_library"),
     ("product_id", "ReplaceTool and add_tool_from_library"),
-    (
-        "v_tip_diameter",
-        "the project file and the tool library (K3; P7 VTipFlat adds its door)",
-    ),
 ];
 
 /// Every field name of [`StockConfig`], by an exhaustive destructure.
@@ -161,7 +157,7 @@ fn every_stock_field_is_patched_or_has_its_own_door() {
 #[test]
 fn every_tool_field_is_a_param_key_or_has_its_own_door() {
     let tool_names = tool_fields();
-    let mut probe = ToolConfig::new_default(ToolId::from_raw(0), ToolType::EndMill);
+    let mut probe = ToolConfig::test_default(ToolId::from_raw(0), ToolType::EndMill);
     probe.size_units = Some(rs_cam_core::compute::tool_config::SizeUnits::Metric);
     // K3: an `Unknown` fact writes no key, so the probe states every fact.
     probe.set_centre_cutting(rs_cam_core::compute::tool_config::ToolFact::Stated(

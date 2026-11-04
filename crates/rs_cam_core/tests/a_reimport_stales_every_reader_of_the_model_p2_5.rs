@@ -193,7 +193,7 @@ fn fixture() -> ProjectSession {
     let [model_a, model_b] = models;
     let mut builder = ProjectSessionBuilder::new()
         .stock(stock)
-        .tool(ToolConfig::new_default(
+        .tool(ToolConfig::test_default(
             ToolId::from_raw(TOOL),
             ToolType::EndMill,
         ))

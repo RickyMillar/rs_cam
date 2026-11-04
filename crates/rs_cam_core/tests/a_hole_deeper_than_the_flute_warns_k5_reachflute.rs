@@ -172,7 +172,7 @@ fn the_simulation_measures_the_pin_hole_and_supersedes_the_stock_box_row() {
 /// stickout 30 mm, centre cutting. The values are the case, not a real
 /// tool.
 fn short_flute_tool() -> ToolConfig {
-    let mut tool = ToolConfig::new_default(ToolId::from_raw(0), ToolType::EndMill);
+    let mut tool = ToolConfig::test_default(ToolId::from_raw(0), ToolType::EndMill);
     tool.diameter = 6.0;
     tool.set_cutting_length(ToolFact::Stated(8.0));
     tool.set_stickout(ToolFact::Stated(30.0));

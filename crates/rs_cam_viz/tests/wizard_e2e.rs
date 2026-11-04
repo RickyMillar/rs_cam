@@ -123,7 +123,7 @@ fn seed_generated_result(
 
 fn build_session() -> (ProjectSession, GuiState, SimulationState) {
     // Tool 1
-    let tool = ToolConfig::new_default(ToolId::from_raw(1), ToolType::EndMill);
+    let tool = ToolConfig::test_default(ToolId::from_raw(1), ToolType::EndMill);
     let mut builder = ProjectSessionBuilder::new()
         .tool(tool)
         .name("wizard e2e".to_owned());

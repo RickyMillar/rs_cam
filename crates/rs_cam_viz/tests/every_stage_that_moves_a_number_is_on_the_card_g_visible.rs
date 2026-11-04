@@ -637,7 +637,7 @@ fn check(case: &Case) -> Vec<&'static str> {
 /// The whyrow cell: a Ø6 flat 2F `Adaptive3d` in Baltic birch, on the
 /// default stickout 45 mm (7.5 x D).
 fn adaptive_tool() -> ToolConfig {
-    let mut tool = ToolConfig::new_default(ToolId::from_raw(1), ToolType::EndMill);
+    let mut tool = ToolConfig::test_default(ToolId::from_raw(1), ToolType::EndMill);
     tool.diameter = 6.0;
     tool.set_flute_count(ToolFact::Stated(2));
     tool
@@ -692,7 +692,7 @@ fn cases() -> Vec<Case> {
     let mut short_flute = adaptive_tool();
     short_flute.set_cutting_length(ToolFact::Stated(2.0));
 
-    let mut profile_tool = ToolConfig::new_default(ToolId::from_raw(1), ToolType::EndMill);
+    let mut profile_tool = ToolConfig::test_default(ToolId::from_raw(1), ToolType::EndMill);
     profile_tool.diameter = 3.175;
     profile_tool.set_flute_count(ToolFact::Stated(2));
     profile_tool.set_cutting_length(ToolFact::Stated(12.0));
@@ -710,7 +710,7 @@ fn cases() -> Vec<Case> {
     // `AggressivenessNotApplied`) left the card, and the finish and drill
     // cells that filed the "no dial action" record went with them.
 
-    let mut pocket_tool = ToolConfig::new_default(ToolId::from_raw(1), ToolType::EndMill);
+    let mut pocket_tool = ToolConfig::test_default(ToolId::from_raw(1), ToolType::EndMill);
     pocket_tool.diameter = 6.0;
 
     vec![

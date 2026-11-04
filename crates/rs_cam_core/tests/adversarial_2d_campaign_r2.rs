@@ -134,7 +134,7 @@ fn stock_for(polys: &[Polygon2]) -> StockConfig {
 }
 
 fn endmill(diameter: f64) -> ToolConfig {
-    let mut t = ToolConfig::new_default(ToolId::from_raw(0), ToolType::EndMill);
+    let mut t = ToolConfig::test_default(ToolId::from_raw(0), ToolType::EndMill);
     t.diameter = diameter;
     t.set_cutting_length(ToolFact::Stated(25.0));
     t.set_shank_diameter(ToolFact::Stated(diameter));
@@ -149,7 +149,7 @@ fn endmill(diameter: f64) -> ToolConfig {
 /// both refuse any other cutter kind (`vbit_half_angle`), and both read the
 /// half angle from the TOOL, never from the config.
 fn vbit() -> ToolConfig {
-    let mut t = ToolConfig::new_default(ToolId::from_raw(0), ToolType::VBit);
+    let mut t = ToolConfig::test_default(ToolId::from_raw(0), ToolType::VBit);
     t.diameter = 12.7;
     t.set_cutting_length(ToolFact::Stated(11.0));
     t.included_angle = 60.0;

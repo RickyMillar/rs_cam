@@ -149,7 +149,7 @@ fn seed_generated(controller: &mut AppController<CountingBackend>) {
 
 fn build_controller(submits: Arc<AtomicUsize>) -> AppController<CountingBackend> {
     let mut controller = AppController::with_backend(CountingBackend { submits });
-    let tool = ToolConfig::new_default(ToolId::from_raw(1), ToolType::EndMill);
+    let tool = ToolConfig::test_default(ToolId::from_raw(1), ToolType::EndMill);
     let mut builder = ProjectSessionBuilder::new().tool(tool);
     let _ = builder.add_model(LoadedModel {
         id: rs_cam_core::ids::ModelId::from_raw(0),

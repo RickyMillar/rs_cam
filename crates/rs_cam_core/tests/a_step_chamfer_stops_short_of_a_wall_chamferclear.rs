@@ -103,7 +103,7 @@ fn load(rel: &str) -> LoadedModel {
 }
 
 fn vbit(diameter: f64, angle: f64) -> ToolConfig {
-    let mut t = ToolConfig::new_default(ToolId::from_raw(0), ToolType::VBit);
+    let mut t = ToolConfig::test_default(ToolId::from_raw(0), ToolType::VBit);
     t.diameter = diameter;
     t.set_cutting_length(ToolFact::Stated(10.0));
     t.included_angle = angle;

@@ -29,7 +29,7 @@ const R1_TOOL: usize = 6;
 const BOARD_MM2: f64 = 350.0 * 350.0;
 
 fn r3_ball() -> ToolConfig {
-    let mut t = ToolConfig::new_default(ToolId::from_raw(0), ToolType::BallNose);
+    let mut t = ToolConfig::test_default(ToolId::from_raw(0), ToolType::BallNose);
     t.name = "R3 6mm Ball Nose 2F (HYPOTHETICAL)".to_owned();
     t.diameter = 6.0;
     t.set_cutting_length(ToolFact::Stated(25.0));

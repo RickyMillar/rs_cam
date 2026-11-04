@@ -108,7 +108,7 @@ fn viz_result(path: Toolpath) -> ToolpathResult {
 /// (the F1_RCA sync in `controller/events/compute.rs` writes
 /// `session.results` and `gui.toolpath_rt` from the same worker output).
 fn build_state() -> (ProjectSession, GuiState, SimulationState) {
-    let tool = ToolConfig::new_default(ToolId::from_raw(1), ToolType::EndMill);
+    let tool = ToolConfig::test_default(ToolId::from_raw(1), ToolType::EndMill);
     let mut builder = ProjectSessionBuilder::new()
         .tool(tool)
         .name("g-modexport sentry".to_owned());

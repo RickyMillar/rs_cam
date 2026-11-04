@@ -99,7 +99,7 @@ fn thin_profile() -> Fixture {
 }
 
 fn state_for(fixture: &Fixture) -> AppState {
-    let mut tool = ToolConfig::new_default(ToolId::from_raw(1), ToolType::EndMill);
+    let mut tool = ToolConfig::test_default(ToolId::from_raw(1), ToolType::EndMill);
     tool.diameter = fixture.diameter_mm;
     tool.set_flute_count(ToolFact::Stated(2));
     tool.set_stickout(ToolFact::Stated(fixture.stickout_mm));

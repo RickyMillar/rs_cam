@@ -145,7 +145,7 @@ fn toolpath(name: &str, model_id: usize, operation: OperationConfig) -> Toolpath
 /// One 6 mm end mill, one outline, one mesh, an 18 mm board and three
 /// operations: a pocket, a 3D rough and a 3D finish.
 fn fixture() -> AppState {
-    let mut tool = ToolConfig::new_default(ToolId::from_raw(TOOL), ToolType::EndMill);
+    let mut tool = ToolConfig::test_default(ToolId::from_raw(TOOL), ToolType::EndMill);
     tool.diameter = 6.0;
     let stock = StockConfig {
         z: Some(18.0),

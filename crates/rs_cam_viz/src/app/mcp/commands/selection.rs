@@ -584,7 +584,7 @@ mod tests {
                 model: Box::new(model),
             }),
         );
-        let mut tool = ToolConfig::new_default(ToolId::from_raw(0), ToolType::EndMill);
+        let mut tool = ToolConfig::test_default(ToolId::from_raw(0), ToolType::EndMill);
         tool.diameter = 3.0;
         let tool_index = apply(
             &mut s,
@@ -619,7 +619,7 @@ mod tests {
         assert_eq!(circles.len(), 2, "the drawing holds two circles");
         // P6.5 (O-3): a Drill drills a circle of the tool size only, so the
         // drills get a tool of the picked circle size.
-        let mut drill_tool = ToolConfig::new_default(ToolId::from_raw(0), ToolType::EndMill);
+        let mut drill_tool = ToolConfig::test_default(ToolId::from_raw(0), ToolType::EndMill);
         drill_tool.diameter = circles[0].key.measure;
         let drill_tool_index = apply(
             &mut s,
@@ -1011,7 +1011,7 @@ mod tests {
                     model: Box::new(model),
                 }),
             );
-            let mut tool = ToolConfig::new_default(ToolId::from_raw(0), ToolType::EndMill);
+            let mut tool = ToolConfig::test_default(ToolId::from_raw(0), ToolType::EndMill);
             tool.diameter = 6.0;
             let tool_index = apply(
                 &mut s,
@@ -1569,7 +1569,7 @@ mod tests {
             let tool_index = apply(
                 &mut s,
                 Command::AddTool(AddToolArgs {
-                    tool: Box::new(ToolConfig::new_default(
+                    tool: Box::new(ToolConfig::test_default(
                         ToolId::from_raw(0),
                         ToolType::EndMill,
                     )),
@@ -1685,7 +1685,7 @@ mod tests {
             let tool_index = apply(
                 &mut s,
                 Command::AddTool(AddToolArgs {
-                    tool: Box::new(ToolConfig::new_default(
+                    tool: Box::new(ToolConfig::test_default(
                         ToolId::from_raw(0),
                         ToolType::EndMill,
                     )),
@@ -1932,7 +1932,7 @@ mod tests {
             .collect();
         assert_eq!(picks.len(), 2, "the faces at Z 0 and Z -4");
 
-        let mut tool = ToolConfig::new_default(ToolId::from_raw(1), ToolType::EndMill);
+        let mut tool = ToolConfig::test_default(ToolId::from_raw(1), ToolType::EndMill);
         tool.diameter = 3.0;
         let config = ToolpathConfig {
             shoe: Default::default(),
@@ -2056,7 +2056,7 @@ mod tests {
             import_report: None,
             drawing: Default::default(),
         };
-        let mut tool = ToolConfig::new_default(ToolId::from_raw(1), ToolType::EndMill);
+        let mut tool = ToolConfig::test_default(ToolId::from_raw(1), ToolType::EndMill);
         tool.diameter = tool_d;
         let config = ToolpathConfig {
             shoe: Default::default(),
@@ -2154,7 +2154,7 @@ mod tests {
             let tool_index = apply(
                 &mut s,
                 Command::AddTool(AddToolArgs {
-                    tool: Box::new(ToolConfig::new_default(
+                    tool: Box::new(ToolConfig::test_default(
                         ToolId::from_raw(0),
                         ToolType::EndMill,
                     )),
@@ -2482,7 +2482,7 @@ mod tests {
                 Default::default(),
             )
             .unwrap();
-            let mut tool = ToolConfig::new_default(ToolId::from_raw(1), ToolType::EndMill);
+            let mut tool = ToolConfig::test_default(ToolId::from_raw(1), ToolType::EndMill);
             tool.diameter = 6.0;
             let mut builder = ProjectSessionBuilder::new()
                 .stock(StockConfig {

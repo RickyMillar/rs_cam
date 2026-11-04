@@ -33,7 +33,7 @@ use rs_cam_core::material::{Material, WoodSpecies};
 const STATED_DPP_MM: f64 = 9.0;
 
 fn bulk_bit() -> ToolConfig {
-    let mut tool = ToolConfig::new_default(ToolId::from_raw(0), ToolType::EndMill);
+    let mut tool = ToolConfig::test_default(ToolId::from_raw(0), ToolType::EndMill);
     tool.diameter = 18.0;
     tool.set_flute_count(ToolFact::Stated(2));
     tool.set_cutting_length(ToolFact::Stated(20.0));

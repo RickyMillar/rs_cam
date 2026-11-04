@@ -100,7 +100,7 @@ fn model(
 /// A 6 mm two-flute end mill. `non_centre_cutting` gives it a 2.4 mm core
 /// and blades 0.5 mm below the centre.
 fn end_mill(non_centre_cutting: bool) -> ToolConfig {
-    let mut tool = ToolConfig::new_default(ToolId::from_raw(0), ToolType::EndMill);
+    let mut tool = ToolConfig::test_default(ToolId::from_raw(0), ToolType::EndMill);
     tool.name = if non_centre_cutting {
         "6 mm bulk"
     } else {

@@ -709,7 +709,7 @@ fn project_curve_point_projection_gives_the_caution() {
             projection,
             ..ProjectCurveConfig::default()
         });
-        let tool = ToolConfig::new_default(ToolId::from_raw(0), tool_type);
+        let tool = ToolConfig::test_default(ToolId::from_raw(0), tool_type);
         adapters::from_static_checks::diagnostics_from_static_checks(
             ToolpathId::from_raw(3),
             &op,
@@ -1128,7 +1128,7 @@ fn the_adapters_fill_the_face_and_the_anchor_w1() {
             ToolType::VBit,
             ToolType::TaperedBallNose,
         ] {
-            let tool = ToolConfig::new_default(ToolId::from_raw(0), tool_type);
+            let tool = ToolConfig::test_default(ToolId::from_raw(0), tool_type);
             for d in
                 adapters::from_static_checks::diagnostics_from_static_checks(tp, &op, &tool, None)
             {
@@ -1150,7 +1150,7 @@ fn the_adapters_fill_the_face_and_the_anchor_w1() {
 
     // A Scallop Finish on an end mill: the face names the tool it needs.
     let scallop = fixture_op(OperationType::Scallop);
-    let flat = ToolConfig::new_default(ToolId::from_raw(0), ToolType::EndMill);
+    let flat = ToolConfig::test_default(ToolId::from_raw(0), ToolType::EndMill);
     let refused =
         adapters::from_static_checks::diagnostics_from_static_checks(tp, &scallop, &flat, None)
             .into_iter()

@@ -100,7 +100,7 @@ fn rectangle_model(id: usize, name: &str, x0: f64, y0: f64, x1: f64, y1: f64) ->
 }
 
 fn tool(id: usize, tool_type: ToolType, diameter: f64) -> ToolConfig {
-    let mut t = ToolConfig::new_default(ToolId::from_raw(id), tool_type);
+    let mut t = ToolConfig::test_default(ToolId::from_raw(id), tool_type);
     t.diameter = diameter;
     t
 }

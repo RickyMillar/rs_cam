@@ -169,7 +169,7 @@ fn a_plot_click_moves_the_ring_and_the_apply_sends_the_pick_k2b() {
 #[test]
 fn the_session_is_unchanged_until_the_apply_and_an_outside_pick_warns_k2b() {
     let mut controller = AppController::with_backend(SilentBackend);
-    let mut builder = ProjectSessionBuilder::new().tool(ToolConfig::new_default(
+    let mut builder = ProjectSessionBuilder::new().tool(ToolConfig::test_default(
         ToolId::from_raw(1),
         ToolType::EndMill,
     ));

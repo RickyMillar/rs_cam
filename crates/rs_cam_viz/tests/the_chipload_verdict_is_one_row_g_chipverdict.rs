@@ -228,7 +228,7 @@ fn no_kc() -> Fixture {
     reason = "test: an unexpected variant panics"
 )]
 fn state_for(fixture: Fixture) -> AppState {
-    let mut tool = ToolConfig::new_default(ToolId::from_raw(1), fixture.tool_type);
+    let mut tool = ToolConfig::test_default(ToolId::from_raw(1), fixture.tool_type);
     tool.diameter = fixture.diameter_mm;
     tool.set_flute_count(ToolFact::Stated(2));
     tool.set_stickout(ToolFact::Stated(fixture.stickout_mm));
@@ -860,7 +860,7 @@ fn shipped_recipe(
         material: Material::SolidWood { species },
         ..Default::default()
     };
-    let mut tool = ToolConfig::new_default(ToolId::from_raw(1), ToolType::EndMill);
+    let mut tool = ToolConfig::test_default(ToolId::from_raw(1), ToolType::EndMill);
     tool.diameter = diameter;
     tool.set_flute_count(ToolFact::Stated(2));
     tool.set_stickout(ToolFact::Stated(3.0 * diameter));

@@ -32,7 +32,7 @@ use rs_cam_core::material::{Material, WoodSpecies};
 const SPEED_KEYS: [&str; 4] = ["feed_rate", "plunge_rate", "spindle_rpm", "ramp_feed_rate"];
 
 fn tool(kind: ToolType) -> ToolConfig {
-    let mut t = ToolConfig::new_default(ToolId::from_raw(0), kind);
+    let mut t = ToolConfig::test_default(ToolId::from_raw(0), kind);
     t.diameter = 6.0;
     if matches!(kind, ToolType::VBit) {
         t.included_angle = 60.0;

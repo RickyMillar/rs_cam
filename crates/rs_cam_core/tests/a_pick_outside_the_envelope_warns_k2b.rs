@@ -43,7 +43,7 @@ const PICK_AP_MM: f64 = 7.0;
 const PICK_AE_MM: f64 = 0.5;
 
 fn tool() -> ToolConfig {
-    let mut t = ToolConfig::new_default(ToolId::from_raw(0), ToolType::EndMill);
+    let mut t = ToolConfig::test_default(ToolId::from_raw(0), ToolType::EndMill);
     t.diameter = 6.0;
     t.set_cutting_length(ToolFact::Stated(6.0));
     t

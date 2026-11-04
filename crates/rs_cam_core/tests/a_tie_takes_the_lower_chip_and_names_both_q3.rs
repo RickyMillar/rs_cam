@@ -32,7 +32,7 @@ const DOWNCUT_ROW: &str = "onsrud-hardwood-60-200-1_4-finish";
 
 #[test]
 fn a_tie_takes_the_lower_chip_and_names_both_rows_q3() {
-    let mut tool = ToolConfig::new_default(ToolId::from_raw(0), ToolType::EndMill);
+    let mut tool = ToolConfig::test_default(ToolId::from_raw(0), ToolType::EndMill);
     tool.diameter = 6.0;
     tool.set_flute_count(ToolFact::Stated(2));
     let op = rs_cam_core::compute::fixture_values::fixture_op(OperationType::Profile);

@@ -200,7 +200,7 @@ mod tests {
         state.replace_session(
             rs_cam_core::session::ProjectSessionBuilder::new()
                 .stock(stock)
-                .tool(ToolConfig::new_default(
+                .tool(ToolConfig::test_default(
                     ToolId::from_raw(1),
                     ToolType::EndMill,
                 ))

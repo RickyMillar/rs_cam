@@ -205,7 +205,7 @@ fn pocket_through_session(polygon: Polygon2) -> rs_cam_core::toolpath::Toolpath 
     use rs_cam_core::session::{LoadedModel, ProjectSessionBuilder, ToolpathConfig};
     use std::sync::Arc;
 
-    let mut tool = ToolConfig::new_default(ToolId::from_raw(0), ToolType::EndMill);
+    let mut tool = ToolConfig::test_default(ToolId::from_raw(0), ToolType::EndMill);
     tool.diameter = 6.35;
     let mut builder = ProjectSessionBuilder::new().stock(StockConfig {
         x: 60.0,
@@ -335,10 +335,12 @@ safe_z = 10.0
 
 [tools.flat_6mm]
 type = "end_mill"
+centre_cutting = { stated = "yes" }
 diameter = 6.35
 
 [tools.flat_3mm]
 type = "end_mill"
+centre_cutting = { stated = "yes" }
 diameter = 3.175
 
 [[operation]]
@@ -457,6 +459,7 @@ output = "test.nc"
 
 [tools.flat_6mm]
 type = "end_mill"
+centre_cutting = { stated = "yes" }
 diameter = 6.35
 
 [[operation]]

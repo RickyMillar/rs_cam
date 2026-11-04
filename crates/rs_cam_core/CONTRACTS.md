@@ -51,7 +51,10 @@ touches names it in its invariants.
   `<fact>_planning_..()` (an `Unknown` fact plans at its `LEGACY_DEFAULT_*`, an F201
   Unsourced row) or `<fact>_fact()`. A file states each fact as a table; a bare
   value refuses to load and one message names every bare key (project file, tool
-  library, CLI job file); an absent key is `Unknown`. Sentries:
+  library, CLI job file); an absent key is `Unknown`. Ruling D12 (P7 A2): centre
+  cutting, and a V-bit's tip, are required inputs: an op whose tool does not hold
+  them `known()` (stated or catalogue) stops with `NotSetKind::ToolFact`
+  (`compute::not_set`), as an unset depth does. Sentries:
   `--test a_tool_fact_states_how_it_is_known_k3`, `--doc tool_fact` (`compile_fail`:
   a read of a fact field, a `Default`, a `Deref`).
 - K8: every generated toolpath carries its lineage (ruling Q7). `trace/lineage.rs`:

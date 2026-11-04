@@ -79,6 +79,7 @@ tool_material = "carbide"
 cut_direction = "up_cut"
 vendor = ""
 product_id = ""
+centre_cutting = { stated = "yes" }
 
 [[tools]]
 id = 4
@@ -100,6 +101,7 @@ tool_material = "carbide"
 cut_direction = "up_cut"
 vendor = ""
 product_id = ""
+centre_cutting = { stated = "yes" }
 
 [[models]]
 id = 1

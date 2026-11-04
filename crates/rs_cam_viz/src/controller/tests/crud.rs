@@ -9,7 +9,7 @@ fn remove_tool_succeeds_when_no_toolpath_references_it() {
 
     // Add a second tool that is not referenced by any toolpath.
     let unreferenced_id = ToolId::from_raw(99);
-    let extra_tool = ToolConfig::new_default(unreferenced_id, ToolType::EndMill);
+    let extra_tool = ToolConfig::test_default(unreferenced_id, ToolType::EndMill);
     let mut tools = controller.state.session().tools().to_vec();
     tools.push(extra_tool);
     let _ = controller
@@ -997,7 +997,7 @@ mod machine_head_h2 {
     /// toolpath has a result.
     fn shoe_controller() -> AppController<ScriptedBackend> {
         let mut controller = sample_controller();
-        let mut second = ToolConfig::new_default(ToolId::from_raw(2), ToolType::BallNose);
+        let mut second = ToolConfig::test_default(ToolId::from_raw(2), ToolType::BallNose);
         second.name = "Second tool".to_owned();
         let mut tools = controller.state.session().tools().to_vec();
         tools.push(second);

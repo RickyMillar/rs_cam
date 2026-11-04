@@ -115,8 +115,12 @@ fn every_generated_toolpath_has_a_lineage_k8() {
                 "{label}: findings {names:?}, generation gives {ids:?}"
             ));
         }
-        if !lineage.rules.is_empty() {
-            failures.push(format!("{label}: a rule outcome before P7"));
+        // K5 (P7): each rule outcome is a row of the rule table whose id
+        // warns (ruling Q6: a rule never refuses).
+        for rule in &lineage.rules {
+            if rs_cam_core::diagnostics::ids::warn_danger(rule.id()).is_none() {
+                failures.push(format!("{label}: rule {} does not warn", rule.id()));
+            }
         }
     }
     assert_eq!(

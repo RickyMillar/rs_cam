@@ -681,7 +681,7 @@ fn the_suggest_clamp_still_fires_at_the_helper_s_own_cap() {
         species: WoodSpecies::GenericHardwood,
     };
 
-    let mut tool = ToolConfig::new_default(ToolId::from_raw(1), ToolType::EndMill);
+    let mut tool = ToolConfig::test_default(ToolId::from_raw(1), ToolType::EndMill);
     tool.diameter = CLAMP_DIAMETER_MM;
     tool.set_flute_count(ToolFact::Stated(2));
     tool.set_cutting_length(ToolFact::Stated(50.0));

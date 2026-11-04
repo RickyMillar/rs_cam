@@ -279,7 +279,7 @@ fn rectangle_and_a_point(polygons: &[Polygon2]) -> SelectionInputs<'static> {
 }
 
 fn make_tool(tool_type: ToolType) -> (crate::tool::ToolDefinition, ToolConfig) {
-    let cfg = ToolConfig::new_default(ToolId::from_raw(0), tool_type);
+    let cfg = ToolConfig::test_default(ToolId::from_raw(0), tool_type);
     let def = build_cutter(&cfg).unwrap();
     (def, cfg)
 }
@@ -1884,7 +1884,7 @@ mod each_face_p3_5 {
     /// the session. The heights are those the session gives under that
     /// floor: the stock top, and the deepest face floor as the Bottom Z.
     pub fn run(op: &OperationConfig, items: Vec<Item>) -> Result<Toolpath, OperationError> {
-        let tool_cfg = ToolConfig::new_default(ToolId::from_raw(0), ToolType::EndMill);
+        let tool_cfg = ToolConfig::test_default(ToolId::from_raw(0), ToolType::EndMill);
         let tool_def = build_cutter(&tool_cfg).unwrap();
         let heights = ResolvedHeights {
             clearance_z: 40.0,

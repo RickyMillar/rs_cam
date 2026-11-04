@@ -180,7 +180,7 @@ fn narration_air_cut_line_names_its_denominators() {
         ..SimulationCutTrace::test_fixture()
     };
 
-    let tool = build_cutter(&ToolConfig::new_default(
+    let tool = build_cutter(&ToolConfig::test_default(
         ToolId::from_raw(0),
         ToolType::EndMill,
     ))

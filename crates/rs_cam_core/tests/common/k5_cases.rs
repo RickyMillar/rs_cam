@@ -41,7 +41,7 @@ pub const MIGRATED: &str = "bare number before K3 (2026-11)";
 /// tool states `Yes`. That is the test case, not a claim about the real
 /// tool.
 pub fn flat_6(stickout_mm: f64) -> ToolConfig {
-    let mut tool = ToolConfig::new_default(ToolId::from_raw(0), ToolType::EndMill);
+    let mut tool = ToolConfig::test_default(ToolId::from_raw(0), ToolType::EndMill);
     tool.name = "6 mm flat end mill".to_owned();
     tool.diameter = 6.0;
     tool.shaft_diameter = 6.0;
@@ -64,7 +64,7 @@ pub const FLAT_6_STICKOUT_MM: f64 = 30.0;
 /// ([`V20_TIP_MM`]) and centre cutting `Yes` (ruling D12, the test-data
 /// rule).
 pub fn v20() -> ToolConfig {
-    let mut tool = ToolConfig::new_default(ToolId::from_raw(0), ToolType::VBit);
+    let mut tool = ToolConfig::test_default(ToolId::from_raw(0), ToolType::VBit);
     tool.name = "3.175-20deg-0.3 V-bit".to_owned();
     tool.diameter = 3.175;
     tool.shaft_diameter = 3.175;

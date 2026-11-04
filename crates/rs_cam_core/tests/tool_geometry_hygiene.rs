@@ -47,7 +47,7 @@ use rs_cam_core::tool::MillingCutter;
 /// the operator corrected the names: `R<tip radius>mm x <shank>mm x
 /// <flute length>mm <flutes>F Tapered Ball`.
 fn live_tapered_ball(name: &str, diameter: f64, taper_half_angle: f64, loc: f64) -> ToolConfig {
-    let mut tool = ToolConfig::new_default(ToolId::from_raw(1), ToolType::TaperedBallNose);
+    let mut tool = ToolConfig::test_default(ToolId::from_raw(1), ToolType::TaperedBallNose);
     tool.name = name.to_owned();
     tool.diameter = diameter;
     tool.set_cutting_length(ToolFact::Stated(loc));
@@ -76,7 +76,7 @@ fn correct_vendor_names_raise_nothing() {
     }
 
     // The end mill from the same file, named the ordinary way.
-    let mut end_mill = ToolConfig::new_default(ToolId::from_raw(0), ToolType::EndMill);
+    let mut end_mill = ToolConfig::test_default(ToolId::from_raw(0), ToolType::EndMill);
     end_mill.name = "6mm 2F Carbide End Mill".to_owned();
     end_mill.diameter = 6.0;
     end_mill.set_shank_diameter(ToolFact::Stated(6.35));
@@ -166,7 +166,7 @@ product_id = ""
 #[test]
 fn normalizing_changes_no_cutter_geometry() {
     for &tool_type in ToolType::ALL {
-        let mut tool = ToolConfig::new_default(ToolId::from_raw(0), tool_type);
+        let mut tool = ToolConfig::test_default(ToolId::from_raw(0), tool_type);
         // Re-plant the pre-4b1e6f21 defaults on every type.
         tool.corner_radius_mm = 0.5;
         tool.corner_radius = 2.0;
@@ -217,7 +217,7 @@ fn normalizing_changes_no_cutter_geometry() {
 /// nicety.
 #[test]
 fn switching_type_in_place_reports_the_geometry_it_now_needs() {
-    let mut tool = ToolConfig::new_default(ToolId::from_raw(0), ToolType::EndMill);
+    let mut tool = ToolConfig::test_default(ToolId::from_raw(0), ToolType::EndMill);
     tool.tool_type = ToolType::VBit;
     let missing = tool.missing_defining_geometry();
     assert_eq!(missing, vec![ToolGeometryField::IncludedAngle]);
@@ -231,7 +231,7 @@ fn switching_type_in_place_reports_the_geometry_it_now_needs() {
     assert_eq!(missing, expected);
 
     // Refilled from the type's own defaults, it is a complete tool.
-    let defaults = ToolConfig::new_default(tool.id, ToolType::TaperedBallNose);
+    let defaults = ToolConfig::test_default(tool.id, ToolType::TaperedBallNose);
     tool.set_taper_half_angle(ToolFact::Stated(defaults.taper_half_angle_planning_deg()));
     tool.shaft_diameter = defaults.shaft_diameter;
     assert!(tool.missing_defining_geometry().is_empty());

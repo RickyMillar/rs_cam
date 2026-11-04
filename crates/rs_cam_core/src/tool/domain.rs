@@ -51,6 +51,8 @@ pub enum ToolDimension {
     CentreCoreDiameterMm,
     /// Blade protrusion below the centre core, mm.
     BladeProtrusionMm,
+    /// Flat tip diameter of a V-bit, mm (0 is a sharp point).
+    VTipDiameter,
 }
 
 /// One end of a [`ToolDomain`].
@@ -138,6 +140,7 @@ impl ToolDimension {
             ToolDimension::Stickout => "stickout",
             ToolDimension::CentreCoreDiameterMm => "centre_core_diameter_mm",
             ToolDimension::BladeProtrusionMm => "blade_protrusion_mm",
+            ToolDimension::VTipDiameter => "v_tip_diameter",
         }
     }
 
@@ -161,6 +164,9 @@ impl ToolDimension {
             | ToolDimension::Stickout
             | ToolDimension::BladeProtrusionMm => ToolDomain::new(Closed(0.0), Unbounded),
             ToolDimension::CentreCoreDiameterMm => ToolDomain::new(Open(0.0), Open(diameter_mm)),
+            // A flat tip narrower than the cutter: at the diameter the cone
+            // has no height left (P7 A2, F029).
+            ToolDimension::VTipDiameter => ToolDomain::new(Closed(0.0), Open(diameter_mm)),
         }
     }
 
@@ -186,6 +192,7 @@ impl ToolDimension {
             ToolDimension::Stickout => 0.0..=300.0,
             ToolDimension::CentreCoreDiameterMm => 0.01..=diameter_mm,
             ToolDimension::BladeProtrusionMm => 0.0..=diameter_mm,
+            ToolDimension::VTipDiameter => 0.0..=diameter_mm,
         }
     }
 

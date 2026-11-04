@@ -119,7 +119,7 @@ fn rule() -> Selection {
 /// A controller with the drawing, an end mill of `tool_diameter` and one
 /// Drill (with [`rule`]), shown on its Geometry tab.
 fn controller(tool_diameter: f64) -> AppController<SilentBackend> {
-    let mut tool = ToolConfig::new_default(ToolId::from_raw(h::TOOL), ToolType::EndMill);
+    let mut tool = ToolConfig::test_default(ToolId::from_raw(h::TOOL), ToolType::EndMill);
     tool.diameter = tool_diameter;
     let mut builder = ProjectSessionBuilder::new()
         .stock(StockConfig {

@@ -170,7 +170,7 @@ mod tests {
     #[test]
     fn the_buried_curve_threshold_is_the_commanded_depth_plus_the_floor() {
         let stock = block();
-        let cutter = build_cutter(&ToolConfig::new_default(
+        let cutter = build_cutter(&ToolConfig::test_default(
             ToolId::from_raw(0),
             ToolType::EndMill,
         ))

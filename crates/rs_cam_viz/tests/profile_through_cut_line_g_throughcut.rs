@@ -149,7 +149,7 @@ fn profile(depth: f64, tab_count: usize) -> OperationConfig {
 /// The builder is returned unbuilt, so the caller adds its Profile through
 /// the same door.
 fn build_session() -> ProjectSessionBuilder {
-    let mut tool = ToolConfig::new_default(ToolId::from_raw(TOOL), ToolType::EndMill);
+    let mut tool = ToolConfig::test_default(ToolId::from_raw(TOOL), ToolType::EndMill);
     tool.diameter = 6.0;
     let stock = StockConfig {
         z: Some(STOCK_THICKNESS_MM),

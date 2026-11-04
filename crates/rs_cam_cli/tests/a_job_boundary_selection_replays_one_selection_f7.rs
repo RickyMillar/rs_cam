@@ -58,6 +58,7 @@ output = "out.nc"
 
 [tools.flat_3mm]
 type = "end_mill"
+centre_cutting = {{ stated = "yes" }}
 diameter = 3.0
 
 [[operation]]

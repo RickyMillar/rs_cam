@@ -259,7 +259,7 @@ fn controller_with_tool(tool_type: ToolType) -> AppController<SilentBackend> {
     let mut controller = AppController::with_backend(SilentBackend);
     controller.state.replace_session(
         ProjectSessionBuilder::new()
-            .tool(ToolConfig::new_default(ToolId::from_raw(1), tool_type))
+            .tool(ToolConfig::test_default(ToolId::from_raw(1), tool_type))
             .build(),
     );
     controller

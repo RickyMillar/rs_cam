@@ -234,7 +234,7 @@ fn adopt(s: &mut ProjectSession, index: usize) {
 /// Both rows carry a cached result before the caller edits anything.
 fn fixture(upstream: OperationConfig) -> ProjectSession {
     let mut builder = ProjectSessionBuilder::new();
-    builder.add_tool(ToolConfig::new_default(
+    builder.add_tool(ToolConfig::test_default(
         ToolId::from_raw(0),
         ToolType::EndMill,
     ));
@@ -276,11 +276,11 @@ fn pocket() -> OperationConfig {
 /// reaches index 1.
 fn fixture_split_inputs() -> ProjectSession {
     let mut builder = ProjectSessionBuilder::new();
-    builder.add_tool(ToolConfig::new_default(
+    builder.add_tool(ToolConfig::test_default(
         ToolId::from_raw(0),
         ToolType::EndMill,
     ));
-    builder.add_tool(ToolConfig::new_default(
+    builder.add_tool(ToolConfig::test_default(
         ToolId::from_raw(1),
         ToolType::BallNose,
     ));

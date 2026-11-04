@@ -48,7 +48,7 @@ const SMALL: AlignmentPin = AlignmentPin::new(10.0, 50.0, 6.0);
 const LARGE: AlignmentPin = AlignmentPin::new(90.0, 50.0, 8.0);
 
 fn drill(id: usize, diameter: f64) -> ToolConfig {
-    let mut t = ToolConfig::new_default(ToolId::from_raw(id), ToolType::VBit);
+    let mut t = ToolConfig::test_default(ToolId::from_raw(id), ToolType::VBit);
     t.diameter = diameter;
     t
 }

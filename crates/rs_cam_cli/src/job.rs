@@ -14,6 +14,8 @@
 //! [tools.flat_6mm]
 //! type = "end_mill"
 //! diameter = 6.35
+//! # D12: a required fact; a V-bit also states `v_tip_diameter`.
+//! centre_cutting = { stated = "yes" }
 //!
 //! [[operation]]
 //! type = "pocket"
@@ -217,6 +219,14 @@ pub struct ToolDef {
         with = "rs_cam_core::compute::tool_config::centre_cutting_serde"
     )]
     pub centre_cutting: ToolFact<rs_cam_core::compute::tool_config::CentreCutting>,
+    /// D12: the flat tip of a V-bit (mm, 0 for a sharp point), a fact
+    /// table (`{ stated = 0.3 }`). Absent: `Unknown`, and a V-bit op stops
+    /// until it is stated, as the project file does.
+    #[serde(
+        default = "ToolFact::unknown",
+        skip_serializing_if = "ToolFact::is_unknown"
+    )]
+    pub v_tip_diameter: ToolFact<f64>,
 }
 
 /// One `[[operation]]` table.
@@ -1212,6 +1222,7 @@ fn tool_config_from_def(def: &ToolDef, name: &str) -> Result<ToolConfig> {
     tc.set_shank_diameter(def.shank_diameter.clone());
     tc.set_stickout(def.stickout.clone());
     tc.set_centre_cutting(def.centre_cutting.clone());
+    tc.set_v_tip_diameter(def.v_tip_diameter.clone());
     Ok(tc)
 }
 
@@ -1586,7 +1597,7 @@ mod tests {
         std::fs::write(
             &job_path,
             format!(
-                "[job]\noutput = \"out.nc\"\n\n[tools.flat_6mm]\ntype = \"end_mill\"\n\
+                "[job]\noutput = \"out.nc\"\n\n[tools.flat_6mm]\ntype = \"end_mill\"\ncentre_cutting = {{ stated = \"yes\" }}\n\
                  diameter = 6.0\n\n[[operation]]\ntype = \"profile\"\ninput = \"{}\"\n\
                  tool = \"flat_6mm\"\n",
                 step.display()
@@ -1647,7 +1658,7 @@ mod tests {
             std::fs::write(
                 &job_path,
                 format!(
-                    "[job]\noutput = \"out.nc\"\n\n[tools.flat_3mm]\ntype = \"end_mill\"\n\
+                    "[job]\noutput = \"out.nc\"\n\n[tools.flat_3mm]\ntype = \"end_mill\"\ncentre_cutting = {{ stated = \"yes\" }}\n\
                      diameter = 3.0\n\n[[operation]]\ntype = \"pocket\"\ninput = \"{}\"\n\
                      tool = \"flat_3mm\"\nstock_z = 12.0\n{tail}",
                     drawing.display()
@@ -1750,7 +1761,7 @@ mod tests {
             std::fs::write(
                 &job_path,
                 format!(
-                    "[job]\noutput = \"out.nc\"\n\n[tools.flat_3mm]\ntype = \"end_mill\"\n\
+                    "[job]\noutput = \"out.nc\"\n\n[tools.flat_3mm]\ntype = \"end_mill\"\ncentre_cutting = {{ stated = \"yes\" }}\n\
                      diameter = 3.0\n\n[[operation]]\ntype = \"pocket\"\ninput = \"{}\"\n\
                      tool = \"flat_3mm\"\n{stock_line}\n",
                     drawing.display()
@@ -1856,7 +1867,7 @@ mod tests {
             std::fs::write(
                 &job_path,
                 format!(
-                    "[job]\noutput = \"out.nc\"\n\n[tools.flat_3mm]\ntype = \"end_mill\"\n\
+                    "[job]\noutput = \"out.nc\"\n\n[tools.flat_3mm]\ntype = \"end_mill\"\ncentre_cutting = {{ stated = \"yes\" }}\n\
                      diameter = 3.0\n\n[[operation]]\ntype = \"pocket\"\ninput = \"{}\"\n\
                      tool = \"flat_3mm\"\nstock_z = 12.0\n{line}\n",
                     drawing.display()
@@ -1895,6 +1906,7 @@ mod tests {
             shank_diameter: ToolFact::Unknown,
             stickout: ToolFact::Unknown,
             centre_cutting: ToolFact::Unknown,
+            v_tip_diameter: ToolFact::Unknown,
         }
     }
 
@@ -2007,6 +2019,7 @@ mod tests {
             shank_diameter: ToolFact::Unknown,
             stickout: ToolFact::Unknown,
             centre_cutting: ToolFact::Unknown,
+            v_tip_diameter: ToolFact::Unknown,
         };
         let cutter = cutter_of(&flat_def).unwrap();
         assert!((cutter.radius() - 3.0).abs() < 1e-10);
@@ -2023,6 +2036,7 @@ mod tests {
             shank_diameter: ToolFact::Unknown,
             stickout: ToolFact::Unknown,
             centre_cutting: ToolFact::Unknown,
+            v_tip_diameter: ToolFact::Unknown,
         };
         let ball_cutter = cutter_of(&ball_def).unwrap();
         assert!((ball_cutter.radius() - 5.0).abs() < 1e-10);
@@ -2042,6 +2056,7 @@ mod tests {
             shank_diameter: ToolFact::Unknown,
             stickout: ToolFact::Unknown,
             centre_cutting: ToolFact::Unknown,
+            v_tip_diameter: ToolFact::Unknown,
         };
         let tapered_cutter = cutter_of(&tapered_def).unwrap();
         // radius() should return shaft_diameter / 2.0 = 6.0
@@ -2216,7 +2231,7 @@ mod tests {
     fn a_job_takes_the_project_rule_for_z_blend_ga2() {
         let op = |extra: &str| -> OperationDef {
             let source = format!(
-                "[job]\noutput = \"o.nc\"\n[tools.t]\ntype = \"end_mill\"\ndiameter = 6.0\n\
+                "[job]\noutput = \"o.nc\"\n[tools.t]\ntype = \"end_mill\"\ncentre_cutting = {{ stated = \"yes\" }}\ndiameter = 6.0\n\
                  [[operation]]\ntype = \"adaptive3d\"\ninput = \"m.stl\"\ntool = \"t\"\n{extra}"
             );
             let mut job: JobFile = toml::from_str(&source).unwrap();
@@ -2254,7 +2269,7 @@ mod tests {
         let root = Path::new(env!("CARGO_MANIFEST_DIR")).join("../../fixtures");
         let run = |extra: &str| {
             let source = format!(
-                "[job]\noutput = \"o.nc\"\n[tools.t]\ntype = \"end_mill\"\ndiameter = 6.0\n\
+                "[job]\noutput = \"o.nc\"\n[tools.t]\ntype = \"end_mill\"\ncentre_cutting = {{ stated = \"yes\" }}\ndiameter = 6.0\n\
                  [[operation]]\ntype = \"pocket\"\ninput = \"demo_pocket.svg\"\ntool = \"t\"\n\
                  stock_z = 25.0\nfloor = {{ from = \"top\", depth = 3.0 }}\n{extra}"
             );

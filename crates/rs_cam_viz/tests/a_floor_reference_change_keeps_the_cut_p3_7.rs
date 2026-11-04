@@ -154,7 +154,7 @@ fn toolpath() -> ToolpathConfig {
 
 /// A Pocket with the face picked, under `Top { depth: 3 }`.
 fn session() -> ProjectSession {
-    let mut tool = ToolConfig::new_default(ToolId::from_raw(1), ToolType::EndMill);
+    let mut tool = ToolConfig::test_default(ToolId::from_raw(1), ToolType::EndMill);
     tool.diameter = 3.0;
     let mut builder = ProjectSessionBuilder::new()
         .stock(StockConfig {

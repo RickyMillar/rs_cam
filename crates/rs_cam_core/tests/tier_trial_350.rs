@@ -326,7 +326,7 @@ fn h1_diameter() -> f64 {
 }
 
 fn h1_tool() -> ToolConfig {
-    let mut t = ToolConfig::new_default(ToolId::from_raw(0), ToolType::BallNose);
+    let mut t = ToolConfig::test_default(ToolId::from_raw(0), ToolType::BallNose);
     let d = h1_diameter();
     t.name = format!("H1 {d}mm Ball Nose 2F (HYPOTHETICAL)");
     t.diameter = d;

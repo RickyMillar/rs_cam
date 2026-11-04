@@ -205,7 +205,7 @@ fn floor_ops() -> Vec<(OperationConfig, Floor)> {
 
 /// An `AppState` with one floor op on the face, its `tab` on screen.
 fn state(operation: OperationConfig, tab: properties::ToolpathTab) -> AppState {
-    let mut tool = ToolConfig::new_default(ToolId::from_raw(1), ToolType::EndMill);
+    let mut tool = ToolConfig::test_default(ToolId::from_raw(1), ToolType::EndMill);
     tool.diameter = 3.0;
     let mut builder = ProjectSessionBuilder::new()
         .stock(StockConfig {

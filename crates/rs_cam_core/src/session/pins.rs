@@ -722,7 +722,7 @@ mod tests {
             ],
             ..Default::default()
         };
-        let mut tool = ToolConfig::new_default(ToolId::from_raw(1), ToolType::VBit);
+        let mut tool = ToolConfig::test_default(ToolId::from_raw(1), ToolType::VBit);
         tool.diameter = 6.0;
         let pin_drill = OperationConfig::AlignmentPinDrill(AlignmentPinDrillConfig {
             diameter: 6.0,

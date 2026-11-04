@@ -880,6 +880,10 @@ impl ProjectSession {
                 .iter()
                 .position(|t| t.id == tc.id)
                 .and_then(|index| self.no_tool_state(index)),
+            // D12: the stop that generation gives (`not_set_for_tool`).
+            not_set: self
+                .toolpath_tool(tc)
+                .and_then(|tool| tc.operation.not_set_for_tool(tool)),
         }
     }
 

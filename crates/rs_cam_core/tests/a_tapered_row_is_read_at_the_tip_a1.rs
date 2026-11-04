@@ -89,7 +89,7 @@ fn printed_diameter_mm(id: &str) -> f64 {
 }
 
 fn tool_config() -> ToolConfig {
-    let mut t = ToolConfig::new_default(ToolId::from_raw(1), ToolType::TaperedBallNose);
+    let mut t = ToolConfig::test_default(ToolId::from_raw(1), ToolType::TaperedBallNose);
     t.diameter = TIP_MM;
     t.set_flute_count(ToolFact::Stated(FLUTES));
     t.set_taper_half_angle(ToolFact::Stated(7.0));

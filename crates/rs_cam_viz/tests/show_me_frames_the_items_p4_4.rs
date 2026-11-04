@@ -100,7 +100,7 @@ fn state() -> (AppState, MatchKey) {
         Default::default(),
     )
     .expect("the drawing loads");
-    let mut tool = ToolConfig::new_default(ToolId::from_raw(1), ToolType::EndMill);
+    let mut tool = ToolConfig::test_default(ToolId::from_raw(1), ToolType::EndMill);
     tool.diameter = 3.0;
     let mut builder = ProjectSessionBuilder::new()
         .stock(StockConfig::default())
@@ -382,7 +382,7 @@ fn at_the_top_state() -> (AppState, Vec<MatchKey>) {
         })
         .collect();
     assert_eq!(keys.len(), 3, "the part holds three faces");
-    let mut tool = ToolConfig::new_default(ToolId::from_raw(1), ToolType::EndMill);
+    let mut tool = ToolConfig::test_default(ToolId::from_raw(1), ToolType::EndMill);
     tool.diameter = 3.0;
     let mut pocket = toolpath("Pocket", OperationType::Pocket);
     pocket.operation = OperationConfig::Pocket(PocketConfig {

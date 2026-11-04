@@ -90,7 +90,7 @@ const OPS: [(&str, OperationType); 3] = [
 ];
 
 fn session() -> ProjectSession {
-    let tool = ToolConfig::new_default(ToolId::from_raw(1), ToolType::EndMill);
+    let tool = ToolConfig::test_default(ToolId::from_raw(1), ToolType::EndMill);
     let stock = StockConfig {
         z: Some(STOCK_Z_MM),
         ..StockConfig::default()

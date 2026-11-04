@@ -313,7 +313,7 @@ fn adopt(s: &mut ProjectSession, index: usize) {
 /// `mutation_paths_invalidate_alike_p0.rs` uses.
 fn fixture() -> ProjectSession {
     let mut builder = ProjectSessionBuilder::new();
-    builder.add_tool(ToolConfig::new_default(
+    builder.add_tool(ToolConfig::test_default(
         ToolId::from_raw(0),
         ToolType::EndMill,
     ));

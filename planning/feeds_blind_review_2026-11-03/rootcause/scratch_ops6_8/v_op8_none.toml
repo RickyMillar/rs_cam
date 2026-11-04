@@ -128,6 +128,7 @@ tool_material = "carbide"
 cut_direction = "up_cut"
 vendor = ""
 product_id = ""
+centre_cutting = { stated = "yes" }
 
 [[tools]]
 id = 1
@@ -149,6 +150,8 @@ tool_material = "carbide"
 cut_direction = "up_cut"
 vendor = ""
 product_id = ""
+centre_cutting = { stated = "yes" }
+v_tip_diameter = { stated = 0.3 }
 
 [[tools]]
 id = 2
@@ -170,6 +173,8 @@ tool_material = "carbide"
 cut_direction = "up_cut"
 vendor = ""
 product_id = ""
+centre_cutting = { stated = "yes" }
+v_tip_diameter = { stated = 0.0 }
 
 [[tools]]
 id = 3
@@ -191,6 +196,7 @@ tool_material = "carbide"
 cut_direction = "up_cut"
 vendor = ""
 product_id = ""
+centre_cutting = { stated = "yes" }
 
 [[tools]]
 id = 4
@@ -212,6 +218,7 @@ tool_material = "carbide"
 cut_direction = "up_cut"
 vendor = ""
 product_id = ""
+centre_cutting = { stated = "yes" }
 
 [[tools]]
 id = 5
@@ -233,6 +240,7 @@ tool_material = "carbide"
 cut_direction = "up_cut"
 vendor = ""
 product_id = ""
+centre_cutting = { stated = "yes" }
 
 [[tools]]
 id = 6
@@ -277,6 +285,7 @@ tool_material = "carbide"
 cut_direction = "up_cut"
 vendor = ""
 product_id = ""
+centre_cutting = { stated = "yes" }
 
 [[models]]
 id = 0

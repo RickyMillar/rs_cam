@@ -167,7 +167,7 @@ fn ctx() -> egui::Context {
 /// empty state. The shape is the fixture of
 /// `inspector_width_is_tab_independent_up4.rs`.
 fn fixture_with_a_toolpath() -> AppState {
-    let mut tool = ToolConfig::new_default(ToolId::from_raw(1), ToolType::EndMill);
+    let mut tool = ToolConfig::test_default(ToolId::from_raw(1), ToolType::EndMill);
     tool.diameter = 6.0;
     tool.set_flute_count(ToolFact::Stated(2));
 

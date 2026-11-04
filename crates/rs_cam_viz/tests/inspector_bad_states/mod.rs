@@ -301,9 +301,9 @@ pub fn fixture_with_stock_z(
     bad: State,
     stock_z: Option<f64>,
 ) -> (AppState, ToolpathId) {
-    let mut flat = ToolConfig::new_default(ToolId::from_raw(TOOL_FLAT), ToolType::EndMill);
+    let mut flat = ToolConfig::test_default(ToolId::from_raw(TOOL_FLAT), ToolType::EndMill);
     flat.diameter = 6.0;
-    let mut ball = ToolConfig::new_default(ToolId::from_raw(TOOL_BALL), ToolType::BallNose);
+    let mut ball = ToolConfig::test_default(ToolId::from_raw(TOOL_BALL), ToolType::BallNose);
     ball.diameter = 6.0;
     let stock = StockConfig {
         z: stock_z,

@@ -86,7 +86,7 @@ fn controller() -> AppController<SilentBackend> {
         ..model(MESH, "part")
     };
     let session = ProjectSessionBuilder::new()
-        .tool(ToolConfig::new_default(
+        .tool(ToolConfig::test_default(
             ToolId::from_raw(0),
             ToolType::EndMill,
         ))

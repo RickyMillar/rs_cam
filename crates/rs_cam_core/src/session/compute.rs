@@ -2721,10 +2721,11 @@ impl ProjectSession {
             return Err(SessionError::OperationFailed(collapse.message()));
         }
 
-        // S11: an op with a value that is not set (a depth, then the
-        // feeds) refuses here, before any work, with the generator's own
-        // sentence (the prologue gives the same one).
-        if let Some(not_set) = tc.operation.not_set() {
+        // S11: an op with a value that is not set (a depth, then a
+        // required tool fact (D12), then the feeds) refuses here, before
+        // any work, with the generator's own sentence (the prologue gives
+        // the same one).
+        if let Some(not_set) = tc.operation.not_set_for_tool(&inputs.tool) {
             return Err(crate::compute::OperationError::NotSet(not_set).into());
         }
         let feeds = tc

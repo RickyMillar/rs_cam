@@ -40,7 +40,7 @@ use rs_cam_core::material::{Material, PlasticFamily, WoodSpecies};
 /// A stubby carbide end mill: 6 mm, four flutes, 45 mm stickout (the t4
 /// fixture).
 fn carbide_endmill() -> ToolConfig {
-    let mut tool = ToolConfig::new_default(ToolId::from_raw(1), ToolType::EndMill);
+    let mut tool = ToolConfig::test_default(ToolId::from_raw(1), ToolType::EndMill);
     tool.diameter = 6.0;
     tool.set_cutting_length(ToolFact::Stated(25.0));
     tool.shaft_diameter = 6.0;

@@ -183,7 +183,7 @@ const STATED_AP_PER_D: f64 = 4.20 / 6.0;
 const STATED_AE_PER_D: f64 = 2.10 / 6.0;
 
 fn fixture(cutter: &Cutter) -> AppState {
-    let mut tool = ToolConfig::new_default(ToolId::from_raw(1), ToolType::EndMill);
+    let mut tool = ToolConfig::test_default(ToolId::from_raw(1), ToolType::EndMill);
     tool.diameter = cutter.diameter_mm;
     tool.set_stickout(ToolFact::Stated(cutter.stickout_mm));
     tool.set_flute_count(ToolFact::Stated(2));

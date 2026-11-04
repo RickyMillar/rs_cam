@@ -249,7 +249,7 @@ fn toolpath_config(name: &str, rpm: u32, tool_id: usize, model_id: usize) -> Too
 }
 
 fn cutter(tool_type: ToolType, name: &str, number: u32) -> ToolConfig {
-    let mut config = ToolConfig::new_default(ToolId::from_raw(0), tool_type);
+    let mut config = ToolConfig::test_default(ToolId::from_raw(0), tool_type);
     config.name = name.to_owned();
     config.tool_number = number;
     config

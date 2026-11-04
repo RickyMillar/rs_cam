@@ -150,7 +150,7 @@ fn the_spetool_row_ties_and_lies_inside_the_amana_band_g1() {
 /// the printed value before the depth de-rate.
 #[test]
 fn suggest_ships_the_printed_tip_row_g1() {
-    let mut tool = ToolConfig::new_default(ToolId::from_raw(1), ToolType::TaperedBallNose);
+    let mut tool = ToolConfig::test_default(ToolId::from_raw(1), ToolType::TaperedBallNose);
     tool.diameter = 1.0;
     tool.set_flute_count(ToolFact::Stated(2));
     tool.set_taper_half_angle(ToolFact::Stated(7.0));

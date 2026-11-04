@@ -97,7 +97,7 @@ fn controller_with_a_disabled_op() -> (AppController<RecordingBackend>, Arc<Mute
     let backend = RecordingBackend::default();
     let log = Arc::clone(&backend.submitted);
     let mut controller = AppController::with_backend(backend);
-    let tool = ToolConfig::new_default(ToolId::from_raw(1), ToolType::EndMill);
+    let tool = ToolConfig::test_default(ToolId::from_raw(1), ToolType::EndMill);
     let mut builder = ProjectSessionBuilder::new().tool(tool);
     for (id, enabled) in [(0, true), (1, false), (2, true)] {
         let _ = builder
@@ -160,7 +160,7 @@ fn generate_all_with_nothing_enabled_tells_the_operator() {
     let backend = RecordingBackend::default();
     let log = Arc::clone(&backend.submitted);
     let mut controller = AppController::with_backend(backend);
-    let tool = ToolConfig::new_default(ToolId::from_raw(1), ToolType::EndMill);
+    let tool = ToolConfig::test_default(ToolId::from_raw(1), ToolType::EndMill);
     let mut builder = ProjectSessionBuilder::new().tool(tool);
     let _ = builder.add_toolpath(0, toolpath(0, false)).expect("add op");
     controller.state.replace_session(builder.build());

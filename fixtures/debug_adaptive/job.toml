@@ -18,6 +18,7 @@ view = "wanaka_3d.html"
 type = "end_mill"
 diameter = 6.35
 flute_count = { estimated = 2, basis = "bare number before K3 (2026-11)" }
+centre_cutting = { stated = "yes" }
 
 [[operation]]
 type = "adaptive3d"
