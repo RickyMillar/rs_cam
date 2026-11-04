@@ -5,6 +5,7 @@ stored CLI output riv_suggest.jsonl. Exits non-zero if a claim fails.
 Run from anywhere:  python3 -I assert_claims.py
 """
 import csv
+import io
 import json
 import math
 import os
@@ -20,7 +21,11 @@ HEAD = "0f55efda4"  # the hash every path:line citation uses
 
 
 def rd(rel):
-    return open(os.path.join(ROOT, rel), encoding="utf-8").read()
+    # The tracked file at the cited hash, so a later edit does not move a citation.
+    r = subprocess.run(["git", "-C", ROOT, "show", f"{HEAD}:{rel}"], capture_output=True, text=True)
+    if r.returncode != 0:  # untracked (e.g. this folder before its commit): the working copy
+        return open(os.path.join(ROOT, rel), encoding="utf-8").read()
+    return r.stdout
 
 
 def lines_of(rel, pat):
@@ -80,8 +85,7 @@ def rust_struct_block(rel, start_pat):
 
 
 def fm1():
-    p = os.path.join(CORE, "tests/fixtures/feeds_matrix_2026-09-23/matrix_2026-09-23.csv")
-    return list(csv.DictReader(open(p, encoding="utf-8")))
+    return list(csv.DictReader(io.StringIO(rd("crates/rs_cam_core/tests/fixtures/feeds_matrix_2026-09-23/matrix_2026-09-23.csv"))))
 
 
 def fm1_cell(tool, d, op, mat):
@@ -90,7 +94,7 @@ def fm1_cell(tool, d, op, mat):
 
 
 def lut_rows(fname):
-    d = json.load(open(os.path.join(CORE, "data/vendor_lut/observations", fname), encoding="utf-8"))
+    d = json.loads(rd("crates/rs_cam_core/data/vendor_lut/observations/" + fname))
     return d if isinstance(d, list) else d.get("observations", d.get("rows", []))
 
 
@@ -106,17 +110,11 @@ def count_lines(paths, pat):
 
 
 def rg_files(pat, root="crates"):
-    """Files under `root` (*.rs) whose text matches `pat` (python walk, rg-equivalent)."""
-    hits = []
-    for dp, _, fs in os.walk(os.path.join(ROOT, root)):
-        if "/target" in dp:
-            continue
-        for f in fs:
-            if f.endswith(".rs"):
-                p = os.path.join(dp, f)
-                if re.search(pat, open(p, encoding="utf-8").read()):
-                    hits.append(os.path.relpath(p, ROOT))
-    return hits
+    """Tracked *.rs files under `root` at the cited hash whose text matches `pat` (git grep -E)."""
+    r = subprocess.run(["git", "-C", ROOT, "grep", "-l", "-E", pat, HEAD, "--", f"{root}/*.rs"],
+                       capture_output=True, text=True)
+    assert r.returncode in (0, 1), r.stderr
+    return [l.split(":", 1)[1] for l in r.stdout.splitlines()]
 
 
 MOD = "crates/rs_cam_core/src/feeds/mod.rs"
@@ -147,10 +145,9 @@ def claim(cid):
 # ---------------------------------------------------------------- A: base
 
 @claim("A00")
-def _():  # every citation uses 0f55efda4; the cited crate is unchanged from that hash to the working tree
-    d = subprocess.run(["git", "-C", ROOT, "diff", "--stat", HEAD, "--", "crates/rs_cam_core"], capture_output=True, text=True)
-    assert d.returncode == 0, d.stderr
-    assert d.stdout.strip() == "", f"crates/rs_cam_core changed since {HEAD}: line citations may have moved"
+def _():  # every citation uses 0f55efda4; rd() reads the tracked files at that hash
+    r = subprocess.run(["git", "-C", ROOT, "cat-file", "-e", HEAD + "^{commit}"], capture_output=True)
+    assert r.returncode == 0, f"the cited hash {HEAD} is not in this repository"
 
 
 @claim("A01")
@@ -287,9 +284,11 @@ def _():  # RigidityProfile::default 0.25/2.0/0.25; generic_wood_router 0.20/1.5
 
 
 @claim("B03")
-def _():  # a machine file with no rigidity block gets RigidityProfile::default (serde default)
+def _():  # corrected by RIGIDITY_DEFAULTS.md: `rigidity` has NO serde default; a machine table without it fails to load
     at(MACH, 257, r"pub rigidity: RigidityProfile")
-    assert "#[serde(default)]" in rd(MACH).split("\n")[253]
+    assert "#[serde(default)]" not in rd(MACH).split("\n")[255]
+    at(MACH, 254, r"#\[serde\(default\)\]")
+    at(MACH, 255, r"pub max_cutting_feed_mm_min")
 
 
 @claim("B04")

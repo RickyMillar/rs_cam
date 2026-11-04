@@ -2,7 +2,7 @@
 
 Author: derate-audit agent, 2026-11-05. Read-only research. HEAD `0f55efda4`. Every
 `path:line` is at that hash. Each claim id in brackets, for example [A01], has one assert in
-`assert_claims.py`. Run `python3 -I assert_claims.py`: 61 claims, all pass. The page
+`assert_claims.py`. Run `python3 -I assert_claims.py`: 61 claims, all pass. The script reads the tracked files at `0f55efda4` (`git show`). The page
 `index.html` shows the same content as diagrams.
 
 Short paths: `mod.rs` = `crates/rs_cam_core/src/feeds/mod.rs`, `machine.rs` =
@@ -205,6 +205,6 @@ Size [G10], [G11]: 69 lines in 6 core files call `Basis::derived(` / `moved_basi
 3. Should the slot cap move into `RigidityProfile`?
 4. For the 60 formula-chip cells: keep the formula, warn (D7), or use a vendor-row law?
 5. Should the `industrial_only/` rows be loaded now?
-6. No rigidity block gives 0.25 / 2.0 / 0.25, but `MachineProfile::default()` gives 0.20 / 1.5 / 0.20 [B02], [B03]. Which is right?
+6. CORRECTED by `RIGIDITY_DEFAULTS.md` (2026-11-05): a machine table with no rigidity block does not load; `rigidity` has no serde default [B03]. `RigidityProfile::default()` (0.25 / 2.0 / 0.25) reaches the product only through the two Shapeoko presets; `MachineProfile::default()` (0.20 / 1.5 / 0.20, `generic_wood_router`) reaches every door with no machine table and FM1 [B02]. Both sets are Unsourced ports from one commit.
 7. Should lineage be stored in the project file, or recomputed on read?
 8. Side flag, not checked: the `Face` feeds family is unreached, so `vendor_normalize.rs:175` and the 8 `amana_facing.json` rows are probably unused.

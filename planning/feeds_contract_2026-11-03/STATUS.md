@@ -189,8 +189,14 @@ Those will already be fairly de-rated so our later deratings will just cut it do
 4. The 60 formula-chip cells: a law fitted to the vendor rows.
 5. Load the `industrial_only/` rows. Intent: the vendor rows are baselines; the math must agree
    with them (same as D11). They are evidence for the model, not a lookup to ship from.
-6. The two rigidity default sets (0.25 / 2.0 / 0.25 against 0.20 / 1.5 / 0.20): an agent
-   researches it (`research_derate/RIGIDITY_DEFAULTS.md`).
+6. The two rigidity default sets: researched (`research_derate/RIGIDITY_DEFAULTS.md`). The
+   question was based on a wrong audit claim (B03, now corrected): a machine table with no
+   rigidity block fails to load. `generic_wood_router` (0.20 / 1.5 / 0.20) serves every door
+   with no machine table and FM1; `RigidityProfile::default()` (0.25 / 2.0 / 0.25) serves only
+   the two Shapeoko presets. Both are Unsourced ports (172d6de60). Recommendation: one set in
+   `impl Default for RigidityProfile` (the generic one; FM1 does not move), the presets and
+   `validate.rs:284` read it. Open for the operator: the 2026-10-23 "no underived defaults"
+   rule would give `RigidityProfile` no default at all.
 7. Lineage: store it in the project file, if it is not a memory sink. Measure the size first.
 
 Lead plan: P11b takes items 1-3 with L6 and L8. A new phase P13 (after P11b, before P12) takes
