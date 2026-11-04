@@ -355,6 +355,9 @@ impl<'a> ToolpathNarrationContext<'a> {
             //    `precondition.buried_face`) that name the entry or the face.
             non_centre_cutting_plunge: _,
             buried_face: _,
+            //  - feasibility (K5): warnings (`tool.*` rule ids) that name
+            //    the fact and the measure; the diagnostics carry them.
+            feasibility: _,
             relink,
             pencil_link,
         } = stats;

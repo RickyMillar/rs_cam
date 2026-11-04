@@ -17,7 +17,7 @@ One module per cutter family. The trait and the shared radius queries live in
 - The cusp radius is what the tool FORMS. The valley radius is what the tool
   FITS INTO. The two coincide on a taper and diverge on a bull nose. Pick the
   one the caller's question asks for.
-- A holder and shank envelope is part of the tool, not of the operation; collision reads it. G-CENTRECUT: `MillingCutter::non_centre_cutting` gives the tool's limits; only `ToolDefinition` holds a value (`with_non_centre_cutting`). K3: only a `CentreCutting::No(..)` fact gives limits (`ToolConfig::non_centre_cutting_limits`); `Yes` and `Unknown` give none, so an `Unknown` tool keeps the motion of a centre-cutting tool. Every reader asks the tool; nothing copies the limits.
+- A holder and shank envelope is part of the tool, not of the operation; collision reads it. G-CENTRECUT: `MillingCutter::non_centre_cutting` gives the tool's limits; only `ToolDefinition` holds a value (`with_non_centre_cutting`). K3: only a `CentreCutting::No(..)` fact gives limits (`ToolConfig::non_centre_cutting_limits`); `Yes` and `Unknown` give none, so an `Unknown` tool keeps the motion of a centre-cutting tool. Every reader asks the tool; nothing copies the limits. K5 VTipFlat (P7): `build_cutter` and `ToolConfig::geometry_hint` set the V tip from `v_tip_planning_mm` (the tip `planning()` gives, else 0: sharp); a stated tip whose cone height disagrees with the flute warns `tool.v_tip_unmodelled` (a V-bit only; D12: an Unknown tip is a missing input).
 - An edge drop is the highest point of `z - height(rho)` over the edge
   (`mod.rs::edge_drop_by_profile`); a `facet_drop` reports `found` only for
   a tangency, or `drop_cutter` skips the edges (G-TIERBURIAL).

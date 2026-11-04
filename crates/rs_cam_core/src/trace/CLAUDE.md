@@ -10,7 +10,7 @@ transform provenance. The agent-facing entry point is `trace::narrate`.
 - `semantic_trace.rs` — the semantic items for operation-level diagnostics.
 - `toolpath_spans.rs` — the semantic ranges of moves inside a `Toolpath`. GUI span text: `Span::display_label`, `SpanKind::display_label` (F074); `SpanKind::label` is the MCP name.
 - `produced.rs` — `Produced`, the typed side channel of a generated toolpath (W6.2). K4: `Produced::entries` holds one `EntryRecord` per entry; `JobPhases::run_stages` builds it once, `translated` shifts it, and no stage that writes moves reads it.
-- `lineage.rs` — K8 `Lineage` (P5b): the cut, the pick, the stored speeds with their stamps, the tool facts, the entry contract and entries, the generation findings; built in `JobPhases::finish` from stored values (no Suggest run), a required field of `ToolpathComputeResult` (no `Default`; `unrecorded()` is a test door). MCP `get_toolpath_lineage`, CLI `summary.json` `lineage`. Sentry `--test every_generated_toolpath_has_a_lineage_k8`.
+- `lineage.rs` — K8 `Lineage` (P5b): the cut, the pick, the stored speeds with their stamps, the tool facts, the entry contract and entries, the generation findings, the K5 rule rows (`rules`, P7); built in `JobPhases::finish` from stored values (no Suggest run), a required field of `ToolpathComputeResult` (no `Default`; `unrecorded()` is a test door). MCP `get_toolpath_lineage`, CLI `summary.json` `lineage`. Sentry `--test every_generated_toolpath_has_a_lineage_k8`.
 - `narrate.rs` — agent-friendly narration of a toolpath and a cut trace.
 - `transform_provenance.rs` — the post-generation transform provenance.
 

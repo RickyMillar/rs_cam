@@ -13,6 +13,7 @@ pub mod cutter;
 pub mod domain;
 pub mod edge_clear;
 pub mod execute;
+pub mod feasibility;
 #[cfg(feature = "test-support")]
 pub mod fixture_values;
 pub mod floor;

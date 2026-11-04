@@ -622,7 +622,8 @@ pub struct ToolConfig {
     pub size_units: Option<SizeUnits>,
     /// K3: does the tool cut at its centre? `No` holds the measured centre
     /// core and blade protrusion. `Unknown` plans as a centre-cutting tool
-    /// (the motion before K3); P7 (PlungeKnown) warns on it.
+    /// (the motion before K3); ruling D12 makes it a required input that
+    /// stops generation (P7 commit A2).
     #[serde(
         default = "ToolFact::unknown",
         skip_serializing_if = "ToolFact::is_unknown",
@@ -837,6 +838,16 @@ impl ToolConfig {
         &self.v_tip_diameter
     }
 
+    /// K5 VTipFlat (feeds contract P7): the flat tip diameter (mm) that the
+    /// cutter model uses. It is the tip that `planning()` gives (stated,
+    /// catalogue or estimated), else 0: a sharp point, the model before K5.
+    /// The feasibility stage warns on an `Unknown` tip of a V-bit.
+    /// `build_cutter` and [`Self::geometry_hint`] read it, so the two stay
+    /// equal.
+    pub fn v_tip_planning_mm(&self) -> f64 {
+        self.v_tip_diameter.value_or(0.0)
+    }
+
     // ── K3 setters (feeds contract P6, decision E3) ─────────────────────
     //
     // Each setter stores the fact. A GUI, MCP, CLI or session edit writes
@@ -1010,7 +1021,7 @@ impl ToolConfig {
     /// The measured geometry of a non-centre-cutting tool: `Some` only for
     /// a `CentreCutting::No(..)` fact of any known kind. `Yes` and `Unknown`
     /// give `None`; an `Unknown` tool plans as a centre-cutting tool (the
-    /// motion before K3), and P7 (PlungeKnown) warns on it.
+    /// motion before K3); ruling D12 makes it a required input (P7 A2).
     pub fn non_centre_cutting_geometry(&self) -> Option<NonCentreCuttingGeometry> {
         match self.centre_cutting.planning() {
             Some((CentreCutting::No(geometry), _)) => Some(*geometry),
@@ -1040,10 +1051,10 @@ impl ToolConfig {
             ToolType::BullNose => ToolGeometryHint::Bull {
                 corner_radius: self.corner_radius,
             },
-            // `build_cutter` builds every V-bit pointed (tip 0).
+            // K5 VTipFlat: the tip that `build_cutter` builds.
             ToolType::VBit => ToolGeometryHint::VBit {
                 included_angle: self.included_angle,
-                tip_diameter: 0.0,
+                tip_diameter: self.v_tip_planning_mm(),
             },
             ToolType::TaperedBallNose => ToolGeometryHint::TaperedBall {
                 tip_radius: self.diameter / 2.0,

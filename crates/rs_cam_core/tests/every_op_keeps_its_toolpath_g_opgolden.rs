@@ -70,6 +70,10 @@
 //! program that the session export door writes. A change of a move intent
 //! or a span label moves `moves_hash` or `spans_hash`, not `gcode_hash`.
 //!
+//! `RS_CAM_OPGOLDEN_DUMP_GCODE=<dir>` writes the program of each arm into
+//! `<dir>/<op>__<arm>.nc`. Use it to show that a change of `gcode_hash`
+//! changes only header lines: dump before and after the change, then diff.
+//!
 //! ```text
 //! cargo test -p rs_cam_core -q --test every_op_keeps_its_toolpath_g_opgolden
 //! RS_CAM_BLESS_OPGOLDEN=1 cargo test -p rs_cam_core -q --test every_op_keeps_its_toolpath_g_opgolden
@@ -130,6 +134,10 @@ const BLESS_FIELDS_ENV: &str = "RS_CAM_BLESS_OPGOLDEN_FIELDS";
 /// A comma list of `op/arm` keys for [`BLESS_FIELDS_ENV`]. Without it the
 /// field-only bless writes every arm.
 const BLESS_ARMS_ENV: &str = "RS_CAM_BLESS_OPGOLDEN_ARMS";
+
+/// A directory: the test writes the program of each arm there, one file per
+/// arm. An instrument for a header-only proof; the compare ignores it.
+const DUMP_ENV: &str = "RS_CAM_OPGOLDEN_DUMP_GCODE";
 
 // ── Cases ───────────────────────────────────────────────────────────────
 
@@ -1028,7 +1036,7 @@ fn run(case: &Case) -> Generated {
             };
         }
     };
-    with_gcode_hash(generated, &session)
+    with_gcode_hash(generated, &session, &case.key())
 }
 
 /// Feeds contract P3 (D4): add the hash of the program that the session
@@ -1037,9 +1045,15 @@ fn run(case: &Case) -> Generated {
 /// the rapid rewrite are in the bytes. A rest arm also exports its prior
 /// op. A change of a move intent or a span label keeps this hash; a change
 /// of a G-code byte moves it.
-fn with_gcode_hash(mut generated: Generated, session: &ProjectSession) -> Generated {
+fn with_gcode_hash(mut generated: Generated, session: &ProjectSession, key: &str) -> Generated {
     let hash = match session.export_gcode_checked(None) {
-        Ok(exported) => format!("{:016x}", common::fingerprint::fnv1a_debug(&exported.gcode)),
+        Ok(exported) => {
+            if let Some(dir) = std::env::var_os(DUMP_ENV) {
+                let path = PathBuf::from(dir).join(format!("{}.nc", key.replace('/', "__")));
+                std::fs::write(&path, &exported.gcode).expect("write the dumped program");
+            }
+            format!("{:016x}", common::fingerprint::fnv1a_debug(&exported.gcode))
+        }
         Err(e) => format!("err: {e}"),
     };
     generated.golden.gcode_hash = Some(hash);

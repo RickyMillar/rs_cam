@@ -474,6 +474,20 @@ diag_ids! {
     /// the flute count, the stick-out, the shank diameter, and the taper
     /// half-angle of a tapered tool. A warning, not a refusal (ruling Q6).
     pub const TOOL_FACT_UNKNOWN: &str = "tool.fact_unknown" => warn(Danger::Tool);
+    /// K5 ReachFlute (feeds contract P7): the cut goes deeper below the top
+    /// than the flute length. The text names the flute, how it is known and
+    /// the depth. A warning (ruling Q6).
+    pub const TOOL_REACH_PAST_FLUTE: &str = "tool.reach_past_flute" => warn(Danger::Tool);
+    /// K5 ReachHolder (feeds contract P7): the cut goes as deep below the
+    /// top as the stickout, so the holder face may reach the stock. Equality
+    /// warns. Measured by the stock box, so it can over-read where an
+    /// earlier op removed the material: a Tool warning, no confirm click
+    /// (lead decision). The simulation holder walk measures what touched.
+    pub const TOOL_REACH_TO_HOLDER: &str = "tool.reach_to_holder" => warn(Danger::Tool);
+    /// K5 VTipFlat (feeds contract P7): the cone height of the stated flat
+    /// tip of a V-bit disagrees with the flute length. A V-bit only. A
+    /// warning (ruling Q6).
+    pub const TOOL_V_TIP_UNMODELLED: &str = "tool.v_tip_unmodelled" => warn(Danger::Part);
 
     // ── Surface quality / cycle-time hints ───────────────────────────────
     pub const QUALITY_STEPOVER_OVER_80_PCT: &str = "quality.stepover_over_80_pct_diameter" => INFO;

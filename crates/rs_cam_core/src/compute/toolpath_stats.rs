@@ -387,6 +387,11 @@ pub struct ToolpathStats {
     /// over its area. `None` = not buried. A warning
     /// (`precondition.buried_face`).
     pub buried_face: Option<crate::compute::execute::BuriedFaceRefusal>,
+    /// K5 (feeds contract P7): the physical rule outcomes of the emitted
+    /// toolpath. `None` = the feasibility stage did not run; an empty
+    /// report = it ran and no rule warned. Each row is a warning
+    /// (`tool.*` ids of the rule table).
+    pub feasibility: Option<crate::compute::feasibility::FeasibilityReport>,
     /// S-4 (G-BYTE): the identity of the machined-stock snapshot this
     /// generation consumed. See [`StockSnapshotStamp`].
     ///

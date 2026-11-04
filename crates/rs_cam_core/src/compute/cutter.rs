@@ -39,6 +39,8 @@ pub fn build_cutter(tool: &ToolConfig) -> Result<ToolDefinition, ToolGeometryErr
                 tool.cutting_length_planning_mm(),
             )?;
             cutter.helix_deg = tool.helix_deg;
+            // K5 VTipFlat (Model stage): the flat tip of the tool record.
+            cutter.tip_diameter = tool.v_tip_planning_mm();
             Box::new(cutter)
         }
         ToolType::TaperedBallNose => {

@@ -12,7 +12,8 @@
 //! - the entry contract and the entries made ([`EntryLineage`], K4);
 //! - the K6 findings of the generation, each with its consequence, and one
 //!   `tool.fact_unknown` warning per Unknown tool fact (K3, decision E5);
-//! - the K5 rule outcomes (empty until P7).
+//! - the K5 rule outcomes ([`RuleResult`], P7): one row per physical rule
+//!   that warns on this toolpath.
 //!
 //! The session builds it in `JobPhases::finish` from the persisted
 //! `FeedsProvenance` stamps and the generation output. It does not run
@@ -46,6 +47,7 @@ use crate::compute::catalog::{
     Axial, CutSpec, EntryContract, EntryKind, EntryRecord, FirstPass, OperationConfig,
     OperationType, Radial, TotalDepth,
 };
+use crate::compute::feasibility::RuleResult;
 use crate::compute::tool_config::{
     FactKind, LEGACY_DEFAULT_SHANK_DIAMETER_MM, LEGACY_DEFAULT_TAPER_HALF_ANGLE_DEG, ToolConfig,
     ToolType,
@@ -72,8 +74,8 @@ pub struct Lineage {
     pub entry: EntryLineage,
     /// The K6 findings of the generation.
     pub findings: Vec<FindingUse>,
-    /// The K5 rule outcomes. Empty until P7.
-    pub rules: Vec<RuleOutcome>,
+    /// The K5 rule outcomes: one row per physical rule that warns.
+    pub rules: Vec<RuleResult>,
 }
 
 /// The envelope pick that the stored geometry records (K2b). The apply
@@ -260,11 +262,6 @@ pub struct FindingUse {
     pub detail: Option<String>,
 }
 
-/// The outcome of one K5 physical rule. P7 adds the variants; until then
-/// the list is empty.
-#[derive(Debug, Clone, Copy, PartialEq, Eq)]
-pub enum RuleOutcome {}
-
 /// What [`Lineage::of`] reads.
 pub struct LineageInputs<'a> {
     /// The op, with the operator's values.
@@ -277,6 +274,8 @@ pub struct LineageInputs<'a> {
     pub entry_contract: EntryContract,
     /// The entries of the generated toolpath.
     pub entries: &'a [EntryRecord],
+    /// The K5 rule outcomes of the feasibility stage.
+    pub rules: Vec<RuleResult>,
     /// The ids of the generation findings.
     pub finding_ids: Vec<String>,
 }
@@ -292,6 +291,7 @@ impl Lineage {
             feeds_provenance: prov,
             entry_contract,
             entries,
+            rules,
             finding_ids,
         } = inputs;
         let use_of = |value: Option<f64>, basis: Option<&ValueProvenance>| ValueUse {
@@ -358,7 +358,7 @@ impl Lineage {
                 records: entries.to_vec(),
             },
             findings,
-            rules: Vec::new(),
+            rules,
         }
     }
 
@@ -411,7 +411,14 @@ impl Lineage {
                 "consequence": consequence_name(f.consequence),
                 "detail": f.detail,
             })).collect::<Vec<_>>(),
-            "rules": Vec::<Value>::new(),
+            "rules": self.rules.iter().map(|r| json!({
+                "rule": format!("{:?}", r.rule()),
+                "id": r.id(),
+                "fact": r.fact(),
+                "measured": r.measured(),
+                "limit": r.limit(),
+                "text": r.text(),
+            })).collect::<Vec<_>>(),
         })
     }
 }
@@ -573,6 +580,7 @@ mod tests {
             feeds_provenance: &prov,
             entry_contract: op.op_type().registry_entry().entry,
             entries: &[],
+            rules: Vec::new(),
             finding_ids: vec!["x".to_owned(), "x".to_owned()],
         });
         let pick = l.pick.expect("a picked depth is a pick");

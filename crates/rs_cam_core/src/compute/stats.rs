@@ -119,6 +119,9 @@ pub fn compute_stats_with_spans(tp: &Toolpath, spans: Option<&[Span]>) -> Toolpa
         // at generation, against the stock.
         non_centre_cutting_plunge: None,
         buried_face: None,
+        // K5: same rule. The feasibility stage reads the tool facts and the
+        // stock box, which a move list does not carry.
+        feasibility: None,
         // A/M7 gate 1: this helper DOES see the move list, so the trip
         // TOTAL is always measured; the in/out split additionally needs
         // `spans` (see `compute_retract_trips`).
@@ -232,6 +235,7 @@ pub fn stats_with_findings(
         model_gouge: _,
         non_centre_cutting_plunge: _,
         buried_face: _,
+        feasibility: _,
         // S-4: caller-owned, like the findings — the helper's honest `None`
         // is about to be replaced by the parameter.
         stock_snapshot: _,
@@ -267,6 +271,7 @@ pub fn stats_with_findings(
         model_gouge,
         non_centre_cutting_plunge,
         buried_face,
+        feasibility,
     } = findings;
 
     // Guard 3: no `..Default::default()`.
@@ -303,6 +308,7 @@ pub fn stats_with_findings(
         model_gouge,
         non_centre_cutting_plunge,
         buried_face,
+        feasibility,
         stock_snapshot,
         source_stock,
         planned_cycle_time_s,

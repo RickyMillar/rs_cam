@@ -295,6 +295,23 @@ impl ProjectSession {
                         }
                     }
                 }
+                Gate::Feasibility => {
+                    for &idx in emitted {
+                        let Some(report) = self
+                            .result_at(idx)
+                            .and_then(|r| r.stats.feasibility.as_ref())
+                        else {
+                            continue;
+                        };
+                        for row in report.rows() {
+                            push(
+                                row.id(),
+                                name_at(idx),
+                                format!("Toolpath '{}': {}", name_at(idx), row.text()),
+                            );
+                        }
+                    }
+                }
             }
         }
         out

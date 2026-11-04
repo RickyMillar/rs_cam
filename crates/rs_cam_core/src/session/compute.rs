@@ -606,6 +606,10 @@ pub fn execute_job(
         observer.clear_phase();
         return Err(e);
     }
+    // K5 (feeds contract P7): the physical rules read the moves the
+    // machine runs, so the stage runs after every stage, beside the gouge
+    // guard. It needs no mesh. Every outcome is a warning (ruling Q6).
+    phases.guard_feasibility(&annotated, &mut findings);
 
     // Operator ruling 2026-10-15: a rest operation keeps its planned cycle
     // time for the on-demand comparison with its fresh twin. One
@@ -863,6 +867,36 @@ impl JobPhases<'_, '_> {
             .map_err(crate::compute::execute::OperationError::from)?;
         findings.record(&finding);
         Ok(())
+    }
+
+    /// CONTRACT K5 (feeds contract P7): the feasibility stage. It reads the
+    /// emitted moves, the tool facts (K3), the stock box and the Drill
+    /// depth bases, and records the
+    /// [`crate::compute::feasibility::FeasibilityReport`] through the one
+    /// door. It needs no mesh, so an op on a drawing is judged too. Nothing
+    /// refuses: each row is a warning (ruling Q6). The lineage reads the
+    /// rows (K8 `rules`).
+    fn guard_feasibility(
+        &self,
+        annotated: &crate::compute::execute::GeneratedToolpath,
+        findings: &mut crate::compute::execute::GenerationFindings,
+    ) {
+        use crate::compute::feasibility::{FeasibilityInputs, assess};
+        self.observer.set_phase("Check the physical rules");
+        let depth_bases = crate::compute::execute::drill_depth_bases(
+            &self.inputs.operation,
+            &self.inputs.selection,
+            &self.inputs.tool_def,
+            &self.inputs.emission_stock_bbox,
+            &self.inputs.heights,
+        );
+        let report = assess(&FeasibilityInputs {
+            toolpath: &annotated.toolpath,
+            tool: &self.inputs.tool,
+            stock_bbox: &self.inputs.emission_stock_bbox,
+            depth_bases: &depth_bases,
+        });
+        findings.record(&report);
     }
 
     fn generate(
@@ -1359,6 +1393,11 @@ impl JobPhases<'_, '_> {
             feeds_provenance: &self.context.feeds_provenance,
             entry_contract: self.context.entry_contract,
             entries: &annotated.produced.entries,
+            rules: stats
+                .feasibility
+                .as_ref()
+                .map(|report| report.rows().to_vec())
+                .unwrap_or_default(),
             finding_ids:
                 crate::diagnostics::adapters::from_generation::diagnostics_from_generation(
                     self.context.toolpath_id,

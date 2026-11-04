@@ -56,7 +56,52 @@ pub fn diagnostics_from_generation(
     out.extend(cuts_into_model(toolpath_id, stats));
     out.extend(non_centre_cutting_plunge(toolpath_id, stats));
     out.extend(buried_face(toolpath_id, stats));
+    out.extend(feasibility(toolpath_id, stats));
     out
+}
+
+/// K5 (feeds contract P7): one diagnostic per physical rule row of the
+/// feasibility stage, with the id of the rule's `physical_rules!` row. The
+/// verdict is the stage's; this adapter converts. Every row is `Caution`:
+/// the pre-simulation reach rows read the stock box and can over-read
+/// (lead decision). Only CentreCut stays `Critical`. Silent when the stage
+/// did not run or no rule warned.
+fn feasibility(toolpath_id: ToolpathId, stats: &ToolpathStats) -> Vec<Diagnostic> {
+    use crate::compute::feasibility::PhysicalRule;
+    let Some(report) = stats.feasibility.as_ref() else {
+        return Vec::new();
+    };
+    report
+        .rows()
+        .iter()
+        .map(|row| {
+            let id = row.id();
+            let severity = match row.rule() {
+                PhysicalRule::CentreCut => Severity::Critical,
+                PhysicalRule::ReachFlute | PhysicalRule::ReachHolder | PhysicalRule::VTipFlat => {
+                    Severity::Caution
+                }
+            };
+            Diagnostic {
+                id: DiagnosticId::from(id),
+                scope: Scope::Toolpath { id: toolpath_id },
+                category: Category::Safety,
+                severity,
+                // Read from the emitted moves, the tool record and the
+                // stock box, with no simulation.
+                confidence: Confidence::Static,
+                state: DiagnosticState::Current,
+                source: Source::StaticValidation,
+                face: crate::diagnostics::presentation::face(id),
+                anchor: crate::diagnostics::presentation::anchor(id),
+                message: row.text().to_owned(),
+                evidence: None,
+                fix: None,
+                supersedes: vec![],
+                suppressed_diagnostics: vec![],
+            }
+        })
+        .collect()
 }
 
 /// K6 (G-CENTRECUT, SAFETY): an entry had to plunge a tool that does not

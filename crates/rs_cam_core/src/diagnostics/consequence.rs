@@ -77,11 +77,14 @@ pub enum Gate {
     /// `OperationType::tool_refusal` of a kind the generator can compute
     /// with (W2.2, decision E1).
     ToolKind,
+    /// A row of `ToolpathStats::feasibility` (K5, feeds contract P7): a
+    /// physical rule warns on the emitted toolpath.
+    Feasibility,
 }
 
 impl Gate {
     /// Every gate, for the export walk and the tests.
-    pub const ALL: [Self; 10] = [
+    pub const ALL: [Self; 11] = [
         Self::HeightRefuses,
         Self::GougeBlocks,
         Self::CentreCutPlunge,
@@ -92,6 +95,7 @@ impl Gate {
         Self::GuiConfirm,
         Self::BuriedFace,
         Self::ToolKind,
+        Self::Feasibility,
     ];
 }
 

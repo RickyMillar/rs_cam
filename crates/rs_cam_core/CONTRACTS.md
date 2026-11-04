@@ -63,7 +63,8 @@ touches names it in its invariants.
   generation findings with their K6 consequence; it runs no calculator (Q5). A
   tool fact records its `FactKind` (K3; the diameter is `Stated`), and each
   Unknown fact adds one `tool.fact_unknown` warning (the facts the lineage lists,
-  the shank diameter, and the taper of a tapered tool); `rules` is empty until P7.
+  the shank diameter, and the taper of a tapered tool); `rules` holds the K5
+  `RuleResult` rows of the feasibility stage (P7).
   `Lineage::unrecorded` is the test door of a hand-built result. Surfaces: the
   inspector Lineage `Details`, MCP `get_toolpath_lineage`, CLI `summary.json`
   `lineage`. Sentries: `--test every_generated_toolpath_has_a_lineage_k8`,
@@ -80,6 +81,19 @@ touches names it in its invariants.
   Unsourced). Sentries: `--test every_op_states_its_entry_contract_k4`,
   `--test an_air_lead_is_an_approach_not_a_plunge_k4`,
   `--doc entry_contract_refusals`, `--lib entry_contract_table_is_pinned`.
+- K5: every physical rule has the G-CENTRECUT shape (P7). `compute/feasibility.rs`:
+  one `physical_rules!` row per rule (`CentreCut`, `ReachFlute`, `ReachHolder`,
+  `VTipFlat`; ruling D12 deleted `PlungeKnown`) names the fact, the plan, generation, simulation and
+  export `Stage` and the `diag_ids!` id; a missing stage, a `None` with no reason
+  and a `Refuse` do not compile (`Stage` has no refusing value, ruling Q6).
+  `JobPhases::guard_feasibility` (after `guard_model_gouge`, no mesh) records a
+  `FeasibilityReport` (`ToolpathStats::feasibility`); each row warns on every
+  surface (`Gate::Feasibility`, the G-code header, the diagnostics, the lineage
+  `rules`). The text names the fact, its value and its `FactKind` (Q7). Commit A:
+  CentreCut maps to the G-CENTRECUT records; the ReachFlute simulation measure is
+  commit B, the CentreCut plan clamp commit C. Sentries:
+  `--test every_physical_rule_warns_through_a_row_k5`, one `_k5_<rule>` per rule,
+  `--doc feasibility`.
 - K6: every finding states its consequence, and no finding refuses a job
   (ruling Q6). Each `diag_ids!` row (`diagnostics/ids.rs`) ends
   `=> warn(Danger::X)`, `=> INFO` or `=> NOT_READY` (a missing input, Q10);

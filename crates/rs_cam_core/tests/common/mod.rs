@@ -69,6 +69,7 @@ pub mod chain;
 pub mod feeds_cells;
 pub mod fingerprint;
 pub mod gcode_fixtures;
+pub mod k5_cases;
 pub mod kernels;
 pub mod meshes;
 // `monge`, `reference_plate` and `scallop_oracle` read `rs_cam_core::metrology`,

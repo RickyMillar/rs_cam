@@ -434,6 +434,14 @@ impl RecordFindings for crate::compute::tool_config::NonCentreCuttingRefusal {
     }
 }
 
+/// K5: the feasibility report of one toolpath. One stage run per
+/// toolpath, so the record overwrites.
+impl RecordFindings for crate::compute::feasibility::FeasibilityReport {
+    fn record_into(&self, findings: &mut GenerationFindings) {
+        findings.feasibility = Some(self.clone());
+    }
+}
+
 /// K6 (UX-1c): the buried face of a one-depth op. The first one stands.
 impl RecordFindings for crate::compute::execute::BuriedFaceRefusal {
     fn record_into(&self, findings: &mut GenerationFindings) {

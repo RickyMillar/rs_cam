@@ -331,6 +331,9 @@ fn every_finding_recorded() -> GenerationFindings {
             buried_mm: 12.0,
             under: BuriedUnder::StockTop,
         }),
+        // K5: a report that ran (empty rows), so a dropped channel reads as
+        // `None`.
+        feasibility: Some(rs_cam_core::compute::feasibility::FeasibilityReport::default()),
     }
 }
 
@@ -381,6 +384,7 @@ fn every_recorded_finding_survives_the_single_join() {
         model_gouge,
         non_centre_cutting_plunge,
         buried_face,
+        feasibility,
         // NOT a finding: S-4's snapshot provenance arrives as the join's
         // fourth PARAMETER, because only the caller knows which
         // machined-stock snapshot the generator was handed. This arm passes
@@ -438,6 +442,7 @@ fn every_recorded_finding_survives_the_single_join() {
         findings.non_centre_cutting_plunge
     );
     assert_eq!(buried_face, findings.buried_face);
+    assert_eq!(feasibility, findings.feasibility);
 }
 
 /// (b) The join is `compute_stats_with_spans` PLUS findings — it does not

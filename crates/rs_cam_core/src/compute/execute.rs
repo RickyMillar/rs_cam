@@ -310,6 +310,11 @@ pub struct GenerationFindings {
     /// over its area. `None` = not buried. A warning
     /// (`precondition.buried_face`); generation goes on (ruling Q6, E1).
     pub buried_face: Option<BuriedFaceRefusal>,
+    /// K5 (feeds contract P7): the physical rule outcomes of the emitted
+    /// toolpath (`JobPhases::guard_feasibility`). `None` = the stage did
+    /// not run; an empty report = it ran and no rule warned. Each row is a
+    /// warning (ruling Q6).
+    pub feasibility: Option<crate::compute::feasibility::FeasibilityReport>,
 }
 
 impl std::fmt::Display for OperationError {

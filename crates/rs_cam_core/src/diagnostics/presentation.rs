@@ -607,6 +607,21 @@ pub const TABLE: &[(&str, Anchor, &str)] = &[
         "Tool fact unknown: planned at the old default",
     ),
     (
+        ids::TOOL_REACH_PAST_FLUTE,
+        TOOL,
+        "Cuts deeper than the flute",
+    ),
+    (
+        ids::TOOL_REACH_TO_HOLDER,
+        TOOL,
+        "Holder may reach the stock, by the stock box",
+    ),
+    (
+        ids::TOOL_V_TIP_UNMODELLED,
+        TOOL,
+        "V-bit cone disagrees with its flute",
+    ),
+    (
         ids::QUALITY_STEPOVER_OVER_80_PCT,
         NOTE,
         "Wide stepover can leave ridges",

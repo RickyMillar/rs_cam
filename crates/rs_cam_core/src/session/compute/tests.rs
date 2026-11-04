@@ -2448,6 +2448,8 @@ fn fake_result_with_regions(
             // Nor an entry plunge or a buried face (K6).
             non_centre_cutting_plunge: None,
             buried_face: None,
+            // Nor a feasibility stage (K5).
+            feasibility: None,
             // Nor did it consume any machined stock.
             stock_snapshot: None,
             source_stock: None,
