@@ -10,6 +10,39 @@ Start here in a new session:
 Citations in the cards are `path:line@40cf411a7` plus a symbol. Find the
 code by the symbol when the line has moved.
 
+## Next session (hand-off by the lead, 2026-11-04, after P5d)
+
+Operator plan (2026-11-04): run two jobs in parallel, each by one Opus agent; the lead
+writes each brief, reviews each diff by path and commits. The two file sets do not overlap.
+
+1. **P6 `ToolFact` (K3), the "enforce more" stream.** Card `phases/P6.md`. No number moves.
+   Before the brief:
+   - Check that the perf session no longer owns `crates/rs_cam_core/src/compute/simulate.rs`
+     (`git status`, `git log -3 -- <file>`; `planning/perf_sweep_2026-11-03/`).
+   - Check `git status -- planning/rivmap_block_job/`: the two toml files still had
+     uncommitted edits of another session on 2026-11-04. The migration script skips them
+     until those edits are committed; ask the operator if they stay uncommitted.
+   - The P6 heavy runs (core `--lib`, viz) can pass three minutes: ask the operator first.
+   - Then P7 (K5 feasibility rules) follows P6.
+2. **P11 step 0, the "change the model" stream (read-only research).** Card `phases/P11.md`
+   step 0. Operator go given 2026-11-04. Output folder `research_p11_step0/`: a script, an
+   HTML page and an assert script for each claim the page makes (operator working
+   preference). It edits no crate code. Its result is the evidence for the operator ruling
+   on chip thinning against N-8 (D11), which P11 steps 2-5 need.
+
+Order after both: P7, then P9 (one `Engagement`, heavy-tests: ask first), then P8 and P10,
+then P11 steps 1-6 (with P9 or after it).
+
+Prompt for the new session (paste after `/clear`):
+
+> Continue the feeds contract. Read `planning/feeds_contract_2026-11-03/STATUS.md`
+> ("Next session" section first), then `PLAN.md` sections 0 and 10, then the cards
+> `phases/P6.md` and `phases/P11.md`. You are the lead: decide and verify; Opus agents
+> implement and never commit. Do the P6 pre-checks in STATUS, write the P6 design
+> decisions into the card, and brief one Opus agent for P6. In parallel, brief one Opus
+> agent for P11 step 0 (read-only research, output in `research_p11_step0/`). Review each
+> result by path, run the gates, and commit each with its own paths.
+
 ## Open decisions
 
 | # | Decision | Blocks | State |
@@ -22,6 +55,8 @@ code by the symbol when the line has moved.
 | D7 | Missing input. **Ruled 2026-11-03: a missing input stops generation or emission with a reason; only findings warn.** | P2, P5 | RULED |
 | D5 | P0 D3 Amana tapered 1/16" 2F rows. **Ruled 2026-11-03: the chip band from the printed IPM** (reverses the 2026-09-24 decision). | P0 item 5 | RULED |
 | D8 | Registry defaults after P5. **Ruled 2026-11-03 (operator): (b) tool-derived. An op has no geometry default without a tool; each geometry default is a fraction of the tool (example: stepover = k x D). Each k is a `FormulaConstant` with a printed source or marked Unsourced (no number from memory).** Until it lands, (a) holds: the built-in default warns and the operator picks the proposal. New phase P10. Evidence after P5 (a5ec62f44): 16 FM1 sim cells (Pocket, Profile, Ø6) exceed the depth rigidity cap at the fixed default depth per pass; 15 Face cells have stepover > D. | P10 | RULED |
+| D10 | P11 step 0, the validation study (read-only). **Go given 2026-11-04 (operator: start P6 and step 0 in parallel).** | P11 step 0 | RULED |
+| D11 | Chip thinning against N-8 (`planning/review_2026-08-04/CHIPLOAD_LITERATURE_VERDICT.md`): may Suggest apply radial chip thinning? Evidence: the P11 step 0 result. | P11 steps 2-5 | ASK THE OPERATOR after step 0 |
 | D9 | The machine "aggressiveness" dial changes no number after P5 (pass 6b deleted; the slider, MCP and the explain payload only show it). Options: (a) remove the dial; (b) make it pick the proposal point inside the envelope (for example, how close to the binding edge); (c) keep it as a display. Lead recommends (b) in P5b or (a). | P5b | ASK THE OPERATOR |
 
 ## Phases
@@ -37,14 +72,19 @@ code by the symbol when the line has moved.
 | 5b GUI envelope + K8 lineage | `phases/P5b.md` | DONE 2026-11-04 (envelope plot on the Passes tab, drag + live nomogram; Feeds tab merged into Passes (4 tabs); `Lineage` is a required field of every toolpath result; MCP `get_toolpath_lineage`; FM1 and G-OPGOLDEN unchanged) | see `git log` | |
 | 5c Plot review fixes | `phases/P5c.md` | DONE 2026-11-04 (lines 4+4 labels -> 1-2 lines, 0 labels on rivmap100 3D Rough; frame = hard stops; candidate ring only on drag, proposal diamond only off Now; no DANGER; feed axis ticks) | see `git log` | Next: P5d |
 | 5d Plot review 2 | `phases/P5d.md` | DONE 2026-11-04 (every limit in view draws and is named; range holds every flat depth limit; one mark rule on both charts: white = setpoint, grey ghost = stored during a draft, quiet ACCENT = recommendation; names Vendor DOC k×D / Rigidity DOC / Slot DOC / Cut length; D tick paints, an off-step D names itself alone; ic1 3D Rough Passes cap 34 -> 35, one more depth tick row; operator approved the live screenshot) | see `git log` | |
-| 6 K3 `ToolFact` | `phases/P6.md` | NOT STARTED | | |
+| 6 K3 `ToolFact` | `phases/P6.md` | NOT STARTED (next; see "Next session") | | |
 | 7 K5 feasibility rules | `phases/P7.md` | NOT STARTED (needs P6) | | |
 | 8 Q1 / Q6 / Q8 | `phases/P8.md` | NOT STARTED (Q1 needs P9 changes 1-2 first) | | |
 | 9 K7 one engagement | `phases/P9.md` | NOT STARTED (heavy-tests: ask first) | | |
 | 10 Tool-derived geometry defaults (D8) | `phases/P10.md` | NOT STARTED (card drafted 2026-11-03; needs P5; lead answers its open points first) | | |
-| 11 Force model, chip first, feed-driven limits | `phases/P11.md` | NOT STARTED (operator discussion 2026-11-04; step 0 validation study waits for the operator's go; needs a ruling on chip thinning vs N-8) | | After P9 or with it |
+| 11 Force model, chip first, feed-driven limits | `phases/P11.md` | NOT STARTED (operator discussion 2026-11-04; step 0 go given 2026-11-04, runs in parallel with P6; steps 2-5 need D11) | | Step 0 now; the rest after P9 or with it |
 
 ## Not in a phase
+
+- P5d follow-up (lead, 2026-11-04): MCP has no call that drags the envelope point or
+  sets the rail to 240 pt, so the live check covered the plot at rest only; the sentry
+  `every_limit_is_drawn_and_named_p5d` covers the drag and 240 pt. The hard depth top
+  edge mark has no fixture that reaches it (same function as the D edge).
 
 - P5 follow-ups (lead, 2026-11-04): 16 `SuggestWarning` variants are never
   produced after P5 (the deleted geometry passes); passes 9 and 10 are inert in
