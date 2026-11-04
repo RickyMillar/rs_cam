@@ -93,11 +93,14 @@ touches names it in its invariants.
   `FeasibilityReport` (`ToolpathStats::feasibility`); each row warns on every
   surface (`Gate::Feasibility`, the G-code header, the diagnostics, the lineage
   `rules`). The text names the fact, its value and its `FactKind` (Q7). Commit A:
-  CentreCut maps to the G-CENTRECUT records. Commit B: the ReachFlute simulation
+  Commit C: CentreCut plans its limit in the 3D Rough cut and link paths
+  (`clamp_descents_to_limit`) and in the terrain ramp (`replan_descent_at_limit`), gives a
+  lineage row where the G-CENTRECUT records fire (the surfaces print the G-CENTRECUT row),
+  and a `StraightPlunge` op keeps its plunges and warns on each one deeper than the
+  protrusion. Commit B: the ReachFlute simulation
   stage (`compute::simulate::flute_reach`, the ninth shared decision) gives
   `tool.flute_overreach` or the clean `tool.flute_reach_within`; with a fresh trace
-  either supersedes the stock-box row (the one reducer, the export gate). The CentreCut
-  plan clamp is commit C. Sentries:
+  either supersedes the stock-box row (the one reducer, the export gate). Sentries:
   `--test every_physical_rule_warns_through_a_row_k5`, one `_k5_<rule>` per rule,
   `--doc feasibility`.
 - K6: every finding states its consequence, and no finding refuses a job

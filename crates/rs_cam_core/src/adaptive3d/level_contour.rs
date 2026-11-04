@@ -209,7 +209,10 @@ impl BandEdge {
             match seg {
                 Adaptive3dSegment::Cut(path) => {
                     let shipped =
-                        shipped_cut_path(path, ctx.cut_tolerance, ctx.min_cutting_radius, &drape);
+                        // The band reads no tool position; with a tool that
+                        // does not cut at its centre the first descent of a
+                        // cut is read from `path[0]` here (K5, P7 C).
+                        shipped_cut_path(path, ctx.cut_tolerance, ctx.min_cutting_radius, &drape, None);
                     self.lower_along(&shipped);
                 }
                 Adaptive3dSegment::Link(p) => self.lower_along(&[*p]),

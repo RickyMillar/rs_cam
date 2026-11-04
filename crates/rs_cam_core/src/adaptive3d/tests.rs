@@ -2874,7 +2874,17 @@ fn a_chord_beside_a_peak_holds_the_leave_g_drapegap() {
     // Z tolerance. A full-tool measure would demand a vertical move at the
     // edge of the patch, which no straight chord makes.
     let probe = FlatEndmill::new(2.0 * (r - tol), 25.0);
-    let shipped = emitted_cut_path(&path, &mesh, &index, &cutter, Some(&probe), leave, tol, 0.0);
+    let shipped = emitted_cut_path(
+        &path,
+        &mesh,
+        &index,
+        &cutter,
+        Some(&probe),
+        leave,
+        tol,
+        0.0,
+        None,
+    );
     let mut worst = f64::NEG_INFINITY;
     for w in shipped.windows(2) {
         let (a, b) = (w[0], w[1]);

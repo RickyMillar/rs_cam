@@ -311,9 +311,11 @@ impl ProjectSession {
                         // stands for the pre-simulation one.
                         let measured = self.flute_reach_measured(idx, sim_trace).is_some();
                         for row in report.rows().iter().filter(|row| {
-                            !(measured
-                                && row.rule()
-                                    == crate::compute::feasibility::PhysicalRule::ReachFlute)
+                            // The G-CENTRECUT gates print CentreCut.
+                            row.rule() != crate::compute::feasibility::PhysicalRule::CentreCut
+                                && !(measured
+                                    && row.rule()
+                                        == crate::compute::feasibility::PhysicalRule::ReachFlute)
                         }) {
                             push(
                                 row.id(),

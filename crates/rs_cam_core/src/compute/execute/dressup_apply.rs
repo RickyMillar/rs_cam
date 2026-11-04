@@ -651,8 +651,10 @@ impl PipelineRun<'_> {
     /// and logs the strip once.
     ///
     /// K4 (feeds contract P3): a contract that is not
-    /// [`EntryContract::Dressup`] gives None before the two overrides. The
-    /// G-CENTRECUT fallback ramp below still fires on it (lead decision D1).
+    /// [`EntryContract::Dressup`] gives None before the two overrides. K5
+    /// (P7 C): the G-CENTRECUT fallback ramp fires only on a `Dressup`
+    /// contract; a `StraightPlunge` op keeps its plunges, and the
+    /// feasibility stage warns on each one deeper than the protrusion.
     fn effective_entry_style(&mut self, current: &AnnotatedToolpath) -> DressupEntryStyle {
         if let Some(style) = self.entry_style {
             return style;
@@ -688,9 +690,17 @@ impl PipelineRun<'_> {
                 .ctx
                 .cutter
                 .is_some_and(|cutter| cutter.non_centre_cutting().is_some());
+        // K5 CentreCut (P7 C): only a `Dressup` contract takes the fallback
+        // ramp. A `StraightPlunge` contract forbids a ramp (K4); its
+        // descents keep the plunge, and the feasibility stage records each
+        // one deeper than the protrusion as the G-CENTRECUT warning.
+        let dressup_contract = matches!(self.ctx.entry, EntryContract::Dressup { .. });
         let style = if is_drill_cycle {
             DressupEntryStyle::None
-        } else if non_centre_cutting && contract_style == DressupEntryStyle::None {
+        } else if non_centre_cutting
+            && dressup_contract
+            && contract_style == DressupEntryStyle::None
+        {
             DressupEntryStyle::Ramp
         } else {
             contract_style

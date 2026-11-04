@@ -1999,16 +1999,60 @@ pub(super) fn emitted_cut_path(
     stock_to_leave: f64,
     tolerance: f64,
     min_cutting_radius: f64,
+    anchor: Option<P3>,
 ) -> Vec<P3> {
     let draped = drape_path_to_leave(path, mesh, index, cutter, stock_to_leave, cutter.radius());
     let simplified = simplify_path_3d(&draped, tolerance);
     let blended = blend_corners_3d(&simplified, min_cutting_radius);
-    match probe {
+    let lifted = match probe {
         Some(probe) => {
             lift_chords_to_leave(&blended, mesh, index, probe, stock_to_leave, tolerance)
         }
         None => blended,
+    };
+    clamp_descents_to_limit(lifted, anchor, cutter)
+}
+
+/// K5 CentreCut, the plan stage (feeds contract P7 commit C): a tool that
+/// does not cut at its centre (`MillingCutter::non_centre_cutting`) never
+/// descends along a cut or a link steeper than its limit slope. Each point
+/// rises to at least `z_prev - slope * dxy`; a point only rises, so the
+/// path stays above the draped path and its chords (no gouge). A
+/// centre-cutting tool keeps the path as it is. The emitter and the
+/// planner's stamp call it through [`emitted_cut_path`] and
+/// [`emitted_link_path`], so they cannot drift.
+///
+/// `anchor` is where the tool stands before the path: the emitter feeds
+/// from there to `path[1]` (G-PHANTOMSTAMP), so the first descent is read
+/// from it. A cut that follows a cut whose end the clamp raised starts
+/// there. `None`: `path[0]`.
+pub(super) fn clamp_descents_to_limit(
+    mut path: Vec<P3>,
+    anchor: Option<P3>,
+    cutter: &dyn crate::tool::MillingCutter,
+) -> Vec<P3> {
+    let Some(limits) = cutter.non_centre_cutting() else {
+        return path;
+    };
+    let slope = limits.max_descent_slope();
+    for i in 1..path.len() {
+        let prev = if i == 1 {
+            anchor.or_else(|| path.first().copied())
+        } else {
+            path.get(i - 1).copied()
+        };
+        let (Some(prev), Some(cur)) = (prev, path.get(i).copied()) else {
+            continue;
+        };
+        let dxy = (cur.x - prev.x).hypot(cur.y - prev.y);
+        let lowest = prev.z - slope * dxy;
+        if cur.z < lowest
+            && let Some(point) = path.get_mut(i)
+        {
+            point.z = lowest;
+        }
     }
+    path
 }
 
 /// The link path the emitter ships and the planner stamps from `from` to
@@ -2036,10 +2080,11 @@ pub(super) fn emitted_link_path(
         stock_to_leave,
         cutter.radius(),
     );
-    match probe {
+    let lifted = match probe {
         Some(probe) => lift_chords_to_leave(&draped, mesh, index, probe, stock_to_leave, tolerance),
         None => draped,
-    }
+    };
+    clamp_descents_to_limit(lifted, None, cutter)
 }
 
 #[cfg(test)]
@@ -2374,6 +2419,7 @@ pub(super) fn segments_to_toolpath_checked(
                     params.depth.stock_to_leave,
                     params.emission_chord_tolerance(),
                     params.geometry.min_cutting_radius,
+                    tp.moves.last().map(|m| m.target),
                 );
                 // G-PHANTOMSTAMP: the first feed runs from where the tool
                 // stands to `blended[1]`; the planner mirror stamps the same

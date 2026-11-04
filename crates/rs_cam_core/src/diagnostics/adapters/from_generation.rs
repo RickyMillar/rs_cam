@@ -74,13 +74,15 @@ fn feasibility(toolpath_id: ToolpathId, stats: &ToolpathStats) -> Vec<Diagnostic
     report
         .rows()
         .iter()
+        // The G-CENTRECUT row (`non_centre_cutting_plunge`) prints CentreCut.
+        .filter(|row| row.rule() != PhysicalRule::CentreCut)
         .map(|row| {
             let id = row.id();
             let severity = match row.rule() {
-                PhysicalRule::CentreCut => Severity::Critical,
-                PhysicalRule::ReachFlute | PhysicalRule::ReachHolder | PhysicalRule::VTipFlat => {
-                    Severity::Caution
-                }
+                PhysicalRule::CentreCut
+                | PhysicalRule::ReachFlute
+                | PhysicalRule::ReachHolder
+                | PhysicalRule::VTipFlat => Severity::Caution,
             };
             Diagnostic {
                 id: DiagnosticId::from(id),

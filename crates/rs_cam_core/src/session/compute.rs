@@ -890,12 +890,21 @@ impl JobPhases<'_, '_> {
             &self.inputs.emission_stock_bbox,
             &self.inputs.heights,
         );
-        let report = assess(&FeasibilityInputs {
+        let inputs = FeasibilityInputs {
             toolpath: &annotated.toolpath,
             tool: &self.inputs.tool,
             stock_bbox: &self.inputs.emission_stock_bbox,
             depth_bases: &depth_bases,
-        });
+            entry_contract: self.context.entry_contract,
+            entry_plunge: annotated.produced.non_centre_cutting_refusal,
+        };
+        // K5 CentreCut (P7 C): a `StraightPlunge` descent deeper than the
+        // protrusion is the G-CENTRECUT warning, recorded as the entry
+        // plunge is (the first one stands).
+        if let Some(first) = inputs.straight_plunge_refusals().first() {
+            findings.record(first);
+        }
+        let report = assess(&inputs);
         findings.record(&report);
     }
 

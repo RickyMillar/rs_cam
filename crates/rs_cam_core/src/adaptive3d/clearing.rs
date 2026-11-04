@@ -648,6 +648,7 @@ pub(super) fn shipped_cut_path(
     tolerance: f64,
     min_cutting_radius: f64,
     drape: &StampDrape<'_>,
+    tool_pos: Option<P3>,
 ) -> Vec<P3> {
     super::path::emitted_cut_path(
         path,
@@ -658,6 +659,7 @@ pub(super) fn shipped_cut_path(
         drape.stock_to_leave,
         tolerance,
         min_cutting_radius,
+        tool_pos,
     )
 }
 
@@ -688,7 +690,7 @@ fn stamp_emitted_segment(
             // RDP, blend, chord lift), so the planner's swept stamps cover
             // the SAME tubes the simulator will stamp from the emitted
             // feeds.
-            let blended = shipped_cut_path(path, tolerance, min_cutting_radius, drape);
+            let blended = shipped_cut_path(path, tolerance, min_cutting_radius, drape, tool_pos);
             // G-PHANTOMSTAMP: the emitter feeds `blended.iter().skip(1)`
             // from where the tool stands, not from `blended[0]`. Stamp the
             // same polyline: the tool position, then `blended[1..]`. With

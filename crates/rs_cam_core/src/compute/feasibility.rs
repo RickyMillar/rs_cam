@@ -163,9 +163,11 @@ macro_rules! physical_rules {
 
 physical_rules! {
     /// G-CENTRECUT: a tool that does not cut at its centre goes down into
-    /// stock no steeper than its limit. In this commit the stages are the
-    /// existing G-CENTRECUT records: the entry plunge that `run_stages`
-    /// records, and the simulation descent rows.
+    /// stock no steeper than its limit. Plan: the entry emitters, the 3D
+    /// Rough cut and link paths and its terrain ramp hold the limit slope
+    /// (P7 C). Generation: the entry plunge that `run_stages` records and
+    /// each `StraightPlunge` descent deeper than the protrusion. Simulation:
+    /// the descent rows (`non_centre_cutting_descents`).
     CentreCut {
         fact: CentreCutting,
         plan: Clamp,
@@ -291,6 +293,12 @@ pub(crate) struct FeasibilityInputs<'a> {
     /// The XY and the depth base of each hole of a Drill
     /// (`execute::drill_depth_bases`); empty for every other op.
     pub depth_bases: &'a [([f64; 2], f64)],
+    /// The entry contract of the registry row (K4). A `StraightPlunge` op
+    /// keeps its plunges; the CentreCut rule judges each one.
+    pub entry_contract: crate::compute::catalog::EntryContract,
+    /// The G-CENTRECUT entry plunge that an entry emitter recorded
+    /// (`Produced::non_centre_cutting_refusal`), if any.
+    pub entry_plunge: Option<crate::compute::tool_config::NonCentreCuttingRefusal>,
 }
 
 /// A length for the warning text: at most three decimals, no trailing
@@ -346,6 +354,70 @@ impl FeasibilityInputs<'_> {
             .map(|m| self.reference_top(m.target.x, m.target.y) - m.target.z)
             .filter(|depth| *depth > 0.0)
             .max_by(f64::total_cmp)
+    }
+
+    /// K5 CentreCut (P7 C): the descents of a `StraightPlunge` op with a
+    /// tool that does not cut at its centre that go into stock deeper than
+    /// the blade protrusion, by the G-CENTRECUT predicate
+    /// (`NonCentreCuttingLimits::plunge_refusal`) from the reference top. A
+    /// descent is a fed move steeper than the limit
+    /// (`is_steeper_than_limit`). Empty for every other op and tool.
+    pub(crate) fn straight_plunge_refusals(
+        &self,
+    ) -> Vec<crate::compute::tool_config::NonCentreCuttingRefusal> {
+        let Some(limits) = self.tool.non_centre_cutting_limits() else {
+            return Vec::new();
+        };
+        if !matches!(
+            self.entry_contract,
+            crate::compute::catalog::EntryContract::StraightPlunge { .. }
+        ) {
+            return Vec::new();
+        }
+        self.toolpath
+            .moves
+            .windows(2)
+            .filter_map(|pair| {
+                let [prev, current] = pair else {
+                    return None;
+                };
+                if current.move_type == MoveType::Rapid
+                    || !limits.is_steeper_than_limit(prev.target, current.target)
+                    || !self.in_footprint(current.target.x, current.target.y)
+                {
+                    return None;
+                }
+                let top = self.reference_top(current.target.x, current.target.y);
+                limits.plunge_refusal(top, current.target)
+            })
+            .collect()
+    }
+
+    /// K5 CentreCut (P7 C): the row of the G-CENTRECUT records, so the
+    /// lineage lists the rule where it fires. The entry plunge of an entry
+    /// emitter, and each `StraightPlunge` descent deeper than the
+    /// protrusion. The surfaces print the G-CENTRECUT row
+    /// (`safety.non_centre_cutting_plunge`), not this one.
+    fn centre_cut(&self) -> Option<RuleResult> {
+        let straight = self.straight_plunge_refusals();
+        let deepest = straight
+            .iter()
+            .chain(self.entry_plunge.as_ref())
+            .max_by(|a, b| a.depth_mm.total_cmp(&b.depth_mm))?;
+        let count = straight.len() + usize::from(self.entry_plunge.is_some());
+        Some(RuleResult {
+            rule: PhysicalRule::CentreCut,
+            fact: self.tool.centre_cutting_fact().kind(),
+            measured: deepest.depth_mm,
+            limit: Some(deepest.max_plunge_depth_mm),
+            text: format!(
+                "centre cutting no, {}: {count} descent(s) go into stock deeper than the {} mm \
+                 blade protrusion, deepest {} mm",
+                self.tool.centre_cutting_fact().kind().label(),
+                mm(deepest.max_plunge_depth_mm),
+                mm(deepest.depth_mm)
+            ),
+        })
     }
 
     fn reach(&self, rule: PhysicalRule) -> Option<RuleResult> {
@@ -416,9 +488,9 @@ pub(crate) fn assess(inputs: &FeasibilityInputs<'_>) -> FeasibilityReport {
     let rows = PhysicalRule::ALL
         .iter()
         .filter_map(|rule| match rule {
-            // The G-CENTRECUT records stand for this row: the entry plunge
-            // that `run_stages` records and the simulation descent rows.
-            PhysicalRule::CentreCut => None,
+            // The G-CENTRECUT records: the entry plunge that `run_stages`
+            // records and the `StraightPlunge` descents (P7 C).
+            PhysicalRule::CentreCut => inputs.centre_cut(),
             PhysicalRule::ReachFlute | PhysicalRule::ReachHolder => inputs.reach(*rule),
             PhysicalRule::VTipFlat => inputs.v_tip_flat(),
         })

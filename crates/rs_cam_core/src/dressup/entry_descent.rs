@@ -671,7 +671,24 @@ pub(crate) fn emit_ramp(
         // G-RAMPTERRAIN: clip the legs to the drop-cutter floor. On a
         // lost surface contact, fall back to the straight plunge — the
         // plunge target sits on the intended surface by construction.
-        match clip_polyline_to_floor(&planned, probe) {
+        // K5 CentreCut (P7 C): a clipped leg that rides over higher
+        // terrain drops steeply at its end. A tool that does not cut at its
+        // centre re-plans the descent over the clip floor at its limit
+        // slope instead (`replan_descent_at_limit`).
+        let clipped = match safety.centre_limits {
+            Some(limits) => replan_descent_at_limit(
+                start,
+                ramp_start_z,
+                end,
+                dir,
+                leg,
+                legs,
+                limits.max_descent_slope(),
+                probe,
+            ),
+            None => clip_polyline_to_floor(&planned, probe),
+        };
+        match clipped {
             Some(points) => {
                 for p in points {
                     tp.feed_to_with_intent(p, ramp_feed, MoveIntent::EntryRamp);
@@ -720,6 +737,90 @@ pub(crate) fn emit_ramp(
         // caller that lands here (R0.2 section 2.2).
         for p in planned.iter().skip(1) {
             tp.feed_to_with_intent(*p, ramp_feed, MoveIntent::EntryRamp);
+        }
+    }
+    None
+}
+
+/// K5 CentreCut (feeds contract P7 commit C): the entry descent of a tool
+/// that does not cut at its centre, over the drop-cutter floor of `probe`.
+///
+/// The zigzag of [`emit_ramp`] goes out `leg` mm along a direction and back
+/// to the start column. Each sample, [`ENTRY_CLIP_SPACING_MM`] apart, takes
+/// `z = max(floor, z_prev - slope * step, end.z)`: it never descends steeper
+/// than `slope` (the tool's limit), never goes below the floor (no gouge)
+/// and never below the target. A leg over higher terrain rises with the
+/// floor and comes down again at the slope, so no leg end drops steeply.
+/// The laps repeat until the start column reaches `end.z`; the last point
+/// is `end`.
+///
+/// It tries `dir` first, then the reverse, the two normals and the four
+/// diagonals: a column in a narrow valley may have room in one direction
+/// only. A direction fails when the probe loses contact, when a lap does
+/// not lower the start column, or after twice the laps of the plan
+/// (`planned_legs`). `None` when no direction reaches the target: the
+/// caller plunges and records the G-CENTRECUT warning.
+#[expect(
+    clippy::too_many_arguments,
+    reason = "each parameter is a separate input of the one entry plan"
+)]
+fn replan_descent_at_limit(
+    start: &P3,
+    ramp_start_z: f64,
+    end: &P3,
+    dir: (f64, f64),
+    leg: f64,
+    planned_legs: usize,
+    slope: f64,
+    probe: &EntrySurfaceProbe<'_>,
+) -> Option<Vec<P3>> {
+    let norm = dir.0.hypot(dir.1);
+    if norm < 1e-12 || leg <= 0.0 || slope <= 0.0 {
+        return None;
+    }
+    let (ux, uy) = (dir.0 / norm, dir.1 / norm);
+    let d = std::f64::consts::FRAC_1_SQRT_2;
+    let candidates = [
+        (ux, uy),
+        (-ux, -uy),
+        (-uy, ux),
+        (uy, -ux),
+        (d * (ux - uy), d * (uy + ux)),
+        (d * (ux + uy), d * (uy - ux)),
+        (d * (-ux - uy), d * (-uy + ux)),
+        (d * (-ux + uy), d * (-uy - ux)),
+    ];
+    let max_laps = planned_legs.max(2);
+    let steps = crate::util::steps::steps(leg, ENTRY_CLIP_SPACING_MM)
+        .unwrap_or(0)
+        .max(1);
+    'direction: for (cx, cy) in candidates {
+        let mut out = Vec::new();
+        let mut z = ramp_start_z;
+        let mut start_column_z = ramp_start_z;
+        for _lap in 0..max_laps {
+            for (from_t, to_t) in [(0.0, 1.0), (1.0, 0.0)] {
+                for k in 1..=steps {
+                    let s = k as f64 / steps as f64;
+                    let t = from_t + (to_t - from_t) * s;
+                    let (x, y) = (start.x + cx * leg * t, start.y + cy * leg * t);
+                    let Some(floor) = probe.floor_z(x, y) else {
+                        continue 'direction;
+                    };
+                    z = floor.max(z - slope * (leg / steps as f64)).max(end.z);
+                    out.push(P3::new(x, y, z));
+                }
+            }
+            if z <= end.z + 1e-9 {
+                if let Some(last) = out.last_mut() {
+                    *last = *end;
+                }
+                return Some(out);
+            }
+            if z >= start_column_z - 1e-9 {
+                continue 'direction;
+            }
+            start_column_z = z;
         }
     }
     None
