@@ -535,12 +535,12 @@ kind = "face"
 stepover = 14.4
 depth = 0.5
 depth_per_pass = 0.5
-feed_rate = 5999.0
+feed_rate = 4000.0
 plunge_rate = 2162.0
 ramp_feed_rate = 5999.0
 stock_offset = 18.0
 direction = "zigzag"
-spindle_rpm = 16219
+spindle_rpm = 10814
 
 [setups.toolpaths.dressups]
 entry_style = "ramp"
@@ -588,16 +588,14 @@ offset = 0.0
 enabled = false
 
 [setups.toolpaths.feeds_provenance.feed_rate]
-source = "vendor_lut"
-reference = "amana-flat-hardwood-pocket-12700-2f-spektra"
+source = "manual"
 
 [setups.toolpaths.feeds_provenance.plunge_rate]
 source = "repo_rule"
 reference = "material_plunge_base"
 
 [setups.toolpaths.feeds_provenance.spindle_rpm]
-source = "vendor_lut"
-reference = "amana-flat-hardwood-pocket-12700-2f-spektra"
+source = "manual"
 
 [setups.toolpaths.feeds_provenance.ramp_feed_rate]
 source = "vendor_lut"
@@ -617,11 +615,11 @@ coolant = "off"
 kind = "adaptive3d"
 
 [setups.toolpaths.operation.params]
-stepover = 3.6
+stepover = 3.16
 depth_per_pass = 9.0
 stock_to_leave_axial = 0.0
-feed_rate = 5999.0
-plunge_rate = 2162.0
+feed_rate = 4200.0
+plunge_rate = 1030.0
 ramp_feed_rate = 5999.0
 tolerance = 0.1
 min_cutting_radius = 0.0
@@ -635,7 +633,7 @@ region_ordering = "global"
 clearing_strategy = "geodesic_adaptive"
 trochoid_cap_mult = 1.6
 engagement_measure = "DiskArea"
-spindle_rpm = 16219
+spindle_rpm = 11358
 min_region_cut_length_mm = 15.0
 stay_down_clearance_mm = 0.5
 
@@ -698,19 +696,16 @@ only = [
 enabled = false
 
 [setups.toolpaths.feeds_provenance.feed_rate]
-source = "vendor_lut"
-reference = "amana-flat-hardwood-pocket-12700-2f-spektra"
+source = "manual"
 
 [setups.toolpaths.feeds_provenance.plunge_rate]
-source = "repo_rule"
-reference = "material_plunge_base"
+source = "manual"
 
 [setups.toolpaths.feeds_provenance.spindle_rpm]
-source = "vendor_lut"
-reference = "amana-flat-hardwood-pocket-12700-2f-spektra"
+source = "manual"
 
 [setups.toolpaths.feeds_provenance.stepover]
-source = "manual"
+source = "formula"
 
 [setups.toolpaths.feeds_provenance.ramp_feed_rate]
 source = "vendor_lut"
@@ -730,11 +725,11 @@ coolant = "off"
 kind = "adaptive3d"
 
 [setups.toolpaths.operation.params]
-stepover = 1.2
-depth_per_pass = 1.2
+stepover = 0.9400000000000001
+depth_per_pass = 4.702
 stock_to_leave_axial = 0.0
-feed_rate = 4720.856166118225
-plunge_rate = 2360.0
+feed_rate = 4200.0
+plunge_rate = 1520.0
 ramp_feed_rate = 4720.0
 tolerance = 0.1
 min_cutting_radius = 0.0
@@ -744,11 +739,11 @@ helix_radius_factor = 0.3
 helix_pitch = 2.0
 entry_clearance_mm = 0.5
 detect_flat_areas = true
-region_ordering = "global"
+region_ordering = "by_area"
 clearing_strategy = "geodesic_adaptive"
 trochoid_cap_mult = 1.6
 engagement_measure = "DiskArea"
-spindle_rpm = 18000
+spindle_rpm = 21428
 min_region_cut_length_mm = 15.0
 stay_down_clearance_mm = 0.5
 
@@ -810,19 +805,20 @@ only = [
 enabled = false
 
 [setups.toolpaths.feeds_provenance.feed_rate]
-source = "vendor_lut"
-reference = "amana-flat-hardwood-pocket-6000-2f-spektra"
+source = "manual"
 
 [setups.toolpaths.feeds_provenance.plunge_rate]
-source = "published_rule"
-reference = "g10_plunge_flat"
+source = "manual"
 
 [setups.toolpaths.feeds_provenance.spindle_rpm]
-source = "vendor_lut"
-reference = "amana-flat-hardwood-pocket-6000-2f-spektra"
+source = "manual"
 
 [setups.toolpaths.feeds_provenance.stepover]
-source = "manual"
+source = "formula"
+
+[setups.toolpaths.feeds_provenance.depth_per_pass]
+source = "vendor_lut"
+reference = "amana-flat-hardwood-pocket-6000-2f-spektra"
 
 [setups.toolpaths.feeds_provenance.ramp_feed_rate]
 source = "vendor_lut"
@@ -910,7 +906,6 @@ kind = "drill"
 [setups.toolpaths.operation.params]
 cycle = "peck"
 peck_depth = 6.0
-dwell_time = 0.5
 retract_amount = 0.5
 feed_rate = 1835.0
 retract_z = 2.0
@@ -1002,6 +997,22 @@ side = "center"
 projection = "cutter"
 spindle_rpm = 10610
 chain_distance_mm = 0.0
+
+[[setups.toolpaths.operation.params.selection.rules]]
+source = "toolpath_model"
+
+[setups.toolpaths.operation.params.selection.rules.filter]
+kinds = "served"
+
+[[setups.toolpaths.operation.params.selection.picks]]
+source = "toolpath_model"
+kind = "path"
+layer = "VGROOVE_V20_RIVER"
+anchor = [
+    207.7603,
+    231.4428,
+]
+measure = 55.44525760907854
 
 [setups.toolpaths.dressups]
 entry_style = "none"
@@ -2018,7 +2029,7 @@ helix_radius_factor = 0.3
 helix_pitch = 2.0
 entry_clearance_mm = 0.5
 detect_flat_areas = true
-region_ordering = "global"
+region_ordering = "by_area"
 clearing_strategy = "geodesic_adaptive"
 trochoid_cap_mult = 1.6
 engagement_measure = "DiskArea"
@@ -2086,7 +2097,7 @@ enabled = false
 [[setups.toolpaths]]
 id = 22
 name = "Front rest R1 (valleys)"
-enabled = true
+enabled = false
 tool_id = 4
 model_id = 4
 boundary_inherit = true
@@ -2202,7 +2213,7 @@ reference = "amana-ball-hardwood-pocket-1588-2f-v7"
 [[setups.toolpaths]]
 id = 23
 name = "Front scallop finish"
-enabled = true
+enabled = false
 tool_id = 4
 model_id = 4
 boundary_inherit = true
