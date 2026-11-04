@@ -82,6 +82,11 @@ line; the candidate ring exists only after a drag, the proposal diamond only
 when it is not at Now; grey lines, amber on a crossing, no red; the feed axis
 names its ticks. Research `feeds_contract_2026-11-03/research_ae/`: stepover
 load and the chip-first flow (needs an operator ruling on chip thinning).
+Next (2026-11-04, operator): P5d (second plot review: every limit shown and
+named, a quiet recommendation, the white dot means the setpoint on both
+charts), then P6. P11 (new card): the engagement force model, chip first,
+limits that follow the feed; its step 0 validation study waits for the
+operator's go.
 
 ## Update 2026-10-29 — viewport parity: phase 0 landed
 
