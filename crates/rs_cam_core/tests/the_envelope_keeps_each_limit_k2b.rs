@@ -251,13 +251,18 @@ fn the_vendor_axial_bound_binds_and_names_its_row_k2b() {
 
 #[test]
 fn the_rigidity_cap_binds_and_names_the_machine_k2b() {
+    // P13c (O1): the rigidity cap is the force-budget depth. In softwood at
+    // a 0.5 mm width no depth below the flute reaches the budget, so the
+    // cell is oak at a 3 mm width (the force-budget depth there is about
+    // 3.5 mm) with a stated 5 mm; narrower widths reach 5 mm only below
+    // 1.5 mm, which removes less, so the removal-rate pick stays at 3 mm.
     let env = envelope(&Cell {
         op: OperationType::Pocket,
         tool: end_mill(6.0, 20.0),
         machine: MachineProfile::default(),
-        material: softwood(),
-        dpp: 2.0,
-        stepover: 0.5,
+        material: oak(),
+        dpp: 5.0,
+        stepover: 3.0,
         bbox: None,
     });
     assert_binds(&env, LimitKind::Rigidity);
@@ -289,8 +294,25 @@ fn the_slot_rule_binds_and_names_its_constants_k2b() {
 
 #[test]
 fn the_tool_diameter_binds_the_width_k2b() {
-    let env = envelope(&Cell {
+    // P13c (O3): a Pocket width binds on the corner-coverage rule
+    // (0.854 D, under D); the tool diameter binds a width that is not
+    // computed (an Adaptive).
+    let pocket = envelope(&Cell {
         op: OperationType::Pocket,
+        tool: end_mill(6.0, 20.0),
+        machine: MachineProfile::default(),
+        material: softwood(),
+        dpp: 0.5,
+        stepover: 8.0,
+        bbox: None,
+    });
+    assert!(
+        pocket.proposal_limits.contains(&LimitKind::CornerCoverage),
+        "{:?}",
+        pocket.proposal_limits
+    );
+    let env = envelope(&Cell {
+        op: OperationType::Adaptive,
         tool: end_mill(6.0, 20.0),
         machine: MachineProfile::default(),
         material: softwood(),

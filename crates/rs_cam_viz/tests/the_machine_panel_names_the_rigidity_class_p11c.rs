@@ -100,7 +100,7 @@ fn the_machine_panel_names_an_industrial_machine_p11c() {
         class: MachineClass::Industrial,
         ..MachineProfile::default()
     };
-    m.rigidity.doc_roughing_factor *= 2.0;
+    m.rigidity.force_budget_n *= 2.0;
     let text = machine_panel_text(Some(m));
     assert!(
         text.iter().any(|t| t == "Rigidity: industrial, stated"),

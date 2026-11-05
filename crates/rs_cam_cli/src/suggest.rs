@@ -273,6 +273,21 @@ pub fn run_suggest(input: &Path, json_out: bool) -> Result<()> {
                 ),
                 cell(peck_depth(cur), sug.and_then(peck_depth)),
             );
+            // P13c (O3): a computed width states its assumptions, the one
+            // core line the GUI card and MCP print.
+            if profile.as_ref().is_some_and(|p| {
+                p.warnings.iter().any(|w| {
+                    matches!(
+                        w,
+                        rs_cam_core::feeds::suggest::SuggestWarning::ComputedWidthAssumptions
+                    )
+                })
+            }) {
+                println!(
+                    "    {}",
+                    rs_cam_core::feeds::force_budget::computed_width_assumptions_line()
+                );
+            }
         }
     }
     Ok(())
@@ -361,6 +376,23 @@ mod tests {
         assert_eq!(
             machine["rigidity_basis"],
             session.machine().rigidity_basis().text(),
+            "{record}"
+        );
+    }
+
+    /// Feeds contract P13c (ruling O3): a roughing Pocket's record names the
+    /// assumptions of its computed width in the rationale, the core text
+    /// that MCP `get_suggest_rationale` and the GUI card print.
+    #[test]
+    fn the_suggest_record_states_the_width_assumptions_p13c() {
+        let session = session_with(OperationType::Pocket);
+        let record = last_record(&session);
+        let text = record["profile"]["rationale"].to_string();
+        for note in rs_cam_core::feeds::force_budget::COMPUTED_WIDTH_ASSUMPTIONS {
+            assert!(text.contains(note), "the record lacks {note:?}: {record}");
+        }
+        assert!(
+            text.contains(&rs_cam_core::feeds::force_budget::computed_width_assumptions_line()),
             "{record}"
         );
     }

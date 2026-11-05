@@ -230,7 +230,142 @@ pub enum ToolRule {
     /// stepover on flat ground and a Z step on a vertical wall are the
     /// same chord. Else `FractionOfD` of the row.
     ScallopChordElse(KRow),
+    /// P13c (rulings O1, O3, O4): the K2b envelope proposal, the cut with
+    /// the most removal per minute inside every limit (the force-budget
+    /// depth, the corner-coverage width bound, the slot step, power,
+    /// deflection). The width and the depth come from ONE envelope of the
+    /// op with both pick fields unset, so the two rules of one op agree.
+    /// When the envelope cannot be built (no backed row), or the force
+    /// budget cannot set a depth (no force line), the width is the geometry
+    /// rule (`geometry_width`) and the depth is left unset: no underived
+    /// default; the op refuses until it is set (lead ruling, 2026-11-05).
+    EnvelopeProposal(ProposalAxis),
 }
+
+/// The axis of a [`ToolRule::EnvelopeProposal`] rule.
+#[derive(Debug, Clone, Copy, PartialEq, Eq)]
+pub enum ProposalAxis {
+    /// The depth (`ap`).
+    Depth,
+    /// The width (`ae`, the stepover).
+    Width,
+}
+
+/// The law of a [`ToolRule::EnvelopeProposal`] value: its stamp reference.
+pub const ENVELOPE_PROPOSAL_LAW: &str =
+    "envelope proposal: most removal per minute inside the limits";
+
+/// The stamp of an envelope-proposal value: the repo formula, with the law
+/// as its reference.
+#[must_use]
+pub fn proposal_stamp() -> ValueProvenance {
+    ValueProvenance {
+        source: crate::feeds::ProvenanceSource::Formula,
+        reference: Some(ENVELOPE_PROPOSAL_LAW.to_owned()),
+    }
+}
+
+/// P13c: the envelope proposal of `op` in `ctx`, with every pick field of
+/// its rules unset and no stated speeds (the add door writes the speeds
+/// for the picked cut). `None` when the envelope refuses the op.
+fn envelope_proposal(
+    op: &OperationConfig,
+    ctx: RuleContext<'_>,
+) -> Option<crate::feeds::envelope::SafeEnvelope> {
+    let mut probe = op.clone();
+    for rule in rules(op.op_type()) {
+        if matches!(rule.rule, ToolRule::EnvelopeProposal(_))
+            && let Some(slot) = slot_mut(&mut probe, rule.field)
+        {
+            *slot = None;
+        }
+    }
+    probe.set_spindle_rpm(None);
+    crate::feeds::envelope::SafeEnvelope::for_cut(crate::feeds::envelope::EnvelopeInput {
+        operation: &probe,
+        tool: ctx.tool,
+        machine: ctx.machine,
+        material: ctx.material,
+        lut: crate::feeds::embedded_vendor_lut(),
+        spindle_strategy: crate::feeds::SpindleStrategy::default(),
+        context: crate::feeds::suggest::SuggestContext::default(),
+    })
+    .ok()
+}
+
+/// P13c: the one envelope of the pick rules of `op`, or `None` when the op
+/// has no pick rule or the envelope refuses it.
+fn pick_envelope(
+    op: &OperationConfig,
+    ctx: RuleContext<'_>,
+) -> Option<crate::feeds::envelope::SafeEnvelope> {
+    rules(op.op_type())
+        .iter()
+        .any(|r| matches!(r.rule, ToolRule::EnvelopeProposal(_)))
+        .then(|| envelope_proposal(op, ctx))
+        .flatten()
+}
+
+/// P13c: the proposal of `env` on `axis`, or `None` when the force budget
+/// cannot set the depth (a `Rigidity` entry that is `Unmodelled` for want
+/// of an input: no force line, no chip). An absent force limit below the
+/// flute is not a missing input.
+fn proposal_value(
+    env: &crate::feeds::envelope::SafeEnvelope,
+    axis: ProposalAxis,
+) -> Option<(f64, Basis)> {
+    use crate::feeds::envelope::{Edge, LimitKind};
+    let missing = env.limit(LimitKind::Rigidity).is_some_and(|l| {
+        matches!(
+            l.edge,
+            Edge::Unmodelled { reason }
+                if reason == crate::feeds::force_budget::NO_FORCE_LINE
+                    || reason == crate::feeds::force_budget::NO_BUDGET_INPUT
+        )
+    });
+    if missing {
+        return None;
+    }
+    let p = env.proposal.get();
+    let value = match axis {
+        ProposalAxis::Depth => p.ap_mm,
+        ProposalAxis::Width => p.ae_mm,
+    };
+    Some((value, env.proposal.basis().clone()))
+}
+
+/// P13c (lead ruling on item 1): the width of a pick with no force answer:
+/// the corner-coverage bound `(1 + 1/sqrt 2) r`, stopped at the slot
+/// threshold of the machine where that is narrower (the width the
+/// removal-rate pick takes when the slot step binds). No force enters it.
+fn geometry_width(d: f64, machine: &crate::machine::MachineProfile) -> (f64, Basis) {
+    let corner = crate::feeds::force_budget::corner_coverage_width_factor();
+    let (threshold, _, slot_basis) = crate::feeds::slot_rule(machine);
+    let corner_basis = Basis::Rule(crate::feeds::force_budget::corner_coverage_row(
+        crate::feeds::force_budget::CORNER_COVERAGE_ROW_NAME,
+    ));
+    if threshold < corner {
+        (
+            threshold * d,
+            Basis::derived(
+                GEOMETRY_WIDTH_LAW,
+                vec![corner_basis, slot_basis, Basis::tool_diameter()],
+            ),
+        )
+    } else {
+        (
+            corner * d,
+            Basis::derived(
+                GEOMETRY_WIDTH_LAW,
+                vec![corner_basis, Basis::tool_diameter()],
+            ),
+        )
+    }
+}
+
+/// The law of [`geometry_width`].
+pub const GEOMETRY_WIDTH_LAW: &str =
+    "corner coverage (1 + 1/sqrt 2) r, at most the slot threshold (no force line or no row)";
 
 /// The rule of one tool-derived field of one op. Each registry row holds
 /// one per field (`OpRegistryEntry::geometry`).
@@ -287,8 +422,25 @@ impl GeometryDefault {
     /// `ae_factor` after the tool, flute, material and machine adjustments);
     /// its stamp names the family row, so it stays one stamp per op for a
     /// tool change. A [`KRow::Constant`] rule is `k x D`.
+    /// P13c: `None` for a [`ToolRule::EnvelopeProposal`] rule whose
+    /// envelope cannot answer (the field stays unset).
     #[must_use]
-    pub fn derive(&self, op: &OperationConfig, ctx: RuleContext<'_>) -> DerivedValue {
+    pub fn derive(&self, op: &OperationConfig, ctx: RuleContext<'_>) -> Option<DerivedValue> {
+        let env = matches!(self.rule, ToolRule::EnvelopeProposal(_))
+            .then(|| envelope_proposal(op, ctx))
+            .flatten();
+        self.derive_with(op, ctx, env.as_ref())
+    }
+
+    /// [`Self::derive`] with the envelope of the op's pick rules built once
+    /// by the caller (`write_rule_values`, `derive_all`: one envelope gives
+    /// the width and the depth).
+    fn derive_with(
+        &self,
+        op: &OperationConfig,
+        ctx: RuleContext<'_>,
+        pick_env: Option<&crate::feeds::envelope::SafeEnvelope>,
+    ) -> Option<DerivedValue> {
         let op_type = op.op_type();
         let tool = ctx.tool;
         let fraction = |k: KRow| {
@@ -333,6 +485,19 @@ impl GeometryDefault {
                     Some(_) | None => fraction(k),
                 }
             }
+            ToolRule::EnvelopeProposal(axis) => {
+                let (value, basis) =
+                    match (pick_env.and_then(|env| proposal_value(env, axis)), axis) {
+                        (Some(v), _) => v,
+                        // Lead ruling on P13c item 1 (2026-11-05): with no force
+                        // line or no backed row the width is the geometry rule
+                        // (it needs no force); the depth has no derivation and
+                        // stays unset (no underived defaults, 2026-10-23).
+                        (None, ProposalAxis::Width) => geometry_width(tool.diameter, ctx.machine),
+                        (None, ProposalAxis::Depth) => return None,
+                    };
+                (value, basis, proposal_stamp())
+            }
         };
         // The value stays inside the field range of the schema (the add
         // door checks it, W6b): a rule value outside it is held at the
@@ -347,12 +512,12 @@ impl GeometryDefault {
         } else {
             Basis::derived(HELD_IN_RANGE_LAW, vec![basis])
         };
-        DerivedValue {
+        Some(DerivedValue {
             field: self.field,
             value: held,
             basis,
             stamp,
-        }
+        })
     }
 
     /// True when `stamp` is a stamp this rule writes ([`rule_stamp`]):
@@ -361,6 +526,7 @@ impl GeometryDefault {
     pub fn wrote(&self, op_type: OperationType, stamp: &ValueProvenance) -> bool {
         let k = match self.rule {
             ToolRule::FractionOfD(k) | ToolRule::ScallopChordElse(k) => k,
+            ToolRule::EnvelopeProposal(_) => return *stamp == proposal_stamp(),
         };
         let fraction = ValueProvenance::of_basis(&Basis::Rule(k.row(op_type)));
         *stamp == fraction
@@ -387,9 +553,10 @@ pub fn rules(op_type: OperationType) -> &'static [GeometryDefault] {
 /// Each tool-derived value of `op` in `ctx`, in registry order.
 #[must_use]
 pub fn derive_all(op: &OperationConfig, ctx: RuleContext<'_>) -> Vec<DerivedValue> {
+    let env = pick_envelope(op, ctx);
     rules(op.op_type())
         .iter()
-        .map(|rule| rule.derive(op, ctx))
+        .filter_map(|rule| rule.derive_with(op, ctx, env.as_ref()))
         .collect()
 }
 
@@ -429,8 +596,9 @@ pub fn write_rule_values(
 ) -> Vec<DerivedValue> {
     let op_type = op.op_type();
     let mut written = Vec::new();
+    let env = pick_envelope(op, ctx);
     for rule in rules(op_type) {
-        let derived = rule.derive(op, ctx);
+        let derived = rule.derive_with(op, ctx, env.as_ref());
         let slot = stamp_slot(op, rule.field);
         let stamp = stamps.get(slot).cloned();
         let Some(value) = slot_mut(op, rule.field) else {
@@ -443,6 +611,11 @@ pub fn write_rule_values(
             }
         };
         if moves {
+            // P13c: a pick with no answer leaves the field unset.
+            let Some(derived) = derived else {
+                *value = None;
+                continue;
+            };
             *value = Some(derived.value);
             stamps.set(slot, derived.stamp.clone());
             written.push(derived);
@@ -463,6 +636,12 @@ pub fn write_rule_values(
 // depth it had before P10. The family `ap_factor` is not used: at the add
 // door it put more FM1 cells outside the K2b envelope on depth (Rigidity
 // 118 -> 134, VendorAxial 10 -> 33), a finding for the P12 review.
+//
+// P13c (rulings O1, O3, O4, 2026-11-05): the Face, Pocket and Zigzag rows
+// (the Pocket family roughs) and the Profile depth read the K2b envelope
+// proposal (`ToolRule::EnvelopeProposal`): the most removal per minute
+// inside every limit, the depth set by the machine force budget, the width
+// bounded by the corner-coverage rule. One envelope gives both fields.
 
 /// The reference diameter of the axial rows (mm): the old fixed defaults
 /// convert to `k = default / 6`.
@@ -526,11 +705,25 @@ const fn radial_chord(field: &'static str) -> GeometryDefault {
     }
 }
 
-/// Face.
-pub(crate) const FACE: &[GeometryDefault] =
-    &[radial("stepover"), axial("depth_per_pass", &AXIAL_K_1_0_MM)];
-/// Pocket, Zigzag, Inlay plug.
-pub(crate) const POCKET: &[GeometryDefault] =
+const fn pick(field: &'static str, axis: ProposalAxis) -> GeometryDefault {
+    GeometryDefault {
+        field,
+        rule: ToolRule::EnvelopeProposal(axis),
+    }
+}
+
+/// Face, Pocket and Zigzag: the Pocket family roughs, so both fields are
+/// the envelope proposal (P13c, O3 and O4).
+pub(crate) const FACE: &[GeometryDefault] = POCKET;
+/// Pocket, Zigzag (P13c: the envelope proposal; the 0.35 D width and the
+/// 1.5 mm at D 6 depth are deleted).
+pub(crate) const POCKET: &[GeometryDefault] = &[
+    pick("stepover", ProposalAxis::Width),
+    pick("depth_per_pass", ProposalAxis::Depth),
+];
+/// Inlay plug (Trace family, a finish pass): the calculator width and the
+/// k row of 1.5 mm at D 6.
+pub(crate) const INLAY_PLUG: &[GeometryDefault] =
     &[radial("stepover"), axial("depth_per_pass", &AXIAL_K_1_5_MM)];
 /// 2D Adaptive.
 pub(crate) const ADAPTIVE: &[GeometryDefault] =
@@ -538,8 +731,9 @@ pub(crate) const ADAPTIVE: &[GeometryDefault] =
 /// 3D Rough.
 pub(crate) const ROUGH_3D: &[GeometryDefault] =
     &[radial("stepover"), axial("depth_per_pass", &AXIAL_K_3_0_MM)];
-/// Profile.
-pub(crate) const PROFILE: &[GeometryDefault] = &[axial("depth_per_pass", &AXIAL_K_2_0_MM)];
+/// Profile: the width is the slot (D); the depth is the envelope proposal
+/// (P13c, O1 and O4: the deepest depth inside every limit at ae = D).
+pub(crate) const PROFILE: &[GeometryDefault] = &[pick("depth_per_pass", ProposalAxis::Depth)];
 /// Trace.
 pub(crate) const TRACE: &[GeometryDefault] = &[axial("depth_per_pass", &AXIAL_K_0_5_MM)];
 /// A stepover only, not a finish (V-Carve, Inlay pocket).

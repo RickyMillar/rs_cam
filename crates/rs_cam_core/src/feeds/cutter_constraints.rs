@@ -325,11 +325,38 @@ fn invert_deflection(
     if upper <= lower {
         return None;
     }
-    // A refusal at the shallowest depth (material, stickout) is no signal.
-    if deflection_at(lower)? > limit_mm {
+    // A refusal at the shallowest depth (material, stickout) is no signal;
+    // over the limit, or refused (a degenerate beam), is past the target.
+    shallowest_crossing(lower, upper, DEFLECTION_SCAN_STEPS, |ap| {
+        deflection_at(ap).map(|d| d <= limit_mm)
+    })
+}
+
+/// The shallowest depth in `[lower, upper]` where `within` stops holding:
+/// the one first-crossing solver of the envelope edges (P11a deflection,
+/// P13c force budget).
+///
+/// `within(ap)` is `Some(true)` inside the limit, `Some(false)` past it,
+/// and `None` for a refusal (no signal).
+///
+/// - `Some(0.0)`: `lower` is already past the limit.
+/// - `Some(ap)`: the last depth inside, to [`BINSEARCH_CONVERGENCE_MM`].
+///   The solver scans `steps` depths for the first one past the limit,
+///   then bisects that step. A quantity that is not monotone in depth
+///   (deflection, the peak force of a helical edge) needs the scan first;
+///   a crossing and recrossing inside one step is missed.
+/// - `None`: a refusal at `lower`, or no depth in the span is past the
+///   limit. The span is a search bracket, never a limit.
+pub(crate) fn shallowest_crossing(
+    lower: f64,
+    upper: f64,
+    steps: usize,
+    within: impl Fn(f64) -> Option<bool>,
+) -> Option<f64> {
+    if !within(lower)? {
         return Some(0.0);
     }
-    let steps = DEFLECTION_SCAN_STEPS.max(1);
+    let steps = steps.max(1);
     let step = (upper - lower) / steps as f64;
     let mut lo = lower;
     let mut hi = None;
@@ -339,11 +366,10 @@ fn invert_deflection(
         } else {
             lower + step * k as f64
         };
-        match deflection_at(ap) {
-            Some(d) if d <= limit_mm => lo = ap,
-            // Over the limit, or refused (a degenerate beam): the first
-            // depth past the target.
-            Some(_) | None => {
+        match within(ap) {
+            Some(true) => lo = ap,
+            // Past the limit, or refused: the first depth past the target.
+            Some(false) | None => {
                 hi = Some(ap);
                 break;
             }
@@ -355,9 +381,9 @@ fn invert_deflection(
             break;
         }
         let mid = 0.5 * (lo + hi);
-        match deflection_at(mid) {
-            Some(d) if d <= limit_mm => lo = mid,
-            Some(_) | None => hi = mid,
+        match within(mid) {
+            Some(true) => lo = mid,
+            Some(false) | None => hi = mid,
         }
     }
     Some(lo)

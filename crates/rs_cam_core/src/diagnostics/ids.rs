@@ -499,7 +499,11 @@ diag_ids! {
     pub const TOOL_V_TIP_UNMODELLED: &str = "tool.v_tip_unmodelled" => warn(Danger::Part);
 
     // ── Surface quality / cycle-time hints ───────────────────────────────
-    pub const QUALITY_STEPOVER_OVER_80_PCT: &str = "quality.stepover_over_80_pct_diameter" => INFO;
+    /// P13c (lead fix B): a stepover past the corner-coverage bound
+    /// `(1 + 1/sqrt 2) r` (`feeds::force_budget::corner_coverage_width_factor`)
+    /// leaves uncut material in a sharp offset corner. Was
+    /// `quality.stepover_over_80_pct_diameter` at a typed 0.8 D (break).
+    pub const QUALITY_STEPOVER_OVER_CORNER_COVERAGE: &str = "quality.stepover_over_corner_coverage" => INFO;
     pub const QUALITY_FINISH_STEPOVER_OVER_50_PCT: &str = "quality.finish_stepover_over_50_pct" => INFO;
     pub const QUALITY_BALL_SCALLOP_HEIGHT: &str = "quality.ball_scallop_height" => INFO;
     pub const EFFICIENCY_VERY_FINE_STEPOVER: &str = "efficiency.very_fine_stepover" => INFO;

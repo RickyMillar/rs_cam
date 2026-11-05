@@ -158,6 +158,17 @@ fn drag_frames(from: egui::Pos2, to: egui::Pos2) -> Vec<Vec<egui::Event>> {
 }
 
 /// The Pocket fixture with a stated depth of `ap_mm`.
+/// P13c: a depth past the lowest ceiling of the fixture Pocket at its
+/// stated width (1.25 x that ceiling), read from the envelope itself.
+fn outside_depth() -> f64 {
+    let (config, env) = pocket_at_depth(1.0);
+    let ae = config.stepover().expect("the fixture states a stepover");
+    1.25 * env
+        .ap_ceiling_at(ae)
+        .expect("a ceiling at the stated width")
+        .0
+}
+
 fn pocket_at_depth(ap_mm: f64) -> (OperationConfig, SafeEnvelope) {
     let mut config = rs_cam_core::compute::fixture_values::fixture_op(OperationType::Pocket);
     if let OperationConfig::Pocket(c) = &mut config {
@@ -355,10 +366,11 @@ fn a_drag_moves_the_candidate_and_never_the_proposal_p5c() {
     );
 
     // 1b. The operator's point outside: the proposal is a third mark, and
-    // the drag does not move it. P11c (D13 item 6): the hobby grade cap is
-    // 0.25 x 6 = 1.5 mm, equal to the fixture's stated ap 1.5 (it was 1.2),
-    // so the point states ap 2.0 to sit outside.
-    let (config, env) = pocket_at_depth(2.0);
+    // the drag does not move it. P11c (D13 item 6): the hobby grade cap was
+    // 0.25 x 6 = 1.5 mm and the point stated ap 2.0. P13c (O1): the
+    // rigidity cap is the force-budget depth, so the point states 1.25 x
+    // the lowest ceiling at its width to sit outside.
+    let (config, env) = pocket_at_depth(outside_depth());
     assert!(
         matches!(env.operator, Some(Placement::Outside { .. })),
         "fixture: the Pocket's stated point sits outside: {:?}",

@@ -713,6 +713,12 @@ pub enum SuggestWarning {
         /// The F201 names of the Unsourced rules.
         rows: Vec<String>,
     },
+    /// P13c (ruling O3): the op's width is free and computed (a
+    /// Pocket-family roughing op: the envelope proposal is the
+    /// removal-rate pick). No limit models chip evacuation or tool life,
+    /// so the card, MCP and the CLI state both assumptions
+    /// (`force_budget::COMPUTED_WIDTH_ASSUMPTIONS`, one producer).
+    ComputedWidthAssumptions,
     /// CONTRACT K2b (ruling Q6, K6 `project.outside_envelope`): the picked
     /// or the stated point sits outside the safe envelope. A warning; the
     /// write goes ahead.
@@ -948,12 +954,30 @@ pub fn suggest_for_operation(
         },
     );
     warnings.extend(accepted);
+    if has_computed_width(input.operation) {
+        warnings.push(SuggestWarning::ComputedWidthAssumptions);
+    }
     Ok(SuggestedParams {
         operation,
         feeds_result,
         warnings,
         provenance,
     })
+}
+
+/// P13c (O3): true for an op whose width is free and computed: a
+/// Pocket-family roughing op that cuts a stepover (the envelope's
+/// corner-coverage rule and removal-rate pick). The same rule as the
+/// envelope's `computed_width`.
+#[must_use]
+pub fn has_computed_width(operation: &OperationConfig) -> bool {
+    let (family, role) = operation.feeds_style();
+    family == crate::feeds::OperationFamily::Pocket
+        && role == crate::feeds::PassRole::Roughing
+        && matches!(
+            operation.cut_spec().radial,
+            crate::compute::catalog::Radial::Width(_)
+        )
 }
 
 /// Build a [`FeedsInput`] for the given operation. Shared by both

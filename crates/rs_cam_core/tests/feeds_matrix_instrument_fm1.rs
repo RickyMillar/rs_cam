@@ -11,7 +11,7 @@
 //! - depth: the four wood material families.
 //!
 //! Per cell it calls `suggest_params`, the diagnostic adapters on the
-//! suggested recipe, and `RigidityProfile::depth_cap_mm`. A second table
+//! suggested recipe, and `force_budget::rigidity_depth_cap`. A second table
 //! generates and simulates a small subset of cells and reads the
 //! post-simulation load verdicts.
 //!
@@ -427,6 +427,7 @@ fn entry_columns(s: &SuggestedParams) -> [String; 6] {
         | SuggestWarning::CutGeometryFieldNotHeld { .. }
         | SuggestWarning::RpmLoweredForFeedCeiling { .. }
         | SuggestWarning::UnsourcedRowsAccepted { .. }
+        | SuggestWarning::ComputedWidthAssumptions
         | SuggestWarning::OutsideEnvelope { .. }
         | SuggestWarning::PlungeReDerived { .. } => None,
     });
@@ -667,18 +668,45 @@ fn recipe_diagnostics(s: &SuggestedParams, tool: &ToolConfig) -> Vec<Diagnostic>
 /// (2026-09-23): the diameter is `depth_cap_diameter_mm` at the cell's
 /// depth per pass, the function the Suggest clamp and the depth gate
 /// call, and a finishing role prints empty cap columns (no cap).
-fn cap_columns(machine: &MachineProfile, op: &OperationConfig, tool: &ToolConfig) -> [String; 4] {
+fn cap_columns(
+    machine: &MachineProfile,
+    op: &OperationConfig,
+    tool: &ToolConfig,
+    material: &Material,
+) -> [String; 4] {
+    // P13c (O1): `cap_factor` is the factor of a factor cap (the Adaptive
+    // family) and the force budget (N) of a force-budget cap (the Pocket
+    // and Profile families); `cap_mm` is the cap. The force-budget cap is
+    // solved at the op's stated width and chip
+    // (`force_budget::cap_cut_of_operation`), through the one producer.
     let (family, role) = op.feeds_style();
-    let diameter = rs_cam_core::feeds::geometry::depth_cap_diameter_mm(
-        &rs_cam_core::compute::cutter::build_cutter(tool).unwrap(),
-        op.depth_per_pass().unwrap_or(tool.diameter),
+    let cutter = rs_cam_core::compute::cutter::build_cutter(tool).unwrap();
+    let depth = op.depth_per_pass().unwrap_or(tool.diameter);
+    let (ae, fz) =
+        rs_cam_core::feeds::force_budget::cap_cut_of_operation(op, tool, material, machine)
+            .unwrap_or((0.0, 0.0));
+    let cap = rs_cam_core::feeds::force_budget::rigidity_depth_cap(
+        machine, family, role, &cutter, material, ae, fz, depth,
     );
-    let cap = machine.rigidity.depth_cap_mm(family, role, diameter);
+    use rs_cam_core::feeds::force_budget::RigidityCapOutcome;
+    use rs_cam_core::machine::RigidityDepthCap;
+    let (factor, mm) = match cap {
+        Some(RigidityCapOutcome::Cap(c)) => (
+            Some(match c {
+                RigidityDepthCap::Factor { factor, .. } => factor,
+                RigidityDepthCap::ForceBudget { budget_n, .. } => budget_n,
+            }),
+            Some(c.cap_mm()),
+        ),
+        Some(RigidityCapOutcome::NoLimitBelowFlute | RigidityCapOutcome::Unmodelled(_)) | None => {
+            (None, None)
+        }
+    };
     [
         format!("{family:?}"),
         format!("{role:?}"),
-        num(cap.as_ref().map(|c| c.factor)),
-        num(cap.as_ref().map(|c| c.cap_mm())),
+        num(factor),
+        num(mm),
     ]
 }
 
@@ -757,6 +785,7 @@ fn walk_matrix(
                                 machine,
                                 &add_time_op(op, &stock_ctx(), &tool, machine, material),
                                 &tool,
+                                material,
                             ));
                             fields.extend(force_line_columns(material, None, &tool));
                             fields.extend(std::iter::repeat_n(String::new(), 6));
@@ -890,7 +919,7 @@ fn walk_matrix(
                             fields.push(sev.join(";"));
                             fields.push(fw.join(";"));
                             fields.push(sw.join(";"));
-                            fields.extend(cap_columns(machine, &s.operation, &tool));
+                            fields.extend(cap_columns(machine, &s.operation, &tool, material));
                             fields.extend(force_line_columns(material, Some(&s.operation), &tool));
                             fields.extend(entry_columns(&s));
                             fields.extend(envelope_columns(op, &tool, machine, material, &stock));
@@ -1080,7 +1109,12 @@ fn depth_cols(v: &DepthVerdict) -> [String; 5] {
             format!("{:?}", v.state()),
             num(Some(*peak_mm)),
             num(Some(bound.cap_mm())),
-            num(Some(bound.factor)),
+            // P13c: the factor of a factor cap, the budget (N) of a
+            // force-budget cap.
+            num(Some(match bound {
+                rs_cam_core::machine::RigidityDepthCap::Factor { factor, .. } => *factor,
+                rs_cam_core::machine::RigidityDepthCap::ForceBudget { budget_n, .. } => *budget_n,
+            })),
             String::new(),
         ],
         // Feeds matrix R2 (2026-09-23): a finishing pass has a peak and

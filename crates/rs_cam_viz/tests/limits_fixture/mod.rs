@@ -96,9 +96,9 @@ pub enum Cut {
 
 /// The one enabled toolpath's depth per pass, in mm, for each arm.
 ///
-/// The cap is `RigidityProfile::doc_roughing_factor × D`. Both figures are
+/// The cap is the force-budget depth of the op (P13c). Both figures are
 /// derived from the project's own machine profile and tool at build time —
-/// see [`rigidity_cap_mm`] — so neither arm carries a typed constant that a
+/// see [`rigidity_cap_of`] — so neither arm carries a typed constant that a
 /// profile change could silently invalidate.
 fn depth_per_pass_for(cap_mm: f64, cut: Cut) -> f64 {
     match cut {
@@ -112,28 +112,60 @@ fn depth_per_pass_for(cap_mm: f64, cut: Cut) -> f64 {
     }
 }
 
-/// The rigidity depth cap the project's own machine profile sets for a
-/// roughing pocket at `diameter_mm`, in mm.
+/// The rigidity depth cap the project's own machine profile sets for the
+/// roughing pocket `op`, in mm.
 ///
-/// `RigidityProfile::depth_cap_mm` is the one producer of this figure, and
-/// the depth gate and the Suggest clamp both read it. The fixture reads it
-/// too, so no arm carries a typed cap that a profile change could invalidate.
-pub fn rigidity_depth_cap_mm(session: &ProjectSession, diameter_mm: f64) -> f64 {
-    session
-        .machine()
-        .rigidity
-        .depth_cap_mm(
-            rs_cam_core::feeds::OperationFamily::Pocket,
-            rs_cam_core::feeds::PassRole::Roughing,
-            diameter_mm,
+/// P13c (O1): the cap is the force-budget depth at a full slot (ae = D,
+/// the pocket's first pass) and the op's stated chip
+/// (`force_budget::cap_cut_of_operation`), from the one producer
+/// `force_budget::rigidity_depth_cap`, which the envelope and the depth
+/// gate read. The fixture reads it too, so no arm carries a typed cap that
+/// a profile change could invalidate. The gate solves at the measured peak
+/// sample's cut, so the two arms keep a wide margin (2/3 and 2 x the cap).
+pub fn rigidity_cap_of(session: &ProjectSession, op: &OperationConfig) -> f64 {
+    let tool = session
+        .tools()
+        .iter()
+        .find(|t| (t.diameter - 6.0).abs() < 1e-6)
+        .expect("the demo project defines a 6 mm end mill");
+    let material = &session.stock_config().material;
+    let machine = session.machine();
+    let (_, fz) =
+        rs_cam_core::feeds::force_budget::cap_cut_of_operation(op, tool, material, machine)
+            .expect("the fixture pocket states its width and chip");
+    // The gate solves the cap at the measured peak sample's width, and a
+    // pocket's first pass cuts a full slot, so the fixture solves it at
+    // ae = D, the widest cut the gate can measure (the smallest cap).
+    let ae = tool.diameter;
+    let cutter = rs_cam_core::compute::cutter::build_cutter(tool).expect("a cutter");
+    let (family, role) = op.feeds_style();
+    match rs_cam_core::feeds::force_budget::rigidity_depth_cap(
+        machine,
+        family,
+        role,
+        &cutter,
+        material,
+        ae,
+        fz,
+        op.depth_per_pass().unwrap_or(1.0),
+    ) {
+        Some(rs_cam_core::feeds::force_budget::RigidityCapOutcome::Cap(c)) => Some(c.cap_mm()),
+        Some(
+            rs_cam_core::feeds::force_budget::RigidityCapOutcome::NoLimitBelowFlute
+            | rs_cam_core::feeds::force_budget::RigidityCapOutcome::Unmodelled(_),
         )
-        .expect("a milling family has a rigidity depth cap")
-        .cap_mm()
+        | None => None,
+    }
+    .expect("the fixture pocket has a rigidity cap")
 }
 
 /// The cap for the one toolpath this fixture builds.
 pub fn rigidity_cap_mm(session: &ProjectSession) -> f64 {
-    rigidity_depth_cap_mm(session, 6.0)
+    let tc = session
+        .toolpath_configs()
+        .first()
+        .expect("the fixture builds one toolpath");
+    rigidity_cap_of(session, &tc.operation)
 }
 
 /// Build the whole state: the demo project generated and simulated, with the
@@ -148,7 +180,7 @@ pub fn simulated_state(cut: Cut) -> AppState {
 
     // The demo project ships `toolpaths = []`, so the fixture adds the one
     // operation it measures. A pocket in the Ø6 end mill: a roughing family,
-    // which is the arm `RigidityProfile::doc_roughing_factor` bounds.
+    // which is the arm the machine force budget bounds (P13c).
     let tool_id = session
         .tools()
         .iter()
@@ -161,13 +193,9 @@ pub fn simulated_state(cut: Cut) -> AppState {
         .map(|m| m.id)
         .expect("the demo project loads demo_pocket.svg");
 
-    let cap = rigidity_depth_cap_mm(&session, 6.0);
-    let dpp = depth_per_pass_for(cap, cut);
-    let operation = OperationConfig::Pocket(PocketConfig {
+    let mut operation = OperationConfig::Pocket(PocketConfig {
         // Four passes at the shallow depth, two at the deep one, so both arms
         // run steady-state cutting rather than one entry move.
-        floor: rs_cam_core::compute::floor::Floor::top(cap * 8.0 / 3.0),
-        depth_per_pass: Some(dpp),
         // Inside the matched vendor chip band on both sides; see the
         // constant's own doc for the window it sits in.
         feed_rate: Some(BAND_FEED_MM_MIN),
@@ -178,8 +206,15 @@ pub fn simulated_state(cut: Cut) -> AppState {
         ..PocketConfig::default()
     });
     // P10: the fixture states the stepover the registry held before P10.
-    let mut operation = operation;
     rs_cam_core::compute::fixture_values::fill_unset_geometry(&mut operation);
+    // P13c: the cap is solved at the stated width and chip; the depth and
+    // the floor follow it.
+    let cap = rigidity_cap_of(&session, &operation);
+    let dpp = depth_per_pass_for(cap, cut);
+    let _ = operation.set_depth_per_pass(dpp);
+    if let OperationConfig::Pocket(c) = &mut operation {
+        c.floor = rs_cam_core::compute::floor::Floor::top(cap * 8.0 / 3.0);
+    }
     let op_type = operation.op_type();
     let config = ToolpathConfig {
         shoe: Default::default(),

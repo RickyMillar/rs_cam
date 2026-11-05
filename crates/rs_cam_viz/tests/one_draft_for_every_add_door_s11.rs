@@ -159,9 +159,19 @@ fn the_gui_add_door_stores_the_core_draft_s11() {
             grade: PlywoodGrade::BalticBirch,
         },
     );
+    // P13c (rulings O1, O3, lead ruling on item 1): the Pocket stepover and
+    // depth are the envelope proposal; plywood has no force line and the
+    // cell has no backed row, so the add door writes the geometry width and
+    // no depth (no underived default).
     assert_eq!(
         assert_gui_is_the_draft(unbacked),
-        vec!["floor", "feed_rate", "plunge_rate", "spindle_rpm"]
+        vec![
+            "floor",
+            "depth_per_pass",
+            "feed_rate",
+            "plunge_rate",
+            "spindle_rpm"
+        ]
     );
 }
 

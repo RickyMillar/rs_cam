@@ -256,7 +256,11 @@ fn depth_per_pass_pill_offers_the_funnel_value_not_the_calculator_value() {
 /// rigidity cap on the demo pocket), so the raw write sits above the pill.
 #[test]
 fn the_fixture_still_shows_the_clamp() {
-    let (session, tool, op) = demo_pocket();
+    let (session, tool, mut op) = demo_pocket();
+    // P13c (O1, O4): the force-budget depth of the demo pocket is above its
+    // stated depth, so the proposal keeps it and nothing clamps. The arm
+    // states 2 x D, which the proposal lowers.
+    let _ = op.set_depth_per_pass(2.0 * tool.diameter);
     let result = recipe(&session, &tool, &op);
     let p = previews(&session, &tool, &op, &result);
     let dpp = p.depth_per_pass.expect("pocket DOC");

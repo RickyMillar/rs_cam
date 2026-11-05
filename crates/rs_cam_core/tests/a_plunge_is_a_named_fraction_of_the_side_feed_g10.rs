@@ -208,6 +208,7 @@ fn re_derived(warnings: &[SuggestWarning]) -> Vec<(f64, f64, PlungeBinding)> {
                 binding,
             } => Some((*from_mm_min, *to_mm_min, *binding)),
             SuggestWarning::UnsourcedRowsAccepted { .. }
+            | SuggestWarning::ComputedWidthAssumptions
             | SuggestWarning::OutsideEnvelope { .. }
             | SuggestWarning::PlungeClampedToFeed { .. }
             | SuggestWarning::StepoverClampedToToolDiameter { .. }

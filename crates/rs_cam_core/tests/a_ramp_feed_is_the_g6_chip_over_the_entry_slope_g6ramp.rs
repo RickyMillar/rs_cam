@@ -218,6 +218,7 @@ fn records(warnings: &[SuggestWarning]) -> Vec<(Option<f64>, &RampFeed)> {
             | SuggestWarning::CutGeometryFieldNotHeld { .. }
             | SuggestWarning::RpmLoweredForFeedCeiling { .. }
             | SuggestWarning::UnsourcedRowsAccepted { .. }
+            | SuggestWarning::ComputedWidthAssumptions
             | SuggestWarning::OutsideEnvelope { .. }
             | SuggestWarning::PlungeReDerived { .. } => None,
         })

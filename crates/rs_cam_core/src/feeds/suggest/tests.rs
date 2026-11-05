@@ -1036,7 +1036,6 @@ fn plunge_entry_unstable_warning_fires_when_dpp_exceeds_half_diameter() {
         // rewrite and the warning-only behaviour is what's under test.
         tool.set_stickout(ToolFact::Stated(12.0));
         let mut machine = MachineProfile::default();
-        machine.rigidity.doc_roughing_factor = 0.20;
         machine.rigidity.adaptive_doc_factor = 1.50;
 
         let warnings = fixed_chain(
@@ -1104,7 +1103,6 @@ fn plunge_entry_unstable_does_not_fire_below_half_diameter() {
     tool.diameter = 6.0;
     tool.set_cutting_length(ToolFact::Stated(25.0));
     let mut machine = MachineProfile::default();
-    machine.rigidity.doc_roughing_factor = 0.20;
     machine.rigidity.adaptive_doc_factor = 1.50;
 
     let warnings = fixed_chain(
@@ -1289,7 +1287,6 @@ fn retired_lift_leaves_wanaka_back_rough_feed_untouched() {
     tool.set_flute_count(ToolFact::Stated(2));
     let mut machine = MachineProfile::default();
     // Disable the rigidity clamp at DPP=3.69 (3.69 < 1.6 × 6 = 9.6 is OK).
-    machine.rigidity.doc_roughing_factor = 0.20;
     machine.rigidity.adaptive_doc_factor = 1.60;
     machine.max_feed_mm_min = 10_000.0;
     let material = Material::SolidWood {
@@ -1411,7 +1408,6 @@ fn retired_lift_fires_no_cap_on_a_deflection_bound_fixture() {
         tool.set_stickout(ToolFact::Stated(115.0));
         tool.set_flute_count(ToolFact::Stated(2));
         let mut machine = MachineProfile::default();
-        machine.rigidity.doc_roughing_factor = 0.20;
         machine.rigidity.adaptive_doc_factor = 1.60;
         machine.max_feed_mm_min = 20_000.0;
 
@@ -1494,7 +1490,6 @@ fn retired_lift_reports_no_max_feed_shortfall() {
     tool.set_stickout(ToolFact::Stated(25.0));
     tool.set_flute_count(ToolFact::Stated(2));
     let mut machine = MachineProfile::default();
-    machine.rigidity.doc_roughing_factor = 0.20;
     machine.rigidity.adaptive_doc_factor = 1.60;
     machine.max_feed_mm_min = 4000.0;
     let material = Material::SolidWood {
@@ -1575,7 +1570,6 @@ fn feed_recalibration_skipped_when_already_in_band() {
     tool.set_stickout(ToolFact::Stated(25.0));
     tool.set_flute_count(ToolFact::Stated(2));
     let mut machine = MachineProfile::default();
-    machine.rigidity.doc_roughing_factor = 0.20;
     machine.rigidity.adaptive_doc_factor = 1.60;
     machine.max_feed_mm_min = 10_000.0;
     let material = Material::SolidWood {
@@ -1761,6 +1755,7 @@ fn clearing_strategy_recommendation_is_warn_only() {
         | SuggestWarning::RpmLoweredForFeedCeiling { .. }
         | SuggestWarning::RampFeed { .. }
         | SuggestWarning::UnsourcedRowsAccepted { .. }
+        | SuggestWarning::ComputedWidthAssumptions
         | SuggestWarning::OutsideEnvelope { .. }
         | SuggestWarning::PlungeReDerived { .. } => None,
     });

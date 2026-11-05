@@ -934,6 +934,33 @@ fraction of the side feed (flat end mill feed / Z, ball and tapered ball
 The tip cap (150 mm/min per mm of tip) and the material plunge base are
 named repo rules with no stored source; the card says so.
 
+### The hobby force budget (feeds contract P13c, ruling O1, 2026-11-05)
+
+`feeds::force_budget::HOBBY_SLOT_POINTS` reads six printed full-slot cuts
+of two hobby-router charts and `hobby_budget` takes the largest peak
+engaged-edge force of them (the force model `feeds::engagement`, the repo
+default 30 degree helix, the Curti 2021 and Goli 2018 force lines) as the
+force budget of a hobby machine. The roughing depth of the Pocket and
+Profile families is the depth where the cut meets that force. The rows,
+stored under `planning/extrapolation_2026-09-24/fetch/G10/sources/`:
+
+- Sienci Labs *Feeds & Speeds chart, metric* (`sienci_feeds_speeds_metric.txt`,
+  source above): 1/4" Flat End Mill UC, "Stepdown - Slotting", line 79
+  (Softwood, Soft Plywood, MDF: 2740 mm/min, 5.4 mm, 12000 rpm; read on the
+  softwood and on the MDF line; the MDF reading sets the budget, 35.3 N) and
+  line 170 (Hardwood, Hard Plywood: 2740 mm/min, 2.5 mm, 12000 rpm). The
+  chart prints no flute count; 2 flutes are assumed.
+- Carbide 3D *Shapeoko 3 Feeds & Speeds chart, .25 in*
+  (`carbide3d_s3_feeds_250.txt`, source above): Pine (line 63), Mahogany
+  (line 64) and MDF (line 66), DOC, RPM and feed (ipm). The tool and the
+  engagement ("3 flute .25\" endmill, 100% engagement") are in the
+  Carbide 3D community post stored as
+  `planning/extrapolation_2026-09-24/fetch/G9/sources/community_2402_post1_announcement.txt`.
+
+The corner-coverage width bound `(1 + 1/sqrt 2) r` is derived from the
+offset geometry in the code (`corner_coverage_width_factor`) and checked by
+sampling in the step 0 research (`research_p13_step0/force_width.py`).
+
 ### Literature-matrix source registry refresh (2026-08-13)
 
 `crates/rs_cam_core/tests/literature_matrix/sources.toml` was refreshed under

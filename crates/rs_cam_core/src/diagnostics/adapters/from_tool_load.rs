@@ -731,7 +731,7 @@ fn depth_to_diagnostic(tp_id: ToolpathId, v: &DepthVerdict) -> Option<Diagnostic
             Severity::Info,
             confidence,
             format!(
-                "Depth of cut within the rule-of-thumb limit for this tool ({:.3} mm of \
+                "Depth of cut within the machine depth limit for this tool ({:.3} mm of \
                  {:.3} mm){}",
                 peak_mm,
                 bound.cap_mm(),
@@ -750,16 +750,39 @@ fn depth_to_diagnostic(tp_id: ToolpathId, v: &DepthVerdict) -> Option<Diagnostic
             ids::LOAD_DEPTH_EXCEEDS,
             Severity::Caution,
             confidence,
-            format!(
-                "Depth of cut {:.3} mm is more than the rule-of-thumb limit of {:.3} mm \
-                 ({:.2} \u{00D7} the {:.2} mm diameter). The rule has no published source \
-                 and does not stop the export{}",
-                peak_mm,
-                bound.cap_mm(),
-                bound.factor,
-                bound.diameter_mm,
-                vacuity_clause(evidence)
-            ),
+            match bound {
+                crate::machine::RigidityDepthCap::Factor {
+                    factor,
+                    diameter_mm,
+                } => format!(
+                    "Depth of cut {:.3} mm is more than the rule-of-thumb limit of {:.3} mm \
+                     ({:.2} \u{00D7} the {:.2} mm diameter). The rule has no published source \
+                     and does not stop the export{}",
+                    peak_mm,
+                    bound.cap_mm(),
+                    factor,
+                    diameter_mm,
+                    vacuity_clause(evidence)
+                ),
+                // P13c (O1): the force-budget depth.
+                crate::machine::RigidityDepthCap::ForceBudget {
+                    budget_n,
+                    ae_mm,
+                    fz_mm,
+                    ..
+                } => format!(
+                    "Depth of cut {:.3} mm is more than the force-budget depth of {:.3} mm \
+                     (peak cutting force at width {:.2} mm and {:.4} mm/tooth meets the \
+                     machine budget {:.1} N). The budget stands in for an unmeasured frame \
+                     and does not stop the export{}",
+                    peak_mm,
+                    bound.cap_mm(),
+                    ae_mm,
+                    fz_mm,
+                    budget_n,
+                    vacuity_clause(evidence)
+                ),
+            },
             evidence,
             *peak_mm,
             Some(bound.cap_mm()),

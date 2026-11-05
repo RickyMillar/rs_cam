@@ -208,6 +208,18 @@ const RETIRED_KEYS: &[RetiredKey] = &[
                       the key",
     },
     RetiredKey {
+        table: &["job", "machine", "rigidity"],
+        key: "doc_roughing_factor",
+        replacement: "Removed (feeds contract P13c, ruling O1): the roughing depth is the \
+                      depth where the peak cutting force meets force_budget_n (N). Delete the \
+                      key; a hobby machine reads the budget derived from the hobby slot charts",
+    },
+    RetiredKey {
+        table: &["job", "machine", "rigidity"],
+        key: "doc_finishing_factor",
+        replacement: "Removed (feeds contract P13c): no code read it. Delete the key",
+    },
+    RetiredKey {
         table: &["job", "stock", "material", "Custom"],
         key: "kc",
         replacement: "Removed (ruling B6): a custom material has no force line and no Kc. \

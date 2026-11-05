@@ -164,6 +164,8 @@ pub enum RationaleReason {
     UnsourcedRowsAccepted,
     /// P5 (K2b, K6): the point sits outside the safe envelope.
     OutsideEnvelope,
+    /// P13c (O3): the assumptions of a computed width.
+    ComputedWidthAssumptions,
 }
 
 /// One row in the rationale tree the GUI / MCP renders alongside a
@@ -714,6 +716,18 @@ fn entry_for_warning(w: &SuggestWarning) -> RationaleEntry {
                 "The written values read rules that no file in the repo prints (F201): {}. \
                  The apply is the acceptance (D4).",
                 rows.join(", ")
+            )),
+        },
+        SuggestWarning::ComputedWidthAssumptions => RationaleEntry {
+            param: RationaleParam::Stepover,
+            reason: RationaleReason::ComputedWidthAssumptions,
+            from_value: None,
+            to_value: None,
+            headline: crate::feeds::force_budget::computed_width_assumptions_line(),
+            detail: Some(format!(
+                "No limit models these: {}. The width is the cut with the most removal per \
+                 minute inside the limits, bounded by the corner-coverage rule.",
+                crate::feeds::force_budget::COMPUTED_WIDTH_ASSUMPTIONS.join(", ")
             )),
         },
         SuggestWarning::OutsideEnvelope {

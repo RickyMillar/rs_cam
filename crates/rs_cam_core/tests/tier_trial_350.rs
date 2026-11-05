@@ -672,6 +672,7 @@ fn apply_suggest(session: &mut ProjectSession) -> Result<Vec<Value>, String> {
             | rs_cam_core::feeds::suggest::SuggestWarning::CutGeometryFieldNotHeld { .. }
             | rs_cam_core::feeds::suggest::SuggestWarning::RpmLoweredForFeedCeiling { .. }
             | rs_cam_core::feeds::suggest::SuggestWarning::UnsourcedRowsAccepted { .. }
+            | rs_cam_core::feeds::suggest::SuggestWarning::ComputedWidthAssumptions
             | rs_cam_core::feeds::suggest::SuggestWarning::OutsideEnvelope { .. }
             | rs_cam_core::feeds::suggest::SuggestWarning::PlungeReDerived { .. } => None,
         });

@@ -24,6 +24,7 @@ pub mod explain_payload;
 pub mod extrapolation;
 pub mod feed_explanation;
 pub mod force;
+pub mod force_budget;
 pub mod geometry;
 pub mod geometry_class;
 pub mod lock;
@@ -2038,10 +2039,14 @@ fn operation_default_profile(family: OperationFamily, role: PassRole) -> Default
             ap_factor: 0.70,
             ae_factor: 0.08,
         },
-        // Pocket: moderate
+        // Pocket: moderate. P13c (ruling O3): the roughing width is the
+        // corner-coverage bound, derived (`force_budget::corner_coverage_width_factor`),
+        // not the typed 0.35 D (deleted). The calculator reads it on an
+        // unstated width; the envelope proposal (the removal-rate pick)
+        // sets the width the add door writes.
         (OperationFamily::Pocket, PassRole::Roughing) => DefaultProfile {
             ap_factor: 0.70,
-            ae_factor: 0.35,
+            ae_factor: force_budget::corner_coverage_width_factor(),
         },
         (OperationFamily::Pocket, PassRole::SemiFinish) => DefaultProfile {
             ap_factor: 0.35,
@@ -2253,6 +2258,12 @@ pub fn formula_constants() -> Vec<FormulaConstant> {
              (feeds contract P0); no record in the repo",
         ),
     ]);
+    // P13c (O1, O3): the hobby force budget (Cited, the chart row that
+    // sets it) and the corner-coverage width factor (Cited, derived).
+    rows.push(force_budget::hobby_budget_row());
+    rows.push(force_budget::corner_coverage_row(
+        force_budget::CORNER_COVERAGE_ROW_NAME,
+    ));
     let families = crate::all_variants!(OperationFamily:
         Adaptive, Pocket, Contour, Parallel, Scallop, Trace, Face, Drill,
     );
@@ -2266,13 +2277,7 @@ pub fn formula_constants() -> Vec<FormulaConstant> {
         for role in roles {
             let profile = operation_default_profile(family, role);
             for (axis, value) in [("ap", profile.ap_factor), ("ae", profile.ae_factor)] {
-                rows.push(FormulaConstant {
-                    name: std::borrow::Cow::Owned(format!(
-                        "feeds.operation_default_profile.{family:?}.{role:?}.{axis}_factor"
-                    )),
-                    value,
-                    source: OPERATION_DEFAULT_PROFILE_SOURCE,
-                });
+                rows.push(profile_row(family, role, axis, value));
             }
         }
     }
@@ -2443,7 +2448,18 @@ fn profile_row(family: OperationFamily, role: PassRole, axis: &str, value: f64) 
             "feeds.operation_default_profile.{family:?}.{role:?}.{axis}_factor"
         )),
         value,
-        source: OPERATION_DEFAULT_PROFILE_SOURCE,
+        source: profile_row_source(family, role, axis),
+    }
+}
+
+/// The source of one profile row: P13c (O3) makes the (Pocket, Roughing)
+/// width the derived corner-coverage bound (Cited, `force_budget::corner_coverage_row`);
+/// every other row is the old Unsourced port.
+fn profile_row_source(family: OperationFamily, role: PassRole, axis: &str) -> ConstantSource {
+    if family == OperationFamily::Pocket && role == PassRole::Roughing && axis == "ae" {
+        force_budget::corner_coverage_row(force_budget::CORNER_COVERAGE_ROW_NAME).source
+    } else {
+        OPERATION_DEFAULT_PROFILE_SOURCE
     }
 }
 

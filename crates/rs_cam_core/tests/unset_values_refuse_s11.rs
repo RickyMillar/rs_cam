@@ -286,9 +286,19 @@ fn an_unbacked_tool_refuses_with_the_feeds_text_s11() {
         draft.feeds_refusal.is_some(),
         "non-vacuity: the cell is Unbacked (FM5)"
     );
+    // P13c (rulings O1, O3, lead ruling on item 1): the Pocket stepover and
+    // depth are the envelope proposal; plywood has no force line and the
+    // cell is Unbacked, so the add door writes the geometry width and no
+    // depth (no underived default).
     assert_eq!(
         draft.config.operation.unset_fields(),
-        vec!["floor", "feed_rate", "plunge_rate", "spindle_rpm"],
+        vec![
+            "floor",
+            "depth_per_pass",
+            "feed_rate",
+            "plunge_rate",
+            "spindle_rpm"
+        ],
         "no raw feeds ship"
     );
     let index = s
@@ -307,6 +317,9 @@ fn an_unbacked_tool_refuses_with_the_feeds_text_s11() {
             floor: Floor::top(2.0),
         }))
         .expect("the floor door");
+    // P13c: the depth is unset too (it refuses first); the operator states
+    // it, then the op names the unset feeds.
+    set_param(&mut s, index, "depth_per_pass", serde_json::json!(1.0));
     let text = generate_err(&mut s, index);
     assert!(text.contains(FEEDS_NOT_SET_TEXT), "{text}");
     for field in ["`feed_rate`", "`plunge_rate`", "`spindle_rpm`"] {

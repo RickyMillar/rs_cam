@@ -121,6 +121,28 @@ fn baltic_birch() -> Option<Material> {
 }
 
 /// Draft a Pocket through THE door with the first fitting tool and add it.
+/// P13c (rulings O1, O3, lead ruling on item 1): on an Unbacked cell
+/// (plywood: no force line) the add door writes the geometry width and
+/// leaves the depth unset, and the depth refuses before the feeds. The
+/// arms about the feeds state what is unset.
+fn state_geometry(s: &mut ProjectSession, index: usize) {
+    for (param, value) in [("stepover", 2.0), ("depth_per_pass", 1.0)] {
+        if s.toolpath_configs()[index]
+            .operation
+            .unset_fields()
+            .contains(&param)
+        {
+            let _ = s
+                .apply(Command::SetToolpathParam(SetToolpathParamArgs {
+                    index,
+                    param: param.to_owned(),
+                    value: serde_json::json!(value),
+                }))
+                .expect("the param door");
+        }
+    }
+}
+
 fn add_pocket(s: &mut ProjectSession) -> usize {
     let draft = s
         .draft_toolpath(
@@ -269,6 +291,7 @@ fn an_unbacked_tool_leaves_the_feeds_empty_and_refuses_r1() {
             floor: Floor::top(2.0),
         }))
         .expect("the floor door");
+    state_geometry(&mut s, index);
     let cancel = AtomicBool::new(false);
     let text = match s.generate_toolpath(index, &cancel) {
         Ok(_) => panic!("an op with no feeds generated"),
@@ -412,6 +435,7 @@ fn a_change_to_an_unbacked_tool_clears_the_suggested_feeds_r1() {
             floor: Floor::top(2.0),
         }))
         .expect("the floor door");
+    state_geometry(&mut s, index);
     let cancel = AtomicBool::new(false);
     let text = match s.generate_toolpath(index, &cancel) {
         Ok(_) => panic!("an op with a cleared feed generated"),

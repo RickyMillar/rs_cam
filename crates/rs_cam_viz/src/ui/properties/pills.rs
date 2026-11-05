@@ -453,8 +453,9 @@ mod tests {
         .expect("the demo pocket has an envelope");
         let proposal = envelope.proposal.get().ap_mm;
         // The depth snaps once to the realised step down (P5 card trap):
-        // the demo pocket is 3.0 deep, so the 1.5 cap cuts in two passes
-        // (P11c; it was 1.2 in three passes of 1.0).
+        // the demo pocket is 3.0 deep, so the 1.5 cap cut in two passes
+        // (P11c; it was 1.2 in three passes of 1.0). P13c: the proposal is
+        // the stated 2.0, which also cuts in two passes of 1.5.
         let total = op.total_depth().expect("the demo pocket states a depth");
         let applied =
             rs_cam_core::ops::depth::realised_step_down(total, proposal).unwrap_or(proposal);
@@ -467,13 +468,16 @@ mod tests {
             (applied - DEMO_POCKET_APPLIED_DPP).abs() < 1e-9,
             "fixture drift: Apply all writes {applied}"
         );
-        // The stated depth is above the proposal: a binding limit lowered
-        // it. The pill compares against the proposal, not the stated depth.
+        // The proposal never raises the stated depth (K2). P13c (O1, O4): the
+        // force-budget depth of the demo pocket is above its stated 2.0, so
+        // the removal-rate proposal keeps 2.0 (before P13c the 1.5 hobby cap
+        // lowered it). The pill still compares against the as-applied value
+        // (the realised step down, 1.5), not the stated depth.
         let stated = op
             .depth_per_pass()
             .expect("a Pocket states a depth per pass");
         assert!(
-            envelope.proposal_binding.is_some() && stated > proposal,
+            stated >= proposal && (stated > proposal || envelope.proposal_binding.is_none()),
             "fixture drift: stated {stated}, proposal {proposal}, binding {:?}",
             envelope.proposal_binding
         );

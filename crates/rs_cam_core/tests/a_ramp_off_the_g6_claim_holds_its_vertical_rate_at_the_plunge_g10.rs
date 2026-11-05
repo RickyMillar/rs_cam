@@ -132,6 +132,7 @@ fn record(s: &SuggestedParams) -> (&RampFeed, &EntryNotes) {
             | SuggestWarning::CutGeometryFieldNotHeld { .. }
             | SuggestWarning::RpmLoweredForFeedCeiling { .. }
             | SuggestWarning::UnsourcedRowsAccepted { .. }
+            | SuggestWarning::ComputedWidthAssumptions
             | SuggestWarning::OutsideEnvelope { .. }
             | SuggestWarning::PlungeReDerived { .. } => None,
         })

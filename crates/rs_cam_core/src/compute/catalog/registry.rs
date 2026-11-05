@@ -465,7 +465,7 @@ pub(super) static REG_INLAY_PLUG: OpRegistryEntry = OpRegistryEntry {
         reason: INLAY_PLUG_NO_ENTRY,
         feed: PlungeFeedRule::OpPlungeRate,
     },
-    geometry: crate::compute::geometry_default::POCKET,
+    geometry: crate::compute::geometry_default::INLAY_PLUG,
     policy: OpPolicy::MILLING,
     capabilities: Capabilities {
         transform: TRANSFORM_V_WIDTH,

@@ -118,23 +118,20 @@ fn an_industrial_table_with_its_own_rigidity_loads_p11c() {
     let t = machine_table(|t| {
         set_class(t, "industrial");
         if let Some(toml::Value::Table(r)) = t.get_mut("rigidity") {
+            // P13c (O1): `doc_roughing_factor` is deleted; the force
+            // budget is the stated value.
             let v = r
-                .get("doc_roughing_factor")
+                .get("force_budget_n")
                 .and_then(toml::Value::as_float)
                 .expect("the default states it");
-            r.insert(
-                "doc_roughing_factor".to_owned(),
-                toml::Value::Float(2.0 * v),
-            );
+            r.insert("force_budget_n".to_owned(), toml::Value::Float(2.0 * v));
         }
     });
     let m = load_library("industrial_stated", &t).expect("loads");
     assert_eq!(m.class, MachineClass::Industrial);
     assert_eq!(m.rigidity_basis(), RigidityBasis::IndustrialStated);
     assert!(
-        (m.rigidity.doc_roughing_factor - 2.0 * RigidityProfile::default().doc_roughing_factor)
-            .abs()
-            < 1e-12
+        (m.rigidity.force_budget_n - 2.0 * RigidityProfile::default().force_budget_n).abs() < 1e-12
     );
 }
 

@@ -218,11 +218,15 @@ fn the_session_is_unchanged_until_the_apply_and_an_outside_pick_warns_k2b() {
         .safe_envelope(&tc)
         .expect("a tool")
         .expect("a backed Pocket");
-    // A point past the top of the depth span: outside the envelope.
+    // A slot point at the top of the view (past the slot step): outside
+    // the envelope. P13c (O1): it read the top of the view
+    // at the proposal width, which the force-budget rigidity curve now
+    // passes; the slot step stays a drawn limit inside the view.
     let scene = rs_cam_viz::ui::feeds::envelope::EnvelopeScene::of(&env, None);
+    let ae = scene.ae_range.1 * 0.95;
     let outside = CutPoint {
         ap_mm: scene.ap_range.1 * 0.98,
-        ae_mm: env.proposal.get().ae_mm,
+        ae_mm: ae,
     };
     let Placement::Outside { binding, .. } = env.placement_of(outside) else {
         panic!("fixture: {outside:?} must sit outside");

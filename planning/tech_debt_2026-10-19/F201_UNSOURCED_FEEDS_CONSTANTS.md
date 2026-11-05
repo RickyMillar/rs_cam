@@ -2,7 +2,7 @@
 
 Status: OPEN. Operator ruling 6 (2026-10-22), option B. The values stay.
 The sentry `every_feeds_formula_constant_states_its_source_f201` lists them
-and pins the count (162 unsourced, 3 cited; 158 before feeds contract P13a, 159 before P11c, 154 before P10, 149 before P6; 150 before the P5 chain ruling deleted the deflection back-off floor, 146 before feeds contract P5, 144 before P3). Option A (the formula path
+and pins the count (161 unsourced, 6 cited; 162 before feeds contract P13c, 158 before feeds contract P13a, 159 before P11c, 154 before P10, 149 before P6; 150 before the P5 chain ruling deleted the deflection back-off floor, 146 before feeds contract P5, 144 before P3). Option A (the formula path
 refuses an unsourced value) applies only if one of these values causes an
 issue.
 
@@ -37,7 +37,7 @@ re-bless the FM1 golden in the same commit (`feeds/CLAUDE.md`).
 | `material.DRILL_PLUNGE_CEILING_PLYWOOD_PER_MM` | 580 | same | same |
 | `material.DRILL_PLUNGE_CEILING_SHEET_PER_MM` | 720 | same | MDF/Laminate ramp down 90 in/min: 90 × 25.4 / 3.175 |
 
-## Unsourced rows (162)
+## Unsourced rows (161)
 
 `material/mod.rs` lines are the `const` definition. The function reads the
 value from that constant.
@@ -202,8 +202,8 @@ Claim: "today's X mm at reference D 6 mm; no record in the repo".
 |---|---|---|---|
 | `compute.geometry_default.AXIAL_K_0_5_MM` | 0.5 / 6 | Trace `depth_per_pass`, Ramp Finish `max_stepdown` | `compute/geometry_default.rs` |
 | `compute.geometry_default.AXIAL_K_1_0_MM` | 1.0 / 6 | Face `depth_per_pass`; Waterline, Steep and Shallow, Unified Finish `z_step` | `compute/geometry_default.rs` |
-| `compute.geometry_default.AXIAL_K_1_5_MM` | 1.5 / 6 | Pocket, Zigzag, Inlay plug `depth_per_pass` | `compute/geometry_default.rs` |
-| `compute.geometry_default.AXIAL_K_2_0_MM` | 2.0 / 6 | Profile, 2D Adaptive `depth_per_pass` | `compute/geometry_default.rs` |
+| `compute.geometry_default.AXIAL_K_1_5_MM` | 1.5 / 6 | Inlay plug `depth_per_pass` (P13c: Pocket and Zigzag read the envelope proposal) | `compute/geometry_default.rs` |
+| `compute.geometry_default.AXIAL_K_2_0_MM` | 2.0 / 6 | 2D Adaptive `depth_per_pass` (P13c: Profile reads the envelope proposal) | `compute/geometry_default.rs` |
 | `compute.geometry_default.AXIAL_K_3_0_MM` | 3.0 / 6 | 3D Rough `depth_per_pass`; Drill, Pin Drill `peck_depth` | `compute/geometry_default.rs` |
 
 The radial rule (every stepover) reads the family `ae_factor` rows of
@@ -244,3 +244,15 @@ beside the number, because this task did not edit `machine/`.
   A later pass can move them into the registry as `Cited` rows.
 - Drill chip-welding and peck bands: on the drill gate and Suggest default
   path, not on `feeds::calculate`.
+
+### The force budget and the corner rule (feeds contract P13c, rulings O1 and O3, 2026-11-05)
+
+The pin fell from 162 to 161. Three rows are Cited, none Unsourced:
+
+| Row | Value | Source |
+|---|---|---|
+| `machine.RigidityProfile.hobby.force_budget_n` | 35.32 N, computed (`feeds::force_budget::hobby_budget`) | the largest peak engaged-edge force of the six printed hobby full-slot rows (`HOBBY_SLOT_POINTS`); the row cites the binding line, Sienci "Softwood, Soft Plywood, MDF", 1/4" flat UC, 2740 mm/min, slot 5.4 mm, 12000 rpm (`planning/extrapolation_2026-09-24/fetch/G10/sources/sienci_feeds_speeds_metric.txt:79`), read on the MDF line |
+| `feeds.force_budget.corner_coverage_width_factor` | (1 + 1/sqrt 2) / 2, derived | `research_p13_step0/FINDINGS.md` prints "(1 + 1/sqrt 2) r = 0.854 D" |
+| `feeds.operation_default_profile.Pocket.Roughing.ae_factor` | the same derived factor (was the typed 0.35) | the same citation |
+
+The deleted machine field `doc_roughing_factor` (0.25 D on the hobby default) was machine data, not a row.

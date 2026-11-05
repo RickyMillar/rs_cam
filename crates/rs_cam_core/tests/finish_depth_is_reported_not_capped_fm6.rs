@@ -6,8 +6,8 @@
 //! finishing cap as a fraction of D for wood (EVIDENCE 5.1-3, 5.1-12), so:
 //!
 //! - (a) a finishing or semi-finishing pass gets no axial ceiling. Suggest
-//!   ships its depth with no depth clamp warning, and the one cap producer
-//!   `RigidityProfile::depth_cap_mm` returns `None` for it;
+//!   ships its depth with no depth clamp warning, and the profile's rule
+//!   `RigidityProfile::depth_cap_rule` returns `None` for it;
 //! - (b) a roughing pass keeps the cap, at the producer's own cap (feeds
 //!   contract P5: as the envelope's rigidity ceiling, which "Apply all"
 //!   ships at or under);
@@ -47,7 +47,7 @@ use rs_cam_core::feeds::suggest::{
 use rs_cam_core::feeds::vendor_lut::{LutOperationFamily, LutPassRole};
 use rs_cam_core::feeds::{EMBEDDED_LUT, OperationFamily, PassRole, SpindleStrategy};
 use rs_cam_core::ids::ToolpathId;
-use rs_cam_core::machine::MachineProfile;
+use rs_cam_core::machine::{MachineProfile, RigidityDepthCap};
 use rs_cam_core::material::{Material, WoodSpecies};
 use rs_cam_core::stock::simulation_cut::{
     CutKinematics, Engagement, SimulationCutSample, SimulationCutTrace,
@@ -118,6 +118,12 @@ struct Shipped {
 /// a depth above its rigidity cap. Before P5 this file read the retired
 /// chain door.
 fn suggest(op: OperationType, tool: &ToolConfig) -> Shipped {
+    suggest_at(op, tool, None)
+}
+
+/// [`suggest`] with the stated depth `depth_mm` in place of the family
+/// default, when given.
+fn suggest_at(op: OperationType, tool: &ToolConfig, depth_mm: Option<f64>) -> Shipped {
     let m = machine();
     let mat = softwood();
     let s = stock();
@@ -133,6 +139,9 @@ fn suggest(op: OperationType, tool: &ToolConfig) -> Shipped {
         .map(|c| c.value)
     {
         operation.set_depth_per_pass(tool.diameter * factor);
+    }
+    if let Some(depth) = depth_mm {
+        let _ = operation.set_depth_per_pass(depth);
     }
     let context = SuggestContext {
         stock: Some(&s),
@@ -288,9 +297,7 @@ fn a_finishing_depth_ships_above_the_old_cap_with_no_clamp_fm6() {
         let (family, pass_role) = s.operation.feeds_style();
         assert_eq!(pass_role, role, "{op:?}: the registry role moved");
         assert!(
-            m.rigidity
-                .depth_cap_mm(family, pass_role, diameter)
-                .is_none(),
+            m.rigidity.depth_cap_rule(family, pass_role).is_none(),
             "{op:?}: a {role:?} pass must carry no axial cap (R2)"
         );
         let dpp = s
@@ -320,42 +327,41 @@ fn a_finishing_depth_ships_above_the_old_cap_with_no_clamp_fm6() {
 
 // ── (b) a roughing depth still clamps ───────────────────────────────────
 
-/// A Ø6 flat Pocket: the op states 4.2 mm, the envelope's rigidity
-/// ceiling is the producer's own roughing cap, 0.25 × 6 = 1.5 mm on the
-/// default profile, bit for bit, and "Apply all" ships at or under it.
+/// A Ø6 flat Pocket: the op states 4.2 mm, above the envelope's rigidity
+/// ceiling. P13c (O1, O4): the ceiling is the force-budget depth (a curve
+/// over the width; the producer equality is in
+/// `the_roughing_depth_meets_the_force_budget_p13c`), and "Apply all" ships
+/// the removal-rate pick inside the stated box, at or under the ceiling at
+/// the width it ships.
 #[test]
 fn a_roughing_depth_still_clamps_at_the_producer_s_cap_fm6() {
-    let m = machine();
     let tool = tool_of(ToolType::EndMill, 6.0);
-    let s = suggest(OperationType::Pocket, &tool);
-    let expected = m
-        .rigidity
-        .depth_cap_mm(OperationFamily::Pocket, PassRole::Roughing, 6.0)
-        .expect("a roughing pocket carries an axial cap")
-        .cap_mm();
-    // Feeds contract P5: the envelope carries the producer's cap as its
-    // rigidity ceiling, and "Apply all" ships at or under it. The stated
-    // depth is above it, so the proposal is lowered (K2: never raised).
+    // P13c: the family default (4.2 mm) is under the force-budget depth in
+    // softwood, so the arm states 2 x D.
+    let s = suggest_at(OperationType::Pocket, &tool, Some(2.0 * tool.diameter));
+    let l = s
+        .envelope
+        .limit(LimitKind::Rigidity)
+        .expect("a roughing pocket envelope carries the rigidity cap");
+    assert_eq!(l.law, rs_cam_core::feeds::force_budget::FORCE_BUDGET_LAW);
     let capped = rigidity_cap(&s).expect("a roughing pocket envelope carries the rigidity cap");
-    assert_eq!(
-        capped, expected,
-        "the rigidity ceiling must be the producer's cap"
-    );
     let stated = s.envelope.stated.expect("the pocket states its cut").ap_mm;
-    assert!(
-        stated > expected,
-        "vacuous: {stated} is not above {expected}"
-    );
     let shipped = s.operation.depth_per_pass().expect("a pocket has a depth");
     assert!(
-        shipped <= expected + 1e-12,
-        "the shipped depth {shipped} is above the cap {expected}"
+        shipped <= capped + 1e-9,
+        "the shipped depth {shipped} is above the cap {capped}"
+    );
+    assert!(
+        stated > shipped,
+        "vacuous: the stated {stated} is not lowered (shipped {shipped})"
     );
 }
 
 // ── (c) one engaged diameter on a tapered ball ──────────────────────────
 
-/// A Ø3.175-tip tapered ball Pocket (7 deg, Ø6.175 shank). The envelope's
+/// A Ø3.175-tip tapered ball Adaptive (7 deg, Ø6.175 shank). P13c (O1):
+/// the Pocket family reads the force budget, so the factor cap of this
+/// arm is the Adaptive family's (`adaptive_doc_factor`). The envelope's
 /// rigidity ceiling (feeds contract P5) at the depth it ships and the gate's cap at a
 /// measured peak equal to that depth are one number, from one diameter:
 /// `depth_cap_diameter_mm`, the engaged diameter at that depth. It is
@@ -368,7 +374,7 @@ fn a_roughing_depth_still_clamps_at_the_producer_s_cap_fm6() {
 fn suggest_and_the_gate_read_one_engaged_diameter_on_a_tapered_ball_fm6() {
     let m = machine();
     let tool = tool_of(ToolType::TaperedBallNose, 3.175);
-    let s = suggest(OperationType::Pocket, &tool);
+    let s = suggest(OperationType::Adaptive, &tool);
     let capped = rigidity_cap(&s)
         .unwrap_or_else(|| panic!("the roughing envelope must carry a rigidity cap"));
     let shipped = s.operation.depth_per_pass().expect("a pocket has a DPP");
@@ -379,7 +385,7 @@ fn suggest_and_the_gate_read_one_engaged_diameter_on_a_tapered_ball_fm6() {
 
     let cutter = build_cutter(&tool).unwrap();
     let suggest_d = depth_cap_diameter_mm(&cutter, capped);
-    let factor = m.rigidity.doc_roughing_factor;
+    let factor = m.rigidity.adaptive_doc_factor;
     assert!(
         (capped - factor * suggest_d).abs() <= 1e-9,
         "the clamp must land where the depth equals its own cap: {capped} vs \
@@ -394,14 +400,21 @@ fn suggest_and_the_gate_read_one_engaged_diameter_on_a_tapered_ball_fm6() {
     );
 
     let t = trace(&[0.5 * capped, capped]);
-    match depth_gate(&cutter, OperationType::Pocket, Some(&t)) {
+    match depth_gate(&cutter, OperationType::Adaptive, Some(&t)) {
         DepthVerdict::Within { peak_mm, bound, .. } => {
             assert_eq!(peak_mm, capped);
+            let RigidityDepthCap::Factor {
+                factor: f,
+                diameter_mm,
+            } = bound
+            else {
+                panic!("an Adaptive cap is a factor, got {bound:?}")
+            };
             assert_eq!(
-                bound.diameter_mm, suggest_d,
+                diameter_mm, suggest_d,
                 "the gate and the clamp must read one diameter at one depth"
             );
-            assert_eq!(bound.factor, factor);
+            assert_eq!(f, factor);
         }
         other => panic!("the shipped depth must read Within its own cap, got {other:?}"),
     }
@@ -427,7 +440,10 @@ fn the_feed_ladder_and_the_gate_read_the_cone_diameter_fm6() {
         other => panic!("an adaptive pass carries a cap, got {other:?}"),
     };
     let engaged = cutter.lookup_diameter_at(DEPTH_MM);
-    assert_eq!(bound.diameter_mm, engaged);
+    let RigidityDepthCap::Factor { diameter_mm, .. } = bound else {
+        panic!("an Adaptive cap is a factor, got {bound:?}")
+    };
+    assert_eq!(diameter_mm, engaged);
     let ladder = feed_ladder_diameter_mm(
         cutter.geometry_hint(),
         DEPTH_MM,
@@ -449,6 +465,25 @@ fn the_feed_ladder_and_the_gate_read_the_cone_diameter_fm6() {
 
 // ── (d) the diagnostics list carries the depth row ──────────────────────
 
+/// The roughing cap of the Ø6 Pocket at the fixture sample's cut: arc
+/// pi/2 (ae = r = 3 mm) and 1500 mm/min at 18 000 rpm, 2 flutes.
+fn pocket_cap() -> f64 {
+    let cutter = flat6();
+    match rs_cam_core::feeds::force_budget::rigidity_depth_cap(
+        &machine(),
+        OperationFamily::Pocket,
+        PassRole::Roughing,
+        &cutter,
+        &softwood(),
+        3.0,
+        1500.0 / (18_000.0 * 2.0),
+        1.0,
+    ) {
+        Some(rs_cam_core::feeds::force_budget::RigidityCapOutcome::Cap(c)) => c.cap_mm(),
+        other => panic!("the fixture cut has a force-budget cap: {other:?}"),
+    }
+}
+
 fn load_verdict(
     op: OperationType,
     t: Option<&SimulationCutTrace>,
@@ -460,12 +495,18 @@ fn load_verdict(
     rs_cam_core::tool_load::evaluate_toolpath(&ctx(&tool, &material, op), t, Some(&m), &tolerance)
 }
 
-/// A Ø6 Pocket cut 3 mm deep against the 1.5 mm roughing cap: the
-/// diagnostics list carries `load.depth.exceeds` at `Caution`, with the
-/// peak and the cap as its evidence.
+/// A Ø6 Pocket cut 1 mm deeper than its roughing cap: the diagnostics
+/// list carries `load.depth.exceeds` at `Caution`, with the peak and the
+/// cap as its evidence. P13c (O1): the cap is the force-budget depth at the
+/// peak sample's cut (arc pi/2, the sample feed), from the one producer.
 #[test]
 fn a_depth_exceedance_reaches_the_diagnostics_list_fm6() {
-    let t = trace(&[1.0, 3.0]);
+    let cap = pocket_cap();
+    let deep = cap + 1.0;
+    let mut t = trace(&[1.0, deep]);
+    for s in &mut t.samples {
+        s.arc_engagement_radians = Some(std::f64::consts::FRAC_PI_2);
+    }
     let v = load_verdict(OperationType::Pocket, Some(&t));
     assert!(v.depth.is_exceeded(), "fixture: {:?}", v.depth);
     let diags = diagnostics_from_load_verdict(&v);
@@ -475,11 +516,6 @@ fn a_depth_exceedance_reaches_the_diagnostics_list_fm6() {
         .unwrap_or_else(|| panic!("no depth Exceeds finding in {diags:?}"));
     assert_eq!(d.severity, Severity::Caution);
     assert_eq!(d.state, DiagnosticState::Current);
-    let cap = machine()
-        .rigidity
-        .depth_cap_mm(OperationFamily::Pocket, PassRole::Roughing, 6.0)
-        .unwrap()
-        .cap_mm();
     match &d.evidence {
         Some(DiagnosticEvidence::SampleRange {
             observed,
@@ -487,7 +523,7 @@ fn a_depth_exceedance_reaches_the_diagnostics_list_fm6() {
             unit,
             ..
         }) => {
-            assert_eq!(*observed, 3.0);
+            assert_eq!(*observed, deep);
             assert_eq!(*threshold, Some(cap));
             assert_eq!(unit, "mm");
         }

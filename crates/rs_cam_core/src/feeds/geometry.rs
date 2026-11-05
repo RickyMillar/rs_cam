@@ -483,7 +483,7 @@ pub fn depth_derate_diameter_for_cutter(
 }
 
 /// **The diameter the rigidity depth cap multiplies, at one axial depth.**
-/// The cap is `factor × D` (`RigidityProfile::depth_cap_mm`). Before R2
+/// The Adaptive cap is `factor × D` (`force_budget::rigidity_depth_cap`). Before R2
 /// the Suggest clamp gave it the tip of a tapered ball and the
 /// post-simulation depth gate gave it the shank (EVIDENCE 5.1-7, 3.5-15).
 /// Both doors now call this function, each at its own depth: Suggest at

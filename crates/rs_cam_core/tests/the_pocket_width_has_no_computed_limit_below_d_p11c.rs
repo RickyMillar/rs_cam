@@ -1,30 +1,29 @@
-//! Feeds contract P11c, D13 item 2 (`planning/feeds_contract_2026-11-03/STATUS.md`,
-//! "Lead rulings for P11c"): the ruling asks that the add-door stepover of
-//! a roughing Pocket be the K2b envelope proposal's stepover at the op's
-//! depth, picked by the computed limits (power, the deflection edge, the
-//! chip). P11c did NOT land that change. This file holds the reason as a
-//! measured claim (a known finding, an inverted assertion): at the
-//! add-door depth, no computed envelope limit bounds the width below the
-//! tool diameter, so "the widest width the limits allow" is D, a full slot
-//! on every pass.
+//! Feeds contract P11c, D13 item 2, closed by P13c (rulings O3 and O4,
+//! 2026-11-05).
 //!
-//! When a computed limit starts to bind the width below D on this fixture
-//! (a new width law, or a depth default that the slot or power edge
-//! reaches), this test fails. Then item 2 can land as ruled, and this file
-//! is deleted.
+//! P11c held item 2 (the add-door stepover of a roughing Pocket from the
+//! envelope) on a measured finding: at the add-door depth no computed
+//! envelope limit bounded the width below the tool diameter (measured
+//! 2026-11-05: the rigidity cap and the slot cap both equalled the add-door
+//! depth, 0.25 D; power and the vendor depth table were above 1 D;
+//! deflection read "no deflection limit below the flute"). The step 0
+//! research confirmed it: no limit in the model falls with the width.
 //!
-//! Fixture: the add door (`ProjectSession::draft_toolpath`) drafts a Pocket
-//! for a two-flute end mill of D 3.175, 6 and 12 mm (flute 12, 22, 30 mm,
-//! stickout flute + 8 mm, stated) on the default machine and material. The
-//! envelope is built with the drafted depth and an unstated stepover. For
-//! each width sample from 5 % of D to D, every `ap` ceiling of the envelope
-//! is at or above the drafted depth.
+//! P13c lands item 2 as ruled: the width is bounded by geometry, the
+//! corner-coverage rule `(1 + 1/sqrt 2) r`, and the proposal is the cut
+//! with the most removal per minute. This file now states that truth:
 //!
-//! Measured 2026-11-05 (P11c probe, agent scratchpad `p11c_probe_*.log`):
-//! the rigidity cap and the slot cap both equal the add-door depth (0.25 D);
-//! power and the vendor depth table are above 1 D; deflection reads
-//! "no deflection limit below the flute" (and, for a D 3 tool at 40 mm
-//! stickout, 2.2 mm at full width, above its 0.75 mm depth).
+//! 1. The add-door stepover sits on a width rule, the corner-coverage
+//!    ceiling or the slot step (`proposal_limits` names it), never on a
+//!    force limit.
+//! 2. At the drafted depth, every computed force ceiling (the force budget,
+//!    power, deflection, the vendor depth table) holds the drafted depth at
+//!    every width up to the drafted width: no force limit binds the width
+//!    below it.
+//!
+//! Fixture: the add door drafts a Pocket for a two-flute end mill of D
+//! 3.175, 6 and 12 mm (flute 12, 22, 30 mm, stickout flute + 8 mm, stated)
+//! on the default machine and material.
 //!
 //! ```text
 //! cargo test -p rs_cam_core -q --test the_pocket_width_has_no_computed_limit_below_d_p11c
@@ -56,7 +55,8 @@ fn tool(d: f64, flute: f64) -> ToolConfig {
 }
 
 #[test]
-fn no_computed_limit_bounds_the_pocket_width_below_d_p11c() {
+fn no_force_limit_binds_the_pocket_width_below_the_corner_rule_p11c() {
+    use rs_cam_core::feeds::envelope::LimitKind;
     let mut checked = 0_usize;
     for (d, flute) in [(3.175, 12.0), (6.0, 22.0), (12.0, 30.0)] {
         let mut s = ProjectSession::new_empty();
@@ -72,9 +72,13 @@ fn no_computed_limit_bounds_the_pocket_width_below_d_p11c() {
             .config
             .operation;
         let depth = op.depth_per_pass().expect("the add door states a depth");
-        if let Some(slot) = rs_cam_core::compute::geometry_default::slot_mut(&mut op, "stepover") {
-            *slot = None;
+        let width = op.stepover().expect("the add door states a stepover");
+        for field in ["stepover", "depth_per_pass"] {
+            if let Some(slot) = rs_cam_core::compute::geometry_default::slot_mut(&mut op, field) {
+                *slot = None;
+            }
         }
+        op.set_spindle_rpm(None);
         let env = SafeEnvelope::for_cut(EnvelopeInput {
             operation: &op,
             tool: &s.tools()[0],
@@ -85,15 +89,33 @@ fn no_computed_limit_bounds_the_pocket_width_below_d_p11c() {
             context: SuggestContext::default(),
         })
         .expect("an envelope");
+        // 1. The width sits on a width rule.
+        assert!(
+            env.proposal_limits
+                .iter()
+                .any(|k| matches!(k, LimitKind::CornerCoverage | LimitKind::Slot)),
+            "D {d}: the width {width} sits on {:?}, not on a width rule",
+            env.proposal_limits
+        );
+        // 2. No force ceiling binds the width below the drafted width.
         for k in 1..=20 {
-            let ae = d * f64::from(k) * 0.05;
+            let ae = width * f64::from(k) / 20.0;
             for limit in &env.boundary {
+                let force = matches!(
+                    limit.kind,
+                    LimitKind::Rigidity
+                        | LimitKind::Power
+                        | LimitKind::Deflection
+                        | LimitKind::VendorDepthTable
+                );
+                if !force {
+                    continue;
+                }
                 if let Some(ceiling) = limit.ap_ceiling_at(ae) {
                     assert!(
-                        ceiling >= depth - 1e-9,
-                        "a computed limit now binds the width: {:?} gives ap <= {ceiling} mm \
-                         at ae {ae} mm (D {d}), below the add-door depth {depth} mm. \
-                         P11c item 2 can land; delete this file.",
+                        ceiling >= depth - 1e-6,
+                        "D {d}: {:?} gives ap <= {ceiling} mm at ae {ae} mm, below the drafted \
+                         depth {depth} mm: a force limit now binds the width",
                         limit.kind
                     );
                     checked += 1;
@@ -101,5 +123,5 @@ fn no_computed_limit_bounds_the_pocket_width_below_d_p11c() {
             }
         }
     }
-    assert!(checked > 100, "non-vacuity: {checked} ceilings checked");
+    assert!(checked > 50, "non-vacuity: {checked} ceilings checked");
 }

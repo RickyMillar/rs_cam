@@ -79,7 +79,16 @@ use rs_cam_core::material::{
 /// floor), `tool.DEFAULT_HELIX_DEG` (the helix that five cutter
 /// constructors typed) and `compute.operation_configs.DRILL_DWELL_S`. No
 /// value moved.
-const PINNED_UNSOURCED_COUNT: usize = 162;
+///
+/// Feeds contract P13c (rulings O1, O3) lowered it from 162 to 161:
+/// `feeds.operation_default_profile.Pocket.Roughing.ae_factor` is now the
+/// derived corner-coverage bound `(1 + 1/sqrt 2) / 2` (Cited, the step 0
+/// finding that prints it), not the typed 0.35. Two new rows are Cited:
+/// `machine.RigidityProfile.hobby.force_budget_n` (the largest peak force of
+/// the printed hobby slot rows, its chart row) and
+/// `feeds.force_budget.corner_coverage_width_factor`. The deleted
+/// `doc_roughing_factor` was machine data, not a row.
+const PINNED_UNSOURCED_COUNT: usize = 161;
 
 fn repo_root() -> PathBuf {
     PathBuf::from(env!("CARGO_MANIFEST_DIR")).join("../..")

@@ -36,7 +36,10 @@
 //!
 //! ## The bound, and why it does not gate
 //!
-//! The cap is [`RigidityProfile::depth_cap_mm`](crate::machine::RigidityProfile::depth_cap_mm): the profile's own
+//! The cap is [`crate::feeds::force_budget::rigidity_depth_cap`] (P13c, O1): on the Pocket and
+//! Profile families the depth where the peak cutting force at the peak
+//! sample's width and chip meets the machine force budget; on the Adaptive
+//! family the profile's own
 //! factor for the operation family, times the diameter that
 //! `feeds::geometry::depth_cap_diameter_mm` gives at the measured peak
 //! (the engaged cone diameter on a tapered ball, the nominal diameter on
@@ -80,6 +83,7 @@
 //! the same contract `power.rs` and `deflection.rs` carry.
 
 use crate::stock::simulation_cut::SimulationCutSample;
+use crate::tool::MillingCutter as _;
 
 use super::locality::SpanLookup;
 use super::verdict::{
@@ -108,6 +112,7 @@ pub fn evaluate(ctx: &super::ToolpathLoadContext<'_>, env: &super::GateEnv<'_>) 
     let &super::ToolpathLoadContext {
         toolpath_id,
         tool,
+        material,
         operation_kind,
         spans,
         ..
@@ -210,36 +215,115 @@ pub fn evaluate(ctx: &super::ToolpathLoadContext<'_>, env: &super::GateEnv<'_>) 
     // peak, capped at the shank; on every other shape it is the nominal
     // diameter.
     let spec = operation_kind.spec();
-    let cap_diameter_mm = crate::feeds::geometry::depth_cap_diameter_mm(tool, peak_mm);
-    let bound =
-        machine
-            .rigidity
-            .depth_cap_mm(spec.feeds_family, spec.feeds_pass_role, cap_diameter_mm);
-    let Some(bound) = bound else {
-        // Feeds matrix R2 (2026-09-23): a finishing or semi-finishing
-        // pass has no axial cap. The drill family also has none, but the
-        // drill arm above already took it. The gate reports the peak and
-        // judges nothing; the deflection gate is the limit on this pass.
-        tracing::debug!(
-            verdict = "Reported",
-            peak_mm,
-            "depth gate reports: this pass role carries no axial cap"
-        );
+    // P13c (O1): the force-budget cap (Pocket and Profile families) is
+    // solved at the cut the peak sample measured: its engaged width (the
+    // sample arc, `Engagement::from_sample`) and its chip (feed / (rpm x
+    // Z)). The Adaptive factor cap reads the engaged diameter at the peak.
+    let peak_sample = peak_idx.and_then(|i| trace.samples.get(i));
+    // X-VAC: with no contributing sample, the cut is read off the first
+    // offered sample of the toolpath that states a feed and a speed (its
+    // chip), at its width or, with no width, a full slot (the widest cut,
+    // the smallest cap). The population still says the reading is vacuous.
+    let cut_sample = peak_sample.or_else(|| {
+        trace
+            .samples
+            .iter()
+            .find(|s| s.toolpath_id == toolpath_id && s.spindle_rpm > 0 && s.feed_rate_mm_min > 0.0)
+    });
+    if cut_sample.is_none()
+        && matches!(
+            machine
+                .rigidity
+                .depth_cap_rule(spec.feeds_family, spec.feeds_pass_role),
+            Some(crate::machine::DepthCapRule::ForceBudget(_))
+        )
+    {
         return DepthVerdict::Reported {
             peak_mm,
             evidence: evidence_with(ChiploadStatistic::PeakInRange),
-            confidence: Confidence::Approximate(format!(
-                "peak engaged depth {peak_mm:.3} mm; a finishing pass has no \
-                 axial cap, and the deflection gate is its limit"
-            )),
+            confidence: Confidence::Approximate(
+                "no sample states a feed: the force budget has no cut to set a depth at".to_owned(),
+            ),
         };
+    }
+    // A sample with no arc gives its width as a share of the diameter
+    // (`Engagement::radial_woc_fraction`), at the engaged diameter of its
+    // depth; with neither, a full slot.
+    let ae_mm = cut_sample.map_or(0.0, |s| {
+        crate::feeds::engagement::Engagement::from_sample(s, tool)
+            .map(|e| e.ae_mm())
+            .or_else(|| {
+                let w = s.engagement.radial_woc_fraction;
+                (w.is_finite() && w > 0.0)
+                    .then(|| w * 2.0 * tool.engagement_radius(s.axial_engagement_mm.max(0.0)))
+            })
+            .unwrap_or_else(|| 2.0 * tool.engagement_radius(peak_mm.max(0.0)))
+    });
+    let fz_mm = cut_sample.map_or(0.0, |s| {
+        let z = f64::from(s.flute_count.max(1));
+        let rpm = f64::from(s.spindle_rpm);
+        if rpm > 0.0 {
+            s.feed_rate_mm_min / (rpm * z)
+        } else {
+            0.0
+        }
+    });
+    let outcome = crate::feeds::force_budget::rigidity_depth_cap(
+        machine,
+        spec.feeds_family,
+        spec.feeds_pass_role,
+        tool,
+        material,
+        ae_mm,
+        fz_mm,
+        peak_mm,
+    );
+    let bound = match outcome {
+        Some(crate::feeds::force_budget::RigidityCapOutcome::Cap(c)) => c,
+        Some(crate::feeds::force_budget::RigidityCapOutcome::NoLimitBelowFlute) => {
+            return DepthVerdict::Reported {
+                peak_mm,
+                evidence: evidence_with(ChiploadStatistic::PeakInRange),
+                confidence: Confidence::Approximate(format!(
+                    "peak engaged depth {peak_mm:.3} mm; {}",
+                    crate::feeds::force_budget::NO_BUDGET_LIMIT_BELOW_THE_FLUTE
+                )),
+            };
+        }
+        Some(crate::feeds::force_budget::RigidityCapOutcome::Unmodelled(reason)) => {
+            tracing::debug!(
+                reason,
+                "depth gate refuses: the force budget cannot set a depth"
+            );
+            return DepthVerdict::Unmodeled {
+                reason: UnmodeledReason::NotImplemented(reason.to_owned()),
+            };
+        }
+        None => {
+            // Feeds matrix R2 (2026-09-23): a finishing or semi-finishing
+            // pass has no axial cap. The drill family also has none, but the
+            // drill arm above already took it. The gate reports the peak and
+            // judges nothing; the deflection gate is the limit on this pass.
+            tracing::debug!(
+                verdict = "Reported",
+                peak_mm,
+                "depth gate reports: this pass role carries no axial cap"
+            );
+            return DepthVerdict::Reported {
+                peak_mm,
+                evidence: evidence_with(ChiploadStatistic::PeakInRange),
+                confidence: Confidence::Approximate(format!(
+                    "peak engaged depth {peak_mm:.3} mm; a finishing pass has no \
+                     axial cap, and the deflection gate is its limit"
+                )),
+            };
+        }
     };
     let cap_mm = bound.cap_mm();
     if !cap_mm.is_finite() || cap_mm <= 0.0 {
         tracing::debug!(
             reason = "NotImplemented",
-            diameter = cap_diameter_mm,
-            factor = bound.factor,
+            cap_mm,
             "depth gate refuses: the rigidity cap is not a usable depth"
         );
         return DepthVerdict::Unmodeled {
@@ -271,18 +355,31 @@ pub fn evaluate(ctx: &super::ToolpathLoadContext<'_>, env: &super::GateEnv<'_>) 
     // confidence is `Approximate` on both decided arms because the
     // bound is a rule of thumb, and that is a property of the bound,
     // not of this cut.
-    let confidence = Confidence::Approximate(format!(
-        "peak engaged depth {peak_mm:.3} mm against the machine rigidity \
-         factor {:.2} times the engaged diameter {:.2} mm at that depth",
-        bound.factor, bound.diameter_mm
-    ));
+    let confidence = Confidence::Approximate(match bound {
+        crate::machine::RigidityDepthCap::Factor {
+            factor,
+            diameter_mm,
+        } => format!(
+            "peak engaged depth {peak_mm:.3} mm against the machine rigidity \
+             factor {factor:.2} times the engaged diameter {diameter_mm:.2} mm at that depth"
+        ),
+        crate::machine::RigidityDepthCap::ForceBudget {
+            budget_n,
+            ae_mm,
+            fz_mm,
+            ..
+        } => format!(
+            "peak engaged depth {peak_mm:.3} mm against the depth where the peak cutting \
+             force at width {ae_mm:.2} mm and {fz_mm:.4} mm/tooth meets the machine force \
+             budget {budget_n:.1} N"
+        ),
+    });
 
     if exceeds {
         tracing::warn!(
             verdict = "Exceeds",
             peak_mm,
             cap_mm,
-            factor = bound.factor,
             "depth gate Exceeds: the measured depth is past the machine rigidity cap"
         );
         return DepthVerdict::Exceeds {
@@ -366,7 +463,11 @@ mod tests {
     fn run(op: OperationType, t: Option<&SimulationCutTrace>) -> DepthVerdict {
         let tool = tool();
         let material = Material::default();
-        let machine = MachineProfile::shapeoko_makita();
+        // P13c: the mechanics arms run the factor rule (the Adaptive family)
+        // at a fixture factor of 0.25, so the cap stays 0.25 x 6 = 1.5 mm;
+        // the force-budget arm is `the_pocket_reads_the_force_budget_p13c`.
+        let mut machine = MachineProfile::shapeoko_makita();
+        machine.rigidity.adaptive_doc_factor = 0.25;
         let tolerance = ToleranceBands::default();
         let ctx = ToolpathLoadContext {
             toolpath_id: TP,
@@ -388,7 +489,50 @@ mod tests {
         evaluate(&ctx, &env)
     }
 
-    /// `doc_roughing_factor` 0.25 × Ø6 = 1.5 mm. A 1.2 mm peak is under
+    /// P13c (O1): a roughing Pocket reads the force budget at the peak
+    /// sample's cut: the arc pi/2 gives ae = r = 3 mm, the chip is the
+    /// sample feed / (rpm x Z). The bound is the one producer's number.
+    #[test]
+    fn the_pocket_reads_the_force_budget_p13c() {
+        let mut s0 = sample(0, 0.8, true);
+        s0.arc_engagement_radians = Some(std::f64::consts::FRAC_PI_2);
+        let t = trace(vec![s0]);
+        let mut machine = MachineProfile::shapeoko_makita();
+        machine.rigidity.adaptive_doc_factor = 0.25;
+        let want = crate::feeds::force_budget::rigidity_depth_cap(
+            &machine,
+            crate::feeds::OperationFamily::Pocket,
+            crate::feeds::PassRole::Roughing,
+            &tool(),
+            &Material::default(),
+            3.0,
+            1500.0 / (18_000.0 * 2.0),
+            0.8,
+        );
+        match (run(OperationType::Pocket, Some(&t)), want) {
+            (
+                DepthVerdict::Within { bound, .. } | DepthVerdict::Exceeds { bound, .. },
+                Some(crate::feeds::force_budget::RigidityCapOutcome::Cap(c)),
+            ) => {
+                assert!(matches!(
+                    bound,
+                    crate::machine::RigidityDepthCap::ForceBudget { .. }
+                ));
+                // The sample arc gives r (1 - cos pi/2), equal to 3 mm to one ulp.
+                assert!(
+                    (bound.cap_mm() - c.cap_mm()).abs() < 1e-9,
+                    "{bound:?} {c:?}"
+                );
+            }
+            (
+                DepthVerdict::Reported { .. },
+                Some(crate::feeds::force_budget::RigidityCapOutcome::NoLimitBelowFlute),
+            ) => {}
+            other => panic!("the Pocket gate and the producer disagree: {other:?}"),
+        }
+    }
+
+    /// The fixture factor 0.25 × Ø6 = 1.5 mm. A 1.2 mm peak is under
     /// it, and the peak is the MAXIMUM of the three depths.
     #[test]
     #[expect(
@@ -401,7 +545,7 @@ mod tests {
             sample(1, 1.2, true),
             sample(2, 0.9, true),
         ]);
-        match run(OperationType::Pocket, Some(&t)) {
+        match run(OperationType::Adaptive, Some(&t)) {
             DepthVerdict::Within {
                 peak_mm,
                 bound,
@@ -423,7 +567,7 @@ mod tests {
     )]
     fn a_depth_past_the_cap_exceeds() {
         let t = trace(vec![sample(0, 0.5, true), sample(1, 2.4, true)]);
-        match run(OperationType::Pocket, Some(&t)) {
+        match run(OperationType::Adaptive, Some(&t)) {
             DepthVerdict::Exceeds { peak_mm, bound, .. } => {
                 assert!(peak_mm > bound.cap_mm());
             }
@@ -437,7 +581,7 @@ mod tests {
     fn a_cut_exactly_on_the_cap_is_within() {
         let t = trace(vec![sample(0, 1.5, true)]);
         assert!(matches!(
-            run(OperationType::Pocket, Some(&t)),
+            run(OperationType::Adaptive, Some(&t)),
             DepthVerdict::Within { .. }
         ));
     }
@@ -449,7 +593,7 @@ mod tests {
     )]
     fn a_trace_with_no_cutting_samples_is_vacuous() {
         let t = trace(vec![sample(0, 0.0, false)]);
-        match run(OperationType::Pocket, Some(&t)) {
+        match run(OperationType::Adaptive, Some(&t)) {
             DepthVerdict::Within {
                 peak_mm, evidence, ..
             } => {
@@ -478,7 +622,7 @@ mod tests {
                 ..sample(1, 9.0, true)
             },
         ]);
-        match run(OperationType::Pocket, Some(&t)) {
+        match run(OperationType::Adaptive, Some(&t)) {
             DepthVerdict::Within {
                 peak_mm, evidence, ..
             } => {
@@ -493,7 +637,7 @@ mod tests {
     #[test]
     fn no_trace_asks_for_a_simulation() {
         assert!(matches!(
-            run(OperationType::Pocket, None),
+            run(OperationType::Adaptive, None),
             DepthVerdict::Unmodeled {
                 reason: UnmodeledReason::SimulationRequired
             }
@@ -581,7 +725,7 @@ mod tests {
     fn f32_noise_at_the_cap_is_within() {
         let t = trace(vec![sample(0, 1.5 + 7.6e-7, true)]);
         assert!(matches!(
-            run(OperationType::Pocket, Some(&t)),
+            run(OperationType::Adaptive, Some(&t)),
             DepthVerdict::Within { .. }
         ));
     }
@@ -592,7 +736,7 @@ mod tests {
     fn a_depth_past_the_dexel_resolution_exceeds() {
         let t = trace(vec![sample(0, 1.5 + 2.0 * DEXEL_DEPTH_RESOLUTION_MM, true)]);
         assert!(matches!(
-            run(OperationType::Pocket, Some(&t)),
+            run(OperationType::Adaptive, Some(&t)),
             DepthVerdict::Exceeds { .. }
         ));
     }

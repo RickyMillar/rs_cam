@@ -19,12 +19,13 @@
 //! ## The fixture
 //!
 //! A Ø12 two-flute flat end mill, a roughing pocket in generic hardwood, on
-//! the shipped `Generic Wood Router` preset. Its `doc_roughing_factor` is
-//! 0.20, so the rigidity cap on this tool is 2.400 mm. The operator asks for
+//! the shipped `Generic Wood Router` preset. Its old `doc_roughing_factor`
+//! was 0.20, so the rigidity cap on this tool was 2.400 mm (P13c replaced it
+//! with the force budget; the fixture keeps 2.400 mm as a stated depth). The operator asks for
 //! 36.000 mm — 3 × D — and the clamp takes it to the cap, a 15× reduction.
 //!
 //! A Pocket is deliberately NOT an Adaptive-family operation, so the clamp
-//! reads `doc_roughing_factor` rather than `adaptive_doc_factor`. The stepover
+//! read `doc_roughing_factor` rather than `adaptive_doc_factor`. The stepover
 //! is 4.000 mm (0.333 × D), under the 0.85 × D slotting threshold, so
 //! `SlottingDetected` does not cap the depth before Step 6. Both `ap` and `ae`
 //! are pinned in the `FeedsInput`, so the Step 6 power ladder's geometry rungs
@@ -96,9 +97,9 @@ const FLUTES: u32 = 2;
 /// and its published power at.
 const REQUESTED_DPP_MM: f64 = 36.0;
 
-/// `doc_roughing_factor × D` on the shipped `Generic Wood Router` preset:
-/// 0.20 × 12 = 2.400 mm. What the rigidity clamp leaves, and what the machine
-/// actually cuts.
+/// The depth the machine cuts in this fixture: the pre-P13c rigidity cap
+/// (`doc_roughing_factor` 0.20 × 12 = 2.400 mm, deleted by P13c, ruling
+/// O1). The arms state it as the op's depth, so no machine field is read.
 const RIGIDITY_CAP_MM: f64 = 2.4;
 
 /// 0.333 × D. Under the 0.85 × D slotting threshold (and the profile has no

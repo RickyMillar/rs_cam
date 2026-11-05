@@ -5,7 +5,8 @@
 //! `a_feed_follows_the_depth_through_the_calculator_g_opt5`, red on the
 //! Suggest funnel route before the optimizer stopped using that route. A
 //! 3 mm 2-flute flat end mill in oak, Pocket / roughing, at a depth per pass
-//! of 7.5 mm (2.5 x D, deeper than the 0.25 x D rigidity rule). The
+//! of 7.5 mm (2.5 x D, deeper than the 0.25 x D rigidity rule; P13c: deeper
+//! than the force-budget depth). The
 //! calculator at 7.5 mm gives 2423 mm/min. `apply_speeds_to_op` shipped
 //! 3877.8 mm/min: the funnel wrote the result onto a scratch copy, the
 //! rigidity clamp moved the scratch depth to 0.75 mm, pass 9 re-derived the
@@ -61,8 +62,6 @@ use rs_cam_core::material::Material;
 const DEEP_DPP_MM: f64 = 7.5;
 /// The stepover of the mini project's pocket.
 const STEPOVER_MM: f64 = 0.838;
-/// The rigidity rule for a roughing pocket on the generic router: 0.25 x D.
-const RIGIDITY_CAP_MM: f64 = 0.25 * 3.0;
 
 /// Tool 0 of the mini project: 3 mm, 2 flutes, 30 mm cut length and
 /// stick-out.
@@ -184,6 +183,31 @@ impl Fixture {
         .expect("a flat end mill on a Pocket is a valid pairing");
         applied
     }
+
+    /// The lowest depth ceiling (mm) of the envelope of `op` at its own
+    /// width. P13c (O1): the 0.25 x D rigidity rule (0.75 mm on this tool)
+    /// is gone; this oak (a Janka-only species, no FPL density) has no force
+    /// line, so the force-budget limit abstains and another limit (the
+    /// vendor depth table, the slot step) sets the ceiling.
+    fn rigidity_ceiling(&self, op: &OperationConfig) -> f64 {
+        let env = rs_cam_core::feeds::envelope::SafeEnvelope::for_cut(
+            rs_cam_core::feeds::envelope::EnvelopeInput {
+                operation: op,
+                tool: &self.tool,
+                machine: &self.machine,
+                material: &self.material,
+                lut: embedded_vendor_lut(),
+                spindle_strategy: SpindleStrategy::default(),
+                context: SuggestContext::default(),
+            },
+        )
+        .expect("a pocket envelope");
+        let ae = op.stepover().expect("a pocket carries a stepover");
+        let c = env
+            .ap_ceiling_at(ae)
+            .expect("a roughing pocket carries a depth ceiling");
+        c.0
+    }
 }
 
 /// Arm 1: a result sized at 7.5 mm ships its own feed on an operation that
@@ -238,8 +262,11 @@ fn a_speeds_only_apply_ships_the_calculator_feed_for_the_kept_depth_g_speedsappl
     let all = f.apply_all(&op);
     let all_dpp = all.depth_per_pass().expect("a pocket carries a DPP");
     assert!(
-        all_dpp <= RIGIDITY_CAP_MM + 1e-9,
-        "fixture drift: Apply all no longer lowers the depth ({all_dpp} mm)"
+        all_dpp < DEEP_DPP_MM && all_dpp <= f.rigidity_ceiling(&all) + 1e-9,
+        "fixture drift: Apply all no longer lowers the depth ({all_dpp} mm, ceiling {} mm, \
+         stepover {:?})",
+        f.rigidity_ceiling(&all),
+        all.stepover()
     );
     // Feeds contract P11b (L6): the depth no longer scales the feed (the
     // vendor depth table is an envelope limit), so the feed of the shallower
@@ -301,7 +328,7 @@ fn inside_the_cap_the_speeds_equal_the_combined_apply_g_speedsapply() {
         .depth_per_pass()
         .expect("a pocket carries a DPP");
     assert!(
-        dpp <= RIGIDITY_CAP_MM + 1e-9,
+        dpp <= f.rigidity_ceiling(&at_proposal) + 1e-9,
         "the control must sit inside the rigidity cap: {dpp} mm"
     );
 

@@ -198,6 +198,10 @@ fn classify_suggest(w: &SuggestWarning) -> (&'static str, Class) {
             ("UnsourcedRowsAccepted", Class::NoNumberMoves)
         }
         SuggestWarning::OutsideEnvelope { .. } => ("OutsideEnvelope", Class::NoNumberMoves),
+        // P13c (O3): the computed-width assumptions report a condition.
+        SuggestWarning::ComputedWidthAssumptions => {
+            ("ComputedWidthAssumptions", Class::NoNumberMoves)
+        }
         SuggestWarning::DeflectionBackoffUnmodeled { .. } => {
             ("DeflectionBackoffUnmodeled", Class::NoNumberMoves)
         }
@@ -376,6 +380,7 @@ fn suggest_numbers(w: &SuggestWarning) -> Vec<String> {
         | SuggestWarning::PowerRecheckedAfterRescale { .. }
         | SuggestWarning::CutGeometryFieldNotHeld { .. }
         | SuggestWarning::UnsourcedRowsAccepted { .. }
+        | SuggestWarning::ComputedWidthAssumptions
         | SuggestWarning::OutsideEnvelope { .. }
         | SuggestWarning::PlungeReDerived { .. } => {}
     }
@@ -788,6 +793,7 @@ fn the_ramp_line_names_the_arm_and_the_angle_g_visible() {
             | SuggestWarning::RpmLoweredForFeedCeiling { .. }
             | SuggestWarning::RampFeed { .. }
             | SuggestWarning::UnsourcedRowsAccepted { .. }
+            | SuggestWarning::ComputedWidthAssumptions
             | SuggestWarning::OutsideEnvelope { .. }
             | SuggestWarning::PlungeReDerived { .. } => None,
         })
@@ -797,8 +803,12 @@ fn the_ramp_line_names_the_arm_and_the_angle_g_visible() {
     // Feeds contract P11b (L1): the chip-thinning lift lowers the shipped
     // RPM at the feed cap (arm L), and the chip term is the G6 axial chip
     // x the shipped RPM x Z / tan(theta): 38 162 -> 36 402.88 (measured).
+    // P13c (O3): the op states no stepover, so the calculator reads the
+    // (Pocket, Roughing) width, now the corner-coverage bound 0.854 D (was
+    // 0.35 D); at or above D/2 the lift is 1 and the RPM follows the
+    // ceiling to 15 748 again: 36 402.88 -> 38 162.20 (measured).
     assert!(
-        (ramp.chip_term_mm_min - 36_402.88).abs() < 1.0,
+        (ramp.chip_term_mm_min - 38_162.20).abs() < 1.0,
         "{}",
         ramp.chip_term_mm_min
     );

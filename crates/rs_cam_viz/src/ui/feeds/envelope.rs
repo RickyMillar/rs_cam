@@ -162,6 +162,7 @@ pub const fn short_label(kind: LimitKind) -> &'static str {
         LimitKind::VendorAxial => "Vendor DOC",
         LimitKind::VendorDepthTable => "Depth table",
         LimitKind::Rigidity => "Rigidity DOC",
+        LimitKind::CornerCoverage => "Corner width",
         LimitKind::Slot => "Slot DOC",
         LimitKind::Power => "Spindle power",
         LimitKind::Deflection => "Deflection",
@@ -261,6 +262,7 @@ const fn is_frame(kind: LimitKind) -> bool {
         LimitKind::VendorAxial
         | LimitKind::VendorDepthTable
         | LimitKind::Rigidity
+        | LimitKind::CornerCoverage
         | LimitKind::Slot
         | LimitKind::Power
         | LimitKind::Deflection
@@ -811,7 +813,7 @@ pub fn draw_envelope(
                 | Radial::SurfaceFollow
                 | Radial::Axial => TITLE_DEPTH,
             };
-            let _ = header(ui, title, None, reason);
+            let _ = header(ui, title, None, reason, &[]);
         }
         return EnvelopeResponse::default();
     };
@@ -834,7 +836,7 @@ pub fn draw_envelope(
         tokens::CAUTION
     };
     let hover = apply_hover(env, &scene, &unsourced);
-    let applied = header(ui, title, Some(chip_color), &hover);
+    let applied = header(ui, title, Some(chip_color), &hover, &env.notes);
     if applied {
         events.push(AppEvent::ApplyFeedsPick {
             toolpath_id,
@@ -886,7 +888,19 @@ fn apply_hover(env: &SafeEnvelope, scene: &EnvelopeScene, unsourced: &[String]) 
 /// The header row: the small-caps title and the ⚡ chip at the right. A
 /// `None` colour draws the chip disabled, with `hover` as the reason.
 /// True when the chip was clicked.
-fn header(ui: &mut egui::Ui, title: &str, chip: Option<egui::Color32>, hover: &str) -> bool {
+///
+/// P13c (ruling O3): the envelope notes (the assumptions of a computed
+/// width, the force-budget floor warning; core `SafeEnvelope::notes`, the
+/// text MCP and the CLI print) sit on this row as one caution: the short
+/// face (`force_budget::note_face`, it fits at 340 points) with the whole
+/// core text on hover, so the warning adds no row.
+fn header(
+    ui: &mut egui::Ui,
+    title: &str,
+    chip: Option<egui::Color32>,
+    hover: &str,
+    notes: &[String],
+) -> bool {
     ui.add_space(tokens::SPACE_2);
     ui.horizontal(|ui| {
         let _ = ui.add(egui::Label::new(small_caps(title)).wrap_mode(egui::TextWrapMode::Truncate));
@@ -902,6 +916,23 @@ fn header(ui: &mut egui::Ui, title: &str, chip: Option<egui::Color32>, hover: &s
             } else {
                 response.on_disabled_hover_text(hover)
             };
+            if let Some(first) = notes.first() {
+                ui.with_layout(egui::Layout::left_to_right(egui::Align::Center), |ui| {
+                    let _ = ui
+                        .add(
+                            egui::Label::new(
+                                egui::RichText::new(format!(
+                                    "⚠ {}",
+                                    rs_cam_core::feeds::force_budget::note_face(first)
+                                ))
+                                .color(tokens::CAUTION)
+                                .size(tokens::SIZE_CAPTION),
+                            )
+                            .wrap_mode(egui::TextWrapMode::Truncate),
+                        )
+                        .on_hover_text(notes.join("\n"));
+                });
+            }
             response.clicked()
         })
         .inner

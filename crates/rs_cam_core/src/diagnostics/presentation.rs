@@ -632,9 +632,9 @@ pub const TABLE: &[(&str, Anchor, &str)] = &[
         "V-bit cone disagrees with its flute",
     ),
     (
-        ids::QUALITY_STEPOVER_OVER_80_PCT,
+        ids::QUALITY_STEPOVER_OVER_CORNER_COVERAGE,
         NOTE,
-        "Wide stepover can leave ridges",
+        "Stepover past the corner coverage",
     ),
     (
         ids::QUALITY_FINISH_STEPOVER_OVER_50_PCT,

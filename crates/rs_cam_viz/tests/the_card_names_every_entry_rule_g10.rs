@@ -226,6 +226,7 @@ fn entry_notes(state: &AppState) -> Vec<EntryNote> {
             | SuggestWarning::CutGeometryFieldNotHeld { .. }
             | SuggestWarning::RpmLoweredForFeedCeiling { .. }
             | SuggestWarning::UnsourcedRowsAccepted { .. }
+            | SuggestWarning::ComputedWidthAssumptions
             | SuggestWarning::OutsideEnvelope { .. }
             | SuggestWarning::PlungeReDerived { .. } => None,
         })
@@ -452,6 +453,7 @@ fn the_mcp_basis_carries_plunge_and_entry_g10() {
             | SuggestWarning::CutGeometryFieldNotHeld { .. }
             | SuggestWarning::RpmLoweredForFeedCeiling { .. }
             | SuggestWarning::UnsourcedRowsAccepted { .. }
+            | SuggestWarning::ComputedWidthAssumptions
             | SuggestWarning::OutsideEnvelope { .. }
             | SuggestWarning::PlungeReDerived { .. } => None,
         })

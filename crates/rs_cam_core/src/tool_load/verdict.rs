@@ -1039,13 +1039,25 @@ pub enum BoundSource {
     /// displacement budget the deflection gate judges against. A fixed
     /// finish-quality figure in MILLIMETRES.
     DeflectionBudget,
-    /// `RigidityProfile::doc_roughing_factor` (or `adaptive_doc_factor`)
+    /// `RigidityProfile::adaptive_doc_factor` (the Adaptive family)
     /// times the engaged diameter at the judged depth
     /// (`feeds::geometry::depth_cap_diameter_mm`). A rule of thumb with
     /// no published source, so it does not gate ([`Self::gates_export`]).
     /// The depth gate (`tool_load::depth`) is its producer. Feeds matrix
     /// R2 (2026-09-23): a finishing pass has no such bound.
     RigidityRuleOfThumb { factor: f64, diameter_mm: f64 },
+    /// P13c (O1): the depth where the peak engaged-edge force at the
+    /// recipe's width and chip meets the machine force budget (the Pocket
+    /// and Profile families). The hobby budget is derived from printed
+    /// hobby slot charts, but the frame it stands in for is not measured,
+    /// so it does not gate either ([`Self::gates_export`]); a P12 item asks
+    /// whether a chart-derived bound may gate.
+    MachineForceBudget {
+        budget_n: f64,
+        ae_mm: f64,
+        fz_mm: f64,
+        depth_mm: f64,
+    },
     /// The drill gates' own envelopes. All three are material-derived:
     /// `chip_welding_threshold`, `per_peck_max_depth_to_diameter` and
     /// the plunge-feed envelope.
@@ -1074,6 +1086,8 @@ impl BoundSource {
             // diameter is the tool's, but the factor is the machine's,
             // and the factor is what makes this bound a rule of thumb.
             BoundSource::RigidityRuleOfThumb { .. } => "machine",
+            // P13c: the budget is a machine value.
+            BoundSource::MachineForceBudget { .. } => "machine",
             BoundSource::DrillEnvelope => "material",
         }
     }
@@ -1124,6 +1138,16 @@ impl BoundSource {
                  with no published source",
                 factor * diameter_mm
             ),
+            BoundSource::MachineForceBudget {
+                budget_n,
+                ae_mm,
+                fz_mm,
+                depth_mm,
+            } => format!(
+                "the depth {depth_mm:.2} mm where the peak cutting force at width \
+                 {ae_mm:.2} mm and {fz_mm:.4} mm/tooth meets the machine force budget \
+                 {budget_n:.1} N; the budget stands in for an unmeasured frame"
+            ),
             BoundSource::DrillEnvelope => {
                 "the material's drilling envelope for this cycle".to_owned()
             }
@@ -1141,7 +1165,10 @@ impl BoundSource {
     /// gate that forgot, and that must fail safe.
     #[must_use]
     pub fn gates_export(&self) -> bool {
-        !matches!(self, BoundSource::RigidityRuleOfThumb { .. })
+        !matches!(
+            self,
+            BoundSource::RigidityRuleOfThumb { .. } | BoundSource::MachineForceBudget { .. }
+        )
     }
 }
 
@@ -2127,7 +2154,7 @@ pub enum DepthVerdict {
     },
     /// **The measured depth, with no bound.** Feeds matrix R2
     /// (2026-09-23). The operation's pass role has no axial cap
-    /// ([`crate::machine::RigidityProfile::depth_cap_mm`] returns `None`
+    /// ([`crate::machine::RigidityProfile::depth_cap_rule`] returns `None`
     /// for a finishing or semi-finishing pass), so the gate reports the
     /// peak and judges nothing. The state is `Within`: a reading with no
     /// bound cannot exceed. The criterion row carries `bound: None`.
@@ -2192,7 +2219,7 @@ impl DepthVerdict {
     pub(crate) fn fixture_within() -> Self {
         DepthVerdict::Within {
             peak_mm: 0.0,
-            bound: crate::machine::RigidityDepthCap {
+            bound: crate::machine::RigidityDepthCap::Factor {
                 factor: 0.25,
                 diameter_mm: 6.0,
             },
@@ -2252,9 +2279,26 @@ impl DepthVerdict {
             display_peak: peak,
             unit: CriterionKind::DepthOfCut.unit(),
             bound: bound.map(|b| b.cap_mm()),
-            bound_source: bound.map(|b| BoundSource::RigidityRuleOfThumb {
-                factor: b.factor,
-                diameter_mm: b.diameter_mm,
+            bound_source: bound.map(|b| match b {
+                crate::machine::RigidityDepthCap::Factor {
+                    factor,
+                    diameter_mm,
+                } => BoundSource::RigidityRuleOfThumb {
+                    factor,
+                    diameter_mm,
+                },
+                crate::machine::RigidityDepthCap::ForceBudget {
+                    budget_n,
+                    ae_mm,
+                    fz_mm,
+                    depth_mm,
+                    ..
+                } => BoundSource::MachineForceBudget {
+                    budget_n,
+                    ae_mm,
+                    fz_mm,
+                    depth_mm,
+                },
             }),
             exceeded: (state == LoadState::Exceeds).then(ExceededCriterion::depth_of_cut),
         }

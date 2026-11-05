@@ -1080,6 +1080,12 @@ fn suggest_line(warning: &SuggestWarning) -> Option<(String, bool)> {
         SuggestWarning::UnsourcedRowsAccepted { rows } => {
             Some((format!("No source: {}", rows.join(", ")), false))
         }
+        // P13c (O3): the computed width states its assumptions; the text
+        // is the one core line MCP and the CLI print.
+        SuggestWarning::ComputedWidthAssumptions => Some((
+            rs_cam_core::feeds::force_budget::computed_width_assumptions_line(),
+            true,
+        )),
         // K2b, K6: the operator's point is outside the safe envelope.
         SuggestWarning::OutsideEnvelope {
             binding, margin, ..
@@ -1107,6 +1113,21 @@ pub(crate) fn suggest_rows(warnings: &[SuggestWarning]) -> Vec<Placement> {
         let Some((line, is_caution)) = suggest_line(warning) else {
             continue;
         };
+        // P13c (O3): the visible warning of a computed width sits on the
+        // envelope header row (`envelope::header`, the core envelope notes);
+        // here it is a caution stage inside `Details`, the same core line.
+        // P13c: the computed-width assumptions take the short core face (it
+        // fits at 340 points) with the whole core line on hover.
+        if matches!(warning, SuggestWarning::ComputedWidthAssumptions) {
+            out.push(Placement::Detail(
+                stage_record(
+                    rs_cam_core::feeds::force_budget::COMPUTED_WIDTH_ASSUMPTIONS_FACE.to_owned(),
+                    is_caution,
+                )
+                .hover(line),
+            ));
+            continue;
+        }
         {
             let mut row = stage_record(line, is_caution);
             if let SuggestWarning::RampFeed { record, .. } = warning {

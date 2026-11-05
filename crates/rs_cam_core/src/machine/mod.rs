@@ -62,17 +62,40 @@ impl Default for ChipLoadFormula {
 /// `woc_roughing_factor`, `woc_roughing_max_mm` and `woc_finishing_mm` are
 /// deleted (no reader; break; review item M11). `slot_doc_factor`
 /// holds the slot depth cap that was the typed constant `SLOTTING_DOC_CAP`.
-#[derive(Debug, Clone, Copy, PartialEq, Serialize, Deserialize)]
-#[serde(deny_unknown_fields)]
+///
+/// Feeds contract P13c (ruling O1): `force_budget_n` replaces the typed
+/// `doc_roughing_factor` (0.25 D) and the unread `doc_finishing_factor`
+/// (break). The roughing depth of the Pocket and Profile families is the
+/// depth where the peak engaged-edge force meets the budget
+/// (`feeds::force_budget::depth_at_budget`). A file reads through
+/// [`RigidityProfileWire`] inside [`MachineProfileWire`]: the class rule
+/// gives a hobby table with no budget the derived hobby budget.
+#[derive(Debug, Clone, Copy, PartialEq, Serialize)]
 pub struct RigidityProfile {
-    pub doc_roughing_factor: f64,
-    pub doc_finishing_factor: f64,
     pub adaptive_doc_factor: f64,
     pub adaptive_woc_factor: f64,
     /// The depth cap of a slot (`ae` above the slot threshold), in
     /// diameters (feeds `slot_rule`, calculate Step 4b and the envelope
     /// `Slot` limit).
     pub slot_doc_factor: f64,
+    /// P13c (O1): the lateral force budget (N), a stand-in for the frame
+    /// stiffness (frame deflection = F / k_frame). The hobby grade default
+    /// is the largest peak force of the printed hobby full-slot cuts
+    /// (`feeds::force_budget::hobby_budget`).
+    pub force_budget_n: f64,
+}
+
+/// The file form of a [`RigidityProfile`] (P13c): `force_budget_n` may be
+/// absent; [`MachineProfile::try_from`] applies the class rule (hobby: the
+/// derived hobby budget; industrial: refuse).
+#[derive(Debug, Clone, Copy, PartialEq, Deserialize)]
+#[serde(deny_unknown_fields)]
+pub struct RigidityProfileWire {
+    adaptive_doc_factor: f64,
+    adaptive_woc_factor: f64,
+    slot_doc_factor: f64,
+    #[serde(default)]
+    force_budget_n: Option<f64>,
 }
 
 /// One named rigidity value, for a surface that lists them (the GUI
@@ -83,7 +106,7 @@ pub struct RigidityValue {
     pub field: &'static str,
     /// The value.
     pub value: f64,
-    /// The unit: `"x D"`, a factor of the diameter.
+    /// The unit: `"x D"`, a factor of the diameter, or `"N"`.
     pub unit: &'static str,
 }
 
@@ -91,19 +114,9 @@ impl RigidityProfile {
     /// Each value with its field name and unit (P11c: the GUI machine
     /// panel lists them, with the class beside each value).
     #[must_use]
-    pub const fn values(&self) -> [RigidityValue; 5] {
+    pub const fn values(&self) -> [RigidityValue; 4] {
         const D: &str = "x D";
         [
-            RigidityValue {
-                field: "doc_roughing_factor",
-                value: self.doc_roughing_factor,
-                unit: D,
-            },
-            RigidityValue {
-                field: "doc_finishing_factor",
-                value: self.doc_finishing_factor,
-                unit: D,
-            },
             RigidityValue {
                 field: "adaptive_doc_factor",
                 value: self.adaptive_doc_factor,
@@ -118,6 +131,11 @@ impl RigidityProfile {
                 field: "slot_doc_factor",
                 value: self.slot_doc_factor,
                 unit: D,
+            },
+            RigidityValue {
+                field: "force_budget_n",
+                value: self.force_budget_n,
+                unit: "N",
             },
         ]
     }
@@ -173,7 +191,9 @@ impl RigidityBasis {
     #[must_use]
     pub const fn text(self) -> &'static str {
         match self {
-            Self::HobbyDefault => "hobby grade (Shapeoko port), Unsourced",
+            Self::HobbyDefault => {
+                "hobby grade (Shapeoko port, Unsourced; force budget from the hobby slot charts)"
+            }
             Self::HobbyStated => "hobby grade, stated by the machine file",
             Self::IndustrialStated => "industrial, stated by the machine file",
         }
@@ -201,97 +221,96 @@ impl RigidityBasis {
 }
 
 /// **The axial depth cap one rigidity profile implies for one
-/// operation family, and the factor behind it.** S3 (2026-09-18).
+/// operation family.** S3 (2026-09-18), P13c (O1).
 ///
-/// The cap is a RULE OF THUMB with no published source. It is the only
-/// axial bound this crate has, and it sets the depth on nearly every
-/// recipe, so it is stated as a value with its factor rather than
-/// recomputed at each reader. [`RigidityProfile::depth_cap_mm`] is the
-/// one producer.
-///
-/// The cap is not stored: [`Self::cap_mm`] multiplies the two fields it
-/// carries, so the bound and the provenance beside it cannot disagree.
+/// The cap carries its inputs, so the bound and the provenance beside it
+/// cannot disagree ([`Self::cap_mm`]). `feeds::force_budget::rigidity_depth_cap`
+/// is the one producer; the envelope `Rigidity` limit and the post-sim
+/// depth gate read it.
 #[derive(Debug, Clone, Copy, PartialEq, Serialize, Deserialize)]
-pub struct RigidityDepthCap {
-    /// The profile's own factor for this family: `doc_roughing_factor`
-    /// or `adaptive_doc_factor`.
-    pub factor: f64,
-    /// The diameter the factor multiplies, in mm: the engaged diameter
-    /// at the judged depth, from
-    /// `crate::feeds::geometry::depth_cap_diameter_mm`. On a flat, ball,
-    /// bull or V-bit tool that is the nominal diameter. On a tapered
-    /// ball it is the cone diameter at the depth, capped at the shank.
-    pub diameter_mm: f64,
+#[serde(tag = "kind", rename_all = "snake_case")]
+pub enum RigidityDepthCap {
+    /// The Adaptive family: `adaptive_doc_factor x diameter_mm`, a rule of
+    /// thumb with no published source. `diameter_mm` is the engaged
+    /// diameter at the judged depth (`feeds::geometry::depth_cap_diameter_mm`).
+    Factor {
+        /// The profile's `adaptive_doc_factor`.
+        factor: f64,
+        /// The diameter the factor multiplies (mm).
+        diameter_mm: f64,
+    },
+    /// The Pocket and Profile families (P13c, O1): the shallowest depth
+    /// where the peak engaged-edge force at `ae_mm` and `fz_mm` meets
+    /// `budget_n`.
+    ForceBudget {
+        /// The machine force budget (N).
+        budget_n: f64,
+        /// The width the depth is solved at (mm).
+        ae_mm: f64,
+        /// The advance per tooth the depth is solved at (mm).
+        fz_mm: f64,
+        /// The solved depth (mm), or the minimum depth when `below_floor`.
+        depth_mm: f64,
+        /// The peak at the minimum depth is already over the budget: the
+        /// minimum depth ships with a warning (Q6).
+        below_floor: bool,
+    },
 }
 
 impl RigidityDepthCap {
-    /// The cap itself, in mm: `factor × diameter_mm`.
+    /// The cap itself, in mm.
     #[must_use]
     pub fn cap_mm(&self) -> f64 {
-        self.factor * self.diameter_mm
+        match *self {
+            Self::Factor {
+                factor,
+                diameter_mm,
+            } => factor * diameter_mm,
+            Self::ForceBudget { depth_mm, .. } => depth_mm,
+        }
     }
 }
 
+/// The rule of the rigidity depth cap of one operation family
+/// ([`RigidityProfile::depth_cap_rule`]).
+#[derive(Debug, Clone, Copy, PartialEq)]
+pub enum DepthCapRule {
+    /// `factor x D` (the Adaptive family).
+    Factor(f64),
+    /// The force budget (N) (every other roughing family).
+    ForceBudget(f64),
+}
+
 impl RigidityProfile {
-    /// **The axial depth cap this profile implies for one operation
-    /// family, and the factor behind it.** S3 (2026-09-18).
+    /// **The rule of the axial depth cap for one operation family.** S3
+    /// (2026-09-18), P13c (O1).
     ///
     /// `None` for an operation with no axial cap:
     ///
-    /// - [`OperationFamily::Drill`](crate::feeds::OperationFamily::Drill): a drill cycle is Z-only, so there
-    ///   is no radial engagement and no axial rule of thumb to judge it
-    ///   by. A drill operation also carries no `depth_per_pass`, so the
-    ///   Suggest clamp never reaches this arm.
+    /// - [`OperationFamily::Drill`](crate::feeds::OperationFamily::Drill): a drill cycle is Z-only.
     /// - A `SemiFinish` or `Finish` pass outside the adaptive family.
     ///   Feeds matrix R2 (2026-09-23): no vendor publishes an axial
-    ///   finishing cap as a fraction of D for wood (EVIDENCE 5.1-3,
-    ///   5.1-12), and the operator ruled for the most flexibility. The
-    ///   depth of a finishing pass is reported, and the deflection
-    ///   gate is its limit. `doc_finishing_factor` stays on the profile
-    ///   but no cap reads it.
+    ///   finishing cap for wood; the deflection gate is its limit.
     ///
-    /// The factor follows the family first and the pass role second,
-    /// which is the order `feeds::suggest::invariants::clamp_dpp_to_rigidity`
-    /// already used: an adaptive pass is a deep, narrow strategy whose
-    /// axial ceiling is deliberately far above the conventional one, so
-    /// the family decides before the role does.
-    ///
-    /// | Family / role | Factor |
+    /// | Family / role | Rule |
     /// |---|---|
     /// | `Drill` | none |
-    /// | `Adaptive` | `adaptive_doc_factor` |
-    /// | any other, `Roughing` | `doc_roughing_factor` |
+    /// | `Adaptive` | `adaptive_doc_factor` x D (kept in P13c; the lead rules it next) |
+    /// | any other, `Roughing` | the force budget `force_budget_n` |
     /// | any other, `SemiFinish` or `Finish` | none (R2) |
-    ///
-    /// **This is the one producer of the cap.** The Suggest clamp calls
-    /// it for its roughing branch and the post-simulation depth
-    /// criterion (`tool_load::depth`) calls it for the bound it judges
-    /// against, so the number the operator's recipe was lowered to and
-    /// the number the row draws against are the same number. Both
-    /// callers pass `diameter_mm` from the one function
-    /// `crate::feeds::geometry::depth_cap_diameter_mm` at their own
-    /// depth (the shipped depth and the measured peak).
     #[must_use]
-    pub fn depth_cap_mm(
+    pub fn depth_cap_rule(
         &self,
         family: crate::feeds::OperationFamily,
         pass_role: crate::feeds::PassRole,
-        diameter_mm: f64,
-    ) -> Option<RigidityDepthCap> {
+    ) -> Option<DepthCapRule> {
         use crate::feeds::{OperationFamily, PassRole};
-        let factor = match (family, pass_role) {
-            (OperationFamily::Drill, _) => return None,
-            (OperationFamily::Adaptive, _) => self.adaptive_doc_factor,
-            (_, PassRole::Roughing) => self.doc_roughing_factor,
-            // Feeds matrix R2 (2026-09-23): a finishing or semi-finishing
-            // pass has no axial ceiling. Its depth is reported, and the
-            // deflection gate decides.
-            (_, PassRole::SemiFinish | PassRole::Finish) => return None,
-        };
-        Some(RigidityDepthCap {
-            factor,
-            diameter_mm,
-        })
+        match (family, pass_role) {
+            (OperationFamily::Drill, _) => None,
+            (OperationFamily::Adaptive, _) => Some(DepthCapRule::Factor(self.adaptive_doc_factor)),
+            (_, PassRole::Roughing) => Some(DepthCapRule::ForceBudget(self.force_budget_n)),
+            (_, PassRole::SemiFinish | PassRole::Finish) => None,
+        }
     }
 }
 
@@ -304,17 +323,18 @@ impl RigidityProfile {
 /// 172d6de60); no printed source is in the repo, so each value is
 /// Unsourced ([`RigidityBasis::HobbyDefault`]). `slot_doc_factor` is the
 /// value of the deleted constant `SLOTTING_DOC_CAP` (0.25 D; "no comment and
-/// no record in the repo"). `generic_wood_router` and the two Shapeoko
-/// presets read this set; a hobby machine table with no `[rigidity]` block
-/// reads it too.
+/// no record in the repo"). P13c (O1): `force_budget_n` is derived, not
+/// ported: the largest peak force of the printed hobby full-slot cuts
+/// (`feeds::force_budget::hobby_budget`, F201 Cited). `generic_wood_router`
+/// and the two Shapeoko presets read this set; a hobby machine table with
+/// no `[rigidity]` block reads it too.
 impl Default for RigidityProfile {
     fn default() -> Self {
         Self {
-            doc_roughing_factor: 0.25,
-            doc_finishing_factor: 0.10,
             adaptive_doc_factor: 2.0,
             adaptive_woc_factor: 0.25,
             slot_doc_factor: 0.25,
+            force_budget_n: crate::feeds::force_budget::hobby_budget().force_n,
         }
     }
 }
@@ -442,7 +462,7 @@ pub struct MachineProfileWire {
     max_shank_mm: f64,
     class: MachineClass,
     #[serde(default)]
-    rigidity: Option<RigidityProfile>,
+    rigidity: Option<RigidityProfileWire>,
     #[serde(default)]
     kinematics: Option<MachineKinematics>,
     #[serde(default)]
@@ -453,16 +473,33 @@ pub struct MachineProfileWire {
 
 /// The refusal of an industrial machine table with no `[rigidity]` block.
 pub const INDUSTRIAL_NEEDS_RIGIDITY: &str = "machine class `industrial` has no default rigidity: \
-     state a [rigidity] block (doc_roughing_factor, doc_finishing_factor, adaptive_doc_factor, \
-     adaptive_woc_factor, slot_doc_factor), or set \
+     state a [rigidity] block (adaptive_doc_factor, adaptive_woc_factor, slot_doc_factor, \
+     force_budget_n), or set \
      class = \"hobby\" to use the hobby grade default (Shapeoko port, Unsourced)";
+
+/// P13c (O1): the refusal of an industrial `[rigidity]` block with no
+/// `force_budget_n`. An industrial machine has no default budget.
+pub const INDUSTRIAL_NEEDS_FORCE_BUDGET: &str = "machine class `industrial` has no default \
+     force budget: state force_budget_n (N) in the [rigidity] block, or set class = \"hobby\" \
+     to use the hobby budget (derived from the Sienci and Carbide 3D hobby slot charts)";
 
 impl TryFrom<MachineProfileWire> for MachineProfile {
     type Error = &'static str;
 
     fn try_from(w: MachineProfileWire) -> Result<Self, Self::Error> {
         let rigidity = match (w.class, w.rigidity) {
-            (_, Some(r)) => r,
+            (class, Some(r)) => RigidityProfile {
+                adaptive_doc_factor: r.adaptive_doc_factor,
+                adaptive_woc_factor: r.adaptive_woc_factor,
+                slot_doc_factor: r.slot_doc_factor,
+                force_budget_n: match (class, r.force_budget_n) {
+                    (_, Some(n)) => n,
+                    (MachineClass::Hobby, None) => {
+                        crate::feeds::force_budget::hobby_budget().force_n
+                    }
+                    (MachineClass::Industrial, None) => return Err(INDUSTRIAL_NEEDS_FORCE_BUDGET),
+                },
+            },
             (MachineClass::Hobby, None) => RigidityProfile::default(),
             (MachineClass::Industrial, None) => return Err(INDUSTRIAL_NEEDS_RIGIDITY),
         };

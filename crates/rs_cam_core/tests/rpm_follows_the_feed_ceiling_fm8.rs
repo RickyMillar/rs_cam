@@ -327,6 +327,7 @@ fn suggest_ships_the_lowered_rpm_with_a_rationale_row_fm8() {
             | SuggestWarning::CutGeometryFieldNotHeld { .. }
             | SuggestWarning::RampFeed { .. }
             | SuggestWarning::UnsourcedRowsAccepted { .. }
+            | SuggestWarning::ComputedWidthAssumptions
             | SuggestWarning::OutsideEnvelope { .. }
             | SuggestWarning::PlungeReDerived { .. } => None,
         })

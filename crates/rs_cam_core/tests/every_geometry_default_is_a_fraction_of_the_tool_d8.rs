@@ -13,6 +13,9 @@
 //!    `k x D` of its F201 row; a radial field is the width the calculator
 //!    reads on an unstated axis (`feeds::default_radial_width`, after the
 //!    tool, flute, material and machine adjustments: lead gate A).
+//!    P13c (rulings O1, O3, O4): the Face, Pocket, Zigzag and Profile rows
+//!    read the envelope proposal (`ToolRule::EnvelopeProposal`); the draft
+//!    holds the rule's own value, with no ratio claim.
 //! 3. A scallop field on a ball or tapered-ball tool with a scallop height
 //!    h: the value is the chord `2 sqrt(2 R h - h^2)`, R = D / 2.
 //! 4. The draft stamps each value with the stamp of its rule.
@@ -107,6 +110,7 @@ fn chord(r: f64, h: f64) -> f64 {
 fn every_geometry_default_is_a_fraction_of_the_tool_d8() {
     let d = 6.0;
     let mut checked_fraction = 0_usize;
+    let mut checked_proposal = 0_usize;
     let mut checked_chord = 0_usize;
     let mut failures = Vec::new();
     for &op in OperationType::ALL {
@@ -166,7 +170,10 @@ fn every_geometry_default_is_a_fraction_of_the_tool_d8() {
                     failures.push(format!("{what}: unset with a tool"));
                     continue;
                 };
-                let derived = rule.derive(&at_d, ctx);
+                let Some(derived) = rule.derive(&at_d, ctx) else {
+                    failures.push(format!("{what}: the rule gives no value"));
+                    continue;
+                };
                 let slot = geometry_default::stamp_slot(&at_d, rule.field);
                 if stamps.get(slot) != Some(&derived.stamp) {
                     failures.push(format!("{what}: stamp {:?}", stamps.get(slot)));
@@ -186,6 +193,16 @@ fn every_geometry_default_is_a_fraction_of_the_tool_d8() {
                 }
                 let k = match rule.rule {
                     ToolRule::FractionOfD(k) | ToolRule::ScallopChordElse(k) => k,
+                    // P13c (O1, O3, O4): the envelope proposal is not a
+                    // fraction of D (the force budget is not linear in D);
+                    // the draft holds the rule's own value.
+                    ToolRule::EnvelopeProposal(_) => {
+                        if (a - derived.value).abs() > 1e-9 {
+                            failures.push(format!("{what}: {a} != the proposal {}", derived.value));
+                        }
+                        checked_proposal += 1;
+                        continue;
+                    }
                 };
                 // A radial rule is the calculator's own width (gate A); an
                 // axial rule is k x D of its row.
@@ -225,4 +242,5 @@ fn every_geometry_default_is_a_fraction_of_the_tool_d8() {
     // Non-vacuity: both rule forms ran.
     assert!(checked_fraction > 40, "fraction cases: {checked_fraction}");
     assert!(checked_chord >= 2, "chord cases: {checked_chord}");
+    assert!(checked_proposal >= 4, "proposal cases: {checked_proposal}");
 }

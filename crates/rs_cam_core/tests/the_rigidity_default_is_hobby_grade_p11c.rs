@@ -33,7 +33,8 @@ use rs_cam_core::compute::tool_config::{ToolConfig, ToolId, ToolType};
 use rs_cam_core::machine::{MachineClass, MachineProfile, RigidityBasis, RigidityProfile};
 use rs_cam_core::session::{AddToolArgs, AddToolpathArgs, Command, DraftRequest, ProjectSession};
 
-const HOBBY_TEXT: &str = "hobby grade (Shapeoko port), Unsourced";
+const HOBBY_TEXT: &str =
+    "hobby grade (Shapeoko port, Unsourced; force budget from the hobby slot charts)";
 
 #[test]
 fn every_built_in_machine_holds_the_one_hobby_default_p11c() {
@@ -54,7 +55,7 @@ fn every_built_in_machine_holds_the_one_hobby_default_p11c() {
 #[test]
 fn a_stated_rigidity_names_its_class_and_the_file_p11c() {
     let mut m = MachineProfile::default();
-    m.rigidity.doc_roughing_factor *= 0.5;
+    m.rigidity.force_budget_n *= 0.5;
     assert_eq!(m.rigidity_basis(), RigidityBasis::HobbyStated);
     assert!(m.rigidity_basis().text().contains("hobby grade"));
     m.class = MachineClass::Industrial;

@@ -147,10 +147,34 @@ fn the_envelope_plot_marks_the_operator_and_the_proposal_k2b() {
     // The operator's point outside: a CAUTION dot, and the proposal is a
     // third mark at its own place
     // (the fixture Pocket itself). The edge that Now crosses is CAUTION.
-    let (fixture, _) = envelope_for(OperationType::Pocket).expect("the Pocket is backed");
+    // P13c (O1): the rigidity cap is the force-budget depth, so the deep
+    // point states 1.25 x the lowest ceiling at its width (it stated 2.0
+    // against the 1.5 mm hobby cap).
+    // The point is past the slot step, a drawn limit (the lowest ceiling at
+    // the fixture width is the flute guard, the frame), at a width between
+    // the slot threshold and the corner-coverage bound, so it crosses the
+    // slot step alone.
+    let (fixture, base) = envelope_for(OperationType::Pocket).expect("the Pocket is backed");
+    let threshold = match base
+        .limit(rs_cam_core::feeds::envelope::LimitKind::Slot)
+        .map(|l| &l.edge)
+    {
+        Some(rs_cam_core::feeds::envelope::Edge::ApCeilingAbove { ae_mm, .. }) => *ae_mm,
+        other => panic!("the Pocket has a slot step: {other:?}"),
+    };
+    let corner = match base
+        .limit(rs_cam_core::feeds::envelope::LimitKind::CornerCoverage)
+        .map(|l| &l.edge)
+    {
+        Some(rs_cam_core::feeds::envelope::Edge::AeCeiling { mm }) => *mm,
+        other => panic!("the Pocket has a corner bound: {other:?}"),
+    };
+    let ae = 0.5 * (threshold + corner);
+    let ceiling = base.ap_ceiling_at(ae).expect("a ceiling").0;
     let mut deep = fixture;
     if let rs_cam_core::compute::catalog::OperationConfig::Pocket(c) = &mut deep {
-        c.depth_per_pass = Some(2.0);
+        c.stepover = Some(ae);
+        c.depth_per_pass = Some(1.25 * ceiling);
     }
     let (deep, env) = envelope_k2b::envelope_of(deep).expect("the Pocket is backed");
     let scene = EnvelopeScene::of(&env, None);
@@ -161,9 +185,14 @@ fn the_envelope_plot_marks_the_operator_and_the_proposal_k2b() {
             env.operator
         );
     };
+    // P5d D4: crossed CAUTION, the proposal's binding TEXT_BODY, the rest
+    // muted. P13c (O4): the removal-rate proposal sits on its own limit,
+    // which need not be the limit the deep point crosses.
     for e in &scene.edges {
         let want = if e.kind == binding {
             tokens::CAUTION
+        } else if Some(e.kind) == env.proposal_binding {
+            tokens::TEXT_BODY
         } else {
             tokens::TEXT_MUTED
         };

@@ -27,12 +27,16 @@ use rs_cam_viz::state::panels::EnvelopeCandidates;
 use rs_cam_viz::ui::feeds::envelope::{EnvelopeScene, EnvelopeShape, readout, short_label};
 
 /// A point past the top of the depth span: outside the flute guard.
+/// A point inside the plot and outside the envelope: the top of the view
+/// over a slot (97 % of the width range, past the slot threshold). P13c
+/// (O1): it was the top of the view at the proposal width, but the
+/// force-budget rigidity curve now passes the top of the view there; the
+/// slot step stays inside the view.
 fn outside(env: &rs_cam_core::feeds::envelope::SafeEnvelope) -> CutPoint {
-    let p = env.proposal.get();
     let scene = EnvelopeScene::of(env, None);
     CutPoint {
         ap_mm: scene.ap_range.1 * 0.98,
-        ae_mm: p.ae_mm,
+        ae_mm: scene.ae_range.1 * 0.97,
     }
 }
 

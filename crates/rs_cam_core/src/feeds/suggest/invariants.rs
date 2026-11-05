@@ -206,9 +206,11 @@ pub(super) fn clamp_plunge_to_feed(operation: &mut OperationConfig) -> Vec<Sugge
     warnings
 }
 
-/// The rigidity cap for a depth of `depth_mm` on a roughing pass, or `None`
-/// when no cap applies. P5: the `Rigidity` limit of the envelope reads this
-/// one rule (pass 4, which wrote it before P5, is deleted).
+/// The `adaptive_doc_factor x D` cap for a depth of `depth_mm` (the
+/// Adaptive family), or `None` when the family's rule is not a factor
+/// (P13c: the Pocket and Profile families read the force budget, which the
+/// envelope `Rigidity` limit solves per width) or no cap applies. P5: the
+/// `Rigidity` limit of the envelope reads this one rule.
 pub(crate) fn rigidity_cap_mm(
     family: crate::feeds::OperationFamily,
     tool: &ToolConfig,
@@ -219,14 +221,15 @@ pub(crate) fn rigidity_cap_mm(
     if !matches!(pass_role, PassRole::Roughing) || !depth_mm.is_finite() {
         return None;
     }
+    let crate::machine::DepthCapRule::Factor(factor) =
+        machine.rigidity.depth_cap_rule(family, pass_role)?
+    else {
+        return None;
+    };
     let cutter = crate::compute::cutter::build_cutter(tool).ok()?;
     let cap_at = |depth: f64| -> Option<f64> {
         let diameter = crate::feeds::geometry::depth_cap_diameter_mm(&cutter, depth);
-        machine
-            .rigidity
-            .depth_cap_mm(family, pass_role, diameter)
-            .map(|c| c.cap_mm())
-            .filter(|cap| cap.is_finite() && *cap > 0.0)
+        Some(factor * diameter).filter(|cap| cap.is_finite() && *cap > 0.0)
     };
     let cap_at_depth = cap_at(depth_mm)?;
     Some(deepest_depth_within_cap(cap_at_depth, &cap_at))

@@ -400,20 +400,30 @@ fn stepover_checks(
         return out;
     }
 
-    if stepover > diameter * 0.8 {
+    // P13c (lead fix B): the bound is the corner-coverage width, the one
+    // derived factor of the corner rule (the envelope limit and the add-door
+    // pick read it too); the typed 0.8 D is gone.
+    let corner = crate::feeds::force_budget::corner_coverage_width_factor();
+    if stepover > diameter * corner {
         out.push(Diagnostic {
-            id: DiagnosticId::from(ids::QUALITY_STEPOVER_OVER_80_PCT),
+            id: DiagnosticId::from(ids::QUALITY_STEPOVER_OVER_CORNER_COVERAGE),
             scope: scope.clone(),
             category: Category::Quality,
             severity: Severity::Hint,
             confidence: Confidence::Static,
             state: DiagnosticState::Current,
             source: Source::StaticValidation,
-            face: crate::diagnostics::presentation::face(ids::QUALITY_STEPOVER_OVER_80_PCT),
-            anchor: crate::diagnostics::presentation::anchor(ids::QUALITY_STEPOVER_OVER_80_PCT),
+            face: crate::diagnostics::presentation::face(
+                ids::QUALITY_STEPOVER_OVER_CORNER_COVERAGE,
+            ),
+            anchor: crate::diagnostics::presentation::anchor(
+                ids::QUALITY_STEPOVER_OVER_CORNER_COVERAGE,
+            ),
             message: format!(
-                "The stepover is {:.0} % of the tool diameter. It can leave visible ridges.",
-                (stepover / diameter) * 100.0
+                "The stepover is {:.0} % of the tool diameter, past the corner-coverage \
+                 bound of {:.0} %: a sharp offset corner keeps uncut material.",
+                (stepover / diameter) * 100.0,
+                corner * 100.0
             ),
             evidence: None,
             fix: None,

@@ -583,6 +583,7 @@ fn wanaka_suggest_baseline() {
                 // G10 (2026-09-25): pass 9 moved the feed, so the funnel
                 // ran the plunge rule again at the feed that ships.
                 | SuggestWarning::UnsourcedRowsAccepted { .. }
+                | SuggestWarning::ComputedWidthAssumptions
 
                 | SuggestWarning::OutsideEnvelope { .. }
 
@@ -888,6 +889,7 @@ fn wanaka_suggest_baseline() {
                 // G10 (2026-09-25): the plunge rule ran again at the feed
                 // that ships. ALLOWED where pass 9 or pass 10 moved the feed.
                 | SuggestWarning::UnsourcedRowsAccepted { .. }
+                | SuggestWarning::ComputedWidthAssumptions
 
                 | SuggestWarning::OutsideEnvelope { .. }
 
