@@ -1584,7 +1584,7 @@ pub struct ToolpathSummary {
 /// UX dial-in A8 — `diameter` is the cutter's named (tip) diameter. The
 /// LUT chipload lookup uses an *effective* diameter that depends on
 /// engagement depth ([`crate::feeds::ToolGeometryHint::engaged_diameter_at_doc`]
-/// for the LUT row, `feeds::geometry::ball_effective_diameter` and friends
+/// for the LUT row, `feeds::effective_diameter` (P15: the cutter's width)
 /// for the contact circle chip thinning uses), which can differ
 /// substantially for tapered / ball / bullnose tools. Geometry context is
 /// included so

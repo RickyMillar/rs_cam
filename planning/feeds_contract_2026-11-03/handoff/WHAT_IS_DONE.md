@@ -88,7 +88,7 @@ The reviewer judges each item. "Close" says what ends it. "R" numbers are for re
 
 | # | Item | Cause | Site | Close |
 |---|---|---|---|---|
-| R30 | Bull nose below its corner radius: two diameter rules disagree (6 mm, r 1, ap 0.2 mm: 1.2 against 5.2 mm) | `bull_nose_effective_diameter` uses the corner circle only and drops the flat centre | `crates/rs_cam_core/src/feeds/geometry.rs:140-148`; the other rule `crates/rs_cam_core/src/tool/mod.rs:496` | One `d_eng` door and an FM1 re-bless (`planning/feeds_contract_2026-11-03/STATUS.md:99-103`) |
+| R30 | FIXED by P15: one `d_eng` door (`EngagedDiameter`); a bull nose below its corner radius keeps its flat centre | was `bull_nose_effective_diameter` (corner circle only) | `planning/feeds_contract_2026-11-03/phases/P15.md:3` | Closed: sentry `crates/rs_cam_core/tests/one_d_eng_door_for_every_engagement_p15.rs`; 6 FM1 Trace bull-nose `power_kw` cells moved |
 | R31 | `BandMid` modulation still exists; its doc says "one release cycle" | P14 ported the law instead of deleting the strategy | `crates/rs_cam_core/src/dressup/feed_modulation.rs:83` | Delete `BandMid` in a tidy (`planning/feeds_contract_2026-11-03/STATUS.md:96-98`) |
 | R32 | Names that say "refuse" but only warn: `Gate::HeightRefuses`, `Gate::LoadRowRefuses`, `HeightOrderViolation::refuses` | P14 item 10 left them | `crates/rs_cam_core/src/diagnostics/consequence.rs:58`, `crates/rs_cam_core/src/diagnostics/consequence.rs:66`, `crates/rs_cam_core/src/compute/config.rs:485` | Rename, or show each refuses |
 | R33 | `RationaleParam::StockToLeave` has no producer | dead variant | `crates/rs_cam_core/src/feeds/rationale.rs:45` | Delete it or add a producer |
@@ -123,6 +123,9 @@ The reviewer judges each item. "Close" says what ends it. "R" numbers are for re
 | R62 | The 3D Rough planner cuts near-slot widths (4-5x the stepover) on the opening cut of each level | planner, not feeds | `planning/feeds_contract_2026-11-03/phases/P9.md:255-257` | Planner fix |
 | R63 | rivmap100 "Face 5" states 0.812 mm per pass and cuts 2.00 mm in one level | Face top at the model top, not the stock top | `planning/fixtures/rivmap100/rivmap100.toml:154` | Face ladder fix |
 | R64 | No noise floor on `project.sim_outside_envelope` (3 of 264564 samples warn) | a threshold would be a new Unsourced constant | `crates/rs_cam_core/src/compute/simulate.rs:967` | Rule on a floor |
+| R65 | Tipped V-bit: the hint `d_eng` adds the flat tip, the cutter width does not | `effective_diameter` V-bit arm against `VBitEndmill::width_at_height` | `planning/feeds_contract_2026-11-03/phases/P15.md:49-52` | Rule which is right; a hint fix moves Suggest, a cutter fix moves toolpaths |
+| R66 | Tapered ball: the hint clamps at the caller's planning shank, the cutter at its own shaft | two shank fields | `planning/feeds_contract_2026-11-03/phases/P15.md:53-55` | One shank source |
+| R67 | The calculator power ladder reads `d_eng` at the Step 5 depth, not at the lowered candidate depth | `calculator/power.rs` `Ladder::required_at`; Step 9 published power | `planning/feeds_contract_2026-11-03/phases/P15.md:58-61` | Read `d_eng` per candidate depth; moves non-flat cells |
 
 ### 4.2 Surface and record items
 

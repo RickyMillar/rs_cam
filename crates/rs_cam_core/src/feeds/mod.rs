@@ -1789,7 +1789,7 @@ fn power_model_terms(
     line: crate::material::force_line::ForceLine,
     ap: f64,
     ae: f64,
-    effective_d: f64,
+    effective_d: engagement::EngagedDiameter,
     rpm: f64,
 ) -> crate::tool_load::power::PowerTerms {
     crate::tool_load::power::PowerTerms::of(
@@ -1815,7 +1815,7 @@ fn worst_case_power(
     line: crate::material::force_line::ForceLine,
     ap: f64,
     ae: f64,
-    effective_d: f64,
+    effective_d: engagement::EngagedDiameter,
     rpm: f64,
     feed: f64,
 ) -> (engagement::PowerCase, f64, f64) {
@@ -1834,7 +1834,7 @@ pub(crate) fn cap_arm_demand_kw(
     material: &Material,
     ap: f64,
     ae: f64,
-    effective_d: f64,
+    effective_d: engagement::EngagedDiameter,
     rpm: f64,
     feed: f64,
 ) -> Option<(engagement::PowerCase, f64)> {
@@ -2744,15 +2744,46 @@ fn default_engagement(
 /// `crates/rs_cam_core/src/feeds/geometry.rs` for what was retired and
 /// `tests/tapered_width_model_parity_c3.rs` for what it cost.
 ///
+/// Feeds contract P15 (the one `d_eng` door): this is the diameter of every
+/// [`engagement::Engagement`] built from a plan (`from_cut` calls it). The
+/// Flat, Ball and Bull arms equal `2 x MillingCutter::engagement_radius`
+/// bit for bit, because each arm calls the cutter's own width function. A
+/// bull nose below its corner radius keeps its flat centre (`D - 2 r` plus
+/// the corner chord). A ball at `ap = 0` gives 0 (the cutter's rule; the
+/// old `0.01 x D` floor had no derivation). Two residuals stay open for a
+/// ruling: a V-bit arm adds the flat tip (`tip_d + 2 cone`) and the cutter
+/// does not; a tapered-ball arm clamps at `shank_d`, the cutter at its own
+/// shaft. `tests/one_d_eng_door_for_every_engagement_p15.rs` holds the door.
+///
 /// Made `pub` on 2026-08-19 for a Suggest pass 9 sentry. Feeds contract P5
 /// deleted that sentry (`suggest_feed_matches_final_geometry`). Do not add
 /// a second copy of the chip-thinning diameter: C3 retired that copy.
 pub fn effective_diameter(geom: ToolGeometryHint, nominal_d: f64, shank_d: f64, ap: f64) -> f64 {
     match geom {
         ToolGeometryHint::Flat => nominal_d,
-        ToolGeometryHint::Ball => geometry::ball_effective_diameter(nominal_d, ap),
+        // P15: the Ball and Bull arms call the cutter's own width
+        // (`tool::ball_radius_at_height`, `tool::bull_nose_radius_at_height`),
+        // so `from_cut` and `from_tool_cut` read one formula. A hint has no
+        // constructor to refuse a degenerate shape, so the guards stay here.
+        ToolGeometryHint::Ball => {
+            if nominal_d <= 0.0 {
+                return 0.0;
+            }
+            2.0 * crate::tool::ball_radius_at_height(nominal_d / 2.0, ap.max(0.0))
+        }
         ToolGeometryHint::Bull { corner_radius } => {
-            geometry::bull_nose_effective_diameter(nominal_d, corner_radius, ap)
+            if nominal_d <= 0.0 {
+                return 0.0;
+            }
+            if corner_radius <= 0.0 {
+                return nominal_d;
+            }
+            let radius = nominal_d / 2.0;
+            2.0 * crate::tool::bull_nose_radius_at_height(
+                radius,
+                corner_radius.min(radius),
+                ap.max(0.0),
+            )
         }
         ToolGeometryHint::VBit {
             included_angle,

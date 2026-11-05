@@ -34,7 +34,7 @@
 use std::path::PathBuf;
 
 use rs_cam_core::feeds::ToolGeometryHint;
-use rs_cam_core::feeds::engagement::Engagement;
+use rs_cam_core::feeds::engagement::{EngagedDiameter, Engagement};
 use rs_cam_core::feeds::envelope::CutPoint;
 use rs_cam_core::feeds::force_budget::{HOBBY_SLOT_POINTS, HobbySlotPoint, hobby_budget};
 use rs_cam_core::machine::{
@@ -92,7 +92,12 @@ fn peak_n(p: &HobbySlotPoint) -> f64 {
             ae_mm: p.diameter_mm,
         },
         ToolGeometryHint::Flat,
-        p.diameter_mm,
+        EngagedDiameter::of_hint(
+            ToolGeometryHint::Flat,
+            p.diameter_mm,
+            p.diameter_mm,
+            p.ap_mm,
+        ),
         Some(rs_cam_core::tool::DEFAULT_HELIX_DEG),
     )
     .edge_force(line, fz, p.flutes)

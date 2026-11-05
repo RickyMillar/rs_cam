@@ -32,9 +32,9 @@ use rs_cam_core::dressup::feed_modulation::{
     BindingConstraint, ChiploadBand, ModulationContext, ModulationStrategy, PerMoveEngagement,
     PowerLimitInputs, adaptive_feed_modulate,
 };
-use rs_cam_core::feeds::engagement::Engagement;
+use rs_cam_core::feeds::engagement::{EngagedDiameter, Engagement};
 use rs_cam_core::feeds::envelope::CutPoint;
-use rs_cam_core::feeds::{effective_diameter, power_at_operating_point};
+use rs_cam_core::feeds::power_at_operating_point;
 use rs_cam_core::geo::P3;
 use rs_cam_core::machine::MachineProfile;
 use rs_cam_core::machine::kinematics::MachineKinematics;
@@ -126,7 +126,7 @@ fn suggest_and_the_gate_give_one_power_for_one_cut() {
     );
 
     // The two constructors build one engagement for this cut.
-    let d_eng = effective_diameter(tool.geometry_hint(), diameter, diameter, ap);
+    let d_eng = EngagedDiameter::of_hint(tool.geometry_hint(), diameter, diameter, ap);
     let planned = Engagement::from_cut(
         CutPoint {
             ap_mm: ap,
@@ -277,7 +277,7 @@ fn a_vbit_cut_has_one_section_in_the_modulator_and_the_gate() {
             ae_mm: woc * d_eng,
         },
         tool.geometry_hint(),
-        d_eng,
+        EngagedDiameter::of_tool(&tool_def, ap),
         None,
     );
     let measured =

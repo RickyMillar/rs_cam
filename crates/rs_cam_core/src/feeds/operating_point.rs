@@ -56,7 +56,7 @@
 
 use crate::compute::catalog::OperationConfig;
 use crate::compute::tool_config::ToolConfig;
-use crate::feeds::engagement::{Engagement, PowerCase, PowerCases};
+use crate::feeds::engagement::{EngagedDiameter, Engagement, PowerCase, PowerCases};
 use crate::feeds::envelope::CutPoint;
 use crate::feeds::suggest::CalculatorOperatingPoint;
 use crate::machine::MachineProfile;
@@ -351,7 +351,7 @@ struct ResolvedPoint {
     rpm: f64,
     /// `power_at_rpm(rpm)`; 0.0 when no machine was given.
     available_kw: f64,
-    effective_d: f64,
+    effective_d: EngagedDiameter,
     geometry: crate::feeds::ToolGeometryHint,
     helix_deg: f64,
     flute_count: f64,
@@ -433,8 +433,8 @@ fn resolve_operating_point(
     } else {
         tool.diameter
     };
-    let effective_d = crate::feeds::effective_diameter(geom, tool.diameter, shank, ap_mm);
-    if !usable(effective_d) {
+    let effective_d = EngagedDiameter::of_hint(geom, tool.diameter, shank, ap_mm);
+    if !usable(effective_d.mm()) {
         return Err(PowerUnmodeled::NoEngagementDiameter);
     }
 

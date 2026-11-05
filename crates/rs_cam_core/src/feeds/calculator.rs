@@ -111,8 +111,8 @@ pub(super) struct Cut {
 /// The feed and the factors that Steps 5 to 9c apply to it.
 pub(super) struct Feed {
     /// The chip-thinning diameter at the shipped depth (Step 5 on; the
-    /// published `FeedsResult::effective_diameter_mm`).
-    effective_d: f64,
+    /// published `FeedsResult::effective_diameter_mm`). P15: the one door.
+    effective_d: crate::feeds::engagement::EngagedDiameter,
     /// The radial chip-thinning rule of the op (P11b2).
     thinning: geometry::RadialThinning,
     /// The radial chip-thinning lift at the shipped width.

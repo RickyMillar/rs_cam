@@ -161,13 +161,13 @@ In `planning/feeds_review_<date>/`:
 ## 9. Machine parts (STATUS item 4e)
 
 Order (lead ruling, from STATUS item 4e):
-1. Do part A first, before the section 5 pass. It gives the judgement a cited hobby frame value.
+1. Part A is done. Read it before the section 5 pass. It gives the judgement a cited hobby frame value.
 2. Do part B when the operator is at the machine. The section 5 pass does not wait for it.
 3. Part C is optional.
 
-A. The Sienci stiffness source. Pull Sienci's printed stiffness results into the repo (the
-   `sienci.com` "Stiffness Rating with Commentary" PDF and the LongMill MK3 rigidity test) as a cited
-   hobby frame ballpark. Store the text and record it in `CREDITS.md` through the lead.
+A. The Sienci stiffness source: DONE 2026-11-06. Read
+   `planning/feeds_contract_2026-11-03/research_sienci_stiffness/FINDINGS.md` and its
+   `stiffness_table.csv` before the section 5 pass. Sienci tested no Shapeoko.
 
 B. The VFD power ladder on the operator's machine (Scylla).
    CAUTION: the operator runs the machine. Do a no-motion test of every macro and streamer first.

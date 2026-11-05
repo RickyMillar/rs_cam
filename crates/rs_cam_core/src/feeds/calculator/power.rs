@@ -31,7 +31,7 @@ struct LadderMoves {
 struct Ladder<'i, 'a> {
     input: &'i FeedsInput<'a>,
     line: ForceLine,
-    effective_d: f64,
+    effective_d: crate::feeds::engagement::EngagedDiameter,
 }
 
 impl Ladder<'_, '_> {
@@ -359,7 +359,7 @@ fn rungs2_3_geometry(
     let thinning = feed.thinning;
     let effective_d = feed.effective_d;
     let radial_lift = feed.radial_lift;
-    let lift_at = |c: f64| thinning.lift(c, effective_d);
+    let lift_at = |c: f64| thinning.lift(c, effective_d.mm());
     let feed_at_width = |c: f64| raw_feed * lift_at(c) / radial_lift;
     let ap = cut.ap;
     if ladder.required_at(rpm, ap, cut.ae, raw_feed) > ladder.budget_at(rpm)

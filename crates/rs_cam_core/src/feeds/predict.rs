@@ -464,7 +464,7 @@ pub fn predict_peak_deflection_um(
     let tool_def = crate::compute::cutter::build_cutter(tool)
         .ok()
         .ok_or(DeflectionUnmodeled::ToolOutOfDomain)?;
-    let d_eng = crate::feeds::effective_diameter(
+    let d_eng = crate::feeds::engagement::EngagedDiameter::of_hint(
         tool.geometry_hint(),
         diameter_mm,
         if tool.shank_diameter_planning_mm() > 0.0 {

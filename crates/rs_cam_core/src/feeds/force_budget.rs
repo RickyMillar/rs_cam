@@ -20,7 +20,7 @@
 use std::sync::LazyLock;
 
 use crate::feeds::ToolGeometryHint;
-use crate::feeds::engagement::Engagement;
+use crate::feeds::engagement::{EngagedDiameter, Engagement};
 use crate::feeds::envelope::CutPoint;
 use crate::material::{FormulaConstant, Material, SheetGoodKind, WoodSpecies};
 use crate::tool::{MillingCutter, ToolDefinition};
@@ -112,7 +112,7 @@ impl HobbySlotPoint {
                 ae_mm: d,
             },
             ToolGeometryHint::Flat,
-            d,
+            EngagedDiameter::of_hint(ToolGeometryHint::Flat, d, d, self.ap_mm),
             Some(crate::tool::DEFAULT_HELIX_DEG),
         );
         engagement

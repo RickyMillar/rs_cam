@@ -1115,7 +1115,12 @@ mod r1_two_term_model {
                     ae_mm: ae,
                 },
                 crate::feeds::ToolGeometryHint::Flat,
-                d,
+                crate::feeds::engagement::EngagedDiameter::of_hint(
+                    crate::feeds::ToolGeometryHint::Flat,
+                    d,
+                    d,
+                    ap,
+                ),
                 None,
             )
             .power_inputs(line, 17_000.0, 2.0),
@@ -1227,7 +1232,12 @@ mod r1_two_term_model {
                     ae_mm: 2.10,
                 },
                 crate::feeds::ToolGeometryHint::Flat,
-                fixture_inputs.engagement_diameter_mm(),
+                crate::feeds::engagement::EngagedDiameter::of_hint(
+                    crate::feeds::ToolGeometryHint::Flat,
+                    fixture_inputs.engagement_diameter_mm(),
+                    fixture_inputs.engagement_diameter_mm(),
+                    fixture_inputs.axial_doc_mm(),
+                ),
                 None,
             )
             .power_inputs(line, inputs.spindle_rpm() * 2.0, inputs.flute_count()),
@@ -1285,7 +1295,12 @@ mod r1_two_term_model {
                 ae_mm: 2.10,
             },
             crate::feeds::ToolGeometryHint::Flat,
-            inputs.engagement_diameter_mm(),
+            crate::feeds::engagement::EngagedDiameter::of_hint(
+                crate::feeds::ToolGeometryHint::Flat,
+                inputs.engagement_diameter_mm(),
+                inputs.engagement_diameter_mm(),
+                inputs.axial_doc_mm(),
+            ),
             None,
         );
         for broken in [

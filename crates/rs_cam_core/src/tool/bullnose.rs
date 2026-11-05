@@ -16,6 +16,27 @@ use super::{
 };
 use crate::geo::P3;
 
+/// The radius of a bull-nose profile of radius `radius` and corner radius
+/// `corner_radius` at height `h` above the tip: the flat centre radius
+/// `R1 = R - R2` plus the corner chord `sqrt(R2^2 - (R2 - h)^2)` below the
+/// corner top, `R` at or above it.
+///
+/// Feeds contract P15 (F075 pattern): the ONE copy of the bull-nose width.
+/// [`BullNoseEndmill`] (its `width_at_height`) and `feeds::effective_diameter`
+/// (which holds only a hint, no cutter) both call it. It keeps the flat
+/// centre: at `h = 0` it is `R1`, not 0.
+pub fn bull_nose_radius_at_height(radius: f64, corner_radius: f64, h: f64) -> f64 {
+    let r1 = radius - corner_radius;
+    let r2 = corner_radius;
+    if h >= r2 {
+        radius
+    } else if h <= 0.0 {
+        r1
+    } else {
+        r1 + (r2 * r2 - (r2 - h) * (r2 - h)).max(0.0).sqrt()
+    }
+}
+
 #[derive(Debug, Clone)]
 pub struct BullNoseEndmill {
     pub diameter: f64,
@@ -112,15 +133,7 @@ impl MillingCutter for BullNoseEndmill {
     }
 
     fn width_at_height(&self, h: f64) -> f64 {
-        let r1 = self.r1();
-        let r2 = self.r2();
-        if h >= r2 {
-            self.radius()
-        } else if h <= 0.0 {
-            r1
-        } else {
-            r1 + (r2 * r2 - (r2 - h) * (r2 - h)).max(0.0).sqrt()
-        }
+        bull_nose_radius_at_height(self.radius(), self.corner_radius, h)
     }
 
     fn center_height(&self) -> f64 {

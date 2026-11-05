@@ -256,7 +256,12 @@ impl ModulationCutter {
     /// The engaged diameter at the axial depth `ap_mm`.
     #[must_use]
     pub fn d_eng_at(&self, ap_mm: f64) -> f64 {
-        crate::feeds::effective_diameter(
+        self.engaged_diameter_at(ap_mm).mm()
+    }
+
+    /// P15: the engaged diameter at `ap_mm` through the one door.
+    fn engaged_diameter_at(&self, ap_mm: f64) -> crate::feeds::engagement::EngagedDiameter {
+        crate::feeds::engagement::EngagedDiameter::of_hint(
             self.geometry,
             self.diameter_mm,
             self.shank_diameter_mm,
@@ -267,11 +272,11 @@ impl ModulationCutter {
     /// The one engagement of a move: depth `ap_mm`, width
     /// `woc_fraction x d_eng`.
     fn engagement(&self, ap_mm: f64, woc_fraction: f64) -> crate::feeds::engagement::Engagement {
-        let d_eng = self.d_eng_at(ap_mm);
+        let d_eng = self.engaged_diameter_at(ap_mm);
         crate::feeds::engagement::Engagement::from_cut(
             crate::feeds::envelope::CutPoint {
                 ap_mm,
-                ae_mm: woc_fraction * d_eng.max(0.0),
+                ae_mm: woc_fraction * d_eng.mm().max(0.0),
             },
             self.geometry,
             d_eng,

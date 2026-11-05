@@ -11,6 +11,20 @@ use super::{
 };
 use crate::geo::P3;
 
+/// The radius of a ball profile of radius `radius` at height `h` above the
+/// tip: the chord `sqrt(2 R h - h^2)` below the equator, `R` at or above it.
+///
+/// Feeds contract P15 (F075 pattern): the ONE copy of the ball width.
+/// [`BallEndmill`] (its `width_at_height`) and `feeds::effective_diameter`
+/// (which holds only a hint, no cutter) both call it. It is 0 at `h = 0`.
+pub fn ball_radius_at_height(radius: f64, h: f64) -> f64 {
+    if h >= radius {
+        radius
+    } else {
+        (2.0 * radius * h - h * h).sqrt()
+    }
+}
+
 #[derive(Debug, Clone)]
 pub struct BallEndmill {
     pub diameter: f64,
@@ -75,12 +89,7 @@ impl MillingCutter for BallEndmill {
     }
 
     fn width_at_height(&self, h: f64) -> f64 {
-        let big_r = self.radius();
-        if h >= big_r {
-            big_r
-        } else {
-            (2.0 * big_r * h - h * h).sqrt()
-        }
+        ball_radius_at_height(self.radius(), h)
     }
 
     fn center_height(&self) -> f64 {

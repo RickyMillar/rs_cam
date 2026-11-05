@@ -40,13 +40,13 @@ impl ProjectSession {
         // engaged diameter at the stated depth, `feeds::effective_diameter`).
         let (stated_ap, stated_ae, _) = tc.operation.cut_spec().calc_inputs(tool_cfg.diameter);
         let commanded_thinning_lift = stated_ap.zip(stated_ae).map(|(ap, ae)| {
-            let d_eng = crate::feeds::effective_diameter(
+            let d_eng = crate::feeds::engagement::EngagedDiameter::of_hint(
                 tool_cfg.geometry_hint(),
                 tool_cfg.diameter,
                 tool_cfg.shank_diameter_planning_mm(),
                 ap,
             );
-            crate::feeds::geometry::RadialThinning::of(family, pass_role).lift(ae, d_eng)
+            crate::feeds::geometry::RadialThinning::of(family, pass_role).lift(ae, d_eng.mm())
         });
         Some(crate::tool_load::LoadContextParts {
             toolpath_id: tc.id,

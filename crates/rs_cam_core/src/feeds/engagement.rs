@@ -3,11 +3,19 @@
 //!
 //! [`Engagement`] holds the engaged geometry of one cut: the axial depth
 //! `ap`, the radial width `ae`, the arc `psi`, the engaged diameter `d_eng`
-//! and the cutter's own chip section. Two constructors build it, and no
-//! other code can ([`Engagement::from_tool_cut`] calls the first):
+//! and the cutter's own chip section. Three constructors build it, and no
+//! other code can.
+//!
+//! P15 (the one `d_eng` door): every constructor reads its engaged diameter
+//! from [`EngagedDiameter`], a type with a private field. Its two builders
+//! read one width function per shape (`tool::ball_radius_at_height`,
+//! `tool::bull_nose_radius_at_height`, `tool::ball_cone_radius_at_height`,
+//! `tool::vbit_cone_radius_at_height`), the cutter's own:
 //!
 //! - [`Engagement::from_cut`]: a planned cut (Suggest, the envelope, the
 //!   modulator). `psi` comes from [`immersion_angle`] (`cos psi = 1 - ae / r`).
+//! - [`Engagement::from_tool_cut`]: a planned cut of a built tool; it calls
+//!   the first.
 //! - [`Engagement::from_sample`]: a simulation sample. The sample measures
 //!   the arc; the width is the geometric inverse `ae = r (1 - cos psi)`
 //!   (lead decision D-W, 2026-11-03), the exact inverse of
@@ -39,12 +47,12 @@
 //!
 //! ```
 //! use rs_cam_core::feeds::ToolGeometryHint;
-//! use rs_cam_core::feeds::engagement::Engagement;
+//! use rs_cam_core::feeds::engagement::{EngagedDiameter, Engagement};
 //! use rs_cam_core::feeds::envelope::CutPoint;
 //! let e = Engagement::from_cut(
 //!     CutPoint { ap_mm: 1.0, ae_mm: 3.0 },
 //!     ToolGeometryHint::Flat,
-//!     6.0,
+//!     EngagedDiameter::of_hint(ToolGeometryHint::Flat, 6.0, 6.0, 1.0),
 //!     None,
 //! );
 //! assert!(e.psi_rad() > 0.0);
@@ -59,7 +67,63 @@ use crate::feeds::force::{DeflectionCapRefusal, immersion_angle};
 use crate::material::force_line::ForceLine;
 use crate::tool::MillingCutter;
 
-/// CONTRACT K7. Built only by [`Self::from_cut`] and [`Self::from_sample`].
+/// Feeds contract P15: THE engaged diameter `d_eng` (mm) of a cut, the one
+/// door of every [`Engagement`] constructor. The field is private, so no
+/// caller passes a raw number. The two builders read the same width
+/// function per shape:
+///
+/// - [`Self::of_hint`]: [`crate::feeds::effective_diameter`], for a caller
+///   that holds a [`ToolGeometryHint`] (Suggest, the modulator, export).
+/// - [`Self::of_tool`]: `2 x MillingCutter::engagement_radius`, for a built
+///   tool (the planned cut of a tool, the simulation sample).
+///
+/// For a flat end mill, a ball and a bull nose the two are equal bit for
+/// bit: each calls the cutter's own width (`tool::ball_radius_at_height`,
+/// `tool::bull_nose_radius_at_height`). A bull nose below its corner radius
+/// keeps its flat centre. A ball at depth 0 gives 0, and every reader of a
+/// zero diameter returns its degenerate answer (no arc, no lift, no edge
+/// term). Two residuals stay for a ruling (P15 phase file): a V-bit hint
+/// adds its flat tip and the V-bit cutter does not; a tapered-ball hint
+/// clamps at the shank the caller gives, the cutter at its own shaft.
+/// `tests/one_d_eng_door_for_every_engagement_p15.rs` holds the door.
+#[derive(Debug, Clone, Copy, PartialEq)]
+pub struct EngagedDiameter(f64);
+
+impl EngagedDiameter {
+    /// The engaged diameter of a hint tool at the axial depth `ap_mm`:
+    /// [`crate::feeds::effective_diameter`].
+    #[must_use]
+    pub fn of_hint(
+        tool: ToolGeometryHint,
+        diameter_mm: f64,
+        shank_diameter_mm: f64,
+        ap_mm: f64,
+    ) -> Self {
+        Self(crate::feeds::effective_diameter(
+            tool,
+            diameter_mm,
+            shank_diameter_mm,
+            ap_mm,
+        ))
+    }
+
+    /// The engaged diameter of a built tool at the axial depth `ap_mm`:
+    /// `2 x tool.engagement_radius(max(ap, 0))`, never below 0.
+    #[must_use]
+    pub fn of_tool(tool: &crate::tool::ToolDefinition, ap_mm: f64) -> Self {
+        Self((2.0 * tool.engagement_radius(ap_mm.max(0.0))).max(0.0))
+    }
+
+    /// The diameter (mm).
+    #[must_use]
+    pub const fn mm(self) -> f64 {
+        self.0
+    }
+}
+
+/// CONTRACT K7. Built only by [`Self::from_cut`] (which
+/// [`Self::from_tool_cut`] calls) and [`Self::from_sample`]. P15: each reads
+/// its engaged diameter from [`EngagedDiameter`].
 ///
 /// G4 (lead, 2026-11-04): `ap`, `psi`, `d_eng` and the tool's helix stay
 /// reachable through accessors, so the P11 force model adds a method here,
@@ -75,17 +139,18 @@ pub struct Engagement {
 }
 
 impl Engagement {
-    /// A planned cut. `d_eng_mm` is the engaged diameter the caller cuts
-    /// with: `feeds::effective_diameter` at the depth (Suggest), or the
-    /// diameter the modulator was given. `helix_deg` is the tool's helix,
-    /// when the caller knows it.
+    /// A planned cut. `d_eng` is the engaged diameter, built only by
+    /// [`EngagedDiameter::of_hint`] or [`EngagedDiameter::of_tool`]: the
+    /// caller cannot pass a raw number (P15, the one `d_eng` door).
+    /// `helix_deg` is the tool's helix, when the caller knows it.
     #[must_use]
     pub fn from_cut(
         cut: CutPoint,
         tool: ToolGeometryHint,
-        d_eng_mm: f64,
+        d_eng: EngagedDiameter,
         helix_deg: Option<f64>,
     ) -> Self {
+        let d_eng_mm = d_eng.mm();
         Self {
             ap_mm: cut.ap_mm,
             ae_mm: cut.ae_mm,
@@ -97,15 +162,15 @@ impl Engagement {
     }
 
     /// A planned cut of a built tool (P11a, the open P9 diameters): the
-    /// engaged diameter is `2 x tool.engagement_radius(ap)` at the cut
-    /// depth, the width rule of [`Self::from_sample`], and the helix is the
+    /// engaged diameter is [`EngagedDiameter::of_tool`] at the cut depth,
+    /// the width rule of [`Self::from_sample`], and the helix is the
     /// tool's. It calls [`Self::from_cut`].
     #[must_use]
     pub fn from_tool_cut(cut: CutPoint, tool: &crate::tool::ToolDefinition) -> Self {
         Self::from_cut(
             cut,
             tool.to_geometry_hint(),
-            2.0 * tool.engagement_radius(cut.ap_mm.max(0.0)),
+            EngagedDiameter::of_tool(tool, cut.ap_mm),
             Some(tool.helix_deg()),
         )
     }
@@ -113,7 +178,7 @@ impl Engagement {
     /// A simulation sample. `None` when the sample removes no material,
     /// carries no arc, or gives no positive width.
     ///
-    /// The engaged diameter is `2 x tool.engagement_radius(ap)`. The arc is
+    /// The engaged diameter is [`EngagedDiameter::of_tool`]. The arc is
     /// the sample's own reading; the width is `r (1 - cos psi)` with psi
     /// clamped to a full slot (D-W).
     #[must_use]
@@ -126,7 +191,7 @@ impl Engagement {
         }
         let arc = sample.arc_engagement_radians?;
         let ap_mm = sample.axial_doc_mm;
-        let r = tool.engagement_radius(ap_mm).max(0.0);
+        let r = EngagedDiameter::of_tool(tool, ap_mm).mm() / 2.0;
         let psi = arc.clamp(0.0, std::f64::consts::PI);
         let ae_mm = r * (1.0 - psi.cos());
         if ae_mm.is_nan() || ae_mm <= 0.0 {
@@ -792,7 +857,7 @@ mod tests {
                 ae_mm: ae,
             },
             ToolGeometryHint::Flat,
-            D,
+            EngagedDiameter::of_hint(ToolGeometryHint::Flat, D, D, ap),
             Some(helix),
         )
     }
@@ -965,7 +1030,7 @@ mod tests {
                 ae_mm: D,
             },
             ToolGeometryHint::Flat,
-            D,
+            EngagedDiameter::of_hint(ToolGeometryHint::Flat, D, D, 3.0),
             None,
         );
         assert_eq!(

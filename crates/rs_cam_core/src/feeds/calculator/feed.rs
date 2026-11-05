@@ -5,8 +5,8 @@ use super::{CalcState, Chip, Cut, Feed, Speed};
 use crate::feeds::sourced::{self, Basis};
 use crate::feeds::{
     ArmPower, CapArm, CapArmReason, CapArms, FeedsInput, FeedsWarning, OperationFamily,
-    RpmFloorSource, SpindleScaleReason, ToolGeometryHint, cap_arm_demand_kw, effective_diameter,
-    geometry, long_tool_load_share, pick_cap_arm,
+    RpmFloorSource, SpindleScaleReason, ToolGeometryHint, cap_arm_demand_kw, geometry,
+    long_tool_load_share, pick_cap_arm,
 };
 
 /// The law of the feed: chip x RPM x Z, and the chip-thinning rule of the
@@ -67,7 +67,7 @@ pub(super) fn step5_feed(input: &FeedsInput, speed: &Speed, chip: &Chip, cut: &C
     // **chip-thinning** diameter, NOT the LUT-semantics one the chipload
     // band is de-rated by (at the shipped depth, before the rubbing floor). This is the value published as
     // `FeedsResult::effective_diameter_mm`.
-    let effective_d = effective_diameter(
+    let effective_d = crate::feeds::engagement::EngagedDiameter::of_hint(
         input.tool_geometry,
         d,
         input.shank_diameter.unwrap_or(d),
@@ -99,10 +99,10 @@ pub(super) fn step5_feed(input: &FeedsInput, speed: &Speed, chip: &Chip, cut: &C
     // 9c sets its feed. P11b2: the one rule (`geometry::RadialThinning`)
     // that the post-sim gate and the modulator also read.
     let thinning = geometry::RadialThinning::of(input.operation, input.pass_role);
-    let radial_lift = thinning.lift(cut.ae, effective_d);
+    let radial_lift = thinning.lift(cut.ae, effective_d.mm());
     let axial_thinning = match input.tool_geometry {
         ToolGeometryHint::Ball | ToolGeometryHint::TaperedBall { .. } => {
-            geometry::axial_chip_thinning_factor_for_ball(d, effective_d)
+            geometry::axial_chip_thinning_factor_for_ball(d, effective_d.mm())
         }
         ToolGeometryHint::Flat | ToolGeometryHint::Bull { .. } | ToolGeometryHint::VBit { .. } => {
             1.0

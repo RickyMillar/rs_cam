@@ -367,7 +367,7 @@ pub(super) fn result(s: CalcState, entry: Entry) -> FeedsResult {
         chipload_bounds: chip.band,
         chipload_point_mm: chip.point,
         matched_lut_row: chip.matched_lut_row,
-        effective_diameter_mm: feed.effective_d,
+        effective_diameter_mm: feed.effective_d.mm(),
         derates,
         bases: PointBases {
             power: Basis::derived(

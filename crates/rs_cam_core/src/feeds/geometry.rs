@@ -90,25 +90,14 @@ impl RadialThinning {
     }
 }
 
-/// Effective cutting diameter for a ball nose end mill at shallow axial depth.
-///
-/// For `ap >= R` (radius), the full diameter is engaged.
-/// For `ap < R`, only a smaller circle of the ball contacts the material.
-pub fn ball_effective_diameter(nominal_d: f64, axial_depth: f64) -> f64 {
-    if nominal_d <= 0.0 {
-        return 0.0;
-    }
-    let radius = nominal_d * 0.5;
-    let ap = axial_depth.max(0.0);
-    if ap <= 0.0 {
-        return 0.01_f64.max(nominal_d * 0.01);
-    }
-    if ap >= radius {
-        return nominal_d;
-    }
-    let value = 2.0 * (ap * (nominal_d - ap)).sqrt();
-    value.max(0.01)
-}
+// There is deliberately NO `ball_effective_diameter` and NO
+// `bull_nose_effective_diameter` here. Feeds contract P15 deleted both. The
+// bull-nose copy used the corner circle only (`ball_effective_diameter(2 r,
+// ap)`) and dropped the flat centre `D - 2 r`: a 6 mm r1 tool at ap 0.2 got
+// 1.2 mm against the true 5.2 mm, so the thinning lift overfed it. The ball
+// copy floored ap 0 at `0.01 x D`. `feeds::effective_diameter` now calls the
+// cutter's own width (`tool::ball_radius_at_height`,
+// `tool::bull_nose_radius_at_height`).
 
 // There is deliberately NO `tapered_ball_effective_diameter` here.
 //
@@ -132,23 +121,6 @@ pub fn ball_effective_diameter(nominal_d: f64, axial_depth: f64) -> f64 {
 // `feeds::tests::engaged_diameter_at_doc_matches_lookup_diameter_at_across_shapes`.
 // The measured cost of the retired model is pinned in
 // `tests/tapered_width_model_parity_c3.rs`.
-
-/// Effective cutting diameter for a bull nose end mill.
-///
-/// Below the corner radius, behaves like a ball of diameter `2*corner_r`.
-/// Above the corner radius, full nominal diameter.
-pub fn bull_nose_effective_diameter(nominal_d: f64, corner_r: f64, axial_depth: f64) -> f64 {
-    if nominal_d <= 0.0 || corner_r <= 0.0 {
-        return nominal_d.max(0.01);
-    }
-    let ap = axial_depth.max(0.0);
-    if ap <= corner_r {
-        let corner_effective = ball_effective_diameter(2.0 * corner_r, ap);
-        corner_effective.clamp(0.01, nominal_d)
-    } else {
-        nominal_d
-    }
-}
 
 /// Scallop-based stepover for a ball nose end mill.
 ///
@@ -533,17 +505,9 @@ pub fn vbit_width_at_depth(included_angle: f64, tip_d: f64, ap: f64) -> Option<f
 mod tests {
     use super::*;
 
-    #[test]
-    fn test_ball_effective_full_depth() {
-        let d_eff = ball_effective_diameter(6.0, 3.0);
-        assert!((d_eff - 6.0).abs() < 1e-9);
-    }
-
-    #[test]
-    fn test_ball_effective_shallow() {
-        let d_eff = ball_effective_diameter(6.0, 0.3);
-        assert!(d_eff > 0.0 && d_eff < 6.0, "got {d_eff}");
-    }
+    // `test_ball_effective_*` and `test_bull_nose_transitions_to_nominal`
+    // lived here until P15 deleted the two hint copies. The door is held by
+    // `tests/one_d_eng_door_for_every_engagement_p15.rs`.
 
     // `test_tapered_ball_effective_scales_with_depth` lived here until C3.
     // It passed `nominal_d = 6.0` with `tip_r = 0.5` — a binding no call site
@@ -552,14 +516,6 @@ mod tests {
     // behaviour was a constant. Its replacement is the DOC sweep in
     // `tests/tapered_width_model_parity_c3.rs`, which drives the tapered arm
     // through `feeds::calculate` at the production binding.
-
-    #[test]
-    fn test_bull_nose_transitions_to_nominal() {
-        let shallow = bull_nose_effective_diameter(6.0, 1.0, 0.2);
-        let deep = bull_nose_effective_diameter(6.0, 1.0, 1.5);
-        assert!(shallow < 6.0);
-        assert!((deep - 6.0).abs() < 1e-9);
-    }
 
     #[test]
     fn test_scallop_stepover_valid() {
@@ -603,8 +559,9 @@ mod tests {
 
     #[test]
     fn test_axial_thinning_at_shallow_cut() {
-        // Ball nose 6mm, effective ~2.68mm at 0.3mm depth → factor ~2.24
-        let d_eff = ball_effective_diameter(6.0, 0.3);
+        // Ball nose 6mm, effective ~2.62mm at 0.3mm depth → factor ~2.29
+        let d_eff =
+            crate::feeds::effective_diameter(crate::feeds::ToolGeometryHint::Ball, 6.0, 6.0, 0.3);
         let factor = axial_chip_thinning_factor_for_ball(6.0, d_eff);
         assert!(factor > 1.5, "expected thinning factor > 1.5, got {factor}");
         assert!(factor < 4.0);

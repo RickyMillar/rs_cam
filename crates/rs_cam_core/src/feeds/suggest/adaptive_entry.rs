@@ -148,13 +148,13 @@ fn geometry_feed_factor(
     ae_mm: f64,
     ap_mm: f64,
 ) -> f64 {
-    let d_eng = crate::feeds::effective_diameter(
+    let d_eng = crate::feeds::engagement::EngagedDiameter::of_hint(
         geom,
         tool.diameter,
         tool.shank_diameter_planning_mm(),
         ap_mm,
     );
-    thinning.lift(ae_mm, d_eng)
+    thinning.lift(ae_mm, d_eng.mm())
 }
 
 /// Pass 9 (G-SUGGEST-NOCLAMP, 2026-08-19): **re-derive the feed at the

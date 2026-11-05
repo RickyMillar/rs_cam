@@ -14,8 +14,8 @@ pub mod size_units;
 mod tapered_ball;
 mod vbit;
 
-pub use ball::BallEndmill;
-pub use bullnose::BullNoseEndmill;
+pub use ball::{BallEndmill, ball_radius_at_height};
+pub use bullnose::{BullNoseEndmill, bull_nose_radius_at_height};
 pub use domain::{ToolDimension, ToolGeometryError};
 pub use flat::FlatEndmill;
 pub use tapered_ball::{TaperedBallEndmill, ball_cone_radius_at_height};
