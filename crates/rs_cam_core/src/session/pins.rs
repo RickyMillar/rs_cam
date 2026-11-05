@@ -287,11 +287,11 @@ impl ProjectSession {
             self,
             self.find_setup_for_toolpath_id(id),
         );
-        // The prologue of the generator: the view, then the hole fit at
-        // the size of the built cutter.
+        // THE item pipeline of the generator (H1), with the built cutter
+        // and no mesh: the Pin Drill reads no step that needs one.
         let extras = (|| {
-            let tool = self.toolpath_tool(tc)?;
-            let cutter = crate::compute::cutter::build_cutter(tool).ok()?;
+            let config = self.toolpath_tool(tc)?;
+            let cutter = crate::compute::cutter::build_cutter(config).ok()?;
             let frames = self
                 .resolve_selection_frames(
                     tc,
@@ -300,13 +300,13 @@ impl ProjectSession {
                     super::selection_status::FaceAccess::Peek,
                 )
                 .ok()?;
-            let item_use = tc.operation.capabilities().item_use;
-            let (mut items, _) = crate::selection::view(&frames.setup, item_use).ok()?;
-            let size = tc
-                .operation
-                .drill_size(crate::tool::MillingCutter::diameter(&cutter));
-            crate::selection::fit_holes(&frames.setup, &mut items, item_use, size).ok()?;
-            items.holes().cloned()
+            let tool = crate::selection::OpTool {
+                cutter: &cutter,
+                config,
+            };
+            let outcome =
+                crate::selection::op_items(&frames.setup, &tc.operation, Some(tool), None).ok()?;
+            outcome.items.holes().cloned()
         })();
         let Some(extras) = extras else {
             return Vec::new();

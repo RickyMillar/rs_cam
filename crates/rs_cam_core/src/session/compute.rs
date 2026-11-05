@@ -842,6 +842,7 @@ impl JobPhases<'_, '_> {
             &self.inputs.operation,
             &self.inputs.selection,
             &self.inputs.tool_def,
+            &self.inputs.tool,
             &self.inputs.emission_stock_bbox,
             &self.inputs.heights,
         );
@@ -887,6 +888,7 @@ impl JobPhases<'_, '_> {
             &self.inputs.operation,
             &self.inputs.selection,
             &self.inputs.tool_def,
+            &self.inputs.tool,
             &self.inputs.emission_stock_bbox,
             &self.inputs.heights,
         );

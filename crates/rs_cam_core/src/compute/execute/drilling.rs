@@ -69,18 +69,15 @@ pub fn build_drill_op_for_config(
 
     let tool_diameter_mm = tool_def.radius() * 2.0;
     let flute_count = tool_cfg.flute_count_planning();
-    // The prologue's two steps: the view, then the hole fit (P6.5, O-3).
+    // THE item pipeline of the prologue (H1), with no mesh: a drill op
+    // reads no step that needs one.
     let holes_of = || {
-        let item_use = op.capabilities().item_use;
-        let (mut items, _) = crate::selection::view(selection, item_use).ok()?;
-        crate::selection::fit_holes(
-            selection,
-            &mut items,
-            item_use,
-            op.drill_size(tool_def.diameter()),
-        )
-        .ok()?;
-        items.holes().cloned()
+        let tool = crate::selection::OpTool {
+            cutter: tool_def,
+            config: tool_cfg,
+        };
+        let outcome = crate::selection::op_items(selection, op, Some(tool), None).ok()?;
+        outcome.items.holes().cloned()
     };
 
     match op {
@@ -179,13 +176,15 @@ pub fn build_drill_op_for_config(
 
 /// F30 (after F19): the XY and the depth base of each hole of a Drill whose
 /// floor is a depth below the Top Z ([`crate::compute::floor::Floor::Top`]),
-/// by the prologue rule. The model gouge text names the depth to type from
+/// by the prologue rule ([`crate::selection::op_items`], then the per-hole
+/// floors). The model gouge text names the depth to type from
 /// the base of the hole it gouges. Empty for every other op and floor.
 #[must_use]
 pub fn drill_depth_bases(
     op: &OperationConfig,
     selection: &ResolvedSelection<SetupFrame>,
     tool_def: &ToolDefinition,
+    tool_cfg: &ToolConfig,
     stock_bbox: &BoundingBox3,
     heights: &ResolvedHeights,
 ) -> Vec<([f64; 2], f64)> {
@@ -195,20 +194,14 @@ pub fn drill_depth_bases(
     if cfg.floor.depth_below_top().is_none() {
         return Vec::new();
     }
-    let item_use = op.capabilities().item_use;
-    let Ok((mut items, _)) = crate::selection::view(selection, item_use) else {
+    let tool = crate::selection::OpTool {
+        cutter: tool_def,
+        config: tool_cfg,
+    };
+    let Ok(outcome) = crate::selection::op_items(selection, op, Some(tool), None) else {
         return Vec::new();
     };
-    if crate::selection::fit_holes(
-        selection,
-        &mut items,
-        item_use,
-        op.drill_size(tool_def.diameter()),
-    )
-    .is_err()
-    {
-        return Vec::new();
-    }
+    let items = outcome.items;
     let Some(holes) = items.holes() else {
         return Vec::new();
     };

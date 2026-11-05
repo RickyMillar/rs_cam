@@ -7,7 +7,8 @@
 //! matches it against the items, [`ResolvedSelection::to_setup_frame`]
 //! moves the items into the setup frame, and [`view`](fn@view) gives the items an
 //! op cuts or a [`SelectionRefusal`] (P2.2). [`fit_holes`] then leaves out a
-//! drill circle that is not of the tool size (P6.5). A Pocket with Extend to
+//! drill circle that is not of the tool size (P6.5). [`op_items`](fn@op_items)
+//! is THE item pipeline of an op (H1): every reader calls it. A Pocket with Extend to
 //! stock closes each open path by the stock edge in `view` (P6.4,
 //! [`extend_to_stock`]).
 
@@ -19,6 +20,7 @@ pub mod item;
 pub mod join;
 pub mod key;
 pub mod near;
+pub mod op_items;
 pub mod outline;
 pub mod refusal;
 pub mod resolve;
@@ -42,6 +44,10 @@ pub use item::{
 };
 pub use key::{CAD_ROUNDING_MM, KEY_MATCH_EPS_MM, MatchKey};
 pub use near::{PickLine, items_near, polyline_distance};
+pub use op_items::{
+    OpItemsOutcome, OpMesh, OpTool, edge_clear_bevel, fit_size, needs_edge_clear, needs_mesh,
+    op_items, open_sides_radius, stock_growth,
+};
 pub use outline::{PART_OUTLINE_LABEL, part_outline_item, part_outline_ring};
 pub use refusal::{
     EdgeRefusal, ItemRef, NO_OPEN_SIDE_TEXT, NoteCause, PART_FREE_TEXT, RefusalCause,
