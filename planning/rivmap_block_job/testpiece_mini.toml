@@ -41,6 +41,7 @@ spindle_strategy = "match_chart"
 controller_waits_for_spindle = true
 
 [job.machine]
+class = "hobby"
 name = "Shapeoko Pro XXL (Scylla grblHAL, H100 1.5 kW VFD, $$ 2026-10-15)"
 max_feed_mm_min = 15000.0
 max_shank_mm = 7.0
@@ -59,11 +60,9 @@ p = 0.61
 q = 1.26
 
 [job.machine.rigidity]
+slot_doc_factor = 0.25
 doc_roughing_factor = 0.25
 doc_finishing_factor = 0.1
-woc_roughing_factor = 0.8
-woc_roughing_max_mm = 6.35
-woc_finishing_mm = 0.635
 adaptive_doc_factor = 2.0
 adaptive_woc_factor = 0.25
 

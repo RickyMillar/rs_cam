@@ -392,10 +392,20 @@ fn every_limit_in_the_range_draws_a_line_and_a_label_p5d() {
     let drawn: Vec<_> = scene.drawn_edges(plot.size());
     let mut kinds: Vec<LimitKind> = drawn.iter().map(|e| e.kind).collect();
     kinds.sort_by_key(|k| format!("{k:?}"));
+    // Feeds contract P11c (review item M4): the move-count model reads the
+    // machine's `adaptive_woc_factor` (0.2 in this file) for the adaptive
+    // area width, not the typed 0.3. The predicted moves at a stepover rise
+    // 1.5 x, so the `Runtime` (move budget) width floor rises 1.5 x and now
+    // enters the view; it draws with the others.
     assert_eq!(
         kinds,
-        vec![LimitKind::Rigidity, LimitKind::Slot, LimitKind::VendorAxial],
-        "D1: the vendor, rigidity and slot limits draw at rest"
+        vec![
+            LimitKind::Rigidity,
+            LimitKind::Runtime,
+            LimitKind::Slot,
+            LimitKind::VendorAxial
+        ],
+        "D1: the vendor, rigidity, slot and move-budget limits draw at rest"
     );
     // Every non-frame limit whose edge enters the view is drawn, or hugs
     // the frame (D1 exception).

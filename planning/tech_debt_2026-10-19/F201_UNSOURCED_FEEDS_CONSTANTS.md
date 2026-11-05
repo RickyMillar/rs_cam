@@ -129,7 +129,7 @@ Source kind: a vendor drilling chart per material.
 | `calculate.flute_guard_factor` | 0.8 | `:1530` | vendor depth-of-cut rule |
 | `calculate.flute_guard_no_length_d` | 2.0 | `:1536` | same |
 | `calculate.slotting_threshold_d` | 0.85 | `:1542` | vendor slotting rule |
-| `calculate.slotting_doc_cap_d` | 0.25 | `:1548` | same |
+| `calculate.slotting_doc_cap_d` | 0.25 | `:1548` | same. Feeds contract P11c (2026-11-05): deleted from the registry; the slot depth cap is `RigidityProfile::slot_doc_factor` (per-machine data; the hobby grade default 0.25 is the Shapeoko port, Unsourced) |
 
 ### DOC/WOC factors (`feeds/mod.rs`), × tool diameter
 

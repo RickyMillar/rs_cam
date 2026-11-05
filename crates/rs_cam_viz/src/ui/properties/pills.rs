@@ -285,7 +285,10 @@ mod tests {
     /// The depth per pass "Apply all" writes on the demo pocket (mm): the
     /// safe envelope proposal (K2b, feeds contract P5). See
     /// `depth_per_pass_pill_offers_the_as_applied_value_and_greys_on_a_match`.
-    const DEMO_POCKET_APPLIED_DPP: f64 = 1.0;
+    /// P11c (D13 item 6): the default rigidity is the hobby grade set, so the
+    /// cap is 0.25 x 6 = 1.5 mm (was 0.20 x 6 = 1.2 mm, three passes of 1.0);
+    /// the 3.0 mm pocket cuts in two passes of 1.5.
+    const DEMO_POCKET_APPLIED_DPP: f64 = 1.5;
 
     /// The demo pocket of UX-R03-014: Ø6 two-flute flat end mill, fresh
     /// Pocket op, default stock / material / Generic Wood Router.
@@ -409,7 +412,20 @@ mod tests {
     /// not act and the pill stays at 1.2.
     #[test]
     fn depth_per_pass_pill_offers_the_as_applied_value_and_greys_on_a_match() {
-        let (session, tool, op, result) = demo_pocket();
+        let (session, tool, mut op, _) = demo_pocket();
+        // P11c (D13 item 6): the hobby grade cap (0.25 x 6 = 1.5 mm) equals
+        // the fixture's stated 1.5 mm, so no limit binds there. The test
+        // states 2.0 mm, so the rigidity cap lowers it (the claim below).
+        let _ = op.set_depth_per_pass(2.0);
+        let result = rs_cam_core::feeds::suggest::feeds_result_for_operation(
+            &op,
+            &tool,
+            &session.stock_config().material,
+            session.machine(),
+            rs_cam_core::feeds::embedded_vendor_lut(),
+            session.post_config().spindle_strategy,
+        )
+        .expect("valid pairing");
         let pills = PillSuggestions::new(
             &op,
             &result,
@@ -437,7 +453,8 @@ mod tests {
         .expect("the demo pocket has an envelope");
         let proposal = envelope.proposal.get().ap_mm;
         // The depth snaps once to the realised step down (P5 card trap):
-        // the demo pocket is 3.0 deep, so 1.2 cuts in three passes of 1.0.
+        // the demo pocket is 3.0 deep, so the 1.5 cap cuts in two passes
+        // (P11c; it was 1.2 in three passes of 1.0).
         let total = op.total_depth().expect("the demo pocket states a depth");
         let applied =
             rs_cam_core::ops::depth::realised_step_down(total, proposal).unwrap_or(proposal);

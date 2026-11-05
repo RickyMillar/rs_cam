@@ -117,7 +117,7 @@ The support arm is one axis: `Refused` (Suggest returned an error), `VendorBacke
 - 2D: Pocket, Profile, Adaptive on a 40 mm square polygon, stock 44 × 44 × 18 below z = 0; end_mill and bull_nose at 6 mm; the four materials.
 - 3D: a dome height field (top z = 0, flat base z = -8, 46 mm footprint) in the same stock; heights pinned to top 0 and bottom -8 on all 3D cells (`bottom_z: Auto` collapses a waterline band). Waterline, DropCutter, Adaptive3d with end_mill; Scallop and DropCutter with ball_nose and tapered_ball_nose; 6 mm; softwood and hardwood.
 - Simulation: resolution 1.0, metrics on, auto resolution off, other fields from `SimulationOptions::default()`. That default has `adaptive_feed_modulation: true`, so the post-simulation verdicts read the modulated feed, as the GUI default does.
-- Cells run: 35; errors: 0; left out (a fixed list, `sim_left_out`): 3; wall-clock of the subset: 46.2 s.
+- Cells run: 35; errors: 0; left out (a fixed list, `sim_left_out`): 3; wall-clock of the subset: 39.5 s.
 
 ## Post-simulation diagnostic ids (cells that fire each id)
 
@@ -134,12 +134,12 @@ The support arm is one axis: `Refused` (Suggest returned an error), `VendorBacke
 | `load.chipload.within` | 11 |
 | `load.deflection.unmodeled` | 8 |
 | `load.deflection.within` | 27 |
-| `load.depth.exceeds` | 16 |
+| `load.depth.exceeds` | 8 |
 | `load.depth.reported` | 9 |
-| `load.depth.within` | 10 |
+| `load.depth.within` | 18 |
 | `load.power.unmodeled` | 8 |
 | `load.power.within` | 27 |
-| `project.sim_outside_envelope` | 18 |
+| `project.sim_outside_envelope` | 10 |
 | `tool.flute_reach_within` | 35 |
 
 ## Doors that could not answer

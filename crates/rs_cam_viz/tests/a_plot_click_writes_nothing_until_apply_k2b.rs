@@ -166,8 +166,17 @@ fn a_plot_click_moves_the_ring_and_the_apply_sends_the_pick_k2b() {
     assert!(candidates.get(ID).is_none(), "Esc drops the candidate");
 }
 
+/// Feeds contract P11c (D13 item 6): the Pocket is 6 mm deep, not the
+/// fixture's 3 mm. The hobby grade cap (0.25 x 6.35 = 1.5875 mm) leaves the
+/// stated 1.5 mm as the proposal, and on a 3 mm floor the outside pick
+/// (about 2.02 mm) snaps to two passes of 1.5 mm, the proposal itself. On a
+/// 6 mm floor it snaps to three passes of 2.0 mm, above the proposal.
 #[test]
 fn the_session_is_unchanged_until_the_apply_and_an_outside_pick_warns_k2b() {
+    let mut operation = rs_cam_core::compute::fixture_values::fixture_op(OperationType::Pocket);
+    if let rs_cam_core::compute::catalog::OperationConfig::Pocket(cfg) = &mut operation {
+        cfg.floor = rs_cam_core::compute::floor::Floor::top(6.0);
+    }
     let mut controller = AppController::with_backend(SilentBackend);
     let mut builder = ProjectSessionBuilder::new().tool(ToolConfig::test_default(
         ToolId::from_raw(1),
@@ -182,7 +191,7 @@ fn the_session_is_unchanged_until_the_apply_and_an_outside_pick_warns_k2b() {
                 id: rs_cam_core::ToolpathId::from_raw(0),
                 name: "Pocket".to_owned(),
                 enabled: true,
-                operation: rs_cam_core::compute::fixture_values::fixture_op(OperationType::Pocket),
+                operation,
                 dressups: Default::default(),
                 heights: Default::default(),
                 tool_id: Some(rs_cam_core::ids::ToolId::from_raw(1)),
@@ -252,7 +261,11 @@ fn the_session_is_unchanged_until_the_apply_and_an_outside_pick_warns_k2b() {
     );
     assert!(
         after.operation.depth_per_pass().expect("a Pocket depth") > env.proposal.get().ap_mm,
-        "Q6: the outside depth is written, not refused"
+        "Q6: the outside depth is written, not refused: picked {} mm, written {:?} mm, \
+         proposal {} mm",
+        outside.ap_mm,
+        after.operation.depth_per_pass(),
+        env.proposal.get().ap_mm
     );
     let placed = controller
         .state

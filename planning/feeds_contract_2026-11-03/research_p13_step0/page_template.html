@@ -1,0 +1,166 @@
+<!doctype html>
+<html lang="en">
+<head>
+<meta charset="utf-8">
+<meta name="viewport" content="width=device-width, initial-scale=1">
+<title>Stepover Model Inputs</title>
+<style>
+:root{--bg:#fbfaf7;--fg:#1d1d1b;--muted:#5f5d57;--line:#d9d6cf;--card:#ffffff;--a:#2563a8;--b:#b4531f;--c:#2f7d4f;--d:#8a3fa0;--bad:#b42318;--ok:#2f7d4f;--hm0:#eef3fa;--hm1:#1f4e8c}
+@media (prefers-color-scheme: dark){:root:not([data-theme="light"]){--bg:#161615;--fg:#ecebe6;--muted:#a3a19a;--line:#3a3935;--card:#1f1f1d;--a:#7fb0ea;--b:#f0a070;--c:#7fd09e;--d:#d29be3;--bad:#ff8a7a;--ok:#7fd09e;--hm0:#1f2a38;--hm1:#8fc1ff}}
+:root[data-theme="dark"]{--bg:#161615;--fg:#ecebe6;--muted:#a3a19a;--line:#3a3935;--card:#1f1f1d;--a:#7fb0ea;--b:#f0a070;--c:#7fd09e;--d:#d29be3;--bad:#ff8a7a;--ok:#7fd09e;--hm0:#1f2a38;--hm1:#8fc1ff}
+*{box-sizing:border-box}
+body{margin:0;background:var(--bg);color:var(--fg);font:15px/1.5 system-ui,-apple-system,Segoe UI,sans-serif}
+main{max-width:980px;margin:0 auto;padding:16px}
+h1{font-size:1.5rem;margin:.4em 0}h2{font-size:1.2rem;margin:1.6em 0 .4em;border-top:1px solid var(--line);padding-top:.8em}
+h3{font-size:1rem;margin:1.1em 0 .3em}
+p,li{max-width:72ch}.muted{color:var(--muted)}
+.card{background:var(--card);border:1px solid var(--line);border-radius:8px;padding:12px;margin:10px 0}
+.cid{font:11px ui-monospace,monospace;color:var(--muted);white-space:nowrap}
+code{font:13px ui-monospace,monospace;overflow-wrap:anywhere}
+.tw{overflow-x:auto;-webkit-overflow-scrolling:touch}
+table{border-collapse:collapse;width:100%;font-size:13px}#gtab{min-width:940px}code.site{overflow-wrap:normal;white-space:nowrap;font-size:11px}
+th,td{border-bottom:1px solid var(--line);padding:5px 6px;text-align:left;vertical-align:top}
+th{position:sticky;top:0;background:var(--card)}
+.st{display:inline-block;min-width:1.6em;text-align:center;border-radius:4px;color:var(--bg);font-weight:600}
+.st-a{background:var(--a)}.st-b{background:var(--b)}.st-c{background:var(--c)}.st-d{background:var(--d)}
+.filters{display:flex;flex-wrap:wrap;gap:6px;margin:8px 0}
+.filters button{border:1px solid var(--line);background:var(--card);color:var(--fg);border-radius:14px;padding:3px 10px;cursor:pointer;font-size:13px}
+.filters button[aria-pressed="true"]{background:var(--fg);color:var(--bg)}
+svg{max-width:100%;height:auto;display:block}
+svg text{fill:var(--fg);font:11px system-ui,sans-serif}
+.legend{display:flex;flex-wrap:wrap;gap:12px;font-size:12px;color:var(--muted)}
+.sw{display:inline-block;width:10px;height:10px;border-radius:2px;margin-right:4px;vertical-align:middle}
+.grid2{display:grid;grid-template-columns:1fr;gap:12px}@media(min-width:760px){.grid2{grid-template-columns:1fr 1fr}}
+.tag{font-size:11px;border:1px solid var(--line);border-radius:10px;padding:0 6px;color:var(--muted)}
+</style>
+</head>
+<body>
+<main>
+<h1>What the model needs to compute a stepover and a depth</h1>
+<p class="muted">Feeds contract P13 step 0, 2026-11-05. Code at <code>36fd50c54</code>. Every number on this page has a claim ID; <code>assert_claims.py</code> checks each one. Section G comes first at the operator's request: the assumptions, then the math.</p>
+<div class="card"><b>Short answer.</b> The model cannot compute a Pocket stepover: no limit it holds falls with the width. The peak force is almost flat in width (15.33 N at 0.35 D, 15.92 N at D) <span class="cid">C09</span>, the Pocket power is judged at a full slot <span class="cid">C04</span>, and the removal-rate optimum is the full width in every cell and sweep <span class="cid">C11 C12</span>. A frame spring explains a shallow <i>depth</i>, not a narrow width <span class="cid">C10</span>. The factors that can pick a narrow width (chip evacuation, finish, chatter, tool life, corner geometry) are all ignored today.</div>
+
+<h2>G. Inputs and assumptions per output</h2>
+<p>Status: <span class="st st-a">a</span> the user states it, <span class="st st-b">b</span> the model derives it, <span class="st st-c">c</span> a typed constant stands in, <span class="st st-d">d</span> ignored with no stand-in. Rank 1 = likely decides the result (this study's judgement). <span id="gcount" class="cid"></span></p>
+<div class="filters" id="fout"></div>
+<div class="filters" id="fst"></div>
+<div class="tw card"><table id="gtab"><thead><tr><th>Id</th><th>Factor</th><th>St.</th><th>Stand-in / hidden assumption</th><th>F201</th><th>Stated?</th><th>Site</th><th>H</th><th>I</th></tr></thead><tbody></tbody></table></div>
+<h3>Does the model have what it needs?</h3>
+<div class="tw card"><table id="otab"><thead><tr><th>Output</th><th>a</th><th>b</th><th>c</th><th>d</th><th>Verdict</th></tr></thead><tbody></tbody></table></div>
+<ul>
+<li><b>Before a computed stepover is credible:</b> a width-dependent limit. None of the force limits is one. Only corner coverage is derivable now: where the inward offsets keep a sharp 90&deg; corner, they leave no gap for s &le; (1 + 1/&radic;2) r = 0.854 D <span class="cid">C14</span>.</li>
+<li><b>Before a computed depth is credible:</b> a machine force budget or a measured frame stiffness (G01, G02) and a sourced or user-stated deflection target (G21).</li>
+<li><b>Can stay as stated assumptions with a warning:</b> helix default, carbide E, bending fraction, grain envelope, moisture, climb mode, runout, coating, long-tool derate. Four of these typed constants sit outside the F201 registry <span class="cid">C18</span>.</li>
+</ul>
+
+<h2>A. Is the force model in the right range? (light check)</h2>
+<p>The Python port matches the release CLI and the FM1 golden file at <b id="nport"></b> points with no miss <span class="cid">C02</span>. FM1 D 6 hardwood Pocket: 15.3253 N, 0.0600 kW (slot case), 7.5 % of 0.8 kW <span class="cid">C03 C05</span>. Below: the shipped laws at nine printed full-slot points. Every point is inside the spindle and the 200 &micro;m tool limit <span class="cid">C06</span>.</p>
+<div class="card"><svg id="avp" viewBox="0 0 640 300" role="img" aria-label="Power against tool deflection at vendor slot points"></svg>
+<div class="legend"><span><span class="sw" style="background:var(--a)"></span>hobby chart (Sienci, Carbide 3D)</span><span><span class="sw" style="background:var(--b)"></span>industrial chart (Amana, Harvey)</span><span>dashed: 0.8 kW generic spindle</span></div></div>
+<div class="tw card"><table id="atab"><thead><tr><th>Point</th><th>ap/D</th><th>Peak N</th><th>Power kW</th><th>Tool &micro;m</th><th>Assumed</th></tr></thead><tbody></tbody></table></div>
+<p>Coefficients match the captured Curti and Goli tables <span class="cid">C22</span>. The code reads Curti's helix-0 rows for every tool. Curti's own helix-30 rows give Ks<sub>n</sub> 0.65&times; as large and an edge term near zero <span class="cid">C23</span>, so the shipped force is on the high side. That makes limits bind earlier, so "nothing binds" is robust.</p>
+
+<h2>B. Frame compliance</h2>
+<p>No machine, belt, screw or collet stiffness is printed in the repo <span class="cid">C17</span>. It would enter as a spring in series with the tool beam: <code>&delta; = F<sub>peak</sub> (1/k<sub>frame</sub> + c<sub>tool</sub>(ap)) &le; target</code>. The target is 200 &micro;m today, F201 Unsourced; a user-stated finish allowance is a better target.</p>
+<div class="grid2">
+<div class="card"><b>Implied k (not a source)</b> <span class="cid">C07 C08</span><svg id="bk" viewBox="0 0 460 300" role="img" aria-label="Implied frame stiffness"></svg><p class="muted">The stiffness at which each point meets 200 &micro;m. Printed points are recommendations inside the limit, so their bars are lower bounds on the stiffness the vendor assumed.</p></div>
+<div class="card"><b>Force against width, D 6 hardwood, ap 1.5 mm</b> <span class="cid">C09</span><svg id="fw" viewBox="0 0 460 300" role="img" aria-label="Force and removal rate against width"></svg><div class="legend"><span><span class="sw" style="background:var(--b)"></span>peak resultant N</span><span><span class="sw" style="background:var(--a)"></span>mean N</span><span><span class="sw" style="background:var(--c)"></span>MRR (right axis)</span></div></div>
+</div>
+<div class="card"><b>With a frame spring, the deepest admitted depth per width</b> <span class="cid">C10</span><svg id="bf" viewBox="0 0 640 300" role="img" aria-label="Admitted depth per width with a frame spring"></svg><div class="legend" id="bflg"></div><p class="muted">The removal rate along each front rises to the full width: the frame limits the depth, not the width.</p></div>
+<h3>Measurement protocol</h3>
+<ol>
+<li>Put a dial indicator (0.01 mm or finer) on a magnetic base on the bed, not the gantry.</li>
+<li>Clamp a short steel pin of the largest diameter the collet takes. Compute its compliance with the shipped beam and subtract it.</li>
+<li>Power the motors, as in a cut.</li>
+<li>X and Y: pull the pin along the axis with a spring scale or a weight over a pulley. Indicate on the far side, on the same line.</li>
+<li>Z: pull up and down at the collet nut; indicate on the nut face.</li>
+<li>Use 6 loads from 0 to about 120 N (section A peaks are 14-104 N). Load up, then unload. Do 3 runs per axis.</li>
+<li>Repeat at the gantry centre and both ends of Y, with Z high and low.</li>
+<li>Fit deflection against force on the loading branch above the first step. Slope = compliance (mm/N) minus the pin; k = 1/slope (N/mm). Report the intercept as backlash. Use the worst position.</li>
+</ol>
+
+<h2>C. Chatter</h2>
+<p>A stability-lobe model needs the tool-tip frequency response (natural frequency, damping, modal stiffness per direction) and the radial coefficient K<sub>r</sub>, which the code sets to 0. The repo prints neither. A phone-microphone tap gives the frequency, the ring-down an estimate of damping, and the B protocol the static stiffness; a real FRF needs a force hammer, per tool and stickout. <b>Recommendation: out of scope for P13</b>; state "the cut is stable" on the card. Revisit after B.</p>
+
+<h2>D. Chip evacuation</h2>
+<p>No printed numeric rule for a wood or plastic slot from chip evacuation or heat. The repo has Sorotec's slot depth "bis 2-facher Durchmesser" with no reason, Harvey's miniature-tool step-down rule (not wood), and qualitative upcut advice (Onsrud, Vortex). It stays a stated assumption: "chips always clear".</p>
+
+<h2>E. The removal-rate aim</h2>
+<p><code>MRR = ae &middot; ap &middot; vf</code>, <code>vf = min(rpm Z f<sub>z</sub> lift(ae), cap)</code>. Below the cap MRR grows as ae/sin &psi;; at the cap as ae. So the objective prefers the full width unless a limit falls steeply with the width, and none does <span class="cid">C11 C12 C13</span>.</p>
+<div class="card"><b>D 6 hardwood Pocket, generic machine: MRR over (ae, ap)</b><svg id="em" viewBox="0 0 640 360" role="img" aria-label="Removal rate heat map"></svg><div class="legend"><span>colour: MRR</span><span>hatched: outside a computed limit (this study applies 1 x D at the band chip in every column)</span><span>&#9675; convention (0.35 D, 0.25 D)</span><span>&#9733; optimum</span><span>dashed: typed 0.25 D depth cap</span></div></div>
+<div class="tw card"><table id="etab"><thead><tr><th>Cell</th><th>Vendor row</th><th>Optimum (computed limits)</th><th>With typed caps</th><th>Convention MRR</th></tr></thead><tbody></tbody></table></div>
+<p>Feed caps from 4000 to unlimited and spindle powers from 0.8 to 6 kW (sweep values, not machines) all give ae = D <span class="cid">C12</span>. For scale, Adams prints "Belt driven &ndash; 4,000 x 4 x 4 = 64 cm&sup3;/min" at 100 % width for softwood <span class="cid">C19</span>; printed hobby slots in hardwood are 0.39-0.40 D deep at full width <span class="cid">C20</span>.</p>
+
+<h2>F. Options</h2>
+<div class="tw card"><table><thead><tr><th>Option</th><th>Gather</th><th>Changes</th><th>Code</th><th>Advice</th></tr></thead><tbody>
+<tr><td>O1 Force budget per machine class from printed hobby slots</td><td>Nothing new (Sienci, Carbide 3D rows are in the repo)</td><td>A derived hobby depth replaces the typed 0.25 D</td><td>small</td><td><b>first</b></td></tr>
+<tr><td>O2 Measured frame stiffness</td><td>Protocol B; a user-stated deflection target (finish allowance)</td><td>k<sub>frame</sub> in series with the beam; per-machine depth</td><td>small</td><td>second</td></tr>
+<tr><td>O3 Stepover = geometry bound + stated assumption</td><td>An operator ruling</td><td>Stated default (0.35 D Unsourced, or full width up to 0.854 D) with a visible "no width limit modelled" warning</td><td>small</td><td><b>rule now</b></td></tr>
+<tr><td>O4 MRR pick in the envelope</td><td>Nothing</td><td>Proposal = most removal inside the limits</td><td>small</td><td>after O1/O2</td></tr>
+<tr><td>O5 Chip evacuation, chatter, tool life</td><td>A printed numeric source; modal data</td><td>Real width limits</td><td>large</td><td>out of scope</td></tr>
+</tbody></table></div>
+<p>Order: (1) the O3 ruling; (2) O1; (3) the O2 measurement; (4) O4; (5) O5 only when a source appears.</p>
+<p class="muted">Files: shipped_laws.py, run_cli.py, verify_port.py, build_inventory.py, vendor_points.py, analysis.py, force_width.py, build_page.py, assert_claims.py and their JSON outputs, in this folder.</p>
+</main>
+<script>
+const DATA = __DATA__;
+const NS="http://www.w3.org/2000/svg";
+function el(t,a,p){const e=document.createElementNS(NS,t);for(const k in a)e.setAttribute(k,a[k]);if(p)p.appendChild(e);return e}
+function txt(p,x,y,s,a){const t=el("text",Object.assign({x,y},a||{}),p);t.textContent=s;return t}
+function axes(svg,o){const {x0,x1,y0,y1,W,H,m}=o;const sx=v=>m.l+(v-x0)/(x1-x0)*(W-m.l-m.r);const sy=v=>H-m.b-(v-y0)/(y1-y0)*(H-m.t-m.b);
+el("line",{x1:m.l,y1:H-m.b,x2:W-m.r,y2:H-m.b,stroke:"currentColor","stroke-opacity":.4},svg);el("line",{x1:m.l,y1:m.t,x2:m.l,y2:H-m.b,stroke:"currentColor","stroke-opacity":.4},svg);
+for(let i=0;i<=4;i++){const xv=x0+(x1-x0)*i/4,yv=y0+(y1-y0)*i/4;txt(svg,sx(xv),H-m.b+14,+xv.toFixed(2),{"text-anchor":"middle"});txt(svg,m.l-4,sy(yv)+3,+yv.toFixed(yv>100?0:2),{"text-anchor":"end"})}
+if(o.xl)txt(svg,(m.l+W-m.r)/2,H-4,o.xl,{"text-anchor":"middle"});if(o.yl)txt(svg,12,m.t-6,o.yl,{});return {sx,sy}}
+const css=v=>getComputedStyle(document.documentElement).getPropertyValue(v).trim();
+function draw(){
+ // G table
+ const inv=DATA.inventory;const outs=["all","stepover","depth","feed","rpm","plunge_ramp"];let fo="all",fs="all";
+ const fout=document.getElementById("fout"),fst=document.getElementById("fst");fout.innerHTML="";fst.innerHTML="";
+ outs.forEach(o=>{const b=document.createElement("button");b.textContent=o;b.setAttribute("aria-pressed",o===fo);b.onclick=()=>{fo=o;[...fout.children].forEach(c=>c.setAttribute("aria-pressed",c.textContent===o));rows()};fout.appendChild(b)});
+ ["all","a","b","c","d"].forEach(o=>{const b=document.createElement("button");b.textContent=o==="all"?"all statuses":"status "+o;b.dataset.v=o;b.setAttribute("aria-pressed",o===fs);b.onclick=()=>{fs=o;[...fst.children].forEach(c=>c.setAttribute("aria-pressed",c.dataset.v===o));rows()};fst.appendChild(b)});
+ function rows(){const tb=document.querySelector("#gtab tbody");tb.innerHTML="";let n=0;inv.filter(r=>(fo==="all"||r.outputs.includes(fo))&&(fs==="all"||r.status===fs)).forEach(r=>{n++;const tr=document.createElement("tr");
+  tr.innerHTML=`<td class="cid">${r.id}</td><td>${r.factor}<div class="muted" style="font-size:12px">${r.outputs.join(", ")}</div></td><td><span class="st st-${r.status}">${r.status}</span></td><td><b>${r.stand_in}</b><br>${r.assumption}${r.note?`<div class="muted" style="font-size:12px">${r.note}</div>`:""}</td><td>${r.f201}</td><td>${r.stated}</td><td><code class="site">${r.site.replace("crates/rs_cam_core/src/","").replace("crates/rs_cam_core/","")}</code></td><td>${r.rank_hobby}</td><td>${r.rank_industrial}</td>`;tb.appendChild(tr)});
+  document.getElementById("gcount").textContent=`${n} of ${inv.length} rows shown · C16`}
+ rows();
+ const ot=document.querySelector("#otab tbody");ot.innerHTML="";const verdict={stepover:"No: no limit falls with the width",depth:"Partly: vendor table and flute only; the hobby depth has no physics",feed:"Mostly: printed chip, Garr lift, cap",rpm:"Mostly: printed row rpm, cap arm",plunge_ramp:"Mostly: G10 fraction; ramp angle a repo rule"};
+ outs.slice(1).forEach(o=>{const c={a:0,b:0,c:0,d:0};inv.filter(r=>r.outputs.includes(o)).forEach(r=>c[r.status]++);const tr=document.createElement("tr");tr.innerHTML=`<td>${o}</td><td>${c.a}</td><td>${c.b}</td><td>${c.c}</td><td>${c.d}</td><td>${verdict[o]}</td>`;ot.appendChild(tr)});
+ document.getElementById("nport").textContent=DATA.port_n;
+ // A
+ const vp=DATA.vendor;let svg=document.getElementById("avp");svg.innerHTML="";const W=640,H=300,m={l:52,r:16,t:30,b:34};
+ let ax=axes(svg,{x0:0,x1:0.9,y0:0,y1:25,W,H,m,xl:"power kW (slot)",yl:"tool deflection µm (limit 200, off scale)"});
+ el("line",{x1:ax.sx(0.8),x2:ax.sx(0.8),y1:m.t,y2:H-m.b,stroke:css("--bad"),"stroke-dasharray":"5 4"},svg);
+ vp.forEach(p=>{const hob=/sienci|c3d/.test(p.id);el("circle",{cx:ax.sx(p.power_kw),cy:ax.sy(p.tool_deflection_mm*1000),r:5,fill:hob?css("--a"):css("--b")},svg);txt(svg,ax.sx(p.power_kw)+7,ax.sy(p.tool_deflection_mm*1000)+4,p.id.replace(/_/g," "),{"font-size":"10"})});
+ const at=document.querySelector("#atab tbody");at.innerHTML="";vp.forEach(p=>{const tr=document.createElement("tr");tr.innerHTML=`<td>${p.id}<div class="muted" style="font-size:11px">${p.quote}</div></td><td>${p.ap_over_d.toFixed(2)}</td><td>${p.peak_resultant_n.toFixed(1)}</td><td>${p.power_kw.toFixed(3)}</td><td>${(p.tool_deflection_mm*1000).toFixed(1)}</td><td class="muted">${p.assumed}</td>`;at.appendChild(tr)});
+ // B implied k
+ svg=document.getElementById("bk");svg.innerHTML="";const ks=DATA.kbars;const W2=460,H2=300,m2={l:150,r:20,t:14,b:30};const kmax=Math.max(...ks.map(k=>k.k));
+ const sx=v=>m2.l+v/kmax*(W2-m2.l-m2.r);const bh=(H2-m2.t-m2.b)/ks.length;
+ ks.forEach((k,i)=>{const y=m2.t+i*bh;el("rect",{x:m2.l,y:y+2,width:sx(k.k)-m2.l,height:bh-5,fill:k.kind==="convention"?css("--d"):k.kind==="hobby"?css("--a"):css("--b")},svg);txt(svg,m2.l-4,y+bh/2+3,k.label,{"text-anchor":"end","font-size":"10"});txt(svg,sx(k.k)+3,y+bh/2+3,Math.round(k.k)+" N/mm",{"font-size":"10"})});
+ // force vs width
+ svg=document.getElementById("fw");svg.innerHTML="";const fw=DATA.fw;const m3={l:40,r:44,t:20,b:34};
+ ax=axes(svg,{x0:0,x1:1,y0:0,y1:20,W:460,H:300,m:m3,xl:"ae / D",yl:"N"});const mrrMax=Math.max(...fw.map(r=>r.mrr));
+ const line=(pts,c,dash)=>el("polyline",{points:pts.map(p=>p.join(",")).join(" "),fill:"none",stroke:c,"stroke-width":2,"stroke-dasharray":dash||""},svg);
+ line(fw.map(r=>[ax.sx(r.ae_fr),ax.sy(r.peak_n)]),css("--b"));line(fw.map(r=>[ax.sx(r.ae_fr),ax.sy(r.mean_n)]),css("--a"));
+ line(fw.map(r=>[ax.sx(r.ae_fr),ax.sy(r.mrr/mrrMax*20)]),css("--c"),"4 3");txt(svg,460-m3.r-2,m3.t-6,"MRR max "+Math.round(mrrMax)+" mm³/min",{"font-size":"9","text-anchor":"end"});
+ // frame fronts
+ svg=document.getElementById("bf");svg.innerHTML="";const fr=DATA.fronts;const cols=[css("--d"),css("--b"),css("--a"),css("--c")];
+ ax=axes(svg,{x0:0,x1:1,y0:0,y1:1.05,W:640,H:300,m:{l:46,r:16,t:20,b:34},xl:"ae / D",yl:"deepest admitted ap / D"});
+ const lg=document.getElementById("bflg");lg.innerHTML="";
+ fr.forEach((f,i)=>{line(f.front.map(p=>[ax.sx(p.ae_fr),ax.sy(p.ap_fr)]),cols[i%4]);const b=f.best;el("circle",{cx:ax.sx(b.ae_fr),cy:ax.sy(b.ap_fr),r:5,fill:cols[i%4]},svg);lg.insertAdjacentHTML("beforeend",`<span><span class="sw" style="background:${cols[i%4]}"></span>k ${Math.round(f.k)} N/mm (${f.label}); optimum ae ${b.ae_fr} D, ap ${b.ap_fr} D</span>`)});
+ el("line",{x1:ax.sx(0),x2:ax.sx(1),y1:ax.sy(0.25),y2:ax.sy(0.25),stroke:css("--muted"),"stroke-dasharray":"5 4"},svg);
+ // E heat map
+ svg=document.getElementById("em");svg.innerHTML="";const g=DATA.grid;const m4={l:46,r:16,t:20,b:34};const W4=640,H4=360;
+ ax=axes(svg,{x0:0.025,x1:1.025,y0:0.025,y1:2.025,W:W4,H:H4,m:m4,xl:"ae / D",yl:"ap / D"});const gm=Math.max(...g.map(p=>p.mrr));
+ const pat=el("pattern",{id:"hatch",width:6,height:6,patternUnits:"userSpaceOnUse",patternTransform:"rotate(45)"},el("defs",{},svg));el("line",{x1:0,y1:0,x2:0,y2:6,stroke:css("--muted"),"stroke-width":1.5},pat);
+ const cw=(W4-m4.l-m4.r)/20,ch=(H4-m4.t-m4.b)/40;const c0=css("--hm0"),c1=css("--hm1");
+ const mix=(a,b,t)=>{const h=s=>[1,3,5].map(i=>parseInt(s.slice(i,i+2),16));const A=h(a),B=h(b);return`rgb(${A.map((v,i)=>Math.round(v+(B[i]-v)*t)).join(",")})`};
+ g.forEach(p=>{const x=ax.sx(p.ae_fr)-cw/2,y=ax.sy(p.ap_fr)-ch/2;el("rect",{x,y,width:cw,height:ch,fill:mix(c0,c1,Math.sqrt(p.mrr/gm))},svg);if(p.out.length)el("rect",{x,y,width:cw,height:ch,fill:"url(#hatch)"},svg)});
+ el("line",{x1:ax.sx(0.025),x2:ax.sx(1.025),y1:ax.sy(0.25),y2:ax.sy(0.25),stroke:css("--bad"),"stroke-dasharray":"5 4","stroke-width":1.5},svg);
+ el("circle",{cx:ax.sx(0.35),cy:ax.sy(0.25),r:6,fill:"none",stroke:css("--fg"),"stroke-width":2},svg);
+ const bst=DATA.cells.hw6.computed_only;txt(svg,ax.sx(bst.ae_fr),ax.sy(bst.ap_fr)+5,"★",{"text-anchor":"middle","font-size":"16"});
+ const et=document.querySelector("#etab tbody");et.innerHTML="";Object.entries(DATA.cells).forEach(([k,v])=>{const f=b=>b?`ae ${b.ae_fr} D, ap ${b.ap_fr} D: ${Math.round(b.mrr)}`:"none";const tr=document.createElement("tr");tr.innerHTML=`<td>${k}</td><td class="muted" style="font-size:11px">${v.row}</td><td>${f(v.computed_only)}</td><td>${f(v.with_typed_caps)}</td><td>${Math.round(v.convention.mrr)}</td>`;et.appendChild(tr)});
+}
+draw();
+matchMedia("(prefers-color-scheme: dark)").addEventListener("change",draw);
+</script>
+</body>
+</html>

@@ -121,6 +121,7 @@ pub fn validate_stale_defaults(session: &ProjectSession) -> Vec<StaleDefault> {
             tc,
             tool,
             &stock.material,
+            session.machine(),
             stock_bottom_z,
         ));
     }
@@ -136,6 +137,7 @@ pub fn validate_one_toolpath(
     tc: &ToolpathConfig,
     tool: Option<&ToolConfig>,
     material: &Material,
+    machine: &crate::machine::MachineProfile,
     stock_bottom_z: f64,
 ) -> Vec<StaleDefault> {
     let mut out = Vec::new();
@@ -146,7 +148,7 @@ pub fn validate_one_toolpath(
         if let Some(d) = check_tapered_ball_plunge(tc, tool) {
             out.push(d);
         }
-        if let Some(d) = check_wood_adaptive_stepover(tc, tool, material) {
+        if let Some(d) = check_wood_adaptive_stepover(tc, tool, material, machine) {
             out.push(d);
         }
     }
@@ -256,10 +258,19 @@ fn check_tapered_ball_plunge(tc: &ToolpathConfig, tool: &ToolConfig) -> Option<S
     })
 }
 
+/// The stale-default detection threshold of the wood adaptive stepover
+/// rule: a stored stepover below this share of D is a pre-Fix-1 value. A
+/// test of an old project file, not a cut rule; no source states it. P11c
+/// (review item M4): it is not a copy of a width or a rigidity value, so it
+/// stays a named threshold; the target the fix writes reads
+/// `feeds::default_radial_width`.
+const STALE_WOOD_ADAPTIVE_FLOOR_D: f64 = 0.15;
+
 fn check_wood_adaptive_stepover(
     tc: &ToolpathConfig,
     tool: &ToolConfig,
     material: &Material,
+    machine: &crate::machine::MachineProfile,
 ) -> Option<StaleDefault> {
     if !is_wood_class(material) {
         return None;
@@ -274,14 +285,25 @@ fn check_wood_adaptive_stepover(
     }
     let stepover = tc.operation.as_params().stepover()?;
     let d = tool_def.diameter();
-    let floor = 0.15 * d;
+    let floor = STALE_WOOD_ADAPTIVE_FLOOR_D * d;
     if stepover >= floor {
         return None;
     }
-    // Suggested new value matches the post-Fix-1 target: 0.20 × D
-    // (machine.rigidity.adaptive_woc_factor is the runtime authority but
-    // 0.20 is the typical fresh value; the auto-fix uses the machine factor).
-    let new_value = 0.20 * d;
+    // P11c (D13 item 6, review item M4): the target is the width the
+    // calculator reads on an unstated axis for this op on this machine
+    // (`feeds::default_radial_width`; on a wood flat adaptive it is the
+    // machine's `adaptive_woc_factor` x D), not a typed copy (it was 0.20 x D).
+    let input = crate::feeds::suggest::feeds_input_for_operation(
+        &tc.operation,
+        tool,
+        material,
+        machine,
+        crate::feeds::embedded_vendor_lut(),
+        crate::feeds::SpindleStrategy::default(),
+    );
+    let new_value = crate::feeds::default_radial_width(&input, machine).0;
+    let target_pct = new_value / d * 100.0;
+    let floor_pct = STALE_WOOD_ADAPTIVE_FLOOR_D * 100.0;
     Some(StaleDefault {
         rule_id: StaleDefaultRule::WoodAdaptiveStepoverPreFix1,
         toolpath_id: tc.id,
@@ -290,9 +312,10 @@ fn check_wood_adaptive_stepover(
             .title()
             .to_owned(),
         detail: format!(
-            "The adaptive stepover {stepover:.3} mm is below 15 % of the tool diameter \
+            "The adaptive stepover {stepover:.3} mm is below {floor_pct:.0} % of the tool diameter \
              ({floor:.3} mm), the lower limit for wood. The current target for wood is \
-             20 % of the diameter, {new_value:.3} mm."
+             {target_pct:.0} % of the diameter, {new_value:.3} mm (the machine rigidity: {}).",
+            machine.rigidity_basis().text()
         ),
         new_value,
         current_value: stepover,
@@ -542,7 +565,10 @@ mod tests {
             .filter(|d| d.rule_id == StaleDefaultRule::WoodAdaptiveStepoverPreFix1)
             .collect();
         assert_eq!(stepover_defects.len(), 1, "got {:?}", defects);
-        assert!((stepover_defects[0].new_value - 1.20).abs() < 1e-6);
+        // P11c (D13 item 6): the target is the hobby grade default
+        // `adaptive_woc_factor` x D (it was the typed 0.20 x D).
+        let target = crate::machine::RigidityProfile::default().adaptive_woc_factor * 6.0;
+        assert!((stepover_defects[0].new_value - target).abs() < 1e-6);
     }
 
     #[test]

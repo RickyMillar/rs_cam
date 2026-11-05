@@ -11,7 +11,7 @@ Every door that reads a file. The entry point is `io::load_model_file`.
   nearest `<g>`; subpaths join; `SVG_DEFAULT_UNITS`, `svg_declared_size`.
 - `step_input.rs` — STEP import through the `truck` crate. A closed shell that winds inward is reversed once (`orient_shell_outward`).
   Face loops walk in a fixed order, the largest first (the outer ring), so a re-import gives the same keys (UX-7).
-- `tool_library.rs`, `machine_library.rs` — the TOML catalogues (`crate::settings::paths`); a tool catalogue takes the K3 fact forms (`{ stated = .. }`, `{ catalogue = .., source = .. }`, `{ estimated = .., basis = .. }`, `centre_cutting = { stated = "no", centre_core_diameter_mm = .., blade_protrusion_mm = .. }`; an absent key is `Unknown`); `load_from` refuses a bare fact and the old key `non_centre_cutting` (`ToolLibraryError::ToolFacts`, one text for every key); `dedupe_key` ignores the kind of a fact; `named_toml_library.rs` — their directory code.
+- `tool_library.rs`, `machine_library.rs` — the TOML catalogues (`crate::settings::paths`); a tool catalogue takes the K3 fact forms (`{ stated = .. }`, `{ catalogue = .., source = .. }`, `{ estimated = .., basis = .. }`, `centre_cutting = { stated = "no", centre_core_diameter_mm = .., blade_protrusion_mm = .. }`; an absent key is `Unknown`); `load_from` refuses a bare fact and the old key `non_centre_cutting` (`ToolLibraryError::ToolFacts`, one text for every key); `dedupe_key` ignores the kind of a fact; a machine file reads through `machine::MachineProfileWire` (P11c: `class` required, an industrial table with no `[rigidity]` refuses); `named_toml_library.rs` — their directory code.
 
 ## Invariants
 - An import states its units and its `ImportOptions`. A reload, rescale and relink pass both.

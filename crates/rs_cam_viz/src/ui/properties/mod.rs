@@ -833,6 +833,7 @@ pub(crate) fn toolpath_panel_inputs(
                 tc,
                 tool,
                 &session.stock_config().material,
+                session.machine(),
                 stock_bottom_z,
             )
         })

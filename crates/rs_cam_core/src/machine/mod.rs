@@ -56,16 +56,148 @@ impl Default for ChipLoadFormula {
 }
 
 /// Machine-specific DOC/WOC parameters reflecting rigidity.
-#[derive(Debug, Clone, Copy, Serialize, Deserialize)]
+///
+/// Feeds contract P11c (D13 items 3 and 6): the one default set is
+/// [`RigidityProfile::default`], the hobby grade set ([`MachineClass::Hobby`]).
+/// `woc_roughing_factor`, `woc_roughing_max_mm` and `woc_finishing_mm` are
+/// deleted (no reader; break; review item M11). `slot_doc_factor`
+/// holds the slot depth cap that was the typed constant `SLOTTING_DOC_CAP`.
+#[derive(Debug, Clone, Copy, PartialEq, Serialize, Deserialize)]
 #[serde(deny_unknown_fields)]
 pub struct RigidityProfile {
     pub doc_roughing_factor: f64,
     pub doc_finishing_factor: f64,
-    pub woc_roughing_factor: f64,
-    pub woc_roughing_max_mm: f64,
-    pub woc_finishing_mm: f64,
     pub adaptive_doc_factor: f64,
     pub adaptive_woc_factor: f64,
+    /// The depth cap of a slot (`ae` above the slot threshold), in
+    /// diameters (feeds `slot_rule`, calculate Step 4b and the envelope
+    /// `Slot` limit).
+    pub slot_doc_factor: f64,
+}
+
+/// One named rigidity value, for a surface that lists them (the GUI
+/// machine panel). The order is the field order of [`RigidityProfile`].
+#[derive(Debug, Clone, Copy, PartialEq)]
+pub struct RigidityValue {
+    /// The field name, as the machine file spells it.
+    pub field: &'static str,
+    /// The value.
+    pub value: f64,
+    /// The unit: `"x D"`, a factor of the diameter.
+    pub unit: &'static str,
+}
+
+impl RigidityProfile {
+    /// Each value with its field name and unit (P11c: the GUI machine
+    /// panel lists them, with the class beside each value).
+    #[must_use]
+    pub const fn values(&self) -> [RigidityValue; 5] {
+        const D: &str = "x D";
+        [
+            RigidityValue {
+                field: "doc_roughing_factor",
+                value: self.doc_roughing_factor,
+                unit: D,
+            },
+            RigidityValue {
+                field: "doc_finishing_factor",
+                value: self.doc_finishing_factor,
+                unit: D,
+            },
+            RigidityValue {
+                field: "adaptive_doc_factor",
+                value: self.adaptive_doc_factor,
+                unit: D,
+            },
+            RigidityValue {
+                field: "adaptive_woc_factor",
+                value: self.adaptive_woc_factor,
+                unit: D,
+            },
+            RigidityValue {
+                field: "slot_doc_factor",
+                value: self.slot_doc_factor,
+                unit: D,
+            },
+        ]
+    }
+}
+
+/// The class of a machine (feeds contract P11c, D13 item 6, operator
+/// 2026-11-05: "make it explicit that this number is 'hobby grade' vs
+/// 'industrial'"). The machine table states it; no default.
+///
+/// - [`Self::Hobby`] has the one default rigidity set
+///   ([`RigidityProfile::default`]: the Shapeoko port, Unsourced). A hobby
+///   table with no `[rigidity]` block reads it.
+/// - [`Self::Industrial`] carries no values: its table states its own
+///   `[rigidity]` block, else the table refuses to load.
+#[derive(Debug, Clone, Copy, PartialEq, Eq, Serialize, Deserialize)]
+#[serde(rename_all = "snake_case")]
+pub enum MachineClass {
+    /// A hobby grade router (the Shapeoko class).
+    Hobby,
+    /// An industrial router. No default values.
+    Industrial,
+}
+
+impl MachineClass {
+    /// The name that the GUI, MCP and the CLI print.
+    #[must_use]
+    pub const fn label(self) -> &'static str {
+        match self {
+            Self::Hobby => "hobby grade",
+            Self::Industrial => "industrial",
+        }
+    }
+}
+
+/// How the rigidity values of one profile are known: the class and
+/// whether the values are the class default. Built by
+/// [`MachineProfile::rigidity_basis`].
+#[derive(Debug, Clone, Copy, PartialEq, Eq, Serialize)]
+#[serde(rename_all = "snake_case")]
+pub enum RigidityBasis {
+    /// The hobby grade default set (the Shapeoko port), Unsourced.
+    HobbyDefault,
+    /// Values that the machine file states, on a hobby grade machine.
+    HobbyStated,
+    /// Values that the machine file states, on an industrial machine.
+    IndustrialStated,
+}
+
+impl RigidityBasis {
+    /// The text that the GUI machine panel, MCP, the CLI and the K8
+    /// lineage print beside each rigidity value (the law of the
+    /// `machine.rigidity` basis).
+    #[must_use]
+    pub const fn text(self) -> &'static str {
+        match self {
+            Self::HobbyDefault => "hobby grade (Shapeoko port), Unsourced",
+            Self::HobbyStated => "hobby grade, stated by the machine file",
+            Self::IndustrialStated => "industrial, stated by the machine file",
+        }
+    }
+
+    /// The short face of [`Self::text`] for a narrow panel (IC1: a text
+    /// over 60 characters takes a short face, the full text on hover).
+    #[must_use]
+    pub const fn short(self) -> &'static str {
+        match self {
+            Self::HobbyDefault => "hobby grade default",
+            Self::HobbyStated => "hobby grade, stated",
+            Self::IndustrialStated => "industrial, stated",
+        }
+    }
+
+    /// The machine class of this basis.
+    #[must_use]
+    pub const fn class(self) -> MachineClass {
+        match self {
+            Self::HobbyDefault | Self::HobbyStated => MachineClass::Hobby,
+            Self::IndustrialStated => MachineClass::Industrial,
+        }
+    }
 }
 
 /// **The axial depth cap one rigidity profile implies for one
@@ -163,16 +295,26 @@ impl RigidityProfile {
     }
 }
 
+/// The one default rigidity set: hobby grade ([`MachineClass::Hobby`]).
+///
+/// Feeds contract P11c (D13 item 6, ruled 2026-11-05: "let the default be
+/// about shapeoko"). The values are a port of
+/// `shapeoko_vfd_1500w_balanced()` in the gitignored
+/// `reference/shapeoko_feeds_and_speeds/src/machine_profile.rs` (commit
+/// 172d6de60); no printed source is in the repo, so each value is
+/// Unsourced ([`RigidityBasis::HobbyDefault`]). `slot_doc_factor` is the
+/// value of the deleted constant `SLOTTING_DOC_CAP` (0.25 D; "no comment and
+/// no record in the repo"). `generic_wood_router` and the two Shapeoko
+/// presets read this set; a hobby machine table with no `[rigidity]` block
+/// reads it too.
 impl Default for RigidityProfile {
     fn default() -> Self {
         Self {
             doc_roughing_factor: 0.25,
             doc_finishing_factor: 0.10,
-            woc_roughing_factor: 0.80,
-            woc_roughing_max_mm: 6.35,
-            woc_finishing_mm: 0.635,
             adaptive_doc_factor: 2.0,
             adaptive_woc_factor: 0.25,
+            slot_doc_factor: 0.25,
         }
     }
 }
@@ -228,8 +370,13 @@ impl CuttingCeilingMmMin {
 }
 
 /// Complete machine profile for feeds calculation.
+///
+/// P11c (D13 item 6): a file reads through [`MachineProfileWire`], the one
+/// place of the class rule: `class` is required; a hobby table with no
+/// `[rigidity]` block reads [`RigidityProfile::default`]; an industrial
+/// table with no `[rigidity]` block refuses to load.
 #[derive(Debug, Clone, Serialize, Deserialize)]
-#[serde(deny_unknown_fields)]
+#[serde(try_from = "MachineProfileWire")]
 pub struct MachineProfile {
     pub name: String,
     pub spindle: SpindleConfig,
@@ -254,6 +401,8 @@ pub struct MachineProfile {
     #[serde(default)]
     pub max_cutting_feed_mm_min: Option<f64>,
     pub max_shank_mm: f64,
+    /// P11c (D13 item 6): the machine class. Required in a file.
+    pub class: MachineClass,
     pub rigidity: RigidityProfile,
     /// Linear-axis kinematics limits used by the F-034 cycle-time
     /// integrator. **`None` for every built-in preset** — the absence
@@ -275,6 +424,63 @@ pub struct MachineProfile {
     /// old file saves as it loaded.
     #[serde(default, skip_serializing_if = "head::MachineHead::is_unmodelled")]
     pub head: head::MachineHead,
+}
+
+/// The file form of a [`MachineProfile`] (P11c): the same keys, with the
+/// `[rigidity]` block optional. [`MachineProfile::try_from`] applies the
+/// class rule.
+#[derive(Debug, Clone, Deserialize)]
+#[serde(deny_unknown_fields)]
+pub struct MachineProfileWire {
+    name: String,
+    spindle: SpindleConfig,
+    power: PowerModel,
+    chip_load: ChipLoadFormula,
+    max_feed_mm_min: f64,
+    #[serde(default)]
+    max_cutting_feed_mm_min: Option<f64>,
+    max_shank_mm: f64,
+    class: MachineClass,
+    #[serde(default)]
+    rigidity: Option<RigidityProfile>,
+    #[serde(default)]
+    kinematics: Option<MachineKinematics>,
+    #[serde(default)]
+    controller: Option<ControllerSettings>,
+    #[serde(default)]
+    head: head::MachineHead,
+}
+
+/// The refusal of an industrial machine table with no `[rigidity]` block.
+pub const INDUSTRIAL_NEEDS_RIGIDITY: &str = "machine class `industrial` has no default rigidity: \
+     state a [rigidity] block (doc_roughing_factor, doc_finishing_factor, adaptive_doc_factor, \
+     adaptive_woc_factor, slot_doc_factor), or set \
+     class = \"hobby\" to use the hobby grade default (Shapeoko port, Unsourced)";
+
+impl TryFrom<MachineProfileWire> for MachineProfile {
+    type Error = &'static str;
+
+    fn try_from(w: MachineProfileWire) -> Result<Self, Self::Error> {
+        let rigidity = match (w.class, w.rigidity) {
+            (_, Some(r)) => r,
+            (MachineClass::Hobby, None) => RigidityProfile::default(),
+            (MachineClass::Industrial, None) => return Err(INDUSTRIAL_NEEDS_RIGIDITY),
+        };
+        Ok(Self {
+            name: w.name,
+            spindle: w.spindle,
+            power: w.power,
+            chip_load: w.chip_load,
+            max_feed_mm_min: w.max_feed_mm_min,
+            max_cutting_feed_mm_min: w.max_cutting_feed_mm_min,
+            max_shank_mm: w.max_shank_mm,
+            class: w.class,
+            rigidity,
+            kinematics: w.kinematics,
+            controller: w.controller,
+            head: w.head,
+        })
+    }
 }
 
 /// The controller firmware a `$$` / `$I` dump came from (G10).
@@ -591,6 +797,20 @@ impl Default for MachineProfile {
 pub const DEFAULT_CUTTING_FEED_CAP_MM_MIN: f64 = 6000.0;
 
 impl MachineProfile {
+    /// P11c (D13 item 6): how the rigidity values are known. A hobby
+    /// machine whose values equal [`RigidityProfile::default`] reads the
+    /// hobby grade default; any other values are stated by the file.
+    #[must_use]
+    pub fn rigidity_basis(&self) -> RigidityBasis {
+        match self.class {
+            MachineClass::Hobby if self.rigidity == RigidityProfile::default() => {
+                RigidityBasis::HobbyDefault
+            }
+            MachineClass::Hobby => RigidityBasis::HobbyStated,
+            MachineClass::Industrial => RigidityBasis::IndustrialStated,
+        }
+    }
+
     /// F210 (W6b): check the numeric profile fields and the kinematics
     /// block against [`domain::MachineDimension::domain`]. The head has its
     /// own check ([`head::MachineHead::validate`]).
@@ -684,15 +904,10 @@ impl MachineProfile {
             max_feed_mm_min: 4000.0,
             max_cutting_feed_mm_min: None,
             max_shank_mm: 6.35,
-            rigidity: RigidityProfile {
-                doc_roughing_factor: 0.20,
-                doc_finishing_factor: 0.08,
-                woc_roughing_factor: 0.70,
-                woc_roughing_max_mm: 5.0,
-                woc_finishing_mm: 0.50,
-                adaptive_doc_factor: 1.5,
-                adaptive_woc_factor: 0.20,
-            },
+            // P11c (D13 item 6): the one default set (hobby grade). The
+            // old generic block (0.20 / 1.5 / 0.20) is deleted.
+            class: MachineClass::Hobby,
+            rigidity: RigidityProfile::default(),
             // F-034: presets ship with `None` to keep runtime
             // behavior byte-identical. Callers opt in by setting
             // this field on the active profile.
@@ -722,6 +937,7 @@ impl MachineProfile {
             max_feed_mm_min: 5000.0,
             max_cutting_feed_mm_min: None,
             max_shank_mm: 7.0,
+            class: MachineClass::Hobby,
             rigidity: RigidityProfile::default(),
             kinematics: None,
             controller: None,
@@ -745,6 +961,7 @@ impl MachineProfile {
             max_feed_mm_min: 5000.0,
             max_cutting_feed_mm_min: None,
             max_shank_mm: 6.35,
+            class: MachineClass::Hobby,
             rigidity: RigidityProfile::default(),
             kinematics: None,
             controller: None,

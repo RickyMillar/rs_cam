@@ -574,9 +574,17 @@ fn modal_apply_all_writes_what_the_panel_writes() {
 /// *invariant-resolved, rounded* one. This test asserts the negative directly:
 /// after `⚡ Apply all` on the Pocket fixture, the operation's DOC is **not**
 /// the raw preview number, and it **is** the funnel's number.
+///
+/// **Feeds contract P11c (D13 item 6): the fixture states 2.0 mm.** The
+/// hobby grade rigidity cap is 0.25 x 6.35 = 1.5875 mm, above the shared
+/// fixture's stated 1.5 mm (it was 0.20 x 6.35 = 1.27 mm), so on that
+/// fixture no clamp bites and the raw DOC is the funnel's DOC. A stated
+/// 2.0 mm is above the cap again, so the funnel lowers it.
 #[test]
 fn no_apply_path_writes_the_raw_preview_value() {
-    let mut controller = controller_with(OperationType::Pocket);
+    let mut config = toolpath(0, OperationType::Pocket);
+    let _ = config.operation.set_depth_per_pass(2.0);
+    let mut controller = controller_with_config(config);
     let raw = modal_preview(&controller).recommended().clone();
 
     let id = id_at(&controller, 0);
@@ -768,6 +776,14 @@ fn panel_cut_geometry_apply_goes_through_the_invariant_funnel() {
 /// tool gives `cos psi = 1 - 2.0 / 3.175`, a lift of `1 / sin psi` (about
 /// 1.08). The feed stays at the 3999 ceiling, so the RPM follows it down to
 /// 14629 (measured). Feed, plunge, stepover and depth do not move.
+///
+/// **The depth moved with its cause: 1.0 -> 1.5, feeds contract P11c (D13
+/// item 6, 2026-11-05).** The default rigidity is the hobby grade set, so
+/// the cap is 0.25 x 6.35 = 1.5875 mm (it was 0.20 x 6.35 = 1.27 mm, which
+/// lowered the stated 1.5 mm and snapped it to 1.0 on the 3 mm floor). The
+/// stated 1.5 mm is now inside the cap: the proposal is the stated depth,
+/// and two passes of 1.5 reach the 3 mm floor. Feed, plunge, RPM and
+/// stepover do not move.
 #[test]
 fn pocket_fixture_recipe_fingerprint_is_unmoved() {
     /// The measured feed of "Apply all" (mm/min).
@@ -779,7 +795,7 @@ fn pocket_fixture_recipe_fingerprint_is_unmoved() {
     /// The measured stepover (mm).
     const FP_WOC: f64 = 2.0;
     /// The measured depth per pass (mm).
-    const FP_DOC: f64 = 1.0;
+    const FP_DOC: f64 = 1.5;
     let mut controller = controller_with(OperationType::Pocket);
     let id = id_at(&controller, 0);
     controller.handle_internal_event(AppEvent::ApplyFeedsAll(id));

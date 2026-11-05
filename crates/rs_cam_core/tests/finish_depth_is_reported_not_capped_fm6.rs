@@ -60,6 +60,13 @@ const TP: ToolpathId = ToolpathId::from_raw(0);
 
 // ── fixtures (the FM1 instrument's cell shapes) ─────────────────────────
 
+/// The `doc_finishing_factor` of the default profile when R2 removed the
+/// finishing cap: the generic router's 0.08 at HEAD f5170da03
+/// (`machine/mod.rs`, `generic_wood_router`). P11c made the default the
+/// hobby grade set (0.10), so the reference is pinned here, not read from
+/// today's default (on which the RampFinish arm sits at the cap).
+const PRE_R2_DOC_FINISHING_FACTOR: f64 = 0.08;
+
 fn machine() -> MachineProfile {
     MachineProfile::default()
 }
@@ -290,7 +297,7 @@ fn a_finishing_depth_ships_above_the_old_cap_with_no_clamp_fm6() {
             .operation
             .depth_per_pass()
             .unwrap_or_else(|| panic!("{op:?} carries a depth per pass"));
-        let old_cap = m.rigidity.doc_finishing_factor * diameter;
+        let old_cap = PRE_R2_DOC_FINISHING_FACTOR * diameter;
         assert!(
             dpp > old_cap,
             "{op:?}: the fixture is vacuous unless the shipped depth {dpp} mm is \
@@ -314,7 +321,7 @@ fn a_finishing_depth_ships_above_the_old_cap_with_no_clamp_fm6() {
 // ── (b) a roughing depth still clamps ───────────────────────────────────
 
 /// A Ø6 flat Pocket: the op states 4.2 mm, the envelope's rigidity
-/// ceiling is the producer's own roughing cap, 0.2 × 6 = 1.2 mm on the
+/// ceiling is the producer's own roughing cap, 0.25 × 6 = 1.5 mm on the
 /// default profile, bit for bit, and "Apply all" ships at or under it.
 #[test]
 fn a_roughing_depth_still_clamps_at_the_producer_s_cap_fm6() {
@@ -453,7 +460,7 @@ fn load_verdict(
     rs_cam_core::tool_load::evaluate_toolpath(&ctx(&tool, &material, op), t, Some(&m), &tolerance)
 }
 
-/// A Ø6 Pocket cut 3 mm deep against the 1.2 mm roughing cap: the
+/// A Ø6 Pocket cut 3 mm deep against the 1.5 mm roughing cap: the
 /// diagnostics list carries `load.depth.exceeds` at `Caution`, with the
 /// peak and the cap as its evidence.
 #[test]

@@ -254,19 +254,6 @@ impl DeflectionCaveat {
 /// [`bending_diameter_mm`], which marks that gap as non-conservative.
 pub const ENDMILL_EQUIVALENT_DIAMETER_FRACTION: f64 = 0.80;
 
-/// Radial WOC fallback fraction of tool diameter for non-Adaptive
-/// families when `operation.stepover()` is `None`. Matches the
-/// Pocket-roughing-equivalent stepover the calculator writes when no
-/// explicit value is supplied.
-const PREDICTOR_NON_ADAPTIVE_WOC_FRACTION: f64 = 0.35;
-
-/// Radial WOC fraction of tool diameter for Adaptive 2D / 3D ops in
-/// the move-count predictor. Matches the narrow-engagement design
-/// point of the adaptive strategy (vs. the calculator's
-/// `adaptive_woc_factor` which carries the per-machine rigidity
-/// tuning).
-const PREDICTOR_ADAPTIVE_WOC_FRACTION: f64 = 0.3;
-
 /// Raster-pass sample density used by the move-count predictor: the
 /// number of motion samples emitted per cutter footprint along the
 /// fast scan axis is roughly `bbox_x / (diameter × 0.1)`, i.e. ~10
@@ -365,15 +352,24 @@ pub fn predict_peak_deflection_um(
     // Radial WOC: operation.stepover() if Some. For Adaptive ops with
     // no explicit stepover, fall back to `adaptive_woc_factor × D` —
     // the same target/ceiling `feeds::calculate` writes for adaptive
-    // engagement (see `feeds/mod.rs:1342`). For non-adaptive families,
-    // fall back to a Pocket-roughing-equivalent `0.35 × D`.
+    // engagement. For the other families, P11c (review item M4): the
+    // width the calculator reads on an unstated axis
+    // (`feeds::default_radial_width`), not a typed copy of it.
     let radial_woc_mm = match operation.stepover() {
         Some(s) if s.is_finite() && s > 0.0 => s,
         _ => {
             if feeds_family == FeedsOperationFamily::Adaptive {
                 machine.rigidity.adaptive_woc_factor.max(0.0) * diameter_mm
             } else {
-                PREDICTOR_NON_ADAPTIVE_WOC_FRACTION * diameter_mm
+                let input = crate::feeds::suggest::feeds_input_for_operation(
+                    operation,
+                    tool,
+                    material,
+                    machine,
+                    crate::feeds::embedded_vendor_lut(),
+                    crate::feeds::SpindleStrategy::default(),
+                );
+                crate::feeds::default_radial_width(&input, machine).0
             }
         }
     };
@@ -697,7 +693,11 @@ pub fn predict_move_count(
     operation: &OperationConfig,
     model_bbox: Option<&crate::geo::BoundingBox3>,
     tool: &ToolConfig,
+    machine: &MachineProfile,
 ) -> u64 {
+    // P11c (review item M4): the narrow adaptive width of the area model is
+    // the machine's `adaptive_woc_factor` (it was a typed 0.3).
+    let adaptive_woc_fraction = machine.rigidity.adaptive_woc_factor;
     let Some(bbox) = model_bbox else {
         return 0;
     };
@@ -746,7 +746,7 @@ pub fn predict_move_count(
         }
         // Adaptive 3D: per-Z-level area-fill × number of Z levels.
         MoveCountModel::Adaptive3d => {
-            let woc = diameter * PREDICTOR_ADAPTIVE_WOC_FRACTION;
+            let woc = diameter * adaptive_woc_fraction;
             let area_per_pass = stepover * woc;
             if area_per_pass <= 0.0 {
                 return 0;
@@ -761,7 +761,7 @@ pub fn predict_move_count(
         }
         // Adaptive 2D: single Z level worth of area-fill at narrow WOC.
         MoveCountModel::Adaptive2d => {
-            let woc = diameter * PREDICTOR_ADAPTIVE_WOC_FRACTION;
+            let woc = diameter * adaptive_woc_fraction;
             let area_per_pass = stepover * woc;
             if area_per_pass <= 0.0 {
                 return 0;
@@ -840,7 +840,8 @@ pub struct DeflectionBreakdown {
     /// Resolved axial DOC (mm) — `operation.depth_per_pass()` when set.
     pub axial_doc_mm: f64,
     /// Resolved radial WOC (mm) — `operation.stepover()` if set, else
-    /// `adaptive_woc_factor × D` for Adaptive family, `0.35 × D` else.
+    /// `adaptive_woc_factor × D` for Adaptive family, else
+    /// `feeds::default_radial_width` (P11c, review item M4).
     pub radial_woc_mm: f64,
 }
 
@@ -1078,7 +1079,7 @@ mod tests {
             min: crate::geo::P3::new(0.0, 0.0, -10.0),
             max: crate::geo::P3::new(500.0, 400.0, 0.0),
         };
-        let moves = predict_move_count(&op, Some(&bbox), &tool);
+        let moves = predict_move_count(&op, Some(&bbox), &tool, &MachineProfile::default());
         assert_eq!(
             moves, 0,
             "V-carve must return 0 moves regardless of stepover/bbox (feature-driven), got {moves}"
@@ -1093,7 +1094,7 @@ mod tests {
             ..PocketConfig::default()
         });
         assert_eq!(
-            predict_move_count(&pocket_op, None, &pocket_tool),
+            predict_move_count(&pocket_op, None, &pocket_tool, &MachineProfile::default()),
             0,
             "model_bbox=None must yield 0 (no constraint signal)"
         );

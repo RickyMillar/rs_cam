@@ -586,14 +586,17 @@ impl RsCamApp {
             "spindle": spindle,
             "power": power,
             "kinematics": kinematics,
+            // P11c (D13 item 6): the class, and the basis text that the
+            // GUI machine panel and the lineage print beside each value.
+            "class": machine.class,
             "rigidity": {
+                "class": machine.class.label(),
+                "basis": machine.rigidity_basis().text(),
                 "doc_roughing_factor": r.doc_roughing_factor,
                 "doc_finishing_factor": r.doc_finishing_factor,
-                "woc_roughing_factor": r.woc_roughing_factor,
-                "woc_roughing_max_mm": r.woc_roughing_max_mm,
-                "woc_finishing_mm": r.woc_finishing_mm,
                 "adaptive_doc_factor": r.adaptive_doc_factor,
                 "adaptive_woc_factor": r.adaptive_woc_factor,
+                "slot_doc_factor": r.slot_doc_factor,
             },
         }))
     }

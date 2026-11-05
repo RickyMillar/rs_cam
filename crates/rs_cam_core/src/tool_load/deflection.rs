@@ -57,8 +57,10 @@ use super::verdict::{
 /// Below this peak tip deflection (mm), the cut is `Within(Validated)`.
 pub const WITHIN_BOUND_MM: f64 = 0.050; // 50 µm
 
-/// Above this peak tip deflection (mm), the cut is `Exceeds`.
-pub const EXCEEDS_BOUND_MM: f64 = 0.200; // 200 µm
+/// Above this peak tip deflection (mm), the cut is `Exceeds`. P11c (review
+/// item M1): the one F201 row `feeds.suggest.DEFLECTION_BACKOFF_TARGET_UM`
+/// (Unsourced, 200 um), in mm.
+pub const EXCEEDS_BOUND_MM: f64 = crate::feeds::suggest::DEFLECTION_BACKOFF_TARGET_UM / 1000.0;
 
 /// The tip compliance (mm of tip deflection per newton of lateral force)
 /// of `tool` at `axial_doc_mm`: the integrated cantilever the gate uses
