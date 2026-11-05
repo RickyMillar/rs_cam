@@ -400,6 +400,26 @@ pub(crate) fn check_collisions_interpolated(
     }
 }
 
+/// How many moves the parallel walk checks in one rayon batch. The calling
+/// thread polls cancel between batches, because a `&dyn CancelCheck` is not
+/// `Sync` and cannot enter a rayon closure (the compiler refuses it). 1024
+/// moves is the batch of round 1 (`ops::project_curve`); one move holds
+/// many samples, so each batch gives every thread enough work.
+#[cfg(feature = "parallel")]
+const PARALLEL_MOVE_CHUNK: usize = 1024;
+
+/// [`check_collisions_interpolated`] with a cancel check.
+///
+/// Perf W3b: with the `parallel` feature the moves run on rayon in batches
+/// of [`PARALLEL_MOVE_CHUNK`]. The samples of move `i` read only
+/// `moves[i - 1].target` and `moves[i]`, so the moves are independent.
+/// Each move gives its events in sample order, and the batches join them
+/// in move order, so the report is the same as the serial walk gives,
+/// event for event (sentry `the_collision_walk_is_the_same_in_parallel_perf7`).
+///
+/// Cancel: the parallel walk polls `cancel` on the calling thread before
+/// each batch, the serial walk before each move and each sample. A cancel
+/// gives `Err(Cancelled)` on both paths.
 pub fn check_collisions_interpolated_with_cancel(
     toolpath: &Toolpath,
     assembly: &ToolAssembly,
@@ -408,67 +428,182 @@ pub fn check_collisions_interpolated_with_cancel(
     step_mm: f64,
     cancel: &dyn CancelCheck,
 ) -> Result<CollisionReport, Cancelled> {
-    let segments = assembly.segments();
-    let mut collisions = Vec::new();
-    let mut max_extra_stickout_needed = 0.0_f64;
+    #[cfg(feature = "parallel")]
+    {
+        use rayon::prelude::*;
 
-    for (move_idx, mv) in toolpath.moves.iter().enumerate() {
-        check_cancel(cancel)?;
-        // Only check cutting moves (linear), not rapids
-        let is_cutting = matches!(
-            mv.move_type,
-            MoveType::Linear { .. } | MoveType::ArcCW { .. } | MoveType::ArcCCW { .. }
-        );
-        if !is_cutting {
-            continue;
+        let segments = assembly.segments();
+        let cutter_radius = assembly.cutter_radius;
+        let move_count = toolpath.moves.len();
+        let mut collisions = Vec::new();
+        let mut max_extra_stickout_needed = 0.0_f64;
+        let mut start = 0;
+        while start < move_count {
+            check_cancel(cancel)?;
+            let end = (start + PARALLEL_MOVE_CHUNK).min(move_count);
+            let per_move: Vec<(Vec<CollisionEvent>, f64)> = (start..end)
+                .into_par_iter()
+                .map(|move_idx| {
+                    move_collisions(
+                        toolpath,
+                        move_idx,
+                        &segments,
+                        cutter_radius,
+                        mesh,
+                        index,
+                        step_mm,
+                    )
+                })
+                .collect();
+            for (events, move_max) in per_move {
+                collisions.extend(events);
+                // Order-independent: each value is a penetration that
+                // passed `> BODY_STRIKE_THRESHOLD_MM`, so it is finite and
+                // positive (a NaN fails that test and never gets here).
+                // `f64::max` over such values gives the same bits in any
+                // order, and it is the same `f64::max` the serial walk uses.
+                max_extra_stickout_needed = max_extra_stickout_needed.max(move_max);
+            }
+            start = end;
         }
 
-        // Get previous position for interpolation
-        #[expect(clippy::indexing_slicing, reason = "move_idx > 0 checked in condition")]
-        let prev = if move_idx > 0 {
-            toolpath.moves[move_idx - 1].target
-        } else {
-            mv.target
-        };
+        let min_safe_stickout = assembly.stickout() + max_extra_stickout_needed;
+        Ok(CollisionReport {
+            collisions,
+            min_safe_stickout,
+        })
+    }
 
-        // Generate sample points along this move
-        let sample_points = interpolate_samples(prev, mv.target, step_mm);
+    #[cfg(not(feature = "parallel"))]
+    {
+        let segments = assembly.segments();
+        let mut collisions = Vec::new();
+        let mut max_extra_stickout_needed = 0.0_f64;
 
-        for tip in &sample_points {
+        for (move_idx, mv) in toolpath.moves.iter().enumerate() {
             check_cancel(cancel)?;
-            for band in &segments {
-                let (z_offset, seg_radius) = (band.z_offset, band.radius);
-                if seg_radius <= assembly.cutter_radius + 1e-6 {
-                    continue;
-                }
+            // Only check cutting moves (linear), not rapids
+            let is_cutting = matches!(
+                mv.move_type,
+                MoveType::Linear { .. } | MoveType::ArcCW { .. } | MoveType::ArcCCW { .. }
+            );
+            if !is_cutting {
+                continue;
+            }
 
-                let Some(penetration) =
-                    body_segment_penetration_mm(*tip, z_offset, seg_radius, mesh, index)
-                else {
-                    continue;
-                };
-                if penetration > BODY_STRIKE_THRESHOLD_MM {
-                    collisions.push(CollisionEvent {
-                        move_index: move_idx,
-                        position: *tip,
-                        penetration_depth: penetration,
-                        segment: band.segment,
-                        kind: CollisionKind::Workpiece,
-                    });
+            // Get previous position for interpolation
+            #[expect(clippy::indexing_slicing, reason = "move_idx > 0 checked in condition")]
+            let prev = if move_idx > 0 {
+                toolpath.moves[move_idx - 1].target
+            } else {
+                mv.target
+            };
 
-                    max_extra_stickout_needed = max_extra_stickout_needed.max(penetration);
-                    break; // One collision per move per segment is enough
+            // Generate sample points along this move
+            let sample_points = interpolate_samples(prev, mv.target, step_mm);
+
+            for tip in &sample_points {
+                check_cancel(cancel)?;
+                for band in &segments {
+                    let (z_offset, seg_radius) = (band.z_offset, band.radius);
+                    if seg_radius <= assembly.cutter_radius + 1e-6 {
+                        continue;
+                    }
+
+                    let Some(penetration) =
+                        body_segment_penetration_mm(*tip, z_offset, seg_radius, mesh, index)
+                    else {
+                        continue;
+                    };
+                    if penetration > BODY_STRIKE_THRESHOLD_MM {
+                        collisions.push(CollisionEvent {
+                            move_index: move_idx,
+                            position: *tip,
+                            penetration_depth: penetration,
+                            segment: band.segment,
+                            kind: CollisionKind::Workpiece,
+                        });
+
+                        max_extra_stickout_needed = max_extra_stickout_needed.max(penetration);
+                        // The first band that strikes at this sample is
+                        // enough; the walk goes on to the next sample.
+                        break;
+                    }
                 }
             }
         }
+
+        let min_safe_stickout = assembly.stickout() + max_extra_stickout_needed;
+
+        Ok(CollisionReport {
+            collisions,
+            min_safe_stickout,
+        })
+    }
+}
+
+/// The events of move `move_idx` of the parallel walk, in sample order, and
+/// the largest penetration among them (`0.0` when there is none). The body
+/// is the serial walk's body for one move, with no cancel poll.
+#[cfg(feature = "parallel")]
+fn move_collisions(
+    toolpath: &Toolpath,
+    move_idx: usize,
+    segments: &[BodyBand],
+    cutter_radius: f64,
+    mesh: &TriangleMesh,
+    index: &SpatialIndex,
+    step_mm: f64,
+) -> (Vec<CollisionEvent>, f64) {
+    let mut events = Vec::new();
+    let mut move_max = 0.0_f64;
+    let Some(mv) = toolpath.moves.get(move_idx) else {
+        return (events, move_max);
+    };
+    // Only check cutting moves (linear), not rapids
+    let is_cutting = matches!(
+        mv.move_type,
+        MoveType::Linear { .. } | MoveType::ArcCW { .. } | MoveType::ArcCCW { .. }
+    );
+    if !is_cutting {
+        return (events, move_max);
     }
 
-    let min_safe_stickout = assembly.stickout() + max_extra_stickout_needed;
+    // The previous position for interpolation; the first move starts at
+    // its own target.
+    let prev = move_idx
+        .checked_sub(1)
+        .and_then(|i| toolpath.moves.get(i))
+        .map_or(mv.target, |p| p.target);
 
-    Ok(CollisionReport {
-        collisions,
-        min_safe_stickout,
-    })
+    for tip in &interpolate_samples(prev, mv.target, step_mm) {
+        for band in segments {
+            let (z_offset, seg_radius) = (band.z_offset, band.radius);
+            if seg_radius <= cutter_radius + 1e-6 {
+                continue;
+            }
+
+            let Some(penetration) =
+                body_segment_penetration_mm(*tip, z_offset, seg_radius, mesh, index)
+            else {
+                continue;
+            };
+            if penetration > BODY_STRIKE_THRESHOLD_MM {
+                events.push(CollisionEvent {
+                    move_index: move_idx,
+                    position: *tip,
+                    penetration_depth: penetration,
+                    segment: band.segment,
+                    kind: CollisionKind::Workpiece,
+                });
+                move_max = move_max.max(penetration);
+                // The first band that strikes at this sample is enough;
+                // the walk goes on to the next sample.
+                break;
+            }
+        }
+    }
+    (events, move_max)
 }
 
 /// Sample points along a move at `step_mm` spacing (plus endpoints).

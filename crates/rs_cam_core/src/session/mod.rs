@@ -89,8 +89,9 @@ pub use run_state::{
 pub use command::RuleOffersArgs;
 pub use compute::{
     BoundaryCollapse, ExportScope, GenContext, GenObserver, GenerateToolpathHandle,
-    LargerRestConsumer, RecommendClearingStrategyHandle, ResolvedGenInputs, RestBoundaryRefusal,
-    TriageSessionKey, execute_generation, execute_job, execute_recommend_clearing_strategy,
+    HolderCollisionSweepRow, LargerRestConsumer, RecommendClearingStrategyHandle,
+    ResolvedGenInputs, RestBoundaryRefusal, TriageSessionKey, execute_generation, execute_job,
+    execute_recommend_clearing_strategy,
 };
 pub use cycle_time::{
     CycleTime, CycleTimeBasis, CycleTimeEvidence, MissingInput, MissingInputs,

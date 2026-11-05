@@ -103,3 +103,46 @@ final simulation and reports. Lead reads the profile and decides a fix.
   2774/0; perf1-perf5 sentries green; viz `--lib` 695/0 (agent);
   `rs_cam_mcp` 39/0; `rs_cam_cli` 105/0; clippy clean; demo job passes.
   The core full gate was not run (operator ruling 2026-09-11).
+
+## W2 result — the closing-phase profile (2026-11-06)
+
+Symbol build (`release-fast` with fat LTO, one codegen unit, `strip = none`,
+frame pointers), `perf record -F 99 -g`, same input and flags as W1.
+The closing phase (after "generation plan finished") took 113 s: the final
+simulation part 75 s, the reports part 38 s. About 99 % of it was
+`run_collision_check` -> `check_collisions_interpolated_with_cancel` ->
+`point_drop_cutter` -> `query_rect_into`, on ONE thread (11 329 samples at
+99 Hz). The CLI ran the same holder sweep three times: its own loop,
+`session.diagnostics()` and `session.triage()`.
+
+## W3 result (2026-11-06)
+
+- W3a: `ProjectSession::holder_collision_sweep` runs the sweep once;
+  `holder_collision_counts_of`, `diagnostics_with_holder_collisions` and
+  `triage_with_holder_collisions` read it. The CLI calls it once.
+- W3b: `check_collisions_interpolated_with_cancel` checks moves on rayon in
+  batches of 1024, cancel polled between batches, events joined in move
+  order. Serial path kept under `cfg(not(feature = "parallel"))`.
+- Sentries: `the_collision_walk_is_the_same_in_parallel_perf7` (4),
+  `--lib the_collision_sweep_runs_once_perf6` (1). Detail: `F_REPORT.md`.
+
+| Run (0.3 mm, same flags) | W1 | W3 |
+|---|---|---|
+| Whole job (wall) | 4:39.0 | 2:56.3 |
+| Peak RSS | 8.99 GB | 8.98 GB |
+
+- Identity: the G-code is byte-identical to W1 and to the round-2 base;
+  the 18 diag files are equal without the timing fields; the printed
+  report (133 lines, triage included) is identical.
+- Round 2 so far, base -> W3: 5:20.7 -> 2:56.3 (1.82x), same output.
+- Gates (agent, after its last edit): core `--lib` 2775/0; 15 core
+  sentry binaries 0 failed; `rs_cam_cli` 105/0; `rs_cam_mcp` 39/0; viz
+  `--lib` 695/0; clippy clean. The lead re-ran perf6 and perf7.
+
+## Next candidate (not started)
+
+The generation profile (0-166 s): `surface::slope` `from_mesh` ->
+`sample_grid_cell` -> `point_drop_cutter` + `query_rect_into` is about 56 %
+of self time (the "Surface heightmap" step, 26 s of tp21's 54 s). It is
+already parallel; a gain needs an algorithm change (reuse of the candidate
+list between neighbour grid points). A design task.

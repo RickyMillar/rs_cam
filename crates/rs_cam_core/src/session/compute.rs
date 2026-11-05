@@ -34,7 +34,7 @@ mod params;
 mod simulation;
 mod toolpath_diagnostics;
 
-pub use diagnostics::TriageSessionKey;
+pub use diagnostics::{HolderCollisionSweepRow, TriageSessionKey};
 pub use export::ExportScope;
 pub use generation::{BoundaryCollapse, LargerRestConsumer, RestBoundaryRefusal};
 pub(crate) use params::strip_outer_quotes;

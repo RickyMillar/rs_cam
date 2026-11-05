@@ -490,6 +490,14 @@ fn triage_from_parts(
     )
 }
 
+/// One row of [`ProjectSession::holder_collision_sweep`]: the toolpath
+/// index, its id, and the outcome of its collision check (perf W3a).
+pub type HolderCollisionSweepRow = (
+    usize,
+    ToolpathId,
+    Result<Option<CollisionCheckResult>, SessionError>,
+);
+
 impl ProjectSession {
     /// Run a collision check for a specific toolpath by index.
     ///
@@ -704,7 +712,18 @@ impl ProjectSession {
     /// [`ProjectEvidence`].
     pub fn triage(&self) -> crate::stock::sim_triage::SimulationTriage {
         let no_cancel = AtomicBool::new(false);
-        let holder_collisions = self.holder_collision_counts(&no_cancel);
+        self.triage_with_holder_collisions(self.holder_collision_counts(&no_cancel))
+    }
+
+    /// [`Self::triage`] with the holder counts the caller already holds
+    /// (perf W3a). A batch caller that runs [`Self::holder_collision_sweep`]
+    /// once gives its counts here and to
+    /// [`Self::diagnostics_with_holder_collisions`], so the sweep does not
+    /// run again. [`Self::triage`] calls this function.
+    pub fn triage_with_holder_collisions(
+        &self,
+        holder_collisions: Vec<(ToolpathId, HolderCollisionCheck)>,
+    ) -> crate::stock::sim_triage::SimulationTriage {
         let Some(sim) = self.simulation.as_ref() else {
             return crate::stock::sim_triage::SimulationTriage::default();
         };
@@ -715,20 +734,25 @@ impl ProjectSession {
 
     pub fn diagnostics(&self) -> ProjectDiagnostics {
         let no_cancel = AtomicBool::new(false);
-        let holder_collisions = self.holder_collision_counts(&no_cancel);
-        let evidence = self
-            .simulation
-            .as_ref()
-            .map(|sim| {
-                ProjectEvidence::from_simulation_with_holder_collisions(
-                    sim,
-                    holder_collisions.clone(),
-                )
-            })
-            .unwrap_or_else(|| ProjectEvidence {
-                holder_collisions: holder_collisions.clone(),
+        self.diagnostics_with_holder_collisions(self.holder_collision_counts(&no_cancel))
+    }
+
+    /// [`Self::diagnostics`] with the holder counts the caller already
+    /// holds (perf W3a). Read [`Self::triage_with_holder_collisions`] for
+    /// why. [`Self::diagnostics`] calls this function.
+    pub fn diagnostics_with_holder_collisions(
+        &self,
+        holder_collisions: Vec<(ToolpathId, HolderCollisionCheck)>,
+    ) -> ProjectDiagnostics {
+        let evidence = match self.simulation.as_ref() {
+            Some(sim) => {
+                ProjectEvidence::from_simulation_with_holder_collisions(sim, holder_collisions)
+            }
+            None => ProjectEvidence {
+                holder_collisions,
                 ..ProjectEvidence::default()
-            });
+            },
+        };
         self.diagnostics_with_evidence(&evidence)
     }
 
@@ -761,6 +785,47 @@ impl ProjectSession {
         indices
     }
 
+    /// Run the holder/shank collision check ONCE for every computed
+    /// toolpath, and return the full result of each check (perf W3a).
+    ///
+    /// One row per toolpath that has a result, in toolpath order:
+    /// `(index, id, outcome)`. The outcome is the answer of
+    /// [`Self::collision_check`] for that index: `Ok(Some(_))` is a
+    /// measured check, `Ok(None)` is a check that does not apply (F055),
+    /// and `Err` is a check that failed. The sweep builds one spatial
+    /// index per distinct model ([`Self::holder_collision_indices`]); that
+    /// index is the same `SpatialIndex::build_auto` of the same mesh that
+    /// a single check builds, so each row equals the single check.
+    ///
+    /// This is the expensive sweep (one spatial-index build per distinct
+    /// model plus an interpolated toolpath walk per toolpath). A batch
+    /// caller runs it once and gives the counts
+    /// ([`Self::holder_collision_counts_of`]) to
+    /// [`Self::diagnostics_with_holder_collisions`] and
+    /// [`Self::triage_with_holder_collisions`]. Interactive surfaces
+    /// should reuse their last dedicated check instead of calling this per
+    /// frame.
+    pub fn holder_collision_sweep(&self, cancel: &AtomicBool) -> Vec<HolderCollisionSweepRow> {
+        let indices = self.holder_collision_indices();
+        self.toolpath_configs
+            .iter()
+            .enumerate()
+            .filter(|(idx, _)| self.results.contains_key(idx))
+            .map(|(idx, tc)| {
+                let outcome =
+                    self.collision_check_with_index(idx, indices.get(&tc.model_id), cancel);
+                if let Err(e) = &outcome {
+                    tracing::warn!(
+                        index = idx,
+                        error = %e,
+                        "Holder collision check failed; the count is unknown"
+                    );
+                }
+                (idx, tc.id, outcome)
+            })
+            .collect()
+    }
+
     /// Run the holder/shank collision check for every computed toolpath
     /// and return one [`HolderCollisionCheck`] per toolpath.
     ///
@@ -770,47 +835,42 @@ impl ProjectSession {
     /// question that wrecks a machine. The three states are now distinct at
     /// the producer and every consumer decides for itself.
     ///
-    /// This is the expensive sweep (one spatial-index build per distinct
-    /// model plus an interpolated toolpath walk per toolpath). Interactive
-    /// surfaces should reuse their last dedicated check instead of calling
-    /// this per frame.
+    /// This runs [`Self::holder_collision_sweep`] and reads it with
+    /// [`Self::holder_collision_counts_of`]; read the sweep for its cost.
     pub fn holder_collision_counts(
         &self,
         cancel: &AtomicBool,
     ) -> Vec<(ToolpathId, HolderCollisionCheck)> {
-        let indices = self.holder_collision_indices();
-        self.toolpath_configs
+        Self::holder_collision_counts_of(&self.holder_collision_sweep(cancel))
+    }
+
+    /// The three-state count of each row of a
+    /// [`Self::holder_collision_sweep`] (CMP-14). The one reading of a
+    /// sweep row: [`Self::holder_collision_counts`] and the CLI both call
+    /// it.
+    pub fn holder_collision_counts_of(
+        sweep: &[HolderCollisionSweepRow],
+    ) -> Vec<(ToolpathId, HolderCollisionCheck)> {
+        sweep
             .iter()
-            .enumerate()
-            .filter(|(idx, _)| self.results.contains_key(idx))
-            .map(|(idx, tc)| {
-                let outcome =
-                    match self.collision_check_with_index(idx, indices.get(&tc.model_id), cancel) {
-                        // K1: an obstacle hit is counted from the
-                        // simulation (`SimulationResult::obstacle_collisions`),
-                        // so this sweep counts the workpiece hits alone.
-                        Ok(Some(r)) => HolderCollisionCheck::Measured(
-                            r.collision_report
-                                .collisions
-                                .iter()
-                                .filter(|c| {
-                                    c.kind == crate::stock::collision::CollisionKind::Workpiece
-                                })
-                                .count(),
-                        ),
-                        // The 2D case the CLI calls expected: no mesh AND
-                        // no enabled fixture, so nothing to check against.
-                        Ok(None) => HolderCollisionCheck::NotApplicable,
-                        Err(e) => {
-                            tracing::warn!(
-                                index = idx,
-                                error = %e,
-                                "Holder collision check failed; the count is unknown"
-                            );
-                            HolderCollisionCheck::Failed
-                        }
-                    };
-                (tc.id, outcome)
+            .map(|(_, id, outcome)| {
+                let check = match outcome {
+                    // K1: an obstacle hit is counted from the
+                    // simulation (`SimulationResult::obstacle_collisions`),
+                    // so this sweep counts the workpiece hits alone.
+                    Ok(Some(r)) => HolderCollisionCheck::Measured(
+                        r.collision_report
+                            .collisions
+                            .iter()
+                            .filter(|c| c.kind == crate::stock::collision::CollisionKind::Workpiece)
+                            .count(),
+                    ),
+                    // The 2D case the CLI calls expected: no mesh AND
+                    // no enabled fixture, so nothing to check against.
+                    Ok(None) => HolderCollisionCheck::NotApplicable,
+                    Err(_) => HolderCollisionCheck::Failed,
+                };
+                (*id, check)
             })
             .collect()
     }

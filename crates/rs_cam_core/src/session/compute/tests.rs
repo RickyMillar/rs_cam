@@ -2970,3 +2970,129 @@ fn the_simulation_request_carries_the_stock_changes_s2() {
         Err(crate::session::SnapshotMiss::StockChangeMoved { .. })
     ));
 }
+
+/// Perf sweep round 2, W3a: the holder-collision sweep runs once and every
+/// reader takes its result.
+///
+/// The fixture holds five toolpaths: three on one meshed model whose
+/// moves strike (`Measured(n > 0)`), one with no tool (`Failed`) and one
+/// on a model with no mesh (`NotApplicable`). The test compares
+/// `holder_collision_counts`, `diagnostics()` and `triage()` with the
+/// readers of the one sweep, and each sweep row with the per-toolpath
+/// `collision_check` the CLI loop called before W3a. The default tool has
+/// a 45 mm stickout, so the tips run at Z -30 for the holder to strike the
+/// 20 mm hemisphere.
+#[test]
+fn the_collision_sweep_runs_once_perf6() {
+    fn model(id: usize, name: &str, meshed: bool) -> crate::session::LoadedModel {
+        crate::session::LoadedModel {
+            id: crate::ids::ModelId::from_raw(id),
+            name: name.to_owned(),
+            mesh: meshed.then(|| Arc::new(crate::mesh::make_test_hemisphere(20.0, 32))),
+            items: Default::default(),
+            path: std::path::PathBuf::from(format!("synthetic://{name}.stl")),
+            kind: None,
+            units: None,
+            enriched_mesh: None,
+            winding_report: None,
+            load_error: None,
+            import_options: Default::default(),
+            import_report: None,
+            drawing: Default::default(),
+        }
+    }
+    fn result_with(y: f64) -> ToolpathComputeResult {
+        let mut tp = crate::toolpath::Toolpath::new();
+        tp.rapid_to(P3::new(-30.0, y, 30.0));
+        tp.feed_to(P3::new(-30.0, y, -30.0), 500.0);
+        tp.feed_to(P3::new(30.0, y, -30.0), 1000.0);
+        tp.feed_to(P3::new(30.0, y + 3.0, -30.0), 1000.0);
+        tp.feed_to(P3::new(-30.0, y + 3.0, -30.0), 1000.0);
+        tp.rapid_to(P3::new(-30.0, y + 3.0, 30.0));
+        let mut r = empty_result();
+        r.op_data = crate::ops::drill_op::OpData::Toolpath(Arc::new(
+            crate::trace::toolpath_spans::AnnotatedToolpath::new(tp),
+        ));
+        r.stats.cutting_distance = 100.0;
+        r
+    }
+
+    let mut s = make_session();
+    s.models.push(model(0, "meshed", true));
+    s.models.push(model(1, "bare", false));
+    let tool = s.tools()[0].id.raw();
+    for _ in 0..3 {
+        let _ = s.add_toolpath(0, make_tc(tool)).unwrap();
+    }
+    let mut no_tool = make_tc(tool);
+    no_tool.tool_id = None;
+    let _ = s.add_toolpath(0, no_tool).unwrap();
+    let mut bare = make_tc(tool);
+    bare.model_id = crate::ids::ModelId::from_raw(1);
+    let _ = s.add_toolpath(0, bare).unwrap();
+    for (index, y) in [(0, -6.0), (1, 0.0), (2, 4.0), (3, 0.0), (4, 0.0)] {
+        s.results.insert(index, result_with(y));
+    }
+
+    let no_cancel = AtomicBool::new(false);
+    let counts = s.holder_collision_counts(&no_cancel);
+    assert_eq!(counts.len(), 5);
+    assert!(
+        counts
+            .iter()
+            .any(|(_, c)| matches!(c, crate::stock::collision::HolderCollisionCheck::Measured(n) if *n > 0)),
+        "the fixture must strike: {counts:?}"
+    );
+    assert!(counts.iter().any(|(_, c)| c.failed()), "{counts:?}");
+    assert!(
+        counts
+            .iter()
+            .any(|(_, c)| *c == crate::stock::collision::HolderCollisionCheck::NotApplicable),
+        "{counts:?}"
+    );
+
+    // The per-toolpath door the CLI loop called before W3a.
+    let per_toolpath: Vec<String> = (0..s.toolpath_count())
+        .filter(|idx| s.result_at(*idx).is_some())
+        .map(|idx| match s.collision_check(idx, &no_cancel) {
+            Ok(Some(check)) => format!("{idx} some {:?}", check.collision_report),
+            Ok(None) => format!("{idx} none"),
+            Err(e) => format!("{idx} err {e}"),
+        })
+        .collect();
+    assert_eq!(per_toolpath.len(), 5);
+
+    let diag = format!("{:?}", s.diagnostics());
+    let triage = format!("{:?}", s.triage());
+    assert!(!diag.is_empty() && !triage.is_empty());
+
+    // W3a: the one sweep. Each row equals the per-toolpath check.
+    let sweep = s.holder_collision_sweep(&no_cancel);
+    let from_sweep: Vec<String> = sweep
+        .iter()
+        .map(|(idx, id, outcome)| {
+            assert_eq!(Some(*id), s.toolpath_config_at(*idx).map(|tc| tc.id));
+            match outcome {
+                Ok(Some(check)) => format!("{idx} some {:?}", check.collision_report),
+                Ok(None) => format!("{idx} none"),
+                Err(e) => format!("{idx} err {e}"),
+            }
+        })
+        .collect();
+    assert_eq!(from_sweep, per_toolpath);
+
+    // The counts, the diagnostics and the triage read the one sweep.
+    let counts_of = ProjectSession::holder_collision_counts_of(&sweep);
+    assert_eq!(counts_of, counts);
+    assert_eq!(
+        format!(
+            "{:?}",
+            s.diagnostics_with_holder_collisions(counts_of.clone())
+        ),
+        diag
+    );
+    assert_eq!(
+        format!("{:?}", s.triage_with_holder_collisions(counts_of)),
+        triage
+    );
+}

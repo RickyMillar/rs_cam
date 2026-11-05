@@ -63,9 +63,11 @@ struct ToolpathDiagnostic<'a> {
     debug_trace: Option<&'a rs_cam_core::trace::debug_trace::ToolpathDebugTrace>,
     semantic_trace: Option<&'a rs_cam_core::trace::semantic_trace::ToolpathSemanticTrace>,
     /// CLI-LOCAL, deliberately. The core diagnostic's `collision_count` is
-    /// whatever holder-collision evidence its caller supplied; the CLI runs
-    /// its own per-toolpath [`rs_cam_core::session::ProjectSession::collision_check`]
-    /// and reports that. Better data, not a second opinion on the same data.
+    /// whatever holder-collision evidence its caller supplied; the CLI reads
+    /// the full report of each row of the one
+    /// [`rs_cam_core::session::ProjectSession::holder_collision_sweep`] (the
+    /// answer of `collision_check` for that toolpath) and reports that.
+    /// Better data, not a second opinion on the same data.
     collision_count: usize,
     rapid_collision_count: usize,
     /// CLI-local for the same reason: it comes off the collision report the
@@ -932,18 +934,16 @@ pub fn run_project_command(
     let mut collision_check_failed: std::collections::HashSet<rs_cam_core::ToolpathId> =
         std::collections::HashSet::new();
 
-    for idx in 0..tp_count {
-        if session.result_at(idx).is_none() {
-            continue;
-        }
-        let tp_id = session
-            .toolpath_config_at(idx)
-            .map(|tc| tc.id)
-            // Defensive fallback mirrors the project-file loader: when a
-            // config is somehow absent, the position doubles as the id.
-            // F004 (W13b): an index in an id slot (the R3 class), kept.
-            .unwrap_or(rs_cam_core::ToolpathId::from_wire(idx));
-        match session.collision_check(idx, &cancel) {
+    // Perf W3a: the holder sweep runs ONCE. Before W3a this loop called
+    // `collision_check` per toolpath, and `diagnostics()` and `triage()`
+    // each ran the full sweep again over the same results. The sweep holds
+    // one row per toolpath that has a result, in toolpath order, with the
+    // answer `collision_check` gives for that index. The two readers below
+    // take the counts of this same sweep.
+    let holder_sweep = session.holder_collision_sweep(&cancel);
+    let holder_counts = ProjectSession::holder_collision_counts_of(&holder_sweep);
+    for (idx, tp_id, outcome) in holder_sweep {
+        match outcome {
             Ok(Some(check)) => {
                 if !check.collision_report.is_clear() {
                     collision_reports.insert(tp_id, check.collision_report);
@@ -968,7 +968,7 @@ pub fn run_project_command(
 
     // 7. Write per-toolpath JSON
     let stock_bbox = session.stock_bbox();
-    let diag = session.diagnostics();
+    let diag = session.diagnostics_with_holder_collisions(holder_counts.clone());
 
     for idx in 0..tp_count {
         let Some(result) = session.result_at(idx) else {
@@ -1122,7 +1122,7 @@ pub fn run_project_command(
     // advisory list that says how much it withheld — rather than a single
     // string plus an unbounded pile of runs.
     print_triage_report(
-        &session.triage(),
+        &session.triage_with_holder_collisions(holder_counts),
         diag.cut_metrics_not_measured
             .map(rs_cam_core::session::CutMetricsNotMeasured::as_str),
     );
