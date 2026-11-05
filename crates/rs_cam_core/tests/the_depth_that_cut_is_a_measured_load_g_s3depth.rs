@@ -214,6 +214,7 @@ fn depth_verdict_for(
         operation_kind: op,
         spans: None,
         drill_op: None,
+        commanded_thinning_lift: None,
     };
     let env = GateEnv {
         sim_trace: Some(trace),
@@ -240,6 +241,7 @@ fn milling_verdict(op: OperationType, trace: &SimulationCutTrace) -> ToolpathLoa
         operation_kind: op,
         spans: None,
         drill_op: None,
+        commanded_thinning_lift: None,
     };
     rs_cam_core::tool_load::evaluate_toolpath(&ctx, Some(trace), Some(&machine), &tolerance)
 }
@@ -471,6 +473,7 @@ fn drill_verdict() -> ToolpathLoadVerdict {
         operation_kind: OperationType::Drill,
         spans: None,
         drill_op: Some(&d),
+        commanded_thinning_lift: None,
     };
     rs_cam_core::tool_load::evaluate_toolpath(&ctx, None, Some(&machine), &tolerance)
 }

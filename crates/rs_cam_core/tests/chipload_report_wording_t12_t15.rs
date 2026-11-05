@@ -178,6 +178,7 @@ fn verdict() -> ToolpathLoadVerdict {
             operation_kind: OperationType::DropCutter,
             spans: None,
             drill_op: None,
+            commanded_thinning_lift: None,
         },
         Some(&trace),
         None,
@@ -201,12 +202,21 @@ fn the_chipload_message_names_its_statistic_unit_and_multipliers() {
     eprintln!("\n  chipload message:\n    {}\n", chipload.message);
 
     // Case-insensitive: the same clause appears sentence-initial on the
-    // trip arm ("Feed per tooth too high ...") and mid-sentence on the
-    // advisory arm ("The feed per tooth 0.0092 mm is BELOW ...").
+    // trip arm ("Peak chip too high ...") and mid-sentence on the advisory
+    // arm ("The peak chip 0.0092 mm is BELOW ...").
+    //
+    // P11b2 (ruling L1): the gate observes the PEAK chip, so the message
+    // names it, not a bare "chipload" and not the advance.
     assert!(
-        chipload.message.to_lowercase().contains("feed per tooth"),
-        "the message must name the quantity as a FEED-PER-TOOTH (linear advance), \
-         not a bare \"chipload\": {}",
+        chipload.message.to_lowercase().contains("peak chip"),
+        "the message must name the quantity as the PEAK CHIP, not a bare \
+         \"chipload\": {}",
+        chipload.message
+    );
+    assert!(
+        chipload.message.contains("chip-thinning lift"),
+        "P11b2: the message must name the chip-thinning lift that separates the \
+         peak chip from the advance: {}",
         chipload.message
     );
     // RESTATED 2026-08-06 (was: must CONTAIN "chip thickness"). The gate
@@ -267,10 +277,12 @@ fn the_commanded_over_band_alarm_is_surfaced() {
         alarm.supersedes.is_empty(),
         "this report must silence nothing — it is not sim-backed evidence"
     );
+    // P11b2: the message names the peak chip and the lift that makes the
+    // commanded advance a peak chip, which is why it compares with the band.
     assert!(
-        alarm.message.contains("Both are the same measure"),
-        "the message must say WHY this comparison is legitimate, since every \
-         neighbouring one is not: {}",
+        alarm.message.contains("peak chip") && alarm.message.contains("chip-thinning lift"),
+        "the message must say WHY this comparison is legitimate (the peak chip of \
+         the set feed): {}",
         alarm.message
     );
     assert!(
@@ -299,8 +311,9 @@ fn the_gate_observation_is_now_on_the_same_axis_as_the_alarm() {
          (throttle {:.4})",
         achieved_ratio / commanded_ratio
     );
+    // P11b2: the alarm reads the commanded PEAK chip, in the gate's unit.
     assert_eq!(
-        e.commanded.unit(),
+        e.commanded.peak_chip_unit(),
         e.gate.unit(),
         "the alarm's axis and the gate's axis must be the same unit"
     );
@@ -319,7 +332,8 @@ fn the_alarm_is_absent_when_the_commanded_feed_sits_inside_the_band() {
     if let Some(e) = v.feed_explanation.as_deref_mut() {
         // Drive the commanded stage under the band maximum, leaving
         // every other stage untouched.
-        e.commanded.feed_per_tooth_mm = e.band.max_mm_per_tooth * 0.5;
+        // P11b2: the alarm reads the commanded peak chip.
+        e.commanded.peak_chip_mm = e.band.max_mm_per_tooth * 0.5;
     }
     let diagnostics = diagnostics_from_load_verdict(&v);
     assert!(
@@ -420,6 +434,7 @@ fn a_drill_verdict_produces_neither_a_record_nor_an_alarm() {
             operation_kind: OperationType::Drill,
             spans: None,
             drill_op: None,
+            commanded_thinning_lift: None,
         },
         None,
         None,

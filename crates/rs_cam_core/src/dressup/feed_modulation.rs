@@ -66,6 +66,7 @@ use crate::machine::CuttingCeilingMmMin;
 use crate::machine::kinematics::{MachineKinematics, predicted_feeds_for_toolpath};
 use crate::toolpath::{MoveIntent, MoveType, Toolpath};
 
+pub use crate::feeds::geometry::RadialThinning;
 pub use crate::tool_load::BindingConstraint;
 
 /// Selects which modulation algorithm runs. Stored on
@@ -221,6 +222,16 @@ pub struct PerMoveEngagement {
     /// `0.0` means the move had no measured cutting engagement, which the
     /// solver treats the same way it treats an air move.
     pub axial_doc_mm: f64,
+    /// Feeds contract P11b2: the radial chip-thinning lift of the move, the
+    /// MINIMUM over its cutting samples of
+    /// `tool_load::display::sample_thinning_lift` (the lift the post-sim gate
+    /// reads at each sample's measured arc). With the minimum, a move held
+    /// at `band.max x lift x rpm x Z` gives a peak chip at or below the band
+    /// max at every one of its samples, so the gate cannot disagree. `None`
+    /// for a move with no measured arc (a synthetic engagement): the solver
+    /// then reads the modelled width `radial_woc_fraction`. Every production
+    /// trace carries the arcs.
+    pub thinning_lift: Option<f64>,
 }
 
 /// Feeds contract P11a: the cutter facts that the deflection and power
@@ -358,6 +369,13 @@ pub struct ModulationContext<'a> {
     /// A printed point ([`ChiploadBand::point`], A2) caps at the point
     /// with no floor.
     pub chipload_band: Option<ChiploadBand>,
+    /// Feeds contract P11b2: whether the op thins its chip radially (the
+    /// one rule, [`RadialThinning::of`] on the op's feeds style). The band
+    /// holds the PEAK chip, so on a thinning op the chipload cap, the floor
+    /// and the pin arms are `band x lift x rpm x Z`, with the lift
+    /// ([`RadialThinning::lift`]) at the move's modelled engagement. A
+    /// finish pass and a drill cycle take lift 1, as Suggest does.
+    pub radial_thinning: RadialThinning,
     /// Machine kinematics — drives the `predicted_feeds_for_toolpath`
     /// per-move achievable-velocity cap.
     pub kinematics: &'a MachineKinematics,
@@ -530,26 +548,20 @@ fn max_safe_feed_for_move(
     // gated out upstream; this protects against single-sample noise.
     let woc_eff = engagement.radial_woc_fraction.clamp(1e-3, 1.0);
 
-    // Chip-thinning correction DELETED 2026-08-19 (G-CHIPTHIN-HALFFIX,
-    // operator-ruled). This site used a different formula from Suggest's —
-    // `band.max ÷ sqrt(woc_eff)` rather than `radial_chip_thinning_factor` —
-    // but it made the same claim, and it fails for the same reason: the vendor
-    // chipload column it re-keys against publishes no radial reference
-    // condition to correct from (`CHIPLOAD_LITERATURE_VERDICT.md` N-8, a
-    // deliberate negative result over six wood charts read in full).
-    //
-    // The magnitude here was larger than Suggest's, not smaller: `1/sqrt(woc)`
-    // is unbounded below and had no equivalent of Suggest's `[1, 4]` clamp, so
-    // at the 1e-3 floor it reached 31.6×. It was applied to the band MAXIMUM,
-    // so a lightly-engaged move could be handed a target tens of times the
-    // largest chipload the vendor publishes — and the post-simulation gate
-    // that judges the result deleted its own half of this correction on
-    // 2026-08-06. The two halves now agree.
-    //
-    // The target is simply the band maximum: this is a constrained-MAX solver,
-    // so the chipload ceiling is the constraint, and the five other caps below
-    // are what actually bind on an engaged move.
-    let target_chipload = band.max_mm_per_tooth;
+    // Feeds contract P11b2 (rulings L1 and L6): the band holds the PEAK
+    // chip, the chip Suggest sizes the feed for. The peak chip is the advance
+    // over the radial chip-thinning lift (Garr, the one law
+    // `RadialThinning::lift`), so every chip edge of this solver (the cap,
+    // the floor, the pin arms) is `band x lift`. The lift is the move's
+    // measured lift (the minimum over its samples of the gate's own reading,
+    // `PerMoveEngagement::thinning_lift`), else the lift at the modelled
+    // width `woc x d_eng` (with no cutter, the fraction on a unit diameter;
+    // the lift is a function of `ae / d_eng` alone). G-CHIPTHIN-HALFFIX (2026-08-19) deleted an earlier lift here
+    // (`1 / sqrt(woc)`, a second formula); operator ruling D11 restored the
+    // claim as one model, so this site reads the one law, not that formula.
+    let lift = move_thinning_lift(engagement, ctx, woc_eff);
+    let target_chipload = band.max_mm_per_tooth * lift;
+    let floor_chipload = band.min_mm_per_tooth * lift;
 
     let mut limits: Vec<(f64, BindingConstraint)> = Vec::with_capacity(6);
     // The first pin arm that fired (deflection or power), if any. For a
@@ -557,7 +569,7 @@ fn max_safe_feed_for_move(
     // needs it.
     let mut pinned: Option<(f64, BindingConstraint)> = None;
 
-    // 1. Chipload-max constraint (with chip-thinning correction).
+    // 1. Chipload-max constraint (the peak chip at the band max, P11b2).
     limits.push((
         target_chipload * ctx.spindle_rpm * flutes,
         BindingConstraint::ChiploadMax,
@@ -599,7 +611,7 @@ fn max_safe_feed_for_move(
                 // binding tag name deflection. Dropping DOC/stepover is the
                 // real fix (out of scope for per-move feed). For a point
                 // (A2) `min == v`, so this pins to the point.
-                let floor = band.min_mm_per_tooth * ctx.spindle_rpm * flutes;
+                let floor = floor_chipload * ctx.spindle_rpm * flutes;
                 let pin = (floor.max(1e-9), BindingConstraint::DeflectionMax);
                 pinned = pinned.or(Some(pin));
                 limits.push(pin);
@@ -656,7 +668,7 @@ fn max_safe_feed_for_move(
                         // less stepover or less RPM, none of which a
                         // per-move feed solver can reach for. For a point
                         // (A2) `min == v`, so this pins to the point.
-                        let floor = band.min_mm_per_tooth * ctx.spindle_rpm * flutes;
+                        let floor = floor_chipload * ctx.spindle_rpm * flutes;
                         let pin = (floor.max(1e-9), BindingConstraint::PowerMax);
                         pinned = pinned.or(Some(pin));
                         limits.push(pin);
@@ -724,7 +736,9 @@ fn max_safe_feed_for_move(
     // a low feed even at feed scale 1.0), keep the original
     // binding so the diagnostic surface names the load-bearing
     // physical constraint, not the floor we backed off to.
-    let floor = band.min_mm_per_tooth * ctx.spindle_rpm * flutes;
+    // P11b2: the floor holds the PEAK chip at `band.min` too (a light cut
+    // makes a thin chip; the floor is what keeps it off the rubbing side).
+    let floor = floor_chipload * ctx.spindle_rpm * flutes;
     let effective_floor = floor.min(ctx.cutting_ceiling.mm_min());
     if after_scale < effective_floor {
         let new_binding = if limit > effective_floor {
@@ -736,6 +750,39 @@ fn max_safe_feed_for_move(
     } else {
         (after_scale, binding)
     }
+}
+
+/// Feeds contract P11b2: the radial chip-thinning lift of one move. The
+/// measured lift ([`PerMoveEngagement::thinning_lift`], the gate's reading)
+/// when the trace carries it, else the lift at the modelled engagement
+/// (`woc_eff x d_eng` on the engaged diameter at the move depth, the
+/// engagement the force caps build). 1 when the op does not thin (a finish
+/// pass, a drill cycle: [`RadialThinning`]).
+fn move_thinning_lift(
+    engagement: PerMoveEngagement,
+    ctx: &ModulationContext<'_>,
+    woc_eff: f64,
+) -> f64 {
+    // The op does not thin: no lift, whatever the samples read.
+    if ctx.radial_thinning != RadialThinning::Applied {
+        return 1.0;
+    }
+    // The measured lift first (the gate's own reading), else the model.
+    if let Some(lift) = engagement
+        .thinning_lift
+        .filter(|l| l.is_finite() && *l >= 1.0)
+    {
+        return lift;
+    }
+    let cutter = ctx
+        .power_inputs
+        .map(|p| p.cutter)
+        .or(ctx.deflection_inputs.map(|d| d.cutter));
+    let d_eng = cutter
+        .map(|c| c.d_eng_at(effective_axial_mm(engagement, ctx)))
+        .filter(|d| d.is_finite() && *d > 0.0)
+        .unwrap_or(1.0);
+    ctx.radial_thinning.lift(woc_eff * d_eng, d_eng)
 }
 
 /// The axial depth this move actually cuts, in mm.
@@ -936,12 +983,22 @@ pub fn adaptive_feed_modulate_with_materials(
     // junction limits. As in F-036b, rebuild a synthetic toolpath
     // commanded at the maximum candidate feed so the integrator
     // returns the geometric reach, not commanded-clipped reach.
-    // Bandless: probe at the machine ceiling — there is no band
-    // ceiling to fold in.
+    // Bandless: probe at the machine ceiling — there is no band ceiling to
+    // fold in. P11b2: the band ceiling is `band.max x lift x rpm x Z` at the
+    // largest lift of the path (the lift has no cap, L3), so a probe at the
+    // un-lifted band ceiling would clip the lift through the kinematic-reach
+    // cap. A path that does not thin probes where it did before P11b2.
+    let max_lift = engagements
+        .iter()
+        // A move with no engagement keeps its feed (the solver skips it).
+        .filter(|e| e.radial_woc_fraction > 1e-6 || e.axial_doc_fraction > 1e-6)
+        .map(|e| move_thinning_lift(*e, ctx, e.radial_woc_fraction.clamp(1e-3, 1.0)))
+        .filter(|l| l.is_finite())
+        .fold(1.0_f64, f64::max);
     let band_ceiling_feed = ctx
         .chipload_band
         .map_or(ctx.cutting_ceiling.mm_min(), |band| {
-            band.max_mm_per_tooth * ctx.spindle_rpm * ctx.flute_count.max(1) as f64
+            band.max_mm_per_tooth * max_lift * ctx.spindle_rpm * ctx.flute_count.max(1) as f64
         });
     let probe_feed = ctx
         .cutting_ceiling
@@ -1123,6 +1180,7 @@ mod tests {
             cutting_ceiling: ceiling(4000.0),
             rapid_feed_mm_min: 5000.0,
             chipload_band: Some(band),
+            radial_thinning: RadialThinning::Applied,
             kinematics: k,
             strategy: ModulationStrategy::BandMid,
             feed_scale: 1.0,
@@ -1181,6 +1239,7 @@ mod tests {
             radial_woc_fraction: 0.5,
             axial_doc_fraction: 0.1,
             axial_doc_mm: 2.0,
+            thinning_lift: None,
         };
         let run = |materials: &[MoveMaterial]| {
             let mut tp = straight_toolpath(3, commanded);
@@ -1314,6 +1373,7 @@ mod tests {
             // T-11: the depth is now read in mm, not derived from the
             // fraction. 2.0 is what `nominal x fraction` meant here.
             axial_doc_mm: 2.0,
+            thinning_lift: None,
         };
         // Large kinematic cap so deflection is the binding constraint.
         let (feed_cap, binding) =
@@ -1405,6 +1465,7 @@ mod tests {
                 // T-11: the depth is now read in mm, not derived from the
                 // fraction. 2.0 is what `nominal x fraction` meant here.
                 axial_doc_mm: 2.0,
+                thinning_lift: None,
             },
             PerMoveEngagement {
                 radial_woc_fraction: 1.0,
@@ -1412,6 +1473,7 @@ mod tests {
                 // T-11: the depth is now read in mm, not derived from the
                 // fraction. 2.0 is what `nominal x fraction` meant here.
                 axial_doc_mm: 2.0,
+                thinning_lift: None,
             },
             PerMoveEngagement {
                 radial_woc_fraction: 1.0,
@@ -1419,6 +1481,7 @@ mod tests {
                 // T-11: the depth is now read in mm, not derived from the
                 // fraction. 2.0 is what `nominal x fraction` meant here.
                 axial_doc_mm: 2.0,
+                thinning_lift: None,
             },
         ];
         let k = shapeoko();
@@ -1442,6 +1505,7 @@ mod tests {
                 // T-11: the depth is now read in mm, not derived from the
                 // fraction. 2.0 is what `nominal x fraction` meant here.
                 axial_doc_mm: 2.0,
+                thinning_lift: None,
             },
             PerMoveEngagement {
                 radial_woc_fraction: 1.0,
@@ -1449,6 +1513,7 @@ mod tests {
                 // T-11: the depth is now read in mm, not derived from the
                 // fraction. 2.0 is what `nominal x fraction` meant here.
                 axial_doc_mm: 2.0,
+                thinning_lift: None,
             },
             PerMoveEngagement {
                 radial_woc_fraction: 1.0,
@@ -1456,6 +1521,7 @@ mod tests {
                 // T-11: the depth is now read in mm, not derived from the
                 // fraction. 2.0 is what `nominal x fraction` meant here.
                 axial_doc_mm: 2.0,
+                thinning_lift: None,
             },
         ];
         let k = shapeoko();
@@ -1484,6 +1550,7 @@ mod tests {
                 // T-11: the depth is now read in mm, not derived from the
                 // fraction. 2.0 is what `nominal x fraction` meant here.
                 axial_doc_mm: 2.0,
+                thinning_lift: None,
             },
             PerMoveEngagement {
                 radial_woc_fraction: 0.1,
@@ -1491,6 +1558,7 @@ mod tests {
                 // T-11: the depth is now read in mm, not derived from the
                 // fraction. 2.0 is what `nominal x fraction` meant here.
                 axial_doc_mm: 2.0,
+                thinning_lift: None,
             },
         ];
         let k = shapeoko();
@@ -1525,6 +1593,7 @@ mod tests {
             // T-11: the depth is now read in mm, not derived from the
             // fraction. 2.0 is what `nominal x fraction` meant here.
             axial_doc_mm: 2.0,
+            thinning_lift: None,
         };
         // Light engagement inflates the chip-thinning target well past
         // the cap, so the clamp — not the natural target — decides the
@@ -1560,6 +1629,7 @@ mod tests {
                 // T-11: the depth is now read in mm, not derived from the
                 // fraction. 2.0 is what `nominal x fraction` meant here.
                 axial_doc_mm: 2.0,
+                thinning_lift: None,
             },
             PerMoveEngagement {
                 radial_woc_fraction: 0.1,
@@ -1567,6 +1637,7 @@ mod tests {
                 // T-11: the depth is now read in mm, not derived from the
                 // fraction. 2.0 is what `nominal x fraction` meant here.
                 axial_doc_mm: 2.0,
+                thinning_lift: None,
             },
         ];
         let k = shapeoko();
@@ -1593,6 +1664,7 @@ mod tests {
                 // T-11: the depth is now read in mm, not derived from the
                 // fraction. 2.0 is what `nominal x fraction` meant here.
                 axial_doc_mm: 2.0,
+                thinning_lift: None,
             },
             PerMoveEngagement {
                 radial_woc_fraction: 1.0,
@@ -1600,6 +1672,7 @@ mod tests {
                 // T-11: the depth is now read in mm, not derived from the
                 // fraction. 2.0 is what `nominal x fraction` meant here.
                 axial_doc_mm: 2.0,
+                thinning_lift: None,
             },
             PerMoveEngagement {
                 radial_woc_fraction: 1.0,
@@ -1607,6 +1680,7 @@ mod tests {
                 // T-11: the depth is now read in mm, not derived from the
                 // fraction. 2.0 is what `nominal x fraction` meant here.
                 axial_doc_mm: 2.0,
+                thinning_lift: None,
             },
         ];
         let k = shapeoko();
@@ -1635,6 +1709,7 @@ mod tests {
                 // T-11: the depth is now read in mm, not derived from the
                 // fraction. 2.0 is what `nominal x fraction` meant here.
                 axial_doc_mm: 2.0,
+                thinning_lift: None,
             })
             .collect();
         let k = shapeoko();
@@ -1681,6 +1756,7 @@ mod tests {
                             // T-11: the depth is now read in mm, not derived from the
                             // fraction. 2.0 is what `nominal x fraction` meant here.
                             axial_doc_mm: 2.0,
+                            thinning_lift: None,
                         }
                     } else {
                         PerMoveEngagement {
@@ -1689,6 +1765,7 @@ mod tests {
                             // T-11: the depth is now read in mm, not derived from the
                             // fraction. 2.0 is what `nominal x fraction` meant here.
                             axial_doc_mm: 2.0,
+                            thinning_lift: None,
                         }
                     }
                 })
@@ -1719,6 +1796,7 @@ mod tests {
             radial_woc_fraction: 1.0,
             axial_doc_fraction: 1.0,
             axial_doc_mm: 2.0,
+            thinning_lift: None,
         }
     }
 

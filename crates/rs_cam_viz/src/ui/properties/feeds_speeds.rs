@@ -827,8 +827,9 @@ fn draw_operating_point(ui: &mut egui::Ui, verdict: &rs_cam_core::tool_load::Too
     }
 }
 
-/// Checkpoint H4.4 — the advance-per-tooth rows: **Commanded / Achieved /
-/// Vendor band**, read-only.
+/// Checkpoint H4.4 — the chip rows: **Commanded advance / Achieved peak
+/// chip / Vendor band**, read-only. P11b2: the achieved row is the gate's
+/// peak chip (the advance over the chip-thinning lift), not the advance.
 ///
 /// The point of putting them adjacent is that the interesting number is
 /// the *gap*: commanded is what the operator typed, achieved is what the
@@ -847,16 +848,22 @@ fn draw_operating_point(ui: &mut egui::Ui, verdict: &rs_cam_core::tool_load::Too
 fn advance_per_tooth_rows(
     explain: &rs_cam_core::feeds::FeedExplanation,
 ) -> (DataRow, Vec<DataRow>) {
-    use rs_cam_core::feeds::{ACHIEVED_ADVANCE_PER_TOOTH, COMMANDED_ADVANCE_PER_TOOTH};
+    use rs_cam_core::feeds::{ACHIEVED_PEAK_CHIP, COMMANDED_ADVANCE_PER_TOOTH};
+    // P11b2: the gate judges the PEAK chip, the advance over the radial
+    // chip-thinning lift; the hover gives the commanded peak chip too.
     let commanded_hover = format!(
-        "feed {:.0} mm/min \u{00f7} ({} RPM \u{00d7} {} flutes)",
+        "feed {:.0} mm/min \u{00f7} ({} RPM \u{00d7} {} flutes). Peak chip {:.4} mm \
+         (\u{00f7} the median chip-thinning lift {:.3} of the measured cut).",
         explain.commanded.feed_rate_mm_min,
         explain.commanded.spindle_rpm,
         explain.commanded.flute_count,
+        explain.commanded.peak_chip_mm,
+        explain.commanded.thinning_lift,
     );
     let ratio_note = match explain.achieved_feed.median_ratio {
         Some(r) => format!(
-            "effective feed \u{00f7} (RPM \u{00d7} flutes), over the {} \
+            "effective feed \u{00f7} (RPM \u{00d7} flutes) \u{00f7} the chip-thinning \
+             lift at each sample's arc, over the {} \
              {}. The machine reaches {:.0}% of the commanded feed \
              (median) on this path.",
             explain.gate.sample_count,
@@ -880,12 +887,12 @@ fn advance_per_tooth_rows(
     };
     let band_hover = format!(
         "Vendor chipload column from row {} (calibrated d={:.3} mm), \
-         after DOC derate. Published as a linear advance per tooth \
-         \u{2014} the same quantity as the two rows above.",
+         as printed at every depth. It holds the peak chip (Garr chip \
+         thinning), the quantity of the achieved row.",
         explain.band.observation_id, explain.band.row_diameter_mm,
     );
     let achieved = DataRow::measured(
-        ACHIEVED_ADVANCE_PER_TOOTH,
+        ACHIEVED_PEAK_CHIP,
         format!("{:.4}", explain.gate.value_mm),
         "mm/tooth",
     )

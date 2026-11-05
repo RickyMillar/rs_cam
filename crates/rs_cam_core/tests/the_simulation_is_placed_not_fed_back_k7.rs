@@ -326,6 +326,7 @@ fn place_one(
         operation_kind: kind,
         spans: None,
         drill_op: None,
+        commanded_thinning_lift: None,
     };
     rs_cam_core::compute::simulate::envelope_placement(&trace, &ctx, envelope)
 }

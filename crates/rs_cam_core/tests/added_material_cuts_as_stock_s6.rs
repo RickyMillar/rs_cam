@@ -312,6 +312,7 @@ fn own_material_with_force_data_uses_it_s6() {
             operation_kind: tc.operation.op_type(),
             spans,
             drill_op: None,
+            commanded_thinning_lift: None,
         };
         let machine = run.session.machine();
         let env = rs_cam_core::tool_load::GateEnv {

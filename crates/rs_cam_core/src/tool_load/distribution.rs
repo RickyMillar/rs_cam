@@ -15,7 +15,7 @@
 //!
 //! | Metric | Filters and per-sample value |
 //! |---|---|
-//! | Chipload | [`super::chipload::steady_state_samples_for_toolpath`] (cutting, `radial_woc_fraction >= 0.02`, 95 % of commanded feed), the vestigial `effective_chip_thickness_mm` predicate, [`super::display::achieved_advance_per_tooth`], [`super::locality::is_steady_state_for_gate`] |
+//! | Chipload | [`super::chipload::steady_state_samples_for_toolpath`] (cutting, `radial_woc_fraction >= 0.02`, 95 % of commanded feed), the vestigial `effective_chip_thickness_mm` predicate, [`super::display::peak_chip_per_tooth`] (P11b2: the peak chip), [`super::locality::is_steady_state_for_gate`] |
 //! | Power | [`super::power::sample_power_kw`] at [`super::effective_feed_for_sample`], then [`super::locality::is_steady_state_for_gate`] |
 //! | Deflection | [`super::deflection::sample_tip_deflection_mm`] at [`super::deflection::deflection_feed_per_tooth_mm`], then [`super::locality::is_steady_state_for_gate`] |
 //! | Depth of cut | the depth gate's `is_depth_sample`, then [`super::locality::is_steady_state_for_gate`]; the value is `axial_engagement_mm` |
@@ -630,9 +630,18 @@ fn chipload_population(
         // chip model does not reach its comparison.
         .filter(|(_, s)| s.effective_chip_thickness_mm.is_some())
         .filter_map(|(i, s)| {
-            let advance = super::display::achieved_advance_per_tooth(s, &trace.predicted_feeds)?;
+            // P11b2: the gate's measure, the peak chip (a sample with no
+            // divisor or, on a thinning cut, no engagement is not in the
+            // gate's trip set either).
+            let reading = super::display::peak_chip_per_tooth(
+                s,
+                &trace.predicted_feeds,
+                ctx.tool,
+                crate::feeds::geometry::RadialThinning::of_lut_role(ctx.pass_role),
+            )
+            .ok()?;
             super::locality::is_steady_state_for_gate(s, lookup).then_some(PopulationSample {
-                value: advance.mm(),
+                value: reading.peak_chip_mm,
                 weight_s: s.segment_time_s,
                 move_index: s.move_index,
                 sample_index: i,

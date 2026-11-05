@@ -144,20 +144,17 @@ pub(super) fn check_plunge_entry_stability(
 fn geometry_feed_factor(
     geom: ToolGeometryHint,
     tool: &ToolConfig,
-    finish_pass: bool,
+    thinning: crate::feeds::geometry::RadialThinning,
     ae_mm: f64,
     ap_mm: f64,
 ) -> f64 {
-    if finish_pass {
-        return 1.0;
-    }
     let d_eng = crate::feeds::effective_diameter(
         geom,
         tool.diameter,
         tool.shank_diameter_planning_mm(),
         ap_mm,
     );
-    crate::feeds::geometry::peak_chip_thinning_lift(ae_mm, d_eng)
+    thinning.lift(ae_mm, d_eng)
 }
 
 /// Pass 9 (G-SUGGEST-NOCLAMP, 2026-08-19): **re-derive the feed at the
@@ -266,15 +263,16 @@ pub(super) fn rescale_feed_to_final_geometry(
     }
 
     let geom = tool.geometry_hint();
-    let finish_pass = operation.feeds_style().1 == crate::feeds::PassRole::Finish;
+    let (family, role) = operation.feeds_style();
+    let thinning = crate::feeds::geometry::RadialThinning::of(family, role);
     let factor_at_calculator = geometry_feed_factor(
         geom,
         tool,
-        finish_pass,
+        thinning,
         calc.radial_width_mm,
         calc.axial_depth_mm,
     );
-    let factor_at_final = geometry_feed_factor(geom, tool, finish_pass, final_ae, final_ap);
+    let factor_at_final = geometry_feed_factor(geom, tool, thinning, final_ae, final_ap);
     if !(usable(factor_at_calculator) && usable(factor_at_final)) {
         return warnings;
     }

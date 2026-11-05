@@ -19,7 +19,8 @@
 //!   `tool_load::evaluate_toolpath`) is the tip;
 //! - the two keys agree, the two key helpers agree, and Suggest and the gate
 //!   match the same row;
-//! - the depth de-rate still divides by the cone diameter, not by the tip.
+//! - the depth ladder and the depth cap divide by the cone diameter; the gate
+//!   band is the printed band (P11b2 removed the gate de-rate).
 
 #![expect(
     clippy::unwrap_used,
@@ -32,8 +33,8 @@ use rs_cam_core::compute::cutter::build_cutter;
 use rs_cam_core::compute::tool_config::ToolFact;
 use rs_cam_core::compute::tool_config::{ToolConfig, ToolId, ToolType};
 use rs_cam_core::feeds::geometry::{
-    depth_cap_diameter_mm, doc_derating_scale, feed_ladder_diameter_mm,
-    lut_key_diameter_for_cutter, lut_key_diameter_mm,
+    depth_cap_diameter_mm, feed_ladder_diameter_mm, lut_key_diameter_for_cutter,
+    lut_key_diameter_mm,
 };
 use rs_cam_core::feeds::vendor_lut::{LutOperationFamily, LutPassRole};
 use rs_cam_core::feeds::{
@@ -220,6 +221,7 @@ fn a_tapered_row_is_read_at_the_tip_a1() {
             operation_kind: OperationType::DropCutter,
             spans: None,
             drill_op: None,
+            commanded_thinning_lift: None,
         },
         Some(&t),
         None,
@@ -269,7 +271,7 @@ fn a_tapered_row_is_read_at_the_tip_a1() {
         band.diameter_scale
     );
 
-    // 5. The depth half of R2 stands: the de-rate divides by the cone.
+    // 5. The depth half of R2 stands for the ladder and the cap (the cone).
     let ladder = feed_ladder_diameter_mm(
         hint,
         DEPTH_MM,
@@ -279,17 +281,13 @@ fn a_tapered_row_is_read_at_the_tip_a1() {
     let cap = depth_cap_diameter_mm(&cutter, DEPTH_MM);
     assert!((ladder - cone_mm).abs() < 1e-9, "{ladder} vs {cone_mm}");
     assert!((cap - cone_mm).abs() < 1e-9, "{cap} vs {cone_mm}");
+    // P11b2 (ruling L6): the gate band is the printed band at every depth.
+    // The depth de-rate that divided by the cone is gone; the cone still
+    // keys the ladder and the depth cap above.
     let row_max_mm = printed_max_mm(ROW_ID);
-    let on_cone = row_max_mm * doc_derating_scale(DEPTH_MM / cone_mm);
-    let on_tip = row_max_mm * doc_derating_scale(DEPTH_MM / TIP_MM);
     assert!(
-        (on_cone - on_tip).abs() > 1e-3,
-        "vacuous: the two de-rates must differ at this depth ({on_cone} vs {on_tip})"
-    );
-    assert!(
-        (band.max_mm_per_tooth - on_cone).abs() < 1e-12,
-        "the gate's band maximum must be de-rated at the cone diameter: expected \
-         {on_cone} (on the tip it would be {on_tip}), got {}",
+        (band.max_mm_per_tooth - row_max_mm).abs() < 1e-12,
+        "P11b2: the gate's band maximum is the printed {row_max_mm} at {DEPTH_MM} mm, got {}",
         band.max_mm_per_tooth
     );
 }

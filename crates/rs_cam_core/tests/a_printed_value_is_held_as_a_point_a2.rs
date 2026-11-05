@@ -411,6 +411,7 @@ fn assert_the_cell_is_held_as_a_point(cell: &PointCell) {
         operation_kind: cell.op,
         spans: None,
         drill_op: None,
+        commanded_thinning_lift: None,
     };
     let env = GateEnv {
         sim_trace: Some(&trace),

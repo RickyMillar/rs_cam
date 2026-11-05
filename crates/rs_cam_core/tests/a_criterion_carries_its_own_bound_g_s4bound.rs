@@ -150,6 +150,7 @@ fn milling_verdict() -> ToolpathLoadVerdict {
         operation_kind: OperationType::Pocket,
         spans: None,
         drill_op: None,
+        commanded_thinning_lift: None,
     };
     let env = GateEnv {
         sim_trace: Some(&trace),

@@ -536,6 +536,7 @@ fn modelled_gate_verdicts_across_the_two_classifications() {
         // ancestry half of the predicate is never exercised.
         spans: Some(&fitted.spans),
         drill_op: None,
+        commanded_thinning_lift: None,
     };
     let bands = ToleranceBands::default();
 

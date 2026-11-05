@@ -75,6 +75,9 @@
 //!   (`tool_load::chipload::evaluate`, through
 //!   `depth_derate_diameter_for_cutter`) read one nominal diameter, so
 //!   the two give one band at each depth.
+//!   P11b (L6) and P11b2 retired the band de-rate: Suggest and the gate
+//!   read the printed band at every depth (the test of part (g) step 2
+//!   states it).
 
 #![expect(
     clippy::unwrap_used,
@@ -89,9 +92,7 @@ use rs_cam_core::compute::cutter::build_cutter;
 use rs_cam_core::compute::tool_config::ToolFact;
 use rs_cam_core::compute::{ToolConfig, ToolId, ToolType};
 use rs_cam_core::feeds::extrapolation::{ClaimResidual, SizeBasis, SizeForm, SpreadFamily};
-use rs_cam_core::feeds::geometry::{
-    doc_derating_scale, lut_key_diameter_for_cutter, lut_key_diameter_mm,
-};
+use rs_cam_core::feeds::geometry::{lut_key_diameter_for_cutter, lut_key_diameter_mm};
 use rs_cam_core::feeds::suggest::{
     StockContext, SuggestContext, SuggestParamsInput, SuggestedParams, feeds_input_for_operation,
     suggest_params,
@@ -308,6 +309,7 @@ fn gate_bounds(
         operation_kind: op,
         spans: None,
         drill_op: None,
+        commanded_thinning_lift: None,
     };
     let env = GateEnv {
         sim_trace: Some(&trace),
@@ -654,10 +656,12 @@ fn a_hardwood_vbit_project_curve_ships_the_printed_trace_row_b4() {
 /// this reads 1.0, not the old constant 0.5. At `ap = 2 D` (deep) it
 /// reads 0.75, also not 0.5.
 ///
-/// Feeds contract P11b (L6): only the post-sim gate de-rates now; Suggest's
-/// band is the printed band at every depth.
+/// Feeds contract P11b (L6): Suggest's band is the printed band at every
+/// depth. P11b2 (break): the post-sim gate no longer de-rates either, so
+/// both doors read the printed band at the shallow and the deep cut. The
+/// B4 step-2 diameter rule now keys only the depth cap.
 #[test]
-fn the_band_de_rate_follows_the_nominal_diameter_not_the_engaged_width_b4() {
+fn the_v_bit_band_is_the_printed_band_at_every_depth_b4() {
     let d = 6.35;
     let mut tool = vbit(d);
     tool.included_angle = 15.0;
@@ -670,9 +674,7 @@ fn the_band_de_rate_follows_the_nominal_diameter_not_the_engaged_width_b4() {
     // `feed_explanation_snapshot_b3.rs`'s DOC-ratio sweep.
     let radial_width_mm = Some(0.3 * d);
 
-    for (label, ap, ratio) in [("shallow", 0.5 * d, 0.5_f64), ("deep", 2.0 * d, 2.0_f64)] {
-        let scale = doc_derating_scale(ratio);
-
+    for (label, ap) in [("shallow", 0.5 * d), ("deep", 2.0 * d)] {
         // Suggest: `feeds::calculate` at this depth.
         let machine = open_machine();
         let result = calculate(&FeedsInput {
@@ -745,21 +747,18 @@ fn the_band_de_rate_follows_the_nominal_diameter_not_the_engaged_width_b4() {
         // there), but `gate_bounds` reads the bounds off either verdict,
         // so the sample's own chip thickness does not matter here.
         let gate = gate_bounds(OperationType::Trace, &tool, &material, ap);
-        // The post-sim gate still de-rates its band (P11b does not change the
-        // gate), at the NOMINAL diameter (B4 step 2).
+        // P11b2 (L6): the gate reads the printed band at every depth too.
         let gate_min = gate
             .min_mm_per_tooth
             .unwrap_or_else(|| panic!("{label}: the gate carries no minimum"));
         assert!(
-            (gate_min - row_min * scale).abs() < 1e-6,
-            "{label}: the gate min {gate_min}, wanted {} (scale {scale})",
-            row_min * scale
+            (gate_min - row_min).abs() < 1e-12,
+            "{label}: the gate min {gate_min}, wanted the printed {row_min}"
         );
         assert!(
-            (gate.max_mm_per_tooth - row_max * scale).abs() < 1e-6,
-            "{label}: the gate max {}, wanted {} (scale {scale})",
-            gate.max_mm_per_tooth,
-            row_max * scale
+            (gate.max_mm_per_tooth - row_max).abs() < 1e-12,
+            "{label}: the gate max {}, wanted the printed {row_max}",
+            gate.max_mm_per_tooth
         );
     }
 }

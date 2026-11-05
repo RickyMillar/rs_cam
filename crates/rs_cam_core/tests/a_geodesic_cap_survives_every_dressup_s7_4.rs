@@ -199,6 +199,7 @@ fn modulate(mut tp: Toolpath) -> Toolpath {
                     radial_woc_fraction: 1.0,
                     axial_doc_fraction: 1.0,
                     axial_doc_mm: TOP_Z - FLOOR_Z,
+                    thinning_lift: None,
                 }
             } else {
                 PerMoveEngagement::default()
@@ -212,6 +213,7 @@ fn modulate(mut tp: Toolpath) -> Toolpath {
         cutting_ceiling: MachineProfile::default().cutting_ceiling(),
         rapid_feed_mm_min: 10_000.0,
         chipload_band: Some(ChiploadBand::new(0.02, 0.08).expect("a valid band")),
+        radial_thinning: rs_cam_core::dressup::feed_modulation::RadialThinning::Applied,
         kinematics: &kinematics,
         strategy: ModulationStrategy::ConstrainedMax,
         feed_scale: 1.0,

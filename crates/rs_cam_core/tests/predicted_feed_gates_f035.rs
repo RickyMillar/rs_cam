@@ -219,6 +219,7 @@ fn evaluate_chipload_at(trace: &SimulationCutTrace, commanded_fpt: f64) -> Chipl
             operation_kind: OperationType::Scallop,
             spans: None,
             drill_op: None,
+            commanded_thinning_lift: None,
         },
         &rs_cam_core::tool_load::GateEnv {
             sim_trace: Some(trace),

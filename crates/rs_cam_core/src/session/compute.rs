@@ -2170,7 +2170,7 @@ fn modulate_annotated_against_trace(
             weight_sum[sample.move_index] += w;
         }
     }
-    let engagements: Vec<PerMoveEngagement> = (0..move_count)
+    let mut engagements: Vec<PerMoveEngagement> = (0..move_count)
         .map(|i| {
             #[expect(clippy::indexing_slicing, reason = "i < move_count by construction.")]
             let w = weight_sum[i];
@@ -2210,6 +2210,7 @@ fn modulate_annotated_against_trace(
                 radial_woc_fraction: radial,
                 axial_doc_fraction: axial,
                 axial_doc_mm: axial_mm,
+                thinning_lift: None,
             }
         })
         .collect();
@@ -2223,6 +2224,28 @@ fn modulate_annotated_against_trace(
     // F029: no modulation for a tool outside its domain (`None` = the
     // toolpath keeps its feeds). The tool doors refuse such a tool first.
     let tool_def = crate::compute::cutter::build_cutter(tool_cfg).ok()?;
+    // P11b2: the radial chip-thinning lift of each move, the MINIMUM over
+    // its cutting samples of the gate's own per-sample lift
+    // (`tool_load::display::sample_thinning_lift` at the measured arc). With
+    // the minimum, a move the modulator holds at `band.max x lift` gives a
+    // peak chip at or below the band max at every sample the gate reads.
+    let radial_thinning = {
+        let (family, role) = operation.feeds_style();
+        crate::feeds::geometry::RadialThinning::of(family, role)
+    };
+    for sample in &cut_trace.samples {
+        if sample.toolpath_id != toolpath_id || !sample.is_cutting {
+            continue;
+        }
+        let Some(lift) =
+            crate::tool_load::display::sample_thinning_lift(sample, &tool_def, radial_thinning)
+        else {
+            continue;
+        };
+        if let Some(e) = engagements.get_mut(sample.move_index) {
+            e.thinning_lift = Some(e.thinning_lift.map_or(lift, |prev| prev.min(lift)));
+        }
+    }
     // Use the per-toolpath max axial DOC from the cut trace
     // as the deflection / power reference; falls back to
     // diameter when unavailable (no cutting samples → no
@@ -2328,6 +2351,8 @@ fn modulate_annotated_against_trace(
         cutting_ceiling: max_feed,
         rapid_feed_mm_min: rapid_feed,
         chipload_band: band,
+        // P11b2: the op's own thinning rule, the one Suggest reads.
+        radial_thinning,
         kinematics: &kinematics,
         strategy,
         feed_scale,

@@ -224,6 +224,7 @@ fn a_vbit_cut_has_one_section_in_the_modulator_and_the_gate() {
                     radial_woc_fraction: woc,
                     axial_doc_fraction: 1.0,
                     axial_doc_mm: ap,
+                    thinning_lift: None,
                 }
             }
         })
@@ -235,6 +236,7 @@ fn a_vbit_cut_has_one_section_in_the_modulator_and_the_gate() {
         cutting_ceiling: cutting_ceiling(100_000.0),
         rapid_feed_mm_min: 100_000.0,
         chipload_band: Some(ChiploadBand::new(1e-6, 10.0).expect("a valid band")),
+        radial_thinning: rs_cam_core::dressup::feed_modulation::RadialThinning::Applied,
         kinematics: &kinematics,
         strategy: ModulationStrategy::ConstrainedMax,
         feed_scale: 1.0,

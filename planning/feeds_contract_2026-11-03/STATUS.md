@@ -57,7 +57,7 @@ the full entry point. Read it first, then the files it names.
    ops do not thin, no new cap), chip first (`doc_derating_scale` stops scaling the chip; the
    vendor 1/2/3 x D table becomes a visible limit), the envelope sized at the operator's chip,
    the source hunt, and the after-page `research_p11_step0/after/` (L9).
-3a. **P11b2** (lead decision 2026-11-05, a consequence of L1 and L6): the post-sim chipload
+3a. DONE 2026-11-05: **P11b2** (lead decision 2026-11-05, a consequence of L1 and L6): the post-sim chipload
    gate (`tool_load`) and the feed modulator still judge the advance per tooth against the
    band max, and the gate still de-rates the band by depth. Move both to the peak chip
    (`fz sin psi` at the measured engagement) and drop the gate's depth de-rate, so Suggest and
@@ -76,6 +76,10 @@ the full entry point. Read it first, then the files it names.
 
 - The lead decides and verifies; one Opus agent per phase implements and never commits. The
   lead reviews each diff by path, runs the gate, and commits with explicit paths.
+- The lead gate per phase (operator, 2026-11-05): read the agent's own test logs, then run
+  clippy, G-OPGOLDEN (the 46 rows), the full viz run and the fmt check. The non-heavy
+  integration run, FM1, wanaka, cli, mcp and core `--lib` run once more before P12, not per
+  phase. Three full gates found one new red, in the full viz run.
 - No tree-wide git. Other sessions share the tree. Leave alone `.mcp.json`,
   `planning/adaptive_research_2026-10-23/**`, untracked `play/*.toml`, `.pi/`. Three files
   carry known fmt diffs at HEAD (`rs_cam_mcp/src/server.rs`, `rs_cam_viz/src/ui/components/mod.rs`,
@@ -104,6 +108,7 @@ the full entry point. Read it first, then the files it names.
   `loose_executor_is_not_named_in_viz_wp12`, `new_3d_op_boundary_is_silhouette_plus_tool_r2`,
   `panel_drafts_leave_egui_memory_ui09`, `the_gui_can_set_a_feed_g_fscontrol`,
   `the_inspector_text_is_bounded_ic1`, `the_selection_section_writes_edits_only_p4_3`.
+  Flake: `render_pipelines_headless_g_pipesmoke` (SIGSEGV in the full run only).
 - core: G-OPGOLDEN (46 rows), W4 check6, `_litmatrix_rubbing_floor_clamp`,
   `a_clearing_cut_holds_the_pass_load_g_adaptpassload`, and the integration list under
   "Known red in the non-heavy core integration run" in "Not in a phase".
@@ -144,7 +149,15 @@ the full entry point. Read it first, then the files it names.
   the suggested chip; the depth-table ceiling divides by the nominal diameter; the ball's
   axial thinning is reported, not applied; `feed_ladder_diameter_mm` has no production
   reader; the operator-chip power edge cost is not measured; no tool-strength value).
-  `render_pipelines_headless_g_pipesmoke` crashed (SIGSEGV) once under the full viz run.
+  `render_pipelines_headless_g_pipesmoke` crashes (SIGSEGV) under the full viz run (P11b and
+  P11b2 gates); it passes alone.
+- P11b2: the reviewer list in `phases/P11.md` "Result P11b2". Waterline keeps
+  `commanded_above_band` on 2 FM1 sim cells: Suggest assumes the 0.1 D default width (lift
+  1.667), the sim measures a median arc of 90 degrees or more on the dome (lift 1). The gate is
+  right; the Waterline width assumption is the open item (P11c, with the stepover). The heat
+  map still paints the advance, not the peak chip; the modulator's deflection and power caps
+  read the modelled width while its chip reads the measured arc; `BandMid` keeps
+  `1/sqrt(woc)` and `dressup::feedopt` the clamped `radial_chip_thinning_factor`.
 - The stepover numbers: 0.12 x D (the Shapeoko profile table), 0.20 x D (`adaptive_woc_factor`,
   from Fusion per the operator) and 0.15 x D (the stale check) are all typed with no source.
 
@@ -256,7 +269,7 @@ lineage trace stored in the project file).
 | 8 Q1 / Q6 / Q8 | `phases/P8.md` | DONE 2026-11-05 (Q1, Q8; Q6 as the agreed mock: the rapid-collision card counts the core `project.rapid_collision` rows, one per toolpath, on the pre-flight and the Readiness panel; sentry `a_collision_is_the_same_warning_on_every_surface_q6`) | see `git log` | |
 | 9 K7 one engagement | `phases/P9.md` | DONE 2026-11-04 (one `Engagement`; pre-sim power is the worst case with its name; the simulation is placed on the envelope, not fed back; open items in the card) | see `git log` | |
 | 10 Tool-derived geometry defaults (D8) | `phases/P10.md` | DONE 2026-11-05 (no default without a tool; radial = the calculator's own width; axial k x D from today's 6 mm values; FM1 353 cells; G-code byte-identical) | 84bfeab68 | |
-| 11 Force model, chip first, feed-driven limits | `phases/P11.md` | Step 0 DONE 2026-11-04; **P11a DONE 2026-11-05** (D-A grid at the requested depth, D-B solved deflection edge, L5 engaged-edge force with the helix (peak for deflection, mean = power), every reader at `d_eng` of the cut depth; FM1: 430 `force_n` cells and 20 sim `deflection_peak_mm` cells, no feed/rpm/depth/power cell). **P11b DONE 2026-11-05** (Garr peak-chip lift, finish and drill do not thin, chip first with `LimitKind::VendorDepthTable`, limits at the operator's chip, L8 source table, a stated depth ships; L9 page: FAIL under the step 0 rule, W 2/7, D 23/455, recorded as is for P12). P11b2 NOT STARTED | see `git log` | P11b2 |
+| 11 Force model, chip first, feed-driven limits | `phases/P11.md` | Step 0 DONE 2026-11-04; **P11a DONE 2026-11-05** (D-A grid at the requested depth, D-B solved deflection edge, L5 engaged-edge force with the helix (peak for deflection, mean = power), every reader at `d_eng` of the cut depth; FM1: 430 `force_n` cells and 20 sim `deflection_peak_mm` cells, no feed/rpm/depth/power cell). **P11b DONE 2026-11-05** (Garr peak-chip lift, finish and drill do not thin, chip first with `LimitKind::VendorDepthTable`, limits at the operator's chip, L8 source table, a stated depth ships; L9 page: FAIL under the step 0 rule, W 2/7, D 23/455, recorded as is for P12). **P11b2 DONE 2026-11-05** (one `RadialThinning` rule for Suggest, the post-sim gate and the modulator; the gate and the modulator judge the peak chip at the measured arc; no depth de-rate on any band; FM1 sim: 10 cells, `commanded_above_band` 4 -> 2). P11c NOT STARTED | see `git log` | P11c |
 | 12 Hand-off for independent review | `phases/P12.md` | NOT STARTED (operator, 2026-11-04: last; another session verifies the output numbers against industry practice) | | after P11 |
 
 ## Not in a phase

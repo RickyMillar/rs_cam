@@ -160,6 +160,7 @@ fn verdicts(t: &SimulationCutTrace) -> (PowerVerdict, DeflectionVerdict, DepthVe
         operation_kind: OperationType::Pocket,
         spans: None,
         drill_op: None,
+        commanded_thinning_lift: None,
     };
     let env = GateEnv {
         sim_trace: Some(t),

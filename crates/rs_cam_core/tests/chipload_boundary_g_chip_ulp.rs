@@ -411,6 +411,7 @@ fn gate_verdict(feed: f64, rpm: u32, flutes: u32, axial_doc_mm: f64) -> Chipload
             operation_kind: OperationType::DropCutter,
             spans: None,
             drill_op: None,
+            commanded_thinning_lift: None,
         },
         &GateEnv {
             sim_trace: Some(&trace),
@@ -572,86 +573,49 @@ fn rider2_the_gate_flips_to_exceeds_on_a_feed_parked_on_its_own_ceiling() {
 ///
 /// Ruling A1 (2026-09-24) keys a tapered-ball row at its tip
 /// (`lut_key_diameter_for_cutter`), so on this tapered cutter the
-/// diameter law no longer moves with the DOC. The DOC derate alone still
-/// moves the band, and it still crosses the verdict below. The "engaged Ø"
-/// column prints the diameter that the derate divides by, not the lookup
-/// key.
+/// diameter law no longer moves with the DOC. Until P11b2 the DOC derate
+/// still moved the band, and it crossed the verdict.
+///
+/// **Retired by P11b2 (2026-11-05, ruling L6):** the gate reads the printed
+/// band at every depth, so the measured DOC no longer moves the bound. The
+/// rider is inverted, as its own message asked: across the DOC sweep the
+/// band maximum is one number, and one feed gets one verdict at the W10-LV
+/// pair of readings. The "engaged Ø" column prints the diameter at the
+/// depth, which no longer enters the band.
 #[test]
-fn rider2b_the_band_moves_with_the_simulation_cell_that_measured_the_doc() {
+fn rider2b_the_band_no_longer_moves_with_the_simulation_cell_p11b2() {
     let (rpm, flutes) = (18_000u32, 2u32);
-    // The two DOC readings that reproduce W10-LV's queried diameters on
-    // this cutter: d(doc) = 1.0 + 2·doc·tan(5.26°).
     let tool = b3_tool(flutes);
-    println!(
-        "| peak axial DOC (mm) | engaged Ø (mm) | band min | band max | Δ band max vs first |"
-    );
-    println!("|---:|---:|---:|---:|---:|");
-    let mut first_max: Option<f64> = None;
-    let mut rows: Vec<(f64, f64, f64)> = Vec::new();
+    println!("| peak axial DOC (mm) | engaged Ø (mm) | band min | band max |");
+    println!("|---:|---:|---:|---:|");
+    let mut rows: Vec<(f64, f64)> = Vec::new();
     for doc in [0.35_f64, 0.70, 1.05, 1.673, 2.020, 3.0] {
         let v = gate_verdict(100.0, rpm, flutes, doc);
         let (min, max) = verdict_bounds(&v);
         let queried = tool.lookup_diameter_at(doc);
-        let delta = first_max.map_or(0.0, |f: f64| (max / f - 1.0) * 100.0);
-        first_max.get_or_insert(max);
         println!(
-            "| {doc:.3} | {queried:.4} | {:.6} | {max:.6} | {delta:+.2} % |",
+            "| {doc:.3} | {queried:.4} | {:.6} | {max:.6} |",
             min.unwrap_or(f64::NAN)
         );
-        rows.push((doc, queried, max));
+        rows.push((doc, max));
     }
-    let maxes: Vec<f64> = rows.iter().map(|(_, _, m)| *m).collect();
-    let lo = maxes.iter().copied().fold(f64::INFINITY, f64::min);
-    let hi = maxes.iter().copied().fold(f64::NEG_INFINITY, f64::max);
-    println!(
-        "band maximum spans {lo:.6} .. {hi:.6} across the DOC sweep — a {:.2} % move in the \
-         bound a verdict is compared against, driven by a quantity the SIM CELL measures.",
-        (hi / lo - 1.0) * 100.0
-    );
-
-    // The W10-LV pair specifically: 1.673 mm vs 2.020 mm peak DOC
-    // (queried Ø 1.308 vs 1.372).
-    let coarse = rows
-        .iter()
-        .find(|(d, _, _)| (*d - 1.673).abs() < 1e-9)
-        .unwrap();
-    let fine = rows
-        .iter()
-        .find(|(d, _, _)| (*d - 2.020).abs() < 1e-9)
-        .unwrap();
-    println!(
-        "W10-LV pair: Ø{:.4} band max {:.6}  →  Ø{:.4} band max {:.6}  ({:+.2} %)",
-        coarse.1,
-        coarse.2,
-        fine.1,
-        fine.2,
-        (fine.2 / coarse.2 - 1.0) * 100.0
-    );
-    assert!(
-        (coarse.2 - fine.2).abs() / coarse.2 > 1e-4,
-        "the band must MOVE with the measured DOC for this rider to exist; got {:.9} vs {:.9}",
-        coarse.2,
-        fine.2
-    );
-
-    // And the move is verdict-crossing: a feed parked on the coarse
-    // band's ceiling is judged against the fine band.
+    let first = rows.first().map(|(_, m)| *m).unwrap();
+    for (doc, max) in &rows {
+        assert_eq!(
+            *max, first,
+            "P11b2: the gate band max at DOC {doc} mm is the printed max {first}, got {max}"
+        );
+    }
+    // One feed parked on the band ceiling, the W10-LV pair of DOC readings
+    // (1.673 mm and 2.020 mm): one verdict.
     let divisor = f64::from(rpm) * f64::from(flutes);
-    let feed_on_coarse_ceiling = coarse.2 * divisor;
-    let v_fine = gate_verdict(feed_on_coarse_ceiling, rpm, flutes, fine.0);
-    let v_coarse = gate_verdict(feed_on_coarse_ceiling, rpm, flutes, coarse.0);
-    println!(
-        "one feed ({feed_on_coarse_ceiling:.4} mm/min), two cells: coarse-DOC verdict {}, \
-         fine-DOC verdict {}",
-        verdict_tag(&v_coarse),
-        verdict_tag(&v_fine)
-    );
-    assert_ne!(
+    let feed_on_ceiling = first * divisor;
+    let v_fine = gate_verdict(feed_on_ceiling, rpm, flutes, 2.020);
+    let v_coarse = gate_verdict(feed_on_ceiling, rpm, flutes, 1.673);
+    assert_eq!(
         verdict_tag(&v_coarse),
         verdict_tag(&v_fine),
-        "**the resolution rider did not reproduce**: the same feed got the same verdict at \
-         both DOC readings. Either the band stopped depending on the measured DOC (say so and \
-         retire), or these two readings no longer straddle the bound — pick a wider pair."
+        "P11b2: one feed, two DOC readings, one band: one verdict"
     );
 }
 

@@ -79,6 +79,7 @@ fn ctx<'a>(k: &'a MachineKinematics, available_kw: f64) -> ModulationContext<'a>
         cutting_ceiling: cutting_ceiling(10_000.0),
         rapid_feed_mm_min: 10_000.0,
         chipload_band: Some(ChiploadBand::new(0.01, 0.30).unwrap()),
+        radial_thinning: rs_cam_core::dressup::feed_modulation::RadialThinning::Applied,
         kinematics: k,
         strategy: ModulationStrategy::ConstrainedMax,
         feed_scale: 1.0,
@@ -137,6 +138,7 @@ fn feed_at(depth_mm: f64, fraction: f64, available_kw: f64) -> f64 {
             radial_woc_fraction: 0.5,
             axial_doc_fraction: fraction,
             axial_doc_mm: depth_mm,
+            thinning_lift: None,
         })
         .collect();
     let outcome = adaptive_feed_modulate(&mut tp, &engagements, &c).unwrap();

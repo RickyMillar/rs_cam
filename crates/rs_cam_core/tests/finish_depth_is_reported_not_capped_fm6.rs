@@ -231,6 +231,7 @@ fn ctx<'a>(
         operation_kind: op,
         spans: None,
         drill_op: None,
+        commanded_thinning_lift: None,
     }
 }
 

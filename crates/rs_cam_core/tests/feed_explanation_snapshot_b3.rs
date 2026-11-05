@@ -686,6 +686,7 @@ fn gate_verdict_in(
             operation_kind,
             spans: None,
             drill_op: None,
+            commanded_thinning_lift: None,
         },
         &GateEnv {
             sim_trace: Some(&trace),

@@ -59,6 +59,7 @@ fn ctx_basic<'a>(k: &'a MachineKinematics, b: ChiploadBand) -> ModulationContext
         cutting_ceiling: cutting_ceiling(10_000.0),
         rapid_feed_mm_min: 10_000.0,
         chipload_band: Some(b),
+        radial_thinning: rs_cam_core::dressup::feed_modulation::RadialThinning::Applied,
         kinematics: k,
         strategy: ModulationStrategy::ConstrainedMax,
         feed_scale: 1.0,
@@ -99,6 +100,7 @@ fn constrained_max_emits_max_feed_when_chipload_max_binds() {
                     // T-11: the depth is now read in mm, not derived from the
                     // fraction. 2.0 is what `nominal x fraction` meant here.
                     axial_doc_mm: 2.0,
+                    thinning_lift: None,
                 }
             }
         })
@@ -141,6 +143,7 @@ fn constrained_max_raises_feed_when_under_band_on_light_engagement() {
                     // T-11: the depth is now read in mm, not derived from the
                     // fraction. 2.0 is what `nominal x fraction` meant here.
                     axial_doc_mm: 2.0,
+                    thinning_lift: None,
                 }
             }
         })
@@ -180,6 +183,7 @@ fn constrained_max_binds_on_deflection_for_long_tool() {
                     // T-11: the depth is now read in mm, not derived from the
                     // fraction. 2.0 is what `nominal x fraction` meant here.
                     axial_doc_mm: 2.0,
+                    thinning_lift: None,
                 }
             }
         })
@@ -239,6 +243,7 @@ fn constrained_max_binds_on_power_for_low_rpm() {
                     // T-11: the depth is now read in mm, not derived from the
                     // fraction. 2.0 is what `nominal x fraction` meant here.
                     axial_doc_mm: 2.0,
+                    thinning_lift: None,
                 }
             }
         })
@@ -309,6 +314,7 @@ fn feed_scale_below_one_emits_proportional_feed() {
                     // T-11: the depth is now read in mm, not derived from the
                     // fraction. 2.0 is what `nominal x fraction` meant here.
                     axial_doc_mm: 2.0,
+                    thinning_lift: None,
                 }
             }
         })
@@ -345,6 +351,7 @@ fn modulation_summary_matches_per_move_binding_distribution() {
                     // T-11: the depth is now read in mm, not derived from the
                     // fraction. 2.0 is what `nominal x fraction` meant here.
                     axial_doc_mm: 2.0,
+                    thinning_lift: None,
                 }
             } else {
                 PerMoveEngagement {
@@ -353,6 +360,7 @@ fn modulation_summary_matches_per_move_binding_distribution() {
                     // T-11: the depth is now read in mm, not derived from the
                     // fraction. 2.0 is what `nominal x fraction` meant here.
                     axial_doc_mm: 2.0,
+                    thinning_lift: None,
                 }
             }
         })

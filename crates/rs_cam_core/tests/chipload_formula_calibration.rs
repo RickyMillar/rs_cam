@@ -52,6 +52,12 @@
 //!   difference it makes is pinned as an exhibit rather than quietly
 //!   corrected — see
 //!   [`the_pre_conversion_safe_feed_was_three_times_the_vendor_maximum`].
+//!
+//! ## P11b2 (2026-11-05): the gate reads the PEAK chip
+//!
+//! Ruling L1 made Suggest size the feed so the peak chip (`fz sin psi`,
+//! Garr) is the band chip; the gate now observes that peak chip at each
+//! sample's arc. The two gate tests below state the new observation.
 
 #![expect(
     clippy::expect_used,
@@ -307,6 +313,11 @@ fn the_pre_conversion_safe_feed_was_three_times_the_vendor_maximum() {
     // Against the printed value the same 0.18 mm/tooth is 0.18 / 0.127 =
     // 1.42x. The pin is that exact ratio and that exact row maximum, so a
     // later row change shows up as a named move.
+    //
+    // P11b2 (ruling L1): the gate observes the PEAK chip, `fz sin(psi)` at
+    // this 27 % radial arc (psi below 90 degrees), so the ratio is
+    // 0.18 x sin(psi) / 0.127. It still trips Exceeds(High).
+    let psi = (1.0_f64 - 2.0 * 1.6 / 6.0).acos();
     assert!(
         triggering.bounds.min_mm_per_tooth.is_none(),
         "the printed Spektra row is a point with no minimum; got {:?}",
@@ -317,8 +328,8 @@ fn the_pre_conversion_safe_feed_was_three_times_the_vendor_maximum() {
         "the band maximum left the printed Spektra v24 value 0.127; got {max}"
     );
     assert!(
-        (over - 0.18 / 0.127).abs() < 1e-9,
-        "the exhibit ratio left 0.18 / 0.127; got {over:.6}x"
+        (over - 0.18 * psi.sin() / 0.127).abs() < 1e-9,
+        "the exhibit ratio left 0.18 x sin(psi) / 0.127; got {over:.6}x"
     );
 }
 
@@ -333,17 +344,19 @@ fn the_pre_conversion_safe_feed_was_three_times_the_vendor_maximum() {
 /// own arc cancelled even before the deletion) and which this test now
 /// asserts directly.
 ///
-/// Two samples at the same feed and wildly different arcs (slot π vs
-/// 27 % radial) must produce the *identical* verdict and the *identical*
-/// observed value. That is a stronger claim than the D9 test made, and
-/// it is the honest one: the gate is no longer engagement-aware, and a
-/// reader should be able to see that from a test rather than infer it.
+/// **P11b2 (2026-11-05, ruling L1) reverses the claim of 2026-08-06.**
+/// The gate observes the PEAK chip, the advance over the radial
+/// chip-thinning lift (Garr: `h = fz sin(psi)` below 90 degrees, `fz` at or
+/// above). So two samples at the same feed and different arcs (slot π vs
+/// 27 % radial) now give different observations: the slot reads `fz`, the
+/// narrow arc `fz sin(psi)`. The arc-mean chip of the dexel model still
+/// does not enter (the peak law is not the D9 renormalisation).
 #[test]
 #[expect(
     clippy::wildcard_enum_match_arm,
     reason = "test: an unexpected variant panics"
 )]
-fn slot_engagement_no_longer_needs_normalisation_because_the_arc_is_gone() {
+fn the_gate_reads_the_peak_chip_at_each_arc_p11b2() {
     use std::f64::consts::PI;
 
     let slot = gate_verdict_at(0.045, PI, 1.0);
@@ -374,16 +387,21 @@ fn slot_engagement_no_longer_needs_normalisation_because_the_arc_is_gone() {
         other => panic!("both arms must land Within; got {other:?}"),
     };
     let (o_slot, o_narrow) = (observed(&slot), observed(&narrow));
+    let psi = (1.0_f64 - 2.0 * 1.6 / 6.0).acos();
     assert!(
-        (o_slot - o_narrow).abs() < 1e-12,
-        "the observation must not depend on engagement at all: slot {o_slot:.12} \
-         vs narrow {o_narrow:.12}, from raw chips differing by {:.2}x",
-        chip_slot / chip_narrow
+        (o_slot - 0.045).abs() < 1e-12,
+        "P11b2: a slot does not thin; the peak chip is the advance: {o_slot:.12}"
+    );
+    assert!(
+        (o_narrow - 0.045 * psi.sin()).abs() < 1e-12,
+        "P11b2: at 27 % radial the peak chip is fz sin(psi) = {:.12}, got {o_narrow:.12}",
+        0.045 * psi.sin()
     );
     eprintln!(
-        "  CONFIRMED: raw chip differs {:.2}x between slot and 27 % radial; the gate's \
-         observation is identical to 1e-12. The gate reports advance per tooth.",
-        chip_slot / chip_narrow
+        "  CONFIRMED: raw arc-mean chip differs {:.2}x between slot and 27 % radial; the \
+         gate's peak chip differs by sin(psi) = {:.4}.",
+        chip_slot / chip_narrow,
+        psi.sin()
     );
 }
 
@@ -445,6 +463,7 @@ fn gate_verdict_at(
             operation_kind: OperationType::Pocket,
             spans: None,
             drill_op: None,
+            commanded_thinning_lift: None,
         },
         &rs_cam_core::tool_load::GateEnv {
             sim_trace: Some(&trace),

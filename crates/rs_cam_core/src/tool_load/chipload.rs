@@ -1,4 +1,4 @@
-//! Chipload guardrail — per-sample advance-per-tooth vs vendor-LUT bounds.
+//! Chipload guardrail — per-sample peak chip (P11b2) vs vendor-LUT bounds.
 //!
 //! Vendor LUT entries report a chipload range
 //! [`chipload_min_mm_tooth`, `chipload_max_mm_tooth`] for a given
@@ -55,6 +55,25 @@
 //! and is reported beside it on `feeds::FeedExplanation`; their ratio is
 //! the kinematic throttle, which the verdict document names as the
 //! operator-actionable fact.
+//!
+//! ## P11b2 (2026-11-05): the observation is the PEAK chip
+//!
+//! Rulings L1 and L6 (`planning/feeds_contract_2026-11-03/phases/P11.md`)
+//! made Suggest size the feed so the PEAK chip is the band chip (radial
+//! chip thinning, Garr: `h = fz sin psi` for `psi < 90 degrees`). The gate
+//! now judges that chip:
+//!
+//! ```text
+//! observed = effective_feed / (rpm · flutes) / lift(measured engagement)
+//! ```
+//!
+//! through [`super::display::peak_chip_per_tooth`]. The lift is
+//! `feeds::geometry::RadialThinning::lift` at the sample's measured arc
+//! (the K7 `Engagement::from_sample` width and engaged diameter); a finish
+//! pass (L2) takes the advance. The band is the printed band at every depth
+//! (no depth de-rate). The low side reads the same peak chip: a light
+//! stepover makes a thin chip, and that is what the burn reference checks.
+//! The text above about the advance per tooth is the record of 2026-08-06.
 //!
 //! **The sim remains the operational arbiter.** This change makes
 //! Suggest, the narration and this gate speak one unit; it does not
@@ -158,46 +177,9 @@ pub(crate) fn matched_chip_envelope(
         .filter(|row| !row.size_basis.is_refused())
 }
 
-/// The gate's observed quantity: the **advance per tooth this sample
-/// actually achieves**, `effective_feed / (rpm · flutes)`.
-///
-/// This is the whole of the conversion the B-lit verdict authorises.
-/// What it replaced — `mean_chip_factor(arc)` and `lut_nominal_arc_rad`,
-/// the D9 chip-geometry pair — is deleted rather than inverted, for the
-/// reasons in this module's header. `git show` at the parent of this
-/// commit is the record of what they were; nothing in the crate needs
-/// them any more.
-///
-/// Returns `None` when the sample carries no usable `rpm × flutes`
-/// divisor, which is a broken sample rather than a modelling limit.
-///
-/// Delegates to [`super::display::achieved_advance_per_tooth`], which is
-/// what every operator-facing surface now displays (Checkpoint H,
-/// 2026-08-08). The gate and the heat-map read **one function**, so
-/// "the colour agrees with the verdict" is a property of the call graph
-/// rather than of two transcriptions staying in step.
-fn achieved_feed_per_tooth_mm(
-    sample: &crate::stock::simulation_cut::SimulationCutSample,
-    predicted_feeds: &crate::machine::kinematics::PredictedFeedMap,
-) -> Option<f64> {
-    super::display::achieved_advance_per_tooth(sample, predicted_feeds)
-        .map(crate::feeds::AdvancePerToothMm::mm)
-}
-
 pub(super) fn embedded_lut() -> &'static crate::feeds::VendorLut {
     crate::feeds::embedded_vendor_lut()
 }
-
-// The published depth de-rate lives in `feeds::geometry` so the feeds
-// calculator applies it to the feed and to the LUT chipload band (at the
-// shipped depth) at the same scale this gate uses. The single canonical home prevents the two
-// paths from drifting (see `feeds::geometry::doc_derating_scale`).
-// Only exercised directly by this module's own tests today (production
-// callers reach it via `feeds::geometry::doc_derating_scale` directly),
-// so the re-export is `#[cfg(test)]`-gated to avoid an unused-import
-// warning in the non-test build.
-#[cfg(test)]
-pub(super) use crate::feeds::geometry::doc_derating_scale;
 
 use super::verdict::{
     ChipBounds, ChipBoundsSource, ChipSide, ChiploadMetric, ChiploadStatistic, ChiploadVerdict,
@@ -452,14 +434,13 @@ fn evaluate_inner(
 
     // 4. Look up the vendor envelope. If no row matches, refuse.
     //
-    // The LUT diameter query and the DOC-derating ratio below both
-    // depend on `lookup_axial_doc_mm`. Folding over every steady-state
+    // The LUT diameter query depends on `lookup_axial_doc_mm` (P11b2: the
+    // band no longer moves with it). Folding over every steady-state
     // sample (including transit-style samples whose dexel reading
     // captures `stock_top − cutter_z` over neighbouring stock — see
-    // P3_TRANSIT_PEAK_DOC_RCA.md) silently inflates this metric and
-    // pushes the derating ratio past the 3×D cliff on toolpaths whose
-    // only "deep" reading is a phantom waterline-cleanup or link-bridge
-    // sample. Filter through the canonical
+    // P3_TRANSIT_PEAK_DOC_RCA.md) silently inflates this metric on
+    // toolpaths whose only "deep" reading is a phantom waterline-cleanup
+    // or link-bridge sample. Filter through the canonical
     // [`super::locality::is_steady_state_for_gate`] predicate (which
     // consults `in_transit_span` plus the Entry / WaterlineCleanup
     // ancestor check), so the LUT lookup and the trip decision below
@@ -506,31 +487,14 @@ fn evaluate_inner(
     // burn/rubbing cannot be modeled for this row, not that we invent
     // one — `AllowHalfBand` lets a present-max/absent-min row through.
     //
-    // DOC-derating (cross-vendor-confirmed rule) folds in here too:
-    // vendor LUT chipload bounds are authored at 1×D axial DOC; deeper
-    // passes must reduce chipload to keep chip-evacuation viable.
-    // Apply the piecewise scale once per toolpath using the peak axial
-    // DOC, so the reported bounds match what the trip actually used.
-    // Validation + scale now live in the shared
-    // `geometry::derate_chipload_bounds` (S.8 — see
-    // `planning/finishing_stack_review_2026-07.md`), the single home
-    // for this wrapper across Suggest and both `tool_load` gate sites.
-    //
-    // The de-rate divides by `depth_derate_diameter_for_cutter` at the
-    // peak DOC, not by the lookup key: the engaged cone of a tapered
-    // ball, the nominal diameter of every other shape. Ruling A1 moved
-    // only the key; the depth half of R2 stands for a tapered ball.
-    // Ruling B4 step 2 moves this de-rate to the nominal diameter for a
-    // V-bit too, so it no longer reads `tool.lookup_diameter_at` (the
-    // engaged width) here.
-    let lookup_diameter_at_peak =
-        crate::feeds::geometry::depth_derate_diameter_for_cutter(tool, lookup_axial_doc_mm)
-            .max(1e-9);
-    let doc_ratio = lookup_axial_doc_mm / lookup_diameter_at_peak;
-    let Some(band) = crate::feeds::geometry::derate_chipload_bounds(
+    // P11b2 (break; rulings L1 and L6): the gate reads the PRINTED band at
+    // every depth, as Suggest does. The vendor depth table (1 / 0.75 / 0.50
+    // at 1 / 2 / 3 x D) no longer lowers it; the envelope draws the table as
+    // the limit `LimitKind::VendorDepthTable`. The validation is the shared
+    // `geometry::validate_chipload_bounds` (S.8).
+    let Some(band) = crate::feeds::geometry::validate_chipload_bounds(
         result.chip_load_min_mm,
         result.chip_load_max_mm,
-        doc_ratio,
         crate::feeds::geometry::ChiploadBoundPolicy::AllowHalfBand,
     ) else {
         tracing::debug!(
@@ -545,8 +509,8 @@ fn evaluate_inner(
     // A2 (point mode): a row that prints one value is a point
     // (`LookupResult::printed_chipload`). A point is not a band: the
     // bounds keep no minimum. The high side stays a hard trip at the
-    // derated point v'. A median chip below v' gives a burn advisory
-    // only (decision Q1 (a); `ChipBounds::burn_reference_mm`). The gate
+    // printed point v (P11b2: no depth de-rate). A median peak chip below v
+    // gives a burn advisory only (decision Q1 (a); `ChipBounds::burn_reference_mm`). The gate
     // never gives `Exceeds(Low)` for a point.
     let is_point = matches!(
         result.printed_chipload(),
@@ -618,8 +582,17 @@ fn evaluate_inner(
             spindle_rpm: s.spindle_rpm,
             flute_count: s.flute_count,
             feed_per_tooth_mm,
+            // P11b2: set after the loop, at the median measured lift of
+            // the trip set.
+            thinning_lift: 1.0,
+            peak_chip_mm: feed_per_tooth_mm,
         }
     });
+    // P11b2 (L1, L2): the op's own pass role decides whether the chip
+    // thins (`ctx.pass_role` is the op's feeds style, not the routed row
+    // role). A drill cycle never reaches this line (the short-circuit at
+    // the top).
+    let thinning = crate::feeds::geometry::RadialThinning::of_lut_role(pass_role);
     let achieved_feed_stage = {
         let predicted_feeds_present = !trace.predicted_feeds.is_empty();
         let median_ratio = if predicted_feeds_present {
@@ -660,6 +633,9 @@ fn evaluate_inner(
     // Per-sample chip thicknesses for the per-toolpath median used by
     // the burn-risk verdict. See `Burn-risk verdict semantics` above.
     let mut burn_samples: Vec<(f64, usize)> = Vec::new();
+    // P11b2: the lift of each trip-set sample, for the commanded peak chip
+    // (the median lift of the measured cut).
+    let mut trip_lifts: Vec<f64> = Vec::new();
     // D7 — span-aware steady-state filter. Samples whose span_path
     // contains a `SpanKind::Entry` ancestor (configured plunge / helix /
     // ramp entries laid down by D4 / D5) are kept out of the
@@ -715,10 +691,24 @@ fn evaluate_inner(
         // hits, it returns the feed the machine will actually reach;
         // otherwise it returns the commanded feed and this is the
         // commanded advance per tooth.
-        let Some(observed_fpt) = achieved_feed_per_tooth_mm(s, &trace.predicted_feeds) else {
-            no_divisor_count += 1;
-            continue;
-        };
+        //
+        // P11b2 (rulings L1, L2): the observation is the PEAK chip, the
+        // achieved advance over the radial chip-thinning lift at the
+        // sample's measured engagement (`display::peak_chip_per_tooth`, the
+        // one law). A thinning cut whose sample gives no engagement cannot
+        // state its peak chip; it counts with the samples that carry no arc.
+        let (observed_fpt, sample_lift) =
+            match super::display::peak_chip_per_tooth(s, &trace.predicted_feeds, tool, thinning) {
+                Ok(reading) => (reading.peak_chip_mm, reading.lift),
+                Err(super::display::PeakChipRefusal::NoDivisor) => {
+                    no_divisor_count += 1;
+                    continue;
+                }
+                Err(super::display::PeakChipRefusal::NoEngagement) => {
+                    missing_arc_count += 1;
+                    continue;
+                }
+            };
         // R-10 (census §7.5, report-only). NOTE THE ORDER: this increments
         // BEFORE the `is_phantom_transit` skip immediately below, so
         // `valid_count` counts samples the loop then discards. It is
@@ -767,6 +757,7 @@ fn evaluate_inner(
             continue;
         }
         burn_samples.push((observed_fpt, i));
+        trip_lifts.push(sample_lift);
         // Layer 1 tolerance band: a single sample 1-2% over `max` (e.g.
         // wanaka TP4 5/2026 transient at 1.05% over) shouldn't flip the
         // verdict to `Exceeds(High)`. The widened trigger is purely a
@@ -793,6 +784,27 @@ fn evaluate_inner(
     // arm (median for the burn side, peak for the breakage side) and is
     // filled in by `evaluate_with_explanation`. Nothing here is
     // recomputed: every field is a value this gate already derived.
+    // P11b2: the commanded peak chip is the commanded advance over the lift
+    // of the STATED cut (`ctx.commanded_thinning_lift`, Suggest's own rule),
+    // so `commanded_above_band` compares the peak chip Suggest sized. With no
+    // stated width or depth it is the median measured lift of the trip set
+    // (1 on a finish pass or with no trip sample).
+    let commanded_lift = match ctx.commanded_thinning_lift {
+        Some(lift) if lift.is_finite() && lift >= 1.0 => lift,
+        Some(_) | None => {
+            if trip_lifts.is_empty() {
+                1.0
+            } else {
+                trip_lifts.sort_by(|a, b| a.partial_cmp(b).unwrap_or(std::cmp::Ordering::Equal));
+                trip_lifts.get(trip_lifts.len() / 2).copied().unwrap_or(1.0)
+            }
+        }
+    };
+    let commanded_stage = commanded_stage.map(|mut c| {
+        c.thinning_lift = commanded_lift;
+        c.peak_chip_mm = c.feed_per_tooth_mm / commanded_lift;
+        c
+    });
     *partial_stages = commanded_stage.map(|commanded| PartialFeedStages {
         commanded,
         band: crate::feeds::LutBandStage {
@@ -1065,6 +1077,7 @@ mod tests {
                 operation_kind,
                 spans,
                 drill_op: None,
+                commanded_thinning_lift: None,
             },
             &crate::tool_load::GateEnv {
                 sim_trace,
@@ -1105,7 +1118,15 @@ mod tests {
     /// constant is now only a realistic arc for the sample to carry. It
     /// is kept because `arc_engagement_radians.is_none()` still selects
     /// which `Unmodeled` reason the all-invalid path reports.
-    const TEST_LUT_NOMINAL_ARC_RAD: f64 = 1.0843860798928202;
+    ///
+    /// P11b2: the gate observes the PEAK chip, the advance over the radial
+    /// chip-thinning lift at the sample's arc. The old arc (1.0844 rad, below
+    /// 90 degrees) lifted by 1 / sin(1.0844) = 1.13, which moved the
+    /// `observed == chipload` premise of every fixture below. A full slot
+    /// (pi) has lift 1, so the premise holds and no expectation moves.
+    /// `the_gate_observes_the_peak_chip_at_the_sample_arc_p11b2` covers a
+    /// light arc.
+    const TEST_LUT_NOMINAL_ARC_RAD: f64 = std::f64::consts::PI;
 
     /// The `chipload` argument is the advance per tooth the sample is to
     /// be **observed** at. [`trace`] realises it through the F-035
@@ -1188,31 +1209,6 @@ mod tests {
             samples,
             ..SimulationCutTrace::test_fixture()
         }
-    }
-
-    /// Phase 1E unit tests for the published depth de-rate (Onsrud,
-    /// Freud and Amana print 1×D=1.0, 2×D=0.75, 3×D=0.5; the scale holds
-    /// 0.5 above 3×D, the last printed point).
-    #[test]
-    fn doc_derating_unscaled_below_1x_d() {
-        assert!((doc_derating_scale(0.5) - 1.0).abs() < 1e-9);
-        assert!((doc_derating_scale(0.0) - 1.0).abs() < 1e-9);
-    }
-
-    #[test]
-    fn doc_derating_25pct_at_2x_d() {
-        assert!((doc_derating_scale(2.0) - 0.75).abs() < 1e-9);
-    }
-
-    #[test]
-    fn doc_derating_50pct_at_3x_d() {
-        assert!((doc_derating_scale(3.0) - 0.5).abs() < 1e-9);
-    }
-
-    #[test]
-    fn doc_derating_clamps_at_3x_d() {
-        assert!((doc_derating_scale(5.0) - 0.5).abs() < 1e-9);
-        assert!((doc_derating_scale(100.0) - 0.5).abs() < 1e-9);
     }
 
     #[test]
@@ -1810,9 +1806,10 @@ mod tests {
     /// `stock_top − cutter_z` over neighbouring uncleared stock, not
     /// the cutter's real engagement) must NOT inflate
     /// `lookup_axial_doc_mm`. Without the in_transit_span filter, the
-    /// LUT row's chipload envelope derates by `doc_derating_scale(ratio)`
-    /// down to 0.5× at 3×D, and well-behaved steady-state samples land
-    /// above the phantom-derated max → false `Exceeds(High)`.
+    /// LUT row's chipload envelope derated by `doc_derating_scale(ratio)`
+    /// down to 0.5× at 3×D, and well-behaved steady-state samples landed
+    /// above the phantom-derated max → false `Exceeds(High)`. P11b2 removed
+    /// the de-rate; the depth still keys the row, so the sentry stays.
     ///
     /// Setup mirrors the wanaka Back Rough symptom: two healthy 0.04
     /// chipload samples at commanded DPP ≈ 0.6×D, plus one phantom
@@ -2184,6 +2181,53 @@ mod tests {
                 }
             ),
             "expected Exceeds(High) at 1.06×max with breakage_tolerance=0.05, got {v:?}"
+        );
+    }
+
+    /// P11b2 (rulings L1, L2): at a light arc the gate observes the peak
+    /// chip, the advance over `1 / sin(psi)`; on a finish pass it observes
+    /// the advance.
+    #[test]
+    fn the_gate_observes_the_peak_chip_at_the_sample_arc_p11b2() {
+        let advance = 0.05;
+        let psi = 0.8_f64;
+        let light = SimulationCutSample {
+            arc_engagement_radians: Some(psi),
+            ..sample(0, 0, advance, 0.15)
+        };
+        let observe = |role: LutPassRole| {
+            let t = trace(vec![light.clone()]);
+            let v = evaluate_args(
+                0,
+                &tool(),
+                &Material::SolidWood {
+                    species: WoodSpecies::HardMaple,
+                },
+                Some(&t),
+                None,
+                LutOperationFamily::Pocket,
+                role,
+                1000.0,
+                OperationType::Pocket,
+                &crate::tool_load::ToleranceBands::default(),
+            );
+            match v {
+                ChiploadVerdict::Within {
+                    approach_to_max, ..
+                } => approach_to_max.observed_mm_per_tooth,
+                ChiploadVerdict::Exceeds { triggering, .. } => triggering.observed_mm_per_tooth,
+                ChiploadVerdict::Unmodeled { reason } => panic!("Unmodeled({reason:?})"),
+            }
+        };
+        let rough = observe(LutPassRole::Roughing);
+        assert!(
+            (rough - advance * psi.sin()).abs() < 1e-9,
+            "the peak chip is fz sin(psi): {rough}"
+        );
+        let finish = observe(LutPassRole::Finish);
+        assert!(
+            (finish - advance).abs() < 1e-12,
+            "a finish pass observes the advance: {finish}"
         );
     }
 

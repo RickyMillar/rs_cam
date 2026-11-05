@@ -265,7 +265,7 @@
 
 use std::collections::{BTreeMap, BTreeSet};
 
-use rs_cam_core::feeds::geometry::{ChiploadBoundPolicy, derate_chipload_bounds};
+use rs_cam_core::feeds::geometry::{ChiploadBoundPolicy, validate_chipload_bounds};
 use rs_cam_core::feeds::vendor_lookup::find_best_chip_envelope_row;
 use rs_cam_core::feeds::vendor_lut::MaterialFamily;
 use rs_cam_core::feeds::vendor_normalize::to_lookup_query;
@@ -642,17 +642,17 @@ impl Row {
 
 /// The band ceiling the **envelope** resolver would supply for this input — the
 /// resolver the post-sim gate uses, which skips rows publishing no chipload
-/// column. Same query, same DOC derate, same both-bounds policy that
-/// `feeds::calculate` applies when it builds `chipload_bounds`.
-fn envelope_band_max(input: &FeedsInput<'_>, engaged_d: f64, ap: f64) -> Option<f64> {
+/// column. Same query and the same both-bounds policy that
+/// `feeds::calculate` applies when it builds `chipload_bounds`. P11b2: no
+/// depth de-rate (the printed band at every depth); `engaged_d` and `ap`
+/// no longer move the band.
+fn envelope_band_max(input: &FeedsInput<'_>, _engaged_d: f64, _ap: f64) -> Option<f64> {
     let lut = input.vendor_lut?;
     let query = to_lookup_query(input)?;
     let row = find_best_chip_envelope_row(lut, &query, &input.tool_geometry)?;
-    let doc_ratio = if engaged_d > 0.0 { ap / engaged_d } else { 0.0 };
-    let band = derate_chipload_bounds(
+    let band = validate_chipload_bounds(
         row.chip_load_min_mm,
         row.chip_load_max_mm,
-        doc_ratio,
         ChiploadBoundPolicy::RequireBoth,
     )?;
     Some(band.max_mm_per_tooth)

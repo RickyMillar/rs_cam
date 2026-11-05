@@ -132,9 +132,9 @@ pub fn classify_sample_locality(
 ///   stamper marks `in_transit_span = true`). Dexel readings at these
 ///   samples report `stock_top − cutter_z` over *neighbouring* stock
 ///   rather than steady-state engagement, so feeding them into any
-///   peak/LUT-lookup metric (e.g. `lookup_axial_doc_mm` for chipload
-///   DOC derating) silently inflates the gate's view of cutter
-///   engagement (P3_TRANSIT_PEAK_DOC_RCA.md).
+///   peak/LUT-lookup metric (e.g. `lookup_axial_doc_mm`, the chipload
+///   row key; the DOC de-rate it fed is retired, P11b2) silently
+///   inflates the gate's view of cutter engagement (P3_TRANSIT_PEAK_DOC_RCA.md).
 ///
 /// [`SpanKind::GeometryRefit`] (arc-fit) is **not** in that set. Checkpoint
 /// D Q3 (2026-08-04) narrowed the predicate: until then arc-fit shared

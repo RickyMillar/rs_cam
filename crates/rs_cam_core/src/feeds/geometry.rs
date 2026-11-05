@@ -61,6 +61,60 @@ pub fn peak_chip_thinning_lift(ae_mm: f64, d_eng_mm: f64) -> f64 {
     }
 }
 
+/// Feeds contract P11b2: whether a cut thins its chip radially, the one rule
+/// that Suggest, the post-sim chipload gate and the feed modulator read.
+///
+/// Decision L2: a finish pass (`PassRole::Finish`) holds the band chip as
+/// its advance (Garr's finish row keeps a low chip on purpose). A drill cycle
+/// has no radial cut. Every other cut thins, and its peak chip is the
+/// advance over [`peak_chip_thinning_lift`].
+#[derive(Debug, Clone, Copy, PartialEq, Eq)]
+pub enum RadialThinning {
+    /// The cut thins: the peak chip is `fz / peak_chip_thinning_lift`.
+    Applied,
+    /// A finish pass (L2): the peak chip is taken as the advance.
+    FinishPass,
+    /// A drill cycle: no radial cut, no lift.
+    DrillCycle,
+}
+
+impl RadialThinning {
+    /// The rule of an operation's feeds style (family and pass role).
+    #[must_use]
+    pub fn of(family: crate::feeds::OperationFamily, role: crate::feeds::PassRole) -> Self {
+        if family == crate::feeds::OperationFamily::Drill {
+            Self::DrillCycle
+        } else if role == crate::feeds::PassRole::Finish {
+            Self::FinishPass
+        } else {
+            Self::Applied
+        }
+    }
+
+    /// The rule of a gate context: the op's own pass role (not a routed
+    /// row role). The gate refuses a drill cycle before it reads a chip, so
+    /// this never returns [`Self::DrillCycle`].
+    #[must_use]
+    pub fn of_lut_role(role: crate::feeds::vendor_lut::LutPassRole) -> Self {
+        match role {
+            crate::feeds::vendor_lut::LutPassRole::Finish => Self::FinishPass,
+            crate::feeds::vendor_lut::LutPassRole::Roughing
+            | crate::feeds::vendor_lut::LutPassRole::SemiFinish => Self::Applied,
+        }
+    }
+
+    /// The applied lift at the radial width `ae_mm` on the engaged
+    /// diameter `d_eng_mm`: [`peak_chip_thinning_lift`] when the cut thins,
+    /// else 1.
+    #[must_use]
+    pub fn lift(self, ae_mm: f64, d_eng_mm: f64) -> f64 {
+        match self {
+            Self::Applied => peak_chip_thinning_lift(ae_mm, d_eng_mm),
+            Self::FinishPass | Self::DrillCycle => 1.0,
+        }
+    }
+}
+
 /// Effective cutting diameter for a ball nose end mill at shallow axial depth.
 ///
 /// For `ap >= R` (radius), the full diameter is engaged.
@@ -169,12 +223,12 @@ pub fn axial_chip_thinning_factor_for_ball(nominal_d: f64, effective_d: f64) -> 
 /// above 3 x D, so the scale holds the last printed point, 0.50, there, and
 /// [`depth_beyond_published_table`] tells the caller that it did.
 ///
-/// Consumers: the feed (through [`depth_tier_multiplier`]), the chipload
-/// band that `feeds::calculate` returns (at the shipped depth), Suggest's
-/// band re-derivation, and the post-simulation chipload gate in
-/// `tool_load::chipload` (at the measured peak depth). One function keeps
-/// them in phase; an earlier private copy in the gate drifted and caused
-/// the v3.0c Wanaka Back Rough false `Exceeds(High)`.
+/// Feeds contract P11b (L6) and P11b2: no reader scales a chip or a band by
+/// this table any more (not the feed, not Suggest's band, not the post-sim
+/// gate, not the modulator band). It stays as the one statement of the
+/// printed table: [`vendor_depth_table_ceiling_ratio`] is its inverse, the
+/// envelope limit `LimitKind::VendorDepthTable`, and the unit test holds the
+/// inverse to it.
 ///
 /// | ratio (DOC/D) | scale                              |
 /// |---------------|------------------------------------|
@@ -236,17 +290,20 @@ pub enum ChiploadBoundPolicy {
     AllowHalfBand,
 }
 
-/// A DOC-derated chipload band (mm/tooth), after [`doc_derating_scale`]
-/// has been applied to whichever raw LUT bounds passed
-/// [`ChiploadBoundPolicy`] validation. `min_mm_per_tooth` is `None`
+/// A validated chipload band (mm/tooth): the printed bounds of a vendor
+/// LUT row that passed [`ChiploadBoundPolicy`]. `min_mm_per_tooth` is `None`
 /// only when `AllowHalfBand` accepted a row with no published floor.
+///
+/// P11b2 (break): this was `DeratedChiploadBand`. No reader de-rates the
+/// band by depth now (rulings L1 and L6), so the band is the printed band at
+/// every depth.
 #[derive(Debug, Clone, Copy, PartialEq)]
-pub struct DeratedChiploadBand {
+pub struct ValidatedChiploadBand {
     pub min_mm_per_tooth: Option<f64>,
     pub max_mm_per_tooth: f64,
 }
 
-impl DeratedChiploadBand {
+impl ValidatedChiploadBand {
     /// Collapse to a both-bounds-required pair (e.g. Suggest's
     /// `ChiploadBounds`). `None` if the low bound is absent —
     /// unreachable for bands built with
@@ -258,25 +315,14 @@ impl DeratedChiploadBand {
     }
 }
 
-/// Validate and DOC-derate a vendor LUT row's published chipload
-/// bounds.
+/// Validate a vendor LUT row's published chipload bounds: the one home of
+/// the rule (S.8) for Suggest (`feeds::calculate`, the band re-derivation),
+/// the post-sim chipload gate (`tool_load::chipload`) and the chip target
+/// of the modulator and the viewport (`tool_load::chip_target_for_toolpath`).
 ///
-/// Single home for the wrapper around [`doc_derating_scale`] that used
-/// to be independently hand-maintained at four call sites: Suggest's
-/// in-place derivation in `feeds::calculate`, Suggest's post-mutation
-/// re-derivation in `suggest::recompute_chipload_bounds_for_dpp`, the
-/// post-sim chipload trip gate in `tool_load::chipload`, and the
-/// viewport-coloring envelope map in
-/// `tool_load::chipload_envelopes_for_session`. See
-/// `planning/finishing_stack_review_2026-07.md` S.8.
-///
-/// `doc_ratio` is the caller's `axial_doc_mm / effective_diameter_mm`.
-/// Callers guard the zero/negative-diameter case slightly differently
-/// (some floor the diameter before dividing, some short-circuit the
-/// ratio to `0.0`, some force `0.0` outright to bypass derating for an
-/// operation family it doesn't apply to, e.g. drilling) — all are
-/// equivalent inputs here, since [`doc_derating_scale`] maps every
-/// ratio `<= 1.0` to a scale of `1.0`.
+/// P11b2 (break): this was `derate_chipload_bounds(min, max, doc_ratio,
+/// policy)`. The depth ratio is gone: every reader reads the printed band
+/// at every depth (ruling L6); the depth table is an envelope limit.
 ///
 /// Returns `None` when the raw bounds don't satisfy `policy`: the max
 /// bound must always be present, finite, and positive; the min bound,
@@ -284,12 +330,11 @@ impl DeratedChiploadBand {
 /// (a present-but-invalid min rejects the row under both policies —
 /// only an *absent* min is treated as "no floor published" and allowed
 /// through under `AllowHalfBand`).
-pub fn derate_chipload_bounds(
+pub fn validate_chipload_bounds(
     min_mm_per_tooth: Option<f64>,
     max_mm_per_tooth: Option<f64>,
-    doc_ratio: f64,
     policy: ChiploadBoundPolicy,
-) -> Option<DeratedChiploadBand> {
+) -> Option<ValidatedChiploadBand> {
     let max = match max_mm_per_tooth {
         Some(max) if max.is_finite() && max > 0.0 => max,
         _ => return None,
@@ -302,10 +347,9 @@ pub fn derate_chipload_bounds(
     if min.is_none() && matches!(policy, ChiploadBoundPolicy::RequireBoth) {
         return None;
     }
-    let scale = doc_derating_scale(doc_ratio);
-    Some(DeratedChiploadBand {
-        min_mm_per_tooth: min.map(|m| m * scale),
-        max_mm_per_tooth: max * scale,
+    Some(ValidatedChiploadBand {
+        min_mm_per_tooth: min,
+        max_mm_per_tooth: max,
     })
 }
 
@@ -348,21 +392,18 @@ pub fn vendor_depth_table_ceiling_ratio(chip_share: f64) -> f64 {
 /// here.
 ///
 /// - Tapered ball: the engaged diameter at `ap`
-///   ([`crate::feeds::ToolGeometryHint::engaged_diameter_at_doc`]). That
-///   is the diameter at which the post-sim chipload gate de-rates at the
-///   peak (`lookup_diameter_at`, the parity twin; the ×0.704 of EVIDENCE
-///   6-10). Before R2 the feed divided by the tip, so the feed and the
-///   band read two ratios on one tool.
+///   ([`crate::feeds::ToolGeometryHint::engaged_diameter_at_doc`]), the
+///   parity twin of `lookup_diameter_at`. Before R2 the feed divided by the
+///   tip. P11b2: no band de-rate reads this diameter any more; the depth cap
+///   does.
 /// - V-bit, flat, ball, bull: the nominal diameter. A V-bit chart never
 ///   prints its chip load against the engaged width. A V-bit divides by
 ///   the nominal diameter like every non-tapered shape (ruling B4). Before
 ///   B4 the band de-rate alone stayed at the engaged width.
 ///
-/// Two callers share this function: [`feed_ladder_diameter_mm`] (the
-/// feed's depth ladder) and the band de-rate (`feeds::mod` `band_d`,
-/// `tool_load::chipload`, `tool_load::mod`, through the cutter twin
-/// [`depth_derate_diameter_for_cutter`]). One diameter, one ratio, for
-/// both.
+/// Callers: [`feed_ladder_diameter_mm`]. The band de-rate that also read it
+/// (Suggest, the gate, the chip target) is retired (P11b, P11b2); the
+/// cutter twin [`depth_derate_diameter_for_cutter`] keys the depth cap.
 #[must_use]
 pub fn depth_derate_diameter_mm(
     geom: crate::feeds::ToolGeometryHint,
@@ -417,9 +458,9 @@ pub fn feed_ladder_diameter_mm(
 ///   Before B4 the band de-rate alone stayed at `lookup_diameter_at`, the
 ///   engaged width.
 ///
-/// Two callers share this function: [`depth_cap_diameter_mm`] (the
-/// rigidity depth cap) and the band de-rate (`tool_load::chipload`,
-/// `tool_load::mod`).
+/// Callers: [`depth_cap_diameter_mm`] (the rigidity depth cap). P11b2
+/// retired the other caller, the band de-rate of `tool_load::chipload` and
+/// `tool_load::mod`.
 ///
 /// A negative or non-finite depth reads as zero.
 #[must_use]
@@ -698,100 +739,70 @@ mod tests {
         assert!((vendor_depth_table_ceiling_ratio(1.4) - 1.0).abs() < 1e-12);
     }
 
-    // ── derate_chipload_bounds (S.8 dedup) ─────────────────────────
+    // ── validate_chipload_bounds (S.8; P11b2: no depth ratio) ─────
 
     #[test]
-    fn test_derate_chipload_bounds_require_both_scales_both_sides() {
-        let band = derate_chipload_bounds(
-            Some(0.05),
-            Some(0.10),
-            2.0, // doc_ratio -> scale 0.75
-            ChiploadBoundPolicy::RequireBoth,
-        )
-        .unwrap();
-        assert!((band.min_mm_per_tooth.unwrap() - 0.0375).abs() < 1e-9);
-        assert!((band.max_mm_per_tooth - 0.075).abs() < 1e-9);
-    }
-
-    #[test]
-    fn test_derate_chipload_bounds_require_both_rejects_missing_min() {
-        assert!(
-            derate_chipload_bounds(None, Some(0.10), 1.0, ChiploadBoundPolicy::RequireBoth)
-                .is_none()
-        );
-    }
-
-    #[test]
-    fn test_derate_chipload_bounds_require_both_rejects_missing_max() {
-        assert!(
-            derate_chipload_bounds(Some(0.05), None, 1.0, ChiploadBoundPolicy::RequireBoth)
-                .is_none()
-        );
-    }
-
-    #[test]
-    fn test_derate_chipload_bounds_allow_half_band_keeps_missing_min() {
+    fn test_validate_chipload_bounds_require_both_keeps_the_printed_band() {
         let band =
-            derate_chipload_bounds(None, Some(0.10), 1.0, ChiploadBoundPolicy::AllowHalfBand)
+            validate_chipload_bounds(Some(0.05), Some(0.10), ChiploadBoundPolicy::RequireBoth)
                 .unwrap();
+        assert!((band.min_mm_per_tooth.unwrap() - 0.05).abs() < 1e-12);
+        assert!((band.max_mm_per_tooth - 0.10).abs() < 1e-12);
+    }
+
+    #[test]
+    fn test_validate_chipload_bounds_require_both_rejects_missing_min() {
+        assert!(
+            validate_chipload_bounds(None, Some(0.10), ChiploadBoundPolicy::RequireBoth).is_none()
+        );
+    }
+
+    #[test]
+    fn test_validate_chipload_bounds_require_both_rejects_missing_max() {
+        assert!(
+            validate_chipload_bounds(Some(0.05), None, ChiploadBoundPolicy::RequireBoth).is_none()
+        );
+    }
+
+    #[test]
+    fn test_validate_chipload_bounds_allow_half_band_keeps_missing_min() {
+        let band =
+            validate_chipload_bounds(None, Some(0.10), ChiploadBoundPolicy::AllowHalfBand).unwrap();
         assert!(band.min_mm_per_tooth.is_none());
         assert!((band.max_mm_per_tooth - 0.10).abs() < 1e-9);
     }
 
     #[test]
-    fn test_derate_chipload_bounds_allow_half_band_still_rejects_missing_max() {
+    fn test_validate_chipload_bounds_allow_half_band_still_rejects_missing_max() {
         assert!(
-            derate_chipload_bounds(Some(0.05), None, 1.0, ChiploadBoundPolicy::AllowHalfBand)
+            validate_chipload_bounds(Some(0.05), None, ChiploadBoundPolicy::AllowHalfBand)
                 .is_none()
         );
     }
 
     #[test]
-    fn test_derate_chipload_bounds_present_but_invalid_min_rejects_under_both_policies() {
+    fn test_validate_chipload_bounds_present_but_invalid_min_rejects_under_both_policies() {
         // min > max: present-but-malformed rejects the whole row, it
         // does not silently degrade to a half-band.
         assert!(
-            derate_chipload_bounds(
-                Some(0.20),
-                Some(0.10),
-                1.0,
-                ChiploadBoundPolicy::RequireBoth
-            )
-            .is_none()
+            validate_chipload_bounds(Some(0.20), Some(0.10), ChiploadBoundPolicy::RequireBoth)
+                .is_none()
         );
         assert!(
-            derate_chipload_bounds(
-                Some(0.20),
-                Some(0.10),
-                1.0,
-                ChiploadBoundPolicy::AllowHalfBand
-            )
-            .is_none()
+            validate_chipload_bounds(Some(0.20), Some(0.10), ChiploadBoundPolicy::AllowHalfBand)
+                .is_none()
         );
     }
 
     #[test]
-    fn test_derate_chipload_bounds_no_derate_at_or_below_1x_ratio() {
-        let band = derate_chipload_bounds(
-            Some(0.05),
-            Some(0.10),
-            0.4,
-            ChiploadBoundPolicy::RequireBoth,
-        )
-        .unwrap();
-        assert!((band.min_mm_per_tooth.unwrap() - 0.05).abs() < 1e-9);
-        assert!((band.max_mm_per_tooth - 0.10).abs() < 1e-9);
-    }
-
-    #[test]
-    fn test_derated_band_into_pair_round_trips() {
-        let band = DeratedChiploadBand {
+    fn test_validated_band_into_pair_round_trips() {
+        let band = ValidatedChiploadBand {
             min_mm_per_tooth: Some(0.05),
             max_mm_per_tooth: 0.10,
         };
         assert_eq!(band.into_pair(), Some((0.05, 0.10)));
 
-        let half = DeratedChiploadBand {
+        let half = ValidatedChiploadBand {
             min_mm_per_tooth: None,
             max_mm_per_tooth: 0.10,
         };

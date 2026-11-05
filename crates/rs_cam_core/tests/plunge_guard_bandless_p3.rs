@@ -57,6 +57,7 @@ fn bandless_ctx<'a>(k: &'a MachineKinematics, plunge_rate_mm_min: f64) -> Modula
         cutting_ceiling: cutting_ceiling(MAX_FEED),
         rapid_feed_mm_min: MAX_FEED,
         chipload_band: None,
+        radial_thinning: rs_cam_core::dressup::feed_modulation::RadialThinning::Applied,
         kinematics: k,
         strategy: ModulationStrategy::ConstrainedMax,
         feed_scale: 1.0,
@@ -81,6 +82,7 @@ fn engaged() -> PerMoveEngagement {
         radial_woc_fraction: 1.0,
         axial_doc_fraction: 1.0,
         axial_doc_mm: 0.0,
+        thinning_lift: None,
     }
 }
 

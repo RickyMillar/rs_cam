@@ -73,6 +73,11 @@
 //!
 //! Nothing here is a threshold, a verdict or a recommendation. This file
 //! reads production functions and asserts relationships between them.
+//!
+//! P11b2 (2026-11-05, ruling L1): the gate now observes the PEAK chip (the
+//! advance over the radial chip-thinning lift at the sample's arc). The heat
+//! map still paints the achieved advance; on a light arc the two differ by
+//! the lift. That gap is a lead item, pinned in the first test.
 
 #![expect(
     clippy::expect_used,
@@ -309,6 +314,7 @@ fn evaluate_pair() -> (Arm, Arm) {
                 operation_kind: OperationType::Pocket,
                 spans: None,
                 drill_op: None,
+                commanded_thinning_lift: None,
             },
             Some(&trace),
             None,
@@ -396,12 +402,18 @@ fn changing_only_the_arc_moves_the_chip_thickness_and_not_the_advance_per_tooth(
         "the two arms must differ only in engagement arc"
     );
 
-    // 2. The gate's observation — the review's proposed display measure —
-    //    does not move. Bit-equality, not a tolerance: `effective_feed /
-    //    (rpm · flutes)` contains no arc term at all.
+    // 2. P11b2 (ruling L1, 2026-11-05): the gate observes the PEAK chip,
+    //    the achieved advance over the radial chip-thinning lift, so it
+    //    moves with the arc by `sin(arc)` below 90 degrees. Arm B (a slot)
+    //    does not thin; arm A reads `advance x sin(0.8)`.
+    assert!(
+        (a.gate_observed_mm_per_tooth - a.displayed.mm() * ARC_A_RAD.sin()).abs() < 1e-12,
+        "P11b2: arm A's gate observation is the peak chip, advance x sin(arc)"
+    );
     assert_eq!(
-        a.gate_observed_mm_per_tooth, b.gate_observed_mm_per_tooth,
-        "achieved advance per tooth must be independent of engagement arc"
+        b.gate_observed_mm_per_tooth,
+        b.displayed.mm(),
+        "P11b2: a slot does not thin; the peak chip is the advance"
     );
 
     // 3. The two arms matched the same LUT row, so any colour difference
@@ -429,13 +441,16 @@ fn changing_only_the_arc_moves_the_chip_thickness_and_not_the_advance_per_tooth(
         a.displayed, b.displayed,
         "the displayed measure must not move when only the engagement arc moves"
     );
-    assert_eq!(
-        a.displayed.mm(),
-        a.gate_observed_mm_per_tooth,
-        "the heat-map and the gate must be reading one expression, not two \
-         transcriptions of one intention"
-    );
+    // P11b2 (lead item): the heat map still paints the ACHIEVED ADVANCE
+    // against the printed band, while the gate judges the peak chip. On a
+    // slot the two agree (arm B); on a light arc they differ by the lift
+    // (arm A, asserted in step 2). Until the heat map moves to the peak
+    // chip, this test pins that gap so it cannot change silently.
     assert_eq!(b.displayed.mm(), b.gate_observed_mm_per_tooth);
+    assert!(
+        a.displayed.mm() > a.gate_observed_mm_per_tooth,
+        "P11b2: on a light arc the displayed advance is above the gate's peak chip"
+    );
 }
 
 #[test]
@@ -512,7 +527,10 @@ fn the_retired_measure_still_reproduces_the_defect() {
     );
     assert!((b.chip.mm() - pre_fix::CHIP_B_MM).abs() < 5e-7);
     assert!((b.chip.mm() / a.chip.mm() - pre_fix::CHIP_RATIO).abs() < 5e-4);
-    assert!((a.gate_observed_mm_per_tooth - pre_fix::GATE_OBSERVED_MM).abs() < 5e-7);
+    // P11b2: the recorded 0.0434 was the gate's advance; the gate now reads
+    // the peak chip, so the record is checked against the displayed advance
+    // (the same expression the gate read then).
+    assert!((a.displayed.mm() - pre_fix::GATE_OBSERVED_MM).abs() < 5e-7);
 
     // 2. The retired measure — reconstructed by hand — still splits one
     //    recipe across two colour classes. This is the defect, preserved.
@@ -546,6 +564,6 @@ fn the_retired_measure_still_reproduces_the_defect() {
     //    the chip reads LOW against an advance band. The caveat quantifies
     //    the full-slot case at 1.6× (`1 / 0.6366`); arm A is further out
     //    still, because the chip factor collapses with the arc.
-    assert!(a.chip.mm() < a.gate_observed_mm_per_tooth);
-    assert!(b.chip.mm() > b.gate_observed_mm_per_tooth * 0.9);
+    assert!(a.chip.mm() < a.displayed.mm());
+    assert!(b.chip.mm() > b.displayed.mm() * 0.9);
 }

@@ -216,12 +216,14 @@ fn row_provenance_clause(explanation: Option<&crate::feeds::FeedExplanation>) ->
     format!(" ({})", parts.join("; "))
 }
 
-/// T1.5 (census P-10) — the commanded feed-per-tooth against the matched
+/// T1.5 (census P-10) — the commanded peak chip against the matched
 /// band's maximum.
 ///
-/// Both sides are a linear advance per tooth: this is the one comparison
-/// in the whole chipload pipeline that needs no unit conversion and no
-/// stage caveat, and it was the only one nothing surfaced.
+/// P11b2: both sides are a PEAK chip. The commanded peak chip is the
+/// commanded feed per tooth over the median radial chip-thinning lift of
+/// the measured cut (`CommandedStage::peak_chip_mm`; 1 on a finish pass), so
+/// Suggest's own thinned recipe does not trip it. Before P11b2 it compared
+/// the advance, which Suggest lifts above the band on a light stepover.
 /// `narrate.rs:426` computed the left-hand side and printed it beside
 /// nothing; the right-hand side sat on the verdict.
 ///
@@ -234,7 +236,14 @@ fn commanded_above_band_to_diagnostic(
 ) -> Option<Diagnostic> {
     let e = explanation?;
     let ratio = e.commanded_over_band_max()?;
-    if ratio <= 1.0 {
+    // P11b2: Suggest's own recipe lands ON the band max (the peak chip is
+    // the band chip); the shared boundary contract (G-CHIP-ULP) keeps a
+    // multiply/divide ulp from raising the alarm there.
+    if !crate::tool_load::boundary::exceeds_high(
+        e.commanded.peak_chip_mm,
+        e.band.max_mm_per_tooth,
+        0.0,
+    ) {
         return None;
     }
     Some(Diagnostic {
@@ -250,10 +259,12 @@ fn commanded_above_band_to_diagnostic(
         face: crate::diagnostics::presentation::face(ids::LOAD_CHIPLOAD_COMMANDED_ABOVE_BAND),
         anchor: crate::diagnostics::presentation::anchor(ids::LOAD_CHIPLOAD_COMMANDED_ABOVE_BAND),
         message: format!(
-            "The set feed per tooth {:.4} mm is {ratio:.1} \u{00D7} the vendor \
-             maximum of {:.4} mm/tooth. Both are the same measure, so no conversion \
-             applies{}",
+            "The set peak chip {:.4} mm (feed per tooth {:.4} mm over the \
+             chip-thinning lift \u{00D7}{:.3} of the commanded cut) is {ratio:.1} \
+             \u{00D7} the vendor maximum of {:.4} mm/tooth{}",
+            e.commanded.peak_chip_mm,
             e.commanded.feed_per_tooth_mm,
+            e.commanded.thinning_lift,
             e.band.max_mm_per_tooth,
             row_provenance_clause(explanation),
         ),
@@ -261,7 +272,7 @@ fn commanded_above_band_to_diagnostic(
             row_id: e.band.bounds_source.row_id().to_owned(),
             min: e.band.min_mm_per_tooth,
             max: Some(e.band.max_mm_per_tooth),
-            observed: e.commanded.feed_per_tooth_mm,
+            observed: e.commanded.peak_chip_mm,
             unit: "mm/tooth".to_owned(),
             extrapolated: e.band.is_extrapolated,
         }),
@@ -323,7 +334,7 @@ fn chipload_to_diagnostic(
                 // point" (`ChipBounds::burn_reference_mm`); the bounds
                 // carry no minimum.
                 Some(advisory) => format!(
-                    "The feed per tooth {:.4} mm is BELOW the {:.4} mm/tooth {}. The \
+                    "The peak chip {:.4} mm is BELOW the {:.4} mm/tooth {}. The \
                      tool can rub. The check does not refuse it, because the limit comes \
                      from {} (advisory only){qualifier}{provenance}",
                     advisory.observed_mm_per_tooth,
@@ -332,7 +343,7 @@ fn chipload_to_diagnostic(
                     advisory.bounds.source.row_id(),
                 ),
                 None => format!(
-                    "Feed per tooth within the vendor range ({:.4} mm){qualifier}{provenance}",
+                    "Peak chip within the vendor range ({:.4} mm){qualifier}{provenance}",
                     approach_to_max.observed_mm_per_tooth
                 ),
             };
@@ -374,14 +385,11 @@ fn chipload_to_diagnostic(
             let (id_str, (msg_prefix, risk)) = match side {
                 crate::tool_load::verdict::ChipSide::Low => (
                     ids::LOAD_CHIPLOAD_LOW,
-                    (
-                        "Feed per tooth too low",
-                        "The tool can rub and burn the wood.",
-                    ),
+                    ("Peak chip too low", "The tool can rub and burn the wood."),
                 ),
                 crate::tool_load::verdict::ChipSide::High => (
                     ids::LOAD_CHIPLOAD_HIGH,
-                    ("Feed per tooth too high", "The tool can break."),
+                    ("Peak chip too high", "The tool can break."),
                 ),
             };
             // T1.2 — same qualifier on the trip arm as on the Within

@@ -44,8 +44,9 @@ pub struct MetricGuide {
 }
 
 const CHIPLOAD: MetricGuide = MetricGuide {
-    what: "How far each cutting edge moves into the wood per turn: \
-           feed / (RPM x flutes).",
+    what: "The thickest chip each cutting edge cuts: the advance per tooth, \
+           feed / (RPM x flutes), thinned by a light width of cut (the peak \
+           chip). A finish pass reads the advance.",
     too_low: "The edge rubs instead of cutting. Heat builds. You see burn \
               marks, glazed walls and fine dust instead of chips, and the \
               tool dulls fast.",

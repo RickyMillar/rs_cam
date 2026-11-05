@@ -378,6 +378,7 @@ mod tests {
             operation_kind: op,
             spans: None,
             drill_op: None,
+            commanded_thinning_lift: None,
         };
         let env = GateEnv {
             sim_trace: t,
@@ -530,6 +531,7 @@ mod tests {
             operation_kind: OperationType::Pocket,
             spans: None,
             drill_op: None,
+            commanded_thinning_lift: None,
         };
         let env = GateEnv {
             sim_trace: Some(&t),

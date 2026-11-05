@@ -54,6 +54,7 @@ fn ctx(k: &MachineKinematics, strategy: ModulationStrategy, banded: bool) -> Mod
         cutting_ceiling: cutting_ceiling(4000.0),
         rapid_feed_mm_min: 10_000.0,
         chipload_band: banded.then(|| ChiploadBand::new(0.02, 0.08).unwrap()),
+        radial_thinning: rs_cam_core::dressup::feed_modulation::RadialThinning::Applied,
         kinematics: k,
         strategy,
         feed_scale: 1.0,
@@ -92,6 +93,7 @@ fn engagements(tp: &Toolpath) -> Vec<PerMoveEngagement> {
                     radial_woc_fraction: 1.0,
                     axial_doc_fraction: 1.0,
                     axial_doc_mm: 2.0,
+                    thinning_lift: None,
                 }
             } else {
                 PerMoveEngagement::default()

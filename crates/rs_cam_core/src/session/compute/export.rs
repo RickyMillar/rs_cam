@@ -578,6 +578,18 @@ impl ProjectSession {
         let tool = crate::compute::cutter::build_cutter(tool_cfg).ok()?;
         let (family, pass_role) = tc.operation.feeds_style();
         let result = self.result_at(index);
+        // P11b2: the lift of the stated cut, by Suggest's own rule (the
+        // engaged diameter at the stated depth, `feeds::effective_diameter`).
+        let (stated_ap, stated_ae, _) = tc.operation.cut_spec().calc_inputs(tool_cfg.diameter);
+        let commanded_thinning_lift = stated_ap.zip(stated_ae).map(|(ap, ae)| {
+            let d_eng = crate::feeds::effective_diameter(
+                tool_cfg.geometry_hint(),
+                tool_cfg.diameter,
+                tool_cfg.shank_diameter_planning_mm(),
+                ap,
+            );
+            crate::feeds::geometry::RadialThinning::of(family, pass_role).lift(ae, d_eng)
+        });
         Some(crate::tool_load::LoadContextParts {
             toolpath_id: tc.id,
             tool,
@@ -591,6 +603,7 @@ impl ProjectSession {
                 .filter(|r| r.annotated().spans_valid)
                 .map(|r| r.annotated().spans.as_slice()),
             drill_op: result.and_then(|r| r.drill_op()).map(AsRef::as_ref),
+            commanded_thinning_lift,
         })
     }
 

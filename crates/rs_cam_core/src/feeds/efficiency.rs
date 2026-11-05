@@ -204,11 +204,9 @@ pub fn cut_efficiency(
 
     // P11b (L1, L2): the band holds the PEAK chip. The lift is 1 at or above
     // half the diameter and on a finish pass.
-    let lift = if operation.feeds_style().1 == crate::feeds::PassRole::Finish {
-        1.0
-    } else {
-        crate::feeds::geometry::peak_chip_thinning_lift(radial_width_mm, diameter_mm)
-    };
+    let (family, role) = operation.feeds_style();
+    let lift =
+        crate::feeds::geometry::RadialThinning::of(family, role).lift(radial_width_mm, diameter_mm);
     let held_chip_mm = advance_per_tooth_mm / lift;
     let verdict = match band {
         None => ChipVerdict::NoBand,

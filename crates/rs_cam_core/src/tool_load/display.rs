@@ -32,9 +32,8 @@ use crate::stock::simulation_cut::{SimulationCutSample, SimulationCutTrace};
 /// The display measure: **achieved advance per tooth** for one sample,
 /// `effective_feed / (rpm · flutes)`.
 ///
-/// Identical in expression to the chipload gate's own observation
-/// (`super::chipload::achieved_feed_per_tooth_mm`), which delegates here
-/// so the two cannot drift. `None` when the sample carries no positive
+/// P11b2: the chipload gate observes this advance over the radial
+/// chip-thinning lift ([`peak_chip_per_tooth`]). `None` when the sample carries no positive
 /// `rpm × flutes` divisor — a broken sample, not a modelling limit.
 #[must_use]
 pub fn achieved_advance_per_tooth(
@@ -46,6 +45,79 @@ pub fn achieved_advance_per_tooth(
         sample.spindle_rpm,
         sample.flute_count,
     )
+}
+
+/// Feeds contract P11b2: the PEAK chip per tooth of one sample, and the lift
+/// that separates it from the achieved advance.
+#[derive(Debug, Clone, Copy, PartialEq)]
+pub struct PeakChipReading {
+    /// The achieved advance per tooth over the lift (mm/tooth).
+    pub peak_chip_mm: f64,
+    /// The radial chip-thinning lift at the sample's measured engagement
+    /// (`feeds::geometry::RadialThinning::lift`); 1 on a finish pass.
+    pub lift: f64,
+}
+
+/// Why a sample gives no peak chip.
+#[derive(Debug, Clone, Copy, PartialEq, Eq)]
+pub enum PeakChipRefusal {
+    /// The sample carries no positive `rpm x flutes` divisor.
+    NoDivisor,
+    /// The cut thins, but the sample gives no engagement
+    /// (`feeds::engagement::Engagement::from_sample` is `None`: no arc, or
+    /// no positive width), so the lift is not known.
+    NoEngagement,
+}
+
+/// Feeds contract P11b2 (rulings L1 and L2): the measure of the post-sim
+/// chipload gate, its histogram and the heat map. It is the PEAK chip,
+/// `achieved advance / lift`, where the lift is the one law
+/// (`feeds::geometry::RadialThinning::lift`, Garr) at the sample's measured
+/// engagement: the width `r (1 - cos psi)` of the measured arc on the
+/// engaged diameter at the sample depth (the K7 `Engagement::from_sample`
+/// rule). This is the chip that Suggest sizes the feed for, so the three
+/// readers and Suggest judge one chip.
+///
+/// A finish pass (`RadialThinning::FinishPass`, L2) takes the advance as its
+/// peak chip and reads no engagement.
+pub fn peak_chip_per_tooth(
+    sample: &SimulationCutSample,
+    predicted_feeds: &crate::machine::kinematics::PredictedFeedMap,
+    tool: &crate::tool::ToolDefinition,
+    thinning: crate::feeds::geometry::RadialThinning,
+) -> Result<PeakChipReading, PeakChipRefusal> {
+    let advance = achieved_advance_per_tooth(sample, predicted_feeds)
+        .ok_or(PeakChipRefusal::NoDivisor)?
+        .mm();
+    let lift = sample_thinning_lift(sample, tool, thinning).ok_or(PeakChipRefusal::NoEngagement)?;
+    Ok(PeakChipReading {
+        peak_chip_mm: advance / lift,
+        lift,
+    })
+}
+
+/// Feeds contract P11b2: the radial chip-thinning lift of one sample, the one
+/// door that the gate ([`peak_chip_per_tooth`]) and the feed modulator (per
+/// move, in `session::compute`) read. The lift is
+/// `feeds::geometry::RadialThinning::lift` at the sample's measured
+/// engagement (`Engagement::from_sample`: the width `r (1 - cos psi)` of the
+/// measured arc on the engaged diameter at the sample depth). 1 when the cut
+/// does not thin. `None` when the cut thins and the sample gives no
+/// engagement (no arc, or no positive width).
+#[must_use]
+pub fn sample_thinning_lift(
+    sample: &SimulationCutSample,
+    tool: &crate::tool::ToolDefinition,
+    thinning: crate::feeds::geometry::RadialThinning,
+) -> Option<f64> {
+    match thinning {
+        crate::feeds::geometry::RadialThinning::Applied => {
+            let engagement = crate::feeds::engagement::Engagement::from_sample(sample, tool)?;
+            Some(thinning.lift(engagement.ae_mm(), engagement.d_eng_mm()))
+        }
+        crate::feeds::geometry::RadialThinning::FinishPass
+        | crate::feeds::geometry::RadialThinning::DrillCycle => Some(1.0),
+    }
 }
 
 /// The sample's dexel-measured arc-average chip thickness, typed so it

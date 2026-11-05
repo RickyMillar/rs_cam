@@ -374,8 +374,9 @@ the Chip Load by at least 25%" and "at least 50%". Amana prints "Reduce feed rat
 by 25%" and "by 50%", which is the same rule at the chart's fixed RPM. The linear
 interpolation between the three points is this crate's own. Above 3 x D no vendor
 prints a factor; the crate holds 0.50 there and raises a Caution. Since feeds
-contract P11b (2026-11-05, chip first) the scale de-rates only the
-post-simulation chipload gate; Suggest draws the table as the envelope limit
+contract P11b and P11b2 (2026-11-05, chip first) the scale de-rates no chip
+and no band (not Suggest, not the post-simulation chipload gate, not the feed
+modulator); Suggest draws the table as the envelope limit
 "vendor depth ceiling (width not printed)" at the operator's peak chip
 (`feeds::geometry::vendor_depth_table_ceiling_ratio`, the inverse of the scale
 on its printed span), and the feed and the shown band no longer take it.
@@ -388,7 +389,10 @@ engagement of 50 %, and `fz` is the band chip at or above it
 source of the law; the wood charts print no radial condition (the next
 paragraph), so the lift is a model matched to Garr's printed rule, not a
 correction read from a wood chart. A finish pass keeps the band chip (Garr's
-finish row, 2.5 % D, prints a low chip; P11 step 0 claim C13).
+finish row, 2.5 % D, prints a low chip; P11 step 0 claim C13). Since P11b2 the
+post-simulation chipload gate and the feed modulator read the same law: the
+gate judges the peak chip at each sample's measured arc, and the modulator
+caps the peak chip at the band at each move's modelled engagement.
 
 No wood source in the shipped LUT publishes a **radial** engagement condition
 for its chipload column; the `ae_min_mm` / `ae_max_mm` values on wood rows are

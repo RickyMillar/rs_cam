@@ -63,6 +63,7 @@ fn ctx<'a>(k: &'a MachineKinematics, plunge_rate_mm_min: f64) -> ModulationConte
         cutting_ceiling: cutting_ceiling(10_000.0),
         rapid_feed_mm_min: 10_000.0,
         chipload_band: Some(ChiploadBand::new(0.02, 0.08).expect("valid band")),
+        radial_thinning: rs_cam_core::dressup::feed_modulation::RadialThinning::Applied,
         kinematics: k,
         strategy: ModulationStrategy::ConstrainedMax,
         feed_scale: 1.0,
@@ -84,6 +85,7 @@ fn engaged() -> PerMoveEngagement {
         // is what the pre-T-11 expression returned here, kept so this
         // plunge-guard test cannot shift on a depth it does not test.
         axial_doc_mm: 0.0,
+        thinning_lift: None,
     }
 }
 

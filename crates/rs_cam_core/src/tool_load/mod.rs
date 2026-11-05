@@ -169,17 +169,17 @@ pub fn chipload_envelopes_for_session(
         .collect()
 }
 
-/// The chipload target of a toolpath (A2, point mode): the DOC-derated
-/// printed band, or the DOC-derated printed point.
+/// The chipload target of a toolpath (A2, point mode): the printed
+/// printed band, or the printed point (P11b2: no depth de-rate).
 ///
 /// A vendor row that prints one value gives a point, not a band
 /// ([`crate::feeds::vendor_lookup::PrintedChipload`]). No consumer derives
 /// a band from a point.
 #[derive(Debug, Clone, PartialEq)]
 pub enum ChipTarget {
-    /// Two printed limits, DOC-derated (mm/tooth), `start < end`.
+    /// Two printed limits, as printed (mm/tooth), `start < end`.
     Band(std::ops::Range<f64>),
-    /// One printed value, DOC-derated (mm/tooth).
+    /// One printed value, as printed (mm/tooth).
     Point(f64),
 }
 
@@ -251,15 +251,15 @@ pub fn modulation_bands_for_session(
         .collect()
 }
 
-/// The DOC-derated chipload target of ONE toolpath (A2, point mode), and
+/// The printed chipload target of ONE toolpath (A2, point mode), and
 /// the only place the target is derived.
 ///
 /// The matched row's [`crate::feeds::vendor_lookup::LookupResult::printed_chipload`]
 /// decides the shape:
 ///
-/// - `Band` gives [`ChipTarget::Band`], both limits DOC-derated.
-/// - `Point` gives [`ChipTarget::Point`], the point DOC-derated the same
-///   way. No band is derived from it.
+/// - `Band` gives [`ChipTarget::Band`], both limits as printed.
+/// - `Point` gives [`ChipTarget::Point`], the point as printed.
+///   No band is derived from it.
 /// - `Unpublished` gives `None`.
 ///
 /// `None` also means a custom material, or no matched row for this tool
@@ -309,41 +309,29 @@ pub fn chip_target_for_toolpath(
         lut_pass_role,
         axial_doc,
     )?;
-    // DOC-derate exactly like the gate's trip bounds, so the
-    // operator-facing colors agree with the export verdict, via the
-    // shared `geometry::derate_chipload_bounds` helper (S.8, single home
-    // for this wrapper across Suggest and both `tool_load` gate sites;
-    // see `planning/finishing_stack_review_2026-07.md`).
-    // The de-rate divides by `depth_derate_diameter_for_cutter` at the
-    // peak DOC, not by the lookup key: the engaged (cone) diameter on a
-    // tapered ball, the nominal diameter on every other shape (a V-bit
-    // included since ruling B4 step 2). The depth half of R2 stands for a
-    // tapered ball (ruling A1).
-    let lookup_diameter =
-        crate::feeds::geometry::depth_derate_diameter_for_cutter(&tool_def, axial_doc).max(1e-9);
-    let doc_ratio = axial_doc / lookup_diameter;
+    // P11b2 (L6): the printed band at every depth, as the gate and Suggest
+    // read it, through the shared validation (S.8). The peak steady-state
+    // depth above keys the row only.
     match matched.printed_chipload() {
         // Two printed limits: both must pass the shared validation.
         crate::feeds::vendor_lookup::PrintedChipload::Band { min_mm, max_mm } => {
-            crate::feeds::geometry::derate_chipload_bounds(
+            crate::feeds::geometry::validate_chipload_bounds(
                 Some(min_mm),
                 Some(max_mm),
-                doc_ratio,
                 crate::feeds::geometry::ChiploadBoundPolicy::RequireBoth,
             )
-            .and_then(crate::feeds::geometry::DeratedChiploadBand::into_pair)
+            .and_then(crate::feeds::geometry::ValidatedChiploadBand::into_pair)
             .map(|(lo, hi)| ChipTarget::Band(lo..hi))
         }
-        // One printed value: the same de-rate as the gate's point v'
+        // One printed value: the printed point, as the gate's point v
         // (`chipload::evaluate_inner`) and Suggest's `chip_point_for_dpp`.
         crate::feeds::vendor_lookup::PrintedChipload::Point { value_mm } => {
-            crate::feeds::geometry::derate_chipload_bounds(
+            crate::feeds::geometry::validate_chipload_bounds(
                 None,
                 Some(value_mm),
-                doc_ratio,
                 crate::feeds::geometry::ChiploadBoundPolicy::AllowHalfBand,
             )
-            .map(|derated| ChipTarget::Point(derated.max_mm_per_tooth))
+            .map(|band| ChipTarget::Point(band.max_mm_per_tooth))
         }
         crate::feeds::vendor_lookup::PrintedChipload::Unpublished => None,
     }
@@ -464,6 +452,14 @@ pub struct ToolpathLoadContext<'a> {
     /// existing chipload / power / deflection criteria do all the
     /// load-checking for non-drill ops.
     pub drill_op: Option<&'a crate::ops::drill_op::DrillOp>,
+    /// Feeds contract P11b2: the radial chip-thinning lift of the cut the op
+    /// STATES (`CutSpec::calc_inputs`: both a depth and a width), by the rule
+    /// Suggest sizes the feed with (`RadialThinning::lift` at the engaged
+    /// diameter of the stated depth). The `commanded_above_band` comparison
+    /// reads the commanded peak chip `fz / lift` with it, so Suggest's own
+    /// recipe does not trip it. `None` when the op states no width or no
+    /// depth: the gate then takes the median measured lift of its trip set.
+    pub commanded_thinning_lift: Option<f64>,
 }
 
 /// F070: the parts of one operation's [`ToolpathLoadContext`], with the
@@ -486,6 +482,7 @@ pub struct LoadContextParts<'s> {
     pub operation_kind: OperationType,
     pub spans: Option<&'s [crate::trace::toolpath_spans::Span]>,
     pub drill_op: Option<&'s crate::ops::drill_op::DrillOp>,
+    pub commanded_thinning_lift: Option<f64>,
 }
 
 impl LoadContextParts<'_> {
@@ -503,6 +500,7 @@ impl LoadContextParts<'_> {
             operation_kind,
             spans,
             drill_op,
+            commanded_thinning_lift,
         } = self;
         ToolpathLoadContext {
             toolpath_id: *toolpath_id,
@@ -514,6 +512,7 @@ impl LoadContextParts<'_> {
             operation_kind: *operation_kind,
             spans: *spans,
             drill_op: *drill_op,
+            commanded_thinning_lift: *commanded_thinning_lift,
         }
     }
 }
@@ -642,6 +641,7 @@ pub fn evaluate_toolpath(
             material,
             spans: ctx.spans,
             drill_op: None,
+            commanded_thinning_lift: None,
             ..*ctx
         };
         let v = evaluate_population(&own_ctx, Some(&view), machine, tolerance);
@@ -788,6 +788,7 @@ mod tests {
             operation_kind,
             spans: None,
             drill_op: None,
+            commanded_thinning_lift: None,
         }
     }
 

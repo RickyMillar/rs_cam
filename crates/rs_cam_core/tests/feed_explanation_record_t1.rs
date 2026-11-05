@@ -188,6 +188,7 @@ fn verdict_for(
             operation_kind: OperationType::DropCutter,
             spans: None,
             drill_op: None,
+            commanded_thinning_lift: None,
         },
         if with_trace { Some(&built) } else { None },
         None,
@@ -251,12 +252,19 @@ fn a_modelled_verdict_carries_a_fully_populated_explanation() {
     // same quantity stage 2 publishes, so a comparison between them is
     // legitimate for the first time. Restated rather than deleted,
     // because the contract change is the point.
+    //
+    // P11b2 (ruling L1): stage 4 is the PEAK chip; the commanded stage
+    // carries its own peak chip (`peak_chip_mm`, the advance over the
+    // median measured lift), and that is the quantity in stage 4's unit.
+    // This fixture is a finish pass (L2), so the lift is 1.
     assert_eq!(
         explanation.gate.unit(),
-        explanation.commanded.unit(),
-        "since the 2026-08-06 unit conversion stage 4 and stage 1 MUST claim \
-         the same unit — the gate reports the commanded quantity at the \
-         achieved feed"
+        explanation.commanded.peak_chip_unit(),
+        "P11b2: stage 4 and the commanded peak chip claim one unit"
+    );
+    assert!(
+        (explanation.commanded.thinning_lift - 1.0).abs() < 1e-12,
+        "a finish pass does not thin (L2)"
     );
     assert_eq!(
         explanation.gate.unit(),
@@ -333,7 +341,11 @@ fn the_record_surfaces_the_commanded_over_band_ratio() {
     );
     // Both sides of this ratio must be the SAME unit, or the number is
     // meaningless.
-    assert_eq!(explanation.commanded.unit(), explanation.band.unit_family());
+    // P11b2: the ratio reads the commanded PEAK chip.
+    assert_eq!(
+        explanation.commanded.peak_chip_unit(),
+        explanation.band.unit_family()
+    );
 
     // And its achieved-feed twin, new on 2026-08-06. The pair, and the
     // throttle between them, is the operator-actionable statement the
@@ -430,10 +442,12 @@ fn the_record_never_collapses_the_stages_to_one_number() {
     // assertion above is the one that matters and it is unchanged; what
     // follows is the restated version of the old `contains("chip")`
     // check.
+    // P11b2: stage 4 is the peak chip; the commanded advance keeps its own
+    // unit and the commanded peak chip shares stage 4's.
     assert_eq!(
         e.gate.unit(),
-        e.commanded.unit(),
-        "stage 4 and stage 1 are the same quantity at different feeds"
+        e.commanded.peak_chip_unit(),
+        "stage 4 and the commanded peak chip are the same quantity at different feeds"
     );
     assert!(
         e.commanded.unit().contains("advance"),

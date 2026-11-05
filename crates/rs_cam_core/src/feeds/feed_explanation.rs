@@ -53,6 +53,17 @@
 //! arc" is therefore no longer a stage in this pipeline; the row's `ae`
 //! window survives on [`LutBandStage`] as report-only provenance.
 //!
+//! ## P11b2 (2026-11-05): the band holds the PEAK chip
+//!
+//! Rulings L1 and L6 made Suggest size the feed so the PEAK chip (radial
+//! chip thinning, Garr) is the band chip. The gate observation (stage 4) is
+//! now the peak chip, and the commanded stage carries its own peak chip:
+//! the commanded advance at the median measured lift
+//! ([`CommandedStage::peak_chip_mm`]). Stages 2 and 4 and the commanded peak
+//! chip share the unit [`PEAK_CHIP_PER_TOOTH`]; the commanded advance
+//! ([`CommandedStage::feed_per_tooth_mm`]) stays [`ADVANCE_PER_TOOTH`]. On a
+//! finish pass (L2) the lift is 1 and the two numbers are equal.
+//!
 //! ## The one rule this type is written under
 //!
 //! **It labels stages. It does not pick a winner.** What it may now also
@@ -100,14 +111,29 @@ pub struct CommandedStage {
     pub feed_rate_mm_min: f64,
     pub spindle_rpm: u32,
     pub flute_count: u32,
-    /// `feed_rate_mm_min / (spindle_rpm · flute_count)`.
+    /// `feed_rate_mm_min / (spindle_rpm · flute_count)`: the advance.
     pub feed_per_tooth_mm: f64,
+    /// P11b2: the radial chip-thinning lift of the commanded cut: the lift
+    /// of the op's STATED width at the engaged diameter of its stated depth
+    /// (Suggest's own rule, `ToolpathLoadContext::commanded_thinning_lift`),
+    /// else the median lift over the gate's trip set
+    /// (`feeds::geometry::RadialThinning::lift` at each sample's measured
+    /// engagement). 1 on a finish pass (L2).
+    pub thinning_lift: f64,
+    /// P11b2: the commanded PEAK chip, `feed_per_tooth_mm / thinning_lift`
+    /// (unit [`PEAK_CHIP_PER_TOOTH`]). The chip Suggest sizes the feed for.
+    pub peak_chip_mm: f64,
 }
 
 /// The unit stages 1 and 2 share. Named once so a consumer can assert
 /// that a comparison between them is legitimate, rather than each site
 /// spelling out a string and hoping they match.
 pub const ADVANCE_PER_TOOTH: &str = "mm of linear advance per tooth";
+
+/// P11b2: the unit of the band, the gate observation and the commanded peak
+/// chip. The peak chip is the advance over the radial chip-thinning lift
+/// (Garr); on a finish pass it is the advance (L2).
+pub const PEAK_CHIP_PER_TOOTH: &str = "mm of peak chip per tooth";
 
 impl CommandedStage {
     /// Unit of [`Self::feed_per_tooth_mm`], spelled out because the
@@ -116,13 +142,19 @@ impl CommandedStage {
     pub const fn unit(&self) -> &'static str {
         ADVANCE_PER_TOOTH
     }
+
+    /// Unit of [`Self::peak_chip_mm`] (P11b2).
+    #[must_use]
+    pub const fn peak_chip_unit(&self) -> &'static str {
+        PEAK_CHIP_PER_TOOTH
+    }
 }
 
 /// **Stage 2 — the vendor band, and where it came from.**
 ///
-/// Bounds are post-scaling and post-DOC-derate: exactly the numbers the
-/// verdict is judged against. Unit: linear advance per tooth, verified
-/// per source family in `CHIPLOAD_LITERATURE_VERDICT.md` §2.
+/// Bounds are post-scaling (diameter, hardness): exactly the numbers the
+/// verdict is judged against. P11b2: the printed band at every depth (no
+/// depth de-rate), held as the PEAK chip (ruling L1).
 #[derive(Debug, Clone, PartialEq, Serialize, Deserialize)]
 pub struct LutBandStage {
     /// The matched observation's id, e.g.
@@ -135,9 +167,7 @@ pub struct LutBandStage {
     /// The LUT lookup key the gate queried with (mm):
     /// [`crate::feeds::geometry::lut_key_diameter_for_cutter`] at the peak
     /// DOC. That is the tip of a tapered ball (ruling A1, 2026-09-24), and
-    /// the nominal diameter otherwise, a V-bit included (ruling B4). The
-    /// depth de-rate in `min_mm_per_tooth` / `max_mm_per_tooth` divides by
-    /// the engaged diameter, not by this key.
+    /// the nominal diameter otherwise, a V-bit included (ruling B4).
     pub queried_diameter_mm: f64,
     /// `queried / row` diameter scaling applied to the chipload bounds.
     pub diameter_scale: f64,
@@ -186,17 +216,18 @@ pub struct LutBandStage {
 impl LutBandStage {
     #[must_use]
     pub const fn unit(&self) -> &'static str {
-        "mm of linear advance per tooth (vendor convention)"
+        "mm of peak chip per tooth (vendor band, ruling L1)"
     }
 
-    /// The unit FAMILY, without the vendor-convention qualifier — equal
-    /// to [`CommandedStage::unit`], which is what makes
+    /// The unit FAMILY, without the vendor qualifier — equal to
+    /// [`CommandedStage::peak_chip_unit`] and [`GateObservationStage::unit`]
+    /// (P11b2), which is what makes
     /// [`FeedExplanation::commanded_over_band_max`] a legitimate ratio.
     ///
     /// Test door: `crates/rs_cam_core/tests/feed_explanation_record_t1.rs`.
     #[must_use]
     pub const fn unit_family(&self) -> &'static str {
-        ADVANCE_PER_TOOTH
+        PEAK_CHIP_PER_TOOTH
     }
 
     /// True when the winning row answers a different pass role than the
@@ -240,9 +271,10 @@ pub struct AchievedFeedStage {
 
 /// **Stage 4 — what the gate reported.**
 ///
-/// Unit is [`ADVANCE_PER_TOOTH`], the same as stages 1 and 2:
-/// `effective_feed / (rpm · flutes)`, i.e. stage 1 evaluated at stage
-/// 3's achieved feed. Census F-1 — the gate comparing a chip thickness
+/// P11b2: unit [`PEAK_CHIP_PER_TOOTH`], the same as stage 2 and the
+/// commanded peak chip: `effective_feed / (rpm · flutes) / lift`, the
+/// achieved advance over the radial chip-thinning lift at each sample's
+/// measured engagement (1 on a finish pass). Census F-1 — the gate comparing a chip thickness
 /// against a band of advance — is closed by deletion (module header).
 #[derive(Debug, Clone, Copy, PartialEq, Serialize, Deserialize)]
 pub struct GateObservationStage {
@@ -259,7 +291,7 @@ pub struct GateObservationStage {
 impl GateObservationStage {
     #[must_use]
     pub const fn unit(&self) -> &'static str {
-        ADVANCE_PER_TOOTH
+        PEAK_CHIP_PER_TOOTH
     }
 }
 
@@ -278,10 +310,10 @@ impl FeedExplanation {
     /// the authored band, the comparison nothing surfaced before (census
     /// P-10 / T1.5).
     ///
-    /// Both sides are a linear advance per tooth, so a value of 7.8
-    /// means the operation is commanded to advance 7.8× further per
-    /// tooth than the matched vendor row's published maximum. `None`
-    /// when the band maximum is not positive.
+    /// P11b2: both sides are a PEAK chip ([`CommandedStage::peak_chip_mm`],
+    /// the commanded advance over the lift of the stated cut), so Suggest's
+    /// own thinned recipe reads at or below 1. `None` when the band maximum is
+    /// not positive.
     ///
     /// Since 2026-08-06 this is no longer the record's *only* legitimate
     /// ratio — [`Self::gate_over_band_max`] is the same comparison at the
@@ -291,7 +323,7 @@ impl FeedExplanation {
     #[must_use]
     pub fn commanded_over_band_max(&self) -> Option<f64> {
         if self.band.max_mm_per_tooth > 0.0 {
-            Some(self.commanded.feed_per_tooth_mm / self.band.max_mm_per_tooth)
+            Some(self.commanded.peak_chip_mm / self.band.max_mm_per_tooth)
         } else {
             None
         }
@@ -325,7 +357,9 @@ impl FeedExplanation {
     #[must_use]
     pub fn predicted_gate_observation_mm(&self) -> Option<f64> {
         let feed_ratio = self.achieved_feed.median_ratio.unwrap_or(1.0);
-        Some(self.commanded.feed_per_tooth_mm * feed_ratio)
+        // P11b2: the commanded peak chip (the median measured lift)
+        // stands in for stage 1.
+        Some(self.commanded.peak_chip_mm * feed_ratio)
     }
 
     /// The multiplier between the commanded number an operator set and
@@ -334,9 +368,14 @@ impl FeedExplanation {
     /// without stating what separates it from stage 1.
     #[must_use]
     pub fn multiplier_clause(&self) -> String {
-        match self.achieved_feed.median_ratio {
+        // P11b2: the peak chip also divides by the chip-thinning lift.
+        let feed = match self.achieved_feed.median_ratio {
             Some(r) => format!("×{r:.4} achieved/commanded feed"),
             None => "×1.0 feed (no predicted-feed map)".to_owned(),
-        }
+        };
+        format!(
+            "{feed}, ÷{:.4} chip-thinning lift of the commanded cut",
+            self.commanded.thinning_lift
+        )
     }
 }

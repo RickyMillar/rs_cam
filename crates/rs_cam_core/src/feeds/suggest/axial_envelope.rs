@@ -138,7 +138,7 @@ pub(crate) fn axial_envelope_for_operation(
 /// calculator's. Feeds contract P11b (L6, chip first): the band is the
 /// printed band at every depth (the vendor depth table is a limit of the
 /// envelope, not a scale on the chip), so the depth does not move it. The
-/// shared validation (`geometry::derate_chipload_bounds` at ratio 0, S.8)
+/// shared validation (`geometry::validate_chipload_bounds`, S.8)
 /// stays, so the band is the one `feeds::calculate` returns. `None` when the
 /// matched row is absent or prints no band.
 pub(super) fn recompute_chipload_bounds_for_dpp(
@@ -148,10 +148,9 @@ pub(super) fn recompute_chipload_bounds_for_dpp(
     _new_dpp_mm: f64,
 ) -> Option<crate::feeds::ChiploadBounds> {
     let row = matched_row?;
-    let (min, max) = crate::feeds::geometry::derate_chipload_bounds(
+    let (min, max) = crate::feeds::geometry::validate_chipload_bounds(
         row.chip_load_min_mm,
         row.chip_load_max_mm,
-        0.0,
         crate::feeds::geometry::ChiploadBoundPolicy::RequireBoth,
     )?
     .into_pair()?;

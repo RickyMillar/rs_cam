@@ -346,6 +346,7 @@ fn modulation_skips_lead_in_lead_out_moves() {
             // `1.0` is what the pre-T-11 `nominal 2.0 x fraction 0.5`
             // returned, kept so this lead-in test cannot shift.
             axial_doc_mm: 1.0,
+            thinning_lift: None,
         })
         .collect();
     let kinematics = MachineKinematics::generic_wood_router();
@@ -356,6 +357,7 @@ fn modulation_skips_lead_in_lead_out_moves() {
         cutting_ceiling: cutting_ceiling(5000.0),
         rapid_feed_mm_min: 5000.0,
         chipload_band: Some(band),
+        radial_thinning: rs_cam_core::dressup::feed_modulation::RadialThinning::Applied,
         kinematics: &kinematics,
         strategy: ModulationStrategy::ConstrainedMax,
         feed_scale: 1.0,

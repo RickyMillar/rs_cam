@@ -58,6 +58,11 @@ pub const COMMANDED_ADVANCE_PER_TOOTH: &str = "Commanded advance/tooth";
 /// and what the chipload gate observes.
 pub const ACHIEVED_ADVANCE_PER_TOOTH: &str = "Achieved advance/tooth";
 
+/// Feeds contract P11b2: canonical rendered name for the chipload gate's
+/// observation, the achieved advance over the radial chip-thinning lift at
+/// the measured engagement (`tool_load::display::peak_chip_per_tooth`).
+pub const ACHIEVED_PEAK_CHIP: &str = "Achieved peak chip";
+
 /// Canonical rendered name for the dexel-measured arc-average chip
 /// thickness. **Never** compared against a vendor band: no source
 /// publishes one in this unit.

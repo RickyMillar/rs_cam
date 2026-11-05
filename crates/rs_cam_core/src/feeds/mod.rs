@@ -56,9 +56,9 @@ pub use predict::{
 };
 pub use provenance::{FeedsField, FeedsProvenance, ProvenanceSource, ValueProvenance};
 pub use quantities::{
-    ACHIEVED_ADVANCE_PER_TOOTH, ADVANCE_PER_TOOTH_UNIT, ARC_MEAN_CHIP_THICKNESS, AchievedFeedMmMin,
-    AdvancePerToothMm, ArcMeanChipThicknessMm, COMMANDED_ADVANCE_PER_TOOTH, ChiploadBandClass,
-    CommandedFeedMmMin, VendorChiploadBand,
+    ACHIEVED_ADVANCE_PER_TOOTH, ACHIEVED_PEAK_CHIP, ADVANCE_PER_TOOTH_UNIT,
+    ARC_MEAN_CHIP_THICKNESS, AchievedFeedMmMin, AdvancePerToothMm, ArcMeanChipThicknessMm,
+    COMMANDED_ADVANCE_PER_TOOTH, ChiploadBandClass, CommandedFeedMmMin, VendorChiploadBand,
 };
 pub use ramp::{EntryGeometry, RampBasis, RampFallback, RampFeed};
 pub use sourced::{Basis, PointBases, Sourced};
@@ -2214,19 +2214,15 @@ pub(crate) fn calculate_with(input: &FeedsInput, clamps: DepthClamps) -> FeedsRe
         // only) leave it None so the loop doesn't fire on an
         // ambiguous target.
         //
-        // The band here is the RAW row band: validated, not yet
-        // de-rated. The axial depth that ships is not known until Step 3
-        // and the power ladder have run, so the depth de-rate is applied
-        // once, after them (see "The chipload band at the shipped depth"
-        // below). Validation lives in `geometry::derate_chipload_bounds`
-        // (S.8); a ratio of `0.0` gets a scale of `1.0`.
-        let bounds = geometry::derate_chipload_bounds(
+        // The band here is the printed row band, validated
+        // (`geometry::validate_chipload_bounds`, S.8). P11b (L6): no depth
+        // de-rate follows; the band is the printed band at every depth.
+        let bounds = geometry::validate_chipload_bounds(
             result.chip_load_min_mm,
             result.chip_load_max_mm,
-            0.0,
             geometry::ChiploadBoundPolicy::RequireBoth,
         )
-        .and_then(geometry::DeratedChiploadBand::into_pair)
+        .and_then(geometry::ValidatedChiploadBand::into_pair)
         .map(|(min, max)| ChiploadBounds {
             min_mm_per_tooth: min,
             max_mm_per_tooth: max,
@@ -2284,13 +2280,12 @@ pub(crate) fn calculate_with(input: &FeedsInput, clamps: DepthClamps) -> FeedsRe
             if let Some(env) =
                 vendor_lookup::find_best_chip_envelope_row(lut, &query, &input.tool_geometry)
             {
-                if let Some((min, max)) = geometry::derate_chipload_bounds(
+                if let Some((min, max)) = geometry::validate_chipload_bounds(
                     env.chip_load_min_mm,
                     env.chip_load_max_mm,
-                    0.0,
                     geometry::ChiploadBoundPolicy::RequireBoth,
                 )
-                .and_then(geometry::DeratedChiploadBand::into_pair)
+                .and_then(geometry::ValidatedChiploadBand::into_pair)
                 {
                     floor_band_fallback_raw = Some(ChiploadBounds {
                         min_mm_per_tooth: min,
@@ -2649,15 +2644,13 @@ pub(crate) fn calculate_with(input: &FeedsInput, clamps: DepthClamps) -> FeedsRe
     //
     // The axial term of a ball at a shallow depth stays OBSERVED, NOT
     // APPLIED: the charts print no rule for a depth below 1 x D.
-    let finish_pass = input.pass_role == PassRole::Finish;
     // A drill cycle has no radial cut (`Radial::Axial`): no lift, and Step
-    // 9c sets its feed.
-    let drill_cycle = input.operation == OperationFamily::Drill;
-    let mut radial_lift = if finish_pass || drill_cycle {
-        1.0
-    } else {
-        geometry::peak_chip_thinning_lift(ae, effective_d)
-    };
+    // 9c sets its feed. P11b2: the one rule (`geometry::RadialThinning`)
+    // that the post-sim gate and the modulator also read.
+    let thinning = geometry::RadialThinning::of(input.operation, input.pass_role);
+    let finish_pass = thinning == geometry::RadialThinning::FinishPass;
+    let drill_cycle = thinning == geometry::RadialThinning::DrillCycle;
+    let mut radial_lift = thinning.lift(ae, effective_d);
     let axial_thinning = match input.tool_geometry {
         ToolGeometryHint::Ball | ToolGeometryHint::TaperedBall { .. } => {
             geometry::axial_chip_thinning_factor_for_ball(d, effective_d)
@@ -2951,13 +2944,7 @@ pub(crate) fn calculate_with(input: &FeedsInput, clamps: DepthClamps) -> FeedsRe
             // width. Power still rises with the width at that feed
             // (`(1 - cos psi) / sin psi = tan(psi / 2)` rises with psi), so the
             // bisection stays monotone.
-            let lift_at = |c: f64| {
-                if finish_pass || drill_cycle {
-                    1.0
-                } else {
-                    geometry::peak_chip_thinning_lift(c, effective_d)
-                }
-            };
+            let lift_at = |c: f64| thinning.lift(c, effective_d);
             let feed_at_width = |c: f64| raw_feed * lift_at(c) / radial_lift;
             if required_at(rpm, ap, ae, raw_feed) > budget_at(rpm)
                 && input.radial_width_mm.is_none()
@@ -3258,11 +3245,9 @@ pub(crate) fn calculate_with(input: &FeedsInput, clamps: DepthClamps) -> FeedsRe
     // the chip. The band holds the PEAK chip (L1): the feed above is sized
     // so that the peak chip is the band midpoint.
     //
-    // The post-sim chipload gate (`tool_load::chipload`) still de-rates its
-    // band at the measured depth and still judges the advance per tooth.
-    // P11b does not change the gate; the Result section of
-    // `planning/feeds_contract_2026-11-03/phases/P11.md` counts the cells
-    // where the two now disagree.
+    // P11b2: the post-sim chipload gate (`tool_load::chipload`) and the feed
+    // modulator read this printed band too, and judge the peak chip through
+    // the same law (`geometry::RadialThinning`).
     let chipload_bounds = chipload_band_raw;
     let floor_band_fallback = floor_band_fallback_raw;
     let chipload_point_mm = chipload_point_raw;

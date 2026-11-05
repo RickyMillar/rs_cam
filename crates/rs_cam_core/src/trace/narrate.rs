@@ -699,13 +699,18 @@ fn append_operation_context(output: &mut String, context: &ToolpathNarrationCont
         // they differ by a *feed ratio*, not by a change of quantity,
         // which is a difference an operator can act on.
         //
+        // P11b2 (2026-11-05, ruling L1): the gate now reports the PEAK chip,
+        // this advance at the achieved feed over the radial chip-thinning
+        // lift at each sample's arc (1 on a finish pass). The line says so.
+        //
         // The comparison of this value against the matched vendor band
         // (census T1.5) is a diagnostic, `load.chipload.commanded_above_band`
         // — narration does not do LUT lookups, so it names the quantity
         // and leaves the comparison to the channel that has the band.
         parts.push(format!(
             "commanded feed-per-tooth {:.4}mm/tooth (linear advance; \
-             the chipload gate reports the same quantity at the achieved feed)",
+             the chipload gate reports the peak chip: the advance at the achieved \
+             feed over the chip-thinning lift)",
             chipload
         ));
     }

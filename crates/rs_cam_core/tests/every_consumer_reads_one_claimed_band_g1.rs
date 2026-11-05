@@ -364,6 +364,7 @@ fn the_gate_holds_the_form_a_point_with_no_minimum_g1() {
         operation_kind: OperationType::Pocket,
         spans: None,
         drill_op: None,
+        commanded_thinning_lift: None,
     };
     let env = GateEnv {
         sim_trace: Some(&trace),
