@@ -1,0 +1,692 @@
+Source: https://sienci.com/wp-content/uploads/2022/09/Stiffness-Rating-with-Commentary.pdf
+Fetched: 2026-11-06
+Publisher: Sienci Labs (primary)
+Extraction: pdftotext -layout Stiffness-Rating-with-Commentary.pdf
+----- BEGIN EXTRACTED TEXT -----
+Stiffness and Deﬂection
+Testing on the LongMill MK2
+Introduction
+This report was written by Johann, one of the engineers here at Sienci Labs. I (Andy) am adding
+my own commentary to this report to add context to the testing and data presented.
+
+Rigidity is one of the most important factor in terms of a hobby CNC’s performance. A machine
+which is more rigid will typically be able to cut faster and more accurately. There are many
+factors that can affect the rigidity of a machine, such as with it’s design, size, and setup, but also
+the way the tests can significantly affect the results.
+
+At Sienci Labs, we want to offer the best performing machine possible at a reasonable price. We
+hope through this report we can provide confidence to our users that 1) the LongMill is a rigid
+and highly optimized machine and 2) they can expect exceptional performance in a hobby CNC
+context.
+
+In this report, Johann considers both the predicted results and real life testing in the LongMill’s
+rigidity. He also considers the real life scope of forces and use that a CNC machine can expect
+to experience to give data that is relatable for the general user.
+
+
+
+Objective
+Establish standardized testing procedures for cross-machine deflection testing and
+explore the possibility of creating a stiffness rating
+
+At the current time, we have not been able to find standardized testing procedures or methods
+within our industry. This is why part of the goal was to establish some sort of standard procedure
+for testing any CNC machine if in the future we wish to compare rigidity between different
+machines.
+
+Unfortunately, even from our testing experience, working on this area seems to have brought up
+more questions that answered. Deflection testing is complicated due to the different size and
+specifications of each type of machine, its design, setup, and even the conditions of the shop
+that the machine is being tested.
+This is something we’re working on ongoing, and hopefully we’ll be able to better understand
+what things to test for and how to do them repeatedly. At the end of the day, we want to provide
+representative data that can help people determine if the LongMill specifically has enough
+rigidity to apply to their normal use.
+
+
+Deflection Testing Procedures
+To establish a standardized way to easily measure the rigidity of desktop CNCs.
+
+
+Test setup
+
+Tools needed
+
+ Tool                                        Notes
+
+ 0.001” Resolution dial indicator &          -
+ (magnetic) stand
+
+ Flat steel plate                            Secured to the waste board with work holding
+                                             and acts as a base for the dial indicator stand
+
+ Force gauge / luggage scale                 Holding the force gauge by hand is not
+                                             recommended since it will be challenging to keep
+                                             forces steady while reading the dial indicator.
+                                             Instead we recommend building a simple jig to
+                                             secure and move the force gauge (See the load
+                                             application section)
+
+ 0.25” End mill                              -
+
+ 3D printed parts                            End mill clip and rope guide
+
+
+Test procedure
+   1. Jog the machine to the center of the wasteboard. The machine is locked into place by
+      the steppers only.
+   2. Adjust the router’s position in the router mount so that the collet is 0.75” off the
+      wasteboard when the router mount is at its lowest position
+   3. Secure the 0.25” end mill / gauge pin in an inverted orientation with 1.25” stick out
+   4. Raise the end mill 1” off the wasteboard
+   5. Attach the end mill clip to the bit
+   6. Secure the steel plate to the wasteboard near the end mill using any work holding
+      (T-track clamps, wood screws etc.)
+   7. Place and lock the dial indicator stand onto the steel plate
+   8. Decide on the axis to apply load and orient the cutout in the clip to face away from that
+      direction
+   9. Position the dial indicator against the end mill exposed in the cutout
+   10. Apply a 10N/2.25lbs* load in the direction away from the dial indicator and note the
+       reading
+   11. Remove the load and note the change in reading, this will be considered deflection in the
+       positive direction
+   12. Being careful not to bump into the spindle or the machine, remove the dial indicator and
+       rotate the spindle to the opposite side
+   13. Reposition the dial indicator so that it is up against the end mill exposed in the cutout
+   14. Note the reading on the dial indicator
+   15. Apply a 10N load in the opposing direction and note down the change in reading, this will
+       be considered deflection in the negative direction
+   16. Add the positive and negative deflection readings together and divide by 2 to get
+       deflection for the axis being measured
+   17. Repeat step 7-12 three times and take an average before moving on to measuring the
+       other axis
+
+When doing the testing, the machine is only kept in place by the holding torque of the stepper
+motors. We also jog the machine to the center of itself as this is the weakest point of the
+machine. This means that deflection from the motor and lead screws twisting, security of the
+bearings and couplers constraining axial motion, and all other systems are tested in this
+process. Basically a worst case scenario when the machine is stationary.
+
+Doing the test in this way, in our opinion, gives the closest representation of what deflection their
+machine should see in real life since it adds up deflection on basically all parts of the machine.
+From the twist of the shaft on the lead screw, backlash of the nut, flex in the workbench, flex
+from the gantries and rails, and looseness from the linear guide bearings, and compression on
+the v-wheels, all of these factors add up to the final number.
+
+A load of 10N was chosen as representative amount of load that an end mill experiences as it is
+cutting. Additional data and recordings are covered in a later section.
+
+
+
+Results
+
+Testing of two LongMill MK2s show the following deflection figures.
+
+Before testing began, all V-wheels were adjusted in pairs so that there is ~7.5N rolling
+resistance for the XZ gantry and each of the Y-axis gantry. The anti-backlash nuts are also
+adjusted to a quarter-half turn post-engagement. Any residue from the rails is also cleaned
+before the test is performed.
+
+For the 10N run, the results are as follows:
+ (Tested at 10N)                  X Axis Deflection*                Y Axis Deflection
+
+ 48x30 Longmill MK2               2.8 thou / 0.072mm                3.2 thou / 0.080mm
+
+ 30x30 Longmill MK2               2.3 thou / 0.057mm                3.0 thou / 0.076mm
+
+ 12x30 Longmill MK2               1.9 thou / 0.049mm                3.0 thou / 0.076mm
+
+
+
+We also did an additional run at 25N, the results are as follows.
+
+
+ (Tested at 25N)                  X Axis Deflection                 Y Axis Deflection
+
+ 48x30 Longmill MK2               14.2 thou / 0.361mm               20.7 thou / 0.525mm
+
+ 30x30 Longmill MK2               12.3 thou / 0.313mm               18.5 thou / 0.470mm
+
+ 12x30 Longmill MK2               13.0 thou / 0.330mm               18.2 thou / 0.461mm
+
+
+*To give some context to the numbers, 3 thou, or 0.1mm is roughly the thickness of a sheet of
+paper.
+
+Areas that are worth further exploring
+   1. While it’s tempting to conclude that the 30” machine is considerably stiffer than the 48”
+       machine by the virtue of its size, the difference measured between the 48” and the 30” is
+       somwhat larger than what is predicted using beam deflection models. There is some
+       evidence to suggest that this variance comes from factors we did not control for during
+       the test (e.g. wear and tear of the V-wheels & delrin nuts, the mounting rigidity of the
+       wasteboard, variation in rigidity of the MGN rails, etc.). Case and point, the original XZ
+       gantry on the 30” machine deflected more than even the 48” machine during initial
+       testing until the gantry from the 48” was swapped in. To further narrow this down, we can
+       consider:
+           a. Identify where the variance is coming from by running further tests
+           b. Directly control for V-wheel tightness (Some torque / tightness measuring tool)
+           c. Measure the relationship between V-wheel wear / tightness and deflection
+   2. The current test setup has the dial indicator positioned opposite the force gauge with the
+       0.25” milling bit sandwiched in the middle. While this arrangement is good for deflection
+       measurements in a single direction, it is not well suited for measuring the deflection
+       envelope from both directions since the dial indicator and force gauge needs to be
+       repositioned half-way through the test.
+      The errors that this introduces should be below 1 thou, but there are a few ways this can
+      be improved:
+          a. Use a test indicator / hall effect sensor to improve clearance
+          b. Load the bit at a 45 degree angle and decompose out deflection in the X and Y
+               direction
+   3. Current measurements suggest that our 30” machine performs similarly to the Shapeoko
+      3 without the stiffer SO3 Z-axis upgrade (quad linear rail blocks). Which may hint at
+      issues with measurements
+      (https://community.carbide3d.com/t/backlash-deflection-and-vibration/28669)
+
+
+
+Notes on test design
+Based on the calculations below, we are assuming that the deflection on a ¼” gauge pin which
+is used for testing to be negligible.
+
+
+0.25” Drill bit
+An inverted milling bit is used as it is readily available in most CNC shops and the additional
+deflection it adds is an order of magnitude smaller than the typical deflection measurements.
+That said, I did measure a runout of 4 thou when the milling bit is installed in the inverted
+direction. To prevent this runout from going into any measurements, we can do one of the
+following:
+
+   1. Prevent the bit from rotation during measurements
+   2. Measure against other parts of the machine (e.g. the collet)
+   3. Use a gauge pin
+
+The first option is selected since it allows for easy interpretation of the measurements, and it is
+relatively easy to hold the bit in place while measuring
+
+Cutting forces
+From the purposes of deflection measurements, a 10N load is chosen as representative of
+typical cutting forces. The choice is based on the following
+
+Assuming a 1.25 HP router with a 0.25” bit and an RPM of 30000, the theoretical maximum
+cutting force is 21 pounds / 93N. This is very likely on the high side since spindle power is
+almost never the limiting factor in typical cutting.
+
+
+
+
+https://community.carbide3d.com/t/carbide-compact-router-max-power-max-torque-and-torque-c
+urve/23458
+Moving to an empirical approach, there is quite a bit of research trying to characterize and
+model cutting forces in wood, that said these models are usually highly complicated (4+
+variables) and use settings/tools that are not common to the benchtop CNC market (>0.5” bits at
+4000+mm/s). An example of 3 papers below.
+
+
+                     Bit Diameter       DoC                   Feed & Speeds        Cutting Forces
+
+ Douglas Fir         40mm               0.5mm/1.5mm           5000mm/s             ~20N / 40N
+ (Link)                                                       13867 RPM
+
+ MDF                 20mm               2mm                   1500-4000mm/s        ~13N
+ (Link)                                                       15000RPM
+
+ Maple & Oak         20mm               30mm                  2000mm/s             Forces
+ (Link - Worth a                                              3000RPM              normalized
+ read)
+
+
+
+Forum users usually suggest cutting force would be under 50lb for handheld router based CNCs
+and caveat that the actual load would be a lot lower (link, link, link). I wasn’t able to find anything
+more concrete or broken down by bits / feeds & speeds.
+
+Instead of solely relying on empirical data, cutting forces are determined experimentally by
+running the following tests.
+
+Note that:
+   1. Rolling resistance is ~5N and has been subtracted from the figures below
+   2. The figures below reflect the reading of the force gauge when cutting forces have
+       stabilized
+   3. Figures are all rounded to the nearest 5N
+
+
+ Material      Bit            DoC           Feed &         Slotting      Conventio      Climb
+                                            Speeds                       nal (0.5D      (0.5D step
+                                                                         step over)     over
+
+ Maple         0.25” 2        2mm           3500mm/m       10N           10N            0N
+               Flute                        in
+               Upcut Bit                    (Router
+                                            Setting 3)
+
+                              4mm           3500mm/m       15N           15N            0N
+                                            in
+                                            (Router
+                                            Setting 3)
+                             4mm           3500mm/m      Unstable       20N           Runaway
+                                           in            reading                      scenario
+                                           RPM
+                                           (Setting 1)
+
+ Plywood                     4mm           3500mm/m      Unstable       Unstable      5N
+                                           in            reading        reading
+                                           (Router
+                                           Setting 3)
+
+                             2mm           3500mm/m      10N            5N            Runaway
+                                           in                                         scenario
+                                           (Router
+                                           Setting 3)
+
+               0.125” 2      8mm           3500mm/m      15N            10N           0N
+               Flute                       in
+               Downcut                     (Router
+               Bit                         Setting 3)
+
+                             6mm           3000mm/m      10N            10N           -5N
+                                           in
+                                           (Router
+                                           Setting 3)
+
+
+Since we can only capture cutting force along the feed direction, we will assume that
+   3. Forces perpendicular to feed during climb milling will be similar to forces along the feed
+       direction during conventional milling
+   4. Forces during slotting will be a combination between conventional and climb milling
+       forces by vector addition
+
+Since conventional / climb milling would be the most common operations performed as
+compared to slotting, we can take the 10N measured as the force most typical to average
+cutting.
+
+One last note is that the reading only reflects cutting forces during regular cutting, and it is
+observed that cutting forces can be an order of magnitude higher when the router is close to
+stalling / when the bit starts to exhibit chatter.
+
+Although the price of a machine doesn’t necessarily imply that machine is more rigid, there is a
+better chance that it’ll be structurally stronger.
+
+This might be important to some users who plan on using larger tooling or cut harder materials,
+but from my personal experience, the rigidity of the machine has become less of an important
+factor in terms of productivity of the machine because of the relatively small loads experienced
+from hobby CNC tooling and the Makita router.
+Load application
+
+Pulley system
+
+A pulley system is quite convenient to use since it is not secured to the wasteboard and weights
+can be hung off the side of the wasteboard. That said, it is observed that friction losses can be
+quite significant so it’s not recommended (e.g. ~15N error when using a quarter inch nylon rope,
+~4N error when using a thinner string).
+
+Direct loading to bit
+
+
+
+
+The most effective way to apply load we have found so far is to use some pipe strapping that
+goes from the bit (with a clip) to the force gauge that is in turn secured to a table mounted vise.
+
+Hysteresis & Backlash
+Repeated testing showed some hysteresis behavior in the system, where the dial indicator
+would fail to return to 0 after being loaded. This is a somewhat different phenomenon to
+backlash since it does not manifest when there is no load. The current test captures both
+hysteresis and backlash in overall deflection since all 3 effects will affect the final cut that users
+see.
+
+https://www.linearmotiontips.com/whats-the-difference-between-backlash-and-hysteresis-in-line
+ar-systems/
+
+
+Notes on stiffness rating
+The section describes the assumptions used in generating the stiffness rating and the rationale
+behind.
+Linear relationship between load and deflection
+Generally speaking, deflection amounts increase linearly. Doubling the load also increases
+deflection by a factor of 2. This means that if you’re getting inaccurate parts, decreasing the
+feedrate and thus load on the machine can improve the dimensional accuracy.
+
+This is almost a certainty even without testing. That said, I performed this test to make sure any
+measurements at 100N can be proportionally scaled up / down with minimum error which is
+indeed the case.
+
+
+
+
+Off axis deflection
+To capture the stiffness on both the X and the Y axis in a single metric. It is important that
+deflection in the cardinal directions (once normalized to a given machine size) can be added
+together using vector addition and easily predict off axis deflection.
+
+
+
+
+Testing shows some evidence of additional “looseness” off axis over what is predicted using
+measurements in the cardinal direction. However the error is quite small (6.3% / 2 thou @45°)
+and it can be observed that deflection off axis still tracks the deflection ellipse generated using
+cardinal measurements.
+
+
+Effects of axis length
+The idea is to take measurements at the center and the edges of the machine and adjust for
+axis length by extrapolation / interpolation.
+
+                𝑚        𝑛
+δ𝑦 (𝐿𝑥, 𝐿𝑦) = 𝑎𝐿𝑥 + 𝑏𝐿𝑦 + 𝑐
+
+
+There is however the following complications:
+
+   4. Choosing the fixed powers n and m
+      There are multiple length dependent deflection modes that grow with different fixed
+      powers. For example, deflection caused by the beam deformation of the Y-axis rail
+                     3
+       grows with 𝐿 while deflection caused by torsion grows linearly (under small angle
+       approximations). On the X-axis, deflection caused by lead screw / belt stretch increases
+       linearly with axis length.
+
+       Depending on the machine being tested, the dominant power may be different and it
+       may not be fair to assume the factor that is dominant.
+
+
+
+
+   5. Practical challenge measuring at origin
+      At times it may be impractical to take measurements at the origin / edges of the machine
+      given interference with the Y axis rails / limitations in table size. Taking measurement of
+      a small offset (e.g. 50mm) from origin seems like a good option at first, however this is
+      still problematic since deflection measurements made along a beam do not lie on the
+      curve that describes maximum deflection for beams of varying length, so extrapolating
+       from such points will introduce additional errors.
+
+
+
+
+   6. Dependencies between 𝐿𝑥& 𝐿𝑦
+       So far we have assumed that deflection changes along 𝐿𝑥& 𝐿𝑦 are independent to one
+       another, that said, there is some evidence to suggest that there is some dependency
+       between the 2 variables. More specifically, deflection along 𝐿𝑥 increased more at the
+       center of the machine
+
+
+Possible solutions / workarounds
+Without actual machines to test with, further assumptions may inadvertently introduce significant
+errors into overall deflection figures.
+
+As of the time of writing, we will only focus on overall deflection in aggregate without axis length
+normalization.
+
+
+Belt deflection
+
+Belt deflection doesn’t apply to the LongMill because it doesn’t use belts, but many hobby CNC
+machines do. Leadscrews are generally more accurate and don’t stretch to the degree that belts
+do, so in essence can be more accurate. So even though a machine’s structure might be rigid,
+the belts can have a large impact on the precision of a CNC machine. Belts stretch and very in
+stiffness based on the length and location of where the machine gantry is.
+
+Under regular use, the difference between leadscrews and belts is negligible. It’s not likely that
+someone using one over the other will notice any differences. However, in our opinion, there’s
+more that can go wrong with a belt system and so we feel that a leadscrew or ball screw is
+superior.
+We have considered using belts in some applications, as they do offer some design and cost
+advantages, so this report helps us understand the implications of this type of system better.
+
+
+
+Modeling
+Intuition suggests that belts are less stiff the further they are away from the edge. Furthermore,
+since belts cannot resist compression, stiffness would depend on load direction once
+pre-tensioning is overcome.
+
+To model and verify these behaviors, we first define a belt that is of length 𝐿0, which due to
+pre-tensioning has been stretched to length 𝐿0.
+
+
+
+
+Assuming a pre-tensioning of 𝑇 and a tensile modulus λ, the stretch can be characterized as
+follows:
+      𝐿−𝐿0
+𝑇 =    𝐿0
+             λ
+
+
+Defining elongation using ε, the equation is simplified to:
+
+𝑇 = ελ
+To model the behavior of the belt under load, a force 𝐹 is applied at position 𝑥, which deflects
+the belt by the distance d. The changes in tension 𝐹1, 𝐹2 can be described as follows:
+
+        𝑑
+𝐹1 =    𝑥0
+           λ
+
+
+         −𝑑
+𝐹2 =    𝐿0−𝑥0
+              λ
+
+
+Expressing 𝑥0 and 𝐿0 in 𝑥 and 𝐿 gives:
+
+        𝑑(1+ε)
+𝐹1 =       𝑥
+               λ
+
+        −𝑑(1+ε)
+𝐹2 =      𝐿−𝑥
+                λ
+
+
+Where it can be observed that pre-tensioning “stiffens up” the effective spring constant by the
+factor 1 + ε. Note that ε is usually a very small number compared to λ.
+
+Expressing ε in terms of 𝑇 and λ gives:
+
+        𝑑(𝑇+λ)
+𝐹1 =       𝑥
+
+
+        −𝑑(𝑇+λ)
+𝐹2 =      𝐿−𝑥
+
+
+Note that 𝐹1 + 𝑇 and 𝐹2 + 𝑇 cannot have a negative value so an effective “floor” of − 𝑇 exists
+for 𝐹1 and 𝐹2, at which point the belts are not longer in tension.
+
+
+To summarize, 𝐹1 and 𝐹2 are piecewise functions that can be described as follows:
+
+
+               When 𝐹1 or 𝐹2 is ≥ − 𝑇                   When 𝐹1 or 𝐹2 is < − 𝑇
+
+ 𝐹1 =          𝑑(𝑇+λ)                                   − 𝑇
+                  𝑥
+
+
+ 𝐹2 =          −𝑑(𝑇+λ)                                  − 𝑇
+                 𝐿−𝑥
+
+
+
+Consider equilibrium condition about 𝑥.
+
+𝐹 = (𝐹1 + 𝑇) − (𝐹2 + 𝑇) = 𝐹1 − 𝐹2
+𝐹 can thus be described with the following function
+
+
+        When 𝐹1 <− 𝑇                   When 𝐹1 𝐴𝑁𝐷 𝐹2 ≥− 𝑇           When 𝐹2 <− 𝑇
+
+ 𝐹 = − 𝑇 + 𝑑(𝑇 + λ) 1                             1     1
+                                       𝑑(𝑇 + λ)( 𝑥 + 𝐿−𝑥 )
+                                                                                1
+                                                                     𝑑(𝑇 + λ)( 𝑥 ) + 𝑇
+                   𝐿−𝑥
+
+
+
+Solving deflection 𝑑 for various load and pre-tensioning values yield the following:
+
+
+
+
+When 𝑇 = 0𝑁
+  - Belt deflection varies linearly across 𝑥 and stiffness depends on load direction (i.e. if 𝐹 is
+      +ve or -ve).
+
+
+
+
+When 𝑇 = 75𝑁
+  - Stiffness is independent of load direction for loads smaller than 𝑇 across the entire beam
+   -   Stiffness is still dependent on load direction for loads greater than 𝑇
+   -   Stiffness is independent of load direction at the center of the beam for loads up to 2𝑇
+
+
+
+
+When 𝑇 = 150𝑁
+  - As long as tensioned is maintained on both belts, further increases in 𝑇 do not reduce
+      deflection significantly. For example, increasing 𝑇 from 75N to 150N only reduces
+      deflection at the center of the beam by -0.093575%.
+
+
+
+Validation
+To double check the model’s validity, an unbranded 542mm long, 6.35mm wide GT2 belt belt is
+tensioned and secured on two ends. Load is then applied along the belt and deflection
+measured.
+
+It might be worth noting that most CNC machines that use timing belts as their power
+transmission use thicker and stiffer belts. This testing was mostly done to see the behavior of
+the belt not so much to gather data on its performance. If you want to check out more relatable
+data, this forum post might be a good place to check out:
+https://community.carbide3d.com/t/backlash-deflection-and-vibration/28669
+
+Note that the tensile modulus of the belt is measured to be around 21,000 N/mm/mm. This
+value is very close to values suggested for 6.35mm GT2 belts (reference 1, reference 2).
+With minimal pre-tensioning, the belt exhibits increasing stiffness asymmetry the further away
+load is applied from the center. This corresponds quite well to the 25N tension belt model.
+
+
+
+
+With 50N pre-tension, overall deflection is reduced and the 50N deflection line (dark yellow)
+remains flat across the length measured. Although these results do not correspond very well
+with the belt model at 50N, they match the model at 35N quite well. This is likely due to the way
+pre-tensioning is set, where a force gauge is used to pull on the belt through a pulley before the
+pulley is secured using grub screws, this means that friction at the pulley would reduce effective
+tension from the force gauge.
+Results at 75N pre-tensioning shows a further reduction in deflection for the 100N deflection line
+(dark blue) , with the 75N deflection line (dark red) now trends downward as predicted. That
+said, additional divergence between the model and the results is observed even when the
+model adjusted to 55N pre-tensioning.
+
+
+
+
+As things stand, evidence suggests the model is likely to be accurate in broad strokes.
+However, additional testing should be done to reconcile the errors observed before it is used to
+normalize deflection against axis length.
+
+Implications for deflection testing
+To quantify and isolate the effects of belt deflections, the variables 𝑇 and λ should ideally be
+measured. This will allow us to determine if belt tension has been lost at any point and
+determine 𝑑 using the appropriate equation.
+
+That said, since it is very challenging to directly measure both variables on an assembled
+machine, we must infer their values by working backwards from deflection measurements.
+
+Is it reasonable to assume 𝐹 < 𝑇
+
+
+ Manufacturer
+
+ XCarve           Instruction manual suggests 3 pounds force when lifting the belt by 1”.
+                         Assuming a middle of the road tensile modulus of 30K N/mm/mm and a belt
+                         length of 1m this would mean that the belt is tensioned to 92.8N.
+
+                         https://inventables.zendesk.com/hc/en-us/articles/360012593173-How-do-I-t
+                         une-and-calibrate-the-X-Carve-
+
+ Shapeoko                Carbide does not seem to offer official figures for belt tension besides the
+                         description to tension the belts until they are “guitar string tight”. That said,
+                         there is a youtube video from 2015 that mentioned 10-15 pounds belt tension
+                         (44.5-66.7N), and an extensive forum post that seems to suggest tensioning
+                         the belts to between 90-120N.
+
+                         https://www.youtube.com/watch?v=_lIIb_PdziA&t=47s
+                         https://community.carbide3d.com/t/measuring-belt-tension-squaring-and-calib
+                         ration/24712
+
+
+
+
+If 𝑇 > 𝐹, belt tension is always maintained and the standard deflection equation can be used.
+
+                 1           1
+𝐹 = 𝑑(𝑇 + λ)( 𝑥 + 𝐿−𝑥 )
+Since λ >> 𝑇, the equation can be further simplified to the following.
+
+         1       1
+𝐹 = 𝑑λ( 𝑥 + 𝐿−𝑥 )
+
+
+   5.   2𝑇 > 𝐹 (e.g. Belts must be pre-tensioned to 50N if load is 100N)
+   6.   Load is applied away from the shorter belt
+   7.   λ >> 𝑇
+   8.   Backlash & hysteresis values are independent of belt length
+
+The first two assumptions allow us to
+
+             1       1
+𝑑(𝑇 + λ)( 𝑥 + 𝐿−𝑥 )
+
+
+If λ ≫ 𝑇, additional stiffening caused by pre-tensioning can be ignored which further simplifies
+the equation to:
+
+         4
+𝐹 = 𝑑λ( 𝐿 )
+Other Implications
+Excessive pre-tensioning beyond the amount needed to prevent slack has minimal effects in
+making the machine “stiffer”. Therefore one should only pre-tension any belts / lead screws to
+the maximum cutting force the machine is likely to experience.
+
+
+Table warping
+The wasteboard is considered the datum for this test so any warp will be included in the overall
+deflection measurements. This is a deliberate simplification since we are mostly interested in
+the deflection of the bit relative to the workpiece (which is secured on the wasteboard).
+
+
+Key exclusions
+Machine behavior in motion is not evaluated in this test.
+
+
+
+
+Concluding thoughts
+We learned a lot through these tests but there are also a lot of new questions, such as:
+
+   -   What sort of impact will we see if we improve individual components that contribute most
+       to the overall deflection of the machine
+   -   How can we test and compare the LongMill against other comparable CNC machines
+
+However, the other question is “does it even matter?”. We’ve shown that in regular cutting, the
+deflection should measure less than a thickness of a sheet of paper. Yes, vibration and other
+factors will contribute to the overall deflection, but at this scale, the Longmill will perform well
+enough regardless and just as well as any other machine on the market and produce results
+indistinguishable compared to much more expensive machines. Rather than focusing on more
+and more engineering, perhaps improving other areas, such as our resources, customer
+service, and quality would make a bigger difference for our users.
+
+
+Other content to watch:
+
+FNR CNC Season 2 Episode 3: CNC4Newbie XCarve Z Axis Upgrade Deflection Test
+https://www.youtube.com/watch?v=QxhQs0T2nyg
+
+LongMill MK1 Deflection Testing (the old machine)
+https://www.youtube.com/watch?v=B27nUN1ejIQ
+

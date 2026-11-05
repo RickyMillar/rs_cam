@@ -1,0 +1,632 @@
+Source: https://sienci.com/2026/03/30/rigidity-testing-on-the-longmill-mk3/
+Fetched: 2026-11-06
+Publisher: Sienci Labs blog, Andy Lee (primary)
+Extraction: stdlib HTML-to-text of mk3_post.html; ~~x~~ marks struck-through text; ' | ' separates table cells
+----- BEGIN EXTRACTED TEXT -----
+[img alt='' src=https://sienci.com/wp-content/uploads/2017/03/cropped-Website-Logo-3.png]
+
+ Menu
+
+Store
+
+AltMill CNC
+
+LongMill CNC
+
+Spindles & Routers
+
+Automatic Tool Changer
+
+Add-ons & Accessories
+
+End Mills & Bits
+
+Extra Parts & Replacements
+
+gControl Panel Computer
+
+Vortex Rotary Axis
+
+CNC Controllers – SLB & SLB-EXT
+
+CAD/CAM Software
+
+Laser Accessories
+
+Software
+
+Tips for Choosing Software
+
+gSender CNC Control Software
+
+Carveco CAD/CAM Software
+
+LightBurn Laser Software
+
+MillMage Design-to-Send Software
+
+Vectric Aspire CAD/CAM Software
+
+Vectric Spark (macOS)
+
+Vectric VCarve Desktop CAD/CAM Software
+
+Vectric VCarve Pro CAD/CAM Software
+
+CAMLab
+
+Resources
+
+Troubleshooting
+
+CNC Fundamentals
+
+Community Forum
+
+Facebook Group
+
+AltMill 2×4 / 4×4 CNC
+
+AltMill 4×8 CNC
+
+LongMill MK3 CNC
+
+LongMill MK2 CNC
+
+gSender
+
+CNC Controllers – SLB & SLB-EXT
+
+Add-ons
+
+ATC
+
+AutoSpin T1 Router
+
+Closed Loop Motor Kit
+
+gControl Panel
+
+TLS
+
+Vortex Rotary Axis
+
+Company
+
+Warranty & Returns
+
+Shipping & Duties
+
+Order Status
+
+About Us
+
+Blog
+
+Support
+
+Contact
+
+Careers
+
+FAQs
+
+Store
+
+AltMill CNC
+
+LongMill CNC
+
+Spindles & Routers
+
+Automatic Tool Changer
+
+Add-ons & Accessories
+
+End Mills & Bits
+
+Extra Parts & Replacements
+
+gControl Panel Computer
+
+Vortex Rotary Axis
+
+CNC Controllers – SLB & SLB-EXT
+
+CAD/CAM Software
+
+Laser Accessories
+
+Software
+
+Tips for Choosing Software
+
+gSender CNC Control Software
+
+Carveco CAD/CAM Software
+
+LightBurn Laser Software
+
+MillMage Design-to-Send Software
+
+Vectric Aspire CAD/CAM Software
+
+Vectric Spark (macOS)
+
+Vectric VCarve Desktop CAD/CAM Software
+
+Vectric VCarve Pro CAD/CAM Software
+
+CAMLab
+
+Resources
+
+Troubleshooting
+
+CNC Fundamentals
+
+Community Forum
+
+Facebook Group
+
+AltMill 2×4 / 4×4 CNC
+
+AltMill 4×8 CNC
+
+LongMill MK3 CNC
+
+LongMill MK2 CNC
+
+gSender
+
+CNC Controllers – SLB & SLB-EXT
+
+Add-ons
+
+ATC
+
+AutoSpin T1 Router
+
+Closed Loop Motor Kit
+
+gControl Panel
+
+TLS
+
+Vortex Rotary Axis
+
+Company
+
+Warranty & Returns
+
+Shipping & Duties
+
+Order Status
+
+About Us
+
+Blog
+
+Support
+
+Contact
+
+Careers
+
+FAQs
+
+ $0.00 0 items
+
+Home / General News / Rigidity Testing on the LongMill MK3
+
+ Posted on March 30, 2026March 30, 2026 by Andy Lee 
+Rigidity Testing on the LongMill MK3
+
+Testing the amount of deflection a machine experiences at different loads, aka the rigidity, is a good way to predict the overall performance of a CNC machine. When it comes to using a CNC machine, two primary objectives are to make the part accurately and quickly. One major contributing factor to the precision of a part has to do with how much the end mill deflects away from the programmed path. The end mill on a more rigid machine will deflect less than on a less rigid machine given the same feeds and speeds, and thus produce a part that is more accurate. Alternatively, a user can run their machine faster while still producing a part of acceptable quality on a more rigid machine.
+
+[img alt='' src=https://sienci.com/wp-content/uploads/2026/03/image-6.png]
+A diagram showing the effect of tool deflection and how it affects the geometry of a simple part
+
+Perhaps a common example of how this affects a simple part of a CNCed design would be holes. Holes cut on a CNC machine tend to come out undersized, because the material on the walls of the hole push the machine and endmill towards the center. 
+
+It should be noted that deflection exists in all machines, it’s just a matter of how much. To improve tolerances, it’s common to do a “roughing” pass, which removes the bulk of the material, and then a “finishing” pass, which removes a small amount of material at the end, minimizing deflection to bring the part to final shape.
+
+The state of the market & why we’re sharing results
+
+As we discussed in one of our prior blog posts, there isn’t, as far as we can tell, a standardized method for testing machine deflection in the hobby CNC space.
+
+We are able to glean general comparisons between our machines and other machines in the market by test results posted by other members of the community. As time has gone on, here are some of my personal opinions on why that is the case:
+
+It’s hard to give context on what the rigidity numbers mean.
+
+For most of the practical testing range, deflection is not visible to the naked eye. A lot of times, people will demonstrate standing on their machine as a demonstration of rigidity, maybe even standing on it while it’s cutting. This doesn’t really show how rigid the machine actually is, because you can’t see how much the machine is deflecting from a distance. 
+
+Additionally, just because a machine is bigger and heavier doesn’t necessarily mean that it has less deflection. Some areas of a machine’s design can affect the overall accuracy of the machine, even though it may seem insignificant at first glance. For example, from our comparisons between computer simulations and real life testing, we’re able to see that things like bolt tolerance and mechanical components shifting around under load can actually play a pretty big role in the overall deflection values. All this to say, you could have a super rigid machine, but have a weak or loose part of it, just that one part alone can have a major impact on the overall machine rigidity.
+
+Rigidity is less important that we think it is.
+
+Owning and using a CNC machine isn’t just about how rigid or fast it cuts. The whole experience is important, from the setup, assembly, software control, and overall reliability. For the average hobbyist, if a CNC project takes 45 minutes to cut instead of 30, does it really make a huge difference?
+
+Return on investment in a higher degree of engineering requires high volumes to experience
+
+Lastly, with us expecting to build a very high volume of CNC machines, a small design improvement affects a lot of users. For machines built at lower quantities or DIY machines, it’s cheaper and easier to over-engineer the machine rather than optimize it, since the cost of engineering time is higher than the cost of buying bigger or better components. 
+
+Testing process
+
+We built a simple testing jig using old prototype parts from the LongMill MK3. We have a force gauge on the moving gantry and the dial indicator on the other. When we turn the lead screw to push the force gauge against the router, it moves the dial indicator some amount. The more that the dial indicator moves, the more the machine is deflecting.
+
+[img alt='' src=https://sienci.com/wp-content/uploads/2026/03/image-3-768x1024.jpeg]
+
+Getting straight to the results & comparisons
+
+As we can see from our results below, we have around 65-80% improvements in rigidity between the LongMill MK2 to the LongMill MK3. 
+
+(Past Data and writeup for the LongMill MK2 from 2022.)
+
+These tables show the amount of force applied during the test on the X & Y axes.
+
+ | LongMill MK3 48×30 | | | | | 
+
+ | | | | | | 
+
+ | Force Applied (N) | Force Applied (lbs) | Positive X (thou) | Negative X (thou) | Positive Y (thou) | Negative Y (thou)
+
+ | 25 | 5.62 | 4.5 | 5 | 8 | 9
+
+ | 50 | 11.24 | 10 | 10 | 11 | 12
+
+ | 75 | 16.86 | 16 | 15 | 17 | 18
+
+ | 100 | 22.48 | 22 | 21 | 24 | 25
+
+ | | | | | | 
+
+ | AltMill 4×4 | | | | | 
+
+ | | | | | | 
+
+ | Force Applied (N) | Force Applied (lbs) | Positive X (thou) | Negative X (thou) | Positive Y (thou) | Negative Y (thou)
+
+ | 25 | 5.62 | 1 | 1 | 1 | 1
+
+ | 50 | 11.24 | 2 | 3 | 4 | 3
+
+ | 75 | 16.86 | 4 | 4 | 5 | 5
+
+ | 100 | 22.48 | 7 | 6 | 6 | 7
+
+ | | | | | | 
+
+ | LongMill MK2 48×30 | | | | | 
+
+ | | | | | | 
+
+ | Force Applied (N) | Force Applied (lbs) | Positive X (thou) | Negative X (thou) | Positive Y (thou) | Negative Y (thou)
+
+ | 10 | 2.248 | 2.8 | NA | 3.2 | NA
+
+ | 25 | 5.62 | ~7 | NA | ~10 | NA
+
+ | 50 | 11.24 | 14.2 | NA | 20.7 | NA
+
+ | | | | | | 
+
+ | Comparison at 25N/5.62lbs | | | | | 
+
+ | | Positive X (thou) | Positive Y (thou) | | | 
+
+ | LongMill MK2 48×30 (extrapolated) | 7 | 10 | | | 
+
+ | LongMill MK3 48×30 | 4.5 | 8 | | | 
+
+ | AltMill 4×4 | 1 | 1 | | | 
+
+ | | | | | | 
+
+ | | | | | | 
+
+ | Comparison at 50N/11.24lbs | | | | | 
+
+ | | | | | | 
+
+ | | Positive X (thou) | Positive Y (thou) | | | 
+
+ | LongMill MK2 48×30 | 14.2 | 20.7 | | | 
+
+ | LongMill MK3 48×30 | 10 | 11 | | | 
+
+ | AltMill 4×4 | 2 | 4 | | | 
+
+ | | | | | | 
+
+ | | | | | | 
+
+ | Comparison at 25N/5.62lbs | | | | | 
+
+ | | Positive X (thou) | Positive Y (thou) | | | 
+
+ | LongMill MK2 48×30 (extrapolated) | 7 | 10 | | | 
+
+ | LongMill MK3 48×30 | 4.5 | 8 | | | 
+
+ | Difference (thou) | 2.5 | 2 | | | 
+
+ | Difference (%) | 64.29% | 80.00% | | | 
+
+ | | | | | | 
+
+ | Comparison at 50N/11.24lbs | | | | | 
+
+ | | | | | | 
+
+ | | Positive X (thou) | Positive Y (thou) | | | 
+
+ | LongMill MK2 48×30 | 14.2 | 20.7 | | | 
+
+ | LongMill MK3 48×30 | 10 | 11 | | | 
+
+ | Difference (thou) | 4.2 | 9.7 | | | 
+
+ | Difference (%) | 70.42% | 64.29% | | | 
+
+Expected Loads
+
+To get an idea of what sort of loads a machine will experience in cutting:
+
+Basic glossary
+
+Axial engagement (AP) = depth of cut
+
+Radial engagement (AE) = stepover/width of cut
+
+Linear feed (VF) = feedrate
+
+Transverse force = forces perpendicular to feed
+
+Feed force = force needed to push the bit through the material
+
+Axial force = up and down (in the Z axis) forces
+
+Generic ¼” end mill
+
+For a list of recommended feeds and speeds for our general selection of end mills, please see our guide here: https://resources.sienci.com/wp-content/uploads/2022/10/FeedsSpeedsMetric.pdf
+
+Settings based on recommended feeds and speeds
+
+[img alt='' src=https://sienci.com/wp-content/uploads/2026/03/image-4-1024x655.png]
+Settings based on recommended feeds and speeds
+
+Same settings as above but with a 6.35mm step down
+
+[img alt='' src=https://sienci.com/wp-content/uploads/2026/03/image-2-1024x655.png]
+Same settings as above but with a 635mm step down
+
+Same settings as above but with 6.35mm step down and 6.35mm step over (full slot)
+
+[img alt='' src=https://sienci.com/wp-content/uploads/2026/03/image-3-1024x653.png]
+Same settings as above but with 635mm step down and 635mm step over full slot
+
+We will refer to some of these values in our discussion below.
+
+Balancing machine performance and cost
+
+Building a machine to be rigid and powerful is easy, but making a machine rigid and powerful on a budget is hard. To optimize the design of a machine, we take many factors into account. 
+
+Acceptable deflection
+
+As my electrical engineering professor used to say, in science, 5 = 5, but in engineering, 5 = 5, plus or minus a tolerance, which is to say, whenever we cut out a part, we should expect some deviance in the size of that part, and we need to decide and understand how much deviance we can accept. 
+
+In the scope of woodworking, I believe anything under 0.005” (5 thousandths of an inch) to be “very very accurate”. For context, 0.005” is 6.25x smaller than 1/32”, or about a sheet and a half paper thick. 
+
+ | LongMill MK3 48×30 | | | | | 
+
+ | | | | | | 
+
+ | Force Applied (N) | Force Applied (lbs) | Positive X (thou) | Negative X (thou) | Positive Y (thou) | Negative Y (thou)
+
+ | 25 | 5.62 | 4.5 | 5 | 8 | 9
+
+ | 50 | 11.24 | 10 | 10 | 11 | 12
+
+ | 75 | 16.86 | 16 | 15 | 17 | 18
+
+ | 100 | 22.48 | 22 | 21 | 24 | 25
+
+If we look at the range of deflection at different forces, we can determine that we should aim to keep forces to under 25N to be within the 0.005” deflection range. 
+
+Motor power
+
+In our testing, we also measured the maximum force that the motor can apply to each axis. On the X axis (one motor), we measured the force to be around 600N, or 135lbs. On the Y axis, 256lbs.
+
+Each motor must resist internal machine forces, such as the friction from the lead screws, bearings, and linear guides, as well as control the inertia of the machine itself. Additionally, the motor must push the end mill through the material at varying forces.
+
+The mean and peak feed forces from Millalyser give us an idea on what those forces are (3.8N-10.4N). Based on these calculations, the motor forces are far higher than the expected loads from cutting.
+
+A few notes:
+
+We have 1.2NM motors on all axis, which will be the same as the ones used on the LongMill MK3 in production.
+
+We used a 48V power supply, instead of a 24V power supply in production
+
+Given how much more powerful the motors are, we believe that running the machines in 24V will not make a difference in overall performance. Because the 24V power supply and SLB-LITE designed specifically for the LongMill MK3 is significantly less expensive than the 48V architecture used on the AltMill, it makes sense to go down this route.
+
+Spindle/router power
+
+Through our AutoSpin T1 project, we did a significant amount of testing and research around spindle and router power, even going as far as building our own dynamometer to test true power output of different routers and spindles. Millalyzer also gives us an idea on the range of power draw needed from the router, ranging from 68.6 watts to 234.8 watts. 
+
+[img alt='' src=https://sienci.com/wp-content/uploads/2026/03/image-1-1024x633.png]
+
+The green line shows that the Makita RT0701 can push around 1600 watts of power until dropping down to around 350 watts of power at 32,000RPM. A typical 1.5KW spindle progressively increases power output as the RPMs get higher.
+
+We can ensure that the spindle or router used with the LongMill MK3 is capable enough by comparing the estimated power draw from Millalyser to our measured output line. In either case, both the Makita RT0701 or 1.5KW spindle is more than capable of producing enough power. 
+
+Our LongMill 1.5KW spindle kit costs around $650USD versus AutoSpin T1 is around $150USD, which is a 4x difference. Users can use either option, but we believe that the AutoSpin T1 is adequate for this application with the added benefit of the lower cost.
+
+AltMill vs LongMill MK3 comparison
+
+As it stands, the AltMill is approximately 2-4x more rigid than the LongMill. This is largely due to:
+
+Thicker and heavier structure on the AltMill
+
+Higher mass of the machine on the AltMill 
+
+If performance and rigidity is very important to you, the AltMill does provide much more in that way. 
+
+There are some practical considerations to make when it comes to actual differences in cutting, such as:
+
+This is something I learned people call the “pucker-factor”, which is that people may not be so inclined to push their machine as hard as they can because of a lack of confidence.
+
+Tools have a limit to how hard they can cut because they can deflect and break as well
+
+Overall, I expect the practical cutting performance of the AltMill to be around 2x of the LongMill MK3.
+
+If you’re cross shopping between the LongMill and AltMill, here are the prices to consider:
+
+LongMill 30×30 ~$1390USD or $1870CAD
+
+LongMill 48×30 ~ $1790USD or $2410CAD
+
+AltMill 2×4 ~ $2790USD or $3890CAD
+
+AltMill 4×4 ~ $3160USD or $4290CAD
+
+…so between LongMill MK3 48×30 vs AltMill 2×4, which I think is the closest comparison based on working area, the price difference is around $1000USD, or comparing the 4×4, $1370USD.
+
+We should also note that the AltMill also requires a spindle, larger tooling, and higher power dust collection to get the maximum performance, which can increase the cost difference when comparing between total setup costs.
+
+Conclusions
+
+With improvements to the machine rigidity and motor power, we expect users to be able to cut much faster and reliably compared to the LongMil MK1 and MK2. A significant amount of work and consideration has been made to improve performance overall while keeping the price the same as the older generation.
+
+While this article only covered testing around rigidity, make sure to stay tuned on discussions of other improvements for the LongMill MK3, including easier assembly, maintenance, and electronics as well!
+
+We hope you enjoyed this report on the LongMill MK3 design and performance!
+
+ Categories: General News, New Products 
+
+Post navigation
+
+Previous post: March 2026 Production Updates
+Next post: April 2026 Production Updates
+
+ Search for:
+
+General News
+
+gSender Updates
+
+Guest Blog
+
+Home
+
+Laser
+
+New Products
+
+Production Updates
+
+Tutorial-basics
+
+Tutorial-projects
+
+Tutorial-software
+
+Tutorials
+
+Video Updates
+
+Weekly Themed Contest
+
+ Recent Posts
+
+ November 2026 Production Updates
+
+ October 2026 Production Update
+
+ 1.7.0-Edge-2
+
+ Release – gSender 1.6.4
+
+ September 2026 Production Update
+
+[img alt='' src=https://sienci.com/wp-content/uploads/2017/03/cropped-Website-Logo-3.png]
+
+STORE 
+
+AltMill CNC
+
+LongMill CNC
+
+Routers & Spindles
+
+Vortex Rotary Axis
+
+Add-ons & Accessories
+
+End Mills & Cutting Tools
+
+Extra Parts/Replacements
+
+Merchandise
+
+Gift Cards
+
+SUPPORT 
+
+AltMill Help
+
+LongMill Help
+
+gSender Help
+
+Technical Support
+
+Community Forum
+
+Facebook Group
+
+GitHub
+
+Order Status Tracking
+
+Free CNC Projects
+
+ABOUT 
+
+About Us
+
+Blog
+
+Contact Us
+
+FAQs
+
+Shipping & Duties
+
+Warranty & Returns
+
+Privacy Policy
+
+Affiliate Marketing
+
+Careers
+
+YouTube
+
+Instagram
+
+Facebook
+
+ © Sienci Labs 
+
+ Privacy Policy 
+
+ Search 
+
+ Search for:
+
+ Search
+
+ Cart 0
+
+[img alt='' src=https://www.facebook.com/tr?id=2051093468552674&ev=PageView&noscript=1&cd%5Bpost_category%5D=General+News%2C+New+Products&cd%5Bpage_title%5D=Rigidity+Testing+on+the+LongMill+MK3&cd%5Bpost_type%5D=post&cd%5Bpost_id%5D=86884&cd%5Bplugin%5D=PixelYourSite&cd%5Buser_role%5D=guest&cd%5Bevent_url%5D=sienci.com%2F2026%2F03%2F30%2Frigidity-testing-on-the-longmill-mk3%2F]

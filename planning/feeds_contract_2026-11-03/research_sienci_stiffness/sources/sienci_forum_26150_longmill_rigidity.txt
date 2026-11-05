@@ -1,0 +1,12 @@
+Source: https://forum.sienci.com/t/longmill-rigidity/26150
+Fetched: 2026-11-06
+Publisher: Sienci community forum; posts by a user, not Sienci staff
+Extraction: Discourse topic JSON (forum_26150.json), HTML tags stripped
+----- BEGIN EXTRACTED TEXT -----
+Title: Longmill rigidity
+
+--- post 1 by ADB8056 (staff=False) 2026-04-10T15:03:37.245Z
+I recently viewed a  Sienci video about their new MK3 Long Mill. Using a rather fancy testing device, they showed that the rigidity of the MK3 is anywhere from 60 to 80% greater than the MK2 versions. I have used my MK1 for over four years now and wonder if there is much of difference between the MK2 and the MK1 rigidity?
+
+--- post 2 by ADB8056 (staff=False) 2026-04-11T17:48:30.783Z
+A Google search led me to several production updates on Sienci’s blog as the various versions of the Longmill were rolled out. The MK2 was designed to be 2 to 3 times stronger than the MK1 and 50% more rigid. The MK 2.5 was not a structural change over the MK2 but the MK3 was designed to be 60 to 80% more rigid than the MK2.5.

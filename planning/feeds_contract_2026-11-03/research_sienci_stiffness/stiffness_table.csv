@@ -1,0 +1,86 @@
+machine,axis,direction,force,force_unit,deflection,deflection_unit,deflection_mm_printed,stiffness_printed,stiffness_derived_N_per_mm,source_file,line,note
+LongMill MK2 48x30,X,mean of +/-,10.0,N,2.8,thou,0.072,,140.6,sources/sienci_stiffness_rating_with_commentary.txt,133,"PDF report, load on the inverted 0.25in end mill"
+LongMill MK2 48x30,Y,mean of +/-,10.0,N,3.2,thou,0.080,,123.0,sources/sienci_stiffness_rating_with_commentary.txt,133,"PDF report, load on the inverted 0.25in end mill"
+LongMill MK2 30x30,X,mean of +/-,10.0,N,2.3,thou,0.057,,171.2,sources/sienci_stiffness_rating_with_commentary.txt,135,"PDF report, load on the inverted 0.25in end mill"
+LongMill MK2 30x30,Y,mean of +/-,10.0,N,3.0,thou,0.076,,131.2,sources/sienci_stiffness_rating_with_commentary.txt,135,"PDF report, load on the inverted 0.25in end mill"
+LongMill MK2 12x30,X,mean of +/-,10.0,N,1.9,thou,0.049,,207.2,sources/sienci_stiffness_rating_with_commentary.txt,137,"PDF report, load on the inverted 0.25in end mill"
+LongMill MK2 12x30,Y,mean of +/-,10.0,N,3.0,thou,0.076,,131.2,sources/sienci_stiffness_rating_with_commentary.txt,137,"PDF report, load on the inverted 0.25in end mill"
+LongMill MK2 48x30,X,mean of +/-,25.0,N,14.2,thou,0.361,,69.3,sources/sienci_stiffness_rating_with_commentary.txt,146,PDF prints 25 N; Sienci corrected this table to 50 N on 2026-03-18 (MK2 blog) and the xlsx raw data is at 50 N
+LongMill MK2 48x30,Y,mean of +/-,25.0,N,20.7,thou,0.525,,47.5,sources/sienci_stiffness_rating_with_commentary.txt,146,PDF prints 25 N; Sienci corrected this table to 50 N on 2026-03-18 (MK2 blog) and the xlsx raw data is at 50 N
+LongMill MK2 30x30,X,mean of +/-,25.0,N,12.3,thou,0.313,,80.0,sources/sienci_stiffness_rating_with_commentary.txt,148,PDF prints 25 N; Sienci corrected this table to 50 N on 2026-03-18 (MK2 blog) and the xlsx raw data is at 50 N
+LongMill MK2 30x30,Y,mean of +/-,25.0,N,18.5,thou,0.470,,53.2,sources/sienci_stiffness_rating_with_commentary.txt,148,PDF prints 25 N; Sienci corrected this table to 50 N on 2026-03-18 (MK2 blog) and the xlsx raw data is at 50 N
+LongMill MK2 12x30,X,mean of +/-,25.0,N,13.0,thou,0.330,,75.7,sources/sienci_stiffness_rating_with_commentary.txt,150,PDF prints 25 N; Sienci corrected this table to 50 N on 2026-03-18 (MK2 blog) and the xlsx raw data is at 50 N
+LongMill MK2 12x30,Y,mean of +/-,25.0,N,18.2,thou,0.461,,54.1,sources/sienci_stiffness_rating_with_commentary.txt,150,PDF prints 25 N; Sienci corrected this table to 50 N on 2026-03-18 (MK2 blog) and the xlsx raw data is at 50 N
+LongMill MK2 48x30,X,mean of +/-,10.0,N,2.8,thou,0.072,,140.6,sources/sienci_blog_mk2_stiffness_2022.txt,237,MK2 blog
+LongMill MK2 48x30,Y,mean of +/-,10.0,N,3.2,thou,0.080,,123.0,sources/sienci_blog_mk2_stiffness_2022.txt,237,MK2 blog
+LongMill MK2 30x30,X,mean of +/-,10.0,N,2.3,thou,0.057,,171.2,sources/sienci_blog_mk2_stiffness_2022.txt,239,MK2 blog
+LongMill MK2 30x30,Y,mean of +/-,10.0,N,3.0,thou,0.076,,131.2,sources/sienci_blog_mk2_stiffness_2022.txt,239,MK2 blog
+LongMill MK2 12x30,X,mean of +/-,10.0,N,1.9,thou,0.049,,207.2,sources/sienci_blog_mk2_stiffness_2022.txt,241,MK2 blog
+LongMill MK2 12x30,Y,mean of +/-,10.0,N,3.0,thou,0.076,,131.2,sources/sienci_blog_mk2_stiffness_2022.txt,241,MK2 blog
+LongMill MK2 48x30,X,mean of +/-,50.0,N,14.2,thou,0.361,,138.6,sources/sienci_blog_mk2_stiffness_2022.txt,247,"MK2 blog, 25 N struck through and replaced by 50 N (update 2026-03-18)"
+LongMill MK2 48x30,Y,mean of +/-,50.0,N,20.7,thou,0.525,,95.1,sources/sienci_blog_mk2_stiffness_2022.txt,247,"MK2 blog, 25 N struck through and replaced by 50 N (update 2026-03-18)"
+LongMill MK2 30x30,X,mean of +/-,50.0,N,12.3,thou,0.313,,160.0,sources/sienci_blog_mk2_stiffness_2022.txt,249,"MK2 blog, 25 N struck through and replaced by 50 N (update 2026-03-18)"
+LongMill MK2 30x30,Y,mean of +/-,50.0,N,18.5,thou,0.470,,106.4,sources/sienci_blog_mk2_stiffness_2022.txt,249,"MK2 blog, 25 N struck through and replaced by 50 N (update 2026-03-18)"
+LongMill MK2 12x30,X,mean of +/-,50.0,N,13.0,thou,0.330,,151.4,sources/sienci_blog_mk2_stiffness_2022.txt,251,"MK2 blog, 25 N struck through and replaced by 50 N (update 2026-03-18)"
+LongMill MK2 12x30,Y,mean of +/-,50.0,N,18.2,thou,0.461,,108.2,sources/sienci_blog_mk2_stiffness_2022.txt,251,"MK2 blog, 25 N struck through and replaced by 50 N (update 2026-03-18)"
+LongMill MK2 12x30,X,"mean of +/-, 3 runs",10.0,N,1.916666667,thou,0.04868333333,,205.4,sources/sienci_mk2_deflection_testing_xlsx.txt,8,"xlsx raw data, unrounded run average; position X640 Y180"
+LongMill MK2 12x30,X,"mean of +/-, 3 runs",50.0,N,13,thou,0.3302,,151.4,sources/sienci_mk2_deflection_testing_xlsx.txt,11,"xlsx raw data, unrounded run average; position X640 Y180"
+LongMill MK2 12x30,Y,"mean of +/-, 3 runs",10.0,N,3,thou,0.0762,,131.2,sources/sienci_mk2_deflection_testing_xlsx.txt,14,"xlsx raw data, unrounded run average; position X640 Y180"
+LongMill MK2 12x30,Y,"mean of +/-, 3 runs",50.0,N,18.16666667,thou,0.4614333333,,108.4,sources/sienci_mk2_deflection_testing_xlsx.txt,17,"xlsx raw data, unrounded run average; position X640 Y180"
+LongMill MK2 30x30,X,"mean of +/-, 3 runs",10.0,N,2.25,thou,0.05715,,175.0,sources/sienci_mk2_deflection_testing_xlsx.txt,20,"xlsx raw data, unrounded run average; position X410 Y430"
+LongMill MK2 30x30,X,"mean of +/-, 3 runs",50.0,N,12.33333333,thou,0.3132666667,,159.6,sources/sienci_mk2_deflection_testing_xlsx.txt,23,"xlsx raw data, unrounded run average; position X410 Y430"
+LongMill MK2 30x30,Y,"mean of +/-, 3 runs",10.0,N,3,thou,0.0762,,131.2,sources/sienci_mk2_deflection_testing_xlsx.txt,26,"xlsx raw data, unrounded run average; position X410 Y430"
+LongMill MK2 30x30,Y,"mean of +/-, 3 runs",50.0,N,18.5,thou,0.4699,,106.4,sources/sienci_mk2_deflection_testing_xlsx.txt,29,"xlsx raw data, unrounded run average; position X410 Y430"
+LongMill MK2 48x30,X,"mean of +/-, 3 runs",10.0,N,2.833333333,thou,0.07196666667,,139.0,sources/sienci_mk2_deflection_testing_xlsx.txt,32,"xlsx raw data, unrounded run average; position X640 Y430"
+LongMill MK2 48x30,X,"mean of +/-, 3 runs",50.0,N,14.2,thou,0.36068,,138.6,sources/sienci_mk2_deflection_testing_xlsx.txt,35,"xlsx raw data, unrounded run average; position X640 Y430"
+LongMill MK2 48x30,Y,"mean of +/-, 3 runs",10.0,N,3.166666667,thou,0.08043333333,,124.3,sources/sienci_mk2_deflection_testing_xlsx.txt,38,"xlsx raw data, unrounded run average; position X640 Y430"
+LongMill MK2 48x30,Y,"mean of +/-, 3 runs",50.0,N,20.66666667,thou,0.5249333333,,95.3,sources/sienci_mk2_deflection_testing_xlsx.txt,41,"xlsx raw data, unrounded run average; position X640 Y430"
+LongMill MK2 (size not named in sheet),Y,one direction,25.0,N,9.0,thou (unit not printed in sheet),,,109.4,sources/sienci_mk2_deflection_testing_xlsx.txt,101,xlsx Linearity sheet; deflection unit not printed (the thou column convention of the workbook)
+LongMill MK2 (size not named in sheet),Y,one direction,49.4,N,16.0,thou (unit not printed in sheet),,,121.6,sources/sienci_mk2_deflection_testing_xlsx.txt,102,xlsx Linearity sheet; deflection unit not printed (the thou column convention of the workbook)
+LongMill MK2 (size not named in sheet),Y,one direction,99.5,N,31.0,thou (unit not printed in sheet),,,126.4,sources/sienci_mk2_deflection_testing_xlsx.txt,103,xlsx Linearity sheet; deflection unit not printed (the thou column convention of the workbook)
+LongMill MK2 (size not named in sheet),Y,one direction,147.8,N,47.0,thou (unit not printed in sheet),,,123.8,sources/sienci_mk2_deflection_testing_xlsx.txt,104,xlsx Linearity sheet; deflection unit not printed (the thou column convention of the workbook)
+LongMill MK2 (size not named in sheet),X,one direction,25.6,N,11.0,thou (unit not printed in sheet),,,91.6,sources/sienci_mk2_deflection_testing_xlsx.txt,105,xlsx Linearity sheet; deflection unit not printed (the thou column convention of the workbook)
+LongMill MK2 (size not named in sheet),X,one direction,50.1,N,22.0,thou (unit not printed in sheet),,,89.7,sources/sienci_mk2_deflection_testing_xlsx.txt,106,xlsx Linearity sheet; deflection unit not printed (the thou column convention of the workbook)
+LongMill MK2 (size not named in sheet),X,one direction,100.4,N,44.0,thou (unit not printed in sheet),,,89.8,sources/sienci_mk2_deflection_testing_xlsx.txt,107,xlsx Linearity sheet; deflection unit not printed (the thou column convention of the workbook)
+LongMill MK2 (size not named in sheet),X,one direction,150.0,N,66.0,thou (unit not printed in sheet),,,89.5,sources/sienci_mk2_deflection_testing_xlsx.txt,108,xlsx Linearity sheet; deflection unit not printed (the thou column convention of the workbook)
+LongMill MK2 (size not named in sheet),45deg,one direction,51.0,N,19.0,thou (unit not printed in sheet),,,105.7,sources/sienci_mk2_deflection_testing_xlsx.txt,109,xlsx Linearity sheet; deflection unit not printed (the thou column convention of the workbook)
+LongMill MK2 (size not named in sheet),45deg,one direction,99.0,N,38.0,thou (unit not printed in sheet),,,102.6,sources/sienci_mk2_deflection_testing_xlsx.txt,110,xlsx Linearity sheet; deflection unit not printed (the thou column convention of the workbook)
+LongMill MK2 (size not named in sheet),45deg,one direction,151.5,N,58.0,thou (unit not printed in sheet),,,102.8,sources/sienci_mk2_deflection_testing_xlsx.txt,111,xlsx Linearity sheet; deflection unit not printed (the thou column convention of the workbook)
+LongMill MK3 48x30,X,+,25.0,N,4.5,thou,,,218.7,sources/sienci_blog_mk3_rigidity_2026.txt,274,MK3 blog; load from a force gauge pushed against the router by a lead-screw jig
+LongMill MK3 48x30,X,-,25.0,N,5,thou,,,196.9,sources/sienci_blog_mk3_rigidity_2026.txt,274,MK3 blog; load from a force gauge pushed against the router by a lead-screw jig
+LongMill MK3 48x30,Y,+,25.0,N,8,thou,,,123.0,sources/sienci_blog_mk3_rigidity_2026.txt,274,MK3 blog; load from a force gauge pushed against the router by a lead-screw jig
+LongMill MK3 48x30,Y,-,25.0,N,9,thou,,,109.4,sources/sienci_blog_mk3_rigidity_2026.txt,274,MK3 blog; load from a force gauge pushed against the router by a lead-screw jig
+LongMill MK3 48x30,X,+,50.0,N,10,thou,,,196.9,sources/sienci_blog_mk3_rigidity_2026.txt,276,MK3 blog; load from a force gauge pushed against the router by a lead-screw jig
+LongMill MK3 48x30,X,-,50.0,N,10,thou,,,196.9,sources/sienci_blog_mk3_rigidity_2026.txt,276,MK3 blog; load from a force gauge pushed against the router by a lead-screw jig
+LongMill MK3 48x30,Y,+,50.0,N,11,thou,,,179.0,sources/sienci_blog_mk3_rigidity_2026.txt,276,MK3 blog; load from a force gauge pushed against the router by a lead-screw jig
+LongMill MK3 48x30,Y,-,50.0,N,12,thou,,,164.0,sources/sienci_blog_mk3_rigidity_2026.txt,276,MK3 blog; load from a force gauge pushed against the router by a lead-screw jig
+LongMill MK3 48x30,X,+,75.0,N,16,thou,,,184.5,sources/sienci_blog_mk3_rigidity_2026.txt,278,MK3 blog; load from a force gauge pushed against the router by a lead-screw jig
+LongMill MK3 48x30,X,-,75.0,N,15,thou,,,196.9,sources/sienci_blog_mk3_rigidity_2026.txt,278,MK3 blog; load from a force gauge pushed against the router by a lead-screw jig
+LongMill MK3 48x30,Y,+,75.0,N,17,thou,,,173.7,sources/sienci_blog_mk3_rigidity_2026.txt,278,MK3 blog; load from a force gauge pushed against the router by a lead-screw jig
+LongMill MK3 48x30,Y,-,75.0,N,18,thou,,,164.0,sources/sienci_blog_mk3_rigidity_2026.txt,278,MK3 blog; load from a force gauge pushed against the router by a lead-screw jig
+LongMill MK3 48x30,X,+,100.0,N,22,thou,,,179.0,sources/sienci_blog_mk3_rigidity_2026.txt,280,MK3 blog; load from a force gauge pushed against the router by a lead-screw jig
+LongMill MK3 48x30,X,-,100.0,N,21,thou,,,187.5,sources/sienci_blog_mk3_rigidity_2026.txt,280,MK3 blog; load from a force gauge pushed against the router by a lead-screw jig
+LongMill MK3 48x30,Y,+,100.0,N,24,thou,,,164.0,sources/sienci_blog_mk3_rigidity_2026.txt,280,MK3 blog; load from a force gauge pushed against the router by a lead-screw jig
+LongMill MK3 48x30,Y,-,100.0,N,25,thou,,,157.5,sources/sienci_blog_mk3_rigidity_2026.txt,280,MK3 blog; load from a force gauge pushed against the router by a lead-screw jig
+AltMill 4x4,X,+,25.0,N,1,thou,,,984.3,sources/sienci_blog_mk3_rigidity_2026.txt,290,MK3 blog; load from a force gauge pushed against the router by a lead-screw jig
+AltMill 4x4,X,-,25.0,N,1,thou,,,984.3,sources/sienci_blog_mk3_rigidity_2026.txt,290,MK3 blog; load from a force gauge pushed against the router by a lead-screw jig
+AltMill 4x4,Y,+,25.0,N,1,thou,,,984.3,sources/sienci_blog_mk3_rigidity_2026.txt,290,MK3 blog; load from a force gauge pushed against the router by a lead-screw jig
+AltMill 4x4,Y,-,25.0,N,1,thou,,,984.3,sources/sienci_blog_mk3_rigidity_2026.txt,290,MK3 blog; load from a force gauge pushed against the router by a lead-screw jig
+AltMill 4x4,X,+,50.0,N,2,thou,,,984.3,sources/sienci_blog_mk3_rigidity_2026.txt,292,MK3 blog; load from a force gauge pushed against the router by a lead-screw jig
+AltMill 4x4,X,-,50.0,N,3,thou,,,656.2,sources/sienci_blog_mk3_rigidity_2026.txt,292,MK3 blog; load from a force gauge pushed against the router by a lead-screw jig
+AltMill 4x4,Y,+,50.0,N,4,thou,,,492.1,sources/sienci_blog_mk3_rigidity_2026.txt,292,MK3 blog; load from a force gauge pushed against the router by a lead-screw jig
+AltMill 4x4,Y,-,50.0,N,3,thou,,,656.2,sources/sienci_blog_mk3_rigidity_2026.txt,292,MK3 blog; load from a force gauge pushed against the router by a lead-screw jig
+AltMill 4x4,X,+,75.0,N,4,thou,,,738.2,sources/sienci_blog_mk3_rigidity_2026.txt,294,MK3 blog; load from a force gauge pushed against the router by a lead-screw jig
+AltMill 4x4,X,-,75.0,N,4,thou,,,738.2,sources/sienci_blog_mk3_rigidity_2026.txt,294,MK3 blog; load from a force gauge pushed against the router by a lead-screw jig
+AltMill 4x4,Y,+,75.0,N,5,thou,,,590.6,sources/sienci_blog_mk3_rigidity_2026.txt,294,MK3 blog; load from a force gauge pushed against the router by a lead-screw jig
+AltMill 4x4,Y,-,75.0,N,5,thou,,,590.6,sources/sienci_blog_mk3_rigidity_2026.txt,294,MK3 blog; load from a force gauge pushed against the router by a lead-screw jig
+AltMill 4x4,X,+,100.0,N,7,thou,,,562.4,sources/sienci_blog_mk3_rigidity_2026.txt,296,MK3 blog; load from a force gauge pushed against the router by a lead-screw jig
+AltMill 4x4,X,-,100.0,N,6,thou,,,656.2,sources/sienci_blog_mk3_rigidity_2026.txt,296,MK3 blog; load from a force gauge pushed against the router by a lead-screw jig
+AltMill 4x4,Y,+,100.0,N,6,thou,,,656.2,sources/sienci_blog_mk3_rigidity_2026.txt,296,MK3 blog; load from a force gauge pushed against the router by a lead-screw jig
+AltMill 4x4,Y,-,100.0,N,7,thou,,,562.4,sources/sienci_blog_mk3_rigidity_2026.txt,296,MK3 blog; load from a force gauge pushed against the router by a lead-screw jig
+LongMill MK2 48x30,X,+,10.0,N,2.8,thou,,,140.6,sources/sienci_blog_mk3_rigidity_2026.txt,306,MK3 blog; load from a force gauge pushed against the router by a lead-screw jig; MK2 values copied from the 2022 test
+LongMill MK2 48x30,Y,+,10.0,N,3.2,thou,,,123.0,sources/sienci_blog_mk3_rigidity_2026.txt,306,MK3 blog; load from a force gauge pushed against the router by a lead-screw jig; MK2 values copied from the 2022 test
+LongMill MK2 48x30,X,+,25.0,N,7,thou,,,140.6,sources/sienci_blog_mk3_rigidity_2026.txt,308,MK3 blog; printed with ~ and called extrapolated in the comparison table; MK2 values copied from the 2022 test
+LongMill MK2 48x30,Y,+,25.0,N,10,thou,,,98.4,sources/sienci_blog_mk3_rigidity_2026.txt,308,MK3 blog; printed with ~ and called extrapolated in the comparison table; MK2 values copied from the 2022 test
+LongMill MK2 48x30,X,+,50.0,N,14.2,thou,,,138.6,sources/sienci_blog_mk3_rigidity_2026.txt,310,MK3 blog; load from a force gauge pushed against the router by a lead-screw jig; MK2 values copied from the 2022 test
+LongMill MK2 48x30,Y,+,50.0,N,20.7,thou,,,95.1,sources/sienci_blog_mk3_rigidity_2026.txt,310,MK3 blog; load from a force gauge pushed against the router by a lead-screw jig; MK2 values copied from the 2022 test

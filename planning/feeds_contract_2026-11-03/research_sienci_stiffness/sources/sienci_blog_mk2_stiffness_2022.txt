@@ -1,0 +1,390 @@
+Source: https://sienci.com/2022/09/09/stiffness-and-deflection-testing-on-the-longmill-mk2/
+Fetched: 2026-11-06
+Publisher: Sienci Labs blog, Andy Lee (primary; page edited 2026-03-18)
+Extraction: stdlib HTML-to-text of mk2_post.html; ~~x~~ marks struck-through text; ' | ' separates table cells
+----- BEGIN EXTRACTED TEXT -----
+[img alt='' src=https://sienci.com/wp-content/uploads/2017/03/cropped-Website-Logo-3.png]
+
+ Menu
+
+Store
+
+AltMill CNC
+
+LongMill CNC
+
+Spindles & Routers
+
+Automatic Tool Changer
+
+Add-ons & Accessories
+
+End Mills & Bits
+
+Extra Parts & Replacements
+
+gControl Panel Computer
+
+Vortex Rotary Axis
+
+CNC Controllers – SLB & SLB-EXT
+
+CAD/CAM Software
+
+Laser Accessories
+
+Software
+
+Tips for Choosing Software
+
+gSender CNC Control Software
+
+Carveco CAD/CAM Software
+
+LightBurn Laser Software
+
+MillMage Design-to-Send Software
+
+Vectric Aspire CAD/CAM Software
+
+Vectric Spark (macOS)
+
+Vectric VCarve Desktop CAD/CAM Software
+
+Vectric VCarve Pro CAD/CAM Software
+
+CAMLab
+
+Resources
+
+Troubleshooting
+
+CNC Fundamentals
+
+Community Forum
+
+Facebook Group
+
+AltMill 2×4 / 4×4 CNC
+
+AltMill 4×8 CNC
+
+LongMill MK3 CNC
+
+LongMill MK2 CNC
+
+gSender
+
+CNC Controllers – SLB & SLB-EXT
+
+Add-ons
+
+ATC
+
+AutoSpin T1 Router
+
+Closed Loop Motor Kit
+
+gControl Panel
+
+TLS
+
+Vortex Rotary Axis
+
+Company
+
+Warranty & Returns
+
+Shipping & Duties
+
+Order Status
+
+About Us
+
+Blog
+
+Support
+
+Contact
+
+Careers
+
+FAQs
+
+Store
+
+AltMill CNC
+
+LongMill CNC
+
+Spindles & Routers
+
+Automatic Tool Changer
+
+Add-ons & Accessories
+
+End Mills & Bits
+
+Extra Parts & Replacements
+
+gControl Panel Computer
+
+Vortex Rotary Axis
+
+CNC Controllers – SLB & SLB-EXT
+
+CAD/CAM Software
+
+Laser Accessories
+
+Software
+
+Tips for Choosing Software
+
+gSender CNC Control Software
+
+Carveco CAD/CAM Software
+
+LightBurn Laser Software
+
+MillMage Design-to-Send Software
+
+Vectric Aspire CAD/CAM Software
+
+Vectric Spark (macOS)
+
+Vectric VCarve Desktop CAD/CAM Software
+
+Vectric VCarve Pro CAD/CAM Software
+
+CAMLab
+
+Resources
+
+Troubleshooting
+
+CNC Fundamentals
+
+Community Forum
+
+Facebook Group
+
+AltMill 2×4 / 4×4 CNC
+
+AltMill 4×8 CNC
+
+LongMill MK3 CNC
+
+LongMill MK2 CNC
+
+gSender
+
+CNC Controllers – SLB & SLB-EXT
+
+Add-ons
+
+ATC
+
+AutoSpin T1 Router
+
+Closed Loop Motor Kit
+
+gControl Panel
+
+TLS
+
+Vortex Rotary Axis
+
+Company
+
+Warranty & Returns
+
+Shipping & Duties
+
+Order Status
+
+About Us
+
+Blog
+
+Support
+
+Contact
+
+Careers
+
+FAQs
+
+ $0.00 0 items
+
+Home / General News / Stiffness and Deflection Testing on the LongMill MK2
+
+ Posted on September 9, 2022March 18, 2026 by Andy Lee 
+Stiffness and Deflection Testing on the LongMill MK2
+
+The LongMill MK2 is an exceptionally rigid machine. By optimizing the design, we’re able to build and design a capable machine at an affordable price. 
+
+It seems rare for CNC companies to share this sort of data and testing, so it’s difficult for consumers to be able to compare apples to apples on different hobby CNC machines. Hopefully, this is a good start for our industry to work towards bringing better, more rigid machines to the market.
+
+Based on our results, a LongMill experiencing regular cutting forces of 10N, which we’ve determined to be representative of a normal cutting load on a hobby CNC machine, we see that the total deflection is under 0.1mm on both the X and Y axis. Given that 0.1mm is roughly the thickness of a sheet of paper, users should expect a very high level of accuracy for their machines.
+
+We created these tests to show users that even though the LongMill is substantially less expensive than other hobby CNC options, it still offers a highly competitive level of rigidity and that customers are not missing out on something just because we’re so affordable.
+
+Results:
+
+ | (Tested at 10N) | X Axis Deflection | Y Axis Deflection
+
+ | 48×30 Longmill MK2 | 2.8 thou / 0.072mm | 3.2 thou / 0.080mm
+
+ | 30×30 Longmill MK2 | 2.3 thou / 0.057mm | 3.0 thou / 0.076mm
+
+ | 12×30 Longmill MK2 | 1.9 thou / 0.049mm | 3.0 thou / 0.076mm
+
+We also did an additional run at ~~25N~~ 50N*, the results are as follows.
+
+ | (Tested at ~~25N~~ 50N) | X Axis Deflection | Y Axis Deflection
+
+ | 48×30 Longmill MK2 | 14.2 thou / 0.361mm | 20.7 thou / 0.525mm
+
+ | 30×30 Longmill MK2 | 12.3 thou / 0.313mm | 18.5 thou / 0.470mm
+
+ | 12×30 Longmill MK2 | 13.0 thou / 0.330mm | 18.2 thou / 0.461mm
+
+For the full report, including my commentary, please read the report below.
+
+Stiffness-Rating-with-CommentaryDownload
+
+Raw data:
+
+MK2-Deflection-TestingDownload
+
+*update from March 18, 2026. Looking at the numbers again, I think we might have mixed up 25N and 50N, as our raw data shows testing done at 50N matching with the results above, plus assuming that deflection is generally has a linear relationship with load, I noticed that the results don’t correspond well with what we would see for a difference of 10N to 25N.
+
+ Category: General News 
+
+Post navigation
+
+Previous post: September 9 – September 16, 2022 “A Project That Is Decorative” Contest
+Next post: September 16 – September 23, 2022 “A Project Made for the Kitchen” Contest
+
+ Search for:
+
+General News
+
+gSender Updates
+
+Guest Blog
+
+Home
+
+Laser
+
+New Products
+
+Production Updates
+
+Tutorial-basics
+
+Tutorial-projects
+
+Tutorial-software
+
+Tutorials
+
+Video Updates
+
+Weekly Themed Contest
+
+ Recent Posts
+
+ November 2026 Production Updates
+
+ October 2026 Production Update
+
+ 1.7.0-Edge-2
+
+ Release – gSender 1.6.4
+
+ September 2026 Production Update
+
+[img alt='' src=https://sienci.com/wp-content/uploads/2017/03/cropped-Website-Logo-3.png]
+
+STORE 
+
+AltMill CNC
+
+LongMill CNC
+
+Routers & Spindles
+
+Vortex Rotary Axis
+
+Add-ons & Accessories
+
+End Mills & Cutting Tools
+
+Extra Parts/Replacements
+
+Merchandise
+
+Gift Cards
+
+SUPPORT 
+
+AltMill Help
+
+LongMill Help
+
+gSender Help
+
+Technical Support
+
+Community Forum
+
+Facebook Group
+
+GitHub
+
+Order Status Tracking
+
+Free CNC Projects
+
+ABOUT 
+
+About Us
+
+Blog
+
+Contact Us
+
+FAQs
+
+Shipping & Duties
+
+Warranty & Returns
+
+Privacy Policy
+
+Affiliate Marketing
+
+Careers
+
+YouTube
+
+Instagram
+
+Facebook
+
+ © Sienci Labs 
+
+ Privacy Policy 
+
+ Search 
+
+ Search for:
+
+ Search
+
+ Cart 0
+
+[img alt='' src=https://www.facebook.com/tr?id=2051093468552674&ev=PageView&noscript=1&cd%5Bpost_category%5D=General+News&cd%5Bpage_title%5D=Stiffness+and+Deflection+Testing+on+the+LongMill+MK2&cd%5Bpost_type%5D=post&cd%5Bpost_id%5D=44005&cd%5Bplugin%5D=PixelYourSite&cd%5Buser_role%5D=guest&cd%5Bevent_url%5D=sienci.com%2F2022%2F09%2F09%2Fstiffness-and-deflection-testing-on-the-longmill-mk2%2F]

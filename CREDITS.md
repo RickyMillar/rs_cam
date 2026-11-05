@@ -961,6 +961,42 @@ The corner-coverage width bound `(1 + 1/sqrt 2) r` is derived from the
 offset geometry in the code (`corner_coverage_width_factor`) and checked by
 sampling in the step 0 research (`research_p13_step0/force_width.py`).
 
+### Hobby frame stiffness reference (feeds contract, 2026-11-06)
+
+Sienci Labs' printed deflection tests are stored as a cited reference for
+hobby-frame stiffness. No code reads them yet. Each stored text below is under
+`planning/feeds_contract_2026-11-03/research_sienci_stiffness/sources/`; the
+rows are in `stiffness_table.csv` and the findings in `FINDINGS.md` of that
+folder. Retrieved 2026-11-06.
+
+- Sienci Labs *Stiffness and Deflection Testing on the LongMill MK2*
+  (report "Stiffness Rating with Commentary", PDF) —
+  <https://sienci.com/wp-content/uploads/2022/09/Stiffness-Rating-with-Commentary.pdf>
+  (`sienci_stiffness_rating_with_commentary.txt`). The dial-gauge protocol
+  (0.001 in indicator, 10 N on an inverted 0.25 in end mill) and the MK2
+  12x30 / 30x30 / 48x30 X and Y deflection at 10 N and at a load labelled
+  "25N" (Sienci corrected it to 50 N, below). An earlier draft of the same
+  report is stored as `sienci_stiffness_rating_google_docs_draft.txt` —
+  <https://sienci.com/wp-content/uploads/2022/09/Stiffness-Rating-deflection-testing-Google-Docs.pdf>.
+- Sienci Labs blog *Stiffness and Deflection Testing on the LongMill MK2*
+  (2022, edited 2026-03-18) —
+  <https://sienci.com/2022/09/09/stiffness-and-deflection-testing-on-the-longmill-mk2/>
+  (`sienci_blog_mk2_stiffness_2022.txt`). The same tables, with the second
+  load corrected from 25 N to 50 N.
+- Sienci Labs raw data *MK2-Deflection-Testing.xlsx* —
+  <https://sienci.com/wp-content/uploads/2022/09/MK2-Deflection-Testing.xlsx>
+  (`sienci_mk2_deflection_testing_xlsx.txt`). The per-run readings at 10 N
+  and 50 N, and a load-linearity sheet to 150 N.
+- Sienci Labs blog *Rigidity Testing on the LongMill MK3* (2026-03-30) —
+  <https://sienci.com/2026/03/30/rigidity-testing-on-the-longmill-mk3/>
+  (`sienci_blog_mk3_rigidity_2026.txt`). LongMill MK3 48x30 and AltMill 4x4
+  deflection per direction at 25, 50, 75 and 100 N.
+- Third party, linked from the Sienci report: Carbide 3D community forum,
+  *Backlash, Deflection and Vibration* (user LiamN, Shapeoko XXL with HDZ,
+  50 N) — <https://community.carbide3d.com/t/backlash-deflection-and-vibration/28669>
+  (`thirdparty_carbide3d_forum_28669_backlash_deflection.txt`). Context
+  only; no number from it is in the table.
+
 ### Literature-matrix source registry refresh (2026-08-13)
 
 `crates/rs_cam_core/tests/literature_matrix/sources.toml` was refreshed under
