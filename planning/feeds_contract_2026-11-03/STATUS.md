@@ -69,6 +69,12 @@ the full entry point. Read it first, then the files it names.
    vendor depth, unread `woc_roughing_factor`) and the Shapeoko chip formula x surface speed on
    60 FM1 cells (feed 0.213 of the vendor row). Lineage today: 0 stored step records. Eight
    operator questions in REPORT section 6. Its proposal overlaps P11b L6 and L8.
+4a. **P13 order (lead, 2026-11-05):** step 0 (read-only research, operator: "do research
+   first"): is the force/power model right at the vendor full-slot points; frame compliance
+   (printed stiffness or a measurement protocol, series with the tool); chatter; chip
+   evacuation; the removal-rate aim (`research_p13_step0/`). In parallel P13a: split
+   `calculate_with` by step (H2, pure refactor, FM1 with no re-bless), H3, the F201 rows. Then
+   the operator rules on step 0, then P13b (the lineage store), then items 4 and 5.
 4b. **P13** (D13 items 4, 5, 7) plus review H3, H3b, L3, L4: the tool-fact kind in `Basis`
    (the legacy row as a child) BEFORE the lineage store; F201 rows for `MIN_AP_MM`,
    `MIN_AE_MM`, the 30 degree helix, `DRILL_DWELL_S`.
