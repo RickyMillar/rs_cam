@@ -130,9 +130,11 @@ fn rule_names(b: &Basis) -> Vec<String> {
     match b {
         Basis::Rule(c) => vec![c.name.to_string()],
         Basis::Derived { from, .. } => from.iter().flat_map(rule_names).collect(),
-        Basis::Operator { .. } | Basis::Printed(_) | Basis::Claim(_) | Basis::Machine(_) => {
-            Vec::new()
-        }
+        Basis::Operator { .. }
+        | Basis::Printed(_)
+        | Basis::Claim(_)
+        | Basis::Machine(_)
+        | Basis::ToolFact(_) => Vec::new(),
     }
 }
 
@@ -140,7 +142,11 @@ fn machine_fields(b: &Basis) -> Vec<MachineField> {
     match b {
         Basis::Machine(f) => vec![*f],
         Basis::Derived { from, .. } => from.iter().flat_map(machine_fields).collect(),
-        Basis::Operator { .. } | Basis::Printed(_) | Basis::Claim(_) | Basis::Rule(_) => Vec::new(),
+        Basis::Operator { .. }
+        | Basis::Printed(_)
+        | Basis::Claim(_)
+        | Basis::Rule(_)
+        | Basis::ToolFact(_) => Vec::new(),
     }
 }
 
@@ -220,7 +226,10 @@ fn the_flute_guard_binds_and_names_its_factor_k2b() {
     );
     assert_eq!(
         env.limit(LimitKind::CuttingLength).map(|l| l.basis.clone()),
-        Some(Basis::tool_fact())
+        Some(Basis::tool_fact(
+            rs_cam_core::feeds::sourced::ToolFactName::CuttingLength,
+            rs_cam_core::compute::tool_config::FactKind::Stated,
+        ))
     );
 }
 
@@ -292,7 +301,7 @@ fn the_tool_diameter_binds_the_width_k2b() {
     assert_binds(&env, LimitKind::Diameter);
     assert_eq!(
         env.limit(LimitKind::Diameter).map(|l| l.basis.clone()),
-        Some(Basis::tool_fact())
+        Some(Basis::tool_diameter())
     );
 }
 

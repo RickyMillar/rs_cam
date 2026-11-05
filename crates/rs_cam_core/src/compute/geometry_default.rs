@@ -299,7 +299,7 @@ impl GeometryDefault {
                     row.value * tool.diameter,
                     Basis::derived(
                         FRACTION_OF_D_LAW,
-                        vec![Basis::Rule(row), Basis::tool_fact()],
+                        vec![Basis::Rule(row), Basis::tool_diameter()],
                     ),
                     stamp,
                 ),
@@ -326,7 +326,7 @@ impl GeometryDefault {
                         crate::finish::scallop_math::stepover_from_scallop_flat(r, h),
                         Basis::derived(
                             SCALLOP_CHORD_LAW,
-                            vec![Basis::stated(), Basis::tool_fact()],
+                            vec![Basis::stated(), Basis::tool_diameter()],
                         ),
                         scallop_stamp(),
                     ),

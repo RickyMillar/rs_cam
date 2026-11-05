@@ -120,6 +120,7 @@ fn feeds_input<'a>(
         setup: SetupContext::default(),
         spindle_strategy: SpindleStrategy::MatchChart,
         power_cases: rs_cam_core::feeds::engagement::PowerCases::NOMINAL,
+        tool_facts: rs_cam_core::feeds::sourced::ToolFactKinds::STATED,
     }
 }
 

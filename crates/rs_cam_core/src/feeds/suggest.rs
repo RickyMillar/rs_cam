@@ -173,9 +173,9 @@ pub struct SuggestContext<'a> {
     /// LUT chipload band for the matched op × tool combination, when
     /// [`FeedsResult::chipload_bounds`] could derive one. Read by the
     /// v2 step 2 chipload-aware feed-up recalibration in
-    /// [`enforce_invariants`](invariants::enforce_invariants). `apply` lifts this
+    /// [`enforce_invariants_at_fixed_geometry`](invariants::enforce_invariants_at_fixed_geometry). `apply` lifts this
     /// off `FeedsResult` automatically; direct callers of
-    /// `enforce_invariants` (tests synthesizing post-v1.1 operating
+    /// `enforce_invariants_at_fixed_geometry` (tests synthesizing post-v1.1 operating
     /// points) populate it explicitly. `None` means "no constraint
     /// signal" — the recalibration short-circuits.
     pub chipload_bounds: Option<crate::feeds::ChiploadBounds>,
@@ -186,7 +186,7 @@ pub struct SuggestContext<'a> {
     pub matched_lut_row: Option<&'a crate::feeds::vendor_lookup::LookupResult>,
     /// Effective cutter diameter at the calculator's commanded axial DOC
     /// (mm). Used by the chipload-bounds re-derivation step in
-    /// `enforce_invariants` when the axial-envelope pass mutates DPP —
+    /// `enforce_invariants_at_fixed_geometry` when the axial-envelope pass mutates DPP —
     /// the new `doc_derating_scale(new_dpp / effective_d)` must be
     /// applied to keep `chipload_bounds` consistent with the post-mutation
     /// operating point.
@@ -225,7 +225,7 @@ pub struct SuggestContext<'a> {
 
 /// The point [`crate::feeds::calculate`] evaluated its feed expression at.
 ///
-/// `enforce_invariants` may legally overwrite the operation's stepover and
+/// `enforce_invariants_at_fixed_geometry` may legally overwrite the operation's stepover and
 /// DPP after the calculator has already folded chip-thinning and depth-tier
 /// terms sized at *these* values into the feed. Reconciling the two needs
 /// the original point, and it must be the calculator's **unrounded** values:
@@ -292,7 +292,7 @@ pub enum SuggestWarning {
     /// projected that the post-rigidity-clamp DPP would drive the
     /// cantilever tip deflection past the 200 µm critical threshold
     /// (the same gate `tool_load::deflection` evaluates post-sim).
-    /// `enforce_invariants` iteratively backed DPP off by 20% per
+    /// `enforce_invariants_at_fixed_geometry` iteratively backed DPP off by 20% per
     /// iteration (max 5 iterations, floor 0.5 mm) until the predicted
     /// deflection cleared the threshold or the loop hit the floor.
     ///
@@ -349,7 +349,7 @@ pub enum SuggestWarning {
     /// [`crate::feeds::predict::predict_move_count`]) projected that the
     /// just-written stepover would emit more than
     /// [`STEPOVER_BACKOFF_TARGET_MOVES`](invariants::STEPOVER_BACKOFF_TARGET_MOVES) motion samples on the operation's
-    /// model envelope. `enforce_invariants` iteratively raised the
+    /// model envelope. `enforce_invariants_at_fixed_geometry` iteratively raised the
     /// stepover by 50% per iteration (max 5 iterations, ceiling
     /// `tool.diameter × `[`STEPOVER_BACKOFF_DIAMETER_FRACTION`](invariants::STEPOVER_BACKOFF_DIAMETER_FRACTION)) until the
     /// predicted move count cleared the threshold or the loop hit the
@@ -533,7 +533,7 @@ pub enum SuggestWarning {
     /// **DECLARED 2026-08-19, NOT YET PRODUCED — G-SUGGEST-NOCLAMP.**
     ///
     /// Reserved for the pass that re-derives the feed once
-    /// `enforce_invariants` has settled the operation's final stepover and
+    /// `enforce_invariants_at_fixed_geometry` has settled the operation's final stepover and
     /// DPP. `feeds::calculate` freezes the feed against the geometry it was
     /// handed; later passes (`backoff_stepover_for_runtime`,
     /// `pick_axial_envelope`, the rigidity/deflection clamps) then overwrite
@@ -1003,6 +1003,7 @@ pub fn feeds_input_for_operation<'a>(
         },
         spindle_strategy,
         power_cases: crate::feeds::engagement::PowerCases::of_operation(operation),
+        tool_facts: crate::feeds::sourced::ToolFactKinds::of_tool(tool),
     }
 }
 

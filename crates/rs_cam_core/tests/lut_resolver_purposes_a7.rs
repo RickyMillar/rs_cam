@@ -143,6 +143,7 @@ fn the_rpm_anchor_disclosure_renders_as_operator_text() {
         setup: SetupContext::default(),
         spindle_strategy: SpindleStrategy::MatchChart,
         power_cases: rs_cam_core::feeds::engagement::PowerCases::NOMINAL,
+        tool_facts: rs_cam_core::feeds::sourced::ToolFactKinds::STATED,
     });
     let rendered: Vec<String> =
         rs_cam_core::diagnostics::adapters::from_feeds::diagnostics_from_feeds_result(
@@ -218,6 +219,7 @@ fn sweep(lut: &VendorLut) -> Sweep {
                             setup: SetupContext::default(),
                             spindle_strategy: SpindleStrategy::MatchChart,
                             power_cases: rs_cam_core::feeds::engagement::PowerCases::NOMINAL,
+                            tool_facts: rs_cam_core::feeds::sourced::ToolFactKinds::STATED,
                         });
                         // The condition the warning is *about*: a vendor
                         // row matched, and its chipload column was absent

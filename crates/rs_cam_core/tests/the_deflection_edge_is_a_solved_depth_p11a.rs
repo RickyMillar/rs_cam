@@ -98,7 +98,8 @@ fn target_um(limit: &Limit) -> f64 {
             | Basis::Operator { .. }
             | Basis::Printed(_)
             | Basis::Claim(_)
-            | Basis::Machine(_) => None,
+            | Basis::Machine(_)
+            | Basis::ToolFact(_) => None,
         }
     }
     find(&limit.basis).expect("the deflection limit names its target row")

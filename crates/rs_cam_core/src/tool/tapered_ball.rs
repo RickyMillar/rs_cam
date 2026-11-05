@@ -90,7 +90,7 @@ impl TaperedBallEndmill {
             shaft_diameter,
             taper_half_angle_deg,
             cutting_length,
-            helix_deg: 30.0,
+            helix_deg: super::DEFAULT_HELIX_DEG,
             tan_alpha,
             sin_alpha,
             cos_alpha,

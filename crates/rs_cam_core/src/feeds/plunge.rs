@@ -350,7 +350,7 @@ impl PlungeBasis {
             }
             (_, PlungeBinding::TipCap) => Basis::derived(
                 "ball tip cap (repo rule, tool_load::plunge_stress)",
-                vec![Basis::tool_fact()],
+                vec![Basis::tool_diameter()],
             ),
             (
                 Self::Claimed { axial, .. } | Self::MaterialBase { axial, .. },

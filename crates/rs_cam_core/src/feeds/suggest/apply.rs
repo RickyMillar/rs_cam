@@ -120,7 +120,7 @@ fn apply_feeds_subset(
     };
     let _ = scratch.set_depth_per_pass(depth_mm);
     // v3.0d (2026-06-04): also write the calculator's chosen RPM so the
-    // rest of enforce_invariants reads a consistent operating point
+    // rest of enforce_invariants_at_fixed_geometry reads a consistent operating point
     // instead of the operation's prior spindle_rpm value.
     //
     // The idempotency argument originally named the chipload
@@ -140,7 +140,7 @@ fn apply_feeds_subset(
     // without a separate parameter. Also thread through the matched LUT
     // row + effective diameter so the axial-DOC envelope pass
     // (`pick_axial_envelope`) can query vendor `ap_*_factor` / `ap_*_mm`
-    // and the chipload-bounds re-derivation step in `enforce_invariants`
+    // and the chipload-bounds re-derivation step in `enforce_invariants_at_fixed_geometry`
     // can re-apply `doc_derating_scale` against a mutated DPP.
     // ...and the operating point the calculator sized the feed at, so the
     // final pass can re-derive the chip-thinning and depth-tier terms once
@@ -697,9 +697,11 @@ impl<'a> Recommendation<'a, Partial> {
     }
 
     /// The names of the Unsourced rules that the written fields read: the
-    /// RPM, the chip, the plunge and the ramp, and the picked geometry. The
-    /// feed is the chip x RPM x Z at the depth the operation keeps (pass 9),
-    /// so the chip and the RPM name its rules.
+    /// RPM, the chip, the flute count, the plunge and the ramp, and the
+    /// picked geometry. The feed is the chip x RPM x Z at the depth the
+    /// operation keeps (pass 9), so the chip, the RPM and the flute count
+    /// name its rules (P13a: an `Unknown` flute count names its legacy
+    /// row).
     #[must_use]
     pub fn unsourced_rows(&self) -> Vec<String> {
         let b = &self.result.bases;
@@ -714,6 +716,7 @@ impl<'a> Recommendation<'a, Partial> {
         };
         take(&b.rpm);
         take(&b.chip);
+        take(&b.flute_count);
         if !self.speeds_explored {
             take(&b.plunge);
             take(&b.ramp);
@@ -749,7 +752,7 @@ impl<'a> Recommendation<'a, Partial> {
     /// dragged rather than off the calculator.
     ///
     /// The chipload band is **dropped** on the returned recommendation, and
-    /// that is load-bearing: `enforce_invariants`'
+    /// that is load-bearing: `enforce_invariants_at_fixed_geometry`'
     /// `recalibrate_feed_for_chipload` pass short-circuits without a band, so
     /// the funnel's clamps (plunge-to-feed, machine envelope, the DOC chain)
     /// still run while the feed the operator explicitly dialled is **not**

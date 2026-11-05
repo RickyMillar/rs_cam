@@ -72,7 +72,14 @@ use rs_cam_core::material::{
 /// cap is the machine's `RigidityProfile::slot_doc_factor` (per-machine
 /// data, as the other rigidity values; the hobby grade default is the
 /// Shapeoko port, Unsourced, and its basis says so).
-const PINNED_UNSOURCED_COUNT: usize = 158;
+///
+/// Feeds contract P13a (architecture review 2026-11-05, H3b, L3, L4)
+/// raised it from 158 to 162: four values that shipped with no row now
+/// have one, `feeds.MIN_AP_MM` and `feeds.MIN_AE_MM` (the engagement
+/// floor), `tool.DEFAULT_HELIX_DEG` (the helix that five cutter
+/// constructors typed) and `compute.operation_configs.DRILL_DWELL_S`. No
+/// value moved.
+const PINNED_UNSOURCED_COUNT: usize = 162;
 
 fn repo_root() -> PathBuf {
     PathBuf::from(env!("CARGO_MANIFEST_DIR")).join("../..")

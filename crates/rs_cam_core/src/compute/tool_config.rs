@@ -731,7 +731,7 @@ impl ToolConfig {
 }
 
 fn default_helix_deg() -> f64 {
-    30.0
+    crate::tool::DEFAULT_HELIX_DEG
 }
 
 impl ToolConfig {

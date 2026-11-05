@@ -491,6 +491,7 @@ fn the_mdf_vcarve_rpm_stays_at_the_engaged_width_b4() {
         setup: SetupContext::default(),
         spindle_strategy: SpindleStrategy::MatchChart,
         power_cases: rs_cam_core::feeds::engagement::PowerCases::NOMINAL,
+        tool_facts: rs_cam_core::feeds::sourced::ToolFactKinds::STATED,
     });
     let row = result
         .matched_lut_row
@@ -557,6 +558,7 @@ fn the_vbit_parallel_finish_cells_refuse_b4() {
                     setup: SetupContext::default(),
                     spindle_strategy: SpindleStrategy::MatchChart,
                     power_cases: rs_cam_core::feeds::engagement::PowerCases::NOMINAL,
+                    tool_facts: rs_cam_core::feeds::sourced::ToolFactKinds::STATED,
                 });
                 match support {
                     FeedsSupport::Refuse { reason } => {
@@ -699,6 +701,7 @@ fn the_v_bit_band_is_the_printed_band_at_every_depth_b4() {
             setup: SetupContext::default(),
             spindle_strategy: SpindleStrategy::MatchChart,
             power_cases: rs_cam_core::feeds::engagement::PowerCases::NOMINAL,
+            tool_facts: rs_cam_core::feeds::sourced::ToolFactKinds::STATED,
         });
         // Non-vacuity: no clamp (the flute guard, the minimum engagement,
         // Step 4b slotting) moved `ap` away from the depth this test means

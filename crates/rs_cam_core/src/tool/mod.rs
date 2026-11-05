@@ -212,6 +212,12 @@ pub struct ChipGeometry {
     pub instantaneous_flutes_in_cut: f64,
 }
 
+/// The helix angle (degrees) of a cutter that states none. The five cutter
+/// constructors and the tool-library default read it (feeds contract P13a,
+/// review L3). No file in the repo prints it: the F201 row
+/// `tool.DEFAULT_HELIX_DEG` marks it Unsourced (`feeds::formula_constants`).
+pub const DEFAULT_HELIX_DEG: f64 = 30.0;
+
 #[derive(Debug, Clone, PartialEq, Eq)]
 pub enum EngagementError {
     Unsupported { reason: String },

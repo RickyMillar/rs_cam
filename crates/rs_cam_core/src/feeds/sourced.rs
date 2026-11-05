@@ -6,7 +6,8 @@
 //! function that owns a rule is the only builder of its value (as
 //! `plunge::resolve_plunge` owns the plunge). A [`Basis`] is a vendor row,
 //! a claim on a row, a named rule (Cited or Unsourced, F201), the
-//! operator, the machine profile, or a law over other bases.
+//! operator, the machine profile, a tool fact with its kind (P13a), or a
+//! law over other bases.
 //!
 //! The unit newtypes ([`Rpm`], [`FeedMmMin`], [`PlungeMmMin`], [`ChipMm`])
 //! keep one quantity from the place of another: a plunge cannot take a
@@ -18,6 +19,7 @@
 use serde::Serialize;
 use serde::ser::SerializeMap;
 
+use crate::compute::tool_config::FactKind;
 use crate::material::{ConstantSource, FormulaConstant};
 
 /// One vendor row: the observation id of the embedded LUT.
@@ -93,9 +95,117 @@ impl MachineField {
 pub const LAW_STATED: &str = "stated";
 /// The law of a geometry value that the operator picked on the envelope.
 pub const LAW_PICKED: &str = "picked";
-/// The law of a value that comes from the tool library (P6 gives the tool
-/// facts a state of their own).
-pub const LAW_TOOL_LIBRARY: &str = "tool library value";
+/// A tool fact that a value reads (CONTRACT K3, feeds contract P13a,
+/// review H3). The diameter and the corner radius are plain fields of the
+/// tool, so they are always stated; the other facts carry a `FactKind`.
+#[derive(Debug, Clone, Copy, PartialEq, Eq, Serialize)]
+#[serde(rename_all = "snake_case")]
+pub enum ToolFactName {
+    /// The nominal diameter.
+    Diameter,
+    /// The corner radius of a bull nose.
+    CornerRadius,
+    /// The flute count.
+    FluteCount,
+    /// The flute (cutting) length.
+    CuttingLength,
+    /// The shank diameter.
+    ShankDiameter,
+    /// The stick-out.
+    Stickout,
+    /// The taper half-angle.
+    TaperHalfAngle,
+}
+
+impl ToolFactName {
+    /// The name that the card and MCP print.
+    #[must_use]
+    pub const fn name(self) -> &'static str {
+        match self {
+            Self::Diameter => "tool.diameter",
+            Self::CornerRadius => "tool.corner_radius",
+            Self::FluteCount => "tool.flute_count",
+            Self::CuttingLength => "tool.cutting_length",
+            Self::ShankDiameter => "tool.shank_diameter",
+            Self::Stickout => "tool.stickout",
+            Self::TaperHalfAngle => "tool.taper_half_angle",
+        }
+    }
+
+    /// The legacy loader default that an `Unknown` fact plans at
+    /// (`compute::tool_config::LEGACY_DEFAULT_*`, an F201 row). The
+    /// diameter and the corner radius have none.
+    #[must_use]
+    pub const fn legacy_row(self) -> Option<FormulaConstant> {
+        use crate::compute::tool_config as tc;
+        match self {
+            Self::Diameter | Self::CornerRadius => None,
+            Self::FluteCount => Some(tc::LEGACY_DEFAULT_FLUTE_COUNT_ROW),
+            Self::CuttingLength => Some(tc::LEGACY_DEFAULT_CUTTING_LENGTH_MM_ROW),
+            Self::ShankDiameter => Some(tc::LEGACY_DEFAULT_SHANK_DIAMETER_MM_ROW),
+            Self::Stickout => Some(tc::LEGACY_DEFAULT_STICKOUT_MM_ROW),
+            Self::TaperHalfAngle => Some(tc::LEGACY_DEFAULT_TAPER_HALF_ANGLE_DEG_ROW),
+        }
+    }
+}
+
+/// The basis of a tool fact: the fact, its kind, and the legacy row that
+/// the value plans at when the kind is `Unknown`.
+#[derive(Debug, Clone, PartialEq)]
+pub struct ToolFactBasis {
+    fact: ToolFactName,
+    kind: FactKind,
+    legacy: Option<FormulaConstant>,
+}
+
+impl ToolFactBasis {
+    /// The fact.
+    #[must_use]
+    pub const fn fact(&self) -> ToolFactName {
+        self.fact
+    }
+
+    /// How the fact is known.
+    #[must_use]
+    pub const fn kind(&self) -> FactKind {
+        self.kind
+    }
+
+    /// The legacy loader default that the value plans at: `Some` exactly
+    /// when the kind is `Unknown` and the fact has a default.
+    #[must_use]
+    pub const fn legacy_row(&self) -> Option<&FormulaConstant> {
+        self.legacy.as_ref()
+    }
+}
+
+/// The kinds of the tool facts that the calculator reads (feeds contract
+/// P13a). `suggest::feeds_input_for_operation` reads them from the tool; a
+/// caller that states each value (a test fixture) uses [`Self::STATED`].
+#[derive(Debug, Clone, Copy, PartialEq, Eq)]
+pub struct ToolFactKinds {
+    /// The kind of the flute count.
+    pub flute_count: FactKind,
+    /// The kind of the flute (cutting) length.
+    pub cutting_length: FactKind,
+}
+
+impl ToolFactKinds {
+    /// Every fact stated.
+    pub const STATED: Self = Self {
+        flute_count: FactKind::Stated,
+        cutting_length: FactKind::Stated,
+    };
+
+    /// The kinds of the facts of `tool`.
+    #[must_use]
+    pub fn of_tool(tool: &crate::compute::tool_config::ToolConfig) -> Self {
+        Self {
+            flute_count: tool.flute_count_fact().kind(),
+            cutting_length: tool.cutting_length_fact().kind(),
+        }
+    }
+}
 
 /// How one shipped value is known. CONTRACT K2.
 #[derive(Debug, Clone, PartialEq)]
@@ -116,8 +226,10 @@ pub enum Basis {
     Rule(FormulaConstant),
     /// A field of the machine profile (lead decision D3).
     Machine(MachineField),
-    /// A law over other bases. An empty `from` is a bare fact whose law
-    /// names it (for example [`LAW_TOOL_LIBRARY`]).
+    /// A tool fact and its kind (K3, P13a). An `Unknown` fact carries the
+    /// legacy row that the value plans at.
+    ToolFact(ToolFactBasis),
+    /// A law over other bases.
     Derived {
         /// The law, in a few words.
         law: &'static str,
@@ -139,13 +251,21 @@ impl Basis {
         Self::Operator { law: LAW_PICKED }
     }
 
-    /// A fact of the tool library (P5: a bare value, P6 gives it a state).
+    /// A tool fact of kind `kind` (P13a, review H3). An `Unknown` fact
+    /// carries the legacy row of the fact, so `unsourced_rules` reaches it.
     #[must_use]
-    pub const fn tool_fact() -> Self {
-        Self::Derived {
-            law: LAW_TOOL_LIBRARY,
-            from: Vec::new(),
-        }
+    pub const fn tool_fact(fact: ToolFactName, kind: FactKind) -> Self {
+        let legacy = match kind {
+            FactKind::Unknown => fact.legacy_row(),
+            FactKind::Stated | FactKind::Catalogue | FactKind::Estimated => None,
+        };
+        Self::ToolFact(ToolFactBasis { fact, kind, legacy })
+    }
+
+    /// The tool diameter: a plain field of the tool, always stated.
+    #[must_use]
+    pub const fn tool_diameter() -> Self {
+        Self::tool_fact(ToolFactName::Diameter, FactKind::Stated)
     }
 
     /// A law over `from`.
@@ -173,6 +293,14 @@ impl Basis {
                     out.push(c);
                 }
             }
+            Self::ToolFact(t) => {
+                if let Some(c) = &t.legacy
+                    && matches!(c.source, ConstantSource::Unsourced { .. })
+                    && !out.iter().any(|o| o.name == c.name)
+                {
+                    out.push(c);
+                }
+            }
             Self::Derived { from, .. } => {
                 for b in from {
                     b.collect_unsourced(out);
@@ -190,7 +318,7 @@ impl Basis {
             Self::Printed(row) => Some(row),
             Self::Claim(c) => Some(&c.row),
             Self::Derived { from, .. } => from.first().and_then(Self::deciding_row),
-            Self::Operator { .. } | Self::Rule(_) | Self::Machine(_) => None,
+            Self::Operator { .. } | Self::Rule(_) | Self::Machine(_) | Self::ToolFact(_) => None,
         }
     }
 
@@ -203,6 +331,7 @@ impl Basis {
             Self::Claim(_) => "claim",
             Self::Rule(_) => "rule",
             Self::Machine(_) => "machine",
+            Self::ToolFact(_) => "tool_fact",
             Self::Derived { .. } => "derived",
         }
     }
@@ -226,6 +355,13 @@ impl Serialize for Basis {
                 map.serialize_entry("source", source)?;
             }
             Self::Machine(field) => map.serialize_entry("field", field.name())?,
+            Self::ToolFact(t) => {
+                map.serialize_entry("fact", t.fact.name())?;
+                map.serialize_entry("fact_kind", t.kind.label())?;
+                if let Some(row) = &t.legacy {
+                    map.serialize_entry("legacy_row", &Self::Rule(row.clone()))?;
+                }
+            }
             Self::Derived { law, from } => {
                 map.serialize_entry("law", law)?;
                 map.serialize_entry("from", from)?;
@@ -312,6 +448,9 @@ pub struct PointBases {
     pub plunge: Basis,
     /// The ramp feed (the G6 chip, or the plunge it falls back to).
     pub ramp: Basis,
+    /// The flute count Z of the feed `chip x RPM x Z` (P13a: a tool fact
+    /// with its kind).
+    pub flute_count: Basis,
     /// The axial depth of the point.
     pub ap: Basis,
     /// The radial width of the point.
@@ -333,6 +472,7 @@ impl PointBases {
             feed: none(),
             plunge: none(),
             ramp: none(),
+            flute_count: none(),
             ap: none(),
             ae: none(),
             power: none(),
@@ -445,7 +585,7 @@ mod tests {
     #[test]
     fn the_cap_api_never_raises_a_stated_value() {
         let stated = Sourced::new(9.0, Basis::stated());
-        let cap = Basis::tool_fact();
+        let cap = Basis::tool_diameter();
         let lowered = lower_to_cap(stated.clone(), 16.0, "flute guard", &cap);
         assert_eq!(lowered, stated, "a cap above the value keeps it");
         let lowered = lower_to_cap(stated, 4.0, "flute guard", &cap);
@@ -466,5 +606,26 @@ mod tests {
         let rows = b.unsourced_rules();
         assert_eq!(rows.len(), 1);
         assert_eq!(rows.first().unwrap().name, "feeds.x");
+    }
+
+    #[test]
+    fn an_unknown_tool_fact_reads_its_legacy_row() {
+        let unknown = Basis::tool_fact(ToolFactName::FluteCount, FactKind::Unknown);
+        let rows = unknown.unsourced_rules();
+        assert_eq!(rows.len(), 1);
+        assert_eq!(
+            rows.first().unwrap().name,
+            "compute.tool_config.LEGACY_DEFAULT_FLUTE_COUNT"
+        );
+        for kind in [FactKind::Stated, FactKind::Catalogue, FactKind::Estimated] {
+            let known = Basis::tool_fact(ToolFactName::FluteCount, kind);
+            assert!(known.unsourced_rules().is_empty(), "{kind:?}");
+        }
+        assert!(
+            Basis::tool_fact(ToolFactName::Diameter, FactKind::Unknown)
+                .unsourced_rules()
+                .is_empty(),
+            "the diameter has no legacy row"
+        );
     }
 }

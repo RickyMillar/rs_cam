@@ -63,6 +63,7 @@ fn max_speed_cannot_lift_drill_above_ceiling() {
         setup: SetupContext::default(),
         spindle_strategy: SpindleStrategy::MaxSpeed,
         power_cases: rs_cam_core::feeds::engagement::PowerCases::NOMINAL,
+        tool_facts: rs_cam_core::feeds::sourced::ToolFactKinds::STATED,
     });
 
     assert!(
@@ -103,6 +104,7 @@ fn match_chart_drill_stays_at_ceiling() {
         setup: SetupContext::default(),
         spindle_strategy: SpindleStrategy::MatchChart,
         power_cases: rs_cam_core::feeds::engagement::PowerCases::NOMINAL,
+        tool_facts: rs_cam_core::feeds::sourced::ToolFactKinds::STATED,
     });
 
     assert!(

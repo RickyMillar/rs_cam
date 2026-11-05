@@ -2,7 +2,7 @@
 
 Status: OPEN. Operator ruling 6 (2026-10-22), option B. The values stay.
 The sentry `every_feeds_formula_constant_states_its_source_f201` lists them
-and pins the count (149 unsourced, 3 cited; 150 before the P5 chain ruling deleted the deflection back-off floor, 146 before feeds contract P5, 144 before P3). Option A (the formula path
+and pins the count (162 unsourced, 3 cited; 158 before feeds contract P13a, 159 before P11c, 154 before P10, 149 before P6; 150 before the P5 chain ruling deleted the deflection back-off floor, 146 before feeds contract P5, 144 before P3). Option A (the formula path
 refuses an unsourced value) applies only if one of these values causes an
 issue.
 
@@ -37,7 +37,7 @@ re-bless the FM1 golden in the same commit (`feeds/CLAUDE.md`).
 | `material.DRILL_PLUNGE_CEILING_PLYWOOD_PER_MM` | 580 | same | same |
 | `material.DRILL_PLUNGE_CEILING_SHEET_PER_MM` | 720 | same | MDF/Laminate ramp down 90 in/min: 90 × 25.4 / 3.175 |
 
-## Unsourced rows (149)
+## Unsourced rows (162)
 
 `material/mod.rs` lines are the `const` definition. The function reads the
 value from that constant.
@@ -209,6 +209,21 @@ Claim: "today's X mm at reference D 6 mm; no record in the repo".
 The radial rule (every stepover) reads the family `ae_factor` rows of
 `feeds.operation_default_profile`, which were rows before P10.
 
+### Engagement floor, helix and dwell (feeds contract P13a, review H3b, L3, L4, 2026-11-05)
+
+Four values shipped with no row. Each now has one, and no value moved. The
+pin rose from 158 to 162.
+
+| Row | Value | Site | Basis site |
+|---|---|---|---|
+| `feeds.MIN_AP_MM` | 0.05 mm | `feeds/mod.rs` (`MIN_AP_MM_ROW`) | the engagement floor of the calculator (`feeds/calculator/cut.rs`) and the envelope depth floor: `Basis::Rule` |
+| `feeds.MIN_AE_MM` | 0.02 mm | `feeds/mod.rs` (`MIN_AE_MM_ROW`) | the engagement floor of the calculator and the envelope width floor: `Basis::Rule` |
+| `tool.DEFAULT_HELIX_DEG` | 30 degrees | `tool/mod.rs` (`DEFAULT_HELIX_DEG`) | none: no basis names the helix today. The five cutter constructors and the two `default_helix_deg` loaders read the one constant |
+| `compute.operation_configs.DRILL_DWELL_S` | 0.5 s | `compute/operation_configs.rs` | none: the G82 dwell has no feeds basis |
+
+`default_engagement` read the floor as the literals `.max(0.05)` and
+`.max(0.02)`; it now reads `MIN_AP_MM` and `MIN_AE_MM`.
+
 ### Machine default (outside the F201 edit boundary)
 
 `machine/mod.rs:51` `ChipLoadFormula::default()`: k0 0.024, p 0.61,
@@ -219,11 +234,9 @@ beside the number, because this task did not edit `machine/`.
 ## Out of the registry (stated reason)
 
 - Design tolerances and solver limits: `SPINDLE_CEILING_HEADROOM` (0.95),
-  `POWER_LADDER_AP_FLOOR_MM` / `_AE_` (0.5), `MIN_AP_MM` (0.05),
-  `MIN_AE_MM` (0.02), the bisection limits, the chip-thinning clamp
-  (1-4).
-- `default_engagement` ends with `.max(0.05)` and `.max(0.02)`. These repeat
-  `MIN_AP_MM` and `MIN_AE_MM` as literals. Not changed here.
+  `POWER_LADDER_AP_FLOOR_MM` / `_AE_` (0.5), the bisection limits, the
+  chip-thinning clamp (1-4). (`MIN_AP_MM` and `MIN_AE_MM` left this list in
+  P13a: they ship a value, so they are rows.)
 - Per-machine data: `RigidityProfile` values (`adaptive_doc_factor`,
   `adaptive_woc_factor`), set per machine profile.
 - Species Janka (`WoodSpecies::janka_lbf`) and aluminium Brinell

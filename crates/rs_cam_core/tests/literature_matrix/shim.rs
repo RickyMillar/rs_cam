@@ -491,6 +491,7 @@ fn run_cell_in_material(
         },
         spindle_strategy: SpindleStrategy::MaxSpeed,
         power_cases: rs_cam_core::feeds::engagement::PowerCases::NOMINAL,
+        tool_facts: rs_cam_core::feeds::sourced::ToolFactKinds::of_tool(&tool),
     };
     // Run the engine's refusal check FIRST so this shim matches the
     // production Suggest paths (`suggest_for_operation` /

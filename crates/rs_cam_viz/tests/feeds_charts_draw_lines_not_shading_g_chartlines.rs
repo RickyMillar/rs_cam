@@ -209,6 +209,7 @@ fn explain_with_a_row() -> FeedsExplain {
         setup: SetupContext::default(),
         spindle_strategy: SpindleStrategy::default(),
         power_cases: rs_cam_core::feeds::engagement::PowerCases::NOMINAL,
+        tool_facts: rs_cam_core::feeds::sourced::ToolFactKinds::STATED,
     };
     let explain = explain_feeds(&input);
     assert!(

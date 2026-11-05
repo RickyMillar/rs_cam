@@ -146,6 +146,8 @@ impl ValueProvenance {
     /// - A named rule: `PublishedRule` when Cited, `RepoRule` when
     ///   Unsourced, with the rule name.
     /// - The machine profile: `Formula` with the field name.
+    /// - A tool fact (P13a): `RepoRule` with the legacy row name when the
+    ///   fact is `Unknown`, else `Formula`.
     /// - A law: the stamp of its first input when that is a vendor row,
     ///   else `Formula` (the law is the repo's formula).
     #[must_use]
@@ -171,6 +173,10 @@ impl ValueProvenance {
             Basis::Machine(field) => Self {
                 source: ProvenanceSource::Formula,
                 reference: Some(field.name().to_owned()),
+            },
+            Basis::ToolFact(fact) => match fact.legacy_row() {
+                Some(row) => Self::repo_rule(row.name.clone()),
+                None => Self::formula(),
             },
             Basis::Derived { from, .. } => match from.first().map(Self::of_basis) {
                 Some(first) if first.source == ProvenanceSource::VendorLut => first,

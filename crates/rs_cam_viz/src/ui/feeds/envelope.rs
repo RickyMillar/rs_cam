@@ -226,6 +226,15 @@ fn basis_text(basis: &rs_cam_core::feeds::Basis) -> String {
         Basis::Claim(claim) => claim.rule.clone(),
         Basis::Rule(rule) => rule.name.to_string(),
         Basis::Machine(field) => field.name().to_owned(),
+        Basis::ToolFact(fact) => match fact.legacy_row() {
+            Some(row) => format!(
+                "{} ({}, plans at {})",
+                fact.fact().name(),
+                fact.kind().label(),
+                row.name
+            ),
+            None => format!("{} ({})", fact.fact().name(), fact.kind().label()),
+        },
     }
 }
 

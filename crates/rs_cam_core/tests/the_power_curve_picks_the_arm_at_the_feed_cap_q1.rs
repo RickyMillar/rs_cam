@@ -169,7 +169,8 @@ fn law(b: &Basis) -> &'static str {
         | Basis::Printed(_)
         | Basis::Claim(_)
         | Basis::Rule(_)
-        | Basis::Machine(_) => "",
+        | Basis::Machine(_)
+        | Basis::ToolFact(_) => "",
     }
 }
 

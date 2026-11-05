@@ -1001,7 +1001,7 @@ fn default_tool_diameter() -> f64 {
     6.35
 }
 fn default_helix_deg() -> f64 {
-    30.0
+    crate::tool::DEFAULT_HELIX_DEG
 }
 fn default_corner_radius() -> f64 {
     2.0

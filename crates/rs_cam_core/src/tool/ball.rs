@@ -23,7 +23,7 @@ impl BallEndmill {
         Self {
             diameter,
             cutting_length,
-            helix_deg: 30.0,
+            helix_deg: super::DEFAULT_HELIX_DEG,
         }
     }
 }

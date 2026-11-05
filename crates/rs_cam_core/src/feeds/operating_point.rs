@@ -3,7 +3,7 @@
 //! ## Why this door exists
 //!
 //! [`crate::feeds::calculate`] publishes `FeedsResult::power_kw` at the
-//! geometry the CALCULATOR was handed. `enforce_invariants` then runs, and
+//! geometry the CALCULATOR was handed. `enforce_invariants_at_fixed_geometry` then runs, and
 //! `clamp_dpp_to_rigidity` lowers the depth per pass. The published figure
 //! therefore describes a depth that will not be cut — a value computed at one
 //! state and consumed at another. Suggest pass 10

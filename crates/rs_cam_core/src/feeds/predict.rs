@@ -652,7 +652,7 @@ pub struct DeflectionPrediction {
 
 /// v1.2 combined-Suggest: first-order estimate of the total number of
 /// motion samples / cutting moves a toolpath would emit at the given
-/// operating point. Used by `crate::feeds::suggest::invariants::enforce_invariants`
+/// operating point. Used by `crate::feeds::suggest::invariants::enforce_invariants_at_fixed_geometry`
 /// to detect catastrophic stepover values (the Wanaka 3D Finish 0.03 mm
 /// failure mode — 4.6 M-move toolpath effectively blocks generation).
 ///

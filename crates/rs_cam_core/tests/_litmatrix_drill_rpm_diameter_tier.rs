@@ -59,6 +59,7 @@ fn drill_input(d: f64, strategy: SpindleStrategy) -> FeedsInput<'static> {
         setup: SetupContext::default(),
         spindle_strategy: strategy,
         power_cases: rs_cam_core::feeds::engagement::PowerCases::NOMINAL,
+        tool_facts: rs_cam_core::feeds::sourced::ToolFactKinds::STATED,
     }
 }
 

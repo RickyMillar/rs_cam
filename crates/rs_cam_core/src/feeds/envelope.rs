@@ -1071,7 +1071,7 @@ impl SafeEnvelope {
                         s,
                         rule,
                         "drill peck rule",
-                        &Basis::derived(DRILL_PECK_LAW, vec![Basis::tool_fact()]),
+                        &Basis::derived(DRILL_PECK_LAW, vec![Basis::tool_diameter()]),
                     ),
                     None => s,
                 };
@@ -1210,7 +1210,7 @@ fn axes_plan(operation: &OperationConfig, tool: &ToolConfig, base: &FeedsResult)
     let flute = if tool.cutting_length_planning_mm() > 0.0 {
         tool.cutting_length_planning_mm()
     } else {
-        crate::feeds::flute_guard_of(0.0, d).0
+        crate::feeds::flute_guard_of(0.0, crate::compute::tool_config::FactKind::Stated, d).0
     };
     let ap_span = AxisSpan {
         min_mm: MIN_AP_MM,
@@ -1257,8 +1257,9 @@ fn geometric_limits(
     role: PassRole,
     d: f64,
 ) {
+    let length_kind = input.tool.cutting_length_fact().kind();
     let (guard, guard_basis) =
-        crate::feeds::flute_guard_of(input.tool.cutting_length_planning_mm(), d);
+        crate::feeds::flute_guard_of(input.tool.cutting_length_planning_mm(), length_kind, d);
     out.push(Limit {
         kind: LimitKind::FluteGuard,
         law: "0.8 x flute",
@@ -1269,7 +1270,10 @@ fn geometric_limits(
         out.push(Limit {
             kind: LimitKind::CuttingLength,
             law: "tool cutting length",
-            basis: Basis::tool_fact(),
+            basis: Basis::tool_fact(
+                crate::feeds::sourced::ToolFactName::CuttingLength,
+                length_kind,
+            ),
             edge: Edge::ApCeiling {
                 mm: input.tool.cutting_length_planning_mm(),
             },
@@ -1322,19 +1326,19 @@ fn geometric_limits(
     out.push(Limit {
         kind: LimitKind::Diameter,
         law: "ae <= D",
-        basis: Basis::tool_fact(),
+        basis: Basis::tool_diameter(),
         edge: Edge::AeCeiling { mm: d },
     });
     out.push(Limit {
         kind: LimitKind::EngagementFloor,
         law: "smallest depth the calculator writes",
-        basis: Basis::derived("MIN_AP_MM", Vec::new()),
+        basis: Basis::Rule(crate::feeds::MIN_AP_MM_ROW),
         edge: Edge::ApFloor { mm: MIN_AP_MM },
     });
     out.push(Limit {
         kind: LimitKind::EngagementFloor,
         law: "smallest width the calculator writes",
-        basis: Basis::derived("MIN_AE_MM", Vec::new()),
+        basis: Basis::Rule(crate::feeds::MIN_AE_MM_ROW),
         edge: Edge::AeFloor { mm: MIN_AE_MM },
     });
 }

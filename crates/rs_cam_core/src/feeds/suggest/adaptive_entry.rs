@@ -105,7 +105,7 @@ pub(super) fn pick_adaptive3d_clearing_strategy(
 /// Warning-only: Suggest never rewrites the entry style (ruling Q11).
 ///
 /// Reads the post-deflection-back-off DPP — this is the intentional
-/// ordering inherited from the monolithic enforce_invariants and only
+/// ordering inherited from the monolithic enforce_invariants_at_fixed_geometry and only
 /// fires when `depth_per_pass()` is `Some`.
 pub(super) fn check_plunge_entry_stability(
     operation: &OperationConfig,
@@ -385,7 +385,7 @@ pub(super) fn rescale_feed_to_final_geometry(
 ///
 /// # When it runs
 ///
-/// Only when pass 9 actually moved the feed — [`enforce_invariants`] gates on
+/// Only when pass 9 actually moved the feed — `enforce_invariants_at_fixed_geometry` gates on
 /// [`SuggestWarning::FeedRescaledToFinalGeometry`]. An operation no pass
 /// touched keeps its feed **byte-identical**, which is the same contract pass
 /// 9 holds and which `tests/suggest_feed_matches_final_geometry.rs` pins.
@@ -449,7 +449,7 @@ pub(super) fn rescale_feed_to_final_geometry(
 /// # The single guard
 ///
 /// A further post-rescale ceiling re-check belongs HERE, beside this one, at
-/// the end of `enforce_invariants` where the last lift has run.
+/// the end of `enforce_invariants_at_fixed_geometry` where the last lift has run.
 pub(super) fn recheck_power_after_rescale(
     operation: &mut OperationConfig,
     tool: &ToolConfig,
@@ -565,7 +565,7 @@ pub(super) fn recheck_power_after_rescale(
 // Nothing in Suggest constructs them today.
 
 /// Returns `Some(label)` when `operation` is an Adaptive-family op whose
-/// entry_style is `Plunge`. Used by [`enforce_invariants`] for the v1.3
+/// entry_style is `Plunge`. Used by `enforce_invariants_at_fixed_geometry` for the v1.3
 /// compatibility warning. Returns `None` for non-Adaptive ops, for
 /// Adaptive ops that don't expose an entry_style field (2D Adaptive),
 /// and for Adaptive ops whose entry_style is Helix/Ramp.

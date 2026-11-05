@@ -239,6 +239,7 @@ mod tests {
             setup: SetupContext::default(),
             spindle_strategy: crate::feeds::SpindleStrategy::default(),
             power_cases: crate::feeds::engagement::PowerCases::NOMINAL,
+            tool_facts: crate::feeds::sourced::ToolFactKinds::STATED,
         }
     }
 

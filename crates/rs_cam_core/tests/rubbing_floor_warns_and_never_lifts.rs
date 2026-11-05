@@ -125,6 +125,7 @@ fn b3_scallop_on(machine: &MachineProfile) -> FeedsResult {
         setup: SetupContext::default(),
         spindle_strategy: SpindleStrategy::MatchChart,
         power_cases: rs_cam_core::feeds::engagement::PowerCases::NOMINAL,
+        tool_facts: rs_cam_core::feeds::sourced::ToolFactKinds::STATED,
     })
 }
 
@@ -322,6 +323,7 @@ fn a_tool_whose_band_sits_above_the_floor_does_not_warn() {
         setup: SetupContext::default(),
         spindle_strategy: SpindleStrategy::MatchChart,
         power_cases: rs_cam_core::feeds::engagement::PowerCases::NOMINAL,
+        tool_facts: rs_cam_core::feeds::sourced::ToolFactKinds::STATED,
     });
 
     let bounds = band(&result);

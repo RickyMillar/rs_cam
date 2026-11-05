@@ -222,6 +222,7 @@ fn calculator_and_gate_match_same_observation_id() {
             setup: SetupContext::default(),
             spindle_strategy: rs_cam_core::feeds::SpindleStrategy::default(),
             power_cases: rs_cam_core::feeds::engagement::PowerCases::NOMINAL,
+            tool_facts: rs_cam_core::feeds::sourced::ToolFactKinds::STATED,
         };
         // Checkpoint K (a4) — `to_lookup_query` can refuse now. None of
         // this file's six cases is a rerouted operation (its header says

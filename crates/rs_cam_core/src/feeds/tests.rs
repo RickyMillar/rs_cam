@@ -36,6 +36,7 @@ fn softwood_flat_6mm_pocket() -> FeedsInput<'static> {
         setup: SetupContext::default(),
         spindle_strategy: crate::feeds::SpindleStrategy::default(),
         power_cases: crate::feeds::engagement::PowerCases::NOMINAL,
+        tool_facts: crate::feeds::sourced::ToolFactKinds::STATED,
     }
 }
 
@@ -130,6 +131,7 @@ fn test_adaptive_deeper_narrower_than_pocket() {
         setup: SetupContext::default(),
         spindle_strategy: crate::feeds::SpindleStrategy::default(),
         power_cases: crate::feeds::engagement::PowerCases::NOMINAL,
+        tool_facts: crate::feeds::sourced::ToolFactKinds::STATED,
     });
     let pocket = calculate(&FeedsInput {
         tool_series: None,
@@ -150,6 +152,7 @@ fn test_adaptive_deeper_narrower_than_pocket() {
         setup: SetupContext::default(),
         spindle_strategy: crate::feeds::SpindleStrategy::default(),
         power_cases: crate::feeds::engagement::PowerCases::NOMINAL,
+        tool_facts: crate::feeds::sourced::ToolFactKinds::STATED,
     });
 
     assert!(
@@ -203,6 +206,7 @@ fn test_roughing_deeper_than_finishing() {
             setup: SetupContext::default(),
             spindle_strategy: crate::feeds::SpindleStrategy::default(),
             power_cases: crate::feeds::engagement::PowerCases::NOMINAL,
+            tool_facts: crate::feeds::sourced::ToolFactKinds::STATED,
         });
         let finish = calculate(&FeedsInput {
             tool_series: None,
@@ -223,6 +227,7 @@ fn test_roughing_deeper_than_finishing() {
             setup: SetupContext::default(),
             spindle_strategy: crate::feeds::SpindleStrategy::default(),
             power_cases: crate::feeds::engagement::PowerCases::NOMINAL,
+            tool_facts: crate::feeds::sourced::ToolFactKinds::STATED,
         });
 
         assert!(
@@ -275,6 +280,7 @@ fn test_small_tapered_ball_plunge_derated() {
         setup: SetupContext::default(),
         spindle_strategy: crate::feeds::SpindleStrategy::default(),
         power_cases: crate::feeds::engagement::PowerCases::NOMINAL,
+        tool_facts: crate::feeds::sourced::ToolFactKinds::STATED,
     });
 
     assert!(
@@ -318,6 +324,7 @@ fn test_flat_endmill_plunge_is_the_g10_flat_claim() {
         setup: SetupContext::default(),
         spindle_strategy: crate::feeds::SpindleStrategy::default(),
         power_cases: crate::feeds::engagement::PowerCases::NOMINAL,
+        tool_facts: crate::feeds::sourced::ToolFactKinds::STATED,
     });
 
     // The G10 flat claim: plunge = floor(F / Z) at Z 2; no tip cap.
@@ -369,6 +376,7 @@ fn test_wood_adaptive_stepover_tracks_machine_factor() {
         setup: SetupContext::default(),
         spindle_strategy: crate::feeds::SpindleStrategy::default(),
         power_cases: crate::feeds::engagement::PowerCases::NOMINAL,
+        tool_facts: crate::feeds::sourced::ToolFactKinds::STATED,
     });
 
     assert!(
@@ -410,6 +418,7 @@ fn test_metal_adaptive_stepover_keeps_metal_base() {
         setup: SetupContext::default(),
         spindle_strategy: crate::feeds::SpindleStrategy::default(),
         power_cases: crate::feeds::engagement::PowerCases::NOMINAL,
+        tool_facts: crate::feeds::sourced::ToolFactKinds::STATED,
     });
 
     // Plastic is not wood-class; ae should sit below the
@@ -508,6 +517,7 @@ fn test_drill_family_rpm_in_drill_band() {
         setup: SetupContext::default(),
         spindle_strategy: crate::feeds::SpindleStrategy::default(),
         power_cases: crate::feeds::engagement::PowerCases::NOMINAL,
+        tool_facts: crate::feeds::sourced::ToolFactKinds::STATED,
     });
 
     // RPM must sit inside the drill band, not the milling SFM result.
@@ -568,6 +578,7 @@ fn test_drill_feed_within_envelope_and_plunge_aliased() {
                 setup: SetupContext::default(),
                 spindle_strategy: crate::feeds::SpindleStrategy::default(),
                 power_cases: crate::feeds::engagement::PowerCases::NOMINAL,
+                tool_facts: crate::feeds::sourced::ToolFactKinds::STATED,
             });
             assert_eq!(
                 result.plunge_rate_mm_min, result.feed_rate_mm_min,
@@ -624,6 +635,7 @@ fn test_drill_envelope_ceiling_drops_rpm_to_hold_chipload() {
         setup: SetupContext::default(),
         spindle_strategy: crate::feeds::SpindleStrategy::default(),
         power_cases: crate::feeds::engagement::PowerCases::NOMINAL,
+        tool_facts: crate::feeds::sourced::ToolFactKinds::STATED,
     });
     let clamp_fired = result
         .warnings
@@ -691,6 +703,7 @@ fn test_drill_feed_clamp_emits_warning_when_binding() {
         setup: SetupContext::default(),
         spindle_strategy: crate::feeds::SpindleStrategy::default(),
         power_cases: crate::feeds::engagement::PowerCases::NOMINAL,
+        tool_facts: crate::feeds::sourced::ToolFactKinds::STATED,
     });
     let ratio = result.feed_rate_mm_min / 2.0;
     let (lo, hi) = material.drill_plunge_feed_envelope_per_mm();
@@ -756,6 +769,7 @@ fn test_pocket_family_unaffected_by_drill_fix() {
         setup: SetupContext::default(),
         spindle_strategy: crate::feeds::SpindleStrategy::default(),
         power_cases: crate::feeds::engagement::PowerCases::NOMINAL,
+        tool_facts: crate::feeds::sourced::ToolFactKinds::STATED,
     });
 
     // Pocket RPM is allowed to be >14k (milling SFM band).
@@ -814,6 +828,7 @@ fn test_vbit_rpm_uses_engaged_diameter() {
         setup: SetupContext::default(),
         spindle_strategy: crate::feeds::SpindleStrategy::default(),
         power_cases: crate::feeds::engagement::PowerCases::NOMINAL,
+        tool_facts: crate::feeds::sourced::ToolFactKinds::STATED,
     });
 
     assert!(
@@ -859,6 +874,7 @@ fn test_flat_tool_rpm_chipload_unchanged_by_engaged_d() {
         setup: SetupContext::default(),
         spindle_strategy: crate::feeds::SpindleStrategy::default(),
         power_cases: crate::feeds::engagement::PowerCases::NOMINAL,
+        tool_facts: crate::feeds::sourced::ToolFactKinds::STATED,
     });
 
     // Allow the machine-clamp the formula was about to be passed
@@ -906,6 +922,7 @@ fn test_wood_adaptive_stepover_solid_wood_by_janka_eastern_white_pine() {
         setup: SetupContext::default(),
         spindle_strategy: crate::feeds::SpindleStrategy::default(),
         power_cases: crate::feeds::engagement::PowerCases::NOMINAL,
+        tool_facts: crate::feeds::sourced::ToolFactKinds::STATED,
     });
 
     assert!(
@@ -943,6 +960,7 @@ fn test_flute_guard_caps_doc() {
         setup: SetupContext::default(),
         spindle_strategy: crate::feeds::SpindleStrategy::default(),
         power_cases: crate::feeds::engagement::PowerCases::NOMINAL,
+        tool_facts: crate::feeds::sourced::ToolFactKinds::STATED,
     });
 
     assert!(
@@ -986,6 +1004,7 @@ fn test_power_limiting_on_low_power_machine() {
         setup: SetupContext::default(),
         spindle_strategy: crate::feeds::SpindleStrategy::default(),
         power_cases: crate::feeds::engagement::PowerCases::NOMINAL,
+        tool_facts: crate::feeds::sourced::ToolFactKinds::STATED,
     });
 
     assert!(
@@ -1027,6 +1046,7 @@ fn test_scallop_stepover_used_for_ball_nose() {
         setup: SetupContext::default(),
         spindle_strategy: crate::feeds::SpindleStrategy::default(),
         power_cases: crate::feeds::engagement::PowerCases::NOMINAL,
+        tool_facts: crate::feeds::sourced::ToolFactKinds::STATED,
     });
 
     // With 3mm ball radius, 0.03mm scallop → stepover should be small
@@ -1060,6 +1080,7 @@ fn test_machine_feed_clamp() {
         setup: SetupContext::default(),
         spindle_strategy: crate::feeds::SpindleStrategy::default(),
         power_cases: crate::feeds::engagement::PowerCases::NOMINAL,
+        tool_facts: crate::feeds::sourced::ToolFactKinds::STATED,
     });
 
     // Ruling R4 (2026-09-24): no factor after the ceiling.
@@ -1101,6 +1122,7 @@ fn no_machine_factor_multiplies_the_feed() {
         setup: SetupContext::default(),
         spindle_strategy: crate::feeds::SpindleStrategy::default(),
         power_cases: crate::feeds::engagement::PowerCases::NOMINAL,
+        tool_facts: crate::feeds::sourced::ToolFactKinds::STATED,
     });
 
     assert!(result.feed_rate_mm_min > 0.0);
@@ -1138,6 +1160,7 @@ fn test_slotting_detection() {
         setup: SetupContext::default(),
         spindle_strategy: crate::feeds::SpindleStrategy::default(),
         power_cases: crate::feeds::engagement::PowerCases::NOMINAL,
+        tool_facts: crate::feeds::sourced::ToolFactKinds::STATED,
     });
 
     // Feeds contract P11b (the P11a lead item): the stated depth ships, and
@@ -1189,6 +1212,7 @@ fn test_lut_chipload_overrides_formula() {
         setup: SetupContext::default(),
         spindle_strategy: crate::feeds::SpindleStrategy::default(),
         power_cases: crate::feeds::engagement::PowerCases::NOMINAL,
+        tool_facts: crate::feeds::sourced::ToolFactKinds::STATED,
     });
     let without_lut = calculate(&FeedsInput {
         tool_series: None,
@@ -1209,6 +1233,7 @@ fn test_lut_chipload_overrides_formula() {
         setup: SetupContext::default(),
         spindle_strategy: crate::feeds::SpindleStrategy::default(),
         power_cases: crate::feeds::engagement::PowerCases::NOMINAL,
+        tool_facts: crate::feeds::sourced::ToolFactKinds::STATED,
     });
 
     // Feeds matrix R5 (2026-09-23): the matched row is the printed Amana
@@ -1276,6 +1301,7 @@ fn chipload_bounds_hold_at_every_depth_p11b() {
         setup: SetupContext::default(),
         spindle_strategy: crate::feeds::SpindleStrategy::default(),
         power_cases: crate::feeds::engagement::PowerCases::NOMINAL,
+        tool_facts: crate::feeds::sourced::ToolFactKinds::STATED,
     };
     let at_1x = calculate(&input);
     input.axial_depth_mm = Some(19.05); // 3×D ratio → scale 0.5
@@ -1320,6 +1346,7 @@ fn chipload_bounds_skip_doc_derating_for_drill_ops() {
         setup: SetupContext::default(),
         spindle_strategy: crate::feeds::SpindleStrategy::default(),
         power_cases: crate::feeds::engagement::PowerCases::NOMINAL,
+        tool_facts: crate::feeds::sourced::ToolFactKinds::STATED,
     };
     let shallow = calculate(&input);
     input.axial_depth_mm = Some(18.0);
@@ -1384,6 +1411,7 @@ fn test_lut_rpm_override_within_machine_range() {
         setup: SetupContext::default(),
         spindle_strategy: crate::feeds::SpindleStrategy::default(),
         power_cases: crate::feeds::engagement::PowerCases::NOMINAL,
+        tool_facts: crate::feeds::sourced::ToolFactKinds::STATED,
     });
 
     // Vendor RPM for amana 6mm softwood adaptive is 18000
@@ -1420,6 +1448,7 @@ fn test_no_lut_backward_compatible() {
         setup: SetupContext::default(),
         spindle_strategy: crate::feeds::SpindleStrategy::default(),
         power_cases: crate::feeds::engagement::PowerCases::NOMINAL,
+        tool_facts: crate::feeds::sourced::ToolFactKinds::STATED,
     });
 
     assert!(result.vendor_source.is_none());
@@ -1457,6 +1486,7 @@ fn test_setup_derate_long_overhang() {
         },
         spindle_strategy: crate::feeds::SpindleStrategy::default(),
         power_cases: crate::feeds::engagement::PowerCases::NOMINAL,
+        tool_facts: crate::feeds::sourced::ToolFactKinds::STATED,
     });
 
     let long = calculate(&FeedsInput {
@@ -1480,6 +1510,7 @@ fn test_setup_derate_long_overhang() {
         },
         spindle_strategy: crate::feeds::SpindleStrategy::default(),
         power_cases: crate::feeds::engagement::PowerCases::NOMINAL,
+        tool_facts: crate::feeds::sourced::ToolFactKinds::STATED,
     });
 
     // Ruling R4 Q7 (2026-09-24): the L/D share (0.75 above 6 x D) does NOT
@@ -1522,6 +1553,7 @@ fn test_setup_derate_medium_overhang() {
         },
         spindle_strategy: crate::feeds::SpindleStrategy::default(),
         power_cases: crate::feeds::engagement::PowerCases::NOMINAL,
+        tool_facts: crate::feeds::sourced::ToolFactKinds::STATED,
     });
 
     let medium = calculate(&FeedsInput {
@@ -1545,6 +1577,7 @@ fn test_setup_derate_medium_overhang() {
         },
         spindle_strategy: crate::feeds::SpindleStrategy::default(),
         power_cases: crate::feeds::engagement::PowerCases::NOMINAL,
+        tool_facts: crate::feeds::sourced::ToolFactKinds::STATED,
     });
 
     // Ruling R4 Q7: the 0.88 share is a load target, not a feed factor.
@@ -1583,6 +1616,7 @@ fn test_lut_ball_nose_different_chipload_than_flat() {
         setup: SetupContext::default(),
         spindle_strategy: crate::feeds::SpindleStrategy::default(),
         power_cases: crate::feeds::engagement::PowerCases::NOMINAL,
+        tool_facts: crate::feeds::sourced::ToolFactKinds::STATED,
     });
     let ball = calculate(&FeedsInput {
         tool_series: None,
@@ -1603,6 +1637,7 @@ fn test_lut_ball_nose_different_chipload_than_flat() {
         setup: SetupContext::default(),
         spindle_strategy: crate::feeds::SpindleStrategy::default(),
         power_cases: crate::feeds::engagement::PowerCases::NOMINAL,
+        tool_facts: crate::feeds::sourced::ToolFactKinds::STATED,
     });
 
     // Ball nose finishing should have a different (lower) chipload than flat adaptive
@@ -1646,6 +1681,7 @@ fn test_lut_fallback_when_no_match() {
         setup: SetupContext::default(),
         spindle_strategy: crate::feeds::SpindleStrategy::default(),
         power_cases: crate::feeds::engagement::PowerCases::NOMINAL,
+        tool_facts: crate::feeds::sourced::ToolFactKinds::STATED,
     });
 
     // Foam maps to softwood in normalize, but with hardness 200 which is far from
@@ -1686,6 +1722,7 @@ fn spindle_strategy_max_speed_lifts_rpm_and_scales_feed() {
         setup: SetupContext::default(),
         spindle_strategy: SpindleStrategy::MatchChart,
         power_cases: crate::feeds::engagement::PowerCases::NOMINAL,
+        tool_facts: crate::feeds::sourced::ToolFactKinds::STATED,
     };
     let match_chart = calculate(&base);
     let max_speed = calculate(&FeedsInput {
@@ -1775,6 +1812,7 @@ fn spindle_strategy_max_speed_respects_hard_cap() {
         setup: SetupContext::default(),
         spindle_strategy: SpindleStrategy::MaxSpeed,
         power_cases: crate::feeds::engagement::PowerCases::NOMINAL,
+        tool_facts: crate::feeds::sourced::ToolFactKinds::STATED,
     });
     assert!(
         result.derates.spindle_scale <= MAX_SPINDLE_SPEEDUP + 1e-6,

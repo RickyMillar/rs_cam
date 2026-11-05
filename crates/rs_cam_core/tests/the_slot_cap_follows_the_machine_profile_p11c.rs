@@ -107,7 +107,11 @@ fn machine_fields(b: &Basis) -> Vec<MachineField> {
     match b {
         Basis::Machine(f) => vec![*f],
         Basis::Derived { from, .. } => from.iter().flat_map(machine_fields).collect(),
-        Basis::Operator { .. } | Basis::Printed(_) | Basis::Claim(_) | Basis::Rule(_) => Vec::new(),
+        Basis::Operator { .. }
+        | Basis::Printed(_)
+        | Basis::Claim(_)
+        | Basis::Rule(_)
+        | Basis::ToolFact(_) => Vec::new(),
     }
 }
 
@@ -120,7 +124,8 @@ fn laws(b: &Basis) -> Vec<&'static str> {
         | Basis::Operator { .. }
         | Basis::Printed(_)
         | Basis::Claim(_)
-        | Basis::Rule(_) => Vec::new(),
+        | Basis::Rule(_)
+        | Basis::ToolFact(_) => Vec::new(),
     }
 }
 
