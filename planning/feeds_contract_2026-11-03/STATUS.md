@@ -110,6 +110,18 @@ the full entry point. Read it first, then the files it names.
    the fixtures, the lead writes a judgement of the safe cut first (depth, width, feed, rpm),
    then compares it with the engine (Suggest, the envelope, the post-sim gate). Each
    disagreement is a finding: the engine is wrong, or the judgement is. Not in this programme.
+   First part (operator, 2026-11-05): (a) pull Sienci's printed stiffness results into the repo
+   (`sienci.com` "Stiffness Rating with Commentary" PDF and the LongMill MK3 rigidity test) as
+   a cited hobby frame ballpark; (b) a VFD power ladder on Scylla: air-cut baseline per rpm,
+   6-9 cuts in one wood around the pick (one full slot), measured power minus baseline against
+   the model's mean-force power. Read the spindle outside the controller's Modbus link (a
+   logging power plug, the VFD analog output, or the display); check the grblHAL H-100 driver
+   source for a current read. A Python streamer on `/dev/ttyACM0` logs a timestamp per cut;
+   (c) optional: the step 0 dial-gauge stiffness protocol on Scylla.
+4f. Reviewer items from the explainer (`explainer_p13c/`): the depth solver returns the inside
+   end (3.4056 against the root 3.4073 mm); FM1 writes the depth at the calculator chip but
+   `force_n` and `cap_mm` at the floored feed; the hobby budget takes the MDF row, so hardwood
+   picks deeper than the printed hardwood slot row (Sienci 2.5 mm): judge in the ladder.
 5. **P12** (`phases/P12.md`): the hand-off folder `handoff/` for the independent review
    session. Include every reviewer item listed below.
 
