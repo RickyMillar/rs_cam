@@ -1,0 +1,669 @@
+{
+ "PW_6.00_2f_hardwood_1.0D": {
+  "cell": {
+   "id": "PW_6.00_2f_hardwood_1.0D",
+   "kind": "end_mill",
+   "d": 6.0,
+   "z": 2,
+   "mat": "hardwood",
+   "ap": 6.0,
+   "ae": 6.0,
+   "flute": 19.200000000000003,
+   "stick": 27.200000000000003,
+   "extra": "",
+   "machine": "shapeoko",
+   "group": "PW"
+  },
+  "feed": 4572.0,
+  "rpm": 18000,
+  "chip": 0.127,
+  "power": 0.28075056162619905,
+  "avail": 1.125,
+  "fz": 0.127,
+  "warnings": [
+   "SlottingDetected { requested_mm: 6.0, cap_mm: 1.5, shipped_mm: 6.0 }",
+   "LongToolDerate { stickout_mm: 27.200000000000003, diameter_mm: 6.0, ratio: 4.533333333333334, factor: 0.88 }"
+  ]
+ },
+ "PW_6.00_2f_hardwood_1.5D": {
+  "cell": {
+   "id": "PW_6.00_2f_hardwood_1.5D",
+   "kind": "end_mill",
+   "d": 6.0,
+   "z": 2,
+   "mat": "hardwood",
+   "ap": 9.0,
+   "ae": 6.0,
+   "flute": 19.200000000000003,
+   "stick": 27.200000000000003,
+   "extra": "",
+   "machine": "shapeoko",
+   "group": "PW"
+  },
+  "feed": 4572.0,
+  "rpm": 18000,
+  "chip": 0.127,
+  "power": 0.4211258424392986,
+  "avail": 1.125,
+  "fz": 0.127,
+  "warnings": [
+   "SlottingDetected { requested_mm: 9.0, cap_mm: 1.5, shipped_mm: 9.0 }",
+   "LongToolDerate { stickout_mm: 27.200000000000003, diameter_mm: 6.0, ratio: 4.533333333333334, factor: 0.88 }"
+  ]
+ },
+ "PW_6.00_2f_hardwood_2.0D": {
+  "cell": {
+   "id": "PW_6.00_2f_hardwood_2.0D",
+   "kind": "end_mill",
+   "d": 6.0,
+   "z": 2,
+   "mat": "hardwood",
+   "ap": 12.0,
+   "ae": 6.0,
+   "flute": 19.200000000000003,
+   "stick": 27.200000000000003,
+   "extra": "",
+   "machine": "shapeoko",
+   "group": "PW"
+  },
+  "feed": 4572.0,
+  "rpm": 18000,
+  "chip": 0.127,
+  "power": 0.5615011232523981,
+  "avail": 1.125,
+  "fz": 0.127,
+  "warnings": [
+   "SlottingDetected { requested_mm: 12.0, cap_mm: 1.5, shipped_mm: 12.0 }",
+   "LongToolDerate { stickout_mm: 27.200000000000003, diameter_mm: 6.0, ratio: 4.533333333333334, factor: 0.88 }"
+  ]
+ },
+ "PW_6.00_2f_hardwood_2.5D": {
+  "cell": {
+   "id": "PW_6.00_2f_hardwood_2.5D",
+   "kind": "end_mill",
+   "d": 6.0,
+   "z": 2,
+   "mat": "hardwood",
+   "ap": 15.0,
+   "ae": 6.0,
+   "flute": 19.200000000000003,
+   "stick": 27.200000000000003,
+   "extra": "",
+   "machine": "shapeoko",
+   "group": "PW"
+  },
+  "feed": 4572.0,
+  "rpm": 18000,
+  "chip": 0.127,
+  "power": 0.7018764040654977,
+  "avail": 1.125,
+  "fz": 0.127,
+  "warnings": [
+   "SlottingDetected { requested_mm: 15.0, cap_mm: 1.5, shipped_mm: 15.0 }",
+   "LongToolDerate { stickout_mm: 27.200000000000003, diameter_mm: 6.0, ratio: 4.533333333333334, factor: 0.88 }"
+  ]
+ },
+ "PW_6.00_2f_hardwood_3.0D": {
+  "cell": {
+   "id": "PW_6.00_2f_hardwood_3.0D",
+   "kind": "end_mill",
+   "d": 6.0,
+   "z": 2,
+   "mat": "hardwood",
+   "ap": 18.0,
+   "ae": 6.0,
+   "flute": 19.200000000000003,
+   "stick": 27.200000000000003,
+   "extra": "",
+   "machine": "shapeoko",
+   "group": "PW"
+  },
+  "feed": 4572.0,
+  "rpm": 18000,
+  "chip": 0.127,
+  "power": 0.8422516848785973,
+  "avail": 1.125,
+  "fz": 0.127,
+  "warnings": [
+   "DocExceedsFlute { requested_mm: 18.0, guard_mm: 15.360000000000003, shipped_mm: 18.0 }",
+   "SlottingDetected { requested_mm: 18.0, cap_mm: 1.5, shipped_mm: 18.0 }",
+   "LongToolDerate { stickout_mm: 27.200000000000003, diameter_mm: 6.0, ratio: 4.533333333333334, factor: 0.88 }"
+  ]
+ },
+ "PW_6.00_2f_softwood_1.0D": {
+  "cell": {
+   "id": "PW_6.00_2f_softwood_1.0D",
+   "kind": "end_mill",
+   "d": 6.0,
+   "z": 2,
+   "mat": "softwood",
+   "ap": 6.0,
+   "ae": 6.0,
+   "flute": 19.200000000000003,
+   "stick": 27.200000000000003,
+   "extra": "",
+   "machine": "shapeoko",
+   "group": "PW"
+  },
+  "feed": 4572.0,
+  "rpm": 18000,
+  "chip": 0.127,
+  "power": 0.16751967213054975,
+  "avail": 1.125,
+  "fz": 0.127,
+  "warnings": [
+   "SlottingDetected { requested_mm: 6.0, cap_mm: 1.5, shipped_mm: 6.0 }",
+   "LongToolDerate { stickout_mm: 27.200000000000003, diameter_mm: 6.0, ratio: 4.533333333333334, factor: 0.88 }"
+  ]
+ },
+ "PW_6.00_2f_softwood_1.5D": {
+  "cell": {
+   "id": "PW_6.00_2f_softwood_1.5D",
+   "kind": "end_mill",
+   "d": 6.0,
+   "z": 2,
+   "mat": "softwood",
+   "ap": 9.0,
+   "ae": 6.0,
+   "flute": 19.200000000000003,
+   "stick": 27.200000000000003,
+   "extra": "",
+   "machine": "shapeoko",
+   "group": "PW"
+  },
+  "feed": 4572.0,
+  "rpm": 18000,
+  "chip": 0.127,
+  "power": 0.25127950819582456,
+  "avail": 1.125,
+  "fz": 0.127,
+  "warnings": [
+   "SlottingDetected { requested_mm: 9.0, cap_mm: 1.5, shipped_mm: 9.0 }",
+   "LongToolDerate { stickout_mm: 27.200000000000003, diameter_mm: 6.0, ratio: 4.533333333333334, factor: 0.88 }"
+  ]
+ },
+ "PW_6.00_2f_softwood_2.0D": {
+  "cell": {
+   "id": "PW_6.00_2f_softwood_2.0D",
+   "kind": "end_mill",
+   "d": 6.0,
+   "z": 2,
+   "mat": "softwood",
+   "ap": 12.0,
+   "ae": 6.0,
+   "flute": 19.200000000000003,
+   "stick": 27.200000000000003,
+   "extra": "",
+   "machine": "shapeoko",
+   "group": "PW"
+  },
+  "feed": 4572.0,
+  "rpm": 18000,
+  "chip": 0.127,
+  "power": 0.3350393442610995,
+  "avail": 1.125,
+  "fz": 0.127,
+  "warnings": [
+   "SlottingDetected { requested_mm: 12.0, cap_mm: 1.5, shipped_mm: 12.0 }",
+   "LongToolDerate { stickout_mm: 27.200000000000003, diameter_mm: 6.0, ratio: 4.533333333333334, factor: 0.88 }"
+  ]
+ },
+ "PW_6.00_2f_softwood_2.5D": {
+  "cell": {
+   "id": "PW_6.00_2f_softwood_2.5D",
+   "kind": "end_mill",
+   "d": 6.0,
+   "z": 2,
+   "mat": "softwood",
+   "ap": 15.0,
+   "ae": 6.0,
+   "flute": 19.200000000000003,
+   "stick": 27.200000000000003,
+   "extra": "",
+   "machine": "shapeoko",
+   "group": "PW"
+  },
+  "feed": 4572.0,
+  "rpm": 18000,
+  "chip": 0.127,
+  "power": 0.41879918032637437,
+  "avail": 1.125,
+  "fz": 0.127,
+  "warnings": [
+   "SlottingDetected { requested_mm: 15.0, cap_mm: 1.5, shipped_mm: 15.0 }",
+   "LongToolDerate { stickout_mm: 27.200000000000003, diameter_mm: 6.0, ratio: 4.533333333333334, factor: 0.88 }"
+  ]
+ },
+ "PW_6.00_2f_softwood_3.0D": {
+  "cell": {
+   "id": "PW_6.00_2f_softwood_3.0D",
+   "kind": "end_mill",
+   "d": 6.0,
+   "z": 2,
+   "mat": "softwood",
+   "ap": 18.0,
+   "ae": 6.0,
+   "flute": 19.200000000000003,
+   "stick": 27.200000000000003,
+   "extra": "",
+   "machine": "shapeoko",
+   "group": "PW"
+  },
+  "feed": 4572.0,
+  "rpm": 18000,
+  "chip": 0.127,
+  "power": 0.5025590163916491,
+  "avail": 1.125,
+  "fz": 0.127,
+  "warnings": [
+   "DocExceedsFlute { requested_mm: 18.0, guard_mm: 15.360000000000003, shipped_mm: 18.0 }",
+   "SlottingDetected { requested_mm: 18.0, cap_mm: 1.5, shipped_mm: 18.0 }",
+   "LongToolDerate { stickout_mm: 27.200000000000003, diameter_mm: 6.0, ratio: 4.533333333333334, factor: 0.88 }"
+  ]
+ },
+ "PW_6.00_2f_mdf_1.0D": {
+  "cell": {
+   "id": "PW_6.00_2f_mdf_1.0D",
+   "kind": "end_mill",
+   "d": 6.0,
+   "z": 2,
+   "mat": "mdf",
+   "ap": 6.0,
+   "ae": 6.0,
+   "flute": 19.200000000000003,
+   "stick": 27.200000000000003,
+   "extra": "",
+   "machine": "shapeoko",
+   "group": "PW"
+  },
+  "feed": 5486.0,
+  "rpm": 18000,
+  "chip": 0.1524,
+  "power": 0.2174975638134664,
+  "avail": 1.125,
+  "fz": 0.15238888888888888,
+  "warnings": [
+   "SlottingDetected { requested_mm: 6.0, cap_mm: 1.5, shipped_mm: 6.0 }",
+   "LongToolDerate { stickout_mm: 27.200000000000003, diameter_mm: 6.0, ratio: 4.533333333333334, factor: 0.88 }"
+  ]
+ },
+ "PW_6.00_2f_mdf_1.5D": {
+  "cell": {
+   "id": "PW_6.00_2f_mdf_1.5D",
+   "kind": "end_mill",
+   "d": 6.0,
+   "z": 2,
+   "mat": "mdf",
+   "ap": 9.0,
+   "ae": 6.0,
+   "flute": 19.200000000000003,
+   "stick": 27.200000000000003,
+   "extra": "",
+   "machine": "shapeoko",
+   "group": "PW"
+  },
+  "feed": 5486.0,
+  "rpm": 18000,
+  "chip": 0.1524,
+  "power": 0.3262463457201996,
+  "avail": 1.125,
+  "fz": 0.15238888888888888,
+  "warnings": [
+   "SlottingDetected { requested_mm: 9.0, cap_mm: 1.5, shipped_mm: 9.0 }",
+   "LongToolDerate { stickout_mm: 27.200000000000003, diameter_mm: 6.0, ratio: 4.533333333333334, factor: 0.88 }"
+  ]
+ },
+ "PW_6.00_2f_mdf_2.0D": {
+  "cell": {
+   "id": "PW_6.00_2f_mdf_2.0D",
+   "kind": "end_mill",
+   "d": 6.0,
+   "z": 2,
+   "mat": "mdf",
+   "ap": 12.0,
+   "ae": 6.0,
+   "flute": 19.200000000000003,
+   "stick": 27.200000000000003,
+   "extra": "",
+   "machine": "shapeoko",
+   "group": "PW"
+  },
+  "feed": 5486.0,
+  "rpm": 18000,
+  "chip": 0.1524,
+  "power": 0.4349951276269328,
+  "avail": 1.125,
+  "fz": 0.15238888888888888,
+  "warnings": [
+   "SlottingDetected { requested_mm: 12.0, cap_mm: 1.5, shipped_mm: 12.0 }",
+   "LongToolDerate { stickout_mm: 27.200000000000003, diameter_mm: 6.0, ratio: 4.533333333333334, factor: 0.88 }"
+  ]
+ },
+ "PW_6.00_2f_mdf_2.5D": {
+  "cell": {
+   "id": "PW_6.00_2f_mdf_2.5D",
+   "kind": "end_mill",
+   "d": 6.0,
+   "z": 2,
+   "mat": "mdf",
+   "ap": 15.0,
+   "ae": 6.0,
+   "flute": 19.200000000000003,
+   "stick": 27.200000000000003,
+   "extra": "",
+   "machine": "shapeoko",
+   "group": "PW"
+  },
+  "feed": 5486.0,
+  "rpm": 18000,
+  "chip": 0.1524,
+  "power": 0.543743909533666,
+  "avail": 1.125,
+  "fz": 0.15238888888888888,
+  "warnings": [
+   "SlottingDetected { requested_mm: 15.0, cap_mm: 1.5, shipped_mm: 15.0 }",
+   "LongToolDerate { stickout_mm: 27.200000000000003, diameter_mm: 6.0, ratio: 4.533333333333334, factor: 0.88 }"
+  ]
+ },
+ "PW_6.00_2f_mdf_3.0D": {
+  "cell": {
+   "id": "PW_6.00_2f_mdf_3.0D",
+   "kind": "end_mill",
+   "d": 6.0,
+   "z": 2,
+   "mat": "mdf",
+   "ap": 18.0,
+   "ae": 6.0,
+   "flute": 19.200000000000003,
+   "stick": 27.200000000000003,
+   "extra": "",
+   "machine": "shapeoko",
+   "group": "PW"
+  },
+  "feed": 5486.0,
+  "rpm": 18000,
+  "chip": 0.1524,
+  "power": 0.6524926914403992,
+  "avail": 1.125,
+  "fz": 0.15238888888888888,
+  "warnings": [
+   "DocExceedsFlute { requested_mm: 18.0, guard_mm: 15.360000000000003, shipped_mm: 18.0 }",
+   "SlottingDetected { requested_mm: 18.0, cap_mm: 1.5, shipped_mm: 18.0 }",
+   "LongToolDerate { stickout_mm: 27.200000000000003, diameter_mm: 6.0, ratio: 4.533333333333334, factor: 0.88 }"
+  ]
+ },
+ "PW_6.35_3f_hardwood_1.0D": {
+  "cell": {
+   "id": "PW_6.35_3f_hardwood_1.0D",
+   "kind": "end_mill",
+   "d": 6.35,
+   "z": 3,
+   "mat": "hardwood",
+   "ap": 6.35,
+   "ae": 6.35,
+   "flute": 20.32,
+   "stick": 28.32,
+   "extra": "",
+   "machine": "shapeoko",
+   "group": "PW"
+  },
+  "feed": 5999.0,
+  "rpm": 15748,
+  "chip": 0.127,
+  "power": 0.4126765048134795,
+  "avail": 0.9842500000000001,
+  "fz": 0.12697908729150792,
+  "warnings": [
+   "SlottingDetected { requested_mm: 6.35, cap_mm: 1.5875, shipped_mm: 6.35 }",
+   "LongToolDerate { stickout_mm: 28.32, diameter_mm: 6.35, ratio: 4.45984251968504, factor: 0.88 }",
+   "RpmLoweredForFeedCeiling { rpm_from: 18000.0, rpm_to: 15748.0, feed_ceiling_mm_min: 6000.0, rpm_floor: 8000.0, floor_source: MachineMinimum, held: true, arms: CapArms { lower: ArmPower { arm: LowerRpmSameChip, rpm: 15748.0, feed: 5999.988, demand: Some((Slot, 0.4126765048134795)), available_kw: 0.9842500000000001 }, same: ArmPower { arm: SameRpmSmallerChip, rpm: 18000.0, feed: 6000.0, demand: Some((Slot, 0.44175317262909497)), available_kw: 1.125 }, shipped: LowerRpmSameChip, reason: BothInside } }"
+  ]
+ },
+ "PW_6.35_3f_hardwood_1.5D": {
+  "cell": {
+   "id": "PW_6.35_3f_hardwood_1.5D",
+   "kind": "end_mill",
+   "d": 6.35,
+   "z": 3,
+   "mat": "hardwood",
+   "ap": 9.524999999999999,
+   "ae": 6.35,
+   "flute": 20.32,
+   "stick": 28.32,
+   "extra": "",
+   "machine": "shapeoko",
+   "group": "PW"
+  },
+  "feed": 5999.0,
+  "rpm": 15748,
+  "chip": 0.127,
+  "power": 0.6190147572202191,
+  "avail": 0.9842500000000001,
+  "fz": 0.12697908729150792,
+  "warnings": [
+   "SlottingDetected { requested_mm: 9.524999999999999, cap_mm: 1.5875, shipped_mm: 9.524999999999999 }",
+   "LongToolDerate { stickout_mm: 28.32, diameter_mm: 6.35, ratio: 4.45984251968504, factor: 0.88 }",
+   "RpmLoweredForFeedCeiling { rpm_from: 18000.0, rpm_to: 15748.0, feed_ceiling_mm_min: 6000.0, rpm_floor: 8000.0, floor_source: MachineMinimum, held: true, arms: CapArms { lower: ArmPower { arm: LowerRpmSameChip, rpm: 15748.0, feed: 5999.988, demand: Some((Slot, 0.6190147572202191)), available_kw: 0.9842500000000001 }, same: ArmPower { arm: SameRpmSmallerChip, rpm: 18000.0, feed: 6000.0, demand: Some((Slot, 0.6626297589436423)), available_kw: 1.125 }, shipped: LowerRpmSameChip, reason: BothInside } }"
+  ]
+ },
+ "PW_6.35_3f_hardwood_2.0D": {
+  "cell": {
+   "id": "PW_6.35_3f_hardwood_2.0D",
+   "kind": "end_mill",
+   "d": 6.35,
+   "z": 3,
+   "mat": "hardwood",
+   "ap": 12.7,
+   "ae": 6.35,
+   "flute": 20.32,
+   "stick": 28.32,
+   "extra": "",
+   "machine": "shapeoko",
+   "group": "PW"
+  },
+  "feed": 5999.0,
+  "rpm": 15748,
+  "chip": 0.127,
+  "power": 0.825353009626959,
+  "avail": 0.9842500000000001,
+  "fz": 0.12697908729150792,
+  "warnings": [
+   "SlottingDetected { requested_mm: 12.7, cap_mm: 1.5875, shipped_mm: 12.7 }",
+   "LongToolDerate { stickout_mm: 28.32, diameter_mm: 6.35, ratio: 4.45984251968504, factor: 0.88 }",
+   "RpmLoweredForFeedCeiling { rpm_from: 18000.0, rpm_to: 15748.0, feed_ceiling_mm_min: 6000.0, rpm_floor: 8000.0, floor_source: MachineMinimum, held: true, arms: CapArms { lower: ArmPower { arm: LowerRpmSameChip, rpm: 15748.0, feed: 5999.988, demand: Some((Slot, 0.825353009626959)), available_kw: 0.9842500000000001 }, same: ArmPower { arm: SameRpmSmallerChip, rpm: 18000.0, feed: 6000.0, demand: Some((Slot, 0.8835063452581899)), available_kw: 1.125 }, shipped: LowerRpmSameChip, reason: BothInside } }"
+  ]
+ },
+ "PW_6.35_3f_hardwood_2.5D": {
+  "cell": {
+   "id": "PW_6.35_3f_hardwood_2.5D",
+   "kind": "end_mill",
+   "d": 6.35,
+   "z": 3,
+   "mat": "hardwood",
+   "ap": 15.875,
+   "ae": 6.35,
+   "flute": 20.32,
+   "stick": 28.32,
+   "extra": "",
+   "machine": "shapeoko",
+   "group": "PW"
+  },
+  "feed": 5999.0,
+  "rpm": 17317,
+  "chip": 0.127,
+  "power": 1.0823125,
+  "avail": 1.0823125,
+  "fz": 0.11547419683932937,
+  "warnings": [
+   "SlottingDetected { requested_mm: 15.875, cap_mm: 1.5875, shipped_mm: 15.875 }",
+   "LongToolDerate { stickout_mm: 28.32, diameter_mm: 6.35, ratio: 4.45984251968504, factor: 0.88 }",
+   "PowerLimited { required_kw: 1.1792254709554597, available_kw: 1.125 }",
+   "PowerLadderReducedCut { rpm_from: None, rpm_to: None, axial_from: None, axial_to: None, radial_from: None, radial_to: None, feed_factor: Some(0.909354838905785), required_kw_before: 1.1792254709554597, required_kw_after: 1.125, available_kw: 1.125 }",
+   "RpmLoweredForFeedCeiling { rpm_from: 18000.0, rpm_to: 17317.0, feed_ceiling_mm_min: 6000.0, rpm_floor: 8000.0, floor_source: MachineMinimum, held: true, arms: CapArms { lower: ArmPower { arm: LowerRpmSameChip, rpm: 17317.0, feed: 5999.720440971293, demand: Some((Slot, 1.0823125)), available_kw: 1.0823125 }, same: ArmPower { arm: SameRpmSmallerChip, rpm: 18000.0, feed: 6000.0, demand: Some((Slot, 1.1043829315727374)), available_kw: 1.125 }, shipped: LowerRpmSameChip, reason: BothInside } }"
+  ]
+ },
+ "PW_6.35_3f_hardwood_3.0D": {
+  "cell": {
+   "id": "PW_6.35_3f_hardwood_3.0D",
+   "kind": "end_mill",
+   "d": 6.35,
+   "z": 3,
+   "mat": "hardwood",
+   "ap": 19.049999999999997,
+   "ae": 6.35,
+   "flute": 20.32,
+   "stick": 28.32,
+   "extra": "",
+   "machine": "shapeoko",
+   "group": "PW"
+  },
+  "feed": 4086.0,
+  "rpm": 18000,
+  "chip": 0.127,
+  "power": 1.125,
+  "avail": 1.125,
+  "fz": 0.07566666666666666,
+  "warnings": [
+   "DocExceedsFlute { requested_mm: 19.049999999999997, guard_mm: 16.256, shipped_mm: 19.049999999999997 }",
+   "SlottingDetected { requested_mm: 19.049999999999997, cap_mm: 1.5875, shipped_mm: 19.049999999999997 }",
+   "LongToolDerate { stickout_mm: 28.32, diameter_mm: 6.35, ratio: 4.45984251968504, factor: 0.88 }",
+   "PowerLimited { required_kw: 1.4150705651465514, available_kw: 1.125 }",
+   "PowerLadderReducedCut { rpm_from: None, rpm_to: None, axial_from: None, axial_to: None, radial_from: None, radial_to: None, feed_factor: Some(0.595923394130954), required_kw_before: 1.4150705651465514, required_kw_after: 1.125, available_kw: 1.125 }"
+  ]
+ },
+ "PW_6.35_2f_whiteoak_1.0D": {
+  "cell": {
+   "id": "PW_6.35_2f_whiteoak_1.0D",
+   "kind": "end_mill",
+   "d": 6.35,
+   "z": 2,
+   "mat": "whiteoak",
+   "ap": 6.35,
+   "ae": 6.35,
+   "flute": 20.32,
+   "stick": 28.32,
+   "extra": "",
+   "machine": "shapeoko",
+   "group": "PW"
+  },
+  "feed": 4995.0,
+  "rpm": 10026,
+  "chip": 0.24915629765623967,
+  "power": 0.29372368741358124,
+  "avail": 0.6265942641413204,
+  "fz": 0.2491023339317774,
+  "warnings": [
+   "SlottingDetected { requested_mm: 6.35, cap_mm: 1.5875, shipped_mm: 6.35 }",
+   "LongToolDerate { stickout_mm: 28.32, diameter_mm: 6.35, ratio: 4.45984251968504, factor: 0.88 }"
+  ]
+ },
+ "PW_6.35_2f_whiteoak_1.5D": {
+  "cell": {
+   "id": "PW_6.35_2f_whiteoak_1.5D",
+   "kind": "end_mill",
+   "d": 6.35,
+   "z": 2,
+   "mat": "whiteoak",
+   "ap": 9.524999999999999,
+   "ae": 6.35,
+   "flute": 20.32,
+   "stick": 28.32,
+   "extra": "",
+   "machine": "shapeoko",
+   "group": "PW"
+  },
+  "feed": 4995.0,
+  "rpm": 10026,
+  "chip": 0.24915629765623967,
+  "power": 0.4405855311203718,
+  "avail": 0.6265942641413204,
+  "fz": 0.2491023339317774,
+  "warnings": [
+   "SlottingDetected { requested_mm: 9.524999999999999, cap_mm: 1.5875, shipped_mm: 9.524999999999999 }",
+   "LongToolDerate { stickout_mm: 28.32, diameter_mm: 6.35, ratio: 4.45984251968504, factor: 0.88 }"
+  ]
+ },
+ "PW_6.35_2f_whiteoak_2.0D": {
+  "cell": {
+   "id": "PW_6.35_2f_whiteoak_2.0D",
+   "kind": "end_mill",
+   "d": 6.35,
+   "z": 2,
+   "mat": "whiteoak",
+   "ap": 12.7,
+   "ae": 6.35,
+   "flute": 20.32,
+   "stick": 28.32,
+   "extra": "",
+   "machine": "shapeoko",
+   "group": "PW"
+  },
+  "feed": 4995.0,
+  "rpm": 10026,
+  "chip": 0.24915629765623967,
+  "power": 0.5874473748271625,
+  "avail": 0.6265942641413204,
+  "fz": 0.2491023339317774,
+  "warnings": [
+   "SlottingDetected { requested_mm: 12.7, cap_mm: 1.5875, shipped_mm: 12.7 }",
+   "LongToolDerate { stickout_mm: 28.32, diameter_mm: 6.35, ratio: 4.45984251968504, factor: 0.88 }"
+  ]
+ },
+ "PW_6.35_2f_whiteoak_2.5D": {
+  "cell": {
+   "id": "PW_6.35_2f_whiteoak_2.5D",
+   "kind": "end_mill",
+   "d": 6.35,
+   "z": 2,
+   "mat": "whiteoak",
+   "ap": 15.875,
+   "ae": 6.35,
+   "flute": 20.32,
+   "stick": 28.32,
+   "extra": "",
+   "machine": "shapeoko",
+   "group": "PW"
+  },
+  "feed": 3900.0,
+  "rpm": 10026,
+  "chip": 0.24915629765623967,
+  "power": 0.6265942641413204,
+  "avail": 0.6265942641413204,
+  "fz": 0.19449431478156792,
+  "warnings": [
+   "SlottingDetected { requested_mm: 15.875, cap_mm: 1.5875, shipped_mm: 15.875 }",
+   "LongToolDerate { stickout_mm: 28.32, diameter_mm: 6.35, ratio: 4.45984251968504, factor: 0.88 }",
+   "PowerLimited { required_kw: 0.7343092185339531, available_kw: 0.6265942641413204 }",
+   "PowerLadderReducedCut { rpm_from: None, rpm_to: None, axial_from: None, axial_to: None, radial_from: None, radial_to: None, feed_factor: Some(0.7806917747117764), required_kw_before: 0.7343092185339531, required_kw_after: 0.6265942641413204, available_kw: 0.6265942641413204 }"
+  ]
+ },
+ "PW_6.35_2f_whiteoak_3.0D": {
+  "cell": {
+   "id": "PW_6.35_2f_whiteoak_3.0D",
+   "kind": "end_mill",
+   "d": 6.35,
+   "z": 2,
+   "mat": "whiteoak",
+   "ap": 19.049999999999997,
+   "ae": 6.35,
+   "flute": 20.32,
+   "stick": 28.32,
+   "extra": "",
+   "machine": "shapeoko",
+   "group": "PW"
+  },
+  "feed": 2837.0,
+  "rpm": 10026,
+  "chip": 0.24915629765623967,
+  "power": 0.6265942641413204,
+  "avail": 0.6265942641413204,
+  "fz": 0.14148214641930978,
+  "warnings": [
+   "DocExceedsFlute { requested_mm: 19.049999999999997, guard_mm: 16.256, shipped_mm: 19.049999999999997 }",
+   "SlottingDetected { requested_mm: 19.049999999999997, cap_mm: 1.5875, shipped_mm: 19.049999999999997 }",
+   "LongToolDerate { stickout_mm: 28.32, diameter_mm: 6.35, ratio: 4.45984251968504, factor: 0.88 }",
+   "PowerLimited { required_kw: 0.8811710622407436, available_kw: 0.6265942641413204 }",
+   "PowerLadderReducedCut { rpm_from: None, rpm_to: None, axial_from: None, axial_to: None, radial_from: None, radial_to: None, feed_factor: Some(0.5680668938871011), required_kw_before: 0.8811710622407436, required_kw_after: 0.6265942641413204, available_kw: 0.6265942641413204 }"
+  ]
+ }
+}

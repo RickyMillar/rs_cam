@@ -1,0 +1,478 @@
+{
+ "spektra_6mm_chip": {
+  "value": 0.127,
+  "shown": "0.127",
+  "files": [
+   "REPORT.md",
+   "DISAGREEMENTS.md",
+   "index.html"
+  ]
+ },
+ "face5_hw_chip": {
+  "value": 0.13113489350328403,
+  "shown": "0.1311",
+  "files": [
+   "REPORT.md",
+   "DISAGREEMENTS.md",
+   "index.html"
+  ]
+ },
+ "face5_sw_chip": {
+  "value": 0.127,
+  "shown": "0.127",
+  "files": [
+   "REPORT.md"
+  ]
+ },
+ "face5_hw_feed": {
+  "value": 5550.0,
+  "shown": "5550",
+  "files": [
+   "REPORT.md",
+   "index.html"
+  ]
+ },
+ "face5_sw_feed": {
+  "value": 5375.0,
+  "shown": "5375",
+  "files": [
+   "REPORT.md",
+   "index.html"
+  ]
+ },
+ "whiteoak_janka": {
+  "value": 1360.0,
+  "shown": "1360",
+  "files": [
+   "REPORT.md",
+   "DISAGREEMENTS.md",
+   "index.html"
+  ]
+ },
+ "proxy_janka": {
+  "value": 1450.0,
+  "shown": "1450",
+  "files": [
+   "REPORT.md",
+   "DISAGREEMENTS.md",
+   "index.html"
+  ]
+ },
+ "janka_scale": {
+  "value": 1.0325582165612917,
+  "shown": "1.0326",
+  "files": [
+   "REPORT.md",
+   "DISAGREEMENTS.md",
+   "index.html"
+  ]
+ },
+ "face5_ratio": {
+  "value": 1.0325582165612917,
+  "shown": "1.0326",
+  "files": [
+   "REPORT.md"
+  ]
+ },
+ "score_hardness_points": {
+  "value": 80,
+  "shown": "80",
+  "files": [
+   "REPORT.md",
+   "DISAGREEMENTS.md"
+  ]
+ },
+ "score_oak_points": {
+  "value": 75,
+  "shown": "75",
+  "files": [
+   "REPORT.md",
+   "DISAGREEMENTS.md"
+  ]
+ },
+ "oak635_row": {
+  "value": "freud-solid-carbide-quarter-hardwood",
+  "shown": "freud-solid-carbide-quarter-hardwood",
+  "files": [
+   "REPORT.md",
+   "DISAGREEMENTS.md",
+   "index.html"
+  ]
+ },
+ "oak635_chip": {
+  "value": 0.24915629765623967,
+  "shown": "0.2492",
+  "files": [
+   "REPORT.md",
+   "DISAGREEMENTS.md",
+   "index.html"
+  ]
+ },
+ "oak635_rpm": {
+  "value": 10026,
+  "shown": "10026",
+  "files": [
+   "REPORT.md",
+   "DISAGREEMENTS.md",
+   "index.html"
+  ]
+ },
+ "hw635_chip": {
+  "value": 0.127,
+  "shown": "0.127",
+  "files": [
+   "REPORT.md",
+   "DISAGREEMENTS.md",
+   "index.html"
+  ]
+ },
+ "freud_quarter_hw_lo": {
+  "value": 0.2032,
+  "shown": "0.2032",
+  "files": [
+   "REPORT.md",
+   "DISAGREEMENTS.md"
+  ]
+ },
+ "freud_quarter_hw_hi": {
+  "value": 0.2794,
+  "shown": "0.2794",
+  "files": [
+   "REPORT.md",
+   "DISAGREEMENTS.md"
+  ]
+ },
+ "onsrud_q_hw_lo": {
+  "value": 0.127,
+  "shown": "0.127",
+  "files": [
+   "index.html"
+  ]
+ },
+ "onsrud_q_hw_hi": {
+  "value": 0.17779999999999999,
+  "shown": "0.178",
+  "files": [
+   "index.html"
+  ]
+ },
+ "sienci_hobby_chip": {
+  "value": 0.11416666666666667,
+  "shown": "0.114",
+  "files": [
+   "index.html"
+  ]
+ },
+ "gate_oak_band_max": {
+  "value": 0.2884967657072249,
+  "shown": "0.2885",
+  "files": [
+   "REPORT.md"
+  ]
+ },
+ "r37_pick_ap": {
+  "value": 6.9849999999999985,
+  "shown": "6.985",
+  "files": [
+   "REPORT.md",
+   "DISAGREEMENTS.md",
+   "index.html"
+  ]
+ },
+ "r37_pick_ae": {
+  "value": 2.32025078223123,
+  "shown": "2.32",
+  "files": [
+   "REPORT.md",
+   "DISAGREEMENTS.md",
+   "index.html"
+  ]
+ },
+ "r37_pick_chip": {
+  "value": 0.0889,
+  "shown": "0.0889",
+  "files": [
+   "REPORT.md",
+   "index.html"
+  ]
+ },
+ "sienci_eighth_pocket": {
+  "value": 5.6,
+  "shown": "5.6",
+  "files": [
+   "REPORT.md",
+   "DISAGREEMENTS.md",
+   "index.html"
+  ]
+ },
+ "sienci_eighth_stepover": {
+  "value": 1.45,
+  "shown": "1.45",
+  "files": [
+   "REPORT.md",
+   "DISAGREEMENTS.md",
+   "index.html"
+  ]
+ },
+ "r37_gate_budget": {
+  "value": 4.999522633947724,
+  "shown": "5.00",
+  "files": [
+   "REPORT.md",
+   "DISAGREEMENTS.md",
+   "index.html"
+  ]
+ },
+ "r37_gate_fz": {
+  "value": 0.10963909007676864,
+  "shown": "0.1096",
+  "files": [
+   "REPORT.md",
+   "DISAGREEMENTS.md"
+  ]
+ },
+ "r37_sienci_gate_budget": {
+  "value": 9.023292695603434,
+  "shown": "9.02",
+  "files": [
+   "REPORT.md"
+  ]
+ },
+ "hw635_free_ap": {
+  "value": 3.3934809137921604,
+  "shown": "3.39",
+  "files": [
+   "REPORT.md",
+   "DISAGREEMENTS.md",
+   "index.html"
+  ]
+ },
+ "sienci_hw_slot": {
+  "value": 2.5,
+  "shown": "2.5",
+  "files": [
+   "REPORT.md",
+   "DISAGREEMENTS.md",
+   "index.html"
+  ]
+ },
+ "c3d_mahogany_slot": {
+  "value": 2.54,
+  "shown": "2.54",
+  "files": [
+   "REPORT.md",
+   "DISAGREEMENTS.md",
+   "index.html"
+  ]
+ },
+ "p13_force_hw": {
+  "value": 24.67,
+  "shown": "24.67",
+  "files": [
+   "REPORT.md",
+   "DISAGREEMENTS.md"
+  ]
+ },
+ "p13_force_sw": {
+  "value": 30.25,
+  "shown": "30.25",
+  "files": [
+   "REPORT.md",
+   "DISAGREEMENTS.md"
+  ]
+ },
+ "engine_hw_sw_ratio": {
+  "value": 1.7615603305785126,
+  "shown": "1.76",
+  "files": [
+   "REPORT.md",
+   "DISAGREEMENTS.md",
+   "index.html"
+  ]
+ },
+ "sienci_sw_hw_ratio": {
+  "value": 2.16,
+  "shown": "2.16",
+  "files": [
+   "REPORT.md",
+   "DISAGREEMENTS.md",
+   "index.html"
+  ]
+ },
+ "ply635_ap": {
+  "value": 10.583333333333332,
+  "shown": "10.58",
+  "files": [
+   "REPORT.md",
+   "DISAGREEMENTS.md",
+   "index.html"
+  ]
+ },
+ "ply635_row": {
+  "value": "freud-solid-carbide-quarter-plywood-hardwood",
+  "shown": "freud-solid-carbide-quarter-plywood-hardwood",
+  "files": [
+   "REPORT.md",
+   "DISAGREEMENTS.md"
+  ]
+ },
+ "thin_lift": {
+  "value": 2.294157338705618,
+  "shown": "2.29",
+  "files": [
+   "REPORT.md",
+   "DISAGREEMENTS.md",
+   "index.html"
+  ]
+ },
+ "thin_gate_budget": {
+  "value": 1.8545047467200098,
+  "shown": "1.85",
+  "files": [
+   "REPORT.md",
+   "DISAGREEMENTS.md",
+   "index.html"
+  ]
+ },
+ "thin_peak_woc": {
+  "value": 0.8333333333333334,
+  "shown": "0.83",
+  "files": [
+   "REPORT.md",
+   "DISAGREEMENTS.md"
+  ]
+ },
+ "river_lineage_ap": {
+  "value": -4.0,
+  "shown": "-4.0",
+  "files": [
+   "REPORT.md",
+   "DISAGREEMENTS.md",
+   "index.html"
+  ]
+ },
+ "river_calc_ap": {
+  "value": 0.36,
+  "shown": "0.36",
+  "files": [
+   "REPORT.md",
+   "DISAGREEMENTS.md",
+   "index.html"
+  ]
+ },
+ "vrivers_calc_ap": {
+  "value": 0.19049999999999997,
+  "shown": "0.19",
+  "files": [
+   "REPORT.md",
+   "DISAGREEMENTS.md"
+  ]
+ },
+ "trace_finish_k": {
+  "value": 0.06,
+  "shown": "0.06",
+  "files": [
+   "REPORT.md",
+   "DISAGREEMENTS.md"
+  ]
+ },
+ "pw_sw127_feed": {
+  "value": 62.0,
+  "shown": "62",
+  "files": [
+   "REPORT.md",
+   "DISAGREEMENTS.md"
+  ]
+ },
+ "pw_hw127_feed": {
+  "value": 5212.0,
+  "shown": "5212",
+  "files": [
+   "REPORT.md",
+   "DISAGREEMENTS.md"
+  ]
+ },
+ "pw_hw127_kw": {
+  "value": 4.04182416012851,
+  "shown": "4.04",
+  "files": [
+   "REPORT.md",
+   "DISAGREEMENTS.md"
+  ]
+ },
+ "feed_cap_default": {
+  "value": 6000,
+  "shown": "6000",
+  "files": [
+   "REPORT.md",
+   "DISAGREEMENTS.md"
+  ]
+ },
+ "lake_chip": {
+  "value": 0.06993860986841814,
+  "shown": "0.0699",
+  "files": [
+   "REPORT.md",
+   "DISAGREEMENTS.md"
+  ]
+ },
+ "spektra_3_32_chip": {
+  "value": 0.05841999999999999,
+  "shown": "0.0584",
+  "files": [
+   "REPORT.md",
+   "DISAGREEMENTS.md"
+  ]
+ },
+ "harvey_ratio": {
+  "value": 0.7641509433962264,
+  "shown": "0.764",
+  "files": [
+   "REPORT.md",
+   "index.html"
+  ]
+ },
+ "harvey_thinned": {
+  "value": 0.8333333333333335,
+  "shown": "0.833",
+  "files": [
+   "REPORT.md",
+   "index.html"
+  ]
+ },
+ "fm1_ok": {
+  "value": 524,
+  "shown": "524",
+  "files": [
+   "REPORT.md"
+  ]
+ },
+ "fm1_sim_chip_unmodeled": {
+  "value": 24,
+  "shown": "24",
+  "files": [
+   "REPORT.md"
+  ]
+ },
+ "fm1_sim_rows": {
+  "value": 38,
+  "shown": "38",
+  "files": [
+   "REPORT.md"
+  ]
+ },
+ "rigid_budget": {
+  "value": 182.77763449001054,
+  "shown": "182.8",
+  "files": [
+   "REPORT.md"
+  ]
+ },
+ "cli_build_s": {
+  "value": 245.05,
+  "shown": "245",
+  "files": [
+   "REPORT.md"
+  ]
+ }
+}

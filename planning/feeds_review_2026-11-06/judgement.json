@@ -1,0 +1,172 @@
+{
+ "flat_6mm_hardwood_chip": {
+  "spektra": 0.127,
+  "onsrud": [
+   0.127,
+   0.17779999999999999
+  ],
+  "freud": [
+   0.2032,
+   0.2794
+  ],
+  "harvey_slot": 0.26924,
+  "sienci_hobby": 0.11416666666666667,
+  "c3d_hobby_3f": 0.029041336851363238,
+  "judgement": [
+   0.11416666666666667,
+   0.127
+  ],
+  "note": "Lowest printed vendor point (Spektra, one wood column) and the Sienci hobby reading bound the safe chip."
+ },
+ "flat_6mm_hardwood_slot": {
+  "sienci_depth": 2.5,
+  "c3d_depth": 2.54,
+  "d": 6.35,
+  "judgement_depth": 2.5,
+  "judgement_width_over_d": 1.0,
+  "judgement_feed_at_18000": 4572.0,
+  "note": "Two hobby charts print a hardwood slot near 0.4 D."
+ },
+ "flat_6mm_hardwood_pocket": {
+  "sienci_depth": 5.6,
+  "sienci_width": 2.85,
+  "width_over_d": 0.4488188976377953,
+  "judgement_depth": 5.6,
+  "judgement_width": 2.85,
+  "note": "Sienci prints the pocket depth with its stepover 2.85 mm (0.45 D)."
+ },
+ "flat_3175_hardwood_pocket": {
+  "sienci_depth": 5.6,
+  "sienci_slot": 2.6,
+  "sienci_width": 1.45,
+  "d": 3.175,
+  "depth_over_d": 1.763779527559055,
+  "width_over_d": 0.4566929133858268,
+  "spektra_chip": 0.1016,
+  "onsrud_chip": [
+   0.0762,
+   0.127
+  ],
+  "freud_chip": [
+   0.0508,
+   0.127
+  ],
+  "note": "R37 reference: Sienci prints 5.6 mm at 1.45 mm width for a 1/8 in hardwood pocket."
+ },
+ "face_18mm_hardwood": {
+  "sienci_d": 22.0,
+  "sienci_depth": 1.0,
+  "sienci_width_over_d": 0.4,
+  "sienci_feed": 2590,
+  "sienci_rpm": 17000,
+  "note": "Nearest printed facing tool: Sienci 22 mm surfacing bit, hardwood."
+ },
+ "drill_6mm_plunge": {
+  "spektra_ramp": 2286.0,
+  "sienci_plunge": 1370,
+  "rule": "flat end plunge = feed / Z (Amana 'To find Ramp Down: Feed Rate IPM / # of flutes')",
+  "judgement": [
+   1370,
+   2286.0
+  ]
+ },
+ "tapered_2mm_finish": {
+  "chip": 0.0762,
+  "feed": 2743.2,
+  "rpm": 18000,
+  "stepdown": 2.0,
+  "stepover": 0.8,
+  "sienci_tapered_rpm": 28500,
+  "note": "SpeTool prints the 2.0 mm tip in wood; Sienci prints 28500 rpm, above the 24000 rpm machine top."
+ },
+ "vbit_hardwood": {
+  "two_flute_feed": 2286.0,
+  "two_flute_chip": 0.0762,
+  "two_flute_chip_from_feed": 0.0635,
+  "one_flute_chip": [
+   0.0762,
+   0.17779999999999999
+  ],
+  "sienci_vcarve_feed": 1730,
+  "note": "Amana prints 90 ipm and .003 in for 2 flutes; 90/(18000 x 2) = .0025 in, so the two columns disagree."
+ },
+ "ball_6mm_hardwood": {
+  "amana_quarter": [
+   0.127,
+   0.17779999999999999
+  ],
+  "amana_eighth": [
+   0.0762,
+   0.127
+  ],
+  "sienci_finish_chip_2f": 0.06340909090909091,
+  "sienci_finish_stepover": 0.3
+ },
+ "harvey_finish_witness": {
+  "ratio": 0.7641509433962264,
+  "radial_over_d": 0.1,
+  "axial_over_d": 3,
+  "lift_at_0p1d": 1.666666666666667,
+  "depth_scale_3xd": 0.5,
+  "thinned_reading": 0.8333333333333335,
+  "unthinned_reading": 0.5
+ },
+ "material_order": {
+  "onsrud_quarter_hw_lt_sw": true,
+  "freud_quarter_hw_lt_sw": true,
+  "harvey_quarter_hw_lt_sw": true,
+  "amana_ball_quarter_hw_lt_sw": true,
+  "spektra_one_wood_column": true,
+  "sienci_slot_ratio_sw_over_hw": 2.16,
+  "c3d_slot_ratio_pine_over_mahogany": 4.0
+ },
+ "hobby_slot_points": {
+  "sienci_sw_or_mdf_quarter": {
+   "depth": 5.4,
+   "chip_2f": 0.11416666666666667
+  },
+  "sienci_hw_quarter": {
+   "depth": 2.5,
+   "chip_2f": 0.11416666666666667
+  },
+  "c3d_pine": {
+   "depth": 10.16,
+   "chip_3f": 0.030238095238095238
+  },
+  "c3d_mahogany": {
+   "depth": 2.54,
+   "chip_3f": 0.029041336851363238
+  },
+  "c3d_mdf": {
+   "depth": 7.619999999999999,
+   "chip_3f": 0.03984313725490196
+  }
+ },
+ "face_18mm_vendor_chip": {
+  "onsrud_3q": [
+   0.22859999999999997,
+   0.2794
+  ],
+  "spektra_3f_3q": 0.22859999999999997,
+  "note": "No printed row at 18 mm; the 3/4 in (19.05 mm) rows are the nearest."
+ },
+ "flat_2mm_1f_hardwood": {
+  "spektra_sixteenth": 0.0508,
+  "spektra_3_32": 0.05841999999999999,
+  "sienci_sixteenth_slot": 2.6,
+  "sienci_sixteenth_pocket": 5.8,
+  "sienci_sixteenth_stepover": 0.7,
+  "sienci_sixteenth_feed": 1350,
+  "feed_1f_at_18000": [
+   914.4,
+   1051.56
+  ],
+  "note": "2 mm lies between the printed 1/16 in and 3/32 in rows; the 1 flute feed is chip x rpm x 1."
+ },
+ "lift_table": {
+  "0.05": 2.294157338705618,
+  "0.1": 1.666666666666667,
+  "0.2": 1.25,
+  "0.5": 1.0
+ }
+}

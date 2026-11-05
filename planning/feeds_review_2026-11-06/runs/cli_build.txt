@@ -1,0 +1,4 @@
+# Release CLI build of this review (shell `time` output, 2026-11-06, HEAD ec5cbe4a9)
+command: timeout 600 scripts/cargo_lane.sh build -q --release -p rs_cam_cli
+wall_s: 245.05
+note: over the 3 minute line of CLAUDE.md; the reviewer did not ask the operator first.

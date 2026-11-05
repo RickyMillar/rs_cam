@@ -1,0 +1,244 @@
+[
+ {
+  "name": "Face 5",
+  "tool": "end_mill",
+  "d": 6.0,
+  "z": 2,
+  "cur": {
+   "feed_rate": 2200.0,
+   "plunge_rate": 500.0,
+   "stepover": 1.422,
+   "depth_per_pass": 0.812,
+   "spindle_rpm": 18000,
+   "peck_depth": null
+  },
+  "sug": {
+   "feed_rate": 5550.0,
+   "plunge_rate": 2775.0,
+   "stepover": 1.422,
+   "depth_per_pass": 0.812,
+   "spindle_rpm": 18000,
+   "peck_depth": null
+  },
+  "chip": 0.13113489350328403,
+  "bounds": null,
+  "point": 0.13113489350328403,
+  "src": "amana-flat-hardwood-pocket-6000-2f-spektra",
+  "chip_src": "VendorLut { observation_id: \"amana-flat-hardwood-pocket-6000-2f-spektra\" }",
+  "rpm_calc": 18000.0,
+  "ap_calc": 0.812,
+  "ae_calc": 1.422,
+  "power": 0.013080368556974396,
+  "avail": 1.125,
+  "power_limited": false,
+  "warnings": [
+   "LongToolDerate { stickout_mm: 45.0, diameter_mm: 6.0, ratio: 7.5, factor: 0.75 }"
+  ],
+  "fz": 0.15416666666666667,
+  "peak_chip": 0.13111637086318906,
+  "peak_factor": 0.8504845677612263,
+  "env_prop": {
+   "ap_mm": 0.812,
+   "ae_mm": 1.4219999999999997
+  },
+  "env_binding": null,
+  "env_operator": {
+   "kind": "inside",
+   "margin": 0.7223372285648471
+  },
+  "support": "vendor-backed",
+  "shipped_power": {
+   "required_kw": 0.013079485639856437,
+   "available_kw": 1.125,
+   "ap_mm": 0.812,
+   "ae_mm": 1.422,
+   "rpm": 18000.0,
+   "feed_mm_min": 5550.0,
+   "case": "nominal",
+   "case_ae_mm": 1.422
+  }
+ },
+ {
+  "name": "3D Rough",
+  "tool": "end_mill",
+  "d": 6.0,
+  "z": 2,
+  "cur": {
+   "feed_rate": 2400.0,
+   "plunge_rate": 500.0,
+   "stepover": 1.2000000000000002,
+   "depth_per_pass": 2.0,
+   "spindle_rpm": 18000,
+   "peck_depth": null
+  },
+  "sug": {
+   "feed_rate": 5901.0,
+   "plunge_rate": 2950.0,
+   "stepover": 1.2000000000000002,
+   "depth_per_pass": 2.0,
+   "spindle_rpm": 18000,
+   "peck_depth": null
+  },
+  "chip": 0.13113489350328403,
+  "bounds": null,
+  "point": 0.13113489350328403,
+  "src": "amana-flat-hardwood-pocket-6000-2f-spektra",
+  "chip_src": "VendorLut { observation_id: \"amana-flat-hardwood-pocket-6000-2f-spektra\" }",
+  "rpm_calc": 18000.0,
+  "ap_calc": 2.0,
+  "ae_calc": 1.2000000000000002,
+  "power": 0.04199191788817162,
+  "avail": 1.125,
+  "power_limited": false,
+  "warnings": [
+   "LongToolDerate { stickout_mm: 45.0, diameter_mm: 6.0, ratio: 7.5, factor: 0.75 }"
+  ],
+  "fz": 0.16391666666666665,
+  "peak_chip": 0.13113333333333332,
+  "peak_factor": 0.8,
+  "env_prop": {
+   "ap_mm": 2.0,
+   "ae_mm": 1.2000000000000002
+  },
+  "env_binding": null,
+  "env_operator": {
+   "kind": "inside",
+   "margin": 0.6666666666666666
+  },
+  "support": "vendor-backed",
+  "shipped_power": {
+   "required_kw": 0.04199165495764749,
+   "available_kw": 1.125,
+   "ap_mm": 2.0,
+   "ae_mm": 1.2000000000000002,
+   "rpm": 18000.0,
+   "feed_mm_min": 5901.0,
+   "case": "planner cap",
+   "case_ae_mm": 1.9200000000000004
+  }
+ },
+ {
+  "name": "Scallop Finish",
+  "tool": "tapered_ball_nose",
+  "d": 2.0,
+  "z": 2,
+  "cur": {
+   "feed_rate": 1000.0,
+   "plunge_rate": 240.0,
+   "stepover": null,
+   "depth_per_pass": null,
+   "spindle_rpm": 24000,
+   "peck_depth": null
+  },
+  "sug": {
+   "feed_rate": 2317.0,
+   "plunge_rate": 240.0,
+   "stepover": null,
+   "depth_per_pass": null,
+   "spindle_rpm": 18000,
+   "peck_depth": null
+  },
+  "chip": 0.06437017664182963,
+  "bounds": [
+   0.04883254779725006,
+   0.07990780548640919
+  ],
+  "point": null,
+  "src": "amana-tapered-hardwood-parallel-1587-2f-zrn-v8",
+  "chip_src": "VendorLut { observation_id: \"amana-tapered-hardwood-parallel-1587-2f-zrn-v8\" }",
+  "rpm_calc": 18000.0,
+  "ap_calc": 0.2,
+  "ae_calc": 0.2821347195933177,
+  "power": 0.00046248757004972545,
+  "avail": 1.125,
+  "power_limited": false,
+  "warnings": [
+   "LongToolDerate { stickout_mm: 35.0, diameter_mm: 2.0, ratio: 17.5, factor: 0.75 }"
+  ],
+  "fz": 0.0643611111111111,
+  "peak_chip": 0.0643611111111111,
+  "peak_factor": 1.0,
+  "env_prop": {
+   "ap_mm": 0.2,
+   "ae_mm": 0.2821347195933177
+  },
+  "env_binding": null,
+  "env_operator": {
+   "kind": "inside",
+   "margin": 0.8589326402033411
+  },
+  "support": "vendor row, family transferred (G3 family): the parallel row serves this scallop pass; extrapolated (G1 size): x1.26 from the 1.5875 mm row",
+  "shipped_power": {
+   "required_kw": 0.0004624696099963031,
+   "available_kw": 1.125,
+   "ap_mm": 0.2,
+   "ae_mm": 0.2821347195933177,
+   "rpm": 18000.0,
+   "feed_mm_min": 2317.0,
+   "case": "nominal",
+   "case_ae_mm": 0.2821347195933177
+  }
+ },
+ {
+  "name": "Project Curve",
+  "tool": "v_bit",
+  "d": 5.5,
+  "z": 2,
+  "cur": {
+   "feed_rate": 1000.0,
+   "plunge_rate": 300.0,
+   "stepover": null,
+   "depth_per_pass": null,
+   "spindle_rpm": 24000,
+   "peck_depth": null
+  },
+  "sug": {
+   "feed_rate": 4572.0,
+   "plunge_rate": 660.0,
+   "stepover": null,
+   "depth_per_pass": null,
+   "spindle_rpm": 18000,
+   "peck_depth": null
+  },
+  "chip": 0.127,
+  "bounds": [
+   0.0762,
+   0.1778
+  ],
+  "point": null,
+  "src": "amana-vgroove-hardwood-trace-18deg-1f",
+  "chip_src": "VendorLut { observation_id: \"amana-vgroove-hardwood-trace-18deg-1f\" }",
+  "rpm_calc": 18000.0,
+  "ap_calc": 1.0,
+  "ae_calc": 5.5,
+  "power": 0.013789312636114489,
+  "avail": 1.125,
+  "power_limited": false,
+  "warnings": [
+   "LongToolDerate { stickout_mm: 30.0, diameter_mm: 5.5, ratio: 5.454545454545454, factor: 0.88 }"
+  ],
+  "fz": 0.127,
+  "peak_chip": 0.127,
+  "peak_factor": 1.0,
+  "env_prop": {
+   "ap_mm": 1.0,
+   "ae_mm": 5.5
+  },
+  "env_binding": null,
+  "env_operator": {
+   "kind": "inside",
+   "margin": 0.2727272727272727
+  },
+  "support": "vendor-backed",
+  "shipped_power": {
+   "required_kw": 0.013789312636114489,
+   "available_kw": 1.125,
+   "ap_mm": 1.0,
+   "ae_mm": 5.5,
+   "rpm": 18000.0,
+   "feed_mm_min": 4572.0,
+   "case": "slot",
+   "case_ae_mm": 5.5
+  }
+ }
+]

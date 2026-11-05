@@ -1,0 +1,54 @@
+{
+ "_source": "MCP get_tool_load_report after load_project + generate_all, rs_cam_gui pid 1955753 started unix 1793918703 (binary mtime 1793918597, HEAD ec5cbe4a9). Values copied from the tool replies of 2026-11-06; the projects are matrix/postsim/<id>.toml.",
+ "P_r37_pick": {
+  "depth_kind": "exceeds",
+  "depth_peak_mm": 6.985000133514404,
+  "depth_budget_mm": 4.999522633947724,
+  "depth_fz_mm": 0.10963909007676864,
+  "depth_ae_mm": 1.9999999999999998,
+  "chip_kind": "within",
+  "chip_peak_observed_mm": 0.10963909007676864,
+  "commanded_fz_mm": 0.0888983093112563,
+  "band_max_mm": 0.127,
+  "band_row": "freud-solid-carbide-eighth-hardwood",
+  "deflection_peak_mm": 0.03205607464952438,
+  "power_peak_kw": 0.10855433732594467,
+  "modulation_moves_touched": 0
+ },
+ "P_r37_sienci": {
+  "depth_kind": "within",
+  "depth_peak_mm": 5.599999904632568,
+  "depth_budget_mm": 9.023292695603434,
+  "depth_fz_mm": 0.08922248266919355,
+  "chip_kind": "within",
+  "chip_peak_observed_mm": 0.10963909007676864,
+  "commanded_fz_mm": 0.08922248266919355
+ },
+ "P_oak_slot": {
+  "depth_kind": "within",
+  "depth_peak_mm": 1.5,
+  "depth_budget_mm": 1.8565765444295543,
+  "depth_fz_mm": 0.2491023339317774,
+  "chip_kind": "within",
+  "band_min_mm": 0.20981582960525447,
+  "band_max_mm": 0.2884967657072249,
+  "band_row": "freud-solid-carbide-quarter-hardwood",
+  "hardness_scale": 1.0325582165612917,
+  "commanded_fz_mm": 0.2491023339317774,
+  "rpm": 10026
+ },
+ "P_thin_005": {
+  "depth_kind": "exceeds",
+  "depth_peak_mm": 6.0,
+  "depth_budget_mm": 1.8545047467200098,
+  "depth_fz_mm": 0.29132672882672883,
+  "depth_ae_mm": 5.0,
+  "chip_kind": "within",
+  "commanded_fz_mm": 0.29132672882672883,
+  "thinning_lift": 2.294157338705618,
+  "rpm": 10296,
+  "peak_radial_woc_fraction": 0.8333333333333334,
+  "modulation_chipload_max_share": 0.025,
+  "median_feed_delta_pct": -42.00400618522268
+ }
+}

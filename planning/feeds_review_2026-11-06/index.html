@@ -1,0 +1,202 @@
+<title>Feeds Sanity Review</title>
+<meta name="claude:viewport-fit-sides" content="cover">
+<link rel="preconnect" href="https://fonts.googleapis.com">
+<link rel="stylesheet" href="https://fonts.googleapis.com/css2?family=IBM+Plex+Sans:wght@400;500;600&family=IBM+Plex+Mono:wght@400;500&family=Fraunces:opsz,wght@9..144,600&display=swap">
+<style>
+/* Layout: one reading column of findings, each a ruled card with a severity stripe; a chip-band chart sits under the lead finding. */
+:root {
+  --bg: #f6f7f4;
+  --panel: #ffffff;
+  --fg: #1d2420;
+  --muted: #5d6862;
+  --rule: #d7ddd8;
+  --accent: #2f6b55;
+  --sev-a: #b4432f;
+  --sev-b: #a7741c;
+  --sev-c: #5a6f86;
+  --band: #cfe0d6;
+  --band-alt: #e6dccb;
+  --engine: #1d2420;
+  --display: "Fraunces", Georgia, serif;
+  --body: "IBM Plex Sans", "Segoe UI", system-ui, sans-serif;
+  --mono: "IBM Plex Mono", ui-monospace, Menlo, monospace;
+}
+@media (prefers-color-scheme: dark) {
+  :root:not([data-theme="light"]) {
+    --bg: #141917; --panel: #1b221f; --fg: #e3e9e5; --muted: #9aa8a0; --rule: #2e3833;
+    --accent: #7cc1a3; --sev-a: #e07a64; --sev-b: #d9a54a; --sev-c: #8fa6c0;
+    --band: #2c4a3d; --band-alt: #4a4232; --engine: #e3e9e5; color-scheme: dark;
+  }
+}
+:root[data-theme="dark"] {
+  --bg: #141917; --panel: #1b221f; --fg: #e3e9e5; --muted: #9aa8a0; --rule: #2e3833;
+  --accent: #7cc1a3; --sev-a: #e07a64; --sev-b: #d9a54a; --sev-c: #8fa6c0;
+  --band: #2c4a3d; --band-alt: #4a4232; --engine: #e3e9e5; color-scheme: dark;
+}
+body { background: var(--bg); color: var(--fg); font-family: var(--body); font-size: 15px; line-height: 1.55; }
+.wrap { max-width: 860px; margin: 0 auto; padding-block: 32px 64px; padding-left: max(16px, env(safe-area-inset-left, 0px)); padding-right: max(16px, env(safe-area-inset-right, 0px)); display: grid; gap: 28px; }
+header { display: grid; gap: 8px; }
+.eyebrow { font-family: var(--mono); font-size: 12px; letter-spacing: .06em; text-transform: uppercase; color: var(--muted); }
+h1 { font-family: var(--display); font-weight: 600; font-size: clamp(28px, 5vw, 40px); line-height: 1.1; margin: 0; text-wrap: balance; }
+h2 { font-family: var(--display); font-weight: 600; font-size: 22px; margin: 0; text-wrap: balance; }
+h3 { font-size: 16px; font-weight: 600; margin: 0; }
+p { margin: 0; max-width: 68ch; }
+.lede { color: var(--muted); }
+[data-claim] { font-family: var(--mono); font-variant-numeric: tabular-nums; font-size: .93em; }
+.stats { display: grid; grid-template-columns: repeat(auto-fit, minmax(170px, 1fr)); gap: 12px; }
+.stat { border-top: 2px solid var(--fg); padding-top: 8px; display: grid; gap: 2px; }
+.stat b { font-family: var(--mono); font-size: 22px; font-weight: 500; }
+.stat span { color: var(--muted); font-size: 13px; }
+section { display: grid; gap: 14px; }
+.cards { display: grid; gap: 12px; }
+.card { background: var(--panel); border: 1px solid var(--rule); border-left: 4px solid var(--sev-c); padding: 14px 16px; display: grid; gap: 6px; min-width: 0; }
+.card.a { border-left-color: var(--sev-a); }
+.card.b { border-left-color: var(--sev-b); }
+.card .meta { display: flex; flex-wrap: wrap; gap: 8px; align-items: baseline; }
+.pill { font-family: var(--mono); font-size: 11px; letter-spacing: .05em; text-transform: uppercase; padding: 1px 7px; border: 1px solid currentColor; border-radius: 3px; }
+.pill.a { color: var(--sev-a); } .pill.b { color: var(--sev-b); } .pill.c { color: var(--sev-c); }
+.term { color: var(--accent); font-weight: 500; }
+.chart { background: var(--panel); border: 1px solid var(--rule); padding: 14px 16px; display: grid; gap: 10px; min-width: 0; }
+.chart svg { width: 100%; height: auto; display: block; }
+.chart text { fill: var(--fg); font-family: var(--mono); font-size: 11px; }
+.chart .ax { stroke: var(--rule); }
+.chart .note { fill: var(--muted); }
+.filters { display: flex; flex-wrap: wrap; gap: 8px; }
+.filters button { font: inherit; font-size: 13px; padding: 4px 10px; border: 1px solid var(--rule); background: var(--panel); color: var(--fg); border-radius: 3px; cursor: pointer; }
+.filters button[aria-pressed="true"] { border-color: var(--fg); font-weight: 600; }
+.filters button:focus-visible { outline: 2px solid var(--accent); outline-offset: 2px; }
+.scale { display: grid; gap: 6px; }
+.scale .track { position: relative; height: 34px; border-bottom: 1px solid var(--rule); }
+.scale .mk { position: absolute; bottom: 0; transform: translateX(-50%); display: grid; justify-items: center; font-family: var(--mono); font-size: 11px; }
+.scale .mk i { width: 2px; height: 12px; background: var(--muted); }
+.scale .mk.hv i { background: var(--accent); height: 18px; width: 3px; }
+footer { color: var(--muted); font-size: 13px; display: grid; gap: 6px; }
+code { font-family: var(--mono); font-size: .9em; overflow-wrap: anywhere; }
+@media (prefers-reduced-motion: no-preference) { .card { transition: opacity .15s; } }
+</style>
+
+<div class="wrap">
+<header>
+  <div class="eyebrow">rs_cam feeds contract · review of 2026-11-06 · HEAD ec5cbe4a9</div>
+  <h1>Does the feeds engine cut like the printed charts say?</h1>
+  <p class="lede">The reviewer wrote a safe cut for each toolpath from printed vendor and hobby charts first, then read Suggest, the envelope and the post-sim gate. Each disagreement names the missing term. Every number on this page comes from <code>claims.json</code>; <code>assert_claims.py</code> re-derives it from the engine output, the chart text or the code.</p>
+</header>
+
+<div class="stats">
+  <div class="stat"><b>13</b><span>disagreements (D1-D13)</span></div>
+  <div class="stat"><b>5</b><span>severity A: a safety-side miss or a wrong row (2 of them open)</span></div>
+  <div class="stat"><b>2</b><span>engine picks where the post-sim depth gate exceeds</span></div>
+  <div class="stat"><b><span data-claim="fm1_ok">524</span></b><span>of 1000 FM1 cells ship (the rest refuse a wrong tool)</span></div>
+</div>
+
+<section>
+  <h2>The lead finding: one chart, two chips</h2>
+  <p>Amana Spektra prints one Wood/Plywood chip, <span data-claim="spektra_6mm_chip">0.127</span> mm at 6 mm. For white oak the engine ships <span data-claim="face5_hw_chip">0.1311</span> mm (rivmap100 "Face 5", <span data-claim="face5_hw_feed">5550</span> mm/min against <span data-claim="face5_sw_feed">5375</span> mm/min in softwood). The Spektra row carries an engine proxy Janka of <span data-claim="proxy_janka">1450</span>; white oak is <span data-claim="whiteoak_janka">1360</span>. The square root of their ratio is <span data-claim="janka_scale">1.0326</span>. No chart prints the proxy.</p>
+  <p>The same proxy flips the row for a 6.35 mm 2F tool. Generic hardwood reads Spektra at <span data-claim="hw635_chip">0.127</span> mm. White oak reads <code><span data-claim="oak635_row">freud-solid-carbide-quarter-hardwood</span></code> at <span data-claim="oak635_chip">0.2492</span> mm and <span data-claim="oak635_rpm">10026</span> rpm. The chart below puts the printed bands beside the two engine chips.</p>
+  <div class="chart" role="img" aria-label="Printed chip bands for a 6.35 mm two-flute end mill in hardwood, with the two engine chips">
+    <svg id="bandchart" viewBox="0 0 640 230" preserveAspectRatio="xMidYMid meet"></svg>
+    <p class="lede" style="font-size:13px">Bands: Onsrud 52-200 <span data-claim="onsrud_q_hw_lo">0.127</span>-<span data-claim="onsrud_q_hw_hi">0.178</span> mm; Freud <span data-claim="freud_quarter_hw_lo">0.2032</span>-<span data-claim="freud_quarter_hw_hi">0.2794</span> mm; Spektra one point; Sienci hobby reading <span data-claim="sienci_hobby_chip">0.114</span> mm (2 flutes assumed, the chart prints none).</p>
+  </div>
+</section>
+
+<section>
+  <h2>Disagreements</h2>
+  <div class="filters" role="group" aria-label="Filter by severity">
+    <button id="f-all" aria-pressed="true" data-f="all">All</button>
+    <button id="f-a" aria-pressed="false" data-f="a">A · safety or wrong row</button>
+    <button id="f-b" aria-pressed="false" data-f="b">B · model term</button>
+    <button id="f-c" aria-pressed="false" data-f="c">C · record</button>
+  </div>
+  <div class="cards" id="cards">
+    <article class="card b" data-s="b"><div class="meta"><span class="pill b">B</span><h3>D1 · Face 5, white oak</h3></div>
+      <p>Chip <span data-claim="face5_hw_chip">0.1311</span> mm against the printed <span data-claim="spektra_6mm_chip">0.127</span> mm. Missing term: <span class="term">a hardness span per row</span>. A one-column chart has no slope inside its column.</p></article>
+    <article class="card a" data-s="a"><div class="meta"><span class="pill a">A</span><h3>D2 · 6.35 mm 2F, white oak</h3></div>
+      <p>Row <code><span data-claim="oak635_row">freud-solid-carbide-quarter-hardwood</span></code>, <span data-claim="oak635_chip">0.2492</span> mm at <span data-claim="oak635_rpm">10026</span> rpm. Missing terms: <span class="term">one reader of a missing hardness</span> (the score gives 0 points, the transfer gives the family default; the hardness points break the Spektra-Freud tie before the lower-chip rule runs) and <span class="term">agreement across vendors</span>.</p></article>
+    <article class="card a" data-s="a"><div class="meta"><span class="pill a">A</span><h3>D3 · R37, 3.175 mm hardwood</h3></div>
+      <p>The proposal is <span data-claim="r37_pick_ap">6.985</span> mm deep and <span data-claim="r37_pick_ae">2.32</span> mm wide at <span data-claim="r37_pick_chip">0.0889</span> mm. Sienci prints <span data-claim="sienci_eighth_pocket">5.6</span> mm at <span data-claim="sienci_eighth_stepover">1.45</span> mm. The depth gate on the simulated cut gives a force-budget depth of <span data-claim="r37_gate_budget">5.00</span> mm and exceeds, but it reads a different feed from the chip gate. Missing term: <span class="term">one feed for Suggest and both gates</span>.</p></article>
+    <article class="card b" data-s="b"><div class="meta"><span class="pill b">B</span><h3>D4 · R36, hardwood slot</h3></div>
+      <p>The 6.35 mm proposal is <span data-claim="hw635_free_ap">3.39</span> mm at 0.85 D. Sienci prints <span data-claim="sienci_hw_slot">2.5</span> mm and Carbide 3D <span data-claim="c3d_mahogany_slot">2.54</span> mm. The engine separates hardwood from softwood by <span data-claim="engine_hw_sw_ratio">1.76</span> per mm; Sienci by a depth ratio of <span data-claim="sienci_sw_hw_ratio">2.16</span>. Missing term: <span class="term">a species factor beyond density</span>.</p></article>
+    <article class="card a" data-s="a"><div class="meta"><span class="pill a">A</span><h3>D5 · Baltic birch plywood</h3></div>
+      <p>No force line, so the 6.35 mm proposal is <span data-claim="ply635_ap">10.58</span> mm deep. Sienci prints 2.5 mm for hard plywood. Missing term: <span class="term">a force line for plywood</span>.</p></article>
+    <article class="card a" data-s="a"><div class="meta"><span class="pill a">A</span><h3>D6 · a 0.05 D width</h3></div>
+      <p>Suggest lifts the feed by <span data-claim="thin_lift">2.29</span>. The pocket path meets near-slot widths, and the depth gate gives a budget of <span data-claim="thin_gate_budget">1.85</span> mm against 6.0 mm. Two terms can explain it: <span class="term">the engagement spread of the planned path</span>, or one feed for both gates.</p></article>
+    <article class="card a" data-s="a"><div class="meta"><span class="pill a">A</span><h3>D7 · Project Curve depth</h3></div>
+      <p>The cut spec reads the signed offset <span data-claim="river_lineage_ap">-4.0</span> mm as the depth; the calculator then uses <span data-claim="river_calc_ap">0.36</span> mm, a 0.06 D default. Missing term: <span class="term">the sign of the surface offset in the cut spec</span>.</p></article>
+    <article class="card c" data-s="c"><div class="meta"><span class="pill c">C</span><h3>D8 · power ladder jump</h3></div>
+      <p>The last power rung has no rubbing-floor bound. Only cells with a shank the machine cannot hold reach it.</p></article>
+    <article class="card c" data-s="c"><div class="meta"><span class="pill c">C</span><h3>D9 · the 6000 mm/min cutting cap</h3></div>
+      <p>A typed default with no stored source and no F201 row.</p></article>
+    <article class="card b" data-s="b"><div class="meta"><span class="pill b">B</span><h3>D10 · 2 mm 1F lake pockets</h3></div>
+      <p>The size law scales up from the 1.5 mm row and passes the printed 3/32 in row. Missing term: <span class="term">interpolation between bracketing rows</span>.</p></article>
+    <article class="card c" data-s="c"><div class="meta"><span class="pill c">C</span><h3>D11 · V60 feed</h3></div>
+      <p>The row stores the chip column only; the printed 90 in/min sits in a note. Missing term: <span class="term">the printed feed in the row</span>.</p></article>
+    <article class="card c" data-s="c"><div class="meta"><span class="pill c">C</span><h3>D12 · the 0.25 D slot cap</h3></div>
+      <p>An unsourced cap below both printed hobby slots; the conservative side.</p></article>
+    <article class="card b" data-s="b"><div class="meta"><span class="pill b">B</span><h3>D13 · R38, a light finish pass</h3></div>
+      <p>Harvey prints Finishing at <span data-claim="harvey_ratio">0.764</span> x Slot-Rough at 0.1 D and 3 D. The thinned reading is <span data-claim="harvey_thinned">0.833</span>; the engine's no-thin reading is 0.5. Missing term: <span class="term">thinning on a light finish pass</span>.</p>
+      <div class="scale" aria-label="Harvey finish ratio against the two readings">
+        <div class="track" id="harveytrack"></div>
+      </div></article>
+  </div>
+</section>
+
+<footer>
+  <p>Files: <code>planning/feeds_review_2026-11-06/</code> (REPORT.md, DISAGREEMENTS.md, JUDGEMENT.md, PREREGISTRATION.md). GUI numbers come from <code>rs_cam_gui</code> built from HEAD and restarted before use.</p>
+  <p>Severity A means a safety-side miss or a wrong row; B a model term that moves numbers; C a record or consistency item.</p>
+</footer>
+</div>
+
+<script type="application/json" id="claims">{"spektra_6mm_chip": {"value": 0.127, "shown": "0.127", "files": ["REPORT.md", "DISAGREEMENTS.md", "index.html"]}, "face5_hw_chip": {"value": 0.13113489350328403, "shown": "0.1311", "files": ["REPORT.md", "DISAGREEMENTS.md", "index.html"]}, "face5_sw_chip": {"value": 0.127, "shown": "0.127", "files": ["REPORT.md"]}, "face5_hw_feed": {"value": 5550.0, "shown": "5550", "files": ["REPORT.md", "index.html"]}, "face5_sw_feed": {"value": 5375.0, "shown": "5375", "files": ["REPORT.md", "index.html"]}, "whiteoak_janka": {"value": 1360.0, "shown": "1360", "files": ["REPORT.md", "DISAGREEMENTS.md", "index.html"]}, "proxy_janka": {"value": 1450.0, "shown": "1450", "files": ["REPORT.md", "DISAGREEMENTS.md", "index.html"]}, "janka_scale": {"value": 1.0325582165612917, "shown": "1.0326", "files": ["REPORT.md", "DISAGREEMENTS.md", "index.html"]}, "face5_ratio": {"value": 1.0325582165612917, "shown": "1.0326", "files": ["REPORT.md"]}, "score_hardness_points": {"value": 80, "shown": "80", "files": ["REPORT.md", "DISAGREEMENTS.md"]}, "score_oak_points": {"value": 75, "shown": "75", "files": ["REPORT.md", "DISAGREEMENTS.md"]}, "oak635_row": {"value": "freud-solid-carbide-quarter-hardwood", "shown": "freud-solid-carbide-quarter-hardwood", "files": ["REPORT.md", "DISAGREEMENTS.md", "index.html"]}, "oak635_chip": {"value": 0.24915629765623967, "shown": "0.2492", "files": ["REPORT.md", "DISAGREEMENTS.md", "index.html"]}, "oak635_rpm": {"value": 10026, "shown": "10026", "files": ["REPORT.md", "DISAGREEMENTS.md", "index.html"]}, "hw635_chip": {"value": 0.127, "shown": "0.127", "files": ["REPORT.md", "DISAGREEMENTS.md", "index.html"]}, "freud_quarter_hw_lo": {"value": 0.2032, "shown": "0.2032", "files": ["REPORT.md", "DISAGREEMENTS.md"]}, "freud_quarter_hw_hi": {"value": 0.2794, "shown": "0.2794", "files": ["REPORT.md", "DISAGREEMENTS.md"]}, "onsrud_q_hw_lo": {"value": 0.127, "shown": "0.127", "files": ["index.html"]}, "onsrud_q_hw_hi": {"value": 0.17779999999999999, "shown": "0.178", "files": ["index.html"]}, "sienci_hobby_chip": {"value": 0.11416666666666667, "shown": "0.114", "files": ["index.html"]}, "gate_oak_band_max": {"value": 0.2884967657072249, "shown": "0.2885", "files": ["REPORT.md"]}, "r37_pick_ap": {"value": 6.9849999999999985, "shown": "6.985", "files": ["REPORT.md", "DISAGREEMENTS.md", "index.html"]}, "r37_pick_ae": {"value": 2.32025078223123, "shown": "2.32", "files": ["REPORT.md", "DISAGREEMENTS.md", "index.html"]}, "r37_pick_chip": {"value": 0.0889, "shown": "0.0889", "files": ["REPORT.md", "index.html"]}, "sienci_eighth_pocket": {"value": 5.6, "shown": "5.6", "files": ["REPORT.md", "DISAGREEMENTS.md", "index.html"]}, "sienci_eighth_stepover": {"value": 1.45, "shown": "1.45", "files": ["REPORT.md", "DISAGREEMENTS.md", "index.html"]}, "r37_gate_budget": {"value": 4.999522633947724, "shown": "5.00", "files": ["REPORT.md", "DISAGREEMENTS.md", "index.html"]}, "r37_gate_fz": {"value": 0.10963909007676864, "shown": "0.1096", "files": ["REPORT.md", "DISAGREEMENTS.md"]}, "r37_sienci_gate_budget": {"value": 9.023292695603434, "shown": "9.02", "files": ["REPORT.md"]}, "hw635_free_ap": {"value": 3.3934809137921604, "shown": "3.39", "files": ["REPORT.md", "DISAGREEMENTS.md", "index.html"]}, "sienci_hw_slot": {"value": 2.5, "shown": "2.5", "files": ["REPORT.md", "DISAGREEMENTS.md", "index.html"]}, "c3d_mahogany_slot": {"value": 2.54, "shown": "2.54", "files": ["REPORT.md", "DISAGREEMENTS.md", "index.html"]}, "p13_force_hw": {"value": 24.67, "shown": "24.67", "files": ["REPORT.md", "DISAGREEMENTS.md"]}, "p13_force_sw": {"value": 30.25, "shown": "30.25", "files": ["REPORT.md", "DISAGREEMENTS.md"]}, "engine_hw_sw_ratio": {"value": 1.7615603305785126, "shown": "1.76", "files": ["REPORT.md", "DISAGREEMENTS.md", "index.html"]}, "sienci_sw_hw_ratio": {"value": 2.16, "shown": "2.16", "files": ["REPORT.md", "DISAGREEMENTS.md", "index.html"]}, "ply635_ap": {"value": 10.583333333333332, "shown": "10.58", "files": ["REPORT.md", "DISAGREEMENTS.md", "index.html"]}, "ply635_row": {"value": "freud-solid-carbide-quarter-plywood-hardwood", "shown": "freud-solid-carbide-quarter-plywood-hardwood", "files": ["REPORT.md", "DISAGREEMENTS.md"]}, "thin_lift": {"value": 2.294157338705618, "shown": "2.29", "files": ["REPORT.md", "DISAGREEMENTS.md", "index.html"]}, "thin_gate_budget": {"value": 1.8545047467200098, "shown": "1.85", "files": ["REPORT.md", "DISAGREEMENTS.md", "index.html"]}, "thin_peak_woc": {"value": 0.8333333333333334, "shown": "0.83", "files": ["REPORT.md", "DISAGREEMENTS.md"]}, "river_lineage_ap": {"value": -4.0, "shown": "-4.0", "files": ["REPORT.md", "DISAGREEMENTS.md", "index.html"]}, "river_calc_ap": {"value": 0.36, "shown": "0.36", "files": ["REPORT.md", "DISAGREEMENTS.md", "index.html"]}, "vrivers_calc_ap": {"value": 0.19049999999999997, "shown": "0.19", "files": ["REPORT.md", "DISAGREEMENTS.md"]}, "trace_finish_k": {"value": 0.06, "shown": "0.06", "files": ["REPORT.md", "DISAGREEMENTS.md"]}, "pw_sw127_feed": {"value": 62.0, "shown": "62", "files": ["REPORT.md", "DISAGREEMENTS.md"]}, "pw_hw127_feed": {"value": 5212.0, "shown": "5212", "files": ["REPORT.md", "DISAGREEMENTS.md"]}, "pw_hw127_kw": {"value": 4.04182416012851, "shown": "4.04", "files": ["REPORT.md", "DISAGREEMENTS.md"]}, "feed_cap_default": {"value": 6000, "shown": "6000", "files": ["REPORT.md", "DISAGREEMENTS.md"]}, "lake_chip": {"value": 0.06993860986841814, "shown": "0.0699", "files": ["REPORT.md", "DISAGREEMENTS.md"]}, "spektra_3_32_chip": {"value": 0.05841999999999999, "shown": "0.0584", "files": ["REPORT.md", "DISAGREEMENTS.md"]}, "harvey_ratio": {"value": 0.7641509433962264, "shown": "0.764", "files": ["REPORT.md", "index.html"]}, "harvey_thinned": {"value": 0.8333333333333335, "shown": "0.833", "files": ["REPORT.md", "index.html"]}, "fm1_ok": {"value": 524, "shown": "524", "files": ["REPORT.md"]}, "fm1_sim_chip_unmodeled": {"value": 24, "shown": "24", "files": ["REPORT.md"]}, "fm1_sim_rows": {"value": 38, "shown": "38", "files": ["REPORT.md"]}, "rigid_budget": {"value": 182.77763449001054, "shown": "182.8", "files": ["REPORT.md"]}, "cli_build_s": {"value": 245.05, "shown": "245", "files": ["REPORT.md"]}}</script>
+<script>
+(function () {
+  var C = JSON.parse(document.getElementById("claims").textContent);
+  function v(id) { return C[id].value; }
+  // chip-band chart
+  var svg = document.getElementById("bandchart");
+  var NS = "http://www.w3.org/2000/svg";
+  var x0 = 150, x1 = 610, lo = 0, hi = 0.3;
+  function X(c) { return x0 + (c - lo) / (hi - lo) * (x1 - x0); }
+  function el(n, a, t) { var e = document.createElementNS(NS, n); for (var k in a) e.setAttribute(k, a[k]); if (t != null) e.textContent = t; svg.appendChild(e); return e; }
+  var rows = [
+    { name: "Onsrud 52-200", a: v("onsrud_q_hw_lo"), b: v("onsrud_q_hw_hi"), kind: "band" },
+    { name: "Freud", a: v("freud_quarter_hw_lo"), b: v("freud_quarter_hw_hi"), kind: "band2" },
+    { name: "Spektra (one point)", a: v("spektra_6mm_chip"), b: v("spektra_6mm_chip"), kind: "point" },
+    { name: "Sienci hobby", a: v("sienci_hobby_chip"), b: v("sienci_hobby_chip"), kind: "point" },
+    { name: "Engine, generic hw", a: v("hw635_chip"), b: v("hw635_chip"), kind: "engine" },
+    { name: "Engine, white oak", a: v("oak635_chip"), b: v("oak635_chip"), kind: "engine" }
+  ];
+  for (var t = 0; t <= 0.3001; t += 0.05) {
+    el("line", { x1: X(t), x2: X(t), y1: 12, y2: 196, "class": "ax" });
+    el("text", { x: X(t), y: 214, "text-anchor": "middle", "class": "note" }, t.toFixed(2));
+  }
+  el("text", { x: x1, y: 228, "text-anchor": "end", "class": "note" }, "chip per tooth, mm");
+  rows.forEach(function (r, i) {
+    var y = 26 + i * 30;
+    el("text", { x: 0, y: y + 4 }, r.name);
+    if (r.kind === "band" || r.kind === "band2") {
+      el("rect", { x: X(r.a), y: y - 7, width: Math.max(2, X(r.b) - X(r.a)), height: 14, fill: r.kind === "band" ? "var(--band)" : "var(--band-alt)" });
+    } else if (r.kind === "point") {
+      el("rect", { x: X(r.a) - 1.5, y: y - 9, width: 3, height: 18, fill: "var(--muted)" });
+    } else {
+      el("circle", { cx: X(r.a), cy: y, r: 6, fill: "var(--engine)" });
+    }
+    el("text", { x: Math.min(X(r.b) + 10, x1 - 40), y: y + 4, "class": "note" }, r.a === r.b ? C[{ "Spektra (one point)": "spektra_6mm_chip", "Sienci hobby": "sienci_hobby_chip", "Engine, generic hw": "hw635_chip", "Engine, white oak": "oak635_chip" }[r.name]].shown : "");
+  });
+  // Harvey scale
+  var tr = document.getElementById("harveytrack");
+  [["0.5 no thin", 0.5, false], [C.harvey_ratio.shown + " Harvey", v("harvey_ratio"), true], [C.harvey_thinned.shown + " thinned", v("harvey_thinned"), false]].forEach(function (m) {
+    var d = document.createElement("div"); d.className = "mk" + (m[2] ? " hv" : "");
+    d.style.left = ((m[1] - 0.4) / 0.5 * 100) + "%";
+    d.innerHTML = "<span></span><i></i>"; d.firstChild.textContent = m[0]; tr.appendChild(d);
+  });
+  // filters
+  var btns = document.querySelectorAll(".filters button");
+  btns.forEach(function (b) {
+    b.addEventListener("click", function () {
+      btns.forEach(function (o) { o.setAttribute("aria-pressed", o === b ? "true" : "false"); });
+      var f = b.getAttribute("data-f");
+      document.querySelectorAll("#cards .card").forEach(function (c) { c.hidden = !(f === "all" || c.getAttribute("data-s") === f); });
+    });
+  });
+})();
+</script>

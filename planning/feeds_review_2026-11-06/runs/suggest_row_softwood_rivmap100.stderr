@@ -1,0 +1,3 @@
+[2m   0.091644691s[0m [32m INFO[0m [2mrs_cam_core::session::project_file[0m[2m:[0m Loaded mesh model [3mname[0m[2m=[0mterrain.stl [3mtris[0m[2m=[0m131962
+[2m   0.179908197s[0m [32m INFO[0m [2mrs_cam_core::session::project_file[0m[2m:[0m Loaded 2D model [3mname[0m[2m=[0mrivers_aligned.dxf [3mitems[0m[2m=[0m36
+row_softwood_rivmap100 0.21s
