@@ -75,6 +75,18 @@ the full entry point. Read it first, then the files it names.
    evacuation; the removal-rate aim (`research_p13_step0/`). In parallel P13a: split
    `calculate_with` by step (H2, pure refactor, FM1 with no re-bless), H3, the F201 rows. Then
    the operator rules on step 0, then P13b (the lineage store), then items 4 and 5.
+   **Operator rulings on step 0 (2026-11-05, `research_p13_step0/FINDINGS.md`):**
+   - O1 yes: derive the hobby depth from a force budget per machine class, set by the printed
+     hobby full-slot rows (Sienci, Carbide 3D); it replaces the typed 0.25 D depth.
+   - O4 yes: the envelope proposal is the cut with the most removal per minute inside the
+     limits (after O1).
+   - O3: the add-door Pocket stepover is the computed width (the O4 pick, bounded by the
+     corner-coverage rule (1 + 1/sqrt 2) r = 0.854 D), not 0.35 D. The card states the
+     assumptions "chips clear" and "tool life not modelled" as visible warnings. A printed heat
+     or tool-life source later becomes a width limit (O5).
+   - O2 (measured frame stiffness) not now; O5 out of scope until a source appears.
+   - Lead reading of where 0.35 D comes from: heat and tool life, chip evacuation, metal-cutting
+     habit, floor tram ridges; none is a force limit and none has a number in the repo.
 4b. **P13** (D13 items 4, 5, 7) plus review H3, H3b, L3, L4: the tool-fact kind in `Basis`
    (the legacy row as a child) BEFORE the lineage store; F201 rows for `MIN_AP_MM`,
    `MIN_AE_MM`, the 30 degree helix, `DRILL_DWELL_S`.
