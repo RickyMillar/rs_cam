@@ -39,6 +39,19 @@ You are the lead of the geometry selection programme. Read `PLAN.md` from
 
 ## Queue, in order
 
+### Logged from the architecture review (2026-11-05, `../arch_review_2026-11-05/REPORT.md`)
+
+Not done in the feeds contract session; take them in the next selection session.
+- H1 (High): the selection pipeline (stock grow, `view`, part-free note, `fit_holes`, edge
+  clear, open sides) is built twice by hand: `compute/execute/prologue.rs` `require_items`
+  and `session/selection_status.rs`; partial copies in `session/pins.rs` and
+  `compute/execute/drilling.rs`. Make one function in `selection/` that all four call.
+- M10: the GUI add menu (`ui/toolpath_panel.rs`) copies `LoadedModel::serves` and differs
+  (one DXF plus one STL offers an op no single model serves). Call `serves`.
+- L8: MCP `is_horizontal` (`app/mcp/project.rs`) uses `> 0.95`; core uses
+  `HORIZONTAL_FACE_MIN_NORMAL_Z` with `< 0.95`. Read the constant.
+
+
 1. DONE 44af62dc: GUI pass, audit rows P4, P3, D7,
    L3, L5 (checkbox), L6, L7.
 2. DONE 74af0f8e (+0e6788b2 s6 fixture): underived defaults removed

@@ -69,6 +69,22 @@ the full entry point. Read it first, then the files it names.
    vendor depth, unread `woc_roughing_factor`) and the Shapeoko chip formula x surface speed on
    60 FM1 cells (feed 0.213 of the vendor row). Lineage today: 0 stored step records. Eight
    operator questions in REPORT section 6. Its proposal overlaps P11b L6 and L8.
+4b. **P13** (D13 items 4, 5, 7) plus review H3, H3b, L3, L4: the tool-fact kind in `Basis`
+   (the legacy row as a child) BEFORE the lineage store; F201 rows for `MIN_AP_MM`,
+   `MIN_AE_MM`, the 30 degree helix, `DRILL_DWELL_S`.
+4c. **P14 tidy** (operator 2026-11-05: "anything related to this work should be tidyed in this
+   session and the rest logged for later"), from `../arch_review_2026-11-05/REPORT.md`:
+   H2 (split `calculate_with` by step behind FM1), M2 (one thinning law: `BandMid` and
+   `dressup::feedopt` read `RadialThinning`), M3 (one `d_eng` door; delete
+   `feed_ladder_diameter_mm`), M5 (the Unsourced count line), M6 (PLAN K2 and the
+   unconditional `accept_unsourced` agree), M7 (refusal from the row kind only; rename
+   `Severity::Blocking`, `blocks_export`, `model_gouge_refusal`), M8 (delete the 14 unbuilt
+   `SuggestWarning` variants), M9 (one core shipped-point method; MCP gets the power), M12
+   (feeds, session, compute folder maps back to maps; `CONTRACTS.md` size), L1 (stale names:
+   `enforce_invariants`, pass 6b), L2 (`DressupPolicy` beside `EntryContract`), L5
+   (`Lineage::unrecorded` behind `test-support`), L6 (split `session/compute/export.rs`).
+   In P11c: M1, M4, M11. Carried to P12: L7 (the accepted reds). Logged for the selection
+   session (`geometry_selection_2026-10-16/PROMPT_NEXT.md`): H1, M10, L8.
 5. **P12** (`phases/P12.md`): the hand-off folder `handoff/` for the independent review
    session. Include every reviewer item listed below.
 
