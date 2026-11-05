@@ -72,6 +72,10 @@ Counts: High 3, Medium 13, Low 8.
 - `HORIZONTAL_FACE_MIN_NORMAL_Z` is shared by three readers.
 - MCP selection is 486 lines of JSON plus parity tests.
 
+## Status
+
+2026-11-05: H1 (fc514b05c), M10 (077107b98) and L8 (d9c21f1b4) landed on the branch `geom-arch-tidy` (geometry selection session). Details: `../geometry_selection_2026-10-16/PROMPT_NEXT.md`.
+
 ## Recommended order
 
 1. P11c: M4, M11, M1.
