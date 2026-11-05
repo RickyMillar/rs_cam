@@ -1,0 +1,1778 @@
+<!doctype html>
+<html lang="en">
+<head>
+<meta charset="utf-8">
+<meta name="viewport" content="width=device-width, initial-scale=1">
+<title>How Feeds Are Picked</title>
+<meta name="description" content="rs_cam P13c: how the feeds calculator and the safe envelope pick rpm, feed, stepover and depth for one Pocket cut, with a live port of the shipped laws.">
+<style>
+:root {
+  --bg: #f6f5f1; --surface: #ffffff; --surface-2: #efede7; --ink: #1d1f22; --muted: #5d6168; --line: #d6d3cb;
+  --accent: #2f5d8a; --accent-ink: #ffffff;
+  --c-rigidity: #c0392b; --c-table: #8e44ad; --c-slot: #d48a00; --c-corner: #16808a; --c-flute: #6b7280;
+  --c-power: #2e7d32; --c-defl: #1f6fd1; --c-mrr: #9a9a9a; --c-pick: #111111; --c-user: #c0392b;
+  --stock: #d9c3a0; --stock-edge: #a88a5c; --cut: #f3eee4; --tool: #8c96a3; --tool-edge: #4b5563; --chip: #e67e22;
+  --ok: #2e7d32; --warn: #b45309; --bad: #b91c1c;
+  --b-stated: #dbeafe; --b-derived: #e0e7ff; --b-cited: #dcfce7; --b-unsourced: #fee2e2; --b-assumed: #fef3c7; --b-ignored: #e5e7eb; --b-numeric: #f3f4f6;
+}
+@media (prefers-color-scheme: dark) {
+  :root:not([data-theme="light"]) {
+    --bg: #15171a; --surface: #1d2024; --surface-2: #262a2f; --ink: #e6e6e3; --muted: #a1a5ab; --line: #363b42;
+    --accent: #7aa7d6; --accent-ink: #0d1116;
+    --c-rigidity: #ef6b5b; --c-table: #c38be0; --c-slot: #f0b43c; --c-corner: #3cc3cc; --c-flute: #9aa3ae;
+    --c-power: #6cc070; --c-defl: #69a8f2; --c-mrr: #6f7378; --c-pick: #f2f2f2; --c-user: #ef6b5b;
+    --stock: #7a6446; --stock-edge: #a88a5c; --cut: #2a2d31; --tool: #6b7480; --tool-edge: #c3c9d1; --chip: #f39c4a;
+    --ok: #6cc070; --warn: #f0b43c; --bad: #ef6b5b;
+    --b-stated: #1e3a5f; --b-derived: #312e81; --b-cited: #14532d; --b-unsourced: #6b1d1d; --b-assumed: #5c4510; --b-ignored: #374151; --b-numeric: #2a2d31;
+  }
+}
+:root[data-theme="dark"] {
+  --bg: #15171a; --surface: #1d2024; --surface-2: #262a2f; --ink: #e6e6e3; --muted: #a1a5ab; --line: #363b42;
+  --accent: #7aa7d6; --accent-ink: #0d1116;
+  --c-rigidity: #ef6b5b; --c-table: #c38be0; --c-slot: #f0b43c; --c-corner: #3cc3cc; --c-flute: #9aa3ae;
+  --c-power: #6cc070; --c-defl: #69a8f2; --c-mrr: #6f7378; --c-pick: #f2f2f2; --c-user: #ef6b5b;
+  --stock: #7a6446; --stock-edge: #a88a5c; --cut: #2a2d31; --tool: #6b7480; --tool-edge: #c3c9d1; --chip: #f39c4a;
+  --ok: #6cc070; --warn: #f0b43c; --bad: #ef6b5b;
+  --b-stated: #1e3a5f; --b-derived: #312e81; --b-cited: #14532d; --b-unsourced: #6b1d1d; --b-assumed: #5c4510; --b-ignored: #374151; --b-numeric: #2a2d31;
+}
+* { box-sizing: border-box; }
+html { -webkit-text-size-adjust: 100%; }
+body { margin: 0; background: var(--bg); color: var(--ink); font: 15px/1.5 system-ui, -apple-system, "Segoe UI", Roboto, sans-serif; overflow-x: hidden; }
+.wrap { max-width: 1180px; margin: 0 auto; padding: 0 16px 48px; }
+header.top { padding: 28px 0 8px; }
+h1 { font-size: 26px; margin: 0 0 6px; letter-spacing: -0.01em; }
+h2 { font-size: 19px; margin: 34px 0 8px; }
+h3 { font-size: 15px; margin: 16px 0 6px; }
+p { margin: 6px 0 10px; max-width: 76ch; }
+.muted { color: var(--muted); }
+code, .mono { font-family: ui-monospace, SFMono-Regular, Menlo, Consolas, monospace; font-size: 0.92em; }
+code { background: var(--surface-2); padding: 0 4px; border-radius: 4px; overflow-wrap: anywhere; }
+.layout { display: grid; grid-template-columns: 290px minmax(0, 1fr); gap: 22px; align-items: start; }
+@media (max-width: 860px) { .layout { grid-template-columns: minmax(0, 1fr); } }
+aside.controls { position: sticky; top: 12px; background: var(--surface); border: 1px solid var(--line); border-radius: 10px; padding: 14px; }
+@media (max-width: 860px) { aside.controls { position: static; } }
+.ctl { margin: 0 0 12px; }
+.ctl label { display: flex; justify-content: space-between; gap: 8px; font-size: 13px; color: var(--muted); }
+.ctl label b { color: var(--ink); font-weight: 600; font-variant-numeric: tabular-nums; }
+.ctl input[type=range] { width: 100%; accent-color: var(--accent); }
+.seg { display: flex; gap: 4px; flex-wrap: wrap; margin-top: 4px; }
+.seg button { flex: 1 1 auto; border: 1px solid var(--line); background: var(--surface-2); color: var(--ink); border-radius: 6px; padding: 5px 8px; font: inherit; font-size: 13px; cursor: pointer; }
+.seg button[aria-pressed=true] { background: var(--accent); color: var(--accent-ink); border-color: var(--accent); }
+.btnrow { display: flex; gap: 6px; flex-wrap: wrap; }
+.btn { border: 1px solid var(--line); background: var(--surface-2); color: var(--ink); border-radius: 6px; padding: 5px 9px; font: inherit; font-size: 13px; cursor: pointer; }
+.chk { display: flex; gap: 6px; align-items: center; font-size: 13px; }
+.card { background: var(--surface); border: 1px solid var(--line); border-radius: 10px; padding: 14px; }
+.grid2 { display: grid; grid-template-columns: minmax(0, 1fr) minmax(0, 1fr); gap: 14px; }
+@media (max-width: 700px) { .grid2 { grid-template-columns: minmax(0, 1fr); } }
+svg { display: block; width: 100%; height: auto; }
+svg text { font: 11px system-ui, sans-serif; fill: var(--ink); }
+svg .mut { fill: var(--muted); }
+.chain { display: grid; grid-template-columns: repeat(auto-fill, minmax(150px, 1fr)); gap: 8px; }
+.step { background: var(--surface); border: 1px solid var(--line); border-left: 4px solid var(--line); border-radius: 8px; padding: 8px 10px; min-width: 0; }
+.step .k { font-size: 12px; color: var(--muted); }
+.step .v { font-size: 17px; font-weight: 600; font-variant-numeric: tabular-nums; }
+.step .f { font-size: 12px; color: var(--muted); overflow-wrap: anywhere; }
+.step.binds { border-left-color: var(--bad); }
+.step.moved { border-left-color: var(--warn); }
+.step.idle { border-left-color: var(--ok); }
+.readout { display: grid; grid-template-columns: repeat(auto-fill, minmax(140px, 1fr)); gap: 6px 14px; font-size: 13px; }
+.readout div span { display: block; color: var(--muted); font-size: 12px; }
+.readout div b { font-variant-numeric: tabular-nums; }
+.legend { display: flex; flex-wrap: wrap; gap: 4px 14px; font-size: 12px; margin-top: 6px; }
+.legend span { display: inline-flex; align-items: center; gap: 5px; }
+.legend i { display: inline-block; width: 16px; height: 3px; border-radius: 2px; }
+.legend .on { font-weight: 700; }
+.tablewrap { overflow-x: auto; border: 1px solid var(--line); border-radius: 10px; background: var(--surface); }
+table { border-collapse: collapse; width: 100%; font-size: 13px; }
+th, td { text-align: left; padding: 6px 9px; border-bottom: 1px solid var(--line); vertical-align: top; }
+th { background: var(--surface-2); font-weight: 600; position: sticky; top: 0; }
+td.num { font-variant-numeric: tabular-nums; white-space: nowrap; }
+td.site { font-family: ui-monospace, Menlo, Consolas, monospace; font-size: 11.5px; overflow-wrap: anywhere; min-width: 170px; }
+.badge { display: inline-block; font-size: 11px; padding: 1px 6px; border-radius: 9px; white-space: nowrap; color: var(--ink); }
+.b-stated { background: var(--b-stated); } .b-derived { background: var(--b-derived); } .b-cited { background: var(--b-cited); }
+.b-unsourced { background: var(--b-unsourced); } .b-assumed { background: var(--b-assumed); } .b-ignored { background: var(--b-ignored); } .b-numeric { background: var(--b-numeric); }
+ul.tight { margin: 4px 0 10px 18px; padding: 0; max-width: 78ch; }
+ul.tight li { margin: 3px 0; }
+.note { border-left: 3px solid var(--accent); padding: 4px 10px; background: var(--surface); border-radius: 0 8px 8px 0; max-width: 80ch; }
+.pill { display: inline-block; padding: 1px 7px; border-radius: 9px; font-size: 12px; font-weight: 600; }
+.pill.in { background: var(--b-cited); } .pill.out { background: var(--b-unsourced); }
+footer { margin-top: 40px; font-size: 12px; color: var(--muted); }
+#claimcheck { font-size: 12px; }
+</style>
+</head>
+<body>
+<div class="wrap">
+<header class="top">
+  <h1>How Feeds Are Picked</h1>
+  <p class="muted">rs_cam feeds contract, phase P13c. One Pocket cut: a <span data-claim="tool_d" data-digits="0">6</span> mm, 2-flute flat end mill in hardwood on the default machine (<code>MachineProfile::generic_wood_router</code>). The page runs a port of the shipped laws in your browser. Move a control: every number and every drawing comes from the port again. <span id="claimcheck"></span></p>
+</header>
+
+<div class="layout">
+<aside class="controls" aria-label="Controls">
+  <div class="ctl"><label>Material</label>
+    <div class="seg" id="matSeg"><button data-v="hardwood" aria-pressed="true">Hardwood</button><button data-v="softwood" aria-pressed="false">Softwood</button><button data-v="mdf" aria-pressed="false">MDF</button></div></div>
+  <div class="ctl"><label>Diameter D (printed Spektra 2F rows)</label>
+    <div class="seg" id="dSeg"><button data-v="3.175" aria-pressed="false">3.175 mm</button><button data-v="6" aria-pressed="true">6 mm</button></div></div>
+  <div class="ctl"><label for="capR">Machine cutting-feed cap <b id="capV"></b></label><input id="capR" type="range" min="1000" max="10000" step="50"></div>
+  <div class="ctl"><label for="budR">Force budget <b id="budV"></b></label><input id="budR" type="range" min="5" max="80" step="0.1"></div>
+  <div class="ctl"><label for="powR">Spindle power <b id="powV"></b></label><input id="powR" type="range" min="0.05" max="3" step="0.01"></div>
+  <div class="ctl"><label for="stkR">Stickout <b id="stkV"></b></label><input id="stkR" type="range" min="0" max="40" step="1"></div>
+  <hr style="border:0;border-top:1px solid var(--line);margin:10px 0">
+  <div class="ctl"><label class="chk"><input id="follow" type="checkbox" checked> Your point follows the pick</label></div>
+  <div class="ctl"><label for="aeR">Width ae <b id="aeV"></b></label><input id="aeR" type="range" min="0" max="1000" step="1"></div>
+  <div class="ctl"><label for="apR">Depth ap <b id="apV"></b></label><input id="apR" type="range" min="0" max="1000" step="1"></div>
+  <div class="btnrow"><button class="btn" id="reset">Reset to the default cell</button></div>
+  <p class="muted" style="font-size:12px;margin-top:10px">Default: 6 mm hardwood, cap = min(<span data-claim="cap_default_typed" data-digits="0">6000</span> default, <span data-claim="travel" data-digits="0">4000</span> travel) mm/min, hobby budget, 0.8 kW, stickout = flute + 8 mm.</p>
+</aside>
+
+<main>
+  <section>
+    <h2 style="margin-top:0">1. The chain at your point</h2>
+    <p>Each card is one step of the calculator or the envelope. A red edge marks the limit that stops the cut. An amber edge marks a step that moved a number. A green edge marks a step that changed nothing.</p>
+    <div class="chain" id="chain"></div>
+    <div class="card" style="margin-top:10px"><div class="readout" id="readout"></div></div>
+  </section>
+
+  <section>
+    <h2>2. The tool in the cut</h2>
+    <div class="grid2">
+      <div class="card"><h3 style="margin-top:0">From above</h3><svg id="topView" viewBox="0 0 360 300" role="img" aria-label="Tool seen from above"></svg>
+        <svg id="chipPlot" viewBox="0 0 360 130" role="img" aria-label="Chip thickness along the arc"></svg>
+        <p class="muted" style="font-size:12.5px">The tooth enters at the top (chip zero) and cuts on the arc to the angle psi. The chip is <code>h = fz sin(phi)</code>. Below half the diameter psi is under 90 degrees, so the peak chip is under fz. The calculator lifts fz by <code>1 / sin(psi)</code> (Garr) so that the peak chip equals the chart chip. At or above half the diameter the lift is 1.</p></div>
+      <div class="card"><h3 style="margin-top:0">From the side</h3><svg id="sideView" viewBox="0 0 360 400" role="img" aria-label="Tool seen from the side"></svg>
+        <p class="muted" style="font-size:12.5px">The collet clamps the tool at its face. The model is a stepped cantilever (shank, then the fluted part at <span data-claim="bend_frac" data-digits="2">0.80</span> D). The peak lateral force acts at ap / 2 above the tip. The drawing magnifies the bend; the number is the shipped beam. The frame, the Z axis and the collet do not bend in the model.</p></div>
+    </div>
+  </section>
+
+  <section>
+    <h2>3. Why the width stops near 0.85 D: the pocket corner</h2>
+    <div class="grid2">
+      <div class="card"><svg id="cornerView" viewBox="0 0 320 370" role="img" aria-label="Pocket corner with two offset loops"></svg></div>
+      <div>
+        <p>A pocket clears its area with offset loops. In a sharp 90 degree inside corner the loop paths keep a sharp corner. The tool of the outer loop cuts all material within r of its path, so the uncut region starts at the point (2r, 2r). The next loop runs at r + s. Its corner is (r + s, r + s).</p>
+        <p>The point (2r, 2r) is the uncut point farthest from the inner loop. Its distance to the inner corner is <code>(s - r) sqrt 2</code>. No material stays when that distance is at most r:</p>
+        <p class="note mono">(s - r) sqrt 2 &lt;= r &nbsp;&rArr;&nbsp; s &lt;= (1 + 1/sqrt 2) r = <span data-claim="corner_factor" data-digits="4">0.8536</span> D</p>
+        <p>For D = 6 mm that is <span data-claim="corner_mm" data-digits="3">5.121</span> mm. The slot rule (<code>SLOTTING_THRESHOLD</code>, Unsourced) starts at <span data-claim="thr_factor" data-digits="2">0.85</span> D = <span data-claim="thr_mm" data-digits="3">5.100</span> mm, <span data-claim="thr_under_corner_pct" data-digits="1">0.4</span> % under the corner bound. Above the threshold the depth falls to <span data-claim="slot_cap_mm" data-digits="1">1.5</span> mm (0.25 D). Thus the removal-rate pick sits on the threshold, not on the corner bound. Move the width slider above 0.854 D and the sketch shows the uncut island.</p>
+        <p class="muted">Source: <code>force_budget.rs</code> <code>corner_coverage_width_factor</code> (doc comment) and step 0 <code>FINDINGS.md</code> F; the step 0 script <code>force_width.py</code> checks the bound by sampling.</p>
+      </div>
+    </div>
+  </section>
+
+  <section>
+    <h2>4. The safe envelope and the pick</h2>
+    <p>The envelope is the set of (ae, ap) points inside every limit. The proposal of a Pocket rough is the point with the most removal per minute, <code>ae x ap x vf</code>, inside every limit (ruling O4). The dashed grey curve is the line of equal removal through the pick. Click the plot to put your point there.</p>
+    <div class="card"><svg id="envPlot" viewBox="0 0 640 400" role="img" aria-label="Safe envelope, width against depth"></svg>
+      <div class="legend" id="envLegend"></div>
+      <p class="muted" id="envNotes" style="font-size:12.5px;margin-bottom:0"></p></div>
+    <div class="grid2" style="margin-top:14px">
+      <div class="card"><h3 style="margin-top:0">Peak force against depth at your width</h3><svg id="forcePlot" viewBox="0 0 360 230" role="img" aria-label="Peak force against depth"></svg>
+        <p class="muted" style="font-size:12.5px">The solid curve is the peak engaged-edge resultant (<code>Engagement::edge_force</code>). The solver starts at the bound <code>ap0 = budget / (Z (Ks fz + F_edge))</code> (dotted), scans <span data-claim="scan_steps" data-digits="0">24</span> steps to the flute length, then bisects until the bracket is under <span data-claim="conv_mm" data-digits="3">0.005</span> mm. It returns the inside end. The force is not monotone in depth: a helical flute adds force until the next flute joins one wrap deeper.</p></div>
+      <div class="card"><h3 style="margin-top:0">The hobby force budget</h3>
+        <p style="font-size:13.5px">The repo prints no frame stiffness. It prints full-slot cuts that hobby charts command on Shapeoko-class routers. The budget is the largest peak force of those cuts (ruling O1), at the repo helix of 30 degrees:</p>
+        <div class="tablewrap"><table id="budgetTable"><thead><tr><th>Printed slot row</th><th>D x ap, feed, rpm, Z</th><th>Peak N</th></tr></thead><tbody></tbody></table></div>
+        <p class="muted" style="font-size:12.5px">Budget = <span data-claim="budget_n" data-digits="4">35.3224</span> N (Sienci 1/4" row read on the MDF line). Median <span data-claim="budget_median" data-digits="2">30.62</span> N. At the default pick the median would give <span data-claim="sens_median" data-digits="2">2.93</span> mm and 40 N would give <span data-claim="sens_40" data-digits="2">3.89</span> mm.</p></div>
+    </div>
+  </section>
+
+  <section>
+    <h2>5. The default cell, step by step</h2>
+    <ol class="tight">
+      <li><b>Row.</b> The lookup reads the Amana Spektra 2F 6 mm row: chip <span data-claim="chip_hw" data-digits="3">0.127</span> mm per tooth at <span data-claim="rpm_row" data-digits="0">18000</span> rpm (Wood/Plywood column). A plain upcut 6 mm row also exists (<code>amana-flat-hardwood-pocket-6000-2f</code>, <span data-claim="upcut_rpm" data-digits="0">15000</span> rpm, band <span data-claim="upcut_min" data-digits="3">0.032</span> to <span data-claim="upcut_max" data-digits="3">0.055</span> mm). FM1 reads the Spektra row (<code>lut_observation_id</code>). The lookup score and the series rules decide; this page does not repeat that choice.</li>
+      <li><b>rpm.</b> The row rpm replaces the surface-speed rpm (Step 2, <code>SpindleStrategy::MatchChart</code>). 18000 is inside <span data-claim="min_rpm" data-digits="0">8000</span> to <span data-claim="max_rpm" data-digits="0">24000</span>.</li>
+      <li><b>Lift.</b> At ae = 0.85 D, cos psi = 1 - ae / r gives psi = <span data-claim="psi_pick_deg" data-digits="1">134.4</span> degrees, above 90, so the lift is <span data-claim="lift_pick" data-digits="0">1</span>. At 0.25 D the lift would be <span data-claim="lift_quarter" data-digits="3">1.155</span>.</li>
+      <li><b>Feed and cap.</b> 18000 x 0.127 x 2 = <span data-claim="raw_feed" data-digits="0">4572</span> mm/min is above the cap <span data-claim="cap" data-digits="0">4000</span> mm/min. Arm L ("lower rpm, same chip") gives floor(4000 / 0.254) = <span data-claim="rpm_pick" data-digits="0">15748</span> rpm and <span data-claim="feed_calc" data-digits="2">3999.99</span> mm/min. Both arms are inside <span data-claim="power_kw" data-digits="1">0.8</span> kW, so arm L ships. The apply funnel floors the feed to <span data-claim="feed_fm1" data-digits="0">3999</span> mm/min.</li>
+      <li><b>Width.</b> The corner bound is <span data-claim="corner_mm" data-digits="3">5.121</span> mm. The slot rule cuts the depth to <span data-claim="slot_cap_mm" data-digits="1">1.5</span> mm above <span data-claim="thr_mm" data-digits="3">5.100</span> mm. The pick takes ae = <span data-claim="pick_ae_over_d" data-digits="3">0.850</span> D.</li>
+      <li><b>Depth.</b> The force budget gives <span data-claim="depth_hw" data-digits="3">3.406</span> mm at ae = 5.1 mm and fz = 0.127 mm (scan start ap0 = <span data-claim="ap0_hw" data-digits="2">1.66</span> mm). The vendor depth table allows <span data-claim="table_hw_mm" data-digits="1">6.0</span> mm (1 x D: chip first keeps the peak chip at the chart chip, so the share is 1). The flute guard allows <span data-claim="guard" data-digits="1">14.4</span> mm (0.8 x <span data-claim="flute" data-digits="0">18</span>). Tool deflection has no root below the flute: at the pick the tip moves <span data-claim="defl_pick_um" data-digits="1">7.1</span> &micro;m against <span data-claim="target_um" data-digits="0">200</span> &micro;m.</li>
+      <li><b>Force and power.</b> At the FM1 feed the peak force is <span data-claim="force_pick" data-digits="2">35.30</span> N, under the budget because the floored feed gives a smaller chip. Pocket power is judged as a slot (ae = D): <span data-claim="power_pick" data-digits="4">0.1394</span> kW, <span data-claim="power_share_pct" data-digits="1">17.4</span> % of 0.8 kW.</li>
+      <li><b>Pick.</b> 0.850 D x 3.406 mm, limits Rigidity and Slot, <span data-claim="mrr_pick" data-digits="0">69474</span> mm&sup3;/min.</li>
+    </ol>
+    <p>The same chain for the other materials: MDF (chip <span data-claim="chip_mdf" data-digits="4">0.1524</span>, <span data-claim="rpm_mdf" data-digits="0">13123</span> rpm) picks 0.850 D x <span data-claim="depth_mdf" data-digits="3">4.558</span> mm (Rigidity, Slot). Softwood picks 0.850 D x <span data-claim="depth_sw" data-digits="1">6.0</span> mm: the vendor depth table (1 x D) binds before the budget depth <span data-claim="budget_sw" data-digits="3">6.075</span> mm. The 3.175 mm hardwood cell picks 0.850 D x <span data-claim="d3_depth" data-digits="3">3.175</span> mm (table, Slot); its budget depth is <span data-claim="d3_budget" data-digits="2">4.47</span> mm.</p>
+    <p class="muted">The FM1 golden file (<code>matrix_2026-09-23.csv</code>) holds these values; <code>assert_claims.py</code> compares them.</p>
+  </section>
+
+  <section>
+    <h2>6. Every parameter</h2>
+    <p>Value for the default cell, unit, where the value comes from, and the code site (path:line in the P13c working tree). <span class="badge b-stated">stated</span> the user or the machine file states it. <span class="badge b-derived">derived</span> a computation from other rows. <span class="badge b-cited">cited</span> a printed source in the repo. <span class="badge b-unsourced">Unsourced F201</span> a typed rule with no source. <span class="badge b-assumed">assumed</span> a typed value outside F201, or a stated model assumption. <span class="badge b-ignored">ignored</span> the model has no term for it. <span class="badge b-numeric">numeric</span> a solver step, not physics.</p>
+    <div class="tablewrap"><table id="paramTable"><thead><tr><th>Parameter</th><th>Value</th><th>Unit</th><th>Source</th><th>Code site</th></tr></thead><tbody></tbody></table></div>
+  </section>
+
+  <section>
+    <h2>7. Stated assumptions</h2>
+    <ul class="tight">
+      <li><b>Chips clear; tool life not modelled.</b> No limit in the envelope models chip evacuation or wear. Every surface prints <code>COMPUTED_WIDTH_ASSUMPTIONS</code>: "Width assumes: chips clear; tool life not modelled".</li>
+      <li><b>Helix 30 degrees</b> for every tool that states none, and for the printed slot rows (the charts print no helix).</li>
+      <li><b>Carbide E = 600 000 N/mm&sup2;</b> and a fluted section that bends as a rod of 0.80 D.</li>
+      <li><b>Rigid frame.</b> The beam is clamped at the collet face. The force budget stands in for the frame: on one frame a cap on force is a cap on frame deflection.</li>
+      <li><b>K_r = 0.</b> The element force has no radial part, so the lateral force is low.</li>
+      <li><b>Worst grain angle and worse milling mode</b> (Curti helix-0 envelope) at 12 % moisture; grain factor 1.0.</li>
+      <li><b>Pocket power is judged at ae = D</b> (<code>PowerCase::Slot</code>) for every width: the first pass of a pocket is a slot.</li>
+      <li><b>The cut is stable.</b> No chatter model; no runout; no acceleration limit in the feeds.</li>
+      <li><b>The long-tool share is reported, not applied</b> (ruling R4 Q7).</li>
+    </ul>
+  </section>
+
+  <section>
+    <h2>8. What the port does not do</h2>
+    <ul class="tight">
+      <li>No vendor lookup and no size law: the page reads the six Spektra rows that FM1 reads (3.175 and 6 mm). Other diameters go through the lookup score and the G1 size claim.</li>
+      <li>No Step 1 surface speed: the row rpm replaces it at every cell here.</li>
+      <li>No Step 6 power ladder: the page draws power as a limit only. At the default cell the cut uses <span data-claim="power_share_pct" data-digits="1">17.4</span> % of the spindle.</li>
+      <li>The pick solves every width candidate exactly. The shipped pick ranks the candidates on the stored grid first, then solves the best three. The power edge here is exact; the shipped pick reads it between width samples.</li>
+      <li>No move-budget floor (it needs the model box) and no stated values (the add door states none).</li>
+    </ul>
+    <p class="muted" style="margin-bottom:2px">Differences between the shipped code and the step 0 Python port (<code>shipped_laws.py</code>):</p>
+    <ul class="tight muted">
+      <li>The Rust edge sum is exact in z (closed-form primitives). The Python port sums 600 midpoints. This page ports the Rust form.</li>
+      <li>The Rust solvers scan, then bisect until the bracket is under 0.005 mm, and return the inside end. The root itself is <span data-claim="root_hw_fine" data-digits="4">3.4073</span> mm (the port's 3.407); the shipped depth is <span data-claim="depth_hw" data-digits="4">3.4056</span> mm.</li>
+      <li>FM1 states the floored feed 3999, not the calculator feed 3999.99. The force column and <code>cap_mm</code> (<span data-claim="cap_hw_fm1chip" data-digits="4">3.4058</span>) read the floored chip; the depth reads the calculator chip.</li>
+      <li>The step 0 citations name lines at <code>36fd50c54</code>; several moved (the Curti rows, Step 5). The port also types the 8000 rpm floor; the shipped floor is the row <code>rpm_min</code> when it is higher (these rows print none).</li>
+    </ul>
+  </section>
+
+  <footer>
+    Built from <code>255d8db90</code> plus the uncommitted P13c working tree (2026-11-05). Port and checks: <code>planning/feeds_contract_2026-11-03/explainer_p13c/assert_claims.py</code> runs the script below in node and compares every number on this page with the repo files and the FM1 golden file.
+  </footer>
+</main>
+</div>
+</div>
+
+<script type="application/json" id="laws">
+{
+ "CURTI_UP_HELIX0_KS_N": {
+  "value": [
+   -5e-06,
+   0.001,
+   0.026
+  ],
+  "path": "crates/rs_cam_core/src/material/force_line.rs",
+  "line": 189,
+  "printed": "GrainQuadratic::new(-5e-6, 1e-3, 26e-3)",
+  "class": "cited",
+  "label": "Curti 2021 Table 5, up-milling helix 0, Ks per kg/m3 (grain quadratic)",
+  "unit": "N/mm2 per kg/m3"
+ },
+ "CURTI_UP_HELIX0_INT_N": {
+  "value": [
+   -1e-07,
+   1e-05,
+   0.0055
+  ],
+  "path": "crates/rs_cam_core/src/material/force_line.rs",
+  "line": 193,
+  "printed": "GrainQuadratic::new(-1e-7, 1e-5, 55e-4)",
+  "class": "cited",
+  "label": "Curti 2021, up-milling helix 0, edge term per kg/m3",
+  "unit": "N/mm per kg/m3"
+ },
+ "CURTI_DOWN_HELIX0_KS_N": {
+  "value": [
+   -3e-06,
+   0.0005,
+   0.056
+  ],
+  "path": "crates/rs_cam_core/src/material/force_line.rs",
+  "line": 197,
+  "printed": "GrainQuadratic::new(-3e-6, 5e-4, 56e-3)",
+  "class": "cited",
+  "label": "Curti 2021, down-milling helix 0, Ks per kg/m3",
+  "unit": "N/mm2 per kg/m3"
+ },
+ "CURTI_DOWN_HELIX0_INT_N": {
+  "value": [
+   -3e-07,
+   4e-05,
+   0.0047
+  ],
+  "path": "crates/rs_cam_core/src/material/force_line.rs",
+  "line": 202,
+  "printed": "GrainQuadratic::new(-3e-7, 4e-5, 47e-4)",
+  "class": "cited",
+  "label": "Curti 2021, down-milling helix 0, edge term per kg/m3",
+  "unit": "N/mm per kg/m3"
+ },
+ "CURTI_GRAIN_ANGLE_RANGE_DEG": {
+  "value": [
+   0.0,
+   180.0
+  ],
+  "path": "crates/rs_cam_core/src/material/force_line.rs",
+  "line": 83,
+  "printed": "(0.0, 180.0)",
+  "class": "cited",
+  "label": "Grain-angle range of the force envelope (the worst grain angle is used)",
+  "unit": "deg"
+ },
+ "FPL_12PCT_MOISTURE_FACTOR": {
+  "value": 1.12,
+  "path": "crates/rs_cam_core/src/material/force_line.rs",
+  "line": 102,
+  "printed": "= 1.12;",
+  "class": "cited",
+  "label": "FPL density factor at 12 % moisture",
+  "unit": "-"
+ },
+ "FPL_ROWS_GENERIC_HARDWOOD": {
+  "value": [
+   0.64,
+   0.54,
+   0.63
+  ],
+  "path": "crates/rs_cam_core/src/material/mod.rs",
+  "line": 56,
+  "printed": "\"Beech, American\", 0.64",
+  "lines": [
+   56,
+   57,
+   58
+  ],
+  "printeds": [
+   "0.64",
+   "0.54",
+   "0.63"
+  ],
+  "class": "cited",
+  "label": "FPL SG rows of GenericHardwood (beech, red maple, northern red oak)",
+  "unit": "SG"
+ },
+ "FPL_ROWS_GENERIC_SOFTWOOD": {
+  "value": [
+   0.4,
+   0.36,
+   0.32
+  ],
+  "path": "crates/rs_cam_core/src/material/mod.rs",
+  "line": 42,
+  "printed": "\"Pine, ponderosa\", 0.40",
+  "lines": [
+   42,
+   43,
+   44
+  ],
+  "printeds": [
+   "0.40",
+   "0.36",
+   "0.32"
+  ],
+  "class": "cited",
+  "label": "FPL SG rows of GenericSoftwood (ponderosa pine, white spruce, western redcedar)",
+  "unit": "SG"
+ },
+ "GOLI_2018_MDF_KS_N_PER_MM2": {
+  "value": 31.44,
+  "path": "crates/rs_cam_core/src/material/force_line.rs",
+  "line": 90,
+  "printed": "= 31.44;",
+  "class": "cited",
+  "label": "Goli 2018 MDF shear coefficient Ks",
+  "unit": "N/mm2"
+ },
+ "GOLI_2018_MDF_INT_N_PER_MM": {
+  "value": 3.36,
+  "path": "crates/rs_cam_core/src/material/force_line.rs",
+  "line": 94,
+  "printed": "= 3.36;",
+  "class": "cited",
+  "label": "Goli 2018 MDF edge term F_edge",
+  "unit": "N/mm"
+ },
+ "DEFAULT_HELIX_DEG": {
+  "value": 30.0,
+  "path": "crates/rs_cam_core/src/tool/mod.rs",
+  "line": 219,
+  "printed": "pub const DEFAULT_HELIX_DEG: f64 = 30.0;",
+  "class": "assumed",
+  "label": "Helix angle (repo default; the charts print none)",
+  "unit": "deg"
+ },
+ "CARBIDE_YOUNGS_MODULUS_N_PER_MM2": {
+  "value": 600000.0,
+  "path": "crates/rs_cam_core/src/compute/tool_config.rs",
+  "line": 130,
+  "printed": "600_000.0",
+  "class": "assumed",
+  "label": "Carbide Young's modulus E (typed, outside F201)",
+  "unit": "N/mm2"
+ },
+ "ENDMILL_EQUIVALENT_DIAMETER_FRACTION": {
+  "value": 0.8,
+  "path": "crates/rs_cam_core/src/feeds/predict.rs",
+  "line": 255,
+  "printed": "= 0.80;",
+  "class": "assumed",
+  "label": "Bending diameter of the fluted part, share of D (Kivanc and Budak; typed, outside F201)",
+  "unit": "-"
+ },
+ "EDGE_SAMPLES_PER_PITCH": {
+  "value": 180,
+  "path": "crates/rs_cam_core/src/feeds/engagement.rs",
+  "line": 396,
+  "printed": "= 180;",
+  "class": "numeric",
+  "label": "Rotation samples per flute pitch of the edge sum",
+  "unit": "-"
+ },
+ "MIN_AP_MM": {
+  "value": 0.05,
+  "path": "crates/rs_cam_core/src/feeds/mod.rs",
+  "line": 1964,
+  "printed": "MIN_AP_MM: f64 = 0.05;",
+  "class": "unsourced",
+  "label": "Smallest depth the calculator writes (F201 Unsourced)",
+  "unit": "mm"
+ },
+ "MIN_AE_MM": {
+  "value": 0.02,
+  "path": "crates/rs_cam_core/src/feeds/mod.rs",
+  "line": 1967,
+  "printed": "MIN_AE_MM: f64 = 0.02;",
+  "class": "unsourced",
+  "label": "Smallest width the calculator writes (F201 Unsourced)",
+  "unit": "mm"
+ },
+ "SLOTTING_THRESHOLD": {
+  "value": 0.85,
+  "path": "crates/rs_cam_core/src/feeds/mod.rs",
+  "line": 1911,
+  "printed": "0.85,",
+  "class": "unsourced",
+  "label": "Slot threshold: a width above this share of D is a slot (F201 Unsourced)",
+  "unit": "x D"
+ },
+ "FLUTE_GUARD_FACTOR": {
+  "value": 0.8,
+  "path": "crates/rs_cam_core/src/feeds/mod.rs",
+  "line": 1839,
+  "printed": "0.8,",
+  "class": "unsourced",
+  "label": "Flute guard: depth cap as a share of the flute length (F201 Unsourced)",
+  "unit": "x flute"
+ },
+ "SLOT_DOC_FACTOR": {
+  "value": 0.25,
+  "path": "crates/rs_cam_core/src/machine/mod.rs",
+  "line": 336,
+  "printed": "slot_doc_factor: 0.25,",
+  "class": "unsourced",
+  "label": "Slot depth cap of the hobby rigidity default (Shapeoko port, Unsourced)",
+  "unit": "x D"
+ },
+ "GENERIC_MIN_RPM": {
+  "value": 8000.0,
+  "path": "crates/rs_cam_core/src/machine/mod.rs",
+  "line": 936,
+  "printed": "min_rpm: 8000.0,",
+  "class": "stated",
+  "label": "Generic Wood Router: spindle minimum (machine profile)",
+  "unit": "rpm"
+ },
+ "GENERIC_MAX_RPM": {
+  "value": 24000.0,
+  "path": "crates/rs_cam_core/src/machine/mod.rs",
+  "line": 937,
+  "printed": "max_rpm: 24000.0,",
+  "class": "stated",
+  "label": "Generic Wood Router: spindle maximum",
+  "unit": "rpm"
+ },
+ "GENERIC_POWER_KW": {
+  "value": 0.8,
+  "path": "crates/rs_cam_core/src/machine/mod.rs",
+  "line": 939,
+  "printed": "power_kw: 0.8",
+  "class": "stated",
+  "label": "Generic Wood Router: spindle power (constant)",
+  "unit": "kW"
+ },
+ "GENERIC_MAX_FEED": {
+  "value": 4000.0,
+  "path": "crates/rs_cam_core/src/machine/mod.rs",
+  "line": 941,
+  "printed": "max_feed_mm_min: 4000.0,",
+  "class": "stated",
+  "label": "Generic Wood Router: travel rate (the feed cap is never above it)",
+  "unit": "mm/min"
+ },
+ "DEFAULT_CUTTING_FEED_CAP_MM_MIN": {
+  "value": 6000.0,
+  "path": "crates/rs_cam_core/src/machine/mod.rs",
+  "line": 834,
+  "printed": "DEFAULT_CUTTING_FEED_CAP_MM_MIN: f64 = 6000.0;",
+  "class": "assumed",
+  "label": "Default cutting-feed cap when the profile states none (typed, outside F201)",
+  "unit": "mm/min"
+ },
+ "DEFLECTION_BACKOFF_TARGET_UM": {
+  "value": 200.0,
+  "path": "crates/rs_cam_core/src/feeds/suggest/invariants.rs",
+  "line": 53,
+  "printed": "DEFLECTION_BACKOFF_TARGET_UM: f64 = 200.0;",
+  "class": "unsourced",
+  "label": "Tip deflection target (F201 Unsourced)",
+  "unit": "um"
+ },
+ "BUDGET_SCAN_STEPS": {
+  "value": 24,
+  "path": "crates/rs_cam_core/src/feeds/force_budget.rs",
+  "line": 296,
+  "printed": "BUDGET_SCAN_STEPS: usize = 24;",
+  "class": "numeric",
+  "label": "Depth scan steps of the force-budget solve",
+  "unit": "-"
+ },
+ "DEFLECTION_SCAN_STEPS": {
+  "value": 16,
+  "path": "crates/rs_cam_core/src/feeds/cutter_constraints.rs",
+  "line": 101,
+  "printed": "DEFLECTION_SCAN_STEPS: usize = 16;",
+  "class": "numeric",
+  "label": "Depth scan steps of the deflection solve",
+  "unit": "-"
+ },
+ "BINSEARCH_CONVERGENCE_MM": {
+  "value": 0.005,
+  "path": "crates/rs_cam_core/src/feeds/cutter_constraints.rs",
+  "line": 105,
+  "printed": "BINSEARCH_CONVERGENCE_MM: f64 = 0.005;",
+  "class": "numeric",
+  "label": "Bisection stops when the bracket is under this width (the solver returns the inside end)",
+  "unit": "mm"
+ },
+ "BINSEARCH_MAX_ITERATIONS": {
+  "value": 64,
+  "path": "crates/rs_cam_core/src/feeds/cutter_constraints.rs",
+  "line": 108,
+  "printed": "BINSEARCH_MAX_ITERATIONS: usize = 64;",
+  "class": "numeric",
+  "label": "Bisection iteration guard",
+  "unit": "-"
+ },
+ "BINSEARCH_LOWER_FRACTION": {
+  "value": 0.0001,
+  "path": "crates/rs_cam_core/src/feeds/cutter_constraints.rs",
+  "line": 90,
+  "printed": "BINSEARCH_LOWER_FRACTION: f64 = 1.0e-4;",
+  "class": "numeric",
+  "label": "Deflection search start, share of stickout",
+  "unit": "-"
+ },
+ "BINSEARCH_UPPER_FRACTION": {
+  "value": 0.95,
+  "path": "crates/rs_cam_core/src/feeds/cutter_constraints.rs",
+  "line": 95,
+  "printed": "BINSEARCH_UPPER_FRACTION: f64 = 0.95;",
+  "class": "numeric",
+  "label": "Deflection search end, share of stickout (also stops at the flute)",
+  "unit": "-"
+ },
+ "D_FLOOR_MM": {
+  "value": 0.05,
+  "path": "crates/rs_cam_core/src/tool/mod.rs",
+  "line": 787,
+  "printed": "D_FLOOR_MM: f64 = 0.05;",
+  "class": "numeric",
+  "label": "Beam diameter floor (numerical guard)",
+  "unit": "mm"
+ },
+ "N_SHANK": {
+  "value": 32,
+  "path": "crates/rs_cam_core/src/tool/mod.rs",
+  "line": 798,
+  "printed": "N_SHANK: usize = 32;",
+  "class": "numeric",
+  "label": "Beam segments, shank",
+  "unit": "-"
+ },
+ "N_CUTTER": {
+  "value": 64,
+  "path": "crates/rs_cam_core/src/tool/mod.rs",
+  "line": 810,
+  "printed": "N_CUTTER: usize = 64;",
+  "class": "numeric",
+  "label": "Beam segments, fluted part",
+  "unit": "-"
+ },
+ "DOC_DERATE_LAST_PRINTED_RATIO": {
+  "value": 3.0,
+  "path": "crates/rs_cam_core/src/feeds/geometry.rs",
+  "line": 253,
+  "printed": "DOC_DERATE_LAST_PRINTED_RATIO: f64 = 3.0;",
+  "class": "cited",
+  "label": "Vendor depth table: last printed depth (3 x D)",
+  "unit": "x D"
+ },
+ "DOC_DERATE_2D": {
+  "value": 0.75,
+  "path": "crates/rs_cam_core/src/feeds/geometry.rs",
+  "line": 244,
+  "printed": "1.0 - 0.25 * (ratio - 1.0)",
+  "class": "cited",
+  "label": "Vendor depth table: 2 x D reduce chip 25 % (Onsrud, Freud, Amana); linear between points is the repo's own",
+  "unit": "share"
+ },
+ "ENVELOPE_GRID_N": {
+  "value": 8,
+  "path": "crates/rs_cam_core/src/feeds/envelope.rs",
+  "line": 47,
+  "printed": "ENVELOPE_GRID_N: usize = 8;",
+  "class": "numeric",
+  "label": "Envelope grid samples per axis",
+  "unit": "-"
+ },
+ "REMOVAL_RATE_WIDTH_SAMPLES": {
+  "value": 24,
+  "path": "crates/rs_cam_core/src/feeds/envelope.rs",
+  "line": 1259,
+  "printed": "REMOVAL_RATE_WIDTH_SAMPLES: usize = 24;",
+  "class": "numeric",
+  "label": "Width samples of the removal-rate search",
+  "unit": "-"
+ },
+ "REMOVAL_RATE_REFINE_STEPS": {
+  "value": 6,
+  "path": "crates/rs_cam_core/src/feeds/envelope.rs",
+  "line": 1263,
+  "printed": "REMOVAL_RATE_REFINE_STEPS: usize = 6;",
+  "class": "numeric",
+  "label": "Golden-section refine steps of the pick",
+  "unit": "-"
+ },
+ "FM1_FLUTE": {
+  "value": "max(3 D, 12)",
+  "path": "crates/rs_cam_core/tests/feeds_matrix_instrument_fm1.rs",
+  "line": 207,
+  "printed": "(diameter * 3.0).max(12.0)",
+  "class": "stated",
+  "label": "FM1 tool flute length",
+  "unit": "mm"
+ },
+ "FM1_SHANK": {
+  "value": "max(D, 3)",
+  "path": "crates/rs_cam_core/tests/feeds_matrix_instrument_fm1.rs",
+  "line": 208,
+  "printed": "diameter.max(3.0)",
+  "class": "stated",
+  "label": "FM1 tool shank diameter",
+  "unit": "mm"
+ },
+ "FM1_STICKOUT": {
+  "value": "flute + 8",
+  "path": "crates/rs_cam_core/tests/feeds_matrix_instrument_fm1.rs",
+  "line": 210,
+  "printed": "t.cutting_length_planning_mm() + 8.0",
+  "class": "stated",
+  "label": "FM1 tool stickout",
+  "unit": "mm"
+ },
+ "VENDOR_ROWS": {
+  "value": {
+   "6": {
+    "hardwood": {
+     "chip": 0.127,
+     "rpm": 18000.0,
+     "line": 1005,
+     "id": "amana-flat-hardwood-pocket-6000-2f-spektra"
+    },
+    "softwood": {
+     "chip": 0.127,
+     "rpm": 18000.0,
+     "line": 951,
+     "id": "amana-flat-softwood-pocket-6000-2f-spektra"
+    },
+    "mdf": {
+     "chip": 0.1524,
+     "rpm": 18000.0,
+     "line": 1167,
+     "id": "amana-flat-mdf-pocket-6000-2f-spektra"
+    }
+   },
+   "3.175": {
+    "hardwood": {
+     "chip": 0.1016,
+     "rpm": 18000.0,
+     "line": 735,
+     "id": "amana-flat-hardwood-pocket-3175-2f-spektra"
+    },
+    "softwood": {
+     "chip": 0.1016,
+     "rpm": 18000.0,
+     "line": 681,
+     "id": "amana-flat-softwood-pocket-3175-2f-spektra"
+    },
+    "mdf": {
+     "chip": 0.127,
+     "rpm": 18000.0,
+     "line": 897,
+     "id": "amana-flat-mdf-pocket-3175-2f-spektra"
+    }
+   }
+  },
+  "path": "crates/rs_cam_core/data/vendor_lut/observations/amana_flat_end.json",
+  "line": 1005,
+  "printed": "amana-flat-hardwood-pocket-6000-2f-spektra",
+  "class": "cited",
+  "label": "Amana Spektra 2F chart rows (chip, rpm 18 000) that FM1 reads",
+  "unit": "mm, rpm"
+ },
+ "HOBBY_SLOT_POINTS": {
+  "value": [
+   {
+    "id": "sienci_quarter_softwood",
+    "line": 151,
+    "diameter_mm": 6.35,
+    "flutes": 2,
+    "material": "softwood",
+    "ap_mm": 5.4,
+    "feed_mm_min": 2740.0,
+    "rpm": 12000.0
+   },
+   {
+    "id": "sienci_quarter_mdf",
+    "line": 164,
+    "diameter_mm": 6.35,
+    "flutes": 2,
+    "material": "mdf",
+    "ap_mm": 5.4,
+    "feed_mm_min": 2740.0,
+    "rpm": 12000.0
+   },
+   {
+    "id": "sienci_quarter_hardwood",
+    "line": 177,
+    "diameter_mm": 6.35,
+    "flutes": 2,
+    "material": "hardwood",
+    "ap_mm": 2.5,
+    "feed_mm_min": 2740.0,
+    "rpm": 12000.0
+   },
+   {
+    "id": "carbide3d_s3_mdf",
+    "line": 190,
+    "diameter_mm": 6.35,
+    "flutes": 3,
+    "material": "mdf",
+    "ap_mm": 7.62,
+    "feed_mm_min": 2032.0,
+    "rpm": 17000.0
+   },
+   {
+    "id": "carbide3d_s3_pine",
+    "line": 203,
+    "diameter_mm": 6.35,
+    "flutes": 3,
+    "material": "softwood",
+    "ap_mm": 10.16,
+    "feed_mm_min": 1905.0,
+    "rpm": 21000.0
+   },
+   {
+    "id": "carbide3d_s3_mahogany",
+    "line": 216,
+    "diameter_mm": 6.35,
+    "flutes": 3,
+    "material": "hardwood",
+    "ap_mm": 2.54,
+    "feed_mm_min": 1651.0,
+    "rpm": 18950.0
+   }
+  ],
+  "path": "crates/rs_cam_core/src/feeds/force_budget.rs",
+  "line": 151,
+  "printed": "id: \"sienci_quarter_softwood\"",
+  "class": "cited",
+  "label": "Printed hobby full-slot cuts (Sienci, Carbide 3D) that set the force budget",
+  "unit": "mm, mm/min, rpm"
+ },
+ "UPCUT_ROW": {
+  "value": {
+   "id": "amana-flat-hardwood-pocket-6000-2f",
+   "rpm": 15000.0,
+   "chip_min": 0.032,
+   "chip_max": 0.055
+  },
+  "path": "crates/rs_cam_core/data/vendor_lut/observations/amana_flat_end.json",
+  "line": 211,
+  "printed": "amana-flat-hardwood-pocket-6000-2f\"",
+  "class": "cited",
+  "label": "The other 6 mm hardwood Pocket row (Amana upcut), not the row FM1 reads",
+  "unit": "rpm, mm"
+ },
+ "IGNORED": {
+  "value": [
+   {
+    "id": "G01",
+    "factor": "Machine frame stiffness X/Y (gantry, belts, rails)",
+    "stand_in": "none",
+    "cls": "ignored",
+    "path": "crates/rs_cam_core/src/tool/mod.rs",
+    "line": 753,
+    "needle": "stepped cantilever clamped at `x = 0` (the"
+   },
+   {
+    "id": "G02",
+    "factor": "Z axis and spindle mount stiffness",
+    "stand_in": "none",
+    "cls": "ignored",
+    "path": "crates/rs_cam_core/src/tool/mod.rs",
+    "line": 753,
+    "needle": "stepped cantilever clamped at `x = 0` (the"
+   },
+   {
+    "id": "G04",
+    "factor": "Collet or holder type and stiffness",
+    "stand_in": "none",
+    "cls": "ignored",
+    "path": "crates/rs_cam_core/src/tool_load/deflection.rs",
+    "line": 43,
+    "needle": "**Bending only.**"
+   },
+   {
+    "id": "G06",
+    "factor": "Runout (TIR)",
+    "stand_in": "none",
+    "cls": "ignored",
+    "path": null,
+    "line": null,
+    "needle": null
+   },
+   {
+    "id": "G13",
+    "factor": "Tool wear and the tool-life target",
+    "stand_in": "none (u is a display proxy)",
+    "cls": "ignored",
+    "path": "crates/rs_cam_core/src/feeds/efficiency.rs",
+    "line": 36,
+    "needle": "`u` is a wear proxy."
+   },
+   {
+    "id": "G14",
+    "factor": "Chip evacuation (slot depth, flute volume, air or vacuum)",
+    "stand_in": "slot_doc_factor = 0.25 D (the only slot-depth stand-in)",
+    "cls": "ignored",
+    "path": "crates/rs_cam_core/src/tool_load/drill_gates.rs",
+    "line": 185,
+    "needle": "Evacuation-credited ratio (F1)"
+   },
+   {
+    "id": "G15",
+    "factor": "Heat and burn",
+    "stand_in": "RUBBING_FLOOR_MM_TOOTH = 0.025 (warns only)",
+    "cls": "unsourced",
+    "path": "crates/rs_cam_core/src/feeds/mod.rs",
+    "line": 1392,
+    "needle": "pub const RUBBING_FLOOR_MM_TOOTH: f64 = 0.025;"
+   },
+   {
+    "id": "G19",
+    "factor": "Climb against conventional",
+    "stand_in": "the larger Curti mode",
+    "cls": "assumed",
+    "path": "crates/rs_cam_core/src/tool_load/power.rs",
+    "line": 432,
+    "needle": "climb/conventional split not modeled"
+   },
+   {
+    "id": "G20",
+    "factor": "Radial force ratio K_r",
+    "stand_in": "K_r = 0",
+    "cls": "assumed",
+    "path": "crates/rs_cam_core/src/feeds/engagement.rs",
+    "line": 222,
+    "needle": "element has no radial component (`K_r = 0`)"
+   },
+   {
+    "id": "G23",
+    "factor": "Machine acceleration",
+    "stand_in": "none in feeds (cycle time only)",
+    "cls": "ignored",
+    "path": "crates/rs_cam_core/src/machine/mod.rs",
+    "line": 911,
+    "needle": "pub fn effective_kinematics(&self) -> MachineKinematics {"
+   },
+   {
+    "id": "G25",
+    "factor": "Chatter (stability)",
+    "stand_in": "none",
+    "cls": "ignored",
+    "path": "crates/rs_cam_core/src/tool_load/metric_guide.rs",
+    "line": 53,
+    "needle": "You hear chatter"
+   },
+   {
+    "id": "G34",
+    "factor": "Gantry thrust (stepper force)",
+    "stand_in": "none",
+    "cls": "ignored",
+    "path": null,
+    "line": null,
+    "needle": null
+   },
+   {
+    "id": "G36",
+    "factor": "Long tool (L/D) derate",
+    "stand_in": "long_tool_load_share (warn only)",
+    "cls": "assumed",
+    "path": "crates/rs_cam_core/src/feeds/mod.rs",
+    "line": 631,
+    "needle": "**Not a feed factor since ruling R4 Q7 (2026-09-24).**"
+   }
+  ],
+  "path": "planning/feeds_contract_2026-11-03/research_p13_step0/inventory.json",
+  "line": 1,
+  "printed": "[",
+  "class": "ignored",
+  "label": "Step 0 inventory rows with no term or a stated stand-in",
+  "unit": "-"
+ }
+}
+</script>
+<script id="laws-js">
+// A port of the shipped feeds laws (rs_cam_core, P13c working tree).
+// Each function carries the name of its Rust function. C is the constant
+// table (the JSON block "laws"); every value there cites path:line.
+function makeLaws(C) {
+  const v = (k) => C[k].value;
+  const TAU = 2 * Math.PI;
+
+  // material/force_line.rs: max of a grain quadratic over the grain range.
+  function max_over_grain(q) {
+    const [a, b, c] = q;
+    const [g0, g1] = v("CURTI_GRAIN_ANGLE_RANGE_DEG");
+    const xs = [g0, g1];
+    if (a < 0) { const x = -b / (2 * a); if (x >= g0 && x <= g1) xs.push(x); }
+    return Math.max(...xs.map((x) => a * x * x + b * x + c));
+  }
+  // force_line.rs curti_helix0_envelope: per term, max over grain, then the larger mode.
+  function curti_helix0_envelope() {
+    return [
+      Math.max(max_over_grain(v("CURTI_UP_HELIX0_KS_N")), max_over_grain(v("CURTI_DOWN_HELIX0_KS_N"))),
+      Math.max(max_over_grain(v("CURTI_UP_HELIX0_INT_N")), max_over_grain(v("CURTI_DOWN_HELIX0_INT_N"))),
+    ];
+  }
+  const mean = (xs) => xs.reduce((s, x) => s + x, 0) / xs.length;
+  // Material::force_line: (Ks N/mm2, F_edge N/mm).
+  function force_line(material) {
+    if (material === "mdf") return [v("GOLI_2018_MDF_KS_N_PER_MM2"), v("GOLI_2018_MDF_INT_N_PER_MM")];
+    const sg = material === "hardwood" ? mean(v("FPL_ROWS_GENERIC_HARDWOOD")) : mean(v("FPL_ROWS_GENERIC_SOFTWOOD"));
+    const rho = sg * 1000 * v("FPL_12PCT_MOISTURE_FACTOR");
+    const [ks, fe] = curti_helix0_envelope();
+    return [ks * rho, fe * rho];
+  }
+
+  // feeds/force.rs immersion_angle.
+  function immersion_angle(ae, r) {
+    if (!(ae > 0 && r > 0)) return 0;
+    return Math.acos(Math.max(-1, Math.min(1, 1 - ae / r)));
+  }
+  // feeds/geometry.rs peak_chip_thinning_lift (Garr, no cap).
+  function peak_chip_thinning_lift(ae, d) {
+    const psi = immersion_angle(ae, 0.5 * d);
+    return psi <= 0 || psi >= Math.PI / 2 ? 1 : 1 / Math.sin(psi);
+  }
+  // tool/mod.rs helix_lag_rad.
+  const helix_lag_rad = (ap, r, helix) => (ap * Math.abs(Math.tan((helix * Math.PI) / 180))) / r;
+
+  // engagement.rs Primitive::at: int sin = -cos, int sin cos = sin^2/2,
+  // int sin^2 = phi/2 - sin cos/2, int cos = sin.
+  const primitive = (phi, s, c) => ({ phi, shear_s: -c, shear_x: (s * s) / 2, shear_y: phi / 2 - (s * c) / 2, edge_x: s, edge_y: -c });
+  // engagement.rs EdgeSample::add_interval (exact in z).
+  function add_interval(acc, psi, lo, hi, scale) {
+    if (hi.u <= lo.u) return;
+    const first = Math.floor((lo.u - psi) / TAU), last = Math.floor(hi.u / TAU);
+    for (let m = first; m <= last; m++) {
+      const sh = TAU * m;
+      const pa = lo.u - sh > 0 ? primitive(lo.u - sh, lo.s, lo.c) : primitive(0, 0, 1);
+      const pb = hi.u - sh < psi ? primitive(hi.u - sh, hi.s, hi.c) : primitive(psi, Math.sin(psi), Math.cos(psi));
+      if (pb.phi > pa.phi) {
+        acc.sx += scale * (pb.shear_x - pa.shear_x); acc.sy += scale * (pb.shear_y - pa.shear_y);
+        acc.ex += scale * (pb.edge_x - pa.edge_x); acc.ey += scale * (pb.edge_y - pa.edge_y);
+      }
+    }
+  }
+  // engagement.rs Engagement::edge_sums: one sample per rotation step.
+  function edge_sums(ap, ae, d, z, helix) {
+    const r = d / 2, psi = Math.min(Math.max(immersion_angle(ae, r), 0), Math.PI);
+    if (!(ap > 0 && r > 0 && psi > 0 && z > 0)) return null;
+    const pitch = TAU / z, wrap = helix_lag_rad(ap, r, helix), n = v("EDGE_SAMPLES_PER_PITCH");
+    const out = [];
+    for (let i = 0; i < n; i++) {
+      const acc = { sx: 0, sy: 0, ex: 0, ey: 0 };
+      const theta = (pitch * i) / n;
+      for (let j = 0; j < z; j++) {
+        const u = theta + pitch * j;
+        const lead = { u, s: Math.sin(u), c: Math.cos(u) };
+        if (wrap > 0) {
+          const t = u - wrap;
+          add_interval(acc, psi, { u: t, s: Math.sin(t), c: Math.cos(t) }, lead, ap / wrap);
+        } else if (((u % TAU) + TAU) % TAU <= psi) {
+          acc.sx += ap * lead.s * lead.c; acc.sy += ap * lead.s * lead.s; acc.ex += ap * lead.c; acc.ey += ap * lead.s;
+        }
+      }
+      out.push(acc);
+    }
+    return out;
+  }
+  // engagement.rs EdgeSample::resultant_n.
+  const resultant_n = (s, shear, fe) => Math.hypot(shear * s.sx + fe * s.ex, shear * s.sy + fe * s.ey);
+  // engagement.rs Engagement::edge_force: the mean and the PEAK resultant (N).
+  function edge_force(ap, ae, d, z, fz, line, helix) {
+    const [ks, fe] = line, sums = edge_sums(ap, ae, d, z, helix);
+    if (!sums) return null;
+    const psi = Math.min(immersion_angle(ae, d / 2), Math.PI);
+    return {
+      mean_tangential_n: ((ap * z) / TAU) * (ks * fz * (1 - Math.cos(psi)) + fe * psi),
+      peak_resultant_n: sums.reduce((m, s) => Math.max(m, resultant_n(s, ks * fz, fe)), 0),
+    };
+  }
+
+  // force_budget.rs hobby_budget: the largest peak force of the printed slot rows.
+  function hobby_budget() {
+    let best = { force_n: 0, binding: 0, forces: [] };
+    C.HOBBY_SLOT_POINTS.value.forEach((p, i) => {
+      const fz = p.feed_mm_min / (p.rpm * p.flutes);
+      const f = edge_force(p.ap_mm, p.diameter_mm, p.diameter_mm, p.flutes, fz, force_line(p.material), v("DEFAULT_HELIX_DEG")).peak_resultant_n;
+      best.forces.push(f);
+      if (f > best.force_n) { best.force_n = f; best.binding = i; }
+    });
+    return best;
+  }
+
+  // cutter_constraints.rs shallowest_crossing: scan, then bisect to the convergence.
+  function shallowest_crossing(lower, upper, steps, within) {
+    if (!within(lower)) return 0;
+    const step = (upper - lower) / steps;
+    let lo = lower, hi = null;
+    for (let k = 1; k <= steps; k++) {
+      const ap = k === steps ? upper : lower + step * k;
+      if (within(ap)) lo = ap; else { hi = ap; break; }
+    }
+    if (hi === null) return null;
+    for (let i = 0; i < v("BINSEARCH_MAX_ITERATIONS"); i++) {
+      if (hi - lo < v("BINSEARCH_CONVERGENCE_MM")) break;
+      const mid = 0.5 * (lo + hi);
+      if (within(mid)) lo = mid; else hi = mid;
+    }
+    return lo;
+  }
+  // force_budget.rs depth_at_budget: {kind: Solved|BelowFloor|NoRootBelowFlute, mm}.
+  function depth_at_budget(tool, line, ae, fz, budget) {
+    const floor = v("MIN_AP_MM"), upper = tool.flute;
+    const ap0 = budget / (tool.z * (line[0] * fz + line[1]));
+    if (ap0 >= upper) return { kind: "NoRootBelowFlute", mm: null };
+    const within = (ap) => edge_force(ap, ae, tool.d, tool.z, fz, line, tool.helix).peak_resultant_n <= budget;
+    const mm = shallowest_crossing(Math.max(ap0, floor), upper, v("BUDGET_SCAN_STEPS"), within);
+    if (mm === null) return { kind: "NoRootBelowFlute", mm: null };
+    if (mm <= 0) return { kind: "BelowFloor", mm: floor };
+    return { kind: "Solved", mm };
+  }
+
+  // tool/mod.rs ToolDefinition::tip_deflection_mm (stepped cantilever, flat end mill).
+  function tip_deflection_mm(tool, force_n, ap) {
+    const L = tool.stickout, E = v("CARBIDE_YOUNGS_MODULUS_N_PER_MM2");
+    const load = Math.max(L - Math.max(ap, 0) * 0.5, 0);
+    if (L <= 0 || load <= 0 || force_n === 0) return 0;
+    const shank_top = Math.min(Math.max(L - tool.flute, 0), load);
+    let delta = 0, slope = 0;
+    const region = (x0, x1, dia, n) => {
+      if (x1 <= x0) return;
+      const I = (Math.PI * Math.pow(Math.max(dia, v("D_FLOOR_MM")), 4)) / 64, dx = (x1 - x0) / n;
+      for (let i = 0; i < n; i++) {
+        const x = x0 + (i + 0.5) * dx, arm = load - x, k = force_n / (E * I);
+        delta += k * arm * arm * dx; slope += k * arm * dx;
+      }
+    };
+    region(0, shank_top, tool.shank, v("N_SHANK"));
+    region(shank_top, load, v("ENDMILL_EQUIVALENT_DIAMETER_FRACTION") * tool.d, v("N_CUTTER"));
+    return delta + slope * (L - load);
+  }
+  // cutter_constraints.rs invert_deflection: the shallowest depth at the target, or null.
+  function invert_deflection(tool, line, ae, fz, limit_um) {
+    const lower = tool.stickout * v("BINSEARCH_LOWER_FRACTION");
+    const upper = Math.min(tool.stickout * v("BINSEARCH_UPPER_FRACTION"), tool.flute);
+    const defl = (ap) => tip_deflection_mm(tool, edge_force(ap, ae, tool.d, tool.z, fz, line, tool.helix).peak_resultant_n, ap);
+    return shallowest_crossing(lower, upper, v("DEFLECTION_SCAN_STEPS"), (ap) => defl(ap) <= limit_um * 1e-3);
+  }
+
+  // geometry.rs doc_derating_scale and its inverse vendor_depth_table_ceiling_ratio.
+  function doc_derating_scale(ratio) {
+    if (!(ratio > 1)) return 1;
+    if (ratio <= 2) return 1 - 0.25 * (ratio - 1);
+    if (ratio <= 3) return 0.75 - 0.25 * (ratio - 2);
+    return 0.5;
+  }
+  function vendor_depth_table_ceiling_ratio(share) {
+    if (!(share > 0.5)) return v("DOC_DERATE_LAST_PRINTED_RATIO");
+    if (share <= 0.75) return 2 + (0.75 - share) / 0.25;
+    if (share <= 1) return 1 + (1 - share) / 0.25;
+    return 1;
+  }
+  // force_budget.rs corner_coverage_width_factor: (1 + 1/sqrt 2) / 2.
+  const corner_coverage_width_factor = () => (1 + 1 / Math.SQRT2) / 2;
+
+  // tool_load/power.rs PowerTerms (two-term model, grain factor 1.0), kW.
+  function power_kw(ap, ae, d, z, rpm, feed, line) {
+    const psi = Math.min(immersion_angle(ae, d / 2), Math.PI);
+    return (line[0] * ap * ae * feed) / 60e6 + (line[1] * ap * Math.PI * d * rpm * ((z * psi) / TAU)) / 60e6;
+  }
+  // The Pocket demand: the worst PowerCase (Slot: ae = D) at the point.
+  const pocket_power_kw = (tool, line, ap, ae, rpm, feed) =>
+    Math.max(power_kw(ap, ae, tool.d, tool.z, rpm, feed, line), power_kw(ap, tool.d, tool.d, tool.z, rpm, feed, line));
+
+  // MachineProfile::cutting_feed_ceiling_mm_min: min(stated or 6000, travel).
+  const cutting_feed_ceiling_mm_min = (m) => Math.min(m.max_cutting_feed ?? v("DEFAULT_CUTTING_FEED_CAP_MM_MIN"), m.max_feed);
+
+  // calculator Step 2 (row RPM), Step 5 (feed with lift) and Step 7 (cap, arms L/S).
+  function speeds(cut, tool, row, m, line, ap) {
+    const rpm0 = Math.min(Math.max(row.rpm, m.min_rpm), m.max_rpm);
+    const lift = peak_chip_thinning_lift(cut.ae, tool.d);
+    const raw = rpm0 * row.chip * tool.z * lift;
+    const cap = cutting_feed_ceiling_mm_min(m);
+    let rpm = rpm0, feed = raw, arm = null, capped = false;
+    if (raw > cap && cap > 0) {
+      const per_rev = raw / rpm0;
+      const target = Math.floor(cap / per_rev);
+      let rpm_l = Math.min(Math.max(Math.max(target, m.min_rpm), m.min_rpm), m.max_rpm);
+      if (rpm_l < rpm0 && rpm_l > 0) {
+        const mk = (name, r) => { const f = Math.min(per_rev * r, cap); const dmd = pocket_power_kw(tool, line, ap, cut.ae, r, f); return { name, rpm: r, feed: f, demand: dmd, inside: dmd <= m.power_kw }; };
+        const L = mk("L", rpm_l), S = mk("S", rpm0);
+        const pick = L.inside ? L : S.inside ? S : (S.demand - m.power_kw < L.demand - m.power_kw ? S : L);
+        arm = { L, S, shipped: pick.name };
+        if (pick.name === "L") { rpm = rpm_l; feed = per_rev * rpm_l; }
+      }
+      if (feed > cap) { feed = cap; capped = true; }
+    }
+    return { rpm0, raw, lift, rpm, feed, cap, arm, capped, fz: feed / (rpm * tool.z) };
+  }
+
+  // The tool of the FM1 walk (tests/feeds_matrix_instrument_fm1.rs tool_of).
+  function fm1_tool(d, z, stickout_extra) {
+    const flute = Math.max(d * 3, 12);
+    return { d, z, flute, shank: Math.max(d, 3), stickout: flute + (stickout_extra ?? 8), helix: v("DEFAULT_HELIX_DEG") };
+  }
+
+  // The SafeEnvelope limits at one width: each ap ceiling and its kind.
+  function ceilings_at(ae, ctx) {
+    const { tool, line, row, m, budget, limit_um } = ctx;
+    const sp = speeds({ ae }, tool, row, m, line, v("MIN_AP_MM"));
+    const fz = sp.fz, top = tool.flute, d = tool.d;
+    const out = [];
+    out.push({ kind: "FluteGuard", mm: tool.flute * v("FLUTE_GUARD_FACTOR") });
+    out.push({ kind: "CuttingLength", mm: tool.flute });
+    if (ae > d * v("SLOTTING_THRESHOLD")) out.push({ kind: "Slot", mm: d * m.slot_doc_factor });
+    const b = depth_at_budget(tool, line, ae, fz, budget);
+    out.push({ kind: "Rigidity", mm: b.mm ?? top, none: b.kind === "NoRootBelowFlute", budget: b });
+    const psi = immersion_angle(ae, 0.5 * d);
+    const share = (fz * Math.sin(Math.min(psi, Math.PI / 2))) / row.chip;
+    out.push({ kind: "VendorDepthTable", mm: share > 0.5 ? vendor_depth_table_ceiling_ratio(share) * d : top, share, none: !(share > 0.5) });
+    const dfl = invert_deflection(tool, line, Math.max(ae, 1e-3), fz, limit_um);
+    out.push({ kind: "Deflection", mm: dfl ?? top, none: dfl === null });
+    out.push(power_edge(ae, ctx, top));
+    return { ae, fz, speeds: sp, list: out };
+  }
+  // envelope.rs power_limit: the deepest ap where the full chip fits the rated power.
+  function power_edge(ae, ctx, top) {
+    const { tool, line, row, m } = ctx;
+    const fits = (ap) => { const s = speeds({ ae }, tool, row, m, line, ap); return pocket_power_kw(tool, line, ap, ae, s.rpm, s.feed) <= m.power_kw; };
+    if (fits(top)) return { kind: "Power", mm: top, none: true };
+    let lo = 0, hi = top;
+    for (let i = 0; i < 40; i++) { const mid = 0.5 * (lo + hi); if (fits(mid)) lo = mid; else hi = mid; }
+    return { kind: "Power", mm: lo, none: false };
+  }
+  // envelope.rs deepest_at: the deepest depth inside every ceiling, and its kind.
+  function deepest_at(ae, ctx) {
+    const c = ceilings_at(ae, ctx);
+    let best = { mm: ctx.tool.flute, kind: null };
+    for (const l of c.list) if (l.mm < best.mm) best = { mm: l.mm, kind: l.kind };
+    best.mm = Math.max(best.mm, v("MIN_AP_MM"));
+    return { ...best, at: c };
+  }
+  // envelope.rs removal_rate: ae x ap x the feed the calculator ships there.
+  const removal_rate = (ae, ap, ctx) => ae * ap * speeds({ ae }, ctx.tool, ctx.row, ctx.m, ctx.line, ap).feed;
+
+  // envelope.rs propose_removal_rate (free Pocket width). The page solves every
+  // candidate exactly; the Rust ranks with the stored grid first, then solves the top 3.
+  function propose_removal_rate(ctx) {
+    const d = ctx.tool.d;
+    const corner = d * corner_coverage_width_factor();
+    const hi = Math.min(corner, d), lo = v("MIN_AE_MM");
+    const n = v("REMOVAL_RATE_WIDTH_SAMPLES");
+    const cands = [];
+    for (let i = 0; i < n; i++) cands.push(lo + ((hi - lo) * i) / (n - 1));
+    const thr = d * v("SLOTTING_THRESHOLD");
+    if (thr > lo && thr < hi) cands.push(thr);
+    const g = v("ENVELOPE_GRID_N");
+    for (let i = 0; i < g; i++) { const a = lo + ((d - lo) * i) / (g - 1); if (a > lo && a < hi) cands.push(a); }
+    cands.sort((a, b) => a - b);
+    const cache = new Map();
+    const evalw = (ae) => {
+      if (cache.has(ae)) return cache.get(ae);
+      const dp = deepest_at(ae, ctx);
+      const r = { ae, ap: dp.mm, kind: dp.kind, mrr: removal_rate(ae, dp.mm, ctx) };
+      cache.set(ae, r);
+      return r;
+    };
+    let bi = 0, best = null;
+    cands.forEach((ae, i) => { const r = evalw(ae); if (!best || r.mrr > best.mrr) { best = r; bi = i; } });
+    if (cands.length > 2) {
+      let a = cands[Math.max(bi - 1, 0)], b = cands[Math.min(bi + 1, cands.length - 1)];
+      const gr = (Math.sqrt(5) - 1) / 2;
+      let c = b - gr * (b - a), e = a + gr * (b - a), fc = evalw(c), fe = evalw(e);
+      for (let k = 0; k < v("REMOVAL_RATE_REFINE_STEPS"); k++) {
+        for (const r of [fc, fe]) if (r.mrr > best.mrr) best = r;
+        if (fc.mrr >= fe.mrr) { b = e; e = c; fe = fc; c = b - gr * (b - a); fc = evalw(c); }
+        else { a = c; c = e; fc = fe; e = a + gr * (b - a); fe = evalw(e); }
+      }
+      for (const r of [fc, fe]) if (r.mrr > best.mrr) best = r;
+    }
+    const limits = best.kind ? [best.kind] : [];
+    if (Math.abs(best.ae - hi) < 1e-9) limits.push(hi === corner ? "CornerCoverage" : "Diameter");
+    if (Math.abs(best.ae - thr) < 1e-9 && !limits.includes("Slot")) limits.push("Slot");
+    return { ...best, limits, corner, threshold: thr };
+  }
+
+  return {
+    force_line, immersion_angle, peak_chip_thinning_lift, edge_force, hobby_budget, depth_at_budget,
+    tip_deflection_mm, invert_deflection, doc_derating_scale, vendor_depth_table_ceiling_ratio,
+    corner_coverage_width_factor, power_kw, pocket_power_kw, cutting_feed_ceiling_mm_min, speeds,
+    fm1_tool, ceilings_at, deepest_at, removal_rate, propose_removal_rate, curti_helix0_envelope,
+  };
+}
+
+</script>
+<script id="claims-js">
+// The numbers that the page prose states, computed by the port for the
+// default cell (D 6, 2 flutes, hardwood Pocket, Generic Wood Router).
+function default_claims(L, C) {
+  const v = (k) => C[k].value;
+  const hb = L.hobby_budget();
+  const m = { min_rpm: v("GENERIC_MIN_RPM"), max_rpm: v("GENERIC_MAX_RPM"), power_kw: v("GENERIC_POWER_KW"), max_feed: v("GENERIC_MAX_FEED"), max_cutting_feed: null, slot_doc_factor: v("SLOT_DOC_FACTOR") };
+  const ctx_of = (d, mat, budget) => ({ tool: L.fm1_tool(d, 2), line: L.force_line(mat), row: C.VENDOR_ROWS.value[String(d)][mat], m, budget: budget ?? hb.force_n, limit_um: v("DEFLECTION_BACKOFF_TARGET_UM") });
+  const hw = ctx_of(6, "hardwood"), md = ctx_of(6, "mdf"), sw = ctx_of(6, "softwood");
+  const p_hw = L.propose_removal_rate(hw), p_md = L.propose_removal_rate(md), p_sw = L.propose_removal_rate(sw);
+  const sp = L.speeds({ ae: p_hw.ae }, hw.tool, hw.row, m, hw.line, p_hw.ap);
+  const feed_fm1 = Math.floor(sp.feed);
+  const fz_fm1 = feed_fm1 / (sp.rpm * 2);
+  const sorted = hb.forces.slice().sort((a, b) => a - b);
+  const median = 0.5 * (sorted[2] + sorted[3]);
+  const sw_budget = L.depth_at_budget(sw.tool, sw.line, p_sw.ae, L.speeds({ ae: p_sw.ae }, sw.tool, sw.row, m, sw.line, 1).fz, hb.force_n).mm;
+  const d3 = ctx_of(3.175, "hardwood"), p_d3 = L.propose_removal_rate(d3);
+  const d3_budget = L.depth_at_budget(d3.tool, d3.line, p_d3.ae, L.speeds({ ae: p_d3.ae }, d3.tool, d3.row, m, d3.line, 1).fz, hb.force_n).mm;
+  const corner = L.corner_coverage_width_factor();
+  const power_pick = L.pocket_power_kw(hw.tool, hw.line, p_hw.ap, p_hw.ae, sp.rpm, feed_fm1);
+  const f_pick = L.edge_force(p_hw.ap, p_hw.ae, 6, 2, fz_fm1, hw.line, v("DEFAULT_HELIX_DEG")).peak_resultant_n;
+  const f_pick_calc = L.edge_force(p_hw.ap, p_hw.ae, 6, 2, sp.fz, hw.line, v("DEFAULT_HELIX_DEG")).peak_resultant_n;
+  const sg = (k) => v(k).reduce((s, x) => s + x, 0) / 3;
+  const quarter = 0.25 * 6;
+  return {
+    budget_n: hb.force_n,
+    f_sienci_sw: hb.forces[0], f_sienci_mdf: hb.forces[1], f_sienci_hw: hb.forces[2],
+    f_c3d_mdf: hb.forces[3], f_c3d_pine: hb.forces[4], f_c3d_mah: hb.forces[5],
+    budget_median: median,
+    rho_hw: sg("FPL_ROWS_GENERIC_HARDWOOD") * 1000 * v("FPL_12PCT_MOISTURE_FACTOR"),
+    rho_sw: sg("FPL_ROWS_GENERIC_SOFTWOOD") * 1000 * v("FPL_12PCT_MOISTURE_FACTOR"),
+    ks_n: L.curti_helix0_envelope()[0], int_n: L.curti_helix0_envelope()[1],
+    ks_hw: hw.line[0], fe_hw: hw.line[1], ks_sw: sw.line[0], fe_sw: sw.line[1], ks_mdf: md.line[0], fe_mdf: md.line[1],
+    chip_hw: hw.row.chip, chip_mdf: md.row.chip, rpm_row: hw.row.rpm,
+    raw_feed: sp.raw, cap: sp.cap, rpm_pick: sp.rpm, feed_calc: sp.feed, feed_fm1, fz_fm1,
+    rpm_mdf: L.speeds({ ae: p_md.ae }, md.tool, md.row, m, md.line, p_md.ap).rpm,
+    psi_pick_deg: (L.immersion_angle(p_hw.ae, 3) * 180) / Math.PI,
+    lift_pick: sp.lift, lift_quarter: L.peak_chip_thinning_lift(quarter, 6),
+    raw_quarter: hw.row.rpm * hw.row.chip * 2 * L.peak_chip_thinning_lift(quarter, 6),
+    corner_factor: corner, corner_mm: 6 * corner, thr_factor: v("SLOTTING_THRESHOLD"), thr_mm: 6 * v("SLOTTING_THRESHOLD"),
+    thr_under_corner_pct: 100 * (1 - v("SLOTTING_THRESHOLD") / corner),
+    slot_cap_mm: 6 * v("SLOT_DOC_FACTOR"),
+    flute: hw.tool.flute, guard: hw.tool.flute * v("FLUTE_GUARD_FACTOR"), stickout: hw.tool.stickout,
+    ap0_hw: hb.force_n / (2 * (hw.line[0] * sp.fz + hw.line[1])),
+    pick_ae_over_d: p_hw.ae / 6, pick_ae: p_hw.ae,
+    depth_hw: p_hw.ap, depth_mdf: p_md.ap, depth_sw: p_sw.ap, budget_sw: sw_budget,
+    cap_hw_fm1chip: L.depth_at_budget(hw.tool, hw.line, p_hw.ae, fz_fm1, hb.force_n).mm,
+    limits_hw: p_hw.limits.join(","), limits_mdf: p_md.limits.join(","), limits_sw: p_sw.limits.join(","),
+    force_pick: f_pick, force_pick_calc: f_pick_calc, power_pick, power_share_pct: (100 * power_pick) / v("GENERIC_POWER_KW"),
+    defl_pick_um: 1000 * L.tip_deflection_mm(hw.tool, f_pick, p_hw.ap),
+    defl_root_hw: L.invert_deflection(hw.tool, hw.line, p_hw.ae, sp.fz, v("DEFLECTION_BACKOFF_TARGET_UM")),
+    mrr_pick: p_hw.mrr,
+    sens_median: L.depth_at_budget(hw.tool, hw.line, p_hw.ae, sp.fz, median).mm,
+    sens_40: L.depth_at_budget(hw.tool, hw.line, p_hw.ae, sp.fz, 40).mm,
+    d3_depth: p_d3.ap, d3_budget, d3_limits: p_d3.limits.join(","),
+    table_hw_mm: 6 * L.vendor_depth_table_ceiling_ratio(1),
+    budget_at_d: L.depth_at_budget(hw.tool, hw.line, 6, sp.fz, hb.force_n).mm,
+    root_hw_fine: (function () {
+      const F = JSON.parse(JSON.stringify(C));
+      F.BINSEARCH_CONVERGENCE_MM.value = 1e-9; F.BINSEARCH_MAX_ITERATIONS.value = 200;
+      return makeLaws(F).depth_at_budget(hw.tool, hw.line, p_hw.ae, sp.fz, hb.force_n).mm;
+    })(),
+    min_rpm: v("GENERIC_MIN_RPM"), max_rpm: v("GENERIC_MAX_RPM"), power_kw: v("GENERIC_POWER_KW"), target_um: v("DEFLECTION_BACKOFF_TARGET_UM"),
+    upcut_rpm: C.UPCUT_ROW.value.rpm, upcut_min: C.UPCUT_ROW.value.chip_min, upcut_max: C.UPCUT_ROW.value.chip_max,
+  };
+}
+
+</script>
+<script>
+(function () {
+  const C = JSON.parse(document.getElementById("laws").textContent);
+  const L = makeLaws(C);
+  const v = (k) => C[k].value;
+  const HB = L.hobby_budget();
+  const NS = "http://www.w3.org/2000/svg";
+  const $ = (id) => document.getElementById(id);
+  const fmt = (x, d) => (x === null || x === undefined || !isFinite(x) ? "-" : Number(x).toFixed(d));
+  const DEF = { mat: "hardwood", d: 6, cap: Math.min(v("DEFAULT_CUTTING_FEED_CAP_MM_MIN"), v("GENERIC_MAX_FEED")), budget: HB.force_n, power: v("GENERIC_POWER_KW"), stkExtra: 8, follow: true, ae: null, ap: null };
+  let S = Object.assign({}, DEF);
+  const COLORS = { Rigidity: "--c-rigidity", VendorDepthTable: "--c-table", Slot: "--c-slot", CornerCoverage: "--c-corner", FluteGuard: "--c-flute", CuttingLength: "--c-flute", Power: "--c-power", Deflection: "--c-defl", Diameter: "--c-flute" };
+  const LABEL = { Rigidity: "machine rigidity (force budget)", VendorDepthTable: "vendor depth table", Slot: "slot rule", CornerCoverage: "corner coverage", FluteGuard: "flute guard", CuttingLength: "cutting length", Power: "spindle power", Deflection: "tool deflection", Diameter: "tool diameter" };
+  const col = (k) => getComputedStyle(document.documentElement).getPropertyValue(COLORS[k] || "--muted").trim();
+  const css = (n) => getComputedStyle(document.documentElement).getPropertyValue(n).trim();
+
+  function el(tag, attrs, parent, text) {
+    const e = document.createElementNS(NS, tag);
+    for (const k in attrs) e.setAttribute(k, attrs[k]);
+    if (text !== undefined) e.textContent = text;
+    if (parent) parent.appendChild(e);
+    return e;
+  }
+  function clear(svg) { while (svg.firstChild) svg.removeChild(svg.firstChild); }
+
+  function machine() {
+    return { min_rpm: v("GENERIC_MIN_RPM"), max_rpm: v("GENERIC_MAX_RPM"), power_kw: S.power, max_feed: S.cap, max_cutting_feed: S.cap, slot_doc_factor: v("SLOT_DOC_FACTOR") };
+  }
+  function context() {
+    return { tool: L.fm1_tool(S.d, 2, S.stkExtra), line: L.force_line(S.mat), row: C.VENDOR_ROWS.value[String(S.d)][S.mat], m: machine(), budget: S.budget, limit_um: v("DEFLECTION_BACKOFF_TARGET_UM") };
+  }
+
+  // ---- controls ----
+  function segInit(id, key, parse) {
+    $(id).querySelectorAll("button").forEach((b) => b.addEventListener("click", () => {
+      S[key] = parse(b.dataset.v);
+      $(id).querySelectorAll("button").forEach((x) => x.setAttribute("aria-pressed", String(x === b)));
+      if (key === "d") S.follow = true, ($("follow").checked = true);
+      schedule();
+    }));
+  }
+  segInit("matSeg", "mat", (x) => x);
+  segInit("dSeg", "d", (x) => Number(x));
+  function syncControls() {
+    $("capR").value = S.cap; $("budR").value = S.budget; $("powR").value = S.power; $("stkR").value = S.stkExtra;
+    $("follow").checked = S.follow;
+    $("matSeg").querySelectorAll("button").forEach((x) => x.setAttribute("aria-pressed", String(x.dataset.v === S.mat)));
+    $("dSeg").querySelectorAll("button").forEach((x) => x.setAttribute("aria-pressed", String(Number(x.dataset.v) === S.d)));
+  }
+  $("capR").addEventListener("input", (e) => { S.cap = Number(e.target.value); schedule(); });
+  $("budR").addEventListener("input", (e) => { S.budget = Number(e.target.value); schedule(); });
+  $("powR").addEventListener("input", (e) => { S.power = Number(e.target.value); schedule(); });
+  $("stkR").addEventListener("input", (e) => { S.stkExtra = Number(e.target.value); schedule(); });
+  $("follow").addEventListener("change", (e) => { S.follow = e.target.checked; schedule(); });
+  $("aeR").addEventListener("input", (e) => { S.follow = false; S.ae = (Number(e.target.value) / 1000) * S.d; schedule(); });
+  $("apR").addEventListener("input", (e) => { S.follow = false; S.ap = Math.max(v("MIN_AP_MM"), (Number(e.target.value) / 1000) * L.fm1_tool(S.d, 2).flute); schedule(); });
+  $("reset").addEventListener("click", () => { S = Object.assign({}, DEF); syncControls(); schedule(); });
+
+  let timer = null;
+  function schedule() { if (timer) clearTimeout(timer); timer = setTimeout(() => { timer = null; requestAnimationFrame(render); }, 25); }
+
+  // ---- model evaluation (cached per state) ----
+  let cacheKey = "", cache = null;
+  function model() {
+    const key = [S.mat, S.d, S.cap, S.budget, S.power, S.stkExtra].join("|");
+    if (key === cacheKey) return cache;
+    const ctx = context();
+    const pick = L.propose_removal_rate(ctx);
+    const d = S.d, n = 44, lo = v("MIN_AE_MM");
+    const widths = [];
+    for (let i = 0; i < n; i++) widths.push(lo + ((d - lo) * i) / (n - 1));
+    const thr = d * v("SLOTTING_THRESHOLD");
+    widths.push(thr, thr + 1e-6, pick.ae, d * L.corner_coverage_width_factor());
+    widths.sort((a, b) => a - b);
+    const cols = widths.map((ae) => L.ceilings_at(ae, ctx));
+    cacheKey = key; cache = { ctx, pick, cols, thr };
+    return cache;
+  }
+
+  // ---- render ----
+  function render() {
+    const M = model();
+    const { ctx, pick } = M;
+    const tool = ctx.tool;
+    if (S.follow || S.ae === null) { S.ae = pick.ae; S.ap = pick.ap; }
+    S.ae = Math.min(Math.max(S.ae, v("MIN_AE_MM")), S.d);
+    S.ap = Math.min(Math.max(S.ap, v("MIN_AP_MM")), tool.flute);
+    $("aeR").value = Math.round((S.ae / S.d) * 1000);
+    $("apR").value = Math.round((S.ap / tool.flute) * 1000);
+    $("capV").textContent = fmt(S.cap, 0) + " mm/min";
+    $("budV").textContent = fmt(S.budget, 2) + " N";
+    $("powV").textContent = fmt(S.power, 2) + " kW";
+    $("stkV").textContent = fmt(tool.stickout, 0) + " mm";
+    $("aeV").textContent = fmt(S.ae, 3) + " mm (" + fmt(S.ae / S.d, 3) + " D)";
+    $("apV").textContent = fmt(S.ap, 3) + " mm";
+    const P = point(ctx, S.ae, S.ap);
+    renderChain(ctx, pick, P);
+    renderTop(ctx, P);
+    renderChip(ctx, P);
+    renderSide(ctx, P);
+    renderCorner(ctx);
+    renderEnvelope(M, P);
+    renderForce(ctx, P);
+  }
+
+  function point(ctx, ae, ap) {
+    const sp = L.speeds({ ae }, ctx.tool, ctx.row, ctx.m, ctx.line, ap);
+    const ef = L.edge_force(ap, ae, ctx.tool.d, ctx.tool.z, sp.fz, ctx.line, ctx.tool.helix);
+    const F = ef.peak_resultant_n;
+    const pw = L.pocket_power_kw(ctx.tool, ctx.line, ap, ae, sp.rpm, sp.feed);
+    const defl = L.tip_deflection_mm(ctx.tool, F, ap) * 1000;
+    const at = L.ceilings_at(ae, ctx);
+    const psi = L.immersion_angle(ae, ctx.tool.d / 2);
+    const peak_chip = sp.fz * Math.sin(Math.min(psi, Math.PI / 2));
+    const corner = ctx.tool.d * L.corner_coverage_width_factor();
+    const over = at.list.filter((l) => ap > l.mm + 1e-9).map((l) => l.kind);
+    if (ae > corner + 1e-9) over.push("CornerCoverage");
+    return { ae, ap, sp, F, mean: ef.mean_tangential_n, pw, defl, at, psi, peak_chip, corner, over, mrr: ae * ap * sp.feed };
+  }
+
+  function renderChain(ctx, pick, P) {
+    const sp = P.sp, row = ctx.row, tool = ctx.tool;
+    const rig = P.at.list.find((l) => l.kind === "Rigidity");
+    const tab = P.at.list.find((l) => l.kind === "VendorDepthTable");
+    const dfl = P.at.list.find((l) => l.kind === "Deflection");
+    const pwl = P.at.list.find((l) => l.kind === "Power");
+    const deep = P.at.list.reduce((a, b) => (b.mm < a.mm ? b : a));
+    const bindsDepth = (k) => (deep.kind === k && !deep.none ? "binds" : "idle");
+    const steps = [
+      { k: "Row (Amana Spektra 2F)", v: fmt(row.chip, 4) + " mm/t", f: fmt(row.rpm, 0) + " rpm, " + S.mat + ", D " + S.d, c: "idle" },
+      { k: "rpm (row, then cap arm)", v: fmt(sp.rpm, 0), f: sp.rpm < sp.rpm0 ? "arm " + (sp.arm ? sp.arm.shipped : "-") + ": floor(cap / chip per rev)" : "row rpm, inside " + fmt(ctx.m.min_rpm, 0) + "-" + fmt(ctx.m.max_rpm, 0), c: sp.rpm < sp.rpm0 ? "moved" : "idle" },
+      { k: "Chip thinning lift", v: "x " + fmt(sp.lift, 3), f: "psi " + fmt((P.psi * 180) / Math.PI, 1) + " deg; 1/sin psi below 0.5 D", c: sp.lift > 1 ? "moved" : "idle" },
+      { k: "Feed (cap " + fmt(sp.cap, 0) + ")", v: fmt(sp.feed, 2) + " mm/min", f: "raw " + fmt(sp.raw, 0) + " = rpm x chip x Z x lift", c: sp.raw > sp.cap ? "binds" : "idle" },
+      { k: "fz, peak chip", v: fmt(sp.fz, 4) + " / " + fmt(P.peak_chip, 4), f: "peak = fz sin(min(psi, 90))", c: "idle" },
+      { k: "Width ae", v: fmt(P.ae, 3) + " mm", f: "corner " + fmt(P.corner, 3) + ", slot above " + fmt(tool.d * v("SLOTTING_THRESHOLD"), 3), c: P.ae > P.corner + 1e-9 ? "binds" : Math.abs(P.ae - tool.d * v("SLOTTING_THRESHOLD")) < 1e-6 ? "binds" : "idle" },
+      { k: "Depth: force budget", v: rig.none ? "no root" : fmt(rig.mm, 3) + " mm", f: fmt(S.budget, 2) + " N at fz " + fmt(sp.fz, 4), c: bindsDepth("Rigidity") },
+      { k: "Depth: vendor table", v: tab.none ? "no edge" : fmt(tab.mm, 3) + " mm", f: "chip share " + fmt(tab.share, 3) + " of the row", c: bindsDepth("VendorDepthTable") },
+      { k: "Depth: slot, flute", v: (P.ae > tool.d * v("SLOTTING_THRESHOLD") ? fmt(tool.d * ctx.m.slot_doc_factor, 2) + " / " : "- / ") + fmt(tool.flute * v("FLUTE_GUARD_FACTOR"), 1), f: "slot 0.25 D above 0.85 D; guard 0.8 x flute", c: deep.kind === "Slot" || deep.kind === "FluteGuard" ? "binds" : "idle" },
+      { k: "Depth: deflection", v: dfl.none ? "no root" : fmt(dfl.mm, 3) + " mm", f: "tip at your point " + fmt(P.defl, 1) + " um of 200", c: bindsDepth("Deflection") },
+      { k: "Force, power", v: fmt(P.F, 2) + " N / " + fmt(P.pw, 3) + " kW", f: "power as a slot; " + (pwl.none ? "no power edge" : "edge " + fmt(pwl.mm, 2) + " mm"), c: bindsDepth("Power") },
+      { k: "Pick (most mm3/min)", v: fmt(pick.ae / tool.d, 3) + " D x " + fmt(pick.ap, 3), f: (pick.limits.join(", ") || "-") + "; " + fmt(pick.mrr, 0) + " mm3/min", c: "binds" },
+    ];
+    const box = $("chain");
+    box.innerHTML = "";
+    for (const s of steps) {
+      const d = document.createElement("div");
+      d.className = "step " + s.c;
+      d.innerHTML = '<div class="k"></div><div class="v"></div><div class="f"></div>';
+      d.children[0].textContent = s.k; d.children[1].textContent = s.v; d.children[2].textContent = s.f;
+      box.appendChild(d);
+    }
+    const inside = P.over.length === 0;
+    const r = [
+      ["Your point", fmt(P.ae, 3) + " x " + fmt(P.ap, 3) + " mm"],
+      ["Placement", inside ? "inside" : "outside: " + P.over.map((k) => LABEL[k] || k).join(", ")],
+      ["rpm, feed", fmt(P.sp.rpm, 0) + ", " + fmt(P.sp.feed, 2)],
+      ["Peak force", fmt(P.F, 2) + " N (budget " + fmt(S.budget, 2) + ")"],
+      ["Mean force", fmt(P.mean, 2) + " N"],
+      ["Power (slot case)", fmt(P.pw, 3) + " of " + fmt(S.power, 2) + " kW"],
+      ["Tip deflection", fmt(P.defl, 1) + " um"],
+      ["Removal", fmt(P.mrr, 0) + " mm3/min"],
+      ["Pick removal", fmt(pick.mrr, 0) + " mm3/min"],
+    ];
+    $("readout").innerHTML = r.map(([a, b]) => "<div><span>" + a + "</span><b></b></div>").join("");
+    $("readout").querySelectorAll("b").forEach((b, i) => { b.textContent = r[i][1]; if (i === 1) b.style.color = inside ? css("--ok") : css("--bad"); });
+  }
+
+  // From above: tool centre, feed +x, uncut band of width ae at the top.
+  function renderTop(ctx, P) {
+    const svg = $("topView"); clear(svg);
+    const R = 92, cx = 150, cy = 150, d = ctx.tool.d, k = R / (d / 2);
+    const aePx = P.ae * k, yTop = cy - R, yBand = yTop + aePx;
+    el("rect", { x: 0, y: 0, width: 360, height: 300, fill: css("--cut") }, svg);
+    el("rect", { x: 0, y: 0, width: 360, height: yBand, fill: css("--stock") }, svg);
+    el("rect", { x: 0, y: yTop, width: cx, height: aePx, fill: css("--cut") }, svg);
+    if (P.ae < d - 1e-9) el("line", { x1: 0, x2: 360, y1: yBand, y2: yBand, stroke: css("--stock-edge"), "stroke-dasharray": "3 3" }, svg);
+    el("line", { x1: 0, x2: 360, y1: yTop, y2: yTop, stroke: css("--stock-edge") }, svg);
+    el("circle", { cx, cy, r: R, fill: css("--tool"), "fill-opacity": 0.35, stroke: css("--tool-edge") }, svg);
+    const psi = P.psi, fz = P.sp.fz;
+    const hk = 26 / Math.max(fz, 1e-9);
+    const pt = (phi, rr) => [cx + rr * Math.sin(phi), cy - rr * Math.cos(phi)];
+    let dOut = "", dIn = "";
+    const N = 60;
+    for (let i = 0; i <= N; i++) { const ph = (psi * i) / N; const [x, y] = pt(ph, R + hk * fz * Math.sin(ph)); dOut += (i ? "L" : "M") + x.toFixed(1) + "," + y.toFixed(1); }
+    for (let i = N; i >= 0; i--) { const ph = (psi * i) / N; const [x, y] = pt(ph, R); dIn += "L" + x.toFixed(1) + "," + y.toFixed(1); }
+    el("path", { d: dOut + dIn + "Z", fill: css("--chip"), "fill-opacity": 0.8 }, svg);
+    let arc = "";
+    for (let i = 0; i <= N; i++) { const [x, y] = pt((psi * i) / N, R); arc += (i ? "L" : "M") + x.toFixed(1) + "," + y.toFixed(1); }
+    el("path", { d: arc, fill: "none", stroke: css("--c-rigidity"), "stroke-width": 3 }, svg);
+    let a2 = "";
+    for (let i = 0; i <= 30; i++) { const [x, y] = pt((psi * i) / 30, 30); a2 += (i ? "L" : "M") + x.toFixed(1) + "," + y.toFixed(1); }
+    el("path", { d: a2, fill: "none", stroke: css("--ink"), "stroke-width": 1 }, svg);
+    el("line", { x1: cx, y1: cy, x2: cx, y2: yTop, stroke: css("--ink"), "stroke-width": 0.8 }, svg);
+    const [ex, ey] = pt(psi, R);
+    el("line", { x1: cx, y1: cy, x2: ex, y2: ey, stroke: css("--ink"), "stroke-width": 0.8 }, svg);
+    const [lx, ly] = pt(psi / 2, 44);
+    el("text", { x: lx + 2, y: ly + 4 }, svg, "psi " + fmt((psi * 180) / Math.PI, 1) + "°");
+    const ax = 30;
+    el("line", { x1: ax, y1: yTop, x2: ax, y2: yBand, stroke: css("--ink"), "marker-start": "", "stroke-width": 1 }, svg);
+    el("line", { x1: ax - 5, y1: yTop, x2: ax + 5, y2: yTop, stroke: css("--ink") }, svg);
+    el("line", { x1: ax - 5, y1: yBand, x2: ax + 5, y2: yBand, stroke: css("--ink") }, svg);
+    el("text", { x: ax + 6, y: (yTop + yBand) / 2 + 4 }, svg, "ae " + fmt(P.ae, 2));
+    el("line", { x1: 268, y1: 268, x2: 330, y2: 268, stroke: css("--ink"), "stroke-width": 1.5 }, svg);
+    el("path", { d: "M330,268 l-8,-4 v8 Z", fill: css("--ink") }, svg);
+    el("text", { x: 262, y: 260 }, svg, "feed " + fmt(P.sp.feed, 0) + " mm/min");
+    el("text", { x: 8, y: 16, class: "mut" }, svg, "stock (uncut)"); el("text", { x: 8, y: yBand + 16, class: "mut" }, svg, P.ae < d - 1e-9 ? "cut by the last pass" : "");
+    el("text", { x: 8, y: 292, class: "mut" }, svg, "chip drawn x" + fmt(hk / k, 0) + " (peak " + fmt(P.peak_chip, 4) + " mm)");
+    el("text", { x: cx - 18, y: cy + 4 }, svg, "D " + fmt(d, 3));
+  }
+
+  function renderChip(ctx, P) {
+    const svg = $("chipPlot"); clear(svg);
+    const x0 = 44, x1 = 344, y0 = 108, y1 = 14;
+    const hmax = Math.max(P.sp.fz, ctx.row.chip) * 1.15;
+    const X = (deg) => x0 + ((x1 - x0) * deg) / 180, Y = (h) => y0 - ((y0 - y1) * h) / hmax;
+    el("line", { x1: x0, x2: x1, y1: y0, y2: y0, stroke: css("--line") }, svg);
+    el("line", { x1: x0, x2: x0, y1: y0, y2: y1, stroke: css("--line") }, svg);
+    for (const deg of [0, 45, 90, 135, 180]) el("text", { x: X(deg) - 8, y: y0 + 13, class: "mut" }, svg, deg + "°");
+    el("text", { x: 2, y: y1 + 4, class: "mut" }, svg, fmt(hmax, 3));
+    el("text", { x: 4, y: y0, class: "mut" }, svg, "0");
+    el("line", { x1: x0, x2: x1, y1: Y(ctx.row.chip), y2: Y(ctx.row.chip), stroke: css("--c-table"), "stroke-dasharray": "4 3" }, svg);
+    el("text", { x: x1 - 92, y: Y(ctx.row.chip) - 4, class: "mut" }, svg, "chart chip " + fmt(ctx.row.chip, 4));
+    const psiDeg = (P.psi * 180) / Math.PI;
+    let dd = "";
+    for (let i = 0; i <= 60; i++) { const deg = (psiDeg * i) / 60; dd += (i ? "L" : "M") + X(deg).toFixed(1) + "," + Y(P.sp.fz * Math.sin((deg * Math.PI) / 180)).toFixed(1); }
+    el("path", { d: dd, fill: "none", stroke: css("--chip"), "stroke-width": 2 }, svg);
+    const pkDeg = Math.min(psiDeg, 90);
+    el("circle", { cx: X(pkDeg), cy: Y(P.peak_chip), r: 3.5, fill: css("--chip") }, svg);
+    el("text", { x: x0 + 4, y: y0 - 4, class: "mut" }, svg, "h = fz sin(phi), fz " + fmt(P.sp.fz, 4) + " mm");
+  }
+
+  // From the side: collet at the top, tool down to the tip, stock below the surface.
+  function renderSide(ctx, P) {
+    const svg = $("sideView"); clear(svg);
+    const t = ctx.tool, Lmm = t.stickout;
+    const yC = 40, yTip = 330, k = (yTip - yC) / Lmm, cx = 150;
+    const wD = t.d * k, wS = t.shank * k;
+    const ySurf = yTip - P.ap * k;
+    el("rect", { x: 0, y: ySurf, width: 360, height: 400 - ySurf, fill: css("--stock"), stroke: css("--stock-edge") }, svg);
+    el("rect", { x: cx - wD / 2, y: ySurf, width: wD, height: yTip - ySurf, fill: css("--cut") }, svg);
+    el("rect", { x: cx - wS / 2 - 14, y: 8, width: wS + 28, height: yC - 8, fill: css("--surface-2"), stroke: css("--tool-edge") }, svg);
+    el("text", { x: cx + wS / 2 + 20, y: 28, class: "mut" }, svg, "collet face (clamp, x = 0)");
+    // Drawn bend: a plain cantilever shape scaled so that 200 um is 30 px.
+    const dTipUm = P.defl, scale = 30 / v("DEFLECTION_BACKOFF_TARGET_UM");
+    const off = (y) => { const x = (y - yC) / (yTip - yC); return dTipUm * scale * (x * x * (3 - x)) / 2; };
+    const yFl = yTip - t.flute * k;
+    const outline = (y0, y1, w) => { let l = "", r = ""; for (let i = 0; i <= 20; i++) { const y = y0 + ((y1 - y0) * i) / 20; l += (i ? "L" : "M") + (cx - w / 2 + off(y)).toFixed(1) + "," + y.toFixed(1); } for (let i = 20; i >= 0; i--) { const y = y0 + ((y1 - y0) * i) / 20; r += "L" + (cx + w / 2 + off(y)).toFixed(1) + "," + y.toFixed(1); } return l + r + "Z"; };
+    el("path", { d: outline(yC, Math.max(yFl, yC), wS), fill: css("--tool"), stroke: css("--tool-edge") }, svg);
+    el("path", { d: outline(Math.max(yFl, yC), yTip, wD), fill: css("--tool"), "fill-opacity": 0.75, stroke: css("--tool-edge") }, svg);
+    for (let y = Math.max(yFl, yC) + 6; y < yTip - 2; y += 9) el("line", { x1: cx - wD / 2 + off(y), y1: y + 5, x2: cx + wD / 2 + off(y), y2: y - 3, stroke: css("--tool-edge"), "stroke-width": 0.6 }, svg);
+    el("line", { x1: cx, y1: yC, x2: cx, y2: yTip + 12, stroke: css("--muted"), "stroke-dasharray": "2 3" }, svg);
+    const yLoad = yTip - (P.ap / 2) * k;
+    el("line", { x1: cx + wD / 2 + off(yLoad) + 52, y1: yLoad, x2: cx + wD / 2 + off(yLoad) + 4, y2: yLoad, stroke: css("--c-rigidity"), "stroke-width": 2 }, svg);
+    el("path", { d: "M" + (cx + wD / 2 + off(yLoad) + 4) + "," + yLoad + " l8,-4 v8 Z", fill: css("--c-rigidity") }, svg);
+    el("text", { x: cx + wD / 2 + 8, y: ySurf - 8 }, svg, "F peak " + fmt(P.F, 1) + " N at ap/2");
+    const dim = (x, ya, yb, txt) => { el("line", { x1: x, x2: x, y1: ya, y2: yb, stroke: css("--ink") }, svg); el("line", { x1: x - 4, x2: x + 4, y1: ya, y2: ya, stroke: css("--ink") }, svg); el("line", { x1: x - 4, x2: x + 4, y1: yb, y2: yb, stroke: css("--ink") }, svg); el("text", { x: x - 4, y: (ya + yb) / 2, "text-anchor": "end" }, svg, txt); };
+    dim(70, yC, yTip, "stickout " + fmt(Lmm, 0));
+    dim(100, yFl, yTip, "flute " + fmt(t.flute, 0));
+    el("line", { x1: 0, x2: 360, y1: ySurf, y2: ySurf, stroke: css("--stock-edge") }, svg);
+    el("text", { x: 4, y: ySurf - 4, class: "mut" }, svg, "stock top");
+    el("line", { x1: 340, x2: 340, y1: ySurf, y2: yTip, stroke: css("--ink") }, svg);
+    el("text", { x: 336, y: (ySurf + yTip) / 2 + 4, "text-anchor": "end" }, svg, "ap " + fmt(P.ap, 2));
+    const gy = yTip - t.flute * v("FLUTE_GUARD_FACTOR") * k;
+    el("line", { x1: cx - 60, x2: cx + 60, y1: gy, y2: gy, stroke: css("--c-flute"), "stroke-dasharray": "4 3" }, svg);
+    el("text", { x: cx + 62, y: gy + 4, class: "mut" }, svg, "flute guard " + fmt(t.flute * v("FLUTE_GUARD_FACTOR"), 1));
+    el("text", { x: 8, y: 362 }, svg, "tip moves " + fmt(P.defl, 1) + " um (target " + fmt(v("DEFLECTION_BACKOFF_TARGET_UM"), 0) + " um)");
+    el("text", { x: 8, y: 378, class: "mut" }, svg, "bend drawn: 200 um = 30 px; shank " + fmt(t.shank, 2) + ", bending dia " + fmt(t.d * v("ENDMILL_EQUIVALENT_DIAMETER_FRACTION"), 2));
+  }
+
+  // Pocket corner: walls on the axes, loops at r, r + s and r + 2s.
+  function renderCorner(ctx) {
+    const svg = $("cornerView"); clear(svg);
+    const d = ctx.tool.d, r = d / 2, s = S.ae, k = 300 / (5.2 * r), ox = 12, oy = 362;
+    const X = (x) => ox + x * k, Y = (y) => oy - y * k;
+    el("rect", { x: X(0), y: Y(5.2 * r), width: 300, height: 300, fill: css("--stock") }, svg);
+    const H = 5.2 * r;
+    const loop = (o) => "M" + X(o) + "," + Y(H) + " L" + X(o) + "," + Y(o) + " L" + X(H) + "," + Y(o);
+    for (const o of [r, r + s, r + 2 * s]) {
+      if (o > H) continue;
+      el("path", { d: loop(o), fill: "none", stroke: css("--cut"), "stroke-width": 2 * r * k, "stroke-linejoin": "round", "stroke-linecap": "butt" }, svg);
+    }
+    for (const o of [r, r + s]) el("path", { d: loop(o), fill: "none", stroke: css("--tool-edge"), "stroke-width": 1, "stroke-dasharray": "4 3" }, svg);
+    el("line", { x1: X(0), y1: Y(0), x2: X(0), y2: Y(H), stroke: css("--ink"), "stroke-width": 2.5 }, svg);
+    el("line", { x1: X(0), y1: Y(0), x2: X(H), y2: Y(0), stroke: css("--ink"), "stroke-width": 2.5 }, svg);
+    el("circle", { cx: X(r + s), cy: Y(r + s), r: r * k, fill: "none", stroke: css("--c-corner"), "stroke-width": 1.2 }, svg);
+    el("circle", { cx: X(2 * r), cy: Y(2 * r), r: 3, fill: css("--c-rigidity") }, svg);
+    el("line", { x1: X(2 * r), y1: Y(2 * r), x2: X(r + s), y2: Y(r + s), stroke: css("--c-rigidity"), "stroke-width": 1 }, svg);
+    const gap = (s - r) * Math.SQRT2 - r;
+    el("text", { x: X(2 * r) + 6, y: Y(2 * r) + 14 }, svg, "(2r, 2r)");
+    el("text", { x: 12, y: 14 }, svg, "s = " + fmt(s / d, 3) + " D, limit " + fmt(L.corner_coverage_width_factor(), 4) + " D");
+    el("text", { x: 12, y: 30, fill: gap > 1e-9 ? css("--bad") : css("--ok") }, svg, gap > 1e-9 ? "uncut island: gap " + fmt(gap, 3) + " mm" : "corner clear");
+    el("text", { x: 12, y: 46, class: "mut" }, svg, "stock (tan), swept by the tool (pale)");
+  }
+
+  function renderEnvelope(M, P) {
+    const svg = $("envPlot"); clear(svg);
+    const { ctx, pick, cols } = M;
+    const d = ctx.tool.d, top = ctx.tool.flute;
+    const x0 = 52, x1 = 620, y0 = 360, y1 = 26;
+    const X = (ae) => x0 + ((x1 - x0) * ae) / d, Y = (ap) => y0 - ((y0 - y1) * ap) / top;
+    for (let i = 0; i <= 6; i++) { const ae = (d * i) / 6; el("line", { x1: X(ae), x2: X(ae), y1: y0, y2: y1, stroke: css("--line"), "stroke-width": 0.5 }, svg); el("text", { x: X(ae) - 10, y: y0 + 15, class: "mut" }, svg, fmt(ae, 2)); }
+    const ystep = top > 14 ? 3 : 2;
+    for (let ap = 0; ap <= top + 1e-9; ap += ystep) { el("line", { x1: x0, x2: x1, y1: Y(ap), y2: Y(ap), stroke: css("--line"), "stroke-width": 0.5 }, svg); el("text", { x: x0 - 22, y: Y(ap) + 4, class: "mut" }, svg, fmt(ap, 0)); }
+    el("text", { x: (x0 + x1) / 2 - 40, y: 394 }, svg, "width ae (mm)");
+    el("text", { x: 4, y: 11 }, svg, "depth ap (mm)");
+    const corner = d * L.corner_coverage_width_factor();
+    // feasible region
+    const feas = cols.filter((c) => c.ae <= corner + 1e-9).map((c) => [c.ae, Math.max(v("MIN_AP_MM"), Math.min(...c.list.map((l) => l.mm)))]);
+    if (feas.length) {
+      let p = "M" + X(feas[0][0]) + "," + Y(0);
+      for (const [a, b] of feas) p += " L" + X(a).toFixed(1) + "," + Y(b).toFixed(1);
+      p += " L" + X(feas[feas.length - 1][0]).toFixed(1) + "," + Y(0) + " Z";
+      el("path", { d: p, fill: css("--c-power"), "fill-opacity": 0.12, stroke: "none" }, svg);
+    }
+    // iso-removal through the pick
+    if (pick.mrr > 0) {
+      let p = "", started = false;
+      for (let i = 1; i <= 60; i++) {
+        const ae = (d * i) / 60;
+        const ap = pick.mrr / (ae * L.speeds({ ae }, ctx.tool, ctx.row, ctx.m, ctx.line, 1).feed);
+        if (ap > top * 1.02) { started = false; continue; }
+        p += (started ? " L" : " M") + X(ae).toFixed(1) + "," + Y(ap).toFixed(1); started = true;
+      }
+      el("path", { d: p, fill: "none", stroke: css("--c-mrr"), "stroke-dasharray": "5 4", "stroke-width": 1.2 }, svg);
+    }
+    const kinds = ["FluteGuard", "CuttingLength", "VendorDepthTable", "Rigidity", "Deflection", "Power"];
+    const present = {};
+    for (const kind of kinds) {
+      const pts = cols.map((c) => { const l = c.list.find((q) => q.kind === kind); return [c.ae, l.mm, l.none]; });
+      const real = pts.filter((q) => !q[2]);
+      present[kind] = real.length > 0;
+      if (!real.length) continue;
+      let p = "", on = false;
+      for (const [a, b, none] of pts) { if (none) { on = false; continue; } p += (on ? " L" : " M") + X(a).toFixed(1) + "," + Y(Math.min(b, top)).toFixed(1); on = true; }
+      el("path", { d: p, fill: "none", stroke: col(kind), "stroke-width": kind === "CuttingLength" ? 1 : 2, "stroke-dasharray": kind === "FluteGuard" ? "6 4" : "" }, svg);
+    }
+    const thr = d * v("SLOTTING_THRESHOLD"), slot = d * ctx.m.slot_doc_factor;
+    el("path", { d: "M" + X(thr) + "," + Y(top) + " L" + X(thr) + "," + Y(slot) + " L" + X(d) + "," + Y(slot), fill: "none", stroke: col("Slot"), "stroke-width": 2 }, svg);
+    el("line", { x1: X(corner), x2: X(corner), y1: y0, y2: y1, stroke: col("CornerCoverage"), "stroke-width": 1.5, "stroke-dasharray": "3 3" }, svg);
+    el("line", { x1: X(d), x2: X(d), y1: y0, y2: y1, stroke: col("Diameter"), "stroke-width": 1 }, svg);
+    el("circle", { cx: X(pick.ae), cy: Y(pick.ap), r: 6, fill: css("--c-pick") }, svg);
+    el("text", { x: X(pick.ae) - 120, y: Y(pick.ap) - 10 }, svg, "pick " + fmt(pick.ae / d, 3) + " D x " + fmt(pick.ap, 3) + " mm");
+    el("circle", { cx: X(P.ae), cy: Y(P.ap), r: 7, fill: "none", stroke: css("--c-user"), "stroke-width": 2 }, svg);
+    const hit = el("rect", { x: x0, y: y1, width: x1 - x0, height: y0 - y1, fill: "transparent" }, svg);
+    hit.addEventListener("click", (e) => {
+      const pt = svg.createSVGPoint(); pt.x = e.clientX; pt.y = e.clientY;
+      const q = pt.matrixTransform(svg.getScreenCTM().inverse());
+      S.follow = false; S.ae = ((q.x - x0) / (x1 - x0)) * d; S.ap = ((y0 - q.y) / (y0 - y1)) * top; schedule();
+    });
+    const binding = new Set(pick.limits);
+    const items = [["Rigidity", present.Rigidity], ["VendorDepthTable", present.VendorDepthTable], ["Slot", true], ["CornerCoverage", true], ["FluteGuard", true], ["Deflection", present.Deflection], ["Power", present.Power]];
+    $("envLegend").innerHTML = "";
+    for (const [k, has] of items) {
+      const s = document.createElement("span");
+      if (binding.has(k)) s.className = "on";
+      s.innerHTML = '<i style="background:' + col(k) + '"></i>';
+      s.appendChild(document.createTextNode(LABEL[k] + (has ? "" : ": no root below the flute") + (binding.has(k) ? " (binds at the pick)" : "")));
+      $("envLegend").appendChild(s);
+    }
+    const sp = document.createElement("span"); sp.innerHTML = '<i style="background:' + css("--c-mrr") + '"></i>'; sp.appendChild(document.createTextNode("equal removal through the pick")); $("envLegend").appendChild(sp);
+    const below = cols.some((c) => c.list.find((l) => l.kind === "Rigidity").budget.kind === "BelowFloor");
+    $("envNotes").textContent = (below ? "At some widths no depth meets the force budget: the envelope ships the minimum depth there (FORCE_BUDGET_FLOOR_NOTE). " : "") +
+      "The force-budget and table curves read the chip at each width (chip first: fz = chip x lift, then the cap). The slot step uses ae > 0.85 D, as Step 4b does. At narrow widths the force-budget depth jumps: the peak force of a helical edge has a plateau, so a small change of width or budget moves the root by about one flute wrap.";
+  }
+
+  function renderForce(ctx, P) {
+    const svg = $("forcePlot"); clear(svg);
+    const t = ctx.tool, fz = P.sp.fz, top = t.flute;
+    const pts = [];
+    for (let i = 1; i <= 72; i++) { const ap = (top * i) / 72; pts.push([ap, L.edge_force(ap, P.ae, t.d, t.z, fz, ctx.line, t.helix).peak_resultant_n]); }
+    const fmax = Math.max(S.budget * 1.3, ...pts.map((p) => p[1])) * 1.05;
+    const x0 = 40, x1 = 350, y0 = 200, y1 = 12;
+    const X = (ap) => x0 + ((x1 - x0) * ap) / top, Y = (f) => y0 - ((y0 - y1) * Math.min(f, fmax)) / fmax;
+    el("line", { x1: x0, x2: x1, y1: y0, y2: y0, stroke: css("--line") }, svg);
+    el("line", { x1: x0, x2: x0, y1: y0, y2: y1, stroke: css("--line") }, svg);
+    for (let ap = 0; ap <= top; ap += 3) el("text", { x: X(ap) - 4, y: y0 + 14, class: "mut" }, svg, String(ap));
+    el("text", { x: x1 - 60, y: y0 + 26, class: "mut" }, svg, "ap (mm)");
+    el("text", { x: 2, y: Y(fmax) + 8, class: "mut" }, svg, fmt(fmax, 0) + " N");
+    el("line", { x1: x0, x2: x1, y1: Y(S.budget), y2: Y(S.budget), stroke: col("Rigidity"), "stroke-dasharray": "5 3" }, svg);
+    el("text", { x: x0 + 4, y: Y(S.budget) - 4 }, svg, "budget " + fmt(S.budget, 2) + " N");
+    const [ks, fe] = ctx.line;
+    const slope = t.z * (ks * fz + fe);
+    el("line", { x1: X(0), y1: Y(0), x2: X(Math.min(top, fmax / slope)), y2: Y(Math.min(top * slope, fmax)), stroke: css("--muted"), "stroke-dasharray": "1 3" }, svg);
+    let p = "";
+    pts.forEach(([a, f], i) => { p += (i ? " L" : "M") + X(a).toFixed(1) + "," + Y(f).toFixed(1); });
+    el("path", { d: p, fill: "none", stroke: css("--ink"), "stroke-width": 1.8 }, svg);
+    const rig = P.at.list.find((l) => l.kind === "Rigidity");
+    if (!rig.none) { el("line", { x1: X(rig.mm), x2: X(rig.mm), y1: y0, y2: y1, stroke: col("Rigidity") }, svg); el("text", { x: X(rig.mm) + 4, y: y1 + 22 }, svg, "solved " + fmt(rig.mm, 3) + " mm"); }
+    el("circle", { cx: X(P.ap), cy: Y(P.F), r: 4, fill: "none", stroke: css("--c-user"), "stroke-width": 2 }, svg);
+  }
+
+  // ---- static tables ----
+  function budgetTable() {
+    const tb = $("budgetTable").querySelector("tbody");
+    C.HOBBY_SLOT_POINTS.value.forEach((p, i) => {
+      const tr = document.createElement("tr");
+      if (i === HB.binding) tr.style.fontWeight = "700";
+      const cells = [p.id.replace(/_/g, " ") + " (" + p.material + ")", fmt(p.diameter_mm, 2) + " x " + fmt(p.ap_mm, 2) + ", " + fmt(p.feed_mm_min, 0) + ", " + fmt(p.rpm, 0) + ", " + p.flutes, fmt(HB.forces[i], 2)];
+      cells.forEach((c, j) => { const td = document.createElement("td"); td.textContent = c; if (j === 2) td.className = "num"; tr.appendChild(td); });
+      tb.appendChild(tr);
+    });
+  }
+  function paramTable() {
+    const cl = default_claims(L, C);
+    const site = (p, l) => p.replace("crates/rs_cam_core/", "core/") + ":" + l;
+    const rows = [];
+    const derived = [
+      ["Tool diameter D", "6", "mm", "stated", "the op's tool (FM1 walk)"],
+      ["Flute count Z", "2", "-", "stated", "FM1 walk; unknown = 2 (LEGACY_DEFAULT_FLUTE_COUNT)"],
+      ["Flute length", fmt(cl.flute, 0), "mm", "stated", site(C.FM1_FLUTE.path, C.FM1_FLUTE.line) + " max(3 D, 12)"],
+      ["Stickout", fmt(cl.stickout, 0), "mm", "stated", site(C.FM1_STICKOUT.path, C.FM1_STICKOUT.line) + " flute + 8"],
+      ["Shank diameter", "6", "mm", "stated", site(C.FM1_SHANK.path, C.FM1_SHANK.line) + " max(D, 3)"],
+      ["Chart chip (hardwood row)", fmt(cl.chip_hw, 3), "mm/tooth", "cited", site(C.VENDOR_ROWS.path, C.VENDOR_ROWS.value["6"].hardwood.line) + " " + C.VENDOR_ROWS.value["6"].hardwood.id],
+      ["Chart rpm", fmt(cl.rpm_row, 0), "rpm", "cited", "same row, rpm_nominal; Step 2 core/src/feeds/calculator/speed.rs step2_vendor_rpm"],
+      ["Density rho (hardwood)", fmt(cl.rho_hw, 1), "kg/m3", "derived", "mean SG x 1000 x 1.12; core/src/material/mod.rs FPL_ROWS_GENERIC_HARDWOOD"],
+      ["Curti envelope Ks_n, Int_n", fmt(cl.ks_n, 7) + ", " + fmt(cl.int_n, 7), "per kg/m3", "derived", "max over grain, larger mode; core/src/material/force_line.rs curti_helix0_envelope"],
+      ["Ks (hardwood line)", fmt(cl.ks_hw, 2), "N/mm2", "derived", "Ks_n x rho; Material::force_line"],
+      ["F_edge (hardwood line)", fmt(cl.fe_hw, 3), "N/mm", "derived", "Int_n x rho; Material::force_line"],
+      ["Feed cap", fmt(cl.cap, 0), "mm/min", "derived", "min(6000, travel 4000); core/src/machine/mod.rs cutting_ceiling"],
+      ["rpm after the cap (arm L)", fmt(cl.rpm_pick, 0), "rpm", "derived", "floor(cap / chip per rev); core/src/feeds/calculator/feed.rs step7_feed_ceiling"],
+      ["Feed (calculator / FM1 floored)", fmt(cl.feed_calc, 2) + " / " + fmt(cl.feed_fm1, 0), "mm/min", "derived", "rpm x chip x Z x lift; core/src/feeds/calculator/feed.rs step5_feed"],
+      ["Immersion psi at the pick", fmt(cl.psi_pick_deg, 1), "deg", "derived", "cos psi = 1 - ae/r; core/src/feeds/force.rs immersion_angle"],
+      ["Chip-thinning lift", fmt(cl.lift_pick, 0), "x", "cited", "Garr 1/sin psi below 0.5 D; core/src/feeds/geometry.rs peak_chip_thinning_lift"],
+      ["Corner-coverage factor", fmt(cl.corner_factor, 4), "x D", "cited", "core/src/feeds/force_budget.rs corner_coverage_width_factor (FINDINGS.md F)"],
+      ["Hobby force budget", fmt(cl.budget_n, 4), "N", "cited", "largest of HOBBY_SLOT_POINTS; core/src/feeds/force_budget.rs hobby_budget"],
+      ["Force-budget depth", fmt(cl.depth_hw, 4), "mm", "derived", "core/src/feeds/force_budget.rs depth_at_budget"],
+      ["Vendor depth table ceiling", fmt(cl.table_hw_mm, 1), "mm", "cited", "core/src/feeds/geometry.rs vendor_depth_table_ceiling_ratio (Onsrud, Freud, Amana 1/2/3 x D)"],
+      ["Peak force at the pick (FM1 feed)", fmt(cl.force_pick, 4), "N", "derived", "core/src/feeds/engagement.rs edge_force"],
+      ["Power at the pick (slot case)", fmt(cl.power_pick, 4), "kW", "derived", "core/src/tool_load/power.rs PowerTerms; PowerCase::Slot"],
+      ["Tip deflection at the pick", fmt(cl.defl_pick_um, 2), "um", "derived", "core/src/tool/mod.rs tip_deflection_mm"],
+      ["Removal rate at the pick", fmt(cl.mrr_pick, 0), "mm3/min", "derived", "core/src/feeds/envelope.rs removal_rate"],
+    ];
+    for (const r of derived) rows.push(r);
+    for (const [key, c] of Object.entries(C)) {
+      if (["VENDOR_ROWS", "HOBBY_SLOT_POINTS", "FM1_FLUTE", "FM1_SHANK", "FM1_STICKOUT", "IGNORED", "UPCUT_ROW"].includes(key)) continue;
+      const val = Array.isArray(c.value) ? c.value.join(", ") : String(c.value);
+      rows.push([c.label + " (" + key + ")", val, c.unit, c.class, site(c.path, c.line)]);
+    }
+    for (const g of C.IGNORED.value) rows.push([g.factor + " (" + g.id + ")", g.stand_in, "-", g.cls, g.path ? site(g.path, g.line) : "no site"]);
+    const tb = $("paramTable").querySelector("tbody");
+    const names = { stated: "stated", derived: "derived", cited: "cited", unsourced: "Unsourced F201", assumed: "assumed", ignored: "ignored", numeric: "numeric" };
+    for (const r of rows) {
+      const tr = document.createElement("tr");
+      [r[0], r[1], r[2]].forEach((c, j) => { const td = document.createElement("td"); td.textContent = c; if (j === 1) td.className = "num"; tr.appendChild(td); });
+      const td = document.createElement("td"); const b = document.createElement("span"); b.className = "badge b-" + r[3]; b.textContent = names[r[3]] || r[3]; td.appendChild(b); tr.appendChild(td);
+      const ts = document.createElement("td"); ts.className = "site"; ts.textContent = r[4]; tr.appendChild(ts);
+      tb.appendChild(tr);
+    }
+    // The page checks its own prose against the port.
+    const extra = { tool_d: 6, cap_default_typed: v("DEFAULT_CUTTING_FEED_CAP_MM_MIN"), travel: v("GENERIC_MAX_FEED"), bend_frac: v("ENDMILL_EQUIVALENT_DIAMETER_FRACTION"), scan_steps: v("BUDGET_SCAN_STEPS"), conv_mm: v("BINSEARCH_CONVERGENCE_MM") };
+    let ok = 0, n = 0;
+    document.querySelectorAll("[data-claim]").forEach((s) => {
+      const id = s.dataset.claim, dg = Number(s.dataset.digits);
+      const val = id in cl ? cl[id] : extra[id];
+      n++;
+      if (typeof val === "number" && Number(val.toFixed(dg)) === Number(s.textContent.replace(/[^0-9.\-]/g, ""))) ok++;
+      else s.style.outline = "2px solid " + css("--bad");
+    });
+    $("claimcheck").textContent = "Prose check in this browser: " + ok + "/" + n + " numbers equal the port.";
+  }
+
+  syncControls();
+  budgetTable();
+  render();
+  setTimeout(paramTable, 0);
+})();
+</script>
+</body>
+</html>
