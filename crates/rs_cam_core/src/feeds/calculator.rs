@@ -31,6 +31,7 @@ use super::{
     ChiploadBounds, ChiploadSource, FeedsInput, FeedsResult, FeedsSupport, FeedsWarning,
     SpindleScaleReason, geometry, vendor_lookup,
 };
+use crate::trace::lineage::{BasisRecord, StepQuantity, StepRecord};
 
 /// Feeds contract P11a (L4, D-A): what the calculator does with a depth
 /// above the flute guard (Step 4) or the slot cap (Step 4b).
@@ -148,20 +149,118 @@ pub(super) struct CalcState<'i, 'a> {
     feed: Feed,
 }
 
+/// P13b (lead ruling 5): whether a calculation writes its step records.
+/// The Apply path ([`super::calculate`]) and the envelope pick point
+/// record; the envelope grid does not (one call per grid point).
+#[derive(Debug, Clone, Copy, PartialEq, Eq)]
+pub(crate) enum StepRecording {
+    /// Write [`FeedsResult::steps`].
+    Record,
+    /// Leave [`FeedsResult::steps`] empty.
+    Skip,
+}
+
+/// P13b (K8, ruling Q7): the step records of one calculation. A step that
+/// changes a value leaves one record per value it changes: the value
+/// before, the value after and the basis after. A step that changes only
+/// a basis, or only warns, leaves none.
+struct StepLog {
+    on: bool,
+    records: Vec<StepRecord>,
+    last: [Option<f64>; StepQuantity::ALL.len()],
+}
+
+impl StepLog {
+    fn new(recording: StepRecording) -> Self {
+        Self {
+            on: recording == StepRecording::Record,
+            records: Vec::new(),
+            last: [None; StepQuantity::ALL.len()],
+        }
+    }
+
+    /// Note `value` of `q` after `step`: a record when it changed.
+    fn note(&mut self, step: &str, q: StepQuantity, value: f64, basis: &Basis) {
+        if !self.on {
+            return;
+        }
+        let Some(slot) = StepQuantity::ALL
+            .iter()
+            .position(|x| *x == q)
+            .and_then(|i| self.last.get_mut(i))
+        else {
+            return;
+        };
+        let before = *slot;
+        if before.map(f64::to_bits) == Some(value.to_bits()) {
+            return;
+        }
+        *slot = Some(value);
+        self.records.push(StepRecord::new(
+            step,
+            q,
+            before,
+            value,
+            BasisRecord::of(basis),
+        ));
+    }
+
+    fn speed(&mut self, step: &str, speed: &Speed) {
+        self.note(step, StepQuantity::Rpm, speed.rpm, &speed.basis);
+    }
+
+    fn cut(&mut self, step: &str, cut: &Cut) {
+        self.note(step, StepQuantity::Depth, cut.ap, &cut.ap_basis);
+        self.note(step, StepQuantity::Width, cut.ae, &cut.ae_basis);
+    }
+
+    /// Every value of the state after Step 5.
+    fn state(&mut self, step: &str, s: &CalcState) {
+        self.speed(step, &s.speed);
+        self.note(step, StepQuantity::Chip, s.chip.chip_load, &s.chip.basis);
+        self.cut(step, &s.cut);
+        self.note(step, StepQuantity::Feed, s.feed.feed, &s.feed.basis);
+    }
+}
+
 /// [`super::calculate`] with the depth-clamp policy `clamps`.
-pub(crate) fn calculate_with(input: &FeedsInput, clamps: DepthClamps) -> FeedsResult {
+///
+/// P13b: each step call is followed by a note of the values it can move,
+/// so [`FeedsResult::steps`] holds one record per step that changed a value
+/// (sentry `every_calculator_step_leaves_one_record_p13b`).
+pub(crate) fn calculate_with(
+    input: &FeedsInput,
+    clamps: DepthClamps,
+    recording: StepRecording,
+) -> FeedsResult {
+    let mut log = StepLog::new(recording);
     let mut warnings = Vec::new();
     let lut_d = speed::engaged_diameter(input);
     let mut speed = speed::step1_rpm(input, &lut_d);
+    log.speed("step1_rpm", &speed);
     let chip = chip::step2_chip_load(input, lut_d.diameter, &mut warnings);
+    log.note(
+        "step2_chip_load",
+        StepQuantity::Chip,
+        chip.chip_load,
+        &chip.basis,
+    );
     speed::step2_vendor_rpm(input, &chip, &mut speed);
+    log.speed("step2_vendor_rpm", &speed);
     speed::step2b_max_speed(input, &chip, &mut speed);
+    log.speed("step2b_max_speed", &speed);
     speed::step2b_milling_tier(input, &mut speed);
+    log.speed("step2b_milling_tier", &speed);
     speed::step2c_drill_tier(input, &mut speed);
+    log.speed("step2c_drill_tier", &speed);
     let mut cut = cut::step3_engagement(input, &mut warnings);
+    log.cut("step3_engagement", &cut);
     cut::step4_flute_guard(input, clamps, &mut cut, &mut warnings);
+    log.cut("step4_flute_guard", &cut);
     cut::engagement_floor(input, &mut cut);
+    log.cut("engagement_floor", &cut);
     cut::step4b_slot(input, clamps, &mut cut, &mut warnings);
+    log.cut("step4b_slot", &cut);
     cut::step4c_shank(input, &mut warnings);
     let feed = feed::step5_feed(input, &speed, &chip, &cut);
     let mut s = CalcState {
@@ -172,12 +271,40 @@ pub(crate) fn calculate_with(input: &FeedsInput, clamps: DepthClamps) -> FeedsRe
         cut,
         feed,
     };
+    log.state("step5_feed", &s);
     feed::step5b_long_tool(&mut s);
+    log.state("step5b_long_tool", &s);
     power::step6_power(&mut s);
+    // The feed basis after the power check changes a basis only; the note
+    // after it gives the Step 6 records their final basis.
     feed::feed_basis_after_power(&mut s);
+    log.state("step6_power", &s);
     feed::step7_feed_ceiling(&mut s);
+    log.state("step7_feed_ceiling", &s);
     let mut entry = close::step8_plunge(&s);
+    log.note(
+        "step8_plunge",
+        StepQuantity::Plunge,
+        entry.plunge_rate,
+        &entry.step8_basis(&s),
+    );
     close::step9b_rubbing_floor(&mut s);
     close::step9c_drill(&mut s, &mut entry);
-    close::result(s, entry)
+    log.state("step9c_drill", &s);
+    let plunge_9c = entry.plunge_rate;
+    let mut result = close::result(s, entry);
+    log.note(
+        "step9c_drill",
+        StepQuantity::Plunge,
+        plunge_9c,
+        &result.bases.plunge,
+    );
+    log.note(
+        "result_power",
+        StepQuantity::Power,
+        result.power_kw,
+        &result.bases.power,
+    );
+    result.steps = log.records;
+    result
 }

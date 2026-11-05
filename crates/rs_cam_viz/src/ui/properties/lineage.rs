@@ -3,14 +3,16 @@
 //!
 //! ONE closed `Details` under the issue stack, with a count. Open, it is
 //! one `DataTable` row per fact: the cut, the pick, the stored speeds, each
-//! tool fact the op read, the entry and the findings. No row wraps; the
+//! tool fact the op read, the entry and the findings, and one row per
+//! quantity of the step records (P13b; each record on hover). No row wraps; the
 //! source text is the hover (IC1, IC2). The basis glyph is the one
 //! provenance vocabulary, `ProvKind` (decision D4). A fact with no
 //! recorded state reads in the neutral role, never `CAUTION` (Q7: no stress
 //! on an estimated fact).
 
 use rs_cam_core::trace::lineage::{
-    Lineage, ValueUse, axial_text, consequence_name, contract_name, entry_kind_name, radial_text,
+    Lineage, StepQuantity, StepRecord, ValueUse, axial_text, consequence_name, contract_name,
+    entry_kind_name, radial_text, records_of,
 };
 
 use crate::ui::components::{DataRow, DataTable, Details, ProvKind, Source};
@@ -169,6 +171,10 @@ pub fn lineage_rows(l: &Lineage) -> Vec<LineageRow> {
                 .join("\n"),
         });
     }
+    // P13b (ruling Q7): the step records, ONE row per quantity: the count
+    // and the last value; the hover lists each record (step, value in,
+    // factor, value out, basis). The rows stay short (IC1, W3g).
+    rows.extend(step_rows(l));
     // K7 (feeds contract P9): what a fresh simulation measured, when the
     // reader attached it. One row: the peak power and the crossed limit.
     if let Some(m) = &l.measured {
@@ -194,6 +200,61 @@ pub fn lineage_rows(l: &Lineage) -> Vec<LineageRow> {
         });
     }
     rows
+}
+
+/// P13b: the hover line of one step record: the step, the value in, the
+/// factor, the value out and the basis. The parity sentry
+/// (`the_step_records_reach_every_surface_p13b`) reads it.
+#[must_use]
+pub fn step_line(r: &StepRecord) -> String {
+    let unit = r.quantity.unit();
+    let value_in = r
+        .value_in
+        .map_or_else(|| "\u{2014}".to_owned(), |v| format!("{v}"));
+    let factor = r
+        .factor
+        .map_or_else(String::new, |f| format!(" (\u{00D7}{f:.4})"));
+    format!(
+        "{}: {value_in} \u{2192} {} {unit}{factor}; {}",
+        r.step,
+        r.value_out,
+        r.basis.short_text()
+    )
+}
+
+/// P13b: one row per quantity that has a step record, in
+/// `StepQuantity::ALL` order.
+fn step_rows(l: &Lineage) -> Vec<LineageRow> {
+    StepQuantity::ALL
+        .iter()
+        .filter_map(|q| {
+            let records: Vec<&StepRecord> = records_of(&l.steps, *q).collect();
+            let last = records.last()?;
+            let decimals = match q {
+                StepQuantity::Chip => 4,
+                StepQuantity::Depth | StepQuantity::Width | StepQuantity::Power => 2,
+                StepQuantity::Rpm
+                | StepQuantity::Feed
+                | StepQuantity::Plunge
+                | StepQuantity::Ramp => 0,
+            };
+            Some(LineageRow {
+                name: format!("{} steps", q.label()),
+                value: format!(
+                    "{} \u{00B7} {:.decimals$} {}",
+                    records.len(),
+                    last.value_out,
+                    q.unit()
+                ),
+                source: None,
+                hover: records
+                    .iter()
+                    .map(|r| step_line(r))
+                    .collect::<Vec<_>>()
+                    .join("\n"),
+            })
+        })
+        .collect()
 }
 
 fn capitalised(s: &str) -> String {

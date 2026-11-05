@@ -26,6 +26,7 @@ use crate::compute::catalog::{OperationConfig, OperationType};
 use crate::compute::tool_config::ToolConfig;
 use crate::feeds::{Basis, FeedsField, FeedsProvenance, ValueProvenance};
 use crate::material::FormulaConstant;
+use crate::trace::lineage::{BasisRecord, StepQuantity, StepRecord};
 
 /// The tool-derived geometry fields of `op` that the op reads with its
 /// other settings, each with its value. A Simple or Dwell drill cycle reads
@@ -611,6 +612,23 @@ pub fn write_rule_values(
             }
         };
         if moves {
+            // P13b: the depth and the width keep a step record of the rule
+            // value (the envelope proposal, or the fraction of D).
+            let quantity = match slot {
+                FeedsField::DepthPerPass => Some(StepQuantity::Depth),
+                FeedsField::Stepover => Some(StepQuantity::Width),
+                FeedsField::FeedRate
+                | FeedsField::PlungeRate
+                | FeedsField::SpindleRpm
+                | FeedsField::ScallopHeight
+                | FeedsField::RampFeedRate
+                | FeedsField::PeckDepth
+                | FeedsField::ZStep => None,
+            };
+            let value_in = *value;
+            if let Some(q) = quantity {
+                stamps.steps.replace_quantity(q, Vec::new());
+            }
             // P13c: a pick with no answer leaves the field unset.
             let Some(derived) = derived else {
                 *value = None;
@@ -618,6 +636,22 @@ pub fn write_rule_values(
             };
             *value = Some(derived.value);
             stamps.set(slot, derived.stamp.clone());
+            if let Some(q) = quantity {
+                let step = match rule.rule {
+                    ToolRule::EnvelopeProposal(_) => "envelope_proposal",
+                    ToolRule::FractionOfD(_) | ToolRule::ScallopChordElse(_) => "add_door_rule",
+                };
+                stamps.steps.replace_quantity(
+                    q,
+                    vec![StepRecord::new(
+                        step,
+                        q,
+                        value_in,
+                        derived.value,
+                        BasisRecord::of(&derived.basis),
+                    )],
+                );
+            }
             written.push(derived);
         }
     }

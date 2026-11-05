@@ -12,6 +12,7 @@ use crate::feeds::envelope::{CutPoint, EnvelopeAxes, EnvelopePick, PickRequest, 
 use crate::feeds::{FeedsError, FeedsInput, FeedsResult, PassRole, VendorLut};
 use crate::machine::MachineProfile;
 use crate::material::Material;
+use crate::trace::lineage::{BasisRecord, StepQuantity, StepRecord, records_of};
 
 use super::invariants::enforce_invariants_at_fixed_geometry;
 use super::{
@@ -294,7 +295,196 @@ fn apply_feeds_subset(
     if let Some(record) = &ramp_record {
         provenance.stamp_ramp(record);
     }
+    // P13b (K8, ruling Q7): the step records of the values this write
+    // sets: the calculator's records, then one record per funnel move.
+    let steps = funnel_steps(FunnelSteps {
+        result,
+        stored: provenance.steps.as_slice(),
+        operation,
+        warnings: &warnings,
+        written_feed,
+        written_plunge,
+        rpm_written,
+        ramp_written: ramp_record.is_some(),
+    });
+    provenance.steps.replace(steps);
     warnings
+}
+
+/// What [`funnel_steps`] reads.
+#[derive(Clone, Copy)]
+struct FunnelSteps<'a> {
+    result: &'a FeedsResult,
+    /// The records before this write.
+    stored: &'a [StepRecord],
+    /// The operation after this write.
+    operation: &'a OperationConfig,
+    warnings: &'a [SuggestWarning],
+    written_feed: f64,
+    written_plunge: f64,
+    rpm_written: bool,
+    ramp_written: bool,
+}
+
+/// P13b: the step records after a speeds write.
+///
+/// - The speeds (RPM, chip, feed, plunge, power, ramp): the calculator's
+///   records, then one record per move of the funnel (the rounding, the
+///   invariant passes 1, 9 and 10, the G10 plunge at the shipped feed, the
+///   ramp), so the last record of a stored value is the value written.
+/// - The depth and the width: this write sets no geometry (Q4), so the
+///   records of the geometry write (a pick, an add-door rule) stay; with
+///   none, the calculator's records (the cut that the speeds are for).
+#[expect(
+    clippy::wildcard_enum_match_arm,
+    reason = "projection: only the warnings of a funnel move carry a value (named: PlungeClampedToFeed, FeedRescaledToFinalGeometry, PlungeReDerived, RampFeed)"
+)]
+fn funnel_steps(f: FunnelSteps<'_>) -> Vec<StepRecord> {
+    let geometry = |q: StepQuantity| matches!(q, StepQuantity::Depth | StepQuantity::Width);
+    let mut steps: Vec<StepRecord> = Vec::new();
+    for q in [StepQuantity::Depth, StepQuantity::Width] {
+        let kept: Vec<StepRecord> = records_of(f.stored, q).cloned().collect();
+        if kept.is_empty() {
+            steps.extend(records_of(&f.result.steps, q).cloned());
+        } else {
+            steps.extend(kept);
+        }
+    }
+    steps.extend(
+        f.result
+            .steps
+            .iter()
+            .filter(|r| !geometry(r.quantity))
+            .filter(|r| f.rpm_written || r.quantity != StepQuantity::Rpm)
+            .cloned(),
+    );
+    if !f.rpm_written {
+        // The RPM stays as it was: its records stay too.
+        steps.extend(records_of(f.stored, StepQuantity::Rpm).cloned());
+    }
+    if !f.ramp_written {
+        steps.extend(records_of(f.stored, StepQuantity::Ramp).cloned());
+    }
+    // The funnel moves, in the order the funnel makes them.
+    if f.rpm_written
+        && let Some(rpm) = f.operation.spindle_rpm()
+    {
+        follow(
+            &mut steps,
+            "apply_round",
+            StepQuantity::Rpm,
+            f64::from(rpm),
+            "round to 1 rpm",
+        );
+    }
+    follow(
+        &mut steps,
+        "apply_round_down",
+        StepQuantity::Feed,
+        f.written_feed,
+        "round down to 1 mm/min (T-9)",
+    );
+    follow(
+        &mut steps,
+        "apply_round_down",
+        StepQuantity::Plunge,
+        f.written_plunge,
+        "round down to 1 mm/min (T-9)",
+    );
+    for w in f.warnings {
+        match w {
+            SuggestWarning::PlungeClampedToFeed { capped, .. } => follow(
+                &mut steps,
+                "apply_pass1_plunge_at_most_feed",
+                StepQuantity::Plunge,
+                *capped,
+                "pass 1: the plunge is at most the feed",
+            ),
+            SuggestWarning::FeedRescaledToFinalGeometry { .. } => {
+                if let Some(feed) = f.operation.feed_rate() {
+                    follow(
+                        &mut steps,
+                        "apply_pass9_feed_at_kept_geometry",
+                        StepQuantity::Feed,
+                        feed,
+                        "pass 9: the feed at the depth and width the op keeps",
+                    );
+                }
+            }
+            SuggestWarning::PlungeReDerived { to_mm_min, .. } => follow(
+                &mut steps,
+                "apply_g10_plunge_at_shipped_feed",
+                StepQuantity::Plunge,
+                *to_mm_min,
+                "G10: the plunge rule at the feed that ships",
+            ),
+            SuggestWarning::RampFeed { record, .. } if f.ramp_written => {
+                // The ramp is set from nothing: its basis is the ramp
+                // basis of the result (the G6 claim, or the plunge).
+                if let Some(value) = record.value() {
+                    steps.push(StepRecord::new(
+                        "apply_ramp_feed",
+                        StepQuantity::Ramp,
+                        None,
+                        value,
+                        BasisRecord::of(&f.result.bases.ramp),
+                    ));
+                }
+            }
+            _ => {}
+        }
+    }
+    // Every stored speed ends at the value written: a move that no record
+    // above names (pass 10) is the last funnel record.
+    for q in [
+        StepQuantity::Rpm,
+        StepQuantity::Feed,
+        StepQuantity::Plunge,
+        StepQuantity::Ramp,
+    ] {
+        let written = match q {
+            StepQuantity::Rpm => f.rpm_written,
+            StepQuantity::Ramp => f.ramp_written,
+            StepQuantity::Feed | StepQuantity::Plunge => true,
+            StepQuantity::Chip
+            | StepQuantity::Depth
+            | StepQuantity::Width
+            | StepQuantity::Power => false,
+        };
+        if written && let Some(value) = q.stored_value(f.operation) {
+            follow(
+                &mut steps,
+                "apply_invariant_passes",
+                q,
+                value,
+                "the invariant passes of the apply funnel (pass 10: the power ceiling)",
+            );
+        }
+    }
+    steps
+}
+
+/// P13b: add a record of `q` moving to `value` at `step`, when `value` is
+/// not the value of the last record of `q`. The basis is the law of the
+/// step over the basis of the last record.
+fn follow(steps: &mut Vec<StepRecord>, step: &str, q: StepQuantity, value: f64, law: &str) {
+    let last = records_of(steps, q).last();
+    let value_in = last.map(|r| r.value_out);
+    if value_in.map(f64::to_bits) == Some(value.to_bits()) {
+        return;
+    }
+    let from = last.map(|r| vec![r.basis.clone()]).unwrap_or_default();
+    let record = StepRecord::new(
+        step,
+        q,
+        value_in,
+        value,
+        BasisRecord::Derived {
+            law: law.to_owned(),
+            from,
+        },
+    );
+    steps.push(record);
 }
 
 /// Apply only the recommended *speeds* (feed / plunge / RPM), leaving the cut
@@ -773,6 +963,23 @@ impl<'a> Recommendation<'a, Partial> {
         owned.bases.feed = crate::feeds::Basis::picked();
         owned.bases.rpm = crate::feeds::Basis::picked();
         owned.bases.chip = crate::feeds::Basis::picked();
+        // P13b: the explored feed and RPM are a step of their own.
+        for (q, value) in [
+            (StepQuantity::Rpm, owned.rpm),
+            (StepQuantity::Feed, owned.feed_rate_mm_min),
+        ] {
+            let value_in = records_of(&owned.steps, q).last().map(|r| r.value_out);
+            if value_in.map(f64::to_bits) == Some(value.to_bits()) {
+                continue;
+            }
+            owned.steps.push(StepRecord::new(
+                "explored_speeds",
+                q,
+                value_in,
+                value,
+                BasisRecord::of(&crate::feeds::Basis::picked()),
+            ));
+        }
         Self {
             result: std::borrow::Cow::Owned(owned),
             speeds_explored: true,
@@ -943,6 +1150,7 @@ fn write_pick(
                 let held = operation.set_stepover(pick_mm_down(p.ae_mm));
                 if held {
                     provenance.stepover = Some(stamp.clone());
+                    pick_step(provenance, StepQuantity::Width, operation.stepover());
                 }
                 held
             }
@@ -1014,6 +1222,7 @@ fn write_pick(
                 let held = operation.set_depth_per_pass(depth);
                 if held {
                     provenance.depth_per_pass = Some(stamp);
+                    pick_step(provenance, StepQuantity::Depth, operation.depth_per_pass());
                 }
                 held
             }
@@ -1027,6 +1236,24 @@ fn write_pick(
         }
     }
     warnings
+}
+
+/// P13b: the record of a picked depth or width (rounded down, and a depth
+/// snapped to the staircase): it replaces the records of `q`.
+fn pick_step(provenance: &mut crate::feeds::FeedsProvenance, q: StepQuantity, value: Option<f64>) {
+    let records = value
+        .map(|value| {
+            StepRecord::new(
+                "envelope_pick",
+                q,
+                None,
+                value,
+                BasisRecord::of(&crate::feeds::Basis::picked()),
+            )
+        })
+        .into_iter()
+        .collect();
+    provenance.steps.replace_quantity(q, records);
 }
 
 /// A feed and an RPM the operator dragged on the explore chart (the

@@ -6,7 +6,7 @@ The view-side state; the core owns the project, so it is not an alternate data m
 
 - `mod.rs` — `AppState`. F096: `session` is private. Read `session()`; write only `apply` (stamps `Effects.stale`,
   raises the sim flag, logs a refusal), `replace_session`, `start_job`; `split_mut` gives disjoint borrows.
-- `freshness.rs` — `FreshnessState` per toolpath and `SimFreshness`: both DERIVED, never stored.
+- `freshness.rs` — `FreshnessState` per toolpath and `SimFreshness`: both DERIVED, never stored. P13b: `toolpath_lineage_reply` (MCP `get_toolpath_lineage`: the lineage, stored with no result, and THE run state).
 - `stale.rs` — the one place the GUI stamps `stale_since` from a core answer.
 - `toolpath.rs` and `toolpath/` — the toolpath rows, their catalogue entries and configuration support. R2: `ToolpathEntry.tool_id` is `Option` (an op with no tool), as `ShoePlanRow.tool_id` and `RunLine.tool_id`.
 - `simulation.rs`, `job.rs`, `runtime.rs` — sim, job lanes, GUI runtime (round 7: `ReachSurface`, the reach mesh refined to the map cell, ramp to one tip radius; 7c: a not-up-facing triangle has its own grey vertices, `copies`); `FeedsMemo::refresh` is the one `feeds_result` writer (F216);

@@ -43,7 +43,7 @@ pub mod support;
 pub mod vendor_lookup;
 pub mod vendor_lut;
 pub mod vendor_normalize;
-pub(crate) use calculator::{DepthClamps, calculate_with};
+pub(crate) use calculator::{DepthClamps, StepRecording, calculate_with};
 pub use efficiency::{ChipVerdict, CutEfficiency, cut_efficiency};
 pub use explain_payload::{FeedsExplain, MachineEnvelope, explain as explain_feeds};
 pub use feed_explanation::{
@@ -590,6 +590,10 @@ pub struct FeedsResult {
     /// the same statement. [`FeedsResult::provenance`] is a projection of
     /// these bases.
     pub bases: PointBases,
+    /// P13b (K8, ruling Q7): one record per step of [`calculate`] that
+    /// changed a value, in step order. The last record of a quantity holds
+    /// the value of its result field.
+    pub steps: Vec<crate::trace::lineage::StepRecord>,
 }
 
 /// Per-step record of the chipload → feed pipeline. Each multiplier
@@ -2008,7 +2012,7 @@ pub fn long_tool_load_share(stickout_mm: f64, diameter_mm: f64) -> f64 {
 /// power) and the basis of each value. The steps are in `calculator`
 /// (feeds contract P13a).
 pub fn calculate(input: &FeedsInput) -> FeedsResult {
-    calculate_with(input, DepthClamps::Apply)
+    calculate_with(input, DepthClamps::Apply, StepRecording::Record)
 }
 
 /// The source of every factor in [`operation_default_profile`] (F201).

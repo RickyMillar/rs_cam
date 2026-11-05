@@ -114,9 +114,14 @@ touches names it in its invariants.
   the shank diameter, and the taper of a tapered tool); `rules` holds the K5
   `RuleResult` rows of the feasibility stage (P7); `measured` (K7, P9) holds what a fresh
   simulation measured on the envelope, attached by `ProjectSession::lineage_measured`.
-  `Lineage::unrecorded` is the test door of a hand-built result. Surfaces: the
+  `Lineage::unrecorded` is the test door of a hand-built result (`test-support`, L5).
+  P13b: `steps` is a view of THE store `FeedsProvenance::steps` (`StepRecords`, in the
+  project file as one basis table per toolpath; a typed value ends a chain with a
+  `stated_by_operator` record). With no result `Lineage::stored`. Surfaces: the
   inspector Lineage `Details`, MCP `get_toolpath_lineage`, CLI `summary.json`
   `lineage`. Sentries: `--test every_generated_toolpath_has_a_lineage_k8`,
+  `--test every_calculator_step_leaves_one_record_p13b`,
+  `--test the_step_records_are_stored_and_bounded_p13b`,
   `--doc lineage` (`compile_fail`: a result without `lineage`).
 - K4: every op states how it enters material. Each `REG_*` row states its
   `entry: EntryContract` (`Dressup`, `Planner`, `DescentIsCut`,

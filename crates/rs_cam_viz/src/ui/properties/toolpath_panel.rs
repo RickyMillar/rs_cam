@@ -183,12 +183,25 @@ pub(super) fn draw_toolpath_panel(
     );
 
     // K8 (feeds contract P5b, ruling Q7): the lineage of the stored result,
-    // ONE closed `Details` under the issue stack. No result, no lineage.
+    // ONE closed `Details` under the issue stack. P13b: with no result (a
+    // loaded project, an edit that dropped the result) the stored lineage
+    // (core `Lineage::stored`: the stamps and the step records) when the
+    // op holds step records; the header's run state says which. No tool or
+    // no record, no row: an op that no producer wrote adds no row (IC1).
     if let Some(lineage) = entry
         .run
         .result()
         .map(|r| std::sync::Arc::clone(&r.lineage))
     {
+        super::lineage::draw_lineage(ui, entry.id, &lineage);
+    } else if let Some(tool) = tool_for_diags
+        && !entry.feeds_provenance.steps.is_empty()
+    {
+        let lineage = rs_cam_core::trace::lineage::Lineage::stored(
+            &entry.operation,
+            tool,
+            &entry.feeds_provenance,
+        );
         super::lineage::draw_lineage(ui, entry.id, &lineage);
     }
 

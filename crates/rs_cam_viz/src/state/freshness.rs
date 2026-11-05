@@ -317,3 +317,35 @@ pub fn running_label(sim: &crate::state::simulation::SimulationState) -> &'stati
         "Running"
     }
 }
+
+/// Feeds contract P5b (K8) + P13b: the reply of MCP `get_toolpath_lineage`
+/// for the toolpath at `index`: the lineage of its result, else its stored
+/// lineage (core `ProjectSession::lineage_measured`, the step records of
+/// the project file), with THE run state (`run_state_of`), which says
+/// whether the lineage is the current result's ("done") or not. With a
+/// fresh trace the lineage records the measured placement (K7).
+#[must_use]
+pub fn toolpath_lineage_reply(state: &crate::state::AppState, index: usize) -> serde_json::Value {
+    let session = state.session();
+    let Some(tc) = session.toolpath_config_at(index) else {
+        return serde_json::json!({
+            "error": format!("Toolpath index {index} not found")
+        });
+    };
+    let run_state = run_state_of(session, &state.gui, tc.id).map(|s| s.label());
+    let evidence = state.simulation.project_evidence();
+    match session.lineage_measured(index, evidence.cut_trace) {
+        None => serde_json::json!({
+            "toolpath_id": tc.id,
+            "toolpath_name": tc.name,
+            "run_state": run_state,
+            "error": "The toolpath has no tool, so it has no lineage. Set a tool first.",
+        }),
+        Some(lineage) => serde_json::json!({
+            "toolpath_id": tc.id,
+            "toolpath_name": tc.name,
+            "run_state": run_state,
+            "lineage": lineage.to_json(),
+        }),
+    }
+}

@@ -14,8 +14,48 @@ use crate::material::FormulaConstant;
 pub(super) struct Entry {
     ramp: RampBasis,
     plunge_basis: plunge::PlungeBasis,
-    plunge_rate: f64,
+    /// The plunge (Step 8; Step 9c sets a drill plunge to its feed).
+    pub(super) plunge_rate: f64,
     material_plunge_row: FormulaConstant,
+}
+
+impl Entry {
+    /// P13b: the basis of the Step 8 plunge at the feed of `s`: the basis
+    /// that [`result`] gives the plunge when Step 9c does not move it.
+    pub(super) fn step8_basis(&self, s: &CalcState) -> Basis {
+        plunge_value_basis(
+            &self.plunge_basis,
+            s.feed.feed,
+            s.speed.rpm,
+            &s.feed.basis,
+            &self.material_plunge_row,
+        )
+    }
+}
+
+/// The basis of the plunge at `feed` and `rpm`: the binding term of the
+/// plunge rule, `plunge = feed` for a drill cycle, or the material base.
+fn plunge_value_basis(
+    plunge_basis: &plunge::PlungeBasis,
+    feed: f64,
+    rpm: f64,
+    feed_basis: &Basis,
+    material_plunge_row: &FormulaConstant,
+) -> Basis {
+    match plunge::resolve_plunge(plunge_basis, feed, rpm) {
+        Some((_, binding)) => plunge_basis.basis(binding, feed_basis, material_plunge_row.clone()),
+        None => match plunge_basis {
+            plunge::PlungeBasis::DrillCycle => {
+                Basis::derived("plunge = feed", vec![feed_basis.clone()])
+            }
+            plunge::PlungeBasis::Claimed { .. } | plunge::PlungeBasis::MaterialBase { .. } => {
+                Basis::derived(
+                    "material plunge base",
+                    vec![Basis::Rule(material_plunge_row.clone())],
+                )
+            }
+        },
+    }
 }
 
 /// Step 8 (the plunge rule and the ramp basis) and Step 9 (the plunge at
@@ -227,20 +267,13 @@ pub(super) fn result(s: CalcState, entry: Entry) -> FeedsResult {
     } = entry;
     // P5 (K2): the plunge basis at the final feed, the ramp basis, and the
     // power basis.
-    let plunge_value_basis = match plunge::resolve_plunge(&plunge_basis, feed.feed, speed.rpm) {
-        Some((_, binding)) => plunge_basis.basis(binding, &feed.basis, material_plunge_row),
-        None => match plunge_basis {
-            plunge::PlungeBasis::DrillCycle => {
-                Basis::derived("plunge = feed", vec![feed.basis.clone()])
-            }
-            plunge::PlungeBasis::Claimed { .. } | plunge::PlungeBasis::MaterialBase { .. } => {
-                Basis::derived(
-                    "material plunge base",
-                    vec![Basis::Rule(material_plunge_row)],
-                )
-            }
-        },
-    };
+    let plunge_value_basis = plunge_value_basis(
+        &plunge_basis,
+        feed.feed,
+        speed.rpm,
+        &feed.basis,
+        &material_plunge_row,
+    );
     let ramp_value_basis = match &ramp {
         RampBasis::Sourced { drill, .. } => Basis::Claim(sourced::ClaimRef {
             kind: sourced::ClaimKind::DrillG6,
@@ -355,5 +388,7 @@ pub(super) fn result(s: CalcState, entry: Entry) -> FeedsResult {
             ap: cut.ap_basis,
             ae: cut.ae_basis,
         },
+        // `calculate_with` adds the step records.
+        steps: Vec::new(),
     }
 }

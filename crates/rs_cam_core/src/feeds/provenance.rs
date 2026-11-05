@@ -192,7 +192,7 @@ impl ValueProvenance {
 /// operation's struct default still stands. Each field maps to the
 /// corresponding `OperationParams` accessor (so variant-named storage like
 /// `WaterlineConfig::z_step` is keyed under `depth_per_pass`).
-#[derive(Debug, Clone, Default, PartialEq, Eq, Serialize, Deserialize)]
+#[derive(Debug, Clone, Default, PartialEq, Serialize, Deserialize)]
 pub struct FeedsProvenance {
     #[serde(default, skip_serializing_if = "Option::is_none")]
     pub feed_rate: Option<ValueProvenance>,
@@ -219,6 +219,17 @@ pub struct FeedsProvenance {
     /// IS its depth per pass, so it is stamped under `depth_per_pass`.
     #[serde(default, skip_serializing_if = "Option::is_none")]
     pub z_step: Option<ValueProvenance>,
+    /// P13b (K8, ruling Q7): the step records of the stored values, THE
+    /// store. The producer that writes a value replaces the records in the
+    /// same call (the apply funnel, the envelope pick, the add-door rules);
+    /// `Lineage::of` reads them. The project file stores them as one basis
+    /// table per toolpath (`[...feeds_provenance.steps]`, `nodes` and
+    /// `records`; lead ruling 1, stored form C).
+    #[serde(
+        default,
+        skip_serializing_if = "crate::trace::lineage::StepRecords::is_empty"
+    )]
+    pub steps: crate::trace::lineage::StepRecords,
 }
 
 impl FeedsProvenance {
@@ -461,6 +472,8 @@ impl FeedsResult {
             // P10: the tool rule stamps these, never the calculator.
             peck_depth: None,
             z_step: None,
+            // P13b: the apply funnel writes the step records.
+            steps: crate::trace::lineage::StepRecords::default(),
         }
     }
 }
@@ -556,6 +569,7 @@ mod tests {
             effective_diameter_mm: 6.0,
             derates: FeedsDerates::default(),
             bases: crate::feeds::PointBases::not_computed(),
+            steps: Vec::new(),
         }
     }
 

@@ -138,6 +138,7 @@ fn operating_point(axial_doc_mm: f64, band: Option<ChiploadBounds>) -> FeedsResu
         effective_diameter_mm: DIAMETER_MM,
         derates: FeedsDerates::default(),
         bases: rs_cam_core::feeds::PointBases::not_computed(),
+        steps: Vec::new(),
     }
 }
 

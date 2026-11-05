@@ -1189,20 +1189,43 @@ impl ProjectSession {
 
     /// K8 + K7 (feeds contract P9): the lineage of the toolpath at `index`
     /// with what a fresh simulation measured on its envelope
-    /// ([`Self::envelope_placement_measured`]). `None` when the toolpath
-    /// has no result; `measured` is `None` with no fresh trace. MCP
-    /// `get_toolpath_lineage` and the CLI `summary.json` read it.
+    /// ([`Self::envelope_placement_measured`]). With no result (a loaded
+    /// project, or an edit that dropped the result) it is the stored
+    /// lineage ([`Self::stored_lineage`], P13b); the run state says which.
+    /// `None` when no toolpath is at `index` or it has no tool; `measured`
+    /// is `None` with no fresh trace. MCP `get_toolpath_lineage`, the CLI
+    /// and the GUI read it.
     #[must_use]
     pub fn lineage_measured(
         &self,
         index: usize,
         trace: Option<&SimulationCutTrace>,
     ) -> Option<crate::trace::lineage::Lineage> {
-        let result = self.result_at(index)?;
+        let Some(result) = self.result_at(index) else {
+            return self.stored_lineage(index);
+        };
         let measured = self
             .envelope_placement_measured(index, trace)
             .map(|p| crate::trace::lineage::MeasuredLineage::of(&p));
         Some(result.lineage.with_measured(measured))
+    }
+
+    /// P13b (lead ruling, "a loaded project shows the stored lineage until
+    /// a regenerate replaces it"): the lineage of the toolpath at `index`
+    /// from the stored values only: the cut, the pick, the stamps, the tool
+    /// facts, the entry contract and the step records of the project file.
+    /// The sections that a generation makes (the entries, the findings of
+    /// the generation, the rule rows, the measured placement) are empty.
+    /// `None` when no toolpath is at `index` or it has no tool.
+    #[must_use]
+    pub fn stored_lineage(&self, index: usize) -> Option<crate::trace::lineage::Lineage> {
+        let tc = self.toolpath_config_at(index)?;
+        let tool = self.toolpath_tool(tc)?;
+        Some(crate::trace::lineage::Lineage::stored(
+            &tc.operation,
+            tool,
+            &tc.feeds_provenance,
+        ))
     }
 
     /// [`Self::sim_trace_is_fresh`] for ONE operation: its own provenance only.

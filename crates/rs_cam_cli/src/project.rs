@@ -188,8 +188,8 @@ struct ToolpathSummaryEntry {
     /// this was a bare `usize` and a failed check shipped `0`.
     collision_count: Option<usize>,
     /// K8 (feeds contract P5b): the lineage of the generated toolpath, the
-    /// JSON of MCP `get_toolpath_lineage`. `null` when the toolpath has no
-    /// result.
+    /// JSON of MCP `get_toolpath_lineage`. With no result it is the stored
+    /// lineage (P13b); `null` when the toolpath has no tool.
     lineage: Option<serde_json::Value>,
 }
 

@@ -565,6 +565,16 @@ impl OwnedInputs {
     /// so a pick outside the guard or the cap ships the speeds of the
     /// depth it writes.
     fn calc_at(&self, p: CutPoint) -> FeedsResult {
+        self.calc_at_with(p, crate::feeds::StepRecording::Skip)
+    }
+
+    /// [`Self::calc_at`] with its step records: the pick point (P13b, lead
+    /// ruling 5). The grid points skip them.
+    fn calc_at_recorded(&self, p: CutPoint) -> FeedsResult {
+        self.calc_at_with(p, crate::feeds::StepRecording::Record)
+    }
+
+    fn calc_at_with(&self, p: CutPoint, recording: crate::feeds::StepRecording) -> FeedsResult {
         let mut input = feeds_input_for_operation(
             &self.operation,
             &self.tool,
@@ -576,7 +586,7 @@ impl OwnedInputs {
         input.axial_depth_mm = Some(p.ap_mm);
         input.radial_width_mm = Some(p.ae_mm);
         input.target_scallop_mm = None;
-        crate::feeds::calculate_with(&input, crate::feeds::DepthClamps::DrawnAsLimits)
+        crate::feeds::calculate_with(&input, crate::feeds::DepthClamps::DrawnAsLimits, recording)
     }
 
     /// P11b (L7): the operator's stated feed and RPM fit the rated power at
@@ -1150,7 +1160,7 @@ impl SafeEnvelope {
             envelope: self,
             request,
             placement: self.placement_of(p),
-            result: self.inputs.calc_at(p),
+            result: self.inputs.calc_at_recorded(p),
             point,
         }
     }

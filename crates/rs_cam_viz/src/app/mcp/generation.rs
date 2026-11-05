@@ -1006,30 +1006,14 @@ impl RsCamApp {
     /// Feeds contract P5b (K8, ruling Q7): the lineage of the generated
     /// toolpath at `index` as JSON: the cut, the pick, the stored speeds
     /// with their stamps, the tool facts, the entry contract and entries,
-    /// the findings and the rule outcomes. Read-only. A toolpath with no
-    /// result has no lineage, and the reply says so.
+    /// the findings and the rule outcomes, the step records (P13b).
+    /// Read-only. A toolpath with no result answers its stored lineage
+    /// (no entries, findings or rule rows); `run_state` names the state.
     pub(super) fn mcp_get_toolpath_lineage(&self, index: usize) -> String {
-        let state = self.controller.state();
-        let Some(tc) = state.session().toolpath_config_at(index) else {
-            return json_str(serde_json::json!({
-                "error": format!("Toolpath index {index} not found")
-            }));
-        };
-        // K7 (feeds contract P9): with a fresh trace (on the viz-side
-        // state), the lineage records the measured placement.
-        let evidence = super::diagnostics::viz_project_evidence(state);
-        match state.session().lineage_measured(index, evidence.cut_trace) {
-            None => json_str(serde_json::json!({
-                "toolpath_id": tc.id,
-                "toolpath_name": tc.name,
-                "error": "The toolpath has no result. Generate it first.",
-            })),
-            Some(lineage) => json_str(serde_json::json!({
-                "toolpath_id": tc.id,
-                "toolpath_name": tc.name,
-                "lineage": lineage.to_json(),
-            })),
-        }
+        json_str(crate::state::freshness::toolpath_lineage_reply(
+            self.controller.state(),
+            index,
+        ))
     }
 
     /// Feeds contract P5 (K2b): the safe envelope of the toolpath at

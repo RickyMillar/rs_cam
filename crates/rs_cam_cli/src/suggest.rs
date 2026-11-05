@@ -26,6 +26,10 @@
 //! `get_safe_envelope` returns: the axes, the limits with law and basis, the
 //! speeds grid, the proposal and the operator's placement. `tied_rows`
 //! names both rows of a Q3 tie.
+//!
+//! Feeds contract P13b: `lineage` is the lineage of the toolpath with no
+//! generation (`ProjectSession::lineage_measured`: the stored step records
+//! of the project file), and `run_state` names the state of the toolpath.
 
 use anyhow::{Context, Result};
 use serde_json::{Value, json};
@@ -179,6 +183,19 @@ fn record_json(
     record.insert("toolpath_id".into(), json!(tc.id));
     record.insert("toolpath_name".into(), json!(tc.name));
     record.insert("current".into(), op_values(&tc.operation));
+    // P13b: the lineage that the project file stores (the step records),
+    // the JSON of MCP `get_toolpath_lineage`; this command generates
+    // nothing, so the run state names the toolpath's state.
+    record.insert(
+        "run_state".into(),
+        json!(rs_cam_core::session::toolpath_run_state(session, tc.id, false).map(|s| s.label())),
+    );
+    record.insert(
+        "lineage".into(),
+        session
+            .lineage_measured(index, None)
+            .map_or(Value::Null, |l| l.to_json()),
+    );
     match profile.as_ref() {
         None => {
             record.insert(
@@ -349,6 +366,40 @@ mod tests {
         let configs = session.toolpath_configs();
         let index = configs.len() - 1;
         record_json(session, index, &configs[index])
+    }
+
+    /// Feeds contract P13b (surface parity): the record prints the stored
+    /// lineage of the toolpath (the core `lineage_measured` with no trace,
+    /// the call MCP `get_toolpath_lineage` reads) and its run state. After
+    /// an apply the lineage holds the step records. Red at HEAD 255d8db90:
+    /// the record has no `lineage` key.
+    #[test]
+    fn the_suggest_record_carries_the_stored_lineage_p13b() {
+        let mut session = session_with(OperationType::Pocket);
+        let index = session.toolpath_configs().len() - 1;
+        let _ = apply_command(
+            &mut session,
+            Command::ApplyFeeds(rs_cam_core::session::ApplyFeedsArgs {
+                index,
+                pick: None,
+                explored: None,
+            }),
+        )
+        .expect("the speeds apply");
+        let record = last_record(&session);
+        let core = session
+            .lineage_measured(index, None)
+            .expect("a stored lineage")
+            .to_json();
+        assert_eq!(record["lineage"], core);
+        assert!(
+            record["lineage"]["steps"]
+                .as_array()
+                .is_some_and(|s| !s.is_empty()),
+            "no step record in {}",
+            record["lineage"]
+        );
+        assert!(record["run_state"].is_string());
     }
 
     /// FC0 item 2: a Drill record prints its peck depth.

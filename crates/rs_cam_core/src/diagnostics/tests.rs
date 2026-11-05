@@ -678,6 +678,7 @@ fn feeds_hint_emits_high_feed_ratio() {
         effective_diameter_mm: 6.0,
         derates: crate::feeds::FeedsDerates::default(),
         bases: crate::feeds::PointBases::not_computed(),
+        steps: Vec::new(),
     };
     let diags = adapters::from_feeds::heuristic_hints_from_recommendation(
         ToolpathId::from_raw(7),
@@ -1027,6 +1028,7 @@ fn fixture_feeds_result() -> crate::feeds::FeedsResult {
         effective_diameter_mm: 6.0,
         derates: crate::feeds::FeedsDerates::default(),
         bases: crate::feeds::PointBases::not_computed(),
+        steps: Vec::new(),
     }
 }
 
