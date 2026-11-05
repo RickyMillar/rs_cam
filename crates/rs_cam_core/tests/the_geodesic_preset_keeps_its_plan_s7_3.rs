@@ -39,7 +39,7 @@ use rs_cam_core::adaptive::research_geodesic::{Candidate2d, run_2d};
 use rs_cam_core::adaptive::{AdaptiveParams, KeepDownLinks, PathStrategy2d};
 use rs_cam_core::compute::catalog::OperationType;
 use rs_cam_core::compute::config::{DressupConfig, DressupEntryStyle};
-use rs_cam_core::compute::fixture_values::fixture_feeds;
+use rs_cam_core::compute::fixture_values::{fixture_feeds, fixture_geometry};
 use rs_cam_core::compute::operation_configs::AdaptiveConfig;
 use rs_cam_core::polygon::Polygon2;
 use rs_cam_core::session::ProjectSession;
@@ -81,9 +81,20 @@ fn params(tool: &FlatEndmill) -> AdaptiveParams {
         0.0
     };
     let (feed_rate, plunge_rate) = fixture_feeds(OperationType::Adaptive);
-    let stepover = cfg.stepover.expect("the fixture states the stepover");
+    // P10 (ruling D8): the op has no stepover or depth per pass until it
+    // has a tool; the fixture states the values from before P10.
+    let geometry = |field: &str| {
+        fixture_geometry(OperationType::Adaptive)
+            .iter()
+            .find_map(|&(name, value)| (name == field).then_some(value))
+    };
+    let stepover = cfg
+        .stepover
+        .or_else(|| geometry("stepover"))
+        .expect("the fixture states the stepover");
     let depth_per_pass = cfg
         .depth_per_pass
+        .or_else(|| geometry("depth_per_pass"))
         .expect("the fixture states the depth per pass");
     AdaptiveParams {
         tool_radius: tool.diameter / 2.0,

@@ -32,7 +32,7 @@ use std::sync::atomic::AtomicBool;
 use rs_cam_core::compute::config::StockSource;
 use rs_cam_core::geo::{P2, P3};
 use rs_cam_core::mesh::{SpatialIndex, TriangleMesh};
-use rs_cam_core::session::{Command, ProjectSession, SetStockSourceArgs};
+use rs_cam_core::session::{Command, ProjectSession, SetStockSourceArgs, SetToolpathParamArgs};
 use rs_cam_core::toolpath::{MoveType, Toolpath};
 
 fn fixture_path(name: &str) -> PathBuf {
@@ -253,6 +253,17 @@ fn drop_cutter_toolpath_stamp_dives_only_at_the_residual_columns() {
             source: StockSource::Fresh,
         }))
         .expect("the finish takes fresh stock");
+    // S11: an op with no spindle speed refuses to generate. The fixture's
+    // 3D Finish 8 states none; before S11 it read the post spindle speed,
+    // so the test states that value.
+    let post_rpm = session.post_config().spindle_speed;
+    let _ = session
+        .apply(Command::SetToolpathParam(SetToolpathParamArgs {
+            index: finish_idx,
+            param: "spindle_rpm".to_owned(),
+            value: serde_json::json!(post_rpm),
+        }))
+        .expect("the finish takes the post spindle speed");
     let cancel = AtomicBool::new(false);
     let tp = std::sync::Arc::new(
         session
