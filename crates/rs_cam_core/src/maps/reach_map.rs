@@ -1008,23 +1008,27 @@ pub fn reach_overlay_stock_mesh(
 /// This is the exact zero-radius drop, and it uses the same triangle set and
 /// the same containment test as
 /// [`crate::surface::dropcutter::point_is_over_mesh_xy`] — so "is there surface here"
-/// and "how high is it" can never disagree.
+/// and "how high is it" can never disagree. Both read
+/// `SpatialIndex::with_point_candidates` (W1): the result is the same as
+/// over the radius-0 query, and a point off the low sides reads no band.
 #[must_use]
 pub fn surface_z_at(x: f64, y: f64, mesh: &TriangleMesh, index: &SpatialIndex) -> Option<f64> {
-    let mut best: Option<f64> = None;
-    for idx in index.query(x, y, 0.0) {
-        let Some(tri) = mesh.faces.get(idx) else {
-            continue;
-        };
-        if !tri.contains_point_xy(x, y) {
-            continue;
+    index.with_point_candidates(mesh, x, y, |tris| {
+        let mut best: Option<f64> = None;
+        for &idx in tris {
+            let Some(tri) = mesh.faces.get(idx) else {
+                continue;
+            };
+            if !tri.contains_point_xy(x, y) {
+                continue;
+            }
+            let Some(z) = plane_z_at(tri, x, y) else {
+                continue;
+            };
+            best = Some(best.map_or(z, |b: f64| b.max(z)));
         }
-        let Some(z) = plane_z_at(tri, x, y) else {
-            continue;
-        };
-        best = Some(best.map_or(z, |b: f64| b.max(z)));
-    }
-    best
+        best
+    })
 }
 
 /// Z of the triangle's own plane above `(x, y)`. `None` for a plane that is

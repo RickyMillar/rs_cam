@@ -37,4 +37,4 @@ The two cutter walks and the derived surface fields. The entry point is
 - `cargo test -p rs_cam_core -q --test reach_policy_pr4`; `... -q --lib stock_reference`
 - `... --features test-support -q --test grid_z_uncovered_contract_c2`
 - `cargo test -p rs_cam_core -q --features test-support --test rest_routing_probe_e9 --test catchment_basin_census_w0`
-- `... --test drop_cutter_off_mesh --test waterline_sees_material_above_the_flute_top_g_flutetop`
+- `... --test drop_cutter_off_mesh --test waterline_sees_material_above_the_flute_top_g_flutetop --test an_off_grid_query_reads_no_band_perf5` (W1)

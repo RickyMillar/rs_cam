@@ -31,7 +31,7 @@ are `maps::tier_map::compute_tier_map` and `maps::reach_map::compute_reach_map`.
 - With `--features test-support`: `reach_map_p5`, `reach_map_residual_p5_1`,
   `tier_map_walk_t1`, `tier_map_slope_t2`, `tier_map_cache_t3`, `stl_flat_regions_are_face_items_p4_7`, `a_reimport_drops_the_pick_index_sel2`; with `step` too: `a_flat_top_reads_reached_to_its_edge_r7d`.
 - Without it: `tier_islands_i1`, `tier_islands_speck_weld`,
-  `tier_map_flute_reach`, `the_test_doors_are_gated_fld0405`.
+  `tier_map_flute_reach`, `the_test_doors_are_gated_fld0405`, `an_off_grid_query_reads_no_band_perf5` (W1).
 
 ## Do not
 

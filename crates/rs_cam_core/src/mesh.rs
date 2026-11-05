@@ -423,6 +423,10 @@ pub struct SpatialIndex {
     origin_x: f64,
     origin_y: f64,
     total_triangles: usize,
+    /// The XY box past which no well-conditioned triangle accepts a point,
+    /// and the list of ill-conditioned triangles. Read only by
+    /// [`Self::with_point_candidates`].
+    point_reach: PointReach,
 }
 
 impl SpatialIndex {
@@ -490,9 +494,10 @@ impl SpatialIndex {
         // and few allocations to save. Keeping the table wins at both
         // resolutions.
         //
-        // Identical arithmetic to the pre-CSR builder, including the
-        // `x1 as usize` wrap on a negative index (over-inclusive,
-        // pre-existing, and shared with `query_rect_into` — see its doc).
+        // Identical arithmetic to the pre-CSR builder. The `x1 as usize`
+        // cast cannot wrap here: `origin` is `bbox.min`, so no face box is
+        // left of or below it and `x1`, `y1` are never negative. The wrap
+        // that does fire is in `query_rect_into` (see its doc).
         let mut cell_starts = vec![0usize; total_cells + 1];
         let mut spans: Vec<[usize; 3]> = Vec::with_capacity(mesh.faces.len());
         for face in &mesh.faces {
@@ -564,6 +569,7 @@ impl SpatialIndex {
             origin_x,
             origin_y,
             total_triangles: mesh.faces.len(),
+            point_reach: PointReach::of(mesh),
         }
     }
 
@@ -601,6 +607,48 @@ impl SpatialIndex {
         let result = f(&out);
         put_local(&QUERY_OUT, out);
         result
+    }
+
+    /// Call `f` with the radius-0 candidates of `(x, y)` for a caller that
+    /// keeps a triangle only when `Triangle::contains_point_xy(x, y)` holds.
+    ///
+    /// `mesh` must be the mesh that this index was built from.
+    ///
+    /// The contract: after that filter, the result is the same as for
+    /// [`Self::query`] at radius 0, triangle for triangle and in the same
+    /// order. The unfiltered list can be shorter. A radius-0 query left of
+    /// or below the grid reads a whole row or column band, or the whole
+    /// mesh at a low corner (the wrap in [`Self::query_rect_into`]). This
+    /// door reads no band when it can prove that no triangle accepts the
+    /// point. Three paths (W1, perf sweep round 2; the P4 proof):
+    ///
+    /// 1. The point is in an index cell that holds triangles. The list is
+    ///    [`Self::cell_triangles_at`]. A point in the grid makes the radius-0
+    ///    query take its single-cell path, so the list is the same list.
+    /// 2. The point is outside the reach box of the well-conditioned
+    ///    triangles, and no ill-conditioned triangle accepts it. Then no
+    ///    triangle of the mesh accepts it, and the list is empty.
+    ///    `PointReach` holds the proof of the box.
+    /// 3. Any other point reads the radius-0 query, as before.
+    ///
+    /// The pin is `tests/an_off_grid_query_reads_no_band_perf5.rs`. A caller
+    /// with another predicate (a cutter radius, a vertical-ray edge test)
+    /// must use [`Self::query`]: the proof covers `contains_point_xy` only.
+    pub fn with_point_candidates<R>(
+        &self,
+        mesh: &TriangleMesh,
+        x: f64,
+        y: f64,
+        f: impl FnOnce(&[usize]) -> R,
+    ) -> R {
+        let cell = self.cell_triangles_at(x, y);
+        if !cell.is_empty() {
+            return f(cell);
+        }
+        if self.point_reach.excludes(mesh, x, y) {
+            return f(&[]);
+        }
+        self.with_query(x, y, 0.0, f)
     }
 
     /// The CSR row for grid cell `cell_idx` — the triangle indices registered
@@ -708,11 +756,26 @@ impl SpatialIndex {
     /// *order* as `query_into` would produce for a square of the same bounds;
     /// the two share one implementation, so they cannot drift.
     ///
-    /// The odd `x1 as usize` wrap on a negative index — which clamps a fully
-    /// off-grid query up to the last column rather than to nothing — is
-    /// reproduced verbatim from [`Self::query`]. It is pre-existing behaviour
-    /// and over-inclusive rather than wrong, and this primitive must not "fix"
-    /// it, or the three query paths would disagree on off-grid cells.
+    /// The `x1 as usize` cast wraps on a negative index. A rectangle wholly
+    /// left of the grid thus reads columns `0..=ncx-1` of its rows, not
+    /// nothing; below the grid it reads whole columns, and at a low corner
+    /// the whole mesh. The high side gives nothing (`x0 > x1`). The wrap
+    /// stays, on purpose (W1, perf sweep round 2):
+    ///
+    /// - The over-inclusion is visible to callers. `contains_point_xy`
+    ///   accepts a point outside the triangle: for a safe triangle by up to
+    ///   `3.4e-6 W` (see `PointReach`), and for an ill-conditioned sliver
+    ///   by millimetres, from any column. `drop_cutter_can_contact` accepts
+    ///   a triangle up to `DROP_CONTACT_SLACK_MM` past the cutter radius. A
+    ///   narrower cell range must keep all of those, for every caller.
+    /// - Radius-0 callers that filter by `contains_point_xy` use
+    ///   [`SpatialIndex::with_point_candidates`]. It reads no band when it
+    ///   can prove that no triangle accepts the point.
+    /// - A caller with a radius reads the band only when its whole
+    ///   rectangle is off the low side.
+    ///
+    /// `query`, `query_into` and `with_query` share this one body, so they
+    /// agree on every cell.
     #[expect(
         clippy::indexing_slicing,
         reason = "bounded indexing in algorithmic code"
@@ -788,6 +851,100 @@ impl SpatialIndex {
             return &[];
         }
         self.cell_slice(cy * self.cell_count_x + cx)
+    }
+}
+
+/// The XY box outside which `Triangle::contains_point_xy` accepts a point
+/// for no triangle of the mesh with a safe condition, and the list of the
+/// other triangles. [`SpatialIndex::with_point_candidates`] reads it.
+///
+/// `contains_point_xy` accepts barycentric coordinates down to `-1e-8`, and
+/// it computes them in floating point. So it can accept a point a small
+/// distance outside the triangle. The bound below holds for the computed
+/// predicate, with its rounding.
+///
+/// Notation: `A = y1-y2`, `B = x2-x1`, `C = y2-y0`, `E = x0-x2`, the
+/// computed `D = A*E + B*(y0-y2)`, `W = |A|+|B|+|C|+|E|`, `u = 2^-53`.
+/// A triangle has a safe condition when `1e-9 * W^2 <= |D|`. Then:
+///
+/// - `|D - det| <= 2u * W^2`, so `q = 2u * W^2 / |det| <= 2.3e-7`;
+/// - an accepted point has computed `a, b >= -1e-8` and `a + b <= 1 + 2e-8`
+///   (from `c >= -1e-8`), so `alpha = N_a/det` and `beta = N_b/det` are in
+///   the triangle `alpha, beta >= -L`, `alpha + beta <= 1 + L`, with
+///   `L = 1e-6`;
+/// - `dx = alpha*E + beta*(x1-x2) - err` with `|err| <= q * 1.01 * W`;
+/// - so the point x is in `[min x - 3.4e-6 W, max x + 3.4e-6 W]`, and y is
+///   in the same band of the y values.
+///
+/// The margin is `1e-5 * W` plus `1e-12` of the vertex magnitudes, which
+/// covers the rounding of the margin itself. A point with an infinite
+/// coordinate gives an infinite or NaN `a` or `b`, so the predicate refuses
+/// it. A triangle with `|D| < 1e-15` never accepts a point and is left out.
+/// A triangle with NaN or very large values fails the safe test and goes
+/// to `ill`, which `excludes` tests point by point.
+///
+/// The `ill` list is necessary, not a formality. A near-collinear sliver
+/// has a computed `D` that is rounding noise, and it can accept a point
+/// millimetres outside its own box. The W1 sentry holds one that accepts a
+/// point 3.39 mm left of its min X. No cell bound keeps such a triangle, so
+/// the radius-0 query keeps its row band for a point this box cannot
+/// exclude.
+#[derive(Debug, Clone)]
+struct PointReach {
+    lo_x: f64,
+    lo_y: f64,
+    hi_x: f64,
+    hi_y: f64,
+    ill: Vec<usize>,
+}
+
+impl PointReach {
+    fn of(mesh: &TriangleMesh) -> Self {
+        let mut reach = Self {
+            lo_x: f64::INFINITY,
+            lo_y: f64::INFINITY,
+            hi_x: f64::NEG_INFINITY,
+            hi_y: f64::NEG_INFINITY,
+            ill: Vec::new(),
+        };
+        for (i, face) in mesh.faces.iter().enumerate() {
+            let [p0, p1, p2] = face.v;
+            let (x0, y0, x1, y1, x2, y2) = (p0.x, p0.y, p1.x, p1.y, p2.x, p2.y);
+            // The same expression as `Triangle::contains_point_xy`, so the
+            // same value.
+            let denom = (y1 - y2) * (x0 - x2) + (x2 - x1) * (y0 - y2);
+            if denom.abs() < 1e-15 {
+                continue;
+            }
+            let w = (y1 - y2).abs() + (x2 - x1).abs() + (y2 - y0).abs() + (x0 - x2).abs();
+            // A NaN fails this test, so a NaN triangle goes to `ill`.
+            let safe = 1e-9 * w * w <= denom.abs();
+            if !safe {
+                reach.ill.push(i);
+                continue;
+            }
+            let size = x0.abs() + x1.abs() + x2.abs() + y0.abs() + y1.abs() + y2.abs();
+            let margin = 1e-5 * w + 1e-12 * size;
+            reach.lo_x = reach.lo_x.min(x0.min(x1).min(x2) - margin);
+            reach.lo_y = reach.lo_y.min(y0.min(y1).min(y2) - margin);
+            reach.hi_x = reach.hi_x.max(x0.max(x1).max(x2) + margin);
+            reach.hi_y = reach.hi_y.max(y0.max(y1).max(y2) + margin);
+        }
+        reach
+    }
+
+    /// True when no triangle of `mesh` accepts `(x, y)`. False says only
+    /// that the box cannot prove it. A NaN coordinate gives false.
+    fn excludes(&self, mesh: &TriangleMesh, x: f64, y: f64) -> bool {
+        let outside = x < self.lo_x || x > self.hi_x || y < self.lo_y || y > self.hi_y;
+        // An index that `mesh` does not hold means the caller passed another
+        // mesh; it fails safe to "cannot prove".
+        outside
+            && !self.ill.iter().any(|&i| {
+                mesh.faces
+                    .get(i)
+                    .is_none_or(|face| face.contains_point_xy(x, y))
+            })
     }
 }
 
@@ -1198,5 +1355,89 @@ mod tests {
         let triangles = vec![[0, 1, 2]];
         let mesh = TriangleMesh::from_raw(vertices, triangles);
         assert_eq!(mesh.faces.len(), 1);
+    }
+
+    /// A height field over `[x0, x1] x [y0, y1]`.
+    fn reach_field(x0: f64, x1: f64, y0: f64, y1: f64, nx: u32, ny: u32) -> TriangleMesh {
+        let mut v = Vec::new();
+        for j in 0..=ny {
+            for i in 0..=nx {
+                let x = x0 + (x1 - x0) * f64::from(i) / f64::from(nx);
+                let y = y0 + (y1 - y0) * f64::from(j) / f64::from(ny);
+                v.push(P3::new(x, y, 3.0 + (x * 0.7).sin() * (y * 0.3).cos()));
+            }
+        }
+        let at = |i: u32, j: u32| j * (nx + 1) + i;
+        let mut t = Vec::new();
+        for j in 0..ny {
+            for i in 0..nx {
+                t.push([at(i, j), at(i + 1, j), at(i + 1, j + 1)]);
+                t.push([at(i, j), at(i + 1, j + 1), at(i, j + 1)]);
+            }
+        }
+        TriangleMesh::from_raw(v, t)
+    }
+
+    /// P4, moved with the box in W1: a point far off the low sides is
+    /// excluded without the band query, and a point in the tolerance band
+    /// is not.
+    #[test]
+    fn a_point_far_off_the_low_sides_is_excluded_p4() {
+        let mesh = reach_field(6.0, 32.0, 5.0, 22.0, 27, 18);
+        let reach = PointReach::of(&mesh);
+        assert!(reach.ill.is_empty());
+        for (x, y) in [
+            (0.0, 0.0),
+            (0.0, 10.0),
+            (10.0, 0.0),
+            (40.0, 30.0),
+            (5.99, 10.0),
+        ] {
+            assert!(reach.excludes(&mesh, x, y), "({x}, {y}) is not excluded");
+        }
+        assert!(!reach.excludes(&mesh, 6.0 - 1e-12, 10.0));
+    }
+
+    /// A needle, a near-collinear sliver and a NaN triangle go to `ill`; an
+    /// exactly collinear triangle is left out (it accepts no point).
+    #[test]
+    fn slivers_and_bad_triangles_go_to_ill_p4() {
+        let base = reach_field(2.0, 12.0, 1.0, 9.0, 5, 4);
+        let mut v = base.vertices.clone();
+        let mut t = base.triangles.clone();
+        let n = u32::try_from(v.len()).unwrap_or(u32::MAX);
+        v.extend([
+            P3::new(2.0, 1.0, 4.0),
+            P3::new(2.0 + 1e-9, 9.0, 4.0),
+            P3::new(2.0, 9.0, 4.5),
+            P3::new(2.0, 1.0, 1.0),
+            P3::new(12.0, 1.0 + 1e-13, 1.0),
+            P3::new(7.0, 1.0, 1.5),
+            P3::new(3.0, 3.0, 2.0),
+            P3::new(4.0, 4.0, 2.0),
+            P3::new(5.0, 5.0, 2.0),
+            P3::new(f64::NAN, 2.0, 2.0),
+        ]);
+        t.extend([
+            [n, n + 1, n + 2],
+            [n + 3, n + 4, n + 5],
+            [n + 6, n + 7, n + 8],
+            [n, n + 9, n + 2],
+        ]);
+        let mesh = TriangleMesh::from_raw(v, t);
+        let first = base.faces.len();
+        let reach = PointReach::of(&mesh);
+        assert!(reach.ill.contains(&(first + 1)), "the sliver is not ill");
+        assert!(
+            reach.ill.contains(&(first + 3)),
+            "the NaN triangle is not ill"
+        );
+        assert!(
+            !reach.ill.contains(&(first + 2)),
+            "the collinear one is ill"
+        );
+        // The index carries the same box.
+        let index = SpatialIndex::build_auto(&mesh);
+        assert_eq!(index.point_reach.ill, reach.ill);
     }
 }

@@ -3017,35 +3017,29 @@ fn compute_deviations(stock_vertices: &[f32], model_mesh: &TriangleMesh) -> Vec<
 /// 1. The point is in an index cell that holds triangles. The candidates
 ///    are `SpatialIndex::cell_triangles_at`, the same list in the same
 ///    order as the radius-0 query gives for that cell.
-/// 2. The point is outside `ModelReach` (no triangle with a safe
-///    condition can accept it) and no ill-conditioned triangle accepts it.
-///    Then no candidate of the query can accept it, and the result is
-///    `None`.
+/// 2. The point is outside the reach box of the safe triangles (no
+///    triangle with a safe condition can accept it) and no ill-conditioned
+///    triangle accepts it. Then no candidate of the query can accept it,
+///    and the result is `None`.
 /// 3. Any other point reads the radius-0 query, as before P4.
+///
+/// W1 (perf sweep round 2) moved the three paths into
+/// `SpatialIndex::with_point_candidates`, which holds the proof, so the
+/// other radius-0 callers share them.
 struct ModelZQuery<'a> {
     index: &'a SpatialIndex,
     mesh: &'a TriangleMesh,
-    reach: ModelReach,
 }
 
 impl<'a> ModelZQuery<'a> {
-    fn new(index: &'a SpatialIndex, mesh: &'a TriangleMesh) -> Self {
-        Self {
-            index,
-            mesh,
-            reach: ModelReach::of(mesh),
-        }
+    const fn new(index: &'a SpatialIndex, mesh: &'a TriangleMesh) -> Self {
+        Self { index, mesh }
     }
 
     fn z_range(&self, x: f64, y: f64) -> Option<(f64, f64)> {
-        let cell = self.index.cell_triangles_at(x, y);
-        if !cell.is_empty() {
-            return fold_model_z_range(self.mesh, cell, x, y);
-        }
-        if self.reach.excludes(self.mesh, x, y) {
-            return None;
-        }
-        fold_model_z_range(self.mesh, &self.index.query(x, y, 0.0), x, y)
+        self.index.with_point_candidates(self.mesh, x, y, |tris| {
+            fold_model_z_range(self.mesh, tris, x, y)
+        })
     }
 }
 
@@ -3065,90 +3059,6 @@ fn fold_model_z_range(mesh: &TriangleMesh, tris: &[usize], x: f64, y: f64) -> Op
         }
     }
     min_z.zip(max_z)
-}
-
-/// The XY box outside which `Triangle::contains_point_xy` accepts a point
-/// for no triangle of the mesh with a safe condition, and the list of the
-/// other triangles.
-///
-/// `contains_point_xy` accepts barycentric coordinates down to `-1e-8`, and
-/// it computes them in floating point. So it can accept a point a small
-/// distance outside the triangle. The bound below holds for the computed
-/// predicate, with its rounding.
-///
-/// Notation: `A = y1-y2`, `B = x2-x1`, `C = y2-y0`, `E = x0-x2`, the
-/// computed `D = A*E + B*(y0-y2)`, `W = |A|+|B|+|C|+|E|`, `u = 2^-53`.
-/// A triangle has a safe condition when `1e-9 * W^2 <= |D|`. Then:
-///
-/// - `|D - det| <= 2u * W^2`, so `q = 2u * W^2 / |det| <= 2.3e-7`;
-/// - an accepted point has computed `a, b >= -1e-8` and `a + b <= 1 + 2e-8`
-///   (from `c >= -1e-8`), so `alpha = N_a/det` and `beta = N_b/det` are in
-///   the triangle `alpha, beta >= -L`, `alpha + beta <= 1 + L`, with
-///   `L = 1e-6`;
-/// - `dx = alpha*E + beta*(x1-x2) - err` with `|err| <= q * 1.01 * W`;
-/// - so the point x is in `[min x - 3.4e-6 W, max x + 3.4e-6 W]`, and y is
-///   in the same band of the y values.
-///
-/// The margin is `1e-5 * W` plus `1e-12` of the vertex magnitudes, which
-/// covers the rounding of the margin itself. A point with an infinite
-/// coordinate gives an infinite or NaN `a` or `b`, so the predicate refuses
-/// it. A triangle with `|D| < 1e-15` never accepts a point and is left out.
-/// A triangle with NaN or very large values fails the safe test and goes
-/// to `ill`, which `excludes` tests point by point.
-struct ModelReach {
-    lo_x: f64,
-    lo_y: f64,
-    hi_x: f64,
-    hi_y: f64,
-    ill: Vec<usize>,
-}
-
-impl ModelReach {
-    fn of(mesh: &TriangleMesh) -> Self {
-        let mut reach = Self {
-            lo_x: f64::INFINITY,
-            lo_y: f64::INFINITY,
-            hi_x: f64::NEG_INFINITY,
-            hi_y: f64::NEG_INFINITY,
-            ill: Vec::new(),
-        };
-        for (i, face) in mesh.faces.iter().enumerate() {
-            let [p0, p1, p2] = face.v;
-            let (x0, y0, x1, y1, x2, y2) = (p0.x, p0.y, p1.x, p1.y, p2.x, p2.y);
-            // The same expression as `Triangle::contains_point_xy`, so the
-            // same value.
-            let denom = (y1 - y2) * (x0 - x2) + (x2 - x1) * (y0 - y2);
-            if denom.abs() < 1e-15 {
-                continue;
-            }
-            let w = (y1 - y2).abs() + (x2 - x1).abs() + (y2 - y0).abs() + (x0 - x2).abs();
-            // A NaN fails this test, so a NaN triangle goes to `ill`.
-            let safe = 1e-9 * w * w <= denom.abs();
-            if !safe {
-                reach.ill.push(i);
-                continue;
-            }
-            let size = x0.abs() + x1.abs() + x2.abs() + y0.abs() + y1.abs() + y2.abs();
-            let margin = 1e-5 * w + 1e-12 * size;
-            reach.lo_x = reach.lo_x.min(x0.min(x1).min(x2) - margin);
-            reach.lo_y = reach.lo_y.min(y0.min(y1).min(y2) - margin);
-            reach.hi_x = reach.hi_x.max(x0.max(x1).max(x2) + margin);
-            reach.hi_y = reach.hi_y.max(y0.max(y1).max(y2) + margin);
-        }
-        reach
-    }
-
-    /// True when no triangle of `mesh` accepts `(x, y)`. False says only
-    /// that the box cannot prove it. A NaN coordinate gives false.
-    #[expect(clippy::indexing_slicing, reason = "triangle indices bounded by mesh")]
-    fn excludes(&self, mesh: &TriangleMesh, x: f64, y: f64) -> bool {
-        let outside = x < self.lo_x || x > self.hi_x || y < self.lo_y || y > self.hi_y;
-        outside
-            && !self
-                .ill
-                .iter()
-                .any(|&i| mesh.faces[i].contains_point_xy(x, y))
-    }
 }
 
 #[cfg(test)]
@@ -3933,7 +3843,7 @@ mod model_z_query_tests {
 
     /// A point left of the grid inside the tolerance band is accepted by
     /// the predicate. The reference reads it through the row band, and the
-    /// new path must read it too: this is the class that `ModelReach`
+    /// new path must read it too: this is the class that the reach box
     /// must not exclude.
     #[test]
     fn a_point_in_the_tolerance_band_left_of_the_grid_still_hits_p4() {
@@ -3991,27 +3901,7 @@ mod model_z_query_tests {
             [base, base + 9, base + 2],
         ]);
         mesh = TriangleMesh::from_raw(v, t);
-        let reach = ModelReach::of(&mesh);
-        assert!(!reach.ill.is_empty(), "no triangle went to `ill`");
+        // `mesh::tests` checks that these triangles go to `ill`.
         assert_identical(&mesh);
-    }
-
-    /// The point of P4: a point far off the low sides is excluded without
-    /// the band query.
-    #[test]
-    fn a_point_far_off_the_low_sides_is_excluded_p4() {
-        let mesh = field(6.0, 32.0, 5.0, 22.0, 27, 18);
-        let reach = ModelReach::of(&mesh);
-        assert!(reach.ill.is_empty());
-        for (x, y) in [
-            (0.0, 0.0),
-            (0.0, 10.0),
-            (10.0, 0.0),
-            (40.0, 30.0),
-            (5.99, 10.0),
-        ] {
-            assert!(reach.excludes(&mesh, x, y), "({x}, {y}) is not excluded");
-        }
-        assert!(!reach.excludes(&mesh, 6.0 - 1e-12, 10.0));
     }
 }

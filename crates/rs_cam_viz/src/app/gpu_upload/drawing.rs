@@ -189,20 +189,24 @@ pub(super) fn upload(
             let Some((mesh, index, direction)) = surface_mesh.as_ref() else {
                 return Some(planar_z);
             };
-            let z = index
-                .query(x, y, 0.0)
-                .into_iter()
-                .filter_map(|face_index| mesh.faces.get(face_index))
-                .filter(|face| face.contains_point_xy(x, y))
-                .filter_map(|face| face.z_at_xy(x, y));
-            let z = match direction {
-                rs_cam_core::compute::operation_configs::ProjectCurveDirection::FromAbove => {
-                    z.max_by(f64::total_cmp)
+            // W1: the exact radius-0 candidates. The result after the
+            // `contains_point_xy` filter is the radius-0 query's, and a
+            // point off the low sides of the mesh reads no band.
+            let z = index.with_point_candidates(mesh, x, y, |tris| {
+                let z = tris
+                    .iter()
+                    .filter_map(|&face_index| mesh.faces.get(face_index))
+                    .filter(|face| face.contains_point_xy(x, y))
+                    .filter_map(|face| face.z_at_xy(x, y));
+                match direction {
+                    rs_cam_core::compute::operation_configs::ProjectCurveDirection::FromAbove => {
+                        z.max_by(f64::total_cmp)
+                    }
+                    rs_cam_core::compute::operation_configs::ProjectCurveDirection::FromBelow => {
+                        z.min_by(f64::total_cmp)
+                    }
                 }
-                rs_cam_core::compute::operation_configs::ProjectCurveDirection::FromBelow => {
-                    z.min_by(f64::total_cmp)
-                }
-            }?;
+            })?;
             Some(z as f32 + 0.05)
         };
         // Each drawn ring of the drawing (P2.1): a loop, a path or a

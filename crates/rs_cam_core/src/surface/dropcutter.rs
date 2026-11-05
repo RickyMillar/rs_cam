@@ -496,15 +496,15 @@ pub(crate) fn batch_drop_cutter_windowed_with_cancel<C: MillingCutter + ?Sized>(
 /// `FINISHING_OPEN_DEFECTS_EVIDENCE.md` §2.2): scallop's ring lift read a
 /// 0.75 mm generation heightmap and cut 0.375 mm past the part edge.
 ///
-/// Cost is one extra `index.with_query` at radius 0. For a point inside the
-/// index grid, both ends of the query rectangle fall in the same cell, so
-/// `query_rect_into` takes its single-cell fast path: it copies that cell's
-/// list and touches no dedup bitset. A point off the grid at negative X or
-/// Y spans a whole row or column (the `x1 as usize` wrap), and a point past
-/// the max edge returns nothing. The result buffer is thread-local, so the
+/// Cost: the candidates come from `SpatialIndex::with_point_candidates`.
+/// For a point inside the index grid that is the list of its one cell, with
+/// no copy and no dedup bitset. A point left of or below the grid, outside
+/// the reach of every triangle, gets an empty list; before W1 (perf sweep
+/// round 2) it read a whole row or column band (the `x1 as usize` wrap).
+/// The answer is the same as over the radius-0 query, bit for bit. The
 /// call allocates nothing in steady state.
 pub fn point_is_over_mesh_xy(x: f64, y: f64, mesh: &TriangleMesh, index: &SpatialIndex) -> bool {
-    index.with_query(x, y, 0.0, |tri_indices| {
+    index.with_point_candidates(mesh, x, y, |tri_indices| {
         tri_indices.iter().any(|&idx| {
             #[expect(
                 clippy::indexing_slicing,
