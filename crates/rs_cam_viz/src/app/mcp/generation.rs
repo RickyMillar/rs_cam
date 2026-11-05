@@ -16,34 +16,10 @@ use crate::state::selection::Selection;
 use super::simulation::build_per_depth_pass_summary;
 use super::{MultitoolDials, tier_strategies};
 
-/// The mean chip of the cut Suggest ships, through
-/// `feeds::operating_point::force_at_operating_point` (the door the Feeds
-/// card reads). `None` when the material has no force line or the cut
-/// resolves no point.
-fn shipped_force_point(
-    operation: &rs_cam_core::compute::catalog::OperationConfig,
-    tool: &rs_cam_core::compute::tool_config::ToolConfig,
-    material: &rs_cam_core::material::Material,
-    feeds: &rs_cam_core::feeds::FeedsResult,
-) -> Option<rs_cam_core::material::force_line::ForceAtPoint> {
-    rs_cam_core::feeds::operating_point::force_at_operating_point(
-        operation,
-        tool,
-        material,
-        Some(rs_cam_core::feeds::suggest::CalculatorOperatingPoint {
-            radial_width_mm: feeds.radial_width_mm,
-            axial_depth_mm: feeds.axial_depth_mm,
-            feed_rate_mm_min: feeds.feed_rate_mm_min,
-            rpm: feeds.rpm,
-        }),
-    )
-    .ok()
-}
-
 /// The `basis.force_line` object of `get_suggest_rationale` (plan B6 §6).
 ///
 /// The line comes from `Material::force_line`; `point` is the line at the
-/// mean chip of the shipped cut ([`shipped_force_point`]). On a refusal every
+/// mean chip of the shipped cut (`CutterOpProfile::shipped_force_point`). On a refusal every
 /// number is null and `refused` names the variant. `basic_specific_gravity`
 /// is the printed FPL Table 5-5a `Gb` of a species with no Table 5-3a row;
 /// it is null otherwise.
@@ -169,20 +145,24 @@ pub fn suggest_basis_json(
     let (ramp_source_headline, ramp_source_detail) = feeds.ramp.card_text();
     let (ramp_headline, ramp_detail) = ramp_record.map(|record| record.card_text()).unzip();
     let (plunge_headline, plunge_detail) = feeds.plunge.card_text();
-    // The cut Suggest ships, else the input operation.
-    let shipped_operation = profile
-        .suggested_operation
-        .as_ref()
-        .unwrap_or(profile.operation);
-    let force_point =
-        shipped_force_point(shipped_operation, profile.tool_cfg, profile.material, feeds);
-    let force_line = force_line_json(profile.material, force_point);
+    // The cut Suggest ships, else the input operation (P14, review M9: the
+    // core doors the GUI card and the CLI read).
+    let shipped_operation = profile.shipped_operation();
+    let force_line = force_line_json(profile.material, profile.shipped_force_point());
+    let shipped_power = profile
+        .shipped_power()
+        .map_or(serde_json::Value::Null, |figure| {
+            rs_cam_core::feeds::operating_point::shipped_power_json(&figure)
+        });
     serde_json::json!({
         "headline": headline,
         "detail": detail,
         "hardness": hardness,
         "tied_rows": tied_rows,
         "force_line": force_line,
+        // P14 (review M9): the power at the shipped cut, the CLI
+        // `suggest` record's `shipped_power` object.
+        "shipped_power": shipped_power,
         // P11c (D13 item 6): the machine class and how the rigidity values
         // (the depth caps, the slot cap, the adaptive width) are known. The
         // CLI `suggest` record prints the same two texts.

@@ -20,7 +20,7 @@
 //!
 //! # Red proof
 //!
-//! With the old row (`DressupPolicy::ANY_DRESSUP`, the Finish-role lead-in
+//! With the old row (`LeadLinkPolicy::AS_CONFIGURED`, the Finish-role lead-in
 //! on) on this fixture, 2026-10-14: claim (a) failed with **2 227 cells cut
 //! outside the outline + one cell, up to 2.147 mm out, 0.113 mm deep**, and
 //! claim (b) failed on the first lead arc. With the stripped row: 0 cells,

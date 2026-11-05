@@ -226,7 +226,7 @@ fn the_badge_and_the_diagnostic_give_one_severity_f033() {
         "the MCP route names the retract below the top as Critical: {diags:?}"
     );
     let badge_of_worst = match worst {
-        Severity::Blocking | Severity::Critical => Some(tokens::DANGER),
+        Severity::Severe | Severity::Critical => Some(tokens::DANGER),
         Severity::Caution => Some(tokens::CAUTION),
         Severity::Info | Severity::Hint => None,
     };

@@ -79,7 +79,7 @@
 //! The class: a sample below the limit cuts into the leave. It cuts into
 //! the model only when it is also below the model surface less the op
 //! tolerance (`ModelGougeFinding::below_surface_mm`). Only that case is
-//! Blocking and the export warns on it; a cut into the leave alone is Caution
+//! Severe and the export warns on it; a cut into the leave alone is Caution
 //! ([`ModelGougeFinding::severity`]). Under `Allowance` the limit and that
 //! surface differ by the leave at every sample, so the deepest sample below
 //! the limit is also the deepest below the surface.
@@ -253,20 +253,20 @@ impl ModelGougeFinding {
     /// warns (`safety.cuts_into_model`, K6). Under every rule except
     /// `Allowance` this is [`Self::gouges`].
     #[must_use]
-    pub fn blocks_export(&self) -> bool {
+    pub fn warns_at_export(&self) -> bool {
         self.gouges() && self.below_surface_mm > MODEL_GOUGE_Z_TOL_MM
     }
 
-    /// The class of the finding: `None` when clean, `Blocking` when it cuts
-    /// into the model ([`Self::blocks_export`]), and `Caution` when it cuts
+    /// The class of the finding: `None` when clean, `Severe` when it cuts
+    /// into the model ([`Self::warns_at_export`]), and `Caution` when it cuts
     /// into the leave only (B2, operator ruling 2026-10-23).
     #[must_use]
     pub fn severity(&self) -> Option<crate::diagnostics::Severity> {
         use crate::diagnostics::Severity;
         if !self.gouges() {
             None
-        } else if self.blocks_export() {
-            Some(Severity::Blocking)
+        } else if self.warns_at_export() {
+            Some(Severity::Severe)
         } else {
             Some(Severity::Caution)
         }
@@ -292,7 +292,7 @@ impl ModelGougeFinding {
             );
         }
         if let ModelGougeRule::Allowance { fix } = self.rule {
-            let blocks = self.blocks_export();
+            let blocks = self.warns_at_export();
             let class = if blocks {
                 "The toolpath cuts into the model"
             } else {

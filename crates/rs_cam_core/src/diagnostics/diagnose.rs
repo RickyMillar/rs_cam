@@ -90,7 +90,7 @@ pub struct ToolpathDiagnoseInputs<'a> {
     pub stats: Option<&'a crate::compute::toolpath_stats::ToolpathStats>,
     /// Model cross-reference context (F-023). Carries the toolpath's
     /// `model_id` together with whether it resolves against the loaded
-    /// project models, so the unified pipeline emits a `Blocking`
+    /// project models, so the unified pipeline emits a `Severe`
     /// `ref.model_missing` diagnostic the same way the GUI banner
     /// does. `None` for callers without a session — the check is
     /// skipped rather than crashed.

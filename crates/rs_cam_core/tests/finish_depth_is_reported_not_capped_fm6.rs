@@ -40,7 +40,7 @@ use rs_cam_core::compute::tool_config::{ToolConfig, ToolId, ToolMaterial, ToolTy
 use rs_cam_core::diagnostics::adapters::from_tool_load::diagnostics_from_load_verdict;
 use rs_cam_core::diagnostics::{DiagnosticEvidence, DiagnosticState, Severity, ids};
 use rs_cam_core::feeds::envelope::{EnvelopeInput, LimitKind, PickRequest, SafeEnvelope};
-use rs_cam_core::feeds::geometry::{depth_cap_diameter_mm, feed_ladder_diameter_mm};
+use rs_cam_core::feeds::geometry::depth_cap_diameter_mm;
 use rs_cam_core::feeds::suggest::{
     OperationApplyInput, StockContext, SuggestContext, SuggestWarning, apply_to_operation,
 };
@@ -421,12 +421,12 @@ fn suggest_and_the_gate_read_one_engaged_diameter_on_a_tapered_ball_fm6() {
 }
 
 /// In the cone of the same tapered ball (6 mm deep, Adaptive), the gate's
-/// cap diameter is the engaged cone diameter, and the feed's depth ladder
-/// divides by the same diameter (`feed_ladder_diameter_mm`, the parity
-/// twin of `lookup_diameter_at`). EVIDENCE 6-10: the gate's ×0.704 was the
-/// ladder at the cone diameter; the feed now reads that diameter too.
+/// cap diameter is the engaged cone diameter. EVIDENCE 6-10: the gate's
+/// ×0.704 was the ladder at the cone diameter. The feed's depth ladder is
+/// retired (P11b); feeds contract P14 deleted its diameter function
+/// (`feed_ladder_diameter_mm`, no production reader).
 #[test]
-fn the_feed_ladder_and_the_gate_read_the_cone_diameter_fm6() {
+fn the_gate_reads_the_cone_diameter_fm6() {
     const DEPTH_MM: f64 = 6.0;
     let tool = tool_of(ToolType::TaperedBallNose, 3.175);
     let cutter = build_cutter(&tool).unwrap();
@@ -444,16 +444,6 @@ fn the_feed_ladder_and_the_gate_read_the_cone_diameter_fm6() {
         panic!("an Adaptive cap is a factor, got {bound:?}")
     };
     assert_eq!(diameter_mm, engaged);
-    let ladder = feed_ladder_diameter_mm(
-        cutter.geometry_hint(),
-        DEPTH_MM,
-        tool.diameter,
-        tool.shank_diameter_planning_mm(),
-    );
-    assert!(
-        (ladder - engaged).abs() < 1e-9,
-        "the feed ladder diameter {ladder} and the gate diameter {engaged} must agree"
-    );
     assert!(
         engaged > tool.diameter + 0.1 && engaged < cutter.diameter() - 0.1,
         "vacuous: 6 mm deep must sit in the cone, between the tip {} and the shank {}: \

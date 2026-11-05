@@ -768,7 +768,7 @@ pub(super) fn draw_linking_params(
     // controls out so the UI reflects what compute actually does. Read from
     // the SAME registry policy `DressupConfig::normalize_for_op` applies.
     let row = entry.operation.op_type().registry_entry();
-    let op_incompatible_msg: Option<&str> = row.dressup_policy.strip_all_reason;
+    let op_incompatible_msg: Option<&str> = row.lead_link_policy.strip_reason;
     // F5 (W3e): ONE predicate. K4: an op whose entry contract is not
     // `Dressup` (the strip-all ops, 3D Rough, Drill, Trace, Pin Drill)
     // ignores the dressup entry style. The row, its diagram and its

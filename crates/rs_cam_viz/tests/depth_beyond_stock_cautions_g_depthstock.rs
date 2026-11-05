@@ -321,7 +321,7 @@ fn a_the_rule_reads_the_excess_and_the_diagnostic_carries_its_id() {
     assert!(
         !diags
             .iter()
-            .any(|d| matches!(d.severity, Severity::Blocking | Severity::Critical)),
+            .any(|d| matches!(d.severity, Severity::Severe | Severity::Critical)),
         "(a) nothing on the header blocks: {:?}",
         diags
             .iter()

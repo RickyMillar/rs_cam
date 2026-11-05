@@ -75,10 +75,11 @@ pub use crate::tool_load::BindingConstraint;
 #[derive(Debug, Default, Clone, Copy, PartialEq, Eq)]
 pub enum ModulationStrategy {
     /// F-036 "target band-mid" heuristic. Walks the chipload band's
-    /// geometric mid as the target and applies the chip-thinning
-    /// correction (`1 / sqrt(radial_woc_fraction)`), then clamps at
-    /// the band edges and the machine cap. Kept as a fallback for
-    /// one release cycle.
+    /// geometric mid as the target and applies the chip-thinning lift of
+    /// the one rule (`RadialThinning`, Garr; feeds contract P14, review
+    /// M2: it was `1 / sqrt(radial_woc_fraction)`), then clamps at the
+    /// band edges and the machine cap. Kept as a fallback for one release
+    /// cycle.
     BandMid,
     /// F-039 constrained-max solver (default). Computes the smallest
     /// of six candidate feed limits — chipload-max, deflection-max,
@@ -853,8 +854,9 @@ fn band_mid_feed_for_move(
         return (commanded_feed_mm_min, BindingConstraint::ChiploadMax);
     }
     let woc = engagement.radial_woc_fraction.clamp(1e-3, 1.0);
-    let thinning = woc.sqrt().max(1e-6);
-    let target_chipload = band.mid_mm_per_tooth() / thinning;
+    // Feeds contract P14 (review M2): the modulator's one thinning rule
+    // (Garr; 1 on a finish pass or a drill cycle).
+    let target_chipload = band.mid_mm_per_tooth() * move_thinning_lift(engagement, ctx, woc);
     let flutes = ctx.flute_count.max(1) as f64;
     let base_feed = target_chipload * ctx.spindle_rpm * flutes;
 
@@ -1538,9 +1540,11 @@ mod tests {
         }
     }
 
-    /// BandMid: light engagement clamps at band-ceiling feed.
+    /// BandMid: a light engagement lifts the band mid by Garr's law.
+    /// Feeds contract P14 (review M2) moved this number: the old law
+    /// (0.04 / sqrt(0.1) = 0.1265 > 0.08) clamped at the ceiling 2880.
     #[test]
-    fn band_mid_light_engagement_clamps_at_band_ceiling() {
+    fn band_mid_light_engagement_lifts_by_garr() {
         let mut tp = straight_toolpath(2, 1500.0);
         let engagements = vec![
             PerMoveEngagement::default(),
@@ -1566,11 +1570,11 @@ mod tests {
         ctx.strategy = ModulationStrategy::BandMid;
         adaptive_feed_modulate(&mut tp, &engagements, &ctx).unwrap();
         let f = tp.moves[1].move_type.feed_rate().unwrap();
-        // 0.08 × 18000 × 2 = 2880.
-        assert!(
-            (f - 2880.0).abs() < 5.0,
-            "expected band ceiling 2880, got {f}"
-        );
+        // Garr at woc 0.1: lift = 1 / sin(acos(1 - 2 x 0.1)) = 1 / 0.6.
+        // Chip 0.04 / 0.6 = 0.0667 (band 0.02..0.08, geometric mid 0.04),
+        // below the 0.08 ceiling: 0.04 / 0.6 x 18000 x 2 = 2400.
+        let want = 0.04 / 0.6 * 18000.0 * 2.0;
+        assert!((f - want).abs() < 5.0, "expected {want}, got {f}");
     }
 
     /// S.4 regression: when the machine cap ties the band ceiling at the

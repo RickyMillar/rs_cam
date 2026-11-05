@@ -1123,7 +1123,7 @@ fn a_field_finding_dots_the_tab_of_its_field_w2b() {
         crate::state::toolpath::OperationType::Pocket,
     );
     let list = [
-        finding(ids::PRECOND_SELECTION_REFUSED, Severity::Blocking),
+        finding(ids::PRECOND_SELECTION_REFUSED, Severity::Severe),
         finding(ids::LOAD_CHIPLOAD_HIGH, Severity::Caution),
         finding(ids::PROJECT_PIN_WALL_THIN, Severity::Critical),
         finding(ids::PROJECT_GENERATED_EMPTY, Severity::Critical),

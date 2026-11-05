@@ -199,8 +199,9 @@ impl CurrentValues {
 /// What `⚡ Apply all` writes on each row of the comparison card.
 ///
 /// G-RECOMAPPLIED (2026-09-24). The card's recommended column printed the
-/// raw calculator DOC and WOC. `⚡ Apply all` writes the values after
-/// `enforce_invariants`. On a Ø6 hardwood pocket the column
+/// raw calculator DOC and WOC. `⚡ Apply all` wrote the values after the
+/// `enforce_invariants` chain (deleted in feeds contract P5). On a Ø6
+/// hardwood pocket the column
 /// read "DOC 0.81 mm → 4.20 mm" while the apply wrote 0.81 mm again.
 ///
 /// This record holds the funnel's own dry run,

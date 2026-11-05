@@ -69,7 +69,7 @@ fn a_blocked_result_does_not_read_ok_f20() {
     let (finding, danger) =
         warning_finding(Some(&gouged), id).expect("a gouge is a warning finding");
     assert_eq!(finding.id.as_str(), ids::SAFETY_CUTS_INTO_MODEL);
-    assert_eq!(finding.severity, Severity::Blocking);
+    assert_eq!(finding.severity, Severity::Severe);
     assert_eq!(danger, rs_cam_core::diagnostics::Danger::Part);
     assert!(
         finding

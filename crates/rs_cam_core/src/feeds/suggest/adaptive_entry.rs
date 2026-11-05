@@ -388,7 +388,7 @@ pub(super) fn rescale_feed_to_final_geometry(
 /// Only when pass 9 actually moved the feed — `enforce_invariants_at_fixed_geometry` gates on
 /// [`SuggestWarning::FeedRescaledToFinalGeometry`]. An operation no pass
 /// touched keeps its feed **byte-identical**, which is the same contract pass
-/// 9 holds and which `tests/suggest_feed_matches_final_geometry.rs` pins.
+/// 9 holds (its sentry went with the P5 chain deletion).
 ///
 /// # What it evaluates
 ///
@@ -558,11 +558,8 @@ pub(super) fn recheck_power_after_rescale(
 // measured clean 4/4 on the same fixtures (`feed_modulation`, whose default
 // was flipped ON under Checkpoint J-3).
 //
-// `SuggestWarning::FeedRaisedForChipload` and
-// `SuggestWarning::ChiploadStillLowAfterRecalibration` were deliberately
-// KEPT (J-5) so the simulation-backed path can report its own measured feed
-// changes through the vocabulary the rationale renderer already speaks.
-// Nothing in Suggest constructs them today.
+// J-5 kept the two lift warnings for the simulation-backed path. That path
+// never used them, and feeds contract P14 deleted them (no producer).
 
 /// Returns `Some(label)` when `operation` is an Adaptive-family op whose
 /// entry_style is `Plunge`. Used by `enforce_invariants_at_fixed_geometry` for the v1.3

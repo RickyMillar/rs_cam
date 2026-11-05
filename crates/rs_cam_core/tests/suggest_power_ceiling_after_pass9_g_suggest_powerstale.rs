@@ -107,8 +107,9 @@
 //! — and it reproduces: 110.67 % of the gate ceiling on a recipe Step 6 had
 //! clamped ONTO that ceiling. Pass 10 (`recheck_power_after_rescale`) now
 //! re-evaluates the ceiling at the shipped operating point. The fixture and
-//! the arithmetic are in
-//! `tests/a_rescaled_feed_stays_inside_the_power_ceiling_g_t15.rs`.
+//! the arithmetic were in
+//! `tests/a_rescaled_feed_stays_inside_the_power_ceiling_g_t15.rs`, which
+//! feeds contract P5 deleted with the chain.
 //!
 //! The general rule the register draws from this stands: **a sweep that does
 //! not fire is evidence about the sweep.**

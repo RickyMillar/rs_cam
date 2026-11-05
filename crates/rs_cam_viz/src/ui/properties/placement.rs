@@ -288,7 +288,7 @@ pub(crate) fn drawn_fields(config: &OperationConfig) -> BTreeMap<&'static str, T
 fn role_of(d: &Diagnostic) -> crate::ui::components::Role {
     use crate::ui::components::Role;
     match d.severity {
-        Severity::Blocking | Severity::Critical => Role::Danger,
+        Severity::Severe | Severity::Critical => Role::Danger,
         Severity::Caution => Role::Caution,
         Severity::Info | Severity::Hint => Role::Info,
     }
@@ -586,7 +586,7 @@ mod tests {
         let mut stale = finding("e", Anchor::Operation, Severity::Caution);
         stale.state = DiagnosticState::NeedsSimulation;
         let list = vec![
-            finding("a", Anchor::Tool, Severity::Blocking),
+            finding("a", Anchor::Tool, Severity::Severe),
             // A Drop Cutter has no selection, so no Cuts row (W3f: the op
             // decides). W2b dotted the Geometry tab for it.
             finding("b", Anchor::field("selection"), Severity::Caution),

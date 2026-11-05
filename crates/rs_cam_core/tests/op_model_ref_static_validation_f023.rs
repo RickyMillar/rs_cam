@@ -1,6 +1,6 @@
 //! F-023 regression — toolpath `model_id` references that don't
 //! resolve against the loaded project must surface as a
-//! `Severity::Blocking` `ref.model_missing` diagnostic through
+//! `Severity::Severe` `ref.model_missing` diagnostic through
 //! [`rs_cam_core::session::ProjectSession::diagnose_toolpath_with_trace`].
 //!
 //! Before this fix the check lived in the viz-side `validate_toolpath`
@@ -139,7 +139,7 @@ fn pocket_op_with_unresolved_model_id_surfaces_blocking_diagnostic() {
         .iter()
         .find(|d| d.id.as_str() == ids::REF_MODEL_MISSING)
         .unwrap();
-    assert_eq!(diag.severity, Severity::Blocking);
+    assert_eq!(diag.severity, Severity::Severe);
     assert!(
         diag.message.contains("999"),
         "message should cite the invalid model_id, got: {}",

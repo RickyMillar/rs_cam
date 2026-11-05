@@ -51,7 +51,9 @@ pub use feed_explanation::{
     LutBandStage, ObservedStatistic,
 };
 pub use lock::{FeedsLock, SpeedEdit, SpeedField, SpeedRanges, SpeedWrite};
-pub use operating_point::{PowerFigure, PowerUnmodeled, power_at_operating_point};
+pub use operating_point::{
+    PowerFigure, PowerUnmodeled, power_at_operating_point, power_at_shipped_point,
+};
 pub use plunge::{PlungeBasis, PlungeBinding};
 pub use predict::{
     DeflectionBreakdown, DeflectionCaveat, DeflectionPrediction, DeflectionUnmodeled,
@@ -144,10 +146,8 @@ impl ToolGeometryHint {
     /// the lookup does not use it for a V-bit either: the row is read at
     /// the nominal diameter, or at its printed angle.
     ///
-    /// For a tapered ball the depth ladder, the band de-rate and the depth
-    /// cap still use this engaged diameter
-    /// ([`geometry::depth_derate_diameter_mm`],
-    /// [`geometry::depth_derate_diameter_for_cutter`]). For a V-bit, B4
+    /// For a tapered ball the depth cap still uses this engaged diameter
+    /// ([`geometry::depth_derate_diameter_for_cutter`]). For a V-bit, B4
     /// step 2 moves those three to the nominal diameter too; only the
     /// surface-speed RPM and the formula chip load still use this engaged
     /// diameter.
@@ -630,7 +630,7 @@ pub struct FeedsDerates {
     ///
     /// **Not a feed factor since ruling R4 Q7 (2026-09-24).** The feed does
     /// not take it; the share is a reported record. It is therefore NOT part
-    /// of [`Self::combined_factor`]. Suggest pass 6b, which read it, is
+    /// of [`Self::combined_factor`]. The Suggest dial pass that read it is
     /// deleted (P5), and D9 (2026-11-04) removed the machine dial.
     pub ld_overhang: f64,
     /// Power-limit factor (≤ 1.0). Applied when the calc had to back
@@ -1782,7 +1782,7 @@ fn chip_basis_of_row(row: &vendor_lookup::LookupResult) -> Basis {
 /// `effective_d` must be the CHIP-THINNING diameter — the circle that
 /// actually touches material at this DOC — because it sets both the
 /// immersion angle ψ and the cutting velocity `Vc = π·D·n`. That is the
-/// same binding `radial_chip_thinning_factor` reads, not the LUT-row
+/// same binding `RadialThinning::lift` reads, not the LUT-row
 /// diameter this function's callers shadowed earlier.
 fn power_model_terms(
     input: &FeedsInput,
@@ -2744,12 +2744,9 @@ fn default_engagement(
 /// `crates/rs_cam_core/src/feeds/geometry.rs` for what was retired and
 /// `tests/tapered_width_model_parity_c3.rs` for what it cost.
 ///
-/// Made `pub` on 2026-08-19 for Suggest pass 9's regression sentry
-/// (`tests/suggest_feed_matches_final_geometry.rs`), which reconstructs the
-/// calculator's geometry-dependent feed terms at two operating points. The
-/// sentry deliberately calls THIS function rather than carrying a copy — a
-/// second implementation of the chip-thinning diameter is exactly what C3
-/// retired above.
+/// Made `pub` on 2026-08-19 for a Suggest pass 9 sentry. Feeds contract P5
+/// deleted that sentry (`suggest_feed_matches_final_geometry`). Do not add
+/// a second copy of the chip-thinning diameter: C3 retired that copy.
 pub fn effective_diameter(geom: ToolGeometryHint, nominal_d: f64, shank_d: f64, ap: f64) -> f64 {
     match geom {
         ToolGeometryHint::Flat => nominal_d,

@@ -1375,7 +1375,7 @@ mod tests {
         // diameter (T-17), so the hand calculation must use the same section,
         // or the two sides describe different beams and the test stops
         // measuring the integrator. The VALUE of the fraction belongs to
-        // `tests/the_bending_diameter_knows_the_flute_count_g_bendeq.rs`; this
+        // `tests/the_bending_section_is_one_sourced_fraction_g_bendeq.rs`; this
         // test reads it from the same function so the two cannot drift.
         let cutter = Box::new(FlatEndmill::new(6.0, 60.0));
         let td = ToolDefinition::new(cutter, 6.0, 45.0, 2, ToolMaterial::Carbide);

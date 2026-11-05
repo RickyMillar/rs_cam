@@ -129,7 +129,6 @@ use rs_cam_core::compute::operation_configs::{
 };
 use rs_cam_core::compute::tool_config::ToolConfig;
 use rs_cam_core::compute::toolpath_stats::StockSnapshotStamp;
-use rs_cam_core::feeds::suggest::SuggestWarning;
 use rs_cam_core::machine::MachineProfile;
 use rs_cam_core::material::{Material, WoodSpecies};
 use rs_cam_core::session::{
@@ -580,9 +579,6 @@ struct SuggestRead {
     /// outlives pass 8 because every arm still runs at this RPM, which is
     /// what makes the A/B/C delta attributable to the feed alone.
     rpm: u32,
-    /// Whether either retired chipload-lift warning appeared. Must be
-    /// `false` — nothing in Suggest constructs them since 2026-08-13.
-    any_retired_lift_warning: bool,
 }
 
 impl SuggestRead {
@@ -636,13 +632,6 @@ fn suggest_read(session: &ProjectSession, fx: &Fixture) -> SuggestRead {
         rpm: suggested
             .spindle_rpm()
             .unwrap_or_else(|| feeds.rpm.round() as u32),
-        any_retired_lift_warning: profile.warnings.iter().any(|w| {
-            matches!(
-                w,
-                SuggestWarning::FeedRaisedForChipload { .. }
-                    | SuggestWarning::ChiploadStillLowAfterRecalibration { .. }
-            )
-        }),
     }
 }
 
@@ -724,14 +713,9 @@ fn retired_lift_leaves_feed_at_the_calculator_value() {
             r.band.map_or(f64::NAN, |b| b.1),
         );
 
-        // 1 — the lift is gone from the warning stream.
-        assert!(
-            !r.any_retired_lift_warning,
-            "{}: no Suggest pass has constructed FeedRaisedForChipload or \
-             ChiploadStillLowAfterRecalibration since 2026-08-13 (Checkpoint J-1/J-5)",
-            fx.label
-        );
-
+        // 1 — the lift is gone from the warning stream: feeds contract P14
+        // deleted both lift warnings from `SuggestWarning`, so the type
+        // holds this check.
         // 2 — Suggest ships the calculator's feed.
         if (r.shipped_feed - fx.expected_suggest_feed).abs() >= 0.5 {
             mismatches.push(format!(

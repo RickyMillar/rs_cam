@@ -68,15 +68,14 @@ pub struct FeedOptParams {
     pub plunge_rate_mm_min: Option<f64>,
 }
 
-/// Compute the Radial Chip Thinning Factor (RCTF).
+/// Compute the Radial Chip Thinning Factor (RCTF) at an ae fraction (0..1).
 ///
-/// Delegates to `feeds::geometry::radial_chip_thinning_factor` for the shared
-/// implementation. This wrapper accepts an ae fraction (0..1) instead of
-/// absolute mm values.
+/// Feeds contract P14 (review M2): the one law, `RadialThinning::Applied`
+/// (Garr, `1 / sin psi`, no cap) on a unit diameter, so the fraction is
+/// `ae / D`. Before P14 this read a copy clamped to `[1, 4]`; the feed
+/// ceiling now bounds the lift (`.min(ceiling)` at the call site).
 fn rctf(ae_fraction: f64) -> f64 {
-    // Convert fraction to absolute values — use diameter = 1.0 so ae_fraction
-    // directly represents ae/D ratio.
-    crate::feeds::geometry::radial_chip_thinning_factor(ae_fraction, 1.0)
+    crate::feeds::geometry::RadialThinning::Applied.lift(ae_fraction, 1.0)
 }
 
 /// Estimate material engagement fraction at a point using the tri-dexel stock.

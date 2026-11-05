@@ -662,7 +662,7 @@ impl RsCamApp {
                     "id": format!("runtime.generate_error.{}", tc.id),
                     "scope": { "kind": "toolpath", "id": tc.id },
                     "category": "state",
-                    "severity": "blocking",
+                    "severity": "severe",
                     "confidence": "verified",
                     "state": "current",
                     "source": { "kind": "gui_runtime", "toolpath_index": index },

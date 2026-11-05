@@ -1042,7 +1042,7 @@ impl SafeEnvelope {
     ///   operator's stated point; a simulation sample with a lighter cut than
     ///   the plan crosses no limit, so the floors do not place it.
     /// - The `Diameter` ceiling is the engaged diameter at the sample depth
-    ///   (`tool.d_eng_mm`, from `Engagement::d_eng`), not the nominal
+    ///   (`tool.d_eng_mm`, from `Engagement::d_eng_mm`), not the nominal
     ///   diameter: a tapered ball or a V-bit cuts wider than its tip as the
     ///   cone engages (lead decision, 2026-11-05). For a flat tool the two
     ///   are equal.
@@ -2320,6 +2320,23 @@ fn refine_budget_columns(
     top: f64,
     solve: impl Fn(f64) -> Option<crate::feeds::force_budget::BudgetDepth>,
 ) {
+    // P14 (STATUS 4d0): a pure memo of `solve` by the exact width bits. The
+    // split loop re-solves the midpoint of every segment that did not split
+    // on each level; `solve` is deterministic, so a cached answer is the
+    // answer it would give again, and every output stays the same.
+    let memo = std::cell::RefCell::new(std::collections::HashMap::<
+        u64,
+        Option<crate::feeds::force_budget::BudgetDepth>,
+    >::new());
+    let solve = |ae: f64| {
+        let key = ae.to_bits();
+        if let Some(hit) = memo.borrow().get(&key) {
+            return *hit;
+        }
+        let answer = solve(ae);
+        memo.borrow_mut().insert(key, answer);
+        answer
+    };
     let depth = |c: Option<crate::feeds::force_budget::BudgetDepth>| {
         c.and_then(crate::feeds::force_budget::BudgetDepth::ceiling_mm)
             .unwrap_or(top)

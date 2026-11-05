@@ -300,8 +300,8 @@ pub(crate) fn draw_inspector_comparison(
     )
     .map(rs_cam_core::feeds::AdvancePerToothMm::mm);
     // G-FEEDSLABEL (UX-R03-005), G-RECOMAPPLIED (2026-09-24): the
-    // recommended DOC / WOC are the values `⚡ Apply all` writes, after
-    // `enforce_invariants`. Until 2026-09-24 the
+    // recommended DOC / WOC are the values `⚡ Apply all` writes (the
+    // funnel's dry run, `preview_field_applies`). Until 2026-09-24 the
     // column printed the raw calculator values. On a Ø6 hardwood pocket it
     // recommended 4.20 mm of DOC where the apply wrote 0.81 mm. Each row's
     // hover keeps the calculator value. The advance row prints
@@ -843,9 +843,11 @@ impl PowerReading {
     /// Evaluate the power this operation will draw at the point it ships.
     ///
     /// **Not `FeedsResult::power_kw`.** That figure sits at the CALCULATOR's
-    /// geometry, and `enforce_invariants` lowers the depth per pass
-    /// afterwards; on a shipped Ø12 roughing preset the published figure is
-    /// 11.96× the power at the depth that cuts. The recommendation supplies
+    /// geometry, and the operation can ship a different depth per pass (the
+    /// operator's value or the envelope pick). Before feeds contract P5 the
+    /// deleted `enforce_invariants` chain lowered the depth; on a shipped Ø12
+    /// roughing preset the figure was 11.96× the power at the depth that
+    /// cuts. The recommendation supplies
     /// only the FALLBACK point here, for an operation that exposes no depth,
     /// no stepover or no speed of its own — the surface-following finishes
     /// command no axial step, so the calculator's value is the correct
@@ -857,22 +859,24 @@ impl PowerReading {
         machine: &rs_cam_core::machine::MachineProfile,
         recommended: &rs_cam_core::feeds::FeedsResult,
     ) -> Self {
-        let fallback = Some(rs_cam_core::feeds::suggest::CalculatorOperatingPoint {
-            radial_width_mm: recommended.radial_width_mm,
-            axial_depth_mm: recommended.axial_depth_mm,
-            feed_rate_mm_min: recommended.feed_rate_mm_min,
-            rpm: recommended.rpm,
-        });
-        let figure = rs_cam_core::feeds::power_at_operating_point(
-            operation, tool, material, machine, fallback,
+        // P14 (review M9): the one core door of the shipped point.
+        let figure = rs_cam_core::feeds::power_at_shipped_point(
+            operation,
+            tool,
+            material,
+            machine,
+            recommended,
         );
         let source = figure
             .as_ref()
             .ok()
             .map(|figure| BoundSource::MachinePowerCurve { rpm: figure.rpm });
         let force_point = figure.as_ref().ok().map(|figure| figure.force).or_else(|| {
-            rs_cam_core::feeds::operating_point::force_at_operating_point(
-                operation, tool, material, fallback,
+            rs_cam_core::feeds::operating_point::force_at_shipped_point(
+                operation,
+                tool,
+                material,
+                recommended,
             )
             .ok()
         });

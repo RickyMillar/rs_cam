@@ -1094,7 +1094,7 @@ pub fn warning_finding(
     rs_cam_core::diagnostics::adapters::from_generation::diagnostics_from_generation(id, stats?)
         .into_iter()
         .find_map(|d| {
-            if !matches!(d.severity, Severity::Blocking | Severity::Critical) {
+            if !matches!(d.severity, Severity::Severe | Severity::Critical) {
                 return None;
             }
             let danger = rs_cam_core::diagnostics::ids::warn_danger(d.id.as_str())?;

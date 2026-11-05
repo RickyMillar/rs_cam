@@ -100,7 +100,7 @@ fn an_add_with_no_fitting_tool_makes_the_op_r2() {
         "the refusal names the state and the fix: {text}"
     );
 
-    // The diagnostics hold the no-tool finding, Blocking, with the fix.
+    // The diagnostics hold the no-tool finding, Severe, with the fix.
     let diags = s
         .diagnose_toolpath_with_trace(index, None)
         .expect("the diagnostics of an op with no tool");
@@ -108,10 +108,7 @@ fn an_add_with_no_fitting_tool_makes_the_op_r2() {
         .iter()
         .find(|d| d.id.as_str() == ids::PRECOND_NO_TOOL)
         .unwrap_or_else(|| panic!("no `precondition.no_tool` in {diags:?}"));
-    assert_eq!(
-        finding.severity,
-        rs_cam_core::diagnostics::Severity::Blocking
-    );
+    assert_eq!(finding.severity, rs_cam_core::diagnostics::Severity::Severe);
     assert!(
         finding.message.contains(CHOOSE_A_TOOL_FIX),
         "{}",

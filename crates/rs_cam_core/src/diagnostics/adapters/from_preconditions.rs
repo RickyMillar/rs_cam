@@ -27,7 +27,7 @@
 //!   `model_id` must point at a polygon-bearing model) AND a target
 //!   surface mesh (either the same model or any other loaded model).
 //!
-//! Each precondition emits a `Severity::Blocking` diagnostic so the
+//! Each precondition emits a `Severity::Severe` diagnostic so the
 //! params banner surfaces it as actionable and the export gate refuses
 //! to proceed. Confidence is `Static` (config-only check, no sim
 //! required) and `state` is `Current`.
@@ -133,7 +133,7 @@ pub fn diagnostics_from_preconditions(
                     id: DiagnosticId::from(ids::PRECOND_ALIGNMENT_PIN_DRILL_NO_HOLES),
                     scope: scope.clone(),
                     category: Category::Geometry,
-                    severity: Severity::Blocking,
+                    severity: Severity::Severe,
                     confidence: Confidence::Static,
                     state: DiagnosticState::Current,
                     source: Source::StaticValidation,
@@ -197,7 +197,7 @@ fn no_tool(scope: &Scope, ctx: &PreconditionContext) -> Option<Diagnostic> {
         id: DiagnosticId::from(ids::PRECOND_NO_TOOL),
         scope: scope.clone(),
         category: Category::Geometry,
-        severity: Severity::Blocking,
+        severity: Severity::Severe,
         confidence: Confidence::Static,
         state: DiagnosticState::Current,
         source: Source::StaticValidation,
@@ -274,7 +274,7 @@ fn not_set(scope: &Scope, op: &OperationConfig, ctx: &PreconditionContext) -> Op
         id: DiagnosticId::from(ids::PRECOND_NOT_SET),
         scope: scope.clone(),
         category,
-        severity: Severity::Blocking,
+        severity: Severity::Severe,
         confidence: Confidence::Static,
         state: DiagnosticState::Current,
         source: Source::StaticValidation,
@@ -291,7 +291,7 @@ fn not_set(scope: &Scope, op: &OperationConfig, ctx: &PreconditionContext) -> Op
 /// UX-1c (operator ruling 2026-10-22, SAFETY): a one-depth op on fresh
 /// stock whose face pick is below the stock top. The message is the
 /// buried-face sentence (the cause and the fix). K6 (ruling Q6, E1): a
-/// warning; the op generates, so the severity is `Critical`, not `Blocking`.
+/// warning; the op generates, so the severity is `Critical`, not `Severe`.
 fn buried_face(scope: &Scope, ctx: &PreconditionContext) -> Option<Diagnostic> {
     let message = ctx.buried_face_refusal.as_ref()?;
     Some(Diagnostic {
@@ -324,7 +324,7 @@ fn selection_refused(scope: &Scope, ctx: &PreconditionContext) -> Option<Diagnos
         id: DiagnosticId::from(ids::PRECOND_SELECTION_REFUSED),
         scope: scope.clone(),
         category: Category::Geometry,
-        severity: Severity::Blocking,
+        severity: Severity::Severe,
         confidence: Confidence::Static,
         state: DiagnosticState::Current,
         source: Source::StaticValidation,
@@ -345,7 +345,7 @@ fn selection_empty(scope: &Scope) -> Diagnostic {
         id: DiagnosticId::from(ids::PRECOND_SELECTION_EMPTY),
         scope: scope.clone(),
         category: Category::Geometry,
-        severity: Severity::Blocking,
+        severity: Severity::Severe,
         confidence: Confidence::Static,
         state: DiagnosticState::Current,
         source: Source::StaticValidation,
@@ -373,7 +373,7 @@ fn drill_checks(scope: &Scope, ctx: &PreconditionContext) -> Vec<Diagnostic> {
             id: DiagnosticId::from(ids::PRECOND_DRILL_NO_HOLES),
             scope: scope.clone(),
             category: Category::Geometry,
-            severity: Severity::Blocking,
+            severity: Severity::Severe,
             confidence: Confidence::Static,
             state: DiagnosticState::Current,
             source: Source::StaticValidation,
@@ -399,7 +399,7 @@ fn project_curve_checks(scope: &Scope, ctx: &PreconditionContext) -> Vec<Diagnos
             id: DiagnosticId::from(ids::PRECOND_PROJECT_CURVE_NO_CURVE),
             scope: scope.clone(),
             category: Category::Geometry,
-            severity: Severity::Blocking,
+            severity: Severity::Severe,
             confidence: Confidence::Static,
             state: DiagnosticState::Current,
             source: Source::StaticValidation,
@@ -423,7 +423,7 @@ fn project_curve_checks(scope: &Scope, ctx: &PreconditionContext) -> Vec<Diagnos
             id: DiagnosticId::from(ids::PRECOND_PROJECT_CURVE_NO_SURFACE),
             scope: scope.clone(),
             category: Category::Geometry,
-            severity: Severity::Blocking,
+            severity: Severity::Severe,
             confidence: Confidence::Static,
             state: DiagnosticState::Current,
             source: Source::StaticValidation,
@@ -486,7 +486,7 @@ mod tests {
         let diags = diagnostics_from_preconditions(ToolpathId::from_raw(0), &drill_op(), &ctx);
         assert_eq!(diags.len(), 1);
         assert_eq!(diags[0].id.as_str(), ids::PRECOND_DRILL_NO_HOLES);
-        assert_eq!(diags[0].severity, Severity::Blocking);
+        assert_eq!(diags[0].severity, Severity::Severe);
         assert!(
             diags[0].message.starts_with("Drill: nothing to cut"),
             "got {:?}",
@@ -554,7 +554,7 @@ mod tests {
             diags[0].id.as_str(),
             ids::PRECOND_ALIGNMENT_PIN_DRILL_NO_HOLES
         );
-        assert_eq!(diags[0].severity, Severity::Blocking);
+        assert_eq!(diags[0].severity, Severity::Severe);
     }
 
     /// The live case: two pins on the stock. The generator drills the two

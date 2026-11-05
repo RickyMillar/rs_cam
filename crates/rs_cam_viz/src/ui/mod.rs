@@ -47,7 +47,8 @@ use std::path::PathBuf;
 // their absence is a safety property, not a tidy-up. They backed six per-row
 // `Apply` buttons in the Feeds & Speeds modal that wrote
 // `FeedsExplain::recommended` straight into the operation — no validation of
-// the tool × operation pairing, and no `enforce_invariants`, so none of the
+// the tool × operation pairing, and no `enforce_invariants` (the chain that
+// feeds contract P5 deleted), so none of the
 // plunge/stepover clamps, the rigidity and cutting-length DOC clamps, the
 // deflection back-off or the rounding ran. Measured on the shipped default
 // Ø6.35 2-flute flat end mill in a Pocket op, the per-field DOC `Apply` wrote

@@ -76,7 +76,7 @@ fn every_finishing_operation_creates_with_no_entry() {
             "R10: {op:?} ({role:?}) must create with no entry ramp"
         );
         let row = op.registry_entry();
-        if row.dressup_policy.strip_all_reason.is_none()
+        if row.lead_link_policy.strip_reason.is_none()
             && matches!(
                 row.entry,
                 EntryContract::Dressup {

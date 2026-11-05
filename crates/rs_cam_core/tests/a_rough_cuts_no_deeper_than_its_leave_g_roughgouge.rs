@@ -16,10 +16,10 @@
 //! 2. A tip inside the leave band (below the limit, above the surface less
 //!    `t`) is a Caution finding: export does not refuse, and the finding
 //!    gives the depth below the limit and the height above the surface.
-//! 3. A tip below the surface less `t` is Blocking, with both depths, at
+//! 3. A tip below the surface less `t` is Severe, with both depths, at
 //!    the right place. One dip in one move gives the finding at the bottom
 //!    of the dip, on that move.
-//! 4. A tool side past `t` into a wall is Blocking, and the finding names a
+//! 4. A tool side past `t` into a wall is Severe, and the finding names a
 //!    wall: the depth is the wall height above the tip.
 //! 5. The Pocket rule (Surface) is unchanged: its probe keeps the CAD
 //!    tolerance and it reads no allowance. The 2.5D behaviour on a real
@@ -218,7 +218,7 @@ fn a_cut_into_the_leave_is_a_caution_g_roughgouge() {
     let f = run(&floor_mesh(), &zigzag_at(z), rule, a);
     assert!(f.gouges(), "{f:?}");
     assert_eq!(f.severity(), Some(Severity::Caution), "{f:?}");
-    assert!(!f.blocks_export(), "{f:?}");
+    assert!(!f.warns_at_export(), "{f:?}");
     assert!(near(f.deepest_mm, 2.0 * MODEL_GOUGE_Z_TOL_MM), "{f:?}");
     assert!(
         near(f.below_surface_mm, 2.0 * MODEL_GOUGE_Z_TOL_MM - a.leave_mm),
@@ -233,16 +233,16 @@ fn a_cut_into_the_leave_is_a_caution_g_roughgouge() {
     assert!(m.contains("export does not refuse"), "{m}");
 }
 
-/// Claim 3: a tip below the surface less the tolerance is Blocking, with
+/// Claim 3: a tip below the surface less the tolerance is Severe, with
 /// both depths; a dip gives the finding at its bottom, on its move.
 #[test]
-fn a_cut_below_the_surface_is_blocking_at_the_right_place_g_roughgouge() {
+fn a_cut_below_the_surface_is_severe_at_the_right_place_g_roughgouge() {
     let (rule, a) = rough();
     let floor = floor_mesh();
     let z = FLOOR_Z - a.tolerance_mm - 2.0 * MODEL_GOUGE_Z_TOL_MM;
     let f = run(&floor, &zigzag_at(z), rule, a);
-    assert_eq!(f.severity(), Some(Severity::Blocking), "{f:?}");
-    assert!(f.blocks_export(), "{f:?}");
+    assert_eq!(f.severity(), Some(Severity::Severe), "{f:?}");
+    assert!(f.warns_at_export(), "{f:?}");
     // The plunge starts in the air: its first sample is the one clean one.
     assert_eq!(f.gouging + 1, f.judged, "{f:?}");
     assert!(
@@ -276,7 +276,7 @@ fn a_cut_below_the_surface_is_blocking_at_the_right_place_g_roughgouge() {
     let dip_move = tp.moves.len() - 1;
     tp.feed_to(P3::new(-30.0, ROWS[1], at_leave), 1000.0);
     let f = run(&floor, &tp, rule, a);
-    assert_eq!(f.severity(), Some(Severity::Blocking), "{f:?}");
+    assert_eq!(f.severity(), Some(Severity::Severe), "{f:?}");
     assert!(
         near(f.deepest_mm, 1.0 + a.leave_mm - a.tolerance_mm),
         "{f:?}"
@@ -290,7 +290,7 @@ fn a_cut_below_the_surface_is_blocking_at_the_right_place_g_roughgouge() {
     );
 }
 
-/// Claim 4: the tool side past the tolerance into a wall is Blocking, and
+/// Claim 4: the tool side past the tolerance into a wall is Severe, and
 /// the finding names a wall (the depth is the wall height above the tip).
 #[test]
 fn a_tool_past_its_tolerance_into_a_wall_is_blocking_and_named_a_wall_g_roughgouge() {
@@ -298,7 +298,7 @@ fn a_tool_past_its_tolerance_into_a_wall_is_blocking_and_named_a_wall_g_roughgou
     let into = WALL_X - R + a.tolerance_mm + 0.1;
     let tip = FLOOR_Z + a.leave_mm;
     let f = run(&wall_mesh(), &pass_beside_the_wall(into, tip), rule, a);
-    assert_eq!(f.severity(), Some(Severity::Blocking), "{f:?}");
+    assert_eq!(f.severity(), Some(Severity::Severe), "{f:?}");
     assert!(f.at_wall, "{f:?}");
     let limit = BLOCK_Z + a.leave_mm - a.tolerance_mm;
     assert!(near(f.deepest_mm, limit - tip), "{f:?}");
@@ -314,7 +314,7 @@ fn a_tool_past_its_tolerance_into_a_wall_is_blocking_and_named_a_wall_g_roughgou
 }
 
 /// Claim 5: the Pocket rule keeps the CAD tolerance in its probe, reads no
-/// allowance, and every finding it gives is Blocking.
+/// allowance, and every finding it gives is Severe.
 #[test]
 fn the_pocket_rule_reads_no_allowance_g_roughgouge() {
     let (rule, a) = rough();
@@ -346,7 +346,7 @@ fn the_pocket_rule_reads_no_allowance_g_roughgouge() {
         near(surface.below_surface_mm, surface.deepest_mm),
         "{surface:?}"
     );
-    assert_eq!(surface.severity(), Some(Severity::Blocking), "{surface:?}");
+    assert_eq!(surface.severity(), Some(Severity::Severe), "{surface:?}");
     assert!(!surface.at_wall, "{surface:?}");
 }
 

@@ -285,6 +285,63 @@ pub fn force_at_operating_point(
     resolve_operating_point(operation, tool, material, None, fallback).map(|p| p.force)
 }
 
+/// Spindle power at the point `operation` ships, with the point
+/// `recommended` was sized at as the fallback (feeds contract P14, review
+/// M9). The one door of the Feeds card, MCP `get_suggest_rationale` and
+/// the CLI `suggest` record: no surface builds the fallback by hand.
+pub fn power_at_shipped_point(
+    operation: &OperationConfig,
+    tool: &ToolConfig,
+    material: &Material,
+    machine: &MachineProfile,
+    recommended: &crate::feeds::FeedsResult,
+) -> Result<PowerFigure, PowerUnmodeled> {
+    power_at_operating_point(
+        operation,
+        tool,
+        material,
+        machine,
+        Some(CalculatorOperatingPoint::of(recommended)),
+    )
+}
+
+/// The force line at the mean chip of the point `operation` ships, with
+/// the point `recommended` was sized at as the fallback (P14, M9). The
+/// twin of [`power_at_shipped_point`] that needs no machine.
+pub fn force_at_shipped_point(
+    operation: &OperationConfig,
+    tool: &ToolConfig,
+    material: &Material,
+    recommended: &crate::feeds::FeedsResult,
+) -> Result<ForceAtPoint, PowerUnmodeled> {
+    force_at_operating_point(
+        operation,
+        tool,
+        material,
+        Some(CalculatorOperatingPoint::of(recommended)),
+    )
+}
+
+/// The `shipped_power` object that the CLI `suggest` record and MCP
+/// `get_suggest_rationale` print (P14, M9: one shape on both surfaces).
+#[must_use]
+pub fn shipped_power_json(figure: &Result<PowerFigure, PowerUnmodeled>) -> serde_json::Value {
+    match figure {
+        Ok(p) => serde_json::json!({
+            "required_kw": p.required_kw,
+            "available_kw": p.available_kw,
+            "ap_mm": p.ap_mm,
+            "ae_mm": p.ae_mm,
+            "rpm": p.rpm,
+            "feed_mm_min": p.feed_mm_min,
+            // K7 (feeds contract P9): the worst case of the pre-sim set.
+            "case": p.case.label(),
+            "case_ae_mm": p.case_ae_mm,
+        }),
+        Err(e) => serde_json::json!({ "unmodeled": format!("{e:?}") }),
+    }
+}
+
 /// The resolved inputs of one operating point.
 struct ResolvedPoint {
     force: ForceAtPoint,

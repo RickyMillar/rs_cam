@@ -164,7 +164,7 @@ fn buried_face(toolpath_id: ToolpathId, stats: &ToolpathStats) -> Vec<Diagnostic
 
 /// UX-7b (SAFETY): the emitted moves cut into the mesh of the toolpath
 /// model. The verdict and the class are the guard's (`compute::model_gouge`,
-/// `ModelGougeFinding::severity`): `Blocking` when the tip cuts into the
+/// `ModelGougeFinding::severity`): `Severe` when the tip cuts into the
 /// model, and the export warns on the same finding (K6); `Caution` when a 3D Rough
 /// cuts into its stock to leave only (B2). The evidence is the move and the
 /// tip of the deepest gouge, in the setup frame. Silent when the guard did
@@ -248,7 +248,7 @@ fn rest_levels_fallback(toolpath_id: ToolpathId, stats: &ToolpathStats) -> Vec<D
 /// list, so islands the mask found are absent from the artifacts a
 /// `DerivedRestRegions` consumer will be confined to.
 ///
-/// `Caution`. Not `Blocking`: the cap is a deliberate guard and the kept
+/// `Caution`. Not `Severe`: the cap is a deliberate guard and the kept
 /// regions are real geometry. Not `Info` either: the dropped islands are
 /// territory a downstream operation is now forbidden to cut, and nothing else
 /// on any operator surface says so — the pre-F3 trace was a `tracing::warn!`
@@ -302,7 +302,7 @@ fn region_cap_truncated(toolpath_id: ToolpathId, stats: &ToolpathStats) -> Vec<D
 
 /// F4: a rest-claims dial the operator set that this operation never applies.
 ///
-/// `Caution`, not `Info` and not `Blocking` — the same call
+/// `Caution`, not `Info` and not `Severe` — the same call
 /// a config notice makes, and for the same reason. Nothing is wrong with
 /// the geometry; what is wrong is that the operator's setting has no effect
 /// and only this says so. The measured cost of the silence is the T4 arm:
@@ -342,7 +342,7 @@ fn inert_claims_dial(toolpath_id: ToolpathId, stats: &ToolpathStats) -> Vec<Diag
 /// Checkpoint C (Q2): a boundary containment that collapsed, so the path is
 /// not contained by anything.
 ///
-/// `Caution`. It is not `Blocking` because the pass-through is the ruled
+/// `Caution`. It is not `Severe` because the pass-through is the ruled
 /// behaviour for this cause and the resulting path is usually harmless — but
 /// it is not `Info` either: a safety setting the operator switched on is not
 /// in force, and that is a thing to know before pressing cycle start. The
@@ -376,7 +376,7 @@ fn boundary_clip_dropped(toolpath_id: ToolpathId, stats: &ToolpathStats) -> Vec<
 /// R3 / R4 (Corne case): the waterline's Z ladder was floored at the stock
 /// bottom, or fewer than two levels reached the cutter.
 ///
-/// `Caution` on both readings. Not `Blocking`: the floored ladder is the
+/// `Caution` on both readings. Not `Severe`: the floored ladder is the
 /// SAFE one — the levels that would have cut the bed are gone — and an empty
 /// ladder cuts nothing. Not `Info`: an operator who pinned a height at or
 /// below the bed, or whose ladder missed the model, must see it before
@@ -425,7 +425,7 @@ fn waterline_ladder(toolpath_id: ToolpathId, stats: &ToolpathStats) -> Vec<Diagn
 /// Checkpoint C (Q1 / D-2): 2D offsets in this generation that FAILED rather
 /// than collapsed.
 ///
-/// `Caution`, not `Blocking`: the toolpath is real and runnable, and the
+/// `Caution`, not `Severe`: the toolpath is real and runnable, and the
 /// operator's ruling on the failure contract was explicitly *not* to turn a
 /// contained panic into a refusal — an operation that lost one ring may still
 /// be producing usable geometry everywhere else. What is not acceptable is
@@ -479,7 +479,7 @@ fn offset_library_failures(toolpath_id: ToolpathId, stats: &ToolpathStats) -> Ve
 /// A4 (Checkpoint E): a rest pass whose emitted cutting geometry never gets
 /// under the reference stock it was planned against.
 ///
-/// `Caution`, not `Blocking` and not `Info`. The operator's ruling is that
+/// `Caution`, not `Severe` and not `Info`. The operator's ruling is that
 /// this is a **report and not a refusal** — the pass may legitimately be
 /// wanted — but it is not advisory trivia either: on H4's §3.2 fixture the
 /// pass cost 45% of the arm's runtime and 48 retract round trips to remove

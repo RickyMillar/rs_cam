@@ -290,8 +290,8 @@ pub struct ToolpathLoadVerdict {
     /// **S3 (2026-09-18) — the depth the cut actually took.**
     ///
     /// Post-simulation only. Before a simulation the depth is a value
-    /// the engine chose and clamped, and it stays a rationale entry
-    /// (`RationaleReason::RigidityFactor`); after one it is a measured
+    /// the engine chose (the operator value or the envelope pick); after one
+    /// it is a measured
     /// quantity with a real population, like the three gates above it.
     /// Its bound is a rule of thumb, so the row reports and never
     /// refuses an export.

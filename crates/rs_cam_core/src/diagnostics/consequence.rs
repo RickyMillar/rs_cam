@@ -56,8 +56,8 @@ impl Danger {
 pub enum Gate {
     /// `HeightOrderViolation::refuses` (F033): the `geom.*` order breaks.
     HeightRefuses,
-    /// `ModelGougeFinding::blocks_export` (UX-7b).
-    GougeBlocks,
+    /// `ModelGougeFinding::warns_at_export` (UX-7b).
+    GougeWarns,
     /// `ToolpathStats::non_centre_cutting_plunge` is `Some` (G-CENTRECUT).
     CentreCutPlunge,
     /// `non_centre_cutting_refusal_rows` is not empty (G-CENTRECUT).
@@ -92,7 +92,7 @@ impl Gate {
     /// Every gate, for the export walk and the tests.
     pub const ALL: [Self; 13] = [
         Self::HeightRefuses,
-        Self::GougeBlocks,
+        Self::GougeWarns,
         Self::CentreCutPlunge,
         Self::CentreCutDescent,
         Self::LoadRowRefuses,

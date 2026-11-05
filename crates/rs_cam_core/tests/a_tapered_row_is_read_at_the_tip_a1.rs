@@ -33,8 +33,7 @@ use rs_cam_core::compute::cutter::build_cutter;
 use rs_cam_core::compute::tool_config::ToolFact;
 use rs_cam_core::compute::tool_config::{ToolConfig, ToolId, ToolType};
 use rs_cam_core::feeds::geometry::{
-    depth_cap_diameter_mm, feed_ladder_diameter_mm, lut_key_diameter_for_cutter,
-    lut_key_diameter_mm,
+    depth_cap_diameter_mm, lut_key_diameter_for_cutter, lut_key_diameter_mm,
 };
 use rs_cam_core::feeds::vendor_lut::{LutOperationFamily, LutPassRole};
 use rs_cam_core::feeds::{
@@ -272,19 +271,13 @@ fn a_tapered_row_is_read_at_the_tip_a1() {
         band.diameter_scale
     );
 
-    // 5. The depth half of R2 stands for the ladder and the cap (the cone).
-    let ladder = feed_ladder_diameter_mm(
-        hint,
-        DEPTH_MM,
-        tool.diameter,
-        tool.shank_diameter_planning_mm(),
-    );
+    // 5. The depth half of R2 stands for the cap (the cone). The feed
+    // ladder is retired (P11b); P14 deleted its diameter function.
     let cap = depth_cap_diameter_mm(&cutter, DEPTH_MM);
-    assert!((ladder - cone_mm).abs() < 1e-9, "{ladder} vs {cone_mm}");
     assert!((cap - cone_mm).abs() < 1e-9, "{cap} vs {cone_mm}");
     // P11b2 (ruling L6): the gate band is the printed band at every depth.
     // The depth de-rate that divided by the cone is gone; the cone still
-    // keys the ladder and the depth cap above.
+    // keys the depth cap above.
     let row_max_mm = printed_max_mm(ROW_ID);
     assert!(
         (band.max_mm_per_tooth - row_max_mm).abs() < 1e-12,

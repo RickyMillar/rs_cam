@@ -448,11 +448,17 @@ diag_ids! {
 
     // ── Tool / operation compatibility ───────────────────────────────────
     /// W2.2: the operation's registry row refuses the tool kind
-    /// (`tool_constraints`). The message is the registry's refusal text.
-    /// K6 (decision E1): a Part warning (`Critical`) when the generator can
-    /// compute with the tool; `Blocking`, and generation stops, when it
-    /// cannot (the V-bit ops read the V angle).
+    /// (`tool_constraints`) and the generator can still compute with the
+    /// tool. The message is the registry's refusal text. K6 (decision E1):
+    /// a Part warning (`Critical`); the op generates.
     pub const COMPAT_TOOL_KIND_REFUSED: &str = "compat.tool_kind_refused" => warn(Danger::Part);
+    /// Feeds contract P14 (review M7): the generator cannot compute with
+    /// the tool kind (the V-bit ops read the V angle;
+    /// `OperationType::tool_cannot_compute`). A missing input, so the row
+    /// kind alone stops generation, as the prologue does. The message is the
+    /// registry's refusal text.
+    pub const COMPAT_TOOL_KIND_CANNOT_COMPUTE: &str =
+        "compat.tool_kind_cannot_compute" => NOT_READY;
     pub const COMPAT_BALL_NOSE_FLAT_CLEARING: &str = "compat.ball_nose_on_flat_clearing" => INFO;
     /// A Project Curve set to Point projection. The tool tip follows the
     /// surface Z under the curve and the tool body is not tested against the
@@ -566,7 +572,7 @@ diag_ids! {
     pub const PRECOND_NO_TOOL: &str = "precondition.no_tool" => NOT_READY;
     /// UX-7b (operator rulings 2026-10-22, SAFETY): the emitted moves of a
     /// 2.5D op cut into the mesh of its own model
-    /// (`compute::model_gouge`). Blocking in severity; K6: the export warns
+    /// (`compute::model_gouge`). Severe in severity; K6: the export warns
     /// on it while it stands (`Danger::Part`). B2: Caution when a 3D Rough cuts
     /// into its stock to leave only (`ModelGougeFinding::severity`).
     pub const SAFETY_CUTS_INTO_MODEL: &str = "safety.cuts_into_model" => warn(Danger::Part);

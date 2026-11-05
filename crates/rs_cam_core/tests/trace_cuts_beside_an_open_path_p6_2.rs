@@ -18,7 +18,7 @@
 //! - (c) No fed move goes past the end normals of the drawn path, with the
 //!   default dressups of Trace (lead-in/out on), and with a ramp entry
 //!   asked for on a 2 mm line (design risk "ramp entry on a short open
-//!   path"; Trace strips the entry, `DressupPolicy::FORCE_NO_ENTRY`). An
+//!   path"; Trace strips the entry, `LeadLinkPolicy::FORCE_NO_ENTRY`). An
 //!   open offset pass takes no lead: a lead arc starts one lead radius back
 //!   along the travel, past the start normal.
 //! - (d) A closed loop drawn counter-clockwise: Trace `Left` cuts inside

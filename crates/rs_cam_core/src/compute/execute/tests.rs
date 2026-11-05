@@ -1322,9 +1322,10 @@ fn every_tool_refusal_is_the_registry_rows_through_the_dispatch() {
 /// Unified Finish or Pencil) and missed Spiral Finish, the bull nose, the
 /// V-bit and the four V-bit operations.
 ///
-/// K6 (decision E1): the `Blocking` diagnostics are the generator's
-/// refusals (the kinds it cannot compute with); every other tool-kind
-/// diagnostic is a `Critical` warning, and the generator passes it.
+/// K6 (decision E1), P14 (M7): the `compat.tool_kind_cannot_compute`
+/// diagnostics are the generator's refusals (the kinds it cannot compute
+/// with); every other tool-kind diagnostic is the `Critical` warning
+/// `compat.tool_kind_refused`, and the generator passes it.
 #[test]
 fn the_static_check_and_the_generator_refuse_the_same_tools() {
     let heights = test_heights();
@@ -1346,8 +1347,7 @@ fn the_static_check_and_the_generator_refuse_the_same_tools() {
                 )
                 .into_iter()
                 .filter(|d| {
-                    d.id.as_str() == crate::diagnostics::ids::COMPAT_TOOL_KIND_REFUSED
-                        && d.severity == crate::diagnostics::Severity::Blocking
+                    d.id.as_str() == crate::diagnostics::ids::COMPAT_TOOL_KIND_CANNOT_COMPUTE
                 })
                 .map(|d| d.message)
                 .collect();

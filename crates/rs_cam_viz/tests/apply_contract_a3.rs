@@ -347,7 +347,8 @@ fn modal_apply_all_refuses_the_pairing_the_panel_refuses() {
 /// rendered a `small_button("Apply")` in every comparison row, pushing
 /// `AppEvent::ApplyFeedsField`, whose handler
 /// (`controller/events/mod.rs:796-817`) wrote `explain.recommended.*` directly
-/// — no `validate_tool_for_operation`, and none of `enforce_invariants`'
+/// — no `validate_tool_for_operation`, and none of the passes of
+/// `enforce_invariants` (deleted in feeds contract P5)
 /// passes: not `clamp_plunge_to_feed`, `clamp_stepover_to_diameter`,
 /// `backoff_stepover_for_runtime`, `clamp_dpp_to_rigidity`,
 /// `clamp_dpp_to_cutting_length`, `backoff_dpp_for_deflection`,
@@ -595,7 +596,7 @@ fn no_apply_path_writes_the_raw_preview_value() {
         applied.depth_per_pass(),
         Some(raw.axial_depth_mm),
         "the raw preview DOC ({}) reached the operation — some path is still bypassing \
-         enforce_invariants",
+         the apply funnel",
         raw.axial_depth_mm
     );
     // Feed and WOC agree with the raw value to within rounding; DOC is where

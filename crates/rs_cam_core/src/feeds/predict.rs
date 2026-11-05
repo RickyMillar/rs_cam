@@ -817,9 +817,9 @@ pub fn predict_move_count(
 // is what the current gate observation actually depends on. Any feed
 // lift now belongs to the **simulation-backed** path
 // (`feed_modulation`), which corrects from a measured observation — that
-// path is measured clean 4/4 on the same fixtures. The two `SuggestWarning` variants
-// (`FeedRaisedForChipload`, `ChiploadStillLowAfterRecalibration`) were
-// deliberately KEPT for that path to reuse; see their own docs.
+// path is measured clean 4/4 on the same fixtures. The two lift warnings
+// that J-5 kept for that path had no producer; feeds contract P14 deleted
+// them.
 //
 // Do not reintroduce a pre-simulation feed lift keyed on an
 // operation-family constant.

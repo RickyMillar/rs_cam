@@ -5,7 +5,8 @@
 //! `round_suggestion_value(result.axial_depth_mm, 0.001)` straight into the
 //! field. On the demo pocket (Pocket op, Ø6 two-flute flat end mill, default
 //! stock, material and machine) that is **4.2 mm**, while `⚡ Apply cut
-//! geometry` goes through `apply_feeds_subset` → `enforce_invariants` and
+//! geometry` went through `apply_feeds_subset` → `enforce_invariants` (the
+//! chain that feeds contract P5 deleted) and
 //! writes the rigidity-capped **1.2 mm** (0.20 × 6.0, Generic Wood Router).
 //!
 //! **Pre-fix run (2026-09-10, first version of this file, which reproduced the

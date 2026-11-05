@@ -126,7 +126,7 @@ fn a_note_paints_only_in_the_notes_counter_w6() {
                 .filter(|d| {
                     matches!(
                         d.severity,
-                        rs_cam_core::diagnostics::Severity::Blocking
+                        rs_cam_core::diagnostics::Severity::Severe
                             | rs_cam_core::diagnostics::Severity::Critical
                     )
                 })

@@ -53,10 +53,11 @@
 //!   run a 6 mm 2-flute flat end mill in GenericHardwood, which the G6
 //!   drill claim serves from the Amana Spektra 6 mm side row / 2: chip
 //!   0.0635 mm/tooth at the 14 000 RPM drill cap, about 1778 mm/min.
-//!   Neither `FeedRaisedForChipload` nor `DppCappedByDeflection` may
-//!   leak through.
+//!   Feeds contract P14 deleted the lift and deflection-clamp warnings
+//!   (no producer), so the type now holds the old "neither fires" check.
 //! - **Rivers / Lakes** (V-bit `project_curve`): `FeedRaisedForChipload`
-//!   must NOT fire. Pre-2026-08-13 this held because V-bit chipload was
+//!   must NOT fire (P14 deleted the variant; the block is gone).
+//!   Pre-2026-08-13 this held because V-bit chipload was
 //!   `NotApplicable` and `project_curve`'s arc-fit ratio was `Default`
 //!   rather than `Calibrated`; since the retirement it holds for every op
 //!   family, so this case no longer distinguishes anything. Operator
@@ -65,12 +66,11 @@
 //!   (the printed AMS-159 60 deg Trace row, a point with no floor, ruling
 //!   B4/A2) instead of the empirical formula; a point row still has no
 //!   floor to raise against, so the "must NOT fire" claim is unaffected.
-//!   Kept because the negative catch-all below still guards the variant
-//!   list.
+//!   The negative catch-all below still guards the variant list.
 //!
 //! And a negative catch-all: any `SuggestWarning` variant that
 //! shouldn't appear on this project — e.g. an unexpected
-//! `StepoverClampedToToolDiameter` — fails the test loudly so a
+//! `StrategyRecommendedNotApplied` — fails the test loudly so a
 //! future regression that quietly leaks a new variant gets flagged.
 //!
 //! If the snapshot fixture is intentionally re-taken this test will fail
@@ -241,24 +241,6 @@ fn find_case(
             cases.iter().map(|(i, n, _)| (*i, n.as_str())).collect::<Vec<_>>()
         )
     })
-}
-
-/// **RE-BASELINED 2026-08-13 — Checkpoint J-1.** `assert_has_feed_raised`
-/// stood here and returned the six `FeedRaisedForChipload` fields; every
-/// Adaptive3d / DropCutter case in this file called it. Suggest pass 8 is
-/// retired, so the helper inverts and `assert_no_feed_raised` becomes the
-/// only one — it applies to **every** op family now, not just the ones
-/// whose chipload was `NotApplicable`.
-fn assert_no_feed_raised(warnings: &[SuggestWarning], context: &str) {
-    assert!(
-        !warnings.iter().any(|w| matches!(
-            w,
-            SuggestWarning::FeedRaisedForChipload { .. }
-                | SuggestWarning::ChiploadStillLowAfterRecalibration { .. }
-        )),
-        "{context}: the retired chipload-lift warnings must NOT fire — no Suggest pass has \
-         constructed either since 2026-08-13 (Checkpoint J-1/J-5), got warnings: {warnings:?}"
-    );
 }
 
 #[test]
@@ -447,20 +429,6 @@ fn wanaka_suggest_baseline() {
              ceiling; re-baselined from 4.2 on 2026-09-23 for R5, from 5.4 on 2026-08-16 \
              for 6604303c / Checkpoint K-(a4)), got {envelope_clamped}"
         );
-        // This assertion catches the deflection back-off leaking back
-        // into stub-tool roughing — a regression that would silently
-        // reintroduce the old ~3.69 mm DppCappedByDeflection chain the
-        // unified load model retired.
-        assert!(
-            !suggested
-                .warnings
-                .iter()
-                .any(|w| matches!(w, SuggestWarning::DppCappedByDeflection { .. })),
-            "{ctx}: DppCappedByDeflection must NOT fire — the vendor_ap envelope binds first \
-             and this chipload/power-bound stub tool never reaches the deflection back-off, \
-             got {:?}",
-            suggested.warnings
-        );
 
         // ── RE-BASELINED 2026-08-13 (Checkpoint J-1) ───────────────────
         //
@@ -479,10 +447,9 @@ fn wanaka_suggest_baseline() {
         //
         // Post-retirement Suggest ships 911 mm/min and says nothing. The
         // assertions invert to that.
-        assert_no_feed_raised(&suggested.warnings, &ctx);
         // v3.0d (RPM idempotency fix): apply_feeds_result_to_op now
         // writes the calculator's chosen RPM (16000 on this case) into
-        // the operation before enforce_invariants runs, so the
+        // the operation before enforce_invariants (deleted in P5) ran, so the
         // recalibration's closed-form solve consumes 16000 (not the
         // op's pre-Suggest 12194). The target_feed scales linearly
         // with RPM: pre-fix landed 5268 mm/min on the median target
@@ -565,16 +532,9 @@ fn wanaka_suggest_baseline() {
         // No surprising variants on this case.
         for w in &suggested.warnings {
             match w {
-                SuggestWarning::DppCappedByDeflection { .. }
-                | SuggestWarning::FeedRaisedForChipload { .. }
-                | SuggestWarning::PlungeClampedToFeed { .. }
-                | SuggestWarning::StepoverClampedToToolDiameter { .. }
-                | SuggestWarning::RoughingDepthClampedToRigidity { .. }
-                | SuggestWarning::DepthClampedToCuttingLength { .. }
+                SuggestWarning::PlungeClampedToFeed { .. }
                 | SuggestWarning::PlungeEntryUnstableAtDpp { .. }
-                | SuggestWarning::AxialDocClampedByEnvelope { .. }
                 | SuggestWarning::FeedRescaledToFinalGeometry { .. }
-                | SuggestWarning::ChiploadStillLowAfterRecalibration { .. }
                 // Ruling R4 Q10 (2026-09-24): the RPM follows the feed ceiling.
                 | SuggestWarning::RpmLoweredForFeedCeiling { .. }
                 // G6 ramp (2026-09-25): one record per apply that writes
@@ -641,20 +601,10 @@ fn wanaka_suggest_baseline() {
             envelope_clamped > 0.0 && envelope_clamped < 9.0,
             "{ctx}: the proposal must drop below the stated 9.0 mm, got {envelope_clamped}"
         );
-        assert!(
-            !suggested
-                .warnings
-                .iter()
-                .any(|w| matches!(w, SuggestWarning::DppCappedByDeflection { .. })),
-            "{ctx}: DppCappedByDeflection must NOT fire — same chipload/power-bound stub tool \
-             as Back Rough, got {:?}",
-            suggested.warnings
-        );
 
         // RE-BASELINED 2026-08-13 (Checkpoint J-1). Same Wanaka geometry as
         // Back Rough, and at `719b92d7` the identical lift: 911 → 6000
         // mm/min, `cap_hit: Some(MaxFeed)`, still-low alongside. Retired.
-        assert_no_feed_raised(&suggested.warnings, &ctx);
         assert!(
             suggested
                 .operation
@@ -749,7 +699,6 @@ fn wanaka_suggest_baseline() {
             matched.chip_load_min_mm,
             matched.chip_load_max_mm
         );
-        assert_no_feed_raised(&suggested.warnings, &ctx);
     }
 
     // ── Toolpath 14: Pin Drill and toolpath 7: Holes (drill family)
@@ -771,15 +720,6 @@ fn wanaka_suggest_baseline() {
     for id in [ToolpathId::from_raw(14), ToolpathId::from_raw(7)] {
         let (_id, name, suggested) = find_case(&cases, id);
         let ctx = format!("drill (tp {_id} / {name})");
-        assert_no_feed_raised(&suggested.warnings, &ctx);
-        assert!(
-            !suggested
-                .warnings
-                .iter()
-                .any(|w| matches!(w, SuggestWarning::DppCappedByDeflection { .. })),
-            "{ctx}: DppCappedByDeflection must NOT fire on a drill, got {:?}",
-            suggested.warnings
-        );
         let r = &suggested.feeds_result;
         assert!(
             matches!(
@@ -819,20 +759,6 @@ fn wanaka_suggest_baseline() {
         );
     }
 
-    // ── Toolpath 5: Rivers (back) — Project Curve, 60° V-bit (chipload NotApplicable)
-    {
-        let (_id, name, suggested) = find_case(&cases, ToolpathId::from_raw(5));
-        let ctx = format!("Rivers (tp {_id} / {name})");
-        assert_no_feed_raised(&suggested.warnings, &ctx);
-    }
-
-    // ── Toolpath 6: Lakes (back, inside) — Project Curve, 60° V-bit
-    {
-        let (_id, name, suggested) = find_case(&cases, ToolpathId::from_raw(6));
-        let ctx = format!("Lakes (tp {_id} / {name})");
-        assert_no_feed_raised(&suggested.warnings, &ctx);
-    }
-
     // ── Negative catch-all: no toolpath should emit a SuggestWarning
     // variant outside the v2 surface. If a future variant gets added
     // and starts firing on Wanaka without an intentional re-baseline,
@@ -845,14 +771,7 @@ fn wanaka_suggest_baseline() {
             // Wanaka. It did exactly that for G-SUGGEST-NOCLAMP below.
             match w {
                 SuggestWarning::PlungeClampedToFeed { .. }
-                | SuggestWarning::StepoverClampedToToolDiameter { .. }
-                | SuggestWarning::RoughingDepthClampedToRigidity { .. }
-                | SuggestWarning::DepthClampedToCuttingLength { .. }
-                | SuggestWarning::PlungeEntryUnstableAtDpp { .. }
-                | SuggestWarning::DppCappedByDeflection { .. }
-                | SuggestWarning::StepoverRaisedForRuntime { .. }
-                | SuggestWarning::FeedRaisedForChipload { .. }
-                | SuggestWarning::ChiploadStillLowAfterRecalibration { .. } => {}
+                | SuggestWarning::PlungeEntryUnstableAtDpp { .. } => {}
                 // T-12 (2026-09-16): the forcing arm fired, and this is the
                 // deliberate answer it demanded. ALLOWED on Wanaka.
                 //
@@ -902,18 +821,6 @@ fn wanaka_suggest_baseline() {
                     "tp {id} ({name}): StrategyRecommendedNotApplied({param}) fired on Wanaka — \
                      heuristic-B pinning must suppress it (clearing_strategy is pinned to agent_search)"
                 ),
-                // Phase 3 axial-envelope warnings: warning-only on
-                // Wanaka (no auto-mutation has shipped yet, so Adaptive3d
-                // DPP clamps land as `AxialDocClampedByEnvelope` /
-                // `AxialEnvelopeSafeBandEmpty`; finish ops can emit
-                // advisories without mutating any field). They're allowed
-                // to fire — the regression net for these lives in the
-                // `feeds::cutter_constraints::tests` unit suite.
-                SuggestWarning::AxialEnvelopeSafeBandEmpty { .. }
-                | SuggestWarning::AxialDocClampedByEnvelope { .. }
-                | SuggestWarning::AxialDocBelowBurnFloor { .. }
-                | SuggestWarning::ProjectCurveDepthInfeasible { .. }
-                | SuggestWarning::FinishEnvelopeAdvisory { .. } => {}
                 // G-SUGGEST-NOCLAMP: the forcing arm fired as designed when
                 // Suggest pass 9 landed on 2026-08-19, and this is the
                 // deliberate re-baseline it demanded. Both variants are now
@@ -932,48 +839,10 @@ fn wanaka_suggest_baseline() {
                 //     lift the feed; it fires only under the band minimum.
                 //
                 // Neither is tolerated blindly: the mechanism both speak for
-                // is asserted in tests/suggest_feed_matches_final_geometry.rs.
+                // was asserted in suggest_feed_matches_final_geometry, which
+                // feeds contract P5 deleted with the chain.
                 SuggestWarning::FeedRescaledToFinalGeometry { .. }
                 | SuggestWarning::FeedClampedToChiploadFloor { .. } => {}
-                // T-4 (2026-09-18): the forcing arm fired when the
-                // deflection predictor's refusal became a type. Neither
-                // variant may fire on Wanaka, and the reason is
-                // structural rather than a tolerance:
-                //
-                //   * `DeflectionBackoffUnmodeled` needs the back-off to
-                //     run, and the back-off needs `depth_per_pass()`.
-                //     `DrillConfig`, `AlignmentPinDrillConfig` and
-                //     `ProjectCurveConfig` carry no such field, so the
-                //     drill and curve toolpaths never enter the loop.
-                //     Every remaining Wanaka toolpath cuts hard maple or
-                //     white oak with a real carbide cutter, and both
-                //     materials carry a measured `Kc`.
-                //   * `DeflectionBackoffFigureIsAFloor` needs a V-bit on
-                //     a ROUGHING operation. `VCarve` is `PassRole::
-                //     Finish`, so the natural V-bit operation never
-                //     enters the loop either.
-                //
-                // If one fires, the fixture gained a tool or a material
-                // the closed-form model does not cover. That is a real
-                // finding about the fixture; re-derive it rather than
-                // widening this arm.
-                SuggestWarning::DeflectionBackoffUnmodeled { dpp_mm, reason } => panic!(
-                    "tp {id} ({name}): DeflectionBackoffUnmodeled fired on Wanaka at DPP \
-                     {dpp_mm:.2} mm — {} ({reason:?}). Every Wanaka roughing toolpath runs a \
-                     modelled tool in a modelled material; a refusal here means the fixture \
-                     changed.",
-                    reason.clause()
-                ),
-                SuggestWarning::DeflectionBackoffFigureIsAFloor {
-                    dpp_mm,
-                    predicted_um,
-                    caveat,
-                } => panic!(
-                    "tp {id} ({name}): DeflectionBackoffFigureIsAFloor fired on Wanaka at DPP \
-                     {dpp_mm:.2} mm ({predicted_um:.0} µm) — {}. No Wanaka roughing toolpath \
-                     runs a V-bit.",
-                    caveat.clause()
-                ),
                 // T-15 (2026-09-18): the forcing arm fired when Suggest pass
                 // 10 landed. The answer is a REFUSAL, and it is argued from
                 // the fixture rather than tolerated.

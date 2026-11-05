@@ -5,8 +5,9 @@
 //!
 //! The Feeds card's `current → recommended · Δ vs current` rail printed the
 //! RAW calculator DOC and WOC (`explain.recommended.axial_depth_mm`,
-//! `radial_width_mm`). `⚡ Apply all` writes the values after
-//! `enforce_invariants`, and that funnel (in 2026-09 with the aggressiveness
+//! `radial_width_mm`). `⚡ Apply all` wrote the values after
+//! `enforce_invariants` (deleted in feeds contract P5), and that funnel
+//! (in 2026-09 with the aggressiveness
 //! dial, deleted by D9) moved them. On a Ø6 hardwood pocket the
 //! column read "DOC 0.81 mm → 4.20 mm ↑ 5.17×", and Apply wrote 0.81 mm
 //! again. The ⚡ pills had the same defect once and read the funnel's dry run

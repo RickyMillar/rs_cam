@@ -249,22 +249,25 @@ pub struct CalculatorOperatingPoint {
     pub rpm: f64,
 }
 
+impl CalculatorOperatingPoint {
+    /// The point `result` was sized at (feeds contract P14, review M9: the
+    /// one builder from a [`FeedsResult`]; the surfaces no longer copy the
+    /// four fields by hand).
+    #[must_use]
+    pub const fn of(result: &FeedsResult) -> Self {
+        Self {
+            radial_width_mm: result.radial_width_mm,
+            axial_depth_mm: result.axial_depth_mm,
+            feed_rate_mm_min: result.feed_rate_mm_min,
+            rpm: result.rpm,
+        }
+    }
+}
+
 /// Warnings emitted while applying suggestions to an operation.
 #[derive(Debug, Clone, PartialEq)]
 pub enum SuggestWarning {
     PlungeClampedToFeed {
-        requested: f64,
-        capped: f64,
-    },
-    StepoverClampedToToolDiameter {
-        requested: f64,
-        capped: f64,
-    },
-    RoughingDepthClampedToRigidity {
-        requested: f64,
-        capped: f64,
-    },
-    DepthClampedToCuttingLength {
         requested: f64,
         capped: f64,
     },
@@ -287,166 +290,6 @@ pub enum SuggestWarning {
         diameter_mm: f64,
         entry_style: String,
     },
-    /// v1.1 combined-Suggest step 2: the closed-form deflection
-    /// predictor (see [`crate::feeds::predict::predict_peak_deflection_um`])
-    /// projected that the post-rigidity-clamp DPP would drive the
-    /// cantilever tip deflection past the 200 µm critical threshold
-    /// (the same gate `tool_load::deflection` evaluates post-sim).
-    /// `enforce_invariants_at_fixed_geometry` iteratively backed DPP off by 20% per
-    /// iteration (max 5 iterations, floor 0.5 mm) until the predicted
-    /// deflection cleared the threshold or the loop hit the floor.
-    ///
-    /// `predicted_um_at_capped` may still exceed 200 µm if the loop
-    /// bailed on the floor — that's the "unmet gate" signal until
-    /// the v2 surface adds a structured unmet-condition channel.
-    /// Wanaka Back Rough motivating case: 9 mm DPP on a 6 mm carbide
-    /// endmill in HardMaple shipped 358 µm post-sim; back-off settles
-    /// to a DPP that clears the threshold.
-    DppCappedByDeflection {
-        requested_mm: f64,
-        capped_mm: f64,
-        predicted_um_at_requested: f64,
-        predicted_um_at_capped: f64,
-        iterations: u8,
-    },
-    /// T-4 (2026-09-18): the closed-form deflection predictor abstained,
-    /// so the DPP back-off did not run. Warning-only — Suggest keeps the
-    /// DPP the rigidity clamp and the axial envelope produced.
-    ///
-    /// The operator needs the distinction. Until T-4 the predictor
-    /// reported every refusal as `0.0 µm`, the loop's `> target` test
-    /// short-circuited, and nothing was said. A pass-through and a
-    /// clearance were the same event. The sharp case is an unvalidated
-    /// plastic on a roughing operation: nine of the ten shipped plastics
-    /// carry no measured `Kc`, the stock picker names them all, and the
-    /// operator had no way to know which ones the model covers.
-    DeflectionBackoffUnmodeled {
-        /// The DPP the operation carried when the predictor abstained.
-        dpp_mm: f64,
-        /// Which abstention. `reason.clause()` is the operator-facing
-        /// wording and `reason.as_unmodeled_reason()` is the same
-        /// vocabulary the post-simulation gate prints.
-        reason: crate::feeds::predict::DeflectionUnmodeled,
-    },
-    /// T-4 (2026-09-18): the deflection figure the back-off ran on is a
-    /// modelled FLOOR, not a bound.
-    ///
-    /// The back-off still runs, because backing a DPP off a floor is
-    /// conservative. It does not show the cut safe. A V-bit is the one
-    /// producer today: the integrator models its cone but not its flute
-    /// relief, and that gap runs in the UNSAFE direction.
-    DeflectionBackoffFigureIsAFloor {
-        /// The DPP the operation carried at the figure below.
-        dpp_mm: f64,
-        /// The modelled floor (µm) at `dpp_mm`. The real deflection is
-        /// larger.
-        predicted_um: f64,
-        /// Which part of the model is missing. `caveat.clause()` is the
-        /// operator-facing wording.
-        caveat: crate::feeds::predict::DeflectionCaveat,
-    },
-    /// v1.2 combined-Suggest: the closed-form move-count predictor (see
-    /// [`crate::feeds::predict::predict_move_count`]) projected that the
-    /// just-written stepover would emit more than
-    /// [`STEPOVER_BACKOFF_TARGET_MOVES`](invariants::STEPOVER_BACKOFF_TARGET_MOVES) motion samples on the operation's
-    /// model envelope. `enforce_invariants_at_fixed_geometry` iteratively raised the
-    /// stepover by 50% per iteration (max 5 iterations, ceiling
-    /// `tool.diameter × `[`STEPOVER_BACKOFF_DIAMETER_FRACTION`](invariants::STEPOVER_BACKOFF_DIAMETER_FRACTION)) until the
-    /// predicted move count cleared the threshold or the loop hit the
-    /// ceiling. The Wanaka 3D Finish 6 motivating case (2 mm tip
-    /// tapered-ball on a 140 × 150 mm stock with a `scallop_height`
-    /// target that resolves to 0.03 mm stepover, 4.6 M predicted moves)
-    /// settles to a usable stepover via this back-off.
-    ///
-    /// `predicted_moves_at_raised` may still exceed
-    /// [`STEPOVER_BACKOFF_TARGET_MOVES`](invariants::STEPOVER_BACKOFF_TARGET_MOVES) if the loop bailed on the
-    /// diameter-fraction ceiling — that's the "unmet gate" signal until
-    /// the v2 surface adds a structured unmet-condition channel.
-    /// Scallop-height-targeted ops that get raised past the scallop
-    /// floor are not explicitly flagged on this variant; the warning
-    /// itself signals the trade-off ("we raised stepover for runtime
-    /// reasons, which probably degrades scallop").
-    StepoverRaisedForRuntime {
-        requested_mm: f64,
-        raised_mm: f64,
-        predicted_moves_at_requested: u64,
-        predicted_moves_at_raised: u64,
-        iterations: u8,
-    },
-    /// **RESERVED, not constructed by Suggest (since 2026-08-13).**
-    ///
-    /// This variant used to report Suggest pass 8's arc-fit chipload feed
-    /// recalibration. Checkpoint J-1/J-5 retired that pass — Suggest emits
-    /// the un-lifted feed the calculator produced — and **kept this variant
-    /// deliberately** so the *simulation-backed* path (`feed_modulation`)
-    /// can report its own **measured** feed changes through a vocabulary
-    /// the rationale renderer, the feeds modal and the MCP rationale
-    /// endpoint already speak. Nothing in `feeds::suggest` pushes it today; the renderer
-    /// arms and their round-trip tests remain live.
-    ///
-    /// The field semantics below are written for that reuse: they describe
-    /// a feed that WAS raised and the observation it was raised against.
-    /// A producer must supply a **measured** observation — the pre-sim
-    /// prediction those fields were originally fed from was itself the
-    /// defect (it estimated a quantity the gate stopped reporting on
-    /// 2026-08-06).
-    ///
-    /// Historical note, kept because it is the case the retired pass was
-    /// built for: Wanaka post-sim 2026-06-03 showed three toolpaths at
-    /// observed median chipload 0.0067–0.011 mm/tooth vs LUT minima
-    /// 0.027–0.076 — a rubbing/burning recipe. That statement is in the
-    /// **deleted arc-mean quantity**; in the unit the gate now reports,
-    /// A-5 measured the same operating points already inside the band.
-    FeedRaisedForChipload {
-        /// Pre-recalibration `feed_rate` (mm/min) — the value written
-        /// by the calculator and any earlier invariants.
-        requested_mm_per_min: f64,
-        /// Post-recalibration `feed_rate` (mm/min) — what the loop
-        /// settled on after iterating against the chipload + deflection
-        /// + feed-cap constraints.
-        raised_mm_per_min: f64,
-        /// Forward-predicted observed median chipload before the loop
-        /// (mm/tooth). Should be below `lut_target_mm_per_tooth` for
-        /// the loop to fire at all.
-        predicted_observed_chipload_before: f64,
-        /// Forward-predicted observed median chipload at the
-        /// terminating feed (mm/tooth). When `cap_hit` is `None` this
-        /// is `>= lut_target_mm_per_tooth`; when a cap binds, this is
-        /// the best the loop could achieve under the constraint.
-        predicted_observed_chipload_after: f64,
-        /// The target inside the LUT band (mm/tooth), from
-        /// [`FeedsResult::chipload_bounds`].
-        lut_target_mm_per_tooth: f64,
-        /// `Some(_)` when the loop terminated on a constraint rather
-        /// than reaching the LUT minimum. See [`FeedRecalibrationCap`]
-        /// for the three modes.
-        cap_hit: Option<FeedRecalibrationCap>,
-    },
-    /// **RESERVED, not constructed by Suggest (since 2026-08-13).**
-    /// Retired and kept alongside [`SuggestWarning::FeedRaisedForChipload`]
-    /// under Checkpoint J-5 — same reasoning, same intended reuse by the
-    /// simulation-backed path.
-    ///
-    /// Semantics for a future producer: paired with `FeedRaisedForChipload`
-    /// when a binding cap stopped the correction before the observation
-    /// reached the band. The deflection budget is too tight for the
-    /// configured (tool, material) combination — the
-    /// operator's options are to drop RPM (which raises chipload at
-    /// constant feed) or accept the rubbing-floor recipe with the
-    /// understanding that edge heating may shorten tool life.
-    ChiploadStillLowAfterRecalibration {
-        /// Best predicted observed median chipload the loop achieved
-        /// (mm/tooth), still below `lut_target_mm_per_tooth`.
-        predicted_observed_mm_per_tooth: f64,
-        /// The target inside the LUT band the loop was aiming for
-        /// (mm/tooth).
-        lut_target_mm_per_tooth: f64,
-        /// `feed_rate` at loop termination (mm/min) — what got written
-        /// into the operation.
-        feed_at_termination_mm_per_min: f64,
-        /// The binding constraint that stopped the loop.
-        blocking_cap: FeedRecalibrationCap,
-    },
     /// v3.3c (2026-06-05): the geometry classifier prefers a different
     /// value for a strategy field, but the orchestrator does NOT
     /// auto-apply it. (Its write-back sibling `StrategyRewrote` went with
@@ -464,71 +307,6 @@ pub enum SuggestWarning {
         current: String,
         recommended: String,
         reason: &'static str,
-    },
-    /// Phase 3 / cutter-axial-constraints envelope: the cutter / material /
-    /// engagement combination has an empty safe band (chipload-burn floor
-    /// exceeds the deflection / vendor / scallop max). Warning-only in
-    /// this phase — automatic 3D-finish `stock_to_leave` mutation is
-    /// deferred until in-process stock at gen time lands. Mirrors the
-    /// planning doc §5.2 `FinishToolMismatched` variant: surface the
-    /// mismatch so the operator can switch tool / surface / chipload
-    /// before committing.
-    AxialEnvelopeSafeBandEmpty {
-        /// Cutter / material / op kind so the rationale entry can render
-        /// "scallop on 6 mm ball" rather than a bare warning string.
-        op_kind: &'static str,
-        max_safe_doc_mm: f64,
-        chipload_floor_doc_mm: f64,
-        /// Which upper bound was tighter — Deflection / VendorAp / Scallop.
-        binding_upper: &'static str,
-    },
-    /// Phase 3 envelope policy-C clamp: the user-set / calculator-derived
-    /// axial value sat above the cutter-axial-constraints `safe_max_doc_mm`,
-    /// so the envelope clamped it down. Variant carries `param_name` so
-    /// downstream renderers know whether `depth_per_pass` (Adaptive3d),
-    /// `max_depth` (VCarve), or another axial knob was rewritten.
-    AxialDocClampedByEnvelope {
-        op_kind: &'static str,
-        param_name: &'static str,
-        commanded_mm: f64,
-        clamped_mm: f64,
-        /// `"deflection" | "vendor_ap" | "scallop"`. SafeBandEmpty goes
-        /// through `AxialEnvelopeSafeBandEmpty` instead.
-        binding: &'static str,
-    },
-    /// Phase 3 envelope policy-C lower-band warning: the user-set axial
-    /// value sat *below* the LUT's chipload-burn floor. Per planning
-    /// §5.4 policy C the envelope does NOT clamp upward — operators
-    /// running deliberately conservative shallow passes should not have
-    /// Suggest drown out their pin — but the warning still surfaces so
-    /// the rationale tree can explain the rubbing-risk trade-off.
-    AxialDocBelowBurnFloor {
-        op_kind: &'static str,
-        param_name: &'static str,
-        commanded_mm: f64,
-        floor_mm: f64,
-    },
-    /// Phase 3 ProjectCurve / engraving feasibility check: the user's
-    /// commanded depth exceeds the cutter-axial-constraints safe envelope.
-    /// Warning-only — Suggest does not rewrite engraving depth (the user
-    /// chose it intentionally for the artwork).
-    ProjectCurveDepthInfeasible {
-        commanded_mm: f64,
-        max_safe_mm: f64,
-        binding: &'static str,
-    },
-    /// Phase 3 finish-op envelope warning: scallop / drop_cutter /
-    /// horizontal_finish / waterline / spiral_finish / radial_finish
-    /// landed with a deflection or scallop bound below the operator's
-    /// commanded `stock_to_leave` semantics. Warning-only in this phase
-    /// (automatic `stock_to_leave` mutation blocked on in-process
-    /// stock); rationale tree carries the binding constraint name so
-    /// the user can decide whether to drop stepover, soften the
-    /// chipload, or switch tool.
-    FinishEnvelopeAdvisory {
-        op_kind: &'static str,
-        max_safe_doc_mm: f64,
-        binding: &'static str,
     },
     /// **DECLARED 2026-08-19, NOT YET PRODUCED — G-SUGGEST-NOCLAMP.**
     ///
@@ -555,7 +333,8 @@ pub enum SuggestWarning {
     /// `depth_tier` of 0.75 computed at 9.0, where 4.2 mm on a Ø6 tool is
     /// tier 1.0 — that op is **under**-fed by 1.33×.
     ///
-    /// Sentry: `tests/suggest_feed_matches_final_geometry.rs`.
+    /// Feeds contract P5 deleted its sentry
+    /// (`suggest_feed_matches_final_geometry`) with the geometry chain.
     FeedRescaledToFinalGeometry {
         /// `feed_rate` (mm/min) as the calculator and earlier invariants left it.
         requested_mm_per_min: f64,
@@ -618,8 +397,8 @@ pub enum SuggestWarning {
     /// clamp-and-warn convention as calculator Step 6 rung 4 and the
     /// rubbing floor at Step 9b.
     ///
-    /// Sentry: `tests/a_rescaled_feed_stays_inside_the_power_ceiling_g_t15.rs`.
-    /// Register: `planning/TECH_DEBT_REGISTER.md` T-15.
+    /// Feeds contract P5 deleted its sentry (`..._g_t15`) with the geometry
+    /// chain. Register: `planning/TECH_DEBT_REGISTER.md` T-15.
     PowerRecheckedAfterRescale {
         /// `feed_rate` (mm/min) pass 9 wrote, before this pass.
         rescaled_mm_per_min: f64,
@@ -748,8 +527,7 @@ pub enum SuggestWarning {
 
 /// Reason the v2 step 2 feed-up recalibration terminated early
 /// (i.e. before predicted observed chipload reached the LUT lower
-/// bound). Paired with [`SuggestWarning::FeedRaisedForChipload`] /
-/// [`SuggestWarning::ChiploadStillLowAfterRecalibration`].
+/// bound). [`SuggestWarning::FeedRescaledToFinalGeometry`] carries it.
 ///
 /// v2.1 (2026-06-04) collapsed the iterative feed-up into a single
 /// closed-form solve, so the only caps that can fire are the

@@ -134,7 +134,7 @@ pub fn height_order_badge(
         .map(height_order_severity)
         .max()?;
     match worst {
-        Severity::Blocking | Severity::Critical => Some(crate::ui::tokens::DANGER),
+        Severity::Severe | Severity::Critical => Some(crate::ui::tokens::DANGER),
         Severity::Caution => Some(crate::ui::tokens::CAUTION),
         Severity::Info | Severity::Hint => None,
     }

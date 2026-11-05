@@ -870,7 +870,7 @@ impl RegionKind {
 /// Plan A/M8: those two systems were independent and only the structural
 /// one was implemented, so `narrate_toolpath` reported `regions 0` for the
 /// one operation whose entire premise is mixing strategies. Both now read
-/// this table, and `tests/unified_finish_semantic_regions.rs` asserts they
+/// this table, and `compute/execute/unified_finish_semantic_regions.rs` asserts they
 /// agree on count and move range so they cannot drift apart again.
 #[derive(Debug, Clone)]
 pub struct RegionAnnotation {

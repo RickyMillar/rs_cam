@@ -554,7 +554,7 @@ pub enum Kinematics {
 /// metadata, with no wildcard fallbacks. These three failed open: a new
 /// operation joined the false side of each in silence. As a row field the
 /// decision is written per operation, beside `tool_constraints` and
-/// `dressup_policy`, and the named constants below are what an entry
+/// `lead_link_policy`, and the named constants below are what an entry
 /// points at when it takes the ordinary answer.
 #[derive(Debug, Clone, Copy, PartialEq, Eq)]
 pub struct OpPolicy {
@@ -606,30 +606,30 @@ impl OpPolicy {
     };
 }
 
-/// Per-op dressup policy (Phase 1 registry field). ONE source for both
+/// Per-op lead and link policy (registry field). ONE source for both
 /// `DressupConfig::normalize_for_op` in compute and the viz dressup
-/// panel's grey-out/tooltip — pre-registry these were two hand-synced
-/// tables (compute/config.rs predicates + ui/properties/mod.rs match).
+/// panel's grey-out and tooltip.
 ///
-/// K4 (feeds contract P3): the entry style is not here. The row's
-/// [`OpRegistryEntry::entry`] states it.
+/// Feeds contract P14 (review L2): renamed from `DressupPolicy`, whose
+/// doc named entry ramps. K4 (P3): the entry is not here; the row's
+/// [`OpRegistryEntry::entry`] states it. This policy covers the lead-in
+/// and lead-out and the link moves only.
 #[derive(Debug, Clone, Copy)]
-pub struct DressupPolicy {
-    /// `Some(reason)` ⇒ entry ramps, lead-in/out, AND link moves are
-    /// geometrically incompatible with this op: compute strips them all
-    /// and the UI greys the controls, showing this user-facing reason.
-    pub strip_all_reason: Option<&'static str>,
+pub struct LeadLinkPolicy {
+    /// `Some(reason)` ⇒ the lead-in/out and the link moves are
+    /// geometrically incompatible with this op: compute strips both and
+    /// the UI greys the controls, showing this user-facing reason. The
+    /// same text is the reason of the row's `StraightPlunge` entry.
+    pub strip_reason: Option<&'static str>,
 }
 
-impl DressupPolicy {
-    /// Named "no restriction" policy: leads and links as configured.
-    pub const ANY_DRESSUP: Self = Self {
-        strip_all_reason: None,
-    };
-    /// All topology-altering dressups stripped, with the user-facing reason.
-    pub const fn strip_all(reason: &'static str) -> Self {
+impl LeadLinkPolicy {
+    /// No restriction: leads and links as configured.
+    pub const AS_CONFIGURED: Self = Self { strip_reason: None };
+    /// Leads and links stripped, with the user-facing reason.
+    pub const fn strip(reason: &'static str) -> Self {
         Self {
-            strip_all_reason: Some(reason),
+            strip_reason: Some(reason),
         }
     }
 }
@@ -643,7 +643,7 @@ pub struct OpRegistryEntry {
     /// W5: the parameter table `#[derive(OpParams)]` wrote from the config.
     pub params: ParamTable,
     pub tool_constraints: ToolConstraintsDef,
-    pub dressup_policy: DressupPolicy,
+    pub lead_link_policy: LeadLinkPolicy,
     /// CONTRACT K4 (feeds contract P3): how the op enters material. The
     /// one entry source: `DressupConfig::for_op`, `normalize_for_op` and
     /// the dressup pipeline read it.

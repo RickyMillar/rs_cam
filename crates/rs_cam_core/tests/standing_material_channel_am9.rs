@@ -241,7 +241,7 @@ fn truncated_cascade_is_visible_on_every_surface() {
     // 4. Report-only (the A/M9 gate: report before enforcing).
     assert_ne!(
         d.severity,
-        rs_cam_core::diagnostics::Severity::Blocking,
+        rs_cam_core::diagnostics::Severity::Severe,
         "standing material must not block export yet"
     );
     assert_eq!(d.category, rs_cam_core::diagnostics::Category::Geometry);

@@ -1298,7 +1298,7 @@ fn retired_lift_leaves_wanaka_back_rough_feed_untouched() {
     });
 
     let initial_feed = op.feed_rate().expect("S11: the fixture sets it");
-    let warnings = fixed_chain(
+    fixed_chain(
         &mut op,
         &tool,
         &machine,
@@ -1315,19 +1315,6 @@ fn retired_lift_leaves_wanaka_back_rough_feed_untouched() {
         "retired pass 8 must leave feed at the calculator value {initial_feed} \
              (pre-fix it was lifted to 3456), got {}",
         op.feed_rate().expect("S11: the fixture sets it")
-    );
-    assert!(
-        !warnings
-            .iter()
-            .any(|w| matches!(w, SuggestWarning::FeedRaisedForChipload { .. })),
-        "no Suggest pass constructs FeedRaisedForChipload since 2026-08-13, got {warnings:?}"
-    );
-    assert!(
-        !warnings
-            .iter()
-            .any(|w| matches!(w, SuggestWarning::ChiploadStillLowAfterRecalibration { .. })),
-        "no Suggest pass constructs ChiploadStillLowAfterRecalibration since 2026-08-13, \
-             got {warnings:?}"
     );
 }
 /// **RE-BASELINED 2026-08-13 — Checkpoint J-1 (was
@@ -1425,7 +1412,7 @@ fn retired_lift_fires_no_cap_on_a_deflection_bound_fixture() {
                  [190, {DEFLECTION_BACKOFF_TARGET_UM:.0}) µm — retune tool.stickout"
         );
 
-        let warnings = fixed_chain(
+        fixed_chain(
             &mut op,
             &tool,
             &machine,
@@ -1441,15 +1428,6 @@ fn retired_lift_fires_no_cap_on_a_deflection_bound_fixture() {
             (op.feed_rate().expect("S11: the fixture sets it") - initial_feed).abs() < 1e-6,
             "{aggressiveness:?}: feed must stay at the calculator value {initial_feed}, got {}",
             op.feed_rate().expect("S11: the fixture sets it")
-        );
-        assert!(
-            !warnings.iter().any(|w| matches!(
-                w,
-                SuggestWarning::FeedRaisedForChipload { .. }
-                    | SuggestWarning::ChiploadStillLowAfterRecalibration { .. }
-            )),
-            "{aggressiveness:?}: no Suggest pass constructs the retired chipload-lift \
-                 warnings since 2026-08-13, got {warnings:?}"
         );
     }
 }
@@ -1504,7 +1482,7 @@ fn retired_lift_reports_no_max_feed_shortfall() {
         max_mm_per_tooth: 0.20,
     });
 
-    let warnings = fixed_chain(
+    fixed_chain(
         &mut op,
         &tool,
         &machine,
@@ -1520,14 +1498,6 @@ fn retired_lift_reports_no_max_feed_shortfall() {
         (op.feed_rate().expect("S11: the fixture sets it") - 4000.0).abs() < 1e-6,
         "feed must stay at the machine cap, got {}",
         op.feed_rate().expect("S11: the fixture sets it")
-    );
-    assert!(
-        !warnings.iter().any(|w| matches!(
-            w,
-            SuggestWarning::ChiploadStillLowAfterRecalibration { .. }
-                | SuggestWarning::FeedRaisedForChipload { .. }
-        )),
-        "the retired pass's shortfall report must be silent, got {warnings:?}"
     );
 }
 
@@ -1581,7 +1551,7 @@ fn feed_recalibration_skipped_when_already_in_band() {
     });
 
     let initial_feed = op.feed_rate().expect("S11: the fixture sets it");
-    let warnings = fixed_chain(
+    fixed_chain(
         &mut op,
         &tool,
         &machine,
@@ -1597,18 +1567,6 @@ fn feed_recalibration_skipped_when_already_in_band() {
         (op.feed_rate().expect("S11: the fixture sets it") - initial_feed).abs() < 1e-6,
         "feed must be unchanged when observed chipload already in band, got {} vs {initial_feed}",
         op.feed_rate().expect("S11: the fixture sets it")
-    );
-    assert!(
-        !warnings
-            .iter()
-            .any(|w| matches!(w, SuggestWarning::FeedRaisedForChipload { .. })),
-        "FeedRaisedForChipload must not fire when initial observed ≥ LUT min, got {warnings:?}"
-    );
-    assert!(
-        !warnings
-            .iter()
-            .any(|w| matches!(w, SuggestWarning::ChiploadStillLowAfterRecalibration { .. })),
-        "ChiploadStillLowAfterRecalibration must not fire when initial observed ≥ LUT min, got {warnings:?}"
     );
 }
 
@@ -1732,22 +1690,8 @@ fn clearing_strategy_recommendation_is_warn_only() {
             reason,
         } => Some((current.clone(), recommended.clone(), *reason)),
         SuggestWarning::PlungeClampedToFeed { .. }
-        | SuggestWarning::StepoverClampedToToolDiameter { .. }
-        | SuggestWarning::RoughingDepthClampedToRigidity { .. }
-        | SuggestWarning::DepthClampedToCuttingLength { .. }
         | SuggestWarning::PlungeEntryUnstableAtDpp { .. }
-        | SuggestWarning::DppCappedByDeflection { .. }
-        | SuggestWarning::DeflectionBackoffUnmodeled { .. }
-        | SuggestWarning::DeflectionBackoffFigureIsAFloor { .. }
-        | SuggestWarning::StepoverRaisedForRuntime { .. }
-        | SuggestWarning::FeedRaisedForChipload { .. }
-        | SuggestWarning::ChiploadStillLowAfterRecalibration { .. }
         | SuggestWarning::StrategyRecommendedNotApplied { .. }
-        | SuggestWarning::AxialEnvelopeSafeBandEmpty { .. }
-        | SuggestWarning::AxialDocClampedByEnvelope { .. }
-        | SuggestWarning::AxialDocBelowBurnFloor { .. }
-        | SuggestWarning::ProjectCurveDepthInfeasible { .. }
-        | SuggestWarning::FinishEnvelopeAdvisory { .. }
         | SuggestWarning::FeedRescaledToFinalGeometry { .. }
         | SuggestWarning::FeedClampedToChiploadFloor { .. }
         | SuggestWarning::PowerRecheckedAfterRescale { .. }

@@ -112,7 +112,8 @@ pub fn next_action(state: &RunState) -> NextAction {
     match state {
         RunState::NotReady { blocking } => {
             let tool_first = blocking.iter().any(|id| {
-                id.as_str() == ids::PRECOND_NO_TOOL || id.as_str() == ids::COMPAT_TOOL_KIND_REFUSED
+                id.as_str() == ids::PRECOND_NO_TOOL
+                    || id.as_str() == ids::COMPAT_TOOL_KIND_CANNOT_COMPUTE
             });
             if tool_first {
                 NextAction::ChooseTool
@@ -140,21 +141,24 @@ pub fn skips_automatic_generate(state: &RunState) -> bool {
 
 /// True when the diagnostic refuses generation while it is current.
 ///
-/// K6 (ruling Q6, Q10): no finding refuses generation. Only a `Blocking`
-/// missing input does: a row of [`crate::diagnostics::RowKind::NotReady`]
-/// (an id with no row too), or the tool-kind row when the generator cannot
-/// compute with the tool (`Blocking` only then, decision E1; the prologue
-/// refuses on the same `OperationType::tool_cannot_compute`). A cut into the
-/// model is `Blocking` in severity and still refuses nothing (A5).
+/// K6 (ruling Q6, Q10), feeds contract P14 (review M7): the row kind alone
+/// decides. A current diagnostic whose `diag_ids!` row is
+/// [`crate::diagnostics::RowKind::NotReady`] (a missing input, including
+/// `compat.tool_kind_cannot_compute`, the prologue's tool refusal) refuses;
+/// a finding never does, whatever its severity (a cut into the model is
+/// `Severe` and refuses nothing, A5). An id with no row keeps the old rule
+/// (a `Severe` one refuses): `DiagnosticId` also builds from a `String`, so
+/// no test holds every produced id to a row.
 #[must_use]
 pub fn refuses_generation(d: &Diagnostic) -> bool {
     use crate::diagnostics::RowKind;
-    if d.state != DiagnosticState::Current || d.severity != Severity::Blocking {
+    if d.state != DiagnosticState::Current {
         return false;
     }
     match ids::row_kind(d.id.as_str()) {
-        Some(RowKind::NotReady) | None => true,
-        Some(RowKind::Finding(_)) => d.id.as_str() == ids::COMPAT_TOOL_KIND_REFUSED,
+        Some(RowKind::NotReady) => true,
+        Some(RowKind::Finding(_)) => false,
+        None => d.severity == Severity::Severe,
     }
 }
 

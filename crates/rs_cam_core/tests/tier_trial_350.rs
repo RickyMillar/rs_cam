@@ -640,32 +640,10 @@ fn apply_suggest(session: &mut ProjectSession) -> Result<Vec<Value>, String> {
         let ramp = profile.warnings.iter().find_map(|w| match w {
             rs_cam_core::feeds::suggest::SuggestWarning::RampFeed { record, .. } => Some(record),
             rs_cam_core::feeds::suggest::SuggestWarning::PlungeClampedToFeed { .. }
-            | rs_cam_core::feeds::suggest::SuggestWarning::StepoverClampedToToolDiameter {
-                ..
-            }
-            | rs_cam_core::feeds::suggest::SuggestWarning::RoughingDepthClampedToRigidity {
-                ..
-            }
-            | rs_cam_core::feeds::suggest::SuggestWarning::DepthClampedToCuttingLength { .. }
             | rs_cam_core::feeds::suggest::SuggestWarning::PlungeEntryUnstableAtDpp { .. }
-            | rs_cam_core::feeds::suggest::SuggestWarning::DppCappedByDeflection { .. }
-            | rs_cam_core::feeds::suggest::SuggestWarning::DeflectionBackoffUnmodeled { .. }
-            | rs_cam_core::feeds::suggest::SuggestWarning::DeflectionBackoffFigureIsAFloor {
-                ..
-            }
-            | rs_cam_core::feeds::suggest::SuggestWarning::StepoverRaisedForRuntime { .. }
-            | rs_cam_core::feeds::suggest::SuggestWarning::FeedRaisedForChipload { .. }
-            | rs_cam_core::feeds::suggest::SuggestWarning::ChiploadStillLowAfterRecalibration {
-                ..
-            }
             | rs_cam_core::feeds::suggest::SuggestWarning::StrategyRecommendedNotApplied {
                 ..
             }
-            | rs_cam_core::feeds::suggest::SuggestWarning::AxialEnvelopeSafeBandEmpty { .. }
-            | rs_cam_core::feeds::suggest::SuggestWarning::AxialDocClampedByEnvelope { .. }
-            | rs_cam_core::feeds::suggest::SuggestWarning::AxialDocBelowBurnFloor { .. }
-            | rs_cam_core::feeds::suggest::SuggestWarning::ProjectCurveDepthInfeasible { .. }
-            | rs_cam_core::feeds::suggest::SuggestWarning::FinishEnvelopeAdvisory { .. }
             | rs_cam_core::feeds::suggest::SuggestWarning::FeedRescaledToFinalGeometry { .. }
             | rs_cam_core::feeds::suggest::SuggestWarning::FeedClampedToChiploadFloor { .. }
             | rs_cam_core::feeds::suggest::SuggestWarning::PowerRecheckedAfterRescale { .. }

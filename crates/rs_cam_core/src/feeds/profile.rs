@@ -192,6 +192,47 @@ impl<'a> CutterOpProfile<'a> {
             warnings,
         })
     }
+
+    /// The cut Suggest ships: the operation with Suggest's speeds, else
+    /// the input operation (a refused combination).
+    #[must_use]
+    pub fn shipped_operation(&self) -> &OperationConfig {
+        self.suggested_operation.as_ref().unwrap_or(self.operation)
+    }
+
+    /// Spindle power at the shipped cut (feeds contract P14, review M9):
+    /// [`crate::feeds::power_at_shipped_point`] with the calculator point as
+    /// the fallback. `None` when Suggest refused (no feeds result).
+    #[must_use]
+    pub fn shipped_power(
+        &self,
+    ) -> Option<Result<crate::feeds::PowerFigure, crate::feeds::PowerUnmodeled>> {
+        self.feeds.as_ref().map(|feeds| {
+            crate::feeds::power_at_shipped_point(
+                self.shipped_operation(),
+                self.tool_cfg,
+                self.material,
+                self.machine,
+                feeds,
+            )
+        })
+    }
+
+    /// The force line at the mean chip of the shipped cut (P14, M9). `None`
+    /// when Suggest refused, the material has no force line, or the cut
+    /// resolves no point.
+    #[must_use]
+    pub fn shipped_force_point(&self) -> Option<crate::material::force_line::ForceAtPoint> {
+        self.feeds.as_ref().and_then(|feeds| {
+            crate::feeds::operating_point::force_at_shipped_point(
+                self.shipped_operation(),
+                self.tool_cfg,
+                self.material,
+                feeds,
+            )
+            .ok()
+        })
+    }
 }
 
 #[cfg(test)]

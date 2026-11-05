@@ -13,8 +13,9 @@
 //!
 //! `current` is the operation in the project file. `suggested` is
 //! `CutterOpProfile::suggested_operation`, the operation that `ApplyFeeds`
-//! writes. `shipped_power` is `feeds::power_at_operating_point` on the
-//! suggested operation; `calculator` is the `FeedsResult` at the
+//! writes. `shipped_power` is `CutterOpProfile::shipped_power` (P14: the
+//! one core door that the GUI card and MCP `get_suggest_rationale` read)
+//! on the suggested operation; `calculator` is the `FeedsResult` at the
 //! calculator's geometry (see the `FeedsResult::power_kw` note). Where the
 //! operation holds no stepover, depth or rpm, `shipped_power` reads the
 //! calculator point, as the GUI does, and `point_source` names the source
@@ -89,38 +90,12 @@ fn profile_json(profile: &CutterOpProfile<'_>) -> Value {
     let (support_headline, support_detail) = feeds.support.card_text();
     let (plunge_headline, plunge_detail) = feeds.plunge.card_text();
     let (ramp_headline, ramp_detail) = feeds.ramp.card_text();
-    let shipped = profile
-        .suggested_operation
-        .as_ref()
-        .unwrap_or(profile.operation);
-    // The fallback is the calculator point, as the GUI builds it
-    // (`compare.rs` `PowerReading::at_shipped_point`).
-    let fallback = Some(rs_cam_core::feeds::suggest::CalculatorOperatingPoint {
-        radial_width_mm: feeds.radial_width_mm,
-        axial_depth_mm: feeds.axial_depth_mm,
-        feed_rate_mm_min: feeds.feed_rate_mm_min,
-        rpm: feeds.rpm,
+    let shipped = profile.shipped_operation();
+    // P14 (review M9): the one core door of the shipped point, as the GUI
+    // card and MCP `get_suggest_rationale` read it.
+    let shipped_power = profile.shipped_power().map_or(Value::Null, |figure| {
+        rs_cam_core::feeds::operating_point::shipped_power_json(&figure)
     });
-    let shipped_power = match rs_cam_core::feeds::power_at_operating_point(
-        shipped,
-        profile.tool_cfg,
-        profile.material,
-        profile.machine,
-        fallback,
-    ) {
-        Ok(p) => json!({
-            "required_kw": p.required_kw,
-            "available_kw": p.available_kw,
-            "ap_mm": p.ap_mm,
-            "ae_mm": p.ae_mm,
-            "rpm": p.rpm,
-            "feed_mm_min": p.feed_mm_min,
-            // K7 (feeds contract P9): the worst case of the pre-sim set.
-            "case": p.case.label(),
-            "case_ae_mm": p.case_ae_mm,
-        }),
-        Err(e) => json!({ "unmodeled": format!("{e:?}") }),
-    };
     json!({
         "calculator": {
             "rpm": feeds.rpm,
@@ -400,6 +375,39 @@ mod tests {
             record["lineage"]
         );
         assert!(record["run_state"].is_string());
+    }
+
+    /// Feeds contract P14 (review M9): the record's `shipped_power` is the
+    /// one core door (`CutterOpProfile::shipped_power`), and it prints the
+    /// number the hand-built fallback printed before P14.
+    #[test]
+    fn the_shipped_power_reads_the_one_core_door_m9() {
+        let session = session_with(OperationType::Pocket);
+        let tc = session.toolpath_configs().last().expect("one toolpath");
+        let profile = session.cutter_op_profile(tc).expect("the tool resolves");
+        let feeds = profile.feeds.as_ref().expect("Suggest serves the fixture");
+        let by_hand = rs_cam_core::feeds::power_at_operating_point(
+            profile.shipped_operation(),
+            profile.tool_cfg,
+            profile.material,
+            profile.machine,
+            Some(rs_cam_core::feeds::suggest::CalculatorOperatingPoint {
+                radial_width_mm: feeds.radial_width_mm,
+                axial_depth_mm: feeds.axial_depth_mm,
+                feed_rate_mm_min: feeds.feed_rate_mm_min,
+                rpm: feeds.rpm,
+            }),
+        )
+        .expect("the pocket draws a modelled power");
+        let record = last_record(&session);
+        let shipped = &record["profile"]["shipped_power"];
+        assert_eq!(
+            shipped["required_kw"].as_f64(),
+            Some(by_hand.required_kw),
+            "{record}"
+        );
+        assert_eq!(shipped["ap_mm"].as_f64(), Some(by_hand.ap_mm), "{record}");
+        assert_eq!(shipped["rpm"].as_f64(), Some(by_hand.rpm), "{record}");
     }
 
     /// FC0 item 2: a Drill record prints its peck depth.

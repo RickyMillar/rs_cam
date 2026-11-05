@@ -1,6 +1,6 @@
 //! F-015 regression — op-precondition static validation rules for
 //! drill and project_curve must surface as
-//! `Severity::Blocking` diagnostics through
+//! `Severity::Severe` diagnostics through
 //! `ProjectSession::diagnose_toolpath_with_trace` so the MCP
 //! `add_toolpath` / `set_toolpath_param` `diagnostic_delta` carries them
 //! before generation.
@@ -170,7 +170,7 @@ fn project_curve_in_single_model_project_surfaces_blocking_diagnostic() {
         .iter()
         .find(|d| d.id.as_str() == ids::PRECOND_PROJECT_CURVE_NO_CURVE)
         .unwrap();
-    assert_eq!(diag.severity, Severity::Blocking);
+    assert_eq!(diag.severity, Severity::Severe);
 }
 
 #[test]
@@ -274,7 +274,7 @@ fn drill_op_against_mesh_only_model_surfaces_blocking_diagnostic() {
         .iter()
         .find(|d| d.id.as_str() == ids::PRECOND_DRILL_NO_HOLES)
         .unwrap();
-    assert_eq!(diag.severity, Severity::Blocking);
+    assert_eq!(diag.severity, Severity::Severe);
 }
 
 #[test]
@@ -340,7 +340,7 @@ fn drill_op_against_polygon_only_model_fires_no_targets() {
                 diags.iter().map(|d| d.id.as_str()).collect::<Vec<_>>()
             )
         });
-    assert_eq!(diag.severity, Severity::Blocking);
+    assert_eq!(diag.severity, Severity::Severe);
     // Geometry selection P2.3c: the message is the generator's own
     // selection refusal (`Empty`), which names the skipped loops and the fix.
     assert!(

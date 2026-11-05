@@ -169,26 +169,9 @@ fn classify_suggest(w: &SuggestWarning) -> (&'static str, Class) {
         // a face line.
         SuggestWarning::RampFeed { .. } => ("RampFeed", Class::OnTheFace),
         SuggestWarning::PlungeClampedToFeed { .. } => ("PlungeClampedToFeed", Class::RowHover),
-        SuggestWarning::StepoverClampedToToolDiameter { .. } => {
-            ("StepoverClampedToToolDiameter", Class::RowHover)
-        }
-        SuggestWarning::RoughingDepthClampedToRigidity { .. } => {
-            ("RoughingDepthClampedToRigidity", Class::RowHover)
-        }
-        SuggestWarning::DepthClampedToCuttingLength { .. } => {
-            ("DepthClampedToCuttingLength", Class::RowHover)
-        }
-        SuggestWarning::DppCappedByDeflection { .. } => ("DppCappedByDeflection", Class::RowHover),
-        SuggestWarning::StepoverRaisedForRuntime { .. } => {
-            ("StepoverRaisedForRuntime", Class::RowHover)
-        }
-        SuggestWarning::FeedRaisedForChipload { .. } => ("FeedRaisedForChipload", Class::RowHover),
         // G10 (2026-09-25): the plunge rule ran again at the shipped feed.
         // The rationale row carries it on the plunge row hover.
         SuggestWarning::PlungeReDerived { .. } => ("PlungeReDerived", Class::RowHover),
-        SuggestWarning::AxialDocClampedByEnvelope { .. } => {
-            ("AxialDocClampedByEnvelope", Class::RowHover)
-        }
         SuggestWarning::PowerRecheckedAfterRescale { .. } => {
             ("PowerRecheckedAfterRescale", Class::RowHover)
         }
@@ -206,29 +189,8 @@ fn classify_suggest(w: &SuggestWarning) -> (&'static str, Class) {
         SuggestWarning::ComputedWidthAssumptions => {
             ("ComputedWidthAssumptions", Class::NoNumberMoves)
         }
-        SuggestWarning::DeflectionBackoffUnmodeled { .. } => {
-            ("DeflectionBackoffUnmodeled", Class::NoNumberMoves)
-        }
-        SuggestWarning::DeflectionBackoffFigureIsAFloor { .. } => {
-            ("DeflectionBackoffFigureIsAFloor", Class::NoNumberMoves)
-        }
-        SuggestWarning::ChiploadStillLowAfterRecalibration { .. } => {
-            ("ChiploadStillLowAfterRecalibration", Class::NoNumberMoves)
-        }
         SuggestWarning::StrategyRecommendedNotApplied { .. } => {
             ("StrategyRecommendedNotApplied", Class::NoNumberMoves)
-        }
-        SuggestWarning::AxialEnvelopeSafeBandEmpty { .. } => {
-            ("AxialEnvelopeSafeBandEmpty", Class::NoNumberMoves)
-        }
-        SuggestWarning::AxialDocBelowBurnFloor { .. } => {
-            ("AxialDocBelowBurnFloor", Class::NoNumberMoves)
-        }
-        SuggestWarning::ProjectCurveDepthInfeasible { .. } => {
-            ("ProjectCurveDepthInfeasible", Class::NoNumberMoves)
-        }
-        SuggestWarning::FinishEnvelopeAdvisory { .. } => {
-            ("FinishEnvelopeAdvisory", Class::NoNumberMoves)
         }
         // Ruling R4 WP2a: pass 9 warns and does not lift the feed.
         SuggestWarning::FeedClampedToChiploadFloor { .. } => {
@@ -365,22 +327,8 @@ fn suggest_numbers(w: &SuggestWarning) -> Vec<String> {
             RampFeed::NoEntryFeed { plunge_mm_min, .. } => out.push(at(*plunge_mm_min, 0)),
         },
         SuggestWarning::PlungeClampedToFeed { .. }
-        | SuggestWarning::StepoverClampedToToolDiameter { .. }
-        | SuggestWarning::RoughingDepthClampedToRigidity { .. }
-        | SuggestWarning::DepthClampedToCuttingLength { .. }
         | SuggestWarning::PlungeEntryUnstableAtDpp { .. }
-        | SuggestWarning::DppCappedByDeflection { .. }
-        | SuggestWarning::DeflectionBackoffUnmodeled { .. }
-        | SuggestWarning::DeflectionBackoffFigureIsAFloor { .. }
-        | SuggestWarning::StepoverRaisedForRuntime { .. }
-        | SuggestWarning::FeedRaisedForChipload { .. }
-        | SuggestWarning::ChiploadStillLowAfterRecalibration { .. }
         | SuggestWarning::StrategyRecommendedNotApplied { .. }
-        | SuggestWarning::AxialEnvelopeSafeBandEmpty { .. }
-        | SuggestWarning::AxialDocClampedByEnvelope { .. }
-        | SuggestWarning::AxialDocBelowBurnFloor { .. }
-        | SuggestWarning::ProjectCurveDepthInfeasible { .. }
-        | SuggestWarning::FinishEnvelopeAdvisory { .. }
         | SuggestWarning::FeedClampedToChiploadFloor { .. }
         | SuggestWarning::PowerRecheckedAfterRescale { .. }
         | SuggestWarning::CutGeometryFieldNotHeld { .. }
@@ -775,22 +723,8 @@ fn the_ramp_line_names_the_arm_and_the_angle_g_visible() {
                 ..
             } => Some(ramp),
             SuggestWarning::PlungeClampedToFeed { .. }
-            | SuggestWarning::StepoverClampedToToolDiameter { .. }
-            | SuggestWarning::RoughingDepthClampedToRigidity { .. }
-            | SuggestWarning::DepthClampedToCuttingLength { .. }
             | SuggestWarning::PlungeEntryUnstableAtDpp { .. }
-            | SuggestWarning::DppCappedByDeflection { .. }
-            | SuggestWarning::DeflectionBackoffUnmodeled { .. }
-            | SuggestWarning::DeflectionBackoffFigureIsAFloor { .. }
-            | SuggestWarning::StepoverRaisedForRuntime { .. }
-            | SuggestWarning::FeedRaisedForChipload { .. }
-            | SuggestWarning::ChiploadStillLowAfterRecalibration { .. }
             | SuggestWarning::StrategyRecommendedNotApplied { .. }
-            | SuggestWarning::AxialEnvelopeSafeBandEmpty { .. }
-            | SuggestWarning::AxialDocClampedByEnvelope { .. }
-            | SuggestWarning::AxialDocBelowBurnFloor { .. }
-            | SuggestWarning::ProjectCurveDepthInfeasible { .. }
-            | SuggestWarning::FinishEnvelopeAdvisory { .. }
             | SuggestWarning::FeedRescaledToFinalGeometry { .. }
             | SuggestWarning::FeedClampedToChiploadFloor { .. }
             | SuggestWarning::PowerRecheckedAfterRescale { .. }

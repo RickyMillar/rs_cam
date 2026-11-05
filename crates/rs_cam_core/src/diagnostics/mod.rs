@@ -120,11 +120,12 @@ pub enum Scope {
 /// without hardcoding the enum order.
 ///
 /// Definitions:
-/// - **Blocking** — generation cannot proceed (geometry impossible,
-///   required input missing). UI shows red. K6 (ruling Q6): only a missing
-///   input refuses generation (`run_state::refuses_generation`); a finding
-///   at this rank (a cut into the model) is a warning, and no export
-///   refuses on it.
+/// - **Severe** — the top rank: a required input is missing, or a finding
+///   is grave (a cut into the model). UI shows red. The rank refuses
+///   nothing: generation stops on the `diag_ids!` row kind alone
+///   (`NOT_READY`, `run_state::refuses_generation`), and no export refuses
+///   (K6, ruling Q6). Feeds contract P14 (review M7) renamed it from
+///   `Blocking`; the serialised token is `severe`.
 /// - **Critical** — will break the tool, ruin the part, or violate
 ///   safety. Action required before run.
 /// - **Caution** — degrades quality or stresses the tool; the operator
@@ -140,7 +141,7 @@ pub enum Severity {
     Hint,
     Caution,
     Critical,
-    Blocking,
+    Severe,
 }
 
 impl Severity {
@@ -152,7 +153,7 @@ impl Severity {
             Self::Hint => 1,
             Self::Caution => 2,
             Self::Critical => 3,
-            Self::Blocking => 4,
+            Self::Severe => 4,
         }
     }
 

@@ -306,22 +306,8 @@ fn suggest_ships_the_lowered_rpm_with_a_rationale_row_fm8() {
                 rpm_from, rpm_to, ..
             } => Some((*rpm_from, *rpm_to)),
             SuggestWarning::PlungeClampedToFeed { .. }
-            | SuggestWarning::StepoverClampedToToolDiameter { .. }
-            | SuggestWarning::RoughingDepthClampedToRigidity { .. }
-            | SuggestWarning::DepthClampedToCuttingLength { .. }
             | SuggestWarning::PlungeEntryUnstableAtDpp { .. }
-            | SuggestWarning::DppCappedByDeflection { .. }
-            | SuggestWarning::DeflectionBackoffUnmodeled { .. }
-            | SuggestWarning::DeflectionBackoffFigureIsAFloor { .. }
-            | SuggestWarning::StepoverRaisedForRuntime { .. }
-            | SuggestWarning::FeedRaisedForChipload { .. }
-            | SuggestWarning::ChiploadStillLowAfterRecalibration { .. }
             | SuggestWarning::StrategyRecommendedNotApplied { .. }
-            | SuggestWarning::AxialEnvelopeSafeBandEmpty { .. }
-            | SuggestWarning::AxialDocClampedByEnvelope { .. }
-            | SuggestWarning::AxialDocBelowBurnFloor { .. }
-            | SuggestWarning::ProjectCurveDepthInfeasible { .. }
-            | SuggestWarning::FinishEnvelopeAdvisory { .. }
             | SuggestWarning::FeedRescaledToFinalGeometry { .. }
             | SuggestWarning::FeedClampedToChiploadFloor { .. }
             | SuggestWarning::PowerRecheckedAfterRescale { .. }

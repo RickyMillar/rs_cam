@@ -204,22 +204,8 @@ fn entry_notes(state: &AppState) -> Vec<EntryNote> {
         .find_map(|w| match w {
             SuggestWarning::RampFeed { notes, .. } => Some(notes.as_slice().to_vec()),
             SuggestWarning::PlungeClampedToFeed { .. }
-            | SuggestWarning::StepoverClampedToToolDiameter { .. }
-            | SuggestWarning::RoughingDepthClampedToRigidity { .. }
-            | SuggestWarning::DepthClampedToCuttingLength { .. }
             | SuggestWarning::PlungeEntryUnstableAtDpp { .. }
-            | SuggestWarning::DppCappedByDeflection { .. }
-            | SuggestWarning::DeflectionBackoffUnmodeled { .. }
-            | SuggestWarning::DeflectionBackoffFigureIsAFloor { .. }
-            | SuggestWarning::StepoverRaisedForRuntime { .. }
-            | SuggestWarning::FeedRaisedForChipload { .. }
-            | SuggestWarning::ChiploadStillLowAfterRecalibration { .. }
             | SuggestWarning::StrategyRecommendedNotApplied { .. }
-            | SuggestWarning::AxialEnvelopeSafeBandEmpty { .. }
-            | SuggestWarning::AxialDocClampedByEnvelope { .. }
-            | SuggestWarning::AxialDocBelowBurnFloor { .. }
-            | SuggestWarning::ProjectCurveDepthInfeasible { .. }
-            | SuggestWarning::FinishEnvelopeAdvisory { .. }
             | SuggestWarning::FeedRescaledToFinalGeometry { .. }
             | SuggestWarning::FeedClampedToChiploadFloor { .. }
             | SuggestWarning::PowerRecheckedAfterRescale { .. }
@@ -389,6 +375,36 @@ fn the_entry_lines_name_angle_pitch_pip_and_clearance_g10() {
     }
 }
 
+/// Feeds contract P14 (review M9): the MCP basis carries `shipped_power`,
+/// the same core door (`CutterOpProfile::shipped_power`) that the CLI
+/// `suggest` record and the Feeds card read.
+#[cfg(feature = "mcp")]
+#[test]
+fn the_mcp_basis_carries_the_shipped_power_m9() {
+    let state = state_for(
+        tool_of(ToolType::EndMill, 6.0),
+        softwood(),
+        OperationConfig::new_default(OperationType::Pocket),
+        helix(1.8, 1.0),
+    );
+    let tc = &state.session().toolpath_configs()[0];
+    let profile = state
+        .session()
+        .cutter_op_profile(tc)
+        .expect("the fixture's tool resolves");
+    let basis = rs_cam_viz::app::suggest_basis_json(&profile);
+    let figure = profile.shipped_power().expect("Suggest serves the fixture");
+    assert_eq!(
+        basis["shipped_power"],
+        rs_cam_core::feeds::operating_point::shipped_power_json(&figure)
+    );
+    let figure = figure.expect("the pocket draws a modelled power");
+    assert_eq!(
+        basis["shipped_power"]["required_kw"].as_f64(),
+        Some(figure.required_kw)
+    );
+}
+
 /// The MCP basis carries the plunge source, the re-derive record, the entry
 /// notes and the ramp arm, from the same profile the card reads.
 #[cfg(feature = "mcp")]
@@ -431,22 +447,8 @@ fn the_mcp_basis_carries_plunge_and_entry_g10() {
         .find_map(|w| match w {
             SuggestWarning::RampFeed { notes, .. } => Some(notes.as_slice().to_vec()),
             SuggestWarning::PlungeClampedToFeed { .. }
-            | SuggestWarning::StepoverClampedToToolDiameter { .. }
-            | SuggestWarning::RoughingDepthClampedToRigidity { .. }
-            | SuggestWarning::DepthClampedToCuttingLength { .. }
             | SuggestWarning::PlungeEntryUnstableAtDpp { .. }
-            | SuggestWarning::DppCappedByDeflection { .. }
-            | SuggestWarning::DeflectionBackoffUnmodeled { .. }
-            | SuggestWarning::DeflectionBackoffFigureIsAFloor { .. }
-            | SuggestWarning::StepoverRaisedForRuntime { .. }
-            | SuggestWarning::FeedRaisedForChipload { .. }
-            | SuggestWarning::ChiploadStillLowAfterRecalibration { .. }
             | SuggestWarning::StrategyRecommendedNotApplied { .. }
-            | SuggestWarning::AxialEnvelopeSafeBandEmpty { .. }
-            | SuggestWarning::AxialDocClampedByEnvelope { .. }
-            | SuggestWarning::AxialDocBelowBurnFloor { .. }
-            | SuggestWarning::ProjectCurveDepthInfeasible { .. }
-            | SuggestWarning::FinishEnvelopeAdvisory { .. }
             | SuggestWarning::FeedRescaledToFinalGeometry { .. }
             | SuggestWarning::FeedClampedToChiploadFloor { .. }
             | SuggestWarning::PowerRecheckedAfterRescale { .. }

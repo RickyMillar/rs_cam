@@ -265,21 +265,22 @@ fn tool_op_compat_checks(
     // `tool_constraints` is the one source. It replaced a hand list (end
     // mill on Scallop, Unified Finish or Pencil) that missed Spiral Finish,
     // the bull nose, the V-bit and the four V-bit operations. K6 (decision
-    // E1): `Blocking` only when the generator cannot compute with the tool
-    // (`OperationType::tool_cannot_compute`, the prologue's refusal); else a
-    // `Critical` warning and the op generates.
+    // E1), P14 (review M7): when the generator cannot compute with the tool
+    // (`OperationType::tool_cannot_compute`, the prologue's refusal) the id
+    // is the missing-input row `compat.tool_kind_cannot_compute`; else the
+    // `Critical` warning `compat.tool_kind_refused` and the op generates.
     if let Some(text) = op.op_type().tool_refusal(tool_type.cutter_kind()) {
-        let severity = if op
+        let (id, severity) = if op
             .op_type()
             .tool_cannot_compute(tool_type.cutter_kind())
             .is_some()
         {
-            Severity::Blocking
+            (ids::COMPAT_TOOL_KIND_CANNOT_COMPUTE, Severity::Severe)
         } else {
-            Severity::Critical
+            (ids::COMPAT_TOOL_KIND_REFUSED, Severity::Critical)
         };
         out.push(Diagnostic {
-            id: DiagnosticId::from(ids::COMPAT_TOOL_KIND_REFUSED),
+            id: DiagnosticId::from(id),
             scope: scope.clone(),
             // The wrong kind of tool is a fit fault, not a load fault: the
             // same category as the other refusals of the op.
@@ -290,10 +291,10 @@ fn tool_op_compat_checks(
             source: Source::StaticValidation,
             // W1: the face names the tool kind the op needs.
             face: crate::diagnostics::presentation::face_or_default(
-                ids::COMPAT_TOOL_KIND_REFUSED,
+                id,
                 crate::diagnostics::presentation::sentence_case(&op.op_type().needs_text()),
             ),
-            anchor: crate::diagnostics::presentation::anchor(ids::COMPAT_TOOL_KIND_REFUSED),
+            anchor: crate::diagnostics::presentation::anchor(id),
             message: text,
             evidence: None,
             fix: None,

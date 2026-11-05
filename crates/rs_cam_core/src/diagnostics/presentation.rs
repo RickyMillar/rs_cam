@@ -587,6 +587,11 @@ pub const TABLE: &[(&str, Anchor, &str)] = &[
     // Tool and op compatibility.
     (ids::COMPAT_TOOL_KIND_REFUSED, TOOL, "Wrong tool kind"),
     (
+        ids::COMPAT_TOOL_KIND_CANNOT_COMPUTE,
+        TOOL,
+        "Wrong tool kind",
+    ),
+    (
         ids::COMPAT_BALL_NOSE_FLAT_CLEARING,
         NOTE,
         "Ball nose leaves ridges on flat floors",

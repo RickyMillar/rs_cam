@@ -4,7 +4,8 @@ Until 2026-09-25 these files lived only on the operator's machine
 (`~/Downloads/wanaka100/`), and the Wanaka fixtures named them by that
 absolute path. On any other checkout the models loaded with no bounding
 box, and a test that needs one (for example the stepover back-off in
-`suggest_feed_matches_final_geometry`) read red or skipped.
+`suggest_feed_matches_final_geometry`, deleted in feeds contract P5) read
+red or skipped.
 
 | File | Read by |
 |---|---|

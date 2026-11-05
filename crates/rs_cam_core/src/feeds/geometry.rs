@@ -4,32 +4,6 @@
 //! These are pure geometry functions with no material/machine dependencies.
 //! Ported from reference/shapeoko_feeds_and_speeds/src/calcs.rs lines 523-720.
 
-/// Radial Chip Thinning Factor (RCTF).
-///
-/// When radial engagement is less than half the tool diameter, the actual chip
-/// is thinner than the nominal feed-per-tooth. Feed rate must increase to
-/// maintain consistent chip load.
-///
-/// `ae_mm` — radial width of cut (mm)
-/// `diameter_mm` — tool diameter (mm)
-///
-/// Returns a multiplier >= 1.0 to apply to the nominal feed rate.
-pub fn radial_chip_thinning_factor(ae_mm: f64, diameter_mm: f64) -> f64 {
-    if diameter_mm <= 0.0 || ae_mm <= 0.0 {
-        return 1.0;
-    }
-    let ae_ratio = (ae_mm / diameter_mm).clamp(0.0, 0.5);
-    if ae_ratio >= 0.5 {
-        return 1.0;
-    }
-    let denom = (1.0 - (1.0 - 2.0 * ae_ratio).powi(2)).sqrt();
-    if denom <= 0.0 {
-        1.0
-    } else {
-        (1.0 / denom).clamp(1.0, 4.0)
-    }
-}
-
 /// Feeds contract P11b (decision L1): the radial chip-thinning lift that
 /// Suggest applies to the feed, so that the PEAK chip equals the band chip.
 ///
@@ -44,13 +18,14 @@ pub fn radial_chip_thinning_factor(ae_mm: f64, diameter_mm: f64) -> f64 {
 ///
 /// One formula with no cap (decision L3): the machine feed ceiling, the
 /// spindle power and the rubbing floor bound the lifted feed downstream.
-/// [`radial_chip_thinning_factor`] is the same law with a `[1, 4]` clamp
-/// (`sqrt(1 - (1 - 2 ae/D)^2) = sin(psi)`); it stays only for
-/// `dressup::feedopt`.
+/// Feeds contract P14 (review M2): this is the one law; `dressup::feedopt`
+/// and the modulator band-mid read it through [`RadialThinning`] (the
+/// clamped copy `radial_chip_thinning_factor` is deleted).
 ///
 /// `d_eng_mm` is the engaged diameter at the cut depth (the K7
-/// `Engagement::d_eng` rule). A degenerate input (no width, no diameter)
-/// returns 1: no engagement, no lift.
+/// `Engagement::d_eng_mm`: `effective_diameter` or `2 x engagement_radius`).
+/// A degenerate input (no width, no diameter) returns 1: no engagement, no
+/// lift.
 #[must_use]
 pub fn peak_chip_thinning_lift(ae_mm: f64, d_eng_mm: f64) -> f64 {
     let psi = crate::feeds::force::immersion_angle(ae_mm, 0.5 * d_eng_mm);
@@ -386,61 +361,8 @@ pub fn vendor_depth_table_ceiling_ratio(chip_share: f64) -> f64 {
     }
 }
 
-/// **The diameter that a depth-dependent feed de-rate divides by, at axial
-/// depth `ap`.** Feeds matrix R2 (2026-09-23); ruling B4 (2026-09-25,
-/// `planning/extrapolation_2026-09-24/B4_PLAN.md` §3) moves the V-bit case
-/// here.
-///
-/// - Tapered ball: the engaged diameter at `ap`
-///   ([`crate::feeds::ToolGeometryHint::engaged_diameter_at_doc`]), the
-///   parity twin of `lookup_diameter_at`. Before R2 the feed divided by the
-///   tip. P11b2: no band de-rate reads this diameter any more; the depth cap
-///   does.
-/// - V-bit, flat, ball, bull: the nominal diameter. A V-bit chart never
-///   prints its chip load against the engaged width. A V-bit divides by
-///   the nominal diameter like every non-tapered shape (ruling B4). Before
-///   B4 the band de-rate alone stayed at the engaged width.
-///
-/// Callers: [`feed_ladder_diameter_mm`]. The band de-rate that also read it
-/// (Suggest, the gate, the chip target) is retired (P11b, P11b2); the
-/// cutter twin [`depth_derate_diameter_for_cutter`] keys the depth cap.
-#[must_use]
-pub fn depth_derate_diameter_mm(
-    geom: crate::feeds::ToolGeometryHint,
-    ap: f64,
-    nominal_d: f64,
-    shank_d: f64,
-) -> f64 {
-    match geom {
-        crate::feeds::ToolGeometryHint::TaperedBall { .. } => {
-            geom.engaged_diameter_at_doc(ap.max(0.0), nominal_d, shank_d)
-        }
-        crate::feeds::ToolGeometryHint::Flat
-        | crate::feeds::ToolGeometryHint::Ball
-        | crate::feeds::ToolGeometryHint::Bull { .. }
-        | crate::feeds::ToolGeometryHint::VBit { .. } => nominal_d,
-    }
-}
-
-/// **The diameter the feed's depth ladder divides by, at axial depth
-/// `ap`.** `feeds::calculate` Step 5a, Suggest pass 9 and the pass 9
-/// sentry all call this one function.
-///
-/// A thin name for [`depth_derate_diameter_mm`]; see it for the per-shape
-/// rule.
-#[must_use]
-pub fn feed_ladder_diameter_mm(
-    geom: crate::feeds::ToolGeometryHint,
-    ap: f64,
-    nominal_d: f64,
-    shank_d: f64,
-) -> f64 {
-    depth_derate_diameter_mm(geom, ap, nominal_d, shank_d)
-}
-
 /// **The diameter a depth-dependent de-rate multiplies or divides by, at
-/// one axial depth, from a cutter.** The cutter twin of
-/// [`depth_derate_diameter_mm`] (ruling B4, 2026-09-25). Feeds matrix R2
+/// one axial depth, from a cutter.** Ruling B4 (2026-09-25). Feeds matrix R2
 /// (2026-09-23) set the tapered-ball and the depth-cap rule; B4 moves the
 /// V-bit band de-rate here too.
 ///
@@ -504,9 +426,9 @@ pub fn depth_cap_diameter_mm(cutter: &dyn crate::tool::MillingCutter, depth_mm: 
 ///   tapered chart (Onsrud, Amana, SpeTool, Whiteside) prints the
 ///   chipload against the tip, so the row is read at the tip at every
 ///   depth. A1 reopens the lookup half of feeds matrix R2 only. The depth
-///   half of R2 stands: the depth ladder ([`feed_ladder_diameter_mm`]),
-///   the depth cap ([`depth_cap_diameter_mm`]), the band de-rate and the
-///   deflection gate still use the engaged cone diameter at the depth.
+///   half of R2 stands: the depth cap ([`depth_cap_diameter_mm`]) and the
+///   deflection gate still use the engaged cone diameter at the depth (the
+///   depth ladder and the band de-rate are retired, P11b and P11b2).
 /// - V-bit: the nominal diameter at every depth (ruling B4, 2026-09-25,
 ///   G5). A V-bit chart prints its chip load against the tool's cutting
 ///   diameter (Onsrud 37-series, Whiteside) or against the included angle
@@ -517,7 +439,7 @@ pub fn depth_cap_diameter_mm(cutter: &dyn crate::tool::MillingCutter, depth_mm: 
 ///
 /// The key is the lookup key only. The depth ladder and the depth cap of a
 /// V-bit already read the nominal diameter before B4
-/// ([`depth_derate_diameter_mm`], [`depth_derate_diameter_for_cutter`]).
+/// ([`depth_derate_diameter_for_cutter`]).
 /// Step 2 of B4 moves the band de-rate of a V-bit to the nominal diameter
 /// too, so every depth-dependent consumer but one now agrees with this
 /// key. The surface-speed RPM, the formula chip load and the deflection of
@@ -610,35 +532,6 @@ pub fn vbit_width_at_depth(included_angle: f64, tip_d: f64, ap: f64) -> Option<f
 )]
 mod tests {
     use super::*;
-
-    #[test]
-    fn test_rctf_full_engagement() {
-        let f = radial_chip_thinning_factor(6.0, 6.0);
-        assert!((f - 1.0).abs() < 0.01);
-    }
-
-    #[test]
-    fn test_rctf_half_engagement() {
-        let f = radial_chip_thinning_factor(3.0, 6.0);
-        assert!((f - 1.0).abs() < 0.01);
-    }
-
-    #[test]
-    fn test_rctf_quarter_engagement() {
-        let f = radial_chip_thinning_factor(1.5, 6.0);
-        assert!(f > 1.1 && f < 1.3, "got {f}");
-    }
-
-    #[test]
-    fn test_rctf_light_engagement() {
-        let f = radial_chip_thinning_factor(0.6, 6.0);
-        assert!(f > 1.5, "got {f}");
-    }
-
-    #[test]
-    fn test_rctf_zero_engagement() {
-        assert_eq!(radial_chip_thinning_factor(0.0, 6.0), 1.0);
-    }
 
     #[test]
     fn test_ball_effective_full_depth() {

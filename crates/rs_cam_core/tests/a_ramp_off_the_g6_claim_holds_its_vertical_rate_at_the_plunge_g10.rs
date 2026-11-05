@@ -110,22 +110,8 @@ fn record(s: &SuggestedParams) -> (&RampFeed, &EntryNotes) {
         .filter_map(|w| match w {
             SuggestWarning::RampFeed { record, notes, .. } => Some((record, notes)),
             SuggestWarning::PlungeClampedToFeed { .. }
-            | SuggestWarning::StepoverClampedToToolDiameter { .. }
-            | SuggestWarning::RoughingDepthClampedToRigidity { .. }
-            | SuggestWarning::DepthClampedToCuttingLength { .. }
             | SuggestWarning::PlungeEntryUnstableAtDpp { .. }
-            | SuggestWarning::DppCappedByDeflection { .. }
-            | SuggestWarning::DeflectionBackoffUnmodeled { .. }
-            | SuggestWarning::DeflectionBackoffFigureIsAFloor { .. }
-            | SuggestWarning::StepoverRaisedForRuntime { .. }
-            | SuggestWarning::FeedRaisedForChipload { .. }
-            | SuggestWarning::ChiploadStillLowAfterRecalibration { .. }
             | SuggestWarning::StrategyRecommendedNotApplied { .. }
-            | SuggestWarning::AxialEnvelopeSafeBandEmpty { .. }
-            | SuggestWarning::AxialDocClampedByEnvelope { .. }
-            | SuggestWarning::AxialDocBelowBurnFloor { .. }
-            | SuggestWarning::ProjectCurveDepthInfeasible { .. }
-            | SuggestWarning::FinishEnvelopeAdvisory { .. }
             | SuggestWarning::FeedRescaledToFinalGeometry { .. }
             | SuggestWarning::FeedClampedToChiploadFloor { .. }
             | SuggestWarning::PowerRecheckedAfterRescale { .. }

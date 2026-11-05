@@ -256,7 +256,7 @@ fn no_suggest_path_calls_the_sample_constructor() {
 //
 // A tapered ball or a V-bit cuts wider than its tip as the cone engages, so
 // the placement compares a measured width with the engaged diameter at the
-// sample depth (`Engagement::d_eng`), not the nominal tip diameter, and it
+// sample depth (`Engagement::d_eng_mm`), not the nominal tip diameter, and it
 // does not judge a cone tool by the slot rule (a flat end mill rule; a V
 // groove is always a full groove).
 

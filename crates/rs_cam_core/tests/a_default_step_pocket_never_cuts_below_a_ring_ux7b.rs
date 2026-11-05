@@ -384,7 +384,7 @@ fn a_pocket_below_the_z30_ring_is_warned_ux7b() {
     );
     let diagnostics = gouge_diagnostics(&s, 0);
     assert_eq!(diagnostics.len(), 1);
-    assert_eq!(diagnostics[0].severity, Severity::Blocking);
+    assert_eq!(diagnostics[0].severity, Severity::Severe);
     assert!(
         diagnostics[0].message.contains("Each picked face"),
         "{}",
@@ -409,7 +409,7 @@ fn a_ring_profile_through_the_stock_is_warned_ux7b() {
     assert!(finding.gouges(), "{finding:?}");
     let diagnostics = gouge_diagnostics(&s, 0);
     assert_eq!(diagnostics.len(), 1);
-    assert_eq!(diagnostics[0].severity, Severity::Blocking);
+    assert_eq!(diagnostics[0].severity, Severity::Severe);
     assert!(
         diagnostics[0].message.contains("part outline"),
         "{}",

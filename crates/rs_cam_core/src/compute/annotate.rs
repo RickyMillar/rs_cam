@@ -783,7 +783,7 @@ pub(super) fn annotate_scallop(
 ///
 /// Both systems are built from the same
 /// [`crate::finish::unified_finish::RegionAnnotation`] table, and
-/// `tests/unified_finish_semantic_regions.rs` asserts they agree on count
+/// `compute/execute/unified_finish_semantic_regions.rs` asserts they agree on count
 /// and move range. This is annotation only: no move is added, removed, or
 /// moved.
 pub(super) fn annotate_unified_finish_regions(

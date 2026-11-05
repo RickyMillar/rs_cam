@@ -211,22 +211,8 @@ fn re_derived(warnings: &[SuggestWarning]) -> Vec<(f64, f64, PlungeBinding)> {
             | SuggestWarning::ComputedWidthAssumptions
             | SuggestWarning::OutsideEnvelope { .. }
             | SuggestWarning::PlungeClampedToFeed { .. }
-            | SuggestWarning::StepoverClampedToToolDiameter { .. }
-            | SuggestWarning::RoughingDepthClampedToRigidity { .. }
-            | SuggestWarning::DepthClampedToCuttingLength { .. }
             | SuggestWarning::PlungeEntryUnstableAtDpp { .. }
-            | SuggestWarning::DppCappedByDeflection { .. }
-            | SuggestWarning::DeflectionBackoffUnmodeled { .. }
-            | SuggestWarning::DeflectionBackoffFigureIsAFloor { .. }
-            | SuggestWarning::StepoverRaisedForRuntime { .. }
-            | SuggestWarning::FeedRaisedForChipload { .. }
-            | SuggestWarning::ChiploadStillLowAfterRecalibration { .. }
             | SuggestWarning::StrategyRecommendedNotApplied { .. }
-            | SuggestWarning::AxialEnvelopeSafeBandEmpty { .. }
-            | SuggestWarning::AxialDocClampedByEnvelope { .. }
-            | SuggestWarning::AxialDocBelowBurnFloor { .. }
-            | SuggestWarning::ProjectCurveDepthInfeasible { .. }
-            | SuggestWarning::FinishEnvelopeAdvisory { .. }
             | SuggestWarning::FeedRescaledToFinalGeometry { .. }
             | SuggestWarning::FeedClampedToChiploadFloor { .. }
             | SuggestWarning::PowerRecheckedAfterRescale { .. }

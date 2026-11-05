@@ -377,7 +377,7 @@ fn reducer_preserves_unrelated_diagnostics() {
 
 #[test]
 fn severity_rank_orders_correctly() {
-    assert!(Severity::Blocking.rank() > Severity::Critical.rank());
+    assert!(Severity::Severe.rank() > Severity::Critical.rank());
     assert!(Severity::Critical.rank() > Severity::Caution.rank());
     assert!(Severity::Caution.rank() > Severity::Hint.rank());
     assert!(Severity::Hint.rank() > Severity::Info.rank());
@@ -385,7 +385,7 @@ fn severity_rank_orders_correctly() {
 
 #[test]
 fn severity_is_actionable() {
-    assert!(Severity::Blocking.is_actionable());
+    assert!(Severity::Severe.is_actionable());
     assert!(Severity::Critical.is_actionable());
     assert!(Severity::Caution.is_actionable());
     assert!(!Severity::Hint.is_actionable());

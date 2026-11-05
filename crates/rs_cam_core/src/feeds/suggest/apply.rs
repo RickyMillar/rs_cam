@@ -155,12 +155,8 @@ fn apply_feeds_subset(
         chipload_bounds: result.chipload_bounds,
         matched_lut_row: result.matched_lut_row.as_ref(),
         effective_diameter_mm: result.effective_diameter_mm,
-        calculator_operating_point: (!speeds_explored).then_some(CalculatorOperatingPoint {
-            radial_width_mm: result.radial_width_mm,
-            axial_depth_mm: result.axial_depth_mm,
-            feed_rate_mm_min: result.feed_rate_mm_min,
-            rpm: result.rpm,
-        }),
+        calculator_operating_point: (!speeds_explored)
+            .then_some(CalculatorOperatingPoint::of(result)),
         ..context
     };
     // G-SPEEDSAPPLY (2026-10-12): a speeds-only apply resolves the speeds
@@ -239,10 +235,9 @@ fn apply_feeds_subset(
             }
         }
     }
-    // Ruling R4 (2026-09-24) marked the pass 6b record `applied: false` here
-    // when this apply did not write the cut geometry. Since G-SPEEDSAPPLY
-    // (2026-10-12) the only scope that does not write the geometry,
-    // `Speeds`, does not run pass 6b, so no such record reaches this point.
+    // Ruling R4 (2026-09-24) marked the dial record `applied: false` here.
+    // Feeds contract P5 deleted the dial pass, so no such record reaches
+    // this point.
     {
         operation.set_feed_rate(scratch_feed(&scratch));
         operation.set_plunge_rate(scratch_plunge(&scratch));

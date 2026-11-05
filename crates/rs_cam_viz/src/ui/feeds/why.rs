@@ -1068,23 +1068,9 @@ fn suggest_line(warning: &SuggestWarning) -> Option<(String, bool)> {
         // they move no number. `PlungeReDerived` (G10) is on the plunge row
         // hover.
         SuggestWarning::PlungeClampedToFeed { .. }
-        | SuggestWarning::StepoverClampedToToolDiameter { .. }
-        | SuggestWarning::RoughingDepthClampedToRigidity { .. }
-        | SuggestWarning::DepthClampedToCuttingLength { .. }
         | SuggestWarning::PlungeEntryUnstableAtDpp { .. }
-        | SuggestWarning::DppCappedByDeflection { .. }
-        | SuggestWarning::DeflectionBackoffUnmodeled { .. }
-        | SuggestWarning::DeflectionBackoffFigureIsAFloor { .. }
-        | SuggestWarning::StepoverRaisedForRuntime { .. }
-        | SuggestWarning::FeedRaisedForChipload { .. }
-        | SuggestWarning::ChiploadStillLowAfterRecalibration { .. }
         | SuggestWarning::StrategyRecommendedNotApplied { .. }
         | SuggestWarning::PlungeReDerived { .. }
-        | SuggestWarning::AxialEnvelopeSafeBandEmpty { .. }
-        | SuggestWarning::AxialDocClampedByEnvelope { .. }
-        | SuggestWarning::AxialDocBelowBurnFloor { .. }
-        | SuggestWarning::ProjectCurveDepthInfeasible { .. }
-        | SuggestWarning::FinishEnvelopeAdvisory { .. }
         | SuggestWarning::FeedClampedToChiploadFloor { .. }
         | SuggestWarning::PowerRecheckedAfterRescale { .. }
         | SuggestWarning::CutGeometryFieldNotHeld { .. } => None,

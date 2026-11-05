@@ -155,8 +155,13 @@ pub struct Recommendation<S: Completeness> { /* Sourced fields */ }
   carries `Derived { law: "<cap>", from: [Operator, ...] }`. Raising an operator depth (the
   14.05 mm case) does not compile: the cap API returns `min(stated, cap)` only.
 - `Complete` needs every written field to have a basis that is not `Rule` with an Unsourced
-  constant, OR an explicit operator acceptance recorded in the command. A `Partial`
-  recommendation shows on the card and cannot be applied.
+  constant. A `Partial` recommendation shows its Unsourced rows on the card. Lead decision D4
+  (P5, revised 2026-11-03; P14 M6 brought this text into line with it): an apply on any surface
+  (GUI click, MCP, CLI) is the operator's acceptance. No acceptance flag exists on the wire or in
+  `ApplyFeedsArgs`. Every apply door calls `Recommendation::accept_unsourced`, which turns a
+  `Partial` into the `Complete` that `apply` takes; the apply records the acceptance in the
+  lineage and returns `SuggestWarning::UnsourcedRowsAccepted`, which names the rows. With 161
+  Unsourced rows (F201 pin), nearly every apply passes through this acceptance.
 - A unit newtype per field (`Rpm`, `FeedMmMin`, `PlungeMmMin`, `ChipMm`) so a plunge cannot take a
   side feed from another row: the G10 plunge takes `Sourced<FeedMmMin>` and checks that its
   `RowRef` is the claim's row (report 02 c).

@@ -95,7 +95,8 @@ pub fn mrr_row(ui: &mut egui::Ui, mrr_mm3_min: f64) {
 /// **Read-only** since Checkpoint I-1 (A-4, 2026-08-12). The trailing cell used
 /// to hold a per-field `Apply` button that pushed `AppEvent::ApplyFeedsField`,
 /// which wrote the raw preview value into the operation with neither the tool ×
-/// operation validation nor `enforce_invariants` — on the shipped default
+/// operation validation nor `enforce_invariants` (deleted in feeds contract
+/// P5) — on the shipped default
 /// fixture that put **4.445 mm** of DOC where the funnel puts **1.27 mm**. The
 /// buttons were deleted rather than rerouted; the trailing cell is now blank
 /// and the row is a display primitive with no event surface at all, which is

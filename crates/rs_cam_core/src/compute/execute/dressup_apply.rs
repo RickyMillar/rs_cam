@@ -31,7 +31,7 @@
 //! guarantee.
 //!
 //! **Stripped, not refused.** A refusal would fire on the product's own
-//! defaults — `AlignmentPinDrill` carries `DressupPolicy::ANY_DRESSUP`
+//! defaults — `AlignmentPinDrill` carries `LeadLinkPolicy::AS_CONFIGURED`
 //! and the Roughing role's `Ramp`, so every freshly-added pin drill
 //! would stop generating — and it would buy nothing: the dressup is a
 //! request to REWRITE the emitted geometry, so declining it leaves the

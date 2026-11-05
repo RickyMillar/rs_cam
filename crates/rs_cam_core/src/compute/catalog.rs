@@ -35,7 +35,7 @@ pub use entry_contract::{
 };
 
 pub use schema::{
-    DressupPolicy, DriverSetField, Kinematics, OpParams, OpPolicy, OpRegistryEntry,
+    DriverSetField, Kinematics, LeadLinkPolicy, OpParams, OpPolicy, OpRegistryEntry,
     OperationParamSchema, OperationSchema, ParamDef, ParamHint, ParamKind, ParamRange, ParamTable,
     ParamType, SkippedField, TOOLPATH_PARAM_DEFS, ToolConstraints, ToolConstraintsDef,
     driver_set_field,

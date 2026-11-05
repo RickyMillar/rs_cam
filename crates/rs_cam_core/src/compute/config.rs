@@ -1691,8 +1691,8 @@ impl DressupConfig {
         }
         // CMP-26: the hand-written ProjectCurve strip that stood here was
         // a no-op. `normalize_for_op` below reads the row's
-        // `dressup_policy` and `entry`, and ProjectCurve's policy is
-        // `DressupPolicy::strip_all("Incompatible with Project Curve: each
+        // `lead_link_policy` and `entry`, and ProjectCurve's policy is
+        // `LeadLinkPolicy::strip("Incompatible with Project Curve: each
         // ring would get a phantom diagonal cut.")`, which sets exactly
         // those three fields — with the user-facing reason the GUI greys
         // the controls with. This was the last op-specific arm in a method
@@ -1716,7 +1716,7 @@ impl DressupConfig {
     pub fn normalize_for_op(&mut self, op: super::catalog::OperationType) -> bool {
         use super::catalog::EntryContract;
         // Phase 1 (architectural refactor T5): the per-op decisions live
-        // in the registry: `dressup_policy` (leads and links, ONE source
+        // in the registry: `lead_link_policy` (leads and links, ONE source
         // shared with the viz dressup panel) and, K4 (feeds contract P3),
         // `entry` (the entry style). The op-specific rationale (phantom
         // diagonals on ProjectCurve/DropCutter, Roadmap B.5 entry
@@ -1724,7 +1724,7 @@ impl DressupConfig {
         // is documented on the registry entries in compute/catalog.rs.
         let row = op.registry_entry();
         let mut changed = false;
-        if row.dressup_policy.strip_all_reason.is_some() {
+        if row.lead_link_policy.strip_reason.is_some() {
             if self.lead_in_out.is_some() {
                 self.lead_in_out = None;
                 changed = true;
@@ -2165,17 +2165,17 @@ mod tests {
         };
         for &op in OperationType::ALL {
             let row = op.registry_entry();
-            let strips = row.dressup_policy.strip_all_reason.is_some();
+            let strips = row.lead_link_policy.strip_reason.is_some();
             assert!(
                 matches!(row.entry, EntryContract::StraightPlunge { .. })
                     == !reason_of(row.entry).is_empty(),
                 "{op:?}: a straight plunge states a reason"
             );
-            // A row that strips every dressup takes no dressup entry, so
+            // A row that strips its leads and links takes no dressup entry, so
             // `normalize_for_op` sets its style to None.
             assert!(
                 !strips || !row.entry_style_applies(),
-                "{op:?}: a strip-all row has a Dressup entry contract"
+                "{op:?}: a row that strips leads and links has a Dressup entry contract"
             );
             let (want, want_strip) = match op {
                 OperationType::Face
@@ -2217,7 +2217,7 @@ mod tests {
                 | OperationType::InlayPlug
                 | OperationType::DropCutter => (
                     EntryContract::StraightPlunge {
-                        reason: row.dressup_policy.strip_all_reason.unwrap_or_default(),
+                        reason: row.lead_link_policy.strip_reason.unwrap_or_default(),
                         feed: PlungeFeedRule::OpPlungeRate,
                     },
                     true,
@@ -2225,7 +2225,7 @@ mod tests {
                 // P8 (ruling Q8): the plunge is bound by the G6 axial chip.
                 OperationType::ProjectCurve => (
                     EntryContract::StraightPlunge {
-                        reason: row.dressup_policy.strip_all_reason.unwrap_or_default(),
+                        reason: row.lead_link_policy.strip_reason.unwrap_or_default(),
                         feed: PlungeFeedRule::AxialChip,
                     },
                     true,

@@ -29,8 +29,10 @@ use super::{
 mod diagnostics;
 mod export;
 mod generation;
+mod measured;
 mod params;
 mod simulation;
+mod toolpath_diagnostics;
 
 pub use diagnostics::TriageSessionKey;
 pub use export::ExportScope;
@@ -1537,46 +1539,14 @@ const ADVISOR_CANDIDATE_STRATEGIES: [ClearingStrategy; 2] = [
     ClearingStrategy::GeodesicAdaptive,
 ];
 
-/// Map a Suggest pass's warnings to the binding [`LoadRegime`] for the
-/// advisor's *why* string. Deflection-binding warnings mean the tool is the
-/// limit (tool-limited); everything else reads as unconstrained here.
-///
-/// Machine-limited (power-binding) detection is deliberately not inferred
-/// from Suggest warnings — Suggest does not emit a power-cap warning, and the
-/// regime label only colours the explanation (the *choice* is always the
-/// measured wall-clock minimum), so a conservative "unconstrained" default is
-/// honest until a power-gate signal is threaded in.
-///
-/// [`LoadRegime`]: crate::machine::strategy_advisor::LoadRegime
-#[expect(
-    clippy::wildcard_enum_match_arm,
-    reason = "projection: only the named variant(s) carry this (named: SuggestWarning::DppCappedByDeflection, SuggestWarning::AxialDocClampedByEnvelope)"
-)]
-fn regime_from_suggest_warnings(
-    warnings: &[crate::feeds::suggest::SuggestWarning],
-) -> crate::machine::strategy_advisor::LoadRegime {
-    use crate::feeds::suggest::SuggestWarning;
-    let deflection_bound = warnings.iter().any(|w| match w {
-        SuggestWarning::DppCappedByDeflection { .. } => true,
-        SuggestWarning::AxialDocClampedByEnvelope { binding, .. } => *binding == "deflection",
-        _ => false,
-    });
-    if deflection_bound {
-        crate::machine::strategy_advisor::LoadRegime::ToolLimited
-    } else {
-        crate::machine::strategy_advisor::LoadRegime::Unconstrained
-    }
-}
-
 /// Map a modulated path's per-move binding-constraint distribution to the
 /// advisor's [`LoadRegime`]. The dominant (most-frequent) binding constraint
 /// decides: deflection → tool-limited; power / machine-max-feed /
 /// kinematic-reach → machine-limited; the chipload band (max or min) →
 /// unconstrained (the comfortable regime, neither the tool nor the machine
-/// stressed). This is the unified-load-model upgrade over
-/// [`regime_from_suggest_warnings`]: the label now comes from the actual
-/// per-move binding signal of the *optimized* path, not a Suggest-warning
-/// heuristic (`planning/UNIFIED_LOAD_MODEL_2026-06-18.md` §5.4).
+/// stressed). This is the unified-load-model upgrade over the old
+/// Suggest-warning heuristic: the label comes from the actual per-move
+/// binding signal of the *optimized* path (`planning/UNIFIED_LOAD_MODEL_2026-06-18.md` §5.4).
 fn regime_from_binding(
     summary: &crate::tool_load::ModulationSummary,
 ) -> crate::machine::strategy_advisor::LoadRegime {
@@ -1798,18 +1768,16 @@ pub fn execute_recommend_clearing_strategy(
                 },
             },
         );
-        let (op_loadlimited, regime) = match suggested {
-            Ok(s) => {
-                let regime = regime_from_suggest_warnings(&s.warnings);
-                (s.operation, regime)
-            }
-            // Suggest refused (e.g. a material without primary-source Kc).
-            // Still worth timing at the raw params; regime is unknown.
-            Err(_) => (
-                op,
-                crate::machine::strategy_advisor::LoadRegime::Unconstrained,
-            ),
+        // The regime before modulation reads `Unconstrained`: no Suggest
+        // warning names a binding limit since the feeds contract P5 deleted
+        // the deflection and envelope clamps (P14 deleted their warnings).
+        // Suggest can refuse (e.g. a material without primary-source Kc);
+        // the raw params are still worth timing.
+        let op_loadlimited = match suggested {
+            Ok(s) => s.operation,
+            Err(_) => op,
         };
+        let regime = crate::machine::strategy_advisor::LoadRegime::Unconstrained;
         // Plan the clearing toolpath — no recorders / dressups / persist;
         // the raw path is what we time.
         //

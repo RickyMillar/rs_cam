@@ -17,7 +17,7 @@
 //! resolve to a loaded model unless the operation is stock-based
 //! (face / drill-stock-area cases that don't need a model).
 //!
-//! The diagnostic is `Severity::Blocking` so the params banner
+//! The diagnostic is `Severity::Severe` so the params banner
 //! surfaces it as actionable, the export gate refuses to proceed, and
 //! the MCP envelope's `gui_banners` / `warnings` carry it for any
 //! agent driving the workflow.
@@ -63,7 +63,7 @@ pub fn diagnostics_from_model_refs(
             id: DiagnosticId::from(ids::REF_MODEL_MISSING),
             scope: Scope::Toolpath { id: toolpath_id },
             category: Category::Geometry,
-            severity: Severity::Blocking,
+            severity: Severity::Severe,
             confidence: Confidence::Static,
             state: DiagnosticState::Current,
             source: Source::StaticValidation,
@@ -109,7 +109,7 @@ mod tests {
         assert_eq!(diags.len(), 1);
         let d = &diags[0];
         assert_eq!(d.id.as_str(), ids::REF_MODEL_MISSING);
-        assert_eq!(d.severity, Severity::Blocking);
+        assert_eq!(d.severity, Severity::Severe);
         assert_eq!(d.category, Category::Geometry);
         assert_eq!(d.source, Source::StaticValidation);
         assert!(
