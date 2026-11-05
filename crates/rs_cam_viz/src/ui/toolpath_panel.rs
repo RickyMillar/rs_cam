@@ -1310,23 +1310,13 @@ fn add_geodesic_pair_menu_item(
 
 /// True when the add menu offers `op` for the models of `session`.
 ///
-/// A 2D op reads a drawing item or a face item (a STEP face): the rule of
-/// the "Selection" boundary source, `ItemSet::has_selectable_item`
-/// (geometry selection P4.D). A 3D op reads a mesh. Face and Pin Drill run
-/// with no model (the stock outline, the stock pins): `is_stock_based`.
+/// M10: one model must serve the op (`LoadedModel::serves`, the Q7 rule
+/// of the core). A drawing and a separate mesh do not serve an op that
+/// needs items and a mesh on one model (Project Curve). Face and Pin Drill
+/// run with no model (the stock outline, the stock pins):
+/// `is_stock_based`.
 pub fn add_menu_offers(session: &rs_cam_core::session::ProjectSession, op: OperationType) -> bool {
-    use crate::state::toolpath::GeometryRequirement;
-    let has_mesh = session.models().iter().any(|m| m.mesh.is_some());
-    let has_items = session
-        .models()
-        .iter()
-        .any(|m| m.items.has_selectable_item());
-    op.is_stock_based()
-        || match op.spec().geometry {
-            GeometryRequirement::Items => has_items,
-            GeometryRequirement::Mesh => has_mesh,
-            GeometryRequirement::ItemsAndMesh => has_items && has_mesh,
-        }
+    op.is_stock_based() || session.models().iter().any(|m| m.serves(op))
 }
 
 fn add_op_menu_item(
