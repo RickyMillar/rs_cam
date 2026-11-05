@@ -60,7 +60,10 @@ fn roughing_pocket() -> OperationConfig {
         floor: rs_cam_core::compute::floor::Floor::top(12.0),
         depth_per_pass: Some(3.0),
         stepover: Some(2.0),
-        feed_rate: Some(1800.0),
+        // P11b (L7): the envelope is sized at the operator's chip, 4800 /
+        // (18 000 x Z); 1800 left the slender tool with no root below its
+        // flute.
+        feed_rate: Some(4800.0),
         plunge_rate: Some(500.0),
         spindle_rpm: Some(18_000),
         ..PocketConfig::default()

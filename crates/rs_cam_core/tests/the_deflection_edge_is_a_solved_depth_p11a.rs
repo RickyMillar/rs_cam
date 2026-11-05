@@ -56,7 +56,10 @@ fn roughing_pocket() -> OperationConfig {
         floor: rs_cam_core::compute::floor::Floor::top(12.0),
         depth_per_pass: Some(1.0),
         stepover: Some(1.0),
-        feed_rate: Some(1800.0),
+        // P11b (L7): the envelope is sized at the operator's chip, 4800 /
+        // (18 000 x 2) = 0.133 mm, the chip of the suggested 6 mm row that
+        // the grid read before P11b.
+        feed_rate: Some(4800.0),
         plunge_rate: Some(500.0),
         spindle_rpm: Some(18_000),
         ..PocketConfig::default()
@@ -143,26 +146,16 @@ fn a_solved_edge_sits_where_deflection_meets_its_target_p11a() {
     assert!(!points.is_empty(), "the curve has points");
     let mut checked = 0;
     for &[ae, ap] in points {
-        // The column's chip is the chip of its shallowest grid point.
-        let j = env
-            .speeds
-            .aes
-            .iter()
-            .position(|&w| (w - ae).abs() < 1e-12)
-            .expect("a curve point sits on a width sample");
-        let p = env.speeds.at(0, j).expect("the column has a first point");
-        let rpm = p.rpm.get().0;
+        // P11b (L7): the column's chip is the operator's (the op's own feed
+        // and RPM), so the predictor reads the op as it stands.
         assert!(
-            (rpm - rpm.round()).abs() < 1e-9 && rpm > 0.0,
-            "the fixture ships a whole RPM: {rpm}"
+            env.speeds.aes.iter().any(|&w| (w - ae).abs() < 1e-12),
+            "a curve point sits on a width sample"
         );
         let delta_at = |depth: f64| {
             let mut op = roughing_pocket();
             assert!(op.set_depth_per_pass(depth));
             assert!(op.set_stepover(ae.max(1.0e-3)));
-            op.set_feed_rate(p.feed.get().0);
-            // The RPM is a positive whole number (asserted above).
-            op.set_spindle_rpm(Some(rpm.round() as u32));
             predict_peak_deflection_um(&op, &tool, &oak(), &machine)
                 .expect("white oak and a stated stickout give a figure")
                 .predicted_um

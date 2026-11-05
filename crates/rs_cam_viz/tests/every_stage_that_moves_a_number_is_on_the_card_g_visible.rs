@@ -271,11 +271,15 @@ fn feeds_numbers(w: &FeedsWarning) -> Vec<String> {
                 out.push(at(*f, 3));
             }
         }
-        FeedsWarning::DocExceedsFlute { requested, capped } => {
-            out.push(at(*requested, 1));
-            out.push(at(*capped, 1));
+        FeedsWarning::DocExceedsFlute {
+            requested_mm,
+            guard_mm,
+            ..
+        } => {
+            out.push(at(*requested_mm, 1));
+            out.push(at(*guard_mm, 1));
         }
-        FeedsWarning::SlottingDetected { doc_reduced_to } => out.push(at(*doc_reduced_to, 1)),
+        FeedsWarning::SlottingDetected { cap_mm, .. } => out.push(at(*cap_mm, 1)),
         FeedsWarning::LongToolDerate {
             stickout_mm,
             ratio,
@@ -790,8 +794,11 @@ fn the_ramp_line_names_the_arm_and_the_angle_g_visible() {
         .unwrap_or_else(|| panic!("the pocket must ship a sourced ramp: {suggest:?}"));
     assert_eq!(ramp.arm, RampArm::CutFeed);
     assert!((ramp.theta_deg - 3.0).abs() < 1e-9, "{}", ramp.theta_deg);
+    // Feeds contract P11b (L1): the chip-thinning lift lowers the shipped
+    // RPM at the feed cap (arm L), and the chip term is the G6 axial chip
+    // x the shipped RPM x Z / tan(theta): 38 162 -> 36 402.88 (measured).
     assert!(
-        (ramp.chip_term_mm_min - 38_162.0).abs() < 1.0,
+        (ramp.chip_term_mm_min - 36_402.88).abs() < 1.0,
         "{}",
         ramp.chip_term_mm_min
     );

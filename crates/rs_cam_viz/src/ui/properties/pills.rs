@@ -347,6 +347,11 @@ mod tests {
     /// and the floor gives 3999. A ceiling of 3999.5 no longer separates
     /// them: the RPM goes to 15 746 and the feed to 3999.484, which both
     /// roundings take to 3999.
+    ///
+    /// Feeds contract P11b (L1): the chip per rev is now 0.254 times the
+    /// chip-thinning lift at the pocket's stepover, so the RPM and the feed
+    /// under the ceiling differ from the arithmetic above (measured feed
+    /// 3999.895879, still with a fraction above 0.5).
     fn hardwood_pocket() -> (
         ProjectSession,
         ToolConfig,
@@ -483,18 +488,21 @@ mod tests {
     #[test]
     fn the_feed_floors_while_the_depth_rounds_to_the_nearest() {
         // Arm 1 — end to end, on `hardwood_pocket` (the arithmetic is on
-        // that fixture): the calculator gives 3999.738 mm/min and the pill
-        // offers 3999. A nearest rounding offers 4000, which is ABOVE the
+        // that fixture): the calculator gives a feed under 4000 mm/min and
+        // the pill offers 3999. A nearest rounding offers 4000, which is ABOVE the
         // value every ceiling was satisfied at, so this arm is red on the
         // pre-T-9 code. Before feeds matrix R5 the demo pocket gave 1290.9375
         // here; it now lands on the integer 4000. Until ruling R4 WP3 this
         // fixture gave 2571.75 (a 0.75 long-tool and a 0.75 safety factor).
+        // Feeds contract P11b (L1): the chip-thinning lift moves the chip
+        // per rev, so the arm-L RPM and the feed under the ceiling move
+        // (measured 3999.738 -> 3999.895879); the feed still sits under 4000.
         let (session, tool, op, result, material) = hardwood_pocket();
         let pills = PillSuggestions::new(&op, &result, &tool, session.machine(), &material, None);
         let feed_pill = pills.feed_rate();
         let calculator = result.feed_rate_mm_min;
         assert!(
-            (calculator - 3999.738).abs() < 1e-6,
+            (calculator - 3_999.895_879).abs() < 1e-6,
             "fixture drift: raw feed {calculator}"
         );
         assert!(

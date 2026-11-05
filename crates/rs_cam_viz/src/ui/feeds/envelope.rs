@@ -160,6 +160,7 @@ pub const fn short_label(kind: LimitKind) -> &'static str {
         LimitKind::FluteGuard => "Flute guard",
         LimitKind::CuttingLength => "Cut length",
         LimitKind::VendorAxial => "Vendor DOC",
+        LimitKind::VendorDepthTable => "Depth table",
         LimitKind::Rigidity => "Rigidity DOC",
         LimitKind::Slot => "Slot DOC",
         LimitKind::Power => "Spindle power",
@@ -183,11 +184,11 @@ pub fn limit_name(env: &SafeEnvelope, kind: LimitKind) -> String {
         .limit(LimitKind::Diameter)
         .and_then(ae_ceiling_mm)
         .filter(|d| d.is_finite() && *d > 0.0);
-    let vendor = env
-        .limit(LimitKind::VendorAxial)
-        .and_then(|l| edge_mm(&l.edge));
-    match (kind, d, vendor) {
-        (LimitKind::VendorAxial, Some(d), Some(mm)) => {
+    // The vendor depth and the vendor depth table (P11b) name their depth
+    // as a share of D when the edge has one value.
+    let depth = env.limit(kind).and_then(|l| edge_mm(&l.edge));
+    match (kind, d, depth) {
+        (LimitKind::VendorAxial | LimitKind::VendorDepthTable, Some(d), Some(mm)) => {
             format!("{} {}\u{00D7}D", short_label(kind), trim_decimals(mm / d))
         }
         _ => short_label(kind).to_owned(),
@@ -249,6 +250,7 @@ const fn is_frame(kind: LimitKind) -> bool {
         | LimitKind::FluteGuard
         | LimitKind::EngagementFloor => true,
         LimitKind::VendorAxial
+        | LimitKind::VendorDepthTable
         | LimitKind::Rigidity
         | LimitKind::Slot
         | LimitKind::Power

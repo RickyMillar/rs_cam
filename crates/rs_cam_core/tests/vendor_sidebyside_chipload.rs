@@ -196,17 +196,13 @@ fn vendor_sidebyside_chipload_spotcheck() {
             result.axial_depth_mm, result.radial_width_mm, result.effective_diameter_mm
         );
         println!(
-            "  target_chip_load={:.6}   chip-thinning OBSERVED but NOT applied: \
-             rctf={:.6} axial={:.6} combined={:.6}",
-            dr.target_chip_load_mm,
-            dr.observed_radial_chip_thinning,
-            dr.observed_axial_chip_thinning,
-            dr.observed_combined_chip_thinning
+            "  target_chip_load={:.6}   radial chip thinning APPLIED (P11b)={:.6}  \
+             axial OBSERVED but NOT applied={:.6}",
+            dr.target_chip_load_mm, dr.radial_chip_thinning, dr.observed_axial_chip_thinning,
         );
         println!(
-            "           depth_tier={:.6}  ld={:.6}  power={:.6}  \
-             feed_clamp={:.6}  spindle_scale={:.6}",
-            dr.depth_tier, dr.ld_overhang, dr.power_limit, dr.feed_clamp, dr.spindle_scale
+            "           ld={:.6}  power={:.6}  feed_clamp={:.6}  spindle_scale={:.6}",
+            dr.ld_overhang, dr.power_limit, dr.feed_clamp, dr.spindle_scale
         );
 
         match (&result.matched_lut_row, result.chipload_bounds) {
@@ -321,8 +317,12 @@ fn vendor_sidebyside_chipload_spotcheck() {
 /// commanded advance per tooth equals
 ///
 /// ```text
-/// target_chip_load_mm x depth_tier
+/// target_chip_load_mm x radial_chip_thinning
 /// ```
+///
+/// **`depth_tier` left this identity in feeds contract P11b (L6)**: the
+/// vendor depth table is a limit of the envelope, not a feed factor. The
+/// radial chip-thinning lift joined it (P11b, L1).
 ///
 /// **`workholding` left this identity on 2026-09-24** (ruling R4 Q8): the
 /// workholding factor is gone. Every probe ran it at Medium (1.0).
@@ -377,7 +377,7 @@ fn the_recommendation_is_the_transferred_band_midpoint_times_the_derate_stack() 
         let divisor = result.rpm * f64::from(probe.flutes);
         assert!(divisor > 0.0, "{}: no fpt divisor", probe.label);
         let commanded_fpt = result.feed_rate_mm_min / divisor;
-        let predicted = dr.target_chip_load_mm * dr.depth_tier;
+        let predicted = dr.target_chip_load_mm * dr.radial_chip_thinning;
         assert!(
             (commanded_fpt - predicted).abs() < 1e-9,
             "{}: commanded {commanded_fpt:.9} != seed-midpoint identity {predicted:.9} \
@@ -393,52 +393,8 @@ fn the_recommendation_is_the_transferred_band_midpoint_times_the_derate_stack() 
     );
 }
 
-/// **The two sides of the comparison carry DIFFERENT DOC derates, and
-/// they are not the same function.**
-///
-/// `FeedsResult::chipload_bounds` — the band the post-sim gate judges
-/// against — is scaled by `geometry::doc_derating_scale`, a PIECEWISE
-/// LINEAR ramp (1.000 at 1xD, 0.750 at 2xD, 0.500 at and past 3xD).
-/// `FeedsResult::derates.target_chip_load_mm` — the seed the feed is
-/// actually built from — is NOT scaled by it at all; the feed instead
-/// takes `geometry::depth_tier_multiplier`, a STEP function
-/// (1.00 / 0.75 / 0.50 / 0.45 for ratio <=1 / >1 / >2 / >3).
-///
-/// The two agree exactly at the vendor break points the rule is quoted
-/// from (1xD, 2xD, 3xD) and diverge everywhere between them — at
-/// DOC/Ø = 1.5 the band is derated 0.875 while the feed is derated
-/// 0.750, so the commanded advance sits 14 % lower against the band
-/// than the same recipe would at 2xD. Reproduction of current state,
-/// pinned on probe B (DOC/Ø = 2.0), the only probe with a non-unit DOC
-/// derate.
-#[test]
-fn the_band_derate_and_the_feed_derate_are_different_functions() {
-    let probe = probes()
-        .into_iter()
-        .find(|p| p.label.starts_with("B "))
-        .expect("probe B must exist");
-    let result = run(&probe);
-    let bounds = result
-        .chipload_bounds
-        .expect("probe B must resolve a banded vendor row");
-    let dr = &result.derates;
-    let derated_mid = 0.5 * (bounds.min_mm_per_tooth + bounds.max_mm_per_tooth);
-
-    // The seed is the transferred midpoint BEFORE the DOC derate, so at
-    // DOC/Ø = 2.0 it sits at exactly 1 / 0.75 of the published band's
-    // midpoint.
-    assert!(
-        (dr.target_chip_load_mm - derated_mid / 0.75).abs() < 1e-9,
-        "probe B: seed {:.9} should be the UN-DOC-derated midpoint, i.e. \
-         derated mid {derated_mid:.9} / 0.75",
-        dr.target_chip_load_mm,
-    );
-    assert!(
-        (dr.depth_tier - 0.75).abs() < 1e-12,
-        "probe B: depth_tier should be 0.75 at DOC/Ø = 2.0, got {}",
-        dr.depth_tier,
-    );
-}
+// RETIRED in feeds contract P11b (L6): `the_band_derate_and_the_feed_derate_are_different_functions`.
+// Neither the band nor the feed takes the vendor depth table now.
 
 /// **INVERTED 2026-08-19 (G-CHIPTHIN-HALFFIX), not deleted.**
 ///

@@ -145,11 +145,11 @@ fn slot_cut(machine: &MachineProfile, species: WoodSpecies, diameter: f64) -> Fe
         operation: OperationFamily::Pocket,
         operation_kind: None,
         pass_role: PassRole::Roughing,
-        // Ask for a full-width slot at a deep DOC — the heaviest cut the
-        // calculator will entertain for this tool. Both are clamped
-        // downstream (rigidity / LUT ap band); the point is to request
-        // the maximum so nothing but those clamps limits the load.
-        axial_depth_mm: Some(2.0 * diameter),
+        // A full-width slot at the slot cap (0.25 D). Until feeds contract
+        // P11b the fixture asked for 2 x D and the calculator lowered it to
+        // the slot cap; P11b ships a STATED depth (the cap only warns), so
+        // the fixture states the cap and the cut is the one it measured.
+        axial_depth_mm: Some(0.25 * diameter),
         radial_width_mm: Some(diameter),
         target_scallop_mm: None,
         vendor_lut: Some(embedded_vendor_lut()),

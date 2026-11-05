@@ -63,13 +63,13 @@ const RECIPE_ROWS: [&str; 6] = ["RPM", "Feed", "Plunge", "DOC", "WOC", "Advance/
 
 /// Explanations that used to hold a line and are now inside a row's hover.
 /// Each must still be painted somewhere, or the rework deleted it.
-const EXPLANATIONS_THAT_MOVED: [&str; 5] = [
-    // the derate captions
-    "to limit deflection",
-    // the chip-thinning ruling (G-CHIPTHIN-HALFFIX)
-    "no radial condition to correct from",
+const EXPLANATIONS_THAT_MOVED: [&str; 4] = [
+    // the factor captions; feeds contract P11b (L1) applies the radial
+    // chip-thinning lift (the depth tier caption and the G-CHIPTHIN-HALFFIX
+    // "observed, not applied" line are gone with L6 and L1)
+    "chip thinning ×",
     // the arithmetic proof of the advance per tooth
-    "reduction",
+    "Scaled ×",
     // the DOC/WOC calculator caveat, which shipped twice as a caption
     "invariant funnel",
     // the vendor row's identity
@@ -103,12 +103,10 @@ fn fixture() -> AppState {
     if let OperationConfig::Adaptive3d(config) = &mut operation {
         config.feed_rate = Some(3_000.0);
         config.spindle_rpm = Some(18_000);
-        // Feeds contract P5 (K2): the calculator reads the STATED depth.
-        // The derate captions need a depth deep enough for the depth tier,
-        // so the fixture states the depth the calculator chose before P5:
+        // Feeds contract P5 (K2): the calculator reads the STATED depth,
         // 1.20·D, `feeds.default_engagement.adaptive.flat_bull_ap` in
-        // `feeds/mod.rs` (measured depth tier ×0.95). At the Adaptive 3D
-        // default (3.0 mm) no tier fires and the caption has no line.
+        // `feeds/mod.rs`. P11b: the factor caption is the chip-thinning
+        // lift of the light Adaptive 3D stepover.
         config.depth_per_pass = Some(1.20 * tool.diameter);
     }
     state_with(None, tool, material, operation)

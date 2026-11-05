@@ -296,13 +296,6 @@ fn explain_doc(out: &mut String, explain: &FeedsExplain, applied: &AppliedRecipe
         2,
     );
     applied_note(out, applied, FeedsField::DepthPerPass);
-    let tier = explain.recommended.derates.depth_tier;
-    if tier < 0.999 {
-        out.push_str(&format!(
-            "\nThis depth is deep enough to derate the feed ×{tier:.3}, to limit \
-             deflection."
-        ));
-    }
 }
 
 fn explain_woc(
@@ -375,8 +368,10 @@ fn explain_advance(out: &mut String, explain: &FeedsExplain, applied: &AppliedRe
     // long-tool share is a load target, not a feed factor (Q7). Neither is
     // in this list; the long-tool line on the card states it. The
     // workholding factor is gone (Q8), and the dial is gone (D9).
+    // P11b (L1): the radial chip-thinning lift raises the feed so that the
+    // peak chip is the target; the power limit and the feed cap lower it.
     for (label, value) in [
-        ("depth tier", d.depth_tier),
+        ("chip thinning", d.radial_chip_thinning),
         ("power limit", d.power_limit),
         ("feed cap", d.feed_clamp),
     ] {
@@ -385,7 +380,9 @@ fn explain_advance(out: &mut String, explain: &FeedsExplain, applied: &AppliedRe
         }
     }
     if moved.is_empty() {
-        out.push_str("Nothing derated it.\n");
+        out.push_str("Nothing scaled it.\n");
+    } else if combined >= 1.0 {
+        out.push_str(&format!("Scaled ×{combined:.3} by {}.\n", moved.join(", ")));
     } else {
         out.push_str(&format!(
             "Derated ×{combined:.3} ({pct:.0}% reduction) by {}.\n",
@@ -400,33 +397,40 @@ fn explain_advance(out: &mut String, explain: &FeedsExplain, applied: &AppliedRe
         ));
     }
 
-    // Chip thinning is MEASURED, NOT APPLIED since 2026-08-19
-    // (G-CHIPTHIN-HALFFIX). It is reported because the geometric condition
-    // is real, and it must not read as one of the multipliers above,
-    // because it no longer is one.
-    if d.observed_combined_chip_thinning > 1.001 {
+    // P11b (L1): the radial lift is applied (the line above). The axial
+    // term of a ball at a shallow depth stays observed, not applied.
+    if d.observed_axial_chip_thinning > 1.001 {
         out.push_str(&format!(
-            "Chip thinning ×{:.3} is OBSERVED, NOT APPLIED: the chip is thinner \
-             per pass at this stepover and DOC, but the vendor chipload column \
-             states no radial condition to correct from.\n",
-            d.observed_combined_chip_thinning
+            "Axial chip thinning ×{:.3} is OBSERVED, NOT APPLIED: the vendor \
+             charts give no rule for a depth below 1 × D.\n",
+            d.observed_axial_chip_thinning
         ));
     }
 
     // Where it landed. A band only when the row publishes both limits
     // (G-CHARTLINES); a one-value row names its one value as a point (A2)
     // and claims no band.
+    //
+    // P11b (L1): the band holds the PEAK chip, the advance over the
+    // chip-thinning lift.
+    let lift = d.radial_chip_thinning.max(1.0);
+    let held = effective / lift;
+    let which = if lift > 1.0 + UNITY_TOLERANCE {
+        format!("the peak chip {held:.4}")
+    } else {
+        "this".to_owned()
+    };
     if effective > 0.0 {
         if let Some((lo, hi)) = vendor_band(explain) {
             out.push_str(&format!(
-                "Vendor band {lo:.4}–{hi:.4}; this sits at {:.0}% of the maximum.\n",
-                (effective / hi) * 100.0
+                "Vendor band {lo:.4}–{hi:.4}; {which} sits at {:.0}% of the maximum.\n",
+                (held / hi) * 100.0
             ));
         } else if let Some(value) = vendor_single_value(explain) {
             out.push_str(&format!(
                 "Vendor value {value:.4} (one printed value, held as a point; no \
-                 band); this sits at {:.0}% of it.\n",
-                (effective / value) * 100.0
+                 band); {which} sits at {:.0}% of it.\n",
+                (held / value) * 100.0
             ));
         }
     }
@@ -790,12 +794,28 @@ fn warning_lines(warning: &rs_cam_core::feeds::FeedsWarning) -> (String, Option<
                 )),
             )
         }
-        FeedsWarning::DocExceedsFlute { requested, capped } => (
-            format!("DOC capped: {requested:.1} → {capped:.1} mm (flute guard)"),
+        FeedsWarning::DocExceedsFlute {
+            requested_mm,
+            guard_mm,
+            shipped_mm,
+        } => (
+            if (shipped_mm - requested_mm).abs() < 1e-9 {
+                format!("DOC {requested_mm:.1} mm past the flute guard {guard_mm:.1} mm")
+            } else {
+                format!("DOC capped: {requested_mm:.1} → {shipped_mm:.1} mm (flute guard)")
+            },
             None,
         ),
-        FeedsWarning::SlottingDetected { doc_reduced_to } => (
-            format!("Slotting detected: DOC reduced to {doc_reduced_to:.1} mm"),
+        FeedsWarning::SlottingDetected {
+            requested_mm,
+            cap_mm,
+            shipped_mm,
+        } => (
+            if (shipped_mm - requested_mm).abs() < 1e-9 {
+                format!("Slot DOC {requested_mm:.1} mm past the slot cap {cap_mm:.1} mm")
+            } else {
+                format!("Slotting detected: DOC reduced to {shipped_mm:.1} mm")
+            },
             None,
         ),
         FeedsWarning::ScallopInvalid {

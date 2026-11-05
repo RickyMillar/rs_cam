@@ -524,9 +524,9 @@ pub struct FeedsResult {
     /// match supplied one. `None` for formula-fallback / RPM-only LUT
     /// rows / edge-radius-floor paths.
     ///
-    /// The band is de-rated at the SHIPPED axial depth
-    /// ([`Self::axial_depth_mm`]) by `geometry::doc_derating_scale`, the
-    /// same scale the post-sim chipload gate applies (feeds matrix R3).
+    /// P11b (L6, chip first): the printed band at every depth. The vendor
+    /// depth table is a limit of the envelope, not a scale on this band.
+    /// The band holds the PEAK chip (L1).
     ///
     /// Until 2026-08-13 this was also the input to Suggest's chipload-aware
     /// feed-up recalibration (pass 8), which is retired — see the retirement
@@ -536,8 +536,8 @@ pub struct FeedsResult {
     pub chipload_bounds: Option<ChiploadBounds>,
     /// The one printed chipload of a point row (A2, point mode), in
     /// mm/tooth. The row prints a maximum only, or two equal limits
-    /// (`LookupResult::printed_chipload`). The depth de-rate is the one
-    /// that [`Self::chipload_bounds`] takes. At most one of the two is
+    /// (`LookupResult::printed_chipload`). P11b: no depth de-rate, as
+    /// [`Self::chipload_bounds`]. At most one of the two is
     /// `Some`: a point never becomes a band.
     pub chipload_point_mm: Option<f64>,
     /// Matched vendor row (post-scaling) from the LUT lookup, when one
@@ -588,10 +588,10 @@ pub struct FeedsResult {
 /// is positive (no zero divisors); a value of 1.0 means "no effect."
 /// The "effective chipload" the toolpath actually cuts at is
 /// `target_chip_load_mm × combined_factor()` — note the accessor, **not**
-/// the product of every field. Since 2026-08-19 three fields here
-/// (`observed_*_chip_thinning`) are measurements the engine reports but does
-/// not apply, so multiplying the struct out by hand overstates the feed by up
-/// to 4×. `combined_factor()` is the only correct composition.
+/// the product of every field. `observed_axial_chip_thinning` and
+/// `ld_overhang` are records the engine reports but does not apply, so
+/// multiplying the struct out by hand overstates the feed.
+/// `combined_factor()` is the only correct composition.
 ///
 /// Derived purely so the UI can render the breakdown — calculate()
 /// applies each APPLIED factor in place, this struct just captures them.
@@ -603,33 +603,16 @@ pub struct FeedsDerates {
     /// came from [`ChiploadSource::FormulaFallback`] / `EdgeRadiusFloor`.
     /// `None` when the LUT supplied the value.
     pub formula: Option<FormulaBreakdown>,
-    /// Radial chip-thinning factor (≥ 1.0) — **OBSERVED, NOT APPLIED** since
-    /// 2026-08-19 (G-CHIPTHIN-HALFFIX).
-    ///
-    /// The geometric statement is real: at a small stepover the chip is
-    /// thinner per tooth-pass. What is gone is the inference "…so feed
-    /// faster", because the vendor column this would correct publishes no
-    /// radial reference condition to correct *from* — see the deletion note at
-    /// Step 5 of [`calculate`] and `CHIPLOAD_LITERATURE_VERDICT.md` N-8.
-    ///
-    /// Reported so the condition stays visible to the operator and to
-    /// diagnostics. It is deliberately **excluded** from
-    /// [`FeedsDerates::combined_factor`]: a number in this struct that does not
-    /// multiply the feed must not be composed with the ones that do.
-    pub observed_radial_chip_thinning: f64,
-    /// Axial chip-thinning factor for ball / tapered-ball tools at shallow DOC
-    /// — **OBSERVED, NOT APPLIED**, same ruling and same reasoning as
-    /// [`Self::observed_radial_chip_thinning`]. The vendor charts publish a
-    /// rule for cutting deeper than 1 × D and none at all for shallower.
+    /// The radial chip-thinning lift (>= 1.0) that the feed takes, so that
+    /// the peak chip is the band chip (feeds contract P11b, L1;
+    /// [`geometry::peak_chip_thinning_lift`]). 1.0 at a width of half the
+    /// engaged diameter or more, and on a finish pass (L2). Part of
+    /// [`Self::combined_factor`].
+    pub radial_chip_thinning: f64,
+    /// Axial chip-thinning factor for ball / tapered-ball tools at shallow
+    /// DOC: **OBSERVED, NOT APPLIED**. The vendor charts print a rule for a
+    /// depth below 1 x D nowhere, so the feed does not take it.
     pub observed_axial_chip_thinning: f64,
-    /// Combined observed chip thinning, clamped to `[1.0, 4.0]` — **OBSERVED,
-    /// NOT APPLIED**. The clamp is retained because the reported number should
-    /// stay the one the engine historically computed, so the survey that
-    /// justified the deletion remains comparable against it.
-    pub observed_combined_chip_thinning: f64,
-    /// Depth-tier feed derate (≤ 1.0). Deep cuts get slower feed to
-    /// limit deflection.
-    pub depth_tier: f64,
     /// The long-tool (L/D) share of the load target (≤ 1.0): 0.88 above
     /// 4 x D stickout, 0.75 above 6 x D (repo rule, unsourced).
     ///
@@ -958,18 +941,14 @@ impl FeedsDerates {
         // sees the speed-axis change separately from the chipload
         // derates.
         //
-        // The three `observed_*_chip_thinning` fields are NOT included either,
-        // and for a different reason: since 2026-08-19 they are measurements
-        // rather than derates, and `calculate` no longer multiplies the feed by
-        // them. Composing them here would make this function — and the
-        // `effective_chip_load_mm` identity built on it — disagree with the
-        // feed the engine actually emits. See their field docs.
+        // The observed axial chip thinning is NOT included: the feed does
+        // not take it. The radial lift is (P11b, L1).
         //
         // Ruling R4 (2026-09-24): the machine safety factor is gone, and the
         // long-tool share `ld_overhang` is a load target, not a feed factor
-        // (Q7), so neither is composed here. The workholding factor is gone
-        // (Q8): the dial is the one load margin.
-        self.depth_tier * self.power_limit * self.feed_clamp
+        // (Q7), so neither is composed here. P11b (L6): the vendor depth
+        // table is a limit of the envelope, not a feed factor.
+        self.radial_chip_thinning * self.power_limit * self.feed_clamp
     }
 
     /// Effective chipload that the toolpath will actually cut at,
@@ -1055,12 +1034,20 @@ pub enum FeedsWarning {
         shank_mm: f64,
         max_mm: f64,
     },
+    /// The depth is above the flute guard (Step 4). P11b: a stated depth
+    /// ships (`shipped_mm == requested_mm`); a calculator depth is lowered
+    /// to the guard (`shipped_mm == guard_mm`).
     DocExceedsFlute {
-        requested: f64,
-        capped: f64,
+        requested_mm: f64,
+        guard_mm: f64,
+        shipped_mm: f64,
     },
+    /// The cut is a slot and the depth is above the slot cap (Step 4b).
+    /// P11b: a stated depth ships; a calculator depth is lowered to the cap.
     SlottingDetected {
-        doc_reduced_to: f64,
+        requested_mm: f64,
+        cap_mm: f64,
+        shipped_mm: f64,
     },
     ScallopInvalid {
         target: f64,
@@ -1988,8 +1975,10 @@ pub fn calculate(input: &FeedsInput) -> FeedsResult {
 /// above the flute guard (Step 4) or the slot cap (Step 4b).
 #[derive(Debug, Clone, Copy, PartialEq, Eq)]
 pub(crate) enum DepthClamps {
-    /// Lower the depth to the guard or the cap and warn
-    /// ([`calculate`]).
+    /// Warn when the depth is above the guard or the cap ([`calculate`]).
+    /// P11b: a stated depth ships unchanged, so the feed and the power are
+    /// at that depth; only a calculator depth (the family default) is
+    /// lowered to the guard or the cap.
     Apply,
     /// Keep the requested depth. The envelope grid draws the guard and the
     /// cap as limits, so every value of a grid point (feed, chip, power) is
@@ -2547,14 +2536,24 @@ pub(crate) fn calculate_with(input: &FeedsInput, clamps: DepthClamps) -> FeedsRe
     }
 
     // --- Step 4: Flute guard ---
+    //
+    // Feeds contract P11b (the P11a lead item): a STATED depth ships, so the
+    // feed and the power are sized at that depth and the warning names the
+    // guard (ruling Q6: warn, never refuse). Only a depth that the
+    // calculator chose (the family default) is lowered to the guard.
+    let depth_is_stated = input.axial_depth_mm.is_some();
     let (flute_guard, flute_guard_basis) = flute_guard_of(input.flute_length, d);
     if ap > flute_guard && clamps == DepthClamps::Apply {
+        let requested = ap;
+        if !depth_is_stated {
+            ap = flute_guard;
+            ap_basis = Basis::derived("flute guard", vec![ap_basis, flute_guard_basis]);
+        }
         warnings.push(FeedsWarning::DocExceedsFlute {
-            requested: ap,
-            capped: flute_guard,
+            requested_mm: requested,
+            guard_mm: flute_guard,
+            shipped_mm: ap,
         });
-        ap = flute_guard;
-        ap_basis = Basis::derived("flute guard", vec![ap_basis, flute_guard_basis]);
     }
 
     // Ensure minimum engagement
@@ -2585,18 +2584,24 @@ pub(crate) fn calculate_with(input: &FeedsInput, clamps: DepthClamps) -> FeedsRe
     if ae > d * SLOTTING_THRESHOLD.value {
         let slotting_cap = d * SLOTTING_DOC_CAP.value;
         if ap > slotting_cap && clamps == DepthClamps::Apply {
+            // P11b: a stated depth ships (see Step 4).
+            let requested = ap;
+            if !depth_is_stated {
+                ap = slotting_cap;
+                ap_basis = Basis::derived(
+                    "slot cap",
+                    vec![
+                        ap_basis,
+                        Basis::Rule(SLOTTING_THRESHOLD),
+                        Basis::Rule(SLOTTING_DOC_CAP),
+                    ],
+                );
+            }
             warnings.push(FeedsWarning::SlottingDetected {
-                doc_reduced_to: slotting_cap,
+                requested_mm: requested,
+                cap_mm: slotting_cap,
+                shipped_mm: ap,
             });
-            ap = slotting_cap;
-            ap_basis = Basis::derived(
-                "slot cap",
-                vec![
-                    ap_basis,
-                    Basis::Rule(SLOTTING_THRESHOLD),
-                    Basis::Rule(SLOTTING_DOC_CAP),
-                ],
-            );
         }
     }
 
@@ -2623,48 +2628,36 @@ pub(crate) fn calculate_with(input: &FeedsInput, clamps: DepthClamps) -> FeedsRe
         ap,
     );
 
-    // ── Chip thinning: MEASURED, NOT APPLIED (G-CHIPTHIN-HALFFIX, 2026-08-19)
+    // ── Radial chip thinning: APPLIED (feeds contract P11b, L1-L3) ─────
     //
-    // These two factors are still computed, because the geometric condition
-    // they describe is real and worth reporting — a Ø6 ball at 0.05 mm DOC
-    // genuinely does present a thinner chip per tooth-pass. What was deleted
-    // here is the **multiplication into the feed**.
+    // Chip first. The band chip is the target PEAK chip, and the feed is
+    // sized so that the peak chip equals it: `fz = h_band / sin(psi)` below
+    // half the engaged diameter, `fz = h_band` at or above
+    // (`geometry::peak_chip_thinning_lift`, Garr). Operator ruling D11
+    // (2026-11-04) reverses G-CHIPTHIN-HALFFIX (2026-08-19), which applied
+    // no lift because no wood chart prints a radial condition (N-8): the
+    // lift is now a model matched to Garr's printed rule, not a correction
+    // read from a chart.
     //
-    // The reason is the same one that deleted the gate-side normalisation on
-    // 2026-08-06, applied to the half that wave did not reach.
-    // `planning/review_2026-08-04/CHIPLOAD_LITERATURE_VERDICT.md` §2.3 / N-8
-    // records, as a deliberate negative result, that **no wood source in the
-    // shipped LUT publishes a radial-engagement condition for its chipload
-    // column**: six wood charts were read in full and all six state an *axial*
-    // condition (1 × D) plus an axial derate table, none mentioning stepover,
-    // width of cut, radial engagement or `ae`. A correction can only be applied
-    // against a stated reference condition, and for these columns there is
-    // none. The `ae_min`/`ae_max` values the factor read are repo-authored
-    // application windows (`ae_rule` strings like `"scallop driven"`), not
-    // transcriptions — so the multiplier was scaling a vendor number by a
-    // quantity the vendor never conditioned it on.
+    // L2: a finish op (`PassRole::Finish`) does not thin. Garr's finish row
+    // (2.5 % D) holds a low chip on purpose (step 0 claim C13). The basis
+    // says so.
     //
-    // The same argument retires the axial term: the vendor charts publish a
-    // rule for cutting *deeper* than 1 × D (reduce chipload) and no rule at all
-    // for cutting shallower, so "feed faster at shallow DOC" has no source
-    // either.
+    // L3: no cap on the lift. The machine cutting-feed ceiling (Step 7,
+    // the Q1 arms), the spindle power (Step 6) and the rubbing floor (Step
+    // 9b) bound the lifted feed, and each names itself when it binds.
     //
-    // Measured before the deletion (`tests/chipload_thinning_magnitude_survey.rs`,
-    // 3 420 operating points): the multiplier was active on 99.1 % of them at a
-    // median of 1.809, with 636 points pinned to the 4.0 clamp ceiling — i.e.
-    // there the applied value was not the geometric one, it was the cap.
-    // Against the derated vendor band it put 37.7 % of banded points ABOVE the
-    // maximum the post-sim gate judges them by. Deleting it drops that to
-    // 0.1 % and more than doubles in-band adherence, 19.0 % → 44.5 %, once the
-    // Step-9b rubbing floor below catches the fall. Ruled by the operator
-    // 2026-08-19 after that survey; the seed-target half of the question
-    // (midpoint vs band maximum) was deliberately NOT bundled with it.
-    //
-    // Consequence worth knowing: with this gone, `ae` no longer enters the feed
-    // expression at all except through the Step 6 power check, which
-    // `power_ceiling_parity_f2.rs` measured as never firing on shipped
-    // profiles. A stepover change therefore no longer moves the feed.
-    let rctf = geometry::radial_chip_thinning_factor(ae, effective_d);
+    // The axial term of a ball at a shallow depth stays OBSERVED, NOT
+    // APPLIED: the charts print no rule for a depth below 1 x D.
+    let finish_pass = input.pass_role == PassRole::Finish;
+    // A drill cycle has no radial cut (`Radial::Axial`): no lift, and Step
+    // 9c sets its feed.
+    let drill_cycle = input.operation == OperationFamily::Drill;
+    let mut radial_lift = if finish_pass || drill_cycle {
+        1.0
+    } else {
+        geometry::peak_chip_thinning_lift(ae, effective_d)
+    };
     let axial_thinning = match input.tool_geometry {
         ToolGeometryHint::Ball | ToolGeometryHint::TaperedBall { .. } => {
             geometry::axial_chip_thinning_factor_for_ball(d, effective_d)
@@ -2673,33 +2666,28 @@ pub(crate) fn calculate_with(input: &FeedsInput, clamps: DepthClamps) -> FeedsRe
             1.0
         }
     };
-    let chip_thinning = (rctf * axial_thinning).clamp(1.0, 4.0);
 
-    // Depth de-rate on the feed. Onsrud, Freud and Amana print the same
-    // three points (1 x D full, 2 x D minus 25 %, 3 x D minus 50 %; Freud
-    // says "at least", Amana says "feed rate"), keyed to the AXIAL depth.
-    // `depth_tier_multiplier` is `geometry::doc_derating_scale`, the one
-    // scale that the chipload band and the post-sim gate also use (R3).
-    //
-    // Feeds matrix R2 (2026-09-23): on a tapered ball the diameter is the
-    // engaged diameter at `ap`, the one the band below and the post-sim
-    // chipload gate de-rate at. Before R2 the feed used the tip `d`, so
-    // the feed and the band read two ratios on one tool. Every other shape
-    // keeps `d`; see `geometry::feed_ladder_diameter_mm`.
-    let ladder_d = geometry::feed_ladder_diameter_mm(
-        input.tool_geometry,
-        ap,
-        d,
-        input.shank_diameter.unwrap_or(d),
-    );
-    let depth_tier = geometry::depth_tier_multiplier(ap, ladder_d);
-
-    let mut raw_feed = rpm * chip_load * input.flute_count as f64 * depth_tier;
-    let feed_law = |chip: &Basis, rpm_b: &Basis, ap_b: &Basis| {
-        Basis::derived(
-            "chip x RPM x Z x depth tier",
-            vec![chip.clone(), rpm_b.clone(), ap_b.clone()],
-        )
+    // L6 (chip first): the vendor depth table (Onsrud, Freud, Amana: 1 x D
+    // full, 2 x D less 25 %, 3 x D less 50 %) no longer scales the feed or
+    // the band. Step 0 shows that the table holds neither the force, the
+    // chip nor the peak chip. The envelope draws it as the limit "vendor
+    // depth ceiling (width not printed)" (`envelope::LimitKind::VendorDepthTable`).
+    let mut raw_feed = rpm * chip_load * input.flute_count as f64 * radial_lift;
+    let feed_law = |chip: &Basis, rpm_b: &Basis, ap_b: &Basis, ae_b: &Basis| {
+        let base = Basis::derived("chip x RPM x Z", vec![chip.clone(), rpm_b.clone()]);
+        if drill_cycle {
+            base
+        } else if finish_pass {
+            Basis::derived(
+                "finish pass: no chip thinning (Garr finish row)",
+                vec![base, ae_b.clone()],
+            )
+        } else {
+            Basis::derived(
+                "radial chip thinning (Garr)",
+                vec![base, ae_b.clone(), ap_b.clone()],
+            )
+        }
     };
     let power_curve = || Basis::Machine(sourced::MachineField::PowerCurve);
     let feed_cap_basis = || Basis::Machine(sourced::MachineField::CuttingFeedCap);
@@ -2958,14 +2946,30 @@ pub(crate) fn calculate_with(input: &FeedsInput, clamps: DepthClamps) -> FeedsRe
                 ap = fitted;
                 ap_basis = Basis::derived("power ladder depth", vec![ap_basis, power_curve()]);
             }
+            // P11b (L1): a narrower width lifts the feed by the chip-thinning
+            // law, so the peak chip stays the band chip at every candidate
+            // width. Power still rises with the width at that feed
+            // (`(1 - cos psi) / sin psi = tan(psi / 2)` rises with psi), so the
+            // bisection stays monotone.
+            let lift_at = |c: f64| {
+                if finish_pass || drill_cycle {
+                    1.0
+                } else {
+                    geometry::peak_chip_thinning_lift(c, effective_d)
+                }
+            };
+            let feed_at_width = |c: f64| raw_feed * lift_at(c) / radial_lift;
             if required_at(rpm, ap, ae, raw_feed) > budget_at(rpm)
                 && input.radial_width_mm.is_none()
                 && let Some(fitted) = largest_fitting(ae, POWER_LADDER_AE_FLOOR_MM, |c| {
-                    required_at(rpm, ap, c, raw_feed) <= budget_at(rpm)
+                    required_at(rpm, ap, c, feed_at_width(c)) <= budget_at(rpm)
                 })
                 && fitted < ae
             {
                 ladder_ae_from = Some(ae);
+                raw_feed = feed_at_width(fitted);
+                feed = raw_feed;
+                radial_lift = lift_at(fitted);
                 ae = fitted;
                 ae_basis = Basis::derived("power ladder width", vec![ae_basis, power_curve()]);
             }
@@ -3056,7 +3060,7 @@ pub(crate) fn calculate_with(input: &FeedsInput, clamps: DepthClamps) -> FeedsRe
         }
     }
 
-    let mut feed_basis = feed_law(&chip_basis, &rpm_basis, &ap_basis);
+    let mut feed_basis = feed_law(&chip_basis, &rpm_basis, &ap_basis, &ae_basis);
     if feed_power_cut {
         feed_basis = Basis::derived("power ceiling", vec![feed_basis, power_curve()]);
     }
@@ -3137,7 +3141,7 @@ pub(crate) fn calculate_with(input: &FeedsInput, clamps: DepthClamps) -> FeedsRe
                 rpm = rpm_l;
                 feed = chip_per_rev * rpm;
             }
-            feed_basis = feed_law(&chip_basis, &rpm_basis, &ap_basis);
+            feed_basis = feed_law(&chip_basis, &rpm_basis, &ap_basis, &ae_basis);
             if feed_power_cut {
                 feed_basis = Basis::derived("power ceiling", vec![feed_basis, power_curve()]);
             }
@@ -3244,61 +3248,25 @@ pub(crate) fn calculate_with(input: &FeedsInput, clamps: DepthClamps) -> FeedsRe
     // otherwise the envelope resolver's band (P1, 2026-08-22): the band that
     // the post-sim gate also uses.
     //
-    // ── The chipload band at the shipped depth (feeds matrix R3) ──────
+    // ── The chipload band (feeds contract P11b, L6: chip first) ───────
     //
-    // The band that this function returns is the band at the axial depth
-    // that ships: `geometry::doc_derating_scale(ap / D_lut)`, where `D_lut`
-    // is `geometry::depth_derate_diameter_mm` at that depth (the engaged
-    // cone on a tapered ball, the nominal diameter on every other shape,
-    // a V-bit included since ruling B4 step 2). That is the scale and the
-    // diameter that the post-sim chipload gate applies at the measured
-    // depth (through the cutter twin, `depth_derate_diameter_for_cutter`),
-    // so Suggest's band, the UI's band and the gate's band are one number.
-    // Before R3 the band was de-rated at the depth HINT (or at 1 x D when
-    // no hint came), so every roughing cell showed the raw row band
-    // (EVIDENCE 5.2-7). The rubbing floor below reads this band too, which
-    // is the band the gate will use (P1).
+    // The band that this function returns is the printed band (after the
+    // size and hardness claims), at every depth. Until P11b it was de-rated
+    // at the shipped depth by the vendor depth table
+    // (`geometry::doc_derating_scale`); the table is now a limit of the
+    // envelope ("vendor depth ceiling (width not printed)"), not a scale on
+    // the chip. The band holds the PEAK chip (L1): the feed above is sized
+    // so that the peak chip is the band midpoint.
     //
-    // Drill ops are excluded, as in the gate (`NotApplicableForOp`):
-    // a ratio of `0.0` gets a scale of `1.0`.
-    let band_doc_ratio = if input.operation == OperationFamily::Drill {
-        0.0
-    } else {
-        let band_d = geometry::depth_derate_diameter_mm(
-            input.tool_geometry,
-            ap,
-            d,
-            input.shank_diameter.unwrap_or(d),
-        );
-        if band_d > 0.0 { ap / band_d } else { 0.0 }
-    };
-    let band_at_depth = |raw: ChiploadBounds| {
-        geometry::derate_chipload_bounds(
-            Some(raw.min_mm_per_tooth),
-            Some(raw.max_mm_per_tooth),
-            band_doc_ratio,
-            geometry::ChiploadBoundPolicy::RequireBoth,
-        )
-        .and_then(geometry::DeratedChiploadBand::into_pair)
-        .map(|(min, max)| ChiploadBounds {
-            min_mm_per_tooth: min,
-            max_mm_per_tooth: max,
-        })
-    };
-    let chipload_bounds = chipload_band_raw.and_then(band_at_depth);
-    let floor_band_fallback = floor_band_fallback_raw.and_then(band_at_depth);
-    // A2: the point takes the same depth de-rate as the band.
-    let point_at_depth = |raw: f64| {
-        geometry::derate_chipload_bounds(
-            None,
-            Some(raw),
-            band_doc_ratio,
-            geometry::ChiploadBoundPolicy::AllowHalfBand,
-        )
-        .map(|b| b.max_mm_per_tooth)
-    };
-    let chipload_point_mm = chipload_point_raw.and_then(point_at_depth);
-    let floor_point_fallback = floor_point_fallback_raw.and_then(point_at_depth);
+    // The post-sim chipload gate (`tool_load::chipload`) still de-rates its
+    // band at the measured depth and still judges the advance per tooth.
+    // P11b does not change the gate; the Result section of
+    // `planning/feeds_contract_2026-11-03/phases/P11.md` counts the cells
+    // where the two now disagree.
+    let chipload_bounds = chipload_band_raw;
+    let floor_band_fallback = floor_band_fallback_raw;
+    let chipload_point_mm = chipload_point_raw;
+    let floor_point_fallback = floor_point_fallback_raw;
 
     let fpt_divisor = rpm * input.flute_count as f64;
     if fpt_divisor > 0.0 {
@@ -3452,10 +3420,8 @@ pub(crate) fn calculate_with(input: &FeedsInput, clamps: DepthClamps) -> FeedsRe
     let derates = FeedsDerates {
         target_chip_load_mm: chip_load,
         formula,
-        observed_radial_chip_thinning: rctf,
+        radial_chip_thinning: radial_lift,
         observed_axial_chip_thinning: axial_thinning,
-        observed_combined_chip_thinning: chip_thinning,
-        depth_tier,
         ld_overhang: ld_factor,
         power_limit: power_factor,
         feed_clamp: feed_clamp_factor,

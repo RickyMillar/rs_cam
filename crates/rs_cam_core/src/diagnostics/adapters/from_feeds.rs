@@ -199,7 +199,11 @@ fn feeds_warning_to_diagnostic(tp_id: ToolpathId, w: &FeedsWarning) -> Diagnosti
             supersedes: vec![],
             suppressed_diagnostics: vec![],
         },
-        FeedsWarning::DocExceedsFlute { requested, capped } => Diagnostic {
+        FeedsWarning::DocExceedsFlute {
+            requested_mm,
+            guard_mm,
+            shipped_mm,
+        } => Diagnostic {
             id: DiagnosticId::from(ids::FEEDS_DOC_EXCEEDS_FLUTE),
             scope: Scope::Toolpath { id: tp_id },
             category: Category::Safety,
@@ -209,16 +213,28 @@ fn feeds_warning_to_diagnostic(tp_id: ToolpathId, w: &FeedsWarning) -> Diagnosti
             source: Source::FeedsCalculator,
             face: crate::diagnostics::presentation::face(ids::FEEDS_DOC_EXCEEDS_FLUTE),
             anchor: crate::diagnostics::presentation::anchor(ids::FEEDS_DOC_EXCEEDS_FLUTE),
-            message: format!(
-                "The depth per pass {requested:.1} mm is longer than the flutes. The \
-                 calculator limits it to the flute length, {capped:.1} mm."
-            ),
+            message: if (shipped_mm - requested_mm).abs() < 1e-9 {
+                format!(
+                    "The depth per pass {requested_mm:.1} mm is past the flute guard \
+                     {guard_mm:.1} mm. The speeds are for {shipped_mm:.1} mm, the depth that \
+                     cuts."
+                )
+            } else {
+                format!(
+                    "The default depth per pass {requested_mm:.1} mm is past the flute guard. \
+                     The calculator lowers it to {shipped_mm:.1} mm."
+                )
+            },
             evidence: None,
             fix: None,
             supersedes: vec![],
             suppressed_diagnostics: vec![],
         },
-        FeedsWarning::SlottingDetected { doc_reduced_to } => Diagnostic {
+        FeedsWarning::SlottingDetected {
+            requested_mm,
+            cap_mm,
+            shipped_mm,
+        } => Diagnostic {
             id: DiagnosticId::from(ids::FEEDS_SLOTTING_DETECTED),
             scope: Scope::Toolpath { id: tp_id },
             category: Category::ToolLoad,
@@ -228,10 +244,18 @@ fn feeds_warning_to_diagnostic(tp_id: ToolpathId, w: &FeedsWarning) -> Diagnosti
             source: Source::FeedsCalculator,
             face: crate::diagnostics::presentation::face(ids::FEEDS_SLOTTING_DETECTED),
             anchor: crate::diagnostics::presentation::anchor(ids::FEEDS_SLOTTING_DETECTED),
-            message: format!(
-                "The tool cuts a full-width slot. The calculator lowers the depth per pass \
-                 to {doc_reduced_to:.1} mm."
-            ),
+            message: if (shipped_mm - requested_mm).abs() < 1e-9 {
+                format!(
+                    "The tool cuts a full-width slot {requested_mm:.1} mm deep, past the slot \
+                     cap {cap_mm:.1} mm. The speeds are for {shipped_mm:.1} mm, the depth that \
+                     cuts."
+                )
+            } else {
+                format!(
+                    "The tool cuts a full-width slot. The calculator lowers the default depth \
+                     per pass to {shipped_mm:.1} mm."
+                )
+            },
             evidence: None,
             fix: None,
             supersedes: vec![],

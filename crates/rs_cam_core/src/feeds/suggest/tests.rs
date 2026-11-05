@@ -33,13 +33,10 @@ use crate::compute::operation_configs::{DropCutterConfig, PocketConfig};
 use crate::compute::tool_config::{ToolId, ToolType};
 use crate::feeds::{ChiploadSource, EMBEDDED_LUT, PassRole};
 
-/// C2 sentinel contract: `SuggestContext::effective_diameter_mm == 0.0`
-/// is "not populated", and the post-mutation chipload re-derivation must
-/// then leave the vendor band UNDERATED — the same outcome the drill path
-/// gets by forcing `doc_ratio = 0.0`. A populated diameter with a DPP
-/// above it must, by contrast, actually derate.
+/// Feeds contract P11b (L6, chip first): the re-derived band is the printed
+/// band whether the effective diameter is populated or not, at any DPP.
 #[test]
-fn unpopulated_effective_diameter_skips_doc_derating() {
+fn the_rederived_band_holds_at_every_depth_p11b() {
     let row = crate::feeds::vendor_lookup::LookupResult {
         chip_load_mm: 0.1,
         chip_load_min_mm: Some(0.05),
@@ -84,13 +81,11 @@ fn unpopulated_effective_diameter_skips_doc_derating() {
         "unpopulated effective diameter must pass the raw band through, got {unpopulated:?}"
     );
 
-    // Populated, DPP twice the diameter → derated below the raw band.
-    let derated = recompute_chipload_bounds_for_dpp(Some(&row), 6.0, &op, 12.0)
+    // Feeds contract P11b (L6, chip first): a populated diameter and a DPP
+    // twice the diameter leave the band as printed too.
+    let deep = recompute_chipload_bounds_for_dpp(Some(&row), 6.0, &op, 12.0)
         .expect("a row with a full band must yield bounds");
-    assert!(
-        derated.max_mm_per_tooth < 0.20,
-        "a 2.0 DOC ratio must derate the band; got {derated:?}"
-    );
+    assert_eq!(deep, unpopulated, "L6: the depth does not move the band");
 }
 
 /// Ball-nose tool of the given diameter (tip radius = diameter / 2).

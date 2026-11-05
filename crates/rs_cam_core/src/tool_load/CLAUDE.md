@@ -16,7 +16,8 @@ Independent gates over a simulated cut. Entry: `tool_load::evaluate_toolpath`.
 - Every gate filters `in_transit_span` samples through the one predicate
   `locality::is_steady_state_for_gate`. Never write a second copy.
 - The chipload gate quantity is advance per tooth, `effective_feed / (rpm *
-  flutes)`. It is not the dexel chip thickness.
+  flutes)`. It is not the dexel chip thickness. P11b: Suggest lifts the feed by chip
+  thinning and keeps the printed band; this gate still judges the advance against the depth-de-rated band.
 - The cutting load `L` of a pass (chip area over a full pass, per strip) is
   `load_fraction::chip_load_fraction` only (INTEGRATION_PLAN D5, Q1); it reads
   `mrr_cross_section_mm2`, as power does. Never write a second form.

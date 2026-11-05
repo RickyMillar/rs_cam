@@ -241,9 +241,13 @@ fn a_speeds_only_apply_ships_the_calculator_feed_for_the_kept_depth_g_speedsappl
         all_dpp <= RIGIDITY_CAP_MM + 1e-9,
         "fixture drift: Apply all no longer lowers the depth ({all_dpp} mm)"
     );
+    // Feeds contract P11b (L6): the depth no longer scales the feed (the
+    // vendor depth table is an envelope limit), so the feed of the shallower
+    // depth is not below the feed of the kept depth; on this fixture both sit
+    // on the machine feed cap.
     assert!(
-        all.feed_rate() > applied.feed_rate(),
-        "the feed of Apply all ({} mm/min, at {all_dpp} mm) must be above the feed \
+        all.feed_rate() >= applied.feed_rate(),
+        "the feed of Apply all ({} mm/min, at {all_dpp} mm) must not be below the feed \
          for {DEEP_DPP_MM} mm ({} mm/min)",
         all.feed_rate().expect("S11: the apply writes it"),
         applied.feed_rate().expect("S11: the fixture sets it")
@@ -272,9 +276,11 @@ fn the_door_result_is_derated_to_the_kept_depth_g_speedsapply() {
 
     assert_eq!(applied.depth_per_pass(), Some(DEEP_DPP_MM));
     assert_eq!(applied.stepover(), Some(STEPOVER_MM));
+    // P11b (L6): the depth no longer scales the feed, so the kept depth's
+    // feed is at most the feed of Apply all (equal on the feed cap here).
     assert!(
-        applied.feed_rate() < all.feed_rate(),
-        "the speeds-only feed ({} mm/min, for {DEEP_DPP_MM} mm) must be below the \
+        applied.feed_rate() <= all.feed_rate(),
+        "the speeds-only feed ({} mm/min, for {DEEP_DPP_MM} mm) must not be above the \
          feed of Apply all ({} mm/min, for {:?} mm)",
         applied.feed_rate().expect("S11: the fixture sets it"),
         all.feed_rate().expect("S11: the apply writes it"),

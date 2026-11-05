@@ -132,38 +132,32 @@ pub(super) fn check_plunge_entry_stability(
 }
 
 /// The geometry-dependent term [`crate::feeds::calculate`] folds into its feed:
-/// the depth tier, and **only** the depth tier.
+/// the radial chip-thinning lift, and **only** that lift (feeds contract
+/// P11b, L1; L6 removed the depth tier).
 ///
 /// Deliberately calls the same shipped helper the calculator calls, so this is
 /// a re-evaluation of the calculator's own expression at a different operating
 /// point rather than a model of it — a second implementation is exactly what
-/// Checkpoint C3 retired.
-///
-/// # Why `ae` is still a parameter
-///
-/// Until 2026-08-19 this also composed `clamp(radial × axial chip thinning, 1,
-/// 4)`, which is why the pass fired on stepover changes at all. G-CHIPTHIN-HALFFIX
-/// deleted that multiplication from the calculator, so re-deriving it here
-/// would rescale the feed by a factor the feed no longer contains — the exact
-/// failure this pass exists to prevent, inverted.
-///
-/// `ae_mm` is kept in the signature because the calculator's remaining
-/// `ae` dependence — the Step 6 power check, whose cross-section moves with
-/// both `ae` and `ap` — is the open **G-SUGGEST-POWERSTALE** row. When that is
-/// instrumented, this is where the term goes. Keeping the parameter also keeps
-/// the pass's mutation test honest: it still notices a stepover the invariants
-/// moved, and still declines to act on it, rather than becoming blind to one.
-fn geometry_feed_factor(geom: ToolGeometryHint, tool: &ToolConfig, _ae_mm: f64, ap_mm: f64) -> f64 {
-    // Feeds matrix R2 (2026-09-23): the ladder diameter is the one the
-    // calculator's Step 5a reads. The shank is the one
-    // `suggest_for_operation` puts in `FeedsInput::shank_diameter`.
-    let ladder_d = crate::feeds::geometry::feed_ladder_diameter_mm(
+/// Checkpoint C3 retired. The engaged diameter is the calculator's Step 5
+/// diameter (`feeds::effective_diameter` at `ap`), and a finish pass takes no
+/// lift (L2).
+fn geometry_feed_factor(
+    geom: ToolGeometryHint,
+    tool: &ToolConfig,
+    finish_pass: bool,
+    ae_mm: f64,
+    ap_mm: f64,
+) -> f64 {
+    if finish_pass {
+        return 1.0;
+    }
+    let d_eng = crate::feeds::effective_diameter(
         geom,
-        ap_mm,
         tool.diameter,
         tool.shank_diameter_planning_mm(),
+        ap_mm,
     );
-    crate::feeds::geometry::depth_tier_multiplier(ap_mm, ladder_d)
+    crate::feeds::geometry::peak_chip_thinning_lift(ae_mm, d_eng)
 }
 
 /// Pass 9 (G-SUGGEST-NOCLAMP, 2026-08-19): **re-derive the feed at the
@@ -272,9 +266,15 @@ pub(super) fn rescale_feed_to_final_geometry(
     }
 
     let geom = tool.geometry_hint();
-    let factor_at_calculator =
-        geometry_feed_factor(geom, tool, calc.radial_width_mm, calc.axial_depth_mm);
-    let factor_at_final = geometry_feed_factor(geom, tool, final_ae, final_ap);
+    let finish_pass = operation.feeds_style().1 == crate::feeds::PassRole::Finish;
+    let factor_at_calculator = geometry_feed_factor(
+        geom,
+        tool,
+        finish_pass,
+        calc.radial_width_mm,
+        calc.axial_depth_mm,
+    );
+    let factor_at_final = geometry_feed_factor(geom, tool, finish_pass, final_ae, final_ap);
     if !(usable(factor_at_calculator) && usable(factor_at_final)) {
         return warnings;
     }
@@ -379,12 +379,11 @@ pub(super) fn rescale_feed_to_final_geometry(
 /// operating point the operation ships.**
 ///
 /// Calculator Step 6 sizes the power check at the `ap` / `ae` it was handed.
-/// Pass 9 above then re-multiplies the feed by `depth_tier_multiplier` at the
-/// FINAL depth, and that multiplier RISES as the depth falls — 1.00 / 0.75 /
-/// 0.50 / 0.45 at `ap/D` of 1 / 2 / 3. So a clamp that lowers the depth across
-/// a tier boundary makes pass 9 RAISE the feed, by up to 2.22×, for a depth
-/// loss that can be arbitrarily small. Until this pass nothing re-checked
-/// Step 6, and the shipped recipe could draw more power than the spindle has.
+/// Pass 9 above then re-multiplies the feed by the chip-thinning lift at the
+/// FINAL width (P11b; until P11b it was the depth tier), and that lift RISES
+/// as the width falls. So a narrower kept width makes pass 9 RAISE the feed.
+/// Until this pass nothing re-checked Step 6, and the shipped recipe could
+/// draw more power than the spindle has.
 ///
 /// # When it runs
 ///

@@ -653,6 +653,9 @@ fn a_hardwood_vbit_project_curve_ships_the_printed_trace_row_b4() {
 /// same piecewise scale as every other shape. At `ap = 0.5 D` (shallow)
 /// this reads 1.0, not the old constant 0.5. At `ap = 2 D` (deep) it
 /// reads 0.75, also not 0.5.
+///
+/// Feeds contract P11b (L6): only the post-sim gate de-rates now; Suggest's
+/// band is the printed band at every depth.
 #[test]
 fn the_band_de_rate_follows_the_nominal_diameter_not_the_engaged_width_b4() {
     let d = 6.35;
@@ -726,15 +729,14 @@ fn the_band_de_rate_follows_the_nominal_diameter_not_the_engaged_width_b4() {
         let bounds = result
             .chipload_bounds
             .unwrap_or_else(|| panic!("{label}: Suggest carries no band"));
+        // Feeds contract P11b (L6, chip first): Suggest's band is the printed
+        // band at every depth; the depth table is an envelope limit.
         let suggest_scale_min = bounds.min_mm_per_tooth / row_min;
         let suggest_scale_max = bounds.max_mm_per_tooth / row_max;
         assert!(
-            (suggest_scale_min - scale).abs() < 1e-9,
-            "{label}: Suggest's min de-rate {suggest_scale_min}, wanted {scale}"
-        );
-        assert!(
-            (suggest_scale_max - scale).abs() < 1e-9,
-            "{label}: Suggest's max de-rate {suggest_scale_max}, wanted {scale}"
+            (suggest_scale_min - 1.0).abs() < 1e-9 && (suggest_scale_max - 1.0).abs() < 1e-9,
+            "{label}: Suggest's band moved with the depth ({suggest_scale_min}, \
+             {suggest_scale_max})"
         );
 
         // The gate, at the same depth: the same row, the same band. A
@@ -743,19 +745,21 @@ fn the_band_de_rate_follows_the_nominal_diameter_not_the_engaged_width_b4() {
         // there), but `gate_bounds` reads the bounds off either verdict,
         // so the sample's own chip thickness does not matter here.
         let gate = gate_bounds(OperationType::Trace, &tool, &material, ap);
+        // The post-sim gate still de-rates its band (P11b does not change the
+        // gate), at the NOMINAL diameter (B4 step 2).
         let gate_min = gate
             .min_mm_per_tooth
             .unwrap_or_else(|| panic!("{label}: the gate carries no minimum"));
         assert!(
-            (gate_min - bounds.min_mm_per_tooth).abs() < 1e-6,
-            "{label}: the gate min {gate_min} disagrees with Suggest {}",
-            bounds.min_mm_per_tooth
+            (gate_min - row_min * scale).abs() < 1e-6,
+            "{label}: the gate min {gate_min}, wanted {} (scale {scale})",
+            row_min * scale
         );
         assert!(
-            (gate.max_mm_per_tooth - bounds.max_mm_per_tooth).abs() < 1e-6,
-            "{label}: the gate max {} disagrees with Suggest {}",
+            (gate.max_mm_per_tooth - row_max * scale).abs() < 1e-6,
+            "{label}: the gate max {}, wanted {} (scale {scale})",
             gate.max_mm_per_tooth,
-            bounds.max_mm_per_tooth
+            row_max * scale
         );
     }
 }

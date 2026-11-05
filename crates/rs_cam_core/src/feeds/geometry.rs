@@ -30,6 +30,37 @@ pub fn radial_chip_thinning_factor(ae_mm: f64, diameter_mm: f64) -> f64 {
     }
 }
 
+/// Feeds contract P11b (decision L1): the radial chip-thinning lift that
+/// Suggest applies to the feed, so that the PEAK chip equals the band chip.
+///
+/// The law is Garr's (`CREDITS.md`, "Garr Tool, Chip Thinning"): the
+/// published chip is the programmed feed per tooth, and it equals the
+/// maximum chip thickness only at a radial engagement of 50 % of the
+/// diameter or more. Below that, the peak chip is `h = fz sin(psi)` with
+/// `cos psi = 1 - ae / r` ([`crate::feeds::force::immersion_angle`]). Thus
+/// the feed that gives the band chip as the peak chip is `fz = h_band /
+/// sin(psi)`, and this function returns `1 / sin(psi)`. At or above half the
+/// diameter it returns 1 (Garr prints no change there).
+///
+/// One formula with no cap (decision L3): the machine feed ceiling, the
+/// spindle power and the rubbing floor bound the lifted feed downstream.
+/// [`radial_chip_thinning_factor`] is the same law with a `[1, 4]` clamp
+/// (`sqrt(1 - (1 - 2 ae/D)^2) = sin(psi)`); it stays only for
+/// `dressup::feedopt`.
+///
+/// `d_eng_mm` is the engaged diameter at the cut depth (the K7
+/// `Engagement::d_eng` rule). A degenerate input (no width, no diameter)
+/// returns 1: no engagement, no lift.
+#[must_use]
+pub fn peak_chip_thinning_lift(ae_mm: f64, d_eng_mm: f64) -> f64 {
+    let psi = crate::feeds::force::immersion_angle(ae_mm, 0.5 * d_eng_mm);
+    if psi <= 0.0 || psi >= std::f64::consts::FRAC_PI_2 {
+        1.0
+    } else {
+        1.0 / psi.sin()
+    }
+}
+
 /// Effective cutting diameter for a ball nose end mill at shallow axial depth.
 ///
 /// For `ap >= R` (radius), the full diameter is engaged.
@@ -278,17 +309,37 @@ pub fn derate_chipload_bounds(
     })
 }
 
-/// The depth de-rate on the feed, at axial depth `ap` on a tool of
-/// `diameter`.
+/// Feeds contract P11b (decision L6): the vendor depth table read as a
+/// depth ceiling at a chip.
 ///
-/// This is [`doc_derating_scale`] at `ap / diameter`, so the feed and the
-/// chipload band use one function (feeds matrix ruling R3, 2026-09-23).
-/// A non-positive diameter gets no de-rate.
-pub fn depth_tier_multiplier(ap: f64, diameter: f64) -> f64 {
-    if diameter <= 0.0 {
-        return 1.0;
+/// `chip_share` is the peak chip as a share of the printed band maximum.
+/// The table (Onsrud, Freud, Amana; [`doc_derating_scale`]) allows the
+/// chip `band max x doc_derating_scale(ap / D)` at a depth `ap`. This
+/// function returns the deepest ratio `ap / D` where that allowed chip is
+/// still at or above the chip: the inverse of [`doc_derating_scale`] on its
+/// printed span.
+///
+/// - `chip_share <= 0.50`: 3.0, the last printed point
+///   ([`DOC_DERATE_LAST_PRINTED_RATIO`]). No vendor prints a deeper row.
+/// - `0.50 < chip_share <= 1.0`: the linear inverse between the printed
+///   points (the interpolation is this crate's own, as in
+///   [`doc_derating_scale`]).
+/// - `chip_share > 1.0`: 1.0. The chip is above the band at every depth;
+///   the chip band, not the depth table, names that.
+///
+/// The vendors print no width for the table ("width not printed"), so the
+/// ceiling does not read the width except through the peak chip.
+#[must_use]
+pub fn vendor_depth_table_ceiling_ratio(chip_share: f64) -> f64 {
+    if !chip_share.is_finite() || chip_share <= 0.5 {
+        DOC_DERATE_LAST_PRINTED_RATIO
+    } else if chip_share <= 0.75 {
+        2.0 + (0.75 - chip_share) / 0.25
+    } else if chip_share <= 1.0 {
+        1.0 + (1.0 - chip_share) / 0.25
+    } else {
+        1.0
     }
-    doc_derating_scale(ap / diameter)
 }
 
 /// **The diameter that a depth-dependent feed de-rate divides by, at axial
@@ -631,23 +682,20 @@ mod tests {
     }
 
     #[test]
-    fn test_depth_tier_multiplier_shallow() {
-        assert!((depth_tier_multiplier(3.0, 6.0) - 1.0).abs() < 1e-9); // 0.5D
-    }
-
-    #[test]
-    fn test_depth_tier_multiplier_1d() {
-        assert!((depth_tier_multiplier(6.0, 6.0) - 1.0).abs() < 1e-9); // exactly 1D
-    }
-
-    #[test]
-    fn test_depth_tier_multiplier_deep() {
-        // R3 (2026-09-23): the feed uses the one published scale, linear
-        // between the printed points and held at 0.50 above 3 x D.
-        assert!((depth_tier_multiplier(9.0, 6.0) - 0.875).abs() < 1e-9); // 1.5D
-        assert!((depth_tier_multiplier(12.0, 6.0) - 0.75).abs() < 1e-9); // 2D
-        assert!((depth_tier_multiplier(18.0, 6.0) - 0.50).abs() < 1e-9); // 3D
-        assert!((depth_tier_multiplier(24.0, 6.0) - 0.50).abs() < 1e-9); // 4D
+    fn the_depth_table_ceiling_inverts_the_printed_scale_p11b() {
+        // The printed points: the full band at 1 x D, 0.75 at 2 x D, 0.50
+        // at 3 x D.
+        for (share, ratio) in [(1.0, 1.0), (0.75, 2.0), (0.5, 3.0)] {
+            assert!((vendor_depth_table_ceiling_ratio(share) - ratio).abs() < 1e-12);
+            assert!((doc_derating_scale(ratio) - share).abs() < 1e-12);
+        }
+        // Between them the inverse meets the scale.
+        for share in [0.55, 0.6, 0.8, 0.95] {
+            let r = vendor_depth_table_ceiling_ratio(share);
+            assert!((doc_derating_scale(r) - share).abs() < 1e-12, "{share}");
+        }
+        assert!((vendor_depth_table_ceiling_ratio(0.2) - 3.0).abs() < 1e-12);
+        assert!((vendor_depth_table_ceiling_ratio(1.4) - 1.0).abs() < 1e-12);
     }
 
     // ── derate_chipload_bounds (S.8 dedup) ─────────────────────────

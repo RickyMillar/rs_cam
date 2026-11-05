@@ -7,7 +7,7 @@
 
 use crate::compute::catalog::{AxialEnvelope, OperationConfig};
 use crate::compute::tool_config::ToolConfig;
-use crate::feeds::{OperationFamily as FeedsOperationFamily, ToolGeometryHint};
+use crate::feeds::ToolGeometryHint;
 use crate::material::Material;
 
 /// Construct the axial-DOC constraint envelope for an operation at its
@@ -134,37 +134,24 @@ pub(crate) fn axial_envelope_for_operation(
     }
 }
 
-/// Re-derive `chipload_bounds` after the axial-envelope pass mutated
-/// DPP. Uses the same shared helper as `feeds::calculate`'s in-place
-/// derivation (`geometry::derate_chipload_bounds`, S.8 — see
-/// `planning/finishing_stack_review_2026-07.md`) so the post-mutation
-/// chipload-recalibration pass sees a bounds value consistent with the
-/// new DPP / effective-D ratio. No-op when the matched LUT row is
-/// absent or carries no chipload band (the original derivation would
-/// also be `None`).
+/// The chipload band of the matched row at a depth that is not the
+/// calculator's. Feeds contract P11b (L6, chip first): the band is the
+/// printed band at every depth (the vendor depth table is a limit of the
+/// envelope, not a scale on the chip), so the depth does not move it. The
+/// shared validation (`geometry::derate_chipload_bounds` at ratio 0, S.8)
+/// stays, so the band is the one `feeds::calculate` returns. `None` when the
+/// matched row is absent or prints no band.
 pub(super) fn recompute_chipload_bounds_for_dpp(
     matched_row: Option<&crate::feeds::vendor_lookup::LookupResult>,
-    effective_diameter_mm: f64,
-    operation: &OperationConfig,
-    new_dpp_mm: f64,
+    _effective_diameter_mm: f64,
+    _operation: &OperationConfig,
+    _new_dpp_mm: f64,
 ) -> Option<crate::feeds::ChiploadBounds> {
     let row = matched_row?;
-    // Drill ops are excluded from doc-derating per `feeds::calculate`
-    // (same path), so leave bounds at the raw LUT values for them —
-    // forcing `doc_ratio` to `0.0` bypasses derating since
-    // `doc_derating_scale` maps any ratio `<= 1.0` to a scale of
-    // `1.0`.
-    let op_family = operation.feeds_style().0;
-    let is_drill = matches!(op_family, FeedsOperationFamily::Drill);
-    let doc_ratio = if is_drill || effective_diameter_mm <= 0.0 {
-        0.0
-    } else {
-        new_dpp_mm / effective_diameter_mm
-    };
     let (min, max) = crate::feeds::geometry::derate_chipload_bounds(
         row.chip_load_min_mm,
         row.chip_load_max_mm,
-        doc_ratio,
+        0.0,
         crate::feeds::geometry::ChiploadBoundPolicy::RequireBoth,
     )?
     .into_pair()?;
@@ -174,32 +161,14 @@ pub(super) fn recompute_chipload_bounds_for_dpp(
     })
 }
 
-/// The printed point of the matched row at a new DPP (A2, point mode).
-///
-/// This is the point twin of [`recompute_chipload_bounds_for_dpp`]: the
-/// same row, the same DOC ratio and the same de-rate. It reads the row
-/// (`SuggestContext::matched_lut_row`), so no `SuggestContext` field is
-/// added. `None` when the row is absent or prints a band or no chipload.
+/// The printed point of the matched row at a new DPP (A2, point mode): the
+/// point twin of [`recompute_chipload_bounds_for_dpp`]. P11b (L6): no depth
+/// de-rate. `None` when the row is absent or prints a band or no chipload.
 pub(super) fn chip_point_for_dpp(
     matched_row: Option<&crate::feeds::vendor_lookup::LookupResult>,
-    effective_diameter_mm: f64,
-    operation: &OperationConfig,
-    new_dpp_mm: f64,
+    _effective_diameter_mm: f64,
+    _operation: &OperationConfig,
+    _new_dpp_mm: f64,
 ) -> Option<f64> {
-    let point = matched_row?.printed_chipload().point_mm()?;
-    // Drill ops take no DOC de-rate, as in the band twin above.
-    let op_family = operation.feeds_style().0;
-    let is_drill = matches!(op_family, FeedsOperationFamily::Drill);
-    let doc_ratio = if is_drill || effective_diameter_mm <= 0.0 {
-        0.0
-    } else {
-        new_dpp_mm / effective_diameter_mm
-    };
-    crate::feeds::geometry::derate_chipload_bounds(
-        None,
-        Some(point),
-        doc_ratio,
-        crate::feeds::geometry::ChiploadBoundPolicy::AllowHalfBand,
-    )
-    .map(|b| b.max_mm_per_tooth)
+    matched_row?.printed_chipload().point_mm()
 }

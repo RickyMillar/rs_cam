@@ -133,6 +133,12 @@ pub enum LimitKind {
     CuttingLength,
     /// The vendor row's axial bound: an `ap` ceiling.
     VendorAxial,
+    /// Feeds contract P11b (L6): the vendor depth table (Onsrud, Freud,
+    /// Amana: 1 x D full chip, 2 x D less 25 %, 3 x D less 50 %) read at the
+    /// operator's peak chip: an `ap` ceiling per width. The vendors print no
+    /// width for it. A point past it is outside the envelope (a warning,
+    /// Q6); the table no longer scales the chip.
+    VendorDepthTable,
     /// The machine rigidity cap (roughing): an `ap` ceiling.
     Rigidity,
     /// The slot rule: an `ap` ceiling where `ae` is above the threshold.
@@ -163,6 +169,7 @@ impl LimitKind {
             Self::FluteGuard => "flute guard",
             Self::CuttingLength => "cutting length",
             Self::VendorAxial => "vendor axial bound",
+            Self::VendorDepthTable => "vendor depth ceiling (width not printed)",
             Self::Rigidity => "machine rigidity",
             Self::Slot => "slot rule",
             Self::Power => "spindle power",
@@ -558,6 +565,31 @@ impl OwnedInputs {
         input.target_scallop_mm = None;
         crate::feeds::calculate_with(&input, crate::feeds::DepthClamps::DrawnAsLimits)
     }
+
+    /// P11b (L7): the operator's stated feed and RPM fit the rated power at
+    /// `p` (`power_at_operating_point`, the K7 worst case of the op). A
+    /// material with no force line has no power figure and fits.
+    fn operator_fits_power(&self, p: CutPoint, chip: OperatorChip) -> bool {
+        let mut op = self.operation.clone();
+        let _ = op.set_depth_per_pass(p.ap_mm);
+        let _ = op.set_stepover(p.ae_mm);
+        let point = crate::feeds::suggest::CalculatorOperatingPoint {
+            radial_width_mm: p.ae_mm,
+            axial_depth_mm: p.ap_mm,
+            feed_rate_mm_min: chip.feed_mm_min,
+            rpm: chip.rpm,
+        };
+        crate::feeds::power_at_operating_point(
+            &op,
+            &self.tool,
+            &self.material,
+            &self.machine,
+            Some(point),
+        )
+        .map_or(true, |f| {
+            f.available_kw <= 0.0 || f.required_kw <= f.available_kw * (1.0 + 1e-9)
+        })
+    }
 }
 
 /// CONTRACT K2b. Built only by [`SafeEnvelope::for_cut`]; no public
@@ -739,10 +771,22 @@ impl SafeEnvelope {
             points,
         };
 
+        // P11b (L7): the force limits are sized at the operator's chip (the
+        // stated feed / (rpm x Z)), so a higher chip moves them in. With no
+        // stated feed or RPM (S11) they read the suggested chip of the grid.
+        let operator = operator_chip(input.operation, input.tool);
         let mut boundary = Vec::new();
         geometric_limits(&mut boundary, &input, &base, &plan, family, role, d);
-        power_limit(&mut boundary, &inputs, &speeds, &plan, base.power_case);
-        deflection_limit(&mut boundary, &input, &speeds, &plan, role);
+        vendor_depth_limit(&mut boundary, &input, &base, &speeds, &plan, operator);
+        power_limit(
+            &mut boundary,
+            &inputs,
+            &speeds,
+            &plan,
+            base.power_case,
+            operator,
+        );
+        deflection_limit(&mut boundary, &input, &speeds, &plan, role, operator);
         runtime_limit(&mut boundary, &input, &plan, d);
         per_point_limits(&mut boundary, &base, &speeds);
 
@@ -1295,25 +1339,70 @@ fn geometric_limits(
     });
 }
 
+/// The operator's chip of an op (feeds contract P11b, L7): the stated feed
+/// over the stated RPM and the flute count, with the RPM and the feed it
+/// came from. `None` when the op states no feed or no RPM (S11).
+#[derive(Debug, Clone, Copy, PartialEq)]
+struct OperatorChip {
+    /// The advance per tooth (mm).
+    fz_mm: f64,
+    /// The stated feed (mm/min).
+    feed_mm_min: f64,
+    /// The stated RPM.
+    rpm: f64,
+}
+
+fn operator_chip(operation: &OperationConfig, tool: &ToolConfig) -> Option<OperatorChip> {
+    let feed = operation.feed_rate()?;
+    let rpm = f64::from(operation.spindle_rpm()?);
+    let z = f64::from(tool.flute_count_planning().max(1));
+    (feed.is_finite() && feed > 0.0 && rpm > 0.0).then(|| OperatorChip {
+        fz_mm: feed / (rpm * z),
+        feed_mm_min: feed,
+        rpm,
+    })
+}
+
 /// The rated-power edge: per width sample, the deepest `ap` at which the
-/// full chip fits the spindle curve. Between two grid samples the edge is
-/// placed by bisection with the calculator.
+/// chip fits the spindle curve. Between two grid samples the edge is placed
+/// by bisection.
 /// K7 change 3: the power edge is drawn at the worst case of the op's
-/// pre-sim set (the calculator's `power_kw` is that case at each sample),
-/// and its law names the case.
+/// pre-sim set, and its law names the case.
+/// P11b (L7): with an operator chip the power is the operator's (the stated
+/// feed and RPM at the point, `power_at_operating_point`), so a higher chip
+/// moves the edge in. With none, the full suggested chip of the grid point.
 fn power_limit(
     out: &mut Vec<Limit>,
     inputs: &OwnedInputs,
     speeds: &SpeedsMap,
     plan: &AxesPlan,
     case: crate::feeds::engagement::PowerCase,
+    operator: Option<OperatorChip>,
 ) {
     if !plan.axes.ap_free() {
         return;
     }
+    let fits_at = |ap: f64, ae: f64| -> bool {
+        match operator {
+            Some(chip) => inputs.operator_fits_power(
+                CutPoint {
+                    ap_mm: ap,
+                    ae_mm: ae,
+                },
+                chip,
+            ),
+            None => fits_power(&inputs.calc_at(CutPoint {
+                ap_mm: ap,
+                ae_mm: ae,
+            })),
+        }
+    };
     let mut points = Vec::new();
     for (j, &ae) in speeds.aes.iter().enumerate() {
-        let fits = |i: usize| speeds.at(i, j).is_some_and(|p| p.fits_power);
+        let fits = |i: usize| match operator {
+            Some(_) => speeds.aps.get(i).is_some_and(|&ap| fits_at(ap, ae)),
+            None => speeds.at(i, j).is_some_and(|p| p.fits_power),
+        };
         let Some(first_out) = (0..speeds.aps.len()).find(|&i| !fits(i)) else {
             continue;
         };
@@ -1326,10 +1415,7 @@ fn power_limit(
         };
         for _ in 0..EDGE_BISECTION_STEPS {
             let mid = 0.5 * (lo + hi);
-            if fits_power(&inputs.calc_at(CutPoint {
-                ap_mm: mid,
-                ae_mm: ae,
-            })) {
+            if fits_at(mid, ae) {
                 lo = mid;
             } else {
                 hi = mid;
@@ -1355,24 +1441,131 @@ fn power_limit(
         })
         .collect();
     curve.dedup_by(|a, b| (a[0] - b[0]).abs() < 1e-12);
+    use crate::feeds::engagement::PowerCase;
     out.push(Limit {
         kind: LimitKind::Power,
-        law: match case {
-            crate::feeds::engagement::PowerCase::Nominal => {
-                "rated spindle power at the full chip (nominal case)"
-            }
-            crate::feeds::engagement::PowerCase::PlannerCap => {
+        law: match (operator.is_some(), case) {
+            (false, PowerCase::Nominal) => "rated spindle power at the full chip (nominal case)",
+            (false, PowerCase::PlannerCap) => {
                 "rated spindle power at the full chip (planner cap case)"
             }
-            crate::feeds::engagement::PowerCase::Slot => {
-                "rated spindle power at the full chip (slot case)"
+            (false, PowerCase::Slot) => "rated spindle power at the full chip (slot case)",
+            (true, PowerCase::Nominal) => {
+                "rated spindle power at the operator's chip (nominal case)"
             }
+            (true, PowerCase::PlannerCap) => {
+                "rated spindle power at the operator's chip (planner cap case)"
+            }
+            (true, PowerCase::Slot) => "rated spindle power at the operator's chip (slot case)",
         },
         basis: Basis::derived(
             "two-term power model <= rated curve",
             vec![Basis::Machine(MachineField::PowerCurve)],
         ),
         edge: Edge::ApCurve { points: curve },
+    });
+}
+
+/// P11b (L6): the vendor depth table as a limit. Per width sample, the
+/// deepest `ap` where the table's allowed chip (`band max x
+/// doc_derating_scale(ap / D)`) still holds the PEAK chip at that width
+/// (`geometry::vendor_depth_table_ceiling_ratio`). The chip is the
+/// operator's (L7), else the suggested chip of the grid. The table is
+/// printed as a chip rule at 1, 2 and 3 x D with no width (step 0 found that
+/// it holds neither the force nor the chip), so it is drawn, not derived
+/// from the force model. A peak chip at or below half the band maximum
+/// meets the table at every printed depth: that column has no edge. No
+/// band or printed point, a drill peck, a fixed depth, or no binding
+/// column: no limit.
+fn vendor_depth_limit(
+    out: &mut Vec<Limit>,
+    input: &EnvelopeInput<'_>,
+    base: &FeedsResult,
+    speeds: &SpeedsMap,
+    plan: &AxesPlan,
+    operator: Option<OperatorChip>,
+) {
+    if !plan.axes.ap_free() || plan.peck {
+        return;
+    }
+    let band_max = base
+        .chipload_bounds
+        .map(|b| b.max_mm_per_tooth)
+        .or(base.chipload_point_mm)
+        .filter(|v| v.is_finite() && *v > 0.0);
+    let (Some(band_max), Some(row)) = (band_max, base.matched_lut_row.as_ref()) else {
+        return;
+    };
+    let d = input.tool.diameter;
+    if !(d.is_finite() && d > 0.0) {
+        return;
+    }
+    // A column where the peak chip is at or below half the band maximum is
+    // inside the table at every printed depth; above 3 x D the vendors print
+    // nothing, and the static check `feeds.depth_beyond_published_table`
+    // names that depth. So the column has no edge in the span and takes the
+    // span top (the power edge's rule). No binding column: no limit.
+    let top = speeds.aps.last().copied().unwrap_or(MIN_AP_MM);
+    // The edge is closed form, so it also takes a sample at the operator's
+    // stated width: the ceiling there is exact, not an interpolation between
+    // two grid columns.
+    let mut widths: Vec<(f64, Option<usize>)> = speeds
+        .aes
+        .iter()
+        .enumerate()
+        .map(|(j, &ae)| (ae, Some(j)))
+        .collect();
+    if let (Some(ae), Some(_)) = (plan.stated_ae, operator)
+        && !speeds.aes.iter().any(|w| (w - ae).abs() < 1e-12)
+    {
+        widths.push((ae, None));
+        widths.sort_by(|a, b| a.0.total_cmp(&b.0));
+    }
+    let mut curve: Vec<[f64; 2]> = Vec::with_capacity(widths.len());
+    let mut binds = false;
+    for (ae, column) in widths {
+        let fz = match (operator, column) {
+            (Some(chip), _) => chip.fz_mm,
+            (None, Some(j)) => match speeds.at(0, j) {
+                Some(p) => p.chip.get().0,
+                None => continue,
+            },
+            (None, None) => continue,
+        };
+        let psi = crate::feeds::force::immersion_angle(ae, 0.5 * d);
+        let peak = fz * psi.min(std::f64::consts::FRAC_PI_2).sin();
+        let share = peak / band_max;
+        if share > 0.5 {
+            binds = true;
+            let ratio = crate::feeds::geometry::vendor_depth_table_ceiling_ratio(share);
+            curve.push([ae, ratio * d]);
+        } else {
+            curve.push([ae, top]);
+        }
+    }
+    if !binds {
+        return;
+    }
+    let first = curve.first().map_or(0.0, |p| p[1]);
+    let flat = curve.iter().all(|p| (p[1] - first).abs() < 1e-9);
+    out.push(Limit {
+        kind: LimitKind::VendorDepthTable,
+        law: if operator.is_some() {
+            "vendor depth table at the operator's peak chip (1/2/3 x D)"
+        } else {
+            "vendor depth table at the suggested peak chip (1/2/3 x D)"
+        },
+        basis: Basis::derived(
+            "vendor depth table (Onsrud, Freud, Amana)",
+            vec![Basis::Printed(crate::feeds::sourced::RowRef(
+                row.observation_id.clone(),
+            ))],
+        ),
+        edge: if flat {
+            Edge::ApCeiling { mm: first }
+        } else {
+            Edge::ApCurve { points: curve }
+        },
     });
 }
 
@@ -1390,6 +1583,7 @@ fn deflection_limit(
     speeds: &SpeedsMap,
     plan: &AxesPlan,
     role: PassRole,
+    operator: Option<OperatorChip>,
 ) {
     if !plan.axes.ap_free() || !matches!(role, PassRole::Roughing) {
         return;
@@ -1426,9 +1620,15 @@ fn deflection_limit(
     }
     let mut columns: Vec<(f64, Option<f64>)> = Vec::new();
     for (j, &ae) in speeds.aes.iter().enumerate() {
-        // The chip at the shallowest sample: the largest chip of the column.
-        let Some(p) = speeds.at(0, j) else { continue };
-        let fz = p.chip.get().0;
+        // P11b (L7): the operator's chip; else the suggested chip at the
+        // shallowest sample (the largest chip of the column).
+        let fz = match operator {
+            Some(chip) => chip.fz_mm,
+            None => match speeds.at(0, j) {
+                Some(p) => p.chip.get().0,
+                None => continue,
+            },
+        };
         let c = crate::feeds::cutter_constraints::cutter_axial_constraints(
             &tool_def,
             input.material,
@@ -1545,7 +1745,7 @@ fn per_point_limits(out: &mut Vec<Limit>, base: &FeedsResult, speeds: &SpeedsMap
     {
         out.push(Limit {
             kind: LimitKind::ChipBand,
-            law: "printed chip band at the depth",
+            law: "printed chip band (peak chip)",
             basis: Basis::Printed(crate::feeds::sourced::RowRef(row.observation_id.clone())),
             edge: Edge::PerPoint,
         });

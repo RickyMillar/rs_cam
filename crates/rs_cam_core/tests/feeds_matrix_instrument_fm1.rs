@@ -199,7 +199,7 @@ fn diameter_reason(kind: ToolType) -> &'static str {
     }
 }
 
-/// The tool builder of `chipload_thinning_magnitude_survey.rs`, copied.
+/// The tool builder of the retired `chipload_thinning_magnitude_survey.rs`, copied.
 fn tool_of(kind: ToolType, diameter: f64, flutes: u32) -> ToolConfig {
     let mut t = ToolConfig::test_default(ToolId::from_raw(1), kind);
     t.diameter = diameter;

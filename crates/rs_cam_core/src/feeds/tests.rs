@@ -1105,7 +1105,9 @@ fn no_machine_factor_multiplies_the_feed() {
 
     assert!(result.feed_rate_mm_min > 0.0);
     let d = &result.derates;
-    assert!((d.combined_factor() - d.depth_tier * d.power_limit * d.feed_clamp).abs() < 1e-12);
+    assert!(
+        (d.combined_factor() - d.radial_chip_thinning * d.power_limit * d.feed_clamp).abs() < 1e-12
+    );
     let fpt = result.feed_rate_mm_min / (result.rpm * 2.0);
     assert!((fpt - d.effective_chip_load_mm()).abs() <= fpt * 1e-9);
 }
@@ -1138,11 +1140,18 @@ fn test_slotting_detection() {
         power_cases: crate::feeds::engagement::PowerCases::NOMINAL,
     });
 
+    // Feeds contract P11b (the P11a lead item): the stated depth ships, and
+    // the slot warning names the cap.
     assert!(
-        result.axial_depth_mm <= 6.0 * 0.25 + 0.01,
-        "slotting should reduce DOC, got {}",
+        (result.axial_depth_mm - 10.0).abs() < 1e-12,
+        "a stated slot depth ships, got {}",
         result.axial_depth_mm
     );
+    assert!(result.warnings.iter().any(|w| matches!(
+        w,
+        FeedsWarning::SlottingDetected { cap_mm, shipped_mm, .. }
+            if (*cap_mm - 1.5).abs() < 1e-12 && (*shipped_mm - 10.0).abs() < 1e-12
+    )));
     assert!(
         result
             .warnings
@@ -1232,16 +1241,9 @@ fn test_lut_chipload_overrides_formula() {
     assert_eq!(without_lut.chipload_source, ChiploadSource::FormulaFallback);
 }
 
-/// Finding 1 (2026-06-04): Suggest's `ChiploadBounds` must mirror
-/// the post-sim chipload gate's DOC-derated envelope so
-/// `SuggestAggressiveness::target_chipload(bounds)` aims at a value
-/// the gate will accept. Without derating, v3.0c median targeting
-/// on high-DOC milling ops (e.g. wanaka Back Rough at ~3×D) lands
-/// above the gate's derated max and trips `Exceeds(High)`.
-///
-/// This test pins the derating contract on a 3×D hardwood pocket-
-/// roughing case: bounds at axial_depth=D get the 1.0 scale (no
-/// change), bounds at axial_depth=3D get the 0.5 scale.
+/// Feeds contract P11b (L6, chip first): the band does not move with the
+/// depth. Until P11b it took the vendor depth table (0.5 at 3 x D); the
+/// table is now a limit of the envelope.
 ///
 /// Fixture since feeds matrix R5 (2026-09-23): a Ø6.35 ball nose. The
 /// flat 6 mm hardwood pocket cell now resolves to the printed Amana
@@ -1249,7 +1251,7 @@ fn test_lut_chipload_overrides_formula() {
 /// printed Amana ball-nose v7 row `amana-ball-hardwood-pocket-6350-2f-v7`
 /// (0.127-0.1778 mm/tooth) publishes both bounds.
 #[test]
-fn chipload_bounds_derate_with_doc_ratio_for_milling() {
+fn chipload_bounds_hold_at_every_depth_p11b() {
     let lut = vendor_lut::VendorLut::embedded();
     let material = Material::SolidWood {
         species: WoodSpecies::HardMaple,
@@ -1283,20 +1285,7 @@ fn chipload_bounds_derate_with_doc_ratio_for_milling() {
     // so the orchestrator must produce `Some(ChiploadBounds)` here.
     let b1 = at_1x.chipload_bounds.unwrap();
     let b3 = at_3x.chipload_bounds.unwrap();
-    let scale_min = b3.min_mm_per_tooth / b1.min_mm_per_tooth;
-    let scale_max = b3.max_mm_per_tooth / b1.max_mm_per_tooth;
-    assert!(
-        (scale_min - 0.5).abs() < 1e-6,
-        "min should derate to 0.5× at 3×D, got scale {scale_min} ({} → {})",
-        b1.min_mm_per_tooth,
-        b3.min_mm_per_tooth,
-    );
-    assert!(
-        (scale_max - 0.5).abs() < 1e-6,
-        "max should derate to 0.5× at 3×D, got scale {scale_max} ({} → {})",
-        b1.max_mm_per_tooth,
-        b3.max_mm_per_tooth,
-    );
+    assert_eq!(b1, b3, "L6: the band at 3 x D is the band at 1 x D");
 }
 
 /// Drill ops are explicitly excluded from chipload-bounds DOC
@@ -1387,7 +1376,9 @@ fn test_lut_rpm_override_within_machine_range() {
         operation_kind: None,
         pass_role: PassRole::Roughing,
         axial_depth_mm: None,
-        radial_width_mm: None,
+        // P11b: half the diameter, so the chip-thinning lift (L1) does
+        // not raise the feed to the machine cap and move the RPM.
+        radial_width_mm: Some(3.0),
         target_scallop_mm: None,
         vendor_lut: Some(&lut),
         setup: SetupContext::default(),
@@ -1687,7 +1678,9 @@ fn spindle_strategy_max_speed_lifts_rpm_and_scales_feed() {
         operation_kind: None,
         pass_role: PassRole::Roughing,
         axial_depth_mm: None,
-        radial_width_mm: None,
+        // P11b: half the diameter, so the chip-thinning lift (L1) does
+        // not raise the feed to the machine cap and move the RPM.
+        radial_width_mm: Some(3.0),
         target_scallop_mm: None,
         vendor_lut: Some(&lut),
         setup: SetupContext::default(),

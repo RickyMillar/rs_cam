@@ -98,8 +98,11 @@ pub struct CutEfficiency {
     /// `(u − Ks) / u` — the share of cutting power spent ploughing
     /// rather than shearing, 0..1.
     pub ploughing_share: f64,
-    /// Where [`Self::advance_per_tooth_mm`] falls against
-    /// [`Self::band`].
+    /// Where the band-held chip falls against [`Self::band`]. Feeds
+    /// contract P11b (L1, L2): the band holds the PEAK chip, so the verdict
+    /// reads the advance per tooth over the chip-thinning lift at the cut
+    /// (`geometry::peak_chip_thinning_lift`); a finish pass holds the
+    /// advance itself.
     pub verdict: ChipVerdict,
     /// The matched vendor chipload window, when one exists and carries
     /// usable bounds. Every ratio below is derived from this band, so a
@@ -117,7 +120,8 @@ pub struct CutEfficiency {
     pub deflection_ceiling_mm: Option<f64>,
     /// `u(fz) / u(band midpoint)` — how much more energy this cut spends
     /// per mm³ than the middle of the vendor window. `None` without a
-    /// band.
+    /// band. P11b keeps it in advance units (the ADVICE table); only the
+    /// verdict reads the peak chip.
     pub wear_ratio_vs_band_mid: Option<f64>,
     /// `fz_mid / fz` — time is inversely proportional to chipload at
     /// fixed RPM, DOC and WOC. `None` without a band.
@@ -198,6 +202,14 @@ pub fn cut_efficiency(
             && b.max_mm_per_tooth >= b.min_mm_per_tooth
     });
 
+    // P11b (L1, L2): the band holds the PEAK chip. The lift is 1 at or above
+    // half the diameter and on a finish pass.
+    let lift = if operation.feeds_style().1 == crate::feeds::PassRole::Finish {
+        1.0
+    } else {
+        crate::feeds::geometry::peak_chip_thinning_lift(radial_width_mm, diameter_mm)
+    };
+    let held_chip_mm = advance_per_tooth_mm / lift;
     let verdict = match band {
         None => ChipVerdict::NoBand,
         Some(b) => {
@@ -205,7 +217,7 @@ pub fn cut_efficiency(
                 AdvancePerToothMm::new(b.min_mm_per_tooth),
                 AdvancePerToothMm::new(b.max_mm_per_tooth),
             );
-            match window.classify(AdvancePerToothMm::new(advance_per_tooth_mm)) {
+            match window.classify(AdvancePerToothMm::new(held_chip_mm)) {
                 ChiploadBandClass::BelowBand => ChipVerdict::Thin,
                 ChiploadBandClass::AboveBand => ChipVerdict::Heavy,
                 ChiploadBandClass::JustAboveFloor

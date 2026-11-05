@@ -320,7 +320,14 @@ fn fixtures() -> Vec<Fixture> {
             // 0.75 machine factor left the feed: 3429 / 0.75 = 4572 =
             // 0.127 x 18 000 x 2, the printed row value itself (advance
             // 0.127 mm/tooth, no factor).
-            expected_suggest_feed: 4572.0,
+            //
+            // **RE-PINNED 2026-11-05, feeds contract P11b (L1): 4572.0 →
+            // 5715.0.** Suggest sizes the feed so that the PEAK chip is the
+            // printed 0.127: at this fixture's 1.2 mm stepover on Ø6,
+            // cos psi = 1 - 1.2 / 3 = 0.6, sin psi = 0.8, so the advance is
+            // 0.127 / 0.8 = 0.15875 and the feed 0.15875 x 18 000 x 2 = 5715.
+            // Still below the legacy 6912.0 (point 3).
+            expected_suggest_feed: 5715.0,
         },
         // Stock ceiling: what an operator on a normal machine actually gets.
         Fixture {

@@ -32,8 +32,8 @@ use rs_cam_core::compute::tool_config::ToolFact;
 use rs_cam_core::compute::tool_config::{ToolConfig, ToolId, ToolType};
 use rs_cam_core::feeds::envelope::{Edge, EnvelopeInput, LimitKind, Placement, SafeEnvelope};
 use rs_cam_core::feeds::sourced::MachineField;
-use rs_cam_core::feeds::suggest::SuggestContext;
-use rs_cam_core::feeds::{Basis, SpindleStrategy, embedded_vendor_lut};
+use rs_cam_core::feeds::suggest::{SuggestContext, feeds_input_for_operation};
+use rs_cam_core::feeds::{Basis, SpindleStrategy, calculate, embedded_vendor_lut};
 use rs_cam_core::geo::{BoundingBox3, P3};
 use rs_cam_core::machine::MachineProfile;
 use rs_cam_core::material::{Material, WoodSpecies};
@@ -68,6 +68,11 @@ struct Cell<'a> {
 }
 
 fn envelope(cell: &Cell<'_>) -> SafeEnvelope {
+    envelope_at_chip_share(cell, 1.0)
+}
+
+/// [`envelope`] with the stated chip at `share` of the full Suggest chip.
+fn envelope_at_chip_share(cell: &Cell<'_>, share: f64) -> SafeEnvelope {
     let mut op = rs_cam_core::compute::fixture_values::fixture_op(cell.op);
     assert!(
         op.set_depth_per_pass(cell.dpp),
@@ -79,6 +84,32 @@ fn envelope(cell: &Cell<'_>) -> SafeEnvelope {
         "{:?} holds a stepover",
         cell.op
     );
+    // Feeds contract P11b (L7): the envelope is sized at the operator's
+    // chip. The cell states the full Suggest chip for its cut (the band chip
+    // and the RPM before the Step 6 power ladder: an operator who keeps the
+    // band chip), so the force limits read that chip, as the grid did before
+    // P11b.
+    let r = calculate(&feeds_input_for_operation(
+        &op,
+        &cell.tool,
+        &cell.material,
+        &cell.machine,
+        embedded_vendor_lut(),
+        SpindleStrategy::default(),
+    ));
+    // The RPM before the power ladder walked it, and the band chip lifted by
+    // the chip-thinning law at that RPM.
+    let rpm = (r.rpm / r.derates.spindle_scale.max(1e-9)).round();
+    let z = f64::from(cell.tool.flute_count_planning());
+    op.set_feed_rate(
+        share * r.derates.target_chip_load_mm * r.derates.radial_chip_thinning * rpm * z,
+    );
+    #[expect(
+        clippy::cast_possible_truncation,
+        clippy::cast_sign_loss,
+        reason = "a positive RPM below 100 000"
+    )]
+    op.set_spindle_rpm(Some(rpm as u32));
     SafeEnvelope::for_cut(EnvelopeInput {
         operation: &op,
         tool: &cell.tool,
@@ -154,15 +185,21 @@ fn assert_binds(env: &SafeEnvelope, kind: LimitKind) {
 
 #[test]
 fn the_flute_guard_binds_and_names_its_factor_k2b() {
-    let env = envelope(&Cell {
-        op: OperationType::Adaptive,
-        tool: end_mill(6.0, 10.0),
-        machine: MachineProfile::default(),
-        material: softwood(),
-        dpp: 9.0,
-        stepover: 0.5,
-        bbox: None,
-    });
+    // P11b (L6): at the full Suggest chip the vendor depth table binds
+    // under the 8 mm guard (measured). At half the chip the table binds no
+    // width, so the guard binds.
+    let env = envelope_at_chip_share(
+        &Cell {
+            op: OperationType::Adaptive,
+            tool: end_mill(6.0, 10.0),
+            machine: MachineProfile::default(),
+            material: softwood(),
+            dpp: 9.0,
+            stepover: 0.5,
+            bbox: None,
+        },
+        0.5,
+    );
     assert_binds(&env, LimitKind::FluteGuard);
     let names = rule_names(&env.limit(LimitKind::FluteGuard).expect("kept").basis);
     assert!(

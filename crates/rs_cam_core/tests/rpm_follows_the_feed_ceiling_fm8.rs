@@ -22,9 +22,10 @@
 //! - (d) through Suggest, on the Ø6 hardwood pocket (the printed Spektra row
 //!   0.127 mm/tooth at 18 000 rpm, 2 flutes, raw feed 4572 mm/min) on the
 //!   generic router's 4000 mm/min ceiling: the RPM is
-//!   floor(4000 / 0.254) = 15 748, the feed 0.254 x 15 748 = 3999.992,
-//!   shipped floored to 3999; the rationale row sits on the RPM entry, and
-//!   the diagnostic is Info.
+//!   floor(4000 / chip per rev), the chip per rev 0.254 times the
+//!   chip-thinning lift at the stepover (feeds contract P11b, L1), the feed
+//!   floored; the rationale row sits on the RPM entry, and the diagnostic is
+//!   Info.
 
 #![expect(
     clippy::expect_used,
@@ -329,19 +330,35 @@ fn suggest_ships_the_lowered_rpm_with_a_rationale_row_fm8() {
             | SuggestWarning::PlungeReDerived { .. } => None,
         })
         .unwrap_or_else(|| panic!("{:?}", s.warnings));
+    // Feeds contract P11b (L1): the chip per rev is 2 x 0.127 times the
+    // chip-thinning lift at the op's stepover, so the RPM is
+    // floor(4000 / chip per rev). The spindle steps whole RPM here.
+    let stepover = s
+        .operation
+        .stepover()
+        .expect("the pocket states a stepover");
+    let lift = rs_cam_core::feeds::geometry::peak_chip_thinning_lift(stepover, 6.0);
+    let per_rev = 0.254 * lift;
+    let want_rpm = (4000.0 / per_rev).floor();
     assert_eq!(from, 18_000.0);
-    assert_eq!(to, 15_748.0, "floor(4000 / 0.254)");
-    assert_eq!(s.operation.spindle_rpm(), Some(15_748));
+    assert_eq!(to, want_rpm, "floor(4000 / (0.254 x lift {lift}))");
+    #[expect(
+        clippy::cast_possible_truncation,
+        clippy::cast_sign_loss,
+        reason = "a positive whole RPM below 18 000"
+    )]
+    let want_rpm_u32 = want_rpm as u32;
+    assert_eq!(s.operation.spindle_rpm(), Some(want_rpm_u32));
     assert_eq!(
         s.operation.feed_rate(),
-        Some(3999.0),
-        "0.254 x 15 748 = 3999.992, floored"
+        Some((per_rev * want_rpm).floor()),
+        "chip per rev x RPM, floored"
     );
 
     let rows = SuggestRationale::from_warnings(&s.warnings).entries;
     assert!(
         rows.iter()
-            .any(|e| e.param == RationaleParam::Rpm && e.to_value == Some(15_748.0)),
+            .any(|e| e.param == RationaleParam::Rpm && e.to_value == Some(want_rpm)),
         "the rationale row sits on the RPM entry: {rows:?}"
     );
 }

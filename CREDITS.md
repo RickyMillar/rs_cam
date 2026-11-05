@@ -373,8 +373,22 @@ Reduce chip load by 25% / 3 x D Reduce chip load by 50%". Freud prints "reduce
 the Chip Load by at least 25%" and "at least 50%". Amana prints "Reduce feed rate
 by 25%" and "by 50%", which is the same rule at the chart's fixed RPM. The linear
 interpolation between the three points is this crate's own. Above 3 x D no vendor
-prints a factor; the crate holds 0.50 there and raises a Caution. The one scale
-de-rates the feed, the chipload band and the post-simulation chipload gate.
+prints a factor; the crate holds 0.50 there and raises a Caution. Since feeds
+contract P11b (2026-11-05, chip first) the scale de-rates only the
+post-simulation chipload gate; Suggest draws the table as the envelope limit
+"vendor depth ceiling (width not printed)" at the operator's peak chip
+(`feeds::geometry::vendor_depth_table_ceiling_ratio`, the inverse of the scale
+on its printed span), and the feed and the shown band no longer take it.
+
+Suggest applies Garr's chip thinning as a model (feeds contract P11b, operator
+ruling D11, 2026-11-04): the feed is sized so that the peak chip
+`fz sin(psi)` (`cos psi = 1 - ae / r`) is the band chip below a radial
+engagement of 50 %, and `fz` is the band chip at or above it
+(`feeds::geometry::peak_chip_thinning_lift`). The Garr page above is the
+source of the law; the wood charts print no radial condition (the next
+paragraph), so the lift is a model matched to Garr's printed rule, not a
+correction read from a wood chart. A finish pass keeps the band chip (Garr's
+finish row, 2.5 % D, prints a low chip; P11 step 0 claim C13).
 
 No wood source in the shipped LUT publishes a **radial** engagement condition
 for its chipload column; the `ae_min_mm` / `ae_max_mm` values on wood rows are

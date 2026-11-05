@@ -761,6 +761,13 @@ fn panel_cut_geometry_apply_goes_through_the_invariant_funnel() {
 /// pin (3999 / 1999 / 15748). The stepover is the stated 2.0 (the chain's
 /// dial gave 1.369; no product door runs the dial). The depth is the
 /// proposal snapped once to the pass staircase: 1.0 (the chain gave 0.75).
+///
+/// **The RPM moved with its cause: 15748 -> 14629, feeds contract P11b
+/// (decision L1, 2026-11-05).** The feed is sized so the PEAK chip is the
+/// band chip (radial chip thinning, Garr). The stepover 2.0 on the Ø6.35
+/// tool gives `cos psi = 1 - 2.0 / 3.175`, a lift of `1 / sin psi` (about
+/// 1.08). The feed stays at the 3999 ceiling, so the RPM follows it down to
+/// 14629 (measured). Feed, plunge, stepover and depth do not move.
 #[test]
 fn pocket_fixture_recipe_fingerprint_is_unmoved() {
     /// The measured feed of "Apply all" (mm/min).
@@ -768,7 +775,7 @@ fn pocket_fixture_recipe_fingerprint_is_unmoved() {
     /// The measured plunge (mm/min).
     const FP_PLUNGE: f64 = 1999.0;
     /// The measured RPM.
-    const FP_RPM: u32 = 15_748;
+    const FP_RPM: u32 = 14_629;
     /// The measured stepover (mm).
     const FP_WOC: f64 = 2.0;
     /// The measured depth per pass (mm).

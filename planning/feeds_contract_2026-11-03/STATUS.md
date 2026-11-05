@@ -51,12 +51,18 @@ the full entry point. Read it first, then the files it names.
    force as a method on `feeds/engagement.rs` `Engagement` (peak for lateral force and
    deflection, mean for power). Decide the two P9 open diameters (`phases/P11.md` "Open from
    P9"): every reader uses `Engagement::d_eng` at the cut depth.
-3. **P11b** (steps 1, 4, 5, 6; L1-L3, L6-L9; plus the P11a item: a stated depth above the
+3. DONE 2026-11-05: **P11b** (steps 1, 4, 5, 6; L1-L3, L6-L9; plus the P11a item: a stated depth above the
    flute guard or the slot cap still sizes the feed and power at the clamped depth in
    `calculate` (`DepthClamps::Apply`); P11b sizes them at the stated depth and warns): chip thinning in Suggest (Garr peak chip, finish
    ops do not thin, no new cap), chip first (`doc_derating_scale` stops scaling the chip; the
    vendor 1/2/3 x D table becomes a visible limit), the envelope sized at the operator's chip,
    the source hunt, and the after-page `research_p11_step0/after/` (L9).
+3a. **P11b2** (lead decision 2026-11-05, a consequence of L1 and L6): the post-sim chipload
+   gate (`tool_load`) and the feed modulator still judge the advance per tooth against the
+   band max, and the gate still de-rates the band by depth. Move both to the peak chip
+   (`fz sin psi` at the measured engagement) and drop the gate's depth de-rate, so Suggest and
+   the gate read one chip again. FM1: 4 sim cells raise `load.chipload.commanded_above_band`
+   until then. Then P11c, then P13 (the lead plan below).
 4. DONE 2026-11-05 (research): **the derate audit**, `research_derate/` (REPORT.md, index.html,
    assert_claims.py 61/61). Headline: the vendor feed path has no light-machine factor; the
    double margins are geometry (slot cap over `doc_roughing_factor`, depth stack 0.20 of the
@@ -130,6 +136,15 @@ the full entry point. Read it first, then the files it names.
 - P10: the calculator's ap factors put the add-door default outside the repo's own envelope
   (option (a) measured: Rigidity 118 -> 134, VendorAxial 10 -> 33 FM1 cells), so the axial
   defaults scale today's 6 mm values instead. The radial and axial tables are Unsourced.
+- P11b: the L9 page is FAIL under the step 0 rule (W 2/7, D 23/455; group D fails by design
+  under L6; the default machine's power binds most Onsrud slots). The reviewer list in
+  `phases/P11.md` "Result P11b" (no cap on the lift: a very light width lands on the feed cap
+  with RPM down to 0.515 x; no deflection step caps the lifted feed in `calculate`; L2 reads
+  "finish" as `PassRole::Finish`, so Waterline thins; a one-value row allows only 1 x D at
+  the suggested chip; the depth-table ceiling divides by the nominal diameter; the ball's
+  axial thinning is reported, not applied; `feed_ladder_diameter_mm` has no production
+  reader; the operator-chip power edge cost is not measured; no tool-strength value).
+  `render_pipelines_headless_g_pipesmoke` crashed (SIGSEGV) once under the full viz run.
 - The stepover numbers: 0.12 x D (the Shapeoko profile table), 0.20 x D (`adaptive_woc_factor`,
   from Fusion per the operator) and 0.15 x D (the stale check) are all typed with no source.
 
@@ -241,7 +256,7 @@ lineage trace stored in the project file).
 | 8 Q1 / Q6 / Q8 | `phases/P8.md` | DONE 2026-11-05 (Q1, Q8; Q6 as the agreed mock: the rapid-collision card counts the core `project.rapid_collision` rows, one per toolpath, on the pre-flight and the Readiness panel; sentry `a_collision_is_the_same_warning_on_every_surface_q6`) | see `git log` | |
 | 9 K7 one engagement | `phases/P9.md` | DONE 2026-11-04 (one `Engagement`; pre-sim power is the worst case with its name; the simulation is placed on the envelope, not fed back; open items in the card) | see `git log` | |
 | 10 Tool-derived geometry defaults (D8) | `phases/P10.md` | DONE 2026-11-05 (no default without a tool; radial = the calculator's own width; axial k x D from today's 6 mm values; FM1 353 cells; G-code byte-identical) | 84bfeab68 | |
-| 11 Force model, chip first, feed-driven limits | `phases/P11.md` | Step 0 DONE 2026-11-04; **P11a DONE 2026-11-05** (D-A grid at the requested depth, D-B solved deflection edge, L5 engaged-edge force with the helix (peak for deflection, mean = power), every reader at `d_eng` of the cut depth; FM1: 430 `force_n` cells and 20 sim `deflection_peak_mm` cells, no feed/rpm/depth/power cell). P11b NOT STARTED | see `git log` | P11b |
+| 11 Force model, chip first, feed-driven limits | `phases/P11.md` | Step 0 DONE 2026-11-04; **P11a DONE 2026-11-05** (D-A grid at the requested depth, D-B solved deflection edge, L5 engaged-edge force with the helix (peak for deflection, mean = power), every reader at `d_eng` of the cut depth; FM1: 430 `force_n` cells and 20 sim `deflection_peak_mm` cells, no feed/rpm/depth/power cell). **P11b DONE 2026-11-05** (Garr peak-chip lift, finish and drill do not thin, chip first with `LimitKind::VendorDepthTable`, limits at the operator's chip, L8 source table, a stated depth ships; L9 page: FAIL under the step 0 rule, W 2/7, D 23/455, recorded as is for P12). P11b2 NOT STARTED | see `git log` | P11b2 |
 | 12 Hand-off for independent review | `phases/P12.md` | NOT STARTED (operator, 2026-11-04: last; another session verifies the output numbers against industry practice) | | after P11 |
 
 ## Not in a phase

@@ -177,9 +177,17 @@ fn the_generic_6mm_softwood_pocket_ships_the_spektra_chip_g_series() {
     let z = f64::from(cell.flutes);
     let chip = feed / (rpm * z);
     let step = 1.0 / (rpm * z);
+    // Feeds contract P11b (L1): the PEAK chip is the point, so the advance
+    // per tooth is the point times the chip-thinning lift at the stepover.
+    let stepover = s
+        .operation
+        .stepover()
+        .expect("the pocket states a stepover");
+    let target = point * rs_cam_core::feeds::geometry::peak_chip_thinning_lift(stepover, 6.0);
     assert!(
-        chip <= point + 1e-9 && chip >= point - step - 1e-9,
-        "shipped chip {chip} (feed {feed} at {rpm} rpm) is not the Spektra point {point}"
+        chip <= target + 1e-9 && chip >= target - step - 1e-9,
+        "shipped chip {chip} (feed {feed} at {rpm} rpm) is not the Spektra point {point} \
+         lifted to {target}"
     );
     // The G6 ramp reads the same printed cell: the Spektra pocket row.
     match &s.feeds_result.ramp {

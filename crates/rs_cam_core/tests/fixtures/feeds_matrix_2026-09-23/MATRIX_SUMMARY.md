@@ -88,9 +88,9 @@ The support arm is one axis: `Refused` (Suggest returned an error), `VendorBacke
 |---|---|
 | `compat.ball_nose_on_flat_clearing` | 42 |
 | `efficiency.very_fine_stepover` | 86 |
-| `feeds.feed_clamped` | 22 |
+| `feeds.feed_clamped` | 41 |
 | `feeds.long_tool_derate` | 496 |
-| `feeds.rpm_lowered_for_ceiling` | 204 |
+| `feeds.rpm_lowered_for_ceiling` | 237 |
 | `feeds.shank_too_large` | 100 |
 | `feeds.slotting_detected` | 60 |
 
@@ -98,9 +98,9 @@ The support arm is one axis: `Refused` (Suggest returned an error), `VendorBacke
 
 | id | cells |
 |---|---|
-| `FeedRateClamped` | 22 |
+| `FeedRateClamped` | 41 |
 | `LongToolDerate` | 496 |
-| `RpmLoweredForFeedCeiling` | 204 |
+| `RpmLoweredForFeedCeiling` | 237 |
 | `ShankTooLarge` | 100 |
 | `SlottingDetected` | 60 |
 
@@ -109,15 +109,15 @@ The support arm is one axis: `Refused` (Suggest returned an error), `VendorBacke
 | id | cells |
 |---|---|
 | `RampFeed` | 508 |
-| `RpmLoweredForFeedCeiling` | 204 |
-| `UnsourcedRowsAccepted` | 413 |
+| `RpmLoweredForFeedCeiling` | 237 |
+| `UnsourcedRowsAccepted` | 403 |
 
 ## Simulation subset (`matrix_2026-09-23_sim.csv`)
 
 - 2D: Pocket, Profile, Adaptive on a 40 mm square polygon, stock 44 × 44 × 18 below z = 0; end_mill and bull_nose at 6 mm; the four materials.
 - 3D: a dome height field (top z = 0, flat base z = -8, 46 mm footprint) in the same stock; heights pinned to top 0 and bottom -8 on all 3D cells (`bottom_z: Auto` collapses a waterline band). Waterline, DropCutter, Adaptive3d with end_mill; Scallop and DropCutter with ball_nose and tapered_ball_nose; 6 mm; softwood and hardwood.
 - Simulation: resolution 1.0, metrics on, auto resolution off, other fields from `SimulationOptions::default()`. That default has `adaptive_feed_modulation: true`, so the post-simulation verdicts read the modulated feed, as the GUI default does.
-- Cells run: 35; errors: 0; left out (a fixed list, `sim_left_out`): 3; wall-clock of the subset: 40.8 s.
+- Cells run: 35; errors: 0; left out (a fixed list, `sim_left_out`): 3; wall-clock of the subset: 42.4 s.
 
 ## Post-simulation diagnostic ids (cells that fire each id)
 
@@ -126,9 +126,10 @@ The support arm is one axis: `Refused` (Suggest returned an error), `VendorBacke
 | `efficiency.very_fine_stepover` | 3 |
 | `feeds.feed_clamped` | 2 |
 | `feeds.long_tool_derate` | 35 |
-| `feeds.rpm_lowered_for_ceiling` | 24 |
+| `feeds.rpm_lowered_for_ceiling` | 26 |
 | `feeds.shank_too_large` | 2 |
 | `feeds.slotting_detected` | 8 |
+| `load.chipload.commanded_above_band` | 4 |
 | `load.chipload.unmodeled` | 24 |
 | `load.chipload.within` | 11 |
 | `load.deflection.unmodeled` | 8 |
