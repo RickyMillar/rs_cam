@@ -246,6 +246,7 @@ fn ribbon_diagnostics(session: &ProjectSession, idx: usize) -> Vec<Diagnostic> {
         tc,
         Some(&tool),
         &session.stock_config().material,
+        session.machine(),
         session.stock_config().bbox().min.z,
     );
     let load_report = session.build_tool_load_report(None);

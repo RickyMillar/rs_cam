@@ -66,7 +66,13 @@ use rs_cam_core::material::{
 /// `compute.geometry_default.AXIAL_K_2_0_MM` and
 /// `compute.geometry_default.AXIAL_K_3_0_MM`. The radial rule reads the
 /// family `ae_factor` rows, which were rows before P10.
-const PINNED_UNSOURCED_COUNT: usize = 159;
+///
+/// Feeds contract P11c (D13 item 3) lowered it from 159 to 158:
+/// `feeds.calculate.slotting_doc_cap_d` left the registry. The slot depth
+/// cap is the machine's `RigidityProfile::slot_doc_factor` (per-machine
+/// data, as the other rigidity values; the hobby grade default is the
+/// Shapeoko port, Unsourced, and its basis says so).
+const PINNED_UNSOURCED_COUNT: usize = 158;
 
 fn repo_root() -> PathBuf {
     PathBuf::from(env!("CARGO_MANIFEST_DIR")).join("../..")

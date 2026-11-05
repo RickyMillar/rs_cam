@@ -702,6 +702,7 @@ impl ProjectSession {
             tc,
             Some(tool),
             &self.stock.material,
+            &self.machine,
             self.stock_bbox().min.z,
         );
         // Build the load report from the *supplied* trace so callers

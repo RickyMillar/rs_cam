@@ -1857,18 +1857,30 @@ pub(crate) fn flute_guard_of(flute_length_mm: f64, d: f64) -> (f64, Basis) {
 
 /// Step 4b: the slot rule (threshold in diameters, depth cap in
 /// diameters) and its basis (P5: the calculator and the envelope read one
-/// rule).
-pub(crate) fn slot_rule() -> (f64, f64, Basis) {
+/// rule). P11c (D13 item 3): the depth cap is the machine's
+/// `RigidityProfile::slot_doc_factor`; the threshold stays a
+/// machine-neutral geometry rule.
+pub(crate) fn slot_rule(machine: &MachineProfile) -> (f64, f64, Basis) {
     (
         SLOTTING_THRESHOLD.value,
-        SLOTTING_DOC_CAP.value,
+        machine.rigidity.slot_doc_factor,
         Basis::derived(
             "slot cap",
-            vec![
-                Basis::Rule(SLOTTING_THRESHOLD),
-                Basis::Rule(SLOTTING_DOC_CAP),
-            ],
+            vec![Basis::Rule(SLOTTING_THRESHOLD), rigidity_basis(machine)],
         ),
+    )
+}
+
+/// P11c (D13 item 6): the basis of a value that a rigidity factor of
+/// `machine` sets. The law names the machine class and how the values are
+/// known (`RigidityBasis::text`, for example "hobby grade (Shapeoko port),
+/// Unsourced"), so the card, MCP, the CLI and the K8 lineage print the
+/// class beside the value.
+#[must_use]
+pub fn rigidity_basis(machine: &MachineProfile) -> Basis {
+    Basis::derived(
+        machine.rigidity_basis().text(),
+        vec![Basis::Machine(sourced::MachineField::Rigidity)],
     )
 }
 
@@ -1876,12 +1888,6 @@ pub(crate) fn slot_rule() -> (f64, f64, Basis) {
 const SLOTTING_THRESHOLD: FormulaConstant = FormulaConstant::unsourced(
     "feeds.calculate.slotting_threshold_d",
     0.85,
-    "no comment and no record in the repo",
-);
-/// Step 4b: the depth cap of a slot, in diameters.
-const SLOTTING_DOC_CAP: FormulaConstant = FormulaConstant::unsourced(
-    "feeds.calculate.slotting_doc_cap_d",
-    0.25,
     "no comment and no record in the repo",
 );
 
@@ -2576,21 +2582,15 @@ pub(crate) fn calculate_with(input: &FeedsInput, clamps: DepthClamps) -> FeedsRe
     ae_basis = moved_basis(ae_basis, ae_before, ae, "tool diameter", Basis::tool_fact());
 
     // --- Step 4b: Slotting detection ---
-    if ae > d * SLOTTING_THRESHOLD.value {
-        let slotting_cap = d * SLOTTING_DOC_CAP.value;
+    let (slot_threshold_d, slot_cap_d, slot_basis) = slot_rule(machine);
+    if ae > d * slot_threshold_d {
+        let slotting_cap = d * slot_cap_d;
         if ap > slotting_cap && clamps == DepthClamps::Apply {
             // P11b: a stated depth ships (see Step 4).
             let requested = ap;
             if !depth_is_stated {
                 ap = slotting_cap;
-                ap_basis = Basis::derived(
-                    "slot cap",
-                    vec![
-                        ap_basis,
-                        Basis::Rule(SLOTTING_THRESHOLD),
-                        Basis::Rule(SLOTTING_DOC_CAP),
-                    ],
-                );
+                ap_basis = Basis::derived("slot cap", vec![ap_basis, slot_basis]);
             }
             warnings.push(FeedsWarning::SlottingDetected {
                 requested_mm: requested,
@@ -3664,7 +3664,6 @@ pub fn formula_constants() -> Vec<FormulaConstant> {
         FLUTE_GUARD_FACTOR,
         FLUTE_GUARD_NO_LENGTH_D,
         SLOTTING_THRESHOLD,
-        SLOTTING_DOC_CAP,
         ADAPTIVE_FLAT_AP,
         ADAPTIVE_FLAT_AE,
         ADAPTIVE_BALL_AP,
@@ -4050,7 +4049,7 @@ fn default_engagement(
             ap_basis = Basis::derived(
                 "rigidity floor",
                 vec![
-                    Basis::Machine(sourced::MachineField::Rigidity),
+                    rigidity_basis(machine),
                     Basis::Rule(ADAPTIVE_RIGIDITY_DOC_DIVISOR),
                     ap_basis,
                 ],
@@ -4078,7 +4077,7 @@ fn default_engagement(
             ae_before,
             ae_factor,
             "rigidity width",
-            Basis::Machine(sourced::MachineField::Rigidity),
+            rigidity_basis(machine),
         );
     }
 

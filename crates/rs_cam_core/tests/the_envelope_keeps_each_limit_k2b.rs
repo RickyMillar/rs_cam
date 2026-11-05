@@ -268,14 +268,14 @@ fn the_slot_rule_binds_and_names_its_constants_k2b() {
         bbox: None,
     });
     assert_binds(&env, LimitKind::Slot);
-    let names = rule_names(&env.limit(LimitKind::Slot).expect("kept").basis);
+    // P11c (D13 item 3): the threshold is the one rule; the depth cap is the
+    // machine's `slot_doc_factor` (a `machine.rigidity` basis).
+    let basis = &env.limit(LimitKind::Slot).expect("kept").basis;
     assert_eq!(
-        names,
-        vec![
-            "feeds.calculate.slotting_threshold_d".to_owned(),
-            "feeds.calculate.slotting_doc_cap_d".to_owned()
-        ]
+        rule_names(basis),
+        vec!["feeds.calculate.slotting_threshold_d".to_owned()]
     );
+    assert_eq!(machine_fields(basis), vec![MachineField::Rigidity]);
 }
 
 #[test]

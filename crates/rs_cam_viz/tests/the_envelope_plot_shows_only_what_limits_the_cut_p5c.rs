@@ -354,9 +354,11 @@ fn a_drag_moves_the_candidate_and_never_the_proposal_p5c() {
         "the dot is back at the stored point: {m:?}"
     );
 
-    // 1b. The operator's point outside (the fixture Pocket states ap 1.5):
-    // the proposal is a third mark, and the drag does not move it.
-    let (config, env) = envelope_for(OperationType::Pocket).expect("the Pocket is backed");
+    // 1b. The operator's point outside: the proposal is a third mark, and
+    // the drag does not move it. P11c (D13 item 6): the hobby grade cap is
+    // 0.25 x 6 = 1.5 mm, equal to the fixture's stated ap 1.5 (it was 1.2),
+    // so the point states ap 2.0 to sit outside.
+    let (config, env) = pocket_at_depth(2.0);
     assert!(
         matches!(env.operator, Some(Placement::Outside { .. })),
         "fixture: the Pocket's stated point sits outside: {:?}",
@@ -518,9 +520,16 @@ fn the_frame_is_the_hard_stops_p5c() {
 fn the_rivmap_rough_plot_draws_every_limit_in_view_p5c() {
     let ctx = ctx();
     // The fixture's point, and the live point of the operator's review.
-    for (tag, point) in [
-        ("fixture", None),
-        ("review ap 4.217 x ae 2.303", Some((4.217, 2.303))),
+    //
+    // Feeds contract P11c (review item M4): the move-count model reads the
+    // machine's `adaptive_woc_factor` (0.2 in this file) for the adaptive
+    // area width, not the typed 0.3, so the predicted moves rise 1.5 x. At
+    // the fixture's point the `Runtime` (move budget) width floor now enters
+    // the view and draws. At the review point (ap 4.217) the cut has fewer
+    // depth levels, so fewer moves, and the floor stays out of view.
+    for (tag, point, runtime_in_view) in [
+        ("fixture", None, true),
+        ("review ap 4.217 x ae 2.303", Some((4.217, 2.303)), false),
     ] {
         let (config, env) = rivmap_rough(point);
         let scene = EnvelopeScene::of(&env, None);
@@ -534,10 +543,20 @@ fn the_rivmap_rough_plot_draws_every_limit_in_view_p5c() {
             !kinds.contains(&LimitKind::Diameter),
             "{tag}: D is the frame"
         );
+        let want = if runtime_in_view {
+            vec![
+                LimitKind::Rigidity,
+                LimitKind::Runtime,
+                LimitKind::Slot,
+                LimitKind::VendorAxial,
+            ]
+        } else {
+            vec![LimitKind::Rigidity, LimitKind::Slot, LimitKind::VendorAxial]
+        };
         assert_eq!(
-            kinds,
-            vec![LimitKind::Rigidity, LimitKind::Slot, LimitKind::VendorAxial],
-            "{tag}: P5d D1, the vendor, rigidity and slot limits draw"
+            kinds, want,
+            "{tag}: P5d D1, the vendor, rigidity and slot limits draw (and the move budget \
+             where it enters the view)"
         );
         assert_eq!(
             scene.binding,

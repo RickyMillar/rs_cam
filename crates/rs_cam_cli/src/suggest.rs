@@ -141,6 +141,13 @@ fn profile_json(profile: &CutterOpProfile<'_>) -> Value {
         },
         "shipped_power": shipped_power,
         "point_source": point_source(shipped),
+        // P11c (D13 item 6): the machine class and how the rigidity values
+        // are known; MCP `get_suggest_rationale` `basis.machine` prints the
+        // same two texts.
+        "machine": {
+            "class": profile.machine.class.label(),
+            "rigidity_basis": profile.machine.rigidity_basis().text(),
+        },
         "basis": {
             "support": { "headline": support_headline, "detail": support_detail },
             "plunge": { "headline": plunge_headline, "detail": plunge_detail },
@@ -217,6 +224,14 @@ pub fn run_suggest(input: &Path, json_out: bool) -> Result<()> {
     let session = ProjectSession::load(&path).context("Failed to load project session")?;
 
     if !json_out {
+        // P11c (D13 item 6): the machine class and how its rigidity values
+        // are known, above the table.
+        let machine = session.machine();
+        println!(
+            "machine: {} (rigidity: {})",
+            machine.name,
+            machine.rigidity_basis().text()
+        );
         println!(
             "{:<3} {:<30} {:>13} {:>11} {:>11} {:>11} {:>13} {:>11}",
             "idx", "name", "feed", "plunge", "stepover", "dpp", "rpm", "peck"
@@ -328,6 +343,26 @@ mod tests {
         let record = last_record(&session);
         let peck = record["current"]["peck_depth"].as_f64();
         assert!(peck.is_some_and(|p| p > 0.0), "no peck_depth in {record}");
+    }
+
+    /// Feeds contract P11c (D13 item 6): the record names the machine class
+    /// and how its rigidity values are known, as MCP
+    /// `get_suggest_rationale` `basis.machine` does.
+    #[test]
+    fn the_suggest_record_names_the_machine_class_p11c() {
+        let session = session_with(OperationType::Pocket);
+        let record = last_record(&session);
+        let machine = &record["profile"]["machine"];
+        assert_eq!(
+            machine["class"],
+            session.machine().class.label(),
+            "{record}"
+        );
+        assert_eq!(
+            machine["rigidity_basis"],
+            session.machine().rigidity_basis().text(),
+            "{record}"
+        );
     }
 
     /// FC0 item 2: a Profile has no stepover, so the shipped power reads

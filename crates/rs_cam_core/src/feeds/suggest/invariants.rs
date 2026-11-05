@@ -54,9 +54,15 @@ pub(crate) const DEFLECTION_BACKOFF_TARGET_UM: f64 = 200.0;
 
 /// The F201 row of [`DEFLECTION_BACKOFF_TARGET_UM`] (feeds contract P5,
 /// card row 27): the basis of the `Deflection` limit of the envelope.
+///
+/// Feeds contract P11c (review item M1): THE one typed 200 um is
+/// [`DEFLECTION_BACKOFF_TARGET_UM`]; this row, the envelope edge, the
+/// Suggest target, `cutter_constraints::DEFAULT_ROUGH_DEFLECTION_LIMIT_UM`
+/// and the post-sim gate bound `tool_load::deflection::EXCEEDS_BOUND_MM`
+/// read it.
 pub(crate) const DEFLECTION_BACKOFF_TARGET_ROW: FormulaConstant = FormulaConstant::unsourced(
     "feeds.suggest.DEFLECTION_BACKOFF_TARGET_UM",
-    200.0,
+    DEFLECTION_BACKOFF_TARGET_UM,
     "the post-sim tool_load::deflection critical threshold; no file in the repo prints it",
 );
 

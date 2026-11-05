@@ -119,13 +119,19 @@ fn viz_result() -> ToolpathResult {
 }
 
 fn toolpath() -> ToolpathConfig {
+    let mut operation = rs_cam_core::compute::fixture_values::fixture_op(OperationType::Pocket);
+    // Feeds contract P11c (D13 item 6): the hobby grade cap is 0.25 x 6.35 =
+    // 1.5875 mm, above the fixture's 1.5 mm, so `Apply all` would not move
+    // the cut (it was 0.20 x 6.35 = 1.27). The fixture states 2.0 mm, so the
+    // rigidity cap lowers it and the non-vacuity arm holds.
+    let _ = operation.set_depth_per_pass(2.0);
     ToolpathConfig {
         shoe: Default::default(),
         feeds_lock: Default::default(),
         id: rs_cam_core::ToolpathId::from_raw(0),
         name: "Rough Pocket".to_owned(),
         enabled: true,
-        operation: rs_cam_core::compute::fixture_values::fixture_op(OperationType::Pocket),
+        operation,
         dressups: Default::default(),
         heights: Default::default(),
         tool_id: Some(rs_cam_core::ids::ToolId::from_raw(1)),

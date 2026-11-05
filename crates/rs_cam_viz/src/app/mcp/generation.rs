@@ -183,6 +183,13 @@ pub fn suggest_basis_json(
         "hardness": hardness,
         "tied_rows": tied_rows,
         "force_line": force_line,
+        // P11c (D13 item 6): the machine class and how the rigidity values
+        // (the depth caps, the slot cap, the adaptive width) are known. The
+        // CLI `suggest` record prints the same two texts.
+        "machine": {
+            "class": profile.machine.class.label(),
+            "rigidity_basis": profile.machine.rigidity_basis().text(),
+        },
         "plunge": {
             "source": {
                 "headline": plunge_headline,

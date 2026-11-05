@@ -202,6 +202,9 @@ pub(super) fn draw_machine_panel(
     });
 
     ui.add_space(8.0);
+    draw_rigidity_section(ui, state.session().machine());
+
+    ui.add_space(8.0);
     // The kinematics grid keeps its own edit record: its row is
     // `SetMachineKinematics`, which also drops the library link, and the
     // whole-profile row must not be applied for it.
@@ -227,6 +230,38 @@ pub(super) fn draw_machine_panel(
     // gone. D9 (2026-11-04): the aggressiveness slider is gone too.
 
     draw_head_section(ui, state);
+}
+
+/// P11c (D13 item 6): the rigidity values, read-only, with the machine
+/// class beside each value. The header names how the values are known in
+/// a short face (core `RigidityBasis::short`); its hover is the full text
+/// (`RigidityBasis::text`, the text MCP `inspect_machine` and the lineage
+/// print), IC1. The values come from the machine file; the panel does not
+/// edit them. Closed by default (a rare read).
+fn draw_rigidity_section(ui: &mut egui::Ui, machine: &rs_cam_core::machine::MachineProfile) {
+    let basis = machine.rigidity_basis();
+    let section = egui::CollapsingHeader::new(
+        egui::RichText::new(rigidity_title(machine)).color(crate::ui::tokens::TEXT_STRONG),
+    )
+    .id_salt("machine_rigidity_section")
+    .default_open(false)
+    .show(ui, |ui| {
+        ui.param_grid("machine_rigidity", |ui| {
+            for row in machine.rigidity.values() {
+                ui.label(row.field);
+                ui.label(format!("{} {}", row.value, row.unit));
+                ui.label(basis.class().label()).on_hover_text(basis.text());
+                ui.end_row();
+            }
+        });
+    });
+    let _ = section.header_response.on_hover_text(basis.text());
+}
+
+/// The header of the rigidity section: "Rigidity: " and the short face of
+/// the basis.
+pub(crate) fn rigidity_title(machine: &rs_cam_core::machine::MachineProfile) -> String {
+    format!("Rigidity: {}", machine.rigidity_basis().short())
 }
 
 /// H2: the Head section. The draft lives in `state.panels.head_editor`

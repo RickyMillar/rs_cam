@@ -1301,17 +1301,17 @@ fn geometric_limits(
         out.push(Limit {
             kind: LimitKind::Rigidity,
             law: "machine rigidity depth cap",
-            basis: Basis::Machine(MachineField::Rigidity),
+            basis: crate::feeds::rigidity_basis(input.machine),
             edge: Edge::ApCeiling { mm: cap },
         });
     }
     // A drill peck is a plunge: it cuts no side slot, so the slot rule does
     // not bound it.
     if !plan.peck {
-        let (threshold_d, cap_d, slot_basis) = crate::feeds::slot_rule();
+        let (threshold_d, cap_d, slot_basis) = crate::feeds::slot_rule(input.machine);
         out.push(Limit {
             kind: LimitKind::Slot,
-            law: "slot: ap <= 0.25 D where ae > 0.85 D",
+            law: "slot: ap <= machine slot_doc_factor x D where ae > 0.85 D",
             basis: slot_basis,
             edge: Edge::ApCeilingAbove {
                 ae_mm: d * threshold_d,
@@ -1695,7 +1695,7 @@ fn runtime_limit(out: &mut Vec<Limit>, input: &EnvelopeInput<'_>, plan: &AxesPla
     let moves_at = |s: f64| {
         let mut op = input.operation.clone();
         op.set_stepover(s);
-        crate::feeds::predict::predict_move_count(&op, Some(bbox), input.tool)
+        crate::feeds::predict::predict_move_count(&op, Some(bbox), input.tool, input.machine)
     };
     let within = |s: f64| {
         #[expect(

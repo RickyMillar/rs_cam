@@ -28,15 +28,11 @@ principal type is `MachineProfile` in `mod.rs`.
   `retract_saves_time` is the ONE feed-or-retract rule (W6.1 Waterline, the air-cut filter).
 - F202: `$341` is `ControllerToolChangeMode`, `$32` is `ControllerMode` (`try_from` the number). The `$$` import lists an
   unknown value in `GrblImport::unknown_values` and leaves the field `None`. It is not `gcode::ToolChangeMode` (one export's handling).
+- P11c (D13 items 3, 6): every machine table states `class` (`MachineClass::{Hobby, Industrial}`); `MachineProfileWire` is the one class rule (hobby + no `[rigidity]` = `RigidityProfile::default()`, industrial + none refuses `INDUSTRIAL_NEEDS_RIGIDITY`). `RigidityProfile::default()` is the ONE set (hobby grade, Shapeoko port, Unsourced); the presets read it. `rigidity_basis().text()` is the text every surface prints beside a rigidity value. `slot_doc_factor` is the slot cap; the three `woc_*` fields are deleted (no reader). Sentries `an_industrial_machine_states_its_rigidity_p11c`, `the_rigidity_default_is_hobby_grade_p11c`.
 - An arc is timed at its arc length (`move_length`, `hypot(r * sweep, dz)`), never its chord;
   both integrators read `move_length` / `move_directions`.
 
 ## Sentries
 
-`cargo test -p rs_cam_core -q --test <name>`, one per name: `kinematics_per_axis_rate_p1`,
-`kinematic_utilization_p2`, `kinematic_surfacing_p4`, `a_downward_traverse_rounds_down_g_rpmdown`,
-`power_ceiling_parity_f2`, `the_machine_head_guards_the_checks_h1` (H1), `a_value_outside_its_domain_is_refused_at_every_door_w6b` (F210).
-
-## Do not
-
-- Do not compare a wall clock across arms without a fresh measurement on the same profile.
+`cargo test -p rs_cam_core -q --test <name>`, one per name: `kinematics_per_axis_rate_p1`, `kinematic_utilization_p2`, `kinematic_surfacing_p4`, `a_downward_traverse_rounds_down_g_rpmdown`,
+`power_ceiling_parity_f2`, `the_machine_head_guards_the_checks_h1` (H1), `a_value_outside_its_domain_is_refused_at_every_door_w6b` (F210). Do not compare a wall clock across arms without a fresh measurement on the same profile.

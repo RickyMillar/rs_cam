@@ -64,8 +64,9 @@ fn circles(
 
 #[test]
 fn the_envelope_plot_marks_the_operator_and_the_proposal_k2b() {
-    // The fixture Pocket states ap 1.5 over a rigidity cap of 1.2: outside.
-    // At ap 1.0 the stated point sits inside.
+    // P11c (D13 item 6): the hobby grade cap is 0.25 x 6 = 1.5 mm, equal
+    // to the fixture's stated ap 1.5 (it was 1.2), so the outside arm below
+    // states ap 2.0. At ap 1.0 the stated point sits inside.
     let (fixture, _) = envelope_for(OperationType::Pocket).expect("the Pocket is backed");
     let mut inside = fixture;
     if let rs_cam_core::compute::catalog::OperationConfig::Pocket(c) = &mut inside {
@@ -146,7 +147,12 @@ fn the_envelope_plot_marks_the_operator_and_the_proposal_k2b() {
     // The operator's point outside: a CAUTION dot, and the proposal is a
     // third mark at its own place
     // (the fixture Pocket itself). The edge that Now crosses is CAUTION.
-    let (deep, env) = envelope_for(OperationType::Pocket).expect("the Pocket is backed");
+    let (fixture, _) = envelope_for(OperationType::Pocket).expect("the Pocket is backed");
+    let mut deep = fixture;
+    if let rs_cam_core::compute::catalog::OperationConfig::Pocket(c) = &mut deep {
+        c.depth_per_pass = Some(2.0);
+    }
+    let (deep, env) = envelope_k2b::envelope_of(deep).expect("the Pocket is backed");
     let scene = EnvelopeScene::of(&env, None);
     let Some(rs_cam_core::feeds::envelope::Placement::Outside { binding, .. }) = env.operator
     else {

@@ -190,6 +190,24 @@ const RETIRED_KEYS: &[RetiredKey] = &[
                       rigidity is job.machine.rigidity. Delete the key",
     },
     RetiredKey {
+        table: &["job", "machine", "rigidity"],
+        key: "woc_roughing_factor",
+        replacement: "Removed (feeds contract P11c, D13 item 2): no code read it. Delete the \
+                      key; set class = \"hobby\" or \"industrial\" in [job.machine]",
+    },
+    RetiredKey {
+        table: &["job", "machine", "rigidity"],
+        key: "woc_roughing_max_mm",
+        replacement: "Removed (feeds contract P11c, review item M11): no code read it. Delete \
+                      the key",
+    },
+    RetiredKey {
+        table: &["job", "machine", "rigidity"],
+        key: "woc_finishing_mm",
+        replacement: "Removed (feeds contract P11c, review item M11): no code read it. Delete \
+                      the key",
+    },
+    RetiredKey {
         table: &["job", "stock", "material", "Custom"],
         key: "kc",
         replacement: "Removed (ruling B6): a custom material has no force line and no Kc. \

@@ -101,8 +101,8 @@ const REQUESTED_DPP_MM: f64 = 36.0;
 /// actually cuts.
 const RIGIDITY_CAP_MM: f64 = 2.4;
 
-/// 0.333 × D. Under the 0.85 × D slotting threshold and under the preset's
-/// 5.0 mm `woc_roughing_max_mm`, so nothing moves it and the shear term's
+/// 0.333 × D. Under the 0.85 × D slotting threshold (and the profile has no
+/// width cap; P11c deleted the unread `woc_roughing_max_mm`), so nothing moves it and the shear term's
 /// cross-section scales with the depth alone.
 const STEPOVER_MM: f64 = 4.0;
 

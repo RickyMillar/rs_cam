@@ -71,9 +71,10 @@ use super::ToolGeometryHint;
 use super::vendor_lookup::LookupResult;
 
 /// Default deflection bound when the caller doesn't override (µm).
-/// Matches `tool_load::deflection::EXCEEDS_BOUND_MM × 1000` — exceeds
-/// this and the post-sim gate would flip to `Exceeds`.
-pub const DEFAULT_ROUGH_DEFLECTION_LIMIT_UM: f64 = 200.0;
+/// P11c (review item M1): it reads the one F201 row
+/// `feeds.suggest.DEFLECTION_BACKOFF_TARGET_UM`, as the post-sim gate
+/// bound `tool_load::deflection::EXCEEDS_BOUND_MM` does.
+pub const DEFAULT_ROUGH_DEFLECTION_LIMIT_UM: f64 = super::suggest::DEFLECTION_BACKOFF_TARGET_UM;
 /// Default deflection bound for finish ops with a surface-quality goal.
 /// Matches the `WITHIN_BOUND_MM × 1000` Validated band — under this and
 /// the surface remains visually clean.
