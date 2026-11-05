@@ -1,0 +1,6261 @@
+{
+ "rev": "7048456f8",
+ "embedded_files": 26,
+ "rows_total": 506,
+ "wood_flat_rows": 238,
+ "series_rows": 209,
+ "points": 165,
+ "points_by_vendor": {
+  "amana": 73,
+  "freud": 12,
+  "onsrud": 80
+ },
+ "points_by_class": {
+  "mdf": 44,
+  "plywood": 50,
+  "hardwood": 35,
+  "softwood": 36
+ },
+ "industrial_vs_embedded": [
+  {
+   "id": "freud-solid-carbide-half-hardwood",
+   "in_embedded": true,
+   "same_values": true,
+   "embedded_file": "freud_solid_carbide.json"
+  },
+  {
+   "id": "freud-solid-carbide-half-softwood",
+   "in_embedded": true,
+   "same_values": true,
+   "embedded_file": "freud_solid_carbide.json"
+  },
+  {
+   "id": "freud-solid-carbide-half-mdf-particle",
+   "in_embedded": true,
+   "same_values": true,
+   "embedded_file": "freud_solid_carbide.json"
+  },
+  {
+   "id": "freud-solid-carbide-half-plywood-hardwood",
+   "in_embedded": true,
+   "same_values": true,
+   "embedded_file": "freud_solid_carbide.json"
+  }
+ ],
+ "cut_cap": 4000.0,
+ "z_sources": [
+  "amana:amana_spektra_spiral_plunge_v24"
+ ],
+ "points_list": [
+  {
+   "id": "amana-compression-mdf-pocket-12700-2f",
+   "vendor": "amana",
+   "source": "amana_compression_spirals_v8",
+   "cls": "mdf",
+   "mat": "mdf",
+   "sub": "compression",
+   "D": 12.7,
+   "Z": 2,
+   "chip": 0.2819,
+   "J": 1100.0,
+   "op": "pocket",
+   "role": "roughing",
+   "grade": "a"
+  },
+  {
+   "id": "amana-compression-mdf-pocket-6350-2f",
+   "vendor": "amana",
+   "source": "amana_compression_spirals_v8",
+   "cls": "mdf",
+   "mat": "mdf",
+   "sub": "compression",
+   "D": 6.35,
+   "Z": 2,
+   "chip": 0.1549,
+   "J": 1100.0,
+   "op": "pocket",
+   "role": "roughing",
+   "grade": "a"
+  },
+  {
+   "id": "amana-compression-plywood-hardwood-pocket-6350-2f",
+   "vendor": "amana",
+   "source": "amana_compression_spirals_v8",
+   "cls": "plywood",
+   "mat": "plywood_hardwood",
+   "sub": "compression",
+   "D": 6.35,
+   "Z": 2,
+   "chip": 0.0787,
+   "J": 1000.0,
+   "op": "pocket",
+   "role": "roughing",
+   "grade": "a"
+  },
+  {
+   "id": "amana-compression-wood-pocket-12700-2f",
+   "vendor": "amana",
+   "source": "amana_compression_spirals_v8",
+   "cls": "hardwood",
+   "mat": "hardwood",
+   "sub": "compression",
+   "D": 12.7,
+   "Z": 2,
+   "chip": 0.1956,
+   "J": 1450.0,
+   "op": "pocket",
+   "role": "roughing",
+   "grade": "a"
+  },
+  {
+   "id": "amana-compression-wood-pocket-6350-2f",
+   "vendor": "amana",
+   "source": "amana_compression_spirals_v8",
+   "cls": "hardwood",
+   "mat": "hardwood",
+   "sub": "compression",
+   "D": 6.35,
+   "Z": 2,
+   "chip": 0.0787,
+   "J": 1450.0,
+   "op": "pocket",
+   "role": "roughing",
+   "grade": "a"
+  },
+  {
+   "id": "amana-flat-hardwood-pocket-12000-2f-spektra",
+   "vendor": "amana",
+   "source": "amana_spektra_spiral_plunge_v24",
+   "cls": "hardwood",
+   "mat": "hardwood",
+   "sub": "spektra_spiral_plunge",
+   "D": 12.0,
+   "Z": 2,
+   "chip": 0.1448,
+   "J": 1450.0,
+   "op": "pocket",
+   "role": "roughing",
+   "grade": "b"
+  },
+  {
+   "id": "amana-flat-hardwood-pocket-12700-2f-spektra",
+   "vendor": "amana",
+   "source": "amana_spektra_spiral_plunge_v24",
+   "cls": "hardwood",
+   "mat": "hardwood",
+   "sub": "spektra_spiral_plunge",
+   "D": 12.7,
+   "Z": 2,
+   "chip": 0.1448,
+   "J": 1450.0,
+   "op": "pocket",
+   "role": "roughing",
+   "grade": "b"
+  },
+  {
+   "id": "amana-flat-hardwood-pocket-12700-3f-spektra",
+   "vendor": "amana",
+   "source": "amana_spektra_spiral_plunge_v24",
+   "cls": "hardwood",
+   "mat": "hardwood",
+   "sub": "spektra_spiral_plunge",
+   "D": 12.7,
+   "Z": 3,
+   "chip": 0.1448,
+   "J": 1450.0,
+   "op": "pocket",
+   "role": "roughing",
+   "grade": "b"
+  },
+  {
+   "id": "amana-flat-hardwood-pocket-1500-2f-spektra",
+   "vendor": "amana",
+   "source": "amana_spektra_spiral_plunge_v24",
+   "cls": "hardwood",
+   "mat": "hardwood",
+   "sub": "spektra_spiral_plunge",
+   "D": 1.5,
+   "Z": 2,
+   "chip": 0.0508,
+   "J": 1450.0,
+   "op": "pocket",
+   "role": "roughing",
+   "grade": "b"
+  },
+  {
+   "id": "amana-flat-hardwood-pocket-3000-2f-spektra",
+   "vendor": "amana",
+   "source": "amana_spektra_spiral_plunge_v24",
+   "cls": "hardwood",
+   "mat": "hardwood",
+   "sub": "spektra_spiral_plunge",
+   "D": 3.0,
+   "Z": 2,
+   "chip": 0.1016,
+   "J": 1450.0,
+   "op": "pocket",
+   "role": "roughing",
+   "grade": "b"
+  },
+  {
+   "id": "amana-flat-hardwood-pocket-3175-2f-spektra",
+   "vendor": "amana",
+   "source": "amana_spektra_spiral_plunge_v24",
+   "cls": "hardwood",
+   "mat": "hardwood",
+   "sub": "spektra_spiral_plunge",
+   "D": 3.175,
+   "Z": 2,
+   "chip": 0.1016,
+   "J": 1450.0,
+   "op": "pocket",
+   "role": "roughing",
+   "grade": "b"
+  },
+  {
+   "id": "amana-flat-hardwood-pocket-3175-3f-spektra",
+   "vendor": "amana",
+   "source": "amana_spektra_spiral_plunge_v24",
+   "cls": "hardwood",
+   "mat": "hardwood",
+   "sub": "spektra_spiral_plunge",
+   "D": 3.175,
+   "Z": 3,
+   "chip": 0.1016,
+   "J": 1450.0,
+   "op": "pocket",
+   "role": "roughing",
+   "grade": "b"
+  },
+  {
+   "id": "amana-flat-hardwood-pocket-5000-2f-spektra",
+   "vendor": "amana",
+   "source": "amana_spektra_spiral_plunge_v24",
+   "cls": "hardwood",
+   "mat": "hardwood",
+   "sub": "spektra_spiral_plunge",
+   "D": 5.0,
+   "Z": 2,
+   "chip": 0.127,
+   "J": 1450.0,
+   "op": "pocket",
+   "role": "roughing",
+   "grade": "b"
+  },
+  {
+   "id": "amana-flat-hardwood-pocket-6000-2f-spektra",
+   "vendor": "amana",
+   "source": "amana_spektra_spiral_plunge_v24",
+   "cls": "hardwood",
+   "mat": "hardwood",
+   "sub": "spektra_spiral_plunge",
+   "D": 6.0,
+   "Z": 2,
+   "chip": 0.127,
+   "J": 1450.0,
+   "op": "pocket",
+   "role": "roughing",
+   "grade": "b"
+  },
+  {
+   "id": "amana-flat-hardwood-pocket-6000-3f-spektra",
+   "vendor": "amana",
+   "source": "amana_spektra_spiral_plunge_v24",
+   "cls": "hardwood",
+   "mat": "hardwood",
+   "sub": "spektra_spiral_plunge",
+   "D": 6.0,
+   "Z": 3,
+   "chip": 0.127,
+   "J": 1450.0,
+   "op": "pocket",
+   "role": "roughing",
+   "grade": "b"
+  },
+  {
+   "id": "amana-flat-hardwood-pocket-6350-2f-spektra",
+   "vendor": "amana",
+   "source": "amana_spektra_spiral_plunge_v24",
+   "cls": "hardwood",
+   "mat": "hardwood",
+   "sub": "spektra_spiral_plunge",
+   "D": 6.35,
+   "Z": 2,
+   "chip": 0.127,
+   "J": 1450.0,
+   "op": "pocket",
+   "role": "roughing",
+   "grade": "b"
+  },
+  {
+   "id": "amana-flat-hardwood-pocket-6350-3f-spektra",
+   "vendor": "amana",
+   "source": "amana_spektra_spiral_plunge_v24",
+   "cls": "hardwood",
+   "mat": "hardwood",
+   "sub": "spektra_spiral_plunge",
+   "D": 6.35,
+   "Z": 3,
+   "chip": 0.127,
+   "J": 1450.0,
+   "op": "pocket",
+   "role": "roughing",
+   "grade": "b"
+  },
+  {
+   "id": "amana-flat-hardwood-pocket-9525-2f-spektra",
+   "vendor": "amana",
+   "source": "amana_spektra_spiral_plunge_v24",
+   "cls": "hardwood",
+   "mat": "hardwood",
+   "sub": "spektra_spiral_plunge",
+   "D": 9.525,
+   "Z": 2,
+   "chip": 0.1626,
+   "J": 1450.0,
+   "op": "pocket",
+   "role": "roughing",
+   "grade": "b"
+  },
+  {
+   "id": "amana-flat-hardwood-pocket-9525-3f-spektra",
+   "vendor": "amana",
+   "source": "amana_spektra_spiral_plunge_v24",
+   "cls": "hardwood",
+   "mat": "hardwood",
+   "sub": "spektra_spiral_plunge",
+   "D": 9.525,
+   "Z": 3,
+   "chip": 0.1626,
+   "J": 1450.0,
+   "op": "pocket",
+   "role": "roughing",
+   "grade": "b"
+  },
+  {
+   "id": "amana-flat-mdf-pocket-0794-2f-spektra",
+   "vendor": "amana",
+   "source": "amana_spektra_spiral_plunge_v24",
+   "cls": "mdf",
+   "mat": "mdf",
+   "sub": "spektra_spiral_plunge",
+   "D": 0.79375,
+   "Z": 2,
+   "chip": 0.0508,
+   "J": 1100.0,
+   "op": "pocket",
+   "role": "roughing",
+   "grade": "a"
+  },
+  {
+   "id": "amana-flat-mdf-pocket-12000-2f-spektra",
+   "vendor": "amana",
+   "source": "amana_spektra_spiral_plunge_v24",
+   "cls": "mdf",
+   "mat": "mdf",
+   "sub": "spektra_spiral_plunge",
+   "D": 12.0,
+   "Z": 2,
+   "chip": 0.24384,
+   "J": 1100.0,
+   "op": "pocket",
+   "role": "roughing",
+   "grade": "a"
+  },
+  {
+   "id": "amana-flat-mdf-pocket-12700-2f-spektra",
+   "vendor": "amana",
+   "source": "amana_spektra_spiral_plunge_v24",
+   "cls": "mdf",
+   "mat": "mdf",
+   "sub": "spektra_spiral_plunge",
+   "D": 12.7,
+   "Z": 2,
+   "chip": 0.24384,
+   "J": 1100.0,
+   "op": "pocket",
+   "role": "roughing",
+   "grade": "a"
+  },
+  {
+   "id": "amana-flat-mdf-pocket-12700-3f-spektra",
+   "vendor": "amana",
+   "source": "amana_spektra_spiral_plunge_v24",
+   "cls": "mdf",
+   "mat": "mdf",
+   "sub": "spektra_spiral_plunge",
+   "D": 12.7,
+   "Z": 3,
+   "chip": 0.24384,
+   "J": 1100.0,
+   "op": "pocket",
+   "role": "roughing",
+   "grade": "a"
+  },
+  {
+   "id": "amana-flat-mdf-pocket-1500-2f-spektra",
+   "vendor": "amana",
+   "source": "amana_spektra_spiral_plunge_v24",
+   "cls": "mdf",
+   "mat": "mdf",
+   "sub": "spektra_spiral_plunge",
+   "D": 1.5,
+   "Z": 2,
+   "chip": 0.0762,
+   "J": 1100.0,
+   "op": "pocket",
+   "role": "roughing",
+   "grade": "a"
+  },
+  {
+   "id": "amana-flat-mdf-pocket-1587-2f-spektra",
+   "vendor": "amana",
+   "source": "amana_spektra_spiral_plunge_v24",
+   "cls": "mdf",
+   "mat": "mdf",
+   "sub": "spektra_spiral_plunge",
+   "D": 1.5875,
+   "Z": 2,
+   "chip": 0.0762,
+   "J": 1100.0,
+   "op": "pocket",
+   "role": "roughing",
+   "grade": "a"
+  },
+  {
+   "id": "amana-flat-mdf-pocket-2381-2f-spektra",
+   "vendor": "amana",
+   "source": "amana_spektra_spiral_plunge_v24",
+   "cls": "mdf",
+   "mat": "mdf",
+   "sub": "spektra_spiral_plunge",
+   "D": 2.38125,
+   "Z": 2,
+   "chip": 0.11684,
+   "J": 1100.0,
+   "op": "pocket",
+   "role": "roughing",
+   "grade": "a"
+  },
+  {
+   "id": "amana-flat-mdf-pocket-3000-2f-spektra",
+   "vendor": "amana",
+   "source": "amana_spektra_spiral_plunge_v24",
+   "cls": "mdf",
+   "mat": "mdf",
+   "sub": "spektra_spiral_plunge",
+   "D": 3.0,
+   "Z": 2,
+   "chip": 0.127,
+   "J": 1100.0,
+   "op": "pocket",
+   "role": "roughing",
+   "grade": "a"
+  },
+  {
+   "id": "amana-flat-mdf-pocket-3175-2f-spektra",
+   "vendor": "amana",
+   "source": "amana_spektra_spiral_plunge_v24",
+   "cls": "mdf",
+   "mat": "mdf",
+   "sub": "spektra_spiral_plunge",
+   "D": 3.175,
+   "Z": 2,
+   "chip": 0.127,
+   "J": 1100.0,
+   "op": "pocket",
+   "role": "roughing",
+   "grade": "a"
+  },
+  {
+   "id": "amana-flat-mdf-pocket-3175-3f-spektra",
+   "vendor": "amana",
+   "source": "amana_spektra_spiral_plunge_v24",
+   "cls": "mdf",
+   "mat": "mdf",
+   "sub": "spektra_spiral_plunge",
+   "D": 3.175,
+   "Z": 3,
+   "chip": 0.127,
+   "J": 1100.0,
+   "op": "pocket",
+   "role": "roughing",
+   "grade": "a"
+  },
+  {
+   "id": "amana-flat-mdf-pocket-4763-2f-spektra",
+   "vendor": "amana",
+   "source": "amana_spektra_spiral_plunge_v24",
+   "cls": "mdf",
+   "mat": "mdf",
+   "sub": "spektra_spiral_plunge",
+   "D": 4.7625,
+   "Z": 2,
+   "chip": 0.1524,
+   "J": 1100.0,
+   "op": "pocket",
+   "role": "roughing",
+   "grade": "a"
+  },
+  {
+   "id": "amana-flat-mdf-pocket-5000-2f-spektra",
+   "vendor": "amana",
+   "source": "amana_spektra_spiral_plunge_v24",
+   "cls": "mdf",
+   "mat": "mdf",
+   "sub": "spektra_spiral_plunge",
+   "D": 5.0,
+   "Z": 2,
+   "chip": 0.1524,
+   "J": 1100.0,
+   "op": "pocket",
+   "role": "roughing",
+   "grade": "a"
+  },
+  {
+   "id": "amana-flat-mdf-pocket-6000-2f-spektra",
+   "vendor": "amana",
+   "source": "amana_spektra_spiral_plunge_v24",
+   "cls": "mdf",
+   "mat": "mdf",
+   "sub": "spektra_spiral_plunge",
+   "D": 6.0,
+   "Z": 2,
+   "chip": 0.1524,
+   "J": 1100.0,
+   "op": "pocket",
+   "role": "roughing",
+   "grade": "a"
+  },
+  {
+   "id": "amana-flat-mdf-pocket-6000-3f-spektra",
+   "vendor": "amana",
+   "source": "amana_spektra_spiral_plunge_v24",
+   "cls": "mdf",
+   "mat": "mdf",
+   "sub": "spektra_spiral_plunge",
+   "D": 6.0,
+   "Z": 3,
+   "chip": 0.1524,
+   "J": 1100.0,
+   "op": "pocket",
+   "role": "roughing",
+   "grade": "a"
+  },
+  {
+   "id": "amana-flat-mdf-pocket-6350-2f-spektra",
+   "vendor": "amana",
+   "source": "amana_spektra_spiral_plunge_v24",
+   "cls": "mdf",
+   "mat": "mdf",
+   "sub": "spektra_spiral_plunge",
+   "D": 6.35,
+   "Z": 2,
+   "chip": 0.1524,
+   "J": 1100.0,
+   "op": "pocket",
+   "role": "roughing",
+   "grade": "a"
+  },
+  {
+   "id": "amana-flat-mdf-pocket-6350-3f-spektra",
+   "vendor": "amana",
+   "source": "amana_spektra_spiral_plunge_v24",
+   "cls": "mdf",
+   "mat": "mdf",
+   "sub": "spektra_spiral_plunge",
+   "D": 6.35,
+   "Z": 3,
+   "chip": 0.1524,
+   "J": 1100.0,
+   "op": "pocket",
+   "role": "roughing",
+   "grade": "a"
+  },
+  {
+   "id": "amana-flat-mdf-pocket-9525-2f-spektra",
+   "vendor": "amana",
+   "source": "amana_spektra_spiral_plunge_v24",
+   "cls": "mdf",
+   "mat": "mdf",
+   "sub": "spektra_spiral_plunge",
+   "D": 9.525,
+   "Z": 2,
+   "chip": 0.27432,
+   "J": 1100.0,
+   "op": "pocket",
+   "role": "roughing",
+   "grade": "a"
+  },
+  {
+   "id": "amana-flat-mdf-pocket-9525-3f-spektra",
+   "vendor": "amana",
+   "source": "amana_spektra_spiral_plunge_v24",
+   "cls": "mdf",
+   "mat": "mdf",
+   "sub": "spektra_spiral_plunge",
+   "D": 9.525,
+   "Z": 3,
+   "chip": 0.27432,
+   "J": 1100.0,
+   "op": "pocket",
+   "role": "roughing",
+   "grade": "a"
+  },
+  {
+   "id": "amana-flat-plywood-softwood-pocket-12000-2f-spektra",
+   "vendor": "amana",
+   "source": "amana_spektra_spiral_plunge_v24",
+   "cls": "plywood",
+   "mat": "plywood_softwood",
+   "sub": "spektra_spiral_plunge",
+   "D": 12.0,
+   "Z": 2,
+   "chip": 0.1448,
+   "J": 600.0,
+   "op": "pocket",
+   "role": "roughing",
+   "grade": "b"
+  },
+  {
+   "id": "amana-flat-plywood-softwood-pocket-12700-2f-spektra",
+   "vendor": "amana",
+   "source": "amana_spektra_spiral_plunge_v24",
+   "cls": "plywood",
+   "mat": "plywood_softwood",
+   "sub": "spektra_spiral_plunge",
+   "D": 12.7,
+   "Z": 2,
+   "chip": 0.1448,
+   "J": 600.0,
+   "op": "pocket",
+   "role": "roughing",
+   "grade": "b"
+  },
+  {
+   "id": "amana-flat-plywood-softwood-pocket-12700-3f-spektra",
+   "vendor": "amana",
+   "source": "amana_spektra_spiral_plunge_v24",
+   "cls": "plywood",
+   "mat": "plywood_softwood",
+   "sub": "spektra_spiral_plunge",
+   "D": 12.7,
+   "Z": 3,
+   "chip": 0.1448,
+   "J": 600.0,
+   "op": "pocket",
+   "role": "roughing",
+   "grade": "b"
+  },
+  {
+   "id": "amana-flat-plywood-softwood-pocket-1500-2f-spektra",
+   "vendor": "amana",
+   "source": "amana_spektra_spiral_plunge_v24",
+   "cls": "plywood",
+   "mat": "plywood_softwood",
+   "sub": "spektra_spiral_plunge",
+   "D": 1.5,
+   "Z": 2,
+   "chip": 0.0508,
+   "J": 600.0,
+   "op": "pocket",
+   "role": "roughing",
+   "grade": "b"
+  },
+  {
+   "id": "amana-flat-plywood-softwood-pocket-3000-2f-spektra",
+   "vendor": "amana",
+   "source": "amana_spektra_spiral_plunge_v24",
+   "cls": "plywood",
+   "mat": "plywood_softwood",
+   "sub": "spektra_spiral_plunge",
+   "D": 3.0,
+   "Z": 2,
+   "chip": 0.1016,
+   "J": 600.0,
+   "op": "pocket",
+   "role": "roughing",
+   "grade": "b"
+  },
+  {
+   "id": "amana-flat-plywood-softwood-pocket-3175-2f-spektra",
+   "vendor": "amana",
+   "source": "amana_spektra_spiral_plunge_v24",
+   "cls": "plywood",
+   "mat": "plywood_softwood",
+   "sub": "spektra_spiral_plunge",
+   "D": 3.175,
+   "Z": 2,
+   "chip": 0.1016,
+   "J": 600.0,
+   "op": "pocket",
+   "role": "roughing",
+   "grade": "b"
+  },
+  {
+   "id": "amana-flat-plywood-softwood-pocket-3175-3f-spektra",
+   "vendor": "amana",
+   "source": "amana_spektra_spiral_plunge_v24",
+   "cls": "plywood",
+   "mat": "plywood_softwood",
+   "sub": "spektra_spiral_plunge",
+   "D": 3.175,
+   "Z": 3,
+   "chip": 0.1016,
+   "J": 600.0,
+   "op": "pocket",
+   "role": "roughing",
+   "grade": "b"
+  },
+  {
+   "id": "amana-flat-plywood-softwood-pocket-5000-2f-spektra",
+   "vendor": "amana",
+   "source": "amana_spektra_spiral_plunge_v24",
+   "cls": "plywood",
+   "mat": "plywood_softwood",
+   "sub": "spektra_spiral_plunge",
+   "D": 5.0,
+   "Z": 2,
+   "chip": 0.127,
+   "J": 600.0,
+   "op": "pocket",
+   "role": "roughing",
+   "grade": "b"
+  },
+  {
+   "id": "amana-flat-plywood-softwood-pocket-6000-2f-spektra",
+   "vendor": "amana",
+   "source": "amana_spektra_spiral_plunge_v24",
+   "cls": "plywood",
+   "mat": "plywood_softwood",
+   "sub": "spektra_spiral_plunge",
+   "D": 6.0,
+   "Z": 2,
+   "chip": 0.127,
+   "J": 600.0,
+   "op": "pocket",
+   "role": "roughing",
+   "grade": "b"
+  },
+  {
+   "id": "amana-flat-plywood-softwood-pocket-6000-3f-spektra",
+   "vendor": "amana",
+   "source": "amana_spektra_spiral_plunge_v24",
+   "cls": "plywood",
+   "mat": "plywood_softwood",
+   "sub": "spektra_spiral_plunge",
+   "D": 6.0,
+   "Z": 3,
+   "chip": 0.127,
+   "J": 600.0,
+   "op": "pocket",
+   "role": "roughing",
+   "grade": "b"
+  },
+  {
+   "id": "amana-flat-plywood-softwood-pocket-6350-2f-spektra",
+   "vendor": "amana",
+   "source": "amana_spektra_spiral_plunge_v24",
+   "cls": "plywood",
+   "mat": "plywood_softwood",
+   "sub": "spektra_spiral_plunge",
+   "D": 6.35,
+   "Z": 2,
+   "chip": 0.127,
+   "J": 600.0,
+   "op": "pocket",
+   "role": "roughing",
+   "grade": "b"
+  },
+  {
+   "id": "amana-flat-plywood-softwood-pocket-6350-3f-spektra",
+   "vendor": "amana",
+   "source": "amana_spektra_spiral_plunge_v24",
+   "cls": "plywood",
+   "mat": "plywood_softwood",
+   "sub": "spektra_spiral_plunge",
+   "D": 6.35,
+   "Z": 3,
+   "chip": 0.127,
+   "J": 600.0,
+   "op": "pocket",
+   "role": "roughing",
+   "grade": "b"
+  },
+  {
+   "id": "amana-flat-plywood-softwood-pocket-9525-2f-spektra",
+   "vendor": "amana",
+   "source": "amana_spektra_spiral_plunge_v24",
+   "cls": "plywood",
+   "mat": "plywood_softwood",
+   "sub": "spektra_spiral_plunge",
+   "D": 9.525,
+   "Z": 2,
+   "chip": 0.1626,
+   "J": 600.0,
+   "op": "pocket",
+   "role": "roughing",
+   "grade": "b"
+  },
+  {
+   "id": "amana-flat-plywood-softwood-pocket-9525-3f-spektra",
+   "vendor": "amana",
+   "source": "amana_spektra_spiral_plunge_v24",
+   "cls": "plywood",
+   "mat": "plywood_softwood",
+   "sub": "spektra_spiral_plunge",
+   "D": 9.525,
+   "Z": 3,
+   "chip": 0.1626,
+   "J": 600.0,
+   "op": "pocket",
+   "role": "roughing",
+   "grade": "b"
+  },
+  {
+   "id": "amana-flat-softwood-pocket-0794-2f-spektra",
+   "vendor": "amana",
+   "source": "amana_spektra_spiral_plunge_v24",
+   "cls": "softwood",
+   "mat": "softwood",
+   "sub": "spektra_spiral_plunge",
+   "D": 0.79375,
+   "Z": 2,
+   "chip": 0.0254,
+   "J": 600.0,
+   "op": "pocket",
+   "role": "roughing",
+   "grade": "b"
+  },
+  {
+   "id": "amana-flat-softwood-pocket-12000-2f-spektra",
+   "vendor": "amana",
+   "source": "amana_spektra_spiral_plunge_v24",
+   "cls": "softwood",
+   "mat": "softwood",
+   "sub": "spektra_spiral_plunge",
+   "D": 12.0,
+   "Z": 2,
+   "chip": 0.14478,
+   "J": 600.0,
+   "op": "pocket",
+   "role": "roughing",
+   "grade": "b"
+  },
+  {
+   "id": "amana-flat-softwood-pocket-12700-2f-spektra",
+   "vendor": "amana",
+   "source": "amana_spektra_spiral_plunge_v24",
+   "cls": "softwood",
+   "mat": "softwood",
+   "sub": "spektra_spiral_plunge",
+   "D": 12.7,
+   "Z": 2,
+   "chip": 0.14478,
+   "J": 600.0,
+   "op": "pocket",
+   "role": "roughing",
+   "grade": "b"
+  },
+  {
+   "id": "amana-flat-softwood-pocket-12700-3f-spektra",
+   "vendor": "amana",
+   "source": "amana_spektra_spiral_plunge_v24",
+   "cls": "softwood",
+   "mat": "softwood",
+   "sub": "spektra_spiral_plunge",
+   "D": 12.7,
+   "Z": 3,
+   "chip": 0.14478,
+   "J": 600.0,
+   "op": "pocket",
+   "role": "roughing",
+   "grade": "b"
+  },
+  {
+   "id": "amana-flat-softwood-pocket-1500-2f-spektra",
+   "vendor": "amana",
+   "source": "amana_spektra_spiral_plunge_v24",
+   "cls": "softwood",
+   "mat": "softwood",
+   "sub": "spektra_spiral_plunge",
+   "D": 1.5,
+   "Z": 2,
+   "chip": 0.0508,
+   "J": 600.0,
+   "op": "pocket",
+   "role": "roughing",
+   "grade": "b"
+  },
+  {
+   "id": "amana-flat-softwood-pocket-1587-2f-spektra",
+   "vendor": "amana",
+   "source": "amana_spektra_spiral_plunge_v24",
+   "cls": "softwood",
+   "mat": "softwood",
+   "sub": "spektra_spiral_plunge",
+   "D": 1.5875,
+   "Z": 2,
+   "chip": 0.0508,
+   "J": 600.0,
+   "op": "pocket",
+   "role": "roughing",
+   "grade": "b"
+  },
+  {
+   "id": "amana-flat-softwood-pocket-2381-2f-spektra",
+   "vendor": "amana",
+   "source": "amana_spektra_spiral_plunge_v24",
+   "cls": "softwood",
+   "mat": "softwood",
+   "sub": "spektra_spiral_plunge",
+   "D": 2.38125,
+   "Z": 2,
+   "chip": 0.05842,
+   "J": 600.0,
+   "op": "pocket",
+   "role": "roughing",
+   "grade": "b"
+  },
+  {
+   "id": "amana-flat-softwood-pocket-3000-2f-spektra",
+   "vendor": "amana",
+   "source": "amana_spektra_spiral_plunge_v24",
+   "cls": "softwood",
+   "mat": "softwood",
+   "sub": "spektra_spiral_plunge",
+   "D": 3.0,
+   "Z": 2,
+   "chip": 0.1016,
+   "J": 600.0,
+   "op": "pocket",
+   "role": "roughing",
+   "grade": "b"
+  },
+  {
+   "id": "amana-flat-softwood-pocket-3175-2f-spektra",
+   "vendor": "amana",
+   "source": "amana_spektra_spiral_plunge_v24",
+   "cls": "softwood",
+   "mat": "softwood",
+   "sub": "spektra_spiral_plunge",
+   "D": 3.175,
+   "Z": 2,
+   "chip": 0.1016,
+   "J": 600.0,
+   "op": "pocket",
+   "role": "roughing",
+   "grade": "b"
+  },
+  {
+   "id": "amana-flat-softwood-pocket-3175-3f-spektra",
+   "vendor": "amana",
+   "source": "amana_spektra_spiral_plunge_v24",
+   "cls": "softwood",
+   "mat": "softwood",
+   "sub": "spektra_spiral_plunge",
+   "D": 3.175,
+   "Z": 3,
+   "chip": 0.1016,
+   "J": 600.0,
+   "op": "pocket",
+   "role": "roughing",
+   "grade": "b"
+  },
+  {
+   "id": "amana-flat-softwood-pocket-4763-2f-spektra",
+   "vendor": "amana",
+   "source": "amana_spektra_spiral_plunge_v24",
+   "cls": "softwood",
+   "mat": "softwood",
+   "sub": "spektra_spiral_plunge",
+   "D": 4.7625,
+   "Z": 2,
+   "chip": 0.127,
+   "J": 600.0,
+   "op": "pocket",
+   "role": "roughing",
+   "grade": "b"
+  },
+  {
+   "id": "amana-flat-softwood-pocket-5000-2f-spektra",
+   "vendor": "amana",
+   "source": "amana_spektra_spiral_plunge_v24",
+   "cls": "softwood",
+   "mat": "softwood",
+   "sub": "spektra_spiral_plunge",
+   "D": 5.0,
+   "Z": 2,
+   "chip": 0.127,
+   "J": 600.0,
+   "op": "pocket",
+   "role": "roughing",
+   "grade": "b"
+  },
+  {
+   "id": "amana-flat-softwood-pocket-6000-2f-spektra",
+   "vendor": "amana",
+   "source": "amana_spektra_spiral_plunge_v24",
+   "cls": "softwood",
+   "mat": "softwood",
+   "sub": "spektra_spiral_plunge",
+   "D": 6.0,
+   "Z": 2,
+   "chip": 0.127,
+   "J": 600.0,
+   "op": "pocket",
+   "role": "roughing",
+   "grade": "b"
+  },
+  {
+   "id": "amana-flat-softwood-pocket-6000-3f-spektra",
+   "vendor": "amana",
+   "source": "amana_spektra_spiral_plunge_v24",
+   "cls": "softwood",
+   "mat": "softwood",
+   "sub": "spektra_spiral_plunge",
+   "D": 6.0,
+   "Z": 3,
+   "chip": 0.127,
+   "J": 600.0,
+   "op": "pocket",
+   "role": "roughing",
+   "grade": "b"
+  },
+  {
+   "id": "amana-flat-softwood-pocket-6350-2f-spektra",
+   "vendor": "amana",
+   "source": "amana_spektra_spiral_plunge_v24",
+   "cls": "softwood",
+   "mat": "softwood",
+   "sub": "spektra_spiral_plunge",
+   "D": 6.35,
+   "Z": 2,
+   "chip": 0.127,
+   "J": 600.0,
+   "op": "pocket",
+   "role": "roughing",
+   "grade": "b"
+  },
+  {
+   "id": "amana-flat-softwood-pocket-6350-3f-spektra",
+   "vendor": "amana",
+   "source": "amana_spektra_spiral_plunge_v24",
+   "cls": "softwood",
+   "mat": "softwood",
+   "sub": "spektra_spiral_plunge",
+   "D": 6.35,
+   "Z": 3,
+   "chip": 0.127,
+   "J": 600.0,
+   "op": "pocket",
+   "role": "roughing",
+   "grade": "b"
+  },
+  {
+   "id": "amana-flat-softwood-pocket-9525-2f-spektra",
+   "vendor": "amana",
+   "source": "amana_spektra_spiral_plunge_v24",
+   "cls": "softwood",
+   "mat": "softwood",
+   "sub": "spektra_spiral_plunge",
+   "D": 9.525,
+   "Z": 2,
+   "chip": 0.16256,
+   "J": 600.0,
+   "op": "pocket",
+   "role": "roughing",
+   "grade": "b"
+  },
+  {
+   "id": "amana-flat-softwood-pocket-9525-3f-spektra",
+   "vendor": "amana",
+   "source": "amana_spektra_spiral_plunge_v24",
+   "cls": "softwood",
+   "mat": "softwood",
+   "sub": "spektra_spiral_plunge",
+   "D": 9.525,
+   "Z": 3,
+   "chip": 0.16256,
+   "J": 600.0,
+   "op": "pocket",
+   "role": "roughing",
+   "grade": "b"
+  },
+  {
+   "id": "amana-zrn-flat-mdf-pocket-3175-2f",
+   "vendor": "amana",
+   "source": "amana_zrn_3d_profiling_v8",
+   "cls": "mdf",
+   "mat": "mdf",
+   "sub": "zrn_2d3d_carving",
+   "D": 3.175,
+   "Z": 2,
+   "chip": 0.1016,
+   "J": 1100.0,
+   "op": "pocket",
+   "role": "roughing",
+   "grade": "a"
+  },
+  {
+   "id": "amana-zrn-flat-softwood-pocket-3175-2f",
+   "vendor": "amana",
+   "source": "amana_zrn_3d_profiling_v8",
+   "cls": "softwood",
+   "mat": "softwood",
+   "sub": "zrn_2d3d_carving",
+   "D": 3.175,
+   "Z": 2,
+   "chip": 0.1016,
+   "J": 600.0,
+   "op": "pocket",
+   "role": "roughing",
+   "grade": "a"
+  },
+  {
+   "id": "amana-zrn-flat-softwood-pocket-6000-2f",
+   "vendor": "amana",
+   "source": "amana_zrn_3d_profiling_v8",
+   "cls": "softwood",
+   "mat": "softwood",
+   "sub": "zrn_2d3d_carving",
+   "D": 6.0,
+   "Z": 2,
+   "chip": 0.2032,
+   "J": 600.0,
+   "op": "pocket",
+   "role": "roughing",
+   "grade": "a"
+  },
+  {
+   "id": "amana-zrn-flat-softwood-pocket-6350-2f",
+   "vendor": "amana",
+   "source": "amana_zrn_3d_profiling_v8",
+   "cls": "softwood",
+   "mat": "softwood",
+   "sub": "zrn_2d3d_carving",
+   "D": 6.35,
+   "Z": 2,
+   "chip": 0.1778,
+   "J": 600.0,
+   "op": "pocket",
+   "role": "roughing",
+   "grade": "a"
+  },
+  {
+   "id": "freud-solid-carbide-eighth-hardwood",
+   "vendor": "freud",
+   "source": "freud_router_bit_feed_and_speed_for_cnc_20170822",
+   "cls": "hardwood",
+   "mat": "hardwood",
+   "sub": "solid_carbide",
+   "D": 3.175,
+   "Z": 2,
+   "chip": 0.0889,
+   "J": 1450.0,
+   "op": "pocket",
+   "role": "finish",
+   "grade": "a"
+  },
+  {
+   "id": "freud-solid-carbide-eighth-mdf-particle",
+   "vendor": "freud",
+   "source": "freud_router_bit_feed_and_speed_for_cnc_20170822",
+   "cls": "mdf",
+   "mat": "mdf",
+   "sub": "solid_carbide",
+   "D": 3.175,
+   "Z": 2,
+   "chip": 0.1397,
+   "J": 1100.0,
+   "op": "pocket",
+   "role": "roughing",
+   "grade": "a"
+  },
+  {
+   "id": "freud-solid-carbide-eighth-softwood",
+   "vendor": "freud",
+   "source": "freud_router_bit_feed_and_speed_for_cnc_20170822",
+   "cls": "softwood",
+   "mat": "softwood",
+   "sub": "solid_carbide",
+   "D": 3.175,
+   "Z": 2,
+   "chip": 0.127,
+   "J": 600.0,
+   "op": "pocket",
+   "role": "finish",
+   "grade": "a"
+  },
+  {
+   "id": "freud-solid-carbide-half-hardwood",
+   "vendor": "freud",
+   "source": "freud_router_bit_feed_and_speed_for_cnc_20170822",
+   "cls": "hardwood",
+   "mat": "hardwood",
+   "sub": "solid_carbide",
+   "D": 12.7,
+   "Z": 2,
+   "chip": 0.49529999999999996,
+   "J": 1450.0,
+   "op": "pocket",
+   "role": "finish",
+   "grade": "a"
+  },
+  {
+   "id": "freud-solid-carbide-half-mdf-particle",
+   "vendor": "freud",
+   "source": "freud_router_bit_feed_and_speed_for_cnc_20170822",
+   "cls": "mdf",
+   "mat": "mdf",
+   "sub": "solid_carbide",
+   "D": 12.7,
+   "Z": 2,
+   "chip": 0.635,
+   "J": 1100.0,
+   "op": "pocket",
+   "role": "roughing",
+   "grade": "a"
+  },
+  {
+   "id": "freud-solid-carbide-half-plywood-hardwood",
+   "vendor": "freud",
+   "source": "freud_router_bit_feed_and_speed_for_cnc_20170822",
+   "cls": "plywood",
+   "mat": "plywood_hardwood",
+   "sub": "solid_carbide",
+   "D": 12.7,
+   "Z": 2,
+   "chip": 0.49529999999999996,
+   "J": 1000.0,
+   "op": "pocket",
+   "role": "finish",
+   "grade": "a"
+  },
+  {
+   "id": "freud-solid-carbide-half-softwood",
+   "vendor": "freud",
+   "source": "freud_router_bit_feed_and_speed_for_cnc_20170822",
+   "cls": "softwood",
+   "mat": "softwood",
+   "sub": "solid_carbide",
+   "D": 12.7,
+   "Z": 2,
+   "chip": 0.5461,
+   "J": 600.0,
+   "op": "pocket",
+   "role": "finish",
+   "grade": "a"
+  },
+  {
+   "id": "freud-solid-carbide-quarter-hardwood",
+   "vendor": "freud",
+   "source": "freud_router_bit_feed_and_speed_for_cnc_20170822",
+   "cls": "hardwood",
+   "mat": "hardwood",
+   "sub": "solid_carbide",
+   "D": 6.35,
+   "Z": 2,
+   "chip": 0.2413,
+   "J": 1450.0,
+   "op": "pocket",
+   "role": "finish",
+   "grade": "a"
+  },
+  {
+   "id": "freud-solid-carbide-quarter-mdf-particle",
+   "vendor": "freud",
+   "source": "freud_router_bit_feed_and_speed_for_cnc_20170822",
+   "cls": "mdf",
+   "mat": "mdf",
+   "sub": "solid_carbide",
+   "D": 6.35,
+   "Z": 2,
+   "chip": 0.381,
+   "J": 1100.0,
+   "op": "pocket",
+   "role": "roughing",
+   "grade": "a"
+  },
+  {
+   "id": "freud-solid-carbide-quarter-plywood-hardwood",
+   "vendor": "freud",
+   "source": "freud_router_bit_feed_and_speed_for_cnc_20170822",
+   "cls": "plywood",
+   "mat": "plywood_hardwood",
+   "sub": "solid_carbide",
+   "D": 6.35,
+   "Z": 2,
+   "chip": 0.1905,
+   "J": 1000.0,
+   "op": "pocket",
+   "role": "finish",
+   "grade": "a"
+  },
+  {
+   "id": "freud-solid-carbide-quarter-softwood",
+   "vendor": "freud",
+   "source": "freud_router_bit_feed_and_speed_for_cnc_20170822",
+   "cls": "softwood",
+   "mat": "softwood",
+   "sub": "solid_carbide",
+   "D": 6.35,
+   "Z": 2,
+   "chip": 0.2794,
+   "J": 600.0,
+   "op": "pocket",
+   "role": "finish",
+   "grade": "a"
+  },
+  {
+   "id": "freud-solid-carbide-three-eighth-hardwood",
+   "vendor": "freud",
+   "source": "freud_router_bit_feed_and_speed_for_cnc_20170822",
+   "cls": "hardwood",
+   "mat": "hardwood",
+   "sub": "solid_carbide",
+   "D": 9.525,
+   "Z": 2,
+   "chip": 0.381,
+   "J": 1450.0,
+   "op": "pocket",
+   "role": "finish",
+   "grade": "a"
+  },
+  {
+   "id": "onsrud-hardwood-60-000hh-1_2-roughing",
+   "vendor": "onsrud",
+   "source": "onsrud_hard_wood_cutting_data",
+   "cls": "hardwood",
+   "mat": "hardwood",
+   "sub": "60_000hh_series",
+   "D": 12.7,
+   "Z": 2,
+   "chip": 0.4572,
+   "J": 1450.0,
+   "op": "adaptive",
+   "role": "roughing",
+   "grade": "b"
+  },
+  {
+   "id": "onsrud-hardwood-60-000hh-3_8-roughing",
+   "vendor": "onsrud",
+   "source": "onsrud_hard_wood_cutting_data",
+   "cls": "hardwood",
+   "mat": "hardwood",
+   "sub": "60_000hh_series",
+   "D": 9.525,
+   "Z": 2,
+   "chip": 0.4064,
+   "J": 1450.0,
+   "op": "adaptive",
+   "role": "roughing",
+   "grade": "b"
+  },
+  {
+   "id": "onsrud-hardwood-60-000lh-1_2-roughing",
+   "vendor": "onsrud",
+   "source": "onsrud_hard_wood_cutting_data",
+   "cls": "hardwood",
+   "mat": "hardwood",
+   "sub": "60_000lh_series",
+   "D": 12.7,
+   "Z": 2,
+   "chip": 0.381,
+   "J": 1450.0,
+   "op": "adaptive",
+   "role": "roughing",
+   "grade": "b"
+  },
+  {
+   "id": "onsrud-hardwood-60-000lh-3_4-roughing",
+   "vendor": "onsrud",
+   "source": "onsrud_hard_wood_cutting_data",
+   "cls": "hardwood",
+   "mat": "hardwood",
+   "sub": "60_000lh_series",
+   "D": 19.05,
+   "Z": 2,
+   "chip": 0.4572,
+   "J": 1450.0,
+   "op": "adaptive",
+   "role": "roughing",
+   "grade": "b"
+  },
+  {
+   "id": "onsrud-hardwood-60-000lh-3_8-roughing",
+   "vendor": "onsrud",
+   "source": "onsrud_hard_wood_cutting_data",
+   "cls": "hardwood",
+   "mat": "hardwood",
+   "sub": "60_000lh_series",
+   "D": 9.525,
+   "Z": 2,
+   "chip": 0.3556,
+   "J": 1450.0,
+   "op": "adaptive",
+   "role": "roughing",
+   "grade": "b"
+  },
+  {
+   "id": "onsrud-hardwood-60-000lh-5_8-roughing",
+   "vendor": "onsrud",
+   "source": "onsrud_hard_wood_cutting_data",
+   "cls": "hardwood",
+   "mat": "hardwood",
+   "sub": "60_000lh_series",
+   "D": 15.875,
+   "Z": 2,
+   "chip": 0.43179999999999996,
+   "J": 1450.0,
+   "op": "adaptive",
+   "role": "roughing",
+   "grade": "b"
+  },
+  {
+   "id": "onsrud-hardwood-60-100mw-1_4-finish",
+   "vendor": "onsrud",
+   "source": "onsrud_hard_wood_cutting_data",
+   "cls": "hardwood",
+   "mat": "hardwood",
+   "sub": "60_100mw_compression_spiral",
+   "D": 6.35,
+   "Z": 2,
+   "chip": 0.381,
+   "J": 1450.0,
+   "op": "contour",
+   "role": "finish",
+   "grade": "b"
+  },
+  {
+   "id": "onsrud-hardwood-60-100mw-1_8-finish",
+   "vendor": "onsrud",
+   "source": "onsrud_hard_wood_cutting_data",
+   "cls": "hardwood",
+   "mat": "hardwood",
+   "sub": "60_100mw_compression_spiral",
+   "D": 3.175,
+   "Z": 2,
+   "chip": 0.2794,
+   "J": 1450.0,
+   "op": "contour",
+   "role": "finish",
+   "grade": "b"
+  },
+  {
+   "id": "onsrud-hardwood-60-100mw-3_16-finish",
+   "vendor": "onsrud",
+   "source": "onsrud_hard_wood_cutting_data",
+   "cls": "hardwood",
+   "mat": "hardwood",
+   "sub": "60_100mw_compression_spiral",
+   "D": 4.7625,
+   "Z": 2,
+   "chip": 0.33020000000000005,
+   "J": 1450.0,
+   "op": "contour",
+   "role": "finish",
+   "grade": "b"
+  },
+  {
+   "id": "onsrud-hardwood-60-100mw-3_8-finish",
+   "vendor": "onsrud",
+   "source": "onsrud_hard_wood_cutting_data",
+   "cls": "hardwood",
+   "mat": "hardwood",
+   "sub": "60_100mw_compression_spiral",
+   "D": 9.525,
+   "Z": 2,
+   "chip": 0.43179999999999996,
+   "J": 1450.0,
+   "op": "contour",
+   "role": "finish",
+   "grade": "b"
+  },
+  {
+   "id": "onsrud-hardwood-60-200-1_2-finish",
+   "vendor": "onsrud",
+   "source": "onsrud_hard_wood_cutting_data",
+   "cls": "hardwood",
+   "mat": "hardwood",
+   "sub": "60_200_downcut",
+   "D": 12.7,
+   "Z": 2,
+   "chip": 0.2032,
+   "J": 1450.0,
+   "op": "contour",
+   "role": "finish",
+   "grade": "b"
+  },
+  {
+   "id": "onsrud-hardwood-60-200-1_4-finish",
+   "vendor": "onsrud",
+   "source": "onsrud_hard_wood_cutting_data",
+   "cls": "hardwood",
+   "mat": "hardwood",
+   "sub": "60_200_downcut",
+   "D": 6.35,
+   "Z": 2,
+   "chip": 0.1524,
+   "J": 1450.0,
+   "op": "contour",
+   "role": "finish",
+   "grade": "b"
+  },
+  {
+   "id": "onsrud-hardwood-60-200-3_4-finish",
+   "vendor": "onsrud",
+   "source": "onsrud_hard_wood_cutting_data",
+   "cls": "hardwood",
+   "mat": "hardwood",
+   "sub": "60_200_downcut",
+   "D": 19.05,
+   "Z": 2,
+   "chip": 0.2286,
+   "J": 1450.0,
+   "op": "contour",
+   "role": "finish",
+   "grade": "b"
+  },
+  {
+   "id": "onsrud-hardwood-60-200-3_8-finish",
+   "vendor": "onsrud",
+   "source": "onsrud_hard_wood_cutting_data",
+   "cls": "hardwood",
+   "mat": "hardwood",
+   "sub": "60_200_downcut",
+   "D": 9.525,
+   "Z": 2,
+   "chip": 0.1778,
+   "J": 1450.0,
+   "op": "contour",
+   "role": "finish",
+   "grade": "b"
+  },
+  {
+   "id": "onsrud-hardwood-60-800-3_8-roughing",
+   "vendor": "onsrud",
+   "source": "onsrud_hard_wood_cutting_data",
+   "cls": "hardwood",
+   "mat": "hardwood",
+   "sub": "60_800_series",
+   "D": 9.525,
+   "Z": 2,
+   "chip": 0.4572,
+   "J": 1450.0,
+   "op": "adaptive",
+   "role": "roughing",
+   "grade": "b"
+  },
+  {
+   "id": "onsrud-mdf-60-000hh-3_8-roughing",
+   "vendor": "onsrud",
+   "source": "onsrud_mdf_cutting_data",
+   "cls": "mdf",
+   "mat": "mdf",
+   "sub": "60_000hh_series",
+   "D": 9.525,
+   "Z": 2,
+   "chip": 0.4572,
+   "J": 1100.0,
+   "op": "adaptive",
+   "role": "roughing",
+   "grade": "b"
+  },
+  {
+   "id": "onsrud-mdf-60-000lh-1_2-roughing",
+   "vendor": "onsrud",
+   "source": "onsrud_mdf_cutting_data",
+   "cls": "mdf",
+   "mat": "mdf",
+   "sub": "60_000lh_series",
+   "D": 12.7,
+   "Z": 2,
+   "chip": 0.3556,
+   "J": 1100.0,
+   "op": "adaptive",
+   "role": "roughing",
+   "grade": "b"
+  },
+  {
+   "id": "onsrud-mdf-60-000lh-3_4-roughing",
+   "vendor": "onsrud",
+   "source": "onsrud_mdf_cutting_data",
+   "cls": "mdf",
+   "mat": "mdf",
+   "sub": "60_000lh_series",
+   "D": 19.05,
+   "Z": 2,
+   "chip": 0.43179999999999996,
+   "J": 1100.0,
+   "op": "adaptive",
+   "role": "roughing",
+   "grade": "b"
+  },
+  {
+   "id": "onsrud-mdf-60-000lh-3_8-roughing",
+   "vendor": "onsrud",
+   "source": "onsrud_mdf_cutting_data",
+   "cls": "mdf",
+   "mat": "mdf",
+   "sub": "60_000lh_series",
+   "D": 9.525,
+   "Z": 2,
+   "chip": 0.33020000000000005,
+   "J": 1100.0,
+   "op": "adaptive",
+   "role": "roughing",
+   "grade": "b"
+  },
+  {
+   "id": "onsrud-mdf-60-000lh-5_8-roughing",
+   "vendor": "onsrud",
+   "source": "onsrud_mdf_cutting_data",
+   "cls": "mdf",
+   "mat": "mdf",
+   "sub": "60_000lh_series",
+   "D": 15.875,
+   "Z": 2,
+   "chip": 0.381,
+   "J": 1100.0,
+   "op": "adaptive",
+   "role": "roughing",
+   "grade": "b"
+  },
+  {
+   "id": "onsrud-mdf-60-100c-3_8-finish",
+   "vendor": "onsrud",
+   "source": "onsrud_mdf_cutting_data",
+   "cls": "mdf",
+   "mat": "mdf",
+   "sub": "60_100c_compression_spiral",
+   "D": 9.525,
+   "Z": 2,
+   "chip": 0.4572,
+   "J": 1100.0,
+   "op": "contour",
+   "role": "finish",
+   "grade": "b"
+  },
+  {
+   "id": "onsrud-mdf-60-100mw-1_2-finish",
+   "vendor": "onsrud",
+   "source": "onsrud_mdf_cutting_data",
+   "cls": "mdf",
+   "mat": "mdf",
+   "sub": "60_100mw_compression_spiral",
+   "D": 12.7,
+   "Z": 2,
+   "chip": 0.43179999999999996,
+   "J": 1100.0,
+   "op": "contour",
+   "role": "finish",
+   "grade": "b"
+  },
+  {
+   "id": "onsrud-mdf-60-100mw-1_4-finish",
+   "vendor": "onsrud",
+   "source": "onsrud_mdf_cutting_data",
+   "cls": "mdf",
+   "mat": "mdf",
+   "sub": "60_100mw_compression_spiral",
+   "D": 6.35,
+   "Z": 2,
+   "chip": 0.3556,
+   "J": 1100.0,
+   "op": "contour",
+   "role": "finish",
+   "grade": "b"
+  },
+  {
+   "id": "onsrud-mdf-60-100mw-1_8-finish",
+   "vendor": "onsrud",
+   "source": "onsrud_mdf_cutting_data",
+   "cls": "mdf",
+   "mat": "mdf",
+   "sub": "60_100mw_compression_spiral",
+   "D": 3.175,
+   "Z": 2,
+   "chip": 0.2794,
+   "J": 1100.0,
+   "op": "contour",
+   "role": "finish",
+   "grade": "b"
+  },
+  {
+   "id": "onsrud-mdf-60-100mw-3_16-finish",
+   "vendor": "onsrud",
+   "source": "onsrud_mdf_cutting_data",
+   "cls": "mdf",
+   "mat": "mdf",
+   "sub": "60_100mw_compression_spiral",
+   "D": 4.7625,
+   "Z": 2,
+   "chip": 0.2794,
+   "J": 1100.0,
+   "op": "contour",
+   "role": "finish",
+   "grade": "b"
+  },
+  {
+   "id": "onsrud-mdf-60-100mw-3_8-finish",
+   "vendor": "onsrud",
+   "source": "onsrud_mdf_cutting_data",
+   "cls": "mdf",
+   "mat": "mdf",
+   "sub": "60_100mw_compression_spiral",
+   "D": 9.525,
+   "Z": 2,
+   "chip": 0.381,
+   "J": 1100.0,
+   "op": "contour",
+   "role": "finish",
+   "grade": "b"
+  },
+  {
+   "id": "onsrud-mdf-60-200-1_2-finish",
+   "vendor": "onsrud",
+   "source": "onsrud_mdf_cutting_data",
+   "cls": "mdf",
+   "mat": "mdf",
+   "sub": "60_200_downcut",
+   "D": 12.7,
+   "Z": 2,
+   "chip": 0.1524,
+   "J": 1100.0,
+   "op": "contour",
+   "role": "finish",
+   "grade": "b"
+  },
+  {
+   "id": "onsrud-mdf-60-200-1_4-finish",
+   "vendor": "onsrud",
+   "source": "onsrud_mdf_cutting_data",
+   "cls": "mdf",
+   "mat": "mdf",
+   "sub": "60_200_downcut",
+   "D": 6.35,
+   "Z": 2,
+   "chip": 0.127,
+   "J": 1100.0,
+   "op": "contour",
+   "role": "finish",
+   "grade": "b"
+  },
+  {
+   "id": "onsrud-mdf-60-200-3_4-finish",
+   "vendor": "onsrud",
+   "source": "onsrud_mdf_cutting_data",
+   "cls": "mdf",
+   "mat": "mdf",
+   "sub": "60_200_downcut",
+   "D": 19.05,
+   "Z": 2,
+   "chip": 0.1778,
+   "J": 1100.0,
+   "op": "contour",
+   "role": "finish",
+   "grade": "b"
+  },
+  {
+   "id": "onsrud-mdf-60-200-3_8-finish",
+   "vendor": "onsrud",
+   "source": "onsrud_mdf_cutting_data",
+   "cls": "mdf",
+   "mat": "mdf",
+   "sub": "60_200_downcut",
+   "D": 9.525,
+   "Z": 2,
+   "chip": 0.1524,
+   "J": 1100.0,
+   "op": "contour",
+   "role": "finish",
+   "grade": "b"
+  },
+  {
+   "id": "onsrud-mdf-60-300-3_8-semi_finish",
+   "vendor": "onsrud",
+   "source": "onsrud_mdf_cutting_data",
+   "cls": "mdf",
+   "mat": "mdf",
+   "sub": "60_300_series",
+   "D": 9.525,
+   "Z": 2,
+   "chip": 0.4572,
+   "J": 1100.0,
+   "op": "contour",
+   "role": "semi_finish",
+   "grade": "b"
+  },
+  {
+   "id": "onsrud-mdf-60-350-1_2-semi_finish",
+   "vendor": "onsrud",
+   "source": "onsrud_mdf_cutting_data",
+   "cls": "mdf",
+   "mat": "mdf",
+   "sub": "60_350_series",
+   "D": 12.7,
+   "Z": 2,
+   "chip": 0.43179999999999996,
+   "J": 1100.0,
+   "op": "contour",
+   "role": "semi_finish",
+   "grade": "b"
+  },
+  {
+   "id": "onsrud-mdf-60-350-3_8-semi_finish",
+   "vendor": "onsrud",
+   "source": "onsrud_mdf_cutting_data",
+   "cls": "mdf",
+   "mat": "mdf",
+   "sub": "60_350_series",
+   "D": 9.525,
+   "Z": 2,
+   "chip": 0.381,
+   "J": 1100.0,
+   "op": "contour",
+   "role": "semi_finish",
+   "grade": "b"
+  },
+  {
+   "id": "onsrud-mdf-60-350-5_8-semi_finish",
+   "vendor": "onsrud",
+   "source": "onsrud_mdf_cutting_data",
+   "cls": "mdf",
+   "mat": "mdf",
+   "sub": "60_350_series",
+   "D": 15.875,
+   "Z": 2,
+   "chip": 0.4572,
+   "J": 1100.0,
+   "op": "contour",
+   "role": "semi_finish",
+   "grade": "b"
+  },
+  {
+   "id": "onsrud-mdf-60-800-3_8-roughing",
+   "vendor": "onsrud",
+   "source": "onsrud_mdf_cutting_data",
+   "cls": "mdf",
+   "mat": "mdf",
+   "sub": "60_800_series",
+   "D": 9.525,
+   "Z": 2,
+   "chip": 0.4572,
+   "J": 1100.0,
+   "op": "adaptive",
+   "role": "roughing",
+   "grade": "b"
+  },
+  {
+   "id": "onsrud-plywood-hardwood-60-000hh-1_2-roughing",
+   "vendor": "onsrud",
+   "source": "onsrud_hard_plywood_cutting_data",
+   "cls": "plywood",
+   "mat": "plywood_hardwood",
+   "sub": "60_000hh_series",
+   "D": 12.7,
+   "Z": 2,
+   "chip": 0.508,
+   "J": 1000.0,
+   "op": "adaptive",
+   "role": "roughing",
+   "grade": "a"
+  },
+  {
+   "id": "onsrud-plywood-hardwood-60-000hh-3_8-roughing",
+   "vendor": "onsrud",
+   "source": "onsrud_hard_plywood_cutting_data",
+   "cls": "plywood",
+   "mat": "plywood_hardwood",
+   "sub": "60_000hh_series",
+   "D": 9.525,
+   "Z": 2,
+   "chip": 0.4572,
+   "J": 1000.0,
+   "op": "adaptive",
+   "role": "roughing",
+   "grade": "a"
+  },
+  {
+   "id": "onsrud-plywood-hardwood-60-000lh-1_2-roughing",
+   "vendor": "onsrud",
+   "source": "onsrud_hard_plywood_cutting_data",
+   "cls": "plywood",
+   "mat": "plywood_hardwood",
+   "sub": "60_000lh_series",
+   "D": 12.7,
+   "Z": 2,
+   "chip": 0.43179999999999996,
+   "J": 1000.0,
+   "op": "adaptive",
+   "role": "roughing",
+   "grade": "a"
+  },
+  {
+   "id": "onsrud-plywood-hardwood-60-000lh-3_4-roughing",
+   "vendor": "onsrud",
+   "source": "onsrud_hard_plywood_cutting_data",
+   "cls": "plywood",
+   "mat": "plywood_hardwood",
+   "sub": "60_000lh_series",
+   "D": 19.05,
+   "Z": 2,
+   "chip": 0.5334,
+   "J": 1000.0,
+   "op": "adaptive",
+   "role": "roughing",
+   "grade": "a"
+  },
+  {
+   "id": "onsrud-plywood-hardwood-60-000lh-3_8-roughing",
+   "vendor": "onsrud",
+   "source": "onsrud_hard_plywood_cutting_data",
+   "cls": "plywood",
+   "mat": "plywood_hardwood",
+   "sub": "60_000lh_series",
+   "D": 9.525,
+   "Z": 2,
+   "chip": 0.381,
+   "J": 1000.0,
+   "op": "adaptive",
+   "role": "roughing",
+   "grade": "a"
+  },
+  {
+   "id": "onsrud-plywood-hardwood-60-000lh-5_8-roughing",
+   "vendor": "onsrud",
+   "source": "onsrud_hard_plywood_cutting_data",
+   "cls": "plywood",
+   "mat": "plywood_hardwood",
+   "sub": "60_000lh_series",
+   "D": 15.875,
+   "Z": 2,
+   "chip": 0.48260000000000003,
+   "J": 1000.0,
+   "op": "adaptive",
+   "role": "roughing",
+   "grade": "a"
+  },
+  {
+   "id": "onsrud-plywood-hardwood-60-100c-3_8-finish",
+   "vendor": "onsrud",
+   "source": "onsrud_hard_plywood_cutting_data",
+   "cls": "plywood",
+   "mat": "plywood_hardwood",
+   "sub": "60_100c_compression_spiral",
+   "D": 9.525,
+   "Z": 2,
+   "chip": 0.508,
+   "J": 1000.0,
+   "op": "contour",
+   "role": "finish",
+   "grade": "a"
+  },
+  {
+   "id": "onsrud-plywood-hardwood-60-100mw-1_2-finish",
+   "vendor": "onsrud",
+   "source": "onsrud_hard_plywood_cutting_data",
+   "cls": "plywood",
+   "mat": "plywood_hardwood",
+   "sub": "60_100mw_compression_spiral",
+   "D": 12.7,
+   "Z": 2,
+   "chip": 0.48260000000000003,
+   "J": 1000.0,
+   "op": "contour",
+   "role": "finish",
+   "grade": "a"
+  },
+  {
+   "id": "onsrud-plywood-hardwood-60-100mw-1_4-finish",
+   "vendor": "onsrud",
+   "source": "onsrud_hard_plywood_cutting_data",
+   "cls": "plywood",
+   "mat": "plywood_hardwood",
+   "sub": "60_100mw_compression_spiral",
+   "D": 6.35,
+   "Z": 2,
+   "chip": 0.381,
+   "J": 1000.0,
+   "op": "contour",
+   "role": "finish",
+   "grade": "a"
+  },
+  {
+   "id": "onsrud-plywood-hardwood-60-100mw-1_8-finish",
+   "vendor": "onsrud",
+   "source": "onsrud_hard_plywood_cutting_data",
+   "cls": "plywood",
+   "mat": "plywood_hardwood",
+   "sub": "60_100mw_compression_spiral",
+   "D": 3.175,
+   "Z": 2,
+   "chip": 0.33020000000000005,
+   "J": 1000.0,
+   "op": "contour",
+   "role": "finish",
+   "grade": "a"
+  },
+  {
+   "id": "onsrud-plywood-hardwood-60-100mw-3_16-finish",
+   "vendor": "onsrud",
+   "source": "onsrud_hard_plywood_cutting_data",
+   "cls": "plywood",
+   "mat": "plywood_hardwood",
+   "sub": "60_100mw_compression_spiral",
+   "D": 4.7625,
+   "Z": 2,
+   "chip": 0.33020000000000005,
+   "J": 1000.0,
+   "op": "contour",
+   "role": "finish",
+   "grade": "a"
+  },
+  {
+   "id": "onsrud-plywood-hardwood-60-100mw-3_8-finish",
+   "vendor": "onsrud",
+   "source": "onsrud_hard_plywood_cutting_data",
+   "cls": "plywood",
+   "mat": "plywood_hardwood",
+   "sub": "60_100mw_compression_spiral",
+   "D": 9.525,
+   "Z": 2,
+   "chip": 0.43179999999999996,
+   "J": 1000.0,
+   "op": "contour",
+   "role": "finish",
+   "grade": "a"
+  },
+  {
+   "id": "onsrud-plywood-hardwood-60-300-3_8-semi_finish",
+   "vendor": "onsrud",
+   "source": "onsrud_hard_plywood_cutting_data",
+   "cls": "plywood",
+   "mat": "plywood_hardwood",
+   "sub": "60_300_series",
+   "D": 9.525,
+   "Z": 2,
+   "chip": 0.508,
+   "J": 1000.0,
+   "op": "contour",
+   "role": "semi_finish",
+   "grade": "a"
+  },
+  {
+   "id": "onsrud-plywood-hardwood-60-350-1_2-semi_finish",
+   "vendor": "onsrud",
+   "source": "onsrud_hard_plywood_cutting_data",
+   "cls": "plywood",
+   "mat": "plywood_hardwood",
+   "sub": "60_350_series",
+   "D": 12.7,
+   "Z": 2,
+   "chip": 0.5334,
+   "J": 1000.0,
+   "op": "contour",
+   "role": "semi_finish",
+   "grade": "a"
+  },
+  {
+   "id": "onsrud-plywood-hardwood-60-350-3_8-semi_finish",
+   "vendor": "onsrud",
+   "source": "onsrud_hard_plywood_cutting_data",
+   "cls": "plywood",
+   "mat": "plywood_hardwood",
+   "sub": "60_350_series",
+   "D": 9.525,
+   "Z": 2,
+   "chip": 0.48260000000000003,
+   "J": 1000.0,
+   "op": "contour",
+   "role": "semi_finish",
+   "grade": "a"
+  },
+  {
+   "id": "onsrud-plywood-hardwood-60-350-5_8-semi_finish",
+   "vendor": "onsrud",
+   "source": "onsrud_hard_plywood_cutting_data",
+   "cls": "plywood",
+   "mat": "plywood_hardwood",
+   "sub": "60_350_series",
+   "D": 15.875,
+   "Z": 2,
+   "chip": 0.5969,
+   "J": 1000.0,
+   "op": "contour",
+   "role": "semi_finish",
+   "grade": "a"
+  },
+  {
+   "id": "onsrud-plywood-hardwood-60-800-3_8-roughing",
+   "vendor": "onsrud",
+   "source": "onsrud_hard_plywood_cutting_data",
+   "cls": "plywood",
+   "mat": "plywood_hardwood",
+   "sub": "60_800_series",
+   "D": 9.525,
+   "Z": 2,
+   "chip": 0.4572,
+   "J": 1000.0,
+   "op": "adaptive",
+   "role": "roughing",
+   "grade": "a"
+  },
+  {
+   "id": "onsrud-plywood-softwood-60-000hh-1_2-roughing",
+   "vendor": "onsrud",
+   "source": "onsrud_soft_plywood_cutting_data",
+   "cls": "plywood",
+   "mat": "plywood_softwood",
+   "sub": "60_000hh_series",
+   "D": 12.7,
+   "Z": 2,
+   "chip": 0.508,
+   "J": 600.0,
+   "op": "adaptive",
+   "role": "roughing",
+   "grade": "a"
+  },
+  {
+   "id": "onsrud-plywood-softwood-60-000hh-3_8-roughing",
+   "vendor": "onsrud",
+   "source": "onsrud_soft_plywood_cutting_data",
+   "cls": "plywood",
+   "mat": "plywood_softwood",
+   "sub": "60_000hh_series",
+   "D": 9.525,
+   "Z": 2,
+   "chip": 0.4572,
+   "J": 600.0,
+   "op": "adaptive",
+   "role": "roughing",
+   "grade": "a"
+  },
+  {
+   "id": "onsrud-plywood-softwood-60-000lh-1_2-roughing",
+   "vendor": "onsrud",
+   "source": "onsrud_soft_plywood_cutting_data",
+   "cls": "plywood",
+   "mat": "plywood_softwood",
+   "sub": "60_000lh_series",
+   "D": 12.7,
+   "Z": 2,
+   "chip": 0.43179999999999996,
+   "J": 600.0,
+   "op": "adaptive",
+   "role": "roughing",
+   "grade": "a"
+  },
+  {
+   "id": "onsrud-plywood-softwood-60-000lh-3_4-roughing",
+   "vendor": "onsrud",
+   "source": "onsrud_soft_plywood_cutting_data",
+   "cls": "plywood",
+   "mat": "plywood_softwood",
+   "sub": "60_000lh_series",
+   "D": 19.05,
+   "Z": 2,
+   "chip": 0.5334,
+   "J": 600.0,
+   "op": "adaptive",
+   "role": "roughing",
+   "grade": "a"
+  },
+  {
+   "id": "onsrud-plywood-softwood-60-000lh-3_8-roughing",
+   "vendor": "onsrud",
+   "source": "onsrud_soft_plywood_cutting_data",
+   "cls": "plywood",
+   "mat": "plywood_softwood",
+   "sub": "60_000lh_series",
+   "D": 9.525,
+   "Z": 2,
+   "chip": 0.381,
+   "J": 600.0,
+   "op": "adaptive",
+   "role": "roughing",
+   "grade": "a"
+  },
+  {
+   "id": "onsrud-plywood-softwood-60-000lh-5_8-roughing",
+   "vendor": "onsrud",
+   "source": "onsrud_soft_plywood_cutting_data",
+   "cls": "plywood",
+   "mat": "plywood_softwood",
+   "sub": "60_000lh_series",
+   "D": 15.875,
+   "Z": 2,
+   "chip": 0.48260000000000003,
+   "J": 600.0,
+   "op": "adaptive",
+   "role": "roughing",
+   "grade": "a"
+  },
+  {
+   "id": "onsrud-plywood-softwood-60-100c-3_8-finish",
+   "vendor": "onsrud",
+   "source": "onsrud_soft_plywood_cutting_data",
+   "cls": "plywood",
+   "mat": "plywood_softwood",
+   "sub": "60_100c_compression_spiral",
+   "D": 9.525,
+   "Z": 2,
+   "chip": 0.5842,
+   "J": 600.0,
+   "op": "contour",
+   "role": "finish",
+   "grade": "a"
+  },
+  {
+   "id": "onsrud-plywood-softwood-60-100mw-1_2-finish",
+   "vendor": "onsrud",
+   "source": "onsrud_soft_plywood_cutting_data",
+   "cls": "plywood",
+   "mat": "plywood_softwood",
+   "sub": "60_100mw_compression_spiral",
+   "D": 12.7,
+   "Z": 2,
+   "chip": 0.5588,
+   "J": 600.0,
+   "op": "contour",
+   "role": "finish",
+   "grade": "a"
+  },
+  {
+   "id": "onsrud-plywood-softwood-60-100mw-1_4-finish",
+   "vendor": "onsrud",
+   "source": "onsrud_soft_plywood_cutting_data",
+   "cls": "plywood",
+   "mat": "plywood_softwood",
+   "sub": "60_100mw_compression_spiral",
+   "D": 6.35,
+   "Z": 2,
+   "chip": 0.4572,
+   "J": 600.0,
+   "op": "contour",
+   "role": "finish",
+   "grade": "a"
+  },
+  {
+   "id": "onsrud-plywood-softwood-60-100mw-3_16-finish",
+   "vendor": "onsrud",
+   "source": "onsrud_soft_plywood_cutting_data",
+   "cls": "plywood",
+   "mat": "plywood_softwood",
+   "sub": "60_100mw_compression_spiral",
+   "D": 4.7625,
+   "Z": 2,
+   "chip": 0.381,
+   "J": 600.0,
+   "op": "contour",
+   "role": "finish",
+   "grade": "a"
+  },
+  {
+   "id": "onsrud-plywood-softwood-60-100mw-3_8-finish",
+   "vendor": "onsrud",
+   "source": "onsrud_soft_plywood_cutting_data",
+   "cls": "plywood",
+   "mat": "plywood_softwood",
+   "sub": "60_100mw_compression_spiral",
+   "D": 9.525,
+   "Z": 2,
+   "chip": 0.508,
+   "J": 600.0,
+   "op": "contour",
+   "role": "finish",
+   "grade": "a"
+  },
+  {
+   "id": "onsrud-plywood-softwood-60-300-3_8-semi_finish",
+   "vendor": "onsrud",
+   "source": "onsrud_soft_plywood_cutting_data",
+   "cls": "plywood",
+   "mat": "plywood_softwood",
+   "sub": "60_300_series",
+   "D": 9.525,
+   "Z": 2,
+   "chip": 0.5842,
+   "J": 600.0,
+   "op": "contour",
+   "role": "semi_finish",
+   "grade": "a"
+  },
+  {
+   "id": "onsrud-plywood-softwood-60-350-1_2-semi_finish",
+   "vendor": "onsrud",
+   "source": "onsrud_soft_plywood_cutting_data",
+   "cls": "plywood",
+   "mat": "plywood_softwood",
+   "sub": "60_350_series",
+   "D": 12.7,
+   "Z": 2,
+   "chip": 0.5842,
+   "J": 600.0,
+   "op": "contour",
+   "role": "semi_finish",
+   "grade": "a"
+  },
+  {
+   "id": "onsrud-plywood-softwood-60-350-3_8-semi_finish",
+   "vendor": "onsrud",
+   "source": "onsrud_soft_plywood_cutting_data",
+   "cls": "plywood",
+   "mat": "plywood_softwood",
+   "sub": "60_350_series",
+   "D": 9.525,
+   "Z": 2,
+   "chip": 0.5334,
+   "J": 600.0,
+   "op": "contour",
+   "role": "semi_finish",
+   "grade": "a"
+  },
+  {
+   "id": "onsrud-plywood-softwood-60-350-5_8-semi_finish",
+   "vendor": "onsrud",
+   "source": "onsrud_soft_plywood_cutting_data",
+   "cls": "plywood",
+   "mat": "plywood_softwood",
+   "sub": "60_350_series",
+   "D": 15.875,
+   "Z": 2,
+   "chip": 0.635,
+   "J": 600.0,
+   "op": "contour",
+   "role": "semi_finish",
+   "grade": "a"
+  },
+  {
+   "id": "onsrud-plywood-softwood-60-800-3_8-roughing",
+   "vendor": "onsrud",
+   "source": "onsrud_soft_plywood_cutting_data",
+   "cls": "plywood",
+   "mat": "plywood_softwood",
+   "sub": "60_800_series",
+   "D": 9.525,
+   "Z": 2,
+   "chip": 0.4572,
+   "J": 600.0,
+   "op": "adaptive",
+   "role": "roughing",
+   "grade": "a"
+  },
+  {
+   "id": "onsrud-softwood-60-000hh-3_8-roughing",
+   "vendor": "onsrud",
+   "source": "onsrud_soft_wood_cutting_data",
+   "cls": "softwood",
+   "mat": "softwood",
+   "sub": "60_000hh_series",
+   "D": 9.525,
+   "Z": 2,
+   "chip": 0.43179999999999996,
+   "J": 600.0,
+   "op": "adaptive",
+   "role": "roughing",
+   "grade": "b"
+  },
+  {
+   "id": "onsrud-softwood-60-000lh-1_2-roughing",
+   "vendor": "onsrud",
+   "source": "onsrud_soft_wood_cutting_data",
+   "cls": "softwood",
+   "mat": "softwood",
+   "sub": "60_000lh_series",
+   "D": 12.7,
+   "Z": 2,
+   "chip": 0.4064,
+   "J": 600.0,
+   "op": "adaptive",
+   "role": "roughing",
+   "grade": "b"
+  },
+  {
+   "id": "onsrud-softwood-60-000lh-3_8-roughing",
+   "vendor": "onsrud",
+   "source": "onsrud_soft_wood_cutting_data",
+   "cls": "softwood",
+   "mat": "softwood",
+   "sub": "60_000lh_series",
+   "D": 9.525,
+   "Z": 2,
+   "chip": 0.3556,
+   "J": 600.0,
+   "op": "adaptive",
+   "role": "roughing",
+   "grade": "b"
+  },
+  {
+   "id": "onsrud-softwood-60-000lh-5_8-roughing",
+   "vendor": "onsrud",
+   "source": "onsrud_soft_wood_cutting_data",
+   "cls": "softwood",
+   "mat": "softwood",
+   "sub": "60_000lh_series",
+   "D": 15.875,
+   "Z": 2,
+   "chip": 0.4572,
+   "J": 600.0,
+   "op": "adaptive",
+   "role": "roughing",
+   "grade": "b"
+  },
+  {
+   "id": "onsrud-softwood-60-100mw-1_8-finish",
+   "vendor": "onsrud",
+   "source": "onsrud_soft_wood_cutting_data",
+   "cls": "softwood",
+   "mat": "softwood",
+   "sub": "60_100mw_compression_spiral",
+   "D": 3.175,
+   "Z": 2,
+   "chip": 0.30479999999999996,
+   "J": 600.0,
+   "op": "contour",
+   "role": "finish",
+   "grade": "b"
+  },
+  {
+   "id": "onsrud-softwood-60-100mw-3_16-finish",
+   "vendor": "onsrud",
+   "source": "onsrud_soft_wood_cutting_data",
+   "cls": "softwood",
+   "mat": "softwood",
+   "sub": "60_100mw_compression_spiral",
+   "D": 4.7625,
+   "Z": 2,
+   "chip": 0.3556,
+   "J": 600.0,
+   "op": "contour",
+   "role": "finish",
+   "grade": "b"
+  },
+  {
+   "id": "onsrud-softwood-60-200-1_2-finish",
+   "vendor": "onsrud",
+   "source": "onsrud_soft_wood_cutting_data",
+   "cls": "softwood",
+   "mat": "softwood",
+   "sub": "60_200_downcut",
+   "D": 12.7,
+   "Z": 2,
+   "chip": 0.2032,
+   "J": 600.0,
+   "op": "contour",
+   "role": "finish",
+   "grade": "b"
+  },
+  {
+   "id": "onsrud-softwood-60-200-1_4-finish",
+   "vendor": "onsrud",
+   "source": "onsrud_soft_wood_cutting_data",
+   "cls": "softwood",
+   "mat": "softwood",
+   "sub": "60_200_downcut",
+   "D": 6.35,
+   "Z": 2,
+   "chip": 0.1524,
+   "J": 600.0,
+   "op": "contour",
+   "role": "finish",
+   "grade": "b"
+  },
+  {
+   "id": "onsrud-softwood-60-200-3_4-finish",
+   "vendor": "onsrud",
+   "source": "onsrud_soft_wood_cutting_data",
+   "cls": "softwood",
+   "mat": "softwood",
+   "sub": "60_200_downcut",
+   "D": 19.05,
+   "Z": 2,
+   "chip": 0.2286,
+   "J": 600.0,
+   "op": "contour",
+   "role": "finish",
+   "grade": "b"
+  },
+  {
+   "id": "onsrud-softwood-60-200-3_8-finish",
+   "vendor": "onsrud",
+   "source": "onsrud_soft_wood_cutting_data",
+   "cls": "softwood",
+   "mat": "softwood",
+   "sub": "60_200_downcut",
+   "D": 9.525,
+   "Z": 2,
+   "chip": 0.1778,
+   "J": 600.0,
+   "op": "contour",
+   "role": "finish",
+   "grade": "b"
+  },
+  {
+   "id": "onsrud-softwood-60-350-3_8-semi_finish",
+   "vendor": "onsrud",
+   "source": "onsrud_soft_wood_cutting_data",
+   "cls": "softwood",
+   "mat": "softwood",
+   "sub": "60_350_series",
+   "D": 9.525,
+   "Z": 2,
+   "chip": 0.4572,
+   "J": 600.0,
+   "op": "contour",
+   "role": "semi_finish",
+   "grade": "b"
+  },
+  {
+   "id": "onsrud-softwood-60-800-3_8-roughing",
+   "vendor": "onsrud",
+   "source": "onsrud_soft_wood_cutting_data",
+   "cls": "softwood",
+   "mat": "softwood",
+   "sub": "60_800_series",
+   "D": 9.525,
+   "Z": 2,
+   "chip": 0.4572,
+   "J": 600.0,
+   "op": "adaptive",
+   "role": "roughing",
+   "grade": "b"
+  }
+ ],
+ "fits": {
+  "shipped_formula": {
+   "r2": -2.8564144348505276,
+   "rms_factor": 3.8211905965584982,
+   "per_vendor": {
+    "amana": {
+     "n": 73,
+     "median_ratio": 2.1659004965273807,
+     "min": 1.2184715534093413,
+     "max": 3.922945485433006
+    },
+    "freud": {
+     "n": 12,
+     "median_ratio": 4.95345238434156,
+     "min": 2.615343902599698,
+     "max": 7.619314442922792
+    },
+    "onsrud": {
+     "n": 80,
+     "median_ratio": 5.195144115668017,
+     "min": 1.5780801117751977,
+     "max": 8.976204285173107
+    }
+   }
+  },
+  "per_class/point": {
+   "beta": [
+    -3.1116055788287,
+    0.7343503876861643,
+    -2.9165251415255264,
+    0.6464194531536909,
+    -2.7342654897008174,
+    0.6423596322128103,
+    -3.067937465126471,
+    0.8755936108305249
+   ],
+   "r2": 0.5623806251486964,
+   "rms_factor": 1.570806192427602,
+   "per_vendor": {
+    "amana": {
+     "n": 73,
+     "median_ratio": 0.7369234735347426,
+     "min": 0.3353200324227532,
+     "max": 1.2241683979885993
+    },
+    "freud": {
+     "n": 12,
+     "median_ratio": 1.4821797962078596,
+     "min": 0.7783870983207997,
+     "max": 1.910782201600893
+    },
+    "onsrud": {
+     "n": 80,
+     "median_ratio": 1.363708732257214,
+     "min": 0.4123398439563398,
+     "max": 2.930302077829294
+    }
+   },
+   "lovo": {
+    "amana": {
+     "n": 73,
+     "median_ratio": 0.4711348980449946,
+     "min": 0.18060621274765842,
+     "max": 0.8463062690228,
+     "median_abs_factor": 2.1225343402697745
+    },
+    "onsrud": {
+     "n": 80,
+     "median_ratio": 2.210366725808248,
+     "min": 0.4550940756161266,
+     "max": 3.634374133172008,
+     "median_abs_factor": 2.210366725808248
+    },
+    "freud": {
+     "n": 12,
+     "median_ratio": 1.5342567631627917,
+     "min": 0.7709251920160726,
+     "max": 2.0081563473136317,
+     "median_abs_factor": 1.5270419906287556
+    }
+   },
+   "industrial_oos": [
+    {
+     "id": "freud-solid-carbide-half-hardwood",
+     "printed_mid": 0.49529999999999996,
+     "law": 0.2714088654739512,
+     "ratio": 1.824921964634707
+    },
+    {
+     "id": "freud-solid-carbide-half-softwood",
+     "printed_mid": 0.5461,
+     "law": 0.27664070209371244,
+     "ratio": 1.974040681168485
+    },
+    {
+     "id": "freud-solid-carbide-half-mdf-particle",
+     "printed_mid": 0.635,
+     "law": 0.32347870116101757,
+     "ratio": 1.9630349624902101
+    },
+    {
+     "id": "freud-solid-carbide-half-plywood-hardwood",
+     "printed_mid": 0.49529999999999996,
+     "law": 0.4287071391259373,
+     "ratio": 1.1553341542429978
+    }
+   ]
+  },
+  "per_class/vendor": {
+   "beta": [
+    -3.1350920249319256,
+    0.8180385476461505,
+    -3.184055196988335,
+    0.8294560624735572,
+    -2.7692855893273296,
+    0.7174595843097858,
+    -3.19489529076671,
+    0.9249484702646655
+   ],
+   "r2": 0.5339986875419019,
+   "rms_factor": 1.5936116566697434,
+   "per_vendor": {
+    "amana": {
+     "n": 73,
+     "median_ratio": 0.6742161773884637,
+     "min": 0.33676922208745436,
+     "max": 1.0787458838215418
+    },
+    "freud": {
+     "n": 12,
+     "median_ratio": 1.3367788612508904,
+     "min": 0.8232751083400814,
+     "max": 1.6350258253178152
+    },
+    "onsrud": {
+     "n": 80,
+     "median_ratio": 1.2670274731738203,
+     "min": 0.3422506539072989,
+     "max": 2.7683141257376263
+    }
+   },
+   "lovo": {
+    "amana": {
+     "n": 73,
+     "median_ratio": 0.5519813591826144,
+     "min": 0.2472377696954843,
+     "max": 0.8668130080694342,
+     "median_abs_factor": 1.8116553817701762
+    },
+    "onsrud": {
+     "n": 80,
+     "median_ratio": 1.4702889232938918,
+     "min": 0.29672723485444086,
+     "max": 3.6946901726918835,
+     "median_abs_factor": 1.6629257237621293
+    },
+    "freud": {
+     "n": 12,
+     "median_ratio": 1.5560721433383011,
+     "min": 0.784829239421995,
+     "max": 2.0335934202424255,
+     "median_abs_factor": 1.5491012974236866
+    }
+   },
+   "industrial_oos": [
+    {
+     "id": "freud-solid-carbide-half-hardwood",
+     "printed_mid": 0.49529999999999996,
+     "law": 0.3259818266748622,
+     "ratio": 1.519409854997891
+    },
+    {
+     "id": "freud-solid-carbide-half-softwood",
+     "printed_mid": 0.5461,
+     "law": 0.3053620330213321,
+     "ratio": 1.7883690208528655
+    },
+    {
+     "id": "freud-solid-carbide-half-mdf-particle",
+     "printed_mid": 0.635,
+     "law": 0.35388926719445,
+     "ratio": 1.79434659048614
+    },
+    {
+     "id": "freud-solid-carbide-half-plywood-hardwood",
+     "printed_mid": 0.49529999999999996,
+     "law": 0.415594316476288,
+     "ratio": 1.1917872318358802
+    }
+   ]
+  },
+  "class_D/point": {
+   "beta": [
+    -3.0800967122414136,
+    -3.0590460532881085,
+    -2.877218856169402,
+    -2.725341273551628,
+    0.7167395028220973
+   ],
+   "r2": 0.5554569420833231,
+   "rms_factor": 1.5764055968018158,
+   "per_vendor": {
+    "amana": {
+     "n": 73,
+     "median_ratio": 0.731529845473583,
+     "min": 0.3192976836988827,
+     "max": 1.224224225171386
+    },
+    "freud": {
+     "n": 12,
+     "median_ratio": 1.490319484048686,
+     "min": 0.7728870234388456,
+     "max": 1.9222127439262824
+    },
+    "onsrud": {
+     "n": 80,
+     "median_ratio": 1.3754622063897886,
+     "min": 0.38206806374760305,
+     "max": 2.8977733712355134
+    }
+   },
+   "lovo": {
+    "amana": {
+     "n": 73,
+     "median_ratio": 0.4780032890038607,
+     "min": 0.1986790535578337,
+     "max": 0.8458810679537593,
+     "median_abs_factor": 2.092035814406129
+    },
+    "onsrud": {
+     "n": 80,
+     "median_ratio": 2.0864838599827733,
+     "min": 0.46069208274577456,
+     "max": 3.8481176523749117,
+     "median_abs_factor": 2.131900194893788
+    },
+    "freud": {
+     "n": 12,
+     "median_ratio": 1.5469969715177605,
+     "min": 0.767072601466716,
+     "max": 2.032552420980872,
+     "median_abs_factor": 1.5411223395127134
+    }
+   },
+   "industrial_oos": [
+    {
+     "id": "freud-solid-carbide-half-hardwood",
+     "printed_mid": 0.49529999999999996,
+     "law": 0.28271117492695114,
+     "ratio": 1.751964704359419
+    },
+    {
+     "id": "freud-solid-carbide-half-softwood",
+     "printed_mid": 0.5461,
+     "law": 0.2747136373898934,
+     "ratio": 1.9878882067472157
+    },
+    {
+     "id": "freud-solid-carbide-half-mdf-particle",
+     "printed_mid": 0.635,
+     "law": 0.33899601589100614,
+     "ratio": 1.8731783567750393
+    },
+    {
+     "id": "freud-solid-carbide-half-plywood-hardwood",
+     "printed_mid": 0.49529999999999996,
+     "law": 0.4003751615851323,
+     "ratio": 1.2370897286411302
+    }
+   ]
+  },
+  "class_D/vendor": {
+   "beta": [
+    -3.1142215404113633,
+    -3.13819115509345,
+    -2.937522832280538,
+    -2.939509500162689,
+    0.8064321460027002
+   ],
+   "r2": 0.5287938530090214,
+   "rms_factor": 1.5977527685708628,
+   "per_vendor": {
+    "amana": {
+     "n": 73,
+     "median_ratio": 0.6779672897993396,
+     "min": 0.33512355141534733,
+     "max": 1.1548136988506952
+    },
+    "freud": {
+     "n": 12,
+     "median_ratio": 1.3351172331200438,
+     "min": 0.8075670489202083,
+     "max": 1.6191697969464438
+    },
+    "onsrud": {
+     "n": 80,
+     "median_ratio": 1.2995499052460486,
+     "min": 0.3115539471251282,
+     "max": 2.703223289732873
+    }
+   },
+   "lovo": {
+    "amana": {
+     "n": 73,
+     "median_ratio": 0.5491935402975695,
+     "min": 0.2578566579429116,
+     "max": 0.8649376747049466,
+     "median_abs_factor": 1.8208517155139337
+    },
+    "onsrud": {
+     "n": 80,
+     "median_ratio": 1.4699988197558476,
+     "min": 0.28101863995246984,
+     "max": 3.694658811895041,
+     "median_abs_factor": 1.6627864133808756
+    },
+    "freud": {
+     "n": 12,
+     "median_ratio": 1.5698152256948958,
+     "min": 0.7832815032456278,
+     "max": 2.0542151944628704,
+     "median_abs_factor": 1.5639875104797822
+    }
+   },
+   "industrial_oos": [
+    {
+     "id": "freud-solid-carbide-half-hardwood",
+     "printed_mid": 0.49529999999999996,
+     "law": 0.31453381122603336,
+     "ratio": 1.5747114692355368
+    },
+    {
+     "id": "freud-solid-carbide-half-softwood",
+     "printed_mid": 0.5461,
+     "law": 0.3151902771890859,
+     "ratio": 1.7326042061646116
+    },
+    {
+     "id": "freud-solid-carbide-half-mdf-particle",
+     "printed_mid": 0.635,
+     "law": 0.38247778147581146,
+     "ratio": 1.6602271576398968
+    },
+    {
+     "id": "freud-solid-carbide-half-plywood-hardwood",
+     "printed_mid": 0.49529999999999996,
+     "law": 0.38487640654521166,
+     "ratio": 1.2869066317834081
+    }
+   ]
+  },
+  "class_D_Z/point": {
+   "beta": [
+    -2.2422539191632644,
+    -2.2176586333395134,
+    -2.049648243426638,
+    -1.902099789225374,
+    0.7092699584693304,
+    -1.1000941365286487
+   ],
+   "r2": 0.6007511786513827,
+   "rms_factor": 1.5393144840826785,
+   "per_vendor": {
+    "amana": {
+     "n": 73,
+     "median_ratio": 0.7680158295932417,
+     "min": 0.30466616170242833,
+     "max": 1.4553289995218093
+    },
+    "freud": {
+     "n": 12,
+     "median_ratio": 1.398749088113858,
+     "min": 0.7374701881107064,
+     "max": 1.8169258109705682
+    },
+    "onsrud": {
+     "n": 80,
+     "median_ratio": 1.310793483618994,
+     "min": 0.3659762918191957,
+     "max": 2.710834759148887
+    }
+   },
+   "lovo": {
+    "amana": null,
+    "onsrud": {
+     "n": 80,
+     "median_ratio": 1.9871115825258832,
+     "min": 0.4384662315468764,
+     "max": 3.7298049369943285,
+     "median_abs_factor": 2.071393150900224
+    },
+    "freud": {
+     "n": 12,
+     "median_ratio": 1.4454955219318342,
+     "min": 0.7323245967125322,
+     "max": 1.917763711640294,
+     "median_abs_factor": 1.46586711904083
+    }
+   },
+   "industrial_oos": [
+    {
+     "id": "freud-solid-carbide-half-hardwood",
+     "printed_mid": 0.49529999999999996,
+     "law": 0.30044565429804787,
+     "ratio": 1.6485510537910888
+    },
+    {
+     "id": "freud-solid-carbide-half-softwood",
+     "printed_mid": 0.5461,
+     "law": 0.2910286571707037,
+     "ratio": 1.8764475131384861
+    },
+    {
+     "id": "freud-solid-carbide-half-mdf-particle",
+     "printed_mid": 0.635,
+     "law": 0.3552866287975146,
+     "ratio": 1.787289327913041
+    },
+    {
+     "id": "freud-solid-carbide-half-plywood-hardwood",
+     "printed_mid": 0.49529999999999996,
+     "law": 0.4175824540628741,
+     "ratio": 1.1861130542746037
+    }
+   ]
+  },
+  "class_D_Z/vendor": {
+   "beta": [
+    -2.177431685723856,
+    -2.2040114573713527,
+    -2.0067368736977667,
+    -2.007187719669714,
+    0.801265070315395,
+    -1.2644278546094379
+   ],
+   "r2": 0.5783093385777573,
+   "rms_factor": 1.5578306014228995,
+   "per_vendor": {
+    "amana": {
+     "n": 73,
+     "median_ratio": 0.7532417342705381,
+     "min": 0.3199495099376828,
+     "max": 1.501668779098181
+    },
+    "freud": {
+     "n": 12,
+     "median_ratio": 1.270538670354068,
+     "min": 0.7668188174240318,
+     "max": 1.5482314765589906
+    },
+    "onsrud": {
+     "n": 80,
+     "median_ratio": 1.241626669468073,
+     "min": 0.2996001855161686,
+     "max": 2.560132926945826
+    }
+   },
+   "lovo": {
+    "amana": null,
+    "onsrud": {
+     "n": 80,
+     "median_ratio": 1.3925358478649534,
+     "min": 0.2609696719832072,
+     "max": 3.461440487325126,
+     "median_abs_factor": 1.5788569799854357
+    },
+    "freud": {
+     "n": 12,
+     "median_ratio": 1.4665368040977023,
+     "min": 0.7472234753154026,
+     "max": 1.9356725158716173,
+     "median_abs_factor": 1.4611932722152774
+    }
+   },
+   "industrial_oos": [
+    {
+     "id": "freud-solid-carbide-half-hardwood",
+     "printed_mid": 0.49529999999999996,
+     "law": 0.3296247625429906,
+     "ratio": 1.5026176922475645
+    },
+    {
+     "id": "freud-solid-carbide-half-softwood",
+     "printed_mid": 0.5461,
+     "law": 0.3327633736228881,
+     "ratio": 1.6411060930608325
+    },
+    {
+     "id": "freud-solid-carbide-half-mdf-particle",
+     "printed_mid": 0.635,
+     "law": 0.40103550186424886,
+     "ratio": 1.5834009633764257
+    },
+    {
+     "id": "freud-solid-carbide-half-plywood-hardwood",
+     "printed_mid": 0.49529999999999996,
+     "law": 0.4036392474838645,
+     "ratio": 1.2270858274746923
+    }
+   ]
+  },
+  "janka_D_Z/point": {
+   "beta": [
+    -2.111786427542773,
+    0.7433805056742587,
+    -1.1508304259791389,
+    -0.0022044865556748593
+   ],
+   "r2": 0.5598724223438215,
+   "rms_factor": 1.5728374348166185,
+   "per_vendor": {
+    "amana": {
+     "n": 73,
+     "median_ratio": 0.7828902607254842,
+     "min": 0.36582141703403853,
+     "max": 1.5762328523284317
+    },
+    "freud": {
+     "n": 12,
+     "median_ratio": 1.3042420949581826,
+     "min": 0.6923596030821695,
+     "max": 1.7713754469026028
+    },
+    "onsrud": {
+     "n": 80,
+     "median_ratio": 1.4064776387014088,
+     "min": 0.36528745869848817,
+     "max": 2.569515812609674
+    }
+   },
+   "lovo": {
+    "amana": null,
+    "onsrud": {
+     "n": 80,
+     "median_ratio": 2.023709759584409,
+     "min": 0.5491801271847289,
+     "max": 3.1722295121371276,
+     "median_abs_factor": 2.023548032742335
+    },
+    "freud": {
+     "n": 12,
+     "median_ratio": 1.3296423074545727,
+     "min": 0.697674527656427,
+     "max": 1.8138980980631265,
+     "median_abs_factor": 1.378818348733216
+    }
+   },
+   "industrial_oos": [
+    {
+     "id": "freud-solid-carbide-half-hardwood",
+     "printed_mid": 0.49529999999999996,
+     "law": 0.3523726464740343,
+     "ratio": 1.4056142125563589
+    },
+    {
+     "id": "freud-solid-carbide-half-softwood",
+     "printed_mid": 0.5461,
+     "law": 0.35444728758917404,
+     "ratio": 1.5407086444768145
+    },
+    {
+     "id": "freud-solid-carbide-half-mdf-particle",
+     "printed_mid": 0.635,
+     "law": 0.35302085418198703,
+     "ratio": 1.7987605901396662
+    },
+    {
+     "id": "freud-solid-carbide-half-plywood-hardwood",
+     "printed_mid": 0.49529999999999996,
+     "law": 0.35324476888223366,
+     "ratio": 1.402143905958662
+    }
+   ]
+  },
+  "janka_D_Z/vendor": {
+   "beta": [
+    -2.1172115314706166,
+    0.8140693919306176,
+    -1.2727202678032343,
+    0.007842347187605637
+   ],
+   "r2": 0.549531562198476,
+   "rms_factor": 1.581178789675385,
+   "per_vendor": {
+    "amana": {
+     "n": 73,
+     "median_ratio": 0.7330497837014566,
+     "min": 0.3483984040970992,
+     "max": 1.659664305013606
+    },
+    "freud": {
+     "n": 12,
+     "median_ratio": 1.228976651764165,
+     "min": 0.6919305263975601,
+     "max": 1.6903136102550411
+    },
+    "onsrud": {
+     "n": 80,
+     "median_ratio": 1.2854113014922834,
+     "min": 0.32252565035234443,
+     "max": 2.577527472907843
+    }
+   },
+   "lovo": {
+    "amana": null,
+    "onsrud": {
+     "n": 80,
+     "median_ratio": 1.3726207309116345,
+     "min": 0.33309145442021326,
+     "max": 2.863239083481933,
+     "median_abs_factor": 1.5422776520962376
+    },
+    "freud": {
+     "n": 12,
+     "median_ratio": 1.3478970753236896,
+     "min": 0.7061298020825411,
+     "max": 1.8350691233901981,
+     "median_abs_factor": 1.3870192662356184
+    }
+   },
+   "industrial_oos": [
+    {
+     "id": "freud-solid-carbide-half-hardwood",
+     "printed_mid": 0.49529999999999996,
+     "law": 0.37034461439054134,
+     "ratio": 1.3374030045369818
+    },
+    {
+     "id": "freud-solid-carbide-half-softwood",
+     "printed_mid": 0.5461,
+     "law": 0.3706574304904255,
+     "ratio": 1.4733280789149226
+    },
+    {
+     "id": "freud-solid-carbide-half-mdf-particle",
+     "printed_mid": 0.635,
+     "law": 0.37044252067429506,
+     "ratio": 1.7141660704720028
+    },
+    {
+     "id": "freud-solid-carbide-half-plywood-hardwood",
+     "printed_mid": 0.49529999999999996,
+     "law": 0.37047630532713866,
+     "ratio": 1.336927606105981
+    }
+   ]
+  },
+  "class_D_Z_vendor/point": {
+   "r2": 0.8006335971691195,
+   "rms_factor": 1.3563595064490228,
+   "beta": [
+    -2.983407332191849,
+    -2.998399110404372,
+    -2.830417939416105,
+    -2.7594795586594913,
+    0.4581793427323762,
+    0.05741618090589697,
+    0.7174028095385679,
+    0.7893116905593842
+   ],
+   "vendor_order": [
+    "amana",
+    "freud",
+    "onsrud"
+   ],
+   "vendor_offsets_vs_first": {
+    "freud": 2.049104379295952,
+    "onsrud": 2.2018803295260283
+   }
+  },
+  "class_D_Z_series/point": {
+   "r2": 0.9532728699841014,
+   "rms_factor": 1.1590071458786864,
+   "n_series": 37,
+   "class_offsets": [
+    -3.2989861578013886,
+    -3.3105579912486953,
+    -2.978808338760859,
+    -3.313841936053745
+   ],
+   "D_slope": 0.5604269430290472,
+   "Z_slope": 0.025666209454264125
+  },
+  "paired_hard_over_soft": {
+   "amana": {
+    "n": 14,
+    "median": 1.0,
+    "min": 1.0,
+    "max": 1.000246062992126
+   },
+   "freud": {
+    "n": 3,
+    "median": 0.8636363636363636,
+    "min": 0.7000000000000001,
+    "max": 0.9069767441860463
+   },
+   "onsrud": {
+    "n": 11,
+    "median": 1.0,
+    "min": 0.9166666666666667,
+    "max": 1.0
+   }
+  },
+  "paired_mdf_over_soft": {
+   "amana": {
+    "n": 19,
+    "median": 1.25,
+    "min": 1.0,
+    "max": 2.0
+   },
+   "freud": {
+    "n": 3,
+    "median": 1.1627906976744184,
+    "min": 1.0999999999999999,
+    "max": 1.3636363636363638
+   },
+   "onsrud": {
+    "n": 12,
+    "median": 0.8452380952380952,
+    "min": 0.7500000000000001,
+    "max": 1.0588235294117647
+   }
+  },
+  "paired_ply_over_soft": {
+   "amana": {
+    "n": 14,
+    "median": 1.0,
+    "min": 1.0,
+    "max": 1.000246062992126
+   },
+   "freud": {
+    "n": 2,
+    "median": 0.7943974630021141,
+    "min": 0.6818181818181819,
+    "max": 0.9069767441860463
+   },
+   "onsrud": {
+    "n": 8,
+    "median": 1.0669642857142856,
+    "min": 1.0,
+    "max": 1.1666666666666667
+   }
+  },
+  "paired_3f_over_2f": {
+   "amana": {
+    "n": 20,
+    "median": 1.0,
+    "min": 0.625,
+    "max": 1.25
+   }
+  },
+  "anchored_series_law_industrial_oos": [
+   {
+    "id": "freud-solid-carbide-half-hardwood",
+    "anchor": "freud-solid-carbide-three-eighth-hardwood",
+    "anchor_D": 9.525,
+    "printed_mid": 0.49529999999999996,
+    "law": 0.4476555878147854,
+    "ratio": 1.1064309560342784
+   },
+   {
+    "id": "freud-solid-carbide-half-softwood",
+    "anchor": "freud-solid-carbide-quarter-softwood",
+    "anchor_D": 6.35,
+    "printed_mid": 0.5461,
+    "law": 0.41203273591328937,
+    "ratio": 1.3253801273569792
+   },
+   {
+    "id": "freud-solid-carbide-half-mdf-particle",
+    "anchor": "freud-solid-carbide-quarter-mdf-particle",
+    "anchor_D": 6.35,
+    "printed_mid": 0.635,
+    "law": 0.5618628216999401,
+    "ratio": 1.1301691008470365
+   },
+   {
+    "id": "freud-solid-carbide-half-plywood-hardwood",
+    "anchor": "freud-solid-carbide-quarter-plywood-hardwood",
+    "anchor_D": 6.35,
+    "printed_mid": 0.49529999999999996,
+    "law": 0.28093141084997003,
+    "ratio": 1.7630637973213767
+   }
+  ],
+  "per_vendor_slope": {
+   "amana": {
+    "n": 73,
+    "D_slope": 0.5327140952426901,
+    "Z_slope": 0.053958779082911836,
+    "D_range": [
+     0.79375,
+     12.7
+    ]
+   },
+   "onsrud": {
+    "n": 80,
+    "D_slope": 0.1868618893993217,
+    "Z_slope": null,
+    "D_range": [
+     3.175,
+     19.05
+    ]
+   },
+   "freud": {
+    "n": 12,
+    "D_slope": 1.1550297106548726,
+    "Z_slope": null,
+    "D_range": [
+     3.175,
+     12.7
+    ]
+   }
+  }
+ },
+ "fm1_formula_cells": 60,
+ "cells": [
+  {
+   "tool": "EndMill",
+   "D": 3.175,
+   "Z": 2,
+   "op": "Trace",
+   "mat": "softwood",
+   "rpm": 20051.0,
+   "feed": 1947.0,
+   "chip": 0.0486,
+   "warnings": "LongToolDerate",
+   "repro_chip": 0.04855957943953748,
+   "repro_rpm": 20051.01645252225,
+   "laws": {
+    "per_class/point": {
+     "chip": 0.10401657982844874,
+     "feed_sfm_rpm": 4000,
+     "feed_vendor_rpm": 3744
+    },
+    "per_class/vendor": {
+     "chip": 0.11191609421020718,
+     "feed_sfm_rpm": 4000,
+     "feed_vendor_rpm": 4000
+    },
+    "class_D/point": {
+     "chip": 0.10518420902944645,
+     "feed_sfm_rpm": 4000,
+     "feed_vendor_rpm": 3786
+    },
+    "class_D/vendor": {
+     "chip": 0.11275428158586176,
+     "feed_sfm_rpm": 4000,
+     "feed_vendor_rpm": 4000
+    },
+    "class_D_Z/point": {
+     "chip": 0.11243769063065177,
+     "feed_sfm_rpm": 4000,
+     "feed_vendor_rpm": 4000
+    },
+    "class_D_Z/vendor": {
+     "chip": 0.11905631804971105,
+     "feed_sfm_rpm": 4000,
+     "feed_vendor_rpm": 4000
+    },
+    "janka_D_Z/point": {
+     "chip": 0.12865149486807256,
+     "feed_sfm_rpm": 4000,
+     "feed_vendor_rpm": 4000
+    },
+    "janka_D_Z/vendor": {
+     "chip": 0.12759508661251878,
+     "feed_sfm_rpm": 4000,
+     "feed_vendor_rpm": 4000
+    },
+    "roughing_row_x1": {
+     "chip": 0.1016,
+     "row": "amana-flat-softwood-pocket-3175-2f-spektra",
+     "feed_sfm_rpm": 4000,
+     "feed_vendor_rpm": 3657,
+     "pocket_cell_rpm": 18000.0,
+     "pocket_cell_feed": 3657.0
+    },
+    "anchored_series_law": {
+     "chip": 0.1016,
+     "b": 0.5604269430290472,
+     "feed_sfm_rpm": 4000,
+     "feed_vendor_rpm": 3657
+    }
+   }
+  },
+  {
+   "tool": "EndMill",
+   "D": 3.175,
+   "Z": 2,
+   "op": "Trace",
+   "mat": "hardwood",
+   "rpm": 20051.0,
+   "feed": 1248.0,
+   "chip": 0.0311,
+   "warnings": "LongToolDerate",
+   "repro_chip": 0.031126742565508767,
+   "repro_rpm": 20051.01645252225,
+   "laws": {
+    "per_class/point": {
+     "chip": 0.11421052608886037,
+     "feed_sfm_rpm": 4000,
+     "feed_vendor_rpm": 4000
+    },
+    "per_class/vendor": {
+     "chip": 0.10798334493465199,
+     "feed_sfm_rpm": 4000,
+     "feed_vendor_rpm": 3887
+    },
+    "class_D/point": {
+     "chip": 0.10742187548685855,
+     "feed_sfm_rpm": 4000,
+     "feed_vendor_rpm": 3867
+    },
+    "class_D/vendor": {
+     "chip": 0.11008373870487599,
+     "feed_sfm_rpm": 4000,
+     "feed_vendor_rpm": 3963
+    },
+    "class_D_Z/point": {
+     "chip": 0.11523741666544943,
+     "feed_sfm_rpm": 4000,
+     "feed_vendor_rpm": 4000
+    },
+    "class_D_Z/vendor": {
+     "chip": 0.1159335138626893,
+     "feed_sfm_rpm": 4000,
+     "feed_vendor_rpm": 4000
+    },
+    "janka_D_Z/point": {
+     "chip": 0.128401483281585,
+     "feed_sfm_rpm": 4000,
+     "feed_vendor_rpm": 4000
+    },
+    "janka_D_Z/vendor": {
+     "chip": 0.12848110700194926,
+     "feed_sfm_rpm": 4000,
+     "feed_vendor_rpm": 4000
+    },
+    "roughing_row_x1": {
+     "chip": 0.1016,
+     "row": "amana-flat-hardwood-pocket-3175-2f-spektra",
+     "feed_sfm_rpm": 4000,
+     "feed_vendor_rpm": 3657,
+     "pocket_cell_rpm": 18000.0,
+     "pocket_cell_feed": 3657.0
+    },
+    "anchored_series_law": {
+     "chip": 0.1016,
+     "b": 0.5604269430290472,
+     "feed_sfm_rpm": 4000,
+     "feed_vendor_rpm": 3657
+    }
+   }
+  },
+  {
+   "tool": "EndMill",
+   "D": 3.175,
+   "Z": 2,
+   "op": "Trace",
+   "mat": "mdf",
+   "rpm": 17043.0,
+   "feed": 1219.0,
+   "chip": 0.0358,
+   "warnings": "LongToolDerate",
+   "repro_chip": 0.03577677862109845,
+   "repro_rpm": 17043.36398464391,
+   "laws": {
+    "per_class/point": {
+     "chip": 0.13640286847817565,
+     "feed_sfm_rpm": 4000,
+     "feed_vendor_rpm": 4000
+    },
+    "per_class/vendor": {
+     "chip": 0.14364661534154213,
+     "feed_sfm_rpm": 4000,
+     "feed_vendor_rpm": 4000
+    },
+    "class_D/point": {
+     "chip": 0.12884254028125386,
+     "feed_sfm_rpm": 4000,
+     "feed_vendor_rpm": 4000
+    },
+    "class_D/vendor": {
+     "chip": 0.13454647251843965,
+     "feed_sfm_rpm": 4000,
+     "feed_vendor_rpm": 4000
+    },
+    "class_D_Z/point": {
+     "chip": 0.1363199754353464,
+     "feed_sfm_rpm": 4000,
+     "feed_vendor_rpm": 4000
+    },
+    "class_D_Z/vendor": {
+     "chip": 0.1412161159411788,
+     "feed_sfm_rpm": 4000,
+     "feed_vendor_rpm": 4000
+    },
+    "janka_D_Z/point": {
+     "chip": 0.1284797031964706,
+     "feed_sfm_rpm": 4000,
+     "feed_vendor_rpm": 4000
+    },
+    "janka_D_Z/vendor": {
+     "chip": 0.1282030572123261,
+     "feed_sfm_rpm": 4000,
+     "feed_vendor_rpm": 4000
+    },
+    "roughing_row_x1": {
+     "chip": 0.127,
+     "row": "amana-flat-mdf-pocket-3175-2f-spektra",
+     "feed_sfm_rpm": 4000,
+     "feed_vendor_rpm": 4000,
+     "pocket_cell_rpm": 15748.0,
+     "pocket_cell_feed": 3999.0
+    },
+    "anchored_series_law": {
+     "chip": 0.127,
+     "b": 0.5604269430290472,
+     "feed_sfm_rpm": 4000,
+     "feed_vendor_rpm": 4000
+    }
+   }
+  },
+  {
+   "tool": "EndMill",
+   "D": 3.175,
+   "Z": 2,
+   "op": "Trace",
+   "mat": "plywood_hardwood",
+   "rpm": 18046.0,
+   "feed": 1235.0,
+   "chip": 0.0342,
+   "warnings": "LongToolDerate",
+   "repro_chip": 0.03424173792277971,
+   "repro_rpm": 18045.914807270023,
+   "laws": {
+    "per_class/point": {
+     "chip": 0.1279190696098432,
+     "feed_sfm_rpm": 4000,
+     "feed_vendor_rpm": 4000
+    },
+    "per_class/vendor": {
+     "chip": 0.11927837124048095,
+     "feed_sfm_rpm": 4000,
+     "feed_vendor_rpm": 4000
+    },
+    "class_D/point": {
+     "chip": 0.14997500148544762,
+     "feed_sfm_rpm": 4000,
+     "feed_vendor_rpm": 4000
+    },
+    "class_D/vendor": {
+     "chip": 0.1342794387044099,
+     "feed_sfm_rpm": 4000,
+     "feed_vendor_rpm": 4000
+    },
+    "class_D_Z/point": {
+     "chip": 0.15799341217832277,
+     "feed_sfm_rpm": 4000,
+     "feed_vendor_rpm": 4000
+    },
+    "class_D_Z/vendor": {
+     "chip": 0.14115246357391753,
+     "feed_sfm_rpm": 4000,
+     "feed_vendor_rpm": 4000
+    },
+    "janka_D_Z/point": {
+     "chip": 0.1284550611728625,
+     "feed_sfm_rpm": 4000,
+     "feed_vendor_rpm": 4000
+    },
+    "janka_D_Z/vendor": {
+     "chip": 0.1282905694265171,
+     "feed_sfm_rpm": 4000,
+     "feed_vendor_rpm": 4000
+    },
+    "roughing_row_x1": {
+     "chip": 0.1016,
+     "row": "amana-flat-plywood-hardwood-pocket-3175-2f-spektra",
+     "feed_sfm_rpm": 3666,
+     "feed_vendor_rpm": 3657,
+     "pocket_cell_rpm": 18000.0,
+     "pocket_cell_feed": 3657.0
+    },
+    "anchored_series_law": {
+     "chip": 0.1016,
+     "b": 0.5604269430290472,
+     "feed_sfm_rpm": 3666,
+     "feed_vendor_rpm": 3657
+    }
+   }
+  },
+  {
+   "tool": "EndMill",
+   "D": 3.175,
+   "Z": 2,
+   "op": "RampFinish",
+   "mat": "softwood",
+   "rpm": 20051.0,
+   "feed": 1947.0,
+   "chip": 0.0486,
+   "warnings": "LongToolDerate",
+   "repro_chip": 0.04855957943953748,
+   "repro_rpm": 20051.01645252225,
+   "laws": {
+    "per_class/point": {
+     "chip": 0.10401657982844874,
+     "feed_sfm_rpm": 4000,
+     "feed_vendor_rpm": 3744
+    },
+    "per_class/vendor": {
+     "chip": 0.11191609421020718,
+     "feed_sfm_rpm": 4000,
+     "feed_vendor_rpm": 4000
+    },
+    "class_D/point": {
+     "chip": 0.10518420902944645,
+     "feed_sfm_rpm": 4000,
+     "feed_vendor_rpm": 3786
+    },
+    "class_D/vendor": {
+     "chip": 0.11275428158586176,
+     "feed_sfm_rpm": 4000,
+     "feed_vendor_rpm": 4000
+    },
+    "class_D_Z/point": {
+     "chip": 0.11243769063065177,
+     "feed_sfm_rpm": 4000,
+     "feed_vendor_rpm": 4000
+    },
+    "class_D_Z/vendor": {
+     "chip": 0.11905631804971105,
+     "feed_sfm_rpm": 4000,
+     "feed_vendor_rpm": 4000
+    },
+    "janka_D_Z/point": {
+     "chip": 0.12865149486807256,
+     "feed_sfm_rpm": 4000,
+     "feed_vendor_rpm": 4000
+    },
+    "janka_D_Z/vendor": {
+     "chip": 0.12759508661251878,
+     "feed_sfm_rpm": 4000,
+     "feed_vendor_rpm": 4000
+    },
+    "roughing_row_x1": {
+     "chip": 0.1016,
+     "row": "amana-flat-softwood-pocket-3175-2f-spektra",
+     "feed_sfm_rpm": 4000,
+     "feed_vendor_rpm": 3657,
+     "pocket_cell_rpm": 18000.0,
+     "pocket_cell_feed": 3657.0
+    },
+    "anchored_series_law": {
+     "chip": 0.1016,
+     "b": 0.5604269430290472,
+     "feed_sfm_rpm": 4000,
+     "feed_vendor_rpm": 3657
+    }
+   }
+  },
+  {
+   "tool": "EndMill",
+   "D": 3.175,
+   "Z": 2,
+   "op": "RampFinish",
+   "mat": "hardwood",
+   "rpm": 20051.0,
+   "feed": 1248.0,
+   "chip": 0.0311,
+   "warnings": "LongToolDerate",
+   "repro_chip": 0.031126742565508767,
+   "repro_rpm": 20051.01645252225,
+   "laws": {
+    "per_class/point": {
+     "chip": 0.11421052608886037,
+     "feed_sfm_rpm": 4000,
+     "feed_vendor_rpm": 4000
+    },
+    "per_class/vendor": {
+     "chip": 0.10798334493465199,
+     "feed_sfm_rpm": 4000,
+     "feed_vendor_rpm": 3887
+    },
+    "class_D/point": {
+     "chip": 0.10742187548685855,
+     "feed_sfm_rpm": 4000,
+     "feed_vendor_rpm": 3867
+    },
+    "class_D/vendor": {
+     "chip": 0.11008373870487599,
+     "feed_sfm_rpm": 4000,
+     "feed_vendor_rpm": 3963
+    },
+    "class_D_Z/point": {
+     "chip": 0.11523741666544943,
+     "feed_sfm_rpm": 4000,
+     "feed_vendor_rpm": 4000
+    },
+    "class_D_Z/vendor": {
+     "chip": 0.1159335138626893,
+     "feed_sfm_rpm": 4000,
+     "feed_vendor_rpm": 4000
+    },
+    "janka_D_Z/point": {
+     "chip": 0.128401483281585,
+     "feed_sfm_rpm": 4000,
+     "feed_vendor_rpm": 4000
+    },
+    "janka_D_Z/vendor": {
+     "chip": 0.12848110700194926,
+     "feed_sfm_rpm": 4000,
+     "feed_vendor_rpm": 4000
+    },
+    "roughing_row_x1": {
+     "chip": 0.1016,
+     "row": "amana-flat-hardwood-pocket-3175-2f-spektra",
+     "feed_sfm_rpm": 4000,
+     "feed_vendor_rpm": 3657,
+     "pocket_cell_rpm": 18000.0,
+     "pocket_cell_feed": 3657.0
+    },
+    "anchored_series_law": {
+     "chip": 0.1016,
+     "b": 0.5604269430290472,
+     "feed_sfm_rpm": 4000,
+     "feed_vendor_rpm": 3657
+    }
+   }
+  },
+  {
+   "tool": "EndMill",
+   "D": 3.175,
+   "Z": 2,
+   "op": "RampFinish",
+   "mat": "mdf",
+   "rpm": 17043.0,
+   "feed": 1219.0,
+   "chip": 0.0358,
+   "warnings": "LongToolDerate",
+   "repro_chip": 0.03577677862109845,
+   "repro_rpm": 17043.36398464391,
+   "laws": {
+    "per_class/point": {
+     "chip": 0.13640286847817565,
+     "feed_sfm_rpm": 4000,
+     "feed_vendor_rpm": 4000
+    },
+    "per_class/vendor": {
+     "chip": 0.14364661534154213,
+     "feed_sfm_rpm": 4000,
+     "feed_vendor_rpm": 4000
+    },
+    "class_D/point": {
+     "chip": 0.12884254028125386,
+     "feed_sfm_rpm": 4000,
+     "feed_vendor_rpm": 4000
+    },
+    "class_D/vendor": {
+     "chip": 0.13454647251843965,
+     "feed_sfm_rpm": 4000,
+     "feed_vendor_rpm": 4000
+    },
+    "class_D_Z/point": {
+     "chip": 0.1363199754353464,
+     "feed_sfm_rpm": 4000,
+     "feed_vendor_rpm": 4000
+    },
+    "class_D_Z/vendor": {
+     "chip": 0.1412161159411788,
+     "feed_sfm_rpm": 4000,
+     "feed_vendor_rpm": 4000
+    },
+    "janka_D_Z/point": {
+     "chip": 0.1284797031964706,
+     "feed_sfm_rpm": 4000,
+     "feed_vendor_rpm": 4000
+    },
+    "janka_D_Z/vendor": {
+     "chip": 0.1282030572123261,
+     "feed_sfm_rpm": 4000,
+     "feed_vendor_rpm": 4000
+    },
+    "roughing_row_x1": {
+     "chip": 0.127,
+     "row": "amana-flat-mdf-pocket-3175-2f-spektra",
+     "feed_sfm_rpm": 4000,
+     "feed_vendor_rpm": 4000,
+     "pocket_cell_rpm": 15748.0,
+     "pocket_cell_feed": 3999.0
+    },
+    "anchored_series_law": {
+     "chip": 0.127,
+     "b": 0.5604269430290472,
+     "feed_sfm_rpm": 4000,
+     "feed_vendor_rpm": 4000
+    }
+   }
+  },
+  {
+   "tool": "EndMill",
+   "D": 3.175,
+   "Z": 2,
+   "op": "RampFinish",
+   "mat": "plywood_hardwood",
+   "rpm": 18046.0,
+   "feed": 1235.0,
+   "chip": 0.0342,
+   "warnings": "LongToolDerate",
+   "repro_chip": 0.03424173792277971,
+   "repro_rpm": 18045.914807270023,
+   "laws": {
+    "per_class/point": {
+     "chip": 0.1279190696098432,
+     "feed_sfm_rpm": 4000,
+     "feed_vendor_rpm": 4000
+    },
+    "per_class/vendor": {
+     "chip": 0.11927837124048095,
+     "feed_sfm_rpm": 4000,
+     "feed_vendor_rpm": 4000
+    },
+    "class_D/point": {
+     "chip": 0.14997500148544762,
+     "feed_sfm_rpm": 4000,
+     "feed_vendor_rpm": 4000
+    },
+    "class_D/vendor": {
+     "chip": 0.1342794387044099,
+     "feed_sfm_rpm": 4000,
+     "feed_vendor_rpm": 4000
+    },
+    "class_D_Z/point": {
+     "chip": 0.15799341217832277,
+     "feed_sfm_rpm": 4000,
+     "feed_vendor_rpm": 4000
+    },
+    "class_D_Z/vendor": {
+     "chip": 0.14115246357391753,
+     "feed_sfm_rpm": 4000,
+     "feed_vendor_rpm": 4000
+    },
+    "janka_D_Z/point": {
+     "chip": 0.1284550611728625,
+     "feed_sfm_rpm": 4000,
+     "feed_vendor_rpm": 4000
+    },
+    "janka_D_Z/vendor": {
+     "chip": 0.1282905694265171,
+     "feed_sfm_rpm": 4000,
+     "feed_vendor_rpm": 4000
+    },
+    "roughing_row_x1": {
+     "chip": 0.1016,
+     "row": "amana-flat-plywood-hardwood-pocket-3175-2f-spektra",
+     "feed_sfm_rpm": 3666,
+     "feed_vendor_rpm": 3657,
+     "pocket_cell_rpm": 18000.0,
+     "pocket_cell_feed": 3657.0
+    },
+    "anchored_series_law": {
+     "chip": 0.1016,
+     "b": 0.5604269430290472,
+     "feed_sfm_rpm": 3666,
+     "feed_vendor_rpm": 3657
+    }
+   }
+  },
+  {
+   "tool": "EndMill",
+   "D": 3.175,
+   "Z": 2,
+   "op": "RadialFinish",
+   "mat": "softwood",
+   "rpm": 20051.0,
+   "feed": 1947.0,
+   "chip": 0.0486,
+   "warnings": "LongToolDerate",
+   "repro_chip": 0.04855957943953748,
+   "repro_rpm": 20051.01645252225,
+   "laws": {
+    "per_class/point": {
+     "chip": 0.10401657982844874,
+     "feed_sfm_rpm": 4000,
+     "feed_vendor_rpm": 3744
+    },
+    "per_class/vendor": {
+     "chip": 0.11191609421020718,
+     "feed_sfm_rpm": 4000,
+     "feed_vendor_rpm": 4000
+    },
+    "class_D/point": {
+     "chip": 0.10518420902944645,
+     "feed_sfm_rpm": 4000,
+     "feed_vendor_rpm": 3786
+    },
+    "class_D/vendor": {
+     "chip": 0.11275428158586176,
+     "feed_sfm_rpm": 4000,
+     "feed_vendor_rpm": 4000
+    },
+    "class_D_Z/point": {
+     "chip": 0.11243769063065177,
+     "feed_sfm_rpm": 4000,
+     "feed_vendor_rpm": 4000
+    },
+    "class_D_Z/vendor": {
+     "chip": 0.11905631804971105,
+     "feed_sfm_rpm": 4000,
+     "feed_vendor_rpm": 4000
+    },
+    "janka_D_Z/point": {
+     "chip": 0.12865149486807256,
+     "feed_sfm_rpm": 4000,
+     "feed_vendor_rpm": 4000
+    },
+    "janka_D_Z/vendor": {
+     "chip": 0.12759508661251878,
+     "feed_sfm_rpm": 4000,
+     "feed_vendor_rpm": 4000
+    },
+    "roughing_row_x1": {
+     "chip": 0.1016,
+     "row": "amana-flat-softwood-pocket-3175-2f-spektra",
+     "feed_sfm_rpm": 4000,
+     "feed_vendor_rpm": 3657,
+     "pocket_cell_rpm": 18000.0,
+     "pocket_cell_feed": 3657.0
+    },
+    "anchored_series_law": {
+     "chip": 0.1016,
+     "b": 0.5604269430290472,
+     "feed_sfm_rpm": 4000,
+     "feed_vendor_rpm": 3657
+    }
+   }
+  },
+  {
+   "tool": "EndMill",
+   "D": 3.175,
+   "Z": 2,
+   "op": "RadialFinish",
+   "mat": "hardwood",
+   "rpm": 20051.0,
+   "feed": 1248.0,
+   "chip": 0.0311,
+   "warnings": "LongToolDerate",
+   "repro_chip": 0.031126742565508767,
+   "repro_rpm": 20051.01645252225,
+   "laws": {
+    "per_class/point": {
+     "chip": 0.11421052608886037,
+     "feed_sfm_rpm": 4000,
+     "feed_vendor_rpm": 4000
+    },
+    "per_class/vendor": {
+     "chip": 0.10798334493465199,
+     "feed_sfm_rpm": 4000,
+     "feed_vendor_rpm": 3887
+    },
+    "class_D/point": {
+     "chip": 0.10742187548685855,
+     "feed_sfm_rpm": 4000,
+     "feed_vendor_rpm": 3867
+    },
+    "class_D/vendor": {
+     "chip": 0.11008373870487599,
+     "feed_sfm_rpm": 4000,
+     "feed_vendor_rpm": 3963
+    },
+    "class_D_Z/point": {
+     "chip": 0.11523741666544943,
+     "feed_sfm_rpm": 4000,
+     "feed_vendor_rpm": 4000
+    },
+    "class_D_Z/vendor": {
+     "chip": 0.1159335138626893,
+     "feed_sfm_rpm": 4000,
+     "feed_vendor_rpm": 4000
+    },
+    "janka_D_Z/point": {
+     "chip": 0.128401483281585,
+     "feed_sfm_rpm": 4000,
+     "feed_vendor_rpm": 4000
+    },
+    "janka_D_Z/vendor": {
+     "chip": 0.12848110700194926,
+     "feed_sfm_rpm": 4000,
+     "feed_vendor_rpm": 4000
+    },
+    "roughing_row_x1": {
+     "chip": 0.1016,
+     "row": "amana-flat-hardwood-pocket-3175-2f-spektra",
+     "feed_sfm_rpm": 4000,
+     "feed_vendor_rpm": 3657,
+     "pocket_cell_rpm": 18000.0,
+     "pocket_cell_feed": 3657.0
+    },
+    "anchored_series_law": {
+     "chip": 0.1016,
+     "b": 0.5604269430290472,
+     "feed_sfm_rpm": 4000,
+     "feed_vendor_rpm": 3657
+    }
+   }
+  },
+  {
+   "tool": "EndMill",
+   "D": 3.175,
+   "Z": 2,
+   "op": "RadialFinish",
+   "mat": "mdf",
+   "rpm": 17043.0,
+   "feed": 1219.0,
+   "chip": 0.0358,
+   "warnings": "LongToolDerate",
+   "repro_chip": 0.03577677862109845,
+   "repro_rpm": 17043.36398464391,
+   "laws": {
+    "per_class/point": {
+     "chip": 0.13640286847817565,
+     "feed_sfm_rpm": 4000,
+     "feed_vendor_rpm": 4000
+    },
+    "per_class/vendor": {
+     "chip": 0.14364661534154213,
+     "feed_sfm_rpm": 4000,
+     "feed_vendor_rpm": 4000
+    },
+    "class_D/point": {
+     "chip": 0.12884254028125386,
+     "feed_sfm_rpm": 4000,
+     "feed_vendor_rpm": 4000
+    },
+    "class_D/vendor": {
+     "chip": 0.13454647251843965,
+     "feed_sfm_rpm": 4000,
+     "feed_vendor_rpm": 4000
+    },
+    "class_D_Z/point": {
+     "chip": 0.1363199754353464,
+     "feed_sfm_rpm": 4000,
+     "feed_vendor_rpm": 4000
+    },
+    "class_D_Z/vendor": {
+     "chip": 0.1412161159411788,
+     "feed_sfm_rpm": 4000,
+     "feed_vendor_rpm": 4000
+    },
+    "janka_D_Z/point": {
+     "chip": 0.1284797031964706,
+     "feed_sfm_rpm": 4000,
+     "feed_vendor_rpm": 4000
+    },
+    "janka_D_Z/vendor": {
+     "chip": 0.1282030572123261,
+     "feed_sfm_rpm": 4000,
+     "feed_vendor_rpm": 4000
+    },
+    "roughing_row_x1": {
+     "chip": 0.127,
+     "row": "amana-flat-mdf-pocket-3175-2f-spektra",
+     "feed_sfm_rpm": 4000,
+     "feed_vendor_rpm": 4000,
+     "pocket_cell_rpm": 15748.0,
+     "pocket_cell_feed": 3999.0
+    },
+    "anchored_series_law": {
+     "chip": 0.127,
+     "b": 0.5604269430290472,
+     "feed_sfm_rpm": 4000,
+     "feed_vendor_rpm": 4000
+    }
+   }
+  },
+  {
+   "tool": "EndMill",
+   "D": 3.175,
+   "Z": 2,
+   "op": "RadialFinish",
+   "mat": "plywood_hardwood",
+   "rpm": 18046.0,
+   "feed": 1235.0,
+   "chip": 0.0342,
+   "warnings": "LongToolDerate",
+   "repro_chip": 0.03424173792277971,
+   "repro_rpm": 18045.914807270023,
+   "laws": {
+    "per_class/point": {
+     "chip": 0.1279190696098432,
+     "feed_sfm_rpm": 4000,
+     "feed_vendor_rpm": 4000
+    },
+    "per_class/vendor": {
+     "chip": 0.11927837124048095,
+     "feed_sfm_rpm": 4000,
+     "feed_vendor_rpm": 4000
+    },
+    "class_D/point": {
+     "chip": 0.14997500148544762,
+     "feed_sfm_rpm": 4000,
+     "feed_vendor_rpm": 4000
+    },
+    "class_D/vendor": {
+     "chip": 0.1342794387044099,
+     "feed_sfm_rpm": 4000,
+     "feed_vendor_rpm": 4000
+    },
+    "class_D_Z/point": {
+     "chip": 0.15799341217832277,
+     "feed_sfm_rpm": 4000,
+     "feed_vendor_rpm": 4000
+    },
+    "class_D_Z/vendor": {
+     "chip": 0.14115246357391753,
+     "feed_sfm_rpm": 4000,
+     "feed_vendor_rpm": 4000
+    },
+    "janka_D_Z/point": {
+     "chip": 0.1284550611728625,
+     "feed_sfm_rpm": 4000,
+     "feed_vendor_rpm": 4000
+    },
+    "janka_D_Z/vendor": {
+     "chip": 0.1282905694265171,
+     "feed_sfm_rpm": 4000,
+     "feed_vendor_rpm": 4000
+    },
+    "roughing_row_x1": {
+     "chip": 0.1016,
+     "row": "amana-flat-plywood-hardwood-pocket-3175-2f-spektra",
+     "feed_sfm_rpm": 3666,
+     "feed_vendor_rpm": 3657,
+     "pocket_cell_rpm": 18000.0,
+     "pocket_cell_feed": 3657.0
+    },
+    "anchored_series_law": {
+     "chip": 0.1016,
+     "b": 0.5604269430290472,
+     "feed_sfm_rpm": 3666,
+     "feed_vendor_rpm": 3657
+    }
+   }
+  },
+  {
+   "tool": "EndMill",
+   "D": 3.175,
+   "Z": 2,
+   "op": "HorizontalFinish",
+   "mat": "softwood",
+   "rpm": 20051.0,
+   "feed": 1947.0,
+   "chip": 0.0486,
+   "warnings": "LongToolDerate",
+   "repro_chip": 0.04855957943953748,
+   "repro_rpm": 20051.01645252225,
+   "laws": {
+    "per_class/point": {
+     "chip": 0.10401657982844874,
+     "feed_sfm_rpm": 4000,
+     "feed_vendor_rpm": 3744
+    },
+    "per_class/vendor": {
+     "chip": 0.11191609421020718,
+     "feed_sfm_rpm": 4000,
+     "feed_vendor_rpm": 4000
+    },
+    "class_D/point": {
+     "chip": 0.10518420902944645,
+     "feed_sfm_rpm": 4000,
+     "feed_vendor_rpm": 3786
+    },
+    "class_D/vendor": {
+     "chip": 0.11275428158586176,
+     "feed_sfm_rpm": 4000,
+     "feed_vendor_rpm": 4000
+    },
+    "class_D_Z/point": {
+     "chip": 0.11243769063065177,
+     "feed_sfm_rpm": 4000,
+     "feed_vendor_rpm": 4000
+    },
+    "class_D_Z/vendor": {
+     "chip": 0.11905631804971105,
+     "feed_sfm_rpm": 4000,
+     "feed_vendor_rpm": 4000
+    },
+    "janka_D_Z/point": {
+     "chip": 0.12865149486807256,
+     "feed_sfm_rpm": 4000,
+     "feed_vendor_rpm": 4000
+    },
+    "janka_D_Z/vendor": {
+     "chip": 0.12759508661251878,
+     "feed_sfm_rpm": 4000,
+     "feed_vendor_rpm": 4000
+    },
+    "roughing_row_x1": {
+     "chip": 0.1016,
+     "row": "amana-flat-softwood-pocket-3175-2f-spektra",
+     "feed_sfm_rpm": 4000,
+     "feed_vendor_rpm": 3657,
+     "pocket_cell_rpm": 18000.0,
+     "pocket_cell_feed": 3657.0
+    },
+    "anchored_series_law": {
+     "chip": 0.1016,
+     "b": 0.5604269430290472,
+     "feed_sfm_rpm": 4000,
+     "feed_vendor_rpm": 3657
+    }
+   }
+  },
+  {
+   "tool": "EndMill",
+   "D": 3.175,
+   "Z": 2,
+   "op": "HorizontalFinish",
+   "mat": "hardwood",
+   "rpm": 20051.0,
+   "feed": 1248.0,
+   "chip": 0.0311,
+   "warnings": "LongToolDerate",
+   "repro_chip": 0.031126742565508767,
+   "repro_rpm": 20051.01645252225,
+   "laws": {
+    "per_class/point": {
+     "chip": 0.11421052608886037,
+     "feed_sfm_rpm": 4000,
+     "feed_vendor_rpm": 4000
+    },
+    "per_class/vendor": {
+     "chip": 0.10798334493465199,
+     "feed_sfm_rpm": 4000,
+     "feed_vendor_rpm": 3887
+    },
+    "class_D/point": {
+     "chip": 0.10742187548685855,
+     "feed_sfm_rpm": 4000,
+     "feed_vendor_rpm": 3867
+    },
+    "class_D/vendor": {
+     "chip": 0.11008373870487599,
+     "feed_sfm_rpm": 4000,
+     "feed_vendor_rpm": 3963
+    },
+    "class_D_Z/point": {
+     "chip": 0.11523741666544943,
+     "feed_sfm_rpm": 4000,
+     "feed_vendor_rpm": 4000
+    },
+    "class_D_Z/vendor": {
+     "chip": 0.1159335138626893,
+     "feed_sfm_rpm": 4000,
+     "feed_vendor_rpm": 4000
+    },
+    "janka_D_Z/point": {
+     "chip": 0.128401483281585,
+     "feed_sfm_rpm": 4000,
+     "feed_vendor_rpm": 4000
+    },
+    "janka_D_Z/vendor": {
+     "chip": 0.12848110700194926,
+     "feed_sfm_rpm": 4000,
+     "feed_vendor_rpm": 4000
+    },
+    "roughing_row_x1": {
+     "chip": 0.1016,
+     "row": "amana-flat-hardwood-pocket-3175-2f-spektra",
+     "feed_sfm_rpm": 4000,
+     "feed_vendor_rpm": 3657,
+     "pocket_cell_rpm": 18000.0,
+     "pocket_cell_feed": 3657.0
+    },
+    "anchored_series_law": {
+     "chip": 0.1016,
+     "b": 0.5604269430290472,
+     "feed_sfm_rpm": 4000,
+     "feed_vendor_rpm": 3657
+    }
+   }
+  },
+  {
+   "tool": "EndMill",
+   "D": 3.175,
+   "Z": 2,
+   "op": "HorizontalFinish",
+   "mat": "mdf",
+   "rpm": 17043.0,
+   "feed": 1219.0,
+   "chip": 0.0358,
+   "warnings": "LongToolDerate",
+   "repro_chip": 0.03577677862109845,
+   "repro_rpm": 17043.36398464391,
+   "laws": {
+    "per_class/point": {
+     "chip": 0.13640286847817565,
+     "feed_sfm_rpm": 4000,
+     "feed_vendor_rpm": 4000
+    },
+    "per_class/vendor": {
+     "chip": 0.14364661534154213,
+     "feed_sfm_rpm": 4000,
+     "feed_vendor_rpm": 4000
+    },
+    "class_D/point": {
+     "chip": 0.12884254028125386,
+     "feed_sfm_rpm": 4000,
+     "feed_vendor_rpm": 4000
+    },
+    "class_D/vendor": {
+     "chip": 0.13454647251843965,
+     "feed_sfm_rpm": 4000,
+     "feed_vendor_rpm": 4000
+    },
+    "class_D_Z/point": {
+     "chip": 0.1363199754353464,
+     "feed_sfm_rpm": 4000,
+     "feed_vendor_rpm": 4000
+    },
+    "class_D_Z/vendor": {
+     "chip": 0.1412161159411788,
+     "feed_sfm_rpm": 4000,
+     "feed_vendor_rpm": 4000
+    },
+    "janka_D_Z/point": {
+     "chip": 0.1284797031964706,
+     "feed_sfm_rpm": 4000,
+     "feed_vendor_rpm": 4000
+    },
+    "janka_D_Z/vendor": {
+     "chip": 0.1282030572123261,
+     "feed_sfm_rpm": 4000,
+     "feed_vendor_rpm": 4000
+    },
+    "roughing_row_x1": {
+     "chip": 0.127,
+     "row": "amana-flat-mdf-pocket-3175-2f-spektra",
+     "feed_sfm_rpm": 4000,
+     "feed_vendor_rpm": 4000,
+     "pocket_cell_rpm": 15748.0,
+     "pocket_cell_feed": 3999.0
+    },
+    "anchored_series_law": {
+     "chip": 0.127,
+     "b": 0.5604269430290472,
+     "feed_sfm_rpm": 4000,
+     "feed_vendor_rpm": 4000
+    }
+   }
+  },
+  {
+   "tool": "EndMill",
+   "D": 3.175,
+   "Z": 2,
+   "op": "HorizontalFinish",
+   "mat": "plywood_hardwood",
+   "rpm": 18046.0,
+   "feed": 1235.0,
+   "chip": 0.0342,
+   "warnings": "LongToolDerate",
+   "repro_chip": 0.03424173792277971,
+   "repro_rpm": 18045.914807270023,
+   "laws": {
+    "per_class/point": {
+     "chip": 0.1279190696098432,
+     "feed_sfm_rpm": 4000,
+     "feed_vendor_rpm": 4000
+    },
+    "per_class/vendor": {
+     "chip": 0.11927837124048095,
+     "feed_sfm_rpm": 4000,
+     "feed_vendor_rpm": 4000
+    },
+    "class_D/point": {
+     "chip": 0.14997500148544762,
+     "feed_sfm_rpm": 4000,
+     "feed_vendor_rpm": 4000
+    },
+    "class_D/vendor": {
+     "chip": 0.1342794387044099,
+     "feed_sfm_rpm": 4000,
+     "feed_vendor_rpm": 4000
+    },
+    "class_D_Z/point": {
+     "chip": 0.15799341217832277,
+     "feed_sfm_rpm": 4000,
+     "feed_vendor_rpm": 4000
+    },
+    "class_D_Z/vendor": {
+     "chip": 0.14115246357391753,
+     "feed_sfm_rpm": 4000,
+     "feed_vendor_rpm": 4000
+    },
+    "janka_D_Z/point": {
+     "chip": 0.1284550611728625,
+     "feed_sfm_rpm": 4000,
+     "feed_vendor_rpm": 4000
+    },
+    "janka_D_Z/vendor": {
+     "chip": 0.1282905694265171,
+     "feed_sfm_rpm": 4000,
+     "feed_vendor_rpm": 4000
+    },
+    "roughing_row_x1": {
+     "chip": 0.1016,
+     "row": "amana-flat-plywood-hardwood-pocket-3175-2f-spektra",
+     "feed_sfm_rpm": 3666,
+     "feed_vendor_rpm": 3657,
+     "pocket_cell_rpm": 18000.0,
+     "pocket_cell_feed": 3657.0
+    },
+    "anchored_series_law": {
+     "chip": 0.1016,
+     "b": 0.5604269430290472,
+     "feed_sfm_rpm": 3666,
+     "feed_vendor_rpm": 3657
+    }
+   }
+  },
+  {
+   "tool": "EndMill",
+   "D": 6.0,
+   "Z": 2,
+   "op": "Trace",
+   "mat": "softwood",
+   "rpm": 10610.0,
+   "feed": 1519.0,
+   "chip": 0.0716,
+   "warnings": "LongToolDerate",
+   "repro_chip": 0.0715951337002856,
+   "repro_rpm": 10610.32953945969,
+   "laws": {
+    "per_class/point": {
+     "chip": 0.1659902349495975,
+     "feed_sfm_rpm": 3522,
+     "feed_vendor_rpm": 4000
+    },
+    "per_class/vendor": {
+     "chip": 0.18836688329242848,
+     "feed_sfm_rpm": 3997,
+     "feed_vendor_rpm": 4000
+    },
+    "class_D/point": {
+     "chip": 0.16598266544803333,
+     "feed_sfm_rpm": 3522,
+     "feed_vendor_rpm": 4000
+    },
+    "class_D/vendor": {
+     "chip": 0.18838093682856696,
+     "feed_sfm_rpm": 3997,
+     "feed_vendor_rpm": 4000
+    },
+    "class_D_Z/point": {
+     "chip": 0.17658730060141747,
+     "feed_sfm_rpm": 3747,
+     "feed_vendor_rpm": 4000
+    },
+    "class_D_Z/vendor": {
+     "chip": 0.19825682138412953,
+     "feed_sfm_rpm": 4000,
+     "feed_vendor_rpm": 4000
+    },
+    "janka_D_Z/point": {
+     "chip": 0.2064860894411011,
+     "feed_sfm_rpm": 4000,
+     "feed_vendor_rpm": 4000
+    },
+    "janka_D_Z/vendor": {
+     "chip": 0.21421449451095145,
+     "feed_sfm_rpm": 4000,
+     "feed_vendor_rpm": 4000
+    },
+    "roughing_row_x1": {
+     "chip": 0.127,
+     "row": "amana-flat-softwood-pocket-6000-2f-spektra",
+     "feed_sfm_rpm": 2694,
+     "feed_vendor_rpm": 4000,
+     "pocket_cell_rpm": 15748.0,
+     "pocket_cell_feed": 3999.0
+    },
+    "anchored_series_law": {
+     "chip": 0.127,
+     "b": 0.5604269430290472,
+     "feed_sfm_rpm": 2694,
+     "feed_vendor_rpm": 4000
+    }
+   }
+  },
+  {
+   "tool": "EndMill",
+   "D": 6.0,
+   "Z": 2,
+   "op": "Trace",
+   "mat": "hardwood",
+   "rpm": 10610.0,
+   "feed": 973.0,
+   "chip": 0.0459,
+   "warnings": "LongToolDerate",
+   "repro_chip": 0.04589255758293275,
+   "repro_rpm": 10610.32953945969,
+   "laws": {
+    "per_class/point": {
+     "chip": 0.17233811184060827,
+     "feed_sfm_rpm": 3657,
+     "feed_vendor_rpm": 4000
+    },
+    "per_class/vendor": {
+     "chip": 0.18307315668061444,
+     "feed_sfm_rpm": 3884,
+     "feed_vendor_rpm": 4000
+    },
+    "class_D/point": {
+     "chip": 0.1695137453165043,
+     "feed_sfm_rpm": 3597,
+     "feed_vendor_rpm": 4000
+    },
+    "class_D/vendor": {
+     "chip": 0.18391920497514846,
+     "feed_sfm_rpm": 3902,
+     "feed_vendor_rpm": 4000
+    },
+    "class_D_Z/point": {
+     "chip": 0.18098436763592707,
+     "feed_sfm_rpm": 3840,
+     "feed_vendor_rpm": 4000
+    },
+    "class_D_Z/vendor": {
+     "chip": 0.19305661662334164,
+     "feed_sfm_rpm": 4000,
+     "feed_vendor_rpm": 4000
+    },
+    "janka_D_Z/point": {
+     "chip": 0.20608481998938025,
+     "feed_sfm_rpm": 4000,
+     "feed_vendor_rpm": 4000
+    },
+    "janka_D_Z/vendor": {
+     "chip": 0.21570200014214105,
+     "feed_sfm_rpm": 4000,
+     "feed_vendor_rpm": 4000
+    },
+    "roughing_row_x1": {
+     "chip": 0.127,
+     "row": "amana-flat-hardwood-pocket-6000-2f-spektra",
+     "feed_sfm_rpm": 2694,
+     "feed_vendor_rpm": 4000,
+     "pocket_cell_rpm": 15748.0,
+     "pocket_cell_feed": 3999.0
+    },
+    "anchored_series_law": {
+     "chip": 0.127,
+     "b": 0.5604269430290472,
+     "feed_sfm_rpm": 2694,
+     "feed_vendor_rpm": 4000
+    }
+   }
+  },
+  {
+   "tool": "EndMill",
+   "D": 6.0,
+   "Z": 2,
+   "op": "Trace",
+   "mat": "mdf",
+   "rpm": 9019.0,
+   "feed": 951.0,
+   "chip": 0.0527,
+   "warnings": "LongToolDerate",
+   "repro_chip": 0.05274846442878214,
+   "repro_rpm": 9018.780108540735,
+   "laws": {
+    "per_class/point": {
+     "chip": 0.2052941323888638,
+     "feed_sfm_rpm": 3703,
+     "feed_vendor_rpm": 4000
+    },
+    "per_class/vendor": {
+     "chip": 0.22678097721676382,
+     "feed_sfm_rpm": 4000,
+     "feed_vendor_rpm": 4000
+    },
+    "class_D/point": {
+     "chip": 0.20331595832023783,
+     "feed_sfm_rpm": 3667,
+     "feed_vendor_rpm": 4000
+    },
+    "class_D/vendor": {
+     "chip": 0.22478960606654985,
+     "feed_sfm_rpm": 4000,
+     "feed_vendor_rpm": 4000
+    },
+    "class_D_Z/point": {
+     "chip": 0.2140952588510117,
+     "feed_sfm_rpm": 3861,
+     "feed_vendor_rpm": 4000
+    },
+    "class_D_Z/vendor": {
+     "chip": 0.23515810612437094,
+     "feed_sfm_rpm": 4000,
+     "feed_vendor_rpm": 4000
+    },
+    "janka_D_Z/point": {
+     "chip": 0.20621036322039904,
+     "feed_sfm_rpm": 3719,
+     "feed_vendor_rpm": 4000
+    },
+    "janka_D_Z/vendor": {
+     "chip": 0.2152351930203757,
+     "feed_sfm_rpm": 3882,
+     "feed_vendor_rpm": 4000
+    },
+    "roughing_row_x1": {
+     "chip": 0.1524,
+     "row": "amana-flat-mdf-pocket-6000-2f-spektra",
+     "feed_sfm_rpm": 2748,
+     "feed_vendor_rpm": 4000,
+     "pocket_cell_rpm": 13123.0,
+     "pocket_cell_feed": 3999.0
+    },
+    "anchored_series_law": {
+     "chip": 0.1524,
+     "b": 0.5604269430290472,
+     "feed_sfm_rpm": 2748,
+     "feed_vendor_rpm": 4000
+    }
+   }
+  },
+  {
+   "tool": "EndMill",
+   "D": 6.0,
+   "Z": 2,
+   "op": "Trace",
+   "mat": "plywood_hardwood",
+   "rpm": 9549.0,
+   "feed": 964.0,
+   "chip": 0.0505,
+   "warnings": "LongToolDerate",
+   "repro_chip": 0.050485235519059986,
+   "repro_rpm": 9549.29658551372,
+   "laws": {
+    "per_class/point": {
+     "chip": 0.22333456916067287,
+     "feed_sfm_rpm": 4000,
+     "feed_vendor_rpm": 4000
+    },
+    "per_class/vendor": {
+     "chip": 0.2148940612586,
+     "feed_sfm_rpm": 4000,
+     "feed_vendor_rpm": 4000
+    },
+    "class_D/point": {
+     "chip": 0.23666338062359202,
+     "feed_sfm_rpm": 4000,
+     "feed_vendor_rpm": 4000
+    },
+    "class_D/vendor": {
+     "chip": 0.2243434670876631,
+     "feed_sfm_rpm": 4000,
+     "feed_vendor_rpm": 4000
+    },
+    "class_D_Z/point": {
+     "chip": 0.24813414445717366,
+     "feed_sfm_rpm": 4000,
+     "feed_vendor_rpm": 4000
+    },
+    "class_D_Z/vendor": {
+     "chip": 0.23505210993522685,
+     "feed_sfm_rpm": 4000,
+     "feed_vendor_rpm": 4000
+    },
+    "janka_D_Z/point": {
+     "chip": 0.20617081268819612,
+     "feed_sfm_rpm": 3937,
+     "feed_vendor_rpm": 4000
+    },
+    "janka_D_Z/vendor": {
+     "chip": 0.21538211391853984,
+     "feed_sfm_rpm": 4000,
+     "feed_vendor_rpm": 4000
+    },
+    "roughing_row_x1": {
+     "chip": 0.127,
+     "row": "amana-flat-plywood-hardwood-pocket-6000-2f-spektra",
+     "feed_sfm_rpm": 2425,
+     "feed_vendor_rpm": 4000,
+     "pocket_cell_rpm": 15748.0,
+     "pocket_cell_feed": 3999.0
+    },
+    "anchored_series_law": {
+     "chip": 0.127,
+     "b": 0.5604269430290472,
+     "feed_sfm_rpm": 2425,
+     "feed_vendor_rpm": 4000
+    }
+   }
+  },
+  {
+   "tool": "EndMill",
+   "D": 6.0,
+   "Z": 2,
+   "op": "RampFinish",
+   "mat": "softwood",
+   "rpm": 10610.0,
+   "feed": 1519.0,
+   "chip": 0.0716,
+   "warnings": "LongToolDerate",
+   "repro_chip": 0.0715951337002856,
+   "repro_rpm": 10610.32953945969,
+   "laws": {
+    "per_class/point": {
+     "chip": 0.1659902349495975,
+     "feed_sfm_rpm": 3522,
+     "feed_vendor_rpm": 4000
+    },
+    "per_class/vendor": {
+     "chip": 0.18836688329242848,
+     "feed_sfm_rpm": 3997,
+     "feed_vendor_rpm": 4000
+    },
+    "class_D/point": {
+     "chip": 0.16598266544803333,
+     "feed_sfm_rpm": 3522,
+     "feed_vendor_rpm": 4000
+    },
+    "class_D/vendor": {
+     "chip": 0.18838093682856696,
+     "feed_sfm_rpm": 3997,
+     "feed_vendor_rpm": 4000
+    },
+    "class_D_Z/point": {
+     "chip": 0.17658730060141747,
+     "feed_sfm_rpm": 3747,
+     "feed_vendor_rpm": 4000
+    },
+    "class_D_Z/vendor": {
+     "chip": 0.19825682138412953,
+     "feed_sfm_rpm": 4000,
+     "feed_vendor_rpm": 4000
+    },
+    "janka_D_Z/point": {
+     "chip": 0.2064860894411011,
+     "feed_sfm_rpm": 4000,
+     "feed_vendor_rpm": 4000
+    },
+    "janka_D_Z/vendor": {
+     "chip": 0.21421449451095145,
+     "feed_sfm_rpm": 4000,
+     "feed_vendor_rpm": 4000
+    },
+    "roughing_row_x1": {
+     "chip": 0.127,
+     "row": "amana-flat-softwood-pocket-6000-2f-spektra",
+     "feed_sfm_rpm": 2694,
+     "feed_vendor_rpm": 4000,
+     "pocket_cell_rpm": 15748.0,
+     "pocket_cell_feed": 3999.0
+    },
+    "anchored_series_law": {
+     "chip": 0.127,
+     "b": 0.5604269430290472,
+     "feed_sfm_rpm": 2694,
+     "feed_vendor_rpm": 4000
+    }
+   }
+  },
+  {
+   "tool": "EndMill",
+   "D": 6.0,
+   "Z": 2,
+   "op": "RampFinish",
+   "mat": "hardwood",
+   "rpm": 10610.0,
+   "feed": 973.0,
+   "chip": 0.0459,
+   "warnings": "LongToolDerate",
+   "repro_chip": 0.04589255758293275,
+   "repro_rpm": 10610.32953945969,
+   "laws": {
+    "per_class/point": {
+     "chip": 0.17233811184060827,
+     "feed_sfm_rpm": 3657,
+     "feed_vendor_rpm": 4000
+    },
+    "per_class/vendor": {
+     "chip": 0.18307315668061444,
+     "feed_sfm_rpm": 3884,
+     "feed_vendor_rpm": 4000
+    },
+    "class_D/point": {
+     "chip": 0.1695137453165043,
+     "feed_sfm_rpm": 3597,
+     "feed_vendor_rpm": 4000
+    },
+    "class_D/vendor": {
+     "chip": 0.18391920497514846,
+     "feed_sfm_rpm": 3902,
+     "feed_vendor_rpm": 4000
+    },
+    "class_D_Z/point": {
+     "chip": 0.18098436763592707,
+     "feed_sfm_rpm": 3840,
+     "feed_vendor_rpm": 4000
+    },
+    "class_D_Z/vendor": {
+     "chip": 0.19305661662334164,
+     "feed_sfm_rpm": 4000,
+     "feed_vendor_rpm": 4000
+    },
+    "janka_D_Z/point": {
+     "chip": 0.20608481998938025,
+     "feed_sfm_rpm": 4000,
+     "feed_vendor_rpm": 4000
+    },
+    "janka_D_Z/vendor": {
+     "chip": 0.21570200014214105,
+     "feed_sfm_rpm": 4000,
+     "feed_vendor_rpm": 4000
+    },
+    "roughing_row_x1": {
+     "chip": 0.127,
+     "row": "amana-flat-hardwood-pocket-6000-2f-spektra",
+     "feed_sfm_rpm": 2694,
+     "feed_vendor_rpm": 4000,
+     "pocket_cell_rpm": 15748.0,
+     "pocket_cell_feed": 3999.0
+    },
+    "anchored_series_law": {
+     "chip": 0.127,
+     "b": 0.5604269430290472,
+     "feed_sfm_rpm": 2694,
+     "feed_vendor_rpm": 4000
+    }
+   }
+  },
+  {
+   "tool": "EndMill",
+   "D": 6.0,
+   "Z": 2,
+   "op": "RampFinish",
+   "mat": "mdf",
+   "rpm": 9019.0,
+   "feed": 951.0,
+   "chip": 0.0527,
+   "warnings": "LongToolDerate",
+   "repro_chip": 0.05274846442878214,
+   "repro_rpm": 9018.780108540735,
+   "laws": {
+    "per_class/point": {
+     "chip": 0.2052941323888638,
+     "feed_sfm_rpm": 3703,
+     "feed_vendor_rpm": 4000
+    },
+    "per_class/vendor": {
+     "chip": 0.22678097721676382,
+     "feed_sfm_rpm": 4000,
+     "feed_vendor_rpm": 4000
+    },
+    "class_D/point": {
+     "chip": 0.20331595832023783,
+     "feed_sfm_rpm": 3667,
+     "feed_vendor_rpm": 4000
+    },
+    "class_D/vendor": {
+     "chip": 0.22478960606654985,
+     "feed_sfm_rpm": 4000,
+     "feed_vendor_rpm": 4000
+    },
+    "class_D_Z/point": {
+     "chip": 0.2140952588510117,
+     "feed_sfm_rpm": 3861,
+     "feed_vendor_rpm": 4000
+    },
+    "class_D_Z/vendor": {
+     "chip": 0.23515810612437094,
+     "feed_sfm_rpm": 4000,
+     "feed_vendor_rpm": 4000
+    },
+    "janka_D_Z/point": {
+     "chip": 0.20621036322039904,
+     "feed_sfm_rpm": 3719,
+     "feed_vendor_rpm": 4000
+    },
+    "janka_D_Z/vendor": {
+     "chip": 0.2152351930203757,
+     "feed_sfm_rpm": 3882,
+     "feed_vendor_rpm": 4000
+    },
+    "roughing_row_x1": {
+     "chip": 0.1524,
+     "row": "amana-flat-mdf-pocket-6000-2f-spektra",
+     "feed_sfm_rpm": 2748,
+     "feed_vendor_rpm": 4000,
+     "pocket_cell_rpm": 13123.0,
+     "pocket_cell_feed": 3999.0
+    },
+    "anchored_series_law": {
+     "chip": 0.1524,
+     "b": 0.5604269430290472,
+     "feed_sfm_rpm": 2748,
+     "feed_vendor_rpm": 4000
+    }
+   }
+  },
+  {
+   "tool": "EndMill",
+   "D": 6.0,
+   "Z": 2,
+   "op": "RampFinish",
+   "mat": "plywood_hardwood",
+   "rpm": 9549.0,
+   "feed": 964.0,
+   "chip": 0.0505,
+   "warnings": "LongToolDerate",
+   "repro_chip": 0.050485235519059986,
+   "repro_rpm": 9549.29658551372,
+   "laws": {
+    "per_class/point": {
+     "chip": 0.22333456916067287,
+     "feed_sfm_rpm": 4000,
+     "feed_vendor_rpm": 4000
+    },
+    "per_class/vendor": {
+     "chip": 0.2148940612586,
+     "feed_sfm_rpm": 4000,
+     "feed_vendor_rpm": 4000
+    },
+    "class_D/point": {
+     "chip": 0.23666338062359202,
+     "feed_sfm_rpm": 4000,
+     "feed_vendor_rpm": 4000
+    },
+    "class_D/vendor": {
+     "chip": 0.2243434670876631,
+     "feed_sfm_rpm": 4000,
+     "feed_vendor_rpm": 4000
+    },
+    "class_D_Z/point": {
+     "chip": 0.24813414445717366,
+     "feed_sfm_rpm": 4000,
+     "feed_vendor_rpm": 4000
+    },
+    "class_D_Z/vendor": {
+     "chip": 0.23505210993522685,
+     "feed_sfm_rpm": 4000,
+     "feed_vendor_rpm": 4000
+    },
+    "janka_D_Z/point": {
+     "chip": 0.20617081268819612,
+     "feed_sfm_rpm": 3937,
+     "feed_vendor_rpm": 4000
+    },
+    "janka_D_Z/vendor": {
+     "chip": 0.21538211391853984,
+     "feed_sfm_rpm": 4000,
+     "feed_vendor_rpm": 4000
+    },
+    "roughing_row_x1": {
+     "chip": 0.127,
+     "row": "amana-flat-plywood-hardwood-pocket-6000-2f-spektra",
+     "feed_sfm_rpm": 2425,
+     "feed_vendor_rpm": 4000,
+     "pocket_cell_rpm": 15748.0,
+     "pocket_cell_feed": 3999.0
+    },
+    "anchored_series_law": {
+     "chip": 0.127,
+     "b": 0.5604269430290472,
+     "feed_sfm_rpm": 2425,
+     "feed_vendor_rpm": 4000
+    }
+   }
+  },
+  {
+   "tool": "EndMill",
+   "D": 6.0,
+   "Z": 2,
+   "op": "RadialFinish",
+   "mat": "softwood",
+   "rpm": 10610.0,
+   "feed": 1519.0,
+   "chip": 0.0716,
+   "warnings": "LongToolDerate",
+   "repro_chip": 0.0715951337002856,
+   "repro_rpm": 10610.32953945969,
+   "laws": {
+    "per_class/point": {
+     "chip": 0.1659902349495975,
+     "feed_sfm_rpm": 3522,
+     "feed_vendor_rpm": 4000
+    },
+    "per_class/vendor": {
+     "chip": 0.18836688329242848,
+     "feed_sfm_rpm": 3997,
+     "feed_vendor_rpm": 4000
+    },
+    "class_D/point": {
+     "chip": 0.16598266544803333,
+     "feed_sfm_rpm": 3522,
+     "feed_vendor_rpm": 4000
+    },
+    "class_D/vendor": {
+     "chip": 0.18838093682856696,
+     "feed_sfm_rpm": 3997,
+     "feed_vendor_rpm": 4000
+    },
+    "class_D_Z/point": {
+     "chip": 0.17658730060141747,
+     "feed_sfm_rpm": 3747,
+     "feed_vendor_rpm": 4000
+    },
+    "class_D_Z/vendor": {
+     "chip": 0.19825682138412953,
+     "feed_sfm_rpm": 4000,
+     "feed_vendor_rpm": 4000
+    },
+    "janka_D_Z/point": {
+     "chip": 0.2064860894411011,
+     "feed_sfm_rpm": 4000,
+     "feed_vendor_rpm": 4000
+    },
+    "janka_D_Z/vendor": {
+     "chip": 0.21421449451095145,
+     "feed_sfm_rpm": 4000,
+     "feed_vendor_rpm": 4000
+    },
+    "roughing_row_x1": {
+     "chip": 0.127,
+     "row": "amana-flat-softwood-pocket-6000-2f-spektra",
+     "feed_sfm_rpm": 2694,
+     "feed_vendor_rpm": 4000,
+     "pocket_cell_rpm": 15748.0,
+     "pocket_cell_feed": 3999.0
+    },
+    "anchored_series_law": {
+     "chip": 0.127,
+     "b": 0.5604269430290472,
+     "feed_sfm_rpm": 2694,
+     "feed_vendor_rpm": 4000
+    }
+   }
+  },
+  {
+   "tool": "EndMill",
+   "D": 6.0,
+   "Z": 2,
+   "op": "RadialFinish",
+   "mat": "hardwood",
+   "rpm": 10610.0,
+   "feed": 973.0,
+   "chip": 0.0459,
+   "warnings": "LongToolDerate",
+   "repro_chip": 0.04589255758293275,
+   "repro_rpm": 10610.32953945969,
+   "laws": {
+    "per_class/point": {
+     "chip": 0.17233811184060827,
+     "feed_sfm_rpm": 3657,
+     "feed_vendor_rpm": 4000
+    },
+    "per_class/vendor": {
+     "chip": 0.18307315668061444,
+     "feed_sfm_rpm": 3884,
+     "feed_vendor_rpm": 4000
+    },
+    "class_D/point": {
+     "chip": 0.1695137453165043,
+     "feed_sfm_rpm": 3597,
+     "feed_vendor_rpm": 4000
+    },
+    "class_D/vendor": {
+     "chip": 0.18391920497514846,
+     "feed_sfm_rpm": 3902,
+     "feed_vendor_rpm": 4000
+    },
+    "class_D_Z/point": {
+     "chip": 0.18098436763592707,
+     "feed_sfm_rpm": 3840,
+     "feed_vendor_rpm": 4000
+    },
+    "class_D_Z/vendor": {
+     "chip": 0.19305661662334164,
+     "feed_sfm_rpm": 4000,
+     "feed_vendor_rpm": 4000
+    },
+    "janka_D_Z/point": {
+     "chip": 0.20608481998938025,
+     "feed_sfm_rpm": 4000,
+     "feed_vendor_rpm": 4000
+    },
+    "janka_D_Z/vendor": {
+     "chip": 0.21570200014214105,
+     "feed_sfm_rpm": 4000,
+     "feed_vendor_rpm": 4000
+    },
+    "roughing_row_x1": {
+     "chip": 0.127,
+     "row": "amana-flat-hardwood-pocket-6000-2f-spektra",
+     "feed_sfm_rpm": 2694,
+     "feed_vendor_rpm": 4000,
+     "pocket_cell_rpm": 15748.0,
+     "pocket_cell_feed": 3999.0
+    },
+    "anchored_series_law": {
+     "chip": 0.127,
+     "b": 0.5604269430290472,
+     "feed_sfm_rpm": 2694,
+     "feed_vendor_rpm": 4000
+    }
+   }
+  },
+  {
+   "tool": "EndMill",
+   "D": 6.0,
+   "Z": 2,
+   "op": "RadialFinish",
+   "mat": "mdf",
+   "rpm": 9019.0,
+   "feed": 951.0,
+   "chip": 0.0527,
+   "warnings": "LongToolDerate",
+   "repro_chip": 0.05274846442878214,
+   "repro_rpm": 9018.780108540735,
+   "laws": {
+    "per_class/point": {
+     "chip": 0.2052941323888638,
+     "feed_sfm_rpm": 3703,
+     "feed_vendor_rpm": 4000
+    },
+    "per_class/vendor": {
+     "chip": 0.22678097721676382,
+     "feed_sfm_rpm": 4000,
+     "feed_vendor_rpm": 4000
+    },
+    "class_D/point": {
+     "chip": 0.20331595832023783,
+     "feed_sfm_rpm": 3667,
+     "feed_vendor_rpm": 4000
+    },
+    "class_D/vendor": {
+     "chip": 0.22478960606654985,
+     "feed_sfm_rpm": 4000,
+     "feed_vendor_rpm": 4000
+    },
+    "class_D_Z/point": {
+     "chip": 0.2140952588510117,
+     "feed_sfm_rpm": 3861,
+     "feed_vendor_rpm": 4000
+    },
+    "class_D_Z/vendor": {
+     "chip": 0.23515810612437094,
+     "feed_sfm_rpm": 4000,
+     "feed_vendor_rpm": 4000
+    },
+    "janka_D_Z/point": {
+     "chip": 0.20621036322039904,
+     "feed_sfm_rpm": 3719,
+     "feed_vendor_rpm": 4000
+    },
+    "janka_D_Z/vendor": {
+     "chip": 0.2152351930203757,
+     "feed_sfm_rpm": 3882,
+     "feed_vendor_rpm": 4000
+    },
+    "roughing_row_x1": {
+     "chip": 0.1524,
+     "row": "amana-flat-mdf-pocket-6000-2f-spektra",
+     "feed_sfm_rpm": 2748,
+     "feed_vendor_rpm": 4000,
+     "pocket_cell_rpm": 13123.0,
+     "pocket_cell_feed": 3999.0
+    },
+    "anchored_series_law": {
+     "chip": 0.1524,
+     "b": 0.5604269430290472,
+     "feed_sfm_rpm": 2748,
+     "feed_vendor_rpm": 4000
+    }
+   }
+  },
+  {
+   "tool": "EndMill",
+   "D": 6.0,
+   "Z": 2,
+   "op": "RadialFinish",
+   "mat": "plywood_hardwood",
+   "rpm": 9549.0,
+   "feed": 964.0,
+   "chip": 0.0505,
+   "warnings": "LongToolDerate",
+   "repro_chip": 0.050485235519059986,
+   "repro_rpm": 9549.29658551372,
+   "laws": {
+    "per_class/point": {
+     "chip": 0.22333456916067287,
+     "feed_sfm_rpm": 4000,
+     "feed_vendor_rpm": 4000
+    },
+    "per_class/vendor": {
+     "chip": 0.2148940612586,
+     "feed_sfm_rpm": 4000,
+     "feed_vendor_rpm": 4000
+    },
+    "class_D/point": {
+     "chip": 0.23666338062359202,
+     "feed_sfm_rpm": 4000,
+     "feed_vendor_rpm": 4000
+    },
+    "class_D/vendor": {
+     "chip": 0.2243434670876631,
+     "feed_sfm_rpm": 4000,
+     "feed_vendor_rpm": 4000
+    },
+    "class_D_Z/point": {
+     "chip": 0.24813414445717366,
+     "feed_sfm_rpm": 4000,
+     "feed_vendor_rpm": 4000
+    },
+    "class_D_Z/vendor": {
+     "chip": 0.23505210993522685,
+     "feed_sfm_rpm": 4000,
+     "feed_vendor_rpm": 4000
+    },
+    "janka_D_Z/point": {
+     "chip": 0.20617081268819612,
+     "feed_sfm_rpm": 3937,
+     "feed_vendor_rpm": 4000
+    },
+    "janka_D_Z/vendor": {
+     "chip": 0.21538211391853984,
+     "feed_sfm_rpm": 4000,
+     "feed_vendor_rpm": 4000
+    },
+    "roughing_row_x1": {
+     "chip": 0.127,
+     "row": "amana-flat-plywood-hardwood-pocket-6000-2f-spektra",
+     "feed_sfm_rpm": 2425,
+     "feed_vendor_rpm": 4000,
+     "pocket_cell_rpm": 15748.0,
+     "pocket_cell_feed": 3999.0
+    },
+    "anchored_series_law": {
+     "chip": 0.127,
+     "b": 0.5604269430290472,
+     "feed_sfm_rpm": 2425,
+     "feed_vendor_rpm": 4000
+    }
+   }
+  },
+  {
+   "tool": "EndMill",
+   "D": 6.0,
+   "Z": 2,
+   "op": "HorizontalFinish",
+   "mat": "softwood",
+   "rpm": 10610.0,
+   "feed": 1519.0,
+   "chip": 0.0716,
+   "warnings": "LongToolDerate",
+   "repro_chip": 0.0715951337002856,
+   "repro_rpm": 10610.32953945969,
+   "laws": {
+    "per_class/point": {
+     "chip": 0.1659902349495975,
+     "feed_sfm_rpm": 3522,
+     "feed_vendor_rpm": 4000
+    },
+    "per_class/vendor": {
+     "chip": 0.18836688329242848,
+     "feed_sfm_rpm": 3997,
+     "feed_vendor_rpm": 4000
+    },
+    "class_D/point": {
+     "chip": 0.16598266544803333,
+     "feed_sfm_rpm": 3522,
+     "feed_vendor_rpm": 4000
+    },
+    "class_D/vendor": {
+     "chip": 0.18838093682856696,
+     "feed_sfm_rpm": 3997,
+     "feed_vendor_rpm": 4000
+    },
+    "class_D_Z/point": {
+     "chip": 0.17658730060141747,
+     "feed_sfm_rpm": 3747,
+     "feed_vendor_rpm": 4000
+    },
+    "class_D_Z/vendor": {
+     "chip": 0.19825682138412953,
+     "feed_sfm_rpm": 4000,
+     "feed_vendor_rpm": 4000
+    },
+    "janka_D_Z/point": {
+     "chip": 0.2064860894411011,
+     "feed_sfm_rpm": 4000,
+     "feed_vendor_rpm": 4000
+    },
+    "janka_D_Z/vendor": {
+     "chip": 0.21421449451095145,
+     "feed_sfm_rpm": 4000,
+     "feed_vendor_rpm": 4000
+    },
+    "roughing_row_x1": {
+     "chip": 0.127,
+     "row": "amana-flat-softwood-pocket-6000-2f-spektra",
+     "feed_sfm_rpm": 2694,
+     "feed_vendor_rpm": 4000,
+     "pocket_cell_rpm": 15748.0,
+     "pocket_cell_feed": 3999.0
+    },
+    "anchored_series_law": {
+     "chip": 0.127,
+     "b": 0.5604269430290472,
+     "feed_sfm_rpm": 2694,
+     "feed_vendor_rpm": 4000
+    }
+   }
+  },
+  {
+   "tool": "EndMill",
+   "D": 6.0,
+   "Z": 2,
+   "op": "HorizontalFinish",
+   "mat": "hardwood",
+   "rpm": 10610.0,
+   "feed": 973.0,
+   "chip": 0.0459,
+   "warnings": "LongToolDerate",
+   "repro_chip": 0.04589255758293275,
+   "repro_rpm": 10610.32953945969,
+   "laws": {
+    "per_class/point": {
+     "chip": 0.17233811184060827,
+     "feed_sfm_rpm": 3657,
+     "feed_vendor_rpm": 4000
+    },
+    "per_class/vendor": {
+     "chip": 0.18307315668061444,
+     "feed_sfm_rpm": 3884,
+     "feed_vendor_rpm": 4000
+    },
+    "class_D/point": {
+     "chip": 0.1695137453165043,
+     "feed_sfm_rpm": 3597,
+     "feed_vendor_rpm": 4000
+    },
+    "class_D/vendor": {
+     "chip": 0.18391920497514846,
+     "feed_sfm_rpm": 3902,
+     "feed_vendor_rpm": 4000
+    },
+    "class_D_Z/point": {
+     "chip": 0.18098436763592707,
+     "feed_sfm_rpm": 3840,
+     "feed_vendor_rpm": 4000
+    },
+    "class_D_Z/vendor": {
+     "chip": 0.19305661662334164,
+     "feed_sfm_rpm": 4000,
+     "feed_vendor_rpm": 4000
+    },
+    "janka_D_Z/point": {
+     "chip": 0.20608481998938025,
+     "feed_sfm_rpm": 4000,
+     "feed_vendor_rpm": 4000
+    },
+    "janka_D_Z/vendor": {
+     "chip": 0.21570200014214105,
+     "feed_sfm_rpm": 4000,
+     "feed_vendor_rpm": 4000
+    },
+    "roughing_row_x1": {
+     "chip": 0.127,
+     "row": "amana-flat-hardwood-pocket-6000-2f-spektra",
+     "feed_sfm_rpm": 2694,
+     "feed_vendor_rpm": 4000,
+     "pocket_cell_rpm": 15748.0,
+     "pocket_cell_feed": 3999.0
+    },
+    "anchored_series_law": {
+     "chip": 0.127,
+     "b": 0.5604269430290472,
+     "feed_sfm_rpm": 2694,
+     "feed_vendor_rpm": 4000
+    }
+   }
+  },
+  {
+   "tool": "EndMill",
+   "D": 6.0,
+   "Z": 2,
+   "op": "HorizontalFinish",
+   "mat": "mdf",
+   "rpm": 9019.0,
+   "feed": 951.0,
+   "chip": 0.0527,
+   "warnings": "LongToolDerate",
+   "repro_chip": 0.05274846442878214,
+   "repro_rpm": 9018.780108540735,
+   "laws": {
+    "per_class/point": {
+     "chip": 0.2052941323888638,
+     "feed_sfm_rpm": 3703,
+     "feed_vendor_rpm": 4000
+    },
+    "per_class/vendor": {
+     "chip": 0.22678097721676382,
+     "feed_sfm_rpm": 4000,
+     "feed_vendor_rpm": 4000
+    },
+    "class_D/point": {
+     "chip": 0.20331595832023783,
+     "feed_sfm_rpm": 3667,
+     "feed_vendor_rpm": 4000
+    },
+    "class_D/vendor": {
+     "chip": 0.22478960606654985,
+     "feed_sfm_rpm": 4000,
+     "feed_vendor_rpm": 4000
+    },
+    "class_D_Z/point": {
+     "chip": 0.2140952588510117,
+     "feed_sfm_rpm": 3861,
+     "feed_vendor_rpm": 4000
+    },
+    "class_D_Z/vendor": {
+     "chip": 0.23515810612437094,
+     "feed_sfm_rpm": 4000,
+     "feed_vendor_rpm": 4000
+    },
+    "janka_D_Z/point": {
+     "chip": 0.20621036322039904,
+     "feed_sfm_rpm": 3719,
+     "feed_vendor_rpm": 4000
+    },
+    "janka_D_Z/vendor": {
+     "chip": 0.2152351930203757,
+     "feed_sfm_rpm": 3882,
+     "feed_vendor_rpm": 4000
+    },
+    "roughing_row_x1": {
+     "chip": 0.1524,
+     "row": "amana-flat-mdf-pocket-6000-2f-spektra",
+     "feed_sfm_rpm": 2748,
+     "feed_vendor_rpm": 4000,
+     "pocket_cell_rpm": 13123.0,
+     "pocket_cell_feed": 3999.0
+    },
+    "anchored_series_law": {
+     "chip": 0.1524,
+     "b": 0.5604269430290472,
+     "feed_sfm_rpm": 2748,
+     "feed_vendor_rpm": 4000
+    }
+   }
+  },
+  {
+   "tool": "EndMill",
+   "D": 6.0,
+   "Z": 2,
+   "op": "HorizontalFinish",
+   "mat": "plywood_hardwood",
+   "rpm": 9549.0,
+   "feed": 964.0,
+   "chip": 0.0505,
+   "warnings": "LongToolDerate",
+   "repro_chip": 0.050485235519059986,
+   "repro_rpm": 9549.29658551372,
+   "laws": {
+    "per_class/point": {
+     "chip": 0.22333456916067287,
+     "feed_sfm_rpm": 4000,
+     "feed_vendor_rpm": 4000
+    },
+    "per_class/vendor": {
+     "chip": 0.2148940612586,
+     "feed_sfm_rpm": 4000,
+     "feed_vendor_rpm": 4000
+    },
+    "class_D/point": {
+     "chip": 0.23666338062359202,
+     "feed_sfm_rpm": 4000,
+     "feed_vendor_rpm": 4000
+    },
+    "class_D/vendor": {
+     "chip": 0.2243434670876631,
+     "feed_sfm_rpm": 4000,
+     "feed_vendor_rpm": 4000
+    },
+    "class_D_Z/point": {
+     "chip": 0.24813414445717366,
+     "feed_sfm_rpm": 4000,
+     "feed_vendor_rpm": 4000
+    },
+    "class_D_Z/vendor": {
+     "chip": 0.23505210993522685,
+     "feed_sfm_rpm": 4000,
+     "feed_vendor_rpm": 4000
+    },
+    "janka_D_Z/point": {
+     "chip": 0.20617081268819612,
+     "feed_sfm_rpm": 3937,
+     "feed_vendor_rpm": 4000
+    },
+    "janka_D_Z/vendor": {
+     "chip": 0.21538211391853984,
+     "feed_sfm_rpm": 4000,
+     "feed_vendor_rpm": 4000
+    },
+    "roughing_row_x1": {
+     "chip": 0.127,
+     "row": "amana-flat-plywood-hardwood-pocket-6000-2f-spektra",
+     "feed_sfm_rpm": 2425,
+     "feed_vendor_rpm": 4000,
+     "pocket_cell_rpm": 15748.0,
+     "pocket_cell_feed": 3999.0
+    },
+    "anchored_series_law": {
+     "chip": 0.127,
+     "b": 0.5604269430290472,
+     "feed_sfm_rpm": 2425,
+     "feed_vendor_rpm": 4000
+    }
+   }
+  },
+  {
+   "tool": "BallNose",
+   "D": 3.175,
+   "Z": 2,
+   "op": "Profile",
+   "mat": "softwood",
+   "rpm": 20051.0,
+   "feed": 1947.0,
+   "chip": 0.0486,
+   "warnings": "LongToolDerate",
+   "repro_chip": 0.04855957943953748,
+   "repro_rpm": 20051.01645252225
+  },
+  {
+   "tool": "BallNose",
+   "D": 3.175,
+   "Z": 2,
+   "op": "Profile",
+   "mat": "hardwood",
+   "rpm": 20051.0,
+   "feed": 1248.0,
+   "chip": 0.0311,
+   "warnings": "LongToolDerate",
+   "repro_chip": 0.031126742565508767,
+   "repro_rpm": 20051.01645252225
+  },
+  {
+   "tool": "BallNose",
+   "D": 3.175,
+   "Z": 2,
+   "op": "Trace",
+   "mat": "softwood",
+   "rpm": 20051.0,
+   "feed": 1947.0,
+   "chip": 0.0486,
+   "warnings": "LongToolDerate",
+   "repro_chip": 0.04855957943953748,
+   "repro_rpm": 20051.01645252225
+  },
+  {
+   "tool": "BallNose",
+   "D": 3.175,
+   "Z": 2,
+   "op": "Trace",
+   "mat": "hardwood",
+   "rpm": 20051.0,
+   "feed": 1248.0,
+   "chip": 0.0311,
+   "warnings": "LongToolDerate",
+   "repro_chip": 0.031126742565508767,
+   "repro_rpm": 20051.01645252225
+  },
+  {
+   "tool": "BallNose",
+   "D": 3.175,
+   "Z": 2,
+   "op": "Waterline",
+   "mat": "softwood",
+   "rpm": 20051.0,
+   "feed": 2856.0,
+   "chip": 0.0486,
+   "warnings": "LongToolDerate",
+   "repro_chip": 0.04855957943953748,
+   "repro_rpm": 20051.01645252225
+  },
+  {
+   "tool": "BallNose",
+   "D": 3.175,
+   "Z": 2,
+   "op": "Waterline",
+   "mat": "hardwood",
+   "rpm": 20051.0,
+   "feed": 1831.0,
+   "chip": 0.0311,
+   "warnings": "LongToolDerate",
+   "repro_chip": 0.031126742565508767,
+   "repro_rpm": 20051.01645252225
+  },
+  {
+   "tool": "BallNose",
+   "D": 3.175,
+   "Z": 2,
+   "op": "Pencil",
+   "mat": "softwood",
+   "rpm": 20051.0,
+   "feed": 1947.0,
+   "chip": 0.0486,
+   "warnings": "LongToolDerate",
+   "repro_chip": 0.04855957943953748,
+   "repro_rpm": 20051.01645252225
+  },
+  {
+   "tool": "BallNose",
+   "D": 3.175,
+   "Z": 2,
+   "op": "Pencil",
+   "mat": "hardwood",
+   "rpm": 20051.0,
+   "feed": 1248.0,
+   "chip": 0.0311,
+   "warnings": "LongToolDerate",
+   "repro_chip": 0.031126742565508767,
+   "repro_rpm": 20051.01645252225
+  },
+  {
+   "tool": "BallNose",
+   "D": 3.175,
+   "Z": 2,
+   "op": "SteepShallow",
+   "mat": "softwood",
+   "rpm": 20051.0,
+   "feed": 1947.0,
+   "chip": 0.0486,
+   "warnings": "LongToolDerate",
+   "repro_chip": 0.04855957943953748,
+   "repro_rpm": 20051.01645252225
+  },
+  {
+   "tool": "BallNose",
+   "D": 3.175,
+   "Z": 2,
+   "op": "SteepShallow",
+   "mat": "hardwood",
+   "rpm": 20051.0,
+   "feed": 1248.0,
+   "chip": 0.0311,
+   "warnings": "LongToolDerate",
+   "repro_chip": 0.031126742565508767,
+   "repro_rpm": 20051.01645252225
+  },
+  {
+   "tool": "BallNose",
+   "D": 6.0,
+   "Z": 2,
+   "op": "Profile",
+   "mat": "softwood",
+   "rpm": 10610.0,
+   "feed": 1519.0,
+   "chip": 0.0716,
+   "warnings": "LongToolDerate",
+   "repro_chip": 0.0715951337002856,
+   "repro_rpm": 10610.32953945969
+  },
+  {
+   "tool": "BallNose",
+   "D": 6.0,
+   "Z": 2,
+   "op": "Profile",
+   "mat": "hardwood",
+   "rpm": 10610.0,
+   "feed": 973.0,
+   "chip": 0.0459,
+   "warnings": "LongToolDerate",
+   "repro_chip": 0.04589255758293275,
+   "repro_rpm": 10610.32953945969
+  },
+  {
+   "tool": "BallNose",
+   "D": 6.0,
+   "Z": 2,
+   "op": "Trace",
+   "mat": "softwood",
+   "rpm": 10610.0,
+   "feed": 1519.0,
+   "chip": 0.0716,
+   "warnings": "LongToolDerate",
+   "repro_chip": 0.0715951337002856,
+   "repro_rpm": 10610.32953945969
+  },
+  {
+   "tool": "BallNose",
+   "D": 6.0,
+   "Z": 2,
+   "op": "Trace",
+   "mat": "hardwood",
+   "rpm": 10610.0,
+   "feed": 973.0,
+   "chip": 0.0459,
+   "warnings": "LongToolDerate",
+   "repro_chip": 0.04589255758293275,
+   "repro_rpm": 10610.32953945969
+  },
+  {
+   "tool": "BallNose",
+   "D": 6.0,
+   "Z": 2,
+   "op": "Waterline",
+   "mat": "softwood",
+   "rpm": 10610.0,
+   "feed": 2228.0,
+   "chip": 0.0716,
+   "warnings": "LongToolDerate",
+   "repro_chip": 0.0715951337002856,
+   "repro_rpm": 10610.32953945969
+  },
+  {
+   "tool": "BallNose",
+   "D": 6.0,
+   "Z": 2,
+   "op": "Waterline",
+   "mat": "hardwood",
+   "rpm": 10610.0,
+   "feed": 1428.0,
+   "chip": 0.0459,
+   "warnings": "LongToolDerate",
+   "repro_chip": 0.04589255758293275,
+   "repro_rpm": 10610.32953945969
+  },
+  {
+   "tool": "BallNose",
+   "D": 6.0,
+   "Z": 2,
+   "op": "Pencil",
+   "mat": "softwood",
+   "rpm": 10610.0,
+   "feed": 1519.0,
+   "chip": 0.0716,
+   "warnings": "LongToolDerate",
+   "repro_chip": 0.0715951337002856,
+   "repro_rpm": 10610.32953945969
+  },
+  {
+   "tool": "BallNose",
+   "D": 6.0,
+   "Z": 2,
+   "op": "Pencil",
+   "mat": "hardwood",
+   "rpm": 10610.0,
+   "feed": 973.0,
+   "chip": 0.0459,
+   "warnings": "LongToolDerate",
+   "repro_chip": 0.04589255758293275,
+   "repro_rpm": 10610.32953945969
+  },
+  {
+   "tool": "BallNose",
+   "D": 6.0,
+   "Z": 2,
+   "op": "SteepShallow",
+   "mat": "softwood",
+   "rpm": 10610.0,
+   "feed": 1519.0,
+   "chip": 0.0716,
+   "warnings": "LongToolDerate",
+   "repro_chip": 0.0715951337002856,
+   "repro_rpm": 10610.32953945969
+  },
+  {
+   "tool": "BallNose",
+   "D": 6.0,
+   "Z": 2,
+   "op": "SteepShallow",
+   "mat": "hardwood",
+   "rpm": 10610.0,
+   "feed": 973.0,
+   "chip": 0.0459,
+   "warnings": "LongToolDerate",
+   "repro_chip": 0.04589255758293275,
+   "repro_rpm": 10610.32953945969
+  },
+  {
+   "tool": "VBit",
+   "D": 6.35,
+   "Z": 2,
+   "op": "Face",
+   "mat": "softwood",
+   "rpm": 10026.0,
+   "feed": 1486.0,
+   "chip": 0.0741,
+   "warnings": "LongToolDerate",
+   "repro_chip": 0.07411450530284591,
+   "repro_rpm": 10025.508226261125
+  },
+  {
+   "tool": "VBit",
+   "D": 6.35,
+   "Z": 2,
+   "op": "Pocket",
+   "mat": "softwood",
+   "rpm": 10026.0,
+   "feed": 1486.0,
+   "chip": 0.0741,
+   "warnings": "LongToolDerate",
+   "repro_chip": 0.07411450530284591,
+   "repro_rpm": 10025.508226261125
+  },
+  {
+   "tool": "VBit",
+   "D": 6.35,
+   "Z": 2,
+   "op": "Profile",
+   "mat": "softwood",
+   "rpm": 24000.0,
+   "feed": 1667.0,
+   "chip": 0.0347,
+   "warnings": "LongToolDerate",
+   "repro_chip": 0.07411450530284591,
+   "repro_rpm": 10025.508226261125
+  },
+  {
+   "tool": "VBit",
+   "D": 6.35,
+   "Z": 2,
+   "op": "Zigzag",
+   "mat": "softwood",
+   "rpm": 10026.0,
+   "feed": 1486.0,
+   "chip": 0.0741,
+   "warnings": "LongToolDerate",
+   "repro_chip": 0.07411450530284591,
+   "repro_rpm": 10025.508226261125
+  },
+  {
+   "tool": "VBit",
+   "D": 12.7,
+   "Z": 2,
+   "op": "Face",
+   "mat": "softwood",
+   "rpm": 8000.0,
+   "feed": 1809.0,
+   "chip": 0.1131,
+   "warnings": "ShankTooLarge",
+   "repro_chip": 0.11311794623602477,
+   "repro_rpm": 8000.0
+  },
+  {
+   "tool": "VBit",
+   "D": 12.7,
+   "Z": 2,
+   "op": "Pocket",
+   "mat": "softwood",
+   "rpm": 8000.0,
+   "feed": 1809.0,
+   "chip": 0.1131,
+   "warnings": "ShankTooLarge",
+   "repro_chip": 0.11311794623602477,
+   "repro_rpm": 8000.0
+  },
+  {
+   "tool": "VBit",
+   "D": 12.7,
+   "Z": 2,
+   "op": "Profile",
+   "mat": "softwood",
+   "rpm": 17365.0,
+   "feed": 1841.0,
+   "chip": 0.053,
+   "warnings": "ShankTooLarge",
+   "repro_chip": 0.11311794623602477,
+   "repro_rpm": 8000.0
+  },
+  {
+   "tool": "VBit",
+   "D": 12.7,
+   "Z": 2,
+   "op": "Zigzag",
+   "mat": "softwood",
+   "rpm": 8000.0,
+   "feed": 1809.0,
+   "chip": 0.1131,
+   "warnings": "ShankTooLarge",
+   "repro_chip": 0.11311794623602477,
+   "repro_rpm": 8000.0
+  }
+ ],
+ "moves": {
+  "per_class/point|feed_sfm_rpm": {
+   "n": 32,
+   "gt5pct": 32,
+   "ge2x": 32,
+   "at_cap": 20,
+   "ratio_min": 2.054442732408834,
+   "ratio_max": 4.149377593360996
+  },
+  "per_class/point|feed_vendor_rpm": {
+   "n": 32,
+   "gt5pct": 32,
+   "ge2x": 28,
+   "at_cap": 28,
+   "ratio_min": 1.9229583975346687,
+   "ratio_max": 4.206098843322818
+  },
+  "per_class/vendor|feed_sfm_rpm": {
+   "n": 32,
+   "gt5pct": 32,
+   "ge2x": 32,
+   "at_cap": 24,
+   "ratio_min": 2.054442732408834,
+   "ratio_max": 4.206098843322818
+  },
+  "per_class/vendor|feed_vendor_rpm": {
+   "n": 32,
+   "gt5pct": 32,
+   "ge2x": 32,
+   "at_cap": 28,
+   "ratio_min": 2.054442732408834,
+   "ratio_max": 4.206098843322818
+  },
+  "class_D/point|feed_sfm_rpm": {
+   "n": 32,
+   "gt5pct": 32,
+   "ge2x": 32,
+   "at_cap": 20,
+   "ratio_min": 2.054442732408834,
+   "ratio_max": 4.149377593360996
+  },
+  "class_D/point|feed_vendor_rpm": {
+   "n": 32,
+   "gt5pct": 32,
+   "ge2x": 28,
+   "at_cap": 24,
+   "ratio_min": 1.9445300462249615,
+   "ratio_max": 4.206098843322818
+  },
+  "class_D/vendor|feed_sfm_rpm": {
+   "n": 32,
+   "gt5pct": 32,
+   "ge2x": 32,
+   "at_cap": 24,
+   "ratio_min": 2.054442732408834,
+   "ratio_max": 4.206098843322818
+  },
+  "class_D/vendor|feed_vendor_rpm": {
+   "n": 32,
+   "gt5pct": 32,
+   "ge2x": 32,
+   "at_cap": 28,
+   "ratio_min": 2.054442732408834,
+   "ratio_max": 4.206098843322818
+  },
+  "class_D_Z/point|feed_sfm_rpm": {
+   "n": 32,
+   "gt5pct": 32,
+   "ge2x": 32,
+   "at_cap": 20,
+   "ratio_min": 2.054442732408834,
+   "ratio_max": 4.149377593360996
+  },
+  "class_D_Z/point|feed_vendor_rpm": {
+   "n": 32,
+   "gt5pct": 32,
+   "ge2x": 32,
+   "at_cap": 32,
+   "ratio_min": 2.054442732408834,
+   "ratio_max": 4.206098843322818
+  },
+  "class_D_Z/vendor|feed_sfm_rpm": {
+   "n": 32,
+   "gt5pct": 32,
+   "ge2x": 32,
+   "at_cap": 32,
+   "ratio_min": 2.054442732408834,
+   "ratio_max": 4.206098843322818
+  },
+  "class_D_Z/vendor|feed_vendor_rpm": {
+   "n": 32,
+   "gt5pct": 32,
+   "ge2x": 32,
+   "at_cap": 32,
+   "ratio_min": 2.054442732408834,
+   "ratio_max": 4.206098843322818
+  },
+  "janka_D_Z/point|feed_sfm_rpm": {
+   "n": 32,
+   "gt5pct": 32,
+   "ge2x": 32,
+   "at_cap": 24,
+   "ratio_min": 2.054442732408834,
+   "ratio_max": 4.110996916752312
+  },
+  "janka_D_Z/point|feed_vendor_rpm": {
+   "n": 32,
+   "gt5pct": 32,
+   "ge2x": 32,
+   "at_cap": 32,
+   "ratio_min": 2.054442732408834,
+   "ratio_max": 4.206098843322818
+  },
+  "janka_D_Z/vendor|feed_sfm_rpm": {
+   "n": 32,
+   "gt5pct": 32,
+   "ge2x": 32,
+   "at_cap": 28,
+   "ratio_min": 2.054442732408834,
+   "ratio_max": 4.149377593360996
+  },
+  "janka_D_Z/vendor|feed_vendor_rpm": {
+   "n": 32,
+   "gt5pct": 32,
+   "ge2x": 32,
+   "at_cap": 32,
+   "ratio_min": 2.054442732408834,
+   "ratio_max": 4.206098843322818
+  },
+  "roughing_row_x1|feed_sfm_rpm": {
+   "n": 32,
+   "gt5pct": 32,
+   "ge2x": 28,
+   "at_cap": 12,
+   "ratio_min": 1.773535220539829,
+   "ratio_max": 3.281378178835111
+  },
+  "roughing_row_x1|feed_vendor_rpm": {
+   "n": 32,
+   "gt5pct": 32,
+   "ge2x": 28,
+   "at_cap": 20,
+   "ratio_min": 1.8782742681047766,
+   "ratio_max": 4.206098843322818
+  },
+  "anchored_series_law|feed_sfm_rpm": {
+   "n": 32,
+   "gt5pct": 32,
+   "ge2x": 28,
+   "at_cap": 12,
+   "ratio_min": 1.773535220539829,
+   "ratio_max": 3.281378178835111
+  },
+  "anchored_series_law|feed_vendor_rpm": {
+   "n": 32,
+   "gt5pct": 32,
+   "ge2x": 28,
+   "at_cap": 20,
+   "ratio_min": 1.8782742681047766,
+   "ratio_max": 4.206098843322818
+  }
+ },
+ "harvey": {
+  "diameters_in": [
+   0.015,
+   0.031,
+   0.047,
+   0.062,
+   0.078,
+   0.093,
+   0.125,
+   0.187,
+   0.25,
+   0.312,
+   0.375,
+   0.5,
+   0.625,
+   0.75,
+   1.0
+  ],
+  "rows": {
+   "softer": {
+    "slot_ipt": [
+     0.0007,
+     0.0015,
+     0.0022,
+     0.0029,
+     0.0037,
+     0.0044,
+     0.0059,
+     0.0088,
+     0.0118,
+     0.0125,
+     0.015,
+     0.02,
+     0.025,
+     0.03,
+     0.04
+    ],
+    "finish_ipt": [
+     0.0005,
+     0.0011,
+     0.0017,
+     0.0022,
+     0.0028,
+     0.0033,
+     0.0045,
+     0.0067,
+     0.009,
+     0.0097,
+     0.0116,
+     0.0155,
+     0.0194,
+     0.0233,
+     0.031
+    ],
+    "ratio_min": 0.7142857142857143,
+    "ratio_max": 0.7766666666666667,
+    "ratio_median": 0.7627118644067796
+   },
+   "harder": {
+    "slot_ipt": [
+     0.0006,
+     0.0013,
+     0.002,
+     0.0026,
+     0.0033,
+     0.0039,
+     0.0053,
+     0.0079,
+     0.0106,
+     0.0112,
+     0.0135,
+     0.018,
+     0.0225,
+     0.027,
+     0.036
+    ],
+    "finish_ipt": [
+     0.0005,
+     0.001,
+     0.0015,
+     0.002,
+     0.0025,
+     0.003,
+     0.0041,
+     0.0061,
+     0.0081,
+     0.0087,
+     0.0105,
+     0.014,
+     0.0174,
+     0.0209,
+     0.0279
+    ],
+    "ratio_min": 0.75,
+    "ratio_max": 0.8333333333333334,
+    "ratio_median": 0.7733333333333333
+   },
+   "engineered": {
+    "slot_ipt": [
+     0.0008,
+     0.0016,
+     0.0024,
+     0.0032,
+     0.004,
+     0.0048,
+     0.0065,
+     0.0097,
+     0.0129,
+     0.0137,
+     0.0165,
+     0.022,
+     0.0275,
+     0.033,
+     0.044
+    ],
+    "finish_ipt": [
+     0.0006,
+     0.0012,
+     0.0019,
+     0.0025,
+     0.0031,
+     0.0037,
+     0.005,
+     0.0074,
+     0.0099,
+     0.0106,
+     0.0128,
+     0.0171,
+     0.0213,
+     0.0256,
+     0.0341
+    ],
+    "ratio_min": 0.7499999999999999,
+    "ratio_max": 0.7916666666666667,
+    "ratio_median": 0.7745454545454545
+   },
+   "phenolic": {
+    "slot_ipt": [
+     0.0003,
+     0.0006,
+     0.0009,
+     0.0012,
+     0.0015,
+     0.0017,
+     0.0024,
+     0.0035,
+     0.0047,
+     0.005,
+     0.006,
+     0.008,
+     0.01,
+     0.012,
+     0.016
+    ],
+    "finish_ipt": [
+     0.0002,
+     0.0004,
+     0.0007,
+     0.0009,
+     0.0011,
+     0.0013,
+     0.0018,
+     0.0027,
+     0.0036,
+     0.0039,
+     0.0047,
+     0.0062,
+     0.0078,
+     0.0093,
+     0.0124
+    ],
+    "ratio_min": 0.6666666666666667,
+    "ratio_max": 0.7833333333333333,
+    "ratio_median": 0.7714285714285715
+   }
+  },
+  "model": {
+   "ae_over_D": 0.1,
+   "garr_lift": 1.666666666666667,
+   "depth_table_3xD": 0.5,
+   "product": 0.8333333333333335
+  }
+ }
+}
