@@ -2294,6 +2294,102 @@ fn deflection_limit(
     });
 }
 
+/// The bisection steps that place a force-budget depth between two solved
+/// width columns (a numerical step, not a formula constant): twelve steps
+/// put the sample within 1/4096 of the column gap.
+const BUDGET_EDGE_REFINE_STEPS: usize = 12;
+
+/// The midpoint split passes on the smooth stretches of the force-budget
+/// edge (a numerical step, not a formula constant): each pass halves every
+/// segment whose straight line stands above the solved depth.
+const BUDGET_EDGE_SPLIT_LEVELS: usize = 4;
+
+/// P13c fix (lead review 2026-11-06): the force-budget depth is not a
+/// smooth function of the width. The peak engaged-edge force of a helical
+/// edge plateaus once a full flute pitch is engaged, so where the budget
+/// sits inside that plateau a small width step moves the shallowest
+/// crossing by millimetres (measured: 3.175 mm 2F in hardwood, ae 2.317 ->
+/// 2.324 mm, the depth 8.65 -> 5.65 mm). A straight line between two solved
+/// columns then draws depths the model refuses, and a point the envelope
+/// places inside can beat the exact proposal. Between each pair of adjacent
+/// columns this bisects the width at which the depth leaves the left
+/// column's value for the right one's and adds the two bracketing samples,
+/// so a cliff stands at its own width and a smooth stretch gains a midpoint.
+fn refine_budget_columns(
+    columns: &mut Vec<(f64, Option<crate::feeds::force_budget::BudgetDepth>)>,
+    top: f64,
+    solve: impl Fn(f64) -> Option<crate::feeds::force_budget::BudgetDepth>,
+) {
+    let depth = |c: Option<crate::feeds::force_budget::BudgetDepth>| {
+        c.and_then(crate::feeds::force_budget::BudgetDepth::ceiling_mm)
+            .unwrap_or(top)
+    };
+    let mut added = Vec::new();
+    for pair in columns.windows(2) {
+        let [(a, ca), (b, cb)] = pair else {
+            continue;
+        };
+        if ca.is_none() || cb.is_none() {
+            continue;
+        }
+        let (da, db) = (depth(*ca), depth(*cb));
+        if (da - db).abs() < crate::feeds::cutter_constraints::BINSEARCH_CONVERGENCE_MM {
+            continue;
+        }
+        let (mut lo, mut hi) = ((*a, *ca), (*b, *cb));
+        for _ in 0..BUDGET_EDGE_REFINE_STEPS {
+            let mid = 0.5 * (lo.0 + hi.0);
+            let cm = solve(mid);
+            if cm.is_none() {
+                break;
+            }
+            let dm = depth(cm);
+            if (dm - da).abs() <= (dm - db).abs() {
+                lo = (mid, cm);
+            } else {
+                hi = (mid, cm);
+            }
+        }
+        for sample in [lo, hi] {
+            if (sample.0 - a).abs() > 1e-12 && (sample.0 - b).abs() > 1e-12 {
+                added.push(sample);
+            }
+        }
+    }
+    columns.extend(added);
+    columns.sort_by(|x, y| x.0.total_cmp(&y.0));
+    columns.dedup_by(|x, y| (x.0 - y.0).abs() < 1e-12);
+    // Then the smooth stretches: split a segment at its midpoint while the
+    // straight line there stands above the solved depth by more than the
+    // solver's own resolution, up to `BUDGET_EDGE_SPLIT_LEVELS` times.
+    for _ in 0..BUDGET_EDGE_SPLIT_LEVELS {
+        let mut split = Vec::new();
+        for pair in columns.windows(2) {
+            let [(a, ca), (b, cb)] = pair else {
+                continue;
+            };
+            if ca.is_none() || cb.is_none() {
+                continue;
+            }
+            let mid = 0.5 * (a + b);
+            let cm = solve(mid);
+            if cm.is_none() {
+                continue;
+            }
+            let line = 0.5 * (depth(*ca) + depth(*cb));
+            if line - depth(cm) > crate::feeds::cutter_constraints::BINSEARCH_CONVERGENCE_MM {
+                split.push((mid, cm));
+            }
+        }
+        if split.is_empty() {
+            break;
+        }
+        columns.extend(split);
+        columns.sort_by(|x, y| x.0.total_cmp(&y.0));
+        columns.dedup_by(|x, y| (x.0 - y.0).abs() < 1e-12);
+    }
+}
+
 /// The `Rigidity` limit (roughing). P13c (O1):
 ///
 /// - The Adaptive family: `adaptive_doc_factor x D`, an `ap` ceiling
@@ -2304,7 +2400,10 @@ fn deflection_limit(
 ///   budget. Extra exact samples at the slot threshold, the corner bound
 ///   and the stated width. A column with no root takes the span top; no
 ///   root anywhere, or no force line, is an `Unmodelled` entry with its
-///   reason. Returns the model the proposal solves exactly.
+///   reason. Between adjacent columns [`refine_budget_columns`] adds the
+///   samples of a cliff and of the smooth stretches, so the drawn edge
+///   stands on the solved depth. Returns the model the proposal solves
+///   exactly.
 fn rigidity_limit(
     out: &mut Vec<Limit>,
     inputs: &OwnedInputs,
@@ -2409,6 +2508,19 @@ fn rigidity_limit(
         out.push(unmodelled(fb::NO_BUDGET_INPUT));
         return None;
     }
+    let top = speeds.aps.last().copied().unwrap_or(MIN_AP_MM);
+    refine_budget_columns(&mut columns, top, |ae| {
+        let fz = model.operator_fz.unwrap_or_else(|| {
+            chip_of(
+                &inputs.calc_at(CutPoint {
+                    ap_mm: MIN_AP_MM,
+                    ae_mm: ae,
+                }),
+                flutes,
+            )
+        });
+        fb::depth_at_budget(&tool, &inputs.material, ae.max(1.0e-3), fz, budget_n)
+    });
     model.solved = SolvedColumns(
         columns
             .iter()
@@ -2425,7 +2537,6 @@ fn rigidity_limit(
     let floored = columns
         .iter()
         .any(|(_, c)| matches!(c, Some(fb::BudgetDepth::BelowFloor)));
-    let top = speeds.aps.last().copied().unwrap_or(MIN_AP_MM);
     let curve: Vec<[f64; 2]> = columns
         .into_iter()
         .map(|(ae, c)| [ae, c.and_then(fb::BudgetDepth::ceiling_mm).unwrap_or(top)])
@@ -2655,5 +2766,81 @@ mod tests {
         let p = env.proposal.get();
         assert!(p.ap_mm <= stated.ap_mm + 1e-12);
         assert!(p.ae_mm <= stated.ae_mm + 1e-12);
+    }
+
+    /// The 3.175 mm 2F hardwood Pocket of
+    /// `the_pocket_proposal_is_the_removal_rate_maximum_p13c` (the FM1 tool,
+    /// the Freud chip): free width and depth, no stated speeds.
+    fn hardwood_3175_pocket() -> SafeEnvelope {
+        use crate::compute::geometry_default::slot_mut;
+        use crate::compute::tool_config::ToolFact;
+        let mut op = OperationConfig::new_default(OperationType::Pocket);
+        for field in ["stepover", "depth_per_pass"] {
+            if let Some(slot) = slot_mut(&mut op, field) {
+                *slot = None;
+            }
+        }
+        op.set_spindle_rpm(None);
+        let mut tool = ToolConfig::test_default(ToolId::from_raw(1), ToolType::EndMill);
+        tool.diameter = 3.175;
+        tool.set_flute_count(ToolFact::Stated(2));
+        tool.set_cutting_length(ToolFact::Stated(12.0));
+        tool.set_shank_diameter(ToolFact::Stated(3.175));
+        tool.shaft_diameter = 3.175;
+        tool.set_stickout(ToolFact::Stated(tool.cutting_length_planning_mm() + 8.0));
+        let machine = MachineProfile::default();
+        let material = Material::SolidWood {
+            species: crate::material::WoodSpecies::GenericHardwood,
+        };
+        SafeEnvelope::for_cut(EnvelopeInput {
+            operation: &op,
+            tool: &tool,
+            machine: &machine,
+            material: &material,
+            lut: crate::feeds::embedded_vendor_lut(),
+            spindle_strategy: SpindleStrategy::default(),
+            context: SuggestContext::default(),
+        })
+        .unwrap()
+    }
+
+    /// P13c fix: the drawn force-budget edge never stands above the solved
+    /// depth. The peak force of a helical edge plateaus with depth, and
+    /// where the budget sits in that plateau the solved depth drops by
+    /// millimetres over a small width step (8.65 -> 5.65 mm at ae 2.317 ->
+    /// 2.324 mm here). A straight line between two solved columns drew
+    /// 6.9 mm at ae 2.381 mm where the model allows 5.46 mm, so the envelope
+    /// placed that point inside and it beat the exact proposal. Red before
+    /// `refine_budget_columns`.
+    #[test]
+    fn the_drawn_force_budget_edge_stands_on_the_solved_depth() {
+        let env = hardwood_3175_pocket();
+        let edge = env.limit(LimitKind::Rigidity).unwrap();
+        let top = *env.speeds.aps.last().unwrap();
+        let (lo, hi) = (
+            *env.speeds.aes.first().unwrap(),
+            *env.speeds.aes.last().unwrap(),
+        );
+        let mut worst = (0.0, 0.0, 0.0);
+        for i in 0..=400 {
+            let ae = lo + (hi - lo) * f64::from(i) / 400.0;
+            let drawn = edge.ap_ceiling_at(ae).unwrap();
+            let solved = env
+                .budget_depth_at(ae, BudgetChip::Curve)
+                .and_then(crate::feeds::force_budget::BudgetDepth::ceiling_mm)
+                .unwrap_or(top);
+            if drawn - solved > worst.1 - worst.2 {
+                worst = (ae, drawn, solved);
+            }
+        }
+        println!("worst (ae, drawn, solved) = {worst:?}");
+        // The removal-rate search compares its pick with the placed points
+        // within 0.5 %; the drawn edge must not stand higher than that.
+        assert!(
+            worst.1 <= worst.2 * 1.005,
+            "the drawn edge stands {} mm above the solved depth at ae {}",
+            worst.1 - worst.2,
+            worst.0
+        );
     }
 }

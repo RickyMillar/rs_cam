@@ -126,6 +126,7 @@ fn lowered(r: &FeedsResult) -> Option<(f64, f64, f64, f64, RpmFloorSource, bool)
         | FeedsWarning::LongToolDerate { .. }
         | FeedsWarning::VendorRowPublishesNoChipload { .. }
         | FeedsWarning::NoVendorRowsForRoutedOperation { .. }
+        | FeedsWarning::FormulaChipNoPrintedRow { .. }
         | FeedsWarning::DrillFeedClampedToEnvelope { .. } => None,
     })
 }

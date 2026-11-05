@@ -928,6 +928,18 @@ fn warning_lines(warning: &rs_cam_core::feeds::FeedsWarning) -> (String, Option<
                 ),
             }),
         ),
+        // P13 item 4 (law B): the flat end mill has no printed roughing row
+        // of its own material; the chip is the machine formula.
+        FeedsWarning::FormulaChipNoPrintedRow {
+            formula_chipload_mm,
+        } => (
+            "No printed row; formula chip".to_owned(),
+            Some(format!(
+                "No vendor roughing row matches this tool and material, so the \
+                 {formula_chipload_mm:.4} mm/tooth comes from the machine chip formula \
+                 (no source in the repository) and carries no band."
+            )),
+        ),
         FeedsWarning::DrillFeedClampedToEnvelope {
             requested,
             actual,
@@ -978,6 +990,7 @@ pub(crate) fn warning_rows(explain: &FeedsExplain) -> Vec<Placement> {
                 | FeedsWarning::ScallopInvalid { .. }
                 | FeedsWarning::ShankTooLarge { .. }
                 | FeedsWarning::ChiploadBelowRubbingFloor { .. }
+                | FeedsWarning::FormulaChipNoPrintedRow { .. }
                 | FeedsWarning::DrillFeedClampedToEnvelope { .. } => {
                     Placement::Problem(caution(format!("⚠ {headline}")).hover_opt(detail))
                 }

@@ -2,10 +2,11 @@
 //! the formula second.
 
 use super::Chip;
+use crate::compute::catalog::LutRoute;
 use crate::feeds::sourced::Basis;
 use crate::feeds::{
     ChiploadBounds, ChiploadSource, FeedsInput, FeedsWarning, chip_basis_of_row, geometry, support,
-    vendor_lookup, vendor_normalize,
+    vendor_lookup, vendor_lut, vendor_normalize,
 };
 use crate::material::{ConstantSource, FormulaConstant};
 
@@ -104,6 +105,18 @@ pub(super) fn step2_chip_load(
             operation_kind: format!("{:?}", input.operation_kind),
             tool_family: format!("{tool_family:?}"),
             missing_rows: vendor_normalize::missing_project_curve_rows(tool_family).to_owned(),
+        });
+    }
+    if matches!(row_lookup, support::RecipeRowLookup::NoRow)
+        && input.tool_geometry.cutter_kind().lut_family() == vendor_lut::ToolFamily::FlatEnd
+        && input
+            .operation_kind
+            .is_some_and(|k| k.capabilities().lut_route == LutRoute::FlatAsRoughPocket)
+    {
+        // P13 item 4 (law B): the tool has no (Pocket, Roughing) row of its
+        // own material. The formula chip stays, and the warning says so (D7).
+        warnings.push(FeedsWarning::FormulaChipNoPrintedRow {
+            formula_chipload_mm: formula_chipload,
         });
     }
     let support = support::support_for_lookup(input, &row_lookup);

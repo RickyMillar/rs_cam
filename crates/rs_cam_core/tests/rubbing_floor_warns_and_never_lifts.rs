@@ -249,6 +249,7 @@ fn a_ceiling_that_pushes_the_advance_under_the_band_minimum_warns_and_does_not_l
         | FeedsWarning::LongToolDerate { .. }
         | FeedsWarning::VendorRowPublishesNoChipload { .. }
         | FeedsWarning::NoVendorRowsForRoutedOperation { .. }
+        | FeedsWarning::FormulaChipNoPrintedRow { .. }
         | FeedsWarning::DrillFeedClampedToEnvelope { .. } => None,
     });
 

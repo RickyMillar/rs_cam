@@ -3308,6 +3308,36 @@
     "ratio": 1.7630637973213767
    }
   ],
+  "within_group_slope": {
+   "k": 0.522414877044122,
+   "groups": 33,
+   "industrial_oos": [
+    {
+     "id": "freud-solid-carbide-half-hardwood",
+     "anchor": "freud-solid-carbide-three-eighth-hardwood",
+     "law": 0.4427869680563759,
+     "ratio": 1.118596606792949
+    },
+    {
+     "id": "freud-solid-carbide-half-softwood",
+     "anchor": "freud-solid-carbide-quarter-softwood",
+     "law": 0.40131828711818657,
+     "ratio": 1.3607653015801293
+    },
+    {
+     "id": "freud-solid-carbide-half-mdf-particle",
+     "anchor": "freud-solid-carbide-quarter-mdf-particle",
+     "law": 0.547252209706618,
+     "ratio": 1.160342505223366
+    },
+    {
+     "id": "freud-solid-carbide-half-plywood-hardwood",
+     "anchor": "freud-solid-carbide-quarter-plywood-hardwood",
+     "law": 0.273626104853309,
+     "ratio": 1.8101343081484507
+    }
+   ]
+  },
   "per_vendor_slope": {
    "amana": {
     "n": 73,

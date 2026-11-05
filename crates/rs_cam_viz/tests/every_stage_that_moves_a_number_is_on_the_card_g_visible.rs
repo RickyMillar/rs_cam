@@ -139,6 +139,10 @@ fn classify_feeds(w: &FeedsWarning) -> (&'static str, Class) {
         FeedsWarning::NoVendorRowsForRoutedOperation { .. } => {
             ("NoVendorRowsForRoutedOperation", Class::NoNumberMoves)
         }
+        // P13 item 4 (law B): it reports where the chip came from.
+        FeedsWarning::FormulaChipNoPrintedRow { .. } => {
+            ("FormulaChipNoPrintedRow", Class::NoNumberMoves)
+        }
         FeedsWarning::DrillFeedClampedToEnvelope { .. } => {
             ("DrillFeedClampedToEnvelope", Class::OnTheFace)
         }
@@ -315,7 +319,8 @@ fn feeds_numbers(w: &FeedsWarning) -> Vec<String> {
         | FeedsWarning::ScallopInvalid { .. }
         | FeedsWarning::ChiploadBelowRubbingFloor { .. }
         | FeedsWarning::VendorRowPublishesNoChipload { .. }
-        | FeedsWarning::NoVendorRowsForRoutedOperation { .. } => {}
+        | FeedsWarning::NoVendorRowsForRoutedOperation { .. }
+        | FeedsWarning::FormulaChipNoPrintedRow { .. } => {}
     }
     out
 }

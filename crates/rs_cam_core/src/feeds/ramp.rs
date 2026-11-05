@@ -39,7 +39,7 @@
 use std::f64::consts::TAU;
 
 use super::extrapolation::{Claim, DrillClaim, tool_family_label};
-use super::vendor_lut::ToolFamily;
+use super::vendor_lut::{LutOperationFamily, LutPassRole, ToolFamily};
 use super::{FeedsInput, OperationFamily, PassRole};
 use crate::compute::catalog::OperationConfig;
 use crate::compute::config::{
@@ -131,6 +131,11 @@ pub enum RampFallback {
     },
     /// The G1 size claim refused the side row.
     SizeRefused,
+    /// The feed reads a (Pocket, Roughing) row of another chart cell than
+    /// the G6 side row. One operation reads one chart cell (operator ruling
+    /// 2026-10-31), so the G6 chip does not apply (feeds contract P13: a
+    /// Freud row, which prints no ramp column, can win the feed).
+    FeedRowOffTheDrillChart,
     /// The entry is a straight plunge.
     EntryOff,
     /// The toolpath's entry dressup is not known at the call.
@@ -178,6 +183,12 @@ impl RampFallback {
             ),
             Self::SizeRefused => "The G1 size claim refused the side row, so no axial chip is \
                                   sourced, so the ramp holds its vertical rate at the plunge."
+                .to_owned(),
+            Self::FeedRowOffTheDrillChart => "The feed reads a chart cell that prints no ramp \
+                                              column, and the G6 claim reads another chart (the \
+                                              Amana Spektra ramp column); one operation reads one \
+                                              chart cell, so the ramp holds its vertical rate at \
+                                              the plunge."
                 .to_owned(),
             Self::EntryOff => {
                 "The entry is a straight plunge, with no helix or ramp; the entry uses the \
@@ -369,7 +380,10 @@ pub fn entry_geometry(
 ///    chip / Z, with the hardness scale.
 /// 4. Any other row, or no row, gives `NoDrillClaim`.
 #[must_use]
-pub fn ramp_basis(input: &FeedsInput<'_>) -> RampBasis {
+pub fn ramp_basis(
+    input: &FeedsInput<'_>,
+    feed_row: Option<&super::vendor_lookup::LookupResult>,
+) -> RampBasis {
     let fallback = |reason| RampBasis::NoChip { reason };
     if input.operation == OperationFamily::Drill {
         return fallback(RampFallback::DrillCycle);
@@ -393,6 +407,28 @@ pub fn ramp_basis(input: &FeedsInput<'_>) -> RampBasis {
     };
     if row.size_basis.is_refused() {
         return fallback(RampFallback::SizeRefused);
+    }
+    // One chart cell (operator ruling 2026-10-31): where the feed reads a
+    // (Pocket, Roughing) row, the drill rule's home, the G6 side row must be
+    // that printed cell (source, subfamily, material, diameter, flutes).
+    if let Some(feed) = feed_row {
+        let obs = |id: &str| lut.observations.iter().find(|o| o.observation_id == id);
+        if let (Some(f), Some(d)) = (obs(&feed.observation_id), obs(&row.observation_id)) {
+            let home = f.operation_family == LutOperationFamily::Pocket
+                && f.pass_role == LutPassRole::Roughing;
+            let cell = |o: &super::vendor_lut::VendorObservation| {
+                (
+                    o.source_id.clone(),
+                    o.tool_subfamily.clone(),
+                    o.material_family,
+                    o.diameter_mm.map(f64::to_bits),
+                    o.flute_count,
+                )
+            };
+            if home && cell(f) != cell(d) {
+                return fallback(RampFallback::FeedRowOffTheDrillChart);
+            }
+        }
     }
     let Some(chip) = row
         .printed_chipload()

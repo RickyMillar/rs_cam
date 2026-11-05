@@ -497,6 +497,7 @@ fn the_power_limited_warning_compares_like_with_like() {
             | rs_cam_core::feeds::FeedsWarning::LongToolDerate { .. }
             | rs_cam_core::feeds::FeedsWarning::VendorRowPublishesNoChipload { .. }
             | rs_cam_core::feeds::FeedsWarning::NoVendorRowsForRoutedOperation { .. }
+            | rs_cam_core::feeds::FeedsWarning::FormulaChipNoPrintedRow { .. }
             | rs_cam_core::feeds::FeedsWarning::DrillFeedClampedToEnvelope { .. } => None,
         })
         .expect("the synthetic profile must emit a PowerLimited warning");

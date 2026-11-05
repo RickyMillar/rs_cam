@@ -408,13 +408,6 @@ fn the_chip_is_the_side_row_over_z_g6ramp() {
             0.0508,
         ),
         (
-            3.175,
-            hardwood(),
-            "hardwood",
-            "amana-flat-hardwood-pocket-3175-2f-spektra",
-            0.0508,
-        ),
-        (
             6.0,
             mdf(),
             "mdf",
@@ -452,6 +445,23 @@ fn the_chip_is_the_side_row_over_z_g6ramp() {
                 panic!("{name} {d} mm: expected a G6 chip, got {reason:?}")
             }
         }
+    }
+    // Feeds contract P13 (ruling 5): the 3.175 mm hardwood feed reads the
+    // Freud row (one printed table, now (Pocket, Roughing); the Q3 tie takes
+    // its lower chip). Freud prints no ramp column, and one operation reads
+    // one chart cell, so the G6 chip does not apply.
+    match basis(&flat(3.175, 2), &hardwood()) {
+        RampBasis::NoChip { reason } => {
+            assert_eq!(
+                reason,
+                RampFallback::FeedRowOffTheDrillChart,
+                "hardwood 3.175 mm"
+            );
+        }
+        RampBasis::Sourced { drill, .. } => panic!(
+            "hardwood 3.175 mm: the feed reads Freud, the ramp must not read {}",
+            drill.side_row
+        ),
     }
 }
 

@@ -332,6 +332,31 @@ def main():
         anch.append({"id": r["observation_id"], "anchor": a["id"], "anchor_D": a["D"],
                      "printed_mid": mid(r), "law": law, "ratio": mid(r) / law})
     fits["anchored_series_law_industrial_oos"] = anch
+    # The estimator the Rust baseline sentry uses (no matrix solve): the pooled within-group
+    # slope, groups = (source, subfamily, class, Z), ln chip and ln D demeaned per group of 2+
+    # points, industrial ids removed. Then the same anchored prediction.
+    groups = {}
+    for p in pts_noind:
+        groups.setdefault((p["source"], p["sub"], p["cls"], p["Z"]), []).append(
+            (math.log(p["D"]), math.log(p["chip"])))
+    sxy = sxx = 0.0
+    ng = 0
+    for v in groups.values():
+        if len(v) < 2:
+            continue
+        mx = sum(a for a, _ in v) / len(v)
+        my = sum(b for _, b in v) / len(v)
+        sxy += sum((a - mx) * (b - my) for a, b in v)
+        sxx += sum((a - mx) ** 2 for a, _ in v)
+        ng += 1
+    kw = sxy / sxx
+    anw = []
+    for r in ind:
+        cand = [p for p in pts_noind if p["vendor"] == "freud" and p["mat"] == r["material_family"]]
+        a = max(cand, key=lambda p: p["D"])
+        law = a["chip"] * (r["diameter_mm"] / a["D"]) ** kw
+        anw.append({"id": r["observation_id"], "anchor": a["id"], "law": law, "ratio": mid(r) / law})
+    fits["within_group_slope"] = {"k": kw, "groups": ng, "industrial_oos": anw}
     # Per-vendor own slope (class offsets, one D slope per vendor), the size exponent per vendor.
     slopes = {}
     for v in ("amana", "onsrud", "freud"):

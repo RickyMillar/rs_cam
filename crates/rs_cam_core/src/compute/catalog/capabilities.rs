@@ -536,11 +536,16 @@ pub enum LutRoute {
     /// An `Adaptive` family query reads the `Pocket` rows of the same
     /// role. 3D Rough.
     AdaptiveAsPocket,
-    /// G-DCFLAT: a flat end mill on a `Parallel` query reads the
-    /// (`Pocket`, `Roughing`) rows, as the 3D Rough does. The table has no
-    /// flat-end `Parallel` row. Every other query reads as stated. Drop
-    /// Cutter.
-    FlatParallelAsRoughPocket,
+    /// A flat end mill reads the (`Pocket`, `Roughing`) rows of its own
+    /// tool and material, at x1.00 (G-DCFLAT; feeds contract P13 item 4,
+    /// law B, the anchored series law). The table has no flat-end
+    /// `Parallel` or `Trace` row; the step 0 study
+    /// (`planning/feeds_contract_2026-11-03/research_p13_items45/`) found
+    /// that a pooled law over the rows misses a held-out vendor by about
+    /// 2x, so the cell reads its own chart series. Every other cutter
+    /// reads as stated. Drop Cutter, Trace, Ramp, Radial and Horizontal
+    /// Finish.
+    FlatAsRoughPocket,
     /// The cutter class picks the rows, not the op's family (operator
     /// ruling 2026-09-25): ball, tapered ball and bull nose read
     /// (`Parallel`, `Finish`), a flat end (`Contour`, `Finish`), a V-bit

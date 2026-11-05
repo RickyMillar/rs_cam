@@ -50,7 +50,9 @@
 //!   `feeds::vendor_normalize::lut_query_for` and one in
 //!   `feeds::explain`, with the same routes: 3D Rough `AdaptiveAsPocket`,
 //!   Drop Cutter `FlatParallelAsRoughPocket`, Project Curve `ByCutter`,
-//!   every other op `AsStated`.
+//!   every other op `AsStated`. Feeds contract P13 item 4 (law B) renamed
+//!   the route `FlatAsRoughPocket` and gave it to Trace, Ramp, Radial and
+//!   Horizontal Finish too (any family, a flat end mill only).
 //! - Project Curve `relink_dial`: `None` -> `chain_distance_mm`. Its runner
 //!   now records the chain-link totals, and the narration names this dial
 //!   as their lever.
@@ -621,21 +623,21 @@ fn frozen_d2() -> Vec<(OperationType, LutRoute)> {
     (O::Inlay, LutRoute::AsStated),
     (O::InlayPlug, LutRoute::AsStated),
     (O::Zigzag, LutRoute::AsStated),
-    (O::Trace, LutRoute::AsStated),
+    (O::Trace, LutRoute::FlatAsRoughPocket),
     (O::Drill, LutRoute::AsStated),
     (O::Bore, LutRoute::AsStated),
     (O::Chamfer, LutRoute::AsStated),
-    (O::DropCutter, LutRoute::FlatParallelAsRoughPocket),
+    (O::DropCutter, LutRoute::FlatAsRoughPocket),
     (O::Adaptive3d, LutRoute::AdaptiveAsPocket),
     (O::Waterline, LutRoute::AsStated),
     (O::Pencil, LutRoute::AsStated),
     (O::Scallop, LutRoute::AsStated),
     (O::UnifiedFinish, LutRoute::AsStated),
     (O::SteepShallow, LutRoute::AsStated),
-    (O::RampFinish, LutRoute::AsStated),
+    (O::RampFinish, LutRoute::FlatAsRoughPocket),
     (O::SpiralFinish, LutRoute::AsStated),
-    (O::RadialFinish, LutRoute::AsStated),
-    (O::HorizontalFinish, LutRoute::AsStated),
+    (O::RadialFinish, LutRoute::FlatAsRoughPocket),
+    (O::HorizontalFinish, LutRoute::FlatAsRoughPocket),
     (O::ProjectCurve, LutRoute::ByCutter),
     (O::AlignmentPinDrill, LutRoute::AsStated),
     ]

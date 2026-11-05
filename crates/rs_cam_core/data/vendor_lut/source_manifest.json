@@ -366,7 +366,7 @@
       "source_title": "Freud — Router Bit Feed Rates and Speeds for CNC (Solid Carbide chart, 2017-08-22)",
       "source_url": "https://www.freudtools.com/public/assets/freud/downloadables/freudtools-router-bit-feed-and-speed-for-cnc-20170822.pdf",
       "accessed_on": "2026-05-30",
-      "coverage_notes": "Bundled 2026-05-31 (Phase 4 bulk promotion). Freud Solid Carbide chart: 1/8\"–1/2\" across hardwood / softwood / MDF / particleboard / plywood / acrylic / aluminum. Grade A. NOTE: 1/2\" rows quote chiploads 0.46–0.69 mm/tooth (calibrated for industrial 10–15 kW CNC spindles, not Shapeoko-class hobby routers); those 4 rows live under data/vendor_lut/industrial_only/freud_solid_carbide_industrial.json and are intentionally NOT loaded by embedded() until a per-spindle gate exists. See planning/feeds_data_ingest_phase4_2026-05-31.md."
+      "coverage_notes": "Bundled 2026-05-31 (Phase 4 bulk promotion). Freud Solid Carbide chart: 1/8\"–1/2\" across hardwood / softwood / MDF / particleboard / plywood / acrylic / aluminum. Grade A. NOTE: 1/2\" rows quote chiploads 0.46–0.69 mm/tooth (calibrated for industrial 10–15 kW CNC spindles, not Shapeoko-class hobby routers); those 4 rows live only under data/vendor_lut/industrial_only/freud_solid_carbide_industrial.json and are NOT loaded by embedded(): feeds contract P13 item 5 (2026-11-05) made them evidence for the model (a baseline sentry reads them), and removed the copies that commit 51edd494d had put in observations/. The chart prints one table with no roughing or finishing split, so every loaded Freud row is (pocket, roughing)."
     },
     {
       "source_id": "idcwoodcraft_chipload_csv_2026-05-30",

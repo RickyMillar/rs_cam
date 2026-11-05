@@ -93,6 +93,7 @@ fn long_tool_warning(result: &FeedsResult) -> Option<(f64, f64, f64, f64)> {
         | FeedsWarning::ChiploadBelowRubbingFloor { .. }
         | FeedsWarning::VendorRowPublishesNoChipload { .. }
         | FeedsWarning::NoVendorRowsForRoutedOperation { .. }
+        | FeedsWarning::FormulaChipNoPrintedRow { .. }
         | FeedsWarning::DrillFeedClampedToEnvelope { .. } => None,
     })
 }

@@ -443,6 +443,32 @@ fn feeds_warning_to_diagnostic(tp_id: ToolpathId, w: &FeedsWarning) -> Diagnosti
             supersedes: vec![],
             suppressed_diagnostics: vec![],
         },
+        // P13 item 4 (law B): a Caution, like (a4). The chip has no printed
+        // row behind it; the operator sees that before the job runs.
+        FeedsWarning::FormulaChipNoPrintedRow {
+            formula_chipload_mm,
+        } => Diagnostic {
+            id: DiagnosticId::from(ids::FEEDS_FORMULA_CHIP_NO_PRINTED_ROW),
+            scope: Scope::Toolpath { id: tp_id },
+            category: Category::ToolLoad,
+            severity: Severity::Caution,
+            confidence: Confidence::Static,
+            state: DiagnosticState::Current,
+            source: Source::FeedsCalculator,
+            face: crate::diagnostics::presentation::face(ids::FEEDS_FORMULA_CHIP_NO_PRINTED_ROW),
+            anchor: crate::diagnostics::presentation::anchor(
+                ids::FEEDS_FORMULA_CHIP_NO_PRINTED_ROW,
+            ),
+            message: format!(
+                "No printed row; formula chip. This flat end mill has no vendor roughing row \
+                 for this material, so the {formula_chipload_mm:.4} mm/tooth comes from the \
+                 machine chip formula (no source in the repository) and has no safe range."
+            ),
+            evidence: None,
+            fix: None,
+            supersedes: vec![],
+            suppressed_diagnostics: vec![],
+        },
         // Checkpoint K (a3). Informational, not a Caution: nothing is
         // clamped, derated or unsafe — the recommendation simply has a
         // provenance the operator could not see. Saying "caution" about

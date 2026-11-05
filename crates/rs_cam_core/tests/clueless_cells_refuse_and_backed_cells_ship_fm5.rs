@@ -142,8 +142,11 @@ fn clueless_cells_refuse_with_the_judgement_reason_fm5() {
 /// (c) and (d): a BACKED wood cell and an unjudged material ship the formula.
 #[test]
 fn backed_and_unjudged_cells_ship_the_formula_fm5() {
-    let trace = suggest(OperationType::Trace, ToolType::EndMill, &hardwood())
-        .expect("Trace with a flat end mill in hardwood is BACKED");
+    // P13 item 4 (law B): a flat end mill on Trace now reads the roughing
+    // row of its tool (`a_flat_finish_reads_its_roughing_row_p13`), so the
+    // BACKED cell with no row is a ball nose on Trace in hardwood.
+    let trace = suggest(OperationType::Trace, ToolType::BallNose, &hardwood())
+        .expect("Trace with a ball nose in hardwood is BACKED");
     assert!(
         matches!(trace.feeds_result.support, FeedsSupport::FormulaOnly { .. }),
         "a BACKED cell with no row ships FormulaOnly, got {:?}",

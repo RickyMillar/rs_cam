@@ -88,13 +88,13 @@ pub fn lut_query_for(
                 Some((operation_family, pass_role))
             }
         }
-        // G-DCFLAT: a flat end mill on a drop-cutter raster is a roughing
-        // use. Route it to the roughing pocket row the Adaptive3d rough
-        // resolves; the LUT has no flat-end Parallel row to answer with.
-        LutRoute::FlatParallelAsRoughPocket => {
-            if tool_family == ToolFamily::FlatEnd
-                && operation_family == LutOperationFamily::Parallel
-            {
+        // G-DCFLAT and P13 item 4 (law B): a flat end mill on a raster or a
+        // trace reads the roughing pocket row of its own tool, the row the
+        // Pocket cell of that tool resolves; the LUT has no flat-end
+        // Parallel or Trace row to answer with. The size step is the
+        // lookup's own (G1), so the cell and the Pocket cell agree at x1.00.
+        LutRoute::FlatAsRoughPocket => {
+            if tool_family == ToolFamily::FlatEnd {
                 Some((LutOperationFamily::Pocket, LutPassRole::Roughing))
             } else {
                 Some((operation_family, pass_role))

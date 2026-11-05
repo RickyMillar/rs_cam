@@ -1188,6 +1188,16 @@ pub enum FeedsWarning {
         /// saying "no data".
         missing_rows: String,
     },
+    /// Feeds contract P13 item 4 (law B): a flat end mill on an op that
+    /// reads the (Pocket, Roughing) rows of its tool
+    /// (`LutRoute::FlatAsRoughPocket`) found no printed row, so the chip is
+    /// the machine chip formula (`machine::ChipLoadFormula`, Unsourced).
+    /// D7: a warning, never a refusal (Q6). The shipped formula stays only
+    /// on this path for those ops.
+    FormulaChipNoPrintedRow {
+        /// The formula advance per tooth the cell ships (mm/tooth).
+        formula_chipload_mm: f64,
+    },
     /// Drill-cycle feed clamped into the material plunge-feed envelope
     /// (`Material::drill_plunge_feed_envelope_per_mm` × diameter,
     /// mm/min). Below the envelope the drill rubs and burns; above it

@@ -80,7 +80,7 @@ pub(super) fn step8_plunge(s: &CalcState) -> Entry {
     // The G6 drill claim gives the axial chip of a helix or ramp entry, or
     // the record says why there is none. The number needs θ and the shipped
     // feed and RPM, so `suggest::apply` resolves it. No clamp rule remains.
-    let ramp = ramp::ramp_basis(input);
+    let ramp = ramp::ramp_basis(input, s.chip.matched_lut_row.as_ref());
     let plunge = material.plunge_rate_base(input.tool_diameter);
     let plunge_basis = plunge::plunge_basis(input, plunge, &ramp);
     let material_plunge_row = material.plunge_rate_base_constant();

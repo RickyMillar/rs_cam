@@ -212,18 +212,15 @@ fn ball_tools_on_drop_cutter_keep_parallel_finish() {
     }
 }
 
-/// The other raster finishes with the same hole are NOT routed by
-/// G-DCFLAT. This pins the scope so a widened reroute is a deliberate
-/// change with its own sentry, not a side effect.
+/// The other 3D finishes on a flat tool. P13 item 4 (law B, lead rulings
+/// 2026-11-05) widened the reroute on purpose: Ramp, Radial and Horizontal
+/// Finish (and Trace) read the (Pocket, Roughing) row of the tool, with
+/// their own sentry `a_flat_finish_reads_its_roughing_row_p13`. Waterline
+/// and Steep/Shallow (the Contour family, which prints flat-end rows) keep
+/// their declared family.
 #[test]
 fn other_parallel_ops_on_a_flat_tool_are_not_rerouted() {
-    for op in [
-        OperationType::Waterline,
-        OperationType::RadialFinish,
-        OperationType::HorizontalFinish,
-        OperationType::SteepShallow,
-        OperationType::RampFinish,
-    ] {
+    for op in [OperationType::Waterline, OperationType::SteepShallow] {
         let routed = lut_query_for(
             op,
             ToolFamily::FlatEnd,
@@ -233,7 +230,25 @@ fn other_parallel_ops_on_a_flat_tool_are_not_rerouted() {
         assert_eq!(
             routed,
             Some((LutOperationFamily::Parallel, LutPassRole::Finish)),
-            "{op:?} keeps its declared family (listed follow-up, not in G-DCFLAT scope)"
+            "{op:?} keeps its declared family"
+        );
+    }
+    for op in [
+        OperationType::RadialFinish,
+        OperationType::HorizontalFinish,
+        OperationType::RampFinish,
+        OperationType::Trace,
+    ] {
+        let routed = lut_query_for(
+            op,
+            ToolFamily::FlatEnd,
+            LutOperationFamily::Parallel,
+            LutPassRole::Finish,
+        );
+        assert_eq!(
+            routed,
+            Some((LutOperationFamily::Pocket, LutPassRole::Roughing)),
+            "{op:?} on a flat tool reads the roughing row of its tool (P13 law B)"
         );
     }
 }

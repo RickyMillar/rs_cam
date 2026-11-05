@@ -281,6 +281,11 @@ diag_ids! {
         "feeds.vendor_row_publishes_no_chipload" => INFO;
     pub const FEEDS_NO_VENDOR_ROWS_FOR_ROUTED_OPERATION: &str =
         "feeds.no_vendor_rows_for_routed_operation" => warn(Danger::Part);
+    /// Feeds contract P13 item 4 (law B): a flat end mill on a finish or
+    /// trace op found no (Pocket, Roughing) row of its own tool and
+    /// material; the chip is the machine formula (D7: warn, never refuse).
+    pub const FEEDS_FORMULA_CHIP_NO_PRINTED_ROW: &str =
+        "feeds.formula_chip_no_printed_row" => warn(Danger::Part);
     /// The depth per pass is above 3 x D, past the published de-rate table.
     /// The de-rate holds the last printed point, 0.50 (feeds matrix R3).
     pub const FEEDS_DEPTH_BEYOND_PUBLISHED_TABLE: &str = "feeds.depth_beyond_published_table" => warn(Danger::Part);

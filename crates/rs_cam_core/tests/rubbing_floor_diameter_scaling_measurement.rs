@@ -743,6 +743,7 @@ fn sweep() -> Vec<Row> {
                             | FeedsWarning::ScallopInvalid { .. }
                             | FeedsWarning::LongToolDerate { .. }
                             | FeedsWarning::NoVendorRowsForRoutedOperation { .. }
+                            | FeedsWarning::FormulaChipNoPrintedRow { .. }
                             | FeedsWarning::DrillFeedClampedToEnvelope { .. } => {}
                         }
                     }

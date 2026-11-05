@@ -429,6 +429,11 @@ pub const TABLE: &[(&str, Anchor, &str)] = &[
         "No vendor data: feeds from formula",
     ),
     (
+        ids::FEEDS_FORMULA_CHIP_NO_PRINTED_ROW,
+        f("feed_rate"),
+        "No printed row; formula chip",
+    ),
+    (
         ids::FEEDS_DEPTH_BEYOND_PUBLISHED_TABLE,
         f("depth_per_pass"),
         "Depth per pass beyond vendor table",

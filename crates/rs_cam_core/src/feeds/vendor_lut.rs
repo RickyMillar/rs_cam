@@ -373,7 +373,10 @@ pub struct VendorLut {
 /// the offending filename.
 ///
 /// Add new sources here; keep `industrial_only/` files OUT — they
-/// document data we deliberately don't load.
+/// document data we deliberately don't load. Feeds contract P13 item 5
+/// (operator ruling D13): those rows are evidence for the model, read by
+/// the baseline sentry `the_industrial_rows_are_a_baseline_not_a_lookup_p13`,
+/// and no row of theirs may also sit in `observations/`.
 const EMBEDDED_FILES: &[(&str, &str)] = &[
     (
         "amana_flat_end.json",
@@ -752,8 +755,8 @@ mod tests {
         let lut = VendorLut::embedded();
         assert_eq!(
             lut.observations.len(),
-            506,
-            "expected 506 embedded observations: 252 before feeds matrix R5 \
+            502,
+            "expected 502 embedded observations: 252 before feeds matrix R5 \
              (2026-09-23), + 12 printed Amana ball v7 rows (1/8 and 1/4 in, \
              hardwood / softwood / MDF, pocket and adaptive), + 60 printed \
              Amana Spektra v24 rows (2F and 3F at 1/8 in, 6 mm and 1/4 in; \
@@ -778,7 +781,8 @@ mod tests {
              printed Amana corner-radius bull rows (1/4 and 1/2 in x softwood \
              / hardwood / MDF, pocket only) = 476; \
              then the G6 Spektra load (2026-09-25): + 24 printed Spektra rows (hardwood, soft and hard plywood; 2F 1.5-12.7 mm, 3F 9.525 and 12.7 mm), - 2 long-tail 3F 19.05 mm rows (the printed feed disagrees with the 18 000 RPM header) = 498; \
-             then 2026-10-01 (operator: 'yes to loading the rows'): + 14 printed Onsrud 37-50 and 37-60 V-bit rows of the Soft Wood and Hard Wood sheets (90 deg, 2 flutes, 7 per sheet; unparked), - 6 amana-vbit-* rows that cite the Amana insert V-groove v16 chart and are not on it (finding G5 D1) = 506"
+             then 2026-10-01 (operator: 'yes to loading the rows'): + 14 printed Onsrud 37-50 and 37-60 V-bit rows of the Soft Wood and Hard Wood sheets (90 deg, 2 flutes, 7 per sheet; unparked), - 6 amana-vbit-* rows that cite the Amana insert V-groove v16 chart and are not on it (finding G5 D1) = 506; \
+             then feeds contract P13 item 5 (2026-11-05): - 4 Freud 1/2 in rows (they live only in industrial_only/: evidence, not a shipped lookup) = 502"
         );
     }
 

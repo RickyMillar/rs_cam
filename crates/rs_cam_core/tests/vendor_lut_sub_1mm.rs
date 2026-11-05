@@ -170,8 +170,8 @@ fn embedded_count_matches_after_expansion() {
     let lut = VendorLut::embedded();
     assert_eq!(
         lut.observations.len(),
-        506,
-        "expected 506 embedded observations, the same total that \
+        502,
+        "expected 502 embedded observations, the same total that \
          vendor_lut::tests::test_embedded_loads_all_observations pins: 389 \
          after feeds matrix R5 (2026-09-23), - 2 Amana ZrN ball_nose rows in \
          cells that list only tapered tools, + 27 Amana ZrN v8 tapered rows, \
@@ -184,6 +184,7 @@ fn embedded_count_matches_after_expansion() {
          then the G6 Spektra load (2026-09-25): + 24 printed Spektra rows (hardwood, soft and hard plywood; 2F 1.5-12.7 mm, 3F 9.525 and 12.7 mm), - 2 long-tail 3F 19.05 mm rows (the printed feed disagrees with the 18 000 RPM header) = 498; \
          then 2026-10-01: + 14 printed Onsrud 37-50 and 37-60 Soft Wood and Hard Wood V-bit \
          rows (unparked), - 6 amana-vbit-* insert V-groove v16 rows (not on the chart, \
-         finding G5 D1) = 506"
+         finding G5 D1) = 506; then feeds contract P13 item 5 (2026-11-05): - 4 Freud \
+         1/2 in rows (industrial_only/ only) = 502"
     );
 }

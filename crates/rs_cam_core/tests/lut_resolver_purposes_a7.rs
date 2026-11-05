@@ -241,6 +241,7 @@ fn sweep(lut: &VendorLut) -> Sweep {
                             | FeedsWarning::ChiploadBelowRubbingFloor { .. }
                             | FeedsWarning::LongToolDerate { .. }
                             | FeedsWarning::NoVendorRowsForRoutedOperation { .. }
+                            | FeedsWarning::FormulaChipNoPrintedRow { .. }
                             | FeedsWarning::DrillFeedClampedToEnvelope { .. } => None,
                         });
                         let case = format!(
