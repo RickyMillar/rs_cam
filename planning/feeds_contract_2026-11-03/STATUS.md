@@ -251,6 +251,22 @@ margin with more than one source, the Shapeoko default named hobby grade). A new
 (after P11c, before P12) takes items 4, 5 and 7 (the vendor-row law, the industrial rows, the
 lineage trace stored in the project file).
 
+Lead rulings for P11c (2026-11-05):
+- Item 2 mechanism: no machine-stiffness constant is added (the repo prints none). The add-door
+  default stepover of a roughing Pocket-family op (`default_radial_width`, today the table
+  0.35 D) is the K2b envelope proposal's stepover at the op's depth: the computed limits
+  (power, the deflection edge, the chip) pick it. Where the deflection edge binds, the basis
+  names the Unsourced 200 um target. `woc_roughing_factor` is deleted (unread today).
+- Item 1: a hunt for printed sources IN THE REPO for `doc_roughing_factor`. Two or more printed
+  sources: cite them (F201 Cited). Fewer: the factor stays Unsourced, no value changes. Fusion's
+  0.2 counts only if a Fusion document in the repo prints it.
+- Item 3: `SLOTTING_DOC_CAP` becomes `RigidityProfile::slot_doc_factor`; `SLOTTING_THRESHOLD`
+  stays machine-neutral geometry. P11b's "a stated depth ships" holds.
+- Item 6: `MachineClass::{Hobby, Industrial}` on the machine table (break). `Hobby` has the one
+  default set (the Shapeoko values). `Industrial` carries no values; its table states its own
+  rigidity block. The class shows beside each rigidity value on every surface.
+- Out of P11c: the Waterline width (P12 reviewer item), and P13 items 4, 5, 7.
+
 ## Phases
 
 | Phase | Card | State | Commit | Next action |
