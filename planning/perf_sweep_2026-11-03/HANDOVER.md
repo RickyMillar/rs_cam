@@ -1,18 +1,28 @@
-# Perf sweep hand-over (2026-11-05)
+# Perf sweep hand-over (2026-11-06, after round 2)
 
-Read this file first, then `PLAN.md` in this folder. The agent reports
-`A_REPORT.md` .. `D_REPORT.md` hold the detail for each change.
+Read this file first, then `ROUND2_BRIEF.md` (round 2: brief, results,
+next candidate) and `PLAN.md` (round 1). The agent reports `A_REPORT.md`
+.. `F_REPORT.md` hold the detail for each change.
 
 ## 1. State
 
-- Round 1 is committed: `98344a12f` "perf: the nz-wanaka-21 job runs 1.83x
-  faster with the same output" (14 files, on `master`).
-- No perf work is open. No agent runs. No file in the tree holds an
-  uncommitted perf edit.
-- Later commits from the feeds-contract session changed
-  `compute/simulate.rs` (`db86f0b66`, `72ef44c49`, `fb260023b`). They add
-  code beside `ModelZQuery`; they do not edit it. The round-1 numbers below
-  were measured at `98344a12f`, not at the current HEAD.
+- Round 1 is committed: `98344a12f` (1.83x on the nz-wanaka-21 job).
+- Round 2 is committed on `master`, not pushed:
+  - `bb179e8bd` W1: radius-0 callers read no band off the low sides of
+    the grid (`SpatialIndex::with_point_candidates`, `E_REPORT.md`).
+  - `7c06e049d` W3: the holder collision sweep runs once and on rayon
+    (`F_REPORT.md`). W2 was the profile that found it.
+- Round 2 result, paired, same flags (`--skip 22 --resolution 0.3
+  --memory-limit 15GiB --emit-gcode`, input frozen at `0c05e90e7`):
+  base 5:20.7 -> W1 4:38.6 -> W3 2:56.3 (1.82x). Peak RSS 8.99 GB on
+  all three. The G-code is byte-identical on all three; the 18 diag files
+  are equal without the timing fields.
+- Round 2 ran at 0.3 mm, not 0.2 mm: only 17-20 GB RAM was free (browser
+  tabs, full swap). Its numbers do not compare with the round-1 table.
+- G-code export now works on `nz_wanaka_21_operator.toml`, so byte-equal
+  G-code is the identity check from now on (the §6 note is out of date).
+- No perf work is open. No agent runs. No file holds an uncommitted perf
+  edit.
 
 ## 2. What round 1 did
 
@@ -82,7 +92,21 @@ Rules for the run:
 - The scratchpad from the old session is on `/tmp`, a RAM-backed tmpfs.
   Do not rely on it after a reboot.
 
-## 5. Next candidates (none started)
+## 5. Next candidates
+
+Round 2 did candidates 1 and 2 below (W1, W2 + W3). Open:
+
+- The generation heightmap (`surface::slope` `from_mesh` ->
+  `sample_grid_cell` -> `point_drop_cutter` + `query_rect_into`): about
+  56 % of generation self time; already parallel. A design task (see
+  `ROUND2_BRIEF.md` "Next candidate"). Watch the tie order of the
+  contact record before you reuse candidate lists.
+- Tile sharing between simulation checkpoints (peak RSS), unchanged.
+- The flaky viz test `with_no_settings_the_budget_is_half_of_the_system_memory`
+  hung once in a parallel `controller::tests:: compute::worker::tests::`
+  run (2026-11-06) and passes alone. Not perf code.
+
+Round-1 text, kept for reference:
 
 Ask the operator which one to do. Recommended order:
 
