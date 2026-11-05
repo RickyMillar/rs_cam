@@ -263,8 +263,8 @@ impl ProjectSession {
 impl LoadedModel {
     /// Q7: true when the op can read this model: a stock-based op reads any
     /// model; an `Items` op needs a selectable item; a `Mesh` op a mesh;
-    /// an `ItemsAndMesh` op both. The GUI add menu reads the same rule
-    /// over every model.
+    /// an `ItemsAndMesh` op both. The GUI add menu calls it for each
+    /// model (M10).
     pub fn serves(&self, op_type: OperationType) -> bool {
         let has_mesh = self.mesh.is_some();
         let has_items = self.items.has_selectable_item();

@@ -18,70 +18,46 @@
 //! carries the setup's obstacles for every op; K3: it pre-clips them.
 //!
 //! Geometry selection (P1, P2.3a): the op's selection reaches the prologue
-//! as [`SelectionInputs`], resolved by the session. The prologue runs
-//! [`view`] with the op's [`ItemUse`] and gives the adapter the items it
-//! cuts: [`Prepared::regions`], [`Prepared::curves`] or
-//! [`Prepared::holes`]. A `Regions` op gets closed areas only; the
-//! prologue records a [`SelectionNoteFinding`] for the open paths that the
-//! default rule left out. A selection that refuses stops the op with
-//! [`OperationError::Selection`]. No op closes an open path with a chord
-//! in silence.
+//! as [`SelectionInputs`], resolved by the session. The prologue runs THE
+//! item pipeline of the op ([`op_items`], H1) with the op's tool, mesh and
+//! index, and gives the adapter the items it cuts: [`Prepared::regions`],
+//! [`Prepared::curves`] or [`Prepared::holes`]. The pipeline grows the
+//! stock of an extend reader (P6.4), runs `view`, keeps the "frees the
+//! part" note by the op (R-A), fits the holes to the tool (P6.5), trims
+//! the model edges at a wall (Chamfer Clearance) and grows each face area
+//! past its open sides ("Cut past open sides"). The selection status, the
+//! drill-op view and the Pin Drill holes call the same function. A `Regions`
+//! op gets closed areas only; the prologue records a
+//! [`SelectionNoteFinding`] for the notes of the pipeline. A selection that
+//! refuses stops the op with [`OperationError::Selection`]. No op closes an
+//! open path with a chord in silence.
 //!
 //! Geometry selection P3.5: under the floor "each picked face" the prologue
-//! runs THE per-area floor rule ([`region_floors`]) after the view, and
+//! runs THE per-area floor rule ([`region_floors`]) after the pipeline, and
 //! gives each closed area its own ladder: the catalogue ladder
 //! (`OperationConfig::cutting_levels`) down to the floor of that area
 //! ([`Prepared::region_ladders`]). An area with no face refuses with
 //! [`OperationError::Selection`], as `selection_status` refuses it. P3.7: a
 //! face whose floor is at or above the top is left out with a note; the op
-//! refuses `FloorAboveTop` only when every face is at the top.
-//!
-//! Geometry selection P6.5 (ruling O-3): after the view the prologue runs
-//! THE hole fit step ([`fit_holes`]) with the tool diameter and the size
-//! tolerance of the op (the Drill `size_tolerance`). A Drill leaves
-//! out a circle that is not of the tool size, with a note, and refuses a
-//! picked one (`HoleDoesNotFit`). [`Prepared::holes`] gives the fitted
-//! holes only, so no adapter reads a hole the tool does not make.
+//! refuses `FloorAboveTop` only when every face is at the top. The floor
+//! rule reads the grown face areas.
 //!
 //! UX-1c (operator ruling 2026-10-22, SAFETY): last, a one-depth op
 //! (`FaceTopRule::RefuseBuried`) on the remaining stock refuses when
 //! material stands above its face top over its area
-//! ([`OperationError::BuriedFace`]).
-//!
-//! Chamfer Clearance (operator ruling 2026-10-23): after the view and the
-//! hole fit, the prologue runs THE wall trim of the model edges of an
-//! `Edges` op ([`clear_edge_walls`]). An edge that ends at a higher wall
-//! stops short of it; an edge with no clear stretch is left out with a
-//! note. The buried check and the adapter read the trimmed runs.
-//!
-//! Geometry selection P6.4 (ruling O-2 (B)): for an op that extends its open
-//! paths to the stock (`ItemUse::RegionsExtendOpen`, Pocket with Extend to
-//! stock) the prologue grows the stock rectangle of the selection by the
-//! tool radius ([`ResolvedSelection::with_stock_grown`]) before [`view`],
-//! so the area ends one tool radius past the stock edge and the tool centre
-//! reaches the edge. The `selection_status` report grows it by the same
-//! radius.
-//!
-//! "Cut past open sides" (operator ruling 2026-10-23): last in the item
-//! step, for a Pocket with the setting on, the prologue runs THE area rule
-//! of `compute::open_sides`: the area of each model face grows out through
-//! its open sides to the stock edge. The per-face floors, the adapter and
-//! the gouge guard read the grown areas.
+//! ([`OperationError::BuriedFace`]). It reads the trimmed edge runs.
 
 use std::borrow::Cow;
 
-use crate::compute::catalog::{
-    FaceTopRule, GeometryRequirement, ItemUse, OperationConfig, OperationType,
-};
+use crate::compute::catalog::{FaceTopRule, GeometryRequirement, OperationConfig, OperationType};
 use crate::compute::config::ResolvedHeights;
-use crate::compute::edge_clear::{EdgeClearProbe, clear_edge_walls};
-use crate::compute::floor::{Floor, HoleFloorInputs, HoleSpan, hole_floors, region_floors};
-use crate::compute::open_sides::{OpenSidesProbe, OpenSidesReach, grow_past_open_sides};
+use crate::compute::floor::{HoleFloorInputs, HoleSpan, hole_floors, region_floors};
 use crate::compute::toolpath_stats::SelectionNoteFinding;
 use crate::dexel_stock::FRESH_MATERIAL_THRESHOLD_MM;
 use crate::mesh::{SpatialIndex, TriangleMesh};
 use crate::selection::{
-    Curves, Holes, OpItems, Regions, ResolvedSelection, SelectionNote, SetupFrame, fit_holes, view,
+    Curves, Holes, OpItems, OpMesh, OpTool, Regions, ResolvedSelection, SelectionNote, SetupFrame,
+    op_items,
 };
 use crate::tool::MillingCutter;
 
@@ -129,8 +105,9 @@ impl<'a> SelectionInputs<'a> {
 
     /// Test only: the default rule over a hand-built polygon list
     /// ([`ResolvedSelection::from_polygons`]). Every polygon gives its
-    /// items, and [`view`] nests the rings as it nests a drawing, so a
-    /// test drawing takes the same door as a session drawing.
+    /// items, and [`view`](crate::selection::view) nests the rings as it
+    /// nests a drawing, so a test drawing takes the same door as a session
+    /// drawing.
     #[cfg(test)]
     pub(crate) fn from_polygons(polygons: &[crate::polygon::Polygon2]) -> SelectionInputs<'static> {
         SelectionInputs {
@@ -305,15 +282,12 @@ pub(super) fn check_inputs<'a>(
 ) -> Result<Prepared<'a>, OperationError> {
     let op_type = op.op_type();
     let name = op_type.name();
-    let item_use = op.capabilities().item_use;
     let mut notes = Vec::new();
     let mut geometry = match op_type.geometry_requirement() {
-        GeometryRequirement::Items => {
-            CheckedGeometry::Items(require_items(ctx, op, item_use, &mut notes)?)
-        }
+        GeometryRequirement::Items => CheckedGeometry::Items(require_items(ctx, op, &mut notes)?),
         GeometryRequirement::Mesh => CheckedGeometry::Mesh(require_mesh(ctx, name)?),
         GeometryRequirement::ItemsAndMesh => CheckedGeometry::ItemsAndMesh {
-            items: require_items(ctx, op, item_use, &mut notes)?,
+            items: require_items(ctx, op, &mut notes)?,
             mesh: require_mesh(ctx, name)?,
         },
     };
@@ -401,7 +375,7 @@ fn buried_face(
     }
     // R-C / F21: each area against its own top, and each model edge along
     // a band of the cone radius of the bevel on both sides of the edge.
-    // The edges are the runs after the wall trim (`clear_edges`), so the
+    // The edges are the runs after the wall trim (`selection::op_items`), so the
     // band of a run that ends at a higher wall does not reach that wall.
     for (i, outline) in regions.as_slice().iter().enumerate() {
         let own_top = regions.plane_z(i).unwrap_or(top_z);
@@ -491,123 +465,34 @@ fn hole_spans(
         })
 }
 
-/// The items the op cuts: [`view`] over the resolved selection with the
-/// op's [`ItemUse`]. A refusal names the op (CMP-13) and stops the op with
-/// [`OperationError::Selection`]. The open paths that the default rule
-/// left out go into `notes`; [`check_inputs`] records them in ONE
-/// [`SelectionNoteFinding`] through `ctx.record`.
+/// The items the op cuts: THE item pipeline ([`op_items`]) over the
+/// resolved selection, with the tool, the mesh and the index of the op. A
+/// refusal names the op (CMP-13) and stops the op with
+/// [`OperationError::Selection`]. The notes of the pipeline (the open
+/// paths that the default rule left out, the misfit holes, the edges at a
+/// wall, the faces with no open side) go into `notes`; [`check_inputs`]
+/// records them in ONE [`SelectionNoteFinding`] through `ctx.record`.
 ///
 /// A `Holes` op takes its own `may_be_empty` (P2.3c): a Drill with no hole
 /// refuses `Empty`; a Pin Drill with no extra hole runs on its stock pins.
-/// P6.5: then THE hole fit step ([`fit_holes`]) with the tool diameter and
-/// the size tolerance of the op ([`OperationConfig::drill_size`]); its
-/// notes join `notes`, and its refusal stops the op as a view refusal does.
 fn require_items(
     ctx: &ExecutionContext<'_>,
     op: &OperationConfig,
-    item_use: ItemUse,
     notes: &mut Vec<SelectionNote>,
 ) -> Result<OpItems, OperationError> {
-    let op_type = op.op_type();
-    let selection_error = |refusal: crate::selection::SelectionRefusal| -> OperationError {
-        OperationError::Selection(Box::new(refusal.for_op(op_type.label())))
-    };
-    // P6.4 (O-2 (B)): the extend reader views the stock grown by the tool
-    // radius. Every other reader views the selection as resolved.
-    let grown;
-    let resolved: &ResolvedSelection<SetupFrame> = match item_use {
-        ItemUse::RegionsExtendOpen { .. } => {
-            grown = ctx
-                .selection
-                .resolved
-                .as_ref()
-                .clone()
-                .with_stock_grown(ctx.tool_def.diameter() / 2.0);
-            &grown
-        }
-        ItemUse::None
-        | ItemUse::Regions
-        | ItemUse::Curves
-        | ItemUse::Edges
-        | ItemUse::Holes { .. } => &ctx.selection.resolved,
-    };
-    let size = op.drill_size(ctx.tool_def.diameter());
-    // F29: an `Empty` Drill names the hole rims that the default rule did
-    // not take.
-    let (mut items, mut view_notes) = view(resolved, item_use)
-        .map_err(|refusal| selection_error(refusal.with_default_rims(resolved, item_use, &size)))?;
-    // R-A: the "frees the part" note stays only when the op frees it.
-    crate::selection::drop_part_free_note(&mut view_notes, op.frees_the_part());
-    notes.extend(view_notes);
-    let fit_notes = fit_holes(resolved, &mut items, item_use, size).map_err(selection_error)?;
-    notes.extend(fit_notes);
-    let clear_notes = clear_edges(ctx, op, resolved, &mut items).map_err(selection_error)?;
-    notes.extend(clear_notes);
-    notes.extend(grow_open_sides(ctx, op, &mut items));
-    Ok(items)
-}
-
-/// "Cut past open sides" (operator ruling 2026-10-23): THE area rule
-/// ([`grow_past_open_sides`]) over the face areas of a Pocket with the
-/// setting on, with the mesh of the op and the tool radius. It reads the
-/// stock of the selection as resolved, not the stock that the open path
-/// extend grew, so the stock grows by the tool radius once. With the
-/// setting off, with no mesh, or under a floor that is not "Each picked
-/// face", it does nothing.
-fn grow_open_sides(
-    ctx: &ExecutionContext<'_>,
-    op: &OperationConfig,
-    items: &mut OpItems,
-) -> Vec<SelectionNote> {
-    let (Some(mesh), Some(stock), Some(Floor::EachFace { depth })) = (
-        ctx.mesh.filter(|_| op.cuts_past_open_sides()),
-        ctx.selection.resolved.stock_xy(),
-        op.floor(),
-    ) else {
-        return Vec::new();
-    };
-    let probe = OpenSidesProbe {
-        mesh,
-        reach: OpenSidesReach::Stock(stock),
-        tool_radius: ctx.tool_def.diameter() / 2.0,
-        face_depth: depth,
-    };
-    grow_past_open_sides(&ctx.selection.resolved, items, &probe)
-}
-
-/// Chamfer Clearance (operator ruling 2026-10-23): THE wall trim
-/// ([`clear_edge_walls`]) of the model edges of an `Edges` op, with the
-/// mesh of the op, its V-bit and its bevel. Each edge run stops short of a
-/// higher wall; [`buried_face`] and the adapter then read the
-/// trimmed runs. With no mesh, no bevel or a tool that the op refuses,
-/// the trim does nothing (the tool check refuses after it).
-fn clear_edges(
-    ctx: &ExecutionContext<'_>,
-    op: &OperationConfig,
-    resolved: &ResolvedSelection<SetupFrame>,
-    items: &mut OpItems,
-) -> Result<Vec<SelectionNote>, crate::selection::SelectionRefusal> {
-    let (Some(mesh), Some(index), Some((chamfer_width, tip_offset))) =
-        (ctx.mesh, ctx.index, op.bevel_width_and_tip_mm())
-    else {
-        return Ok(Vec::new());
-    };
-    if op
-        .op_type()
-        .tool_refusal(ctx.tool_cfg.tool_type.cutter_kind())
-        .is_some()
-    {
-        return Ok(Vec::new());
-    }
-    let probe = EdgeClearProbe {
-        mesh,
-        index,
+    let tool = OpTool {
         cutter: ctx.tool_def,
-        half_angle_rad: (ctx.tool_cfg.included_angle / 2.0).to_radians(),
-        chamfer_width,
-        tip_offset,
+        config: ctx.tool_cfg,
     };
-    clear_edge_walls(resolved, items, &probe)
+    let mesh = ctx.mesh.map(|mesh| OpMesh {
+        mesh,
+        index: ctx.index,
+    });
+    let outcome = op_items(&ctx.selection.resolved, op, Some(tool), mesh).map_err(|refusal| {
+        OperationError::Selection(Box::new(refusal.for_op(op.op_type().label())))
+    })?;
+    notes.extend(outcome.notes);
+    Ok(outcome.items)
 }
 
 /// The mesh, then its spatial index. The two texts are the ones the

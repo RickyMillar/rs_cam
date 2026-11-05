@@ -5,9 +5,10 @@
 //! resolution: [`ProjectSession::resolve_selection_frames`] (the op's own
 //! selection, plus its picked faces as picks, resolved against the models
 //! and the stock, then moved into the setup frame through THE frame door).
-//! Generation hands the setup-frame half to the prologue, which runs
-//! [`crate::selection::view`]. [`ProjectSession::selection_status`] runs
-//! the same `view` with the same `ItemUse` on the same half. So the
+//! Generation hands the setup-frame half to the prologue, which runs THE
+//! item pipeline [`crate::selection::op_items`] (H1).
+//! [`ProjectSession::selection_status`] calls the same function with the
+//! same tool and mesh on the same half. So the
 //! Generate button, the diagnostics ribbon, the drill picker and the
 //! generator cannot give different refusals for one selection.
 //!
@@ -52,6 +53,7 @@
 //! also holds the feeds, the dressups, the heights and the tool, which the
 //! selection does not read, so an edit of those would build again.
 
+use std::borrow::Cow;
 use std::collections::BTreeMap;
 use std::sync::atomic::{AtomicU64, Ordering};
 use std::sync::{Arc, Mutex, Weak};
@@ -67,12 +69,13 @@ use crate::geometry::enriched_mesh::FaceGroupId;
 use crate::ids::{ModelId, ToolpathId};
 use crate::selection::hole_fit::DrillSize;
 use crate::selection::{
-    DownFaces, FLAT_REGION_Z_BAND_MM, FacesByFacing, Hole, HoleDepth, HoleFit, HoleFitRule,
-    ItemError, ItemKind, ItemRef, ItemRole, ItemSet, MatchKey, MatchedBy, MeshFaces, ModelFrame,
-    OpItems, RefusalCause, ResolveScope, ResolvedSelection, Selection, SelectionEdit,
-    SelectionNote, SelectionRefusal, SetupFrame, Shape, SourceRef, fit_holes, hole_fit,
+    DownFaces, FLAT_REGION_Z_BAND_MM, FacesByFacing, Hole, HoleDepth, HoleFit, ItemError, ItemKind,
+    ItemRef, ItemRole, ItemSet, MatchKey, MatchedBy, MeshFaces, ModelFrame, OpItems, RefusalCause,
+    ResolveScope, ResolvedSelection, Selection, SelectionEdit, SelectionNote, SelectionRefusal,
+    SetupFrame, Shape, SourceRef, fit_holes, hole_fit,
 };
 use crate::session::{LoadedModel, ProjectSession, SessionError, ToolpathConfig};
+use crate::tool::MillingCutter;
 
 use super::SetupEvalContext;
 
@@ -834,18 +837,6 @@ impl ProjectSession {
             SelectionTarget::Boundary => (BOUNDARY_LABEL, BOUNDARY_ITEM_USE, true),
         };
         let frames = self.resolve_selection_frames(tc, target, ctx, FaceAccess::Peek)?;
-        // "Cut past open sides": the stock as resolved, before the P6.4
-        // growth, as the prologue reads it.
-        let resolved_stock = frames.setup.stock_xy();
-        // P6.4 (O-2 (B)): the stock grown by the tool radius, as the
-        // prologue grows it, so the report extends as generation does.
-        let frames = match (target, self.extend_radius(tc)) {
-            (SelectionTarget::Op, Some(radius)) => SelectionFrames {
-                setup: frames.setup.with_stock_grown(radius),
-                model: frames.model,
-            },
-            (SelectionTarget::Op | SelectionTarget::Boundary, _) => frames,
-        };
         let selected: Vec<MatchKey> = frames
             .model
             .items()
@@ -856,10 +847,9 @@ impl ProjectSession {
             SelectionTarget::Op => self.hole_items(tc, &selected),
             SelectionTarget::Boundary => Vec::new(),
         };
-        // P6.5: the tool diameter and the size tolerance of the hole fit
-        // step, as the prologue reads them. `None` for an op with no fit
-        // rule and for a toolpath with no valid tool (generation refuses
-        // that tool itself).
+        // P6.5: the size of the hole fit step of the item pipeline. `None`
+        // for an op with no fit rule and for a toolpath with no valid tool
+        // (generation refuses that tool itself).
         let fit_size = match target {
             SelectionTarget::Op => self.hole_fit_size(tc),
             SelectionTarget::Boundary => None,
@@ -982,44 +972,24 @@ impl ProjectSession {
         }
         // P3.4: a boundary keeps a down face (its outline); an op follows
         // `OperationConfig::down_faces` (R6a). Each reads the view that its
-        // generation reads.
+        // generation reads. An op runs THE item pipeline of generation
+        // (`selection::op_items`, H1); `setup` becomes the selection that
+        // it viewed (the stock grown for an extend reader).
+        let mut setup: Cow<'_, ResolvedSelection<SetupFrame>> = Cow::Borrowed(&frames.setup);
         let viewed = match target {
-            // R-A: the "frees the part" note by the prologue rule.
-            SelectionTarget::Op => {
-                crate::selection::view(&frames.setup, item_use).map(|(items, mut notes)| {
-                    crate::selection::drop_part_free_note(
-                        &mut notes,
-                        tc.operation.frees_the_part(),
-                    );
-                    (items, notes)
-                })
-            }
-            SelectionTarget::Boundary => crate::selection::view_boundary(&frames.setup),
-        };
-        // "Cut past open sides" (operator ruling 2026-10-23): THE area rule
-        // of the prologue (`compute::open_sides`), on the setup mesh and the
-        // tool radius that generation reads, before the per-face floors as
-        // in the prologue, so the status shows the area that the op cuts.
-        let viewed = match (viewed, target) {
-            (Ok((mut items, mut notes)), SelectionTarget::Op)
-                if tc.operation.cuts_past_open_sides() =>
-            {
-                notes.extend(self.grow_open_sides_as_generation(
-                    tc,
-                    ctx,
-                    &frames.setup,
-                    resolved_stock,
-                    &mut items,
-                )?);
-                Ok((items, notes))
-            }
+            SelectionTarget::Op => self.op_items_of(tc, ctx, &frames.setup)?.map(|outcome| {
+                setup = outcome.resolved;
+                (outcome.items, outcome.notes)
+            }),
             // Operator ruling 2026-10-30: the boundary generation grows
             // each face past its open sides by the tool radius.
-            (Ok((mut items, notes)), SelectionTarget::Boundary) => {
-                self.grow_boundary_open_sides(tc, ctx, &frames.setup, &mut items)?;
-                Ok((items, notes))
-            }
-            (viewed, _) => viewed,
+            SelectionTarget::Boundary => match crate::selection::view_boundary(&frames.setup) {
+                Ok((mut items, notes)) => {
+                    self.grow_boundary_open_sides(tc, ctx, &frames.setup, &mut items)?;
+                    Ok((items, notes))
+                }
+                Err(refusal) => Err(refusal),
+            },
         };
         // P3.5: under "each picked face" every closed area needs a face.
         // P3.7: a face whose floor is at or above the top is left out with a
@@ -1033,10 +1003,7 @@ impl ProjectSession {
             (Ok((mut items, mut notes)), SelectionTarget::Op, Some(floor)) => {
                 match self.each_face_top_z(tc, ctx)? {
                     Some(top_z) => crate::compute::floor::region_floors(
-                        &frames.setup,
-                        &mut items,
-                        &floor,
-                        top_z,
+                        &setup, &mut items, &floor, top_z,
                     )
                     .map(|region_floors| {
                         if let (Some(region_floors), Some(regions)) =
@@ -1059,30 +1026,6 @@ impl ProjectSession {
                 }
             }
             (viewed, _, _) => viewed,
-        };
-        // P6.5: THE hole fit step of the prologue, with the same tool
-        // diameter and size tolerance, so a skipped circle is `Skipped` here and not cut there.
-        let viewed = match (viewed, fit_size) {
-            (Ok((mut items, mut notes)), Some(size)) => {
-                fit_holes(&frames.setup, &mut items, item_use, size).map(|fit_notes| {
-                    notes.extend(fit_notes);
-                    (items, notes)
-                })
-            }
-            (viewed, _) => viewed,
-        };
-        // Chamfer Clearance: THE wall trim of the prologue
-        // (`compute::edge_clear`), on the setup mesh and the tool that
-        // generation reads, so an edge with no clear stretch is `Skipped`
-        // here and not cut there, and the notes are the same.
-        let viewed = match (viewed, target) {
-            (Ok((mut items, mut notes)), SelectionTarget::Op) if item_use == ItemUse::Edges => self
-                .clear_edges_as_generation(tc, ctx, &frames.setup, &mut items)?
-                .map(|clear_notes| {
-                    notes.extend(clear_notes);
-                    (items, notes)
-                }),
-            (viewed, _) => viewed,
         };
         // R-B, F19: THE per-hole floor rule of the prologue
         // (`compute::floor::hole_floors`), on the heights that the hole
@@ -1124,8 +1067,8 @@ impl ProjectSession {
                             &answer.heights,
                             answer.context.stock_bottom_z,
                         );
-                        crate::compute::floor::hole_floors(&frames.setup, &holes, &floor, &inputs)
-                            .map(|spans| {
+                        crate::compute::floor::hole_floors(&setup, &holes, &floor, &inputs).map(
+                            |spans| {
                                 if floors.is_empty() {
                                     floors = vec![None; frames.model.items().len()];
                                 }
@@ -1137,19 +1080,12 @@ impl ProjectSession {
                                     }
                                 }
                                 (items, notes)
-                            })
+                            },
+                        )
                     }
                 }
             }
             (viewed, _, _) => viewed,
-        };
-        // F29: the `Empty` refusal of a Drill names the hole rims that the
-        // default rule did not take, as the prologue names them.
-        let viewed = match fit_size {
-            Some(size) => {
-                viewed.map_err(|refusal| refusal.with_default_rims(&frames.setup, item_use, &size))
-            }
-            None => viewed,
         };
         // UX-8: the face of the floor "A picked face" refuses as generation
         // refuses it (before the prologue runs `view`), so the status and
@@ -1168,7 +1104,7 @@ impl ProjectSession {
                 report.islands = items
                     .regions()
                     .map_or(0, |r| r.as_slice().iter().map(|p| p.holes.len()).sum());
-                report.extended = extended_areas(&frames.setup, &items, ctx);
+                report.extended = extended_areas(&setup, &items, ctx);
                 if items.holes().is_some()
                     && let Ok((mut model_items, _)) =
                         crate::selection::view(&frames.model, item_use)
@@ -1192,97 +1128,56 @@ impl ProjectSession {
         Ok(report)
     }
 
-    /// Chamfer Clearance: THE wall trim (`compute::edge_clear`) of the
-    /// model edges in `items`, with the inputs that the prologue reads: the
-    /// setup mesh of the toolpath model, the built cutter of the tool, and
-    /// the bevel of the op. With no mesh, no bevel or a tool that the op
-    /// refuses, the trim does nothing, as in the prologue.
-    fn clear_edges_as_generation(
+    /// The built cutter of the tool of `tc` and its config, or `None`
+    /// when the toolpath has no valid tool (generation refuses that tool
+    /// itself).
+    fn toolpath_cutter(
         &self,
         tc: &ToolpathConfig,
-        ctx: &SetupEvalContext,
-        setup: &crate::selection::ResolvedSelection<SetupFrame>,
-        items: &mut OpItems,
-    ) -> Result<Result<Vec<SelectionNote>, SelectionRefusal>, SessionError> {
-        let Some((chamfer_width, tip_offset)) = tc.operation.bevel_width_and_tip_mm() else {
-            return Ok(Ok(Vec::new()));
-        };
-        let Some(tool) = self.toolpath_tool(tc) else {
-            return Ok(Ok(Vec::new()));
-        };
-        if tc
-            .operation
-            .op_type()
-            .tool_refusal(tool.tool_type.cutter_kind())
-            .is_some()
-        {
-            return Ok(Ok(Vec::new()));
-        }
-        let Ok(cutter) = crate::compute::cutter::build_cutter(tool) else {
-            return Ok(Ok(Vec::new()));
-        };
-        let Some(mesh) = self.setup_mesh(tc, ctx)? else {
-            return Ok(Ok(Vec::new()));
-        };
-        let index = crate::maps::geom_cache::cached_auto_index(&mesh);
-        let probe = crate::compute::edge_clear::EdgeClearProbe {
-            mesh: &mesh,
-            index: &index,
-            cutter: &cutter,
-            half_angle_rad: (tool.included_angle / 2.0).to_radians(),
-            chamfer_width,
-            tip_offset,
-        };
-        Ok(crate::compute::edge_clear::clear_edge_walls(
-            setup, items, &probe,
-        ))
-    }
-
-    /// "Cut past open sides": THE area rule (`compute::open_sides`) of the
-    /// prologue, on the setup mesh and the tool radius of the built cutter,
-    /// with the stock as resolved. No tool, no cutter, no stock, no mesh or
-    /// a floor that is not "Each picked face": no change (generation
-    /// refuses the tool itself).
-    fn grow_open_sides_as_generation(
-        &self,
-        tc: &ToolpathConfig,
-        ctx: &SetupEvalContext,
-        setup: &crate::selection::ResolvedSelection<SetupFrame>,
-        stock: Option<crate::selection::StockXy>,
-        items: &mut OpItems,
-    ) -> Result<Vec<SelectionNote>, SessionError> {
-        let Some(radius) = self.open_sides_radius(tc) else {
-            return Ok(Vec::new());
-        };
-        let (Some(stock), Some(Floor::EachFace { depth })) = (stock, tc.operation.floor()) else {
-            return Ok(Vec::new());
-        };
-        let Some(mesh) = self.setup_mesh(tc, ctx)? else {
-            return Ok(Vec::new());
-        };
-        let probe = crate::compute::open_sides::OpenSidesProbe {
-            mesh: &mesh,
-            reach: crate::compute::open_sides::OpenSidesReach::Stock(stock),
-            tool_radius: radius,
-            face_depth: depth,
-        };
-        Ok(crate::compute::open_sides::grow_past_open_sides(
-            setup, items, &probe,
-        ))
-    }
-
-    /// "Cut past open sides": the tool radius by which THE area rule grows
-    /// the stock (`ToolDefinition::diameter` of the built cutter, as the
-    /// prologue reads it), or `None` when the setting is off or the
-    /// toolpath has no valid tool.
-    fn open_sides_radius(&self, tc: &ToolpathConfig) -> Option<f64> {
-        if !tc.operation.cuts_past_open_sides() {
-            return None;
-        }
-        let tool = self.toolpath_tool(tc)?;
-        crate::compute::cutter::build_cutter(tool)
+    ) -> Option<(
+        crate::tool::ToolDefinition,
+        &crate::compute::tool_config::ToolConfig,
+    )> {
+        let config = self.toolpath_tool(tc)?;
+        crate::compute::cutter::build_cutter(config)
             .ok()
-            .map(|cutter| crate::tool::MillingCutter::diameter(&cutter) / 2.0)
+            .map(|cutter| (cutter, config))
+    }
+
+    /// THE item pipeline of generation (`selection::op_items`, H1) over
+    /// `setup`, with the built cutter of `tc`, the setup mesh and its
+    /// spatial index. The report loads the mesh only when the pipeline
+    /// reads it (`selection::needs_mesh`), and builds the index only for
+    /// the wall trim (`selection::needs_edge_clear`).
+    fn op_items_of<'a>(
+        &self,
+        tc: &ToolpathConfig,
+        ctx: &SetupEvalContext,
+        setup: &'a ResolvedSelection<SetupFrame>,
+    ) -> Result<Result<crate::selection::OpItemsOutcome<'a>, SelectionRefusal>, SessionError> {
+        let built = self.toolpath_cutter(tc);
+        let tool = built
+            .as_ref()
+            .map(|(cutter, config)| crate::selection::OpTool { cutter, config });
+        let mesh = if crate::selection::needs_mesh(&tc.operation, tool) {
+            self.setup_mesh(tc, ctx)?
+        } else {
+            None
+        };
+        let index = mesh
+            .as_ref()
+            .filter(|_| crate::selection::needs_edge_clear(&tc.operation, tool))
+            .map(crate::maps::geom_cache::cached_auto_index);
+        let op_mesh = mesh.as_deref().map(|mesh| crate::selection::OpMesh {
+            mesh,
+            index: index.as_deref(),
+        });
+        Ok(crate::selection::op_items(
+            setup,
+            &tc.operation,
+            tool,
+            op_mesh,
+        ))
     }
 
     /// Operator ruling 2026-10-30: THE open-sides rule of a
@@ -1334,58 +1229,43 @@ impl ProjectSession {
             .map(|cutter| crate::tool::MillingCutter::diameter(&cutter) / 2.0)
     }
 
-    /// P6.5: the tool diameter and the size tolerance that the hole fit
-    /// step of `tc` reads, as the prologue reads them
-    /// (`ToolDefinition::diameter` of the built cutter,
-    /// `OperationConfig::drill_size`). `None` when the op has no fit rule (`HoleFitRule::None`, every op
-    /// that reads no hole), or when the toolpath has no valid tool.
+    /// P6.5: the size of the hole fit step of the item pipeline
+    /// (`selection::fit_size`) with the built cutter of `tc`. `None` when
+    /// the op has no fit rule or the toolpath has no valid tool.
     fn hole_fit_size(&self, tc: &ToolpathConfig) -> Option<DrillSize> {
-        match tc.operation.capabilities().item_use {
-            ItemUse::Holes {
-                fit: HoleFitRule::ToolSize | HoleFitRule::LargerThanTool,
-                ..
-            } => {}
-            ItemUse::Holes {
-                fit: HoleFitRule::None,
-                ..
-            }
-            | ItemUse::None
-            | ItemUse::Regions
-            | ItemUse::RegionsExtendOpen { .. }
-            | ItemUse::Curves
-            | ItemUse::Edges => return None,
-        }
-        let tool = self.toolpath_tool(tc)?;
-        crate::compute::cutter::build_cutter(tool)
-            .ok()
-            .map(|cutter| {
-                tc.operation
-                    .drill_size(crate::tool::MillingCutter::diameter(&cutter))
-            })
+        let (cutter, _) = self.toolpath_cutter(tc)?;
+        crate::selection::fit_size(&tc.operation, cutter.diameter())
     }
 
-    /// P6.4 (ruling O-2 (B)): the tool radius by which the prologue grows
-    /// the stock of an op that extends its open paths to the stock
-    /// (`ItemUse::RegionsExtendOpen`), as the prologue reads it
-    /// (`ToolDefinition::diameter` of the built cutter, halved). `None` for
-    /// every other op, and for a toolpath with no valid tool: the report
-    /// then extends to the stock edge itself, and generation refuses the
-    /// tool.
+    /// P6.4 (ruling O-2 (B)): the radius by which the item pipeline grows
+    /// the stock (`selection::stock_growth`) with the built cutter of `tc`.
+    /// `None` for an op that does not extend its open paths, and for a
+    /// toolpath with no valid tool.
     fn extend_radius(&self, tc: &ToolpathConfig) -> Option<f64> {
-        match tc.operation.capabilities().item_use {
-            ItemUse::RegionsExtendOpen { .. } => {}
-            ItemUse::None
-            | ItemUse::Regions
-            | ItemUse::Curves
-            | ItemUse::Edges
-            | ItemUse::Holes { .. } => {
-                return None;
-            }
+        let (cutter, _) = self.toolpath_cutter(tc)?;
+        crate::selection::stock_growth(&tc.operation, cutter.diameter())
+    }
+
+    /// "Cut past open sides": the tool radius of the area rule of the item
+    /// pipeline (`selection::open_sides_radius`) with the built cutter of
+    /// `tc`. `None` when the step does nothing or the toolpath has no
+    /// valid tool.
+    fn open_sides_radius(&self, tc: &ToolpathConfig) -> Option<f64> {
+        let (cutter, _) = self.toolpath_cutter(tc)?;
+        crate::selection::open_sides_radius(&tc.operation, cutter.diameter())
+    }
+
+    /// Chamfer Clearance: the tool config and the bevel that the wall trim
+    /// of the item pipeline reads (`selection::edge_clear_bevel`), as
+    /// bytes. Empty when the trim does not run.
+    fn edge_clear_key(&self, tc: &ToolpathConfig) -> Option<Vec<u8>> {
+        let Some((_, config)) = self.toolpath_cutter(tc) else {
+            return Some(Vec::new());
+        };
+        match crate::selection::edge_clear_bevel(&tc.operation, config) {
+            Some(bevel) => serde_json::to_vec(&(config, bevel)).ok(),
+            None => Some(Vec::new()),
         }
-        let tool = self.toolpath_tool(tc)?;
-        crate::compute::cutter::build_cutter(tool)
-            .ok()
-            .map(|cutter| crate::tool::MillingCutter::diameter(&cutter) / 2.0)
     }
 
     /// Every point and circle of the toolpath model of a drill op, in the
@@ -2332,8 +2212,8 @@ struct StatusKey {
     /// floors). Empty for every other floor, so a heights edit does not
     /// rebuild the report.
     each_face: Vec<u8>,
-    /// P6.5: the bits of the tool diameter that the hole fit step reads
-    /// (`ProjectSession::hole_fit_size`), and the bits of the size
+    /// P6.5: the bits of the tool diameter that the hole fit step of the
+    /// item pipeline reads (`ProjectSession::hole_fit_size`), and the bits of the size
     /// tolerance of the op (operator ruling 2026-10-22), so a tolerance
     /// edit builds the report again. `None` for every op with no
     /// fit rule, so a tool edit does not rebuild their reports.
@@ -2343,8 +2223,9 @@ struct StatusKey {
     /// the report again. `None` for every other op.
     extend_radius: Option<u64>,
     /// Chamfer Clearance: the tool and the bevel (`w`, `t`) that the wall
-    /// trim reads, so a tool or a bevel edit builds the report again.
-    /// Empty for every op with no model edges.
+    /// trim of the item pipeline reads (`ProjectSession::edge_clear_key`),
+    /// so a tool or a bevel edit builds the report again. Empty when the
+    /// trim does not run.
     edge_clear: Vec<u8>,
     /// "Cut past open sides": the bits of the tool radius of THE area rule
     /// (`ProjectSession::open_sides_radius`), so a tool edit or the
@@ -2425,11 +2306,9 @@ impl StatusKey {
                 SelectionTarget::Op => session.extend_radius(tc).map(f64::to_bits),
                 SelectionTarget::Boundary => None,
             },
-            edge_clear: match (target, tc.operation.bevel_width_and_tip_mm()) {
-                (SelectionTarget::Op, Some(bevel)) if item_use == ItemUse::Edges => {
-                    serde_json::to_vec(&(session.toolpath_tool(tc), bevel)).ok()?
-                }
-                _ => Vec::new(),
+            edge_clear: match target {
+                SelectionTarget::Op => session.edge_clear_key(tc)?,
+                SelectionTarget::Boundary => Vec::new(),
             },
             open_sides: match target {
                 SelectionTarget::Op => session.open_sides_radius(tc).map(f64::to_bits),

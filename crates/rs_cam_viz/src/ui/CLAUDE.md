@@ -8,7 +8,7 @@ Every panel, modal and workspace. `../app.rs` calls the `draw` of each surface o
 - `tokens.rs` — every token (`PATH_OPEN` too); `theme.rs` re-exports it.
 - `components/`, `feeds/`, `overlays/`, `properties/` — see each child file.
 - `setup_panel.rs`, `toolpath_panel.rs`, `toolpath_row_controls.rs` — the Setup rail (an eye per model row)
-  and the toolpath rows with the gutter connector; `add_menu_offers` gates the 2D ops on `has_selectable_item`.
+  and the toolpath rows with the gutter connector; `add_menu_offers` calls `LoadedModel::serves` for each model (M10).
 - `sim_*.rs` — the Simulation workspace, with `draw_trace_badge`. The inspector is the verdict line, then
   ONE `TabStrip`: Metrics (default, the charts first), Warnings (count badge), Navigate, Project (IC3).
   A card flips to a median line on a min-max band; `< >` opens it large. Span help is core `DebugSpanKind::help` (F017).

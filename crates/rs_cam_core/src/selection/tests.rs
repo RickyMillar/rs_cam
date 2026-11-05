@@ -836,3 +836,64 @@ fn a_profile_cuts_its_outer_ring_only_and_its_inner_ring_is_called_an_island_kno
         );
     }
 }
+
+/// F29 (H1): a Drill whose default holes all misfit the tool refuses
+/// `Empty` in the hole fit step, and `op_items` names the off-default rim
+/// of the tool size in that refusal too, not only in a `view` refusal.
+#[test]
+fn a_drill_with_no_fitting_hole_names_the_off_default_rim_f29() {
+    use crate::compute::catalog::{OperationConfig, OperationType};
+    use crate::compute::tool_config::{ToolConfig, ToolId, ToolType};
+    let tool_diameter = 6.0;
+    let rim = |x: f64, diameter: f64| {
+        Item::at_z(
+            SourceRef::ToolpathModel,
+            None,
+            Shape::circle(P2::new(x, 40.0), diameter),
+            10.0,
+        )
+        .unwrap()
+        .with_model_edge(ModelEdge {
+            form: EdgeForm::ConvexTop {
+                material: EdgeMaterial::Outside,
+            },
+            ring: false,
+        })
+    };
+    // The default rule takes a rim with a depth; this one is too wide.
+    let wide = rim(20.0, 10.0).with_model_hole(ModelHole::Rim(HoleDepth::Blind { depth_mm: 5.0 }));
+    // A rim of the tool size with no depth: the default rule leaves it.
+    let m = model(vec![wide, rim(60.0, tool_diameter)]);
+    let op = OperationConfig::new_default(OperationType::Drill);
+    let bbox = stock_bbox();
+    let scope = ResolveScope {
+        toolpath_model: Ok(&m),
+        models: std::slice::from_ref(&m),
+        stock_bbox: &bbox,
+        setup: None,
+        mesh_faces: &[],
+        item_use: op.capabilities().item_use,
+        outline_use: op.outline_use(),
+        down_faces: op.down_faces(),
+    };
+    // The served rule (`Selection::drawing`): the default rule of a Drill.
+    let resolved = resolve(&Selection::drawing(), &scope)
+        .to_setup_frame(None)
+        .unwrap();
+    let mut config = ToolConfig::test_default(ToolId::from_raw(1), ToolType::EndMill);
+    config.diameter = tool_diameter;
+    let cutter = crate::compute::cutter::build_cutter(&config).unwrap();
+    let tool = OpTool {
+        cutter: &cutter,
+        config: &config,
+    };
+    let Err(refusal) = op_items(&resolved, &op, Some(tool), None) else {
+        panic!("no hole fits the tool, so the Drill must refuse");
+    };
+    let RefusalCause::Empty { rims, .. } = refusal.cause else {
+        panic!("the refusal is not Empty: {refusal}");
+    };
+    assert_eq!(rims.len(), 1, "one off-default rim fits: {rims:?}");
+    assert!((rims[0].key.measure - tool_diameter).abs() < 1e-9);
+    assert_eq!(rims[0].key.anchor, [60.0, 40.0]);
+}

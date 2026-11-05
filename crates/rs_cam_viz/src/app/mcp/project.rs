@@ -8,6 +8,7 @@
 
 use std::path::Path;
 
+use rs_cam_core::geometry::enriched_mesh::HORIZONTAL_FACE_MIN_NORMAL_Z;
 use rs_cam_core::session::{GetOperationSchemaArgs, Query, QueryAnswer};
 
 use rs_cam_mcp::server::{json_str, no_project_error, text};
@@ -687,7 +688,7 @@ impl RsCamApp {
                         );
                         map.insert(
                             "is_horizontal".into(),
-                            serde_json::json!(normal.z.abs() > 0.95),
+                            serde_json::json!(normal.z.abs() >= HORIZONTAL_FACE_MIN_NORMAL_Z),
                         );
                     }
                     rs_cam_core::geometry::enriched_mesh::SurfaceParams::Cylinder {

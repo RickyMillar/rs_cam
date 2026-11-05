@@ -41,15 +41,20 @@ You are the lead of the geometry selection programme. Read `PLAN.md` from
 
 ### Logged from the architecture review (2026-11-05, `../arch_review_2026-11-05/REPORT.md`)
 
-Not done in the feeds contract session; take them in the next selection session.
-- H1 (High): the selection pipeline (stock grow, `view`, part-free note, `fit_holes`, edge
-  clear, open sides) is built twice by hand: `compute/execute/prologue.rs` `require_items`
-  and `session/selection_status.rs`; partial copies in `session/pins.rs` and
-  `compute/execute/drilling.rs`. Make one function in `selection/` that all four call.
-- M10: the GUI add menu (`ui/toolpath_panel.rs`) copies `LoadedModel::serves` and differs
-  (one DXF plus one STL offers an op no single model serves). Call `serves`.
-- L8: MCP `is_horizontal` (`app/mcp/project.rs`) uses `> 0.95`; core uses
-  `HORIZONTAL_FACE_MIN_NORMAL_Z` with `< 0.95`. Read the constant.
+DONE 2026-11-05 on the branch `geom-arch-tidy` (worktree `geom-tidy`; the operator merges):
+- H1 fc514b05c: `selection/op_items.rs` is THE item pipeline (grow, `view`, part-free note,
+  `fit_holes`, edge clear, open sides). The prologue, `selection_status`, the drill-op view
+  and the Pin Drill holes call it; the status key reads its predicates. Lead decision (F29):
+  the rims rewrite covers every `Empty` refusal, so generation now names the off-default
+  rims when every default hole misfits (lib sentry `..._off_default_rim_f29`). G-OPGOLDEN:
+  the 46 known rows, unchanged. Two view-only readers stay exact today (`tab_layout.rs`,
+  2D Adaptive entry containment in `session/compute.rs`): no pipeline step acts on a
+  Profile or a `Regions` op. Open gap, not H1: both skip `region_floors`, so under
+  `EachFace` an `AtTheTop` face still shows in the tab layout and the entry containment.
+- M10 077107b98: `add_menu_offers` = `is_stock_based || any(serves)`; viz sentry
+  `the_add_menu_offers_what_one_model_serves_m10`.
+- L8 d9c21f1b4: MCP `is_horizontal` reads `>= HORIZONTAL_FACE_MIN_NORMAL_Z`; viz sentry
+  `the_mcp_horizontal_flag_reads_the_core_constant_l8`.
 
 
 1. DONE 44af62dc: GUI pass, audit rows P4, P3, D7,
