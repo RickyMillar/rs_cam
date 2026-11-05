@@ -41,7 +41,7 @@ You are the lead of the geometry selection programme. Read `PLAN.md` from
 
 ### Logged from the architecture review (2026-11-05, `../arch_review_2026-11-05/REPORT.md`)
 
-DONE 2026-11-05 on the branch `geom-arch-tidy` (worktree `geom-tidy`; the operator merges):
+DONE 2026-11-05 on the branch `geom-arch-tidy` (worktree `geom-tidy`), MERGED into master 60389b9e4:
 - H1 fc514b05c: `selection/op_items.rs` is THE item pipeline (grow, `view`, part-free note,
   `fit_holes`, edge clear, open sides). The prologue, `selection_status`, the drill-op view
   and the Pin Drill holes call it; the status key reads its predicates. Lead decision (F29):
