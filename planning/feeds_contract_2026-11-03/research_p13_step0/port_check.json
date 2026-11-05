@@ -1,0 +1,450 @@
+[
+ {
+  "cell": "fm1_hw6",
+  "what": "rpm",
+  "port": 15022,
+  "shipped": 15022.0,
+  "rel_tol": 1e-06,
+  "ok": true
+ },
+ {
+  "cell": "fm1_hw6",
+  "what": "feed_mm_min",
+  "port": 3999.8230435781106,
+  "shipped": 3999.8230435781106,
+  "rel_tol": 1e-06,
+  "ok": true
+ },
+ {
+  "cell": "fm1_hw6",
+  "what": "power_kw_slot_case",
+  "port": 0.060010275817933806,
+  "shipped": 0.060010275817933806,
+  "rel_tol": 1e-06,
+  "ok": true
+ },
+ {
+  "cell": "hw6_ae05",
+  "what": "rpm",
+  "port": 8705,
+  "shipped": 8705.0,
+  "rel_tol": 1e-06,
+  "ok": true
+ },
+ {
+  "cell": "hw6_ae05",
+  "what": "feed_mm_min",
+  "port": 3999.9761319333347,
+  "shipped": 3999.9761319333347,
+  "rel_tol": 1e-06,
+  "ok": true
+ },
+ {
+  "cell": "hw6_ae05",
+  "what": "power_kw_slot_case",
+  "port": 0.0478752136417126,
+  "shipped": 0.0478752136417126,
+  "rel_tol": 1e-06,
+  "ok": true
+ },
+ {
+  "cell": "hw6_slot",
+  "what": "rpm",
+  "port": 15748,
+  "shipped": 15748.0,
+  "rel_tol": 1e-06,
+  "ok": true
+ },
+ {
+  "cell": "hw6_slot",
+  "what": "feed_mm_min",
+  "port": 3999.992,
+  "shipped": 3999.992,
+  "rel_tol": 1e-06,
+  "ok": true
+ },
+ {
+  "cell": "hw6_slot",
+  "what": "power_kw_slot_case",
+  "port": 0.06140638672901921,
+  "shipped": 0.06140638672901921,
+  "rel_tol": 1e-06,
+  "ok": true
+ },
+ {
+  "cell": "hw6_deep",
+  "what": "rpm",
+  "port": 15022,
+  "shipped": 15022.0,
+  "rel_tol": 1e-06,
+  "ok": true
+ },
+ {
+  "cell": "hw6_deep",
+  "what": "feed_mm_min",
+  "port": 3999.8230435781106,
+  "shipped": 3999.8230435781106,
+  "rel_tol": 1e-06,
+  "ok": true
+ },
+ {
+  "cell": "hw6_deep",
+  "what": "power_kw_slot_case",
+  "port": 0.24004110327173522,
+  "shipped": 0.24004110327173522,
+  "rel_tol": 1e-06,
+  "ok": true
+ },
+ {
+  "cell": "hw6_long",
+  "what": "rpm",
+  "port": 15022,
+  "shipped": 15022.0,
+  "rel_tol": 1e-06,
+  "ok": true
+ },
+ {
+  "cell": "hw6_long",
+  "what": "feed_mm_min",
+  "port": 3999.8230435781106,
+  "shipped": 3999.8230435781106,
+  "rel_tol": 1e-06,
+  "ok": true
+ },
+ {
+  "cell": "hw6_long",
+  "what": "power_kw_slot_case",
+  "port": 0.060010275817933806,
+  "shipped": 0.060010275817933806,
+  "rel_tol": 1e-06,
+  "ok": true
+ },
+ {
+  "cell": "hw6_long",
+  "what": "deflection_edge_ae5.15",
+  "port": 21.561247919036383,
+  "shipped": 21.56506005859375,
+  "rel_tol": 0.01,
+  "ok": true
+ },
+ {
+  "cell": "hw6_long",
+  "what": "deflection_edge_ae6.00",
+  "port": 20.30214916559156,
+  "shipped": 20.300512451171876,
+  "rel_tol": 0.01,
+  "ok": true
+ },
+ {
+  "cell": "hw3",
+  "what": "rpm",
+  "port": 18000.0,
+  "shipped": 18000.0,
+  "rel_tol": 1e-06,
+  "ok": true
+ },
+ {
+  "cell": "hw3",
+  "what": "feed_mm_min",
+  "port": 3834.2066187940877,
+  "shipped": 3834.2066187940877,
+  "rel_tol": 1e-06,
+  "ok": true
+ },
+ {
+  "cell": "hw3",
+  "what": "power_kw_slot_case",
+  "port": 0.01804483214444369,
+  "shipped": 0.018044832144443697,
+  "rel_tol": 1e-06,
+  "ok": true
+ },
+ {
+  "cell": "hw3_long",
+  "what": "rpm",
+  "port": 18000.0,
+  "shipped": 18000.0,
+  "rel_tol": 1e-06,
+  "ok": true
+ },
+ {
+  "cell": "hw3_long",
+  "what": "feed_mm_min",
+  "port": 3834.2066187940877,
+  "shipped": 3834.2066187940877,
+  "rel_tol": 1e-06,
+  "ok": true
+ },
+ {
+  "cell": "hw3_long",
+  "what": "power_kw_slot_case",
+  "port": 0.01804483214444369,
+  "shipped": 0.018044832144443697,
+  "rel_tol": 1e-06,
+  "ok": true
+ },
+ {
+  "cell": "hw3_long",
+  "what": "deflection_edge_ae0.92",
+  "port": 10.242120314184323,
+  "shipped": 10.251559570312502,
+  "rel_tol": 0.01,
+  "ok": true
+ },
+ {
+  "cell": "hw3_long",
+  "what": "deflection_edge_ae1.37",
+  "port": 9.444640383461785,
+  "shipped": 9.4432353515625,
+  "rel_tol": 0.01,
+  "ok": true
+ },
+ {
+  "cell": "hw3_long",
+  "what": "deflection_edge_ae1.82",
+  "port": 3.897524457013838,
+  "shipped": 3.8962568359375007,
+  "rel_tol": 0.01,
+  "ok": true
+ },
+ {
+  "cell": "hw3_long",
+  "what": "deflection_edge_ae2.27",
+  "port": 3.483876064174848,
+  "shipped": 3.4833085937500003,
+  "rel_tol": 0.01,
+  "ok": true
+ },
+ {
+  "cell": "hw3_long",
+  "what": "deflection_edge_ae2.72",
+  "port": 3.433375851056679,
+  "shipped": 3.4305917968750004,
+  "rel_tol": 0.01,
+  "ok": true
+ },
+ {
+  "cell": "hw3_long",
+  "what": "deflection_edge_ae3.17",
+  "port": 3.433375851056679,
+  "shipped": 3.4305917968750004,
+  "rel_tol": 0.01,
+  "ok": true
+ },
+ {
+  "cell": "hw12",
+  "what": "rpm",
+  "port": 13175,
+  "shipped": 13175.0,
+  "rel_tol": 1e-06,
+  "ok": true
+ },
+ {
+  "cell": "hw12",
+  "what": "feed_mm_min",
+  "port": 3999.7098288157445,
+  "shipped": 3999.7098288157445,
+  "rel_tol": 1e-06,
+  "ok": true
+ },
+ {
+  "cell": "hw12",
+  "what": "power_kw_slot_case",
+  "port": 0.22584371111740748,
+  "shipped": 0.22584371111740748,
+  "rel_tol": 1e-06,
+  "ok": true
+ },
+ {
+  "cell": "sw6",
+  "what": "rpm",
+  "port": 15022,
+  "shipped": 15022.0,
+  "rel_tol": 1e-06,
+  "ok": true
+ },
+ {
+  "cell": "sw6",
+  "what": "feed_mm_min",
+  "port": 3999.8230435781106,
+  "shipped": 3999.8230435781106,
+  "rel_tol": 1e-06,
+  "ok": true
+ },
+ {
+  "cell": "sw6",
+  "what": "power_kw_slot_case",
+  "port": 0.03580723639965111,
+  "shipped": 0.03580723639965111,
+  "rel_tol": 1e-06,
+  "ok": true
+ },
+ {
+  "cell": "mdf6",
+  "what": "rpm",
+  "port": 12518,
+  "shipped": 12518.0,
+  "rel_tol": 1e-06,
+  "ok": true
+ },
+ {
+  "cell": "mdf6",
+  "what": "feed_mm_min",
+  "port": 3999.7165378387,
+  "shipped": 3999.7165378387,
+  "rel_tol": 1e-06,
+  "ok": true
+ },
+ {
+  "cell": "mdf6",
+  "what": "power_kw_slot_case",
+  "port": 0.038683197438616375,
+  "shipped": 0.03868319743861637,
+  "rel_tol": 1e-06,
+  "ok": true
+ },
+ {
+  "cell": "hw6_xxl",
+  "what": "rpm",
+  "port": 18000.0,
+  "shipped": 18000.0,
+  "rel_tol": 1e-06,
+  "ok": true
+ },
+ {
+  "cell": "hw6_xxl",
+  "what": "feed_mm_min",
+  "port": 4792.75827349261,
+  "shipped": 4792.75827349261,
+  "rel_tol": 1e-06,
+  "ok": true
+ },
+ {
+  "cell": "hw6_xxl",
+  "what": "power_kw_slot_case",
+  "port": 0.0719068675757428,
+  "shipped": 0.07190686757574281,
+  "rel_tol": 1e-06,
+  "ok": true
+ },
+ {
+  "cell": "hw6_xxl_slot",
+  "what": "rpm",
+  "port": 18000.0,
+  "shipped": 18000.0,
+  "rel_tol": 1e-06,
+  "ok": true
+ },
+ {
+  "cell": "hw6_xxl_slot",
+  "what": "feed_mm_min",
+  "port": 4572.0,
+  "shipped": 4572.0,
+  "rel_tol": 1e-06,
+  "ok": true
+ },
+ {
+  "cell": "hw6_xxl_slot",
+  "what": "power_kw_slot_case",
+  "port": 0.07018764040654976,
+  "shipped": 0.07018764040654976,
+  "rel_tol": 1e-06,
+  "ok": true
+ },
+ {
+  "cell": "FM1 D3.175 softwood",
+  "what": "force_n_peak",
+  "port": 4.25605700299115,
+  "shipped": 4.2563,
+  "rel_tol": 0.001,
+  "ok": true
+ },
+ {
+  "cell": "FM1 D3.175 softwood",
+  "what": "power_kw_slot_case",
+  "port": 0.010766135085238314,
+  "shipped": 0.0108,
+  "rel_tol": 0.002,
+  "ok": true
+ },
+ {
+  "cell": "FM1 D3.175 hardwood",
+  "what": "force_n_peak",
+  "port": 7.132836273531464,
+  "shipped": 7.1333,
+  "rel_tol": 0.001,
+  "ok": true
+ },
+ {
+  "cell": "FM1 D3.175 hardwood",
+  "what": "power_kw_slot_case",
+  "port": 0.01804324491137162,
+  "shipped": 0.018,
+  "rel_tol": 0.002,
+  "ok": true
+ },
+ {
+  "cell": "FM1 D3.175 mdf",
+  "what": "force_n_peak",
+  "port": 5.615450471948793,
+  "shipped": 5.6158,
+  "rel_tol": 0.001,
+  "ok": true
+ },
+ {
+  "cell": "FM1 D3.175 mdf",
+  "what": "power_kw_slot_case",
+  "port": 0.011940464517624236,
+  "shipped": 0.0119,
+  "rel_tol": 0.002,
+  "ok": true
+ },
+ {
+  "cell": "FM1 D6 softwood",
+  "what": "force_n_peak",
+  "port": 9.144368999640418,
+  "shipped": 9.1444,
+  "rel_tol": 0.001,
+  "ok": true
+ },
+ {
+  "cell": "FM1 D6 softwood",
+  "what": "power_kw_slot_case",
+  "port": 0.03580341181490886,
+  "shipped": 0.0358,
+  "rel_tol": 0.002,
+  "ok": true
+ },
+ {
+  "cell": "FM1 D6 hardwood",
+  "what": "force_n_peak",
+  "port": 15.3252850827307,
+  "shipped": 15.3253,
+  "rel_tol": 0.001,
+  "ok": true
+ },
+ {
+  "cell": "FM1 D6 hardwood",
+  "what": "power_kw_slot_case",
+  "port": 0.06000386609720837,
+  "shipped": 0.06,
+  "rel_tol": 0.002,
+  "ok": true
+ },
+ {
+  "cell": "FM1 D6 mdf",
+  "what": "force_n_peak",
+  "port": 11.730690256270622,
+  "shipped": 11.7307,
+  "rel_tol": 0.001,
+  "ok": true
+ },
+ {
+  "cell": "FM1 D6 mdf",
+  "what": "power_kw_slot_case",
+  "port": 0.03867981824616906,
+  "shipped": 0.0387,
+  "rel_tol": 0.002,
+  "ok": true
+ }
+]

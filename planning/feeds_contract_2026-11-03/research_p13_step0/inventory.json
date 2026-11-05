@@ -1,0 +1,674 @@
+[
+ {
+  "id": "G01",
+  "factor": "Machine frame stiffness X/Y (gantry, belts, rails)",
+  "outputs": [
+   "stepover",
+   "depth",
+   "feed"
+  ],
+  "status": "d",
+  "stand_in": "none",
+  "f201": "n/a",
+  "assumption": "The frame and the drives are rigid: the tool beam is clamped at the collet face and nothing behind it moves.",
+  "stated": "partly: the beam doc says 'clamped at x = 0 (the collet face)'; no text says the frame is rigid",
+  "site": "crates/rs_cam_core/src/tool/mod.rs:747",
+  "needle": "stepped cantilever clamped at `x = 0` (the",
+  "rank_hobby": 1,
+  "rank_industrial": 3,
+  "note": "No printed machine stiffness in the repo (search report B). Section B back-solves an implied value."
+ },
+ {
+  "id": "G02",
+  "factor": "Z axis and spindle mount stiffness",
+  "outputs": [
+   "depth",
+   "plunge_ramp",
+   "feed"
+  ],
+  "status": "d",
+  "stand_in": "none",
+  "f201": "n/a",
+  "assumption": "The Z carriage and the spindle clamp are rigid (same clamp at the collet face).",
+  "stated": "no",
+  "site": "crates/rs_cam_core/src/tool/mod.rs:747",
+  "needle": "stepped cantilever clamped at `x = 0` (the",
+  "rank_hobby": 1,
+  "rank_industrial": 3,
+  "note": "Adams prints 'The rigidity of your spindle and Z axis determines your plunge rate' (G6 source :241), no number."
+ },
+ {
+  "id": "G03",
+  "factor": "Workholding stiffness (clamps, tape, vacuum)",
+  "outputs": [
+   "stepover",
+   "depth",
+   "feed"
+  ],
+  "status": "d",
+  "stand_in": "none (deleted)",
+  "f201": "n/a",
+  "assumption": "The part does not move or vibrate.",
+  "stated": "yes: R4 Q8 deleted the unsourced workholding scale",
+  "site": "crates/rs_cam_core/src/feeds/mod.rs:330",
+  "needle": "The workholding rigidity is gone (ruling R4 Q8",
+  "rank_hobby": 2,
+  "rank_industrial": 2,
+  "note": ""
+ },
+ {
+  "id": "G04",
+  "factor": "Collet or holder type and stiffness",
+  "outputs": [
+   "depth",
+   "feed"
+  ],
+  "status": "d",
+  "stand_in": "none",
+  "f201": "n/a",
+  "assumption": "The collet is a rigid clamp; ER11 and shrink-fit are the same.",
+  "stated": "no",
+  "site": "crates/rs_cam_core/src/tool_load/deflection.rs:43",
+  "needle": "**Bending only.**",
+  "rank_hobby": 2,
+  "rank_industrial": 2,
+  "note": "Leitz prints a relative claim only (shrink-fit vs collet), no stiffness number."
+ },
+ {
+  "id": "G05",
+  "factor": "Tool stickout",
+  "outputs": [
+   "depth",
+   "stepover"
+  ],
+  "status": "a",
+  "stand_in": "LEGACY_DEFAULT_STICKOUT_MM = 45 when unknown",
+  "f201": "F201 Unsourced",
+  "assumption": "When the tool states no stickout, it sticks out 45 mm.",
+  "stated": "yes: the lineage warns tool.fact_unknown",
+  "site": "crates/rs_cam_core/src/compute/tool_config.rs:539",
+  "needle": "pub const LEGACY_DEFAULT_STICKOUT_MM: f64 = 45.0;",
+  "rank_hobby": 2,
+  "rank_industrial": 2,
+  "note": "Moves only the tool beam; at 30 mm on D 6 the tool bends 5 um at the convention point."
+ },
+ {
+  "id": "G06",
+  "factor": "Runout (TIR)",
+  "outputs": [
+   "feed",
+   "rpm"
+  ],
+  "status": "d",
+  "stand_in": "none",
+  "f201": "n/a",
+  "assumption": "Every flute cuts the same chip; the peak chip is the band chip.",
+  "stated": "no",
+  "site": "no site",
+  "needle": null,
+  "rank_hobby": 2,
+  "rank_industrial": 2,
+  "note": "On a 2-flute tool, runout loads one flute more; no site models it."
+ },
+ {
+  "id": "G07",
+  "factor": "Flute count",
+  "outputs": [
+   "stepover",
+   "depth",
+   "feed",
+   "rpm",
+   "plunge_ramp"
+  ],
+  "status": "a",
+  "stand_in": "LEGACY_DEFAULT_FLUTE_COUNT = 2 when unknown",
+  "f201": "F201 Unsourced",
+  "assumption": "An unknown tool has 2 flutes.",
+  "stated": "yes (F201 row)",
+  "site": "crates/rs_cam_core/src/compute/tool_config.rs:550",
+  "needle": "pub const LEGACY_DEFAULT_FLUTE_COUNT: u32 = 2;",
+  "rank_hobby": 3,
+  "rank_industrial": 3,
+  "note": ""
+ },
+ {
+  "id": "G08",
+  "factor": "Helix angle",
+  "outputs": [
+   "depth",
+   "stepover"
+  ],
+  "status": "c",
+  "stand_in": "default_helix_deg = 30",
+  "f201": "typed, not in F201",
+  "assumption": "A tool with no stated helix has a 30 deg helix.",
+  "stated": "no",
+  "site": "crates/rs_cam_core/src/compute/tool_config.rs:733",
+  "needle": "fn default_helix_deg() -> f64 {",
+  "rank_hobby": 3,
+  "rank_industrial": 3,
+  "note": "Moves the peak force only."
+ },
+ {
+  "id": "G09",
+  "factor": "Flute length",
+  "outputs": [
+   "depth"
+  ],
+  "status": "a",
+  "stand_in": "LEGACY_DEFAULT_CUTTING_LENGTH_MM = 25; flute guard 0.8 x flute",
+  "f201": "F201 Unsourced (both)",
+  "assumption": "The usable depth is 0.8 of the flute.",
+  "stated": "yes (F201 rows)",
+  "site": "crates/rs_cam_core/src/feeds/mod.rs:1826",
+  "needle": "\"feeds.calculate.flute_guard_factor\",",
+  "rank_hobby": 3,
+  "rank_industrial": 3,
+  "note": ""
+ },
+ {
+  "id": "G10",
+  "factor": "Coating and series (ZrN, O-flute, compression)",
+  "outputs": [
+   "feed",
+   "rpm"
+  ],
+  "status": "a",
+  "stand_in": "lookup tie-break only",
+  "f201": "n/a",
+  "assumption": "A coating changes which row wins a tie, never a limit.",
+  "stated": "yes",
+  "site": "crates/rs_cam_core/src/feeds/series.rs:16",
+  "needle": "table holds the ZrN rows (no subfamily states the coating in a",
+  "rank_hobby": 3,
+  "rank_industrial": 3,
+  "note": ""
+ },
+ {
+  "id": "G11",
+  "factor": "Tool material stiffness (E)",
+  "outputs": [
+   "depth"
+  ],
+  "status": "c",
+  "stand_in": "CARBIDE_YOUNGS_MODULUS = 600 000 N/mm2",
+  "f201": "typed, not in F201",
+  "assumption": "Every carbide grade has E = 600 GPa.",
+  "stated": "comment: 'canonical handbook value', no file",
+  "site": "crates/rs_cam_core/src/compute/tool_config.rs:130",
+  "needle": "pub(crate) const CARBIDE_YOUNGS_MODULUS_N_PER_MM2: f64 = 600_000.0;",
+  "rank_hobby": 3,
+  "rank_industrial": 3,
+  "note": ""
+ },
+ {
+  "id": "G12",
+  "factor": "Fluted section (bending diameter)",
+  "outputs": [
+   "depth"
+  ],
+  "status": "c",
+  "stand_in": "ENDMILL_EQUIVALENT_DIAMETER_FRACTION = 0.80",
+  "f201": "typed, not in F201",
+  "assumption": "The fluted section bends as a solid rod of 0.8 D.",
+  "stated": "yes: sentry the_bending_section_is_one_sourced_fraction_g_bendeq (Kops and Vo, not captured)",
+  "site": "crates/rs_cam_core/src/feeds/predict.rs:255",
+  "needle": "pub const ENDMILL_EQUIVALENT_DIAMETER_FRACTION: f64 = 0.80;",
+  "rank_hobby": 3,
+  "rank_industrial": 3,
+  "note": ""
+ },
+ {
+  "id": "G13",
+  "factor": "Tool wear and the tool-life target",
+  "outputs": [
+   "feed",
+   "rpm"
+  ],
+  "status": "d",
+  "stand_in": "none (u is a display proxy)",
+  "f201": "n/a",
+  "assumption": "The tool is new and sharp; no life target.",
+  "stated": "no",
+  "site": "crates/rs_cam_core/src/feeds/efficiency.rs:36",
+  "needle": "`u` is a wear proxy.",
+  "rank_hobby": 3,
+  "rank_industrial": 1,
+  "note": "Vendor chips are for new tools; an industrial user prices tool life."
+ },
+ {
+  "id": "G14",
+  "factor": "Chip evacuation (slot depth, flute volume, air or vacuum)",
+  "outputs": [
+   "depth",
+   "stepover",
+   "feed"
+  ],
+  "status": "d",
+  "stand_in": "slot_doc_factor = 0.25 D (the only slot-depth stand-in)",
+  "f201": "Unsourced (hobby default)",
+  "assumption": "Chips always clear, at any slot depth.",
+  "stated": "no (drill pecks only credit evacuation)",
+  "site": "crates/rs_cam_core/src/tool_load/drill_gates.rs:185",
+  "needle": "Evacuation-credited ratio (F1)",
+  "rank_hobby": 1,
+  "rank_industrial": 1,
+  "note": "No printed numeric wood or plastic rule (section D); qualitative: upcut for slots (Onsrud, Vortex)."
+ },
+ {
+  "id": "G15",
+  "factor": "Heat and burn",
+  "outputs": [
+   "feed",
+   "rpm",
+   "stepover"
+  ],
+  "status": "c",
+  "stand_in": "RUBBING_FLOOR_MM_TOOTH = 0.025 (warns only)",
+  "f201": "F201 Unsourced",
+  "assumption": "No burn above the rubbing floor; no thermal model.",
+  "stated": "yes (F201 row, warn-only)",
+  "site": "crates/rs_cam_core/src/feeds/mod.rs:1380",
+  "needle": "pub const RUBBING_FLOOR_MM_TOOTH: f64 = 0.025;",
+  "rank_hobby": 2,
+  "rank_industrial": 2,
+  "note": ""
+ },
+ {
+  "id": "G16",
+  "factor": "Material species and density",
+  "outputs": [
+   "stepover",
+   "depth",
+   "feed",
+   "rpm",
+   "plunge_ramp"
+  ],
+  "status": "a",
+  "stand_in": "density from FPL rows",
+  "f201": "Cited (FPL, Curti 2021)",
+  "assumption": "Plywood has no force line: power and deflection refuse.",
+  "stated": "yes",
+  "site": "crates/rs_cam_core/src/material/mod.rs:1318",
+  "needle": "Material::Plywood { .. } => Err(ForceLineRefusal::Plywood),",
+  "rank_hobby": 2,
+  "rank_industrial": 2,
+  "note": "Modelled for solid wood and MDF."
+ },
+ {
+  "id": "G17",
+  "factor": "Grain direction",
+  "outputs": [
+   "feed",
+   "depth"
+  ],
+  "status": "c",
+  "stand_in": "upper envelope over grain angle 0-180 deg",
+  "f201": "Cited (Curti 2021)",
+  "assumption": "Every cut meets the worst grain angle.",
+  "stated": "yes",
+  "site": "crates/rs_cam_core/src/material/force_line.rs:270",
+  "needle": "pub fn curti_helix0_envelope() -> (f64, f64) {",
+  "rank_hobby": 3,
+  "rank_industrial": 3,
+  "note": "Conservative by design."
+ },
+ {
+  "id": "G18",
+  "factor": "Moisture content",
+  "outputs": [
+   "feed"
+  ],
+  "status": "c",
+  "stand_in": "FPL_12PCT_MOISTURE_FACTOR = 1.12 (12 % MC)",
+  "f201": "Cited (FPL)",
+  "assumption": "The wood is at 12 % MC.",
+  "stated": "yes",
+  "site": "crates/rs_cam_core/src/material/force_line.rs:102",
+  "needle": "pub const FPL_12PCT_MOISTURE_FACTOR: f64 = 1.12;",
+  "rank_hobby": 3,
+  "rank_industrial": 3,
+  "note": ""
+ },
+ {
+  "id": "G19",
+  "factor": "Climb against conventional",
+  "outputs": [
+   "feed",
+   "stepover"
+  ],
+  "status": "c",
+  "stand_in": "the larger Curti mode",
+  "f201": "Cited",
+  "assumption": "The force is the worse mode; the sim does not split a slot.",
+  "stated": "yes",
+  "site": "crates/rs_cam_core/src/tool_load/power.rs:432",
+  "needle": "climb/conventional split not modeled",
+  "rank_hobby": 3,
+  "rank_industrial": 3,
+  "note": ""
+ },
+ {
+  "id": "G20",
+  "factor": "Radial force ratio K_r",
+  "outputs": [
+   "depth",
+   "stepover"
+  ],
+  "status": "c",
+  "stand_in": "K_r = 0",
+  "f201": "no source (stated)",
+  "assumption": "The cutting force has no radial part; the lateral force is under-stated.",
+  "stated": "yes",
+  "site": "crates/rs_cam_core/src/feeds/engagement.rs:222",
+  "needle": "element has no radial component (`K_r = 0`)",
+  "rank_hobby": 2,
+  "rank_industrial": 2,
+  "note": ""
+ },
+ {
+  "id": "G21",
+  "factor": "Surface finish target (wall, floor)",
+  "outputs": [
+   "stepover",
+   "depth",
+   "feed"
+  ],
+  "status": "c",
+  "stand_in": "DEFLECTION_BACKOFF_TARGET_UM = 200",
+  "f201": "F201 Unsourced",
+  "assumption": "A 200 um tip deflection is acceptable in a rough.",
+  "stated": "yes (F201 row)",
+  "site": "crates/rs_cam_core/src/feeds/suggest/invariants.rs:64",
+  "needle": "\"feeds.suggest.DEFLECTION_BACKOFF_TARGET_UM\",",
+  "rank_hobby": 2,
+  "rank_industrial": 2,
+  "note": "The only deflection limit. No Ra or wall-error model."
+ },
+ {
+  "id": "G22",
+  "factor": "Machine feed cap",
+  "outputs": [
+   "feed",
+   "rpm",
+   "stepover"
+  ],
+  "status": "a",
+  "stand_in": "DEFAULT_CUTTING_FEED_CAP_MM_MIN = 6000 when unset",
+  "f201": "typed, not in F201",
+  "assumption": "A machine with no stated cutting cap cuts at min(6000, travel).",
+  "stated": "comment only",
+  "site": "crates/rs_cam_core/src/machine/mod.rs:797",
+  "needle": "pub const DEFAULT_CUTTING_FEED_CAP_MM_MIN: f64 = 6000.0;",
+  "rank_hobby": 1,
+  "rank_industrial": 3,
+  "note": "Binds at the FM1 point (feed 3999 of 4000)."
+ },
+ {
+  "id": "G23",
+  "factor": "Machine acceleration",
+  "outputs": [
+   "feed",
+   "stepover"
+  ],
+  "status": "d",
+  "stand_in": "none in feeds (cycle time only)",
+  "f201": "n/a",
+  "assumption": "Every move reaches the commanded feed.",
+  "stated": "no",
+  "site": "crates/rs_cam_core/src/machine/mod.rs:874",
+  "needle": "pub fn effective_kinematics(&self) -> MachineKinematics {",
+  "rank_hobby": 2,
+  "rank_industrial": 2,
+  "note": "Small pockets never reach the cap; the feeds side does not read it."
+ },
+ {
+  "id": "G24",
+  "factor": "Spindle power and torque at the rpm",
+  "outputs": [
+   "depth",
+   "feed",
+   "rpm"
+  ],
+  "status": "a",
+  "stand_in": "generic_wood_router 0.8 kW when no machine",
+  "f201": "typed preset",
+  "assumption": "A machine with no table has 0.8 kW at every rpm.",
+  "stated": "no",
+  "site": "crates/rs_cam_core/src/machine/mod.rs:902",
+  "needle": "power: PowerModel::ConstantPower { power_kw: 0.8 },",
+  "rank_hobby": 3,
+  "rank_industrial": 1,
+  "note": "FM1 point uses 0.060 kW of 0.8 (slot case)."
+ },
+ {
+  "id": "G25",
+  "factor": "Chatter (stability)",
+  "outputs": [
+   "depth",
+   "stepover",
+   "rpm"
+  ],
+  "status": "d",
+  "stand_in": "none",
+  "f201": "n/a",
+  "assumption": "The cut is stable at every rpm and depth.",
+  "stated": "no (hover copy only)",
+  "site": "crates/rs_cam_core/src/tool_load/metric_guide.rs:53",
+  "needle": "You hear chatter",
+  "rank_hobby": 2,
+  "rank_industrial": 1,
+  "note": "Section C."
+ },
+ {
+  "id": "G26",
+  "factor": "Operator risk and tool-cost tolerance",
+  "outputs": [
+   "stepover",
+   "depth",
+   "feed",
+   "rpm",
+   "plunge_ramp"
+  ],
+  "status": "d",
+  "stand_in": "none (D9 removed the dial)",
+  "f201": "n/a",
+  "assumption": "One risk level: the vendor recommendation.",
+  "stated": "yes: D9 sentry",
+  "site": "crates/rs_cam_core/tests/the_retired_aggressiveness_key_refuses_with_its_name_d9.rs:2",
+  "needle": "aggressiveness dial is removed",
+  "rank_hobby": 2,
+  "rank_industrial": 2,
+  "note": ""
+ },
+ {
+  "id": "G27",
+  "factor": "Depth convention",
+  "outputs": [
+   "depth"
+  ],
+  "status": "c",
+  "stand_in": "rigidity.doc_roughing_factor 0.25; AXIAL_K_1_5_MM 0.25 D",
+  "f201": "Unsourced (hobby default; F201 row)",
+  "assumption": "A hobby machine cuts 0.25 D deep.",
+  "stated": "yes (basis text)",
+  "site": "crates/rs_cam_core/src/compute/geometry_default.rs:486",
+  "needle": "\"compute.geometry_default.AXIAL_K_1_5_MM\",",
+  "rank_hobby": 1,
+  "rank_industrial": 2,
+  "note": "Printed hobby slots: Sienci hardwood 0.39 D, Carbide 3D mahogany 0.40 D."
+ },
+ {
+  "id": "G28",
+  "factor": "Stepover convention (Pocket)",
+  "outputs": [
+   "stepover"
+  ],
+  "status": "c",
+  "stand_in": "operation_default_profile Pocket ae 0.35 D",
+  "f201": "Unsourced (profile source)",
+  "assumption": "A Pocket steps 0.35 D.",
+  "stated": "yes (Unsourced claim)",
+  "site": "crates/rs_cam_core/src/feeds/mod.rs:3473",
+  "needle": "DOC/WOC matrix of reference/shapeoko_feeds_and_speeds calcs.rs (not in the repo)",
+  "rank_hobby": 1,
+  "rank_industrial": 2,
+  "note": "No computed limit binds below D (P11c sentry)."
+ },
+ {
+  "id": "G29",
+  "factor": "Slot depth cap",
+  "outputs": [
+   "depth"
+  ],
+  "status": "c",
+  "stand_in": "slot_doc_factor 0.25 D above slotting_threshold_d 0.85",
+  "f201": "Unsourced (both)",
+  "assumption": "A slot is 0.25 D deep on every hobby machine.",
+  "stated": "yes",
+  "site": "crates/rs_cam_core/src/feeds/mod.rs:1889",
+  "needle": "\"feeds.calculate.slotting_threshold_d\",",
+  "rank_hobby": 1,
+  "rank_industrial": 2,
+  "note": ""
+ },
+ {
+  "id": "G30",
+  "factor": "Pocket first pass is a slot",
+  "outputs": [
+   "depth",
+   "feed"
+  ],
+  "status": "b",
+  "stand_in": "PowerCase::Slot",
+  "f201": "n/a",
+  "assumption": "Power is judged at ae = D for every Pocket width.",
+  "stated": "yes",
+  "site": "crates/rs_cam_core/src/feeds/engagement.rs:681",
+  "needle": "A slot (ae = D): `FirstPass::Slot` or `Radial::Slot`.",
+  "rank_hobby": 2,
+  "rank_industrial": 2,
+  "note": "The force side of power reads ae = D; only the feed (through the lift) varies with the stepover."
+ },
+ {
+  "id": "G31",
+  "factor": "Vendor chip and rpm (printed row)",
+  "outputs": [
+   "feed",
+   "rpm"
+  ],
+  "status": "a",
+  "stand_in": "row rpm_nominal (MatchChart)",
+  "f201": "Printed",
+  "assumption": "The vendor's machine class is this machine.",
+  "stated": "partly: Amana banner says INDUSTRIAL",
+  "site": "crates/rs_cam_core/data/vendor_lut/sources/amana_spektra_spiral_plunge_v24.txt:1",
+  "needle": "INDUSTRIAL",
+  "rank_hobby": 2,
+  "rank_industrial": 3,
+  "note": ""
+ },
+ {
+  "id": "G32",
+  "factor": "Vendor depth table 1/2/3 x D",
+  "outputs": [
+   "depth"
+  ],
+  "status": "b",
+  "stand_in": "vendor_depth_table_ceiling_ratio",
+  "f201": "Printed",
+  "assumption": "The table holds at any width.",
+  "stated": "yes",
+  "site": "crates/rs_cam_core/src/feeds/geometry.rs:377",
+  "needle": "pub fn vendor_depth_table_ceiling_ratio(chip_share: f64) -> f64 {",
+  "rank_hobby": 3,
+  "rank_industrial": 2,
+  "note": ""
+ },
+ {
+  "id": "G33",
+  "factor": "Pocket corner coverage (offset geometry)",
+  "outputs": [
+   "stepover"
+  ],
+  "status": "d",
+  "stand_in": "none",
+  "f201": "n/a",
+  "assumption": "Any stepover up to D clears the corners.",
+  "stated": "no",
+  "site": "no site",
+  "needle": null,
+  "rank_hobby": 2,
+  "rank_industrial": 2,
+  "note": "Derivable geometry: where the inward offsets keep a sharp 90 deg corner (cavalier_contours, polygon.rs:77), the gap closes for s <= r (1 + 1/sqrt 2) = 0.854 D. Other corner angles change the bound."
+ },
+ {
+  "id": "G34",
+  "factor": "Gantry thrust (stepper force)",
+  "outputs": [
+   "feed",
+   "depth"
+  ],
+  "status": "d",
+  "stand_in": "none",
+  "f201": "n/a",
+  "assumption": "The axes deliver any force the cut needs.",
+  "stated": "no (TECH_DEBT_REGISTER: no such field)",
+  "site": "no site",
+  "needle": null,
+  "rank_hobby": 2,
+  "rank_industrial": 3,
+  "note": "Agent prose cites forum skip forces 80-187 N (URL only, not captured)."
+ },
+ {
+  "id": "G35",
+  "factor": "Ramp angle and plunge",
+  "outputs": [
+   "plunge_ramp"
+  ],
+  "status": "c",
+  "stand_in": "DRESSUP_RAMP_ANGLE_DEG = 3; G10 plunge fraction",
+  "f201": "ramp: repo rule; plunge: Cited (G10)",
+  "assumption": "A 3 deg ramp suits every machine.",
+  "stated": "yes (entry notes)",
+  "site": "crates/rs_cam_core/src/compute/config.rs:981",
+  "needle": "pub const DRESSUP_RAMP_ANGLE_DEG: f64 = 3.0;",
+  "rank_hobby": 2,
+  "rank_industrial": 3,
+  "note": ""
+ },
+ {
+  "id": "G36",
+  "factor": "Long tool (L/D) derate",
+  "outputs": [
+   "feed"
+  ],
+  "status": "c",
+  "stand_in": "long_tool_load_share (warn only)",
+  "f201": "Unsourced",
+  "assumption": "A long tool needs no lower feed.",
+  "stated": "yes: R4 Q7",
+  "site": "crates/rs_cam_core/src/feeds/mod.rs:619",
+  "needle": "**Not a feed factor since ruling R4 Q7 (2026-09-24).**",
+  "rank_hobby": 3,
+  "rank_industrial": 3,
+  "note": ""
+ },
+ {
+  "id": "G37",
+  "factor": "Surface speed when no row",
+  "outputs": [
+   "rpm"
+  ],
+  "status": "c",
+  "stand_in": "SPEED_SOLID_WOOD etc.",
+  "f201": "F201 Unsourced",
+  "assumption": "A cutting speed constant per material class.",
+  "stated": "yes",
+  "site": "crates/rs_cam_core/src/material/mod.rs:736",
+  "needle": "\"material.base_cutting_speed_m_min.solid_wood\",",
+  "rank_hobby": 3,
+  "rank_industrial": 3,
+  "note": "The row rpm wins where a row exists."
+ }
+]
