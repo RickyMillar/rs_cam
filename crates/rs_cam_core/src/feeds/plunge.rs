@@ -5,10 +5,16 @@
 //!
 //! 1. [`PlungeBasis`] is the part that does not use the feed F. `calculate`
 //!    sets it on `FeedsResult::plunge` (step 8).
-//! 2. [`resolve_plunge`] gives the number at a feed. `calculate` runs it at
-//!    the calculator's F. The apply funnel (`suggest::apply`) runs it again
-//!    at the feed that ships, because pass 9, pass 10 and an explored feed
-//!    can move F.
+//! 2. [`resolve_plunge_at`] gives the number at a feed. `calculate` runs it
+//!    at the calculator's F. The apply funnel (`suggest::apply`) runs it
+//!    again at the feed that ships, because pass 9, pass 10 and an explored
+//!    feed can move F.
+//!
+//! P18 (review D14): F is the feed BEFORE the radial chip-thinning lift
+//! ([`UnliftedFeed`]). The Garr lift corrects a narrow radial width; a
+//! plunge is axial and has no radial thinning. Until P18 the plunge read
+//! the lifted feed: a 6 mm 2F flat at a 0.3 mm width plunged at 2.29 x the
+//! axial chip of the same tool at full width.
 //!
 //! The value is `min(rule, tip cap, axial chip, F)`, rounded down to 1
 //! mm/min:
@@ -28,6 +34,7 @@
 
 use super::extrapolation::plunge::flutes_text;
 use super::extrapolation::{PlungeClaim, PlungeRefusal, plunge_rule};
+use super::geometry::UnliftedFeed;
 use super::provenance::ValueProvenance;
 use super::{FeedsInput, OperationFamily, ToolGeometryHint};
 use crate::tool_load::plunge_stress;
@@ -290,9 +297,9 @@ impl PlungeBasis {
     /// The card text at a feed and an RPM. The headline names the term
     /// that binds.
     #[must_use]
-    pub fn card_text_at(&self, feed_mm_min: f64, rpm: f64) -> (String, String) {
+    pub fn card_text_at(&self, feed: UnliftedFeed, rpm: f64) -> (String, String) {
         let (headline, detail) = self.card_text();
-        match resolve_plunge(self, feed_mm_min, rpm) {
+        match resolve_plunge_at(self, feed, rpm) {
             Some((value, binding)) => (
                 format!("{headline}; {value:.0} mm/min, set by {}", binding.label()),
                 detail,
@@ -487,7 +494,25 @@ fn axial_chip_bound(
     }
 }
 
-/// The plunge at `feed_mm_min` and `rpm`, and the term that sets it.
+/// P18 (review D14): the plunge at the feed before the lift, `feed`, and
+/// `rpm`, and the term that sets it. Every product site calls this door
+/// ([`resolve_plunge`] at `feed.mm_min()`). The type holds that no caller
+/// passes the lifted feed.
+#[must_use]
+pub fn resolve_plunge_at(
+    basis: &PlungeBasis,
+    feed: UnliftedFeed,
+    rpm: f64,
+) -> Option<(f64, PlungeBinding)> {
+    resolve_plunge(basis, feed.mm_min(), rpm)
+}
+
+/// The plunge at a raw feed `feed_mm_min` and `rpm`, and the term that sets
+/// it. P18: a product site calls [`resolve_plunge_at`]; this raw form stays
+/// public only for the FM1 instrument's `plunge_binding` column
+/// (`tests/feeds_matrix_instrument_fm1.rs`). The sentry
+/// `the_plunge_reads_the_feed_before_the_lift_p18` holds that no source
+/// file outside this module calls it.
 ///
 /// The value is `min(rule, tip cap, axial chip, feed)`, rounded DOWN to 1
 /// mm/min (T-9: the value is bound from above). On a tie the rule binds,
@@ -607,7 +632,8 @@ mod tests {
             resolve_plunge(&tapered, 2000.0, 18_000.0),
             Some((150.0, PlungeBinding::TipCap))
         );
-        let (headline, detail) = tapered.card_text_at(2000.0, 18_000.0);
+        let (headline, detail) =
+            tapered.card_text_at(UnliftedFeed::over_lift(2000.0, 1.0), 18_000.0);
         assert!(headline.contains("set by the tip cap"), "{headline}");
         assert!(detail.contains(TIP_CAP_RULE_TEXT), "{detail}");
     }

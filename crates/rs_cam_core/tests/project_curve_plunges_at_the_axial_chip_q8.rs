@@ -154,11 +154,16 @@ fn suggest_writes_the_axial_chip_plunge_on_a_project_curve() {
         .axial()
         .expect("the result carries the bound");
     assert_eq!(bound.axial_chip_mm, chip);
+    // P18 (review D14): the plunge reads the feed before the radial
+    // chip-thinning lift. A Project Curve cuts the full width, so the lift
+    // is 1 and the feed before the lift is the shipped feed.
+    assert_eq!(s.feeds_result.derates.radial_chip_thinning, 1.0);
+    let unlifted = s.feeds_result.unlifted_feed();
     assert_eq!(
-        rs_cam_core::feeds::plunge::resolve_plunge(&s.feeds_result.plunge, feed, rpm),
+        rs_cam_core::feeds::plunge::resolve_plunge_at(&s.feeds_result.plunge, unlifted, rpm),
         Some((want, PlungeBinding::AxialChip))
     );
-    let (headline, _) = s.feeds_result.plunge.card_text_at(feed, rpm);
+    let (headline, _) = s.feeds_result.plunge.card_text_at(unlifted, rpm);
     assert!(headline.contains("set by the G6 axial chip"), "{headline}");
 }
 

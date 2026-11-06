@@ -453,8 +453,9 @@ impl FeedsResult {
         let doc = ValueProvenance::of_basis(&self.bases.ap);
         let woc = ValueProvenance::of_basis(&self.bases.ae);
 
+        // P18 (review D14): the plunge binds at the feed before the lift.
         let plunge =
-            match super::plunge::resolve_plunge(&self.plunge, self.feed_rate_mm_min, self.rpm) {
+            match super::plunge::resolve_plunge_at(&self.plunge, self.unlifted_feed(), self.rpm) {
                 Some((_, binding)) => self.plunge.provenance(binding, chip.clone()),
                 None => chip.clone(),
             };

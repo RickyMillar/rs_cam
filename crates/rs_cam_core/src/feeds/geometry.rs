@@ -90,6 +90,63 @@ impl RadialThinning {
     }
 }
 
+/// Feeds contract P18 (review D14): the feed before the radial
+/// chip-thinning lift.
+///
+/// The Garr lift (`CREDITS.md`, "Garr Tool, Chip Thinning") is a correction
+/// for a narrow radial width. An axial plunge, and a ramp or helix entry
+/// into fresh stock, has no radial thinning: the tool cuts the full width.
+/// Thus the plunge and the ramp feed read this feed, not the shipped
+/// (lifted) feed.
+///
+/// The value is `feed / lift`, with the lift that [`RadialThinning::lift`]
+/// gives at the shipped width. The shipped feed already carries every cap
+/// after the lift (the power rungs, the machine cutting ceiling, the Q1
+/// arms), so this value is at or below the shipped feed and at or below
+/// `band chip x rpm x Z`. A lift that is not finite or below 1 counts as 1,
+/// so the value is never above the feed.
+///
+/// The field is private. The doors are [`Self::at_cut`] (a cut: the
+/// thinning rule, the width and the engaged diameter),
+/// [`crate::feeds::FeedsResult::unlifted_feed`] (the calculator's lift) and
+/// the apply funnel's door at the kept geometry. The plunge resolver
+/// ([`crate::feeds::plunge::resolve_plunge_at`]) and the ramp resolver
+/// ([`crate::feeds::ramp::resolve_ramp_feed`]) take this type, so a caller
+/// cannot pass the lifted feed.
+#[derive(Debug, Clone, Copy, PartialEq)]
+pub struct UnliftedFeed(f64);
+
+impl UnliftedFeed {
+    /// The feed `feed_mm_min` over the lift of a cut: the rule `thinning`
+    /// at the radial width `ae_mm` on the engaged diameter `d_eng`.
+    #[must_use]
+    pub fn at_cut(
+        feed_mm_min: f64,
+        thinning: RadialThinning,
+        ae_mm: f64,
+        d_eng: crate::feeds::engagement::EngagedDiameter,
+    ) -> Self {
+        Self::over_lift(feed_mm_min, thinning.lift(ae_mm, d_eng.mm()))
+    }
+
+    /// The feed `feed_mm_min` over the lift `lift`. A lift that is not
+    /// finite or below 1 counts as 1.
+    #[must_use]
+    pub(in crate::feeds) fn over_lift(feed_mm_min: f64, lift: f64) -> Self {
+        if lift.is_finite() && lift > 1.0 {
+            Self(feed_mm_min / lift)
+        } else {
+            Self(feed_mm_min)
+        }
+    }
+
+    /// The feed, mm/min.
+    #[must_use]
+    pub const fn mm_min(self) -> f64 {
+        self.0
+    }
+}
+
 // There is deliberately NO `ball_effective_diameter` and NO
 // `bull_nose_effective_diameter` here. Feeds contract P15 deleted both. The
 // bull-nose copy used the corner circle only (`ball_effective_diameter(2 r,

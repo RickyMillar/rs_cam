@@ -107,6 +107,9 @@ fn id_and_category_for(kind: VerdictKind) -> (&'static str, Category) {
         VerdictKind::MeasurabilityAbstained => {
             (ids::PROJECT_MEASURABILITY_ABSTAINED, Category::State)
         }
+        VerdictKind::SimCellAboveHalfStepover => {
+            (ids::PROJECT_SIM_CELL_ABOVE_HALF_STEPOVER, Category::State)
+        }
     }
 }
 
@@ -132,6 +135,7 @@ fn state_for(kind: VerdictKind) -> DiagnosticState {
         | VerdictKind::DowelHolesDisagree
         | VerdictKind::PinWallThin
         | VerdictKind::PinToolMismatch
-        | VerdictKind::ShoeGapTooLow => DiagnosticState::Current,
+        | VerdictKind::ShoeGapTooLow
+        | VerdictKind::SimCellAboveHalfStepover => DiagnosticState::Current,
     }
 }

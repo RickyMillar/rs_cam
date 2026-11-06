@@ -176,6 +176,13 @@ diag_ids! {
     /// Carries `DiagnosticState::NotApplicable`: it is not a warning about the
     /// toolpath, it is a statement about the simulation.
     pub const PROJECT_MEASURABILITY_ABSTAINED: &str = "project.measurability_abstained" => INFO;
+    /// Feeds contract P18 item 4b (lead ruling 2026-11-07). The simulation
+    /// cell is wider than half the stepover of a toolpath, so the gates
+    /// cannot grade its width (a grid does not resolve a width below 2
+    /// cells). An a-priori finding: it reads the cell and the stepover, not a
+    /// trace, and it never refuses. The derivation and its two neighbours are
+    /// in `session::compute::diagnostics::CellStepoverBound`.
+    pub const PROJECT_SIM_CELL_ABOVE_HALF_STEPOVER: &str = "project.sim_cell_above_half_stepover" => INFO;
     /// R-12 (census §6.4). A pass is cutting through material an upstream
     /// operation left standing. The actionable half of the "Rivers B4"
     /// investigation: the simulator's reading was correct all along, and what

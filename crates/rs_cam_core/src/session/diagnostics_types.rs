@@ -156,6 +156,10 @@ pub enum VerdictKind {
     /// needs: the shoe plate or the shoe shelf strikes the stock or an
     /// obstacle at the stated gap.
     ShoeGapTooLow,
+    /// Feeds contract P18 item 4b: the simulation cell is wider than half the
+    /// stepover of a toolpath, so the gates cannot grade its width. A
+    /// statement about the simulation, made before it runs; never a refusal.
+    SimCellAboveHalfStepover,
 }
 
 impl VerdictKind {
@@ -175,6 +179,7 @@ impl VerdictKind {
             Self::PinToolMismatch => "pin_tool_mismatch",
             Self::MeasurabilityAbstained => "measurability_abstained",
             Self::ShoeGapTooLow => "shoe_gap_too_low",
+            Self::SimCellAboveHalfStepover => "sim_cell_above_half_stepover",
         }
     }
 }
@@ -425,6 +430,26 @@ pub struct ProjectDiagnostics {
     /// Severity-ranked list of structured verdicts (critical → polish).
     /// Empty when the project has no findings.
     pub verdicts: Vec<Verdict>,
+    /// Feeds contract P18 item 4b (d), lead ruling option (a): the air-cut
+    /// share over the MEASURABLE toolpaths, when a measurability abstention
+    /// withholds the air cut of one or more toolpaths. `None` when no
+    /// toolpath abstains: then [`Self::air_cut_pct_of_total_runtime`] is the
+    /// share. The project verdict reads it; it is not on the wire (the
+    /// abstention verdict and the per-toolpath air-cut verdict carry the
+    /// names).
+    #[serde(skip)]
+    pub air_cut_measured: Option<MeasuredAirCut>,
+}
+
+/// P18 item 4b (d): the air cut of the measurable toolpaths.
+#[derive(Debug, Clone, PartialEq)]
+pub struct MeasuredAirCut {
+    /// Air-cut time ÷ total runtime × 100 over the toolpaths whose air cut
+    /// is measurable. `None` when no measurable toolpath has runtime (every
+    /// toolpath abstains).
+    pub pct_of_total_runtime: Option<f64>,
+    /// The names of the toolpaths whose air cut is withheld.
+    pub withheld: Vec<String>,
 }
 
 /// The project air-cut band of [`ProjectVerdict::HighAirCut`], on the
@@ -554,7 +579,16 @@ impl ProjectDiagnostics {
             per_toolpath,
             // The per-finding list is a different, per-toolpath answer.
             verdicts: _,
+            air_cut_measured,
         } = self;
+        // P18 (item 4b, (d), lead ruling option (a)): a headline does not
+        // state an air-cut share that a measurability abstention withholds.
+        // With an abstention the arm reads the share over the measurable
+        // toolpaths only; with every toolpath withheld it gives no verdict.
+        let air_cut_share = match air_cut_measured {
+            Some(measured) => measured.pct_of_total_runtime,
+            None => *air_cut_pct_of_total_runtime,
+        };
         if *collision_checks_failed > 0 {
             ProjectVerdict::Unknown {
                 checks_failed: *collision_checks_failed,
@@ -568,9 +602,7 @@ impl ProjectDiagnostics {
             ProjectVerdict::RapidCollisions {
                 count: *rapid_collision_count,
             }
-        } else if let Some(pct) =
-            air_cut_pct_of_total_runtime.filter(|pct| *pct > PROJECT_AIR_CUT_BAR_PCT)
-        {
+        } else if let Some(pct) = air_cut_share.filter(|pct| *pct > PROJECT_AIR_CUT_BAR_PCT) {
             ProjectVerdict::HighAirCut {
                 pct_of_total_runtime: pct,
             }
@@ -625,6 +657,7 @@ mod tests {
             rapid_collision_count: 0,
             per_toolpath: Vec::new(),
             verdicts: Vec::new(),
+            air_cut_measured: None,
         }
     }
 

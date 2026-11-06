@@ -328,16 +328,26 @@ fn test_flat_endmill_plunge_is_the_g10_flat_claim() {
     });
 
     // The G10 flat claim: plunge = floor(F / Z) at Z 2; no tip cap.
+    // Re-pinned by feeds contract P18 (review D14): F is the feed BEFORE the
+    // radial chip-thinning lift, `feed / derates.radial_chip_thinning`. The
+    // Adaptive default width is narrow, so the lift is above 1 here
+    // (non-vacuity below); before P18 the pin read the lifted feed.
     let claim = result
         .plunge
         .claim()
         .unwrap_or_else(|| panic!("6mm 2F flat: basis {:?}", result.plunge));
     assert_eq!(claim.rule.id, "g10_plunge_flat");
     assert_eq!(result.plunge.tip_cap(), None);
+    let lift = result.derates.radial_chip_thinning;
+    assert!(
+        lift > 1.0,
+        "the Adaptive default width lifts the feed: {lift}"
+    );
+    let unlifted = result.feed_rate_mm_min / lift;
     assert_eq!(
         result.plunge_rate_mm_min,
-        (result.feed_rate_mm_min / 2.0).floor(),
-        "6mm 2F flat plunge {} should be floor(feed {} / 2)",
+        (unlifted / 2.0).floor(),
+        "6mm 2F flat plunge {} should be floor(feed {} / lift {lift} / 2)",
         result.plunge_rate_mm_min,
         result.feed_rate_mm_min
     );

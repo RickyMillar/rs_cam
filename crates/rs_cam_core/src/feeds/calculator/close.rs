@@ -2,6 +2,7 @@
 //! floor, the drill cycle) and the result.
 
 use super::CalcState;
+use crate::feeds::geometry::UnliftedFeed;
 use crate::feeds::sourced::{self, Basis, PointBases};
 use crate::feeds::{
     ChiploadSource, FeedsDerates, FeedsResult, FeedsWarning, FormulaBreakdown, OperationFamily,
@@ -24,7 +25,7 @@ impl Entry {
     pub(super) fn step8_basis(&self, s: &CalcState) -> Basis {
         plunge_value_basis(
             &self.plunge_basis,
-            s.feed.feed,
+            unlifted_feed(s),
             s.speed.rpm,
             &s.feed.basis,
             &self.material_plunge_row,
@@ -32,16 +33,22 @@ impl Entry {
     }
 }
 
+/// P18 (review D14): the feed of `s` before the radial chip-thinning lift,
+/// at the shipped width and engaged diameter. The plunge reads it.
+fn unlifted_feed(s: &CalcState) -> UnliftedFeed {
+    UnliftedFeed::at_cut(s.feed.feed, s.feed.thinning, s.cut.ae, s.feed.effective_d)
+}
+
 /// The basis of the plunge at `feed` and `rpm`: the binding term of the
 /// plunge rule, `plunge = feed` for a drill cycle, or the material base.
 fn plunge_value_basis(
     plunge_basis: &plunge::PlungeBasis,
-    feed: f64,
+    feed: UnliftedFeed,
     rpm: f64,
     feed_basis: &Basis,
     material_plunge_row: &FormulaConstant,
 ) -> Basis {
-    match plunge::resolve_plunge(plunge_basis, feed, rpm) {
+    match plunge::resolve_plunge_at(plunge_basis, feed, rpm) {
         Some((_, binding)) => plunge_basis.basis(binding, feed_basis, material_plunge_row.clone()),
         None => match plunge_basis {
             plunge::PlungeBasis::DrillCycle => {
@@ -93,7 +100,11 @@ pub(super) fn step8_plunge(s: &CalcState) -> Entry {
     // axial, so no engagement lever acts on it. The plunge
     // is the G10 rule of Step 8 at this feed. A drill cycle gives no value
     // here; Step 9c sets its plunge to the drill feed.
-    let plunge_rate = plunge::resolve_plunge(&plunge_basis, s.feed.feed, s.speed.rpm)
+    //
+    // P18 (review D14): the rule reads the feed BEFORE the radial
+    // chip-thinning lift. The lift corrects a narrow radial width; a plunge
+    // is axial and has no radial thinning.
+    let plunge_rate = plunge::resolve_plunge_at(&plunge_basis, unlifted_feed(s), s.speed.rpm)
         .map_or(plunge, |(value, _)| value);
     Entry {
         ramp,
@@ -269,7 +280,7 @@ pub(super) fn result(s: CalcState, entry: Entry) -> FeedsResult {
     // power basis.
     let plunge_value_basis = plunge_value_basis(
         &plunge_basis,
-        feed.feed,
+        UnliftedFeed::at_cut(feed.feed, feed.thinning, cut.ae, feed.effective_d),
         speed.rpm,
         &feed.basis,
         &material_plunge_row,

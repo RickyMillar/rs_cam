@@ -118,6 +118,8 @@ fn the_verdict_does_not_claim_ok_over_a_failed_check_g_colfail() {
         rapid_collision_count: 3,
         per_toolpath: Vec::new(),
         verdicts: Vec::new(),
+        // P18 item 4b (d): no air-cut abstention in this fixture.
+        air_cut_measured: None,
     };
     assert!(
         matches!(

@@ -120,6 +120,8 @@ fn project_diagnostics_wire_names_both_denominators() {
         rapid_collision_count: 0,
         per_toolpath: Vec::new(),
         verdicts: Vec::new(),
+        // P18 item 4b (d): no air-cut abstention in this fixture.
+        air_cut_measured: None,
     };
 
     let json = serde_json::to_value(&diag).expect("ProjectDiagnostics serialises");

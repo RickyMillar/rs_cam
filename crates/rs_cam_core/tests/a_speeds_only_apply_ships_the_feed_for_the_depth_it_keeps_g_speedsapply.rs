@@ -21,16 +21,25 @@
 //! The arms:
 //!
 //! 1. A result sized at the kept depth (7.5 mm) ships its own feed, rounded
-//!    down to 1 mm/min, and the depth and the stepover stay. "Apply all"
-//!    (the envelope proposal; before feeds contract P5 the combined chain
-//!    apply `Both`) on the same operation lowers the depth and ships a
-//!    different feed.
+//!    down to 1 mm/min, and the depth and the stepover stay. Non-vacuity, in
+//!    two materials (feeds contract P18, lead ruling):
+//!    - the oak of the fixture is a Janka-only species with no force line.
+//!      P16 item 6c gives no depth proposal without a force line, so "Apply
+//!      all" (the envelope proposal; before feeds contract P5 the combined
+//!      chain apply `Both`) keeps 7.5 mm. The envelope still states its
+//!      depth ceiling below 7.5 mm and places the kept depth outside it, so
+//!      the operator sees the warning with no proposal;
+//!    - generic hardwood has a force line, so "Apply all" writes a depth
+//!      proposal: the depth lowered to its binding cap.
+//!
+//!    P16 (D12) deleted the slot step, so no slot limit sets a ceiling.
 //! 2. The Suggest door's own result (the calculator picks the depth, as the
 //!    GUI "Apply recommended speeds" button does) ships a feed below the
 //!    feed of "Apply all": the depth de-rate for 7.5 mm reached the feed.
 //! 3. Control: on an operation that already carries the geometry "Apply
 //!    all" writes (inside the rigidity cap), the speeds are bit-identical
-//!    to the speeds of "Apply all".
+//!    to the speeds of "Apply all". P18: in generic hardwood, where "Apply
+//!    all" writes a depth (the oak gets no depth proposal, P16 item 6c).
 //!
 //! The tool and the stock are the fixture of the G-OPT5 sentry (the mini
 //! project, `planning/rivmap_block_job/testpiece_mini.toml`, tool 0 and the
@@ -39,6 +48,7 @@
 
 #![expect(
     clippy::expect_used,
+    clippy::panic,
     reason = "test code: a panic is how a test reports a failure"
 )]
 
@@ -47,6 +57,7 @@ use rs_cam_core::compute::operation_configs::PocketConfig;
 use rs_cam_core::compute::tool_config::ToolFact;
 use rs_cam_core::compute::tool_config::{ToolConfig, ToolId, ToolType};
 use rs_cam_core::feeds::envelope::PickRequest;
+use rs_cam_core::feeds::envelope::Placement;
 use rs_cam_core::feeds::suggest::{
     OperationApplyInput, SuggestContext, apply_speeds_to_op, apply_to_operation,
     feeds_input_for_operation, feeds_result_for_operation, round_suggestion_value_down,
@@ -56,7 +67,7 @@ use rs_cam_core::feeds::{
     validate_tool_for_operation,
 };
 use rs_cam_core::machine::MachineProfile;
-use rs_cam_core::material::Material;
+use rs_cam_core::material::{Material, WoodSpecies};
 
 /// The depth per pass of the defect: 2.5 x the 3 mm diameter.
 const DEEP_DPP_MM: f64 = 7.5;
@@ -106,11 +117,24 @@ struct Fixture {
 
 impl Fixture {
     fn new() -> Self {
+        Self::with(mini_oak())
+    }
+
+    /// The fixture in `material` (P18: a material with a force line gets a
+    /// depth proposal; the oak does not).
+    fn with(material: Material) -> Self {
         Self {
             tool: mini_tool(),
-            material: mini_oak(),
+            material,
             machine: MachineProfile::generic_wood_router(),
         }
+    }
+
+    /// Generic hardwood: a species with a force line (B6).
+    fn hardwood() -> Self {
+        Self::with(Material::SolidWood {
+            species: WoodSpecies::GenericHardwood,
+        })
     }
 
     /// The Suggest door's result: the calculator picks the depth (a Pocket
@@ -186,11 +210,23 @@ impl Fixture {
 
     /// The lowest depth ceiling (mm) of the envelope of `op` at its own
     /// width. P13c (O1): the 0.25 x D rigidity rule (0.75 mm on this tool)
-    /// is gone; this oak (a Janka-only species, no FPL density) has no force
-    /// line, so the force-budget limit abstains and another limit (the
-    /// vendor depth table, the slot step) sets the ceiling.
+    /// is gone. In the oak (a Janka-only species, no FPL density) there is no
+    /// force line, so the force-budget limit abstains and another limit (the
+    /// vendor depth table) sets the ceiling; P16 (D12) deleted the slot step.
+    /// In generic hardwood the lowest ceiling at this width is the same
+    /// vendor depth table (measured 2026-11-07).
     fn rigidity_ceiling(&self, op: &OperationConfig) -> f64 {
-        let env = rs_cam_core::feeds::envelope::SafeEnvelope::for_cut(
+        let ae = op.stepover().expect("a pocket carries a stepover");
+        let c = self
+            .envelope(op)
+            .ap_ceiling_at(ae)
+            .expect("a roughing pocket carries a depth ceiling");
+        c.0
+    }
+
+    /// The safe envelope of `op`.
+    fn envelope(&self, op: &OperationConfig) -> rs_cam_core::feeds::envelope::SafeEnvelope {
+        rs_cam_core::feeds::envelope::SafeEnvelope::for_cut(
             rs_cam_core::feeds::envelope::EnvelopeInput {
                 operation: op,
                 tool: &self.tool,
@@ -201,12 +237,7 @@ impl Fixture {
                 context: SuggestContext::default(),
             },
         )
-        .expect("a pocket envelope");
-        let ae = op.stepover().expect("a pocket carries a stepover");
-        let c = env
-            .ap_ceiling_at(ae)
-            .expect("a roughing pocket carries a depth ceiling");
-        c.0
+        .expect("a pocket envelope")
     }
 }
 
@@ -255,29 +286,55 @@ fn a_speeds_only_apply_ships_the_calculator_feed_for_the_kept_depth_g_speedsappl
         "the RPM is the calculator's"
     );
 
-    // Non-vacuity: "Apply all" on the same operation lowers the depth to
-    // the rigidity cap and ships another feed. Before G-SPEEDSAPPLY the
-    // speeds-only apply shipped the feed of the clamped depth (measured
-    // 3877.8 mm/min). Feeds contract P5: the clamp is the envelope proposal.
+    // Non-vacuity in the oak, a pin of P16 item 6c: no force line, so no
+    // depth proposal. "Apply all" keeps the stated depth; the envelope still
+    // states its depth ceiling below it and places the kept depth outside
+    // it (the warning with no proposal).
     let all = f.apply_all(&op);
-    let all_dpp = all.depth_per_pass().expect("a pocket carries a DPP");
+    assert_eq!(
+        all.depth_per_pass(),
+        Some(DEEP_DPP_MM),
+        "P16 item 6c: no force line, no depth proposal, so Apply all keeps the depth"
+    );
+    let ceiling = f.rigidity_ceiling(&all);
     assert!(
-        all_dpp < DEEP_DPP_MM && all_dpp <= f.rigidity_ceiling(&all) + 1e-9,
-        "fixture drift: Apply all no longer lowers the depth ({all_dpp} mm, ceiling {} mm, \
-         stepover {:?})",
-        f.rigidity_ceiling(&all),
-        all.stepover()
+        ceiling < DEEP_DPP_MM,
+        "the envelope states a depth ceiling ({ceiling} mm) below the kept {DEEP_DPP_MM} mm"
+    );
+    match f.envelope(&all).operator {
+        Some(Placement::Outside { binding, margin }) => {
+            assert!(margin < 0.0, "outside by {margin} at {binding:?}");
+        }
+        other => panic!("the kept {DEEP_DPP_MM} mm sits outside the envelope: {other:?}"),
+    }
+
+    // Non-vacuity in generic hardwood (a force line, so P16 item 6c gives a
+    // depth proposal): "Apply all" writes `min(stated, binding cap)`
+    // (`lower_to_cap`) at the stated width. Measured 2026-11-07: the binding
+    // cap is the envelope ceiling at 0.838 mm, 3.0028 mm (the vendor depth
+    // table, as in the oak), and the depth staircase of the 30 mm pocket
+    // snaps it to 30 / ceil(30 / 3.0028) = 3.0 mm. The test reads the
+    // ceiling from the envelope and types no number. Both feeds sit on the
+    // generic router's cutting cap, 3999 mm/min after the round-down (T-9).
+    let hw = Fixture::hardwood();
+    let hw_result = hw.result_at(&op, DEEP_DPP_MM, STEPOVER_MM);
+    let hw_applied = hw.speeds(&op, &hw_result);
+    let hw_all = hw.apply_all(&op);
+    let all_dpp = hw_all.depth_per_pass().expect("a pocket carries a DPP");
+    assert!(
+        all_dpp < DEEP_DPP_MM && all_dpp <= hw.rigidity_ceiling(&hw_all) + 1e-9,
+        "Apply all lowers the depth in hardwood ({all_dpp} mm, ceiling {} mm)",
+        hw.rigidity_ceiling(&hw_all)
     );
     // Feeds contract P11b (L6): the depth no longer scales the feed (the
     // vendor depth table is an envelope limit), so the feed of the shallower
-    // depth is not below the feed of the kept depth; on this fixture both sit
-    // on the machine feed cap.
+    // depth is not below the feed of the kept depth.
     assert!(
-        all.feed_rate() >= applied.feed_rate(),
+        hw_all.feed_rate() >= hw_applied.feed_rate(),
         "the feed of Apply all ({} mm/min, at {all_dpp} mm) must not be below the feed \
          for {DEEP_DPP_MM} mm ({} mm/min)",
-        all.feed_rate().expect("S11: the apply writes it"),
-        applied.feed_rate().expect("S11: the fixture sets it")
+        hw_all.feed_rate().expect("S11: the apply writes it"),
+        hw_applied.feed_rate().expect("S11: the fixture sets it")
     );
 }
 
@@ -321,7 +378,9 @@ fn the_door_result_is_derated_to_the_kept_depth_g_speedsapply() {
 /// "Apply all" (the envelope proposal) replaced the combined chain apply.
 #[test]
 fn inside_the_cap_the_speeds_equal_the_combined_apply_g_speedsapply() {
-    let f = Fixture::new();
+    // P18: generic hardwood, where Apply all writes a depth (P16 item 6c:
+    // the oak has no force line and gets no depth proposal).
+    let f = Fixture::hardwood();
     let deep = pocket(DEEP_DPP_MM);
     let at_proposal = f.apply_all(&deep);
     let dpp = at_proposal

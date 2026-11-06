@@ -148,13 +148,63 @@ fn geometry_feed_factor(
     ae_mm: f64,
     ap_mm: f64,
 ) -> f64 {
-    let d_eng = crate::feeds::engagement::EngagedDiameter::of_hint(
+    thinning.lift(ae_mm, kept_engaged_diameter(geom, tool, ap_mm).mm())
+}
+
+/// The engaged diameter of `tool` at the depth `ap_mm`, as pass 9 and the
+/// P18 door read it.
+fn kept_engaged_diameter(
+    geom: ToolGeometryHint,
+    tool: &ToolConfig,
+    ap_mm: f64,
+) -> crate::feeds::engagement::EngagedDiameter {
+    crate::feeds::engagement::EngagedDiameter::of_hint(
         geom,
         tool.diameter,
         tool.shank_diameter_planning_mm(),
         ap_mm,
-    );
-    thinning.lift(ae_mm, d_eng.mm())
+    )
+}
+
+/// The width and the depth that `operation` keeps: its own stepover and
+/// depth per pass when they are finite and above 0, else `fallback_ae_mm`
+/// and `fallback_ap_mm` (the calculator's values). Pass 9 and the P18 door
+/// read this one rule.
+fn kept_cut(operation: &OperationConfig, fallback_ae_mm: f64, fallback_ap_mm: f64) -> (f64, f64) {
+    let usable = |v: f64| v.is_finite() && v > 0.0;
+    let ae = operation
+        .stepover()
+        .filter(|v| usable(*v))
+        .unwrap_or(fallback_ae_mm);
+    let ap = operation
+        .depth_per_pass()
+        .filter(|v| usable(*v))
+        .unwrap_or(fallback_ap_mm);
+    (ae, ap)
+}
+
+/// Feeds contract P18 (review D14): the feed `feed_mm_min` of `operation`
+/// before the radial chip-thinning lift, at the geometry the operation
+/// keeps. The lift is the lift that pass 9 multiplies the feed by: the
+/// thinning rule of the operation's feeds style at the kept width, on the
+/// engaged diameter at the kept depth. An operation with no stepover or
+/// depth field takes the calculator's value from `result`, as pass 9 does.
+///
+/// The apply funnel gives this feed to the plunge rule and to the ramp feed.
+pub(super) fn unlifted_feed_at_kept_geometry(
+    operation: &OperationConfig,
+    tool: &ToolConfig,
+    result: &crate::feeds::FeedsResult,
+    feed_mm_min: f64,
+) -> crate::feeds::geometry::UnliftedFeed {
+    let (ae, ap) = kept_cut(operation, result.radial_width_mm, result.axial_depth_mm);
+    let (family, role) = operation.feeds_style();
+    crate::feeds::geometry::UnliftedFeed::at_cut(
+        feed_mm_min,
+        crate::feeds::geometry::RadialThinning::of(family, role),
+        ae,
+        kept_engaged_diameter(tool.geometry_hint(), tool, ap),
+    )
 }
 
 /// Pass 9 (G-SUGGEST-NOCLAMP, 2026-08-19): **re-derive the feed at the
@@ -242,14 +292,7 @@ pub(super) fn rescale_feed_to_final_geometry(
     // axial step, and `narrate_toolpath` says so in those words) cannot have
     // gone stale on that axis, so it falls back to the calculator's own value
     // and that term cancels exactly.
-    let final_ae = operation
-        .stepover()
-        .filter(|v| usable(*v))
-        .unwrap_or(calc.radial_width_mm);
-    let final_ap = operation
-        .depth_per_pass()
-        .filter(|v| usable(*v))
-        .unwrap_or(calc.axial_depth_mm);
+    let (final_ae, final_ap) = kept_cut(operation, calc.radial_width_mm, calc.axial_depth_mm);
 
     // Did any pass above actually move the cut? Compared against the entry
     // values, not the calculator's, so an untouched operation is left exactly

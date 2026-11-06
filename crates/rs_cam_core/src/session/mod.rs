@@ -103,8 +103,9 @@ pub use cycle_time::{
 // move.
 pub use dependencies::{Edge, EdgeKind, EdgeState};
 pub use diagnostics_types::{
-    CutMetricsNotMeasured, PROJECT_AIR_CUT_BAR_PCT, ProjectDiagnostics, ProjectEvidence,
-    ProjectVerdict, ToolpathDiagnostic, Verdict, VerdictEvidence, VerdictKind, VerdictSeverity,
+    CutMetricsNotMeasured, MeasuredAirCut, PROJECT_AIR_CUT_BAR_PCT, ProjectDiagnostics,
+    ProjectEvidence, ProjectVerdict, ToolpathDiagnostic, Verdict, VerdictEvidence, VerdictKind,
+    VerdictSeverity,
 };
 pub use eval_context::SetupEvalContext;
 pub use heights::{HeightOrderRefusal, ToolpathHeights, TopSource};

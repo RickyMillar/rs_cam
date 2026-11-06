@@ -635,6 +635,15 @@ impl FeedsResult {
     pub fn vendor_band(&self) -> Option<&vendor_lookup::VendorBand> {
         self.matched_lut_row.as_ref().map(|row| &row.band)
     }
+
+    /// Feeds contract P18 (review D14): the feed of this result before the
+    /// radial chip-thinning lift (`derates.radial_chip_thinning`, the lift
+    /// that Step 5 applied at the calculator's width). The plunge and the
+    /// ramp feed of this result read it ([`geometry::UnliftedFeed`]).
+    #[must_use]
+    pub fn unlifted_feed(&self) -> geometry::UnliftedFeed {
+        geometry::UnliftedFeed::over_lift(self.feed_rate_mm_min, self.derates.radial_chip_thinning)
+    }
 }
 
 /// Per-step record of the chipload → feed pipeline. Each multiplier

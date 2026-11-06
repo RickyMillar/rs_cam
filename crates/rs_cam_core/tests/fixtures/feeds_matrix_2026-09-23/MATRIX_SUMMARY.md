@@ -112,6 +112,7 @@ The support arm is one axis: `Refused` (Suggest returned an error), `VendorBacke
 | id | cells |
 |---|---|
 | `ComputedWidthAssumptions` | 96 |
+| `PlungeReDerived` | 12 |
 | `RampFeed` | 508 |
 | `RpmLoweredForFeedCeiling` | 237 |
 | `UnsourcedRowsAccepted` | 394 |
@@ -121,7 +122,7 @@ The support arm is one axis: `Refused` (Suggest returned an error), `VendorBacke
 - 2D: Pocket, Profile, Adaptive on a 40 mm square polygon, stock 44 × 44 × 18 below z = 0; end_mill and bull_nose at 6 mm; the four materials.
 - 3D: a dome height field (top z = 0, flat base z = -8, 46 mm footprint) in the same stock; heights pinned to top 0 and bottom -8 on all 3D cells (`bottom_z: Auto` collapses a waterline band). Waterline, DropCutter, Adaptive3d with end_mill; Scallop and DropCutter with ball_nose and tapered_ball_nose; 6 mm; softwood and hardwood.
 - Simulation: resolution 1.0, metrics on, auto resolution off, other fields from `SimulationOptions::default()`. That default has `adaptive_feed_modulation: true`, so the post-simulation verdicts read the modulated feed, as the GUI default does.
-- Cells run: 35; errors: 0; left out (a fixed list, `sim_left_out`): 3; wall-clock of the subset: 40.4 s.
+- Cells run: 35; errors: 0; left out (a fixed list, `sim_left_out`): 3; wall-clock of the subset: 47.9 s.
 
 ## Post-simulation diagnostic ids (cells that fire each id)
 
@@ -150,4 +151,5 @@ The support arm is one axis: `Refused` (Suggest returned an error), `VendorBacke
 
 - `lut_evidence_grade`, `lut_row_kind`, `lut_source_id` are not on `FeedsResult`. The instrument joins `matched_lut_row.observation_id` to `EMBEDDED_LUT.observations`. A cell whose id is absent from the LUT records `n/a`.
 - A refused cell has no recipe, so its recipe, row and diagnostic columns are empty; its cap columns come from the registry default of the operation.
+- `force_state`, `force_peak_n`, `force_budget_n`, `force_detail` (P17) are the cut-force reading of the simulated toolpath (`ToolpathLoadVerdict::cut_force`): the peak engaged-edge force of the deflection gate's population, against the machine force budget on an op under the `ForceBudget` depth-cap rule (`Within` / `Exceeds`), `Reported` with no line, `Vacuous` when no sample reached the force law, `n/a` with no reading.
 - `force_line` is the form id of the material's force line, or `refused:<variant>` (ruling B6). `chip_regime` is the chip regime at the shipped point from `force_at_operating_point`; it is empty on a refused cell and where the door gives no point.

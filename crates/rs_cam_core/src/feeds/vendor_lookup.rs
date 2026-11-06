@@ -190,6 +190,15 @@ pub struct LookupResult {
 ///
 /// 1. The hard filters of the lookup (tool family, material category,
 ///    operation family or a stated transfer, the diameter sanity range).
+///
+///    Rule 1b, the tool family of the query first (feeds contract P18,
+///    review D16, lead ruling option (a)): when a row of the query's own
+///    tool family passes rule 4 (a printed size or a form A interpolation),
+///    the band holds only rows of that family (flat with flat, bull with
+///    bull). A row of another compatible family (rule 1,
+///    `tool_family_compatible`) joins only when no row of the query family
+///    passes rule 4. Such a band names the family of the shipped row
+///    ([`VendorBand::cross_family`]).
 /// 2. The same material family as the query. The D2 first half (one
 ///    reading of a missing hardness in the score) is held back (lead,
 ///    2026-11-06): the score reads the row's own hardness, so the FM1
@@ -243,6 +252,20 @@ pub struct VendorBand {
     pub rule: BandRule,
     /// Why the score winner is not a member, or `None` when it is one.
     pub winner_outside: Option<BandExclusion>,
+    /// P18 (review D16): the tool family of the shipped row and of the
+    /// query, when the two differ (rule 1b: no row of the query family
+    /// passes the size rule). `None` when the shipped row is of the query
+    /// family.
+    pub cross_family: Option<CrossFamily>,
+}
+
+/// P18 (review D16): a shipped row of another tool family than the tool.
+#[derive(Debug, Clone, Copy, PartialEq, Eq)]
+pub struct CrossFamily {
+    /// The tool family of the shipped row.
+    pub shipped: ToolFamily,
+    /// The tool family of the query (the tool).
+    pub tool: ToolFamily,
 }
 
 /// One member of a [`VendorBand`]. The chip fields are scaled like
@@ -290,6 +313,9 @@ impl BandRule {
 /// [`VendorBand`] rules.
 #[derive(Debug, Clone, Copy, PartialEq, Eq)]
 pub enum BandExclusion {
+    /// Rule 1b: another tool family than the query, while a row of the
+    /// query family is a member (P18).
+    ToolFamily,
     /// Rule 2: another material family.
     Material,
     /// Rule 3: another operation family or pass role than the winner.
@@ -311,6 +337,7 @@ impl BandExclusion {
     #[must_use]
     pub const fn name(self) -> &'static str {
         match self {
+            Self::ToolFamily => "tool_family",
             Self::Material => "material",
             Self::Operation => "operation",
             Self::Size => "size",
@@ -333,6 +360,7 @@ impl VendorBand {
             score_winner_chip_mm: None,
             rule: BandRule::NoMember,
             winner_outside: None,
+            cross_family: None,
         }
     }
 
@@ -371,6 +399,10 @@ impl VendorBand {
             "score_winner_chip_mm": self.score_winner_chip_mm,
             "rule": self.rule.name(),
             "winner_outside": self.winner_outside.map(BandExclusion::name),
+            "cross_family": self.cross_family.map(|c| serde_json::json!({
+                "shipped": c.shipped.label(),
+                "tool": c.tool.label(),
+            })),
         })
     }
 
@@ -378,8 +410,17 @@ impl VendorBand {
     /// the lowest)". `None` for a band of fewer than two members.
     #[must_use]
     pub fn card_text(&self) -> Option<String> {
+        // P18 (review D16): a shipped row of another tool family is named
+        // on the card, also with fewer than two members.
+        let family = self.cross_family.map(|c| {
+            format!(
+                "; the row is a {} row: no {} row prints this size",
+                c.shipped.label(),
+                c.tool.label()
+            )
+        });
         if self.members.len() < 2 {
-            return None;
+            return family.map(|f| format!("Vendor row{f}"));
         }
         let names: Vec<String> = self
             .members
@@ -391,7 +432,11 @@ impl VendorBand {
             BandRule::WinnerShips => "ships the score winner, which is not a member",
             BandRule::NoMember => "ships the score winner",
         };
-        Some(format!("Vendors: {} mm/tooth ({tail})", names.join(", ")))
+        Some(format!(
+            "Vendors: {} mm/tooth ({tail}){}",
+            names.join(", "),
+            family.unwrap_or_default()
+        ))
     }
 }
 
@@ -1232,6 +1277,15 @@ fn with_band(
             admitted.push((c, result));
         }
     }
+    // Rule 1b (P18, review D16, option (a)): the query's tool family
+    // first. When a row of that family passes rule 4, rows of another
+    // family leave the band.
+    let family_first = admitted
+        .iter()
+        .any(|(c, _)| lut.observations[c.0].tool_family == query.tool_family);
+    if family_first {
+        admitted.retain(|(c, _)| lut.observations[c.0].tool_family == query.tool_family);
+    }
     // Rule 4, one member per chart series: every `Exact` row is a member. A
     // form A row joins only when no member already stands for its series:
     // no `Exact` member is one of its bracketing rows, and no earlier form
@@ -1297,6 +1351,7 @@ fn with_band(
             (winner_obs, chosen.3),
             &winner,
             has_strong,
+            family_first,
         ))
     };
     let members: Vec<BandMember> = built
@@ -1319,7 +1374,7 @@ fn with_band(
     // chip moves no number, so the winner keeps its row (its RPM and depth
     // fields).
     let winner_is_member = winner_outside.is_none();
-    let (rule, shipped) = match (built.first(), winner_chip) {
+    let (rule, shipped): (BandRule, LookupResult) = match (built.first(), winner_chip) {
         (None, _) => (BandRule::NoMember, winner),
         (Some((_, lowest)), Some(chip))
             if winner_is_member || lowest.chip_load_mm < chip * (1.0 - CHIP_EQUAL_REL) =>
@@ -1328,6 +1383,15 @@ fn with_band(
         }
         (Some(_), Some(_) | None) => (BandRule::WinnerShips, winner),
     };
+    let shipped_family = lut
+        .observations
+        .iter()
+        .find(|o| o.observation_id == shipped.observation_id)
+        .map_or(winner_obs.tool_family, |o| o.tool_family);
+    let cross_family = (shipped_family != query.tool_family).then_some(CrossFamily {
+        shipped: shipped_family,
+        tool: query.tool_family,
+    });
     LookupResult {
         band: VendorBand {
             members,
@@ -1335,6 +1399,7 @@ fn with_band(
             score_winner_chip_mm: winner_chip,
             rule,
             winner_outside,
+            cross_family,
         },
         ..shipped
     }
@@ -1346,9 +1411,15 @@ fn winner_exclusion(
     winner_obs: (&VendorObservation, bool),
     winner: &LookupResult,
     has_strong: bool,
+    family_first: bool,
 ) -> BandExclusion {
     if let Some(e) = cheap_exclusion(query, winner_obs, winner_obs) {
         return e;
+    }
+    // Rule 1b (P18): a winner of another tool family while the query
+    // family has a member.
+    if family_first && winner_obs.0.tool_family != query.tool_family {
+        return BandExclusion::ToolFamily;
     }
     if !size_admits(&winner.size_basis) || winner.chip_load_mm <= 0.0 {
         return if winner.size_basis.is_refused() || winner.chip_load_mm <= 0.0 {

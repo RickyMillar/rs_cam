@@ -83,6 +83,48 @@ fn point_source(op: &OperationConfig) -> Value {
     })
 }
 
+/// Feeds contract P18 (review D17, lead ruling option (c)): the calculator
+/// power of the record. An unmodelled power is not a zero (the K6 rule), so
+/// the value is `null` when the shipped power is unmodelled for a reason
+/// that also leaves the calculator with no power model: the material has
+/// no force line (`MaterialUnvalidated`), or the depth is known after the
+/// simulation (`DepthAfterSimulation`). `FeedsResult::power_kw` holds 0.0
+/// in those two cases. The other reasons are about the shipped operating
+/// point (no feed, no width, ...); the calculator still has its own figure,
+/// so it prints. Follow-up (item 3b): the core field becomes a `Result`
+/// once `diagnostics/tests.rs` is free.
+fn calculator_power_json(
+    power_kw: f64,
+    shipped: Option<
+        &Result<
+            rs_cam_core::feeds::PowerFigure,
+            rs_cam_core::feeds::operating_point::PowerUnmodeled,
+        >,
+    >,
+) -> Value {
+    use rs_cam_core::feeds::operating_point::PowerUnmodeled;
+    let no_power_model = match shipped {
+        Some(Err(PowerUnmodeled::MaterialUnvalidated | PowerUnmodeled::DepthAfterSimulation)) => {
+            true
+        }
+        Some(Err(
+            PowerUnmodeled::NoFeed
+            | PowerUnmodeled::NoRadialEngagement
+            | PowerUnmodeled::NoDepthPerPass
+            | PowerUnmodeled::NoSpindleSpeed
+            | PowerUnmodeled::NoAvailablePower
+            | PowerUnmodeled::NoEngagementDiameter,
+        ))
+        | Some(Ok(_))
+        | None => false,
+    };
+    if no_power_model {
+        Value::Null
+    } else {
+        json!(power_kw)
+    }
+}
+
 fn profile_json(profile: &CutterOpProfile<'_>) -> Value {
     let rationale = SuggestRationale::from_warnings(&profile.warnings);
     let Some(feeds) = profile.feeds.as_ref() else {
@@ -94,8 +136,9 @@ fn profile_json(profile: &CutterOpProfile<'_>) -> Value {
     let shipped = profile.shipped_operation();
     // P14 (review M9): the one core door of the shipped point, as the GUI
     // card and MCP `get_suggest_rationale` read it.
-    let shipped_power = profile.shipped_power().map_or(Value::Null, |figure| {
-        rs_cam_core::feeds::operating_point::shipped_power_json(&figure)
+    let shipped_figure = profile.shipped_power();
+    let shipped_power = shipped_figure.as_ref().map_or(Value::Null, |figure| {
+        rs_cam_core::feeds::operating_point::shipped_power_json(figure)
     });
     json!({
         "calculator": {
@@ -105,7 +148,7 @@ fn profile_json(profile: &CutterOpProfile<'_>) -> Value {
             "plunge_rate_mm_min": feeds.plunge_rate_mm_min,
             "axial_depth_mm": feeds.axial_depth_mm,
             "radial_width_mm": feeds.radial_width_mm,
-            "power_kw": feeds.power_kw,
+            "power_kw": calculator_power_json(feeds.power_kw, shipped_figure.as_ref()),
             "power_case": feeds.power_case.label(),
             "available_power_kw": feeds.available_power_kw,
             "power_limited": feeds.power_limited,
@@ -470,6 +513,42 @@ mod tests {
         assert_eq!(
             record["profile"]["point_source"]["ae"], "calculator",
             "{record}"
+        );
+    }
+
+    /// Feeds contract P18 (review D17, lead ruling option (c)): an
+    /// unmodelled calculator power prints `null`, never 0.0. Plywood has no
+    /// force line (`MaterialUnvalidated`). Non-vacuity: the same Pocket in
+    /// the fixture's hardwood prints a number.
+    #[test]
+    fn an_unmodelled_calculator_power_prints_null_p18() {
+        let mut session = session_with(OperationType::Pocket);
+        let hardwood = last_record(&session);
+        assert!(
+            hardwood["profile"]["calculator"]["power_kw"]
+                .as_f64()
+                .is_some_and(|kw| kw > 0.0),
+            "hardwood has a power model: {hardwood}"
+        );
+        let mut stock = session.stock_config().clone();
+        stock.material = rs_cam_core::material::Material::Plywood {
+            grade: rs_cam_core::material::PlywoodGrade::BalticBirch,
+        };
+        let _ = apply_command(
+            &mut session,
+            Command::SetStockConfig(rs_cam_core::session::SetStockConfigArgs {
+                stock: Box::new(stock),
+            }),
+        )
+        .expect("the stock edit applies");
+        let record = last_record(&session);
+        assert_eq!(
+            record["profile"]["shipped_power"]["unmodeled"], "MaterialUnvalidated",
+            "{record}"
+        );
+        assert!(
+            record["profile"]["calculator"]["power_kw"].is_null(),
+            "an unmodelled power is not a zero: {record}"
         );
     }
 }

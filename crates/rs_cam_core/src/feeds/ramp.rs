@@ -659,15 +659,22 @@ impl RampFeed {
 ///
 /// Every value rounds DOWN to 1 mm/min (T-9: the value is bound from
 /// above).
+///
+/// P18 (review D14): the cut feed is the feed BEFORE the radial
+/// chip-thinning lift ([`super::geometry::UnliftedFeed`]). A ramp or helix
+/// entry goes down into fresh stock at the full width of the tool: its
+/// horizontal part is a slot, and its vertical part is axial. Neither has
+/// radial thinning, so the lift does not apply to either term.
 #[must_use]
 pub fn resolve_ramp_feed(
     basis: &RampBasis,
     entry: Result<Entry, RampFallback>,
-    cut_feed_mm_min: f64,
+    cut_feed: super::geometry::UnliftedFeed,
     rpm: Option<u32>,
     flutes: u32,
     plunge_mm_min: f64,
 ) -> RampFeed {
+    let cut_feed_mm_min = cut_feed.mm_min();
     let fallback = |reason| RampFeed::NoEntryFeed {
         reason,
         plunge_mm_min,
@@ -1075,8 +1082,13 @@ mod tests {
         }
     }
 
+    /// A cut feed with no lift, for the resolver tests.
+    fn uf(v: f64) -> super::super::geometry::UnliftedFeed {
+        super::super::geometry::UnliftedFeed::over_lift(v, 1.0)
+    }
+
     fn resolve(geometry: EntryGeometry, cut: f64, rpm: u32) -> RampFeed {
-        resolve_ramp_feed(&basis(), Ok(entry(geometry)), cut, Some(rpm), 2, 1000.0)
+        resolve_ramp_feed(&basis(), Ok(entry(geometry)), uf(cut), Some(rpm), 2, 1000.0)
     }
 
     /// The helix slope is pitch / (2π r): r 2, pitch 1 gives 4.55 degrees.
@@ -1175,7 +1187,7 @@ mod tests {
                 resolve_ramp_feed(
                     &basis(),
                     Err(RampFallback::EntryOff),
-                    4000.0,
+                    uf(4000.0),
                     Some(18_000),
                     2,
                     700.0,
@@ -1186,7 +1198,7 @@ mod tests {
                 resolve_ramp_feed(
                     &no_lut,
                     Err(RampFallback::EntryUnknown),
-                    4000.0,
+                    uf(4000.0),
                     Some(18_000),
                     2,
                     700.0,
@@ -1197,7 +1209,7 @@ mod tests {
                 resolve_ramp_feed(
                     &basis(),
                     Ok(entry(EntryGeometry::Ramp { angle_deg: 0.0 })),
-                    4000.0,
+                    uf(4000.0),
                     Some(18_000),
                     2,
                     700.0,
@@ -1211,7 +1223,7 @@ mod tests {
                         radius_mm: 2.0,
                         pitch_mm: 0.0,
                     })),
-                    4000.0,
+                    uf(4000.0),
                     Some(18_000),
                     2,
                     700.0,
@@ -1219,11 +1231,11 @@ mod tests {
                 RampFallback::DegenerateEntry,
             ),
             (
-                resolve_ramp_feed(&basis(), Ok(entry(HELIX)), 0.0, Some(18_000), 2, 700.0),
+                resolve_ramp_feed(&basis(), Ok(entry(HELIX)), uf(0.0), Some(18_000), 2, 700.0),
                 RampFallback::NoCutFeed,
             ),
             (
-                resolve_ramp_feed(&drill, Ok(entry(HELIX)), 4000.0, Some(18_000), 2, 700.0),
+                resolve_ramp_feed(&drill, Ok(entry(HELIX)), uf(4000.0), Some(18_000), 2, 700.0),
                 RampFallback::DrillCycle,
             ),
         ];
@@ -1246,7 +1258,7 @@ mod tests {
             assert!(face.ends_with("the entry uses the plunge rate."), "{face}");
         }
         // No plunge: the ramp has no vertical rate.
-        let record = resolve_ramp_feed(&no_lut, Ok(entry(HELIX)), 4000.0, Some(18_000), 2, 0.0);
+        let record = resolve_ramp_feed(&no_lut, Ok(entry(HELIX)), uf(4000.0), Some(18_000), 2, 0.0);
         assert_eq!(record.value(), None);
         assert!(matches!(
             record,
@@ -1266,7 +1278,14 @@ mod tests {
         };
         let ramp3 = EntryGeometry::Ramp { angle_deg: 3.0 };
         // 700 / tan 3° = 13 357 > 4000: the cut feed binds.
-        let r = resolve_ramp_feed(&no_lut, Ok(entry(ramp3)), 4000.0, Some(18_000), 2, 700.0);
+        let r = resolve_ramp_feed(
+            &no_lut,
+            Ok(entry(ramp3)),
+            uf(4000.0),
+            Some(18_000),
+            2,
+            700.0,
+        );
         let s = plunge_slope(&r);
         assert_eq!(s.arm, RampArm::CutFeed);
         assert_eq!(s.no_chip, RampFallback::NoLut);
@@ -1279,7 +1298,14 @@ mod tests {
 
         // A 45° ramp: 700 / tan 45° = 700 < 4000, so the plunge term binds.
         let steep = EntryGeometry::Ramp { angle_deg: 45.0 };
-        let r = resolve_ramp_feed(&no_lut, Ok(entry(steep)), 4000.0, Some(18_000), 2, 700.0);
+        let r = resolve_ramp_feed(
+            &no_lut,
+            Ok(entry(steep)),
+            uf(4000.0),
+            Some(18_000),
+            2,
+            700.0,
+        );
         let s = plunge_slope(&r);
         assert_eq!(s.arm, RampArm::PlungeTerm);
         let want = (700.0 / 45.0_f64.to_radians().tan()).floor();
@@ -1287,7 +1313,7 @@ mod tests {
         assert!(r.card_text().0.contains("the plunge limit at ramp 45.00°"));
 
         // A G6 basis with no shipped RPM: the plunge slope, NoShippedRpm.
-        let r = resolve_ramp_feed(&basis(), Ok(entry(ramp3)), 4000.0, None, 2, 700.0);
+        let r = resolve_ramp_feed(&basis(), Ok(entry(ramp3)), uf(4000.0), None, 2, 700.0);
         let s = plunge_slope(&r);
         assert_eq!(s.no_chip, RampFallback::NoShippedRpm);
         assert_eq!(r.value(), Some(4000.0));

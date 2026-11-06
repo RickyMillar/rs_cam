@@ -18,8 +18,10 @@
 //! 1. a bandless untagged vertical descent IS capped, and says
 //!    `PlungeRate` — the incident, in one move, without a band;
 //! 2. a bandless move above the machine ceiling is clamped to the
-//!    ceiling and says `MachineMaxFeed` — the bandless arm's only
-//!    other cap;
+//!    ceiling and says `MachineMaxFeed`; feeds contract P18 (review D15,
+//!    lead ruling) adds the kinematic reach at the cutting ceiling as the
+//!    arm's third cap (`KinematicReach`), the rule of the no-engagement
+//!    arm;
 //! 3. the BANDED arm on the same fixtures is unchanged (regression
 //!    guard: `Some(band)` behaviour stays byte-identical).
 
@@ -35,7 +37,7 @@ use rs_cam_core::dressup::feed_modulation::{
     adaptive_feed_modulate,
 };
 use rs_cam_core::geo::P3;
-use rs_cam_core::machine::kinematics::MachineKinematics;
+use rs_cam_core::machine::kinematics::{MachineKinematics, predicted_feeds_for_toolpath};
 use rs_cam_core::toolpath::{MoveIntent, Toolpath};
 
 /// The operation plunge rate every fixture here is graded against.
@@ -141,13 +143,33 @@ fn bandless_untagged_vertical_descent_is_capped_at_plunge_rate() {
 #[test]
 fn bandless_guard_disabled_by_infinity_leaves_commanded_feed() {
     // Phase 3's documented disable dial: a non-positive or non-finite
-    // plunge rate means no guard. Commanded 1500 < MAX_FEED, so the
-    // bandless arm leaves it untouched.
+    // plunge rate means no guard. Commanded 1500 < MAX_FEED.
+    // Re-pinned by feeds contract P18 (review D15, lead ruling): the
+    // bandless arm also takes the kinematic reach at the cutting ceiling.
+    // A 2 mm vertical move from rest to rest cannot reach 1500 mm/min on
+    // the Z axis of the stock Shapeoko, so the feed is the reach, computed
+    // here by the public integrator on the probe (every move at the
+    // ceiling). Before P18 the feed stayed at the commanded 1500.
     let k = machine();
     let mut tp = one_move(vertical(2.0), MoveIntent::ClearingCut);
+    let reach = reach_of(&tp, &k);
+    assert!(reach < COMMANDED, "non-vacuity: the reach binds ({reach})");
     let (feed, binding) = modulate_with(&mut tp, &bandless_ctx(&k, f64::INFINITY));
-    assert_eq!(feed, COMMANDED);
-    assert_eq!(binding, Some(BindingConstraint::MachineMaxFeed));
+    assert_eq!(feed, reach);
+    assert_eq!(binding, Some(BindingConstraint::KinematicReach));
+}
+
+/// The reach of move 1 at the cutting ceiling: every move commanded at
+/// `MAX_FEED`, through the integrator the modulator's probe uses.
+fn reach_of(tp: &Toolpath, k: &MachineKinematics) -> f64 {
+    let mut probe = tp.clone();
+    for m in probe.moves.iter_mut() {
+        m.move_type = m.move_type.with_feed_rate(MAX_FEED);
+    }
+    predicted_feeds_for_toolpath(&probe, k, MAX_FEED, MAX_FEED)
+        .get(&1)
+        .copied()
+        .expect("move 1 is fed")
 }
 
 // ---------------------------------------------------------------
@@ -159,12 +181,19 @@ fn bandless_lateral_move_above_machine_ceiling_is_clamped() {
     let k = machine();
     // A lateral move commanded PAST the machine ceiling, with the guard
     // disabled, so only the ceiling can act.
+    // P18: the move is long enough that the reach at the ceiling is the
+    // ceiling (a 50 mm move reached only 6708 mm/min from rest to rest), so
+    // the ceiling is the cap that acts, as this case intends.
     let mut tp = Toolpath::new();
     tp.rapid_to(P3::new(0.0, 0.0, 0.0));
     tp.feed_to_with_intent(
-        P3::new(50.0, 0.0, 0.0),
+        P3::new(1000.0, 0.0, 0.0),
         MAX_FEED * 2.0,
         MoveIntent::ClearingCut,
+    );
+    assert!(
+        reach_of(&tp, &k) >= MAX_FEED,
+        "non-vacuity: the reach does not bind"
     );
     let ctx = {
         let mut c = bandless_ctx(&k, f64::INFINITY);

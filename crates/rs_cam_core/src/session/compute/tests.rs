@@ -3096,3 +3096,75 @@ fn the_collision_sweep_runs_once_perf6() {
         triage
     );
 }
+
+/// Feeds contract P18 item 4b (d), lead ruling option (a): with toolpath A
+/// blind (its air cut withheld) and toolpath B measured and high, the
+/// project air-cut warning stays, reads the share over B only, and the
+/// per-toolpath verdict names A as withheld. With A alone the warning gives
+/// no share at all (the `P_thin_005` case of
+/// `tests/the_simulation_names_the_widths_its_cell_cannot_grade_p18.rs`).
+#[test]
+fn the_air_cut_warning_reads_the_measurable_toolpaths_and_names_the_withheld_p18() {
+    use super::diagnostics::{AirCutAbstention, air_cut_headline, air_cut_over_measured};
+    use crate::session::{PROJECT_AIR_CUT_BAR_PCT, ProjectDiagnostics, ProjectVerdict};
+    // A: 90 % air (blind); B: 60 % air (measured). The project sum reads
+    // 150 s of 200 s = 75 %; B alone reads 60 s of 100 s = 60 %.
+    let a = summary(1, 90.0);
+    let b = summary(2, 60.0);
+    let project_air = a.air_cut_time_s + b.air_cut_time_s;
+    let project_runtime = a.total_runtime_s + b.total_runtime_s;
+    let blind = AirCutAbstention {
+        id: ToolpathId::from_raw(1),
+        name: "A".to_owned(),
+        reason: crate::stock::sim_measurability::MeasurabilityReason::KinematicsNotModelled,
+    };
+    let measured = air_cut_over_measured(
+        project_air,
+        project_runtime,
+        &[a.clone(), b.clone()],
+        std::slice::from_ref(&blind),
+    )
+    .expect("an abstention gives a measured share");
+    let b_share = b.air_cut_time_s / b.total_runtime_s * 100.0;
+    assert_eq!(measured.pct_of_total_runtime, Some(b_share));
+    assert_eq!(measured.withheld, vec!["A".to_owned()]);
+    // Non-vacuity: B alone is above the project bar.
+    assert!(b_share > PROJECT_AIR_CUT_BAR_PCT, "{b_share}");
+
+    let diag = |air_cut_measured| ProjectDiagnostics {
+        total_runtime_s: Some(project_runtime),
+        air_cut_pct_of_total_runtime: Some(project_air / project_runtime * 100.0),
+        air_cut_pct_of_cutting_time: None,
+        average_engagement: None,
+        cut_metrics_not_measured: None,
+        collision_count: 0,
+        collision_checks_failed: 0,
+        rapid_collision_count: 0,
+        per_toolpath: Vec::new(),
+        verdicts: Vec::new(),
+        air_cut_measured,
+    };
+    assert_eq!(
+        diag(Some(measured.clone())).verdict(),
+        ProjectVerdict::HighAirCut {
+            pct_of_total_runtime: b_share
+        },
+        "the warning stays, over B only"
+    );
+    let text = air_cut_headline(&["'B' is 60% air-cut".to_owned()], Some(&measured));
+    assert!(text.contains("withheld") && text.contains("'A'"), "{text}");
+
+    // A alone: no measurable runtime, so no share and no warning.
+    let alone = air_cut_over_measured(
+        a.air_cut_time_s,
+        a.total_runtime_s,
+        std::slice::from_ref(&a),
+        std::slice::from_ref(&blind),
+    )
+    .expect("an abstention gives a measured share");
+    assert_eq!(alone.pct_of_total_runtime, None);
+    assert!(!matches!(
+        diag(Some(alone)).verdict(),
+        ProjectVerdict::HighAirCut { .. }
+    ));
+}

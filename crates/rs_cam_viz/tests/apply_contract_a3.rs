@@ -789,8 +789,12 @@ fn panel_cut_geometry_apply_goes_through_the_invariant_funnel() {
 fn pocket_fixture_recipe_fingerprint_is_unmoved() {
     /// The measured feed of "Apply all" (mm/min).
     const FP_FEED: f64 = 3999.0;
-    /// The measured plunge (mm/min).
-    const FP_PLUNGE: f64 = 1999.0;
+    /// The measured plunge (mm/min). Feeds contract P18 (review D14): the
+    /// plunge reads the feed before the radial chip-thinning lift. At the
+    /// 2.0 mm stepover on the 6.35 mm flat, cos psi = 1 - 2.0 / 3.175 and
+    /// lift = 1 / sin psi = 1.0764, so floor(3999 / 1.0764 / 2) = 1857 (it
+    /// was floor(3999 / 2) = 1999). The test derives it below.
+    const FP_PLUNGE: f64 = 1857.0;
     /// The measured RPM.
     const FP_RPM: u32 = 14_629;
     /// The measured stepover (mm).
@@ -803,6 +807,16 @@ fn pocket_fixture_recipe_fingerprint_is_unmoved() {
     let op = op_of(&controller);
 
     assert_eq!(op.feed_rate(), Some(FP_FEED), "feed");
+    let lift = rs_cam_core::feeds::geometry::peak_chip_thinning_lift(FP_WOC, 6.35);
+    assert!(
+        lift > 1.0,
+        "non-vacuity: the 2.0 mm stepover lifts the feed"
+    );
+    assert_eq!(
+        FP_PLUNGE,
+        (FP_FEED / lift / 2.0).floor(),
+        "the pinned plunge is floor(F / lift / 2)"
+    );
     assert_eq!(op.plunge_rate(), Some(FP_PLUNGE), "plunge");
     assert_eq!(op.spindle_rpm(), Some(FP_RPM), "rpm");
     let woc = op.stepover().expect("woc");
@@ -906,13 +920,22 @@ fn explore_apply_takes_the_clamps_but_keeps_the_dragged_point() {
     );
     assert_eq!(after.spindle_rpm(), Some(14_000), "the dragged RPM moved");
     // G10 (2026-09-25): the funnel runs the plunge rule again at the
-    // dragged feed. The Ø6.35 2F flat claim gives floor(120 / 2) = 60.
+    // dragged feed. Feeds contract P18 (review D14): the rule reads the feed
+    // before the radial chip-thinning lift. The kept stepover on the 6.35 mm
+    // flat gives the lift (2.0 mm: cos psi = 1 - 2.0 / 3.175, lift = 1.0764),
+    // so the Ø6.35 2F flat claim gives floor(120 / 1.0764 / 2) = 55 (it was
+    // floor(120 / 2) = 60).
+    let woc = before_geometry.0.expect("the pocket keeps a stepover");
+    let lift = rs_cam_core::feeds::geometry::peak_chip_thinning_lift(woc, 6.35);
+    assert!(lift > 1.0, "non-vacuity: the kept stepover lifts the feed");
     assert_eq!(
         after.plunge_rate(),
-        Some(60.0),
-        "plunge is not the G10 flat claim at the dragged feed (floor(120 / 2)) — pre-fix \
-         this left plunge at 900 mm/min under a 120 mm/min cut"
+        Some((120.0_f64 / lift / 2.0).floor()),
+        "plunge is not the G10 flat claim at the dragged feed before the lift \
+         (floor(120 / lift / 2)) — pre-fix this left plunge at 900 mm/min under a \
+         120 mm/min cut"
     );
+    assert_eq!(after.plunge_rate(), Some(55.0), "floor(120 / 1.0764 / 2)");
     assert!(
         after.plunge_rate() <= after.feed_rate(),
         "the plunge {} is above the dragged feed {}",

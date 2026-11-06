@@ -69,3 +69,13 @@ numbers; C = a record or consistency item.
 | D15 | `C_width_0.05` (the D6 cut, Suggest) | feed 9999 mm/min at 17161 rpm (shipped) | was 5999 under the deleted 6000 cap; the machine travel rate is the ceiling now | **The pre-sim lifted feed meets no cap below the travel rate.** After the simulation the modulator brings the first ring to F1832, but 5 moves still emit F9999. The card before the simulation shows the travel rate. Depends on D6 (a). | B |
 | D16 | 12.7 mm 2F flat end mill in MDF; 6 mm r 1 mm bull nose in hardwood | the flat tool ships `amana-bull-mdf-pocket-12700-2f-cr`, chip 0.2286 (the flat Spektra member prints 0.2438); the bull nose ships `amana-flat-hardwood-pocket-6000-2f-spektra` | P16 item 8 band rule 1 keeps the existing tool-family filter, which joins flat and bull rows | **A band member of the other cutter family.** Both picks are the lower chip, so the error is on the safe side; the card names a row of another tool family. | C |
 | D17 | 6.35 mm 2F plywood; wanaka Project Curve | `profile.calculator.power_kw` prints 0.0 while `profile.shipped_power` says Unmodeled (`MaterialUnvalidated`, `DepthAfterSimulation`) | the K6 rule: an unmodelled value is not a zero | **One record for an unmodelled power.** A reader of the calculator block sees zero load. | C |
+
+## Update (P18, lead ruling 2026-11-06)
+
+- **D15 is CLOSED as "not a cap defect".** The deleted 6000 mm/min cap shipped the thin cut at
+  5999 mm/min and 10296 rpm, the same chip as the 9999 mm/min at 17161 rpm of today. The cap
+  changed the rpm and the removal rate, never the chip. The diagnosis (`phases/P18.md`, item 4)
+  found the cause of the F9999 moves: the 0.5 mm simulation cell does not resolve the 0.3 mm
+  stepover, so those real cuts read a width of 0, and the modulator's no-engagement arm keeps
+  the commanded feed. P18 lands two changes for it: the no-engagement arm applies the predicted
+  kinematic cap, and a finding names a simulation cell that is coarser than stepover / 2.

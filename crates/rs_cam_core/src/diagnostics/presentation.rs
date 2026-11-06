@@ -322,6 +322,11 @@ pub const TABLE: &[(&str, Anchor, &str)] = &[
         "Air cut not measured",
     ),
     (
+        ids::PROJECT_SIM_CELL_ABOVE_HALF_STEPOVER,
+        NOTE,
+        "Simulation cell too coarse for the stepover",
+    ),
+    (
         ids::PROJECT_CROSSES_STANDING_MATERIAL,
         OP,
         "Link crosses uncut stock",

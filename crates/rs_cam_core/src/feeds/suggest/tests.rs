@@ -586,12 +586,19 @@ fn explored_speeds_survive_the_funnel_but_still_get_clamped() {
     );
     // Re-pinned by G10 (2026-09-25), cause: ruling Q4. The 6.35 mm 2-flute
     // flat is inside the G10 flat plunge claim (3.0-12.7 mm, feed / Z), so
-    // the funnel runs the rule again at the explored feed: 120 / 2 = 60.
-    // Before G10 the plunge stopped at the clamp, 120.
+    // the funnel runs the rule again at the explored feed. Before G10 the
+    // plunge stopped at the clamp, 120.
+    // Re-pinned by feeds contract P18 (review D14): the rule reads the feed
+    // BEFORE the radial chip-thinning lift at the kept stepover. The
+    // fixture keeps 1.234 mm on the 6.35 mm flat (a flat engages its full
+    // diameter): lift = 1 / sin(psi), cos(psi) = 1 - 1.234 / 3.175, so
+    // floor(120 / lift / 2) = 47 (was 120 / 2 = 60).
+    let lift = crate::feeds::geometry::peak_chip_thinning_lift(1.234, 6.35);
+    assert!(lift > 1.0, "the kept stepover lifts the feed: {lift}");
     assert_eq!(
         op.plunge_rate(),
-        Some(60.0),
-        "the plunge is not feed / Z at the explored feed"
+        Some((120.0 / lift / 2.0).floor()),
+        "the plunge is not feed / lift / Z at the explored feed"
     );
     assert!(
         warnings.iter().any(|w| matches!(

@@ -194,9 +194,20 @@ fn apply_feeds_subset(
     // below reads this plunge, so the plunge comes first.
     // Q8 (P8): the axial-chip bound of a Project Curve plunge reads the RPM
     // that ships.
+    // P18 (review D14): the rule reads the shipped feed BEFORE the radial
+    // chip-thinning lift at the geometry the operation keeps (a plunge is
+    // axial and has no radial thinning).
     let shipped_rpm = scratch.spindle_rpm().map_or(result.rpm, f64::from);
-    let plunge_binding =
-        crate::feeds::plunge::resolve_plunge(&result.plunge, scratch_feed(&scratch), shipped_rpm);
+    let plunge_binding = crate::feeds::plunge::resolve_plunge_at(
+        &result.plunge,
+        super::adaptive_entry::unlifted_feed_at_kept_geometry(
+            &scratch,
+            tool,
+            result,
+            scratch_feed(&scratch),
+        ),
+        shipped_rpm,
+    );
     if let Some((to_mm_min, binding)) = plunge_binding {
         let from_mm_min = scratch_plunge(&scratch);
         if (to_mm_min - from_mm_min).abs() >= 1.0 {
@@ -258,10 +269,18 @@ fn apply_feeds_subset(
     {
         let from_mm_min = operation.ramp_feed_rate();
         let entry = crate::feeds::ramp::entry_geometry(operation, context.dressups, tool);
+        // P18 (review D14): the cut term of the ramp reads the feed before
+        // the lift too (an entry cuts the full width of the tool).
         let record = crate::feeds::ramp::resolve_ramp_feed(
             &result.ramp,
             entry,
-            scratch_feed(operation),
+            // The scratch holds the geometry that pass 9 read.
+            super::adaptive_entry::unlifted_feed_at_kept_geometry(
+                &scratch,
+                tool,
+                result,
+                scratch_feed(operation),
+            ),
             operation.spindle_rpm(),
             tool.flute_count_planning(),
             scratch_plunge(operation),

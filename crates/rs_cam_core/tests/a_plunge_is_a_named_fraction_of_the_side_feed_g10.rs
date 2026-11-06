@@ -54,7 +54,7 @@ use rs_cam_core::compute::config::DressupConfig;
 use rs_cam_core::compute::tool_config::ToolFact;
 use rs_cam_core::compute::tool_config::{ToolConfig, ToolId, ToolType};
 use rs_cam_core::feeds::extrapolation::{DRILL_RULES, PLUNGE_RULES, PlungeKey};
-use rs_cam_core::feeds::plunge::{PLUNGE_BASE_RULE_TEXT, resolve_plunge};
+use rs_cam_core::feeds::plunge::{PLUNGE_BASE_RULE_TEXT, resolve_plunge_at};
 use rs_cam_core::feeds::suggest::{
     ApplyContext, SuggestContext, SuggestForOperationInput, SuggestWarning, SuggestedParams, apply,
     feeds_input_for_operation, feeds_preview_for_operation, suggest_for_operation,
@@ -284,11 +284,16 @@ fn a_ball_plunges_at_half_the_feed_under_its_tip_cap_g10() {
     } else {
         PlungeBinding::TipCap
     };
+    // P18 (review D14): the plunge reads the feed before the radial
+    // chip-thinning lift. A Drop Cutter is a finish pass (no lift), so it
+    // is the shipped feed.
+    assert_eq!(s.feeds_result.derates.radial_chip_thinning, 1.0);
+    let unlifted = s.feeds_result.unlifted_feed();
     assert_eq!(
-        resolve_plunge(&s.feeds_result.plunge, feed, rpm(&s)),
+        resolve_plunge_at(&s.feeds_result.plunge, unlifted, rpm(&s)),
         Some((expected, binding))
     );
-    let (headline, _) = s.feeds_result.plunge.card_text_at(feed, rpm(&s));
+    let (headline, _) = s.feeds_result.plunge.card_text_at(unlifted, rpm(&s));
     assert!(
         headline.contains(&format!("set by {}", binding.label())),
         "{headline}"
@@ -403,7 +408,11 @@ fn a_one_millimetre_tapered_tip_is_held_by_the_tip_cap_g10() {
         "the cap must be the smaller term: {feed}"
     );
     assert_eq!(
-        resolve_plunge(&s.feeds_result.plunge, feed, rpm(&s)),
+        resolve_plunge_at(
+            &s.feeds_result.plunge,
+            s.feeds_result.unlifted_feed(),
+            rpm(&s)
+        ),
         Some((150.0, PlungeBinding::TipCap))
     );
     assert!(s.operation.plunge_rate().expect("S11: the fixture sets it") <= 150.0);

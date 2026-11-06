@@ -37,8 +37,8 @@
 use rs_cam_core::ToolpathId;
 use rs_cam_core::finish::unified_finish::MonotoneCellTotals;
 use rs_cam_core::session::{
-    CutMetricsNotMeasured, ProjectDiagnostics, ToolpathDiagnostic, Verdict, VerdictEvidence,
-    VerdictKind, VerdictSeverity,
+    CutMetricsNotMeasured, MeasuredAirCut, ProjectDiagnostics, ToolpathDiagnostic, Verdict,
+    VerdictEvidence, VerdictKind, VerdictSeverity,
 };
 
 /// Every field carries a DISTINCT value, and every `Option` is `Some`.
@@ -96,6 +96,12 @@ fn populated() -> ProjectDiagnostics {
                 count: Some(44),
             },
         }],
+        // P18 item 4b (d): `Some`, and not on the wire (`serde(skip)`): the
+        // pinned JSON below has no key for it.
+        air_cut_measured: Some(MeasuredAirCut {
+            pct_of_total_runtime: Some(45.0),
+            withheld: vec!["Blind".to_owned()],
+        }),
     }
 }
 
@@ -227,6 +233,7 @@ fn the_verdict_enums_write_their_own_string_tags() {
         VerdictKind::PinToolMismatch,
         VerdictKind::MeasurabilityAbstained,
         VerdictKind::ShoeGapTooLow,
+        VerdictKind::SimCellAboveHalfStepover,
     ];
     for kind in kinds {
         let json = serde_json::to_string(&kind).expect("a kind serialises");

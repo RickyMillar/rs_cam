@@ -978,6 +978,27 @@ fn effective_axial_mm(engagement: PerMoveEngagement, ctx: &ModulationContext<'_>
         .unwrap_or(0.0)
 }
 
+/// Feeds contract P18 (review D15): the feed of a ConstrainedMax move with
+/// no engagement, and of a bandless move (no chipload band). The commanded
+/// feed, under the cutting ceiling
+/// (`MachineMaxFeed`) and under the predicted kinematic cap
+/// (`KinematicReach`, the cap of every engaged arm). It only lowers.
+fn no_engagement_feed(
+    commanded_mm_min: f64,
+    cutting_ceiling_mm_min: f64,
+    predicted_cap_mm_min: f64,
+) -> (f64, BindingConstraint) {
+    let under_ceiling = commanded_mm_min.min(cutting_ceiling_mm_min);
+    if predicted_cap_mm_min.is_finite()
+        && predicted_cap_mm_min > 0.0
+        && predicted_cap_mm_min < under_ceiling
+    {
+        (predicted_cap_mm_min, BindingConstraint::KinematicReach)
+    } else {
+        (under_ceiling, BindingConstraint::MachineMaxFeed)
+    }
+}
+
 /// F-036 — "target band-mid" per-move feed (legacy heuristic).
 ///
 /// A2 (point mode): for a point band the target and the ceiling are
@@ -1159,6 +1180,38 @@ pub fn adaptive_feed_modulate_with_materials(
         ctx.cutting_ceiling.mm_min(),
         ctx.rapid_feed_mm_min,
     );
+    // Feeds contract P18 (review D15): the reach of a move with no
+    // engagement. The probe above runs at the band ceiling, which is a chip
+    // limit, not a machine limit; a move with no engagement has no chip, so
+    // its reach comes from a probe at the cutting ceiling. When the two
+    // probe feeds are equal, the first probe serves.
+    // A bandless move (an own-material move with no band, or a not-judged
+    // move) has no chip either, so it reads the same probe.
+    let no_engagement_fed = engagements.iter().zip(&toolpath.moves).any(|(e, m)| {
+        e.radial_woc_fraction <= 1e-6
+            && e.axial_doc_fraction <= 1e-6
+            && m.move_type.feed_rate().is_some()
+    });
+    let bandless_move = materials.iter().any(|m| match m {
+        MoveMaterial::Toolpath => false,
+        MoveMaterial::Own(own) => own.chipload_band.is_none(),
+        MoveMaterial::NotJudged => true,
+    });
+    let reach_at_ceiling =
+        if (no_engagement_fed || bandless_move) && probe_feed < ctx.cutting_ceiling.mm_min() {
+            let mut at_ceiling = toolpath.clone();
+            for m in at_ceiling.moves.iter_mut() {
+                m.move_type = m.move_type.with_feed_rate(ctx.cutting_ceiling.mm_min());
+            }
+            Some(predicted_feeds_for_toolpath(
+                &at_ceiling,
+                ctx.kinematics,
+                ctx.cutting_ceiling.mm_min(),
+                ctx.rapid_feed_mm_min,
+            ))
+        } else {
+            None
+        };
 
     let mut outcome = ModulationOutcome::default();
     #[expect(
@@ -1218,9 +1271,18 @@ pub fn adaptive_feed_modulate_with_materials(
             // mm/min plunge rate) because the guard lived downstream of
             // a band gate it could never pass. Same binding tag as the
             // banded no-engagement arm, for consistency.
-            (_, None) => (
-                commanded.min(ctx.cutting_ceiling.mm_min()),
-                BindingConstraint::MachineMaxFeed,
+            //
+            // Feeds contract P18 (review D15, lead ruling): the reach cap at
+            // the cutting ceiling binds here too, by the rule of the
+            // no-engagement arm (`no_engagement_feed`). A bandless toolpath
+            // probes at the ceiling, so its `predicted_cap` is that reach.
+            (_, None) => no_engagement_feed(
+                commanded,
+                ctx.cutting_ceiling.mm_min(),
+                reach_at_ceiling
+                    .as_ref()
+                    .and_then(|r| r.get(&i).copied())
+                    .map_or(predicted_cap, |r| r.max(1e-3)),
             ),
             (ModulationStrategy::BandMid, Some(band)) => {
                 band_mid_feed_for_move(commanded, engagement, predicted_cap, ctx, band)
@@ -1232,10 +1294,19 @@ pub fn adaptive_feed_modulate_with_materials(
                     // holds the op's `feed_max_rate`, a hard cap of every
                     // arm). Record the per-move entry so the diagnostic
                     // surface can still see it.
-                    (
-                        commanded.min(ctx.cutting_ceiling.mm_min()),
-                        BindingConstraint::MachineMaxFeed,
-                    )
+                    //
+                    // Feeds contract P18 (review D15, lead ruling option
+                    // 1): the predicted kinematic cap binds here too, as in
+                    // every engaged arm. A move that the simulation sees
+                    // with no engagement can still be a real cut that the
+                    // cell cannot resolve (P_thin_005: a 0.3 mm width on a
+                    // 0.5 mm cell). The machine cannot reach a feed above
+                    // the cap on that move, so the emitted feed is the cap.
+                    let reach = reach_at_ceiling
+                        .as_ref()
+                        .and_then(|r| r.get(&i).copied())
+                        .map_or(predicted_cap, |r| r.max(1e-3));
+                    no_engagement_feed(commanded, ctx.cutting_ceiling.mm_min(), reach)
                 } else {
                     max_safe_feed_for_move(engagement, band, ctx, predicted_cap)
                 }

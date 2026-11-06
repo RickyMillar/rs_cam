@@ -60,6 +60,123 @@ pub(super) struct AirCutAbstention {
     pub(super) reason: crate::stock::sim_measurability::MeasurabilityReason,
 }
 
+/// Feeds contract P18 item 4b (lead ruling 2026-11-07): the simulation
+/// cell against the stepover of a toolpath, a finding made before the
+/// simulation runs.
+///
+/// The derivation is sampling, with k = 2: a grid of cell `c` resolves a
+/// width `w` only when at least two cell centres fall across it, so a width
+/// below `2 c` reads as one cell or none. Thus the gates cannot grade a
+/// stepover `s` when `c > s / 2`. The finding fires there and names the cell
+/// to use, `s / 2`.
+///
+/// k = 2 is a necessary bound, not a sufficient one. Measured on
+/// `P_thin_005` (6 mm flat, 0.3 mm stepover): at stepover / 3 (a 0.1 mm
+/// cell) the width still reads half, 0.150 of 0.3 mm. A cell at `s / 2`
+/// removes the certain blindness; it does not promise a true width.
+///
+/// It is a separate rule from its two neighbours, and merges with neither:
+/// - G-RESTRES, the rest-op cell against the tip: the sampling residual of
+///   a reference stock is `cell^2 / (2 x tip radius)`
+///   (`compute::execute::findings::zero_removal_engagement_floor_mm`);
+/// - `stock::sim_measurability`, the trace-based blind detection (census
+///   Floor 2, `cell <= sqrt(2 R_tip d - d^2)`, Checkpoint D Q2): it reads a
+///   simulated trace and abstains a gate; this rule reads only the cell and
+///   the stepover, before any trace exists.
+///
+/// A finding, never a refusal (K6).
+#[derive(Debug, Clone, Copy, PartialEq)]
+pub(crate) struct CellStepoverBound {
+    /// The simulation cell (mm).
+    pub(crate) cell_mm: f64,
+    /// The stepover of the toolpath (mm).
+    pub(crate) stepover_mm: f64,
+}
+
+impl CellStepoverBound {
+    /// The bound of `cell_mm` against a stated stepover, or `None` when the
+    /// cell is at or below half the stepover (or either value is not a
+    /// positive, finite number).
+    pub(crate) fn of(cell_mm: f64, stepover_mm: Option<f64>) -> Option<Self> {
+        let stepover_mm = stepover_mm.filter(|s| s.is_finite() && *s > 0.0)?;
+        (cell_mm.is_finite() && cell_mm > 0.0 && cell_mm > stepover_mm / 2.0).then_some(Self {
+            cell_mm,
+            stepover_mm,
+        })
+    }
+
+    /// The coarsest cell the rule admits: half the stepover (mm).
+    pub(crate) fn finest_cell_mm(self) -> f64 {
+        self.stepover_mm / 2.0
+    }
+
+    /// "cell 0.5 mm > stepover 0.3 mm / 2: the gates cannot grade a width
+    /// below 2 cells; simulate at 0.15 mm or finer".
+    pub(crate) fn text(self) -> String {
+        format!(
+            "cell {} mm > stepover {} mm / 2: the gates cannot grade a width below 2 cells; \
+             simulate at {} mm or finer",
+            mm_text(self.cell_mm),
+            mm_text(self.stepover_mm),
+            mm_text(self.finest_cell_mm())
+        )
+    }
+}
+
+/// P18 item 4b (d), lead ruling option (a): the air cut over the
+/// measurable toolpaths. `None` when no toolpath abstains (the project share
+/// stands). The project totals less the totals of each withheld toolpath:
+/// with no abstention this is the project share itself, so the two never
+/// disagree on a fully measured run.
+pub(crate) fn air_cut_over_measured(
+    project_air_cut_s: f64,
+    project_runtime_s: f64,
+    toolpath_summaries: &[crate::stock::simulation_cut::SimulationToolpathCutSummary],
+    abstentions: &[AirCutAbstention],
+) -> Option<crate::session::MeasuredAirCut> {
+    if abstentions.is_empty() {
+        return None;
+    }
+    let withheld = |id: ToolpathId| abstentions.iter().any(|a| a.id == id);
+    let (air_s, runtime_s) = toolpath_summaries
+        .iter()
+        .filter(|t| withheld(t.toolpath_id))
+        .fold((project_air_cut_s, project_runtime_s), |(air, run), t| {
+            (air - t.air_cut_time_s, run - t.total_runtime_s)
+        });
+    Some(crate::session::MeasuredAirCut {
+        pct_of_total_runtime: (runtime_s > 1e-9).then(|| (air_s.max(0.0) / runtime_s) * 100.0),
+        withheld: abstentions.iter().map(|a| a.name.clone()).collect(),
+    })
+}
+
+/// The headline of the per-toolpath air-cut verdict. P18 item 4b (d): the
+/// text names the toolpaths whose air cut is withheld, so a reader does not
+/// take them as clean.
+pub(crate) fn air_cut_headline(
+    names: &[String],
+    measured: Option<&crate::session::MeasuredAirCut>,
+) -> String {
+    match measured {
+        Some(m) if !m.withheld.is_empty() => format!(
+            "WARNING: high air cutting on {}; air cut withheld (not measurable) for {}",
+            names.join(", "),
+            m.withheld
+                .iter()
+                .map(|n| format!("'{n}'"))
+                .collect::<Vec<_>>()
+                .join(", ")
+        ),
+        Some(_) | None => format!("WARNING: high air cutting on {}", names.join(", ")),
+    }
+}
+
+/// A length in mm with at most 3 decimals and no trailing zero.
+fn mm_text(mm: f64) -> String {
+    let text = format!("{mm:.3}");
+    text.trim_end_matches('0').trim_end_matches('.').to_owned()
+}
+
 /// Identify toolpaths whose air-cut percentage exceeds their op-kind's
 /// high-water threshold — **abstaining** where the metric is not measurable.
 ///
@@ -1390,6 +1507,21 @@ impl ProjectSession {
             .unwrap_or_default();
         let air_cut_offenders = air_cut_scan.offenders;
         let air_cut_abstentions = air_cut_scan.abstentions;
+        // P18 item 4b (d): the air cut over the measurable toolpaths, when an
+        // abstention withholds one.
+        let air_cut_measured = evidence.cut_trace.and_then(|trace| {
+            air_cut_over_measured(
+                trace.summary.air_cut_time_s,
+                trace.summary.total_runtime_s,
+                &trace.toolpath_summaries,
+                &air_cut_abstentions,
+            )
+        });
+        // P18 item 4b: the cell the simulation ran at, else the cell it will
+        // run at (the project's stored value).
+        let cell_mm = evidence
+            .resolution_mm
+            .unwrap_or_else(|| self.simulation_resolution_mm());
 
         // P2: plunge-stress warnings for small ball / tapered-ball tools.
         // Fix 2 caps fresh LUT recommendations, but pre-Fix-2 projects carry
@@ -1684,7 +1816,9 @@ impl ProjectSession {
             verdicts.push(Verdict {
                 severity: VerdictSeverity::Polish,
                 kind: VerdictKind::AirCut,
-                headline: format!("WARNING: high air cutting on {}", names.join(", ")),
+                // P18 item 4b (d): the text names the toolpaths whose air cut
+                // is withheld, so a reader does not take them as clean.
+                headline: air_cut_headline(&names, air_cut_measured.as_ref()),
                 offender_toolpath_ids: offender_ids,
                 fix_hint: "Tighten the boundary, lower the stock-top, or pre-rough with \
                            a faster op so the finishing pass doesn't traverse uncut \
@@ -1717,18 +1851,44 @@ impl ProjectSession {
                     names.join("; ")
                 ),
                 offender_toolpath_ids: air_cut_abstentions.iter().map(|a| a.id).collect(),
-                fix_hint: "This is a statement about the SIMULATION, not the toolpath. \
-                           Collision detection, material removal and axial DOC are \
-                           unaffected and remain valid. Where the reason is a coarse \
-                           cell, re-simulate below the tool's TIP radius; where it is \
-                           the fixed 0.05 mm fresh-material floor, the engagement \
-                           channel cannot see a pass this shallow at any resolution — \
-                           judge it on removed material and surface quality instead."
-                    .to_owned(),
+                // P18 item 4b (2): the hint names the fix for the reason, per
+                // toolpath (`abstention_fix`).
+                fix_hint: format!(
+                    "This is a statement about the SIMULATION, not the toolpath. Collision \
+                     detection, material removal and axial DOC are unaffected and remain \
+                     valid. {}",
+                    air_cut_abstentions
+                        .iter()
+                        .map(|a| self.abstention_fix(a, cell_mm))
+                        .collect::<Vec<_>>()
+                        .join(" ")
+                ),
                 evidence: VerdictEvidence {
                     move_index: None,
                     z_value: None,
                     count: Some(air_cut_abstentions.len()),
+                },
+            });
+        }
+
+        // P18 item 4b (1): the a-priori finding, one per enabled toolpath
+        // whose stated stepover the cell cannot grade (`CellStepoverBound`).
+        for tc in self.toolpath_configs.iter().filter(|tc| tc.enabled) {
+            let Some(bound) = CellStepoverBound::of(cell_mm, tc.operation.stepover()) else {
+                continue;
+            };
+            verdicts.push(Verdict {
+                severity: VerdictSeverity::Polish,
+                kind: VerdictKind::SimCellAboveHalfStepover,
+                headline: format!("NOTE: TP{} '{}': {}", tc.id, tc.name, bound.text()),
+                offender_toolpath_ids: vec![tc.id],
+                fix_hint: "A statement about the simulation, made before it runs: collision \
+                           detection and material removal stay valid; the width gates do not."
+                    .to_owned(),
+                evidence: VerdictEvidence {
+                    move_index: None,
+                    z_value: None,
+                    count: None,
                 },
             });
         }
@@ -1748,10 +1908,89 @@ impl ProjectSession {
             rapid_collision_count: total_rapid_collision_count,
             per_toolpath,
             verdicts,
+            air_cut_measured,
         }
     }
 
     // ── Export ──────────────────────────────────────────────────────
+}
+
+impl ProjectSession {
+    /// P18 item 4b (2): the fix of one air-cut abstention, for its reason.
+    ///
+    /// - The tip-contact rule: a blind TIP contact (`CellTooCoarseForTipContact`)
+    ///   needs a cell below the cutter's cusp radius (`MillingCutter::cusp_radius`,
+    ///   census Floor 2). For a flat end mill that is D/2: the rule reads the
+    ///   cusp radius, not a tip radius, and the text names it so.
+    /// - The stepover rule: a stepover below 2 cells needs a cell at or below
+    ///   half the stepover ([`CellStepoverBound`]).
+    /// - Both: the smaller cell, and the text names both rules.
+    /// - The fresh-material floor (`BelowFreshMaterialFloor`) is independent of
+    ///   the cell: no cell fixes it; the stepover rule still applies.
+    fn abstention_fix(&self, a: &AirCutAbstention, cell_mm: f64) -> String {
+        use crate::stock::sim_measurability::MeasurabilityReason;
+        use crate::tool::MillingCutter;
+        let tc = self.toolpath_configs.iter().find(|t| t.id == a.id);
+        let stepover = tc
+            .and_then(|tc| CellStepoverBound::of(cell_mm, tc.operation.stepover()))
+            .map(CellStepoverBound::finest_cell_mm);
+        let tip_radius = tc
+            .and_then(|tc| self.toolpath_tool(tc))
+            .and_then(|tool| crate::compute::cutter::build_cutter(tool).ok())
+            .map(|cutter| cutter.cusp_radius())
+            .filter(|r| r.is_finite() && *r > 0.0);
+        let stepover_text = |s: f64| {
+            format!(
+                "'{}': re-simulate at {} mm or finer (cell <= stepover / 2: a width below 2 \
+                 cells is not graded).",
+                a.name,
+                mm_text(s)
+            )
+        };
+        match a.reason {
+            MeasurabilityReason::CellTooCoarseForTipContact { .. } => {
+                match (tip_radius, stepover) {
+                    (Some(r), Some(s)) => format!(
+                        "'{}': re-simulate at {} mm or finer, the smaller of two rules: the \
+                         tip-contact rule (below the cusp radius, {} mm) and cell <= stepover \
+                         / 2 ({} mm).",
+                        a.name,
+                        mm_text(r.min(s)),
+                        mm_text(r),
+                        mm_text(s)
+                    ),
+                    (Some(r), None) => format!(
+                        "'{}': re-simulate below the cusp radius, {} mm (the tip-contact rule).",
+                        a.name,
+                        mm_text(r)
+                    ),
+                    (None, Some(s)) => stepover_text(s),
+                    (None, None) => {
+                        format!(
+                            "'{}': re-simulate below the cusp radius (the tip-contact rule).",
+                            a.name
+                        )
+                    }
+                }
+            }
+            MeasurabilityReason::BelowFreshMaterialFloor { .. } => {
+                let floor = format!(
+                    "'{}': the fixed {} mm fresh-material floor hides a pass this shallow at \
+                     any cell; judge it on removed material and surface quality.",
+                    a.name,
+                    mm_text(crate::dexel_stock::FRESH_MATERIAL_THRESHOLD_MM)
+                );
+                match stepover {
+                    Some(s) => format!("{floor} {}", stepover_text(s)),
+                    None => floor,
+                }
+            }
+            MeasurabilityReason::KinematicsNotModelled => match stepover {
+                Some(s) => stepover_text(s),
+                None => format!("'{}': the engagement model does not cover this op.", a.name),
+            },
+        }
+    }
 }
 
 /// The fix hint of a rapid-collision verdict.

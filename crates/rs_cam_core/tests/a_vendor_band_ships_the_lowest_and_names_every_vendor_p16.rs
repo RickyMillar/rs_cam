@@ -10,7 +10,12 @@
 //! - (c) a grade c row joins only when the band has no grade a or b member;
 //! - (d) no chip rises: the shipped chip is at or below the score winner's
 //!   chip on every query of a sample grid, and every member has the score
-//!   winner's series rank (band rule 8, option B).
+//!   winner's series rank (band rule 8, option B);
+//! - (e) P18 (review D16, lead ruling option (a)): the band takes the
+//!   query's tool family first. A 12.7 mm 2F flat in MDF holds only flat
+//!   rows (before P18 the Amana corner-radius bull row joined and shipped);
+//!   a 6 mm bull nose in hardwood, where no bull row passes the size rule,
+//!   holds flat rows and the card names the family of the shipped row.
 
 #![expect(
     clippy::expect_used,
@@ -317,4 +322,86 @@ fn no_shipped_chip_is_above_the_score_winner_p16() {
         several > 10,
         "only {several} bands had more than one member"
     );
+}
+
+/// The tool family of a row of the embedded LUT.
+fn family_of(id: &str) -> ToolFamily {
+    row(id).tool_family
+}
+
+/// (e) P18 (review D16): flat with flat, bull with bull; the other family
+/// only when the query family has no member.
+#[test]
+fn a_band_takes_the_tool_family_of_the_query_first_p18() {
+    let lut = embedded_vendor_lut();
+    let pocket = |tool_family: ToolFamily, diameter_mm: f64, material: MaterialFamily| {
+        let janka = match material {
+            MaterialFamily::Hardwood => Some(WoodSpecies::GenericHardwood.janka_lbf()),
+            MaterialFamily::Softwood
+            | MaterialFamily::PlywoodSoftwood
+            | MaterialFamily::PlywoodHardwood
+            | MaterialFamily::Mdf
+            | MaterialFamily::Hdf
+            | MaterialFamily::Particleboard
+            | MaterialFamily::Acrylic
+            | MaterialFamily::Hdpe
+            | MaterialFamily::Polycarbonate
+            | MaterialFamily::Delrin
+            | MaterialFamily::Aluminum
+            | MaterialFamily::Fiberglass => None,
+        };
+        LookupQuery {
+            tool_family,
+            tool_subfamily: None,
+            diameter_mm,
+            flute_count: 2,
+            material_family: material,
+            hardness_kind: janka.map(|_| HardnessKind::Janka),
+            hardness_value: janka,
+            operation_family: LutOperationFamily::Pocket,
+            pass_role: LutPassRole::Roughing,
+        }
+    };
+
+    // The 12.7 mm 2F flat in MDF: the Spektra flat row prints this cell
+    // (`amana_spektra_spiral_plunge_v24.txt` line 37, .0096 in = 0.24384
+    // mm), and the Amana corner-radius bull row prints the same size.
+    let flat = lookup_best(lut, &pocket(ToolFamily::FlatEnd, 12.7, MaterialFamily::Mdf))
+        .expect("the cell is printed");
+    let ids = member_ids(&flat);
+    assert!(!ids.is_empty(), "non-vacuity: the band has members");
+    for id in &ids {
+        assert_eq!(family_of(id), ToolFamily::FlatEnd, "{id} in a flat band");
+    }
+    assert_eq!(family_of(&flat.observation_id), ToolFamily::FlatEnd);
+    assert!(flat.band.cross_family.is_none());
+    // Non-vacuity: a bull row of this size and material exists, so the
+    // rule removed it.
+    let bull_row_exists = lut.observations.iter().any(|o| {
+        o.tool_family == ToolFamily::BullNose
+            && o.material_family == MaterialFamily::Mdf
+            && o.diameter_mm == Some(12.7)
+            && o.flute_count == 2
+    });
+    assert!(bull_row_exists, "a 12.7 mm 2F bull MDF row exists");
+
+    // The 6 mm 2F bull nose in hardwood: no bull row passes the size rule
+    // (the Amana bull row prints 6.35 mm, a form C extrapolation), so the
+    // flat rows form the band, and the card names the shipped family.
+    let bull = lookup_best(
+        lut,
+        &pocket(ToolFamily::BullNose, 6.0, MaterialFamily::Hardwood),
+    )
+    .expect("the cell is served");
+    let shipped = family_of(&bull.observation_id);
+    assert_eq!(shipped, ToolFamily::FlatEnd, "{}", bull.observation_id);
+    let cross = bull
+        .band
+        .cross_family
+        .expect("the band names the other family");
+    assert_eq!(cross.shipped, ToolFamily::FlatEnd);
+    assert_eq!(cross.tool, ToolFamily::BullNose);
+    let text = bull.band.card_text().expect("the card names the family");
+    assert!(text.contains(ToolFamily::FlatEnd.label()), "{text}");
+    assert!(text.contains(ToolFamily::BullNose.label()), "{text}");
 }
