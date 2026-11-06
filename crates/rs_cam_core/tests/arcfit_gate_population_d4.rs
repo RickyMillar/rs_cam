@@ -537,6 +537,7 @@ fn modelled_gate_verdicts_across_the_two_classifications() {
         spans: Some(&fitted.spans),
         drill_op: None,
         commanded_thinning_lift: None,
+        radial_stock_to_leave_mm: None,
     };
     let bands = ToleranceBands::default();
 

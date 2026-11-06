@@ -41,6 +41,7 @@
 
 use rs_cam_core::tool_load::Histogram;
 
+use super::chart::labels::{Nudge, place_label};
 use crate::ui::tokens;
 
 /// The height of the bar area, in points.
@@ -64,7 +65,7 @@ pub(crate) const CAP_HALF_WIDTH: f32 = 3.0;
 pub const NEAR_BOUND_SHARE: f64 = 0.15;
 
 /// The alpha factor of the in-band wash.
-pub(crate) const WASH_OK: f32 = 0.07;
+pub const WASH_OK: f32 = 0.07;
 
 /// The alpha factor of the out-of-band washes.
 pub(crate) const WASH_OUT: f32 = 0.12;
@@ -688,61 +689,5 @@ pub fn format_value(value: f64) -> String {
         format!("{value:.1}")
     } else {
         format!("{value:.0}")
-    }
-}
-
-/// Which way a colliding label may move before it is left out.
-#[derive(Clone, Copy, PartialEq, Eq)]
-enum Nudge {
-    None,
-    Left,
-    Right,
-}
-
-/// Paint one axis label when it does not collide with a label already
-/// placed, and keep it inside `bounds`. A label with a `Nudge` moves clear
-/// of the label it collides with, in that direction, and is left out when
-/// it still collides or leaves `bounds`.
-#[expect(
-    clippy::too_many_arguments,
-    reason = "a private painter helper; the nine inputs are one label's position, text, style and nudge, and a struct for them would be used once."
-)]
-fn place_label(
-    painter: &egui::Painter,
-    placed: &mut Vec<egui::Rect>,
-    bounds: egui::Rect,
-    anchor: egui::Pos2,
-    align: egui::Align2,
-    text: &str,
-    font: &egui::FontId,
-    colour: egui::Color32,
-    nudge: Nudge,
-) {
-    let galley = painter.layout_no_wrap(text.to_owned(), font.clone(), colour);
-    let mut label = align.anchor_size(anchor, galley.size());
-    if label.left() < bounds.left() {
-        label = label.translate(egui::vec2(bounds.left() - label.left(), 0.0));
-    }
-    if label.right() > bounds.right() {
-        label = label.translate(egui::vec2(bounds.right() - label.right(), 0.0));
-    }
-    let pad = egui::vec2(tokens::SPACE_1, 0.0);
-    // At most one move per placed label, so the loop ends.
-    for _ in 0..=placed.len() {
-        let padded = label.expand2(pad);
-        let Some(other) = placed.iter().find(|other| other.intersects(padded)) else {
-            placed.push(label);
-            painter.galley(label.min, galley, colour);
-            return;
-        };
-        let shift = match nudge {
-            Nudge::None => return,
-            Nudge::Left => other.left() - tokens::SPACE_3 - label.right(),
-            Nudge::Right => other.right() + tokens::SPACE_3 - label.left(),
-        };
-        label = label.translate(egui::vec2(shift, 0.0));
-        if label.left() < bounds.left() || label.right() > bounds.right() {
-            return;
-        }
     }
 }

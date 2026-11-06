@@ -5,6 +5,7 @@ use super::components::{
     NotMeasured, Role, SectionHeader, Sparkline, TabBadge, TabStrip, TraceOpen, text,
 };
 use super::readiness::{self, MissingInput, MissingInputExt};
+use super::sim_cut_chart::{self, CutChartInput};
 use super::sim_debug::{
     debug_span_math_summary, format_json_value, semantic_kind_color, semantic_kind_label,
 };
@@ -19,6 +20,7 @@ use crate::ui::theme;
 use crate::ui::tokens;
 use crate::ui_command::{SimJumpToMoveArgs, UiCommand};
 use rs_cam_core::session::{ProjectSession, ProjectVerdict};
+use rs_cam_core::tool_load::cut_force::{RULE_FORCE_BUDGET, RULE_NO_LIMIT};
 use rs_cam_core::tool_load::verdict::{
     BoundSource, ChipSide, ChiploadVerdict, CriterionKind, CriterionStatus, LoadState,
 };
@@ -1217,6 +1219,7 @@ fn burn_floor(status: &CriterionStatus<'_>) -> Option<f64> {
         } => *floor_mm_per_tooth,
         BoundSource::MachinePowerCurve { .. }
         | BoundSource::DeflectionBudget
+        | BoundSource::StockToLeave { .. }
         | BoundSource::RigidityRuleOfThumb { .. }
         | BoundSource::MachineForceBudget { .. }
         | BoundSource::DrillEnvelope => None,
@@ -1242,6 +1245,12 @@ fn pct_of_bound(peak: f64, bound: Option<f64>) -> Option<i32> {
 /// Every figure is formatted from the value it describes. The population's
 /// unit is [`PopulationUnit::plural`], core's own word.
 fn row_caption(row: &LimitRow<'_>) -> String {
+    caption_parts(row).join(" \u{00b7} ")
+}
+
+/// The parts of [`row_caption`], in order: the setting (or the unmodelled
+/// clause), the population, the source toolpath.
+fn caption_parts(row: &LimitRow<'_>) -> Vec<String> {
     let status = &row.status;
     let mut parts: Vec<String> = Vec::new();
     match status.bound_source.as_ref() {
@@ -1274,7 +1283,7 @@ fn row_caption(row: &LimitRow<'_>) -> String {
     if let Some(source) = &row.source {
         parts.push(source.clone());
     }
-    parts.join(" \u{00b7} ")
+    parts
 }
 
 /// The face of one limit row: its colour and its one-line text, for
@@ -1327,10 +1336,39 @@ fn verdict_face(row: &LimitRow<'_>) -> (egui::Color32, String) {
 /// the painted text finds the caption directly after the face (G-OWNBOUND).
 /// The colour of the verdict moves from the face to the status chip.
 fn limit_data_row(row: &LimitRow<'_>) -> DataRow {
-    let hover = verdict_tooltip(row);
+    limit_data_row_with(row, false)
+}
+
+/// [`limit_data_row`] for the inspector's "Other limits" table (P17): the
+/// rail is narrow, so the caption keeps its first part (the setting) and
+/// the whole caption opens the hover (W4: the population is still stated).
+fn other_limit_row(row: &LimitRow<'_>) -> DataRow {
+    limit_data_row_with(row, true)
+}
+
+/// The limit row; `narrow` keeps the first caption part on the face.
+fn limit_data_row_with(row: &LimitRow<'_>, narrow: bool) -> DataRow {
+    let mut hover = verdict_tooltip(row);
+    // Feeds ruling R2: a depth the gate reports with no cap names the gate
+    // that decides, so the row draws no invented limit.
+    if row.status.kind == CriterionKind::DepthOfCut
+        && row.status.state == LoadState::Within
+        && row.status.bound.is_none()
+    {
+        hover = format!("Depth is reported; the deflection limit decides.\n{hover}");
+    }
     let (_, face) = verdict_face(row);
     let (role, word) = limit_status(row);
-    let caption = row_caption(row);
+    let parts = caption_parts(row);
+    let full = parts.join(" \u{00b7} ");
+    let caption = if narrow {
+        parts.first().cloned().unwrap_or_default()
+    } else {
+        full.clone()
+    };
+    if narrow && caption != full {
+        hover = format!("{full}\n{hover}");
+    }
     // Round 3: a limit that is not modelled reads "N/A". The caption (for
     // example "no machine-side thrust rating is published") and the status
     // word go to the hover, so the row carries no chip.
@@ -1557,12 +1595,14 @@ fn aggregate_stats(
 
 /// True when the Inspector draws a cut-metric card for `kind`. Those kinds
 /// leave the text limit rows of "Now playing"; Readiness keeps the rows.
+/// P17: the depth row has no card, so it paints once in "Other limits".
 fn has_cut_metric_card(kind: CriterionKind) -> bool {
     CUT_METRIC_ORDER.contains(&DistributionMetric::Criterion(kind))
 }
 
 /// What a card asks the panel to do after the draw.
-enum CutMetricAction {
+#[derive(Debug, Clone, Copy, PartialEq, Eq)]
+pub enum CutMetricAction {
     /// Flip this metric's card to its other face.
     Flip(DistributionMetric),
     /// Open this metric's trace in the trace modal.
@@ -1618,11 +1658,18 @@ impl CutMetricSpec {
                 scale: 1.0,
                 above: "over limit",
             },
+            // P17: no card (`CUT_METRIC_ORDER`); the variant stays in core.
             DistributionMetric::Engagement => Self {
                 title: "Engagement",
                 unit: "\u{00b0}",
                 scale: 1.0,
                 above: "over limit",
+            },
+            DistributionMetric::CutForce => Self {
+                title: "Cut force",
+                unit: "N",
+                scale: 1.0,
+                above: "over budget",
             },
         }
     }
@@ -1633,6 +1680,7 @@ fn cut_metric_guide(metric: DistributionMetric) -> Option<String> {
     let guide = match metric {
         DistributionMetric::Criterion(kind) => kind.guide()?,
         DistributionMetric::Engagement => rs_cam_core::tool_load::engagement_guide(),
+        DistributionMetric::CutForce => rs_cam_core::tool_load::cut_force_guide(),
     };
     Some(format!(
         "{}\n\nToo low: {}\nToo high: {}\nLevers: {}",
@@ -1734,13 +1782,19 @@ fn cut_metrics_view(sim: &mut SimulationState, session: &ProjectSession) -> CutM
 
 /// The rank of a card: the position of its criterion in `criteria()`, so
 /// the cards and the rows keep the one order the CLI and the MCP use.
-/// Engagement has no criterion and goes last.
+/// P17: the force card follows the deflection card (one law) and comes
+/// before the depth row's place; engagement has no card.
 fn card_rank(metric: DistributionMetric, rows: &[LimitRow<'_>]) -> usize {
     match metric {
         DistributionMetric::Criterion(kind) => rows
             .iter()
             .position(|row| row.status.kind == kind)
-            .unwrap_or(usize::MAX - 1),
+            .map_or(usize::MAX - 1, |rank| 2 * rank),
+        DistributionMetric::CutForce => rows
+            .iter()
+            .position(|row| row.status.kind == CriterionKind::Deflection)
+            .map_or(usize::MAX - 1, |rank| 2 * rank + 1),
+        // P17: no card (`CUT_METRIC_ORDER`); the variant stays in core.
         DistributionMetric::Engagement => usize::MAX,
     }
 }
@@ -1764,6 +1818,12 @@ fn card_rank(metric: DistributionMetric, rows: &[LimitRow<'_>]) -> usize {
 /// glyph: the face `verdict_badge` paints for Readiness, the setting, the
 /// population, the bound clause and the confidence reason. The rows with
 /// no card follow the cards through `verdict_badge`.
+///
+/// P17 (layout B): the four cards, the abstention table, one hairline,
+/// then the width x depth chart (`sim_cut_chart`) as the drill-down, then
+/// "Other limits". The cards and the chart draw from the set alone
+/// ([`draw_cut_metric_cards`], [`draw_cut_chart_section`]), so a headless
+/// snapshot draws them with no simulation state.
 fn draw_cut_metrics_section(
     ui: &mut egui::Ui,
     sim: &mut SimulationState,
@@ -1784,21 +1844,11 @@ fn draw_cut_metrics_section(
         }
         CutMetricsView::Cards(toolpath_id, set) => (*toolpath_id, set),
     };
-    let rows: Vec<LimitRow<'_>> = load_report
+    let verdict = load_report
         .per_toolpath
         .iter()
-        .find(|verdict| verdict.toolpath_id == toolpath_id)
-        .map(limit_rows)
-        .unwrap_or_default();
-    let mut cards: Vec<&CutMetricCard> = set.cards.iter().collect();
-    // Measured cards first, then the cards core could not measure. Inside
-    // each group the cards keep the `criteria()` order.
-    cards.sort_by_key(|card| {
-        (
-            matches!(card.outcome, DistributionOutcome::NotMeasured(_)),
-            card_rank(card.metric, &rows),
-        )
-    });
+        .find(|verdict| verdict.toolpath_id == toolpath_id);
+    let rows: Vec<LimitRow<'_>> = verdict.map(limit_rows).unwrap_or_default();
     let other_rows: Vec<&LimitRow<'_>> = rows
         .iter()
         .filter(|row| !has_cut_metric_card(row.status.kind))
@@ -1823,7 +1873,6 @@ fn draw_cut_metrics_section(
         .show(ui);
     let measurability = measurability_rows(sim, session, toolpath_id);
 
-    let mut actions: Vec<CutMetricAction> = Vec::new();
     // The playhead, as a move of this toolpath, for the line face.
     let playhead = sim
         .current_local_toolpath_move()
@@ -1832,57 +1881,34 @@ fn draw_cut_metrics_section(
     // The global move of the toolpath's first move, so the line names the
     // move the transport bar shows.
     let move_offset = sim.global_move_for_local(toolpath_id, 0).unwrap_or(0);
+    let move_count = sim
+        .boundary_for_toolpath_id(toolpath_id)
+        .map_or(0, |b| b.end_move.saturating_sub(b.start_move));
     // G-STALECARDS: an operation with no core result was not simulated at
     // all. Its cards say to regenerate it, because a re-run cannot help.
     let regenerate_first: Option<String> = session
         .find_toolpath_config_by_id(toolpath_id)
         .filter(|(index, _)| session.result_at(*index).is_none())
         .map(|(_, tc)| tc.name.clone());
-    // A metric core could not measure is one row of the abstention table
-    // after the charts, not a card of its own.
-    let mut abstentions: Vec<DataRow> = Vec::new();
-    let mut charts = 0_usize;
-    for card in cards {
-        let row = match card.metric {
-            DistributionMetric::Criterion(kind) => rows.iter().find(|row| row.status.kind == kind),
-            DistributionMetric::Engagement => None,
-        };
-        if let DistributionOutcome::NotMeasured(reason) = &card.outcome {
-            abstentions.push(abstention_row(
-                card,
-                reason,
-                row,
-                regenerate_first.as_deref(),
-            ));
-            continue;
-        }
-        if charts > 0 {
-            draw_hairline(ui);
-        }
-        charts += 1;
-        let face = if sim.shows_over_time(card.metric) {
-            ChartFace::OverTime
-        } else {
-            ChartFace::Distribution
-        };
-        let view = CardView {
-            face,
+    let mut actions = draw_cut_metric_cards(
+        ui,
+        CutMetricsBody {
+            set,
+            verdict,
+            over_time: &sim.cut_metric_over_time,
             playhead,
             move_offset,
-        };
-        draw_cut_metric_card(ui, card, row, &view, &mut actions);
-    }
-    abstentions.extend(measurability);
-    if !abstentions.is_empty() {
-        ui.add_space(tokens::SPACE_2);
-        DataTable::new("cut_metrics_abstentions")
-            .rows(abstentions)
-            .show(ui);
+            regenerate_first: regenerate_first.as_deref(),
+            extra_abstentions: measurability,
+        },
+    );
+    if let Some(local_move) = draw_cut_chart_section(ui, set, playhead, move_count) {
+        actions.push(CutMetricAction::Seek { local_move });
     }
     if !other_rows.is_empty() {
         SectionHeader::new("Other limits").show(ui);
         DataTable::new("cut_metrics_other_limits")
-            .rows(other_rows.into_iter().map(limit_data_row))
+            .rows(other_rows.into_iter().map(other_limit_row))
             .show(ui);
     }
 
@@ -1902,6 +1928,157 @@ fn draw_cut_metrics_section(
             }
         }
     }
+}
+
+/// The inputs of the cards of one set, with no simulation state (P17):
+/// the section builds it from the state, a headless snapshot by hand.
+pub struct CutMetricsBody<'a> {
+    /// The set of the focused toolpath.
+    pub set: &'a CutMetricSet,
+    /// The toolpath's verdict, the source of the limit rows the status
+    /// hovers carry. `None`: no row, the cards read their histograms.
+    pub verdict: Option<&'a ToolpathLoadVerdict>,
+    /// The metrics whose card shows the line over time.
+    pub over_time: &'a [DistributionMetric],
+    /// The playhead as a move of this toolpath, when it is in it.
+    pub playhead: Option<usize>,
+    /// The global move of the toolpath's first move.
+    pub move_offset: usize,
+    /// The name of the operation to regenerate first (G-STALECARDS).
+    pub regenerate_first: Option<&'a str>,
+    /// Rows that join the abstention table (the cell-size rows).
+    pub extra_abstentions: Vec<DataRow>,
+}
+
+/// The cards of one set, split by hairlines, then the abstention table.
+/// Measured cards first, then the cards core could not measure; inside
+/// each group the cards keep the `criteria()` order. The depth and width
+/// readings sit under the force card. Returns what the cards asked.
+pub fn draw_cut_metric_cards(ui: &mut egui::Ui, body: CutMetricsBody<'_>) -> Vec<CutMetricAction> {
+    let set = body.set;
+    let rows: Vec<LimitRow<'_>> = body.verdict.map(limit_rows).unwrap_or_default();
+    let mut cards: Vec<&CutMetricCard> = set.cards.iter().collect();
+    cards.sort_by_key(|card| {
+        (
+            matches!(card.outcome, DistributionOutcome::NotMeasured(_)),
+            card_rank(card.metric, &rows),
+        )
+    });
+    let mut actions: Vec<CutMetricAction> = Vec::new();
+    // A metric core could not measure is one row of the abstention table
+    // after the charts, not a card of its own.
+    let mut abstentions: Vec<DataRow> = Vec::new();
+    let mut charts = 0_usize;
+    for card in cards {
+        let row = match card.metric {
+            DistributionMetric::Criterion(kind) => rows.iter().find(|row| row.status.kind == kind),
+            DistributionMetric::Engagement | DistributionMetric::CutForce => None,
+        };
+        if let DistributionOutcome::NotMeasured(reason) = &card.outcome {
+            abstentions.push(abstention_row(card, reason, row, body.regenerate_first));
+            continue;
+        }
+        if charts > 0 {
+            draw_hairline(ui);
+        }
+        charts += 1;
+        let face = if body.over_time.contains(&card.metric) {
+            ChartFace::OverTime
+        } else {
+            ChartFace::Distribution
+        };
+        let view = CardView {
+            face,
+            playhead: body.playhead,
+            move_offset: body.move_offset,
+        };
+        draw_cut_metric_card(ui, card, row, &view, &mut actions);
+        if card.metric == DistributionMetric::CutForce {
+            draw_force_readings(ui, set);
+        }
+    }
+    abstentions.extend(body.extra_abstentions);
+    if !abstentions.is_empty() {
+        ui.add_space(tokens::SPACE_2);
+        DataTable::new("cut_metrics_abstentions")
+            .rows(abstentions)
+            .show(ui);
+    }
+    actions
+}
+
+/// The two plain readings under the cut-force chart (P17): the depth and
+/// the width of the sample set, min to max and the peak. No line, no
+/// status, no hover: the depth row of `criteria()` keeps its place in
+/// "Other limits". Nothing with no sample.
+fn draw_force_readings(ui: &mut egui::Ui, set: &CutMetricSet) {
+    let Some((depth, width)) = force_readings(set) else {
+        return;
+    };
+    ui.add(egui::Label::new(text::caption(depth)).wrap());
+    ui.add(egui::Label::new(text::caption(width)).wrap());
+}
+
+/// The readings lines: "Depth 0.25 to 2.00 mm · peak 2.00 mm" and
+/// "Width 12 to 100 % of D · peak 100 %", from the min and max of the
+/// sample set's `ap_mm` and `ae_mm / D`. `None` with no sample or no D.
+#[must_use]
+pub fn force_readings(set: &CutMetricSet) -> Option<(String, String)> {
+    if set.samples.is_empty() || set.diameter_mm <= 0.0 || !set.diameter_mm.is_finite() {
+        return None;
+    }
+    let span = |values: &mut dyn Iterator<Item = f64>| {
+        values
+            .filter(|v| v.is_finite())
+            .fold(None, |acc: Option<(f64, f64)>, v| {
+                Some(acc.map_or((v, v), |(lo, hi)| (lo.min(v), hi.max(v))))
+            })
+    };
+    let (ap_lo, ap_hi) = span(&mut set.samples.iter().map(|s| s.ap_mm))?;
+    let (ae_lo, ae_hi) = span(
+        &mut set
+            .samples
+            .iter()
+            .map(|s| s.ae_mm / set.diameter_mm * 100.0),
+    )?;
+    Some((
+        format!(
+            "Depth {} to {} mm \u{00b7} peak {} mm",
+            histogram::format_value(ap_lo),
+            histogram::format_value(ap_hi),
+            histogram::format_value(ap_hi)
+        ),
+        format!(
+            "Width {ae_lo:.0} to {} of D \u{00b7} peak {}",
+            histogram::format_share(ae_hi),
+            histogram::format_share(ae_hi)
+        ),
+    ))
+}
+
+/// The chart section (P17, layout B): one hairline, then the width x
+/// depth chart of the set. Nothing without an envelope. Returns the move
+/// a click asked the playhead to seek to.
+pub fn draw_cut_chart_section(
+    ui: &mut egui::Ui,
+    set: &CutMetricSet,
+    playhead: Option<usize>,
+    move_count: usize,
+) -> Option<usize> {
+    let env = set.envelope.as_deref()?;
+    draw_hairline(ui);
+    sim_cut_chart::draw_cut_chart(
+        ui,
+        &CutChartInput {
+            env,
+            samples: &set.samples,
+            diameter_mm: set.diameter_mm,
+            budget_n: set.budget_n,
+            playhead,
+            move_count,
+        },
+    )
+    .seek
 }
 
 /// A hairline between two metrics, with a small space on each side.
@@ -2181,12 +2358,19 @@ fn peak_text(
         )
     };
     let Some(row) = row else {
-        // No criterion (engagement): the largest value in the histogram.
-        return distribution
-            .histogram
-            .edges
-            .last()
-            .map(|max| unit_peak(*max));
+        // No criterion row (the force card; a snapshot with no verdict): the
+        // population maximum is the last histogram edge (the overflow bin's
+        // upper edge, core's layout), against the histogram's own ceiling.
+        // P17: the force card's ceiling is the budget (lead ruling 3).
+        let bound = match distribution.metric {
+            DistributionMetric::CutForce => "budget",
+            DistributionMetric::Criterion(_) | DistributionMetric::Engagement => "limit",
+        };
+        let peak = *distribution.histogram.edges.last()?;
+        return Some(match pct_of_bound(peak, distribution.histogram.ceiling) {
+            Some(pct) => format!("peak {pct} % of {bound}"),
+            None => unit_peak(peak),
+        });
     };
     let status = &row.status;
     let peak = status.display_peak?;
@@ -2246,17 +2430,32 @@ fn cut_metric_status_hover(
                 lines.push(caption);
             }
         }
-        None => lines.push("No gate judges this metric. Use it to compare cuts.".to_owned()),
+        None => match (card.metric, distribution) {
+            // P17: the force reading names its peak and its rule (one law
+            // with the deflection gate; report-only).
+            (DistributionMetric::CutForce, Some(d)) => {
+                let peak = histogram::format_value(
+                    d.histogram.edges.last().copied().unwrap_or(0.0) * spec.scale,
+                );
+                lines.push(match d.histogram.ceiling {
+                    Some(budget) => format!(
+                        "Cut force: peak {peak} N against the {RULE_FORCE_BUDGET}, {} N",
+                        histogram::format_value(budget * spec.scale)
+                    ),
+                    None => format!("Cut force: peak {peak} N \u{00b7} {RULE_NO_LIMIT}"),
+                });
+            }
+            (DistributionMetric::CutForce, None)
+            | (DistributionMetric::Criterion(_) | DistributionMetric::Engagement, _) => {
+                lines.push("No gate judges this metric. Use it to compare cuts.".to_owned());
+            }
+        },
     }
     if let Some(distribution) = distribution {
         let hist = &distribution.histogram;
         if unbounded {
-            if matches!(
-                distribution.metric,
-                DistributionMetric::Criterion(CriterionKind::DepthOfCut)
-            ) {
-                lines.push("Depth is reported; the deflection limit decides.".to_owned());
-            }
+            // The reading has no band share to state (P17: the force card
+            // with no line; the depth row says its piece in "Other limits").
         } else if let Some(share) = hist.in_band_share() {
             lines.push(format!(
                 "{} of cut time in band.",
@@ -2302,6 +2501,10 @@ fn card_caption(distribution: &MetricDistribution, spec: &CutMetricSpec) -> Opti
             share(hist.above_s),
             spec.above
         ));
+    }
+    // P17 (lead ruling 3): a force reading with no line says so.
+    if distribution.metric == DistributionMetric::CutForce && hist.ceiling.is_none() {
+        parts.push(RULE_NO_LIMIT.to_owned());
     }
     (!parts.is_empty()).then(|| parts.join(" \u{00b7} "))
 }
@@ -2907,6 +3110,7 @@ mod tests {
             feed_explanation: None,
             kinematic_utilization: None,
             material_split: None,
+            cut_force: None,
         };
         assert!(
             limit_rows(&verdict).is_empty(),

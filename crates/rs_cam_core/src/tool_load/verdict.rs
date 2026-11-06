@@ -366,6 +366,15 @@ pub struct ToolpathLoadVerdict {
     /// toolpath, the default `CutAs::StockMaterial` included.
     #[serde(default, skip_serializing_if = "Option::is_none")]
     pub material_split: Option<Box<super::MaterialSplit>>,
+    /// Feeds contract P17: the peak engaged-edge cutting force of the
+    /// stock population, against the machine force budget when the op
+    /// family has one (`cut_force::evaluate`). Report-only: it joins
+    /// neither [`Self::criteria`] nor the export gate. `None` (and no wire
+    /// key) with no trace, on a drill, or with no force line. The MCP
+    /// `get_tool_load_report` serialises it, so the agent reads the peak
+    /// and the budget the force card shows.
+    #[serde(default, skip_serializing_if = "Option::is_none")]
+    pub cut_force: Option<super::cut_force::CutForceReading>,
 }
 
 /// F197: `SimulationRequired` → `StaleSimulation` on one reason; every
@@ -436,6 +445,9 @@ impl ToolpathLoadVerdict {
             feed_explanation: _,
             kinematic_utilization: _,
             material_split,
+            // P17: a report-only reading with no `Unmodeled` arm; it is
+            // `None` when no trace was read, so a stale trace leaves it.
+            cut_force: _,
         } = self;
         stale_chipload(chipload);
         stale_power(power);
@@ -1054,6 +1066,13 @@ pub enum BoundSource {
     /// displacement budget the deflection gate judges against. A fixed
     /// finish-quality figure in MILLIMETRES.
     DeflectionBudget,
+    /// Feeds contract P17: the radial stock to leave of a rough op, in
+    /// MILLIMETRES (`ToolpathLoadContext::radial_stock_to_leave_mm`,
+    /// `deflection::exceeds_limit`). A tip that moves less than the leave
+    /// stays inside the finish allowance; one that moves more cuts into
+    /// the finish surface. An operation setting, and a stated bound, so it
+    /// gates as [`Self::DeflectionBudget`] does.
+    StockToLeave { mm: f64 },
     /// `RigidityProfile::adaptive_doc_factor` (the Adaptive family)
     /// times the engaged diameter at the judged depth
     /// (`feeds::geometry::depth_cap_diameter_mm`). A rule of thumb with
@@ -1081,7 +1100,8 @@ pub enum BoundSource {
 
 impl BoundSource {
     /// **The setting an operator changes to move this row**, one of
-    /// `"machine"`, `"tool"`, `"material"` or `"vendor row"`.
+    /// `"machine"`, `"tool"`, `"material"`, `"vendor row"` or `"operation"`
+    /// (P17: the stock to leave is an operation field).
     ///
     /// The operator's rule 3, and the durable half of provenance
     /// (`REVIEW_DESIGN.md` §6.3): a setting is a live symbol a reader
@@ -1097,6 +1117,8 @@ impl BoundSource {
             // diameter and the flute profile are the whole cantilever
             // the gate integrates.
             BoundSource::DeflectionBudget => "tool",
+            // P17: the leave is a field of the operation config.
+            BoundSource::StockToLeave { .. } => "operation",
             // `RigidityProfile` is a `MachineProfile` field. The
             // diameter is the tool's, but the factor is the machine's,
             // and the factor is what makes this bound a rule of thumb.
@@ -1143,6 +1165,10 @@ impl BoundSource {
             BoundSource::DeflectionBudget => format!(
                 "the tip deflection budget of {:.3} mm",
                 crate::tool_load::deflection::EXCEEDS_BOUND_MM
+            ),
+            BoundSource::StockToLeave { mm } => format!(
+                "the radial stock to leave of this op, {mm:.2} mm: a tip that moves more \
+                 than it cuts into the finish surface"
             ),
             BoundSource::RigidityRuleOfThumb {
                 factor,
@@ -2016,10 +2042,68 @@ pub struct DeflectionBounds {
     /// Below this peak tip deflection (mm), `Within(Validated)`.
     /// 0.050 mm in `tool_load::deflection`.
     pub validated_within_mm: f64,
-    /// Above this peak tip deflection (mm), `Exceeds`. 0.200 mm.
-    /// Between the two thresholds, `Within(Approximate)` with
-    /// finish-degradation warning.
+    /// Above this peak tip deflection (mm), `Exceeds`. The finish target
+    /// (`deflection::EXCEEDS_BOUND_MM`) or, on a rough pass with a radial
+    /// stock to leave, the leave (P17, [`Self::basis`]). Between the two
+    /// thresholds, `Within(Approximate)` with a finish-degradation warning.
     pub exceeds_mm: f64,
+    /// P17: what set `exceeds_mm`. `deflection::exceeds_limit` is the one
+    /// writer.
+    pub basis: DeflectionBasis,
+}
+
+/// Feeds contract P17: what set the `Exceeds` limit of the deflection gate
+/// (`deflection::exceeds_limit`). Every case is named, so the confidence
+/// clause and the bound source state which limit judged the pass.
+#[derive(Debug, Clone, PartialEq, Serialize, Deserialize)]
+#[serde(rename_all = "snake_case", tag = "kind")]
+pub enum DeflectionBasis {
+    /// A finish or semi-finish pass: no stock is left after it, so the
+    /// finish target `deflection::EXCEEDS_BOUND_MM` applies.
+    FinishTarget,
+    /// A rough pass with a radial stock to leave above zero: the leave is
+    /// the limit ([`BoundSource::StockToLeave`]).
+    StockToLeave { mm: f64 },
+    /// A rough op with no radial stock-to-leave field: the finish target
+    /// applies, and the clause says so.
+    NoLeaveField,
+    /// A rough op whose radial stock to leave is zero: the rough pass is
+    /// the final wall, so the finish target applies.
+    ZeroLeave,
+}
+
+impl DeflectionBasis {
+    /// The one operator-facing clause of this basis. Every figure is
+    /// formatted from the value it describes.
+    #[must_use]
+    pub fn clause(&self) -> String {
+        let target_um = crate::tool_load::deflection::EXCEEDS_BOUND_MM * 1000.0;
+        match self {
+            DeflectionBasis::FinishTarget => {
+                format!("finish pass: the finish target {target_um:.0} um applies")
+            }
+            DeflectionBasis::StockToLeave { mm } => {
+                format!("limit: the radial stock to leave {mm:.2} mm")
+            }
+            DeflectionBasis::NoLeaveField => format!(
+                "no stock-to-leave field on this op: the finish target {target_um:.0} um applies"
+            ),
+            DeflectionBasis::ZeroLeave => {
+                format!("stock to leave 0: the finish target {target_um:.0} um applies")
+            }
+        }
+    }
+
+    /// The bound source of a row judged under this basis.
+    #[must_use]
+    pub fn bound_source(&self) -> BoundSource {
+        match self {
+            DeflectionBasis::StockToLeave { mm } => BoundSource::StockToLeave { mm: *mm },
+            DeflectionBasis::FinishTarget
+            | DeflectionBasis::NoLeaveField
+            | DeflectionBasis::ZeroLeave => BoundSource::DeflectionBudget,
+        }
+    }
 }
 
 /// Typed deflection verdict. Both `Within` and `Exceeds` carry the
@@ -2086,7 +2170,10 @@ impl DeflectionVerdict {
         // GUI drew this row against `DEFLECTION_SAFE_LD_RATIO = 4.0`,
         // an L over D ratio, which is a different quantity with a
         // similar magnitude — defect class 2 (`RESUME_PLAN` §9).
-        let (state, peak, range, population, bound) = match self {
+        // P17: the bound is `bounds.exceeds_mm` under `bounds.basis`: the
+        // finish target (`BoundSource::DeflectionBudget`) or the radial
+        // stock to leave of a rough pass (`BoundSource::StockToLeave`).
+        let (state, peak, range, population, bounds) = match self {
             DeflectionVerdict::Within {
                 peak_mm,
                 bounds,
@@ -2097,7 +2184,7 @@ impl DeflectionVerdict {
                 Some(*peak_mm),
                 option_range(&evidence.sample_range),
                 evidence.population,
-                Some(bounds.exceeds_mm),
+                Some(bounds),
             ),
             DeflectionVerdict::Exceeds {
                 peak_mm,
@@ -2109,7 +2196,7 @@ impl DeflectionVerdict {
                 Some(*peak_mm),
                 option_range(&evidence.sample_range),
                 evidence.population,
-                Some(bounds.exceeds_mm),
+                Some(bounds),
             ),
             DeflectionVerdict::Unmodeled { .. } => (LoadState::Unmodeled, None, None, None, None),
         };
@@ -2122,8 +2209,8 @@ impl DeflectionVerdict {
             population,
             display_peak: peak,
             unit: CriterionKind::Deflection.unit(),
-            bound,
-            bound_source: bound.map(|_| BoundSource::DeflectionBudget),
+            bound: bounds.map(|b| b.exceeds_mm),
+            bound_source: bounds.map(|b| b.basis.bound_source()),
             exceeded: (state == LoadState::Exceeds).then(ExceededCriterion::deflection),
         }
     }
@@ -2517,6 +2604,7 @@ mod tests {
                 bounds: DeflectionBounds {
                     validated_within_mm: 0.050,
                     exceeds_mm: 0.200,
+                    basis: DeflectionBasis::FinishTarget,
                 },
                 evidence: SampleEvidence::empty(),
                 confidence: Confidence::Validated,
@@ -2530,6 +2618,7 @@ mod tests {
             feed_explanation: None,
             kinematic_utilization: None,
             material_split: None,
+            cut_force: None,
         };
         // S3: three, not two. The fixture's chipload and deflection rows
         // were modelled before, and the depth row joined them. The count
@@ -2573,6 +2662,7 @@ mod tests {
                     bounds: DeflectionBounds {
                         validated_within_mm: 0.050,
                         exceeds_mm: 0.200,
+                        basis: DeflectionBasis::FinishTarget,
                     },
                     evidence: SampleEvidence::empty(),
                     confidence: Confidence::Approximate("L/D in 4-6 range".to_owned()),
@@ -2586,6 +2676,7 @@ mod tests {
                 feed_explanation: None,
                 kinematic_utilization: None,
                 material_split: None,
+                cut_force: None,
             }],
         };
         let v = serde_json::to_value(&r).expect("must round-trip");
@@ -2625,6 +2716,7 @@ mod tests {
                         bounds: DeflectionBounds {
                             validated_within_mm: 0.050,
                             exceeds_mm: 0.200,
+                            basis: DeflectionBasis::FinishTarget,
                         },
                         evidence: SampleEvidence::empty(),
                         confidence: Confidence::Validated,
@@ -2637,6 +2729,7 @@ mod tests {
                     feed_explanation: None,
                     kinematic_utilization: None,
                     material_split: None,
+                    cut_force: None,
                 },
                 ToolpathLoadVerdict {
                     toolpath_id: ToolpathId::from_raw(1),
@@ -2664,6 +2757,7 @@ mod tests {
                         bounds: DeflectionBounds {
                             validated_within_mm: 0.050,
                             exceeds_mm: 0.200,
+                            basis: DeflectionBasis::FinishTarget,
                         },
                         evidence: SampleEvidence::empty(),
                         confidence: Confidence::Validated,
@@ -2677,6 +2771,7 @@ mod tests {
                     feed_explanation: None,
                     kinematic_utilization: None,
                     material_split: None,
+                    cut_force: None,
                 },
             ],
         };
@@ -2732,6 +2827,7 @@ mod tests {
             feed_explanation: None,
             kinematic_utilization: None,
             material_split: None,
+            cut_force: None,
         };
 
         let healthy = drill_verdict(DrillGateOutcome::Within {
@@ -2815,6 +2911,7 @@ mod tests {
                     feed_explanation: None,
                     kinematic_utilization: None,
                     material_split: None,
+                    cut_force: None,
                 },
                 // Sim wasn't run yet — every gate `SimulationRequired`.
                 // Operator action: run the sim.
@@ -2838,6 +2935,7 @@ mod tests {
                     feed_explanation: None,
                     kinematic_utilization: None,
                     material_split: None,
+                    cut_force: None,
                 },
                 // Mixed: one gate N/A, one needs sim. Operator still
                 // has an action item, so this rolls up as
@@ -2862,6 +2960,7 @@ mod tests {
                     feed_explanation: None,
                     kinematic_utilization: None,
                     material_split: None,
+                    cut_force: None,
                 },
             ],
         };
@@ -2910,6 +3009,7 @@ mod tests {
                     bounds: DeflectionBounds {
                         validated_within_mm: 0.050,
                         exceeds_mm: 0.200,
+                        basis: DeflectionBasis::FinishTarget,
                     },
                     evidence: SampleEvidence::empty(),
                     confidence: Confidence::Validated,
@@ -2923,6 +3023,7 @@ mod tests {
                 feed_explanation: None,
                 kinematic_utilization: None,
                 material_split: None,
+                cut_force: None,
             }],
         };
         // Resolver hit — name flows into the entry.
@@ -2964,6 +3065,7 @@ mod tests {
         DeflectionBounds {
             validated_within_mm: 0.050,
             exceeds_mm: 0.200,
+            basis: DeflectionBasis::FinishTarget,
         }
     }
 
@@ -3199,6 +3301,7 @@ mod tests {
                     bounds: DeflectionBounds {
                         validated_within_mm: 0.050,
                         exceeds_mm: 0.200,
+                        basis: DeflectionBasis::FinishTarget,
                     },
                     evidence: SampleEvidence::at(5),
                     confidence: Confidence::Approximate("approximate band".to_owned()),
@@ -3212,6 +3315,7 @@ mod tests {
                 feed_explanation: None,
                 kinematic_utilization: None,
                 material_split: None,
+                cut_force: None,
             }],
         };
         let s = serde_json::to_string(&r).expect("serialize");
@@ -3271,6 +3375,7 @@ mod tests {
                     bounds: DeflectionBounds {
                         validated_within_mm: 0.050,
                         exceeds_mm: 0.200,
+                        basis: DeflectionBasis::FinishTarget,
                     },
                     evidence: SampleEvidence::empty(),
                     confidence: Confidence::Validated,
@@ -3284,6 +3389,7 @@ mod tests {
                 feed_explanation: None,
                 kinematic_utilization: None,
                 material_split: None,
+                cut_force: None,
             }],
         };
         let exceeded = r.exceeded_criteria();
@@ -3362,6 +3468,7 @@ mod tests {
             feed_explanation: None,
             kinematic_utilization: None,
             material_split: None,
+            cut_force: None,
         };
         for status in v.criteria() {
             assert_eq!(
@@ -3409,6 +3516,7 @@ mod tests {
             feed_explanation: None,
             kinematic_utilization: None,
             material_split: None,
+            cut_force: None,
         }
     }
 
@@ -3435,6 +3543,7 @@ mod tests {
             feed_explanation: None,
             kinematic_utilization: None,
             material_split: None,
+            cut_force: None,
         }
     }
 
@@ -3466,6 +3575,7 @@ mod tests {
             bounds: DeflectionBounds {
                 validated_within_mm: 0.050,
                 exceeds_mm: 0.200,
+                basis: DeflectionBasis::FinishTarget,
             },
             evidence: SampleEvidence::empty(),
             confidence: Confidence::Validated,
@@ -3509,6 +3619,7 @@ mod tests {
                     bounds: DeflectionBounds {
                         validated_within_mm: 0.050,
                         exceeds_mm: 0.200,
+                        basis: DeflectionBasis::FinishTarget,
                     },
                     evidence: SampleEvidence::empty(),
                     confidence: Confidence::Validated,
@@ -3521,6 +3632,7 @@ mod tests {
                 feed_explanation: None,
                 kinematic_utilization: None,
                 material_split: None,
+                cut_force: None,
             }],
         };
         let s = r.summary(|id| {
@@ -3566,6 +3678,7 @@ mod tests {
                     bounds: DeflectionBounds {
                         validated_within_mm: 0.050,
                         exceeds_mm: 0.200,
+                        basis: DeflectionBasis::FinishTarget,
                     },
                     evidence: SampleEvidence::empty(),
                     confidence: Confidence::Validated,
@@ -3579,6 +3692,7 @@ mod tests {
                 feed_explanation: None,
                 kinematic_utilization: None,
                 material_split: None,
+                cut_force: None,
             }],
         };
         let s = r.summary(|_| None);

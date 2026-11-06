@@ -62,6 +62,8 @@ impl ProjectSession {
                 .map(|r| r.annotated().spans.as_slice()),
             drill_op: result.and_then(|r| r.drill_op()).map(AsRef::as_ref),
             commanded_thinning_lift,
+            // P17: the radial leave of the op, the rough deflection limit.
+            radial_stock_to_leave_mm: tc.operation.radial_stock_to_leave_mm(),
         })
     }
 

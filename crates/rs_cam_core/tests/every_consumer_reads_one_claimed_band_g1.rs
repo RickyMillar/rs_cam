@@ -365,6 +365,7 @@ fn the_gate_holds_the_form_a_point_with_no_minimum_g1() {
         spans: None,
         drill_op: None,
         commanded_thinning_lift: None,
+        radial_stock_to_leave_mm: None,
     };
     let env = GateEnv {
         sim_trace: Some(&trace),
@@ -558,6 +559,7 @@ fn a_refused_cell_is_not_reported_within_g1() {
         feed_explanation: None,
         kinematic_utilization: None,
         material_split: None,
+        cut_force: None,
     };
     let rows = diagnostics_from_load_verdict(&verdict);
     let chip: Vec<&str> = rows

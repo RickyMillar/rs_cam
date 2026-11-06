@@ -284,7 +284,11 @@ fn a_milling_toolpath_paints_one_row_per_kind_g_ownbound() {
         .iter()
         .position(|t| t.starts_with(&format!("{} ", face_label(CriterionKind::GantryPush))))
         .expect("the gantry row is a verdict_badge face");
-    for (_, title) in CARD_TITLES {
+    for title in CARD_TITLES
+        .iter()
+        .map(|(_, title)| *title)
+        .chain([FORCE_CARD_TITLE])
+    {
         let at = painted
             .iter()
             .position(|t| is_card_title(t, title))
@@ -296,6 +300,20 @@ fn a_milling_toolpath_paints_one_row_per_kind_g_ownbound() {
              same rows the same way."
         );
     }
+    // P17: the depth row has no card; it paints after the force card, as
+    // the gantry row does.
+    let force = painted
+        .iter()
+        .position(|t| is_card_title(t, FORCE_CARD_TITLE))
+        .expect("the force card");
+    let depth = painted
+        .iter()
+        .position(|t| t.starts_with(&format!("{} ", face_label(CriterionKind::DepthOfCut))))
+        .expect("the depth row is a verdict_badge face in \"Other limits\"");
+    assert!(
+        force < depth,
+        "the depth row (run {depth}) painted before the force card (run {force})"
+    );
 }
 
 /// True when `run` is the title of the card `title`.
@@ -309,12 +327,18 @@ fn is_card_title(run: &str, title: &str) -> bool {
 
 /// The card title each banded kind's row sits under, in `criteria()` order.
 /// The titles are `sim_diagnostics::CutMetricSpec::of(..).title`.
-const CARD_TITLES: [(CriterionKind, &str); 4] = [
+///
+/// P17 (operator 2026-11-06): the depth card went; the depth row paints in
+/// "Other limits" after the cards, as the gantry row does. The fourth card,
+/// "Cut force", has no criterion ([`FORCE_CARD_TITLE`]).
+const CARD_TITLES: [(CriterionKind, &str); 3] = [
     (CriterionKind::Chipload, "Chipload"),
     (CriterionKind::Power, "Spindle power"),
     (CriterionKind::Deflection, "Tool deflection"),
-    (CriterionKind::DepthOfCut, "Depth of cut"),
 ];
+
+/// The title of the cut-force card (P17), the last card.
+const FORCE_CARD_TITLE: &str = "Cut force";
 
 /// Package C: each banded row is painted ONCE, and on its own card: after
 /// the card's title and before the next card's title. A row painted in
@@ -344,7 +368,12 @@ fn every_banded_row_is_on_its_own_card_g_ownbound() {
             .position(|t| is_card_title(t, title))
             .unwrap_or_else(|| panic!("no card titled {title:?}. Runs were {painted:#?}"))
     };
-    let titles: Vec<usize> = expected.iter().map(|(_, t)| title_at(t)).collect();
+    let mut titles: Vec<usize> = expected.iter().map(|(_, t)| title_at(t)).collect();
+    // P17: the force card follows the deflection card (one law) when both
+    // are measured.
+    if !not_measured(CriterionKind::Deflection) {
+        titles.push(title_at(FORCE_CARD_TITLE));
+    }
     for pair in titles.windows(2) {
         assert!(
             pair[0] < pair[1],
@@ -375,8 +404,9 @@ fn every_banded_row_is_on_its_own_card_g_ownbound() {
     }
 
     // Feeds ruling R2: a finishing or semi-finishing pass has no depth cap,
-    // so the depth gate REPORTS its peak with no bound. The card still
-    // draws, with no invented limit, and says which gate decides.
+    // so the depth gate REPORTS its peak with no bound. The row (P17: in
+    // "Other limits") still draws, with no invented limit, and its hover
+    // says which gate decides.
     let depth = criteria
         .iter()
         .find(|s| s.kind == CriterionKind::DepthOfCut)
@@ -385,8 +415,8 @@ fn every_banded_row_is_on_its_own_card_g_ownbound() {
         let caption = "Depth is reported; the deflection limit decides.";
         assert!(
             texts.iter().any(|t| t.contains(caption)),
-            "the depth gate reported a peak with no bound, and the Depth of \
-             cut card never painted {caption:?}. Runs were {texts:#?}"
+            "the depth gate reported a peak with no bound, and the depth row \
+             never painted {caption:?}. Runs were {texts:#?}"
         );
         assert!(
             depth.bound_source.is_none(),

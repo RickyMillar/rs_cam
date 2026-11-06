@@ -5,8 +5,9 @@ Independent gates over a simulated cut. Entry: `tool_load::evaluate_toolpath`.
 ## Files
 
 - `mod.rs` — the monitor and the report entry point. `chipload.rs`, `power.rs`,
-  `deflection.rs`, `depth.rs`, `plunge_stress.rs` — the milling gates;
-  `drill_gates.rs` — chip welding, peck, plunge feed. `load_fraction.rs` — the one load `L`.
+  `deflection.rs`, `depth.rs`, `plunge_stress.rs` — the milling gates; `cut_force.rs` — the
+  report-only force reading (P17); `drill_gates.rs` — chip welding, peck, plunge feed.
+  `load_fraction.rs` — the one load `L`.
 - `locality.rs`, `boundary.rs`, `verdict.rs`, `display.rs`, `distribution.rs`,
   `metric_guide.rs` — steady-state predicate, boundary contract, verdicts,
   display, histograms (call the gate filters; never copy them), hover copy.
@@ -26,10 +27,11 @@ Independent gates over a simulated cut. Entry: `tool_load::evaluate_toolpath`.
   force-line or grain-factor change needs the slow `--test` sims, not `--lib`.
 - F197: a stale trace rewrites a verdict through `ToolpathLoadVerdict::mark_simulation_stale` only; it
   destructures every field. F070: build a gate context with `ProjectSession::load_context_parts(..).ctx()`.
-- P11a (L5): the deflection gate reads the PEAK engaged-edge force of the sample (`Engagement::from_tool_cut` at `axial_engagement_mm` and the arc's width `r (1 - cos psi)`), through `feeds::predict::tip_deflection_from_engagement`; the power gate's mean is the same sum's mean.
+- P11a (L5): the deflection gate reads the PEAK engaged-edge force of the sample (`deflection::sample_engagement`: `Engagement::from_tool_cut` at `axial_engagement_mm` and the arc's width `r (1 - cos psi)`), through `feeds::predict::tip_deflection_from_engagement`; the power gate's mean is the same sum's mean. P17: `cut_force::sample_peak_force_n` is that force; the force card, `ToolpathLoadVerdict::cut_force` (report-only, not a criterion) and the deflection gate read one engagement and one law. The budget line exists only under `DepthCapRule::ForceBudget` (`cut_force::budget_line`, lead ruling 3).
+- P17: the deflection `Exceeds` limit is `deflection::exceeds_limit`: the radial stock to leave of a rough pass (`ToolpathLoadContext::radial_stock_to_leave_mm`, `BoundSource::StockToLeave`), else the finish target `EXCEEDS_BOUND_MM`; `DeflectionBounds::basis` names the case. Suggest, the envelope and F082 keep the finish target.
 - F082: the deflection-cap compliance is `deflection::tip_compliance_mm_per_n` (Suggest's ceiling and the modulator read it). F080: `UnmodeledReason::operator_text` is the reason's one clause.
 - The drill gates model the R-plane-rooted emitted schedule and read cutting
   geometry, not fed distance; a tapered drill uses the envelope diameter.
 
 ## Sentries
-Run one with `cargo test -p rs_cam_core -q --test <name>`: `gate_population_vacuity_xvac`, `chipload_boundary_g_chip_ulp`, `predicted_feed_gates_f035`, `drill_evidence_wording_d3`, `an_absent_limit_is_visibly_absent_g_gantry`, `a_criterion_carries_its_own_bound_g_s4bound`, `a_weak_bound_cannot_refuse_an_export_g_s4weak` (only a sourced bound may refuse an export), `the_depth_that_cut_is_a_measured_load_g_s3depth` (depth exceeds, never refuses; P13c: the cap is `feeds::force_budget::rigidity_depth_cap` at the peak sample's arc width and chip, `BoundSource::MachineForceBudget`, non-gating; the Adaptive factor stays), `finish_depth_is_reported_not_capped_fm6`, `histogram_population_is_the_gate_population_g_cuthist`, `suggests_own_recipe_is_not_above_the_band_p11b2`, `the_gate_reads_the_printed_band_at_every_depth_p11b2`; `--lib tool_load::load_fraction` (the full-pass identity `w/D`).
+Run one with `cargo test -p rs_cam_core -q --test <name>`: `gate_population_vacuity_xvac`, `chipload_boundary_g_chip_ulp`, `predicted_feed_gates_f035`, `drill_evidence_wording_d3`, `an_absent_limit_is_visibly_absent_g_gantry`, `a_criterion_carries_its_own_bound_g_s4bound`, `a_weak_bound_cannot_refuse_an_export_g_s4weak` (only a sourced bound may refuse an export), `the_depth_that_cut_is_a_measured_load_g_s3depth` (depth exceeds, never refuses; P13c: the cap is `feeds::force_budget::rigidity_depth_cap` at the peak sample's arc width and chip, `BoundSource::MachineForceBudget`, non-gating; the Adaptive factor stays), `finish_depth_is_reported_not_capped_fm6`, `histogram_population_is_the_gate_population_g_cuthist`, `suggests_own_recipe_is_not_above_the_band_p11b2`, `the_gate_reads_the_printed_band_at_every_depth_p11b2`, `the_cut_force_is_the_deflection_force_p17`, `a_rough_pass_deflects_up_to_its_stock_to_leave_p17`; `--lib tool_load::load_fraction` (the full-pass identity `w/D`).

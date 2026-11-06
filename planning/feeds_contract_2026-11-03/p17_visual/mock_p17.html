@@ -1,0 +1,221 @@
+<!doctype html>
+<html lang="en">
+<head>
+<meta charset="utf-8">
+<meta name="viewport" content="width=device-width, initial-scale=1">
+<title>P17 chart mock-up</title>
+<style>
+  :root {
+    --ink00:#0F1113; --ink05:#15171A; --ink10:#1B1E22; --ink15:#22262B; --ink20:#282D33;
+    --ink25:#31373E; --ink35:#454D56; --ink50:#737C87; --ink65:#8C959F; --ink80:#B4BCC5; --ink95:#E2E7EC;
+    --accent:#5B9DD9; --ok:#5FBF7A; --caution:#E0A83C; --danger:#E87B77;
+  }
+  body { margin:0; background:var(--ink10); color:var(--ink80); font:13px Inter, system-ui, sans-serif; padding:16px; }
+  h1 { font-size:16px; color:var(--ink95); margin:0 0 4px; }
+  p.note { color:var(--ink65); max-width:72ch; margin:0 0 16px; }
+  .row { display:flex; gap:24px; flex-wrap:wrap; align-items:flex-start; }
+  .panel { width:340px; background:var(--ink10); border:1px solid var(--ink25); padding:8px 8px 12px; }
+  .panel.narrow { width:240px; }
+  .cap { font-size:11px; letter-spacing:.07em; color:var(--ink50); margin:10px 0 2px; }
+  .hdr { display:flex; justify-content:space-between; font-size:13px; color:var(--ink95); margin-top:10px; }
+  .hdr .peak { color:var(--ink65); font-size:11px; }
+  .hdr .ok { color:var(--ok); }
+  .caption { font-size:11px; color:var(--ink65); margin-top:2px; }
+  .legend { display:flex; gap:12px; font-size:11px; color:var(--ink65); margin-top:4px; align-items:center; }
+  .sw { display:inline-block; width:10px; height:10px; margin-right:4px; vertical-align:-1px; }
+  hr { border:0; border-top:1px solid var(--ink25); margin:8px 0; }
+  svg text { font:11px Inter, system-ui, sans-serif; }
+  .what { font-size:12px; color:var(--ink65); margin:4px 0 0; max-width:340px; }
+</style>
+</head>
+<body>
+<h1>P17 chart kit mock-up (dark, the one INK palette)</h1>
+<p class="note">Three panels at the normal inspector width (340 pt) and one at 240 pt. Layout A puts the width x depth chart above the four cards, layout B below them. The histogram card at the top of each panel is the reference the operator called fantastic; the charts under it use its fonts, greys, baseline and wash.</p>
+
+<div class="row">
+
+<!-- ===== Passes tab: envelope on the kit ===== -->
+<div class="panel">
+  <div class="cap">SAFE CUT <span style="float:right;color:var(--accent)">&#9889;</span></div>
+  <svg width="324" height="170" viewBox="0 0 324 170">
+    <!-- y title, rotated -->
+    <text transform="translate(9,100) rotate(-90)" fill="var(--ink50)" text-anchor="middle" letter-spacing=".07em">DEPTH (mm)</text>
+    <!-- frame: x from 40 to 316, y from 8 to 132 -->
+    <!-- soft fill of the safe region -->
+    <path d="M 60,132 L 60,78 L 190,78 L 190,96 L 262,96 L 262,132 Z" fill="rgba(95,191,122,0.07)"/>
+    <!-- faint reference lines at major y steps -->
+    <line x1="40" y1="101" x2="316" y2="101" stroke="var(--ink25)"/>
+    <line x1="40" y1="70" x2="316" y2="70" stroke="var(--ink25)"/>
+    <line x1="40" y1="39" x2="316" y2="39" stroke="var(--ink25)"/>
+    <!-- limit lines -->
+    <line x1="40" y1="24" x2="316" y2="24" stroke="var(--ink65)" stroke-width="1.5"/>   <!-- Rigidity DOC -->
+    <line x1="40" y1="55" x2="316" y2="55" stroke="var(--ink65)" stroke-width="1.5"/>   <!-- Vendor DOC 1xD -->
+    <line x1="60" y1="8" x2="60" y2="132" stroke="var(--ink65)" stroke-width="1.5"/>    <!-- Min width -->
+    <path d="M 190,8 L 190,96 L 316,96" fill="none" stroke="var(--ink80)" stroke-width="2"/> <!-- Slot DOC, binding -->
+    <line x1="40" y1="78" x2="190" y2="78" stroke="var(--ink65)" stroke-width="1.5"/> <!-- a depth table step -->
+    <!-- frame edge D -->
+    <line x1="316" y1="8" x2="316" y2="132" stroke="var(--ink50)"/>
+    <!-- labels -->
+    <text x="300" y="21" fill="var(--ink65)" text-anchor="end">Rigidity DOC</text>
+    <text x="300" y="52" fill="var(--ink65)" text-anchor="end">Vendor DOC 1&#215;D</text>
+    <text x="236" y="109" fill="var(--ink80)">Slot DOC</text>
+    <text x="64" y="128" fill="var(--ink65)">Min width (moves)</text>
+    <!-- marks -->
+    <circle cx="96" cy="112" r="3.5" fill="var(--ink95)"/>
+    <polygon points="150,88 156,94 150,100 144,94" fill="none" stroke="rgba(91,157,217,0.35)" stroke-width="1"/>
+    <!-- axes -->
+    <line x1="40" y1="132" x2="316" y2="132" stroke="var(--ink25)"/>
+    <line x1="40" y1="8" x2="40" y2="132" stroke="var(--ink25)"/>
+    <!-- y ticks -->
+    <g fill="var(--ink65)" text-anchor="end">
+      <text x="34" y="135">0</text><text x="34" y="104">2.5</text><text x="34" y="73">5</text><text x="34" y="42">7.5</text><text x="34" y="12">10</text>
+    </g>
+    <g stroke="var(--ink25)">
+      <line x1="38" y1="132" x2="40" y2="132"/><line x1="38" y1="101" x2="40" y2="101"/><line x1="38" y1="70" x2="40" y2="70"/><line x1="38" y1="39" x2="40" y2="39"/><line x1="38" y1="8" x2="40" y2="8"/>
+    </g>
+    <!-- x ticks as % of D -->
+    <g fill="var(--ink65)" text-anchor="middle">
+      <text x="40" y="147">0</text><text x="109" y="147">25</text><text x="178" y="147">50</text><text x="247" y="147">75</text><text x="316" y="147">100 %</text>
+    </g>
+    <g stroke="var(--ink25)">
+      <line x1="40" y1="132" x2="40" y2="134"/><line x1="109" y1="132" x2="109" y2="134"/><line x1="178" y1="132" x2="178" y2="134"/><line x1="247" y1="132" x2="247" y2="134"/><line x1="316" y1="132" x2="316" y2="134"/>
+    </g>
+    <text x="178" y="164" fill="var(--ink50)" text-anchor="middle" letter-spacing=".07em">WIDTH (% OF D)</text>
+  </svg>
+  <p class="what">Envelope on the kit: the safe region is one OK wash; limit lines keep their P5d colours (binding body, others muted, crossed amber); the white dot is the setpoint, the quiet diamond the proposal. The width axis reads as a stepover.</p>
+</div>
+
+<!-- ===== Layout A: sim Metrics tab, chart above the cards ===== -->
+<div class="panel">
+  <div class="cap">CUT METRICS <span style="float:right;letter-spacing:0;text-transform:none">within limits</span></div>
+  <div class="caption">Operation &nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp; 3D Rough</div>
+  <div class="hdr"><span>Width &#215; depth</span><span class="peak">30 591 moves &middot; 84 % steady</span></div>
+  <svg width="324" height="170" viewBox="0 0 324 170">
+    <text transform="translate(9,100) rotate(-90)" fill="var(--ink50)" text-anchor="middle" letter-spacing=".07em">DEPTH (mm)</text>
+    <path d="M 60,132 L 60,78 L 190,78 L 190,96 L 262,96 L 262,132 Z" fill="rgba(95,191,122,0.07)"/>
+    <line x1="40" y1="101" x2="316" y2="101" stroke="var(--ink25)"/>
+    <line x1="40" y1="70" x2="316" y2="70" stroke="var(--ink25)"/>
+    <line x1="40" y1="39" x2="316" y2="39" stroke="var(--ink25)"/>
+    <!-- density cells -->
+    <g fill="var(--ink80)">
+      <rect x="84" y="108" width="6" height="4" opacity=".35"/><rect x="90" y="108" width="6" height="4" opacity=".6"/><rect x="96" y="108" width="6" height="4" opacity=".9"/><rect x="102" y="108" width="6" height="4" opacity=".7"/><rect x="108" y="108" width="6" height="4" opacity=".3"/>
+      <rect x="90" y="112" width="6" height="4" opacity=".4"/><rect x="96" y="112" width="6" height="4" opacity=".5"/><rect x="102" y="112" width="6" height="4" opacity=".3"/>
+      <rect x="120" y="104" width="6" height="4" opacity=".15"/><rect x="150" y="100" width="6" height="4" opacity=".12"/><rect x="180" y="100" width="6" height="4" opacity=".14"/><rect x="220" y="100" width="6" height="4" opacity=".12"/>
+      <rect x="300" y="108" width="6" height="4" opacity=".18"/><rect x="306" y="108" width="6" height="4" opacity=".22"/><rect x="306" y="112" width="6" height="4" opacity=".16"/><rect x="306" y="120" width="6" height="4" opacity=".1"/><rect x="306" y="126" width="6" height="4" opacity=".1"/>
+      <rect x="66" y="128" width="6" height="4" opacity=".12"/><rect x="72" y="128" width="6" height="4" opacity=".1"/>
+    </g>
+    <line x1="40" y1="24" x2="316" y2="24" stroke="var(--ink65)" stroke-width="1.5"/>
+    <line x1="40" y1="55" x2="316" y2="55" stroke="var(--ink65)" stroke-width="1.5"/>
+    <line x1="60" y1="8" x2="60" y2="132" stroke="var(--ink65)" stroke-width="1.5"/>
+    <path d="M 190,8 L 190,96 L 316,96" fill="none" stroke="var(--ink80)" stroke-width="2"/>
+    <line x1="40" y1="78" x2="190" y2="78" stroke="var(--ink65)" stroke-width="1.5"/>
+    <line x1="316" y1="8" x2="316" y2="132" stroke="var(--ink50)"/>
+    <text x="300" y="21" fill="var(--ink65)" text-anchor="end">Rigidity DOC</text>
+    <text x="300" y="52" fill="var(--ink65)" text-anchor="end">Vendor DOC 1&#215;D</text>
+    <text x="236" y="92" fill="var(--ink80)">Slot DOC</text>
+    <!-- over-budget dots -->
+    <circle cx="308" cy="90" r="2.5" fill="var(--caution)"/><circle cx="312" cy="86" r="2.5" fill="var(--caution)"/><circle cx="304" cy="92" r="2.5" fill="var(--caution)"/>
+    <!-- cluster label with leader -->
+    <line x1="99" y1="108" x2="120" y2="92" stroke="var(--ink50)"/>
+    <text x="123" y="90" fill="var(--ink80)">steady passes &middot; 84 %</text>
+    <!-- planned point and playhead ring -->
+    <circle cx="96" cy="112" r="3.5" fill="var(--ink95)"/>
+    <circle cx="150" cy="102" r="4.5" fill="none" stroke="var(--accent)" stroke-width="1.5"/>
+    <line x1="40" y1="132" x2="316" y2="132" stroke="var(--ink25)"/>
+    <line x1="40" y1="8" x2="40" y2="132" stroke="var(--ink25)"/>
+    <g fill="var(--ink65)" text-anchor="end"><text x="34" y="135">0</text><text x="34" y="104">2.5</text><text x="34" y="73">5</text><text x="34" y="42">7.5</text><text x="34" y="12">10</text></g>
+    <g fill="var(--ink65)" text-anchor="middle"><text x="40" y="147">0</text><text x="109" y="147">25</text><text x="178" y="147">50</text><text x="247" y="147">75</text><text x="316" y="147">100 %</text></g>
+    <text x="178" y="164" fill="var(--ink50)" text-anchor="middle" letter-spacing=".07em">WIDTH (% OF D)</text>
+  </svg>
+  <div class="legend">
+    <span><span class="sw" style="background:rgba(180,188,197,.6)"></span>cut time</span>
+    <span><span class="sw" style="background:var(--caution);border-radius:50%;width:7px;height:7px"></span>over force budget</span>
+    <span><span class="sw" style="background:var(--ink95);border-radius:50%;width:7px;height:7px"></span>planned</span>
+    <span><span class="sw" style="border:1.5px solid var(--accent);border-radius:50%;width:6px;height:6px"></span>playhead</span>
+  </div>
+  <hr>
+  <!-- card 1 -->
+  <div class="hdr"><span>Chipload <span style="color:var(--ink65)">&#9432;</span> <span class="ok">&#10003;</span></span><span class="peak">peak 64 % of limit &nbsp;&#8767; &nbsp;&lt;&gt;</span></div>
+  <svg width="324" height="62" viewBox="0 0 324 62">
+    <rect x="0" y="6" width="236" height="38" fill="rgba(95,191,122,.07)"/><rect x="236" y="6" width="88" height="38" fill="rgba(232,123,119,.12)"/>
+    <line x1="0" y1="44" x2="324" y2="44" stroke="var(--ink25)"/>
+    <g fill="var(--ink50)"><rect x="60" y="40" width="4" height="4"/><rect x="100" y="36" width="4" height="8"/><rect x="140" y="30" width="4" height="14"/><rect x="160" y="8" width="4" height="36"/><rect x="164" y="20" width="4" height="24"/><rect x="180" y="38" width="4" height="6"/></g>
+    <polygon points="233,0 239,0 236,4" fill="rgba(232,123,119,.7)"/><line x1="236" y1="4" x2="236" y2="46" stroke="rgba(232,123,119,.7)" stroke-dasharray="3 2"/>
+    <text x="2" y="58" fill="var(--ink65)">0.018</text><text x="236" y="58" fill="var(--danger)" text-anchor="middle">0.13</text><text x="322" y="58" fill="var(--ink65)" text-anchor="end">0.16 mm/tooth</text>
+  </svg>
+  <div class="hdr"><span>Spindle power <span style="color:var(--ink65)">&#9432;</span> <span class="ok">&#10003;</span></span><span class="peak">peak 7 % of limit &nbsp;&#8767; &nbsp;&lt;&gt;</span></div>
+  <svg width="324" height="62" viewBox="0 0 324 62"><rect x="0" y="6" width="324" height="38" fill="rgba(95,191,122,.07)"/><line x1="0" y1="44" x2="324" y2="44" stroke="var(--ink25)"/><g fill="var(--ink50)"><rect x="70" y="8" width="4" height="36"/><rect x="74" y="30" width="4" height="14"/><rect x="90" y="40" width="4" height="4"/></g><text x="2" y="58" fill="var(--ink65)">0.000</text><text x="250" y="58" fill="var(--ink65)" text-anchor="end">0.080 kW</text><text x="322" y="58" fill="var(--danger)" text-anchor="end">&#9656; 1.12 kW</text></svg>
+  <div class="hdr"><span>Tool deflection <span style="color:var(--ink65)">&#9432;</span> <span class="ok">&#10003;</span></span><span class="peak">peak 8 % of limit &nbsp;&#8767; &nbsp;&lt;&gt;</span></div>
+  <svg width="324" height="62" viewBox="0 0 324 62"><rect x="0" y="6" width="324" height="38" fill="rgba(95,191,122,.07)"/><line x1="0" y1="44" x2="324" y2="44" stroke="var(--ink25)"/><g fill="var(--ink50)"><rect x="200" y="8" width="4" height="36"/><rect x="204" y="30" width="4" height="14"/><rect x="100" y="40" width="4" height="4"/></g><text x="2" y="58" fill="var(--ink65)">0.25</text><text x="250" y="58" fill="var(--ink65)" text-anchor="end">15.5 &#181;m</text><text x="322" y="58" fill="var(--danger)" text-anchor="end">&#9656; 200 &#181;m</text></svg>
+  <div class="caption">Limit: finish target 200 &#181;m (no stock-to-leave field on this op)</div>
+  <div class="hdr"><span>Cut force <span style="color:var(--ink65)">&#9432;</span> <span style="color:var(--ink65)">no limit</span></span><span class="peak">peak 11.2 N &nbsp;&#8767; &nbsp;&lt;&gt;</span></div>
+  <svg width="324" height="62" viewBox="0 0 324 62"><line x1="0" y1="44" x2="324" y2="44" stroke="var(--ink25)"/><g fill="var(--ink50)"><rect x="80" y="8" width="4" height="36"/><rect x="84" y="24" width="4" height="20"/><rect x="88" y="38" width="4" height="6"/><rect x="300" y="36" width="4" height="8"/></g><text x="2" y="58" fill="var(--ink65)">0.4</text><text x="322" y="58" fill="var(--ink65)" text-anchor="end">11.2 N</text></svg>
+  <div class="caption">no force limit on this op family</div>
+  <div class="caption">Depth 0.25 to 2.00 mm &middot; peak 2.00 mm</div>
+  <div class="caption">Width 12 to 100 % of D &middot; peak 100 %</div>
+  <p class="what">Layout A: the chart is the map; the four cards follow. A Pocket (ForceBudget rule) draws the cut-force card with a dashed 100 % line and "peak 99 % of budget".</p>
+</div>
+
+<!-- ===== Layout B: cards first, chart last ===== -->
+<div class="panel">
+  <div class="cap">CUT METRICS <span style="float:right;letter-spacing:0;text-transform:none">within limits</span></div>
+  <div class="caption">Operation &nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp; Face 5</div>
+  <div class="hdr"><span>Chipload <span style="color:var(--ink65)">&#9432;</span> <span class="ok">&#10003;</span></span><span class="peak">peak 71 % of limit &nbsp;&#8767; &nbsp;&lt;&gt;</span></div>
+  <svg width="324" height="62" viewBox="0 0 324 62"><rect x="0" y="6" width="236" height="38" fill="rgba(95,191,122,.07)"/><rect x="236" y="6" width="88" height="38" fill="rgba(232,123,119,.12)"/><line x1="0" y1="44" x2="324" y2="44" stroke="var(--ink25)"/><g fill="var(--ink50)"><rect x="170" y="8" width="4" height="36"/><rect x="174" y="30" width="4" height="14"/></g><polygon points="233,0 239,0 236,4" fill="rgba(232,123,119,.7)"/><line x1="236" y1="4" x2="236" y2="46" stroke="rgba(232,123,119,.7)" stroke-dasharray="3 2"/><text x="2" y="58" fill="var(--ink65)">0.05</text><text x="236" y="58" fill="var(--danger)" text-anchor="middle">0.13</text><text x="322" y="58" fill="var(--ink65)" text-anchor="end">0.16 mm/tooth</text></svg>
+  <div class="hdr"><span>Spindle power <span style="color:var(--ink65)">&#9432;</span> <span class="ok">&#10003;</span></span><span class="peak">peak 12 % of limit &nbsp;&#8767; &nbsp;&lt;&gt;</span></div>
+  <svg width="324" height="62" viewBox="0 0 324 62"><rect x="0" y="6" width="324" height="38" fill="rgba(95,191,122,.07)"/><line x1="0" y1="44" x2="324" y2="44" stroke="var(--ink25)"/><g fill="var(--ink50)"><rect x="120" y="8" width="4" height="36"/><rect x="124" y="30" width="4" height="14"/></g><text x="2" y="58" fill="var(--ink65)">0.00</text><text x="250" y="58" fill="var(--ink65)" text-anchor="end">0.14 kW</text><text x="322" y="58" fill="var(--danger)" text-anchor="end">&#9656; 1.12 kW</text></svg>
+  <div class="hdr"><span>Tool deflection <span style="color:var(--ink65)">&#9432;</span> <span class="ok">&#10003;</span></span><span class="peak">peak 4 % of limit &nbsp;&#8767; &nbsp;&lt;&gt;</span></div>
+  <svg width="324" height="62" viewBox="0 0 324 62"><rect x="0" y="6" width="324" height="38" fill="rgba(95,191,122,.07)"/><line x1="0" y1="44" x2="324" y2="44" stroke="var(--ink25)"/><g fill="var(--ink50)"><rect x="140" y="8" width="4" height="36"/><rect x="144" y="30" width="4" height="14"/></g><text x="2" y="58" fill="var(--ink65)">1.1</text><text x="250" y="58" fill="var(--ink65)" text-anchor="end">7.1 &#181;m</text><text x="322" y="58" fill="var(--danger)" text-anchor="end">&#9656; 200 &#181;m</text></svg>
+  <div class="hdr"><span>Cut force <span style="color:var(--ink65)">&#9432;</span> <span class="ok">&#10003;</span></span><span class="peak">peak 99 % of budget &nbsp;&#8767; &nbsp;&lt;&gt;</span></div>
+  <svg width="324" height="62" viewBox="0 0 324 62"><rect x="0" y="6" width="290" height="38" fill="rgba(95,191,122,.07)"/><rect x="290" y="6" width="34" height="38" fill="rgba(224,168,60,.12)"/><line x1="0" y1="44" x2="324" y2="44" stroke="var(--ink25)"/><g fill="var(--ink50)"><rect x="270" y="8" width="4" height="36"/><rect x="274" y="30" width="4" height="14"/><rect x="286" y="36" width="4" height="8"/></g><polygon points="287,0 293,0 290,4" fill="rgba(224,168,60,.7)"/><line x1="290" y1="4" x2="290" y2="46" stroke="rgba(224,168,60,.7)" stroke-dasharray="2 4"/><text x="2" y="58" fill="var(--ink65)">4.1</text><text x="290" y="58" fill="var(--caution)" text-anchor="middle">35.3</text><text x="322" y="58" fill="var(--ink65)" text-anchor="end">36 N</text></svg>
+  <div class="caption">Depth 0.50 to 0.81 mm &middot; peak 0.81 mm</div>
+  <div class="caption">Width 23 to 100 % of D &middot; peak 100 %</div>
+  <hr>
+  <div class="hdr"><span>Width &#215; depth</span><span class="peak">1 256 moves &middot; 91 % steady</span></div>
+  <svg width="324" height="170" viewBox="0 0 324 170">
+    <text transform="translate(9,100) rotate(-90)" fill="var(--ink50)" text-anchor="middle" letter-spacing=".07em">DEPTH (mm)</text>
+    <path d="M 40,132 L 40,70 L 262,70 L 262,110 L 316,110 L 316,132 Z" fill="rgba(95,191,122,0.07)"/>
+    <line x1="40" y1="101" x2="316" y2="101" stroke="var(--ink25)"/><line x1="40" y1="70" x2="316" y2="70" stroke="var(--ink25)"/><line x1="40" y1="39" x2="316" y2="39" stroke="var(--ink25)"/>
+    <g fill="var(--ink80)"><rect x="96" y="100" width="6" height="4" opacity=".9"/><rect x="102" y="100" width="6" height="4" opacity=".7"/><rect x="90" y="100" width="6" height="4" opacity=".5"/><rect x="306" y="100" width="6" height="4" opacity=".25"/><rect x="306" y="104" width="6" height="4" opacity=".15"/></g>
+    <path d="M 262,8 L 262,110 L 316,110" fill="none" stroke="var(--ink65)" stroke-width="1.5"/>
+    <line x1="40" y1="70" x2="316" y2="70" stroke="var(--ink80)" stroke-width="2"/>
+    <line x1="316" y1="8" x2="316" y2="132" stroke="var(--ink50)"/>
+    <text x="300" y="67" fill="var(--ink80)" text-anchor="end">Corner width</text>
+    <text x="266" y="124" fill="var(--ink65)">Slot DOC</text>
+    <circle cx="99" cy="102" r="3.5" fill="var(--ink95)"/>
+    <line x1="40" y1="132" x2="316" y2="132" stroke="var(--ink25)"/><line x1="40" y1="8" x2="40" y2="132" stroke="var(--ink25)"/>
+    <g fill="var(--ink65)" text-anchor="end"><text x="34" y="135">0</text><text x="34" y="104">0.5</text><text x="34" y="73">1</text><text x="34" y="42">1.5</text></g>
+    <g fill="var(--ink65)" text-anchor="middle"><text x="40" y="147">0</text><text x="109" y="147">25</text><text x="178" y="147">50</text><text x="247" y="147">75</text><text x="316" y="147">100 %</text></g>
+    <text x="178" y="164" fill="var(--ink50)" text-anchor="middle" letter-spacing=".07em">WIDTH (% OF D)</text>
+  </svg>
+  <div class="legend"><span><span class="sw" style="background:rgba(180,188,197,.6)"></span>cut time</span><span><span class="sw" style="background:var(--caution);border-radius:50%;width:7px;height:7px"></span>over force budget</span><span><span class="sw" style="background:var(--ink95);border-radius:50%;width:7px;height:7px"></span>planned</span></div>
+  <p class="what">Layout B: the verdict cards first, the chart as the drill-down at the end. The Face 5 cut-force card has its line (Face is a ForceBudget-rule family).</p>
+</div>
+
+<!-- ===== narrow 240 ===== -->
+<div class="panel narrow">
+  <div class="cap">SAFE CUT</div>
+  <svg width="224" height="160" viewBox="0 0 224 160">
+    <text transform="translate(9,90) rotate(-90)" fill="var(--ink50)" text-anchor="middle" letter-spacing=".07em">DEPTH (mm)</text>
+    <path d="M 52,122 L 52,72 L 140,72 L 140,90 L 190,90 L 190,122 Z" fill="rgba(95,191,122,0.07)"/>
+    <line x1="36" y1="94" x2="216" y2="94" stroke="var(--ink25)"/><line x1="36" y1="66" x2="216" y2="66" stroke="var(--ink25)"/><line x1="36" y1="38" x2="216" y2="38" stroke="var(--ink25)"/>
+    <line x1="36" y1="22" x2="216" y2="22" stroke="var(--ink65)" stroke-width="1.5"/>
+    <line x1="36" y1="50" x2="216" y2="50" stroke="var(--ink65)" stroke-width="1.5"/>
+    <line x1="52" y1="8" x2="52" y2="122" stroke="var(--ink65)" stroke-width="1.5"/>
+    <path d="M 140,8 L 140,90 L 216,90" fill="none" stroke="var(--ink80)" stroke-width="2"/>
+    <line x1="216" y1="8" x2="216" y2="122" stroke="var(--ink50)"/>
+    <text x="204" y="19" fill="var(--ink65)" text-anchor="end">Rigidity DOC</text>
+    <text x="204" y="47" fill="var(--ink65)" text-anchor="end">Vendor DOC 1&#215;D</text>
+    <text x="150" y="104" fill="var(--ink80)">Slot DOC</text>
+    <circle cx="82" cy="104" r="3.5" fill="var(--ink95)"/>
+    <line x1="36" y1="122" x2="216" y2="122" stroke="var(--ink25)"/><line x1="36" y1="8" x2="36" y2="122" stroke="var(--ink25)"/>
+    <g fill="var(--ink65)" text-anchor="end"><text x="30" y="125">0</text><text x="30" y="69">5</text><text x="30" y="12">10</text></g>
+    <g fill="var(--ink65)" text-anchor="middle"><text x="36" y="137">0</text><text x="126" y="137">50</text><text x="216" y="137">100 %</text></g>
+    <text x="126" y="154" fill="var(--ink50)" text-anchor="middle" letter-spacing=".07em">WIDTH (% OF D)</text>
+  </svg>
+  <p class="what">At 240 pt the kit keeps every other tick and drops the label that does not fit (the "Min width" label goes first: it is the least important, P5d order).</p>
+</div>
+
+</div>
+</body>
+</html>

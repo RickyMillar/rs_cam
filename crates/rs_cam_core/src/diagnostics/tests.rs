@@ -454,6 +454,7 @@ fn tool_load_adapter_drops_milling_na_on_drill_with_drill_gates() {
         feed_explanation: None,
         kinematic_utilization: None,
         material_split: None,
+        cut_force: None,
     };
     let diags = adapters::from_tool_load::diagnostics_from_load_verdict(&verdict);
     assert_eq!(diags.len(), 3, "drill gates only, no milling N/A noise");
@@ -510,6 +511,7 @@ fn tool_load_adapter_emits_chipload_exceeds_with_evidence() {
         feed_explanation: None,
         kinematic_utilization: None,
         material_split: None,
+        cut_force: None,
     };
     let diags = adapters::from_tool_load::diagnostics_from_load_verdict(&verdict);
     let chip = diags
@@ -553,6 +555,7 @@ fn tool_load_adapter_marks_stale_simulation_as_stale_evidence_state() {
         feed_explanation: None,
         kinematic_utilization: None,
         material_split: None,
+        cut_force: None,
     };
     let diags = adapters::from_tool_load::diagnostics_from_load_verdict(&verdict);
     assert!(!diags.is_empty());
@@ -594,6 +597,7 @@ fn tool_load_adapter_marks_sim_required_as_needs_simulation_state() {
         feed_explanation: None,
         kinematic_utilization: None,
         material_split: None,
+        cut_force: None,
     };
     let diags = adapters::from_tool_load::diagnostics_from_load_verdict(&verdict);
     assert!(!diags.is_empty());

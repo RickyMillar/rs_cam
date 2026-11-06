@@ -60,7 +60,8 @@
 
 use std::path::{Path, PathBuf};
 
-use rs_cam_core::tool_load::{Histogram, PopulationSample};
+use rs_cam_core::tool_load::verdict::CriterionKind;
+use rs_cam_core::tool_load::{DistributionMetric, Histogram, PopulationSample};
 use rs_cam_viz::state::simulation::{CUT_METRIC_ORDER, SimulationState};
 use rs_cam_viz::ui::components::histogram::{
     self, BAR_HEIGHT, BinSide, DistributionChart, STUB_WIDTH,
@@ -238,12 +239,43 @@ fn the_inspector_draws_cut_metric_cards_from_the_gate_g_cutcards() {
         "a metric core could not measure draws the abstention mark, never \
          an empty histogram (X-VAC)"
     );
+    // P17: the cards draw from the set alone (`draw_cut_metric_cards`), so
+    // a headless snapshot draws them; the section calls it, then the width
+    // x depth chart after the cards (layout B, operator 2026-11-06).
+    let cards_fn = function_source(&diagnostics, "pub fn draw_cut_metric_cards(");
     assert!(
-        section.contains("abstention_row("),
+        section.contains("draw_cut_metric_cards(") && cards_fn.contains("abstention_row("),
         "the section draws the cards core could not measure as abstention rows"
     );
+    let cards_at = section
+        .find("draw_cut_metric_cards(")
+        .expect("the section draws the cards");
+    let chart_at = section
+        .find("draw_cut_chart_section(")
+        .expect("the section draws the width x depth chart (P17)");
     assert!(
-        hover_fn.contains("Depth is reported; the deflection limit decides."),
+        cards_at < chart_at,
+        "layout B: the four cards first, the chart as the drill-down"
+    );
+    let chart_fn = function_source(&diagnostics, "pub fn draw_cut_chart_section(");
+    assert!(
+        chart_fn.contains("draw_hairline(") && chart_fn.contains("draw_cut_chart("),
+        "one hairline, then the sim chart of `ui/sim_cut_chart.rs`"
+    );
+    assert!(
+        cards_fn.contains("draw_force_readings("),
+        "the depth and width readings sit under the force card (P17)"
+    );
+    let has_card = function_source(&diagnostics, "fn has_cut_metric_card(");
+    assert!(
+        !has_card.contains("DepthOfCut"),
+        "P17: the depth row has no card; it paints once in \"Other limits\""
+    );
+    // P17: the depth row has no card; its "Other limits" row carries the R2
+    // sentence in its hover.
+    let limit_row = function_source(&diagnostics, "fn limit_data_row_with(");
+    assert!(
+        limit_row.contains("Depth is reported; the deflection limit decides."),
         "a depth reading with no cap (feeds ruling R2) must say which gate \
          decides, not draw an invented limit"
     );
@@ -544,6 +576,30 @@ fn the_time_series_drawer_is_gone_g_cutcards() {
     assert!(
         !app.contains("Panel::bottom(\"sim_timeline\")"),
         "{APP} opens the resizable drawer panel again"
+    );
+}
+
+/// P17 (operator 2026-11-06): four cards. The depth and engagement cards
+/// went; the cut force is the fourth and last card.
+#[test]
+fn the_section_has_four_cards_and_the_force_card_is_last_p17() {
+    assert_eq!(
+        CUT_METRIC_ORDER.len(),
+        4,
+        "four cards: {CUT_METRIC_ORDER:?}"
+    );
+    assert!(
+        !CUT_METRIC_ORDER.contains(&DistributionMetric::Engagement),
+        "no engagement card"
+    );
+    assert!(
+        !CUT_METRIC_ORDER.contains(&DistributionMetric::Criterion(CriterionKind::DepthOfCut)),
+        "no depth-of-cut card: the depth is a plain reading under the force card"
+    );
+    assert_eq!(
+        CUT_METRIC_ORDER.last().copied(),
+        Some(DistributionMetric::CutForce),
+        "the force card is last"
     );
 }
 

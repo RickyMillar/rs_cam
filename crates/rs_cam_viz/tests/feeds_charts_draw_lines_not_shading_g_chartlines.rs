@@ -11,6 +11,16 @@
 //! It draws two fainter lines at the vendor limits ONLY when the matched row
 //! publishes both limits. It draws no filled region.
 //!
+//! # The envelope plot left the scan (P17, operator 2026-11-06)
+//!
+//! The operator ruled on 2026-11-06 that the envelope plot shows "the safe
+//! region as a soft fill": one fill in the histogram's `WASH_OK`, behind
+//! every limit line. That overrides G-CHARTLINES for `envelope.rs` alone,
+//! so the file is no longer in `CHART_FILES`. The nomogram keeps lines
+//! only. `the_chart_kit_draws_the_envelope_p17` holds the envelope's one
+//! fill, and `the_envelope_plot_shows_only_what_limits_the_cut_p5c` counts
+//! it.
+//!
 //! # The defect this holds
 //!
 //! Since the R5 vendor-row fix, many flat-end pocket and adaptive rows
@@ -50,11 +60,11 @@ use rs_cam_core::feeds::{
 use rs_cam_core::machine::MachineProfile;
 use rs_cam_core::material::{Material, WoodSpecies};
 
-/// The feeds chart files, relative to this crate's manifest.
-const CHART_FILES: [&str; 6] = [
+/// The feeds chart files, relative to this crate's manifest. P17 (operator
+/// 2026-11-06): `envelope.rs` left the list; its safe region is one soft
+/// fill.
+const CHART_FILES: [&str; 5] = [
     "src/ui/feeds/explore.rs",
-    // P5b (K2b): the safe envelope plot (decision D2: lines only).
-    "src/ui/feeds/envelope.rs",
     "src/ui/feeds/shared.rs",
     "src/ui/feeds/compare.rs",
     "src/ui/feeds/why.rs",
@@ -117,12 +127,17 @@ fn the_feeds_charts_construct_no_shading_g_chartlines() {
         explore.contains("plot_ui.line("),
         "`draw_chart_c` draws no line, so the scan below has nothing to check"
     );
-    // Non-vacuity of the envelope plot (P5b, D2): it draws its edges as
-    // lines.
+    // The envelope plot (P17): it draws through the chart kit, not
+    // `egui_plot`, and it is out of this scan by the ruling of 2026-11-06.
+    // The anchor holds the scan honest: the file still draws its plane.
     let envelope = code_of("src/ui/feeds/envelope.rs");
     assert!(
-        envelope.contains("fn draw_plane(") && envelope.contains("plot_ui.line("),
-        "the envelope plot moved or draws no line"
+        envelope.contains("fn draw_plane(") && envelope.contains("PlaneChart::new("),
+        "the envelope plot moved or draws no plane through the kit"
+    );
+    assert!(
+        !envelope.contains("egui_plot"),
+        "`envelope.rs` names `egui_plot` again (P17: the kit draws it)"
     );
 
     let mut hits = Vec::new();

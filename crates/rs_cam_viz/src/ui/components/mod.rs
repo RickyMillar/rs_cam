@@ -23,6 +23,7 @@
 
 pub mod button;
 pub mod card;
+pub mod chart;
 pub mod chip;
 pub mod choice_row;
 pub mod compare;

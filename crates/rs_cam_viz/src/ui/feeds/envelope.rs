@@ -11,8 +11,15 @@
 //!   flute guard. P5d: every limit whose edge enters the view draws a line
 //!   with its short name (`EnvelopeScene::drawn_edges`); the depth range is
 //!   large enough to hold the flat depth limits. The hover names a limit
-//!   with its law, its mm and its basis. No item is a filled region
-//!   (G-CHARTLINES, decision D2).
+//!   with its law, its mm and its basis. P17 (operator 2026-11-06, "the
+//!   safe region as a soft fill"): the safe region is ONE soft fill in the
+//!   histogram's `WASH_OK` behind every line; it overrides G-CHARTLINES
+//!   (decision D2, lines only) for this plot alone. The nomogram keeps
+//!   lines only.
+//! - P17: the plot paints through the chart kit
+//!   (`components::chart::PlaneChart`), in the histogram's visual language,
+//!   and names no `egui_plot`. The width axis reads as a share of D
+//!   (`0..=100 %`, the frame edge "100 %"); the scene stays in mm.
 //! - An op with one free value (a Trace or Project Curve depth, a drill
 //!   peck, a surface width) gets a bar of one row: it ends at the binding
 //!   limit, and the limit is named at its end.
@@ -38,60 +45,55 @@
 //! The header is the one text row this section adds; the readout is the
 //! hover only.
 
-use egui_plot::{Line, Plot, PlotPoints};
 use rs_cam_core::compute::catalog::{Axial, OperationConfig, Radial};
 use rs_cam_core::feeds::envelope::{
     AxisSpan, CutPoint, Edge, EnvelopeAxes, Limit, LimitKind, PickRequest, Placement, SafeEnvelope,
     SpeedsSample,
 };
 
-use super::shared::{
-    ChartLabel, DrawnLine, LabelAnchor, axis_title_overhang, nice_steps, paint_labels, place_labels,
-};
 use crate::state::panels::EnvelopeCandidates;
+use crate::ui::components::chart::{
+    self, Axis, ChartLine, ChartMap, Label, LabelAt, LabelGround, Mark, PlaneChart,
+};
+use crate::ui::components::histogram::WASH_OK;
 use crate::ui::{AppEvent, tokens};
 
-/// The height of the plane plot. Smaller than the nomogram (180): the two
-/// charts share the Passes tab with the op rows.
-const PLOT_HEIGHT: f32 = 140.0;
+/// The height of the plane plot, the gutters included (P17, lead review:
+/// 160, so the frame is about 115 points, the height the egui_plot frame
+/// had). Smaller than the nomogram (180): the two charts share the Passes
+/// tab with the op rows. The sim chart (`ui/sim_cut_chart.rs`) reads the
+/// `pub(crate)` items of this file, so the two planes draw alike.
+pub(crate) const PLOT_HEIGHT: f32 = 160.0;
 
 /// The height of the one-value bar.
 const BAR_HEIGHT: f32 = 18.0;
 
-/// The title of the depth axis, rotated at the left of the plot.
-const DEPTH_AXIS_TITLE: &str = "Depth (mm)";
+/// The title of the depth axis, turned at the left of the plot (the kit's
+/// small caps: upper case, the unit in its own case).
+pub const DEPTH_AXIS_TITLE: &str = "DEPTH (mm)";
 
-/// The title of the width axis.
-const WIDTH_AXIS_TITLE: &str = "Width (mm)";
+/// The title of the width axis: the width as a share of D (P17).
+pub const WIDTH_AXIS_TITLE: &str = "WIDTH (% OF D)";
 
-/// The room of the depth axis ticks.
-const Y_AXIS_MIN_WIDTH: f32 = 28.0;
+/// The name of the width frame edge, the tool diameter (P17: the axis is
+/// a share of D, so the edge is always "100 %").
+pub const WIDTH_EDGE_TEXT: &str = "100 %";
 
-/// The spacing range of the width tick labels, in points (egui_plot fades a
-/// label in across it and hides it below the low end).
-const X_LABEL_SPACING: std::ops::RangeInclusive<f32> = 45.0..=60.0;
-
-/// The spacing range of the depth tick labels, in points: egui_plot 0.37's
-/// own y default (`axis.rs`, `AxisHints::new`), set here so the edge mark
-/// rule reads the value in force.
-const Y_LABEL_SPACING: std::ops::RangeInclusive<f32> = 20.0..=30.0;
-
-/// The spacing range of the grid lines, in points: egui_plot 0.37's own
-/// default (`plot.rs`, `Plot::new`), set here so a grid spacer can turn
-/// `GridInput::base_step_size` back into plot units per point.
-const GRID_SPACING: std::ops::RangeInclusive<f32> = 8.0..=300.0;
+/// The columns of the safe-region fill across the width range (P17).
+const FILL_COLUMNS: usize = 64;
 
 /// The width of the binding or crossed limit line, in points (P5c round 2:
-/// twice the 1-point grid line, so a limit reads above the grid).
-const LINE_WIDTH: f32 = 2.0;
+/// twice the 1-point reference line, so a limit reads above it).
+pub(crate) const LINE_WIDTH: f32 = 2.0;
 
 /// The width of every other drawn limit line, in points (P5d D4: still
-/// above the 1-point `BORDER` grid, under the binding line).
+/// above the 1-point reference line, under the binding line).
 const MUTED_LINE_WIDTH: f32 = 1.5;
 
 /// The width of a frame edge line (the width D, the hard depth top), in
-/// points: the width of a grid line, one step stronger in colour (P5d D5).
-const FRAME_EDGE_WIDTH: f32 = 1.0;
+/// points: the width of a reference line, one step stronger in colour (P5d
+/// D5).
+pub(crate) const FRAME_EDGE_WIDTH: f32 = 1.0;
 
 /// The width of a recommendation mark outline, in points (P5d D3): the
 /// width of the faint vendor range lines of the nomogram.
@@ -126,7 +128,7 @@ const SPAN_WIDTH: f32 = 1.0;
 const PROPOSAL_RADIUS: f32 = 6.0;
 
 /// The radius of the operator's dot, in points (the nomogram's `Now`).
-const DOT_RADIUS: f32 = 3.5;
+pub(crate) const DOT_RADIUS: f32 = 3.5;
 
 /// The room of the view past the tallest flat depth limit and the marks, a
 /// factor (a layout choice: that limit sits at about three quarters of the
@@ -180,10 +182,7 @@ pub const fn short_label(kind: LimitKind) -> &'static str {
 /// vendor prints a depth per pass, not the tool length.
 #[must_use]
 pub fn limit_name(env: &SafeEnvelope, kind: LimitKind) -> String {
-    let d = env
-        .limit(LimitKind::Diameter)
-        .and_then(ae_ceiling_mm)
-        .filter(|d| d.is_finite() && *d > 0.0);
+    let d = diameter_mm(env);
     // The vendor depth and the vendor depth table (P11b) name their depth
     // as a share of D when the edge has one value.
     let depth = env.limit(kind).and_then(|l| edge_mm(&l.edge));
@@ -195,8 +194,15 @@ pub fn limit_name(env: &SafeEnvelope, kind: LimitKind) -> String {
     }
 }
 
+/// The tool diameter of `env`, the width frame D, when it has one.
+fn diameter_mm(env: &SafeEnvelope) -> Option<f64> {
+    env.limit(LimitKind::Diameter)
+        .and_then(ae_ceiling_mm)
+        .filter(|d| d.is_finite() && *d > 0.0)
+}
+
 /// `v` with at most two decimals and no trailing zero ("1", "0.5").
-fn trim_decimals(v: f64) -> String {
+pub(crate) fn trim_decimals(v: f64) -> String {
     let text = format!("{v:.2}");
     if text.contains('.') {
         text.trim_end_matches('0').trim_end_matches('.').to_owned()
@@ -361,6 +367,20 @@ impl EnvelopeScene {
     /// The scene of `env` with the candidate `candidate`.
     #[must_use]
     pub fn of(env: &SafeEnvelope, candidate: Option<CutPoint>) -> Self {
+        Self::with_depth_mark(env, candidate, None)
+    }
+
+    /// [`Self::of`] with one more mark for the view range (P17, the sim
+    /// chart): `depth_mark` is the deepest cut sample, so the depth range
+    /// holds every sample (`VIEW_HEADROOM` over it, never past the hard
+    /// top, the rule of `view_ranges`). The limit lines and the fill then
+    /// draw on that range. The mark moves no dot.
+    #[must_use]
+    pub(crate) fn with_depth_mark(
+        env: &SafeEnvelope,
+        candidate: Option<CutPoint>,
+        depth_mark: Option<f64>,
+    ) -> Self {
         let shape = EnvelopeShape::of(&env.axes);
         let proposal = env.proposal.get().point();
         let dot = env.stated.map(|p| {
@@ -371,7 +391,18 @@ impl EnvelopeScene {
         let setpoint = candidate.or(now);
         let proposal_shown = proposal.is_some_and(|q| setpoint.is_none_or(|p| !same_point(p, q)));
         let subject = setpoint.or(proposal);
-        let (ae_range, ap_range, top) = view_ranges(env, proposal, now);
+        let view_mark = match (now, depth_mark.filter(|d| d.is_finite() && *d > 0.0)) {
+            (Some(p), Some(d)) => Some(CutPoint {
+                ap_mm: p.ap_mm.max(d),
+                ae_mm: p.ae_mm,
+            }),
+            (None, Some(d)) => Some(CutPoint {
+                ap_mm: d,
+                ae_mm: 0.0,
+            }),
+            (now, None) => now,
+        };
+        let (ae_range, ap_range, top) = view_ranges(env, proposal, view_mark);
 
         let lines: Vec<&Limit> = env.boundary.iter().filter(|l| !is_frame(l.kind)).collect();
         let binding = subject.and_then(|s| binding_at(&lines, s));
@@ -543,6 +574,18 @@ impl EnvelopeScene {
         }
     }
 
+    /// The width `ae_mm` as a share of the width range, in percent (P17:
+    /// the x axis of the plot). The range is `0..D`, so this is `% of D`.
+    #[must_use]
+    pub fn ae_share(&self, ae_mm: f64) -> f64 {
+        let span = self.ae_range.1 - self.ae_range.0;
+        if span > 0.0 {
+            (ae_mm - self.ae_range.0) / span * 100.0
+        } else {
+            0.0
+        }
+    }
+
     /// `p` moved onto the frame, for a mark that sits past it.
     #[must_use]
     pub const fn on_frame(&self, p: CutPoint) -> CutPoint {
@@ -689,10 +732,14 @@ fn edge_points(l: &Limit, ae: (f64, f64), ap: (f64, f64)) -> Option<Vec<[f64; 2]
 
 /// The hover readout at `p`: one line. Inside, the speeds from the
 /// `SpeedsMap` (a lookup); outside, the crossed limit and no speeds (it
-/// abstains, as the nomogram readout does).
+/// abstains, as the nomogram readout does). P17: the width carries its
+/// share of D ("ae 1.20 mm (20 % D)") when the envelope has a diameter.
 #[must_use]
 pub fn readout(env: &SafeEnvelope, p: CutPoint) -> String {
-    let head = format!("ap {:.2} \u{00B7} ae {:.2}", p.ap_mm, p.ae_mm);
+    let share = diameter_mm(env).map_or(String::new(), |d| {
+        format!(" ({:.0} % D)", p.ae_mm / d * 100.0)
+    });
+    let head = format!("ap {:.2} mm \u{00B7} ae {:.2} mm{share}", p.ap_mm, p.ae_mm);
     match env.placement_of(p) {
         Placement::Outside { binding, .. } => {
             format!("{head} \u{00B7} {}", limit_name(env, binding))
@@ -752,9 +799,9 @@ pub fn unsourced_rules(env: &SafeEnvelope) -> Vec<String> {
 /// a click.
 #[derive(Clone, Copy, Default)]
 pub struct EnvelopeResponse {
-    /// The plot transform of the plane plot (screen <-> plot), when one
-    /// was drawn.
-    pub transform: Option<egui_plot::PlotTransform>,
+    /// The map of the plane plot (screen <-> plot; P17: the kit's
+    /// `ChartMap`, its x in % of D), when one was drawn.
+    pub transform: Option<ChartMap>,
     /// The screen rect of the plot frame or the bar, when one was drawn.
     pub frame: Option<egui::Rect>,
     /// The width range of the frame (mm).
@@ -774,7 +821,7 @@ impl EnvelopeResponse {
         match shape {
             EnvelopeShape::Plane => self
                 .transform
-                .map(|t| t.position_from_point(&egui_plot::PlotPoint::new(p.ae_mm, p.ap_mm))),
+                .map(|m| m.to_screen(f64::from(tx(p.ae_mm, self.ae_range)) * 100.0, p.ap_mm)),
             EnvelopeShape::DepthBar => Some(egui::pos2(
                 f.left() + tx(p.ap_mm, self.ap_range) * f.width(),
                 f.center().y,
@@ -847,8 +894,8 @@ pub fn draw_envelope(
     }
     let (frame, transform) = match shape {
         EnvelopeShape::Plane => {
-            let t = draw_plane(ui, toolpath_id, env, &scene, candidates);
-            (Some(*t.frame()), Some(t))
+            let m = draw_plane(ui, toolpath_id, env, &scene, candidates);
+            (Some(m.frame), Some(m))
         }
         EnvelopeShape::DepthBar | EnvelopeShape::WidthBar => {
             (draw_bar(ui, toolpath_id, env, &scene, candidates), None)
@@ -959,223 +1006,132 @@ fn small_caps(title: &str) -> egui::text::LayoutJob {
     job
 }
 
-/// The plane plot. Returns the plot transform.
+/// The plane plot, on the chart kit (P17). Returns the chart map.
+///
+/// The scene is in mm; the kit's x axis is the width as a share of D
+/// (`0..=100 %`), so every x goes through [`EnvelopeScene::ae_share`].
 fn draw_plane(
     ui: &mut egui::Ui,
     toolpath_id: rs_cam_core::ToolpathId,
     env: &SafeEnvelope,
     scene: &EnvelopeScene,
     candidates: &mut EnvelopeCandidates,
-) -> egui_plot::PlotTransform {
-    let overhang = axis_title_overhang(ui, DEPTH_AXIS_TITLE);
+) -> ChartMap {
     let (ae_range, ap_range) = (scene.ae_range, scene.ap_range);
-    let hard_top = scene.top.is_some();
-    // P5d D5: a 1-2-5 grid (a mm axis of a few units: the default log-10
-    // grid names only 0 on it), plus a named mark at the width frame D and
-    // at a hard depth top: D (6 mm) is not on a 2.5 mm step. A named mark
-    // within one label of the edge goes (lead review: 5 beside 6.35), and
-    // the edge names itself in full.
-    let ae_edge = ae_range.1;
-    let ap_edge = hard_top.then_some(ap_range.1);
-    let x_spacer = egui_plot::uniform_grid_spacer(|i| nice_steps(&i));
-    let y_spacer = egui_plot::uniform_grid_spacer(|i| nice_steps(&i));
-    let response = ui
-        .horizontal(|ui| {
-            ui.add_space(overhang);
-            // The id is unique per toolpath, and the bounds are set on
-            // every frame: egui_plot keeps a bound per plot id (the
-            // nomogram's bounds trap).
-            Plot::new(("envelope_plot", toolpath_id.raw()))
-                .height(PLOT_HEIGHT)
-                // P5c: the width ticks are a few characters wide. The
-                // default spacing of an x label (60 points) hid every width
-                // tick at the 240-point rail; 45 points keeps the 2 mm
-                // ticks and hides the 1 mm ones.
-                .custom_x_axes(vec![
-                    egui_plot::AxisHints::new_x()
-                        .label(WIDTH_AXIS_TITLE)
-                        .formatter(move |m, _| tick_text(m.value, Some(ae_edge)))
-                        .label_spacing(X_LABEL_SPACING),
-                ])
-                .custom_y_axes(vec![
-                    egui_plot::AxisHints::new_y()
-                        .label(DEPTH_AXIS_TITLE)
-                        .formatter(move |m, _| tick_text(m.value, ap_edge))
-                        .label_spacing(Y_LABEL_SPACING),
-                ])
-                .y_axis_min_width(Y_AXIS_MIN_WIDTH)
-                .grid_spacing(GRID_SPACING)
-                .allow_drag(false)
-                .allow_zoom(false)
-                .allow_scroll(false)
-                .allow_boxed_zoom(false)
-                .allow_axis_zoom_drag(false)
-                .allow_double_click_reset(false)
-                .show_x(false)
-                .show_y(false)
-                .x_grid_spacer(move |i| {
-                    let per_pt = i.base_step_size / f64::from(*GRID_SPACING.start());
-                    let room = f64::from(*X_LABEL_SPACING.start());
-                    with_edge_mark(x_spacer(i), ae_edge, per_pt, room)
-                })
-                .y_grid_spacer(move |i| {
-                    let per_pt = i.base_step_size / f64::from(*GRID_SPACING.start());
-                    let room = f64::from(*Y_LABEL_SPACING.start());
-                    let marks = y_spacer(i);
-                    match ap_edge {
-                        Some(edge) => with_edge_mark(marks, edge, per_pt, room),
-                        None => marks,
-                    }
-                })
-                // P5c round 2: the grid in `tokens::BORDER`, under the limit
-                // lines. The default grid takes the text colour, and its
-                // strongest lines were brighter than the limits.
-                .grid_color(tokens::BORDER)
-                .sense(egui::Sense::click_and_drag())
-                .show(ui, |plot_ui| {
-                    // P5d D5: the drawn bounds pass the width frame D, and
-                    // the depth top when it is a hard stop, by the half
-                    // width of the widest mark: egui_plot then paints the
-                    // tick at the edge, and a mark on the edge paints whole.
-                    // The clamp and the frame stay at the ranges.
-                    let frame = *plot_ui.transform().frame();
-                    let x_pad = edge_pad(ae_range, frame.width());
-                    let y_pad = if scene.top.is_some() {
-                        edge_pad(ap_range, frame.height())
-                    } else {
-                        0.0
-                    };
-                    plot_ui.set_plot_bounds_x(ae_range.0..=ae_range.1 + x_pad);
-                    plot_ui.set_plot_bounds_y(ap_range.0..=ap_range.1 + y_pad);
-                    for edge in frame_edges(scene) {
-                        plot_ui.line(
-                            Line::new("", PlotPoints::from(edge))
-                                .color(tokens::TEXT_FAINT)
-                                .width(FRAME_EDGE_WIDTH)
-                                .allow_hover(false),
-                        );
-                    }
-                    for edge in scene.drawn_edges(frame.size()) {
-                        plot_ui.line(
-                            Line::new("", PlotPoints::from(edge.points.clone()))
-                                .color(scene.edge_color(edge))
-                                .width(scene.edge_width(edge))
-                                .allow_hover(false),
-                        );
-                    }
-                })
-        })
-        .inner;
-    let transform = response.transform;
-    let frame = *transform.frame();
-    // The pointer as a point of the view: a pointer past the frame (a drag
-    // that left the plot) is held on the frame edge.
-    let to_point = |pos: egui::Pos2| {
-        let v = transform.value_from_position(pos);
-        CutPoint {
-            ap_mm: v.y.clamp(ap_range.0, ap_range.1),
-            ae_mm: v.x.clamp(ae_range.0, ae_range.1),
-        }
-    };
-    let at_screen =
-        |p: [f64; 2]| transform.position_from_point(&egui_plot::PlotPoint::new(p[0], p[1]));
+    let sx = |ae: f64| scene.ae_share(ae);
+    let pt = |p: [f64; 2]| [sx(p[0]), p[1]];
+    let pts = |points: &[[f64; 2]]| points.iter().copied().map(pt).collect::<Vec<_>>();
     let at_mark = |p: CutPoint| {
         let p = scene.on_frame(p);
-        at_screen([p.ae_mm, p.ap_mm])
+        [sx(p.ae_mm), p.ap_mm]
     };
+
+    // P5d D5: the width frame D names itself "100 %", and a hard depth top
+    // names its mm in full ("6.35", lead review of D5).
+    let mut y_axis = Axis::new(ap_range, DEPTH_AXIS_TITLE);
+    if scene.top.is_some() {
+        y_axis = y_axis.edge(trim_decimals(ap_range.1));
+    }
+    let mut plot = PlaneChart::new(
+        Axis::new((0.0, 100.0), WIDTH_AXIS_TITLE).edge(WIDTH_EDGE_TEXT),
+        y_axis,
+        PLOT_HEIGHT,
+        egui::Sense::click_and_drag(),
+    )
+    // P17: the safe region, one soft fill behind every line.
+    .fill(
+        safe_region_quads(env, scene)
+            .into_iter()
+            .map(|q| q.map(pt))
+            .collect(),
+        tokens::OK.gamma_multiply(WASH_OK),
+    );
+    // The frame edges (D5), under the limit lines.
+    let frame_lines = frame_edges(scene);
+    for edge in &frame_lines {
+        plot = plot.line(ChartLine::new(
+            pts(edge),
+            egui::Stroke::new(FRAME_EDGE_WIDTH, tokens::TEXT_FAINT),
+        ));
+    }
+    // The limit lines (P5d D1, D4): every edge but one that hugs the
+    // frame, a test on the frame the kit is about to take.
+    let mut drawn = scene.drawn_edges(plot.frame(ui).size());
+    for edge in &drawn {
+        plot = plot.line(ChartLine::new(
+            pts(&edge.points),
+            egui::Stroke::new(scene.edge_width(edge), scene.edge_color(edge)),
+        ));
+    }
 
     // The marks (P5d D3), over the lines: the quiet proposal diamond, the
     // ghost at the stored point, then the white dot.
-    let painter = ui.painter_at(frame);
     if let (true, Some(proposal)) = (scene.proposal_shown, scene.proposal) {
-        let _ = painter.add(diamond(
+        plot = plot.mark(Mark::diamond(
             at_mark(proposal),
+            PROPOSAL_RADIUS,
             egui::Stroke::new(RECOMMENDATION_WIDTH, scene.proposal_color()),
         ));
     }
     if let Some(g) = scene.ghost() {
-        let _ = painter.circle_stroke(
+        plot = plot.mark(Mark::ring(
             at_mark(g),
             GHOST_RADIUS,
             egui::Stroke::new(OUTLINE_WIDTH, tokens::TEXT_MUTED),
-        );
+        ));
     }
     if let (Some(p), Some(color)) = (scene.setpoint(), scene.dot_color()) {
-        let _ = painter.circle_filled(at_mark(p), DOT_RADIUS, color);
+        plot = plot.mark(Mark::dot(at_mark(p), DOT_RADIUS, color));
     }
+
+    // The labels (P5d D1, D4): the name of each drawn limit on its line, in
+    // the colour of the line, clear of the marks, plain text with no chip
+    // (P17, lead review: the histogram paints plain labels); the binding
+    // and crossed lines first. A step (two segments) takes its label beside either
+    // segment; its chord runs through the plot, not along the line. The
+    // frame top names its hard stop, last.
+    drawn.sort_by_key(|e| scene.edge_width(e) < LINE_WIDTH);
+    for edge in &drawn {
+        let at = if edge.points.len() == 3 {
+            LabelAt::Lines(edge.points.windows(2).map(pts).collect())
+        } else {
+            LabelAt::Line(pts(&edge.points))
+        };
+        plot = plot.label(
+            Label::new(edge.label.clone(), scene.edge_color(edge), at).ground(LabelGround::None),
+        );
+    }
+    if let (Some(name), Some(top)) = (scene.top_label(), frame_lines.get(1)) {
+        plot = plot.label(
+            Label::new(name, tokens::TEXT_MUTED, LabelAt::Line(pts(top))).ground(LabelGround::None),
+        );
+    }
+
+    let chart::ChartResponse { response, map } = plot.show(ui);
+    let frame = map.frame;
+    // The pointer as a point of the view: a pointer past the frame (a drag
+    // that left the plot) is held on the frame edge.
+    let to_point = |pos: egui::Pos2| {
+        let (x, y) = map.from_screen(pos);
+        CutPoint {
+            ap_mm: y.clamp(ap_range.0, ap_range.1),
+            ae_mm: (ae_range.0 + x / 100.0 * (ae_range.1 - ae_range.0))
+                .clamp(ae_range.0, ae_range.1),
+        }
+    };
+    let at_screen = |p: [f64; 2]| map.to_screen(sx(p[0]), p[1]);
 
     // A click or a drag moves the candidate (no write). egui keeps the
     // drag on the plot until the release, wherever the pointer goes.
-    if (response.response.clicked() || response.response.dragged())
-        && let Some(pos) = response.response.interact_pointer_pos()
+    if (response.clicked() || response.dragged())
+        && let Some(pos) = response.interact_pointer_pos()
     {
         candidates.set(toolpath_id, to_point(pos));
     }
 
-    // The labels (P5d D1, D4): the name of each drawn limit on its line, in
-    // the colour of the line, clear of the marks; the binding and crossed
-    // lines first. The frame top names its hard stop.
-    let mark_rect = |p: CutPoint, r: f32| {
-        egui::Rect::from_center_size(at_mark(p), egui::Vec2::splat(2.0 * r + MARK_CLEARANCE))
-    };
-    let mut keep_clear: Vec<egui::Rect> = Vec::new();
-    keep_clear.extend(scene.setpoint().map(|p| mark_rect(p, DOT_RADIUS)));
-    keep_clear.extend(scene.ghost().map(|p| mark_rect(p, GHOST_RADIUS)));
-    if let (true, Some(proposal)) = (scene.proposal_shown, scene.proposal) {
-        keep_clear.push(mark_rect(proposal, PROPOSAL_RADIUS));
-    }
-    let mut drawn = scene.drawn_edges(frame.size());
-    drawn.sort_by_key(|e| scene.edge_width(e) < LINE_WIDTH);
-    let screen_edges: Vec<(&SceneEdge, Vec<egui::Pos2>)> = drawn
-        .into_iter()
-        .map(|e| (e, e.points.iter().copied().map(at_screen).collect()))
-        .collect();
-    let mut lines: Vec<DrawnLine> = screen_edges
-        .iter()
-        .map(|(e, pts)| DrawnLine {
-            points: pts.clone(),
-            half_width: scene.edge_width(e) / 2.0,
-            soft: false,
-        })
-        .collect();
-    let frame_lines: Vec<Vec<egui::Pos2>> = frame_edges(scene)
-        .into_iter()
-        .map(|edge| edge.into_iter().map(at_screen).collect())
-        .collect();
-    lines.extend(frame_lines.iter().map(|points| DrawnLine {
-        points: points.clone(),
-        half_width: FRAME_EDGE_WIDTH / 2.0,
-        soft: false,
-    }));
-    // A step (the slot depth above a width: two segments) takes its label
-    // beside either segment; its chord runs through the plot, not along the
-    // line. A level line or a curve takes it along its own run.
-    let mut specs: Vec<ChartLabel> = screen_edges
-        .into_iter()
-        .map(|(e, pts)| ChartLabel {
-            text: e.label.clone(),
-            color: scene.edge_color(e),
-            anchor: if pts.len() == 3 {
-                LabelAnchor::Lines(pts.windows(2).map(<[egui::Pos2]>::to_vec).collect())
-            } else {
-                LabelAnchor::Line(pts)
-            },
-        })
-        .collect();
-    // The top edge is the last frame edge when the top is a hard stop.
-    if let (Some(name), Some(top)) = (scene.top_label(), frame_lines.get(1)) {
-        specs.push(ChartLabel {
-            text: name.to_owned(),
-            color: tokens::TEXT_MUTED,
-            anchor: LabelAnchor::Line(top.clone()),
-        });
-    }
-    let placed = place_labels(ui, frame, &keep_clear, &lines, specs);
-    paint_labels(ui, frame, &placed);
-
     // The hover: the limit line near the pointer (its name, law, mm and
     // basis; a line that runs along the frame too), then the readout line.
-    if let Some(pos) = response.response.hover_pos()
+    if let Some(pos) = response.hover_pos()
         && frame.contains(pos)
     {
         let near = scene
@@ -1197,7 +1153,7 @@ fn draw_plane(
             .and_then(|(_, kind)| env.limit(kind))
             .map(|l| limit_hover(env, l));
         let text = readout(env, to_point(pos));
-        let _ = response.response.on_hover_ui_at_pointer(|ui| {
+        let _ = response.on_hover_ui_at_pointer(|ui| {
             if let Some(name) = near {
                 ui.add(
                     egui::Label::new(egui::RichText::new(name).small().color(tokens::TEXT_BODY))
@@ -1210,54 +1166,65 @@ fn draw_plane(
             );
         });
     }
-    transform
+    map
 }
 
-/// The plot units that put the frame edge `BAR_END_ROOM` points inside a
-/// plot `px` points across (P5d D5): the room of the widest mark.
-fn edge_pad(range: (f64, f64), px: f32) -> f64 {
-    let room = f64::from(BAR_END_ROOM);
-    let px = f64::from(px);
-    if px > 2.0 * room {
-        (range.1 - range.0) * room / (px - room)
-    } else {
-        0.0
-    }
-}
-
-/// `marks` with the frame edge `edge` named as a large step (P5d D5):
-/// egui_plot names a mark by its step size, so a mark on a fine step at
-/// the edge (6 mm on a 0.25 mm step) takes the large step, and an edge off
-/// every step gets a mark of its own. A named mark (its step is wider than
-/// `room` points) nearer the edge than `room` points goes, so its label
-/// cannot touch the edge label (lead review: "5" beside "6.35"); a fine
-/// mark keeps its grid line, it has no label. `per_pt` is plot units per
-/// point.
-fn with_edge_mark(
-    mut marks: Vec<egui_plot::GridMark>,
-    edge: f64,
-    per_pt: f64,
-    room: f64,
-) -> Vec<egui_plot::GridMark> {
-    let step = marks.iter().map(|m| m.step_size).fold(0.0_f64, f64::max);
-    if step <= 0.0 || !(per_pt.is_finite() && per_pt > 0.0) {
-        return marks;
-    }
-    let near = |m: &egui_plot::GridMark| (m.value - edge).abs() <= 1e-9 * edge.abs().max(1.0);
-    let crowds = |m: &egui_plot::GridMark| {
-        m.step_size / per_pt > room && (m.value - edge).abs() / per_pt < room
+/// The safe region of the plot (P17, operator 2026-11-06): `FILL_COLUMNS`
+/// quads in `[ae, ap]` (mm) across `[the largest width floor, D]`. The top
+/// of a column is `min(the depth ceiling at its width, the top of the
+/// view)`, read from `SafeEnvelope::ap_ceiling_at`; a width with no
+/// ceiling reaches the top of the view. The bottom is the largest depth
+/// floor, else 0.
+#[must_use]
+pub fn safe_region_quads(env: &SafeEnvelope, scene: &EnvelopeScene) -> Vec<[[f64; 2]; 4]> {
+    let (ae_range, ap_range) = (scene.ae_range, scene.ap_range);
+    let floor_of = |pick: fn(&Edge) -> Option<f64>| {
+        env.boundary
+            .iter()
+            .filter_map(|l| pick(&l.edge))
+            .fold(0.0_f64, f64::max)
     };
-    marks.retain(|m| !near(m) && !crowds(m));
-    marks.push(egui_plot::GridMark {
-        value: edge,
-        step_size: step,
-    });
-    marks
+    let ae_lo = floor_of(|e| match *e {
+        Edge::AeFloor { mm } => Some(mm),
+        Edge::ApCeiling { .. }
+        | Edge::ApFloor { .. }
+        | Edge::AeCeiling { .. }
+        | Edge::ApCurve { .. }
+        | Edge::PerPoint
+        | Edge::Unmodelled { .. } => None,
+    })
+    .max(ae_range.0);
+    let ap_lo = floor_of(|e| match *e {
+        Edge::ApFloor { mm } => Some(mm),
+        Edge::ApCeiling { .. }
+        | Edge::AeFloor { .. }
+        | Edge::AeCeiling { .. }
+        | Edge::ApCurve { .. }
+        | Edge::PerPoint
+        | Edge::Unmodelled { .. } => None,
+    })
+    .max(ap_range.0);
+    let ae_hi = ae_range.1;
+    if ae_hi <= ae_lo || !(ae_hi - ae_lo).is_finite() {
+        return Vec::new();
+    }
+    let top_at = |ae: f64| {
+        env.ap_ceiling_at(ae)
+            .map_or(ap_range.1, |(mm, _)| mm.min(ap_range.1))
+            .max(ap_lo)
+    };
+    let column = |i: usize| ae_lo + (ae_hi - ae_lo) * i as f64 / FILL_COLUMNS as f64;
+    (0..FILL_COLUMNS)
+        .map(|i| {
+            let (a, b) = (column(i), column(i + 1));
+            [[a, ap_lo], [b, ap_lo], [b, top_at(b)], [a, top_at(a)]]
+        })
+        .collect()
 }
 
 /// The frame edge lines of the plot (P5d D5): the width D, and the depth
 /// top when it is a hard stop (the second line).
-fn frame_edges(scene: &EnvelopeScene) -> Vec<Vec<[f64; 2]>> {
+pub(crate) fn frame_edges(scene: &EnvelopeScene) -> Vec<Vec<[f64; 2]>> {
     let (ae, ap) = (scene.ae_range, scene.ap_range);
     let mut out = vec![vec![[ae.1, ap.0], [ae.1, ap.1]]];
     if scene.top.is_some() {
@@ -1266,7 +1233,7 @@ fn frame_edges(scene: &EnvelopeScene) -> Vec<Vec<[f64; 2]>> {
     out
 }
 
-/// The proposal diamond at `c`: an outline, no fill.
+/// The proposal diamond at `c` on the bar: an outline, no fill.
 fn diamond(c: egui::Pos2, stroke: egui::Stroke) -> egui::Shape {
     let r = PROPOSAL_RADIUS;
     egui::Shape::closed_line(
@@ -1278,21 +1245,6 @@ fn diamond(c: egui::Pos2, stroke: egui::Stroke) -> egui::Shape {
         ],
         stroke,
     )
-}
-
-/// The text of an axis tick: a whole number with no decimal, else one
-/// decimal. The default egui_plot text rounded the 2.5 mm tick to "2"
-/// (P5c screenshot). The frame edge `edge` names itself with up to two
-/// decimals ("6.35", lead review of D5).
-fn tick_text(v: f64, edge: Option<f64>) -> String {
-    if edge.is_some_and(|e| (v - e).abs() <= 1e-9 * e.abs().max(1.0)) {
-        return trim_decimals(v);
-    }
-    if (v - v.round()).abs() < 1e-6 {
-        format!("{v:.0}")
-    } else {
-        format!("{v:.1}")
-    }
 }
 
 /// The distance from `q` to the screen segment `a`-`b`, in points.
@@ -1354,7 +1306,7 @@ fn draw_bar(
     } else {
         tokens::TEXT_BODY
     };
-    let font = egui::FontId::proportional(tokens::SIZE_CAPTION);
+    let font = chart::caption_font();
     let label = end.map(|(_, kind)| limit_name(env, kind));
     let label_width = label.as_ref().map_or(0.0, |t| {
         ui.painter()

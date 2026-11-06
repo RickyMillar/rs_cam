@@ -80,6 +80,7 @@ fn unmodelled(id: rs_cam_core::ids::ToolpathId) -> ToolpathLoadVerdict {
         feed_explanation: None,
         kinematic_utilization: None,
         material_split: None,
+        cut_force: None,
     }
 }
 
@@ -92,6 +93,7 @@ fn load_report(session: &ProjectSession) -> ToolLoadReport {
         bounds: DeflectionBounds {
             validated_within_mm: 0.050,
             exceeds_mm: 0.200,
+            basis: rs_cam_core::tool_load::verdict::DeflectionBasis::FinishTarget,
         },
         evidence: SampleEvidence::at(0),
         confidence: Confidence::Validated,

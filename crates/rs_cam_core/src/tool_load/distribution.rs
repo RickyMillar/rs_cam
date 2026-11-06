@@ -20,6 +20,7 @@
 //! | Deflection | [`super::deflection::sample_tip_deflection_mm`] at [`super::deflection::deflection_feed_per_tooth_mm`], then [`super::locality::is_steady_state_for_gate`] |
 //! | Depth of cut | the depth gate's `is_depth_sample`, then [`super::locality::is_steady_state_for_gate`]; the value is `axial_engagement_mm` |
 //! | Engagement | no gate; the power gate's pre-filter (cutting, not air, arc captured), then [`super::locality::is_steady_state_for_gate`]; the value is the arc in degrees |
+//! | Cut force (P17) | [`super::cut_force::cut_points`] (the deflection gate's filters, [`super::deflection::sample_engagement`], [`super::locality::is_steady_state_for_gate`]); the value is `force_n`, [`super::cut_force::sample_peak_force_n`]; the ceiling is [`super::cut_force::budget_line`] (lead ruling 3) |
 //!
 //! The sentry `tests/histogram_population_is_the_gate_population_g_cuthist.rs`
 //! holds this: the population maximum equals the gate's `display_peak`, and
@@ -31,7 +32,12 @@
 //! ([`CriterionStatus::bound`] and [`CriterionStatus::bound_source`]). It
 //! adds no bound. The chipload floor is present only when the vendor row
 //! publishes one ([`BoundSource::VendorChipBand`] `floor_mm_per_tooth`).
-//! Engagement has no bound.
+//! Engagement has no bound. The cut force has the machine force budget as
+//! its ceiling only under the `ForceBudget` depth-cap rule; its state is
+//! then `Within` or `Exceeds` by [`super::boundary::exceeds_high`] at zero
+//! tolerance, and `None` (a reading, no verdict) without the line. Its
+//! bound source is [`BoundSource::MachineForceBudget`] of the peak sample,
+//! which does not gate an export, so the card is advisory.
 //!
 //! The in-band and out-of-band shares use the gate's boundary contract
 //! ([`super::boundary::exceeds_high`], [`super::boundary::below_low`]) at
@@ -89,6 +95,10 @@ pub enum DistributionMetric {
     /// The engagement arc, in degrees. No gate judges it, so it has no
     /// bound and no verdict.
     Engagement,
+    /// P17: the peak engaged-edge force of each sample, in newtons
+    /// (`super::cut_force`). The machine force budget is its ceiling only
+    /// under the `ForceBudget` depth-cap rule (lead ruling 3).
+    CutForce,
 }
 
 impl DistributionMetric {
@@ -100,6 +110,7 @@ impl DistributionMetric {
         match self {
             DistributionMetric::Criterion(kind) => kind.unit(),
             DistributionMetric::Engagement => "deg",
+            DistributionMetric::CutForce => "N",
         }
     }
 }
@@ -387,7 +398,125 @@ pub fn metric_distribution(
             }
         }
         DistributionMetric::Engagement => engagement_distribution(ctx, env),
+        DistributionMetric::CutForce => {
+            // S6: the verdict's `cut_force` reads the stock population
+            // (`evaluate_population`), so the histogram bins the same one.
+            let stock_view = env
+                .sim_trace
+                .and_then(|t| t.stock_population_view(ctx.toolpath_id, ctx.material));
+            match &stock_view {
+                Some(view) => {
+                    let view_env = GateEnv {
+                        sim_trace: Some(view),
+                        ..*env
+                    };
+                    cut_force_distribution(verdict, ctx, &view_env)
+                }
+                None => cut_force_distribution(verdict, ctx, env),
+            }
+        }
     }
+}
+
+/// P17: the force card. `None` on a drill (no card). The refusals mirror
+/// the deflection gate's: no trace, no force line, no arc captured. The
+/// population is the verdict's reading when it holds one, else this
+/// module's count.
+fn cut_force_distribution(
+    verdict: &ToolpathLoadVerdict,
+    ctx: &ToolpathLoadContext<'_>,
+    env: &GateEnv<'_>,
+) -> Option<DistributionOutcome> {
+    if ctx.operation_kind.is_drill_kinematics() {
+        return None;
+    }
+    let Some(trace) = env.sim_trace else {
+        return Some(DistributionOutcome::NotMeasured(
+            NotMeasuredReason::Unmodeled(UnmodeledReason::SimulationRequired),
+        ));
+    };
+    if ctx.material.force_line().is_err() {
+        return Some(DistributionOutcome::NotMeasured(
+            NotMeasuredReason::Unmodeled(UnmodeledReason::MaterialUnvalidated),
+        ));
+    }
+    // The deflection gate's third refusal: no sample of this toolpath
+    // carries an arc, so the force has no engagement to read.
+    let any_arc_captured = trace.samples.iter().any(|s| {
+        s.toolpath_id == ctx.toolpath_id && s.is_cutting && s.arc_engagement_radians.is_some()
+    });
+    if !any_arc_captured {
+        return Some(DistributionOutcome::NotMeasured(
+            NotMeasuredReason::Unmodeled(UnmodeledReason::ArcEngagementNotCaptured),
+        ));
+    }
+    let samples = gate_population(DistributionMetric::CutForce, ctx, env);
+    let population = verdict.cut_force.as_ref().map_or_else(
+        || {
+            GatePopulation::new(
+                samples.len(),
+                offered_count(ctx, env),
+                PopulationUnit::Samples,
+            )
+        },
+        |reading| reading.population,
+    );
+    if population.is_vacuous() {
+        return Some(DistributionOutcome::NotMeasured(
+            NotMeasuredReason::Vacuous(population),
+        ));
+    }
+    if samples.len() != population.contributing {
+        tracing::warn!(
+            histogram_samples = samples.len(),
+            reading_contributing = population.contributing,
+            "cut-force histogram population differs from the reading population"
+        );
+    }
+    let budget_n = super::cut_force::budget_line(ctx, env);
+    let peak = samples
+        .iter()
+        .filter(|s| s.value.is_finite())
+        .max_by(|a, b| a.value.total_cmp(&b.value));
+    // The line and its source exist together (lead ruling 3): the bound
+    // source is the budget at the peak sample's width, chip and depth.
+    let (state, bound_source) = match (budget_n, peak) {
+        (Some(budget), Some(peak)) => {
+            let state = if super::boundary::exceeds_high(peak.value, budget, 0.0) {
+                LoadState::Exceeds
+            } else {
+                LoadState::Within
+            };
+            let sample = trace.samples.get(peak.sample_index);
+            let ae_mm = sample
+                .and_then(|s| super::deflection::sample_engagement(ctx.tool, s))
+                .map_or(0.0, |e| e.ae_mm());
+            let fz_mm = sample.map_or(0.0, |s| {
+                super::deflection::deflection_feed_per_tooth_mm(s, &trace.predicted_feeds)
+            });
+            let depth_mm = sample.map_or(0.0, |s| s.axial_engagement_mm);
+            (
+                Some(state),
+                Some(BoundSource::MachineForceBudget {
+                    budget_n: budget,
+                    ae_mm,
+                    fz_mm,
+                    depth_mm,
+                }),
+            )
+        }
+        (Some(_), None) | (None, _) => (None, None),
+    };
+    let histogram = Histogram::build(&samples, None, budget_n, DEFAULT_BIN_COUNT);
+    Some(DistributionOutcome::Measured(Box::new(
+        MetricDistribution {
+            metric: DistributionMetric::CutForce,
+            state,
+            bound_source,
+            population,
+            histogram,
+        },
+    )))
 }
 
 /// The generic row of the criteria this module bins.
@@ -576,6 +705,19 @@ pub fn gate_population(
             }
             s.arc_engagement_radians.map(f64::to_degrees)
         }),
+        // P17: the points of the deflection gate's population that have a
+        // force; the filters are in `cut_points`, not copied here.
+        DistributionMetric::CutForce => super::cut_force::cut_points(ctx, env)
+            .into_iter()
+            .filter_map(|p| {
+                p.force_n.map(|value| PopulationSample {
+                    value,
+                    weight_s: p.weight_s,
+                    move_index: p.move_index,
+                    sample_index: p.sample_index,
+                })
+            })
+            .collect(),
         DistributionMetric::Criterion(
             CriterionKind::GantryPush
             | CriterionKind::DrillChipWelding

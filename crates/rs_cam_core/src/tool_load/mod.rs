@@ -10,6 +10,9 @@
 //! - `depth` — per-sample engaged depth vs the machine rigidity cap
 //!   (S3, 2026-09-18). It reports and never refuses an export: its
 //!   bound is a rule of thumb with no published source.
+//! - `cut_force` (P17) — the peak engaged-edge force of the deflection
+//!   gate's population against the machine force budget. A report-only
+//!   reading, not a criterion.
 //!
 //! There is no aggregate scalar "load %". A scalar would conflate inputs
 //! that are individually honest with inputs that are systematically
@@ -19,6 +22,7 @@
 
 pub mod boundary;
 pub mod chipload;
+pub mod cut_force;
 pub mod deflection;
 pub mod depth;
 pub mod display;
@@ -92,7 +96,7 @@ pub use distribution::{
     DistributionMetric, DistributionOutcome, Histogram, MetricDistribution, NotMeasuredReason,
     PopulationSample, metric_distribution,
 };
-pub use metric_guide::{MetricGuide, engagement_guide};
+pub use metric_guide::{MetricGuide, cut_force_guide, engagement_guide};
 pub use verdict::{
     BindingConstraint, ChiploadVerdict, Confidence, DeflectionVerdict, DepthVerdict,
     ModulationStrategyTag, ModulationSummary, PowerVerdict, ToolLoadReport, ToolpathLoadVerdict,
@@ -408,7 +412,9 @@ pub struct ToleranceBands {
     /// Trigger flips when `peak_power > peak_available * (1.0 + power_breach)`.
     pub power_breach: f64,
     /// Fractional widening of the deflection-exceeds trigger.
-    /// Trigger flips when `peak_delta_mm > EXCEEDS_BOUND_MM * (1.0 + deflection_breach)`.
+    /// Trigger flips when `peak_delta_mm > limit * (1.0 + deflection_breach)`,
+    /// where the limit is `deflection::exceeds_limit` (P17: the finish
+    /// target or the radial stock to leave of a rough pass).
     /// Defaults to 0 — the existing `validated_within → exceeds` band on
     /// `DeflectionBounds` already provides the soft warning zone.
     pub deflection_breach: f64,
@@ -460,6 +466,13 @@ pub struct ToolpathLoadContext<'a> {
     /// recipe does not trip it. `None` when the op states no width or no
     /// depth: the gate then takes the median measured lift of its trip set.
     pub commanded_thinning_lift: Option<f64>,
+    /// Feeds contract P17: the radial stock to leave of the operation
+    /// (`OperationConfig::radial_stock_to_leave_mm`), in mm. The deflection
+    /// gate reads it as the limit of a rough pass: a tip that moves less
+    /// than the leave stays inside the finish allowance
+    /// (`deflection::exceeds_limit`). `None` when the op has no radial
+    /// leave field; the finish target then applies.
+    pub radial_stock_to_leave_mm: Option<f64>,
 }
 
 /// F070: the parts of one operation's [`ToolpathLoadContext`], with the
@@ -483,6 +496,7 @@ pub struct LoadContextParts<'s> {
     pub spans: Option<&'s [crate::trace::toolpath_spans::Span]>,
     pub drill_op: Option<&'s crate::ops::drill_op::DrillOp>,
     pub commanded_thinning_lift: Option<f64>,
+    pub radial_stock_to_leave_mm: Option<f64>,
 }
 
 impl LoadContextParts<'_> {
@@ -501,6 +515,7 @@ impl LoadContextParts<'_> {
             spans,
             drill_op,
             commanded_thinning_lift,
+            radial_stock_to_leave_mm,
         } = self;
         ToolpathLoadContext {
             toolpath_id: *toolpath_id,
@@ -513,6 +528,7 @@ impl LoadContextParts<'_> {
             spans: *spans,
             drill_op: *drill_op,
             commanded_thinning_lift: *commanded_thinning_lift,
+            radial_stock_to_leave_mm: *radial_stock_to_leave_mm,
         }
     }
 }
@@ -729,6 +745,9 @@ fn evaluate_population(
         // `ToolpathLoadVerdict` assembly site, so the g-code export path
         // and the GUI see one depth verdict.
         depth: depth::evaluate(ctx, &env),
+        // P17: the peak cutting force, report-only, from the same points
+        // the force card bins.
+        cut_force: cut_force::evaluate(ctx, &env),
         drill_gates,
         // Feed-modulation rollup captured by the simulator for this
         // toolpath, when the trace carries one. Populated here (not at
@@ -789,6 +808,7 @@ mod tests {
             spans: None,
             drill_op: None,
             commanded_thinning_lift: None,
+            radial_stock_to_leave_mm: None,
         }
     }
 

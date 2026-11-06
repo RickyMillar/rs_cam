@@ -161,6 +161,7 @@ fn verdicts(t: &SimulationCutTrace) -> (PowerVerdict, DeflectionVerdict, DepthVe
         spans: None,
         drill_op: None,
         commanded_thinning_lift: None,
+        radial_stock_to_leave_mm: None,
     };
     let env = GateEnv {
         sim_trace: Some(t),
@@ -191,6 +192,7 @@ fn verdict_for(t: &SimulationCutTrace) -> ToolpathLoadVerdict {
         feed_explanation: None,
         kinematic_utilization: None,
         material_split: None,
+        cut_force: None,
     }
 }
 
@@ -565,6 +567,7 @@ fn the_drill_criteria_and_diagnostics_carry_the_hole_population() {
         feed_explanation: None,
         kinematic_utilization: None,
         material_split: None,
+        cut_force: None,
     };
 
     let drill_kinds = [

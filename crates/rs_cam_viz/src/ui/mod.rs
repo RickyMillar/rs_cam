@@ -22,6 +22,7 @@ pub mod setup_deletion_modal;
 pub mod setup_panel;
 pub mod shoe_list;
 pub mod shortcuts_window;
+pub mod sim_cut_chart;
 pub mod sim_debug;
 pub mod sim_diagnostics;
 pub mod sim_op_list;

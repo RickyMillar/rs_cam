@@ -238,6 +238,7 @@ fn histogram_population_is_the_gate_population() {
         spans: None,
         drill_op: None,
         commanded_thinning_lift: None,
+        radial_stock_to_leave_mm: None,
     };
     let env = GateEnv {
         sim_trace: Some(&trace),
@@ -414,6 +415,7 @@ fn not_applicable_has_no_card_and_unmodelled_is_not_measured() {
         spans: None,
         drill_op: None,
         commanded_thinning_lift: None,
+        radial_stock_to_leave_mm: None,
     };
     let env = GateEnv {
         sim_trace: None,

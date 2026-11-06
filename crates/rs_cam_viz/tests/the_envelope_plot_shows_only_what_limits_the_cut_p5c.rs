@@ -23,6 +23,10 @@
 //!    (items 5 to 7). P5d D1 (2026-11-04) reversed the P5c rule that drew
 //!    only a limit near a mark: every limit in view draws (3 lines here),
 //!    the binding one `TEXT_BODY`, the others `TEXT_MUTED`.
+//! 5. P17 (operator 2026-11-06, "the safe region as a soft fill"): the
+//!    plot paints ONE fill, the safe region, in the histogram's `WASH_OK`
+//!    on `OK`. Decision D2 ("no filled region") is replaced by this claim
+//!    for the envelope plot; the nomogram keeps lines only.
 //!
 //! Red before P5c: `EnvelopeScene` has no `candidate`, `proposal_shown` or
 //! `edge_color`; the P5b view range followed the candidate, so a drag at the
@@ -40,6 +44,7 @@ use envelope_k2b::{ID, ctx, envelope_for, envelope_of, frame, input, solid, text
 use rs_cam_core::compute::catalog::{OperationConfig, OperationType};
 use rs_cam_core::feeds::envelope::{CutPoint, Edge, LimitKind, Placement, SafeEnvelope};
 use rs_cam_viz::state::panels::EnvelopeCandidates;
+use rs_cam_viz::ui::components::histogram;
 use rs_cam_viz::ui::feeds::envelope::{
     EnvelopeResponse, EnvelopeScene, EnvelopeShape, draw_envelope, recommendation_color,
 };
@@ -101,8 +106,8 @@ fn marks(shapes: &[egui::epaint::ClippedShape]) -> Marks {
     out
 }
 
-/// The line colours a frame painted (egui_plot draws a line as a `Path` or
-/// a `LineSegment`): every stroke colour of an open path.
+/// The line colours a frame painted (the kit draws a line as a `Path`):
+/// every stroke colour of an open path.
 #[expect(
     clippy::wildcard_enum_match_arm,
     reason = "test: foreign enum egui Shape; the arm skips every shape that this test does not read"
@@ -111,6 +116,37 @@ fn line_colours(shapes: &[egui::epaint::ClippedShape]) -> Vec<egui::Color32> {
     let mut out = Vec::new();
     let mut walk = |s: &egui::Shape| match s {
         egui::Shape::Path(p) if !p.closed => out.push(solid(&p.stroke.color)),
+        _ => {}
+    };
+    for c in shapes {
+        if let egui::Shape::Vec(v) = &c.shape {
+            v.iter().for_each(&mut walk);
+        } else {
+            walk(&c.shape);
+        }
+    }
+    out
+}
+
+/// The fills a frame painted: every mesh whose vertices are one colour,
+/// and every closed path with a fill, as (colour, count of shapes).
+#[expect(
+    clippy::wildcard_enum_match_arm,
+    reason = "test: foreign enum egui Shape; the arm skips every shape that this test does not read"
+)]
+fn fills(shapes: &[egui::epaint::ClippedShape]) -> Vec<egui::Color32> {
+    let mut out = Vec::new();
+    let mut walk = |s: &egui::Shape| match s {
+        egui::Shape::Mesh(m) => {
+            if let Some(first) = m.vertices.first()
+                && m.vertices.iter().all(|v| v.color == first.color)
+            {
+                out.push(first.color);
+            }
+        }
+        egui::Shape::Path(p) if p.closed && p.fill != egui::Color32::TRANSPARENT => {
+            out.push(p.fill);
+        }
         _ => {}
     };
     for c in shapes {
@@ -611,6 +647,22 @@ fn the_rivmap_rough_plot_draws_every_limit_in_view_p5c() {
         assert!(
             !colours.contains(&tokens::DANGER),
             "{tag}: no DANGER line: {colours:?}"
+        );
+        // Claim 5 (P17): one fill, the safe region, in the OK wash. The
+        // only other filled shapes are the label chips (the overlay
+        // surface behind each label of the kit).
+        let wash = tokens::OK.gamma_multiply(histogram::WASH_OK);
+        let painted_fills = fills(&f.shapes);
+        assert_eq!(
+            painted_fills.iter().filter(|c| **c == wash).count(),
+            1,
+            "{tag}: P17, the plot paints ONE fill in the OK wash: {painted_fills:?}"
+        );
+        // A label chip is near opaque; the wash is the one translucent
+        // fill, so no second soft region hides under the lines.
+        assert!(
+            painted_fills.iter().all(|c| *c == wash || c.a() >= 200),
+            "{tag}: P17, every other fill is an opaque label chip: {painted_fills:?}"
         );
     }
 }

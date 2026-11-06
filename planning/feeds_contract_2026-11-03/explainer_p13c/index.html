@@ -98,6 +98,18 @@ ul.tight li { margin: 3px 0; }
 .pill.in { background: var(--b-cited); } .pill.out { background: var(--b-unsourced); }
 footer { margin-top: 40px; font-size: 12px; color: var(--muted); }
 #claimcheck { font-size: 12px; }
+.mcards { display: grid; grid-template-columns: minmax(0, 1fr); gap: 8px; }
+.mcard { border: 1px solid var(--line); border-radius: 8px; padding: 6px 8px 4px; background: var(--bg); min-width: 0; }
+.mcard .hd { display: flex; flex-wrap: wrap; align-items: center; gap: 2px 6px; font-size: 13px; }
+.mcard .hd .t { font-weight: 600; flex: 1 1 auto; min-width: 7em; }
+.mcard .hd .pk { font-variant-numeric: tabular-nums; font-size: 12px; white-space: nowrap; margin-left: auto; }
+.mcard .sub { font-size: 11.5px; color: var(--muted); overflow-wrap: anywhere; }
+.mcard svg text { font-size: 10px; }
+.glyph { flex: 0 0 auto; width: 16px; height: 16px; border-radius: 50%; display: inline-flex; align-items: center; justify-content: center; font-size: 11px; font-weight: 700; color: var(--bg); }
+.glyph.ok { background: var(--ok); } .glyph.bad { background: var(--bad); } .glyph.none { background: var(--muted); }
+.plain { font-size: 12.5px; margin-top: 6px; display: grid; grid-template-columns: repeat(auto-fill, minmax(150px, 1fr)); gap: 2px 12px; }
+.plain span { color: var(--muted); }
+.pctl { display: grid; grid-template-columns: repeat(auto-fill, minmax(190px, 1fr)); gap: 4px 16px; }
 </style>
 </head>
 <body>
@@ -226,6 +238,48 @@ footer { margin-top: 40px; font-size: 12px; color: var(--muted); }
       <li>The Rust solvers scan, then bisect until the bracket is under 0.005 mm, and return the inside end. The root itself is <span data-claim="root_hw_fine" data-digits="4">3.4073</span> mm (the port's 3.407); the shipped depth is <span data-claim="depth_hw" data-digits="4">3.4056</span> mm.</li>
       <li>FM1 states the floored feed 3999, not the calculator feed 3999.99. The force column and <code>cap_mm</code> (<span data-claim="cap_hw_fm1chip" data-digits="4">3.4058</span>) read the floored chip; the depth reads the calculator chip.</li>
       <li>The step 0 citations name lines at <code>36fd50c54</code>; several moved (the Curti rows, Step 5). The port also types the 8000 rpm floor; the shipped floor is the row <code>rpm_min</code> when it is higher (these rows print none).</li>
+    </ul>
+  </section>
+
+  <section id="proto">
+    <h2>9. Prototype: simulation cut metrics</h2>
+    <p class="note"><b>Illustrative samples from a simple pocket model, not a simulation run.</b> No simulation data reaches this page. A fixed-seed generator makes the samples, so the page shows the same samples each time. This section is a design prototype for the cut-metric cards of the GUI.</p>
+    <p>Today the GUI shows five cards after a simulation: Chipload, Spindle power, Tool deflection, Depth of cut and Engagement. Each card is a time-weighted histogram of the samples with a band. This section puts two proposals next to the current cards. Proposal A keeps four simple cards, each with one 100 % line. Proposal B puts the samples on one width x depth chart with the limits as contour lines.</p>
+    <p>The pocket model has four classes of sample. Each class has a share of the cutting time. The default shares are illustration values, not engine numbers:</p>
+    <ul class="tight">
+      <li><b>Steady passes</b> (<span data-claim="proto_share_steady" data-digits="0">80</span> %): the planned width and depth. The width varies by up to <span data-claim="proto_jitter_pct" data-digits="0">2</span> % each way.</li>
+      <li><b>Corners</b> (<span data-claim="proto_share_corner" data-digits="0">12</span> %): the width rises from the planned width toward the corner coverage width (section 3, <span data-claim="corner_factor" data-digits="4">0.8536</span> D), at the planned depth. At the default the planned width is already 0.850 D, so the rise is small. Move "Width ae" in the controls lower and the corner samples spread.</li>
+      <li><b>Opening slot</b> (<span data-claim="proto_share_slot" data-digits="0">5</span> %): the full width D at the planned depth.</li>
+      <li><b>Ramp entry</b> (<span data-claim="proto_share_ramp" data-digits="0">3</span> %): the full width D at a depth between zero and the planned depth. The model keeps the planned feed on the ramp.</li>
+    </ul>
+    <p>The planned point is your point in the controls; it follows the pick. The feed is the floored planned feed (<span data-claim="feed_fm1" data-digits="0">3999</span> mm/min at <span data-claim="rpm_pick" data-digits="0">15748</span> rpm for the default cell). The feed does not change along the path, so fz does not change. The peak chip of a sample is <code>fz sin(min(psi, 90))</code> at the sample width. The calculator lift is a planning step, and the samples do not apply it again. The script gives each sample the peak edge force (<code>edge_force</code>), the power at the sample width (<code>power_kw</code>) and the tip deflection (<code>tip_deflection_mm</code>, the shipped beam). It makes <span data-claim="proto_n" data-digits="0">500</span> samples. Each histogram has <span data-claim="proto_bins" data-digits="0">24</span> bins, as the GUI cards have (<code>DEFAULT_BIN_COUNT</code>).</p>
+    <div class="card">
+      <div class="pctl">
+        <div class="ctl"><label for="pCorner">Corner share <b id="pCornerV"></b></label><input id="pCorner" type="range" min="0" max="40" step="1"></div>
+        <div class="ctl"><label for="pSlot">Opening slot share <b id="pSlotV"></b></label><input id="pSlot" type="range" min="0" max="30" step="1"></div>
+        <div class="ctl"><label for="pRamp">Ramp entry share <b id="pRampV"></b></label><input id="pRamp" type="range" min="0" max="30" step="1"></div>
+        <div class="ctl"><label>Steady share (the rest) <b id="pSteadyV"></b></label></div>
+        <div class="ctl"><label>Pass</label><div class="seg" id="pPass"><button data-v="rough" aria-pressed="true">Rough</button><button data-v="finish" aria-pressed="false">Finish</button></div></div>
+        <div class="ctl"><label for="pStl">Stock to leave (prototype) <b id="pStlV"></b></label><input id="pStl" type="range" min="0.05" max="2" step="0.05"></div>
+      </div>
+      <div class="btnrow"><button class="btn" id="pReset">Reset the prototype</button></div>
+    </div>
+    <div class="grid2" style="margin-top:14px">
+      <div class="card"><h3 style="margin-top:0">Today: five cards</h3><div class="mcards" id="protoToday"></div></div>
+      <div class="card"><h3 style="margin-top:0">Proposal A: four cards, one 100 % line each</h3><div class="mcards" id="protoA"></div>
+        <div class="plain" id="protoReadings"></div></div>
+    </div>
+    <div class="card" style="margin-top:14px"><h3 style="margin-top:0">Proposal B: one width x depth chart</h3>
+      <svg id="protoChart" viewBox="0 0 640 380" role="img" aria-label="Sample density on width against depth, with the force, power and vendor table limits"></svg>
+      <div class="legend" id="protoLegend"></div>
+      <p class="muted" style="font-size:12.5px;margin-bottom:0">The power line is exact only at the planned feed and rpm; the force line depends on chip and geometry only.</p></div>
+    <h3>What the prototype shows at the default cell</h3>
+    <ul class="tight">
+      <li><b>Chipload.</b> The peak chip is <span data-claim="proto_chip_pct" data-digits="2">99.98</span> % of the printed point <span data-claim="chip_hw" data-digits="3">0.127</span> mm (the floored feed gives a chip a little under the point). The Spektra row prints one value, not a band. Thus the card has a ceiling and no floor; today's card also has no floor for this row.</li>
+      <li><b>Spindle power.</b> The peak is <span data-claim="proto_power_kw" data-digits="4">0.1394</span> kW, <span data-claim="proto_power_pct" data-digits="1">17.4</span> % of the 0.8 kW spindle. The full-slot samples set the peak, so it equals the slot-case power of section 5. Set the slot and ramp shares to zero and the peak falls to the power at the planned width.</li>
+      <li><b>Tool deflection.</b> The peak tip deflection is <span data-claim="proto_defl_um" data-digits="1">7.1</span> &micro;m. That is <span data-claim="proto_defl_pct_finish" data-digits="1">3.6</span> % of the 200 &micro;m finish target and <span data-claim="proto_defl_pct_rough" data-digits="1">1.4</span> % of the prototype rough limit <span data-claim="proto_rough_limit_um" data-digits="0">500</span> &micro;m. The rough limit is the stock to leave (<span data-claim="proto_stl_mm" data-digits="1">0.5</span> mm): a tip that moves more than the stock to leave cuts into the finish surface. This 1:1 rule is a prototype assumption with no source. <code>PocketConfig</code> has no stock-to-leave field, so the slider default borrows the 3D rough default (<code>Adaptive3dConfig</code> <code>stock_to_leave_axial</code>).</li>
+      <li><b>Cut force.</b> The peak edge force is <span data-claim="proto_force_n" data-digits="2">35.30</span> N, <span data-claim="proto_force_pct" data-digits="1">99.9</span> % of the budget <span data-claim="budget_n" data-digits="2">35.32</span> N. The budget sets the planned depth (section 4), so the steady passes sit on the line. The full-slot samples also sit on it: the peak force has a plateau above 0.85 D. This card replaces Depth of cut and Engagement. Today's Depth of cut card draws the budget depth at the width and chip of the deepest sample (<span data-claim="proto_depth_bound" data-digits="3">3.406</span> mm, <code>depth.rs</code>), so it measures the same limit one step removed. Engagement has no line.</li>
+      <li><b>Outside the limits.</b> No sample is over a limit at the default shares (<span data-claim="proto_outside_pct" data-digits="1">0.0</span> % of the time). Make the depth of your point larger, or lower the force budget in the controls, and samples cross the force line.</li>
     </ul>
   </section>
 
@@ -797,6 +851,24 @@ footer { margin-top: 40px; font-size: 12px; color: var(--muted); }
   "label": "The other 6 mm hardwood Pocket row (Amana upcut), not the row FM1 reads",
   "unit": "rpm, mm"
  },
+ "ADAPTIVE3D_STOCK_TO_LEAVE_AXIAL": {
+  "value": 0.5,
+  "path": "crates/rs_cam_core/src/compute/operation_configs.rs",
+  "line": 1955,
+  "printed": "stock_to_leave_axial: 0.5,",
+  "class": "assumed",
+  "label": "Default stock to leave of the 3D rough (Adaptive3dConfig); the section 9 prototype borrows it (PocketConfig has no such field)",
+  "unit": "mm"
+ },
+ "DEFAULT_BIN_COUNT": {
+  "value": 24,
+  "path": "crates/rs_cam_core/src/tool_load/distribution.rs",
+  "line": 72,
+  "printed": "pub const DEFAULT_BIN_COUNT: usize = 24;",
+  "class": "numeric",
+  "label": "Bins of a cut-metric card histogram",
+  "unit": "-"
+ },
  "IGNORED": {
   "value": [
    {
@@ -1303,6 +1375,109 @@ function default_claims(L, C) {
     })(),
     min_rpm: v("GENERIC_MIN_RPM"), max_rpm: v("GENERIC_MAX_RPM"), power_kw: v("GENERIC_POWER_KW"), target_um: v("DEFLECTION_BACKOFF_TARGET_UM"),
     upcut_rpm: C.UPCUT_ROW.value.rpm, upcut_min: C.UPCUT_ROW.value.chip_min, upcut_max: C.UPCUT_ROW.value.chip_max,
+    ...proto_claims(L, C, hw, p_hw),
+  };
+}
+
+// ---- Section 9 prototype: an ILLUSTRATIVE pocket sample set, not a simulation run.
+// The seed, the class counts, the default time shares and the width jitter are
+// typed illustration values of the prototype; they are not engine numbers.
+const PROTO = { seed: 20261106, counts: { steady: 300, corner: 120, slot: 40, ramp: 40 }, shares: { corner: 0.12, slot: 0.05, ramp: 0.03 }, jitter: 0.04 };
+function mulberry32(a) {
+  return function () {
+    a |= 0; a = (a + 0x6d2b79f5) | 0;
+    let t = Math.imul(a ^ (a >>> 15), 1 | a);
+    t = (t + Math.imul(t ^ (t >>> 7), 61 | t)) ^ t;
+    return ((t ^ (t >>> 14)) >>> 0) / 4294967296;
+  };
+}
+// The samples of a simple pocket at the planned (ae, ap). The feed is the floored
+// planned feed and stays constant, so fz is constant; the peak chip at a sample
+// is fz sin(min(psi, 90 deg)) at the sample width (no second lift).
+function proto_samples(L, C, ctx, plan) {
+  const tool = ctx.tool, d = tool.d, z = tool.z, line = ctx.line;
+  const sp = L.speeds({ ae: plan.ae }, tool, ctx.row, ctx.m, line, plan.ap);
+  const feed = Math.floor(sp.feed), rpm = sp.rpm, fz = feed / (rpm * z);
+  const corner = d * L.corner_coverage_width_factor();
+  const minAe = C.MIN_AE_MM.value, minAp = C.MIN_AP_MM.value;
+  const rnd = mulberry32(PROTO.seed);
+  const raw = [];
+  for (let i = 0; i < PROTO.counts.steady; i++) raw.push({ cls: "steady", ae: Math.min(Math.max(plan.ae * (1 + PROTO.jitter * (rnd() - 0.5)), minAe), d), ap: plan.ap });
+  const cTop = Math.max(corner, plan.ae);
+  for (let i = 0; i < PROTO.counts.corner; i++) raw.push({ cls: "corner", ae: Math.min(plan.ae + (cTop - plan.ae) * rnd(), d), ap: plan.ap });
+  for (let i = 0; i < PROTO.counts.slot; i++) raw.push({ cls: "slot", ae: d, ap: plan.ap });
+  for (let i = 0; i < PROTO.counts.ramp; i++) raw.push({ cls: "ramp", ae: d, ap: Math.max(minAp, plan.ap * rnd()) });
+  const memo = new Map();
+  const samples = raw.map((s) => {
+    const key = s.ae + "|" + s.ap;
+    if (!memo.has(key)) {
+      const psi = L.immersion_angle(s.ae, d / 2);
+      const F = L.edge_force(s.ap, s.ae, d, z, fz, line, tool.helix).peak_resultant_n;
+      memo.set(key, { psi_deg: (psi * 180) / Math.PI, chip: fz * Math.sin(Math.min(psi, Math.PI / 2)), power: L.power_kw(s.ap, s.ae, d, z, rpm, feed, line), force: F, defl_um: 1000 * L.tip_deflection_mm(tool, F, s.ap) });
+    }
+    return Object.assign({}, s, memo.get(key));
+  });
+  return { samples, rpm, feed, fz, corner, plan };
+}
+// The cards of both layouts from one sample set. opts: shares {corner, slot, ramp}
+// (fractions), stl_mm (stock to leave), rough (true: the stock-to-leave limit).
+function proto_cards(L, C, ctx, set, opts) {
+  const sh = Object.assign({}, PROTO.shares, (opts && opts.shares) || {});
+  const share = { steady: Math.max(0, 1 - sh.corner - sh.slot - sh.ramp), corner: sh.corner, slot: sh.slot, ramp: sh.ramp };
+  const w = set.samples.map((s) => share[s.cls] / PROTO.counts[s.cls]);
+  const total = w.reduce((a, b) => a + b, 0);
+  const stl = opts && opts.stl_mm !== undefined ? opts.stl_mm : C.ADAPTIVE3D_STOCK_TO_LEAVE_AXIAL.value;
+  const rough = !(opts && opts.rough === false);
+  const target = C.DEFLECTION_BACKOFF_TARGET_UM.value;
+  const defl_limit = rough ? stl * 1000 : target;
+  const card = (key, title, unit, val, limit, floor, note) => {
+    let peak = 0, above = 0;
+    set.samples.forEach((s, i) => { if (w[i] <= 0) return; const x = val(s); if (x > peak) peak = x; if (limit !== null && x > limit) above += w[i]; });
+    return { key, title, unit, limit, floor, note, peak, pct: limit ? (100 * peak) / limit : null, above_share: total > 0 ? above / total : 0, values: set.samples.map(val) };
+  };
+  const row = ctx.row;
+  const chip = card("chip", "Chipload", "mm/tooth", (s) => s.chip, row.chip, row.chip_min ?? null, row.chip_min ? "band" : "point row: ceiling only");
+  const power = card("power", "Spindle power", "kW", (s) => s.power, ctx.m.power_kw, null, "mean-force power at the sample width");
+  const defl = card("defl", "Tool deflection", "um", (s) => s.defl_um, defl_limit, null, rough ? "prototype: stock to leave" : "finish: 200 um target");
+  const force = card("force", "Cut force", "N", (s) => s.force, ctx.budget, null, "peak edge force against the force budget");
+  // Today's Depth of cut card: the budget depth at the deepest sample's width and chip (depth.rs).
+  let pk = null;
+  set.samples.forEach((s, i) => { if (w[i] > 0 && (!pk || s.ap > pk.ap || (s.ap === pk.ap && s.ae > pk.ae))) pk = s; });
+  const db = pk ? L.depth_at_budget(ctx.tool, ctx.line, pk.ae, set.fz, ctx.budget) : null;
+  const depth_bound = db ? (db.mm ?? ctx.tool.flute) : null;
+  const today = [
+    chip, power,
+    card("defl200", "Tool deflection", "um", (s) => s.defl_um, target, null, "200 um target"),
+    card("depth", "Depth of cut", "mm", (s) => s.ap, depth_bound, null, "budget depth at the deepest sample"),
+    card("eng", "Engagement", "deg", (s) => s.psi_deg, null, null, "no line"),
+  ];
+  let out = 0, apS = 0, aeS = 0, apMin = Infinity, apMax = 0, aeMin = Infinity, aeMax = 0;
+  const outside = set.samples.map((s, i) => {
+    const o = s.chip > row.chip || s.power > ctx.m.power_kw || s.force > ctx.budget || s.defl_um > defl_limit;
+    if (w[i] > 0) {
+      if (o) out += w[i];
+      apS += w[i] * s.ap; aeS += w[i] * s.ae;
+      apMin = Math.min(apMin, s.ap); apMax = Math.max(apMax, s.ap); aeMin = Math.min(aeMin, s.ae); aeMax = Math.max(aeMax, s.ae);
+    }
+    return o;
+  });
+  const readings = total > 0 ? { apMin, apMax, apMean: apS / total, aeMin, aeMax, aeMean: aeS / total } : null;
+  return { w, total, share, stl, rough, defl_limit, A: [chip, power, defl, force], today, outside, outside_share: total > 0 ? out / total : 0, readings };
+}
+// The section 9 prose numbers: the default cell at the default shares and stock to leave.
+function proto_claims(L, C, ctx, pick) {
+  const set = proto_samples(L, C, ctx, { ae: pick.ae, ap: pick.ap });
+  const pc = proto_cards(L, C, ctx, set, {});
+  const [chip, power, defl, force] = pc.A;
+  const n = Object.values(PROTO.counts).reduce((a, b) => a + b, 0);
+  return {
+    proto_n: n, proto_share_steady: 100 * pc.share.steady, proto_share_corner: 100 * pc.share.corner,
+    proto_share_slot: 100 * pc.share.slot, proto_share_ramp: 100 * pc.share.ramp, proto_jitter_pct: (100 * PROTO.jitter) / 2,
+    proto_chip_pct: chip.pct, proto_power_kw: power.peak, proto_power_pct: power.pct,
+    proto_defl_um: defl.peak, proto_stl_mm: pc.stl, proto_rough_limit_um: pc.defl_limit, proto_defl_pct_rough: defl.pct,
+    proto_defl_pct_finish: (100 * defl.peak) / C.DEFLECTION_BACKOFF_TARGET_UM.value,
+    proto_force_n: force.peak, proto_force_pct: force.pct, proto_outside_pct: 100 * pc.outside_share,
+    proto_depth_bound: pc.today[3].limit, proto_bins: C.DEFAULT_BIN_COUNT.value,
   };
 }
 
@@ -1410,6 +1585,7 @@ function default_claims(L, C) {
     renderCorner(ctx);
     renderEnvelope(M, P);
     renderForce(ctx, P);
+    renderProto(ctx, P);
   }
 
   function point(ctx, ae, ap) {
@@ -1696,6 +1872,155 @@ function default_claims(L, C) {
     const rig = P.at.list.find((l) => l.kind === "Rigidity");
     if (!rig.none) { el("line", { x1: X(rig.mm), x2: X(rig.mm), y1: y0, y2: y1, stroke: col("Rigidity") }, svg); el("text", { x: X(rig.mm) + 4, y: y1 + 22 }, svg, "solved " + fmt(rig.mm, 3) + " mm"); }
     el("circle", { cx: X(P.ap), cy: Y(P.F), r: 4, fill: "none", stroke: css("--c-user"), "stroke-width": 2 }, svg);
+  }
+
+  // ---- section 9: prototype cut-metric cards (illustrative samples) ----
+  const PDEF = { corner: 100 * PROTO.shares.corner, slot: 100 * PROTO.shares.slot, ramp: 100 * PROTO.shares.ramp, rough: true, stl: v("ADAPTIVE3D_STOCK_TO_LEAVE_AXIAL") };
+  let PS = Object.assign({}, PDEF);
+  let lastCtx = null, lastP = null;
+  function protoSync() {
+    $("pCorner").value = PS.corner; $("pSlot").value = PS.slot; $("pRamp").value = PS.ramp; $("pStl").value = PS.stl;
+    $("pPass").querySelectorAll("button").forEach((b) => b.setAttribute("aria-pressed", String((b.dataset.v === "rough") === PS.rough)));
+  }
+  const protoRedraw = () => { if (lastCtx) renderProto(lastCtx, lastP); };
+  [["pCorner", "corner"], ["pSlot", "slot"], ["pRamp", "ramp"], ["pStl", "stl"]].forEach(([id, k]) => $(id).addEventListener("input", (e) => { PS[k] = Number(e.target.value); protoRedraw(); }));
+  $("pPass").querySelectorAll("button").forEach((b) => b.addEventListener("click", () => { PS.rough = b.dataset.v === "rough"; protoSync(); protoRedraw(); }));
+  $("pReset").addEventListener("click", () => { PS = Object.assign({}, PDEF); protoSync(); protoRedraw(); });
+  protoSync();
+
+  let protoKey = "", protoSet = null, protoLines = null;
+  function protoData(ctx, P) {
+    const key = [cacheKey, P.ae, P.ap].join("|");
+    if (key !== protoKey) {
+      const set = proto_samples(L, C, ctx, { ae: P.ae, ap: P.ap });
+      const t = ctx.tool, d = t.d, cols = [];
+      for (let i = 1; i <= 40; i++) {
+        const ae = (d * i) / 40;
+        const b = L.depth_at_budget(t, ctx.line, ae, set.fz, ctx.budget);
+        const per_mm = L.power_kw(1, ae, d, t.z, set.rpm, set.feed, ctx.line);
+        const psi = L.immersion_angle(ae, d / 2);
+        const share = (set.fz * Math.sin(Math.min(psi, Math.PI / 2))) / ctx.row.chip;
+        cols.push({ ae, force: b.kind === "NoRootBelowFlute" ? null : b.mm, power: per_mm > 0 ? ctx.m.power_kw / per_mm : null, table: share > 0.5 ? L.vendor_depth_table_ceiling_ratio(share) * d : null });
+      }
+      protoKey = key; protoSet = set; protoLines = cols;
+    }
+    return { set: protoSet, cols: protoLines };
+  }
+
+  // One GUI-style card: title, glyph, peak as % of the limit, a 24-bin time-weighted histogram.
+  function metricCard(box, c, w, total, unitScale) {
+    const div = document.createElement("div");
+    div.className = "mcard";
+    const bad = c.limit !== null && c.above_share > 0;
+    const glyph = c.limit === null ? ["none", "-"] : bad ? ["bad", "!"] : ["ok", "✓"];
+    div.innerHTML = '<div class="hd"><span class="glyph"></span><span class="t"></span><span class="pk"></span></div><svg viewBox="0 0 300 64" role="img"></svg><div class="sub"></div>';
+    const g = div.querySelector(".glyph"); g.classList.add(glyph[0]); g.textContent = glyph[1];
+    div.querySelector(".t").textContent = c.title;
+    const dg = c.unit === "mm/tooth" ? 4 : c.unit === "kW" ? 3 : 1;
+    div.querySelector(".pk").textContent = c.limit === null ? "peak " + fmt(c.peak, dg) + " " + c.unit : "peak " + fmt(c.pct, c.pct >= 99.95 && c.pct < 100 ? 2 : 1) + " % of limit";
+    div.querySelector(".pk").style.color = bad ? css("--bad") : css("--ink");
+    div.querySelector(".sub").textContent = c.limit === null
+      ? c.note
+      : "peak " + fmt(c.peak, dg) + " of " + fmt(c.limit, dg) + " " + c.unit + "; " + c.note + (bad ? "; " + fmt(100 * c.above_share, 1) + " % of the time above" : "");
+    const svg = div.querySelector("svg");
+    const nb = v("DEFAULT_BIN_COUNT"), x0 = 4, x1 = 296, y0 = 50, y1 = 4;
+    // x axis: % of the limit, with 100 % on a bin edge; degrees when the card has no limit.
+    let xmax, toX;
+    if (c.limit === null) { xmax = 180; toX = (val) => val; }
+    else { const need = Math.max(120, c.pct * 1.02); xmax = [120, 150, 200, 300, 400, 600, 1200].find((m) => m >= need) || 1200; toX = (val) => (100 * val) / c.limit; }
+    const bins = new Array(nb).fill(0);
+    c.values.forEach((val, i) => { if (w[i] <= 0) return; const k = Math.min(nb - 1, Math.max(0, Math.floor((toX(val) / xmax) * nb))); bins[k] += w[i]; });
+    const bmax = Math.max(...bins, 1e-12), bw = (x1 - x0) / nb;
+    el("line", { x1: x0, x2: x1, y1: y0, y2: y0, stroke: css("--line") }, svg);
+    bins.forEach((b, k) => {
+      if (b <= 0) return;
+      const h = Math.max(1.5, ((y0 - y1) * b) / bmax), over = c.limit !== null && ((k + 0.5) * xmax) / nb > 100;
+      el("rect", { x: x0 + k * bw + 0.5, y: y0 - h, width: bw - 1, height: h, fill: over ? css("--bad") : css("--accent") }, svg);
+    });
+    const X = (pct) => x0 + ((x1 - x0) * pct) / xmax;
+    if (c.limit !== null) {
+      if (c.floor !== null && c.floor !== undefined) el("line", { x1: X((100 * c.floor) / c.limit), x2: X((100 * c.floor) / c.limit), y1: y0, y2: y1, stroke: css("--ink"), "stroke-dasharray": "2 2" }, svg);
+      el("line", { x1: X(100), x2: X(100), y1: y0 + 2, y2: y1 - 2, stroke: css("--ink"), "stroke-width": 1.4, "stroke-dasharray": "4 2" }, svg);
+      el("text", { x: X(100) - 4, y: 61, "text-anchor": "end", class: "mut" }, svg, "100 %");
+      el("text", { x: x0, y: 61, class: "mut" }, svg, "0");
+      el("text", { x: x1, y: 61, "text-anchor": "end", class: "mut" }, svg, xmax + " %");
+    } else {
+      el("text", { x: x0, y: 61, class: "mut" }, svg, "0°");
+      el("text", { x: x1, y: 61, "text-anchor": "end", class: "mut" }, svg, "180°");
+    }
+    box.appendChild(div);
+  }
+
+  function renderProto(ctx, P) {
+    lastCtx = ctx; lastP = P;
+    const { set, cols } = protoData(ctx, P);
+    const total = PS.corner + PS.slot + PS.ramp;
+    const scale = total > 100 ? 100 / total : 1;
+    const pc = proto_cards(L, C, ctx, set, { shares: { corner: (PS.corner * scale) / 100, slot: (PS.slot * scale) / 100, ramp: (PS.ramp * scale) / 100 }, stl_mm: PS.stl, rough: PS.rough });
+    $("pCornerV").textContent = fmt(PS.corner, 0) + " %"; $("pSlotV").textContent = fmt(PS.slot, 0) + " %"; $("pRampV").textContent = fmt(PS.ramp, 0) + " %";
+    $("pSteadyV").textContent = fmt(100 * pc.share.steady, 0) + " %";
+    $("pStlV").textContent = fmt(PS.stl, 2) + " mm" + (PS.rough ? "" : " (finish: not used)");
+    $("pStl").disabled = !PS.rough;
+    const today = $("protoToday"), A = $("protoA");
+    today.innerHTML = ""; A.innerHTML = "";
+    pc.today.forEach((c) => metricCard(today, c, pc.w, pc.total));
+    pc.A.forEach((c) => metricCard(A, c, pc.w, pc.total));
+    const r = pc.readings, d = ctx.tool.d;
+    const rd = r ? [["Depth (no line)", fmt(r.apMin, 2) + " to " + fmt(r.apMax, 2) + " mm, mean " + fmt(r.apMean, 2)], ["Width (no line)", fmt((100 * r.aeMin) / d, 1) + " to " + fmt((100 * r.aeMax) / d, 1) + " % D, mean " + fmt((100 * r.aeMean) / d, 1)]] : [["Readings", "no cutting time"]];
+    $("protoReadings").innerHTML = rd.map(() => "<div><span></span><br><b></b></div>").join("");
+    $("protoReadings").querySelectorAll("div").forEach((e, i) => { e.querySelector("span").textContent = rd[i][0]; e.querySelector("b").textContent = rd[i][1]; });
+    renderProtoChart(ctx, P, set, cols, pc);
+  }
+
+  function renderProtoChart(ctx, P, set, cols, pc) {
+    const svg = $("protoChart"); clear(svg);
+    const t = ctx.tool, d = t.d;
+    const atPlan = cols.reduce((a, c) => (Math.abs(c.ae - P.ae) < Math.abs(a.ae - P.ae) ? c : a));
+    const ymax = Math.min(t.flute, Math.max(2.5 * P.ap, 1.15 * (atPlan.table ?? 0), 1));
+    const x0 = 52, x1 = 560, y0 = 340, y1 = 18;
+    const X = (pctD) => x0 + ((x1 - x0) * pctD) / 100, Y = (ap) => y0 - ((y0 - y1) * ap) / ymax;
+    // density cells
+    const nx = 40, ny = 24, cell = new Array(nx * ny).fill(0);
+    set.samples.forEach((s, i) => {
+      if (pc.w[i] <= 0) return;
+      const ix = Math.min(nx - 1, Math.floor(((100 * s.ae) / d / 100) * nx - 1e-9)), iy = Math.min(ny - 1, Math.floor((s.ap / ymax) * ny));
+      cell[Math.max(ix, 0) + nx * Math.max(iy, 0)] += pc.w[i];
+    });
+    const cmax = Math.max(...cell, 1e-12), cw = (x1 - x0) / nx, ch = (y0 - y1) / ny;
+    for (let k = 0; k < cell.length; k++) {
+      if (cell[k] <= 0) continue;
+      const ix = k % nx, iy = Math.floor(k / nx);
+      el("rect", { x: x0 + ix * cw, y: y0 - (iy + 1) * ch, width: cw, height: ch, fill: css("--accent"), "fill-opacity": (0.12 + 0.83 * Math.sqrt(cell[k] / cmax)).toFixed(3) }, svg);
+    }
+    // grid and axes
+    for (const p of [0, 25, 50, 75, 100]) { el("line", { x1: X(p), x2: X(p), y1: y0, y2: y1, stroke: css("--line"), "stroke-width": 0.5 }, svg); el("text", { x: X(p), y: y0 + 15, "text-anchor": "middle", class: "mut" }, svg, p + " %"); }
+    const ystep = ymax > 12 ? 3 : ymax > 6 ? 2 : 1;
+    for (let ap = 0; ap <= ymax + 1e-9; ap += ystep) { el("line", { x1: x0, x2: x1, y1: Y(ap), y2: Y(ap), stroke: css("--line"), "stroke-width": 0.5 }, svg); el("text", { x: x0 - 6, y: Y(ap) + 4, "text-anchor": "end", class: "mut" }, svg, fmt(ap, 0)); }
+    el("text", { x: (x0 + x1) / 2, y: 372, "text-anchor": "middle" }, svg, "radial width ae, % of D (the stepover)");
+    el("text", { x: 4, y: 11 }, svg, "depth ap (mm)");
+    // contour lines: [key, label, colour token]
+    const lines = [["force", "force budget " + fmt(ctx.budget, 2) + " N", "--c-rigidity"], ["power", "spindle power at planned feed and rpm", "--c-power"], ["table", "vendor depth table", "--c-table"]];
+    const off = [];
+    lines.forEach(([k, label, tok], li) => {
+      let p = "", on = false, last = null;
+      for (const c of cols) {
+        const y = c[k];
+        if (y === null || y > ymax) { on = false; continue; }
+        p += (on ? " L" : " M") + X((100 * c.ae) / d).toFixed(1) + "," + Y(y).toFixed(1); on = true; last = [X((100 * c.ae) / d), Y(y)];
+      }
+      if (!p) { off.push(label); return; }
+      el("path", { d: p, fill: "none", stroke: css(tok), "stroke-width": 2, "stroke-dasharray": k === "power" ? "6 4" : "" }, svg);
+      el("text", { x: Math.min(last[0] + 4, x1 + 4), y: last[1] + 4 + (li - 1) * 2, fill: css(tok) }, svg, k === "force" ? "force" : k === "power" ? "power" : "table");
+    });
+    // samples outside a limit, then the planned point
+    set.samples.forEach((s, i) => { if (pc.w[i] > 0 && pc.outside[i] && s.ap <= ymax) el("circle", { cx: X((100 * s.ae) / d), cy: Y(s.ap), r: 2.6, fill: css("--bad"), stroke: css("--surface"), "stroke-width": 0.6 }, svg); });
+    el("circle", { cx: X((100 * P.ae) / d), cy: Y(Math.min(P.ap, ymax)), r: 7, fill: "none", stroke: css("--c-pick"), "stroke-width": 2 }, svg);
+    el("text", { x: X((100 * P.ae) / d) - 10, y: Y(Math.min(P.ap, ymax)) - 11, "text-anchor": "end" }, svg, "planned " + fmt((100 * P.ae) / d, 1) + " % D x " + fmt(P.ap, 2) + " mm");
+    const lg = $("protoLegend"); lg.innerHTML = "";
+    const add = (colr, txt, dot) => { const s = document.createElement("span"); s.innerHTML = dot ? '<i style="background:' + colr + ';width:8px;height:8px;border-radius:50%"></i>' : '<i style="background:' + colr + '"></i>'; s.appendChild(document.createTextNode(txt)); lg.appendChild(s); };
+    lines.forEach(([, label, tok]) => add(css(tok), label + (off.includes(label) ? ": above the chart" : "")));
+    add(css("--accent"), "sample time (darker = more)");
+    add(css("--bad"), "sample over a card limit (" + fmt(100 * pc.outside_share, 1) + " % of the time)", true);
   }
 
   // ---- static tables ----

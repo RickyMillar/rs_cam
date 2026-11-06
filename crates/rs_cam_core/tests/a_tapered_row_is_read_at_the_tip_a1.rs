@@ -222,6 +222,7 @@ fn a_tapered_row_is_read_at_the_tip_a1() {
             spans: None,
             drill_op: None,
             commanded_thinning_lift: None,
+            radial_stock_to_leave_mm: None,
         },
         Some(&t),
         None,

@@ -92,6 +92,7 @@ use rs_cam_core::ids::ToolpathId;
 use rs_cam_core::machine::MachineProfile;
 use rs_cam_core::material::{Material, PlywoodGrade, SheetGoodKind, WoodSpecies};
 use rs_cam_core::session::SimulationOptions;
+use rs_cam_core::tool_load::cut_force::CutForceReading;
 use rs_cam_core::tool_load::{
     ChiploadVerdict, DeflectionVerdict, DepthVerdict, PowerVerdict, ToolpathLoadVerdict,
 };
@@ -979,6 +980,10 @@ const SIM_HEADER: &[&str] = &[
     "deflection_state",
     "deflection_peak_mm",
     "deflection_detail",
+    "force_state",
+    "force_peak_n",
+    "force_budget_n",
+    "force_detail",
     "depth_state",
     "depth_peak_mm",
     "depth_cap_mm",
@@ -1115,6 +1120,58 @@ fn deflection_cols(v: &DeflectionVerdict) -> [String; 3] {
     }
 }
 
+/// P17: the cut-force reading (`ToolpathLoadVerdict::cut_force`). The
+/// state is `Within` or `Exceeds` by `boundary::exceeds_high` at zero
+/// tolerance under the force-budget line (lead ruling 3), `Reported` with
+/// no line, `Vacuous` when no sample reached the force law (X-VAC: the
+/// peak is then no reading), and `n/a` with no reading (no trace, a drill,
+/// no force line).
+fn force_cols(v: Option<&CutForceReading>) -> [String; 4] {
+    match v {
+        Some(reading) if reading.population.is_vacuous() => [
+            "Vacuous".to_owned(),
+            String::new(),
+            num(reading.budget_n),
+            format!(
+                "vacuous: 0 of {} samples reached the force law",
+                reading.population.offered
+            ),
+        ],
+        Some(CutForceReading {
+            peak_n,
+            budget_n: Some(budget_n),
+            rule,
+            ..
+        }) => [
+            if rs_cam_core::tool_load::boundary::exceeds_high(*peak_n, *budget_n, 0.0) {
+                "Exceeds".to_owned()
+            } else {
+                "Within".to_owned()
+            },
+            num(Some(*peak_n)),
+            num(Some(*budget_n)),
+            rule.clone(),
+        ],
+        Some(CutForceReading {
+            peak_n,
+            budget_n: None,
+            rule,
+            ..
+        }) => [
+            "Reported".to_owned(),
+            num(Some(*peak_n)),
+            String::new(),
+            rule.clone(),
+        ],
+        None => [
+            "n/a".to_owned(),
+            String::new(),
+            String::new(),
+            "no force reading".to_owned(),
+        ],
+    }
+}
+
 fn depth_cols(v: &DepthVerdict) -> [String; 5] {
     match v {
         DepthVerdict::Within { peak_mm, bound, .. }
@@ -1156,10 +1213,11 @@ fn verdict_cols(v: Option<&ToolpathLoadVerdict>) -> Vec<String> {
             out.extend(chipload_cols(&v.chipload));
             out.extend(power_cols(&v.power));
             out.extend(deflection_cols(&v.deflection));
+            out.extend(force_cols(v.cut_force.as_ref()));
             out.extend(depth_cols(&v.depth));
             out
         }
-        None => std::iter::repeat_n("n/a: no verdict row".to_owned(), 14).collect(),
+        None => std::iter::repeat_n("n/a: no verdict row".to_owned(), 18).collect(),
     }
 }
 
@@ -1647,6 +1705,16 @@ fn summary(machine: &MachineProfile, cells: &[Cell], sim: &SimOutcome) -> String
     .expect("write");
     writeln!(
         w,
+        "- `force_state`, `force_peak_n`, `force_budget_n`, `force_detail` (P17) are the \
+         cut-force reading of the simulated toolpath (`ToolpathLoadVerdict::cut_force`): the \
+         peak engaged-edge force of the deflection gate's population, against the machine \
+         force budget on an op under the `ForceBudget` depth-cap rule (`Within` / `Exceeds`), \
+         `Reported` with no line, `Vacuous` when no sample reached the force law, `n/a` with \
+         no reading."
+    )
+    .expect("write");
+    writeln!(
+        w,
         "- `force_line` is the form id of the material's force line, or \
          `refused:<variant>` (ruling B6). `chip_regime` is the chip regime at the shipped \
          point from `force_at_operating_point`; it is empty on a refused cell and where the \
@@ -1770,9 +1838,19 @@ fn diff_tables(committed: &Table, now: &Table, key: &[&str]) -> Option<String> {
     Some(report)
 }
 
+/// P17: a directory that receives a copy of each walked CSV, under its
+/// file name, on every run. A determinism check runs the instrument twice
+/// and compares the two copies by checksum. Unset: no copy.
+const OUT_DIR_VAR: &str = "RS_CAM_FEEDS_MATRIX_OUT";
+
 /// Compare `now` with the committed file at `path`, or rewrite the file
-/// when [`UPDATE_VAR`] is set. Both arms that do not match fail.
+/// when [`UPDATE_VAR`] is set. Both arms that do not match fail. With
+/// [`OUT_DIR_VAR`] set, the walk is also written there first.
 fn gate(path: &std::path::Path, now: &str, key: &[&str]) {
+    if let Some(dir) = std::env::var_os(OUT_DIR_VAR) {
+        let copy = std::path::Path::new(&dir).join(path.file_name().expect("a file name"));
+        std::fs::write(&copy, now).unwrap_or_else(|e| panic!("write {}: {e}", copy.display()));
+    }
     if std::env::var_os(UPDATE_VAR).is_some() {
         std::fs::write(path, now).unwrap_or_else(|e| panic!("write {}: {e}", path.display()));
         panic!(

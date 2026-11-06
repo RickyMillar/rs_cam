@@ -55,10 +55,12 @@ const TP: ToolpathId = ToolpathId::from_raw(0);
 /// is the number the bound's provenance must carry back.
 const SAMPLE_RPM: u32 = 18_000;
 
-/// The four words `BoundSource::setting` may return. The operator's
+/// The five words `BoundSource::setting` may return. The operator's
 /// rule 3: every limit traces back to the setting that set it, and a
-/// setting is a live symbol a reader can find.
-const SETTINGS: [&str; 4] = ["machine", "tool", "material", "vendor row"];
+/// setting is a live symbol a reader can find. P17 added "operation":
+/// the radial stock to leave of a rough op (`BoundSource::StockToLeave`)
+/// is a field of the operation config.
+const SETTINGS: [&str; 5] = ["machine", "tool", "material", "vendor row", "operation"];
 
 fn tool() -> ToolDefinition {
     ToolDefinition::new(
@@ -151,6 +153,7 @@ fn milling_verdict() -> ToolpathLoadVerdict {
         spans: None,
         drill_op: None,
         commanded_thinning_lift: None,
+        radial_stock_to_leave_mm: None,
     };
     let env = GateEnv {
         sim_trace: Some(&trace),
@@ -169,6 +172,7 @@ fn milling_verdict() -> ToolpathLoadVerdict {
         feed_explanation: None,
         kinematic_utilization: None,
         material_split: None,
+        cut_force: None,
     }
 }
 
@@ -210,6 +214,7 @@ fn drill_verdict() -> ToolpathLoadVerdict {
         feed_explanation: None,
         kinematic_utilization: None,
         material_split: None,
+        cut_force: None,
     }
 }
 

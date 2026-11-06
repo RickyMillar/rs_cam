@@ -208,6 +208,32 @@ check("Step 4b slot rule uses ae > threshold x D", "if cut.ae > d * slot_thresho
 check("Pocket power is the slot case (engagement.rs)", "A slot (ae = D): `FirstPass::Slot` or `Radial::Slot`." in "\n".join(lines_of("crates/rs_cam_core/src/feeds/engagement.rs")))
 check("K_r = 0 (engagement.rs)", "`K_r = 0`" in "\n".join(lines_of("crates/rs_cam_core/src/feeds/engagement.rs")))
 
+# section 9 prototype: claims in words
+check("s9 note: illustrative samples, not a simulation run", "<b>Illustrative samples from a simple pocket model, not a simulation run.</b>" in PAGE)
+check("s9 caption: power exact only at planned feed and rpm", "The power line is exact only at the planned feed and rpm; the force line depends on chip and geometry only." in PAGE)
+check("s9 power contour label names the planned feed and rpm", '"spindle power at planned feed and rpm"' in PAGE)
+viz = "\n".join(lines_of("crates/rs_cam_viz/src/ui/sim_diagnostics.rs"))
+check("s9 today's five card titles (CutMetricSpec)", all(f'title: "{t}"' in viz for t in ("Chipload", "Depth of cut", "Tool deflection", "Spindle power", "Engagement")))
+dist = "\n".join(lines_of("crates/rs_cam_core/src/tool_load/distribution.rs"))
+check("s9 card histograms use DEFAULT_BIN_COUNT", "Histogram::build(&samples, floor, status.bound, DEFAULT_BIN_COUNT)" in dist and cl["proto_bins"] == 24)
+check("s9 card floor only when the row publishes one", "The chipload floor is present only when the vendor row" in dist)
+spk = obs[LAWS["VENDOR_ROWS"]["value"]["6"]["hardwood"]["id"]]
+check("s9 Spektra 6 mm hardwood row is a point (no chipload_min)", "chipload_min_mm_tooth" not in spk and spk["chipload_max_mm_tooth"] == cl["chip_hw"])
+oc = "\n".join(lines_of("crates/rs_cam_core/src/compute/operation_configs.rs"))
+pocket = re.search(r"pub struct PocketConfig \{(.*?)\n\}", oc, re.S).group(1)
+check("s9 PocketConfig has no stock-to-leave field", "stock_to_leave" not in pocket)
+check("s9 stock to leave default is Adaptive3dConfig's", "impl Default for Adaptive3dConfig" in "\n".join(lines_of("crates/rs_cam_core/src/compute/operation_configs.rs")[1935:1956]))
+check("s9 rough limit = stock to leave x 1000 um", abs(cl["proto_rough_limit_um"] - 1000 * cl["proto_stl_mm"]) < 1e-9)
+dep = "\n".join(lines_of("crates/rs_cam_core/src/tool_load/depth.rs"))
+check("s9 depth card bound: budget depth at the peak sample's width and chip", "the depth where the peak cutting force at the peak\n//! sample's width and chip meets the machine force budget" in dep
+      and abs(cl["proto_depth_bound"] - cl["cap_hw_fm1chip"]) < 1e-12)
+dfl = "\n".join(lines_of("crates/rs_cam_core/src/tool_load/deflection.rs"))
+check("s9 deflection card law: peak edge force into tip_deflection_mm", "PEAK resultant" in dfl and "[`ToolDefinition::tip_deflection_mm`]" in dfl)
+check("s9 power peak = the slot-case power of section 5 (slot samples)", abs(cl["proto_power_kw"] - cl["power_pick"]) < 1e-12)
+check("s9 force peak = the pick force (plateau), under the budget, nothing outside", abs(cl["proto_force_n"] - cl["force_pick"]) < 1e-9
+      and cl["proto_force_n"] < cl["budget_n"] and cl["proto_outside_pct"] == 0)
+check("s9 default shares sum to 100 %", abs(cl["proto_share_steady"] + cl["proto_share_corner"] + cl["proto_share_slot"] + cl["proto_share_ramp"] - 100) < 1e-9)
+
 # ---------------------------------------------------------------- 3. prose spans
 extra = {"tool_d": 6, "cap_default_typed": LAWS["DEFAULT_CUTTING_FEED_CAP_MM_MIN"]["value"], "travel": LAWS["GENERIC_MAX_FEED"]["value"],
          "bend_frac": LAWS["ENDMILL_EQUIVALENT_DIAMETER_FRACTION"]["value"], "scan_steps": LAWS["BUDGET_SCAN_STEPS"]["value"],

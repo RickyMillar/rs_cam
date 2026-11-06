@@ -315,6 +315,7 @@ fn evaluate_pair() -> (Arm, Arm) {
                 spans: None,
                 drill_op: None,
                 commanded_thinning_lift: None,
+                radial_stock_to_leave_mm: None,
             },
             Some(&trace),
             None,

@@ -1472,6 +1472,48 @@ impl OperationConfig {
         }
     }
 
+    /// Feeds contract P17: the RADIAL stock to leave of a rough op (mm), or
+    /// `None` when the op has no radial leave field. The deflection gate
+    /// reads it as the limit of a rough pass (`tool_load::deflection`).
+    ///
+    /// Only `BoreConfig::finish_allowance` is a radial leave at P17: its
+    /// doc says "Radial stock the rough helix leaves on the wall".
+    /// `Adaptive3dConfig::stock_to_leave_axial` is axial by its own doc (the
+    /// planner offsets in Z alone), so it is not one. Every `stock_to_leave`
+    /// field is on a finish op ([`Self::stock_to_leave_dial`]); a finish pass
+    /// has no leave after it, so those are not read here. The match names
+    /// every variant, so a new rough op states whether it has a radial leave.
+    #[must_use]
+    pub fn radial_stock_to_leave_mm(&self) -> Option<f64> {
+        match self {
+            OperationConfig::Bore(c) => Some(c.finish_allowance),
+            OperationConfig::Pencil(_)
+            | OperationConfig::Scallop(_)
+            | OperationConfig::UnifiedFinish(_)
+            | OperationConfig::SteepShallow(_)
+            | OperationConfig::RampFinish(_)
+            | OperationConfig::SpiralFinish(_)
+            | OperationConfig::RadialFinish(_)
+            | OperationConfig::HorizontalFinish(_)
+            | OperationConfig::Face(_)
+            | OperationConfig::Pocket(_)
+            | OperationConfig::Profile(_)
+            | OperationConfig::Adaptive(_)
+            | OperationConfig::VCarve(_)
+            | OperationConfig::Inlay(_)
+            | OperationConfig::InlayPlug(_)
+            | OperationConfig::Zigzag(_)
+            | OperationConfig::Trace(_)
+            | OperationConfig::Drill(_)
+            | OperationConfig::Chamfer(_)
+            | OperationConfig::DropCutter(_)
+            | OperationConfig::Adaptive3d(_)
+            | OperationConfig::Waterline(_)
+            | OperationConfig::ProjectCurve(_)
+            | OperationConfig::AlignmentPinDrill(_) => None,
+        }
+    }
+
     /// G-ROUGHGOUGE: the leave and the chord tolerance that set the model
     /// gouge limit under [`ModelGougeRule::Allowance`], or `None` for an op
     /// without that rule. The match names every variant, so a new op states

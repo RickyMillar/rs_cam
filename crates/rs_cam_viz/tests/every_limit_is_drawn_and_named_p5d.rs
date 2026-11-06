@@ -11,7 +11,8 @@
 //!    hard top, the marks))`, derived here from the envelope. The binding
 //!    line is `TEXT_BODY`, the others `TEXT_MUTED` and thinner; no line is
 //!    DANGER. The vendor label names its depth as a share of D. The width
-//!    frame edge D paints its tick.
+//!    frame edge D paints its tick: P17 made the width axis a share of D,
+//!    so the tick reads "100 %" and the title "WIDTH (% OF D)".
 //! 2. D3: the white dot is the setpoint on both charts. A drag on the
 //!    envelope plot moves the envelope white dot to the candidate and the
 //!    nomogram white dot to `candidate_speeds`; a hollow `TEXT_MUTED` ghost
@@ -53,6 +54,13 @@ use rs_cam_viz::ui::feeds::envelope::{
 use rs_cam_viz::ui::{properties, tokens};
 
 // ── fixtures ────────────────────────────────────────────────────────────
+
+/// The width axis title as the kit paints it (P17: upper case, a share of
+/// D).
+const WIDTH_TITLE: &str = "WIDTH (% OF D)";
+
+/// The width frame edge tick (P17: D is 100 % of itself).
+const D_TICK: &str = "100 %";
 
 const FIXTURE: &str = concat!(
     env!("CARGO_MANIFEST_DIR"),
@@ -247,7 +255,7 @@ fn bands(p: &Painted) -> Bands {
             .unwrap_or_else(|| panic!("`{t}` paints: {:?}", p.texts))
     };
     let head = top_of("SAFE CUT");
-    let width_title = top_of("Width (mm)");
+    let width_title = top_of(WIDTH_TITLE);
     let rpm_title = top_of("RPM");
     Bands {
         envelope: (head.bottom(), width_title.top()),
@@ -466,7 +474,10 @@ fn every_limit_in_the_range_draws_a_line_and_a_label_p5d() {
         assert_eq!(n, 1, "`{}` paints once: {p:?}", e.label);
     }
 
-    // D5: the D tick paints under the frame at the x of D.
+    // D5: the D tick paints under the frame at the x of D. P17: the tick
+    // reads "100 %", and the kit anchors the edge label to the edge (its
+    // right end at D, as the histogram anchors its range-end label), so it
+    // is never clipped.
     let at_d = f
         .response
         .screen_of(
@@ -477,13 +488,24 @@ fn every_limit_in_the_range_draws_a_line_and_a_label_p5d() {
             EnvelopeShape::Plane,
         )
         .expect("a frame");
-    let d_text = format!("{d:.0}");
+    assert!(
+        (at_d.x - plot.right()).abs() < 0.5,
+        "P17: D is the right frame edge: {at_d:?} vs {plot:?}"
+    );
     let shapes = painted(&f.shapes);
     assert!(
-        shapes.texts.iter().any(|(t, r)| *t == d_text
+        shapes.texts.iter().any(|(t, r)| *t == D_TICK
             && r.top() >= plot.bottom() - 1.0
-            && (r.center().x - at_d.x).abs() < 4.0),
-        "D5: the `{d_text}` tick paints at D: {:?}",
+            && (r.right() - at_d.x).abs() < 1.5),
+        "D5: the `{D_TICK}` tick paints at D: {:?}",
+        shapes.texts
+    );
+    assert!(
+        shapes
+            .texts
+            .iter()
+            .any(|(t, r)| t == WIDTH_TITLE && r.top() > plot.bottom()),
+        "P17: the width title reads `{WIDTH_TITLE}` under the plot: {:?}",
         shapes.texts
     );
 }
@@ -851,7 +873,10 @@ fn trimmed(v: f64) -> String {
 
 /// Lead review of D5: when D is off the large step (6.35 mm on a 2.5 mm
 /// step), the edge tick names D in full and no other width tick label
-/// touches it.
+/// touches it. P17: the width axis is a share of D, so the edge tick reads
+/// "100 %" for every D; the claim stays: it paints at D and no width tick
+/// label overlaps it. The depth top of this fixture is not a hard stop, so
+/// `trimmed` names no depth edge here.
 #[test]
 fn an_edge_off_the_step_names_itself_alone_p5d() {
     let (config, env, d) = quarter_inch_pocket();
@@ -862,7 +887,12 @@ fn an_edge_off_the_step_names_itself_alone_p5d() {
         (d * 2.0 - (d * 2.0).round()).abs() > 1e-6,
         "fixture: D {d} is off every half-mm step"
     );
-    let want = trimmed(d);
+    assert_ne!(
+        trimmed(d),
+        D_TICK,
+        "P17: the edge names the share, not the mm"
+    );
+    let want = D_TICK;
     let ctx = ctx();
     for width in [360.0_f32, 240.0] {
         let mut candidates = EnvelopeCandidates::default();
@@ -898,14 +928,14 @@ fn an_edge_off_the_step_names_itself_alone_p5d() {
         let title = p
             .texts
             .iter()
-            .find(|(t, _)| t == "Width (mm)")
+            .find(|(t, _)| t == WIDTH_TITLE)
             .map(|(_, r)| *r)
             .expect("the width title paints");
         let ticks: Vec<&(String, egui::Rect)> = p
             .texts
             .iter()
             .filter(|(t, r)| {
-                t.parse::<f64>().is_ok()
+                (t.parse::<f64>().is_ok() || t == D_TICK)
                     && r.top() >= plot.bottom() - 1.0
                     && r.bottom() <= title.top() + 1.0
             })

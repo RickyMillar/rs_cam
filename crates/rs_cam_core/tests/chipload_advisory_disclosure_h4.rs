@@ -125,6 +125,7 @@ fn verdict_with(chipload: ChiploadVerdict) -> ToolpathLoadVerdict {
         feed_explanation: None,
         kinematic_utilization: None,
         material_split: None,
+        cut_force: None,
     }
 }
 

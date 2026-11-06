@@ -220,6 +220,7 @@ fn evaluate_chipload_at(trace: &SimulationCutTrace, commanded_fpt: f64) -> Chipl
             spans: None,
             drill_op: None,
             commanded_thinning_lift: None,
+            radial_stock_to_leave_mm: None,
         },
         &rs_cam_core::tool_load::GateEnv {
             sim_trace: Some(trace),

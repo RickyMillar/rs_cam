@@ -94,6 +94,18 @@ const ENGAGEMENT: MetricGuide = MetricGuide {
     levers: "Adaptive or trochoidal clearing keeps the engagement even.",
 };
 
+const CUT_FORCE: MetricGuide = MetricGuide {
+    what: "The peak sideways force the cut puts on the tool and the frame at \
+           this moment: the same force that bends the tool tip.",
+    too_low: "No risk.",
+    too_high: "The frame and the gantry flex. You hear a deeper tone, and you \
+               see a wall out of size or steps between passes. The budget \
+               stands in for an unmeasured frame, so it does not stop an \
+               export.",
+    levers: "Reduce the depth or the step-over first. Keep the chipload in \
+             the band: do not reduce the feed alone.",
+};
+
 impl CriterionKind {
     /// The (i) hover copy for this criterion's card. `None` for a kind
     /// that has no card: gantry push and the three drill gates.
@@ -116,6 +128,13 @@ impl CriterionKind {
 #[must_use]
 pub fn engagement_guide() -> MetricGuide {
     ENGAGEMENT
+}
+
+/// P17: the (i) hover copy for the cut-force card, which has no criterion
+/// (the reading is report-only).
+#[must_use]
+pub fn cut_force_guide() -> MetricGuide {
+    CUT_FORCE
 }
 
 #[cfg(test)]
@@ -148,6 +167,10 @@ mod tests {
             assert!(kind.guide().is_none(), "{kind:?} must not get copy");
         }
         assert!(!engagement_guide().what.is_empty());
+        let g = cut_force_guide();
+        for line in [g.what, g.too_low, g.too_high, g.levers] {
+            assert!(!line.trim().is_empty(), "cut force has an empty line");
+        }
     }
 
     /// Ruling R4: the load levers name engagement, and do not offer the

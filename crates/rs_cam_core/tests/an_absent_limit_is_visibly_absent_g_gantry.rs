@@ -136,6 +136,7 @@ fn milling_verdict() -> ToolpathLoadVerdict {
         spans: None,
         drill_op: None,
         commanded_thinning_lift: None,
+        radial_stock_to_leave_mm: None,
     };
     let env = GateEnv {
         sim_trace: Some(&trace),
@@ -154,6 +155,7 @@ fn milling_verdict() -> ToolpathLoadVerdict {
         feed_explanation: None,
         kinematic_utilization: None,
         material_split: None,
+        cut_force: None,
     }
 }
 
@@ -211,6 +213,7 @@ fn drill_verdict() -> ToolpathLoadVerdict {
         feed_explanation: None,
         kinematic_utilization: None,
         material_split: None,
+        cut_force: None,
     }
 }
 

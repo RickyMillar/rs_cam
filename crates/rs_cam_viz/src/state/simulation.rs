@@ -14,10 +14,12 @@ use super::job::SetupId;
 use super::runtime::GuiState;
 use super::toolpath::ToolpathId;
 use rs_cam_core::dexel_stock::TriDexelStock;
+use rs_cam_core::feeds::envelope::SafeEnvelope;
 use rs_cam_core::session::{LoadReportStamp, TriageSessionKey};
 use rs_cam_core::stock::collision::{CollisionReport, RapidCollision};
 use rs_cam_core::stock::simulation_cut::{SimulationCutSample, SimulationCutTrace};
 use rs_cam_core::stock::stock_mesh::StockMesh;
+use rs_cam_core::tool_load::cut_force::CutPoint3;
 use rs_cam_core::tool_load::verdict::CriterionKind;
 use rs_cam_core::tool_load::{
     DistributionMetric, DistributionOutcome, GateEnv, ToleranceBands, ToolpathLoadVerdict,
@@ -182,14 +184,23 @@ fn weak_matches<T>(stored: Option<&Weak<T>>, live: Option<&Arc<T>>) -> bool {
 
 /// The metrics the Inspector's "Cut metrics" section shows, in the order it
 /// shows them: the criteria in `ToolpathLoadVerdict::criteria()` order, so
-/// the cards, the CLI and the MCP list one order. The
-/// engagement card has no criterion and goes last.
-pub const CUT_METRIC_ORDER: [DistributionMetric; 5] = [
+/// the cards, the CLI and the MCP list one order, then the cut force
+/// (P17: report-only, one law with the deflection gate).
+///
+/// P17 (operator 2026-11-06): four cards. The depth-of-cut card went: its
+/// line (the rigidity depth cap) was the force budget one step removed, so
+/// the force card carries the budget and the depth is a plain reading
+/// under it. The engagement card went: it had no line and read in degrees,
+/// a unit the operator types nowhere; the width x depth chart
+/// (`ui/sim_cut_chart.rs`) shows the engaged width as a share of D. The
+/// depth row of `criteria()` keeps its one painted place in the "Other
+/// limits" table. `DistributionMetric::Engagement` stays in core; the GUI
+/// builds no card for it.
+pub const CUT_METRIC_ORDER: [DistributionMetric; 4] = [
     DistributionMetric::Criterion(CriterionKind::Chipload),
     DistributionMetric::Criterion(CriterionKind::Power),
     DistributionMetric::Criterion(CriterionKind::Deflection),
-    DistributionMetric::Criterion(CriterionKind::DepthOfCut),
-    DistributionMetric::Engagement,
+    DistributionMetric::CutForce,
 ];
 
 /// One card of the "Cut metrics" section: the metric and what core said.
@@ -206,12 +217,28 @@ pub struct CutMetricCard {
     pub series: Vec<(usize, f64)>,
 }
 
-/// The cut-metric cards of one toolpath. A metric that has no card for the
-/// operation (`NotApplicableForOp`) is not in `cards`.
+/// The cut-metric cards of one toolpath, and the width x depth chart's
+/// inputs (P17). A metric that has no card for the operation
+/// (`NotApplicableForOp`) is not in `cards`.
 #[derive(Debug, Clone)]
 pub struct CutMetricSet {
     pub toolpath_id: ToolpathId,
     pub cards: Vec<CutMetricCard>,
+    /// The operation's safe envelope (`ProjectSession::safe_envelope`, the
+    /// MCP door), the plane the chart draws. `None` on a refusal or with
+    /// no tool: the chart does not draw.
+    pub envelope: Option<Arc<SafeEnvelope>>,
+    /// The deflection gate's population on the width x depth plane
+    /// (`tool_load::cut_force::cut_points`), in trace order, with the
+    /// same context, environment and S6 stock view the force card bins.
+    /// `move_index` is toolpath-local, as the histograms' is.
+    pub samples: Vec<CutPoint3>,
+    /// The tool diameter D (mm) the width readings share by: the
+    /// envelope's `LimitKind::Diameter` when it has one, else the tool's.
+    pub diameter_mm: f64,
+    /// The force budget line (N), `tool_load::cut_force::budget_line`:
+    /// `Some` only under the `ForceBudget` depth-cap rule (lead ruling 3).
+    pub budget_n: Option<f64>,
 }
 
 /// The memo behind [`SimulationState::cached_cut_metrics`].
@@ -320,14 +347,19 @@ fn build_cut_metric_set(
     let mut set = CutMetricSet {
         toolpath_id,
         cards: Vec::new(),
+        envelope: None,
+        samples: Vec::new(),
+        diameter_mm: 0.0,
+        budget_n: None,
     };
     let Some(verdict) = verdict else {
         return set;
     };
-    let Some(index) = session
+    let Some((index, tc)) = session
         .toolpath_configs()
         .iter()
-        .position(|config| config.id == toolpath_id)
+        .enumerate()
+        .find(|(_, config)| config.id == toolpath_id)
     else {
         return set;
     };
@@ -365,7 +397,52 @@ fn build_cut_metric_set(
             series,
         });
     }
+    // P17: the chart's plane and its samples. The envelope is the MCP
+    // door's; the Passes-tab memo is filled only while the Toolpaths
+    // workspace draws that op. The samples read the S6 stock view the
+    // force card bins (`metric_distribution`), so the chart and the card
+    // hold one population.
+    set.envelope = session.safe_envelope(tc).and_then(Result::ok).map(Arc::new);
+    set.diameter_mm = set
+        .envelope
+        .as_deref()
+        .and_then(envelope_diameter_mm)
+        .unwrap_or_else(|| rs_cam_core::tool::MillingCutter::diameter(ctx.tool));
+    set.budget_n = rs_cam_core::tool_load::cut_force::budget_line(&ctx, &env);
+    let stock_view = env
+        .sim_trace
+        .and_then(|t| t.stock_population_view(ctx.toolpath_id, ctx.material));
+    set.samples = match &stock_view {
+        Some(view) => {
+            let view_env = GateEnv {
+                sim_trace: Some(view),
+                ..env
+            };
+            rs_cam_core::tool_load::cut_force::cut_points(&ctx, &view_env)
+        }
+        None => rs_cam_core::tool_load::cut_force::cut_points(&ctx, &env),
+    };
     set
+}
+
+/// The tool diameter of `env`: the width frame D, when the envelope has
+/// the `Diameter` limit (the envelope plot's own read).
+fn envelope_diameter_mm(env: &SafeEnvelope) -> Option<f64> {
+    match env
+        .limit(rs_cam_core::feeds::envelope::LimitKind::Diameter)?
+        .edge
+    {
+        rs_cam_core::feeds::envelope::Edge::AeCeiling { mm } if mm.is_finite() && mm > 0.0 => {
+            Some(mm)
+        }
+        rs_cam_core::feeds::envelope::Edge::AeCeiling { .. }
+        | rs_cam_core::feeds::envelope::Edge::ApCeiling { .. }
+        | rs_cam_core::feeds::envelope::Edge::ApFloor { .. }
+        | rs_cam_core::feeds::envelope::Edge::AeFloor { .. }
+        | rs_cam_core::feeds::envelope::Edge::ApCurve { .. }
+        | rs_cam_core::feeds::envelope::Edge::PerPoint
+        | rs_cam_core::feeds::envelope::Edge::Unmodelled { .. } => None,
+    }
 }
 
 /// The air samples of one toolpath in a cut trace.

@@ -24,6 +24,9 @@
 //! | `50 – 200 µm`       | Within  | Approximate             |
 //! | `> 200 µm`          | Exceeds | LongToolStiffnessUnsafe |
 //!
+//! P17: on a rough pass with a radial stock to leave `s > 0`, the `Exceeds`
+//! limit is `s`, not 200 µm ([`exceeds_limit`] holds the derivation).
+//!
 //! Refusal cases (mirrored with `power::evaluate`):
 //! - No simulation trace → `Unmodeled(SimulationRequired)`
 //! - Trace lacks `arc_engagement_radians` → `Unmodeled(ArcEngagementNotCaptured)`
@@ -45,13 +48,16 @@
 //!   not translate the tip — only rotates it. The "tip-wander" metric
 //!   this gate predicts therefore ignores torsion.
 
+use crate::feeds::engagement::Engagement;
+use crate::feeds::vendor_lut::LutPassRole;
 use crate::material::Material;
 use crate::stock::simulation_cut::{RadialEngagementClass, SimulationCutSample};
 use crate::tool::ToolDefinition;
 
 use super::locality::SpanLookup;
 use super::verdict::{
-    Confidence, DeflectionBounds, DeflectionVerdict, EntrySpike, SampleEvidence, UnmodeledReason,
+    Confidence, DeflectionBasis, DeflectionBounds, DeflectionVerdict, EntrySpike, SampleEvidence,
+    UnmodeledReason,
 };
 
 /// Below this peak tip deflection (mm), the cut is `Within(Validated)`.
@@ -90,11 +96,96 @@ pub fn tip_compliance_mm_per_n(tool: &ToolDefinition, axial_doc_mm: f64) -> Opti
     (compliance.is_finite() && compliance > 0.0).then_some(compliance)
 }
 
-fn standard_bounds() -> DeflectionBounds {
-    DeflectionBounds {
-        validated_within_mm: WITHIN_BOUND_MM,
-        exceeds_mm: EXCEEDS_BOUND_MM,
+/// **The `Exceeds` limit of the deflection gate, and what set it.**
+/// Feeds contract P17 (the derivation, for the record).
+///
+/// The tip deflection of this gate is the lateral displacement of the tool
+/// tip under the peak engaged-edge force. On a wall cut the tip moves away
+/// from the wall by that displacement, so the wall is left proud by the
+/// same amount: the wall error equals the tip deflection. This is the
+/// gate's own assumption (bending only; the force acts normal to the wall
+/// at the peak of the arc).
+///
+/// A rough pass leaves a radial stock to leave `s` on the wall for the
+/// finish pass to remove. A wall error up to `s` leaves material inside
+/// the finish allowance, and the finish pass cleans it up. A wall error
+/// above `s` leaves material the finish pass does not reach, or (on the
+/// other side of the force) a wall cut below the finish surface. So the
+/// deflection limit of a rough pass is `s`:
+///
+/// - `pass_role == Roughing` and `radial_stock_to_leave_mm == Some(s)`
+///   with `s > 0`: the limit is `s` ([`DeflectionBasis::StockToLeave`]).
+/// - A finish or semi-finish pass has no stock to leave after it: the
+///   finish target [`EXCEEDS_BOUND_MM`] (200 um, the F201 row) stays its
+///   limit ([`DeflectionBasis::FinishTarget`]).
+/// - A rough op with no radial stock-to-leave field has no `s` to read:
+///   the finish target stays, and the clause says so
+///   ([`DeflectionBasis::NoLeaveField`]).
+/// - A rough op whose field is 0: the rough pass is the final wall, so the
+///   finish target applies ([`DeflectionBasis::ZeroLeave`]). A limit of 0
+///   would put every sample over it.
+///
+/// [`WITHIN_BOUND_MM`] (50 um, `Validated`) does not move. A leave below
+/// 50 um puts the `Exceeds` limit under the `Validated` band: every sample
+/// under the limit is then `Validated`, and the `Approximate` tier between
+/// the two does not occur. A leave that small is a finish allowance no
+/// shipped op states; the case is named here, not clamped.
+///
+/// The Suggest ceiling (`feeds::suggest`), the envelope's Deflection limit
+/// and the F082 compliance door keep the finish target on a rough pass:
+/// out of P17's scope, recorded in its card.
+#[must_use]
+pub fn exceeds_limit(
+    pass_role: LutPassRole,
+    radial_stock_to_leave_mm: Option<f64>,
+) -> (f64, DeflectionBasis) {
+    match (pass_role, radial_stock_to_leave_mm) {
+        (LutPassRole::Finish | LutPassRole::SemiFinish, _) => {
+            (EXCEEDS_BOUND_MM, DeflectionBasis::FinishTarget)
+        }
+        (LutPassRole::Roughing, None) => (EXCEEDS_BOUND_MM, DeflectionBasis::NoLeaveField),
+        (LutPassRole::Roughing, Some(mm)) if mm.is_finite() && mm > 0.0 => {
+            (mm, DeflectionBasis::StockToLeave { mm })
+        }
+        (LutPassRole::Roughing, Some(_)) => (EXCEEDS_BOUND_MM, DeflectionBasis::ZeroLeave),
     }
+}
+
+/// **The engagement of one simulation sample, as the deflection gate reads
+/// it** (P11a, L5): [`Engagement::from_tool_cut`] at `axial_engagement_mm`
+/// with the arc width `r (1 - cos psi)`.
+///
+/// The swept engagement arc IS the immersion angle psi. The engagement
+/// takes the width `r (1 - cos psi)` at the engaged radius of the sample
+/// depth, the exact inverse of `immersion_angle` (P9 D-W), so psi comes
+/// back unchanged.
+///
+/// `None` when the sample is air, has no positive engaged depth, or has no
+/// positive arc. [`sample_tip_deflection_mm`] and
+/// `cut_force::sample_peak_force_n` both read it (P17): one engagement,
+/// one force. This is NOT [`Engagement::from_sample`], which reads
+/// `axial_doc_mm`.
+#[must_use]
+pub fn sample_engagement(
+    tool: &ToolDefinition,
+    sample: &SimulationCutSample,
+) -> Option<Engagement> {
+    if sample.is_air() || sample.axial_engagement_mm <= 0.0 {
+        return None;
+    }
+    let immersion_rad = sample.arc_engagement_radians?;
+    if immersion_rad <= 0.0 {
+        return None;
+    }
+    let ap = sample.axial_engagement_mm;
+    let r = crate::tool::MillingCutter::engagement_radius(tool, ap);
+    Some(Engagement::from_tool_cut(
+        crate::feeds::envelope::CutPoint {
+            ap_mm: ap,
+            ae_mm: r * (1.0 - immersion_rad.clamp(0.0, std::f64::consts::PI).cos()),
+        },
+        tool,
+    ))
 }
 
 /// Predict tip deflection for one simulation sample.
@@ -110,26 +201,7 @@ pub fn sample_tip_deflection_mm(
     sample: &SimulationCutSample,
     feed_per_tooth_mm: f64,
 ) -> Option<f64> {
-    if sample.is_air() || sample.axial_engagement_mm <= 0.0 {
-        return None;
-    }
-    // The swept engagement arc IS the immersion angle ψ. The engagement
-    // takes the width `r (1 - cos ψ)` at the engaged radius of the sample
-    // depth, the exact inverse of `immersion_angle` (P9 D-W), so ψ comes
-    // back unchanged.
-    let immersion_rad = sample.arc_engagement_radians?;
-    if immersion_rad <= 0.0 {
-        return None;
-    }
-    let ap = sample.axial_engagement_mm;
-    let r = crate::tool::MillingCutter::engagement_radius(tool, ap);
-    let engagement = crate::feeds::engagement::Engagement::from_tool_cut(
-        crate::feeds::envelope::CutPoint {
-            ap_mm: ap,
-            ae_mm: r * (1.0 - immersion_rad.clamp(0.0, std::f64::consts::PI).cos()),
-        },
-        tool,
-    );
+    let engagement = sample_engagement(tool, sample)?;
     // Canonical feed-aware force + cantilever model lives in
     // `feeds::force`/`feeds::predict` so the pre-sim cutter-axial-
     // constraints envelope, the Suggest predictor, and this post-sim gate
@@ -182,7 +254,9 @@ pub fn evaluate(
         tool,
         material,
         operation_kind,
+        pass_role,
         spans,
+        radial_stock_to_leave_mm,
         ..
     } = ctx;
     let &super::GateEnv {
@@ -190,6 +264,8 @@ pub fn evaluate(
         tolerance,
         ..
     } = env;
+    // P17: one limit for the trip, the bounds and the entry spike.
+    let (limit_mm, basis) = exceeds_limit(pass_role, radial_stock_to_leave_mm);
     // Roadmap F.8 — same short-circuit as power/chipload: drill cycles
     // have no continuous engagement, so the cantilever-deflection
     // metric is meaningless. Return "doesn't apply" rather than the
@@ -324,12 +400,14 @@ pub fn evaluate(
     }
 
     let peak_um = peak_delta_mm * 1000.0;
+    // P17: the detail names the limit that judged the pass.
+    let basis_clause = basis.clause();
     let base_detail = if any_slot {
         format!(
-            "peak tip deflection {peak_um:.0} µm (slot engagement; climb/conventional split not modeled)"
+            "peak tip deflection {peak_um:.0} µm (slot engagement; climb/conventional split not modeled); {basis_clause}"
         )
     } else {
-        format!("peak tip deflection {peak_um:.0} µm (isotropic Kc, bending only)")
+        format!("peak tip deflection {peak_um:.0} µm (isotropic Kc, bending only); {basis_clause}")
     };
 
     // X-VAC: stated on both arms, same contract as `power.rs`.
@@ -347,12 +425,16 @@ pub fn evaluate(
                 .with_population(population),
             None => SampleEvidence::empty().with_population(population),
         };
-    let bounds = standard_bounds();
+    let bounds = DeflectionBounds {
+        validated_within_mm: WITHIN_BOUND_MM,
+        exceeds_mm: limit_mm,
+        basis,
+    };
 
     // Checkpoint K (b1) — shared boundary contract; see `power.rs` for
     // why a gate with no reconstruction defect is inside it anyway.
-    let exceeds_trigger = EXCEEDS_BOUND_MM * (1.0 + tolerance.deflection_breach);
-    if super::boundary::exceeds_high(peak_delta_mm, EXCEEDS_BOUND_MM, tolerance.deflection_breach) {
+    let exceeds_trigger = limit_mm * (1.0 + tolerance.deflection_breach);
+    if super::boundary::exceeds_high(peak_delta_mm, limit_mm, tolerance.deflection_breach) {
         tracing::warn!(
             verdict = "Exceeds",
             peak_mm = peak_delta_mm,
@@ -384,7 +466,7 @@ pub fn evaluate(
     // deflection landed past the EXCEEDS bound, even though the
     // steady-state trip didn't fire.
     let entry_spike = match entry_peak_idx {
-        Some(idx) if super::boundary::exceeds_high(entry_peak_delta_mm, EXCEEDS_BOUND_MM, 0.0) => {
+        Some(idx) if super::boundary::exceeds_high(entry_peak_delta_mm, limit_mm, 0.0) => {
             let locality = trace
                 .samples
                 .get(idx)
@@ -392,7 +474,7 @@ pub fn evaluate(
                 .unwrap_or_else(|| "entry".to_owned());
             Some(EntrySpike {
                 observed: entry_peak_delta_mm,
-                bound: EXCEEDS_BOUND_MM,
+                bound: limit_mm,
                 locality,
                 side: None,
             })
@@ -448,6 +530,7 @@ mod tests {
                 spans,
                 drill_op: None,
                 commanded_thinning_lift: None,
+                radial_stock_to_leave_mm: None,
             },
             &crate::tool_load::GateEnv {
                 sim_trace,

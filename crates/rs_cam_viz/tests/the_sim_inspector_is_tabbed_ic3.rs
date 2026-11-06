@@ -57,7 +57,8 @@ const CARD_TITLES: [&str; 4] = [
     "Chipload",
     "Spindle power",
     "Tool deflection",
-    "Depth of cut",
+    // P17: the fourth card is the cut force; the depth card went.
+    "Cut force",
 ];
 
 /// True when `run` is the title of the card `title`: a measured card paints

@@ -488,6 +488,7 @@ mod tests {
             spans: None,
             drill_op: None,
             commanded_thinning_lift: None,
+            radial_stock_to_leave_mm: None,
         };
         let env = GateEnv {
             sim_trace: t,
@@ -684,6 +685,7 @@ mod tests {
             spans: None,
             drill_op: None,
             commanded_thinning_lift: None,
+            radial_stock_to_leave_mm: None,
         };
         let env = GateEnv {
             sim_trace: Some(&t),

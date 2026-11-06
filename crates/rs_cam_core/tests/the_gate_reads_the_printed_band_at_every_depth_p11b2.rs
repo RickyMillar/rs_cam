@@ -103,6 +103,7 @@ fn gate_bounds_at_depth(ap_mm: f64) -> ChipBounds {
             spans: None,
             drill_op: None,
             commanded_thinning_lift: None,
+            radial_stock_to_leave_mm: None,
         },
         Some(&trace),
         None,

@@ -10,7 +10,7 @@ Every panel, modal and workspace. `../app.rs` calls the `draw` of each surface o
 - `setup_panel.rs`, `toolpath_panel.rs`, `toolpath_row_controls.rs` — the Setup rail (an eye per model row)
   and the toolpath rows with the gutter connector; `add_menu_offers` calls `LoadedModel::serves` for each model (M10).
 - `sim_*.rs` — the Simulation workspace, with `draw_trace_badge`. The inspector is the verdict line, then
-  ONE `TabStrip`: Metrics (default, the charts first), Warnings (count badge), Navigate, Project (IC3).
+  ONE `TabStrip`: Metrics (default: FOUR cards chipload/power/deflection/cut force, one hairline, then the width x depth chart `sim_cut_chart.rs` on the kit with the cut samples; P17 layout B), Warnings (count badge), Navigate, Project (IC3).
   A card flips to a median line on a min-max band; `< >` opens it large. Span help is core `DebugSpanKind::help` (F017).
 - `readiness.rs`, `readiness_panel.rs`, `preflight.rs` — is this safe to cut? K6 (ruling Q6): the pre-flight
   refuses nothing. It draws the check cards, ONE chip row (`danger_counts`: a chip per `Danger`, colour and count,
@@ -32,7 +32,7 @@ Every panel, modal and workspace. `../app.rs` calls the `draw` of each surface o
 - Every Run Simulation button is enabled by `simulation_request_is_buildable`; the `AppEvent::RunSimulation` handler refuses through the builder.
 - Declutter removes a control; it does not hide a duplicate route. An empty queue keeps its "Add toolpath" (g_emptyadd).
 - A dependency between operations is ONE line in the card gutter, read from `dependencies::primary_edges`. No surface draws a second badge for it.
-- The crate is on egui 0.36 with `egui_plot` 0.37; the two differ on purpose.
+- The crate is on egui 0.36 with `egui_plot` 0.37; the two differ on purpose. The envelope plot and the cut-metric charts use the kit (`components/chart.rs`, `histogram.rs`), not `egui_plot`; the nomogram and the readiness scatter still do.
 - A panel draws a field, a list, a table or a message with the kit (`components/`); the toolpath inspector is held to it by `the_inspector_draws_only_kit_rows_w6`.
 
 ## Sentries

@@ -413,6 +413,7 @@ fn gate_verdict(feed: f64, rpm: u32, flutes: u32, axial_doc_mm: f64) -> Chipload
             spans: None,
             drill_op: None,
             commanded_thinning_lift: None,
+            radial_stock_to_leave_mm: None,
         },
         &GateEnv {
             sim_trace: Some(&trace),

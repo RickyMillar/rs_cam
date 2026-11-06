@@ -464,6 +464,7 @@ fn gate_verdict_at(
             spans: None,
             drill_op: None,
             commanded_thinning_lift: None,
+            radial_stock_to_leave_mm: None,
         },
         &rs_cam_core::tool_load::GateEnv {
             sim_trace: Some(&trace),

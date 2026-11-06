@@ -203,6 +203,7 @@ fn suggests_own_light_stepover_recipe_is_not_above_the_band_p11b2() {
             spans: None,
             drill_op: None,
             commanded_thinning_lift: None,
+            radial_stock_to_leave_mm: None,
         },
         Some(&trace),
         None,

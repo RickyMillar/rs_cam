@@ -1078,6 +1078,7 @@ mod tests {
                 spans,
                 drill_op: None,
                 commanded_thinning_lift: None,
+                radial_stock_to_leave_mm: None,
             },
             &crate::tool_load::GateEnv {
                 sim_trace,

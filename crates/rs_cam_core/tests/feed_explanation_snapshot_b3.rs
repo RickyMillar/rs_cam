@@ -687,6 +687,7 @@ fn gate_verdict_in(
             spans: None,
             drill_op: None,
             commanded_thinning_lift: None,
+            radial_stock_to_leave_mm: None,
         },
         &GateEnv {
             sim_trace: Some(&trace),

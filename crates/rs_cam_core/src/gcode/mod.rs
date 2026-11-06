@@ -2597,6 +2597,7 @@ mod tests {
                 feed_explanation: None,
                 kinematic_utilization: None,
                 material_split: None,
+                cut_force: None,
             }],
         }
     }
@@ -2638,6 +2639,7 @@ mod tests {
         DeflectionBounds {
             validated_within_mm: 0.050,
             exceeds_mm: 0.200,
+            basis: crate::tool_load::verdict::DeflectionBasis::FinishTarget,
         }
     }
 
