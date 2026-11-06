@@ -51,9 +51,6 @@
 //! The arm checks each of these whenever a fixture raises it. No fixture is
 //! required to raise them, for the reason given:
 //!
-//! - `FeedsWarning::SlottingDetected`: the calculator raises it on a full
-//!   width cut at a depth over its slotting rule; the panel's default
-//!   operations do not command a full-width stepover.
 //! - `FeedsWarning::DrillFeedClampedToEnvelope`: the material envelope
 //!   brackets the drill recipe on every shipped drill cell (spec R4 §1.2,
 //!   S14 fires on 0 cells).
@@ -123,8 +120,13 @@ fn classify_feeds(w: &FeedsWarning) -> (&'static str, Class) {
         FeedsWarning::PowerLimited { .. } => ("PowerLimited", Class::NoNumberMoves),
         FeedsWarning::PowerLadderReducedCut { .. } => ("PowerLadderReducedCut", Class::OnTheFace),
         FeedsWarning::ShankTooLarge { .. } => ("ShankTooLarge", Class::NoNumberMoves),
+        FeedsWarning::DepthJudgedAfterSimulation => {
+            ("DepthJudgedAfterSimulation", Class::NoNumberMoves)
+        }
         FeedsWarning::DocExceedsFlute { .. } => ("DocExceedsFlute", Class::OnTheFace),
-        FeedsWarning::SlottingDetected { .. } => ("SlottingDetected", Class::OnTheFace),
+        // P16 (D9): a record of the unstated cap; the cap itself is the
+        // `FeedRateClamped` or `RpmLoweredForFeedCeiling` row.
+        FeedsWarning::CuttingCapUnstated { .. } => ("CuttingCapUnstated", Class::NoNumberMoves),
         FeedsWarning::ScallopInvalid { .. } => ("ScallopInvalid", Class::NoNumberMoves),
         // Ruling R4 WP2a: the engine warns and does not lift the feed.
         FeedsWarning::ChiploadBelowRubbingFloor { .. } => {
@@ -249,7 +251,6 @@ fn feeds_numbers(w: &FeedsWarning) -> Vec<String> {
             out.push(at(*requested_mm, 1));
             out.push(at(*guard_mm, 1));
         }
-        FeedsWarning::SlottingDetected { cap_mm, .. } => out.push(at(*cap_mm, 1)),
         FeedsWarning::LongToolDerate {
             stickout_mm,
             ratio,
@@ -277,7 +278,9 @@ fn feeds_numbers(w: &FeedsWarning) -> Vec<String> {
             out.push(at(*feed_ceiling_mm_min, 0));
         }
         FeedsWarning::PowerLimited { .. }
+        | FeedsWarning::CuttingCapUnstated { .. }
         | FeedsWarning::ShankTooLarge { .. }
+        | FeedsWarning::DepthJudgedAfterSimulation
         | FeedsWarning::ScallopInvalid { .. }
         | FeedsWarning::ChiploadBelowRubbingFloor { .. }
         | FeedsWarning::VendorRowPublishesNoChipload { .. }

@@ -347,7 +347,7 @@ fn envelope_columns(
                 env.proposal_binding
                     .map(|k| format!("{k:?}"))
                     .unwrap_or_default(),
-                num(Some(p.ap_mm)),
+                num(p.ap_mm()),
                 num(Some(p.ae_mm)),
             ]
         }
@@ -496,6 +496,12 @@ const MATRIX_HEADER: &[&str] = &[
     "family_home",
     "drill_basis",
     "drill_scale",
+    // P16 item 8: the vendor band (`LookupResult::band`). The rule that
+    // picked the shipped row, the score winner and why it is not a member,
+    // and the members as `id:chip` (lowest first).
+    "band_rule",
+    "band_score_winner",
+    "band_members",
     "chipload_source",
     "vendor_source",
     "diagnostic_ids",
@@ -519,6 +525,21 @@ const MATRIX_HEADER: &[&str] = &[
     "proposal_ap_mm",
     "proposal_ae_mm",
 ];
+
+/// P16 item 8: the three band columns of a matched row.
+fn band_columns(m: &rs_cam_core::feeds::vendor_lookup::LookupResult) -> [String; 3] {
+    let band = &m.band;
+    let winner = match band.winner_outside {
+        Some(e) => format!("{} ({})", band.score_winner.id(), e.name()),
+        None => band.score_winner.id().to_owned(),
+    };
+    let members: Vec<String> = band
+        .members
+        .iter()
+        .map(|mb| format!("{}:{:.4}", mb.row.id(), mb.chip_mid_mm))
+        .collect();
+    [band.rule.name().to_owned(), winner, members.join(";")]
+}
 
 fn support_columns(s: &FeedsSupport) -> (String, String) {
     match s {
@@ -757,15 +778,15 @@ fn walk_matrix(
                             fields.push(e.to_string());
                             // 13 recipe columns (incl. the force and power
                             // at the shipped point, and the A2 point), the
-                            // support pair, 21 row
+                            // support pair, 24 row
                             // columns (7 row incl. `lut_key`, 5 G1 claim,
                             // 3 G2 hardness, 2 G3 family, 2 G6 drill,
-                            // chipload source, vendor source),
+                            // 3 P16 band, chipload source, vendor source),
                             // 4 diagnostic / warning columns.
                             fields.extend(std::iter::repeat_n(String::new(), 13));
                             fields.push("Refused".to_owned());
                             fields.push(String::new());
-                            fields.extend(std::iter::repeat_n(String::new(), 21));
+                            fields.extend(std::iter::repeat_n(String::new(), 24));
                             fields.extend(std::iter::repeat_n(String::new(), 4));
                             fields.extend(cap_columns(
                                 machine,
@@ -822,8 +843,13 @@ fn walk_matrix(
                             // P11a (L5): the peak resultant engaged-edge
                             // force of the shipped cut, at the engaged
                             // diameter of the shipped depth.
+                            // P16 (review D7): a surface-offset op has no
+                            // depth before the simulation, so no force.
+                            let depth_known =
+                                !s.operation.cut_spec().axial.depth_after_simulation();
                             let force_n = rs_cam_core::compute::cutter::build_cutter(&tool)
                                 .ok()
+                                .filter(|_| depth_known)
                                 .and_then(|tool_def| {
                                     let line = material.force_line().ok()?;
                                     rs_cam_core::feeds::engagement::Engagement::from_tool_cut(
@@ -880,8 +906,9 @@ fn walk_matrix(
                                     fields.extend(hardness_columns(m));
                                     fields.extend(family_columns(m));
                                     fields.extend(drill_columns(m));
+                                    fields.extend(band_columns(m));
                                 }
-                                None => fields.extend(std::iter::repeat_n(String::new(), 19)),
+                                None => fields.extend(std::iter::repeat_n(String::new(), 22)),
                             }
                             fields.push(format!("{:?}", r.chipload_source));
                             fields.push(r.vendor_source.clone().unwrap_or_default());

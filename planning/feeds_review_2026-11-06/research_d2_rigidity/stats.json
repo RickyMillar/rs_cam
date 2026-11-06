@@ -1,0 +1,705 @@
+{
+ "primary": {
+  "n": 115,
+  "median": 0.368,
+  "q25": 0.244,
+  "q75": 0.749,
+  "min": 0.0947,
+  "max": 2.34,
+  "frac_below_1": 0.913
+ },
+ "by_hobby_source": {
+  "c3d_nomad": {
+   "n": 14,
+   "median": 1.09,
+   "q25": 0.801,
+   "q75": 1.83,
+   "min": 0.247,
+   "max": 2.34,
+   "frac_below_1": 0.429
+  },
+  "c3d_s3": {
+   "n": 9,
+   "median": 0.235,
+   "q25": 0.12,
+   "q75": 0.261,
+   "min": 0.105,
+   "max": 0.352,
+   "frac_below_1": 1.0
+  },
+  "idc": {
+   "n": 46,
+   "median": 0.274,
+   "q25": 0.185,
+   "q75": 0.325,
+   "min": 0.0947,
+   "max": 0.679,
+   "frac_below_1": 1.0
+  },
+  "sienci_metric": {
+   "n": 46,
+   "median": 0.645,
+   "q25": 0.521,
+   "q75": 0.782,
+   "min": 0.24,
+   "max": 1.45,
+   "frac_below_1": 0.957
+  }
+ },
+ "by_industrial_vendor": {
+  "amana": {
+   "n": 64,
+   "median": 0.578,
+   "q25": 0.297,
+   "q75": 0.782,
+   "min": 0.185,
+   "max": 2.34,
+   "frac_below_1": 0.891
+  },
+  "freud": {
+   "n": 22,
+   "median": 0.312,
+   "q25": 0.201,
+   "q75": 0.592,
+   "min": 0.105,
+   "max": 1.7,
+   "frac_below_1": 0.864
+  },
+  "onsrud": {
+   "n": 29,
+   "median": 0.284,
+   "q25": 0.15,
+   "q75": 0.351,
+   "min": 0.0947,
+   "max": 0.899,
+   "frac_below_1": 1.0
+  }
+ },
+ "by_wood": {
+  "MDF": {
+   "n": 19,
+   "median": 0.625,
+   "q25": 0.421,
+   "q75": 0.817,
+   "min": 0.105,
+   "max": 2.34,
+   "frac_below_1": 0.842
+  },
+  "hardwood": {
+   "n": 36,
+   "median": 0.333,
+   "q25": 0.227,
+   "q75": 0.719,
+   "min": 0.103,
+   "max": 1.45,
+   "frac_below_1": 0.917
+  },
+  "plywood": {
+   "n": 16,
+   "median": 0.624,
+   "q25": 0.287,
+   "q75": 0.801,
+   "min": 0.235,
+   "max": 1.45,
+   "frac_below_1": 0.938
+  },
+  "softwood": {
+   "n": 44,
+   "median": 0.292,
+   "q25": 0.218,
+   "q75": 0.578,
+   "min": 0.0947,
+   "max": 2.0,
+   "frac_below_1": 0.932
+  }
+ },
+ "by_tool": {
+  "ball_nose": {
+   "n": 10,
+   "median": 0.521,
+   "q25": 0.315,
+   "q75": 0.622,
+   "min": 0.227,
+   "max": 0.782,
+   "frac_below_1": 1.0
+  },
+  "facing_bit": {
+   "n": 4,
+   "median": 0.629,
+   "q25": 0.593,
+   "q75": 0.663,
+   "min": 0.544,
+   "max": 0.709,
+   "frac_below_1": 1.0
+  },
+  "flat_end": {
+   "n": 101,
+   "median": 0.351,
+   "q25": 0.238,
+   "q75": 0.782,
+   "min": 0.0947,
+   "max": 2.34,
+   "frac_below_1": 0.901
+  }
+ },
+ "by_source_x_vendor": {
+  "c3d_nomad|amana": {
+   "n": 7,
+   "median": 1.88,
+   "q25": 0.91,
+   "q75": 2.0,
+   "min": 0.801,
+   "max": 2.34,
+   "frac_below_1": 0.286
+  },
+  "c3d_nomad|freud": {
+   "n": 3,
+   "median": 1.6,
+   "q25": 1.38,
+   "q75": 1.65,
+   "min": 1.16,
+   "max": 1.7,
+   "frac_below_1": 0.0
+  },
+  "c3d_nomad|onsrud": {
+   "n": 4,
+   "median": 0.519,
+   "q25": 0.34,
+   "q75": 0.713,
+   "min": 0.247,
+   "max": 0.852,
+   "frac_below_1": 1.0
+  },
+  "c3d_s3|amana": {
+   "n": 5,
+   "median": 0.261,
+   "q25": 0.238,
+   "q75": 0.352,
+   "min": 0.229,
+   "max": 0.352,
+   "frac_below_1": 1.0
+  },
+  "c3d_s3|freud": {
+   "n": 4,
+   "median": 0.114,
+   "q25": 0.107,
+   "q75": 0.149,
+   "min": 0.105,
+   "max": 0.235,
+   "frac_below_1": 1.0
+  },
+  "idc|amana": {
+   "n": 24,
+   "median": 0.284,
+   "q25": 0.255,
+   "q75": 0.375,
+   "min": 0.185,
+   "max": 0.679,
+   "frac_below_1": 1.0
+  },
+  "idc|freud": {
+   "n": 8,
+   "median": 0.224,
+   "q25": 0.193,
+   "q75": 0.252,
+   "min": 0.167,
+   "max": 0.325,
+   "frac_below_1": 1.0
+  },
+  "idc|onsrud": {
+   "n": 14,
+   "median": 0.146,
+   "q25": 0.108,
+   "q75": 0.271,
+   "min": 0.0947,
+   "max": 0.351,
+   "frac_below_1": 1.0
+  },
+  "sienci_metric|amana": {
+   "n": 28,
+   "median": 0.765,
+   "q25": 0.638,
+   "q75": 0.782,
+   "min": 0.521,
+   "max": 1.45,
+   "frac_below_1": 0.929
+  },
+  "sienci_metric|freud": {
+   "n": 7,
+   "median": 0.568,
+   "q25": 0.441,
+   "q75": 0.612,
+   "min": 0.3,
+   "max": 0.893,
+   "frac_below_1": 1.0
+  },
+  "sienci_metric|onsrud": {
+   "n": 11,
+   "median": 0.3,
+   "q25": 0.272,
+   "q75": 0.535,
+   "min": 0.24,
+   "max": 0.899,
+   "frac_below_1": 1.0
+  }
+ },
+ "sienci_by_tier": {
+  "full": {
+   "n": 46,
+   "median": 0.645,
+   "q25": 0.521,
+   "q75": 0.782,
+   "min": 0.24,
+   "max": 1.45,
+   "frac_below_1": 0.957
+  },
+  "reduced": {
+   "n": 46,
+   "median": 0.387,
+   "q25": 0.313,
+   "q75": 0.469,
+   "min": 0.144,
+   "max": 0.874,
+   "frac_below_1": 1.0
+  },
+  "regular": {
+   "n": 46,
+   "median": 0.516,
+   "q25": 0.417,
+   "q75": 0.625,
+   "min": 0.192,
+   "max": 1.16,
+   "frac_below_1": 0.957
+  }
+ },
+ "envelope_by_hobby_source": {
+  "sienci_metric": {
+   "below": 14,
+   "inside": 8
+  },
+  "c3d_s3": {
+   "below": 5
+  },
+  "c3d_nomad": {
+   "inside": 3,
+   "below": 2
+  },
+  "idc": {
+   "below": 20
+  }
+ },
+ "envelope_total": {
+  "below": 41,
+  "inside": 11,
+  "above": 0
+ },
+ "n_pairs_all": 214,
+ "n_pairs_primary": 115,
+ "n_hobby_rows": 60,
+ "n_hobby_rows_primary_paired": 31,
+ "n_hobby_rows_unpaired": 3,
+ "unpaired": [
+  "planning/extrapolation_2026-09-24/fetch/G10/sources/sienci_feeds_speeds_metric.txt:129 (=:130) 1/16\" Flat End Mill UC D=1.587 Z=2",
+  "planning/extrapolation_2026-09-24/fetch/G10/sources/sienci_feeds_speeds_metric.txt:153 (=:154) 1/16\" Flat End Mill UC D=1.587 Z=2",
+  "planning/extrapolation_2026-09-24/fetch/G10/sources/sienci_feeds_speeds_metric.txt:177 (=:178) 1/16\" Flat End Mill UC D=1.587 Z=2"
+ ],
+ "n_industrial_rows_used": 55,
+ "depth_rows": [
+  {
+   "cite": "planning/extrapolation_2026-09-24/fetch/G10/sources/sienci_feeds_speeds_metric.txt:79 (=:80)",
+   "label": "1/4\" Flat End Mill UC",
+   "source": "sienci_metric",
+   "D": 6.35,
+   "slot_over_D": 0.85,
+   "pocket_over_D": 1.91,
+   "chip": 0.114
+  },
+  {
+   "cite": "planning/extrapolation_2026-09-24/fetch/G10/sources/sienci_feeds_speeds_metric.txt:81",
+   "label": "1/4\" Ball End Mill",
+   "source": "sienci_metric",
+   "D": 6.35,
+   "slot_over_D": 0.85,
+   "pocket_over_D": 1.91,
+   "chip": 0.114
+  },
+  {
+   "cite": "planning/extrapolation_2026-09-24/fetch/G10/sources/sienci_feeds_speeds_metric.txt:83 (=:84)",
+   "label": "1/8\" Flat End Mill UC",
+   "source": "sienci_metric",
+   "D": 3.175,
+   "slot_over_D": 1.73,
+   "pocket_over_D": 3.81,
+   "chip": 0.0794
+  },
+  {
+   "cite": "planning/extrapolation_2026-09-24/fetch/G10/sources/sienci_feeds_speeds_metric.txt:85",
+   "label": "1/8\" Ball End Mill",
+   "source": "sienci_metric",
+   "D": 3.175,
+   "slot_over_D": 1.73,
+   "pocket_over_D": 3.81,
+   "chip": 0.0794
+  },
+  {
+   "cite": "planning/extrapolation_2026-09-24/fetch/G10/sources/sienci_feeds_speeds_metric.txt:86 (=:87)",
+   "label": "1/16\" Flat End Mill UC",
+   "source": "sienci_metric",
+   "D": 1.5875,
+   "slot_over_D": 3.46,
+   "pocket_over_D": 7.87,
+   "chip": 0.0397
+  },
+  {
+   "cite": "planning/extrapolation_2026-09-24/fetch/G10/sources/sienci_feeds_speeds_metric.txt:89",
+   "label": "22mm Surfacing Bit",
+   "source": "sienci_metric",
+   "D": 22.0,
+   "slot_over_D": 0.0364,
+   "pocket_over_D": 0.0955,
+   "chip": 0.0762
+  },
+  {
+   "cite": "planning/extrapolation_2026-09-24/fetch/G10/sources/sienci_feeds_speeds_metric.txt:170 (=:171)",
+   "label": "1/4\" Flat End Mill UC",
+   "source": "sienci_metric",
+   "D": 6.35,
+   "slot_over_D": 0.394,
+   "pocket_over_D": 0.882,
+   "chip": 0.114
+  },
+  {
+   "cite": "planning/extrapolation_2026-09-24/fetch/G10/sources/sienci_feeds_speeds_metric.txt:172",
+   "label": "1/4\" Ball End Mill",
+   "source": "sienci_metric",
+   "D": 6.35,
+   "slot_over_D": 0.394,
+   "pocket_over_D": 0.882,
+   "chip": 0.114
+  },
+  {
+   "cite": "planning/extrapolation_2026-09-24/fetch/G10/sources/sienci_feeds_speeds_metric.txt:174 (=:175)",
+   "label": "1/8\" Flat End Mill UC",
+   "source": "sienci_metric",
+   "D": 3.175,
+   "slot_over_D": 0.819,
+   "pocket_over_D": 1.76,
+   "chip": 0.0794
+  },
+  {
+   "cite": "planning/extrapolation_2026-09-24/fetch/G10/sources/sienci_feeds_speeds_metric.txt:176",
+   "label": "1/8\" Ball End Mill",
+   "source": "sienci_metric",
+   "D": 3.175,
+   "slot_over_D": 0.819,
+   "pocket_over_D": 1.76,
+   "chip": 0.0794
+  },
+  {
+   "cite": "planning/extrapolation_2026-09-24/fetch/G10/sources/sienci_feeds_speeds_metric.txt:180",
+   "label": "22mm Surfacing Bit",
+   "source": "sienci_metric",
+   "D": 22.0,
+   "slot_over_D": 0.0182,
+   "pocket_over_D": 0.0455,
+   "chip": 0.0762
+  },
+  {
+   "cite": "planning/extrapolation_2026-09-24/fetch/G10/sources/carbide3d_s3_feeds_250.txt:63",
+   "label": "S3 .25 in end mill, Pine",
+   "source": "c3d_s3",
+   "D": 6.35,
+   "slot_over_D": 1.6,
+   "pocket_over_D": null,
+   "chip": 0.0302
+  },
+  {
+   "cite": "planning/extrapolation_2026-09-24/fetch/G10/sources/carbide3d_s3_feeds_250.txt:64",
+   "label": "S3 .25 in end mill, Mahogany",
+   "source": "c3d_s3",
+   "D": 6.35,
+   "slot_over_D": 0.4,
+   "pocket_over_D": null,
+   "chip": 0.029
+  },
+  {
+   "cite": "planning/extrapolation_2026-09-24/fetch/G10/sources/carbide3d_s3_feeds_250.txt:65",
+   "label": "S3 .25 in end mill, Plywood",
+   "source": "c3d_s3",
+   "D": 6.35,
+   "slot_over_D": 1.0,
+   "pocket_over_D": null,
+   "chip": 0.0447
+  },
+  {
+   "cite": "planning/extrapolation_2026-09-24/fetch/G10/sources/carbide3d_s3_feeds_250.txt:66",
+   "label": "S3 .25 in end mill, MDF",
+   "source": "c3d_s3",
+   "D": 6.35,
+   "slot_over_D": 1.2,
+   "pocket_over_D": null,
+   "chip": 0.0398
+  },
+  {
+   "cite": "planning/extrapolation_2026-09-24/fetch/G10/sources/carbide3d_nomad883_feeds_125.txt:61",
+   "label": "Nomad .125 in end mill, Pine",
+   "source": "c3d_nomad",
+   "D": 3.175,
+   "slot_over_D": 0.24,
+   "pocket_over_D": null,
+   "chip": 0.203
+  },
+  {
+   "cite": "planning/extrapolation_2026-09-24/fetch/G10/sources/carbide3d_nomad883_feeds_125.txt:62",
+   "label": "Nomad .125 in end mill, Mahogany",
+   "source": "c3d_nomad",
+   "D": 3.175,
+   "slot_over_D": 0.112,
+   "pocket_over_D": null,
+   "chip": 0.104
+  },
+  {
+   "cite": "planning/extrapolation_2026-09-24/fetch/G10/sources/carbide3d_nomad883_feeds_125.txt:63",
+   "label": "Nomad .125 in end mill, Plywood",
+   "source": "c3d_nomad",
+   "D": 3.175,
+   "slot_over_D": 0.272,
+   "pocket_over_D": null,
+   "chip": 0.0814
+  },
+  {
+   "cite": "planning/extrapolation_2026-09-24/fetch/G10/sources/carbide3d_nomad883_feeds_125.txt:64",
+   "label": "Nomad .125 in end mill, MDF",
+   "source": "c3d_nomad",
+   "D": 3.175,
+   "slot_over_D": 0.136,
+   "pocket_over_D": null,
+   "chip": 0.238
+  },
+  {
+   "cite": "planning/extrapolation_2026-09-24/fetch/G10/sources/wood_idc_feeds_speeds.txt:207",
+   "label": "IDC 1/32\" down cut",
+   "source": "idc",
+   "D": 0.79375,
+   "slot_over_D": null,
+   "pocket_over_D": 0.48,
+   "chip": 0.0047
+  },
+  {
+   "cite": "planning/extrapolation_2026-09-24/fetch/G10/sources/wood_idc_feeds_speeds.txt:210",
+   "label": "IDC 1/16\" down cut",
+   "source": "idc",
+   "D": 1.5875,
+   "slot_over_D": null,
+   "pocket_over_D": 0.512,
+   "chip": 0.00941
+  },
+  {
+   "cite": "planning/extrapolation_2026-09-24/fetch/G10/sources/wood_idc_feeds_speeds.txt:213",
+   "label": "IDC 1/8\" down cut",
+   "source": "idc",
+   "D": 3.175,
+   "slot_over_D": null,
+   "pocket_over_D": 1.0,
+   "chip": 0.0289
+  },
+  {
+   "cite": "planning/extrapolation_2026-09-24/fetch/G10/sources/wood_idc_feeds_speeds.txt:216",
+   "label": "IDC 3/16\" down cut",
+   "source": "idc",
+   "D": 4.762499999999999,
+   "slot_over_D": null,
+   "pocket_over_D": 0.997,
+   "chip": 0.0501
+  },
+  {
+   "cite": "planning/extrapolation_2026-09-24/fetch/G10/sources/wood_idc_feeds_speeds.txt:219",
+   "label": "IDC 1/4\" down cut",
+   "source": "idc",
+   "D": 6.35,
+   "slot_over_D": null,
+   "pocket_over_D": 1.0,
+   "chip": 0.0468
+  },
+  {
+   "cite": "planning/extrapolation_2026-09-24/fetch/G10/sources/wood_idc_feeds_speeds.txt:233",
+   "label": "IDC 1/32\" up cut",
+   "source": "idc",
+   "D": 0.79375,
+   "slot_over_D": null,
+   "pocket_over_D": 0.48,
+   "chip": 0.0047
+  },
+  {
+   "cite": "planning/extrapolation_2026-09-24/fetch/G10/sources/wood_idc_feeds_speeds.txt:236",
+   "label": "IDC 1/16\" up cut",
+   "source": "idc",
+   "D": 1.5875,
+   "slot_over_D": null,
+   "pocket_over_D": 0.512,
+   "chip": 0.00941
+  },
+  {
+   "cite": "planning/extrapolation_2026-09-24/fetch/G10/sources/wood_idc_feeds_speeds.txt:239",
+   "label": "IDC 1/8\" up cut",
+   "source": "idc",
+   "D": 3.175,
+   "slot_over_D": null,
+   "pocket_over_D": 1.0,
+   "chip": 0.0289
+  },
+  {
+   "cite": "planning/extrapolation_2026-09-24/fetch/G10/sources/wood_idc_feeds_speeds.txt:242",
+   "label": "IDC 3/16\" up cut",
+   "source": "idc",
+   "D": 4.762499999999999,
+   "slot_over_D": null,
+   "pocket_over_D": 1.49,
+   "chip": 0.0535
+  },
+  {
+   "cite": "planning/extrapolation_2026-09-24/fetch/G10/sources/wood_idc_feeds_speeds.txt:245",
+   "label": "IDC 1/4\" up cut",
+   "source": "idc",
+   "D": 6.35,
+   "slot_over_D": null,
+   "pocket_over_D": 1.0,
+   "chip": 0.0535
+  },
+  {
+   "cite": "planning/extrapolation_2026-09-24/fetch/G10/sources/wood_idc_feeds_speeds.txt:261",
+   "label": "IDC 1/8\" ballnose",
+   "source": "idc",
+   "D": 3.175,
+   "slot_over_D": null,
+   "pocket_over_D": 0.4,
+   "chip": 0.0346
+  },
+  {
+   "cite": "planning/extrapolation_2026-09-24/fetch/G10/sources/wood_idc_feeds_speeds.txt:263",
+   "label": "IDC 1/4\" ballnose",
+   "source": "idc",
+   "D": 6.35,
+   "slot_over_D": null,
+   "pocket_over_D": 0.48,
+   "chip": 0.0468
+  }
+ ],
+ "depth_ratio_spearman": {
+  "n": 29,
+  "rho": -0.406
+ },
+ "wood_witnesses": {
+  "sienci_1_4_full": {
+   "chip_hard_over_soft": 1.0,
+   "depth_hard_over_soft": 0.463
+  },
+  "c3d_s3_pine_mahogany": {
+   "chip_hard_over_soft": 0.96,
+   "depth_hard_over_soft": 0.25
+  },
+  "c3d_nomad_pine_mahogany": {
+   "chip_hard_over_soft": 0.51,
+   "depth_hard_over_soft": 0.467
+  }
+ },
+ "classes": {
+  "sienci_metric": {
+   "class": "hobby",
+   "cite": "planning/extrapolation_2026-09-24/fetch/G10/sources/sienci_feeds_speeds_metric.txt:8",
+   "reason": "chart column 'Makita Speed Dial Setting' (a trim router); Sienci LongMill page names the Makita RT0701"
+  },
+  "c3d_s3": {
+   "class": "hobby",
+   "cite": "planning/extrapolation_2026-09-24/fetch/G9/sources/community_2402_post1_announcement.txt:3",
+   "reason": "post names the Shapeoko3; chart columns 'Carbide Compact /Makita' and 'Dewalt' router dials"
+  },
+  "c3d_nomad": {
+   "class": "hobby",
+   "cite": "planning/extrapolation_2026-09-24/fetch/G9/sources/community_2402_post1_announcement.txt:7",
+   "reason": "post names the Nomad 883 (desktop machine)"
+  },
+  "idc": {
+   "class": "hobby",
+   "cite": "planning/extrapolation_2026-09-24/fetch/G10/sources/wood_idc_feeds_speeds.txt:19-20",
+   "reason": "'average accepted values for benchtop CNC routers'"
+  },
+  "amana_spektra_spiral_plunge_v24": {
+   "class": "industrial",
+   "cite": "crates/rs_cam_core/data/vendor_lut/sources/amana_spektra_spiral_plunge_v24.txt:1",
+   "reason": "chart header 'INDUSTRIAL'"
+  },
+  "amana_ball_nose_v7": {
+   "class": "industrial",
+   "cite": "crates/rs_cam_core/data/vendor_lut/sources/amana_ball_nose_v7.txt:1",
+   "reason": "chart header 'INDUSTRIAL'"
+  },
+  "amana_zrn_3d_profiling_v8": {
+   "class": "industrial",
+   "cite": "crates/rs_cam_core/data/vendor_lut/sources/amana_zrn_3d_v8.txt:1",
+   "reason": "chart header 'INDUSTRIAL'"
+  },
+  "amana_compression_spirals_v8": {
+   "class": "industrial",
+   "cite": "planning/extrapolation_2026-09-24/fetch/G10/sources/wood_amana_compression_v8.txt:4",
+   "reason": "chart header 'INDUSTRIAL'"
+  },
+  "amana_spoilboard_v8": {
+   "class": "industrial",
+   "cite": "crates/rs_cam_core/data/vendor_lut/source_manifest.json (no stored text)",
+   "reason": "Amana chart; no stored text of this chart in the repo; the stored Amana charts all print 'INDUSTRIAL' on line 1"
+  },
+  "freud_router_bit_feed_and_speed_for_cnc_20170822": {
+   "class": "industrial",
+   "cite": "crates/rs_cam_core/data/vendor_lut/source_manifest.json:369",
+   "reason": "the chart names no machine class; the manifest note says 'calibrated for industrial 10-15 kW CNC spindles'"
+  },
+  "onsrud": {
+   "class": "industrial",
+   "cite": "planning/extrapolation_2026-09-24/fetch/G10/sources/wood_onsrud_routing_guide.txt:94",
+   "reason": "Onsrud routing guide: 'router bits in the industrial market place'"
+  }
+ },
+ "excluded_sources": {
+  "sienci_lm_feeds_and_speeds.txt": {
+   "reason": "hobby; prints only the dial-to-rpm table, no feed rows",
+   "cite": "planning/extrapolation_2026-09-24/fetch/G10/sources/sienci_lm_feeds_and_speeds.txt:60"
+  },
+  "shopbot_user_guide_2015.txt": {
+   "reason": "reprints the Onsrud chip ranges, not an independent chart",
+   "cite": "planning/extrapolation_2026-09-24/fetch/G10/sources/shopbot_user_guide_2015.txt:1961"
+  },
+  "vectric_tool_database_v11.txt": {
+   "reason": "software help; prints no chip or feed values",
+   "cite": "planning/extrapolation_2026-09-24/fetch/G10/sources/vectric_tool_database_v11.txt:835"
+  },
+  "precisebits_tapered_ball_2f.txt": {
+   "reason": "prints no feed: 'Do the Sweetspot Test'",
+   "cite": "planning/extrapolation_2026-09-24/fetch/G10/sources/precisebits_tapered_ball_2f.txt:344"
+  },
+  "precisebits_vtip_scoreengrave.txt": {
+   "reason": "prints no feed: 'Do the Sweetspot Test'",
+   "cite": "planning/extrapolation_2026-09-24/fetch/G10/sources/precisebits_vtip_scoreengrave.txt:390"
+  },
+  "precisebits_vtip_2500.txt": {
+   "reason": "prints no feed: 'Depends on the material being cut'",
+   "cite": "planning/extrapolation_2026-09-24/fetch/G10/sources/precisebits_vtip_2500.txt:360"
+  },
+  "wood_toolstoday_calc_video.txt": {
+   "reason": "retailer narrative; one desktop example, used as prose evidence only",
+   "cite": "planning/extrapolation_2026-09-24/fetch/G10/sources/wood_toolstoday_calc_video.txt:81"
+  },
+  "wood_toolstoday_understanding_feeds_speeds.txt": {
+   "reason": "retailer narrative; one desktop example, used as prose evidence only",
+   "cite": "planning/extrapolation_2026-09-24/fetch/G10/sources/wood_toolstoday_understanding_feeds_speeds.txt:179"
+  },
+  "idcwoodcraft_chipload_csv_2026-05-30 (LUT)": {
+   "reason": "community CSV, grade c, not a tool maker",
+   "cite": "crates/rs_cam_core/data/vendor_lut/source_manifest.json:377"
+  },
+  "spetool_2d3d_tapered_router_bit_chart (LUT)": {
+   "reason": "chart names no machine class; tapered only",
+   "cite": "crates/rs_cam_core/data/vendor_lut/sources/spetool_2d3d_tapered.txt:1"
+  }
+ }
+}

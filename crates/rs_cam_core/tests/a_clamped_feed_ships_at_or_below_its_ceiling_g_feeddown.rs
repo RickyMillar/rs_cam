@@ -67,8 +67,9 @@ const ALL_SPECIES: [WoodSpecies; 10] = [
 ];
 
 /// Ø12, not Ø6. The sibling power instrument records the reason: at Ø6 a
-/// full-width slot trips `SlottingDetected`, the cross-section collapses
-/// before Step 6, and the sweep never reaches a ceiling at all.
+/// full-width slot tripped the slot cap (deleted by P16, D12), the
+/// cross-section collapsed before Step 6, and the sweep never reached a
+/// ceiling at all.
 const DIAMETER_MM: f64 = 12.0;
 
 /// The quantisation step the apply path uses for the feed and the plunge.
@@ -83,11 +84,11 @@ fn endmill() -> ToolConfig {
 
 /// A heavy 2.5D rough: a full-width slot at an aggressive DOC, so the
 /// ceilings have something to bind.
-fn heavy_pocket() -> OperationConfig {
+fn heavy_pocket(ap_mm: f64) -> OperationConfig {
     OperationConfig::Pocket(PocketConfig {
         stepover: Some(DIAMETER_MM),
         floor: rs_cam_core::compute::floor::Floor::top(4.0 * DIAMETER_MM),
-        depth_per_pass: Some(2.0 * DIAMETER_MM),
+        depth_per_pass: Some(ap_mm),
         feed_rate: Some(1000.0),
         plunge_rate: Some(500.0),
         climb: true,
@@ -139,10 +140,9 @@ struct Shipped {
 /// `suggest::apply` — and report what lands on the operation. The
 /// calculator's recommendation and the shipped operation are different
 /// numbers, and only one of them reaches the machine.
-fn run_funnel(machine: &MachineProfile, material: &Material) -> Option<Shipped> {
-    let requested_ap = 2.0 * DIAMETER_MM;
+fn run_funnel(machine: &MachineProfile, material: &Material, requested_ap: f64) -> Option<Shipped> {
     let tool = endmill();
-    let mut operation = heavy_pocket();
+    let mut operation = heavy_pocket(requested_ap);
     let mut provenance = rs_cam_core::feeds::FeedsProvenance::default();
 
     let input = feeds_input(machine, material, requested_ap, DIAMETER_MM);
@@ -230,10 +230,18 @@ fn the_quantisation_never_raises_a_clamped_feed_g_feeddown() {
     let mut clamped_pairs = 0usize;
     let mut worst: Option<(String, f64, f64)> = None;
 
+    // P16 (review D8): a cut where no feed fits the power ships the
+    // rubbing-floor feed, a whole number on these spindles, so the sweep
+    // also takes lighter depths, where the power cap or the feed cap binds
+    // at a fractional feed.
+    let depths = [2.0 * DIAMETER_MM, 0.5 * DIAMETER_MM, 0.25 * DIAMETER_MM];
     for (label, machine) in MachineProfile::presets() {
-        for species in ALL_SPECIES {
+        for (species, ap) in ALL_SPECIES
+            .into_iter()
+            .flat_map(|s| depths.into_iter().map(move |ap| (s, ap)))
+        {
             let material = Material::SolidWood { species };
-            let Some(shipped) = run_funnel(&machine, &material) else {
+            let Some(shipped) = run_funnel(&machine, &material, ap) else {
                 continue;
             };
             checked += 1;

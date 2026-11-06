@@ -85,7 +85,9 @@ const TOL: f64 = 1e-9;
 /// doc for the derivation).
 // 148 before the G6 Spektra load of 2026-09-25: it added 24 maximum-only
 // rows and removed the two equal-limit 19.05 mm 3-flute rows (ruling 2).
-const ONE_VALUE_ROWS: usize = 170;
+// 170 before feeds contract P16 item 3 (review D10): + 12 maximum-only
+// Spektra rows (1/32, 1/16, 3/32, 3/16 in x hardwood, soft and hard plywood).
+const ONE_VALUE_ROWS: usize = 182;
 
 /// `true` when the raw row prints one value: a maximum only, a minimum
 /// only, or two equal limits.
@@ -266,7 +268,9 @@ fn ams159_trace() -> PointCell {
         op: OperationType::Trace,
         tool: tool_of(ToolType::VBit, 12.7),
         expected_row: "amana-vgroove-hardwood-trace-60deg-2f",
-        point_mm: 0.0762,
+        // P16 item 5 (review D11, the D5 rule): the chip of the printed
+        // feed, 90 in/min / (18 000 rpm x 2) x 25.4 = 0.0635 mm.
+        point_mm: 0.0635,
         operation_family: LutOperationFamily::Trace,
         pass_role: LutPassRole::Finish,
         sample_doc_mm: 0.762,

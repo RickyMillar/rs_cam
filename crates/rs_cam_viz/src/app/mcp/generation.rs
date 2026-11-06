@@ -135,13 +135,11 @@ pub fn suggest_basis_json(
         .as_ref()
         .and_then(|row| row.hardness_basis.card_text())
         .map(|(headline, detail)| serde_json::json!({ "headline": headline, "detail": detail }));
-    // Ruling Q3 (feeds contract P5): a score tie takes the lower printed
-    // chip; the reply names both rows, the winner first.
-    let tied_rows = feeds.matched_lut_row.as_ref().and_then(|row| {
-        row.tied_with
-            .as_ref()
-            .map(|tie| vec![row.observation_id.clone(), tie.id().to_owned()])
-    });
+    // P16 item 8: the vendor band (the Q3 tie is a band of two). One core
+    // record; the CLI `suggest` record's `profile.vendor_band` is the same.
+    let vendor_band = feeds
+        .vendor_band()
+        .map(rs_cam_core::feeds::vendor_lookup::VendorBand::to_json);
     let (ramp_source_headline, ramp_source_detail) = feeds.ramp.card_text();
     let (ramp_headline, ramp_detail) = ramp_record.map(|record| record.card_text()).unzip();
     let (plunge_headline, plunge_detail) = feeds.plunge.card_text();
@@ -158,7 +156,7 @@ pub fn suggest_basis_json(
         "headline": headline,
         "detail": detail,
         "hardness": hardness,
-        "tied_rows": tied_rows,
+        "vendor_band": vendor_band,
         "force_line": force_line,
         // P14 (review M9): the power at the shipped cut, the CLI
         // `suggest` record's `shipped_power` object.

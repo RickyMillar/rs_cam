@@ -130,10 +130,17 @@ pub enum Axial {
         /// The largest axial depth that the operator set.
         max: Option<Stated<Mm>>,
     },
+    /// Project Curve (feeds contract P16, review D7): the tool follows the
+    /// model surface at this signed offset (positive = into the material).
+    /// The offset is not a depth into the stock. The simulation gives that
+    /// depth, so no step before the simulation reads a depth here.
+    /// `None`: the offset is not set (S11).
+    SurfaceOffset(Option<Stated<Mm>>),
 }
 
 impl Axial {
     /// The axial value (mm) that the operator set, if this cut has one.
+    /// For [`Self::SurfaceOffset`] it is the offset, not a depth.
     #[must_use]
     pub const fn stated_mm(&self) -> Option<f64> {
         match self {
@@ -142,13 +149,35 @@ impl Axial {
             | Self::ZStep(s)
             | Self::Peck(s)
             | Self::OnePass(s)
+            | Self::SurfaceOffset(s)
             | Self::Surface { max: s } => match s {
                 Some(s) => Some(s.mm()),
                 None => None,
             },
         }
     }
+
+    /// P16 (review D7): `true` when the simulation gives the depth into the
+    /// stock ([`Self::SurfaceOffset`]). Then no step before the simulation
+    /// has a depth: no default depth, no power figure, no deflection
+    /// figure, no flute guard and no depth proposal.
+    #[must_use]
+    pub const fn depth_after_simulation(&self) -> bool {
+        match self {
+            Self::SurfaceOffset(_) => true,
+            Self::PerPass(_)
+            | Self::ZStep(_)
+            | Self::OnePass(_)
+            | Self::Peck(_)
+            | Self::HelixPitch(_)
+            | Self::ChamferWidth(_)
+            | Self::Surface { .. } => false,
+        }
+    }
 }
+
+/// The reason of [`TotalDepth::None`] for an [`Axial::SurfaceOffset`] cut.
+pub const DEPTH_AFTER_SIMULATION: &str = "the depth into the stock is known after the simulation";
 
 /// The total depth of an op.
 #[derive(Debug, Clone, Copy, PartialEq)]
@@ -227,6 +256,8 @@ pub enum AxialRule {
     Surface,
     /// [`Axial::Surface`] with the cap from the op's cap field.
     SurfaceCapped,
+    /// [`Axial::SurfaceOffset`] from the op's `depth` field (P16).
+    SurfaceOffset,
 }
 
 impl CutSpec {
@@ -238,7 +269,8 @@ impl CutSpec {
     /// - The depth: a depth per pass, a Z step, a one-pass depth, or the
     ///   operator's surface cap, when it is above zero. A peck, a helix
     ///   pitch and a chamfer width are not a side-cut depth, so the
-    ///   calculator reads none for them.
+    ///   calculator reads none for them. A surface offset is not a depth
+    ///   (P16), so the calculator reads none for it.
     /// - The width: a stepover, or the tool diameter for a slot. A groove,
     ///   a surface width, an angular step and a drill give none.
     /// - The scallop target, when the radial cut is a scallop.
@@ -251,10 +283,13 @@ impl CutSpec {
                     None => None,
                 }
             }
-            Axial::Peck(_) | Axial::HelixPitch(_) | Axial::ChamferWidth(_) => None,
+            Axial::Peck(_)
+            | Axial::HelixPitch(_)
+            | Axial::ChamferWidth(_)
+            | Axial::SurfaceOffset(_) => None,
         };
-        // A depth at or below zero is an offset from a surface (Project
-        // Curve), not a cut depth: the calculator reads none.
+        // A depth at or below zero is not a cut depth: the calculator reads
+        // none.
         let ap = match ap {
             Some(v) if v > 0.0 => Some(v),
             Some(_) | None => None,

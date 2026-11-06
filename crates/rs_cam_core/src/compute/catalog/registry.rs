@@ -1522,7 +1522,7 @@ pub(super) static REG_PROJECT_CURVE: OpRegistryEntry = OpRegistryEntry {
         link_ceiling: LinkCeilingNeed::Always,
         cut_rule: CutRule {
             radial: RadialRule::Slot,
-            axial: AxialRule::OnePass,
+            axial: AxialRule::SurfaceOffset,
         },
         move_count: MoveCountModel::FeatureDriven,
         doc_basis: DocBasis::CurveOnSurface,

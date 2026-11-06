@@ -99,7 +99,6 @@ fn one_pass_field(op: OperationType) -> &'static str {
     )]
     match op {
         OperationType::Inlay => "pocket_depth",
-        OperationType::ProjectCurve => "depth",
         _ => panic!("{op:?}: OnePass names no field here"),
     }
 }
@@ -142,6 +141,8 @@ fn rule_fields(op: OperationType, rule: CutRule) -> Vec<&'static str> {
         AxialRule::ChamferWidth => Some("chamfer_width"),
         AxialRule::SurfaceCapped => Some(surface_cap_field(op)),
         AxialRule::Surface => None,
+        // P16 (review D7): the Project Curve offset from the model surface.
+        AxialRule::SurfaceOffset => Some("depth"),
     });
     fields
 }
@@ -283,6 +284,9 @@ fn check_axial(op: OperationType, rule: AxialRule, axial: Axial, params: &Value)
         (AxialRule::Surface, Axial::Surface { max }) => {
             assert!(max.is_none(), "{what}: an uncapped surface has a cap");
         }
+        (AxialRule::SurfaceOffset, Axial::SurfaceOffset(d)) => {
+            optional("depth", d.map(|d| d.mm()));
+        }
         (
             AxialRule::DepthPerPass
             | AxialRule::ZStep
@@ -291,14 +295,16 @@ fn check_axial(op: OperationType, rule: AxialRule, axial: Axial, params: &Value)
             | AxialRule::HelixPitch
             | AxialRule::ChamferWidth
             | AxialRule::Surface
-            | AxialRule::SurfaceCapped,
+            | AxialRule::SurfaceCapped
+            | AxialRule::SurfaceOffset,
             Axial::PerPass(_)
             | Axial::ZStep(_)
             | Axial::OnePass(_)
             | Axial::Peck(_)
             | Axial::HelixPitch(_)
             | Axial::ChamferWidth(_)
-            | Axial::Surface { .. },
+            | Axial::Surface { .. }
+            | Axial::SurfaceOffset(_),
         ) => panic!("{what}: the spec kind is not the row rule"),
     }
 }

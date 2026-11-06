@@ -224,11 +224,14 @@ pub fn evaluate(ctx: &super::ToolpathLoadContext<'_>, env: &super::GateEnv<'_>) 
     // offered sample of the toolpath that states a feed and a speed (its
     // chip), at its width or, with no width, a full slot (the widest cut,
     // the smallest cap). The population still says the reading is vacuous.
+    // P16 item 7 (D3): "states a feed" reads the one gate feed, the feed
+    // the machine runs (`effective_feed_for_sample`).
     let cut_sample = peak_sample.or_else(|| {
-        trace
-            .samples
-            .iter()
-            .find(|s| s.toolpath_id == toolpath_id && s.spindle_rpm > 0 && s.feed_rate_mm_min > 0.0)
+        trace.samples.iter().find(|s| {
+            s.toolpath_id == toolpath_id
+                && s.spindle_rpm > 0
+                && super::effective_feed_for_sample(s, &trace.predicted_feeds) > 0.0
+        })
     });
     if cut_sample.is_none()
         && matches!(
@@ -259,11 +262,16 @@ pub fn evaluate(ctx: &super::ToolpathLoadContext<'_>, env: &super::GateEnv<'_>) 
             })
             .unwrap_or_else(|| 2.0 * tool.engagement_radius(peak_mm.max(0.0)))
     });
+    // P16 item 7 (D3): the chip is the one gate feed, the feed that the
+    // chip, power and deflection gates read (`effective_feed_for_sample`):
+    // the modulated feed when the trace holds one. The sample field is the
+    // feed of the simulation run, which the machine does not run after a
+    // modulation.
     let fz_mm = cut_sample.map_or(0.0, |s| {
         let z = f64::from(s.flute_count.max(1));
         let rpm = f64::from(s.spindle_rpm);
         if rpm > 0.0 {
-            s.feed_rate_mm_min / (rpm * z)
+            super::effective_feed_for_sample(s, &trace.predicted_feeds) / (rpm * z)
         } else {
             0.0
         }

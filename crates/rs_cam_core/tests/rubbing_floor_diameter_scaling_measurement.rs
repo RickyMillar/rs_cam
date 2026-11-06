@@ -738,8 +738,9 @@ fn sweep() -> Vec<Row> {
                             | FeedsWarning::PowerLimited { .. }
                             | FeedsWarning::PowerLadderReducedCut { .. }
                             | FeedsWarning::ShankTooLarge { .. }
+                            | FeedsWarning::DepthJudgedAfterSimulation
                             | FeedsWarning::DocExceedsFlute { .. }
-                            | FeedsWarning::SlottingDetected { .. }
+                            | FeedsWarning::CuttingCapUnstated { .. }
                             | FeedsWarning::ScallopInvalid { .. }
                             | FeedsWarning::LongToolDerate { .. }
                             | FeedsWarning::NoVendorRowsForRoutedOperation { .. }

@@ -91,7 +91,7 @@
 //!    (`cap_hit == Some(MaxFeed)`), monotonic relations
 //!    (`raised > requested`), relative bands against model outputs
 //!    (`obs_after ∈ (0.8×target, target)`), and named constants
-//!    (`DEFAULT_CUTTING_FEED_CAP_MM_MIN`) instead of literals.
+//!    (`RETIRED_LIFT_CEILING_MM_MIN`) instead of literals.
 //! 3. **Determinism sentries** (rare): a raw numeric pin is allowed
 //!    only with a comment naming what legitimately re-baselines it
 //!    (see the 4.2 mm envelope-clamped DPP pin below, which since
@@ -117,8 +117,12 @@ use rs_cam_core::feeds::{
         suggest_for_operation,
     },
 };
-use rs_cam_core::machine::DEFAULT_CUTTING_FEED_CAP_MM_MIN;
 use rs_cam_core::session::ProjectSession;
+
+/// The ceiling the retired lift clamped against: the deleted
+/// `DEFAULT_CUTTING_FEED_CAP_MM_MIN` (P16, operator ruling D9; the record at
+/// `719b92d7` below, "911 -> 6000 mm/min"). Only the direction pins read it.
+const RETIRED_LIFT_CEILING_MM_MIN: f64 = 6000.0;
 
 /// Resolve the wanaka project this sentry runs against.
 ///
@@ -368,7 +372,7 @@ fn wanaka_suggest_baseline() {
             Some(LimitKind::VendorAxial),
             "{ctx}: the vendor ap bound must bind the proposal (not deflection or rigidity)"
         );
-        let envelope_clamped = envelope.proposal.get().ap_mm;
+        let envelope_clamped = envelope.proposal.get().ap_mm().expect("a proposed depth");
         let stated_ae = envelope
             .stated
             .unwrap_or_else(|| panic!("{ctx}: the op states its cut"))
@@ -474,9 +478,9 @@ fn wanaka_suggest_baseline() {
                 .operation
                 .feed_rate()
                 .expect("S11: the fixture sets it")
-                < DEFAULT_CUTTING_FEED_CAP_MM_MIN,
+                < RETIRED_LIFT_CEILING_MM_MIN,
             "{ctx}: the shipped feed must sit below the derived cutting ceiling \
-             ({DEFAULT_CUTTING_FEED_CAP_MM_MIN}) the retired lift used to clamp against, \
+             ({RETIRED_LIFT_CEILING_MM_MIN}) the retired lift used to clamp against, \
              got {}",
             suggested
                 .operation
@@ -596,7 +600,7 @@ fn wanaka_suggest_baseline() {
             Some(LimitKind::VendorAxial),
             "{ctx}: the vendor ap bound must bind a stated 9 mm"
         );
-        let envelope_clamped = envelope.proposal.get().ap_mm;
+        let envelope_clamped = envelope.proposal.get().ap_mm().expect("a proposed depth");
         assert!(
             envelope_clamped > 0.0 && envelope_clamped < 9.0,
             "{ctx}: the proposal must drop below the stated 9.0 mm, got {envelope_clamped}"
@@ -610,9 +614,9 @@ fn wanaka_suggest_baseline() {
                 .operation
                 .feed_rate()
                 .expect("S11: the fixture sets it")
-                < DEFAULT_CUTTING_FEED_CAP_MM_MIN,
+                < RETIRED_LIFT_CEILING_MM_MIN,
             "{ctx}: the shipped feed must sit below the derived cutting ceiling \
-             ({DEFAULT_CUTTING_FEED_CAP_MM_MIN}), got {}",
+             ({RETIRED_LIFT_CEILING_MM_MIN}), got {}",
             suggested
                 .operation
                 .feed_rate()
@@ -669,7 +673,12 @@ fn wanaka_suggest_baseline() {
              1825 tie with Amana v8 on the lower printed chip (Q3)"
         );
         assert_eq!(
-            matched.tied_with.as_ref().map(|r| r.id()),
+            matched
+                .band
+                .members
+                .iter()
+                .map(|m| m.row.id())
+                .find(|id| *id != matched.observation_id),
             Some("amana-tapered-hardwood-parallel-1000-2f-zrn-v8"),
             "{ctx}: the Q3 winner names the other row"
         );

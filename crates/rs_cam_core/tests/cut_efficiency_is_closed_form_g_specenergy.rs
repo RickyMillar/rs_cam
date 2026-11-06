@@ -196,7 +196,7 @@ fn operating_point(
         power_case: rs_cam_core::feeds::engagement::PowerCase::Nominal,
         available_power_kw: 0.8,
         power_limited: false,
-        mrr_mm3_min: axial_doc_mm * radial_woc_mm * feed,
+        mrr_mm3_min: Ok(axial_doc_mm * radial_woc_mm * feed),
         warnings: Vec::new(),
         vendor_source: None,
         support: rs_cam_core::feeds::FeedsSupport::FormulaOnly {

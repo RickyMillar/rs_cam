@@ -75,7 +75,11 @@ fn the_envelope_plot_marks_the_operator_and_the_proposal_k2b() {
     let (config, env) = envelope_k2b::envelope_of(inside).expect("the Pocket is backed");
     let scene = EnvelopeScene::of(&env, None);
     assert_eq!(scene.shape, EnvelopeShape::Plane, "fixture: a plane op");
-    assert_eq!(scene.proposal, env.proposal.get(), "the scene's proposal");
+    assert_eq!(
+        scene.proposal,
+        env.proposal.get().point(),
+        "the scene's proposal"
+    );
     assert!(scene.candidate.is_none(), "no candidate at rest");
     let stated = env.stated.expect("fixture: the Pocket states both axes");
     assert_eq!(scene.dot.map(|(p, _)| p), Some(stated));
@@ -147,21 +151,11 @@ fn the_envelope_plot_marks_the_operator_and_the_proposal_k2b() {
     // The operator's point outside: a CAUTION dot, and the proposal is a
     // third mark at its own place
     // (the fixture Pocket itself). The edge that Now crosses is CAUTION.
-    // P13c (O1): the rigidity cap is the force-budget depth, so the deep
-    // point states 1.25 x the lowest ceiling at its width (it stated 2.0
-    // against the 1.5 mm hobby cap).
-    // The point is past the slot step, a drawn limit (the lowest ceiling at
-    // the fixture width is the flute guard, the frame), at a width between
-    // the slot threshold and the corner-coverage bound, so it crosses the
-    // slot step alone.
+    // P16 (D12): the slot step is deleted. The point is past the corner
+    // coverage bound, a drawn width limit, at a width under the tool
+    // diameter (the frame) and at half the lowest depth ceiling there, so
+    // it crosses the corner bound alone.
     let (fixture, base) = envelope_for(OperationType::Pocket).expect("the Pocket is backed");
-    let threshold = match base
-        .limit(rs_cam_core::feeds::envelope::LimitKind::Slot)
-        .map(|l| &l.edge)
-    {
-        Some(rs_cam_core::feeds::envelope::Edge::ApCeilingAbove { ae_mm, .. }) => *ae_mm,
-        other => panic!("the Pocket has a slot step: {other:?}"),
-    };
     let corner = match base
         .limit(rs_cam_core::feeds::envelope::LimitKind::CornerCoverage)
         .map(|l| &l.edge)
@@ -169,12 +163,19 @@ fn the_envelope_plot_marks_the_operator_and_the_proposal_k2b() {
         Some(rs_cam_core::feeds::envelope::Edge::AeCeiling { mm }) => *mm,
         other => panic!("the Pocket has a corner bound: {other:?}"),
     };
-    let ae = 0.5 * (threshold + corner);
+    let diameter = match base
+        .limit(rs_cam_core::feeds::envelope::LimitKind::Diameter)
+        .map(|l| &l.edge)
+    {
+        Some(rs_cam_core::feeds::envelope::Edge::AeCeiling { mm }) => *mm,
+        other => panic!("the Pocket has a diameter bound: {other:?}"),
+    };
+    let ae = 0.5 * (corner + diameter);
     let ceiling = base.ap_ceiling_at(ae).expect("a ceiling").0;
     let mut deep = fixture;
     if let rs_cam_core::compute::catalog::OperationConfig::Pocket(c) = &mut deep {
         c.stepover = Some(ae);
-        c.depth_per_pass = Some(1.25 * ceiling);
+        c.depth_per_pass = Some(0.5 * ceiling);
     }
     let (deep, env) = envelope_k2b::envelope_of(deep).expect("the Pocket is backed");
     let scene = EnvelopeScene::of(&env, None);
@@ -212,7 +213,10 @@ fn the_envelope_plot_marks_the_operator_and_the_proposal_k2b() {
     let f = settle(&ctx, &deep, &env, &mut candidates);
     let at = f
         .response
-        .screen_of(scene.proposal, EnvelopeShape::Plane)
+        .screen_of(
+            scene.proposal.expect("a proposed depth"),
+            EnvelopeShape::Plane,
+        )
         .expect("the plot has a frame");
     let diamond = diamonds(&f.shapes);
     assert_eq!(diamond.len(), 1, "one proposal mark: {diamond:?}");

@@ -124,7 +124,6 @@ fn no_root_below_the_flute_is_stated_not_drawn_p11a() {
              curve (the bracket is {bracket} mm): {points:?}"
         ),
         Edge::ApCeiling { .. }
-        | Edge::ApCeilingAbove { .. }
         | Edge::ApFloor { .. }
         | Edge::AeCeiling { .. }
         | Edge::AeFloor { .. }

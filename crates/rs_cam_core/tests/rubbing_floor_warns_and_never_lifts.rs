@@ -243,8 +243,9 @@ fn a_ceiling_that_pushes_the_advance_under_the_band_minimum_warns_and_does_not_l
         | FeedsWarning::PowerLimited { .. }
         | FeedsWarning::PowerLadderReducedCut { .. }
         | FeedsWarning::ShankTooLarge { .. }
+        | FeedsWarning::DepthJudgedAfterSimulation
         | FeedsWarning::DocExceedsFlute { .. }
-        | FeedsWarning::SlottingDetected { .. }
+        | FeedsWarning::CuttingCapUnstated { .. }
         | FeedsWarning::ScallopInvalid { .. }
         | FeedsWarning::LongToolDerate { .. }
         | FeedsWarning::VendorRowPublishesNoChipload { .. }

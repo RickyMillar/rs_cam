@@ -400,25 +400,27 @@ fn the_gate_holds_the_form_a_point_with_no_minimum_g1() {
     assert_eq!(advisory.bounds.burn_reference_label(), "printed point");
 }
 
-/// Form B: 1.2 mm is inside one printed step (1.5 mm) below the 1.5 mm end
-/// of the Spektra hardwood 2-flute series. The series has 9 printed sizes
-/// (1.5-12.7 mm, the G6 Spektra load of 2026-09-25); the OLS slope of
-/// ln(point) on ln(d) over them is 0.445115 (python over
-/// observations/*.json), so the scale is (1.2 / 1.5)^0.445115 and the
-/// point is 0.0508 × that scale. (At 13 mm, one step above the series,
-/// the Amana compression-spiral 12.7 mm row answers by form C.) Before that load the fixture was 2.5 mm,
-/// one step below a 3.175-6.35 mm series; 2.5 mm is now form A between
-/// the printed 1.5 and 3.0 mm rows.
+/// Form B: a 3-flute 2.9 mm end mill lies inside one printed step (6.0 -
+/// 3.175 mm) below the 3.175 mm end of the Spektra hardwood 3-flute
+/// series. The series has 5 printed sizes (3.175, 6.0, 6.35, 9.525,
+/// 12.7 mm); the OLS slope of ln(point) on ln(d) over them is 0.303353
+/// (python over observations/*.json), so the scale is (2.9 / 3.175)^0.303353
+/// and the point is 0.1016 x that scale. History: the fixture was 2.5 mm
+/// (2F) before the G6 Spektra load of 2026-09-25, then 1.2 mm (2F) until
+/// feeds contract P16 item 3 (review D10) added the 1/32, 1/16, 3/32 and
+/// 3/16 in hardwood rows; 1.2 mm is now form A between 0.79375 and 1.5 mm.
 #[test]
 fn a_form_b_cell_has_one_band_g1() {
+    let mut tool = tool_of(ToolType::EndMill, 2.9);
+    tool.set_flute_count(ToolFact::Stated(3));
     assert_one_claimed_band(
         OperationType::Pocket,
-        &tool_of(ToolType::EndMill, 1.2),
+        &tool,
         &hardwood(),
-        "amana-flat-hardwood-pocket-1500-2f-spektra",
+        "amana-flat-hardwood-pocket-3175-3f-spektra",
         "B",
-        0.905448790581,
-        (None, 0.045996798562),
+        0.972_891_349_940,
+        (None, 0.098_845_761_154),
     );
 }
 

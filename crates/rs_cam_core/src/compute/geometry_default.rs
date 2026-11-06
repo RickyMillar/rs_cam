@@ -310,7 +310,8 @@ fn pick_envelope(
 /// P13c: the proposal of `env` on `axis`, or `None` when the force budget
 /// cannot set the depth (a `Rigidity` entry that is `Unmodelled` for want
 /// of an input: no force line, no chip). An absent force limit below the
-/// flute is not a missing input.
+/// flute is not a missing input. P16 (review D5): the depth is `None` when
+/// the envelope proposes no depth (`ProposedDepth::None`).
 fn proposal_value(
     env: &crate::feeds::envelope::SafeEnvelope,
     axis: ProposalAxis,
@@ -329,44 +330,31 @@ fn proposal_value(
     }
     let p = env.proposal.get();
     let value = match axis {
-        ProposalAxis::Depth => p.ap_mm,
+        ProposalAxis::Depth => p.ap_mm()?,
         ProposalAxis::Width => p.ae_mm,
     };
     Some((value, env.proposal.basis().clone()))
 }
 
 /// P13c (lead ruling on item 1): the width of a pick with no force answer:
-/// the corner-coverage bound `(1 + 1/sqrt 2) r`, stopped at the slot
-/// threshold of the machine where that is narrower (the width the
-/// removal-rate pick takes when the slot step binds). No force enters it.
-fn geometry_width(d: f64, machine: &crate::machine::MachineProfile) -> (f64, Basis) {
+/// the corner-coverage bound `(1 + 1/sqrt 2) r`. No force enters it. P16
+/// (D12): the slot threshold that stopped it is deleted with the slot cap.
+pub(crate) fn geometry_width(d: f64) -> (f64, Basis) {
     let corner = crate::feeds::force_budget::corner_coverage_width_factor();
-    let (threshold, _, slot_basis) = crate::feeds::slot_rule(machine);
     let corner_basis = Basis::Rule(crate::feeds::force_budget::corner_coverage_row(
         crate::feeds::force_budget::CORNER_COVERAGE_ROW_NAME,
     ));
-    if threshold < corner {
-        (
-            threshold * d,
-            Basis::derived(
-                GEOMETRY_WIDTH_LAW,
-                vec![corner_basis, slot_basis, Basis::tool_diameter()],
-            ),
-        )
-    } else {
-        (
-            corner * d,
-            Basis::derived(
-                GEOMETRY_WIDTH_LAW,
-                vec![corner_basis, Basis::tool_diameter()],
-            ),
-        )
-    }
+    (
+        corner * d,
+        Basis::derived(
+            GEOMETRY_WIDTH_LAW,
+            vec![corner_basis, Basis::tool_diameter()],
+        ),
+    )
 }
 
 /// The law of [`geometry_width`].
-pub const GEOMETRY_WIDTH_LAW: &str =
-    "corner coverage (1 + 1/sqrt 2) r, at most the slot threshold (no force line or no row)";
+pub const GEOMETRY_WIDTH_LAW: &str = "corner coverage (1 + 1/sqrt 2) r (no force line or no row)";
 
 /// The rule of one tool-derived field of one op. Each registry row holds
 /// one per field (`OpRegistryEntry::geometry`).
@@ -494,7 +482,7 @@ impl GeometryDefault {
                         // line or no backed row the width is the geometry rule
                         // (it needs no force); the depth has no derivation and
                         // stays unset (no underived defaults, 2026-10-23).
-                        (None, ProposalAxis::Width) => geometry_width(tool.diameter, ctx.machine),
+                        (None, ProposalAxis::Width) => geometry_width(tool.diameter),
                         (None, ProposalAxis::Depth) => return None,
                     };
                 (value, basis, proposal_stamp())

@@ -63,7 +63,7 @@ const FLUTES: u32 = 2;
 /// after the score, the diameter, the transfer and the series rules, and
 /// the lower printed chip wins. This reverses G1 orchestrator decision 5.
 const ROW_ID: &str = "spetool-tapered-hardwood-parallel-1000-2f";
-/// The row it ties with, which `tied_with` names.
+/// The row it ties with, which the vendor band names (P16 item 8, `band`).
 const TIED_ROW_ID: &str = "amana-tapered-hardwood-parallel-1000-2f-zrn-v8";
 
 /// The printed maximum of a row (mm/tooth), read from the shipped table.
@@ -255,7 +255,12 @@ fn a_tapered_row_is_read_at_the_tip_a1() {
     // Q3: the winner names the row it tied with. Both rows print the chip
     // at the same 1.0 mm tip, so the tip read holds on either row.
     assert_eq!(
-        recipe_row.tied_with.as_ref().map(|r| r.id()),
+        recipe_row
+            .band
+            .members
+            .iter()
+            .map(|m| m.row.id())
+            .find(|id| *id != recipe_row.observation_id),
         Some(TIED_ROW_ID),
         "the Q3 winner names the other row"
     );

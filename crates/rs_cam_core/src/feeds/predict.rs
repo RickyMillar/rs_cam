@@ -122,6 +122,10 @@ pub enum DeflectionUnmodeled {
     /// ([`crate::compute::tool_config::ToolConfig::validate`]), so no cutter
     /// is built (F029).
     ToolOutOfDomain,
+    /// P16 (review D7): the op follows a surface at an offset
+    /// (`Axial::SurfaceOffset`, Project Curve), so the depth into the stock
+    /// is known after the simulation. The post-sim deflection gate judges it.
+    DepthAfterSimulation,
 }
 
 impl DeflectionUnmodeled {
@@ -140,7 +144,10 @@ impl DeflectionUnmodeled {
             | Self::NoChipload
             | Self::NoStickout
             | Self::DegenerateCantilever
-            | Self::ToolOutOfDomain => UnmodeledReason::NotImplemented(self.clause().to_owned()),
+            | Self::ToolOutOfDomain
+            | Self::DepthAfterSimulation => {
+                UnmodeledReason::NotImplemented(self.clause().to_owned())
+            }
         }
     }
 
@@ -159,6 +166,7 @@ impl DeflectionUnmodeled {
             Self::NoStickout => "the tool reports no usable stickout",
             Self::DegenerateCantilever => "the cut is deeper than the tool stands out",
             Self::ToolOutOfDomain => "a tool dimension is outside its domain",
+            Self::DepthAfterSimulation => "the depth into the stock is known after the simulation",
         }
     }
 }
@@ -338,6 +346,10 @@ pub fn predict_peak_deflection_um(
         return Err(DeflectionUnmodeled::NoDiameter);
     }
 
+    // P16: a surface-offset op has no depth before the simulation.
+    if operation.cut_spec().axial.depth_after_simulation() {
+        return Err(DeflectionUnmodeled::DepthAfterSimulation);
+    }
     let Some(axial_doc_mm) = operation.depth_per_pass() else {
         tracing::debug!(
             reason = "no_dpp",

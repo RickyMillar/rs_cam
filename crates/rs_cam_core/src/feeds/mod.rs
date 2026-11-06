@@ -445,6 +445,32 @@ pub struct FeedsInput<'a> {
     pub tool_facts: sourced::ToolFactKinds,
 }
 
+impl FeedsInput<'_> {
+    /// P16 (review D7): `true` when the simulation gives the depth into the
+    /// stock: the op's row reads its depth field as an offset from the
+    /// model surface (`AxialRule::SurfaceOffset`, Project Curve). The
+    /// calculator then has no depth: no family default depth, no flute
+    /// guard, no slot cap, no power figure, and one
+    /// [`FeedsWarning::DepthJudgedAfterSimulation`]. `None` for
+    /// `operation_kind` (a unit fixture) gives `false`.
+    #[must_use]
+    pub fn depth_after_simulation(&self) -> bool {
+        self.operation_kind.is_some_and(|k| {
+            k.capabilities().cut_rule.axial == crate::compute::catalog::AxialRule::SurfaceOffset
+        })
+    }
+
+    /// The force line of the power model: `None` when the material has no
+    /// force line, or when the depth is known only after the simulation
+    /// (P16: no power figure without a depth).
+    pub(crate) fn power_force_line(&self) -> Option<crate::material::force_line::ForceLine> {
+        if self.depth_after_simulation() {
+            return None;
+        }
+        self.material.force_line().ok()
+    }
+}
+
 #[derive(Debug, Clone, PartialEq, Eq)]
 pub enum ChiploadSource {
     VendorLut { observation_id: String },
@@ -519,7 +545,11 @@ pub struct FeedsResult {
     /// figure.
     pub available_power_kw: f64,
     pub power_limited: bool,
-    pub mrr_mm3_min: f64,
+    /// The removal rate `ap x ae x feed`, mm^3/min. P16 (item 2b):
+    /// `Err(PowerUnmodeled::DepthAfterSimulation)` on a surface offset
+    /// (Project Curve), where the depth is known after the simulation; the
+    /// same reason as the shipped power.
+    pub mrr_mm3_min: Result<f64, crate::feeds::operating_point::PowerUnmodeled>,
     pub warnings: Vec<FeedsWarning>,
     /// Observation ID if vendor LUT was used for chipload.
     pub vendor_source: Option<String>,
@@ -594,6 +624,17 @@ pub struct FeedsResult {
     /// changed a value, in step order. The last record of a quantity holds
     /// the value of its result field.
     pub steps: Vec<crate::trace::lineage::StepRecord>,
+}
+
+impl FeedsResult {
+    /// Feeds contract P16 item 8: the vendor band of the matched lookup
+    /// (`vendor_lookup::VendorBand`), or `None` with no matched row. The
+    /// CLI `suggest --json`, MCP `get_suggest_rationale` and the Suggest
+    /// card read only this method.
+    #[must_use]
+    pub fn vendor_band(&self) -> Option<&vendor_lookup::VendorBand> {
+        self.matched_lut_row.as_ref().map(|row| &row.band)
+    }
 }
 
 /// Per-step record of the chipload → feed pipeline. Each multiplier
@@ -1046,6 +1087,13 @@ pub enum FeedsWarning {
         shank_mm: f64,
         max_mm: f64,
     },
+    /// P16 (review D7, lead ruling B): the op follows a surface at an
+    /// offset (Project Curve), so the depth into the stock is known after
+    /// the simulation. Suggest gives no power figure and no deflection
+    /// figure, and the flute guard has no depth to judge. The post-sim
+    /// gates judge the depth, the power and the deflection. The feed ships
+    /// from the chip.
+    DepthJudgedAfterSimulation,
     /// The depth is above the flute guard (Step 4). P11b: a stated depth
     /// ships (`shipped_mm == requested_mm`); a calculator depth is lowered
     /// to the guard (`shipped_mm == guard_mm`).
@@ -1054,12 +1102,14 @@ pub enum FeedsWarning {
         guard_mm: f64,
         shipped_mm: f64,
     },
-    /// The cut is a slot and the depth is above the slot cap (Step 4b).
-    /// P11b: a stated depth ships; a calculator depth is lowered to the cap.
-    SlottingDetected {
-        requested_mm: f64,
-        cap_mm: f64,
-        shipped_mm: f64,
+    /// P16 (operator ruling D9): the machine states no cutting-feed cap
+    /// (no `max_cutting_feed_mm_min` and no kinematics X/Y rate), so the
+    /// travel rate bounds the cut, and that ceiling bound this cut (Step 7
+    /// added `RpmLoweredForFeedCeiling` or `FeedRateClamped`). The engine
+    /// never refuses (Q6); the operator states the cap.
+    CuttingCapUnstated {
+        /// The travel rate that bound the cut (mm/min).
+        travel_rate_mm_min: f64,
     },
     ScallopInvalid {
         target: f64,
@@ -1827,18 +1877,18 @@ fn worst_case_power(
 /// Q1 (feeds contract P8): THE demand of a cap arm. The worst case of the
 /// K7 pre-sim set of the `CutSpec` (`FeedsInput::power_cases` at the stated
 /// `ap` and `ae`) at the arm's `rpm` and `feed`, through `Engagement`, with
-/// its case. `None` when the material has no force line.
+/// its case. `None` when the material has no force line, or when the depth
+/// is known after the simulation (P16).
 #[must_use]
 pub(crate) fn cap_arm_demand_kw(
     input: &FeedsInput,
-    material: &Material,
     ap: f64,
     ae: f64,
     effective_d: engagement::EngagedDiameter,
     rpm: f64,
     feed: f64,
 ) -> Option<(engagement::PowerCase, f64)> {
-    let line = material.force_line().ok()?;
+    let line = input.power_force_line()?;
     let (case, kw, _) = worst_case_power(input, line, ap, ae, effective_d, rpm, feed);
     Some((case, kw))
 }
@@ -1886,22 +1936,6 @@ pub(crate) fn flute_guard_of(
     }
 }
 
-/// Step 4b: the slot rule (threshold in diameters, depth cap in
-/// diameters) and its basis (P5: the calculator and the envelope read one
-/// rule). P11c (D13 item 3): the depth cap is the machine's
-/// `RigidityProfile::slot_doc_factor`; the threshold stays a
-/// machine-neutral geometry rule.
-pub(crate) fn slot_rule(machine: &MachineProfile) -> (f64, f64, Basis) {
-    (
-        SLOTTING_THRESHOLD.value,
-        machine.rigidity.slot_doc_factor,
-        Basis::derived(
-            "slot cap",
-            vec![Basis::Rule(SLOTTING_THRESHOLD), rigidity_basis(machine)],
-        ),
-    )
-}
-
 /// P11c (D13 item 6): the basis of a value that a rigidity factor of
 /// `machine` sets. The law names the machine class and how the values are
 /// known (`RigidityBasis::text`, for example "hobby grade (Shapeoko port),
@@ -1914,13 +1948,6 @@ pub fn rigidity_basis(machine: &MachineProfile) -> Basis {
         vec![Basis::Machine(sourced::MachineField::Rigidity)],
     )
 }
-
-/// Step 4b: the radial width, in diameters, above which the cut is a slot.
-const SLOTTING_THRESHOLD: FormulaConstant = FormulaConstant::unsourced(
-    "feeds.calculate.slotting_threshold_d",
-    0.85,
-    "no comment and no record in the repo",
-);
 
 /// Main calculation entry point.
 /// Smallest axial depth the power ladder may propose (mm).
@@ -2228,7 +2255,6 @@ pub fn formula_constants() -> Vec<FormulaConstant> {
         ),
         FLUTE_GUARD_FACTOR,
         FLUTE_GUARD_NO_LENGTH_D,
-        SLOTTING_THRESHOLD,
         ADAPTIVE_FLAT_AP,
         ADAPTIVE_FLAT_AE,
         ADAPTIVE_BALL_AP,

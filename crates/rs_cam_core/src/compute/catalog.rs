@@ -25,7 +25,8 @@ pub use capabilities::{
 };
 
 pub use cut_spec::{
-    Axial, AxialRule, CutRule, CutSpec, FirstPass, Mm, Radial, RadialRule, Stated, TotalDepth,
+    Axial, AxialRule, CutRule, CutSpec, DEPTH_AFTER_SIMULATION, FirstPass, Mm, Radial, RadialRule,
+    Stated, TotalDepth,
 };
 
 pub(crate) use entry_contract::entry_records;
@@ -1321,11 +1322,13 @@ impl OperationConfig {
                 total: TotalDepth::None(SURFACE_DEPTH),
                 first_pass: FirstPass::NotSlot,
             },
-            // D3: every side is a slot on the first pass.
+            // D3: every side is a slot on the first pass. P16 (review D7):
+            // `depth` is a signed offset from the model surface, not a depth
+            // into the stock; the simulation gives that depth.
             OperationConfig::ProjectCurve(c) => CutSpec {
                 radial: Radial::Slot,
-                axial: Axial::OnePass(c.depth.map(mm)),
-                total: known_or_unset(c.depth),
+                axial: Axial::SurfaceOffset(c.depth.map(mm)),
+                total: TotalDepth::None(DEPTH_AFTER_SIMULATION),
                 first_pass: FirstPass::Slot,
             },
             OperationConfig::AlignmentPinDrill(c) => CutSpec {

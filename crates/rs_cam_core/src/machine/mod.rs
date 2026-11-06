@@ -60,8 +60,9 @@ impl Default for ChipLoadFormula {
 /// Feeds contract P11c (D13 items 3 and 6): the one default set is
 /// [`RigidityProfile::default`], the hobby grade set ([`MachineClass::Hobby`]).
 /// `woc_roughing_factor`, `woc_roughing_max_mm` and `woc_finishing_mm` are
-/// deleted (no reader; break; review item M11). `slot_doc_factor`
-/// holds the slot depth cap that was the typed constant `SLOTTING_DOC_CAP`.
+/// deleted (no reader; break; review item M11). P16 (operator ruling D12):
+/// `slot_doc_factor`, the 0.25 D slot depth cap, is deleted (a retired key);
+/// the force budget sets the slot depth.
 ///
 /// Feeds contract P13c (ruling O1): `force_budget_n` replaces the typed
 /// `doc_roughing_factor` (0.25 D) and the unread `doc_finishing_factor`
@@ -74,10 +75,6 @@ impl Default for ChipLoadFormula {
 pub struct RigidityProfile {
     pub adaptive_doc_factor: f64,
     pub adaptive_woc_factor: f64,
-    /// The depth cap of a slot (`ae` above the slot threshold), in
-    /// diameters (feeds `slot_rule`, calculate Step 4b and the envelope
-    /// `Slot` limit).
-    pub slot_doc_factor: f64,
     /// P13c (O1): the lateral force budget (N), a stand-in for the frame
     /// stiffness (frame deflection = F / k_frame). The hobby grade default
     /// is the largest peak force of the printed hobby full-slot cuts
@@ -93,7 +90,6 @@ pub struct RigidityProfile {
 pub struct RigidityProfileWire {
     adaptive_doc_factor: f64,
     adaptive_woc_factor: f64,
-    slot_doc_factor: f64,
     #[serde(default)]
     force_budget_n: Option<f64>,
 }
@@ -114,7 +110,7 @@ impl RigidityProfile {
     /// Each value with its field name and unit (P11c: the GUI machine
     /// panel lists them, with the class beside each value).
     #[must_use]
-    pub const fn values(&self) -> [RigidityValue; 4] {
+    pub const fn values(&self) -> [RigidityValue; 3] {
         const D: &str = "x D";
         [
             RigidityValue {
@@ -125,11 +121,6 @@ impl RigidityProfile {
             RigidityValue {
                 field: "adaptive_woc_factor",
                 value: self.adaptive_woc_factor,
-                unit: D,
-            },
-            RigidityValue {
-                field: "slot_doc_factor",
-                value: self.slot_doc_factor,
                 unit: D,
             },
             RigidityValue {
@@ -321,9 +312,7 @@ impl RigidityProfile {
 /// `shapeoko_vfd_1500w_balanced()` in the gitignored
 /// `reference/shapeoko_feeds_and_speeds/src/machine_profile.rs` (commit
 /// 172d6de60); no printed source is in the repo, so each value is
-/// Unsourced ([`RigidityBasis::HobbyDefault`]). `slot_doc_factor` is the
-/// value of the deleted constant `SLOTTING_DOC_CAP` (0.25 D; "no comment and
-/// no record in the repo"). P13c (O1): `force_budget_n` is derived, not
+/// Unsourced ([`RigidityBasis::HobbyDefault`]). P13c (O1): `force_budget_n` is derived, not
 /// ported: the largest peak force of the printed hobby full-slot cuts
 /// (`feeds::force_budget::hobby_budget`, F201 Cited). `generic_wood_router`
 /// and the two Shapeoko presets read this set; a hobby machine table with
@@ -333,7 +322,6 @@ impl Default for RigidityProfile {
         Self {
             adaptive_doc_factor: 2.0,
             adaptive_woc_factor: 0.25,
-            slot_doc_factor: 0.25,
             force_budget_n: crate::feeds::force_budget::hobby_budget().force_n,
         }
     }
@@ -353,27 +341,68 @@ impl TravelRateMmMin {
     }
 }
 
-/// F002: the ceiling of a CUTTING feed, mm/min:
-/// `max_cutting_feed_mm_min` when set, else
-/// `min(travel, DEFAULT_CUTTING_FEED_CAP_MM_MIN)`, never above the travel
-/// rate. Only [`MachineProfile::cutting_ceiling`] makes one; the field is
-/// private, so a travel rate cannot pose as a cutting cap.
-/// [`Self::capped_at`] can only lower it (G-FEEDMAX).
-#[derive(Debug, Clone, Copy, PartialEq, PartialOrd)]
-pub struct CuttingCeilingMmMin(f64);
+/// F002: the ceiling of a CUTTING feed, mm/min (P16, operator ruling D9):
+/// `max_cutting_feed_mm_min` when stated, else the smaller of the X and Y
+/// rates of the kinematics (`$110`, `$111`), else the travel rate. It is
+/// never above the travel rate. Only [`MachineProfile::cutting_ceiling`]
+/// makes one; the fields are private, so a travel rate cannot pose as a
+/// cutting cap. [`Self::capped_at`] can only lower it (G-FEEDMAX).
+#[derive(Debug, Clone, Copy, PartialEq)]
+pub struct CuttingCeilingMmMin {
+    mm_min: f64,
+    source: CuttingCeilingSource,
+}
+
+/// P16 (D9): what set a [`CuttingCeilingMmMin`].
+#[derive(Debug, Clone, Copy, PartialEq, Eq)]
+pub enum CuttingCeilingSource {
+    /// The machine states `max_cutting_feed_mm_min`.
+    Stated,
+    /// The smaller of the X and Y maximum rates of the kinematics.
+    AxisRate,
+    /// No cutting cap is stated: the travel rate `max_feed_mm_min` bounds
+    /// the cut (a cut cannot outrun the axes). Step 7 warns
+    /// (`FeedsWarning::CuttingCapUnstated`) when this ceiling binds.
+    TravelRate,
+    /// The op's own feed cap (`DressupConfig::feed_max_rate`) lowered the
+    /// machine ceiling ([`CuttingCeilingMmMin::capped_at`]).
+    OpFeedCap,
+}
+
+impl CuttingCeilingSource {
+    /// The wire id (MCP `inspect_machine`).
+    #[must_use]
+    pub const fn wire_id(self) -> &'static str {
+        match self {
+            Self::Stated => "stated",
+            Self::AxisRate => "axis_rate",
+            Self::TravelRate => "travel_rate",
+            Self::OpFeedCap => "op_feed_cap",
+        }
+    }
+}
 
 impl CuttingCeilingMmMin {
     /// The ceiling, mm/min.
     #[must_use]
     pub const fn mm_min(self) -> f64 {
-        self.0
+        self.mm_min
+    }
+
+    /// What set the ceiling.
+    #[must_use]
+    pub const fn source(self) -> CuttingCeilingSource {
+        self.source
     }
 
     /// The ceiling with a floor of `floor_mm_min` (the `.max(1.0)` guard the
     /// sim and the advisor take against a zero profile).
     #[must_use]
     pub const fn at_least(self, floor_mm_min: f64) -> Self {
-        Self(self.0.max(floor_mm_min))
+        Self {
+            mm_min: self.mm_min.max(floor_mm_min),
+            source: self.source,
+        }
     }
 
     /// G-FEEDMAX: the ceiling, lowered to the op's own cut-feed cap
@@ -383,7 +412,10 @@ impl CuttingCeilingMmMin {
     #[must_use]
     pub fn capped_at(self, cap_mm_min: Option<f64>) -> Self {
         match cap_mm_min {
-            Some(cap) if cap.is_finite() && cap > 0.0 => Self(self.0.min(cap)),
+            Some(cap) if cap.is_finite() && cap > 0.0 && cap < self.mm_min => Self {
+                mm_min: cap,
+                source: CuttingCeilingSource::OpFeedCap,
+            },
             _ => self,
         }
     }
@@ -415,9 +447,9 @@ pub struct MachineProfile {
     pub max_feed_mm_min: f64,
     /// F4 — explicit ceiling for CUTTING feeds (optimizer search
     /// space, suggest recalibration, adaptive feed modulation).
-    /// `None` derives the conservative default
-    /// `min(travel, DEFAULT_CUTTING_FEED_CAP_MM_MIN)`. Set explicitly
-    /// on rigid machines that genuinely cut faster.
+    /// `None` (P16, D9): the smaller of the kinematics X and Y rates,
+    /// else the travel rate, with a warning where it binds
+    /// ([`Self::cutting_ceiling`]).
     #[serde(default)]
     pub max_cutting_feed_mm_min: Option<f64>,
     pub max_shank_mm: f64,
@@ -473,8 +505,8 @@ pub struct MachineProfileWire {
 
 /// The refusal of an industrial machine table with no `[rigidity]` block.
 pub const INDUSTRIAL_NEEDS_RIGIDITY: &str = "machine class `industrial` has no default rigidity: \
-     state a [rigidity] block (adaptive_doc_factor, adaptive_woc_factor, slot_doc_factor, \
-     force_budget_n), or set \
+     state a [rigidity] block (adaptive_doc_factor, adaptive_woc_factor, force_budget_n), or \
+     set \
      class = \"hobby\" to use the hobby grade default (Shapeoko port, Unsourced)";
 
 /// P13c (O1): the refusal of an industrial `[rigidity]` block with no
@@ -491,7 +523,6 @@ impl TryFrom<MachineProfileWire> for MachineProfile {
             (class, Some(r)) => RigidityProfile {
                 adaptive_doc_factor: r.adaptive_doc_factor,
                 adaptive_woc_factor: r.adaptive_woc_factor,
-                slot_doc_factor: r.slot_doc_factor,
                 force_budget_n: match (class, r.force_budget_n) {
                     (_, Some(n)) => n,
                     (MachineClass::Hobby, None) => {
@@ -825,14 +856,6 @@ impl Default for MachineProfile {
     }
 }
 
-/// F4 — conservative cutting-feed cap used when a profile doesn't set
-/// `max_cutting_feed_mm_min` explicitly. 6 000 mm/min sits above every
-/// vendor wood-routing recommendation in the embedded literature net
-/// (Onsrud industrial charts top out near 5 000–6 000 for the machine
-/// classes we model) while staying far under gantry travel rates
-/// (10 000+). A machine that genuinely cuts faster declares it.
-pub const DEFAULT_CUTTING_FEED_CAP_MM_MIN: f64 = 6000.0;
-
 impl MachineProfile {
     /// P11c (D13 item 6): how the rigidity values are known. A hobby
     /// machine whose values equal [`RigidityProfile::default`] reads the
@@ -869,10 +892,8 @@ impl MachineProfile {
         Ok(())
     }
 
-    /// F4 — the feed ceiling for CUTTING moves. Explicit
-    /// `max_cutting_feed_mm_min` when set, else
-    /// `min(travel, DEFAULT_CUTTING_FEED_CAP_MM_MIN)`. Never exceeds
-    /// the travel rate — a cut can't outrun the axes.
+    /// F4 — the feed ceiling for CUTTING moves, mm/min: the value of
+    /// [`Self::cutting_ceiling`].
     pub fn cutting_feed_ceiling_mm_min(&self) -> f64 {
         self.cutting_ceiling().mm_min()
     }
@@ -880,13 +901,32 @@ impl MachineProfile {
     /// F002: the cutting-feed ceiling as its own type. A consumer that caps
     /// a CUT (the modulator) takes [`CuttingCeilingMmMin`], so the travel
     /// rate cannot reach it by mistake.
+    ///
+    /// P16 (operator ruling D9, 2026-11-06): no default cap. The order is:
+    /// 1. `max_cutting_feed_mm_min` when stated ([`CuttingCeilingSource::Stated`]);
+    /// 2. else the smaller of the X and Y rates of `kinematics.max_rate_xyz_mm_min`
+    ///    ([`CuttingCeilingSource::AxisRate`], the `$$` import);
+    /// 3. else the travel rate ([`CuttingCeilingSource::TravelRate`]).
+    ///
+    /// Each is held at or below the travel rate: a cut cannot outrun the
+    /// axes. The travel rate is a required key, so a ceiling always exists.
     #[must_use]
     pub fn cutting_ceiling(&self) -> CuttingCeilingMmMin {
-        CuttingCeilingMmMin(
-            self.max_cutting_feed_mm_min
-                .unwrap_or(DEFAULT_CUTTING_FEED_CAP_MM_MIN)
-                .min(self.max_feed_mm_min),
-        )
+        let travel = self.max_feed_mm_min;
+        let axis_xy = self
+            .kinematics
+            .and_then(|k| k.max_rate_xyz_mm_min)
+            .map(|[x, y, _]| x.min(y))
+            .filter(|r| r.is_finite() && *r > 0.0);
+        let (mm_min, source) = match (self.max_cutting_feed_mm_min, axis_xy) {
+            (Some(cap), _) => (cap, CuttingCeilingSource::Stated),
+            (None, Some(rate)) => (rate, CuttingCeilingSource::AxisRate),
+            (None, None) => (travel, CuttingCeilingSource::TravelRate),
+        };
+        CuttingCeilingMmMin {
+            mm_min: mm_min.min(travel),
+            source,
+        }
     }
 
     /// F002: the travel rate (`max_feed_mm_min`, the $110 class) as its own
@@ -1128,32 +1168,44 @@ impl MachineProfile {
 mod tests {
     use super::*;
 
-    /// F4 — the validation case from the defect-class tracker: a
-    /// profile with 10 000 mm/min travel ($110-class, the ricky-XXL
-    /// setup) must NOT expose 10 000 as the cutting ceiling — the
-    /// derived default caps cutting at 6 000 while rapids keep the
-    /// full travel rate. An explicit `max_cutting_feed_mm_min` wins,
-    /// but can never exceed travel.
+    /// P16 (operator ruling D9): no default cutting cap. With no stated
+    /// cap the ceiling is the smaller kinematics X/Y rate, else the travel
+    /// rate. A stated cap wins. No ceiling exceeds the travel rate.
     #[test]
-    fn cutting_ceiling_split_from_travel_rate() {
+    fn cutting_ceiling_reads_the_stated_cap_then_the_axis_rate_then_travel_d9() {
         let mut m = MachineProfile::generic_wood_router();
         m.max_feed_mm_min = 10_000.0;
+        let c = m.cutting_ceiling();
         assert!(
-            (m.cutting_feed_ceiling_mm_min() - DEFAULT_CUTTING_FEED_CAP_MM_MIN).abs() < 1e-9,
-            "10k-travel profile must derive the conservative cutting cap"
+            (c.mm_min() - 10_000.0).abs() < 1e-9,
+            "travel bounds the cut: {c:?}"
         );
+        assert_eq!(c.source(), CuttingCeilingSource::TravelRate);
 
-        // Explicit ceiling wins.
+        // The axis rate: the smaller of X and Y, Z is not read.
+        let mut k = MachineKinematics::generic_wood_router();
+        k.max_rate_xyz_mm_min = Some([9_000.0, 8_500.0, 1_000.0]);
+        m.kinematics = Some(k);
+        let c = m.cutting_ceiling();
+        assert!((c.mm_min() - 8_500.0).abs() < 1e-9, "axis rate: {c:?}");
+        assert_eq!(c.source(), CuttingCeilingSource::AxisRate);
+
+        // A stated cap wins.
         m.max_cutting_feed_mm_min = Some(8_000.0);
-        assert!((m.cutting_feed_ceiling_mm_min() - 8_000.0).abs() < 1e-9);
+        let c = m.cutting_ceiling();
+        assert!((c.mm_min() - 8_000.0).abs() < 1e-9);
+        assert_eq!(c.source(), CuttingCeilingSource::Stated);
 
         // ...but never exceeds travel.
         m.max_feed_mm_min = 4_000.0;
         assert!((m.cutting_feed_ceiling_mm_min() - 4_000.0).abs() < 1e-9);
 
-        // Built-ins (travel ≤ cap) keep pre-F4 behavior exactly.
-        let preset = MachineProfile::shapeoko_vfd();
-        assert!((preset.cutting_feed_ceiling_mm_min() - preset.max_feed_mm_min).abs() < 1e-9);
+        // An op cap only lowers, and names itself.
+        let lowered = m.cutting_ceiling().capped_at(Some(3_000.0));
+        assert!((lowered.mm_min() - 3_000.0).abs() < 1e-9);
+        assert_eq!(lowered.source(), CuttingCeilingSource::OpFeedCap);
+        let kept = m.cutting_ceiling().capped_at(Some(9_000.0));
+        assert_eq!(kept.source(), CuttingCeilingSource::Stated);
     }
 
     #[test]

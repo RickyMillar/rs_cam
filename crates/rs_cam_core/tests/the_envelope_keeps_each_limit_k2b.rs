@@ -3,7 +3,7 @@
 //!
 //! For each `LimitKind` row of the P5 card table, one cell:
 //!
-//! - An edge on the stated axis (flute guard, vendor axial, rigidity, slot,
+//! - An edge on the stated axis (flute guard, vendor axial, rigidity,
 //!   power, deflection, diameter): the operator states a point past it, the
 //!   proposal sits on that edge (`min(stated, cap)`), the envelope names the
 //!   limit as the binding one, and `Limit.basis` names its constant.
@@ -154,7 +154,7 @@ fn machine_fields(b: &Basis) -> Vec<MachineField> {
 /// proposal is below the operator's point.
 fn assert_binds(env: &SafeEnvelope, kind: LimitKind) {
     assert_eq!(env.proposal_binding, Some(kind), "the binding limit");
-    let p = env.proposal.get();
+    let p = env.proposal.get().point().expect("a proposed depth");
     let stated = env.stated.expect("the cell states both axes");
     let limit = env.limit(kind).expect("the envelope keeps the limit");
     match &limit.edge {
@@ -169,7 +169,7 @@ fn assert_binds(env: &SafeEnvelope, kind: LimitKind) {
                 "{kind:?}: the proposal did not lower ae"
             );
         }
-        Edge::ApCeiling { .. } | Edge::ApCeilingAbove { .. } | Edge::ApCurve { .. } => {
+        Edge::ApCeiling { .. } | Edge::ApCurve { .. } => {
             let cap = limit
                 .ap_ceiling_at(p.ae_mm)
                 .expect("an ap edge at the proposal");
@@ -267,28 +267,6 @@ fn the_rigidity_cap_binds_and_names_the_machine_k2b() {
     });
     assert_binds(&env, LimitKind::Rigidity);
     let basis = &env.limit(LimitKind::Rigidity).expect("kept").basis;
-    assert_eq!(machine_fields(basis), vec![MachineField::Rigidity]);
-}
-
-#[test]
-fn the_slot_rule_binds_and_names_its_constants_k2b() {
-    let env = envelope(&Cell {
-        op: OperationType::Adaptive,
-        tool: end_mill(6.0, 20.0),
-        machine: MachineProfile::default(),
-        material: softwood(),
-        dpp: 2.0,
-        stepover: 8.0,
-        bbox: None,
-    });
-    assert_binds(&env, LimitKind::Slot);
-    // P11c (D13 item 3): the threshold is the one rule; the depth cap is the
-    // machine's `slot_doc_factor` (a `machine.rigidity` basis).
-    let basis = &env.limit(LimitKind::Slot).expect("kept").basis;
-    assert_eq!(
-        rule_names(basis),
-        vec!["feeds.calculate.slotting_threshold_d".to_owned()]
-    );
     assert_eq!(machine_fields(basis), vec![MachineField::Rigidity]);
 }
 
@@ -432,7 +410,10 @@ fn the_engagement_floor_places_a_tiny_depth_outside_k2b() {
         "{:?}",
         env.operator
     );
-    assert!(env.proposal.get().ap_mm <= 0.01 + 1e-12, "no raise (K2)");
+    assert!(
+        env.proposal.get().ap_mm().expect("a proposed depth") <= 0.01 + 1e-12,
+        "no raise (K2)"
+    );
 }
 
 #[test]

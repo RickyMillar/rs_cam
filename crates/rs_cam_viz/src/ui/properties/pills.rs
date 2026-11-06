@@ -451,7 +451,11 @@ mod tests {
             },
         )
         .expect("the demo pocket has an envelope");
-        let proposal = envelope.proposal.get().ap_mm;
+        let proposal = envelope
+            .proposal
+            .get()
+            .ap_mm()
+            .expect("the demo pocket has a proposed depth");
         // The depth snaps once to the realised step down (P5 card trap):
         // the demo pocket is 3.0 deep, so the 1.5 cap cut in two passes
         // (P11c; it was 1.2 in three passes of 1.0). P13c: the proposal is

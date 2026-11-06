@@ -25,8 +25,9 @@
 //! op keeps (Suggest writes no geometry by itself). `envelope` is the safe
 //! envelope of the profile (`CutterOpProfile::envelope`), the JSON that MCP
 //! `get_safe_envelope` returns: the axes, the limits with law and basis, the
-//! speeds grid, the proposal and the operator's placement. `tied_rows`
-//! names both rows of a Q3 tie.
+//! speeds grid, the proposal and the operator's placement. P16 item 8:
+//! `profile.vendor_band` is the vendor band of the matched row
+//! (`VendorBand::to_json`); it replaces `basis.tied_rows` (break).
 //!
 //! Feeds contract P13b: `lineage` is the lineage of the toolpath with no
 //! generation (`ProjectSession::lineage_measured`: the stored step records
@@ -108,7 +109,7 @@ fn profile_json(profile: &CutterOpProfile<'_>) -> Value {
             "power_case": feeds.power_case.label(),
             "available_power_kw": feeds.available_power_kw,
             "power_limited": feeds.power_limited,
-            "mrr_mm3_min": feeds.mrr_mm3_min,
+            "mrr_mm3_min": rs_cam_core::feeds::operating_point::mrr_json(&feeds.mrr_mm3_min),
             "vendor_source": feeds.vendor_source,
             "chipload_source": format!("{:?}", feeds.chipload_source),
             "chipload_bounds_mm": feeds
@@ -119,6 +120,10 @@ fn profile_json(profile: &CutterOpProfile<'_>) -> Value {
             "warnings": feeds.warnings.iter().map(|w| format!("{w:?}")).collect::<Vec<_>>(),
         },
         "shipped_power": shipped_power,
+        // P16 item 8: the vendor band of the matched row (members, lowest,
+        // highest), the one core record; MCP `get_suggest_rationale`
+        // `basis.vendor_band` prints the same JSON.
+        "vendor_band": feeds.vendor_band().map(rs_cam_core::feeds::vendor_lookup::VendorBand::to_json),
         "point_source": point_source(shipped),
         // P11c (D13 item 6): the machine class and how the rigidity values
         // are known; MCP `get_suggest_rationale` `basis.machine` prints the
@@ -131,11 +136,6 @@ fn profile_json(profile: &CutterOpProfile<'_>) -> Value {
             "support": { "headline": support_headline, "detail": support_detail },
             "plunge": { "headline": plunge_headline, "detail": plunge_detail },
             "ramp": { "headline": ramp_headline, "detail": ramp_detail },
-            "tied_rows": feeds.matched_lut_row.as_ref().and_then(|row| {
-                row.tied_with
-                    .as_ref()
-                    .map(|tie| vec![row.observation_id.clone(), tie.id().to_owned()])
-            }),
         },
         "envelope": match &profile.envelope {
             Ok(envelope) => serde_json::to_value(envelope).unwrap_or(Value::Null),

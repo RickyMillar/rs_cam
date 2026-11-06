@@ -74,6 +74,103 @@ pub struct CutPoint {
     pub ae_mm: f64,
 }
 
+/// P16 (review D5, D7): why the envelope proposes no depth.
+#[derive(Debug, Clone, Copy, PartialEq, Eq, Serialize)]
+#[serde(rename_all = "snake_case")]
+pub enum NoDepthProposal {
+    /// The material has no force line (`Material::force_line` refuses), so
+    /// no limit can model the depth (operator ruling D5, the P13c add-door
+    /// rule). The op keeps the depth it has.
+    NoForceLine,
+    /// The op follows a surface at an offset (`Axial::SurfaceOffset`,
+    /// Project Curve), so the simulation gives the depth into the stock
+    /// (lead ruling D7).
+    AfterSimulation,
+}
+
+impl NoDepthProposal {
+    /// One operator-facing clause, the same on every surface.
+    #[must_use]
+    pub const fn clause(self) -> &'static str {
+        match self {
+            Self::NoForceLine => {
+                "no depth proposal: this material has no measured force line (ruling B6)"
+            }
+            Self::AfterSimulation => {
+                "no depth proposal: the depth into the stock is known after the simulation"
+            }
+        }
+    }
+}
+
+/// P16: the depth of the proposal.
+#[derive(Debug, Clone, Copy, PartialEq)]
+pub enum ProposedDepth {
+    /// The envelope proposes this depth (mm).
+    Mm(f64),
+    /// The envelope proposes no depth, for this reason. An apply writes no
+    /// depth.
+    None(NoDepthProposal),
+}
+
+/// P16: the proposal of the envelope: a width and, when the envelope can
+/// model it, a depth.
+#[derive(Debug, Clone, Copy, PartialEq)]
+pub struct Proposal {
+    /// The proposed depth, or the reason for no depth.
+    pub depth: ProposedDepth,
+    /// The proposed radial width (mm).
+    pub ae_mm: f64,
+}
+
+impl Proposal {
+    /// The proposed depth (mm), or `None` when the envelope proposes no
+    /// depth.
+    #[must_use]
+    pub const fn ap_mm(&self) -> Option<f64> {
+        match self.depth {
+            ProposedDepth::Mm(mm) => Some(mm),
+            ProposedDepth::None(_) => None,
+        }
+    }
+
+    /// The proposed point, or `None` when the envelope proposes no depth.
+    #[must_use]
+    pub const fn point(&self) -> Option<CutPoint> {
+        match self.depth {
+            ProposedDepth::Mm(ap_mm) => Some(CutPoint {
+                ap_mm,
+                ae_mm: self.ae_mm,
+            }),
+            ProposedDepth::None(_) => None,
+        }
+    }
+
+    /// The reason for no depth, when the envelope proposes none.
+    #[must_use]
+    pub const fn no_depth(&self) -> Option<NoDepthProposal> {
+        match self.depth {
+            ProposedDepth::Mm(_) => None,
+            ProposedDepth::None(reason) => Some(reason),
+        }
+    }
+}
+
+/// The JSON shape keeps `ap_mm` and `ae_mm`; `ap_mm` is `null` when the
+/// envelope proposes no depth, and `no_depth` gives the reason.
+impl Serialize for Proposal {
+    fn serialize<S: serde::Serializer>(&self, serializer: S) -> Result<S::Ok, S::Error> {
+        let mut map = serializer.serialize_map(None)?;
+        map.serialize_entry("ap_mm", &self.ap_mm())?;
+        map.serialize_entry("ae_mm", &self.ae_mm)?;
+        if let Some(reason) = self.no_depth() {
+            map.serialize_entry("no_depth", &reason)?;
+            map.serialize_entry("no_depth_text", reason.clause())?;
+        }
+        map.end()
+    }
+}
+
 /// One axis of the envelope: the span that the grid covers.
 #[derive(Debug, Clone, Copy, PartialEq, Serialize)]
 pub struct AxisSpan {
@@ -153,8 +250,6 @@ pub enum LimitKind {
     /// `ae` ceiling at `(1 + 1/sqrt 2) r`: a wider stepover leaves uncut
     /// material in a sharp offset corner.
     CornerCoverage,
-    /// The slot rule: an `ap` ceiling where `ae` is above the threshold.
-    Slot,
     /// The rated spindle power: an `ap(ae)` curve.
     Power,
     /// The tip deflection target (roughing): an `ap(ae)` curve.
@@ -184,7 +279,6 @@ impl LimitKind {
             Self::VendorDepthTable => "vendor depth ceiling (width not printed)",
             Self::Rigidity => "machine rigidity",
             Self::CornerCoverage => "corner coverage",
-            Self::Slot => "slot rule",
             Self::Power => "spindle power",
             Self::Deflection => "tool deflection",
             Self::ChipBand => "chipload band",
@@ -203,13 +297,6 @@ impl LimitKind {
 pub enum Edge {
     /// `ap <= mm` for every `ae`.
     ApCeiling {
-        /// The ceiling (mm).
-        mm: f64,
-    },
-    /// `ap <= mm` where `ae > ae_mm` (the slot step).
-    ApCeilingAbove {
-        /// The width above which the ceiling holds (mm).
-        ae_mm: f64,
         /// The ceiling (mm).
         mm: f64,
     },
@@ -263,7 +350,6 @@ impl Limit {
     pub fn ap_ceiling_at(&self, ae_mm: f64) -> Option<f64> {
         match &self.edge {
             Edge::ApCeiling { mm } => Some(*mm),
-            Edge::ApCeilingAbove { ae_mm: above, mm } => (ae_mm > *above).then_some(*mm),
             Edge::ApCurve { points } => interpolate_curve(points, ae_mm),
             Edge::ApFloor { .. }
             | Edge::AeCeiling { .. }
@@ -281,7 +367,7 @@ impl Limit {
         let ceiling = |value: f64, cap: f64| (cap > 0.0).then(|| (cap - value) / cap);
         let floor = |value: f64, low: f64| (low > 0.0).then(|| (value - low) / low);
         match &self.edge {
-            Edge::ApCeiling { .. } | Edge::ApCeilingAbove { .. } | Edge::ApCurve { .. } => self
+            Edge::ApCeiling { .. } | Edge::ApCurve { .. } => self
                 .ap_ceiling_at(p.ae_mm)
                 .and_then(|cap| ceiling(p.ap_mm, cap)),
             Edge::ApFloor { mm } => floor(p.ap_mm, *mm),
@@ -324,8 +410,6 @@ pub struct MeasuredTool {
     /// The engaged diameter at the sample depth (mm),
     /// `Engagement::d_eng_mm`.
     pub d_eng_mm: f64,
-    /// A cone tool (tapered ball, V-bit): the slot rule does not judge it.
-    pub cone: bool,
 }
 
 /// K7: the value of a point that one limit judges, and the limit there.
@@ -625,8 +709,9 @@ pub struct SafeEnvelope {
     pub boundary: Vec<Limit>,
     /// The speeds at each grid point.
     pub speeds: SpeedsMap,
-    /// The one proposed point, with the reason it was chosen.
-    pub proposal: Sourced<CutPoint>,
+    /// The one proposal, with the reason it was chosen. P16: the depth is
+    /// [`ProposedDepth::None`] when the envelope cannot model it.
+    pub proposal: Sourced<Proposal>,
     /// The limit that lowered the proposal below the operator's point, if
     /// one did. P13c (O4): on a removal-rate pick, the limit that sets its
     /// depth.
@@ -644,6 +729,11 @@ pub struct SafeEnvelope {
     /// Where the operator's stated point sits.
     pub operator: Option<Placement>,
     inputs: OwnedInputs,
+    /// The point a proposal pick computes its speeds at: the proposal, and
+    /// on an axis with no proposed depth the depth of `propose` (the stated
+    /// depth lowered to a cap, else the calculator depth). The apply writes
+    /// no depth then, and pass 9 sizes the feed at the depth the op keeps.
+    proposal_point: CutPoint,
     /// P13c (O1): the force-budget model of the `Rigidity` limit, when the
     /// op's rule is the force budget. The proposal solves it exactly.
     budget: Option<BudgetModel>,
@@ -740,6 +830,7 @@ pub struct EnvelopePick<'env> {
     point: Sourced<CutPoint>,
     placement: Placement,
     result: FeedsResult,
+    writes_depth: bool,
 }
 
 impl<'env> EnvelopePick<'env> {
@@ -777,6 +868,14 @@ impl<'env> EnvelopePick<'env> {
     #[must_use]
     pub const fn axes(&self) -> EnvelopeAxes {
         self.envelope.axes
+    }
+
+    /// P16: `true` when the apply writes the picked depth: the depth axis
+    /// is free, and a proposal pick has a proposed depth. An apply never
+    /// writes a depth that the envelope did not propose.
+    #[must_use]
+    pub const fn writes_depth(&self) -> bool {
+        self.writes_depth
     }
 }
 
@@ -900,17 +999,22 @@ impl SafeEnvelope {
             deflection_limit(&mut pick_limits, &input, &speeds, &plan, role, None);
         }
 
+        let base_point = CutPoint {
+            ap_mm: base.axial_depth_mm,
+            ae_mm: base.radial_width_mm,
+        };
         let mut env = Self {
             axes: plan.axes,
             boundary,
             speeds,
             proposal: Sourced::new(
-                CutPoint {
-                    ap_mm: base.axial_depth_mm,
-                    ae_mm: base.radial_width_mm,
+                Proposal {
+                    depth: ProposedDepth::Mm(base_point.ap_mm),
+                    ae_mm: base_point.ae_mm,
                 },
                 Basis::derived("not computed", Vec::new()),
             ),
+            proposal_point: base_point,
             proposal_binding: None,
             proposal_limits: Vec::new(),
             notes: Vec::new(),
@@ -928,24 +1032,67 @@ impl SafeEnvelope {
                 .filter(|_| base.matched_lut_row.is_some() && plan.axes.ap_free() && !plan.peck),
         };
         let peck_rule = plan.peck.then(|| drill_peck_rule(&input)).flatten();
+        // P16 (review D5, D7): the envelope proposes no depth that it cannot
+        // model. A surface-offset op has no depth before the simulation; a
+        // material with no force line has no limit that models the depth
+        // (a drill peck is a drill rule, not a force depth).
+        let no_depth = if input.operation.cut_spec().axial.depth_after_simulation() {
+            Some(NoDepthProposal::AfterSimulation)
+        } else if plan.axes.ap_free() && !plan.peck && input.material.force_line().is_err() {
+            Some(NoDepthProposal::NoForceLine)
+        } else {
+            None
+        };
         let removal_rate = matches!(role, PassRole::Roughing)
             && !plan.peck
+            && no_depth.is_none()
             && (plan.computed_width
                 || (family != OperationFamily::Adaptive
                     && matches!(env.axes, EnvelopeAxes::AxialBar { .. })));
-        if removal_rate {
+        let (point, binding, limits) = if removal_rate {
             let pick = env.propose_removal_rate(&plan);
-            env.proposal = pick.point;
-            env.proposal_binding = pick.limits.first().copied();
-            env.proposal_limits = pick.limits;
+            (pick.point, pick.limits.first().copied(), pick.limits)
         } else {
-            let (proposal, binding) = env.propose(&plan, &base, peck_rule);
-            env.proposal = proposal;
-            env.proposal_binding = binding;
-            env.proposal_limits = binding.into_iter().collect();
+            let proposed = env.propose(&plan, &base, peck_rule);
+            match (no_depth, plan.computed_width) {
+                // The P13c add-door rule: with no force answer the computed
+                // width is the corner width (`geometry_width`), never above
+                // the stated width (K2).
+                (Some(NoDepthProposal::NoForceLine), true) => {
+                    let (point, binding, limits) =
+                        env.geometry_width_proposal(&proposed.point, &plan, d);
+                    (point, binding, limits)
+                }
+                // With no proposed depth, a depth limit binds nothing.
+                (Some(NoDepthProposal::NoForceLine), false)
+                | (Some(NoDepthProposal::AfterSimulation), _) => {
+                    let binding = proposed.ae_binding;
+                    (proposed.point, binding, binding.into_iter().collect())
+                }
+                (None, _) => {
+                    let binding = proposed.ap_binding.or(proposed.ae_binding);
+                    (proposed.point, binding, binding.into_iter().collect())
+                }
+            }
+        };
+        env.proposal_point = point.get();
+        env.proposal = Sourced::new(
+            Proposal {
+                depth: match no_depth {
+                    Some(reason) => ProposedDepth::None(reason),
+                    None => ProposedDepth::Mm(point.get().ap_mm),
+                },
+                ae_mm: point.get().ae_mm,
+            },
+            point.basis().clone(),
+        );
+        env.proposal_binding = binding;
+        env.proposal_limits = limits;
+        if let Some(reason) = no_depth {
+            env.notes.push(reason.clause().to_owned());
         }
         env.add_exact_budget_samples(&[
-            (Some(env.proposal.get().ae_mm), BudgetChip::Pick),
+            (Some(env.proposal_point.ae_mm), BudgetChip::Pick),
             (plan.stated_ae, BudgetChip::Curve),
         ]);
         if plan.computed_width {
@@ -1001,8 +1148,7 @@ impl SafeEnvelope {
     /// K7 (feeds contract P9): the value of the measured point `p` that the
     /// limit of `kind` judges, and the limit there, by the rules of
     /// [`Self::placement_of_measured`]. `None` for a limit with no edge
-    /// (judged per point, or unmodelled), a limit that does not judge this
-    /// tool, or no limit of that kind.
+    /// (judged per point, or unmodelled), or no limit of that kind.
     #[must_use]
     pub fn judged_value(
         &self,
@@ -1011,10 +1157,10 @@ impl SafeEnvelope {
         tool: MeasuredTool,
     ) -> Option<JudgedValue> {
         let l = self.limit(kind)?;
-        let edge = Self::measured_edge(l, tool)?;
+        let edge = Self::measured_edge(l, tool);
         let judged = Limit { edge, ..l.clone() };
         let (axis, measured_mm, limit_mm) = match judged.edge {
-            Edge::ApCeiling { .. } | Edge::ApCeilingAbove { .. } | Edge::ApCurve { .. } => {
+            Edge::ApCeiling { .. } | Edge::ApCurve { .. } => {
                 ("depth", p.ap_mm, judged.ap_ceiling_at(p.ae_mm)?)
             }
             Edge::ApFloor { mm } => ("depth", p.ap_mm, mm),
@@ -1046,24 +1192,17 @@ impl SafeEnvelope {
     ///   diameter: a tapered ball or a V-bit cuts wider than its tip as the
     ///   cone engages (lead decision, 2026-11-05). For a flat tool the two
     ///   are equal.
-    /// - A cone tool is not judged by the `Slot` rule: the rule caps the
-    ///   depth of a flat end mill that cuts a full-width slot, and a V
-    ///   groove (or a tapered ball's cone) is always a full groove.
     #[must_use]
     pub fn placement_of_measured(&self, p: CutPoint, tool: MeasuredTool) -> Placement {
         self.place(p, Some(tool))
     }
 
     /// The ceiling of `l` that a measured point of `tool` meets: the edge
-    /// itself, the `Diameter` ceiling at the engaged diameter, or `None`
-    /// for a limit that does not judge this tool.
-    fn measured_edge(l: &Limit, tool: MeasuredTool) -> Option<Edge> {
+    /// itself, or the `Diameter` ceiling at the engaged diameter.
+    fn measured_edge(l: &Limit, tool: MeasuredTool) -> Edge {
         match (l.kind, &l.edge) {
-            (LimitKind::Slot, _) if tool.cone => None,
-            (LimitKind::Diameter, Edge::AeCeiling { .. }) => {
-                Some(Edge::AeCeiling { mm: tool.d_eng_mm })
-            }
-            (_, edge) => Some(edge.clone()),
+            (LimitKind::Diameter, Edge::AeCeiling { .. }) => Edge::AeCeiling { mm: tool.d_eng_mm },
+            (_, edge) => edge.clone(),
         }
     }
 
@@ -1074,18 +1213,17 @@ impl SafeEnvelope {
             let judged;
             let l = match measured {
                 None => l,
-                Some(tool) => match Self::measured_edge(l, tool) {
-                    None => continue,
-                    Some(edge) => {
-                        judged = Limit { edge, ..l.clone() };
-                        &judged
-                    }
-                },
+                Some(tool) => {
+                    judged = Limit {
+                        edge: Self::measured_edge(l, tool),
+                        ..l.clone()
+                    };
+                    &judged
+                }
             };
             let is_floor = match l.edge {
                 Edge::ApFloor { .. } | Edge::AeFloor { .. } => true,
                 Edge::ApCeiling { .. }
-                | Edge::ApCeilingAbove { .. }
                 | Edge::ApCurve { .. }
                 | Edge::AeCeiling { .. }
                 | Edge::PerPoint
@@ -1097,10 +1235,9 @@ impl SafeEnvelope {
             // A fixed axis is not the operator's choice: its edges do not
             // place the point.
             let on_fixed_axis = match l.edge {
-                Edge::ApCeiling { .. }
-                | Edge::ApCeilingAbove { .. }
-                | Edge::ApCurve { .. }
-                | Edge::ApFloor { .. } => !self.axes.ap_free(),
+                Edge::ApCeiling { .. } | Edge::ApCurve { .. } | Edge::ApFloor { .. } => {
+                    !self.axes.ap_free()
+                }
                 Edge::AeCeiling { .. } | Edge::AeFloor { .. } => !self.axes.ae_free(),
                 Edge::PerPoint | Edge::Unmodelled { .. } => true,
             };
@@ -1143,7 +1280,9 @@ impl SafeEnvelope {
             },
         };
         let point = match request {
-            PickRequest::Proposal => self.proposal.clone(),
+            PickRequest::Proposal => {
+                Sourced::new(self.proposal_point, self.proposal.basis().clone())
+            }
             PickRequest::Point { ap_mm, ae_mm } => {
                 Sourced::new(fix(CutPoint { ap_mm, ae_mm }), Basis::picked())
             }
@@ -1155,6 +1294,12 @@ impl SafeEnvelope {
                 Basis::picked(),
             ),
         };
+        // P16: a proposal pick with no proposed depth writes no depth.
+        let writes_depth = self.axes.ap_free()
+            && match request {
+                PickRequest::Proposal => self.proposal.get().ap_mm().is_some(),
+                PickRequest::Point { .. } | PickRequest::Peck(_) => true,
+            };
         let p = point.get();
         EnvelopePick {
             envelope: self,
@@ -1162,24 +1307,65 @@ impl SafeEnvelope {
             placement: self.placement_of(p),
             result: self.inputs.calc_at_recorded(p),
             point,
+            writes_depth,
         }
+    }
+
+    /// P16 (review D5): the P13c add-door width of a computed-width op with
+    /// no force line: the corner width (`geometry_default::geometry_width`),
+    /// never above the stated width (K2). It returns the point, the limit
+    /// that lowered the stated width, and the limits the width sits on.
+    fn geometry_width_proposal(
+        &self,
+        point: &Sourced<CutPoint>,
+        plan: &AxesPlan,
+        d: f64,
+    ) -> (Sourced<CutPoint>, Option<LimitKind>, Vec<LimitKind>) {
+        let (width, width_basis) = crate::compute::geometry_default::geometry_width(d);
+        let kind = LimitKind::CornerCoverage;
+        let p = point.get();
+        let (ae, binding, limits) = match plan.stated_ae {
+            Some(stated) if stated <= width => {
+                (Sourced::new(stated, Basis::stated()), None, Vec::new())
+            }
+            Some(stated) => (
+                lower_to_cap(
+                    Sourced::new(stated, Basis::stated()),
+                    width,
+                    crate::compute::geometry_default::GEOMETRY_WIDTH_LAW,
+                    &width_basis,
+                ),
+                Some(kind),
+                vec![kind],
+            ),
+            None => (Sourced::new(width, width_basis), None, vec![kind]),
+        };
+        let basis = Basis::derived(
+            "proposal: corner width, no depth (no force line)",
+            vec![ae.basis().clone()],
+        );
+        (
+            Sourced::new(
+                CutPoint {
+                    ap_mm: p.ap_mm,
+                    ae_mm: ae.get(),
+                },
+                basis,
+            ),
+            binding,
+            limits,
+        )
     }
 
     /// The proposal: `min(stated, binding cap)` on a stated axis (never a
     /// raise, K2), the calculator's point on an unstated axis.
-    fn propose(
-        &self,
-        plan: &AxesPlan,
-        base: &FeedsResult,
-        peck_rule: Option<f64>,
-    ) -> (Sourced<CutPoint>, Option<LimitKind>) {
+    fn propose(&self, plan: &AxesPlan, base: &FeedsResult, peck_rule: Option<f64>) -> Proposed {
         let ae_cap = self
             .boundary
             .iter()
             .filter_map(|l| match l.edge {
                 Edge::AeCeiling { mm } => Some((mm, l)),
                 Edge::ApCeiling { .. }
-                | Edge::ApCeilingAbove { .. }
                 | Edge::ApCurve { .. }
                 | Edge::ApFloor { .. }
                 | Edge::AeFloor { .. }
@@ -1187,13 +1373,14 @@ impl SafeEnvelope {
                 | Edge::Unmodelled { .. } => None,
             })
             .min_by(|a, b| a.0.total_cmp(&b.0));
-        let mut binding = None;
+        let mut ae_binding = None;
+        let mut ap_binding = None;
         let ae = match (self.axes, plan.stated_ae) {
             (EnvelopeAxes::Plane { .. } | EnvelopeAxes::RadialBar { .. }, Some(stated)) => {
                 let s = Sourced::new(stated, Basis::stated());
                 match ae_cap {
                     Some((cap, l)) if cap < stated => {
-                        binding = Some(l.kind);
+                        ae_binding = Some(l.kind);
                         lower_to_cap(s, cap, l.law, &l.basis)
                     }
                     Some(_) | None => s,
@@ -1231,7 +1418,7 @@ impl SafeEnvelope {
                     .min_by(|a, b| a.0.total_cmp(&b.0));
                 match cap {
                     Some((c, l)) if c < s.get() => {
-                        binding = Some(l.kind);
+                        ap_binding = Some(l.kind);
                         lower_to_cap(s, c, l.law, &l.basis)
                     }
                     Some(_) | None => s,
@@ -1249,8 +1436,20 @@ impl SafeEnvelope {
             "proposal: min(stated, binding cap)",
             vec![ap.basis().clone(), ae.basis().clone()],
         );
-        (Sourced::new(point, basis), binding)
+        Proposed {
+            point: Sourced::new(point, basis),
+            ae_binding,
+            ap_binding,
+        }
     }
+}
+
+/// The result of [`SafeEnvelope::propose`]: the point and the limit that
+/// lowered each stated axis.
+struct Proposed {
+    point: Sourced<CutPoint>,
+    ae_binding: Option<LimitKind>,
+    ap_binding: Option<LimitKind>,
 }
 
 /// One scored width of the removal-rate search: the removal rate, the
@@ -1493,7 +1692,6 @@ impl SafeEnvelope {
             .filter_map(|l| match l.edge {
                 Edge::AeCeiling { mm } => Some((mm, l.kind)),
                 Edge::ApCeiling { .. }
-                | Edge::ApCeilingAbove { .. }
                 | Edge::ApCurve { .. }
                 | Edge::ApFloor { .. }
                 | Edge::AeFloor { .. }
@@ -1507,7 +1705,6 @@ impl SafeEnvelope {
             .filter_map(|l| match l.edge {
                 Edge::AeFloor { mm } => Some(mm),
                 Edge::ApCeiling { .. }
-                | Edge::ApCeilingAbove { .. }
                 | Edge::ApCurve { .. }
                 | Edge::ApFloor { .. }
                 | Edge::AeCeiling { .. }
@@ -1586,18 +1783,8 @@ impl SafeEnvelope {
         } else {
             vec![hi]
         };
-        // The breakpoints of the limits: a slot step (the rule holds above
-        // its width, so its width is the widest point under the step), and
-        // the grid columns of the curves.
+        // The breakpoints of the limits: the grid columns of the curves.
         if hi > lo {
-            for l in &self.boundary {
-                if let Edge::ApCeilingAbove { ae_mm, .. } = l.edge
-                    && ae_mm > lo
-                    && ae_mm < hi
-                {
-                    candidates.push(ae_mm);
-                }
-            }
             candidates.extend(
                 self.speeds
                     .aes
@@ -1668,21 +1855,11 @@ impl SafeEnvelope {
         }
         let (_, ap, depth_kind) = eval(best_ae);
         let mut limits: Vec<LimitKind> = depth_kind.into_iter().collect();
-        if fixed_ae.is_none() {
-            if let Some(kind) = width_bound
-                && (best_ae - hi).abs() < 1e-9
-            {
-                limits.push(kind);
-            }
-            // A slot step that stops the width at its threshold.
-            for l in &self.boundary {
-                if let Edge::ApCeilingAbove { ae_mm, .. } = l.edge
-                    && (best_ae - ae_mm).abs() < 1e-9
-                    && !limits.contains(&l.kind)
-                {
-                    limits.push(l.kind);
-                }
-            }
+        if fixed_ae.is_none()
+            && let Some(kind) = width_bound
+            && (best_ae - hi).abs() < 1e-9
+        {
+            limits.push(kind);
         }
         let mut bases: Vec<Basis> = limits
             .iter()
@@ -1803,10 +1980,18 @@ fn axes_plan(operation: &OperationConfig, tool: &ToolConfig, base: &FeedsResult)
             (Axial::PerPass(_) | Axial::ZStep(_) | Axial::Peck(_) | Axial::OnePass(_), None) => {
                 (true, None, base.axial_depth_mm)
             }
-            (Axial::Surface { .. } | Axial::HelixPitch(_) | Axial::ChamferWidth(_), None) => {
-                (false, None, base.axial_depth_mm)
-            }
+            (
+                Axial::Surface { .. }
+                | Axial::HelixPitch(_)
+                | Axial::ChamferWidth(_)
+                | Axial::SurfaceOffset(_),
+                None,
+            ) => (false, None, base.axial_depth_mm),
         },
+        // P16 (review D7): the offset is not a depth. The depth is fixed by
+        // the surface and known after the simulation; the axis holds the
+        // calculator depth only for the speeds of the grid point.
+        Axial::SurfaceOffset(_) => (false, None, base.axial_depth_mm),
     };
     let flute = if tool.cutting_length_planning_mm() > 0.0 {
         tool.cutting_length_planning_mm()
@@ -1915,20 +2100,6 @@ fn geometric_limits(
             ),
             edge: Edge::AeCeiling {
                 mm: d * crate::feeds::force_budget::corner_coverage_width_factor(),
-            },
-        });
-    }
-    // A drill peck is a plunge: it cuts no side slot, so the slot rule does
-    // not bound it.
-    if !plan.peck {
-        let (threshold_d, cap_d, slot_basis) = crate::feeds::slot_rule(input.machine);
-        out.push(Limit {
-            kind: LimitKind::Slot,
-            law: "slot: ap <= machine slot_doc_factor x D where ae > 0.85 D",
-            basis: slot_basis,
-            edge: Edge::ApCeilingAbove {
-                ae_mm: d * threshold_d,
-                mm: d * cap_d,
             },
         });
     }
@@ -2487,8 +2658,7 @@ fn rigidity_limit(
         .map(|(j, &ae)| (ae, Some(j)))
         .collect();
     if let (Some(first), Some(last)) = (speeds.aes.first(), speeds.aes.last()) {
-        let (threshold_d, _, _) = crate::feeds::slot_rule(&inputs.machine);
-        let mut extra = vec![d * threshold_d];
+        let mut extra = Vec::new();
         if plan.computed_width {
             extra.push(d * fb::corner_coverage_width_factor());
         }
@@ -2781,7 +2951,7 @@ mod tests {
         let env = pocket_envelope();
         let stated = env.stated.expect("a pocket states both axes");
         let p = env.proposal.get();
-        assert!(p.ap_mm <= stated.ap_mm + 1e-12);
+        assert!(p.ap_mm().expect("a pocket depth") <= stated.ap_mm + 1e-12);
         assert!(p.ae_mm <= stated.ae_mm + 1e-12);
     }
 

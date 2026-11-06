@@ -197,11 +197,20 @@ fn the_size_law_stays_inside_the_measured_band_on_the_industrial_rows_p13() {
     let shipped = points(&embedded_vendor_lut().observations);
     let (k, groups) = within_group_slope(&shipped);
     eprintln!("in-series size slope k = {k:.4} over {groups} groups");
-    // results.json `fits.within_group_slope`: k 0.5224 over 33 groups.
+    // results.json `fits.within_group_slope`: k 0.5224 over 33 groups at
+    // step 0. Feeds contract P16 item 3 (lead ruling 2026-11-06) added 12
+    // printed Spektra rows (hardwood, plywood softwood and plywood hardwood
+    // at 0.794, 1.587, 2.381 and 4.763 mm, 2F). They join 3 existing series
+    // groups, so the group count stays 33. The same estimator over the
+    // shipped JSON gives k 0.5701 (0.5224 without the 12 rows).
     assert_eq!(groups, 33, "the group count of the step 0 estimator");
-    assert!((k - 0.5224).abs() < 5e-4, "k is the step 0 value: {k}");
-    // The measured band of printed / law (results.json, same key).
-    const BAND: (f64, f64) = (1.118, 1.811);
+    assert!((k - 0.5701).abs() < 5e-4, "k is the P16 value: {k}");
+    // The band of printed / law: the min and max of the 4 industrial
+    // ratios at k 0.5701. Each step 0 ratio (results.json) times
+    // (d / anchor d)^(0.5224 - 0.5701): half hardwood 1.1186 -> 1.1033,
+    // half softwood 1.3608 -> 1.3165, half MDF 1.1603 -> 1.1226, half
+    // plywood hardwood 1.8101 -> 1.7512.
+    const BAND: (f64, f64) = (1.103, 1.752);
     for row in industrial_rows() {
         let d = row
             .diameter_mm
@@ -218,6 +227,12 @@ fn the_size_law_stays_inside_the_measured_band_on_the_industrial_rows_p13() {
             row.observation_id,
             mid(&row),
             anchor.d
+        );
+        // The P13 claim: every industrial row prints above the size law.
+        assert!(
+            ratio > 1.0,
+            "{}: printed / law {ratio:.3} is not above the law",
+            row.observation_id
         );
         assert!(
             ratio >= BAND.0 && ratio <= BAND.1,

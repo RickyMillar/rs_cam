@@ -59,7 +59,6 @@ impl Ladder<'_, '_> {
 pub(super) fn step6_power(s: &mut CalcState) {
     let input = s.input;
     let machine = input.machine;
-    let material = input.material;
     let rpm = s.speed.rpm;
     let (ap, ae) = (s.cut.ap, s.cut.ae);
     let effective_d = s.feed.effective_d;
@@ -107,7 +106,8 @@ pub(super) fn step6_power(s: &mut CalcState) {
         feed_factor: None,
     };
 
-    if let Ok(line) = material.force_line()
+    // P16: no power figure when the depth is known after the simulation.
+    if let Some(line) = input.power_force_line()
         && available_power > 0.0
     {
         let ladder = Ladder {
@@ -189,7 +189,7 @@ pub(super) fn step6_power(s: &mut CalcState) {
             );
             rungs2_3_geometry(&ladder, &s.speed, &mut s.cut, &mut s.feed, &mut moves);
             let (still_required, still_available) =
-                rung4_feed(&ladder, &s.speed, &s.cut, &mut s.feed, &mut moves);
+                rung4_feed(&ladder, &s.chip, &s.speed, &s.cut, &mut s.feed, &mut moves);
             rung5_report(
                 s,
                 &moves,
@@ -383,8 +383,17 @@ fn rungs2_3_geometry(
 
 /// Rung 4: the feed, last. Returns the required and the available power
 /// after the rung.
+///
+/// P16 (review D8, lead ruling 2026-11-06): the rubbing floor
+/// ([`Chip::rubbing_floor`], the Step 9b floor) is the lower bound of the
+/// rung. "No feed fits" has two causes: the edge term alone is over the
+/// budget (`feed_for_kw` gives `None`), or the feed that fits the power is
+/// below the floor feed. Both ship ONE answer: the floor feed, never above
+/// the feed before the rung (R4: the floor never lifts a feed).
+/// `PowerLimited` and `PowerLadderReducedCut` name the conflict.
 fn rung4_feed(
     ladder: &Ladder,
+    chip: &Chip,
     speed: &Speed,
     cut: &Cut,
     feed: &mut Feed,
@@ -432,19 +441,23 @@ fn rung4_feed(
             ladder.effective_d,
             rpm,
         );
-        // `None` means the feed-free edge term ALONE is over budget.
-        // No feed rescues that cut: thinning the chip leaves the
-        // ploughing power exactly where it was while driving the
-        // chipload toward the rubbing floor. Leave the feed and let
-        // the warning carry the conflict — the same clamp-and-warn
-        // convention as the rubbing floor at Step 9b.
-        if let Some(commanded_cap) = terms_now.feed_for_kw(still_available)
-            && feed.raw_feed > 0.0
-        {
-            let f = (commanded_cap / feed.raw_feed).clamp(0.0, 1.0);
+        // P16 (D8): the floor feed, the rubbing floor at this RPM.
+        // `None` means the feed-free edge term ALONE is over budget; a cap
+        // under the floor feed means the fitting feed rubs. In both cases no
+        // feed fits, and the rung ships the floor feed: the least power
+        // that does not rub (the modulator's `PowerMax` pin has the same
+        // shape). It never raises the feed.
+        let (floor_fpt, _) = chip.rubbing_floor();
+        let floor_feed = floor_fpt * rpm * f64::from(ladder.input.flute_count);
+        let target = match terms_now.feed_for_kw(still_available) {
+            Some(cap) if cap >= floor_feed => cap,
+            Some(_) | None => floor_feed,
+        };
+        if feed.raw_feed > 0.0 && target.is_finite() && target > 0.0 {
+            let f = (target / feed.raw_feed).clamp(0.0, 1.0);
             if f < 1.0 {
                 feed.power_factor = f;
-                feed.raw_feed *= f;
+                feed.raw_feed = target;
                 moves.feed_factor = Some(f);
                 feed.feed_power_cut = true;
                 still_required = ladder.required_at(rpm, ap, ae, feed.raw_feed);

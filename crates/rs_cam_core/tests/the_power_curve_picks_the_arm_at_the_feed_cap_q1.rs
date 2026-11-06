@@ -78,8 +78,9 @@ fn arms(r: &FeedsResult) -> CapArms {
             | FeedsWarning::PowerLimited { .. }
             | FeedsWarning::PowerLadderReducedCut { .. }
             | FeedsWarning::ShankTooLarge { .. }
+            | FeedsWarning::DepthJudgedAfterSimulation
             | FeedsWarning::DocExceedsFlute { .. }
-            | FeedsWarning::SlottingDetected { .. }
+            | FeedsWarning::CuttingCapUnstated { .. }
             | FeedsWarning::ScallopInvalid { .. }
             | FeedsWarning::ChiploadBelowRubbingFloor { .. }
             | FeedsWarning::LongToolDerate { .. }
@@ -245,6 +246,14 @@ fn neither_inside_ships_the_smaller_exceedance_and_warns_once_q1() {
         species: WoodSpecies::WhiteOak,
     };
     let ap = 3.0;
+    // P16 (review D8): with no feed that fits, power rung 4 ships the
+    // rubbing-floor feed, under the travel rate of the preset. So the cap
+    // sits at half of the uncapped feed, derived from the cell itself, and
+    // binds again.
+    let mut unbound = machine.clone();
+    unbound.max_feed_mm_min = 1.0e9;
+    unbound.max_cutting_feed_mm_min = Some(1.0e9);
+    machine.max_feed_mm_min = 0.5 * result(&unbound, &material, ap).feed_rate_mm_min;
     let want = expected(&machine, &material, ap);
     assert!(want.lower.2 > want.lower.3, "precondition: L outside");
     assert!(want.same.2 > want.same.3, "precondition: S outside");

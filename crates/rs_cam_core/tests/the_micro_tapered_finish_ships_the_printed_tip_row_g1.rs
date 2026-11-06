@@ -18,8 +18,8 @@
 //! 1825 (no subfamily term: the query carries none).
 //!
 //! Operator ruling Q3 (feeds contract P5, D2) decides the tie: the lower
-//! printed chip wins, then the id, and the winner names the other row in
-//! `tied_with`. The SpeTool row (0.0254) is lower than the Amana band, so
+//! printed chip wins, then the id. P16 item 8: the winner names the other
+//! row in its vendor band (`band`). The SpeTool row (0.0254) is lower than the Amana band, so
 //! the SpeTool row wins. G1 orchestrator decision 5 reversed by operator
 //! ruling Q3: before P5 the smaller id won and the Amana row shipped. The
 //! SpeTool value still lies inside the Amana band: the only two-vendor
@@ -95,7 +95,14 @@ fn the_lookup_picks_the_lower_printed_tip_row_g1() {
     let row = lookup_best(lut, &q).expect("a printed 1.0 mm tapered hardwood row exists");
     assert_eq!(row.observation_id, SPETOOL_ID);
     assert_eq!(row.score, 1825);
-    assert_eq!(row.tied_with.as_ref().map(|r| r.id()), Some(AMANA_ID));
+    assert_eq!(
+        row.band
+            .members
+            .iter()
+            .map(|m| m.row.id())
+            .find(|id| *id != row.observation_id),
+        Some(AMANA_ID)
+    );
     assert_eq!(row.size_basis, SizeBasis::Exact);
     assert_eq!(row.chip_load_min_mm, None);
     assert!((row.chip_load_max_mm.unwrap() - SPETOOL_VALUE).abs() < 1e-12);
@@ -120,20 +127,38 @@ fn the_lookup_picks_the_lower_printed_tip_row_g1() {
 /// The tie is real: without the SpeTool row, the Amana row wins at the same
 /// 1825 with its printed band and its A4 label, and the SpeTool value lies
 /// inside that band.
+///
+/// P16 item 8: the probe removes the whole SpeTool hardwood parallel series,
+/// not only the 1.0 mm row. With the 1.0 mm row alone removed, the 0.79375
+/// and 1.5 mm SpeTool rows bracket 1.0 mm, so a form A member at
+/// 0.02032 x (0.0381 / 0.02032)^(ln(1 / 0.79375) / ln(1.5 / 0.79375)) =
+/// 0.025527 mm (python) joins the band below the Amana mid
+/// (0.01905 + 0.0508) / 2 = 0.034925 mm and ships.
 #[test]
 fn the_spetool_row_ties_and_lies_inside_the_amana_band_g1() {
     let without_spetool = VendorLut {
         observations: embedded_vendor_lut()
             .observations
             .iter()
-            .filter(|o| o.observation_id != SPETOOL_ID)
+            .filter(|o| {
+                !o.observation_id
+                    .starts_with("spetool-tapered-hardwood-parallel-")
+            })
             .cloned()
             .collect(),
     };
     let row = lookup_best(&without_spetool, &query()).expect("the Amana row matches");
     assert_eq!(row.observation_id, AMANA_ID);
     assert_eq!(row.score, 1825, "the two rows tie, so Q3 decides");
-    assert_eq!(row.tied_with, None, "no other row ties");
+    assert_eq!(
+        row.band
+            .members
+            .iter()
+            .map(|m| m.row.id())
+            .find(|id| *id != row.observation_id),
+        None,
+        "no other row is a band member"
+    );
     assert!((row.chip_load_min_mm.unwrap() - BAND.0).abs() < 1e-12);
     assert!((row.chip_load_max_mm.unwrap() - BAND.1).abs() < 1e-12);
     assert!(
@@ -188,7 +213,14 @@ fn suggest_ships_the_printed_tip_row_g1() {
         .as_ref()
         .expect("a vendor row answered");
     assert_eq!(row.observation_id, SPETOOL_ID);
-    assert_eq!(row.tied_with.as_ref().map(|r| r.id()), Some(AMANA_ID));
+    assert_eq!(
+        row.band
+            .members
+            .iter()
+            .map(|m| m.row.id())
+            .find(|id| *id != row.observation_id),
+        Some(AMANA_ID)
+    );
     assert_eq!(row.size_basis, SizeBasis::Exact);
     assert_eq!(row.chip_load_min_mm, None);
     assert!((row.chip_load_max_mm.unwrap() - SPETOOL_VALUE).abs() < 1e-12);

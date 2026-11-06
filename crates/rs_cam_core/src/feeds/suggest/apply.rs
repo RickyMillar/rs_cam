@@ -837,6 +837,10 @@ pub struct PickedGeometry {
     pub placement: Placement,
     /// The request that gave the point.
     pub request: PickRequest,
+    /// P16: `true` when the apply writes the depth
+    /// ([`EnvelopePick::writes_depth`]). A proposal with no proposed depth
+    /// writes none.
+    pub writes_depth: bool,
 }
 
 /// CONTRACT K2. A validated recommendation in the state `S`.
@@ -1007,6 +1011,7 @@ impl<'env> EnvelopePick<'env> {
             axes: self.axes(),
             placement: self.placement(),
             request: self.request(),
+            writes_depth: self.writes_depth(),
         });
         rec
     }
@@ -1105,10 +1110,13 @@ fn write_pick(
     let p = pick.point.get();
     let stamp = crate::feeds::ValueProvenance::of_basis(&crate::feeds::Basis::picked());
     let op_kind = operation.op_type().name();
-    let ap_free = matches!(
-        pick.axes,
-        EnvelopeAxes::Plane { .. } | EnvelopeAxes::AxialBar { .. }
-    );
+    // P16: the depth axis is free and the pick has a depth to write (a
+    // proposal with no proposed depth writes none).
+    let ap_free = pick.writes_depth
+        && matches!(
+            pick.axes,
+            EnvelopeAxes::Plane { .. } | EnvelopeAxes::AxialBar { .. }
+        );
     let ae_free = matches!(
         pick.axes,
         EnvelopeAxes::Plane { .. } | EnvelopeAxes::RadialBar { .. }

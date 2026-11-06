@@ -661,6 +661,9 @@ fn rider3_no_binding_constraint_variant_denotes_the_rubbing_floor_clamp() {
         // C38 §15 (2026-10-26). A planner's per-move feed cap. It is a
         // load-rule bound, not a chip-formation floor.
         BindingConstraint::FeedCap,
+        // Feeds contract P16 item 7. The machine force budget. It is a
+        // force bound, not a chip-formation floor.
+        BindingConstraint::ForceBudget,
     ];
     for v in all {
         // Exhaustiveness guard: a new variant fails to compile here.
@@ -672,7 +675,8 @@ fn rider3_no_binding_constraint_variant_denotes_the_rubbing_floor_clamp() {
             | BindingConstraint::MachineMaxFeed
             | BindingConstraint::KinematicReach
             | BindingConstraint::PlungeRate
-            | BindingConstraint::FeedCap => {}
+            | BindingConstraint::FeedCap
+            | BindingConstraint::ForceBudget => {}
         }
         assert!(
             !v.label().contains("rubbing"),

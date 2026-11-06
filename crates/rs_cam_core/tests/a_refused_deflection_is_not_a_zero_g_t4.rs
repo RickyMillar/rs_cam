@@ -313,6 +313,7 @@ fn every_variant() -> Vec<DeflectionUnmodeled> {
         DeflectionUnmodeled::NoStickout,
         DeflectionUnmodeled::DegenerateCantilever,
         DeflectionUnmodeled::ToolOutOfDomain,
+        DeflectionUnmodeled::DepthAfterSimulation,
     ];
     for variant in &all {
         match variant {
@@ -324,7 +325,8 @@ fn every_variant() -> Vec<DeflectionUnmodeled> {
             | DeflectionUnmodeled::NoChipload
             | DeflectionUnmodeled::NoStickout
             | DeflectionUnmodeled::DegenerateCantilever
-            | DeflectionUnmodeled::ToolOutOfDomain => {}
+            | DeflectionUnmodeled::ToolOutOfDomain
+            | DeflectionUnmodeled::DepthAfterSimulation => {}
         }
     }
     all
@@ -339,7 +341,7 @@ fn the_two_vocabularies_agree() {
     let variants = every_variant();
     assert_eq!(
         variants.len(),
-        9,
+        10,
         "the fixture list must cover every variant; the match in every_variant() \
          forces a new one to be visited, and this count forces it to be LISTED"
     );

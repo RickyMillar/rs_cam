@@ -3,7 +3,9 @@
 //! meets the chip of that printed feed.
 //!
 //! A row's `source_page` that prints `a" - b" IPM at N RPM` gives the chip
-//! band `[a, b] / (N x flute_count) x 25.4` mm per tooth. The row's band
+//! band `[a, b] / (N x flute_count) x 25.4` mm per tooth. A single printed
+//! feed (`a" IPM at N RPM`) gives the point `a = b` (feeds contract P16,
+//! review D11: the Amana V-groove 2 flute columns print one feed). The row's band
 //! `[chipload_min_mm_tooth, chipload_max_mm_tooth]` must overlap it. Report
 //! 06 found three Amana ZrN 2F 1/16" rows whose printed chip is twice the
 //! chip of the printed feed; decision D3 holds them at the feed band.
@@ -27,17 +29,26 @@ use std::path::Path;
 /// Millimetres per inch: the definition of the inch.
 const MM_PER_INCH: f64 = 25.4;
 
-/// The rows that print `a" - b" IPM at N RPM` (count on 2026-11-03). A new
-/// row changes it; a parser that stops matching sets it to 0.
-const IPM_BAND_ROWS: usize = 27;
+/// The rows that print `a" - b" IPM at N RPM` or `a" IPM at N RPM`: 27 on
+/// 2026-11-03, plus the 9 Amana V-groove rows of P16 (review D11) on
+/// 2026-11-06. A new row changes it; a parser that stops matching sets it
+/// to 0.
+const IPM_BAND_ROWS: usize = 36;
 
 /// The printed feed band (in/min) and spindle speed of a `source_page`
-/// that prints `a" - b" IPM at N RPM`. `None` for any other text.
+/// that prints `a" - b" IPM at N RPM` or `a" IPM at N RPM`. `None` for
+/// any other text.
 fn printed_ipm_band(source_page: &str) -> Option<(f64, f64, f64)> {
     const MARK: &str = "\" IPM at ";
     let at = source_page.find(MARK)?;
-    let (left, hi) = source_page[..at].rsplit_once(" - ")?;
-    let lo = left.rsplit(' ').next()?.trim_end_matches('"');
+    let before = &source_page[..at];
+    // The last token before the mark is the high (or the only) feed.
+    let (head, hi) = before.rsplit_once(' ')?;
+    // A band prints `a" - b"`; a single feed prints `a"` alone.
+    let lo = match head.strip_suffix(" -") {
+        Some(band) => band.rsplit(' ').next()?.trim_end_matches('"'),
+        None => hi,
+    };
     let rest = &source_page[at + MARK.len()..];
     let rpm = rest.split(" RPM").next()?.replace(',', "");
     Some((lo.parse().ok()?, hi.parse().ok()?, rpm.parse().ok()?))

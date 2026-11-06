@@ -180,6 +180,27 @@ fn feeds_warning_to_diagnostic(tp_id: ToolpathId, w: &FeedsWarning) -> Diagnosti
                 suppressed_diagnostics: vec![],
             }
         }
+        FeedsWarning::DepthJudgedAfterSimulation => Diagnostic {
+            id: DiagnosticId::from(ids::FEEDS_DEPTH_AFTER_SIMULATION),
+            scope: Scope::Toolpath { id: tp_id },
+            category: Category::ToolLoad,
+            severity: Severity::Info,
+            confidence: Confidence::Static,
+            state: DiagnosticState::Current,
+            source: Source::FeedsCalculator,
+            face: crate::diagnostics::presentation::face(ids::FEEDS_DEPTH_AFTER_SIMULATION),
+            anchor: crate::diagnostics::presentation::anchor(ids::FEEDS_DEPTH_AFTER_SIMULATION),
+            message: "The tool follows the model surface at an offset, so the depth into \
+                      the stock is known after the simulation. Suggest gives no power and \
+                      no deflection figure, and the flute guard has no depth to judge. The \
+                      gates after the simulation judge the depth, the power and the \
+                      deflection. The feed comes from the chip load."
+                .to_owned(),
+            evidence: None,
+            fix: None,
+            supersedes: vec![],
+            suppressed_diagnostics: vec![],
+        },
         FeedsWarning::ShankTooLarge { shank_mm, max_mm } => Diagnostic {
             id: DiagnosticId::from(ids::FEEDS_SHANK_TOO_LARGE),
             scope: Scope::Toolpath { id: tp_id },
@@ -230,32 +251,21 @@ fn feeds_warning_to_diagnostic(tp_id: ToolpathId, w: &FeedsWarning) -> Diagnosti
             supersedes: vec![],
             suppressed_diagnostics: vec![],
         },
-        FeedsWarning::SlottingDetected {
-            requested_mm,
-            cap_mm,
-            shipped_mm,
-        } => Diagnostic {
-            id: DiagnosticId::from(ids::FEEDS_SLOTTING_DETECTED),
+        FeedsWarning::CuttingCapUnstated { travel_rate_mm_min } => Diagnostic {
+            id: DiagnosticId::from(ids::FEEDS_CUTTING_CAP_UNSTATED),
             scope: Scope::Toolpath { id: tp_id },
             category: Category::ToolLoad,
-            severity: Severity::Caution,
-            confidence: Confidence::Approximate,
+            severity: Severity::Info,
+            confidence: Confidence::Static,
             state: DiagnosticState::Current,
             source: Source::FeedsCalculator,
-            face: crate::diagnostics::presentation::face(ids::FEEDS_SLOTTING_DETECTED),
-            anchor: crate::diagnostics::presentation::anchor(ids::FEEDS_SLOTTING_DETECTED),
-            message: if (shipped_mm - requested_mm).abs() < 1e-9 {
-                format!(
-                    "The tool cuts a full-width slot {requested_mm:.1} mm deep, past the slot \
-                     cap {cap_mm:.1} mm. The speeds are for {shipped_mm:.1} mm, the depth that \
-                     cuts."
-                )
-            } else {
-                format!(
-                    "The tool cuts a full-width slot. The calculator lowers the default depth \
-                     per pass to {shipped_mm:.1} mm."
-                )
-            },
+            face: crate::diagnostics::presentation::face(ids::FEEDS_CUTTING_CAP_UNSTATED),
+            anchor: crate::diagnostics::presentation::anchor(ids::FEEDS_CUTTING_CAP_UNSTATED),
+            message: format!(
+                "The machine states no cutting feed cap (max_cutting_feed_mm_min) and no \
+                 X and Y axis rate. The travel rate {travel_rate_mm_min:.0} mm/min caps this \
+                 cut. State the cutting cap of the machine."
+            ),
             evidence: None,
             fix: None,
             supersedes: vec![],

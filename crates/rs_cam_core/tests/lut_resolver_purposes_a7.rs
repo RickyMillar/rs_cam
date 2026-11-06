@@ -235,8 +235,9 @@ fn sweep(lut: &VendorLut) -> Sweep {
                             | FeedsWarning::PowerLimited { .. }
                             | FeedsWarning::PowerLadderReducedCut { .. }
                             | FeedsWarning::ShankTooLarge { .. }
+                            | FeedsWarning::DepthJudgedAfterSimulation
                             | FeedsWarning::DocExceedsFlute { .. }
-                            | FeedsWarning::SlottingDetected { .. }
+                            | FeedsWarning::CuttingCapUnstated { .. }
                             | FeedsWarning::ScallopInvalid { .. }
                             | FeedsWarning::ChiploadBelowRubbingFloor { .. }
                             | FeedsWarning::LongToolDerate { .. }

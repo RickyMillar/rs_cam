@@ -610,6 +610,35 @@ pub(crate) fn row_basis_rows(explain: &FeedsExplain) -> Vec<DataRow> {
             ),
         ));
     }
+    // P16 item 8 (operator ruling D2): the vendor band. Every member is
+    // named; Suggest ships the lowest. The hover names each row and its
+    // size basis. To cut higher inside the band, state the chip on the
+    // Chipload row (the Chipload lock).
+    if let Some(band) = explain.recommended.vendor_band()
+        && let Some(line) = band.card_text()
+    {
+        let members: Vec<String> = band
+            .members
+            .iter()
+            .map(|m| {
+                format!(
+                    "{} {:.4} mm/tooth ({}, {})",
+                    m.vendor,
+                    m.chip_mid_mm,
+                    m.row.id(),
+                    m.size_basis.name()
+                )
+            })
+            .collect();
+        rows.push(record(
+            line,
+            theme::TEXT_DIM,
+            &format!(
+                "The printed rows for this tool, size and material form a band. Suggest ships the lowest chip. To cut higher inside the band, state the chip on the Chipload row.\n{}.",
+                members.join(";\n")
+            ),
+        ));
+    }
     if let Some(key_text) = vbit_key_text(explain.query.tool_family, row) {
         rows.push(record(
             key_text,
@@ -684,6 +713,10 @@ fn claim_hover(claim: &Claim, detail: &str, hardness: &HardnessBasis) -> String 
         HardnessBasis::Capped { law_scale, .. } => {
             format!(" (capped at the soft/hard cap; the Janka law gives x{law_scale:.2})")
         }
+        HardnessBasis::InColumn { law_scale, .. } => format!(
+            " (one chart column for the material family; the Janka law gives x{law_scale:.2}, not \
+             applied)"
+        ),
         HardnessBasis::Unscaled | HardnessBasis::CompositeBoard | HardnessBasis::Law { .. } => {
             String::new()
         }
@@ -806,17 +839,15 @@ fn warning_lines(warning: &rs_cam_core::feeds::FeedsWarning) -> (String, Option<
             },
             None,
         ),
-        FeedsWarning::SlottingDetected {
-            requested_mm,
-            cap_mm,
-            shipped_mm,
-        } => (
-            if (shipped_mm - requested_mm).abs() < 1e-9 {
-                format!("Slot DOC {requested_mm:.1} mm past the slot cap {cap_mm:.1} mm")
-            } else {
-                format!("Slotting detected: DOC reduced to {shipped_mm:.1} mm")
-            },
-            None,
+        FeedsWarning::CuttingCapUnstated { travel_rate_mm_min } => (
+            format!(
+                "No cutting cap stated: travel rate {travel_rate_mm_min:.0} mm/min caps the cut"
+            ),
+            Some(
+                "The machine states no max_cutting_feed_mm_min and no X and Y axis rate. \
+                 State the cutting cap of the machine."
+                    .to_owned(),
+            ),
         ),
         FeedsWarning::ScallopInvalid {
             target,
@@ -828,6 +859,16 @@ fn warning_lines(warning: &rs_cam_core::feeds::FeedsWarning) -> (String, Option<
         FeedsWarning::ShankTooLarge { shank_mm, max_mm } => (
             format!("Shank {shank_mm:.1} mm exceeds max {max_mm:.1} mm"),
             None,
+        ),
+        // P16 (review D7): Project Curve has no depth before the simulation.
+        FeedsWarning::DepthJudgedAfterSimulation => (
+            "Depth, power and deflection: judged after the simulation".to_owned(),
+            Some(
+                "The tool follows the model surface at an offset, so the depth into the \
+                 stock is known after the simulation. Suggest gives no power and no \
+                 deflection figure. The feed comes from the chip load."
+                    .to_owned(),
+            ),
         ),
         // The headline below is asserted verbatim by
         // `inspector_width_is_tab_independent_up4.rs`: it is the real
@@ -977,7 +1018,10 @@ pub(crate) fn warning_rows(explain: &FeedsExplain) -> Vec<Placement> {
                         .hover_opt(detail)
                         .source(Source::Prov(ProvKind::RepoRule, None)),
                 ),
+                // P16 (D9): the cap row itself is on the face; the unstated
+                // cap is its record in Details.
                 FeedsWarning::RpmLoweredForFeedCeiling { .. }
+                | FeedsWarning::CuttingCapUnstated { .. }
                 | FeedsWarning::NoVendorRowsForRoutedOperation { .. }
                 | FeedsWarning::VendorRowPublishesNoChipload { .. } => {
                     Placement::Detail(DataRow::record(headline).hover_opt(detail))
@@ -986,9 +1030,9 @@ pub(crate) fn warning_rows(explain: &FeedsExplain) -> Vec<Placement> {
                 | FeedsWarning::PowerLimited { .. }
                 | FeedsWarning::PowerLadderReducedCut { .. }
                 | FeedsWarning::DocExceedsFlute { .. }
-                | FeedsWarning::SlottingDetected { .. }
                 | FeedsWarning::ScallopInvalid { .. }
                 | FeedsWarning::ShankTooLarge { .. }
+                | FeedsWarning::DepthJudgedAfterSimulation
                 | FeedsWarning::ChiploadBelowRubbingFloor { .. }
                 | FeedsWarning::FormulaChipNoPrintedRow { .. }
                 | FeedsWarning::DrillFeedClampedToEnvelope { .. } => {

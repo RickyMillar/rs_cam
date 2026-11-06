@@ -28,10 +28,10 @@ use rs_cam_viz::ui::feeds::envelope::{EnvelopeScene, EnvelopeShape, readout, sho
 
 /// A point past the top of the depth span: outside the flute guard.
 /// A point inside the plot and outside the envelope: the top of the view
-/// over a slot (97 % of the width range, past the slot threshold). P13c
-/// (O1): it was the top of the view at the proposal width, but the
-/// force-budget rigidity curve now passes the top of the view there; the
-/// slot step stays inside the view.
+/// at 97 % of the width range (past the corner width). P13c (O1): it was
+/// the top of the view at the proposal width, but the force-budget rigidity
+/// curve now passes the top of the view there. P16 (D12) deleted the slot
+/// step.
 fn outside(env: &rs_cam_core::feeds::envelope::SafeEnvelope) -> CutPoint {
     let scene = EnvelopeScene::of(env, None);
     CutPoint {
@@ -43,7 +43,7 @@ fn outside(env: &rs_cam_core::feeds::envelope::SafeEnvelope) -> CutPoint {
 #[test]
 fn the_envelope_hover_abstains_outside_k2b() {
     let (config, env) = envelope_for(OperationType::Pocket).expect("the Pocket is backed");
-    let inside = env.proposal.get();
+    let inside = env.proposal.get().point().expect("a proposed depth");
     assert!(matches!(env.placement_of(inside), Placement::Inside { .. }));
     let text = readout(&env, inside);
     assert!(

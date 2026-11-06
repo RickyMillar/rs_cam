@@ -1229,6 +1229,7 @@ pub fn axial_text(a: Axial) -> (&'static str, Option<f64>) {
         Axial::HelixPitch(_) => "helix pitch",
         Axial::ChamferWidth(_) => "chamfer width",
         Axial::Surface { .. } => "surface",
+        Axial::SurfaceOffset(_) => "surface offset",
     };
     (name, a.stated_mm())
 }

@@ -3,6 +3,7 @@
     {
       "source_id": "amana_spektra_spiral_plunge_v24",
       "source_vendor": "amana",
+      "source_class": "vendor",
       "source_title": "Amana Solid Carbide Spektra Spiral Plunge 2/3 Flute Chart v24",
       "source_url": "https://www.amanatool.com/pub/media/productattachments/Solid-Carbide-Spektra-Spiral-Plunge-2-3-Flute-v24.pdf",
       "accessed_on": "2026-03-10",
@@ -14,6 +15,7 @@
     {
       "source_id": "amana_ball_nose_v7",
       "source_vendor": "amana",
+      "source_class": "vendor",
       "source_title": "Amana Spiral Ball Nose Speed Chart v7",
       "source_url": "https://www.amanatool.com/pub/media/productattachments/Spiral-Ball-Nose-Speed-Chart-v7.pdf",
       "accessed_on": "2026-03-10",
@@ -25,6 +27,7 @@
     {
       "source_id": "amana_corner_radius_spiral_plunge_2f",
       "source_vendor": "amana",
+      "source_class": "vendor",
       "source_title": "Amana Tool 2 Flute Solid Carbide Spiral Plunge with Corner Radius Router Bit (speed chart)",
       "source_url": "https://toolstoday.com/content/ProductFile/Attachments/Solid-Carbide-Spiral-Plunge-w-Corner-Radius.pdf",
       "accessed_on": "2026-09-24",
@@ -36,6 +39,7 @@
     {
       "source_id": "amana_zrn_3d_profiling",
       "source_vendor": "amana",
+      "source_class": "vendor",
       "source_title": "Amana ZrN 3D Profiling Feed and Chip Load Chart",
       "source_url": "https://www.amanatool.com/pub/media/productattachments/ZrN-3D-Profiling-Feed-Chip-Load-Chart.pdf",
       "accessed_on": "2026-03-10",
@@ -47,6 +51,7 @@
     {
       "source_id": "amana_insert_v_groove_v16",
       "source_vendor": "amana",
+      "source_class": "vendor",
       "source_title": "Amana Insert V-Groove Speed Chart v16",
       "source_url": "https://www.amanatool.com/pub/media/productattachments/Insert-V-Groove-Speed-Chart-v16.pdf",
       "accessed_on": "2026-03-10",
@@ -55,6 +60,7 @@
     {
       "source_id": "amana_spoilboard_v8",
       "source_vendor": "amana",
+      "source_class": "vendor",
       "source_title": "Amana Spoilboard 2-Wing Speed Chart v8",
       "source_url": "https://www.amanatool.com/pub/media/productattachments/Spoilboard_2-Wing-Speed-Chart-v8.pdf",
       "accessed_on": "2026-03-10",
@@ -63,6 +69,7 @@
     {
       "source_id": "onsrud_cutting_data_recommendations",
       "source_vendor": "onsrud",
+      "source_class": "vendor",
       "source_title": "Onsrud Cutting Data Recommendations",
       "source_url": "https://www.onsrud.com/Forms/Cutting-Data-Recommendations.asp",
       "accessed_on": "2026-03-10",
@@ -71,6 +78,7 @@
     {
       "source_id": "harvey_speeds_and_feeds_library",
       "source_vendor": "harvey",
+      "source_class": "vendor",
       "source_title": "Harvey Speeds and Feeds Library",
       "source_url": "https://www.harveytool.com/resources/speeds-feeds",
       "accessed_on": "2026-03-10",
@@ -79,6 +87,7 @@
     {
       "source_id": "harvey_map",
       "source_vendor": "harvey",
+      "source_class": "vendor",
       "source_title": "Harvey Machining Advisor Pro",
       "source_url": "https://www.harveyperformance.com/machining-advisor-pro/",
       "accessed_on": "2026-03-10",
@@ -87,6 +96,7 @@
     {
       "source_id": "whiteside_cnc_router_bits",
       "source_vendor": "whiteside",
+      "source_class": "vendor",
       "source_title": "Whiteside CNC Router Bits Collection",
       "source_url": "https://www.whitesiderouterbits.com/collections/cnc-router-bits",
       "accessed_on": "2026-03-10",
@@ -95,6 +105,7 @@
     {
       "source_id": "whiteside_vgroove_collection",
       "source_vendor": "whiteside",
+      "source_class": "vendor",
       "source_title": "Whiteside 120 V-Groove Collection",
       "source_url": "https://www.whitesiderouterbits.com/collections/120-v-groove",
       "accessed_on": "2026-03-10",
@@ -103,6 +114,7 @@
     {
       "source_id": "whiteside_6210_spoilboard",
       "source_vendor": "whiteside",
+      "source_class": "vendor",
       "source_title": "Whiteside 6210 Spoilboard Surfacing",
       "source_url": "https://www.whitesiderouterbits.com/products/6210",
       "accessed_on": "2026-03-10",
@@ -111,6 +123,7 @@
     {
       "source_id": "sandvik_formulas",
       "source_vendor": "sandvik",
+      "source_class": "vendor",
       "source_title": "Sandvik Coromant Milling Formulas",
       "source_url": "https://cdn.sandvik.coromant.com/files/sitecollectiondocuments/downloads/global/technical%20guides/en-gb/c-2920-034.pdf",
       "accessed_on": "2026-03-10",
@@ -119,6 +132,7 @@
     {
       "source_id": "garr_chip_thinning",
       "source_vendor": "garr",
+      "source_class": "vendor",
       "source_title": "GARR Chip Thinning",
       "source_url": "https://www.garrtool.com/knowledge-base/chip-thinning/",
       "accessed_on": "2026-03-10",
@@ -127,6 +141,7 @@
     {
       "source_id": "autodesk_adaptive_reference",
       "source_vendor": "autodesk",
+      "source_class": "vendor",
       "source_title": "Autodesk Fusion Adaptive Reference",
       "source_url": "https://help.autodesk.com/cloudhelp/ENU/Fusion-CAM/files/GUID09E44604-DAD8-47D6-ADC6-C100869DE724.htm",
       "accessed_on": "2026-03-10",
@@ -135,6 +150,7 @@
     {
       "source_id": "amana_ams159_vgroove_v2",
       "source_vendor": "amana",
+      "source_class": "vendor",
       "source_title": "Amana 18/30/45/60/90 Degree V-Groove Speed Chart v2 (AMS-159)",
       "source_url": "https://www.amanatool.com/pub/media/productattachments/AMS-159-18-30-45-60-90-Degree-V-Groove-Speed-Chart-v2.pdf",
       "accessed_on": "2026-05-29",
@@ -146,6 +162,7 @@
     {
       "source_id": "amana_spektra_engraving_v4",
       "source_vendor": "amana",
+      "source_class": "vendor",
       "source_title": "Amana Spektra 15/30/45/120 Degree Engraving Speed Chart v4",
       "source_url": "https://www.amanatool.com/pub/media/productattachments/Spektra-15-30-45-120-Degree-Engraving-Speed-Chart-v4.pdf",
       "accessed_on": "2026-05-29",
@@ -154,6 +171,7 @@
     {
       "source_id": "amana_compression_spirals_v8",
       "source_vendor": "amana",
+      "source_class": "vendor",
       "source_title": "Amana Solid Carbide Compression Spiral Router Bits v8",
       "source_url": "https://www.amanatool.com/pub/media/productattachments/Solid-Carbide-Compression-Spirals-v8.pdf",
       "accessed_on": "2026-05-29",
@@ -162,6 +180,7 @@
     {
       "source_id": "amana_plastic_oflute_v2",
       "source_vendor": "amana",
+      "source_class": "vendor",
       "source_title": "Amana Solid Carbide Plastic Cutting Spiral Single O-Flute Speed Chart v2",
       "source_url": "https://www.amanatool.com/pub/media/productattachments/Plastic-O-Flute-Speed-Chart-v2.pdf",
       "accessed_on": "2026-05-29",
@@ -170,6 +189,7 @@
     {
       "source_id": "amana_zrn_aluminum_oflute_v13",
       "source_vendor": "amana",
+      "source_class": "vendor",
       "source_title": "Amana ZrN Coated Aluminum Cutting Spiral Single O-Flute Speed Chart v13",
       "source_url": "https://www.amanatool.com/pub/media/productattachments/ZrN-Aluminum-O-Flute-Speed-Chart-v13.pdf",
       "accessed_on": "2026-05-29",
@@ -178,6 +198,7 @@
     {
       "source_id": "helical_machining_guidebook_2016",
       "source_vendor": "helical",
+      "source_class": "vendor",
       "source_title": "Helical Solutions Machining Guidebook 2016 — HEM 6061 Aluminum Example (H45AL-C-3)",
       "source_url": "https://web.mae.ufl.edu/designlab/Advanced%20Manufacturing/Helical_Machining_Guidebook.pdf",
       "accessed_on": "2026-05-29",
@@ -186,6 +207,7 @@
     {
       "source_id": "onsrud_hard_plastic_cutting_data",
       "source_vendor": "onsrud",
+      "source_class": "vendor",
       "source_title": "LMT Onsrud Hard Plastic Cutting Data Recommendations (HP)",
       "source_url": "https://www.onsrud.com/images/Hard%20Plastic.pdf",
       "accessed_on": "2026-05-29",
@@ -194,6 +216,7 @@
     {
       "source_id": "onsrud_soft_plastic_cutting_data",
       "source_vendor": "onsrud",
+      "source_class": "vendor",
       "source_title": "LMT Onsrud Soft Plastic Cutting Data Recommendations (SP)",
       "source_url": "https://www.onsrud.com/images/Soft%20Plastic.pdf",
       "accessed_on": "2026-05-29",
@@ -202,6 +225,7 @@
     {
       "source_id": "whiteside_1540_vgroove",
       "source_vendor": "whiteside",
+      "source_class": "vendor",
       "source_title": "Whiteside 1540 V Groove (60 degree)",
       "source_url": "https://www.whitesiderouterbits.com/products/1540",
       "accessed_on": "2026-05-29",
@@ -210,6 +234,7 @@
     {
       "source_id": "whiteside_1550_vgroove",
       "source_vendor": "whiteside",
+      "source_class": "vendor",
       "source_title": "Whiteside 1550 V Groove (60 degree)",
       "source_url": "https://www.whitesiderouterbits.com/products/1550",
       "accessed_on": "2026-05-29",
@@ -218,6 +243,7 @@
     {
       "source_id": "whiteside_rd5218h_roughing_down_spiral",
       "source_vendor": "whiteside",
+      "source_class": "vendor",
       "source_title": "Whiteside RD5218H Roughing Down Cut Spiral",
       "source_url": "https://www.whitesiderouterbits.com/products/rd5218h",
       "accessed_on": "2026-05-29",
@@ -226,6 +252,7 @@
     {
       "source_id": "whiteside_ru4000h_roughing_up_spiral",
       "source_vendor": "whiteside",
+      "source_class": "vendor",
       "source_title": "Whiteside RU4000H Roughing Up Cut Spiral",
       "source_url": "https://www.whitesiderouterbits.com/products/ru4000h",
       "accessed_on": "2026-05-29",
@@ -234,6 +261,7 @@
     {
       "source_id": "amana_zrn_3d_profiling_v8",
       "source_vendor": "amana",
+      "source_class": "vendor",
       "source_title": "Amana ZrN 3D Profiling Feed and Chip Load Chart (v8)",
       "source_url": "https://www.amanatool.com/pub/media/productattachments/ZrN-3D-Profiling-Feed-Chip-Load-Chart-v8.pdf",
       "accessed_on": "2026-05-30",
@@ -245,6 +273,7 @@
     {
       "source_id": "spetool_2d3d_tapered_router_bit_chart",
       "source_vendor": "spetool",
+      "source_class": "vendor",
       "source_title": "SpeTool WOODWORKING 2D/3D ROUTER BIT FEED&SPEED CHART",
       "source_url": "https://cdn.shopify.com/s/files/1/0404/1582/1977/files/SpeTool_2D_3D_Tapered_router_bit_a51e0653-1672-4ba2-98bc-8852cde4fc0f.pdf?v=1676951061",
       "accessed_on": "2026-09-24",
@@ -256,6 +285,7 @@
     {
       "source_id": "amana_46xxx_tool_identity",
       "source_vendor": "amana",
+      "source_class": "vendor",
       "source_title": "Amana 46xxx carving bits: product spec per tool number listed on the ZrN 2D/3D carving chart",
       "source_url": "https://fastoolnow.com/search.php?search_query=<tool number> (one product page per number; each URL and raw-page sha256 is in the stored text)",
       "accessed_on": "2026-09-24",
@@ -267,6 +297,7 @@
     {
       "source_id": "onsrud_hard_wood_cutting_data",
       "source_vendor": "onsrud",
+      "source_class": "vendor",
       "source_title": "Onsrud Cutting Data — Hard Wood (PDF)",
       "source_url": "https://www.onsrud.com/images/Hard%20Wood.pdf",
       "accessed_on": "2026-05-30",
@@ -278,6 +309,7 @@
     {
       "source_id": "onsrud_soft_wood_cutting_data",
       "source_vendor": "onsrud",
+      "source_class": "vendor",
       "source_title": "Onsrud Cutting Data — Soft Wood (PDF)",
       "source_url": "https://www.onsrud.com/images/Soft%20Wood.pdf",
       "accessed_on": "2026-05-30",
@@ -289,6 +321,7 @@
     {
       "source_id": "onsrud_mdf_cutting_data",
       "source_vendor": "onsrud",
+      "source_class": "vendor",
       "source_title": "Onsrud Cutting Data — MDF (PDF)",
       "source_url": "https://www.onsrud.com/images/MDF.pdf",
       "accessed_on": "2026-05-30",
@@ -300,6 +333,7 @@
     {
       "source_id": "onsrud_hard_plywood_cutting_data",
       "source_vendor": "onsrud",
+      "source_class": "vendor",
       "source_title": "Onsrud Cutting Data — Hard Plywood (PDF)",
       "source_url": "https://www.onsrud.com/images/Hard%20Plywood.pdf",
       "accessed_on": "2026-09-23",
@@ -311,6 +345,7 @@
     {
       "source_id": "onsrud_soft_plywood_cutting_data",
       "source_vendor": "onsrud",
+      "source_class": "vendor",
       "source_title": "Onsrud Cutting Data — Soft Plywood (PDF)",
       "source_url": "https://www.onsrud.com/images/Soft%20Plywood.pdf",
       "accessed_on": "2026-09-23",
@@ -322,6 +357,7 @@
     {
       "source_id": "onsrud_laminated_chipboard_cutting_data",
       "source_vendor": "onsrud",
+      "source_class": "vendor",
       "source_title": "LMT Onsrud Laminated Chipboard Cutting Data Recommendations (catalog page 119, upper table)",
       "source_url": "https://www.onsrud.com/images/Laminated%20Chipboard.pdf",
       "accessed_on": "2026-09-24",
@@ -333,6 +369,7 @@
     {
       "source_id": "onsrud_laminated_plywood_cutting_data",
       "source_vendor": "onsrud",
+      "source_class": "vendor",
       "source_title": "LMT Onsrud Laminated Plywood Cutting Data Recommendations (catalog page 119, lower table)",
       "source_url": "https://www.onsrud.com/images/Laminated%20Plywood.pdf",
       "accessed_on": "2026-09-24",
@@ -344,6 +381,7 @@
     {
       "source_id": "onsrud_pct19_catalog",
       "source_vendor": "onsrud",
+      "source_class": "vendor",
       "source_title": "LMT Onsrud Production Cutting Tools Catalog PCT-19 (Wood, Plastic, Composite, Honeycomb, Aluminum)",
       "source_url": "https://onsrud.com/images/LMT%20Onsrud%20Product%20Cutting%20Tools%20Catalog%20PCT-19.pdf",
       "accessed_on": "2026-09-24",
@@ -355,6 +393,7 @@
     {
       "source_id": "whiteside_fusion360_tools_2019-10-23",
       "source_vendor": "whiteside",
+      "source_class": "vendor",
       "source_title": "Whiteside Router Bits — Fusion 360 Tool Library (2019-10-23)",
       "source_url": "https://www.dropbox.com/s/bqw4gqeggcv30o1/Whiteside-Router-Bits-Fusion360.tools?dl=0",
       "accessed_on": "2026-05-30",
@@ -363,6 +402,7 @@
     {
       "source_id": "freud_router_bit_feed_and_speed_for_cnc_20170822",
       "source_vendor": "freud",
+      "source_class": "vendor",
       "source_title": "Freud — Router Bit Feed Rates and Speeds for CNC (Solid Carbide chart, 2017-08-22)",
       "source_url": "https://www.freudtools.com/public/assets/freud/downloadables/freudtools-router-bit-feed-and-speed-for-cnc-20170822.pdf",
       "accessed_on": "2026-05-30",
@@ -371,6 +411,7 @@
     {
       "source_id": "idcwoodcraft_chipload_csv_2026-05-30",
       "source_vendor": "idcwoodcraft",
+      "source_class": "hobby_feed_chart",
       "source_title": "IDC Woodcraft / Millmage Community Chipload Database (CSV)",
       "source_url": "https://feeds-speeds-chipload-api.fly.dev/download-csv",
       "accessed_on": "2026-05-30",
@@ -379,6 +420,7 @@
     {
       "source_id": "garr_milling_aluminum_low_range",
       "source_vendor": "garr",
+      "source_class": "vendor",
       "source_title": "Garr Tool Milling Guide for Aluminum (Low-Range HP/Torque) Series 242M/842M/A3 End Mills",
       "source_url": "https://www.garrtool.com/doc/pdf/tech/TECH_MILLING_ALUMINUM.pdf",
       "accessed_on": "2026-05-29",
@@ -387,6 +429,7 @@
     {
       "source_id": "garr_milling_aluminum_high_range",
       "source_vendor": "garr",
+      "source_class": "vendor",
       "source_title": "Garr Tool Milling Guide for Aluminum (High-Range HP/Torque) Series A3 End Mills",
       "source_url": "https://www.garrtool.com/doc/pdf/tech/TECH_MILLING_ALUMINUM.pdf",
       "accessed_on": "2026-05-29",
@@ -395,6 +438,7 @@
     {
       "source_id": "garr_milling_aluminum_mid_range",
       "source_vendor": "garr",
+      "source_class": "vendor",
       "source_title": "Garr Tool Milling Guide for Aluminum (Mid-Range HP/Torque) Series 142M End Mills",
       "source_url": "https://www.garrtool.com/doc/pdf/tech/TECH_MILLING_ALUMINUM.pdf",
       "accessed_on": "2026-05-29",
@@ -403,6 +447,7 @@
     {
       "source_id": "garr_general_purpose_milling",
       "source_vendor": "garr",
+      "source_class": "vendor",
       "source_title": "Garr Tool General Purpose Milling Chart — Aluminum Section",
       "source_url": "https://www.garrtool.com/wp-content/uploads/2018/11/TECHNICAL.pdf",
       "accessed_on": "2026-05-29",
@@ -411,6 +456,7 @@
     {
       "source_id": "fpl_ch5_2010",
       "source_vendor": "fpl",
+      "source_class": "vendor",
       "source_title": "USDA Forest Service, Wood Handbook — Wood as an Engineering Material, GTR FPL-GTR-190 (2010), Chapter 5 'Mechanical Properties of Wood' by David E. Kretschmann, Table 5-3a",
       "source_url": "https://www.precisebits.com/PDF/USFS_mechanical_properties_of_wood.pdf",
       "accessed_on": "2026-05-30",
@@ -419,6 +465,7 @@
     {
       "source_id": "onsrud_routing_polycarbonate_article",
       "source_vendor": "onsrud",
+      "source_class": "vendor",
       "source_title": "LMT Onsrud Article: Routing Polycarbonate Material",
       "source_url": "https://www.onsrud.com/articles/Routing-Polycarbonate-Material.asp",
       "accessed_on": "2026-05-29",
@@ -427,6 +474,7 @@
     {
       "source_id": "wood_database_2026-05-30",
       "source_vendor": "wood_database",
+      "source_class": "vendor",
       "source_title": "The Wood Database (https://www.wood-database.com/) — per-species Janka hardness pages, 2026-05-30 snapshot",
       "source_url": "https://www.wood-database.com/janka-hardness/",
       "accessed_on": "2026-05-30",

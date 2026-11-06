@@ -1004,6 +1004,17 @@ fn force_line_rows(power: &PowerReading) -> Vec<DataRow> {
                 .tone(theme::TEXT_DIM)
                 .hover(hover),
         );
+    } else if power.force_line.is_ok()
+        && power.force_point.is_none()
+        && let Err(reason @ rs_cam_core::feeds::PowerUnmodeled::DepthAfterSimulation) = power.figure
+    {
+        // P16 (item 2b): a Project Curve has no chip regime before the
+        // simulation; the row says why, not nothing.
+        rows.push(
+            DataRow::record(format!("Chip regime: unmodeled ({})", reason.clause()))
+                .tone(theme::TEXT_DIM)
+                .hover(hover),
+        );
     }
     rows
 }

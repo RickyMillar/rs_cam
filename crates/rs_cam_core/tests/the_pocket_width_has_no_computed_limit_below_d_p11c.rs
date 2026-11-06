@@ -14,8 +14,8 @@
 //! with the most removal per minute. This file now states that truth:
 //!
 //! 1. The add-door stepover sits on a width rule, the corner-coverage
-//!    ceiling or the slot step (`proposal_limits` names it), never on a
-//!    force limit.
+//!    ceiling (`proposal_limits` names it; P16 deleted the slot step), never
+//!    on a force limit.
 //! 2. At the drafted depth, every computed force ceiling (the force budget,
 //!    power, deflection, the vendor depth table) holds the drafted depth at
 //!    every width up to the drafted width: no force limit binds the width
@@ -93,7 +93,7 @@ fn no_force_limit_binds_the_pocket_width_below_the_corner_rule_p11c() {
         assert!(
             env.proposal_limits
                 .iter()
-                .any(|k| matches!(k, LimitKind::CornerCoverage | LimitKind::Slot)),
+                .any(|k| matches!(k, LimitKind::CornerCoverage)),
             "D {d}: the width {width} sits on {:?}, not on a width rule",
             env.proposal_limits
         );

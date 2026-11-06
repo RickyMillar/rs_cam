@@ -256,9 +256,8 @@ fn no_suggest_path_calls_the_sample_constructor() {
 //
 // A tapered ball or a V-bit cuts wider than its tip as the cone engages, so
 // the placement compares a measured width with the engaged diameter at the
-// sample depth (`Engagement::d_eng_mm`), not the nominal tip diameter, and it
-// does not judge a cone tool by the slot rule (a flat end mill rule; a V
-// groove is always a full groove).
+// sample depth (`Engagement::d_eng_mm`), not the nominal tip diameter. P16
+// (D12) deleted the slot rule and its cone exception.
 
 /// The envelope of `op` with `tool` in generic hardwood on the shipped
 /// generic router.
@@ -379,51 +378,6 @@ fn a_tapered_ball_wider_than_its_tip_is_judged_at_its_engaged_diameter() {
         binding_of(&placement),
         Some(LimitKind::Diameter),
         "a width {ae} mm under the engaged diameter {d_eng} mm is not past the tool: {placement:?}"
-    );
-}
-
-#[test]
-fn a_vbit_full_groove_is_not_judged_by_the_slot_rule() {
-    use rs_cam_core::tool::MillingCutter;
-    // A 60 deg V-bit, D 6.35 (the wanaka day strip slit tool, fixture).
-    let mut tool = ToolConfig::test_default(ToolId::from_raw(2), ToolType::VBit);
-    tool.diameter = 6.35;
-    tool.included_angle = 60.0;
-    tool.set_cutting_length(ToolFact::Stated(12.0));
-    let op = OperationConfig::Trace(rs_cam_core::compute::operation_configs::TraceConfig {
-        depth: Some(5.0),
-        depth_per_pass: Some(5.0),
-        feed_rate: Some(1000.0),
-        plunge_rate: Some(300.0),
-        spindle_rpm: Some(16_000),
-        ..Default::default()
-    });
-    let envelope = envelope_of(&op, &tool);
-    let (slot_above, slot_cap) = match envelope.limit(LimitKind::Slot).map(|l| &l.edge) {
-        Some(rs_cam_core::feeds::envelope::Edge::ApCeilingAbove { ae_mm, mm }) => (*ae_mm, *mm),
-        other => panic!("non-vacuity: the envelope has the slot rule: {other:?}"),
-    };
-    // A full groove (psi = pi) at a depth past the slot cap, where the
-    // groove is wider than the rule's width.
-    let tool_def = rs_cam_core::compute::build_cutter(&tool).expect("the tool builds");
-    let ap = 5.0;
-    let d_eng = 2.0 * tool_def.engagement_radius(ap);
-    assert!(
-        ap > slot_cap && d_eng > slot_above,
-        "non-vacuity: the groove is in the slot rule's region ({ap} > {slot_cap}, {d_eng} > {slot_above})"
-    );
-    let placement = place_one(
-        &tool,
-        rs_cam_core::compute::catalog::OperationType::Trace,
-        &envelope,
-        ap,
-        std::f64::consts::PI,
-    );
-    assert_eq!(placement.placed, 1, "non-vacuity: {placement:?}");
-    assert_ne!(
-        binding_of(&placement),
-        Some(LimitKind::Slot),
-        "a V groove is always a full groove: {placement:?}"
     );
 }
 

@@ -389,14 +389,19 @@ pub const TABLE: &[(&str, Anchor, &str)] = &[
         "Depth per pass capped to flute length",
     ),
     (
-        ids::FEEDS_SLOTTING_DETECTED,
-        f("depth_per_pass"),
-        "Slotting: depth per pass reduced",
-    ),
-    (
         ids::FEEDS_SCALLOP_INVALID,
         f("scallop_height"),
         "Scallop target not reachable",
+    ),
+    (
+        ids::FEEDS_DEPTH_AFTER_SIMULATION,
+        NOTE,
+        "Depth, power and deflection: judged after simulation",
+    ),
+    (
+        ids::FEEDS_CUTTING_CAP_UNSTATED,
+        NOTE,
+        "No cutting feed cap stated: travel rate caps the cut",
     ),
     (
         ids::FEEDS_CHIPLOAD_BELOW_FLOOR,

@@ -68,7 +68,7 @@ fn the_rederived_band_holds_at_every_depth_p11b() {
         material_label: String::new(),
         evidence_grade: crate::feeds::vendor_lut::EvidenceGrade::A,
         row_kind: crate::feeds::vendor_lut::ObservationKind::Exact,
-        tied_with: None,
+        band: crate::feeds::vendor_lookup::VendorBand::alone("c2-sentinel"),
     };
     let op = OperationConfig::new_default(OperationType::Pocket);
 

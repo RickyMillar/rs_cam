@@ -163,7 +163,6 @@ pub const fn short_label(kind: LimitKind) -> &'static str {
         LimitKind::VendorDepthTable => "Depth table",
         LimitKind::Rigidity => "Rigidity DOC",
         LimitKind::CornerCoverage => "Corner width",
-        LimitKind::Slot => "Slot DOC",
         LimitKind::Power => "Spindle power",
         LimitKind::Deflection => "Deflection",
         LimitKind::ChipBand => "Chip band",
@@ -210,7 +209,6 @@ fn trim_decimals(v: f64) -> String {
 const fn edge_mm(edge: &Edge) -> Option<f64> {
     match *edge {
         Edge::ApCeiling { mm }
-        | Edge::ApCeilingAbove { mm, .. }
         | Edge::ApFloor { mm }
         | Edge::AeCeiling { mm }
         | Edge::AeFloor { mm } => Some(mm),
@@ -263,7 +261,6 @@ const fn is_frame(kind: LimitKind) -> bool {
         | LimitKind::VendorDepthTable
         | LimitKind::Rigidity
         | LimitKind::CornerCoverage
-        | LimitKind::Slot
         | LimitKind::Power
         | LimitKind::Deflection
         | LimitKind::ChipBand
@@ -346,9 +343,13 @@ pub struct EnvelopeScene {
     pub candidate: Option<CutPoint>,
     /// Where the candidate sits.
     pub candidate_placement: Option<Placement>,
-    /// The envelope's proposal.
-    pub proposal: CutPoint,
-    /// The proposal is drawn: it is not at the setpoint (P5d D3).
+    /// The envelope's proposal. P16: `None` when the envelope proposes no
+    /// depth (no force line, or the depth is known after the simulation);
+    /// the plot then draws no proposal mark, and the header note
+    /// (`SafeEnvelope::notes`) gives the reason.
+    pub proposal: Option<CutPoint>,
+    /// The proposal is drawn: it exists and it is not at the setpoint (P5d
+    /// D3).
     pub proposal_shown: bool,
     /// The limit that binds the subject (the candidate, else Now, else the
     /// proposal): the worst crossed limit when it sits outside, else the
@@ -361,19 +362,19 @@ impl EnvelopeScene {
     #[must_use]
     pub fn of(env: &SafeEnvelope, candidate: Option<CutPoint>) -> Self {
         let shape = EnvelopeShape::of(&env.axes);
-        let proposal = env.proposal.get();
+        let proposal = env.proposal.get().point();
         let dot = env.stated.map(|p| {
             let outside = matches!(env.operator, Some(Placement::Outside { .. }));
             (p, outside)
         });
         let now = dot.map(|(p, _)| p);
         let setpoint = candidate.or(now);
-        let proposal_shown = setpoint.is_none_or(|p| !same_point(p, proposal));
-        let subject = setpoint.unwrap_or(proposal);
+        let proposal_shown = proposal.is_some_and(|q| setpoint.is_none_or(|p| !same_point(p, q)));
+        let subject = setpoint.or(proposal);
         let (ae_range, ap_range, top) = view_ranges(env, proposal, now);
 
         let lines: Vec<&Limit> = env.boundary.iter().filter(|l| !is_frame(l.kind)).collect();
-        let binding = binding_at(&lines, subject);
+        let binding = subject.and_then(|s| binding_at(&lines, s));
         // P5d D1: every limit whose edge enters the view draws (the P5c
         // rule drew only a limit near a mark).
         let mut edges: Vec<SceneEdge> = lines
@@ -382,7 +383,9 @@ impl EnvelopeScene {
                 let points = edge_points(l, ae_range, ap_range)?;
                 in_view(&points, ae_range, ap_range).then(|| SceneEdge {
                     kind: l.kind,
-                    crossed: l.margin(subject).is_some_and(|m| m < -OUTSIDE_EPS),
+                    crossed: subject
+                        .and_then(|s| l.margin(s))
+                        .is_some_and(|m| m < -OUTSIDE_EPS),
                     label: limit_name(env, l.kind),
                     points,
                 })
@@ -586,7 +589,7 @@ const fn ap_ceiling_mm(l: &Limit) -> Option<f64> {
 ///   range reaches it.
 fn view_ranges(
     env: &SafeEnvelope,
-    proposal: CutPoint,
+    proposal: Option<CutPoint>,
     now: Option<CutPoint>,
 ) -> ((f64, f64), (f64, f64), Option<LimitKind>) {
     let (ae_span, ap_span) = spans(&env.axes);
@@ -610,7 +613,7 @@ fn view_ranges(
         .iter()
         .filter(|l| !is_frame(l.kind))
         .filter_map(|l| match l.edge {
-            Edge::ApCeiling { mm } | Edge::ApCeilingAbove { mm, .. } => positive(mm),
+            Edge::ApCeiling { mm } => positive(mm),
             Edge::ApCurve { .. }
             | Edge::ApFloor { .. }
             | Edge::AeCeiling { .. }
@@ -620,7 +623,7 @@ fn view_ranges(
         })
         .filter(|mm| under_top(*mm))
         .chain(now.map(|n| n.ap_mm))
-        .chain(std::iter::once(proposal.ap_mm))
+        .chain(proposal.map(|p| p.ap_mm))
         .fold(0.0_f64, f64::max);
     let want = positive(tallest * VIEW_HEADROOM);
     let (ap_max, at_top) = match (want, hard_top) {
@@ -678,9 +681,6 @@ const fn spans(axes: &EnvelopeAxes) -> (AxisSpan, AxisSpan) {
 fn edge_points(l: &Limit, ae: (f64, f64), ap: (f64, f64)) -> Option<Vec<[f64; 2]>> {
     match &l.edge {
         Edge::ApCeiling { mm } | Edge::ApFloor { mm } => Some(vec![[ae.0, *mm], [ae.1, *mm]]),
-        Edge::ApCeilingAbove { ae_mm, mm } => {
-            Some(vec![[*ae_mm, ap.1], [*ae_mm, *mm], [ae.1, *mm]])
-        }
         Edge::ApCurve { points } => (points.len() >= 2).then(|| points.clone()),
         Edge::AeCeiling { mm } | Edge::AeFloor { mm } => Some(vec![[*mm, ap.0], [*mm, ap.1]]),
         Edge::PerPoint | Edge::Unmodelled { .. } => None,
@@ -722,6 +722,8 @@ pub fn candidate_speeds(env: &SafeEnvelope, candidate: Option<CutPoint>) -> Opti
 #[must_use]
 pub fn unsourced_rules(env: &SafeEnvelope) -> Vec<String> {
     let p = env.proposal.get();
+    // P16: with no proposed depth the nearest point is by width alone.
+    let p_ap = p.ap_mm();
     let mut out: Vec<String> = Vec::new();
     let mut take = |b: &rs_cam_core::feeds::Basis| {
         for c in b.unsourced_rules() {
@@ -734,7 +736,7 @@ pub fn unsourced_rules(env: &SafeEnvelope) -> Vec<String> {
     take(env.proposal.basis());
     let nearest = env.speeds.points.iter().min_by(|a, b| {
         let d = |q: &rs_cam_core::feeds::envelope::SpeedsPoint| {
-            (q.ap_mm - p.ap_mm).powi(2) + (q.ae_mm - p.ae_mm).powi(2)
+            p_ap.map_or(0.0, |ap| (q.ap_mm - ap).powi(2)) + (q.ae_mm - p.ae_mm).powi(2)
         };
         d(a).total_cmp(&d(b))
     });
@@ -1085,9 +1087,9 @@ fn draw_plane(
     // The marks (P5d D3), over the lines: the quiet proposal diamond, the
     // ghost at the stored point, then the white dot.
     let painter = ui.painter_at(frame);
-    if scene.proposal_shown {
+    if let (true, Some(proposal)) = (scene.proposal_shown, scene.proposal) {
         let _ = painter.add(diamond(
-            at_mark(scene.proposal),
+            at_mark(proposal),
             egui::Stroke::new(RECOMMENDATION_WIDTH, scene.proposal_color()),
         ));
     }
@@ -1119,8 +1121,8 @@ fn draw_plane(
     let mut keep_clear: Vec<egui::Rect> = Vec::new();
     keep_clear.extend(scene.setpoint().map(|p| mark_rect(p, DOT_RADIUS)));
     keep_clear.extend(scene.ghost().map(|p| mark_rect(p, GHOST_RADIUS)));
-    if scene.proposal_shown {
-        keep_clear.push(mark_rect(scene.proposal, PROPOSAL_RADIUS));
+    if let (true, Some(proposal)) = (scene.proposal_shown, scene.proposal) {
+        keep_clear.push(mark_rect(proposal, PROPOSAL_RADIUS));
     }
     let mut drawn = scene.drawn_edges(frame.size());
     drawn.sort_by_key(|e| scene.edge_width(e) < LINE_WIDTH);
@@ -1324,11 +1326,16 @@ fn draw_bar(
         scene.ae_range
     };
     let value = |p: CutPoint| if depth { p.ap_mm } else { p.ae_mm };
-    // The fixed value of the bar: the subject's.
+    // The fixed value of the bar: the subject's. P16: with no proposed
+    // depth and no stated point, the proposal width at depth 0 (no mark).
     let subject = scene
         .candidate
         .or(scene.dot.map(|(p, _)| p))
-        .unwrap_or(scene.proposal);
+        .or(scene.proposal)
+        .unwrap_or(CutPoint {
+            ap_mm: 0.0,
+            ae_mm: env.proposal.get().ae_mm,
+        });
     let fixed = if depth { subject.ae_mm } else { subject.ap_mm };
     // The end of the bar: the lowest ceiling of the free axis.
     let end = if depth {
@@ -1415,9 +1422,9 @@ fn draw_bar(
             end_color,
         );
     }
-    if scene.proposal_shown {
+    if let (true, Some(proposal)) = (scene.proposal_shown, scene.proposal) {
         let _ = painter.add(diamond(
-            egui::pos2(x_of(value(scene.proposal)), y),
+            egui::pos2(x_of(value(proposal)), y),
             egui::Stroke::new(RECOMMENDATION_WIDTH, scene.proposal_color()),
         ));
     }

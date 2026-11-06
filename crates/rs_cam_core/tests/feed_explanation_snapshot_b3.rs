@@ -196,7 +196,7 @@
 //!
 //! Operator ruling Q3 (P5, D2): on a tie after the score, the diameter, the
 //! transfer and the series rules, the lower printed chip wins, and the
-//! winner names the other row in `tied_with`. G1 orchestrator decision 5
+//! winner names the other row in its vendor band (P16 item 8). G1 orchestrator decision 5
 //! reversed by operator ruling Q3. On the Parallel premise the Amana ZrN
 //! v8 row ties with `spetool-tapered-hardwood-parallel-1000-2f` (both 1825),
 //! and the SpeTool row prints the lower chip, one value 0.001 in = 0.0254
@@ -1565,7 +1565,12 @@ fn the_old_scallop_premise_ships_the_printed_tip_row() {
         .expect("the Parallel premise reads a row");
     assert_eq!(parallel_row.observation_id, PREMISE_ROW);
     assert_eq!(
-        parallel_row.tied_with.as_ref().map(|r| r.id()),
+        parallel_row
+            .band
+            .members
+            .iter()
+            .map(|m| m.row.id())
+            .find(|id| *id != parallel_row.observation_id),
         Some(V8_ROW),
         "the Q3 winner names the other row"
     );

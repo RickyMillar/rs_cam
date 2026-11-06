@@ -190,7 +190,6 @@ pub(super) fn feed_basis_after_power(s: &mut CalcState) {
 pub(super) fn step7_feed_ceiling(s: &mut CalcState) {
     let input = s.input;
     let machine = input.machine;
-    let material = input.material;
     // --- Step 7: Machine feed ceiling ---
     // F4: the calculator emits CUTTING feeds — the ceiling is the cutting
     // ceiling, not the gantry travel rate.
@@ -244,7 +243,7 @@ pub(super) fn step7_feed_ceiling(s: &mut CalcState) {
                     arm: which,
                     rpm: rpm_c,
                     feed: feed_c,
-                    demand: cap_arm_demand_kw(input, material, ap, ae, effective_d, rpm_c, feed_c),
+                    demand: cap_arm_demand_kw(input, ap, ae, effective_d, rpm_c, feed_c),
                     available_kw: machine.power_at_rpm(rpm_c),
                 }
             };
@@ -307,6 +306,20 @@ pub(super) fn step7_feed_ceiling(s: &mut CalcState) {
         }
         s.feed.feed = machine_cut_ceiling;
         s.feed.basis = Basis::derived("feed cap", vec![s.feed.basis.clone(), feed_cap_basis()]);
+    }
+    // P16 (D9): an unstated cutting cap that binds the cut warns once.
+    let cap_bound = s.warnings.iter().any(|w| {
+        matches!(
+            w,
+            FeedsWarning::RpmLoweredForFeedCeiling { .. } | FeedsWarning::FeedRateClamped { .. }
+        )
+    });
+    if cap_bound
+        && machine.cutting_ceiling().source() == crate::machine::CuttingCeilingSource::TravelRate
+    {
+        s.warnings.push(FeedsWarning::CuttingCapUnstated {
+            travel_rate_mm_min: machine_cut_ceiling,
+        });
     }
     // K2: the shipped feed names the Q1 arm (its RPM basis names it too).
     if let Some(arm) = shipped_cap_arm {

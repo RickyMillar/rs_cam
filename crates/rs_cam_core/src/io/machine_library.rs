@@ -42,6 +42,10 @@ pub enum MachineLibraryError {
     Parse(String, toml::de::Error),
     #[error("failed to serialize machine {0:?}: {1}")]
     Serialize(String, toml::ser::Error),
+    /// P16 (D12): the file holds a retired key. One refusal names each key
+    /// and what replaced it (the machine rows of the project `RETIRED_KEYS`).
+    #[error("machine {0:?} holds a retired key: {1}")]
+    RetiredKeys(String, String),
 }
 
 impl crate::io::named_toml_library::LibraryError for MachineLibraryError {
@@ -96,6 +100,17 @@ pub fn load_from(dir: &Path, name: &str) -> Result<MachineProfile, MachineLibrar
         name: name.to_owned(),
         source,
     })?;
+    if let Ok(raw) = toml::from_str::<toml::Value>(&text) {
+        let found = crate::session::project_file::retired_machine_keys(&raw);
+        if !found.is_empty() {
+            let text = found
+                .iter()
+                .map(|(path, replacement)| format!("{path}: {replacement}"))
+                .collect::<Vec<_>>()
+                .join("; ");
+            return Err(MachineLibraryError::RetiredKeys(name.to_owned(), text));
+        }
+    }
     toml::from_str(&text).map_err(|e| MachineLibraryError::Parse(name.to_owned(), e))
 }
 
@@ -205,6 +220,25 @@ mod tests {
         std::fs::write(&path, format!("max_feed_mm_minn = 1.0\n{text}")).unwrap();
         let err = load_from(&dir, "m").unwrap_err();
         assert!(err.to_string().contains("max_feed_mm_minn"), "{err}");
+        let _ = std::fs::remove_dir_all(&dir);
+    }
+
+    /// P16 (D12): a machine file that states the retired `slot_doc_factor`
+    /// refuses, and the error names the key and what replaced it.
+    #[test]
+    fn a_machine_file_with_the_retired_slot_cap_refuses_p16() {
+        let dir = temp_dir("retired_slot");
+        let path = save_to(&dir, "m", &MachineProfile::generic_wood_router()).unwrap();
+        let text = std::fs::read_to_string(&path).unwrap();
+        let text = text.replace("[rigidity]\n", "[rigidity]\nslot_doc_factor = 0.25\n");
+        assert!(text.contains("slot_doc_factor"), "non-vacuity: {text}");
+        std::fs::write(&path, text).unwrap();
+        let err = load_from(&dir, "m").unwrap_err();
+        let msg = err.to_string();
+        assert!(
+            msg.contains("rigidity.slot_doc_factor") && msg.contains("force_budget_n"),
+            "{msg}"
+        );
         let _ = std::fs::remove_dir_all(&dir);
     }
 

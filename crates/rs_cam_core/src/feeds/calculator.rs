@@ -8,7 +8,7 @@
 //!   and 2c (the RPM ceilings).
 //! - [`chip`]: Step 2 (the chip load, the vendor row and its band).
 //! - [`cut`]: Steps 3 to 4c (the depth and the width, the flute guard, the
-//!   engagement floor, the slot cap, the shank check).
+//!   engagement floor, the shank check; P16 deleted the slot cap).
 //! - [`feed`]: Step 5 (the feed), Step 5b (the long-tool share), the feed
 //!   basis after the power check, and Step 7 (the machine feed ceiling).
 //! - [`power`]: Step 6 (the power check and its ladder).
@@ -34,16 +34,16 @@ use super::{
 use crate::trace::lineage::{BasisRecord, StepQuantity, StepRecord};
 
 /// Feeds contract P11a (L4, D-A): what the calculator does with a depth
-/// above the flute guard (Step 4) or the slot cap (Step 4b).
+/// above the flute guard (Step 4).
 #[derive(Debug, Clone, Copy, PartialEq, Eq)]
 pub(crate) enum DepthClamps {
-    /// Warn when the depth is above the guard or the cap
-    /// ([`super::calculate`]). P11b: a stated depth ships unchanged, so the
-    /// feed and the power are at that depth; only a calculator depth (the
-    /// family default) is lowered to the guard or the cap.
+    /// Warn when the depth is above the guard ([`super::calculate`]).
+    /// P11b: a stated depth ships unchanged, so the feed and the power are
+    /// at that depth; only a calculator depth (the family default) is
+    /// lowered to the guard.
     Apply,
-    /// Keep the requested depth. The envelope grid draws the guard and the
-    /// cap as limits, so every value of a grid point (feed, chip, power) is
+    /// Keep the requested depth. The envelope grid draws the guard as a
+    /// limit, so every value of a grid point (feed, chip, power) is
     /// at the depth it names. No clamp warning: no depth moved.
     DrawnAsLimits,
 }
@@ -94,6 +94,18 @@ pub(super) struct Chip {
     formula_chipload: f64,
     /// The material feed scale `H` of the formula.
     feed_scale: f64,
+}
+
+impl Chip {
+    /// The rubbing floor (mm/tooth) and its bound: the recipe row's band or
+    /// point, else the envelope row's (P1). The one floor of Step 9b (the
+    /// warning) and of the power ladder's last rung (P16, review D8).
+    fn rubbing_floor(&self) -> (f64, crate::feeds::RubbingFloorSource) {
+        crate::feeds::rubbing_floor_at(
+            self.band.or(self.floor_band_fallback),
+            self.point.or(self.floor_point_fallback),
+        )
+    }
 }
 
 /// The depth and the width of the cut.
@@ -259,8 +271,6 @@ pub(crate) fn calculate_with(
     log.cut("step4_flute_guard", &cut);
     cut::engagement_floor(input, &mut cut);
     log.cut("engagement_floor", &cut);
-    cut::step4b_slot(input, clamps, &mut cut, &mut warnings);
-    log.cut("step4b_slot", &cut);
     cut::step4c_shank(input, &mut warnings);
     let feed = feed::step5_feed(input, &speed, &chip, &cut);
     let mut s = CalcState {

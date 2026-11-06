@@ -175,6 +175,7 @@ fn the_modulator_keeps_the_lifted_feed_at_the_suggest_engagement_p11b2() {
             feed_scale: 1.0,
             deflection_inputs: None,
             power_inputs: None,
+            force_budget_inputs: None,
             nominal_axial_doc_mm: AP_MM,
             plunge_rate_mm_min: 500.0,
         };

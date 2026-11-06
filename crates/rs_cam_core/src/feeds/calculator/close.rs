@@ -5,8 +5,7 @@ use super::CalcState;
 use crate::feeds::sourced::{self, Basis, PointBases};
 use crate::feeds::{
     ChiploadSource, FeedsDerates, FeedsResult, FeedsWarning, FormulaBreakdown, OperationFamily,
-    RampBasis, drill_rpm_envelope_for_diameter, engagement, plunge, ramp, rubbing_floor_at,
-    worst_case_power,
+    RampBasis, drill_rpm_envelope_for_diameter, engagement, plunge, ramp, worst_case_power,
 };
 use crate::material::FormulaConstant;
 
@@ -151,9 +150,11 @@ pub(super) fn step9b_rubbing_floor(s: &mut CalcState) {
         let floor_band = s.chip.band.or(s.chip.floor_band_fallback);
         // The recipe row's point when it has one; else the envelope row's
         // point. A band outranks a point (`rubbing_floor_at`).
-        let floor_point = s.chip.point.or(s.chip.floor_point_fallback);
-        let (floor, source) = rubbing_floor_at(floor_band, floor_point);
-        if commanded_fpt > 0.0 && commanded_fpt < floor {
+        let (floor, source) = s.chip.rubbing_floor();
+        // P16 (D8): the last power rung can ship the floor feed itself; the
+        // relative margin keeps a rounding step under the floor from
+        // warning.
+        if commanded_fpt > 0.0 && commanded_fpt < floor * (1.0 - 1e-9) {
             s.warnings.push(FeedsWarning::ChiploadBelowRubbingFloor {
                 commanded: commanded_fpt,
                 floor,
@@ -258,7 +259,6 @@ pub(super) fn result(s: CalcState, entry: Entry) -> FeedsResult {
         feed,
     } = s;
     let machine = input.machine;
-    let material = input.material;
     let Entry {
         ramp,
         plunge_basis,
@@ -292,8 +292,10 @@ pub(super) fn result(s: CalcState, entry: Entry) -> FeedsResult {
     // power matches the Sim verdict's prediction.
     // K7 change 3: the published power is the worst case of the set, and
     // the result names the case.
-    let (power_case, actual_power) = match material.force_line() {
-        Ok(line) => {
+    // P16: a depth known after the simulation gives no power figure either
+    // (`FeedsInput::power_force_line`).
+    let (power_case, actual_power) = match input.power_force_line() {
+        Some(line) => {
             let (case, kw, _) = worst_case_power(
                 input,
                 line,
@@ -305,9 +307,15 @@ pub(super) fn result(s: CalcState, entry: Entry) -> FeedsResult {
             );
             (case, kw)
         }
-        Err(_) => (engagement::PowerCase::Nominal, 0.0),
+        None => (engagement::PowerCase::Nominal, 0.0),
     };
-    let mrr = cut.ap * cut.ae * feed.feed;
+    // P16 (item 2b): no removal rate where the depth is known after the
+    // simulation; the depth value there is the tool diameter, not a cut.
+    let mrr = if input.depth_after_simulation() {
+        Err(crate::feeds::operating_point::PowerUnmodeled::DepthAfterSimulation)
+    } else {
+        Ok(cut.ap * cut.ae * feed.feed)
+    };
 
     let cl = &machine.chip_load;
     let formula = if matches!(

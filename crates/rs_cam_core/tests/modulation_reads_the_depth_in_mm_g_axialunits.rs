@@ -84,6 +84,7 @@ fn ctx<'a>(k: &'a MachineKinematics, available_kw: f64) -> ModulationContext<'a>
         strategy: ModulationStrategy::ConstrainedMax,
         feed_scale: 1.0,
         deflection_inputs: None,
+        force_budget_inputs: None,
         // Ruling B6: the power cap reads the material's force line. The
         // hardwood line (Ks 51.9 N/mm², F_edge 4.08 N/mm) puts the edge
         // term at about 11.5 W per mm of depth on this cut, so at 50 W a

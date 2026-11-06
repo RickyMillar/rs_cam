@@ -6,7 +6,7 @@
 //!
 //! 1. D1, D2, D4, D5: on the rivmap100 3D Rough at rest, every non-frame
 //!    limit whose edge enters the view draws a line and ONE label: Vendor
-//!    DOC, Rigidity DOC and Slot DOC. The depth range is
+//!    DOC and Rigidity DOC (P16 deleted Slot DOC). The depth range is
 //!    `min(hard top, VIEW_HEADROOM x max(the flat depth ceilings under the
 //!    hard top, the marks))`, derived here from the envelope. The binding
 //!    line is `TEXT_BODY`, the others `TEXT_MUTED` and thinner; no line is
@@ -109,8 +109,7 @@ fn ceiling(env: &SafeEnvelope, kind: LimitKind) -> Option<f64> {
         .filter(|l| l.kind == kind)
         .find_map(|l| match l.edge {
             Edge::ApCeiling { mm } | Edge::AeCeiling { mm } => Some(mm),
-            Edge::ApCeilingAbove { .. }
-            | Edge::ApCurve { .. }
+            Edge::ApCurve { .. }
             | Edge::ApFloor { .. }
             | Edge::AeFloor { .. }
             | Edge::PerPoint
@@ -361,14 +360,16 @@ fn every_limit_in_the_range_draws_a_line_and_a_label_p5d() {
     assert!(hard_top.is_finite(), "fixture: a hard top");
     let mut tallest: f64 = 0.0;
     for l in env.boundary.iter().filter(|l| !is_frame(l.kind)) {
-        if let Edge::ApCeiling { mm } | Edge::ApCeilingAbove { mm, .. } = l.edge
+        if let Edge::ApCeiling { mm } = l.edge
             && mm < hard_top
         {
             tallest = tallest.max(mm);
         }
     }
     let stated = env.stated.expect("fixture: a stated point");
-    tallest = tallest.max(stated.ap_mm).max(env.proposal.get().ap_mm);
+    tallest = tallest
+        .max(stated.ap_mm)
+        .max(env.proposal.get().ap_mm().expect("a proposed depth"));
     let ap_max = (VIEW_HEADROOM * tallest).min(hard_top);
     eprintln!("P5d: hard top {hard_top}, tallest {tallest}, ap_max {ap_max}");
     assert!(
@@ -402,10 +403,9 @@ fn every_limit_in_the_range_draws_a_line_and_a_label_p5d() {
         vec![
             LimitKind::Rigidity,
             LimitKind::Runtime,
-            LimitKind::Slot,
             LimitKind::VendorAxial
         ],
-        "D1: the vendor, rigidity, slot and move-budget limits draw at rest"
+        "D1: the vendor, rigidity and move-budget limits draw at rest (P16: no slot limit)"
     );
     // Every non-frame limit whose edge enters the view is drawn, or hugs
     // the frame (D1 exception).
@@ -438,7 +438,6 @@ fn every_limit_in_the_range_draws_a_line_and_a_label_p5d() {
     );
     assert_eq!(v, limit_name(&env, LimitKind::VendorAxial));
     assert_eq!(label_of(LimitKind::Rigidity), "Rigidity DOC");
-    assert_eq!(label_of(LimitKind::Slot), "Slot DOC");
 
     // D4: the colours. The binding line is TEXT_BODY and wider.
     assert_eq!(scene.binding, Some(LimitKind::VendorAxial), "fixture");
@@ -724,7 +723,7 @@ fn one_mark_rule_on_both_charts_p5d() {
 #[test]
 fn the_counts_at_340_and_240_p5d() {
     let (_, env) = rivmap_env(None);
-    let want: Vec<String> = [LimitKind::VendorAxial, LimitKind::Rigidity, LimitKind::Slot]
+    let want: Vec<String> = [LimitKind::VendorAxial, LimitKind::Rigidity]
         .into_iter()
         .map(|k| limit_name(&env, k))
         .collect();

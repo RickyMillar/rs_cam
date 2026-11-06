@@ -125,7 +125,7 @@ fn operating_point(axial_doc_mm: f64, band: Option<ChiploadBounds>) -> FeedsResu
         power_case: rs_cam_core::feeds::engagement::PowerCase::Nominal,
         available_power_kw: 0.8,
         power_limited: false,
-        mrr_mm3_min: axial_doc_mm * RADIAL_WOC_MM * feed,
+        mrr_mm3_min: Ok(axial_doc_mm * RADIAL_WOC_MM * feed),
         warnings: Vec::new(),
         vendor_source: None,
         support: rs_cam_core::feeds::FeedsSupport::FormulaOnly {

@@ -615,7 +615,7 @@ mod tests {
             material_label: String::new(),
             evidence_grade: crate::feeds::vendor_lut::EvidenceGrade::A,
             row_kind: crate::feeds::vendor_lut::ObservationKind::Exact,
-            tied_with: None,
+            band: crate::feeds::vendor_lookup::VendorBand::alone("synthetic"),
         }
     }
 

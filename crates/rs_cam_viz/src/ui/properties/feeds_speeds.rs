@@ -959,6 +959,11 @@ fn modulation_rows(summary: &rs_cam_core::tool_load::ModulationSummary) -> Vec<D
             ));
         }
     }
+    // P16 item 7: the notes of the run (for example "force budget: no
+    // force line").
+    for note in &summary.notes {
+        rows.push(DataRow::value("Note", note.clone()));
+    }
     rows
 }
 

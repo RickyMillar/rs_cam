@@ -19,7 +19,7 @@
 - The card is `DataTable` rows (IC2). The face holds one status row per problem (and
   a refusal); the apply buttons, every recipe row, the stages and the basis are in its ONE `Details`.
 - Every stage that moves a number is ONE row with its source (ruling R4, in
-  `Details`): `why::suggest_rows`, `why::row_basis_rows`. A problem is one
+  `Details`): `why::suggest_rows`, `why::row_basis_rows` (P16 item 8: the "Vendors: .. (ships the lowest)" row reads `FeedsResult::vendor_band()`). A problem is one
   status row on the face (`why::Placement`). P13c: the envelope notes (`SafeEnvelope::notes`, the computed-width assumptions) are a caution on the SAFE CUT header row (`envelope::header`; no added row; the short core face `force_budget::note_face`, which fits at 340 points, the core line on hover) and `ComputedWidthAssumptions` a caution stage in Details (the same face and hover); the plot names `LimitKind::CornerCoverage` "Corner width".
 - A nomogram readout outside the axes abstains; the hover opens only on the plot. P5d D3, one mark rule on both charts: white dot = the setpoint ⚡ writes (`candidate_speeds` on the nomogram during a draft); hollow `TEXT_MUTED` ghost = the stored value, only during a draft; quiet ACCENT (`recommendation_color`, 1 pt) = the recommendation, never moves. The memo builds the envelope (`FeedsMemo::envelope`); a frame only reads it (F216).
 - A chart draws one line at the suggested value, and band lines only where the

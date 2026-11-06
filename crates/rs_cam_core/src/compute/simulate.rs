@@ -979,15 +979,8 @@ pub fn envelope_placement(
         peak: None,
     };
     // Lead decision (2026-11-05): a cone tool is judged at its engaged
-    // diameter and not by the slot rule (`placement_of_measured`).
-    let cone = match ctx.tool.geometry_hint() {
-        crate::feeds::ToolGeometryHint::VBit { .. }
-        | crate::feeds::ToolGeometryHint::TaperedBall { .. } => true,
-        crate::feeds::ToolGeometryHint::Flat
-        | crate::feeds::ToolGeometryHint::Ball
-        | crate::feeds::ToolGeometryHint::Bull { .. } => false,
-    };
-    let measured_tool = |d_eng_mm: f64| crate::feeds::envelope::MeasuredTool { d_eng_mm, cone };
+    // diameter (`placement_of_measured`).
+    let measured_tool = |d_eng_mm: f64| crate::feeds::envelope::MeasuredTool { d_eng_mm };
     for (i, s) in trace.samples.iter().enumerate() {
         if s.toolpath_id != ctx.toolpath_id
             || !crate::tool_load::locality::is_steady_state_for_gate(s, span_lookup.as_ref())

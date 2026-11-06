@@ -92,6 +92,10 @@ pub enum PowerUnmodeled {
     /// The tool has no positive cutting diameter at this depth. A tapered
     /// ball or a V-bit above its cone reaches this.
     NoEngagementDiameter,
+    /// P16 (review D7): the op follows a surface at an offset
+    /// (`Axial::SurfaceOffset`, Project Curve), so the depth into the stock
+    /// is known after the simulation. The post-sim power gate judges it.
+    DepthAfterSimulation,
 }
 
 impl PowerUnmodeled {
@@ -105,6 +109,7 @@ impl PowerUnmodeled {
             Self::NoSpindleSpeed => "the operation has no spindle speed",
             Self::NoAvailablePower => "the machine publishes no spindle power at this speed",
             Self::NoEngagementDiameter => "the tool has no cutting diameter at this depth",
+            Self::DepthAfterSimulation => "the depth into the stock is known after the simulation",
         }
     }
 }
@@ -223,6 +228,11 @@ pub fn power_at_operating_point(
     machine: &MachineProfile,
     fallback: Option<CalculatorOperatingPoint>,
 ) -> Result<PowerFigure, PowerUnmodeled> {
+    // P16 (review D7): no depth before the simulation, so no power figure.
+    // A material with no force line keeps its `MaterialUnvalidated` reason.
+    if material.force_line().is_ok() && operation.cut_spec().axial.depth_after_simulation() {
+        return Err(PowerUnmodeled::DepthAfterSimulation);
+    }
     let point = resolve_operating_point(operation, tool, material, Some(machine), fallback)?;
 
     // K7 change 3: the power of each case the CutSpec admits; the figure is
@@ -282,6 +292,12 @@ pub fn force_at_operating_point(
     material: &Material,
     fallback: Option<CalculatorOperatingPoint>,
 ) -> Result<ForceAtPoint, PowerUnmodeled> {
+    // P16 (item 2b): the guard of `power_at_operating_point`. No depth
+    // before the simulation, so no force at D x D. A material with no force
+    // line keeps its `MaterialUnvalidated` reason.
+    if material.force_line().is_ok() && operation.cut_spec().axial.depth_after_simulation() {
+        return Err(PowerUnmodeled::DepthAfterSimulation);
+    }
     resolve_operating_point(operation, tool, material, None, fallback).map(|p| p.force)
 }
 
@@ -320,6 +336,16 @@ pub fn force_at_shipped_point(
         material,
         Some(CalculatorOperatingPoint::of(recommended)),
     )
+}
+
+/// P16 (item 2b): the JSON of [`crate::feeds::FeedsResult::mrr_mm3_min`]:
+/// the number, or `{"unmodeled": "<reason>"}` (the `shipped_power` shape).
+#[must_use]
+pub fn mrr_json(mrr: &Result<f64, PowerUnmodeled>) -> serde_json::Value {
+    match mrr {
+        Ok(v) => serde_json::json!(v),
+        Err(e) => serde_json::json!({ "unmodeled": format!("{e:?}") }),
+    }
 }
 
 /// The `shipped_power` object that the CLI `suggest` record and MCP

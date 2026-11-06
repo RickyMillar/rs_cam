@@ -391,33 +391,36 @@ fn a_tapered_hardwood_row_on_a_softer_query_caps_at_1_00_g2() {
     assert!((soft.chip_load_min_mm.unwrap() - 0.127).abs() < TOL);
     assert!((soft.chip_load_max_mm.unwrap() - 0.1778).abs() < TOL);
 
-    // A softer hardwood (1000 lbf): the law gives 1.45^0.5 = 1.2042, above
-    // the tapered cap.
+    // A softer hardwood (1000 lbf): the law gives 1.45^0.5 = 1.2042. The
+    // query is in the row's own family, so P16 (review D1) ships the
+    // printed band: one chart column, no slope inside it.
     let softer = alone(TAPERED_ROW, MaterialFamily::Hardwood, 1000.0);
-    assert_eq!(softer.hardness_basis.name(), "Capped", "{softer:?}");
+    assert_eq!(softer.hardness_basis.name(), "InColumn", "{softer:?}");
     assert!((softer.chipload_hardness_scale - 1.0).abs() < TOL);
 }
 
 // ── What the cap does not touch ──────────────────────────────────────
 
-/// Under the cap the law stands: the ball row on a 1000 lbf hardwood query
-/// gives `1.45^0.5 = 1.204159457879`, under 1.50.
+/// P16 (review D1): a softer query in the row's own family reads the
+/// printed band. The ball row on a 1000 lbf hardwood query: the law gives
+/// `1.45^0.5 = 1.204159457879`, but the chart prints one hardwood column,
+/// so the scale is 1.0 (`InColumn`). The raw ratio stays for the flag.
 #[test]
-fn a_transfer_under_the_cap_keeps_the_law_g2() {
+fn a_softer_query_in_the_rows_own_family_reads_the_printed_band_p16() {
     let r = alone(BALL_SCALLOP_ROW, MaterialFamily::Hardwood, 1000.0);
-    let HardnessBasis::Law {
+    let HardnessBasis::InColumn {
         ratio_raw,
-        scale,
+        law_scale,
         from,
         ..
     } = &r.hardness_basis
     else {
-        panic!("expected the law: {:?}", r.hardness_basis);
+        panic!("expected InColumn: {:?}", r.hardness_basis);
     };
     assert!((ratio_raw - 1.45).abs() < TOL);
-    assert!((scale - 1.204_159_457_879).abs() < 1e-11, "{scale}");
+    assert!((law_scale - 1.204_159_457_879).abs() < 1e-11, "{law_scale}");
     assert_eq!(*from, JankaFrom::Row);
-    assert!((r.chipload_hardness_scale - scale).abs() < TOL);
+    assert!((r.chipload_hardness_scale - 1.0).abs() < TOL);
 }
 
 /// A harder query (Ipe, 3510) derates by the law, `(1450 / 3510)^0.5 =

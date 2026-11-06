@@ -717,8 +717,9 @@ fn test_drill_feed_clamp_emits_warning_when_binding() {
         | FeedsWarning::PowerLimited { .. }
         | FeedsWarning::PowerLadderReducedCut { .. }
         | FeedsWarning::ShankTooLarge { .. }
+        | FeedsWarning::DepthJudgedAfterSimulation
         | FeedsWarning::DocExceedsFlute { .. }
-        | FeedsWarning::SlottingDetected { .. }
+        | FeedsWarning::CuttingCapUnstated { .. }
         | FeedsWarning::ScallopInvalid { .. }
         | FeedsWarning::ChiploadBelowRubbingFloor { .. }
         | FeedsWarning::LongToolDerate { .. }
@@ -1135,8 +1136,10 @@ fn no_machine_factor_multiplies_the_feed() {
     assert!((fpt - d.effective_chip_load_mm()).abs() <= fpt * 1e-9);
 }
 
+/// P16 (operator ruling D12): no slot depth cap. A stated full-width slot
+/// depth ships, and the force budget is the only depth rule of a slot.
 #[test]
-fn test_slotting_detection() {
+fn a_stated_slot_depth_ships_with_no_slot_cap_p16() {
     let material = Material::SolidWood {
         species: WoodSpecies::GenericSoftwood,
     };
@@ -1164,23 +1167,11 @@ fn test_slotting_detection() {
         tool_facts: crate::feeds::sourced::ToolFactKinds::STATED,
     });
 
-    // Feeds contract P11b (the P11a lead item): the stated depth ships, and
-    // the slot warning names the cap.
+    // Feeds contract P11b: the stated depth ships.
     assert!(
         (result.axial_depth_mm - 10.0).abs() < 1e-12,
         "a stated slot depth ships, got {}",
         result.axial_depth_mm
-    );
-    assert!(result.warnings.iter().any(|w| matches!(
-        w,
-        FeedsWarning::SlottingDetected { cap_mm, shipped_mm, .. }
-            if (*cap_mm - 1.5).abs() < 1e-12 && (*shipped_mm - 10.0).abs() < 1e-12
-    )));
-    assert!(
-        result
-            .warnings
-            .iter()
-            .any(|w| matches!(w, FeedsWarning::SlottingDetected { .. }))
     );
 }
 

@@ -582,6 +582,8 @@ impl RsCamApp {
             "name": machine.name,
             "max_feed_mm_min": machine.max_feed_mm_min,
             "cutting_feed_ceiling_mm_min": machine.cutting_feed_ceiling_mm_min(),
+            // P16 (D9): what set the ceiling (stated, axis_rate, travel_rate).
+            "cutting_feed_ceiling_source": machine.cutting_ceiling().source().wire_id(),
             "max_shank_mm": machine.max_shank_mm,
             "spindle": spindle,
             "power": power,
@@ -594,7 +596,6 @@ impl RsCamApp {
                 "basis": machine.rigidity_basis().text(),
                 "adaptive_doc_factor": r.adaptive_doc_factor,
                 "adaptive_woc_factor": r.adaptive_woc_factor,
-                "slot_doc_factor": r.slot_doc_factor,
                 // P13c (O1): the force budget (N) that sets the roughing
                 // depth of the Pocket and Profile families.
                 "force_budget_n": r.force_budget_n,

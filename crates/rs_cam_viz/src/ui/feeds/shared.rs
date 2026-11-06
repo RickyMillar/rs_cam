@@ -276,7 +276,10 @@ impl AppliedRecipe {
             self.value(FeedsField::PlungeRate, recommended.plunge_rate_mm_min);
         point.axial_depth_mm = self.value(FeedsField::DepthPerPass, recommended.axial_depth_mm);
         point.radial_width_mm = self.value(FeedsField::Stepover, recommended.radial_width_mm);
-        point.mrr_mm3_min = point.axial_depth_mm * point.radial_width_mm * point.feed_rate_mm_min;
+        // P16 (item 2b): a surface offset keeps its unmodeled reason.
+        point.mrr_mm3_min = recommended
+            .mrr_mm3_min
+            .map(|_| point.axial_depth_mm * point.radial_width_mm * point.feed_rate_mm_min);
         (cut, point)
     }
 

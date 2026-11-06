@@ -674,7 +674,7 @@ fn operating_point(ap: f64, ae: f64, fz: f64, rpm: f64) -> FeedsResult {
         power_case: PowerCase::Nominal,
         available_power_kw: 0.8,
         power_limited: false,
-        mrr_mm3_min: ap * ae * feed,
+        mrr_mm3_min: Ok(ap * ae * feed),
         warnings: Vec::new(),
         vendor_source: None,
         support: rs_cam_core::feeds::FeedsSupport::FormulaOnly {

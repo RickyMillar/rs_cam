@@ -220,6 +220,12 @@ const RETIRED_KEYS: &[RetiredKey] = &[
         replacement: "Removed (feeds contract P13c): no code read it. Delete the key",
     },
     RetiredKey {
+        table: &["job", "machine", "rigidity"],
+        key: "slot_doc_factor",
+        replacement: "Removed (feeds contract P16, operator ruling D12): no slot depth cap; the \
+                      force budget (force_budget_n) sets the slot depth. Delete the key",
+    },
+    RetiredKey {
         table: &["job", "stock", "material", "Custom"],
         key: "kc",
         replacement: "Removed (ruling B6): a custom material has no force line and no Kc. \
@@ -544,6 +550,24 @@ fn check_retired_keys(raw: &toml::Value) -> Result<(), SessionError> {
     } else {
         Err(SessionError::RetiredKeys(found))
     }
+}
+
+/// P16 (D12): the [`RETIRED_KEYS`] hits of a raw machine-library file. A
+/// library file is the `[job.machine]` table of a project, so the rows under
+/// `job.machine` apply with that prefix removed. Each hit is
+/// `(path, replacement)`.
+pub(crate) fn retired_machine_keys(raw: &toml::Value) -> Vec<(String, &'static str)> {
+    let mut found = Vec::new();
+    for retired in RETIRED_KEYS {
+        let Some(rest) = retired.table.strip_prefix(&["job", "machine"][..]) else {
+            continue;
+        };
+        let mut paths = Vec::new();
+        let hit = |t: &toml::Table| t.contains_key(retired.key);
+        find_retired(raw, rest, retired.key, &hit, "", &mut paths);
+        found.extend(paths.into_iter().map(|path| (path, retired.replacement)));
+    }
+    found
 }
 
 /// The [`RETIRED_OP_ENTRIES`] hits of a raw project file: one per old key,

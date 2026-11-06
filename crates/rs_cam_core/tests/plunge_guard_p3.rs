@@ -69,6 +69,7 @@ fn ctx<'a>(k: &'a MachineKinematics, plunge_rate_mm_min: f64) -> ModulationConte
         feed_scale: 1.0,
         deflection_inputs: None,
         power_inputs: None,
+        force_budget_inputs: None,
         nominal_axial_doc_mm: 0.0,
         plunge_rate_mm_min,
     }

@@ -61,7 +61,7 @@ pub use family::{
 
 pub use hardness::{
     HardnessBasis, JankaFrom, SOFT_OVER_HARD_PRINTED_MAX, SoftHardCap, hardness_basis,
-    soft_hard_cap,
+    row_and_query_hardness, soft_hard_cap,
 };
 
 pub use size::{

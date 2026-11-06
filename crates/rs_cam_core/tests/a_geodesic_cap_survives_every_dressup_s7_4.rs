@@ -219,6 +219,7 @@ fn modulate(mut tp: Toolpath) -> Toolpath {
         feed_scale: 1.0,
         deflection_inputs: None,
         power_inputs: None,
+        force_budget_inputs: None,
         nominal_axial_doc_mm: TOP_Z - FLOOR_Z,
         plunge_rate_mm_min: PLUNGE,
     };

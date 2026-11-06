@@ -522,7 +522,7 @@ mod tests {
             material_label: String::new(),
             evidence_grade: crate::feeds::vendor_lut::EvidenceGrade::A,
             row_kind: crate::feeds::vendor_lut::ObservationKind::Exact,
-            tied_with: None,
+            band: crate::feeds::vendor_lookup::VendorBand::alone("obs-123"),
         }
     }
 
@@ -552,7 +552,7 @@ mod tests {
             power_case: crate::feeds::engagement::PowerCase::Nominal,
             available_power_kw: 0.6,
             power_limited: false,
-            mrr_mm3_min: 1200.0,
+            mrr_mm3_min: Ok(1200.0),
             warnings: vec![],
             vendor_source: None,
             support: if matched_lut_row.is_some() {

@@ -241,6 +241,7 @@ fn a_vbit_cut_has_one_section_in_the_modulator_and_the_gate() {
         strategy: ModulationStrategy::ConstrainedMax,
         feed_scale: 1.0,
         deflection_inputs: None,
+        force_budget_inputs: None,
         power_inputs: Some(PowerLimitInputs {
             line,
             // P11a: the modulator reads the engaged diameter at the move

@@ -58,7 +58,7 @@ parameter-sweep entry points. Read root `CLAUDE.md` first and
   pick, so it writes the speeds for the cut each op keeps; `--apply-suggest-pick proposal`
   also writes the envelope proposal first. The apply logs each Unsourced rule it accepts and
   each outside-envelope warning. `suggest` prints `envelope` (the `get_safe_envelope` JSON)
-  and `basis.tied_rows`.
+  and `profile.vendor_band` (P16 item 8; `basis.tied_rows` deleted).
 - `suggest` prints `peck_depth` for a Drill and a Pin Drill. `shipped_power`
   reads the calculator point where the operation has no stepover, depth or
   rpm, as the GUI does; `point_source` names the source of each value. That

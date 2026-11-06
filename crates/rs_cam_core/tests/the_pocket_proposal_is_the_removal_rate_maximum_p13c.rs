@@ -102,7 +102,7 @@ fn the_pocket_proposal_is_the_most_removal_inside_the_limits_p13c() {
                 context: SuggestContext::default(),
             })
             .expect("the FM1 cell is backed");
-            let p = env.proposal.get();
+            let p = env.proposal.get().point().expect("a proposed depth");
             let what = format!("{m:?} D {d}");
             assert!(
                 matches!(env.placement_of(p), Placement::Inside { .. }),

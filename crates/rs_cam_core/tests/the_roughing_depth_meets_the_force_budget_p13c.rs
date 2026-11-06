@@ -194,7 +194,7 @@ fn a_tiny_budget_ships_the_minimum_depth_with_a_warning_p13c() {
             _ => None,
         })
         .expect("the depth floor");
-    let p = env.proposal.get();
+    let p = env.proposal.get().point().expect("a proposed depth");
     assert!(
         (p.ap_mm - floor).abs() < 1e-12,
         "the minimum depth ships: {p:?}"
@@ -288,7 +288,7 @@ fn p13c_report_instrument() {
                 OperationType::Adaptive,
             ] {
                 let env = envelope(&op(kind), &t, &machine, &m);
-                let p = env.proposal.get();
+                let p = env.proposal.get().point().expect("a proposed depth");
                 let vf = env
                     .pick(rs_cam_core::feeds::envelope::PickRequest::Proposal)
                     .result()

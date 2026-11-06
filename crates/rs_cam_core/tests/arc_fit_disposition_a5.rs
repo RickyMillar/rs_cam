@@ -185,8 +185,8 @@ struct Fixture {
     rpm: u32,
     /// `max_feed_mm_min` for the fixture's machine.
     max_feed_mm_min: f64,
-    /// Explicit `max_cutting_feed_mm_min`. `None` leaves the conservative
-    /// derived ceiling `min(max_feed, DEFAULT_CUTTING_FEED_CAP_MM_MIN = 6000)`.
+    /// Explicit `max_cutting_feed_mm_min`. `None` leaves the derived
+    /// ceiling: the kinematics X/Y rate, else `max_feed` (P16, D9).
     ///
     /// This dial is load-bearing for the evidence, not fixture decoration:
     /// whether the ceiling binds decides whether the arc-fit lift is
@@ -340,7 +340,11 @@ fn fixtures() -> Vec<Fixture> {
             op: adaptive3d_op(1100.0, 14_000, 1.6, 2.0),
             rpm: 14_000,
             max_feed_mm_min: 8_000.0,
-            max_cutting_feed_mm_min: None,
+            // P16 (operator ruling D9): no default cap; with none stated the
+            // ceiling is the 8000 travel rate. The fixture states the cap
+            // that its legacy lift (6000) and every pin below were measured
+            // against, the deleted `DEFAULT_CUTTING_FEED_CAP_MM_MIN`.
+            max_cutting_feed_mm_min: Some(6000.0),
             legacy_shipped_feed: 6000.0,
             // **RE-PINNED 2026-08-13, A-7 / Checkpoint K-(a4): 2243.0 →
             // 1694.0** (×0.7552) — the same mechanism and, to three

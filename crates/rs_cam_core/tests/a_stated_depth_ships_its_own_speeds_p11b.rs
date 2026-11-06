@@ -1,6 +1,7 @@
 //! Feeds contract P11b, the P11a lead item (`planning/feeds_contract_2026-11-03/phases/P11.md`,
-//! "Result P11a", "For the lead"): a STATED depth above the slot cap or the
-//! flute guard ships, so Suggest sizes the feed and the power at that depth.
+//! "Result P11a", "For the lead"): a STATED depth above the flute guard
+//! ships, so Suggest sizes the feed and the power at that depth. P16 (D12)
+//! deleted the slot cap and its arm.
 //!
 //! Before P11b, `calculate` (`DepthClamps::Apply`) lowered the depth to the
 //! cap, sized the feed and the power there, and the stated depth shipped
@@ -8,15 +9,14 @@
 //! warn, never refuse).
 //!
 //! Fixture: a 6 mm end mill cuts a full-width slot (Profile states `ae = D`)
-//! 3 mm deep in white oak; the slot cap is `0.25 D = 1.5 mm`.
+//! 3 mm deep in white oak.
 //!
 //! Arms (each red before P11b, which returned the capped 1.5 mm depth):
 //!
 //! 1. The result's depth is the stated depth.
 //! 2. The result's power equals `power_at_operating_point` of an op that
 //!    states that depth, width, feed and RPM.
-//! 3. The slot warning is filed.
-//! 4. The flute guard: a stated depth above it ships too, with its warning.
+//! 3. The flute guard: a stated depth above it ships, with its warning.
 
 #![expect(
     clippy::expect_used,
@@ -117,11 +117,6 @@ fn assert_ships(stated: f64, warned: impl Fn(&FeedsWarning) -> bool) {
         "the published power {} kW is the power of the depth that ships, {want} kW",
         r.power_kw
     );
-}
-
-#[test]
-fn a_stated_depth_above_the_slot_cap_ships_its_speeds_p11b() {
-    assert_ships(3.0, |w| matches!(w, FeedsWarning::SlottingDetected { .. }));
 }
 
 #[test]

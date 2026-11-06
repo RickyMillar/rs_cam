@@ -54,8 +54,8 @@ run the server; the live server, GUI dispatch and session ownership are in
   `point { ap_mm, ae_mm }`, `peck { mm }`) converts both ways with core `PickRequest` (F166).
   No pick writes the speeds for the cut the op keeps. The reply carries `unsourced_rows` and
   `outside_envelope`. New tool `get_safe_envelope { index }` (the grid cap is
-  `response::MAX_SAFE_ENVELOPE_GRID_POINTS`); `get_suggest_rationale` `basis.tied_rows`
-  (Q3). Feature tokens `safe_envelope`, `apply_feeds_pick`. The snapshot was re-blessed.
+  `response::MAX_SAFE_ENVELOPE_GRID_POINTS`); `get_suggest_rationale` `basis.vendor_band`
+  (P16 item 8; it replaced `basis.tied_rows`). Feature tokens `safe_envelope`, `apply_feeds_pick`. The snapshot was re-blessed.
 - Feeds contract P5b (2026-11-04, K8): new tool `get_toolpath_lineage { index }` (the
   core `Lineage::to_json`: cut, pick, speeds with stamps, tool facts, entry, findings
   with consequence, rules). Feature token `toolpath_lineage`. `set_ui_view`

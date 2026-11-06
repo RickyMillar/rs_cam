@@ -111,7 +111,25 @@ fn router(power_kw: f64) -> MachineProfile {
 }
 
 /// Enough power that the traverse alone closes the gap (B6: 0.5 -> 0.22).
-const ROUTER_TRAVERSE_KW: f64 = 0.22;
+///
+/// P16 (D12) deleted the slot cap, so the default depth of this cut is no
+/// longer 0.25 D and the 0.22 kW pin no longer sits in the traverse band.
+/// The band is now derived from the cell: at a held chip both power terms
+/// scale with the RPM, so the traverse closes the gap at any power from
+/// `P x rpm_min / rpm` (the cut at the 3 000 rpm floor) up to `P` (the cut
+/// at its RPM), with `P` the power of the same cut on a 100 kW router. The
+/// fixture takes the geometric mean of the two edges.
+fn router_traverse_kw() -> f64 {
+    let free = recipe(&router(100.0), None);
+    let min_rpm = router(100.0).rpm_range().0;
+    let hi = free.power_kw;
+    let lo = hi * min_rpm / free.rpm;
+    assert!(
+        lo > 0.0 && hi > lo,
+        "non-vacuity: a traverse band ({lo}, {hi})"
+    );
+    (lo * hi).sqrt()
+}
 /// Little enough that the traverse cannot, so the depth rung must act
 /// (B6: 0.25 -> 0.10).
 const ROUTER_DEPTH_KW: f64 = 0.10;
@@ -156,11 +174,11 @@ fn advance_per_tooth(r: &rs_cam_core::feeds::FeedsResult, flutes: f64) -> f64 {
 
 #[test]
 fn a_constant_power_spindle_slows_down_g_ladder() {
-    let r = recipe(&router(ROUTER_TRAVERSE_KW), None);
+    let r = recipe(&router(router_traverse_kw()), None);
     assert!(
         ladder_fired(&r),
-        "the cut was not power limited on a 0.22 kW router, so this fixture \
-         proves nothing. Make the cut heavier."
+        "the cut was not power limited on the traverse-band router, so this \
+         fixture proves nothing. Make the cut heavier."
     );
     assert!(
         rpm_moved(&r),
@@ -194,7 +212,7 @@ fn a_constant_torque_vfd_does_not_slow_down_g_ladder() {
 fn the_ladder_holds_the_advance_per_tooth_g_ladder() {
     // The defining property. The dial it replaced was the feed, and the whole
     // argument for the ladder is that thinning the chip is the wrong answer.
-    for (label, machine) in [("router", router(ROUTER_TRAVERSE_KW)), ("vfd", vfd())] {
+    for (label, machine) in [("router", router(router_traverse_kw())), ("vfd", vfd())] {
         let limited = recipe(&machine, None);
         assert!(
             ladder_fired(&limited),

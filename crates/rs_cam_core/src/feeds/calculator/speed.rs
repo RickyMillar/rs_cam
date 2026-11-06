@@ -60,8 +60,19 @@ pub(super) fn engaged_diameter(input: &FeedsInput) -> EngagedDiameter {
     let axial_doc_for_eff_d = input.axial_depth_mm.unwrap_or(d).max(0.0);
     // P5 (K2): the depth that sets the SFM diameter is the operator's when
     // the input states one, else the tool diameter (a tool fact).
+    // P16 (item 2b): on a surface offset (Project Curve) a tool whose
+    // engaged diameter grows with the depth (ball, tapered ball, V-bit)
+    // takes the rpm at the full diameter; the basis says why.
+    let grows_with_depth = match input.tool_geometry {
+        ToolGeometryHint::Ball
+        | ToolGeometryHint::TaperedBall { .. }
+        | ToolGeometryHint::VBit { .. } => true,
+        ToolGeometryHint::Flat | ToolGeometryHint::Bull { .. } => false,
+    };
     let depth_basis = if input.axial_depth_mm.is_some() {
         Basis::stated()
+    } else if input.depth_after_simulation() && grows_with_depth {
+        Basis::derived(RPM_AT_FULL_DIAMETER_LAW, vec![Basis::tool_diameter()])
     } else {
         Basis::tool_diameter()
     };
@@ -74,6 +85,11 @@ pub(super) fn engaged_diameter(input: &FeedsInput) -> EngagedDiameter {
         depth_basis,
     }
 }
+
+/// P16 (item 2b): the law of the SFM diameter of a cone tool on a surface
+/// offset. The card shows it in the speed basis.
+pub(crate) const RPM_AT_FULL_DIAMETER_LAW: &str =
+    "rpm at the full diameter: the depth is known after the simulation";
 
 fn machine_rpm() -> Basis {
     Basis::Machine(sourced::MachineField::SpindleRpm)

@@ -51,8 +51,8 @@
 //! ## Non-vacuity
 //!
 //! `the_fix_is_silent_on_every_shipped_preset` asserts the two expressions
-//! are numerically EQUAL on all three presets, because every preset's travel
-//! rate sits under `DEFAULT_CUTTING_FEED_CAP_MM_MIN`. The swap therefore
+//! are numerically EQUAL on all three presets, because no preset states a
+//! cutting cap or kinematics, so its ceiling is its travel rate (P16, D9). The swap therefore
 //! moves no shipped number. The same test runs the fixture operation on a
 //! preset and shows its feed lands above the slow-ceiling cap, so the fixture
 //! machine discriminates and the arm above is not an accident of it.

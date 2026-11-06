@@ -220,11 +220,36 @@ pub enum HardnessKind {
     ShoreD,
 }
 
+/// The class of a source record in `data/vendor_lut/source_manifest.json`
+/// (feeds contract P16 item 8, operator ruling D2). Every source record
+/// states it (`source_class`); the loader copies it onto each row of the
+/// source ([`VendorObservation::source_class`]).
+#[derive(Debug, Clone, Copy, PartialEq, Eq, Default, Serialize, Deserialize)]
+#[serde(rename_all = "snake_case")]
+pub enum SourceClass {
+    /// A source whose rows may enter a vendor chip band: a tool maker's
+    /// chart, a reference or a formula source.
+    #[default]
+    Vendor,
+    /// A hobby feed chart (a community CSV of a hobby chart, for example
+    /// IDC Woodcraft). Its chips are back-calculated from a feed, an RPM
+    /// and a flute count; it is feed and depth evidence. A row of this
+    /// class never enters a vendor chip band
+    /// (`planning/feeds_review_2026-11-06/research_d2_rigidity/FINDINGS.md`
+    /// section 6).
+    HobbyFeedChart,
+}
+
 /// A single vendor observation row.
 #[derive(Debug, Clone, Deserialize)]
 pub struct VendorObservation {
     pub observation_id: String,
     pub source_id: String,
+    /// The class of the row's source record (P16 item 8). A row file does
+    /// not state it: [`VendorLut::embedded`] reads it from the source
+    /// manifest by `source_id`.
+    #[serde(skip_deserializing)]
+    pub source_class: SourceClass,
     pub source_vendor: Vendor,
     pub source_title: String,
     pub source_url: String,
@@ -358,6 +383,23 @@ impl LutPassRole {
 #[derive(Deserialize)]
 struct ObservationFile {
     observations: Vec<VendorObservation>,
+}
+
+/// The source manifest: one record per source that a row cites.
+const SOURCE_MANIFEST: &str = include_str!("../../data/vendor_lut/source_manifest.json");
+
+/// The part of the source manifest that the loader reads.
+#[derive(Deserialize)]
+struct SourceManifest {
+    sources: Vec<SourceRecord>,
+}
+
+/// One source record of the manifest, as the loader reads it. Every record
+/// states its class; a record with no class fails the strict parse.
+#[derive(Deserialize)]
+struct SourceRecord {
+    source_id: String,
+    source_class: SourceClass,
 }
 
 /// Collection of vendor observations.
@@ -535,12 +577,29 @@ impl VendorLut {
     /// change doesn't crash the runtime. The `test_embedded_strict_parse`
     /// test exercises the strict path and fails noisily on bad files —
     /// silent dropouts are a CI failure, not a runtime one.
+    ///
+    /// Each row takes the `source_class` of its source record in the source
+    /// manifest (P16 item 8). The strict test
+    /// `every_row_takes_its_source_class_from_the_manifest` holds that the
+    /// manifest parses and names every row's source.
     pub fn embedded() -> Self {
+        let classes: std::collections::HashMap<String, SourceClass> =
+            serde_json::from_str::<SourceManifest>(SOURCE_MANIFEST)
+                .map(|m| {
+                    m.sources
+                        .into_iter()
+                        .map(|r| (r.source_id, r.source_class))
+                        .collect()
+                })
+                .unwrap_or_default();
         let mut observations = Vec::new();
         for (_name, json) in EMBEDDED_FILES {
             if let Ok(file) = serde_json::from_str::<ObservationFile>(json) {
                 observations.extend(file.observations);
             }
+        }
+        for obs in &mut observations {
+            obs.source_class = classes.get(&obs.source_id).copied().unwrap_or_default();
         }
         VendorLut { observations }
     }
@@ -750,13 +809,50 @@ mod tests {
         }
     }
 
+    /// P16 item 8: the manifest parses strictly, names the source of every
+    /// embedded row, and the loaded rows carry the class of their record.
+    /// Non-vacuity: the IDC Woodcraft rows exist and load as the hobby class.
+    #[test]
+    fn every_row_takes_its_source_class_from_the_manifest() {
+        let manifest: SourceManifest =
+            serde_json::from_str(SOURCE_MANIFEST).expect("the source manifest parses strictly");
+        let classes: std::collections::HashMap<&str, SourceClass> = manifest
+            .sources
+            .iter()
+            .map(|r| (r.source_id.as_str(), r.source_class))
+            .collect();
+        let lut = VendorLut::embedded();
+        for obs in &lut.observations {
+            let class = classes.get(obs.source_id.as_str()).unwrap_or_else(|| {
+                panic!(
+                    "{}: source {} is not in the source manifest",
+                    obs.observation_id, obs.source_id
+                )
+            });
+            assert_eq!(obs.source_class, *class, "{}", obs.observation_id);
+        }
+        let hobby: Vec<&str> = lut
+            .observations
+            .iter()
+            .filter(|o| o.source_class == SourceClass::HobbyFeedChart)
+            .map(|o| o.source_id.as_str())
+            .collect();
+        assert!(!hobby.is_empty(), "the hobby rows exist");
+        assert!(
+            hobby
+                .iter()
+                .all(|id| *id == "idcwoodcraft_chipload_csv_2026-05-30"),
+            "only the IDC Woodcraft source is the hobby class: {hobby:?}"
+        );
+    }
+
     #[test]
     fn test_embedded_loads_all_observations() {
         let lut = VendorLut::embedded();
         assert_eq!(
             lut.observations.len(),
-            502,
-            "expected 502 embedded observations: 252 before feeds matrix R5 \
+            514,
+            "expected 514 embedded observations: 252 before feeds matrix R5 \
              (2026-09-23), + 12 printed Amana ball v7 rows (1/8 and 1/4 in, \
              hardwood / softwood / MDF, pocket and adaptive), + 60 printed \
              Amana Spektra v24 rows (2F and 3F at 1/8 in, 6 mm and 1/4 in; \
@@ -782,7 +878,8 @@ mod tests {
              / hardwood / MDF, pocket only) = 476; \
              then the G6 Spektra load (2026-09-25): + 24 printed Spektra rows (hardwood, soft and hard plywood; 2F 1.5-12.7 mm, 3F 9.525 and 12.7 mm), - 2 long-tail 3F 19.05 mm rows (the printed feed disagrees with the 18 000 RPM header) = 498; \
              then 2026-10-01 (operator: 'yes to loading the rows'): + 14 printed Onsrud 37-50 and 37-60 V-bit rows of the Soft Wood and Hard Wood sheets (90 deg, 2 flutes, 7 per sheet; unparked), - 6 amana-vbit-* rows that cite the Amana insert V-groove v16 chart and are not on it (finding G5 D1) = 506; \
-             then feeds contract P13 item 5 (2026-11-05): - 4 Freud 1/2 in rows (they live only in industrial_only/: evidence, not a shipped lookup) = 502"
+             then feeds contract P13 item 5 (2026-11-05): - 4 Freud 1/2 in rows (they live only in industrial_only/: evidence, not a shipped lookup) = 502; \
+             then feeds contract P16 item 3 (2026-11-06, review D10): + 12 Spektra rows (1/32, 1/16, 3/32 and 3/16 in x hardwood, soft and hard plywood; the chart prints one wood column) = 514"
         );
     }
 

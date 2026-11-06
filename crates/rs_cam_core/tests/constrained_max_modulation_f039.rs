@@ -65,6 +65,7 @@ fn ctx_basic<'a>(k: &'a MachineKinematics, b: ChiploadBand) -> ModulationContext
         feed_scale: 1.0,
         deflection_inputs: None,
         power_inputs: None,
+        force_budget_inputs: None,
         nominal_axial_doc_mm: 2.0,
         // Phase 3 (2026-09-07): a realistic operation plunge rate. Every
         // fixture here cuts along +X with a 2 mm descent, which classifies

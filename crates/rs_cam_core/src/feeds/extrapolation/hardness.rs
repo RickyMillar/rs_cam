@@ -19,6 +19,13 @@
 //! The raw ratio stays unchanged under the cap. The extrapolation flag
 //! (`LookupResult::is_extrapolated`) reads the raw ratios, so a capped row
 //! stays flagged.
+//!
+//! Feeds contract P16 (review D1): a chart prints one column for a
+//! material family, so the column has no slope inside the family. An
+//! upward transfer inside the row's own family ships the printed band
+//! ([`HardnessBasis::InColumn`]). A query harder than the generic species
+//! still derates (the Ipe case). The row hardness is read in one place,
+//! [`row_and_query_hardness`].
 
 use super::Gap;
 use crate::feeds::vendor_lookup::{
@@ -130,6 +137,17 @@ pub enum HardnessBasis {
         from: JankaFrom,
         cap: SoftHardCap,
     },
+    /// Feeds contract P16 (review D1): the law's scale is above 1, and the
+    /// query and the row are the same solid-wood family. The chart prints
+    /// one column for the family, so no slope applies inside it. The
+    /// applied scale is 1.0; the raw ratio stays for the extrapolation flag.
+    InColumn {
+        ratio_raw: f64,
+        /// The scale that the law gives, not applied.
+        law_scale: f64,
+        row_hardness: f64,
+        from: JankaFrom,
+    },
 }
 
 impl HardnessBasis {
@@ -139,7 +157,9 @@ impl HardnessBasis {
     pub const fn ratio_raw(&self) -> f64 {
         match self {
             Self::Unscaled | Self::CompositeBoard => 1.0,
-            Self::Law { ratio_raw, .. } | Self::Capped { ratio_raw, .. } => *ratio_raw,
+            Self::Law { ratio_raw, .. }
+            | Self::Capped { ratio_raw, .. }
+            | Self::InColumn { ratio_raw, .. } => *ratio_raw,
         }
     }
 
@@ -147,7 +167,7 @@ impl HardnessBasis {
     #[must_use]
     pub const fn scale(&self) -> f64 {
         match self {
-            Self::Unscaled | Self::CompositeBoard => 1.0,
+            Self::Unscaled | Self::CompositeBoard | Self::InColumn { .. } => 1.0,
             Self::Law { scale, .. } => *scale,
             Self::Capped { cap, .. } => cap.ratio,
         }
@@ -158,7 +178,9 @@ impl HardnessBasis {
     pub const fn cap(&self) -> Option<&SoftHardCap> {
         match self {
             Self::Capped { cap, .. } => Some(cap),
-            Self::Unscaled | Self::CompositeBoard | Self::Law { .. } => None,
+            Self::Unscaled | Self::CompositeBoard | Self::Law { .. } | Self::InColumn { .. } => {
+                None
+            }
         }
     }
 
@@ -170,6 +192,7 @@ impl HardnessBasis {
             Self::CompositeBoard => "CompositeBoard",
             Self::Law { .. } => "Law",
             Self::Capped { .. } => "Capped",
+            Self::InColumn { .. } => "InColumn",
         }
     }
 
@@ -258,6 +281,37 @@ fn family_default_janka(family: MaterialFamily) -> Option<f64> {
     }
 }
 
+/// Feeds contract P16: the one reading of a row's hardness for the
+/// hardness transfer.
+///
+/// `(query hardness, row hardness, where the row value comes from)`:
+/// - the query and the row state a hardness of the same kind: both values
+///   (`JankaFrom::Row`);
+/// - the query states a Janka value and the row states none: the generic
+///   species of the row's family (`JankaFrom::FamilyGeneric`), solid wood
+///   only;
+/// - else `None`.
+#[must_use]
+pub fn row_and_query_hardness(
+    query: &LookupQuery,
+    obs: &VendorObservation,
+) -> Option<(f64, f64, JankaFrom)> {
+    match (
+        query.hardness_kind,
+        query.hardness_value,
+        obs.hardness_kind,
+        obs.hardness_value,
+    ) {
+        (Some(qk), Some(qv), Some(ok), Some(ov)) if qk == ok && qv > 0.0 && ov > 0.0 => {
+            Some((qv, ov, JankaFrom::Row))
+        }
+        (Some(HardnessKind::Janka), Some(qv), _, _) if qv > 0.0 => {
+            family_default_janka(obs.material_family).map(|ov| (qv, ov, JankaFrom::FamilyGeneric))
+        }
+        _ => None,
+    }
+}
+
 /// The hardness basis of the row `obs` for `query`. This is the one place
 /// where the raw hardness ratio and the applied hardness scale come from.
 ///
@@ -278,6 +332,8 @@ fn family_default_janka(family: MaterialFamily) -> Option<f64> {
 ///    hardwood row.
 /// 4. Otherwise [`HardnessBasis::Unscaled`], and also when the row and the
 ///    query have the same hardness (within [`HARDNESS_EXACT_TOL`]).
+/// 5. P16 (review D1): a scale above 1 between a query and a row of the
+///    same solid-wood family is [`HardnessBasis::InColumn`] (scale 1.0).
 ///
 /// Chipload is roughly inverse with hardness: a softer material takes a
 /// larger chipload at the same RPM. So a hardwood row on a softwood query
@@ -294,21 +350,7 @@ pub fn hardness_basis(query: &LookupQuery, obs: &VendorObservation) -> HardnessB
     if matches!(material_category(query.material_family), 5 | 6) {
         return HardnessBasis::CompositeBoard;
     }
-    let row = match (
-        query.hardness_kind,
-        query.hardness_value,
-        obs.hardness_kind,
-        obs.hardness_value,
-    ) {
-        (Some(qk), Some(qv), Some(ok), Some(ov)) if qk == ok && qv > 0.0 && ov > 0.0 => {
-            Some((qv, ov, JankaFrom::Row))
-        }
-        (Some(HardnessKind::Janka), Some(qv), _, _) if qv > 0.0 => {
-            family_default_janka(obs.material_family).map(|ov| (qv, ov, JankaFrom::FamilyGeneric))
-        }
-        _ => None,
-    };
-    let Some((query_hardness, row_hardness, from)) = row else {
+    let Some((query_hardness, row_hardness, from)) = row_and_query_hardness(query, obs) else {
         return HardnessBasis::Unscaled;
     };
     let ratio_raw = (row_hardness / query_hardness).clamp(SCALE_CLAMP_LO, SCALE_CLAMP_HI);
@@ -320,6 +362,14 @@ pub fn hardness_basis(query: &LookupQuery, obs: &VendorObservation) -> HardnessB
     let law_scale = apply_chipload_law(ratio_raw, CHIPLOAD_HARDNESS_EXPONENT);
     let solid_wood = material_category(query.material_family) == 0
         && material_category(obs.material_family) == 0;
+    if solid_wood && law_scale > 1.0 && query.material_family == obs.material_family {
+        return HardnessBasis::InColumn {
+            ratio_raw,
+            law_scale,
+            row_hardness,
+            from,
+        };
+    }
     if solid_wood && law_scale > 1.0 {
         let cap = soft_hard_cap(obs.tool_family);
         if law_scale > cap.ratio {

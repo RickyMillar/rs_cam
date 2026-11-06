@@ -7,7 +7,8 @@
 //! `ae > 0.85 D`) and the flute guard (`0.8 x flute`). Above the slot cap
 //! the power was flat in `ap`, so the power edge could not cross there.
 //! The slot cap and the flute guard are limits drawn on the envelope; they
-//! do not clamp the power input.
+//! do not clamp the power input. P16 (D12) deleted the slot cap; arm 1
+//! now reads the whole slot column.
 //!
 //! The fixture is the rivmap100 end mill
 //! (`planning/fixtures/rivmap100/rivmap100.toml`, tool 3: D 6, Z 2, flute
@@ -15,8 +16,8 @@
 //!
 //! The arms:
 //!
-//! 1. In the slot column (`ae = D`), the grid points above the slot cap
-//!    hold more than one power value (red before: one value).
+//! 1. In the slot column (`ae = D`), the grid points hold more than one
+//!    power value (red before: one value above the old slot cap).
 //! 2. In the narrowest column, the grid points above the flute guard hold
 //!    more than one power value (red before: one value).
 //! 3. Each grid point holds the power that `power_at_operating_point`
@@ -112,7 +113,7 @@ fn distinct_powers(points: &[&SpeedsPoint]) -> usize {
 }
 
 #[test]
-fn the_slot_column_sizes_power_above_the_slot_cap_p11a() {
+fn the_slot_column_sizes_power_at_each_depth_p11a() {
     let env = envelope(&ample_machine());
     let j = env.speeds.aes.len() - 1;
     let ae = env.speeds.aes.get(j).copied().expect("a slot column");
@@ -120,18 +121,16 @@ fn the_slot_column_sizes_power_above_the_slot_cap_p11a() {
         (ae - D_MM).abs() < 1e-9,
         "the last width sample is the slot: {ae}"
     );
-    // The slot cap is `0.25 D` (`feeds::slot_rule`, an Unsourced row).
-    let cap = 0.25 * D_MM;
-    let points = column_above(&env, j, cap);
+    // P16 (D12): no slot cap; every depth of the column is a cut.
+    let points = column_above(&env, j, 0.0);
     assert!(
         points.len() >= 3,
-        "the fixture has grid points above the slot cap: {}",
+        "the fixture has grid points in the slot column: {}",
         points.len()
     );
     assert!(
         distinct_powers(&points) > 1,
-        "D-A: the slot column stores one power above the slot cap, the power of the capped \
-         depth: {:?}",
+        "D-A: the slot column stores one power for every depth: {:?}",
         points
             .iter()
             .map(|p| (p.ap_mm, p.power_kw))

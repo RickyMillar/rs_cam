@@ -1572,8 +1572,12 @@ fn regime_from_binding(
             | BindingConstraint::PlungeRate
             | BindingConstraint::FeedCap,
         ) => LoadRegime::ToolLimited,
+        // P16 item 7: the force budget is a property of the machine's
+        // rigidity (`RigidityProfile::force_budget_n`), so it is a machine
+        // limit, as power is.
         Some(
             BindingConstraint::PowerMax
+            | BindingConstraint::ForceBudget
             | BindingConstraint::MachineMaxFeed
             | BindingConstraint::KinematicReach,
         ) => LoadRegime::MachineLimited,
@@ -2242,6 +2246,17 @@ fn modulate_annotated_against_trace(
     };
     let machine_profile = context.machine;
     let available_kw = machine_profile.power_at_rpm(spindle_rpm as f64);
+    // Feeds contract P16 item 7 (D6): the force-budget limit applies only
+    // where the depth gate applies the force budget. Both read the one rule,
+    // `RigidityProfile::depth_cap_rule`, at the op's feeds family and pass
+    // role (the pair `tool_load::depth::evaluate` reads off the op's spec).
+    let depth_cap_rule = {
+        let (family, role) = operation.feeds_style();
+        machine_profile.rigidity.depth_cap_rule(family, role)
+    };
+    // P16 item 7: set when a material in scope has no force line; the move
+    // summary then states `FORCE_BUDGET_NO_FORCE_LINE_NOTE`.
+    let force_budget_note: std::cell::Cell<Option<&'static str>> = std::cell::Cell::new(None);
     // The deflection and power caps of one material. Materials without a
     // force line disable both constraints in the constrained-max solver;
     // the solver falls through to chipload + machine + kinematics caps.
@@ -2281,9 +2296,14 @@ fn modulate_annotated_against_trace(
             }),
             _ => None,
         };
-        (deflection_inputs, power_inputs)
+        let force_budget =
+            crate::dressup::feed_modulation::ForceBudgetScope::of(depth_cap_rule, line_opt, cutter);
+        if let Some(note) = force_budget.note() {
+            force_budget_note.set(Some(note));
+        }
+        (deflection_inputs, power_inputs, force_budget.inputs())
     };
-    let (deflection_inputs, power_inputs) = force_inputs(material);
+    let (deflection_inputs, power_inputs, force_budget_inputs) = force_inputs(material);
 
     // S6: the material of each move, through the one helper
     // (`SimulationCutTrace::effective_material_for_slot`) on the move's
@@ -2296,7 +2316,7 @@ fn modulate_annotated_against_trace(
             move_count,
             material,
             |own: &crate::material::Material| {
-                let (deflection_inputs, power_inputs) = force_inputs(own);
+                let (deflection_inputs, power_inputs, force_budget_inputs) = force_inputs(own);
                 crate::dressup::feed_modulation::OwnMaterialInputs {
                     chipload_band: crate::tool_load::chip_target_for_toolpath(
                         own,
@@ -2308,6 +2328,7 @@ fn modulate_annotated_against_trace(
                     .and_then(|t| t.modulation_band()),
                     deflection_inputs,
                     power_inputs,
+                    force_budget_inputs,
                 }
             },
         )
@@ -2328,6 +2349,7 @@ fn modulate_annotated_against_trace(
         feed_scale,
         deflection_inputs,
         power_inputs,
+        force_budget_inputs,
         nominal_axial_doc_mm: nominal_axial,
         // Phase 3 (2026-09-07) — the operation's OWN plunge rate, the
         // ceiling the geometric guard applies to a vertical-dominant
@@ -2337,13 +2359,16 @@ fn modulate_annotated_against_trace(
     };
 
     let mut modulated_toolpath = annotated.toolpath.clone();
-    let outcome = adaptive_feed_modulate_with_materials(
+    let mut outcome = adaptive_feed_modulate_with_materials(
         &mut modulated_toolpath,
         &engagements,
         &move_materials,
         &ctx,
     )
     .ok()?;
+    if let Some(note) = force_budget_note.get() {
+        outcome.notes.push(note);
+    }
     Some((modulated_toolpath, outcome))
 }
 

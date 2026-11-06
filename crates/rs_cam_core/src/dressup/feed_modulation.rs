@@ -3,7 +3,7 @@
 //! Two strategies live behind one entry point:
 //!
 //! - [`ModulationStrategy::ConstrainedMax`] (F-039, default) — solves a
-//!   per-move constrained-optimisation problem. Six candidate limits
+//!   per-move constrained-optimisation problem. Seven candidate limits
 //!   compete; the smallest wins, scaled by `feed_scale`, then
 //!   floored at the chipload-min band edge. A printed point
 //!   ([`ChiploadBand::point`], A2) gets no floor. Each per-move decision
@@ -22,7 +22,7 @@
 //!   touched, per-move map of `(feed, binding)`).
 //! - [`ModulationContext`] carries the per-toolpath inputs (RPM,
 //!   flutes, machine cap, LUT band, kinematics, optional
-//!   deflection/power inputs).
+//!   deflection/power/force-budget inputs).
 //! - [`BindingConstraint`] is re-exported from
 //!   [`crate::tool_load::BindingConstraint`] so consumers can match
 //!   without an extra import.
@@ -82,9 +82,10 @@ pub enum ModulationStrategy {
     /// cycle.
     BandMid,
     /// F-039 constrained-max solver (default). Computes the smallest
-    /// of six candidate feed limits — chipload-max, deflection-max,
-    /// power-max, machine-max, kinematic-reach, chipload-min floor —
-    /// and emits the binding value scaled by `feed_scale`.
+    /// of seven candidate feed limits — chipload-max, deflection-max,
+    /// power-max, force-budget (P16 item 7), machine-max, kinematic-reach,
+    /// chipload-min floor — and emits the binding value scaled by
+    /// `feed_scale`.
     #[default]
     ConstrainedMax,
 }
@@ -339,6 +340,90 @@ pub struct PowerLimitInputs {
     pub available_kw: f64,
 }
 
+/// The note of a move summary whose op has the force-budget rule but whose
+/// material has no force line: the modulator applies no force-budget limit
+/// (feeds contract P16 item 7).
+pub const FORCE_BUDGET_NO_FORCE_LINE_NOTE: &str = "force budget: no force line";
+
+/// Feeds contract P16 item 7 (D6): the force-budget cap inputs of the
+/// constrained-max solver. The cap is the advance per tooth where the PEAK
+/// engaged-edge force of the move's one engagement meets the machine force
+/// budget (`Engagement::fz_cap_for_peak_force`). It is the inverse of the
+/// depth that the depth gate solves at a fixed chip
+/// (`feeds::force_budget::rigidity_depth_cap`): one law,
+/// `Engagement::edge_force`.
+///
+/// Build it only through [`ForceBudgetScope::of`], so the modulator and the
+/// depth gate read the one rule (`RigidityProfile::depth_cap_rule`).
+#[derive(Debug, Clone, Copy, PartialEq)]
+pub struct ForceBudgetLimitInputs {
+    /// The material's force line (the line alone, as the depth gate reads
+    /// it: no grain factor).
+    pub line: crate::material::force_line::ForceLine,
+    /// The cutter facts of the engagement.
+    pub cutter: ModulationCutter,
+    /// The machine force budget (N), `RigidityProfile::force_budget_n`.
+    pub budget_n: f64,
+}
+
+/// Feeds contract P16 item 7: whether the force-budget limit applies to an
+/// op, from the one rule the depth gate reads.
+#[derive(Debug, Clone, Copy, PartialEq)]
+pub enum ForceBudgetScope {
+    /// The op's rule is not the force budget (the Adaptive factor, a finish
+    /// pass, a drill): no limit.
+    OutOfScope,
+    /// The op's rule is the force budget, but the material has no force
+    /// line: no limit, and the move summary states
+    /// [`FORCE_BUDGET_NO_FORCE_LINE_NOTE`].
+    NoForceLine,
+    /// The op's rule is the force budget, with a force line: the limit.
+    Limit(ForceBudgetLimitInputs),
+}
+
+impl ForceBudgetScope {
+    /// **The one scope rule.** The limit applies only where
+    /// `rule == Some(DepthCapRule::ForceBudget(budget))`, the rule the depth
+    /// gate reads (`RigidityProfile::depth_cap_rule(family, role)`).
+    #[must_use]
+    pub fn of(
+        rule: Option<crate::machine::DepthCapRule>,
+        line: Option<crate::material::force_line::ForceLine>,
+        cutter: ModulationCutter,
+    ) -> Self {
+        use crate::machine::DepthCapRule;
+        match (rule, line) {
+            (Some(DepthCapRule::ForceBudget(budget_n)), Some(line)) => {
+                Self::Limit(ForceBudgetLimitInputs {
+                    line,
+                    cutter,
+                    budget_n,
+                })
+            }
+            (Some(DepthCapRule::ForceBudget(_)), None) => Self::NoForceLine,
+            (Some(DepthCapRule::Factor(_)) | None, _) => Self::OutOfScope,
+        }
+    }
+
+    /// The limit inputs, if the limit applies.
+    #[must_use]
+    pub fn inputs(self) -> Option<ForceBudgetLimitInputs> {
+        match self {
+            Self::Limit(inputs) => Some(inputs),
+            Self::OutOfScope | Self::NoForceLine => None,
+        }
+    }
+
+    /// The move summary note, if the scope has one.
+    #[must_use]
+    pub fn note(self) -> Option<&'static str> {
+        match self {
+            Self::NoForceLine => Some(FORCE_BUDGET_NO_FORCE_LINE_NOTE),
+            Self::OutOfScope | Self::Limit(_) => None,
+        }
+    }
+}
+
 /// Static inputs the modulator needs to convert engagement into feed.
 ///
 /// Kept tool/material/machine-agnostic at the struct level so a caller
@@ -401,6 +486,10 @@ pub struct ModulationContext<'a> {
     /// F-039 — optional power-cap inputs (see [`PowerLimitInputs`]).
     /// `None` disables the constraint.
     pub power_inputs: Option<PowerLimitInputs>,
+    /// Feeds contract P16 item 7 — optional force-budget cap inputs (see
+    /// [`ForceBudgetLimitInputs`]). The session sets it from
+    /// [`ForceBudgetScope::of`]; `None` disables the constraint.
+    pub force_budget_inputs: Option<ForceBudgetLimitInputs>,
     /// F-039 — per-move axial DOC (mm) at full engagement. Used as
     /// the `axial_doc_mm` term when scaling deflection + power
     /// limits via `engagement.axial_doc_fraction`. Falls back to
@@ -444,6 +533,10 @@ pub struct ModulationOutcome {
     /// the emitted feed matched commanded). Skipped moves (rapids,
     /// drilling, etc.) are absent from the map.
     pub per_move: BTreeMap<usize, (f64, BindingConstraint)>,
+    /// The notes of the move summary (P16 item 7:
+    /// [`FORCE_BUDGET_NO_FORCE_LINE_NOTE`]). The session adds them; the
+    /// summary carries them.
+    pub notes: Vec<&'static str>,
 }
 
 impl ModulationOutcome {
@@ -500,6 +593,7 @@ impl ModulationOutcome {
             binding_constraint_distribution,
             feed_scale,
             strategy: strategy.tag(),
+            notes: self.notes.iter().map(|n| (*n).to_owned()).collect(),
         })
     }
 }
@@ -532,7 +626,7 @@ fn should_skip_modulation(move_type: MoveType, intent: MoveIntent) -> bool {
 
 /// F-039 — Constrained-max per-move solver.
 ///
-/// Computes six candidate feed caps; the smallest binds. The binding
+/// Computes seven candidate feed caps; the smallest binds. The binding
 /// constraint is returned so the diagnostic surface can name *why*
 /// the move's feed landed where it did. `ctx.feed_scale` multiplies the
 /// minimum *before* the chipload-min floor; values above 1.0 push past
@@ -540,7 +634,7 @@ fn should_skip_modulation(move_type: MoveType, intent: MoveIntent) -> bool {
 ///
 /// A2 (point mode): for a point band ([`ChiploadBand::is_point`]) the
 /// chipload cap is `v × rpm × flutes`, the pin arms pin to `v`, and the
-/// step-6 floor is skipped. The feed scale still applies.
+/// step-7 floor is skipped. The feed scale still applies.
 fn max_safe_feed_for_move(
     engagement: PerMoveEngagement,
     band: ChiploadBand,
@@ -569,8 +663,8 @@ fn max_safe_feed_for_move(
     let target_chipload = band.max_mm_per_tooth * lift;
     let floor_chipload = band.min_mm_per_tooth * lift;
 
-    let mut limits: Vec<(f64, BindingConstraint)> = Vec::with_capacity(6);
-    // The first pin arm that fired (deflection or power), if any. For a
+    let mut limits: Vec<(f64, BindingConstraint)> = Vec::with_capacity(7);
+    // The first pin arm that fired (deflection, power or force budget), if any. For a
     // point the pin value equals the chipload cap, so the tie-break below
     // needs it.
     let mut pinned: Option<(f64, BindingConstraint)> = None;
@@ -684,13 +778,52 @@ fn max_safe_feed_for_move(
         }
     }
 
-    // 4. Machine-feed hard cap.
+    // 4. Force-budget cap (feeds contract P16 item 7, D6). The same shape
+    // as the deflection cap: the fz where the PEAK engaged-edge force of the
+    // move's one engagement meets the machine force budget. It is the inverse
+    // of the depth the depth gate solves at a fixed chip
+    // (`feeds::force_budget::rigidity_depth_cap`), one law
+    // (`Engagement::edge_force`). The session sets the inputs only where the
+    // depth gate applies the force budget (`ForceBudgetScope::of`). R27: the
+    // width is the modelled width `woc x d_eng`, not the measured arc.
+    if let Some(fb) = ctx.force_budget_inputs {
+        let axial_mm = effective_axial_mm(engagement, ctx);
+        match fb
+            .cutter
+            .engagement(axial_mm, woc_eff)
+            .fz_cap_for_peak_force(fb.line, ctx.flute_count.max(1), fb.budget_n)
+        {
+            Ok(fz_cap) => {
+                limits.push((
+                    fz_cap * ctx.spindle_rpm * flutes,
+                    BindingConstraint::ForceBudget,
+                ));
+            }
+            Err(
+                DeflectionCapRefusal::NoLateralEngagement
+                | DeflectionCapRefusal::EdgeForceOverBudget,
+            ) => {
+                // The edge term alone meets the budget (or no edge is
+                // engaged): no feed rescues it. Pin to the chipload-min floor
+                // and let the tag name the force budget, as the deflection and
+                // power pins do. For a point (A2) `min == v`.
+                let floor = floor_chipload * ctx.spindle_rpm * flutes;
+                let pin = (floor.max(1e-9), BindingConstraint::ForceBudget);
+                pinned = pinned.or(Some(pin));
+                limits.push(pin);
+            }
+            // No depth, no budget, no helix, no Ks: no signal, no cap.
+            Err(DeflectionCapRefusal::Unmodelled) => {}
+        }
+    }
+
+    // 5. Machine-feed hard cap.
     limits.push((
         ctx.cutting_ceiling.mm_min(),
         BindingConstraint::MachineMaxFeed,
     ));
 
-    // 5. Kinematic-reach cap.
+    // 6. Kinematic-reach cap.
     if predicted_cap_mm_min.is_finite() && predicted_cap_mm_min > 0.0 {
         limits.push((predicted_cap_mm_min, BindingConstraint::KinematicReach));
     }
@@ -726,7 +859,7 @@ fn max_safe_feed_for_move(
         return (after_scale, binding);
     }
 
-    // 6. Chipload-min floor — the matched row's own `band.min`, NOT
+    // 7. Chipload-min floor — the matched row's own `band.min`, NOT
     // `feeds::effective_rubbing_floor` (see `ChiploadBand`). Applied last so
     // the feed scale can't drop feeds below the safe floor. When
     // the floor itself sits above the machine's hard cap (rare:
@@ -783,7 +916,8 @@ fn move_thinning_lift(
     let cutter = ctx
         .power_inputs
         .map(|p| p.cutter)
-        .or(ctx.deflection_inputs.map(|d| d.cutter));
+        .or(ctx.deflection_inputs.map(|d| d.cutter))
+        .or(ctx.force_budget_inputs.map(|f| f.cutter));
     let d_eng = cutter
         .map(|c| c.d_eng_at(effective_axial_mm(engagement, ctx)))
         .filter(|d| d.is_finite() && *d > 0.0)
@@ -840,6 +974,7 @@ fn effective_axial_mm(engagement: PerMoveEngagement, ctx: &ModulationContext<'_>
     ctx.power_inputs
         .map(|p| p.cutter.diameter_mm)
         .or(ctx.deflection_inputs.map(|d| d.cutter.diameter_mm))
+        .or(ctx.force_budget_inputs.map(|f| f.cutter.diameter_mm))
         .unwrap_or(0.0)
 }
 
@@ -962,6 +1097,8 @@ pub struct OwnMaterialInputs {
     pub deflection_inputs: Option<DeflectionLimitInputs>,
     /// The power cap of the material.
     pub power_inputs: Option<PowerLimitInputs>,
+    /// The force-budget cap of the material (P16 item 7).
+    pub force_budget_inputs: Option<ForceBudgetLimitInputs>,
 }
 
 /// [`adaptive_feed_modulate`] with a material per move (S6). An empty
@@ -1053,6 +1190,7 @@ pub fn adaptive_feed_modulate_with_materials(
                     chipload_band: own.chipload_band,
                     deflection_inputs: own.deflection_inputs,
                     power_inputs: own.power_inputs,
+                    force_budget_inputs: own.force_budget_inputs,
                     ..*ctx
                 };
                 &move_ctx_storage
@@ -1062,6 +1200,7 @@ pub fn adaptive_feed_modulate_with_materials(
                     chipload_band: None,
                     deflection_inputs: None,
                     power_inputs: None,
+                    force_budget_inputs: None,
                     ..*ctx
                 };
                 &move_ctx_storage
@@ -1193,6 +1332,7 @@ mod tests {
             feed_scale: 1.0,
             deflection_inputs: None,
             power_inputs: None,
+            force_budget_inputs: None,
             nominal_axial_doc_mm: 0.0,
             // A realistic operation plunge rate. Every fixture in this
             // module cuts laterally or ramps at 45 degrees, so the Phase 3
@@ -1272,6 +1412,7 @@ mod tests {
                 chipload_band: Some(low),
                 deflection_inputs: None,
                 power_inputs: None,
+                force_budget_inputs: None,
             }));
             n
         ]);

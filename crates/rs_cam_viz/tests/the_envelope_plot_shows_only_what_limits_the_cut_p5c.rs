@@ -211,8 +211,7 @@ fn ceiling(env: &SafeEnvelope, kind: LimitKind) -> Option<f64> {
         .filter(|l| l.kind == kind)
         .find_map(|l| match l.edge {
             Edge::ApCeiling { mm } | Edge::AeCeiling { mm } => Some(mm),
-            Edge::ApCeilingAbove { .. }
-            | Edge::ApCurve { .. }
+            Edge::ApCurve { .. }
             | Edge::ApFloor { .. }
             | Edge::AeFloor { .. }
             | Edge::PerPoint
@@ -289,7 +288,7 @@ fn a_drag_moves_the_candidate_and_never_the_proposal_p5c() {
         ae_mm: r.ae_range.1 * 0.6,
     };
     let screen = |p| r.screen_of(p, EnvelopeShape::Plane).expect("a frame");
-    let proposal_before = env.proposal.get();
+    let proposal_before = env.proposal.get().point().expect("a proposed depth");
     let mut last = None;
     for events in drag_frames(screen(from), screen(to)) {
         last = Some(frame(&ctx, &config, Some(&env), &mut candidates, events));
@@ -309,9 +308,17 @@ fn a_drag_moves_the_candidate_and_never_the_proposal_p5c() {
             && (got.ae_mm - to.ae_mm).abs() < tol(r.ae_range),
         "the candidate at {got:?}, the drag ended at {to:?}"
     );
-    assert_eq!(env.proposal.get(), proposal_before, "the proposal value");
+    assert_eq!(
+        env.proposal.get().point(),
+        Some(proposal_before),
+        "the proposal value"
+    );
     let scene = EnvelopeScene::of(&env, Some(got));
-    assert_eq!(scene.proposal, proposal_before, "the scene's proposal");
+    assert_eq!(
+        scene.proposal,
+        Some(proposal_before),
+        "the scene's proposal"
+    );
     let m = marks(&f.shapes);
     assert!(m.no_blue_circle(), "nothing blue moves: {m:?}");
     // P5d D3: the proposal diamond paints when the proposal is not at the
@@ -559,16 +566,15 @@ fn the_rivmap_rough_plot_draws_every_limit_in_view_p5c() {
             vec![
                 LimitKind::Rigidity,
                 LimitKind::Runtime,
-                LimitKind::Slot,
                 LimitKind::VendorAxial,
             ]
         } else {
-            vec![LimitKind::Rigidity, LimitKind::Slot, LimitKind::VendorAxial]
+            vec![LimitKind::Rigidity, LimitKind::VendorAxial]
         };
         assert_eq!(
             kinds, want,
-            "{tag}: P5d D1, the vendor, rigidity and slot limits draw (and the move budget \
-             where it enters the view)"
+            "{tag}: P5d D1, the vendor and rigidity limits draw (and the move budget \
+             where it enters the view; P16 deleted the slot limit)"
         );
         assert_eq!(
             scene.binding,

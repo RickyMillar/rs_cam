@@ -665,7 +665,7 @@ fn feeds_hint_emits_high_feed_ratio() {
         power_case: crate::feeds::engagement::PowerCase::Nominal,
         available_power_kw: 0.6,
         power_limited: false,
-        mrr_mm3_min: 1200.0,
+        mrr_mm3_min: Ok(1200.0),
         warnings: vec![],
         vendor_source: None,
         support: crate::feeds::FeedsSupport::FormulaOnly {
@@ -1015,7 +1015,7 @@ fn fixture_feeds_result() -> crate::feeds::FeedsResult {
         power_case: crate::feeds::engagement::PowerCase::Nominal,
         available_power_kw: 0.6,
         power_limited: false,
-        mrr_mm3_min: 1200.0,
+        mrr_mm3_min: Ok(1200.0),
         warnings: vec![],
         vendor_source: None,
         support: crate::feeds::FeedsSupport::FormulaOnly {

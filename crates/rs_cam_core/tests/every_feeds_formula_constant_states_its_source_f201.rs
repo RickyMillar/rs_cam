@@ -88,7 +88,12 @@ use rs_cam_core::material::{
 /// the printed hobby slot rows, its chart row) and
 /// `feeds.force_budget.corner_coverage_width_factor`. The deleted
 /// `doc_roughing_factor` was machine data, not a row.
-const PINNED_UNSOURCED_COUNT: usize = 161;
+///
+/// Feeds contract P16 (operator ruling D12) lowered it from 161 to 160:
+/// `feeds.calculate.slotting_threshold_d` (0.85 D) left with the slot depth
+/// cap; every reader of the threshold existed for the cap. The deleted
+/// `slot_doc_factor` was machine data, not a row.
+const PINNED_UNSOURCED_COUNT: usize = 160;
 
 fn repo_root() -> PathBuf {
     PathBuf::from(env!("CARGO_MANIFEST_DIR")).join("../..")

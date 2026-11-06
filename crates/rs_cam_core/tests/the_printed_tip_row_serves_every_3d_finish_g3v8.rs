@@ -28,8 +28,8 @@
 //! operations the SpeTool 1.0 mm row (`spetool-tapered-hardwood-parallel-
 //! 1000-2f`, one printed value 0.001 in = 0.0254 mm, held as a point, A2)
 //! ties with the v8 row, and the lower printed chip wins: those operations
-//! read the SpeTool row, and `tied_with` names the v8 row. G1 orchestrator
-//! decision 5 reversed by operator ruling Q3. The SpeTool row is not a
+//! read the SpeTool row, and the vendor band (P16 item 8) names the v8
+//! row. G1 orchestrator decision 5 reversed by operator ruling Q3. The SpeTool row is not a
 //! candidate on Contour, Scallop and Trace (no family rule transfers it), so
 //! those operations still read the v8 row, Transferred. Open data question
 //! (lead, 2026-11-03): one Ø1 tapered tool reads two rows by finish family.
@@ -150,7 +150,12 @@ fn a_one_millimetre_tapered_tip_reads_the_printed_band_on_every_3d_finish_g3v8()
             // Q3: the SpeTool point wins and names the v8 row.
             assert_eq!(recipe.observation_id, SPETOOL_ROW, "{label}");
             assert_eq!(
-                recipe.tied_with.as_ref().map(|r| r.id()),
+                recipe
+                    .band
+                    .members
+                    .iter()
+                    .map(|m| m.row.id())
+                    .find(|id| *id != recipe.observation_id),
                 Some(ROW),
                 "{label}: the Q3 winner names the other row"
             );

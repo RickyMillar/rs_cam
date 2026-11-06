@@ -45,7 +45,6 @@ p = 0.61
 q = 1.26
 
 [job.machine.rigidity]
-slot_doc_factor = 0.25
 adaptive_doc_factor = 1.5
 adaptive_woc_factor = 0.2
 

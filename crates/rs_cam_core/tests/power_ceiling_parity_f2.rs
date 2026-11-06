@@ -490,8 +490,9 @@ fn the_power_limited_warning_compares_like_with_like() {
             | rs_cam_core::feeds::FeedsWarning::RpmLoweredForFeedCeiling { .. }
             | rs_cam_core::feeds::FeedsWarning::PowerLadderReducedCut { .. }
             | rs_cam_core::feeds::FeedsWarning::ShankTooLarge { .. }
+            | rs_cam_core::feeds::FeedsWarning::DepthJudgedAfterSimulation
             | rs_cam_core::feeds::FeedsWarning::DocExceedsFlute { .. }
-            | rs_cam_core::feeds::FeedsWarning::SlottingDetected { .. }
+            | rs_cam_core::feeds::FeedsWarning::CuttingCapUnstated { .. }
             | rs_cam_core::feeds::FeedsWarning::ScallopInvalid { .. }
             | rs_cam_core::feeds::FeedsWarning::ChiploadBelowRubbingFloor { .. }
             | rs_cam_core::feeds::FeedsWarning::LongToolDerate { .. }

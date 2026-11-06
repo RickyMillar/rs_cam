@@ -36,7 +36,7 @@
 //! row (≈ 119) and the SpeTool 1.5 mm row (≈ 136), and it ties the Amana
 //! ZrN v8 1.0 mm row. Operator ruling Q3 (feeds contract P5, D2): the lower
 //! printed chip wins the tie (SpeTool 0.0254 against the Amana band
-//! 0.01905-0.0508), and the winner names the Amana row in `tied_with`. G1
+//! 0.01905-0.0508), and the winner names the Amana row in its vendor band (P16 item 8, `band`). G1
 //! orchestrator decision 5 reversed by operator ruling Q3: before P5 the
 //! smaller id won and the Amana row was the anchor. Both rows carry the A4
 //! label. The claim is form A, between the chart's printed 1.0 mm and
@@ -89,7 +89,7 @@ const PANEL_WIDTH: f32 = 240.0;
 /// The anchor row (see the module docs).
 const ANCHOR_ID: &str = "spetool-tapered-hardwood-parallel-1000-2f";
 
-/// The row the anchor ties with (Q3), which `tied_with` names.
+/// The row the anchor ties with (Q3), which the vendor band names (P16 item 8, `band`).
 const TIED_ID: &str = "amana-tapered-hardwood-parallel-1000-2f-zrn-v8";
 
 /// The A4 card sentence the anchor row carries (ruling A4).
@@ -282,7 +282,11 @@ fn a_claimed_row_states_its_claim_and_its_a4_label_g_claimcard() {
     // Non-vacuity: the fixture IS a claimed, derived A4 cell.
     assert_eq!(row.observation_id, ANCHOR_ID, "{row:?}");
     assert_eq!(
-        row.tied_with.as_ref().map(|r| r.id()),
+        row.band
+            .members
+            .iter()
+            .map(|m| m.row.id())
+            .find(|id| *id != row.observation_id),
         Some(TIED_ID),
         "the Q3 winner names the other row: {row:?}"
     );

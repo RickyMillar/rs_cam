@@ -263,7 +263,6 @@ diag_ids! {
     pub const FEEDS_POWER_LADDER_REDUCED_CUT: &str = "feeds.power_ladder_reduced_cut" => warn(Danger::Part);
     pub const FEEDS_SHANK_TOO_LARGE: &str = "feeds.shank_too_large" => warn(Danger::Tool);
     pub const FEEDS_DOC_EXCEEDS_FLUTE: &str = "feeds.doc_exceeds_flute" => warn(Danger::Tool);
-    pub const FEEDS_SLOTTING_DETECTED: &str = "feeds.slotting_detected" => warn(Danger::Part);
     pub const FEEDS_SCALLOP_INVALID: &str = "feeds.scallop_invalid" => warn(Danger::Part);
     /// The commanded advance per tooth is below the rubbing floor. The engine
     /// does not raise the feed (ruling R4 WP2a, 2026-09-23). Until then the id
@@ -289,6 +288,16 @@ diag_ids! {
     /// The depth per pass is above 3 x D, past the published de-rate table.
     /// The de-rate holds the last printed point, 0.50 (feeds matrix R3).
     pub const FEEDS_DEPTH_BEYOND_PUBLISHED_TABLE: &str = "feeds.depth_beyond_published_table" => warn(Danger::Part);
+    /// Feeds contract P16 (review D7): the op follows a surface at an offset
+    /// (Project Curve), so the depth into the stock is known after the
+    /// simulation. Suggest gives no power and no deflection figure; the
+    /// post-sim gates judge the depth, the power and the deflection. Info:
+    /// the gates give the verdict.
+    pub const FEEDS_DEPTH_AFTER_SIMULATION: &str = "feeds.depth_after_simulation" => INFO;
+    /// Feeds contract P16 (operator ruling D9): the machine states no
+    /// cutting-feed cap, so the travel rate bounds the cut, and it bound
+    /// this cut. Info: the cut ships (Q6); the operator states the cap.
+    pub const FEEDS_CUTTING_CAP_UNSTATED: &str = "feeds.cutting_cap_unstated" => INFO;
 
     // ── Pre-sim heuristic hints (superseded by load gates) ───────────────
     pub const FEEDS_FEED_VS_LUT_HIGH: &str = "feeds.feed_vs_lut.high" => INFO;

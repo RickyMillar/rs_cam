@@ -107,7 +107,7 @@ fn a_plot_click_moves_the_ring_and_the_apply_sends_the_pick_k2b() {
         .speeds_at(got.ap_mm, got.ae_mm)
         .expect("the grid answers");
     assert_eq!(speeds, at_candidate, "the nomogram reads the candidate");
-    let p = env.proposal.get();
+    let p = env.proposal.get().point().expect("a proposed depth");
     let at_proposal = env.speeds.speeds_at(p.ap_mm, p.ae_mm).expect("the grid");
     assert_ne!(
         speeds, at_proposal,
@@ -170,7 +170,8 @@ fn a_plot_click_moves_the_ring_and_the_apply_sends_the_pick_k2b() {
 /// fixture's 3 mm. The hobby grade cap (0.25 x 6.35 = 1.5875 mm) leaves the
 /// stated 1.5 mm as the proposal, and on a 3 mm floor the outside pick
 /// (about 2.02 mm) snaps to two passes of 1.5 mm, the proposal itself. On a
-/// 6 mm floor it snaps to three passes of 2.0 mm, above the proposal.
+/// 6 mm floor it snaps to three passes of 2.0 mm, above the proposal. P16
+/// (D12): the slot cap is deleted; the pick is the 2.0 mm pass itself.
 #[test]
 fn the_session_is_unchanged_until_the_apply_and_an_outside_pick_warns_k2b() {
     let mut operation = rs_cam_core::compute::fixture_values::fixture_op(OperationType::Pocket);
@@ -218,14 +219,15 @@ fn the_session_is_unchanged_until_the_apply_and_an_outside_pick_warns_k2b() {
         .safe_envelope(&tc)
         .expect("a tool")
         .expect("a backed Pocket");
-    // A slot point at the top of the view (past the slot step): outside
-    // the envelope. P13c (O1): it read the top of the view
-    // at the proposal width, which the force-budget rigidity curve now
-    // passes; the slot step stays a drawn limit inside the view.
+    // A point near the right edge of the view (past the corner width):
+    // outside the envelope. P16 (D12) deleted the slot step, so the top of
+    // the view fell under 2 mm and a pick there snaps to four passes of
+    // 1.5 mm, the proposal itself. The depth is three passes on the 6 mm
+    // floor, which snaps to itself, above the proposal.
     let scene = rs_cam_viz::ui::feeds::envelope::EnvelopeScene::of(&env, None);
     let ae = scene.ae_range.1 * 0.95;
     let outside = CutPoint {
-        ap_mm: scene.ap_range.1 * 0.98,
+        ap_mm: 6.0 / 3.0,
         ae_mm: ae,
     };
     let Placement::Outside { binding, .. } = env.placement_of(outside) else {
@@ -264,12 +266,13 @@ fn the_session_is_unchanged_until_the_apply_and_an_outside_pick_warns_k2b() {
         "the apply drops the candidate"
     );
     assert!(
-        after.operation.depth_per_pass().expect("a Pocket depth") > env.proposal.get().ap_mm,
+        after.operation.depth_per_pass().expect("a Pocket depth")
+            > env.proposal.get().ap_mm().expect("a proposed depth"),
         "Q6: the outside depth is written, not refused: picked {} mm, written {:?} mm, \
          proposal {} mm",
         outside.ap_mm,
         after.operation.depth_per_pass(),
-        env.proposal.get().ap_mm
+        env.proposal.get().ap_mm().expect("a proposed depth")
     );
     let placed = controller
         .state

@@ -267,10 +267,25 @@ fn the_home_row_serves_the_unprinted_families_through_one_claim_g3() {
                     };
                     for row in both_rows(op, &tool, material) {
                         assert_eq!(row.observation_id, winner, "{label}");
+                        // P16 item 8: the tie is part of the vendor band
+                        // when the other row passes the band rules. Band
+                        // rule 5 asks for the tool's flute count (2 here):
+                        // at 3.175 mm both tied rows print 3 flutes
+                        // (`onsrud-mdf-77-100-1_8-pocket`,
+                        // `amana-tapered-mdf-parallel-3175-3f-zrn-v8`), so
+                        // the other row is no member; at 6.35 mm both
+                        // print 2 flutes and the band names it.
+                        let other_flutes = EMBEDDED_LUT
+                            .observations
+                            .iter()
+                            .find(|o| o.observation_id == other)
+                            .map(|o| o.flute_count);
+                        let named = row.band.members.iter().any(|m| m.row.id() == other);
                         assert_eq!(
-                            row.tied_with.as_ref().map(|r| r.id()),
-                            Some(other),
-                            "{label}: the Q3 winner names the other row"
+                            named,
+                            other_flutes == Some(tool.flute_count_planning()),
+                            "{label}: the band and the flute rule disagree: {:?}",
+                            row.band.members
                         );
                         let claim = row
                             .family_basis

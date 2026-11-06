@@ -60,7 +60,7 @@ pub enum BindingConstraint {
     /// operation's own `plunge_rate` by GEOMETRY: the intent skip did not
     /// fire because the move carried no plunge tag.
     ///
-    /// The modulator's other five bounds are lateral-cutting physics. This
+    /// The modulator's other lateral bounds are cutting physics. This
     /// one is not: the classifier
     /// ([`crate::machine::kinematic_utilization::classify_move`]) reads the move's
     /// own vector, and a descent inside the plunge cone cuts on its centre,
@@ -80,6 +80,14 @@ pub enum BindingConstraint {
     /// Geodesic Adaptive writes it on tight turns and plunge departures
     /// (integration step 7.4a).
     FeedCap,
+    /// Feeds contract P16 item 7 (D6). The machine force budget bound the
+    /// feed: at a higher feed the PEAK engaged-edge force of the move's one
+    /// engagement would exceed `RigidityProfile::force_budget_n`. Only an op
+    /// whose depth cap rule is the force budget
+    /// (`RigidityProfile::depth_cap_rule`) carries this limit. With the edge
+    /// term alone over the budget, the move pins to the chipload-min floor
+    /// with this tag.
+    ForceBudget,
 }
 
 impl BindingConstraint {
@@ -93,6 +101,7 @@ impl BindingConstraint {
             BindingConstraint::ChiploadMin => "chipload-min",
             BindingConstraint::PlungeRate => "plunge-rate",
             BindingConstraint::FeedCap => "feed-cap",
+            BindingConstraint::ForceBudget => "force-budget",
         }
     }
 }
@@ -116,6 +125,7 @@ impl BindingConstraint {
 /// - `feed_scale`: the multiplier the run applied to the binding feed
 ///   limit (1.0 = at-limit; 0.7 = 70 %; etc.). No machine field scales
 ///   it.
+/// - `notes`: the notes of the run (P16 item 7).
 /// - `strategy`: which algorithm produced this summary (band-mid or
 ///   constrained-max). `BandMid` rolls up `binding_constraint_distribution`
 ///   from the same six-variant enum but its bindings collapse to the
@@ -129,6 +139,11 @@ pub struct ModulationSummary {
     pub binding_constraint_distribution: BTreeMap<BindingConstraint, f64>,
     pub feed_scale: f64,
     pub strategy: ModulationStrategyTag,
+    /// The notes of the run (P16 item 7: "force budget: no force line" when
+    /// the op has the force-budget rule but the material has no force
+    /// line). Empty on most runs; an empty list is not serialised.
+    #[serde(default, skip_serializing_if = "Vec::is_empty")]
+    pub notes: Vec<String>,
 }
 
 /// Stable serialised tag for the modulation strategy used. Mirrors

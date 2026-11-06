@@ -453,8 +453,9 @@ fn tapered_ball_floor_lands_below_the_global_constant() {
         | FeedsWarning::PowerLimited { .. }
         | FeedsWarning::PowerLadderReducedCut { .. }
         | FeedsWarning::ShankTooLarge { .. }
+        | FeedsWarning::DepthJudgedAfterSimulation
         | FeedsWarning::DocExceedsFlute { .. }
-        | FeedsWarning::SlottingDetected { .. }
+        | FeedsWarning::CuttingCapUnstated { .. }
         | FeedsWarning::ScallopInvalid { .. }
         | FeedsWarning::ChiploadBelowRubbingFloor { .. }
         | FeedsWarning::LongToolDerate { .. }
@@ -487,8 +488,9 @@ fn tapered_ball_floor_lands_below_the_global_constant() {
         | FeedsWarning::PowerLimited { .. }
         | FeedsWarning::PowerLadderReducedCut { .. }
         | FeedsWarning::ShankTooLarge { .. }
+        | FeedsWarning::DepthJudgedAfterSimulation
         | FeedsWarning::DocExceedsFlute { .. }
-        | FeedsWarning::SlottingDetected { .. }
+        | FeedsWarning::CuttingCapUnstated { .. }
         | FeedsWarning::ScallopInvalid { .. }
         | FeedsWarning::LongToolDerate { .. }
         | FeedsWarning::VendorRowPublishesNoChipload { .. }

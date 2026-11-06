@@ -28,7 +28,6 @@
 #![expect(
     clippy::expect_used,
     clippy::indexing_slicing,
-    clippy::panic,
     reason = "test code: a panic is how a test reports a failure"
 )]
 
@@ -90,7 +89,7 @@ fn the_add_door_writes_the_proposal_and_states_its_assumptions_p13c() {
             context: SuggestContext::default(),
         })
         .expect("an envelope");
-        let p = env.proposal.get();
+        let p = env.proposal.get().point().expect("a proposed depth");
         assert!(
             (stepover - p.ae_mm).abs() < 1e-9,
             "D {d}: the add-door stepover {stepover} is not the proposal width {}",
@@ -123,11 +122,10 @@ fn the_add_door_writes_the_proposal_and_states_its_assumptions_p13c() {
 
 /// Lead ruling on P13c item 1 (2026-11-05): with no force line (plywood)
 /// the force budget cannot set a depth. The add door writes the geometry
-/// width (the corner-coverage bound, at most the slot threshold; no force
-/// enters it) and leaves the depth unset (no underived default).
+/// width (the corner-coverage bound; no force enters it; P16 deleted the
+/// slot threshold) and leaves the depth unset (no underived default).
 #[test]
 fn with_no_force_line_the_width_is_written_and_the_depth_is_not_p13c() {
-    use rs_cam_core::feeds::envelope::{Edge, LimitKind};
     use rs_cam_core::session::SetStockConfigArgs;
     let d = 6.0;
     let mut s = ProjectSession::new_empty();
@@ -161,7 +159,7 @@ fn with_no_force_line_the_width_is_written_and_the_depth_is_not_p13c() {
     // covers the outer loop's uncut corner (2r, 2r) when (s - r) sqrt 2 <= r.
     let r = d / 2.0;
     let corner = r + r / std::f64::consts::SQRT_2;
-    // The slot threshold of the machine, read off the envelope of the op.
+    // The envelope of the op (P16, D12: no slot threshold stops the width).
     let env = SafeEnvelope::for_cut(EnvelopeInput {
         operation: &op,
         tool: &s.tools()[0],
@@ -172,13 +170,27 @@ fn with_no_force_line_the_width_is_written_and_the_depth_is_not_p13c() {
         context: SuggestContext::default(),
     })
     .expect("a backed plywood pocket");
-    let threshold = match env.limit(LimitKind::Slot).map(|l| &l.edge) {
-        Some(Edge::ApCeilingAbove { ae_mm, .. }) => *ae_mm,
-        other => panic!("a slot step: {other:?}"),
-    };
-    let want = corner.min(threshold);
+    let want = corner;
     assert!(
         (stepover - want).abs() < 1e-9,
         "the width {stepover} is not the geometry width {want}"
+    );
+    // P16 (review D5): the envelope follows the same rule. It proposes the
+    // geometry width and no depth, so an apply writes no depth.
+    let p = env.proposal.get();
+    assert_eq!(
+        p.no_depth(),
+        Some(rs_cam_core::feeds::envelope::NoDepthProposal::NoForceLine),
+        "no force line: the envelope proposes no depth: {p:?}"
+    );
+    assert!(
+        (p.ae_mm - want).abs() < 1e-9,
+        "the envelope width {} is not the geometry width {want}",
+        p.ae_mm
+    );
+    assert!(
+        !env.pick(rs_cam_core::feeds::envelope::PickRequest::Proposal)
+            .writes_depth(),
+        "a proposal pick writes no depth"
     );
 }

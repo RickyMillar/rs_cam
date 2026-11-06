@@ -173,11 +173,226 @@ pub struct LookupResult {
     pub evidence_grade: EvidenceGrade,
     /// The matched row's kind (exact, derived or fallback).
     pub row_kind: ObservationKind,
-    /// Ruling Q3 (feeds contract P5): the row that tied with this row on
-    /// the score, the diameter, the transfer and the series rules. The
-    /// lower printed chip won the tie; the card and MCP name both rows.
-    /// `None` when no row tied.
-    pub tied_with: Option<crate::feeds::sourced::RowRef>,
+    /// Feeds contract P16 item 8 (operator ruling D2): the vendor band of
+    /// this query. This row is the band's shipped row. The band replaces
+    /// the Q3 tie field (`tied_with`): a tie is a band of two. See
+    /// [`VendorBand`].
+    pub band: VendorBand,
+}
+
+/// Feeds contract P16 item 8 (operator ruling D2, 2026-11-06): the vendor
+/// band of one query. The printed rows that match one tool, size and wood
+/// form a band from the lowest to the highest chip. Suggest ships the
+/// lowest; the surfaces name every member, so the operator can state a
+/// higher chip inside the band (the stated-chip door).
+///
+/// A member is a candidate row of the lookup that passes every rule:
+///
+/// 1. The hard filters of the lookup (tool family, material category,
+///    operation family or a stated transfer, the diameter sanity range).
+/// 2. The same material family as the query. The D2 first half (one
+///    reading of a missing hardness in the score) is held back (lead,
+///    2026-11-06): the score reads the row's own hardness, so the FM1
+///    chips do not rise.
+/// 3. The same operation family and pass role as the score winner, after
+///    the routes of the query (`vendor_normalize::lut_query_for`,
+///    `LutRoute::FlatAsRoughPocket`, the G3 family rules). A row that a G3
+///    family rule or the G6 drill rule transfers counts as its copy in the
+///    queried family and role. A printed winner's band holds only printed
+///    rows and a transferred winner's band only transferred rows: a row
+///    printed in the family beats a transfer (A3), so a transfer does not
+///    ship over it.
+/// 4. The size: a printed row at the query size (G1 `SizeBasis::Exact`), or
+///    a form A interpolation between two printed sizes of one chart series
+///    (one member per series, at the interpolated value). Forms B and C
+///    (extrapolation), an angle key and a row with no diameter give no
+///    member.
+/// 5. The same printed flute count as the query.
+/// 6. A source of the vendor class: a row of a hobby feed chart
+///    (`SourceClass::HobbyFeedChart`) never enters.
+/// 7. A grade c row or a fallback row joins only when the band has no
+///    grade a or grade b member.
+/// 8. The same series rank as the score winner (`series::series_rank`: the
+///    tool's own series, the standard rows, the other specialty rows; lead
+///    provisional ruling 2026-11-06, option B). The series ruling of
+///    2026-10-31 picks the winner's rank; the band does not cross it.
+///
+/// A member also prints a chip. Each member carries its chip after its own
+/// size, hardness and drill scales: the chip each consumer reads for that
+/// row. The members are in ascending order of the chip middle.
+///
+/// The shipped row (the matched row) is the member with the lowest chip
+/// middle ([`BandRule::Lowest`]). The no-rise rule: when the score winner is
+/// not a member and no member is strictly below its chip, or the score
+/// winner prints no chip or its size is refused, the score winner ships
+/// ([`BandRule::WinnerShips`]). When the winner is a member, the lowest
+/// member is at or below it by the order.
+/// When no row is a member, the score winner ships alone
+/// ([`BandRule::NoMember`], the single-row rule before P16).
+#[derive(Debug, Clone, PartialEq)]
+pub struct VendorBand {
+    /// The members, lowest chip middle first.
+    pub members: Vec<BandMember>,
+    /// The row that the score and the series rule pick.
+    pub score_winner: crate::feeds::sourced::RowRef,
+    /// The scaled chip middle of the score winner, or `None` when the
+    /// winner prints no chip or its size is refused. The shipped chip is at
+    /// or below it (the no-rise rule).
+    pub score_winner_chip_mm: Option<f64>,
+    /// Which rule picked the shipped row.
+    pub rule: BandRule,
+    /// Why the score winner is not a member, or `None` when it is one.
+    pub winner_outside: Option<BandExclusion>,
+}
+
+/// One member of a [`VendorBand`]. The chip fields are scaled like
+/// [`LookupResult::chip_load_mm`] and its bounds.
+#[derive(Debug, Clone, PartialEq)]
+pub struct BandMember {
+    pub row: crate::feeds::sourced::RowRef,
+    pub vendor: super::vendor_lut::Vendor,
+    /// The scaled chip middle (mm/tooth).
+    pub chip_mid_mm: f64,
+    /// The scaled lower bound, `None` for a printed point (A2).
+    pub chip_min_mm: Option<f64>,
+    /// The scaled upper bound.
+    pub chip_max_mm: Option<f64>,
+    /// The G1 size basis of the member: `Exact` or a form A claim.
+    pub size_basis: SizeBasis,
+}
+
+/// The rule that picked the shipped row of a [`VendorBand`].
+#[derive(Debug, Clone, Copy, PartialEq, Eq)]
+pub enum BandRule {
+    /// The member with the lowest chip ships.
+    Lowest,
+    /// The score winner is not a member and no member is strictly below its
+    /// chip (or the winner has no chip to compare), so the score winner
+    /// ships. No chip rises.
+    WinnerShips,
+    /// No row is a member: the score winner ships alone.
+    NoMember,
+}
+
+impl BandRule {
+    /// The short name, for the FM1 column and the JSON record.
+    #[must_use]
+    pub const fn name(self) -> &'static str {
+        match self {
+            Self::Lowest => "lowest",
+            Self::WinnerShips => "winner_ships",
+            Self::NoMember => "no_member",
+        }
+    }
+}
+
+/// The first band rule that a row fails, in the order of the
+/// [`VendorBand`] rules.
+#[derive(Debug, Clone, Copy, PartialEq, Eq)]
+pub enum BandExclusion {
+    /// Rule 2: another material family.
+    Material,
+    /// Rule 3: another operation family or pass role than the winner.
+    Operation,
+    /// Rule 4: the size basis is not `Exact` or form A.
+    Size,
+    /// Rule 5: another flute count.
+    Flutes,
+    /// Rule 6: a hobby feed chart.
+    Hobby,
+    /// Rule 7: grade c or fallback while a grade a or b member exists.
+    Grade,
+    /// The row prints no chip, or its size is refused.
+    NoChip,
+}
+
+impl BandExclusion {
+    /// The short name, for the FM1 column and the JSON record.
+    #[must_use]
+    pub const fn name(self) -> &'static str {
+        match self {
+            Self::Material => "material",
+            Self::Operation => "operation",
+            Self::Size => "size",
+            Self::Flutes => "flutes",
+            Self::Hobby => "hobby",
+            Self::Grade => "grade",
+            Self::NoChip => "no_chip",
+        }
+    }
+}
+
+impl VendorBand {
+    /// The band of a row with no member: the row ships alone
+    /// ([`BandRule::NoMember`]).
+    #[must_use]
+    pub fn alone(observation_id: &str) -> Self {
+        Self {
+            members: Vec::new(),
+            score_winner: crate::feeds::sourced::RowRef(observation_id.to_owned()),
+            score_winner_chip_mm: None,
+            rule: BandRule::NoMember,
+            winner_outside: None,
+        }
+    }
+
+    /// The member with the lowest chip middle.
+    #[must_use]
+    pub fn lowest(&self) -> Option<&BandMember> {
+        self.members.first()
+    }
+
+    /// The member with the highest chip middle.
+    #[must_use]
+    pub fn highest(&self) -> Option<&BandMember> {
+        self.members.last()
+    }
+
+    /// The one JSON record of the band. CLI `suggest --json`
+    /// (`profile.vendor_band`) and MCP `get_suggest_rationale`
+    /// (`basis.vendor_band`) print it.
+    #[must_use]
+    pub fn to_json(&self) -> serde_json::Value {
+        let member = |m: &BandMember| {
+            serde_json::json!({
+                "row": m.row.id(),
+                "vendor": m.vendor.to_string(),
+                "chip_mid_mm": m.chip_mid_mm,
+                "chip_min_mm": m.chip_min_mm,
+                "chip_max_mm": m.chip_max_mm,
+                "size_basis": m.size_basis.name(),
+            })
+        };
+        serde_json::json!({
+            "members": self.members.iter().map(member).collect::<Vec<_>>(),
+            "lowest": self.lowest().map(member),
+            "highest": self.highest().map(member),
+            "score_winner": self.score_winner.id(),
+            "score_winner_chip_mm": self.score_winner_chip_mm,
+            "rule": self.rule.name(),
+            "winner_outside": self.winner_outside.map(BandExclusion::name),
+        })
+    }
+
+    /// The card line: "Vendors: Amana 0.1270, Freud 0.2413 mm/tooth (ships
+    /// the lowest)". `None` for a band of fewer than two members.
+    #[must_use]
+    pub fn card_text(&self) -> Option<String> {
+        if self.members.len() < 2 {
+            return None;
+        }
+        let names: Vec<String> = self
+            .members
+            .iter()
+            .map(|m| format!("{} {:.4}", m.vendor, m.chip_mid_mm))
+            .collect();
+        let tail = match self.rule {
+            BandRule::Lowest => "ships the lowest",
+            BandRule::WinnerShips => "ships the score winner, which is not a member",
+            BandRule::NoMember => "ships the score winner",
+        };
+        Some(format!("Vendors: {} mm/tooth ({tail})", names.join(", ")))
+    }
 }
 
 /// The printed chipload of a matched row, classified (A2, point mode).
@@ -343,17 +558,7 @@ fn find_best_vbit_row_in(
     }
     let best = best_by_score(lut, criteria, candidates.iter().copied())?;
     let chosen = prefer_series(lut, criteria, &candidates, best);
-    let tied_with = tied_row(lut, criteria, &candidates, chosen);
-    let (i, score, diameter_match_score, _) = chosen;
-    #[expect(
-        clippy::indexing_slicing,
-        reason = "`i` was stored from a valid iteration over `lut.observations`"
-    )]
-    let obs = &lut.observations[i];
-    Some(with_tie(
-        build_result(lut, obs, criteria, score, diameter_match_score),
-        tied_with,
-    ))
+    Some(with_band(lut, criteria, &candidates, chosen))
 }
 
 /// **The RECIPE resolver.** Answers "which vendor row best describes
@@ -706,7 +911,7 @@ fn build_result(
         material_label: obs.material_label.clone(),
         evidence_grade: obs.evidence_grade,
         row_kind: obs.row_kind,
-        tied_with: None,
+        band: VendorBand::alone(&obs.observation_id),
     }
 }
 
@@ -723,7 +928,10 @@ fn build_result(
 /// Ruling Q3 (feeds contract P5, lead decision D2): after the series rule
 /// ([`prefer_series`]) and before the id, the lower printed chip wins. A
 /// row with no printed chip does not take part in this rule. The id
-/// decides last.
+/// decides last. P16 item 8 keeps this order: it picks the score winner,
+/// and the band rules read the winner's operation and role
+/// ([`VendorBand`]). Without it a tie can pick a winner whose band does not
+/// hold the lower tied row, and the chip can rise.
 fn beats(candidate: TieKey<'_>, best: Option<TieKey<'_>>) -> bool {
     let (candidate_score, candidate_distance, candidate_transferred, candidate_chip, candidate_id) =
         candidate;
@@ -761,7 +969,7 @@ fn beats(candidate: TieKey<'_>, best: Option<TieKey<'_>>) -> bool {
 type TieKey<'a> = (i64, Option<f64>, bool, Option<f64>, &'a str);
 
 /// The printed chip that the Q3 rule compares: the row's chip midpoint,
-/// or `None` when the row prints no chip.
+/// or `None` when the row prints no chip. A band member prints a chip.
 fn printed_chip(obs: &VendorObservation) -> Option<f64> {
     let chip = chipload_midpoint(obs);
     (chip.is_finite() && chip > 0.0).then_some(chip)
@@ -782,41 +990,6 @@ fn tie_key<'a>(lut: &'a VendorLut, query: &LookupQuery, c: Candidate) -> TieKey<
         printed_chip(obs),
         obs.observation_id.as_str(),
     )
-}
-
-/// Ruling Q3: the best other candidate that ties with `chosen` on every
-/// rule before the chip (score, diameter distance, transfer, series rank).
-/// The result names it, so the card and MCP show both rows.
-#[expect(
-    clippy::indexing_slicing,
-    reason = "every candidate index was taken from an iteration over `lut.observations`"
-)]
-fn tied_row(
-    lut: &VendorLut,
-    query: &LookupQuery,
-    candidates: &[Candidate],
-    chosen: Candidate,
-) -> Option<crate::feeds::sourced::RowRef> {
-    let key = query.tool_subfamily.as_deref();
-    let rank = |i: usize| super::series::series_rank(key, &lut.observations[i]);
-    let (c_score, c_dist, c_transferred, _, _) = tie_key(lut, query, chosen);
-    let same_distance = |d: Option<f64>| match (d, c_dist) {
-        (Some(a), Some(b)) => (a - b).abs() <= 1e-12,
-        (None, None) => true,
-        (Some(_), None) | (None, Some(_)) => false,
-    };
-    let tied = candidates.iter().copied().filter(|c| {
-        let (score, dist, transferred, _, _) = tie_key(lut, query, *c);
-        c.0 != chosen.0
-            && score == c_score
-            && transferred == c_transferred
-            && same_distance(dist)
-            && rank(c.0) == rank(chosen.0)
-    });
-    let best = best_by_score(lut, query, tied)?;
-    Some(crate::feeds::sourced::RowRef(
-        lut.observations[best.0].observation_id.clone(),
-    ))
 }
 
 /// `|ln(query / row)|` for a row with a diameter, else `None`. The tie-break
@@ -928,26 +1101,267 @@ fn lookup_best_in(
     }
     let best = best_by_score(lut, query, candidates.iter().copied())?;
     let chosen = prefer_series(lut, query, &candidates, best);
-    let tied_with = tied_row(lut, query, &candidates, chosen);
-    let (i, score, diameter_match_score, _) = chosen;
-    #[expect(
-        clippy::indexing_slicing,
-        reason = "`i` was stored from a valid iteration over `lut.observations`"
-    )]
-    let obs = &lut.observations[i];
-    Some(with_tie(
-        build_result(lut, obs, query, score, diameter_match_score),
-        tied_with,
-    ))
+    Some(with_band(lut, query, &candidates, chosen))
 }
 
-/// The result with the Q3 tie row set.
-fn with_tie(
-    mut result: LookupResult,
-    tied_with: Option<crate::feeds::sourced::RowRef>,
+/// Two band chips closer than this fraction of the larger chip are equal:
+/// the order then keeps the score winner. The value is a floating-point
+/// tolerance (a printed chip has at most 5 significant digits, and two
+/// scale paths to one printed value differ only by rounding), not a cutting
+/// figure.
+const CHIP_EQUAL_REL: f64 = 1e-9;
+
+/// True for a grade c row or a fallback row (band rule 7).
+fn is_weak_evidence(obs: &VendorObservation) -> bool {
+    obs.evidence_grade == EvidenceGrade::C || obs.row_kind == ObservationKind::Fallback
+}
+
+/// The band rules 2, 3, 5 and 6 and the printed chip, which read only the
+/// row, the query and the winner (no size claim). The first rule that
+/// `obs` fails, or `None`.
+fn cheap_exclusion(
+    query: &LookupQuery,
+    winner: (&VendorObservation, bool),
+    obs: (&VendorObservation, bool),
+) -> Option<BandExclusion> {
+    let (winner, winner_transferred) = winner;
+    let (obs, transferred) = obs;
+    if obs.material_family != query.material_family {
+        return Some(BandExclusion::Material);
+    }
+    if transferred != winner_transferred
+        || effective_operation(query, obs, transferred)
+            != effective_operation(query, winner, winner_transferred)
+    {
+        return Some(BandExclusion::Operation);
+    }
+    if obs.flute_count != query.flute_count {
+        return Some(BandExclusion::Flutes);
+    }
+    match obs.source_class {
+        super::vendor_lut::SourceClass::HobbyFeedChart => return Some(BandExclusion::Hobby),
+        super::vendor_lut::SourceClass::Vendor => {}
+    }
+    printed_chip(obs).is_none().then_some(BandExclusion::NoChip)
+}
+
+/// Band rule 3 (with the transfer status, see `cheap_exclusion`): the
+/// operation family and pass role of a row after the routes. A row that a stated rule transfers (`is_transferred`: a G3
+/// family rule or the G6 drill rule) serves as its copy in the queried
+/// family and role (copy semantics, A3); every other row keeps its own.
+fn effective_operation(
+    query: &LookupQuery,
+    obs: &VendorObservation,
+    transferred: bool,
+) -> (LutOperationFamily, LutPassRole) {
+    if transferred {
+        (query.operation_family, query.pass_role)
+    } else {
+        (obs.operation_family, obs.pass_role)
+    }
+}
+
+/// Band rule 4: the size basis of a built row. `Exact`, or a form A claim.
+fn size_admits(basis: &SizeBasis) -> bool {
+    match basis {
+        SizeBasis::Exact => true,
+        SizeBasis::Claim(claim) => matches!(
+            claim.form,
+            super::extrapolation::SizeForm::Interpolated { .. }
+        ),
+        SizeBasis::NoDiameterAnchor
+        | SizeBasis::NoChipload
+        | SizeBasis::AngleKey { .. }
+        | SizeBasis::Refused { .. } => false,
+    }
+}
+
+/// The key that makes one form A member per chart series: the series
+/// source and the two bracketing rows. `None` for an `Exact` member.
+fn series_key(basis: &SizeBasis) -> Option<(String, Vec<String>)> {
+    basis.claim().map(|claim| {
+        let mut rows = claim.source_rows.clone();
+        rows.sort();
+        (claim.series_source_id.clone(), rows)
+    })
+}
+
+/// Feeds contract P16 item 8: build the [`VendorBand`] of `chosen` (the
+/// score winner after the series rule) over `candidates`, and return the
+/// shipped row with the band set. The rules are in the [`VendorBand`] doc.
+#[expect(
+    clippy::indexing_slicing,
+    reason = "every candidate index was taken from an iteration over `lut.observations`"
+)]
+fn with_band(
+    lut: &VendorLut,
+    query: &LookupQuery,
+    candidates: &[Candidate],
+    chosen: Candidate,
 ) -> LookupResult {
-    result.tied_with = tied_with;
-    result
+    let winner_obs = &lut.observations[chosen.0];
+    let winner = build_result(lut, winner_obs, query, chosen.1, chosen.2);
+    // Rules 2-6: the members before the grade rule, each with its built
+    // result. The winner comes first, then the other rows by id, so a tie
+    // of equal rows keeps the winner.
+    let mut order: Vec<Candidate> = candidates.to_vec();
+    order.sort_by(|a, b| {
+        (a.0 != chosen.0).cmp(&(b.0 != chosen.0)).then_with(|| {
+            lut.observations[a.0]
+                .observation_id
+                .cmp(&lut.observations[b.0].observation_id)
+        })
+    });
+    let key = query.tool_subfamily.as_deref();
+    let winner_rank = super::series::series_rank(key, winner_obs);
+    let mut admitted: Vec<(Candidate, LookupResult)> = Vec::new();
+    for c in order {
+        let obs = &lut.observations[c.0];
+        if super::series::series_rank(key, obs) != winner_rank {
+            continue;
+        }
+        if cheap_exclusion(query, (winner_obs, chosen.3), (obs, c.3)).is_some() {
+            continue;
+        }
+        let result = if c.0 == chosen.0 {
+            winner.clone()
+        } else {
+            build_result(lut, obs, query, c.1, c.2)
+        };
+        if size_admits(&result.size_basis) && result.chip_load_mm > 0.0 {
+            admitted.push((c, result));
+        }
+    }
+    // Rule 4, one member per chart series: every `Exact` row is a member. A
+    // form A row joins only when no member already stands for its series:
+    // no `Exact` member is one of its bracketing rows, and no earlier form
+    // A member has the same series and bracketing rows. (At a printed size
+    // the form A claim of a neighbour row gives the printed row's value.)
+    let exact_ids: Vec<String> = admitted
+        .iter()
+        .filter(|(_, r)| r.size_basis.claim().is_none())
+        .map(|(_, r)| r.observation_id.clone())
+        .collect();
+    // A form A row that is one of its own bracketing rows stands for the
+    // series first, so the member names a printed size next to the query.
+    // The sort is stable: the winner and the id order stay inside each part.
+    let brackets_itself = |r: &LookupResult| {
+        r.size_basis
+            .claim()
+            .is_some_and(|claim| claim.source_rows.contains(&r.observation_id))
+    };
+    admitted.sort_by_key(|(_, r)| !brackets_itself(r));
+    let mut seen_series: Vec<(String, Vec<String>)> = Vec::new();
+    let mut built: Vec<(Candidate, LookupResult)> = Vec::new();
+    for (c, result) in admitted {
+        if let Some(claim) = result.size_basis.claim() {
+            if claim.source_rows.iter().any(|row| exact_ids.contains(row)) {
+                continue;
+            }
+            if let Some(key) = series_key(&result.size_basis) {
+                if seen_series.contains(&key) {
+                    continue;
+                }
+                seen_series.push(key);
+            }
+        }
+        built.push((c, result));
+    }
+    // Rule 7: a grade c or fallback row joins only when no grade a or b
+    // member exists.
+    let has_strong = built
+        .iter()
+        .any(|(c, _)| !is_weak_evidence(&lut.observations[c.0]));
+    if has_strong {
+        built.retain(|(c, _)| !is_weak_evidence(&lut.observations[c.0]));
+    }
+    // Ascending chip middle; on an equal chip (within `CHIP_EQUAL_REL`) the
+    // winner first, then the id.
+    built.sort_by(|(ca, a), (cb, b)| {
+        let equal = (a.chip_load_mm - b.chip_load_mm).abs()
+            <= CHIP_EQUAL_REL * a.chip_load_mm.max(b.chip_load_mm);
+        let by_chip = if equal {
+            std::cmp::Ordering::Equal
+        } else {
+            a.chip_load_mm.total_cmp(&b.chip_load_mm)
+        };
+        by_chip
+            .then_with(|| (ca.0 != chosen.0).cmp(&(cb.0 != chosen.0)))
+            .then_with(|| a.observation_id.cmp(&b.observation_id))
+    });
+    let winner_outside = if built.iter().any(|(c, _)| c.0 == chosen.0) {
+        None
+    } else {
+        Some(winner_exclusion(
+            query,
+            (winner_obs, chosen.3),
+            &winner,
+            has_strong,
+        ))
+    };
+    let members: Vec<BandMember> = built
+        .iter()
+        .map(|(_, r)| BandMember {
+            row: crate::feeds::sourced::RowRef(r.observation_id.clone()),
+            vendor: r.source_vendor,
+            chip_mid_mm: r.chip_load_mm,
+            chip_min_mm: r.chip_load_min_mm,
+            chip_max_mm: r.chip_load_max_mm,
+            size_basis: r.size_basis.clone(),
+        })
+        .collect();
+    // The no-rise rule: the winner's chip, when it has one to compare.
+    let winner_chip = (!winner.size_basis.is_refused() && winner.chip_load_mm > 0.0)
+        .then_some(winner.chip_load_mm);
+    // When the winner is a member, the lowest member is at or below it (the
+    // sort puts the winner first on an equal chip). When the winner is not a
+    // member, a member ships only when its chip is strictly lower: an equal
+    // chip moves no number, so the winner keeps its row (its RPM and depth
+    // fields).
+    let winner_is_member = winner_outside.is_none();
+    let (rule, shipped) = match (built.first(), winner_chip) {
+        (None, _) => (BandRule::NoMember, winner),
+        (Some((_, lowest)), Some(chip))
+            if winner_is_member || lowest.chip_load_mm < chip * (1.0 - CHIP_EQUAL_REL) =>
+        {
+            (BandRule::Lowest, lowest.clone())
+        }
+        (Some(_), Some(_) | None) => (BandRule::WinnerShips, winner),
+    };
+    LookupResult {
+        band: VendorBand {
+            members,
+            score_winner: crate::feeds::sourced::RowRef(winner_obs.observation_id.clone()),
+            score_winner_chip_mm: winner_chip,
+            rule,
+            winner_outside,
+        },
+        ..shipped
+    }
+}
+
+/// Why the score winner is not a band member: the first rule it fails.
+fn winner_exclusion(
+    query: &LookupQuery,
+    winner_obs: (&VendorObservation, bool),
+    winner: &LookupResult,
+    has_strong: bool,
+) -> BandExclusion {
+    if let Some(e) = cheap_exclusion(query, winner_obs, winner_obs) {
+        return e;
+    }
+    if !size_admits(&winner.size_basis) || winner.chip_load_mm <= 0.0 {
+        return if winner.size_basis.is_refused() || winner.chip_load_mm <= 0.0 {
+            BandExclusion::NoChip
+        } else {
+            BandExclusion::Size
+        };
+    }
+    if has_strong && is_weak_evidence(winner_obs.0) {
+        return BandExclusion::Grade;
+    }
+    // A form A winner whose series already gave a member.
+    BandExclusion::Size
 }
 
 /// Group `MaterialFamily` into the categories a row may serve across.
@@ -1416,21 +1830,23 @@ mod tests {
         );
         // Ruling Q3 (feeds contract P5): the ZrN v8 row and the SpeTool
         // 1.0 mm row tie at 1825. Until P5 the smaller id won (the ZrN
-        // row). Now the lower printed chip wins, and the result names the
-        // other row, so the card shows both.
-        assert_eq!(result.score, 1825);
+        // row). Now the lower printed chip wins. P16 item 8: the tie is
+        // part of the vendor band (both rows print 1.0 mm, 2 flutes,
+        // softwood, parallel finish), lowest chip first, and the lowest
+        // ships. The straight ball ZrN row (`amana-ball-softwood-parallel-
+        // 1000-2f-zrn`, 1795 on the family fallback) prints the same cell,
+        // but its series rank (`series::series_rank`) is not the winner's,
+        // so band rule 8 keeps it out.
+        let members: Vec<&str> = result.band.members.iter().map(|m| m.row.id()).collect();
         assert_eq!(
-            result.observation_id, "spetool-tapered-softwood-parallel-1000-2f",
-            "the lower printed chip wins the Q3 tie"
+            members,
+            vec![
+                "spetool-tapered-softwood-parallel-1000-2f",
+                "amana-tapered-softwood-parallel-1000-2f-zrn-v8"
+            ],
+            "the band names both rows, the lowest first"
         );
-        assert_eq!(
-            result
-                .tied_with
-                .as_ref()
-                .map(crate::feeds::sourced::RowRef::id),
-            Some("amana-tapered-softwood-parallel-1000-2f-zrn-v8"),
-            "the result names the ZrN v8 row that tied"
-        );
+        assert_eq!(result.band.rule, BandRule::Lowest);
         // The ZrN row prints midpoint(0.01905, 0.0508); the winner's chip is
         // lower.
         let zrn_mid = (0.01905 + 0.0508) / 2.0;

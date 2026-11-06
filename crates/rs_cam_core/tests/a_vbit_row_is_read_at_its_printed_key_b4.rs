@@ -117,8 +117,11 @@ use rs_cam_core::tool_load::{GateEnv, ToleranceBands, ToolpathLoadContext};
 
 const TOL: f64 = 1e-12;
 
-/// The printed AMS-159 60 deg chip load, 0.003 in.
-const AMS_60_POINT_MM: f64 = 0.0762;
+/// The AMS-159 60 deg row holds the chip of its printed feed (feeds
+/// contract P16 item 5, review D11, the lead rule D5 of 2026-11-03):
+/// 90 in/min / (18 000 rpm x 2 flutes) x 25.4 = 0.0635 mm. The chart's chip
+/// column prints 0.003 in (0.0762 mm); the two printed columns disagree.
+const AMS_60_POINT_MM: f64 = 0.0635;
 
 /// `0.5^0.61`: form C from the 1 in Onsrud row to a 1/2 in tool.
 const SCALE_HALF: f64 = 0.655_196_701_929;
