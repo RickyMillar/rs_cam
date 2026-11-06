@@ -1,0 +1,6 @@
+P_r37_pick exit 0 tp True
+P_r37_sienci exit 0 tp True
+P_oak_slot exit 0 tp True
+P_hw_slot exit 0 tp True
+P_thin_005 exit 0 tp True
+python3 -I postsim.py   2.26s user 0.15s system 133% cpu 1.797 total

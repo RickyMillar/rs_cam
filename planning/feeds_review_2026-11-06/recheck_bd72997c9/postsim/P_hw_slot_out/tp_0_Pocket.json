@@ -1,0 +1,217 @@
+{
+  "toolpath_id": 0,
+  "toolpath_name": "Pocket",
+  "operation_type": "Pocket",
+  "op_kind": "pocket",
+  "tool": "end_mill D6.35 Z2",
+  "move_count": 32,
+  "cutting_distance_mm": 293.8,
+  "rapid_distance_mm": 107.94076836320744,
+  "debug_trace": {
+    "schema_version": 1,
+    "toolpath_name": "Pocket",
+    "operation_label": "Pocket",
+    "summary": {
+      "total_elapsed_us": 1269,
+      "span_count": 1,
+      "hotspot_count": 0,
+      "dominant_span_kind": "core_generate",
+      "dominant_span_label": "Pocket",
+      "dominant_span_elapsed_us": 554
+    },
+    "spans": [
+      {
+        "id": 1,
+        "parent_id": null,
+        "kind": "core_generate",
+        "label": "Pocket",
+        "start_us": 13,
+        "elapsed_us": 554,
+        "xy_bbox": null,
+        "z_level": null,
+        "move_start": 0,
+        "move_end": 27,
+        "exit_reason": null,
+        "counters": {}
+      }
+    ],
+    "hotspots": [],
+    "annotations": []
+  },
+  "semantic_trace": {
+    "schema_version": 1,
+    "toolpath_name": "Pocket",
+    "operation_label": "Pocket",
+    "summary": {
+      "item_count": 7,
+      "move_linked_item_count": 7
+    },
+    "items": [
+      {
+        "id": 1,
+        "parent_id": null,
+        "kind": "operation",
+        "label": "Pocket",
+        "move_start": 0,
+        "move_end": 31,
+        "xy_bbox": {
+          "min_x": 8.175,
+          "max_x": 31.825,
+          "min_y": 8.175,
+          "max_y": 31.825
+        },
+        "z_min": -3.0,
+        "z_max": 10.0,
+        "params": {
+          "values": {}
+        },
+        "debug_span_id": null
+      },
+      {
+        "id": 2,
+        "parent_id": 1,
+        "kind": "depth_level",
+        "label": "Z -1.500 pass 1",
+        "move_start": 0,
+        "move_end": 14,
+        "xy_bbox": {
+          "min_x": 8.175,
+          "max_x": 31.825,
+          "min_y": 8.175,
+          "max_y": 31.825
+        },
+        "z_min": -1.5,
+        "z_max": 10.0,
+        "params": {
+          "values": {
+            "pass_index": 0,
+            "z_level": -1.5
+          }
+        },
+        "debug_span_id": null
+      },
+      {
+        "id": 3,
+        "parent_id": 2,
+        "kind": "region",
+        "label": "Run 1",
+        "move_start": 0,
+        "move_end": 6,
+        "xy_bbox": {
+          "min_x": 8.175,
+          "max_x": 31.825,
+          "min_y": 8.175,
+          "max_y": 31.825
+        },
+        "z_min": -1.5,
+        "z_max": 10.0,
+        "params": {
+          "values": {
+            "region_id": 0
+          }
+        },
+        "debug_span_id": null
+      },
+      {
+        "id": 4,
+        "parent_id": 2,
+        "kind": "region",
+        "label": "Run 2",
+        "move_start": 8,
+        "move_end": 14,
+        "xy_bbox": {
+          "min_x": 8.175,
+          "max_x": 25.475000000000005,
+          "min_y": 14.524999999999995,
+          "max_y": 31.825
+        },
+        "z_min": -1.5,
+        "z_max": 10.0,
+        "params": {
+          "values": {
+            "region_id": 1
+          }
+        },
+        "debug_span_id": null
+      },
+      {
+        "id": 5,
+        "parent_id": 1,
+        "kind": "depth_level",
+        "label": "Z -3.000 pass 2",
+        "move_start": 16,
+        "move_end": 30,
+        "xy_bbox": {
+          "min_x": 8.175,
+          "max_x": 31.825,
+          "min_y": 8.175,
+          "max_y": 31.825
+        },
+        "z_min": -3.0,
+        "z_max": 10.0,
+        "params": {
+          "values": {
+            "pass_index": 1,
+            "z_level": -3.0
+          }
+        },
+        "debug_span_id": null
+      },
+      {
+        "id": 6,
+        "parent_id": 5,
+        "kind": "region",
+        "label": "Run 3",
+        "move_start": 16,
+        "move_end": 22,
+        "xy_bbox": {
+          "min_x": 8.175,
+          "max_x": 31.825,
+          "min_y": 8.175,
+          "max_y": 31.825
+        },
+        "z_min": -3.0,
+        "z_max": 10.0,
+        "params": {
+          "values": {
+            "region_id": 2
+          }
+        },
+        "debug_span_id": null
+      },
+      {
+        "id": 7,
+        "parent_id": 5,
+        "kind": "region",
+        "label": "Run 4",
+        "move_start": 24,
+        "move_end": 30,
+        "xy_bbox": {
+          "min_x": 8.175,
+          "max_x": 25.475000000000005,
+          "min_y": 14.524999999999995,
+          "max_y": 31.825
+        },
+        "z_min": -3.0,
+        "z_max": 10.0,
+        "params": {
+          "values": {
+            "region_id": 3
+          }
+        },
+        "debug_span_id": 1
+      }
+    ]
+  },
+  "collision_count": 0,
+  "rapid_collision_count": 0,
+  "min_safe_stickout": null,
+  "truncated_core_mm2": null,
+  "untouched_material_mm2": null,
+  "reached_uncut_estimate_mm2": null,
+  "unmachined_band_area_mm2": null,
+  "tip_float_points": null,
+  "max_tip_float_mm": null,
+  "monotone_cells": null,
+  "source_stock": null
+}

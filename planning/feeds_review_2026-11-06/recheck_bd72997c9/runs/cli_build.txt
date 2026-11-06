@@ -1,0 +1,1 @@
+-rwxrwxr-x 2 ricky ricky 174723392 2026-11-06 21:02:26.590540504 +1300 /home/ricky/personal_repos/rs_cam/target/debug/rs_cam_cli

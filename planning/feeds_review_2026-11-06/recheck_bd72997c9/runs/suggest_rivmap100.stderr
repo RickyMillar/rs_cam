@@ -1,0 +1,2 @@
+[2m   0.684541597s[0m [32m INFO[0m [2mrs_cam_core::session::project_file[0m[2m:[0m Loaded mesh model [3mname[0m[2m=[0mterrain.stl [3mtris[0m[2m=[0m131962
+[2m   1.319754934s[0m [32m INFO[0m [2mrs_cam_core::session::project_file[0m[2m:[0m Loaded 2D model [3mname[0m[2m=[0mrivers_aligned.dxf [3mitems[0m[2m=[0m36

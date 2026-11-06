@@ -1,0 +1,84 @@
+format_version = 3
+
+[job]
+name = "feeds review cell A_flat_6.350_2f_mdf"
+
+[job.simulation]
+resolution_mm = 0.5
+
+[job.stock]
+x = 40.0
+y = 40.0
+z = 38.1000
+origin_x = 0.0
+origin_y = 0.0
+origin_z = -38.1000
+auto_from_model = false
+
+[job.stock.material.SheetGood]
+kind = "Mdf"
+
+[job.machine]
+class = "hobby"
+name = "Shapeoko Pro XXL"
+max_feed_mm_min = 10000.0
+max_shank_mm = 6.35
+
+[job.machine.spindle.Variable]
+min_rpm = 8000.0
+max_rpm = 24000.0
+
+[job.machine.power.VfdConstantTorque]
+rated_power_kw = 1.5
+rated_rpm = 24000.0
+
+[job.machine.chip_load]
+k0 = 0.024
+p = 0.61
+q = 1.26
+
+[job.machine.rigidity]
+adaptive_doc_factor = 1.5
+adaptive_woc_factor = 0.2
+
+[[tools]]
+id = 0
+name = "end_mill D6.35 Z2"
+type = "end_mill"
+diameter = 6.35
+cutting_length = { stated = 19.049999999999997 }
+stickout = { stated = 27.049999999999997 }
+shank_diameter = { stated = 6.35 }
+flute_count = { stated = 2 }
+tool_number = 1
+centre_cutting = { stated = "yes" }
+
+[[models]]
+id = 0
+path = "square.svg"
+name = "Square"
+kind = "svg"
+units = { kind = "millimeters" }
+
+[[setups]]
+name = "Setup 1"
+
+[[setups.toolpaths]]
+id = 0
+name = "Pocket"
+enabled = true
+tool_id = 0
+model_id = 0
+stock_source = "fresh"
+
+[setups.toolpaths.operation]
+kind = "pocket"
+
+[setups.toolpaths.operation.params]
+stepover = 6.35
+floor = { from = "top", depth = 19.049999999999997 }
+depth_per_pass = 19.049999999999997
+climb = true
+pattern = "contour"
+angle = 0.0
+finishing_passes = 0

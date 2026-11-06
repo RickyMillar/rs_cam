@@ -1,0 +1,154 @@
+{
+  "project": "feeds review cell P_oak_slot",
+  "setup_count": 1,
+  "toolpath_count": 1,
+  "total_cutting_distance_mm": 293.8,
+  "total_rapid_distance_mm": 107.94076836320744,
+  "total_runtime_s": 4.73254887650252,
+  "air_cut_pct_of_total_runtime": 17.10489102077506,
+  "air_cut_pct_of_cutting_time": 19.816800469580702,
+  "average_engagement": 0.6649605026632507,
+  "cut_metrics_not_measured": null,
+  "collision_count": 0,
+  "collision_checks_failed": 0,
+  "rapid_collision_count": 0,
+  "default_findings": [],
+  "awaiting_prior_stock": [],
+  "simulation_resolution": {
+    "mm": 0.5,
+    "mode": "fixed",
+    "source": "project",
+    "project_mm": 0.5
+  },
+  "per_toolpath": [
+    {
+      "id": 0,
+      "name": "Pocket",
+      "operation": "Pocket",
+      "status": "ok",
+      "move_count": 32,
+      "collision_count": 0,
+      "lineage": {
+        "cut": {
+          "radial": {
+            "kind": "stepover",
+            "value": 6.35
+          },
+          "axial": {
+            "kind": "depth per pass",
+            "value": 2.5
+          },
+          "total": {
+            "kind": "from_heights"
+          },
+          "first_pass": "slot"
+        },
+        "pick": null,
+        "speeds": {
+          "depth_per_pass": {
+            "value": 2.5,
+            "basis": null
+          },
+          "stepover": {
+            "value": 6.35,
+            "basis": null
+          },
+          "spindle_rpm": {
+            "value": 18000.0,
+            "basis": null
+          },
+          "feed_rate": {
+            "value": 4572.0,
+            "basis": null
+          },
+          "plunge_rate": {
+            "value": 2286.0,
+            "basis": null
+          },
+          "ramp_feed_rate": {
+            "value": null,
+            "basis": null
+          },
+          "peck_depth": {
+            "value": null,
+            "basis": null
+          },
+          "z_step": {
+            "value": null,
+            "basis": null
+          }
+        },
+        "tool_facts": [
+          {
+            "fact": "diameter",
+            "value": 6.35,
+            "state": "stated"
+          },
+          {
+            "fact": "flute_count",
+            "value": 2.0,
+            "state": "stated"
+          },
+          {
+            "fact": "flute_length",
+            "value": 19.05,
+            "state": "stated"
+          },
+          {
+            "fact": "stickout",
+            "value": 27.05,
+            "state": "stated"
+          }
+        ],
+        "entry": {
+          "contract": "dressup",
+          "records": [
+            {
+              "kind": "plunge",
+              "count": 4
+            }
+          ]
+        },
+        "findings": [],
+        "rules": [],
+        "measured": {
+          "case": "measured",
+          "placed": 476,
+          "outside": 448,
+          "peak": {
+            "sample_index": 27,
+            "move_index": 3,
+            "point": {
+              "ap_mm": 1.5,
+              "ae_mm": 5.5
+            },
+            "power_kw": 0.06463219129216413,
+            "placement": {
+              "kind": "outside",
+              "binding": "corner_coverage",
+              "margin": -0.014748159668654278
+            },
+            "judged": {
+              "axis": "width",
+              "measured_mm": 5.5,
+              "limit_mm": 5.420064030267288
+            }
+          },
+          "binding": "corner_coverage",
+          "judged": {
+            "axis": "width",
+            "measured_mm": 5.5000000000000036,
+            "limit_mm": 5.420064030267288
+          }
+        },
+        "steps": []
+      }
+    }
+  ],
+  "verdict": {
+    "kind": "ok",
+    "headline": "OK"
+  },
+  "adaptive_feed_modulation": true,
+  "modulation_state": "on (ConstrainedMax, feed scale 1.00)"
+}

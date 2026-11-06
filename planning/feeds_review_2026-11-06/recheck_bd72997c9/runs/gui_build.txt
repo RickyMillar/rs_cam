@@ -1,0 +1,2 @@
+timeout 1800 scripts/cargo_lane.sh build --release -p rs_cam_viz --bin  -q  405.26s user 6.12s system 126% cpu 5:25.58 total
+-rwxrwxr-x 2 ricky ricky 47365176 2026-11-06 21:11:27.334691135 +1300 target/release/rs_cam_gui
