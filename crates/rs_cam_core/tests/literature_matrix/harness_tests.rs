@@ -65,7 +65,9 @@ fn band_check_ceiling_floor_modes() {
 /// false-alarms in literature_matrix Phase 1.
 #[test]
 fn band_check_at_clamp_is_within_not_edge() {
-    // Ceiling-mode: engine clamped RPM to 14_000 (drill rpm ceiling).
+    // Ceiling-mode: engine clamped RPM to 14_000 (the drill RPM ceiling
+    // that first raised this false alarm; P20a removed that ceiling, and
+    // the case stays as a ceiling-mode example).
     let drill_rpm = band_check(14_000.0, None, Some(14_000.0), BandMode::Ceiling, 0.10);
     assert_eq!(
         drill_rpm.verdict,

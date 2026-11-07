@@ -52,7 +52,8 @@
 //!   (2026-09-23), shipped again under ruling B5 (G6, 2026-09-24). Both
 //!   run a 6 mm 2-flute flat end mill in GenericHardwood, which the G6
 //!   drill claim serves from the Amana Spektra 6 mm side row / 2: chip
-//!   0.0635 mm/tooth at the 14 000 RPM drill cap, about 1778 mm/min.
+//!   0.0635 mm/tooth at the chart's 18 000 RPM, about 2286 mm/min (P20a
+//!   removed the 14 000 RPM drill cap).
 //!   Feeds contract P14 deleted the lift and deflection-clamp warnings
 //!   (no producer), so the type now holds the old "neither fires" check.
 //! - **Rivers / Lakes** (V-bit `project_curve`): `FeedRaisedForChipload`
@@ -723,9 +724,11 @@ fn wanaka_suggest_baseline() {
     // mm/tooth, Janka 1450 on a 1450 query (no hardness scale), at the
     // printed size (no size claim). The drill claim divides by Z = 2:
     // 0.0635 mm/tooth, the verified Ramp Down chip (90 in/min / (18 000 x
-    // 2)). The chart's 18 000 RPM is clamped to the 14 000 drill cap, so the
-    // feed is 14 000 x 0.0635 x 2 = 1778 mm/min (float rounding and the
-    // round-down on apply decide 1777 or 1778), 0.78x the printed 2286.
+    // 2)). RE-PINNED P20a (2026-11-08): no drill RPM cap. The chart's
+    // 18 000 RPM ships; the fixture machine range is 8 000-24 000, so it is
+    // not clamped. The feed is 18 000 x 0.0635 x 2 = 2286 mm/min (float
+    // rounding and the round-down on apply decide 2285 or 2286), the
+    // printed Ramp Down 90 in/min x 25.4. It was 14 000 x 0.0635 x 2 = 1778.
     for id in [ToolpathId::from_raw(14), ToolpathId::from_raw(7)] {
         let (_id, name, suggested) = find_case(&cases, id);
         let ctx = format!("drill (tp {_id} / {name})");
@@ -753,18 +756,22 @@ fn wanaka_suggest_baseline() {
             (chip - 0.0635).abs() < 1e-12,
             "{ctx}: chip must be 0.127 / 2 = 0.0635, got {chip}"
         );
+        let chart_rpm = matched
+            .rpm_nominal
+            .unwrap_or_else(|| panic!("{ctx}: the Spektra row prints its RPM"));
         assert!(
-            (r.rpm - 14_000.0).abs() < 1e-9,
-            "{ctx}: the drill RPM cap must replace the chart's 18 000, got {}",
+            (r.rpm - chart_rpm).abs() < 1e-9,
+            "{ctx}: the chart's {chart_rpm} RPM must ship (no drill RPM cap), got {}",
             r.rpm
         );
         let feed = suggested
             .operation
             .feed_rate()
             .expect("S11: the fixture sets it");
+        let held = chart_rpm * chip * 2.0;
         assert!(
-            (1777.0..=1778.0 + 1e-9).contains(&feed),
-            "{ctx}: feed must be 14 000 x 0.0635 x 2 = 1778 (rounded down), got {feed}"
+            (held.floor() - 1.0..=held + 1e-9).contains(&feed),
+            "{ctx}: feed must be {chart_rpm} x {chip} x 2 = {held} (rounded down), got {feed}"
         );
     }
 

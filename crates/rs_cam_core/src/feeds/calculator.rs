@@ -263,8 +263,6 @@ pub(crate) fn calculate_with(
     log.speed("step2b_max_speed", &speed);
     speed::step2b_milling_tier(input, &mut speed);
     log.speed("step2b_milling_tier", &speed);
-    speed::step2c_drill_tier(input, &mut speed);
-    log.speed("step2c_drill_tier", &speed);
     let mut cut = cut::step3_engagement(input, &mut warnings);
     log.cut("step3_engagement", &cut);
     cut::step4_flute_guard(input, clamps, &mut cut, &mut warnings);

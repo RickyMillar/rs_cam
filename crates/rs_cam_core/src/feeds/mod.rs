@@ -1595,84 +1595,6 @@ const FALLBACK_RPM: FormulaConstant = FormulaConstant::unsourced(
     "a guard value for a zero engaged diameter; no record in the repo",
 );
 
-const DRILL_TIER_CLAIM: &str =
-    "repo rule; the W6 audit (2026-08-04) found that the cited sources do not state the tiers";
-const DRILL_TIER_SMALL_MAX_D_MM: FormulaConstant = FormulaConstant::unsourced(
-    "feeds.drill_rpm_envelope_for_diameter.small_max_d_mm",
-    6.0,
-    DRILL_TIER_CLAIM,
-);
-const DRILL_TIER_MID_MAX_D_MM: FormulaConstant = FormulaConstant::unsourced(
-    "feeds.drill_rpm_envelope_for_diameter.mid_max_d_mm",
-    10.0,
-    DRILL_TIER_CLAIM,
-);
-const DRILL_TIER_SMALL_FLOOR_RPM: FormulaConstant = FormulaConstant::unsourced(
-    "feeds.drill_rpm_envelope_for_diameter.small_floor_rpm",
-    8_000.0,
-    DRILL_TIER_CLAIM,
-);
-const DRILL_TIER_SMALL_CEILING_RPM: FormulaConstant = FormulaConstant::unsourced(
-    "feeds.drill_rpm_envelope_for_diameter.small_ceiling_rpm",
-    14_000.0,
-    DRILL_TIER_CLAIM,
-);
-const DRILL_TIER_MID_FLOOR_RPM: FormulaConstant = FormulaConstant::unsourced(
-    "feeds.drill_rpm_envelope_for_diameter.mid_floor_rpm",
-    6_000.0,
-    DRILL_TIER_CLAIM,
-);
-const DRILL_TIER_MID_CEILING_RPM: FormulaConstant = FormulaConstant::unsourced(
-    "feeds.drill_rpm_envelope_for_diameter.mid_ceiling_rpm",
-    10_000.0,
-    DRILL_TIER_CLAIM,
-);
-const DRILL_TIER_LARGE_FLOOR_RPM: FormulaConstant = FormulaConstant::unsourced(
-    "feeds.drill_rpm_envelope_for_diameter.large_floor_rpm",
-    4_000.0,
-    DRILL_TIER_CLAIM,
-);
-const DRILL_TIER_LARGE_CEILING_RPM: FormulaConstant = FormulaConstant::unsourced(
-    "feeds.drill_rpm_envelope_for_diameter.large_ceiling_rpm",
-    8_000.0,
-    DRILL_TIER_CLAIM,
-);
-
-/// Diameter-tiered RPM envelope for wood-drilling ops: a named repo cap
-/// (repo rule, unsourced; CREDITS.md "Drill-subsystem provenance"). The
-/// band narrows and drops as the diameter grows, because chip evacuation
-/// scales with the chip volume per revolution. The W6 audit (2026-08-04)
-/// found that the sources this doc used to cite do not state these tiers.
-///
-/// On a G6-claimed plunge (ruling B5) this cap replaces the 18 000 RPM
-/// that the Amana Spektra chart prints: Step 2c clamps the vendor RPM to
-/// it, the chip per tooth holds, and the feed follows. The claim card
-/// states it (`extrapolation::drill::DrillClaim::card_text`).
-///
-/// Tiers (inclusive upper bound):
-/// - D ≤ 6 mm:  (8000, 14000).
-/// - D ≤ 10 mm: (6000, 10000).
-/// - D > 10 mm: (4000, 8000); the 8 kRPM ceiling matches the
-///   literature-matrix `flat_12mm_drill_oak_big` cell.
-#[must_use]
-pub(crate) fn drill_rpm_envelope_for_diameter(d_mm: f64) -> (f64, f64) {
-    let (floor, ceiling) = drill_rpm_tier_rows(d_mm);
-    (floor.value, ceiling.value)
-}
-
-/// The two F201 rows (floor, ceiling) of the drill RPM tier at `d_mm`: the
-/// rows that [`drill_rpm_envelope_for_diameter`] reads (P5: the basis of a
-/// drill RPM).
-fn drill_rpm_tier_rows(d_mm: f64) -> (FormulaConstant, FormulaConstant) {
-    if d_mm <= DRILL_TIER_SMALL_MAX_D_MM.value {
-        (DRILL_TIER_SMALL_FLOOR_RPM, DRILL_TIER_SMALL_CEILING_RPM)
-    } else if d_mm <= DRILL_TIER_MID_MAX_D_MM.value {
-        (DRILL_TIER_MID_FLOOR_RPM, DRILL_TIER_MID_CEILING_RPM)
-    } else {
-        (DRILL_TIER_LARGE_FLOOR_RPM, DRILL_TIER_LARGE_CEILING_RPM)
-    }
-}
-
 /// The tiers of [`milling_rpm_ceiling_for_diameter`]: (largest diameter in
 /// mm, ceiling in RPM). The last row has an infinite diameter.
 const MILLING_CEILING_CLAIM: &str =
@@ -2202,17 +2124,7 @@ fn operation_default_profile(family: OperationFamily, role: PassRole) -> Default
 #[must_use]
 pub fn formula_constants() -> Vec<FormulaConstant> {
     let mut rows: Vec<FormulaConstant> = MATERIAL_FORMULA_CONSTANTS.to_vec();
-    rows.extend([
-        FALLBACK_RPM,
-        DRILL_TIER_SMALL_MAX_D_MM,
-        DRILL_TIER_MID_MAX_D_MM,
-        DRILL_TIER_SMALL_FLOOR_RPM,
-        DRILL_TIER_SMALL_CEILING_RPM,
-        DRILL_TIER_MID_FLOOR_RPM,
-        DRILL_TIER_MID_CEILING_RPM,
-        DRILL_TIER_LARGE_FLOOR_RPM,
-        DRILL_TIER_LARGE_CEILING_RPM,
-    ]);
+    rows.push(FALLBACK_RPM);
     for (max_d, ceiling) in MILLING_CEILING_TIERS {
         rows.push(max_d);
         rows.push(ceiling);
@@ -2318,8 +2230,8 @@ pub fn formula_constants() -> Vec<FormulaConstant> {
     );
     let roles = crate::all_variants!(PassRole: Roughing, SemiFinish, Finish);
     for family in families {
-        // The Drill row is 0 / 0 for type completeness; the drill RPM
-        // tiers and the drill feed envelope set the drill operating point.
+        // The Drill row is 0 / 0 for type completeness; the vendor RPM and
+        // the drill feed envelope set the drill operating point.
         if family == OperationFamily::Drill {
             continue;
         }

@@ -8,9 +8,9 @@
 //! the axial advance per tooth is the side chip / Z. The drill rule
 //! (`feeds::extrapolation::drill`) reads the tool's own Spektra side row
 //! (`amana_flat_end.json`, filed under (Pocket, Roughing)) and divides it
-//! by Z. The chip is held per tooth; the engine drill RPM cap (14 000 at
-//! D <= 6 mm) replaces the chart's 18 000, so the feed is under the printed
-//! Ramp Down.
+//! by Z. The chip is held per tooth. P20a (2026-11-08) removed the drill
+//! RPM cap (14 000 at D <= 6 mm): the chart's 18 000 ships, clamped only to
+//! the machine spindle range, so the feed is the printed Ramp Down.
 //!
 //! How the numbers were derived (python3 over
 //! `planning/extrapolation_2026-09-24/fetch/G6/verified_rows.json`, the 8
@@ -29,16 +29,16 @@
 //! | 6.0 | 3 | MDF/Laminate | 109 | 0.0513 | 0.1524 | 0.0508 | 0.9903 |
 //!
 //! The worst ratio is 0.9903 (Amana rounds the printed in/min), so the bar
-//! is 1 %. At 14 000 RPM the feed is 14 000 x chip x Z: 1422.4, 1778.0 or
-//! 2133.6 mm/min, which is 0.77-0.78x the printed Ramp Down (x 25.4). The
-//! MDF 3.175 mm cell sits at 1778.0 / 3.175 = 560 mm/min per mm, under the
-//! 720 sheet-goods ceiling.
+//! is 1 %. At 18 000 RPM the feed is 18 000 x chip x Z: 1828.8, 2286.0 or
+//! 2743.2 mm/min, which is the printed Ramp Down (x 25.4) within 1 %. The
+//! MDF 3.175 mm cell sits at 2286.0 / 3.175 = 720 mm/min per mm, under the
+//! sheet-goods ceiling 90 x 25.4 / 3.0 = 762 (P20a).
 //!
 //! The arms:
 //!
 //! - (a) each verified cell ships through the drill claim, its chip is the
-//!   verified chip within 1 %, its RPM is the cap, and its feed is under
-//!   the printed Ramp Down;
+//!   verified chip within 1 %, its RPM is the chart RPM in the machine
+//!   range, and its feed is the printed Ramp Down within 1 %;
 //! - (b) the Suggest recipe and the gate's envelope resolver read one row,
 //!   and the scaled point is still a point;
 //! - (c) a flat query outside the claim (3.0 mm, 6.35 mm, 1 or 4 flutes)
@@ -78,9 +78,6 @@ use rs_cam_core::tool_load::drill_gates::{DrillGateOutcome, classify_plunge_feed
 
 /// The relative bar on the chip against the verified chip (see the table).
 const CHIP_TOL: f64 = 0.01;
-
-/// The engine drill RPM cap at D <= 6 mm (repo rule).
-const RPM_CAP: f64 = 14_000.0;
 
 /// One verified Ramp Down cell of `fetch/G6/verified_rows.json`.
 struct Verified {
@@ -305,25 +302,27 @@ fn each_verified_cell_ships_the_side_chip_over_z_g6() {
                     v.chip_mm
                 );
                 assert_eq!(r.chipload_point_mm, Some(chip), "{cell}");
-                // The RPM: the chart's 18 000 is replaced by the cap.
+                // The RPM: the chart's 18 000 ships, clamped only to the
+                // machine spindle range (P20a: no drill RPM cap).
                 assert_eq!(row.rpm_nominal, Some(18_000.0), "{cell}");
+                let chart_rpm = MachineProfile::generic_wood_router().clamp_rpm(18_000.0);
                 assert!(
-                    (r.rpm - RPM_CAP).abs() < 1e-9,
-                    "{cell}: the drill RPM cap must bind, got {}",
+                    (r.rpm - chart_rpm).abs() < 1e-9,
+                    "{cell}: the chart RPM {chart_rpm} must ship, got {}",
                     r.rpm
                 );
-                // The feed: the chip is held per tooth at the cap, and the
-                // feed rounds down on apply.
+                // The feed: the chip is held per tooth at the chart RPM,
+                // and the feed rounds down on apply.
                 let feed = s.operation.feed_rate().expect("S11: the fixture sets it");
-                let held = RPM_CAP * chip * f64::from(v.flutes);
+                let held = chart_rpm * chip * f64::from(v.flutes);
                 assert!(
                     feed <= held + 1e-9 && feed >= held.floor() - 1.0,
-                    "{cell}: feed {feed} is not 14 000 x {chip} x {} = {held}",
+                    "{cell}: feed {feed} is not {chart_rpm} x {chip} x {} = {held}",
                     v.flutes
                 );
                 assert!(
-                    feed < printed_feed,
-                    "{cell}: feed {feed} must sit under the printed Ramp Down {printed_feed}"
+                    (feed / printed_feed - 1.0).abs() < CHIP_TOL,
+                    "{cell}: feed {feed} must be the printed Ramp Down {printed_feed} within 1 %"
                 );
                 assert!(
                     (s.operation.plunge_rate().expect("S11: the fixture sets it") - feed).abs()
@@ -460,7 +459,8 @@ fn a_plunge_in_plastic_or_aluminium_refuses_g6() {
 }
 
 /// (f) The MDF 3.175 mm 2-flute cell reads Within on the plunge-feed gate:
-/// 1778 / 3.175 = 560 mm/min per mm, under the 720 sheet-goods ceiling.
+/// 0.0635 x 18 000 x 2 = 2286 mm/min, 2286 / 3.175 = 720 mm/min per mm,
+/// under the sheet-goods ceiling 90 x 25.4 / 3.0 = 762 (P20a).
 #[test]
 fn the_mdf_eighth_inch_cell_is_within_the_plunge_envelope_g6() {
     let material = mdf();
@@ -477,10 +477,15 @@ fn the_mdf_eighth_inch_cell_is_within_the_plunge_envelope_g6() {
                 (observed - feed / 3.175).abs() < 1e-9,
                 "observed {observed}"
             );
-            assert_eq!(envelope_hi, Some(720.0));
+            let ceiling = 90.0 * 25.4 / 3.0;
+            assert_eq!(envelope_hi, Some(ceiling));
+            let chart_rpm = MachineProfile::generic_wood_router().clamp_rpm(18_000.0);
+            // The printed side chip .0050 in over Z = 2.
+            let held = chart_rpm * (0.0050 * 25.4 / 2.0) * 2.0;
             assert!(
-                observed < 720.0 && observed > 555.0,
-                "about 560 per mm: {observed}"
+                observed < ceiling && observed > (held.floor() - 1.0) / 3.175,
+                "about {} per mm: {observed}",
+                held / 3.175
             );
         }
         other @ DrillGateOutcome::Exceeds { .. } => {

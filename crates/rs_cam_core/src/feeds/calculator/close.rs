@@ -6,7 +6,7 @@ use crate::feeds::geometry::UnliftedFeed;
 use crate::feeds::sourced::{self, Basis, PointBases};
 use crate::feeds::{
     ChiploadSource, FeedsDerates, FeedsResult, FeedsWarning, FormulaBreakdown, OperationFamily,
-    RampBasis, drill_rpm_envelope_for_diameter, engagement, plunge, ramp, worst_case_power,
+    RampBasis, engagement, plunge, ramp, worst_case_power,
 };
 use crate::material::FormulaConstant;
 
@@ -209,8 +209,8 @@ pub(super) fn step9c_drill(s: &mut CalcState, entry: &mut Entry) {
     //    alias `set_feed_rate` / `set_plunge_rate` onto one field
     //    ("feed IS plunge"), and `apply_feeds_subset` writes feed then
     //    plunge — pre-fix, the milling plunge baseline from Step 8
-    //    clobbered the drill-tuned feed (the RPM band and the chipload
-    //    of Steps 1-2), landing every suggested drill at the milling
+    //    clobbered the drill-tuned feed (the RPM and the chipload of
+    //    Steps 1-2), landing every suggested drill at the milling
     //    plunge value instead. Making the result self-consistent here
     //    keeps any write order safe.
     if input.operation == OperationFamily::Drill {
@@ -227,24 +227,25 @@ pub(super) fn step9c_drill(s: &mut CalcState, entry: &mut Entry) {
                 envelope_lo: env_lo,
                 envelope_hi: env_hi,
             });
-            // When the ceiling binds (feed reduced), RPM follows down —
-            // bounded by the drill band floor — so the commanded
-            // chipload holds instead of thinning toward rubbing. A
-            // feed-capped drill that keeps spinning fast takes thinner
-            // and thinner bites per rev; drilling chip evacuation
-            // prefers fewer revolutions anyway (same sources as
-            // `drill_rpm_envelope_for_diameter`). Since ruling B5 no
-            // claimed G6 cell reaches this ceiling (296-560 mm/min per mm
-            // at 14 kRPM against 580 / 720); a formula preview of a small
-            // drill can (`feeds::tests`).
+            // When the ceiling binds (feed reduced), the RPM follows down
+            // so that the commanded chipload holds and does not thin
+            // toward rubbing. A feed-capped drill that keeps a high RPM
+            // takes a thinner bite per revolution. The machine minimum
+            // RPM (`machine.clamp_rpm`) is the only lower bound: P20a
+            // (2026-11-08) removed the drill RPM tier, which had no
+            // source. The ceilings are the largest printed Ramp Down per
+            // mm in the G6 rule range (the Amana Spektra 3 mm row), so a
+            // claimed G6 cell at the chart chip and RPM is at or just
+            // under the ceiling at 3 mm and below it at a larger
+            // diameter. A higher RPM (`SpindleStrategy::MaxSpeed`), a
+            // hardness transfer that lifts the chip, or a formula preview
+            // can bind it.
             let flutes = input.flute_count as f64;
             let rpm = s.speed.rpm;
             if clamped < requested && rpm > 0.0 && flutes > 0.0 {
                 let kept_fpt = requested / (rpm * flutes);
                 if kept_fpt > 0.0 {
-                    let (band_floor, _) = drill_rpm_envelope_for_diameter(d);
-                    let target_rpm =
-                        machine.clamp_rpm((clamped / (kept_fpt * flutes)).max(band_floor));
+                    let target_rpm = machine.clamp_rpm(clamped / (kept_fpt * flutes));
                     if target_rpm < rpm {
                         s.speed.spindle_scale *= target_rpm / rpm;
                         s.speed.rpm = target_rpm;

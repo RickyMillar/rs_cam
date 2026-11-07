@@ -49,7 +49,7 @@ The support arm is one axis: `Refused` (Suggest returned an error), `VendorBacke
 | Refuse | 0 | 0 | 0 | 0 | 0 | 0 |
 | fires-a-diagnostic | 136 | 92 | 108 | 44 | 144 | 524 |
 | has a FeedsWarning | 136 | 92 | 108 | 44 | 144 | 524 |
-| has a SuggestWarning | 136 | 92 | 108 | 44 | 144 | 524 |
+| has a SuggestWarning | 120 | 92 | 108 | 44 | 144 | 508 |
 | total | 200 | 200 | 200 | 200 | 200 | 1000 |
 
 ## Cell classes per operation (all tools, diameters and materials)
@@ -115,14 +115,14 @@ The support arm is one axis: `Refused` (Suggest returned an error), `VendorBacke
 | `PlungeReDerived` | 12 |
 | `RampFeed` | 508 |
 | `RpmLoweredForFeedCeiling` | 237 |
-| `UnsourcedRowsAccepted` | 394 |
+| `UnsourcedRowsAccepted` | 378 |
 
 ## Simulation subset (`matrix_2026-09-23_sim.csv`)
 
 - 2D: Pocket, Profile, Adaptive on a 40 mm square polygon, stock 44 × 44 × 18 below z = 0; end_mill and bull_nose at 6 mm; the four materials.
 - 3D: a dome height field (top z = 0, flat base z = -8, 46 mm footprint) in the same stock; heights pinned to top 0 and bottom -8 on all 3D cells (`bottom_z: Auto` collapses a waterline band). Waterline, DropCutter, Adaptive3d with end_mill; Scallop and DropCutter with ball_nose and tapered_ball_nose; 6 mm; softwood and hardwood.
 - Simulation: resolution 1.0, metrics on, auto resolution off, other fields from `SimulationOptions::default()`. That default has `adaptive_feed_modulation: true`, so the post-simulation verdicts read the modulated feed, as the GUI default does.
-- Cells run: 35; errors: 0; left out (a fixed list, `sim_left_out`): 3; wall-clock of the subset: 47.9 s.
+- Cells run: 35; errors: 0; left out (a fixed list, `sim_left_out`): 3; wall-clock of the subset: 44.7 s.
 
 ## Post-simulation diagnostic ids (cells that fire each id)
 

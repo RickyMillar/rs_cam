@@ -427,7 +427,7 @@ severity = "critical"
 id = "flat_3mm_drill_oak"
 category = "normal-use"
 description = "3mm 2F flat used as drill in red oak; tests Drill OperationFamily routing"
-rationale = "Drill family must clamp RPM 8-14k and emit peck cycles. Catches missing-routing where pocket-class params leak into drill ops. Ruling B5 (G6, 2026-09-24) refused this cell until the claim range widened to 3.0-12.7 mm (2026-09-25); it now ships from the printed chart."
+rationale = "Drill family must emit peck cycles (P20a, 2026-11-08, removed the 8-14k drill RPM clamp). Catches missing-routing where pocket-class params leak into drill ops. Ruling B5 (G6, 2026-09-24) refused this cell until the claim range widened to 3.0-12.7 mm (2026-09-25); it now ships from the printed chart."
 profile_tag = "either"
 
 [cell.inputs]
@@ -444,11 +444,15 @@ machine_class = "shapeoko_xxl"
 drill_depth_mm = 15.0
 
 [cell.expected.rpm]
-min = 8000
-max = 14000
+# P20a (2026-11-08): the band was the removed drill RPM tier (8-14k). The
+# chart prints 18,000 RPM (`amana_spektra_plunge_v24`); the shim runs
+# SpindleStrategy::MaxSpeed, which can lift it up to the machine
+# `max_rpm` (24,000). The band is 18,000 to 24,000.
+min = 18000
+max = 24000
 mode = "band"
 unit = "rpm"
-sources = ["onsrud_drill", "vectric_drill_default", "amana_spektra"]
+sources = ["amana_spektra_plunge_v24"]
 
 # PRINTED CHART VALUE, re-banded under ruling B5 (G6 drill) when the claim
 # range widened to 3.0-12.7 mm (the G6 Spektra load, 2026-09-25), as
@@ -462,8 +466,8 @@ sources = ["onsrud_drill", "vectric_drill_default", "amana_spektra"]
 #     the side row x 1/Z);
 #   - the white-oak transfer (1450 / 1360)^0.5, x1.0326.
 # The band spans both printed figures, +/-2 % (the repo tolerance for the
-# chart's in/min rounding, as flat_6mm_drill_oak). The engine drill RPM
-# cap replaces the chart's 18,000 RPM; the chip per tooth is held.
+# chart's in/min rounding, as flat_6mm_drill_oak). The chip per tooth is
+# held at any RPM (P20a removed the drill RPM cap).
 [cell.expected.feed_per_tooth]
 min = 0.0514
 max = 0.0539
@@ -492,7 +496,10 @@ sources = ["onsrud_drill", "vectric_drill_default", "shapeoko_wiki"]
 # Citation corrected 2026-08-04 (W6 audit §6.4, item R-15): this floor used
 # to cite `onsrud_drill`, whose only published wood-drill RPM is 4,500 — the
 # invariant would fail its own cited source, at critical. The floor is
-# REPO-AUTHORED hobby-router spindle practice. Value held.
+# REPO-AUTHORED hobby-router spindle practice. Value held. P20a
+# (2026-11-08) removed the drill RPM tier; 8000 is also the shim machine's
+# `min_rpm` (`MachineProfile::generic_wood_router`), the only lower bound
+# of a drill RPM now.
 name = "drill_rpm_floor"
 expr = "rpm"
 floor = 8000
@@ -501,11 +508,16 @@ sources = ["amana_spektra"]
 severity_on_fail = "critical"
 
 [[cell.invariants]]
-name = "drill_rpm_ceiling"
+# P20a (2026-11-08) removed the drill RPM tier (8-14k at D <= 6 mm): no
+# source printed it, and the chart that the G6 claim reads prints 18,000
+# RPM for the same tool. The drill RPM is the vendor RPM in the machine
+# spindle range. The ceiling is the shim machine's `max_rpm` (24,000,
+# `MachineProfile::generic_wood_router`).
+name = "drill_rpm_machine_ceiling"
 expr = "rpm"
-ceiling = 14000
+ceiling = 24000
 unit = "rpm"
-sources = ["onsrud_drill", "vectric_drill_default"]
+sources = ["amana_spektra_plunge_v24"]
 severity_on_fail = "critical"
 
 [[cell.invariants]]
@@ -533,11 +545,6 @@ sources = ["amana_spektra"]
 severity_on_fail = "major"
 
 [[cell.anti_patterns]]
-name = "drill_uses_peripheral_rpm"
-expr = "rpm > 14500"
-severity = "critical"
-
-[[cell.anti_patterns]]
 # REPO-AUTHORED ceiling, marked 2026-08-04 (W6 audit §6.3 / ledger W6-N5,
 # item R-14). No primary source states a per-peck depth-to-diameter limit
 # for wood; the '3-8xD' figure formerly cited is a TOTAL-HOLE regime
@@ -552,18 +559,20 @@ severity = "major"
 # drill feed/plunge setter clobber (suggested ~2400 -> stored ~595)
 # or of the Step 9c envelope clamp fails here at critical.
 # Ruling B5 (G6, 2026-09-24): the ceiling moved from 400 (repo-authored)
-# to 580, the engine's solid-wood plunge ceiling. The Amana Spektra
-# Spiral Plunge chart v24 prints a 2-flute 1/8 in "Ramp Down" of 72.5
-# in/min (Wood/Plywood column) = 1841.5 mm/min; 1841.5 / 3.175 = 580
-# mm/min per mm. This is the largest printed figure per mm. The figure
-# per mm falls with the diameter (90 in/min at 6 mm = 381 per mm), so at
-# 6 mm the ceiling is about 1.5x the printed figure. Every drill cell in
-# this file is solid wood, so none reads the sheet-good ceiling (720).
+# to 580, the engine's solid-wood plunge ceiling. P20a (2026-11-08)
+# re-derived it at the 3 mm row: the Amana Spektra Spiral Plunge chart
+# v24 prints a 2-flute 3 mm "Ramp Down" of 72.5 in/min (Wood/Plywood
+# column) = 1841.5 mm/min; 1841.5 / 3.0 = 613.8333 mm/min per mm. This is
+# the largest printed figure per mm in the G6 rule range (3.0-12.7 mm);
+# B5 read the 1/8 in row (580) and missed the 3 mm row. The figure per mm
+# falls with the diameter (90 in/min at 6 mm = 381 per mm), so at 6 mm
+# the ceiling is about 1.6x the printed figure. Every drill cell in this
+# file is solid wood, so none reads the sheet-good ceiling (762).
 # The floor 50 is repo-authored; no source prints it.
 name = "drill_final_feed_in_plunge_envelope"
 expr = "feed_rate / D"
 floor = 50
-ceiling = 580
+ceiling = 613.8333333333334
 unit = "mm/min per mm dia"
 sources = ["amana_spektra_plunge_v24", "onsrud_drill", "vectric_drill_default"]
 severity_on_fail = "critical"
@@ -1691,7 +1700,7 @@ severity = "major"
 id = "flat_6mm_drill_oak"
 category = "normal-use"
 description = "6mm 2F flat used as drill in red oak; Drill OperationFamily routing at 2xD diameter scale"
-rationale = "Companion to flat_3mm_drill_oak — verifies Drill family RPM clamp (8-14k) and peck cycle behaviour scale correctly for a larger diameter."
+rationale = "Companion to flat_3mm_drill_oak — verifies Drill family peck cycle behaviour scales correctly for a larger diameter (P20a, 2026-11-08, removed the 8-14k drill RPM clamp)."
 profile_tag = "either"
 
 [cell.inputs]
@@ -1710,11 +1719,15 @@ machine_class = "shapeoko_xxl"
 drill_depth_mm = 20.0
 
 [cell.expected.rpm]
-min = 8000
-max = 14000
+# P20a (2026-11-08): the band was the removed drill RPM tier (8-14k). The
+# chart prints 18,000 RPM (`amana_spektra_plunge_v24`); the shim runs
+# SpindleStrategy::MaxSpeed, which can lift it up to the machine
+# `max_rpm` (24,000). The band is 18,000 to 24,000.
+min = 18000
+max = 24000
 mode = "band"
 unit = "rpm"
-sources = ["onsrud_drill", "vectric_drill_default", "amana_spektra"]
+sources = ["amana_spektra_plunge_v24"]
 
 # PRINTED CHART VALUE, re-banded under ruling B5 (G6 drill, 2026-09-24,
 # decision 7). The band is the printed chart value, not the LUT and not
@@ -1733,9 +1746,9 @@ sources = ["onsrud_drill", "vectric_drill_default", "amana_spektra"]
 #     (GenericHardwood), and `white_oak` is Janka 1360. The law is
 #     (1450 / 1360)^0.5 = x1.0326 (below the flat-end cap 1.43), so
 #     0.0635 x 1.0326 = 0.0656 mm/tooth.
-# The engine drill RPM cap (14,000, a repo rule) replaces the chart's
-# 18,000 RPM. The chip per tooth is held, so the band does not move with
-# the RPM. The feed is 14,000 x 2 x 0.0656 = 1836 mm/min.
+# Until P20a (2026-11-08) the engine drill RPM cap (14,000, a repo rule)
+# replaced the chart's 18,000 RPM; P20a removed it. The chip per tooth is
+# held, so the band does not move with the RPM.
 # The band width (+/-2 %, 0.0643-0.0669) is a repo tolerance for the
 # chart's in/min rounding (the 6 mm MDF cell reads 0.0762 against the
 # derived 0.0758). The width is not printed.
@@ -1767,7 +1780,10 @@ sources = ["onsrud_drill", "vectric_drill_default", "shapeoko_wiki"]
 # Citation corrected 2026-08-04 (W6 audit §6.4, item R-15): this floor used
 # to cite `onsrud_drill`, whose only published wood-drill RPM is 4,500 — the
 # invariant would fail its own cited source, at critical. The floor is
-# REPO-AUTHORED hobby-router spindle practice. Value held.
+# REPO-AUTHORED hobby-router spindle practice. Value held. P20a
+# (2026-11-08) removed the drill RPM tier; 8000 is also the shim machine's
+# `min_rpm` (`MachineProfile::generic_wood_router`), the only lower bound
+# of a drill RPM now.
 name = "drill_rpm_floor"
 expr = "rpm"
 floor = 8000
@@ -1776,11 +1792,16 @@ sources = ["amana_spektra"]
 severity_on_fail = "critical"
 
 [[cell.invariants]]
-name = "drill_rpm_ceiling"
+# P20a (2026-11-08) removed the drill RPM tier (8-14k at D <= 6 mm): no
+# source printed it, and the chart that the G6 claim reads prints 18,000
+# RPM for the same tool. The drill RPM is the vendor RPM in the machine
+# spindle range. The ceiling is the shim machine's `max_rpm` (24,000,
+# `MachineProfile::generic_wood_router`).
+name = "drill_rpm_machine_ceiling"
 expr = "rpm"
-ceiling = 14000
+ceiling = 24000
 unit = "rpm"
-sources = ["onsrud_drill", "vectric_drill_default"]
+sources = ["amana_spektra_plunge_v24"]
 severity_on_fail = "critical"
 
 [[cell.invariants]]
@@ -1808,11 +1829,6 @@ sources = ["amana_spektra"]
 severity_on_fail = "major"
 
 [[cell.anti_patterns]]
-name = "drill_uses_peripheral_rpm"
-expr = "rpm > 14500"
-severity = "critical"
-
-[[cell.anti_patterns]]
 # REPO-AUTHORED ceiling, marked 2026-08-04 (W6 audit §6.3 / ledger W6-N5,
 # item R-14). No primary source states a per-peck depth-to-diameter limit
 # for wood; the '3-8xD' figure formerly cited is a TOTAL-HOLE regime
@@ -1830,18 +1846,20 @@ severity = "major"
 # drill feed/plunge setter clobber (suggested ~2400 -> stored ~595)
 # or of the Step 9c envelope clamp fails here at critical.
 # Ruling B5 (G6, 2026-09-24): the ceiling moved from 400 (repo-authored)
-# to 580, the engine's solid-wood plunge ceiling. The Amana Spektra
-# Spiral Plunge chart v24 prints a 2-flute 1/8 in "Ramp Down" of 72.5
-# in/min (Wood/Plywood column) = 1841.5 mm/min; 1841.5 / 3.175 = 580
-# mm/min per mm. This is the largest printed figure per mm. The figure
-# per mm falls with the diameter (90 in/min at 6 mm = 381 per mm), so at
-# 6 mm the ceiling is about 1.5x the printed figure. Every drill cell in
-# this file is solid wood, so none reads the sheet-good ceiling (720).
+# to 580, the engine's solid-wood plunge ceiling. P20a (2026-11-08)
+# re-derived it at the 3 mm row: the Amana Spektra Spiral Plunge chart
+# v24 prints a 2-flute 3 mm "Ramp Down" of 72.5 in/min (Wood/Plywood
+# column) = 1841.5 mm/min; 1841.5 / 3.0 = 613.8333 mm/min per mm. This is
+# the largest printed figure per mm in the G6 rule range (3.0-12.7 mm);
+# B5 read the 1/8 in row (580) and missed the 3 mm row. The figure per mm
+# falls with the diameter (90 in/min at 6 mm = 381 per mm), so at 6 mm
+# the ceiling is about 1.6x the printed figure. Every drill cell in this
+# file is solid wood, so none reads the sheet-good ceiling (762).
 # The floor 50 is repo-authored; no source prints it.
 name = "drill_final_feed_in_plunge_envelope"
 expr = "feed_rate / D"
 floor = 50
-ceiling = 580
+ceiling = 613.8333333333334
 unit = "mm/min per mm dia"
 sources = ["amana_spektra_plunge_v24", "onsrud_drill", "vectric_drill_default"]
 severity_on_fail = "critical"
@@ -2318,11 +2336,15 @@ machine_class = "shapeoko_xxl"
 drill_depth_mm = 18.0
 
 [cell.expected.rpm]
-min = 8000
-max = 14000
+# P20a (2026-11-08): the band was the removed drill RPM tier (8-14k). The
+# chart prints 18,000 RPM (`amana_spektra_plunge_v24`); the shim runs
+# SpindleStrategy::MaxSpeed, which can lift it up to the machine
+# `max_rpm` (24,000). The band is 18,000 to 24,000.
+min = 18000
+max = 24000
 mode = "band"
 unit = "rpm"
-sources = ["onsrud_drill", "vectric_drill_default", "amana_spektra"]
+sources = ["amana_spektra_plunge_v24"]
 
 # PRINTED CHART VALUE, re-banded under ruling B5 (G6 drill) when the claim
 # range widened to 3.0-12.7 mm (the G6 Spektra load, 2026-09-25), as
@@ -2336,8 +2358,8 @@ sources = ["onsrud_drill", "vectric_drill_default", "amana_spektra"]
 #     the side row x 1/Z);
 #   - no hardness transfer (GenericSoftwood is the row's own Janka 600).
 # The band spans both printed figures, +/-2 % (the repo tolerance for the
-# chart's in/min rounding, as flat_6mm_drill_oak). The engine drill RPM
-# cap replaces the chart's 18,000 RPM; the chip per tooth is held.
+# chart's in/min rounding, as flat_6mm_drill_oak). The chip per tooth is
+# held at any RPM (P20a removed the drill RPM cap).
 [cell.expected.feed_per_tooth]
 min = 0.0498
 max = 0.0522
@@ -2366,7 +2388,10 @@ sources = ["onsrud_drill", "vectric_drill_default", "shapeoko_wiki"]
 # Citation corrected 2026-08-04 (W6 audit §6.4, item R-15): this floor used
 # to cite `onsrud_drill`, whose only published wood-drill RPM is 4,500 — the
 # invariant would fail its own cited source, at critical. The floor is
-# REPO-AUTHORED hobby-router spindle practice. Value held.
+# REPO-AUTHORED hobby-router spindle practice. Value held. P20a
+# (2026-11-08) removed the drill RPM tier; 8000 is also the shim machine's
+# `min_rpm` (`MachineProfile::generic_wood_router`), the only lower bound
+# of a drill RPM now.
 name = "drill_rpm_floor"
 expr = "rpm"
 floor = 8000
@@ -2375,11 +2400,16 @@ sources = ["amana_spektra"]
 severity_on_fail = "critical"
 
 [[cell.invariants]]
-name = "drill_rpm_ceiling"
+# P20a (2026-11-08) removed the drill RPM tier (8-14k at D <= 6 mm): no
+# source printed it, and the chart that the G6 claim reads prints 18,000
+# RPM for the same tool. The drill RPM is the vendor RPM in the machine
+# spindle range. The ceiling is the shim machine's `max_rpm` (24,000,
+# `MachineProfile::generic_wood_router`).
+name = "drill_rpm_machine_ceiling"
 expr = "rpm"
-ceiling = 14000
+ceiling = 24000
 unit = "rpm"
-sources = ["onsrud_drill", "vectric_drill_default"]
+sources = ["amana_spektra_plunge_v24"]
 severity_on_fail = "critical"
 
 [[cell.invariants]]
@@ -2407,11 +2437,6 @@ sources = ["amana_spektra"]
 severity_on_fail = "major"
 
 [[cell.anti_patterns]]
-name = "drill_uses_peripheral_rpm"
-expr = "rpm > 14500"
-severity = "critical"
-
-[[cell.anti_patterns]]
 # REPO-AUTHORED ceiling, marked 2026-08-04 (W6 audit §6.3 / ledger W6-N5,
 # item R-14). No primary source states a per-peck depth-to-diameter limit
 # for wood; the '3-8xD' figure formerly cited is a TOTAL-HOLE regime
@@ -2435,18 +2460,20 @@ severity = "moderate"
 # drill feed/plunge setter clobber (suggested ~2400 -> stored ~595)
 # or of the Step 9c envelope clamp fails here at critical.
 # Ruling B5 (G6, 2026-09-24): the ceiling moved from 400 (repo-authored)
-# to 580, the engine's solid-wood plunge ceiling. The Amana Spektra
-# Spiral Plunge chart v24 prints a 2-flute 1/8 in "Ramp Down" of 72.5
-# in/min (Wood/Plywood column) = 1841.5 mm/min; 1841.5 / 3.175 = 580
-# mm/min per mm. This is the largest printed figure per mm. The figure
-# per mm falls with the diameter (90 in/min at 6 mm = 381 per mm), so at
-# 6 mm the ceiling is about 1.5x the printed figure. Every drill cell in
-# this file is solid wood, so none reads the sheet-good ceiling (720).
+# to 580, the engine's solid-wood plunge ceiling. P20a (2026-11-08)
+# re-derived it at the 3 mm row: the Amana Spektra Spiral Plunge chart
+# v24 prints a 2-flute 3 mm "Ramp Down" of 72.5 in/min (Wood/Plywood
+# column) = 1841.5 mm/min; 1841.5 / 3.0 = 613.8333 mm/min per mm. This is
+# the largest printed figure per mm in the G6 rule range (3.0-12.7 mm);
+# B5 read the 1/8 in row (580) and missed the 3 mm row. The figure per mm
+# falls with the diameter (90 in/min at 6 mm = 381 per mm), so at 6 mm
+# the ceiling is about 1.6x the printed figure. Every drill cell in this
+# file is solid wood, so none reads the sheet-good ceiling (762).
 # The floor 50 is repo-authored; no source prints it.
 name = "drill_final_feed_in_plunge_envelope"
 expr = "feed_rate / D"
 floor = 50
-ceiling = 580
+ceiling = 613.8333333333334
 unit = "mm/min per mm dia"
 sources = ["amana_spektra_plunge_v24", "onsrud_drill", "vectric_drill_default"]
 severity_on_fail = "critical"
@@ -3460,11 +3487,15 @@ machine_class = "shapeoko_xxl"
 drill_depth_mm = 10.0
 
 [cell.expected.rpm]
-min = 8000
-max = 14000
+# P20a (2026-11-08): the band was the removed drill RPM tier (8-14k). The
+# chart prints 18,000 RPM (`amana_spektra_plunge_v24`); the shim runs
+# SpindleStrategy::MaxSpeed, which can lift it up to the machine
+# `max_rpm` (24,000). The band is 18,000 to 24,000.
+min = 18000
+max = 24000
 mode = "band"
 unit = "rpm"
-sources = ["onsrud_drill", "vectric_drill_default", "amana_spektra"]
+sources = ["amana_spektra_plunge_v24"]
 
 # REFUSED, and so NA (ruling B5, G6 drill, 2026-09-24): 2.0 mm is outside the claim range 3.0-12.7 mm (widened 2026-09-25).
 # The engine refuses the cell with a text that names G6, and the runner
@@ -3501,7 +3532,10 @@ sources = ["onsrud_drill", "vectric_drill_default", "shapeoko_wiki"]
 # Citation corrected 2026-08-04 (W6 audit §6.4, item R-15): this floor used
 # to cite `onsrud_drill`, whose only published wood-drill RPM is 4,500 — the
 # invariant would fail its own cited source, at critical. The floor is
-# REPO-AUTHORED hobby-router spindle practice. Value held.
+# REPO-AUTHORED hobby-router spindle practice. Value held. P20a
+# (2026-11-08) removed the drill RPM tier; 8000 is also the shim machine's
+# `min_rpm` (`MachineProfile::generic_wood_router`), the only lower bound
+# of a drill RPM now.
 name = "drill_rpm_floor"
 expr = "rpm"
 floor = 8000
@@ -3510,11 +3544,16 @@ sources = ["amana_spektra"]
 severity_on_fail = "critical"
 
 [[cell.invariants]]
-name = "drill_rpm_ceiling"
+# P20a (2026-11-08) removed the drill RPM tier (8-14k at D <= 6 mm): no
+# source printed it, and the chart that the G6 claim reads prints 18,000
+# RPM for the same tool. The drill RPM is the vendor RPM in the machine
+# spindle range. The ceiling is the shim machine's `max_rpm` (24,000,
+# `MachineProfile::generic_wood_router`).
+name = "drill_rpm_machine_ceiling"
 expr = "rpm"
-ceiling = 14000
+ceiling = 24000
 unit = "rpm"
-sources = ["onsrud_drill", "vectric_drill_default"]
+sources = ["amana_spektra_plunge_v24"]
 severity_on_fail = "critical"
 
 [[cell.invariants]]
@@ -3542,11 +3581,6 @@ sources = ["amana_spektra"]
 severity_on_fail = "major"
 
 [[cell.anti_patterns]]
-name = "drill_uses_peripheral_rpm"
-expr = "rpm > 14500"
-severity = "critical"
-
-[[cell.anti_patterns]]
 # REPO-AUTHORED ceiling, marked 2026-08-04 (W6 audit §6.3 / ledger W6-N5,
 # item R-14). No primary source states a per-peck depth-to-diameter limit
 # for wood; the '3-8xD' figure formerly cited is a TOTAL-HOLE regime
@@ -3561,18 +3595,20 @@ severity = "critical"
 # drill feed/plunge setter clobber (suggested ~2400 -> stored ~595)
 # or of the Step 9c envelope clamp fails here at critical.
 # Ruling B5 (G6, 2026-09-24): the ceiling moved from 400 (repo-authored)
-# to 580, the engine's solid-wood plunge ceiling. The Amana Spektra
-# Spiral Plunge chart v24 prints a 2-flute 1/8 in "Ramp Down" of 72.5
-# in/min (Wood/Plywood column) = 1841.5 mm/min; 1841.5 / 3.175 = 580
-# mm/min per mm. This is the largest printed figure per mm. The figure
-# per mm falls with the diameter (90 in/min at 6 mm = 381 per mm), so at
-# 6 mm the ceiling is about 1.5x the printed figure. Every drill cell in
-# this file is solid wood, so none reads the sheet-good ceiling (720).
+# to 580, the engine's solid-wood plunge ceiling. P20a (2026-11-08)
+# re-derived it at the 3 mm row: the Amana Spektra Spiral Plunge chart
+# v24 prints a 2-flute 3 mm "Ramp Down" of 72.5 in/min (Wood/Plywood
+# column) = 1841.5 mm/min; 1841.5 / 3.0 = 613.8333 mm/min per mm. This is
+# the largest printed figure per mm in the G6 rule range (3.0-12.7 mm);
+# B5 read the 1/8 in row (580) and missed the 3 mm row. The figure per mm
+# falls with the diameter (90 in/min at 6 mm = 381 per mm), so at 6 mm
+# the ceiling is about 1.6x the printed figure. Every drill cell in this
+# file is solid wood, so none reads the sheet-good ceiling (762).
 # The floor 50 is repo-authored; no source prints it.
 name = "drill_final_feed_in_plunge_envelope"
 expr = "feed_rate / D"
 floor = 50
-ceiling = 580
+ceiling = 613.8333333333334
 unit = "mm/min per mm dia"
 sources = ["amana_spektra_plunge_v24", "onsrud_drill", "vectric_drill_default"]
 severity_on_fail = "critical"
@@ -4007,8 +4043,8 @@ sources = ["onsrud_drill", "vectric_drill_default"]
 #     the side row x 1/Z);
 #   - the white-oak transfer (1450 / 1360)^0.5, x1.0326.
 # The band spans both printed figures, +/-2 % (the repo tolerance for the
-# chart's in/min rounding, as flat_6mm_drill_oak). The engine drill RPM
-# cap replaces the chart's 18,000 RPM; the chip per tooth is held.
+# chart's in/min rounding, as flat_6mm_drill_oak). The chip per tooth is
+# held at any RPM (P20a removed the drill RPM cap).
 [cell.expected.feed_per_tooth]
 min = 0.0714
 max = 0.0762
@@ -4034,11 +4070,15 @@ mode = "fraction"
 sources = ["onsrud_drill", "vectric_drill_default", "shapeoko_wiki"]
 
 [[cell.invariants]]
-name = "drill_rpm_ceiling_large_d"
+# P20a (2026-11-08) removed the drill RPM tier (4-8k above 10 mm): no
+# source printed it, and the Amana Spektra chart prints 18,000 RPM for its
+# 12 mm row. The ceiling is the shim machine's `max_rpm` (24,000,
+# `MachineProfile::generic_wood_router`).
+name = "drill_rpm_machine_ceiling_large_d"
 expr = "rpm"
-ceiling = 8000
+ceiling = 24000
 unit = "rpm"
-sources = ["onsrud_drill", "vectric_drill_default"]
+sources = ["amana_spektra_plunge_v24"]
 severity_on_fail = "critical"
 
 [[cell.invariants]]
@@ -4074,16 +4114,6 @@ sources = ["onsrud_drill"]
 severity_on_fail = "major"
 
 [[cell.anti_patterns]]
-name = "drill_uses_peripheral_rpm"
-expr = "rpm > 14500"
-severity = "critical"
-
-[[cell.anti_patterns]]
-name = "drill_rpm_unscaled_by_diameter"
-expr = "rpm > 10000"
-severity = "major"
-
-[[cell.anti_patterns]]
 # REPO-AUTHORED ceiling, marked 2026-08-04 (W6 audit §6.3 / ledger W6-N5,
 # item R-14). No primary source states a per-peck depth-to-diameter limit
 # for wood; the '3-8xD' figure formerly cited is a TOTAL-HOLE regime
@@ -4098,18 +4128,20 @@ severity = "major"
 # drill feed/plunge setter clobber (suggested ~2400 -> stored ~595)
 # or of the Step 9c envelope clamp fails here at critical.
 # Ruling B5 (G6, 2026-09-24): the ceiling moved from 400 (repo-authored)
-# to 580, the engine's solid-wood plunge ceiling. The Amana Spektra
-# Spiral Plunge chart v24 prints a 2-flute 1/8 in "Ramp Down" of 72.5
-# in/min (Wood/Plywood column) = 1841.5 mm/min; 1841.5 / 3.175 = 580
-# mm/min per mm. This is the largest printed figure per mm. The figure
-# per mm falls with the diameter (90 in/min at 6 mm = 381 per mm), so at
-# 6 mm the ceiling is about 1.5x the printed figure. Every drill cell in
-# this file is solid wood, so none reads the sheet-good ceiling (720).
+# to 580, the engine's solid-wood plunge ceiling. P20a (2026-11-08)
+# re-derived it at the 3 mm row: the Amana Spektra Spiral Plunge chart
+# v24 prints a 2-flute 3 mm "Ramp Down" of 72.5 in/min (Wood/Plywood
+# column) = 1841.5 mm/min; 1841.5 / 3.0 = 613.8333 mm/min per mm. This is
+# the largest printed figure per mm in the G6 rule range (3.0-12.7 mm);
+# B5 read the 1/8 in row (580) and missed the 3 mm row. The figure per mm
+# falls with the diameter (90 in/min at 6 mm = 381 per mm), so at 6 mm
+# the ceiling is about 1.6x the printed figure. Every drill cell in this
+# file is solid wood, so none reads the sheet-good ceiling (762).
 # The floor 50 is repo-authored; no source prints it.
 name = "drill_final_feed_in_plunge_envelope"
 expr = "feed_rate / D"
 floor = 50
-ceiling = 580
+ceiling = 613.8333333333334
 unit = "mm/min per mm dia"
 sources = ["amana_spektra_plunge_v24", "onsrud_drill", "vectric_drill_default"]
 # Operator ruling 2026-09-25: "major", not "critical", on this cell. The
@@ -4844,9 +4876,9 @@ sources = ["onsrud_drill", "vectric_drill_default", "amana_spektra"]
 #     (GenericHardwood), and `white_oak` is Janka 1360. The law is
 #     (1450 / 1360)^0.5 = x1.0326 (below the flat-end cap 1.43), so
 #     0.0635 x 1.0326 = 0.0656 mm/tooth.
-# The engine drill RPM cap (14,000, a repo rule) replaces the chart's
-# 18,000 RPM. The chip per tooth is held, so the band does not move with
-# the RPM. The feed is 14,000 x 2 x 0.0656 = 1836 mm/min.
+# Until P20a (2026-11-08) the engine drill RPM cap (14,000, a repo rule)
+# replaced the chart's 18,000 RPM; P20a removed it. The chip per tooth is
+# held, so the band does not move with the RPM.
 # The band width (+/-2 %, 0.0643-0.0669) is a repo tolerance for the
 # chart's in/min rounding (the 6 mm MDF cell reads 0.0762 against the
 # derived 0.0758). The width is not printed.
@@ -4934,18 +4966,20 @@ expected_warning_pattern = "endmill|center.?cut|drill|peck|plunge"
 # drill feed/plunge setter clobber (suggested ~2400 -> stored ~595)
 # or of the Step 9c envelope clamp fails here at critical.
 # Ruling B5 (G6, 2026-09-24): the ceiling moved from 400 (repo-authored)
-# to 580, the engine's solid-wood plunge ceiling. The Amana Spektra
-# Spiral Plunge chart v24 prints a 2-flute 1/8 in "Ramp Down" of 72.5
-# in/min (Wood/Plywood column) = 1841.5 mm/min; 1841.5 / 3.175 = 580
-# mm/min per mm. This is the largest printed figure per mm. The figure
-# per mm falls with the diameter (90 in/min at 6 mm = 381 per mm), so at
-# 6 mm the ceiling is about 1.5x the printed figure. Every drill cell in
-# this file is solid wood, so none reads the sheet-good ceiling (720).
+# to 580, the engine's solid-wood plunge ceiling. P20a (2026-11-08)
+# re-derived it at the 3 mm row: the Amana Spektra Spiral Plunge chart
+# v24 prints a 2-flute 3 mm "Ramp Down" of 72.5 in/min (Wood/Plywood
+# column) = 1841.5 mm/min; 1841.5 / 3.0 = 613.8333 mm/min per mm. This is
+# the largest printed figure per mm in the G6 rule range (3.0-12.7 mm);
+# B5 read the 1/8 in row (580) and missed the 3 mm row. The figure per mm
+# falls with the diameter (90 in/min at 6 mm = 381 per mm), so at 6 mm
+# the ceiling is about 1.6x the printed figure. Every drill cell in this
+# file is solid wood, so none reads the sheet-good ceiling (762).
 # The floor 50 is repo-authored; no source prints it.
 name = "drill_final_feed_in_plunge_envelope"
 expr = "feed_rate / D"
 floor = 50
-ceiling = 580
+ceiling = 613.8333333333334
 unit = "mm/min per mm dia"
 sources = ["amana_spektra_plunge_v24", "onsrud_drill", "vectric_drill_default"]
 severity_on_fail = "critical"
@@ -5164,18 +5198,20 @@ expected_warning_pattern = "ball|drill|tip|center.?cut|plunge"
 # drill feed/plunge setter clobber (suggested ~2400 -> stored ~595)
 # or of the Step 9c envelope clamp fails here at critical.
 # Ruling B5 (G6, 2026-09-24): the ceiling moved from 400 (repo-authored)
-# to 580, the engine's solid-wood plunge ceiling. The Amana Spektra
-# Spiral Plunge chart v24 prints a 2-flute 1/8 in "Ramp Down" of 72.5
-# in/min (Wood/Plywood column) = 1841.5 mm/min; 1841.5 / 3.175 = 580
-# mm/min per mm. This is the largest printed figure per mm. The figure
-# per mm falls with the diameter (90 in/min at 6 mm = 381 per mm), so at
-# 6 mm the ceiling is about 1.5x the printed figure. Every drill cell in
-# this file is solid wood, so none reads the sheet-good ceiling (720).
+# to 580, the engine's solid-wood plunge ceiling. P20a (2026-11-08)
+# re-derived it at the 3 mm row: the Amana Spektra Spiral Plunge chart
+# v24 prints a 2-flute 3 mm "Ramp Down" of 72.5 in/min (Wood/Plywood
+# column) = 1841.5 mm/min; 1841.5 / 3.0 = 613.8333 mm/min per mm. This is
+# the largest printed figure per mm in the G6 rule range (3.0-12.7 mm);
+# B5 read the 1/8 in row (580) and missed the 3 mm row. The figure per mm
+# falls with the diameter (90 in/min at 6 mm = 381 per mm), so at 6 mm
+# the ceiling is about 1.6x the printed figure. Every drill cell in this
+# file is solid wood, so none reads the sheet-good ceiling (762).
 # The floor 50 is repo-authored; no source prints it.
 name = "drill_final_feed_in_plunge_envelope"
 expr = "feed_rate / D"
 floor = 50
-ceiling = 580
+ceiling = 613.8333333333334
 unit = "mm/min per mm dia"
 sources = ["amana_spektra_plunge_v24", "onsrud_drill", "vectric_drill_default"]
 severity_on_fail = "critical"

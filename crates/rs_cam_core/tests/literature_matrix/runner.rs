@@ -6,6 +6,7 @@
 //! overall verdict reaches `major` or `critical` (per plan §"CI policy").
 
 use super::cell::{AntiPattern, Band, CellsFile, ExpectedBands, Invariant, LiteratureCell};
+use super::expr::evaluate;
 use super::freshness::{
     audit_citation_urls, audit_citations, build_freshness_report, decay_fail_enabled,
     render_citation_audit_text, render_freshness_json, render_freshness_text,
@@ -372,6 +373,8 @@ fn eval_invariants(invariants: &[Invariant], snap: &ShimSnapshot, rows: &mut Vec
                     expr_check(expr, &snap.bindings, inv.floor, inv.ceiling, EDGE_FRACTION);
                 if inv.name == RUBBING_FLOOR_INVARIANT {
                     rubbing_floor_rule(detail, snap)
+                } else if inv.name == PLUNGE_ENVELOPE_INVARIANT {
+                    plunge_envelope_rule(detail, expr, inv.ceiling, snap)
                 } else {
                     detail
                 }
@@ -424,6 +427,49 @@ fn known_gap_rule(detail: SubVerdictDetail, gap: &str) -> SubVerdictDetail {
             detail.reason
         )),
         SubVerdict::NA => detail,
+    }
+}
+
+/// The invariant that holds the final drill feed per mm of diameter in the
+/// material plunge-feed envelope (`feed_rate / D`).
+const PLUNGE_ENVELOPE_INVARIANT: &str = "drill_final_feed_in_plunge_envelope";
+
+/// The apply writes a feed as a whole number of mm/min: it floors the
+/// value (`floor` in the Suggest write funnel). A feed that the engine
+/// clamps to the envelope ceiling therefore ships as
+/// `floor(ceiling x D)`, which is up to 1 mm/min below `ceiling x D`. Per
+/// mm of diameter that is up to `1 / D` below the ceiling.
+const APPLY_FEED_FLOOR_MM_MIN: f64 = 1.0;
+
+/// The plunge-envelope invariant counts a value as at the clamp when it is
+/// at most `APPLY_FEED_FLOOR_MM_MIN / D` below the ceiling (the apply's
+/// whole-mm/min floor of a clamped feed). `band_check` already counts a
+/// value within `CLAMP_EPSILON` as at the clamp. Only an `Edge` verdict
+/// changes; `Outside` and `Within` pass through.
+fn plunge_envelope_rule(
+    detail: SubVerdictDetail,
+    expr: &str,
+    ceiling: Option<f64>,
+    snap: &ShimSnapshot,
+) -> SubVerdictDetail {
+    if detail.verdict != SubVerdict::Edge {
+        return detail;
+    }
+    let (Some(hi), Some(&d), Ok(value)) = (
+        ceiling,
+        snap.bindings.get("D"),
+        evaluate(expr, &snap.bindings),
+    ) else {
+        return detail;
+    };
+    if d > 0.0 && value <= hi && hi - value <= APPLY_FEED_FLOOR_MM_MIN / d {
+        SubVerdictDetail::within(format!(
+            "{value:.4} ≤ {hi:.4} (at clamp: the apply floors the clamped feed to a whole \
+             mm/min, at most {:.4} per mm below the ceiling)",
+            APPLY_FEED_FLOOR_MM_MIN / d
+        ))
+    } else {
+        detail
     }
 }
 

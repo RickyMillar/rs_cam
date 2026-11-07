@@ -107,8 +107,8 @@ fn sourced_detail(drill: &DrillClaim, size: Option<&Claim>) -> String {
     let (claim, _) = drill.card_text();
     let size = size.map_or_else(String::new, |c| format!("; {}", c.card_text().0));
     format!(
-        "{claim}; row {} ({}); {}; the ramp reads the chip at the shipped RPM, not at the \
-         drill RPM cap{size}; {RAMP_RULE_TEXT}",
+        "{claim}; row {} ({}); {}; the ramp reads the chip at the shipped RPM{size}; \
+         {RAMP_RULE_TEXT}",
         drill.side_row, drill.source_id, drill.rule
     )
 }

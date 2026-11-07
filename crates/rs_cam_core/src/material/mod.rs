@@ -638,20 +638,27 @@ pub const JANKA_CALIBRATED_BAND_LOW_LBF: f64 = 200.0;
 pub const JANKA_CALIBRATED_BAND_HIGH_LBF: f64 = 4000.0;
 
 /// The drill plunge-feed ceiling in solid wood (mm/min per mm of
-/// diameter; ruling B5). Amana Spektra v24, 1/8 in 2-flute, "Wood/Plywood"
-/// Ramp Down 72.5 in/min: 72.5 × 25.4 / 3.175 = 580. The printed figure
-/// per mm falls with the diameter (381 at 6 mm); see
+/// diameter; ruling B5, re-derived P20a 2026-11-08). It is the largest
+/// printed Ramp Down per mm of diameter inside the G6 rule range
+/// (3.0-12.7 mm). That is the 3 mm row of the Amana Spektra v24 chart
+/// (`data/vendor_lut/sources/amana_spektra_spiral_plunge_v24.txt`),
+/// 2 Flute, "Wood/Plywood" Ramp Down 72.5 in/min:
+/// 72.5 × 25.4 / 3.0 = 613.83. The 1/8 in row prints the same 72.5 in/min
+/// over a larger diameter (580 per mm). The printed figure per mm falls
+/// with the diameter (381 at 6 mm); see
 /// [`Material::drill_plunge_feed_envelope_per_mm`].
-pub const DRILL_PLUNGE_CEILING_WOOD_PER_MM: f64 = 580.0;
+pub const DRILL_PLUNGE_CEILING_WOOD_PER_MM: f64 = 72.5 * 25.4 / 3.0;
 
-/// The drill plunge-feed ceiling in plywood (mm/min per mm; ruling B5).
-/// The same Amana "Wood/Plywood" column as solid wood: 580.
-pub const DRILL_PLUNGE_CEILING_PLYWOOD_PER_MM: f64 = 580.0;
+/// The drill plunge-feed ceiling in plywood (mm/min per mm; ruling B5,
+/// re-derived P20a). The same Amana "Wood/Plywood" column as solid wood:
+/// 72.5 × 25.4 / 3.0 = 613.83.
+pub const DRILL_PLUNGE_CEILING_PLYWOOD_PER_MM: f64 = 72.5 * 25.4 / 3.0;
 
 /// The drill plunge-feed ceiling in sheet goods (MDF, HDF, particleboard;
-/// mm/min per mm; ruling B5). Amana Spektra v24, 1/8 in 2-flute,
-/// "MDF/Laminate" Ramp Down 90 in/min: 90 × 25.4 / 3.175 = 720.
-pub const DRILL_PLUNGE_CEILING_SHEET_PER_MM: f64 = 720.0;
+/// mm/min per mm; ruling B5, re-derived P20a). Amana Spektra v24, 3 mm
+/// row, 2 Flute, "MDF/Laminate" Ramp Down 90 in/min:
+/// 90 × 25.4 / 3.0 = 762.
+pub const DRILL_PLUNGE_CEILING_SHEET_PER_MM: f64 = 90.0 * 25.4 / 3.0;
 
 /// The drill plunge-feed floor in solid wood (mm/min per mm). Repo rule,
 /// unsourced (W6 audit 2026-08-04, item R-10).
@@ -987,27 +994,27 @@ pub const MATERIAL_FORMULA_CONSTANTS: &[FormulaConstant] = &[
     JANKA_SHEET_MDF,
     JANKA_SHEET_HDF,
     JANKA_SHEET_PARTICLEBOARD,
-    // Amana prints the wood ramp-down 72.5 in/min at 1/8 in:
-    // 72.5 × 25.4 / 3.175 = 580.
+    // Amana prints the wood ramp-down 72.5 in/min at 3 mm (P20a):
+    // 72.5 × 25.4 / 3.0 = 613.83.
     FormulaConstant::cited(
         "material.DRILL_PLUNGE_CEILING_WOOD_PER_MM",
         DRILL_PLUNGE_CEILING_WOOD_PER_MM,
         AMANA_SPEKTRA_V24,
-        "46127-K          46227-K              1/8\"              145\"     .0040\"     72.5\"",
+        "48116-K          48216-K             3mm                145\"     .0040\"     72.5\"",
     ),
     FormulaConstant::cited(
         "material.DRILL_PLUNGE_CEILING_PLYWOOD_PER_MM",
         DRILL_PLUNGE_CEILING_PLYWOOD_PER_MM,
         AMANA_SPEKTRA_V24,
-        "46127-K          46227-K              1/8\"              145\"     .0040\"     72.5\"",
+        "48116-K          48216-K             3mm                145\"     .0040\"     72.5\"",
     ),
-    // Amana prints the MDF ramp-down 90 in/min at 1/8 in:
-    // 90 × 25.4 / 3.175 = 720.
+    // Amana prints the MDF ramp-down 90 in/min at 3 mm (P20a):
+    // 90 × 25.4 / 3.0 = 762.
     FormulaConstant::cited(
         "material.DRILL_PLUNGE_CEILING_SHEET_PER_MM",
         DRILL_PLUNGE_CEILING_SHEET_PER_MM,
         AMANA_SPEKTRA_V24,
-        "72.5\"     180\"       .0050\"      90\"",
+        "48116-K          48216-K             3mm                145\"     .0040\"     72.5\"     180\"       .0050\"      90\"",
     ),
     FormulaConstant::unsourced(
         "material.DRILL_PLUNGE_FLOOR_WOOD_PER_MM",
@@ -1509,23 +1516,28 @@ impl Material {
     /// min the cutter rubs / burns; above the max it breaks or
     /// stalls. Same dispatch pattern as the chip-welding methods.
     ///
-    /// The wood ceilings (ruling B5, 2026-09-24) are the largest printed
-    /// plunge feeds per mm of diameter: the Amana Spektra Spiral Plunge
-    /// chart v24 "Ramp Down" column (`amana_spektra_spiral_plunge_v24`,
-    /// `planning/extrapolation_2026-09-24/fetch/G6/verified_rows.json`),
-    /// at 1/8 in (3.175 mm), 2 flutes:
+    /// The wood ceilings (ruling B5, 2026-09-24; re-derived P20a,
+    /// 2026-11-08) are the largest printed plunge feeds per mm of diameter
+    /// inside the G6 rule range (3.0-12.7 mm): the Amana Spektra Spiral
+    /// Plunge chart v24 "Ramp Down" column
+    /// (`data/vendor_lut/sources/amana_spektra_spiral_plunge_v24.txt`), at
+    /// the 3 mm row, 2 flutes:
     ///
     /// - solid wood and plywood: the "Wood/Plywood" column prints 72.5
-    ///   in/min = 1841.5 mm/min, so 580 mm/min per mm
+    ///   in/min = 1841.5 mm/min, so 613.83 mm/min per mm
     ///   ([`DRILL_PLUNGE_CEILING_WOOD_PER_MM`], [`DRILL_PLUNGE_CEILING_PLYWOOD_PER_MM`]);
     /// - sheet goods: the "MDF/Laminate" column prints 90 in/min =
-    ///   2286 mm/min, so 720 mm/min per mm
+    ///   2286 mm/min, so 762 mm/min per mm
     ///   ([`DRILL_PLUNGE_CEILING_SHEET_PER_MM`]).
+    ///
+    /// B5 read the 1/8 in (3.175 mm) row (580 and 720 per mm) and missed
+    /// the 3 mm row, which prints the same figures over a smaller
+    /// diameter.
     ///
     /// The printed figure per mm falls with the diameter: at 6 mm the
     /// same chart prints 90 in/min (Wood/Plywood) = 381 per mm and 107.5
     /// in/min (MDF) = 455 per mm. At 6 mm the ceiling is therefore about
-    /// 1.5x the printed figure, and above 6 mm no chart states it (B5
+    /// 1.6x the printed figure (613.83 / 381, 762 / 455), and above 6 mm no chart states it (B5
     /// decision 5: the ceiling is held per material).
     ///
     /// The floors (50 wood, 40 plywood and sheet goods) are repo-authored

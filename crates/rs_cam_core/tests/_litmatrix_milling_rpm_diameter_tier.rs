@@ -19,8 +19,8 @@
 //! the chipload envelope in hardwood is much narrower (Onsrud series
 //! 70/85: 12 mm 2F hardwood = 12-14 krpm; 10 mm = 12-16 krpm).
 //!
-//! The fix mirrors the drill diameter-tier pattern (round-4 commit
-//! 9c4f3b9 / `_litmatrix_drill_rpm_diameter_tier.rs`):
+//! The fix mirrored the drill diameter-tier pattern (round-4 commit
+//! 9c4f3b9; P20a removed the drill tier and its test on 2026-11-08):
 //!   - D ≤ 3 mm:  22 000 RPM ceiling
 //!   - D ≤ 6 mm:  20 000 RPM ceiling
 //!   - D ≤ 8 mm:  18 000 RPM ceiling

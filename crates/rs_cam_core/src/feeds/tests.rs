@@ -491,10 +491,13 @@ fn test_plunge_rate_base_scales_with_diameter() {
 }
 
 /// Fix #3 (2026-06-02 audit): Drill ops are routed through their
-/// own `OperationFamily::Drill` (was `OperationFamily::Pocket`),
-/// and the calculate() path clamps drill RPM into the diameter tier
-/// (8-14k at Ø6) — milling SFM/RPM derivation push small-D drills
-/// past 16k where chipload starves.
+/// own `OperationFamily::Drill` (was `OperationFamily::Pocket`).
+///
+/// P20a (2026-11-08) removed the drill RPM tier (8-14k at Ø6), which had
+/// no source. A drill with no vendor row takes the Step 1 RPM: the
+/// surface speed at the diameter, clamped to the machine range. At Ø6 the
+/// formula feed stays below the drill feed ceiling, so no follow-down
+/// moves it.
 ///
 /// Ruling B5 (2026-09-24) deleted the drill multiplier (2.5). The old
 /// "0.05 mm/rev softwood drill floor" was a band fitted to formula x
@@ -502,7 +505,7 @@ fn test_plunge_rate_base_scales_with_diameter() {
 /// the preview chip IS the milling formula with no multiplier. With no
 /// LUT the cell refuses (no G6 claim), and the number is a preview.
 #[test]
-fn test_drill_family_rpm_in_drill_band() {
+fn test_drill_family_rpm_is_the_surface_speed_rpm() {
     let material = Material::SolidWood {
         species: WoodSpecies::GenericSoftwood,
     };
@@ -530,10 +533,12 @@ fn test_drill_family_rpm_in_drill_band() {
         tool_facts: crate::feeds::sourced::ToolFactKinds::STATED,
     });
 
-    // RPM must sit inside the drill band, not the milling SFM result.
+    // The RPM is the Step 1 surface-speed RPM in the machine range.
+    let speed = material.base_cutting_speed_constant().value;
+    let step1 = machine.clamp_rpm(speed * 1000.0 / (std::f64::consts::PI * 6.0));
     assert!(
-        (8_000.0..=14_000.0).contains(&result.rpm),
-        "drill RPM {} must clamp to 8k-14k drill band",
+        (result.rpm - step1).abs() < 1e-9,
+        "drill RPM {} must be the surface-speed RPM {step1}",
         result.rpm
     );
 
@@ -605,8 +610,8 @@ fn test_drill_feed_within_envelope_and_plunge_aliased() {
 }
 
 /// F1: when the envelope ceiling binds, RPM follows the feed down
-/// (bounded by the drill band floor) so the result keeps its chipload
-/// instead of thinning toward rubbing.
+/// (bounded only by the machine minimum since P20a) so the result keeps
+/// its chipload instead of thinning toward rubbing.
 ///
 /// Rebaselined for ruling B5 (2026-09-24). The old fixture (Ø3 oak,
 /// "~0.107 mm/tooth") rested on formula x 2.5; without the multiplier
@@ -614,12 +619,15 @@ fn test_drill_feed_within_envelope_and_plunge_aliased() {
 /// new fixture is a Ø2 3-flute formula preview in GenericSoftwood (no
 /// LUT, so the cell refuses and the number is a preview):
 ///
-/// - RPM: 200 000 / (π × 2) = 31 831 → machine 24 000 → drill cap 14 000;
+/// P20a (2026-11-08) removed the drill RPM cap and re-derived the
+/// ceiling (72.5 in/min x 25.4 / 3.0 = 613.83 per mm):
+///
+/// - RPM: 200 000 / (π × 2) = 31 831 → machine 24 000;
 /// - chip: k0 × 2^p = 0.024 × 2^0.61 = 0.03663 mm/tooth;
-/// - feed: 14 000 × 0.03663 × 3 = 1 538.5 mm/min, over the ceiling
-///   580 × 2 = 1 160;
-/// - follow-down: 1 160 / (0.03663 × 3) = 10 556 RPM, above the 8 000
-///   floor, so the chip holds at 0.03663.
+/// - feed: 24 000 × 0.03663 × 3 = 2 637 mm/min, over the ceiling
+///   613.83 × 2 = 1 227.7;
+/// - follow-down: 1 227.7 / (0.03663 × 3) = 11 172 RPM, above the machine
+///   minimum, so the chip holds at 0.03663.
 #[test]
 fn test_drill_envelope_ceiling_drops_rpm_to_hold_chipload() {
     let material = Material::SolidWood {
@@ -662,18 +670,26 @@ fn test_drill_envelope_ceiling_drops_rpm_to_hold_chipload() {
         hi * 2.0,
         result.feed_rate_mm_min
     );
+    let speed = material.base_cutting_speed_constant().value;
+    let step1 = machine.clamp_rpm(speed * 1000.0 / (std::f64::consts::PI * 2.0));
     assert!(
-        result.rpm < 14_000.0,
-        "RPM must follow the capped feed down, got {}",
+        result.rpm < step1,
+        "RPM must follow the capped feed down from {step1}, got {}",
         result.rpm
     );
+    let (machine_min, _) = machine.rpm_range();
     assert!(
-        result.rpm >= 8_000.0,
-        "follow-down bounded by the drill band floor, got {}",
+        result.rpm >= machine_min,
+        "follow-down bounded by the machine minimum {machine_min}, got {}",
         result.rpm
     );
     let cl = &machine.chip_load;
     let formula = cl.k0 * 2.0_f64.powf(cl.p);
+    assert!(
+        (result.rpm - hi * 2.0 / (formula * 3.0)).abs() < 1e-6,
+        "the follow-down RPM is the ceiling over (chip x Z), got {}",
+        result.rpm
+    );
     let implied = result.feed_rate_mm_min / (3.0 * result.rpm);
     assert!(
         (implied / formula - 1.0).abs() < 1e-9,
@@ -684,7 +700,7 @@ fn test_drill_envelope_ceiling_drops_rpm_to_hold_chipload() {
 /// F1: the envelope clamp warns when it binds — never a silent
 /// rewrite. The Ø2 3-flute softwood preview of
 /// `test_drill_envelope_ceiling_drops_rpm_to_hold_chipload` drives the
-/// feed (1 538.5) above the envelope max (580 × 2 = 1 160; ruling B5), so
+/// feed (2 637) above the envelope max (613.83 × 2 = 1 227.7; P20a), so
 /// the clamp must fire with the honest before/after. Before B5 the
 /// fixture was Ø3 2-flute, which formula x 2.5 put over 400 × 3; without
 /// the multiplier it sits in band and the warning check was vacuous.
@@ -753,8 +769,8 @@ fn test_drill_feed_clamp_emits_warning_when_binding() {
 }
 
 /// Fix #3 regression guard: a Pocket op on the same tool/material
-/// must NOT see the drill RPM clamp or chipload multiplier —
-/// the fix is selective by family.
+/// takes the surface-speed RPM in the machine range. P20a removed the
+/// drill RPM clamp, so no family-selective clamp is left to guard.
 #[test]
 fn test_pocket_family_unaffected_by_drill_fix() {
     let material = Material::SolidWood {
@@ -784,12 +800,10 @@ fn test_pocket_family_unaffected_by_drill_fix() {
         tool_facts: crate::feeds::sourced::ToolFactKinds::STATED,
     });
 
-    // Pocket RPM is allowed to be >14k (milling SFM band).
-    // Don't assert a specific value — just check the drill clamp
-    // didn't fire.
+    // The pocket RPM is in the machine range.
     assert!(
-        result.rpm > 14_000.0 || result.rpm == machine.clamp_rpm(result.rpm),
-        "pocket RPM {} should not be drill-clamped",
+        result.rpm == machine.clamp_rpm(result.rpm),
+        "pocket RPM {} must be in the machine range",
         result.rpm
     );
 }

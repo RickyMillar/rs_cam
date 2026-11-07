@@ -36,8 +36,7 @@
 //!   feed;
 //! - ramp 3°: tan θ = 0.052408; chip term = 43 619 mm/min; ramp feed = 4572;
 //! - steep check (c): a 60° ramp puts the chip term under the cut feed.
-//!   It reads the shipped RPM; the drill RPM cap (14 000) would give
-//!   0.0635 x 14 000 x 2 / tan 60° = 1026.
+//!   It reads the shipped RPM (P20a removed the drill RPM cap).
 //!
 //! The arms:
 //!
@@ -333,7 +332,7 @@ fn the_three_degree_ramp_ships_the_cut_feed_g6ramp() {
 }
 
 /// (c) A 60° ramp: the chip term is under the cut feed, so it wins. It
-/// reads the RPM that ships, not the drill RPM cap (14 000).
+/// reads the RPM that ships (`expected` derives it from that RPM).
 #[test]
 fn a_steep_ramp_ships_the_chip_term_at_the_shipped_rpm_g6ramp() {
     let dressups = ramp_dressup(60.0);
@@ -355,14 +354,6 @@ fn a_steep_ramp_ships_the_chip_term_at_the_shipped_rpm_g6ramp() {
     assert_eq!(ramp.arm, RampArm::ChipTerm);
     assert_eq!(r.value(), Some(value));
     assert_eq!(s.operation.ramp_feed_rate(), Some(value));
-    let drill_cap = (0.0635 * 14_000.0 * 2.0 / tan60).floor();
-    if s.operation.spindle_rpm() != Some(14_000) {
-        assert_ne!(
-            r.value(),
-            Some(drill_cap),
-            "the chip term reads the shipped RPM, not the drill RPM cap"
-        );
-    }
     assert!(ramp.value_mm_min < s.operation.feed_rate().expect("S11: the fixture sets it"));
 }
 

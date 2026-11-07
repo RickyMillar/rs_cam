@@ -812,7 +812,7 @@ The integrated feeds/material stack also depends on direct material and formula 
 
 Those sources underpin material hardness anchors, sheet-good ordering, and conservative cutting-force assumptions used by the current integrated model.
 
-### Drill-subsystem provenance (corrected 2026-08-04, ruling B5 2026-09-24)
+### Drill-subsystem provenance (corrected 2026-08-04, ruling B5 2026-09-24, P20a 2026-11-08)
 
 The drilling stack — the three drill gates (chip welding, peck adequacy,
 plunge feed), the drill RPM tiers, and the drill chipload multiplier — was
@@ -861,8 +861,10 @@ Declared repo-authored / unsourced (values held, not moved):
   chart at any diameter. The wood ceilings are sourced since ruling B5
   (below).
 - Drill RPM tiers (8–14k / 6–10k / 4–8k by diameter,
-  `drill_rpm_envelope_for_diameter`). A named repo cap: on a G6-claimed
-  plunge it replaces Amana's printed 18,000 RPM (below).
+  `drill_rpm_envelope_for_diameter`). **Removed 2026-11-08 (feeds contract
+  P20a).** No source prints them, and the Amana Spektra chart that the G6
+  claim reads prints 18,000 RPM for the same tool. A G6-claimed plunge now
+  ships the chart RPM, clamped only to the machine spindle range.
 - Peck depth: no vendor prints a per-peck depth (the G6 search found none).
   Suggest writes half the per-peck maximum above.
 
@@ -881,17 +883,21 @@ Ruling B5 (G6 drill, 2026-09-24; `planning/extrapolation_2026-09-24/B5_PLAN.md`)
   per tooth is the side chip / Z. `feeds::extrapolation::drill` reads the
   tool's own side row (`amana_flat_end.json`) and divides by Z, for a 2- or
   3-flute flat end mill at 3.175–6.0 mm, where the 8 verified Ramp Down
-  cells sit (`fetch/G6/verified_rows.json`). The chip is held per tooth; the
-  engine RPM cap (14,000 at D ≤ 6 mm) replaces the chart's 18,000, so the
-  feed is about 0.78x the printed Ramp Down. "Ramp Down" is read as a
+  cells sit (`fetch/G6/verified_rows.json`). The chip is held per tooth.
+  Until P20a (2026-11-08) an engine RPM cap (14,000 at D ≤ 6 mm) replaced
+  the chart's 18,000; P20a removed it, so the chart RPM ships and the feed
+  at the printed chip is the printed Ramp Down. "Ramp Down" is read as a
   straight plunge; Amana does not print the word "plunge". Softwood and
   hardwood read the "Wood/Plywood" column as derived grade b (R5).
 - **The plunge envelope ceilings** are the largest printed Ramp Down per mm
-  Ø (1/8 in, 2 flutes): wood and plywood 72.5 in/min / 3.175 mm = 580, MDF
-  and sheet goods 90 in/min / 3.175 mm = 720 mm/min per mm. The printed
-  figure per mm falls with the diameter (381 Wood/Plywood and 455 MDF at
-  6 mm), so at 6 mm the ceiling is about 1.5x the printed figure, and above
-  6 mm no chart states it.
+  Ø inside the claim range (3.0–12.7 mm): the 3 mm row, 2 flutes
+  (`crates/rs_cam_core/data/vendor_lut/sources/amana_spektra_spiral_plunge_v24.txt`).
+  Wood and plywood 72.5 in/min x 25.4 / 3.0 mm = 613.83, MDF and sheet
+  goods 90 in/min x 25.4 / 3.0 mm = 762 mm/min per mm. B5 read the 1/8 in
+  row (580 and 720) and missed the 3 mm row; P20a (2026-11-08) re-derived
+  them. The printed figure per mm falls with the diameter (381
+  Wood/Plywood and 455 MDF at 6 mm), so at 6 mm the ceiling is about 1.6x
+  the printed figure.
 - **Every other drill cell refuses**, in every material (ball, tapered
   ball, V-bit, bull nose; a flat end mill outside the claim; plastics and
   aluminium). The one printed bull plunge (PreciseBits fret plane) is a feed

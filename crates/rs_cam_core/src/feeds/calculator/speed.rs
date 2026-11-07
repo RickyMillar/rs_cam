@@ -1,12 +1,12 @@
 //! The spindle-speed steps of the calculator: the engaged diameter, Step 1,
-//! the vendor RPM of Step 2, and Steps 2b, 2b' and 2c.
+//! the vendor RPM of Step 2, and Steps 2b and 2b'.
 
 use super::{Chip, Speed};
 use crate::feeds::sourced::{self, Basis};
 use crate::feeds::{
     FALLBACK_RPM, FeedsInput, MAX_SPINDLE_SPEEDUP, MAX_SPINDLE_SPEEDUP_ROW, OperationFamily,
     SPINDLE_CEILING_HEADROOM, SpindleScaleReason, SpindleStrategy, ToolGeometryHint,
-    drill_rpm_tier_rows, milling_rpm_ceiling_for_diameter, milling_rpm_ceiling_row, moved_basis,
+    milling_rpm_ceiling_for_diameter, milling_rpm_ceiling_row, moved_basis,
 };
 
 /// The engaged diameter at the commanded depth, with the basis of the
@@ -95,12 +95,11 @@ fn machine_rpm() -> Basis {
     Basis::Machine(sourced::MachineField::SpindleRpm)
 }
 
-/// Step 1: the RPM from the surface speed at the engaged diameter, the
-/// machine range, and the drill RPM tier.
+/// Step 1: the RPM from the surface speed at the engaged diameter and the
+/// machine range.
 pub(super) fn step1_rpm(input: &FeedsInput, engaged: &EngagedDiameter) -> Speed {
     let machine = input.machine;
     let material = input.material;
-    let d = input.tool_diameter;
     let effective_d = engaged.diameter;
     // --- Step 1: RPM ---
     let (ideal_rpm, sfm_basis) = if effective_d > 0.0 {
@@ -115,8 +114,8 @@ pub(super) fn step1_rpm(input: &FeedsInput, engaged: &EngagedDiameter) -> Speed 
     } else {
         (FALLBACK_RPM.value, Basis::Rule(FALLBACK_RPM))
     };
-    let mut rpm = machine.clamp_rpm(ideal_rpm);
-    let mut rpm_basis = moved_basis(
+    let rpm = machine.clamp_rpm(ideal_rpm);
+    let rpm_basis = moved_basis(
         sfm_basis,
         ideal_rpm,
         rpm,
@@ -124,34 +123,10 @@ pub(super) fn step1_rpm(input: &FeedsInput, engaged: &EngagedDiameter) -> Speed 
         machine_rpm(),
     );
 
-    // Drill ops want a lower RPM band than milling regardless of D:
-    // chip evacuation, not surface speed, is the limiting factor. The
-    // wood-drill band tightens as diameter grows — small drills (≤6 mm)
-    // tolerate 8-14k, mid drills (≤10 mm) cap around 10k, and big
-    // drills (>10 mm) cap around 6-8k. **Citation corrected
-    // 2026-08-04 (W6 audit §6.1/§6.2): these tiers are REPO-AUTHORED.**
-    // The "Onsrud wood-drilling bulletin" cited here was not located;
-    // the retrieved Onsrud drill chart publishes exactly one wood-drill
-    // RPM, the 4,500 gang-drill footnote, and no band. The FPL Wood
-    // Handbook has no drilling chapter (Ch.19 is *Specialty
-    // Treatments*). The tiers remain defensible as hobby-router
-    // spindle practice and are held, not moved. The milling SFM formula above
-    // would push small-D drills past 16k where chipload starves and
-    // the cut rubs/burns. Pre-2026-06-02 drill ops routed through
-    // `Pocket` family and inherited milling RPM (audit finding: "Drill
-    // ops route through OperationFamily::Pocket with no chipload
-    // reconciliation"). Pre-2026-06-03 the clamp was diameter-
-    // independent at 8-14k, letting 12 mm hardwood drills emit 12k RPM
-    // — well above the 3-8k band (literature-matrix cell
-    // flat_12mm_drill_oak_big: ceiling 8000, emitted 12000, +50%).
-    if input.operation == OperationFamily::Drill {
-        let (floor_row, ceil_row) = drill_rpm_tier_rows(d);
-        let before = rpm;
-        rpm = rpm.clamp(floor_row.value, ceil_row.value);
-        rpm = machine.clamp_rpm(rpm);
-        let tier = if before > rpm { ceil_row } else { floor_row };
-        rpm_basis = moved_basis(rpm_basis, before, rpm, "drill RPM tier", Basis::Rule(tier));
-    }
+    // P20a (2026-11-08): no drill RPM tier. The tier had no source, and
+    // the chart that the G6 drill claim reads prints 18 000 RPM for the
+    // same tool. A drill takes the RPM of the vendor row (Step 2), clamped
+    // only to the machine spindle range.
     Speed {
         rpm,
         basis: rpm_basis,
@@ -206,9 +181,6 @@ pub(super) fn step2b_max_speed(input: &FeedsInput, chip: &Chip, speed: &mut Spee
         // pushing a 12 mm hardwood adaptive2d cut to 22.8 k RPM —
         // ~63% above the Onsrud/Amana 14 k literature ceiling
         // (literature-matrix cell flat_12mm_adaptive2d_oak_power).
-        // Drill ops already had a diameter tier from round-4
-        // (`drill_rpm_envelope_for_diameter`, commit 9c4f3b9); this is
-        // the milling-side analogue.
         //
         // The tier ceiling always applies for nominal-D == cutting-D
         // geometries (Flat / Ball / Bull) — vendor `rpm_max` on the
@@ -275,8 +247,10 @@ pub(super) fn step2b_milling_tier(input: &FeedsInput, speed: &mut Speed) {
     // Apply the tier ceiling as a hard cap under MaxSpeed only —
     // MatchChart explicitly opts into the vendor row's nominal RPM and
     // shouldn't be silently re-clamped (the smoke baselines + chart-
-    // fidelity tests depend on that opt-in). The Drill family has its
-    // own dedicated Step 2c clamp below.
+    // fidelity tests depend on that opt-in). This step does not clamp the
+    // Drill family. P20a removed the drill RPM tier (Step 2c), and this
+    // step kept its Drill exclusion, so a drill under MaxSpeed reads only
+    // the Step 2b ceiling.
     if matches!(input.spindle_strategy, SpindleStrategy::MaxSpeed)
         && input.operation != OperationFamily::Drill
         && !matches!(
@@ -304,43 +278,5 @@ pub(super) fn step2b_milling_tier(input: &FeedsInput, speed: &mut Speed) {
                 Basis::Rule(tier_row),
             );
         }
-    }
-}
-
-/// Step 2c: the drill RPM tier again, after the vendor RPM and Step 2b.
-pub(super) fn step2c_drill_tier(input: &FeedsInput, speed: &mut Speed) {
-    // --- Step 2c: Re-apply the Drill RPM clamp ---
-    //
-    // Both the vendor-RPM override (Step 2) and the MaxSpeed speedup
-    // (Step 2b) can lift RPM above the drill ceiling. Chip evacuation
-    // is the binding constraint for drill ops regardless of spindle
-    // headroom or chart RPM — pushing past 14k starves chipload below
-    // the rubbing floor (literature-matrix cell flat_3mm_drill_oak:
-    // MaxSpeed lifted clamped 14000 → 14000 × MAX_SPINDLE_SPEEDUP =
-    // 21000, +50% over the 8-14k wood-drill band).
-    //
-    // We also roll `spindle_scale` back proportionally so the modal
-    // reports the actual speedup the engine kept, not the requested
-    // one it then undid.
-    if input.operation == OperationFamily::Drill {
-        let (floor_row, ceil_row) = drill_rpm_tier_rows(input.tool_diameter);
-        let pre_clamp = speed.rpm;
-        speed.rpm = speed.rpm.clamp(floor_row.value, ceil_row.value);
-        speed.rpm = input.machine.clamp_rpm(speed.rpm);
-        if pre_clamp > 0.0 && speed.rpm < pre_clamp {
-            speed.spindle_scale *= speed.rpm / pre_clamp;
-        }
-        let tier = if pre_clamp > speed.rpm {
-            ceil_row
-        } else {
-            floor_row
-        };
-        speed.basis = moved_basis(
-            speed.basis.clone(),
-            pre_clamp,
-            speed.rpm,
-            "drill RPM tier",
-            Basis::Rule(tier),
-        );
     }
 }

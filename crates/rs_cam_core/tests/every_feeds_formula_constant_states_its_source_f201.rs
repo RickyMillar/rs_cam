@@ -93,7 +93,14 @@ use rs_cam_core::material::{
 /// `feeds.calculate.slotting_threshold_d` (0.85 D) left with the slot depth
 /// cap; every reader of the threshold existed for the cap. The deleted
 /// `slot_doc_factor` was machine data, not a row.
-const PINNED_UNSOURCED_COUNT: usize = 160;
+///
+/// Feeds contract P20a (2026-11-08) lowered it from 160 to 152: the drill
+/// RPM tier left. No source printed it, and the Amana Spektra chart that the
+/// G6 drill claim reads prints 18000 RPM for the same tool. The eight rows
+/// were `feeds.drill_rpm_envelope_for_diameter.{small_max_d_mm,
+/// mid_max_d_mm, small_floor_rpm, small_ceiling_rpm, mid_floor_rpm,
+/// mid_ceiling_rpm, large_floor_rpm, large_ceiling_rpm}`.
+const PINNED_UNSOURCED_COUNT: usize = 152;
 
 fn repo_root() -> PathBuf {
     PathBuf::from(env!("CARGO_MANIFEST_DIR")).join("../..")
@@ -137,7 +144,6 @@ fn every_feeds_formula_constant_states_its_source_f201() {
         "feeds.operation_default_profile.Adaptive.Roughing.ap_factor",
         "feeds.operation_default_profile.Face.Finish.ae_factor",
         "feeds.default_engagement.adaptive.flat_bull_ap",
-        "feeds.drill_rpm_envelope_for_diameter.small_ceiling_rpm",
         "machine.ChipLoadFormula.default.k0",
         // K4 (feeds contract P3, D5): the dressup entry plunge feed rule.
         "dressup.entry_plunge_rate.first_linear_feed_fraction",
@@ -175,17 +181,17 @@ fn every_feeds_formula_constant_states_its_source_f201() {
         }
     }
     // The cited drill ceilings follow from the printed ramp-down figures
-    // (in/min at 1/8 in): 72.5 × 25.4 / 3.175 and 90 × 25.4 / 3.175.
-    let eighth_inch_mm = 25.4 / 8.0;
+    // (in/min at the 3 mm row, P20a): 72.5 × 25.4 / 3.0 and 90 × 25.4 / 3.0.
+    let row_mm = 3.0;
     for (name, printed_in_min) in [
         ("material.DRILL_PLUNGE_CEILING_WOOD_PER_MM", 72.5),
         ("material.DRILL_PLUNGE_CEILING_PLYWOOD_PER_MM", 72.5),
         ("material.DRILL_PLUNGE_CEILING_SHEET_PER_MM", 90.0),
     ] {
-        let derived = printed_in_min * 25.4 / eighth_inch_mm;
+        let derived = printed_in_min * 25.4 / row_mm;
         assert!(
             (value(&named, name) - derived).abs() < 1e-9,
-            "F201: `{name}` is not {printed_in_min} in/min over 1/8 in ({derived})"
+            "F201: `{name}` is not {printed_in_min} in/min over 3 mm ({derived})"
         );
     }
 

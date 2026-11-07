@@ -21,12 +21,12 @@
 //! and `build_result` multiplies the row's chip by [`DrillBasis::scale`].
 //! A printed point stays a point.
 //!
-//! The recipe holds the chip per tooth. Step 2c of `feeds::calculate`
-//! clamps the chart's 18 000 RPM to the engine drill RPM cap (a repo rule,
-//! tiered by diameter: 8 000-14 000 at D <= 6 mm, 6 000-10 000 at D <= 10 mm,
-//! 4 000-8 000 above that), so the feed comes out at about 0.78x, 0.56x or
-//! 0.44x the printed Ramp Down, by tier. The card states it (orchestrator
-//! decision 1).
+//! The recipe holds the chip per tooth. The chart's 18 000 RPM ships
+//! through the vendor RPM step of `feeds::calculate`, clamped only to the
+//! machine spindle range (`MachineProfile::clamp_rpm`). At that RPM the
+//! feed is the printed Ramp Down. P20a (2026-11-08) removed the drill RPM
+//! tier: no source printed it, and this chart prints 18 000 RPM for the
+//! same tool. The card states it (orchestrator decision 1).
 
 use std::ops::RangeInclusive;
 
@@ -164,9 +164,8 @@ pub struct DrillClaim {
     pub home: (LutOperationFamily, LutPassRole),
     /// The row's printed material label (the chart column).
     pub material_label: String,
-    /// The query's diameter (mm). The rule's range now spans three RPM
-    /// tiers (`drill_rpm_envelope_for_diameter`), so the card reads the
-    /// cap at the query's own diameter, not at the range's upper end.
+    /// The query's diameter (mm): the diameter of the plunge that the
+    /// claim serves, inside [`Self::range_mm`].
     pub diameter_mm: f64,
     /// The diameters (mm) where the rule is valid.
     pub range_mm: RangeInclusive<f64>,
@@ -183,8 +182,8 @@ impl DrillClaim {
     /// Example: headline "vendor row, plunge claim (G6 drill): the side chip
     /// of the pocket row / 2 flutes (x0.50)"; the detail states the rule,
     /// the row and its column, the range, the "Ramp Down" reading, the
-    /// chip held per tooth, the RPM cap and the feed ratio, the peck depth
-    /// rule and the witness.
+    /// chip held per tooth, the RPM that ships, the peck depth rule and the
+    /// witness.
     #[must_use]
     pub fn card_text(&self) -> (String, String) {
         let headline = format!(
@@ -211,30 +210,17 @@ impl DrillClaim {
         } else {
             format!("the chart's \"{}\" column", self.material_label)
         };
-        // The engine drill RPM cap is tiered by diameter
-        // (`drill_rpm_envelope_for_diameter`); the range now spans three
-        // tiers (<=6 mm, <=10 mm, >10 mm), so the card reads the cap at the
-        // query's own diameter, not at the range's upper end.
-        let (cap_lo, cap_hi) = crate::feeds::drill_rpm_envelope_for_diameter(self.diameter_mm);
-        let tier_hi = if self.diameter_mm <= 6.0 {
-            6.0
-        } else if self.diameter_mm <= 10.0 {
-            10.0
-        } else {
-            self.diameter_mm
-        };
+        // P20a: the chart RPM ships. The calculator clamps it only to the
+        // machine spindle range; the card has no machine, so it states the
+        // rule.
         let rpm = match self.printed_rpm {
-            Some(printed) if printed > 0.0 => {
-                let ratio = cap_hi.min(printed) / printed;
-                format!(
-                    "the chart's {printed:.0} RPM is replaced by the engine drill RPM cap \
-                     ({cap_lo:.0}-{cap_hi:.0} RPM at D <= {tier_hi:?} mm, a repo rule), and the \
-                     feed follows (about x{ratio:.2} of the printed Ramp Down)"
-                )
-            }
-            _ => format!(
-                "the chart prints no RPM; the engine drill RPM cap ({cap_lo:.0}-{cap_hi:.0} RPM \
-                 at D <= {tier_hi:?} mm, a repo rule) sets it"
+            Some(printed) if printed > 0.0 => format!(
+                "the chart's {printed:.0} RPM ships, clamped only to the machine spindle range; \
+                 at the printed chip the feed is the printed Ramp Down"
+            ),
+            _ => String::from(
+                "the chart prints no RPM; the RPM comes from the surface speed, clamped to the \
+                 machine spindle range",
             ),
         };
         let detail = format!(
@@ -399,10 +385,10 @@ mod tests {
         assert!(drill_rule(&query(ToolFamily::FlatEnd, 6.0, 2), &adaptive).is_none());
     }
 
-    /// The claim scales the chip by 1 / Z and states the rule, the RPM cap
-    /// and the peck rule.
+    /// The claim scales the chip by 1 / Z and states the rule, the chart
+    /// RPM that ships and the peck rule.
     #[test]
-    fn the_claim_is_the_side_chip_over_z_and_states_the_rpm_cap() {
+    fn the_claim_is_the_side_chip_over_z_and_ships_the_chart_rpm() {
         let lut = VendorLut::embedded();
         let home = row(&lut, HOME_6);
         assert_eq!(
@@ -425,9 +411,8 @@ mod tests {
         assert!(detail.starts_with(DRILL_RULE_TEXT), "{detail}");
         for needle in [
             "held per tooth",
-            "the chart's 18000 RPM is replaced by the engine drill RPM cap (8000-14000 RPM at \
-             D <= 6.0 mm, a repo rule)",
-            "about x0.78 of the printed Ramp Down",
+            "the chart's 18000 RPM ships, clamped only to the machine spindle range",
+            "at the printed chip the feed is the printed Ramp Down",
             "derived grade b",
             "straight plunge",
             "vertical (Z) rate",

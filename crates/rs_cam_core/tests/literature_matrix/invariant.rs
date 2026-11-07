@@ -83,8 +83,8 @@ impl BandMode {
 }
 
 /// Floating-point tolerance for "engine output landed exactly at the
-/// clamp value". When the engine deliberately clamps (e.g. drill RPM
-/// ceiling at 14 k, rubbing-floor chipload at 0.025), the output sits
+/// clamp value". When the engine deliberately clamps (e.g. the machine
+/// RPM range, rubbing-floor chipload at 0.025), the output sits
 /// at the clamp by design — that's success, not Edge. We treat any
 /// value within `CLAMP_EPSILON` (relative) of the band edge as
 /// equal-to-clamp and verdict `Within`.
