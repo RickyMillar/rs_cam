@@ -26,10 +26,10 @@ high_feedrate = 5000.0
 spindle_strategy = "match_chart"
 
 [job.machine]
-class = "hobby"
 name = "Shapeoko Pro XXL"
 max_feed_mm_min = 10000.0
 max_shank_mm = 6.35
+class = "hobby"
 
 [job.machine.spindle.Variable]
 min_rpm = 8000.0
@@ -47,6 +47,7 @@ q = 1.26
 [job.machine.rigidity]
 adaptive_doc_factor = 1.5
 adaptive_woc_factor = 0.2
+force_budget_n = 35.32243336966621
 
 [job.machine.kinematics]
 acceleration_mm_s2 = 423.3333333333333
@@ -62,67 +63,120 @@ id = 3
 name = "End Mill"
 type = "end_mill"
 diameter = 6.0
-cutting_length = { estimated = 25.0, basis = "bare number before K3 (2026-11)" }
 helix_deg = 30.0
 corner_radius_mm = 0.0
 corner_radius = 2.0
 included_angle = 90.0
-taper_half_angle = { estimated = 15.0, basis = "bare number before K3 (2026-11)" }
 shaft_diameter = 6.35
-shank_diameter = { estimated = 6.35, basis = "bare number before K3 (2026-11)" }
-stickout = { estimated = 45.0, basis = "bare number before K3 (2026-11)" }
-flute_count = { estimated = 2, basis = "bare number before K3 (2026-11)" }
 tool_number = 1
 tool_material = "carbide"
 cut_direction = "up_cut"
 vendor = ""
 product_id = ""
-centre_cutting = { stated = "yes" }
+
+[tools.cutting_length]
+estimated = 25.0
+basis = "bare number before K3 (2026-11)"
+
+[tools.taper_half_angle]
+estimated = 15.0
+basis = "bare number before K3 (2026-11)"
+
+[tools.shank_diameter]
+estimated = 6.35
+basis = "bare number before K3 (2026-11)"
+
+[tools.stickout]
+estimated = 45.0
+basis = "bare number before K3 (2026-11)"
+
+[tools.flute_count]
+estimated = 2
+basis = "bare number before K3 (2026-11)"
+
+[tools.centre_cutting]
+stated = "yes"
 
 [[tools]]
 id = 6
 name = "R1.0mm x 6mm x 20mm 2F Tapered Ball"
 type = "tapered_ball_nose"
 diameter = 2.0
-cutting_length = { estimated = 20.0, basis = "bare number before K3 (2026-11)" }
 helix_deg = 30.0
 corner_radius_mm = 0.0
 corner_radius = 0.0
 included_angle = 90.0
-taper_half_angle = { estimated = 5.7, basis = "bare number before K3 (2026-11)" }
 shaft_diameter = 6.0
-shank_diameter = { estimated = 6.0, basis = "bare number before K3 (2026-11)" }
-stickout = { estimated = 35.0, basis = "bare number before K3 (2026-11)" }
-flute_count = { estimated = 2, basis = "bare number before K3 (2026-11)" }
 tool_number = 8
 tool_material = "carbide"
 cut_direction = "up_cut"
 vendor = "endmill.com.au"
 product_id = "TBN-R1.0-6-20"
-centre_cutting = { stated = "yes" }
+
+[tools.cutting_length]
+estimated = 20.0
+basis = "bare number before K3 (2026-11)"
+
+[tools.taper_half_angle]
+estimated = 5.7
+basis = "bare number before K3 (2026-11)"
+
+[tools.shank_diameter]
+estimated = 6.0
+basis = "bare number before K3 (2026-11)"
+
+[tools.stickout]
+estimated = 35.0
+basis = "bare number before K3 (2026-11)"
+
+[tools.flute_count]
+estimated = 2
+basis = "bare number before K3 (2026-11)"
+
+[tools.centre_cutting]
+stated = "yes"
 
 [[tools]]
 id = 11
 name = "20° V-bit"
 type = "v_bit"
 diameter = 5.5
-cutting_length = { estimated = 15.0, basis = "bare number before K3 (2026-11)" }
 helix_deg = 30.0
 corner_radius_mm = 0.0
 corner_radius = 0.0
 included_angle = 20.0
-taper_half_angle = { estimated = 10.0, basis = "bare number before K3 (2026-11)" }
 shaft_diameter = 6.0
-shank_diameter = { estimated = 6.0, basis = "bare number before K3 (2026-11)" }
-stickout = { estimated = 30.0, basis = "bare number before K3 (2026-11)" }
-flute_count = { estimated = 2, basis = "bare number before K3 (2026-11)" }
 tool_number = 10
 tool_material = "carbide"
 cut_direction = "up_cut"
 vendor = ""
 product_id = ""
-centre_cutting = { stated = "yes" }
-v_tip_diameter = { stated = 0.0 }
+
+[tools.cutting_length]
+estimated = 15.0
+basis = "bare number before K3 (2026-11)"
+
+[tools.v_tip_diameter]
+stated = 0.0
+
+[tools.taper_half_angle]
+estimated = 10.0
+basis = "bare number before K3 (2026-11)"
+
+[tools.shank_diameter]
+estimated = 6.0
+basis = "bare number before K3 (2026-11)"
+
+[tools.stickout]
+estimated = 30.0
+basis = "bare number before K3 (2026-11)"
+
+[tools.flute_count]
+estimated = 2
+basis = "bare number before K3 (2026-11)"
+
+[tools.centre_cutting]
+stated = "yes"
 
 [[models]]
 id = 1
@@ -176,6 +230,7 @@ entry_style = "ramp"
 ramp_angle = 3.0
 helix_radius = 2.0
 helix_pitch = 1.0
+entry_clearance_mm = 0.5
 dogbone = false
 dogbone_angle = 90.0
 lead_in_out = false
@@ -262,15 +317,13 @@ entry_style = "helix"
 ramp_angle_deg = 10.0
 helix_radius_factor = 0.3
 helix_pitch = 1.0
-fine_stepdown = 0.0
+entry_clearance_mm = 0.5
 detect_flat_areas = false
 region_ordering = "global"
 clearing_strategy = "contour_parallel"
 trochoid_cap_mult = 1.6
 engagement_measure = "DiskArea"
-z_blend = false
 spindle_rpm = 18000
-mill_shallow_areas = false
 min_region_cut_length_mm = 15.0
 stay_down_clearance_mm = 0.5
 
@@ -279,6 +332,7 @@ entry_style = "none"
 ramp_angle = 3.0
 helix_radius = 2.0
 helix_pitch = 1.0
+entry_clearance_mm = 0.5
 dogbone = false
 dogbone_angle = 90.0
 lead_in_out = false
@@ -367,6 +421,7 @@ entry_style = "none"
 ramp_angle = 3.0
 helix_radius = 2.0
 helix_pitch = 1.0
+entry_clearance_mm = 0.5
 dogbone = false
 dogbone_angle = 90.0
 lead_in_out = true
@@ -441,6 +496,7 @@ plunge_rate = 300.0
 surface_model_id = 1
 direction = "from_above"
 side = "center"
+projection = "cutter"
 spindle_rpm = 24000
 chain_distance_mm = 0.0
 
@@ -449,12 +505,12 @@ entry_style = "none"
 ramp_angle = 3.0
 helix_radius = 2.0
 helix_pitch = 1.0
+entry_clearance_mm = 0.5
 dogbone = false
 dogbone_angle = 90.0
 lead_in_out = false
 lead_radius = 2.0
 link_moves = false
-link_max_distance = 10.0
 link_feed_rate = 500.0
 arc_fitting = true
 arc_tolerance = 0.05
