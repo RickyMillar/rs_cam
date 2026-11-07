@@ -499,7 +499,8 @@ fn the_power_limited_warning_compares_like_with_like() {
             | rs_cam_core::feeds::FeedsWarning::VendorRowPublishesNoChipload { .. }
             | rs_cam_core::feeds::FeedsWarning::NoVendorRowsForRoutedOperation { .. }
             | rs_cam_core::feeds::FeedsWarning::FormulaChipNoPrintedRow { .. }
-            | rs_cam_core::feeds::FeedsWarning::DrillFeedClampedToEnvelope { .. } => None,
+            | rs_cam_core::feeds::FeedsWarning::DrillFeedClampedToEnvelope { .. }
+            | rs_cam_core::feeds::FeedsWarning::DrillFeedAtZAxisRate { .. } => None,
         })
         .expect("the synthetic profile must emit a PowerLimited warning");
     let gate_ceiling = gate_power_ceiling_kw(&machine, result.rpm);

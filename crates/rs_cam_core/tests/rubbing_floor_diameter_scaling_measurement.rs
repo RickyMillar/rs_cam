@@ -745,7 +745,8 @@ fn sweep() -> Vec<Row> {
                             | FeedsWarning::LongToolDerate { .. }
                             | FeedsWarning::NoVendorRowsForRoutedOperation { .. }
                             | FeedsWarning::FormulaChipNoPrintedRow { .. }
-                            | FeedsWarning::DrillFeedClampedToEnvelope { .. } => {}
+                            | FeedsWarning::DrillFeedClampedToEnvelope { .. }
+                            | FeedsWarning::DrillFeedAtZAxisRate { .. } => {}
                         }
                     }
 

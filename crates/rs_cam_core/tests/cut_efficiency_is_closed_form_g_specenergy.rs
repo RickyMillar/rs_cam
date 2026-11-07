@@ -186,7 +186,14 @@ fn operating_point(
         chip_load_mm: advance_per_tooth_mm,
         feed_rate_mm_min: feed,
         plunge_rate_mm_min: feed * 0.4,
-        plunge: rs_cam_core::feeds::PlungeBasis::DrillCycle,
+        plunge: rs_cam_core::feeds::PlungeBasis::DrillCycle {
+            vertical: rs_cam_core::feeds::vertical::VerticalRateLimit::new(
+                &RampBasis::NoChip {
+                    reason: RampFallback::NoLut,
+                },
+                &rs_cam_core::machine::MachineProfile::default(),
+            ),
+        },
         ramp: RampBasis::NoChip {
             reason: RampFallback::NoLut,
         },

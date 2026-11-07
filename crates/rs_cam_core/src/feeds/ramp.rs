@@ -4,9 +4,13 @@
 //!
 //! The ramp feed has three arms:
 //!
-//! - G6: `min(cut feed, axial chip x RPM x Z / tan θ)`. The axial chip comes
-//!   from the G6 drill claim (`extrapolation::drill`): the tool's printed
-//!   Amana Spektra side row / Z.
+//! - G6: `min(cut feed, axial chip x RPM x Z / tan θ, Z axis rate / tan θ)`.
+//!   The axial chip comes from the G6 drill claim (`extrapolation::drill`):
+//!   the tool's printed Amana Spektra side row / Z. P20b: the vertical part
+//!   `cut feed x tan θ` goes through the one vertical-rate limit
+//!   (`feeds::vertical::VerticalRateLimit`), which holds the axial chip and
+//!   the machine Z axis rate (GRBL `$112`). A capped ramp keeps the
+//!   operator's angle (Q11) and runs slower.
 //! - G10 Q2: with no G6 chip, the ramp holds its vertical rate at the
 //!   plunge: `min(cut feed, plunge / tan θ)`. This is a repo rule with no
 //!   source, and the card says so.
@@ -40,6 +44,7 @@ use std::f64::consts::TAU;
 
 use super::extrapolation::{Claim, DrillClaim, tool_family_label};
 use super::vendor_lut::{LutOperationFamily, LutPassRole, ToolFamily};
+use super::vertical::{VerticalBinding, VerticalRateLimit, ZAxisRate};
 use super::{FeedsInput, OperationFamily, PassRole};
 use crate::compute::catalog::OperationConfig;
 use crate::compute::config::{
@@ -453,6 +458,8 @@ pub enum RampArm {
     ChipTerm,
     /// The plunge term `plunge / tan θ` is the smaller term (G10 Q2).
     PlungeTerm,
+    /// P20b: the Z axis term `Z axis rate / tan θ` is the smaller term.
+    ZAxisRate,
 }
 
 /// A ramp feed from the G6 chip: every term of the rule.
@@ -483,6 +490,8 @@ pub struct SourcedRamp {
     /// vertical rate only at depth tier 1 (G10_PLAN F2); the card shows
     /// both.
     pub plunge_mm_min: f64,
+    /// P20b: the machine Z axis rate of the vertical-rate limit.
+    pub z_axis: ZAxisRate,
     pub drill: Box<DrillClaim>,
     pub size: Option<Box<Claim>>,
 }
@@ -545,11 +554,13 @@ impl RampFeed {
                 RampArm::CutFeed => "Sourced/CutFeed",
                 RampArm::ChipTerm => "Sourced/ChipTerm",
                 RampArm::PlungeTerm => "Sourced/PlungeTerm",
+                RampArm::ZAxisRate => "Sourced/ZAxisRate",
             },
             Self::PlungeSlope(s) => match s.arm {
                 RampArm::CutFeed => "PlungeSlope/CutFeed",
                 RampArm::ChipTerm => "PlungeSlope/ChipTerm",
                 RampArm::PlungeTerm => "PlungeSlope/PlungeTerm",
+                RampArm::ZAxisRate => "PlungeSlope/ZAxisRate",
             },
             Self::NoEntryFeed { .. } => "NoEntryFeed",
         }
@@ -577,13 +588,18 @@ impl RampFeed {
                         "Ramp feed {:.0} mm/min: the chip limit at {entry} (cut feed {:.0} mm/min)",
                         s.value_mm_min, s.cut_feed_mm_min
                     ),
+                    RampArm::ZAxisRate => format!(
+                        "Ramp feed {:.0} mm/min: the machine Z axis rate at {entry} (cut feed {:.0} \
+                         mm/min)",
+                        s.value_mm_min, s.cut_feed_mm_min
+                    ),
                 };
                 let detail = format!(
                     "axial chip {:.4} mm/tooth x {:.0} RPM x {} flutes = {:.0} mm/min vertical; \
                      / tan {:.2}° ({:.5}) = chip limit {:.0} mm/min; cut feed {:.0} mm/min; the \
                      G6 vertical rate is {:.0} mm/min and the plunge (feed / Z, ruling Q4) is {:.0} \
-                     mm/min; the two agree only at depth tier 1; the entry is from {}; θ is the \
-                     configured slope; {}",
+                     mm/min; the two agree only at depth tier 1; {}; the entry is from {}; θ is \
+                     the configured slope; {}",
                     s.axial_chip_mm,
                     s.rpm,
                     s.flutes,
@@ -594,6 +610,7 @@ impl RampFeed {
                     s.cut_feed_mm_min,
                     s.vertical_mm_min,
                     s.plunge_mm_min,
+                    s.z_axis.text(),
                     s.source.label(),
                     sourced_detail(&s.drill, s.size.as_deref()),
                 );
@@ -601,7 +618,7 @@ impl RampFeed {
             }
             Self::PlungeSlope(s) => {
                 let headline = match s.arm {
-                    RampArm::CutFeed | RampArm::ChipTerm => format!(
+                    RampArm::CutFeed | RampArm::ChipTerm | RampArm::ZAxisRate => format!(
                         "Ramp feed {:.0} mm/min: the cut feed (plunge limit {:.0} mm/min = plunge \
                          {:.0} / tan {:.2}°)",
                         s.value_mm_min, s.plunge_term_mm_min, s.plunge_mm_min, s.theta_deg
@@ -650,12 +667,17 @@ impl RampFeed {
 /// 3. A cut feed that is not positive gives `NoCutFeed`.
 /// 4. A slope with no valid tan θ gives `DegenerateEntry`.
 /// 5. A `Sourced` basis with a positive RPM gives the G6 arm:
-///    `vertical = chip x RPM x Z`, `chip_term = vertical / tan θ`, and the
-///    value is `min(cut, chip_term)`.
+///    `vertical = chip x RPM x Z`, `chip_term = vertical / tan θ`. P20b: the
+///    vertical part at the cut feed, `cut x tan θ`, goes through `limit`
+///    ([`VerticalRateLimit::bound`]: the axial chip, then the Z axis rate),
+///    and the value is the bounded vertical rate / tan θ, or the cut feed
+///    when no limit binds: `min(cut, chip_term, Z axis rate / tan θ)`.
 /// 6. Otherwise a plunge that is not positive gives `NoEntryFeed {
 ///    NoPlunge }`.
 /// 7. Otherwise the G10 Q2 arm: the value is `min(cut, plunge / tan θ)`.
-///    `no_chip` is the basis reason, or `NoShippedRpm`.
+///    `no_chip` is the basis reason, or `NoShippedRpm`. The plunge already
+///    went through `limit` (`plunge::resolve_plunge`), so its vertical
+///    rate is at or below the Z axis rate.
 ///
 /// Every value rounds DOWN to 1 mm/min (T-9: the value is bound from
 /// above).
@@ -668,6 +690,7 @@ impl RampFeed {
 #[must_use]
 pub fn resolve_ramp_feed(
     basis: &RampBasis,
+    limit: &VerticalRateLimit,
     entry: Result<Entry, RampFallback>,
     cut_feed: super::geometry::UnliftedFeed,
     rpm: Option<u32>,
@@ -709,16 +732,16 @@ pub fn resolve_ramp_feed(
         ) => {
             let vertical_mm_min = axial_chip_mm * rpm * f64::from(flutes);
             let chip_term_mm_min = vertical_mm_min / tan_theta;
-            let raw = cut_feed_mm_min.min(chip_term_mm_min);
+            let bounded = limit.bound(cut_feed_mm_min * tan_theta, rpm);
+            let (raw, arm) = match bounded.binding() {
+                VerticalBinding::Candidate => (cut_feed_mm_min, RampArm::CutFeed),
+                VerticalBinding::AxialChip => (bounded.mm_min() / tan_theta, RampArm::ChipTerm),
+                VerticalBinding::ZAxisRate => (bounded.mm_min() / tan_theta, RampArm::ZAxisRate),
+            };
             let value_mm_min = super::suggest::round_suggestion_value_down(raw, 1.0);
             if !(value_mm_min.is_finite() && value_mm_min > 0.0) {
                 return fallback(RampFallback::NoCutFeed);
             }
-            let arm = if chip_term_mm_min < cut_feed_mm_min {
-                RampArm::ChipTerm
-            } else {
-                RampArm::CutFeed
-            };
             return RampFeed::Sourced(Box::new(SourcedRamp {
                 value_mm_min,
                 arm,
@@ -733,6 +756,7 @@ pub fn resolve_ramp_feed(
                 chip_term_mm_min,
                 cut_feed_mm_min,
                 plunge_mm_min,
+                z_axis: limit.z_axis(),
                 drill: drill.clone(),
                 size: size.clone(),
             }));
@@ -1066,6 +1090,15 @@ mod tests {
         }
     }
 
+    /// The vertical-rate limit of `b` on a machine with no Z axis rate
+    /// (`MachineProfile::default()` has no kinematics).
+    fn lim(b: &RampBasis) -> super::super::vertical::VerticalRateLimit {
+        super::super::vertical::VerticalRateLimit::new(
+            b,
+            &crate::machine::MachineProfile::default(),
+        )
+    }
+
     fn sourced(r: &RampFeed) -> &SourcedRamp {
         match r {
             RampFeed::Sourced(s) => s,
@@ -1088,7 +1121,15 @@ mod tests {
     }
 
     fn resolve(geometry: EntryGeometry, cut: f64, rpm: u32) -> RampFeed {
-        resolve_ramp_feed(&basis(), Ok(entry(geometry)), uf(cut), Some(rpm), 2, 1000.0)
+        resolve_ramp_feed(
+            &basis(),
+            &lim(&basis()),
+            Ok(entry(geometry)),
+            uf(cut),
+            Some(rpm),
+            2,
+            1000.0,
+        )
     }
 
     /// The helix slope is pitch / (2π r): r 2, pitch 1 gives 4.55 degrees.
@@ -1186,6 +1227,7 @@ mod tests {
             (
                 resolve_ramp_feed(
                     &basis(),
+                    &lim(&basis()),
                     Err(RampFallback::EntryOff),
                     uf(4000.0),
                     Some(18_000),
@@ -1197,6 +1239,7 @@ mod tests {
             (
                 resolve_ramp_feed(
                     &no_lut,
+                    &lim(&no_lut),
                     Err(RampFallback::EntryUnknown),
                     uf(4000.0),
                     Some(18_000),
@@ -1208,6 +1251,7 @@ mod tests {
             (
                 resolve_ramp_feed(
                     &basis(),
+                    &lim(&basis()),
                     Ok(entry(EntryGeometry::Ramp { angle_deg: 0.0 })),
                     uf(4000.0),
                     Some(18_000),
@@ -1219,6 +1263,7 @@ mod tests {
             (
                 resolve_ramp_feed(
                     &no_lut,
+                    &lim(&no_lut),
                     Ok(entry(EntryGeometry::Helix {
                         radius_mm: 2.0,
                         pitch_mm: 0.0,
@@ -1231,11 +1276,27 @@ mod tests {
                 RampFallback::DegenerateEntry,
             ),
             (
-                resolve_ramp_feed(&basis(), Ok(entry(HELIX)), uf(0.0), Some(18_000), 2, 700.0),
+                resolve_ramp_feed(
+                    &basis(),
+                    &lim(&basis()),
+                    Ok(entry(HELIX)),
+                    uf(0.0),
+                    Some(18_000),
+                    2,
+                    700.0,
+                ),
                 RampFallback::NoCutFeed,
             ),
             (
-                resolve_ramp_feed(&drill, Ok(entry(HELIX)), uf(4000.0), Some(18_000), 2, 700.0),
+                resolve_ramp_feed(
+                    &drill,
+                    &lim(&drill),
+                    Ok(entry(HELIX)),
+                    uf(4000.0),
+                    Some(18_000),
+                    2,
+                    700.0,
+                ),
                 RampFallback::DrillCycle,
             ),
         ];
@@ -1258,7 +1319,15 @@ mod tests {
             assert!(face.ends_with("the entry uses the plunge rate."), "{face}");
         }
         // No plunge: the ramp has no vertical rate.
-        let record = resolve_ramp_feed(&no_lut, Ok(entry(HELIX)), uf(4000.0), Some(18_000), 2, 0.0);
+        let record = resolve_ramp_feed(
+            &no_lut,
+            &lim(&no_lut),
+            Ok(entry(HELIX)),
+            uf(4000.0),
+            Some(18_000),
+            2,
+            0.0,
+        );
         assert_eq!(record.value(), None);
         assert!(matches!(
             record,
@@ -1280,6 +1349,7 @@ mod tests {
         // 700 / tan 3° = 13 357 > 4000: the cut feed binds.
         let r = resolve_ramp_feed(
             &no_lut,
+            &lim(&no_lut),
             Ok(entry(ramp3)),
             uf(4000.0),
             Some(18_000),
@@ -1300,6 +1370,7 @@ mod tests {
         let steep = EntryGeometry::Ramp { angle_deg: 45.0 };
         let r = resolve_ramp_feed(
             &no_lut,
+            &lim(&no_lut),
             Ok(entry(steep)),
             uf(4000.0),
             Some(18_000),
@@ -1313,7 +1384,15 @@ mod tests {
         assert!(r.card_text().0.contains("the plunge limit at ramp 45.00°"));
 
         // A G6 basis with no shipped RPM: the plunge slope, NoShippedRpm.
-        let r = resolve_ramp_feed(&basis(), Ok(entry(ramp3)), uf(4000.0), None, 2, 700.0);
+        let r = resolve_ramp_feed(
+            &basis(),
+            &lim(&basis()),
+            Ok(entry(ramp3)),
+            uf(4000.0),
+            None,
+            2,
+            700.0,
+        );
         let s = plunge_slope(&r);
         assert_eq!(s.no_chip, RampFallback::NoShippedRpm);
         assert_eq!(r.value(), Some(4000.0));

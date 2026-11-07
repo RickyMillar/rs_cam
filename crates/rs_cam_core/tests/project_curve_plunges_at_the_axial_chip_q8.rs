@@ -1,13 +1,15 @@
-//! Q8 (feeds contract P8, operator ruling 2026-11-03): Project Curve states
-//! its entry, `EntryContract::StraightPlunge { feed: PlungeFeedRule::AxialChip }`.
+//! Q8 (feeds contract P8, operator ruling 2026-11-03): Project Curve enters
+//! with a straight plunge (`EntryContract::StraightPlunge`).
 //!
 //! Suggest writes the plunge rate of a Project Curve as
 //! `min(G10 rule, G6 axial chip x rpm x Z, F)` where a G6 claim covers the
 //! tool (report 02 F-c1), and the generator descends at that rate at each
 //! chain start. Before P8 the plunge was the G10 rule alone (F / Z): report
 //! 02 (c) measured 2999 mm/min where the G6 vertical rate was 1028 mm/min.
-//! Lead decision Q8a: the bound applies to Project Curve only; a Pocket with
-//! the same tool keeps the G10 rule.
+//! P20b supersedes lead decision Q8a ("Project Curve only"): the one
+//! vertical-rate limit (`feeds::vertical::VerticalRateLimit`) gives the G6
+//! bound to every op, so a Pocket with the same tool carries it too, and
+//! the `PlungeFeedRule::AxialChip` variant is gone.
 //!
 //! The tool: the op 5 tool of report 02, a 6 mm 2F flat end mill, in white
 //! oak. Every expected value comes from the result under test: the G10
@@ -19,8 +21,8 @@
 //! deep plunge. An `Unknown` tool stops with the D12 reason (ruling Q10: a
 //! missing input stops generation); it gets no ramp either.
 //!
-//! Red: give the Project Curve row `PlungeFeedRule::OpPlungeRate`. The
-//! shipped plunge is then the G10 rule.
+//! Red: drop the axial chip from `VerticalRateLimit::new`. The shipped
+//! plunge is then the G10 rule.
 
 #![expect(
     clippy::expect_used,
@@ -34,9 +36,7 @@ use std::sync::atomic::AtomicBool;
 
 use common::op_fixtures::{CaseSpec, Fixture, Frame, Prior, case_session};
 use rs_cam_core::compute::OperationError;
-use rs_cam_core::compute::catalog::{
-    EntryContract, OperationConfig, OperationType, PlungeFeedRule,
-};
+use rs_cam_core::compute::catalog::{EntryContract, OperationConfig, OperationType};
 use rs_cam_core::compute::config::StockSource;
 use rs_cam_core::compute::not_set::NotSetKind;
 use rs_cam_core::compute::tool_config::{
@@ -117,11 +117,9 @@ fn g6_chip(s: &SuggestedParams) -> (f64, u32) {
 }
 
 #[test]
-fn the_project_curve_row_states_the_axial_chip_rule() {
+fn the_project_curve_row_is_a_straight_plunge() {
     match OperationType::ProjectCurve.registry_entry().entry {
-        EntryContract::StraightPlunge { feed, .. } => {
-            assert_eq!(feed, PlungeFeedRule::AxialChip);
-        }
+        EntryContract::StraightPlunge { .. } => {}
         EntryContract::Dressup { .. }
         | EntryContract::Planner { .. }
         | EntryContract::DescentIsCut => panic!("Project Curve is a straight plunge (Q8)"),
@@ -151,9 +149,10 @@ fn suggest_writes_the_axial_chip_plunge_on_a_project_curve() {
     let bound = s
         .feeds_result
         .plunge
+        .vertical_limit()
         .axial()
         .expect("the result carries the bound");
-    assert_eq!(bound.axial_chip_mm, chip);
+    assert_eq!(bound.axial_chip_mm(), chip);
     // P18 (review D14): the plunge reads the feed before the radial
     // chip-thinning lift. A Project Curve cuts the full width, so the lift
     // is 1 and the feed before the lift is the shipped feed.
@@ -168,13 +167,17 @@ fn suggest_writes_the_axial_chip_plunge_on_a_project_curve() {
 }
 
 #[test]
-fn a_pocket_with_the_same_tool_keeps_the_g10_rule_q8a() {
+fn a_pocket_with_the_same_tool_carries_the_bound_p20b() {
     let tool = op5_tool(ToolFact::Stated(CentreCutting::Yes));
     let s = suggested(&OperationConfig::new_default(OperationType::Pocket), &tool);
-    assert!(
-        s.feeds_result.plunge.axial().is_none(),
-        "Q8a: Project Curve only"
-    );
+    let (chip, _) = g6_chip(&s);
+    let bound = s
+        .feeds_result
+        .plunge
+        .vertical_limit()
+        .axial()
+        .expect("P20b: every op carries the G6 bound");
+    assert_eq!(bound.axial_chip_mm(), chip);
 }
 
 #[test]

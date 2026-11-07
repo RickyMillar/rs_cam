@@ -429,6 +429,11 @@ pub const TABLE: &[(&str, Anchor, &str)] = &[
         "Drill feed clamped to safe band",
     ),
     (
+        ids::FEEDS_DRILL_FEED_AT_Z_AXIS_RATE,
+        f("feed_rate"),
+        "Drill feed at the machine Z rate",
+    ),
+    (
         ids::FEEDS_VENDOR_ROW_PUBLISHES_NO_CHIPLOAD,
         NOTE,
         "Vendor data gives no chipload",

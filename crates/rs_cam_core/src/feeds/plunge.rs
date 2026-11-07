@@ -16,26 +16,30 @@
 //! the lifted feed: a 6 mm 2F flat at a 0.3 mm width plunged at 2.29 x the
 //! axial chip of the same tool at full width.
 //!
-//! The value is `min(rule, tip cap, axial chip, F)`, rounded down to 1
+//! The value is `min(rule, tip cap, axial chip, Z axis rate, F)`, rounded down to 1
 //! mm/min:
 //!
 //! - the rule is the G10 claim (`extrapolation::plunge`, fraction x F), or
 //!   the named repo rule (the material base) when no claim covers the tool;
 //! - the tip cap is a named repo rule for a ball or a tapered ball
 //!   (`tool_load::plunge_stress`, the one producer);
-//! - the axial chip (feeds contract P8, ruling Q8) bounds the plunge of an
-//!   op whose entry contract is `StraightPlunge { feed: AxialChip }`
-//!   (Project Curve, lead decision Q8a) where a G6 claim covers the tool:
-//!   `g6_chip x rpm x Z` (report 02 F-c1);
+//! - P20b: the one vertical-rate limit ([`VerticalRateLimit`]) bounds the
+//!   plunge of every op: the G6 axial chip `g6_chip x rpm x Z` (report 02
+//!   F-c1) where a G6 claim covers the tool, and the machine Z axis rate
+//!   (GRBL `$112`) where the machine states it. Until P20b the axial chip
+//!   bound only an op whose entry contract stated it (Project Curve, lead
+//!   decision Q8a), and no producer read the Z axis rate;
 //! - a plunge never exceeds the feed.
 //!
 //! A drill cycle has one feed. Its plunge is the drill feed (calculator
-//! step 9c), so the resolver gives `None` for it.
+//! step 9c), so the resolver gives `None` for it. Step 9c bounds the drill
+//! feed with the same limit ([`PlungeBasis::vertical_limit`]).
 
 use super::extrapolation::plunge::flutes_text;
 use super::extrapolation::{PlungeClaim, PlungeRefusal, plunge_rule};
 use super::geometry::UnliftedFeed;
 use super::provenance::ValueProvenance;
+use super::vertical::{VerticalBinding, VerticalRateLimit, ZAxisRate};
 use super::{FeedsInput, OperationFamily, ToolGeometryHint};
 use crate::tool_load::plunge_stress;
 
@@ -88,39 +92,6 @@ impl TipCap {
     }
 }
 
-/// Q8 (feeds contract P8): the G6 axial-chip bound of a straight plunge.
-/// The vertical rate is `axial_chip_mm x rpm x flutes`. Only an op whose
-/// entry contract is `StraightPlunge { feed: PlungeFeedRule::AxialChip }`
-/// carries it, and only where a G6 claim covers the tool
-/// (`RampBasis::Sourced`).
-#[derive(Debug, Clone, PartialEq)]
-pub struct AxialChipBound {
-    /// The G6 axial chip per tooth (mm): the side row's chip / Z, with the
-    /// hardness scale (`FeedsResult::ramp`).
-    pub axial_chip_mm: f64,
-    /// The flute count Z of the claim.
-    pub flutes: u32,
-    /// The side row that the G6 drill claim reads.
-    pub side_row: String,
-}
-
-impl AxialChipBound {
-    /// The vertical rate at `rpm` (mm/min).
-    #[must_use]
-    pub fn at_rpm(&self, rpm: f64) -> f64 {
-        self.axial_chip_mm * rpm * f64::from(self.flutes)
-    }
-
-    /// The bound in words.
-    #[must_use]
-    pub fn text(&self) -> String {
-        format!(
-            "G6 axial chip {:.4} mm/tooth x rpm x {} (row {})",
-            self.axial_chip_mm, self.flutes, self.side_row
-        )
-    }
-}
-
 /// The part of the plunge that does not use the feed.
 #[derive(Debug, Clone, PartialEq)]
 pub enum PlungeBasis {
@@ -128,8 +99,9 @@ pub enum PlungeBasis {
     Claimed {
         claim: Box<PlungeClaim>,
         tip_cap: Option<TipCap>,
-        /// Q8: the G6 axial-chip bound of a Project Curve plunge.
-        axial: Option<AxialChipBound>,
+        /// P20b: the vertical-rate limit (the G6 axial chip, the Z axis
+        /// rate).
+        vertical: VerticalRateLimit,
     },
     /// No claim covers the tool. The named repo rule (the material base)
     /// gives the plunge.
@@ -137,11 +109,13 @@ pub enum PlungeBasis {
         reason: PlungeRefusal,
         base_mm_min: f64,
         tip_cap: Option<TipCap>,
-        /// Q8: the G6 axial-chip bound of a Project Curve plunge.
-        axial: Option<AxialChipBound>,
+        /// P20b: the vertical-rate limit (the G6 axial chip, the Z axis
+        /// rate).
+        vertical: VerticalRateLimit,
     },
-    /// A drill cycle: the plunge is the drill feed.
-    DrillCycle,
+    /// A drill cycle: the plunge is the drill feed. Step 9c bounds the
+    /// drill feed with `vertical`.
+    DrillCycle { vertical: VerticalRateLimit },
 }
 
 /// Which term sets the plunge.
@@ -151,8 +125,10 @@ pub enum PlungeBinding {
     Rule,
     /// The ball or tapered-ball tip cap.
     TipCap,
-    /// Q8: the G6 axial chip x rpm x Z (Project Curve).
+    /// The G6 axial chip x rpm x Z (Q8; every op since P20b).
     AxialChip,
+    /// P20b: the machine Z axis rate (GRBL `$112`).
+    ZAxisRate,
     /// The feed: a plunge never exceeds the feed.
     Feed,
 }
@@ -165,6 +141,7 @@ impl PlungeBinding {
             Self::Rule => "the rule",
             Self::TipCap => "the tip cap",
             Self::AxialChip => "the G6 axial chip",
+            Self::ZAxisRate => "the machine Z axis rate",
             Self::Feed => "the feed",
         }
     }
@@ -177,7 +154,7 @@ impl PlungeBasis {
         match self {
             Self::Claimed { .. } => "Claimed",
             Self::MaterialBase { .. } => "MaterialBase",
-            Self::DrillCycle => "DrillCycle",
+            Self::DrillCycle { .. } => "DrillCycle",
         }
     }
 
@@ -186,7 +163,7 @@ impl PlungeBasis {
     pub fn claim(&self) -> Option<&PlungeClaim> {
         match self {
             Self::Claimed { claim, .. } => Some(claim),
-            Self::MaterialBase { .. } | Self::DrillCycle => None,
+            Self::MaterialBase { .. } | Self::DrillCycle { .. } => None,
         }
     }
 
@@ -195,17 +172,19 @@ impl PlungeBasis {
     pub fn tip_cap(&self) -> Option<TipCap> {
         match self {
             Self::Claimed { tip_cap, .. } | Self::MaterialBase { tip_cap, .. } => *tip_cap,
-            Self::DrillCycle => None,
+            Self::DrillCycle { .. } => None,
         }
     }
 
-    /// Q8: the G6 axial-chip bound, when the op states it and a G6 claim
-    /// covers the tool.
+    /// P20b: the vertical-rate limit of the cut. The plunge, the drill feed
+    /// (Step 9c) and the vertical part of a G6 ramp
+    /// (`ramp::resolve_ramp_feed`) read it.
     #[must_use]
-    pub fn axial(&self) -> Option<&AxialChipBound> {
+    pub const fn vertical_limit(&self) -> &VerticalRateLimit {
         match self {
-            Self::Claimed { axial, .. } | Self::MaterialBase { axial, .. } => axial.as_ref(),
-            Self::DrillCycle => None,
+            Self::Claimed { vertical, .. }
+            | Self::MaterialBase { vertical, .. }
+            | Self::DrillCycle { vertical } => vertical,
         }
     }
 
@@ -228,7 +207,7 @@ impl PlungeBasis {
             Self::Claimed {
                 claim,
                 tip_cap,
-                axial,
+                vertical,
             } => {
                 let rule = claim.rule;
                 let fraction = claim.fraction_text();
@@ -236,12 +215,7 @@ impl PlungeBasis {
                 if let Some(cap) = tip_cap {
                     terms.push(format!("tip cap {:.0} mm/min", cap.cap_mm_min));
                 }
-                if let Some(bound) = axial {
-                    terms.push(format!(
-                        "{:.4} x rpm x {}",
-                        bound.axial_chip_mm, bound.flutes
-                    ));
-                }
+                terms.extend(vertical_terms(vertical));
                 let value = if terms.len() == 1 {
                     terms.remove(0)
                 } else {
@@ -258,23 +232,23 @@ impl PlungeBasis {
                 );
                 let (_, claim_detail) = claim.card_text();
                 let cap = tip_cap.map_or_else(String::new, |c| format!("; {}", c.text()));
-                let ax = axial
-                    .as_ref()
-                    .map_or_else(String::new, |b| format!("; {}", b.text()));
-                let detail = format!("{claim_detail}{cap}{ax}. {DOWN_CUT_PLUNGE_TEXT}");
+                let detail = format!(
+                    "{claim_detail}{cap}; {}. {DOWN_CUT_PLUNGE_TEXT}",
+                    vertical.text()
+                );
                 (headline, detail)
             }
             Self::MaterialBase {
                 reason,
                 base_mm_min,
                 tip_cap,
-                axial,
+                vertical,
             } => {
                 let mut cap = tip_cap.map_or_else(String::new, |c| {
                     format!(", tip cap {:.0} mm/min", c.cap_mm_min)
                 });
-                if let Some(bound) = axial {
-                    cap.push_str(&format!(", {}", bound.text()));
+                for term in vertical_terms(vertical) {
+                    cap.push_str(&format!(", {term}"));
                 }
                 let headline = format!(
                     "Plunge: no source; repo rule material base {base_mm_min:.0} mm/min{cap} ({})",
@@ -282,14 +256,19 @@ impl PlungeBasis {
                 );
                 let cap = tip_cap.map_or_else(String::new, |c| format!(" The {}.", c.text()));
                 let detail = format!(
-                    "The rule: {PLUNGE_BASE_RULE_TEXT}. {}{cap} {DOWN_CUT_PLUNGE_TEXT}",
-                    reason.text()
+                    "The rule: {PLUNGE_BASE_RULE_TEXT}. {}{cap} The {}. {DOWN_CUT_PLUNGE_TEXT}",
+                    reason.text(),
+                    vertical.text()
                 );
                 (headline, detail)
             }
-            Self::DrillCycle => (
+            Self::DrillCycle { vertical } => (
                 "Plunge: the drill feed".to_owned(),
-                "A drill cycle has one feed: the plunge is the drill feed.".to_owned(),
+                format!(
+                    "A drill cycle has one feed: the plunge is the drill feed. The {}; the RPM \
+                     follows a capped feed down to hold the chip.",
+                    vertical.text()
+                ),
             ),
         }
     }
@@ -314,18 +293,23 @@ impl PlungeBasis {
     /// - The material base that binds stamps `RepoRule`
     ///   ("material_plunge_base").
     /// - The tip cap stamps `RepoRule` ("ball_tip_cap").
+    /// - The G6 axial chip stamps the G6 side row; the Z axis rate stamps
+    ///   the machine field (P20b).
     /// - The feed that binds, and a drill cycle, copy the feed stamp.
     #[must_use]
     pub fn provenance(&self, binding: PlungeBinding, feed: ValueProvenance) -> ValueProvenance {
         match (self, binding) {
-            (Self::DrillCycle, _) | (_, PlungeBinding::Feed) => feed,
+            (Self::DrillCycle { .. }, _) | (_, PlungeBinding::Feed) => feed,
             (_, PlungeBinding::TipCap) => ValueProvenance::repo_rule("ball_tip_cap"),
+            (_, PlungeBinding::ZAxisRate) => ValueProvenance::of_basis(&super::Basis::Machine(
+                super::sourced::MachineField::ZAxisRate,
+            )),
             (
-                Self::Claimed { axial, .. } | Self::MaterialBase { axial, .. },
+                Self::Claimed { vertical, .. } | Self::MaterialBase { vertical, .. },
                 PlungeBinding::AxialChip,
-            ) => axial
-                .as_ref()
-                .map_or(feed, |b| ValueProvenance::vendor_lut(b.side_row.clone())),
+            ) => vertical
+                .axial()
+                .map_or(feed, |b| ValueProvenance::vendor_lut(b.side_row())),
             (Self::Claimed { claim, .. }, PlungeBinding::Rule) => {
                 ValueProvenance::published_rule(claim.rule.id)
             }
@@ -350,26 +334,31 @@ impl PlungeBasis {
         material_row: crate::material::FormulaConstant,
     ) -> super::Basis {
         use super::Basis;
-        use super::sourced::{ClaimKind, ClaimRef, RowRef};
+        use super::sourced::{ClaimKind, ClaimRef, MachineField, RowRef};
         match (self, binding) {
-            (Self::DrillCycle, _) | (_, PlungeBinding::Feed) => {
+            (Self::DrillCycle { .. }, _) | (_, PlungeBinding::Feed) => {
                 Basis::derived("plunge = feed", vec![feed.clone()])
             }
+            (_, PlungeBinding::ZAxisRate) => Basis::derived(
+                "machine Z axis rate",
+                vec![Basis::Machine(MachineField::ZAxisRate)],
+            ),
             (_, PlungeBinding::TipCap) => Basis::derived(
                 "ball tip cap (repo rule, tool_load::plunge_stress)",
                 vec![Basis::tool_diameter()],
             ),
             (
-                Self::Claimed { axial, .. } | Self::MaterialBase { axial, .. },
+                Self::Claimed { vertical, .. } | Self::MaterialBase { vertical, .. },
                 PlungeBinding::AxialChip,
             ) => Basis::derived(
                 "Q8 G6 axial chip x rpm x Z",
-                axial
-                    .iter()
+                vertical
+                    .axial()
+                    .into_iter()
                     .map(|b| {
                         Basis::Claim(ClaimRef {
                             kind: ClaimKind::DrillG6,
-                            row: RowRef(b.side_row.clone()),
+                            row: RowRef(b.side_row().to_owned()),
                             rule: "g6_axial_plunge".to_owned(),
                         })
                     })
@@ -400,6 +389,25 @@ impl PlungeBasis {
     }
 }
 
+/// The headline terms of the vertical-rate limit: the G6 axial chip
+/// (`0.0635 x rpm x 2`) and the stated Z axis rate. A machine with no Z rate
+/// adds no term; the detail line says that no Z cap applies.
+fn vertical_terms(vertical: &VerticalRateLimit) -> Vec<String> {
+    let mut terms = Vec::new();
+    if let Some(bound) = vertical.axial() {
+        terms.push(format!(
+            "{:.4} x rpm x {}",
+            bound.axial_chip_mm(),
+            bound.flutes()
+        ));
+    }
+    match vertical.z_axis() {
+        ZAxisRate::Stated(rate) => terms.push(format!("Z axis rate {rate:.0} mm/min")),
+        ZAxisRate::NotStated => {}
+    }
+    terms
+}
+
 /// The plunge basis of one calculator input (`calculate` step 8).
 ///
 /// 1. A drill cycle gives `DrillCycle`.
@@ -409,19 +417,19 @@ impl PlungeBasis {
 ///    unrouted LUT query.
 /// 3. A G10 claim gives `Claimed`; a refusal gives `MaterialBase` with
 ///    `material_base_mm_min`.
-/// 4. Q8 (P8): an op whose entry contract is `StraightPlunge { feed:
-///    AxialChip }` takes the G6 axial-chip bound when `ramp` holds a G6
-///    claim (`RampBasis::Sourced`); any other op, or no claim, takes none.
+/// 4. P20b: every basis carries the one vertical-rate limit
+///    ([`VerticalRateLimit::new`]): the G6 axial chip when `ramp` holds a G6
+///    claim (`RampBasis::Sourced`), and the machine Z axis rate.
 #[must_use]
 pub fn plunge_basis(
     input: &FeedsInput<'_>,
     material_base_mm_min: f64,
     ramp: &super::ramp::RampBasis,
 ) -> PlungeBasis {
+    let vertical = VerticalRateLimit::new(ramp, input.machine);
     if input.operation == OperationFamily::Drill {
-        return PlungeBasis::DrillCycle;
+        return PlungeBasis::DrillCycle { vertical };
     }
-    let axial = axial_chip_bound(input, ramp);
     let tip_cap = TipCap::for_tool(input.tool_geometry, input.tool_diameter);
     let tip_d_mm = match input.tool_geometry {
         ToolGeometryHint::TaperedBall { .. } => {
@@ -451,46 +459,14 @@ pub fn plunge_basis(
         Ok(claim) => PlungeBasis::Claimed {
             claim: Box::new(claim),
             tip_cap,
-            axial,
+            vertical,
         },
         Err(reason) => PlungeBasis::MaterialBase {
             reason,
             base_mm_min: material_base_mm_min,
             tip_cap,
-            axial,
+            vertical,
         },
-    }
-}
-
-/// Q8: the G6 axial-chip bound of `input`, from its op's entry contract and
-/// the G6 ramp basis. `None` unless the contract is `StraightPlunge { feed:
-/// AxialChip }` and a G6 claim covers the tool.
-fn axial_chip_bound(
-    input: &FeedsInput<'_>,
-    ramp: &super::ramp::RampBasis,
-) -> Option<AxialChipBound> {
-    use crate::compute::catalog::{EntryContract, PlungeFeedRule};
-    let op = input.operation_kind?;
-    let states_axial_chip = match op.registry_entry().entry {
-        EntryContract::StraightPlunge { feed, .. } => feed == PlungeFeedRule::AxialChip,
-        EntryContract::Dressup { .. }
-        | EntryContract::Planner { .. }
-        | EntryContract::DescentIsCut => false,
-    };
-    if !states_axial_chip {
-        return None;
-    }
-    match ramp {
-        super::ramp::RampBasis::Sourced {
-            axial_chip_mm,
-            drill,
-            ..
-        } => Some(AxialChipBound {
-            axial_chip_mm: *axial_chip_mm,
-            flutes: drill.flutes,
-            side_row: drill.side_row.clone(),
-        }),
-        super::ramp::RampBasis::NoChip { .. } => None,
     }
 }
 
@@ -514,30 +490,32 @@ pub fn resolve_plunge_at(
 /// `the_plunge_reads_the_feed_before_the_lift_p18` holds that no source
 /// file outside this module calls it.
 ///
-/// The value is `min(rule, tip cap, axial chip, feed)`, rounded DOWN to 1
-/// mm/min (T-9: the value is bound from above). On a tie the rule binds,
-/// then the tip cap, then the axial chip. The RPM reaches only the axial
-/// chip (Q8). `None` for a drill cycle, and for a value that is not
-/// positive.
+/// The value is `min(rule, tip cap, axial chip, Z axis rate, feed)`,
+/// rounded DOWN to 1 mm/min (T-9: the value is bound from above). The
+/// axial chip and the Z axis rate come from the one vertical-rate limit
+/// ([`VerticalRateLimit::bound`], P20b). On a tie the rule binds, then the
+/// tip cap, then the axial chip, then the Z axis rate. The RPM reaches only
+/// the axial chip (Q8). `None` for a drill cycle, and for a value that is
+/// not positive.
 #[must_use]
 pub fn resolve_plunge(
     basis: &PlungeBasis,
     feed_mm_min: f64,
     rpm: f64,
 ) -> Option<(f64, PlungeBinding)> {
-    let (rule_mm_min, tip_cap, axial) = match basis {
+    let (rule_mm_min, tip_cap, vertical) = match basis {
         PlungeBasis::Claimed {
             claim,
             tip_cap,
-            axial,
-        } => (claim.fraction * feed_mm_min, *tip_cap, axial.as_ref()),
+            vertical,
+        } => (claim.fraction * feed_mm_min, *tip_cap, vertical),
         PlungeBasis::MaterialBase {
             base_mm_min,
             tip_cap,
-            axial,
+            vertical,
             ..
-        } => (*base_mm_min, *tip_cap, axial.as_ref()),
-        PlungeBasis::DrillCycle => return None,
+        } => (*base_mm_min, *tip_cap, vertical),
+        PlungeBasis::DrillCycle { .. } => return None,
     };
     let mut value = rule_mm_min;
     let mut binding = PlungeBinding::Rule;
@@ -547,11 +525,16 @@ pub fn resolve_plunge(
         value = cap.cap_mm_min;
         binding = PlungeBinding::TipCap;
     }
-    if let Some(bound) = axial {
-        let vertical = bound.at_rpm(rpm);
-        if vertical.is_finite() && vertical > 0.0 && vertical < value {
-            value = vertical;
+    let bounded = vertical.bound(value, rpm);
+    match bounded.binding() {
+        VerticalBinding::Candidate => {}
+        VerticalBinding::AxialChip => {
+            value = bounded.mm_min();
             binding = PlungeBinding::AxialChip;
+        }
+        VerticalBinding::ZAxisRate => {
+            value = bounded.mm_min();
+            binding = PlungeBinding::ZAxisRate;
         }
     }
     if feed_mm_min.is_finite() && feed_mm_min > 0.0 && feed_mm_min < value {
@@ -572,6 +555,17 @@ mod tests {
     use super::*;
     use crate::feeds::vendor_lut::{MaterialFamily, ToolFamily};
 
+    /// No G6 chip and no Z axis rate (`MachineProfile::default()` has no
+    /// kinematics).
+    fn no_limit() -> VerticalRateLimit {
+        VerticalRateLimit::new(
+            &crate::feeds::ramp::RampBasis::NoChip {
+                reason: crate::feeds::ramp::RampFallback::NoLut,
+            },
+            &crate::machine::MachineProfile::default(),
+        )
+    }
+
     fn claimed(family: ToolFamily, d: f64, tip: Option<f64>, z: u32) -> PlungeBasis {
         let claim = plunge_rule(family, d, tip, None, z, MaterialFamily::Hardwood)
             .unwrap_or_else(|e| panic!("{family:?}: {}", e.text()));
@@ -589,7 +583,7 @@ mod tests {
         PlungeBasis::Claimed {
             claim: Box::new(claim),
             tip_cap: TipCap::for_tool(geometry, d),
-            axial: None,
+            vertical: no_limit(),
         }
     }
 
@@ -645,7 +639,7 @@ mod tests {
             reason: PlungeRefusal::NoRuleForFamily(ToolFamily::BullNose),
             base_mm_min: 1000.0,
             tip_cap: None,
-            axial: None,
+            vertical: no_limit(),
         };
         assert_eq!(
             resolve_plunge(&base, 800.0, 18_000.0),
@@ -675,7 +669,13 @@ mod tests {
         let (value, _) = resolve_plunge(&two, 2001.9, 18_000.0).unwrap();
         assert!((value - 1000.0).abs() < 1e-12, "{value}");
         assert_eq!(
-            resolve_plunge(&PlungeBasis::DrillCycle, 2000.0, 18_000.0),
+            resolve_plunge(
+                &PlungeBasis::DrillCycle {
+                    vertical: no_limit()
+                },
+                2000.0,
+                18_000.0
+            ),
             None
         );
     }

@@ -95,7 +95,8 @@ fn long_tool_warning(result: &FeedsResult) -> Option<(f64, f64, f64, f64)> {
         | FeedsWarning::VendorRowPublishesNoChipload { .. }
         | FeedsWarning::NoVendorRowsForRoutedOperation { .. }
         | FeedsWarning::FormulaChipNoPrintedRow { .. }
-        | FeedsWarning::DrillFeedClampedToEnvelope { .. } => None,
+        | FeedsWarning::DrillFeedClampedToEnvelope { .. }
+        | FeedsWarning::DrillFeedAtZAxisRate { .. } => None,
     })
 }
 

@@ -43,6 +43,7 @@ pub mod support;
 pub mod vendor_lookup;
 pub mod vendor_lut;
 pub mod vendor_normalize;
+pub mod vertical;
 pub(crate) use calculator::{DepthClamps, StepRecording, calculate_with};
 pub use efficiency::{ChipVerdict, CutEfficiency, cut_efficiency};
 pub use explain_payload::{FeedsExplain, MachineEnvelope, explain as explain_feeds};
@@ -1271,6 +1272,21 @@ pub enum FeedsWarning {
         actual: f64,
         envelope_lo: f64,
         envelope_hi: f64,
+    },
+    /// P20b: the machine Z axis rate (GRBL `$112`,
+    /// `feeds::vertical::VerticalRateLimit`) capped the drill feed, and the
+    /// RPM followed down to hold the chip. The machine minimum RPM is the
+    /// only lower bound of the RPM; where it binds, `rpm_to` is above the
+    /// RPM that holds the chip and the chip is thinner.
+    DrillFeedAtZAxisRate {
+        /// The drill feed before the cap (mm/min).
+        requested: f64,
+        /// The Z axis rate, the feed that ships (mm/min).
+        z_rate_mm_min: f64,
+        /// The RPM before the cap.
+        rpm_from: f64,
+        /// The RPM that ships.
+        rpm_to: f64,
     },
 }
 

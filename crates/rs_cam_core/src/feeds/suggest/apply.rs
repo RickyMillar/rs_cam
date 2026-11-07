@@ -192,8 +192,8 @@ fn apply_feeds_subset(
     // plunge only when the value moved by 1 mm/min or more, and files the
     // move. A drill cycle gives no value: its plunge is its feed. The ramp
     // below reads this plunge, so the plunge comes first.
-    // Q8 (P8): the axial-chip bound of a Project Curve plunge reads the RPM
-    // that ships.
+    // P20b: the vertical-rate limit (the G6 axial chip of every op, Q8;
+    // the machine Z axis rate) reads the RPM that ships.
     // P18 (review D14): the rule reads the shipped feed BEFORE the radial
     // chip-thinning lift at the geometry the operation keeps (a plunge is
     // axial and has no radial thinning).
@@ -271,8 +271,11 @@ fn apply_feeds_subset(
         let entry = crate::feeds::ramp::entry_geometry(operation, context.dressups, tool);
         // P18 (review D14): the cut term of the ramp reads the feed before
         // the lift too (an entry cuts the full width of the tool).
+        // P20b: the vertical part of the ramp goes through the one
+        // vertical-rate limit (the G6 axial chip, the machine Z axis rate).
         let record = crate::feeds::ramp::resolve_ramp_feed(
             &result.ramp,
+            result.plunge.vertical_limit(),
             entry,
             // The scratch holds the geometry that pass 9 read.
             super::adaptive_entry::unlifted_feed_at_kept_geometry(

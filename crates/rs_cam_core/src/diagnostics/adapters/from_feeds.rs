@@ -421,6 +421,37 @@ fn feeds_warning_to_diagnostic(tp_id: ToolpathId, w: &FeedsWarning) -> Diagnosti
             supersedes: vec![],
             suppressed_diagnostics: vec![],
         },
+        // P20b. Info: the machine runs at its Z axis rate anyway; the card
+        // states the feed and the RPM that ship.
+        FeedsWarning::DrillFeedAtZAxisRate {
+            requested,
+            z_rate_mm_min,
+            rpm_from,
+            rpm_to,
+        } => Diagnostic {
+            id: DiagnosticId::from(ids::FEEDS_DRILL_FEED_AT_Z_AXIS_RATE),
+            scope: Scope::Toolpath { id: tp_id },
+            category: Category::ToolLoad,
+            severity: Severity::Info,
+            confidence: Confidence::Static,
+            state: DiagnosticState::Current,
+            source: Source::FeedsCalculator,
+            face: crate::diagnostics::presentation::face(ids::FEEDS_DRILL_FEED_AT_Z_AXIS_RATE),
+            anchor: crate::diagnostics::presentation::anchor(ids::FEEDS_DRILL_FEED_AT_Z_AXIS_RATE),
+            message: format!(
+                "{}.",
+                crate::feeds::vertical::drill_feed_at_z_axis_rate_text(
+                    *requested,
+                    *z_rate_mm_min,
+                    *rpm_from,
+                    *rpm_to,
+                )
+            ),
+            evidence: None,
+            fix: None,
+            supersedes: vec![],
+            suppressed_diagnostics: vec![],
+        },
         // Checkpoint K (a4). A Caution, unlike (a3)'s Info: the operator
         // is being told the recommendation has NO vendor backing at all,
         // and that the post-simulation gate will refuse to judge it.

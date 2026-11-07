@@ -659,7 +659,14 @@ fn feeds_hint_emits_high_feed_ratio() {
         chip_load_mm: 0.02,
         feed_rate_mm_min: 1000.0,
         plunge_rate_mm_min: 400.0,
-        plunge: crate::feeds::PlungeBasis::DrillCycle,
+        plunge: crate::feeds::PlungeBasis::DrillCycle {
+            vertical: crate::feeds::vertical::VerticalRateLimit::new(
+                &crate::feeds::RampBasis::NoChip {
+                    reason: crate::feeds::RampFallback::NoLut,
+                },
+                &crate::machine::MachineProfile::default(),
+            ),
+        },
         ramp: crate::feeds::RampBasis::NoChip {
             reason: crate::feeds::RampFallback::NoLut,
         },
@@ -1009,7 +1016,14 @@ fn fixture_feeds_result() -> crate::feeds::FeedsResult {
         chip_load_mm: 0.02,
         feed_rate_mm_min: 1000.0,
         plunge_rate_mm_min: 400.0,
-        plunge: crate::feeds::PlungeBasis::DrillCycle,
+        plunge: crate::feeds::PlungeBasis::DrillCycle {
+            vertical: crate::feeds::vertical::VerticalRateLimit::new(
+                &crate::feeds::RampBasis::NoChip {
+                    reason: crate::feeds::RampFallback::NoLut,
+                },
+                &crate::machine::MachineProfile::default(),
+            ),
+        },
         ramp: crate::feeds::RampBasis::NoChip {
             reason: crate::feeds::RampFallback::NoLut,
         },

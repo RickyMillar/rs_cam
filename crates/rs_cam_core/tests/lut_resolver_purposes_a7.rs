@@ -243,7 +243,8 @@ fn sweep(lut: &VendorLut) -> Sweep {
                             | FeedsWarning::LongToolDerate { .. }
                             | FeedsWarning::NoVendorRowsForRoutedOperation { .. }
                             | FeedsWarning::FormulaChipNoPrintedRow { .. }
-                            | FeedsWarning::DrillFeedClampedToEnvelope { .. } => None,
+                            | FeedsWarning::DrillFeedClampedToEnvelope { .. }
+                            | FeedsWarning::DrillFeedAtZAxisRate { .. } => None,
                         });
                         let case = format!(
                             "{label} d={diameter} f={flutes} {species:?} {pass_role:?} \

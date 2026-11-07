@@ -589,7 +589,7 @@ pub(crate) fn row_basis_rows(explain: &FeedsExplain) -> Vec<DataRow> {
     let plunge_tone = match plunge {
         PlungeBasis::Claimed { .. } => Some((theme::WARNING_MILD, ProvKind::PublishedRule)),
         PlungeBasis::MaterialBase { .. } => Some((theme::TEXT_DIM, ProvKind::RepoRule)),
-        PlungeBasis::DrillCycle => None,
+        PlungeBasis::DrillCycle { .. } => None,
     };
     if let Some((tone, kind)) = plunge_tone {
         let (headline, detail) = plunge.card_text();
@@ -993,6 +993,23 @@ fn warning_lines(warning: &rs_cam_core::feeds::FeedsWarning) -> (String, Option<
                  {envelope_lo:.0}–{envelope_hi:.0} mm/min."
             )),
         ),
+        FeedsWarning::DrillFeedAtZAxisRate {
+            requested,
+            z_rate_mm_min,
+            rpm_from,
+            rpm_to,
+        } => (
+            format!("Drill feed at the machine Z rate: {requested:.0} → {z_rate_mm_min:.0} mm/min"),
+            Some(format!(
+                "{}.",
+                rs_cam_core::feeds::vertical::drill_feed_at_z_axis_rate_text(
+                    *requested,
+                    *z_rate_mm_min,
+                    *rpm_from,
+                    *rpm_to,
+                )
+            )),
+        ),
     }
 }
 
@@ -1021,6 +1038,7 @@ pub(crate) fn warning_rows(explain: &FeedsExplain) -> Vec<Placement> {
                 // P16 (D9): the cap row itself is on the face; the unstated
                 // cap is its record in Details.
                 FeedsWarning::RpmLoweredForFeedCeiling { .. }
+                | FeedsWarning::DrillFeedAtZAxisRate { .. }
                 | FeedsWarning::CuttingCapUnstated { .. }
                 | FeedsWarning::NoVendorRowsForRoutedOperation { .. }
                 | FeedsWarning::VendorRowPublishesNoChipload { .. } => {

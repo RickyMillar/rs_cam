@@ -929,6 +929,19 @@ impl MachineProfile {
         }
     }
 
+    /// P20b: the Z axis rate (mm/min, GRBL `$112`), the third value of
+    /// `kinematics.max_rate_xyz_mm_min`. `None` when the machine states no
+    /// per-axis rates; the generic kinematics fallback is not read. The
+    /// feeds vertical-rate limit (`feeds::vertical::VerticalRateLimit`)
+    /// is the one reader.
+    #[must_use]
+    pub fn z_axis_rate_mm_min(&self) -> Option<f64> {
+        self.kinematics
+            .and_then(|k| k.max_rate_xyz_mm_min)
+            .map(|[_, _, z]| z)
+            .filter(|r| r.is_finite() && *r > 0.0)
+    }
+
     /// F002: the travel rate (`max_feed_mm_min`, the $110 class) as its own
     /// type: the rate of rapids, links and the kinematics cruise cap.
     #[must_use]

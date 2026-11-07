@@ -395,7 +395,7 @@ fn entry_columns(s: &SuggestedParams) -> [String; 6] {
     let rule = match &r.plunge {
         PlungeBasis::Claimed { claim, .. } => claim.rule.id.to_owned(),
         PlungeBasis::MaterialBase { reason, .. } => reason.short(),
-        PlungeBasis::DrillCycle => String::new(),
+        PlungeBasis::DrillCycle { .. } => String::new(),
     };
     let binding = resolve_plunge(
         &r.plunge,

@@ -1510,7 +1510,7 @@ pub(super) static REG_PROJECT_CURVE: OpRegistryEntry = OpRegistryEntry {
     lead_link_policy: LeadLinkPolicy::strip(PROJECT_CURVE_NO_ENTRY),
     entry: EntryContract::StraightPlunge {
         reason: PROJECT_CURVE_NO_ENTRY,
-        feed: PlungeFeedRule::AxialChip,
+        feed: PlungeFeedRule::OpPlungeRate,
     },
     geometry: crate::compute::geometry_default::NONE,
     policy: OpPolicy::MILLING,

@@ -290,8 +290,10 @@ fn the_plunge_line_names_its_claim_or_rule_g10() {
         }
         let (headline, detail) = plunge.card_text();
         if claimed {
+            // P20b: the G6 axial chip bounds every plunge where a G6 claim
+            // covers the tool, so the headline names it beside the fraction.
             assert!(
-                headline.starts_with("Plunge = feed / 2 (G10"),
+                headline.starts_with("Plunge = min(feed / 2, 0.0635 x rpm x 2) (G10"),
                 "{name}: {headline}"
             );
         } else {

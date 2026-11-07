@@ -283,6 +283,9 @@ diag_ids! {
     /// the chipload (ruling R4 Q10, 2026-09-24). Info.
     pub const FEEDS_RPM_LOWERED_FOR_CEILING: &str = "feeds.rpm_lowered_for_ceiling" => INFO;
     pub const FEEDS_DRILL_FEED_CLAMPED_TO_ENVELOPE: &str = "feeds.drill_feed_clamped_to_envelope" => warn(Danger::Part);
+    /// P20b: the machine Z axis rate capped the drill feed, and the RPM
+    /// followed down to hold the chip. Info.
+    pub const FEEDS_DRILL_FEED_AT_Z_AXIS_RATE: &str = "feeds.drill_feed_at_z_axis_rate" => INFO;
     pub const FEEDS_VENDOR_ROW_PUBLISHES_NO_CHIPLOAD: &str =
         "feeds.vendor_row_publishes_no_chipload" => INFO;
     pub const FEEDS_NO_VENDOR_ROWS_FOR_ROUTED_OPERATION: &str =

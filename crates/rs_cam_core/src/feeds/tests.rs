@@ -751,7 +751,8 @@ fn test_drill_feed_clamp_emits_warning_when_binding() {
         | FeedsWarning::LongToolDerate { .. }
         | FeedsWarning::VendorRowPublishesNoChipload { .. }
         | FeedsWarning::NoVendorRowsForRoutedOperation { .. }
-        | FeedsWarning::FormulaChipNoPrintedRow { .. } => None,
+        | FeedsWarning::FormulaChipNoPrintedRow { .. }
+        | FeedsWarning::DrillFeedAtZAxisRate { .. } => None,
     });
     let Some((requested, actual)) = clamped else {
         panic!("non-vacuity: the fixture must bind the envelope ceiling");

@@ -76,6 +76,9 @@ pub enum MachineField {
     CuttingFeedCap,
     /// `MachineProfile::rigidity`: the depth caps and adaptive factors.
     Rigidity,
+    /// `MachineProfile::z_axis_rate_mm_min` (GRBL `$112`): the vertical
+    /// rate cap (P20b).
+    ZAxisRate,
 }
 
 impl MachineField {
@@ -87,6 +90,7 @@ impl MachineField {
             Self::PowerCurve => "machine.power_at_rpm",
             Self::CuttingFeedCap => "machine.cutting_feed_ceiling_mm_min",
             Self::Rigidity => "machine.rigidity",
+            Self::ZAxisRate => "machine.kinematics.max_rate_xyz_mm_min[2]",
         }
     }
 }

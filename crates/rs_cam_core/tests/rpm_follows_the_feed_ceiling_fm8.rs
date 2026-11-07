@@ -128,7 +128,8 @@ fn lowered(r: &FeedsResult) -> Option<(f64, f64, f64, f64, RpmFloorSource, bool)
         | FeedsWarning::VendorRowPublishesNoChipload { .. }
         | FeedsWarning::NoVendorRowsForRoutedOperation { .. }
         | FeedsWarning::FormulaChipNoPrintedRow { .. }
-        | FeedsWarning::DrillFeedClampedToEnvelope { .. } => None,
+        | FeedsWarning::DrillFeedClampedToEnvelope { .. }
+        | FeedsWarning::DrillFeedAtZAxisRate { .. } => None,
     })
 }
 

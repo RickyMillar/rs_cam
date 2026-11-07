@@ -4,6 +4,7 @@
 use super::CalcState;
 use crate::feeds::geometry::UnliftedFeed;
 use crate::feeds::sourced::{self, Basis, PointBases};
+use crate::feeds::vertical::VerticalBinding;
 use crate::feeds::{
     ChiploadSource, FeedsDerates, FeedsResult, FeedsWarning, FormulaBreakdown, OperationFamily,
     RampBasis, engagement, plunge, ramp, worst_case_power,
@@ -51,7 +52,7 @@ fn plunge_value_basis(
     match plunge::resolve_plunge_at(plunge_basis, feed, rpm) {
         Some((_, binding)) => plunge_basis.basis(binding, feed_basis, material_plunge_row.clone()),
         None => match plunge_basis {
-            plunge::PlungeBasis::DrillCycle => {
+            plunge::PlungeBasis::DrillCycle { .. } => {
                 Basis::derived("plunge = feed", vec![feed_basis.clone()])
             }
             plunge::PlungeBasis::Claimed { .. } | plunge::PlungeBasis::MaterialBase { .. } => {
@@ -76,11 +77,12 @@ pub(super) fn step8_plunge(s: &CalcState) -> Entry {
     // V-bit F / 3; rulings Q4 and Q5). When no claim covers the tool, the
     // rule is the named repo rule: the material base below, scaled by the
     // diameter. The tip cap of a ball or a tapered ball is a named repo rule
-    // too (`tool_load::plunge_stress`, the one producer). Q8 (P8): an op
-    // whose entry contract is `StraightPlunge { feed: AxialChip }` (Project
-    // Curve) also takes `G6 axial chip x rpm x Z` where a G6 claim covers
-    // the tool, so the ramp basis (Step 8b) comes first. The apply funnel
-    // runs the rule again at the feed and the RPM that ship.
+    // too (`tool_load::plunge_stress`, the one producer). P20b: the one
+    // vertical-rate limit (`feeds::vertical`) bounds every plunge by the
+    // G6 axial chip x rpm x Z where a G6 claim covers the tool, and by the
+    // machine Z axis rate where the machine states it, so the ramp basis
+    // (Step 8b) comes first. The apply funnel runs the rule again at the
+    // feed and the RPM that ship.
     //
     // --- Step 8b: the sourced half of the ramp feed (G6 ramp) ---
     // The G6 drill claim gives the axial chip of a helix or ramp entry, or
@@ -177,17 +179,18 @@ pub(super) fn step9b_rubbing_floor(s: &mut CalcState) {
     }
 }
 
-/// Step 9c: a drill cycle keeps its feed in the material plunge envelope,
-/// and its plunge is its feed.
+/// Step 9c: a drill cycle keeps its feed in the material plunge envelope
+/// and at or below the machine Z axis rate, and its plunge is its feed.
 pub(super) fn step9c_drill(s: &mut CalcState, entry: &mut Entry) {
     let input = s.input;
     let machine = input.machine;
     let d = input.tool_diameter;
     // --- Step 9c: Drill cycles — envelope sanity + "feed IS plunge" ---
     //
-    // A drill cycle has exactly one feed: the plunge. Two corrections
+    // A drill cycle has exactly one feed: the plunge. Corrections 1 and 2
     // close the 2026-06-10 defect-class findings (F1, see
-    // `planning/DEFECT_CLASS_CLEANUP_2026-06-10.md`):
+    // `planning/DEFECT_CLASS_CLEANUP_2026-06-10.md`); correction 3 is
+    // P20b:
     //
     // 1. Clamp the chipload-derived feed into the material plunge-feed
     //    envelope (`Material::drill_plunge_feed_envelope_per_mm`, units
@@ -213,13 +216,31 @@ pub(super) fn step9c_drill(s: &mut CalcState, entry: &mut Entry) {
     //    Steps 1-2), landing every suggested drill at the milling
     //    plunge value instead. Making the result self-consistent here
     //    keeps any write order safe.
+    // 3. P20b: the machine Z axis rate (GRBL `$112`) caps the drill feed
+    //    (`feeds::vertical::VerticalRateLimit`, the one vertical-rate
+    //    limit; a drill cycle has no G6 ramp basis, so only the Z axis rate
+    //    binds). Above it the machine runs slower than the card says. A
+    //    machine with no per-axis rates has no Z cap.
+    //
+    // When the envelope ceiling or the Z axis rate lowers the feed, the RPM
+    // follows down once, over the combined clamp, so that the commanded
+    // chipload holds and does not thin toward rubbing. A capped drill that
+    // keeps a high RPM takes a thinner bite per revolution. The machine
+    // minimum RPM (`machine.clamp_rpm`) is the only lower bound: P20a
+    // (2026-11-08) removed the drill RPM tier, which had no source. The
+    // envelope ceilings are the largest printed Ramp Down per mm in the G6
+    // rule range (the Amana Spektra 3 mm row), so a claimed G6 cell at the
+    // chart chip and RPM is at or just under the ceiling at 3 mm and below
+    // it at a larger diameter. A higher RPM (`SpindleStrategy::MaxSpeed`), a
+    // hardness transfer that lifts the chip, or a formula preview can bind
+    // it.
     if input.operation == OperationFamily::Drill {
         let (env_lo_per_mm, env_hi_per_mm) = input.material.drill_plunge_feed_envelope_per_mm();
         let (env_lo, env_hi) = (env_lo_per_mm * d, env_hi_per_mm * d);
-        let feed = s.feed.feed;
+        let requested = s.feed.feed;
+        let mut feed = requested;
         if feed < env_lo || feed > env_hi {
             let commanded_cut_ceiling = machine.cutting_feed_ceiling_mm_min();
-            let requested = feed;
             let clamped = feed.clamp(env_lo, env_hi).min(commanded_cut_ceiling);
             s.warnings.push(FeedsWarning::DrillFeedClampedToEnvelope {
                 requested,
@@ -227,34 +248,46 @@ pub(super) fn step9c_drill(s: &mut CalcState, entry: &mut Entry) {
                 envelope_lo: env_lo,
                 envelope_hi: env_hi,
             });
-            // When the ceiling binds (feed reduced), the RPM follows down
-            // so that the commanded chipload holds and does not thin
-            // toward rubbing. A feed-capped drill that keeps a high RPM
-            // takes a thinner bite per revolution. The machine minimum
-            // RPM (`machine.clamp_rpm`) is the only lower bound: P20a
-            // (2026-11-08) removed the drill RPM tier, which had no
-            // source. The ceilings are the largest printed Ramp Down per
-            // mm in the G6 rule range (the Amana Spektra 3 mm row), so a
-            // claimed G6 cell at the chart chip and RPM is at or just
-            // under the ceiling at 3 mm and below it at a larger
-            // diameter. A higher RPM (`SpindleStrategy::MaxSpeed`), a
-            // hardness transfer that lifts the chip, or a formula preview
-            // can bind it.
-            let flutes = input.flute_count as f64;
-            let rpm = s.speed.rpm;
-            if clamped < requested && rpm > 0.0 && flutes > 0.0 {
-                let kept_fpt = requested / (rpm * flutes);
-                if kept_fpt > 0.0 {
-                    let target_rpm = machine.clamp_rpm(clamped / (kept_fpt * flutes));
-                    if target_rpm < rpm {
-                        s.speed.spindle_scale *= target_rpm / rpm;
-                        s.speed.rpm = target_rpm;
-                    }
-                }
-            }
-            s.feed.feed = clamped;
+            feed = clamped;
             s.feed.basis = Basis::derived("drill feed envelope", vec![s.feed.basis.clone()]);
         }
+        let rpm = s.speed.rpm;
+        let vertical = entry.plunge_basis.vertical_limit().bound(feed, rpm);
+        let z_capped = match vertical.binding() {
+            VerticalBinding::ZAxisRate => true,
+            VerticalBinding::Candidate | VerticalBinding::AxialChip => false,
+        };
+        let before_z = feed;
+        if z_capped {
+            feed = vertical.mm_min();
+            s.feed.basis = Basis::derived(
+                "machine Z axis rate",
+                vec![
+                    Basis::Machine(sourced::MachineField::ZAxisRate),
+                    s.feed.basis.clone(),
+                ],
+            );
+        }
+        let flutes = input.flute_count as f64;
+        if feed < requested && rpm > 0.0 && flutes > 0.0 {
+            let kept_fpt = requested / (rpm * flutes);
+            if kept_fpt > 0.0 {
+                let target_rpm = machine.clamp_rpm(feed / (kept_fpt * flutes));
+                if target_rpm < rpm {
+                    s.speed.spindle_scale *= target_rpm / rpm;
+                    s.speed.rpm = target_rpm;
+                }
+            }
+        }
+        if z_capped {
+            s.warnings.push(FeedsWarning::DrillFeedAtZAxisRate {
+                requested: before_z,
+                z_rate_mm_min: feed,
+                rpm_from: rpm,
+                rpm_to: s.speed.rpm,
+            });
+        }
+        s.feed.feed = feed;
         entry.plunge_rate = s.feed.feed;
     }
 }

@@ -461,7 +461,8 @@ fn tapered_ball_floor_lands_below_the_global_constant() {
         | FeedsWarning::LongToolDerate { .. }
         | FeedsWarning::NoVendorRowsForRoutedOperation { .. }
         | FeedsWarning::FormulaChipNoPrintedRow { .. }
-        | FeedsWarning::DrillFeedClampedToEnvelope { .. } => None,
+        | FeedsWarning::DrillFeedClampedToEnvelope { .. }
+        | FeedsWarning::DrillFeedAtZAxisRate { .. } => None,
     });
     // The recipe resolver may legitimately match a chipload-bearing row here,
     // in which case there is no warning and no fallback — that is the healthy
@@ -496,7 +497,8 @@ fn tapered_ball_floor_lands_below_the_global_constant() {
         | FeedsWarning::VendorRowPublishesNoChipload { .. }
         | FeedsWarning::NoVendorRowsForRoutedOperation { .. }
         | FeedsWarning::FormulaChipNoPrintedRow { .. }
-        | FeedsWarning::DrillFeedClampedToEnvelope { .. } => None,
+        | FeedsWarning::DrillFeedClampedToEnvelope { .. }
+        | FeedsWarning::DrillFeedAtZAxisRate { .. } => None,
     });
     let (commanded, warned_floor, source) = warned.unwrap_or_else(|| {
         panic!(

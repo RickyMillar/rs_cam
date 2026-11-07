@@ -54,6 +54,10 @@
 //! - `FeedsWarning::DrillFeedClampedToEnvelope`: the material envelope
 //!   brackets the drill recipe on every shipped drill cell (spec R4 §1.2,
 //!   S14 fires on 0 cells).
+//! - `FeedsWarning::DrillFeedAtZAxisRate` (P20b): it needs a machine with
+//!   kinematics whose Z axis rate is below the drill feed; no fixture here
+//!   states kinematics. The core sentry
+//!   `one_vertical_rate_limit_for_plunge_drill_and_ramp_p20b` raises it.
 //! - `SuggestWarning::FeedRescaledToFinalGeometry`: pass 9 files it only when
 //!   the final depth crosses a step of the published depth ladder. Whether
 //!   the dial's smaller depth crosses one depends on the cell (FM1: 24 cells).
@@ -148,6 +152,8 @@ fn classify_feeds(w: &FeedsWarning) -> (&'static str, Class) {
         FeedsWarning::DrillFeedClampedToEnvelope { .. } => {
             ("DrillFeedClampedToEnvelope", Class::OnTheFace)
         }
+        // P20b: the machine Z axis rate caps the drill feed.
+        FeedsWarning::DrillFeedAtZAxisRate { .. } => ("DrillFeedAtZAxisRate", Class::OnTheFace),
         // Ruling R4 Q10: the RPM follows the feed ceiling down.
         FeedsWarning::RpmLoweredForFeedCeiling { .. } => {
             ("RpmLoweredForFeedCeiling", Class::OnTheFace)
@@ -266,6 +272,14 @@ fn feeds_numbers(w: &FeedsWarning) -> Vec<String> {
         } => {
             out.push(at(*requested, 0));
             out.push(at(*actual, 0));
+        }
+        FeedsWarning::DrillFeedAtZAxisRate {
+            requested,
+            z_rate_mm_min,
+            ..
+        } => {
+            out.push(at(*requested, 0));
+            out.push(at(*z_rate_mm_min, 0));
         }
         FeedsWarning::RpmLoweredForFeedCeiling {
             rpm_from,

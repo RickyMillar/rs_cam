@@ -186,6 +186,11 @@ impl ValueProvenance {
     }
 }
 
+/// P20b: the stamp of a value that the machine Z axis rate sets.
+fn z_axis_rate_stamp() -> ValueProvenance {
+    ValueProvenance::of_basis(&Basis::Machine(super::sourced::MachineField::ZAxisRate))
+}
+
 /// Per-dimension provenance for the feeds stored on a `ToolpathConfig`.
 ///
 /// `None` for a field means "never explicitly derived or edited" — the
@@ -287,16 +292,19 @@ impl FeedsProvenance {
     /// - the plunge term of a plunge-slope ramp (G10 Q2) copies the plunge's
     ///   stamp, because the ramp then holds its vertical rate at the plunge;
     /// - the no-entry fallback copies the plunge's stamp, because the entry
-    ///   then runs at the plunge rate.
+    ///   then runs at the plunge rate;
+    /// - the Z axis term (P20b) stamps the machine field.
     pub fn stamp_ramp(&mut self, ramp: &RampFeed) {
         self.ramp_feed_rate = match ramp {
             RampFeed::Sourced(s) => match s.arm {
                 RampArm::ChipTerm => Some(ValueProvenance::vendor_lut(s.drill.side_row.clone())),
                 RampArm::CutFeed => self.feed_rate.clone(),
                 RampArm::PlungeTerm => self.plunge_rate.clone(),
+                RampArm::ZAxisRate => Some(z_axis_rate_stamp()),
             },
             RampFeed::PlungeSlope(s) => match s.arm {
                 RampArm::PlungeTerm | RampArm::ChipTerm => self.plunge_rate.clone(),
+                RampArm::ZAxisRate => Some(z_axis_rate_stamp()),
                 RampArm::CutFeed => self.feed_rate.clone(),
             },
             RampFeed::NoEntryFeed { .. } => self.plunge_rate.clone(),
@@ -542,7 +550,12 @@ mod tests {
                 ),
                 base_mm_min: 400.0,
                 tip_cap: None,
-                axial: None,
+                vertical: crate::feeds::vertical::VerticalRateLimit::new(
+                    &crate::feeds::RampBasis::NoChip {
+                        reason: crate::feeds::RampFallback::NoLut,
+                    },
+                    &crate::machine::MachineProfile::default(),
+                ),
             },
             ramp: crate::feeds::RampBasis::NoChip {
                 reason: crate::feeds::RampFallback::NoLut,

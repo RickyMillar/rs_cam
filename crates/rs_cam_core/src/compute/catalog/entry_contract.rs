@@ -216,16 +216,12 @@ pub enum NoneEntry {
 /// The plunge feeds, named.
 #[derive(Debug, Clone, Copy, PartialEq, Eq)]
 pub enum PlungeFeedRule {
-    /// The plunge rate of the op.
+    /// The plunge rate of the op. Suggest writes it through the one
+    /// vertical-rate limit (`feeds::vertical::VerticalRateLimit`, P20b: the
+    /// G6 axial chip and the machine Z axis rate). P20b deleted the
+    /// `AxialChip` variant (Q8): the limit now bounds every op, so the
+    /// contract no longer states it.
     OpPlungeRate,
-    /// Feeds contract P8 (ruling Q8, lead decision Q8a): the plunge rate of
-    /// the op, which Suggest writes as `min(G10 rule, G6 axial chip x rpm x
-    /// Z)` where a G6 claim covers the tool (`feeds::plunge::AxialChipBound`),
-    /// else the G10 rule alone. The claim depends on the tool, so the row
-    /// states the rule and Suggest resolves the claim (the plan's
-    /// `AxialChip(ClaimRef)`). The generator reads `plunge_rate` as for
-    /// [`Self::OpPlungeRate`].
-    AxialChip,
     /// The feed of the dressup entry for the air lead and for the plunge
     /// fallback: the first linear feed of the toolpath times
     /// [`ENTRY_PLUNGE_FIRST_FEED_FRACTION`], else

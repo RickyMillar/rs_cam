@@ -87,7 +87,8 @@ fn arms(r: &FeedsResult) -> CapArms {
             | FeedsWarning::VendorRowPublishesNoChipload { .. }
             | FeedsWarning::NoVendorRowsForRoutedOperation { .. }
             | FeedsWarning::FormulaChipNoPrintedRow { .. }
-            | FeedsWarning::DrillFeedClampedToEnvelope { .. } => None,
+            | FeedsWarning::DrillFeedClampedToEnvelope { .. }
+            | FeedsWarning::DrillFeedAtZAxisRate { .. } => None,
         })
         .expect("the feed cap binds, so Step 7 compares the arms")
 }

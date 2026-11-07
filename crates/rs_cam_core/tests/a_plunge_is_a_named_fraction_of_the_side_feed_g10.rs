@@ -223,8 +223,8 @@ fn re_derived(warnings: &[SuggestWarning]) -> Vec<(f64, f64, PlungeBinding)> {
         .collect()
 }
 
-/// The RPM that ships: the axial-chip bound of a Project Curve plunge reads
-/// it (P8); the other ops ignore it.
+/// The RPM that ships: the axial-chip bound of the plunge reads it (P8;
+/// every op since P20b).
 fn rpm(s: &SuggestedParams) -> f64 {
     s.operation
         .spindle_rpm()
@@ -244,9 +244,11 @@ fn a_flat_plunges_at_feed_over_two_g10() {
         "plunge {} at feed {feed}",
         s.operation.plunge_rate().expect("S11: the fixture sets it")
     );
+    // P20b: the G6 axial chip bounds every plunge where a G6 claim covers
+    // the tool, so the headline names it beside the G10 fraction.
     let (headline, _) = s.feeds_result.plunge.card_text();
     assert!(
-        headline.starts_with("Plunge = feed / 2 (G10 plunge claim"),
+        headline.starts_with("Plunge = min(feed / 2, 0.0635 x rpm x 2) (G10 plunge claim"),
         "{headline}"
     );
 }
@@ -424,9 +426,8 @@ fn a_one_millimetre_tapered_tip_is_held_by_the_tip_cap_g10() {
 fn a_drill_cycle_plunges_at_its_feed_g10() {
     for op_type in [OperationType::Drill, OperationType::AlignmentPinDrill] {
         let s = suggest(&op(op_type), &flat(6.0, 2), &softwood());
-        assert_eq!(
-            s.feeds_result.plunge,
-            PlungeBasis::DrillCycle,
+        assert!(
+            matches!(s.feeds_result.plunge, PlungeBasis::DrillCycle { .. }),
             "{op_type:?}"
         );
         assert_eq!(
