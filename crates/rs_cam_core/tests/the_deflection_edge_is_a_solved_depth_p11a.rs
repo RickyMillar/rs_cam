@@ -127,6 +127,7 @@ fn no_root_below_the_flute_is_stated_not_drawn_p11a() {
         | Edge::ApFloor { .. }
         | Edge::AeCeiling { .. }
         | Edge::AeFloor { .. }
+        | Edge::AeCurve { .. }
         | Edge::PerPoint => panic!("the deflection limit has an unexpected edge: {limit:?}"),
     }
 }

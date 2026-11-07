@@ -33,7 +33,9 @@
 
 use rs_cam_core::compute::catalog::OperationType;
 use rs_cam_core::compute::tool_config::{ToolConfig, ToolFact, ToolId, ToolType};
-use rs_cam_core::feeds::envelope::{Edge, EnvelopeInput, Limit, LimitKind, SafeEnvelope};
+use rs_cam_core::feeds::envelope::{
+    CurveBound, Edge, EnvelopeInput, Limit, LimitKind, SafeEnvelope,
+};
 use rs_cam_core::feeds::suggest::{SuggestContext, feeds_input_for_operation};
 use rs_cam_core::feeds::{SpindleStrategy, calculate, embedded_vendor_lut};
 use rs_cam_core::geo::{BoundingBox3, P3};
@@ -81,9 +83,19 @@ fn model_box() -> BoundingBox3 {
 /// The envelope of `case` at the stated cut `(ap, ae)` and the stated
 /// speeds `(feed, rpm)`.
 fn envelope(case: &Case, ap: f64, ae: f64, speeds: (f64, u32)) -> SafeEnvelope {
+    envelope_in(case, ap, ae, speeds, &model_box())
+}
+
+/// [`envelope`] on the model box `bbox`.
+fn envelope_in(
+    case: &Case,
+    ap: f64,
+    ae: f64,
+    speeds: (f64, u32),
+    bbox: &BoundingBox3,
+) -> SafeEnvelope {
     let tool = tool();
     let machine = MachineProfile::default();
-    let bbox = model_box();
     let mut op = rs_cam_core::compute::fixture_values::fixture_op(case.op);
     assert!(op.set_depth_per_pass(ap), "{} holds a depth", case.name);
     assert!(op.set_stepover(ae), "{} holds a stepover", case.name);
@@ -97,7 +109,7 @@ fn envelope(case: &Case, ap: f64, ae: f64, speeds: (f64, u32)) -> SafeEnvelope {
         lut: embedded_vendor_lut(),
         spindle_strategy: SpindleStrategy::default(),
         context: SuggestContext {
-            model_bbox: Some(&bbox),
+            model_bbox: Some(bbox),
             ..SuggestContext::default()
         },
     })
@@ -139,7 +151,8 @@ fn drawn(env: &SafeEnvelope) -> Vec<(LimitKind, Edge)> {
             | Edge::ApCurve { .. }
             | Edge::ApFloor { .. }
             | Edge::AeCeiling { .. }
-            | Edge::AeFloor { .. } => true,
+            | Edge::AeFloor { .. }
+            | Edge::AeCurve { .. } => true,
         })
         .map(|l| (l.kind, l.edge.clone()))
         .collect()
@@ -185,15 +198,36 @@ fn edge_moves(kind: LimitKind, a: &Edge, b: &Edge) -> Vec<String> {
         | (Edge::AeFloor { mm: x }, Edge::AeFloor { mm: y }) => {
             scalar(*x, *y).into_iter().collect()
         }
-        (Edge::ApCurve { points: p }, Edge::ApCurve { points: q }) => {
+        (Edge::ApCurve { points: p }, Edge::ApCurve { points: q })
+        | (
+            Edge::AeCurve {
+                bound: CurveBound::Floor,
+                points: p,
+            },
+            Edge::AeCurve {
+                bound: CurveBound::Floor,
+                points: q,
+            },
+        )
+        | (
+            Edge::AeCurve {
+                bound: CurveBound::Ceiling,
+                points: p,
+            },
+            Edge::AeCurve {
+                bound: CurveBound::Ceiling,
+                points: q,
+            },
+        ) => {
             // The two curves as point sets: each sample of one against the
-            // other polyline, and the same width span.
+            // other polyline, and the same span (P19b: an `AeCurve` holds
+            // `[ap, ae]` samples, so its span is a depth span).
             let mut out = Vec::new();
             let span = |c: &[[f64; 2]]| (c.first().map(|s| s[0]), c.last().map(|s| s[0]));
             let ((p0, p1), (q0, q1)) = (span(p), span(q));
             if p0 != q0 || p1 != q1 {
                 out.push(format!(
-                    "{kind:?}: the width span moves {p0:?}..{p1:?} -> {q0:?}..{q1:?}"
+                    "{kind:?}: the span moves {p0:?}..{p1:?} -> {q0:?}..{q1:?}"
                 ));
             }
             for (s, other, side) in p
@@ -204,7 +238,7 @@ fn edge_moves(kind: LimitKind, a: &Edge, b: &Edge) -> Vec<String> {
                 let gap = distance_to(other, *s);
                 if gap > TOL_MM {
                     out.push(format!(
-                        "{kind:?}: the {side} curve's sample (ae {:.4}, ap {:.4}) is {gap:.4} mm off the other curve",
+                        "{kind:?}: the {side} curve's sample ({:.4}, {:.4}) is {gap:.4} mm off the other curve",
                         s[0], s[1]
                     ));
                 }
@@ -323,11 +357,28 @@ fn an_envelope_edge_does_not_move_when_the_stated_cut_moves_p19() {
         env.limit(LimitKind::Runtime).is_some(),
         "the Pocket case builds the Runtime limit"
     );
+    // P19b: the Pocket move budget collapses to one width floor (its move
+    // model does not read the depth); the Adaptive3d one is a curve.
+    assert!(
+        matches!(
+            env.limit(LimitKind::Runtime).map(|l| &l.edge),
+            Some(Edge::AeFloor { .. })
+        ),
+        "the Pocket move budget is a constant width floor: {:?}",
+        env.limit(LimitKind::Runtime)
+    );
     let a3 = &cases[1];
     let env = envelope(a3, a3.depths[0], a3.widths[0], speeds(a3));
     assert!(
-        env.limit(LimitKind::Runtime).is_some(),
-        "the Adaptive3d case builds the Runtime limit"
+        matches!(
+            env.limit(LimitKind::Runtime).map(|l| &l.edge),
+            Some(Edge::AeCurve {
+                bound: CurveBound::Floor,
+                ..
+            })
+        ),
+        "the Adaptive3d move budget is a width-floor curve: {:?}",
+        env.limit(LimitKind::Runtime)
     );
     let moved: Vec<String> = cases.iter().flat_map(check).collect();
     assert!(
@@ -453,9 +504,10 @@ fn table_edge_stands_on_its_closed_form(case: &Case) -> bool {
 
 #[test]
 fn the_stated_point_still_warns_on_the_move_budget_p19() {
-    use rs_cam_core::feeds::envelope::{MOVE_BUDGET_NOT_MET, MOVE_BUDGET_READS_DEPTH, Placement};
-    // 1. An Adaptive3d: the edge is unmodelled, and a stated stepover far
-    //    under the old floor (0.0512 mm at dpp 0.5, P19 audit) is outside.
+    use rs_cam_core::feeds::envelope::{MOVE_BUDGET_NOT_MET, Placement};
+    // 1. An Adaptive3d: the edge is a width-floor curve (P19b), and a stated
+    //    stepover far under the floor (0.0512 mm at dpp 0.5, P19 audit) is
+    //    outside by the exact per-point judgement.
     let a3 = Case {
         name: "adaptive3d",
         op: OperationType::Adaptive3d,
@@ -469,11 +521,16 @@ fn the_stated_point_still_warns_on_the_move_budget_p19() {
     let sp = speeds(&a3);
     let fine = envelope(&a3, 0.5, 0.03, sp);
     let runtime = fine.limit(LimitKind::Runtime).expect("a Runtime entry");
-    assert_eq!(
-        runtime.edge,
-        Edge::Unmodelled {
-            reason: MOVE_BUDGET_READS_DEPTH
-        }
+    assert!(
+        matches!(
+            runtime.edge,
+            Edge::AeCurve {
+                bound: CurveBound::Floor,
+                ..
+            }
+        ),
+        "{:?}",
+        runtime.edge
     );
     assert!(
         matches!(
@@ -581,4 +638,214 @@ fn the_proposal_still_sits_on_its_force_budget_depth_p19() {
             panic!("the proposal is outside {binding:?} by {margin}")
         }
     }
+}
+
+/// The value of the F201 row `name` (a constant the test may not name).
+fn row(name: &str) -> f64 {
+    rs_cam_core::feeds::formula_constants()
+        .into_iter()
+        .find(|c| c.name == name)
+        .unwrap_or_else(|| panic!("{name} is in the F201 registry"))
+        .value
+}
+
+/// The number of depths at which the drawn move-budget curve is compared
+/// with its closed form.
+const CURVE_CHECK_DEPTHS: usize = 1000;
+
+#[test]
+fn the_adaptive3d_move_budget_floor_is_k_over_the_depth_p19() {
+    // P19b: the Adaptive3d move model (`predict::predict_move_count`) is
+    // `moves = dx dy / (s x woc) x max(dz / ap, 1)`, with
+    // `woc = D x adaptive_woc_factor`. With `moves = budget` and
+    // `dz / ap >= 1`, the width floor is `s = K / ap`, with
+    // `K = dx dy dz / (woc x budget)`. The drawn curve must stand within
+    // `TOL_MM` of `K / ap` wherever that floor is inside
+    // `[MIN_AE_MM, ceiling]` and `ap <= dz`, of `K / dz` deeper, and at
+    // `MIN_AE_MM` where `K / ap` is under it.
+    //
+    // 1. The 40 x 40 x 12 mm box: K = 0.0256 mm^2 (6 mm tool, factor 0.25),
+    //    so K / ceiling is under the shallowest depth: the curve starts at
+    //    the span bottom.
+    // 2. The 600 x 400 x 30 mm box of the P19 audit: K = 9.6 mm^2, so no
+    //    width up to the ceiling (3 mm) meets the budget above
+    //    K / ceiling = 3.2 mm. The curve starts there.
+    let small = model_box();
+    let large = BoundingBox3 {
+        min: P3::new(0.0, 0.0, -30.0),
+        max: P3::new(600.0, 400.0, 0.0),
+    };
+    for (tag, bbox, saturated) in [("40 mm box", small, false), ("600 mm box", large, true)] {
+        let case = &cases()[1];
+        let env = envelope_in(case, case.depths[0], case.widths[0], speeds(case), &bbox);
+        let Some(Edge::AeCurve {
+            bound: CurveBound::Floor,
+            points,
+        }) = env.limit(LimitKind::Runtime).map(|l| &l.edge)
+        else {
+            panic!(
+                "{tag}: a width-floor curve: {:?}",
+                env.limit(LimitKind::Runtime)
+            );
+        };
+        let (dx, dy, dz) = (
+            bbox.max.x - bbox.min.x,
+            bbox.max.y - bbox.min.y,
+            bbox.max.z - bbox.min.z,
+        );
+        let machine = MachineProfile::default();
+        let d = tool().diameter;
+        let woc = d * machine.rigidity.adaptive_woc_factor;
+        let budget = row("feeds.suggest.STEPOVER_BACKOFF_TARGET_MOVES");
+        let ceiling = d * row("feeds.suggest.STEPOVER_BACKOFF_DIAMETER_FRACTION");
+        let min_ae = row("feeds.MIN_AE_MM");
+        let min_ap = row("feeds.MIN_AP_MM");
+        let k = dx * dy * dz / (woc * budget);
+        let (lo, hi) = (
+            points.first().expect("a sample")[0],
+            points.last().expect("a sample")[0],
+        );
+        let at = |ap: f64| {
+            rs_cam_core::feeds::envelope::ae_curve_at(CurveBound::Floor, points, ap)
+                .expect("a value on the span")
+        };
+        let mut checked = 0_usize;
+        let mut worst = (0.0_f64, lo);
+        for i in 0..CURVE_CHECK_DEPTHS {
+            #[expect(
+                clippy::cast_precision_loss,
+                reason = "an index under 10 000, exact in an f64"
+            )]
+            let ap = lo + (hi - lo) * (i as f64 + 0.5) / CURVE_CHECK_DEPTHS as f64;
+            let closed = (k / ap.min(dz)).clamp(min_ae, ceiling);
+            let gap = (at(ap) - closed).abs();
+            checked += usize::from(ap <= dz && (k / ap) > min_ae && (k / ap) < ceiling);
+            if gap > worst.0 {
+                worst = (gap, ap);
+            }
+        }
+        assert!(
+            checked > 0,
+            "{tag}: non-vacuity: the K / ap stretch is in the span"
+        );
+        assert!(
+            worst.0 <= TOL_MM,
+            "{tag}: the drawn floor is {:.4} mm off K / ap at ap {:.4} ({} samples, K {k:.4})",
+            worst.0,
+            worst.1,
+            points.len()
+        );
+        // The start depth: `K / ceiling`. The predictor truncates the move
+        // count to an integer, so a count under `budget + 1` meets the
+        // budget: the start can sit up to `start / budget` shallower. The
+        // bisection adds under 1e-6 mm (2^-32 of one grid step).
+        let start = if saturated { k / ceiling } else { min_ap };
+        assert!(
+            (lo - start).abs() < start / budget + 1e-6,
+            "{tag}: the curve starts at {start:.4} mm, not {lo}"
+        );
+        // The drawn start shows the saturated depths; no note (a note is
+        // for a budget that no point of the plane meets).
+        assert!(
+            !env.notes
+                .iter()
+                .any(|n| n.starts_with("the move budget is not met at any width up to")),
+            "{tag}: no move-budget note: {:?}",
+            env.notes
+        );
+        // Above the start no width meets the floor: the judgement is
+        // outside there at the widest width the curve allows.
+        if saturated {
+            let p = rs_cam_core::feeds::envelope::CutPoint {
+                ap_mm: 0.5 * lo,
+                ae_mm: ceiling,
+            };
+            assert!(
+                env.limit(LimitKind::Runtime)
+                    .and_then(|l| l.margin(p))
+                    .is_some_and(|m| m < 0.0),
+                "{tag}: a depth above the start is outside the drawn floor"
+            );
+        }
+    }
+}
+
+#[test]
+fn a_ball_width_ceiling_is_its_engaged_diameter_over_the_depth_p19() {
+    // P19b item 7: a ball engages `d_eng(ap) = 2 sqrt(ap (D - ap))` below
+    // its centre (`ap < D / 2`) and `D` above it (the circle chord at the
+    // height `ap` of a sphere of radius `D / 2`). The `Diameter` limit of
+    // a ball on a free depth is that curve (`AeCurve` ceiling) within
+    // `TOL_MM`; a flat end mill keeps the one width `D`.
+    let machine = MachineProfile::default();
+    let material = Material::SolidWood {
+        species: WoodSpecies::GenericSoftwood,
+    };
+    let build = |tool: &ToolConfig| {
+        let mut op = rs_cam_core::compute::fixture_values::fixture_op(OperationType::Pocket);
+        assert!(op.set_depth_per_pass(1.0) && op.set_stepover(1.0));
+        SafeEnvelope::for_cut(EnvelopeInput {
+            operation: &op,
+            tool,
+            machine: &machine,
+            material: &material,
+            lut: embedded_vendor_lut(),
+            spindle_strategy: SpindleStrategy::default(),
+            context: SuggestContext::default(),
+        })
+        .expect("the case is backed")
+    };
+    let flat = build(&tool());
+    assert_eq!(
+        flat.limit(LimitKind::Diameter).map(|l| l.edge.clone()),
+        Some(Edge::AeCeiling {
+            mm: tool().diameter
+        }),
+        "a flat end mill keeps the one width D"
+    );
+    let mut ball = ToolConfig::test_default(ToolId::from_raw(2), ToolType::BallNose);
+    ball.diameter = 6.0;
+    ball.set_cutting_length(ToolFact::Stated(25.0));
+    let d = ball.diameter;
+    let env = build(&ball);
+    let Some(Edge::AeCurve {
+        bound: CurveBound::Ceiling,
+        points,
+    }) = env.limit(LimitKind::Diameter).map(|l| &l.edge)
+    else {
+        panic!(
+            "a ball width ceiling is a curve: {:?}",
+            env.limit(LimitKind::Diameter)
+        );
+    };
+    let (lo, hi) = (
+        points.first().expect("a sample")[0],
+        points.last().expect("a sample")[0],
+    );
+    let mut worst = (0.0_f64, lo);
+    for i in 0..CURVE_CHECK_DEPTHS {
+        #[expect(
+            clippy::cast_precision_loss,
+            reason = "an index under 10 000, exact in an f64"
+        )]
+        let ap = lo + (hi - lo) * (i as f64 + 0.5) / CURVE_CHECK_DEPTHS as f64;
+        let closed = if ap < 0.5 * d {
+            2.0 * (ap * (d - ap)).sqrt()
+        } else {
+            d
+        };
+        let drawn = rs_cam_core::feeds::envelope::ae_curve_at(CurveBound::Ceiling, points, ap)
+            .expect("a value on the span");
+        let gap = (drawn - closed).abs();
+        if gap > worst.0 {
+            worst = (gap, ap);
+        }
+    }
+    assert!(
+        worst.0 <= TOL_MM,
+        "the ball ceiling is {:.4} mm off 2 sqrt(ap (D - ap)) at ap {:.4} ({} samples)",
+        worst.0,
+        worst.1,
+        points.len()
+    );
 }

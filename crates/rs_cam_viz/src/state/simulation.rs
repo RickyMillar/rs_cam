@@ -471,6 +471,7 @@ fn envelope_diameter_mm(env: &SafeEnvelope) -> Option<f64> {
         | rs_cam_core::feeds::envelope::Edge::ApFloor { .. }
         | rs_cam_core::feeds::envelope::Edge::AeFloor { .. }
         | rs_cam_core::feeds::envelope::Edge::ApCurve { .. }
+        | rs_cam_core::feeds::envelope::Edge::AeCurve { .. }
         | rs_cam_core::feeds::envelope::Edge::PerPoint
         | rs_cam_core::feeds::envelope::Edge::Unmodelled { .. } => None,
     }

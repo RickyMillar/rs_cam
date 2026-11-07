@@ -325,6 +325,18 @@ pub enum Edge {
         /// The floor (mm).
         mm: f64,
     },
+    /// P19b: `ae >= f(ap)` (a floor) or `ae <= f(ap)` (a ceiling): one
+    /// `[ap, ae]` pair per sample, ascending in `ap`, linear between them.
+    /// Above the last sample the last value holds. Below the first sample
+    /// a ceiling keeps the first value, and a floor is not met at any
+    /// width: no width up to the ceiling of that limit meets it there (the
+    /// move budget at a shallow depth). See [`ae_curve_at`].
+    AeCurve {
+        /// Floor or ceiling.
+        bound: CurveBound,
+        /// The `[ap, ae]` samples, ascending in `ap`.
+        points: Vec<[f64; 2]>,
+    },
     /// Judged per point of the [`SpeedsMap`]; no edge on the plane.
     PerPoint,
     /// The limit is not modelled for this cut, and `reason` says why (T-4:
@@ -334,6 +346,32 @@ pub enum Edge {
         /// The clause of the abstention.
         reason: &'static str,
     },
+}
+
+/// P19b: which side of an [`Edge::AeCurve`] is inside.
+#[derive(Debug, Clone, Copy, PartialEq, Eq, Serialize)]
+#[serde(rename_all = "snake_case")]
+pub enum CurveBound {
+    /// `ae >= f(ap)`.
+    Floor,
+    /// `ae <= f(ap)`.
+    Ceiling,
+}
+
+/// P19b: the width bound of an [`Edge::AeCurve`] at the depth `ap_mm`:
+/// linear between samples, the last value above the last sample. Below the
+/// first sample a ceiling keeps the first value and a floor gives
+/// `f64::INFINITY` (no width meets it there). `None` for an empty curve.
+#[must_use]
+pub fn ae_curve_at(bound: CurveBound, points: &[[f64; 2]], ap_mm: f64) -> Option<f64> {
+    let first = points.first()?;
+    if ap_mm < first[0] {
+        return Some(match bound {
+            CurveBound::Floor => f64::INFINITY,
+            CurveBound::Ceiling => first[1],
+        });
+    }
+    interpolate_curve(points, ap_mm)
 }
 
 /// One limit of the envelope: its kind, its law and its basis.
@@ -359,9 +397,67 @@ impl Limit {
             Edge::ApFloor { .. }
             | Edge::AeCeiling { .. }
             | Edge::AeFloor { .. }
+            | Edge::AeCurve { .. }
             | Edge::PerPoint
             | Edge::Unmodelled { .. } => None,
         }
+    }
+
+    /// P19b: the width bound of this limit at the depth `ap_mm`, and
+    /// whether it is a floor: an `AeFloor`, an `AeCeiling`, or an
+    /// `AeCurve` read at `ap_mm` ([`ae_curve_at`]). `None` for a limit
+    /// with no width bound.
+    #[must_use]
+    pub fn ae_bound_at(&self, ap_mm: f64) -> Option<(f64, CurveBound)> {
+        match &self.edge {
+            Edge::AeFloor { mm } => Some((*mm, CurveBound::Floor)),
+            Edge::AeCeiling { mm } => Some((*mm, CurveBound::Ceiling)),
+            Edge::AeCurve { bound, points } => {
+                ae_curve_at(*bound, points, ap_mm).map(|v| (v, *bound))
+            }
+            Edge::ApCeiling { .. }
+            | Edge::ApCurve { .. }
+            | Edge::ApFloor { .. }
+            | Edge::PerPoint
+            | Edge::Unmodelled { .. } => None,
+        }
+    }
+
+    /// P19b: the smallest depth in the sample span of an `AeCurve` at which
+    /// the width `ae_mm` meets the bound, by the straight segments between
+    /// the samples. `Some(f64::INFINITY)` when no depth on the curve meets
+    /// it; `None` for an edge that is not an `AeCurve`. The safe-region
+    /// fill reads it as the bottom of a column (a width floor that falls
+    /// with the depth is a depth floor that falls with the width).
+    #[must_use]
+    pub fn depth_floor_at_width(&self, ae_mm: f64) -> Option<f64> {
+        let Edge::AeCurve { bound, points } = &self.edge else {
+            return None;
+        };
+        let meets = |v: f64| match bound {
+            CurveBound::Floor => ae_mm >= v,
+            CurveBound::Ceiling => ae_mm <= v,
+        };
+        if let Some(first) = points.first()
+            && meets(first[1])
+        {
+            return Some(first[0]);
+        }
+        for w in points.windows(2) {
+            let [a, b] = w else { continue };
+            if meets(b[1]) {
+                // The crossing on this segment, linear between the two
+                // samples.
+                let span = b[1] - a[1];
+                let t = if span.abs() > 0.0 {
+                    ((ae_mm - a[1]) / span).clamp(0.0, 1.0)
+                } else {
+                    1.0
+                };
+                return Some(a[0] + t * (b[0] - a[0]));
+            }
+        }
+        Some(f64::INFINITY)
     }
 
     /// The signed margin of `p` against this limit, as a share of the
@@ -378,6 +474,16 @@ impl Limit {
             Edge::ApFloor { mm } => floor(p.ap_mm, *mm),
             Edge::AeCeiling { mm } => ceiling(p.ae_mm, *mm),
             Edge::AeFloor { mm } => floor(p.ae_mm, *mm),
+            // P19b: the bound at the depth of `p`. A floor that no width
+            // meets (below the first sample) is crossed by the whole share.
+            Edge::AeCurve { bound, points } => {
+                match (bound, ae_curve_at(*bound, points, p.ap_mm)) {
+                    (CurveBound::Floor, Some(v)) if v.is_infinite() => Some(-1.0),
+                    (CurveBound::Floor, Some(v)) => floor(p.ae_mm, v),
+                    (CurveBound::Ceiling, Some(v)) => ceiling(p.ae_mm, v),
+                    (CurveBound::Floor | CurveBound::Ceiling, None) => None,
+                }
+            }
             Edge::PerPoint | Edge::Unmodelled { .. } => None,
         }
     }
@@ -1235,6 +1341,14 @@ impl SafeEnvelope {
             }
             Edge::ApFloor { mm } => ("depth", p.ap_mm, mm),
             Edge::AeCeiling { mm } | Edge::AeFloor { mm } => ("width", p.ae_mm, mm),
+            Edge::AeCurve { .. } => (
+                "width",
+                p.ae_mm,
+                judged
+                    .ae_bound_at(p.ap_mm)
+                    .map(|(v, _)| v)
+                    .filter(|v| v.is_finite())?,
+            ),
             Edge::PerPoint | Edge::Unmodelled { .. } => return None,
         };
         Some(JudgedValue {
@@ -1292,10 +1406,19 @@ impl SafeEnvelope {
                 }
             };
             let is_floor = match l.edge {
-                Edge::ApFloor { .. } | Edge::AeFloor { .. } => true,
+                Edge::ApFloor { .. }
+                | Edge::AeFloor { .. }
+                | Edge::AeCurve {
+                    bound: CurveBound::Floor,
+                    ..
+                } => true,
                 Edge::ApCeiling { .. }
                 | Edge::ApCurve { .. }
                 | Edge::AeCeiling { .. }
+                | Edge::AeCurve {
+                    bound: CurveBound::Ceiling,
+                    ..
+                }
                 | Edge::PerPoint
                 | Edge::Unmodelled { .. } => false,
             };
@@ -1308,10 +1431,18 @@ impl SafeEnvelope {
                 Edge::ApCeiling { .. } | Edge::ApCurve { .. } | Edge::ApFloor { .. } => {
                     !self.axes.ap_free()
                 }
-                Edge::AeCeiling { .. } | Edge::AeFloor { .. } => !self.axes.ae_free(),
+                Edge::AeCeiling { .. } | Edge::AeFloor { .. } | Edge::AeCurve { .. } => {
+                    !self.axes.ae_free()
+                }
                 Edge::PerPoint | Edge::Unmodelled { .. } => true,
             };
             if on_fixed_axis {
+                continue;
+            }
+            // P19b: the drawn move-budget curve is a picture; the exact
+            // per-point judgement below (`move_budget_margin`) places the
+            // point.
+            if l.kind == LimitKind::Runtime && self.move_budget.is_some() {
                 continue;
             }
             let Some(m) = self.judged_margin(l, p) else {
@@ -1446,15 +1577,26 @@ impl SafeEnvelope {
     /// The proposal: `min(stated, binding cap)` on a stated axis (never a
     /// raise, K2), the calculator's point on an unstated axis.
     fn propose(&self, plan: &AxesPlan, base: &FeedsResult, peck_rule: Option<f64>) -> Proposed {
+        // P19b: a width ceiling that moves with the depth is read at the
+        // stated depth, else the calculator depth.
+        let ap_for_width = plan.stated_ap.unwrap_or(base.axial_depth_mm);
         let ae_cap = self
             .boundary
             .iter()
-            .filter_map(|l| match l.edge {
-                Edge::AeCeiling { mm } => Some((mm, l)),
+            .filter_map(|l| match &l.edge {
+                Edge::AeCeiling { mm } => Some((*mm, l)),
+                Edge::AeCurve {
+                    bound: CurveBound::Ceiling,
+                    points,
+                } => ae_curve_at(CurveBound::Ceiling, points, ap_for_width).map(|mm| (mm, l)),
                 Edge::ApCeiling { .. }
                 | Edge::ApCurve { .. }
                 | Edge::ApFloor { .. }
                 | Edge::AeFloor { .. }
+                | Edge::AeCurve {
+                    bound: CurveBound::Floor,
+                    ..
+                }
                 | Edge::PerPoint
                 | Edge::Unmodelled { .. } => None,
             })
@@ -1784,6 +1926,7 @@ impl SafeEnvelope {
             Edge::ApFloor { .. }
             | Edge::AeCeiling { .. }
             | Edge::AeFloor { .. }
+            | Edge::AeCurve { .. }
             | Edge::PerPoint
             | Edge::Unmodelled { .. } => l.margin(p),
         }
@@ -1855,30 +1998,29 @@ impl SafeEnvelope {
             EnvelopeAxes::AxialBar { ae_mm, .. } | EnvelopeAxes::Fixed { ae_mm, .. } => Some(ae_mm),
             EnvelopeAxes::Plane { .. } | EnvelopeAxes::RadialBar { .. } => None,
         };
+        // P19b: a width bound that moves with the depth is read at the
+        // deepest depth the search may pick (the stated depth, else the
+        // span top). A floor that no width meets there bounds nothing.
+        let ap_for_width = plan.stated_ap.unwrap_or(match self.axes {
+            EnvelopeAxes::Plane { ap, .. } | EnvelopeAxes::AxialBar { ap, .. } => ap.max_mm,
+            EnvelopeAxes::RadialBar { ap_mm, .. } | EnvelopeAxes::Fixed { ap_mm, .. } => ap_mm,
+        });
+        let bound_at_depth =
+            |l: &Limit| l.ae_bound_at(ap_for_width).filter(|(mm, _)| mm.is_finite());
         let ae_ceiling = self
             .boundary
             .iter()
-            .filter_map(|l| match l.edge {
-                Edge::AeCeiling { mm } => Some((mm, l.kind)),
-                Edge::ApCeiling { .. }
-                | Edge::ApCurve { .. }
-                | Edge::ApFloor { .. }
-                | Edge::AeFloor { .. }
-                | Edge::PerPoint
-                | Edge::Unmodelled { .. } => None,
+            .filter_map(|l| match bound_at_depth(l) {
+                Some((mm, CurveBound::Ceiling)) => Some((mm, l.kind)),
+                Some((_, CurveBound::Floor)) | None => None,
             })
             .min_by(|a, b| a.0.total_cmp(&b.0));
         let ae_floor = self
             .boundary
             .iter()
-            .filter_map(|l| match l.edge {
-                Edge::AeFloor { mm } => Some(mm),
-                Edge::ApCeiling { .. }
-                | Edge::ApCurve { .. }
-                | Edge::ApFloor { .. }
-                | Edge::AeCeiling { .. }
-                | Edge::PerPoint
-                | Edge::Unmodelled { .. } => None,
+            .filter_map(|l| match bound_at_depth(l) {
+                Some((mm, CurveBound::Floor)) => Some(mm),
+                Some((_, CurveBound::Ceiling)) | None => None,
             })
             .fold(MIN_AE_MM, f64::max);
         let (lo, hi, width_bound) = match fixed_ae {
@@ -2276,7 +2418,7 @@ fn geometric_limits(
         kind: LimitKind::Diameter,
         law: "ae <= D",
         basis: Basis::tool_diameter(),
-        edge: Edge::AeCeiling { mm: d },
+        edge: diameter_edge(input, plan, d),
     });
     out.push(Limit {
         kind: LimitKind::EngagementFloor,
@@ -2290,6 +2432,62 @@ fn geometric_limits(
         basis: Basis::Rule(crate::feeds::MIN_AE_MM_ROW),
         edge: Edge::AeFloor { mm: MIN_AE_MM },
     });
+}
+
+/// P19b: the width ceiling of the tool. A flat end mill engages its
+/// nominal diameter at every depth: `AeCeiling { D }`. A ball, a bull nose,
+/// a V-bit or a taper engages `d_eng(ap) = 2 x engagement_radius(ap)`
+/// (`EngagedDiameter::of_tool`, the one P15 door that a measured point also
+/// reads), so on a free depth the ceiling is an `AeCurve` over the depth
+/// columns, refined like the move-budget floor. A fixed depth, or a tool
+/// that builds no cutter, keeps `AeCeiling { D }`.
+fn diameter_edge(input: &EnvelopeInput<'_>, plan: &AxesPlan, d: f64) -> Edge {
+    let flat = Edge::AeCeiling { mm: d };
+    let span = match plan.axes {
+        EnvelopeAxes::Plane { ap, .. } | EnvelopeAxes::AxialBar { ap, .. } => ap,
+        EnvelopeAxes::RadialBar { .. } | EnvelopeAxes::Fixed { .. } => return flat,
+    };
+    match input.tool.geometry_hint() {
+        ToolGeometryHint::Flat => return flat,
+        ToolGeometryHint::Ball
+        | ToolGeometryHint::TaperedBall { .. }
+        | ToolGeometryHint::Bull { .. }
+        | ToolGeometryHint::VBit { .. } => {}
+    }
+    let Ok(cutter) = crate::compute::cutter::build_cutter(input.tool) else {
+        return flat;
+    };
+    let d_eng = |ap: f64| {
+        Some(crate::feeds::engagement::EngagedDiameter::of_tool(&cutter, ap).mm())
+            .filter(|v| v.is_finite())
+    };
+    let mut columns: Vec<(f64, Option<f64>)> = samples(span)
+        .into_iter()
+        .map(|ap| (ap, d_eng(ap)))
+        .collect();
+    refine_columns(
+        &mut columns,
+        |c: Option<f64>| c.unwrap_or(d),
+        d_eng,
+        SplitRule {
+            levels: TABLE_EDGE_SPLIT_LEVELS,
+            two_sided: true,
+        },
+    );
+    let points: Vec<[f64; 2]> = columns
+        .iter()
+        .filter_map(|(ap, c)| c.map(|ae| [*ap, ae]))
+        .collect();
+    match points.as_slice() {
+        [] => flat,
+        [first, ..] if points.iter().all(|p| (p[1] - first[1]).abs() < 1e-9) => {
+            Edge::AeCeiling { mm: first[1] }
+        }
+        _ => Edge::AeCurve {
+            bound: CurveBound::Ceiling,
+            points,
+        },
+    }
 }
 
 /// The operator's chip of an op (feeds contract P11b, L7): the stated feed
@@ -3011,11 +3209,6 @@ fn budget_basis(machine: &MachineProfile) -> Basis {
     Basis::derived(crate::feeds::force_budget::FORCE_BUDGET_LAW, leaves)
 }
 
-/// P19: the reason of a `Runtime` entry when the move model reads the
-/// depth per pass (`predict::move_count_reads_depth`): the width floor
-/// moves with the depth, so the envelope draws no straight width line.
-pub const MOVE_BUDGET_READS_DEPTH: &str = "the move budget depends on the depth per pass";
-
 /// P19: the reason of a `Runtime` entry when no width up to the width
 /// ceiling of the move budget meets the budget. A note gives the ceiling
 /// in mm ([`move_budget_not_met_note`]).
@@ -3030,10 +3223,10 @@ pub fn move_budget_not_met_note(ceiling_mm: f64) -> String {
 }
 
 /// P19: what the envelope keeps to judge a point against the move budget
-/// when the `Runtime` limit draws no edge (the move model reads the depth,
-/// or no width up to the ceiling meets the budget). `place` judges each
-/// point that is not measured by `predict_move_count` at its own depth
-/// and width.
+/// when the `Runtime` limit is not one width floor (P19b: an `AeCurve` when
+/// the move model reads the depth, or `Unmodelled` when no width up to the
+/// ceiling meets the budget). `place` judges each point that is not
+/// measured by `predict_move_count` at its own depth and width.
 #[derive(Debug, Clone, Copy)]
 struct MoveBudget {
     /// The model box.
@@ -3047,15 +3240,19 @@ struct MoveBudget {
 ///
 /// - A move model that does not read the depth: the smallest width with
 ///   `predict_move_count` <= the budget, an `AeFloor`.
-/// - P19: a move model that reads the depth (`move_count_reads_depth`) on a
-///   free depth: `Unmodelled` with [`MOVE_BUDGET_READS_DEPTH`], because the
-///   floor moves with the depth per pass.
+/// - P19b: a move model that reads the depth (`move_count_reads_depth`) on
+///   a free depth: an `AeCurve` floor, the smallest width per depth column
+///   (bisection of the predictor from the plane only, the stated cut never
+///   read), refined between columns like the vendor depth table edge. The
+///   saturated shallow depths have no sample: the curve starts at the
+///   shallowest depth that meets the budget at the ceiling (no note: the
+///   drawn start shows it). `place` still judges each point exactly.
 /// - P19: no width up to the ceiling meets the budget: `Unmodelled` with
 ///   [`MOVE_BUDGET_NOT_MET`] and a note with the ceiling in mm. No floor is
 ///   drawn at the ceiling (points on it also fail the budget).
 ///
-/// The two `Unmodelled` arms return the [`MoveBudget`] that `place` judges
-/// each point with, so the stated point still warns.
+/// The curve and the `Unmodelled` arm return the [`MoveBudget`] that
+/// `place` judges each point with, so the stated point still warns.
 fn runtime_limit(
     out: &mut Vec<Limit>,
     notes: &mut Vec<String>,
@@ -3104,19 +3301,90 @@ fn runtime_limit(
         edge,
     };
     let judge = MoveBudget { bbox, target };
-    if let (true, Some(ap)) = (reads_depth, ap_span) {
+    // The smallest width with the moves inside the budget, by bisection
+    // in [lo, hi] (`within(hi)` holds, `within(lo)` does not).
+    let bisect = |ap: Option<f64>| {
+        let (mut lo, mut hi) = (MIN_AE_MM, ceiling);
+        for _ in 0..RUNTIME_BISECTION_STEPS {
+            let mid = 0.5 * (lo + hi);
+            if within(ap, mid) {
+                hi = mid;
+            } else {
+                lo = mid;
+            }
+        }
+        hi
+    };
+    if let (true, Some(span)) = (reads_depth, ap_span) {
         // The move count falls as the depth and the width grow: the
-        // shallowest, narrowest corner is the worst point of the plane and
-        // the deepest, widest corner the best.
-        if within(Some(ap.min_mm), MIN_AE_MM) {
+        // shallowest, narrowest corner is the worst point of the plane.
+        if within(Some(span.min_mm), MIN_AE_MM) {
             return None;
         }
-        out.push(limit(Edge::Unmodelled {
-            reason: MOVE_BUDGET_READS_DEPTH,
-        }));
-        if !within(Some(ap.max_mm), ceiling) {
+        // P19b: the width floor per depth column, from the plane only.
+        // `None`: no width up to the ceiling meets the budget at that depth
+        // (saturated); `MIN_AE_MM` where the narrowest width meets it.
+        let floor_at = |ap: f64| {
+            if !within(Some(ap), ceiling) {
+                None
+            } else if within(Some(ap), MIN_AE_MM) {
+                Some(MIN_AE_MM)
+            } else {
+                Some(bisect(Some(ap)))
+            }
+        };
+        let mut columns: Vec<(f64, Option<f64>)> = samples(span)
+            .into_iter()
+            .map(|ap| (ap, floor_at(ap)))
+            .collect();
+        if columns.iter().all(|(_, c)| c.is_none()) {
+            out.push(limit(Edge::Unmodelled {
+                reason: MOVE_BUDGET_NOT_MET,
+            }));
             notes.push(move_budget_not_met_note(ceiling));
+            return Some(judge);
         }
+        // The saturated columns are the shallow ones (the count falls with
+        // the depth). The curve starts at the shallowest depth that meets
+        // the budget at the ceiling, by bisection between the last
+        // saturated column and the first met one; no floor is drawn above
+        // the ceiling, so a shallower depth is not met at any width. The
+        // drawn start says so; no note (a note is for a budget that no
+        // point of the plane meets).
+        if let Some(first_met) = columns.iter().position(|(_, c)| c.is_some())
+            && first_met > 0
+            && let (Some(&(lo_ap, _)), Some(&(hi_ap, _))) =
+                (columns.get(first_met - 1), columns.get(first_met))
+        {
+            let (mut lo, mut hi) = (lo_ap, hi_ap);
+            for _ in 0..RUNTIME_BISECTION_STEPS {
+                let mid = 0.5 * (lo + hi);
+                if within(Some(mid), ceiling) {
+                    hi = mid;
+                } else {
+                    lo = mid;
+                }
+            }
+            columns.retain(|(_, c)| c.is_some());
+            columns.insert(0, (hi, Some(bisect(Some(hi)))));
+        }
+        refine_columns(
+            &mut columns,
+            |c: Option<f64>| c.unwrap_or(ceiling),
+            floor_at,
+            SplitRule {
+                levels: TABLE_EDGE_SPLIT_LEVELS,
+                two_sided: true,
+            },
+        );
+        let points: Vec<[f64; 2]> = columns
+            .iter()
+            .filter_map(|(ap, c)| c.map(|ae| [*ap, ae]))
+            .collect();
+        out.push(limit(Edge::AeCurve {
+            bound: CurveBound::Floor,
+            points,
+        }));
         return Some(judge);
     }
     if within(None, MIN_AE_MM) {
@@ -3129,16 +3397,7 @@ fn runtime_limit(
         notes.push(move_budget_not_met_note(ceiling));
         return Some(judge);
     }
-    let (mut lo, mut hi) = (MIN_AE_MM, ceiling);
-    for _ in 0..RUNTIME_BISECTION_STEPS {
-        let mid = 0.5 * (lo + hi);
-        if within(None, mid) {
-            hi = mid;
-        } else {
-            lo = mid;
-        }
-    }
-    out.push(limit(Edge::AeFloor { mm: hi }));
+    out.push(limit(Edge::AeFloor { mm: bisect(None) }));
     None
 }
 

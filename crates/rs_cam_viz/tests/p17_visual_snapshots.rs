@@ -279,6 +279,7 @@ fn ae_ceiling(env: &SafeEnvelope, kind: LimitKind) -> Option<f64> {
         | Edge::AeFloor { .. }
         | Edge::ApCurve { .. }
         | Edge::PerPoint
+        | Edge::AeCurve { .. }
         | Edge::Unmodelled { .. } => None,
     }
 }

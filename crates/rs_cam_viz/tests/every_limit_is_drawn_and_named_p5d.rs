@@ -121,6 +121,7 @@ fn ceiling(env: &SafeEnvelope, kind: LimitKind) -> Option<f64> {
             | Edge::ApFloor { .. }
             | Edge::AeFloor { .. }
             | Edge::PerPoint
+            | Edge::AeCurve { .. }
             | Edge::Unmodelled { .. } => None,
         })
 }
@@ -401,26 +402,33 @@ fn every_limit_in_the_range_draws_a_line_and_a_label_p5d() {
     let drawn: Vec<_> = scene.drawn_edges(plot.size());
     let mut kinds: Vec<LimitKind> = drawn.iter().map(|e| e.kind).collect();
     kinds.sort_by_key(|k| format!("{k:?}"));
-    // Feeds contract P19 (phase 2a, lead ruling a): the rivmap 3D Rough is
-    // an Adaptive3d. Its move model reads the depth per pass
-    // (`predict::move_count_reads_depth`: moves = dx dy / (s x woc) x
-    // dz / dpp), so a width floor moves with the stated depth. The
-    // `Runtime` limit is stated, not drawn (an `Unmodelled` entry with its
-    // reason), and the P11c floor line leaves this view. The drawn floor of
-    // a model that does not read the depth is held on a Pocket in
+    // Feeds contract P19b: the rivmap 3D Rough is an Adaptive3d. Its move
+    // model reads the depth per pass (`predict::move_count_reads_depth`:
+    // moves = dx dy / (s x woc) x dz / dpp), so its width floor is a curve
+    // over the depth (`Edge::AeCurve`), solved from the plane only. It
+    // enters this view and draws with the others. The straight floor of a
+    // model that does not read the depth is held on a Pocket in
     // `a_pocket_draws_its_move_budget_floor_and_it_does_not_move_p19` (p5c).
-    assert_eq!(
-        env.limit(LimitKind::Runtime).map(|l| &l.edge),
-        Some(&Edge::Unmodelled {
-            reason: rs_cam_core::feeds::envelope::MOVE_BUDGET_READS_DEPTH
-        }),
-        "P19: the move budget of an Adaptive3d is stated, not drawn"
+    assert!(
+        matches!(
+            env.limit(LimitKind::Runtime).map(|l| &l.edge),
+            Some(Edge::AeCurve {
+                bound: rs_cam_core::feeds::envelope::CurveBound::Floor,
+                ..
+            })
+        ),
+        "P19b: the Adaptive3d move budget is a width-floor curve: {:?}",
+        env.limit(LimitKind::Runtime)
     );
     assert_eq!(
         kinds,
-        vec![LimitKind::Rigidity, LimitKind::VendorAxial],
-        "D1: the vendor and rigidity limits draw at rest (P16: no slot limit; P19: the \
-         Adaptive3d move budget draws no line)"
+        vec![
+            LimitKind::Rigidity,
+            LimitKind::Runtime,
+            LimitKind::VendorAxial
+        ],
+        "D1: the vendor, rigidity and move-budget limits draw at rest (P16: no slot \
+         limit; P19b: the move budget is a curve)"
     );
     // Every non-frame limit whose edge enters the view is drawn, or hugs
     // the frame (D1 exception).

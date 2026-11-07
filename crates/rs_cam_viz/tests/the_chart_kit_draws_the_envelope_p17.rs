@@ -76,6 +76,7 @@ fn diameter(env: &SafeEnvelope) -> f64 {
             | Edge::ApFloor { .. }
             | Edge::AeFloor { .. }
             | Edge::PerPoint
+            | Edge::AeCurve { .. }
             | Edge::Unmodelled { .. } => None,
         })
         .expect("fixture: a diameter limit")

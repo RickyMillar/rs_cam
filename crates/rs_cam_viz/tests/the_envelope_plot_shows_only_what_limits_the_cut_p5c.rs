@@ -251,6 +251,7 @@ fn ceiling(env: &SafeEnvelope, kind: LimitKind) -> Option<f64> {
             | Edge::ApFloor { .. }
             | Edge::AeFloor { .. }
             | Edge::PerPoint
+            | Edge::AeCurve { .. }
             | Edge::Unmodelled { .. } => None,
         })
 }
@@ -576,25 +577,30 @@ fn the_rivmap_rough_plot_draws_every_limit_in_view_p5c() {
     let ctx = ctx();
     // The fixture's point, and the live point of the operator's review.
     //
-    // Feeds contract P19 (phase 2a, lead ruling a): the 3D Rough is an
-    // Adaptive3d, whose move model reads the depth per pass
-    // (`predict::move_count_reads_depth`: moves = dx dy / (s x woc) x
-    // dz / dpp). Its width floor moves with the stated depth (the P11c
-    // floor was in view at the fixture point and out of view at ap 4.217),
-    // so the `Runtime` limit is stated, not drawn: an `Unmodelled` entry
-    // with its reason, at both points. The drawn Runtime floor of a move
-    // model that does not read the depth is held on a Pocket below.
+    // Feeds contract P19b: the 3D Rough is an Adaptive3d, whose move model
+    // reads the depth per pass (`predict::move_count_reads_depth`: moves =
+    // dx dy / (s x woc) x dz / dpp). Its width floor is a curve over the
+    // depth (`Edge::AeCurve`), solved from the plane only, so the same
+    // line draws at both points (P19a stated it, unmodelled; P11c drew
+    // one straight width line that moved with the stated depth). The
+    // straight Runtime floor of a move model that does not read the depth
+    // is held on a Pocket below.
+    let mut runtime_edges: Vec<Edge> = Vec::new();
     for (tag, point) in [
         ("fixture", None),
         ("review ap 4.217 x ae 2.303", Some((4.217, 2.303))),
     ] {
         let (config, env) = rivmap_rough(point);
-        assert_eq!(
-            env.limit(LimitKind::Runtime).map(|l| &l.edge),
-            Some(&Edge::Unmodelled {
-                reason: rs_cam_core::feeds::envelope::MOVE_BUDGET_READS_DEPTH
-            }),
-            "{tag}: P19, the move budget of an Adaptive3d is stated, not drawn"
+        assert!(
+            matches!(
+                env.limit(LimitKind::Runtime).map(|l| &l.edge),
+                Some(Edge::AeCurve {
+                    bound: rs_cam_core::feeds::envelope::CurveBound::Floor,
+                    ..
+                })
+            ),
+            "{tag}: P19b, the Adaptive3d move budget is a width-floor curve: {:?}",
+            env.limit(LimitKind::Runtime)
         );
         let scene = EnvelopeScene::of(&env, None);
         let mut candidates = EnvelopeCandidates::default();
@@ -609,9 +615,45 @@ fn the_rivmap_rough_plot_draws_every_limit_in_view_p5c() {
         );
         assert_eq!(
             kinds,
-            vec![LimitKind::Rigidity, LimitKind::VendorAxial],
-            "{tag}: P5d D1, the vendor and rigidity limits draw (P16 deleted the slot \
-             limit; P19: the Adaptive3d move budget draws no line)"
+            vec![
+                LimitKind::Rigidity,
+                LimitKind::Runtime,
+                LimitKind::VendorAxial
+            ],
+            "{tag}: P5d D1, the vendor, rigidity and move-budget limits draw (P16 \
+             deleted the slot limit; P19b: the move budget is a curve)"
+        );
+        runtime_edges.extend(env.limit(LimitKind::Runtime).map(|l| l.edge.clone()));
+        // P19b: the safe-region fill respects the floor curve: the bottom
+        // corner of each column sits on or above it (margin >= 0 within the
+        // rounding of one division), and the curve raises some column.
+        let runtime = env.limit(LimitKind::Runtime).expect("a Runtime limit");
+        let quads = rs_cam_viz::ui::feeds::envelope::safe_region_quads(&env, &scene);
+        let mut raised = 0_usize;
+        for q in &quads {
+            for corner in [q[0], q[1]] {
+                let (ae, ap) = (corner[0], corner[1]);
+                if ap > scene.ap_range.0 {
+                    raised += 1;
+                }
+                let top = q[2][1].max(q[3][1]);
+                if ap < top {
+                    let m = runtime
+                        .margin(CutPoint {
+                            ap_mm: ap,
+                            ae_mm: ae,
+                        })
+                        .expect("a margin on the curve span");
+                    assert!(
+                        m > -1e-9,
+                        "{tag}: a fill corner ({ae}, {ap}) is under the floor: {m}"
+                    );
+                }
+            }
+        }
+        assert!(
+            raised > 0,
+            "{tag}: non-vacuity: the floor curve raises a column"
         );
         assert_eq!(
             scene.binding,
@@ -666,6 +708,13 @@ fn the_rivmap_rough_plot_draws_every_limit_in_view_p5c() {
             "{tag}: P17, every other fill is an opaque label chip: {painted_fills:?}"
         );
     }
+    // P19b: the move-budget curve does not move with the stated cut (the
+    // drawn line ends at the top of each view, which the stated point sets).
+    assert_eq!(runtime_edges.len(), 2, "one Runtime edge at each point");
+    assert_eq!(
+        runtime_edges[0], runtime_edges[1],
+        "the move-budget curve is the same at both stated points"
+    );
 }
 
 /// P19 (phase 2a): the move budget of a Pocket is drawn, a constant width

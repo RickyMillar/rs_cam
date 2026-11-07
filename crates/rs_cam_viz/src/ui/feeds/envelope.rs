@@ -197,8 +197,31 @@ pub fn limit_name(env: &SafeEnvelope, kind: LimitKind) -> String {
 /// The tool diameter of `env`, the width frame D, when it has one.
 fn diameter_mm(env: &SafeEnvelope) -> Option<f64> {
     env.limit(LimitKind::Diameter)
-        .and_then(ae_ceiling_mm)
+        .and_then(ae_ceiling_max_mm)
         .filter(|d| d.is_finite() && *d > 0.0)
+}
+
+/// P19b: the widest value of an `AeCeiling` or a ceiling `AeCurve` (the
+/// engaged diameter of a ball, a bull nose, a V-bit or a taper at its
+/// deepest sample), for the width frame.
+fn ae_ceiling_max_mm(l: &Limit) -> Option<f64> {
+    match &l.edge {
+        Edge::AeCeiling { mm } => Some(*mm),
+        Edge::AeCurve {
+            bound: rs_cam_core::feeds::envelope::CurveBound::Ceiling,
+            points,
+        } => points.iter().map(|p| p[1]).reduce(f64::max),
+        Edge::AeCurve {
+            bound: rs_cam_core::feeds::envelope::CurveBound::Floor,
+            ..
+        }
+        | Edge::ApCeiling { .. }
+        | Edge::ApCurve { .. }
+        | Edge::ApFloor { .. }
+        | Edge::AeFloor { .. }
+        | Edge::PerPoint
+        | Edge::Unmodelled { .. } => None,
+    }
 }
 
 /// `v` with at most two decimals and no trailing zero ("1", "0.5").
@@ -218,7 +241,9 @@ const fn edge_mm(edge: &Edge) -> Option<f64> {
         | Edge::ApFloor { mm }
         | Edge::AeCeiling { mm }
         | Edge::AeFloor { mm } => Some(mm),
-        Edge::ApCurve { .. } | Edge::PerPoint | Edge::Unmodelled { .. } => None,
+        Edge::ApCurve { .. } | Edge::AeCurve { .. } | Edge::PerPoint | Edge::Unmodelled { .. } => {
+            None
+        }
     }
 }
 
@@ -639,7 +664,7 @@ fn view_ranges(
     let positive = |v: f64| (v.is_finite() && v > 0.0).then_some(v);
     let ae_max = env
         .limit(LimitKind::Diameter)
-        .and_then(ae_ceiling_mm)
+        .and_then(ae_ceiling_max_mm)
         .and_then(positive)
         .or_else(|| positive(ae_span.max_mm))
         .unwrap_or(1.0);
@@ -661,6 +686,7 @@ fn view_ranges(
             | Edge::ApFloor { .. }
             | Edge::AeCeiling { .. }
             | Edge::AeFloor { .. }
+            | Edge::AeCurve { .. }
             | Edge::PerPoint
             | Edge::Unmodelled { .. } => None,
         })
@@ -726,6 +752,26 @@ fn edge_points(l: &Limit, ae: (f64, f64), ap: (f64, f64)) -> Option<Vec<[f64; 2]
         Edge::ApCeiling { mm } | Edge::ApFloor { mm } => Some(vec![[ae.0, *mm], [ae.1, *mm]]),
         Edge::ApCurve { points } => (points.len() >= 2).then(|| points.clone()),
         Edge::AeCeiling { mm } | Edge::AeFloor { mm } => Some(vec![[*mm, ap.0], [*mm, ap.1]]),
+        // P19b: the core samples are `[ap, ae]`; the plot is `[ae, ap]`.
+        // The line stops at the top of the view, so its end (where the
+        // label sits) is in view: a sample above the top is cut at the
+        // top, and the last value holds up to the top when the samples end
+        // under it.
+        Edge::AeCurve { bound, points } => {
+            let mut line: Vec<[f64; 2]> = points
+                .iter()
+                .filter(|p| p[0] <= ap.1)
+                .map(|p| [p[1], p[0]])
+                .collect();
+            let at_top = rs_cam_core::feeds::envelope::ae_curve_at(*bound, points, ap.1)
+                .filter(|v| v.is_finite());
+            if let Some(ae_top) = at_top
+                && line.last().is_some_and(|last| last[1] < ap.1)
+            {
+                line.push([ae_top, ap.1]);
+            }
+            (line.len() >= 2).then_some(line)
+        }
         Edge::PerPoint | Edge::Unmodelled { .. } => None,
     }
 }
@@ -1176,7 +1222,10 @@ fn draw_plane(
 /// of a column is `min(the depth ceiling at its width, the top of the
 /// view)`, read from `SafeEnvelope::ap_ceiling_at`; a width with no
 /// ceiling reaches the top of the view. The bottom is the largest depth
-/// floor, else 0.
+/// floor, else 0. P19b: a width bound that moves with the depth (an
+/// `AeCurve`) raises the bottom of a column to the smallest depth where
+/// the column width meets it (`Limit::depth_floor_at_width`); a column
+/// that meets it at no depth in view is a quad of no height.
 #[must_use]
 pub fn safe_region_quads(env: &SafeEnvelope, scene: &EnvelopeScene) -> Vec<[[f64; 2]; 4]> {
     let (ae_range, ap_range) = (scene.ae_range, scene.ap_range);
@@ -1192,6 +1241,7 @@ pub fn safe_region_quads(env: &SafeEnvelope, scene: &EnvelopeScene) -> Vec<[[f64
         | Edge::ApFloor { .. }
         | Edge::AeCeiling { .. }
         | Edge::ApCurve { .. }
+        | Edge::AeCurve { .. }
         | Edge::PerPoint
         | Edge::Unmodelled { .. } => None,
     })
@@ -1202,6 +1252,7 @@ pub fn safe_region_quads(env: &SafeEnvelope, scene: &EnvelopeScene) -> Vec<[[f64
         | Edge::AeFloor { .. }
         | Edge::AeCeiling { .. }
         | Edge::ApCurve { .. }
+        | Edge::AeCurve { .. }
         | Edge::PerPoint
         | Edge::Unmodelled { .. } => None,
     })
@@ -1215,11 +1266,23 @@ pub fn safe_region_quads(env: &SafeEnvelope, scene: &EnvelopeScene) -> Vec<[[f64
             .map_or(ap_range.1, |(mm, _)| mm.min(ap_range.1))
             .max(ap_lo)
     };
+    let bottom_at = |ae: f64| {
+        env.boundary
+            .iter()
+            .filter_map(|l| l.depth_floor_at_width(ae))
+            .fold(ap_lo, f64::max)
+            .min(top_at(ae))
+    };
     let column = |i: usize| ae_lo + (ae_hi - ae_lo) * i as f64 / FILL_COLUMNS as f64;
     (0..FILL_COLUMNS)
         .map(|i| {
             let (a, b) = (column(i), column(i + 1));
-            [[a, ap_lo], [b, ap_lo], [b, top_at(b)], [a, top_at(a)]]
+            [
+                [a, bottom_at(a)],
+                [b, bottom_at(b)],
+                [b, top_at(b)],
+                [a, top_at(a)],
+            ]
         })
         .collect()
 }

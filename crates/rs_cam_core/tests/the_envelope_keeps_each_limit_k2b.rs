@@ -185,7 +185,11 @@ fn assert_binds(env: &SafeEnvelope, kind: LimitKind) {
                 "{kind:?}: the proposal did not lower ap"
             );
         }
-        Edge::ApFloor { .. } | Edge::AeFloor { .. } | Edge::PerPoint | Edge::Unmodelled { .. } => {
+        Edge::ApFloor { .. }
+        | Edge::AeFloor { .. }
+        | Edge::AeCurve { .. }
+        | Edge::PerPoint
+        | Edge::Unmodelled { .. } => {
             panic!("{kind:?}: not an edge that lowers a proposal")
         }
     }
