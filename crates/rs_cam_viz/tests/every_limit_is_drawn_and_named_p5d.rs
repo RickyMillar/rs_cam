@@ -401,19 +401,26 @@ fn every_limit_in_the_range_draws_a_line_and_a_label_p5d() {
     let drawn: Vec<_> = scene.drawn_edges(plot.size());
     let mut kinds: Vec<LimitKind> = drawn.iter().map(|e| e.kind).collect();
     kinds.sort_by_key(|k| format!("{k:?}"));
-    // Feeds contract P11c (review item M4): the move-count model reads the
-    // machine's `adaptive_woc_factor` (0.2 in this file) for the adaptive
-    // area width, not the typed 0.3. The predicted moves at a stepover rise
-    // 1.5 x, so the `Runtime` (move budget) width floor rises 1.5 x and now
-    // enters the view; it draws with the others.
+    // Feeds contract P19 (phase 2a, lead ruling a): the rivmap 3D Rough is
+    // an Adaptive3d. Its move model reads the depth per pass
+    // (`predict::move_count_reads_depth`: moves = dx dy / (s x woc) x
+    // dz / dpp), so a width floor moves with the stated depth. The
+    // `Runtime` limit is stated, not drawn (an `Unmodelled` entry with its
+    // reason), and the P11c floor line leaves this view. The drawn floor of
+    // a model that does not read the depth is held on a Pocket in
+    // `a_pocket_draws_its_move_budget_floor_and_it_does_not_move_p19` (p5c).
+    assert_eq!(
+        env.limit(LimitKind::Runtime).map(|l| &l.edge),
+        Some(&Edge::Unmodelled {
+            reason: rs_cam_core::feeds::envelope::MOVE_BUDGET_READS_DEPTH
+        }),
+        "P19: the move budget of an Adaptive3d is stated, not drawn"
+    );
     assert_eq!(
         kinds,
-        vec![
-            LimitKind::Rigidity,
-            LimitKind::Runtime,
-            LimitKind::VendorAxial
-        ],
-        "D1: the vendor, rigidity and move-budget limits draw at rest (P16: no slot limit)"
+        vec![LimitKind::Rigidity, LimitKind::VendorAxial],
+        "D1: the vendor and rigidity limits draw at rest (P16: no slot limit; P19: the \
+         Adaptive3d move budget draws no line)"
     );
     // Every non-frame limit whose edge enters the view is drawn, or hugs
     // the frame (D1 exception).
@@ -467,11 +474,57 @@ fn every_limit_in_the_range_draws_a_line_and_a_label_p5d() {
         );
     }
 
-    // One label per drawn line, its name, once.
+    // One label per drawn line, its name, once. P17b item 2: the label
+    // sits ON its line near one end: its text rect, grown `TOUCH`, touches
+    // a segment of the line (on a level line the text is on it; beside a
+    // steep line the chip touches the line's edge, so the text starts the
+    // chip padding 2 and the line's half width 1 past the line centre,
+    // half a point of rounding allowed), and grown `END_REACH` it holds
+    // the first or the last point (the kit's end inset and the padding).
+    const TOUCH: f32 = 3.5;
+    const END_REACH: f32 = 6.0;
     let p = texts(&f.shapes);
+    let shapes = painted(&f.shapes);
     for e in &drawn {
         let n = p.iter().filter(|t| **t == e.label).count();
         assert_eq!(n, 1, "`{}` paints once: {p:?}", e.label);
+        let rect = shapes
+            .texts
+            .iter()
+            .find(|(t, _)| *t == e.label)
+            .map(|(_, r)| *r)
+            .expect("painted once");
+        let line: Vec<egui::Pos2> = e
+            .points
+            .iter()
+            .map(|q| {
+                f.response
+                    .screen_of(
+                        CutPoint {
+                            ap_mm: q[1],
+                            ae_mm: q[0],
+                        },
+                        EnvelopeShape::Plane,
+                    )
+                    .expect("a frame")
+            })
+            .collect();
+        let touches = line
+            .windows(2)
+            .any(|w| matches!(w, [a, b] if rect.expand(TOUCH).intersects(egui::Rect::from_two_pos(*a, *b))));
+        assert!(
+            touches,
+            "P17b: `{}` {rect:?} does not touch its line {line:?}",
+            e.label
+        );
+        let ends = [line.first(), line.last()];
+        assert!(
+            ends.into_iter()
+                .flatten()
+                .any(|q| rect.expand(END_REACH).contains(*q)),
+            "P17b: `{}` {rect:?} sits at neither end of its line {line:?}",
+            e.label
+        );
     }
 
     // D5: the D tick paints under the frame at the x of D. P17: the tick
@@ -492,7 +545,7 @@ fn every_limit_in_the_range_draws_a_line_and_a_label_p5d() {
         (at_d.x - plot.right()).abs() < 0.5,
         "P17: D is the right frame edge: {at_d:?} vs {plot:?}"
     );
-    let shapes = painted(&f.shapes);
+
     assert!(
         shapes.texts.iter().any(|(t, r)| *t == D_TICK
             && r.top() >= plot.bottom() - 1.0

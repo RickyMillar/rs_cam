@@ -576,17 +576,26 @@ fn the_rivmap_rough_plot_draws_every_limit_in_view_p5c() {
     let ctx = ctx();
     // The fixture's point, and the live point of the operator's review.
     //
-    // Feeds contract P11c (review item M4): the move-count model reads the
-    // machine's `adaptive_woc_factor` (0.2 in this file) for the adaptive
-    // area width, not the typed 0.3, so the predicted moves rise 1.5 x. At
-    // the fixture's point the `Runtime` (move budget) width floor now enters
-    // the view and draws. At the review point (ap 4.217) the cut has fewer
-    // depth levels, so fewer moves, and the floor stays out of view.
-    for (tag, point, runtime_in_view) in [
-        ("fixture", None, true),
-        ("review ap 4.217 x ae 2.303", Some((4.217, 2.303)), false),
+    // Feeds contract P19 (phase 2a, lead ruling a): the 3D Rough is an
+    // Adaptive3d, whose move model reads the depth per pass
+    // (`predict::move_count_reads_depth`: moves = dx dy / (s x woc) x
+    // dz / dpp). Its width floor moves with the stated depth (the P11c
+    // floor was in view at the fixture point and out of view at ap 4.217),
+    // so the `Runtime` limit is stated, not drawn: an `Unmodelled` entry
+    // with its reason, at both points. The drawn Runtime floor of a move
+    // model that does not read the depth is held on a Pocket below.
+    for (tag, point) in [
+        ("fixture", None),
+        ("review ap 4.217 x ae 2.303", Some((4.217, 2.303))),
     ] {
         let (config, env) = rivmap_rough(point);
+        assert_eq!(
+            env.limit(LimitKind::Runtime).map(|l| &l.edge),
+            Some(&Edge::Unmodelled {
+                reason: rs_cam_core::feeds::envelope::MOVE_BUDGET_READS_DEPTH
+            }),
+            "{tag}: P19, the move budget of an Adaptive3d is stated, not drawn"
+        );
         let scene = EnvelopeScene::of(&env, None);
         let mut candidates = EnvelopeCandidates::default();
         let f = settle(&ctx, &config, &env, &mut candidates);
@@ -598,19 +607,11 @@ fn the_rivmap_rough_plot_draws_every_limit_in_view_p5c() {
             !kinds.contains(&LimitKind::Diameter),
             "{tag}: D is the frame"
         );
-        let want = if runtime_in_view {
-            vec![
-                LimitKind::Rigidity,
-                LimitKind::Runtime,
-                LimitKind::VendorAxial,
-            ]
-        } else {
-            vec![LimitKind::Rigidity, LimitKind::VendorAxial]
-        };
         assert_eq!(
-            kinds, want,
-            "{tag}: P5d D1, the vendor and rigidity limits draw (and the move budget \
-             where it enters the view; P16 deleted the slot limit)"
+            kinds,
+            vec![LimitKind::Rigidity, LimitKind::VendorAxial],
+            "{tag}: P5d D1, the vendor and rigidity limits draw (P16 deleted the slot \
+             limit; P19: the Adaptive3d move budget draws no line)"
         );
         assert_eq!(
             scene.binding,
@@ -665,6 +666,77 @@ fn the_rivmap_rough_plot_draws_every_limit_in_view_p5c() {
             "{tag}: P17, every other fill is an opaque label chip: {painted_fills:?}"
         );
     }
+}
+
+/// P19 (phase 2a): the move budget of a Pocket is drawn, a constant width
+/// floor that does not move with the stated depth or width. The Pocket move
+/// model is one Z level, `moves = dx dy / s^2`
+/// (`predict::predict_move_count`), so the floor is
+/// `s = sqrt(dx dy / budget)`: on the 40 x 40 mm box of the P19 audit,
+/// `sqrt(1600 / 500 000)` = 0.0566 mm, at every stated depth and width.
+#[test]
+#[expect(
+    clippy::panic,
+    reason = "test code: a panic is how a test reports a failure"
+)]
+fn a_pocket_draws_its_move_budget_floor_and_it_does_not_move_p19() {
+    use rs_cam_core::compute::tool_config::{ToolConfig, ToolType};
+    let bbox = rs_cam_core::geo::BoundingBox3 {
+        min: rs_cam_core::geo::P3::new(0.0, 0.0, -12.0),
+        max: rs_cam_core::geo::P3::new(40.0, 40.0, 0.0),
+    };
+    // The move budget, read from the F201 registry by its name.
+    let budget = rs_cam_core::feeds::formula_constants()
+        .into_iter()
+        .find(|c| c.name == "feeds.suggest.STEPOVER_BACKOFF_TARGET_MOVES")
+        .expect("the move budget is in the F201 registry")
+        .value;
+    let derived = (40.0_f64 * 40.0 / budget).sqrt();
+    let mut tool =
+        ToolConfig::test_default(rs_cam_core::ids::ToolId::from_raw(1), ToolType::EndMill);
+    tool.diameter = 6.0;
+    let machine = rs_cam_core::machine::MachineProfile::default();
+    let material = rs_cam_core::material::Material::default();
+    let mut floors = Vec::new();
+    for (ap, ae) in [(1.0, 1.0), (2.0, 1.0), (1.0, 2.0)] {
+        let mut config = rs_cam_core::compute::fixture_values::fixture_op(OperationType::Pocket);
+        assert!(config.set_depth_per_pass(ap) && config.set_stepover(ae));
+        let env = SafeEnvelope::for_cut(rs_cam_core::feeds::envelope::EnvelopeInput {
+            operation: &config,
+            tool: &tool,
+            machine: &machine,
+            material: &material,
+            lut: rs_cam_core::feeds::embedded_vendor_lut(),
+            spindle_strategy: rs_cam_core::feeds::SpindleStrategy::default(),
+            context: rs_cam_core::feeds::suggest::SuggestContext {
+                model_bbox: Some(&bbox),
+                ..rs_cam_core::feeds::suggest::SuggestContext::default()
+            },
+        })
+        .expect("the Pocket is backed");
+        let Some(Edge::AeFloor { mm }) = env.limit(LimitKind::Runtime).map(|l| l.edge.clone())
+        else {
+            panic!(
+                "ap {ap} ae {ae}: the Pocket move budget is a width floor: {:?}",
+                env.limit(LimitKind::Runtime)
+            );
+        };
+        // The bisection stops within 2^-32 of the [MIN_AE, 0.5 D] span.
+        assert!(
+            (mm - derived).abs() < 1e-6,
+            "ap {ap} ae {ae}: the floor {mm}, derived {derived}"
+        );
+        let scene = EnvelopeScene::of(&env, None);
+        assert!(
+            scene.edges.iter().any(|e| e.kind == LimitKind::Runtime),
+            "ap {ap} ae {ae}: the scene holds the move budget line"
+        );
+        floors.push(mm);
+    }
+    assert!(
+        floors.iter().all(|f| f.to_bits() == floors[0].to_bits()),
+        "the floor does not move with the stated cut: {floors:?}"
+    );
 }
 
 #[test]

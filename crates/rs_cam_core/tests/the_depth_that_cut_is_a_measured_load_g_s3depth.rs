@@ -832,9 +832,10 @@ fn the_suggest_clamp_still_fires_at_the_helper_s_own_cap() {
         other => panic!("a pocket roughing pass carries an axial cap: {other:?}"),
     };
 
+    // P19: the drawn curve holds no sample at the stated width; the
+    // judged ceiling there is the exact one.
     let capped = envelope
-        .limit(LimitKind::Rigidity)
-        .and_then(|l| l.ap_ceiling_at(STEPOVER_MM))
+        .judged_ap_ceiling(LimitKind::Rigidity, STEPOVER_MM)
         .expect("the roughing envelope must carry the rigidity ceiling");
 
     assert_eq!(

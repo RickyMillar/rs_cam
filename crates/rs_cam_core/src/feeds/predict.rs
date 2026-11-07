@@ -799,6 +799,24 @@ pub fn predict_move_count(
     moves_f.min(u64::MAX as f64) as u64
 }
 
+/// Feeds contract P19: `true` when the [`predict_move_count`] formula of
+/// `model` reads the depth per pass. The envelope then draws no width
+/// floor for the move budget, because the floor moves with the depth.
+/// Each arm names the term of the formula above that decides it.
+#[must_use]
+pub const fn move_count_reads_depth(model: MoveCountModel) -> bool {
+    match model {
+        // `passes_per_z x (dz / dpp)`: the Z levels read the depth.
+        MoveCountModel::Adaptive3d => true,
+        // One Z level, or no model.
+        MoveCountModel::Raster
+        | MoveCountModel::Adaptive2d
+        | MoveCountModel::PocketCell
+        | MoveCountModel::FeatureDriven
+        | MoveCountModel::NotModelled => false,
+    }
+}
+
 // # ⚰ RETIRED 2026-08-13 — the arc-fit observed-chipload prediction
 //
 // This module used to carry `predict_observed_chipload_mm`, its

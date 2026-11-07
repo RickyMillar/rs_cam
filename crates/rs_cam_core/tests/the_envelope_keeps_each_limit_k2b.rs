@@ -170,8 +170,10 @@ fn assert_binds(env: &SafeEnvelope, kind: LimitKind) {
             );
         }
         Edge::ApCeiling { .. } | Edge::ApCurve { .. } => {
-            let cap = limit
-                .ap_ceiling_at(p.ae_mm)
+            // P19: the drawn curve holds no sample at the proposal width;
+            // the judged ceiling there is the exact one.
+            let cap = env
+                .judged_ap_ceiling(kind, p.ae_mm)
                 .expect("an ap edge at the proposal");
             assert!(
                 (p.ap_mm - cap).abs() < 1e-9,
