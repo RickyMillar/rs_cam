@@ -123,8 +123,10 @@ fn the_feeds_charts_construct_no_shading_g_chartlines() {
          feeds chart files for shading; if the nomogram moved, move \
          `CHART_FILES` with it, or this arm passes on a file with no chart."
     );
+    // P17b: the nomogram draws through the chart kit; a line is a
+    // `ChartLine` the kit paints (`plot_ui.line(` was the egui_plot door).
     assert!(
-        explore.contains("plot_ui.line("),
+        explore.contains("ChartLine::new("),
         "`draw_chart_c` draws no line, so the scan below has nothing to check"
     );
     // The envelope plot (P17): it draws through the chart kit, not

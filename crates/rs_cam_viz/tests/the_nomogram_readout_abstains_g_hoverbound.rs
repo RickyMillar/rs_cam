@@ -307,8 +307,10 @@ fn the_hover_guard_uses_the_axis_bound_g_hoverbound() {
         std::path::Path::new(env!("CARGO_MANIFEST_DIR")).join("src/ui/feeds/explore.rs"),
     )
     .expect("read explore source");
+    // P17b: the nomogram draws through the chart kit; the hover reads the
+    // kit's `hover_pos()` (egui_plot's `pointer_coordinate()` is gone).
     let at = source
-        .find("pointer_coordinate()")
+        .find("hover_pos()")
         .expect("the hover readout moved or was renamed");
     let guard = &source[at..(at + 400).min(source.len())];
     assert!(

@@ -410,10 +410,16 @@ fn surfaces(state: &AppState) -> Vec<Surface> {
     // the graph"): the 3D Rough depth axis holds every flat depth limit
     // (Rigidity 9 mm, x 1.3), so it paints one more tick row ("10"):
     // 3D Rough Passes 34 -> 35. The limit labels share rows with ticks.
+    // P17 (the envelope plot on the kit: its ticks and small-caps titles):
+    // Pocket Passes 36 -> 39, 3D Rough 35 -> 38 (measured on 3bd24d92e).
+    // P17b (2026-11-07, the nomogram on the kit): the feed axis names a
+    // tick every 20 points (0, 1000, .. 4000 on the Pocket) and each limit
+    // label sits ON its line at its end. Chart texts, no prose row: Pocket
+    // Passes 39 -> 40, 3D Rough 38 -> 37, 3D Finish 28 -> 29.
     let caps: [(&str, [usize; 4]); 3] = [
-        ("Pocket", [10, 36, 17, 22]),
-        ("3D Rough", [7, 35, 15, 15]),
-        ("3D Finish", [9, 28, 16, 14]),
+        ("Pocket", [10, 40, 17, 22]),
+        ("3D Rough", [7, 37, 15, 15]),
+        ("3D Finish", [9, 29, 16, 14]),
     ];
     for (name, tab_caps) in caps {
         let id = configs

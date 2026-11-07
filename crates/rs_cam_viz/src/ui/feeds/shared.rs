@@ -14,10 +14,10 @@
 //! reads [`material_family_label`] and [`tool_family_label`] here. It carried
 //! its own copies of both tables, and the two spellings had drifted apart.
 //!
-//! [`draw_machine_envelope`] is the one item DC5a's plan placed with the
-//! project rollup and the call graph placed here. Chart C draws it and the
-//! project scatter draws it, so it is shared geometry and not a
-//! project-scope function.
+//! `draw_machine_envelope` (the egui_plot walls of the project scatter)
+//! lived here while Chart C and the scatter both drew it. P17b moved the
+//! nomogram onto the chart kit; the layer has one caller and lives in
+//! `ui/readiness_panel.rs`. No `egui_plot` is left in this file.
 //!
 //! **One item is below the rule and is recorded rather than moved.** After
 //! the rollup left, [`chart`] has a single caller, [`super::explore`]. It is
@@ -26,20 +26,18 @@
 //! correctness and this package is already large. Move it when the file is
 //! next opened.
 
-use egui_plot::{Line, PlotPoints};
 use rs_cam_core::feeds::{
     FeedsExplain, ToolGeometryHint, vendor_lut::HardnessKind, vendor_lut::MaterialFamily,
     vendor_lut::ToolFamily,
 };
 
 use crate::state::AppState;
-use crate::ui::tokens;
 
 // The chart label kit of the nomogram lived here as a re-export of
 // `explore.rs` (P5b, P5c round 2). P17 moved the kit to
 // `ui/components/chart/labels.rs`; `explore.rs` keeps the names through its
-// own `pub(crate) use`, and the envelope plot draws through
-// `components::chart::PlaneChart`.
+// own `pub(crate) use`, and both charts draw through
+// `components::chart::PlaneChart` (P17b).
 
 /// The chart palette, named by what each series IS.
 ///
@@ -70,15 +68,6 @@ pub(crate) mod chart {
 /// filled region (ruling G-CHARTLINES, 2026-09-23).
 pub(crate) fn wash(base: egui::Color32, alpha: u8) -> egui::Color32 {
     egui::Color32::from_rgba_unmultiplied(base.r(), base.g(), base.b(), alpha)
-}
-
-/// The grid steps of the nomogram's axes: the kit's 1-2-5 rule
-/// (`components::chart::nice_steps`) on an `egui_plot::GridInput`. The
-/// default egui_plot spacer is a log-10 grid; on a short axis (a feed axis
-/// 180 points high) it names only 0. P17: the envelope plot reads the kit
-/// rule through `PlaneChart`; this adapter is the nomogram's.
-pub(crate) fn nice_steps(input: &egui_plot::GridInput) -> [f64; 3] {
-    crate::ui::components::chart::nice_steps(input.bounds.0, input.bounds.1)
 }
 
 pub(crate) fn toolpath_name(
@@ -385,114 +374,6 @@ pub(crate) fn engaged_diameter_context(
         explain.shank_diameter_mm,
     );
     Some((doc, engaged, tip_dia, kind))
-}
-
-/// Render the shared machine-envelope overlay used by Chart C and the
-/// project scatter: solid red walls at max RPM and max feed, and axis marks
-/// for the parts of each axis past the caps and below the spindle minimum.
-///
-/// The envelope draws lines only. It drew three shaded regions until
-/// 2026-09-23; the operator ruled "no shading" for these charts
-/// (G-CHARTLINES). The wall and the axis mark already say where each limit
-/// is.
-pub(crate) fn draw_machine_envelope(
-    plot_ui: &mut egui_plot::PlotUi,
-    env: &rs_cam_core::feeds::MachineEnvelope,
-    axis_rpm_max: f64,
-    axis_feed_max: f64,
-) {
-    // These two ARE verdicts — beyond them the machine cannot go — so the
-    // envelope keeps the danger hue that every category in these charts just
-    // gave up. It used to be a hand-mixed red one step off `DANGER`.
-    let forbidden_edge = wash(tokens::DANGER, 200);
-
-    plot_ui.line(
-        Line::new(
-            "",
-            PlotPoints::from(vec![
-                [env.spindle_max_rpm, 0.0],
-                [env.spindle_max_rpm, axis_feed_max],
-            ]),
-        )
-        .color(forbidden_edge)
-        .width(2.0_f32)
-        .name(format!("machine max {} RPM", env.spindle_max_rpm as i64)),
-    );
-    plot_ui.line(
-        Line::new(
-            "",
-            PlotPoints::from(vec![
-                [0.0, env.max_feed_mm_min],
-                [axis_rpm_max, env.max_feed_mm_min],
-            ]),
-        )
-        .color(forbidden_edge)
-        .width(2.0_f32)
-        .name(format!(
-            "machine max feed {} mm/min",
-            env.max_feed_mm_min as i64
-        )),
-    );
-    // W6: the RPM wall is labelled at the FOOT of the wall, not the head.
-    //
-    // Both wall labels used to sit near the top-right: this one at
-    // `axis_feed_max * 0.97` and the feed label at the feed wall, which is
-    // `axis_feed_max / 1.05`. Those two heights are about 5 % of the axis
-    // apart, and both labels are right-anchored, so on any machine whose
-    // caps are both in frame they overlapped — `max 24000 RPM` printed
-    // through `max 4000 mm/min`. The walls cross at the top-right corner;
-    // only one label can live there.
-    // The limits are marked ON the axes they belong to, not lettered into
-    // the plot body.
-    //
-    // They used to be two labelled hexagons floating inside the drawing.
-    // They collided with each other and with the band, one of them clipped
-    // at the plot edge, and a label inside a chart competes with the data
-    // for attention it does not deserve — the wall already says where the
-    // limit is; only the NUMBER was ever in the label, and the legend row
-    // carries that. Operator, 2026-09-16: "the max and min lines should be
-    // on the axis, not marked on the chart as points".
-    //
-    // A segment along y = 0 from the cap to the axis end says "this part of
-    // the RPM axis is out of bounds" with no words at all.
-    plot_ui.line(
-        Line::new(
-            "",
-            PlotPoints::from(vec![[env.spindle_max_rpm, 0.0], [axis_rpm_max, 0.0]]),
-        )
-        .color(forbidden_edge)
-        .width(crate::ui::feeds::explore::AXIS_MARK_WIDTH)
-        .name(format!(
-            "Past machine cap ({} RPM)",
-            env.spindle_max_rpm as i64
-        )),
-    );
-    plot_ui.line(
-        Line::new(
-            "",
-            PlotPoints::from(vec![[0.0, env.max_feed_mm_min], [0.0, axis_feed_max]]),
-        )
-        .color(forbidden_edge)
-        .width(crate::ui::feeds::explore::AXIS_MARK_WIDTH)
-        .name(format!(
-            "Past machine feed ({} mm/min)",
-            env.max_feed_mm_min as i64
-        )),
-    );
-    if env.spindle_min_rpm > 0.0 {
-        plot_ui.line(
-            Line::new(
-                "",
-                PlotPoints::from(vec![[0.0, 0.0], [env.spindle_min_rpm, 0.0]]),
-            )
-            .color(tokens::CAUTION)
-            .width(crate::ui::feeds::explore::AXIS_MARK_WIDTH)
-            .name(format!(
-                "Below spindle min ({} RPM)",
-                env.spindle_min_rpm as i64
-            )),
-        );
-    }
 }
 
 pub(crate) fn speedup(current: &CurrentValues, explain: &FeedsExplain) -> f64 {

@@ -18,7 +18,7 @@ use crate::state::{AppState, ProjectFeedsSort, ProjectFeedsState, Workspace};
 use crate::ui::components::FreshnessGate;
 use crate::ui::components::compare;
 use crate::ui::feeds::compare::{compute_preview, read_current_values};
-use crate::ui::feeds::shared::{CurrentValues, draw_machine_envelope, speedup, wash};
+use crate::ui::feeds::shared::{CurrentValues, speedup, wash};
 use crate::ui::readiness::{self, CheckStatus, CycleTimeBasisExt};
 use crate::ui::sim_diagnostics::{LimitRow, draw_limit_rows, limit_rows};
 use crate::ui::{theme, tokens};
@@ -905,6 +905,123 @@ struct ProjectFeedsRow {
     /// `⚡⚡ Apply all toolpaths` swept the refused row up **silently**. The
     /// batch handler now skips it and says so; the table marks it.
     refusal: Option<String>,
+}
+
+/// Ranges that belong to an axis are drawn ON that axis, at this weight.
+///
+/// The machine's limits and the vendor's RPM window are facts about one
+/// axis. Drawn into the plot body they were a labelled hexagon and a
+/// full-height wash, both competing with the vendor band for the same
+/// pixels.
+const AXIS_MARK_WIDTH: f32 = 4.0;
+
+/// Render the machine-envelope overlay of the project scatter (P17b: the
+/// nomogram moved onto the chart kit and draws its own walls, so this
+/// egui_plot layer has one caller and lives here): solid red walls at max RPM and max feed, and axis marks
+/// for the parts of each axis past the caps and below the spindle minimum.
+///
+/// The envelope draws lines only. It drew three shaded regions until
+/// 2026-09-23; the operator ruled "no shading" for these charts
+/// (G-CHARTLINES). The wall and the axis mark already say where each limit
+/// is.
+fn draw_machine_envelope(
+    plot_ui: &mut egui_plot::PlotUi,
+    env: &rs_cam_core::feeds::MachineEnvelope,
+    axis_rpm_max: f64,
+    axis_feed_max: f64,
+) {
+    // These two ARE verdicts — beyond them the machine cannot go — so the
+    // envelope keeps the danger hue that every category in these charts just
+    // gave up. It used to be a hand-mixed red one step off `DANGER`.
+    let forbidden_edge = wash(tokens::DANGER, 200);
+
+    plot_ui.line(
+        Line::new(
+            "",
+            PlotPoints::from(vec![
+                [env.spindle_max_rpm, 0.0],
+                [env.spindle_max_rpm, axis_feed_max],
+            ]),
+        )
+        .color(forbidden_edge)
+        .width(2.0_f32)
+        .name(format!("machine max {} RPM", env.spindle_max_rpm as i64)),
+    );
+    plot_ui.line(
+        Line::new(
+            "",
+            PlotPoints::from(vec![
+                [0.0, env.max_feed_mm_min],
+                [axis_rpm_max, env.max_feed_mm_min],
+            ]),
+        )
+        .color(forbidden_edge)
+        .width(2.0_f32)
+        .name(format!(
+            "machine max feed {} mm/min",
+            env.max_feed_mm_min as i64
+        )),
+    );
+    // W6: the RPM wall is labelled at the FOOT of the wall, not the head.
+    //
+    // Both wall labels used to sit near the top-right: this one at
+    // `axis_feed_max * 0.97` and the feed label at the feed wall, which is
+    // `axis_feed_max / 1.05`. Those two heights are about 5 % of the axis
+    // apart, and both labels are right-anchored, so on any machine whose
+    // caps are both in frame they overlapped — `max 24000 RPM` printed
+    // through `max 4000 mm/min`. The walls cross at the top-right corner;
+    // only one label can live there.
+    // The limits are marked ON the axes they belong to, not lettered into
+    // the plot body.
+    //
+    // They used to be two labelled hexagons floating inside the drawing.
+    // They collided with each other and with the band, one of them clipped
+    // at the plot edge, and a label inside a chart competes with the data
+    // for attention it does not deserve — the wall already says where the
+    // limit is; only the NUMBER was ever in the label, and the legend row
+    // carries that. Operator, 2026-09-16: "the max and min lines should be
+    // on the axis, not marked on the chart as points".
+    //
+    // A segment along y = 0 from the cap to the axis end says "this part of
+    // the RPM axis is out of bounds" with no words at all.
+    plot_ui.line(
+        Line::new(
+            "",
+            PlotPoints::from(vec![[env.spindle_max_rpm, 0.0], [axis_rpm_max, 0.0]]),
+        )
+        .color(forbidden_edge)
+        .width(AXIS_MARK_WIDTH)
+        .name(format!(
+            "Past machine cap ({} RPM)",
+            env.spindle_max_rpm as i64
+        )),
+    );
+    plot_ui.line(
+        Line::new(
+            "",
+            PlotPoints::from(vec![[0.0, env.max_feed_mm_min], [0.0, axis_feed_max]]),
+        )
+        .color(forbidden_edge)
+        .width(AXIS_MARK_WIDTH)
+        .name(format!(
+            "Past machine feed ({} mm/min)",
+            env.max_feed_mm_min as i64
+        )),
+    );
+    if env.spindle_min_rpm > 0.0 {
+        plot_ui.line(
+            Line::new(
+                "",
+                PlotPoints::from(vec![[0.0, 0.0], [env.spindle_min_rpm, 0.0]]),
+            )
+            .color(tokens::CAUTION)
+            .width(AXIS_MARK_WIDTH)
+            .name(format!(
+                "Below spindle min ({} RPM)",
+                env.spindle_min_rpm as i64
+            )),
+        );
+    }
 }
 
 #[cfg(test)]

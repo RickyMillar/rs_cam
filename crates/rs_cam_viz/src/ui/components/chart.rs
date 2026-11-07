@@ -28,7 +28,9 @@
 //!   outlined diamond), the off-scale rows in the gutter above the frame
 //!   ([`PlaneChart::off_scale_top`], a value above the y range), the
 //!   labels on the lines (the label kit of [`labels`], clear of the marks;
-//!   plain text or on a chip, the caller's [`LabelGround`]), then the
+//!   plain text or on a chip, the caller's [`LabelGround`]; P17b item 2: a
+//!   limit line carries its name ON the line at its end,
+//!   [`LabelAt::LineEnd`] on [`LabelGround::Ground`]), then the
 //!   tick labels and titles. A line marked [`ChartLine::beneath`] paints
 //!   under the fills.
 //! - The room: the left gutter is the widest y tick label plus `SPACE_2`
@@ -269,6 +271,25 @@ pub enum LabelAt {
     Lines(Vec<Vec<[f64; 2]>>),
     /// A mark of `radius` points at `at`.
     Mark { at: [f64; 2], radius: f32 },
+    /// The end of one or more lines (P17b item 2): the label sits ON the
+    /// line at its last point, in the line's colour. A level or shallow
+    /// line takes the text along it, ending at the last point (a full-width
+    /// limit reads right-aligned inside the frame); a steep line takes the
+    /// text horizontal beside its top end, touching the line, hanging down
+    /// from it. When that place is taken (a mark, another label, another
+    /// line), the first point; then beside the line as [`Self::Line`]. A
+    /// step gives its polyline whole: its last point. Pair it with
+    /// [`LabelGround::Ground`], so the line is masked under the letters
+    /// only. [`Self::line_end`] wraps one line.
+    LineEnd(Vec<Vec<[f64; 2]>>),
+}
+
+impl LabelAt {
+    /// The end of one line: [`Self::LineEnd`] of `points` alone.
+    #[must_use]
+    pub fn line_end(points: Vec<[f64; 2]>) -> Self {
+        Self::LineEnd(vec![points])
+    }
 }
 
 /// The most off-scale rows the top gutter holds ([`PlaneChart::off_scale_top`]).
@@ -556,6 +577,16 @@ impl<'a> PlaneChart<'a> {
 
     /// Draw the chart in the full available width.
     pub fn show(self, ui: &mut egui::Ui) -> ChartResponse {
+        self.show_with_labels(ui).0
+    }
+
+    /// [`Self::show`], with the labels the kit placed this frame in screen
+    /// space (empty when the chart was not visible). The label fit test of
+    /// the nomogram reads them.
+    pub(crate) fn show_with_labels(
+        self,
+        ui: &mut egui::Ui,
+    ) -> (ChartResponse, Vec<labels::PlacedLabel>) {
         let (rect, response) = ui.allocate_exact_size(
             egui::vec2(self.width(ui), self.total_height(ui)),
             self.sense,
@@ -569,7 +600,7 @@ impl<'a> PlaneChart<'a> {
         } = self.geometry(ui, rect);
         let frame = map.frame;
 
-        if ui.is_rect_visible(rect) {
+        let placed = if ui.is_rect_visible(rect) {
             let painter = ui.painter_at(rect);
             // The lines and fills stop at the frame; a mark or a label on
             // the edge paints whole in the room past it.
@@ -707,6 +738,14 @@ impl<'a> PlaneChart<'a> {
                             center: map.to_screen(at[0], at[1]),
                             radius: *radius,
                         },
+                        LabelAt::LineEnd(lines) => LabelAnchor::LineEnd(
+                            lines
+                                .iter()
+                                .map(|line| {
+                                    line.iter().map(|p| map.to_screen(p[0], p[1])).collect()
+                                })
+                                .collect(),
+                        ),
                     },
                 })
                 .collect();
@@ -736,9 +775,12 @@ impl<'a> PlaneChart<'a> {
             paint_axes(
                 &painter, &map, rect, &self.x, &self.y, &x_ticks, &y_ticks, &font, row,
             );
-        }
+            placed
+        } else {
+            Vec::new()
+        };
 
-        ChartResponse { response, map }
+        (ChartResponse { response, map }, placed)
     }
 }
 

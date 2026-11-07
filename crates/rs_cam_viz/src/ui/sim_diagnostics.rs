@@ -2074,6 +2074,7 @@ pub fn draw_cut_chart_section(
             samples: &set.samples,
             diameter_mm: set.diameter_mm,
             budget_n: set.budget_n,
+            force_field: set.force_field.as_ref(),
             playhead,
             move_count,
         },

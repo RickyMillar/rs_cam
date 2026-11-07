@@ -508,3 +508,231 @@ every item below is a follow-up for the operator's demo ruling:
    region name; "Corner width" sits left of its line over the 60 % column on Face 5.
 7. Nits: dots at 100 % clipped by the frame; the empty block glyph looks like a button; no
    legend entry for the limit lines or the rows; the two rows right-aligned with a stagger.
+
+## P17b agent C (items 1, 2, 3, 5; headless egui_kittest, 2 px/pt, 2026-11-07)
+
+Images: `sim_chart_{240,340,420}.png` (the rivmap100 3D Rough envelope, the prototype
+classes, no budget), `sim_chart_340_over_budget.png` (the Pocket set at a fifth of its
+budget: dots and contours), `sim_chart_340_spread.png` (new, look only: the Pocket set
+with the steady passes spread over four heat cells each way on a triangular density, no
+dot, so the ramp and the contours read alone).
+
+### sim_chart_340_spread.png (item 1, the heat map)
+
+Good: the band reads "brighter where more cuts" at a glance: a bright core at the planned
+point, a grey ring, faint edge cells that fade into the wash (32 steps on the square-root
+ramp from the histogram's wash to the full body rung); the white planned dot on its ground
+halo reads whole over the bright core; no cluster box, no leader, no "steady" text; the
+header is the move count alone; the legend swatch is a four-square ramp, faint to bright.
+The "25 %" contour is named on its line, quiet, in the line's colour (the only level
+under the axis top: the planned Pocket cut sits near a quarter of its budget).
+Wrong: nothing by eye. Nit: "Corner width" floats left of its line (the P17 label kit;
+agent B's on-line anchor is the fix, pending).
+
+### sim_chart_340.png, sim_chart_420.png, sim_chart_240.png (item 2, the depth axis)
+
+Good: the axis extends to the Vendor DOC (6 mm), which draws as a line INSIDE the frame
+with "Vendor DOC 1×D" named under it in the binding colour; the Rigidity DOC (9 mm) keeps
+one quiet `TEXT_MUTED` row above the frame; the heat grid stays over the data range (the
+2 mm band and the 3 mm deep cells), the extension is empty space with the limit through
+it; the 240 rail keeps both.
+Wrong: the band is one cell tall under a 6.9 mm axis: the extension to the lowest limit
+squashes it (the operator's own ask for item 2; the judge's round-3 note stands as the
+cost). The prototype's steady samples share one cell under the planned dot, so the ramp
+does not show here (see the spread image). "Min width (moves)" still floats mid-plot
+(agent B's anchor, pending).
+Changed from the P17b before images: the up-arrow gutter row for the Vendor DOC is gone;
+the cluster box, its leader and the "40 % steady" header text are gone.
+
+### sim_chart_340_over_budget.png (items 3 and 5)
+
+Good: the four iso-force contours from core's law at the planned advance per tooth, the
+25/50/75 % lines faint (`TEXT_FAINT` 1 pt) under the fills, the "100 % budget" line in
+`CAUTION` 1.5 pt the strongest, the same colour as the dots over it, so "the dots are
+over THIS line" reads; the curves are the non-linear force the operator asked to see (a
+wide cut is heavy at a shallow depth, a narrow cut at a deep one); the planned dot paints
+last on its halo, whole over the orange dots at the same point, with the playhead ring
+under it.
+Wrong: the "25 %", "50 %", "75 %" labels take background chips where their only free
+place crosses a neighbouring soft line (the kit's rule), so three of the four labels read
+as chips, not as quiet text on the line; "100 % budget" turns along the steep part of its
+curve. Both wait on agent B's on-line label anchor (the brief: keep the current labels
+until it lands). Nit: the dots at 100 % D are still cut by the frame (P17 nit, open).
+
+## P17b item 2: the limit names ON their lines (`envelope_240/340/420.png`, `envelope_340_draft.png`, `envelope_340_hard_top.png`; headless, 2 px/pt, 2026-11-07)
+
+The operator: "I cant see what the axis lines are (limits) ... 'corner width' kind of works
+but its not obvious its labelling the axis line." The kit gains `LabelAt::LineEnd` on
+`LabelGround::Ground`: a label sits ON its line at the line's end, in the line's colour, on a
+chip of the chart ground, so the line runs into the text and out the other side; a vertical
+line takes the text horizontal beside its top, touching it; a step or a curve at its last
+point; when the end place is taken, the other end, then the old beside-the-line places.
+Good, 340 and 420: "Rigidity DOC" and "Vendor DOC 1×D" read as the names of their lines:
+each sits on its line, right-aligned at the frame, the line visibly entering and leaving the
+text; "Min width (moves)" hangs from the top of its vertical line, touching it. The binding
+line's heavier weight still reads through its label colour. Nothing is clipped.
+Good, 240: the two depth names keep their place at the right ends; the move-budget line
+hugs the frame at this width and does not draw (P5d D1, as before), so it has no label.
+Draft (`envelope_340_draft.png`): the white dot sits at the candidate, the hollow ghost at
+the stored point, and the labels keep clear of both as at rest.
+Hard top: "Flute guard" sits at the LEFT end of the top line (the right end is crossed by
+the "Corner width" line, so the kit took the other end); "Rigidity DOC" sits along the
+start of its curve (its end crosses the Corner width line); "Corner width" hangs beside the
+bottom of its line (the top end sits under the crossed curve). Each label still touches the
+line it names.
+Wrong, by design: the ground chip under a level label punches a notch in the OK wash
+where the label straddles the limit line (above the line: the ground; below: the wash); the
+chip also masks the faint reference hairline it crosses ("Min width (moves)" over the
+10 mm line at 340). Both are what "the line masked under the letters" asks for; recorded
+for the lead. The 240 rail still drops the move-budget line (no change).
+
+### P17b agent C, round 2 (agent B's on-line anchor landed; the same five images re-rendered)
+
+Changed: every limit label and every contour label is now ON its line at the line's end
+in the line's colour on a chip of the chart ground (`LabelAt::line_end`,
+`LabelGround::Ground`); the playhead ring paints between the halo and the planned dot
+(the advisor's catch: a halo over the ring hid "the playhead is at the plan"); the chart
+snapshot screen is 300 pt so the 240 rail shows its second legend row.
+Good (`sim_chart_340_over_budget.png`): "100 % budget" sits on the amber curve at its
+upper end, "50 %" on its line at the left, "75 %" and "25 %" on their lines at the right
+edge, each in its line's colour with the line running into the chip; no floating chip;
+"Corner width" at the top of its line; the blue ring reads around the white dot over
+the orange dots. (`sim_chart_340.png`, 420, 240): "Vendor DOC 1×D" on its line at the
+right end, inside the frame; "Min width (moves)" at the foot of its line, no longer
+mid-plot; the Rigidity DOC row above the frame. (`sim_chart_340_spread.png`): the heat
+core, the ring of grey, the faint edge; "25 %" on its line at the right.
+Wrong: nothing by eye. Nits: the dots at 100 % D are cut by the frame (P17, open); the
+2 mm band under a 6.9 mm axis is thin on the rough (the cost of item 2's extension).
+
+## P17b item 4: the nomogram on the chart kit (`passes_240/340/420.png`; headless, 2 px/pt, the whole Passes tab of the rivmap100 3D Rough, 2026-11-07)
+
+The operator: "the passes tab on the toolpath ... still has the old feeds/speeds chart,
+looks out of place now." `explore.rs` `draw_chart_c` draws through `PlaneChart` (no
+`egui_plot` left in `explore.rs` or `shared.rs`; the readiness scatter keeps it). The content
+is the same: the corridor lines, the one suggested line, the band lines where the row
+publishes both, the three walls, the dashed target line and its ring, the quiet ring, the
+ghost, the white dot, the hover readout on the frame only, the ranges `0..1.15 x cap` and
+`0..1.05 x cap` with the wall label room; only the look moved to the kit.
+Good, 340: the two charts now read as one kit: the same caption ticks on 1-2-5 steps
+(RPM 0, 5000 .. 25000; feed 0, 2500 .. 10000), the same small-caps titles ("FEED
+(mm/min)", "RPM"), one hairline baseline per axis with short outward ticks, a faint
+reference line per feed step and no lattice, the origin at the frame corner (the egui_plot
+5 % margin is gone). "Max feed" sits ON the feed wall at its right end in the wall's red;
+"Rubbing" sits on the rubbing ray at its end, turned with the ray; "Min RPM" hangs from the
+top of the amber wall, touching it; "Max RPM" takes the old beside-the-wall place (its top
+end is under "Max feed", its bottom end over "Rubbing"); "Now" and "Before derate" are plain
+text beside their marks. The quiet ring, the ghost and the dot are the kit's marks.
+Good, 240: every line and mark keeps its place; "Max feed", "Max RPM", "Rubbing" and "Now"
+paint; "Min RPM" drops (no room; as before W3k at 240). The feed ticks keep 2500 steps,
+the RPM axis names 0, 10000, 20000.
+Good, 420: the 340 image with more air; "Max RPM" moves beside the wall at mid height.
+Wrong, by eye: the room above the feed wall (kept for the one wall label's fallback at the
+240 rail, `with_wall_label_room`) leaves a 20-point band above "Max feed" with nothing in
+it; a half-chip room would do when the end place is free, but the Pocket fixture at 240
+needs the beside place (both ends taken: the ring at the corner, the Min RPM wall at the
+axis). Recorded. The Passes tab text rows (ic1) moved with the chart texts, no prose row:
+P17 (the envelope plot) 36 -> 39 and 35 -> 38; P17b (the nomogram: a feed tick every 20
+points, each limit label on its own row) 39 -> 40, 38 -> 37, 28 -> 29.
+
+## P17b finish (agent D, 2026-11-07): one live look, then headless only
+
+The lead stopped the live GUI work after one look (the operator needed the GUI). The live
+images below are round 0: the release binary of the tree that agent D found (agents A-C),
+before the fixes of this round. Every later image is headless (`p17_visual_snapshots.rs`,
+2 px/pt). The headless images include the uncommitted P19 core edits of a peer session
+(`rs_cam_core/src/feeds/envelope.rs`, `predict.rs`): the "Min width (moves)" line is out
+of the rivmap rough view in them.
+
+### Live round 0 (`p17b_live_r0_*.png`, 1400 x 1380 and 1920 x 1165, dark)
+
+- `p17b_live_r0_zoom_sim_rough.png`: the heat map reads as one flat grey sheet. Most of
+  the cut time is in one cell at 2 mm, and the ramp on the share of the densest cell puts
+  every other cell at the faint end. The cells are about 1 pt tall and 5 pt wide (32 rows
+  over the data range under a 6.9 mm axis), so they read as streaks, not cells. The
+  Vendor DOC name sits on its line inside the frame; the Rigidity DOC (9 mm, more than 3x
+  the data range) keeps one quiet off-scale row. No contour: the 3D Rough has the Factor
+  rule (no force budget), as specified.
+- `p17b_live_r0_zoom_sim_face.png`: wrong. Face 5 has a force budget (35.3 N, the card
+  reads "peak 53 % of budget"), but no contour draws. Cause: the force field covered only
+  the envelope's own view top (1.06 mm); the samples go to 2 mm, the field peak under
+  1.06 mm is 8.6 N, under the 25 % level (8.8 N). The faint cells read as a few grey
+  bars.
+- `p17b_live_r0_zoom_passes_rough.png`: the nomogram on the kit reads as one kit with the
+  SAFE CUT plot. "Max RPM" hangs under "Max feed" at the corner of the two red walls;
+  neither name reads as its own line's.
+
+### Fixes of this round
+
+1. The heat ramp is the RANK of the cell's time among the cells with time (histogram
+   equalisation, datashader `eq_hist`), not the share of the densest cell: one heavy cell
+   no longer fades the rest.
+2. The heat cells are square on the screen (`square_rows`: 48 columns, the rows follow
+   the data range's height in the frame, at most 32).
+3. The force field spans the top of the chart's own scene (`with_depth_mark` at the
+   deepest sample), so Face 5 gets its 25 % and 50 % contours.
+4. The label kit: a steep line whose two ends are taken tries places touching its side
+   before the free places; a label may name its line from either end (`is_own_line` reads
+   both orders). The feed wall names itself at its low-RPM end, so "Max feed" and "Max
+   RPM" no longer stack at 340 and 420 (at 240 the low end is taken by the Min RPM wall,
+   so they still stack there).
+
+### Headless after (`p17b_after_headless_*.png`, `sim_chart_*.png`, `passes_*.png`)
+
+- `sim_chart_340.png`: square cells; the ramp shows (bright and grey cells along the 2 mm
+  row). The prototype set holds every steady sample at one depth, so the row still reads
+  as a dashed band; live data spreads over the plane.
+- `sim_chart_340_over_budget.png`: the four contours, each named on its line; the planned
+  dot whole over the orange dots; the cells now show under the dots.
+- `sim_chart_340_spread.png`: a soft blob, bright core, faint edge.
+- `passes_340.png`, `passes_420.png`: "Max feed" on its line at the left end, "Min RPM"
+  and "Max RPM" hang from the tops of their walls, each touching its wall.
+
+### A process defect in looks 1 and 2 (read this first)
+
+Agent D ran the snapshot test with the RELATIVE directory
+`planning/feeds_contract_2026-11-03/p17_visual`; cargo runs a test in the crate
+directory, so the renders went to `crates/rs_cam_viz/planning/...` (moved here and the
+stray directory deleted). The `p17b_after_headless_*` copies, `sim_chart_340_spread.png`
+and `passes_240.png` that looks 1 and 2 saw were therefore the renders of agents A-C,
+WITHOUT fixes 1, 2 and 4 of this round. Look 3 is the first look at the final images.
+
+### Judge, look 1 (images: sim_chart 340, over budget, spread, passes 340; stale renders)
+
+Verdicts: sim chart mostly; over budget no; spread mostly; passes: SAFE CUT mostly,
+feed x RPM no. Must fix: the unlabelled quiet ring and the unlabelled corridor line on
+the nomogram; "Max feed"/"Max RPM" stacked at the corner; the 2 mm row reads as a dashed
+guide line; the orange dots hide the cells; contour labels at mixed ends; the cells and
+dots at 100 % cut by the frame. Acted on: the corner stack (fix 4). Not acted on, by
+rule: the ring and the corridor have no painted label since W3k/P5d D3 (the hover names
+them; item 4 keeps the content); the dots stay orange (item 3); the labels sit ON their
+lines (item 2).
+
+### Judge, look 2 (the same images plus passes 240; stale renders)
+
+Verdicts: sim chart mostly; over budget no; spread mostly; passes 340: SAFE CUT mostly,
+feed x RPM no; passes 240 no. Must fix: at 240 "Min RPM" and "Before derate" drop;
+the orange dots cover the cells; "Max RPM" still reads as a second label of the feed line
+(it hangs left of its wall, under the feed wall); the two-ring "Before derate" glyph; the
+100 % data cut by the frame; the thin data on the prototype rough; contour labels at mixed
+ends; "Min width (moves)" placement; the playhead ring is dark on the dark ground. Nits:
+red walls when nothing is crossed, the stub of line past each label, chip on one label and
+not another, the blank band under the legend.
+Not acted on (rule-bound or a design choice for the lead): the label drops at 240 (as
+before P17b, W3k); the glyphs and colours of the nomogram (item 4: look only, content
+kept; the red walls are the machine walls since W3k); the orange dots (item 3); the frame
+at D (D5).
+
+### Judge, look 3 (the final images: `p17b_after_headless_sim_chart_340.png`, `..._over_budget.png`, `sim_chart_340_spread.png`, `p17b_after_headless_passes_340.png`, `passes_240.png`)
+
+Verdicts: sim chart mostly ("the data marks look like broken dashes"); over budget no
+(too busy: dots and contour labels); spread YES; passes 340 mostly (SAFE CUT fine, the
+feed x RPM chart busy); passes 240 no.
+Must fix, as the judge ranks them: (1) at 240 "Min RPM" and "Before derate" drop; (2) at
+240 "Max feed" and "Max RPM" stack at the corner; (3) the orange dots cover the heat cells
+and the planned dot sinks into them; (4) "75 %" and "25 %" sit on the 100 % column; (5)
+the 100 % column looks clipped by the frame; (6) the playhead ring is dark blue on the
+dark ground; (7) the prototype 2 mm row reads as dashes. Nits: one chip style ("Vendor
+DOC" has a chip, "Rigidity DOC" seems not to), contour labels at mixed ends, "25 %" says
+not of what, the double line at 100 %, heavy small-caps axis titles.
+The three-look cap is reached; agent D stops here. Each item is open for the lead (P17.md
+"P17b open items").

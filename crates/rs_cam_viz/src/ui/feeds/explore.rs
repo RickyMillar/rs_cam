@@ -62,30 +62,24 @@
 //! limit was invented. `feeds_charts_draw_lines_not_shading_g_chartlines`
 //! holds the rule.
 
-use egui_plot::{Line, MarkerShape, Plot, PlotPoints, Points};
 use rs_cam_core::feeds::FeedsExplain;
 use rs_cam_core::feeds::efficiency::CutEfficiency;
 use rs_cam_core::feeds::suggest::FeedsPreview;
 
 use super::envelope::{GHOST_RADIUS, OUTLINE_WIDTH, RECOMMENDATION_WIDTH, recommendation_color};
-use super::shared::{CurrentValues, OpFeeds, chart, nice_steps, vendor_band, wash};
+use super::shared::{CurrentValues, OpFeeds, chart, vendor_band, wash};
+use crate::ui::components::chart::labels::{LABEL_GAP, LABEL_PADDING};
 /// The chart label kit (W3k). P17 moved it to `ui/components/chart/labels.rs`;
-/// the nomogram keeps the names.
-pub(crate) use crate::ui::components::chart::labels::{
-    ChartLabel, DrawnLine, LABEL_GAP, LABEL_PADDING, LabelAnchor, LabelGround, paint_labels,
-    place_labels,
-};
+/// the label fit test keeps the names.
 #[cfg(test)]
-pub(crate) use crate::ui::components::chart::labels::{MAX_LABELS, PlacedLabel, candidates};
+pub(crate) use crate::ui::components::chart::labels::{
+    LabelAnchor, MAX_LABELS, PlacedLabel, candidates,
+};
+use crate::ui::components::chart::{
+    Axis, ChartLine, ChartMap, ChartResponse, Label, LabelAt, LabelGround, Mark, PlaneChart,
+    caption_font,
+};
 use crate::ui::{AppEvent, tokens};
-
-/// Ranges that belong to an axis are drawn ON that axis, at this weight.
-///
-/// The machine's limits and the vendor's RPM window are facts about one
-/// axis. Drawn into the plot body they were a labelled hexagon and a
-/// full-height wash, both competing with the vendor band for the same
-/// pixels.
-pub(crate) const AXIS_MARK_WIDTH: f32 = 4.0;
 
 /// The alpha of the chipload corridor's two lines.
 ///
@@ -113,16 +107,12 @@ pub(crate) const BAND_LIMIT_WIDTH: f32 = 1.0;
 /// the speed rows (W3i). The window drew it at 280.
 const CHART_HEIGHT: f32 = 180.0;
 
-/// The room of the feed axis ticks: four digits at the small text size.
-const Y_AXIS_MIN_WIDTH: f32 = 32.0;
+/// The title of the feed axis, turned at the left of the plot (the kit's
+/// small caps: upper case, the unit in its own case).
+const FEED_AXIS_TITLE: &str = "FEED (mm/min)";
 
-/// The title of the feed axis, rotated at the left of the plot.
-const FEED_AXIS_TITLE: &str = "Feed (mm/min)";
-
-/// The gap of an egui_plot axis title, as a fraction of its row height
-/// (egui_plot 0.37 `axis.rs`, `AXIS_LABEL_GAP`; the crate keeps it
-/// private). The rotated y title paints this far left of the plot.
-const AXIS_LABEL_GAP: f32 = 0.25;
+/// The title of the RPM axis, under the plot.
+const RPM_AXIS_TITLE: &str = "RPM";
 
 /// The nomogram of this operation, inline on the Passes tab (P5b: the
 /// Feeds tab merged into Passes). The recommendation card draws under the
@@ -274,12 +264,14 @@ impl Corridor {
 
 /// The nomogram: the live operating point of the operation against the
 /// engine's recommendation, the vendor lines, the corridor and the machine
-/// limits. W3k: a short label beside each limit says what it is; the hover
-/// is one line with the RPM, the feed and the chipload under the pointer.
+/// limits. W3k: a short label on each limit says what it is; the hover is
+/// one line with the RPM, the feed and the chipload under the pointer.
 ///
-/// W3k (operator, 2026-10-31): the chart has no navigation. The plot senses
-/// hover only, every zoom, pan and reset flag is off, and the bounds are set
-/// on every frame (see [`chart_bounds`]).
+/// W3k (operator, 2026-10-31): the chart has no navigation. It senses hover
+/// only. P17b: the chart kit paints it (`PlaneChart`); the kit keeps no
+/// state, so the ranges are set on every frame by construction, and every
+/// gesture of the egui_plot era (a tick drag, a box zoom, a double click, a
+/// wheel) has no door to open.
 pub(crate) fn draw_chart_c(
     ui: &mut egui::Ui,
     current: &CurrentValues,
@@ -292,10 +284,41 @@ pub(crate) fn draw_chart_c(
     let env = &explain.machine;
 
     // RPM/Feed axis bounds — show a bit past the machine cap so the
-    // wall is visible.
-    let rpm_axis_max = env.spindle_max_rpm * 1.15;
-    let feed_axis_max = env.max_feed_mm_min * 1.05;
-    let (x_bounds, y_bounds) = chart_bounds(rpm_axis_max, feed_axis_max);
+    // wall is visible. A degenerate machine (a zero cap) still gets a
+    // range, so the chart never divides by zero.
+    let rpm_axis_max = axis_max(env.spindle_max_rpm * 1.15);
+    let feed_axis_max = axis_max(env.max_feed_mm_min * 1.05);
+    // The feed wall is the top line of the chart. The axis keeps room
+    // above it for one wall label, so "Max feed" has a place on a narrow
+    // rail (lead, 2026-10-31). P17b item 2 puts the label ON the wall at
+    // its end; the room stays for the fallback beside the wall, when both
+    // ends are taken (the recommended ring at the corner, the Min RPM wall
+    // at the axis). The room: the label box, its gap to the line, the
+    // wall's half width and the one point the layout keeps inside the
+    // frame. The frame height does not depend on the range, so a probe
+    // chart gives it.
+    let wall_label_room = {
+        let text_height = ui
+            .painter()
+            .layout_no_wrap(LABEL_MAX_FEED.to_owned(), caption_font(), tokens::DANGER)
+            .size()
+            .y;
+        f64::from(text_height + 2.0 * LABEL_PADDING.y + LABEL_GAP + WALL_WIDTH / 2.0 + 1.5)
+    };
+    let frame_height = PlaneChart::new(
+        Axis::new((0.0, rpm_axis_max), RPM_AXIS_TITLE),
+        Axis::new((0.0, feed_axis_max), FEED_AXIS_TITLE),
+        CHART_HEIGHT,
+        egui::Sense::hover(),
+    )
+    .frame(ui)
+    .height();
+    let feed_axis_max = with_wall_label_room(
+        feed_axis_max,
+        env.max_feed_mm_min,
+        f64::from(frame_height),
+        wall_label_room,
+    );
 
     // The corridor is resolved here, where the axes are known, and nowhere
     // else: whether the deflection ceiling has a place on this chart is a
@@ -334,442 +357,272 @@ pub(crate) fn draw_chart_c(
         ])
         .filter(|t| (t[1] - explain.recommended.feed_rate_mm_min).abs() > 1.0);
 
-    let mut hover_readout: Option<String> = None;
-    // egui_plot 0.37 (`axis.rs`, `AXIS_LABEL_GAP` = 0.25) paints the
-    // rotated feed axis title a quarter of its galley height left of the
-    // plot. At the left edge of the inspector the scroll area clipped the
-    // tops of its glyphs ("ieea"). The plot starts that far in, so the
-    // title paints whole. The indent adds no text row (IC1). The galley is
-    // the one egui_plot lays out: the Body style, no wrap.
-    let title_overhang = axis_title_overhang(ui, FEED_AXIS_TITLE);
-    // The screen room that a wall label needs above the feed wall: the
-    // label box, its gap to the line, the wall's half width and the one
-    // point the layout keeps inside the frame.
-    let wall_label_room = {
-        let font = egui::FontId::proportional(tokens::SIZE_CAPTION);
-        let text_height = ui
-            .painter()
-            .layout_no_wrap(LABEL_MAX_FEED.to_owned(), font, tokens::DANGER)
-            .size()
-            .y;
-        f64::from(text_height + 2.0 * LABEL_PADDING.y + LABEL_GAP + WALL_WIDTH / 2.0 + 1.5)
-    };
-    let plot_response = ui
-        .horizontal(|ui| {
-            ui.add_space(title_overhang);
-            Plot::new("feeds_tab_nomogram")
-                .height(CHART_HEIGHT)
-                .x_axis_label("RPM")
-                .y_axis_label(FEED_AXIS_TITLE)
-                // The four-digit feed ticks need this room at the 240-point rail;
-                // the default width clipped them.
-                .y_axis_min_width(Y_AXIS_MIN_WIDTH)
-                // P5c: the default log-10 grid named only 0 on the feed
-                // axis (a step of 1000 mm/min is closer than its label
-                // spacing on a 180-point chart). A 1-2-5 step near a third
-                // of the range gives three or four names, as on the
-                // envelope plot. The axis grows past `Y_AXIS_MIN_WIDTH`
-                // when a name needs more room.
-                .y_grid_spacer(egui_plot::uniform_grid_spacer(|i| nice_steps(&i)))
-                // P5d D5: the RPM axis reads the same rule. The default
-                // log-10 grid named only "0" at the 240-point rail.
-                .x_grid_spacer(egui_plot::uniform_grid_spacer(|i| nice_steps(&i)))
-                // W3k: no navigation. W3i turned off drag, zoom and scroll,
-                // but egui_plot has three more doors, each on by default: a
-                // drag on the axis ticks zooms that axis, a right drag zooms
-                // to a box, and a double click resets. A zoom sets
-                // `auto_bounds` false in the plot memory, which egui keeps
-                // per plot id. Measured headless: a short drag on the RPM
-                // ticks moved the x axis to about -100000, so every pointer
-                // position read outside the axes and the readout abstained
-                // on the whole chart until a double click.
-                .allow_drag(false)
-                .allow_zoom(false)
-                .allow_scroll(false)
-                .allow_boxed_zoom(false)
-                .allow_axis_zoom_drag(false)
-                .allow_double_click_reset(false)
-                .sense(egui::Sense::hover())
-                .show(ui, |plot_ui| {
-                    // W3k: the bounds are set on every frame, so a bound kept
-                    // in the plot memory from an older build cannot stay.
-                    plot_ui.set_plot_bounds_x(x_bounds.clone());
-                    // The feed wall is the top line of the chart. The plot
-                    // keeps room above it for its label, so "Max feed" has
-                    // a place on a narrow rail (lead, 2026-10-31).
-                    let plot_height = f64::from(plot_ui.transform().frame().height());
-                    plot_ui.set_plot_bounds_y(with_wall_label_room(
-                        y_bounds.clone(),
-                        env.max_feed_mm_min,
-                        plot_height,
-                        wall_label_room,
-                    ));
-                    // 0. The corridor: the two bounds that turn the vendor band into
-                    //    a place the cut can live. Each is a thin line in the machine
-                    //    wall's hue. They were shaded wedges until 2026-09-23
-                    //    (G-CHARTLINES: "no shading"). W3k: "Rubbing" and "Chip
-                    //    limit" label them.
-                    if let Some(corridor) = corridor {
-                        if corridor.floor_mm.is_finite() && corridor.floor_mm > 0.0 {
-                            plot_ui.line(
-                                Line::new(
-                                    "",
-                                    iso_line(
-                                        corridor.floor_mm,
-                                        env.spindle_max_rpm,
-                                        flutes,
-                                        env.max_feed_mm_min,
-                                    ),
-                                )
-                                .color(wash(tokens::DANGER, CORRIDOR_LINE_ALPHA))
-                                .width(CORRIDOR_LINE_WIDTH)
-                                .allow_hover(false),
-                            );
-                        }
-                        // The ceiling line is drawn ONLY when the ceiling lands
-                        // inside the plot. It is never clamped to the top edge —
-                        // see [`Ceiling::OffScale`].
-                        if let Ceiling::OnChart { ceiling_mm } = corridor.ceiling {
-                            plot_ui.line(
-                                Line::new(
-                                    "",
-                                    iso_line(
-                                        ceiling_mm,
-                                        env.spindle_max_rpm,
-                                        flutes,
-                                        env.max_feed_mm_min,
-                                    ),
-                                )
-                                .color(wash(tokens::DANGER, CORRIDOR_LINE_ALPHA))
-                                .width(CORRIDOR_LINE_WIDTH)
-                                .allow_hover(false),
-                            );
-                        }
-                    }
-                    // 1. The suggested advance per tooth: ONE solid iso-advance line,
-                    //    clipped at the machine RPM cap and feed cap. It goes through
-                    //    the `Recommended` ring. P5d D3: a recommendation mark, so it
-                    //    is quiet ACCENT at 1 point, as the ring is.
-                    if let Some(cl) = suggested {
-                        plot_ui.line(
-                            Line::new(
-                                "",
-                                iso_line(cl, env.spindle_max_rpm, flutes, env.max_feed_mm_min),
-                            )
-                            .color(recommendation_color())
-                            .width(RECOMMENDATION_WIDTH)
-                            .allow_hover(false),
-                        );
-                    }
-                    // 2. The vendor limits: two fainter lines in the same colour,
-                    //    ONLY when the row publishes both. No fill between them.
-                    //
-                    //    Operator ruling, 2026-09-23: "Always just have the straight
-                    //    line, center or suggested, then add more faint bands around
-                    //    it, no shading, but only if they exist". A row that
-                    //    publishes one value gets no band lines. The chart does not
-                    //    make a band from one value.
-                    if let Some((lo, hi)) = band {
-                        for limit in [lo, hi] {
-                            plot_ui.line(
-                                Line::new(
-                                    "",
-                                    iso_line(
-                                        limit,
-                                        env.spindle_max_rpm,
-                                        flutes,
-                                        env.max_feed_mm_min,
-                                    ),
-                                )
-                                .color(wash(chart::BAND, BAND_LIMIT_ALPHA))
-                                .width(BAND_LIMIT_WIDTH)
-                                .allow_hover(false),
-                            );
-                        }
-                    }
-
-                    // 3. The machine walls: the spindle maximum and the feed
-                    //    maximum, and the spindle minimum as an amber wall of the
-                    //    same style (lead, 2026-10-31: the axis band left its
-                    //    label floating above it). W3k (lead, 2026-10-31): the inline chart draws no
-                    //    "past the cap" axis marks. The red bar beyond Max RPM and
-                    //    the red tick above Max feed at RPM 0 said what the walls
-                    //    already say, and read as stray marks. The vendor RPM
-                    //    window mark on the axis went too: it had no label.
-                    //    `draw_machine_envelope`
-                    //    keeps them for the project scatter.
-                    for wall in walls(env) {
-                        plot_ui.line(
-                            Line::new("", PlotPoints::from(wall.to_vec()))
-                                .color(wash(tokens::DANGER, WALL_ALPHA))
-                                .width(WALL_WIDTH)
-                                .allow_hover(false),
-                        );
-                    }
-                    if let Some(wall) = min_wall(env) {
-                        plot_ui.line(
-                            Line::new("", PlotPoints::from(wall.to_vec()))
-                                .color(tokens::CAUTION)
-                                .width(WALL_WIDTH)
-                                .allow_hover(false),
-                        );
-                    }
-
-                    // 5. The target (pre-derate) operating point: where the
-                    //    recommendation would sit without the depth, power and
-                    //    feed-clamp derates (ruling R4 removed the safety factor
-                    //    and the workholding factor). A dashed line runs from it
-                    //    down to the recommendation. W3k: a neutral ring, so the
-                    //    one blue ring on the chart is the recommendation.
-                    if let Some(t) = target {
-                        plot_ui.points(
-                            Points::new("", vec![t])
-                                .shape(MarkerShape::Circle)
-                                .filled(false)
-                                .radius(TARGET_RADIUS)
-                                .color(tokens::TEXT_MUTED)
-                                .allow_hover(false),
-                        );
-                        plot_ui.line(
-                            Line::new("", PlotPoints::from(vec![t, recommended]))
-                                .color(wash(tokens::TEXT_MUTED, 180))
-                                .style(egui_plot::LineStyle::Dashed { length: 4.0 })
-                                .width(1.5_f32)
-                                .allow_hover(false),
-                        );
-                    }
-
-                    // 6. The marks of P5d D3 (the recommended ring, the ghost
-                    //    and the white dot) paint after the plot, at an exact
-                    //    1-point outline: egui_plot strokes an outline marker
-                    //    at a fifth of its radius.
-
-                    // 7. The hover readout: one line, the RPM, the feed and the
-                    //    chipload under the pointer (W3k).
-                    //
-                    // The pointer must be ON the chart. `pointer_coordinate` also
-                    // answers for a pointer outside the drawn bounds, and the
-                    // readout below then reports an operating point that does not
-                    // exist: measured at `37891 RPM · 0 mm/min · BURN risk (below
-                    // band)`, painted in the danger colour, on an axis whose maximum
-                    // is 27 600. That is a hazard verdict manufactured from an
-                    // absence, which is the failure shape this repo cares about most.
-                    //
-                    // The strip BETWEEN the spindle cap and the axis maximum is a
-                    // real place to hover — it is how `· past spindle cap` is read —
-                    // so the guard is the axis bound, not the machine's.
-                    if let Some(hover) = plot_ui
-                        .pointer_coordinate()
-                        .filter(|p| (0.0..=rpm_axis_max).contains(&p.x))
-                        .filter(|p| (0.0..=feed_axis_max).contains(&p.y))
-                    {
-                        // Read the CLAMPED coordinates once and derive everything
-                        // from them, readout and cap-note alike — see
-                        // `hover_readout_chipload`.
-                        let (rpm, feed) = (hover.x.max(0.0), hover.y.max(0.0));
-                        let cl = hover_readout_chipload(rpm, feed, flutes);
-                        let cap_note = if rpm > env.spindle_max_rpm {
-                            " \u{00B7} past spindle cap"
-                        } else if feed > env.max_feed_mm_min {
-                            " \u{00B7} past feed cap"
-                        } else if rpm < env.spindle_min_rpm {
-                            " \u{00B7} below spindle min"
-                        } else {
-                            ""
-                        };
-                        hover_readout = Some(format!(
-                            "{rpm:.0} RPM \u{00B7} {feed:.0} mm/min \u{00B7} {cl:.4} mm/t{cap_note}"
-                        ));
-                    }
-                })
-        })
-        .inner;
-
-    // W3k: the labels. They paint after the plot, in screen space, so each
-    // one has a background and the layout can test it against the others
-    // and against every drawn line.
-    let transform = &plot_response.transform;
-    let frame = *transform.frame();
-    let at = |p: [f64; 2]| transform.position_from_point(&egui_plot::PlotPoint::new(p[0], p[1]));
-    let ring = |p: [f64; 2], radius: f32| {
-        egui::Rect::from_center_size(at(p), egui::Vec2::splat(2.0 * radius + MARK_CLEARANCE))
-    };
-    // The marks (P5d D3): the quiet ring at the recommendation (operator,
-    // 2026-11-04: "recommendations should be subtle"), the hollow ghost at
-    // the stored speeds during a draft, then the white dot at the setpoint
-    // (ruling R23: an operator value is neutral ink, not a verdict). The
-    // dot shows inside the ring when the operation runs at the
-    // recommendation.
-    let painter = ui.painter_at(frame);
-    let _ = painter.circle_stroke(
-        at(recommended),
-        RECOMMENDED_RADIUS,
-        egui::Stroke::new(RECOMMENDATION_WIDTH, recommendation_color()),
-    );
-    if let Some(point) = ghost {
-        let _ = painter.circle_stroke(
-            at(point),
-            GHOST_RADIUS,
-            egui::Stroke::new(OUTLINE_WIDTH, tokens::TEXT_MUTED),
-        );
-    }
-    if let Some(point) = now {
-        let _ = painter.circle_filled(at(point), NOW_RADIUS, tokens::TEXT_STRONG);
-    }
-    let mut keep_clear = vec![ring(recommended, RECOMMENDED_RADIUS)];
-    keep_clear.extend(now.map(|p| ring(p, NOW_RADIUS)));
-    keep_clear.extend(ghost.map(|p| ring(p, GHOST_RADIUS)));
-    keep_clear.extend(target.map(|p| ring(p, TARGET_RADIUS)));
-    // The crossing of the two machine walls.
-    keep_clear.push(ring(
-        [env.spindle_max_rpm, env.max_feed_mm_min],
-        CROSSING_CLEARANCE,
-    ));
-    let iso_screen = |cl: f64| -> Vec<egui::Pos2> {
-        clip_iso_line(cl, env.spindle_max_rpm, flutes, env.max_feed_mm_min)
-            .into_iter()
-            .map(at)
-            .collect()
-    };
-    // Every drawn line, in screen space, with half its width. No label
-    // crosses one.
-    let mut lines: Vec<DrawnLine> = Vec::new();
-    let mut push_line = |points: Vec<egui::Pos2>, width: f32, soft: bool| {
-        lines.push(DrawnLine {
-            points,
-            half_width: width / 2.0,
-            soft,
-        });
-    };
+    // Every iso-advance line, clipped to the machine caps.
+    let iso = |cl: f64| clip_iso_line(cl, env.spindle_max_rpm, flutes, env.max_feed_mm_min);
     let floor_line = corridor
         .filter(|c| c.floor_mm.is_finite() && c.floor_mm > 0.0)
-        .map(|c| iso_screen(c.floor_mm));
+        .map(|c| iso(c.floor_mm));
+    // The ceiling line exists ONLY when the ceiling lands inside the plot.
+    // It is never clamped to the top edge — see [`Ceiling::OffScale`].
     let ceiling_line = corridor.and_then(|c| match c.ceiling {
-        Ceiling::OnChart { ceiling_mm } => Some(iso_screen(ceiling_mm)),
+        Ceiling::OnChart { ceiling_mm } => Some(iso(ceiling_mm)),
         Ceiling::NotModelled | Ceiling::OffScale => None,
     });
-    if let Some(l) = &floor_line {
-        push_line(l.clone(), CORRIDOR_LINE_WIDTH, false);
-    }
-    if let Some(l) = &ceiling_line {
-        push_line(l.clone(), CORRIDOR_LINE_WIDTH, false);
-    }
-    if let Some(cl) = suggested {
-        push_line(iso_screen(cl), RECOMMENDATION_WIDTH, false);
-    }
-    if let Some((lo, hi)) = band {
-        push_line(iso_screen(lo), BAND_LIMIT_WIDTH, true);
-        push_line(iso_screen(hi), BAND_LIMIT_WIDTH, true);
-    }
     let [rpm_wall, feed_wall] = walls(env);
-    push_line(
-        rpm_wall.iter().copied().map(at).collect(),
-        WALL_WIDTH,
-        false,
+    let min_line = min_wall(env);
+
+    let mut plot = PlaneChart::new(
+        Axis::new((0.0, rpm_axis_max), RPM_AXIS_TITLE),
+        Axis::new((0.0, feed_axis_max), FEED_AXIS_TITLE),
+        CHART_HEIGHT,
+        egui::Sense::hover(),
     );
-    push_line(
-        feed_wall.iter().copied().map(at).collect(),
-        WALL_WIDTH,
-        false,
+    // 0. The corridor: the two bounds that turn the vendor band into a
+    //    place the cut can live. Each is a thin line in the machine wall's
+    //    hue. They were shaded wedges until 2026-09-23 (G-CHARTLINES: "no
+    //    shading"). W3k: "Rubbing" and "Chip limit" label them.
+    let corridor_stroke = egui::Stroke::new(
+        CORRIDOR_LINE_WIDTH,
+        wash(tokens::DANGER, CORRIDOR_LINE_ALPHA),
     );
-    let min_line: Option<Vec<egui::Pos2>> =
-        min_wall(env).map(|wall| wall.iter().copied().map(at).collect());
-    if let Some(line) = &min_line {
-        push_line(line.clone(), WALL_WIDTH, false);
+    for line in floor_line.iter().chain(ceiling_line.iter()) {
+        plot = plot.line(ChartLine::new(line.clone(), corridor_stroke));
     }
+    // 1. The suggested advance per tooth: ONE solid iso-advance line,
+    //    clipped at the machine RPM cap and feed cap. It goes through the
+    //    `Recommended` ring. P5d D3: a recommendation mark, so it is quiet
+    //    ACCENT at 1 point, as the ring is.
+    if let Some(cl) = suggested {
+        plot = plot.line(ChartLine::new(
+            iso(cl),
+            egui::Stroke::new(RECOMMENDATION_WIDTH, recommendation_color()),
+        ));
+    }
+    // 2. The vendor limits: two fainter lines in the same colour, ONLY
+    //    when the row publishes both. No fill between them.
+    //
+    //    Operator ruling, 2026-09-23: "Always just have the straight line,
+    //    center or suggested, then add more faint bands around it, no
+    //    shading, but only if they exist". A row that publishes one value
+    //    gets no band lines. The chart does not make a band from one value.
+    //    A label may cross a faint line when it has no other place
+    //    (`ChartLine::soft`).
+    if let Some((lo, hi)) = band {
+        for limit in [lo, hi] {
+            plot = plot.line(
+                ChartLine::new(
+                    iso(limit),
+                    egui::Stroke::new(BAND_LIMIT_WIDTH, wash(chart::BAND, BAND_LIMIT_ALPHA)),
+                )
+                .soft(true),
+            );
+        }
+    }
+    // 3. The machine walls: the spindle maximum and the feed maximum, and
+    //    the spindle minimum as an amber wall of the same style (lead,
+    //    2026-10-31: the axis band left its label floating above it). W3k
+    //    (lead, 2026-10-31): the inline chart draws no "past the cap" axis
+    //    marks. The red bar beyond Max RPM and the red tick above Max feed
+    //    at RPM 0 said what the walls already say, and read as stray
+    //    marks. The vendor RPM window mark on the axis went too: it had no
+    //    label. The project scatter (`ui/readiness_panel.rs`) keeps them.
+    let wall_stroke = egui::Stroke::new(WALL_WIDTH, wash(tokens::DANGER, WALL_ALPHA));
+    for wall in [rpm_wall, feed_wall] {
+        plot = plot.line(ChartLine::new(wall.to_vec(), wall_stroke));
+    }
+    if let Some(wall) = min_line {
+        plot = plot.line(ChartLine::new(
+            wall.to_vec(),
+            egui::Stroke::new(WALL_WIDTH, tokens::CAUTION),
+        ));
+    }
+    // 5. The target (pre-derate) operating point: where the recommendation
+    //    would sit without the depth, power and feed-clamp derates (ruling
+    //    R4 removed the safety factor and the workholding factor). A
+    //    dashed line runs from it down to the recommendation. W3k: a
+    //    neutral ring, so the one blue ring on the chart is the
+    //    recommendation.
     if let Some(t) = target {
-        push_line(vec![at(t), at(recommended)], 1.5, false);
+        plot = plot
+            .line(
+                ChartLine::new(
+                    vec![t, recommended],
+                    egui::Stroke::new(TARGET_LINE_WIDTH, wash(tokens::TEXT_MUTED, 180)),
+                )
+                .dashed(TARGET_DASH, TARGET_DASH),
+            )
+            .mark(Mark::ring(
+                t,
+                TARGET_RADIUS,
+                egui::Stroke::new(TARGET_OUTLINE_WIDTH, tokens::TEXT_MUTED),
+            ));
+    }
+    // 6. The marks of P5d D3: the quiet ring at the recommendation
+    //    (operator, 2026-11-04: "recommendations should be subtle"), the
+    //    hollow ghost at the stored speeds during a draft, then the white
+    //    dot at the setpoint (ruling R23: an operator value is neutral ink,
+    //    not a verdict). The dot shows inside the ring when the operation
+    //    runs at the recommendation.
+    plot = plot.mark(Mark::ring(
+        recommended,
+        RECOMMENDED_RADIUS,
+        egui::Stroke::new(RECOMMENDATION_WIDTH, recommendation_color()),
+    ));
+    if let Some(point) = ghost {
+        plot = plot.mark(Mark::ring(
+            point,
+            GHOST_RADIUS,
+            egui::Stroke::new(OUTLINE_WIDTH, tokens::TEXT_MUTED),
+        ));
+    }
+    if let Some(point) = now {
+        plot = plot.mark(Mark::dot(point, NOW_RADIUS, tokens::TEXT_STRONG));
     }
 
     // The labels in priority order: the walls, the corridor, Now, Vendor
     // range, Before derate. `MAX_LABELS` of them paint at most. P5d D3: the
-    // recommended ring has no painted label; the hover names it.
-    let mut specs = vec![ChartLabel {
-        text: LABEL_MAX_FEED.to_owned(),
-        color: tokens::DANGER,
-        anchor: LabelAnchor::Line(feed_wall.iter().copied().map(at).collect()),
-        ground: LabelGround::Overlay,
-    }];
-    specs.push(ChartLabel {
-        text: LABEL_MAX_RPM.to_owned(),
-        color: tokens::DANGER,
-        anchor: LabelAnchor::Line(rpm_wall.iter().copied().map(at).collect()),
-        ground: LabelGround::Overlay,
-    });
-    if let Some(l) = floor_line {
-        specs.push(ChartLabel {
-            text: LABEL_RUBBING.to_owned(),
-            color: tokens::DANGER,
-            anchor: LabelAnchor::Line(l),
-            ground: LabelGround::Overlay,
-        });
+    // recommended ring has no painted label; the hover names it. P17b item
+    // 2: a limit line carries its name ON the line at its end, on a chip
+    // of the chart ground; a mark keeps its mark label, plain text beside
+    // the mark.
+    let on_line = |text: &str, color: egui::Color32, points: Vec<[f64; 2]>| {
+        Label::new(text, color, LabelAt::line_end(points)).ground(LabelGround::Ground)
+    };
+    // The feed wall names itself at its LOW-RPM end first (its points
+    // reversed, so that end is the "last"): its high-RPM end is the corner
+    // with the Max RPM wall, where the two red names stacked and neither
+    // read as its own line's (P17b judge, look 1). The kit takes the other
+    // end when the low end is taken.
+    let feed_wall_from_corner: Vec<[f64; 2]> = feed_wall.iter().rev().copied().collect();
+    plot = plot
+        .label(on_line(
+            LABEL_MAX_FEED,
+            tokens::DANGER,
+            feed_wall_from_corner,
+        ))
+        .label(on_line(LABEL_MAX_RPM, tokens::DANGER, rpm_wall.to_vec()));
+    if let Some(line) = floor_line {
+        plot = plot.label(on_line(LABEL_RUBBING, tokens::DANGER, line));
     }
-    if let Some(l) = ceiling_line {
-        specs.push(ChartLabel {
-            text: LABEL_CHIP_LIMIT.to_owned(),
-            color: tokens::DANGER,
-            anchor: LabelAnchor::Line(l),
-            ground: LabelGround::Overlay,
-        });
+    if let Some(line) = ceiling_line {
+        plot = plot.label(on_line(LABEL_CHIP_LIMIT, tokens::DANGER, line));
     }
-    if let Some(line) = min_line {
-        specs.push(ChartLabel {
-            text: LABEL_MIN_RPM.to_owned(),
-            color: tokens::CAUTION,
-            anchor: LabelAnchor::Line(line),
-            ground: LabelGround::Overlay,
-        });
+    if let Some(wall) = min_line {
+        plot = plot.label(on_line(LABEL_MIN_RPM, tokens::CAUTION, wall.to_vec()));
     }
     // The current dot takes a label only where it does not sit in the ring.
     // It ranks under the limits (lead, 2026-10-31): on a crowded chart the
-    // white dot keeps its place and its label drops first.
+    // white dot keeps its place and its label drops first. The test is in
+    // screen space, on the frame the kit is about to take.
+    let frame = plot.frame(ui);
+    let probe = ChartMap {
+        frame,
+        x: (0.0, rpm_axis_max),
+        y: (0.0, feed_axis_max),
+    };
+    let at = |p: [f64; 2]| probe.to_screen(p[0], p[1]);
     if let Some(point) = now
         && at(point).distance(at(recommended)) > RECOMMENDED_RADIUS + NOW_RADIUS
     {
-        specs.push(ChartLabel {
-            text: LABEL_NOW.to_owned(),
-            color: tokens::TEXT_STRONG,
-            anchor: LabelAnchor::Mark {
-                center: at(point),
-                radius: NOW_RADIUS,
-            },
-            ground: LabelGround::Overlay,
-        });
+        plot = plot.label(
+            Label::new(
+                LABEL_NOW,
+                tokens::TEXT_STRONG,
+                LabelAt::Mark {
+                    at: point,
+                    radius: NOW_RADIUS,
+                },
+            )
+            .ground(LabelGround::None),
+        );
     }
-    // The vendor range: ONE label for its two lines, beside either one
+    // The vendor range: ONE label for its two lines, at the end of either
     // (the lower line first: the space under it is open more often).
     if let Some((lo, hi)) = band {
-        specs.push(ChartLabel {
-            text: LABEL_VENDOR_RANGE.to_owned(),
-            color: chart::BAND,
-            anchor: LabelAnchor::Lines(vec![iso_screen(lo), iso_screen(hi)]),
-            ground: LabelGround::Overlay,
-        });
+        plot = plot.label(
+            Label::new(
+                LABEL_VENDOR_RANGE,
+                chart::BAND,
+                LabelAt::LineEnd(vec![iso(lo), iso(hi)]),
+            )
+            .ground(LabelGround::Ground),
+        );
     }
     if let Some(t) = target {
-        specs.push(ChartLabel {
-            text: LABEL_BEFORE_DERATE.to_owned(),
-            color: tokens::TEXT_MUTED,
-            anchor: LabelAnchor::Mark {
-                center: at(t),
-                radius: TARGET_RADIUS,
-            },
-            ground: LabelGround::Overlay,
-        });
+        plot = plot.label(
+            Label::new(
+                LABEL_BEFORE_DERATE,
+                tokens::TEXT_MUTED,
+                LabelAt::Mark {
+                    at: t,
+                    radius: TARGET_RADIUS,
+                },
+            )
+            .ground(LabelGround::None),
+        );
     }
-    let placed = place_labels(ui, frame, &keep_clear, &lines, specs);
-    paint_labels(ui, frame, &placed);
-    #[cfg(test)]
-    tests::record(frame, &placed, tokens::SIZE_CAPTION);
 
-    // W3k: the hover is one line at the pointer, only on the axes. P5d D3:
-    // on the recommended ring, a line above it names the ring.
-    let on_ring = plot_response
-        .response
+    let (ChartResponse { response, map }, placed) = plot.show_with_labels(ui);
+    #[cfg(test)]
+    tests::record(map.frame, &placed, tokens::SIZE_CAPTION);
+    #[cfg(not(test))]
+    drop(placed);
+
+    // 7. The hover readout: one line, the RPM, the feed and the chipload
+    //    under the pointer (W3k). P5d D3: on the recommended ring, a line
+    //    above it names the ring.
+    //
+    // The pointer must be ON the chart. The egui_plot `pointer_coordinate`
+    // answered for a pointer outside the drawn bounds, and the readout then
+    // reported an operating point that does not exist: measured at `37891
+    // RPM · 0 mm/min · BURN risk (below band)`, painted in the danger
+    // colour, on an axis whose maximum is 27 600. That is a hazard verdict
+    // manufactured from an absence, which is the failure shape this repo
+    // cares about most. The kit's `from_screen` holds a pointer on the
+    // ranges, so the guard is the frame, and the reading is filtered on
+    // the plot's own axes.
+    //
+    // The strip BETWEEN the spindle cap and the axis maximum is a real
+    // place to hover — it is how `· past spindle cap` is read — so the
+    // guard is the axis bound, not the machine's.
+    let hover = response
         .hover_pos()
-        .is_some_and(|p| p.distance(at(recommended)) <= RECOMMENDED_RADIUS + MARK_CLEARANCE);
-    if let Some(text) = hover_readout {
-        let _ = plot_response.response.on_hover_ui_at_pointer(|ui| {
+        .filter(|pos| map.frame.contains(*pos))
+        .map(|pos| (pos, map.from_screen(pos)))
+        .filter(|(_, (rpm, _))| (0.0..=rpm_axis_max).contains(rpm))
+        .filter(|(_, (_, feed))| (0.0..=feed_axis_max).contains(feed));
+    if let Some((pos, (rpm, feed))) = hover {
+        // Read the CLAMPED coordinates once and derive everything from
+        // them, readout and cap-note alike — see `hover_readout_chipload`.
+        let (rpm, feed) = (rpm.max(0.0), feed.max(0.0));
+        let cl = hover_readout_chipload(rpm, feed, flutes);
+        let cap_note = if rpm > env.spindle_max_rpm {
+            " \u{00B7} past spindle cap"
+        } else if feed > env.max_feed_mm_min {
+            " \u{00B7} past feed cap"
+        } else if rpm < env.spindle_min_rpm {
+            " \u{00B7} below spindle min"
+        } else {
+            ""
+        };
+        let text =
+            format!("{rpm:.0} RPM \u{00B7} {feed:.0} mm/min \u{00B7} {cl:.4} mm/t{cap_note}");
+        let ring = map.to_screen(recommended[0], recommended[1]);
+        let on_ring = pos.distance(ring) <= RECOMMENDED_RADIUS + MARK_CLEARANCE;
+        // The readout opens while the pointer is on the frame, with no
+        // delay and no tooltip gate: egui's tooltip rule hides a hover
+        // tooltip for 150 ms after a wheel and until the pointer moves
+        // after a click (`Tooltip::should_show`); the egui_plot response
+        // stayed inside the rule's grace, the kit's hover-only response
+        // does not (`no_gesture_moves_the_axes_w3k`). A readout is not a
+        // tooltip: it reports where the pointer IS.
+        let _ = egui::Tooltip::always_open(
+            ui.ctx().clone(),
+            response.layer_id,
+            response.id,
+            egui::PopupAnchor::Pointer,
+        )
+        .show(|ui| {
             if on_ring {
                 ui.add(
                     egui::Label::new(
@@ -788,70 +641,32 @@ pub(crate) fn draw_chart_c(
     }
 }
 
-/// The screen room (points) that egui_plot paints a rotated axis `title`
-/// outside the plot (`AXIS_LABEL_GAP`). A plot at the inspector edge starts
-/// this far in, so the title paints whole. Shared with the envelope plot.
-pub(crate) fn axis_title_overhang(ui: &egui::Ui, title: &str) -> f32 {
-    let title_height = egui::WidgetText::from(title)
-        .into_galley(
-            ui,
-            Some(egui::TextWrapMode::Extend),
-            f32::INFINITY,
-            egui::TextStyle::Body,
-        )
-        .size()
-        .y;
-    (AXIS_LABEL_GAP * title_height).ceil()
-}
-
-/// The plot bounds: the axis range and a margin on each side.
+/// The feed axis top with room above the feed wall at `feed_max` for one
+/// wall label beside the wall: the top rises until the
+/// screen gap between the wall and the top of the frame is at least
+/// `room_px` on a frame `frame_height_px` high. A top that is already high
+/// enough does not move.
 ///
-/// The margin is egui_plot's own default (`margin_fraction`, 0.05). Until
-/// W3k the plot found its bounds from `include_x` and `include_y` with that
-/// margin; the explicit bounds keep the same look. A degenerate machine
-/// (a zero cap) still gets a range, so the plot never divides by zero.
-fn chart_bounds(
-    rpm_axis_max: f64,
-    feed_axis_max: f64,
-) -> (std::ops::RangeInclusive<f64>, std::ops::RangeInclusive<f64>) {
-    let range = |max: f64| {
-        let max = if max.is_finite() && max > 0.0 {
-            max
-        } else {
-            1.0
-        };
-        (-PLOT_MARGIN * max)..=((1.0 + PLOT_MARGIN) * max)
-    };
-    (range(rpm_axis_max), range(feed_axis_max))
-}
-
-/// The margin of each axis, a fraction of its range (egui_plot's default).
-const PLOT_MARGIN: f64 = 0.05;
-
-/// The feed bounds with room above the feed wall at `feed_max` for one wall
-/// label: the top bound rises until the screen gap between the wall and the
-/// top of the plot is at least `room_px` on a plot `plot_height_px` high.
-/// The bottom bound does not move; a top bound that is already high enough
-/// does not move either.
-///
-/// With bottom `b`, top `t` and the wall at `f`, the gap is
-/// `(t - f) / (t - b) x height`. The gap is `room` at
-/// `t = (f - k b) / (1 - k)`, with `k = room / height`.
-fn with_wall_label_room(
-    bounds: std::ops::RangeInclusive<f64>,
-    feed_max: f64,
-    plot_height_px: f64,
-    room_px: f64,
-) -> std::ops::RangeInclusive<f64> {
-    let (bottom, top) = (*bounds.start(), *bounds.end());
-    let k = room_px / plot_height_px;
-    // A room of half the plot or more would leave no chart under the wall:
-    // keep the bounds then.
+/// With the bottom at 0, the top `t` and the wall at `f`, the gap is
+/// `(t - f) / t x height`. The gap is `room` at `t = f / (1 - k)`, with
+/// `k = room / height`.
+fn with_wall_label_room(top: f64, feed_max: f64, frame_height_px: f64, room_px: f64) -> f64 {
+    let k = room_px / frame_height_px;
+    // A room of half the frame or more would leave no chart under the
+    // wall: keep the top then.
     if !(k.is_finite() && k > 0.0 && k < 0.5) || !feed_max.is_finite() {
-        return bounds;
+        return top;
     }
-    let needed = (feed_max - k * bottom) / (1.0 - k);
-    bottom..=top.max(needed)
+    top.max(feed_max / (1.0 - k))
+}
+
+/// An axis extent: `max` when it is a positive number, else 1.
+fn axis_max(max: f64) -> f64 {
+    if max.is_finite() && max > 0.0 {
+        max
+    } else {
+        1.0
+    }
 }
 
 /// The spindle minimum wall, in plot coordinates: an upright line at the
@@ -901,12 +716,20 @@ const NOW_RADIUS: f32 = 3.5;
 /// The radius of the pre-derate target ring, in points.
 const TARGET_RADIUS: f32 = 6.0;
 
+/// The outline of the pre-derate target ring, in points (egui_plot stroked
+/// an outline marker at a fifth of its radius; the kit paints the width
+/// it is given).
+const TARGET_OUTLINE_WIDTH: f32 = 1.2;
+
+/// The width of the dashed line from the target to the recommendation.
+const TARGET_LINE_WIDTH: f32 = 1.5;
+
+/// The dash and the gap of that line, in points (egui_plot's
+/// `LineStyle::Dashed { length: 4.0 }`).
+const TARGET_DASH: f32 = 4.0;
+
 /// The room a label keeps around a mark, in points.
 const MARK_CLEARANCE: f32 = 4.0;
-
-/// The half side of the square that a label keeps clear at the crossing of
-/// the two machine walls, in points.
-const CROSSING_CLEARANCE: f32 = 4.0;
 
 /// The chart labels (W3k, operator 2026-10-31: "labels instead of hover
 /// with really simple terms"). Each names one limit or mark in one or two
@@ -950,10 +773,6 @@ fn suggested_advance_mm(explain: &FeedsExplain) -> Option<f64> {
 ///
 /// The chart draws every advance-per-tooth quantity as one of these lines.
 /// It draws no filled region between two of them (G-CHARTLINES).
-fn iso_line(cl: f64, rpm_max: f64, flutes: f64, feed_cap: f64) -> PlotPoints<'static> {
-    PlotPoints::from(clip_iso_line(cl, rpm_max, flutes, feed_cap))
-}
-
 fn clip_iso_line(cl: f64, rpm_max: f64, flutes: f64, feed_cap: f64) -> Vec<[f64; 2]> {
     let mut out = vec![[0.0, 0.0]];
     let feed_at_rpm_max = cl * rpm_max * flutes;

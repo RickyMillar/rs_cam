@@ -1084,26 +1084,28 @@ fn draw_plane(
         plot = plot.mark(Mark::dot(at_mark(p), DOT_RADIUS, color));
     }
 
-    // The labels (P5d D1, D4): the name of each drawn limit on its line, in
-    // the colour of the line, clear of the marks, plain text with no chip
-    // (P17, lead review: the histogram paints plain labels); the binding
-    // and crossed lines first. A step (two segments) takes its label beside either
-    // segment; its chord runs through the plot, not along the line. The
-    // frame top names its hard stop, last.
+    // The labels (P5d D1, D4; P17b item 2): the name of each drawn limit
+    // ON its line at its end, in the colour of the line, on a chip of the
+    // chart ground (the line runs into the text and out the other side),
+    // clear of the marks; the binding and crossed lines first. A step
+    // gives its polyline whole: the label sits at its last point, else
+    // beside one of its segments. The frame top names its hard stop at
+    // its right end, last.
     drawn.sort_by_key(|e| scene.edge_width(e) < LINE_WIDTH);
     for edge in &drawn {
-        let at = if edge.points.len() == 3 {
-            LabelAt::Lines(edge.points.windows(2).map(pts).collect())
-        } else {
-            LabelAt::Line(pts(&edge.points))
-        };
         plot = plot.label(
-            Label::new(edge.label.clone(), scene.edge_color(edge), at).ground(LabelGround::None),
+            Label::new(
+                edge.label.clone(),
+                scene.edge_color(edge),
+                LabelAt::line_end(pts(&edge.points)),
+            )
+            .ground(LabelGround::Ground),
         );
     }
     if let (Some(name), Some(top)) = (scene.top_label(), frame_lines.get(1)) {
         plot = plot.label(
-            Label::new(name, tokens::TEXT_MUTED, LabelAt::Line(pts(top))).ground(LabelGround::None),
+            Label::new(name, tokens::TEXT_MUTED, LabelAt::line_end(pts(top)))
+                .ground(LabelGround::Ground),
         );
     }
 

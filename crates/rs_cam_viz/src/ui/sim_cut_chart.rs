@@ -1,6 +1,6 @@
-//! The sim width x depth chart (feeds contract P17, change 3): the focused
-//! toolpath's safe envelope on the chart kit, read-only, with the cut
-//! samples on it.
+//! The sim width x depth chart (feeds contract P17, change 3; P17b items
+//! 1, 2, 3 and 5): the focused toolpath's safe envelope on the chart kit,
+//! read-only, with the cut samples on it as a heat map.
 //!
 //! The Metrics tab draws it after the four cut-metric cards and one
 //! hairline (layout B, operator ruling through the lead, 2026-11-06): the
@@ -10,52 +10,77 @@
 //!
 //! The plane is the envelope plot of the Passes tab (`ui/feeds/envelope.rs`
 //! `draw_plane`): the same axes (the width as a share of D, the depth in
-//! mm), the same ranges, frame edges, limit lines, labels and soft fill,
-//! through [`EnvelopeScene`] and the public helpers of that module. No
-//! candidate, no drag, no apply.
+//! mm), frame edges, limit lines, labels and soft fill, through
+//! [`EnvelopeScene`] and the public helpers of that module. No candidate,
+//! no drag, no apply.
 //!
-//! The samples layer, between the fill and the limit lines:
+//! The layers, from the ground up:
 //!
-//! - Density cells: the samples binned on a [`GRID_COLUMNS`] x
-//!   [`GRID_ROWS`] grid over the chart ranges by cutting time. A cell's
-//!   alpha is `sqrt(cell time / densest cell time)`, painted in
-//!   [`ALPHA_BUCKETS`] buckets of `TEXT_BODY`. A sample past a range
-//!   clamps to the edge cell. The depth range follows the samples (round
-//!   3): `VIEW_HEADROOM` over the deeper of the deepest sample and the
-//!   planned depth, never past the hard top; the scene is built with the
-//!   deepest sample as one more mark ([`EnvelopeScene::with_depth_mark`]),
-//!   so every limit under that range is in it. A flat depth limit above
-//!   the range is an off-scale row in the gutter above the frame
-//!   ([`PlaneChart::off_scale_top`]: the arrow beside the name and the
-//!   value, outside the data area); a curve or a vertical limit draws as
-//!   far as the frame.
-//! - The steady cluster block: a 1 pt `TEXT_MUTED` outline about the nine
-//!   cells; the cluster label keeps clear of every cell at [`CLEAR_SHARE`]
-//!   of the densest or more and points at the block with a leader.
+//! - The iso-force contours (P17b item 3, operator: "faint background
+//!   lines"): the level set of the set's force field
+//!   (`state::simulation::force_field`, core's law at the planned advance
+//!   per tooth) at [`CONTOUR_SHARES`] of the force budget. The three under
+//!   the budget are `TEXT_FAINT` [`CONTOUR_WIDTH`]; the budget line is
+//!   `CAUTION` [`BUDGET_CONTOUR_WIDTH`], the strongest, the colour of the
+//!   over-budget dots. Each is named on its line ("25 %", "100 % budget")
+//!   in its own colour. They paint under every fill (the kit has one slot
+//!   under the fills, [`ChartLine::beneath`]; the wash is faint enough that
+//!   this is the "between the fill and the cells" the brief asks). No
+//!   budget, no field, no contour (lead ruling 3).
+//! - The heat map (P17b item 1, operator: "brighter where more cuts"): the
+//!   samples binned over the DATA range by cutting time, [`GRID_COLUMNS`]
+//!   columns and at most [`GRID_ROWS`] rows ([`square_rows`]: the cells
+//!   are square on the screen). One hue, [`heat_hue`] (the histogram's
+//!   ink family), whose alpha rises with the RANK of the cell's time among
+//!   the cells that hold time (histogram equalisation, the `eq_hist`
+//!   shading of datashader: no constant, and one heavy cell does not push
+//!   every other cell to the faint end), in [`HEAT_STEPS`] steps from
+//!   [`FAINTEST_ALPHA`] (a single scattered sample still reads) to
+//!   [`DENSEST_ALPHA`] (the densest cell at full strength). No cluster
+//!   box, no label: the hover names a cell.
+//! - The limit lines, each named ON its line at the line's end in the
+//!   line's colour ([`LabelAt::LineEnd`] on [`LabelGround::Ground`], the
+//!   P17b kit anchor), as are the contours.
 //! - Over-budget dots: each sample whose force is above the force budget
 //!   paints a `CAUTION` dot (the budget does not gate an export, so no
-//!   `DANGER`). Only under the `ForceBudget` rule (lead ruling 3). At most
-//!   [`DOT_CAP`] dots paint, every k-th by weight; the legend hover names
-//!   the rest.
+//!   `DANGER`). Only under the `ForceBudget` rule. At most [`DOT_CAP`]
+//!   dots paint, every k-th by weight; the legend hover names the rest.
 //! - The playhead sample: the sample whose move is nearest at or below the
 //!   playhead, as the quietest mark (a 1 pt ring at the recommendation
-//!   colour, under the planned dot), when the playhead is in this toolpath.
-//! - The planned point: the white dot of the envelope plot, on top.
-//! - The steady cluster: the densest cell and its eight neighbours; their
-//!   share of cutting time is one label at the cell centre, through the
-//!   label kit (a leader when the label moves).
+//!   colour), when the playhead is in this toolpath.
+//! - The planned point LAST (P17b item 5, the judge's must-fix): the white
+//!   dot of the envelope plot over a halo of the panel ground
+//!   ([`HALO_WIDTH`]), so no dot under it breaks its outline. The
+//!   playhead ring paints between the halo and the dot, so a ring at the
+//!   plan still reads as a ring.
+//!
+//! # The depth range (P17b item 2)
+//!
+//! The DATA range is `VIEW_HEADROOM` over the deeper of the deepest sample
+//! and the planned depth, never past the scene's own top ([`depth_view`]).
+//! The heat grid covers it. When a flat depth limit sits above it, the
+//! AXIS extends to the lowest such limit, with room above the line for its
+//! name, so the limit draws inside the frame and is named on its line; the
+//! extension is empty space over the band. A limit more than
+//! [`OFF_SCALE_FACTOR`] times the data range does not extend the axis: it
+//! keeps one quiet off-scale row in the gutter above the frame
+//! ([`PlaneChart::off_scale_top`]), as does every flat limit still above
+//! the extended axis (the Rigidity DOC over the Vendor DOC on the rivmap
+//! rough: the brief's "lowest such limit" reading, which drops no limit).
 //!
 //! A click on a dot seeks the playhead to that sample's move; a click on
 //! a non-empty cell seeks to the cell's first sample in trace order. The
 //! hover names the cell under the pointer. One legend row of painted
-//! swatches closes the section (no glyph: the font sentry).
+//! swatches closes the section (no glyph: the font sentry): a ramp of
+//! [`LEGEND_RAMP_SQUARES`] squares for the cut time.
 //!
 //! # What it does NOT do
 //!
 //! It reads no simulation state: [`draw_cut_chart`] takes the set's
 //! inputs and the playhead, so a headless sentry drives it. It builds no
-//! sample: the set is built once per load report
-//! (`state::simulation::build_cut_metric_set`).
+//! sample and no field: the set is built once per load report
+//! (`state::simulation::build_cut_metric_set`). It colours no point by
+//! load: the dots stay white and orange (operator, item 3).
 
 use rs_cam_core::feeds::envelope::{CutPoint, SafeEnvelope};
 use rs_cam_core::tool_load::cut_force::CutPoint3;
@@ -65,27 +90,26 @@ use super::components::chart::{
 };
 use super::components::{histogram, text};
 use super::feeds::envelope::{
-    self, DEPTH_AXIS_TITLE, EnvelopeScene, GHOST_RADIUS, RECOMMENDATION_WIDTH, VIEW_HEADROOM,
-    WIDTH_AXIS_TITLE, WIDTH_EDGE_TEXT, recommendation_color,
+    self, DEPTH_AXIS_TITLE, EnvelopeScene, GHOST_RADIUS, OUTLINE_WIDTH, RECOMMENDATION_WIDTH,
+    VIEW_HEADROOM, WIDTH_AXIS_TITLE, WIDTH_EDGE_TEXT, recommendation_color,
 };
 use super::tokens;
+use crate::state::simulation::force_field::{ForceField, contours};
 
-/// The columns of the density grid across the width range.
+/// The columns of the heat grid across the width range.
 pub const GRID_COLUMNS: usize = 48;
 
-/// The rows of the density grid up the depth range.
+/// The most rows of the heat grid up the depth range ([`square_rows`]
+/// gives the count the chart draws).
 pub const GRID_ROWS: usize = 32;
 
-/// The alpha buckets of the density cells: one fill per bucket (round 3:
-/// sixteen, so the shade reads as a gradient).
-pub const ALPHA_BUCKETS: usize = 16;
+/// The steps of the heat ramp: one fill per step. Thirty-two steps on the
+/// rank ramp read as a gradient (P17b; the sixteen equal buckets over a
+/// narrow alpha span read as one level).
+pub const HEAT_STEPS: usize = 32;
 
 /// The most over-budget dots the chart paints.
 pub const DOT_CAP: usize = 400;
-
-/// The cluster label keeps clear of every cell whose alpha is this share
-/// of the densest cell's or more (round 5).
-pub const CLEAR_SHARE: f64 = 0.25;
 
 /// The radius of an over-budget dot, in points: under the planned dot, so
 /// the plan reads above the samples.
@@ -94,24 +118,46 @@ pub const DOT_RADIUS: f32 = 2.5;
 /// A click or a hover takes a dot within this distance, in points.
 pub const HIT_RADIUS: f32 = 4.0;
 
-/// The alpha of the densest cell: the histogram's out-of-band wash, five
-/// times, so the cluster reads against the safe-region wash under it and
-/// stays under the white planned dot (judged by eye in the P17 snapshots).
-pub const DENSEST_ALPHA: f32 = histogram::WASH_OUT * 5.0;
+/// The alpha of the densest cell: full strength (P17b item 1, "brighter
+/// where more cuts").
+pub const DENSEST_ALPHA: f32 = 1.0;
 
-/// The alpha of the lightest bucket: the out-of-band wash itself. A cell
-/// with a few samples still reads; the square root alone left it unseen
-/// in the first P17 snapshot.
-pub const LIGHTEST_ALPHA: f32 = histogram::WASH_OUT;
+/// The alpha of the faintest step: the histogram's out-of-band wash, so a
+/// single scattered sample still reads against the safe-region wash.
+pub const FAINTEST_ALPHA: f32 = histogram::WASH_OUT;
+
+/// A flat depth limit more than this many times the data range does not
+/// extend the axis (the band would squash into a strip, the judge's
+/// round-3 finding); it keeps a quiet off-scale row instead.
+pub const OFF_SCALE_FACTOR: f64 = 3.0;
+
+/// The iso-force contour levels, as shares of the force budget.
+pub const CONTOUR_SHARES: [f64; 4] = [0.25, 0.5, 0.75, 1.0];
+
+/// The width of a contour under the budget, in points.
+pub const CONTOUR_WIDTH: f32 = 1.0;
+
+/// The width of the budget contour, in points: the strongest line of the
+/// ground.
+pub const BUDGET_CONTOUR_WIDTH: f32 = 1.5;
+
+/// The halo under the planned dot, in points: the envelope plot's outline
+/// width, in the panel ground, so a dot under the plan does not break it.
+pub const HALO_WIDTH: f32 = OUTLINE_WIDTH;
+
+/// The painted squares of the legend's cut-time ramp, faint to bright.
+pub const LEGEND_RAMP_SQUARES: usize = 4;
 
 /// The section title.
 pub const TITLE: &str = "Width \u{00D7} depth";
 
 /// The (i) hover of the section.
 pub const GUIDE: &str = "Each sample of the cut on the envelope of the operation: its engaged \
-                         width as a share of the tool diameter and its engaged depth. The shade \
-                         is cutting time. A dot is a sample over the force budget. Click a dot \
-                         or a cell to go to that move.";
+                         width as a share of the tool diameter and its engaged depth. The cells \
+                         are brighter where more of the cutting time is. The faint lines are the \
+                         cut force at the planned feed, as shares of the machine's force budget. \
+                         A dot is a sample over the budget. Click a dot or a cell to go to that \
+                         move.";
 
 /// The legend captions, in their order.
 pub const LEGEND_CUT_TIME: &str = "cut time";
@@ -119,7 +165,10 @@ pub const LEGEND_OVER_BUDGET: &str = "over budget";
 pub const LEGEND_PLANNED: &str = "planned";
 pub const LEGEND_PLAYHEAD: &str = "playhead";
 
-/// The inputs of the chart: the set's plane and samples, and the
+/// The hover of the cut-time ramp.
+pub const RAMP_HOVER: &str = "Brighter where more of the cutting time is.";
+
+/// The inputs of the chart: the set's plane, samples and field, and the
 /// playhead. No simulation state.
 pub struct CutChartInput<'a> {
     /// The operation's safe envelope.
@@ -128,8 +177,11 @@ pub struct CutChartInput<'a> {
     pub samples: &'a [CutPoint3],
     /// The tool diameter D (mm) the width shares by.
     pub diameter_mm: f64,
-    /// The force budget line (N); `None`: no over-budget dot.
+    /// The force budget line (N); `None`: no over-budget dot, no contour.
     pub budget_n: Option<f64>,
+    /// The force law over the plane at the planned advance per tooth;
+    /// `None`: no contour.
+    pub force_field: Option<&'a ForceField>,
     /// The playhead as a toolpath-local move, when it is in this toolpath.
     pub playhead: Option<usize>,
     /// The toolpath's move count, for the header caption.
@@ -145,7 +197,7 @@ pub struct CutChartResponse {
     pub map: Option<ChartMap>,
 }
 
-/// One cell of the density grid.
+/// One cell of the heat grid.
 #[derive(Debug, Clone, Copy, Default, PartialEq)]
 pub struct Cell {
     /// The cutting time (s) of the samples in the cell.
@@ -157,13 +209,18 @@ pub struct Cell {
     pub first_move: Option<usize>,
 }
 
-/// The density grid over the chart ranges: `x` is the width share (% of
-/// D), `y` the depth (mm). Row 0 is the bottom of the depth range.
+/// The heat grid over the data ranges: `x` is the width share (% of D),
+/// `y` the depth (mm). Row 0 is the bottom of the depth range.
 #[derive(Debug, Clone, PartialEq)]
 pub struct CellGrid {
     cells: Vec<Cell>,
     x: (f64, f64),
     y: (f64, f64),
+    /// The rows up the depth range, `1..=GRID_ROWS`.
+    rows: usize,
+    /// The time of each cell that holds time, ascending: the ranks of
+    /// [`Self::alpha`].
+    ranked_s: Vec<f64>,
     /// The cutting time of every binned sample.
     pub total_s: f64,
     /// The index of the cell with the most cutting time.
@@ -172,18 +229,32 @@ pub struct CellGrid {
 
 impl CellGrid {
     /// Bin `points` (`x` share, `y` mm, weight s, toolpath-local move),
-    /// in trace order, over the ranges `x` and `y`. A point past a range
-    /// lands in the edge cell.
+    /// in trace order, over the ranges `x` and `y` on [`GRID_ROWS`] rows.
+    /// A point past a range lands in the edge cell.
     #[must_use]
     pub fn bin(
         points: impl IntoIterator<Item = (f64, f64, f64, usize)>,
         x: (f64, f64),
         y: (f64, f64),
     ) -> Self {
+        Self::bin_rows(points, x, y, GRID_ROWS)
+    }
+
+    /// [`Self::bin`] on `rows` rows, held to `1..=GRID_ROWS`.
+    #[must_use]
+    pub fn bin_rows(
+        points: impl IntoIterator<Item = (f64, f64, f64, usize)>,
+        x: (f64, f64),
+        y: (f64, f64),
+        rows: usize,
+    ) -> Self {
+        let rows = rows.clamp(1, GRID_ROWS);
         let mut grid = Self {
-            cells: vec![Cell::default(); GRID_COLUMNS * GRID_ROWS],
+            cells: vec![Cell::default(); GRID_COLUMNS * rows],
             x,
             y,
+            rows,
+            ranked_s: Vec::new(),
             total_s: 0.0,
             densest: None,
         };
@@ -208,7 +279,20 @@ impl CellGrid {
             .filter(|(_, c)| c.seconds > 0.0)
             .max_by(|a, b| a.1.seconds.total_cmp(&b.1.seconds))
             .map(|(i, _)| i);
+        grid.ranked_s = grid
+            .cells
+            .iter()
+            .map(|c| c.seconds)
+            .filter(|s| *s > 0.0)
+            .collect();
+        grid.ranked_s.sort_by(f64::total_cmp);
         grid
+    }
+
+    /// The rows up the depth range.
+    #[must_use]
+    pub const fn rows(&self) -> usize {
+        self.rows
     }
 
     /// The cells, row-major from the bottom-left cell.
@@ -217,11 +301,17 @@ impl CellGrid {
         &self.cells
     }
 
+    /// The depth range the grid covers (the data range, not the axis).
+    #[must_use]
+    pub const fn y_range(&self) -> (f64, f64) {
+        self.y
+    }
+
     /// The cell of the point `(x, y)`, held on the grid.
     #[must_use]
     pub fn index_of(&self, x: f64, y: f64) -> usize {
         let col = Self::slot(x, self.x, GRID_COLUMNS);
-        let row = Self::slot(y, self.y, GRID_ROWS);
+        let row = Self::slot(y, self.y, self.rows);
         row * GRID_COLUMNS + col
     }
 
@@ -247,7 +337,7 @@ impl CellGrid {
     pub fn quad(&self, i: usize) -> [[f64; 2]; 4] {
         let (col, row) = Self::col_row(i);
         let (x0, x1) = Self::edges(col, self.x, GRID_COLUMNS);
-        let (y0, y1) = Self::edges(row, self.y, GRID_ROWS);
+        let (y0, y1) = Self::edges(row, self.y, self.rows);
         [[x0, y0], [x1, y0], [x1, y1], [x0, y1]]
     }
 
@@ -264,80 +354,66 @@ impl CellGrid {
         (range.0 + step * k as f64, range.0 + step * (k + 1) as f64)
     }
 
-    /// The alpha of cell `i`: the square root of its share of the densest
-    /// cell's time. 0 for an empty cell; 1 for the densest.
+    /// The heat of cell `i`: the share of the cells that hold time whose
+    /// time is at most the cell's own (its rank; histogram equalisation).
+    /// 0 for an empty cell; 1 for the densest; a cell with more time is
+    /// never fainter than a cell with less.
     #[must_use]
     pub fn alpha(&self, i: usize) -> f64 {
-        let densest = self
-            .densest
-            .and_then(|d| self.cells.get(d))
-            .map_or(0.0, |c| c.seconds);
         let s = self.cells.get(i).map_or(0.0, |c| c.seconds);
-        if densest > 0.0 && s > 0.0 {
-            (s / densest).sqrt().clamp(0.0, 1.0)
-        } else {
-            0.0
+        let n = self.ranked_s.len();
+        if s <= 0.0 || n == 0 {
+            return 0.0;
         }
+        let at_most = self.ranked_s.partition_point(|v| *v <= s);
+        (at_most as f64 / n as f64).clamp(0.0, 1.0)
     }
 
-    /// The bucket of cell `i`: `None` for an empty cell, else `0..ALPHA_BUCKETS`,
-    /// the densest cell in the last bucket.
+    /// The ramp step of cell `i`: `None` for an empty cell, else
+    /// `0..HEAT_STEPS`, the densest cell in the last step.
     #[must_use]
-    pub fn bucket(&self, i: usize) -> Option<usize> {
+    pub fn step(&self, i: usize) -> Option<usize> {
         let a = self.alpha(i);
         if a <= 0.0 {
             return None;
         }
-        Some(((a * ALPHA_BUCKETS as f64).ceil() as usize).clamp(1, ALPHA_BUCKETS) - 1)
-    }
-
-    /// The cells within one cell of `i`: `i` and its eight neighbours
-    /// inside the grid.
-    #[must_use]
-    pub fn neighbourhood(i: usize) -> Vec<usize> {
-        let (col, row) = Self::col_row(i);
-        let mut out = Vec::with_capacity(9);
-        for dr in -1_i64..=1 {
-            for dc in -1_i64..=1 {
-                let c = col as i64 + dc;
-                let r = row as i64 + dr;
-                if (0..GRID_COLUMNS as i64).contains(&c) && (0..GRID_ROWS as i64).contains(&r) {
-                    out.push(r as usize * GRID_COLUMNS + c as usize);
-                }
-            }
-        }
-        out
-    }
-
-    /// The steady cluster: the densest cell and the share of cutting time
-    /// in it and its eight neighbours, `0..=1`. `None` with no time.
-    #[must_use]
-    pub fn cluster(&self) -> Option<(usize, f64)> {
-        let densest = self.densest?;
-        if self.total_s <= 0.0 {
-            return None;
-        }
-        let seconds: f64 = Self::neighbourhood(densest)
-            .into_iter()
-            .filter_map(|j| self.cells.get(j))
-            .map(|c| c.seconds)
-            .sum();
-        Some((densest, (seconds / self.total_s).clamp(0.0, 1.0)))
+        Some(((a * HEAT_STEPS as f64).ceil() as usize).clamp(1, HEAT_STEPS) - 1)
     }
 }
 
-/// The alpha of bucket `b` of [`ALPHA_BUCKETS`]: from [`LIGHTEST_ALPHA`]
-/// in the first bucket to [`DENSEST_ALPHA`] in the last, in equal steps.
+/// The rows that make a heat cell square on the screen: the columns times
+/// the data range's height over the frame width, in screen points, held
+/// to `1..=GRID_ROWS`. `data_height` is the data range's share of the
+/// frame height times the frame height.
 #[must_use]
-pub fn bucket_alpha(b: usize) -> f32 {
-    let t = b.min(ALPHA_BUCKETS - 1) as f32 / (ALPHA_BUCKETS - 1) as f32;
-    LIGHTEST_ALPHA + (DENSEST_ALPHA - LIGHTEST_ALPHA) * t
+pub fn square_rows(data_height: f32, frame_width: f32) -> usize {
+    if !(data_height > 0.0 && frame_width > 0.0) {
+        return GRID_ROWS;
+    }
+    let rows = (GRID_COLUMNS as f32 * data_height / frame_width).round();
+    (rows.max(1.0) as usize).min(GRID_ROWS)
 }
 
-/// The colour of a density cell in bucket `b`.
+/// The hue of the heat map: the histogram's ink family (its in-band bars
+/// are `TEXT_FAINT`; the body rung reads at full strength against the
+/// panel and under the `TEXT_STRONG` planned dot on its halo).
 #[must_use]
-pub fn bucket_color(b: usize) -> egui::Color32 {
-    tokens::TEXT_BODY.gamma_multiply(bucket_alpha(b))
+pub const fn heat_hue() -> egui::Color32 {
+    tokens::TEXT_BODY
+}
+
+/// The alpha of step `s` of [`HEAT_STEPS`]: from [`FAINTEST_ALPHA`] in
+/// the first step to [`DENSEST_ALPHA`] in the last, in equal steps.
+#[must_use]
+pub fn step_alpha(s: usize) -> f32 {
+    let t = s.min(HEAT_STEPS - 1) as f32 / (HEAT_STEPS - 1) as f32;
+    FAINTEST_ALPHA + (DENSEST_ALPHA - FAINTEST_ALPHA) * t
+}
+
+/// The colour of a heat cell in step `s`.
+#[must_use]
+pub fn step_color(s: usize) -> egui::Color32 {
+    heat_hue().gamma_multiply(step_alpha(s))
 }
 
 /// The over-budget samples that paint, and how many more there are. The
@@ -376,31 +452,168 @@ pub fn playhead_sample(samples: &[CutPoint3], playhead: Option<usize>) -> Option
         .copied()
 }
 
-/// The header caption at the right: the move count and the steady share.
-/// `short`: the steady share alone, for a rail too narrow for both.
+/// The header caption at the right: the move count.
 #[must_use]
-pub fn header_caption(move_count: usize, steady_share: Option<f64>, short: bool) -> String {
-    let moves = format!(
+pub fn header_caption(move_count: usize) -> String {
+    format!(
         "{} moves",
         text::group_thousands(i64::try_from(move_count).unwrap_or(i64::MAX))
-    );
-    match steady_share {
-        Some(share) if short => format!("{} steady", histogram::format_share(share * 100.0)),
-        Some(share) => format!(
-            "{moves} \u{00b7} {} steady",
-            histogram::format_share(share * 100.0)
-        ),
-        None => moves,
+    )
+}
+
+/// The label of the contour at `share` of the budget: "25 %", "100 %
+/// budget".
+#[must_use]
+pub fn contour_label(share: f64) -> String {
+    let pct = histogram::format_share(share * 100.0);
+    if (share - 1.0).abs() < 1e-9 {
+        format!("{pct} budget")
+    } else {
+        pct
     }
 }
 
-/// The cluster label: "steady passes · 84 %".
+/// The contour polylines of `field` at each of [`CONTOUR_SHARES`] of
+/// `budget_n`, in `[ae mm, ap mm]`, paired with the share. Empty with no
+/// field or no budget.
 #[must_use]
-pub fn cluster_label(share: f64) -> String {
-    format!(
-        "steady passes \u{00b7} {}",
-        histogram::format_share(share * 100.0)
-    )
+pub fn contour_lines(
+    field: Option<&ForceField>,
+    budget_n: Option<f64>,
+) -> Vec<(f64, Vec<Vec<[f64; 2]>>)> {
+    let (Some(field), Some(budget)) = (field, budget_n) else {
+        return Vec::new();
+    };
+    if !(budget.is_finite() && budget > 0.0) {
+        return Vec::new();
+    }
+    CONTOUR_SHARES
+        .into_iter()
+        .map(|share| (share, contours(field, share * budget)))
+        .filter(|(_, lines)| !lines.is_empty())
+        .collect()
+}
+
+/// The runs of `points` at or under the depth `top`: a run ends at the
+/// crossing of the top (interpolated), so a line reaches the frame edge
+/// and stops.
+#[must_use]
+pub fn clip_below(points: &[[f64; 2]], top: f64) -> Vec<Vec<[f64; 2]>> {
+    let mut runs: Vec<Vec<[f64; 2]>> = Vec::new();
+    let mut run: Vec<[f64; 2]> = Vec::new();
+    let at_top = |a: [f64; 2], b: [f64; 2]| -> [f64; 2] {
+        let t = if (b[1] - a[1]).abs() > 0.0 {
+            (top - a[1]) / (b[1] - a[1])
+        } else {
+            0.0
+        };
+        [a[0] + (b[0] - a[0]) * t, top]
+    };
+    for pair in points.windows(2) {
+        let [a, b] = pair else { continue };
+        let (a_in, b_in) = (a[1] <= top, b[1] <= top);
+        match (a_in, b_in) {
+            (true, true) => {
+                if run.is_empty() {
+                    run.push(*a);
+                }
+                run.push(*b);
+            }
+            (true, false) => {
+                if run.is_empty() {
+                    run.push(*a);
+                }
+                run.push(at_top(*a, *b));
+                runs.push(std::mem::take(&mut run));
+            }
+            (false, true) => {
+                run.push(at_top(*a, *b));
+                run.push(*b);
+            }
+            (false, false) => {}
+        }
+    }
+    if run.len() >= 2 {
+        runs.push(run);
+    }
+    if points.len() == 1
+        && let Some(p) = points.first()
+        && p[1] <= top
+    {
+        runs.push(vec![*p]);
+    }
+    runs
+}
+
+/// The depth range of the chart (P17b item 2): the data range the heat
+/// grid covers and the axis range the frame draws.
+#[derive(Debug, Clone, PartialEq)]
+pub struct DepthView {
+    /// The top of the data range: `VIEW_HEADROOM` over the deeper of the
+    /// deepest sample and the planned depth, never past the scene top.
+    pub data_top: f64,
+    /// The top of the axis: the data top, or the lowest flat limit above
+    /// it with room for its name, never past the scene top.
+    pub ap_top: f64,
+    /// The axis reaches the scene's own top (a hard stop may be named).
+    pub at_scene_top: bool,
+    /// The flat limit the axis extended to, in mm.
+    pub extended_to: Option<f64>,
+    /// The flat limits still above the axis, lowest first: `(label, mm)`.
+    pub off_scale: Vec<(String, f64)>,
+}
+
+/// The depth view of `scene` for a cut to `deepest` planned at
+/// `planned_ap`. `room_share` is the share of the frame height a limit
+/// name needs above its line (one caption row over the frame height).
+#[must_use]
+pub fn depth_view(
+    scene: &EnvelopeScene,
+    deepest: f64,
+    planned_ap: f64,
+    room_share: f64,
+) -> DepthView {
+    let scene_top = scene.ap_range.1;
+    let wanted = VIEW_HEADROOM * deepest.max(planned_ap);
+    let data_top = if wanted > 0.0 && wanted < scene_top {
+        wanted
+    } else {
+        scene_top
+    };
+    let eps = 1e-9;
+    let mut flat: Vec<(String, f64)> = scene
+        .edges
+        .iter()
+        .filter_map(|edge| flat_depth(edge).map(|mm| (edge.label.clone(), mm)))
+        .filter(|(_, mm)| *mm > data_top + eps)
+        .collect();
+    flat.sort_by(|a, b| a.1.total_cmp(&b.1));
+    let lowest = flat.first().map(|(_, mm)| *mm);
+    let (ap_top, extended_to) = match lowest {
+        Some(mm) if mm <= OFF_SCALE_FACTOR * data_top => {
+            let room = room_share.clamp(0.0, 0.5);
+            ((mm / (1.0 - room)).min(scene_top), Some(mm))
+        }
+        Some(_) | None => (data_top, None),
+    };
+    let off_scale = flat
+        .into_iter()
+        .filter(|(_, mm)| *mm > ap_top + eps)
+        .collect();
+    DepthView {
+        data_top,
+        ap_top,
+        at_scene_top: (ap_top - scene_top).abs() < eps,
+        extended_to,
+        off_scale,
+    }
+}
+
+/// The depth of a flat limit `edge` (two points at one depth).
+fn flat_depth(edge: &envelope::SceneEdge) -> Option<f64> {
+    let first = edge.points.first()?;
+    let flat = edge.points.len() == 2 && edge.points.iter().all(|p| (p[1] - first[1]).abs() < 1e-9);
+    flat.then_some(first[1])
 }
 
 /// The hover of a cell: its width and depth, its share of cutting time
@@ -452,41 +665,57 @@ pub fn draw_cut_chart(ui: &mut egui::Ui, input: &CutChartInput<'_>) -> CutChartR
         .filter(|ap| ap.is_finite())
         .fold(0.0_f64, f64::max);
     let scene = EnvelopeScene::with_depth_mark(input.env, None, (deepest > 0.0).then_some(deepest));
-    // Round 3: the range follows the samples, so a cut under 2 mm is not
-    // a 15 px band under a 9 mm limit. The scene's range (the limits in
-    // view, never past the hard top) caps it.
     let planned_ap = input.env.stated.map_or(0.0, |p| p.ap_mm);
-    let wanted = VIEW_HEADROOM * deepest.max(planned_ap);
-    let ap_top = if wanted > 0.0 && wanted < scene.ap_range.1 {
-        wanted
-    } else {
-        scene.ap_range.1
-    };
-    let ap_range = (scene.ap_range.0, ap_top);
-    let at_scene_top = (ap_top - scene.ap_range.1).abs() < 1e-9;
     let x_range = (0.0, 100.0);
     let sx = |ae: f64| scene.ae_share(ae);
     let pt = |p: [f64; 2]| [sx(p[0]), p[1]];
     let pts = |points: &[[f64; 2]]| points.iter().copied().map(pt).collect::<Vec<_>>();
+
+    // The room a limit name needs above its line, as a share of the frame
+    // height: one caption row and a gap, over the frame the kit gives a
+    // chart of `PLOT_HEIGHT` with no off-scale row (the row count is not
+    // known before the view; the gutter only makes the frame shorter by
+    // a row, which the clamp of `depth_view` absorbs).
+    let row = ui
+        .ctx()
+        .fonts_mut(|fonts| fonts.row_height(&chart::caption_font()));
+    let probe = PlaneChart::new(
+        Axis::new(x_range, WIDTH_AXIS_TITLE),
+        Axis::new((0.0, 1.0), DEPTH_AXIS_TITLE),
+        envelope::PLOT_HEIGHT,
+        egui::Sense::hover(),
+    );
+    let frame = probe.frame(ui);
+    let frame_height = frame.height().max(1.0);
+    let room_share = f64::from((row + tokens::SPACE_2) / frame_height);
+    let view = depth_view(&scene, deepest, planned_ap, room_share);
+    let ap_range = (scene.ap_range.0, view.ap_top);
+    let data_range = (scene.ap_range.0, view.data_top);
     let at_mark = |p: CutPoint| {
         let p = scene.on_frame(p);
-        [sx(p.ae_mm), p.ap_mm]
+        [sx(p.ae_mm), p.ap_mm.min(view.ap_top)]
     };
 
-    // The samples on the plane, held on the frame. The grid and the dots
-    // are rebuilt per frame over the set's samples (the set itself is
-    // built once per load report); a frame of a large toolpath pays a
+    // The samples on the plane, held on the data range. The grid and the
+    // dots are rebuilt per frame over the set's samples (the set itself
+    // is built once per load report); a frame of a large toolpath pays a
     // pass over them, logged when it is slow.
     let started = std::time::Instant::now();
-    let grid = CellGrid::bin(
+    // Square cells on the screen: the rows follow the data range's height
+    // in the frame (the off-scale row makes the frame a row shorter; the
+    // rounding absorbs it).
+    let ap_span = (ap_range.1 - ap_range.0).max(f64::EPSILON);
+    let data_share = ((data_range.1 - data_range.0) / ap_span).clamp(0.0, 1.0) as f32;
+    let rows = square_rows(frame_height * data_share, frame.width());
+    let grid = CellGrid::bin_rows(
         input
             .samples
             .iter()
             .map(|s| (sx(s.ae_mm), s.ap_mm, s.weight_s, s.move_index)),
         x_range,
-        ap_range,
+        data_range,
+        rows,
     );
-    let cluster = grid.cluster();
     let (dots, hidden) = over_budget_dots(input.samples, input.budget_n);
     let elapsed = started.elapsed();
     if elapsed > std::time::Duration::from_millis(8) {
@@ -497,10 +726,10 @@ pub fn draw_cut_chart(ui: &mut egui::Ui, input: &CutChartInput<'_>) -> CutChartR
         );
     }
 
-    draw_header(ui, input.move_count, cluster.map(|(_, s)| s));
+    draw_header(ui, input.move_count);
 
     let mut y_axis = Axis::new(ap_range, DEPTH_AXIS_TITLE);
-    if scene.top.is_some() && at_scene_top {
+    if scene.top.is_some() && view.at_scene_top {
         y_axis = y_axis.edge(envelope::trim_decimals(ap_range.1));
     }
     let mut plot = PlaneChart::new(
@@ -508,34 +737,17 @@ pub fn draw_cut_chart(ui: &mut egui::Ui, input: &CutChartInput<'_>) -> CutChartR
         y_axis,
         envelope::PLOT_HEIGHT,
         egui::Sense::click(),
-    )
-    .fill(
-        envelope::safe_region_quads(input.env, &scene)
-            .into_iter()
-            .map(|q| q.map(pt))
-            .collect(),
-        tokens::OK.gamma_multiply(histogram::WASH_OK),
     );
-    // The density cells, one fill per bucket, over the wash.
-    let mut buckets: Vec<Vec<[[f64; 2]; 4]>> = vec![Vec::new(); ALPHA_BUCKETS];
-    for i in 0..grid.cells().len() {
-        if let Some(b) = grid.bucket(i)
-            && let Some(bucket) = buckets.get_mut(b)
-        {
-            bucket.push(grid.quad(i));
-        }
-    }
-    for (b, quads) in buckets.into_iter().enumerate() {
-        if !quads.is_empty() {
-            plot = plot.fill(quads, bucket_color(b));
-        }
-    }
-    // The frame edges (D5), under the limit lines: the width D, and the
-    // hard top when the range reaches it.
+    // The frame edges (D5), under everything: the width D, and the hard
+    // top when the range reaches it.
     let frame_lines: Vec<Vec<[f64; 2]>> = envelope::frame_edges(&scene)
         .into_iter()
-        .take(if at_scene_top { 2 } else { 1 })
-        .map(|line| line.into_iter().map(|p| [p[0], p[1].min(ap_top)]).collect())
+        .take(if view.at_scene_top { 2 } else { 1 })
+        .map(|line| {
+            line.into_iter()
+                .map(|p| [p[0], p[1].min(view.ap_top)])
+                .collect()
+        })
         .collect();
     for edge in &frame_lines {
         plot = plot.line(
@@ -546,37 +758,82 @@ pub fn draw_cut_chart(ui: &mut egui::Ui, input: &CutChartInput<'_>) -> CutChartR
             .beneath(true),
         );
     }
-    // The off-scale markers: the name and the value of each flat limit
-    // above the range, one gutter row each above the frame (the kit's
-    // idiom), the lower limit first. Decided before the frame: the gutter
-    // is part of it.
-    let flat_above = |edge: &envelope::SceneEdge| -> Option<f64> {
-        let first = edge.points.first()?;
-        let flat =
-            edge.points.len() == 2 && edge.points.iter().all(|p| (p[1] - first[1]).abs() < 1e-9);
-        (flat && first[1] > ap_top + 1e-9).then_some(first[1])
-    };
-    let mut off_scale: Vec<(&envelope::SceneEdge, f64)> = scene
-        .edges
-        .iter()
-        .filter_map(|edge| flat_above(edge).map(|mm| (edge, mm)))
-        .collect();
-    off_scale.sort_by(|a, b| a.1.total_cmp(&b.1));
-    for (edge, mm) in &off_scale {
+    // The iso-force contours, under the fills, the budget line last (the
+    // strongest). Each level's runs under the axis top; the longest run
+    // of a level carries its name.
+    let contour_set = contour_lines(input.force_field, input.budget_n);
+    let mut contour_labels: Vec<Label> = Vec::new();
+    for (share, lines) in &contour_set {
+        let budget_line = (*share - 1.0).abs() < 1e-9;
+        let (color, width) = if budget_line {
+            (tokens::CAUTION, BUDGET_CONTOUR_WIDTH)
+        } else {
+            (tokens::TEXT_FAINT, CONTOUR_WIDTH)
+        };
+        let runs: Vec<Vec<[f64; 2]>> = lines
+            .iter()
+            .flat_map(|line| clip_below(line, view.ap_top))
+            .filter(|run| run.len() >= 2)
+            .map(|run| pts(&run))
+            .collect();
+        for run in &runs {
+            plot = plot.line(
+                ChartLine::new(run.clone(), egui::Stroke::new(width, color))
+                    .beneath(true)
+                    .soft(true),
+            );
+        }
+        if let Some(longest) = runs.iter().max_by_key(|run| run.len()) {
+            contour_labels.push(
+                Label::new(
+                    contour_label(*share),
+                    color,
+                    LabelAt::line_end(longest.clone()),
+                )
+                .ground(LabelGround::Ground),
+            );
+        }
+    }
+    // The soft fill of the safe region, then the heat cells, one fill per
+    // step, over it.
+    plot = plot.fill(
+        envelope::safe_region_quads(input.env, &scene)
+            .into_iter()
+            .map(|q| q.map(pt))
+            .collect(),
+        tokens::OK.gamma_multiply(histogram::WASH_OK),
+    );
+    let mut steps: Vec<Vec<[[f64; 2]; 4]>> = vec![Vec::new(); HEAT_STEPS];
+    for i in 0..grid.cells().len() {
+        if let Some(s) = grid.step(i)
+            && let Some(step) = steps.get_mut(s)
+        {
+            step.push(grid.quad(i));
+        }
+    }
+    for (s, quads) in steps.into_iter().enumerate() {
+        if !quads.is_empty() {
+            plot = plot.fill(quads, step_color(s));
+        }
+    }
+    // The off-scale rows: one quiet gutter row per flat limit still above
+    // the axis, the lower limit first. Decided before the frame: the
+    // gutter is part of it.
+    for (label, mm) in &view.off_scale {
         plot = plot.off_scale_top(
-            format!("{} {} mm", edge.label, histogram::format_value(*mm)),
-            scene.edge_color(edge),
+            format!("{label} {} mm", histogram::format_value(*mm)),
+            tokens::TEXT_MUTED,
         );
     }
     let frame = plot.frame(ui);
-    // The limit lines on the chart range: a vertical limit stops at the
+    // The limit lines on the axis range: a vertical limit stops at the
     // top; a curve keeps the points under the top.
     let mut drawn: Vec<(&envelope::SceneEdge, Vec<[f64; 2]>)> = Vec::new();
     for edge in scene.drawn_edges(frame.size()) {
         let Some(first) = edge.points.first() else {
             continue;
         };
-        if flat_above(edge).is_some() {
+        if flat_depth(edge).is_some_and(|mm| mm > view.ap_top + 1e-9) {
             continue;
         }
         let two = edge.points.len() == 2;
@@ -584,13 +841,13 @@ pub fn draw_cut_chart(ui: &mut egui::Ui, input: &CutChartInput<'_>) -> CutChartR
         let points: Vec<[f64; 2]> = if vertical {
             edge.points
                 .iter()
-                .map(|p| [p[0], p[1].min(ap_top)])
+                .map(|p| [p[0], p[1].min(view.ap_top)])
                 .collect()
         } else {
             edge.points
                 .iter()
                 .copied()
-                .filter(|p| p[1] <= ap_top + 1e-9)
+                .filter(|p| p[1] <= view.ap_top + 1e-9)
                 .collect()
         };
         if points.len() < 2 {
@@ -605,7 +862,8 @@ pub fn draw_cut_chart(ui: &mut egui::Ui, input: &CutChartInput<'_>) -> CutChartR
         ));
     }
 
-    // The marks: the over-budget dots, the planned point, the playhead.
+    // The marks: the over-budget dots, the playhead ring, then the
+    // planned point LAST on its halo (item 5).
     for s in &dots {
         plot = plot.mark(Mark::dot(
             [sx(s.ae_mm), s.ap_mm],
@@ -613,91 +871,61 @@ pub fn draw_cut_chart(ui: &mut egui::Ui, input: &CutChartInput<'_>) -> CutChartR
             tokens::CAUTION,
         ));
     }
-    // The playhead ring is the quietest mark and paints under the planned
-    // dot (round 3), so the plan reads when the two coincide.
+    // The halo first, the ring over it (a ring at the planned point says
+    // "the playhead is at the plan", round 3), the white dot last.
+    let planned_at = input.env.stated.map(at_mark);
+    if let Some(at) = planned_at {
+        plot = plot.mark(Mark::dot(
+            at,
+            envelope::DOT_RADIUS + HALO_WIDTH,
+            tokens::SURFACE_BASE,
+        ));
+    }
     let playhead = playhead_sample(input.samples, input.playhead);
     if let Some(s) = playhead {
         plot = plot.mark(Mark::ring(
-            [sx(s.ae_mm), s.ap_mm.min(ap_top)],
+            [sx(s.ae_mm), s.ap_mm.min(view.ap_top)],
             GHOST_RADIUS,
             egui::Stroke::new(RECOMMENDATION_WIDTH, recommendation_color()),
         ));
     }
-    if let Some(p) = input.env.stated {
-        let p = CutPoint {
-            ap_mm: p.ap_mm.min(ap_top),
-            ae_mm: p.ae_mm,
-        };
-        plot = plot.mark(Mark::dot(
-            at_mark(p),
-            envelope::DOT_RADIUS,
-            tokens::TEXT_STRONG,
-        ));
+    if let Some(at) = planned_at {
+        plot = plot.mark(Mark::dot(at, envelope::DOT_RADIUS, tokens::TEXT_STRONG));
     }
 
-    // The labels: the cluster first, then each drawn limit on its line,
-    // the binding and crossed lines before the muted ones, the hard top
-    // last (the envelope plot's order).
-    if let Some((densest, share)) = cluster {
-        // Round 5: the cluster is visible as a 1 pt outline about its cell
-        // block (the nine cells, merged to their bounding rect); the label
-        // keeps clear of every cell at a quarter of the densest or more
-        // and points at the block with a leader always drawn.
-        let block = CellGrid::neighbourhood(densest)
-            .into_iter()
-            .map(|i| grid.quad(i))
-            .fold(None, |acc: Option<[f64; 4]>, q| {
-                let (x0, x1, y0, y1) = (q[0][0], q[1][0], q[0][1], q[2][1]);
-                Some(acc.map_or([x0, x1, y0, y1], |[a, b, c, d]| {
-                    [a.min(x0), b.max(x1), c.min(y0), d.max(y1)]
-                }))
-            });
-        if let Some([x0, x1, y0, y1]) = block {
-            plot = plot.line(ChartLine::new(
-                vec![[x0, y0], [x1, y0], [x1, y1], [x0, y1], [x0, y0]],
-                egui::Stroke::new(1.0, tokens::TEXT_MUTED),
-            ));
-            let dense: Vec<[[f64; 2]; 4]> = (0..grid.cells().len())
-                .filter(|i| grid.alpha(*i) >= CLEAR_SHARE)
-                .map(|i| grid.quad(i))
-                .collect();
-            plot = plot.keep_clear(dense);
-            let a = map_size(frame, x_range, ap_range, x1 - x0, y1 - y0);
-            plot = plot.label(
-                Label::new(
-                    cluster_label(share),
-                    tokens::TEXT_BODY,
-                    LabelAt::Mark {
-                        at: [(x0 + x1) / 2.0, (y0 + y1) / 2.0],
-                        radius: a.x.hypot(a.y) / 2.0,
-                    },
-                )
-                .ground(LabelGround::None)
-                .leader(),
-            );
-        }
-    }
+    // The labels, in priority: each drawn limit on its line (the binding
+    // and crossed lines before the muted ones), the hard top, then the
+    // contours (the budget line first).
     drawn.sort_by_key(|(e, _)| scene.edge_width(e) < envelope::LINE_WIDTH);
+    // P17b item 2: each label ON its line at the line's end, in the line's
+    // colour, on a chip of the chart ground (agent B's kit anchor).
     for (edge, points) in &drawn {
         let at = if points.len() == 3 {
-            LabelAt::Lines(points.windows(2).map(pts).collect())
+            LabelAt::LineEnd(points.windows(2).map(pts).collect())
         } else {
-            LabelAt::Line(pts(points))
+            LabelAt::line_end(pts(points))
         };
         plot = plot.label(
-            Label::new(edge.label.clone(), scene.edge_color(edge), at).ground(LabelGround::None),
+            Label::new(edge.label.clone(), scene.edge_color(edge), at).ground(LabelGround::Ground),
         );
     }
-    if let (true, Some(name), Some(top)) = (at_scene_top, scene.top_label(), frame_lines.get(1)) {
+    if let (true, Some(name), Some(top)) =
+        (view.at_scene_top, scene.top_label(), frame_lines.get(1))
+    {
         plot = plot.label(
-            Label::new(name, tokens::TEXT_MUTED, LabelAt::Line(pts(top))).ground(LabelGround::None),
+            Label::new(name, tokens::TEXT_MUTED, LabelAt::line_end(pts(top)))
+                .ground(LabelGround::Ground),
         );
+    }
+    for label in contour_labels.into_iter().rev() {
+        plot = plot.label(label);
     }
 
     let chart::ChartResponse { response, map } = plot.show(ui);
     let frame = map.frame;
 
-    // The hit: a dot within `HIT_RADIUS`, else the cell under the pointer.
+    // The hit: a dot within `HIT_RADIUS`, else the cell under the pointer
+    // (none in the empty extension above the data range).
     let hit_at = |pos: egui::Pos2| -> Hit {
         let dot = dots
             .iter()
@@ -709,7 +937,11 @@ pub fn draw_cut_chart(ui: &mut egui::Ui, input: &CutChartInput<'_>) -> CutChartR
             Some(s) => Hit::Dot(s),
             None => {
                 let (x, y) = map.from_screen(pos);
-                Hit::Cell(grid.index_of(x, y))
+                if y > grid.y_range().1 {
+                    Hit::Air
+                } else {
+                    Hit::Cell(grid.index_of(x, y))
+                }
             }
         }
     };
@@ -721,6 +953,7 @@ pub fn draw_cut_chart(ui: &mut egui::Ui, input: &CutChartInput<'_>) -> CutChartR
         seek = match hit_at(pos) {
             Hit::Dot(s) => Some(s.move_index),
             Hit::Cell(i) => grid.cells().get(i).and_then(|c| c.first_move),
+            Hit::Air => None,
         };
     }
     if let Some(pos) = response.hover_pos()
@@ -733,19 +966,22 @@ pub fn draw_cut_chart(ui: &mut egui::Ui, input: &CutChartInput<'_>) -> CutChartR
                     grid.index_of(sx(s.ae_mm), s.ap_mm),
                     input.diameter_mm,
                 );
-                match (s.force_n, input.budget_n) {
+                Some(match (s.force_n, input.budget_n) {
                     (Some(f), Some(b)) => format!("{}\n{cell}", dot_hover(f, b)),
                     (None, _) | (_, None) => cell,
-                }
+                })
             }
-            Hit::Cell(i) => cell_hover(&grid, i, input.diameter_mm),
+            Hit::Cell(i) => Some(cell_hover(&grid, i, input.diameter_mm)),
+            Hit::Air => None,
         };
-        let _ = response.on_hover_ui_at_pointer(|ui| {
-            ui.add(
-                egui::Label::new(egui::RichText::new(text).small().color(tokens::TEXT_STRONG))
-                    .extend(),
-            );
-        });
+        if let Some(text) = text {
+            let _ = response.on_hover_ui_at_pointer(|ui| {
+                ui.add(
+                    egui::Label::new(egui::RichText::new(text).small().color(tokens::TEXT_STRONG))
+                        .extend(),
+                );
+            });
+        }
     }
 
     draw_legend(ui, !dots.is_empty(), hidden);
@@ -755,37 +991,23 @@ pub fn draw_cut_chart(ui: &mut egui::Ui, input: &CutChartInput<'_>) -> CutChartR
     }
 }
 
-/// The size in points of a span of `dx` by `dy` data units on `frame`.
-fn map_size(frame: egui::Rect, x: (f64, f64), y: (f64, f64), dx: f64, dy: f64) -> egui::Vec2 {
-    let sx = if x.1 > x.0 { dx / (x.1 - x.0) } else { 0.0 };
-    let sy = if y.1 > y.0 { dy / (y.1 - y.0) } else { 0.0 };
-    egui::vec2(sx as f32 * frame.width(), sy as f32 * frame.height())
-}
-
 /// What sits under the pointer.
 enum Hit {
     Dot(CutPoint3),
     Cell(usize),
+    /// The empty extension above the data range.
+    Air,
 }
 
 /// The header row in the card style: the title, the (i) guide, and the
-/// caption at the right. The caption drops the move count when the two
-/// do not fit beside the title (the 240 point rail).
-fn draw_header(ui: &mut egui::Ui, move_count: usize, steady_share: Option<f64>) {
+/// move count at the right.
+fn draw_header(ui: &mut egui::Ui, move_count: usize) {
     ui.horizontal(|ui| {
         ui.add(egui::Label::new(egui::RichText::new(TITLE).color(tokens::TEXT_STRONG)).truncate());
         ui.label(egui::RichText::new(tokens::GLYPH_DETAIL).color(tokens::TEXT_MUTED))
             .on_hover_text(GUIDE);
-        let room = ui.available_width() - tokens::SPACE_3;
-        let fits = |caption: &str| text_width(ui, caption) <= room;
-        let full = header_caption(move_count, steady_share, false);
-        let caption = if fits(&full) {
-            full
-        } else {
-            header_caption(move_count, steady_share, true)
-        };
         ui.with_layout(egui::Layout::right_to_left(egui::Align::Center), |ui| {
-            ui.add(egui::Label::new(text::caption(caption)).truncate());
+            ui.add(egui::Label::new(text::caption(header_caption(move_count))).truncate());
         });
     });
 }
@@ -810,7 +1032,7 @@ const SWATCH: f32 = 10.0;
 /// One legend entry: what the swatch paints, and its caption.
 #[derive(Debug, Clone, Copy, PartialEq, Eq)]
 enum Swatch {
-    Wash,
+    Ramp,
     OverBudget,
     Planned,
     Playhead,
@@ -819,17 +1041,32 @@ enum Swatch {
 impl Swatch {
     const fn caption(self) -> &'static str {
         match self {
-            Self::Wash => LEGEND_CUT_TIME,
+            Self::Ramp => LEGEND_CUT_TIME,
             Self::OverBudget => LEGEND_OVER_BUDGET,
             Self::Planned => LEGEND_PLANNED,
             Self::Playhead => LEGEND_PLAYHEAD,
         }
     }
 
+    /// The width of the swatch: the ramp is a row of squares.
+    const fn width(self) -> f32 {
+        match self {
+            Self::Ramp => SWATCH * LEGEND_RAMP_SQUARES as f32,
+            Self::OverBudget | Self::Planned | Self::Playhead => SWATCH,
+        }
+    }
+
     fn paint(self, painter: &egui::Painter, rect: egui::Rect) {
         match self {
-            Self::Wash => {
-                let _ = painter.rect_filled(rect, 0.0, bucket_color(ALPHA_BUCKETS - 1));
+            Self::Ramp => {
+                for k in 0..LEGEND_RAMP_SQUARES {
+                    let s = k * (HEAT_STEPS - 1) / (LEGEND_RAMP_SQUARES - 1).max(1);
+                    let square = egui::Rect::from_min_size(
+                        rect.min + egui::vec2(SWATCH * k as f32, 0.0),
+                        egui::Vec2::splat(SWATCH),
+                    );
+                    let _ = painter.rect_filled(square, 0.0, step_color(s));
+                }
             }
             Self::OverBudget => {
                 let _ = painter.circle_filled(rect.center(), DOT_RADIUS, tokens::CAUTION);
@@ -855,7 +1092,7 @@ impl Swatch {
 /// that did not paint.
 fn draw_legend(ui: &mut egui::Ui, has_budget: bool, hidden: usize) {
     let entries: Vec<Swatch> = [
-        Swatch::Wash,
+        Swatch::Ramp,
         Swatch::OverBudget,
         Swatch::Planned,
         Swatch::Playhead,
@@ -865,7 +1102,7 @@ fn draw_legend(ui: &mut egui::Ui, has_budget: bool, hidden: usize) {
     .collect();
     let gap = tokens::SPACE_2;
     let entry_width =
-        |ui: &egui::Ui, s: Swatch| SWATCH + gap + text_width(ui, s.caption()) + tokens::SPACE_3;
+        |ui: &egui::Ui, s: Swatch| s.width() + gap + text_width(ui, s.caption()) + tokens::SPACE_3;
     let room = ui.available_width();
     let mut rows: Vec<Vec<Swatch>> = vec![Vec::new()];
     let mut used = 0.0_f32;
@@ -884,9 +1121,12 @@ fn draw_legend(ui: &mut egui::Ui, has_budget: bool, hidden: usize) {
         ui.horizontal(|ui| {
             ui.spacing_mut().item_spacing.x = gap;
             for s in row {
-                let (rect, _) =
-                    ui.allocate_exact_size(egui::Vec2::splat(SWATCH), egui::Sense::hover());
+                let (rect, swatch_response) =
+                    ui.allocate_exact_size(egui::vec2(s.width(), SWATCH), egui::Sense::hover());
                 s.paint(&ui.painter_at(rect), rect);
+                if s == Swatch::Ramp {
+                    let _ = swatch_response.on_hover_text(RAMP_HOVER);
+                }
                 let response = ui.add(egui::Label::new(text::caption(s.caption())).truncate());
                 if s == Swatch::OverBudget && hidden > 0 {
                     let _ = response.on_hover_text(format!(

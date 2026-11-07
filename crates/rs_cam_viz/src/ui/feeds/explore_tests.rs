@@ -252,9 +252,25 @@ fn the_chart_labels_fit_at_340_and_240_w3k() {
             "non-vacuity: the plot paints its lines (walls, rubbing, suggested); found {}",
             plot_lines.len()
         );
+        // P17b item 2: a line label sits ON its own line (`LineEnd`); it
+        // crosses no OTHER line.
         for label in &recorded.labels {
             for (points, half, color) in &plot_lines {
                 if *color == faint {
+                    continue;
+                }
+                // The same points in either order (the feed wall names
+                // itself from its low-RPM end).
+                let own = label.line.as_ref().is_some_and(|line| {
+                    line.len() == points.len()
+                        && (line.iter().zip(points).all(|(p, q)| p.distance(*q) < 0.5)
+                            || line
+                                .iter()
+                                .rev()
+                                .zip(points)
+                                .all(|(p, q)| p.distance(*q) < 0.5))
+                });
+                if own {
                     continue;
                 }
                 let crosses = points
@@ -274,9 +290,15 @@ fn the_chart_labels_fit_at_340_and_240_w3k() {
             let Some(line) = &label.line else {
                 continue;
             };
+            // The same points in either order (the feed wall names itself
+            // from its low-RPM end, P17b).
             let painted_line = painted.paths.iter().any(|(points, _, _)| {
                 points.len() == line.len()
-                    && points.iter().zip(line).all(|(p, q)| p.distance(*q) < 1.0)
+                    && (points.iter().zip(line).all(|(p, q)| p.distance(*q) < 1.0)
+                        || points
+                            .iter()
+                            .zip(line.iter().rev())
+                            .all(|(p, q)| p.distance(*q) < 1.0))
             });
             assert!(
                 painted_line,

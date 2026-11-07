@@ -68,6 +68,11 @@ pub enum LabelGround {
     /// cross a soft line keeps a chip, so the line does not run through
     /// its text.
     None,
+    /// A chip of the chart ground (the panel fill, `tokens::SURFACE_BASE`)
+    /// behind the text (P17b item 2): a label ON its line masks the line
+    /// under the letters only, so the line runs into the text and out the
+    /// other side.
+    Ground,
 }
 
 /// One label to place: its text, its colour, what it names and its ground.
@@ -88,7 +93,49 @@ pub(crate) enum LabelAnchor {
     /// Any one of several lines (the two lines of the vendor range): the
     /// places of the first, then of the next.
     Lines(Vec<Vec<egui::Pos2>>),
+    /// The end of a line (P17b item 2): the label sits ON the line at its
+    /// last point. A level or shallow line takes the text along it, ending
+    /// `END_INSET` before the last point (a full-width limit reads
+    /// right-aligned inside the frame); a steep line takes the text
+    /// horizontal beside its top end, touching the line, hanging down from
+    /// it. The next place is the first point, then beside the line (the
+    /// `Line` places of each segment). Several polylines (a step): the end
+    /// of each, then beside each. The layout does not test a label against
+    /// its own line.
+    LineEnd(Vec<Vec<egui::Pos2>>),
 }
+
+impl LabelAnchor {
+    /// The polylines a `LineEnd` label sits on: the layout does not test
+    /// the label against them.
+    fn own_lines(&self) -> &[Vec<egui::Pos2>] {
+        match self {
+            Self::LineEnd(lines) => lines,
+            Self::Line(_) | Self::Lines(_) | Self::Mark { .. } => &[],
+        }
+    }
+}
+
+/// True when the drawn `line` is one of `own` (the same points, in either
+/// order: a label may name a line from its other end, P17b).
+fn is_own_line(line: &DrawnLine, own: &[Vec<egui::Pos2>]) -> bool {
+    let same = |a: &egui::Pos2, b: &egui::Pos2| a.distance(*b) < 0.5;
+    own.iter().any(|o| {
+        o.len() == line.points.len()
+            && (o.iter().zip(&line.points).all(|(a, b)| same(a, b))
+                || o.iter().rev().zip(&line.points).all(|(a, b)| same(a, b)))
+    })
+}
+
+/// The room between the end of a line and the end of a label on it, in
+/// points: past the padding, so the chip clears a frame edge line or a
+/// wall that the line ends on (a 2 pt line grown by the layout's 0.5).
+const END_INSET: f32 = 2.5;
+
+/// The room between a steep line and the chip beside its end, in points:
+/// the half width of a 2 pt line, so the chip touches the line's edge and
+/// the text starts `LABEL_PADDING.x` past it.
+const SIDE_TOUCH: f32 = 1.0;
 
 /// One drawn line in screen space, for the label layout.
 pub(crate) struct DrawnLine {
@@ -348,14 +395,15 @@ pub(crate) fn greedy_layout(
         let Some((label, size)) = labels.get(i) else {
             continue;
         };
+        let own = label.anchor.own_lines();
         let fits = |quad: &Quad, cross_soft: bool| {
             quad.inside(inside)
                 && !keep_clear
                     .iter()
                     .any(|r| quad.intersects(&Quad::upright(*r)))
-                && !lines
-                    .iter()
-                    .any(|l| !(cross_soft && l.soft) && line_hits_quad(l, quad))
+                && !lines.iter().any(|l| {
+                    !(cross_soft && l.soft) && !is_own_line(l, own) && line_hits_quad(l, quad)
+                })
                 && !placed.iter().any(|(_, p)| {
                     let mut grown = p.quad;
                     grown.half += egui::Vec2::splat(1.0);
@@ -379,12 +427,14 @@ pub(crate) fn greedy_layout(
                     crossed_soft,
                     mark: match label.anchor {
                         LabelAnchor::Mark { center, radius } => Some((center, radius)),
-                        LabelAnchor::Line(_) | LabelAnchor::Lines(_) => None,
+                        LabelAnchor::Line(_) | LabelAnchor::Lines(_) | LabelAnchor::LineEnd(_) => {
+                            None
+                        }
                     },
                     line: match &label.anchor {
                         LabelAnchor::Mark { .. } => None,
                         LabelAnchor::Line(points) => Some(points.clone()),
-                        LabelAnchor::Lines(lines) => lines
+                        LabelAnchor::Lines(lines) | LabelAnchor::LineEnd(lines) => lines
                             .iter()
                             .min_by(|a, b| {
                                 quad.distance_to_line(a)
@@ -445,6 +495,27 @@ pub(crate) fn candidates(anchor: &LabelAnchor, size: egui::Vec2) -> Vec<Quad> {
             .iter()
             .flat_map(|line| candidates(&LabelAnchor::Line(line.clone()), size))
             .collect(),
+        LabelAnchor::LineEnd(lines) => {
+            // The end of each polyline, then its start, then touching the
+            // side of each steep segment, then beside each segment of each.
+            let mut out: Vec<Quad> = lines
+                .iter()
+                .filter_map(|line| end_places(line, true, size))
+                .chain(
+                    lines
+                        .iter()
+                        .filter_map(|line| end_places(line, false, size)),
+                )
+                .flatten()
+                .collect();
+            out.extend(lines.iter().flat_map(|line| side_places(line, size)));
+            out.extend(lines.iter().flat_map(|line| {
+                line.windows(2)
+                    .flat_map(|w| candidates(&LabelAnchor::Line(w.to_vec()), size))
+                    .collect::<Vec<_>>()
+            }));
+            out
+        }
         LabelAnchor::Line(points) => {
             let mut out = Vec::new();
             let (Some(first), Some(last)) = (points.first(), points.last()) else {
@@ -489,6 +560,99 @@ pub(crate) fn candidates(anchor: &LabelAnchor, size: egui::Vec2) -> Vec<Quad> {
             out
         }
     }
+}
+
+/// The places of a label of `size` at one end of `line` (`last`: the last
+/// point, else the first): on the line, along its end segment, when the
+/// segment is no steeper than `MAX_LABEL_ANGLE`; else horizontal beside
+/// the end, touching the line, hanging down from a top end (up from a
+/// bottom end), the side nearer the frame centre first: the two sides.
+/// `None` for a line of fewer than two points or no length.
+fn end_places(line: &[egui::Pos2], last: bool, size: egui::Vec2) -> Option<Vec<Quad>> {
+    let (end, prev) = if last {
+        (*line.last()?, *line.get(line.len().checked_sub(2)?)?)
+    } else {
+        (*line.first()?, *line.get(1)?)
+    };
+    // The unit vector from the end into the line.
+    let inward = prev - end;
+    if inward.length() < 1.0 {
+        return None;
+    }
+    let inward = inward.normalized();
+    let half = size / 2.0;
+    // The text reads left to right: the angle of the segment pointed right.
+    let dir = if inward.x < 0.0 { -inward } else { inward };
+    let angle = dir.y.atan2(dir.x);
+    if angle.abs() <= MAX_LABEL_ANGLE {
+        // On the line: the chip's far corner clears the end by `END_INSET`
+        // (a turned chip reaches past its centre line by `half.y sin`).
+        let reach = half.x + END_INSET + half.y * angle.sin().abs();
+        return Some(vec![Quad {
+            center: end + inward * reach,
+            half,
+            angle,
+        }]);
+    }
+    // Steep: horizontal text beside the end, the chip's near edge on the
+    // edge of a 2 pt line (touching it), hanging into the line's own
+    // extent (down from a top end).
+    let y = if inward.y > 0.0 {
+        end.y + LABEL_GAP + half.y
+    } else {
+        end.y - LABEL_GAP - half.y
+    };
+    let dx = SIDE_TOUCH + half.x;
+    Some(vec![
+        Quad {
+            center: egui::pos2(end.x + dx, y),
+            half,
+            angle: 0.0,
+        },
+        Quad {
+            center: egui::pos2(end.x - dx, y),
+            half,
+            angle: 0.0,
+        },
+    ])
+}
+
+/// The places of a label of `size` touching the side of each steep
+/// segment of `line` (steeper than `MAX_LABEL_ANGLE`): horizontal text,
+/// the chip's near edge on the edge of the line as at a steep end, at the
+/// fractions of [`line_fractions`], both sides. A wall whose two ends are
+/// taken keeps its name against it (P17b: "Max RPM" floated free of its
+/// wall).
+fn side_places(line: &[egui::Pos2], size: egui::Vec2) -> Vec<Quad> {
+    let half = size / 2.0;
+    let mut out = Vec::new();
+    for w in line.windows(2) {
+        let [a, b] = w else { continue };
+        let along = *b - *a;
+        if along.length() < 1.0 {
+            continue;
+        }
+        let dir = if along.x < 0.0 { -along } else { along };
+        if dir.y.atan2(dir.x).abs() <= MAX_LABEL_ANGLE {
+            continue;
+        }
+        // A slanted segment moves across the chip's height by `slant`; the
+        // chip clears it by that much more, so it never lies on its own
+        // line (the layout does not test a label against its own line).
+        let slant = half.y * (along.x / along.y).abs();
+        let dx = SIDE_TOUCH + half.x + slant;
+        for t in line_fractions() {
+            let p = *a + along * t;
+            for side in [dx, -dx] {
+                out.push(Quad {
+                    center: egui::pos2(p.x + side, p.y),
+                    half,
+                    angle: 0.0,
+                });
+            }
+        }
+    }
+    out
 }
 
 /// Size each label and place them with [`layout_labels`]; at most
@@ -537,10 +701,17 @@ pub(crate) fn paint_labels(ui: &egui::Ui, frame: egui::Rect, placed: &[PlacedLab
                 );
             }
         }
-        if label.ground == LabelGround::Overlay || label.crossed_soft {
+        let chip = match label.ground {
+            LabelGround::Ground => Some(tokens::SURFACE_BASE),
+            LabelGround::Overlay => Some(wash(tokens::SURFACE_OVERLAY, LABEL_BACKGROUND_ALPHA)),
+            LabelGround::None => label
+                .crossed_soft
+                .then_some(wash(tokens::SURFACE_OVERLAY, LABEL_BACKGROUND_ALPHA)),
+        };
+        if let Some(fill) = chip {
             let _ = painter.add(egui::Shape::convex_polygon(
                 label.quad.corners().to_vec(),
-                wash(tokens::SURFACE_OVERLAY, LABEL_BACKGROUND_ALPHA),
+                fill,
                 egui::Stroke::NONE,
             ));
         }

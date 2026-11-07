@@ -52,8 +52,10 @@ use rs_cam_core::tool_load::{
 };
 use rs_cam_viz::app::{SidePanelEdge, side_panel};
 use rs_cam_viz::state::panels::EnvelopeCandidates;
+use rs_cam_viz::state::simulation::force_field::ForceField;
 use rs_cam_viz::state::simulation::{CUT_METRIC_ORDER, CutMetricCard, CutMetricSet};
-use rs_cam_viz::ui::feeds::envelope::draw_envelope;
+use rs_cam_viz::ui::feeds::envelope::{EnvelopeScene, draw_envelope};
+use rs_cam_viz::ui::sim_cut_chart::{GRID_COLUMNS, GRID_ROWS};
 use rs_cam_viz::ui::sim_diagnostics::{
     CutMetricsBody, draw_cut_chart_section, draw_cut_metric_cards,
 };
@@ -230,8 +232,9 @@ fn the_envelope_at_each_rail_width_p17() {
 const CARDS_HEIGHT: f32 = 500.0;
 
 /// The height of the chart screen: the hairline, the header row, the
-/// plot and the legend.
-const CHART_HEIGHT: f32 = 280.0;
+/// plot and the legend (P17b: two legend rows at the 240 rail, where the
+/// ramp swatch wraps the playhead entry).
+const CHART_HEIGHT: f32 = 300.0;
 
 /// The samples of the prototype set (explainer P13c section 9).
 const SAMPLE_COUNT: usize = 500;
@@ -485,6 +488,16 @@ fn sim_set() -> CutMetricSet {
         CUT_METRIC_ORDER.to_vec(),
         "the set holds the four cards in the section's order"
     );
+    // P17b: the iso-force field at the same advance per tooth the samples
+    // read, over the envelope scene's own view top (the state builder's
+    // rule); the contours show on the over-budget image.
+    let force_field = ForceField::build(
+        &tool,
+        &material,
+        diameter,
+        EnvelopeScene::of(&env, None).ap_range.1,
+        fz,
+    );
     CutMetricSet {
         toolpath_id: ID,
         cards,
@@ -492,6 +505,7 @@ fn sim_set() -> CutMetricSet {
         samples,
         diameter_mm: diameter,
         budget_n: budget,
+        force_field,
     }
 }
 
@@ -550,6 +564,51 @@ fn rough_chart_set(pocket: &CutMetricSet) -> CutMetricSet {
         samples,
         diameter_mm: diameter,
         budget_n: None,
+        force_field: None,
+    }
+}
+
+/// P17b (a look-only set): the steady passes of the Pocket set spread
+/// over [`SPREAD_CELLS`] heat cells each way in width and in depth, on a
+/// triangular density that falls off from the planned point, so the heat
+/// ramp shows every step. The explainer's prototype puts most of the
+/// cutting time in the one cell under the planned dot, where no ramp can
+/// show. No force on a sample (no dot), so the heat and the contours read
+/// alone; the budget and the field stay, so the contours draw.
+const SPREAD_CELLS: usize = 4;
+
+fn spread_chart_set(pocket: &CutMetricSet) -> CutMetricSet {
+    let env = pocket
+        .envelope
+        .as_deref()
+        .expect("the Pocket set has its envelope");
+    let scene = EnvelopeScene::of(env, None);
+    let planned = env
+        .stated
+        .or(env.proposal.get().point())
+        .expect("the fixture states or proposes a point");
+    let diameter = pocket.diameter_mm;
+    let mut rng = Lcg(0x5EED_0017);
+    let width_cell = diameter * SPREAD_CELLS as f64 / GRID_COLUMNS as f64;
+    let depth_cell = scene.ap_range.1 * SPREAD_CELLS as f64 / GRID_ROWS as f64;
+    let samples: Vec<CutPoint3> = (0..SAMPLE_COUNT)
+        .map(|i| {
+            let tri = |rng: &mut Lcg| rng.next_unit() + rng.next_unit() - 1.0;
+            let ae = (planned.ae_mm + tri(&mut rng) * width_cell).max(0.0);
+            let ap = (planned.ap_mm + tri(&mut rng) * depth_cell).max(0.0);
+            CutPoint3 {
+                ae_mm: ae,
+                ap_mm: ap,
+                force_n: None,
+                weight_s: 1.0,
+                move_index: i,
+                sample_index: i,
+            }
+        })
+        .collect();
+    CutMetricSet {
+        samples,
+        ..pocket.clone()
     }
 }
 
@@ -657,4 +716,109 @@ fn the_sim_cards_and_chart_at_each_rail_width_p17() {
             let _ = draw_cut_chart_section(ui, &what_if, Some(SAMPLE_COUNT / 2), SAMPLE_COUNT);
         },
     );
+    // P17b: the heat ramp on a spread set (look only).
+    let spread = spread_chart_set(&set);
+    snapshot_panel(
+        &dir,
+        "sim_chart_340_spread.png",
+        340.0,
+        CHART_HEIGHT,
+        move |ui| {
+            let _ = draw_cut_chart_section(ui, &spread, None, SAMPLE_COUNT);
+        },
+    );
+}
+
+// ── P17b item 4: the Passes tab feeds block (the envelope plot over the nomogram) ──
+
+/// The height of the Passes screen: the inspector header, the tab strip,
+/// the SAFE CUT plot and the nomogram under it (the op rows start below).
+const PASSES_HEIGHT: f32 = 600.0;
+
+/// The rivmap100 project on the Passes tab of the 3D Rough (the p5d
+/// recipe): the memo fills on the first frames, so the nomogram draws.
+fn rivmap_passes_state() -> rs_cam_viz::state::AppState {
+    let session = rs_cam_core::session::ProjectSession::load(Path::new(FIXTURE))
+        .expect("the rivmap100 fixture loads");
+    let mut state = rs_cam_viz::state::AppState::new();
+    state.replace_session(session);
+    let id = state
+        .session()
+        .toolpath_configs()
+        .iter()
+        .find(|t| t.name == "3D Rough")
+        .expect("rivmap100 has the 3D Rough")
+        .id;
+    state
+        .gui
+        .toolpath_rt
+        .insert(id, rs_cam_viz::state::runtime::ToolpathRuntime::new(true));
+    let _ = state.set_focus(rs_cam_viz::state::selection::Selection::Toolpath(id));
+    state.gui.pending_toolpath_tab = Some((id, rs_cam_viz::ui::properties::ToolpathTab::Passes));
+    state
+}
+
+/// Render the whole inspector (`properties::draw`) on the Passes tab at
+/// `width` and save it: the kit envelope plot over the kit nomogram.
+fn snapshot_passes(dir: &Path, name: &str, width: f32) {
+    let state = std::cell::RefCell::new(rivmap_passes_state());
+    let built = std::panic::catch_unwind(std::panic::AssertUnwindSafe(|| {
+        egui_kittest::Harness::builder()
+            .with_size(egui::vec2(width + CENTRAL_WIDTH, PASSES_HEIGHT))
+            .with_pixels_per_point(PIXELS_PER_POINT)
+            .wgpu()
+            .build_ui(move |ui| {
+                side_panel(
+                    ui,
+                    SidePanelEdge::Right,
+                    "p17b_passes_snapshot",
+                    width,
+                    |ui| {
+                        let mut events = Vec::new();
+                        rs_cam_viz::ui::properties::draw(ui, &mut state.borrow_mut(), &mut events);
+                    },
+                );
+            })
+    }));
+    let mut harness = match built {
+        Ok(harness) => harness,
+        Err(err) => {
+            let text = err
+                .downcast_ref::<String>()
+                .cloned()
+                .or_else(|| err.downcast_ref::<&str>().map(|s| (*s).to_owned()))
+                .unwrap_or_else(|| "no message".to_owned());
+            panic!("P17 blocker: no headless wgpu adapter: {text}");
+        }
+    };
+    tokens::apply(&harness.ctx);
+    tokens::apply_fonts(&harness.ctx);
+    // The memo and the label layout settle over a few frames.
+    for _ in 0..6 {
+        harness.step();
+    }
+    let image = harness
+        .render()
+        .unwrap_or_else(|err| panic!("P17 blocker: the wgpu render failed: {err}"));
+    let left = (CENTRAL_WIDTH * PIXELS_PER_POINT).round() as u32;
+    let image =
+        image::imageops::crop_imm(&image, left, 0, image.width() - left, image.height()).to_image();
+    let path = dir.join(name);
+    image
+        .save(&path)
+        .unwrap_or_else(|err| panic!("save {}: {err}", path.display()));
+    eprintln!("P17 snapshot: {}", path.display());
+}
+
+#[test]
+#[ignore = "writes PNG files and needs a wgpu adapter; set RS_CAM_P17_SNAPSHOT_DIR"]
+fn the_passes_tab_at_each_rail_width_p17b() {
+    let Some(dir) = snapshot_dir() else {
+        eprintln!("RS_CAM_P17_SNAPSHOT_DIR is not set: no snapshot");
+        return;
+    };
+    std::fs::create_dir_all(&dir).unwrap_or_else(|err| panic!("mkdir {}: {err}", dir.display()));
+    for width in WIDTHS {
+        snapshot_passes(&dir, &format!("passes_{width:.0}.png"), width);
+    }
 }
