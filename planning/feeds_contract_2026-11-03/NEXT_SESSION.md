@@ -1,6 +1,6 @@
 # Next session: feeds and speeds correctness (brief, 2026-11-08, second edition)
 
-HEAD at the time of writing: `0a6e78116` (P20b). The first edition of this brief (`02b832eb9`) is
+HEAD at the time of writing: `a52e88813` (P20d). The first edition of this brief (`02b832eb9`) is
 done in part: section 1 of that edition became P20a and P20b.
 The operator wants every feeds and speeds number to be correct and explainable, so that the app
 can be shared. GUI work waits.
@@ -32,22 +32,24 @@ Records: `phases/P20.md` (audit table of 20 rows, P20a and P20b sections),
 `phases/P20_chip_gate_abstain.md` (the chip gate finding, section 1 below).
 The release GUI runs 998ac93a3 (not rebuilt for P20b; the operator said "rebuild later").
 
-## In flight at the end of the session (check first)
+## Also done late on 2026-11-08
 
-Two implementing agents ran when the session ended. Look for their records in `phases/P20.md`
-sections "P20c" and "P20d" and for uncommitted files under `crates/`. Review by path, run the
-gate, and commit with explicit paths. If a record is missing or partial, the work is not done.
+| Commit | Content |
+|---|---|
+| `42977948d` | P20c: `rate_bound_feed_mm_min` caps every fed move at the per-axis rate for its direction (one stage after the last feed writer); gates grade the reached feed (`use_predicted_feed_in_gates` = true) |
+| `a52e88813` | P20d: `feeds/section.rs` `EngagedSection` (rectangle, V groove, axial circle); V-bit power from the cone; drill power advisory; `power_kw` is an Option (item 3b) |
 
-- **P20c, one per-move machine limit.** Every commanded feed (cut, plunge, ramp, entry, link) and
-  the chip gate go through `MachineKinematics::effective_max_rate_mm_min(dir)` (it exists in
-  `machine/kinematics.rs`; only the cycle-time estimate used it). Covers audit row 14 (the
-  dressup entry plunge, `compute/catalog/entry_contract.rs`, 0.5 x first linear feed, unsourced)
-  and the modulator's lifted feeds. Also an investigation of the 2 mm 1F plunge (240 mm/min,
-  likely the unsourced material base plunge; G10 covers 3.0-12.7 mm and 2-3 flutes only).
-- **P20d, power from the true section.** Drill and plunge: circle (pi D^2/4 x vf); V-groove:
-  triangle (h^2 tan a, edge h / cos a); ball and tapered tips from the tip shape. One path with a
-  section enum that every caller must choose. Power is an Option ("not modelled", never 0.0;
-  P18 item 3b).
+Records: `phases/P20.md` sections 4 (P20c survey of feed writers and graders) and 5 (P20d).
+The GUI is still 998ac93a3: rebuild, then re-grade the acceptance table (P20b, P20c, P20d rows).
+
+Open from P20c/P20d (operator rulings): drill power stays advisory, or cite the MDF twist-drill
+torque text (`planning/extrapolation_2026-09-24/fetch/G8/sources/materials_2019_mdf_drill_edge_radius.txt`;
+the model reads 0.6-0.9x it); the drill power hover labels (ap is advance per rev, ae the
+diameter); an operator-typed plunge and the axial-chip bound; the 2 mm 1F plunge (240, unsourced;
+G10 refuses below 3.0 mm and 1 flute; Spektra prints 2F Ramp Down at 1/16 and 3/32 in).
+Open in code: a `ReachableFeed` type (about 450 writer sites); the drill gate and plunge stress
+read the op config, not the emitted move; accel reach is graded but not written; the drill
+engagement floor still writes ap 0.05, ae 0.02; deflection still reads the rectangle on a V-bit.
 
 ## 1. Top finding, not yet fixed: the feed cap of 3000 and the chip gate
 
@@ -106,7 +108,10 @@ for axial thinning at a shallow depth (`calculator/feed.rs:97-98` says "observed
 ## 5. The operator's cut (not yet cut)
 
 Safety read on 998ac93a3 (generate all, simulate, export warnings): no collision, no rapid
-collision. Before the cut:
+collision. After that read the operator fixed some lakes in the project (2026-11-08,
+uncommitted edits to the TOML), so regenerate, re-simulate and re-read the per-op warnings
+before any verdict. The acceptance table rows are per toolpath and stay valid unless a toolpath,
+tool or feed changed. Before the cut:
 
 - The F3000 cap (section 1): the operator must decide whether the roughs run at 3000 or at the
   card feed. At the card feed, "Back bulk rough 18 mm" at 8475 needs about 1.11-1.25 kW of
