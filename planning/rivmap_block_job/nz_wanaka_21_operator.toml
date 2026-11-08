@@ -702,7 +702,6 @@ arc_tolerance = 0.05
 segment_merge = true
 segment_merge_tolerance = 0.05
 feed_optimization = false
-feed_max_rate = 3000.0
 feed_ramp_rate = 200.0
 optimize_rapid_order = true
 
@@ -933,8 +932,8 @@ coolant = "off"
 kind = "adaptive3d"
 
 [setups.toolpaths.operation.params]
-stepover = 3.16
-depth_per_pass = 9.0
+stepover = 5.5
+depth_per_pass = 10.0
 stock_to_leave_axial = 0.0
 feed_rate = 8475.0
 plunge_rate = 2162.0
@@ -971,7 +970,6 @@ arc_tolerance = 0.05
 segment_merge = true
 segment_merge_tolerance = 0.05
 feed_optimization = false
-feed_max_rate = 3000.0
 feed_ramp_rate = 200.0
 optimize_rapid_order = true
 
@@ -1027,11 +1025,9 @@ reference = "amana-flat-hardwood-pocket-12700-2f-spektra"
 
 [setups.toolpaths.feeds_provenance.stepover]
 source = "manual"
-reference = "picked"
 
 [setups.toolpaths.feeds_provenance.depth_per_pass]
 source = "manual"
-reference = "picked"
 
 [setups.toolpaths.feeds_provenance.ramp_feed_rate]
 source = "vendor_lut"
@@ -1253,7 +1249,6 @@ arc_tolerance = 0.05
 segment_merge = true
 segment_merge_tolerance = 0.05
 feed_optimization = false
-feed_max_rate = 3000.0
 feed_ramp_rate = 200.0
 optimize_rapid_order = true
 
@@ -1522,7 +1517,6 @@ arc_tolerance = 0.05
 segment_merge = false
 segment_merge_tolerance = 0.3
 feed_optimization = false
-feed_max_rate = 3000.0
 feed_ramp_rate = 200.0
 optimize_rapid_order = true
 
@@ -1741,7 +1735,6 @@ arc_tolerance = 0.05
 segment_merge = false
 segment_merge_tolerance = 0.3
 feed_optimization = false
-feed_max_rate = 3000.0
 feed_ramp_rate = 200.0
 optimize_rapid_order = true
 
@@ -1947,17 +1940,8 @@ chain_distance_mm = 0.0
 source = "toolpath_model"
 
 [setups.toolpaths.operation.params.selection.rules.filter]
+layers = ["VGROOVE_V20_RIVER"]
 kinds = "served"
-
-[[setups.toolpaths.operation.params.selection.picks]]
-source = "toolpath_model"
-kind = "path"
-layer = "VGROOVE_V20_RIVER"
-anchor = [
-    207.7603,
-    231.4428,
-]
-measure = 55.44525760907854
 
 [setups.toolpaths.dressups]
 entry_style = "none"
@@ -1975,7 +1959,6 @@ arc_tolerance = 0.05
 segment_merge = false
 segment_merge_tolerance = 0.3
 feed_optimization = false
-feed_max_rate = 3000.0
 feed_ramp_rate = 200.0
 optimize_rapid_order = true
 
@@ -2174,7 +2157,7 @@ basis = 13
 
 [[setups.toolpaths]]
 id = 12
-name = "Lake pocket 2 mm, 8 lakes to Z 5.91"
+name = "Lake pocket 2 mm, 11 lakes to Z 5.88"
 enabled = true
 tool_id = 5
 model_id = 15
@@ -2200,7 +2183,7 @@ open_paths = "skip"
 
 [setups.toolpaths.operation.params.floor]
 from = "z"
-z = 5.9106
+z = 5.875
 
 [setups.toolpaths.dressups]
 entry_style = "none"
@@ -2218,7 +2201,6 @@ arc_tolerance = 0.05
 segment_merge = true
 segment_merge_tolerance = 0.05
 feed_optimization = false
-feed_max_rate = 3000.0
 feed_ramp_rate = 200.0
 optimize_rapid_order = true
 
@@ -2234,7 +2216,7 @@ mode = "auto"
 
 [setups.toolpaths.heights.top_z]
 mode = "manual"
-value = 14.46
+value = 14.49
 
 [setups.toolpaths.heights.bottom_z]
 mode = "auto"
@@ -2471,7 +2453,6 @@ arc_tolerance = 0.05
 segment_merge = true
 segment_merge_tolerance = 0.05
 feed_optimization = false
-feed_max_rate = 3000.0
 feed_ramp_rate = 200.0
 optimize_rapid_order = true
 
@@ -2567,7 +2548,6 @@ arc_tolerance = 0.05
 segment_merge = true
 segment_merge_tolerance = 0.05
 feed_optimization = false
-feed_max_rate = 3000.0
 feed_ramp_rate = 200.0
 optimize_rapid_order = true
 
@@ -2655,7 +2635,6 @@ arc_tolerance = 0.05
 segment_merge = false
 segment_merge_tolerance = 0.3
 feed_optimization = false
-feed_max_rate = 3000.0
 feed_ramp_rate = 200.0
 optimize_rapid_order = true
 
@@ -2739,7 +2718,6 @@ arc_tolerance = 0.05
 segment_merge = false
 segment_merge_tolerance = 0.3
 feed_optimization = false
-feed_max_rate = 3000.0
 feed_ramp_rate = 200.0
 optimize_rapid_order = true
 
@@ -2966,7 +2944,6 @@ arc_tolerance = 0.05
 segment_merge = false
 segment_merge_tolerance = 0.3
 feed_optimization = false
-feed_max_rate = 3000.0
 feed_ramp_rate = 200.0
 optimize_rapid_order = true
 
@@ -3340,7 +3317,6 @@ arc_tolerance = 0.05
 segment_merge = true
 segment_merge_tolerance = 0.05
 feed_optimization = false
-feed_max_rate = 3000.0
 feed_ramp_rate = 200.0
 optimize_rapid_order = true
 
@@ -3594,7 +3570,6 @@ arc_tolerance = 0.05
 segment_merge = false
 segment_merge_tolerance = 0.3
 feed_optimization = false
-feed_max_rate = 3000.0
 feed_ramp_rate = 200.0
 optimize_rapid_order = true
 
@@ -3831,7 +3806,6 @@ arc_tolerance = 0.05
 segment_merge = true
 segment_merge_tolerance = 0.05
 feed_optimization = false
-feed_max_rate = 3000.0
 feed_ramp_rate = 200.0
 optimize_rapid_order = true
 
@@ -4112,7 +4086,6 @@ arc_tolerance = 0.05
 segment_merge = true
 segment_merge_tolerance = 0.05
 feed_optimization = false
-feed_max_rate = 3000.0
 feed_ramp_rate = 200.0
 optimize_rapid_order = true
 
@@ -4356,16 +4329,16 @@ coolant = "off"
 kind = "scallop"
 
 [setups.toolpaths.operation.params]
-scallop_height = 0.1
+scallop_height = 0.09999999999999998
 tolerance = 0.05
 direction = "outside_in"
 continuous = false
 slope_from = 0.0
 slope_to = 90.0
-feed_rate = 4700.0
+feed_rate = 2317.0
 plunge_rate = 240.0
 stock_to_leave = 0.0
-spindle_rpm = 20611
+spindle_rpm = 18000
 intra_pass_hookup_mm = 3.0
 iso_field = true
 
@@ -4385,7 +4358,6 @@ arc_tolerance = 0.05
 segment_merge = true
 segment_merge_tolerance = 0.02
 feed_optimization = false
-feed_max_rate = 3000.0
 feed_ramp_rate = 200.0
 optimize_rapid_order = true
 
@@ -4425,6 +4397,170 @@ only = [
 
 [setups.toolpaths.debug_options]
 enabled = false
+
+[setups.toolpaths.feeds_provenance.feed_rate]
+source = "vendor_lut"
+reference = "amana-tapered-hardwood-parallel-1587-2f-zrn-v8"
+
+[setups.toolpaths.feeds_provenance.plunge_rate]
+source = "repo_rule"
+reference = "material_plunge_base"
+
+[setups.toolpaths.feeds_provenance.spindle_rpm]
+source = "vendor_lut"
+reference = "amana-tapered-hardwood-parallel-1587-2f-zrn-v8"
+
+[setups.toolpaths.feeds_provenance.ramp_feed_rate]
+source = "repo_rule"
+reference = "material_plunge_base"
+
+[[setups.toolpaths.feeds_provenance.steps.nodes]]
+kind = "operator"
+law = "stated"
+
+[[setups.toolpaths.feeds_provenance.steps.nodes]]
+kind = "rule"
+name = "material.base_cutting_speed_m_min.solid_wood"
+value = 200.0
+source = "unsourced"
+
+[[setups.toolpaths.feeds_provenance.steps.nodes]]
+kind = "derived"
+law = "SFM at engaged diameter"
+from = [
+    1,
+    0,
+]
+
+[[setups.toolpaths.feeds_provenance.steps.nodes]]
+kind = "machine"
+field = "machine.rpm_range"
+
+[[setups.toolpaths.feeds_provenance.steps.nodes]]
+kind = "derived"
+law = "machine RPM range"
+from = [
+    2,
+    3,
+]
+
+[[setups.toolpaths.feeds_provenance.steps.nodes]]
+kind = "claim"
+
+[setups.toolpaths.feeds_provenance.steps.nodes.claim]
+kind = "size_g1"
+row = "amana-tapered-hardwood-parallel-1587-2f-zrn-v8"
+rule = "g1_size"
+
+[[setups.toolpaths.feeds_provenance.steps.nodes]]
+kind = "printed"
+row = "amana-tapered-hardwood-parallel-1587-2f-zrn-v8"
+
+[[setups.toolpaths.feeds_provenance.steps.nodes]]
+kind = "tool_fact"
+fact = "tool.flute_count"
+fact_kind = "estimated"
+
+[[setups.toolpaths.feeds_provenance.steps.nodes]]
+kind = "derived"
+law = "chip x RPM x Z"
+from = [
+    5,
+    6,
+    7,
+]
+
+[[setups.toolpaths.feeds_provenance.steps.nodes]]
+kind = "derived"
+law = "finish pass: no chip thinning (Garr finish row)"
+from = [
+    8,
+    0,
+]
+
+[[setups.toolpaths.feeds_provenance.steps.nodes]]
+kind = "rule"
+name = "material.plunge_rate_base.solid_wood"
+value = 1000.0
+source = "unsourced"
+
+[[setups.toolpaths.feeds_provenance.steps.nodes]]
+kind = "derived"
+law = "material plunge base"
+from = [10]
+
+[[setups.toolpaths.feeds_provenance.steps.nodes]]
+kind = "derived"
+law = "two-term power model"
+from = [
+    9,
+    0,
+    0,
+    6,
+]
+
+[[setups.toolpaths.feeds_provenance.steps.nodes]]
+kind = "derived"
+law = "round down to 1 mm/min (T-9)"
+from = [9]
+
+[[setups.toolpaths.feeds_provenance.steps.records]]
+step = "step3_engagement"
+quantity = "depth"
+value_out = 0.2
+basis = 0
+
+[[setups.toolpaths.feeds_provenance.steps.records]]
+step = "step3_engagement"
+quantity = "width"
+value_out = 0.8717797887081347
+basis = 0
+
+[[setups.toolpaths.feeds_provenance.steps.records]]
+step = "step1_rpm"
+quantity = "rpm"
+value_out = 24000.0
+basis = 4
+
+[[setups.toolpaths.feeds_provenance.steps.records]]
+step = "step2_chip_load"
+quantity = "chip"
+value_out = 0.06437017664182963
+basis = 5
+
+[[setups.toolpaths.feeds_provenance.steps.records]]
+step = "step2_vendor_rpm"
+quantity = "rpm"
+value_in = 24000.0
+factor = 0.75
+value_out = 18000.0
+basis = 6
+
+[[setups.toolpaths.feeds_provenance.steps.records]]
+step = "step5_feed"
+quantity = "feed"
+value_out = 2317.3263591058667
+basis = 9
+
+[[setups.toolpaths.feeds_provenance.steps.records]]
+step = "step8_plunge"
+quantity = "plunge"
+value_out = 240.0
+basis = 11
+
+[[setups.toolpaths.feeds_provenance.steps.records]]
+step = "result_power"
+quantity = "power"
+value_out = 0.0010692530000743702
+basis = 12
+
+[[setups.toolpaths.feeds_provenance.steps.records]]
+step = "apply_round_down"
+quantity = "feed"
+value_in = 2317.3263591058667
+factor = 0.9998591656697019
+value_out = 2317.0
+basis = 13
 
 [[setups.toolpaths]]
 id = 24
@@ -4474,7 +4610,6 @@ arc_tolerance = 0.05
 segment_merge = true
 segment_merge_tolerance = 0.05
 feed_optimization = false
-feed_max_rate = 3000.0
 feed_ramp_rate = 200.0
 optimize_rapid_order = true
 
