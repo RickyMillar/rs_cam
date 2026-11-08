@@ -81,6 +81,7 @@ fn a_move_with_no_engagement_is_capped_at_its_reach_p18() {
         deflection_inputs: None,
         power_inputs: None,
         force_budget_inputs: None,
+        sample_engagements: &[],
         nominal_axial_doc_mm: 2.0,
         plunge_rate_mm_min: 300.0,
     };
@@ -144,6 +145,7 @@ fn a_bandless_move_is_capped_at_its_reach_p18() {
         deflection_inputs: None,
         power_inputs: None,
         force_budget_inputs: None,
+        sample_engagements: &[],
         nominal_axial_doc_mm: 2.0,
         plunge_rate_mm_min: 300.0,
     };
@@ -220,6 +222,7 @@ fn the_cap_moves_no_engaged_move_p18() {
         deflection_inputs: None,
         power_inputs: None,
         force_budget_inputs: None,
+        sample_engagements: &[],
         nominal_axial_doc_mm: 2.0,
         plunge_rate_mm_min: 300.0,
     };

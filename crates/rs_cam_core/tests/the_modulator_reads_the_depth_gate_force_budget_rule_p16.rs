@@ -191,6 +191,7 @@ fn the_modulator_reads_the_depth_gate_force_budget_rule_p16() {
         deflection_inputs: None,
         power_inputs: None,
         force_budget_inputs: scope.inputs(),
+        sample_engagements: &[],
         nominal_axial_doc_mm: ap_mm,
         plunge_rate_mm_min: f64::INFINITY,
     };

@@ -30,10 +30,14 @@
 //!   `axial_doc_mm`, `engagement.axial_doc_fraction`: the three readings the
 //!   feed modulator averages per move with the same time weights
 //!   (`session::compute` per-move engagement). Its per-move inputs, hence the
-//!   modulated feeds and the cycle time, are kept.
+//!   modulated feeds and the cycle time, are kept. Since feeds contract P20g
+//!   the means feed only the zero-engagement test, the planner floor and the
+//!   fallback of a move with no sample engagement.
 //! * **Maxima** — `axial_engagement_mm` ("maximum material height engaged at
 //!   this sample"), `plunge_descent_mm`, the arc and the chip thicknesses: the
-//!   peaks the depth, deflection, chipload and power gates read. A peak is
+//!   peaks the depth, deflection, chipload and power gates read. P20g: the
+//!   modulator's power, deflection and force-budget caps read the same peaks
+//!   per sample (`dressup::feed_modulation::SampleEngagement`). A peak is
 //!   kept exactly or over-stated, never under-stated.
 //! * **Identity fields** (move, feed, spans, intent, kinematics) are equal
 //!   across a group; `position` is the time-weighted mean of the midpoints.

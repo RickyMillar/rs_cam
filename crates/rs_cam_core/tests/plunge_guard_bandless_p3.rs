@@ -66,6 +66,7 @@ fn bandless_ctx<'a>(k: &'a MachineKinematics, plunge_rate_mm_min: f64) -> Modula
         deflection_inputs: None,
         power_inputs: None,
         force_budget_inputs: None,
+        sample_engagements: &[],
         nominal_axial_doc_mm: 0.0,
         plunge_rate_mm_min,
     }

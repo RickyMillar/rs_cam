@@ -364,6 +364,7 @@ fn modulation_skips_lead_in_lead_out_moves() {
         deflection_inputs: None,
         power_inputs: None,
         force_budget_inputs: None,
+        sample_engagements: &[],
         nominal_axial_doc_mm: 2.0,
         // Phase 3 (2026-09-07): the operation's plunge rate. The F-040
         // claim is about the INTENT skip, which the geometric plunge guard

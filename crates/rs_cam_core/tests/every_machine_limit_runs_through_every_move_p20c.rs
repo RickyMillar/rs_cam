@@ -176,6 +176,7 @@ fn the_modulator_floor_does_not_lift_a_move_above_its_axis_rate_p20c() {
         deflection_inputs: None,
         power_inputs: None,
         force_budget_inputs: None,
+        sample_engagements: &[],
         nominal_axial_doc_mm: 0.0,
         // The geometric plunge guard is off: the move is not vertical, and
         // the claim is the rate, not the op plunge rate.

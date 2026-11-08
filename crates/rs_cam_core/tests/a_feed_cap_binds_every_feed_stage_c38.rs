@@ -61,6 +61,7 @@ fn ctx(k: &MachineKinematics, strategy: ModulationStrategy, banded: bool) -> Mod
         deflection_inputs: None,
         power_inputs: None,
         force_budget_inputs: None,
+        sample_engagements: &[],
         nominal_axial_doc_mm: 2.0,
         // Every move here runs along +X with a 2 mm descent at most, which
         // classifies as a ramp, so the plunge guard touches nothing.

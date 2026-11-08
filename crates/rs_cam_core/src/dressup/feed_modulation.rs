@@ -61,6 +61,7 @@
 
 use std::collections::BTreeMap;
 
+use crate::feeds::engagement::Engagement;
 use crate::feeds::force::DeflectionCapRefusal;
 use crate::machine::CuttingCeilingMmMin;
 use crate::machine::kinematics::{MachineKinematics, predicted_feeds_for_toolpath};
@@ -236,6 +237,56 @@ pub struct PerMoveEngagement {
     pub thinning_lift: Option<f64>,
 }
 
+/// Feeds contract P20g: the engagement of one cutting sample, built by the
+/// gates' own builders. A move has one F word, so each load cap of the move
+/// is the MINIMUM over its samples of that cap at the sample's own
+/// engagement (lead ruling 1, 2026-11-09).
+#[derive(Debug, Clone, Copy, PartialEq)]
+pub struct SampleEngagement {
+    /// The power gate's engagement (`Engagement::from_sample`, depth
+    /// `axial_doc_mm`); the power cap reads it.
+    pub power: Option<Engagement>,
+    /// The deflection gate's engagement
+    /// (`tool_load::deflection::sample_engagement`, depth
+    /// `axial_engagement_mm`, the peak engaged-edge force); the deflection
+    /// and force-budget caps read it.
+    pub force: Option<Engagement>,
+}
+
+impl SampleEngagement {
+    /// The engagement of one simulation sample through the gates' own
+    /// builders: the power gate's `Engagement::from_sample` and the
+    /// deflection gate's `tool_load::deflection::sample_engagement`. The
+    /// session builds the side table with this one function, so the
+    /// modulator and the gates read one definition (lead ruling 2).
+    #[must_use]
+    pub fn of_sample(
+        sample: &crate::stock::simulation_cut::SimulationCutSample,
+        tool: &crate::tool::ToolDefinition,
+    ) -> Self {
+        Self {
+            power: Engagement::from_sample(sample, tool),
+            force: crate::tool_load::deflection::sample_engagement(tool, sample),
+        }
+    }
+}
+
+/// Feeds contract P20g: the sample engagements of one move, an entry of
+/// [`ModulationContext::sample_engagements`].
+#[derive(Debug, Clone, PartialEq, Default)]
+pub struct MoveSampleEngagements {
+    /// One entry per cutting sample of the move that the gates grade (the
+    /// session drops the phantom-transit samples with the gate's own
+    /// `tool_load::locality::is_phantom_transit`). Empty: the load caps
+    /// read the mean engagement of [`PerMoveEngagement`], as before P20g.
+    pub samples: Vec<SampleEngagement>,
+    /// The mean engagement binds too. The session sets it where the
+    /// ContourSpiral planner floor lifted the mean width above the
+    /// simulated width (the dexel width reads low on that strategy), so
+    /// the per-sample caps never remove that floor.
+    pub mean_binds: bool,
+}
+
 /// Feeds contract P11a: the cutter facts that the deflection and power
 /// caps need to build one `feeds::engagement::Engagement` per move. The
 /// engaged diameter is `feeds::effective_diameter` at the MOVE depth (the
@@ -344,6 +395,13 @@ pub struct PowerLimitInputs {
 /// material has no force line: the modulator applies no force-budget limit
 /// (feeds contract P16 item 7).
 pub const FORCE_BUDGET_NO_FORCE_LINE_NOTE: &str = "force budget: no force line";
+
+/// Feeds contract P20g (lead ruling 2026-11-09): a move whose lowest load
+/// cap (power, deflection, force budget) sits below the chip-min floor takes
+/// the load cap, not the floor. The load caps are hard limits; the floor is
+/// a rub and burn advisory. The modulation summary states this note so the
+/// operator sees the rub risk; the chip gate grades the low side too.
+pub const LOAD_CAP_BELOW_CHIP_FLOOR_NOTE: &str = "load cap below the chip floor: rub risk";
 
 /// Feeds contract P16 item 7 (D6): the force-budget cap inputs of the
 /// constrained-max solver. The cap is the advance per tooth where the PEAK
@@ -490,6 +548,12 @@ pub struct ModulationContext<'a> {
     /// [`ForceBudgetLimitInputs`]). The session sets it from
     /// [`ForceBudgetScope::of`]; `None` disables the constraint.
     pub force_budget_inputs: Option<ForceBudgetLimitInputs>,
+    /// Feeds contract P20g — the side table of the sample engagements, one
+    /// entry per move ([`MoveSampleEngagements`]). The power, deflection and
+    /// force-budget caps of a move are the MINIMUM over its samples. An empty
+    /// slice (or a move past its end, or a move with no sample) reads the
+    /// mean engagement of [`PerMoveEngagement`], as before P20g.
+    pub sample_engagements: &'a [MoveSampleEngagements],
     /// F-039 — per-move axial DOC (mm) at full engagement. Used as
     /// the `axial_doc_mm` term when scaling deflection + power
     /// limits via `engagement.axial_doc_fraction`. Falls back to
@@ -649,12 +713,16 @@ fn should_skip_modulation(move_type: MoveType, intent: MoveIntent) -> bool {
 /// A2 (point mode): for a point band ([`ChiploadBand::is_point`]) the
 /// chipload cap is `v × rpm × flutes`, the pin arms pin to `v`, and the
 /// step-7 floor is skipped. The feed scale still applies.
-fn max_safe_feed_for_move(
+///
+/// P20g: the third value is `true` when a load cap took the move below the
+/// chip-min floor (the rub risk the summary notes).
+fn constrained_max_move(
     engagement: PerMoveEngagement,
+    move_samples: Option<&MoveSampleEngagements>,
     band: ChiploadBand,
     ctx: &ModulationContext<'_>,
     predicted_cap_mm_min: f64,
-) -> (f64, BindingConstraint) {
+) -> (f64, BindingConstraint, bool) {
     let flutes = ctx.flute_count.max(1) as f64;
 
     // Effective WOC fraction: clamped to a small floor because the deflection
@@ -682,6 +750,10 @@ fn max_safe_feed_for_move(
     // point the pin value equals the chipload cap, so the tie-break below
     // needs it.
     let mut pinned: Option<(f64, BindingConstraint)> = None;
+    // P20g (lead ruling 2026-11-09): the lowest load cap of the move (power,
+    // deflection, force budget; a pin is not a cap). The chip floor never
+    // lifts the feed above it.
+    let mut lowest_load_cap: Option<f64> = None;
 
     // 1. Chipload-max constraint (the peak chip at the band max, P11b2).
     limits.push((
@@ -689,13 +761,25 @@ fn max_safe_feed_for_move(
         BindingConstraint::ChiploadMax,
     ));
 
+    // Feeds contract P20g (lead ruling 1, 2026-11-09): a move has one F
+    // word, so the spindle and the tool must hold the WORST point of the
+    // move. Each load arm below (deflection, power, force budget) is the
+    // MINIMUM over the move's samples of that cap at each sample's own
+    // engagement, built by the gate's own builder (the side table
+    // `ctx.sample_engagements`). A sample whose edge term alone meets the
+    // budget pins the move at the chip floor. The mean engagement of the
+    // move binds only where the move has no sample engagement for the arm,
+    // or where the session flagged `mean_binds` (the planner floor).
+    let (sample_list, mean_binds): (&[SampleEngagement], bool) =
+        move_samples.map_or((&[], false), |m| (m.samples.as_slice(), m.mean_binds));
+    let floor_feed = floor_chipload * ctx.spindle_rpm * flutes;
+
     // 2. Deflection cap (feed-aware, gate-consistent). The lateral force
-    // is the PEAK resultant engaged-edge force of the move's one
-    // engagement (P11a, L5), and tip deflection is linear in force:
-    // δ = compliance · F. So `δ ≤ bound` is the force budget
-    // `bound / compliance`, and the feed cap is solved from the same force
-    // model and beam compliance the post-sim deflection gate uses, so the
-    // optimizer and gate cannot disagree on the cut.
+    // is the PEAK resultant engaged-edge force (P11a, L5), and tip
+    // deflection is linear in force: δ = compliance · F. So `δ ≤ bound` is
+    // the force budget `bound / compliance`, and the feed cap is solved
+    // from the same force model the post-sim deflection gate uses. P20g:
+    // at each sample's engagement (`deflection::sample_engagement`).
     if let Some(defl) = ctx.deflection_inputs {
         let axial_mm = effective_axial_mm(engagement, ctx);
         // One solver, shared with the inspector: the inverse lives on
@@ -706,129 +790,105 @@ fn max_safe_feed_for_move(
         } else {
             0.0
         };
-        match defl
-            .cutter
-            .engagement(axial_mm, woc_eff)
-            .fz_cap_for_peak_force(defl.line, ctx.flute_count.max(1), budget_n)
-        {
-            Ok(fz_cap) => {
-                let defl_cap = fz_cap * ctx.spindle_rpm * flutes;
-                limits.push((defl_cap, BindingConstraint::DeflectionMax));
-            }
-            Err(
-                DeflectionCapRefusal::NoLateralEngagement
-                | DeflectionCapRefusal::EdgeForceOverBudget,
-            ) => {
-                // Even zero feed exceeds the bound (the edge floor alone is
-                // over budget), or no lateral engagement: feed cannot rescue
-                // deflection — pin to the chipload-min floor and let the
-                // binding tag name deflection. Dropping DOC/stepover is the
-                // real fix (out of scope for per-move feed). For a point
-                // (A2) `min == v`, so this pins to the point.
-                let floor = floor_chipload * ctx.spindle_rpm * flutes;
-                let pin = (floor.max(1e-9), BindingConstraint::DeflectionMax);
-                pinned = pinned.or(Some(pin));
-                limits.push(pin);
-            }
-            // No DOC, no compliance, no Ks: the deflection constraint has
-            // no signal here. It contributes no cap, and it must not claim
-            // the binding tag either.
-            Err(DeflectionCapRefusal::Unmodelled) => {}
-        }
+        // Even zero feed exceeds the bound (the edge floor alone is over
+        // budget), or no lateral engagement: feed cannot rescue deflection,
+        // so the arm pins to the chipload-min floor and the binding tag
+        // names deflection. Dropping DOC/stepover is the real fix (out of
+        // scope for per-move feed). For a point (A2) `min == v`, so this
+        // pins to the point. No DOC, no compliance, no Ks: no signal, no
+        // cap, and no claim on the binding tag.
+        let arm = fold_load_arm(
+            sample_list.iter().filter_map(|s| s.force),
+            mean_binds,
+            || Some(defl.cutter.engagement(axial_mm, woc_eff)),
+            |e| force_arm_reading(e, defl.line, ctx, budget_n),
+        );
+        arm.push_into(
+            &mut limits,
+            &mut pinned,
+            &mut lowest_load_cap,
+            floor_feed,
+            BindingConstraint::DeflectionMax,
+        );
     }
 
     // 3. Power cap. R1 (2026-09-16): power is the two-term affine model
     // `P = A·(Ks·MRR + F_edge·ap·Vc·z·ψ/2π)`, built from the SAME
     // `(Ks, F_edge)` pair the deflection cap above consumes. One solver
-    // again: the model lives in `tool_load::power`, not here. This site
-    // previously carried its own copy of the linear formula, so a change
-    // to the gate left the optimizer predicting different power for the
-    // same cut.
+    // again: the model lives in `tool_load::power`, not here.
     //
     // Only the shear term moves with feed, so the cap is an affine
-    // inversion, not a ratio — `PowerTerms::feed_for_kw` does it.
+    // inversion, not a ratio — `PowerTerms::feed_for_kw` does it. Power is
+    // linear in feed with one budget, so the minimum over the samples of
+    // `feed_for_kw` is exact (P20g). The sample engagement is the power
+    // gate's own (`Engagement::from_sample`).
     if let Some(pow) = ctx.power_inputs
         && pow.available_kw > 0.0
     {
         let axial_mm = effective_axial_mm(engagement, ctx);
-        if axial_mm > 0.0 && woc_eff > 0.0 {
-            // P11a: the engaged diameter at the move depth.
-            let radial_width = woc_eff * pow.cutter.d_eng_at(axial_mm).max(0.0);
-            if radial_width > 0.0 {
-                // Callers pass the force line; `PowerTerms::of` applies
-                // its grain factor (S2-9), so the factor is one diff.
-                //
-                // K7 (feeds contract P9): the one engagement of the cut,
-                // the same one the deflection cap builds (P11a: at the
-                // engaged diameter of the move depth), and the cutter's
-                // own section, so the cap, Suggest and the gate read one
-                // power for one cut.
-                let terms = crate::tool_load::power::PowerTerms::of(
-                    pow.cutter.engagement(axial_mm, woc_eff).power_inputs(
-                        pow.line,
-                        ctx.spindle_rpm,
-                        flutes,
-                    ),
-                );
+        // P11a: the engaged diameter at the move depth.
+        let radial_width = woc_eff * pow.cutter.d_eng_at(axial_mm).max(0.0);
+        let mean_modelled = axial_mm > 0.0 && woc_eff > 0.0 && radial_width > 0.0;
+        // K7 (feeds contract P9): the one engagement of the cut and the
+        // cutter's own section, so the cap, Suggest and the gate read one
+        // power for one cut. `PowerTerms::of` applies the grain factor of
+        // the line (S2-9).
+        //
+        // The feed-free edge term alone already meets the power budget, so
+        // no feed rescues it — the same shape as `EdgeForceOverBudget` on
+        // the deflection side, handled the same way: pin to the
+        // chipload-min floor and let the binding tag name power.
+        let arm = fold_load_arm(
+            sample_list
+                .iter()
+                .filter_map(|s| s.power)
+                .filter(|e| e.ap_mm() > 0.0),
+            mean_binds,
+            || mean_modelled.then(|| pow.cutter.engagement(axial_mm, woc_eff)),
+            |e| {
+                let terms = crate::tool_load::power::PowerTerms::of(e.power_inputs(
+                    pow.line,
+                    ctx.spindle_rpm,
+                    flutes,
+                ));
                 match terms.feed_for_kw(pow.available_kw) {
-                    Some(pow_cap) => limits.push((pow_cap, BindingConstraint::PowerMax)),
-                    None => {
-                        // The feed-free edge term alone already meets the
-                        // power budget, so no feed rescues it — the same
-                        // shape as `EdgeForceOverBudget` on the
-                        // deflection side, and handled the same way: pin
-                        // to the chipload-min floor and let the binding
-                        // tag name power. The real fix is less DOC,
-                        // less stepover or less RPM, none of which a
-                        // per-move feed solver can reach for. For a point
-                        // (A2) `min == v`, so this pins to the point.
-                        let floor = floor_chipload * ctx.spindle_rpm * flutes;
-                        let pin = (floor.max(1e-9), BindingConstraint::PowerMax);
-                        pinned = pinned.or(Some(pin));
-                        limits.push(pin);
-                    }
+                    Some(cap) => ArmReading::Cap(cap),
+                    None => ArmReading::Pin,
                 }
-            }
-        }
+            },
+        );
+        arm.push_into(
+            &mut limits,
+            &mut pinned,
+            &mut lowest_load_cap,
+            floor_feed,
+            BindingConstraint::PowerMax,
+        );
     }
 
     // 4. Force-budget cap (feeds contract P16 item 7, D6). The same shape
-    // as the deflection cap: the fz where the PEAK engaged-edge force of the
-    // move's one engagement meets the machine force budget. It is the inverse
-    // of the depth the depth gate solves at a fixed chip
-    // (`feeds::force_budget::rigidity_depth_cap`), one law
-    // (`Engagement::edge_force`). The session sets the inputs only where the
-    // depth gate applies the force budget (`ForceBudgetScope::of`). R27: the
-    // width is the modelled width `woc x d_eng`, not the measured arc.
+    // as the deflection cap: the fz where the PEAK engaged-edge force meets
+    // the machine force budget. It is the inverse of the depth the depth
+    // gate solves at a fixed chip (`feeds::force_budget::rigidity_depth_cap`),
+    // one law (`Engagement::edge_force`). The session sets the inputs only
+    // where the depth gate applies the force budget (`ForceBudgetScope::of`).
+    // P20g: at each sample's engagement, the one the force card reads
+    // (`cut_force::sample_peak_force_n` through `deflection::sample_engagement`).
     if let Some(fb) = ctx.force_budget_inputs {
         let axial_mm = effective_axial_mm(engagement, ctx);
-        match fb
-            .cutter
-            .engagement(axial_mm, woc_eff)
-            .fz_cap_for_peak_force(fb.line, ctx.flute_count.max(1), fb.budget_n)
-        {
-            Ok(fz_cap) => {
-                limits.push((
-                    fz_cap * ctx.spindle_rpm * flutes,
-                    BindingConstraint::ForceBudget,
-                ));
-            }
-            Err(
-                DeflectionCapRefusal::NoLateralEngagement
-                | DeflectionCapRefusal::EdgeForceOverBudget,
-            ) => {
-                // The edge term alone meets the budget (or no edge is
-                // engaged): no feed rescues it. Pin to the chipload-min floor
-                // and let the tag name the force budget, as the deflection and
-                // power pins do. For a point (A2) `min == v`.
-                let floor = floor_chipload * ctx.spindle_rpm * flutes;
-                let pin = (floor.max(1e-9), BindingConstraint::ForceBudget);
-                pinned = pinned.or(Some(pin));
-                limits.push(pin);
-            }
-            // No depth, no budget, no helix, no Ks: no signal, no cap.
-            Err(DeflectionCapRefusal::Unmodelled) => {}
-        }
+        let arm = fold_load_arm(
+            sample_list.iter().filter_map(|s| s.force),
+            mean_binds,
+            || Some(fb.cutter.engagement(axial_mm, woc_eff)),
+            |e| force_arm_reading(e, fb.line, ctx, fb.budget_n),
+        );
+        arm.push_into(
+            &mut limits,
+            &mut pinned,
+            &mut lowest_load_cap,
+            floor_feed,
+            BindingConstraint::ForceBudget,
+        );
     }
 
     // 5. Machine-feed hard cap.
@@ -870,7 +930,7 @@ fn max_safe_feed_for_move(
     // tag stays the tag of the smallest cap (Q7: a move held at the
     // point keeps `ChiploadMax`).
     if band.is_point() {
-        return (after_scale, binding);
+        return (after_scale, binding, false);
     }
 
     // 7. Chipload-min floor — the matched row's own `band.min`, NOT
@@ -891,17 +951,134 @@ fn max_safe_feed_for_move(
     // physical constraint, not the floor we backed off to.
     // P11b2: the floor holds the PEAK chip at `band.min` too (a light cut
     // makes a thin chip; the floor is what keeps it off the rubbing side).
+    //
+    // P20g (lead ruling 2026-11-09): a load cap wins over the floor. Power,
+    // deflection and the force budget are hard limits; the floor is a rub and
+    // burn advisory. Where the floor sits above the lowest load cap, the
+    // floor drops to that cap, the binding stays the load arm, and the move
+    // reports `below_floor` (the summary note, the chip gate's low side).
     let floor = floor_chipload * ctx.spindle_rpm * flutes;
-    let effective_floor = floor.min(ctx.cutting_ceiling.mm_min());
+    let floor_under_ceiling = floor.min(ctx.cutting_ceiling.mm_min());
+    let effective_floor =
+        lowest_load_cap.map_or(floor_under_ceiling, |cap| floor_under_ceiling.min(cap));
+    let below_floor = effective_floor < floor_under_ceiling;
     if after_scale < effective_floor {
         let new_binding = if limit > effective_floor {
             BindingConstraint::ChiploadMin
         } else {
             binding
         };
-        (effective_floor, new_binding)
+        (effective_floor, new_binding, below_floor)
     } else {
-        (after_scale, binding)
+        (
+            after_scale,
+            binding,
+            below_floor && after_scale < floor_under_ceiling,
+        )
+    }
+}
+
+/// The test door: [`constrained_max_move`] without the P20g flag.
+#[cfg(test)]
+fn max_safe_feed_for_move(
+    engagement: PerMoveEngagement,
+    move_samples: Option<&MoveSampleEngagements>,
+    band: ChiploadBand,
+    ctx: &ModulationContext<'_>,
+    predicted_cap_mm_min: f64,
+) -> (f64, BindingConstraint) {
+    let (feed, binding, _) =
+        constrained_max_move(engagement, move_samples, band, ctx, predicted_cap_mm_min);
+    (feed, binding)
+}
+
+/// Feeds contract P20g: the reading of one load arm at one engagement.
+enum ArmReading {
+    /// The feed cap (mm/min) at this engagement.
+    Cap(f64),
+    /// No feed meets the budget (the edge term alone meets it, or no edge
+    /// is engaged): the arm pins the move at the chip floor.
+    Pin,
+    /// No signal (no depth, no budget, no Ks): no cap and no tag.
+    NoSignal,
+}
+
+/// Feeds contract P20g: one load arm over the engagements of one move. The
+/// lowest cap, and whether any engagement pins the move.
+#[derive(Default)]
+struct LoadArm {
+    cap: Option<f64>,
+    pinned: bool,
+}
+
+impl LoadArm {
+    /// Push the arm's limits: the lowest cap, then the floor pin if any
+    /// engagement pinned the move (the pre-P20g order of one engagement).
+    fn push_into(
+        self,
+        limits: &mut Vec<(f64, BindingConstraint)>,
+        pinned: &mut Option<(f64, BindingConstraint)>,
+        lowest_load_cap: &mut Option<f64>,
+        floor_feed: f64,
+        tag: BindingConstraint,
+    ) {
+        if let Some(cap) = self.cap {
+            limits.push((cap, tag));
+            *lowest_load_cap = Some(lowest_load_cap.map_or(cap, |prev| prev.min(cap)));
+        }
+        if self.pinned {
+            let pin = (floor_feed.max(1e-9), tag);
+            *pinned = pinned.or(Some(pin));
+            limits.push(pin);
+        }
+    }
+}
+
+/// Feeds contract P20g: fold one load arm over the sample engagements of a
+/// move (lead ruling 1: the minimum over the samples). `mean` gives the
+/// mean engagement of the move; it binds when no sample engagement exists
+/// for the arm, or when `mean_binds` is set (the planner floor).
+fn fold_load_arm(
+    samples: impl Iterator<Item = Engagement>,
+    mean_binds: bool,
+    mean: impl FnOnce() -> Option<Engagement>,
+    reading: impl Fn(&Engagement) -> ArmReading,
+) -> LoadArm {
+    let mut arm = LoadArm::default();
+    let mut add = |e: &Engagement| match reading(e) {
+        ArmReading::Cap(cap) => {
+            arm.cap = Some(arm.cap.map_or(cap, |prev: f64| prev.min(cap)));
+        }
+        ArmReading::Pin => arm.pinned = true,
+        ArmReading::NoSignal => {}
+    };
+    let mut any_sample = false;
+    for e in samples {
+        any_sample = true;
+        add(&e);
+    }
+    if (!any_sample || mean_binds)
+        && let Some(e) = mean()
+    {
+        add(&e);
+    }
+    arm
+}
+
+/// Feeds contract P20g: the deflection and force-budget arms read one
+/// solver, `Engagement::fz_cap_for_peak_force`, against a force budget.
+fn force_arm_reading(
+    engagement: &Engagement,
+    line: crate::material::force_line::ForceLine,
+    ctx: &ModulationContext<'_>,
+    budget_n: f64,
+) -> ArmReading {
+    match engagement.fz_cap_for_peak_force(line, ctx.flute_count.max(1), budget_n) {
+        Ok(fz_cap) => ArmReading::Cap(fz_cap * ctx.spindle_rpm * f64::from(ctx.flute_count.max(1))),
+        Err(
+            DeflectionCapRefusal::NoLateralEngagement | DeflectionCapRefusal::EdgeForceOverBudget,
+        ) => ArmReading::Pin,
+        Err(DeflectionCapRefusal::Unmodelled) => ArmReading::NoSignal,
     }
 }
 
@@ -1228,6 +1405,8 @@ pub fn adaptive_feed_modulate_with_materials(
         };
 
     let mut outcome = ModulationOutcome::default();
+    // P20g: set when any move took a load cap below its chip floor.
+    let mut below_chip_floor = false;
     #[expect(
         clippy::indexing_slicing,
         reason = "`i` bounded by `engagements.len()`, which we just verified equals `toolpath.moves.len()`. The Phase 3 guard also reads `moves[i - 1]`, under its own `i > 0` test."
@@ -1322,7 +1501,16 @@ pub fn adaptive_feed_modulate_with_materials(
                         .map_or(predicted_cap, |r| r.max(1e-3));
                     no_engagement_feed(commanded, ctx.cutting_ceiling.mm_min(), reach)
                 } else {
-                    max_safe_feed_for_move(engagement, band, ctx, predicted_cap)
+                    let (feed, binding, below) = constrained_max_move(
+                        engagement,
+                        ctx.sample_engagements.get(i),
+                        band,
+                        ctx,
+                        predicted_cap,
+                    );
+                    // P20g: a load cap took the move below the chip floor.
+                    below_chip_floor |= below;
+                    (feed, binding)
                 }
             }
         };
@@ -1393,6 +1581,9 @@ pub fn adaptive_feed_modulate_with_materials(
             outcome.changed += 1;
         }
     }
+    if below_chip_floor {
+        outcome.notes.push(LOAD_CAP_BELOW_CHIP_FLOOR_NOTE);
+    }
     Ok(outcome)
 }
 
@@ -1436,6 +1627,7 @@ mod tests {
             deflection_inputs: None,
             power_inputs: None,
             force_budget_inputs: None,
+            sample_engagements: &[],
             nominal_axial_doc_mm: 0.0,
             // A realistic operation plunge rate. Every fixture in this
             // module cuts laterally or ramps at 45 degrees, so the Phase 3
@@ -1628,7 +1820,7 @@ mod tests {
         };
         // Large kinematic cap so deflection is the binding constraint.
         let (feed_cap, binding) =
-            max_safe_feed_for_move(engagement, ctx.chipload_band.unwrap(), &ctx, 1.0e9);
+            max_safe_feed_for_move(engagement, None, ctx.chipload_band.unwrap(), &ctx, 1.0e9);
         assert_eq!(
             binding,
             BindingConstraint::DeflectionMax,
@@ -2106,7 +2298,7 @@ mod tests {
         let mut ctx = make_ctx(&k, ChiploadBand::point(0.05).unwrap());
         ctx.strategy = ModulationStrategy::ConstrainedMax;
         let (feed, binding) =
-            max_safe_feed_for_move(full_slot(), ctx.chipload_band.unwrap(), &ctx, 1.0e9);
+            max_safe_feed_for_move(full_slot(), None, ctx.chipload_band.unwrap(), &ctx, 1.0e9);
         assert!((feed - 1800.0).abs() < 1e-6, "expected 1800, got {feed}");
         assert_eq!(binding, BindingConstraint::ChiploadMax);
     }
@@ -2123,12 +2315,12 @@ mod tests {
         ctx.strategy = ModulationStrategy::ConstrainedMax;
         ctx.feed_scale = 0.7;
         let (feed, binding) =
-            max_safe_feed_for_move(full_slot(), ctx.chipload_band.unwrap(), &ctx, 1.0e9);
+            max_safe_feed_for_move(full_slot(), None, ctx.chipload_band.unwrap(), &ctx, 1.0e9);
         assert!((feed - 1260.0).abs() < 1e-6, "expected 1260, got {feed}");
         assert_eq!(binding, BindingConstraint::ChiploadMax);
 
         let zero_width = ChiploadBand::new(0.05, 0.05).unwrap();
-        let (feed, binding) = max_safe_feed_for_move(full_slot(), zero_width, &ctx, 1.0e9);
+        let (feed, binding) = max_safe_feed_for_move(full_slot(), None, zero_width, &ctx, 1.0e9);
         assert!(
             (feed - 1800.0).abs() < 1e-6,
             "expected floor 1800, got {feed}"
@@ -2175,7 +2367,7 @@ mod tests {
             max_tip_deflection_mm: 0.2,
         });
         let (feed, binding) =
-            max_safe_feed_for_move(full_slot(), ctx.chipload_band.unwrap(), &ctx, 1.0e9);
+            max_safe_feed_for_move(full_slot(), None, ctx.chipload_band.unwrap(), &ctx, 1.0e9);
         assert!(
             (feed - 1800.0).abs() < 1e-6,
             "expected pin 1800, got {feed}"
@@ -2184,7 +2376,7 @@ mod tests {
 
         ctx.feed_scale = 0.7;
         let (feed, binding) =
-            max_safe_feed_for_move(full_slot(), ctx.chipload_band.unwrap(), &ctx, 1.0e9);
+            max_safe_feed_for_move(full_slot(), None, ctx.chipload_band.unwrap(), &ctx, 1.0e9);
         assert!((feed - 1260.0).abs() < 1e-6, "expected 1260, got {feed}");
         assert_eq!(binding, BindingConstraint::DeflectionMax);
     }
@@ -2203,7 +2395,7 @@ mod tests {
             available_kw: 0.001,
         });
         let (feed, binding) =
-            max_safe_feed_for_move(full_slot(), ctx.chipload_band.unwrap(), &ctx, 1.0e9);
+            max_safe_feed_for_move(full_slot(), None, ctx.chipload_band.unwrap(), &ctx, 1.0e9);
         assert!(
             (feed - 1800.0).abs() < 1e-6,
             "expected pin 1800, got {feed}"
