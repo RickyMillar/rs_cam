@@ -3,7 +3,7 @@
 
 [meta]
 project = "planning/rivmap_block_job/nz_wanaka_21_operator.toml"
-graded_build = "998ac93a3"
+graded_build = "4b7aa0e96"
 tolerance_rel = 0.01
 force_ks_n_mm2 = 58.516267
 force_f_edge_n_mm = 4.594987
@@ -60,17 +60,17 @@ idx = 0.0
 toolpath = "Face back to T1"
 quantity = "rpm"
 unit = "rpm"
-status = "POLICY"
-binding = "a chart; b spindle max 24000"
-expected = "P1a chart 18000: 18000; P1b binding limit: 24000"
-candidates = { "P1a chart 18000" = [18000.0, 18000.0], "P1b binding limit" = [24000.0, 24000.0] }
-grade_candidates = { "P1a chart 18000" = [18000.0, 18000.0], "P1b binding limit" = [24000.0, 24000.0] }
+status = "DERIVED"
+binding = "spindle max 24000"
+expected = "P1b binding limit: 24000"
+candidates = { "P1b binding limit" = [24000.0, 24000.0] }
+grade_candidates = { "P1b binding limit" = [24000.0, 24000.0] }
 n_app = "-"
-derivation = "a: SPK3 18,000 RPM (nearest printed chart). b: n_xy = 15000 / (chip_hi 0.2286 x 2 x lift 1.0062) = 32605; spindle max 24000; n_b = 24000 (spindle max 24000). Power does not bind: P_req and P_avail both scale with n (constant torque below 24000 rpm, MACH), so the ratio holds at every n."
+derivation = "P1 ruled (b), operator 2026-11-08 (the chart rpm: SPK3 18,000 RPM (nearest printed chart)). n_xy = 15000 / (chip_hi 0.2286 x 2 x lift 1.0062) = 32605; spindle max 24000; n_b = 24000 (spindle max 24000). Power does not bind: P_req and P_avail both scale with n (constant torque below 24000 rpm, MACH), so the ratio holds at every n."
 app_suggest = 18000.0
 app_shipped = 18000.0
-grade = "NEEDS-RULING"
-matched = ["P1a chart 18000"]
+grade = "FAIL"
+matched = []
 note = ""
 
 [[row]]
@@ -80,8 +80,8 @@ quantity = "feed"
 unit = "mm/min"
 status = "UNSOURCED"
 binding = "chart chip x lift; XY 15000"
-expected = "P1a: 5245-8281; P1b: 6993-11041 // graded at app rpm 18000: @app: 5245-8281"
-candidates = { "P1a" = [5244.554333, 8280.875262], "P1b" = [6992.739111, 11041.167017] }
+expected = "P1b: 6993-11041 // graded at app rpm 18000: @app: 5245-8281"
+candidates = { "P1b" = [6992.739111, 11041.167017] }
 grade_candidates = { "@app" = [5244.554333, 8280.875262] }
 n_app = 18000.0
 derivation = "feed = chip x z x n x lift (SPK47), clamped to XY 15000. Face: max ae = stepover 8.0, r 0.4444, lift 1.0062."
@@ -116,8 +116,8 @@ quantity = "ramp feed"
 unit = "mm/min"
 status = "UNSOURCED"
 binding = "slot chip (full-width ramp)"
-expected = "P1a: 5212-8230; P1b: 6949-10973 // graded at app rpm 18000: @app: 5212-8230"
-candidates = { "P1a" = [5212.08, 8229.6], "P1b" = [6949.44, 10972.8] }
+expected = "P1b: 6949-10973 // graded at app rpm 18000: @app: 5212-8230"
+candidates = { "P1b" = [6949.44, 10972.8] }
 grade_candidates = { "@app" = [5212.08, 8229.6] }
 n_app = 18000.0
 derivation = "A ramp cuts a full slot: ramp feed = chip x z x n (lift 1)."
@@ -169,17 +169,17 @@ idx = 1.0
 toolpath = "Back bulk rough 18 mm"
 quantity = "rpm"
 unit = "rpm"
-status = "POLICY"
-binding = "a chart; b spindle max 24000"
-expected = "P1a chart 18000: 18000; P1b binding limit: 24000"
-candidates = { "P1a chart 18000" = [18000.0, 18000.0], "P1b binding limit" = [24000.0, 24000.0] }
-grade_candidates = { "P1a chart 18000" = [18000.0, 18000.0], "P1b binding limit" = [24000.0, 24000.0] }
+status = "DERIVED"
+binding = "spindle max 24000"
+expected = "P1b binding limit: 24000"
+candidates = { "P1b binding limit" = [24000.0, 24000.0] }
+grade_candidates = { "P1b binding limit" = [24000.0, 24000.0] }
 n_app = "-"
-derivation = "a: SPK3 18,000 RPM (nearest printed chart). b: n_xy = 15000 / (chip_hi 0.2286 x 2 x lift 1.0854) = 30226; spindle max 24000; n_b = 24000 (spindle max 24000). Power does not bind: P_req and P_avail both scale with n (constant torque below 24000 rpm, MACH), so the ratio holds at every n."
+derivation = "P1 ruled (b), operator 2026-11-08 (the chart rpm: SPK3 18,000 RPM (nearest printed chart)). n_xy = 15000 / (chip_hi 0.2286 x 2 x lift 1.0002) = 32800; spindle max 24000; n_b = 24000 (spindle max 24000). Power does not bind: P_req and P_avail both scale with n (constant torque below 24000 rpm, MACH), so the ratio holds at every n."
 app_suggest = 18000.0
 app_shipped = 18000.0
-grade = "NEEDS-RULING"
-matched = ["P1a chart 18000"]
+grade = "FAIL"
+matched = []
 note = ""
 
 [[row]]
@@ -189,15 +189,15 @@ quantity = "feed"
 unit = "mm/min"
 status = "UNSOURCED"
 binding = "chart chip x lift; XY 15000"
-expected = "P1a/P3a: 5657-8933; P1a/P3b: 5213-8232; P1b/P3a: 7543-11910; P1b/P3b: 6951-10976 // graded at app rpm 18000: @app/P3a: 5657-8933; @app/P3b: 5213-8232"
-candidates = { "P1a/P3a" = [5657.404496, 8932.743941], "P1a/P3b" = [5213.36741, 8231.632753], "P1b/P3a" = [7543.205994, 11910.325254], "P1b/P3b" = [6951.156547, 10975.510337] }
-grade_candidates = { "@app/P3a" = [5657.404496, 8932.743941], "@app/P3b" = [5213.36741, 8231.632753] }
+expected = "P1b: 6951-10976 // graded at app rpm 18000: @app: 5213-8232"
+candidates = { "P1b" = [6951.156547, 10975.510337] }
+grade_candidates = { "@app" = [5213.36741, 8231.632753] }
 n_app = 18000.0
-derivation = "feed = chip x z x n x lift (SPK47), clamped to XY 15000. lift = 1 / (2 sqrt(r(1-r))), r = ae/D. P3a: ae 5.500, r 0.3056, lift 1.0854. P3b: ae 5.500 x 1.6 = 8.8000, r 0.4889, lift 1.0002."
+derivation = "feed = chip x z x n x lift (SPK47), clamped to XY 15000. lift = 1 / (2 sqrt(r(1-r))), r = ae/D. P3 ruled (b): ae 5.500 x 1.6 = 8.8000, r 0.4889, lift 1.0002 (the nominal ae 5.500 would give lift 1.0854)."
 app_suggest = 6999.0
 app_shipped = 8475.0
 grade = "NEEDS-RULING"
-matched = ["@app/P3a", "@app/P3b"]
+matched = ["@app"]
 note = " Shipped 8475 is the operator value: P at ae 8.8 = 1.112 kW = 98.8 % of 1.125 kW."
 
 [[row]]
@@ -225,8 +225,8 @@ quantity = "ramp feed"
 unit = "mm/min"
 status = "UNSOURCED"
 binding = "slot chip (full-width ramp)"
-expected = "P1a: 5212-8230; P1b: 6949-10973 // graded at app rpm 18000: @app: 5212-8230"
-candidates = { "P1a" = [5212.08, 8229.6], "P1b" = [6949.44, 10972.8] }
+expected = "P1b: 6949-10973 // graded at app rpm 18000: @app: 5212-8230"
+candidates = { "P1b" = [6949.44, 10972.8] }
 grade_candidates = { "@app" = [5212.08, 8229.6] }
 n_app = 18000.0
 derivation = "A ramp cuts a full slot: ramp feed = chip x z x n (lift 1)."
@@ -257,70 +257,70 @@ ratio = 0.8755
 
 [[row]]
 idx = 2.0
-toolpath = "Back rest 6 mm"
+toolpath = "Back rest 6 mm (cavity, hollow, lakes, pockets)"
 quantity = "chip per tooth (target peak)"
 unit = "mm"
-status = "POLICY"
+status = "DERIVED"
 binding = "chart"
-expected = "P2a Spektra 6 mm: 0.12700; P2b Onsrud 60-200 1/4 in: 0.12700-0.17780; P2c Amana ZrN 6 mm 2F flat: 0.17780-0.22860"
-candidates = { "P2a Spektra 6 mm" = [0.127, 0.127], "P2b Onsrud 60-200 1/4 in" = [0.127, 0.1778], "P2c Amana ZrN 6 mm 2F flat" = [0.1778, 0.2286] }
-grade_candidates = { "P2a Spektra 6 mm" = [0.127, 0.127], "P2b Onsrud 60-200 1/4 in" = [0.127, 0.1778], "P2c Amana ZrN 6 mm 2F flat" = [0.1778, 0.2286] }
+expected = "Onsrud 60-200 1/4 in: 0.12700-0.17780"
+candidates = { "Onsrud 60-200 1/4 in" = [0.127, 0.1778] }
+grade_candidates = { "Onsrud 60-200 1/4 in" = [0.127, 0.1778] }
 n_app = "-"
-derivation = "SPK26 \".0050\"\" x 25.4 = 0.1270 mm | ONS46 \".005-.007\" x 25.4 = 0.1270-0.1778 mm | ZRN22 \"0.007\"-0.009\"\" x 25.4 = 0.1778-0.2286 mm | P2: the tool has no vendor; the operator rules which row stands for it. Onsrud column read by text position (I). ap/D = 1.000 <= 1: the 1 x D chart condition holds (SPK38/AMS3/SPE14); no feed derate."
+derivation = "ONS46 \".005-.007\" x 25.4 = 0.1270-0.1778 mm | P2 ruled (b), operator 2026-11-08: the Onsrud 60-200 row stands for the unbranded tool. Onsrud column read by text position (I). ap/D = 1.000 <= 1: the 1 x D chart condition holds (SPK38/AMS3/SPE14); no feed derate."
 app_suggest = 0.127
 app_shipped = "-"
-grade = "NEEDS-RULING"
-matched = ["P2a Spektra 6 mm", "P2b Onsrud 60-200 1/4 in"]
+grade = "PASS"
+matched = ["Onsrud 60-200 1/4 in"]
 note = "App = vendor_band.score_winner_chip_mm (the target before the radial lift)."
 
 [[row]]
 idx = 2.0
-toolpath = "Back rest 6 mm"
+toolpath = "Back rest 6 mm (cavity, hollow, lakes, pockets)"
 quantity = "rpm"
 unit = "rpm"
-status = "POLICY"
-binding = "a chart; b spindle max 24000"
-expected = "P1a chart 18000: 18000; P1b binding limit: 24000"
-candidates = { "P1a chart 18000" = [18000.0, 18000.0], "P1b binding limit" = [24000.0, 24000.0] }
-grade_candidates = { "P1a chart 18000" = [18000.0, 18000.0], "P1b binding limit" = [24000.0, 24000.0] }
+status = "DERIVED"
+binding = "spindle max 24000"
+expected = "P1b binding limit: 24000"
+candidates = { "P1b binding limit" = [24000.0, 24000.0] }
+grade_candidates = { "P1b binding limit" = [24000.0, 24000.0] }
 n_app = "-"
-derivation = "a: SPK3 18,000 RPM (Onsrud prints no RPM for 60-200: ONS61). b: n_xy = 15000 / (chip_hi 0.2286 x 2 x lift 1.1547) = 28413; spindle max 24000; n_b = 24000 (spindle max 24000). Power does not bind: P_req and P_avail both scale with n (constant torque below 24000 rpm, MACH), so the ratio holds at every n."
+derivation = "P1 ruled (b), operator 2026-11-08 (the chart rpm: SPK3 18,000 RPM (Onsrud prints no RPM for 60-200: ONS61)). n_xy = 15000 / (chip_hi 0.1778 x 2 x lift 1.0206) = 41330; spindle max 24000; n_b = 24000 (spindle max 24000). Power does not bind: P_req and P_avail both scale with n (constant torque below 24000 rpm, MACH), so the ratio holds at every n."
 app_suggest = 18000.0
 app_shipped = 18000.0
-grade = "NEEDS-RULING"
-matched = ["P1a chart 18000"]
+grade = "FAIL"
+matched = []
 note = ""
 
 [[row]]
 idx = 2.0
-toolpath = "Back rest 6 mm"
+toolpath = "Back rest 6 mm (cavity, hollow, lakes, pockets)"
 quantity = "feed"
 unit = "mm/min"
-status = "POLICY"
+status = "DERIVED"
 binding = "chart chip x lift; XY 15000"
-expected = "P1a/P2a/P3a: 5279; P1a/P2a/P3b: 4666; P1a/P2b/P3a: 5279-7391; P1a/P2b/P3b: 4666-6533; P1a/P2c/P3a: 7391-9503; P1a/P2c/P3b: 6533-8399; P1b/P2a/P3a: 7039; P1b/P2a/P3b: 6222; P1b/P2b/P3a: 7039-9855; P1b/P2b/P3b: 6222-8710; P1b/P2c/P3a: 9855-12670; P1b/P2c/P3b: 8710-11199 // graded at app rpm 18000: @app/P2a/P3a: 5279; @app/P2a/P3b: 4666; @app/P2b/P3a: 5279-7391; @app/P2b/P3b: 4666-6533; @app/P2c/P3a: 7391-9503; @app/P2c/P3b: 6533-8399"
-candidates = { "P1a/P2a/P3a" = [5279.290861, 5279.290861], "P1a/P2a/P3b" = [4666.27796, 4666.27796], "P1a/P2b/P3a" = [5279.290861, 7391.007206], "P1a/P2b/P3b" = [4666.27796, 6532.789144], "P1a/P2c/P3a" = [7391.007206, 9502.723551], "P1a/P2c/P3b" = [6532.789144, 8399.300328], "P1b/P2a/P3a" = [7039.054482, 7039.054482], "P1b/P2a/P3b" = [6221.703947, 6221.703947], "P1b/P2b/P3a" = [7039.054482, 9854.676275], "P1b/P2b/P3b" = [6221.703947, 8710.385525], "P1b/P2c/P3a" = [9854.676275, 12670.298068], "P1b/P2c/P3b" = [8710.385525, 11199.067104] }
-grade_candidates = { "@app/P2a/P3a" = [5279.290861, 5279.290861], "@app/P2a/P3b" = [4666.27796, 4666.27796], "@app/P2b/P3a" = [5279.290861, 7391.007206], "@app/P2b/P3b" = [4666.27796, 6532.789144], "@app/P2c/P3a" = [7391.007206, 9502.723551], "@app/P2c/P3b" = [6532.789144, 8399.300328] }
+expected = "P1b: 6222-8710 // graded at app rpm 18000: @app: 4666-6533"
+candidates = { "P1b" = [6221.703947, 8710.385525] }
+grade_candidates = { "@app" = [4666.27796, 6532.789144] }
 n_app = 18000.0
-derivation = "feed = chip x z x n x lift (SPK47), clamped to XY 15000. lift = 1 / (2 sqrt(r(1-r))), r = ae/D. P3a: ae 1.500, r 0.2500, lift 1.1547. P3b: ae 1.500 x 1.6 = 2.4000, r 0.4000, lift 1.0206."
+derivation = "feed = chip x z x n x lift (SPK47), clamped to XY 15000. lift = 1 / (2 sqrt(r(1-r))), r = ae/D. P3 ruled (b): ae 1.500 x 1.6 = 2.4000, r 0.4000, lift 1.0206 (the nominal ae 1.500 would give lift 1.1547)."
 app_suggest = 5279.0
 app_shipped = 5279.0
-grade = "NEEDS-RULING"
-matched = ["@app/P2a/P3a", "@app/P2b/P3a", "@app/P2b/P3b"]
+grade = "PASS"
+matched = ["@app"]
 note = ""
 
 [[row]]
 idx = 2.0
-toolpath = "Back rest 6 mm"
+toolpath = "Back rest 6 mm (cavity, hollow, lakes, pockets)"
 quantity = "plunge"
 unit = "mm/min"
-status = "POLICY"
-binding = "a chart; b Z rate 2500"
-expected = "P1a chart: 2286; P1b Z-bound: 2500 // graded at app rpm 18000: @app: 2286"
-candidates = { "P1a chart" = [2286.0, 2286.0], "P1b Z-bound" = [2500.0, 2500.0] }
+status = "DERIVED"
+binding = "Z rate 2500"
+expected = "Z-bound: 2500 // graded at app rpm 18000: @app: 2286"
+candidates = { "Z-bound" = [2500.0, 2500.0] }
 grade_candidates = { "@app" = [2286.0, 2286.0] }
 n_app = 18000.0
-derivation = "SPK26 Ramp Down 90\" = 2286.0 mm/min at 18000 (SPK52: Ramp Down = Feed / flutes = n x chip). b: 0.127 x 24000 = 3048 > Z 2500 -> 2500. At the app rpm: 0.127 x n."
+derivation = "SPK26 Ramp Down 90\" = 2286.0 mm/min at 18000 (SPK52: Ramp Down = Feed / flutes = n x chip; the Spektra 6 mm chip 0.127 sets the plunge, P2 rules the side chip only). P1 (b): 0.127 x 24000 = 3048 > Z 2500 -> 2500. At the app rpm: 0.127 x n."
 app_suggest = 2285.0
 app_shipped = 2285.0
 grade = "PASS"
@@ -329,25 +329,25 @@ note = ""
 
 [[row]]
 idx = 2.0
-toolpath = "Back rest 6 mm"
+toolpath = "Back rest 6 mm (cavity, hollow, lakes, pockets)"
 quantity = "ramp feed"
 unit = "mm/min"
-status = "POLICY"
+status = "DERIVED"
 binding = "slot chip (full-width ramp)"
-expected = "P1a/P2a: 4572; P1a/P2b: 4572-6401; P1a/P2c: 6401-8230; P1b/P2a: 6096; P1b/P2b: 6096-8534; P1b/P2c: 8534-10973 // graded at app rpm 18000: @app/P2a: 4572; @app/P2b: 4572-6401; @app/P2c: 6401-8230"
-candidates = { "P1a/P2a" = [4572.0, 4572.0], "P1a/P2b" = [4572.0, 6400.8], "P1a/P2c" = [6400.8, 8229.6], "P1b/P2a" = [6096.0, 6096.0], "P1b/P2b" = [6096.0, 8534.4], "P1b/P2c" = [8534.4, 10972.8] }
-grade_candidates = { "@app/P2a" = [4572.0, 4572.0], "@app/P2b" = [4572.0, 6400.8], "@app/P2c" = [6400.8, 8229.6] }
+expected = "P1b: 6096-8534 // graded at app rpm 18000: @app: 4572-6401"
+candidates = { "P1b" = [6096.0, 8534.4] }
+grade_candidates = { "@app" = [4572.0, 6400.8] }
 n_app = 18000.0
 derivation = "A ramp cuts a full slot: ramp feed = chip x z x n (lift 1). Vertical part: 4572 x sin 3deg = 239 mm/min < Ramp Down 2286: the side chip binds."
 app_suggest = 4571.0
 app_shipped = 4571.0
-grade = "NEEDS-RULING"
-matched = ["@app/P2a", "@app/P2b"]
+grade = "PASS"
+matched = ["@app"]
 note = ""
 
 [[row]]
 idx = 2.0
-toolpath = "Back rest 6 mm"
+toolpath = "Back rest 6 mm (cavity, hollow, lakes, pockets)"
 quantity = "power required vs available"
 unit = "kW"
 status = "DERIVED"
@@ -387,17 +387,17 @@ idx = 3.0
 toolpath = "Pin drill, flip pins"
 quantity = "rpm"
 unit = "rpm"
-status = "POLICY"
-binding = "a chart; b Z rate"
-expected = "P1a chart: 18000; P1b Z-bound: 19685"
-candidates = { "P1a chart" = [18000.0, 18000.0], "P1b Z-bound" = [19685.03937, 19685.03937] }
-grade_candidates = { "P1a chart" = [18000.0, 18000.0], "P1b Z-bound" = [19685.03937, 19685.03937] }
+status = "DERIVED"
+binding = "Z rate"
+expected = "Z-bound: 19685"
+candidates = { "Z-bound" = [19685.03937, 19685.03937] }
+grade_candidates = { "Z-bound" = [19685.03937, 19685.03937] }
 n_app = "-"
-derivation = "a: SPK3 18,000 RPM. b: constant axial chip; vz = 0.0635 x 2 x n <= 2500 -> n <= 19685; < 24000, so the Z rate binds."
+derivation = "P1 ruled (b), operator 2026-11-08. Constant axial chip; vz = 0.0635 x 2 x n <= 2500 -> n <= 19685; < 24000, so the Z rate binds."
 app_suggest = 18000.0
 app_shipped = 18000.0
-grade = "NEEDS-RULING"
-matched = ["P1a chart"]
+grade = "FAIL"
+matched = []
 note = ""
 
 [[row]]
@@ -405,13 +405,13 @@ idx = 3.0
 toolpath = "Pin drill, flip pins"
 quantity = "feed (drill, vertical)"
 unit = "mm/min"
-status = "POLICY"
-binding = "a chart; b Z rate"
-expected = "P1a chart: 2286; P1b Z-bound: 2500 // graded at app rpm 18000: @app: 2286"
-candidates = { "P1a chart" = [2286.0, 2286.0], "P1b Z-bound" = [2500.0, 2500.0] }
+status = "DERIVED"
+binding = "Z rate"
+expected = "Z-bound: 2500 // graded at app rpm 18000: @app: 2286"
+candidates = { "Z-bound" = [2500.0, 2500.0] }
 grade_candidates = { "@app" = [2286.0, 2286.0] }
 n_app = 18000.0
-derivation = "a: SPK26 Ramp Down 90\" = 2286.0 mm/min at 18000. b: 0.06350 x 2 x 19685 = 2500 = Z rate 2500. At the app rpm: axial chip x 2 x n."
+derivation = "P1 (b): 0.06350 x 2 x 19685 = 2500 = Z rate 2500 (SPK26 Ramp Down 90\" = 2286.0 mm/min at 18000). Graded at the app rpm: axial chip x 2 x n."
 app_suggest = 2286.0
 app_shipped = 1000.0
 grade = "PASS"
@@ -423,10 +423,10 @@ idx = 3.0
 toolpath = "Pin drill, flip pins"
 quantity = "plunge"
 unit = "mm/min"
-status = "POLICY"
-binding = "a chart; b Z rate"
-expected = "P1a chart: 2286; P1b Z-bound: 2500 // graded at app rpm 18000: @app: 2286"
-candidates = { "P1a chart" = [2286.0, 2286.0], "P1b Z-bound" = [2500.0, 2500.0] }
+status = "DERIVED"
+binding = "Z rate"
+expected = "Z-bound: 2500 // graded at app rpm 18000: @app: 2286"
+candidates = { "Z-bound" = [2500.0, 2500.0] }
 grade_candidates = { "@app" = [2286.0, 2286.0] }
 n_app = 18000.0
 derivation = "A drill cycle has one feed; this row repeats the feed row."
@@ -459,18 +459,18 @@ idx = 3.0
 toolpath = "Pin drill, flip pins"
 quantity = "power required vs available"
 unit = "kW"
-status = "UNSOURCED"
-binding = "none"
+status = "DERIVED"
+binding = "advisory only"
 expected = "none"
 candidates = {  }
 grade_candidates = {  }
 n_app = "-"
-derivation = "Curti 2021 models peripheral milling only (CUR672). No repo source gives an axial drilling force for wood. Needed: a thrust and torque law for a flat end mill plunging in wood."
-app_suggest = 5e-05
+derivation = "Curti 2021 models peripheral milling only (CUR672). No repo source gives an axial drilling force for wood. Ruling 2026-11-08: the app may print the axial-section figure only as advisory (shipped_power.advisory = true, section = axial_circle)."
+app_suggest = 0.140989
 app_shipped = "-"
-grade = "FAIL"
+grade = "PASS"
 matched = []
-note = "The app prints 0.00005 kW from ae 0.02, ap 0.05: a side-cut number for a plunge. Expected: 'not modelled'."
+note = "Graded on the label: advisory = True, section = axial_circle."
 
 [[row]]
 idx = 4.0
@@ -495,17 +495,17 @@ idx = 4.0
 toolpath = "Drill light holes 6 mm end mill"
 quantity = "rpm"
 unit = "rpm"
-status = "POLICY"
-binding = "a chart; b Z rate"
-expected = "P1a chart: 18000; P1b Z-bound: 19685"
-candidates = { "P1a chart" = [18000.0, 18000.0], "P1b Z-bound" = [19685.03937, 19685.03937] }
-grade_candidates = { "P1a chart" = [18000.0, 18000.0], "P1b Z-bound" = [19685.03937, 19685.03937] }
+status = "DERIVED"
+binding = "Z rate"
+expected = "Z-bound: 19685"
+candidates = { "Z-bound" = [19685.03937, 19685.03937] }
+grade_candidates = { "Z-bound" = [19685.03937, 19685.03937] }
 n_app = "-"
-derivation = "a: SPK3 18,000 RPM. b: constant axial chip; vz = 0.0635 x 2 x n <= 2500 -> n <= 19685; < 24000, so the Z rate binds."
+derivation = "P1 ruled (b), operator 2026-11-08. Constant axial chip; vz = 0.0635 x 2 x n <= 2500 -> n <= 19685; < 24000, so the Z rate binds."
 app_suggest = 18000.0
 app_shipped = 18000.0
-grade = "NEEDS-RULING"
-matched = ["P1a chart"]
+grade = "FAIL"
+matched = []
 note = ""
 
 [[row]]
@@ -513,13 +513,13 @@ idx = 4.0
 toolpath = "Drill light holes 6 mm end mill"
 quantity = "feed (drill, vertical)"
 unit = "mm/min"
-status = "POLICY"
-binding = "a chart; b Z rate"
-expected = "P1a chart: 2286; P1b Z-bound: 2500 // graded at app rpm 18000: @app: 2286"
-candidates = { "P1a chart" = [2286.0, 2286.0], "P1b Z-bound" = [2500.0, 2500.0] }
+status = "DERIVED"
+binding = "Z rate"
+expected = "Z-bound: 2500 // graded at app rpm 18000: @app: 2286"
+candidates = { "Z-bound" = [2500.0, 2500.0] }
 grade_candidates = { "@app" = [2286.0, 2286.0] }
 n_app = 18000.0
-derivation = "a: SPK26 Ramp Down 90\" = 2286.0 mm/min at 18000. b: 0.06350 x 2 x 19685 = 2500 = Z rate 2500. At the app rpm: axial chip x 2 x n."
+derivation = "P1 (b): 0.06350 x 2 x 19685 = 2500 = Z rate 2500 (SPK26 Ramp Down 90\" = 2286.0 mm/min at 18000). Graded at the app rpm: axial chip x 2 x n."
 app_suggest = 2286.0
 app_shipped = 1000.0
 grade = "PASS"
@@ -531,10 +531,10 @@ idx = 4.0
 toolpath = "Drill light holes 6 mm end mill"
 quantity = "plunge"
 unit = "mm/min"
-status = "POLICY"
-binding = "a chart; b Z rate"
-expected = "P1a chart: 2286; P1b Z-bound: 2500 // graded at app rpm 18000: @app: 2286"
-candidates = { "P1a chart" = [2286.0, 2286.0], "P1b Z-bound" = [2500.0, 2500.0] }
+status = "DERIVED"
+binding = "Z rate"
+expected = "Z-bound: 2500 // graded at app rpm 18000: @app: 2286"
+candidates = { "Z-bound" = [2500.0, 2500.0] }
 grade_candidates = { "@app" = [2286.0, 2286.0] }
 n_app = 18000.0
 derivation = "A drill cycle has one feed; this row repeats the feed row."
@@ -567,35 +567,35 @@ idx = 4.0
 toolpath = "Drill light holes 6 mm end mill"
 quantity = "power required vs available"
 unit = "kW"
-status = "UNSOURCED"
-binding = "none"
+status = "DERIVED"
+binding = "advisory only"
 expected = "none"
 candidates = {  }
 grade_candidates = {  }
 n_app = "-"
-derivation = "Curti 2021 models peripheral milling only (CUR672). No repo source gives an axial drilling force for wood. Needed: a thrust and torque law for a flat end mill plunging in wood."
-app_suggest = 5e-05
+derivation = "Curti 2021 models peripheral milling only (CUR672). No repo source gives an axial drilling force for wood. Ruling 2026-11-08: the app may print the axial-section figure only as advisory (shipped_power.advisory = true, section = axial_circle)."
+app_suggest = 0.140989
 app_shipped = "-"
-grade = "FAIL"
+grade = "PASS"
 matched = []
-note = "The app prints 0.00005 kW from ae 0.02, ap 0.05: a side-cut number for a plunge. Expected: 'not modelled'."
+note = "Graded on the label: advisory = True, section = axial_circle."
 
 [[row]]
 idx = 5.0
 toolpath = "River channel 6 mm, pass 7 of 7"
 quantity = "chip per tooth (target peak)"
 unit = "mm"
-status = "POLICY"
+status = "DERIVED"
 binding = "chart"
-expected = "P2a Spektra 6 mm: 0.12700; P2b Onsrud 60-200 1/4 in: 0.12700-0.17780; P2c Amana ZrN 6 mm 2F flat: 0.17780-0.22860"
-candidates = { "P2a Spektra 6 mm" = [0.127, 0.127], "P2b Onsrud 60-200 1/4 in" = [0.127, 0.1778], "P2c Amana ZrN 6 mm 2F flat" = [0.1778, 0.2286] }
-grade_candidates = { "P2a Spektra 6 mm" = [0.127, 0.127], "P2b Onsrud 60-200 1/4 in" = [0.127, 0.1778], "P2c Amana ZrN 6 mm 2F flat" = [0.1778, 0.2286] }
+expected = "Onsrud 60-200 1/4 in: 0.12700-0.17780"
+candidates = { "Onsrud 60-200 1/4 in" = [0.127, 0.1778] }
+grade_candidates = { "Onsrud 60-200 1/4 in" = [0.127, 0.1778] }
 n_app = "-"
-derivation = "SPK26 \".0050\"\" x 25.4 = 0.1270 mm | ONS46 \".005-.007\" x 25.4 = 0.1270-0.1778 mm | ZRN22 \"0.007\"-0.009\"\" x 25.4 = 0.1778-0.2286 mm | P2: the tool has no vendor; the operator rules which row stands for it. Onsrud column read by text position (I)."
+derivation = "ONS46 \".005-.007\" x 25.4 = 0.1270-0.1778 mm | P2 ruled (b), operator 2026-11-08: the Onsrud 60-200 row stands for the unbranded tool. Onsrud column read by text position (I)."
 app_suggest = 0.149193
 app_shipped = "-"
-grade = "NEEDS-RULING"
-matched = ["P2b Onsrud 60-200 1/4 in"]
+grade = "PASS"
+matched = ["Onsrud 60-200 1/4 in"]
 note = "App = vendor_band.score_winner_chip_mm (the target before the radial lift)."
 
 [[row]]
@@ -603,13 +603,13 @@ idx = 5.0
 toolpath = "River channel 6 mm, pass 7 of 7"
 quantity = "rpm"
 unit = "rpm"
-status = "POLICY"
-binding = "a chart; b spindle max 24000"
-expected = "P1a chart 18000: 18000; P1b binding limit: 24000"
-candidates = { "P1a chart 18000" = [18000.0, 18000.0], "P1b binding limit" = [24000.0, 24000.0] }
-grade_candidates = { "P1a chart 18000" = [18000.0, 18000.0], "P1b binding limit" = [24000.0, 24000.0] }
+status = "DERIVED"
+binding = "spindle max 24000"
+expected = "P1b binding limit: 24000"
+candidates = { "P1b binding limit" = [24000.0, 24000.0] }
+grade_candidates = { "P1b binding limit" = [24000.0, 24000.0] }
 n_app = "-"
-derivation = "a: SPK3 18,000 RPM (Onsrud prints no RPM for 60-200: ONS61). b: n_xy = 15000 / (chip_hi 0.2286 x 2 x lift 1.0000) = 32808; spindle max 24000; n_b = 24000 (spindle max 24000). Power does not bind: P_req and P_avail both scale with n (constant torque below 24000 rpm, MACH), so the ratio holds at every n."
+derivation = "P1 ruled (b), operator 2026-11-08 (the chart rpm: SPK3 18,000 RPM (Onsrud prints no RPM for 60-200: ONS61)). n_xy = 15000 / (chip_hi 0.1778 x 2 x lift 1.0000) = 42182; spindle max 24000; n_b = 24000 (spindle max 24000). Power does not bind: P_req and P_avail both scale with n (constant torque below 24000 rpm, MACH), so the ratio holds at every n."
 app_suggest = 10610.0
 app_shipped = 10610.0
 grade = "FAIL"
@@ -621,17 +621,17 @@ idx = 5.0
 toolpath = "River channel 6 mm, pass 7 of 7"
 quantity = "feed"
 unit = "mm/min"
-status = "POLICY"
+status = "DERIVED"
 binding = "chart chip x lift; XY 15000"
-expected = "P1a/P2a: 4572; P1a/P2b: 4572-6401; P1a/P2c: 6401-8230; P1b/P2a: 6096; P1b/P2b: 6096-8534; P1b/P2c: 8534-10973 // graded at app rpm 10610: @app/P2a: 2695; @app/P2b: 2695-3773; @app/P2c: 3773-4851"
-candidates = { "P1a/P2a" = [4572.0, 4572.0], "P1a/P2b" = [4572.0, 6400.8], "P1a/P2c" = [6400.8, 8229.6], "P1b/P2a" = [6096.0, 6096.0], "P1b/P2b" = [6096.0, 8534.4], "P1b/P2c" = [8534.4, 10972.8] }
-grade_candidates = { "@app/P2a" = [2694.94, 2694.94], "@app/P2b" = [2694.94, 3772.916], "@app/P2c" = [3772.916, 4850.892] }
+expected = "P1b: 6096-8534 // graded at app rpm 10610: @app: 2695-3773"
+candidates = { "P1b" = [6096.0, 8534.4] }
+grade_candidates = { "@app" = [2694.94, 3772.916] }
 n_app = 10610.0
 derivation = "feed = chip x z x n x lift (SPK47), clamped to XY 15000. The op cuts a full slot (pocket first ring, profile, centre-line curve): r >= 0.5, lift 1."
 app_suggest = 3165.0
 app_shipped = 3165.0
-grade = "NEEDS-RULING"
-matched = ["@app/P2b"]
+grade = "PASS"
+matched = ["@app"]
 note = "Suggest prints no feed; graded on the shipped param."
 
 [[row]]
@@ -639,13 +639,13 @@ idx = 5.0
 toolpath = "River channel 6 mm, pass 7 of 7"
 quantity = "plunge"
 unit = "mm/min"
-status = "POLICY"
-binding = "a chart; b Z rate 2500"
-expected = "P1a chart: 2286; P1b Z-bound: 2500 // graded at app rpm 10610: @app: 1347"
-candidates = { "P1a chart" = [2286.0, 2286.0], "P1b Z-bound" = [2500.0, 2500.0] }
+status = "DERIVED"
+binding = "Z rate 2500"
+expected = "Z-bound: 2500 // graded at app rpm 10610: @app: 1347"
+candidates = { "Z-bound" = [2500.0, 2500.0] }
 grade_candidates = { "@app" = [1347.47, 1347.47] }
 n_app = 10610.0
-derivation = "SPK26 Ramp Down 90\" = 2286.0 mm/min at 18000 (SPK52: Ramp Down = Feed / flutes = n x chip). b: 0.127 x 24000 = 3048 > Z 2500 -> 2500. At the app rpm: 0.127 x n."
+derivation = "SPK26 Ramp Down 90\" = 2286.0 mm/min at 18000 (SPK52: Ramp Down = Feed / flutes = n x chip; the Spektra 6 mm chip 0.127 sets the plunge, P2 rules the side chip only). P1 (b): 0.127 x 24000 = 3048 > Z 2500 -> 2500. At the app rpm: 0.127 x n."
 app_suggest = 1347.0
 app_shipped = 1347.0
 grade = "PASS"
@@ -690,7 +690,7 @@ note = ""
 
 [[row]]
 idx = 6.0
-toolpath = "Lake pocket 2 mm, 8 lakes"
+toolpath = "Lake pocket 2 mm, 11 lakes to Z 5.88"
 quantity = "chip per tooth (target peak)"
 unit = "mm"
 status = "UNSOURCED"
@@ -708,31 +708,31 @@ note = "App = vendor_band.score_winner_chip_mm (the target before the radial lif
 
 [[row]]
 idx = 6.0
-toolpath = "Lake pocket 2 mm, 8 lakes"
+toolpath = "Lake pocket 2 mm, 11 lakes to Z 5.88"
 quantity = "rpm"
 unit = "rpm"
-status = "POLICY"
-binding = "a chart; b spindle max 24000"
-expected = "P1a chart 18000: 18000; P1b binding limit: 24000"
-candidates = { "P1a chart 18000" = [18000.0, 18000.0], "P1b binding limit" = [24000.0, 24000.0] }
-grade_candidates = { "P1a chart 18000" = [18000.0, 18000.0], "P1b binding limit" = [24000.0, 24000.0] }
+status = "DERIVED"
+binding = "spindle max 24000"
+expected = "P1b binding limit: 24000"
+candidates = { "P1b binding limit" = [24000.0, 24000.0] }
+grade_candidates = { "P1b binding limit" = [24000.0, 24000.0] }
 n_app = "-"
-derivation = "a: SPK3 18,000 RPM. b: n_xy = 15000 / (chip_hi 0.0584 x 1 x lift 1.0000) = 256761; spindle max 24000; n_b = 24000 (spindle max 24000). Power does not bind: P_req and P_avail both scale with n (constant torque below 24000 rpm, MACH), so the ratio holds at every n."
+derivation = "P1 ruled (b), operator 2026-11-08 (the chart rpm: SPK3 18,000 RPM). n_xy = 15000 / (chip_hi 0.0584 x 1 x lift 1.0000) = 256761; spindle max 24000; n_b = 24000 (spindle max 24000). Power does not bind: P_req and P_avail both scale with n (constant torque below 24000 rpm, MACH), so the ratio holds at every n."
 app_suggest = 18000.0
 app_shipped = 18000.0
-grade = "NEEDS-RULING"
-matched = ["P1a chart 18000"]
+grade = "FAIL"
+matched = []
 note = ""
 
 [[row]]
 idx = 6.0
-toolpath = "Lake pocket 2 mm, 8 lakes"
+toolpath = "Lake pocket 2 mm, 11 lakes to Z 5.88"
 quantity = "feed"
 unit = "mm/min"
 status = "UNSOURCED"
 binding = "chart chip x lift; XY 15000"
-expected = "P1a: 914-1052; P1b: 1219-1402 // graded at app rpm 18000: @app: 914-1052"
-candidates = { "P1a" = [914.4, 1051.56], "P1b" = [1219.2, 1402.08] }
+expected = "P1b: 1219-1402 // graded at app rpm 18000: @app: 914-1052"
+candidates = { "P1b" = [1219.2, 1402.08] }
 grade_candidates = { "@app" = [914.4, 1051.56] }
 n_app = 18000.0
 derivation = "feed = chip x z x n x lift (SPK47), clamped to XY 15000. The op cuts a full slot (pocket first ring, profile, centre-line curve): r >= 0.5, lift 1."
@@ -744,13 +744,13 @@ note = " With the 2F log-log chip 0.05501 in a slot the feed is 990; the app's 1
 
 [[row]]
 idx = 6.0
-toolpath = "Lake pocket 2 mm, 8 lakes"
+toolpath = "Lake pocket 2 mm, 11 lakes to Z 5.88"
 quantity = "plunge"
 unit = "mm/min"
 status = "UNSOURCED"
 binding = "chart (2F rule)"
-expected = "P1a 2F printed Ramp Down: 889-1016; P1b chip x 24000: 1219-1402 // graded at app rpm 18000: @app: 889-1016"
-candidates = { "P1a 2F printed Ramp Down" = [889.0, 1016.0], "P1b chip x 24000" = [1219.2, 1402.08] }
+expected = "chip x 24000 (P1 b): 1219-1402 // graded at app rpm 18000: @app: 889-1016"
+candidates = { "chip x 24000 (P1 b)" = [1219.2, 1402.08] }
 grade_candidates = { "@app" = [889.0, 1016.0] }
 n_app = 18000.0
 derivation = "UNSOURCED for 1F. SPK12/SPK17 print Ramp Down 35\" and 40\" (= 889 and 1016 mm/min) at 1/16 and 3/32 in. SPK47 + SPK52 give Ramp Down = n x chip, which does not depend on the flute count; so a 1F tool with the 2F chip plunges at the same rate. Every candidate is >= 889 mm/min."
@@ -762,7 +762,7 @@ note = "The app ships 240 from an unsourced repo rule (conservative: 3.7x slower
 
 [[row]]
 idx = 6.0
-toolpath = "Lake pocket 2 mm, 8 lakes"
+toolpath = "Lake pocket 2 mm, 11 lakes to Z 5.88"
 quantity = "ramp feed"
 unit = "mm/min"
 status = "N/A"
@@ -780,7 +780,7 @@ note = ""
 
 [[row]]
 idx = 6.0
-toolpath = "Lake pocket 2 mm, 8 lakes"
+toolpath = "Lake pocket 2 mm, 11 lakes to Z 5.88"
 quantity = "power required vs available"
 unit = "kW"
 status = "DERIVED"
@@ -799,7 +799,7 @@ ratio = 0.0039
 
 [[row]]
 idx = 7.0
-toolpath = "Lake pocket 2 mm, 1 lake"
+toolpath = "Lake pocket 2 mm, 1 lake to Z 3.99"
 quantity = "chip per tooth (target peak)"
 unit = "mm"
 status = "UNSOURCED"
@@ -817,31 +817,31 @@ note = "App = vendor_band.score_winner_chip_mm (the target before the radial lif
 
 [[row]]
 idx = 7.0
-toolpath = "Lake pocket 2 mm, 1 lake"
+toolpath = "Lake pocket 2 mm, 1 lake to Z 3.99"
 quantity = "rpm"
 unit = "rpm"
-status = "POLICY"
-binding = "a chart; b spindle max 24000"
-expected = "P1a chart 18000: 18000; P1b binding limit: 24000"
-candidates = { "P1a chart 18000" = [18000.0, 18000.0], "P1b binding limit" = [24000.0, 24000.0] }
-grade_candidates = { "P1a chart 18000" = [18000.0, 18000.0], "P1b binding limit" = [24000.0, 24000.0] }
+status = "DERIVED"
+binding = "spindle max 24000"
+expected = "P1b binding limit: 24000"
+candidates = { "P1b binding limit" = [24000.0, 24000.0] }
+grade_candidates = { "P1b binding limit" = [24000.0, 24000.0] }
 n_app = "-"
-derivation = "a: SPK3 18,000 RPM. b: n_xy = 15000 / (chip_hi 0.0584 x 1 x lift 1.0000) = 256761; spindle max 24000; n_b = 24000 (spindle max 24000). Power does not bind: P_req and P_avail both scale with n (constant torque below 24000 rpm, MACH), so the ratio holds at every n."
+derivation = "P1 ruled (b), operator 2026-11-08 (the chart rpm: SPK3 18,000 RPM). n_xy = 15000 / (chip_hi 0.0584 x 1 x lift 1.0000) = 256761; spindle max 24000; n_b = 24000 (spindle max 24000). Power does not bind: P_req and P_avail both scale with n (constant torque below 24000 rpm, MACH), so the ratio holds at every n."
 app_suggest = 18000.0
 app_shipped = 18000.0
-grade = "NEEDS-RULING"
-matched = ["P1a chart 18000"]
+grade = "FAIL"
+matched = []
 note = ""
 
 [[row]]
 idx = 7.0
-toolpath = "Lake pocket 2 mm, 1 lake"
+toolpath = "Lake pocket 2 mm, 1 lake to Z 3.99"
 quantity = "feed"
 unit = "mm/min"
 status = "UNSOURCED"
 binding = "chart chip x lift; XY 15000"
-expected = "P1a: 914-1052; P1b: 1219-1402 // graded at app rpm 18000: @app: 914-1052"
-candidates = { "P1a" = [914.4, 1051.56], "P1b" = [1219.2, 1402.08] }
+expected = "P1b: 1219-1402 // graded at app rpm 18000: @app: 914-1052"
+candidates = { "P1b" = [1219.2, 1402.08] }
 grade_candidates = { "@app" = [914.4, 1051.56] }
 n_app = 18000.0
 derivation = "feed = chip x z x n x lift (SPK47), clamped to XY 15000. The op cuts a full slot (pocket first ring, profile, centre-line curve): r >= 0.5, lift 1."
@@ -853,13 +853,13 @@ note = ""
 
 [[row]]
 idx = 7.0
-toolpath = "Lake pocket 2 mm, 1 lake"
+toolpath = "Lake pocket 2 mm, 1 lake to Z 3.99"
 quantity = "plunge"
 unit = "mm/min"
 status = "UNSOURCED"
 binding = "chart (2F rule)"
-expected = "P1a 2F printed Ramp Down: 889-1016; P1b chip x 24000: 1219-1402 // graded at app rpm 18000: @app: 889-1016"
-candidates = { "P1a 2F printed Ramp Down" = [889.0, 1016.0], "P1b chip x 24000" = [1219.2, 1402.08] }
+expected = "chip x 24000 (P1 b): 1219-1402 // graded at app rpm 18000: @app: 889-1016"
+candidates = { "chip x 24000 (P1 b)" = [1219.2, 1402.08] }
 grade_candidates = { "@app" = [889.0, 1016.0] }
 n_app = 18000.0
 derivation = "UNSOURCED for 1F. SPK12/SPK17 print Ramp Down 35\" and 40\" (= 889 and 1016 mm/min) at 1/16 and 3/32 in. SPK47 + SPK52 give Ramp Down = n x chip, which does not depend on the flute count; so a 1F tool with the 2F chip plunges at the same rate. Every candidate is >= 889 mm/min."
@@ -871,7 +871,7 @@ note = "The app ships 240 from an unsourced repo rule (conservative: 3.7x slower
 
 [[row]]
 idx = 7.0
-toolpath = "Lake pocket 2 mm, 1 lake"
+toolpath = "Lake pocket 2 mm, 1 lake to Z 3.99"
 quantity = "ramp feed"
 unit = "mm/min"
 status = "N/A"
@@ -889,7 +889,7 @@ note = ""
 
 [[row]]
 idx = 7.0
-toolpath = "Lake pocket 2 mm, 1 lake"
+toolpath = "Lake pocket 2 mm, 1 lake to Z 3.99"
 quantity = "power required vs available"
 unit = "kW"
 status = "DERIVED"
@@ -929,17 +929,17 @@ idx = 8.0
 toolpath = "ANTENNA_D5.00 pocket 2 mm"
 quantity = "rpm"
 unit = "rpm"
-status = "POLICY"
-binding = "a chart; b spindle max 24000"
-expected = "P1a chart 18000: 18000; P1b binding limit: 24000"
-candidates = { "P1a chart 18000" = [18000.0, 18000.0], "P1b binding limit" = [24000.0, 24000.0] }
-grade_candidates = { "P1a chart 18000" = [18000.0, 18000.0], "P1b binding limit" = [24000.0, 24000.0] }
+status = "DERIVED"
+binding = "spindle max 24000"
+expected = "P1b binding limit: 24000"
+candidates = { "P1b binding limit" = [24000.0, 24000.0] }
+grade_candidates = { "P1b binding limit" = [24000.0, 24000.0] }
 n_app = "-"
-derivation = "a: SPK3 18,000 RPM. b: n_xy = 15000 / (chip_hi 0.0584 x 1 x lift 1.0000) = 256761; spindle max 24000; n_b = 24000 (spindle max 24000). Power does not bind: P_req and P_avail both scale with n (constant torque below 24000 rpm, MACH), so the ratio holds at every n."
+derivation = "P1 ruled (b), operator 2026-11-08 (the chart rpm: SPK3 18,000 RPM). n_xy = 15000 / (chip_hi 0.0584 x 1 x lift 1.0000) = 256761; spindle max 24000; n_b = 24000 (spindle max 24000). Power does not bind: P_req and P_avail both scale with n (constant torque below 24000 rpm, MACH), so the ratio holds at every n."
 app_suggest = 18000.0
 app_shipped = 18000.0
-grade = "NEEDS-RULING"
-matched = ["P1a chart 18000"]
+grade = "FAIL"
+matched = []
 note = ""
 
 [[row]]
@@ -949,8 +949,8 @@ quantity = "feed"
 unit = "mm/min"
 status = "UNSOURCED"
 binding = "chart chip x lift; XY 15000"
-expected = "P1a: 914-1052; P1b: 1219-1402 // graded at app rpm 18000: @app: 914-1052"
-candidates = { "P1a" = [914.4, 1051.56], "P1b" = [1219.2, 1402.08] }
+expected = "P1b: 1219-1402 // graded at app rpm 18000: @app: 914-1052"
+candidates = { "P1b" = [1219.2, 1402.08] }
 grade_candidates = { "@app" = [914.4, 1051.56] }
 n_app = 18000.0
 derivation = "feed = chip x z x n x lift (SPK47), clamped to XY 15000. The op cuts a full slot (pocket first ring, profile, centre-line curve): r >= 0.5, lift 1."
@@ -967,8 +967,8 @@ quantity = "plunge"
 unit = "mm/min"
 status = "UNSOURCED"
 binding = "chart (2F rule)"
-expected = "P1a 2F printed Ramp Down: 889-1016; P1b chip x 24000: 1219-1402 // graded at app rpm 18000: @app: 889-1016"
-candidates = { "P1a 2F printed Ramp Down" = [889.0, 1016.0], "P1b chip x 24000" = [1219.2, 1402.08] }
+expected = "chip x 24000 (P1 b): 1219-1402 // graded at app rpm 18000: @app: 889-1016"
+candidates = { "chip x 24000 (P1 b)" = [1219.2, 1402.08] }
 grade_candidates = { "@app" = [889.0, 1016.0] }
 n_app = 18000.0
 derivation = "UNSOURCED for 1F. SPK12/SPK17 print Ramp Down 35\" and 40\" (= 889 and 1016 mm/min) at 1/16 and 3/32 in. SPK47 + SPK52 give Ramp Down = n x chip, which does not depend on the flute count; so a 1F tool with the 2F chip plunges at the same rate. Every candidate is >= 889 mm/min."
@@ -985,8 +985,8 @@ quantity = "ramp feed"
 unit = "mm/min"
 status = "UNSOURCED"
 binding = "slot chip (full-width ramp)"
-expected = "P1a: 914-1052; P1b: 1219-1402 // graded at app rpm 18000: @app: 914-1052"
-candidates = { "P1a" = [914.4, 1051.56], "P1b" = [1219.2, 1402.08] }
+expected = "P1b: 1219-1402 // graded at app rpm 18000: @app: 914-1052"
+candidates = { "P1b" = [1219.2, 1402.08] }
 grade_candidates = { "@app" = [914.4, 1051.56] }
 n_app = 18000.0
 derivation = "A ramp cuts a full slot: ramp feed = chip x z x n (lift 1)."
@@ -1038,17 +1038,17 @@ idx = 9.0
 toolpath = "V rivers and lakes"
 quantity = "rpm"
 unit = "rpm"
-status = "POLICY"
-binding = "a chart; b spindle max 24000"
-expected = "P1a chart 18000: 18000; P1b binding limit: 24000"
-candidates = { "P1a chart 18000" = [18000.0, 18000.0], "P1b binding limit" = [24000.0, 24000.0] }
-grade_candidates = { "P1a chart 18000" = [18000.0, 18000.0], "P1b binding limit" = [24000.0, 24000.0] }
+status = "DERIVED"
+binding = "spindle max 24000"
+expected = "P1b binding limit: 24000"
+candidates = { "P1b binding limit" = [24000.0, 24000.0] }
+grade_candidates = { "P1b binding limit" = [24000.0, 24000.0] }
 n_app = "-"
-derivation = "a: AMS3 18,000. b: n_xy = 15000 / (chip_hi 0.1778 x 1 x lift 1.0000) = 84364; spindle max 24000; n_b = 24000 (spindle max 24000). Power does not bind: P_req and P_avail both scale with n (constant torque below 24000 rpm, MACH), so the ratio holds at every n."
+derivation = "P1 ruled (b), operator 2026-11-08 (the chart rpm: AMS3 18,000). n_xy = 15000 / (chip_hi 0.1778 x 1 x lift 1.0000) = 84364; spindle max 24000; n_b = 24000 (spindle max 24000). Power does not bind: P_req and P_avail both scale with n (constant torque below 24000 rpm, MACH), so the ratio holds at every n."
 app_suggest = 18000.0
 app_shipped = 18000.0
-grade = "NEEDS-RULING"
-matched = ["P1a chart 18000"]
+grade = "FAIL"
+matched = []
 note = "Suggest prints no rpm; graded on the shipped param."
 
 [[row]]
@@ -1056,10 +1056,10 @@ idx = 9.0
 toolpath = "V rivers and lakes"
 quantity = "feed"
 unit = "mm/min"
-status = "POLICY"
+status = "DERIVED"
 binding = "chart chip x lift; XY 15000"
-expected = "P1a: 1372-3200; P1b: 1829-4267; P1a/printed IPM: 1270-3302 // graded at app rpm 18000: @app: 1270-3302"
-candidates = { "P1a" = [1371.6, 3200.4], "P1b" = [1828.8, 4267.2], "P1a/printed IPM" = [1270.0, 3302.0] }
+expected = "P1b: 1829-4267 // graded at app rpm 18000: @app: 1270-3302"
+candidates = { "P1b" = [1828.8, 4267.2] }
 grade_candidates = { "@app" = [1270.0, 3302.0] }
 n_app = 18000.0
 derivation = "feed = chip x z x n x lift (SPK47), clamped to XY 15000. V trace is a slot; the V chart is for the same geometry: lift 1. Printed IPM: 50\"-130\" = 1270-3302 mm/min at 18000."
@@ -1146,17 +1146,17 @@ idx = 10.0
 toolpath = "Day strip slit V60"
 quantity = "rpm"
 unit = "rpm"
-status = "POLICY"
-binding = "a chart; b spindle max 24000"
-expected = "P1a chart 18000: 18000; P1b binding limit: 24000"
-candidates = { "P1a chart 18000" = [18000.0, 18000.0], "P1b binding limit" = [24000.0, 24000.0] }
-grade_candidates = { "P1a chart 18000" = [18000.0, 18000.0], "P1b binding limit" = [24000.0, 24000.0] }
+status = "DERIVED"
+binding = "spindle max 24000"
+expected = "P1b binding limit: 24000"
+candidates = { "P1b binding limit" = [24000.0, 24000.0] }
+grade_candidates = { "P1b binding limit" = [24000.0, 24000.0] }
 n_app = "-"
-derivation = "a: AMS3 18,000. b: n_xy = 15000 / (chip_hi 0.0762 x 2 x lift 1.0000) = 98425; spindle max 24000; n_b = 24000 (spindle max 24000). Power does not bind: P_req and P_avail both scale with n (constant torque below 24000 rpm, MACH), so the ratio holds at every n."
+derivation = "P1 ruled (b), operator 2026-11-08 (the chart rpm: AMS3 18,000). n_xy = 15000 / (chip_hi 0.0762 x 2 x lift 1.0000) = 98425; spindle max 24000; n_b = 24000 (spindle max 24000). Power does not bind: P_req and P_avail both scale with n (constant torque below 24000 rpm, MACH), so the ratio holds at every n."
 app_suggest = 18000.0
 app_shipped = 18000.0
-grade = "NEEDS-RULING"
-matched = ["P1a chart 18000"]
+grade = "FAIL"
+matched = []
 note = ""
 
 [[row]]
@@ -1164,10 +1164,10 @@ idx = 10.0
 toolpath = "Day strip slit V60"
 quantity = "feed"
 unit = "mm/min"
-status = "POLICY"
+status = "DERIVED"
 binding = "chart chip x lift; XY 15000"
-expected = "P1a: 2286-2743; P1b: 3048-3658 // graded at app rpm 18000: @app: 2286-2743"
-candidates = { "P1a" = [2286.0, 2743.2], "P1b" = [3048.0, 3657.6] }
+expected = "P1b: 3048-3658 // graded at app rpm 18000: @app: 2286-2743"
+candidates = { "P1b" = [3048.0, 3657.6] }
 grade_candidates = { "@app" = [2286.0, 2743.2] }
 n_app = 18000.0
 derivation = "feed = chip x z x n x lift (SPK47), clamped to XY 15000. V trace is a slot; the V chart is for the same geometry: lift 1. Printed IPM: 90\" = 2286 mm/min at 18000."
@@ -1184,8 +1184,8 @@ quantity = "plunge"
 unit = "mm/min"
 status = "DERIVED"
 binding = "cross-vendor ratio"
-expected = "P1a IDC ratio x feed: 762-1372; P1b IDC ratio x feed: 1016-1829 // graded at app rpm 18000: @app: 762-1372"
-candidates = { "P1a IDC ratio x feed" = [762.0, 1371.6], "P1b IDC ratio x feed" = [1016.0, 1828.8] }
+expected = "IDC ratio x feed (P1 b): 1016-1829 // graded at app rpm 18000: @app: 762-1372"
+candidates = { "IDC ratio x feed (P1 b)" = [1016.0, 1828.8] }
 grade_candidates = { "@app" = [762.0, 1371.6] }
 n_app = 18000.0
 derivation = "No Amana plunge for this bit. IDC 60deg 2F V-bit prints plunge/feed 20/40 = 0.5 (IDC165) and 20/60 = 0.333 (IDC285); the two printings disagree. Range = [feed_lo/3, feed_hi/2]: a [2286/3, 2743/2]."
@@ -1225,16 +1225,16 @@ candidates = { "model" = [0.028218, 0.028218] }
 grade_candidates = { "model" = [0.028218, 0.028218] }
 n_app = "-"
 derivation = "V-groove at the app point: vf 2286, n 18000, ap 2.60, R = ap tan 30 = 1.5011; shear Ks x ap x R x vf = 0.00870; edge F_edge x pi n R^2 / sin 30 x z / 2 = 0.01952; total 0.02822 kW. The app uses a rectangle ae 6.35 x ap. P_avail = 1.5 x 18000 / 24000 = 1.1250 kW (MACH); ratio 0.025. Spindle efficiency: no source; the ratio assumes the rated shaft power."
-app_suggest = 0.052209
+app_suggest = 0.028218
 app_shipped = "-"
-grade = "FAIL"
-matched = []
+grade = "PASS"
+matched = ["model"]
 note = "App overstates the V cross-section (rectangle, not triangle): conservative."
 ratio = 0.0251
 
 [[row]]
 idx = 11.0
-toolpath = "Face clamp pads 6 mm (pocket)"
+toolpath = "Face clamp pads 6 mm"
 quantity = "chip per tooth (target peak)"
 unit = "mm"
 status = "UNSOURCED"
@@ -1252,31 +1252,31 @@ note = "App = vendor_band.score_winner_chip_mm (the target before the radial lif
 
 [[row]]
 idx = 11.0
-toolpath = "Face clamp pads 6 mm (pocket)"
+toolpath = "Face clamp pads 6 mm"
 quantity = "rpm"
 unit = "rpm"
-status = "POLICY"
-binding = "a chart; b spindle max 24000"
-expected = "P1a chart 18000: 18000; P1b binding limit: 24000"
-candidates = { "P1a chart 18000" = [18000.0, 18000.0], "P1b binding limit" = [24000.0, 24000.0] }
-grade_candidates = { "P1a chart 18000" = [18000.0, 18000.0], "P1b binding limit" = [24000.0, 24000.0] }
+status = "DERIVED"
+binding = "spindle max 24000"
+expected = "P1b binding limit: 24000"
+candidates = { "P1b binding limit" = [24000.0, 24000.0] }
+grade_candidates = { "P1b binding limit" = [24000.0, 24000.0] }
 n_app = "-"
-derivation = "a: SPK3 18,000 RPM (nearest printed chart). b: n_xy = 15000 / (chip_hi 0.2286 x 2 x lift 1.0000) = 32808; spindle max 24000; n_b = 24000 (spindle max 24000). Power does not bind: P_req and P_avail both scale with n (constant torque below 24000 rpm, MACH), so the ratio holds at every n."
+derivation = "P1 ruled (b), operator 2026-11-08 (the chart rpm: SPK3 18,000 RPM (nearest printed chart)). n_xy = 15000 / (chip_hi 0.2286 x 2 x lift 1.0000) = 32808; spindle max 24000; n_b = 24000 (spindle max 24000). Power does not bind: P_req and P_avail both scale with n (constant torque below 24000 rpm, MACH), so the ratio holds at every n."
 app_suggest = 18000.0
 app_shipped = 18000.0
-grade = "NEEDS-RULING"
-matched = ["P1a chart 18000"]
+grade = "FAIL"
+matched = []
 note = ""
 
 [[row]]
 idx = 11.0
-toolpath = "Face clamp pads 6 mm (pocket)"
+toolpath = "Face clamp pads 6 mm"
 quantity = "feed"
 unit = "mm/min"
 status = "UNSOURCED"
 binding = "chart chip x lift; XY 15000"
-expected = "P1a: 5212-8230; P1b: 6949-10973 // graded at app rpm 18000: @app: 5212-8230"
-candidates = { "P1a" = [5212.08, 8229.6], "P1b" = [6949.44, 10972.8] }
+expected = "P1b: 6949-10973 // graded at app rpm 18000: @app: 5212-8230"
+candidates = { "P1b" = [6949.44, 10972.8] }
 grade_candidates = { "@app" = [5212.08, 8229.6] }
 n_app = 18000.0
 derivation = "feed = chip x z x n x lift (SPK47), clamped to XY 15000. The op cuts a full slot (pocket first ring, profile, centre-line curve): r >= 0.5, lift 1."
@@ -1288,7 +1288,7 @@ note = ""
 
 [[row]]
 idx = 11.0
-toolpath = "Face clamp pads 6 mm (pocket)"
+toolpath = "Face clamp pads 6 mm"
 quantity = "plunge"
 unit = "mm/min"
 status = "UNSOURCED"
@@ -1306,7 +1306,7 @@ note = "Straight plunge entry at ap 0.5 <= protrusion 1.0: geometrically possibl
 
 [[row]]
 idx = 11.0
-toolpath = "Face clamp pads 6 mm (pocket)"
+toolpath = "Face clamp pads 6 mm"
 quantity = "ramp feed"
 unit = "mm/min"
 status = "N/A"
@@ -1324,7 +1324,7 @@ note = ""
 
 [[row]]
 idx = 11.0
-toolpath = "Face clamp pads 6 mm (pocket)"
+toolpath = "Face clamp pads 6 mm"
 quantity = "power required vs available"
 unit = "kW"
 status = "DERIVED"
@@ -1364,17 +1364,17 @@ idx = 12.0
 toolpath = "Face front to T"
 quantity = "rpm"
 unit = "rpm"
-status = "POLICY"
-binding = "a chart; b spindle max 24000"
-expected = "P1a chart 18000: 18000; P1b binding limit: 24000"
-candidates = { "P1a chart 18000" = [18000.0, 18000.0], "P1b binding limit" = [24000.0, 24000.0] }
-grade_candidates = { "P1a chart 18000" = [18000.0, 18000.0], "P1b binding limit" = [24000.0, 24000.0] }
+status = "DERIVED"
+binding = "spindle max 24000"
+expected = "P1b binding limit: 24000"
+candidates = { "P1b binding limit" = [24000.0, 24000.0] }
+grade_candidates = { "P1b binding limit" = [24000.0, 24000.0] }
 n_app = "-"
-derivation = "a: SPK3 18,000 RPM (nearest printed chart). b: n_xy = 15000 / (chip_hi 0.2286 x 2 x lift 1.0062) = 32605; spindle max 24000; n_b = 24000 (spindle max 24000). Power does not bind: P_req and P_avail both scale with n (constant torque below 24000 rpm, MACH), so the ratio holds at every n."
+derivation = "P1 ruled (b), operator 2026-11-08 (the chart rpm: SPK3 18,000 RPM (nearest printed chart)). n_xy = 15000 / (chip_hi 0.2286 x 2 x lift 1.0062) = 32605; spindle max 24000; n_b = 24000 (spindle max 24000). Power does not bind: P_req and P_avail both scale with n (constant torque below 24000 rpm, MACH), so the ratio holds at every n."
 app_suggest = 18000.0
 app_shipped = 18000.0
-grade = "NEEDS-RULING"
-matched = ["P1a chart 18000"]
+grade = "FAIL"
+matched = []
 note = ""
 
 [[row]]
@@ -1384,8 +1384,8 @@ quantity = "feed"
 unit = "mm/min"
 status = "UNSOURCED"
 binding = "chart chip x lift; XY 15000"
-expected = "P1a: 5245-8281; P1b: 6993-11041 // graded at app rpm 18000: @app: 5245-8281"
-candidates = { "P1a" = [5244.554333, 8280.875262], "P1b" = [6992.739111, 11041.167017] }
+expected = "P1b: 6993-11041 // graded at app rpm 18000: @app: 5245-8281"
+candidates = { "P1b" = [6992.739111, 11041.167017] }
 grade_candidates = { "@app" = [5244.554333, 8280.875262] }
 n_app = 18000.0
 derivation = "feed = chip x z x n x lift (SPK47), clamped to XY 15000. Face: max ae = stepover 8.0, r 0.4444, lift 1.0062."
@@ -1420,8 +1420,8 @@ quantity = "ramp feed"
 unit = "mm/min"
 status = "UNSOURCED"
 binding = "slot chip (full-width ramp)"
-expected = "P1a: 5212-8230; P1b: 6949-10973 // graded at app rpm 18000: @app: 5212-8230"
-candidates = { "P1a" = [5212.08, 8229.6], "P1b" = [6949.44, 10972.8] }
+expected = "P1b: 6949-10973 // graded at app rpm 18000: @app: 5212-8230"
+candidates = { "P1b" = [6949.44, 10972.8] }
 grade_candidates = { "@app" = [5212.08, 8229.6] }
 n_app = 18000.0
 derivation = "A ramp cuts a full slot: ramp feed = chip x z x n (lift 1)."
@@ -1473,17 +1473,17 @@ idx = 13.0
 toolpath = "Engrave day labels V60"
 quantity = "rpm"
 unit = "rpm"
-status = "POLICY"
-binding = "a chart; b spindle max 24000"
-expected = "P1a chart 18000: 18000; P1b binding limit: 24000"
-candidates = { "P1a chart 18000" = [18000.0, 18000.0], "P1b binding limit" = [24000.0, 24000.0] }
-grade_candidates = { "P1a chart 18000" = [18000.0, 18000.0], "P1b binding limit" = [24000.0, 24000.0] }
+status = "DERIVED"
+binding = "spindle max 24000"
+expected = "P1b binding limit: 24000"
+candidates = { "P1b binding limit" = [24000.0, 24000.0] }
+grade_candidates = { "P1b binding limit" = [24000.0, 24000.0] }
 n_app = "-"
-derivation = "a: AMS3 18,000. b: n_xy = 15000 / (chip_hi 0.0762 x 2 x lift 1.0000) = 98425; spindle max 24000; n_b = 24000 (spindle max 24000). Power does not bind: P_req and P_avail both scale with n (constant torque below 24000 rpm, MACH), so the ratio holds at every n."
+derivation = "P1 ruled (b), operator 2026-11-08 (the chart rpm: AMS3 18,000). n_xy = 15000 / (chip_hi 0.0762 x 2 x lift 1.0000) = 98425; spindle max 24000; n_b = 24000 (spindle max 24000). Power does not bind: P_req and P_avail both scale with n (constant torque below 24000 rpm, MACH), so the ratio holds at every n."
 app_suggest = 18000.0
 app_shipped = 18000.0
-grade = "NEEDS-RULING"
-matched = ["P1a chart 18000"]
+grade = "FAIL"
+matched = []
 note = ""
 
 [[row]]
@@ -1491,10 +1491,10 @@ idx = 13.0
 toolpath = "Engrave day labels V60"
 quantity = "feed"
 unit = "mm/min"
-status = "POLICY"
+status = "DERIVED"
 binding = "chart chip x lift; XY 15000"
-expected = "P1a: 2286-2743; P1b: 3048-3658 // graded at app rpm 18000: @app: 2286-2743"
-candidates = { "P1a" = [2286.0, 2743.2], "P1b" = [3048.0, 3657.6] }
+expected = "P1b: 3048-3658 // graded at app rpm 18000: @app: 2286-2743"
+candidates = { "P1b" = [3048.0, 3657.6] }
 grade_candidates = { "@app" = [2286.0, 2743.2] }
 n_app = 18000.0
 derivation = "feed = chip x z x n x lift (SPK47), clamped to XY 15000. V trace is a slot; the V chart is for the same geometry: lift 1. Printed IPM: 90\" = 2286 mm/min at 18000."
@@ -1511,8 +1511,8 @@ quantity = "plunge"
 unit = "mm/min"
 status = "DERIVED"
 binding = "cross-vendor ratio"
-expected = "P1a IDC ratio x feed: 762-1372; P1b IDC ratio x feed: 1016-1829 // graded at app rpm 18000: @app: 762-1372"
-candidates = { "P1a IDC ratio x feed" = [762.0, 1371.6], "P1b IDC ratio x feed" = [1016.0, 1828.8] }
+expected = "IDC ratio x feed (P1 b): 1016-1829 // graded at app rpm 18000: @app: 762-1372"
+candidates = { "IDC ratio x feed (P1 b)" = [1016.0, 1828.8] }
 grade_candidates = { "@app" = [762.0, 1371.6] }
 n_app = 18000.0
 derivation = "No Amana plunge for this bit. IDC 60deg 2F V-bit prints plunge/feed 20/40 = 0.5 (IDC165) and 20/60 = 0.333 (IDC285); the two printings disagree. Range = [feed_lo/3, feed_hi/2]: a [2286/3, 2743/2]."
@@ -1552,10 +1552,10 @@ candidates = { "model" = [0.001503, 0.001503] }
 grade_candidates = { "model" = [0.001503, 0.001503] }
 n_app = "-"
 derivation = "V-groove at the app point: vf 2286, n 18000, ap 0.60, R = ap tan 30 = 0.3464; shear Ks x ap x R x vf = 0.00046; edge F_edge x pi n R^2 / sin 30 x z / 2 = 0.00104; total 0.00150 kW. The app uses a rectangle ae 6.35 x ap. P_avail = 1.5 x 18000 / 24000 = 1.1250 kW (MACH); ratio 0.001. Spindle efficiency: no source; the ratio assumes the rated shaft power."
-app_suggest = 0.006047
+app_suggest = 0.001503
 app_shipped = "-"
-grade = "FAIL"
-matched = []
+grade = "PASS"
+matched = ["model"]
 note = "App overstates the V cross-section (rectangle, not triangle): conservative."
 ratio = 0.0013
 
@@ -1582,17 +1582,17 @@ idx = 14.0
 toolpath = "Front bulk rough 18 mm"
 quantity = "rpm"
 unit = "rpm"
-status = "POLICY"
-binding = "a chart; b spindle max 24000"
-expected = "P1a chart 18000: 18000; P1b binding limit: 24000"
-candidates = { "P1a chart 18000" = [18000.0, 18000.0], "P1b binding limit" = [24000.0, 24000.0] }
-grade_candidates = { "P1a chart 18000" = [18000.0, 18000.0], "P1b binding limit" = [24000.0, 24000.0] }
+status = "DERIVED"
+binding = "spindle max 24000"
+expected = "P1b binding limit: 24000"
+candidates = { "P1b binding limit" = [24000.0, 24000.0] }
+grade_candidates = { "P1b binding limit" = [24000.0, 24000.0] }
 n_app = "-"
-derivation = "a: SPK3 18,000 RPM (nearest printed chart). b: n_xy = 15000 / (chip_hi 0.2286 x 2 x lift 1.2500) = 26247; spindle max 24000; n_b = 24000 (spindle max 24000). Power does not bind: P_req and P_avail both scale with n (constant torque below 24000 rpm, MACH), so the ratio holds at every n."
+derivation = "P1 ruled (b), operator 2026-11-08 (the chart rpm: SPK3 18,000 RPM (nearest printed chart)). n_xy = 15000 / (chip_hi 0.2286 x 2 x lift 1.0719) = 30609; spindle max 24000; n_b = 24000 (spindle max 24000). Power does not bind: P_req and P_avail both scale with n (constant torque below 24000 rpm, MACH), so the ratio holds at every n."
 app_suggest = 18000.0
 app_shipped = 18000.0
-grade = "NEEDS-RULING"
-matched = ["P1a chart 18000"]
+grade = "FAIL"
+matched = []
 note = ""
 
 [[row]]
@@ -1602,15 +1602,15 @@ quantity = "feed"
 unit = "mm/min"
 status = "UNSOURCED"
 binding = "chart chip x lift; XY 15000"
-expected = "P1a/P3a: 6515-10287; P1a/P3b: 5587-8821; P1b/P3a: 8687-13716; P1b/P3b: 7449-11761 // graded at app rpm 18000: @app/P3a: 6515-10287; @app/P3b: 5587-8821"
-candidates = { "P1a/P3a" = [6515.1, 10287.0], "P1a/P3b" = [5586.65216, 8821.029727], "P1b/P3a" = [8686.8, 13716.0], "P1b/P3b" = [7448.869547, 11761.372969] }
-grade_candidates = { "@app/P3a" = [6515.1, 10287.0], "@app/P3b" = [5586.65216, 8821.029727] }
+expected = "P1b: 7449-11761 // graded at app rpm 18000: @app: 5587-8821"
+candidates = { "P1b" = [7448.869547, 11761.372969] }
+grade_candidates = { "@app" = [5586.65216, 8821.029727] }
 n_app = 18000.0
-derivation = "feed = chip x z x n x lift (SPK47), clamped to XY 15000. lift = 1 / (2 sqrt(r(1-r))), r = ae/D. P3a: ae 3.600, r 0.2000, lift 1.2500. P3b: ae 3.600 x 1.6 = 5.7600, r 0.3200, lift 1.0719."
+derivation = "feed = chip x z x n x lift (SPK47), clamped to XY 15000. lift = 1 / (2 sqrt(r(1-r))), r = ae/D. P3 ruled (b): ae 3.600 x 1.6 = 5.7600, r 0.3200, lift 1.0719 (the nominal ae 3.600 would give lift 1.2500)."
 app_suggest = 8060.0
 app_shipped = 8060.0
 grade = "NEEDS-RULING"
-matched = ["@app/P3a", "@app/P3b"]
+matched = ["@app"]
 note = ""
 
 [[row]]
@@ -1638,8 +1638,8 @@ quantity = "ramp feed"
 unit = "mm/min"
 status = "UNSOURCED"
 binding = "slot chip (full-width ramp)"
-expected = "P1a: 5212-8230; P1b: 6949-10973 // graded at app rpm 18000: @app: 5212-8230"
-candidates = { "P1a" = [5212.08, 8229.6], "P1b" = [6949.44, 10972.8] }
+expected = "P1b: 6949-10973 // graded at app rpm 18000: @app: 5212-8230"
+candidates = { "P1b" = [6949.44, 10972.8] }
 grade_candidates = { "@app" = [5212.08, 8229.6] }
 n_app = 18000.0
 derivation = "A ramp cuts a full slot: ramp feed = chip x z x n (lift 1)."
@@ -1673,17 +1673,17 @@ idx = 15.0
 toolpath = "Front 3D rough"
 quantity = "chip per tooth (target peak)"
 unit = "mm"
-status = "POLICY"
+status = "DERIVED"
 binding = "chart"
-expected = "P2a Spektra 6 mm: 0.12700; P2b Onsrud 60-200 1/4 in: 0.12700-0.17780; P2c Amana ZrN 6 mm 2F flat: 0.17780-0.22860"
-candidates = { "P2a Spektra 6 mm" = [0.127, 0.127], "P2b Onsrud 60-200 1/4 in" = [0.127, 0.1778], "P2c Amana ZrN 6 mm 2F flat" = [0.1778, 0.2286] }
-grade_candidates = { "P2a Spektra 6 mm" = [0.127, 0.127], "P2b Onsrud 60-200 1/4 in" = [0.127, 0.1778], "P2c Amana ZrN 6 mm 2F flat" = [0.1778, 0.2286] }
+expected = "Onsrud 60-200 1/4 in: 0.12700-0.17780"
+candidates = { "Onsrud 60-200 1/4 in" = [0.127, 0.1778] }
+grade_candidates = { "Onsrud 60-200 1/4 in" = [0.127, 0.1778] }
 n_app = "-"
-derivation = "SPK26 \".0050\"\" x 25.4 = 0.1270 mm | ONS46 \".005-.007\" x 25.4 = 0.1270-0.1778 mm | ZRN22 \"0.007\"-0.009\"\" x 25.4 = 0.1778-0.2286 mm | P2: the tool has no vendor; the operator rules which row stands for it. Onsrud column read by text position (I). ap/D = 0.922 <= 1: the 1 x D chart condition holds (SPK38/AMS3/SPE14); no feed derate."
+derivation = "ONS46 \".005-.007\" x 25.4 = 0.1270-0.1778 mm | P2 ruled (b), operator 2026-11-08: the Onsrud 60-200 row stands for the unbranded tool. Onsrud column read by text position (I). ap/D = 0.922 <= 1: the 1 x D chart condition holds (SPK38/AMS3/SPE14); no feed derate."
 app_suggest = 0.127
 app_shipped = "-"
-grade = "NEEDS-RULING"
-matched = ["P2a Spektra 6 mm", "P2b Onsrud 60-200 1/4 in"]
+grade = "PASS"
+matched = ["Onsrud 60-200 1/4 in"]
 note = "App = vendor_band.score_winner_chip_mm (the target before the radial lift)."
 
 [[row]]
@@ -1691,17 +1691,17 @@ idx = 15.0
 toolpath = "Front 3D rough"
 quantity = "rpm"
 unit = "rpm"
-status = "POLICY"
-binding = "a chart; b spindle max 24000"
-expected = "P1a chart 18000: 18000; P1b binding limit: 24000"
-candidates = { "P1a chart 18000" = [18000.0, 18000.0], "P1b binding limit" = [24000.0, 24000.0] }
-grade_candidates = { "P1a chart 18000" = [18000.0, 18000.0], "P1b binding limit" = [24000.0, 24000.0] }
+status = "DERIVED"
+binding = "spindle max 24000"
+expected = "P1b binding limit: 24000"
+candidates = { "P1b binding limit" = [24000.0, 24000.0] }
+grade_candidates = { "P1b binding limit" = [24000.0, 24000.0] }
 n_app = "-"
-derivation = "a: SPK3 18,000 RPM (Onsrud prints no RPM for 60-200: ONS61). b: n_xy = 15000 / (chip_hi 0.2286 x 2 x lift 1.1875) = 27628; spindle max 24000; n_b = 24000 (spindle max 24000). Power does not bind: P_req and P_avail both scale with n (constant torque below 24000 rpm, MACH), so the ratio holds at every n."
+derivation = "P1 ruled (b), operator 2026-11-08 (the chart rpm: SPK3 18,000 RPM (Onsrud prints no RPM for 60-200: ONS61)). n_xy = 15000 / (chip_hi 0.1778 x 2 x lift 1.0365) = 40698; spindle max 24000; n_b = 24000 (spindle max 24000). Power does not bind: P_req and P_avail both scale with n (constant torque below 24000 rpm, MACH), so the ratio holds at every n."
 app_suggest = 18000.0
 app_shipped = 18000.0
-grade = "NEEDS-RULING"
-matched = ["P1a chart 18000"]
+grade = "FAIL"
+matched = []
 note = ""
 
 [[row]]
@@ -1709,17 +1709,17 @@ idx = 15.0
 toolpath = "Front 3D rough"
 quantity = "feed"
 unit = "mm/min"
-status = "POLICY"
+status = "DERIVED"
 binding = "chart chip x lift; XY 15000"
-expected = "P1a/P2a/P3a: 5429; P1a/P2a/P3b: 4739; P1a/P2b/P3a: 5429-7601; P1a/P2b/P3b: 4739-6634; P1a/P2c/P3a: 7601-9773; P1a/P2c/P3b: 6634-8530; P1b/P2a/P3a: 7239; P1b/P2a/P3b: 6318; P1b/P2b/P3a: 7239-10135; P1b/P2b/P3b: 6318-8846; P1b/P2c/P3a: 10135-13030; P1b/P2c/P3b: 8846-11373 // graded at app rpm 18000: @app/P2a/P3a: 5429; @app/P2a/P3b: 4739; @app/P2b/P3a: 5429-7601; @app/P2b/P3b: 4739-6634; @app/P2c/P3a: 7601-9773; @app/P2c/P3b: 6634-8530"
-candidates = { "P1a/P2a/P3a" = [5429.333142, 5429.333142], "P1a/P2a/P3b" = [4738.737188, 4738.737188], "P1a/P2b/P3a" = [5429.333142, 7601.066399], "P1a/P2b/P3b" = [4738.737188, 6634.232063], "P1a/P2c/P3a" = [7601.066399, 9772.799656], "P1a/P2c/P3b" = [6634.232063, 8529.726938], "P1b/P2a/P3a" = [7239.110856, 7239.110856], "P1b/P2a/P3b" = [6318.316251, 6318.316251], "P1b/P2b/P3a" = [7239.110856, 10134.755198], "P1b/P2b/P3b" = [6318.316251, 8845.642751], "P1b/P2c/P3a" = [10134.755198, 13030.399541], "P1b/P2c/P3b" = [8845.642751, 11372.969251] }
-grade_candidates = { "@app/P2a/P3a" = [5429.333142, 5429.333142], "@app/P2a/P3b" = [4738.737188, 4738.737188], "@app/P2b/P3a" = [5429.333142, 7601.066399], "@app/P2b/P3b" = [4738.737188, 6634.232063], "@app/P2c/P3a" = [7601.066399, 9772.799656], "@app/P2c/P3b" = [6634.232063, 8529.726938] }
+expected = "P1b: 6318-8846 // graded at app rpm 18000: @app: 4739-6634"
+candidates = { "P1b" = [6318.316251, 8845.642751] }
+grade_candidates = { "@app" = [4738.737188, 6634.232063] }
 n_app = 18000.0
-derivation = "feed = chip x z x n x lift (SPK47), clamped to XY 15000. lift = 1 / (2 sqrt(r(1-r))), r = ae/D. P3a: ae 1.382, r 0.2303, lift 1.1875. P3b: ae 1.382 x 1.6 = 2.2112, r 0.3685, lift 1.0365."
+derivation = "feed = chip x z x n x lift (SPK47), clamped to XY 15000. lift = 1 / (2 sqrt(r(1-r))), r = ae/D. P3 ruled (b): ae 1.382 x 1.6 = 2.2112, r 0.3685, lift 1.0365 (the nominal ae 1.382 would give lift 1.1875)."
 app_suggest = 5429.0
 app_shipped = 5429.0
-grade = "NEEDS-RULING"
-matched = ["@app/P2a/P3a", "@app/P2b/P3a", "@app/P2b/P3b"]
+grade = "PASS"
+matched = ["@app"]
 note = ""
 
 [[row]]
@@ -1727,13 +1727,13 @@ idx = 15.0
 toolpath = "Front 3D rough"
 quantity = "plunge"
 unit = "mm/min"
-status = "POLICY"
-binding = "a chart; b Z rate 2500"
-expected = "P1a chart: 2286; P1b Z-bound: 2500 // graded at app rpm 18000: @app: 2286"
-candidates = { "P1a chart" = [2286.0, 2286.0], "P1b Z-bound" = [2500.0, 2500.0] }
+status = "DERIVED"
+binding = "Z rate 2500"
+expected = "Z-bound: 2500 // graded at app rpm 18000: @app: 2286"
+candidates = { "Z-bound" = [2500.0, 2500.0] }
 grade_candidates = { "@app" = [2286.0, 2286.0] }
 n_app = 18000.0
-derivation = "SPK26 Ramp Down 90\" = 2286.0 mm/min at 18000 (SPK52: Ramp Down = Feed / flutes = n x chip). b: 0.127 x 24000 = 3048 > Z 2500 -> 2500. At the app rpm: 0.127 x n."
+derivation = "SPK26 Ramp Down 90\" = 2286.0 mm/min at 18000 (SPK52: Ramp Down = Feed / flutes = n x chip; the Spektra 6 mm chip 0.127 sets the plunge, P2 rules the side chip only). P1 (b): 0.127 x 24000 = 3048 > Z 2500 -> 2500. At the app rpm: 0.127 x n."
 app_suggest = 2285.0
 app_shipped = 2285.0
 grade = "PASS"
@@ -1745,17 +1745,17 @@ idx = 15.0
 toolpath = "Front 3D rough"
 quantity = "ramp feed"
 unit = "mm/min"
-status = "POLICY"
+status = "DERIVED"
 binding = "slot chip (full-width ramp)"
-expected = "P1a/P2a: 4572; P1a/P2b: 4572-6401; P1a/P2c: 6401-8230; P1b/P2a: 6096; P1b/P2b: 6096-8534; P1b/P2c: 8534-10973 // graded at app rpm 18000: @app/P2a: 4572; @app/P2b: 4572-6401; @app/P2c: 6401-8230"
-candidates = { "P1a/P2a" = [4572.0, 4572.0], "P1a/P2b" = [4572.0, 6400.8], "P1a/P2c" = [6400.8, 8229.6], "P1b/P2a" = [6096.0, 6096.0], "P1b/P2b" = [6096.0, 8534.4], "P1b/P2c" = [8534.4, 10972.8] }
-grade_candidates = { "@app/P2a" = [4572.0, 4572.0], "@app/P2b" = [4572.0, 6400.8], "@app/P2c" = [6400.8, 8229.6] }
+expected = "P1b: 6096-8534 // graded at app rpm 18000: @app: 4572-6401"
+candidates = { "P1b" = [6096.0, 8534.4] }
+grade_candidates = { "@app" = [4572.0, 6400.8] }
 n_app = 18000.0
 derivation = "A ramp cuts a full slot: ramp feed = chip x z x n (lift 1). Vertical part: 4572 x sin 3deg = 239 mm/min < Ramp Down 2286: the side chip binds."
 app_suggest = 4571.0
 app_shipped = 4571.0
-grade = "NEEDS-RULING"
-matched = ["@app/P2a", "@app/P2b"]
+grade = "PASS"
+matched = ["@app"]
 note = ""
 
 [[row]]
@@ -1800,17 +1800,17 @@ idx = 16.0
 toolpath = "Front scallop finish"
 quantity = "rpm"
 unit = "rpm"
-status = "POLICY"
-binding = "a chart; b spindle max 24000"
-expected = "P1a chart 18000: 18000; P1b binding limit: 24000"
-candidates = { "P1a chart 18000" = [18000.0, 18000.0], "P1b binding limit" = [24000.0, 24000.0] }
-grade_candidates = { "P1a chart 18000" = [18000.0, 18000.0], "P1b binding limit" = [24000.0, 24000.0] }
+status = "DERIVED"
+binding = "spindle max 24000"
+expected = "P1b binding limit: 24000"
+candidates = { "P1b binding limit" = [24000.0, 24000.0] }
+grade_candidates = { "P1b binding limit" = [24000.0, 24000.0] }
 n_app = "-"
-derivation = "a: SPE23 18,000. b: n_xy = 15000 / (chip_hi 0.0762 x 2 x lift 1.6667) = 59055; spindle max 24000; n_b = 24000 (spindle max 24000). Power does not bind: P_req and P_avail both scale with n (constant torque below 24000 rpm, MACH), so the ratio holds at every n."
+derivation = "P1 ruled (b), operator 2026-11-08 (the chart rpm: SPE23 18,000). n_xy = 15000 / (chip_hi 0.0762 x 2 x lift 1.6667) = 59055; spindle max 24000; n_b = 24000 (spindle max 24000). Power does not bind: P_req and P_avail both scale with n (constant torque below 24000 rpm, MACH), so the ratio holds at every n."
 app_suggest = 18000.0
 app_shipped = 18000.0
-grade = "NEEDS-RULING"
-matched = ["P1a chart 18000"]
+grade = "FAIL"
+matched = []
 note = ""
 
 [[row]]
@@ -1820,8 +1820,8 @@ quantity = "feed"
 unit = "mm/min"
 status = "POLICY"
 binding = "chart chip x lift; XY 15000"
-expected = "P1a/P4a: 2743; P1a/P4b: 4572; P1b/P4a: 3658; P1b/P4b: 6096 // graded at app rpm 18000: @app/P4a: 2743; @app/P4b: 4572"
-candidates = { "P1a/P4a" = [2743.2, 2743.2], "P1a/P4b" = [4572.0, 4572.0], "P1b/P4a" = [3657.6, 3657.6], "P1b/P4b" = [6096.0, 6096.0] }
+expected = "P1b/P4a: 3658; P1b/P4b: 6096 // graded at app rpm 18000: @app/P4a: 2743; @app/P4b: 4572"
+candidates = { "P1b/P4a" = [3657.6, 3657.6], "P1b/P4b" = [6096.0, 6096.0] }
 grade_candidates = { "@app/P4a" = [2743.2, 2743.2], "@app/P4b" = [4572.0, 4572.0] }
 n_app = 18000.0
 derivation = "feed = chip x z x n x lift (SPK47), clamped to XY 15000. Ball R 1.0 at ap 0.20: sin k = sqrt(1-(1-ap/R)^2) = 0.6000; peak chip = fz sin k. P4b lift = 1/0.6000 = 1.6667. The chart chip is at 1 x D (SPE14), where the equator cuts (sin k = 1)."
@@ -1891,17 +1891,17 @@ idx = 17.0
 toolpath = "Outline profile with tabs"
 quantity = "chip per tooth (target peak)"
 unit = "mm"
-status = "POLICY"
+status = "DERIVED"
 binding = "chart"
-expected = "P2a Spektra 6 mm: 0.12700; P2b Onsrud 60-200 1/4 in: 0.12700-0.17780; P2c Amana ZrN 6 mm 2F flat: 0.17780-0.22860"
-candidates = { "P2a Spektra 6 mm" = [0.127, 0.127], "P2b Onsrud 60-200 1/4 in" = [0.127, 0.1778], "P2c Amana ZrN 6 mm 2F flat" = [0.1778, 0.2286] }
-grade_candidates = { "P2a Spektra 6 mm" = [0.127, 0.127], "P2b Onsrud 60-200 1/4 in" = [0.127, 0.1778], "P2c Amana ZrN 6 mm 2F flat" = [0.1778, 0.2286] }
+expected = "Onsrud 60-200 1/4 in: 0.12700-0.17780"
+candidates = { "Onsrud 60-200 1/4 in" = [0.127, 0.1778] }
+grade_candidates = { "Onsrud 60-200 1/4 in" = [0.127, 0.1778] }
 n_app = "-"
-derivation = "SPK26 \".0050\"\" x 25.4 = 0.1270 mm | ONS46 \".005-.007\" x 25.4 = 0.1270-0.1778 mm | ZRN22 \"0.007\"-0.009\"\" x 25.4 = 0.1778-0.2286 mm | P2: the tool has no vendor; the operator rules which row stands for it. Onsrud column read by text position (I). ap/D = 0.208 <= 1: the 1 x D chart condition holds (SPK38/AMS3/SPE14); no feed derate."
+derivation = "ONS46 \".005-.007\" x 25.4 = 0.1270-0.1778 mm | P2 ruled (b), operator 2026-11-08: the Onsrud 60-200 row stands for the unbranded tool. Onsrud column read by text position (I). ap/D = 0.208 <= 1: the 1 x D chart condition holds (SPK38/AMS3/SPE14); no feed derate."
 app_suggest = 0.149193
 app_shipped = "-"
-grade = "NEEDS-RULING"
-matched = ["P2b Onsrud 60-200 1/4 in"]
+grade = "PASS"
+matched = ["Onsrud 60-200 1/4 in"]
 note = "App = vendor_band.score_winner_chip_mm (the target before the radial lift)."
 
 [[row]]
@@ -1909,13 +1909,13 @@ idx = 17.0
 toolpath = "Outline profile with tabs"
 quantity = "rpm"
 unit = "rpm"
-status = "POLICY"
-binding = "a chart; b spindle max 24000"
-expected = "P1a chart 18000: 18000; P1b binding limit: 24000"
-candidates = { "P1a chart 18000" = [18000.0, 18000.0], "P1b binding limit" = [24000.0, 24000.0] }
-grade_candidates = { "P1a chart 18000" = [18000.0, 18000.0], "P1b binding limit" = [24000.0, 24000.0] }
+status = "DERIVED"
+binding = "spindle max 24000"
+expected = "P1b binding limit: 24000"
+candidates = { "P1b binding limit" = [24000.0, 24000.0] }
+grade_candidates = { "P1b binding limit" = [24000.0, 24000.0] }
 n_app = "-"
-derivation = "a: SPK3 18,000 RPM (Onsrud prints no RPM for 60-200: ONS61). b: n_xy = 15000 / (chip_hi 0.2286 x 2 x lift 1.0000) = 32808; spindle max 24000; n_b = 24000 (spindle max 24000). Power does not bind: P_req and P_avail both scale with n (constant torque below 24000 rpm, MACH), so the ratio holds at every n."
+derivation = "P1 ruled (b), operator 2026-11-08 (the chart rpm: SPK3 18,000 RPM (Onsrud prints no RPM for 60-200: ONS61)). n_xy = 15000 / (chip_hi 0.1778 x 2 x lift 1.0000) = 42182; spindle max 24000; n_b = 24000 (spindle max 24000). Power does not bind: P_req and P_avail both scale with n (constant torque below 24000 rpm, MACH), so the ratio holds at every n."
 app_suggest = 10610.0
 app_shipped = 10610.0
 grade = "FAIL"
@@ -1927,17 +1927,17 @@ idx = 17.0
 toolpath = "Outline profile with tabs"
 quantity = "feed"
 unit = "mm/min"
-status = "POLICY"
+status = "DERIVED"
 binding = "chart chip x lift; XY 15000"
-expected = "P1a/P2a: 4572; P1a/P2b: 4572-6401; P1a/P2c: 6401-8230; P1b/P2a: 6096; P1b/P2b: 6096-8534; P1b/P2c: 8534-10973 // graded at app rpm 10610: @app/P2a: 2695; @app/P2b: 2695-3773; @app/P2c: 3773-4851"
-candidates = { "P1a/P2a" = [4572.0, 4572.0], "P1a/P2b" = [4572.0, 6400.8], "P1a/P2c" = [6400.8, 8229.6], "P1b/P2a" = [6096.0, 6096.0], "P1b/P2b" = [6096.0, 8534.4], "P1b/P2c" = [8534.4, 10972.8] }
-grade_candidates = { "@app/P2a" = [2694.94, 2694.94], "@app/P2b" = [2694.94, 3772.916], "@app/P2c" = [3772.916, 4850.892] }
+expected = "P1b: 6096-8534 // graded at app rpm 10610: @app: 2695-3773"
+candidates = { "P1b" = [6096.0, 8534.4] }
+grade_candidates = { "@app" = [2694.94, 3772.916] }
 n_app = 10610.0
 derivation = "feed = chip x z x n x lift (SPK47), clamped to XY 15000. The op cuts a full slot (pocket first ring, profile, centre-line curve): r >= 0.5, lift 1."
 app_suggest = 3165.0
 app_shipped = 3165.0
-grade = "NEEDS-RULING"
-matched = ["@app/P2b"]
+grade = "PASS"
+matched = ["@app"]
 note = ""
 
 [[row]]
@@ -1945,17 +1945,17 @@ idx = 17.0
 toolpath = "Outline profile with tabs"
 quantity = "plunge"
 unit = "mm/min"
-status = "POLICY"
-binding = "a chart; b Z rate 2500"
-expected = "P1a chart: 2286; P1b Z-bound: 2500 // graded at app rpm 10610: @app: 1347"
-candidates = { "P1a chart" = [2286.0, 2286.0], "P1b Z-bound" = [2500.0, 2500.0] }
+status = "DERIVED"
+binding = "Z rate 2500"
+expected = "Z-bound: 2500 // graded at app rpm 10610: @app: 1347"
+candidates = { "Z-bound" = [2500.0, 2500.0] }
 grade_candidates = { "@app" = [1347.47, 1347.47] }
 n_app = 10610.0
-derivation = "SPK26 Ramp Down 90\" = 2286.0 mm/min at 18000 (SPK52: Ramp Down = Feed / flutes = n x chip). b: 0.127 x 24000 = 3048 > Z 2500 -> 2500. At the app rpm: 0.127 x n."
-app_suggest = 1582.0
+derivation = "SPK26 Ramp Down 90\" = 2286.0 mm/min at 18000 (SPK52: Ramp Down = Feed / flutes = n x chip; the Spektra 6 mm chip 0.127 sets the plunge, P2 rules the side chip only). P1 (b): 0.127 x 24000 = 3048 > Z 2500 -> 2500. At the app rpm: 0.127 x n."
+app_suggest = 1347.0
 app_shipped = 1582.0
-grade = "FAIL"
-matched = []
+grade = "PASS"
+matched = ["@app"]
 note = "Same tool and rpm as idx 17, but a different plunge (1347 vs 1582): the two ops disagree."
 
 [[row]]
@@ -1963,17 +1963,17 @@ idx = 17.0
 toolpath = "Outline profile with tabs"
 quantity = "ramp feed"
 unit = "mm/min"
-status = "POLICY"
+status = "DERIVED"
 binding = "slot chip (full-width ramp)"
-expected = "P1a/P2a: 4572; P1a/P2b: 4572-6401; P1a/P2c: 6401-8230; P1b/P2a: 6096; P1b/P2b: 6096-8534; P1b/P2c: 8534-10973 // graded at app rpm 10610: @app/P2a: 2695; @app/P2b: 2695-3773; @app/P2c: 3773-4851"
-candidates = { "P1a/P2a" = [4572.0, 4572.0], "P1a/P2b" = [4572.0, 6400.8], "P1a/P2c" = [6400.8, 8229.6], "P1b/P2a" = [6096.0, 6096.0], "P1b/P2b" = [6096.0, 8534.4], "P1b/P2c" = [8534.4, 10972.8] }
-grade_candidates = { "@app/P2a" = [2694.94, 2694.94], "@app/P2b" = [2694.94, 3772.916], "@app/P2c" = [3772.916, 4850.892] }
+expected = "P1b: 6096-8534 // graded at app rpm 10610: @app: 2695-3773"
+candidates = { "P1b" = [6096.0, 8534.4] }
+grade_candidates = { "@app" = [2694.94, 3772.916] }
 n_app = 10610.0
 derivation = "A ramp cuts a full slot: ramp feed = chip x z x n (lift 1). Vertical part: 4572 x sin 3deg = 239 mm/min < Ramp Down 2286: the side chip binds."
 app_suggest = 3165.0
 app_shipped = 3165.0
-grade = "NEEDS-RULING"
-matched = ["@app/P2b"]
+grade = "PASS"
+matched = ["@app"]
 note = ""
 
 [[row]]

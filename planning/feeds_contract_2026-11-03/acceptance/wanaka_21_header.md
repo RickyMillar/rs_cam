@@ -6,11 +6,11 @@ the project file, or arithmetic shown in the row. The app is the thing under
 test. No expected value comes from the engine code or from the app output.
 
 - Project: `planning/rivmap_block_job/nz_wanaka_21_operator.toml`, 18 toolpaths, white oak.
-- Graded build: `998ac93a3` (HEAD commit time 1794076138). The running
-  `rs_cam_gui` binary has mtime 1794076448, later than HEAD, and
-  `gui_status` reports `newer_than_process: false`. This shows that the
-  binary was built after HEAD. It does not prove that the binary equals HEAD:
-  a peer agent edits `crates/` now, so uncommitted edits can be in the binary.
+- Graded build: `4b7aa0e96` (P20b-P20d; HEAD commit time 1794098734). The running
+  `rs_cam_gui` binary has mtime 1794109801, later than HEAD; the process started after
+  that (2026-11-08 20:42). Graded by a fresh agent on 2026-11-08: PASS 47, FAIL 23,
+  NEEDS-RULING 28, N/A 10. The previous grade (build `998ac93a3`, before the rulings of
+  2026-11-08) was PASS 31, FAIL 12, NEEDS-RULING 55.
 - App values: MCP `get_suggest_rationale` (Suggest) and `get_toolpath_params`
   (shipped), read on 2026-11-08. The GUI state differs from the saved file
   for idx 16 (GUI 2317 mm/min at 18000 rpm; file 4700 at 20611). The table
@@ -89,6 +89,25 @@ ramp cuts a full slot, so the ramp feed has lift 1.
   ratio does not change with RPM on this machine. Power never sets the RPM.
 - No repo source gives the spindle or VFD efficiency. The ratio assumes the rated
   shaft power. That margin is UNSOURCED.
+
+## Rulings (2026-11-08)
+
+- **P1: (b)**, operator. The table grades the RPM at the binding limit now (24000 for side
+  cuts, 19685 for the 6 mm drills). Feed, plunge and ramp rows stay graded at the app's own
+  RPM, so only the RPM rows carry P1. The app fails these rows until P21.
+- **P2: (b)**, operator. The Onsrud hardwood 60-200 row (1/4 in, 0.127-0.178 mm) stands for
+  the unbranded 6 mm 2F tool (tool 0). The plunge rows of tool 0 keep the Spektra Ramp Down
+  rule; P2 rules the side chip only.
+- **P3: (b)**, lead, on operator delegation ("whichever is most correct"). The chart chip is
+  a peak chip. The peak occurs at the largest engagement, which is the cap width
+  (stepover x `trochoid_cap_mult`).
+- **P4: open.** Operator reason: when the taper cuts, it does roughing work, and the tip does
+  the finish. One lift for the whole edge does not hold; the two parts need their own limits.
+- **Drill power (P20d Q1): advisory**, operator. The power rows of idx 3 and 4 pass when the
+  app labels the figure advisory on the axial section and no gate acts on it.
+- **Axial hover labels (P20d Q2)**, operator: "advance per rev" and "diameter".
+- **F3000**, operator: delete `feed_max_rate` from the wanaka toolpaths. The value is the old
+  `DressupConfig` default (3000.0 until S11, `74af0f8e1`). Empty = the machine cutting ceiling.
 
 ## Questions the operator must rule on
 

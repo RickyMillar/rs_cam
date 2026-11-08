@@ -4,7 +4,7 @@
 The script computes every expected value from printed source lines and
 physics. It does not import or read the engine. The app values below are
 copies of MCP read-tool output (get_toolpath_params, get_suggest_rationale,
-build 998ac93a3). Re-grade a new build: replace the APP dict, run the script.
+build 4b7aa0e96 (P20b-P20d)). Re-grade a new build: replace the APP dict, run the script.
 
 Output: wanaka_21.toml, and wanaka_21.md = wanaka_21_header.md + the row tables.
 """
@@ -132,7 +132,7 @@ def p_vgroove(vf, n, ap, half_deg, z):
 
 
 # ---------------------------------------------------------------- app values
-# From MCP, build 998ac93a3, 2026-11-08. sug = get_suggest_rationale,
+# From MCP, build 4b7aa0e96 (P20b-P20d), 2026-11-08. sug = get_suggest_rationale,
 # shp = get_toolpath_params. chip = vendor_band.score_winner_chip_mm.
 APP = {
     0: dict(sug=dict(feed=6488, rpm=18000, plunge=2162, ramp=6447, preq=0.04341691566912402, pav=1.125, ae=8.0, ap=0.5, chip=0.17912843029568412),
@@ -141,9 +141,11 @@ APP = {
             shp=dict(feed=8475, rpm=18000, plunge=2162, ramp=6448)),
     2: dict(sug=dict(feed=5279, rpm=18000, plunge=2285, ramp=4571, preq=0.14209732235325212, pav=1.125, ae=2.4, ap=6.0, chip=0.127),
             shp=dict(feed=5279, rpm=18000, plunge=2285, ramp=4571)),
-    3: dict(sug=dict(feed=2286, rpm=18000, plunge=2286, ramp=None, preq=0.00005000854100138596, pav=1.125, ae=0.02, ap=0.05, chip=0.0635),
+    3: dict(sug=dict(feed=2286, rpm=18000, plunge=2286, ramp=None, preq=0.14098888469360185, pav=1.125, ae=6.0, ap=0.127, chip=0.0635,
+                     padv=True, section="axial_circle"),
             shp=dict(feed=1000, rpm=18000, plunge=None, ramp=None)),
-    4: dict(sug=dict(feed=2286, rpm=18000, plunge=2286, ramp=None, preq=0.00005000854100138596, pav=1.125, ae=0.02, ap=0.05, chip=0.0635),
+    4: dict(sug=dict(feed=2286, rpm=18000, plunge=2286, ramp=None, preq=0.14098888469360185, pav=1.125, ae=6.0, ap=0.127, chip=0.0635,
+                     padv=True, section="axial_circle"),
             shp=dict(feed=1000, rpm=18000, plunge=None, ramp=None)),
     # idx 5: Suggest prints no feed or rpm (shipped_power unmodeled); the
     # Suggest chip is score_winner 0.14919; plunge 1347 from basis.plunge.
@@ -158,13 +160,13 @@ APP = {
     # idx 9: Suggest prints no feed or rpm (unmodeled); chip = score_winner 0.127.
     9: dict(sug=dict(feed=None, rpm=None, plunge=381, ramp=None, preq=None, pav=None, ae=None, ap=None, chip=0.127),
             shp=dict(feed=2286, rpm=18000, plunge=381, ramp=None)),
-    10: dict(sug=dict(feed=2286, rpm=18000, plunge=762, ramp=None, preq=0.05220853394556006, pav=1.125, ae=6.35, ap=2.6, chip=0.0635),
+    10: dict(sug=dict(feed=2286, rpm=18000, plunge=762, ramp=None, preq=0.02821826960316605, pav=1.125, ae=6.35, ap=2.6, chip=0.0635),
              shp=dict(feed=2286, rpm=18000, plunge=762, ramp=None)),
     11: dict(sug=dict(feed=6488, rpm=18000, plunge=2162, ramp=None, preq=0.09592408687942625, pav=1.125, ae=18.0, ap=0.5, chip=0.17912843029568412),
              shp=dict(feed=6488, rpm=18000, plunge=2162, ramp=None)),
     12: dict(sug=dict(feed=6488, rpm=18000, plunge=2162, ramp=6447, preq=0.04341691566912402, pav=1.125, ae=8.0, ap=0.5, chip=0.17912843029568412),
              shp=dict(feed=6488, rpm=18000, plunge=2162, ramp=6447)),
-    13: dict(sug=dict(feed=2286, rpm=18000, plunge=762, ramp=None, preq=0.006047366814047577, pav=1.125, ae=6.35, ap=0.6, chip=0.0635),
+    13: dict(sug=dict(feed=2286, rpm=18000, plunge=762, ramp=None, preq=0.0015027480853757064, pav=1.125, ae=6.35, ap=0.6, chip=0.0635),
              shp=dict(feed=2286, rpm=18000, plunge=762, ramp=None)),
     14: dict(sug=dict(feed=8060, rpm=18000, plunge=2162, ramp=6448, preq=0.3129324141800096, pav=1.125, ae=5.76, ap=4.166, chip=0.17912843029568412),
              shp=dict(feed=8060, rpm=18000, plunge=2162, ramp=6448)),
@@ -172,7 +174,7 @@ APP = {
              shp=dict(feed=5429, rpm=18000, plunge=2285, ramp=4571)),
     16: dict(sug=dict(feed=2317, rpm=18000, plunge=240, ramp=None, preq=0.0010691975045593193, pav=1.125, ae=0.8717797887081346, ap=0.2, chip=0.06437017664182963),
              shp=dict(feed=2317, rpm=18000, plunge=240, ramp=None)),
-    17: dict(sug=dict(feed=3165, rpm=10610, plunge=1582, ramp=3165, preq=0.042295681141273724, pav=0.663125, ae=6.0, ap=1.25, chip=0.14919260416145616),
+    17: dict(sug=dict(feed=3165, rpm=10610, plunge=1347, ramp=3165, preq=0.042295681141273724, pav=0.663125, ae=6.0, ap=1.25, chip=0.14919260416145616),
              shp=dict(feed=3165, rpm=10610, plunge=1582, ramp=3165)),
 }
 
@@ -182,16 +184,16 @@ APP = {
 TP = {
     0: ("Face back to T1", 6, "face", dict(ae=8.0, ap=0.5, entry="ramp")),
     1: ("Back bulk rough 18 mm", 6, "adaptive", dict(ae=5.5, cap=1.6, ap=10.0, entry="ramp")),
-    2: ("Back rest 6 mm", 0, "adaptive", dict(ae=1.5, cap=1.6, ap=6.0, entry="ramp")),
+    2: ("Back rest 6 mm (cavity, hollow, lakes, pockets)", 0, "adaptive", dict(ae=1.5, cap=1.6, ap=6.0, entry="ramp")),
     3: ("Pin drill, flip pins", 0, "drill", dict()),
     4: ("Drill light holes 6 mm end mill", 0, "drill", dict()),
     5: ("River channel 6 mm, pass 7 of 7", 0, "slot", dict(ae=6.0, ap=None, entry="plunge")),
-    6: ("Lake pocket 2 mm, 8 lakes", 5, "pocket", dict(ae=0.8, ap=0.7, entry="plunge")),
-    7: ("Lake pocket 2 mm, 1 lake", 5, "pocket", dict(ae=1.0, ap=0.5, entry="plunge")),
+    6: ("Lake pocket 2 mm, 11 lakes to Z 5.88", 5, "pocket", dict(ae=0.8, ap=0.7, entry="plunge")),
+    7: ("Lake pocket 2 mm, 1 lake to Z 3.99", 5, "pocket", dict(ae=1.0, ap=0.5, entry="plunge")),
     8: ("ANTENNA_D5.00 pocket 2 mm", 5, "pocket", dict(ae=1.0, ap=0.5, entry="ramp")),
     9: ("V rivers and lakes", 1, "vtrace", dict(ap=None, entry="plunge")),
     10: ("Day strip slit V60", 2, "vtrace", dict(ap=2.6, entry="plunge")),
-    11: ("Face clamp pads 6 mm (pocket)", 6, "pocket", dict(ae=8.0, ap=0.5, entry="plunge")),
+    11: ("Face clamp pads 6 mm", 6, "pocket", dict(ae=8.0, ap=0.5, entry="plunge")),
     12: ("Face front to T", 6, "face", dict(ae=8.0, ap=0.5, entry="ramp")),
     13: ("Engrave day labels V60", 2, "vtrace", dict(ap=0.6, entry="plunge")),
     14: ("Front bulk rough 18 mm", 6, "adaptive", dict(ae=3.6, cap=1.6, ap=4.166, entry="ramp")),
@@ -218,9 +220,8 @@ c_v60 = (90 * IN / (18000 * 2), 0.003 * IN)
 c_spe2 = 0.003 * IN
 
 CHIP = {
-    0: {"P2a Spektra 6 mm": (c_spk6, c_spk6, 'SPK26 ".0050"" x 25.4 = %.4f mm' % c_spk6),
-        "P2b Onsrud 60-200 1/4 in": (c_ons[0], c_ons[1], 'ONS46 ".005-.007" x 25.4 = %.4f-%.4f mm' % c_ons),
-        "P2c Amana ZrN 6 mm 2F flat": (c_zrn6[0], c_zrn6[1], 'ZRN22 "0.007"-0.009"" x 25.4 = %.4f-%.4f mm' % c_zrn6)},
+    # P2 ruled (b), operator 2026-11-08: the Onsrud 60-200 row stands for tool 0.
+    0: {"Onsrud 60-200 1/4 in": (c_ons[0], c_ons[1], 'ONS46 ".005-.007" x 25.4 = %.4f-%.4f mm' % c_ons)},
     6: {"bracket": (c_spk12, c_spk19_3f,
                     'UNSOURCED: no 18 mm 2F row. Bracket: SPK37 1/2 in 2F ".0057"" = %.4f mm (below), SPK54 3/4 in 3F ".009"" = %.4f mm (above)' % (c_spk12, c_spk19_3f))},
     5: {"bracket": (c_116, c_332,
@@ -312,11 +313,11 @@ for idx, (name, tid, kind, g) in TP.items():
     d, z = TOOLS[tid]
     a = APP[idx]
     chips = CHIP[tid]
-    chip_status = {0: "POLICY", 6: "UNSOURCED", 5: "UNSOURCED", 1: "SOURCED", 2: "SOURCED", 4: "SOURCED"}[tid]
+    chip_status = {0: "DERIVED", 6: "UNSOURCED", 5: "UNSOURCED", 1: "SOURCED", 2: "SOURCED", 4: "SOURCED"}[tid]
     chip_bind = "chart"
     deriv_chip = " | ".join(v[2] for v in chips.values())
     if tid == 0:
-        deriv_chip += " | P2: the tool has no vendor; the operator rules which row stands for it. Onsrud column read by text position (I)."
+        deriv_chip += " | P2 ruled (b), operator 2026-11-08: the Onsrud 60-200 row stands for the unbranded tool. Onsrud column read by text position (I)."
     ap = g.get("ap")
     depth_note = ""
     if ap is not None:
@@ -330,21 +331,25 @@ for idx, (name, tid, kind, g) in TP.items():
             'SPK26 Ramp Down "90"" x 25.4 = %.1f mm/min; / (18000 x 2) = %.5f mm (SPK3 18,000 RPM; SPK52 Ramp Down = Feed / flutes)' % (rd, axial),
             app_key="chip", unit="mm", note="App chip = vendor_band.score_winner_chip_mm.")
         nb = min(N_MAX, V_Z / (axial * z))
-        row(idx, "rpm", "POLICY", "a chart; b Z rate", {"P1a chart": (18000, 18000), "P1b Z-bound": (nb, nb)},
-            "a: SPK3 18,000 RPM. b: constant axial chip; vz = %.4f x 2 x n <= 2500 -> n <= %.0f; < 24000, so the Z rate binds." % (axial, nb),
+        row(idx, "rpm", "DERIVED", "Z rate", {"Z-bound": (nb, nb)},
+            "P1 ruled (b), operator 2026-11-08. Constant axial chip; vz = %.4f x 2 x n <= 2500 -> n <= %.0f; < 24000, so the Z rate binds." % (axial, nb),
             app_key="rpm", unit="rpm")
         na = a["sug"]["rpm"]
         gd = {"@app": (min(axial * 2 * na, V_Z), min(axial * 2 * na, V_Z))}
-        row(idx, "feed (drill, vertical)", "POLICY", "a chart; b Z rate", {"P1a chart": (rd, rd), "P1b Z-bound": (V_Z, V_Z)},
-            "a: SPK26 Ramp Down 90\" = %.1f mm/min at 18000. b: %.5f x 2 x %.0f = %.0f = Z rate 2500. At the app rpm: axial chip x 2 x n." % (rd, axial, nb, axial * 2 * nb),
+        row(idx, "feed (drill, vertical)", "DERIVED", "Z rate", {"Z-bound": (V_Z, V_Z)},
+            "P1 (b): %.5f x 2 x %.0f = %.0f = Z rate 2500 (SPK26 Ramp Down 90\" = %.1f mm/min at 18000). Graded at the app rpm: axial chip x 2 x n." % (axial, nb, axial * 2 * nb, rd),
             app_key="feed", note="Shipped 1000 mm/min is an operator value (feeds_lock spindle).", grade_cands=gd, n_app=na)
-        row(idx, "plunge", "POLICY", "a chart; b Z rate", {"P1a chart": (rd, rd), "P1b Z-bound": (V_Z, V_Z)},
+        row(idx, "plunge", "DERIVED", "Z rate", {"Z-bound": (V_Z, V_Z)},
             "A drill cycle has one feed; this row repeats the feed row.", app_key="plunge", grade_cands=gd, n_app=na)
         row(idx, "ramp feed", "N/A", "none", {}, "A drill cycle has no ramp.", app_key="ramp", override="N/A")
-        row(idx, "power required vs available", "UNSOURCED", "none", {},
-            "Curti 2021 models peripheral milling only (CUR672). No repo source gives an axial drilling force for wood. Needed: a thrust and torque law for a flat end mill plunging in wood.",
-            app_key="preq", unit="kW", override="FAIL",
-            note="The app prints 0.00005 kW from ae 0.02, ap 0.05: a side-cut number for a plunge. Expected: 'not modelled'.")
+        # Drill power ruled ADVISORY, operator 2026-11-08 (P20d Q1): no source for an end
+        # cut, so the figure may show only as advisory on the axial section; no gate acts.
+        adv_ok = a["sug"].get("padv") is True and a["sug"].get("section") == "axial_circle"
+        row(idx, "power required vs available", "DERIVED", "advisory only", {},
+            "Curti 2021 models peripheral milling only (CUR672). No repo source gives an axial drilling force for wood. "
+            "Ruling 2026-11-08: the app may print the axial-section figure only as advisory (shipped_power.advisory = true, section = axial_circle).",
+            app_key="preq", unit="kW", override=("PASS" if adv_ok else "FAIL"),
+            note="Graded on the label: advisory = %s, section = %s." % (a["sug"].get("padv"), a["sug"].get("section")))
         continue
 
     # -------------------------------------------------------- chip row
@@ -360,9 +365,11 @@ for idx, (name, tid, kind, g) in TP.items():
     if kind == "adaptive":
         ae_cap = g["ae"] * g["cap"]
         la, lb = lift(g["ae"], d), lift(ae_cap, d)
-        lifts = {"P3a nominal ae": la, "P3b cap ae": lb}
-        lift_deriv = ("lift = 1 / (2 sqrt(r(1-r))), r = ae/D. P3a: ae %.3f, r %.4f, lift %.4f. P3b: ae %.3f x %.1f = %.4f, r %.4f, lift %.4f."
-                      % (g["ae"], g["ae"] / d, la, g["ae"], g["cap"], ae_cap, ae_cap / d, lb))
+        # P3 ruled (b), lead 2026-11-08 (operator: "whichever is most correct"): the chart
+        # chip is a peak chip; the peak occurs at the largest engagement, the cap width.
+        lifts = {"cap ae": lb}
+        lift_deriv = ("lift = 1 / (2 sqrt(r(1-r))), r = ae/D. P3 ruled (b): ae %.3f x %.1f = %.4f, r %.4f, lift %.4f (the nominal ae %.3f would give lift %.4f)."
+                      % (g["ae"], g["cap"], ae_cap, ae_cap / d, lb, g["ae"], la))
     elif kind == "face":
         la = lift(g["ae"], d)
         lifts = {"face ae": la}
@@ -385,16 +392,15 @@ for idx, (name, tid, kind, g) in TP.items():
     deriv_n = []
     max_lift = max(lifts.values())
     nb, nb_bind = n_b_lateral(chip_hi, z, max_lift)
-    pol_n["P1a chart 18000"] = 18000.0
-    pol_n["P1b binding limit"] = nb
+    pol_n["P1b binding limit"] = nb  # P1 ruled (b), operator 2026-11-08
     chart_rpm = {0: "SPK3 18,000 RPM (Onsrud prints no RPM for 60-200: ONS61)", 6: "SPK3 18,000 RPM (nearest printed chart)",
                  5: "SPK3 18,000 RPM", 1: "AMS3 18,000", 2: "AMS3 18,000", 4: "SPE23 18,000"}[tid]
-    deriv_n.append("a: " + chart_rpm + ".")
-    deriv_n.append("b: n_xy = 15000 / (chip_hi %.4f x %d x lift %.4f) = %.0f; spindle max 24000; n_b = %.0f (%s)."
+    deriv_n.append("P1 ruled (b), operator 2026-11-08 (the chart rpm: " + chart_rpm + ").")
+    deriv_n.append("n_xy = 15000 / (chip_hi %.4f x %d x lift %.4f) = %.0f; spindle max 24000; n_b = %.0f (%s)."
                    % (chip_hi, z, max_lift, V_XY / (chip_hi * z * max_lift), nb, nb_bind))
     deriv_n.append("Power does not bind: P_req and P_avail both scale with n (constant torque below 24000 rpm, MACH), so the ratio holds at every n.")
     app_rpm_val = a["sug"]["rpm"] if a["sug"]["rpm"] is not None else a["shp"]["rpm"]
-    row(idx, "rpm", "POLICY", "a chart; b %s" % nb_bind,
+    row(idx, "rpm", "DERIVED", nb_bind,
         {k: (v, v) for k, v in pol_n.items()}, " ".join(deriv_n),
         app_val=app_rpm_val, unit="rpm",
         note=("Suggest prints no rpm; graded on the shipped param." if a["sug"]["rpm"] is None else ""))
@@ -413,7 +419,7 @@ for idx, (name, tid, kind, g) in TP.items():
         return out
     cands = feed_cands(pol_n)
     gfeed = feed_cands({"@app": n_app})
-    feed_status = "POLICY"
+    feed_status = "POLICY" if kind == "ball" else "DERIVED"  # P4 open
     if tid in (6, 5):
         feed_status = "UNSOURCED"
     deriv_f = "feed = chip x z x n x lift (SPK47), clamped to XY 15000. " + lift_deriv
@@ -421,7 +427,6 @@ for idx, (name, tid, kind, g) in TP.items():
         deriv_f += " Printed IPM: " + ("50\"-130\" = 1270-3302 mm/min at 18000." if tid == 1 else "90\" = 2286 mm/min at 18000.")
     app_feed = a["sug"]["feed"] if a["sug"]["feed"] is not None else a["shp"]["feed"]
     if tid == 1:
-        cands["P1a/printed IPM"] = (50 * IN, 130 * IN)
         if n_app == 18000:
             gfeed = {"@app": (min(gfeed["@app"][0], 50 * IN), max(gfeed["@app"][1], 130 * IN))}
     row(idx, "feed", feed_status, "chart chip x lift; XY 15000", cands, deriv_f,
@@ -438,10 +443,10 @@ for idx, (name, tid, kind, g) in TP.items():
     # -------------------------------------------------------- plunge row
     if tid == 0:
         rd = 90 * IN
-        pc = {"P1a chart": (rd, rd), "P1b Z-bound": (min(c_spk6 * N_MAX, V_Z), min(c_spk6 * N_MAX, V_Z))}
+        pc = {"Z-bound": (min(c_spk6 * N_MAX, V_Z), min(c_spk6 * N_MAX, V_Z))}
         pa = min(c_spk6 * n_app, V_Z)
-        row(idx, "plunge", "POLICY", "a chart; b Z rate 2500", pc,
-            "SPK26 Ramp Down 90\" = %.1f mm/min at 18000 (SPK52: Ramp Down = Feed / flutes = n x chip). b: 0.127 x 24000 = %.0f > Z 2500 -> 2500. At the app rpm: 0.127 x n." % (rd, c_spk6 * N_MAX),
+        row(idx, "plunge", "DERIVED", "Z rate 2500", pc,
+            "SPK26 Ramp Down 90\" = %.1f mm/min at 18000 (SPK52: Ramp Down = Feed / flutes = n x chip; the Spektra 6 mm chip 0.127 sets the plunge, P2 rules the side chip only). P1 (b): 0.127 x 24000 = %.0f > Z 2500 -> 2500. At the app rpm: 0.127 x n." % (rd, c_spk6 * N_MAX),
             app_key="plunge", grade_cands={"@app": (pa, pa)}, n_app=n_app,
             note=("Same tool and rpm as idx 17, but a different plunge (1347 vs 1582): the two ops disagree." if idx in (5, 17) else ""))
     elif tid == 6:
@@ -451,7 +456,7 @@ for idx, (name, tid, kind, g) in TP.items():
             app_key="plunge",
             note=("Straight plunge entry at ap 0.5 <= protrusion 1.0: geometrically possible." if idx == 11 else ""))
     elif tid == 5:
-        pc = {"P1a 2F printed Ramp Down": (35 * IN, 40 * IN), "P1b chip x 24000": (c_116 * N_MAX, c_332 * N_MAX)}
+        pc = {"chip x 24000 (P1 b)": (c_116 * N_MAX, c_332 * N_MAX)}
         row(idx, "plunge", "UNSOURCED", "chart (2F rule)", pc,
             "UNSOURCED for 1F. SPK12/SPK17 print Ramp Down 35\" and 40\" (= %.0f and %.0f mm/min) at 1/16 and 3/32 in. "
             "SPK47 + SPK52 give Ramp Down = n x chip, which does not depend on the flute count; so a 1F tool with the 2F chip plunges at the same rate. Every candidate is >= %.0f mm/min." % (35 * IN, 40 * IN, 35 * IN),
@@ -460,8 +465,7 @@ for idx, (name, tid, kind, g) in TP.items():
             note="The app ships 240 from an unsourced repo rule (conservative: 3.7x slower than the lowest candidate).")
     elif tid == 2:
         f_lo, f_hi = c_v60[0] * 2 * 18000, c_v60[1] * 2 * 18000
-        pc = {"P1a IDC ratio x feed": (f_lo / 3, f_hi / 2),
-              "P1b IDC ratio x feed": (c_v60[0] * 2 * N_MAX / 3, c_v60[1] * 2 * N_MAX / 2)}
+        pc = {"IDC ratio x feed (P1 b)": (c_v60[0] * 2 * N_MAX / 3, c_v60[1] * 2 * N_MAX / 2)}
         row(idx, "plunge", "DERIVED", "cross-vendor ratio", pc,
             "No Amana plunge for this bit. IDC 60deg 2F V-bit prints plunge/feed 20/40 = 0.5 (IDC165) and 20/60 = 0.333 (IDC285); the two printings disagree. "
             "Range = [feed_lo/3, feed_hi/2]: a [%.0f/3, %.0f/2]." % (f_lo, f_hi),
@@ -483,7 +487,7 @@ for idx, (name, tid, kind, g) in TP.items():
             return out
         rc = ramp_cands(pol_n)
         grc = ramp_cands({"@app": n_app})
-        st = "UNSOURCED" if tid in (6, 5) else "POLICY"
+        st = "UNSOURCED" if tid in (6, 5) else "DERIVED"
         vert = ""
         if tid == 0:
             vert = " Vertical part: 4572 x sin 3deg = %.0f mm/min < Ramp Down 2286: the side chip binds." % (4572 * math.sin(math.radians(3)))
@@ -549,7 +553,7 @@ out = ["# Wanaka 21 feeds and speeds acceptance table (machine-readable twin of 
        "",
        "[meta]",
        'project = "planning/rivmap_block_job/nz_wanaka_21_operator.toml"',
-       'graded_build = "998ac93a3"',
+       'graded_build = "4b7aa0e96"',
        "tolerance_rel = %s" % TOL,
        "force_ks_n_mm2 = %s" % round(KS, 6),
        "force_f_edge_n_mm = %s" % round(FE, 6),
