@@ -457,15 +457,16 @@ pub struct SimulationRequest {
 /// F-035 extends this with `use_predicted_feed_in_gates`: when set,
 /// the simulator also builds a per-move `PredictedFeedMap` and the
 /// chipload + power gates read predicted feed for each sample instead
-/// of the commanded value. Default `false` keeps the loop's
-/// calibration byte-identical.
+/// of the commanded value. P20c: `SimulationOptions::default()` and the
+/// GUI and CLI builders set it `true`; the strategy advisor's candidate
+/// simulation keeps it `false`.
 #[derive(Debug, Clone, Copy)]
 pub struct KinematicsContext {
     pub kinematics: crate::machine::kinematics::MachineKinematics,
     pub max_feed_mm_min: f64,
     /// F-035 — when `true`, additionally stamp predicted achieved
     /// feeds on the resulting `SimulationCutTrace::predicted_feeds`
-    /// for the chipload/power gates to consume. Default `false`.
+    /// for the chipload/power gates to consume.
     pub use_predicted_feed_in_gates: bool,
 }
 

@@ -429,6 +429,22 @@ impl MachineKinematics {
         self.governing_max_rate(dir).map(|(rate, _)| rate)
     }
 
+    /// P20c: the feed (mm/min) the machine can run on a move of **unit**
+    /// direction `dir` when the toolpath commands `commanded_mm_min`:
+    /// `min(commanded, effective_max_rate_mm_min(dir))`.
+    ///
+    /// It only lowers. With no per-axis rates, or a degenerate direction,
+    /// it returns `commanded_mm_min` unchanged. It reads the one projection
+    /// ([`Self::effective_max_rate_mm_min`]); the integrator's cruise
+    /// ceiling reads the same one.
+    #[must_use]
+    pub fn rate_bound_feed_mm_min(&self, commanded_mm_min: f64, dir: &[f64; 3]) -> f64 {
+        match self.effective_max_rate_mm_min(dir) {
+            Some(rate) if rate < commanded_mm_min => rate,
+            Some(_) | None => commanded_mm_min,
+        }
+    }
+
     /// [`Self::effective_max_rate_mm_min`] plus the index of the axis that
     /// produced it — the smallest `rate_i / |dir_i|`, first axis on a tie.
     /// Feeds `KinematicBinding::RateBound { axis }`.
@@ -1168,6 +1184,56 @@ fn walk_junctions(
         visit(&digests[i], &solution, v_in, v_out);
         v_in = v_out;
     }
+}
+
+/// P20c: the rate bound (mm/min) of a fed move from `p0` to `p1` of kind
+/// `move_type` commanded at `commanded_mm_min`, read on the direction the
+/// integrator reads ([`move_directions`]: the chord, the start tangent for a
+/// full turn). A zero-length move keeps `commanded_mm_min`.
+#[must_use]
+pub fn rate_bound_feed_of_move(
+    p0: &P3,
+    p1: &P3,
+    move_type: MoveType,
+    commanded_mm_min: f64,
+    kinematics: &MachineKinematics,
+) -> f64 {
+    if move_length(p0, p1, move_type) <= 1e-9 {
+        return commanded_mm_min;
+    }
+    let (dir, _, _) = move_directions(p0, p1, move_type);
+    kinematics.rate_bound_feed_mm_min(commanded_mm_min, &dir)
+}
+
+/// P20c: lower every fed move's commanded feed to the feed the machine can
+/// run on that move ([`MachineKinematics::rate_bound_feed_mm_min`] on the
+/// move's own direction). Returns the number of moves it lowered.
+///
+/// The controller clamps a block to its per-axis rates (`$110-$112`)
+/// whatever the F word says, so this pass does not change the motion. It
+/// makes the IR, the G-code and every reader of the commanded feed state
+/// the feed the machine runs. It only lowers. With no per-axis rates it
+/// changes nothing.
+///
+/// Generation calls it once, after the last stage that writes a feed
+/// (`session::compute::JobPhases::run_stages`).
+pub fn cap_feeds_at_axis_rates(toolpath: &mut Toolpath, kinematics: &MachineKinematics) -> usize {
+    if kinematics.max_rate_xyz_mm_min.is_none() {
+        return 0;
+    }
+    let mut lowered = 0;
+    let mut prev: Option<P3> = None;
+    for m in &mut toolpath.moves {
+        if let (Some(p0), Some(commanded)) = (prev, m.move_type.feed_rate()) {
+            let bound = rate_bound_feed_of_move(&p0, &m.target, m.move_type, commanded, kinematics);
+            if bound < commanded {
+                m.move_type = m.move_type.with_feed_rate(bound);
+                lowered += 1;
+            }
+        }
+        prev = Some(m.target);
+    }
+    lowered
 }
 
 /// Same integrator as [`compute_cycle_time`], additionally bucketing

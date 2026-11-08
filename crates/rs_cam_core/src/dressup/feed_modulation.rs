@@ -1355,6 +1355,24 @@ pub fn adaptive_feed_modulate_with_materials(
             binding = BindingConstraint::FeedCap;
         }
 
+        // P20c: the per-axis rate on the move's own direction binds last.
+        // The engaged arms already read it through `predicted_cap`, but the
+        // chipload-min floor can lift a move above that reach; no floor
+        // lifts a feed above a rate the controller clamps to.
+        if i > 0 {
+            let bound = crate::machine::kinematics::rate_bound_feed_of_move(
+                &toolpath.moves[i - 1].target,
+                &toolpath.moves[i].target,
+                move_type,
+                new_feed,
+                ctx.kinematics,
+            );
+            if bound < new_feed {
+                new_feed = bound;
+                binding = BindingConstraint::KinematicReach;
+            }
+        }
+
         outcome.per_move.insert(i, (new_feed, binding));
         if (new_feed - commanded).abs() > 1e-6 {
             toolpath.moves[i].move_type = move_type.with_feed_rate(new_feed);

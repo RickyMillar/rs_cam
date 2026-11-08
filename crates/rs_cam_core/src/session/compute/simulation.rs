@@ -1034,6 +1034,39 @@ impl ProjectSession {
         for (&key, &(feed, _binding)) in &trace.modulated_feeds {
             trace.predicted_feeds.insert(key, feed);
         }
+        // P20c: the gates grade the feed the machine REACHES. With the F-035
+        // flag on and a kinematics block (the N7 rule above), each modulated
+        // move takes the reached feed of the modulated toolpath on the re-time
+        // clock (per-axis rate and accel, `predicted_feeds_for_toolpath`), not
+        // its commanded feed. The stamp above wrote over the reached feed the
+        // simulator stamped; this puts it back for the new commands.
+        if opts.use_predicted_feed_in_gates && self.machine.kinematics.is_some() {
+            let modulated_ids: std::collections::BTreeSet<ToolpathId> =
+                trace.modulated_feeds.keys().map(|(id, _)| *id).collect();
+            for id in modulated_ids {
+                let Some(slot) = self
+                    .toolpath_configs
+                    .iter()
+                    .position(|tc| tc.id == id)
+                    .and_then(|idx| self.results.get(&idx))
+                else {
+                    continue;
+                };
+                let reached = crate::machine::kinematics::predicted_feeds_for_toolpath(
+                    &slot.annotated().toolpath,
+                    &kinematics,
+                    max_feed.mm_min(),
+                    rapid_feed,
+                );
+                for (move_idx, reached_feed) in reached {
+                    if let Some(stamped) = trace.predicted_feeds.get_mut(&(id, move_idx))
+                        && trace.modulated_feeds.contains_key(&(id, move_idx))
+                    {
+                        *stamped = stamped.min(reached_feed);
+                    }
+                }
+            }
+        }
         // Modulation rewrote per-move feeds, so each modulated toolpath now
         // hashes differently than the pre-modulation value captured in the
         // trace's provenance — which would make `Self::sim_trace_is_fresh` (and the

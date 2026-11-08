@@ -1653,11 +1653,11 @@ pub struct SimulationOptions {
     /// chipload + power gates consume that predicted feed instead of
     /// the commanded `feed_rate_mm_min` on each sample.
     ///
-    /// Default `false`. With the flag off **or** kinematics absent,
-    /// gate evaluation is byte-identical to pre-F-035 — the loop's
-    /// acceptance tests (`_f0{24,26,27,28,31}.rs`) and the smoke
-    /// baseline at `planning/toolpath_acceptance/baselines/2026-05-26.csv`
-    /// continue to pass unchanged.
+    /// Default `true` since P20c (2026-11-08, operator goal "all limits
+    /// should run through all moves": the checks grade the feed the
+    /// machine reaches). With kinematics absent, gate evaluation reads the
+    /// commanded feed. The smoke instrument sets it `false` to keep its
+    /// baseline.
     ///
     /// The bug this catches: hobby-class controllers decelerate
     /// through corners. Commanded 4000 mm/min, achieved 2000 mm/min,
@@ -1753,7 +1753,8 @@ impl Default for SimulationOptions {
             // keeps the cell of every `default()` caller.
             resolution: SimulationResolution::Fixed(0.5),
             skip_ids: Vec::new(),
-            use_predicted_feed_in_gates: false,
+            // P20c: the gates grade the reached feed.
+            use_predicted_feed_in_gates: true,
             // Checkpoint J-3, 2026-08-13 (operator, BINDING): was `false`.
             adaptive_feed_modulation: true,
             modulation_strategy:

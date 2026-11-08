@@ -407,9 +407,9 @@ pub(crate) fn run_generation_plan(
     let sim_opts = SimulationOptions {
         resolution: rs_cam_core::session::SimulationResolution::Fixed(resolution.mm),
         skip_ids: combined_skip.clone(),
-        // F-035: predicted-feed plumbing off by default for CLI runs;
-        // protects the smoke baseline from spurious verdict drift.
-        use_predicted_feed_in_gates: false,
+        // P20c: the gates grade the feed the machine reaches, as the GUI
+        // and `SimulationOptions::default()` do (surface parity).
+        use_predicted_feed_in_gates: true,
         adaptive_feed_modulation,
         modulation_strategy,
         modulation_feed_scale,

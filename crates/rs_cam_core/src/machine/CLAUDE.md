@@ -14,6 +14,7 @@ principal type is `MachineProfile` in `mod.rs`.
 ## Invariants
 
 - The per-axis maximum rate is per axis. A single scalar rate over-estimates a diagonal move. F002: `cutting_ceiling()` (`CuttingCeilingMmMin`) caps a cut, `travel_rate()` (`TravelRateMmMin`) a rapid; the modulator takes the ceiling type. P16 (D9): no default cap; the ceiling is `max_cutting_feed_mm_min`, else the smaller kinematics X/Y rate, else the travel rate (`CuttingCeilingSource`; the last warns `CuttingCapUnstated` where it binds).
+- P20c: every machine limit on every move. `rate_bound_feed_mm_min` / `rate_bound_feed_of_move` read the one projection (`effective_max_rate_mm_min`); `cap_feeds_at_axis_rates` runs once in generation (`JobPhases::run_stages`, after the entry split) and the modulator caps last; a per-axis rate change drops every result. The gates grade the reached feed (`use_predicted_feed_in_gates` default on; the modulation stamp writes the reached feed). Sentry `every_machine_limit_runs_through_every_move_p20c`.
 - Machine acceleration decides parallel against spiral. The advisor reads the profile; do not hard-code a strategy preference.
 - H1: the head is a machine part, not a tool part; `MachineHead::bands` is the one band builder.
   Hard parts block, soft parts never; a shelf is a Z floor. The generation step reads the fixed

@@ -765,16 +765,24 @@ impl ProjectSession {
     /// read a stock snapshot (`ToolpathStats::stock_snapshot`) reads it
     /// too. Every other toolpath keeps its result. A change that leaves the
     /// envelope equal (the name, the spindle, the power) drops nothing.
+    ///
+    /// P20c: every generated feed is capped at the per-axis rates
+    /// (`machine::kinematics::cap_feeds_at_axis_rates` in generation), so a
+    /// change of `max_rate_xyz_mm_min` drops every result.
     fn drop_link_readers_if_moved(&mut self, before: &crate::machine::kinematics::LinkKinematics) {
-        if self.machine.link_kinematics() == *before {
+        let after = self.machine.link_kinematics();
+        if after == *before {
             return;
         }
+        let rates_moved =
+            after.kinematics.max_rate_xyz_mm_min != before.kinematics.max_rate_xyz_mm_min;
         let readers: Vec<usize> = self
             .toolpath_configs
             .iter()
             .enumerate()
             .filter(|(index, tc)| {
-                tc.operation.capabilities().reads_link_kinematics()
+                rates_moved
+                    || tc.operation.capabilities().reads_link_kinematics()
                     || self
                         .results
                         .get(index)

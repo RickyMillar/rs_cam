@@ -383,11 +383,9 @@ impl<B: ComputeBackend> AppController<B> {
             rs_cam_core::compute::simulate::KinematicsContext {
                 kinematics,
                 max_feed_mm_min,
-                // The GUI does not yet expose a toggle for this; `false`
-                // preserves pre-F-035 gate verdicts. When the GUI grows an
-                // opt-in (F-036 territory), it reads off the simulation
-                // panel state and threads here.
-                use_predicted_feed_in_gates: false,
+                // P20c: the gates grade the feed the machine reaches, as
+                // `SimulationOptions::default()` does (surface parity).
+                use_predicted_feed_in_gates: true,
             }
         });
         let core = rs_cam_core::compute::simulate::SimulationRequest {

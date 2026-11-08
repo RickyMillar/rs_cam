@@ -752,6 +752,16 @@ impl JobPhases<'_, '_> {
             crate::trace::transform_provenance::ReconcileSet::new(Some(semantic_recorder), None);
         let annotated = self.apply_dressups(annotated, &mut channels);
         let mut annotated = self.clip_and_split_entries(annotated, &mut channels)?;
+        // P20c: every machine limit on every move. The entry split above is
+        // the last stage that writes a feed, so the per-axis rate cap runs
+        // here, once, over every fed move (the generator's, the dressups'
+        // and the split's). It only lowers feeds; no index moves.
+        if let Some(link) = self.context.link_kinematics.as_ref() {
+            let _ = crate::machine::kinematics::cap_feeds_at_axis_rates(
+                &mut annotated.toolpath,
+                &link.kinematics,
+            );
+        }
         // K4 (feeds contract P3): one record per entry, built once, after
         // the entries are final. No later stage that writes moves reads it.
         annotated.produced.entries = crate::compute::catalog::entry_records(
