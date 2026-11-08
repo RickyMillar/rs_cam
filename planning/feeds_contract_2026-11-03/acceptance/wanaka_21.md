@@ -6,13 +6,15 @@ the project file, or arithmetic shown in the row. The app is the thing under
 test. No expected value comes from the engine code or from the app output.
 
 - Project: `planning/rivmap_block_job/nz_wanaka_21_operator.toml`, 18 toolpaths, white oak.
-- Graded build: `4b7aa0e96` (P20b-P20d; HEAD commit time 1794098734). The running
-  `rs_cam_gui` binary has mtime 1794109801, later than HEAD; the process started after
-  that (2026-11-08 20:42). Graded by a fresh agent on 2026-11-08: PASS 47, FAIL 23,
-  NEEDS-RULING 28, N/A 10. The previous grade (build `998ac93a3`, before the rulings of
+- Graded build: `b9e67b24e` (P20e; HEAD commit time 1794168411, 2026-11-09 09:06). The
+  running `rs_cam_gui` binary (`target/release`) has mtime 1794168764 (09:12), later than
+  HEAD; the process started after that (2026-11-09 09:38); no edits under `crates/`.
+  Graded by a fresh agent on 2026-11-09: PASS 47, FAIL 23, NEEDS-RULING 28, N/A 10. The
+  previous grade (build `4b7aa0e96`, P20b-P20d, 2026-11-08) was PASS 47, FAIL 23,
+  NEEDS-RULING 28, N/A 10; the grade before it (build `998ac93a3`, before the rulings of
   2026-11-08) was PASS 31, FAIL 12, NEEDS-RULING 55.
 - App values: MCP `get_suggest_rationale` (Suggest) and `get_toolpath_params`
-  (shipped), read on 2026-11-08. The GUI state differs from the saved file
+  (shipped), read on 2026-11-09 (unchanged from the read of 2026-11-08). The GUI state differs from the saved file
   for idx 16 (GUI 2317 mm/min at 18000 rpm; file 4700 at 20611). The table
   uses the GUI values.
 - Script: `derive_wanaka_21.py` computes every number and every grade. The

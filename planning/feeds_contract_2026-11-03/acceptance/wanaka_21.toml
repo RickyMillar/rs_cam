@@ -3,7 +3,7 @@
 
 [meta]
 project = "planning/rivmap_block_job/nz_wanaka_21_operator.toml"
-graded_build = "4b7aa0e96"
+graded_build = "b9e67b24e"
 tolerance_rel = 0.01
 force_ks_n_mm2 = 58.516267
 force_f_edge_n_mm = 4.594987

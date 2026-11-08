@@ -4,7 +4,7 @@
 The script computes every expected value from printed source lines and
 physics. It does not import or read the engine. The app values below are
 copies of MCP read-tool output (get_toolpath_params, get_suggest_rationale,
-build 4b7aa0e96 (P20b-P20d)). Re-grade a new build: replace the APP dict, run the script.
+build b9e67b24e (P20e)). Re-grade a new build: replace the APP dict, run the script.
 
 Output: wanaka_21.toml, and wanaka_21.md = wanaka_21_header.md + the row tables.
 """
@@ -132,7 +132,7 @@ def p_vgroove(vf, n, ap, half_deg, z):
 
 
 # ---------------------------------------------------------------- app values
-# From MCP, build 4b7aa0e96 (P20b-P20d), 2026-11-08. sug = get_suggest_rationale,
+# From MCP, build b9e67b24e (P20e), 2026-11-09. sug = get_suggest_rationale,
 # shp = get_toolpath_params. chip = vendor_band.score_winner_chip_mm.
 APP = {
     0: dict(sug=dict(feed=6488, rpm=18000, plunge=2162, ramp=6447, preq=0.04341691566912402, pav=1.125, ae=8.0, ap=0.5, chip=0.17912843029568412),
@@ -553,7 +553,7 @@ out = ["# Wanaka 21 feeds and speeds acceptance table (machine-readable twin of 
        "",
        "[meta]",
        'project = "planning/rivmap_block_job/nz_wanaka_21_operator.toml"',
-       'graded_build = "4b7aa0e96"',
+       'graded_build = "b9e67b24e"',
        "tolerance_rel = %s" % TOL,
        "force_ks_n_mm2 = %s" % round(KS, 6),
        "force_f_edge_n_mm = %s" % round(FE, 6),
