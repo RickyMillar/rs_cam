@@ -573,8 +573,9 @@ pub struct SpeedsPoint {
     /// The advance per tooth.
     #[serde(serialize_with = "value_only")]
     pub chip: Sourced<ChipMm>,
-    /// The spindle power at the point (kW).
-    pub power_kw: f64,
+    /// The spindle power at the point (kW); `None` when not modelled
+    /// (P20d).
+    pub power_kw: Option<f64>,
     /// The rated power at the point's RPM (kW).
     pub available_kw: f64,
     /// The full chip fits the rated power at the point.
@@ -631,8 +632,9 @@ fn chip_of(r: &FeedsResult, flutes: u32) -> f64 {
 /// The full chip fits the rated spindle power at the point: no feed cut by
 /// the power ladder, and the shipped power at or under the curve.
 fn fits_power(r: &FeedsResult) -> bool {
-    let fits_curve =
-        r.available_power_kw <= 0.0 || r.power_kw <= r.available_power_kw * (1.0 + 1e-9);
+    let fits_curve = r.available_power_kw <= 0.0
+        || r.power_kw
+            .is_none_or(|kw| kw <= r.available_power_kw * (1.0 + 1e-9));
     fits_curve && r.derates.power_limit >= 1.0
 }
 
@@ -646,8 +648,9 @@ pub struct SpeedsSample {
     pub feed_mm_min: f64,
     /// The plunge feed (mm/min).
     pub plunge_mm_min: f64,
-    /// The spindle power (kW).
-    pub power_kw: f64,
+    /// The spindle power (kW); `None` when a corner of the cell has no
+    /// modelled power (P20d).
+    pub power_kw: Option<f64>,
 }
 
 /// `(ap, ae)` -> the speeds. A grid of [`SpeedsPoint`], row-major in `ae`
@@ -688,7 +691,14 @@ impl SpeedsMap {
             rpm: lerp(&|p| p.rpm.get().0),
             feed_mm_min: lerp(&|p| p.feed.get().0),
             plunge_mm_min: lerp(&|p| p.plunge.get().0),
-            power_kw: lerp(&|p| p.power_kw),
+            power_kw: match (p00.power_kw, p10.power_kw, p01.power_kw, p11.power_kw) {
+                (Some(a), Some(b), Some(c), Some(d)) => {
+                    let low = a + ti * (b - a);
+                    let high = c + ti * (d - c);
+                    Some(low + tj * (high - low))
+                }
+                _ => None,
+            },
         })
     }
 }
@@ -805,7 +815,10 @@ impl OwnedInputs {
             Some(point),
         )
         .map_or(true, |f| {
-            f.available_kw <= 0.0 || f.required_kw <= f.available_kw * (1.0 + 1e-9)
+            // P20d: an advisory figure (the axial plunge) bounds nothing.
+            !f.section.gates()
+                || f.available_kw <= 0.0
+                || f.required_kw <= f.available_kw * (1.0 + 1e-9)
         })
     }
 }
@@ -2608,6 +2621,11 @@ fn power_limit(
                 "rated spindle power at the operator's chip (planner cap case)"
             }
             (true, PowerCase::Slot) => "rated spindle power at the operator's chip (slot case)",
+            // P20d: the envelope is a side-cut plane; a drill cycle draws
+            // no envelope, and its axial power is advisory.
+            (false | true, PowerCase::AxialPlunge) => {
+                "axial plunge power is advisory (no envelope limit)"
+            }
         },
         basis: Basis::derived(
             "two-term power model <= rated curve",

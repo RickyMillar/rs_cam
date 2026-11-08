@@ -52,7 +52,7 @@ fn field(r: &FeedsResult, q: StepQuantity) -> Option<f64> {
         StepQuantity::Depth => Some(r.axial_depth_mm),
         StepQuantity::Width => Some(r.radial_width_mm),
         StepQuantity::Plunge => Some(r.plunge_rate_mm_min),
-        StepQuantity::Power => Some(r.power_kw),
+        StepQuantity::Power => r.power_kw,
         // The ramp needs the shipped feed: the apply funnel sets it.
         StepQuantity::Ramp => None,
     }

@@ -21,8 +21,9 @@
 //!   (lead decision D-W, 2026-11-03), the exact inverse of
 //!   [`immersion_angle`]. The gate's old slab `(psi / pi) x 2 r` is retired.
 //!
-//! The section always comes from the cutter's `mrr_cross_section_mm2` (a
-//! V-bit removes half the rectangle). Every power reader builds its
+//! P20d: the section is [`EngagedSection::side_cut`] of the cutter's shape
+//! (a rectangle for a straight side, the cone for a V-bit). Every power
+//! reader builds its
 //! [`PowerModelInputs`] through [`Engagement::power_inputs`]; the fields of
 //! that struct are private to this file, so the compiler refuses a second
 //! builder.
@@ -38,7 +39,7 @@
 //!     ae_mm: 1.0,
 //!     psi_rad: 1.0,
 //!     d_eng_mm: 6.0,
-//!     section_mm2: 1.0,
+//!     section: rs_cam_core::feeds::section::EngagedSection::AxialCircle { diameter_mm: 6.0 },
 //!     helix_deg: None,
 //! };
 //! ```
@@ -64,6 +65,7 @@ use crate::compute::catalog::{CutSpec, FirstPass, OperationConfig, Radial};
 use crate::feeds::ToolGeometryHint;
 use crate::feeds::envelope::CutPoint;
 use crate::feeds::force::{DeflectionCapRefusal, immersion_angle};
+use crate::feeds::section::{AxialSectionRefusal, EngagedSection};
 use crate::material::force_line::ForceLine;
 use crate::tool::MillingCutter;
 
@@ -87,7 +89,12 @@ use crate::tool::MillingCutter;
 /// clamps at the shank the caller gives, the cutter at its own shaft.
 /// `tests/one_d_eng_door_for_every_engagement_p15.rs` holds the door.
 #[derive(Debug, Clone, Copy, PartialEq)]
-pub struct EngagedDiameter(f64);
+pub struct EngagedDiameter {
+    d_eng: f64,
+    /// P20d: the cutter's nominal diameter, the cap of the V-groove
+    /// section above the cone.
+    nominal: f64,
+}
 
 impl EngagedDiameter {
     /// The engaged diameter of a hint tool at the axial depth `ap_mm`:
@@ -99,25 +106,32 @@ impl EngagedDiameter {
         shank_diameter_mm: f64,
         ap_mm: f64,
     ) -> Self {
-        Self(crate::feeds::effective_diameter(
-            tool,
-            diameter_mm,
-            shank_diameter_mm,
-            ap_mm,
-        ))
+        Self {
+            d_eng: crate::feeds::effective_diameter(tool, diameter_mm, shank_diameter_mm, ap_mm),
+            nominal: diameter_mm,
+        }
     }
 
     /// The engaged diameter of a built tool at the axial depth `ap_mm`:
     /// `2 x tool.engagement_radius(max(ap, 0))`, never below 0.
     #[must_use]
     pub fn of_tool(tool: &crate::tool::ToolDefinition, ap_mm: f64) -> Self {
-        Self((2.0 * tool.engagement_radius(ap_mm.max(0.0))).max(0.0))
+        Self {
+            d_eng: (2.0 * tool.engagement_radius(ap_mm.max(0.0))).max(0.0),
+            nominal: tool.diameter(),
+        }
     }
 
     /// The diameter (mm).
     #[must_use]
     pub const fn mm(self) -> f64 {
-        self.0
+        self.d_eng
+    }
+
+    /// The cutter's nominal diameter (mm) (P20d).
+    #[must_use]
+    pub const fn nominal_mm(self) -> f64 {
+        self.nominal
     }
 }
 
@@ -134,7 +148,7 @@ pub struct Engagement {
     ae_mm: f64,
     psi_rad: f64,
     d_eng_mm: f64,
-    section_mm2: f64,
+    section: EngagedSection,
     helix_deg: Option<f64>,
 }
 
@@ -151,12 +165,20 @@ impl Engagement {
         helix_deg: Option<f64>,
     ) -> Self {
         let d_eng_mm = d_eng.mm();
+        let psi_rad = immersion_angle(cut.ae_mm, d_eng_mm / 2.0);
         Self {
             ap_mm: cut.ap_mm,
             ae_mm: cut.ae_mm,
-            psi_rad: immersion_angle(cut.ae_mm, d_eng_mm / 2.0),
+            psi_rad,
             d_eng_mm,
-            section_mm2: tool.mrr_cross_section_mm2(cut.ap_mm, cut.ae_mm),
+            section: EngagedSection::side_cut(
+                tool,
+                d_eng.nominal_mm(),
+                cut.ap_mm,
+                cut.ae_mm,
+                d_eng_mm,
+                psi_rad,
+            ),
             helix_deg,
         }
     }
@@ -202,7 +224,14 @@ impl Engagement {
             ae_mm,
             psi_rad: arc,
             d_eng_mm: 2.0 * r,
-            section_mm2: tool.mrr_cross_section_mm2(ap_mm, ae_mm),
+            section: EngagedSection::side_cut(
+                tool.to_geometry_hint(),
+                tool.diameter(),
+                ap_mm,
+                ae_mm,
+                2.0 * r,
+                arc,
+            ),
             helix_deg: Some(tool.helix_deg()),
         })
     }
@@ -231,10 +260,17 @@ impl Engagement {
         self.d_eng_mm
     }
 
-    /// The cutter's chip section at `(ap, ae)` (mm²).
+    /// The cutter's chip section at `(ap, ae)` (mm²): the area of
+    /// [`Self::section`].
     #[must_use]
-    pub const fn section_mm2(&self) -> f64 {
-        self.section_mm2
+    pub fn section_mm2(&self) -> f64 {
+        self.section.area_mm2()
+    }
+
+    /// P20d: the engaged section of this side cut.
+    #[must_use]
+    pub const fn section(&self) -> EngagedSection {
+        self.section
     }
 
     /// The tool's helix angle (degrees), when the builder knew it.
@@ -262,10 +298,7 @@ impl Engagement {
     ) -> PowerModelInputs {
         PowerModelInputs {
             line,
-            cross_section_mm2: self.section_mm2,
-            axial_doc_mm: self.ap_mm,
-            immersion_rad: self.psi_rad,
-            engagement_diameter_mm: self.d_eng_mm,
+            section: self.section,
             spindle_rpm: rpm,
             flute_count,
         }
@@ -660,23 +693,17 @@ impl Primitive {
 /// one term of the two-term model moves with it (see
 /// [`crate::tool_load::power::PowerTerms`]).
 ///
-/// K7: built only by [`Engagement::power_inputs`]; the fields are private
-/// to this file. `line` is the material's force line;
-/// `PowerTerms::of` applies its grain factor, so callers never
-/// pre-multiply.
+/// K7: built only by [`Engagement::power_inputs`] (a side cut) and
+/// [`Self::axial_plunge`] (P20d); the fields are private to this file.
+/// `line` is the material's force line; `PowerTerms::of` applies its grain
+/// factor, so callers never pre-multiply.
 #[derive(Debug, Clone, Copy, PartialEq)]
 pub(crate) struct PowerModelInputs {
     /// The material's force line.
     line: ForceLine,
-    /// The cutter's chip section (mm²); `section x feed` is the MRR.
-    cross_section_mm2: f64,
-    /// Axial engagement `ap` (mm). `F_edge` is a force per mm of axial
-    /// engagement, so the edge term scales with this.
-    axial_doc_mm: f64,
-    /// Engagement arc psi (rad); the duty cycle is `z psi / 2 pi`.
-    immersion_rad: f64,
-    /// Cutting diameter at the engaged depth (mm): `Vc = pi D n`.
-    engagement_diameter_mm: f64,
+    /// P20d: the engaged section (`area x feed` is the MRR; the section
+    /// states its own edge term).
+    section: EngagedSection,
     /// Spindle speed (rev/min).
     spindle_rpm: f64,
     /// Flute count `z`.
@@ -684,25 +711,38 @@ pub(crate) struct PowerModelInputs {
 }
 
 impl PowerModelInputs {
+    /// P20d: the inputs of a straight plunge of a tool of shape `tool` and
+    /// diameter `diameter_mm` ([`EngagedSection::axial_plunge`]).
+    ///
+    /// # Errors
+    ///
+    /// [`AxialSectionRefusal`] when the tip shape has no axial section.
+    pub(crate) fn axial_plunge(
+        tool: ToolGeometryHint,
+        diameter_mm: f64,
+        line: ForceLine,
+        rpm: f64,
+        flute_count: f64,
+    ) -> Result<Self, AxialSectionRefusal> {
+        Ok(Self {
+            line,
+            section: EngagedSection::axial_plunge(tool, diameter_mm)?,
+            spindle_rpm: rpm,
+            flute_count,
+        })
+    }
+
     /// The force line.
     pub(crate) const fn line(&self) -> ForceLine {
         self.line
     }
+    /// The engaged section.
+    pub(crate) const fn section(&self) -> EngagedSection {
+        self.section
+    }
     /// The chip section (mm²).
-    pub(crate) const fn cross_section_mm2(&self) -> f64 {
-        self.cross_section_mm2
-    }
-    /// The axial depth (mm).
-    pub(crate) const fn axial_doc_mm(&self) -> f64 {
-        self.axial_doc_mm
-    }
-    /// The arc (rad).
-    pub(crate) const fn immersion_rad(&self) -> f64 {
-        self.immersion_rad
-    }
-    /// The engaged diameter (mm).
-    pub(crate) const fn engagement_diameter_mm(&self) -> f64 {
-        self.engagement_diameter_mm
+    pub(crate) fn cross_section_mm2(&self) -> f64 {
+        self.section.area_mm2()
     }
     /// The spindle speed (rev/min).
     pub(crate) const fn spindle_rpm(&self) -> f64 {
@@ -713,8 +753,8 @@ impl PowerModelInputs {
         self.flute_count
     }
 
-    /// Test door: the same inputs with one edge input set to a degenerate
-    /// value, so the model's degrade rule can be held.
+    /// Test door: the same inputs with one edge input of the rectangle set
+    /// to a degenerate value, so the model's degrade rule can be held.
     #[cfg(test)]
     pub(crate) const fn with_degenerate(
         self,
@@ -722,11 +762,25 @@ impl PowerModelInputs {
         engagement_diameter_mm: Option<f64>,
     ) -> Self {
         let mut out = self;
-        if let Some(v) = immersion_rad {
-            out.immersion_rad = v;
-        }
-        if let Some(v) = engagement_diameter_mm {
-            out.engagement_diameter_mm = v;
+        if let EngagedSection::Rectangle {
+            ap_mm,
+            ae_mm,
+            d_eng_mm,
+            psi_rad,
+        } = self.section
+        {
+            out.section = EngagedSection::Rectangle {
+                ap_mm,
+                ae_mm,
+                d_eng_mm: match engagement_diameter_mm {
+                    Some(v) => v,
+                    None => d_eng_mm,
+                },
+                psi_rad: match immersion_rad {
+                    Some(v) => v,
+                    None => psi_rad,
+                },
+            };
         }
         out
     }
@@ -745,6 +799,9 @@ pub enum PowerCase {
     PlannerCap,
     /// A slot (ae = D): `FirstPass::Slot` or `Radial::Slot`.
     Slot,
+    /// P20d: a straight plunge (`Radial::Axial`, a drill cycle): the axial
+    /// circle, one case.
+    AxialPlunge,
 }
 
 impl PowerCase {
@@ -755,6 +812,7 @@ impl PowerCase {
             Self::Nominal => "nominal",
             Self::PlannerCap => "planner cap",
             Self::Slot => "slot",
+            Self::AxialPlunge => "axial plunge",
         }
     }
 }

@@ -381,7 +381,8 @@ fn run_funnel_at(machine: &MachineProfile, material: &Material, requested_ap: f6
 /// commanded a cut the spindle cannot deliver.
 fn shipped_utilisation(machine: &MachineProfile, material: &Material, s: &Shipped) -> Option<f64> {
     let line = material.force_line().ok()?;
-    let cross_section = ToolGeometryHint::Flat.mrr_cross_section_mm2(s.ap_mm, s.ae_mm);
+    // A flat end mill: the rectangle `ap x ae` (P20d `EngagedSection::Rectangle`).
+    let cross_section = s.ap_mm * s.ae_mm;
     let required = predicted_power_kw(
         &line,
         cross_section,

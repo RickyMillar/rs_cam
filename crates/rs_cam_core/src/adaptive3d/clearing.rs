@@ -999,11 +999,9 @@ pub(super) fn capped_step_factor(
 }
 
 /// The cutter and the pass a step's load is read against: the cutter's
-/// radial profile, its chip cross-section contract, its diameter, and the
-/// op's Depth/Pass.
+/// radial profile, its diameter, and the op's Depth/Pass.
 pub(super) struct StepLoadCutter<'a> {
     pub(super) lut: &'a RadialProfileLUT,
-    pub(super) chip: crate::feeds::ToolGeometryHint,
     pub(super) diameter: f64,
     pub(super) depth_per_pass: f64,
 }
@@ -1106,7 +1104,6 @@ pub(super) fn step_load_on(
             }
         }
         let load = crate::tool_load::load_fraction::chip_load_fraction(
-            cutter.chip,
             cutter.depth_per_pass,
             cutter.diameter,
             strips,
@@ -3510,7 +3507,6 @@ fn plan_and_emit_region(
                                 ctx.stay_down_clearance_mm,
                                 &StepLoadCutter {
                                     lut: ctx.lut,
-                                    chip: ctx.cutter.geometry_hint(),
                                     diameter: 2.0 * ctx.tool_radius,
                                     depth_per_pass: ctx.depth_per_pass,
                                 },

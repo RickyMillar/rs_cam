@@ -8,25 +8,23 @@
 //! second form (the box and the integral forms of the adaptive research are
 //! retired by this function).
 //!
-//! The area is the cutter's chip cross-section,
-//! [`ToolGeometryHint::mrr_cross_section_mm2`]: the area the power gate
-//! (`power.rs`) multiplies by feed. So `L` and the power prediction read one
-//! shape contract.
+//! The area of a strip is `depth x pitch`. Until P20d it read the
+//! cutter's section, the rectangle or the half rectangle of a V-bit; the
+//! factor 1/2 is the same in the sum and in the full pass, so it cancels
+//! (multiplication by 1/2 is exact), and the fraction is the same number
+//! for every shape. The power model reads its own section
+//! (`feeds::section::EngagedSection`).
 //!
 //! Source: `adaptive/slab_field.rs::strips_chip_load` of the research branch
 //! (`planning/adaptive_research_2026-10-23/P3_C22_3d_turns.md` §18.6, §18.11,
 //! the per-strip ruling C43).
 
-use crate::feeds::ToolGeometryHint;
-
 /// The chip-area load of a cut: the lateral strips `strips`
 /// (`(strip index, engaged depth mm)`, in index order, `pitch_mm` apart)
-/// integrated across the strip centres by the trapezoid with the cutter's
-/// chip cross-section `chip.mrr_cross_section_mm2`, over that of a full pass
-/// across the cutter, `mrr_cross_section_mm2(depth_per_pass, diameter)`.
+/// integrated across the strip centres by the trapezoid, over the area of
+/// a full pass across the cutter, `depth_per_pass x diameter`.
 ///
-/// Each pair of neighbouring strips adds `mrr_cross_section_mm2(mean of
-/// their depths, pitch)`; strips with a gap between them add nothing across
+/// Each pair of neighbouring strips adds `(mean of their depths) x pitch`; strips with a gap between them add nothing across
 /// it. So a full-depth band of `n` strip centres reads `(n − 1) · pitch`
 /// wide over the diameter: the extent between its outermost centres, the
 /// quantity the flat swept-width read of the 2D planner measures
@@ -34,7 +32,6 @@ use crate::feeds::ToolGeometryHint;
 /// `t / depth_per_pass` of that.
 #[must_use]
 pub fn chip_load_fraction(
-    chip: ToolGeometryHint,
     depth_per_pass: f64,
     diameter: f64,
     strips: impl IntoIterator<Item = (i64, f64)>,
@@ -46,45 +43,34 @@ pub fn chip_load_fraction(
         if let Some((p_index, p_depth)) = prev
             && index == p_index + 1
         {
-            area += chip.mrr_cross_section_mm2(0.5 * (p_depth + depth), pitch_mm);
+            area += 0.5 * (p_depth + depth) * pitch_mm;
         }
         prev = Some((index, depth));
     }
-    area / chip.mrr_cross_section_mm2(depth_per_pass, diameter)
+    area / (depth_per_pass * diameter)
 }
 
 #[cfg(test)]
 mod tests {
     use super::chip_load_fraction;
-    use crate::feeds::ToolGeometryHint;
-
     /// §18.11 sentry of the one definition: at a full pass (every strip one
     /// Depth/Pass deep) the load of `n` strip centres a cell apart is the
     /// extent between the outermost centres over the diameter,
     /// `(n − 1) · cell / D`, bit for bit, for 1 to 13 centres (a slot of a
-    /// 6 mm cutter on a 0.5 mm lattice), for the rectangular and the V-bit
-    /// cross-section (their shape factor cancels).
+    /// 6 mm cutter on a 0.5 mm lattice).
     #[test]
     fn a_full_pass_reads_the_extent_over_the_diameter() {
         const D: f64 = 6.0;
         const CELL: f64 = 0.5;
-        for chip in [
-            ToolGeometryHint::Flat,
-            ToolGeometryHint::VBit {
-                included_angle: 90.0,
-                tip_diameter: 0.0,
-            },
-        ] {
-            for dpp in [3.0, 6.0] {
-                for n in 1..=13_i64 {
-                    let load = chip_load_fraction(chip, dpp, D, (0..n).map(|i| (i, dpp)), CELL);
-                    let extent = (n - 1) as f64 * CELL / D;
-                    assert_eq!(
-                        load.to_bits(),
-                        extent.to_bits(),
-                        "{chip:?}, DPP {dpp}, {n} centres: load {load}, extent {extent}"
-                    );
-                }
+        for dpp in [3.0, 6.0] {
+            for n in 1..=13_i64 {
+                let load = chip_load_fraction(dpp, D, (0..n).map(|i| (i, dpp)), CELL);
+                let extent = (n - 1) as f64 * CELL / D;
+                assert_eq!(
+                    load.to_bits(),
+                    extent.to_bits(),
+                    "DPP {dpp}, {n} centres: load {load}, extent {extent}"
+                );
             }
         }
     }
@@ -98,28 +84,15 @@ mod tests {
         const CELL: f64 = 0.5;
         const DPP: f64 = 6.0;
         for t in [0.1, 0.5, 1.5, 3.0] {
-            let full = chip_load_fraction(
-                ToolGeometryHint::Flat,
-                DPP,
-                D,
-                (0..9).map(|i| (i, DPP)),
-                CELL,
-            );
-            let thin =
-                chip_load_fraction(ToolGeometryHint::Flat, DPP, D, (0..9).map(|i| (i, t)), CELL);
+            let full = chip_load_fraction(DPP, D, (0..9).map(|i| (i, DPP)), CELL);
+            let thin = chip_load_fraction(DPP, D, (0..9).map(|i| (i, t)), CELL);
             assert!(
                 (thin - full * t / DPP).abs() <= 1e-15,
                 "layer {t}: {thin} against {}",
                 full * t / DPP
             );
         }
-        let split = chip_load_fraction(
-            ToolGeometryHint::Flat,
-            DPP,
-            D,
-            [(0, DPP), (1, DPP), (5, DPP), (6, DPP)],
-            CELL,
-        );
+        let split = chip_load_fraction(DPP, D, [(0, DPP), (1, DPP), (5, DPP), (6, DPP)], CELL);
         assert_eq!(
             split.to_bits(),
             (2.0 * CELL / D).to_bits(),

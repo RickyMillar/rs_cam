@@ -1022,7 +1022,13 @@ fn force_line_rows(power: &PowerReading) -> Vec<DataRow> {
 /// The face: the percent of the limit, formatted from the two figures it
 /// describes. No number on this face is typed; both come off the figure.
 fn power_face(figure: &PowerFigure) -> String {
-    format!("{:.1} %", figure.required_kw / figure.available_kw * 100.0)
+    let share = figure.required_kw / figure.available_kw * 100.0;
+    // P20d: an advisory figure (the axial plunge) says so on the face.
+    if figure.section.gates() {
+        format!("{share:.1} %")
+    } else {
+        format!("{share:.1} % (advisory)")
+    }
 }
 
 /// The row's workings: the kW pair the face does not carry, where the limit
@@ -1038,7 +1044,8 @@ fn power_hover(figure: &PowerFigure, source: &BoundSource) -> String {
          calculator sized its feed at \u{2014} the rigidity clamp can lower \
          one without moving the other.\n\n\
          Power case: {} (width {:.3} mm), the largest of the cases the cut \
-         admits (K7).",
+         admits (K7).\n\n\
+         {} (P20d).",
         figure.required_kw,
         figure.available_kw,
         power_face(figure),
@@ -1050,6 +1057,7 @@ fn power_hover(figure: &PowerFigure, source: &BoundSource) -> String {
         figure.feed_mm_min,
         figure.case.label(),
         figure.case_ae_mm,
+        figure.section.basis_text(),
     )
 }
 

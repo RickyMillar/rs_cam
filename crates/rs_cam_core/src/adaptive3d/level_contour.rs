@@ -492,7 +492,6 @@ pub(super) fn level_contour_pass(
     );
     let load_cutter = StepLoadCutter {
         lut: ctx.lut,
-        chip: ctx.cutter.geometry_hint(),
         diameter: 2.0 * ctx.tool_radius,
         depth_per_pass: ctx.depth_per_pass,
     };

@@ -307,12 +307,10 @@ pub(crate) fn calculate_with(
         plunge_9c,
         &result.bases.plunge,
     );
-    log.note(
-        "result_power",
-        StepQuantity::Power,
-        result.power_kw,
-        &result.bases.power,
-    );
+    // P20d: no record when the power is not modelled.
+    if let Some(kw) = result.power_kw {
+        log.note("result_power", StepQuantity::Power, kw, &result.bases.power);
+    }
     result.steps = log.records;
     result
 }

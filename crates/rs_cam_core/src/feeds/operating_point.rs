@@ -58,6 +58,7 @@ use crate::compute::catalog::OperationConfig;
 use crate::compute::tool_config::ToolConfig;
 use crate::feeds::engagement::{EngagedDiameter, Engagement, PowerCase, PowerCases};
 use crate::feeds::envelope::CutPoint;
+use crate::feeds::section::SectionKind;
 use crate::feeds::suggest::CalculatorOperatingPoint;
 use crate::machine::MachineProfile;
 use crate::material::Material;
@@ -96,6 +97,10 @@ pub enum PowerUnmodeled {
     /// (`Axial::SurfaceOffset`, Project Curve), so the depth into the stock
     /// is known after the simulation. The post-sim power gate judges it.
     DepthAfterSimulation,
+    /// P20d: a straight plunge (`Radial::Axial`) of a tip with no axial
+    /// section (a ball, a bull nose, a V-bit or a tapered ball,
+    /// [`crate::feeds::section::EngagedSection::axial_plunge`]).
+    AxialTipNotModelled,
 }
 
 impl PowerUnmodeled {
@@ -110,6 +115,7 @@ impl PowerUnmodeled {
             Self::NoAvailablePower => "the machine publishes no spindle power at this speed",
             Self::NoEngagementDiameter => "the tool has no cutting diameter at this depth",
             Self::DepthAfterSimulation => "the depth into the stock is known after the simulation",
+            Self::AxialTipNotModelled => "the plunge of this tip shape has no power model",
         }
     }
 }
@@ -152,6 +158,10 @@ pub struct PowerFigure {
     /// The radial width (mm) of [`Self::case`]: `ae_mm` for the nominal
     /// case, D for a slot, the capped width for the planner cap.
     pub case_ae_mm: f64,
+    /// P20d: the engaged section of the figure, with its basis
+    /// ([`SectionKind::basis_text`]) and whether it gates
+    /// ([`SectionKind::gates`]; the axial plunge is advisory).
+    pub section: SectionKind,
     /// The model this figure was built from: the terms of [`Self::case`].
     /// The widest case is the largest at every feed (both terms grow with
     /// the width), so one set of terms answers every feed. Private on
@@ -235,21 +245,43 @@ pub fn power_at_operating_point(
     }
     let point = resolve_operating_point(operation, tool, material, Some(machine), fallback)?;
 
+    // P20d: a drill cycle cuts the axial circle, one case.
+    if let Some(axial) = point.axial {
+        let terms = PowerTerms::of(axial);
+        return Ok(PowerFigure {
+            required_kw: terms.kw_at_feed(point.feed_mm_min),
+            available_kw: point.available_kw,
+            ap_mm: point.ap_mm,
+            ae_mm: point.ae_mm,
+            rpm: point.rpm,
+            feed_mm_min: point.feed_mm_min,
+            force: point.force,
+            case: PowerCase::AxialPlunge,
+            case_ae_mm: point.ae_mm,
+            section: SectionKind::AxialCircle,
+            terms,
+        });
+    }
+
     // K7 change 3: the power of each case the CutSpec admits; the figure is
     // the maximum, with its case name.
-    let terms_at = |ae: f64| {
-        PowerTerms::of(
-            Engagement::from_cut(
-                CutPoint {
-                    ap_mm: point.ap_mm,
-                    ae_mm: ae,
-                },
-                point.geometry,
-                point.effective_d,
-                Some(point.helix_deg),
-            )
-            .power_inputs(point.force.line, point.rpm, point.flute_count),
+    let engagement_at = |ae: f64| {
+        Engagement::from_cut(
+            CutPoint {
+                ap_mm: point.ap_mm,
+                ae_mm: ae,
+            },
+            point.geometry,
+            point.effective_d,
+            Some(point.helix_deg),
         )
+    };
+    let terms_at = |ae: f64| {
+        PowerTerms::of(engagement_at(ae).power_inputs(
+            point.force.line,
+            point.rpm,
+            point.flute_count,
+        ))
     };
     let (case, required_kw, case_ae_mm) =
         PowerCases::of_operation(operation).worst(point.ae_mm, tool.diameter, |ae| {
@@ -267,6 +299,7 @@ pub fn power_at_operating_point(
         force: point.force,
         case,
         case_ae_mm,
+        section: engagement_at(case_ae_mm).section().kind(),
         terms,
     })
 }
@@ -363,6 +396,11 @@ pub fn shipped_power_json(figure: &Result<PowerFigure, PowerUnmodeled>) -> serde
             // K7 (feeds contract P9): the worst case of the pre-sim set.
             "case": p.case.label(),
             "case_ae_mm": p.case_ae_mm,
+            // P20d: the engaged section and its basis; an advisory figure
+            // moves no feed, speed or depth.
+            "section": p.section.wire_id(),
+            "basis": p.section.basis_text(),
+            "advisory": !p.section.gates(),
         }),
         Err(e) => serde_json::json!({ "unmodeled": format!("{e:?}") }),
     }
@@ -381,6 +419,9 @@ struct ResolvedPoint {
     geometry: crate::feeds::ToolGeometryHint,
     helix_deg: f64,
     flute_count: f64,
+    /// P20d: the power inputs of a straight plunge (`Radial::Axial`);
+    /// `None` for a side cut.
+    axial: Option<crate::feeds::engagement::PowerModelInputs>,
 }
 
 /// Resolve the operating point. With `machine` it also checks the ceiling,
@@ -402,6 +443,17 @@ fn resolve_operating_point(
     let Some(feed_mm_min) = operation.feed_rate().filter(|v| usable(*v)) else {
         return Err(PowerUnmodeled::NoFeed);
     };
+
+    // P20d: a drill cycle (`Radial::Axial`) cuts the axial circle. It needs
+    // no width and no depth: `ae` reads the diameter (the width of the
+    // hole) and `ap` the advance per revolution `feed / rpm`. The chip is
+    // the axial chip `feed / (rpm Z)`.
+    if matches!(
+        operation.cut_spec().radial,
+        crate::compute::catalog::Radial::Axial
+    ) {
+        return resolve_axial_point(operation, tool, line, machine, fallback, feed_mm_min);
+    }
 
     // K7 (feeds contract P9): a `Radial::Slot` op states its width, the
     // tool diameter (K1 `CutSpec::calc_inputs`), so a Profile, a Trace or a
@@ -489,5 +541,74 @@ fn resolve_operating_point(
         geometry: geom,
         helix_deg: tool.helix_deg,
         flute_count,
+        axial: None,
+    })
+}
+
+/// P20d: the operating point of a straight plunge. See
+/// [`resolve_operating_point`].
+fn resolve_axial_point(
+    operation: &OperationConfig,
+    tool: &ToolConfig,
+    line: crate::material::force_line::ForceLine,
+    machine: Option<&MachineProfile>,
+    fallback: Option<CalculatorOperatingPoint>,
+    feed_mm_min: f64,
+) -> Result<ResolvedPoint, PowerUnmodeled> {
+    let usable = |v: f64| v.is_finite() && v > 0.0;
+    let Some(rpm) = operation
+        .spindle_rpm()
+        .map(f64::from)
+        .filter(|v| usable(*v))
+        .or_else(|| fallback.map(|c| c.rpm).filter(|v| usable(*v)))
+    else {
+        return Err(PowerUnmodeled::NoSpindleSpeed);
+    };
+    let available_kw = match machine {
+        Some(machine) => {
+            let available_kw = machine.power_at_rpm(rpm);
+            if !usable(available_kw) {
+                return Err(PowerUnmodeled::NoAvailablePower);
+            }
+            available_kw
+        }
+        None => 0.0,
+    };
+    let geom = tool.geometry_hint();
+    let flute_count = f64::from(tool.flute_count_planning().max(1));
+    let axial = crate::feeds::engagement::PowerModelInputs::axial_plunge(
+        geom,
+        tool.diameter,
+        line,
+        rpm,
+        flute_count,
+    )
+    .map_err(|refusal| match refusal {
+        crate::feeds::section::AxialSectionRefusal::TipShapeNotModelled => {
+            PowerUnmodeled::AxialTipNotModelled
+        }
+    })?;
+    if !usable(axial.cross_section_mm2()) {
+        return Err(PowerUnmodeled::NoEngagementDiameter);
+    }
+    let ap_mm = feed_mm_min / rpm;
+    let shank = if usable(tool.shank_diameter_planning_mm()) {
+        tool.shank_diameter_planning_mm()
+    } else {
+        tool.diameter
+    };
+    Ok(ResolvedPoint {
+        // The axial chip: each flute advances `feed / (rpm Z)` per turn.
+        force: line.at_mean_chip(feed_mm_min / (rpm * flute_count)),
+        feed_mm_min,
+        ae_mm: tool.diameter,
+        ap_mm,
+        rpm,
+        available_kw,
+        effective_d: EngagedDiameter::of_hint(geom, tool.diameter, shank, ap_mm),
+        geometry: geom,
+        helix_deg: tool.helix_deg,
+        flute_count,
+        axial: Some(axial),
     })
 }

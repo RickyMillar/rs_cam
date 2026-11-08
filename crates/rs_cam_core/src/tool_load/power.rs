@@ -112,39 +112,18 @@ impl PowerTerms {
     /// inputs.
     pub(crate) fn of(inputs: PowerModelInputs) -> Self {
         let line = inputs.line();
-        let cross_section_mm2 = inputs.cross_section_mm2();
-        let axial_doc_mm = inputs.axial_doc_mm();
-        let immersion_rad = inputs.immersion_rad();
-        let engagement_diameter_mm = inputs.engagement_diameter_mm();
-        let spindle_rpm = inputs.spindle_rpm();
-        let flute_count = inputs.flute_count();
         let (ks, f_edge) = (line.ks_n_per_mm2(), line.f_edge_n_per_mm());
         let grain_factor = line.grain_factor();
+        let section = inputs.section();
 
-        let shear_kw_per_mm_min = grain_factor * ks * cross_section_mm2.max(0.0) / 60_000_000.0;
-
-        // Duty cycle `z·ψ/2π` — the average number of teeth in cut.
-        // ψ is clamped to a full slot; beyond π the arc is not a
-        // peripheral immersion any more and the model says nothing.
-        let psi = immersion_rad.clamp(0.0, std::f64::consts::PI);
-        let edge_inputs_usable = psi > 0.0
-            && axial_doc_mm.is_finite()
-            && axial_doc_mm > 0.0
-            && engagement_diameter_mm.is_finite()
-            && engagement_diameter_mm > 0.0
-            && spindle_rpm.is_finite()
-            && spindle_rpm > 0.0
-            && flute_count.is_finite()
-            && flute_count > 0.0;
-        let edge_kw = if edge_inputs_usable {
-            let duty = flute_count * psi / std::f64::consts::TAU;
-            // Vc in mm/min, so the /60e6 that turns N·mm/min into kW is
-            // the same divisor the shear term uses.
-            let vc_mm_min = std::f64::consts::PI * engagement_diameter_mm * spindle_rpm;
-            grain_factor * f_edge * axial_doc_mm * vc_mm_min * duty / 60_000_000.0
-        } else {
-            0.0
-        };
+        let shear_kw_per_mm_min = grain_factor * ks * section.area_mm2() / 60_000_000.0;
+        // P20d: the section states its own edge term (the rectangle keeps
+        // its pre-P20d arithmetic); a degenerate input gives 0.
+        let edge_kw = section.edge_kw(
+            grain_factor * f_edge,
+            inputs.spindle_rpm(),
+            inputs.flute_count(),
+        );
 
         Self {
             shear_kw_per_mm_min,
@@ -862,21 +841,16 @@ mod tests {
         }
     }
 
-    /// R1 (2026-09-16) re-baseline. The claim used to be "the V-bit's
-    /// power is half the flat's, because its cross-section is half".
-    /// That is now true of the SHEAR term only: the edge term is
-    /// `F_edge · ap · Vc · z·ψ/2π` and reads no cross-section at all, so
-    /// halving the removed area does not halve the power. The test
-    /// therefore pins both terms — the cross-section model is still
-    /// checked, and the claim it makes is now the true one.
+    /// P20d: a V-bit sample reads the cone section
+    /// (`feeds::section::EngagedSection::VGroove`). The R1 claim "the
+    /// triangle halves the shear term of the rectangle `ap x ae`" is
+    /// retired: the cone removes `min(ae, 2 r(z))` at each height, and its
+    /// edge term integrates `psi(z) r(z)` over the flank.
     #[test]
-    fn vbit_triangular_cross_section_halves_the_shear_term() {
-        // Same DOC / arc / feed on a 6.35 mm flat vs a 6.35 mm 90° V-bit.
-        // The flat removes a rectangular slab; the V-bit removes a
-        // triangular groove of half the area. (engagement_radius differs
-        // by shape: a 90° V-bit's width_at_height(1.0) = 1.0 ≠ flat's
-        // 3.175 — so this asserts the V-bit's own hand-computed power
-        // rather than a ratio against the flat.)
+    fn a_vbit_sample_reads_the_cone_section_p20d() {
+        // A 90 deg V-bit (a = 45 deg) at depth 1.0, arc pi/2: the sample
+        // radius at the top is r = 1.0 tan 45 = 1.0, the width
+        // ae = r (1 - cos psi) = 1.0. Z = 2, 18000 rpm.
         let doc = 1.0;
         let arc = std::f64::consts::FRAC_PI_2;
         let feed = 1000.0;
@@ -900,34 +874,25 @@ mod tests {
                 panic!("expected modeled verdict, got {other:?}")
             }
         };
-        // Hand compute: engagement_radius(1.0) for 90° V-bit = 1.0 mm;
-        // radial_width = (arc/π)·2·1.0 = 1.0; triangular area = 0.5·1·1 =
-        // 0.5 mm²; engaged diameter = 2.0 mm. HardMaple Curti 2021 line
-        // (ruling B6) ⇒ (Ks, F_edge) = (54.21, 4.257), grain factor A = 1.0.
-        //   shear = 1.0 · 54.21 · 0.5 · 1000 / 60e6         = 0.000452 kW
-        //   edge  = 1.0 · 4.257 · 1.0 · (π·2·18000) · 0.5 / 60e6
-        //                                                   = 0.004012 kW
         let line = mat.force_line().unwrap();
-        let (ks, f_edge, a) = (
+        let (ks, f_edge, g) = (
             line.ks_n_per_mm2(),
             line.f_edge_n_per_mm(),
             line.grain_factor(),
         );
-        let shear = a * ks * 0.5 * feed / 60_000_000.0;
-        let vc = std::f64::consts::PI * 2.0 * 18_000.0;
-        let edge = a * f_edge * doc * vc * 0.5 / 60_000_000.0;
+        let (r, w, a) = (1.0_f64, 1.0_f64, std::f64::consts::FRAC_PI_4);
+        // Area: the full cone width 2r(z) up to r = w/2, then the band w.
+        let area = (w * w / 4.0 + w * (r - w / 2.0)) / a.tan();
+        // Edge integral of psi(z) r(z) ds, ds = dr / sin a (closed form).
+        let s2 = 2.0 * r - w;
+        let j = (r * r / 2.0 * (1.0 - w / r).acos() + (w / 4.0) * (s2 / w).sqrt() * (s2 / 3.0 + w))
+            / a.sin();
+        let shear = g * ks * area * feed / 60_000_000.0;
+        let edge = g * f_edge * 2.0 * 18_000.0 * j / 60_000_000.0;
         let expected = shear + edge;
         assert!(
-            (peak - expected).abs() / expected < 0.02,
-            "V-bit two-term power {peak} should match {expected}"
-        );
-        // The cross-section model is what this test exists to check: the
-        // triangular groove must still halve the SHEAR term against a
-        // rectangular slab of the same DOC × radial width.
-        let slab_shear = a * ks * 1.0 * feed / 60_000_000.0;
-        assert!(
-            (shear - 0.5 * slab_shear).abs() < 1e-12,
-            "the triangular cross-section must halve the shear term"
+            (peak - expected).abs() / expected < 1e-9,
+            "V-bit cone power {peak} should match {expected}"
         );
     }
 
@@ -1225,19 +1190,19 @@ mod r1_two_term_model {
     fn rpm_moves_the_edge_term_and_not_the_shear_slope() {
         let (inputs, _) = fixture();
         let slow = PowerTerms::of(inputs);
-        let (fixture_inputs, line) = fixture();
+        let (_, line) = fixture();
         let fast = PowerTerms::of(
             crate::feeds::engagement::Engagement::from_cut(
                 crate::feeds::envelope::CutPoint {
-                    ap_mm: fixture_inputs.axial_doc_mm(),
+                    ap_mm: 4.20,
                     ae_mm: 2.10,
                 },
                 crate::feeds::ToolGeometryHint::Flat,
                 crate::feeds::engagement::EngagedDiameter::of_hint(
                     crate::feeds::ToolGeometryHint::Flat,
-                    fixture_inputs.engagement_diameter_mm(),
-                    fixture_inputs.engagement_diameter_mm(),
-                    fixture_inputs.axial_doc_mm(),
+                    6.0,
+                    6.0,
+                    4.20,
                 ),
                 None,
             )
@@ -1292,15 +1257,15 @@ mod r1_two_term_model {
         let feed = 2000.0;
         let engagement = crate::feeds::engagement::Engagement::from_cut(
             crate::feeds::envelope::CutPoint {
-                ap_mm: inputs.axial_doc_mm(),
+                ap_mm: 4.20,
                 ae_mm: 2.10,
             },
             crate::feeds::ToolGeometryHint::Flat,
             crate::feeds::engagement::EngagedDiameter::of_hint(
                 crate::feeds::ToolGeometryHint::Flat,
-                inputs.engagement_diameter_mm(),
-                inputs.engagement_diameter_mm(),
-                inputs.axial_doc_mm(),
+                6.0,
+                6.0,
+                4.20,
             ),
             None,
         );

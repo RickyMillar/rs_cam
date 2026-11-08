@@ -481,6 +481,17 @@ Yang 2022 HDPE figure (doi:10.3390/polym14010189) is a yield stress, not a
 cutting force, so HDPE has no line either. The historical entries below stay
 as the record of what the engine read before B6.
 
+P20d (2026-11-08): the power model reads the line on the true engaged
+section (`feeds/section.rs`), derived by geometry: the rectangle `ap x ae`
+of a side cut, the V groove of a cone (`A = h^2 tan a` for a slot, edge
+length `h / cos a` per flank) and the axial circle `pi D^2 / 4` of a flat
+end mill plunge. No repo source measures a flat end mill plunging in solid
+wood, so the axial figure is advisory. The one drilling-torque text in the
+repo, an MDF study with a D 10 mm carbide drill (Materials 2019,
+`planning/extrapolation_2026-09-24/fetch/G8/sources/materials_2019_mdf_drill_edge_radius.txt`,
+Table 3 and eq. 6), is a cross-check only: the model reads 0.78-0.93 of its
+printed torque at f 0.10-0.20 mm/rev (`planning/feeds_contract_2026-11-03/phases/P20.md`, P20d).
+
 ### Feed-aware lateral cutting-force model (deflection)
 
 `crates/rs_cam_core/src/feeds/force.rs` (the canonical force the tip-deflection

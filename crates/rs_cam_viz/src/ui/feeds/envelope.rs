@@ -791,10 +791,17 @@ pub fn readout(env: &SafeEnvelope, p: CutPoint) -> String {
             format!("{head} \u{00B7} {}", limit_name(env, binding))
         }
         Placement::Inside { .. } => match env.speeds.speeds_at(p.ap_mm, p.ae_mm) {
-            Some(s) => format!(
-                "{head} \u{00B7} {:.0} rpm \u{00B7} {:.0} mm/min \u{00B7} {:.2} kW",
-                s.rpm, s.feed_mm_min, s.power_kw
-            ),
+            Some(s) => {
+                // P20d: an unmodelled power prints as such, never as 0.
+                let power = s.power_kw.map_or_else(
+                    || "power not modelled".to_owned(),
+                    |kw| format!("{kw:.2} kW"),
+                );
+                format!(
+                    "{head} \u{00B7} {:.0} rpm \u{00B7} {:.0} mm/min \u{00B7} {power}",
+                    s.rpm, s.feed_mm_min
+                )
+            }
             None => head,
         },
     }

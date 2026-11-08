@@ -529,6 +529,10 @@ pub(super) fn recheck_power_after_rescale(
         }
         Err(_) => return warnings,
     };
+    // P20d: an advisory figure (the axial plunge) moves no feed.
+    if !figure.section.gates() {
+        return warnings;
+    }
     let rescaled = figure.feed_mm_min;
     let ceiling = figure.available_kw;
 

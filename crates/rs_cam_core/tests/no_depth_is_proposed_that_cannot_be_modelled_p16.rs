@@ -149,7 +149,10 @@ fn suggest_ships_the_chip_and_one_warning_for_the_depth_p16() {
         "no depth to judge: {:?}",
         r.warnings
     );
-    assert_eq!(r.power_kw, 0.0, "no power figure");
+    assert_eq!(
+        r.power_kw, None,
+        "no power figure (P20d: not modelled is None, never 0.0)"
+    );
     let feed = s.operation.feed_rate().expect("the feed ships");
     assert!(feed > 0.0, "the feed ships from the chip");
 

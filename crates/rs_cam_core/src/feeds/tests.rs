@@ -102,7 +102,11 @@ fn test_calculate_produces_reasonable_values() {
         "WOC {}",
         result.radial_width_mm
     );
-    assert!(result.power_kw >= 0.0, "power {}", result.power_kw);
+    assert!(
+        result.power_kw.is_some_and(|kw| kw >= 0.0),
+        "power {:?}",
+        result.power_kw
+    );
 }
 
 #[test]
@@ -1036,7 +1040,7 @@ fn test_power_limiting_on_low_power_machine() {
 
     assert!(
         result.power_limited,
-        "should be power limited with 0.01kW spindle: power={:.4}kW, available={:.4}kW",
+        "should be power limited with 0.01kW spindle: power={:?}kW, available={:.4}kW",
         result.power_kw, result.available_power_kw
     );
     assert!(

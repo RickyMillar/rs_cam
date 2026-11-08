@@ -36,6 +36,7 @@ pub mod provenance;
 pub mod quantities;
 pub mod ramp;
 pub mod rationale;
+pub mod section;
 pub mod series;
 pub mod sourced;
 pub mod suggest;
@@ -102,35 +103,6 @@ pub enum ToolGeometryHint {
 }
 
 impl ToolGeometryHint {
-    /// Engaged chip cross-section (mm²) for the canonical power
-    /// prediction. Mirrors `MillingCutter::mrr_cross_section_mm2` —
-    /// rectangular slab `ap · ae` for endmills, triangular groove
-    /// `½ · ap · ae` for V-bits — so the Suggest path
-    /// (`feeds::calculate`) and the Sim verdict
-    /// (`tool_load::power::evaluate`) agree on what area the power
-    /// model's SHEAR term multiplies by. R1's edge term reads no
-    /// cross-section at all — see `tool_load::power::PowerTerms`.
-    ///
-    /// The cutter trait method is the canonical source when a full
-    /// `ToolDefinition` is available; this hint-level method is the
-    /// equivalent shape contract for the feeds/calculate path that
-    /// only carries a `ToolGeometryHint`.
-    pub fn mrr_cross_section_mm2(self, axial_doc_mm: f64, radial_width_mm: f64) -> f64 {
-        match self {
-            // V-bit removes a triangular groove — half the rectangular
-            // slab a flat endmill would remove at the same DOC × WOC.
-            ToolGeometryHint::VBit { .. } => 0.5 * axial_doc_mm * radial_width_mm,
-            // Flat / Ball / Bull / TaperedBall: rectangular slab.
-            // Ball/tapered remove slightly less than the full slab at
-            // shallow DOC, but the established approximation is the
-            // same `ap · ae` the trait default uses.
-            ToolGeometryHint::Flat
-            | ToolGeometryHint::Ball
-            | ToolGeometryHint::Bull { .. }
-            | ToolGeometryHint::TaperedBall { .. } => axial_doc_mm * radial_width_mm,
-        }
-    }
-
     /// Effective cutting (engaged) diameter at a given axial depth of
     /// cut (mm).
     ///
@@ -470,6 +442,15 @@ impl FeedsInput<'_> {
         }
         self.material.force_line().ok()
     }
+
+    /// P20d: `true` for a drill cycle (`OperationFamily::Drill`: Drill and
+    /// Pin Drill, `Radial::Axial`). Its power section is the axial circle
+    /// ([`section::EngagedSection::axial_plunge`]), and its power is
+    /// advisory: Step 6 does not act on it.
+    #[must_use]
+    pub fn is_axial_plunge(&self) -> bool {
+        self.operation == OperationFamily::Drill
+    }
 }
 
 #[derive(Debug, Clone, PartialEq, Eq)]
@@ -532,7 +513,11 @@ pub struct FeedsResult {
     /// pass 9 then re-derives the feed at the point that ships. A display of
     /// the SHIPPED figure calls
     /// [`crate::feeds::power_at_operating_point`] on the final operation.
-    pub power_kw: f64,
+    ///
+    /// P20d (P18 item 3b): `None` when the power is not modelled (no force
+    /// line, a depth known after the simulation, or a plunge of a tip with
+    /// no axial section); never 0.0 for "not modelled".
+    pub power_kw: Option<f64>,
     /// K7 (feeds contract P9): the case of the pre-sim power set that
     /// `power_kw` is the power of (the maximum over the cases that
     /// [`FeedsInput::power_cases`] admits).
@@ -546,7 +531,8 @@ pub struct FeedsResult {
     /// figure.
     pub available_power_kw: f64,
     pub power_limited: bool,
-    /// The removal rate `ap x ae x feed`, mm^3/min. P16 (item 2b):
+    /// The removal rate `section area x feed`, mm^3/min (P20d: the
+    /// engaged section, [`section::EngagedSection::area_mm2`]). P16 (item 2b):
     /// `Err(PowerUnmodeled::DepthAfterSimulation)` on a surface offset
     /// (Project Curve), where the depth is known after the simulation; the
     /// same reason as the shipped power.
@@ -1838,6 +1824,24 @@ pub(crate) fn cap_arm_demand_kw(
     let line = input.power_force_line()?;
     let (case, kw, _) = worst_case_power(input, line, ap, ae, effective_d, rpm, feed);
     Some((case, kw))
+}
+
+/// P20d: the power terms of a straight plunge (the axial circle of the
+/// tool at `rpm`). `None` when the tip has no axial section.
+fn axial_power_terms(
+    input: &FeedsInput,
+    line: crate::material::force_line::ForceLine,
+    rpm: f64,
+) -> Option<crate::tool_load::power::PowerTerms> {
+    engagement::PowerModelInputs::axial_plunge(
+        input.tool_geometry,
+        input.tool_diameter,
+        line,
+        rpm,
+        f64::from(input.flute_count),
+    )
+    .ok()
+    .map(crate::tool_load::power::PowerTerms::of)
 }
 
 /// Step 4: the depth cap as a share of the flute length.

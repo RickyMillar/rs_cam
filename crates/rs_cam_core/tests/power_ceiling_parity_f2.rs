@@ -279,13 +279,18 @@ fn the_recommended_feed_never_implies_power_above_the_gate_ceiling() {
             for diameter in [3.0, 6.0, 12.0] {
                 let result = slot_cut(&machine, species, diameter);
                 let ceiling = gate_power_ceiling_kw(&machine, result.rpm);
+                // P20d: a species with no force line (ipe, above the Curti
+                // range) has no power figure (`None`), so no ceiling to break.
+                let Some(power_kw) = result.power_kw else {
+                    continue;
+                };
                 assert!(
-                    result.power_kw <= ceiling + 1e-9,
+                    power_kw <= ceiling + 1e-9,
                     "{} / {:?} / Ø{diameter}: recommended feed implies {:.6} kW, \
                      above the gate ceiling {:.6} kW",
                     machine.name,
                     species,
-                    result.power_kw,
+                    power_kw,
                     ceiling
                 );
             }
@@ -332,7 +337,10 @@ fn the_power_ceiling_binds_on_no_shipped_fixture_b6() {
                 if unfactored <= 0.0 {
                     continue;
                 }
-                let utilisation = result.power_kw / unfactored;
+                let Some(power_kw) = result.power_kw else {
+                    continue;
+                };
+                let utilisation = power_kw / unfactored;
                 if utilisation > worst {
                     worst = utilisation;
                     worst_label = format!("{} / {:?} / Ø{diameter}", machine.name, species);
@@ -447,17 +455,18 @@ fn a_power_limited_feed_lands_exactly_on_the_gate_ceiling() {
     assert!(
         result.power_limited,
         "the synthetic profile must reach the power-limited branch, else this \
-         record is empty (power {:.4} kW vs ceiling {:.4} kW)",
+         record is empty (power {:?} kW vs ceiling {:.4} kW)",
         result.power_kw, result.available_power_kw
     );
     let gate_ceiling = gate_power_ceiling_kw(&machine, result.rpm);
-    let utilisation = result.power_kw / gate_ceiling;
+    let power_kw = result.power_kw.expect("maple has a force line");
+    let utilisation = power_kw / gate_ceiling;
     eprintln!(
         "  {} | Ø12 slot maple: feed {:.1} mm/min, {:.5} kW of {:.5} kW gate \
          ceiling = {:.1}%",
         machine.name,
         result.feed_rate_mm_min,
-        result.power_kw,
+        power_kw,
         gate_ceiling,
         100.0 * utilisation,
     );
@@ -559,7 +568,7 @@ fn report_before_after_feeds_on_representative_fixtures() {
                 result.feed_rate_mm_min,
                 result.axial_depth_mm,
                 result.radial_width_mm,
-                result.power_kw,
+                result.power_kw.unwrap_or(f64::NAN),
                 result.available_power_kw,
                 result.power_limited,
             );

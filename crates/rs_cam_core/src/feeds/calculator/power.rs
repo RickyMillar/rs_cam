@@ -71,12 +71,10 @@ pub(super) fn step6_power(s: &mut CalcState) {
     //
     // Power prediction routes through the canonical
     // `tool_load::power::PowerTerms` so the Suggest path and the Sim
-    // verdict can't diverge. The cross-section uses the geometry-hint's
-    // shape-correct area (V-bit triangular, flat/ball/bull/tapered
-    // rectangular) — same contract as the cutter trait's
-    // `mrr_cross_section_mm2` the Sim verdict reads — and it feeds the
-    // SHEAR term only. R1's edge term reads `ap`, ψ, the engaged
-    // diameter and the RPM instead; `power_model_terms` assembles both
+    // verdict can't diverge. P20d: the engagement's section
+    // (`feeds::section::EngagedSection`: the rectangle, or the cone of a
+    // V-bit) states both the shear area and the edge term, the same
+    // section the Sim verdict reads; `power_model_terms` assembles both
     // halves from one place.
     //
     // ── The power ceiling (ruling R4 Q2, 2026-09-24) ──
@@ -107,8 +105,11 @@ pub(super) fn step6_power(s: &mut CalcState) {
     };
 
     // P16: no power figure when the depth is known after the simulation.
+    // P20d: a drill cycle's axial power is advisory (the force line is not
+    // measured on an end cut), so the ladder does not act on it.
     if let Some(line) = input.power_force_line()
         && available_power > 0.0
+        && !input.is_axial_plunge()
     {
         let ladder = Ladder {
             input,

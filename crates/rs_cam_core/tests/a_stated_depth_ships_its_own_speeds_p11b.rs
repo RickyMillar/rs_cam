@@ -112,10 +112,10 @@ fn assert_ships(stated: f64, warned: impl Fn(&FeedsWarning) -> bool) {
         power_at_operating_point(&shipped, &end_mill(), &oak(), &open_machine(), Some(point))
             .expect("white oak has a power figure")
             .required_kw;
+    let published = r.power_kw.expect("white oak has a calculator power");
     assert!(
-        (r.power_kw - want).abs() <= 1e-9 * want.max(1e-12),
-        "the published power {} kW is the power of the depth that ships, {want} kW",
-        r.power_kw
+        (published - want).abs() <= 1e-9 * want.max(1e-12),
+        "the published power {published} kW is the power of the depth that ships, {want} kW"
     );
 }
 

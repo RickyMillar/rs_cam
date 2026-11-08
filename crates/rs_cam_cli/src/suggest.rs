@@ -83,48 +83,6 @@ fn point_source(op: &OperationConfig) -> Value {
     })
 }
 
-/// Feeds contract P18 (review D17, lead ruling option (c)): the calculator
-/// power of the record. An unmodelled power is not a zero (the K6 rule), so
-/// the value is `null` when the shipped power is unmodelled for a reason
-/// that also leaves the calculator with no power model: the material has
-/// no force line (`MaterialUnvalidated`), or the depth is known after the
-/// simulation (`DepthAfterSimulation`). `FeedsResult::power_kw` holds 0.0
-/// in those two cases. The other reasons are about the shipped operating
-/// point (no feed, no width, ...); the calculator still has its own figure,
-/// so it prints. Follow-up (item 3b): the core field becomes a `Result`
-/// once `diagnostics/tests.rs` is free.
-fn calculator_power_json(
-    power_kw: f64,
-    shipped: Option<
-        &Result<
-            rs_cam_core::feeds::PowerFigure,
-            rs_cam_core::feeds::operating_point::PowerUnmodeled,
-        >,
-    >,
-) -> Value {
-    use rs_cam_core::feeds::operating_point::PowerUnmodeled;
-    let no_power_model = match shipped {
-        Some(Err(PowerUnmodeled::MaterialUnvalidated | PowerUnmodeled::DepthAfterSimulation)) => {
-            true
-        }
-        Some(Err(
-            PowerUnmodeled::NoFeed
-            | PowerUnmodeled::NoRadialEngagement
-            | PowerUnmodeled::NoDepthPerPass
-            | PowerUnmodeled::NoSpindleSpeed
-            | PowerUnmodeled::NoAvailablePower
-            | PowerUnmodeled::NoEngagementDiameter,
-        ))
-        | Some(Ok(_))
-        | None => false,
-    };
-    if no_power_model {
-        Value::Null
-    } else {
-        json!(power_kw)
-    }
-}
-
 fn profile_json(profile: &CutterOpProfile<'_>) -> Value {
     let rationale = SuggestRationale::from_warnings(&profile.warnings);
     let Some(feeds) = profile.feeds.as_ref() else {
@@ -148,7 +106,9 @@ fn profile_json(profile: &CutterOpProfile<'_>) -> Value {
             "plunge_rate_mm_min": feeds.plunge_rate_mm_min,
             "axial_depth_mm": feeds.axial_depth_mm,
             "radial_width_mm": feeds.radial_width_mm,
-            "power_kw": calculator_power_json(feeds.power_kw, shipped_figure.as_ref()),
+            // P18 (D17), P20d (item 3b): the calculator power, `null` when
+            // not modelled (`FeedsResult::power_kw` is `None`), never 0.
+            "power_kw": feeds.power_kw,
             "power_case": feeds.power_case.label(),
             "available_power_kw": feeds.available_power_kw,
             "power_limited": feeds.power_limited,

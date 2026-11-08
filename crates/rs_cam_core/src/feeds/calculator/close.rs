@@ -330,36 +330,64 @@ pub(super) fn result(s: CalcState, entry: Entry) -> FeedsResult {
         }
     };
 
-    // Final power at actual feed. Materials without a force line
-    // report 0.0 — the consumers that need a numeric headroom (charts /
-    // diagnostics) treat this as "unmodeled" rather than zero load.
-    // Same canonical helper as Step 6 above so Suggest's reported
-    // power matches the Sim verdict's prediction.
+    // Final power at actual feed, through the same helpers as Step 6, so
+    // Suggest's reported power matches the Sim verdict's prediction.
     // K7 change 3: the published power is the worst case of the set, and
     // the result names the case.
-    // P16: a depth known after the simulation gives no power figure either
-    // (`FeedsInput::power_force_line`).
-    let (power_case, actual_power) = match input.power_force_line() {
-        Some(line) => {
-            let (case, kw, _) = worst_case_power(
-                input,
-                line,
-                cut.ap,
-                cut.ae,
-                feed.effective_d,
-                speed.rpm,
-                feed.feed,
-            );
-            (case, kw)
+    // P20d (P18 item 3b): `None` when not modelled: no force line, a depth
+    // known after the simulation (P16, `FeedsInput::power_force_line`), or
+    // a plunge of a tip with no axial section. A drill cycle reads the axial
+    // circle (advisory: Step 6 did not act on it).
+    let line = input.power_force_line();
+    let (power_case, actual_power, section_area) = if input.is_axial_plunge() {
+        let terms = line.and_then(|l| crate::feeds::axial_power_terms(input, l, speed.rpm));
+        let area = crate::feeds::section::EngagedSection::axial_plunge(
+            input.tool_geometry,
+            input.tool_diameter,
+        )
+        .ok()
+        .map(|s| s.area_mm2());
+        (
+            engagement::PowerCase::AxialPlunge,
+            terms.map(|t| t.kw_at_feed(feed.feed)),
+            area,
+        )
+    } else {
+        let section = engagement::Engagement::from_cut(
+            crate::feeds::envelope::CutPoint {
+                ap_mm: cut.ap,
+                ae_mm: cut.ae,
+            },
+            input.tool_geometry,
+            feed.effective_d,
+            None,
+        )
+        .section_mm2();
+        match line {
+            Some(line) => {
+                let (case, kw, _) = worst_case_power(
+                    input,
+                    line,
+                    cut.ap,
+                    cut.ae,
+                    feed.effective_d,
+                    speed.rpm,
+                    feed.feed,
+                );
+                (case, Some(kw), Some(section))
+            }
+            None => (engagement::PowerCase::Nominal, None, Some(section)),
         }
-        None => (engagement::PowerCase::Nominal, 0.0),
     };
     // P16 (item 2b): no removal rate where the depth is known after the
     // simulation; the depth value there is the tool diameter, not a cut.
+    // P20d: the removal rate is the engaged section x the feed.
     let mrr = if input.depth_after_simulation() {
         Err(crate::feeds::operating_point::PowerUnmodeled::DepthAfterSimulation)
     } else {
-        Ok(cut.ap * cut.ae * feed.feed)
+        section_area
+            .map(|a| a * feed.feed)
+            .ok_or(crate::feeds::operating_point::PowerUnmodeled::AxialTipNotModelled)
     };
 
     let cl = &machine.chip_load;

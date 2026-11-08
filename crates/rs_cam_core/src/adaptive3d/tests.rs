@@ -2718,7 +2718,6 @@ fn the_step_reads_tell_a_full_pass_from_a_thin_layer() {
     let lut = RadialProfileLUT::from_cutter(&cutter, crate::stock::radial_profile::LUT_SAMPLES);
     let load_cutter = StepLoadCutter {
         lut: &lut,
-        chip: crate::tool::MillingCutter::geometry_hint(&cutter),
         diameter: 6.0,
         depth_per_pass: DPP,
     };

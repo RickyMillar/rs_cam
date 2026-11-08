@@ -122,7 +122,8 @@ fn router(power_kw: f64) -> MachineProfile {
 fn router_traverse_kw() -> f64 {
     let free = recipe(&router(100.0), None);
     let min_rpm = router(100.0).rpm_range().0;
-    let hi = free.power_kw;
+    // P20d: an unmodelled power is `None`; NaN then fails the band check.
+    let hi = free.power_kw.unwrap_or(f64::NAN);
     let lo = hi * min_rpm / free.rpm;
     assert!(
         lo > 0.0 && hi > lo,

@@ -604,13 +604,7 @@ fn exact_width_at(
     if hi < lo {
         return (0.0, 0.0);
     }
-    let load = chip_load_fraction(
-        cutter.geometry_hint(),
-        depth_per_pass,
-        2.0 * r,
-        strips,
-        pitch,
-    );
+    let load = chip_load_fraction(depth_per_pass, 2.0 * r, strips, pitch);
     ((hi - lo) / (2.0 * r), load)
 }
 

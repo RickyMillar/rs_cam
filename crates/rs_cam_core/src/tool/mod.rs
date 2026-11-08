@@ -522,19 +522,6 @@ pub trait MillingCutter: Send + Sync {
     // shapes are unchanged; cone/ball cutters override where the geometry
     // genuinely differs. See planning/tool_diagnostics_generic_plan.md.
 
-    /// Engaged chip cross-section area (mm²) for one cut, given the axial
-    /// depth of cut and the arc-equivalent radial slab width the power
-    /// gate already derives. This is the area the spindle power formula
-    /// multiplies by feed.
-    ///
-    /// Default is the rectangular `axial_doc · radial_width` slab — exact
-    /// for flat/bull-nose endmills and the established approximation for
-    /// ball/tapered. A V-bit removes a **triangular** groove cross-section,
-    /// so [`VBitEndmill`] overrides this (≈ half the rectangular slab).
-    fn mrr_cross_section_mm2(&self, axial_doc_mm: f64, radial_width_mm: f64) -> f64 {
-        axial_doc_mm * radial_width_mm
-    }
-
     /// Flat-tip diameter (mm). 0.0 for a fully pointed cutter (the default
     /// for every shape); flat-tip / truncated V-bits override to report
     /// the diameter of the flat at the tip, which feeds the V-carve
@@ -932,10 +919,6 @@ impl MillingCutter for ToolDefinition {
     }
     fn lookup_diameter_at(&self, axial_doc_mm: f64) -> f64 {
         self.cutter.lookup_diameter_at(axial_doc_mm)
-    }
-    fn mrr_cross_section_mm2(&self, axial_doc_mm: f64, radial_width_mm: f64) -> f64 {
-        self.cutter
-            .mrr_cross_section_mm2(axial_doc_mm, radial_width_mm)
     }
     fn flat_tip_diameter(&self) -> f64 {
         self.cutter.flat_tip_diameter()

@@ -177,16 +177,25 @@ fn every_refusal_names_itself() {
     let tool = tool();
     let hardwood = hardwood();
 
-    // A drill has no radial width of cut, and the caller offers no fallback.
+    // P20d: a drill with a flat end mill cuts the axial circle (an advisory
+    // figure); a drill with a ball has no axial section and refuses.
     let drill = OperationConfig::Drill(DrillConfig {
         floor: rs_cam_core::compute::floor::Floor::Top { depth: 20.0 },
         feed_rate: Some(500.0),
         spindle_rpm: Some(10_000),
         ..DrillConfig::default()
     });
-    let drill_refusal = power_at_operating_point(&drill, &tool, &hardwood, &machine, None)
-        .expect_err("a drill has no radial engagement, so there is no power model");
-    assert_eq!(drill_refusal, PowerUnmodeled::NoRadialEngagement);
+    let drill_figure = power_at_operating_point(&drill, &tool, &hardwood, &machine, None)
+        .expect("a flat end mill plunge has the axial section");
+    assert!(
+        !drill_figure.section.gates(),
+        "the axial figure is advisory"
+    );
+    let mut ball = tool.clone();
+    ball.tool_type = ToolType::BallNose;
+    let drill_refusal = power_at_operating_point(&drill, &ball, &hardwood, &machine, None)
+        .expect_err("a ball plunge has no axial section, so there is no power model");
+    assert_eq!(drill_refusal, PowerUnmodeled::AxialTipNotModelled);
 
     // Acrylic has no force line (ruling B6: no plastic does).
     // `Material::force_line` refuses it rather than predicting force from a
@@ -216,6 +225,8 @@ fn every_refusal_names_itself() {
         PowerUnmodeled::NoSpindleSpeed,
         PowerUnmodeled::NoAvailablePower,
         PowerUnmodeled::NoEngagementDiameter,
+        PowerUnmodeled::DepthAfterSimulation,
+        PowerUnmodeled::AxialTipNotModelled,
     ];
     for (i, a) in all.iter().enumerate() {
         assert!(

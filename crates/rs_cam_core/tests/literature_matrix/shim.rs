@@ -579,7 +579,8 @@ fn snapshot_from_clamped(
     bindings.insert("flutes".into(), cell.inputs.flute_count as f64);
     bindings.insert("stickout".into(), cell.inputs.stickout_mm.unwrap_or(0.0));
     bindings.insert("plunge_rate".into(), final_plunge);
-    bindings.insert("power_kw".into(), r.power_kw);
+    // P20d: an unmodelled power has no number; NaN marks it (as the MRR).
+    bindings.insert("power_kw".into(), r.power_kw.unwrap_or(f64::NAN));
     // P16 (item 2b): a surface offset has no removal rate; NaN marks it.
     let mrr = r.mrr_mm3_min.unwrap_or(f64::NAN);
     bindings.insert("mrr_mm3_min".into(), mrr);
@@ -651,7 +652,7 @@ fn snapshot_from_clamped(
         axial_doc_mm: final_doc,
         radial_woc_mm: final_woc,
         plunge_rate_mm_min: final_plunge,
-        power_kw: r.power_kw,
+        power_kw: r.power_kw.unwrap_or(f64::NAN),
         mrr_mm3_min: mrr,
         warnings,
         bindings,

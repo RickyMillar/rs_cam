@@ -146,14 +146,6 @@ impl MillingCutter for VBitEndmill {
         (2.0 * self.engagement_radius(axial_doc_mm)).clamp(0.0, self.diameter())
     }
 
-    fn mrr_cross_section_mm2(&self, axial_doc_mm: f64, radial_width_mm: f64) -> f64 {
-        // A V-bit removes a triangular groove, not a rectangular slab: the
-        // engaged section narrows linearly from `radial_width` at the cut
-        // floor to a point at the tip. Area = ½ · base · height, half the
-        // rectangular default the power gate would otherwise assume.
-        0.5 * axial_doc_mm * radial_width_mm
-    }
-
     fn width_at_height(&self, h: f64) -> f64 {
         let big_r = self.radius();
         let w = vbit_cone_radius_at_height(self.tan_half_angle, h);
@@ -441,18 +433,6 @@ mod tests {
             }
             other => panic!("expected VBit hint, got {other:?}"),
         }
-    }
-
-    #[test]
-    fn mrr_cross_section_is_triangular_half_of_rectangular() {
-        // V-bit groove cross-section is ½ · base · height, exactly half the
-        // rectangular slab the default trait method assumes.
-        let tool = VBitEndmill::new(12.0, 90.0, 25.0).unwrap();
-        let doc = 2.0;
-        let woc = 3.0;
-        let area = tool.mrr_cross_section_mm2(doc, woc);
-        assert!((area - 0.5 * doc * woc).abs() < 1e-12);
-        assert!((area - 3.0).abs() < 1e-12);
     }
 
     #[test]

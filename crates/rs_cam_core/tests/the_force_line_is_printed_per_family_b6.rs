@@ -677,7 +677,7 @@ fn operating_point(ap: f64, ae: f64, fz: f64, rpm: f64) -> FeedsResult {
         },
         axial_depth_mm: ap,
         radial_width_mm: ae,
-        power_kw: 0.0,
+        power_kw: None,
         power_case: PowerCase::Nominal,
         available_power_kw: 0.8,
         power_limited: false,

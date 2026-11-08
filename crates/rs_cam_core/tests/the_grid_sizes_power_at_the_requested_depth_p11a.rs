@@ -106,7 +106,7 @@ fn column_above(env: &SafeEnvelope, j: usize, ap_mm: f64) -> Vec<&SpeedsPoint> {
 
 /// The number of distinct power values (relative step above 1e-9).
 fn distinct_powers(points: &[&SpeedsPoint]) -> usize {
-    let mut kw: Vec<f64> = points.iter().map(|p| p.power_kw).collect();
+    let mut kw: Vec<f64> = points.iter().filter_map(|p| p.power_kw).collect();
     kw.sort_by(f64::total_cmp);
     kw.dedup_by(|a, b| (*a - *b).abs() <= 1e-9 * b.abs().max(1e-12));
     kw.len()
@@ -181,12 +181,13 @@ fn each_grid_point_stores_the_power_of_its_own_depth_p11a() {
         let want = power_at_operating_point(&op, &tool, &material, &machine, None)
             .expect("white oak has a power figure")
             .required_kw;
+        let stored = p.power_kw.expect("white oak has a grid power");
         assert!(
-            (p.power_kw - want).abs() <= 1e-9 * want.abs().max(1e-12),
+            (stored - want).abs() <= 1e-9 * want.abs().max(1e-12),
             "D-A: the grid point at ap {} ae {} stores {} kW; its own depth draws {} kW",
             p.ap_mm,
             p.ae_mm,
-            p.power_kw,
+            stored,
             want
         );
         checked += 1;

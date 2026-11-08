@@ -395,8 +395,8 @@ fn sim_set() -> CutMetricSet {
         chip.push(sample(
             fz * engagement.psi_rad().min(std::f64::consts::FRAC_PI_2).sin(),
         ));
-        if let Some(s) = env.speeds.speeds_at(ap, ae) {
-            power.push(sample(s.power_kw));
+        if let Some(kw) = env.speeds.speeds_at(ap, ae).and_then(|s| s.power_kw) {
+            power.push(sample(kw));
         }
         if let Some(d) = rs_cam_core::feeds::predict::tip_deflection_from_engagement(
             &tool,
