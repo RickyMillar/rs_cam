@@ -110,17 +110,19 @@ impl BindingConstraint {
 /// modulator. Surfaced on [`ToolpathLoadVerdict::modulation_summary`].
 ///
 /// Fields:
-/// - `moves_touched`: number of cutting moves whose `feed_rate` was
-///   actually rewritten by the modulator (skipped intents, rapids,
-///   and no-engagement moves don't count).
+/// - `moves_touched`: number of visited moves whose emitted feed differs
+///   from the op feed by more than 0.5 mm/min (P20f). Skipped intents
+///   and rapids do not count. The count does not change when the
+///   session modulates an already modulated toolpath again.
 /// - `moves_total`: total cutting-eligible moves the modulator
 ///   considered (excludes rapids).
 /// - `median_feed_delta_pct`: median of
-///   `(modulated - commanded) / commanded × 100` across touched
+///   `(modulated - op feed) / op feed × 100` across touched
 ///   moves. Negative when modulation backed off, positive when it
 ///   raised feed.
 /// - `binding_constraint_distribution`: fraction (0.0–1.0) of
-///   touched moves whose binding constraint matched each variant.
+///   visited moves (`moves_total`, touched or not) whose binding
+///   constraint matched each variant.
 ///   Sums to ≤ 1.0 (rounding); variants with zero share are omitted.
 /// - `feed_scale`: the multiplier the run applied to the binding feed
 ///   limit (1.0 = at-limit; 0.7 = 70 %; etc.). No machine field scales

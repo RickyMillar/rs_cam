@@ -18,8 +18,8 @@
 //! ## Module surface
 //!
 //! - [`adaptive_feed_modulate`] mutates the toolpath's per-move
-//!   `feed_rate` and returns a [`ModulationOutcome`] (move count
-//!   touched, per-move map of `(feed, binding)`).
+//!   `feed_rate` and returns a [`ModulationOutcome`] (the count of
+//!   rewritten moves, per-move map of `(feed, binding)`).
 //! - [`ModulationContext`] carries the per-toolpath inputs (RPM,
 //!   flutes, machine cap, LUT band, kinematics, optional
 //!   deflection/power/force-budget inputs).
@@ -526,7 +526,10 @@ pub enum ModulationError {
 /// `SimulationCutTrace::modulated_feeds`.
 #[derive(Debug, Clone, Default)]
 pub struct ModulationOutcome {
-    /// Number of moves whose `feed_rate` was actually rewritten.
+    /// Number of moves whose `feed_rate` this run rewrote (the new feed
+    /// differs from the move's feed before the run). The session skips a
+    /// rebuild when it is 0. The summary does not read it: its
+    /// `moves_touched` compares with the op feed (P20f).
     pub changed: usize,
     /// Per-move map of `(emitted_feed_mm_min, binding_constraint)`
     /// for every move the modulator visited (including no-ops where
@@ -539,11 +542,15 @@ pub struct ModulationOutcome {
     pub notes: Vec<&'static str>,
 }
 
+/// P20f: a move counts as touched when its emitted feed differs from the
+/// op feed by more than this (mm/min). The median delta reads the same set.
+const TOUCHED_FEED_TOLERANCE_MM_MIN: f64 = 0.5;
+
 impl ModulationOutcome {
     /// Build the F-039 per-toolpath
     /// [`crate::tool_load::ModulationSummary`] from this outcome and
-    /// the toolpath's pre-modulation commanded feed (used to compute
-    /// the median delta percentage).
+    /// the op feed. The op feed is the one baseline of `moves_touched`
+    /// and of the median delta percentage (P20f).
     pub fn build_summary(
         &self,
         commanded_feed_mm_min: f64,
@@ -554,12 +561,19 @@ impl ModulationOutcome {
             return None;
         }
         let moves_total = self.per_move.len();
-        let moves_touched = self.changed;
-        let mut deltas: Vec<f64> = Vec::with_capacity(moves_touched);
+        // P20f: `moves_touched` and the median read one baseline, the op
+        // feed. `self.changed` compares with the move's feed before this
+        // run, and a re-simulated toolpath already holds the modulated
+        // feeds, so it reads 0 on the second run.
+        let mut moves_touched = 0_usize;
+        let mut deltas: Vec<f64> = Vec::with_capacity(moves_total);
         let mut binding_counts: BTreeMap<BindingConstraint, usize> = BTreeMap::new();
         for (feed, binding) in self.per_move.values() {
-            if commanded_feed_mm_min > 0.0 && (feed - commanded_feed_mm_min).abs() > 0.5 {
-                deltas.push((feed - commanded_feed_mm_min) / commanded_feed_mm_min * 100.0);
+            if (feed - commanded_feed_mm_min).abs() > TOUCHED_FEED_TOLERANCE_MM_MIN {
+                moves_touched += 1;
+                if commanded_feed_mm_min > 0.0 {
+                    deltas.push((feed - commanded_feed_mm_min) / commanded_feed_mm_min * 100.0);
+                }
             }
             *binding_counts.entry(*binding).or_insert(0) += 1;
         }
@@ -1773,6 +1787,35 @@ mod tests {
                 assert!((f - 1440.0).abs() < 5.0, "expected ~1440, got {f}");
             }
         }
+    }
+
+    /// P20f: `moves_touched` and the median read one baseline, the op
+    /// feed. A second run over the modulated toolpath rewrites no move,
+    /// but its summary still counts the moves off the op feed.
+    #[test]
+    fn a_remodulated_toolpath_keeps_its_touched_count_p20f() {
+        let mut tp = straight_toolpath(3, 1500.0);
+        let engagements = vec![
+            PerMoveEngagement::default(),
+            full_slot(),
+            full_slot(),
+            full_slot(),
+        ];
+        let k = shapeoko();
+        let mut ctx = make_ctx(&k, band());
+        ctx.strategy = ModulationStrategy::BandMid;
+        let first = adaptive_feed_modulate(&mut tp, &engagements, &ctx).unwrap();
+        let second = adaptive_feed_modulate(&mut tp, &engagements, &ctx).unwrap();
+        assert_eq!(second.changed, 0, "the second run rewrites no move");
+        let s1 = first
+            .build_summary(1500.0, 1.0, ModulationStrategy::BandMid)
+            .unwrap();
+        let s2 = second
+            .build_summary(1500.0, 1.0, ModulationStrategy::BandMid)
+            .unwrap();
+        assert!(s1.moves_touched > 0, "the first run touches moves");
+        assert_eq!(s2.moves_touched, s1.moves_touched);
+        assert!((s2.median_feed_delta_pct - s1.median_feed_delta_pct).abs() < 1e-9);
     }
 
     /// BandMid: a light engagement lifts the band mid by Garr's law.
