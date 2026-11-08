@@ -309,6 +309,7 @@ fn gate_bounds(
         operation_family: LutOperationFamily::Trace,
         pass_role: LutPassRole::Finish,
         operation_feed_rate_mm_min: 720.0,
+        steady_feed: rs_cam_core::machine::SteadyFeedMmMin::op_feed_only(720.0),
         operation_kind: op,
         spans: None,
         drill_op: None,

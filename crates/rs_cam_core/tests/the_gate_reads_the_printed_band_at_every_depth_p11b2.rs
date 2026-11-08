@@ -99,6 +99,7 @@ fn gate_bounds_at_depth(ap_mm: f64) -> ChipBounds {
             operation_family: LutOperationFamily::Pocket,
             pass_role: LutPassRole::Roughing,
             operation_feed_rate_mm_min: FEED_MM_MIN,
+            steady_feed: rs_cam_core::machine::SteadyFeedMmMin::op_feed_only(FEED_MM_MIN),
             operation_kind: OperationType::Pocket,
             spans: None,
             drill_op: None,

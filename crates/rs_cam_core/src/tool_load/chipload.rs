@@ -86,7 +86,8 @@
 //! correspondingly lower chipload-per-tooth. Comparing those low-feed
 //! samples to the steady-state LUT range produces false `BurnRisk`
 //! flags. We filter to samples whose feed is within 5% of the
-//! commanded operation feed. If the steady-state set is empty (e.g. an
+//! steady feed of the op (P20e: `min(op feed, feed_max_rate, cutting
+//! ceiling)`, the feed the modulator caps at). If the steady-state set is empty (e.g. an
 //! all-plunge drill cycle, where every sample runs at `plunge_rate`),
 //! we return `Unmodeled(SteadyStateSamplesNotPresent)` rather than
 //! flag against the wrong calibration.
@@ -215,12 +216,18 @@ pub(crate) struct SteadyStateSamples<'a> {
 /// chipload gate. Extracted so the optimizer's pre-flight classifier
 /// can read the same sample set the gate verdict was computed from
 /// without duplicating the threshold constants.
+///
+/// P20e: the reference is the steady feed of the op
+/// ([`crate::machine::SteadyFeedMmMin`]: `min(op feed, feed_max_rate,
+/// cutting ceiling)`), not the stated op feed. Since G-FEEDMAX the op cap
+/// lowers every cutting move, so a stated-feed reference rejected every
+/// cutting sample of an op whose cap is below 0.95 x its feed.
 pub(crate) fn steady_state_samples_for_toolpath<'a>(
     trace: &'a SimulationCutTrace,
     toolpath_id: ToolpathId,
-    operation_feed_rate_mm_min: f64,
+    steady_feed: crate::machine::SteadyFeedMmMin,
 ) -> SteadyStateSamples<'a> {
-    let feed_threshold = STEADY_STATE_FEED_FRACTION * operation_feed_rate_mm_min;
+    let feed_threshold = STEADY_STATE_FEED_FRACTION * steady_feed.mm_min();
     let mut any_in_cut = false;
     let samples = trace
         .samples
@@ -264,9 +271,9 @@ pub(crate) fn steady_state_samples_for_toolpath<'a>(
 /// `toolpath_id` matches `SimulationCutSample::toolpath_id` (the stable
 /// id from `SimToolpathEntry::id`, not a project-relative index).
 ///
-/// `operation_feed_rate_mm_min` is the toolpath's commanded operation
-/// feed (`OperationConfig::feed_rate()`); samples below 95% of this
-/// feed are filtered out as non-steady-state moves. See module doc.
+/// `ctx.steady_feed` is the feed the op commands in steady cutting (P20e:
+/// `min(op feed, feed_max_rate, cutting ceiling)`); samples below 95% of
+/// it are filtered out as non-steady-state moves. See module doc.
 ///
 /// `operation_kind` is the toolpath's `OperationType`. For most kinds
 /// the (operation_family, pass_role) tuple from the operation spec is
@@ -365,7 +372,7 @@ fn evaluate_inner(
         material,
         operation_family,
         pass_role,
-        operation_feed_rate_mm_min,
+        steady_feed,
         operation_kind,
         spans,
         ..
@@ -408,7 +415,7 @@ fn evaluate_inner(
     let SteadyStateSamples {
         samples: steady_samples,
         any_in_cut: any_in_cut_for_toolpath,
-    } = steady_state_samples_for_toolpath(trace, toolpath_id, operation_feed_rate_mm_min);
+    } = steady_state_samples_for_toolpath(trace, toolpath_id, steady_feed);
 
     // 3. Build verdicts for no usable sample data before attempting a LUT
     // lookup. This preserves the distinction between missing samples and
@@ -572,13 +579,17 @@ fn evaluate_inner(
     // number and have nothing relating them.
     let commanded_stage = steady_samples.first().map(|(_, s)| {
         let divisor = f64::from(s.spindle_rpm) * f64::from(s.flute_count);
+        // P20e: the stage states what the G-code commands: the steady
+        // feed under the op cap and the machine ceiling, with its limit.
         let feed_per_tooth_mm = if divisor > 0.0 {
-            operation_feed_rate_mm_min / divisor
+            steady_feed.mm_min() / divisor
         } else {
             0.0
         };
         crate::feeds::CommandedStage {
-            feed_rate_mm_min: operation_feed_rate_mm_min,
+            feed_rate_mm_min: steady_feed.mm_min(),
+            op_feed_mm_min: steady_feed.op_feed_mm_min(),
+            feed_limit: steady_feed.limit(),
             spindle_rpm: s.spindle_rpm,
             flute_count: s.flute_count,
             feed_per_tooth_mm,
@@ -1074,6 +1085,9 @@ mod tests {
                 operation_family,
                 pass_role,
                 operation_feed_rate_mm_min,
+                steady_feed: crate::machine::SteadyFeedMmMin::op_feed_only(
+                    operation_feed_rate_mm_min,
+                ),
                 operation_kind,
                 spans,
                 drill_op: None,

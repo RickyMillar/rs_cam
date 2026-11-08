@@ -113,6 +113,10 @@ pub struct CutterOpProfile<'a> {
     /// Suggest button / `--apply-suggest` would surface. Empty when
     /// refused.
     pub warnings: Vec<SuggestWarning>,
+    /// P20e: the op's feed cap (`DressupConfig::feed_max_rate`), read from
+    /// `SuggestContext::dressups` (the one Suggest context, F114).
+    /// [`Self::shipped_power`] grades the steady feed under it.
+    pub feed_max_rate: Option<f64>,
 }
 
 impl<'a> CutterOpProfile<'a> {
@@ -132,6 +136,7 @@ impl<'a> CutterOpProfile<'a> {
         input: CutterOpProfileInput<'a, '_>,
     ) -> Result<Self, crate::tool::ToolGeometryError> {
         let op_type = input.operation.op_type();
+        let feed_max_rate = input.context.dressups.and_then(|d| d.feed_max_rate);
         let spec = op_type.spec();
         let tool_def = build_cutter(input.tool)?;
         let cutter_kind = tool_def.to_geometry_hint().cutter_kind();
@@ -190,6 +195,7 @@ impl<'a> CutterOpProfile<'a> {
             suggested_operation,
             envelope,
             warnings,
+            feed_max_rate,
         })
     }
 
@@ -214,6 +220,7 @@ impl<'a> CutterOpProfile<'a> {
                 self.material,
                 self.machine,
                 feeds,
+                self.feed_max_rate,
             )
         })
     }
@@ -221,14 +228,23 @@ impl<'a> CutterOpProfile<'a> {
     /// The force line at the mean chip of the shipped cut (P14, M9). `None`
     /// when Suggest refused, the material has no force line, or the cut
     /// resolves no point.
+    ///
+    /// P20e: the point of [`Self::shipped_power`] when it has one (the mean
+    /// chip at the steady feed under the op cap), as the Feeds card reads
+    /// it; else the force door (at the same steady feed).
     #[must_use]
     pub fn shipped_force_point(&self) -> Option<crate::material::force_line::ForceAtPoint> {
+        if let Some(Ok(figure)) = self.shipped_power() {
+            return Some(figure.force);
+        }
         self.feeds.as_ref().and_then(|feeds| {
             crate::feeds::operating_point::force_at_shipped_point(
                 self.shipped_operation(),
                 self.tool_cfg,
                 self.material,
+                self.machine,
                 feeds,
+                self.feed_max_rate,
             )
             .ok()
         })

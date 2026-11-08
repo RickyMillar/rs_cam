@@ -354,7 +354,8 @@ pub struct CuttingCeilingMmMin {
 }
 
 /// P16 (D9): what set a [`CuttingCeilingMmMin`].
-#[derive(Debug, Clone, Copy, PartialEq, Eq)]
+#[derive(Debug, Clone, Copy, PartialEq, Eq, Serialize, Deserialize)]
+#[serde(rename_all = "snake_case")]
 pub enum CuttingCeilingSource {
     /// The machine states `max_cutting_feed_mm_min`.
     Stated,
@@ -418,6 +419,111 @@ impl CuttingCeilingMmMin {
             },
             _ => self,
         }
+    }
+
+    /// P20e: the feed an op with the stated feed `op_feed_mm_min` commands
+    /// in steady cutting under this ceiling: `min(op feed, ceiling)`, with
+    /// the limit that binds. A tie is [`SteadyFeedLimit::OpFeed`] (no cap
+    /// binds). Build the ceiling with
+    /// [`MachineProfile::op_cutting_ceiling`], the cap the modulator reads.
+    #[must_use]
+    pub fn steady_feed(self, op_feed_mm_min: f64) -> SteadyFeedMmMin {
+        if op_feed_mm_min <= self.mm_min {
+            return SteadyFeedMmMin {
+                mm_min: op_feed_mm_min,
+                op_feed_mm_min,
+                limit: SteadyFeedLimit::OpFeed,
+            };
+        }
+        let limit = match self.source {
+            CuttingCeilingSource::OpFeedCap => SteadyFeedLimit::OpFeedCap,
+            source @ (CuttingCeilingSource::Stated
+            | CuttingCeilingSource::AxisRate
+            | CuttingCeilingSource::TravelRate) => SteadyFeedLimit::MachineCeiling(source),
+        };
+        SteadyFeedMmMin {
+            mm_min: self.mm_min,
+            op_feed_mm_min,
+            limit,
+        }
+    }
+}
+
+/// P20e: the limit that sets a [`SteadyFeedMmMin`].
+#[derive(Debug, Clone, Copy, PartialEq, Eq, Serialize, Deserialize)]
+#[serde(rename_all = "snake_case")]
+pub enum SteadyFeedLimit {
+    /// The op feed (`feed_rate`): no cap is below it.
+    OpFeed,
+    /// The op's own feed cap (`DressupConfig::feed_max_rate`).
+    OpFeedCap,
+    /// The machine cutting ceiling, with what set it.
+    MachineCeiling(CuttingCeilingSource),
+}
+
+impl SteadyFeedLimit {
+    /// The wire id (MCP `get_suggest_rationale`, CLI `suggest`).
+    #[must_use]
+    pub const fn wire_id(self) -> &'static str {
+        match self {
+            Self::OpFeed => "op_feed",
+            Self::OpFeedCap => "op_feed_cap",
+            Self::MachineCeiling(_) => "machine_ceiling",
+        }
+    }
+
+    /// A short operator name of the limit.
+    #[must_use]
+    pub const fn label(self) -> &'static str {
+        match self {
+            Self::OpFeed => "the op feed",
+            Self::OpFeedCap => "the op feed cap (feed_max_rate)",
+            Self::MachineCeiling(_) => "the machine cutting ceiling",
+        }
+    }
+}
+
+/// P20e: the feed (mm/min) an op commands in steady cutting:
+/// `min(op feed, op feed cap, machine cutting ceiling)`. Only
+/// [`CuttingCeilingMmMin::steady_feed`] and [`Self::op_feed_only`] make
+/// one. The chip gate filter, the histogram and the Suggest power figure
+/// read it; the modulator caps at the same ceiling
+/// ([`MachineProfile::op_cutting_ceiling`]), so the two cannot diverge.
+#[derive(Debug, Clone, Copy, PartialEq)]
+pub struct SteadyFeedMmMin {
+    mm_min: f64,
+    op_feed_mm_min: f64,
+    limit: SteadyFeedLimit,
+}
+
+impl SteadyFeedMmMin {
+    /// The steady feed with no cap below the op feed: the op feed binds.
+    /// The door of a gate context that a test builds by hand.
+    #[must_use]
+    pub const fn op_feed_only(op_feed_mm_min: f64) -> Self {
+        Self {
+            mm_min: op_feed_mm_min,
+            op_feed_mm_min,
+            limit: SteadyFeedLimit::OpFeed,
+        }
+    }
+
+    /// The steady feed, mm/min.
+    #[must_use]
+    pub const fn mm_min(self) -> f64 {
+        self.mm_min
+    }
+
+    /// The stated op feed, mm/min.
+    #[must_use]
+    pub const fn op_feed_mm_min(self) -> f64 {
+        self.op_feed_mm_min
+    }
+
+    /// The limit that binds.
+    #[must_use]
+    pub const fn limit(self) -> SteadyFeedLimit {
+        self.limit
     }
 }
 
@@ -927,6 +1033,31 @@ impl MachineProfile {
             mm_min: mm_min.min(travel),
             source,
         }
+    }
+
+    /// P20e: THE cutting ceiling of one op: the machine ceiling (with the
+    /// `.max(1.0)` guard against a zero profile), lowered to the op's own
+    /// feed cap `feed_max_rate` (G-FEEDMAX). The post-sim modulator and the
+    /// strategy advisor cap at it; the gates and the Suggest power figure
+    /// read [`Self::op_steady_feed`], which calls it.
+    #[must_use]
+    pub fn op_cutting_ceiling(&self, feed_max_rate: Option<f64>) -> CuttingCeilingMmMin {
+        self.cutting_ceiling()
+            .at_least(1.0)
+            .capped_at(feed_max_rate)
+    }
+
+    /// P20e: the feed an op with the stated feed `op_feed_mm_min` commands
+    /// in steady cutting: `min(op feed, feed_max_rate, cutting ceiling)`
+    /// through [`Self::op_cutting_ceiling`], with the limit that binds.
+    #[must_use]
+    pub fn op_steady_feed(
+        &self,
+        op_feed_mm_min: f64,
+        feed_max_rate: Option<f64>,
+    ) -> SteadyFeedMmMin {
+        self.op_cutting_ceiling(feed_max_rate)
+            .steady_feed(op_feed_mm_min)
     }
 
     /// P20b: the Z axis rate (mm/min, GRBL `$112`), the third value of

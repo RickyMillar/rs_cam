@@ -347,6 +347,7 @@ fn c_no_rapid_crosses_the_rest_stock() {
             stock_top: STOCK_TOP_Z,
             prior_stock: None,
             link_kinematics: None,
+            op_cutting_ceiling: None,
             feed_opt_stock: None,
             cutter: Some(&cutter),
             entry_surface: Some(floor.probe()),

@@ -149,6 +149,7 @@ fn ctx<'a>(
         operation_family: LutOperationFamily::Pocket,
         pass_role,
         operation_feed_rate_mm_min: 1500.0,
+        steady_feed: rs_cam_core::machine::SteadyFeedMmMin::op_feed_only(1500.0),
         operation_kind: op,
         spans: None,
         drill_op: None,

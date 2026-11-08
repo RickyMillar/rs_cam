@@ -15,7 +15,7 @@
 //!
 //! | Metric | Filters and per-sample value |
 //! |---|---|
-//! | Chipload | [`super::chipload::steady_state_samples_for_toolpath`] (cutting, `radial_woc_fraction >= 0.02`, 95 % of commanded feed), the vestigial `effective_chip_thickness_mm` predicate, [`super::display::peak_chip_per_tooth`] (P11b2: the peak chip), [`super::locality::is_steady_state_for_gate`] |
+//! | Chipload | [`super::chipload::steady_state_samples_for_toolpath`] (cutting, `radial_woc_fraction >= 0.02`, 95 % of the steady feed, P20e), the vestigial `effective_chip_thickness_mm` predicate, [`super::display::peak_chip_per_tooth`] (P11b2: the peak chip), [`super::locality::is_steady_state_for_gate`] |
 //! | Power | [`super::power::sample_power_kw`] at [`super::effective_feed_for_sample`], then [`super::locality::is_steady_state_for_gate`] |
 //! | Deflection | [`super::deflection::sample_tip_deflection_mm`] at [`super::deflection::deflection_feed_per_tooth_mm`], then [`super::locality::is_steady_state_for_gate`] |
 //! | Depth of cut | the depth gate's `is_depth_sample`, then [`super::locality::is_steady_state_for_gate`]; the value is `axial_engagement_mm` |
@@ -760,11 +760,8 @@ fn chipload_population(
     ctx: &ToolpathLoadContext<'_>,
     lookup: Option<&SpanLookup<'_>>,
 ) -> Vec<PopulationSample> {
-    let steady = super::chipload::steady_state_samples_for_toolpath(
-        trace,
-        ctx.toolpath_id,
-        ctx.operation_feed_rate_mm_min,
-    );
+    let steady =
+        super::chipload::steady_state_samples_for_toolpath(trace, ctx.toolpath_id, ctx.steady_feed);
     steady
         .samples
         .into_iter()

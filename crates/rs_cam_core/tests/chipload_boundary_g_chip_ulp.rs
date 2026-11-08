@@ -409,6 +409,7 @@ fn gate_verdict(feed: f64, rpm: u32, flutes: u32, axial_doc_mm: f64) -> Chipload
             operation_family: LutOperationFamily::Parallel,
             pass_role: LutPassRole::Finish,
             operation_feed_rate_mm_min: feed,
+            steady_feed: rs_cam_core::machine::SteadyFeedMmMin::op_feed_only(feed),
             operation_kind: OperationType::DropCutter,
             spans: None,
             drill_op: None,

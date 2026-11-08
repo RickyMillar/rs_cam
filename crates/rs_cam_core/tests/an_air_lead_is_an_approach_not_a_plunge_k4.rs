@@ -71,6 +71,7 @@ fn dress(style: DressupEntryStyle) -> (Toolpath, f64) {
             stock_top: STOCK_TOP,
             prior_stock: None,
             link_kinematics: None,
+            op_cutting_ceiling: None,
             feed_opt_stock: None,
             cutter: None,
             entry_surface: None,

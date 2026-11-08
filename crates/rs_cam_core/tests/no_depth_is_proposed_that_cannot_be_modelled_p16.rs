@@ -162,6 +162,7 @@ fn suggest_ships_the_chip_and_one_warning_for_the_depth_p16() {
         &oak(),
         &MachineProfile::generic_wood_router(),
         r,
+        None,
     );
     assert_eq!(power.err(), Some(PowerUnmodeled::DepthAfterSimulation));
     let json = rs_cam_core::feeds::operating_point::shipped_power_json(
@@ -171,6 +172,7 @@ fn suggest_ships_the_chip_and_one_warning_for_the_depth_p16() {
             &oak(),
             &MachineProfile::generic_wood_router(),
             r,
+            None,
         ),
     );
     assert!(json.get("unmodeled").is_some(), "{json}");
@@ -189,7 +191,9 @@ fn suggest_ships_the_chip_and_one_warning_for_the_depth_p16() {
         &s.operation,
         &tool(),
         &oak(),
+        &MachineProfile::generic_wood_router(),
         r,
+        None,
     );
     assert_eq!(force.err(), Some(PowerUnmodeled::DepthAfterSimulation));
     assert_eq!(

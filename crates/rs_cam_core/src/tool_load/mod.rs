@@ -430,12 +430,18 @@ pub struct ToolpathLoadContext<'a> {
     pub material: &'a Material,
     pub operation_family: LutOperationFamily,
     pub pass_role: LutPassRole,
-    /// The toolpath operation's commanded feed rate (mm/min). Used by the
-    /// chipload guardrail to filter the sample set down to steady-state
-    /// cutting moves — samples whose feed matches the commanded feed
-    /// within a small tolerance — and exclude transient entry/plunge/ramp
-    /// moves at lower feeds. Item C of the tool-load fidelity plan.
+    /// The toolpath operation's stated feed rate (`feed_rate`, mm/min).
+    /// Until P20e the chipload steady-state filter (Item C) and the
+    /// commanded stage read it; both read [`Self::steady_feed`] now.
     pub operation_feed_rate_mm_min: f64,
+    /// P20e: the feed the op commands in steady cutting,
+    /// `min(op feed, feed_max_rate, machine cutting ceiling)`
+    /// (`MachineProfile::op_steady_feed`, the ceiling the modulator caps
+    /// at). The chipload steady-state filter and the histogram compare
+    /// each sample feed with it, and the commanded stage states it (the
+    /// G-code F word under a cap). `operation_feed_rate_mm_min` is the
+    /// stated op feed; since P20e no gate reads it.
+    pub steady_feed: crate::machine::SteadyFeedMmMin,
     /// The toolpath's operation kind. Read by every gate: it drives the
     /// drill-kinematics short-circuit (`NotApplicableForOp`) and the LUT
     /// lookup family routing (`routed_lookup_family` reroutes
@@ -492,6 +498,7 @@ pub struct LoadContextParts<'s> {
     pub operation_family: LutOperationFamily,
     pub pass_role: LutPassRole,
     pub operation_feed_rate_mm_min: f64,
+    pub steady_feed: crate::machine::SteadyFeedMmMin,
     pub operation_kind: OperationType,
     pub spans: Option<&'s [crate::trace::toolpath_spans::Span]>,
     pub drill_op: Option<&'s crate::ops::drill_op::DrillOp>,
@@ -511,6 +518,7 @@ impl LoadContextParts<'_> {
             operation_family,
             pass_role,
             operation_feed_rate_mm_min,
+            steady_feed,
             operation_kind,
             spans,
             drill_op,
@@ -524,6 +532,7 @@ impl LoadContextParts<'_> {
             operation_family: *operation_family,
             pass_role: *pass_role,
             operation_feed_rate_mm_min: *operation_feed_rate_mm_min,
+            steady_feed: *steady_feed,
             operation_kind: *operation_kind,
             spans: *spans,
             drill_op: *drill_op,
@@ -804,6 +813,7 @@ mod tests {
             operation_family: LutOperationFamily::Pocket,
             pass_role: LutPassRole::Roughing,
             operation_feed_rate_mm_min: 1000.0,
+            steady_feed: crate::machine::SteadyFeedMmMin::op_feed_only(1000.0),
             operation_kind,
             spans: None,
             drill_op: None,

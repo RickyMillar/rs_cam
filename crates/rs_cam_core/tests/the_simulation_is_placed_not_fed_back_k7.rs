@@ -322,6 +322,7 @@ fn place_one(
         operation_family: rs_cam_core::feeds::vendor_lut::LutOperationFamily::Pocket,
         pass_role: rs_cam_core::feeds::vendor_lut::LutPassRole::Finish,
         operation_feed_rate_mm_min: 1000.0,
+        steady_feed: rs_cam_core::machine::SteadyFeedMmMin::op_feed_only(1000.0),
         operation_kind: kind,
         spans: None,
         drill_op: None,

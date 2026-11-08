@@ -527,6 +527,12 @@ pub struct DressupContext<'a> {
     /// air-cut filter times a bridge with. `None` skips the filter, as a
     /// missing cutter does: nothing becomes a rapid.
     pub link_kinematics: Option<&'a crate::machine::kinematics::LinkKinematics>,
+    /// P20e: THE cutting ceiling of this op,
+    /// `MachineProfile::op_cutting_ceiling(cfg.feed_max_rate)` (the cap the
+    /// post-sim modulator reads). The feed optimiser caps at it. `None`
+    /// names a caller with no machine in scope; the optimiser then does
+    /// not run.
+    pub op_cutting_ceiling: Option<crate::machine::CuttingCeilingMmMin>,
     pub feed_opt_stock: Option<&'a mut crate::dexel_stock::TriDexelStock>,
     pub cutter: Option<&'a dyn MillingCutter>,
     /// G-RAMPTERRAIN: drop-cutter surface probe for stock-aware entry
@@ -1162,12 +1168,11 @@ impl PipelineRun<'_> {
             return current;
         };
         let nominal = self.ctx.nominal_feed_rate;
-        // S11: the set ceiling, else the machine maximum feed. With no
-        // machine envelope there is no ceiling, so the pass does not run.
-        let Some(max_rate) = cfg
-            .feed_max_rate
-            .or_else(|| self.ctx.link_kinematics.map(|k| k.max_feed_mm_min))
-        else {
+        // P20e: THE op ceiling, `min(machine cutting ceiling,
+        // feed_max_rate)` (`MachineProfile::op_cutting_ceiling`), the cap
+        // the post-sim modulator reads. With no machine in scope there is
+        // no ceiling, so the pass does not run.
+        let Some(max_rate) = self.ctx.op_cutting_ceiling.map(|c| c.mm_min()) else {
             return current;
         };
         let ramp_rate = cfg.feed_ramp_rate;

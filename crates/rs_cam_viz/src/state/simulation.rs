@@ -430,7 +430,8 @@ fn build_cut_metric_set(
         None => rs_cam_core::tool_load::cut_force::cut_points(&ctx, &env),
     };
     // P17b: the iso-force field, only under the force budget, at the
-    // PLANNED advance per tooth: the op's feed over its effective spindle
+    // PLANNED advance per tooth: the op's steady feed (P20e: under the op
+    // cap and the machine ceiling) over its effective spindle
     // (the project default when the op states none, the cycle-time door)
     // and the built tool's flutes. The view top is the top of the scene
     // the chart draws (`EnvelopeScene::with_depth_mark` at the deepest
@@ -445,7 +446,7 @@ fn build_cut_metric_set(
         ));
         let flutes = f64::from(ctx.tool.flute_count);
         let fz_mm = if rpm > 0.0 && flutes > 0.0 {
-            ctx.operation_feed_rate_mm_min / (rpm * flutes)
+            ctx.steady_feed.mm_min() / (rpm * flutes)
         } else {
             0.0
         };

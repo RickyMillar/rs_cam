@@ -218,6 +218,7 @@ fn a_tapered_row_is_read_at_the_tip_a1() {
             operation_family: LutOperationFamily::Parallel,
             pass_role: LutPassRole::Finish,
             operation_feed_rate_mm_min: feed,
+            steady_feed: rs_cam_core::machine::SteadyFeedMmMin::op_feed_only(feed),
             operation_kind: OperationType::DropCutter,
             spans: None,
             drill_op: None,

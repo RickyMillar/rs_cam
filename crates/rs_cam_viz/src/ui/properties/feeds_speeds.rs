@@ -134,6 +134,7 @@ pub(super) fn draw_feeds_chart(
         tool: block.tool,
         material: block.material,
         machine: block.machine,
+        feed_max_rate: entry.dressups.feed_max_rate,
         preview: &preview,
         card: &card,
     };
@@ -177,6 +178,7 @@ pub(super) fn draw_feeds_recommendation(
             tool: block.tool,
             material: block.material,
             machine: block.machine,
+            feed_max_rate: entry.dressups.feed_max_rate,
             preview: &preview,
             card: &card,
         };
@@ -300,6 +302,7 @@ pub(super) fn draw_speed_controls(
     if out.lock_clicked {
         new_lock = FeedsLock::Feed;
     }
+    feed_cap_chip(ui, &out.rects, feed, entry.dressups.feed_max_rate, machine);
     if out.edited
         && let Some(feed) = feed
     {
@@ -522,6 +525,71 @@ fn machine_state<'a>(
     }
 }
 
+/// P20e: one chip beside the Feed value when a cap is below the op feed:
+/// the G-code commands `min(op feed, feed_max_rate, cutting ceiling)`
+/// (`MachineProfile::op_steady_feed`, the ceiling the modulator caps at).
+/// The chip sits in the label column, right-aligned to the padlock, so it
+/// takes no width from the well and adds no row (the operator rule: no
+/// text clutter).
+fn feed_cap_chip(
+    ui: &mut egui::Ui,
+    rects: &crate::ui::components::RowRects,
+    feed: Option<f64>,
+    feed_max_rate: Option<f64>,
+    machine: &rs_cam_core::machine::MachineProfile,
+) {
+    let Some(steady) = feed.map(|f| machine.op_steady_feed(f, feed_max_rate)) else {
+        return;
+    };
+    if steady.limit() == rs_cam_core::machine::SteadyFeedLimit::OpFeed {
+        return;
+    }
+    let right = rects.action.map_or(rects.label.right(), |a| {
+        a.left() - crate::ui::tokens::SPACE_2
+    });
+    // The slot starts after the painted label text.
+    let label_w = ui
+        .painter()
+        .layout_no_wrap(
+            "Feed".to_owned(),
+            egui::TextStyle::Body.resolve(ui.style()),
+            egui::Color32::PLACEHOLDER,
+        )
+        .size()
+        .x;
+    let left = (rects.label.left() + label_w + crate::ui::tokens::SPACE_2).min(right);
+    let slot = egui::Rect::from_min_max(
+        egui::pos2(left, rects.label.top()),
+        egui::pos2(right, rects.label.bottom()),
+    );
+    let chip = crate::ui::components::StatusChip::new(
+        format!("cap {:.0}", steady.mm_min()),
+        crate::ui::components::Role::Info,
+    )
+    .hover(format!(
+        "{} runs every cut at {:.0} mm/min, below the op feed {:.0} mm/min. \
+         The chipload gate and the power figure grade {:.0} mm/min.",
+        capitalise(steady.limit().label()),
+        steady.mm_min(),
+        steady.op_feed_mm_min(),
+        steady.mm_min(),
+    ));
+    let _ = ui.scope_builder(
+        egui::UiBuilder::new()
+            .max_rect(slot)
+            .layout(egui::Layout::right_to_left(egui::Align::Center)),
+        |ui| ui.add(chip),
+    );
+}
+
+/// The text with its first letter in upper case.
+fn capitalise(text: &str) -> String {
+    let mut chars = text.chars();
+    chars.next().map_or_else(String::new, |first| {
+        first.to_uppercase().chain(chars).collect()
+    })
+}
+
 /// The reason of a feed above the machine's cutting feed limit.
 fn feed_cap_reason(
     feed: Option<f64>,
@@ -698,6 +766,9 @@ fn speed_row(
 struct SpeedRowOut {
     edited: bool,
     lock_clicked: bool,
+    /// The rectangles of the drawn row (P20e: the cap chip sits beside the
+    /// padlock).
+    rects: crate::ui::components::RowRects,
 }
 
 /// [`speed_row`] with the caller's `NumberSpec` (the Chipload row takes four
@@ -747,6 +818,7 @@ fn speed_row_spec(
     SpeedRowOut {
         edited: changed,
         lock_clicked: out.action_clicked,
+        rects: out.rects,
     }
 }
 
@@ -851,8 +923,19 @@ fn advance_per_tooth_rows(
     use rs_cam_core::feeds::{ACHIEVED_PEAK_CHIP, COMMANDED_ADVANCE_PER_TOOTH};
     // P11b2: the gate judges the PEAK chip, the advance over the radial
     // chip-thinning lift; the hover gives the commanded peak chip too.
+    // P20e: the commanded feed is the G-code F word, the steady feed under
+    // the op cap and the machine ceiling; name the cap when it binds.
+    let cap_clause = match explain.commanded.feed_limit {
+        rs_cam_core::machine::SteadyFeedLimit::OpFeed => String::new(),
+        limit @ (rs_cam_core::machine::SteadyFeedLimit::OpFeedCap
+        | rs_cam_core::machine::SteadyFeedLimit::MachineCeiling(_)) => format!(
+            " ({} below the op feed {:.0} mm/min)",
+            limit.label(),
+            explain.commanded.op_feed_mm_min,
+        ),
+    };
     let commanded_hover = format!(
-        "feed {:.0} mm/min \u{00f7} ({} RPM \u{00d7} {} flutes). Peak chip {:.4} mm \
+        "feed {:.0} mm/min{cap_clause} \u{00f7} ({} RPM \u{00d7} {} flutes). Peak chip {:.4} mm \
          (\u{00f7} the median chip-thinning lift {:.3} of the measured cut).",
         explain.commanded.feed_rate_mm_min,
         explain.commanded.spindle_rpm,

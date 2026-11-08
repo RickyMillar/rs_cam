@@ -530,6 +530,7 @@ fn modelled_gate_verdicts_across_the_two_classifications() {
         operation_family: LutOperationFamily::Contour,
         pass_role: LutPassRole::Finish,
         operation_feed_rate_mm_min: 1200.0,
+        steady_feed: rs_cam_core::machine::SteadyFeedMmMin::op_feed_only(1200.0),
         operation_kind: OperationType::Profile,
         // The gates build their `SpanLookup` from here — without it
         // `is_phantom_transit` degrades to the flag-only fallback and the

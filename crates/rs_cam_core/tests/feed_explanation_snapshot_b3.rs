@@ -683,6 +683,7 @@ fn gate_verdict_in(
             operation_family,
             pass_role,
             operation_feed_rate_mm_min: COMMANDED_FEED_MM_MIN,
+            steady_feed: rs_cam_core::machine::SteadyFeedMmMin::op_feed_only(COMMANDED_FEED_MM_MIN),
             operation_kind,
             spans: None,
             drill_op: None,

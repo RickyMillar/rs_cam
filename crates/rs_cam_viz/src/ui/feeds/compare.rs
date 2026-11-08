@@ -197,6 +197,7 @@ pub(crate) fn draw_recommendation(
         tool,
         material,
         machine,
+        feed_max_rate,
         preview,
         card,
     } = *op;
@@ -217,6 +218,7 @@ pub(crate) fn draw_recommendation(
         tool,
         material,
         machine,
+        feed_max_rate,
         toolpath_id,
         policy,
         events,
@@ -238,6 +240,7 @@ pub(crate) fn draw_inspector_comparison(
     tool: &crate::state::job::ToolConfig,
     material: &rs_cam_core::material::Material,
     machine: &rs_cam_core::machine::MachineProfile,
+    feed_max_rate: Option<f64>,
     toolpath_id: crate::state::toolpath::ToolpathId,
     policy: impl FnOnce(&mut egui::Ui, &mut Vec<AppEvent>),
     events: &mut Vec<AppEvent>,
@@ -267,14 +270,21 @@ pub(crate) fn draw_inspector_comparison(
         calculator_efficiency.as_ref(),
         &applied.cut_cause(),
     );
-    let mut power =
-        PowerReading::at_shipped_point(&applied_op, tool, material, machine, &applied_point);
+    let mut power = PowerReading::at_shipped_point(
+        &applied_op,
+        tool,
+        material,
+        machine,
+        &applied_point,
+        feed_max_rate,
+    );
     let calculator_power = PowerReading::at_shipped_point(
         &calculator_op,
         tool,
         material,
         machine,
         &explain.recommended,
+        feed_max_rate,
     );
     power.calculator_note = power_note(&power, &calculator_power, &applied.cut_cause());
 
@@ -858,14 +868,17 @@ impl PowerReading {
         material: &rs_cam_core::material::Material,
         machine: &rs_cam_core::machine::MachineProfile,
         recommended: &rs_cam_core::feeds::FeedsResult,
+        feed_max_rate: Option<f64>,
     ) -> Self {
-        // P14 (review M9): the one core door of the shipped point.
+        // P14 (review M9): the one core door of the shipped point. P20e: it
+        // grades the steady feed under the op cap and the machine ceiling.
         let figure = rs_cam_core::feeds::power_at_shipped_point(
             operation,
             tool,
             material,
             machine,
             recommended,
+            feed_max_rate,
         );
         let source = figure
             .as_ref()
@@ -876,7 +889,9 @@ impl PowerReading {
                 operation,
                 tool,
                 material,
+                machine,
                 recommended,
+                feed_max_rate,
             )
             .ok()
         });
@@ -1035,11 +1050,27 @@ fn power_face(figure: &PowerFigure) -> String {
 /// came from, and the operating point the figure was evaluated at — so the
 /// reader can see that the bar describes the depth that will be cut.
 fn power_hover(figure: &PowerFigure, source: &BoundSource) -> String {
+    // P20d (operator ruling 2026-11-08): an axial figure (a drill or a
+    // straight plunge) reads `ap_mm` as the advance per revolution and
+    // `ae_mm` as the diameter; a side cut keeps depth and width of cut.
+    let (ap_label, ae_label) = power_point_labels(figure.section);
+    // P20e: the feed the figure grades, and the cap that sets it.
+    let feed_clause = match figure.steady_feed {
+        Some(steady) if steady.limit() != rs_cam_core::machine::SteadyFeedLimit::OpFeed => {
+            format!(
+                "feed {:.0} mm/min ({} below the op feed {:.0} mm/min)",
+                figure.feed_mm_min,
+                steady.limit().label(),
+                steady.op_feed_mm_min(),
+            )
+        }
+        Some(_) | None => format!("feed {:.0} mm/min", figure.feed_mm_min),
+    };
     format!(
         "Power {:.3} kW of {:.3} kW available \u{2014} {} of the limit.\n\n\
          Limit from {}. Setting: {}.\n\n\
-         Evaluated at the cut `\u{26A1} Apply all` writes: depth of cut \
-         {:.3} mm, width of cut {:.3} mm, {:.0} rpm, feed {:.0} mm/min. The \
+         Evaluated at the cut `\u{26A1} Apply all` writes: {ap_label} \
+         {:.3} mm, {ae_label} {:.3} mm, {:.0} rpm, {feed_clause}. The \
          bar describes the depth that WILL be cut, not the depth the \
          calculator sized its feed at \u{2014} the rigidity clamp can lower \
          one without moving the other.\n\n\
@@ -1054,11 +1085,23 @@ fn power_hover(figure: &PowerFigure, source: &BoundSource) -> String {
         figure.ap_mm,
         figure.ae_mm,
         figure.rpm,
-        figure.feed_mm_min,
         figure.case.label(),
         figure.case_ae_mm,
         figure.section.basis_text(),
     )
+}
+
+/// P20d (operator ruling 2026-11-08): the hover labels of `ap_mm` and
+/// `ae_mm`. An axial figure (`SectionKind::AxialCircle`) reads the advance
+/// per revolution and the diameter; a side cut the depth and width of cut.
+fn power_point_labels(
+    section: rs_cam_core::feeds::section::SectionKind,
+) -> (&'static str, &'static str) {
+    use rs_cam_core::feeds::section::SectionKind;
+    match section {
+        SectionKind::AxialCircle => ("advance per rev", "diameter"),
+        SectionKind::Rectangle | SectionKind::VGroove => ("depth of cut", "width of cut"),
+    }
 }
 
 /// The hover for a refused power figure.

@@ -526,6 +526,7 @@ mod tests {
                 operation_family: crate::feeds::vendor_lut::LutOperationFamily::Pocket,
                 pass_role: crate::feeds::vendor_lut::LutPassRole::Roughing,
                 operation_feed_rate_mm_min: 0.0,
+                steady_feed: crate::machine::SteadyFeedMmMin::op_feed_only(0.0),
                 operation_kind,
                 spans,
                 drill_op: None,

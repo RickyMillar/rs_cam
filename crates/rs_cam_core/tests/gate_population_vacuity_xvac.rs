@@ -157,6 +157,7 @@ fn verdicts(t: &SimulationCutTrace) -> (PowerVerdict, DeflectionVerdict, DepthVe
         operation_family: rs_cam_core::feeds::vendor_lut::LutOperationFamily::Pocket,
         pass_role: rs_cam_core::feeds::vendor_lut::LutPassRole::Roughing,
         operation_feed_rate_mm_min: 2000.0,
+        steady_feed: rs_cam_core::machine::SteadyFeedMmMin::op_feed_only(2000.0),
         operation_kind: OperationType::Pocket,
         spans: None,
         drill_op: None,

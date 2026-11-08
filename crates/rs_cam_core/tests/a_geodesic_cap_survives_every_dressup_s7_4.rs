@@ -173,6 +173,9 @@ fn dress(planned: &Toolpath, cutter: &FlatEndmill) -> Toolpath {
             stock_top: TOP_Z,
             prior_stock: Some(&prior),
             link_kinematics: Some(&link),
+            op_cutting_ceiling: Some(
+                MachineProfile::default().op_cutting_ceiling(cfg.feed_max_rate),
+            ),
             feed_opt_stock: Some(&mut feed_stock),
             cutter: Some(cutter),
             entry_surface: None,

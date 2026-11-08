@@ -1232,7 +1232,8 @@ pub struct DressupConfig {
     /// simulation (G-FEEDMAX, operator ruling 2026-10-28), where it is a
     /// hard cap next to the machine cutting ceiling. It only lowers a
     /// feed; a value above the machine ceiling changes nothing. `None` =
-    /// the machine maximum feed (S11); with no machine envelope the
+    /// the machine cutting ceiling (S11; P20e: every stage caps at
+    /// `MachineProfile::op_cutting_ceiling`); with no machine in scope the
     /// optimiser does not run.
     pub feed_max_rate: Option<f64>,
     pub feed_ramp_rate: f64,

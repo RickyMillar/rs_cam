@@ -216,6 +216,9 @@ fn evaluate_chipload_at(trace: &SimulationCutTrace, commanded_fpt: f64) -> Chipl
             operation_family: LutOperationFamily::Scallop,
             pass_role: LutPassRole::Finish,
             operation_feed_rate_mm_min: commanded_fpt * f64::from(RPM) * f64::from(FLUTES),
+            steady_feed: rs_cam_core::machine::SteadyFeedMmMin::op_feed_only(
+                commanded_fpt * f64::from(RPM) * f64::from(FLUTES),
+            ),
             operation_kind: OperationType::Scallop,
             spans: None,
             drill_op: None,

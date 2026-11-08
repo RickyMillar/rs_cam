@@ -270,6 +270,10 @@ pub struct GenContext {
     /// The machine envelope the pencil family's emit-time link decision
     /// costs candidates against, built from `self.machine`.
     link_kinematics: Option<crate::machine::kinematics::LinkKinematics>,
+    /// P20e: THE cutting ceiling of this op
+    /// (`MachineProfile::op_cutting_ceiling(dressups.feed_max_rate)`); the
+    /// feed optimiser caps at it.
+    op_cutting_ceiling: crate::machine::CuttingCeilingMmMin,
     /// `self.stock.material`. The drill gates read the workpiece's own
     /// hardness (F-016).
     material: crate::material::Material,
@@ -1082,6 +1086,7 @@ impl JobPhases<'_, '_> {
                 stock_top: self.inputs.emission_stock_bbox.max.z,
                 prior_stock: prior_stock_ref,
                 link_kinematics: self.context.link_kinematics.as_ref(),
+                op_cutting_ceiling: Some(self.context.op_cutting_ceiling),
                 feed_opt_stock: feed_opt_stock.as_mut(),
                 cutter: Some(&self.inputs.tool_def as &dyn crate::tool::MillingCutter),
                 entry_surface,
@@ -1908,11 +1913,8 @@ fn optimized_candidate(
     // rate, which `recommend_strategy` also times them at.
     // G-FEEDMAX: the op's `feed_max_rate` caps the candidate too, so the
     // advisor times the feeds the post-sim pass would give.
-    let max_feed = context
-        .machine
-        .cutting_ceiling()
-        .capped_at(context.feed_max_rate)
-        .at_least(1.0);
+    // P20e: THE op ceiling (`MachineProfile::op_cutting_ceiling`).
+    let max_feed = context.machine.op_cutting_ceiling(context.feed_max_rate);
     let rapid_feed = context.machine.travel_rate().mm_min().max(1.0);
 
     let cut_trace =
@@ -2803,6 +2805,7 @@ impl ProjectSession {
             prior_stock,
             source_stock,
             link_kinematics,
+            op_cutting_ceiling: self.machine.op_cutting_ceiling(tc.dressups.feed_max_rate),
             material: self.stock.material.clone(),
             post_clip_regions,
             toolpath_id: tc.id,

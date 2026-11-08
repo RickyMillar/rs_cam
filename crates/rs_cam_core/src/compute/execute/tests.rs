@@ -1589,6 +1589,10 @@ fn feed_optimization_uses_configured_nominal_feed_not_entry_plunge() {
             stock_top: 25.0,
             prior_stock: None,
             link_kinematics: None,
+            // P20e: the feed optimiser caps at THE op ceiling.
+            op_cutting_ceiling: Some(
+                crate::machine::MachineProfile::default().op_cutting_ceiling(cfg.feed_max_rate),
+            ),
             feed_opt_stock: Some(&mut stock),
             cutter: Some(&cutter),
             entry_surface: None,
@@ -1637,6 +1641,7 @@ fn apply_dressups_preserves_moves() {
             stock_top: 0.0,
             prior_stock: None,
             link_kinematics: None,
+            op_cutting_ceiling: None,
             feed_opt_stock: None,
             cutter: None,
             entry_surface: None,

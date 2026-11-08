@@ -412,6 +412,7 @@ fn assert_the_cell_is_held_as_a_point(cell: &PointCell) {
         operation_family: cell.operation_family,
         pass_role: cell.pass_role,
         operation_feed_rate_mm_min: FEED,
+        steady_feed: rs_cam_core::machine::SteadyFeedMmMin::op_feed_only(FEED),
         operation_kind: cell.op,
         spans: None,
         drill_op: None,

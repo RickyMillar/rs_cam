@@ -843,6 +843,7 @@ fn chained_junctions_survive_the_rapid_order_dressup() {
             stock_top: 0.0,
             prior_stock: None,
             link_kinematics: None,
+            op_cutting_ceiling: None,
             feed_opt_stock: None,
             cutter: Some(&tool_def as &dyn MillingCutter),
             entry_surface: None,

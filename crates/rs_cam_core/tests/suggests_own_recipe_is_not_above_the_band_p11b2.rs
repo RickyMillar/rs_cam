@@ -199,6 +199,7 @@ fn suggests_own_light_stepover_recipe_is_not_above_the_band_p11b2() {
             operation_family: LutOperationFamily::Pocket,
             pass_role: LutPassRole::Roughing,
             operation_feed_rate_mm_min: r.feed_rate_mm_min,
+            steady_feed: rs_cam_core::machine::SteadyFeedMmMin::op_feed_only(r.feed_rate_mm_min),
             operation_kind: OperationType::Pocket,
             spans: None,
             drill_op: None,

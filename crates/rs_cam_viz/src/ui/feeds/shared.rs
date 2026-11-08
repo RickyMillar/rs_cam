@@ -120,6 +120,9 @@ pub(crate) struct OpFeeds<'a> {
     pub(crate) tool: &'a crate::state::job::ToolConfig,
     pub(crate) material: &'a rs_cam_core::material::Material,
     pub(crate) machine: &'a rs_cam_core::machine::MachineProfile,
+    /// P20e: the op's feed cap (`DressupConfig::feed_max_rate`). The power
+    /// row grades the steady feed under it.
+    pub(crate) feed_max_rate: Option<f64>,
     pub(crate) preview: &'a rs_cam_core::feeds::suggest::FeedsPreview,
     /// The card's funnel answers, memoised with the preview (`FeedsMemo::card`).
     pub(crate) card: &'a crate::state::runtime::FeedsCard,

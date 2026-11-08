@@ -185,6 +185,7 @@ fn verdict_for(
             operation_family: LutOperationFamily::Parallel,
             pass_role: LutPassRole::Finish,
             operation_feed_rate_mm_min: COMMANDED_FEED_MM_MIN,
+            steady_feed: rs_cam_core::machine::SteadyFeedMmMin::op_feed_only(COMMANDED_FEED_MM_MIN),
             operation_kind: OperationType::DropCutter,
             spans: None,
             drill_op: None,

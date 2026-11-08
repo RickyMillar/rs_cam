@@ -148,6 +148,12 @@ pub struct PowerFigure {
     pub rpm: f64,
     /// The feed (mm/min) the figure was evaluated at.
     pub feed_mm_min: f64,
+    /// P20e: the steady feed the figure grades, with the limit that binds
+    /// (`min(op feed, feed_max_rate, cutting ceiling)`,
+    /// `MachineProfile::op_steady_feed`). `Some` from
+    /// [`power_at_shipped_point`]; then `feed_mm_min` is its value. `None`
+    /// from [`power_at_operating_point`], which reads the op feed as given.
+    pub steady_feed: Option<crate::machine::SteadyFeedMmMin>,
     /// The force line the figure was built from, at the mean chip of this
     /// operating point.
     pub force: ForceAtPoint,
@@ -238,12 +244,26 @@ pub fn power_at_operating_point(
     machine: &MachineProfile,
     fallback: Option<CalculatorOperatingPoint>,
 ) -> Result<PowerFigure, PowerUnmodeled> {
+    power_at_point(operation, tool, material, machine, fallback, None)
+}
+
+/// [`power_at_operating_point`], with the feed of the figure set to
+/// `steady` when it is given (P20e).
+fn power_at_point(
+    operation: &OperationConfig,
+    tool: &ToolConfig,
+    material: &Material,
+    machine: &MachineProfile,
+    fallback: Option<CalculatorOperatingPoint>,
+    steady: Option<crate::machine::SteadyFeedMmMin>,
+) -> Result<PowerFigure, PowerUnmodeled> {
     // P16 (review D7): no depth before the simulation, so no power figure.
     // A material with no force line keeps its `MaterialUnvalidated` reason.
     if material.force_line().is_ok() && operation.cut_spec().axial.depth_after_simulation() {
         return Err(PowerUnmodeled::DepthAfterSimulation);
     }
-    let point = resolve_operating_point(operation, tool, material, Some(machine), fallback)?;
+    let point =
+        resolve_operating_point(operation, tool, material, Some(machine), fallback, steady)?;
 
     // P20d: a drill cycle cuts the axial circle, one case.
     if let Some(axial) = point.axial {
@@ -255,6 +275,7 @@ pub fn power_at_operating_point(
             ae_mm: point.ae_mm,
             rpm: point.rpm,
             feed_mm_min: point.feed_mm_min,
+            steady_feed: steady,
             force: point.force,
             case: PowerCase::AxialPlunge,
             case_ae_mm: point.ae_mm,
@@ -296,6 +317,7 @@ pub fn power_at_operating_point(
         ae_mm: point.ae_mm,
         rpm: point.rpm,
         feed_mm_min: point.feed_mm_min,
+        steady_feed: steady,
         force: point.force,
         case,
         case_ae_mm,
@@ -331,44 +353,73 @@ pub fn force_at_operating_point(
     if material.force_line().is_ok() && operation.cut_spec().axial.depth_after_simulation() {
         return Err(PowerUnmodeled::DepthAfterSimulation);
     }
-    resolve_operating_point(operation, tool, material, None, fallback).map(|p| p.force)
+    resolve_operating_point(operation, tool, material, None, fallback, None).map(|p| p.force)
 }
 
 /// Spindle power at the point `operation` ships, with the point
 /// `recommended` was sized at as the fallback (feeds contract P14, review
 /// M9). The one door of the Feeds card, MCP `get_suggest_rationale` and
 /// the CLI `suggest` record: no surface builds the fallback by hand.
+///
+/// P20e: the figure grades the feed the op runs in steady cutting,
+/// `min(op feed, feed_max_rate, cutting ceiling)`
+/// ([`MachineProfile::op_steady_feed`], the ceiling the modulator caps
+/// at), not the stated op feed. [`PowerFigure::steady_feed`] names the
+/// limit that binds. `feed_max_rate` is the op's
+/// `DressupConfig::feed_max_rate`.
 pub fn power_at_shipped_point(
     operation: &OperationConfig,
     tool: &ToolConfig,
     material: &Material,
     machine: &MachineProfile,
     recommended: &crate::feeds::FeedsResult,
+    feed_max_rate: Option<f64>,
 ) -> Result<PowerFigure, PowerUnmodeled> {
-    power_at_operating_point(
+    let steady = operation
+        .feed_rate()
+        .filter(|v| v.is_finite() && *v > 0.0)
+        .map(|op_feed| machine.op_steady_feed(op_feed, feed_max_rate));
+    power_at_point(
         operation,
         tool,
         material,
         machine,
         Some(CalculatorOperatingPoint::of(recommended)),
+        steady,
     )
 }
 
 /// The force line at the mean chip of the point `operation` ships, with
 /// the point `recommended` was sized at as the fallback (P14, M9). The
-/// twin of [`power_at_shipped_point`] that needs no machine.
+/// twin of [`power_at_shipped_point`]: it reads no machine power.
+///
+/// P20e: the mean chip is at the steady feed, as the power figure's is
+/// (`MachineProfile::op_steady_feed(op feed, feed_max_rate)`); `machine`
+/// gives the cutting ceiling only.
 pub fn force_at_shipped_point(
     operation: &OperationConfig,
     tool: &ToolConfig,
     material: &Material,
+    machine: &MachineProfile,
     recommended: &crate::feeds::FeedsResult,
+    feed_max_rate: Option<f64>,
 ) -> Result<ForceAtPoint, PowerUnmodeled> {
-    force_at_operating_point(
+    if material.force_line().is_ok() && operation.cut_spec().axial.depth_after_simulation() {
+        return Err(PowerUnmodeled::DepthAfterSimulation);
+    }
+    let steady = operation
+        .feed_rate()
+        .filter(|v| v.is_finite() && *v > 0.0)
+        .map(|op_feed| machine.op_steady_feed(op_feed, feed_max_rate));
+    resolve_operating_point(
         operation,
         tool,
         material,
+        None,
         Some(CalculatorOperatingPoint::of(recommended)),
+        steady,
     )
+    .map(|p| p.force)
 }
 
 /// P16 (item 2b): the JSON of [`crate::feeds::FeedsResult::mrr_mm3_min`]:
@@ -393,6 +444,11 @@ pub fn shipped_power_json(figure: &Result<PowerFigure, PowerUnmodeled>) -> serde
             "ae_mm": p.ae_mm,
             "rpm": p.rpm,
             "feed_mm_min": p.feed_mm_min,
+            // P20e: the stated op feed and the limit that sets
+            // `feed_mm_min` (`op_feed`, `op_feed_cap`, `machine_ceiling`);
+            // null from a door that reads the op feed as given.
+            "op_feed_mm_min": p.steady_feed.map(crate::machine::SteadyFeedMmMin::op_feed_mm_min),
+            "feed_limit": p.steady_feed.map(|f| f.limit().wire_id()),
             // K7 (feeds contract P9): the worst case of the pre-sim set.
             "case": p.case.label(),
             "case_ae_mm": p.case_ae_mm,
@@ -432,6 +488,7 @@ fn resolve_operating_point(
     material: &Material,
     machine: Option<&MachineProfile>,
     fallback: Option<CalculatorOperatingPoint>,
+    steady: Option<crate::machine::SteadyFeedMmMin>,
 ) -> Result<ResolvedPoint, PowerUnmodeled> {
     let usable = |v: f64| v.is_finite() && v > 0.0;
 
@@ -440,9 +497,11 @@ fn resolve_operating_point(
     };
 
     // S11: an unset feed is no feed.
-    let Some(feed_mm_min) = operation.feed_rate().filter(|v| usable(*v)) else {
+    let Some(op_feed_mm_min) = operation.feed_rate().filter(|v| usable(*v)) else {
         return Err(PowerUnmodeled::NoFeed);
     };
+    // P20e: the steady feed when the caller gives it (the shipped point).
+    let feed_mm_min = steady.map_or(op_feed_mm_min, crate::machine::SteadyFeedMmMin::mm_min);
 
     // P20d: a drill cycle (`Radial::Axial`) cuts the axial circle. It needs
     // no width and no depth: `ae` reads the diameter (the width of the

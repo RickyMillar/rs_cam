@@ -108,7 +108,15 @@ impl ObservedStatistic {
 /// chipload" and the one vendor tables are published in.
 #[derive(Debug, Clone, Copy, PartialEq, Serialize, Deserialize)]
 pub struct CommandedStage {
+    /// P20e: the feed the G-code commands in steady cutting,
+    /// `min(op feed, feed_max_rate, cutting ceiling)`
+    /// (`ToolpathLoadContext::steady_feed`). With a cap below the op feed
+    /// the emitted F word is this value, not the stated op feed.
     pub feed_rate_mm_min: f64,
+    /// P20e: the stated op feed (`feed_rate`), mm/min.
+    pub op_feed_mm_min: f64,
+    /// P20e: the limit that sets [`Self::feed_rate_mm_min`].
+    pub feed_limit: crate::machine::SteadyFeedLimit,
     pub spindle_rpm: u32,
     pub flute_count: u32,
     /// `feed_rate_mm_min / (spindle_rpm · flute_count)`: the advance.

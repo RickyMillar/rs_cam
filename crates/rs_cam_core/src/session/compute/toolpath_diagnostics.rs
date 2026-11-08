@@ -48,14 +48,20 @@ impl ProjectSession {
             );
             crate::feeds::geometry::RadialThinning::of(family, pass_role).lift(ae, d_eng.mm())
         });
+        // S11: an op with no feed has no load context.
+        let op_feed = tc.operation.feed_rate()?;
         Some(crate::tool_load::LoadContextParts {
             toolpath_id: tc.id,
             tool,
             material: &self.stock.material,
             operation_family: crate::feeds::vendor_normalize::op_family_to_lut(family),
             pass_role: pass_role.into(),
-            // S11: an op with no feed has no load context.
-            operation_feed_rate_mm_min: tc.operation.feed_rate()?,
+            operation_feed_rate_mm_min: op_feed,
+            // P20e: the steady feed through THE op ceiling, the cap the
+            // modulator reads (G-FEEDMAX).
+            steady_feed: self
+                .machine
+                .op_steady_feed(op_feed, tc.dressups.feed_max_rate),
             operation_kind: tc.operation.op_type(),
             spans: result
                 .filter(|r| r.annotated().spans_valid)

@@ -792,8 +792,10 @@ impl ProjectSession {
                 continue;
             };
             // G-FEEDMAX: the op's `feed_max_rate` caps every feed stage,
-            // so it caps the modulator next to the machine ceiling.
-            let max_feed = max_feed.capped_at(tc.dressups.feed_max_rate);
+            // so it caps the modulator next to the machine ceiling. P20e:
+            // THE op ceiling, the one the gate reference reads
+            // (`MachineProfile::op_steady_feed`).
+            let max_feed = self.machine.op_cutting_ceiling(tc.dressups.feed_max_rate);
             // F-039 core (shared with the strategy advisor): aggregate
             // engagement + build the deflection / power / chipload context
             // and modulate this toolpath's per-move feeds in one place.
