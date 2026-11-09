@@ -695,7 +695,7 @@ impl PipelineRun<'_> {
             && self
                 .ctx
                 .cutter
-                .is_some_and(|cutter| cutter.non_centre_cutting().is_some());
+                .is_some_and(|cutter| crate::tool::body::core_of(cutter).is_some());
         // K5 CentreCut (P7 C): only a `Dressup` contract takes the fallback
         // ramp. A `StraightPlunge` contract forbids a ramp (K4); its
         // descents keep the plunge, and the feasibility stage records each
@@ -729,7 +729,7 @@ impl PipelineRun<'_> {
             contact_clearance: ctx.cfg.entry_clearance_mm,
             contact_top: None,
             // G-CENTRECUT: the tool owns its limits.
-            centre_limits: ctx.cutter.and_then(|cutter| cutter.non_centre_cutting()),
+            core: ctx.cutter.and_then(crate::tool::body::core_of),
             // Operator ruling 2026-09-24: a helix or ramp takes the full material
             // depth, so it reads the op's own replayed stock for its start.
             own_stock: ctx.cutter.map(|cutter| crate::dressup::EntryStockReplay {

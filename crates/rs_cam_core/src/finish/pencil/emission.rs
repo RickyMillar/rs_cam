@@ -179,12 +179,24 @@ pub(crate) struct EntryRampPlan {
 /// the angle cap, the lap ladder and the surface clamp are the physical model
 /// of "enter standing material without a full-diameter bite", and one defect
 /// class (G-ENTRYLOAD / G-ISOCLIPENTRY) grades both.
+///
+/// # `core` — a tool that does not cut at its centre (P22-0c-2)
+///
+/// The ladder is a zigzag: each lap ramps across the window and reverses.
+/// For a tool with a body core zone it takes the zigzag rule of that zone
+/// (G-SIMCORE rule (i), `CoreZone::max_ramp_slope`,
+/// `CoreZone::min_ramp_leg_mm`): the window is at least the core diameter
+/// long, and no lap descends steeper than `p / (4 c)`. A run shorter than
+/// the core diameter gets no ladder (`None`): the caller's plunge then
+/// records the G-CENTRECUT warning. `None` keeps the shape of a
+/// centre-cutting tool, move for move.
 pub(crate) fn plan_entry_ramp(
     run: &[P3],
     stock: &crate::dexel_stock::TriDexelStock,
     contact_radius: f64,
     safe_z: f64,
     end_at_start: bool,
+    core: Option<crate::tool::body::CoreZone>,
 ) -> Option<EntryRampPlan> {
     if run.len() < 2 {
         return None;
@@ -208,7 +220,8 @@ pub(crate) fn plan_entry_ramp(
     let tip = contact_radius.max(1e-6);
     let budget = entry_bite_budget_mm(tip);
     let tan_ramp = ENTRY_RAMP_MAX_ANGLE_DEG.to_radians().tan();
-    let window_target = entry_ramp_window_mm(tip);
+    let min_leg = core.map_or(0.0, |core| core.min_ramp_leg_mm());
+    let window_target = entry_ramp_window_mm(tip).max(min_leg);
 
     // The window: the prefix of the run out to `window_target` of XY travel,
     // with its cumulative arclength (both truncated at the same point, so
@@ -232,7 +245,7 @@ pub(crate) fn plan_entry_ramp(
     }
     let window = run.get(..=window_end)?;
     let window_len = *arc.last()?;
-    if window_len <= 1e-6 {
+    if window_len <= 1e-6 || window_len < min_leg {
         return None;
     }
 
@@ -263,7 +276,13 @@ pub(crate) fn plan_entry_ramp(
         return None;
     }
 
-    let per_lap = (window_len * tan_ramp).min(budget * 0.5).max(1e-6);
+    let per_lap = match core {
+        Some(core) => (window_len * tan_ramp)
+            .min(budget * 0.5)
+            .min(window_len * core.max_ramp_slope())
+            .max(1e-6),
+        None => (window_len * tan_ramp).min(budget * 0.5).max(1e-6),
+    };
     let laps_f = (depth / per_lap)
         .ceil()
         .clamp(1.0, ENTRY_RAMP_MAX_LAPS as f64);
@@ -330,6 +349,10 @@ pub(crate) fn plan_entry_ramp(
 /// the whole window), in which case the descent is skipped and the first lap
 /// starts from where the tool stands — still in air, because the lap Z ladder
 /// starts at that same ceiling.
+#[expect(
+    clippy::too_many_arguments,
+    reason = "eight inputs of the one entry descent; `core` (P22-0c-2) is the eighth"
+)]
 fn emit_entry_descent(
     tp: &mut Toolpath,
     run: &[P3],
@@ -337,12 +360,13 @@ fn emit_entry_descent(
     start_z: f64,
     entry_stock: Option<&crate::dexel_stock::TriDexelStock>,
     contact_radius: f64,
+    core: Option<crate::tool::body::CoreZone>,
     params: &PencilParams,
 ) -> usize {
     use crate::toolpath::MoveIntent;
 
     match entry_stock
-        .and_then(|stock| plan_entry_ramp(run, stock, contact_radius, params.safe_z, false))
+        .and_then(|stock| plan_entry_ramp(run, stock, contact_radius, params.safe_z, false, core))
     {
         Some(plan) => {
             // Air only — the descent stops at the conservative stock ceiling,
@@ -722,6 +746,8 @@ pub(crate) fn emit_paths_with_entry_stock_reported(
     let mut report = PencilLinkReport::default();
 
     let contact_radius = tip_contact_radius(cutter);
+    // P22-0c-2: the entry ladder takes the core rules of the tool body.
+    let core = crate::tool::body::core_of(cutter);
     // How high the tool's own envelope stands at the edge of that disc, above
     // its tip. G-LINKLOAD's flank test needs it so a link riding a crease is
     // not mistaken for one ploughing a ridge — see `plan_link_lift`.
@@ -894,6 +920,7 @@ pub(crate) fn emit_paths_with_entry_stock_reported(
                         start_z,
                         entry_stock,
                         contact_radius,
+                        core,
                         params,
                     );
                 }
@@ -917,6 +944,7 @@ pub(crate) fn emit_paths_with_entry_stock_reported(
                         params.safe_z,
                         entry_stock,
                         contact_radius,
+                        core,
                         params,
                     );
                 }

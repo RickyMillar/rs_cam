@@ -85,7 +85,7 @@ fn helix(levels: &[LevelRings], wall: Option<&WallStep<'_>>) -> Toolpath {
         reduced_tool: &tool,
     };
     rs_cam_core::interrupt::run_uncancellable(|cancel| {
-        helical_waterline(levels, &params(), &probe, wall, cancel)
+        helical_waterline(levels, &params(), &probe, wall, None, cancel)
     })
 }
 

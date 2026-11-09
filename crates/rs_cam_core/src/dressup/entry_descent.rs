@@ -444,7 +444,7 @@ fn rapid_to_entry_top(
     // G-CENTRECUT: a non-centre-cutting tool trusts only the conservative
     // (sliver-safe) material top. The closer cell-centre read can call a
     // column open where wood stands under the core.
-    let contact_top = if safety.centre_limits.is_some() {
+    let contact_top = if safety.core.is_some() {
         None
     } else {
         safety.contact_top
@@ -502,7 +502,7 @@ pub(crate) fn emit_stock_aware_plunge(
 }
 
 /// G-CENTRECUT: the refusal of a straight plunge from `material_top_z` to
-/// `end` under the tool's limits (`NonCentreCuttingLimits::plunge_refusal`),
+/// `end` under the tool's core zone (`CoreZone::plunge_refusal`),
 /// or `None` for a centre-cutting tool.
 fn plunge_refusal(
     safety: &EntrySafety<'_>,
@@ -510,8 +510,8 @@ fn plunge_refusal(
     end: &P3,
 ) -> Option<NonCentreCuttingRefusal> {
     safety
-        .centre_limits
-        .and_then(|limits| limits.plunge_refusal(material_top_z, *end))
+        .core
+        .and_then(|core| core.plunge_refusal(material_top_z, *end))
 }
 
 #[expect(
@@ -533,8 +533,8 @@ pub(crate) fn emit_ramp(
     // G-CENTRECUT / G-SIMCORE (P22-0b): the zigzag angle of the tool caps
     // the ramp (`max_ramp_slope`: the reversal dwell, not the straight-line
     // limit).
-    let max_angle_deg = safety.centre_limits.map_or(max_angle_deg, |limits| {
-        limits.clamp_ramp_angle_deg(max_angle_deg)
+    let max_angle_deg = safety.core.map_or(max_angle_deg, |core| {
+        core.clamp_ramp_angle_deg(max_angle_deg)
     });
     // The operation's ramp feed rides the ramp moves through material; a
     // straight feed through air and the plunge fallback keep `feed_rate`.
@@ -561,11 +561,18 @@ pub(crate) fn emit_ramp(
     // is SYNTHESISED from `dir`, because this emitter holds a direction rather
     // than the polyline it is entering: two points one window apart, the far
     // one lifted to the probe floor so no lap chord can sag under the surface.
+    // G-SIMCORE (P22-0b): a tool that does not cut at its centre needs legs
+    // of at least the core diameter (`min_ramp_leg_mm`), on the rest ladder
+    // and on the zigzag below.
+    let min_leg = safety.core.map_or(0.0, |core| core.min_ramp_leg_mm());
     if let Some(probe) = &safety.surface
         && let Some(stock) = probe.rest_stock
     {
         let contact = crate::finish::pencil::tip_contact_radius(probe.cutter);
-        let window = crate::finish::pencil::entry_ramp_window_mm(contact);
+        // P22-0c-2: a tool that does not cut at its centre needs a window of
+        // at least the core diameter (`CoreZone::min_ramp_leg_mm`); the
+        // ladder then laps it at the core zigzag slope.
+        let window = crate::finish::pencil::entry_ramp_window_mm(contact).max(min_leg);
         let far_xy = (end.x + dir.0 * window, end.y + dir.1 * window);
         // G-ISOCLIPRAMPFALL: where a rest stock is in scope this emitter is
         // LADDER OR PLUNGE, and never the legacy legs below. Both of the
@@ -585,7 +592,14 @@ pub(crate) fn emit_ramp(
         // point can only make the laps shallower.
         let far_floor = probe.floor_z(far_xy.0, far_xy.1).unwrap_or(end.z);
         let run = [*end, P3::new(far_xy.0, far_xy.1, far_floor.max(end.z))];
-        match crate::finish::pencil::plan_entry_ramp(&run, stock, contact, start.z, true) {
+        match crate::finish::pencil::plan_entry_ramp(
+            &run,
+            stock,
+            contact,
+            start.z,
+            true,
+            safety.core,
+        ) {
             Some(plan) => {
                 // Air only: the ladder starts at the conservative stock
                 // ceiling read over the whole window.
@@ -648,9 +662,6 @@ pub(crate) fn emit_ramp(
     // G-SIMCORE (P22-0b): a tool that does not cut at its centre needs legs
     // of at least the core diameter (`min_ramp_leg_mm`); a shallow ramp then
     // descends less steeply than the angle.
-    let min_leg = safety
-        .centre_limits
-        .map_or(0.0, |limits| limits.min_ramp_leg_mm());
     let half_len = ramp_xy_len / 2.0;
     let leg_cap = (ENTRY_CLEARANCE / tan / 2.0).max(min_leg);
     let legs = crate::util::steps::steps(ramp_xy_len, 2.0 * leg_cap)
@@ -683,7 +694,7 @@ pub(crate) fn emit_ramp(
         // terrain drops steeply at its end. A tool that does not cut at its
         // centre re-plans the descent over the clip floor at its limit
         // slope instead (`replan_descent_at_limit`).
-        let clipped = match safety.centre_limits {
+        let clipped = match safety.core {
             Some(_) => replan_descent_at_limit(
                 start,
                 ramp_start_z,
@@ -954,9 +965,9 @@ pub(crate) fn emit_helix(
     let helix_top = rapid_to_entry_top(tp, start, end, safety, feed_rate)?;
     // G-SIMCORE (P22-0b): the pitch that keeps the core out of wood on the
     // arc a cell spends under the core (`max_helix_pitch_mm`).
-    let pitch = match safety.centre_limits {
-        Some(limits) if radius > 0.0 => {
-            pitch.min(limits.max_helix_pitch_mm(radius, HELIX_STEPS_PER_REV))
+    let pitch = match safety.core {
+        Some(core) if radius > 0.0 => {
+            pitch.min(core.max_helix_pitch_mm(radius, HELIX_STEPS_PER_REV))
         }
         _ => pitch,
     };

@@ -19,6 +19,7 @@ use crate::mesh::{SpatialIndex, TriangleMesh};
 use crate::polygon::Polygon2;
 use crate::surface::pushcutter::batch_push_cutter_with_cancel;
 use crate::tool::MillingCutter;
+use crate::tool::body::CoreZone;
 use crate::toolpath::{MoveIntent, RingMaterial, Toolpath};
 
 /// Parameters for waterline toolpath generation.
@@ -827,17 +828,30 @@ fn ring_length(ring: &[P3]) -> f64 {
         .sum()
 }
 
-/// The laps a descent of `dz` along a ring of XY length `length` takes,
-/// so that no lap descends steeper than the dressup ramp angle
+/// The laps a descent of `dz` along the closed ring `ring` takes, so that
+/// no lap descends steeper than the dressup ramp angle
 /// ([`crate::compute::config::DRESSUP_RAMP_ANGLE_DEG`], the angle of a
 /// ramp entry: the bottom of the tool cuts on the descent as on a ramp).
 /// At least one.
-fn lap_count(dz: f64, length: f64) -> usize {
-    let per_lap = length
-        * crate::compute::config::DRESSUP_RAMP_ANGLE_DEG
-            .to_radians()
-            .tan();
-    crate::util::steps::steps(dz, per_lap).unwrap_or(1).max(1)
+///
+/// P22-0c-2: a tool that does not cut at its centre also holds the dwell
+/// rule of its core zone on the ring (`CoreZone::max_ring_slope`, the one
+/// pitch rule of every helical emitter). `None` when the ring fits inside
+/// the core diameter: no descent along it keeps the core out of wood, so
+/// the chain ends there.
+fn lap_count(dz: f64, ring: &[P3], core: Option<CoreZone>) -> Option<usize> {
+    let ramp = crate::compute::config::DRESSUP_RAMP_ANGLE_DEG
+        .to_radians()
+        .tan();
+    let slope = match core {
+        Some(core) => ramp.min(core.max_ring_slope(ring)),
+        None => ramp,
+    };
+    if slope <= 0.0 {
+        return None;
+    }
+    let per_lap = ring_length(ring) * slope;
+    Some(crate::util::steps::steps(dz, per_lap).unwrap_or(1).max(1))
 }
 
 /// Feed `laps` laps of the closed ring `ring` from vertex `start` back to
@@ -901,6 +915,7 @@ fn emit_chain(
     chain: &[&[P3]],
     params: &WaterlineParams,
     probe: &ChainLinkProbe<'_>,
+    core: Option<CoreZone>,
 ) {
     // The ring the tool is on, the vertex it stands at, the ring's level
     // and whether the ring still needs its flat lap.
@@ -921,13 +936,13 @@ fn emit_chain(
                     params.stock_to_leave,
                     params.sampling,
                 )
+                && let Some(laps) = lap_count(z - level_z, ring, core)
             {
                 toolpath.feed_to_with_intent(
                     P3::new(to.x, to.y, z),
                     params.feed_rate,
                     MoveIntent::FinishingCut,
                 );
-                let laps = lap_count(z - level_z, ring_length(ring));
                 emit_laps(toolpath, ring, j, (z, level_z), laps, params.feed_rate);
                 on = Some((ring, j, level_z, true));
                 continue;
@@ -1037,6 +1052,11 @@ fn thin_wall_chain<'p>(
 /// whole rings over consecutive levels ([`chain_links`]) cut by ONE entry
 /// ([`emit_chain`]).
 ///
+/// `core`: the core zone of a tool that does not cut at its centre
+/// (`tool::body::core_of`, P22-0c-2); each descending lap holds its dwell
+/// rule ([`lap_count`]). `None`: a centre-cutting tool, move for move as
+/// before.
+///
 /// The order is the level order of the stacked form: each level emits its
 /// runs in turn, and a whole ring that starts a chain emits the whole
 /// chain at its place. A run that is not a whole ring, and a ring that
@@ -1052,6 +1072,7 @@ pub fn helical_waterline(
     params: &WaterlineParams,
     probe: &ChainLinkProbe<'_>,
     wall: Option<&WallStep<'_>>,
+    core: Option<CoreZone>,
     cancel: &dyn CancelCheck,
 ) -> Result<Toolpath, Cancelled> {
     let polygons: Vec<Vec<Option<Polygon2>>> = levels
@@ -1137,7 +1158,7 @@ pub fn helical_waterline(
                 .iter()
                 .filter_map(|&(ck, cc)| path_of(ck, cc))
                 .collect();
-            emit_chain(&mut toolpath, &rings, params, probe);
+            emit_chain(&mut toolpath, &rings, params, probe, core);
         }
     }
     Ok(toolpath)

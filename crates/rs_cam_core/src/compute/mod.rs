@@ -56,8 +56,8 @@ pub use config::{
 };
 
 pub use tool_config::{
-    BitCutDirection, NonCentreCuttingGeometry, NonCentreCuttingLimits, NonCentreCuttingRefusal,
-    ToolConfig, ToolId, ToolMaterial, ToolType,
+    BitCutDirection, NonCentreCuttingGeometry, NonCentreCuttingRefusal, ToolConfig, ToolId,
+    ToolMaterial, ToolType,
 };
 
 pub use stock_config::{ModelKind, ModelUnits, StockConfig};

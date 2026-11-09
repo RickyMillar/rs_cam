@@ -29,8 +29,8 @@ pub struct RadialProfileLUT {
     /// non-decreasing. See [`RadialProfileLUT::profile_is_nonneg_total`].
     nonneg_total: bool,
     /// G-SIMCORE (P22-0a): the squared radius of the centre core that removes
-    /// no stock, for a table built by [`RadialProfileLUT::for_stock_stamp`]
-    /// from a tool with non-centre-cutting limits. `None`: the whole disc
+    /// no stock, for a table built by `tool::body::cut_table` from a tool
+    /// that does not cut at its centre. `None`: the whole disc
     /// cuts. See [`RadialProfileLUT::blade_ring_core_sq`].
     core_radius_sq: Option<f64>,
 }
@@ -76,39 +76,31 @@ impl RadialProfileLUT {
         }
     }
 
-    /// The table the stock stamp reads (G-SIMCORE, P22-0a): the envelope of
-    /// [`Self::from_cutter`] plus the blade ring of a tool that does not cut
-    /// at its centre.
+    /// This table with the blade ring of a tool that does not cut at its
+    /// centre (G-SIMCORE, P22-0a): only the ring `core_r <= r <= R` cuts,
+    /// to the blade bottom (the tip); the core removes no stock.
     ///
-    /// A tool with [`MillingCutter::non_centre_cutting`] limits cuts only
-    /// with its blade ring `core_r <= r <= R`, to the blade bottom (the tip);
-    /// the core removes no stock. The ring does not change the height of
-    /// the removal surface where it cuts (that stays `tip + h(r)` of the
-    /// envelope). It changes which cells a stamp cuts, so the stamp kernels
-    /// read it through their coverage functions
-    /// (`dexel_stock::stamping::ring_segment_cell_coverage`).
+    /// The ring does not change the height of the removal surface where it
+    /// cuts (that stays `tip + h(r)` of the envelope). It changes which
+    /// cells a stamp cuts, so the stamp kernels read it through their
+    /// coverage functions (`dexel_stock::stamping::ring_segment_cell_coverage`).
+    /// The ring cuts a subset of what the envelope cuts, at the same
+    /// surface, so [`Self::profile_is_nonneg_total`] and the air-skip it
+    /// guards stay exact.
     ///
-    /// The ring cuts a subset of what the envelope cuts, at the same surface,
-    /// so [`Self::profile_is_nonneg_total`] and the air-skip it guards stay
-    /// exact.
-    ///
-    /// Only the simulation builds its table here. Generation (the 3D
-    /// adaptive planner stock, the dressup replay, the feed optimiser, the
-    /// collision probe) keeps the envelope of [`Self::from_cutter`].
-    pub fn for_stock_stamp(cutter: &dyn MillingCutter, num_samples: usize) -> Self {
-        let mut lut = Self::from_cutter(cutter, num_samples);
-        if let Some(limits) = cutter.non_centre_cutting() {
-            let core_r = 0.5 * limits.centre_core_diameter_mm;
-            if core_r.is_finite() && core_r > 0.0 {
-                lut.core_radius_sq = Some((core_r * core_r).min(lut.radius_sq));
-            }
+    /// P22-0c-2: only the body builds it (`tool::body::cut_table`); the
+    /// core radius is the body's.
+    #[must_use]
+    pub(crate) fn with_blade_ring(mut self, core_r: f64) -> Self {
+        if core_r.is_finite() && core_r > 0.0 {
+            self.core_radius_sq = Some((core_r * core_r).min(self.radius_sq));
         }
-        lut
+        self
     }
 
     /// The squared radius of the centre core that removes no stock, or
     /// `None` when the whole disc cuts (G-SIMCORE). Only
-    /// [`Self::for_stock_stamp`] sets it.
+    /// `tool::body::cut_table` sets it.
     #[inline]
     pub fn blade_ring_core_sq(&self) -> Option<f64> {
         self.core_radius_sq

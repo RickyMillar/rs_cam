@@ -301,6 +301,9 @@ pub(crate) struct FeasibilityInputs<'a> {
     pub toolpath: &'a Toolpath,
     /// The tool and its facts.
     pub tool: &'a ToolConfig,
+    /// The core zone of the tool body (`ToolBody::core`, P22-0c-2); `None`
+    /// for a centre-cutting tool. The CentreCut rule reads it.
+    pub core: Option<crate::tool::body::CoreZone>,
     /// The stock box in the emission frame.
     pub stock_bbox: &'a BoundingBox3,
     /// The XY and the depth base of each hole of a Drill
@@ -375,13 +378,13 @@ impl FeasibilityInputs<'_> {
     /// K5 CentreCut (P7 C): the descents of a `StraightPlunge` op with a
     /// tool that does not cut at its centre that go into stock deeper than
     /// the blade protrusion, by the G-CENTRECUT predicate
-    /// (`NonCentreCuttingLimits::plunge_refusal`) from the reference top. A
+    /// (`CoreZone::plunge_refusal`) from the reference top. A
     /// descent is a fed move steeper than the limit
     /// (`is_steeper_than_limit`). Empty for every other op and tool.
     pub(crate) fn straight_plunge_refusals(
         &self,
     ) -> Vec<crate::compute::tool_config::NonCentreCuttingRefusal> {
-        let Some(limits) = self.tool.non_centre_cutting_limits() else {
+        let Some(core) = self.core else {
             return Vec::new();
         };
         if !matches!(
@@ -398,13 +401,13 @@ impl FeasibilityInputs<'_> {
                     return None;
                 };
                 if current.move_type == MoveType::Rapid
-                    || !limits.is_steeper_than_limit(prev.target, current.target)
+                    || !core.is_steeper_than_limit(prev.target, current.target)
                     || !self.in_footprint(current.target.x, current.target.y)
                 {
                     return None;
                 }
                 let top = self.reference_top(current.target.x, current.target.y);
-                limits.plunge_refusal(top, current.target)
+                core.plunge_refusal(top, current.target)
             })
             .collect()
     }
@@ -587,6 +590,9 @@ mod tests {
         let inputs = |helix_fallbacks: &'static [HelixCoreFallback]| FeasibilityInputs {
             toolpath: &toolpath,
             tool: &tool,
+            core: tool
+                .non_centre_cutting_geometry()
+                .map(crate::tool::body::CoreZone::from_geometry),
             stock_bbox: &stock_bbox,
             depth_bases: &[],
             entry_contract: crate::compute::catalog::EntryContract::DescentIsCut,

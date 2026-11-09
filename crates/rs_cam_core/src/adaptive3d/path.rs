@@ -1603,11 +1603,11 @@ pub(super) struct PlannerLuts {
 impl PlannerLuts {
     pub(super) fn of(cutter: &dyn MillingCutter) -> Self {
         let samples = crate::stock::radial_profile::LUT_SAMPLES;
-        let cut = RadialProfileLUT::for_stock_stamp(cutter, samples);
+        let cut = crate::tool::body::cut_table(cutter, samples);
         let envelope = cut
             .blade_ring_core_sq()
             .is_some()
-            .then(|| RadialProfileLUT::from_cutter(cutter, samples));
+            .then(|| crate::tool::body::envelope_table(cutter, samples));
         Self { cut, envelope }
     }
 
@@ -2052,13 +2052,15 @@ pub(super) fn emitted_cut_path(
 }
 
 /// K5 CentreCut, the plan stage (feeds contract P7 commit C): a tool that
-/// does not cut at its centre (`MillingCutter::non_centre_cutting`) never
-/// descends along a cut or a link steeper than its limit slope. Each point
-/// rises to at least `z_prev - slope * dxy`; a point only rises, so the
-/// path stays above the draped path and its chords (no gouge). A
-/// centre-cutting tool keeps the path as it is. The emitter and the
-/// planner's stamp call it through [`emitted_cut_path`] and
-/// [`emitted_link_path`], so they cannot drift.
+/// does not cut at its centre (`tool::body::core_of`) never descends along a
+/// cut or a link faster than its core zone allows. P22-0c-2: the core zone
+/// owns the rule (`CoreZone::clamp_descents`, the dwell rule): no piece of
+/// the path with an XY diameter of at most the core diameter descends more
+/// than the blade protrusion, and no segment is steeper than the
+/// straight-line limit. A point only rises, so the path stays above the
+/// draped path and its chords (no gouge). A centre-cutting tool keeps the
+/// path as it is. The emitter and the planner's stamp call it through
+/// [`emitted_cut_path`] and [`emitted_link_path`], so they cannot drift.
 ///
 /// `anchor` is where the tool stands before the path: the emitter feeds
 /// from there to `path[1]` (G-PHANTOMSTAMP), so the first descent is read
@@ -2069,26 +2071,8 @@ pub(super) fn clamp_descents_to_limit(
     anchor: Option<P3>,
     cutter: &dyn crate::tool::MillingCutter,
 ) -> Vec<P3> {
-    let Some(limits) = cutter.non_centre_cutting() else {
-        return path;
-    };
-    let slope = limits.max_descent_slope();
-    for i in 1..path.len() {
-        let prev = if i == 1 {
-            anchor.or_else(|| path.first().copied())
-        } else {
-            path.get(i - 1).copied()
-        };
-        let (Some(prev), Some(cur)) = (prev, path.get(i).copied()) else {
-            continue;
-        };
-        let dxy = (cur.x - prev.x).hypot(cur.y - prev.y);
-        let lowest = prev.z - slope * dxy;
-        if cur.z < lowest
-            && let Some(point) = path.get_mut(i)
-        {
-            point.z = lowest;
-        }
+    if let Some(core) = crate::tool::body::core_of(cutter) {
+        core.clamp_descents(&mut path, anchor);
     }
     path
 }
@@ -2146,9 +2130,9 @@ pub(super) fn effective_entry_style(
     style: EntryStyle3d,
     cutter: &dyn crate::tool::MillingCutter,
 ) -> EntryStyle3d {
-    match (style, cutter.non_centre_cutting()) {
-        (EntryStyle3d::Plunge, Some(limits)) => EntryStyle3d::Ramp {
-            max_angle_deg: limits.max_ramp_angle_deg(),
+    match (style, crate::tool::body::core_of(cutter)) {
+        (EntryStyle3d::Plunge, Some(core)) => EntryStyle3d::Ramp {
+            max_angle_deg: core.max_ramp_angle_deg(),
         },
         (style, _) => style,
     }
@@ -2172,7 +2156,7 @@ pub(super) fn segments_to_toolpath_checked(
     // G-DRAPEGAP: the chord-lift probe, the one the planner's stamp reads.
     let probe = params.geometry.gouge_probe.as_deref();
     // G-CENTRECUT: the tool's limits and the entry style they allow.
-    let centre_limits = cutter.non_centre_cutting();
+    let core = crate::tool::body::core_of(cutter);
     let entry_style = effective_entry_style(params.entry_style, cutter);
     let mut refusal = None;
     let mut tp = Toolpath::new();
@@ -2250,7 +2234,7 @@ pub(super) fn segments_to_toolpath_checked(
             // Byte parity: the adaptive3d helix keeps its historical end.
             helix_floor_lap: false,
             helix_containment: None,
-            centre_limits,
+            core,
         }
     };
 

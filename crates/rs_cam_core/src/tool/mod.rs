@@ -306,12 +306,12 @@ pub(crate) fn flat_chip_geometry_for_radius(
 /// `height_at_radius` (ADR, `TOOL_SCALE_SEMANTICS.md` §9).
 pub trait MillingCutter: Send + Sync {
     fn diameter(&self) -> f64;
-    /// G-CENTRECUT: the descent limits of a tool that does not cut at its
-    /// centre, or `None` for a centre-cutting tool. The tool owns them;
-    /// every entry builder and the simulation gate read them here. Only
-    /// [`ToolDefinition`] carries a value; a bare cutter shape is centre
-    /// cutting.
-    fn non_centre_cutting(&self) -> Option<crate::compute::tool_config::NonCentreCuttingLimits> {
+    /// P22-0c-2: the body of a whole tool ([`ToolBody`]), or `None` for a
+    /// bare cutter shape (a centre-cutting tool with no stated parts). Only
+    /// [`ToolDefinition`] carries one. A reader that holds a cutter reads
+    /// the parts through `tool::body` (`core_of`, `cut_table`,
+    /// `envelope_table`), never through a copy.
+    fn tool_body(&self) -> Option<&ToolBody> {
         None
     }
     fn radius(&self) -> f64 {
@@ -871,8 +871,8 @@ impl MillingCutter for ToolDefinition {
     fn diameter(&self) -> f64 {
         self.cutter.diameter()
     }
-    fn non_centre_cutting(&self) -> Option<crate::compute::tool_config::NonCentreCuttingLimits> {
-        self.body.core_limits()
+    fn tool_body(&self) -> Option<&ToolBody> {
+        Some(&self.body)
     }
     // EXPLICIT delegation for every tool-scale accessor, including the ones
     // that used to work only by inherited default over delegated primitives

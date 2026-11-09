@@ -987,7 +987,7 @@ pub(crate) fn generate_adaptive(
                 entry_helix_radius: ctx.entry_helix_radius.unwrap_or(0.0),
                 // G-SIMCORE: the dressup ramps where the room is under it.
                 entry_helix_core_floor: crate::dressup::helix_core_floor_mm(
-                    ctx.tool_def.non_centre_cutting(),
+                    ctx.tool_def.body().core(),
                 ),
             };
             let (level_tp, mut annotations) =

@@ -276,7 +276,7 @@ fn an_unmatched_ring_keeps_the_stacked_form() {
         reduced_tool: &tool,
     };
     let helical = rs_cam_core::interrupt::run_uncancellable(|cancel| {
-        helical_waterline(&levels, &params, &probe, None, cancel)
+        helical_waterline(&levels, &params, &probe, None, None, cancel)
     });
     let mut stacked = Toolpath::new();
     for level in &levels {

@@ -1027,8 +1027,9 @@ pub struct HelixRadius {
     /// `None` when the tool has no flat bottom (ball, tapered ball, V-bit):
     /// then a helix leaves a centre pip, and nothing caps r.
     pub flat_bottom_mm: Option<f64>,
-    /// The core floor (mm) of a tool that does not cut at its centre: half
-    /// the core diameter. `None` for a tool that cuts at its centre.
+    /// The core floor (mm) of a tool that does not cut at its centre: the
+    /// core radius of its body (`CoreZone::radius_mm`). `None` for a tool
+    /// that cuts at its centre.
     pub core_floor_mm: Option<f64>,
     /// True when the request is the rule, not an operator value.
     pub from_rule: bool,
@@ -1056,9 +1057,7 @@ impl HelixRadius {
     ) -> Self {
         let flat = cutter.width_at_height(0.0);
         let flat_bottom_mm = (flat > 1e-9).then_some(flat);
-        let core_floor_mm = cutter
-            .non_centre_cutting()
-            .map(|limits| limits.centre_core_diameter_mm / 2.0);
+        let core_floor_mm = crate::tool::body::core_of(cutter).map(|core| core.radius_mm);
         let floored = core_floor_mm.map_or(requested_mm, |floor| requested_mm.max(floor));
         let emitted_mm = flat_bottom_mm.map_or(floored, |cap| floored.min(cap));
         Self {

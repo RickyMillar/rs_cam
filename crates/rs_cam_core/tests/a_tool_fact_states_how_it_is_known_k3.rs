@@ -138,7 +138,7 @@ fn each_form_round_trips_through_save_and_load_k3_b() {
 fn an_absent_centre_cutting_key_is_unknown_not_centre_cutting_k3_c() {
     let unknown = load_text(&project("")).unwrap();
     assert!(unknown.tools()[0].centre_cutting_fact().is_unknown());
-    assert!(unknown.tools()[0].non_centre_cutting_limits().is_none());
+    assert!(unknown.tools()[0].non_centre_cutting_geometry().is_none());
 
     let yes_text = project("centre_cutting = { stated = \"yes\" }\n");
     let yes = load_text(&yes_text).unwrap();
@@ -150,7 +150,7 @@ fn an_absent_centre_cutting_key_is_unknown_not_centre_cutting_k3_c() {
         "centre_cutting = { stated = \"no\", centre_core_diameter_mm = 2.4, blade_protrusion_mm = 0.5 }\n",
     ))
     .unwrap();
-    assert!(no.tools()[0].non_centre_cutting_limits().is_some());
+    assert!(no.tools()[0].non_centre_cutting_geometry().is_some());
 
     // C 1.4: the save of "centre cutting" and of "not stated" differ.
     let saved_unknown = saved("c1", &project(""));

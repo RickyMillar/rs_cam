@@ -819,18 +819,18 @@ pub(crate) fn rapid_clearance_tolerance_mm(cell_size: f64) -> f64 {
 pub struct RapidClearanceCheck<'a> {
     cutter: &'a dyn crate::tool::MillingCutter,
     /// The envelope of the cutter. The stamps cut with
-    /// `RadialProfileLUT::for_stock_stamp`, which has the same heights (the
+    /// `tool::body::cut_table`, which has the same heights (the
     /// blade ring changes only which cells a stamp cuts), so the low channel
     /// reads the heights the stamps wrote. A rapid is a collision question:
     /// the core is a solid body that meets wood although it cuts none, so the
     /// probe keeps the full disc (G-SIMCORE, P22-0b).
     lut: RadialProfileLUT,
     hits: Vec<RapidCollision>,
-    /// G-CENTRECUT: the limits of a tool that does not cut at its centre
-    /// (`MillingCutter::non_centre_cutting`), or `None`. `Some` makes the
-    /// walk check each fed move against the live stock
+    /// G-CENTRECUT: the core zone of a tool that does not cut at its centre
+    /// (`tool::body::core_of`, P22-0c-2), or `None`. `Some` makes the walk
+    /// check each fed move against the live stock
     /// ([`Self::core_candidate`], [`Self::core_strike`], G-SIMCORE).
-    core_limits: Option<crate::compute::tool_config::NonCentreCuttingLimits>,
+    core: Option<crate::tool::body::CoreZone>,
     core_hits: Vec<NonCentreCuttingDescent>,
     /// K5 ReachFlute (feeds contract P7): the flute length of the tool
     /// (`MillingCutter::length`). The walk checks each fed move that can
@@ -922,14 +922,14 @@ pub struct NonCuttingZone {
 }
 
 impl NonCuttingZone {
-    /// The centre core: radius `0..d_core / 2`, its face one blade
-    /// protrusion over the tip.
+    /// The centre core: radius `0..c` of the body core zone, its face one
+    /// blade protrusion over the tip.
     #[must_use]
-    pub fn core(limits: &crate::compute::tool_config::NonCentreCuttingLimits) -> Self {
+    pub fn core(core: &crate::tool::body::CoreZone) -> Self {
         Self {
             inner_radius_mm: 0.0,
-            outer_radius_mm: limits.core_radius_mm(),
-            bottom_above_tip_mm: limits.max_plunge_depth_mm,
+            outer_radius_mm: core.radius_mm,
+            bottom_above_tip_mm: core.protrusion_mm,
         }
     }
 }
@@ -972,9 +972,9 @@ impl<'a> RapidClearanceCheck<'a> {
     pub fn new(cutter: &'a dyn crate::tool::MillingCutter) -> Self {
         Self {
             cutter,
-            lut: RadialProfileLUT::from_cutter(cutter, LUT_SAMPLES),
+            lut: crate::tool::body::envelope_table(cutter, LUT_SAMPLES),
             hits: Vec::new(),
-            core_limits: cutter.non_centre_cutting(),
+            core: crate::tool::body::core_of(cutter),
             core_hits: Vec::new(),
             flute_length_mm: cutter.length(),
             flute_hits: Vec::new(),
@@ -1065,9 +1065,8 @@ impl<'a> RapidClearanceCheck<'a> {
         start: P3,
         end: P3,
     ) -> bool {
-        self.core_limits.is_some_and(|limits| {
-            start.z.min(end.z) < stock.stock_bbox.max.z - limits.max_plunge_depth_mm
-        })
+        self.core
+            .is_some_and(|core| start.z.min(end.z) < stock.stock_bbox.max.z - core.protrusion_mm)
     }
 
     /// G-CENTRECUT / G-SIMCORE (P22-0b): the height of the wood over the
@@ -1077,7 +1076,7 @@ impl<'a> RapidClearanceCheck<'a> {
     /// move. `None`: the core meets no wood.
     ///
     /// The stock holds the history: the simulation stamps only the blade
-    /// ring of such a tool (`RadialProfileLUT::for_stock_stamp`, P22-0a), so
+    /// ring of such a tool (`tool::body::cut_table`, P22-0a), so
     /// the wood under the core of every earlier move is still in it. The
     /// rule adds what this move's own ring cuts before each sample.
     ///
@@ -1103,7 +1102,7 @@ impl<'a> RapidClearanceCheck<'a> {
         start: P3,
         end: P3,
     ) -> Option<(f64, P3)> {
-        let zone = NonCuttingZone::core(&self.core_limits?);
+        let zone = NonCuttingZone::core(&self.core?);
         let core_r = zone.outer_radius_mm;
         let core_sq = core_r * core_r;
         let inner_sq = zone.inner_radius_mm * zone.inner_radius_mm;
@@ -1168,7 +1167,7 @@ impl<'a> RapidClearanceCheck<'a> {
     /// G-CENTRECUT: record a core strike of move `move_index`.
     pub fn record_core(&mut self, move_index: usize, start: P3, end: P3, strike: (f64, P3)) {
         let (material_over_tip_mm, position) = strike;
-        let Some(limits) = self.core_limits else {
+        let Some(core) = self.core else {
             return;
         };
         let dxy = (end.x - start.x).hypot(end.y - start.y);
@@ -1176,9 +1175,9 @@ impl<'a> RapidClearanceCheck<'a> {
             move_index,
             position,
             material_over_tip_mm,
-            max_plunge_depth_mm: limits.max_plunge_depth_mm,
+            max_plunge_depth_mm: core.protrusion_mm,
             descent_angle_deg: (start.z - end.z).atan2(dxy).to_degrees(),
-            max_descent_angle_deg: limits.max_descent_angle_deg,
+            max_descent_angle_deg: core.max_descent_angle_deg(),
         });
     }
 

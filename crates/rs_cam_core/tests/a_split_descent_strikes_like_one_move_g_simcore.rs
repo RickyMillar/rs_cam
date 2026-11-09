@@ -4,7 +4,7 @@
 //! The probe geometry of `planning/feeds_contract_2026-11-03/phases/
 //! P22_sim_core.md`: wanaka tool 6, an 18 mm 2-flute bit with an 8 mm centre
 //! core and a 1 mm blade protrusion, over a 12 mm board, cell 0.25 mm. The
-//! stamp is the simulation's (`RadialProfileLUT::for_stock_stamp`, P22-0a):
+//! stamp is the simulation's (`tool::body::cut_table`, P22-0a):
 //! the core cuts no wood, so the wood under it stays in the stock.
 //!
 //! - A 5 mm plunge as one move and as 11 moves of 0.5 mm: each pushes the
@@ -130,7 +130,7 @@ fn run(
 /// simulation's own table.
 fn strikes(points: &[P3]) -> Vec<usize> {
     let tool = bulk_bit();
-    let lut = RadialProfileLUT::for_stock_stamp(&tool, LUT_SAMPLES);
+    let lut = rs_cam_core::tool::body::cut_table(&tool, LUT_SAMPLES);
     run(&mut board(), &tool, &lut, &fed(points)).1
 }
 
@@ -215,7 +215,7 @@ fn a_forward_cut_at_full_depth_does_not_strike() {
 /// under the core.
 fn post_and_probe(lut_of_probe: &RadialProfileLUT) -> (Vec<SimulationCutSample>, Vec<usize>) {
     let tool = bulk_bit();
-    let ring = RadialProfileLUT::for_stock_stamp(&tool, LUT_SAMPLES);
+    let ring = rs_cam_core::tool::body::cut_table(&tool, LUT_SAMPLES);
     let mut stock = board();
     run(&mut stock, &tool, &ring, &fed(&helix(2.0)));
     let mut probe = Toolpath::new();
@@ -228,7 +228,7 @@ fn post_and_probe(lut_of_probe: &RadialProfileLUT) -> (Vec<SimulationCutSample>,
 #[test]
 fn a_core_only_contact_reads_no_cutting_engagement() {
     let tool = bulk_bit();
-    let ring = RadialProfileLUT::for_stock_stamp(&tool, LUT_SAMPLES);
+    let ring = rs_cam_core::tool::body::cut_table(&tool, LUT_SAMPLES);
     let (samples, hits) = post_and_probe(&ring);
     let fed: Vec<_> = samples.iter().filter(|s| s.move_index == 2).collect();
     assert!(!fed.is_empty(), "the probe move has samples");
@@ -258,12 +258,11 @@ fn a_core_only_contact_reads_no_cutting_engagement() {
     );
 }
 
-fn probe_limits() -> rs_cam_core::compute::tool_config::NonCentreCuttingLimits {
-    NonCentreCuttingGeometry {
+fn probe_limits() -> rs_cam_core::tool::body::CoreZone {
+    rs_cam_core::tool::body::CoreZone::from_geometry(NonCentreCuttingGeometry {
         centre_core_diameter_mm: CORE_MM,
         blade_protrusion_mm: PROTRUSION_MM,
-    }
-    .limits()
+    })
 }
 
 /// A helix of `radius` at `pitch` mm per turn in 10 degree chords from 0.5
@@ -301,7 +300,7 @@ fn zigzag(leg: f64, slope: f64) -> Vec<P3> {
 }
 
 /// G-SIMCORE (P22-0b, the emitter rules): a helix at
-/// `NonCentreCuttingLimits::max_helix_pitch_mm` and a zigzag at
+/// `CoreZone::max_helix_pitch_mm` and a zigzag at
 /// `max_ramp_slope` with legs of `min_ramp_leg_mm` give no core finding.
 /// The controls: the old chord clamp (`slope x chord x 36`) at r 4, and a
 /// zigzag at the straight-line limit slope or with legs under the core

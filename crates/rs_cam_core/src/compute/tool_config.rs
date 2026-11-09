@@ -377,166 +377,6 @@ pub struct NonCentreCuttingGeometry {
     pub blade_protrusion_mm: f64,
 }
 
-/// The safe descent limits derived from [`NonCentreCuttingGeometry`].
-///
-/// G-CENTRECUT part 2: the tool owns these limits. Every entry builder and
-/// the simulation gate read them from the tool through
-/// [`crate::tool::MillingCutter::non_centre_cutting`]. The methods below
-/// are the one check; no op, planner or dressup keeps a copy.
-#[derive(Debug, Clone, Copy, PartialEq)]
-pub struct NonCentreCuttingLimits {
-    pub max_plunge_depth_mm: f64,
-    pub max_descent_angle_deg: f64,
-    /// The diameter (mm) of the centre core that does not cut. The
-    /// simulation gate reads the material inside this core.
-    pub centre_core_diameter_mm: f64,
-}
-
-impl NonCentreCuttingGeometry {
-    /// Derive the limits from the measured centre core and blade protrusion.
-    pub fn limits(self) -> NonCentreCuttingLimits {
-        NonCentreCuttingLimits {
-            max_plunge_depth_mm: self.blade_protrusion_mm,
-            max_descent_angle_deg: (self.blade_protrusion_mm / self.centre_core_diameter_mm)
-                .atan()
-                .to_degrees(),
-            centre_core_diameter_mm: self.centre_core_diameter_mm,
-        }
-    }
-}
-
-impl NonCentreCuttingLimits {
-    /// The steepest descent slope (dz / dxy) of ONE straight move into
-    /// stock, `p / d_core`: on a straight move a cell stays under the core
-    /// for at most `2 c` of travel. A path that turns needs more
-    /// ([`Self::max_ramp_slope`], [`Self::max_helix_pitch_mm`]).
-    #[must_use]
-    pub fn max_descent_slope(&self) -> f64 {
-        self.max_descent_angle_deg.to_radians().tan()
-    }
-
-    /// The core radius `c` (mm): half the core diameter.
-    #[must_use]
-    pub fn core_radius_mm(&self) -> f64 {
-        self.centre_core_diameter_mm / 2.0
-    }
-
-    /// G-SIMCORE (P22-0b): the steepest slope (dz / dxy) of a straight
-    /// zigzag ramp, `p / (4 c)`.
-    ///
-    /// A cell under the core keeps the top it had when the blade ring last
-    /// passed over it, so the descent along any piece of path that stays
-    /// within `c` of the cell must be at most `p`. On one straight move that
-    /// piece is at most `2 c` long ([`Self::max_descent_slope`]). At a zigzag
-    /// reversal a cell at `b < c` behind the turn point stays under the core
-    /// for `2 (b + c)` of travel, which tends to `4 c`. With legs of at least
-    /// [`Self::min_ramp_leg_mm`] no piece is longer, so `p / (4 c)` holds.
-    /// Asserted in `planning/feeds_contract_2026-11-03/phases/p22_0b_core_geometry.py`.
-    #[must_use]
-    pub fn max_ramp_slope(&self) -> f64 {
-        self.max_plunge_depth_mm / (4.0 * self.core_radius_mm())
-    }
-
-    /// The angle (degrees) of [`Self::max_ramp_slope`].
-    #[must_use]
-    pub fn max_ramp_angle_deg(&self) -> f64 {
-        self.max_ramp_slope().atan().to_degrees()
-    }
-
-    /// The ramp angle (degrees) a zigzag ramp may use: the requested angle,
-    /// but never steeper than [`Self::max_ramp_angle_deg`]. A request that
-    /// is not a valid angle gets that angle.
-    #[must_use]
-    pub fn clamp_ramp_angle_deg(&self, requested_deg: f64) -> f64 {
-        let limit = self.max_ramp_angle_deg();
-        if requested_deg > 0.0 && requested_deg < 90.0 {
-            requested_deg.min(limit)
-        } else {
-            limit
-        }
-    }
-
-    /// G-SIMCORE (P22-0b): the shortest leg (mm) of a zigzag ramp, the core
-    /// diameter. A cell on the leg line reaches the ring on each leg only
-    /// when the far end of the leg is at least `c` away from it; at the leg
-    /// middle that is `leg / 2 >= c`. A shorter leg leaves a cell that no
-    /// blade passes over: a full-depth post.
-    #[must_use]
-    pub fn min_ramp_leg_mm(&self) -> f64 {
-        self.centre_core_diameter_mm
-    }
-
-    /// G-SIMCORE (P22-0b): the largest helix pitch (mm per turn) at helix
-    /// radius `radius_mm`, for a helix written as `chords_per_turn` straight
-    /// chords. The smaller of two bounds:
-    ///
-    /// - The arc: a cell stays under the core for the arc whose chord is
-    ///   `2 c`, `phi = 2 asin(c / r)` of turn (a half turn at `r <= c`). The
-    ///   descent over it, `pitch phi / 2 pi`, must be at most `p`:
-    ///   `pitch <= p 2 pi / phi` (2.0 mm/turn at r 4, 3.77 at r 5.4 on a
-    ///   core of 8 mm and a protrusion of 1 mm).
-    /// - One chord: a straight move holds the straight-line limit
-    ///   ([`Self::max_descent_slope`]), `pitch <= slope x chord x n`. It binds
-    ///   only where a chord is longer than `2 c` (a large `r`) or `r < c`.
-    ///
-    /// For a large `r`, `phi` tends to `2 c / r` and the arc bound to the
-    /// limit slope times the circumference, which is the chord bound times
-    /// `pi / (n sin(pi / n))` (1.00127 at n = 36): the two meet. A radius
-    /// under `c` leaves a post at any pitch (`HelixRadius::resolve` keeps the
-    /// floor). Asserted in `planning/feeds_contract_2026-11-03/phases/p22_0b_core_geometry.py`.
-    #[must_use]
-    pub fn max_helix_pitch_mm(&self, radius_mm: f64, chords_per_turn: usize) -> f64 {
-        let ratio = if radius_mm > 0.0 {
-            (self.core_radius_mm() / radius_mm).min(1.0)
-        } else {
-            1.0
-        };
-        let arc = self.max_plunge_depth_mm * std::f64::consts::TAU / (2.0 * ratio.asin());
-        let n = chords_per_turn.max(1) as f64;
-        let chord = 2.0 * radius_mm.max(0.0) * (std::f64::consts::PI / n).sin();
-        arc.min(self.max_descent_slope() * chord * n)
-    }
-
-    /// True when a straight plunge of `depth_mm` into stock is allowed.
-    #[must_use]
-    pub fn allows_plunge(&self, depth_mm: f64) -> bool {
-        depth_mm <= self.max_plunge_depth_mm + NON_CENTRE_CUTTING_TOL_MM
-    }
-
-    /// True when a fed move from `start` to `end` goes down steeper than
-    /// the limit angle. A vertical descent is steeper. A level move or a
-    /// move up is not.
-    #[must_use]
-    pub fn is_steeper_than_limit(&self, start: crate::geo::P3, end: crate::geo::P3) -> bool {
-        let dz = start.z - end.z;
-        if dz <= NON_CENTRE_CUTTING_TOL_MM {
-            return false;
-        }
-        let dxy = (end.x - start.x).hypot(end.y - start.y);
-        dz > dxy * self.max_descent_slope() * (1.0 + 1e-6) + NON_CENTRE_CUTTING_TOL_MM
-    }
-}
-
-impl NonCentreCuttingLimits {
-    /// The refusal of a straight plunge from the material top
-    /// `material_top_z` down to `end`, or `None` when the plunge is not
-    /// deeper than the blade protrusion. The one plunge check of every
-    /// entry builder.
-    #[must_use]
-    pub fn plunge_refusal(
-        &self,
-        material_top_z: f64,
-        end: crate::geo::P3,
-    ) -> Option<NonCentreCuttingRefusal> {
-        let depth_mm = material_top_z - end.z;
-        (!self.allows_plunge(depth_mm)).then_some(NonCentreCuttingRefusal {
-            at: end,
-            depth_mm,
-            max_plunge_depth_mm: self.max_plunge_depth_mm,
-        })
-    }
-}
-
 /// G-CENTRECUT: an entry builder could not keep a non-centre-cutting tool
 /// inside its limits. It had to plunge straight into stock deeper than the
 /// blade protrusion. K6 (ruling Q6): a warning, not a refusal; the job
@@ -1161,13 +1001,6 @@ impl ToolConfig {
             Some((CentreCutting::No(geometry), _)) => Some(*geometry),
             Some((CentreCutting::Yes, _)) | None => None,
         }
-    }
-
-    /// Limits for this non-centre-cutting tool: `Some` only for a
-    /// `CentreCutting::No(..)` fact ([`Self::non_centre_cutting_geometry`]).
-    pub fn non_centre_cutting_limits(&self) -> Option<NonCentreCuttingLimits> {
-        self.non_centre_cutting_geometry()
-            .map(NonCentreCuttingGeometry::limits)
     }
 
     /// The feeds geometry hint of this tool, read from the record with no
@@ -3292,15 +3125,22 @@ product_id = ""
     #[test]
     fn non_centre_cutting_serde_and_limits() {
         let mut tool = ToolConfig::new_default(ToolId::from_raw(0), ToolType::EndMill);
+        // An 8 mm core needs a wider tool than the 6.35 mm default.
+        tool.diameter = 18.0;
         tool.set_centre_cutting(ToolFact::Stated(CentreCutting::No(
             NonCentreCuttingGeometry {
                 centre_core_diameter_mm: 8.0,
                 blade_protrusion_mm: 1.0,
             },
         )));
-        let limits = tool.non_centre_cutting_limits().unwrap();
-        assert_eq!(limits.max_plunge_depth_mm, 1.0);
-        assert!((limits.max_descent_angle_deg - 7.125_016_349).abs() < 1e-9);
+        // P22-0c-2: the limits are the body core zone's.
+        let core = crate::compute::cutter::build_cutter(&tool)
+            .unwrap()
+            .body()
+            .core()
+            .unwrap();
+        assert_eq!(core.protrusion_mm, 1.0);
+        assert!((core.max_descent_angle_deg() - 7.125_016_349).abs() < 1e-9);
         let json = serde_json::to_value(&tool).unwrap();
         assert_eq!(json["centre_cutting"]["stated"], "no");
         assert_eq!(json["centre_cutting"]["centre_core_diameter_mm"], 8.0);
@@ -3314,9 +3154,9 @@ product_id = ""
     fn only_a_no_fact_gives_non_centre_cutting_limits() {
         let mut tool = ToolConfig::new_default(ToolId::from_raw(0), ToolType::EndMill);
         assert!(tool.centre_cutting_fact().is_unknown());
-        assert!(tool.non_centre_cutting_limits().is_none());
+        assert!(tool.non_centre_cutting_geometry().is_none());
         tool.set_centre_cutting(ToolFact::Stated(CentreCutting::Yes));
-        assert!(tool.non_centre_cutting_limits().is_none());
+        assert!(tool.non_centre_cutting_geometry().is_none());
         tool.set_centre_cutting(ToolFact::estimated(
             CentreCutting::No(NonCentreCuttingGeometry {
                 centre_core_diameter_mm: 3.0,
@@ -3324,7 +3164,7 @@ product_id = ""
             }),
             "test",
         ));
-        assert!(tool.non_centre_cutting_limits().is_some());
+        assert!(tool.non_centre_cutting_geometry().is_some());
     }
 
     /// K3 (decision E4): the `u32` flute-count default equals the value of
@@ -3467,6 +3307,6 @@ product_id = ""
                 &serde_json::json!({"centre_core_diameter_mm": 3.0, "blade_protrusion_mm": 1.0}),
             )
             .unwrap();
-        assert!(tool.non_centre_cutting_limits().is_some());
+        assert!(tool.non_centre_cutting_geometry().is_some());
     }
 }

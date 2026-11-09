@@ -10,6 +10,10 @@
 //!    the old `ToolAssembly` view of the mounted body.
 //! 3. Memo arm: two tools that differ only in `centre_cutting` get two
 //!    simulation-prefix keys (D1); two equal tools share one.
+//! 4. P22-0c-2 search guard (design section 4): no source file under
+//!    `src/` halves the core diameter outside `tool/body.rs`. Every reader
+//!    takes the core radius from the body (`ToolBody::core`). Comments do
+//!    not count; the anchor is the one site in `tool/body.rs`.
 
 #![expect(
     clippy::unwrap_used,
@@ -35,8 +39,12 @@ use rs_cam_core::ids::ToolpathId;
 use rs_cam_core::machine::head::{HeadBandKind, HeadFit};
 use rs_cam_core::stock::collision::AssemblySegment;
 use rs_cam_core::tool::body::{
-    AxialSpan, ContactKind, ContactRadius, ContactZone, CuttingKind, CuttingZone, SpanTop, Zone,
+    AxialSpan, ContactKind, ContactRadius, ContactZone, CoreZone, CuttingKind, CuttingZone,
+    SpanTop, Zone, core_of, cut_table, envelope_table,
 };
+
+#[path = "common/source_scan.rs"]
+mod source_scan;
 use rs_cam_core::tool::{MillingCutter, ToolDefinition};
 use rs_cam_core::toolpath::Toolpath;
 use rs_cam_core::trace::toolpath_spans::AnnotatedToolpath;
@@ -234,13 +242,43 @@ fn one_body_for_every_reader_p22_0c() {
             (case.stickout_mm - case.flute_mm).max(0.0),
             "{label}"
         );
-        // The core limits: the body, the trait view and the record agree.
+        // P22-0c-2: the core view reads the table; the record, the view of
+        // a cutter (`core_of`) and the body agree.
+        let core_zone = body.zones().into_iter().find_map(|zone| match zone {
+            Zone::Contact(ContactZone {
+                kind: ContactKind::Core,
+                span,
+                outer: ContactRadius::Mm(radius_mm),
+                ..
+            }) => Some(CoreZone {
+                radius_mm,
+                protrusion_mm: span.bottom_mm,
+            }),
+            Zone::Contact(_) | Zone::Cutting(_) => None,
+        });
+        assert_eq!(body.core(), core_zone, "{label}: core view");
         assert_eq!(
-            body.core_limits(),
-            tool.non_centre_cutting_limits(),
-            "{label}"
+            body.core(),
+            tool.non_centre_cutting_geometry()
+                .map(CoreZone::from_geometry),
+            "{label}: core view against the record"
         );
-        assert_eq!(def.non_centre_cutting(), body.core_limits(), "{label}");
+        assert_eq!(core_of(&def), body.core(), "{label}: the cutter view");
+        // The cut table carries the ring of the core; the envelope table
+        // the full disc.
+        let ring = cut_table(&def, 256).blade_ring_core_sq();
+        assert_eq!(
+            ring,
+            body.core()
+                .map(|core| (core.radius_mm * core.radius_mm)
+                    .min(case.envelope_mm * case.envelope_mm)),
+            "{label}: cut table ring"
+        );
+        assert_eq!(
+            envelope_table(&def, 256).blade_ring_core_sq(),
+            None,
+            "{label}: envelope table"
+        );
 
         // The mounted body: the tool zones, then the head bands.
         let fit = HeadFit::default();
@@ -421,5 +459,59 @@ fn a_centre_cutting_change_gives_a_new_prefix_key_p22_0c() {
         hits_after(&non_centre, &centre),
         0,
         "the same, in the other order"
+    );
+}
+
+/// The places in `text` (comments removed, white space removed) where a
+/// core diameter is halved: `core_diameter_mm / 2`, `core_diameter_mm *
+/// 0.5`, or `0.5 * <path>core_diameter_mm`.
+fn halved_core_diameters(text: &str) -> usize {
+    let flat: String = source_scan::strip_comments(text)
+        .chars()
+        .filter(|c| !c.is_whitespace())
+        .collect();
+    let needle = "core_diameter_mm";
+    flat.match_indices(needle)
+        .filter(|(at, _)| {
+            let after = &flat[at + needle.len()..];
+            let before = &flat[..*at];
+            // The path in front of the name: `geometry.centre_`, `limits.`.
+            let path_start = before
+                .rfind(|c: char| !(c.is_alphanumeric() || c == '_' || c == '.'))
+                .map_or(0, |i| i + 1);
+            after.starts_with("/2")
+                || after.starts_with("*0.5")
+                || before[..path_start].ends_with("0.5*")
+        })
+        .count()
+}
+
+/// P22-0c-2 search guard: the core radius has ONE definition,
+/// `CoreZone::from_geometry` in `tool/body.rs`.
+#[test]
+fn no_reader_halves_the_core_diameter_outside_the_body_p22_0c() {
+    let src = std::path::Path::new(env!("CARGO_MANIFEST_DIR")).join("src");
+    let body = src.join("tool").join("body.rs");
+    let anchor = halved_core_diameters(&std::fs::read_to_string(&body).unwrap());
+    assert_eq!(anchor, 1, "non-vacuity: tool/body.rs holds the one site");
+    assert_eq!(
+        halved_core_diameters("// x.centre_core_diameter_mm / 2.0\nlet a = 1;"),
+        0,
+        "a comment does not count"
+    );
+    assert_eq!(
+        halved_core_diameters("let r = 0.5 * limits.centre_core_diameter_mm;"),
+        1,
+        "the 0.5 * form counts"
+    );
+    let offenders: Vec<String> = source_scan::rust_files(&src)
+        .into_iter()
+        .filter(|path| *path != body)
+        .filter(|path| halved_core_diameters(&std::fs::read_to_string(path).unwrap()) > 0)
+        .map(|path| path.display().to_string())
+        .collect();
+    assert!(
+        offenders.is_empty(),
+        "these files halve the core diameter; read ToolBody::core instead: {offenders:?}"
     );
 }

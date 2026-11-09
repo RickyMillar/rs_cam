@@ -9,7 +9,7 @@ One module per cutter family. The trait and the shared radius queries live in
   `valley_radius_mm`, `edge_drop_by_profile`, `helix_lag_rad` (one helix lag for the flutes in cut and the P11a engaged-edge force), `DEFAULT_HELIX_DEG` (P13a: the one helix of a cutter that states none; every constructor and `default_helix_deg` read it; F201 row `tool.DEFAULT_HELIX_DEG`).
 - `flat.rs` (`FlatEndmill`), `ball.rs` (`BallEndmill`), `bullnose.rs` (`BullNoseEndmill`, toroidal), `tapered_ball.rs` (`TaperedBallEndmill`), `vbit.rs` (`VBitEndmill`).
 - `size_units.rs` — `SizeUnits` (mm or inch), inch fractions, the length entry parser; display only (lengths stay mm).
-- `body.rs` — P22-0c `ToolBody`: the axial zones the tool owns (`zones()` is THE table; one `pub(crate)` constructor, called by `ToolDefinition`); `MountedBody` = body + head bands (`assembly()` = the old `ToolAssembly` view until P22-0c-5).
+- `body.rs` — P22-0c `ToolBody`: the axial zones the tool owns (`zones()` is THE table; one `pub(crate)` constructor, called by `ToolDefinition`); `MountedBody` = body + head bands (`assembly()` = the old `ToolAssembly` view until P22-0c-5). P22-0c-2: `CoreZone` (`ToolBody::core`) owns every core rule (plunge, straight line, zigzag, helix, the dwell rule `clamp_descents` / `max_ring_slope`); `cut_table`, `envelope_table`, `core_of` for a `&dyn MillingCutter` (`MillingCutter::tool_body`).
 - `domain.rs` — `ToolDimension::domain` (math bounds), `ui_range` (GUI drag only), `ToolGeometryError`; centre-core and blade-protrusion measurement bounds.
 
 ## Invariants
@@ -17,7 +17,7 @@ One module per cutter family. The trait and the shared radius queries live in
 - The cusp radius is what the tool FORMS. The valley radius is what the tool
   FITS INTO. The two coincide on a taper and diverge on a bull nose. Pick the
   one the caller's question asks for.
-- A holder and shank envelope is part of the tool, not of the operation; collision reads it. G-CENTRECUT: `MillingCutter::non_centre_cutting` gives the tool's limits; only `ToolDefinition` holds a value, in its body core (`with_non_centre_cutting`). K3: only a `CentreCutting::No(..)` fact gives limits (`ToolConfig::non_centre_cutting_limits`); `Yes` and `Unknown` give none, so an `Unknown` tool keeps the motion of a centre-cutting tool. Every reader asks the tool; nothing copies the limits. K5 VTipFlat (P7): `build_cutter` and `ToolConfig::geometry_hint` set the V tip from `v_tip_planning_mm` (the tip `planning()` gives, else 0: sharp); a stated tip whose cone height disagrees with the flute warns `tool.v_tip_unmodelled` (a V-bit only; D12: an Unknown or estimated tip, or centre cutting, stops generation: `compute::not_set::tool_facts_not_set`).
+- A holder and shank envelope is part of the tool, not of the operation; collision reads it. G-CENTRECUT: the body core (`ToolBody::core`, `tool::body::core_of`) gives the tool's limits; only `ToolDefinition` holds a body (`with_non_centre_cutting`). Only `CoreZone::from_geometry` halves the core diameter (search guard in `one_body_for_every_reader_p22_0c`). K3: only a `CentreCutting::No(..)` fact gives a core (`ToolConfig::non_centre_cutting_geometry`); `Yes` and `Unknown` give none, so an `Unknown` tool keeps the motion of a centre-cutting tool. Every reader asks the tool; nothing copies the limits. K5 VTipFlat (P7): `build_cutter` and `ToolConfig::geometry_hint` set the V tip from `v_tip_planning_mm` (the tip `planning()` gives, else 0: sharp); a stated tip whose cone height disagrees with the flute warns `tool.v_tip_unmodelled` (a V-bit only; D12: an Unknown or estimated tip, or centre cutting, stops generation: `compute::not_set::tool_facts_not_set`).
 - An edge drop is the highest point of `z - height(rho)` over the edge
   (`mod.rs::edge_drop_by_profile`); a `facet_drop` reports `found` only for
   a tangency, or `drop_cutter` skips the edges (G-TIERBURIAL).
@@ -32,7 +32,7 @@ One module per cutter family. The trait and the shared radius queries live in
 
 - `cargo test -p rs_cam_core -q --test tool_scale_semantics_pr2 --test bull_nose_cusp_radius_g_bullcusp --test tapered_cusp_radius_sentry`
 - `... --test a_tool_outside_its_domain_is_refused_at_every_door_f029` (F029)
-- `... --test tool_geometry_hygiene --test edge_drop_matches_the_sampled_profile_g_tierburial --test one_body_for_every_reader_p22_0c`
+- `... --test tool_geometry_hygiene --test edge_drop_matches_the_sampled_profile_g_tierburial --test one_body_for_every_reader_p22_0c --test a_turning_descent_holds_the_core_dwell_rule_p22_0c`
 - `cargo test -p rs_cam_viz -q --test a_tool_size_reads_diameter_and_radius_g_toolsize`
 
 ## Do not

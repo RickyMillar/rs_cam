@@ -2450,7 +2450,7 @@ where
 
             set_phase(&format!("Simulate {}", entry.name));
             // G-SIMCORE (P22-0a): the stamp cuts with the blade ring only.
-            let lut = RadialProfileLUT::for_stock_stamp(
+            let lut = crate::tool::body::cut_table(
                 entry.tool.as_ref(),
                 crate::stock::radial_profile::LUT_SAMPLES,
             );

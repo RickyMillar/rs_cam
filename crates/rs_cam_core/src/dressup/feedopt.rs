@@ -22,7 +22,6 @@
 use crate::dexel_stock::{StockCutDirection, TriDexelStock};
 use crate::geo::P3;
 use crate::stock::dexel::ray_top;
-use crate::stock::radial_profile::RadialProfileLUT;
 use crate::tool::MillingCutter;
 use crate::toolpath::{Move, MoveType, Toolpath};
 use crate::trace::toolpath_spans::AnnotatedToolpath;
@@ -167,7 +166,7 @@ fn optimize_feed_rates_inner(
     let n_samples = 24; // circumference samples for engagement
     // G-SIMCORE (P22-0b): the simulation's table, so the stock this pass
     // reads keeps the wood under the core of a non-centre-cutting tool.
-    let lut = RadialProfileLUT::for_stock_stamp(cutter, crate::stock::radial_profile::LUT_SAMPLES);
+    let lut = crate::tool::body::cut_table(cutter, crate::stock::radial_profile::LUT_SAMPLES);
 
     // WP21: one read of the feed range serves both arms below, so the
     // air-cut arm and the engaged arm cannot disagree about the ceiling.

@@ -666,6 +666,8 @@ impl<'a> LayeredOp for WaterlinePass<'a> {
                 &self.params,
                 &probe,
                 wall_step.as_ref(),
+                // P22-0c-2: each descending lap holds the core dwell rule.
+                crate::tool::body::core_of(self.cutter),
                 cancel,
             )?;
             // P6.0c: a surface op states no material side.

@@ -221,12 +221,13 @@ pub struct EntrySafety<'a> {
     /// tool radius), or `None` for no containment. 2D Adaptive only
     /// (G-ADAPTPASSLOAD round 3): its planner stamps the same fitted hole.
     pub helix_containment: Option<&'a [crate::polygon::Polygon2]>,
-    /// G-CENTRECUT: the limits of a tool that does not cut at its centre,
-    /// read from the tool (`MillingCutter::non_centre_cutting`). `Some`
-    /// clamps the ramp angle and the helix pitch to the limit angle, starts
-    /// the descent at the conservative material top, and makes an emitter
-    /// return a refusal when it must plunge deeper than the protrusion.
-    pub centre_limits: Option<crate::compute::tool_config::NonCentreCuttingLimits>,
+    /// G-CENTRECUT: the core zone of a tool that does not cut at its
+    /// centre, read from the tool body (`tool::body::core_of`, P22-0c-2).
+    /// `Some` clamps the ramp angle and the helix pitch to the core rules,
+    /// starts the descent at the conservative material top, and makes an
+    /// emitter return a warning when it must plunge deeper than the
+    /// protrusion.
+    pub core: Option<crate::tool::body::CoreZone>,
 }
 
 /// A contained helix whose fitted radius is at most this is a ramp (mm):
@@ -234,14 +235,12 @@ pub struct EntrySafety<'a> {
 pub(crate) const HELIX_MIN_FIT_MM: f64 = 1e-6;
 
 /// G-SIMCORE (P22-0b): the smallest helix radius (mm) that cuts the centre
-/// of a tool that does not cut at its centre: half the core diameter
-/// (`HelixRadius::resolve`, the core floor). 0 for a tool that cuts at its
-/// centre.
+/// of a tool that does not cut at its centre: the core radius
+/// (`CoreZone::radius_mm`; `HelixRadius::resolve`, the core floor). 0 for a
+/// tool that cuts at its centre.
 #[must_use]
-pub fn helix_core_floor_mm(
-    limits: Option<crate::compute::tool_config::NonCentreCuttingLimits>,
-) -> f64 {
-    limits.map_or(0.0, |limits| limits.centre_core_diameter_mm / 2.0)
+pub fn helix_core_floor_mm(core: Option<crate::tool::body::CoreZone>) -> f64 {
+    core.map_or(0.0, |core| core.radius_mm)
 }
 
 /// True when a contained helix of fitted radius `fit` is a helix: the
@@ -352,7 +351,7 @@ impl OwnStockReplay {
             // G-SIMCORE (P22-0b): the simulation's table. A non-centre-cutting
             // tool cuts with its blade ring only, so a replayed plunge keeps the
             // wood under its core, and the next entry reads that wood.
-            lut: crate::stock::radial_profile::RadialProfileLUT::for_stock_stamp(
+            lut: crate::tool::body::cut_table(
                 replay.cutter,
                 crate::stock::radial_profile::LUT_SAMPLES,
             ),
@@ -485,7 +484,7 @@ pub fn apply_entry(
             // G-SIMCORE (P22-0b): a tool that does not cut at its centre needs
             // the core floor (`helix_fit_holds`); with less room it ramps, and
             // the fallback is a finding (`HelixCoreFallback`).
-            let core_floor = helix_core_floor_mm(safety.centre_limits);
+            let core_floor = helix_core_floor_mm(safety.core);
             let mut core_fallback = None;
             let style = match style {
                 EntryStyle::Helix { radius, pitch } => match safety.helix_containment {
@@ -494,7 +493,7 @@ pub fn apply_entry(
                         if helix_fit_holds(fit, core_floor) {
                             EntryStyle::Helix { radius: fit, pitch }
                         } else {
-                            if safety.centre_limits.is_some() {
+                            if safety.core.is_some() {
                                 core_fallback = Some(fit);
                             }
                             EntryStyle::Ramp {
@@ -1022,6 +1021,7 @@ pub fn optimize_entry_descents_with_provenance(
                 cfg.contact_radius_mm,
                 rapid_z,
                 true,
+                crate::tool::body::core_of(cutter),
             )
         });
 

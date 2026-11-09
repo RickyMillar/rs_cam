@@ -911,6 +911,7 @@ impl JobPhases<'_, '_> {
         let inputs = FeasibilityInputs {
             toolpath: &annotated.toolpath,
             tool: &self.inputs.tool,
+            core: self.inputs.tool_def.body().core(),
             stock_bbox: &self.inputs.emission_stock_bbox,
             depth_bases: &depth_bases,
             entry_contract: self.context.entry_contract,

@@ -1132,7 +1132,7 @@ fn no_probe(stock_top: f64) -> EntrySafety<'static> {
         contact_top: None,
         helix_floor_lap: false,
         helix_containment: None,
-        centre_limits: None,
+        core: None,
     }
 }
 
@@ -1415,7 +1415,7 @@ fn a_rough_keeps_folding_over_a_short_run_r10() {
         contact_top: None,
         helix_floor_lap: false,
         helix_containment: None,
-        centre_limits: None,
+        core: None,
     };
     let result = without_provenance(apply_entry(
         AnnotatedToolpath::new(plunge_then_run(2.0)),
@@ -2259,16 +2259,17 @@ fn helix_and_ramp_start_at_the_entry_clearance() {
 /// returns a refusal.
 #[test]
 fn a_non_centre_cutting_tool_ramps_at_its_limit_g_centrecut() {
-    let limits = crate::compute::tool_config::NonCentreCuttingGeometry {
-        centre_core_diameter_mm: 8.0,
-        blade_protrusion_mm: 1.0,
-    }
-    .limits();
-    let slope = limits.max_descent_slope();
+    let core = crate::tool::body::CoreZone::from_geometry(
+        crate::compute::tool_config::NonCentreCuttingGeometry {
+            centre_core_diameter_mm: 8.0,
+            blade_protrusion_mm: 1.0,
+        },
+    );
+    let slope = core.max_descent_slope();
     let start = P3::new(10.0, 10.0, 20.0);
     let end = P3::new(10.0, 10.0, 0.0);
     let safety = EntrySafety {
-        centre_limits: Some(limits),
+        core: Some(core),
         ..no_probe(8.0)
     };
     let mut helix = Toolpath::new();
@@ -2323,11 +2324,12 @@ fn a_non_centre_cutting_tool_ramps_at_its_limit_g_centrecut() {
 /// helix, which leaves a post under the core.
 #[test]
 fn a_helix_with_no_room_for_the_core_ramps_and_names_it_g_simcore() {
-    let limits = crate::compute::tool_config::NonCentreCuttingGeometry {
-        centre_core_diameter_mm: 8.0,
-        blade_protrusion_mm: 1.0,
-    }
-    .limits();
+    let core = crate::tool::body::CoreZone::from_geometry(
+        crate::compute::tool_config::NonCentreCuttingGeometry {
+            centre_core_diameter_mm: 8.0,
+            blade_protrusion_mm: 1.0,
+        },
+    );
     let run = |half: f64| {
         let region = [crate::polygon::Polygon2::rectangle(
             10.0 - half,
@@ -2337,7 +2339,7 @@ fn a_helix_with_no_room_for_the_core_ramps_and_names_it_g_simcore() {
         )];
         let safety = EntrySafety {
             helix_containment: Some(&region),
-            centre_limits: Some(limits),
+            core: Some(core),
             ..no_probe(0.0)
         };
         without_provenance(apply_entry(
@@ -2387,4 +2389,147 @@ fn a_helix_with_no_room_for_the_core_ramps_and_names_it_g_simcore() {
         .map(|m| (m.target.x - 10.0).hypot(m.target.y - 10.0))
         .fold(0.0f64, f64::max);
     assert!(radius >= 4.0 - 1e-9, "the helix radius is {radius}");
+}
+
+/// The core findings of `tp` on `stock`, through the simulation walk with
+/// the core check and the simulation's own table (P22-0c-2).
+fn core_findings_on(
+    stock: &mut TriDexelStock,
+    tool: &crate::tool::ToolDefinition,
+    tp: &Toolpath,
+) -> Vec<usize> {
+    let lut = crate::tool::body::cut_table(tool, crate::stock::radial_profile::LUT_SAMPLES);
+    let mut check = crate::stock::collision::RapidClearanceCheck::new(tool);
+    let cell = stock.z_grid.cell_size;
+    stock
+        .simulate_toolpath_with_lut_metrics_rapid_checked(
+            tp,
+            &lut,
+            tool,
+            tool.radius(),
+            crate::dexel_stock::StockCutDirection::FromTop,
+            crate::ids::ToolpathId::from_raw(0),
+            18_000,
+            2,
+            5000.0,
+            cell,
+            None,
+            &[],
+            &[],
+            true,
+            &crate::interrupt::NeverCancel,
+            Some(&mut check),
+        )
+        .expect("never cancelled");
+    let (_rapids, core) = check.into_parts();
+    core.into_iter().map(|hit| hit.move_index).collect()
+}
+
+/// P22-0c-2 (lead ruling on P22-0b open question 4, a must-fix gap): the
+/// rest-stock ladder of `emit_ramp` (`pencil::plan_entry_ramp`) of a tool
+/// that does not cut at its centre takes the zigzag rule of the core zone
+/// (window >= the core diameter, laps no steeper than `p / 4c`), so the
+/// ladder gives zero core findings. The control: the same tool through
+/// the centre-cutting ladder (no core) strikes. Probe tool: 18 mm, core
+/// 8 mm, protrusion 1 mm; rest stock 5 mm over a flat surface at Z 0.
+#[test]
+fn the_rest_ladder_of_a_non_centre_tool_keeps_the_core_out_of_wood_p22_0c() {
+    let mut config = crate::compute::tool_config::ToolConfig::test_default(
+        crate::compute::tool_config::ToolId::from_raw(0),
+        crate::compute::tool_config::ToolType::EndMill,
+    );
+    config.diameter = 18.0;
+    config.set_cutting_length(crate::compute::tool_config::ToolFact::Stated(30.0));
+    config.set_stickout(crate::compute::tool_config::ToolFact::Stated(45.0));
+    config.set_shank_diameter(crate::compute::tool_config::ToolFact::Stated(12.0));
+    config.set_centre_cutting(crate::compute::tool_config::ToolFact::Stated(
+        crate::compute::tool_config::CentreCutting::No(
+            crate::compute::tool_config::NonCentreCuttingGeometry {
+                centre_core_diameter_mm: 8.0,
+                blade_protrusion_mm: 1.0,
+            },
+        ),
+    ));
+    let tool = crate::compute::cutter::build_cutter(&config).expect("a valid tool");
+    let core = tool.body().core().expect("a non-centre-cutting tool");
+    let block = || {
+        TriDexelStock::from_bounds(
+            &crate::geo::BoundingBox3 {
+                min: P3::new(-40.0, -40.0, -5.0),
+                max: P3::new(40.0, 40.0, 5.0),
+            },
+            0.25,
+        )
+    };
+    let rest = block();
+    let mesh = crate::mesh::make_test_flat(80.0);
+    let index = crate::mesh::SpatialIndex::build(&mesh, 10.0);
+    let start = P3::new(0.0, 0.0, 15.0);
+    let end = P3::new(0.0, 0.0, 0.0);
+    let ladder = |core: Option<crate::tool::body::CoreZone>| {
+        let safety = EntrySafety {
+            surface: Some(EntrySurfaceProbe {
+                mesh: &mesh,
+                index: &index,
+                cutter: &tool,
+                stock_to_leave: 0.0,
+                off_mesh: OffMeshEntry::PlungeFallback,
+                rest_stock: Some(&rest),
+            }),
+            fold_lap_cap: None,
+            core,
+            ..no_probe(5.0)
+        };
+        let mut tp = Toolpath::new();
+        tp.rapid_to(start);
+        let refusal = super::entry_descent::emit_ramp(
+            &mut tp,
+            &start,
+            &end,
+            (1.0, 0.0),
+            3.0,
+            300.0,
+            &safety,
+            None,
+        );
+        (tp, refusal)
+    };
+    let (old, _) = ladder(None);
+    assert!(
+        old.moves.iter().any(|m| m.intent == MoveIntent::EntryRamp),
+        "control: the centre-cutting ladder ramps"
+    );
+    assert!(
+        !core_findings_on(&mut block(), &tool, &old).is_empty(),
+        "control: the centre-cutting ladder strikes with this tool"
+    );
+    let (new, refusal) = ladder(Some(core));
+    assert!(refusal.is_none(), "the ladder has room: {refusal:?}");
+    let ramp: Vec<P3> = new
+        .moves
+        .iter()
+        .filter(|m| m.intent == MoveIntent::EntryRamp)
+        .map(|m| m.target)
+        .collect();
+    assert!(!ramp.is_empty(), "the core ladder ramps");
+    let reach = ramp.iter().map(|p| p.x).fold(0.0_f64, f64::max);
+    assert!(
+        reach >= core.min_ramp_leg_mm() - 1e-9,
+        "the window {reach:.3} is at least the core diameter"
+    );
+    for pair in new.moves.windows(2) {
+        let (a, b) = (pair[0].target, pair[1].target);
+        if pair[1].intent == MoveIntent::EntryRamp {
+            let dxy = (b.x - a.x).hypot(b.y - a.y);
+            assert!(
+                a.z - b.z <= dxy * core.max_ramp_slope() * (1.0 + 1e-9) + 1e-9,
+                "a lap from {a:?} to {b:?} is steeper than p / 4c"
+            );
+        }
+    }
+    let hits = core_findings_on(&mut block(), &tool, &new);
+    assert!(
+        hits.is_empty(),
+        "core findings on the core ladder: {hits:?}"
+    );
 }
