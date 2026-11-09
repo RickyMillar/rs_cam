@@ -47,7 +47,8 @@ spindle_speed = 10610
 safe_z = 30.5
 high_feedrate_mode = false
 high_feedrate = 5000.0
-spindle_strategy = "match_chart"
+spindle_strategy = "constant_chip"
+spindle_rpm_ceiling = 24000
 controller_waits_for_spindle = true
 
 [job.machine]
@@ -940,7 +941,7 @@ plunge_rate = 2162.0
 ramp_feed_rate = 6448.0
 tolerance = 0.1
 min_cutting_radius = 0.0
-entry_style = "ramp"
+entry_style = "helix"
 ramp_angle_deg = 3.0
 helix_radius_factor = 0.3
 helix_pitch = 2.0
