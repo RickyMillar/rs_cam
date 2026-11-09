@@ -678,6 +678,10 @@ pub struct FeedsResult {
     /// changed a value, in step order. The last record of a quantity holds
     /// the value of its result field.
     pub steps: Vec<crate::trace::lineage::StepRecord>,
+    /// Feeds contract P21a: the RPM that [`SpindleStrategy::MaxSpeed`]
+    /// chose and its named limits. `None` under
+    /// [`SpindleStrategy::MatchChart`].
+    pub rpm_choice: Option<RpmChoice>,
 }
 
 impl FeedsResult {
@@ -1021,6 +1025,55 @@ pub enum SpindleScaleReason {
     /// thinning at the same RPM. See Step 7 in [`calculate`] and
     /// [`FeedsWarning::RpmLoweredForFeedCeiling`].
     FeedCeiling,
+}
+
+/// Feeds contract P21a: a named limit on the RPM that
+/// [`SpindleStrategy::MaxSpeed`] chooses (`calculator/spindle.rs::rpm_choice`).
+///
+/// The three `Legacy*` members are the caps of Steps 2b and 2b' before
+/// P21. They stay for one phase; P21c deletes them (`P21_DESIGN.md`
+/// section 7).
+#[derive(Debug, Clone, Copy, PartialEq, Eq)]
+pub enum RpmLimit {
+    /// The chart RPM times [`MAX_SPINDLE_SPEEDUP`].
+    LegacySpeedup,
+    /// The machine's top RPM times [`SPINDLE_CEILING_HEADROOM`]. A cap
+    /// under the chart RPM does not lower it.
+    LegacyHeadroom,
+    /// The diameter tier of the milling RPM ceiling. It lowers the RPM on
+    /// a milling op; on a drill it only stops the rise.
+    LegacyTier,
+    /// The `rpm_max` that the matched vendor row prints (ruling Q9). A cap
+    /// under the chart RPM does not lower it.
+    VendorRpmMax,
+}
+
+/// Feeds contract P21a: one limit of an [`RpmChoice`] and the highest RPM
+/// that it admits.
+#[derive(Debug, Clone, Copy, PartialEq)]
+pub struct RpmLimitValue {
+    /// The limit.
+    pub limit: RpmLimit,
+    /// The highest RPM that the limit admits.
+    pub rpm: f64,
+}
+
+/// Feeds contract P21a: the RPM that [`SpindleStrategy::MaxSpeed`] chose,
+/// the limit that binds and every limit with its RPM.
+///
+/// `rpm` is the RPM after Step 2b'. It is the minimum of `limits`, then
+/// [`crate::machine::MachineProfile::clamp_rpm`]: on a variable spindle
+/// inside its range the two are equal; a discrete spindle snaps the RPM.
+/// Steps 6 and 7 can lower the shipped RPM after this choice
+/// ([`SpindleScaleReason::PowerLimit`], [`SpindleScaleReason::FeedCeiling`]).
+#[derive(Debug, Clone, PartialEq)]
+pub struct RpmChoice {
+    /// The RPM after Step 2b'.
+    pub rpm: f64,
+    /// The limit with the lowest RPM in `limits`.
+    pub binding: RpmLimit,
+    /// Every limit that applies, with the RPM it admits.
+    pub limits: Vec<RpmLimitValue>,
 }
 
 /// Empirical chipload formula evaluation `K₀ × D^p × (1/H)^q`.

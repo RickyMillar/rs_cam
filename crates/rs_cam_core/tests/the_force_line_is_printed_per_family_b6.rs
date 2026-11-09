@@ -698,6 +698,7 @@ fn operating_point(ap: f64, ae: f64, fz: f64, rpm: f64) -> FeedsResult {
         derates: FeedsDerates::default(),
         bases: rs_cam_core::feeds::PointBases::not_computed(),
         steps: Vec::new(),
+        rpm_choice: None,
     }
 }
 

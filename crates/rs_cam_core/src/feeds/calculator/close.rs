@@ -470,7 +470,8 @@ pub(super) fn result(s: CalcState, entry: Entry) -> FeedsResult {
             ap: cut.ap_basis,
             ae: cut.ae_basis,
         },
-        // `calculate_with` adds the step records.
+        // `calculate_with` adds the step records and the RPM choice.
         steps: Vec::new(),
+        rpm_choice: None,
     }
 }

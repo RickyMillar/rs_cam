@@ -690,6 +690,7 @@ fn feeds_hint_emits_high_feed_ratio() {
         derates: crate::feeds::FeedsDerates::default(),
         bases: crate::feeds::PointBases::not_computed(),
         steps: Vec::new(),
+        rpm_choice: None,
     };
     let diags = adapters::from_feeds::heuristic_hints_from_recommendation(
         ToolpathId::from_raw(7),
@@ -1047,6 +1048,7 @@ fn fixture_feeds_result() -> crate::feeds::FeedsResult {
         derates: crate::feeds::FeedsDerates::default(),
         bases: crate::feeds::PointBases::not_computed(),
         steps: Vec::new(),
+        rpm_choice: None,
     }
 }
 

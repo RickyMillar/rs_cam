@@ -24,7 +24,8 @@ use rs_cam_core::feeds::suggest::{
     apply_drill_defaults, apply_speeds_to_op, operation_feeds_hints,
 };
 use rs_cam_core::feeds::{
-    self, FeedsInput, FeedsResult, OperationFamily, PassRole, SetupContext, SpindleStrategy,
+    self, FeedsInput, FeedsResult, OperationFamily, PassRole, RpmChoice, SetupContext,
+    SpindleScaleReason, SpindleStrategy,
 };
 use rs_cam_core::machine::MachineProfile;
 use rs_cam_core::material::Material;
@@ -71,6 +72,12 @@ pub struct ShimSnapshot {
     pub mrr_mm3_min: f64,
     pub warnings: Vec<String>,
     pub bindings: Bindings,
+    /// Feeds contract P21a: the RPM choice of the calculator
+    /// (`FeedsResult::rpm_choice`), `None` under `MatchChart`.
+    pub rpm_choice: Option<RpmChoice>,
+    /// The last step that moved the spindle scale
+    /// (`FeedsDerates::spindle_scale_reason`).
+    pub spindle_scale_reason: SpindleScaleReason,
 }
 
 /// Build a `Material` from the cell's `material` key.
@@ -401,7 +408,7 @@ fn resolve_operation(op: &str) -> Result<(OperationFamily, PassRole), ShimError>
 /// `apply_speeds_to_op` write-back all participate.
 pub fn run_cell(cell: &LiteratureCell) -> Result<ShimSnapshot, ShimError> {
     let material = resolve_material(&cell.inputs.material)?;
-    let mut snapshot = run_cell_in_material(cell, &material)?;
+    let mut snapshot = run_cell_in_material(cell, &material, SpindleStrategy::MaxSpeed)?;
 
     // Checkpoint K (e2) — the comparison arm. Same tool, same operation,
     // same machine, one material swapped, so a `ref_*`-bearing invariant
@@ -413,7 +420,7 @@ pub fn run_cell(cell: &LiteratureCell) -> Result<ShimSnapshot, ShimError> {
     // denominator could not be computed has not passed.
     if let Some(reference) = &cell.reference {
         let ref_material = resolve_material(&reference.material)?;
-        if let Ok(r) = run_cell_in_material(cell, &ref_material) {
+        if let Ok(r) = run_cell_in_material(cell, &ref_material, SpindleStrategy::MaxSpeed) {
             snapshot
                 .bindings
                 .insert("ref_fpt".into(), r.effective_chip_load_mm);
@@ -432,12 +439,23 @@ pub fn run_cell(cell: &LiteratureCell) -> Result<ShimSnapshot, ShimError> {
     Ok(snapshot)
 }
 
+/// Feeds contract P21a: the primary arm of [`run_cell`] under the spindle
+/// strategy `strategy` (the matrix runs `MaxSpeed`). No comparison arm.
+pub fn run_cell_with_strategy(
+    cell: &LiteratureCell,
+    strategy: SpindleStrategy,
+) -> Result<ShimSnapshot, ShimError> {
+    let material = resolve_material(&cell.inputs.material)?;
+    run_cell_in_material(cell, &material, strategy)
+}
+
 /// [`run_cell`] with the material supplied explicitly — the whole body
 /// of the original function, so the comparison arm cannot drift from the
 /// primary one.
 fn run_cell_in_material(
     cell: &LiteratureCell,
     material: &Material,
+    strategy: SpindleStrategy,
 ) -> Result<ShimSnapshot, ShimError> {
     // Validate user-facing tool_class × operation pairing first, before
     // the shim flattens tool_class into ToolType (which loses the drill
@@ -491,7 +509,7 @@ fn run_cell_in_material(
         setup: SetupContext {
             tool_overhang_mm: Some(tool.stickout_planning_mm()),
         },
-        spindle_strategy: SpindleStrategy::MaxSpeed,
+        spindle_strategy: strategy,
         power_cases: rs_cam_core::feeds::engagement::PowerCases::NOMINAL,
         tool_facts: rs_cam_core::feeds::sourced::ToolFactKinds::of_tool(&tool),
     };
@@ -658,5 +676,7 @@ fn snapshot_from_clamped(
         mrr_mm3_min: mrr,
         warnings,
         bindings,
+        rpm_choice: r.rpm_choice.clone(),
+        spindle_scale_reason: r.derates.spindle_scale_reason,
     }
 }

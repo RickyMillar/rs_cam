@@ -146,6 +146,7 @@ fn operating_point(axial_doc_mm: f64, band: Option<ChiploadBounds>) -> FeedsResu
         derates: FeedsDerates::default(),
         bases: rs_cam_core::feeds::PointBases::not_computed(),
         steps: Vec::new(),
+        rpm_choice: None,
     }
 }
 

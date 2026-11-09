@@ -25,6 +25,7 @@ mod cut;
 mod feed;
 mod power;
 mod speed;
+mod spindle;
 
 use super::sourced::Basis;
 use super::{
@@ -259,10 +260,8 @@ pub(crate) fn calculate_with(
     );
     speed::step2_vendor_rpm(input, &chip, &mut speed);
     log.speed("step2_vendor_rpm", &speed);
-    speed::step2b_max_speed(input, &chip, &mut speed);
-    log.speed("step2b_max_speed", &speed);
-    speed::step2b_milling_tier(input, &mut speed);
-    log.speed("step2b_milling_tier", &speed);
+    // P21a: Steps 2b and 2b' are one door; it writes their two records.
+    let rpm_choice = spindle::rpm_choice(input, &chip, &mut speed, &mut log);
     let mut cut = cut::step3_engagement(input, &mut warnings);
     log.cut("step3_engagement", &cut);
     cut::step4_flute_guard(input, clamps, &mut cut, &mut warnings);
@@ -312,5 +311,6 @@ pub(crate) fn calculate_with(
         log.note("result_power", StepQuantity::Power, kw, &result.bases.power);
     }
     result.steps = log.records;
+    result.rpm_choice = rpm_choice;
     result
 }

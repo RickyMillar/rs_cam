@@ -584,6 +584,7 @@ mod tests {
             derates: FeedsDerates::default(),
             bases: crate::feeds::PointBases::not_computed(),
             steps: Vec::new(),
+            rpm_choice: None,
         }
     }
 

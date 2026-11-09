@@ -217,6 +217,7 @@ fn operating_point(
         derates: FeedsDerates::default(),
         bases: rs_cam_core::feeds::PointBases::not_computed(),
         steps: Vec::new(),
+        rpm_choice: None,
     }
 }
 
