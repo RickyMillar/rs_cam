@@ -1571,7 +1571,7 @@ fn preview_flute_reach(
         .iter()
         .map(|d| TierTool {
             cutter: d as &dyn MillingCutter,
-            assembly: d.to_assembly(&handle.head),
+            assembly: d.to_assembly(&handle.head).assembly(),
         })
         .collect();
     tier_flute_reach(

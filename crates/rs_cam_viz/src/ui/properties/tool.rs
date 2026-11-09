@@ -565,12 +565,12 @@ pub(crate) fn draw_tool_preview(
     };
     let cutter_r = tool_def.radius() as f32;
     let cutting_len = tool_def.length() as f32;
-    let shank_r = (tool_def.shank_diameter / 2.0) as f32;
+    let shank_r = (tool_def.shank_diameter() / 2.0) as f32;
     // The exposed shank runs from the flutes to the holder face, which is
     // at the stickout above the tip. The holder has no top in the model;
     // the preview draws it `HOLDER_DRAW_LENGTH_OVER_DIAMETER` diameters tall.
     let shank_len = tool_def.exposed_shank_length() as f32;
-    let holder_face = tool_def.stickout as f32;
+    let holder_face = tool_def.stickout() as f32;
     let unmodelled = rs_cam_core::machine::head::MachineHead::unmodelled();
     let head = head.unwrap_or(&unmodelled);
     let shoe = head
@@ -581,7 +581,7 @@ pub(crate) fn draw_tool_preview(
                 gap_mm: shoe.normal_gap_mm,
             }
         });
-    let parts = crate::render::sim_render::head_draw_parts(head, tool_def.stickout, shoe);
+    let parts = crate::render::sim_render::head_draw_parts(head, tool_def.stickout(), shoe);
     let parts_top = parts.iter().map(|part| part.top).fold(0.0_f32, f32::max);
     let parts_r = parts.iter().map(|part| part.radius).fold(0.0_f32, f32::max);
 

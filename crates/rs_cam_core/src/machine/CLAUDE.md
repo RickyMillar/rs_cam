@@ -6,7 +6,7 @@ principal type is `MachineProfile` in `mod.rs`.
 ## Files
 
 - `mod.rs` — the machine profile: spindle, power, per-axis rates and accel.
-  `head.rs` — the machine head and the dust shoe (H1). `domain.rs` — F210: `MachineDimension`, `HeadDimension` (`domain` = math bounds, `ui_range` = GUI drag only).
+  `head.rs` — the machine head and the dust shoe (H1); `HeadBand`, `HeadBandKind` (P22-0c: the machine owns them; `machine/` imports no `stock/`). `domain.rs` — F210: `MachineDimension`, `HeadDimension` (`domain` = math bounds, `ui_range` = GUI drag only).
 - `kinematics.rs` — the kinematics model for cycle-time estimation.
 - `kinematic_utilization.rs` — the machine-confidence instrument.
 - `strategy_advisor.rs` — suggests the clearing strategy from the profile.

@@ -7,6 +7,7 @@
 //! Reference: research/03_tool_geometry.md and research/raw_opencamlib_math.md
 
 mod ball;
+pub mod body;
 mod bullnose;
 pub mod domain;
 mod flat;
@@ -15,6 +16,7 @@ mod tapered_ball;
 mod vbit;
 
 pub use ball::{BallEndmill, ball_radius_at_height};
+pub use body::{MountedBody, ToolBody};
 pub use bullnose::{BullNoseEndmill, bull_nose_radius_at_height};
 pub use domain::{ToolDimension, ToolGeometryError};
 pub use flat::FlatEndmill;
@@ -639,19 +641,19 @@ pub trait MillingCutter: Send + Sync {
     }
 }
 
-/// A complete tool definition: cutting geometry + assembly dimensions.
+/// A complete tool definition: cutting geometry + the tool body.
 ///
-/// Wraps a `Box<dyn MillingCutter>` and adds the shank dimensions so that
-/// collision detection, feeds calculation, and rendering can all derive their
-/// inputs from a single source of truth.
+/// Wraps a `Box<dyn MillingCutter>` (the cutting edge) and the
+/// [`ToolBody`] (P22-0c: the axial zones the tool owns: flutes, core,
+/// flute top, shank), so that collision detection, feeds calculation, and
+/// rendering can all derive their inputs from a single source of truth.
 ///
 /// Implements `MillingCutter` by delegating to the inner cutter.
 pub struct ToolDefinition {
     cutter: Box<dyn MillingCutter>,
-    /// Shank diameter above the cutting flutes (mm).
-    pub shank_diameter: f64,
-    /// Total stickout from holder face to cutter tip (mm).
-    pub stickout: f64,
+    /// P22-0c: the axial zones. [`ToolBody::new`] builds it from the
+    /// cutter and the shank, stickout and core facts.
+    body: ToolBody,
     /// Number of cutting flutes.
     pub flute_count: u32,
     /// Cutter substrate material.
@@ -661,12 +663,11 @@ pub struct ToolDefinition {
     /// (`feeds::series::ToolSeries::for_cut_direction`, ruling 2026-10-31).
     /// [`Self::new`] sets `UpCut`, a generic tool.
     pub cut_direction: BitCutDirection,
-    /// G-CENTRECUT: the limits of a tool that does not cut at its centre
-    /// (`ToolConfig::non_centre_cutting_limits`). [`Self::new`] sets `None`.
-    pub non_centre_cutting: Option<crate::compute::tool_config::NonCentreCuttingLimits>,
 }
 
 impl ToolDefinition {
+    /// A centre-cutting tool: `shank_diameter` (mm) above the flutes, the
+    /// holder face at `stickout` (mm) above the tip.
     pub fn new(
         cutter: Box<dyn MillingCutter>,
         shank_diameter: f64,
@@ -674,24 +675,32 @@ impl ToolDefinition {
         flute_count: u32,
         tool_material: ToolMaterial,
     ) -> Self {
+        let body = ToolBody::new(cutter.as_ref(), shank_diameter, stickout, None);
         Self {
             cutter,
-            shank_diameter,
-            stickout,
+            body,
             flute_count,
             tool_material,
             cut_direction: BitCutDirection::UpCut,
-            non_centre_cutting: None,
         }
     }
 
-    /// The same tool with the non-centre-cutting limits `limits`.
+    /// The same tool with the centre core `core` (G-CENTRECUT): the
+    /// stated facts, the core diameter and the blade protrusion. The body
+    /// keeps them; `NonCentreCuttingGeometry::limits` derives the descent
+    /// angle in one place, so no caller can pass an angle that disagrees
+    /// with the facts. `None`: a centre-cutting tool.
     #[must_use]
     pub fn with_non_centre_cutting(
         mut self,
-        limits: Option<crate::compute::tool_config::NonCentreCuttingLimits>,
+        core: Option<crate::compute::tool_config::NonCentreCuttingGeometry>,
     ) -> Self {
-        self.non_centre_cutting = limits;
+        self.body = ToolBody::new(
+            self.cutter.as_ref(),
+            self.body.shank_diameter_mm(),
+            self.body.holder_face_mm(),
+            core,
+        );
         self
     }
 
@@ -702,30 +711,38 @@ impl ToolDefinition {
         self
     }
 
+    /// The tool body (P22-0c): the axial zones.
+    pub fn body(&self) -> &ToolBody {
+        &self.body
+    }
+
+    /// Shank diameter above the cutting flutes (mm).
+    pub fn shank_diameter(&self) -> f64 {
+        self.body.shank_diameter_mm()
+    }
+
+    /// Total stickout from holder face to cutter tip (mm).
+    pub fn stickout(&self) -> f64 {
+        self.body.holder_face_mm()
+    }
+
     /// The shank length between the flutes and the holder face (mm):
     /// `max(stickout - cutting length, 0)`. The holder face is at
     /// `stickout` above the tip, always (K1b, B18).
     pub fn exposed_shank_length(&self) -> f64 {
-        (self.stickout - self.cutter.length()).max(0.0)
+        self.body.exposed_shank_length_mm()
     }
 
-    /// Build a `ToolAssembly` for collision detection, with the machine
-    /// head and the shoe position of `fit` (H1).
+    /// The body mounted in the machine head, with the head and the shoe
+    /// position of `fit` (H1). [`MountedBody::assembly`] gives the old
+    /// `ToolAssembly` view.
     ///
-    /// Uses `self.cutter.radius()` for the cutter envelope, which for
-    /// `TaperedBallEndmill` correctly returns `shaft_diameter / 2` (the maximum
-    /// cutting radius), not the ball tip radius.
-    pub fn to_assembly(
-        &self,
-        fit: &crate::machine::head::HeadFit,
-    ) -> crate::stock::collision::ToolAssembly {
-        crate::stock::collision::ToolAssembly {
-            cutter_radius: self.cutter.radius(),
-            cutter_length: self.cutter.length(),
-            shank_diameter: self.shank_diameter,
-            stickout: self.stickout,
-            head: fit.head.bands(self.stickout, fit.shoe),
-        }
+    /// The cutter envelope is `envelope_radius_mm()`, which for
+    /// `TaperedBallEndmill` correctly returns `shaft_diameter / 2` (the
+    /// maximum cutting radius), not the ball tip radius.
+    pub fn to_assembly(&self, fit: &crate::machine::head::HeadFit) -> MountedBody {
+        self.body
+            .mounted(fit.head.bands(self.body.holder_face_mm(), fit.shoe))
     }
 
     /// Derive the feeds geometry hint from the inner cutter.
@@ -757,7 +774,7 @@ impl ToolDefinition {
         axial_doc_mm: f64,
         youngs_modulus_n_per_mm2: f64,
     ) -> f64 {
-        let l = self.stickout;
+        let l = self.stickout();
         let e = youngs_modulus_n_per_mm2;
         if l <= 0.0 || e <= 0.0 || force_n == 0.0 {
             return 0.0;
@@ -780,7 +797,7 @@ impl ToolDefinition {
         let mut slope_at_load = 0.0_f64;
         // Region 1: shank, x ∈ [0, shank_top].
         if shank_top > 0.0 {
-            let d = self.shank_diameter.max(D_FLOOR_MM);
+            let d = self.shank_diameter().max(D_FLOOR_MM);
             let i_mm4 = std::f64::consts::PI * d.powi(4) / 64.0;
             const N_SHANK: usize = 32;
             let dx = shank_top / N_SHANK as f64;
@@ -855,7 +872,7 @@ impl MillingCutter for ToolDefinition {
         self.cutter.diameter()
     }
     fn non_centre_cutting(&self) -> Option<crate::compute::tool_config::NonCentreCuttingLimits> {
-        self.non_centre_cutting
+        self.body.core_limits()
     }
     // EXPLICIT delegation for every tool-scale accessor, including the ones
     // that used to work only by inherited default over delegated primitives
@@ -1303,7 +1320,9 @@ mod tests {
     fn test_tool_definition_assembly_flat() {
         let cutter = Box::new(FlatEndmill::new(10.0, 25.0));
         let td = ToolDefinition::new(cutter, 6.35, 50.0, 2, ToolMaterial::Carbide);
-        let asm = td.to_assembly(&crate::machine::head::HeadFit::default());
+        let asm = td
+            .to_assembly(&crate::machine::head::HeadFit::default())
+            .assembly();
         assert!((asm.cutter_radius - 5.0).abs() < 1e-10);
         assert!((asm.cutter_length - 25.0).abs() < 1e-10);
         assert!((asm.shank_diameter - 6.35).abs() < 1e-10);
@@ -1319,7 +1338,9 @@ mod tests {
         // This is the bug regression: collision must use shaft_radius, not ball_radius
         let cutter = Box::new(TaperedBallEndmill::new(3.175, 15.0, 6.35, 25.0).unwrap());
         let td = ToolDefinition::new(cutter, 6.35, 50.0, 2, ToolMaterial::Carbide);
-        let asm = td.to_assembly(&crate::machine::head::HeadFit::default());
+        let asm = td
+            .to_assembly(&crate::machine::head::HeadFit::default())
+            .assembly();
         // cutter_radius must be shaft_diameter/2 = 3.175, NOT ball_diameter/2 = 1.5875
         assert!(
             (asm.cutter_radius - 6.35 / 2.0).abs() < 1e-10,
@@ -1568,6 +1589,7 @@ mod tests {
         assert!((td.exposed_shank_length() - 5.0).abs() < 1e-10);
         let segs = td
             .to_assembly(&crate::machine::head::HeadFit::default())
+            .assembly()
             .segments();
         assert_eq!(segs.len(), 2, "{segs:?}");
         assert!(
@@ -1590,6 +1612,7 @@ mod tests {
         );
         let segs = short
             .to_assembly(&crate::machine::head::HeadFit::default())
+            .assembly()
             .segments();
         assert_eq!(segs.len(), 1, "{segs:?}");
         assert!((segs[0].z_offset - 20.0).abs() < 1e-10);

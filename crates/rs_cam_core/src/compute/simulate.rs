@@ -2719,8 +2719,11 @@ fn group_obstacle_views(
                 .toolpaths
                 .iter()
                 .map(|entry| {
-                    set.for_tool(&entry.tool.to_assembly(&entry.head), Some(&stock))
-                        .map_err(|e| SimulationError::ObstacleRefused(e.to_string()))
+                    set.for_tool(
+                        &entry.tool.to_assembly(&entry.head).assembly(),
+                        Some(&stock),
+                    )
+                    .map_err(|e| SimulationError::ObstacleRefused(e.to_string()))
                 })
                 .collect()
         })

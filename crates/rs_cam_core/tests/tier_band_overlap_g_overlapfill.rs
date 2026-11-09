@@ -644,7 +644,9 @@ fn rivmap100_tiered_finish_step0() {
         .unwrap()
         .clone();
     let def = build_cutter(&tool).unwrap();
-    let assembly = def.to_assembly(&rs_cam_core::machine::head::HeadFit::default());
+    let assembly = def
+        .to_assembly(&rs_cam_core::machine::head::HeadFit::default())
+        .assembly();
     let mesh = session
         .models()
         .iter()

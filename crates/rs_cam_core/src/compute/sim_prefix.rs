@@ -190,7 +190,6 @@ use crate::compute::simulate::{
     SimulationRequest,
 };
 use crate::compute::stock_change::StockChangeSource;
-use crate::compute::tool_config::NonCentreCuttingLimits;
 use crate::dexel_stock::TriDexelStock;
 use crate::ids::ToolpathId;
 use crate::mesh::TriangleMesh;
@@ -449,8 +448,9 @@ pub(crate) mod digest {
 ///    function the stamp kernel consumes — and `engagement_radius_mm` /
 ///    `chip_geometry` probes cover the depth-dependent width and the chip model
 ///    that per-sample metrics read.
-/// 3. **Centre core.** `non_centre_cutting()` gives the limits that
-///    `RadialProfileLUT::for_stock_stamp` and the core gate read (D1).
+/// 3. **Body.** `ToolBody::digest` hashes the shank, the stickout and the
+///    centre-core facts that `RadialProfileLUT::for_stock_stamp` and the
+///    core gate read (D1, P22-0c-1).
 ///
 /// A new cutter shape whose behaviour is not a function of the hint plus these
 /// probes would need this extended. That is the residual risk and it is stated
@@ -466,8 +466,6 @@ fn hash_tool(hasher: &mut DefaultHasher, tool: &ToolDefinition) {
         tool.length(),
         tool.helix_deg(),
         tool.corner_radius_mm(),
-        tool.shank_diameter,
-        tool.stickout,
     ] {
         hash_f64_bits(hasher, value);
     }
@@ -476,22 +474,11 @@ fn hash_tool(hasher: &mut DefaultHasher, tool: &ToolDefinition) {
     format!("{:?}", tool.geometry_hint()).hash(hasher);
     // D1 (P22-0c): the stamp of a non-centre-cutting tool cuts only the
     // blade ring (`RadialProfileLUT::for_stock_stamp`), and the core gate
-    // reads every limit. Read them through the same accessor as the stamp.
-    // Destructured, `..`-free: a new limit field does not compile until it
-    // is in the key.
-    match tool.non_centre_cutting() {
-        Some(NonCentreCuttingLimits {
-            max_plunge_depth_mm,
-            max_descent_angle_deg,
-            centre_core_diameter_mm,
-        }) => {
-            1_u8.hash(hasher);
-            hash_f64_bits(hasher, max_plunge_depth_mm);
-            hash_f64_bits(hasher, max_descent_angle_deg);
-            hash_f64_bits(hasher, centre_core_diameter_mm);
-        }
-        None => 0_u8.hash(hasher),
-    }
+    // reads every limit. P22-0c-1: the tool body holds the shank, the
+    // stickout and the core facts the limits come from; its digest
+    // destructures every fact, so a new fact does not compile until it is
+    // in the key.
+    tool.body().digest(hasher);
 
     let radius = tool.radius();
     let length = tool.length();
@@ -1158,7 +1145,7 @@ mod tests {
         use crate::compute::tool_config::{NonCentreCuttingGeometry, ToolMaterial};
         use crate::tool::FlatEndmill;
 
-        fn key(limits: Option<crate::compute::tool_config::NonCentreCuttingLimits>) -> u64 {
+        fn key(core: Option<NonCentreCuttingGeometry>) -> u64 {
             let tool = ToolDefinition::new(
                 Box::new(FlatEndmill::new(20.0, 25.0)),
                 12.0,
@@ -1166,19 +1153,16 @@ mod tests {
                 2,
                 ToolMaterial::Carbide,
             )
-            .with_non_centre_cutting(limits);
+            .with_non_centre_cutting(core);
             let mut hasher = DefaultHasher::new();
             hash_tool(&mut hasher, &tool);
             hasher.finish()
         }
         let geometry = |core: f64, protrusion: f64| {
-            Some(
-                NonCentreCuttingGeometry {
-                    centre_core_diameter_mm: core,
-                    blade_protrusion_mm: protrusion,
-                }
-                .limits(),
-            )
+            Some(NonCentreCuttingGeometry {
+                centre_core_diameter_mm: core,
+                blade_protrusion_mm: protrusion,
+            })
         };
 
         assert_eq!(key(None), key(None), "equal tools give equal keys");

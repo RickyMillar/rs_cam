@@ -1477,9 +1477,7 @@ mod tests {
             cutter_radius: 3.0,
             cutter_length: 20.0,
             shank_diameter: 6.0,
-            head: vec![crate::stock::collision::HeadBand::holder_at_face(
-                35.0, 40.0,
-            )],
+            head: vec![crate::machine::head::HeadBand::holder_at_face(35.0, 40.0)],
             stickout: 40.0,
         }
     }

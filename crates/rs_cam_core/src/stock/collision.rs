@@ -9,6 +9,7 @@
 
 use crate::geo::P3;
 use crate::interrupt::{CancelCheck, Cancelled, check_cancel};
+use crate::machine::head::{HeadBand, HeadBandKind};
 use crate::mesh::{SpatialIndex, TriangleMesh};
 use crate::stock::radial_profile::{LUT_SAMPLES, RadialProfileLUT};
 use crate::surface::dropcutter::point_drop_cutter;
@@ -35,38 +36,6 @@ impl HolderSegment {
     /// Maximum radius of this segment (conservative for collision).
     pub fn max_radius(&self) -> f64 {
         self.radius_bottom.max(self.radius_top)
-    }
-}
-
-/// One hard band of the machine head above the tool (H1): a part with a
-/// diameter, or a shelf with no width limit. The machine head builds it
-/// (`machine::head::MachineHead::bands`).
-#[derive(Debug, Clone, PartialEq)]
-pub struct HeadBand {
-    /// The assembly segment a hit names: [`AssemblySegment::Holder`] for a
-    /// fixed head part, [`AssemblySegment::Shoe`] for a shoe part.
-    pub segment: AssemblySegment,
-    /// The part name.
-    pub name: String,
-    /// The bottom of the band, in mm above the tool tip.
-    pub offset_mm: f64,
-    /// The radius (mm). `None`: a shelf, a band with no width limit.
-    pub radius_mm: Option<f64>,
-}
-
-impl HeadBand {
-    /// One hard holder band of `diameter` (mm) at the holder face, for a
-    /// tool of `stickout`: the band of the unmodelled head
-    /// (`machine::head::MachineHead::unmodelled`). Tests and probes build an
-    /// assembly with it; production reads `MachineHead::bands`.
-    #[must_use]
-    pub fn holder_at_face(diameter: f64, stickout: f64) -> Self {
-        Self {
-            segment: AssemblySegment::Holder,
-            name: "Holder".to_owned(),
-            offset_mm: stickout,
-            radius_mm: Some(diameter / 2.0),
-        }
     }
 }
 
@@ -149,7 +118,7 @@ impl ToolAssembly {
         }
         segs.extend(self.head.iter().filter_map(|band| {
             band.radius_mm.map(|radius| BodyBand {
-                segment: band.segment,
+                segment: band.kind.into(),
                 z_offset: band.offset_mm,
                 radius,
             })
@@ -163,7 +132,7 @@ impl ToolAssembly {
         self.head
             .iter()
             .filter(|band| band.radius_mm.is_none())
-            .map(|band| (band.offset_mm, band.segment))
+            .map(|band| (band.offset_mm, band.kind.into()))
             .min_by(|a, b| a.0.total_cmp(&b.0))
     }
 
@@ -218,6 +187,15 @@ pub enum AssemblySegment {
     Holder,
     /// A hard part of the dust shoe (H1).
     Shoe,
+}
+
+impl From<HeadBandKind> for AssemblySegment {
+    fn from(kind: HeadBandKind) -> Self {
+        match kind {
+            HeadBandKind::Holder => Self::Holder,
+            HeadBandKind::Shoe => Self::Shoe,
+        }
+    }
 }
 
 impl AssemblySegment {
@@ -1299,9 +1277,7 @@ mod tests {
             cutter_radius: 3.0, // 6mm ball endmill
             cutter_length: 25.0,
             shank_diameter: 6.0,
-            head: vec![crate::stock::collision::HeadBand::holder_at_face(
-                35.0, 35.0,
-            )],
+            head: vec![crate::machine::head::HeadBand::holder_at_face(35.0, 35.0)],
             stickout: 35.0,
         }
     }
@@ -1352,9 +1328,7 @@ mod tests {
             cutter_radius: 3.0,
             cutter_length: 10.0, // short cutter
             shank_diameter: 6.0,
-            head: vec![crate::stock::collision::HeadBand::holder_at_face(
-                35.0, 15.0,
-            )],
+            head: vec![crate::machine::head::HeadBand::holder_at_face(35.0, 15.0)],
             stickout: 15.0,
         };
 
@@ -1388,9 +1362,7 @@ mod tests {
             cutter_radius: 3.0,
             cutter_length: 10.0,
             shank_diameter: 6.0,
-            head: vec![crate::stock::collision::HeadBand::holder_at_face(
-                35.0, 15.0,
-            )],
+            head: vec![crate::machine::head::HeadBand::holder_at_face(35.0, 15.0)],
             stickout: 15.0,
         };
 
@@ -1450,9 +1422,7 @@ mod tests {
             cutter_radius: 3.0,
             cutter_length: 40.0, // 40mm cutter length
             shank_diameter: 6.0,
-            head: vec![crate::stock::collision::HeadBand::holder_at_face(
-                35.0, 60.0,
-            )],
+            head: vec![crate::machine::head::HeadBand::holder_at_face(35.0, 60.0)],
             stickout: 60.0,
         };
 
@@ -1478,9 +1448,7 @@ mod tests {
             cutter_radius: 3.0,
             cutter_length: 10.0,
             shank_diameter: 6.0,
-            head: vec![crate::stock::collision::HeadBand::holder_at_face(
-                35.0, 15.0,
-            )],
+            head: vec![crate::machine::head::HeadBand::holder_at_face(35.0, 15.0)],
             stickout: 15.0,
         };
 

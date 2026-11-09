@@ -1935,7 +1935,7 @@ mod tests {
         let tool = tool_config_from_def(&end_mill_def(), "t").unwrap();
         let cutter = cutter_of(&end_mill_def()).unwrap();
         assert_eq!(
-            cutter.stickout.to_bits(),
+            cutter.stickout().to_bits(),
             tool.stickout_planning_mm().to_bits()
         );
         assert_eq!(cutter.flute_count, tool.flute_count_planning());

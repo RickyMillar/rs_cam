@@ -649,10 +649,10 @@ impl ToolAssemblyInfo {
         shoe: rs_cam_core::machine::head::ShoePosition,
     ) -> Self {
         Self {
-            shank_radius: (td.shank_diameter / 2.0) as f32,
+            shank_radius: (td.shank_diameter() / 2.0) as f32,
             shank_length: td.exposed_shank_length() as f32,
-            head: head_draw_parts(head, td.stickout, shoe),
-            stickout: td.stickout as f32,
+            head: head_draw_parts(head, td.stickout(), shoe),
+            stickout: td.stickout() as f32,
         }
     }
 }

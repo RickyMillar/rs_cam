@@ -62,5 +62,5 @@ pub fn build_cutter(tool: &ToolConfig) -> Result<ToolDefinition, ToolGeometryErr
         tool.tool_material,
     )
     .with_cut_direction(tool.cut_direction)
-    .with_non_centre_cutting(tool.non_centre_cutting_limits()))
+    .with_non_centre_cutting(tool.non_centre_cutting_geometry()))
 }

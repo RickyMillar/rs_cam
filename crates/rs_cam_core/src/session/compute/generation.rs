@@ -448,7 +448,8 @@ impl ProjectSession {
             obstacles
                 .for_tool(
                     &tool_def
-                        .to_assembly(&crate::machine::head::HeadFit::fixed(&self.machine.head)),
+                        .to_assembly(&crate::machine::head::HeadFit::fixed(&self.machine.head))
+                        .assembly(),
                     Some(&emission_stock_bbox),
                 )
                 .map_err(SessionError::Obstacle)?,

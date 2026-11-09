@@ -21,10 +21,11 @@ use std::sync::atomic::{AtomicUsize, Ordering};
 
 use rs_cam_core::geo::P3;
 use rs_cam_core::interrupt::{CancelCheck, Cancelled, NeverCancel, check_cancel};
+use rs_cam_core::machine::head::HeadBand;
 use rs_cam_core::mesh::{SpatialIndex, TriangleMesh, make_test_hemisphere};
 use rs_cam_core::stock::collision::{
     AssemblySegment, BODY_STRIKE_THRESHOLD_MM, CollisionEvent, CollisionKind, CollisionReport,
-    HeadBand, ToolAssembly, body_segment_penetration_mm, check_collisions_interpolated_with_cancel,
+    ToolAssembly, body_segment_penetration_mm, check_collisions_interpolated_with_cancel,
 };
 use rs_cam_core::toolpath::{MoveType, Toolpath};
 

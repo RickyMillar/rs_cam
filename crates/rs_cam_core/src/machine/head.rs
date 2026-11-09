@@ -34,7 +34,48 @@ use std::sync::Arc;
 use serde::{Deserialize, Serialize};
 
 use crate::machine::domain::HeadDimension;
-use crate::stock::collision::{AssemblySegment, HeadBand};
+
+/// The head part list a [`HeadBand`] comes from.
+#[derive(Debug, Clone, Copy, PartialEq, Eq)]
+pub enum HeadBandKind {
+    /// A fixed part of the head (the holder, the collet nut).
+    Holder,
+    /// A hard part of the dust shoe.
+    Shoe,
+}
+
+/// One hard band of the machine head above the tool (H1): a part with a
+/// diameter, or a shelf with no width limit. [`MachineHead::bands`] builds
+/// it. P22-0c: the machine owns it; the tool body reads it
+/// (`tool::body::MountedBody`), and the stock check names it
+/// (`stock::collision::AssemblySegment::from`).
+#[derive(Debug, Clone, PartialEq)]
+pub struct HeadBand {
+    /// The part list of the band: a fixed head part or a shoe part.
+    pub kind: HeadBandKind,
+    /// The part name.
+    pub name: String,
+    /// The bottom of the band, in mm above the tool tip.
+    pub offset_mm: f64,
+    /// The radius (mm). `None`: a shelf, a band with no width limit.
+    pub radius_mm: Option<f64>,
+}
+
+impl HeadBand {
+    /// One hard holder band of `diameter` (mm) at the holder face, for a
+    /// tool of `stickout`: the band of the unmodelled head
+    /// ([`MachineHead::unmodelled`]). Tests and probes build an assembly
+    /// with it; production reads [`MachineHead::bands`].
+    #[must_use]
+    pub fn holder_at_face(diameter: f64, stickout: f64) -> Self {
+        Self {
+            kind: HeadBandKind::Holder,
+            name: "Holder".to_owned(),
+            offset_mm: stickout,
+            radius_mm: Some(diameter / 2.0),
+        }
+    }
+}
 
 /// Does a part block a move?
 #[derive(Debug, Clone, Copy, PartialEq, Eq, Serialize, Deserialize)]
@@ -243,13 +284,13 @@ fn check_parts(parts: &[HeadPart], at: &str) -> Result<(), HeadRefusal> {
 /// The bands of `parts` that block a move, from `bottom` (mm above the
 /// tip) upward. A soft part is skipped, but its height still places the
 /// next part.
-fn hard_bands(parts: &[HeadPart], bottom: f64, segment: AssemblySegment) -> Vec<HeadBand> {
+fn hard_bands(parts: &[HeadPart], bottom: f64, kind: HeadBandKind) -> Vec<HeadBand> {
     let mut out = Vec::new();
     let mut offset = bottom;
     for part in parts {
         if part.kind == PartKind::Hard {
             out.push(HeadBand {
-                segment,
+                kind,
                 name: part.name.clone(),
                 offset_mm: offset,
                 radius_mm: part.diameter_mm.map(|d| d / 2.0),
@@ -387,13 +428,9 @@ impl MachineHead {
     /// at `shoe`. Offsets are in mm above the tip.
     #[must_use]
     pub fn bands(&self, stickout: f64, shoe: ShoePosition) -> Vec<HeadBand> {
-        let mut out = hard_bands(
-            &self.parts,
-            stickout + self.mount_mm,
-            AssemblySegment::Holder,
-        );
+        let mut out = hard_bands(&self.parts, stickout + self.mount_mm, HeadBandKind::Holder);
         if let (ShoePosition::At { gap_mm }, Some(dust_shoe)) = (shoe, &self.shoe) {
-            out.extend(hard_bands(&dust_shoe.parts, gap_mm, AssemblySegment::Shoe));
+            out.extend(hard_bands(&dust_shoe.parts, gap_mm, HeadBandKind::Shoe));
         }
         out
     }
@@ -551,7 +588,7 @@ mod tests {
         assert_eq!(bands.len(), 1);
         assert_eq!(bands[0].offset_mm, 45.0);
         assert_eq!(bands[0].radius_mm, Some(12.5));
-        assert_eq!(bands[0].segment, AssemblySegment::Holder);
+        assert_eq!(bands[0].kind, HeadBandKind::Holder);
     }
 
     #[test]

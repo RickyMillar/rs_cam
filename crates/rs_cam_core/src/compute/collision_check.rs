@@ -100,7 +100,7 @@ pub fn run_collision_check(
     request: &CollisionCheckRequest<'_>,
     cancel: &AtomicBool,
 ) -> Result<CollisionCheckResult, CollisionCheckError> {
-    let assembly = request.tool.to_assembly(&request.head);
+    let assembly = request.tool.to_assembly(&request.head).assembly();
     let cancel_check = || cancel.load(Ordering::SeqCst);
 
     let mut report = match request.mesh {

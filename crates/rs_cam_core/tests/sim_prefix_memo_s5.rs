@@ -542,8 +542,8 @@ fn clone_tool(src: &ToolDefinition) -> ToolDefinition {
     };
     ToolDefinition::new(
         cutter,
-        src.shank_diameter,
-        src.stickout,
+        src.shank_diameter(),
+        src.stickout(),
         src.flute_count,
         src.tool_material,
     )

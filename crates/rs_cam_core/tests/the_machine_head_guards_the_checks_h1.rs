@@ -109,7 +109,9 @@ fn a_shelf_is_a_z_floor_under_the_highest_top_h1() {
             .build(),
     )
     .unwrap();
-    let assembly = cutter.to_assembly(&HeadFit::fixed(&MachineHead::bare_collet()));
+    let assembly = cutter
+        .to_assembly(&HeadFit::fixed(&MachineHead::bare_collet()))
+        .assembly();
     let view = ObstacleSet::default()
         .for_tool(&assembly, Some(&stock))
         .unwrap();

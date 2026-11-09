@@ -631,7 +631,7 @@ pub fn tip_deflection_from_engagement(
     fz_mm: f64,
 ) -> Option<f64> {
     let axial_mm = engagement.ap_mm();
-    if axial_mm <= 0.0 || engagement.psi_rad() <= 0.0 || fz_mm <= 0.0 || tool.stickout <= 0.0 {
+    if axial_mm <= 0.0 || engagement.psi_rad() <= 0.0 || fz_mm <= 0.0 || tool.stickout() <= 0.0 {
         return None;
     }
     let line = material.force_line().ok()?;

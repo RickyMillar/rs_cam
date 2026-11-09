@@ -728,7 +728,7 @@ impl RsCamApp {
             if let Some((tool, tool_def, _)) = &tool_info {
                 pb.tool_radius = tool.diameter / 2.0;
                 pb.tool_type_label = tool.tool_type.label().to_owned();
-                pb.tool_stickout = tool_def.stickout;
+                pb.tool_stickout = tool_def.stickout();
                 pb.tool_cutting_length = rs_cam_core::tool::MillingCutter::length(tool_def);
             }
         }

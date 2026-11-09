@@ -661,8 +661,7 @@ impl ProjectSession {
         // check then applies with no mesh and no obstacle too.
         let head = self.head_fit_for_toolpath(index);
         let head_reads_stock = head.head.bands(0.0, head.shoe).iter().any(|band| {
-            band.radius_mm.is_none()
-                || band.segment == crate::stock::collision::AssemblySegment::Shoe
+            band.radius_mm.is_none() || band.kind == crate::machine::head::HeadBandKind::Shoe
         });
         if model.is_none() && obstacles.is_empty() && !head_reads_stock {
             return Ok(None);

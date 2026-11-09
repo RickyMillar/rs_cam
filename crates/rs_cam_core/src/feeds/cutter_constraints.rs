@@ -296,7 +296,8 @@ fn invert_deflection(
     limit_um: f64,
 ) -> Option<f64> {
     let limit_mm = limit_um * 1.0e-3;
-    if radial_woc_mm <= 0.0 || feed_per_tooth_mm <= 0.0 || limit_mm <= 0.0 || tool.stickout <= 0.0 {
+    if radial_woc_mm <= 0.0 || feed_per_tooth_mm <= 0.0 || limit_mm <= 0.0 || tool.stickout() <= 0.0
+    {
         // No chip, no width or no beam: the force model has nothing to
         // bound the axial DOC with.
         return None;
@@ -316,9 +317,9 @@ fn invert_deflection(
             feed_per_tooth_mm,
         )
     };
-    let lower = tool.stickout * BINSEARCH_LOWER_FRACTION;
+    let lower = tool.stickout() * BINSEARCH_LOWER_FRACTION;
     let flute = tool.length();
-    let mut upper = tool.stickout * BINSEARCH_UPPER_FRACTION;
+    let mut upper = tool.stickout() * BINSEARCH_UPPER_FRACTION;
     if flute.is_finite() && flute > lower {
         upper = upper.min(flute);
     }
@@ -465,8 +466,8 @@ fn min_doc_chipload_floor(
     // ≥ chipload_min. As ap grows, engaged_radius grows, the
     // radial_woc_mm covers a smaller arc fraction, and the arc-mean
     // chip thickness rises monotonically (chord-to-radius ratio shrinks).
-    let lower = tool.stickout * BINSEARCH_LOWER_FRACTION;
-    let upper = tool.stickout * BINSEARCH_UPPER_FRACTION;
+    let lower = tool.stickout() * BINSEARCH_LOWER_FRACTION;
+    let upper = tool.stickout() * BINSEARCH_UPPER_FRACTION;
 
     let chip_at = |ap: f64| -> Option<f64> {
         let r_eng = MillingCutter::engagement_radius(tool, ap).max(1.0e-6);

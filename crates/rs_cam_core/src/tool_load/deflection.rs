@@ -87,7 +87,7 @@ pub fn tip_compliance_mm_per_n(tool: &ToolDefinition, axial_doc_mm: f64) -> Opti
     if !(axial_doc_mm.is_finite() && axial_doc_mm >= 0.0) {
         return None;
     }
-    let stickout = tool.stickout;
+    let stickout = tool.stickout();
     let youngs = tool.tool_material.youngs_modulus_n_per_mm2();
     if !(stickout.is_finite() && stickout > 0.0 && youngs.is_finite() && youngs > 0.0) {
         return None;
@@ -306,7 +306,7 @@ pub fn evaluate(
         };
     }
 
-    if tool.stickout <= 0.0 {
+    if tool.stickout() <= 0.0 {
         tracing::debug!(
             reason = "NotImplemented",
             "deflection gate refuses: tool reports zero stickout"
