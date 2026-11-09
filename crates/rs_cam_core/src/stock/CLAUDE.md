@@ -8,7 +8,7 @@ The entry point for an operator answer: `stock::sim_triage::SimulationTriage`.
 - `mod.rs`, `dexel.rs` — the facade and the core tri-dexel data types (`LatticeWindow`: a grid window, G-RESTLEVELS).
 - `simulation_cut.rs` + `simulation_cut/` — the cut trace, assembly, reports.
 - `sim_triage.rs` — "what should I act on?"; `sim_measurability.rs` — can it be measured?
-- `collision.rs` — three-state `HolderCollisionCheck`; `RapidClearanceCheck` rides the walk (rapids, G-CENTRECUT core, K5 flute: `flute_candidate` → `flute_strike` → `record_flute`, one per move; `drill_flute_overreach` for an analytic drill); `radial_profile.rs` — the LUT.
+- `collision.rs` — three-state `HolderCollisionCheck`; `RapidClearanceCheck` rides the walk (rapids; G-SIMCORE core: `core_candidate` → `core_strike` on every fed move, the stock history plus the exact in-move ring rule; K5 flute: `flute_candidate` → `flute_strike` → `record_flute`, one per move; `drill_flute_overreach` for an analytic drill); `radial_profile.rs` — the LUT.
   `stock_mesh.rs`, `dexel_mesh.rs`, `dexel_mesh_mc.rs` — mesh extraction; colours: `export/`.
 - `material_slot.rs` — S1 slots; `cut_as.rs` — S6 `CutAs`; `standing_islands.rs` — THE walk of material above a target and its islands (union audit, 3D Rough coverage).
 

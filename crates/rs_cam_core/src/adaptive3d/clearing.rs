@@ -351,7 +351,10 @@ pub(super) struct ClearZLevelContext<'a> {
     /// The chord-lift probe (`Adaptive3dGeometry::gouge_probe`), G-DRAPEGAP.
     /// `None`: no chord lift.
     pub(super) probe: Option<&'a dyn MillingCutter>,
+    /// The table of the cut and link stamps (`PlannerLuts::cut`, G-SIMCORE).
     pub(super) lut: &'a RadialProfileLUT,
+    /// The table of the entry stamps (`PlannerLuts::entry`, G-SIMCORE).
+    pub(super) entry_lut: &'a RadialProfileLUT,
     pub(super) debug: Option<ToolpathDebugContext>,
     pub(super) tool_radius: f64,
     pub(super) stepover: f64,
@@ -584,6 +587,10 @@ pub(super) struct StampDrape<'a> {
     /// stay-down clearance it reads. `Off` for the waterline.
     pub(super) keep_down_route: super::KeepDownRoute,
     pub(super) stay_down_clearance_mm: f64,
+    /// The table of the entry stamps (`Rapid`, `RapidWithFloor`): the
+    /// envelope, because the shipped entry of a non-centre-cutting tool cuts
+    /// the core column (`PlannerLuts::entry`, G-SIMCORE).
+    pub(super) entry_lut: &'a RadialProfileLUT,
 }
 
 impl<'a> ClearZLevelContext<'a> {
@@ -599,6 +606,7 @@ impl<'a> ClearZLevelContext<'a> {
             centre_clip: self.centre_clip,
             keep_down_route: self.keep_down_route,
             stay_down_clearance_mm: self.stay_down_clearance_mm,
+            entry_lut: self.entry_lut,
         }
     }
 }
@@ -731,8 +739,10 @@ fn stamp_emitted_segment(
                 drape.stock_to_leave,
             );
             let start = P3::new(entry.x, entry.y, safe_z);
+            // G-SIMCORE: the entry model is a vertical descent; the shipped
+            // entry cuts the core column, so it stamps the envelope.
             material_stock.stamp_linear_segment(
-                lut,
+                drape.entry_lut,
                 tool_radius,
                 start,
                 entry,
@@ -764,8 +774,9 @@ fn stamp_emitted_segment(
             );
             let descent_floor = descent_start_z(Some(*rapid_floor_z), safe_z, entry.z);
             let start = P3::new(entry.x, entry.y, descent_floor);
+            // G-SIMCORE: as the `Rapid` arm, the envelope.
             material_stock.stamp_linear_segment(
-                lut,
+                drape.entry_lut,
                 tool_radius,
                 start,
                 *entry,
@@ -1798,6 +1809,7 @@ pub(super) fn waterline_cleanup(
         centre_clip: ctx.centre_clip,
         keep_down_route: super::KeepDownRoute::Off,
         stay_down_clearance_mm: 0.0,
+        entry_lut: ctx.entry_lut,
     };
     #[cfg(not(target_arch = "wasm32"))]
     let t_waterline = Instant::now();
@@ -3797,6 +3809,7 @@ pub(super) fn clear_z_level_slice(
         // links as cuts (`plan_one_outline`).
         keep_down_links: crate::adaptive::KeepDownLinks::WithinPassLoad,
         entry_helix_radius: 0.0,
+        entry_helix_core_floor: 0.0,
     };
 
     if let Some(scope) = level_scope.as_ref() {

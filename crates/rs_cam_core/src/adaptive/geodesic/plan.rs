@@ -315,6 +315,7 @@ pub(crate) fn params_with(params: &AdaptiveParams, strategy: PathStrategy2d) -> 
         trochoid_cap_mult: params.trochoid_cap_mult,
         keep_down_links: params.keep_down_links,
         entry_helix_radius: params.entry_helix_radius,
+        entry_helix_core_floor: params.entry_helix_core_floor,
     }
 }
 

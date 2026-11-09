@@ -645,7 +645,7 @@ impl TriDexelStock {
                     );
                 }
                 MoveType::Linear { feed_rate } => {
-                    // G-CENTRECUT: a steep fed descent of a non-centre-cutting tool is
+                    // G-SIMCORE: each fed move of a non-centre-cutting tool is
                     // judged against the stock as it stands HERE, before its own stamp. K5
                     // ReachFlute: so is a move whose tip goes more than the flute below the
                     // stock box top. The flush is paid only on a candidate, as the rapid arm
@@ -653,7 +653,7 @@ impl TriDexelStock {
                     let (core_candidate, flute_candidate) =
                         rapid_check.as_deref().map_or((false, false), |check| {
                             (
-                                check.core_descent_candidate(start, end),
+                                core_unflushed_strike(check, self, start, end),
                                 check.flute_candidate(self, start, end),
                             )
                         });
@@ -729,7 +729,7 @@ impl TriDexelStock {
                     linearize_arc_into(&mut arc_buf, start, end, i, j, true, self.z_grid.cell_size);
                     for window in arc_buf.windows(2) {
                         check_cancel(cancel)?;
-                        // G-CENTRECUT: a steep fed descent of a non-centre-cutting tool is
+                        // G-SIMCORE: each fed move of a non-centre-cutting tool is
                         // judged against the stock as it stands HERE, before its own stamp. K5
                         // ReachFlute: so is a move whose tip goes more than the flute below the
                         // stock box top. The flush is paid only on a candidate, as the rapid arm
@@ -737,7 +737,7 @@ impl TriDexelStock {
                         let (core_candidate, flute_candidate) =
                             rapid_check.as_deref().map_or((false, false), |check| {
                                 (
-                                    check.core_descent_candidate(window[0], window[1]),
+                                    core_unflushed_strike(check, self, window[0], window[1]),
                                     check.flute_candidate(self, window[0], window[1]),
                                 )
                             });
@@ -824,7 +824,7 @@ impl TriDexelStock {
                     );
                     for window in arc_buf.windows(2) {
                         check_cancel(cancel)?;
-                        // G-CENTRECUT: a steep fed descent of a non-centre-cutting tool is
+                        // G-SIMCORE: each fed move of a non-centre-cutting tool is
                         // judged against the stock as it stands HERE, before its own stamp. K5
                         // ReachFlute: so is a move whose tip goes more than the flute below the
                         // stock box top. The flush is paid only on a candidate, as the rapid arm
@@ -832,7 +832,7 @@ impl TriDexelStock {
                         let (core_candidate, flute_candidate) =
                             rapid_check.as_deref().map_or((false, false), |check| {
                                 (
-                                    check.core_descent_candidate(window[0], window[1]),
+                                    core_unflushed_strike(check, self, window[0], window[1]),
                                     check.flute_candidate(self, window[0], window[1]),
                                 )
                             });
@@ -1227,6 +1227,20 @@ impl TriDexelStock {
         }
         Ok(())
     }
+}
+
+/// G-SIMCORE (P22-0b): does this fed move of a non-centre-cutting tool
+/// strike the core on the stock as it stands, with the stamps still queued?
+/// Queued stamps only remove wood, so a move that is clean here is clean on
+/// the flushed stock: only a move that reads a strike pays the flush, and
+/// the walk runs the check again on the flushed stock.
+fn core_unflushed_strike(
+    check: &crate::stock::collision::RapidClearanceCheck<'_>,
+    stock: &TriDexelStock,
+    start: P3,
+    end: P3,
+) -> bool {
+    check.core_candidate(stock, start, end) && check.core_strike(stock, start, end).is_some()
 }
 
 /// Emit one cutting subsegment's sample with its metric fields at their zero

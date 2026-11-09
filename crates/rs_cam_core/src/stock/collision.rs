@@ -840,15 +840,18 @@ pub(crate) fn rapid_clearance_tolerance_mm(cell_size: f64) -> f64 {
 /// points.
 pub struct RapidClearanceCheck<'a> {
     cutter: &'a dyn crate::tool::MillingCutter,
-    /// The table the stamps are cut with — the same two arguments as
-    /// `compute/simulate.rs` — so the low channel reads the heights the
-    /// stamps wrote.
+    /// The envelope of the cutter. The stamps cut with
+    /// `RadialProfileLUT::for_stock_stamp`, which has the same heights (the
+    /// blade ring changes only which cells a stamp cuts), so the low channel
+    /// reads the heights the stamps wrote. A rapid is a collision question:
+    /// the core is a solid body that meets wood although it cuts none, so the
+    /// probe keeps the full disc (G-SIMCORE, P22-0b).
     lut: RadialProfileLUT,
     hits: Vec<RapidCollision>,
     /// G-CENTRECUT: the limits of a tool that does not cut at its centre
     /// (`MillingCutter::non_centre_cutting`), or `None`. `Some` makes the
-    /// walk check each steep fed descent against the live stock
-    /// ([`Self::core_descent_candidate`], [`Self::core_strike`]).
+    /// walk check each fed move against the live stock
+    /// ([`Self::core_candidate`], [`Self::core_strike`], G-SIMCORE).
     core_limits: Option<crate::compute::tool_config::NonCentreCuttingLimits>,
     core_hits: Vec<NonCentreCuttingDescent>,
     /// K5 ReachFlute (feeds contract P7): the flute length of the tool
@@ -927,10 +930,37 @@ pub fn drill_flute_overreach(
         .collect()
 }
 
+/// A ring of the tool that cuts no wood, around the tool axis: the radii
+/// and the height of its bottom over the tool tip (mm). G-SIMCORE (P22-0b):
+/// the centre core of a non-centre-cutting tool is the one zone the core
+/// check reads ([`Self::core`]). P22-0c makes the tool a list of axial zones
+/// (the core, the shank above the flute, the holder bands) and folds the
+/// flute and holder checks into this one.
+#[derive(Debug, Clone, Copy, PartialEq)]
+pub struct NonCuttingZone {
+    pub inner_radius_mm: f64,
+    pub outer_radius_mm: f64,
+    pub bottom_above_tip_mm: f64,
+}
+
+impl NonCuttingZone {
+    /// The centre core: radius `0..d_core / 2`, its face one blade
+    /// protrusion over the tip.
+    #[must_use]
+    pub fn core(limits: &crate::compute::tool_config::NonCentreCuttingLimits) -> Self {
+        Self {
+            inner_radius_mm: 0.0,
+            outer_radius_mm: limits.core_radius_mm(),
+            bottom_above_tip_mm: limits.max_plunge_depth_mm,
+        }
+    }
+}
+
 /// G-CENTRECUT (SAFETY): a fed move where a tool that does not cut at its
-/// centre goes down into stock steeper than its limit angle, or plunges
-/// deeper than its blade protrusion. The core of the tool meets wood that
-/// no blade has cut. One per move (the first striking sample).
+/// centre has wood under its centre core that stands higher over the tip
+/// than the blade protrusion (G-SIMCORE, P22-0b: any fed move, any op). The
+/// core of the tool meets wood that no blade has cut. One per move (the
+/// first striking sample).
 #[derive(Debug, Clone, PartialEq)]
 pub struct NonCentreCuttingDescent {
     /// Index of the move in its toolpath.
@@ -1046,73 +1076,112 @@ impl<'a> RapidClearanceCheck<'a> {
         std::mem::take(&mut self.flute_hits)
     }
 
-    /// G-CENTRECUT: is this fed move a candidate for a core strike? Only
-    /// a move that goes down steeper than the limit angle of a
-    /// non-centre-cutting tool can push the core into wood. A move at or
-    /// under the limit lets the blades clear the core
-    /// (`atan(protrusion / core)`).
-    pub fn core_descent_candidate(&self, start: P3, end: P3) -> bool {
-        self.core_limits
-            .is_some_and(|limits| limits.is_steeper_than_limit(start, end))
+    /// G-CENTRECUT / G-SIMCORE (P22-0b): is this fed move a candidate for
+    /// a core strike? Every fed move of a tool that does not cut at its
+    /// centre is, when its lowest tip goes more than the blade protrusion
+    /// below the stock box top: only then can wood stand over the tip
+    /// higher than the protrusion. The test reads no cell.
+    pub fn core_candidate(
+        &self,
+        stock: &crate::dexel_stock::TriDexelStock,
+        start: P3,
+        end: P3,
+    ) -> bool {
+        self.core_limits.is_some_and(|limits| {
+            start.z.min(end.z) < stock.stock_bbox.max.z - limits.max_plunge_depth_mm
+        })
     }
 
-    /// G-CENTRECUT: the height of the wood over the tool tip under the
-    /// centre core and the tip position, where the wood stands higher than
-    /// the blade protrusion, for
-    /// a candidate move ([`Self::core_descent_candidate`]) against `stock`
-    /// as it stands before the move. `None`: the core meets no wood.
+    /// G-CENTRECUT / G-SIMCORE (P22-0b): the height of the wood over the
+    /// tool tip under the centre core and the tip position, where the wood
+    /// stands higher than the blade protrusion, for a candidate move
+    /// ([`Self::core_candidate`]) against `stock` as it stands before the
+    /// move. `None`: the core meets no wood.
     ///
-    /// The model: the blades cut a point down to the tip Z while the point
-    /// is outside the core. A point that has stood inside the core since
-    /// the tool was `h` back along the move keeps the lower of its stock
-    /// top and the tip Z of that moment. With `h = protrusion / slope`
-    /// that tip Z is one protrusion above the present tip, so the core
-    /// meets wood exactly when the stock top of such a point stands higher
-    /// than the tip plus the protrusion. Those points fill the lens of the
-    /// two core discs, at the tool now and `h` back; the read is the disc
-    /// inside that lens. A plunge has `h = 0`: the whole core.
+    /// The stock holds the history: the simulation stamps only the blade
+    /// ring of such a tool (`RadialProfileLUT::for_stock_stamp`, P22-0a), so
+    /// the wood under the core of every earlier move is still in it. The
+    /// rule adds what this move's own ring cuts before each sample.
+    ///
+    /// At a sample `t` of the move `p(s)`, a cell `q` under the core
+    /// (`|q - p(t)| < core_r`) has this top:
+    ///
+    /// - `|q - p(0)| < core_r`: no blade has passed over `q` in this move;
+    ///   the top is the stock top.
+    /// - else: the distance `|q - p(s)|` is convex in `s`, so it falls
+    ///   through `core_r` once in `[0, t]`, at `s1`. The ring cut `q` while
+    ///   `q` was in it, from `s_in` (where `q` came inside the cutter radius,
+    ///   or the move start) to `s1`. The tip Z is linear in `s`, so the
+    ///   lowest cut is at one end. The top is the lower of the stock top and
+    ///   that cut.
+    ///
+    /// The core meets wood where such a top stands over the tip by more
+    /// than the protrusion. The samples are at most 1 mm apart, no closer
+    /// than one cell, the end included. A split descent, a helix inside the
+    /// core and a ramp steeper than the limit all strike by this one rule.
     pub fn core_strike(
         &self,
         stock: &crate::dexel_stock::TriDexelStock,
         start: P3,
         end: P3,
     ) -> Option<(f64, P3)> {
-        let limits = self.core_limits?;
-        let core_r = limits.centre_core_diameter_mm / 2.0;
-        let protrusion = limits.max_plunge_depth_mm;
+        let zone = NonCuttingZone::core(&self.core_limits?);
+        let core_r = zone.outer_radius_mm;
+        let core_sq = core_r * core_r;
+        let inner_sq = zone.inner_radius_mm * zone.inner_radius_mm;
+        let radius = self.cutter.radius();
+        let radius_sq = radius * radius;
+        let protrusion = zone.bottom_above_tip_mm;
         let tol = crate::compute::tool_config::NON_CENTRE_CUTTING_TOL_MM;
+        // The removal surface over the tip where the ring cuts: at the core
+        // edge and at the cutter edge (both 0 for a flat bit).
+        let h_core = self.cutter.height_at_radius(core_r).unwrap_or(0.0);
+        let h_edge = self.cutter.height_at_radius(radius).unwrap_or(h_core);
         let dx = end.x - start.x;
         let dy = end.y - start.y;
-        let dxy = dx.hypot(dy);
-        let dz = start.z - end.z;
-        let back_xy = if dxy > 1e-9 {
-            protrusion * dxy / dz
-        } else {
-            0.0
-        };
+        let dz = end.z - start.z;
+        let len_sq = dx * dx + dy * dy;
+        let dxy = len_sq.sqrt();
         let cell = stock.z_grid.cell_size;
         let step = (core_r / 2.0).min(1.0).max(cell);
         let n = crate::util::steps::steps(dxy, step).unwrap_or(0).max(1);
-        let at = |t: f64| P3::new(start.x + dx * t, start.y + dy * t, start.z - dz * t);
+        let z_at = |s: f64| start.z + dz * s;
         for k in 1..=n {
             let t = k as f64 / n as f64;
-            let tip = at(t);
-            let back = if dxy > 1e-9 {
-                at(((t * dxy - back_xy) / dxy).max(0.0))
-            } else {
-                tip
-            };
-            let d = (tip.x - back.x).hypot(tip.y - back.y);
-            let lens_r = core_r - d / 2.0;
-            if lens_r < cell / 2.0 {
+            let tip = P3::new(start.x + dx * t, start.y + dy * t, z_at(t));
+            if tip.z + protrusion >= stock.stock_bbox.max.z {
                 continue;
             }
-            let top =
-                stock.max_top_z_in_disc((tip.x + back.x) / 2.0, (tip.y + back.y) / 2.0, lens_r);
-            if let Some(top) = top
-                && top - tip.z > protrusion + tol
-            {
-                return Some((top - tip.z, tip));
+            let mut over_max = f64::NEG_INFINITY;
+            stock.for_each_top_in_disc(tip.x, tip.y, core_r, |x, y, top| {
+                // Cheap reject: this cell cannot strike at its stock top.
+                if top - tip.z <= protrusion + tol {
+                    return;
+                }
+                let (tu, tv) = (x - tip.x, y - tip.y);
+                if tu * tu + tv * tv < inner_sq {
+                    return;
+                }
+                let (qu, qv) = (x - start.x, y - start.y);
+                let d0_sq = qu * qu + qv * qv;
+                let cut_top = if d0_sq < core_sq || len_sq < 1e-18 {
+                    top
+                } else {
+                    let t0 = (qu * dx + qv * dy) / len_sq;
+                    let perp_sq = (d0_sq - t0 * t0 * len_sq).max(0.0);
+                    let s1 = (t0 - ((core_sq - perp_sq).max(0.0) / len_sq).sqrt()).clamp(0.0, t);
+                    let s_in =
+                        (t0 - ((radius_sq - perp_sq).max(0.0) / len_sq).sqrt()).clamp(0.0, s1);
+                    let ring = (z_at(s1) + h_core).min(z_at(s_in) + h_edge);
+                    top.min(ring)
+                };
+                let over = cut_top - tip.z;
+                if over > protrusion + tol + low_channel_epsilon_mm(cut_top) {
+                    over_max = over_max.max(over);
+                }
+            });
+            if over_max > f64::NEG_INFINITY {
+                return Some((over_max, tip));
             }
         }
         None

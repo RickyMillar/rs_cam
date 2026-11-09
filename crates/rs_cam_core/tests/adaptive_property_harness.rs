@@ -463,6 +463,7 @@ fn run_strategy_capped(polygon: &Polygon2, strategy: PathStrategy2d, cap_mult: f
         trochoid_cap_mult: cap_mult,
         keep_down_links: rs_cam_core::adaptive::KeepDownLinks::WithinPassLoad,
         entry_helix_radius: helix_radius(),
+        entry_helix_core_floor: 0.0,
     };
     let tp = adaptive_toolpath(polygon, &params);
     replay(polygon, &tp)

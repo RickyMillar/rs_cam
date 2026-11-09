@@ -176,6 +176,19 @@ physical_rules! {
         export: Warn,
         id: SAFETY_NON_CENTRE_CUTTING_PLUNGE,
     },
+    /// G-SIMCORE (P22-0b): a helix entry of a tool that does not cut at its
+    /// centre has a radius of at least half the core diameter. Plan: the
+    /// core floor of `HelixRadius::resolve`. Generation: a contained helix
+    /// with no room for the floor falls back (ramp, then plunge) and this
+    /// row names it. Simulation: the core check (`non_centre_cutting_descents`).
+    HelixCore {
+        fact: CentreCutting,
+        plan: Clamp,
+        gen: Warn,
+        sim: Measure,
+        export: Warn,
+        id: SAFETY_HELIX_INSIDE_CORE,
+    },
     /// The cut goes deeper below the stock top than the flute is long.
     ReachFlute {
         fact: CuttingLength,
@@ -299,6 +312,9 @@ pub(crate) struct FeasibilityInputs<'a> {
     /// The G-CENTRECUT entry plunge that an entry emitter recorded
     /// (`Produced::non_centre_cutting_refusal`), if any.
     pub entry_plunge: Option<crate::compute::tool_config::NonCentreCuttingRefusal>,
+    /// G-SIMCORE: the helix entries that fell back for want of room for the
+    /// core floor (`Produced::helix_core_fallbacks`).
+    pub helix_fallbacks: &'a [crate::compute::tool_config::HelixCoreFallback],
 }
 
 /// A length for the warning text: at most three decimals, no trailing
@@ -420,6 +436,39 @@ impl FeasibilityInputs<'_> {
         })
     }
 
+    /// G-SIMCORE (P22-0b): the row of the helix entries that fell back for
+    /// want of room for the core floor. One row per toolpath: the count,
+    /// the first place, its room, the floor and the fallback.
+    fn helix_core(&self) -> Option<RuleResult> {
+        let first = self.helix_fallbacks.first()?;
+        let count = self.helix_fallbacks.len();
+        let plunges = self
+            .helix_fallbacks
+            .iter()
+            .filter(|f| f.fallback == crate::compute::tool_config::EntryFallback::Plunge)
+            .count();
+        Some(RuleResult {
+            rule: PhysicalRule::HelixCore,
+            fact: self.tool.centre_cutting_fact().kind(),
+            measured: first.fit_mm,
+            limit: Some(first.core_floor_mm),
+            text: format!(
+                "centre cutting no, {}: {count} helix entr{} had room for r {} mm only, under \
+                 the core radius {} mm (a smaller helix leaves a post under the core); the \
+                 entry falls back to the {} ({plunges} plunge(s) in all), first at X{:.3} \
+                 Y{:.3} Z{:.3}",
+                self.tool.centre_cutting_fact().kind().label(),
+                if count == 1 { "y" } else { "ies" },
+                mm(first.fit_mm),
+                mm(first.core_floor_mm),
+                first.fallback.label(),
+                first.at.x,
+                first.at.y,
+                first.at.z
+            ),
+        })
+    }
+
     fn reach(&self, rule: PhysicalRule) -> Option<RuleResult> {
         let deepest = self.deepest_contact_mm()?;
         let (fact, (limit, kind), passes) = match rule {
@@ -434,7 +483,7 @@ impl FeasibilityInputs<'_> {
                 let kind = self.tool.stickout_fact().kind();
                 (RuleFact::Stickout, (limit, kind), deepest >= limit)
             }
-            PhysicalRule::CentreCut | PhysicalRule::VTipFlat => {
+            PhysicalRule::CentreCut | PhysicalRule::HelixCore | PhysicalRule::VTipFlat => {
                 return None;
             }
         };
@@ -491,9 +540,85 @@ pub(crate) fn assess(inputs: &FeasibilityInputs<'_>) -> FeasibilityReport {
             // The G-CENTRECUT records: the entry plunge that `run_stages`
             // records and the `StraightPlunge` descents (P7 C).
             PhysicalRule::CentreCut => inputs.centre_cut(),
+            PhysicalRule::HelixCore => inputs.helix_core(),
             PhysicalRule::ReachFlute | PhysicalRule::ReachHolder => inputs.reach(*rule),
             PhysicalRule::VTipFlat => inputs.v_tip_flat(),
         })
         .collect();
     FeasibilityReport { rows }
+}
+
+#[cfg(test)]
+#[expect(
+    clippy::indexing_slicing,
+    reason = "test code: a panic is how a test reports a failure"
+)]
+mod tests {
+    use super::*;
+    use crate::compute::tool_config::{
+        CentreCutting, EntryFallback, HelixCoreFallback, NonCentreCuttingGeometry, ToolFact, ToolId,
+    };
+    use crate::geo::P3;
+
+    /// G-SIMCORE (P22-0b): a helix entry that fell back for want of room for
+    /// the core floor gives the `HelixCore` row: its id, the room, the floor,
+    /// the fallback and the place. No fallback: no row.
+    #[test]
+    fn a_helix_fallback_is_a_helix_core_row_g_simcore() {
+        let mut tool = ToolConfig::test_default(ToolId::from_raw(0), ToolType::EndMill);
+        tool.diameter = 18.0;
+        tool.set_centre_cutting(ToolFact::Stated(CentreCutting::No(
+            NonCentreCuttingGeometry {
+                centre_core_diameter_mm: 8.0,
+                blade_protrusion_mm: 1.0,
+            },
+        )));
+        let toolpath = Toolpath::new();
+        let stock_bbox = BoundingBox3 {
+            min: P3::new(-30.0, -30.0, 0.0),
+            max: P3::new(30.0, 30.0, 12.0),
+        };
+        let fallbacks = [HelixCoreFallback {
+            at: P3::new(10.0, 10.0, 7.0),
+            fit_mm: 3.0,
+            core_floor_mm: 4.0,
+            fallback: EntryFallback::Ramp,
+        }];
+        let inputs = |helix_fallbacks: &'static [HelixCoreFallback]| FeasibilityInputs {
+            toolpath: &toolpath,
+            tool: &tool,
+            stock_bbox: &stock_bbox,
+            depth_bases: &[],
+            entry_contract: crate::compute::catalog::EntryContract::DescentIsCut,
+            entry_plunge: None,
+            helix_fallbacks,
+        };
+        let leaked: &'static [HelixCoreFallback] = Box::leak(Box::new(fallbacks));
+        let report = assess(&inputs(leaked));
+        let rows: Vec<_> = report
+            .rows()
+            .iter()
+            .filter(|r| r.rule() == PhysicalRule::HelixCore)
+            .collect();
+        assert_eq!(rows.len(), 1);
+        assert_eq!(
+            rows[0].id(),
+            crate::diagnostics::ids::SAFETY_HELIX_INSIDE_CORE
+        );
+        let text = rows[0].text();
+        for needle in [
+            "r 3 mm",
+            "core radius 4 mm",
+            "ramp",
+            "X10.000 Y10.000 Z7.000",
+        ] {
+            assert!(text.contains(needle), "{needle:?} not in {text:?}");
+        }
+        assert!(
+            !assess(&inputs(&[]))
+                .rows()
+                .iter()
+                .any(|r| r.rule() == PhysicalRule::HelixCore)
+        );
+    }
 }

@@ -388,6 +388,7 @@ fn default_adaptive_params() -> AdaptiveParams {
         trochoid_cap_mult: 1.2,
         keep_down_links: KeepDownLinks::WithinPassLoad,
         entry_helix_radius: 0.0,
+        entry_helix_core_floor: 0.0,
         tool_radius: 3.175,
         stepover: 2.0,
         cut_depth: -3.0,

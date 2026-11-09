@@ -20,11 +20,12 @@ fn every_warn_stage_has_a_warning_row_and_a_face() {
         PhysicalRule::ALL,
         &[
             PhysicalRule::CentreCut,
+            PhysicalRule::HelixCore,
             PhysicalRule::ReachFlute,
             PhysicalRule::ReachHolder,
             PhysicalRule::VTipFlat,
         ],
-        "the four rules of the card after ruling D12, in row order"
+        "the four rules of the card after ruling D12, and HelixCore (G-SIMCORE, P22-0b), in row order"
     );
     for rule in PhysicalRule::ALL {
         let stages = rule.stages();

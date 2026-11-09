@@ -125,6 +125,9 @@ pub(crate) struct LinkLoad {
     /// The radius of the hole a re-entry (`Rapid`) cuts: `R` plus the
     /// entry dressup's helix radius (G-ADAPTPASSLOAD).
     entry_radius: f64,
+    /// G-SIMCORE: the smallest helix radius the dressup emits
+    /// (`AdaptiveParams::entry_helix_core_floor`).
+    entry_core_floor: f64,
     /// Where a re-entry may plunge when the entry is a helix: the lattice
     /// points at least `R + helix radius` inside the part (the machinable
     /// region inset by the helix radius), so the helix circle does not cut
@@ -205,6 +208,7 @@ impl LinkLoad {
                 }
             },
             entry_radius: params.tool_radius + helix,
+            entry_core_floor: params.entry_helix_core_floor,
             entry_mask,
             rewalk_replayed_cuts: holds,
             region,
@@ -328,7 +332,7 @@ impl LinkLoad {
             p.y,
             self.entry_radius - self.tool_radius,
         );
-        if fit > crate::dressup::HELIX_MIN_FIT_MM {
+        if crate::dressup::helix_fit_holds(fit, self.entry_core_floor) {
             self.tool_radius + fit
         } else {
             self.tool_radius
@@ -904,6 +908,7 @@ pub(super) fn adaptive_segments(
         trochoid_cap_mult: 1.2,
         keep_down_links: crate::adaptive::KeepDownLinks::WithinPassLoad,
         entry_helix_radius: 0.0,
+        entry_helix_core_floor: 0.0,
     };
     adaptive_segments_with_debug(polygon, &params, cancel, None, None)
 }
@@ -3550,6 +3555,7 @@ mod link_load_tests {
             step_len: grid.cell_size * 3.0,
             pass: crate::adaptive::search::PassLoad::swept_width(2.0, R, R / 6.0),
             entry_radius: R,
+            entry_core_floor: 0.0,
             entry_mask: None,
             rewalk_replayed_cuts: true,
             region: None,

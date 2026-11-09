@@ -985,6 +985,10 @@ pub(crate) fn generate_adaptive(
                 keep_down_links: crate::adaptive::KeepDownLinks::WithinPassLoad,
                 // G-ADAPTPASSLOAD: the hole the entry dressup's helix cuts.
                 entry_helix_radius: ctx.entry_helix_radius.unwrap_or(0.0),
+                // G-SIMCORE: the dressup ramps where the room is under it.
+                entry_helix_core_floor: crate::dressup::helix_core_floor_mm(
+                    ctx.tool_def.non_centre_cutting(),
+                ),
             };
             let (level_tp, mut annotations) =
                 crate::adaptive::adaptive_toolpath_structured_annotated_traced_with_cancel(

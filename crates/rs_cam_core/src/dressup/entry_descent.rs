@@ -530,9 +530,11 @@ pub(crate) fn emit_ramp(
     fold: Option<&RampFold<'_>>,
 ) -> Option<NonCentreCuttingRefusal> {
     use crate::toolpath::MoveIntent;
-    // G-CENTRECUT: the tool's limit angle caps the ramp.
+    // G-CENTRECUT / G-SIMCORE (P22-0b): the zigzag angle of the tool caps
+    // the ramp (`max_ramp_slope`: the reversal dwell, not the straight-line
+    // limit).
     let max_angle_deg = safety.centre_limits.map_or(max_angle_deg, |limits| {
-        limits.clamp_descent_angle_deg(max_angle_deg)
+        limits.clamp_ramp_angle_deg(max_angle_deg)
     });
     // The operation's ramp feed rides the ramp moves through material; a
     // straight feed through air and the plunge fallback keep `feed_rate`.
@@ -643,13 +645,19 @@ pub(crate) fn emit_ramp(
     // The zigzag goes out along `dir` and back, so each leg descends at the
     // angle. A leg is no longer than the one leg of the old 2 mm ramp; a
     // deeper ramp laps the same ground more times.
+    // G-SIMCORE (P22-0b): a tool that does not cut at its centre needs legs
+    // of at least the core diameter (`min_ramp_leg_mm`); a shallow ramp then
+    // descends less steeply than the angle.
+    let min_leg = safety
+        .centre_limits
+        .map_or(0.0, |limits| limits.min_ramp_leg_mm());
     let half_len = ramp_xy_len / 2.0;
-    let leg_cap = ENTRY_CLEARANCE / tan / 2.0;
+    let leg_cap = (ENTRY_CLEARANCE / tan / 2.0).max(min_leg);
     let legs = crate::util::steps::steps(ramp_xy_len, 2.0 * leg_cap)
         .unwrap_or(0)
         .saturating_mul(2)
         .max(2);
-    let leg = ramp_xy_len / legs as f64;
+    let leg = (ramp_xy_len / legs as f64).max(min_leg);
     let mut planned = Vec::with_capacity(legs + 1);
     planned.push(P3::new(start.x, start.y, ramp_start_z));
     for k in 1..=legs {
@@ -676,14 +684,16 @@ pub(crate) fn emit_ramp(
         // centre re-plans the descent over the clip floor at its limit
         // slope instead (`replan_descent_at_limit`).
         let clipped = match safety.centre_limits {
-            Some(limits) => replan_descent_at_limit(
+            Some(_) => replan_descent_at_limit(
                 start,
                 ramp_start_z,
                 end,
                 dir,
                 leg,
                 legs,
-                limits.max_descent_slope(),
+                // G-SIMCORE (P22-0b): the clamped ramp angle, not the
+                // straight-line limit.
+                tan,
                 probe,
             ),
             None => clip_polyline_to_floor(&planned, probe),
@@ -711,7 +721,9 @@ pub(crate) fn emit_ramp(
         // saw. `fold_ramp_points` also returns empty above
         // [`RAMP_FOLD_MAX_LAPS`], and that empty takes the same plunge.
         let run = crate::geo::polyline_xy_length(fold.follow);
-        let folded = if fold.follow.len() >= 2 && run >= fold.min_run_mm {
+        // G-SIMCORE (P22-0b): a fold laps its run like a zigzag leg, so a
+        // non-centre-cutting tool needs a run of at least `min_ramp_leg_mm`.
+        let folded = if fold.follow.len() >= 2 && run >= fold.min_run_mm.max(min_leg) {
             fold_ramp_points(
                 fold.follow,
                 fold.closed,
@@ -940,10 +952,11 @@ pub(crate) fn emit_helix(
     // goes only through air. (Before the ruling the helix took the last
     // `ENTRY_CLEARANCE` only and fed a straight plunge above it.)
     let helix_top = rapid_to_entry_top(tp, start, end, safety, feed_rate)?;
+    // G-SIMCORE (P22-0b): the pitch that keeps the core out of wood on the
+    // arc a cell spends under the core (`max_helix_pitch_mm`).
     let pitch = match safety.centre_limits {
         Some(limits) if radius > 0.0 => {
-            let chord = 2.0 * radius * (std::f64::consts::PI / HELIX_STEPS_PER_REV as f64).sin();
-            pitch.min(limits.max_descent_slope() * chord * HELIX_STEPS_PER_REV as f64)
+            pitch.min(limits.max_helix_pitch_mm(radius, HELIX_STEPS_PER_REV))
         }
         _ => pitch,
     };

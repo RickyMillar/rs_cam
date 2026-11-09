@@ -332,6 +332,24 @@ impl TriDexelStock {
     /// (max instead of sum) — see that method's comment for the shared
     /// tri-dexel-vs-heightmap correspondence.
     pub fn max_top_z_in_disc(&self, cx: f64, cy: f64, radius: f64) -> Option<f64> {
+        let mut max_top: Option<f64> = None;
+        self.for_each_top_in_disc(cx, cy, radius, |_, _, top| {
+            max_top = Some(max_top.map_or(top, |m: f64| m.max(top)));
+        });
+        max_top
+    }
+
+    /// Visit each Z-grid cell whose centre is inside the disc of `radius`
+    /// around `(cx, cy)` (world frame) and that holds material: `visit`
+    /// gets the cell centre `(x, y)` and the material top. The cell walk of
+    /// [`Self::max_top_z_in_disc`], which is this walk with a max.
+    pub fn for_each_top_in_disc(
+        &self,
+        cx: f64,
+        cy: f64,
+        radius: f64,
+        mut visit: impl FnMut(f64, f64, f64),
+    ) {
         let grid = &self.z_grid;
         let cs = grid.cell_size;
         let r_cells = (radius / cs).ceil() as isize;
@@ -341,18 +359,18 @@ impl TriDexelStock {
         let center_row = ((cy - grid.origin_v) / cs).round() as isize;
 
         // See `local_material_sum` — the same wrapping clamp, same fix.
-        let (col_min, col_max, row_min, row_max) = stamping::clamped_cell_bbox(
+        let Some((col_min, col_max, row_min, row_max)) = stamping::clamped_cell_bbox(
             center_col - r_cells,
             center_col + r_cells,
             center_row - r_cells,
             center_row + r_cells,
             grid.cols,
             grid.rows,
-        )?;
+        ) else {
+            return;
+        };
 
         let r_sq = radius * radius;
-        let mut max_top: Option<f64> = None;
-
         for row in row_min..=row_max {
             let cell_y = grid.origin_v + row as f64 * cs;
             let dy = cell_y - cy;
@@ -368,12 +386,10 @@ impl TriDexelStock {
                     continue;
                 }
                 if let Some(top) = grid.top_z_at(row, col) {
-                    let top = top as f64;
-                    max_top = Some(max_top.map_or(top, |m: f64| m.max(top)));
+                    visit(cell_x, cell_y, f64::from(top));
                 }
             }
         }
-        max_top
     }
 
     /// **The reading a clearance ceiling must use.** Highest Z at which

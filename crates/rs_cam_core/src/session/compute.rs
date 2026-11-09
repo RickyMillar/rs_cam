@@ -915,6 +915,7 @@ impl JobPhases<'_, '_> {
             depth_bases: &depth_bases,
             entry_contract: self.context.entry_contract,
             entry_plunge: annotated.produced.non_centre_cutting_refusal,
+            helix_fallbacks: &annotated.produced.helix_core_fallbacks,
         };
         // K5 CentreCut (P7 C): a `StraightPlunge` descent deeper than the
         // protrusion is the G-CENTRECUT warning, recorded as the entry

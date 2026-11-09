@@ -229,6 +229,12 @@ pub struct AdaptiveParams {
     /// emitted geometry, and the first step out of an entry is read against
     /// the real hole (G-ADAPTPASSLOAD). Ignored by the Adaptive3d slices.
     pub entry_helix_radius: f64,
+    /// G-SIMCORE (P22-0b): the smallest helix radius the entry dressup
+    /// emits, half the core diameter of a tool that does not cut at its
+    /// centre (`dressup::helix_core_floor_mm`); 0 for a tool that cuts at
+    /// its centre. Where the region has less room the dressup ramps, so the
+    /// planner stamps no helix hole there (`dressup::helix_fit_holds`).
+    pub entry_helix_core_floor: f64,
 }
 
 /// A segment of the adaptive path: cutting, rapid reposition, or link (tool-down reposition).
@@ -514,6 +520,7 @@ mod tests {
             trochoid_cap_mult: 1.2,
             keep_down_links: KeepDownLinks::WithinPassLoad,
             entry_helix_radius: 0.0,
+            entry_helix_core_floor: 0.0,
         }
     }
 

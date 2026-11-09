@@ -165,7 +165,9 @@ fn optimize_feed_rates_inner(
 ) -> Toolpath {
     let tool_radius = cutter.radius();
     let n_samples = 24; // circumference samples for engagement
-    let lut = RadialProfileLUT::from_cutter(cutter, crate::stock::radial_profile::LUT_SAMPLES);
+    // G-SIMCORE (P22-0b): the simulation's table, so the stock this pass
+    // reads keeps the wood under the core of a non-centre-cutting tool.
+    let lut = RadialProfileLUT::for_stock_stamp(cutter, crate::stock::radial_profile::LUT_SAMPLES);
 
     // WP21: one read of the feed range serves both arms below, so the
     // air-cut arm and the engaged arm cannot disagree about the ceiling.

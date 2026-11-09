@@ -1223,7 +1223,7 @@ pub(super) fn adaptive_3d_segments(
     let step_len = cell_size * 1.5;
     let max_link_dist = default_max_link_dist(tool_radius, params.geometry.stepover);
 
-    let lut = RadialProfileLUT::from_cutter(cutter, crate::stock::radial_profile::LUT_SAMPLES);
+    let luts = PlannerLuts::of(cutter);
     // G-BOUNDARYPHANTOM: the session clips this path to the containment
     // polygons after generation; the planner applies the same clip before it
     // stamps (`centre_clip.rs`).
@@ -1240,7 +1240,8 @@ pub(super) fn adaptive_3d_segments(
         index,
         cutter,
         probe: params.geometry.gouge_probe.as_deref(),
-        lut: &lut,
+        lut: &luts.cut,
+        entry_lut: luts.entry(),
         debug: debug_ctx.cloned(),
         tool_radius,
         stepover: params.geometry.stepover,
@@ -1397,7 +1398,7 @@ pub(super) fn adaptive_3d_segments(
                             mesh,
                             index,
                             cutter,
-                            &lut,
+                            &luts.cut,
                             &slope_map,
                             &mut material_stock,
                             z_level,
@@ -1436,7 +1437,7 @@ pub(super) fn adaptive_3d_segments(
                     mesh,
                     index,
                     cutter,
-                    &lut,
+                    &luts.cut,
                     &slope_map,
                     &mut material_stock,
                     bottom,
@@ -1486,7 +1487,7 @@ pub(super) fn adaptive_3d_segments(
                     mesh,
                     index,
                     cutter,
-                    &lut,
+                    &luts.cut,
                     &slope_map,
                     &mut material_stock,
                     z_level,
@@ -1577,6 +1578,43 @@ pub(super) fn resolved_stay_down_mm(params: &Adaptive3dParams, tool_radius: f64)
         .linking
         .max_stay_down_distance_mm
         .unwrap_or(tool_radius * 2.0 * crate::compute::config::LINK_MAX_DISTANCE_OVER_D)
+}
+
+/// G-SIMCORE (P22-0b): the two tables of the planner stock.
+///
+/// - `cut`: the table of the cut and link stamps, the simulation's own
+///   (`RadialProfileLUT::for_stock_stamp`): a non-centre-cutting tool cuts
+///   with its blade ring only, so the planner stock keeps the wood that the
+///   simulation keeps.
+/// - `entry`: the table of the entry stamps (`Rapid`, `RapidWithFloor` in
+///   `clearing.rs::stamp_emitted_segment`). The planner models an entry as a
+///   vertical descent, but the emitter ships the ramp at the limit angle or
+///   a helix with `r_h >= d_core / 2` for such a tool, and both cut the core
+///   column. A ring stamp of the vertical model would leave a post that the
+///   shipped entry does not leave, so the entry keeps the envelope
+///   (`RadialProfileLUT::from_cutter`).
+///
+/// A centre-cutting tool has one table: the two are the same object.
+pub(super) struct PlannerLuts {
+    pub(super) cut: RadialProfileLUT,
+    envelope: Option<RadialProfileLUT>,
+}
+
+impl PlannerLuts {
+    pub(super) fn of(cutter: &dyn MillingCutter) -> Self {
+        let samples = crate::stock::radial_profile::LUT_SAMPLES;
+        let cut = RadialProfileLUT::for_stock_stamp(cutter, samples);
+        let envelope = cut
+            .blade_ring_core_sq()
+            .is_some()
+            .then(|| RadialProfileLUT::from_cutter(cutter, samples));
+        Self { cut, envelope }
+    }
+
+    /// The table of the entry stamps.
+    pub(super) fn entry(&self) -> &RadialProfileLUT {
+        self.envelope.as_ref().unwrap_or(&self.cut)
+    }
 }
 
 /// The radius over which the planner reads an entry's rapid floor: the tool
@@ -2102,15 +2140,15 @@ pub(super) fn segments_to_toolpath(
 
 /// The entry style the emitter uses with `cutter`. G-CENTRECUT: a tool that
 /// does not cut at its centre takes no peck plunge; its entries go through
-/// the shared limited ramp at the tool's limit angle (`emit_ramp` clamps a
-/// ramp or a helix to the limit itself).
+/// the shared limited ramp at the tool's zigzag angle (G-SIMCORE,
+/// `max_ramp_angle_deg`; `emit_ramp` clamps a ramp or a helix itself).
 pub(super) fn effective_entry_style(
     style: EntryStyle3d,
     cutter: &dyn crate::tool::MillingCutter,
 ) -> EntryStyle3d {
     match (style, cutter.non_centre_cutting()) {
         (EntryStyle3d::Plunge, Some(limits)) => EntryStyle3d::Ramp {
-            max_angle_deg: limits.max_descent_angle_deg,
+            max_angle_deg: limits.max_ramp_angle_deg(),
         },
         (style, _) => style,
     }

@@ -2314,3 +2314,77 @@ fn a_non_centre_cutting_tool_ramps_at_its_limit_g_centrecut() {
             .expect("a plunge deeper than the protrusion is refused");
     assert!(refusal.depth_mm > 8.0, "{refusal:?}");
 }
+
+/// G-SIMCORE (P22-0b): a contained helix of a tool that does not cut at its
+/// centre needs room for the core floor (`r >= d_core / 2`, 4 mm on the
+/// probe tool). Room for r 3 only: the entry ramps and the toolpath carries
+/// the fallback (`Produced::helix_core_fallbacks`). Room for r 5.4: a helix
+/// of r >= 4, no fallback. Red before P22-0b: the r 3 room gave an r 3
+/// helix, which leaves a post under the core.
+#[test]
+fn a_helix_with_no_room_for_the_core_ramps_and_names_it_g_simcore() {
+    let limits = crate::compute::tool_config::NonCentreCuttingGeometry {
+        centre_core_diameter_mm: 8.0,
+        blade_protrusion_mm: 1.0,
+    }
+    .limits();
+    let run = |half: f64| {
+        let region = [crate::polygon::Polygon2::rectangle(
+            10.0 - half,
+            10.0 - half,
+            10.0 + half,
+            10.0 + half,
+        )];
+        let safety = EntrySafety {
+            helix_containment: Some(&region),
+            centre_limits: Some(limits),
+            ..no_probe(0.0)
+        };
+        without_provenance(apply_entry(
+            AnnotatedToolpath::new(simple_plunge_toolpath()),
+            EntryStyle::Helix {
+                radius: 5.4,
+                pitch: 1.0,
+            },
+            500.0,
+            safety,
+            9.0,
+        ))
+    };
+    let tight = run(3.0);
+    assert!(
+        !tight
+            .toolpath
+            .moves
+            .iter()
+            .any(|m| m.intent == MoveIntent::EntryHelix),
+        "room for r 3 under the core radius 4: the entry must not helix"
+    );
+    assert!(
+        tight
+            .toolpath
+            .moves
+            .iter()
+            .any(|m| m.intent == MoveIntent::EntryRamp),
+        "the entry falls back to the ramp"
+    );
+    let fallbacks = &tight.produced.helix_core_fallbacks;
+    assert_eq!(fallbacks.len(), 1, "one fallback: {fallbacks:?}");
+    assert!((fallbacks[0].fit_mm - 3.0).abs() < 1e-9);
+    assert!((fallbacks[0].core_floor_mm - 4.0).abs() < 1e-12);
+    assert_eq!(
+        fallbacks[0].fallback,
+        crate::compute::tool_config::EntryFallback::Ramp
+    );
+
+    let roomy = run(6.0);
+    assert!(roomy.produced.helix_core_fallbacks.is_empty());
+    let radius = roomy
+        .toolpath
+        .moves
+        .iter()
+        .filter(|m| m.intent == MoveIntent::EntryHelix)
+        .map(|m| (m.target.x - 10.0).hypot(m.target.y - 10.0))
+        .fold(0.0f64, f64::max);
+    assert!(radius >= 4.0 - 1e-9, "the helix radius is {radius}");
+}

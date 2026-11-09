@@ -28,13 +28,13 @@ Stamps a tool along a toolpath into a tri-dexel stock. Entry point:
 - The 0.02 mm Z subdivision serves the STAMP. A move keeps at most
   `⌈len/step⌉` samples (`sample_coalesce`); a sample per stamp was 20 GB.
 - `playback.rs` is the NON-metric replay route. Do not read a metric from it.
-- G-SIMCORE: a non-centre-cutting tool cuts with its blade ring only (`point_coverage`, `swept_coverage`; core in `for_stock_stamp`).
+- G-SIMCORE: a non-centre-cutting tool cuts with its blade ring only (`point_coverage`, `swept_coverage`; core in `for_stock_stamp`). P22-0b: every fed move runs the core check; it flushes only on a strike read on the unflushed stock (`core_unflushed_strike`).
 
 ## Sentries
 
 - `cargo test -p rs_cam_core -q --test dexel_stock_z_frame_f024` (and `playback_band_dispatch_s6`)
 - `... --test swept_stamping_s1` (and `band_stamping_determinism_s3`, `sub_cell_stamping_fa`)
 - `cargo test -p rs_cam_core -q --test sim_trace_sample_rate_g_simmem`,
-  `--test stock_changes_apply_to_the_stock_s3`, `--test a_helix_inside_the_core_leaves_a_post_g_simcore`
+  `--test stock_changes_apply_to_the_stock_s3`, `--test a_helix_inside_the_core_leaves_a_post_g_simcore`, `--test a_split_descent_strikes_like_one_move_g_simcore`
 - `cargo test -p rs_cam_core -q --lib -- the_six_cell_loops` — the STK-01 bit
   net. It runs ONLY under `--lib`.

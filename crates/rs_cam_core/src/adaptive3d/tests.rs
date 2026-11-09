@@ -2987,3 +2987,71 @@ fn a_rest_filter_cuts_only_the_small_leftover_rest_filter() {
     assert_eq!(west, 0, "area filter: the broad leftover is cut");
     assert!(east > 0, "area filter: the small leftover is not cut");
 }
+
+/// The probe tool of G-SIMCORE: an 18 mm bit with an 8 mm centre core and a
+/// 1 mm blade protrusion (wanaka tool 6).
+fn simcore_probe_tool(non_centre_cutting: bool) -> crate::tool::ToolDefinition {
+    use crate::compute::tool_config::{
+        CentreCutting, NonCentreCuttingGeometry, ToolConfig, ToolFact, ToolId, ToolType,
+    };
+    let mut tool = ToolConfig::test_default(ToolId::from_raw(0), ToolType::EndMill);
+    tool.diameter = 18.0;
+    tool.set_cutting_length(ToolFact::Stated(30.0));
+    tool.set_stickout(ToolFact::Stated(45.0));
+    tool.set_shank_diameter(ToolFact::Stated(12.0));
+    tool.set_flute_count(ToolFact::Stated(2));
+    if non_centre_cutting {
+        tool.set_centre_cutting(ToolFact::Stated(CentreCutting::No(
+            NonCentreCuttingGeometry {
+                centre_core_diameter_mm: 8.0,
+                blade_protrusion_mm: 1.0,
+            },
+        )));
+    }
+    crate::compute::cutter::build_cutter(&tool).expect("a valid tool")
+}
+
+/// G-SIMCORE (P22-0b): the planner stock after a 2 mm helix of the probe
+/// tool keeps the post under the core, as the simulation does
+/// (`a_helix_inside_the_core_leaves_a_post_g_simcore`). The planner stamps a
+/// cut with its cut table (`PlannerLuts::cut`). Red before P22-0b: the
+/// planner stamped the envelope and cut the post. The entry table stays the
+/// envelope, and a centre-cutting tool has one table.
+#[test]
+fn the_planner_stock_keeps_the_post_of_a_small_helix_g_simcore() {
+    let tool = simcore_probe_tool(true);
+    let luts = super::path::PlannerLuts::of(&tool);
+    let (top, floor, radius) = (12.0, 7.0, 2.0);
+    let mut stock = make_stock(-30.0, -30.0, 30.0, 30.0, top, 0.25);
+    let slope = 1.0 / 8.0;
+    let chord = 10f64.to_radians();
+    let mut prev = P3::new(radius, 0.0, top + 0.5);
+    let (mut a, mut z) = (0.0f64, top + 0.5);
+    for _ in 0..400 {
+        a += chord;
+        z = (z - radius * chord * slope).max(floor);
+        let next = P3::new(radius * a.cos(), radius * a.sin(), z);
+        stock.stamp_linear_segment(
+            &luts.cut,
+            tool.radius(),
+            prev,
+            next,
+            StockCutDirection::FromTop,
+        );
+        prev = next;
+    }
+    let centre = stock.max_top_z_in_disc(0.0, 0.0, 0.3).expect("material");
+    assert!(
+        centre >= top - 0.25,
+        "the planner stock cut the post under the core: the centre reads Z {centre:.3}"
+    );
+    assert!(
+        luts.entry().blade_ring_core_sq().is_none(),
+        "the entry table is the envelope"
+    );
+    let centre_cutting = super::path::PlannerLuts::of(&simcore_probe_tool(false));
+    assert!(
+        std::ptr::eq(centre_cutting.entry(), &centre_cutting.cut),
+        "a centre-cutting tool has one table"
+    );
+}

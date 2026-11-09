@@ -179,6 +179,7 @@ fn test_params() -> AdaptiveParams {
         trochoid_cap_mult: 1.2,
         keep_down_links: KeepDownLinks::WithinPassLoad,
         entry_helix_radius: helix,
+        entry_helix_core_floor: 0.0,
     }
 }
 

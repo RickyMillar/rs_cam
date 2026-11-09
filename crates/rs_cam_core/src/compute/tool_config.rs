@@ -406,22 +406,95 @@ impl NonCentreCuttingGeometry {
 }
 
 impl NonCentreCuttingLimits {
-    /// The steepest descent slope (dz / dxy) into stock.
+    /// The steepest descent slope (dz / dxy) of ONE straight move into
+    /// stock, `p / d_core`: on a straight move a cell stays under the core
+    /// for at most `2 c` of travel. A path that turns needs more
+    /// ([`Self::max_ramp_slope`], [`Self::max_helix_pitch_mm`]).
     #[must_use]
     pub fn max_descent_slope(&self) -> f64 {
         self.max_descent_angle_deg.to_radians().tan()
     }
 
-    /// The ramp angle (degrees) an entry may use: the requested angle, but
-    /// never steeper than the limit. A request that is not a valid angle
-    /// gets the limit angle.
+    /// The core radius `c` (mm): half the core diameter.
     #[must_use]
-    pub fn clamp_descent_angle_deg(&self, requested_deg: f64) -> f64 {
+    pub fn core_radius_mm(&self) -> f64 {
+        self.centre_core_diameter_mm / 2.0
+    }
+
+    /// G-SIMCORE (P22-0b): the steepest slope (dz / dxy) of a straight
+    /// zigzag ramp, `p / (4 c)`.
+    ///
+    /// A cell under the core keeps the top it had when the blade ring last
+    /// passed over it, so the descent along any piece of path that stays
+    /// within `c` of the cell must be at most `p`. On one straight move that
+    /// piece is at most `2 c` long ([`Self::max_descent_slope`]). At a zigzag
+    /// reversal a cell at `b < c` behind the turn point stays under the core
+    /// for `2 (b + c)` of travel, which tends to `4 c`. With legs of at least
+    /// [`Self::min_ramp_leg_mm`] no piece is longer, so `p / (4 c)` holds.
+    /// Asserted in `planning/feeds_contract_2026-11-03/phases/p22_0b_core_geometry.py`.
+    #[must_use]
+    pub fn max_ramp_slope(&self) -> f64 {
+        self.max_plunge_depth_mm / (4.0 * self.core_radius_mm())
+    }
+
+    /// The angle (degrees) of [`Self::max_ramp_slope`].
+    #[must_use]
+    pub fn max_ramp_angle_deg(&self) -> f64 {
+        self.max_ramp_slope().atan().to_degrees()
+    }
+
+    /// The ramp angle (degrees) a zigzag ramp may use: the requested angle,
+    /// but never steeper than [`Self::max_ramp_angle_deg`]. A request that
+    /// is not a valid angle gets that angle.
+    #[must_use]
+    pub fn clamp_ramp_angle_deg(&self, requested_deg: f64) -> f64 {
+        let limit = self.max_ramp_angle_deg();
         if requested_deg > 0.0 && requested_deg < 90.0 {
-            requested_deg.min(self.max_descent_angle_deg)
+            requested_deg.min(limit)
         } else {
-            self.max_descent_angle_deg
+            limit
         }
+    }
+
+    /// G-SIMCORE (P22-0b): the shortest leg (mm) of a zigzag ramp, the core
+    /// diameter. A cell on the leg line reaches the ring on each leg only
+    /// when the far end of the leg is at least `c` away from it; at the leg
+    /// middle that is `leg / 2 >= c`. A shorter leg leaves a cell that no
+    /// blade passes over: a full-depth post.
+    #[must_use]
+    pub fn min_ramp_leg_mm(&self) -> f64 {
+        self.centre_core_diameter_mm
+    }
+
+    /// G-SIMCORE (P22-0b): the largest helix pitch (mm per turn) at helix
+    /// radius `radius_mm`, for a helix written as `chords_per_turn` straight
+    /// chords. The smaller of two bounds:
+    ///
+    /// - The arc: a cell stays under the core for the arc whose chord is
+    ///   `2 c`, `phi = 2 asin(c / r)` of turn (a half turn at `r <= c`). The
+    ///   descent over it, `pitch phi / 2 pi`, must be at most `p`:
+    ///   `pitch <= p 2 pi / phi` (2.0 mm/turn at r 4, 3.77 at r 5.4 on a
+    ///   core of 8 mm and a protrusion of 1 mm).
+    /// - One chord: a straight move holds the straight-line limit
+    ///   ([`Self::max_descent_slope`]), `pitch <= slope x chord x n`. It binds
+    ///   only where a chord is longer than `2 c` (a large `r`) or `r < c`.
+    ///
+    /// For a large `r`, `phi` tends to `2 c / r` and the arc bound to the
+    /// limit slope times the circumference, which is the chord bound times
+    /// `pi / (n sin(pi / n))` (1.00127 at n = 36): the two meet. A radius
+    /// under `c` leaves a post at any pitch (`HelixRadius::resolve` keeps the
+    /// floor). Asserted in `planning/feeds_contract_2026-11-03/phases/p22_0b_core_geometry.py`.
+    #[must_use]
+    pub fn max_helix_pitch_mm(&self, radius_mm: f64, chords_per_turn: usize) -> f64 {
+        let ratio = if radius_mm > 0.0 {
+            (self.core_radius_mm() / radius_mm).min(1.0)
+        } else {
+            1.0
+        };
+        let arc = self.max_plunge_depth_mm * std::f64::consts::TAU / (2.0 * ratio.asin());
+        let n = chords_per_turn.max(1) as f64;
+        let chord = 2.0 * radius_mm.max(0.0) * (std::f64::consts::PI / n).sin();
+        arc.min(self.max_descent_slope() * chord * n)
     }
 
     /// True when a straight plunge of `depth_mm` into stock is allowed.
@@ -489,6 +562,45 @@ impl std::fmt::Display for NonCentreCuttingRefusal {
             self.at.x, self.at.y, self.at.z, self.depth_mm, self.max_plunge_depth_mm
         )
     }
+}
+
+/// The entry that a helix fell back to (G-SIMCORE, `P22_DESIGN.md` section
+/// 9: helix, then ramp, then plunge).
+#[derive(Debug, Clone, Copy, PartialEq, Eq)]
+pub enum EntryFallback {
+    /// The ramp, at the limit angle of the tool (G-CENTRECUT).
+    Ramp,
+    /// The ramp had no room either: a straight plunge
+    /// ([`NonCentreCuttingRefusal`] names it too).
+    Plunge,
+}
+
+impl EntryFallback {
+    /// The word the finding prints.
+    #[must_use]
+    pub const fn label(self) -> &'static str {
+        match self {
+            Self::Ramp => "ramp",
+            Self::Plunge => "plunge",
+        }
+    }
+}
+
+/// G-SIMCORE (P22-0b): a helix entry of a tool that does not cut at its
+/// centre where the region had no room for the core floor
+/// (`HelixRadius::resolve`): a smaller helix leaves a post under the core,
+/// so the entry fell back. A warning (`safety.helix_inside_core`, K5 rule
+/// `HelixCore`); never a refusal.
+#[derive(Debug, Clone, Copy, PartialEq)]
+pub struct HelixCoreFallback {
+    /// The entry target, in the emission frame.
+    pub at: crate::geo::P3,
+    /// The largest helix radius the region holds at the entry (mm).
+    pub fit_mm: f64,
+    /// The core floor of the tool (mm): half the core diameter.
+    pub core_floor_mm: f64,
+    /// The entry that the toolpath ships instead.
+    pub fallback: EntryFallback,
 }
 
 /// The tolerance (mm) of the non-centre-cutting checks: float noise on a

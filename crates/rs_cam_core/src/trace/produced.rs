@@ -87,6 +87,11 @@ pub struct Produced {
     /// after generation (`JobPhases::run_stages`) records it as a warning
     /// (K6). `None` for every other toolpath.
     pub non_centre_cutting_refusal: Option<crate::compute::tool_config::NonCentreCuttingRefusal>,
+    /// G-SIMCORE (P22-0b): each helix entry of a non-centre-cutting tool
+    /// that fell back (ramp, then plunge) for want of room for the core
+    /// floor. The feasibility stage names them (K5 rule `HelixCore`). Empty
+    /// for every other toolpath.
+    pub helix_core_fallbacks: Vec<crate::compute::tool_config::HelixCoreFallback>,
     /// CONTRACT K4 (feeds contract P3): one record per entry of the final
     /// moves, under the entry contract of the op's row. `JobPhases::run_stages`
     /// builds them once, after the boundary clip and the entry split
@@ -116,6 +121,7 @@ impl Produced {
     /// - `closed_passes`: each plunge target shifts; the stated side does
     ///   not (a shift keeps the travel direction).
     /// - `non_centre_cutting_refusal`: the plunge target shifts.
+    /// - `helix_core_fallbacks`: each entry target shifts.
     /// - `entries`: each point of each record shifts; the kind and the
     ///   feed do not.
     #[must_use]
@@ -128,6 +134,7 @@ impl Produced {
             area_regions,
             closed_passes,
             non_centre_cutting_refusal,
+            helix_core_fallbacks,
             entries,
         } = self;
 
@@ -194,6 +201,19 @@ impl Produced {
             refusal
         });
 
+        // G-SIMCORE: each fallback entry target shifts; the radii do not.
+        let helix_core_fallbacks = helix_core_fallbacks
+            .iter()
+            .map(|fallback| crate::compute::tool_config::HelixCoreFallback {
+                at: P3::new(
+                    fallback.at.x + shift.x,
+                    fallback.at.y + shift.y,
+                    fallback.at.z + shift.z,
+                ),
+                ..*fallback
+            })
+            .collect();
+
         // K4: the points of each entry record shift.
         let entries = entries
             .iter()
@@ -208,6 +228,7 @@ impl Produced {
             area_regions,
             closed_passes,
             non_centre_cutting_refusal,
+            helix_core_fallbacks,
             entries,
         }
     }

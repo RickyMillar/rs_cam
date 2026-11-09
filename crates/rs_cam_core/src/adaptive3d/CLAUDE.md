@@ -19,7 +19,7 @@
 - `max_stay_down_distance_mm` is the ONE stay-down dial (CUT-05, unset 8 x D). Entries
   read floor and proof from the planner stock (`plan_entry`); no link feeds down into stock.
 - `Adaptive3dParams` groups (CUT-04): `geometry`, `depth`, `linking`; a new dial joins its group. `linking.step_split` / `keep_down_route` `None` keep today's rule (`PathShape`, `Off`; the geodesic arm: `StockDepth`, `CutFeed`); a route replaces the travel, never the entry's cut (§16.7); `StockDepth` reads `chip_load_fraction`.
-- The planner stamps the path that ships: it applies the segment merge
+- The planner stamps the path that ships (G-SIMCORE: `path::PlannerLuts`, cuts and links stamp the ring, entries the envelope): it applies the segment merge
   before the stamp and the dressups do not merge again (G-PLANSIMGAP). It
   stamps an entry only when a cut commits it; a replaced entry is never
   stamped, and cuts and links stamp from `PlannerCursor::tool_pos`

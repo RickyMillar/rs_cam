@@ -233,6 +233,27 @@ pub struct EntrySafety<'a> {
 /// the circle has no room at all (the entry is on the region boundary).
 pub(crate) const HELIX_MIN_FIT_MM: f64 = 1e-6;
 
+/// G-SIMCORE (P22-0b): the smallest helix radius (mm) that cuts the centre
+/// of a tool that does not cut at its centre: half the core diameter
+/// (`HelixRadius::resolve`, the core floor). 0 for a tool that cuts at its
+/// centre.
+#[must_use]
+pub fn helix_core_floor_mm(
+    limits: Option<crate::compute::tool_config::NonCentreCuttingLimits>,
+) -> f64 {
+    limits.map_or(0.0, |limits| limits.centre_core_diameter_mm / 2.0)
+}
+
+/// True when a contained helix of fitted radius `fit` is a helix: the
+/// circle has room ([`HELIX_MIN_FIT_MM`]) and the radius is at least the
+/// core floor ([`helix_core_floor_mm`]). Else the entry ramps. The entry
+/// dressup and the 2D planner hole (`adaptive::path::LinkLoad::entry_hole`)
+/// both read this, so the plan and the cut agree.
+#[must_use]
+pub(crate) fn helix_fit_holds(fit: f64, core_floor_mm: f64) -> bool {
+    fit > HELIX_MIN_FIT_MM && fit >= core_floor_mm - HELIX_MIN_FIT_MM
+}
+
 /// The largest helix radius, at most `radius`, whose circle about `(x, y)`
 /// stays inside `region`: the distance from the point to the boundary of
 /// the region polygon that contains it (every edge, holes included). 0
@@ -328,7 +349,10 @@ impl OwnStockReplay {
         };
         Some(Self {
             stock,
-            lut: crate::stock::radial_profile::RadialProfileLUT::from_cutter(
+            // G-SIMCORE (P22-0b): the simulation's table. A non-centre-cutting
+            // tool cuts with its blade ring only, so a replayed plunge keeps the
+            // wood under its core, and the next entry reads that wood.
+            lut: crate::stock::radial_profile::RadialProfileLUT::for_stock_stamp(
                 replay.cutter,
                 crate::stock::radial_profile::LUT_SAMPLES,
             ),
@@ -426,6 +450,8 @@ pub fn apply_entry(
     // G-CENTRECUT: the first entry that had to plunge deeper than the
     // protrusion of a non-centre-cutting tool. The session refuses on it.
     let mut refusal = None;
+    // G-SIMCORE: each helix that fell back for want of room for the core.
+    let mut helix_core_fallbacks = Vec::new();
     let mut i = 0;
     while i < toolpath.moves.len() {
         let m = &toolpath.moves[i];
@@ -455,13 +481,22 @@ pub fn apply_entry(
             // largest radius that keeps its circle inside the machinable
             // region (`contained_helix_radius`); where none fits it becomes
             // a ramp at the G10 ramp angle, folded along the cut it enters.
+            //
+            // G-SIMCORE (P22-0b): a tool that does not cut at its centre needs
+            // the core floor (`helix_fit_holds`); with less room it ramps, and
+            // the fallback is a finding (`HelixCoreFallback`).
+            let core_floor = helix_core_floor_mm(safety.centre_limits);
+            let mut core_fallback = None;
             let style = match style {
                 EntryStyle::Helix { radius, pitch } => match safety.helix_containment {
                     Some(region) => {
                         let fit = contained_helix_radius(region, m.target.x, m.target.y, radius);
-                        if fit > HELIX_MIN_FIT_MM {
+                        if helix_fit_holds(fit, core_floor) {
                             EntryStyle::Helix { radius: fit, pitch }
                         } else {
+                            if safety.centre_limits.is_some() {
+                                core_fallback = Some(fit);
+                            }
                             EntryStyle::Ramp {
                                 max_angle_deg: crate::compute::config::DRESSUP_RAMP_ANGLE_DEG,
                             }
@@ -503,6 +538,18 @@ pub fn apply_entry(
                         Some(&fold),
                     );
                     refusal = refusal.or(refused);
+                    if let Some(fit_mm) = core_fallback {
+                        helix_core_fallbacks.push(crate::compute::tool_config::HelixCoreFallback {
+                            at: m.target,
+                            fit_mm,
+                            core_floor_mm: core_floor,
+                            fallback: if refused.is_some() {
+                                crate::compute::tool_config::EntryFallback::Plunge
+                            } else {
+                                crate::compute::tool_config::EntryFallback::Ramp
+                            },
+                        });
+                    }
                 }
                 EntryStyle::Plunge => {
                     let refused = emit_stock_aware_plunge(
@@ -547,6 +594,7 @@ pub fn apply_entry(
 
     let mut produced = produced;
     produced.non_centre_cutting_refusal = produced.non_centre_cutting_refusal.or(refusal);
+    produced.helix_core_fallbacks.extend(helix_core_fallbacks);
     let new_n_moves = result.moves.len();
     let remap = MoveRemap { old_to_new };
     let new_spans = if spans_valid {

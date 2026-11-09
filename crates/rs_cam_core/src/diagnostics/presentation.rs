@@ -734,7 +734,12 @@ pub const TABLE: &[(&str, Anchor, &str)] = &[
     (
         ids::SAFETY_NON_CENTRE_CUTTING_DESCENT,
         TOOL,
-        "Tool goes down too steeply for its centre",
+        "Wood under the centre core of the tool",
+    ),
+    (
+        ids::SAFETY_HELIX_INSIDE_CORE,
+        TOOL,
+        "No room for a helix past the core: entry falls back",
     ),
     (ids::PRECOND_PROJECT_CURVE_NO_CURVE, OP, "No source curve"),
     (

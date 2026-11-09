@@ -83,6 +83,7 @@ fn spiral_params() -> AdaptiveParams {
         trochoid_cap_mult: 1.6,
         keep_down_links: rs_cam_core::adaptive::KeepDownLinks::WithinPassLoad,
         entry_helix_radius: 0.0,
+        entry_helix_core_floor: 0.0,
     }
 }
 

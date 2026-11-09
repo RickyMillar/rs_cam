@@ -80,6 +80,7 @@ fn feasibility(toolpath_id: ToolpathId, stats: &ToolpathStats) -> Vec<Diagnostic
             let id = row.id();
             let severity = match row.rule() {
                 PhysicalRule::CentreCut
+                | PhysicalRule::HelixCore
                 | PhysicalRule::ReachFlute
                 | PhysicalRule::ReachHolder
                 | PhysicalRule::VTipFlat => Severity::Caution,

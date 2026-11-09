@@ -1013,19 +1013,23 @@ pub fn helix_entry_diameter_mm(cutter: &dyn crate::tool::MillingCutter) -> f64 {
     }
 }
 
-/// A helix entry radius after the G10 rules (ruling Q6).
+/// A helix entry radius after the G10 rules (ruling Q6) and the core floor
+/// of a tool that does not cut at its centre (G-SIMCORE, P22-0b).
 #[derive(Debug, Clone, Copy, PartialEq)]
 pub struct HelixRadius {
     /// The radius asked for (mm): the operator value, or
     /// [`HELIX_RADIUS_OVER_D`] x D.
     pub requested_mm: f64,
-    /// The radius the engine emits (mm): the request capped at the flat
-    /// bottom.
+    /// The radius the engine emits (mm): the request raised to the core
+    /// floor, then capped at the flat bottom.
     pub emitted_mm: f64,
     /// The flat bottom radius (mm) of the tool, `width_at_height(0.0)`.
     /// `None` when the tool has no flat bottom (ball, tapered ball, V-bit):
     /// then a helix leaves a centre pip, and nothing caps r.
     pub flat_bottom_mm: Option<f64>,
+    /// The core floor (mm) of a tool that does not cut at its centre: half
+    /// the core diameter. `None` for a tool that cuts at its centre.
+    pub core_floor_mm: Option<f64>,
     /// True when the request is the rule, not an operator value.
     pub from_rule: bool,
 }
@@ -1036,6 +1040,14 @@ impl HelixRadius {
     /// Ruling Q6 (geometry): a helix radius larger than the flat bottom
     /// leaves a post of stock at the centre (IMCO, Sandvik and Fusion print
     /// the same limit). On a tool with a flat bottom, r is capped there.
+    ///
+    /// G-SIMCORE (P22-0b, `P22_DESIGN.md` section 4): on a tool that does not
+    /// cut at its centre, the helix centre stays at `r` from the tool axis.
+    /// With `r < d_core / 2` it is inside the core for the whole entry, no
+    /// blade passes over it, and a post of radius `d_core / 2 - r` stays. So
+    /// r is raised to `d_core / 2` first (the core floor), then capped at
+    /// the flat bottom. The core is narrower than the tool, so the floor is
+    /// under the cap.
     #[must_use]
     pub fn resolve(
         requested_mm: f64,
@@ -1044,13 +1056,24 @@ impl HelixRadius {
     ) -> Self {
         let flat = cutter.width_at_height(0.0);
         let flat_bottom_mm = (flat > 1e-9).then_some(flat);
-        let emitted_mm = flat_bottom_mm.map_or(requested_mm, |cap| requested_mm.min(cap));
+        let core_floor_mm = cutter
+            .non_centre_cutting()
+            .map(|limits| limits.centre_core_diameter_mm / 2.0);
+        let floored = core_floor_mm.map_or(requested_mm, |floor| requested_mm.max(floor));
+        let emitted_mm = flat_bottom_mm.map_or(floored, |cap| floored.min(cap));
         Self {
             requested_mm,
             emitted_mm,
             flat_bottom_mm,
+            core_floor_mm,
             from_rule,
         }
+    }
+
+    /// True when the core floor raised the request (G-SIMCORE).
+    #[must_use]
+    pub fn raised(&self) -> bool {
+        self.emitted_mm > self.requested_mm + 1e-9
     }
 
     /// True when the flat bottom cut the request.
@@ -2305,6 +2328,42 @@ mod tests {
         assert_eq!(loaded.helix_radius, Some(2.0));
         let back = serde_json::to_value(&loaded).unwrap();
         assert_eq!(back["helix_radius"].as_f64(), Some(2.0));
+    }
+
+    /// G-SIMCORE (P22-0b): on a tool that does not cut at its centre the
+    /// helix radius is raised to half the core diameter (the probe tool: D
+    /// 18, core 8, so 4 mm); a request above the floor and a centre-cutting
+    /// tool keep the request. Red before P22-0b: r 2 was emitted as 2.
+    #[test]
+    fn a_helix_radius_is_raised_to_the_core_floor_g_simcore() {
+        use crate::compute::tool_config::{
+            CentreCutting, NonCentreCuttingGeometry, ToolConfig, ToolFact, ToolId, ToolType,
+        };
+        let probe = |non_centre: bool| {
+            let mut tool = ToolConfig::test_default(ToolId::from_raw(0), ToolType::EndMill);
+            tool.diameter = 18.0;
+            if non_centre {
+                tool.set_centre_cutting(ToolFact::Stated(CentreCutting::No(
+                    NonCentreCuttingGeometry {
+                        centre_core_diameter_mm: 8.0,
+                        blade_protrusion_mm: 1.0,
+                    },
+                )));
+            }
+            crate::compute::cutter::build_cutter(&tool).unwrap()
+        };
+        let small = HelixRadius::resolve(2.0, false, &probe(true));
+        assert!(
+            small.emitted_mm >= 4.0 - 1e-12,
+            "r 2 on a core of 8 mm leaves a post; emitted {}",
+            small.emitted_mm
+        );
+        assert!(small.raised() && !small.capped());
+        let rule = HelixRadius::resolve(5.4, true, &probe(true));
+        assert!((rule.emitted_mm - 5.4).abs() < 1e-12 && !rule.raised());
+        let centre = HelixRadius::resolve(2.0, false, &probe(false));
+        assert!((centre.emitted_mm - 2.0).abs() < 1e-12);
+        assert_eq!(centre.core_floor_mm, None);
     }
 
     /// G10 Q6: the rule is 0.3 x D; a radius above the flat bottom is
