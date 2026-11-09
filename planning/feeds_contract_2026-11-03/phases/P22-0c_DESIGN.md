@@ -349,3 +349,13 @@ helix cut the core. Q4 asks if it needs a ring clear.
 - Q6 (operator): yes, one chip on the existing collision marker names the zone kind; no new text.
 - D1 (`hash_tool` without the core facts) is a live defect since P22-0a: fixed ahead of P22-0c by
   a separate small change (`P22-0c_D1.md`).
+- Added from the P22-0b wanaka read (`P22-0b_wanaka.md`, lead 2026-11-09), all in P22-0c scope:
+  1. `clamp_descents_to_limit` reads the core-zone dwell rule (two wanaka cut descents still run at
+     7.125 deg; 0.03-0.05 mm past the protrusion).
+  2. The static `safety.non_centre_cutting_plunge` (idx 14 move 21244, 1.79 mm, critical) and the
+     simulation core check disagree on one move: the one contact kernel must give one answer.
+  3. `safety.non_centre_cutting_descent` shows only in the export header: it must reach
+     `get_toolpath_diagnostics`, the project diagnostics and the GUI list (one finding, every
+     surface). Its text still states the old 7.13 deg limit.
+  4. Finding positions: setup 1 reports the model frame, setup 3 the G-code frame. One stated frame
+     on every contact finding.
