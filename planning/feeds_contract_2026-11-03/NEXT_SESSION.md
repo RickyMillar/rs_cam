@@ -16,10 +16,17 @@ rough motion lines 22920 -> 19650). Designs with lead rulings: `phases/P21_DESIG
 `P22-0c-6.md`, `P22f_DESIGN.md`, `P22f-2_DESIGN.md`, `KNOWN_REDS_TRIAGE.md`. Wanaka controller
 `$30` corrected to 24000 (operator). Disk: two `cargo sweep` runs freed 205 GB from target/.
 
-In the tree at hand-off (check `git status`): P22f-2a by agent `p22a-readout` (the D65 rule on
-every fed geodesic step, `FeedCapSource::StockRead3d`; the band-edge arcs 1.45 -> 0.91 kW
-predicted). Report: `phases/P22f-2a.md`. Then: P22f-2b (ops 20/21), P21a/P21b (byte-identical),
-the wanaka read (GUI rebuild + /mcp), P22b, P22f-3, P22-0c-7.
+Later in the night: `87bc0bb17` P22f-2a (every fed geodesic step is read on the 3D planner stock;
+over `c` up to a slot it is capped, `FeedCapSource::StockRead3d`; the band end 1.45 -> 1.26 kW, not
+the 0.91 predicted; four pins blessed by lead ruling, the 46 known G-OPGOLDEN rows unchanged).
+Finding 1 (`phases/P22f-2a.md` section 8): the widest remaining idx 1 cut (move 1621, 2.19 kW,
+ap 10, ae 17.76) is a step where the planner's own 3D stock reads the load under `c` and the
+simulation reads a near-full slot. The planner stock and the simulated stock disagree at the time
+of the cut. In the tree at hand-off (check `git status`): P22f-2c by agent `p22a-readout`, a
+read-only diagnosis of that gap (a test-support probe of the `step_load` inputs beside the
+simulated read at moves 1620 and 1621; candidates: the ring stamp, the strip binning on a draped
+step, the stamp order). Report: `phases/P22f-2c.md`. Then: P22f-2b (ops 20/21), P21a/P21b
+(byte-identical), the wanaka read (GUI rebuild + /mcp), P22b, P22f-3, P22-0c-7.
 
 Operator decisions waiting (plain words in `P21_DESIGN.md` section 9 and the lead's morning
 summary): (1) the wanaka project setting `spindle_strategy = "constant_chip"` with
