@@ -22,11 +22,18 @@ the 0.91 predicted; four pins blessed by lead ruling, the 46 known G-OPGOLDEN ro
 Finding 1 (`phases/P22f-2a.md` section 8): the widest remaining idx 1 cut (move 1621, 2.19 kW,
 ap 10, ae 17.76) is a step where the planner's own 3D stock reads the load under `c` and the
 simulation reads a near-full slot. The planner stock and the simulated stock disagree at the time
-of the cut. In the tree at hand-off (check `git status`): P22f-2c by agent `p22a-readout`, a
-read-only diagnosis of that gap (a test-support probe of the `step_load` inputs beside the
-simulated read at moves 1620 and 1621; candidates: the ring stamp, the strip binning on a draped
-step, the stamp order). Report: `phases/P22f-2c.md`. Then: P22f-2b (ops 20/21), P21a/P21b
-(byte-identical), the wanaka read (GUI rebuild + /mcp), P22b, P22f-3, P22-0c-7.
+of the cut. `7b09f8d88` P22f-2c answered it (`phases/P22f-2c.md`): there is NO stock gap. Both
+stocks see a 1 mm layer across the whole width plus a side band 3-10 mm deep. The planner reads
+the section (0.06-0.36, about `c`). The simulation gate reads the deepest cell times the widest
+arc (ap 10 x ae 17.7 = 2.19 kW), and the sample's own removal is 4-12 % of that rectangle. So the
+"band" powers of P22a, P22f-1 and P22f-2a are in part a rectangle reading of a layered cut, and
+the move-end samples (removal ratio 2-6, a segment-time artefact) inflate the "real removal"
+counts. In the tree at hand-off (check `git status`): P22f-2d by agent `p22a-readout`, a re-read
+of the wide samples by section with mid-move samples, and a design survey of every reader that
+judges a simulated sample by ap x ae (the power gate's `EngagedSection::Rectangle`, the P20i
+figures, the readout) with options A/B/C. **Operator decision:** the gate's section reading
+changes acceptance-table rows, so it waits for a ruling. P22f-2b and P22f-3 wait for the
+re-read. Then: P21a/P21b (byte-identical), the wanaka read (GUI rebuild + /mcp), P22b, P22-0c-7.
 
 Operator decisions waiting (plain words in `P21_DESIGN.md` section 9 and the lead's morning
 summary): (1) the wanaka project setting `spindle_strategy = "constant_chip"` with
