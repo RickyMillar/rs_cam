@@ -113,7 +113,7 @@ pub(crate) fn compute_preview(
         &stock.material,
         state.session().machine(),
         rs_cam_core::feeds::embedded_vendor_lut(),
-        state.session().post_config().spindle_strategy,
+        state.session().post_config().spindle_policy(),
     ))
 }
 

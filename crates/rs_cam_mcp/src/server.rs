@@ -16,7 +16,7 @@ use rs_cam_core::compute::config::{BoundaryContainment, StockSource};
 use rs_cam_core::compute::tool_config::{ToolConfig, ToolFact, ToolId, ToolParamKey, ToolType};
 use rs_cam_core::compute::transform::{FaceUp, ZRotation};
 use rs_cam_core::feeds::envelope::PickRequest;
-use rs_cam_core::feeds::SpindleStrategy;
+use rs_cam_core::feeds::SpindleStrategyKind;
 use rs_cam_core::material::Material;
 use rs_cam_core::session::TierStrategy;
 use rs_cam_core::trace::toolpath_spans::SpanKind;
@@ -341,7 +341,9 @@ impl From<BoundaryContainment> for BoundaryContainmentParam {
     }
 }
 
-/// The project spindle policy: a mirror of core [`SpindleStrategy`].
+/// The project spindle policy token: a mirror of core
+/// [`SpindleStrategyKind`] (feeds contract P21b renamed `max_speed` to
+/// `constant_chip`; no alias).
 #[derive(Debug, Clone, Copy, PartialEq, Eq, Default, Deserialize, schemars::JsonSchema)]
 #[serde(rename_all = "snake_case", deny_unknown_fields)]
 #[schemars(inline)]
@@ -349,35 +351,35 @@ pub enum SpindleStrategyParam {
     /// Use the chart RPM of the vendor row as written.
     #[default]
     MatchChart,
-    /// Push RPM up the constant-chipload line to the spindle ceiling,
-    /// and scale the feed with it.
-    MaxSpeed,
+    /// Hold the chip and raise the RPM along the constant-chipload line
+    /// toward the spindle ceiling; the feed scales with it.
+    ConstantChip,
 }
 
-impl From<SpindleStrategyParam> for SpindleStrategy {
+impl From<SpindleStrategyParam> for SpindleStrategyKind {
     fn from(p: SpindleStrategyParam) -> Self {
         match p {
             SpindleStrategyParam::MatchChart => Self::MatchChart,
-            SpindleStrategyParam::MaxSpeed => Self::MaxSpeed,
+            SpindleStrategyParam::ConstantChip => Self::ConstantChip,
         }
     }
 }
 
-impl From<SpindleStrategy> for SpindleStrategyParam {
-    fn from(s: SpindleStrategy) -> Self {
+impl From<SpindleStrategyKind> for SpindleStrategyParam {
+    fn from(s: SpindleStrategyKind) -> Self {
         match s {
-            SpindleStrategy::MatchChart => Self::MatchChart,
-            SpindleStrategy::MaxSpeed => Self::MaxSpeed,
+            SpindleStrategyKind::MatchChart => Self::MatchChart,
+            SpindleStrategyKind::ConstantChip => Self::ConstantChip,
         }
     }
 }
 
 impl SpindleStrategyParam {
-    /// The wire token.
+    /// The wire token (the core file token).
     pub const fn token(self) -> &'static str {
         match self {
-            Self::MatchChart => "match_chart",
-            Self::MaxSpeed => "max_speed",
+            Self::MatchChart => SpindleStrategyKind::MatchChart.token(),
+            Self::ConstantChip => SpindleStrategyKind::ConstantChip.token(),
         }
     }
 }
@@ -3002,6 +3004,12 @@ pub struct SetSpindleStrategyParam {
     /// The project-level spindle policy. It affects every Suggest call
     /// across the project. See `rs_cam_core::feeds::SpindleStrategy`.
     pub strategy: SpindleStrategyParam,
+    /// Feeds contract P21b: the operator's RPM ceiling of the constant-chip
+    /// strategy (`[job.post] spindle_rpm_ceiling`). `null` or omitted: no
+    /// ceiling. Zero refuses; a value above the spindle maximum warns.
+    /// Suggest does not read it yet.
+    #[serde(default)]
+    pub rpm_ceiling: Option<u32>,
 }
 
 /// `apply_feeds` — the agent-facing entry to the one application funnel
@@ -4004,6 +4012,10 @@ pub fn build_info() -> serde_json::Value {
             // stored speeds with their stamps, the tool facts, the entry
             // contract and entries, the findings with their consequence).
             "toolpath_lineage",
+            // Feeds contract P21b: `set_spindle_strategy` takes
+            // `constant_chip` (the old `max_speed` is gone, break) and
+            // `rpm_ceiling`.
+            "spindle_rpm_ceiling",
         ],
     })
 }

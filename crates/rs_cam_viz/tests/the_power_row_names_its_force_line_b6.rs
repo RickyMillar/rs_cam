@@ -234,7 +234,7 @@ fn door_point(fixture: &Fixture) -> ForceAtPoint {
         &stock.material,
         state.session().machine(),
         feeds::embedded_vendor_lut(),
-        state.session().post_config().spindle_strategy,
+        state.session().post_config().spindle_policy(),
     );
     let recommended = preview.recommended();
     let model_bbox = state.session().model_bbox_by_id(tc.model_id);
@@ -244,7 +244,7 @@ fn door_point(fixture: &Fixture) -> ForceAtPoint {
         state.session().machine(),
         &stock.material,
         feeds::embedded_vendor_lut(),
-        state.session().post_config().spindle_strategy,
+        state.session().post_config().spindle_policy(),
         feeds::suggest::SuggestContext {
             model_bbox: model_bbox.as_ref(),
             ..feeds::suggest::SuggestContext::default()

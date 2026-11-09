@@ -1,5 +1,5 @@
 //! Literature-matrix regression — milling RPM ceiling under
-//! `SpindleStrategy::MaxSpeed` is diameter-tiered.
+//! `SpindleStrategy::ConstantChip` is diameter-tiered.
 //!
 //! Cells covered (round-5 Phase 3 / Pattern P1):
 //!   - `flat_12mm_adaptive2d_oak_power`: pre-fix 22 800 RPM vs band
@@ -11,7 +11,7 @@
 //!   - `flat_3mm_pocket_softwood/maple/ipe_extreme`: pre-fix 22 800
 //!     vs band-max 22 000 (+3.6%).
 //!
-//! Root cause: `SpindleStrategy::MaxSpeed` walked RPM up to
+//! Root cause: `SpindleStrategy::ConstantChip` walked RPM up to
 //! `machine_max × SPINDLE_CEILING_HEADROOM = 24 000 × 0.95 = 22 800`
 //! whenever the vendor LUT row had no `rpm_max` published. The cap
 //! ignored tool diameter — the same 22.8 k ceiling applied to a 1.5 mm
@@ -63,7 +63,7 @@ fn pocket_input(d: f64, flutes: u32, species: WoodSpecies) -> FeedsInput<'static
         target_scallop_mm: None,
         vendor_lut: Some(lut),
         setup: SetupContext::default(),
-        spindle_strategy: SpindleStrategy::MaxSpeed,
+        spindle_strategy: SpindleStrategy::ConstantChip { rpm_ceiling: None },
         power_cases: rs_cam_core::feeds::engagement::PowerCases::NOMINAL,
         tool_facts: rs_cam_core::feeds::sourced::ToolFactKinds::STATED,
     }
@@ -94,7 +94,7 @@ fn adaptive_input(d: f64, flutes: u32, species: WoodSpecies) -> FeedsInput<'stat
         target_scallop_mm: None,
         vendor_lut: Some(lut),
         setup: SetupContext::default(),
-        spindle_strategy: SpindleStrategy::MaxSpeed,
+        spindle_strategy: SpindleStrategy::ConstantChip { rpm_ceiling: None },
         power_cases: rs_cam_core::feeds::engagement::PowerCases::NOMINAL,
         tool_facts: rs_cam_core::feeds::sourced::ToolFactKinds::STATED,
     }

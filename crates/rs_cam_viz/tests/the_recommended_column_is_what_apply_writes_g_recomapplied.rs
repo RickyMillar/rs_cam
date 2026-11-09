@@ -259,7 +259,7 @@ fn calculator(controller: &AppController<SilentBackend>) -> rs_cam_core::feeds::
         &session.stock_config().material,
         session.machine(),
         rs_cam_core::feeds::embedded_vendor_lut(),
-        session.post_config().spindle_strategy,
+        session.post_config().spindle_policy(),
     )
     .recommended()
     .clone()

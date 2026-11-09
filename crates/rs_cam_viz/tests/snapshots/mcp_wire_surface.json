@@ -6863,6 +6863,16 @@
       "$schema": "https://json-schema.org/draft/2020-12/schema",
       "additionalProperties": false,
       "properties": {
+        "rpm_ceiling": {
+          "default": null,
+          "description": "Feeds contract P21b: the operator's RPM ceiling of the constant-chip\nstrategy (`[job.post] spindle_rpm_ceiling`). `null` or omitted: no\nceiling. Zero refuses; a value above the spindle maximum warns.\nSuggest does not read it yet.",
+          "format": "uint32",
+          "minimum": 0,
+          "type": [
+            "integer",
+            "null"
+          ]
+        },
         "strategy": {
           "description": "The project-level spindle policy. It affects every Suggest call\nacross the project. See `rs_cam_core::feeds::SpindleStrategy`.",
           "oneOf": [
@@ -6872,8 +6882,8 @@
               "type": "string"
             },
             {
-              "const": "max_speed",
-              "description": "Push RPM up the constant-chipload line to the spindle ceiling,\nand scale the feed with it.",
+              "const": "constant_chip",
+              "description": "Hold the chip and raise the RPM along the constant-chipload line\ntoward the spindle ceiling; the feed scales with it.",
               "type": "string"
             }
           ]

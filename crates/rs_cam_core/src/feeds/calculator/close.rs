@@ -231,7 +231,7 @@ pub(super) fn step9c_drill(s: &mut CalcState, entry: &mut Entry) {
     // envelope ceilings are the largest printed Ramp Down per mm in the G6
     // rule range (the Amana Spektra 3 mm row), so a claimed G6 cell at the
     // chart chip and RPM is at or just under the ceiling at 3 mm and below
-    // it at a larger diameter. A higher RPM (`SpindleStrategy::MaxSpeed`), a
+    // it at a larger diameter. A higher RPM (`SpindleStrategy::ConstantChip`), a
     // hardness transfer that lifts the chip, or a formula preview can bind
     // it.
     if input.operation == OperationFamily::Drill {

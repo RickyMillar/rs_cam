@@ -90,7 +90,7 @@ fn calc_3mm_pocket(material: &Material) -> rs_cam_core::feeds::FeedsResult {
         target_scallop_mm: None,
         vendor_lut: Some(lut),
         setup: SetupContext::default(),
-        spindle_strategy: SpindleStrategy::MaxSpeed,
+        spindle_strategy: SpindleStrategy::ConstantChip { rpm_ceiling: None },
         power_cases: rs_cam_core::feeds::engagement::PowerCases::NOMINAL,
         tool_facts: rs_cam_core::feeds::sourced::ToolFactKinds::STATED,
     })

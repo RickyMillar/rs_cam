@@ -744,6 +744,10 @@ pub enum ProjectLoadWarning {
         change: String,
         reason: String,
     },
+    /// Feeds contract P21b: `[job.post] spindle_rpm_ceiling` is above the
+    /// spindle maximum of the machine. The loader keeps it; the spindle
+    /// maximum binds first.
+    RpmCeilingAboveSpindle { text: String },
 }
 
 impl ProjectLoadWarning {
@@ -792,6 +796,7 @@ impl ProjectLoadWarning {
                 "Setup '{setup}' has stock change '{change}' that cannot apply: {reason}. \
                  The simulation refuses it. Edit the change or remove it."
             ),
+            Self::RpmCeilingAboveSpindle { text } => text.clone(),
             Self::RestAnalysisNormalized { toolpath, enabled } => {
                 let state = if *enabled { "on" } else { "off" };
                 let because = if *enabled {
@@ -1688,6 +1693,20 @@ pub(super) fn build_session_from_project(
         .head
         .validate()
         .map_err(crate::compute::domain::DomainRefusal::Head)?;
+    // Feeds contract P21b: a spindle RPM ceiling of zero refuses; one
+    // above the spindle maximum warns.
+    project
+        .job
+        .post
+        .validate()
+        .map_err(crate::compute::domain::DomainRefusal::Post)?;
+    if let Some(text) = project
+        .job
+        .post
+        .rpm_ceiling_above_spindle(&project.job.machine)
+    {
+        warnings.push(ProjectLoadWarning::RpmCeilingAboveSpindle { text });
+    }
 
     // Load tools
     let tools: Vec<ToolConfig> = project

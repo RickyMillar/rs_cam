@@ -973,7 +973,7 @@ impl ProjectSession {
             tool,
             machine: &self.machine,
             material: &self.stock.material,
-            spindle_strategy: self.post.spindle_strategy,
+            spindle_strategy: self.post.spindle_policy(),
             lut: crate::feeds::embedded_vendor_lut(),
             suggest: slots.context(&dressups),
         };

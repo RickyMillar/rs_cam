@@ -182,7 +182,7 @@ pub(super) fn suggest_action(recommended: f64) -> String {
     clippy::too_many_arguments,
     reason = "the row, the value and its unit, speed and range, the hint and the clear"
 )]
-fn opt_row(
+pub(super) fn opt_row(
     ui: &mut egui::Ui,
     row: PropRow<'_>,
     val: &mut Option<f64>,

@@ -706,17 +706,24 @@ impl<B: ComputeBackend> AppController<B> {
             AppEvent::OpenVendorData(toolpath_id) => {
                 self.open_vendor_data(toolpath_id);
             }
-            AppEvent::SetSpindleStrategy(strategy) => {
+            AppEvent::SetSpindleStrategy {
+                strategy,
+                rpm_ceiling,
+            } => {
                 // Project-level setting in the session post config
                 // (persisted to TOML on save). The modal reads the
                 // session on the next frame. Invalidates Suggest's cached
                 // output via the existing dirty-tracking hooks.
-                if self.state.session().post_config().spindle_strategy != strategy {
+                let current = self.state.session().post_config();
+                if current.spindle_strategy != strategy
+                    || current.spindle_rpm_ceiling != rpm_ceiling
+                {
                     // `SetPostConfig` replaces the WHOLE block, so a
-                    // surface that offers one field reads the current
-                    // block, writes that field and sends the result.
-                    let mut post = self.state.session().post_config().clone();
+                    // surface that offers two fields reads the current
+                    // block, writes those fields and sends the result.
+                    let mut post = current.clone();
                     post.spindle_strategy = strategy;
+                    post.spindle_rpm_ceiling = rpm_ceiling;
                     let command = Command::SetPostConfig(SetPostConfigArgs {
                         post: Box::new(post),
                     });

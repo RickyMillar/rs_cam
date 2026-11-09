@@ -852,7 +852,8 @@ pub fn run_project_command(
     modulation_feed_scale: f64,
     inject_shapeoko_kinematics: bool,
     apply_suggest: Option<Option<rs_cam_core::feeds::envelope::PickRequest>>,
-    spindle_strategy_override: Option<rs_cam_core::feeds::SpindleStrategy>,
+    spindle_strategy_override: Option<rs_cam_core::feeds::SpindleStrategyKind>,
+    spindle_rpm_ceiling_override: Option<u32>,
     sim_artifact: bool,
 ) -> Result<()> {
     // 1. Load project into a session
@@ -879,10 +880,18 @@ pub fn run_project_command(
         info!("Injected Shapeoko XXL stock kinematics into MachineProfile");
     }
 
-    if let Some(strategy) = spindle_strategy_override {
-        let prev = session.post_config().spindle_strategy;
+    // Feeds contract P21b: the strategy token and the RPM ceiling are two
+    // flat keys of the post block; each flag overrides its own key.
+    if spindle_strategy_override.is_some() || spindle_rpm_ceiling_override.is_some() {
+        let prev = session.post_config().spindle_policy();
         let mut post = session.post_config().clone();
-        post.spindle_strategy = strategy;
+        if let Some(strategy) = spindle_strategy_override {
+            post.spindle_strategy = strategy;
+        }
+        if spindle_rpm_ceiling_override.is_some() {
+            post.spindle_rpm_ceiling = spindle_rpm_ceiling_override;
+        }
+        let warning = post.rpm_ceiling_above_spindle(session.machine());
         let _ = apply_command(
             &mut session,
             Command::SetPostConfig(SetPostConfigArgs {
@@ -891,9 +900,12 @@ pub fn run_project_command(
         )?;
         info!(
             previous = ?prev,
-            applied = ?strategy,
+            applied = ?session.post_config().spindle_policy(),
             "Overrode project spindle policy from CLI flag"
         );
+        if let Some(warning) = warning {
+            warn!("{warning}");
+        }
     }
 
     info!(

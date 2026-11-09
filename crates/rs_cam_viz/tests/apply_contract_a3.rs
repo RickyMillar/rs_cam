@@ -151,7 +151,7 @@ fn panel_recipe(
         &stock.material,
         session.machine(),
         rs_cam_core::feeds::embedded_vendor_lut(),
-        session.post_config().spindle_strategy,
+        session.post_config().spindle_policy(),
     )
 }
 
@@ -171,7 +171,7 @@ fn modal_preview(
         &stock.material,
         session.machine(),
         rs_cam_core::feeds::embedded_vendor_lut(),
-        session.post_config().spindle_strategy,
+        session.post_config().spindle_policy(),
     )
 }
 
@@ -523,7 +523,7 @@ fn modal_apply_all_writes_what_the_panel_writes() {
         &session_machine,
         &session_material,
         rs_cam_core::feeds::embedded_vendor_lut(),
-        controller.state.session().post_config().spindle_strategy,
+        controller.state.session().post_config().spindle_policy(),
         rs_cam_core::feeds::suggest::SuggestContext::default(),
     );
     let mut panel_op = before;
@@ -653,7 +653,7 @@ fn surviving_apply_paths_produce_the_funnelled_doc_exactly() {
         &machine,
         &material,
         rs_cam_core::feeds::embedded_vendor_lut(),
-        controller.state.session().post_config().spindle_strategy,
+        controller.state.session().post_config().spindle_policy(),
         rs_cam_core::feeds::suggest::SuggestContext::default(),
         rs_cam_core::feeds::FeedsField::DepthPerPass,
     )
@@ -1107,7 +1107,7 @@ fn per_field_pill_offers_the_funnelled_doc_exactly() {
         &machine,
         &material,
         rs_cam_core::feeds::embedded_vendor_lut(),
-        controller.state.session().post_config().spindle_strategy,
+        controller.state.session().post_config().spindle_policy(),
         rs_cam_core::feeds::suggest::SuggestContext::default(),
         rs_cam_core::feeds::FeedsField::DepthPerPass,
     )

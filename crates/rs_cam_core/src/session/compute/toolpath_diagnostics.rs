@@ -418,7 +418,7 @@ impl ProjectSession {
             &self.stock.material,
             &self.machine,
             crate::feeds::embedded_vendor_lut(),
-            self.post.spindle_strategy,
+            self.post.spindle_policy(),
         )
         .ok()
     }
@@ -514,7 +514,7 @@ impl ProjectSession {
             machine: &self.machine,
             material: &self.stock.material,
             lut: crate::feeds::embedded_vendor_lut(),
-            spindle_strategy: self.post.spindle_strategy,
+            spindle_strategy: self.post.spindle_policy(),
             context: SuggestContext {
                 model_bbox,
                 stock: Some(&stock_ctx),

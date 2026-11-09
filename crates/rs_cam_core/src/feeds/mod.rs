@@ -320,7 +320,7 @@ pub struct SetupContext {
 /// Under [`SpindleStrategy::MatchChart`] (default) the feeds calculator
 /// returns the vendor LUT row's `rpm_nominal` verbatim — the chipload
 /// envelope is most defensible at the chart's tested RPM. Under
-/// [`SpindleStrategy::MaxSpeed`] the calculator lifts RPM toward the
+/// [`SpindleStrategy::ConstantChip`] the calculator lifts RPM toward the
 /// spindle ceiling (capped by `vendor.rpm_max` when present, then by
 /// the machine's `spindle.max_rpm` and a small safety headroom) and
 /// scales feed proportionally to keep chipload constant — same
@@ -331,8 +331,14 @@ pub struct SetupContext {
 ///
 /// `Default` is `MatchChart` so projects predating this enum behave
 /// identically.
-#[derive(Debug, Clone, Copy, PartialEq, Eq, Default, serde::Serialize, serde::Deserialize)]
-#[serde(rename_all = "snake_case")]
+///
+/// Feeds contract P21b: `MaxSpeed` is renamed `ConstantChip` and carries
+/// the operator's RPM ceiling. The project file holds the two parts as
+/// two flat keys of `[job.post]` (`spindle_strategy`, a
+/// [`SpindleStrategyKind`] token, and `spindle_rpm_ceiling`);
+/// `PostConfig::spindle_policy` builds this value. P21b does not read the
+/// ceiling: `ConstantChip` runs the rule that `MaxSpeed` ran.
+#[derive(Debug, Clone, Copy, PartialEq, Eq, Default)]
 pub enum SpindleStrategy {
     /// Use the LUT row's `rpm_nominal` (or the material-derived ideal
     /// RPM when no vendor row matches). Preserves chart fidelity.
@@ -341,10 +347,111 @@ pub enum SpindleStrategy {
     /// Push RPM up to the spindle ceiling (clamped by vendor rpm_max
     /// when present, capped by [`MAX_SPINDLE_SPEEDUP`] from the chart
     /// nominal). Scales feed proportionally to keep chipload constant.
-    MaxSpeed,
+    ConstantChip {
+        /// The operator's RPM ceiling (`[job.post] spindle_rpm_ceiling`),
+        /// or `None`. P21b carries it; the calculator does not read it
+        /// yet (P21c).
+        rpm_ceiling: Option<u32>,
+    },
 }
 
-/// Hard cap on the speedup multiplier `MaxSpeed` can apply over the
+impl SpindleStrategy {
+    /// The file token of this strategy.
+    #[must_use]
+    pub const fn kind(self) -> SpindleStrategyKind {
+        match self {
+            Self::MatchChart => SpindleStrategyKind::MatchChart,
+            Self::ConstantChip { .. } => SpindleStrategyKind::ConstantChip,
+        }
+    }
+
+    /// The operator's RPM ceiling, or `None` (always `None` under
+    /// `MatchChart`).
+    #[must_use]
+    pub const fn rpm_ceiling(self) -> Option<u32> {
+        match self {
+            Self::MatchChart => None,
+            Self::ConstantChip { rpm_ceiling } => rpm_ceiling,
+        }
+    }
+}
+
+/// The file and wire token of a [`SpindleStrategy`]: `match_chart` or
+/// `constant_chip` (feeds contract P21b).
+///
+/// The old token `max_speed` refuses with [`MAX_SPEED_TOKEN_RENAMED`]
+/// (ruling Q16: no alias, nothing converts). Any other token refuses
+/// with the list of the legal tokens.
+#[derive(Debug, Clone, Copy, PartialEq, Eq, Default, serde::Serialize)]
+#[serde(rename_all = "snake_case")]
+pub enum SpindleStrategyKind {
+    /// [`SpindleStrategy::MatchChart`].
+    #[default]
+    MatchChart,
+    /// [`SpindleStrategy::ConstantChip`].
+    ConstantChip,
+}
+
+impl SpindleStrategyKind {
+    /// The legal tokens, in declaration order.
+    pub const TOKENS: [&'static str; 2] = ["match_chart", "constant_chip"];
+
+    /// The token of this kind.
+    #[must_use]
+    pub const fn token(self) -> &'static str {
+        match self {
+            Self::MatchChart => "match_chart",
+            Self::ConstantChip => "constant_chip",
+        }
+    }
+
+    /// The kind of `token`.
+    ///
+    /// # Errors
+    ///
+    /// [`MAX_SPEED_TOKEN_RENAMED`] for `max_speed`; a sentence that lists
+    /// the legal tokens for any other unknown token.
+    pub fn from_token(token: &str) -> Result<Self, String> {
+        match token {
+            "match_chart" => Ok(Self::MatchChart),
+            "constant_chip" => Ok(Self::ConstantChip),
+            "max_speed" => Err(MAX_SPEED_TOKEN_RENAMED.to_owned()),
+            other => Err(format!(
+                "unknown spindle_strategy \"{other}\": expected one of {}",
+                Self::TOKENS
+                    .iter()
+                    .map(|t| format!("\"{t}\""))
+                    .collect::<Vec<_>>()
+                    .join(", ")
+            )),
+        }
+    }
+
+    /// The engine strategy of this kind with the operator ceiling
+    /// `rpm_ceiling` (`MatchChart` holds no ceiling).
+    #[must_use]
+    pub const fn with_ceiling(self, rpm_ceiling: Option<u32>) -> SpindleStrategy {
+        match self {
+            Self::MatchChart => SpindleStrategy::MatchChart,
+            Self::ConstantChip => SpindleStrategy::ConstantChip { rpm_ceiling },
+        }
+    }
+}
+
+impl<'de> serde::Deserialize<'de> for SpindleStrategyKind {
+    fn deserialize<D: serde::Deserializer<'de>>(deserializer: D) -> Result<Self, D::Error> {
+        let token = String::deserialize(deserializer)?;
+        Self::from_token(&token).map_err(serde::de::Error::custom)
+    }
+}
+
+/// The refusal of the old token `max_speed` (feeds contract P21b, ruling
+/// Q16). It names the new key.
+pub const MAX_SPEED_TOKEN_RENAMED: &str = "spindle_strategy \"max_speed\" was renamed: write \
+     spindle_strategy = \"constant_chip\" (and, if you want one, \
+     spindle_rpm_ceiling = <rpm>); the old token is not read";
+
+/// Hard cap on the speedup multiplier `ConstantChip` can apply over the
 /// chart's `rpm_nominal`. 1.5× is conservative — past it, chip-thinning
 /// at higher RPM enters territory the chart wasn't tested at. Matches
 /// the rough magnitude of the chart's own rpm_max-vs-rpm_nominal
@@ -469,7 +576,7 @@ pub struct FeedsInput<'a> {
     pub setup: SetupContext,
     /// Spindle-RPM policy. See [`SpindleStrategy`]. Defaults to
     /// `MatchChart` (chart-fidelity, preserves pre-2026-06-01
-    /// behaviour). `MaxSpeed` walks the constant-chipload line up to
+    /// behaviour). `ConstantChip` walks the constant-chipload line up to
     /// the spindle ceiling.
     pub spindle_strategy: SpindleStrategy,
     /// K7 (feeds contract P9): the cases of the pre-sim power set. Step 6
@@ -678,7 +785,7 @@ pub struct FeedsResult {
     /// changed a value, in step order. The last record of a quantity holds
     /// the value of its result field.
     pub steps: Vec<crate::trace::lineage::StepRecord>,
-    /// Feeds contract P21a: the RPM that [`SpindleStrategy::MaxSpeed`]
+    /// Feeds contract P21a: the RPM that [`SpindleStrategy::ConstantChip`]
     /// chose and its named limits. `None` under
     /// [`SpindleStrategy::MatchChart`].
     pub rpm_choice: Option<RpmChoice>,
@@ -753,7 +860,7 @@ pub struct FeedsDerates {
     ///
     /// **Was `spindle_scale`, renamed 2026-09-16.** It could only ever
     /// exceed 1.0, because the only thing that moved it was
-    /// [`SpindleStrategy::MaxSpeed`] lifting RPM toward the spindle
+    /// [`SpindleStrategy::ConstantChip`] lifting RPM toward the spindle
     /// ceiling. The power ladder walks the same line DOWNWARD on a
     /// constant-power spindle, so the value can now be below 1.0 and a
     /// field called "speedup" holding 0.5 would be a lie.
@@ -1013,7 +1120,7 @@ pub enum SpindleScaleReason {
     /// The scale is 1.0. The RPM is the chart's or the formula's.
     #[default]
     Unchanged,
-    /// [`SpindleStrategy::MaxSpeed`] lifted the RPM toward the spindle
+    /// [`SpindleStrategy::ConstantChip`] lifted the RPM toward the spindle
     /// ceiling and scaled the feed with it.
     MaxSpeedPolicy,
     /// The cut was over the spindle's power budget and the spindle is one
@@ -1028,7 +1135,7 @@ pub enum SpindleScaleReason {
 }
 
 /// Feeds contract P21a: a named limit on the RPM that
-/// [`SpindleStrategy::MaxSpeed`] chooses (`calculator/spindle.rs::rpm_choice`).
+/// [`SpindleStrategy::ConstantChip`] chooses (`calculator/spindle.rs::rpm_choice`).
 ///
 /// The three `Legacy*` members are the caps of Steps 2b and 2b' before
 /// P21. They stay for one phase; P21c deletes them (`P21_DESIGN.md`
@@ -1058,7 +1165,7 @@ pub struct RpmLimitValue {
     pub rpm: f64,
 }
 
-/// Feeds contract P21a: the RPM that [`SpindleStrategy::MaxSpeed`] chose,
+/// Feeds contract P21a: the RPM that [`SpindleStrategy::ConstantChip`] chose,
 /// the limit that binds and every limit with its RPM.
 ///
 /// `rpm` is the RPM after Step 2b'. It is the minimum of `limits`, then
@@ -1779,7 +1886,7 @@ const MILLING_CEILING_LARGE_RPM: FormulaConstant = FormulaConstant::unsourced(
 );
 
 /// Diameter-tiered RPM ceiling for milling ops under
-/// [`SpindleStrategy::MaxSpeed`]. The MaxSpeed strategy walks RPM up
+/// [`SpindleStrategy::ConstantChip`]. The ConstantChip strategy walks RPM up
 /// toward the spindle ceiling (24 k × 0.95 = 22.8 k on the shapeoko_xxl
 /// profile). For small tools (≤ 6 mm) that's defensible — the chipload
 /// envelope tolerates near-spindle RPM on a 3-flute end mill. For
@@ -1811,7 +1918,7 @@ const MILLING_CEILING_LARGE_RPM: FormulaConstant = FormulaConstant::unsourced(
 /// - D > 10 mm: 14 000 RPM — large-tool literature ceiling (Onsrud /
 ///   Amana hardwood 12 mm bands).
 ///
-/// Returns the ceiling the MaxSpeed speedup may climb to. Combined
+/// Returns the ceiling the ConstantChip speedup may climb to. Combined
 /// with vendor `rpm_max` (when published) and the machine safety
 /// headroom via `.min()` — the lowest defensible cap wins.
 fn milling_rpm_ceiling_for_diameter(d_mm: f64) -> f64 {

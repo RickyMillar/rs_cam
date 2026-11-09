@@ -339,7 +339,7 @@ fn a_tool_change_replaces_a_suggested_feed_and_keeps_a_typed_plunge_r1() {
         tool: &s.tools()[1],
         machine: s.machine(),
         material: &s.stock_config().material,
-        spindle_strategy: s.post_config().spindle_strategy,
+        spindle_strategy: s.post_config().spindle_policy(),
         lut: rs_cam_core::feeds::embedded_vendor_lut(),
         suggest: slots.context(&config_b.dressups),
     };

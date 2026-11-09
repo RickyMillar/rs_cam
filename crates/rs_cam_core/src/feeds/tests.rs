@@ -1854,7 +1854,7 @@ fn test_lut_fallback_when_no_match() {
     assert!(result.feed_rate_mm_min > 0.0);
 }
 
-/// Phase 5 follow-up (2026-06-01): `SpindleStrategy::MaxSpeed`
+/// Phase 5 follow-up (2026-06-01): `SpindleStrategy::ConstantChip`
 /// pushes RPM toward the spindle ceiling and scales feed
 /// proportionally to keep chipload constant. Sanity-check against
 /// a softwood adaptive query whose vendor row publishes
@@ -1895,7 +1895,7 @@ fn spindle_strategy_max_speed_lifts_rpm_and_scales_feed() {
     };
     let match_chart = calculate(&base);
     let max_speed = calculate(&FeedsInput {
-        spindle_strategy: SpindleStrategy::MaxSpeed,
+        spindle_strategy: SpindleStrategy::ConstantChip { rpm_ceiling: None },
         ..base
     });
 
@@ -1983,7 +1983,7 @@ fn spindle_strategy_max_speed_respects_hard_cap() {
         target_scallop_mm: None,
         vendor_lut: Some(&lut),
         setup: SetupContext::default(),
-        spindle_strategy: SpindleStrategy::MaxSpeed,
+        spindle_strategy: SpindleStrategy::ConstantChip { rpm_ceiling: None },
         power_cases: crate::feeds::engagement::PowerCases::NOMINAL,
         tool_facts: crate::feeds::sourced::ToolFactKinds::STATED,
     });

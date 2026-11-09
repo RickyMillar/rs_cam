@@ -396,3 +396,101 @@ fn set_machine_refuses() {
         Err(SessionError::OutOfDomain(DomainRefusal::Machine(_)))
     ));
 }
+
+// ── Feeds contract P21b: the spindle RPM ceiling of the post block ──
+
+use rs_cam_core::gcode::{PostConfig, PostDomainError};
+use rs_cam_core::session::SetPostConfigArgs;
+
+/// A post block with the ceiling `ceiling`; every other field is the
+/// default.
+fn post_with_ceiling(ceiling: Option<u32>) -> PostConfig {
+    PostConfig {
+        spindle_rpm_ceiling: ceiling,
+        ..PostConfig::default()
+    }
+}
+
+/// The ceiling above the spindle maximum of `machine` by one RPM.
+fn ceiling_above_spindle(machine: &MachineProfile) -> u32 {
+    let (_, spindle_max) = machine.rpm_range();
+    spindle_max.ceil() as u32 + 1
+}
+
+#[test]
+fn the_post_door_refuses_a_zero_rpm_ceiling_p21b() {
+    let mut s = session();
+    let before = s.post_config().clone();
+    assert!(matches!(
+        s.apply(Command::SetPostConfig(SetPostConfigArgs {
+            post: Box::new(post_with_ceiling(Some(0))),
+        })),
+        Err(SessionError::OutOfDomain(DomainRefusal::Post(
+            PostDomainError::RpmCeilingZero
+        )))
+    ));
+    assert_eq!(*s.post_config(), before, "a refusal writes nothing");
+
+    // Positive controls: the block's own S word, and a ceiling above the
+    // spindle maximum (a warning, never a refusal).
+    let good = post_with_ceiling(Some(before.spindle_speed));
+    let _ = s
+        .apply(Command::SetPostConfig(SetPostConfigArgs {
+            post: Box::new(good.clone()),
+        }))
+        .unwrap();
+    assert_eq!(*s.post_config(), good);
+    let above = post_with_ceiling(Some(ceiling_above_spindle(s.machine())));
+    assert!(above.rpm_ceiling_above_spindle(s.machine()).is_some());
+    let _ = s
+        .apply(Command::SetPostConfig(SetPostConfigArgs {
+            post: Box::new(above.clone()),
+        }))
+        .unwrap();
+    assert_eq!(*s.post_config(), above);
+}
+
+#[test]
+fn the_loader_refuses_a_zero_rpm_ceiling_and_warns_above_the_spindle_p21b() {
+    let raw_with_post = |post: PostConfig| {
+        let mut builder = ProjectSessionBuilder::new().post(post);
+        let _ = builder.add_tool(make_endmill_6mm());
+        let _ = builder
+            .add_toolpath(0, tp(op(OperationType::Pocket)))
+            .unwrap();
+        builder.build()
+    };
+    let err = round_trip("post_zero", &raw_with_post(post_with_ceiling(Some(0))))
+        .err()
+        .expect("a zero ceiling refuses at load");
+    assert!(
+        matches!(
+            err,
+            SessionError::OutOfDomain(DomainRefusal::Post(PostDomainError::RpmCeilingZero))
+        ),
+        "{err}"
+    );
+    assert!(err.to_string().contains("spindle_rpm_ceiling = 0"), "{err}");
+
+    // Above the spindle maximum: the load keeps the value and warns.
+    let ceiling = ceiling_above_spindle(raw_with_post(PostConfig::default()).machine());
+    let dir = std::env::temp_dir().join("rs_cam_w6b_post_above");
+    let _ = std::fs::remove_dir_all(&dir);
+    std::fs::create_dir_all(&dir).unwrap();
+    let path = dir.join("project.toml");
+    raw_with_post(post_with_ceiling(Some(ceiling)))
+        .save(&path)
+        .unwrap();
+    let (loaded, warnings) = ProjectSession::load_with_warnings(&path).unwrap();
+    let _ = std::fs::remove_dir_all(&dir);
+    assert_eq!(loaded.post_config().spindle_rpm_ceiling, Some(ceiling));
+    let expected = loaded
+        .post_config()
+        .rpm_ceiling_above_spindle(loaded.machine())
+        .expect("the ceiling is above the spindle maximum");
+    assert!(
+        warnings.iter().any(|w| w.message() == expected),
+        "the load warns with the one sentence: {:?}",
+        warnings.iter().map(|w| w.message()).collect::<Vec<_>>()
+    );
+}

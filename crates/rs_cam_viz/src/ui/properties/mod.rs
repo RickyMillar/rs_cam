@@ -509,6 +509,9 @@ pub(crate) struct ToolpathPanelInputs {
     pub material: rs_cam_core::material::Material,
     pub machine: rs_cam_core::machine::MachineProfile,
     pub spindle_strategy: rs_cam_core::feeds::SpindleStrategy,
+    /// Feeds contract P21b: the stored operator RPM ceiling
+    /// (`PostConfig::spindle_rpm_ceiling`), kept under `MatchChart` too.
+    pub spindle_rpm_ceiling: Option<u32>,
     pub model_is_step_missing_brep: bool,
     /// THE heights of the toolpath (geometry selection P3.1:
     /// `ProjectSession::toolpath_heights`), or the text of its error.
@@ -947,7 +950,8 @@ pub(crate) fn toolpath_panel_inputs(
         validation,
         material,
         machine,
-        spindle_strategy: session.post_config().spindle_strategy,
+        spindle_strategy: session.post_config().spindle_policy(),
+        spindle_rpm_ceiling: session.post_config().spindle_rpm_ceiling,
         model_is_step_missing_brep,
         toolpath_heights,
         stale_default_defects,

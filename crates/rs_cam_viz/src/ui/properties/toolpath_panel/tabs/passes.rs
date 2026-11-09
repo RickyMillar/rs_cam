@@ -68,6 +68,7 @@ pub(in crate::ui::properties) fn draw_passes_tab(
         material: &inputs.material,
         machine: &inputs.machine,
         spindle_strategy: inputs.spindle_strategy,
+        spindle_rpm_ceiling: inputs.spindle_rpm_ceiling,
         load_verdict: inputs.load_verdict(),
         model_bbox,
     });

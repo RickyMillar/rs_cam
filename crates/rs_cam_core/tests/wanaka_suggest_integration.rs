@@ -1063,7 +1063,7 @@ fn session_cutter_op_profile_matches_gui_rationale_assembly() {
             machine,
             material: &stock.material,
             lut,
-            spindle_strategy: session.post_config().spindle_strategy,
+            spindle_strategy: session.post_config().spindle_policy(),
             context,
         });
 

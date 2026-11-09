@@ -358,6 +358,8 @@ pub enum DomainRefusal {
     Machine(crate::machine::domain::MachineDomainError),
     /// The machine head.
     Head(crate::machine::head::HeadRefusal),
+    /// The post config (feeds contract P21b: the spindle RPM ceiling).
+    Post(crate::gcode::PostDomainError),
     /// The shoe setting of the toolpath `toolpath`.
     Shoe {
         /// The toolpath name.
@@ -376,6 +378,7 @@ impl std::fmt::Display for DomainRefusal {
             Self::Stock(error) => write!(f, "Stock refused: {error}"),
             Self::Machine(error) => write!(f, "Machine refused: {error}"),
             Self::Head(error) => write!(f, "Machine head refused: {error}"),
+            Self::Post(error) => write!(f, "Post config refused: {error}"),
             Self::Shoe { toolpath, refusal } => {
                 write!(f, "Toolpath '{toolpath}' shoe refused: {refusal}")
             }

@@ -138,8 +138,9 @@ fn obstacle_effects(
 /// - `format`, the post flavour, which
 ///   [`crate::gcode::export_gcode_checked`] resolves from
 ///   [`ProjectSession::post_config`] at emit time;
-/// - `spindle_strategy`, which the feeds suggest path reads at suggest
-///   time (`ProjectSession::feeds_result_for_toolpath`).
+/// - `spindle_strategy` and `spindle_rpm_ceiling` (feeds contract P21b),
+///   which the feeds suggest path reads at suggest time
+///   (`ProjectSession::feeds_result_for_toolpath`).
 ///
 /// It follows [`fixture_collision_inputs_moved`]: it equalises the two
 /// exempt fields and compares the WHOLE record, so a field ADDED to
@@ -152,6 +153,7 @@ fn post_change_reaches_motion(
     let mut exempt_before = before.clone();
     exempt_before.format.clone_from(&after.format);
     exempt_before.spindle_strategy = after.spindle_strategy;
+    exempt_before.spindle_rpm_ceiling = after.spindle_rpm_ceiling;
     // G5-G7: the controller options are read at emit time only. The
     // simulation always runs the expanded drill moves.
     exempt_before.controller_waits_for_spindle = after.controller_waits_for_spindle;

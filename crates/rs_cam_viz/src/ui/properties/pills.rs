@@ -306,7 +306,7 @@ mod tests {
             &stock.material,
             session.machine(),
             rs_cam_core::feeds::embedded_vendor_lut(),
-            session.post_config().spindle_strategy,
+            session.post_config().spindle_policy(),
         )
         .expect("valid pairing");
         (session, tool, op, result)
@@ -384,7 +384,7 @@ mod tests {
             &material,
             session.machine(),
             rs_cam_core::feeds::embedded_vendor_lut(),
-            session.post_config().spindle_strategy,
+            session.post_config().spindle_policy(),
         )
         .expect("valid pairing");
         (session, tool, op, result, material)
@@ -423,7 +423,7 @@ mod tests {
             &session.stock_config().material,
             session.machine(),
             rs_cam_core::feeds::embedded_vendor_lut(),
-            session.post_config().spindle_strategy,
+            session.post_config().spindle_policy(),
         )
         .expect("valid pairing");
         let pills = PillSuggestions::new(
@@ -635,7 +635,7 @@ mod tests {
             &stock.material,
             session.machine(),
             rs_cam_core::feeds::embedded_vendor_lut(),
-            session.post_config().spindle_strategy,
+            session.post_config().spindle_policy(),
         )
         .expect("V-bit on VCarve is a valid pairing");
         let pills = PillSuggestions::new(

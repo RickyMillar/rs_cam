@@ -646,7 +646,8 @@ impl ProjectSession {
     /// The per-field rule:
     ///
     /// - `format` — read at emit time. No invalidation.
-    /// - `spindle_strategy` — read at suggest time. No invalidation.
+    /// - `spindle_strategy`, `spindle_rpm_ceiling` — read at suggest
+    ///   time. No invalidation.
     /// - `spindle_speed` — the emitted S word, read at emit time, and
     ///   `SimulationRequest::spindle_rpm`. The cut trace's gate readings
     ///   carry the old value, so the simulation goes.
@@ -665,15 +666,25 @@ impl ProjectSession {
     /// results drop here destroys generated work while the operator
     /// drags the spinner. The panel needs the draft-commit the stock
     /// panel has before that drop is safe.
+    ///
+    /// # Errors
+    /// [`SessionError::OutOfDomain`] for a spindle RPM ceiling of zero
+    /// (feeds contract P21b, [`crate::gcode::PostConfig::validate`]);
+    /// nothing is written.
     #[instrument(skip(self, post))]
-    pub(crate) fn set_post_config(&mut self, post: crate::gcode::PostConfig) -> Effects {
+    pub(crate) fn set_post_config(
+        &mut self,
+        post: crate::gcode::PostConfig,
+    ) -> Result<Effects, SessionError> {
+        post.validate()
+            .map_err(crate::compute::domain::DomainRefusal::Post)?;
         let reaches_motion = post_change_reaches_motion(&self.post, &post);
-        self.with_effects(None, move |session| {
+        Ok(self.with_effects(None, move |session| {
             session.post = post;
             if reaches_motion {
                 session.drop_simulation(SimulationDropCause::PostSettings);
             }
-        })
+        }))
     }
 
     /// Replace the whole machine profile.

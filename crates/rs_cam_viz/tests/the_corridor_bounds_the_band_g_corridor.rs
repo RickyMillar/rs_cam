@@ -380,7 +380,7 @@ fn suggested_mm(cutter: &Cutter) -> f64 {
         &stock.material,
         state.session().machine(),
         rs_cam_core::feeds::embedded_vendor_lut(),
-        state.session().post_config().spindle_strategy,
+        state.session().post_config().spindle_policy(),
     );
     let r = &preview.explain().recommended;
     r.feed_rate_mm_min / (r.rpm * f64::from(preview.explain().flute_count.max(1)))
@@ -508,7 +508,7 @@ fn measured(cutter: &Cutter) -> (f64, Option<f64>, f64) {
         &stock.material,
         state.session().machine(),
         rs_cam_core::feeds::embedded_vendor_lut(),
-        state.session().post_config().spindle_strategy,
+        state.session().post_config().spindle_policy(),
     );
     let efficiency = rs_cam_core::feeds::efficiency::cut_efficiency(
         &tc.operation,

@@ -573,7 +573,7 @@ pub struct SuggestParamsInput<'a> {
     pub stock_ctx: &'a StockContext,
     /// Spindle-RPM policy. See [`crate::feeds::SpindleStrategy`].
     /// Defaults to `MatchChart` if the caller doesn't care about the
-    /// distinction. `MaxSpeed` walks the constant-chipload line up to
+    /// distinction. `ConstantChip` walks the constant-chipload line up to
     /// the spindle ceiling, capped by vendor.rpm_max when published.
     pub spindle_strategy: crate::feeds::SpindleStrategy,
     /// Project-level context (model bbox, upstream leftover, etc.) used

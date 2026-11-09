@@ -311,12 +311,18 @@ pub enum AppEvent {
     /// (W3i). The Feeds tab's `Vendor data…` button and MCP
     /// `set_ui_view modal: vendor_data` route here.
     OpenVendorData(ToolpathId),
-    /// Set the project-level spindle policy (chart-fidelity vs
-    /// max-speed). Persists into `ProjectPostConfig.spindle_strategy`.
+    /// Set the project-level spindle policy (match chart or constant chip)
+    /// and the operator RPM ceiling (feeds contract P21b). Persists into
+    /// `PostConfig::spindle_strategy` and `PostConfig::spindle_rpm_ceiling`.
     /// All Suggest calls and the Feeds tab use the new policy on the
     /// next frame. Re-emit per change since the strategy alters every
     /// toolpath's recommendation simultaneously.
-    SetSpindleStrategy(rs_cam_core::feeds::SpindleStrategy),
+    SetSpindleStrategy {
+        /// The strategy token.
+        strategy: rs_cam_core::feeds::SpindleStrategyKind,
+        /// The operator RPM ceiling, or `None`.
+        rpm_ceiling: Option<u32>,
+    },
     /// Apply every recommended value (RPM, feed, plunge, DOC, WOC) to a
     /// toolpath in one transactional update. The Apply-all button on
     /// the comparison card routes here.

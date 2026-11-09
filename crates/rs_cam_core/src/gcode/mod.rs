@@ -1288,12 +1288,21 @@ pub struct PostConfig {
     pub high_feedrate_mode: bool,
     #[serde(default = "default_high_feedrate")]
     pub high_feedrate: f64,
-    /// Project-level spindle policy used by Suggest. `MatchChart`
-    /// (default) preserves chart RPM. `MaxSpeed` walks the constant-
-    /// chipload line up to the spindle ceiling, scaling feed
-    /// proportionally. See [`crate::feeds::SpindleStrategy`].
+    /// Project-level spindle policy used by Suggest: the token
+    /// `match_chart` (default, the chart RPM) or `constant_chip` (the
+    /// constant-chipload line). The old token `max_speed` refuses at load
+    /// (feeds contract P21b, ruling Q16). Read the engine value with
+    /// [`Self::spindle_policy`]; see [`crate::feeds::SpindleStrategy`].
     #[serde(default)]
-    pub spindle_strategy: crate::feeds::SpindleStrategy,
+    pub spindle_strategy: crate::feeds::SpindleStrategyKind,
+    /// Feeds contract P21b (ruling Q4): the operator's RPM ceiling of the
+    /// constant-chip strategy, `[job.post] spindle_rpm_ceiling`. An
+    /// operator policy, not a machine fact. Zero refuses at every door
+    /// ([`Self::validate`]); a value above the spindle maximum warns
+    /// ([`Self::rpm_ceiling_above_spindle`]). P21b carries it; Suggest
+    /// does not read it yet.
+    #[serde(default, skip_serializing_if = "Option::is_none")]
+    pub spindle_rpm_ceiling: Option<u32>,
     /// G5: the controller waits for the spindle after M3, so the export
     /// writes no warm-up dwell. `None` reads the machine profile
     /// (`$394` or `$340` above zero).
@@ -1310,7 +1319,79 @@ pub struct PostConfig {
     pub native_drill_cycles: Option<bool>,
 }
 
+/// Feeds contract P21b: the warning when the spindle RPM ceiling `ceiling`
+/// is above the spindle maximum of `machine`, else `None`. The one
+/// sentence of the loader, the GUI field, MCP and the CLI.
+#[must_use]
+pub fn rpm_ceiling_above_spindle(
+    ceiling: u32,
+    machine: &crate::machine::MachineProfile,
+) -> Option<String> {
+    let (_, spindle_max) = machine.rpm_range();
+    (f64::from(ceiling) > spindle_max).then(|| {
+        format!(
+            "The spindle RPM ceiling {ceiling} is above the spindle maximum \
+             {spindle_max:.0} rpm: the spindle maximum binds first."
+        )
+    })
+}
+
+/// Feeds contract P21b: a post config value outside its domain.
+#[derive(Debug, Clone, Copy, PartialEq, Eq)]
+pub enum PostDomainError {
+    /// `spindle_rpm_ceiling` is zero: no spindle turns under it.
+    RpmCeilingZero,
+}
+
+impl std::fmt::Display for PostDomainError {
+    fn fmt(&self, f: &mut std::fmt::Formatter<'_>) -> std::fmt::Result {
+        match self {
+            Self::RpmCeilingZero => write!(
+                f,
+                "spindle_rpm_ceiling = 0: the ceiling must be above 0 rpm \
+                 (leave the key out for no ceiling)"
+            ),
+        }
+    }
+}
+
+impl std::error::Error for PostDomainError {}
+
 impl PostConfig {
+    /// The engine spindle strategy of this config: the strategy token
+    /// with the operator ceiling (feeds contract P21b). Every Suggest
+    /// reader takes the strategy here.
+    #[must_use]
+    pub const fn spindle_policy(&self) -> crate::feeds::SpindleStrategy {
+        self.spindle_strategy.with_ceiling(self.spindle_rpm_ceiling)
+    }
+
+    /// The domain check of this config (feeds contract P21b): a ceiling
+    /// of zero refuses. A ceiling above the spindle maximum is not an
+    /// error ([`Self::rpm_ceiling_above_spindle`] warns).
+    ///
+    /// # Errors
+    ///
+    /// [`PostDomainError::RpmCeilingZero`].
+    pub const fn validate(&self) -> Result<(), PostDomainError> {
+        match self.spindle_rpm_ceiling {
+            Some(0) => Err(PostDomainError::RpmCeilingZero),
+            Some(_) | None => Ok(()),
+        }
+    }
+
+    /// The warning when the ceiling is above the spindle maximum of
+    /// `machine`: the spindle cannot reach it, so the spindle maximum
+    /// binds first. A warning, never a refusal (feeds contract P21b). The
+    /// loader, the GUI field, MCP and the CLI print this one sentence.
+    #[must_use]
+    pub fn rpm_ceiling_above_spindle(
+        &self,
+        machine: &crate::machine::MachineProfile,
+    ) -> Option<String> {
+        rpm_ceiling_above_spindle(self.spindle_rpm_ceiling?, machine)
+    }
+
     /// The rapid rate (mm/min) the simulator, the kinematic utilisation and
     /// the post-simulation feed pass time a rapid at: `high_feedrate` in
     /// high-feedrate mode (the post writes rapids as G1 at that feed), else
@@ -1375,7 +1456,8 @@ impl Default for PostConfig {
             safe_z: default_safe_z(),
             high_feedrate_mode: false,
             high_feedrate: default_high_feedrate(),
-            spindle_strategy: crate::feeds::SpindleStrategy::default(),
+            spindle_strategy: crate::feeds::SpindleStrategyKind::default(),
+            spindle_rpm_ceiling: None,
             controller_waits_for_spindle: None,
             mist_output: None,
             native_drill_cycles: None,

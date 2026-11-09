@@ -66,7 +66,7 @@ fn calc_oak_12mm(strategy: SpindleStrategy) -> rs_cam_core::feeds::FeedsResult {
 
 #[test]
 fn rpm_only_lut_row_does_not_collapse_chipload_to_zero() {
-    let result = calc_oak_12mm(SpindleStrategy::MaxSpeed);
+    let result = calc_oak_12mm(SpindleStrategy::ConstantChip { rpm_ceiling: None });
 
     let rpm = result.rpm;
     // The cell uses a 4-flute tool; flute_count flows through unchanged.

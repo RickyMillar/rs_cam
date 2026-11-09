@@ -172,7 +172,7 @@ fn explain(state: &AppState) -> FeedsExplain {
         &session.stock_config().material,
         session.machine(),
         embedded_vendor_lut(),
-        session.post_config().spindle_strategy,
+        session.post_config().spindle_policy(),
     )
 }
 
@@ -190,7 +190,7 @@ fn entry_notes(state: &AppState) -> Vec<EntryNote> {
         machine: session.machine(),
         material: &session.stock_config().material,
         lut: embedded_vendor_lut(),
-        spindle_strategy: session.post_config().spindle_strategy,
+        spindle_strategy: session.post_config().spindle_policy(),
         context: SuggestContext {
             model_bbox: snapshot.model_bbox.as_ref(),
             dressups: Some(&snapshot.entry.dressups),

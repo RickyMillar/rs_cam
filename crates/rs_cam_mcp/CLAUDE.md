@@ -61,5 +61,10 @@ run the server; the live server, GUI dispatch and session ownership are in
   with consequence, rules). Feature token `toolpath_lineage`. `set_ui_view`
   `properties_tab: "feeds"` opens the Passes tab (the Feeds tab merged into it; the
   wire enum is unchanged). The snapshot was re-blessed.
+- Feeds contract P21b (2026-11-10): `SpindleStrategyParam` mirrors core `SpindleStrategyKind`
+  (`match_chart`, `constant_chip`; `max_speed` is gone, break, no alias), and
+  `SetSpindleStrategyParam` has `rpm_ceiling` (`[job.post] spindle_rpm_ceiling`; 0 refuses, a
+  value above the spindle maximum warns in the reply). Feature token `spindle_rpm_ceiling`. The
+  snapshot was re-blessed.
 - Verify with `cargo test -p rs_cam_mcp -q`; when a wire type changes, also run
   the relevant `rs_cam_viz` MCP integration tests.

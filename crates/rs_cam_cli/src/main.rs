@@ -28,7 +28,7 @@ mod k6_project;
 use anyhow::{Context, Result};
 use clap::{Parser, Subcommand, ValueEnum};
 use rs_cam_core::dressup::feed_modulation::ModulationStrategy;
-use rs_cam_core::feeds::SpindleStrategy;
+use rs_cam_core::feeds::SpindleStrategyKind;
 use std::path::PathBuf;
 
 // ── Typed flag tokens (F014, F028, F057) ────────────────────────────────
@@ -83,21 +83,21 @@ impl From<SuggestPickArg> for rs_cam_core::feeds::envelope::PickRequest {
     }
 }
 
-/// The `project --spindle-strategy` token of [`SpindleStrategy`]. The
-/// token is the core serde token (`match_chart`, `max_speed`), the one the
-/// project file holds.
+/// The `project --spindle-strategy` token of [`SpindleStrategyKind`]. The
+/// token is the core serde token (`match_chart`, `constant_chip`), the one
+/// the project file holds. Feeds contract P21b: `max_speed` is gone.
 #[derive(Clone, Copy, Debug, PartialEq, Eq, ValueEnum)]
 #[value(rename_all = "snake_case")]
 enum SpindleStrategyArg {
     MatchChart,
-    MaxSpeed,
+    ConstantChip,
 }
 
-impl From<SpindleStrategyArg> for SpindleStrategy {
+impl From<SpindleStrategyArg> for SpindleStrategyKind {
     fn from(arg: SpindleStrategyArg) -> Self {
         match arg {
-            SpindleStrategyArg::MatchChart => SpindleStrategy::MatchChart,
-            SpindleStrategyArg::MaxSpeed => SpindleStrategy::MaxSpeed,
+            SpindleStrategyArg::MatchChart => SpindleStrategyKind::MatchChart,
+            SpindleStrategyArg::ConstantChip => SpindleStrategyKind::ConstantChip,
         }
     }
 }
@@ -105,11 +105,11 @@ impl From<SpindleStrategyArg> for SpindleStrategy {
 /// The reverse map. A test walks it, so a new core variant does not
 /// compile in the test build until it has a token here.
 #[cfg(test)]
-impl From<SpindleStrategy> for SpindleStrategyArg {
-    fn from(strategy: SpindleStrategy) -> Self {
+impl From<SpindleStrategyKind> for SpindleStrategyArg {
+    fn from(strategy: SpindleStrategyKind) -> Self {
         match strategy {
-            SpindleStrategy::MatchChart => SpindleStrategyArg::MatchChart,
-            SpindleStrategy::MaxSpeed => SpindleStrategyArg::MaxSpeed,
+            SpindleStrategyKind::MatchChart => SpindleStrategyArg::MatchChart,
+            SpindleStrategyKind::ConstantChip => SpindleStrategyArg::ConstantChip,
         }
     }
 }
@@ -423,12 +423,19 @@ enum Commands {
 
         /// Override the project's spindle policy for this run.
         /// "match_chart" (default in code; preserved when unset) uses
-        /// the vendor LUT row's chart RPM verbatim. "max_speed" walks
+        /// the vendor LUT row's chart RPM verbatim. "constant_chip" walks
         /// the constant-chipload line up to the spindle ceiling and
         /// scales feed proportionally. When unset, the strategy from
         /// the loaded project's post config is used.
         #[arg(long, value_enum)]
         spindle_strategy: Option<SpindleStrategyArg>,
+
+        /// Override the project's spindle RPM ceiling for this run
+        /// (`[job.post] spindle_rpm_ceiling`, feeds contract P21b). Zero
+        /// refuses; a value above the spindle maximum warns. Suggest does
+        /// not read it yet.
+        #[arg(long)]
+        spindle_rpm_ceiling: Option<u32>,
 
         /// Write `simulation.json`, the per-sample cut-trace artifact, into
         /// the output directory. Default off.
@@ -674,6 +681,7 @@ fn main() -> Result<()> {
             apply_suggest,
             apply_suggest_pick,
             spindle_strategy,
+            spindle_rpm_ceiling,
             sim_artifact,
         } => {
             let skip_ids: Vec<rs_cam_core::ToolpathId> = skip
@@ -695,6 +703,7 @@ fn main() -> Result<()> {
                 inject_shapeoko_kinematics,
                 apply_suggest.then(|| apply_suggest_pick.map(Into::into)),
                 spindle_strategy.map(Into::into),
+                spindle_rpm_ceiling,
                 sim_artifact,
             )?;
         }
@@ -927,19 +936,30 @@ mod tests {
     }
 
     /// F014: the `--spindle-strategy` tokens are the core serde tokens, and
-    /// an unknown token is a clap error.
+    /// an unknown token is a clap error. P21b: `max_speed` is gone.
     #[test]
     fn f014_spindle_strategy_tokens_are_the_core_serde_tokens() {
         use super::SpindleStrategyArg;
         use clap::ValueEnum;
-        use rs_cam_core::feeds::SpindleStrategy;
+        use rs_cam_core::feeds::SpindleStrategyKind;
         for &arg in SpindleStrategyArg::value_variants() {
-            let core = SpindleStrategy::from(arg);
+            let core = SpindleStrategyKind::from(arg);
             assert_eq!(SpindleStrategyArg::from(core), arg);
             let token = arg.to_possible_value().unwrap().get_name().to_owned();
             assert_eq!(serde_json::to_value(core).unwrap(), token.as_str());
+            assert_eq!(core.token(), token.as_str());
         }
+        assert!(Cli::try_parse_from(project_args(&["--spindle-strategy", "max_speed"])).is_err());
         assert!(Cli::try_parse_from(project_args(&["--spindle-strategy", "max-speed"])).is_err());
+        assert!(
+            Cli::try_parse_from(project_args(&[
+                "--spindle-strategy",
+                "constant_chip",
+                "--spindle-rpm-ceiling",
+                "1"
+            ]))
+            .is_ok()
+        );
     }
 
     /// F028: an unknown `run --post` token is a clap error. Before the fix

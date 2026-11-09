@@ -198,7 +198,7 @@ fn explain_rpm(out: &mut String, explain: &FeedsExplain, applied: &AppliedRecipe
     let reason = explain.recommended.derates.spindle_scale_reason;
     match reason {
         SpindleScaleReason::MaxSpeedPolicy => out.push_str(&format!(
-            "Spindle policy MaxSpeed lifted it ×{scale:.3} toward the spindle \
+            "Spindle policy Constant chip lifted it ×{scale:.3} toward the spindle \
              ceiling, and scaled the feed with it to hold the advance/tooth \
              constant.\n"
         )),

@@ -71,7 +71,7 @@ use rs_cam_core::compute::config::StockSource;
 use rs_cam_core::compute::operation_configs::PocketConfig;
 use rs_cam_core::compute::simulate::SimulationResult;
 use rs_cam_core::dexel_stock::TriDexelStock;
-use rs_cam_core::feeds::SpindleStrategy;
+use rs_cam_core::feeds::SpindleStrategyKind;
 use rs_cam_core::geo::{BoundingBox3, P3};
 use rs_cam_core::ids::ToolpathId;
 use rs_cam_core::session::{
@@ -274,20 +274,25 @@ fn a_post_config_edit_keeps_the_simulation_wp17() {
          got: {refusal:?}"
     );
 
-    // (b) A changed spindle strategy. The strategy reaches the feeds
-    // suggest path and the G-code, and it moves no geometry and no
-    // simulated stock.
+    // (b) A changed spindle strategy and RPM ceiling (feeds contract
+    // P21b). The strategy reaches the feeds suggest path and the G-code,
+    // and it moves no geometry and no simulated stock. The ceiling is the
+    // session's own S word, so no number is typed here.
     let mut changed = session.post_config().clone();
     changed.spindle_strategy = match changed.spindle_strategy {
-        SpindleStrategy::MatchChart => SpindleStrategy::MaxSpeed,
-        SpindleStrategy::MaxSpeed => SpindleStrategy::MatchChart,
+        SpindleStrategyKind::MatchChart => SpindleStrategyKind::ConstantChip,
+        SpindleStrategyKind::ConstantChip => SpindleStrategyKind::MatchChart,
     };
-    let wanted = changed.spindle_strategy;
+    changed.spindle_rpm_ceiling = match changed.spindle_rpm_ceiling {
+        Some(_) => None,
+        None => Some(changed.spindle_speed),
+    };
+    let wanted = changed.spindle_policy();
     let effects = set_post(&mut session, changed);
     assert_eq!(
-        session.post_config().spindle_strategy,
+        session.post_config().spindle_policy(),
         wanted,
-        "the row writes the field it was given"
+        "the row writes the fields it was given"
     );
     assert!(
         !effects.simulation_cleared,

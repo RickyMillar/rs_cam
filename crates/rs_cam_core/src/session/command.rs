@@ -2961,7 +2961,7 @@ impl ProjectSession {
             Command::SetMachineHead(args) => self.set_machine_head(*args.head),
             Command::SetToolpathShoe(args) => self.set_toolpath_shoe(args.index, args.shoe),
             Command::SetToolpathFloor(args) => self.set_toolpath_floor(args.index, args.floor),
-            Command::SetPostConfig(args) => Ok(self.set_post_config(*args.post)),
+            Command::SetPostConfig(args) => self.set_post_config(*args.post),
             Command::SetBoundaryConfig(args) => self.set_boundary_config(args.index, args.boundary),
             Command::SetRestAnalysisConfig(args) => {
                 self.set_rest_analysis_config(args.index, args.rest_analysis)
@@ -3093,7 +3093,7 @@ impl ProjectSession {
                     tool,
                     machine: &self.machine,
                     material: &self.stock.material,
-                    spindle_strategy: self.post.spindle_strategy,
+                    spindle_strategy: self.post.spindle_policy(),
                     lut: crate::feeds::embedded_vendor_lut(),
                     suggest: slots.context(&draft.dressups),
                 };

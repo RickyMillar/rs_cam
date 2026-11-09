@@ -66,6 +66,8 @@ pub(super) struct FeedsBlock<'a> {
     pub material: &'a rs_cam_core::material::Material,
     pub machine: &'a rs_cam_core::machine::MachineProfile,
     pub spindle_strategy: rs_cam_core::feeds::SpindleStrategy,
+    /// Feeds contract P21b: the stored operator RPM ceiling.
+    pub spindle_rpm_ceiling: Option<u32>,
     pub load_verdict: Option<&'a rs_cam_core::tool_load::ToolpathLoadVerdict>,
     /// Q1: the bbox of the model this toolpath machines, from
     /// `ToolpathPanelSnapshot`. The memo key reads it.
@@ -182,11 +184,15 @@ pub(super) fn draw_feeds_recommendation(
             preview: &preview,
             card: &card,
         };
-        let (spindle_strategy, machine) = (block.spindle_strategy, block.machine);
+        let (strategy, rpm_ceiling, machine) = (
+            block.spindle_strategy.kind(),
+            block.spindle_rpm_ceiling,
+            block.machine,
+        );
         crate::ui::feeds::explore::draw_recommendation_inline(
             ui,
             &op,
-            |ui, events| draw_spindle_policy_row(ui, spindle_strategy, machine, events),
+            |ui, events| draw_spindle_policy_row(ui, strategy, rpm_ceiling, machine, events),
             events,
         );
     }
@@ -353,7 +359,7 @@ pub(super) fn draw_speed_controls(
         (lock_row(row, lock, FeedsLock::Spindle), detail),
         &mut spindle,
         "RPM",
-        100.0,
+        RPM_DRAG_SPEED,
         edit_range(SpeedField::Spindle, SPINDLE_RANGE),
         spindle_suggested,
         NOT_SET_HOVER,
@@ -1075,25 +1081,36 @@ fn advance_gate_verdict(chipload: &rs_cam_core::tool_load::ChiploadVerdict) -> (
 
 // ── Spindle policy ──────────────────────────────────────────────────
 
-/// The spindle policy of the project (chart RPM or maximum speed), the
+/// The drag speed of an RPM field (RPM per pixel): the Spindle row and the
+/// RPM ceiling row.
+const RPM_DRAG_SPEED: f64 = 100.0;
+
+/// The spindle policy of the project (chart RPM or constant chip), the
 /// first row of the recommendation `Details` (W3i). The Explore window held
 /// it as two radio buttons; it is the one GUI control of
-/// `ProjectPostConfig::spindle_strategy` (MCP: `set_spindle_strategy`).
+/// `PostConfig::spindle_strategy` (MCP: `set_spindle_strategy`).
+///
+/// Feeds contract P21b: one "RPM ceiling" row under it, drawn under
+/// Constant chip or while a ceiling is set. Empty is no ceiling; a ceiling
+/// above the spindle maximum takes the Caution state, the sentence on
+/// hover. The row never writes zero (core refuses it): its range starts
+/// at one RPM.
 fn draw_spindle_policy_row(
     ui: &mut egui::Ui,
-    current: rs_cam_core::feeds::SpindleStrategy,
+    current: rs_cam_core::feeds::SpindleStrategyKind,
+    rpm_ceiling: Option<u32>,
     machine: &rs_cam_core::machine::MachineProfile,
     events: &mut Vec<crate::ui::AppEvent>,
 ) {
-    use rs_cam_core::feeds::SpindleStrategy;
+    use rs_cam_core::feeds::SpindleStrategyKind;
     let (_, max_rpm) = machine.rpm_range();
-    let label = |s: SpindleStrategy| match s {
-        SpindleStrategy::MatchChart => "Match chart",
-        SpindleStrategy::MaxSpeed => "Max speed",
+    let label = |s: SpindleStrategyKind| match s {
+        SpindleStrategyKind::MatchChart => "Match chart",
+        SpindleStrategyKind::ConstantChip => "Constant chip",
     };
     let hover = format!(
         "Match chart: use the vendor row's published RPM, the closest match to the \
-         vendor's own test. Max speed: push the RPM up to the spindle ceiling \
+         vendor's own test. Constant chip: push the RPM up to the spindle ceiling \
          ({max_rpm:.0} RPM \u{00D7} {:.0} % headroom) and scale the feed to keep the \
          commanded advance per tooth. The vendor rpm_max and a {:.1}\u{00D7} limit over \
          the chart RPM cap it, and the power derate still applies. This is a project \
@@ -1108,13 +1125,50 @@ fn draw_spindle_policy_row(
         "feeds_spindle_policy",
         label(current),
         |ui| {
-            for s in [SpindleStrategy::MatchChart, SpindleStrategy::MaxSpeed] {
+            for s in [
+                SpindleStrategyKind::MatchChart,
+                SpindleStrategyKind::ConstantChip,
+            ] {
                 let _ = ui.selectable_value(&mut next, s, label(s));
             }
         },
     );
-    if next != current {
-        events.push(crate::ui::AppEvent::SetSpindleStrategy(next));
+    let mut next_ceiling = rpm_ceiling;
+    if next == SpindleStrategyKind::ConstantChip || rpm_ceiling.is_some() {
+        super::placement::note_drawn("spindle_rpm_ceiling");
+        let warning =
+            rpm_ceiling.and_then(|c| rs_cam_core::gcode::rpm_ceiling_above_spindle(c, machine));
+        let ceiling_hover = warning.clone().unwrap_or_else(|| {
+            "The operator RPM ceiling of the constant-chip strategy. Empty: no \
+             ceiling. Suggest does not read it yet."
+                .to_owned()
+        });
+        let row = PropRow::new("RPM ceiling")
+            .hover(Some(&ceiling_hover))
+            .state(
+                warning
+                    .as_ref()
+                    .map(|_| crate::ui::components::Role::Caution),
+            );
+        let mut value = rpm_ceiling.map(f64::from);
+        if super::linking_dressup::opt_row(
+            ui,
+            row,
+            &mut value,
+            "RPM",
+            RPM_DRAG_SPEED,
+            1.0..=f64::INFINITY,
+            "none",
+            true,
+        ) {
+            next_ceiling = value.map(|v| v.round() as u32);
+        }
+    }
+    if next != current || next_ceiling != rpm_ceiling {
+        events.push(crate::ui::AppEvent::SetSpindleStrategy {
+            strategy: next,
+            rpm_ceiling: next_ceiling,
+        });
     }
 }
 
@@ -1537,6 +1591,45 @@ mod tests {
                     );
                 }
             }
+        }
+    }
+
+    /// Feeds contract P21b: the RPM ceiling row draws under Constant chip or
+    /// while a ceiling is set, and a frame with no input sends no event (a
+    /// passive frame must not write the post block).
+    #[test]
+    fn the_rpm_ceiling_row_draws_under_constant_chip_or_a_set_value_p21b() {
+        use rs_cam_core::feeds::SpindleStrategyKind;
+        let machine = rs_cam_core::machine::MachineProfile::default();
+        let ceiling = Some(rs_cam_core::gcode::PostConfig::default().spindle_speed);
+        for (kind, rpm_ceiling, drawn) in [
+            (SpindleStrategyKind::MatchChart, None, false),
+            (SpindleStrategyKind::MatchChart, ceiling, true),
+            (SpindleStrategyKind::ConstantChip, None, true),
+            (SpindleStrategyKind::ConstantChip, ceiling, true),
+        ] {
+            let ctx = egui::Context::default();
+            crate::ui::tokens::apply(&ctx);
+            crate::ui::tokens::apply_fonts(&ctx);
+            let mut warmup = ctx.run_ui(egui::RawInput::default(), |_ui| {});
+            warmup.textures_delta.clear();
+            let mut events = Vec::new();
+            let keys = super::super::placement::record_drawn(|| {
+                let mut out = ctx.run_ui(egui::RawInput::default(), |ui| {
+                    super::draw_spindle_policy_row(ui, kind, rpm_ceiling, &machine, &mut events);
+                });
+                out.textures_delta.clear();
+            });
+            assert_eq!(
+                keys.contains("spindle_rpm_ceiling"),
+                drawn,
+                "{kind:?} with {rpm_ceiling:?}"
+            );
+            assert!(
+                events.is_empty(),
+                "{kind:?} with {rpm_ceiling:?}: a passive frame sent {} event(s)",
+                events.len()
+            );
         }
     }
 

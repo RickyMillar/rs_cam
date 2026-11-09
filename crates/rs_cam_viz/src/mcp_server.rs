@@ -1537,7 +1537,7 @@ impl EmbeddedCamServer {
 
     #[tool(
         name = "set_spindle_strategy",
-        description = "Set the project-level spindle policy that drives the Feeds & Speeds Suggest path. Accepts 'match_chart' (default — use the vendor LUT row's chart-published RPM verbatim) or 'max_speed' (push RPM up the constant-chipload line toward the spindle ceiling and scale feed proportionally). Affects every Suggest call across the project on the next frame; existing toolpath param values are NOT mutated by this call — invoke get_toolpath_params or run Suggest to see the new recommendations. Mirrors the GUI's Feeds & Speeds modal radio toggle."
+        description = "Set the project-level spindle policy that drives the Feeds & Speeds Suggest path. `strategy` is 'match_chart' (default — use the vendor LUT row's chart-published RPM verbatim) or 'constant_chip' (hold the chip and raise the RPM along the constant-chipload line toward the spindle ceiling; the feed scales with it). The old token 'max_speed' is gone. `rpm_ceiling` (optional) is the operator's RPM ceiling of the constant-chip strategy ([job.post] spindle_rpm_ceiling): 0 refuses, a value above the spindle maximum is kept and the reply carries a `warning`; Suggest does not read it yet. Affects every Suggest call across the project on the next frame; existing toolpath param values are NOT mutated by this call — invoke get_toolpath_params or run Suggest to see the new recommendations. Mirrors the GUI's Feeds & Speeds modal radio toggle."
     )]
     async fn set_spindle_strategy(
         &self,

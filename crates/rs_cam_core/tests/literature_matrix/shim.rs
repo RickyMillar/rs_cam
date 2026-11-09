@@ -408,7 +408,11 @@ fn resolve_operation(op: &str) -> Result<(OperationFamily, PassRole), ShimError>
 /// `apply_speeds_to_op` write-back all participate.
 pub fn run_cell(cell: &LiteratureCell) -> Result<ShimSnapshot, ShimError> {
     let material = resolve_material(&cell.inputs.material)?;
-    let mut snapshot = run_cell_in_material(cell, &material, SpindleStrategy::MaxSpeed)?;
+    let mut snapshot = run_cell_in_material(
+        cell,
+        &material,
+        SpindleStrategy::ConstantChip { rpm_ceiling: None },
+    )?;
 
     // Checkpoint K (e2) — the comparison arm. Same tool, same operation,
     // same machine, one material swapped, so a `ref_*`-bearing invariant
@@ -420,7 +424,11 @@ pub fn run_cell(cell: &LiteratureCell) -> Result<ShimSnapshot, ShimError> {
     // denominator could not be computed has not passed.
     if let Some(reference) = &cell.reference {
         let ref_material = resolve_material(&reference.material)?;
-        if let Ok(r) = run_cell_in_material(cell, &ref_material, SpindleStrategy::MaxSpeed) {
+        if let Ok(r) = run_cell_in_material(
+            cell,
+            &ref_material,
+            SpindleStrategy::ConstantChip { rpm_ceiling: None },
+        ) {
             snapshot
                 .bindings
                 .insert("ref_fpt".into(), r.effective_chip_load_mm);
@@ -440,7 +448,7 @@ pub fn run_cell(cell: &LiteratureCell) -> Result<ShimSnapshot, ShimError> {
 }
 
 /// Feeds contract P21a: the primary arm of [`run_cell`] under the spindle
-/// strategy `strategy` (the matrix runs `MaxSpeed`). No comparison arm.
+/// strategy `strategy` (the matrix runs `ConstantChip`). No comparison arm.
 pub fn run_cell_with_strategy(
     cell: &LiteratureCell,
     strategy: SpindleStrategy,

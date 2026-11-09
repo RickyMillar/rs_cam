@@ -2353,7 +2353,7 @@ impl ProjectSession {
             machine: self.machine(),
             material: &stock.material,
             lut: crate::feeds::embedded_vendor_lut(),
-            spindle_strategy: self.post_config().spindle_strategy,
+            spindle_strategy: self.post_config().spindle_policy(),
             context,
         })
         .ok()
@@ -2380,7 +2380,7 @@ impl ProjectSession {
                 machine: self.machine(),
                 material: &self.stock_config().material,
                 lut: crate::feeds::embedded_vendor_lut(),
-                spindle_strategy: self.post_config().spindle_strategy,
+                spindle_strategy: self.post_config().spindle_policy(),
                 context: slots.context(&tc.dressups),
             },
         ))

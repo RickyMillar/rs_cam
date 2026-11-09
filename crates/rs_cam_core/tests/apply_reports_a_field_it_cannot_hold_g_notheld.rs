@@ -88,7 +88,7 @@ fn try_recipe(
         &stock.material,
         session.machine(),
         rs_cam_core::feeds::embedded_vendor_lut(),
-        session.post_config().spindle_strategy,
+        session.post_config().spindle_policy(),
     )
     .ok()
 }
@@ -129,7 +129,7 @@ fn the_funnel_reports_a_depth_it_could_not_hold_g_notheld() {
             machine: session.machine(),
             material,
             lut: rs_cam_core::feeds::embedded_vendor_lut(),
-            spindle_strategy: session.post_config().spindle_strategy,
+            spindle_strategy: session.post_config().spindle_policy(),
             context: SuggestContext::default(),
         }) else {
             continue;
@@ -156,7 +156,7 @@ fn the_funnel_reports_a_depth_it_could_not_hold_g_notheld() {
                 tool: &tool,
                 machine: session.machine(),
                 material,
-                spindle_strategy: session.post_config().spindle_strategy,
+                spindle_strategy: session.post_config().spindle_policy(),
                 lut: rs_cam_core::feeds::embedded_vendor_lut(),
                 suggest: SuggestContext::default(),
             },

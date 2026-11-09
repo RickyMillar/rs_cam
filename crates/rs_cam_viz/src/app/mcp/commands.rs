@@ -699,27 +699,35 @@ impl RsCamApp {
                 )
             }
             CoreRequest::SetSpindleStrategy(p) => {
-                let parsed = rs_cam_core::feeds::SpindleStrategy::from(p.strategy);
-                if self
-                    .controller
-                    .state()
-                    .session()
-                    .post_config()
-                    .spindle_strategy
-                    == parsed
+                // Feeds contract P21b: the strategy token and the RPM
+                // ceiling are two flat keys of the post block.
+                let kind = rs_cam_core::feeds::SpindleStrategyKind::from(p.strategy);
+                let session = self.controller.state().session();
+                let current = session.post_config();
+                if current.spindle_strategy == kind && current.spindle_rpm_ceiling == p.rpm_ceiling
                 {
                     let strategy = p.strategy.token();
                     return CorePlan::Answered(CoreReply::succeeded(self.mcp_mutation_result(
                         format!("Spindle policy already set to '{strategy}'; no change."),
-                        serde_json::json!({ "spindle_strategy": strategy, "changed": false }),
+                        serde_json::json!({
+                            "spindle_strategy": strategy,
+                            "rpm_ceiling": p.rpm_ceiling,
+                            "changed": false,
+                        }),
                         Vec::new(),
                         &before.diagnostics,
                     )));
                 }
-                let mut post = self.controller.state().session().post_config().clone();
-                post.spindle_strategy = parsed;
+                let mut post = current.clone();
+                post.spindle_strategy = kind;
+                post.spindle_rpm_ceiling = p.rpm_ceiling;
+                let warning = post.rpm_ceiling_above_spindle(session.machine());
                 before.display_name = Some(p.strategy.token().to_owned());
-                before.extra = serde_json::json!({ "spindle_strategy": p.strategy.token() });
+                before.extra = serde_json::json!({
+                    "spindle_strategy": p.strategy.token(),
+                    "rpm_ceiling": p.rpm_ceiling,
+                    "warning": warning,
+                });
                 CorePlan::Apply(
                     Command::SetPostConfig(SetPostConfigArgs {
                         post: Box::new(post),

@@ -19,18 +19,28 @@ fn the_spindle_strategy_event_writes_the_session_f072() {
         }))
         .expect("the session accepts the post block");
 
-    let strategy = rs_cam_core::feeds::SpindleStrategy::MaxSpeed;
+    // Feeds contract P21b: the event carries the token and the ceiling;
+    // the ceiling is the block's own S word, so no number is typed here.
+    let strategy = rs_cam_core::feeds::SpindleStrategyKind::ConstantChip;
+    let rpm_ceiling = Some(controller.state.session().post_config().spindle_speed);
     assert_ne!(
         controller.state.session().post_config().spindle_strategy,
         strategy,
         "the fixture must start on the other strategy, or the arm short-circuits"
     );
-    controller.handle_internal_event(AppEvent::SetSpindleStrategy(strategy));
+    controller.handle_internal_event(AppEvent::SetSpindleStrategy {
+        strategy,
+        rpm_ceiling,
+    });
 
     let session_post = controller.state.session().post_config();
     assert_eq!(
         session_post.spindle_strategy, strategy,
         "the strategy the operator picked did not reach the session"
+    );
+    assert_eq!(
+        session_post.spindle_rpm_ceiling, rpm_ceiling,
+        "the ceiling the operator set did not reach the session"
     );
     assert_eq!(
         session_post.format,

@@ -102,7 +102,7 @@ fn apply_proposal(
             tool,
             machine: session.machine(),
             material: &session.stock_config().material,
-            spindle_strategy: session.post_config().spindle_strategy,
+            spindle_strategy: session.post_config().spindle_policy(),
             lut: rs_cam_core::feeds::embedded_vendor_lut(),
             suggest: SuggestContext::default(),
         },
@@ -137,7 +137,7 @@ fn try_recipe(
         &stock.material,
         session.machine(),
         rs_cam_core::feeds::embedded_vendor_lut(),
-        session.post_config().spindle_strategy,
+        session.post_config().spindle_policy(),
     )
     .ok()
 }
@@ -192,7 +192,7 @@ fn previews(
         session.machine(),
         &session.stock_config().material,
         rs_cam_core::feeds::embedded_vendor_lut(),
-        session.post_config().spindle_strategy,
+        session.post_config().spindle_policy(),
         SuggestContext::default(),
     )
 }
@@ -229,7 +229,7 @@ fn depth_per_pass_pill_offers_the_funnel_value_not_the_calculator_value() {
         session.machine(),
         &session.stock_config().material,
         rs_cam_core::feeds::embedded_vendor_lut(),
-        session.post_config().spindle_strategy,
+        session.post_config().spindle_policy(),
         SuggestContext::default(),
         FeedsField::DepthPerPass,
     )

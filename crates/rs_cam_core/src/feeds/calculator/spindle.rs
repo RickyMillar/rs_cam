@@ -10,7 +10,7 @@ use crate::feeds::{
     milling_rpm_ceiling_for_diameter, milling_rpm_ceiling_row, moved_basis,
 };
 
-/// Steps 2b and 2b': the RPM that [`SpindleStrategy::MaxSpeed`] chooses,
+/// Steps 2b and 2b': the RPM that [`SpindleStrategy::ConstantChip`] chooses,
 /// with its named limits. `None` under [`SpindleStrategy::MatchChart`],
 /// where both steps change nothing.
 ///
@@ -54,7 +54,7 @@ pub(super) fn rpm_choice(
 fn named_limits(input: &FeedsInput, chip: &Chip, chart_rpm: f64) -> Option<Vec<RpmLimitValue>> {
     match input.spindle_strategy {
         SpindleStrategy::MatchChart => return None,
-        SpindleStrategy::MaxSpeed => {}
+        SpindleStrategy::ConstantChip { .. } => {}
     }
     let (_, machine_max_rpm) = input.machine.rpm_range();
     let mut limits = vec![
@@ -96,13 +96,13 @@ fn named_limits(input: &FeedsInput, chip: &Chip, chart_rpm: f64) -> Option<Vec<R
 }
 
 /// Step 2b: the spindle speed-up along the constant-chipload line
-/// (`SpindleStrategy::MaxSpeed`).
+/// (`SpindleStrategy::ConstantChip`).
 fn step2b_max_speed(input: &FeedsInput, chip: &Chip, speed: &mut Speed) {
     let machine = input.machine;
     let d = input.tool_diameter;
     // --- Step 2b: Spindle-speedup along the constant-chipload line ---
     //
-    // Under `SpindleStrategy::MaxSpeed` push RPM up toward the
+    // Under `SpindleStrategy::ConstantChip` push RPM up toward the
     // spindle ceiling (clamped by vendor.rpm_max when published,
     // capped by MAX_SPINDLE_SPEEDUP and a small safety headroom).
     // Feed scales proportionally below (the feed formula already
@@ -113,7 +113,7 @@ fn step2b_max_speed(input: &FeedsInput, chip: &Chip, speed: &mut Speed) {
     //
     // `spindle_scale` is captured into `FeedsDerates` for the modal.
     // Default (MatchChart) leaves it at 1.0; smoke baselines unchanged.
-    if matches!(input.spindle_strategy, SpindleStrategy::MaxSpeed) && speed.rpm > 0.0 {
+    if matches!(input.spindle_strategy, SpindleStrategy::ConstantChip { .. }) && speed.rpm > 0.0 {
         let (_, machine_max_rpm) = machine.rpm_range();
         let machine_ceiling = machine_max_rpm * SPINDLE_CEILING_HEADROOM;
         // Diameter-tier literature ceiling for milling. The MaxSpeed
@@ -170,9 +170,9 @@ fn step2b_max_speed(input: &FeedsInput, chip: &Chip, speed: &mut Speed) {
     }
 }
 
-/// Step 2b': the diameter-tier ceiling for milling under `MaxSpeed`.
+/// Step 2b': the diameter-tier ceiling for milling under `ConstantChip`.
 fn step2b_milling_tier(input: &FeedsInput, speed: &mut Speed) {
-    // --- Step 2b': Diameter-tier ceiling for milling under MaxSpeed ---
+    // --- Step 2b': Diameter-tier ceiling for milling under ConstantChip ---
     //
     // The vendor LUT can publish `rpm_nominal` above the diameter-tier
     // literature ceiling (e.g. a 12 mm hardwood adaptive2d row anchored
@@ -184,14 +184,14 @@ fn step2b_milling_tier(input: &FeedsInput, speed: &mut Speed) {
     // literature band whenever the vendor row outpaces the per-diameter
     // wood-cutting envelope.
     //
-    // Apply the tier ceiling as a hard cap under MaxSpeed only —
+    // Apply the tier ceiling as a hard cap under ConstantChip only —
     // MatchChart explicitly opts into the vendor row's nominal RPM and
     // shouldn't be silently re-clamped (the smoke baselines + chart-
     // fidelity tests depend on that opt-in). This step does not clamp the
     // Drill family. P20a removed the drill RPM tier (Step 2c), and this
-    // step kept its Drill exclusion, so a drill under MaxSpeed reads only
+    // step kept its Drill exclusion, so a drill under ConstantChip reads only
     // the Step 2b ceiling.
-    if matches!(input.spindle_strategy, SpindleStrategy::MaxSpeed)
+    if matches!(input.spindle_strategy, SpindleStrategy::ConstantChip { .. })
         && input.operation != OperationFamily::Drill
         && !matches!(
             input.tool_geometry,

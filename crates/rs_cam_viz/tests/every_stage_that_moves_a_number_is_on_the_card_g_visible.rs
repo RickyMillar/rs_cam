@@ -500,7 +500,7 @@ fn records(state: &AppState) -> (Vec<FeedsWarning>, Vec<SuggestWarning>) {
         machine: session.machine(),
         material: &session.stock_config().material,
         lut: embedded_vendor_lut(),
-        spindle_strategy: session.post_config().spindle_strategy,
+        spindle_strategy: session.post_config().spindle_policy(),
         context: SuggestContext {
             model_bbox: snapshot.model_bbox.as_ref(),
             dressups: Some(&snapshot.entry.dressups),

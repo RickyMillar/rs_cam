@@ -1,12 +1,12 @@
 //! Feeds contract P21a (`planning/feeds_contract_2026-11-03/phases/P21a.md`):
-//! every cap on the `MaxSpeed` RPM is a named limit.
+//! every cap on the `ConstantChip` RPM (P21b renamed `MaxSpeed`) is a named limit.
 //!
 //! The grid is every flat pocket and flat 2D adaptive cell of the
 //! literature matrix (`tests/literature_matrix/cells.toml`): 1 to 12 mm,
 //! the 3, 6, 10 and 12 mm tiers included. The machine is the cell's own
 //! (the shim's `resolve_machine`). No grid value is typed here.
 //!
-//! On each cell, under `MaxSpeed`:
+//! On each cell, under `ConstantChip`:
 //! - the calculator returns an RPM choice;
 //! - the RPM of the choice is the minimum of its named limits;
 //! - the binding limit is the limit with that minimum;
@@ -73,7 +73,7 @@ fn every_rpm_cap_is_a_named_limit_p21() {
         let choice = snap
             .rpm_choice
             .as_ref()
-            .unwrap_or_else(|| panic!("{}: MaxSpeed gave no RPM choice", cell.id));
+            .unwrap_or_else(|| panic!("{}: ConstantChip gave no RPM choice", cell.id));
         let min = choice
             .limits
             .iter()

@@ -36,8 +36,8 @@ use std::sync::Arc;
 use rs_cam_core::compute::catalog::{OperationConfig, OperationType};
 use rs_cam_core::compute::stock_config::{ModelKind, ModelUnits, StockConfig};
 use rs_cam_core::compute::tool_config::{ToolConfig, ToolId, ToolType};
-use rs_cam_core::feeds::SpindleStrategy;
 use rs_cam_core::feeds::suggest::FieldApplyPreviews;
+use rs_cam_core::feeds::{SpindleStrategy, SpindleStrategyKind};
 use rs_cam_core::geo::{BoundingBox3, P3};
 use rs_cam_core::material::{Material, PlywoodGrade};
 use rs_cam_core::polygon::Polygon2;
@@ -295,8 +295,8 @@ fn the_panel_runs_the_calculator_once_per_input_f216() {
     // The spindle strategy.
     let mut post = state.session().post_config().clone();
     post.spindle_strategy = match post.spindle_strategy {
-        SpindleStrategy::MatchChart => SpindleStrategy::MaxSpeed,
-        SpindleStrategy::MaxSpeed => SpindleStrategy::MatchChart,
+        SpindleStrategyKind::MatchChart => SpindleStrategyKind::ConstantChip,
+        SpindleStrategyKind::ConstantChip => SpindleStrategyKind::MatchChart,
     };
     apply(
         &mut state,
@@ -410,7 +410,7 @@ fn every_feeds_input_moves_the_memo_key_f216() {
         (
             "spindle_strategy",
             FeedsInputs {
-                spindle_strategy: SpindleStrategy::MaxSpeed,
+                spindle_strategy: SpindleStrategy::ConstantChip { rpm_ceiling: None },
                 ..base()
             },
         ),
