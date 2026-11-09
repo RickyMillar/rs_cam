@@ -58,7 +58,8 @@ impl TriDexelStock {
         direction: StockCutDirection,
         cancel: &dyn CancelCheck,
     ) -> Result<(), Cancelled> {
-        let lut = RadialProfileLUT::from_cutter(cutter, crate::stock::radial_profile::LUT_SAMPLES);
+        let lut =
+            RadialProfileLUT::for_stock_stamp(cutter, crate::stock::radial_profile::LUT_SAMPLES);
         self.simulate_toolpath_with_lut_cancel(toolpath, &lut, cutter.radius(), direction, cancel)
     }
 
@@ -348,7 +349,8 @@ impl TriDexelStock {
         capture_arc_engagement: bool,
         cancel: &dyn CancelCheck,
     ) -> Result<Vec<SimulationCutSample>, Cancelled> {
-        let lut = RadialProfileLUT::from_cutter(cutter, crate::stock::radial_profile::LUT_SAMPLES);
+        let lut =
+            RadialProfileLUT::for_stock_stamp(cutter, crate::stock::radial_profile::LUT_SAMPLES);
         self.simulate_toolpath_with_lut_metrics_cancel(
             toolpath,
             &lut,
@@ -1034,7 +1036,8 @@ impl TriDexelStock {
         start_move: usize,
         end_move: usize,
     ) {
-        let lut = RadialProfileLUT::from_cutter(cutter, crate::stock::radial_profile::LUT_SAMPLES);
+        let lut =
+            RadialProfileLUT::for_stock_stamp(cutter, crate::stock::radial_profile::LUT_SAMPLES);
         self.simulate_toolpath_range_with_lut(
             toolpath,
             &lut,

@@ -47,10 +47,10 @@ use rayon::prelude::*;
 
 use super::band::{self, BAND_ROWS, GridBand};
 use super::stamping::{
-    CoverageFastPath, FRESH_MATERIAL_THRESHOLD_MM, FULL_COVERAGE, PERP_COVERAGE_GATE,
+    BladeRing, CoverageFastPath, FRESH_MATERIAL_THRESHOLD_MM, FULL_COVERAGE, PERP_COVERAGE_GATE,
     SUBSAMPLE_HALF_EXTENT, StampPartial, cell_can_remove, cell_upper_bound_height,
-    cell_upper_bound_surface, clamped_cell_bbox, lut_h_with_edge_fallback, point_cell_coverage,
-    segment_cell_coverage, segment_tip_low, stamp_segment_with_metrics,
+    cell_upper_bound_surface, clamped_cell_bbox, deeper_at_end, lut_h_with_edge_fallback,
+    point_coverage, segment_tip_low, stamp_segment_with_metrics, swept_coverage,
 };
 use super::tile_mip::TileMaxTop;
 use crate::interrupt::{CancelCheck, Cancelled, check_cancel};
@@ -332,6 +332,7 @@ fn stamp_plunge_chunk(
     out[0].bbox_cells = ((row_hi + 1 - row_lo) * (col_hi + 1 - col_lo)) as u64;
 
     let r_sq = lut.radius_sq();
+    let ring = BladeRing::of(lut);
     for row in row_lo..=row_hi {
         let cell_v = band.origin_v + row as f64 * cs;
         let dv = cell_v - sv;
@@ -339,11 +340,10 @@ fn stamp_plunge_chunk(
             let cell_u = band.origin_u + col as f64 * cs;
             let du = cell_u - su;
             // ── the three hoisted invariants ──
-            let coverage = point_cell_coverage(du, dv, r_sq, cs);
+            let (coverage, dist_sq) = point_coverage(du, dv, r_sq, cs, ring);
             if coverage <= 0.0 {
                 continue;
             }
-            let dist_sq = du * du + dv * dv;
             let Some(h) = lut_h_with_edge_fallback(lut, dist_sq) else {
                 continue;
             };
@@ -496,6 +496,8 @@ fn stamp_swept_chunk(
     let inv_seg_len_sq = 1.0 / seg_len_sq;
     let radius_sq = lut.radius_sq();
     let fast = CoverageFastPath::new(radius_sq, cs);
+    let ring = BladeRing::of(lut);
+    let deep_end = deeper_at_end(seg_dd, from_high);
     let seg_len = seg_len_sq.sqrt();
     let inv_seg_len = if seg_len > 1e-9 { 1.0 / seg_len } else { 0.0 };
     let bins_f = bins as f64;
@@ -564,7 +566,7 @@ fn stamp_swept_chunk(
         let cell_v = band.origin_v + row as f64 * cs;
         for col in col_lo..=col_hi {
             let cell_u = band.origin_u + col as f64 * cs;
-            let (coverage, t_center, center_d_sq) = segment_cell_coverage(
+            let (coverage, t_center, center_d_sq) = swept_coverage(
                 cell_u,
                 cell_v,
                 su,
@@ -575,6 +577,8 @@ fn stamp_swept_chunk(
                 radius_sq,
                 cs,
                 fast,
+                ring,
+                deep_end,
             );
             if coverage <= 0.0 {
                 continue;

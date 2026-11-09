@@ -274,6 +274,208 @@ pub(super) fn segment_cell_coverage(
     (cov, t_center, center_d_sq)
 }
 
+// ── G-SIMCORE (P22-0a): the blade ring of a non-centre-cutting tool ─────
+
+/// The centre core of a tool that does not cut at its centre: only the blade
+/// ring `core_r <= r <= R` removes stock. Read off the table
+/// ([`RadialProfileLUT::blade_ring_core_sq`]); `None` for every other tool,
+/// and then every kernel takes its shipped coverage call unchanged.
+#[derive(Clone, Copy, Debug)]
+pub(super) struct BladeRing {
+    core_sq: f64,
+    core_r: f64,
+}
+
+impl BladeRing {
+    /// The ring of `lut`, or `None` when the whole disc cuts.
+    #[inline]
+    pub(super) fn of(lut: &RadialProfileLUT) -> Option<Self> {
+        lut.blade_ring_core_sq().map(|core_sq| Self {
+            core_sq,
+            core_r: core_sq.sqrt(),
+        })
+    }
+}
+
+/// `true` when the deeper end of a segment is its end (`t = 1`): the low
+/// end for a high-side cut, the high end for a low-side cut.
+#[inline]
+pub(super) fn deeper_at_end(seg_dd: f64, from_high: bool) -> bool {
+    if from_high {
+        seg_dd < 0.0
+    } else {
+        seg_dd > 0.0
+    }
+}
+
+/// The coverage of a point stamp and the squared distance its height is read
+/// at. Without a ring this is `point_cell_coverage` and the centre distance,
+/// the shipped pair. With a ring, a cell is cut where `core_r <= r <= R`.
+#[inline]
+pub(super) fn point_coverage(
+    du: f64,
+    dv: f64,
+    r_sq: f64,
+    cs: f64,
+    ring: Option<BladeRing>,
+) -> (f32, f64) {
+    let d_sq = du * du + dv * dv;
+    let outer = point_cell_coverage(du, dv, r_sq, cs);
+    let Some(ring) = ring else {
+        return (outer, d_sq);
+    };
+    if outer <= 0.0 {
+        return (outer, d_sq);
+    }
+    let ext_diag = cs * SUBSAMPLE_HALF_EXTENT * std::f64::consts::SQRT_2;
+    let d = d_sq.sqrt();
+    if d - ext_diag >= ring.core_r {
+        return (outer, d_sq);
+    }
+    if d + ext_diag < ring.core_r {
+        return (0.0, d_sq);
+    }
+    let mut inside = 0u32;
+    for &v_off in &SUBSAMPLE_OFFSETS_FRAC {
+        let y = dv + v_off * cs;
+        for &u_off in &SUBSAMPLE_OFFSETS_FRAC {
+            let x = du + u_off * cs;
+            let q = x * x + y * y;
+            if q >= ring.core_sq && q <= r_sq {
+                inside += 1;
+            }
+        }
+    }
+    let cov = inside as f32 / (COVERAGE_SUBSAMPLES_PER_AXIS * COVERAGE_SUBSAMPLES_PER_AXIS) as f32;
+    (cov, d_sq.max(ring.core_sq).min(r_sq))
+}
+
+/// The squared distance from `(pu, pv)` (relative to the segment start) to
+/// the farther end point of the segment `(0, 0) -> (seg_du, seg_dv)`.
+#[inline]
+fn far_end_sq(pu: f64, pv: f64, seg_du: f64, seg_dv: f64) -> f64 {
+    let qu = pu - seg_du;
+    let qv = pv - seg_dv;
+    (pu * pu + pv * pv).max(qu * qu + qv * qv)
+}
+
+/// [`segment_cell_coverage`] for the sweep of a segment, with the blade ring
+/// of a non-centre-cutting tool when `ring` is `Some`.
+///
+/// Without a ring this is the shipped call, bit for bit.
+///
+/// With a ring (G-SIMCORE): the distance from a point `q` to `p(t)` is convex
+/// in `t`, so its maximum on the segment is at an end point. The ring cuts
+/// `q` exactly when the closest distance is `<= R` and the farther end point
+/// is at `>= core_r` (the distance is continuous, so it reaches `core_r` on
+/// the way, and there it is inside the ring). Boundary cells take the 4 x 4
+/// sub-sample fan, each sub-sample tested on both conditions.
+///
+/// The returned parameter: when the closest point is outside the core it is
+/// `t_closest`, as without a ring. Else the ring crosses `q` at
+/// `t0 ± sqrt(core_r² − d_perp²) / L`; the kernel takes the deeper one of
+/// those in `[0, 1]` (`deeper_at_end`). The returned squared distance is the
+/// distance at that parameter (`core_r²`).
+#[expect(
+    clippy::too_many_arguments,
+    reason = "each parameter is a separate input that the callers supply"
+)]
+#[inline]
+pub(super) fn swept_coverage(
+    cu: f64,
+    cv: f64,
+    su: f64,
+    sv: f64,
+    seg_du: f64,
+    seg_dv: f64,
+    inv_seg_len_sq: f64,
+    r_sq: f64,
+    cs: f64,
+    fast: CoverageFastPath,
+    ring: Option<BladeRing>,
+    deeper_at_end: bool,
+) -> (f32, f64, f64) {
+    let shipped = segment_cell_coverage(
+        cu,
+        cv,
+        su,
+        sv,
+        seg_du,
+        seg_dv,
+        inv_seg_len_sq,
+        r_sq,
+        cs,
+        fast,
+    );
+    let Some(ring) = ring else {
+        return shipped;
+    };
+    let (outer, t_center, center_d_sq) = shipped;
+    if outer <= 0.0 {
+        return shipped;
+    }
+    let pu = cu - su;
+    let pv = cv - sv;
+    let ext_diag = cs * SUBSAMPLE_HALF_EXTENT * std::f64::consts::SQRT_2;
+    let far = far_end_sq(pu, pv, seg_du, seg_dv).sqrt();
+    let coverage = if far - ext_diag >= ring.core_r {
+        outer
+    } else if far + ext_diag < ring.core_r {
+        0.0
+    } else {
+        let mut inside = 0u32;
+        for &v_off in &SUBSAMPLE_OFFSETS_FRAC {
+            let py = pv + v_off * cs;
+            for &u_off in &SUBSAMPLE_OFFSETS_FRAC {
+                let px = pu + u_off * cs;
+                let t = ((px * seg_du + py * seg_dv) * inv_seg_len_sq).clamp(0.0, 1.0);
+                let qu = px - t * seg_du;
+                let qv = py - t * seg_dv;
+                if qu * qu + qv * qv <= r_sq && far_end_sq(px, py, seg_du, seg_dv) >= ring.core_sq {
+                    inside += 1;
+                }
+            }
+        }
+        inside as f32 / (COVERAGE_SUBSAMPLES_PER_AXIS * COVERAGE_SUBSAMPLES_PER_AXIS) as f32
+    };
+    if coverage <= 0.0 {
+        return (0.0, t_center, center_d_sq);
+    }
+    if center_d_sq >= ring.core_sq {
+        return (coverage, t_center, center_d_sq);
+    }
+    // The closest approach is inside the core: the ring crosses the cell
+    // where its distance to the axis is `core_r`.
+    let seg_len_sq = seg_du * seg_du + seg_dv * seg_dv;
+    let t0 = (pu * seg_du + pv * seg_dv) * inv_seg_len_sq;
+    let perp_sq = (pu * pu + pv * pv - t0 * t0 * seg_len_sq).max(0.0);
+    let delta = ((ring.core_sq - perp_sq).max(0.0) * inv_seg_len_sq).sqrt();
+    let lo = t0 - delta;
+    let hi = t0 + delta;
+    let lo_in = (0.0..=1.0).contains(&lo);
+    let hi_in = (0.0..=1.0).contains(&hi);
+    let (t, d_sq) = match (lo_in, hi_in) {
+        (true, true) => (if deeper_at_end { hi } else { lo }, ring.core_sq),
+        (true, false) => (lo, ring.core_sq),
+        (false, true) => (hi, ring.core_sq),
+        (false, false) => {
+            // The cell centre is inside the core for the whole segment and
+            // only some sub-samples reach the ring: read it at the farther
+            // end point.
+            let start_sq = pu * pu + pv * pv;
+            let qu = pu - seg_du;
+            let qv = pv - seg_dv;
+            let end_sq = qu * qu + qv * qv;
+            if start_sq >= end_sq {
+                (0.0, start_sq)
+            } else {
+                (1.0, end_sq)
+            }
+        }
+    };
+    (coverage, t, d_sq.min(r_sq))
+}
+
 /// F.a coverage gate for perp-extent contribution (§6.F). Multiplicative
 /// sub-cell blend leaves residual material at boundary cells (any cell with
 /// coverage < 1) that subsequent passes "bite", which would otherwise inflate
@@ -841,17 +1043,15 @@ pub(super) fn stamp_point_on_grid(
         row_lo,
         row_hi,
     };
+    let ring = BladeRing::of(lut);
     for_each_covered_cell(
         grid,
         &scan,
         |cell_u, cell_v| {
             let du = cell_u - cu;
             let dv = cell_v - cv;
-            (
-                point_cell_coverage(du, dv, r_sq, cs),
-                0.0,
-                du * du + dv * dv,
-            )
+            let (coverage, dist_sq) = point_coverage(du, dv, r_sq, cs, ring);
+            (coverage, 0.0, dist_sq)
         },
         |grid, visit| {
             let CellVisit::Covered {
@@ -959,11 +1159,13 @@ pub(super) fn stamp_segment_on_grid(
         row_lo,
         row_hi,
     };
+    let ring = BladeRing::of(lut);
+    let deep_end = deeper_at_end(seg_dd, from_high);
     for_each_covered_cell(
         grid,
         &scan,
         |cell_u, cell_v| {
-            segment_cell_coverage(
+            swept_coverage(
                 cell_u,
                 cell_v,
                 su,
@@ -974,6 +1176,8 @@ pub(super) fn stamp_segment_on_grid(
                 r_sq,
                 cs,
                 fast,
+                ring,
+                deep_end,
             )
         },
         |grid, visit| {
@@ -1167,17 +1371,15 @@ pub(super) fn stamp_segment_on_band(
             row_lo,
             row_hi,
         };
+        let ring = BladeRing::of(lut);
         for_each_covered_cell(
             band,
             &scan,
             |cell_u, cell_v| {
                 let du = cell_u - su;
                 let dv = cell_v - sv;
-                (
-                    point_cell_coverage(du, dv, r_sq, cs),
-                    0.0,
-                    du * du + dv * dv,
-                )
+                let (coverage, dist_sq) = point_coverage(du, dv, r_sq, cs, ring);
+                (coverage, 0.0, dist_sq)
             },
             |band, visit| {
                 let CellVisit::Covered {
@@ -1248,11 +1450,13 @@ pub(super) fn stamp_segment_on_band(
         row_lo,
         row_hi,
     };
+    let ring = BladeRing::of(lut);
+    let deep_end = deeper_at_end(seg_dd, from_high);
     for_each_covered_cell(
         band,
         &scan,
         |cell_u, cell_v| {
-            segment_cell_coverage(
+            swept_coverage(
                 cell_u,
                 cell_v,
                 su,
@@ -1263,6 +1467,8 @@ pub(super) fn stamp_segment_on_band(
                 r_sq,
                 cs,
                 fast,
+                ring,
+                deep_end,
             )
         },
         |band, visit| {
@@ -1667,17 +1873,15 @@ pub(super) fn stamp_segment_with_metrics(
             row_lo,
             row_hi,
         };
+        let ring = BladeRing::of(lut);
         for_each_covered_cell(
             band,
             &scan,
             |cell_u, cell_v| {
                 let du = cell_u - su;
                 let dv = cell_v - sv;
-                (
-                    point_cell_coverage(du, dv, r_sq, cs),
-                    0.0,
-                    du * du + dv * dv,
-                )
+                let (coverage, dist_sq) = point_coverage(du, dv, r_sq, cs, ring);
+                (coverage, 0.0, dist_sq)
             },
             |band, visit| {
                 let (idx, coverage, h) = match visit {
@@ -1832,11 +2036,13 @@ pub(super) fn stamp_segment_with_metrics(
         row_lo,
         row_hi,
     };
+    let ring = BladeRing::of(lut);
+    let deep_end = deeper_at_end(seg_dd, from_high);
     for_each_covered_cell(
         band,
         &scan,
         |cell_u, cell_v| {
-            segment_cell_coverage(
+            swept_coverage(
                 cell_u,
                 cell_v,
                 su,
@@ -1847,6 +2053,8 @@ pub(super) fn stamp_segment_with_metrics(
                 radius_sq,
                 cs,
                 fast,
+                ring,
+                deep_end,
             )
         },
         |band, visit| {
