@@ -141,6 +141,7 @@ impl SimulationState {
             // P22-0c-3: the contacts of the contact kernel of the accepted run.
             core_contacts: &self.checks.core_contacts,
             flute_contacts: &self.checks.flute_contacts,
+            body_contacts: &self.checks.body_contacts,
             cut_trace: self.results.as_ref().and_then(|r| r.cut_trace.as_deref()),
             holder_collisions: self.holder_collision_counts_by_tp(),
             // The cell the accepted run simulated at. Read only to enrich a
@@ -187,6 +188,7 @@ impl SimulationState {
             obstacle_collisions,
             core_contacts,
             flute_contacts,
+            body_contacts,
             // The load report stamp holds the trace identity.
             cut_trace: _,
             holder_collisions,
@@ -241,6 +243,7 @@ impl SimulationState {
         // length name them.
         (core_contacts.as_ptr() as usize, core_contacts.len()).hash(&mut hasher);
         (flute_contacts.as_ptr() as usize, flute_contacts.len()).hash(&mut hasher);
+        (body_contacts.as_ptr() as usize, body_contacts.len()).hash(&mut hasher);
         holder_collisions.len().hash(&mut hasher);
         for (toolpath_id, check) in holder_collisions {
             toolpath_id.hash(&mut hasher);

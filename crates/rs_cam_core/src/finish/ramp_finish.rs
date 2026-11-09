@@ -115,7 +115,7 @@ impl RampFinishRuntimeEvent {
 /// Report-only. It is the channel `CHECKPOINT_B_EVIDENCE.md` §8.2 says did
 /// not exist: "a genuine reach failure with **no diagnostic channel**; a user
 /// would ship it."
-#[derive(Debug, Clone, Copy, Default, PartialEq)]
+#[derive(Debug, Clone, Default, PartialEq)]
 pub struct RampReachClamp {
     /// Ramp points whose Z was raised because the cutter could not hold the
     /// commanded depth at that XY.
@@ -148,6 +148,14 @@ pub struct RampReachClamp {
     /// dexel-top area: it must never be summed with, or divided by,
     /// [`crate::compute::toolpath_stats::ToolpathStats::truncated_core_mm2`].
     pub lifted_area_mm2: Option<f64>,
+    /// P22-0c-4 (lead ruling on P22-0c-3 open Q3): each matched ring of a
+    /// tool that does not cut at its centre where the core cannot descend
+    /// (`CoreZone::max_ring_slope` is 0: the ring fits inside the core
+    /// diameter). The ramp cuts no pass there, so the ring is left uncut.
+    /// The adapter moves the list into `Produced::helix_core_fallbacks`
+    /// (fallback `EntryFallback::NoPass`), and the K5 rule `HelixCore`
+    /// names it (`safety.helix_inside_core`). Empty for every other run.
+    pub core_ring_skips: Vec<crate::compute::tool_config::HelixCoreFallback>,
 }
 
 impl RampReachClamp {
@@ -377,6 +385,50 @@ fn match_contours(upper: &[ParamContour], lower: &[ParamContour]) -> Vec<(usize,
 
 /// Generate a ramp path between two matched contours.
 ///
+/// True when a contour pair gives no ramp to descend: the Z drop between
+/// the two contours is under 0.001 mm, or the upper contour has no length
+/// (under 1e-6 mm). [`ramp_between_contours`] and [`core_ring_skip`] read
+/// this one test.
+fn pair_has_no_drop(z_drop: f64, upper_length: f64) -> bool {
+    z_drop < 0.001 || upper_length < 1e-6
+}
+
+/// P22-0c-4: the finding of a ring the core cannot descend on. `Some` when
+/// `core` is a core zone, the two contours differ in Z (the ramp would
+/// descend) and the dwell rule gives the upper contour no slope (it fits
+/// inside the core diameter). `fit_mm` is the largest XY distance of the
+/// upper contour from its centroid: the room the ring holds.
+fn core_ring_skip(
+    upper: &ParamContour,
+    lower: &ParamContour,
+    core: Option<crate::tool::body::CoreZone>,
+) -> Option<crate::compute::tool_config::HelixCoreFallback> {
+    let core = core?;
+    let first = upper.points.first()?;
+    let n = upper.points.len() as f64;
+    let z_upper = upper.points.iter().map(|p| p.z).sum::<f64>() / n;
+    let z_lower = lower.points.iter().map(|p| p.z).sum::<f64>() / lower.points.len().max(1) as f64;
+    if pair_has_no_drop((z_upper - z_lower).abs(), upper.total_length) {
+        return None;
+    }
+    if core.max_ring_slope(&upper.points) > 0.0 {
+        return None;
+    }
+    let cx = upper.points.iter().map(|p| p.x).sum::<f64>() / n;
+    let cy = upper.points.iter().map(|p| p.y).sum::<f64>() / n;
+    let fit_mm = upper
+        .points
+        .iter()
+        .map(|p| (p.x - cx).hypot(p.y - cy))
+        .fold(0.0_f64, f64::max);
+    Some(crate::compute::tool_config::HelixCoreFallback {
+        at: *first,
+        fit_mm,
+        core_floor_mm: core.radius_mm,
+        fallback: crate::compute::tool_config::EntryFallback::NoPass,
+    })
+}
+
 /// Walks along the upper contour, continuously interpolating Z toward the lower
 /// contour. The descent rate is limited by `max_stepdown` per revolution.
 ///
@@ -397,7 +449,7 @@ fn ramp_between_contours(
     let z_lower = lower.points.iter().map(|p| p.z).sum::<f64>() / lower.points.len() as f64;
     let z_drop = (z_upper - z_lower).abs();
 
-    if z_drop < 0.001 || upper.total_length < 1e-6 {
+    if pair_has_no_drop(z_drop, upper.total_length) {
         return Vec::new();
     }
 
@@ -708,6 +760,10 @@ pub fn ramp_finish_toolpath_structured_annotated_with_resolution(
         let mut terrace_segments = Vec::new();
 
         for &(ui, li) in &matches {
+            if let Some(skip) = core_ring_skip(&upper_contours[ui], &lower_contours[li], core) {
+                reach_clamp.core_ring_skips.push(skip);
+                continue;
+            }
             let mut ramp_path = ramp_between_contours(
                 &upper_contours[ui],
                 &lower_contours[li],
@@ -1165,6 +1221,47 @@ mod tests {
             ramp_between_contours(&small_upper, &small_lower, 1.0, 0.5, Some(core)).is_empty(),
             "a ring inside the core diameter gets no ramp"
         );
+    }
+
+    /// P22-0c-4 (lead ruling on P22-0c-3 open Q3): a ring inside the core
+    /// diameter gets a finding, not silence. `core_ring_skip` gives the
+    /// `HelixCore` fallback `NoPass` with the room of the ring and the core
+    /// floor; a ring the core can descend on, a level pair and a tool with
+    /// no core give none. Red before: no producer (the ramp was empty and
+    /// nothing recorded it).
+    #[test]
+    fn a_ring_inside_the_core_gives_a_finding_p22_0c_4() {
+        let square = |half: f64, z: f64| {
+            ParamContour::from_contour(&[
+                P3::new(-half, -half, z),
+                P3::new(half, -half, z),
+                P3::new(half, half, z),
+                P3::new(-half, half, z),
+            ])
+        };
+        let core = crate::tool::body::CoreZone {
+            radius_mm: 4.0,
+            protrusion_mm: 0.5,
+        };
+        let (small_upper, small_lower) = (square(2.0, 10.0), square(2.0, 8.0));
+        let skip = core_ring_skip(&small_upper, &small_lower, Some(core))
+            .expect("a ring inside the core diameter gives a finding");
+        assert_eq!(
+            skip.fallback,
+            crate::compute::tool_config::EntryFallback::NoPass
+        );
+        assert!((skip.core_floor_mm - 4.0).abs() < 1e-12);
+        assert!(
+            (skip.fit_mm - 2.0 * 2.0_f64.sqrt()).abs() < 1e-9,
+            "the room of the ring: {}",
+            skip.fit_mm
+        );
+        // A ring the core can descend on: no finding.
+        assert!(core_ring_skip(&square(10.0, 10.0), &square(10.0, -10.0), Some(core)).is_none());
+        // A level pair: no ramp would descend, so no finding.
+        assert!(core_ring_skip(&small_upper, &square(2.0, 10.0), Some(core)).is_none());
+        // A tool that cuts at its centre: no finding.
+        assert!(core_ring_skip(&small_upper, &small_lower, None).is_none());
     }
 
     // ── Slope confinement tests ─────────────────────────────────────

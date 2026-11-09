@@ -65,6 +65,52 @@ impl ProjectSession {
         ))
     }
 
+    /// P22-0c-4 (operator ruling Q1): the holder outcomes with the stock
+    /// answer in place of the mesh answer. For each toolpath that the
+    /// stored simulation carved by the walk and is fresh for
+    /// ([`Self::sim_trace_is_fresh_for`]), the outcome is
+    /// `MeasuredOnStock(n)`, `n` = its fed shank, holder and shoe contacts
+    /// (`SimulationResult::body_contacts`). Every other toolpath keeps its
+    /// `mesh` outcome: no simulation, a stale one, or a drill (its removal
+    /// is analytic and never enters the walk). The mesh check stays the
+    /// answer before a simulation and the source of `min_safe_stickout`.
+    #[must_use]
+    pub fn holder_checks_with_stock(
+        &self,
+        mesh: Vec<(
+            crate::ids::ToolpathId,
+            crate::stock::collision::HolderCollisionCheck,
+        )>,
+    ) -> Vec<(
+        crate::ids::ToolpathId,
+        crate::stock::collision::HolderCollisionCheck,
+    )> {
+        let Some(simulation) = self.simulation.as_ref() else {
+            return mesh;
+        };
+        let Some(trace) = simulation.cut_trace.as_deref() else {
+            return mesh;
+        };
+        let mut out = mesh;
+        for index in 0..self.toolpath_count() {
+            let (Some(tc), Some(result)) = (self.toolpath_config_at(index), self.result_at(index))
+            else {
+                continue;
+            };
+            if result.drill_op().is_some() || !self.sim_trace_is_fresh_for(trace, index) {
+                continue;
+            }
+            let stock = crate::stock::collision::HolderCollisionCheck::MeasuredOnStock(
+                crate::compute::simulate::fed_body_contact_count(&simulation.body_contacts, tc.id),
+            );
+            match out.iter_mut().find(|(id, _)| *id == tc.id) {
+                Some(entry) => entry.1 = stock,
+                None => out.push((tc.id, stock)),
+            }
+        }
+        out
+    }
+
     /// P22-0c-3 (one frame): the frame the contact findings of the
     /// toolpath at `index` state their positions in, the G-code frame of
     /// its setup (`gcode::export_datum_shift_for_toolpath`). Every surface

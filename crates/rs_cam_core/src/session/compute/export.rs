@@ -269,6 +269,33 @@ impl ProjectSession {
                                 );
                             }
                         }
+                        // P22-0c-4 (ruling Q1): the fed shank, holder and
+                        // shoe contacts that a fresh simulation measured.
+                        let stock_checks = self.holder_checks_with_stock(Vec::new());
+                        for tc in emitted.iter().filter_map(|i| self.toolpath_configs.get(*i)) {
+                            let measured = stock_checks.iter().any(|(id, check)| {
+                                *id == tc.id
+                                    && matches!(
+                                        check,
+                                        crate::stock::collision::HolderCollisionCheck::MeasuredOnStock(n)
+                                            if *n > 0
+                                    )
+                            });
+                            if !measured {
+                                continue;
+                            }
+                            if let Some(row) = crate::compute::simulate::body_contact_row(
+                                &simulation.body_contacts,
+                                tc.id,
+                                self.contact_frame_of(tc.id),
+                            ) {
+                                push(
+                                    ids::PROJECT_HOLDER_COLLISION,
+                                    tc.name.clone(),
+                                    format!("Toolpath '{}': {row}", tc.name),
+                                );
+                            }
+                        }
                     }
                 }
                 Gate::BuriedFace => {

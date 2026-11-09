@@ -50,6 +50,7 @@ impl SimulationState {
                 obstacle_collisions: Vec::new(),
                 core_contacts: Vec::new(),
                 flute_contacts: Vec::new(),
+                body_contacts: Vec::new(),
                 collision_report: None,
                 holder_collision_count: 0,
                 min_safe_stickout: None,

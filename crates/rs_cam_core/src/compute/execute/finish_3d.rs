@@ -386,7 +386,7 @@ impl HeightFieldOp for RampPass {
         pctx: &PlanCtx<'_>,
     ) -> Result<Planned<Self::Annotation, Self::Report>, OperationError> {
         let (surface, cutter) = query.mesh(self.op_type())?;
-        let (tp, annotations, reach_clamp) =
+        let (tp, annotations, mut reach_clamp) =
             crate::finish::ramp_finish::ramp_finish_toolpath_structured_annotated_with_cancel(
                 surface.mesh,
                 surface.index,
@@ -396,7 +396,13 @@ impl HeightFieldOp for RampPass {
                 territory.regions(),
                 pctx.cancel,
             )?;
-        Ok(Planned::new(tp, reach_clamp).with_annotations(annotations))
+        // P22-0c-4: the rings the core cannot descend on go to the side
+        // channel, so the K5 rule `HelixCore` names them in the G-code
+        // frame (`Produced::translated` shifts them).
+        let skips = std::mem::take(&mut reach_clamp.core_ring_skips);
+        let mut planned = Planned::new(tp, reach_clamp).with_annotations(annotations);
+        planned.produced.helix_core_fallbacks.extend(skips);
+        Ok(planned)
     }
 }
 

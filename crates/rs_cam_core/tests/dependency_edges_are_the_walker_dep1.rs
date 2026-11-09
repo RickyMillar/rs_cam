@@ -226,6 +226,7 @@ fn adopt_simulation(session: &mut ProjectSession) {
                 obstacle_collisions: Vec::new(),
                 non_centre_cutting_descents: Vec::new(),
                 flute_overreach: Vec::new(),
+                body_contacts: Vec::new(),
             }),
             epoch: session.simulation_epoch(),
             modulation: None,

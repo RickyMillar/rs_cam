@@ -233,7 +233,7 @@ impl RecordFindings for TipFloatFinding {
 /// diagnostic adapter stays quiet when nothing moved.
 impl RecordFindings for crate::finish::ramp_finish::RampReachClamp {
     fn record_into(&self, findings: &mut GenerationFindings) {
-        findings.ramp_reach_clamp = Some(*self);
+        findings.ramp_reach_clamp = Some(self.clone());
     }
 }
 

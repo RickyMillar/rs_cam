@@ -5,11 +5,20 @@
 //! cuts nothing; it only touches. [`zone_contact`] tests one contact zone
 //! against a [`ContactSolid`] along one move: the zone meets the solid at
 //! a sample when a top inside its ring stands above the zone bottom by more
-//! than the float slack. In this phase the solid is the live dexel stock of
-//! the simulation walk, and the zones are `Core` and `FluteTop`
-//! ([`StockContactCheck`]). The rapid arm stays in
-//! [`super::collision::RapidClearanceCheck`]; [`WalkChecks`] holds both
+//! than the float slack. The solid is the live dexel stock of the
+//! simulation walk ([`StockContactCheck`]). On a fed move every contact
+//! zone of the mounted tool is tested: `Core` and `FluteTop` (P22-0c-3),
+//! and `Shank`, `Holder` and `Shoe` (P22-0c-4). On a rapid every
+//! non-cutting zone above the flutes is tested; the envelope arm stays in
+//! [`super::collision::RapidClearanceCheck`]. [`WalkChecks`] holds both
 //! for the walk.
+//!
+//! P22-0c-4 shadow rule: a zone at or above the flute top whose radius is
+//! no more than the cutter envelope radius meets wood only where the flute
+//! top (fed) or the envelope (rapid) meets it first, at the same sample.
+//! It gets no probe, so a plain end mill (shank no wider than the cutter)
+//! adds no finding. A wider zone at or above the flute top reads only its
+//! ring outside the envelope radius, for the same reason.
 //!
 //! The result types stay in [`super::collision`]: one
 //! [`NonCentreCuttingDescent`] per core contact
@@ -19,11 +28,11 @@
 
 use crate::geo::P3;
 use crate::tool::MillingCutter;
-use crate::tool::body::{ContactKind, ContactRadius, ContactZone, CoreZone, Zone};
+use crate::tool::body::{ContactKind, ContactRadius, ContactZone, CoreZone, MountedBody, Zone};
 
 use super::collision::{
-    FluteOverreach, NonCentreCuttingDescent, RapidClearanceCheck, RapidCollision,
-    low_channel_epsilon_mm,
+    BodyContact, ContactMotion, FluteOverreach, NonCentreCuttingDescent, RapidClearanceCheck,
+    RapidCollision, low_channel_epsilon_mm,
 };
 
 /// A solid that a contact zone can meet: the material tops on a grid of
@@ -86,12 +95,169 @@ impl MoveSweep {
     }
 }
 
+/// Which stock a contact zone at or above the flute top reads on a fed
+/// move (P22-0c-4, operator ruling Q2). The core always reads P22-0b's
+/// ring rule ([`MoveSweep`]).
+#[derive(Debug, Clone, Copy, PartialEq, Eq)]
+pub enum ContactRule {
+    /// The stock as it stands before the move (P22-0c-3).
+    PreMove,
+    /// The stock less what the flutes of this move cut before the sample
+    /// ([`DiscSweep`]).
+    InMove,
+}
+
+/// THE rule of the zones at or above the flute top on a fed move
+/// (P22-0c-4, ruling Q2). The count on the `planning/fixtures/` projects
+/// (`planning/feeds_contract_2026-11-03/phases/P22-0c-4.md`) found no
+/// report under either rule, so no removed report was shown to be false.
+/// The conservative rule stays: the stock before the move (every report
+/// of P22-0c-3 is kept). [`ContactRule::InMove`] is built and tested.
+pub const SHIPPED_RULE: ContactRule = ContactRule::PreMove;
+
+/// The test-support override of [`SHIPPED_RULE`] (0: none, 1: pre-move,
+/// 2: in-move), for the Q2 count only.
+#[cfg(feature = "test-support")]
+static RULE_OVERRIDE: std::sync::atomic::AtomicU8 = std::sync::atomic::AtomicU8::new(0);
+
+/// Test support (the Q2 count, P22-0c-4): every [`StockContactCheck`]
+/// built after this call reads `rule`; `None` gives [`SHIPPED_RULE`] back.
+/// Process-wide: a caller runs one rule at a time.
+#[cfg(feature = "test-support")]
+pub fn override_rule_for_count(rule: Option<ContactRule>) {
+    let value = match rule {
+        None => 0,
+        Some(ContactRule::PreMove) => 1,
+        Some(ContactRule::InMove) => 2,
+    };
+    RULE_OVERRIDE.store(value, std::sync::atomic::Ordering::SeqCst);
+}
+
+/// The rule a new check reads: [`SHIPPED_RULE`], or the test-support
+/// override.
+fn current_rule() -> ContactRule {
+    #[cfg(feature = "test-support")]
+    {
+        match RULE_OVERRIDE.load(std::sync::atomic::Ordering::SeqCst) {
+            1 => return ContactRule::PreMove,
+            2 => return ContactRule::InMove,
+            _ => {}
+        }
+    }
+    SHIPPED_RULE
+}
+
+/// P22-0c-4 (ruling Q2): the in-move rule of a zone at or above the flute
+/// top. The flutes cut every column that comes within the cutter radius
+/// `R` (outside the core radius `c` of a core tool) up to the flute top.
+/// A column can be under the zone at a sample after the flutes of this
+/// move cut it; it then takes the lower of its top before the move and an
+/// upper bound of that cut.
+///
+/// For a column `q`, `[e1, e2]` is the part of `[0, t]` in which `q` is
+/// within `R` (`|q - p(s)|` is convex, so it is one interval). The cut at
+/// a time `e` is at most `z(e) + h(R)`: the profile does not fall with the
+/// radius. The flutes reach `q` only when its top is at most the flute
+/// length over the tip; else the flute top meets it and the top stands.
+///
+/// - `c = 0`: the flutes cut `q` all through `[e1, e2]`, so once they
+///   reach it (top at most `max(z(e1), z(e2)) + L`) its top stays at most
+///   `z(s) + h(R)` to `e2`. The cut is `z(e2) + h(R)`.
+/// - `c > 0`: `q` can pass under the core, which cuts nothing, so only an
+///   end of `[e1, e2]` where `q` is in the ring counts, each with its own
+///   reach test. Conservative: the cut is never lower than the true one.
+#[derive(Debug, Clone, Copy, PartialEq)]
+pub struct DiscSweep {
+    /// The cutter radius `R` (mm).
+    radius_mm: f64,
+    /// The core radius `c` (mm); 0 for a tool that cuts at its centre.
+    core_mm: f64,
+    /// The removal surface over the tip at the cutter edge, `h(R)` (mm).
+    h_edge_mm: f64,
+    /// The flute length `L` (mm).
+    flute_mm: f64,
+}
+
+impl DiscSweep {
+    /// The in-move rule of `cutter` (its radius, its flute length and the
+    /// core radius of its body).
+    #[must_use]
+    pub fn of(cutter: &dyn MillingCutter) -> Self {
+        let radius_mm = cutter.radius();
+        Self {
+            radius_mm,
+            core_mm: crate::tool::body::core_of(cutter).map_or(0.0, |core| core.radius_mm),
+            h_edge_mm: cutter.height_at_radius(radius_mm).unwrap_or(0.0),
+            flute_mm: cutter.length(),
+        }
+    }
+
+    /// The top of the column at `(x, y)` (top before the move `top`) at
+    /// the sample `t` of the move `start -> start + (dx, dy, dz)`.
+    #[must_use]
+    fn cut_top(&self, top: f64, x: f64, y: f64, start: P3, d: (f64, f64, f64), t: f64) -> f64 {
+        let (dx, dy, dz) = d;
+        let z_at = |s: f64| start.z + dz * s;
+        let (qu, qv) = (x - start.x, y - start.y);
+        let d0_sq = qu * qu + qv * qv;
+        let len_sq = dx * dx + dy * dy;
+        let r_sq = self.radius_mm * self.radius_mm;
+        let c_sq = self.core_mm * self.core_mm;
+        // The interval of [0, t] in which the column is within R. A move
+        // with no XY keeps the column at its start distance.
+        let (e1, e2, t0, perp_sq) = if len_sq < 1e-18 {
+            if d0_sq > r_sq {
+                return top;
+            }
+            (0.0, t, 0.0, d0_sq)
+        } else {
+            let t0 = (qu * dx + qv * dy) / len_sq;
+            let perp_sq = (d0_sq - t0 * t0 * len_sq).max(0.0);
+            if perp_sq > r_sq {
+                return top;
+            }
+            let half = ((r_sq - perp_sq) / len_sq).sqrt();
+            ((t0 - half).max(0.0), (t0 + half).min(t), t0, perp_sq)
+        };
+        if e1 > e2 {
+            return top;
+        }
+        let dist_sq = |s: f64| perp_sq + (s - t0) * (s - t0) * len_sq;
+        let reaches = |e: f64| top <= z_at(e) + self.flute_mm;
+        let cut = if self.core_mm <= 0.0 {
+            if top <= z_at(e1).max(z_at(e2)) + self.flute_mm {
+                z_at(e2) + self.h_edge_mm
+            } else {
+                f64::INFINITY
+            }
+        } else {
+            [e1, e2]
+                .into_iter()
+                .filter(|&e| dist_sq(e) >= c_sq && reaches(e))
+                .map(|e| z_at(e) + self.h_edge_mm)
+                .fold(f64::INFINITY, f64::min)
+        };
+        top.min(cut)
+    }
+}
+
+/// The in-move rule a probe reads.
+#[derive(Debug, Clone, Copy, PartialEq)]
+pub enum ZoneSweep {
+    /// The core: P22-0b's ring rule.
+    Core(MoveSweep),
+    /// A zone at or above the flute top (P22-0c-4, ruling Q2).
+    Disc(DiscSweep),
+}
+
 /// One contact zone, ready for the kernel: the ring, the bottom over the
 /// tip, the slack, and the in-move rule (`None`: the solid before the move).
-#[derive(Debug, Clone, Copy, PartialEq)]
+#[derive(Debug, Clone, PartialEq)]
 pub struct ZoneProbe {
     /// The part the zone is.
     pub kind: ContactKind,
+    /// The head part name (`None` for a tool zone).
+    pub name: Option<String>,
     /// The inner radius of the ring (mm).
     pub inner_mm: f64,
     /// The outer radius of the ring (mm).
@@ -99,42 +265,80 @@ pub struct ZoneProbe {
     /// The zone bottom over the tool tip (mm).
     pub bottom_mm: f64,
     /// The stated slack of the zone (mm) on top of the float slack:
-    /// `NON_CENTRE_CUTTING_TOL_MM` for the core, 0 for the flute top.
+    /// `NON_CENTRE_CUTTING_TOL_MM` for the core, 0 for every other zone.
     pub tol_mm: f64,
     /// The in-move rule, or `None` for the solid as it stands before the
     /// move.
-    pub sweep: Option<MoveSweep>,
+    pub sweep: Option<ZoneSweep>,
 }
 
 impl ZoneProbe {
-    /// The probe of `zone` on `cutter` (design section 5.2): the core
-    /// reads the in-move rule (`MoveSweep`) with its slack; the flute top
-    /// reads the solid before the move (design 5.3: "the FluteTop arm keeps
-    /// the pre-move stock"). `None` for a zone this phase does not test on
-    /// the live stock (shank, holder, shoe: P22-0c-4) and for a shelf.
+    /// The probe of `zone` on `cutter` for a move of `motion` under
+    /// `rule` (design section 5.2), or `None` when the zone gives no
+    /// probe:
+    ///
+    /// - The core (fed only) reads the ring rule with its slack. On a
+    ///   rapid the envelope arm covers it.
+    /// - The flute top (fed only) reads `rule`. On a rapid the envelope
+    ///   arm covers it.
+    /// - The shank, a holder band and a shoe part read `rule` on a fed
+    ///   move and the stock before the move on a rapid (a rapid cuts
+    ///   nothing). The shadow rule (module text) skips a zone at or above
+    ///   the flute top no wider than the envelope, and gives a wider one
+    ///   the ring outside the envelope. A shelf (no width limit) gives no
+    ///   probe: the H1 head check reads it against the stock box.
     #[must_use]
-    pub fn of(zone: &ContactZone, cutter: &dyn MillingCutter) -> Option<Self> {
+    pub fn of(
+        zone: &ContactZone,
+        cutter: &dyn MillingCutter,
+        rule: ContactRule,
+        motion: ContactMotion,
+    ) -> Option<Self> {
         let outer_mm = match zone.outer {
             ContactRadius::Mm(r) => r,
             ContactRadius::Shelf => return None,
         };
-        let (tol_mm, sweep) = match zone.kind {
-            ContactKind::Core => (
-                crate::compute::tool_config::NON_CENTRE_CUTTING_TOL_MM,
-                Some(MoveSweep::of(cutter, outer_mm)),
-            ),
-            ContactKind::FluteTop => (0.0, None),
-            // P22-0c-4 (needs Q1, Q2): fed moves against the live stock.
-            ContactKind::Shank | ContactKind::Holder | ContactKind::Shoe => return None,
+        let disc = || match rule {
+            ContactRule::PreMove => None,
+            ContactRule::InMove => Some(ZoneSweep::Disc(DiscSweep::of(cutter))),
         };
-        Some(Self {
-            kind: zone.kind,
-            inner_mm: zone.inner_mm,
-            outer_mm,
-            bottom_mm: zone.span.bottom_mm,
-            tol_mm,
-            sweep,
-        })
+        let probe = |inner_mm: f64, tol_mm: f64, sweep: Option<ZoneSweep>| {
+            Some(Self {
+                kind: zone.kind,
+                name: zone.name.clone(),
+                inner_mm,
+                outer_mm,
+                bottom_mm: zone.span.bottom_mm,
+                tol_mm,
+                sweep,
+            })
+        };
+        match (zone.kind, motion) {
+            (ContactKind::Core, ContactMotion::Fed) => probe(
+                zone.inner_mm,
+                crate::compute::tool_config::NON_CENTRE_CUTTING_TOL_MM,
+                Some(ZoneSweep::Core(MoveSweep::of(cutter, outer_mm))),
+            ),
+            (ContactKind::FluteTop, ContactMotion::Fed) => probe(zone.inner_mm, 0.0, disc()),
+            (ContactKind::Core | ContactKind::FluteTop, ContactMotion::Rapid) => None,
+            (ContactKind::Shank | ContactKind::Holder | ContactKind::Shoe, _) => {
+                let envelope = cutter.envelope_radius_mm();
+                let above_flutes = zone.span.bottom_mm >= cutter.length();
+                if above_flutes && outer_mm <= envelope {
+                    return None;
+                }
+                let inner_mm = if above_flutes {
+                    zone.inner_mm.max(envelope)
+                } else {
+                    zone.inner_mm
+                };
+                let sweep = match motion {
+                    ContactMotion::Fed => disc(),
+                    ContactMotion::Rapid => None,
+                };
+                probe(inner_mm, 0.0, sweep)
+            }
+        }
     }
 
     /// Can this move meet the solid at all? Only a move whose lowest tip
@@ -205,7 +409,8 @@ pub fn zone_contact(
             }
             let cut_top = match probe.sweep {
                 None => top,
-                Some(sweep) => {
+                Some(ZoneSweep::Disc(disc)) => disc.cut_top(top, x, y, start, (dx, dy, dz), t),
+                Some(ZoneSweep::Core(sweep)) => {
                     let (qu, qv) = (x - start.x, y - start.y);
                     let d0_sq = qu * qu + qv * qv;
                     if d0_sq < outer_sq || len_sq < 1e-18 {
@@ -260,25 +465,34 @@ pub fn core_material_top(
     Some(top)
 }
 
-/// The probes of the contact zones of `cutter` that this phase tests on
-/// the live stock, from the tool body (`tool::body::body_of`): the core
-/// (a tool that does not cut at its centre) and the flute top.
-fn stock_probes(cutter: &dyn MillingCutter) -> Vec<ZoneProbe> {
-    crate::tool::body::body_of(cutter)
-        .zones()
+/// The probes of the contact `zones` of `cutter` for a move of `motion`
+/// under `rule` ([`ZoneProbe::of`]).
+fn probes_of(
+    zones: &[Zone],
+    cutter: &dyn MillingCutter,
+    rule: ContactRule,
+    motion: ContactMotion,
+) -> Vec<ZoneProbe> {
+    zones
         .iter()
         .filter_map(|zone| match zone {
-            Zone::Contact(contact) => ZoneProbe::of(contact, cutter),
+            Zone::Contact(contact) => ZoneProbe::of(contact, cutter, rule, motion),
             Zone::Cutting(_) => None,
         })
         .collect()
 }
 
-/// The flute-top probe of `cutter` (K5 ReachFlute).
+/// The flute-top probe of `cutter` (K5 ReachFlute), on the stock before
+/// the move (a drill hole has no move to sweep).
 fn flute_top_probe(cutter: &dyn MillingCutter) -> Option<ZoneProbe> {
-    stock_probes(cutter)
-        .into_iter()
-        .find(|probe| probe.kind == ContactKind::FluteTop)
+    probes_of(
+        &crate::tool::body::body_of(cutter).zones(),
+        cutter,
+        ContactRule::PreMove,
+        ContactMotion::Fed,
+    )
+    .into_iter()
+    .find(|probe| probe.kind == ContactKind::FluteTop)
 }
 
 /// The contact zones of one move that need the flushed stock: the ones
@@ -299,28 +513,62 @@ impl MoveContacts {
     }
 }
 
-/// The contact zones of one tool on the live stock of the simulation walk
-/// (P22-0c-3): the core and the flute top, from the tool body. The walk
-/// asks [`Self::unflushed`] on the stock with the stamps still queued, then
-/// [`Self::check`] on the flushed stock for the zones that met it.
+/// The contact zones of one mounted tool on the live stock of the
+/// simulation walk: on a fed move the core, the flute top (P22-0c-3), the
+/// shank, the holder and the shoe (P22-0c-4); on a rapid the non-cutting
+/// zones above the flutes. The walk asks [`Self::unflushed`] (or
+/// [`Self::rapid_unflushed`]) on the stock with the stamps still queued,
+/// then [`Self::check`] (or [`Self::check_rapid`]) on the flushed stock for
+/// the zones that met it.
 #[derive(Debug, Clone)]
 pub struct StockContactCheck {
     probes: Vec<ZoneProbe>,
+    rapid_probes: Vec<ZoneProbe>,
     /// The body core, for the core record (`None`: no core zone).
     core: Option<CoreZone>,
     core_hits: Vec<NonCentreCuttingDescent>,
     flute_hits: Vec<FluteOverreach>,
+    body_hits: Vec<BodyContact>,
 }
 
 impl StockContactCheck {
-    /// The check of `cutter`'s contact zones.
+    /// The check of `cutter`'s own contact zones (the tool body; no head
+    /// bands).
     #[must_use]
     pub fn new(cutter: &dyn MillingCutter) -> Self {
+        Self::of_zones(&crate::tool::body::body_of(cutter).zones(), cutter)
+    }
+
+    /// The check of the contact zones of `mounted` (the tool body plus the
+    /// head bands at its holder face), cut by `cutter`.
+    #[must_use]
+    pub fn mounted(cutter: &dyn MillingCutter, mounted: &MountedBody) -> Self {
+        Self::of_zones(&mounted.zones(), cutter)
+    }
+
+    /// [`Self::mounted`] under `rule`, not [`SHIPPED_RULE`] (the Q2
+    /// sentries compare the two rules on one toolpath).
+    #[must_use]
+    pub fn mounted_with_rule(
+        cutter: &dyn MillingCutter,
+        mounted: &MountedBody,
+        rule: ContactRule,
+    ) -> Self {
+        Self::of_zones_with_rule(&mounted.zones(), cutter, rule)
+    }
+
+    fn of_zones(zones: &[Zone], cutter: &dyn MillingCutter) -> Self {
+        Self::of_zones_with_rule(zones, cutter, current_rule())
+    }
+
+    fn of_zones_with_rule(zones: &[Zone], cutter: &dyn MillingCutter, rule: ContactRule) -> Self {
         Self {
-            probes: stock_probes(cutter),
+            probes: probes_of(zones, cutter, rule, ContactMotion::Fed),
+            rapid_probes: probes_of(zones, cutter, rule, ContactMotion::Rapid),
             core: crate::tool::body::core_of(cutter),
             core_hits: Vec::new(),
             flute_hits: Vec::new(),
+            body_hits: Vec::new(),
         }
     }
 
@@ -328,20 +576,25 @@ impl StockContactCheck {
     /// stands now (the stamps still queued).
     #[must_use]
     pub fn unflushed(&self, solid: &impl ContactSolid, start: P3, end: P3) -> MoveContacts {
-        MoveContacts {
-            flagged: self
-                .probes
-                .iter()
-                .map(|probe| {
-                    probe.candidate(solid, start, end)
-                        && zone_contact(probe, solid, start, end).is_some()
-                })
-                .collect(),
-        }
+        flag(&self.probes, solid, start, end)
     }
 
-    /// Test the flagged zones of move `move_index` on the flushed `solid`
-    /// and record each contact.
+    /// The zones of the rapid `start -> end` that meet `solid` as it
+    /// stands now. A rapid straight up meets nothing: the body at a higher
+    /// tip meets a subset of the columns it met below (the reason the
+    /// envelope arm exempts it).
+    #[must_use]
+    pub fn rapid_unflushed(&self, solid: &impl ContactSolid, start: P3, end: P3) -> MoveContacts {
+        if super::collision::rapid_is_straight_up(start, end) {
+            return MoveContacts {
+                flagged: vec![false; self.rapid_probes.len()],
+            };
+        }
+        flag(&self.rapid_probes, solid, start, end)
+    }
+
+    /// Test the flagged zones of the fed move `move_index` on the flushed
+    /// `solid` and record each contact.
     pub fn check(
         &mut self,
         solid: &impl ContactSolid,
@@ -371,10 +624,46 @@ impl StockContactCheck {
                 ContactKind::FluteTop => {
                     record_flute(&mut self.flute_hits, probe, move_index, strike);
                 }
-                // `ZoneProbe::of` gives no probe for these in this phase.
-                ContactKind::Shank | ContactKind::Holder | ContactKind::Shoe => {}
+                ContactKind::Shank | ContactKind::Holder | ContactKind::Shoe => {
+                    record_body(
+                        &mut self.body_hits,
+                        probe,
+                        move_index,
+                        strike,
+                        ContactMotion::Fed,
+                    );
+                }
             }
         }
+    }
+
+    /// Test the flagged zones of the rapid `move_index` on the flushed
+    /// `solid` and record each contact. True when a zone met the stock.
+    pub fn check_rapid(
+        &mut self,
+        solid: &impl ContactSolid,
+        move_index: usize,
+        start: P3,
+        end: P3,
+        flagged: &MoveContacts,
+    ) -> bool {
+        let mut met = false;
+        for (probe, flag) in self.rapid_probes.iter().zip(&flagged.flagged) {
+            if !*flag {
+                continue;
+            }
+            if let Some(strike) = zone_contact(probe, solid, start, end) {
+                record_body(
+                    &mut self.body_hits,
+                    probe,
+                    move_index,
+                    strike,
+                    ContactMotion::Rapid,
+                );
+                met = true;
+            }
+        }
+        met
     }
 
     /// Take the flute-top contacts recorded so far.
@@ -386,6 +675,54 @@ impl StockContactCheck {
     pub fn take_core_hits(&mut self) -> Vec<NonCentreCuttingDescent> {
         std::mem::take(&mut self.core_hits)
     }
+
+    /// Take the shank, holder and shoe contacts recorded so far.
+    pub fn take_body_hits(&mut self) -> Vec<BodyContact> {
+        std::mem::take(&mut self.body_hits)
+    }
+}
+
+/// The flags of `probes` on `solid` for the move `start -> end`.
+fn flag(probes: &[ZoneProbe], solid: &impl ContactSolid, start: P3, end: P3) -> MoveContacts {
+    MoveContacts {
+        flagged: probes
+            .iter()
+            .map(|probe| {
+                probe.candidate(solid, start, end)
+                    && zone_contact(probe, solid, start, end).is_some()
+            })
+            .collect(),
+    }
+}
+
+/// P22-0c-4: record a shank, holder or shoe contact of move `move_index`.
+/// One record per move per zone: a later window of the same arc move adds
+/// none.
+fn record_body(
+    hits: &mut Vec<BodyContact>,
+    probe: &ZoneProbe,
+    move_index: usize,
+    strike: (f64, P3),
+    motion: ContactMotion,
+) {
+    if hits
+        .iter()
+        .rev()
+        .take_while(|hit| hit.move_index == move_index)
+        .any(|hit| hit.zone == probe.kind && hit.name == probe.name)
+    {
+        return;
+    }
+    let (material_over_tip_mm, position) = strike;
+    hits.push(BodyContact {
+        move_index,
+        position,
+        zone: probe.kind,
+        name: probe.name.clone(),
+        zone_bottom_mm: probe.bottom_mm,
+        material_over_tip_mm,
+        motion,
+    });
 }
 
 /// G-CENTRECUT: record a core contact of move `move_index` (one per fed
@@ -479,29 +816,55 @@ pub fn drill_flute_overreach(
 pub struct WalkChecks<'a> {
     /// The rapid arm (`project.rapid_collision`).
     pub rapid: RapidClearanceCheck<'a>,
-    /// The contact zones on fed moves (`safety.non_centre_cutting_descent`,
-    /// `tool.flute_overreach`).
+    /// The contact zones (`safety.non_centre_cutting_descent`,
+    /// `tool.flute_overreach`, `project.holder_collision`; on a rapid
+    /// `project.rapid_collision`).
     pub contact: StockContactCheck,
 }
 
 /// What the walk checks found on one toolpath.
 #[derive(Debug, Clone, Default)]
 pub struct WalkFindings {
-    /// The struck rapids.
+    /// The struck rapids (the envelope, or a zone above the flutes).
     pub rapids: Vec<RapidCollision>,
     /// The core contacts.
     pub core: Vec<NonCentreCuttingDescent>,
     /// The flute-top contacts.
     pub flute: Vec<FluteOverreach>,
+    /// The shank, holder and shoe contacts (fed and rapid).
+    pub body: Vec<BodyContact>,
 }
 
 impl<'a> WalkChecks<'a> {
-    /// The checks of `cutter`.
+    /// The checks of `cutter` (its body zones; no head bands).
     #[must_use]
     pub fn new(cutter: &'a dyn MillingCutter) -> Self {
         Self {
             rapid: RapidClearanceCheck::new(cutter),
             contact: StockContactCheck::new(cutter),
+        }
+    }
+
+    /// The checks of `cutter` mounted as `mounted` (the body plus the head
+    /// bands at its holder face): the simulation run of a toolpath.
+    #[must_use]
+    pub fn mounted(cutter: &'a dyn MillingCutter, mounted: &MountedBody) -> Self {
+        Self {
+            rapid: RapidClearanceCheck::new(cutter),
+            contact: StockContactCheck::mounted(cutter, mounted),
+        }
+    }
+
+    /// [`Self::mounted`] under `rule` (the Q2 sentries).
+    #[must_use]
+    pub fn mounted_with_rule(
+        cutter: &'a dyn MillingCutter,
+        mounted: &MountedBody,
+        rule: ContactRule,
+    ) -> Self {
+        Self {
+            rapid: RapidClearanceCheck::new(cutter),
+            contact: StockContactCheck::mounted_with_rule(cutter, mounted, rule),
         }
     }
 
@@ -511,6 +874,7 @@ impl<'a> WalkChecks<'a> {
         WalkFindings {
             core: self.contact.take_core_hits(),
             flute: self.contact.take_flute_hits(),
+            body: self.contact.take_body_hits(),
             rapids: self.rapid.into_hits(),
         }
     }

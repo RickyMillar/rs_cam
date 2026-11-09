@@ -111,6 +111,7 @@ fn adopt_an_empty_simulation(session: &mut ProjectSession) {
         obstacle_collisions: Vec::new(),
         non_centre_cutting_descents: Vec::new(),
         flute_overreach: Vec::new(),
+        body_contacts: Vec::new(),
     };
     let epoch = session.simulation_epoch();
     let _ = session

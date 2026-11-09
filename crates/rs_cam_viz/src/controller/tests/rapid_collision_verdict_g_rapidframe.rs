@@ -92,6 +92,7 @@ fn land_run_with_rapids_on_second(
                 obstacle_collisions: Vec::new(),
                 non_centre_cutting_descents: Vec::new(),
                 flute_overreach: Vec::new(),
+                body_contacts: Vec::new(),
             },
             playback_data: Vec::new(),
             cut_trace_path: None,

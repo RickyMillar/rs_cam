@@ -239,6 +239,10 @@ pub struct ProjectEvidence<'a> {
     /// (`SimulationResult::flute_overreach`). The project diagnostics and
     /// the triage list each one.
     pub flute_contacts: &'a [crate::compute::simulate::ToolpathFluteOverreach],
+    /// P22-0c-4: every shank, holder and shoe contact of the contact
+    /// kernel (`SimulationResult::body_contacts`). A toolpath whose holder
+    /// outcome is `MeasuredOnStock` names its fed contacts from here.
+    pub body_contacts: &'a [crate::compute::simulate::ToolpathBodyContact],
     pub cut_trace: Option<&'a crate::stock::simulation_cut::SimulationCutTrace>,
     /// Per-toolpath holder/shank collision outcomes, supplied by the
     /// caller from its most recent dedicated collision check. Empty =
@@ -288,6 +292,7 @@ impl<'a> ProjectEvidence<'a> {
             obstacle_collisions: &sim.obstacle_collisions,
             core_contacts: &sim.non_centre_cutting_descents,
             flute_contacts: &sim.flute_overreach,
+            body_contacts: &sim.body_contacts,
             cut_trace: sim.cut_trace.as_deref(),
             holder_collisions: Vec::new(),
             resolution_mm: Some(sim.column_grid_cell_mm),

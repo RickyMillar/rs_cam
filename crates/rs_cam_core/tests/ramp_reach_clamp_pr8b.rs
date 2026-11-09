@@ -365,10 +365,11 @@ fn nothing_is_reported_when_nothing_was_measured_or_nothing_moved() {
         // C8: a ramp path ran and lifted nothing — a MEASURED zero, which is
         // the case `None` must stay distinct from.
         lifted_area_mm2: Some(0.0),
+        core_ring_skips: Vec::new(),
     };
     assert!(inert.is_inert());
     assert!(
-        diagnostics(Some(inert)).is_empty(),
+        diagnostics(Some(inert.clone())).is_empty(),
         "an inert clamp is a measured-clean descent, not a defect"
     );
     // A ladder that moved is NOT inert even with zero points lifted: two

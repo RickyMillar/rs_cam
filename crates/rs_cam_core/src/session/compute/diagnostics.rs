@@ -595,6 +595,7 @@ fn triage_from_parts(
             toolpath_names: &toolpath_names,
             holder_collisions: &evidence.holder_collisions,
             obstacle_collisions: evidence.obstacle_collisions,
+            body_contacts: evidence.body_contacts,
             tool_diameters_mm: &tool_diameters_mm,
             commanded_depth_per_pass_mm: &commanded_depth_per_pass_mm,
             kinematic_utilization,
@@ -843,8 +844,11 @@ impl ProjectSession {
         let Some(sim) = self.simulation.as_ref() else {
             return crate::stock::sim_triage::SimulationTriage::default();
         };
-        let evidence =
-            ProjectEvidence::from_simulation_with_holder_collisions(sim, holder_collisions);
+        // P22-0c-4 (ruling Q1): a fresh stock answer supersedes the mesh one.
+        let evidence = ProjectEvidence::from_simulation_with_holder_collisions(
+            sim,
+            self.holder_checks_with_stock(holder_collisions),
+        );
         self.simulation_triage(&evidence)
     }
 
@@ -861,9 +865,11 @@ impl ProjectSession {
         holder_collisions: Vec<(ToolpathId, HolderCollisionCheck)>,
     ) -> ProjectDiagnostics {
         let evidence = match self.simulation.as_ref() {
-            Some(sim) => {
-                ProjectEvidence::from_simulation_with_holder_collisions(sim, holder_collisions)
-            }
+            // P22-0c-4 (ruling Q1): a fresh stock answer supersedes the mesh one.
+            Some(sim) => ProjectEvidence::from_simulation_with_holder_collisions(
+                sim,
+                self.holder_checks_with_stock(holder_collisions),
+            ),
             None => ProjectEvidence {
                 holder_collisions,
                 ..ProjectEvidence::default()
@@ -1286,7 +1292,8 @@ impl ProjectSession {
 
         // Per-TP context collected in the toolpath loop for later verdict
         // emission. We index by `toolpath_id` (which equals `tc.id`).
-        let mut holder_collisions_by_tp: Vec<(ToolpathId, String, usize)> = Vec::new();
+        let mut holder_collisions_by_tp: Vec<(ToolpathId, String, usize, Option<String>)> =
+            Vec::new();
         let mut obstacle_collisions_by_tp: Vec<(ToolpathId, String, usize, String)> = Vec::new();
         let mut failed_checks_by_tp: Vec<(ToolpathId, String)> = Vec::new();
         let mut rapid_collisions_by_tp: Vec<(ToolpathId, String, RapidAttribution)> = Vec::new();
@@ -1385,7 +1392,24 @@ impl ProjectSession {
                 if let Some(count) = holder_collision_count.map(|c| c - obstacle_hits)
                     && count > 0
                 {
-                    holder_collisions_by_tp.push((tc.id, tc.name.clone(), count));
+                    // P22-0c-4 (ruling Q1): a stock answer states its zones
+                    // and the worst position in the G-code frame.
+                    let stock_row = match holder_check {
+                        Some(HolderCollisionCheck::MeasuredOnStock(_)) => {
+                            crate::compute::simulate::body_contact_row(
+                                evidence.body_contacts,
+                                tc.id,
+                                self.contact_frame_of(tc.id),
+                            )
+                        }
+                        Some(
+                            HolderCollisionCheck::Measured(_)
+                            | HolderCollisionCheck::NotApplicable
+                            | HolderCollisionCheck::Failed,
+                        )
+                        | None => None,
+                    };
+                    holder_collisions_by_tp.push((tc.id, tc.name.clone(), count, stock_row));
                 }
 
                 // C7: detect toolpaths that generated successfully but laid
@@ -1533,13 +1557,16 @@ impl ProjectSession {
         let mut verdicts: Vec<Verdict> = Vec::new();
 
         // Critical: holder/shank collision per TP.
-        for (id, name, count) in &holder_collisions_by_tp {
+        for (id, name, count, stock_row) in &holder_collisions_by_tp {
             verdicts.push(Verdict {
                 severity: VerdictSeverity::Critical,
                 kind: VerdictKind::HolderCollision,
-                headline: format!(
-                    "ERROR: holder/shank collisions on TP{id} '{name}' ({count} collisions)"
-                ),
+                headline: match stock_row {
+                    Some(row) => format!("ERROR: TP{id} '{name}': {row}"),
+                    None => format!(
+                        "ERROR: holder/shank collisions on TP{id} '{name}' ({count} collisions)"
+                    ),
+                },
                 offender_toolpath_ids: vec![*id],
                 fix_hint: "Increase tool stickout, switch to a tool with a smaller holder, \
                            or raise the operation's safe-Z. Re-run collision check after \

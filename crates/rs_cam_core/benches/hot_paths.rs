@@ -1141,6 +1141,7 @@ fn bench_viz_triage_build(c: &mut Criterion) {
                     kinematic_utilization: &kinematic_utilization,
                     region_of: None,
                     obstacle_collisions: &[],
+                    body_contacts: &[],
                 };
                 black_box(SimulationTriage::build(&inputs).advisories.total_matching)
             })

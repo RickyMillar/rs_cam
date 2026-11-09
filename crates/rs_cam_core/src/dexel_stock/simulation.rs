@@ -595,10 +595,16 @@ impl TriDexelStock {
                     // HERE, mid-walk. Queued stamps can only REMOVE material,
                     // so a rapid that clears the un-flushed grid clears the
                     // flushed one too — the flush is paid only on a candidate.
-                    if checks
+                    // P22-0c-4: the non-cutting zones above the flutes
+                    // (shank, holder, shoe) on the same rule.
+                    let envelope = checks
                         .as_deref()
-                        .is_some_and(|c| c.rapid.strikes(self, start, end, radius))
-                    {
+                        .is_some_and(|c| c.rapid.strikes(self, start, end, radius));
+                    let zones = checks
+                        .as_deref()
+                        .map(|c| c.contact.rapid_unflushed(self, start, end))
+                        .unwrap_or_default();
+                    if envelope || zones.any() {
                         self.flush_pending_stamps(
                             lut,
                             radius,
@@ -612,10 +618,14 @@ impl TriDexelStock {
                             flute_length,
                             cancel,
                         )?;
-                        if let Some(c) = checks.as_deref_mut()
-                            && c.rapid.strikes(self, start, end, radius)
-                        {
-                            c.rapid.record(move_index, start, end);
+                        if let Some(c) = checks.as_deref_mut() {
+                            let envelope_hit =
+                                envelope && c.rapid.strikes(self, start, end, radius);
+                            let zone_hit = zones.any()
+                                && c.contact.check_rapid(self, move_index, start, end, &zones);
+                            if envelope_hit || zone_hit {
+                                c.rapid.record(move_index, start, end);
+                            }
                         }
                     }
                 }

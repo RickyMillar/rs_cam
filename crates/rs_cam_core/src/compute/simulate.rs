@@ -831,6 +831,70 @@ pub struct SimulationResult {
     /// per hole. Empty for a toolpath = measured clean. The diagnostics and
     /// the export read [`flute_overreach_row`] (the ninth shared decision).
     pub flute_overreach: Vec<ToolpathFluteOverreach>,
+    /// P22-0c-4 (design section 5.2): every move where the shank, a holder
+    /// band or a hard shoe part meets the live stock, at most one per move
+    /// per zone, in run order: fed moves and rapids. Empty for a toolpath
+    /// = measured clean. A fed contact is `project.holder_collision`
+    /// ([`body_contact_row`]); with a fresh trace it supersedes the mesh
+    /// holder check (ruling Q1). A rapid contact is also in
+    /// [`Self::rapid_collisions`].
+    pub body_contacts: Vec<ToolpathBodyContact>,
+}
+
+/// P22-0c-4: one shank, holder or shoe contact
+/// ([`crate::stock::collision::BodyContact`]) and the toolpath it belongs
+/// to. `contact.move_index` is the toolpath's own move index.
+#[derive(Debug, Clone, PartialEq)]
+pub struct ToolpathBodyContact {
+    pub toolpath_id: ToolpathId,
+    pub contact: crate::stock::collision::BodyContact,
+}
+
+/// P22-0c-4: the row of the fed shank, holder and shoe contacts of
+/// toolpath `id` in `all`, or `None` when the run recorded none. The text
+/// gives the count, the zone kinds, and the worst contact with its zone
+/// and its position in the G-code frame. The project diagnostics, the
+/// triage and the export read it (`project.holder_collision`).
+#[must_use]
+pub fn body_contact_row(
+    all: &[ToolpathBodyContact],
+    id: ToolpathId,
+    frame: ContactFrame,
+) -> Option<String> {
+    let hits: Vec<_> = all
+        .iter()
+        .filter(|hit| hit.toolpath_id == id)
+        .map(|hit| &hit.contact)
+        .filter(|c| c.motion == crate::stock::collision::ContactMotion::Fed)
+        .collect();
+    let worst = hits.iter().max_by(|a, b| {
+        (a.material_over_tip_mm - a.zone_bottom_mm)
+            .total_cmp(&(b.material_over_tip_mm - b.zone_bottom_mm))
+    })?;
+    let zones: std::collections::BTreeSet<String> = hits.iter().map(|c| c.zone_text()).collect();
+    Some(format!(
+        "{} fed move(s) put the {} into the stock, measured by the simulation (worst: the {} \
+         at move {} at {}, {:.2} mm of wood over its bottom {:.2} mm above the tip)",
+        hits.len(),
+        zones.into_iter().collect::<Vec<_>>().join(", "),
+        worst.zone_text(),
+        worst.move_index,
+        frame.text(worst.position),
+        worst.material_over_tip_mm - worst.zone_bottom_mm,
+        worst.zone_bottom_mm,
+    ))
+}
+
+/// P22-0c-4: the number of fed shank, holder and shoe contacts of
+/// toolpath `id` in `all` (the measured holder count, ruling Q1).
+#[must_use]
+pub fn fed_body_contact_count(all: &[ToolpathBodyContact], id: ToolpathId) -> usize {
+    all.iter()
+        .filter(|hit| {
+            hit.toolpath_id == id
+                && hit.contact.motion == crate::stock::collision::ContactMotion::Fed
+        })
+        .count()
 }
 
 /// K5 ReachFlute: one flute overreach
@@ -1765,6 +1829,7 @@ fn cold_prefix_state(request: &SimulationRequest, global_bbox: &BoundingBox3) ->
         rapid_collision_move_indices: Vec::new(),
         non_centre_cutting_descents: Vec::new(),
         flute_overreach: Vec::new(),
+        body_contacts: Vec::new(),
         prior_stocks: std::collections::HashMap::new(),
         global_drill_ops: Vec::new(),
         group_stock: None,
@@ -2184,7 +2249,10 @@ fn carve_entry(
                 intent_transits,
             )
         };
-        let mut walk_checks = crate::stock::contact::WalkChecks::new(entry.tool.as_ref());
+        // P22-0c-4: the body plus the head bands of this entry.
+        let mounted = entry.tool.to_assembly(&entry.head);
+        let mut walk_checks =
+            crate::stock::contact::WalkChecks::mounted(entry.tool.as_ref(), &mounted);
         // Every simulation records the cut samples and the arc engagement
         // (operator ruling 2026-10-02, "always capture").
         let samples = group_stock
@@ -2229,6 +2297,11 @@ fn carve_entry(
             .extend(found.core.into_iter().map(|descent| ToolpathCoreDescent {
                 toolpath_id: entry.id,
                 descent,
+            }));
+        run.body_contacts
+            .extend(found.body.into_iter().map(|contact| ToolpathBodyContact {
+                toolpath_id: entry.id,
+                contact,
             }));
     }
     Ok(())
@@ -2725,6 +2798,7 @@ where
         rapid_collision_move_indices,
         non_centre_cutting_descents,
         flute_overreach,
+        body_contacts,
         prior_stocks,
         global_drill_ops,
         group_stock: _,
@@ -2805,6 +2879,7 @@ where
         obstacle_collisions,
         non_centre_cutting_descents,
         flute_overreach,
+        body_contacts,
     })
 }
 

@@ -160,6 +160,7 @@ fn every_finding_recorded() -> GenerationFindings {
             requested_bottom_z_mm: -4.0,
             holdable_bottom_z_mm: -3.2,
             lifted_area_mm2: Some(16.0),
+            core_ring_skips: Vec::new(),
         }),
         claims_reference: Some(ClaimsReferenceFinding {
             resolution: ClaimsReferenceResolution::ExplicitSelfProbeOverridingPrior,
@@ -419,7 +420,7 @@ fn every_recorded_finding_survives_the_single_join() {
     );
     assert_eq!(clipped_band.as_deref().copied(), findings.clipped_band);
     assert_eq!(
-        ramp_reach_clamp.as_deref().copied(),
+        ramp_reach_clamp.as_deref().cloned(),
         findings.ramp_reach_clamp
     );
     assert_eq!(claims_reference, findings.claims_reference);

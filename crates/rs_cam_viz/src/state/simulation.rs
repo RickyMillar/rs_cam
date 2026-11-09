@@ -1242,6 +1242,9 @@ pub struct SimulationChecks {
     /// P22-0c-3: the flute-top contacts of the contact kernel in the last
     /// simulation (`SimulationResult::flute_overreach`).
     pub flute_contacts: Vec<rs_cam_core::compute::simulate::ToolpathFluteOverreach>,
+    /// P22-0c-4: the shank, holder and shoe contacts of the contact kernel
+    /// in the last simulation (`SimulationResult::body_contacts`).
+    pub body_contacts: Vec<rs_cam_core::compute::simulate::ToolpathBodyContact>,
     /// Full collision report from last dedicated collision check.
     pub collision_report: Option<CollisionReport>,
     /// Number of holder collisions from last dedicated collision check.
@@ -1729,6 +1732,7 @@ impl SimulationState {
         self.checks.obstacle_collisions = Vec::new();
         self.checks.core_contacts = Vec::new();
         self.checks.flute_contacts = Vec::new();
+        self.checks.body_contacts = Vec::new();
     }
 }
 

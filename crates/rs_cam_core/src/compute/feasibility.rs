@@ -443,32 +443,56 @@ impl FeasibilityInputs<'_> {
     /// want of room for the core floor. One row per toolpath: the count,
     /// the first place, its room, the floor and the fallback.
     fn helix_core(&self) -> Option<RuleResult> {
+        use crate::compute::tool_config::EntryFallback;
         let first = self.helix_fallbacks.first()?;
-        let count = self.helix_fallbacks.len();
-        let plunges = self
+        let kind = self.tool.centre_cutting_fact().kind().label();
+        let (rings, entries): (
+            Vec<&crate::compute::tool_config::HelixCoreFallback>,
+            Vec<&crate::compute::tool_config::HelixCoreFallback>,
+        ) = self
             .helix_fallbacks
             .iter()
-            .filter(|f| f.fallback == crate::compute::tool_config::EntryFallback::Plunge)
-            .count();
+            .partition(|f| f.fallback == EntryFallback::NoPass);
+        let mut parts = Vec::new();
+        if let Some(head) = entries.first() {
+            let count = entries.len();
+            let plunges = entries
+                .iter()
+                .filter(|f| f.fallback == EntryFallback::Plunge)
+                .count();
+            parts.push(format!(
+                "{count} helix entr{} had room for r {} mm only, under the core radius {} mm (a \
+                 smaller helix leaves a post under the core); the entry falls back to the {} \
+                 ({plunges} plunge(s) in all), first at X{:.3} Y{:.3} Z{:.3}",
+                if count == 1 { "y" } else { "ies" },
+                mm(head.fit_mm),
+                mm(head.core_floor_mm),
+                head.fallback.label(),
+                head.at.x,
+                head.at.y,
+                head.at.z
+            ));
+        }
+        // P22-0c-4: a ramp-finish ring inside the core diameter.
+        if let Some(head) = rings.first() {
+            parts.push(format!(
+                "{} ramp ring(s) hold r {} mm only, inside the core radius {} mm: the core \
+                 cannot descend on them, so no pass is cut and the ring is left uncut, first \
+                 at X{:.3} Y{:.3} Z{:.3}",
+                rings.len(),
+                mm(head.fit_mm),
+                mm(head.core_floor_mm),
+                head.at.x,
+                head.at.y,
+                head.at.z
+            ));
+        }
         Some(RuleResult {
             rule: PhysicalRule::HelixCore,
             fact: self.tool.centre_cutting_fact().kind(),
             measured: first.fit_mm,
             limit: Some(first.core_floor_mm),
-            text: format!(
-                "centre cutting no, {}: {count} helix entr{} had room for r {} mm only, under \
-                 the core radius {} mm (a smaller helix leaves a post under the core); the \
-                 entry falls back to the {} ({plunges} plunge(s) in all), first at X{:.3} \
-                 Y{:.3} Z{:.3}",
-                self.tool.centre_cutting_fact().kind().label(),
-                if count == 1 { "y" } else { "ies" },
-                mm(first.fit_mm),
-                mm(first.core_floor_mm),
-                first.fallback.label(),
-                first.at.x,
-                first.at.y,
-                first.at.z
-            ),
+            text: format!("centre cutting no, {kind}: {}", parts.join("; ")),
         })
     }
 
@@ -626,5 +650,39 @@ mod tests {
                 .iter()
                 .any(|r| r.rule() == PhysicalRule::HelixCore)
         );
+
+        // P22-0c-4: a ramp-finish ring inside the core diameter (fallback
+        // `NoPass`) gives the same row with its own words.
+        let rings: &'static [HelixCoreFallback] = Box::leak(Box::new([HelixCoreFallback {
+            at: P3::new(1.0, 2.0, 3.0),
+            fit_mm: 2.5,
+            core_floor_mm: 4.0,
+            fallback: EntryFallback::NoPass,
+        }]));
+        let report = assess(&inputs(rings));
+        let ring_rows: Vec<_> = report
+            .rows()
+            .iter()
+            .filter(|r| r.rule() == PhysicalRule::HelixCore)
+            .collect();
+        assert_eq!(
+            ring_rows.len(),
+            1,
+            "a ring inside the core gives the HelixCore row"
+        );
+        assert_eq!(
+            ring_rows[0].id(),
+            crate::diagnostics::ids::SAFETY_HELIX_INSIDE_CORE
+        );
+        let text = ring_rows[0].text();
+        for needle in [
+            "1 ramp ring(s) hold r 2.5 mm",
+            "core radius 4 mm",
+            "left uncut",
+            "X1.000 Y2.000 Z3.000",
+        ] {
+            assert!(text.contains(needle), "{needle:?} not in {text:?}");
+        }
+        assert!(!text.contains("helix entr"), "{text:?}");
     }
 }

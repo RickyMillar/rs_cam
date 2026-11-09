@@ -543,9 +543,9 @@ fn hash_entry_scalar(entry: &SimToolpathEntry) -> u64 {
         // K1: the tool id moves no stock. Only the obstacle join check
         // reads it, and that check runs at the tail from the live request.
         tool_id: _,
-        // H1: the head moves no stock. Only the obstacle check reads it,
-        // at the tail from the live request, like the tool id.
-        head: _,
+        // H1: the head moves no stock. P22-0c-4: the walk tests the head
+        // bands on the live stock, so the bands are in the key.
+        head,
     } = entry;
 
     let mut hasher = DefaultHasher::new();
@@ -557,6 +557,27 @@ fn hash_entry_scalar(entry: &SimToolpathEntry) -> u64 {
     metrics_not_applicable.hash(&mut hasher);
     operation_config_hash.hash(&mut hasher);
     hash_tool(&mut hasher, tool);
+    // P22-0c-4: the head bands the walk reads at this tool's holder face.
+    let bands = tool.to_assembly(head);
+    bands.head().len().hash(&mut hasher);
+    for band in bands.head() {
+        let crate::machine::head::HeadBand {
+            kind,
+            name,
+            offset_mm,
+            radius_mm,
+        } = band;
+        format!("{kind:?}").hash(&mut hasher);
+        name.hash(&mut hasher);
+        hash_f64_bits(&mut hasher, *offset_mm);
+        match radius_mm {
+            Some(r) => {
+                1_u8.hash(&mut hasher);
+                hash_f64_bits(&mut hasher, *r);
+            }
+            None => 0_u8.hash(&mut hasher),
+        }
+    }
     hasher.finish()
 }
 
@@ -719,6 +740,9 @@ pub(crate) struct PrefixState {
     pub(crate) non_centre_cutting_descents: Vec<crate::compute::simulate::ToolpathCoreDescent>,
     /// K5 ReachFlute: the flute overreaches of the entries replayed so far.
     pub(crate) flute_overreach: Vec<crate::compute::simulate::ToolpathFluteOverreach>,
+    /// P22-0c-4: the shank, holder and shoe contacts of the entries
+    /// replayed so far.
+    pub(crate) body_contacts: Vec<crate::compute::simulate::ToolpathBodyContact>,
     /// Restricted to the ids of the entries actually replayed — phantom
     /// entries are re-derived from the live request, never restored.
     pub(crate) prior_stocks: HashMap<ToolpathId, Arc<TriDexelStock>>,
@@ -1030,6 +1054,7 @@ mod tests {
             rapid_collision_move_indices: Vec::new(),
             non_centre_cutting_descents: Vec::new(),
             flute_overreach: Vec::new(),
+            body_contacts: Vec::new(),
             prior_stocks: HashMap::new(),
             global_drill_ops: Vec::new(),
             group_stock: Some(stock.clone()),

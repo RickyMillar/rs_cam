@@ -179,6 +179,7 @@ fn the_triage_surfaces_the_finding_and_an_empty_map_surfaces_nothing() {
         kinematic_utilization: &populated,
         region_of: None,
         obstacle_collisions: &[],
+        body_contacts: &[],
     });
     assert!(
         with_reading
@@ -201,6 +202,7 @@ fn the_triage_surfaces_the_finding_and_an_empty_map_surfaces_nothing() {
         kinematic_utilization: &empty,
         region_of: None,
         obstacle_collisions: &[],
+        body_contacts: &[],
     });
     assert!(
         without_reading

@@ -367,7 +367,7 @@ impl<'a> ToolpathNarrationContext<'a> {
         self.reached_uncut_estimate_mm2 = *reached_uncut_estimate_mm2;
         self.dropped_band = dropped_band.as_deref().copied();
         self.clipped_band = clipped_band.as_deref().copied();
-        self.ramp_reach_clamp = ramp_reach_clamp.as_deref().copied();
+        self.ramp_reach_clamp = ramp_reach_clamp.as_deref().cloned();
         self.tip_float = *tip_float;
         self.retract_trips = *retract_trips;
         self.zero_removal = *zero_removal;
@@ -1259,7 +1259,7 @@ fn append_ramp_reach_clamp(output: &mut String, context: &ToolpathNarrationConte
     let ramps = context
         .operation_kind
         .is_some_and(|k| k.capabilities().ramp_descent);
-    match context.ramp_reach_clamp {
+    match &context.ramp_reach_clamp {
         Some(f) if !f.is_inert() => {
             let area = match f.lifted_area() {
                 Some((area, provenance)) => format!(

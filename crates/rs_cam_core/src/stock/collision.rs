@@ -276,6 +276,14 @@ pub enum HolderCollisionCheck {
     Failed,
     /// The check ran to the end. `Measured(0)` is measured and clear.
     Measured(usize),
+    /// P22-0c-4 (operator ruling Q1): a fresh simulation measured the
+    /// shank, the holder and the shoe on the live stock
+    /// (`SimulationResult::body_contacts`, the fed contacts). It
+    /// supersedes the mesh check, as `tool.flute_reach_within` supersedes
+    /// `tool.reach_past_flute`: the live stock holds the model, so a part
+    /// that meets the model meets the stock. `MeasuredOnStock(0)` is
+    /// measured and clear.
+    MeasuredOnStock(usize),
 }
 
 impl HolderCollisionCheck {
@@ -286,7 +294,7 @@ impl HolderCollisionCheck {
         match self {
             Self::NotApplicable => Some(0),
             Self::Failed => None,
-            Self::Measured(n) => Some(n),
+            Self::Measured(n) | Self::MeasuredOnStock(n) => Some(n),
         }
     }
 
@@ -295,7 +303,7 @@ impl HolderCollisionCheck {
     /// the absence.
     pub fn collisions(self) -> usize {
         match self {
-            Self::Measured(n) => n,
+            Self::Measured(n) | Self::MeasuredOnStock(n) => n,
             Self::NotApplicable | Self::Failed => 0,
         }
     }
@@ -692,7 +700,7 @@ pub fn check_rapid_collisions_against_stock(
         // After a cutting move the tool retracts from already-machined
         // material — no stock can be present at that dexel column.
         let xy_dist_sq = dx * dx + dy * dy;
-        if dz > 0.0 && xy_dist_sq < 0.01 {
+        if rapid_is_straight_up(start, end) {
             continue;
         }
 
@@ -701,7 +709,7 @@ pub fn check_rapid_collisions_against_stock(
         // pure-Z moves to find the most recent feed at this XY; if it
         // ended at a Z below `end.z`, the column is cleared down to at
         // least `end.z` and this rapid can't physically hit anything.
-        if dz < 0.0 && xy_dist_sq < 0.01 {
+        if dz < 0.0 && xy_dist_sq < SAME_XY_SQ_MM2 {
             let mut k = i;
             let cleared_above = loop {
                 if k == 0 {
@@ -711,7 +719,7 @@ pub fn check_rapid_collisions_against_stock(
                 let m = &toolpath.moves[k];
                 let dxk = m.target.x - end.x;
                 let dyk = m.target.y - end.y;
-                if dxk * dxk + dyk * dyk >= 0.01 {
+                if dxk * dxk + dyk * dyk >= SAME_XY_SQ_MM2 {
                     // Different XY — peck-cycle re-entry doesn't apply.
                     break None;
                 }
@@ -845,6 +853,65 @@ pub struct FluteOverreach {
     pub flute_length_mm: f64,
 }
 
+/// The motion of a move that a contact zone meets the stock on
+/// (P22-0c-4).
+#[derive(Debug, Clone, Copy, PartialEq, Eq)]
+pub enum ContactMotion {
+    /// A fed move (G1, G2, G3).
+    Fed,
+    /// A rapid (G0).
+    Rapid,
+}
+
+impl ContactMotion {
+    /// The word a finding prints.
+    #[must_use]
+    pub const fn label(self) -> &'static str {
+        match self {
+            Self::Fed => "fed move",
+            Self::Rapid => "rapid",
+        }
+    }
+}
+
+/// P22-0c-4 (design section 5.2): a move where a non-cutting zone of the
+/// mounted tool above its cutting edge (the shank, a holder band, a hard
+/// shoe part) meets the live stock. One per move per zone (the first
+/// sample that meets the stock). A fed contact is
+/// `project.holder_collision`; a rapid contact is also a struck rapid
+/// (`project.rapid_collision`).
+#[derive(Debug, Clone, PartialEq)]
+pub struct BodyContact {
+    /// Index of the move in its toolpath.
+    pub move_index: usize,
+    /// The tool tip position at the first sample that meets the stock
+    /// (emission frame; the findings print the G-code frame).
+    pub position: P3,
+    /// The zone kind.
+    pub zone: crate::tool::body::ContactKind,
+    /// The head part name, for a holder or shoe band; `None` for the shank.
+    pub name: Option<String>,
+    /// The zone bottom over the tool tip (mm).
+    pub zone_bottom_mm: f64,
+    /// How high the wood inside the zone stands over the tool tip at that
+    /// sample (mm). It is more than `zone_bottom_mm`.
+    pub material_over_tip_mm: f64,
+    /// The motion of the move.
+    pub motion: ContactMotion,
+}
+
+impl BodyContact {
+    /// The zone word and, for a head band, its part name:
+    /// `shank`, `holder 'ER20 nut'`.
+    #[must_use]
+    pub fn zone_text(&self) -> String {
+        match &self.name {
+            Some(name) => format!("{} '{name}'", self.zone.as_str()),
+            None => self.zone.as_str().to_owned(),
+        }
+    }
+}
+
 /// G-CENTRECUT (SAFETY): a fed move where a tool that does not cut at its
 /// centre has wood under its centre core that stands higher over the tip
 /// than the blade protrusion (G-SIMCORE, P22-0b: any fed move, any op). The
@@ -869,6 +936,28 @@ pub struct NonCentreCuttingDescent {
     /// most this window (P22-0c-3: the text states this rule, not the
     /// straight-line angle).
     pub dwell_window_mm: f64,
+}
+
+/// The XY distance (mm, squared) under which two points are on one
+/// column: 0.1 mm of XY, squared. A rising rapid with less XY travel is
+/// straight up ([`rapid_is_straight_up`]); the drill pre-pass reads the
+/// same column test for its pure-Z moves.
+const SAME_XY_SQ_MM2: f64 = 0.01;
+
+/// Is the rapid `start -> end` straight up (it rises, with less than
+/// 0.1 mm of XY travel, [`SAME_XY_SQ_MM2`])? Such a rapid is exempt
+/// from every rapid check (the envelope arm and the contact zones,
+/// P22-0c-4), and this is a proof rather than an assertion: every shipped
+/// cutter's `height_at_radius` is non-decreasing in r, so the solid a
+/// cutter occupies at a higher tip Z is a strict subset — in the column
+/// sense — of the one it occupied below. The same holds for each body zone
+/// above it (the shank, the holder, the shoe), which rises with the tip.
+/// The tool just came up through this material; it cannot meet anything
+/// on the way out.
+#[must_use]
+pub fn rapid_is_straight_up(start: P3, end: P3) -> bool {
+    let (dx, dy) = (end.x - start.x, end.y - start.y);
+    end.z > start.z && dx * dx + dy * dy < SAME_XY_SQ_MM2
 }
 
 /// Float slack of the low channel at a clearance of `low` mm.
@@ -914,15 +1003,8 @@ impl<'a> RapidClearanceCheck<'a> {
         let dy = end.y - start.y;
         let dz = end.z - start.z;
 
-        // Ascending Z-only rapids are exempt, and this is a proof rather than
-        // an assertion: every shipped cutter's `height_at_radius` is
-        // non-decreasing in r, so the solid a cutter occupies at a higher tip
-        // Z is a strict subset — in the column sense — of the one it occupied
-        // below. The tool just came up through this material; it cannot meet
-        // anything on the way out. (Holder and shank strikes are a different
-        // question, and Phase S4's.)
         let xy_dist_sq = dx * dx + dy * dy;
-        if dz > 0.0 && xy_dist_sq < 0.01 {
+        if rapid_is_straight_up(start, end) {
             return false;
         }
 

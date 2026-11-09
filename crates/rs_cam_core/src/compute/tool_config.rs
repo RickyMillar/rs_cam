@@ -413,6 +413,9 @@ pub enum EntryFallback {
     /// The ramp had no room either: a straight plunge
     /// ([`NonCentreCuttingRefusal`] names it too).
     Plunge,
+    /// P22-0c-4: a ramp-finish ring inside the core diameter. The core
+    /// cannot descend on it, so no pass is cut and the ring is left uncut.
+    NoPass,
 }
 
 impl EntryFallback {
@@ -422,6 +425,7 @@ impl EntryFallback {
         match self {
             Self::Ramp => "ramp",
             Self::Plunge => "plunge",
+            Self::NoPass => "no pass",
         }
     }
 }

@@ -180,6 +180,7 @@ fn link_finding(trace: &SimulationCutTrace, step: Option<f64>) -> Option<Finding
         kinematic_utilization: &BTreeMap::new(),
         region_of: None,
         obstacle_collisions: &[],
+        body_contacts: &[],
     });
     triage
         .actions

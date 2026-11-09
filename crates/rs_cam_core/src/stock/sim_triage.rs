@@ -367,6 +367,11 @@ pub struct TriageInputs<'a> {
     /// K1: every obstacle hit of the simulation. Each is a class A
     /// finding, never deduped.
     pub obstacle_collisions: &'a [crate::compute::obstacle::ObstacleCollision],
+    /// P22-0c-4: the shank, holder and shoe contacts of the simulation
+    /// (`SimulationResult::body_contacts`). A toolpath whose holder outcome
+    /// is `MeasuredOnStock` lists one row per fed contact from here, with
+    /// its zone and position.
+    pub body_contacts: &'a [crate::compute::simulate::ToolpathBodyContact],
     /// Tool diameter per toolpath, for the spatial bucket edge.
     pub tool_diameters_mm: &'a BTreeMap<ToolpathId, f64>,
     /// G-OVERCUTREF — the commanded depth per pass of each toolpath that
@@ -481,6 +486,32 @@ impl SimulationTriage {
                     [0.0, 0.0, 0.0],
                     0,
                 ));
+                continue;
+            }
+            if let HolderCollisionCheck::MeasuredOnStock(_) = check {
+                // P22-0c-4 (ruling Q1): one row per fed contact of the stock
+                // check, with its zone and the tip position.
+                let fed = inputs.body_contacts.iter().filter(|hit| {
+                    hit.toolpath_id == *tp
+                        && hit.contact.motion == crate::stock::collision::ContactMotion::Fed
+                });
+                for (i, hit) in fed.enumerate() {
+                    let c = &hit.contact;
+                    found.push(collision_finding(
+                        ids::PROJECT_HOLDER_COLLISION,
+                        format!(
+                            "The {} meets the stock at move {} ({:.2} mm of wood over its bottom)",
+                            c.zone_text(),
+                            c.move_index,
+                            c.material_over_tip_mm - c.zone_bottom_mm
+                        ),
+                        Some(*tp),
+                        c.move_index,
+                        0,
+                        [c.position.x, c.position.y, c.position.z],
+                        i,
+                    ));
+                }
                 continue;
             }
             let count = check.collisions();
@@ -2178,6 +2209,7 @@ mod tests {
             kinematic_utilization: kinematics,
             region_of: None,
             obstacle_collisions: &[],
+            body_contacts: &[],
         }
     }
 

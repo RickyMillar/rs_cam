@@ -884,6 +884,8 @@ impl<B: ComputeBackend> AppController<B> {
                     simulation.core.non_centre_cutting_descents.clone();
                 self.state.simulation.checks.flute_contacts =
                     simulation.core.flute_overreach.clone();
+                // P22-0c-4: the shank, holder and shoe contacts.
+                self.state.simulation.checks.body_contacts = simulation.core.body_contacts.clone();
 
                 self.state.simulation.playback.display_deviations = simulation.core.deviations;
                 self.state.simulation.playback.display_mesh = None;
@@ -2746,5 +2748,7 @@ fn core_simulation_from_lane(
         non_centre_cutting_descents: core.non_centre_cutting_descents.clone(),
         // K5 ReachFlute: the diagnostics and the export door read these.
         flute_overreach: core.flute_overreach.clone(),
+        // P22-0c-4: the holder supersession and the export door read these.
+        body_contacts: core.body_contacts.clone(),
     }
 }

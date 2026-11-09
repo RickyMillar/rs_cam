@@ -170,6 +170,7 @@ fn triage(reading: &RoughCoverageReading) -> SimulationTriage {
             toolpath_names: &names,
             holder_collisions: &[],
             obstacle_collisions: &[],
+            body_contacts: &[],
             tool_diameters_mm: &diameters,
             commanded_depth_per_pass_mm: &steps,
             kinematic_utilization: &kinematics,
