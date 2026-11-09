@@ -611,7 +611,10 @@ fn the_selection_section_shows_one_pick_p4_d() {
     let mut session = step_pocket_session();
     let empty = geometry_tab_texts(&session, crate::state::toolpath::OperationType::Pocket);
     let per_button = count(&empty, menu);
-    assert!(per_button > 0, "fixture: the header paints its menu: {empty:?}");
+    assert!(
+        per_button > 0,
+        "fixture: the header paints its menu: {empty:?}"
+    );
     assert_eq!(
         count(&empty, "Pick"),
         per_button,
@@ -916,9 +919,7 @@ fn holes_with_a_rule_and_a_pick() -> rs_cam_core::session::ProjectSession {
 /// is more than the report rows.
 #[test]
 fn the_list_rows_hold_each_selected_item_once_gt2() {
-    use super::selection_section::{
-        LIST_CAP, RowFrom, header_menu_edit_of, header_menu_labels,
-    };
+    use super::selection_section::{LIST_CAP, RowFrom, header_menu_edit_of, header_menu_labels};
     use rs_cam_core::selection::{Selection, SelectionEdit};
 
     let session = holes_session();
@@ -927,9 +928,15 @@ fn the_list_rows_hold_each_selected_item_once_gt2() {
     let labels = with_section_inputs(&session, |inputs, _| header_menu_labels(inputs));
     assert!(labels.iter().any(|l| l == "Every circle"), "{labels:?}");
     assert!(labels.iter().any(|l| l == "Clear selection"), "{labels:?}");
-    assert!(!labels.iter().any(|l| l == "Reset to default"), "{labels:?}");
+    assert!(
+        !labels.iter().any(|l| l == "Reset to default"),
+        "{labels:?}"
+    );
     assert_eq!(
-        with_section_inputs(&session, |inputs, _| header_menu_edit_of(inputs, "Clear selection")),
+        with_section_inputs(&session, |inputs, _| header_menu_edit_of(
+            inputs,
+            "Clear selection"
+        )),
         None,
         "nothing to clear"
     );
@@ -957,7 +964,10 @@ fn the_list_rows_hold_each_selected_item_once_gt2() {
         "{labels:?}"
     );
     assert_eq!(
-        with_section_inputs(&session, |inputs, _| header_menu_edit_of(inputs, "Clear selection")),
+        with_section_inputs(&session, |inputs, _| header_menu_edit_of(
+            inputs,
+            "Clear selection"
+        )),
         Some(SelectionEdit::Replace(Box::new(Selection::empty())))
     );
 }
@@ -1079,7 +1089,10 @@ fn hovering_a_face_row_lights_the_face_w3h() {
     );
     let hover = hover.expect("the face row lights its item");
     assert_eq!(hover.kind, rs_cam_core::selection::ItemKind::Face);
-    assert!(hover.matches(&face) || face.matches(&hover), "{hover:?} vs {face:?}");
+    assert!(
+        hover.matches(&face) || face.matches(&hover),
+        "{hover:?} vs {face:?}"
+    );
 }
 
 /// W2b (was F24): a field finding puts its dot on the tab that draws its

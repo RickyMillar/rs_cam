@@ -15,8 +15,8 @@ use rs_cam_core::compute::catalog::OperationType;
 use rs_cam_core::compute::config::{BoundaryContainment, StockSource};
 use rs_cam_core::compute::tool_config::{ToolConfig, ToolFact, ToolId, ToolParamKey, ToolType};
 use rs_cam_core::compute::transform::{FaceUp, ZRotation};
-use rs_cam_core::feeds::SpindleStrategy;
 use rs_cam_core::feeds::envelope::PickRequest;
+use rs_cam_core::feeds::SpindleStrategy;
 use rs_cam_core::material::Material;
 use rs_cam_core::session::TierStrategy;
 use rs_cam_core::trace::toolpath_spans::SpanKind;
@@ -4963,13 +4963,11 @@ mod tests {
                 "`{field}` was supplied — it must not be reported as defaulted"
             );
         }
-        assert!(
-            build_tool_config(&AddToolParam {
-                flute_count: Some(0),
-                ..add_tool_spec("end_mill", 6.0)
-            })
-            .is_err()
-        );
+        assert!(build_tool_config(&AddToolParam {
+            flute_count: Some(0),
+            ..add_tool_spec("end_mill", 6.0)
+        })
+        .is_err());
     }
 
     /// `add_tool` is all-optional beyond name/type/diameter, and the

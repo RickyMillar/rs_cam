@@ -30,9 +30,9 @@ pub mod compare;
 pub mod data_table;
 pub mod focus_ring;
 pub mod format;
+pub mod freshness;
 #[cfg(test)]
 mod glyph_tests;
-pub mod freshness;
 pub mod histogram;
 pub mod kv_row;
 pub mod line;
@@ -63,7 +63,9 @@ pub use freshness::{Freshness, FreshnessGate};
 pub use histogram::{DistributionChart, DistributionChartResponse};
 pub use kv_row::{KeyValueRow, Value as KeyValue};
 pub use line::OneLine;
-pub use list_box::{Act, ListBox, ListLine, Mark, list_header, list_line, list_placeholder, list_row};
+pub use list_box::{
+    Act, ListBox, ListLine, Mark, list_header, list_line, list_placeholder, list_row,
+};
 pub use notes_counter::NotesCounter;
 pub use notice::{
     Banner, CollapsedNotice, EmptyState, IssueStackResponse, NotMeasured, Notice, NoticeStack,
