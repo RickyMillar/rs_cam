@@ -1195,3 +1195,162 @@ fn wanaka_readout(rapid_order: bool, out_name: &str) {
     let out = std::path::Path::new(env!("CARGO_TARGET_TMPDIR")).join(out_name);
     std::fs::write(&out, text).expect("the table writes");
 }
+
+/// P22f-2c (`planning/feeds_contract_2026-11-03/phases/P22f-2c.md`): the
+/// planner's 3D stock read against the simulated samples at wanaka idx 1
+/// moves 1619-1621. Pass 1 generates and simulates; pass 2 arms the
+/// test-support step probe with those moves' ends and regenerates the same
+/// op (the same plan; the move count is checked), so each planner step on
+/// them reports its read. Writes `$CARGO_TARGET_TMPDIR/p22f2c_step_reads.md`.
+#[test]
+#[ignore = "evidence: P22f-2c step reads at wanaka idx 1 moves 1619-1621 (two generations of idx 1, one simulation; about 4 min in debug)"]
+fn the_step_reads_at_idx_1_moves_1620_1621() {
+    const MOVES: [usize; 3] = [1619, 1620, 1621];
+    let path = std::path::Path::new(env!("CARGO_MANIFEST_DIR")).join(WANAKA);
+    let mut session = ProjectSession::load(&path).expect("the wanaka project loads");
+    let index = (0..session.toolpath_count())
+        .find(|&i| {
+            session
+                .toolpath_config_at(i)
+                .is_some_and(|tc| tc.id.raw() == WANAKA_ID)
+        })
+        .expect("toolpath id 1");
+    let id = session.toolpath_config_at(index).expect("the op").id;
+    let cancel = AtomicBool::new(false);
+    let cell = session.simulation_resolution_mm();
+    for step in generation_plan::plan(&session, Scope::Ancestors(id)) {
+        match step {
+            Step::Simulate { .. } => {
+                session
+                    .run_simulation(&options(cell), &cancel)
+                    .expect("the plan simulation runs");
+            }
+            Step::Generate { index, .. } => {
+                session
+                    .generate_toolpath(index, &cancel)
+                    .expect("an ancestor generates");
+            }
+        }
+    }
+    session
+        .run_simulation(&options(cell), &cancel)
+        .expect("the closing simulation runs");
+    let tc = session.toolpath_config_at(index).expect("the op").clone();
+    let tool_cfg = session
+        .tool_by_id(tc.tool_id.expect("a tool"))
+        .expect("the tool")
+        .clone();
+    let tool = rs_cam_core::compute::cutter::build_cutter(&tool_cfg).expect("the cutter builds");
+    let OperationConfig::Adaptive3d(op_cfg) = &tc.operation else {
+        panic_missing("an Adaptive3d op")
+    };
+    let moves = session
+        .result_at(index)
+        .expect("a result")
+        .toolpath()
+        .moves
+        .clone();
+    let mut text = String::from("# P22f-2c step reads, wanaka idx 1\n\n## The emitted moves\n\n");
+    for &i in &MOVES {
+        let (a, m) = (moves[i - 1].target, &moves[i]);
+        let _ = writeln!(
+            text,
+            "- {i}: ({:.2}, {:.2}, {:.3}) -> ({:.2}, {:.2}, {:.3}), {:?}, F {:?}, cap {:?}",
+            a.x,
+            a.y,
+            a.z,
+            m.target.x,
+            m.target.y,
+            m.target.z,
+            m.intent,
+            m.move_type.feed_rate(),
+            m.feed_cap
+        );
+    }
+    let _ = writeln!(
+        text,
+        "\n## The simulated samples (position, ap mm, ae mm, arc rad, feed, removal ratio)\n"
+    );
+    let trace = session
+        .simulation_result()
+        .and_then(|r| r.cut_trace.as_deref())
+        .expect("a cut trace");
+    for s in trace
+        .samples
+        .iter()
+        .filter(|s| s.toolpath_id == id && MOVES.contains(&s.move_index) && s.is_cutting)
+    {
+        let e = Engagement::from_sample(s, &tool);
+        let ratio = e
+            .as_ref()
+            .and_then(|e| common::wide_samples::removal_ratio(s, e));
+        let _ = writeln!(
+            text,
+            "- move {} at ({:.2}, {:.2}, {:.3}): ap {:.2}, ae {:.2}, arc {:.3}, F {:.0}, removal {:.2}",
+            s.move_index,
+            s.position[0],
+            s.position[1],
+            s.position[2],
+            e.as_ref().map_or(0.0, Engagement::ap_mm),
+            e.as_ref().map_or(0.0, Engagement::ae_mm),
+            s.arc_engagement_radians.unwrap_or(0.0),
+            s.feed_rate_mm_min,
+            ratio.unwrap_or(f64::NAN)
+        );
+    }
+    // Pass 2: the planner's reads at the same moves.
+    let targets: Vec<(rs_cam_core::geo::P3, rs_cam_core::geo::P3)> = MOVES
+        .iter()
+        .map(|&i| (moves[i - 1].target, moves[i].target))
+        .collect();
+    let reach = common::wide_samples::planner_cell(tool_cfg.diameter / 2.0, op_cfg.tolerance);
+    rs_cam_core::adaptive3d::step_probe::arm(targets, reach);
+    session
+        .generate_toolpath(index, &cancel)
+        .expect("the op regenerates");
+    let reads = rs_cam_core::adaptive3d::step_probe::take();
+    let again = session
+        .result_at(index)
+        .expect("a result")
+        .toolpath()
+        .moves
+        .len();
+    let _ = writeln!(
+        text,
+        "\n## The planner's step reads (regenerated: {again} moves, first pass {}; reach {reach:.3} mm)\n",
+        moves.len()
+    );
+    for r in &reads {
+        let _ = writeln!(
+            text,
+            "- on move {}: ({:.2}, {:.2}, {:.3}) -> ({:.2}, {:.2}, {:.3}); shape split {}; axial depth {:.3}; load {:.4} (c {:.4}); clearance {}; cell {}; dpp {}",
+            MOVES[r.target],
+            r.prev.x,
+            r.prev.y,
+            r.prev.z,
+            r.curr.x,
+            r.curr.y,
+            r.curr.z,
+            r.shape_split,
+            r.axial_depth,
+            r.load,
+            r.ceiling,
+            r.clearance,
+            r.cell_mm,
+            r.depth_per_pass
+        );
+        let strips: Vec<String> = r
+            .worst_strips
+            .iter()
+            .map(|(k, d)| format!("{k}:{d:.2}"))
+            .collect();
+        let _ = writeln!(
+            text,
+            "  - worst-sample strips (index: depth mm): {}",
+            strips.join(" ")
+        );
+    }
+    eprintln!("{text}");
+    let out = std::path::Path::new(env!("CARGO_TARGET_TMPDIR")).join("p22f2c_step_reads.md");
+    std::fs::write(&out, text).expect("the table writes");
+}

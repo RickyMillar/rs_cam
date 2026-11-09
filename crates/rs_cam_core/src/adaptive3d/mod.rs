@@ -49,6 +49,9 @@ pub use path::debug_adaptive_3d_segments_for_f029_probe;
 // stock), a test door behind `test-support`.
 #[cfg(feature = "test-support")]
 pub use path::debug_level_plan_probe;
+// P22f-2c: the step-read probe of the 3D stock read (test-support only).
+#[cfg(feature = "test-support")]
+pub use clearing::step_probe;
 
 /// Region ordering strategy for 3D adaptive clearing.
 ///

@@ -1073,6 +1073,25 @@ pub(super) fn step_load_on(
     clearance: f64,
     cutter: &StepLoadCutter<'_>,
 ) -> f64 {
+    step_load_on_with(stock, top_at, p, q, radius, clearance, cutter, None)
+}
+
+/// [`step_load_on`], and with `worst` the lateral strips (index, deepest
+/// standing depth) of the sample that gives the load (P22f-2c probe).
+#[expect(
+    clippy::too_many_arguments,
+    reason = "the inputs of step_load_on and one optional out-parameter"
+)]
+fn step_load_on_with(
+    stock: &TriDexelStock,
+    top_at: &dyn Fn(usize, usize) -> f64,
+    p: P3,
+    q: P3,
+    radius: f64,
+    clearance: f64,
+    cutter: &StepLoadCutter<'_>,
+    mut worst: Option<&mut Vec<(i64, f64)>>,
+) -> f64 {
     let grid = &stock.z_grid;
     let cs = grid.cell_size;
     let (dx, dy) = (q.x - p.x, q.y - p.y);
@@ -1126,15 +1145,107 @@ pub(super) fn step_load_on(
                 *deepest = deepest.max(top - floor);
             }
         }
+        let kept: Option<Vec<(i64, f64)>> = worst
+            .as_ref()
+            .map(|_| strips.iter().map(|(&k, &d)| (k, d)).collect());
         let load = crate::tool_load::load_fraction::chip_load_fraction(
             cutter.depth_per_pass,
             cutter.diameter,
             strips,
             cs,
         );
+        if load > highest
+            && let (Some(out), Some(kept)) = (worst.as_deref_mut(), kept)
+        {
+            *out = kept;
+        }
         highest = highest.max(load);
     }
     highest
+}
+
+/// P22f-2c probe (test-support only): the inputs of the 3D stock read at
+/// the planner steps that lie on named emitted moves, so a test can set
+/// them beside the simulated samples of the same moves. Armed by the test;
+/// no product reader.
+#[cfg(feature = "test-support")]
+pub mod step_probe {
+    use crate::geo::{P2, P3, point_to_segment_distance};
+
+    /// One planner step's stock read.
+    #[derive(Debug, Clone)]
+    pub struct StepRead {
+        /// The index of the armed target the step lies on.
+        pub target: usize,
+        pub prev: P3,
+        pub curr: P3,
+        /// The shape rule flags it (`|dz|` or slope over its limits).
+        pub shape_split: bool,
+        /// `step_axial_depth`: the conservative stock depth over the disc.
+        pub axial_depth: f64,
+        /// `step_load` and the pass ceiling `c` it is read against.
+        pub load: f64,
+        pub ceiling: f64,
+        pub clearance: f64,
+        /// The planner stock cell and the Depth/Pass the load normalises by.
+        pub cell_mm: f64,
+        pub depth_per_pass: f64,
+        /// The lateral strips (index, deepest standing depth above the
+        /// cutter) of the sample that gives the load.
+        pub worst_strips: Vec<(i64, f64)>,
+    }
+
+    struct Armed {
+        targets: Vec<(P3, P3)>,
+        reach: f64,
+        reads: Vec<StepRead>,
+    }
+
+    static PROBE: std::sync::Mutex<Option<Armed>> = std::sync::Mutex::new(None);
+
+    /// Arm the probe: record each planner step whose two ends lie within
+    /// `reach` (XY) of one of the target segments.
+    pub fn arm(targets: Vec<(P3, P3)>, reach: f64) {
+        if let Ok(mut guard) = PROBE.lock() {
+            *guard = Some(Armed {
+                targets,
+                reach,
+                reads: Vec::new(),
+            });
+        }
+    }
+
+    /// Disarm the probe and hand back its reads.
+    pub fn take() -> Vec<StepRead> {
+        PROBE
+            .lock()
+            .ok()
+            .and_then(|mut guard| guard.take())
+            .map(|armed| armed.reads)
+            .unwrap_or_default()
+    }
+
+    /// The target a step lies on, when the probe is armed.
+    pub(super) fn target_of(prev: P3, curr: P3) -> Option<usize> {
+        let guard = PROBE.lock().ok()?;
+        let armed = guard.as_ref()?;
+        let near = |p: P3, a: P3, b: P3| {
+            point_to_segment_distance(&P2::new(p.x, p.y), &P2::new(a.x, a.y), &P2::new(b.x, b.y))
+                <= armed.reach
+        };
+        armed
+            .targets
+            .iter()
+            .position(|&(a, b)| near(prev, a, b) && near(curr, a, b))
+    }
+
+    pub(super) fn record(read: StepRead) {
+        if let Ok(mut guard) = PROBE.lock()
+            && let Some(armed) = guard.as_mut()
+        {
+            armed.reads.push(read);
+        }
+    }
 }
 
 /// Helper to push a segment and stamp its simulator-equivalent swept
@@ -3593,6 +3704,44 @@ fn plan_and_emit_region(
                         0.0
                     };
                     let shape_split = dz.abs() > z_drop_threshold || abs_slope > PLUNGE_SLOPE_LIMIT;
+                    // P22f-2c probe: the stock read of a step on an armed
+                    // target move (test-support only; inert unless armed).
+                    #[cfg(feature = "test-support")]
+                    if let Some(target) = step_probe::target_of(prev, curr) {
+                        let mut worst = Vec::new();
+                        let load = step_load_on_with(
+                            sink.material_stock,
+                            &|row, col| super::stock_top_z_at(sink.material_stock, row, col),
+                            prev,
+                            curr,
+                            ctx.tool_radius,
+                            ctx.stay_down_clearance_mm,
+                            &StepLoadCutter {
+                                lut: ctx.lut,
+                                diameter: 2.0 * ctx.tool_radius,
+                                depth_per_pass: ctx.depth_per_pass,
+                            },
+                            Some(&mut worst),
+                        );
+                        step_probe::record(step_probe::StepRead {
+                            target,
+                            prev,
+                            curr,
+                            shape_split,
+                            axial_depth: step_axial_depth(
+                                sink.material_stock,
+                                prev,
+                                curr,
+                                ctx.tool_radius,
+                            ),
+                            load,
+                            ceiling,
+                            clearance: ctx.stay_down_clearance_mm,
+                            cell_mm: sink.material_stock.z_grid.cell_size,
+                            depth_per_pass: ctx.depth_per_pass,
+                            worst_strips: worst,
+                        });
+                    }
                     // StepSplit::StockDepth (D43): a step the path rule flags
                     // is cut at feed unless the tool's swept disc meets stock
                     // deeper than one pass (`step_axial_depth`), or its
