@@ -92,6 +92,20 @@ pub(crate) fn slice_load_margin(stepover: f64, tool_radius: f64, tolerance: f64)
     (ceiling * diameter - stepover.min(diameter)).max(crate::toolpath::MIN_EMITTED_SEGMENT_MM)
 }
 
+/// The rule that admitted a capped run of [`feed_caps`] over the ceiling
+/// (P22a-2). The 3D slice names it on its cap marker
+/// (`adaptive3d::FeedCapSource`).
+#[derive(Debug, Clone, Copy, PartialEq, Eq)]
+pub(crate) enum SliceCapKind {
+    /// A planned clearing turn (`LinkLoad::admits_turn`).
+    Turn,
+    /// D65: a step over the ceiling that reads at most a slot
+    /// (`LinkLoad::admits_capped`).
+    Capped,
+    /// A plan window out of a straight plunge (`PassLoad::departing`).
+    Departure,
+}
+
 /// One straight run that the replay admits over the ceiling: a planned
 /// turn, or a plan window out of a straight plunge (a departure; its steps
 /// are exempt from the ceiling, not from the feed rule).
@@ -178,8 +192,9 @@ pub(crate) fn feed_caps(
     params: &AdaptiveParams,
     segments: Vec<AdaptiveSegment>,
     turns: &[(P2, P2)],
-) -> (Vec<AdaptiveSegment>, Vec<Option<f64>>) {
-    let (runs, first_departure, ceiling) = fed_runs(polygon, params, &segments, turns);
+) -> (Vec<AdaptiveSegment>, Vec<Option<(f64, SliceCapKind)>>) {
+    let (runs, first_capped, first_departure, ceiling) =
+        fed_runs(polygon, params, &segments, turns);
     if runs.is_empty() {
         let n = segments.len();
         return (segments, vec![None; n]);
@@ -218,7 +233,19 @@ pub(crate) fn feed_caps(
         // (one turn, or the departure windows it crosses).
         let mut run: Option<Option<usize>> = None;
         let mut factor = 1.0_f64;
-        let cap = |key: Option<usize>, factor: f64| key.and(Some(factor)).filter(|&f| f < 1.0);
+        // The kind of a run key: its band in the order of `fed_runs`.
+        let kind_of = |key: usize| {
+            if key < first_capped {
+                SliceCapKind::Turn
+            } else if key < first_departure {
+                SliceCapKind::Capped
+            } else {
+                SliceCapKind::Departure
+            }
+        };
+        let cap = |key: Option<usize>, factor: f64| {
+            key.filter(|_| factor < 1.0).map(|k| (factor, kind_of(k)))
+        };
         for w in path.windows(2) {
             let &[a, b] = w else {
                 continue;
@@ -252,20 +279,21 @@ pub(crate) fn feed_caps(
     (out, caps)
 }
 
-/// The runs of [`feed_caps`]: the turns with a step, then the departure
-/// windows; the index of the first departure window; and the pass ceiling.
+/// The runs of [`feed_caps`]: the turns with a step, then the D65 capped
+/// windows, then the departure windows; the index of the first capped
+/// window; the index of the first departure window; and the pass ceiling.
 fn fed_runs(
     polygon: &Polygon2,
     params: &AdaptiveParams,
     segments: &[AdaptiveSegment],
     turns: &[(P2, P2)],
-) -> (Vec<FedRun>, usize, f64) {
+) -> (Vec<FedRun>, usize, usize, f64) {
     let r = params.tool_radius;
     let cell = planner_cell(params);
     let pass = pass_load_for(params, cell);
     let area = PassLoad::area_per_mm(params.stepover, r, cell);
     let Some(mut setup) = PieceSetup::new(polygon, params, cell) else {
-        return (Vec::new(), 0, pass.ceiling);
+        return (Vec::new(), 0, 0, pass.ceiling);
     };
     let step_len = pass_step_len(cell);
     let on_turn = |a: P2, b: P2| {
@@ -391,10 +419,11 @@ fn fed_runs(
         .collect();
     // D65: each capped window is a run of its own (a key of its own, as a
     // turn), before the departure windows, which share one key.
+    let first_capped = runs.len();
     runs.extend(capped);
     let first_departure = runs.len();
     runs.extend(departures);
-    (runs, first_departure, pass.ceiling)
+    (runs, first_capped, first_departure, pass.ceiling)
 }
 
 /// C22: the length (mm) of the `Link`s of `segments` from the cutter

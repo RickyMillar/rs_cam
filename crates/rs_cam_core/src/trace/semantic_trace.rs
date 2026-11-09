@@ -40,6 +40,9 @@ pub enum ToolpathSemanticKind {
     Centerline,
     BoundaryClip,
     Optimization,
+    /// P22a-2: a capped run of a 3D Rough; its `cap_source` names the
+    /// planner rule (`adaptive3d::FeedCapSource::key`).
+    FeedCap,
 }
 
 impl ToolpathSemanticKind {
@@ -57,10 +60,10 @@ impl ToolpathSemanticKind {
     ///
     /// The wire key stays with `serde`'s `rename_all = "snake_case"`. This
     /// list does not add a second key table.
-    pub const ALL: [Self; 26] = crate::all_variants!(ToolpathSemanticKind:
+    pub const ALL: [Self; 27] = crate::all_variants!(ToolpathSemanticKind:
         Operation, DepthLevel, Region, Pass, Entry, SlotClearing, Cleanup, ForcedClear, Contour,
         Raster, Row, Slice, Hole, Cycle, Chain, Band, Ramp, Ring, Ray, Curve, Dressup, FinishPass,
-        OffsetPass, Centerline, BoundaryClip, Optimization,
+        OffsetPass, Centerline, BoundaryClip, Optimization, FeedCap,
     );
 
     /// The position of this kind in [`Self::ALL`].
@@ -99,6 +102,7 @@ impl ToolpathSemanticKind {
             Self::Centerline => 23,
             Self::BoundaryClip => 24,
             Self::Optimization => 25,
+            Self::FeedCap => 26,
         }
     }
 }
@@ -141,6 +145,8 @@ pub enum SemanticKey {
     Band,
     /// `barrier_count`
     BarrierCount,
+    /// `cap_source`
+    CapSource,
     /// `cell_count`
     CellCount,
     /// `center_x`
@@ -171,6 +177,8 @@ pub enum SemanticKey {
     EntryZ,
     /// `exit_reason`
     ExitReason,
+    /// `feed_factor`
+    FeedFactor,
     /// `hole_index`
     HoleIndex,
     /// `idle_count`
@@ -283,10 +291,10 @@ pub enum SemanticKey {
 
 impl SemanticKey {
     /// Every variant, in declaration order (alphabetical by wire key).
-    pub const ALL: [Self; 74] = crate::all_variants!(SemanticKey:
-        AgentWalkCutLengthMm, AngleDeg, AreaMm2, Band, BarrierCount, CellCount, CenterX, CenterY,
+    pub const ALL: [Self; 76] = crate::all_variants!(SemanticKey:
+        AgentWalkCutLengthMm, AngleDeg, AreaMm2, Band, BarrierCount, CapSource, CellCount, CenterX, CenterY,
         ChainIndex, ChainTotal, Containment, Continuous, ContourIndex, ContourTotal, CycleIndex,
-        DroppedMicroRegionCount, EntryX, EntryY, EntryZ, ExitReason, HoleIndex, IdleCount,
+        DroppedMicroRegionCount, EntryX, EntryY, EntryZ, ExitReason, FeedFactor, HoleIndex, IdleCount,
         IsCenterline, KeepOutCount, Kind, LeadInFeedRate, LeadOutFeedRate, LevelIndex, LevelTotal,
         LineIndex, LineTotal, LinkFeedRate, LowerLevelIndex, LowerZ, MarchingSquaresRegions,
         MaxAngleDeg, MaxFeedRate, MaxLinkDistance, MoveScope, NominalFeedRate, OffsetIndex,
@@ -307,6 +315,7 @@ impl SemanticKey {
             Self::AreaMm2 => "area_mm2",
             Self::Band => "band",
             Self::BarrierCount => "barrier_count",
+            Self::CapSource => "cap_source",
             Self::CellCount => "cell_count",
             Self::CenterX => "center_x",
             Self::CenterY => "center_y",
@@ -322,6 +331,7 @@ impl SemanticKey {
             Self::EntryY => "entry_y",
             Self::EntryZ => "entry_z",
             Self::ExitReason => "exit_reason",
+            Self::FeedFactor => "feed_factor",
             Self::HoleIndex => "hole_index",
             Self::IdleCount => "idle_count",
             Self::IsCenterline => "is_centerline",
@@ -1197,14 +1207,20 @@ mod tests {
     /// `SemanticKey::as_str` would make the test tautological — it would
     /// assert the enum equals itself. A key that changes here is a change to
     /// a published vocabulary and should cost one deliberate edit.
+    ///
+    /// P22a-2 (feeds contract, 2026-11-09) adds two keys, 74 to 76:
+    /// `cap_source` and `feed_factor`, the parameters of the new `FeedCap`
+    /// item that names the planner rule of a capped 3D Rough run
+    /// (`adaptive3d::FeedCapSource`). No existing key moves.
     #[test]
     fn the_semantic_key_wire_vocabulary_is_pinned() {
-        const WIRE: [&str; 74] = [
+        const WIRE: [&str; 76] = [
             "agent_walk_cut_length_mm",
             "angle_deg",
             "area_mm2",
             "band",
             "barrier_count",
+            "cap_source",
             "cell_count",
             "center_x",
             "center_y",
@@ -1220,6 +1236,7 @@ mod tests {
             "entry_y",
             "entry_z",
             "exit_reason",
+            "feed_factor",
             "hole_index",
             "idle_count",
             "is_centerline",
@@ -1320,7 +1337,7 @@ mod tests {
     /// Same contract as `SpanKind::ALL` and `RegionSpanRole::ALL`.
     #[test]
     fn all_names_every_semantic_kind_in_order() {
-        assert_eq!(ToolpathSemanticKind::ALL.len(), 26);
+        assert_eq!(ToolpathSemanticKind::ALL.len(), 27);
         for (index, kind) in ToolpathSemanticKind::ALL.iter().enumerate() {
             assert_eq!(
                 kind.ordinal(),

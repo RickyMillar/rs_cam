@@ -606,7 +606,10 @@ pub(super) fn level_contour_pass(
         );
         if let Some(factor) = cap {
             segments.push(Adaptive3dSegment::Marker(
-                Adaptive3dRuntimeEvent::FeedCapStart { factor },
+                Adaptive3dRuntimeEvent::FeedCapStart {
+                    factor,
+                    source: super::FeedCapSource::LevelContour,
+                },
             ));
             stats.min_factor = stats.min_factor.min(factor);
         }

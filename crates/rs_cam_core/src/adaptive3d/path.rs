@@ -2249,15 +2249,26 @@ pub(super) fn segments_to_toolpath_checked(
 
     // Geodesic Adaptive (design part F): the feed of the cut moves between a
     // `FeedCapStart` and a `FeedCapEnd` marker, written as the move's feed
-    // and its `Move::feed_cap`. `None` for every other cut.
+    // and its `Move::feed_cap`. `None` for every other cut. P22a-2: the
+    // pair also stays as annotations (the next arm), so the semantic trace
+    // names the rule of each capped run; no move changes.
     let mut capped_feed: Option<f64> = None;
     for segment in segments {
         match segment {
-            Adaptive3dSegment::Marker(Adaptive3dRuntimeEvent::FeedCapStart { factor }) => {
-                capped_feed = Some(params.feed_rate * factor);
-            }
-            Adaptive3dSegment::Marker(Adaptive3dRuntimeEvent::FeedCapEnd) => capped_feed = None,
             Adaptive3dSegment::Marker(event) => {
+                match event {
+                    Adaptive3dRuntimeEvent::FeedCapStart { factor, .. } => {
+                        capped_feed = Some(params.feed_rate * factor);
+                    }
+                    Adaptive3dRuntimeEvent::FeedCapEnd => capped_feed = None,
+                    Adaptive3dRuntimeEvent::RegionStart { .. }
+                    | Adaptive3dRuntimeEvent::RegionZLevel { .. }
+                    | Adaptive3dRuntimeEvent::GlobalZLevel { .. }
+                    | Adaptive3dRuntimeEvent::WaterlineCleanup
+                    | Adaptive3dRuntimeEvent::PassEntry { .. }
+                    | Adaptive3dRuntimeEvent::PassPreflightSkip { .. }
+                    | Adaptive3dRuntimeEvent::PassSummary { .. } => {}
+                }
                 annotations.push(Adaptive3dRuntimeAnnotation {
                     move_index: tp.moves.len(),
                     event: event.clone(),

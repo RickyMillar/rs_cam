@@ -115,7 +115,8 @@ fn check(strategy: ClearingStrategy, order: RegionOrdering, contour: bool) -> (I
             | ToolpathSemanticKind::OffsetPass
             | ToolpathSemanticKind::Centerline
             | ToolpathSemanticKind::BoundaryClip
-            | ToolpathSemanticKind::Optimization => continue,
+            | ToolpathSemanticKind::Optimization
+            | ToolpathSemanticKind::FeedCap => continue,
         };
         let (Some(start), Some(end)) = (item.move_start, item.move_end) else {
             panic!(

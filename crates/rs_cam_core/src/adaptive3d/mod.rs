@@ -495,6 +495,65 @@ pub struct ZLevelPlanMetrics {
     pub dropped_short_region_count: usize,
 }
 
+/// P22a-2: the planner rule that admitted a capped cut over the pass
+/// ceiling. [`Adaptive3dRuntimeEvent::FeedCapStart`] carries it, and the
+/// semantic trace names it on a `FeedCap` item over the capped moves
+/// (`compute::annotate`), so a reader maps a simulated sample to its rule.
+#[derive(Debug, Clone, Copy, PartialEq, Eq, PartialOrd, Ord, Hash)]
+pub enum FeedCapSource {
+    /// A planned clearing turn of the geodesic plan (`LinkLoad::admits_turn`).
+    PlannedTurn,
+    /// D65 in the 2D replay: a step over the ceiling that reads at most a
+    /// slot (`LinkLoad::admits_capped`).
+    Capped2d,
+    /// A plan window out of a modelled straight plunge (`PassLoad::departing`).
+    DepartureWindow,
+    /// D65 in the 3D lift: a draped step that the stock-read split admits at
+    /// a capped feed (`clearing::admits_capped_split`).
+    CappedSplit3d,
+    /// C4 "Contour each level" (`linking.level_contour`, off by default): a
+    /// contour run whose load passes the ceiling (`level_contour_pass`).
+    LevelContour,
+}
+
+impl FeedCapSource {
+    /// Every variant, in declaration order.
+    pub const ALL: [Self; 5] = [
+        Self::PlannedTurn,
+        Self::Capped2d,
+        Self::DepartureWindow,
+        Self::CappedSplit3d,
+        Self::LevelContour,
+    ];
+
+    /// The stable snake_case key the semantic trace records.
+    #[must_use]
+    pub const fn key(self) -> &'static str {
+        match self {
+            Self::PlannedTurn => "planned_turn",
+            Self::Capped2d => "capped_2d",
+            Self::DepartureWindow => "departure_window",
+            Self::CappedSplit3d => "capped_split_3d",
+            Self::LevelContour => "level_contour",
+        }
+    }
+
+    /// The variant whose [`Self::key`] is `key`.
+    #[must_use]
+    pub fn from_key(key: &str) -> Option<Self> {
+        Self::ALL.into_iter().find(|s| s.key() == key)
+    }
+
+    /// The source of a capped run of the 2D slice plan.
+    pub(crate) const fn of_slice(kind: crate::adaptive::geodesic::SliceCapKind) -> Self {
+        match kind {
+            crate::adaptive::geodesic::SliceCapKind::Turn => Self::PlannedTurn,
+            crate::adaptive::geodesic::SliceCapKind::Capped => Self::Capped2d,
+            crate::adaptive::geodesic::SliceCapKind::Departure => Self::DepartureWindow,
+        }
+    }
+}
+
 #[derive(Debug, Clone, PartialEq)]
 pub enum Adaptive3dRuntimeEvent {
     RegionStart {
@@ -546,12 +605,15 @@ pub enum Adaptive3dRuntimeEvent {
         short: bool,
     },
     /// Geodesic Adaptive (integration step 7.4, design part F): the cuts up
-    /// to the next [`Self::FeedCapEnd`] lie on one planned turn or one run
-    /// of departure windows, and run at `factor` of the feed. The emitter
-    /// consumes the pair: it writes the lowered feed and `Move::feed_cap`
-    /// on the cut moves between them, and adds no annotation.
+    /// to the next [`Self::FeedCapEnd`] lie on one capped run (a planned
+    /// turn, a D65 window or split step, a C4 contour run, or a run of
+    /// departure windows) and run at `factor` of the feed. The emitter
+    /// writes the lowered feed and `Move::feed_cap` on the cut moves between
+    /// them, and keeps the pair as annotations (P22a-2): `compute::annotate`
+    /// binds a `FeedCap` item over the capped moves that names `source`.
     FeedCapStart {
         factor: f64,
+        source: FeedCapSource,
     },
     /// The end of a [`Self::FeedCapStart`] run.
     FeedCapEnd,
@@ -629,7 +691,9 @@ impl Adaptive3dRuntimeEvent {
                     )
                 }
             }
-            Self::FeedCapStart { factor } => format!("Feed cap {factor:.3} of the feed"),
+            Self::FeedCapStart { factor, source } => {
+                format!("Feed cap {factor:.3} of the feed ({})", source.key())
+            }
             Self::FeedCapEnd => "Feed cap end".to_owned(),
         }
     }

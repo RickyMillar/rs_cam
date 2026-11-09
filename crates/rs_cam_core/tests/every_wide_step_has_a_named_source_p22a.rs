@@ -9,12 +9,12 @@
 //!   pass_engagement_limit(s, R))` (the 3D stock-read split reads the same
 //!   value, `adaptive3d/clearing.rs`). `pass_engagement_limit` holds
 //!   `PASS_ENGAGEMENT_TOLERANCE`.
-//! - The source is read from the emitted moves: the entry intents, the
-//!   `Move::feed_cap` runs, and the span ancestry of the sample. No public
-//!   door names the planner's cap source (`FeedCapStart` carries only the
-//!   factor, and the emitter drops it), so three classes are INFERRED from
-//!   the planner rules that write them (see [`Source`]). P22a.md names the
-//!   src item an exact readout needs.
+//! - The source is read from the emitted moves (the entry intents), the
+//!   span ancestry of the sample, and (P22a-2) the `FeedCap` items of the
+//!   semantic trace: each names the planner rule of a capped run
+//!   (`adaptive3d::FeedCapSource`). The inferred cap classes of P22a stay as
+//!   a cross-check of the exact ones (the agreement table). The perimeter
+//!   sweep has no marker and stays inferred.
 //!
 //! Arm 1 (runs by default, debug, about 10 s): the shelf pocket of the D65
 //! sentry through `ProjectSession`. It prints the histogram
@@ -48,6 +48,7 @@ use common::meshes::height_field;
 use common::session::{mesh_model, single_op_session_with, stock_over};
 use common::tools::endmill_tool_config;
 
+use rs_cam_core::adaptive3d::FeedCapSource;
 use rs_cam_core::compute::catalog::OperationConfig;
 use rs_cam_core::compute::operation_configs::{
     Adaptive3dConfig, Adaptive3dEntryStyle, ClearingStrategy,
@@ -63,13 +64,17 @@ use rs_cam_core::stock::simulation_cut::SimulationCutTrace;
 use rs_cam_core::tool::ToolDefinition;
 use rs_cam_core::tool_load::locality::{SpanLookup, is_phantom_transit};
 use rs_cam_core::toolpath::{MoveIntent, MoveType, Toolpath};
+use rs_cam_core::trace::semantic_trace::{
+    SemanticKey, ToolpathSemanticKind, ToolpathSemanticTrace,
+};
 use rs_cam_core::trace::toolpath_spans::Span;
 
 // ── The source of a fed sample ──────────────────────────────────────────
 
-/// The source of a fed sample. The first five are exact reads of public
-/// data; the three `Inferred*` classes rebuild a planner rule from the
-/// emitted moves, because the cap marker carries no source.
+/// The source of a fed sample. The `Cap*` classes are exact (the `FeedCap`
+/// items, P22a-2); the `Inferred*` cap classes rebuild a planner rule from
+/// the emitted moves and serve only the cross-check; the perimeter sweep is
+/// inferred (no marker names it).
 #[derive(Debug, Clone, Copy, PartialEq, Eq, PartialOrd, Ord)]
 enum Source {
     /// A sample whose span ancestry the gates drop as phantom transit
@@ -82,6 +87,18 @@ enum Source {
     PlungeEntry,
     /// A fed keep-down link (`MoveIntent::Linking`).
     KeepDownLink,
+    /// EXACT: a planned clearing turn (`FeedCapSource::PlannedTurn`).
+    CapTurn,
+    /// EXACT: D65 in the 2D replay (`FeedCapSource::Capped2d`).
+    CapD65Plan,
+    /// EXACT: a departure window (`FeedCapSource::DepartureWindow`).
+    CapDeparture,
+    /// EXACT: D65 in the 3D lift (`FeedCapSource::CappedSplit3d`).
+    CapSplit3d,
+    /// EXACT: a C4 contour run over the ceiling (`FeedCapSource::LevelContour`).
+    CapLevelContour,
+    /// A capped move that no `FeedCap` item covers: a defect of the door.
+    CapUnnamed,
     /// INFERRED departure window (`geodesic::slice::fed_runs`): a capped
     /// run in the first cut after an entry whose start lies within R of
     /// the entry's end (the 2D rule: a step out of the plunge starts within
@@ -133,6 +150,12 @@ impl Source {
             Self::HelixEntry => "helix entry",
             Self::PlungeEntry => "plunge entry",
             Self::KeepDownLink => "keep-down link",
+            Self::CapTurn => "planned turn (exact)",
+            Self::CapD65Plan => "D65 2D (exact)",
+            Self::CapDeparture => "departure window (exact)",
+            Self::CapSplit3d => "D65 3D split (exact)",
+            Self::CapLevelContour => "C4 level contour (exact)",
+            Self::CapUnnamed => "OTHER: capped move with no FeedCap item",
             Self::InferredDeparture => "departure window (inferred)",
             Self::InferredSplit3d => "D65 3D split (inferred)",
             Self::InferredCap2dShort => "2D cap <= turn bound: turn or D65 2D (inferred)",
@@ -145,6 +168,17 @@ impl Source {
         }
     }
 
+    /// The exact class of a cap source.
+    const fn of_cap(source: FeedCapSource) -> Self {
+        match source {
+            FeedCapSource::PlannedTurn => Self::CapTurn,
+            FeedCapSource::Capped2d => Self::CapD65Plan,
+            FeedCapSource::DepartureWindow => Self::CapDeparture,
+            FeedCapSource::CappedSplit3d => Self::CapSplit3d,
+            FeedCapSource::LevelContour => Self::CapLevelContour,
+        }
+    }
+
     const fn is_named(self) -> bool {
         match self {
             Self::PhantomTransit
@@ -152,6 +186,11 @@ impl Source {
             | Self::HelixEntry
             | Self::PlungeEntry
             | Self::KeepDownLink
+            | Self::CapTurn
+            | Self::CapD65Plan
+            | Self::CapDeparture
+            | Self::CapSplit3d
+            | Self::CapLevelContour
             | Self::InferredDeparture
             | Self::InferredSplit3d
             | Self::InferredCap2dShort
@@ -159,7 +198,7 @@ impl Source {
             | Self::InferredPerimeter
             | Self::CapJoint
             | Self::UncappedDrape => true,
-            Self::Uncapped | Self::OtherIntent => false,
+            Self::Uncapped | Self::OtherIntent | Self::CapUnnamed => false,
         }
     }
 }
@@ -288,11 +327,18 @@ struct CapRun {
     after_entry: Option<P3>,
 }
 
-/// The source of each move of `tp` (by index). A rapid or a retract gets
-/// `None`.
-fn move_sources(tp: &Toolpath, op: OpFacts, rules: PlannerRules) -> Vec<Option<Source>> {
+/// The source of each move of `tp` (by index; a rapid or a retract gets
+/// `None`), with the capped moves read from `exact` (the `FeedCap` items),
+/// and the inferred class of each capped move (the cross-check).
+fn move_sources(
+    tp: &Toolpath,
+    op: OpFacts,
+    rules: PlannerRules,
+    exact: &[Option<FeedCapSource>],
+) -> (Vec<Option<Source>>, Vec<Option<Source>>) {
     let moves = &tp.moves;
     let mut out: Vec<Option<Source>> = vec![None; moves.len()];
+    let mut inferred: Vec<Option<Source>> = vec![None; moves.len()];
     let turn_bound = rules.turn_bound(op.stepover, op.tool_radius, op.tolerance);
     // The end of the last entry while the first cut after it runs.
     let mut entry_end: Option<P3> = None;
@@ -388,11 +434,86 @@ fn move_sources(tp: &Toolpath, op: OpFacts, rules: PlannerRules) -> Vec<Option<S
         } else {
             Source::InferredCap2dLong
         };
-        for slot in &mut out[run.first..=run.last] {
+        for slot in &mut inferred[run.first..=run.last] {
             *slot = Some(source);
         }
     }
-    out
+    for (i, slot) in out.iter_mut().enumerate() {
+        if tp.moves[i].feed_cap.is_some() && tp.moves[i].intent == MoveIntent::ClearingCut {
+            *slot = Some(
+                exact
+                    .get(i)
+                    .copied()
+                    .flatten()
+                    .map_or(Source::CapUnnamed, Source::of_cap),
+            );
+        }
+    }
+    (out, inferred)
+}
+
+/// The exact cap source of each move: the `FeedCap` items of the semantic
+/// trace (P22a-2), on the capped moves they cover. Also the pin counts:
+/// capped clearing moves in no item, in two or more items, and uncapped
+/// clearing moves inside an item.
+fn exact_sources(
+    tp: &Toolpath,
+    trace: Option<&ToolpathSemanticTrace>,
+) -> (Vec<Option<FeedCapSource>>, CapPin) {
+    let n = tp.moves.len();
+    let mut source: Vec<Option<FeedCapSource>> = vec![None; n];
+    let mut cover = vec![0usize; n];
+    let mut pin = CapPin::default();
+    for item in trace.map_or(&[][..], |t| t.items.as_slice()) {
+        if item.kind != ToolpathSemanticKind::FeedCap {
+            continue;
+        }
+        pin.items += 1;
+        let key = item
+            .params
+            .get(SemanticKey::CapSource)
+            .and_then(|v| v.as_str())
+            .and_then(FeedCapSource::from_key)
+            .expect("a FeedCap item names its source");
+        let (Some(a), Some(b)) = (item.move_start, item.move_end) else {
+            pin.unlinked += 1;
+            continue;
+        };
+        for k in a..=b.min(n.saturating_sub(1)) {
+            let m = &tp.moves[k];
+            if m.intent != MoveIntent::ClearingCut {
+                continue;
+            }
+            if m.feed_cap.is_some() {
+                cover[k] += 1;
+                source[k] = Some(key);
+            } else {
+                pin.uncapped_inside += 1;
+            }
+        }
+    }
+    for (k, m) in tp.moves.iter().enumerate() {
+        if m.intent == MoveIntent::ClearingCut && m.feed_cap.is_some() {
+            pin.capped += 1;
+            match cover[k] {
+                0 => pin.capped_outside += 1,
+                1 => {}
+                _ => pin.capped_twice += 1,
+            }
+        }
+    }
+    (source, pin)
+}
+
+/// The 1:1 pin between the `FeedCap` items and `Move::feed_cap`.
+#[derive(Debug, Clone, Copy, Default, PartialEq, Eq)]
+struct CapPin {
+    items: usize,
+    unlinked: usize,
+    capped: usize,
+    capped_outside: usize,
+    capped_twice: usize,
+    uncapped_inside: usize,
 }
 
 /// [`Source::InferredPerimeter`]: mark each uncapped loop that fills a
@@ -481,11 +602,15 @@ struct Readout {
     turn_bound: f64,
     capped_moves: usize,
     moves: usize,
+    pin: CapPin,
+    /// Capped moves by (exact class, inferred class): the cross-check.
+    agreement: BTreeMap<(Source, Source), usize>,
 }
 
 /// The public inputs of one readout.
 struct Inputs<'a> {
     tp: &'a Toolpath,
+    semantic: Option<&'a ToolpathSemanticTrace>,
     spans: Option<&'a [Span]>,
     trace: &'a SimulationCutTrace,
     id: ToolpathId,
@@ -498,6 +623,7 @@ struct Inputs<'a> {
 fn readout(inputs: &Inputs<'_>) -> Readout {
     let &Inputs {
         tp,
+        semantic,
         spans,
         trace,
         id,
@@ -506,7 +632,14 @@ fn readout(inputs: &Inputs<'_>) -> Readout {
         rules,
         cell,
     } = inputs;
-    let sources = move_sources(tp, op, rules);
+    let (exact, pin) = exact_sources(tp, semantic);
+    let (sources, inferred) = move_sources(tp, op, rules, &exact);
+    let mut agreement: BTreeMap<(Source, Source), usize> = BTreeMap::new();
+    for (s, i) in sources.iter().zip(&inferred) {
+        if let (Some(s), Some(i)) = (s, i) {
+            *agreement.entry((*s, *i)).or_default() += 1;
+        }
+    }
     let lookup = spans.map(SpanLookup::new);
     let ceiling_mm = op.ceiling_mm();
     let mut out = Readout {
@@ -518,6 +651,8 @@ fn readout(inputs: &Inputs<'_>) -> Readout {
         turn_bound: rules.turn_bound(op.stepover, op.tool_radius, op.tolerance),
         capped_moves: tp.moves.iter().filter(|m| m.feed_cap.is_some()).count(),
         moves: tp.moves.len(),
+        pin,
+        agreement,
         ..Readout::default()
     };
     for sample in &trace.samples {
@@ -694,6 +829,21 @@ fn table(name: &str, r: &Readout) -> String {
     }
     let _ = writeln!(
         s,
+        "\nFeedCap pin: {} items ({} unlinked); {} capped clearing moves, {} in no item, {} in two \
+         or more; {} uncapped clearing moves inside an item.\n",
+        r.pin.items,
+        r.pin.unlinked,
+        r.pin.capped,
+        r.pin.capped_outside,
+        r.pin.capped_twice,
+        r.pin.uncapped_inside
+    );
+    let _ = writeln!(s, "Cross-check, capped moves by (exact, inferred):\n");
+    for ((exact, inferred), n) in &r.agreement {
+        let _ = writeln!(s, "- {} / {}: {n}", exact.label(), inferred.label());
+    }
+    let _ = writeln!(
+        s,
         "\nSamples over c D + cell by the innermost span of the move:\n"
     );
     for (source, row) in &r.rows {
@@ -733,6 +883,7 @@ fn session_readout(session: &ProjectSession, index: usize, op: OpFacts, cell: f6
         .expect("a cut trace");
     readout(&Inputs {
         tp: &annotated.toolpath,
+        semantic: result.semantic_trace.as_deref(),
         spans: annotated.spans_valid.then_some(annotated.spans.as_slice()),
         trace,
         id: tc.id,
@@ -818,6 +969,23 @@ fn every_wide_step_on_the_shelf_has_a_named_source() {
     );
     let r = session_readout(&session, 0, op, SIM_CELL);
     eprintln!("{}", table("shelf pocket (D65 fixture), 6 mm, s 2", &r));
+    // P22a-2: every capped clearing move lies in exactly one FeedCap item,
+    // and no item covers an uncapped clearing move.
+    assert!(
+        r.pin.items > 0,
+        "non-vacuity: the shelf has no FeedCap item"
+    );
+    assert_eq!(
+        (
+            r.pin.unlinked,
+            r.pin.capped_outside,
+            r.pin.capped_twice,
+            r.pin.uncapped_inside
+        ),
+        (0, 0, 0, 0),
+        "the FeedCap items and Move::feed_cap disagree: {:?}",
+        r.pin
+    );
     let wide: usize = r.rows.values().map(|row| row.wide).sum();
     assert!(wide > 0, "non-vacuity: the shelf has no sample over c D");
     // KNOWN RED (P22a finding, HEAD 90e03440b): the floor pass that hugs

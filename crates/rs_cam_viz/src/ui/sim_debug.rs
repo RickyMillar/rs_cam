@@ -73,6 +73,7 @@ pub fn semantic_kind_label(
         ToolpathSemanticKind::Centerline => "Centerline",
         ToolpathSemanticKind::BoundaryClip => "Boundary clip",
         ToolpathSemanticKind::Optimization => "Optimization",
+        ToolpathSemanticKind::FeedCap => "Feed cap",
     }
 }
 
@@ -122,6 +123,7 @@ pub fn semantic_kind_color(
         ToolpathSemanticKind::Centerline => SPAN_SCALE[5],
         ToolpathSemanticKind::BoundaryClip => SPAN_SCALE[0],
         ToolpathSemanticKind::Optimization => SPAN_SCALE[1],
+        ToolpathSemanticKind::FeedCap => SPAN_SCALE[2],
     }
 }
 

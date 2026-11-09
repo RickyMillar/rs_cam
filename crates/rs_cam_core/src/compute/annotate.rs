@@ -283,8 +283,24 @@ pub(super) fn annotate_adaptive3d(
         return;
     }
 
-    let move_indices: Vec<usize> = events.iter().map(|a| a.move_index).collect();
     let tp_len = toolpath.moves.len();
+    // The end of each event's moves: the move index of the next event that
+    // is not a feed-cap marker (P22a-2: the cap markers sit inside a pass
+    // and must not shorten it), or the toolpath end.
+    let is_cap = |e: &Adaptive3dRuntimeEvent| {
+        matches!(
+            e,
+            Adaptive3dRuntimeEvent::FeedCapStart { .. } | Adaptive3dRuntimeEvent::FeedCapEnd
+        )
+    };
+    let mut ends = vec![tp_len; events.len()];
+    let mut next_end = tp_len;
+    for (slot, ann) in ends.iter_mut().zip(events).rev() {
+        *slot = next_end;
+        if !is_cap(&ann.event) {
+            next_end = ann.move_index;
+        }
+    }
     // G-WLCLEANSPAN: the structural spans of the same events; a Region,
     // DepthLevel or Cleanup item binds to its span.
     let structure_spans = crate::compute::spans::spans_from_adaptive3d_annotations(events, tp_len);
@@ -301,7 +317,7 @@ pub(super) fn annotate_adaptive3d(
     let mut level_ctx: Option<ToolpathSemanticContext> = None;
 
     for (i, ann) in events.iter().enumerate() {
-        let end = move_end(&move_indices, i, tp_len);
+        let end = ends.get(i).copied().unwrap_or(tp_len);
 
         match &ann.event {
             Adaptive3dRuntimeEvent::RegionStart {
@@ -445,8 +461,27 @@ pub(super) fn annotate_adaptive3d(
                 scope.bind_to_toolpath(toolpath, ann.move_index, end);
                 scope.finish();
             }
-            // The emitter consumes the feed-cap markers (no annotation).
-            Adaptive3dRuntimeEvent::FeedCapStart { .. } | Adaptive3dRuntimeEvent::FeedCapEnd => {}
+            // P22a-2: a capped run, from its start marker to the next end
+            // marker; the item names the rule that capped it.
+            Adaptive3dRuntimeEvent::FeedCapStart { factor, source } => {
+                let cap_end = events
+                    .iter()
+                    .skip(i + 1)
+                    .find(|a| matches!(a.event, Adaptive3dRuntimeEvent::FeedCapEnd))
+                    .map_or(tp_len, |a| a.move_index);
+                if cap_end > ann.move_index {
+                    let parent = level_ctx.as_ref().unwrap_or(op_context);
+                    let scope = parent.start_item(
+                        ToolpathSemanticKind::FeedCap,
+                        format!("Feed cap {} ({factor:.3})", source.key()),
+                    );
+                    scope.set_param(SemanticKey::CapSource, source.key());
+                    scope.set_param(SemanticKey::FeedFactor, *factor);
+                    scope.bind_to_toolpath(toolpath, ann.move_index, cap_end);
+                    scope.finish();
+                }
+            }
+            Adaptive3dRuntimeEvent::FeedCapEnd => {}
         }
     }
 

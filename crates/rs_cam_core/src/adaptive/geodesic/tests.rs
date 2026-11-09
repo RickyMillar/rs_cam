@@ -642,7 +642,7 @@ fn feed_caps_caps_a_step_over_the_ceiling_d65() {
         .iter()
         .zip(&caps)
         .filter(|(s, _)| matches!(s, AdaptiveSegment::Cut(_)))
-        .map(|(_, c)| *c)
+        .map(|(_, c)| c.map(|(factor, _)| factor))
         .collect();
     let [first, second] = cut_caps.as_slice() else {
         panic!("two cuts: {cut_caps:?}");

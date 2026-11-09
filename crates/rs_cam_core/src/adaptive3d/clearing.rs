@@ -2563,6 +2563,13 @@ fn leave_piece(
     ctx.left_pieces.borrow_mut().push((z_level, piece.clone()));
 }
 
+/// The 2D plan of one outline and the feed cap of each segment (`None`: no
+/// cap), with the rule that capped it.
+type OutlinePlan = (
+    Vec<crate::adaptive::AdaptiveSegment>,
+    Vec<Option<(f64, crate::adaptive::geodesic::SliceCapKind)>>,
+);
+
 /// Plan one outline: the geodesic plan (`adaptive::geodesic`), its residue
 /// cleanup and the F-038 short-group filter, then the feed caps of its
 /// turns and departures. A piece where the field does not apply is left to
@@ -2574,7 +2581,7 @@ fn plan_one_outline(
     (z_level, region_idx): (f64, usize),
     dropped_short_regions: &mut usize,
     cancel: &dyn CancelCheck,
-) -> Result<(Vec<crate::adaptive::AdaptiveSegment>, Vec<Option<f64>>), Cancelled> {
+) -> Result<OutlinePlan, Cancelled> {
     // The geodesic field plans the outline, with its planned clearing
     // turns. Research C38 §16 (lead ruling 2026-10-27): a piece where the
     // field does not apply (its seed of radius R does not fit) is edge
@@ -3272,8 +3279,9 @@ fn plan_and_emit_region(
     // G-ADAPT3DPIECES (D2): the planner plans one piece of the inset of
     // the polygon it gets, so the region is planned outline by outline.
     let mut segs_2d: Vec<crate::adaptive::AdaptiveSegment> = Vec::new();
-    // Geodesic Adaptive: the feed factor of each 2D segment (`None`: no cap).
-    let mut caps_2d: Vec<Option<f64>> = Vec::new();
+    // Geodesic Adaptive: the feed factor of each 2D segment and the rule
+    // that capped it (`None`: no cap).
+    let mut caps_2d: Vec<Option<(f64, super::FeedCapSource)>> = Vec::new();
     for outline in outlines {
         let (segs, caps) = plan_one_outline(
             ctx,
@@ -3284,7 +3292,10 @@ fn plan_and_emit_region(
             cancel,
         )?;
         segs_2d.extend(segs);
-        caps_2d.extend(caps);
+        caps_2d.extend(
+            caps.into_iter()
+                .map(|c| c.map(|(f, kind)| (f, super::FeedCapSource::of_slice(kind)))),
+        );
     }
 
     // Geodesic Adaptive (research C22, C26): each 2D keep-down link after a
@@ -3302,17 +3313,22 @@ fn plan_and_emit_region(
     // `FeedCapStart` and a `FeedCapEnd` marker, and the emitter writes the
     // cap on the moves of the 3D cuts between them (`segments_to_toolpath`).
     let mut cap_open = false;
-    for (seg, cap) in segs_2d.into_iter().zip(caps_2d) {
+    for (seg, capped) in segs_2d.into_iter().zip(caps_2d) {
         if std::mem::take(&mut cap_open) {
             sink.emit(
                 ctx,
                 Adaptive3dSegment::Marker(super::Adaptive3dRuntimeEvent::FeedCapEnd),
             );
         }
-        if let Some(factor) = cap {
+        // The factor of the open 2D cap (the D65 3D split reads it).
+        let cap = capped.map(|(factor, _)| factor);
+        if let Some((factor, source)) = capped {
             sink.emit(
                 ctx,
-                Adaptive3dSegment::Marker(super::Adaptive3dRuntimeEvent::FeedCapStart { factor }),
+                Adaptive3dSegment::Marker(super::Adaptive3dRuntimeEvent::FeedCapStart {
+                    factor,
+                    source,
+                }),
             );
             cap_open = true;
         }
@@ -3571,7 +3587,10 @@ fn plan_and_emit_region(
                         sink.emit(
                             ctx,
                             Adaptive3dSegment::Marker(
-                                super::Adaptive3dRuntimeEvent::FeedCapStart { factor },
+                                super::Adaptive3dRuntimeEvent::FeedCapStart {
+                                    factor,
+                                    source: super::FeedCapSource::CappedSplit3d,
+                                },
                             ),
                         );
                         sink.emit(ctx, Adaptive3dSegment::Cut(vec![prev, curr]));
@@ -3580,11 +3599,14 @@ fn plan_and_emit_region(
                             ctx,
                             Adaptive3dSegment::Marker(super::Adaptive3dRuntimeEvent::FeedCapEnd),
                         );
-                        if let Some(outer) = cap {
+                        if let Some((outer, source)) = capped {
                             sink.emit(
                                 ctx,
                                 Adaptive3dSegment::Marker(
-                                    super::Adaptive3dRuntimeEvent::FeedCapStart { factor: outer },
+                                    super::Adaptive3dRuntimeEvent::FeedCapStart {
+                                        factor: outer,
+                                        source,
+                                    },
                                 ),
                             );
                         }

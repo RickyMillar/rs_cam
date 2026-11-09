@@ -121,7 +121,8 @@ fn producers(session: &ProjectSession) -> Vec<String> {
             | Kind::OffsetPass
             | Kind::Centerline
             | Kind::BoundaryClip
-            | Kind::Optimization => continue,
+            | Kind::Optimization
+            | Kind::FeedCap => continue,
         };
         for slot in best.iter_mut().take(b.saturating_add(1)).skip(a) {
             if a >= slot.0 {
