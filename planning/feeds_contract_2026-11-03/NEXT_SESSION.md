@@ -28,12 +28,18 @@ the section (0.06-0.36, about `c`). The simulation gate reads the deepest cell t
 arc (ap 10 x ae 17.7 = 2.19 kW), and the sample's own removal is 4-12 % of that rectangle. So the
 "band" powers of P22a, P22f-1 and P22f-2a are in part a rectangle reading of a layered cut, and
 the move-end samples (removal ratio 2-6, a segment-time artefact) inflate the "real removal"
-counts. In the tree at hand-off (check `git status`): P22f-2d by agent `p22a-readout`, a re-read
-of the wide samples by section with mid-move samples, and a design survey of every reader that
-judges a simulated sample by ap x ae (the power gate's `EngagedSection::Rectangle`, the P20i
-figures, the readout) with options A/B/C. **Operator decision:** the gate's section reading
-changes acceptance-table rows, so it waits for a ruling. P22f-2b and P22f-3 wait for the
-re-read. Then: P21a/P21b (byte-identical), the wanaka read (GUI rebuild + /mcp), P22b, P22-0c-7.
+counts. P22f-2d (`phases/P22f-2d_DESIGN.md`) re-read every wide sample by section (mid-move
+samples, `mrr / (F / 60)` against the pass section `c D dpp`): **0 of the 3731 idx 1 samples are
+wide by section**; every class's worst section sample is at or under 0.80 kW; the planner's own
+read was right. So the app today slows moves that are not heavy: the P20g modulator and the P20i
+envelope read a rectangle (deepest cell x widest arc) 8 to 25 times the removed section at the
+band. Lead rulings in section 4: option (B), a measured `EngagedSection` variant for simulated
+samples through the same power and force doors, the chip readers keep the arc; this is
+**P22f-2e** and **waits for the operator's Go** (it moves every simulated power and deflection
+verdict, the envelope count, the modulated feeds and F words, the FM1 sim cells; no
+acceptance-table row). P22f-3 is dropped; P22f-2b waits for a section read of ops 20/21.
+In the tree at hand-off (check `git status`): P21a by agent `p22a-readout` (the one RPM-choice
+door, byte-identical). Then: P21b, the wanaka read (GUI rebuild + /mcp), P22b, P22-0c-7.
 
 Operator decisions waiting (plain words in `P21_DESIGN.md` section 9 and the lead's morning
 summary): (1) the wanaka project setting `spindle_strategy = "constant_chip"` with

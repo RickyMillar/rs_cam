@@ -115,3 +115,29 @@ pub fn at_cap_joint(
     (i < moves.len() && marked(i + 1) && near(moves[i].target))
         || (i >= 1 && marked(i - 1) && near(moves[i - 1].target))
 }
+
+/// The sample indices that are the first or the last sample of their move,
+/// for toolpath `id` (P22f-2d). Their segment time does not match the
+/// volume their stamp removes (P22f-2c: removal ratio 2-6 at a move end,
+/// 0.04-0.12 inside the move), so the removal and section reads skip them.
+pub fn move_end_samples(
+    samples: &[SimulationCutSample],
+    id: rs_cam_core::ids::ToolpathId,
+) -> std::collections::HashSet<usize> {
+    let mut bounds: std::collections::HashMap<usize, (usize, usize)> =
+        std::collections::HashMap::new();
+    for s in samples.iter().filter(|s| s.toolpath_id == id) {
+        let entry = bounds
+            .entry(s.move_index)
+            .or_insert((s.sample_index, s.sample_index));
+        entry.0 = entry.0.min(s.sample_index);
+        entry.1 = entry.1.max(s.sample_index);
+    }
+    bounds.values().flat_map(|&(a, b)| [a, b]).collect()
+}
+
+/// The section a sample removes (mm2): its removal rate over its feed,
+/// `mrr / (F / 60)`. `None` at zero feed.
+pub fn section_mm2(sample: &SimulationCutSample) -> Option<f64> {
+    (sample.feed_rate_mm_min > 0.0).then(|| sample.mrr_mm3_s / (sample.feed_rate_mm_min / 60.0))
+}

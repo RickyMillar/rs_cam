@@ -568,6 +568,17 @@ struct Row {
     /// ring or a post inside the cutter, `adaptive/CLAUDE.md` "Do not").
     removal_sum: f64,
     removal_n: usize,
+    /// P22f-2d: samples past the section ceiling `c D dpp` plus the read
+    /// precision in area ((planner cell + sim cell) x ap), mid-move only.
+    wide_section: usize,
+    /// Section reads over the full-width rectangle `D x ap`: physically
+    /// impossible, so a timing artefact of the sample; left out of
+    /// `wide_section` and of the worst section.
+    section_impossible: usize,
+    /// The widest section sample: its section ratio, move, ap, section,
+    /// feed.
+    section_max_ratio: f64,
+    section_max: (usize, f64, f64, f64),
     /// The distinct moves of the `wide_precise` samples.
     precise_moves: std::collections::BTreeSet<usize>,
     max_ae: f64,
@@ -591,6 +602,8 @@ struct Readout {
     turn_bound: f64,
     capped_moves: usize,
     moves: usize,
+    /// P22f-2d: the section ceiling `c D dpp` (mm2).
+    section_ceiling: f64,
     pin: CapPin,
     /// P22f-1: the opening decision of each region and level
     /// (`Produced::region_openings`).
@@ -636,6 +649,7 @@ fn readout(inputs: &Inputs<'_>) -> Readout {
     }
     let lookup = spans.map(SpanLookup::new);
     let ceiling_mm = op.ceiling_mm();
+    let ends = common::wide_samples::move_end_samples(&trace.samples, id);
     let mut out = Readout {
         ceiling_mm,
         ceiling_fraction: op.ceiling_fraction(),
@@ -645,6 +659,7 @@ fn readout(inputs: &Inputs<'_>) -> Readout {
         turn_bound: rules.turn_bound(op.stepover, op.tool_radius, op.tolerance),
         capped_moves: tp.moves.iter().filter(|m| m.feed_cap.is_some()).count(),
         moves: tp.moves.len(),
+        section_ceiling: op.ceiling_mm() * op.depth_per_pass,
         pin,
         agreement,
         openings: openings.to_vec(),
@@ -686,14 +701,33 @@ fn readout(inputs: &Inputs<'_>) -> Readout {
         };
         let row = out.rows.entry(source).or_default();
         row.wide += 1;
+        let mid_move = !ends.contains(&sample.sample_index);
         if ae > ceiling_mm + precision {
             row.wide_precise += 1;
             row.precise_at.push(sample.position);
             let _ = row.precise_moves.insert(sample.move_index);
-            let full = engagement.ap_mm() * ae * sample.feed_rate_mm_min / 60.0;
-            if full > 0.0 {
-                row.removal_sum += sample.mrr_mm3_s / full;
+            // P22f-2d: the removal ratio of mid-move samples only.
+            if mid_move
+                && let Some(ratio) = common::wide_samples::removal_ratio(sample, &engagement)
+            {
+                row.removal_sum += ratio;
                 row.removal_n += 1;
+            }
+        }
+        // P22f-2d: the section read, mid-move samples only.
+        if mid_move && let Some(section) = common::wide_samples::section_mm2(sample) {
+            let ap = engagement.ap_mm();
+            let ceiling_section = ceiling_mm * op.depth_per_pass;
+            let impossible = section > 2.0 * op.tool_radius * ap;
+            if impossible {
+                row.section_impossible += 1;
+            } else if section > ceiling_section + precision * ap {
+                row.wide_section += 1;
+            }
+            let ratio = section / ceiling_section;
+            if !impossible && ratio > row.section_max_ratio {
+                row.section_max_ratio = ratio;
+                row.section_max = (sample.move_index, ap, section, sample.feed_rate_mm_min);
             }
         }
         if ae > ceiling_mm + cell {
@@ -768,6 +802,33 @@ fn table(name: &str, r: &Readout) -> String {
             row.max_at[0],
             row.max_at[1],
             row.max_at[2],
+        );
+    }
+    let _ = writeln!(
+        s,
+        "\nBy section (P22f-2d; mid-move samples; section = mrr / (F / 60); ceiling c D dpp = {:.2} mm2; wide past the ceiling plus (planner cell + sim cell) x ap):\n",
+        r.section_ceiling
+    );
+    let _ = writeln!(
+        s,
+        "| Source | Wide by rectangle (> c D + both cells) | Wide by section | Impossible section reads (> D ap) | Worst section: move, ap (mm), section (mm2), ratio, ae = section / ap (mm), feed |"
+    );
+    let _ = writeln!(s, "|---|---|---|---|---|");
+    for (source, row) in &r.rows {
+        let (m, ap, section, feed) = row.section_max;
+        let _ = writeln!(
+            s,
+            "| {} | {} | {} | {} | {}, {:.2}, {:.1}, {:.3}, {:.2}, {:.0} |",
+            source.label(),
+            row.wide_precise,
+            row.wide_section,
+            row.section_impossible,
+            m,
+            ap,
+            section,
+            row.section_max_ratio,
+            if ap > 0.0 { section / ap } else { 0.0 },
+            feed
         );
     }
     let _ = writeln!(
@@ -1286,7 +1347,7 @@ fn the_step_reads_at_idx_1_moves_1620_1621() {
             .and_then(|e| common::wide_samples::removal_ratio(s, e));
         let _ = writeln!(
             text,
-            "- move {} at ({:.2}, {:.2}, {:.3}): ap {:.2}, ae {:.2}, arc {:.3}, F {:.0}, removal {:.2}",
+            "- move {} at ({:.2}, {:.2}, {:.3}): ap {:.2}, ae {:.2}, arc {:.3}, F {:.0}, removal {:.2}, section {:.2} mm2",
             s.move_index,
             s.position[0],
             s.position[1],
@@ -1295,7 +1356,8 @@ fn the_step_reads_at_idx_1_moves_1620_1621() {
             e.as_ref().map_or(0.0, Engagement::ae_mm),
             s.arc_engagement_radians.unwrap_or(0.0),
             s.feed_rate_mm_min,
-            ratio.unwrap_or(f64::NAN)
+            ratio.unwrap_or(f64::NAN),
+            common::wide_samples::section_mm2(s).unwrap_or(f64::NAN)
         );
     }
     // Pass 2: the planner's reads at the same moves.
@@ -1349,6 +1411,21 @@ fn the_step_reads_at_idx_1_moves_1620_1621() {
             "  - worst-sample strips (index: depth mm): {}",
             strips.join(" ")
         );
+        // P22f-2d: the cells of the side band (strips -6 to -3).
+        for c in r.worst_cells.iter().filter(|c| (-6..=-3).contains(&c.0)) {
+            let _ = writeln!(
+                text,
+                "    - band cell strip {}: centre ({:.2}, {:.2}), {:.2} mm from the axis ({:.2} inside the edge), top {:.2}, floor {:.2}, depth {:.2}",
+                c.0,
+                c.1,
+                c.2,
+                c.3,
+                tool_cfg.diameter / 2.0 - c.3,
+                c.4,
+                c.5,
+                c.4 - c.5
+            );
+        }
     }
     eprintln!("{text}");
     let out = std::path::Path::new(env!("CARGO_TARGET_TMPDIR")).join("p22f2c_step_reads.md");

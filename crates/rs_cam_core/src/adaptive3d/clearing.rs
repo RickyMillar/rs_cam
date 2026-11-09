@@ -1076,8 +1076,18 @@ pub(super) fn step_load_on(
     step_load_on_with(stock, top_at, p, q, radius, clearance, cutter, None)
 }
 
-/// [`step_load_on`], and with `worst` the lateral strips (index, deepest
-/// standing depth) of the sample that gives the load (P22f-2c probe).
+/// The worst-sample read of a step (P22f-2c, P22f-2d probes): the lateral
+/// strips (index, deepest standing depth) and each counted cell (strip,
+/// centre x, centre y, distance from the tool axis, column top, cutter floor
+/// there).
+#[derive(Debug, Clone, Default)]
+pub(super) struct WorstSample {
+    pub(super) strips: Vec<(i64, f64)>,
+    pub(super) cells: Vec<(i64, f64, f64, f64, f64, f64)>,
+}
+
+/// [`step_load_on`], and with `worst` the read of the sample that gives the
+/// load (P22f-2c probe).
 #[expect(
     clippy::too_many_arguments,
     reason = "the inputs of step_load_on and one optional out-parameter"
@@ -1090,7 +1100,7 @@ fn step_load_on_with(
     radius: f64,
     clearance: f64,
     cutter: &StepLoadCutter<'_>,
-    mut worst: Option<&mut Vec<(i64, f64)>>,
+    mut worst: Option<&mut WorstSample>,
 ) -> f64 {
     let grid = &stock.z_grid;
     let cs = grid.cell_size;
@@ -1111,6 +1121,7 @@ fn step_load_on_with(
         let col0 = ((x - grid.origin_u) / cs).round() as isize;
         let row0 = ((y - grid.origin_v) / cs).round() as isize;
         let mut strips: std::collections::BTreeMap<i64, f64> = std::collections::BTreeMap::new();
+        let mut cells: Vec<(i64, f64, f64, f64, f64, f64)> = Vec::new();
         for row in (row0 - r_cells)..=(row0 + r_cells) {
             for col in (col0 - r_cells)..=(col0 + r_cells) {
                 if row < 0 || col < 0 || row as usize >= grid.rows || col as usize >= grid.cols {
@@ -1141,6 +1152,9 @@ fn step_load_on_with(
                     continue;
                 }
                 let strip = ((ex * nx + ey * ny) / cs).round() as i64;
+                if worst.is_some() {
+                    cells.push((strip, cx, cy, d_sq.sqrt(), top, floor));
+                }
                 let deepest = strips.entry(strip).or_insert(0.0);
                 *deepest = deepest.max(top - floor);
             }
@@ -1157,7 +1171,8 @@ fn step_load_on_with(
         if load > highest
             && let (Some(out), Some(kept)) = (worst.as_deref_mut(), kept)
         {
-            *out = kept;
+            out.strips = kept;
+            out.cells = cells;
         }
         highest = highest.max(load);
     }
@@ -1193,6 +1208,9 @@ pub mod step_probe {
         /// The lateral strips (index, deepest standing depth above the
         /// cutter) of the sample that gives the load.
         pub worst_strips: Vec<(i64, f64)>,
+        /// Each counted cell of that sample (P22f-2d): strip, centre x,
+        /// centre y, distance from the tool axis, column top, cutter floor.
+        pub worst_cells: Vec<(i64, f64, f64, f64, f64, f64)>,
     }
 
     struct Armed {
@@ -3708,7 +3726,7 @@ fn plan_and_emit_region(
                     // target move (test-support only; inert unless armed).
                     #[cfg(feature = "test-support")]
                     if let Some(target) = step_probe::target_of(prev, curr) {
-                        let mut worst = Vec::new();
+                        let mut worst = WorstSample::default();
                         let load = step_load_on_with(
                             sink.material_stock,
                             &|row, col| super::stock_top_z_at(sink.material_stock, row, col),
@@ -3739,7 +3757,8 @@ fn plan_and_emit_region(
                             clearance: ctx.stay_down_clearance_mm,
                             cell_mm: sink.material_stock.z_grid.cell_size,
                             depth_per_pass: ctx.depth_per_pass,
-                            worst_strips: worst,
+                            worst_strips: worst.strips,
+                            worst_cells: worst.cells,
                         });
                     }
                     // StepSplit::StockDepth (D43): a step the path rule flags
