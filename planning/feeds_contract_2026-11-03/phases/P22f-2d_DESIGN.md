@@ -179,3 +179,9 @@ chip readers. (C) keeps two definitions side by side, one judged and one printed
 3. The P22f-2a sentry still reads the rectangle and the removal ratio with end samples.
    Recommendation: after the ruling on (A)/(B)/(C), move it to the section read through
    `common::wide_samples` (it already shares the classifier).
+
+## 5. Operator ruling (2026-11-10 morning)
+
+"If P22f is more correct, then 100 % do it." The Go on option (B), P22f-2e: the simulated
+sample reads its measured section (`EngagedSection::Measured`) through the same power and force
+doors; the planned cut keeps the rectangle; the chip readers keep the arc. Order: after P22b.

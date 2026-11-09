@@ -53,7 +53,12 @@ rulings in `phases/P21b.md` section 5: the residual names `MaxSpeedPolicy` and
 `gui_restart` to pick it up). Then: the wanaka read, P22b, P22-0c-7; P21c after the Q1/Q6/Q7
 answers.
 
-Operator decisions waiting (plain words in `P21_DESIGN.md` section 9 and the lead's morning
+Operator answers, 2026-11-10 morning: (1) Go on P22f-2e ("if it is more correct, 100 % do it");
+(2) yes, constant chip on wanaka with the ceiling 24000; (3) idx 1 goes to helix; (4) the acceleration
+rule: "not sure", open (A3 ships in P21c, the share is shown first). The GUI restarted on the fresh
+binary at 09:10; the wanaka read runs from it.
+
+Operator decisions that were waiting (plain words in `P21_DESIGN.md` section 9 and the lead's morning
 summary): (1) the wanaka project setting `spindle_strategy = "constant_chip"` with
 `spindle_rpm_ceiling = 24000` (needed for the 16 rpm acceptance rows; P21c); (2) the P21
 acceleration rule after the A3 share is visible on wanaka; (3) P4 (the ball feed lift, the taper);

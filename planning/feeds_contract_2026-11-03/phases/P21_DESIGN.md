@@ -574,3 +574,12 @@ Operator answers (2026-11-09 evening, in the operator's words, read by the lead)
   waits for a plain-words yes; the acceptance rows that need it are listed in section 6.1.
 - Q12: "$30 is 24000 on the machine; the file is wrong." The wanaka controller block `rpm_max`
   is corrected to 24000 (lead edit, 2026-11-09).
+
+Operator answers (2026-11-10 morning, in the operator's words):
+- Q7/Q10: "yes, try constant chip on wanaka." The wanaka file takes `spindle_strategy =
+  "constant_chip"` and `spindle_rpm_ceiling = 24000` (the lead edits it through the GUI door and
+  saves). Under P21b the engine still runs the legacy caps; the ceiling binds in P21c.
+- Q1: "not sure." Open. A3 (the reached share, no cap) ships in P21c as ruled; the lead shows the
+  operator the share on wanaka before any cap rule.
+- Q6 stands as read (delete the SFM RPM where the constant-chip rule replaces it).
+P21c is therefore unblocked after P22b.
