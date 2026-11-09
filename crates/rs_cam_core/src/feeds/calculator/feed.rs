@@ -70,7 +70,7 @@ pub(super) fn step5_feed(input: &FeedsInput, speed: &Speed, chip: &Chip, cut: &C
     let effective_d = crate::feeds::engagement::EngagedDiameter::of_hint(
         input.tool_geometry,
         d,
-        input.shank_diameter.unwrap_or(d),
+        input.cut_body.max_cut_diameter_mm,
         cut.ap,
     );
 

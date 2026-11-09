@@ -164,7 +164,7 @@ fn a_section_with_no_model_gives_none_never_zero_p20d() {
         },
     ] {
         assert_eq!(
-            EngagedSection::axial_plunge(hint, 6.0),
+            EngagedSection::axial_plunge(hint, 6.0, 0.0),
             Err(AxialSectionRefusal::TipShapeNotModelled),
             "{hint:?}"
         );

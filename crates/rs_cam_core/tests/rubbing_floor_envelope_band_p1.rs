@@ -217,6 +217,10 @@ fn observe(lut: &VendorLut) -> Vec<Observed> {
                                 flute_length: d * 4.0,
                                 tool_geometry: geometry,
                                 shank_diameter: Some(6.0),
+                                cut_body: rs_cam_core::feeds::CutBody {
+                                    max_cut_diameter_mm: 6.0,
+                                    core_diameter_mm: 0.0,
+                                },
                                 material: &material,
                                 machine: &machine,
                                 operation,
@@ -399,6 +403,10 @@ fn tapered_ball_floor_lands_below_the_global_constant() {
             taper_angle_deg: 7.0,
         },
         shank_diameter: Some(6.0),
+        cut_body: rs_cam_core::feeds::CutBody {
+            max_cut_diameter_mm: 6.0,
+            core_diameter_mm: 0.0,
+        },
         material: &material,
         machine: &machine,
         operation: OperationFamily::Parallel,
@@ -563,6 +571,10 @@ fn the_fallback_lowers_the_floor_only_to_a_published_bound() {
                                 flute_length: d * 4.0,
                                 tool_geometry: geometry,
                                 shank_diameter: Some(6.0),
+                                cut_body: rs_cam_core::feeds::CutBody {
+                                    max_cut_diameter_mm: 6.0,
+                                    core_diameter_mm: 0.0,
+                                },
                                 material: &material,
                                 machine: &machine,
                                 operation,

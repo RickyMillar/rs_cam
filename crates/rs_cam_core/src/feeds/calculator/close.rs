@@ -344,6 +344,7 @@ pub(super) fn result(s: CalcState, entry: Entry) -> FeedsResult {
         let area = crate::feeds::section::EngagedSection::axial_plunge(
             input.tool_geometry,
             input.tool_diameter,
+            input.cut_body.core_diameter_mm,
         )
         .ok()
         .map(|s| s.area_mm2());

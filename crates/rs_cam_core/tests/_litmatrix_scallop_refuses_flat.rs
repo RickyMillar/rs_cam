@@ -48,6 +48,10 @@ fn base_input<'a>(
         flute_count: 2,
         flute_length: 22.0,
         shank_diameter: None,
+        cut_body: rs_cam_core::feeds::CutBody {
+            max_cut_diameter_mm: 6.0,
+            core_diameter_mm: 0.0,
+        },
         tool_geometry,
         material,
         machine,

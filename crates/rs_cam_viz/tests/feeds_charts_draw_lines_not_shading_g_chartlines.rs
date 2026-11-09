@@ -213,6 +213,10 @@ fn explain_with_a_row() -> FeedsExplain {
         flute_count: 2,
         flute_length: 22.0,
         shank_diameter: Some(6.35),
+        cut_body: rs_cam_core::feeds::CutBody {
+            max_cut_diameter_mm: 6.35,
+            core_diameter_mm: 0.0,
+        },
         tool_geometry: ToolGeometryHint::Flat,
         material: &material,
         machine: &machine,

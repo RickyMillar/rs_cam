@@ -209,6 +209,7 @@ fn calculator_and_gate_match_same_observation_id() {
             flute_count: case.flute_count,
             flute_length: 18.0,
             shank_diameter: None,
+            cut_body: rs_cam_core::feeds::CutBody::of_cutter(case.cutter.as_ref()),
             tool_geometry: case.tool_geometry,
             material: &material,
             machine: &machine,

@@ -39,7 +39,10 @@
 //!     ae_mm: 1.0,
 //!     psi_rad: 1.0,
 //!     d_eng_mm: 6.0,
-//!     section: rs_cam_core::feeds::section::EngagedSection::AxialCircle { diameter_mm: 6.0 },
+//!     section: rs_cam_core::feeds::section::EngagedSection::AxialCircle {
+//!         diameter_mm: 6.0,
+//!         core_diameter_mm: 0.0,
+//!     },
 //!     helix_deg: None,
 //! };
 //! ```
@@ -84,10 +87,12 @@ use crate::tool::MillingCutter;
 /// `tool::bull_nose_radius_at_height`). A bull nose below its corner radius
 /// keeps its flat centre. A ball at depth 0 gives 0, and every reader of a
 /// zero diameter returns its degenerate answer (no arc, no lift, no edge
-/// term). Two residuals stay for a ruling (P15 phase file): a V-bit hint
-/// adds its flat tip and the V-bit cutter does not; a tapered-ball hint
-/// clamps at the shank the caller gives, the cutter at its own shaft.
-/// `tests/one_d_eng_door_for_every_engagement_p15.rs` holds the door.
+/// term). One residual stays for a ruling (P15 phase file): a V-bit hint
+/// adds its flat tip and the V-bit cutter does not. P22-0c-6b: a tapered
+/// ball reads ONE cap on both doors, the body's cutting cap
+/// (`ToolBody::max_cut_diameter_mm`, the width at the flute top, never
+/// above the shaft), so the hint and the cutter give one width at every
+/// depth. `tests/one_d_eng_door_for_every_engagement_p15.rs` holds the door.
 #[derive(Debug, Clone, Copy, PartialEq)]
 pub struct EngagedDiameter {
     d_eng: f64,
@@ -98,26 +103,41 @@ pub struct EngagedDiameter {
 
 impl EngagedDiameter {
     /// The engaged diameter of a hint tool at the axial depth `ap_mm`:
-    /// [`crate::feeds::effective_diameter`].
+    /// [`crate::feeds::effective_diameter`]. `max_cut_diameter_mm` is the
+    /// body's cutting cap ([`crate::feeds::CutBody`]); a tapered ball cuts
+    /// no wider than it.
     #[must_use]
     pub fn of_hint(
         tool: ToolGeometryHint,
         diameter_mm: f64,
-        shank_diameter_mm: f64,
+        max_cut_diameter_mm: f64,
         ap_mm: f64,
     ) -> Self {
         Self {
-            d_eng: crate::feeds::effective_diameter(tool, diameter_mm, shank_diameter_mm, ap_mm),
+            d_eng: crate::feeds::effective_diameter(tool, diameter_mm, max_cut_diameter_mm, ap_mm),
             nominal: diameter_mm,
         }
     }
 
     /// The engaged diameter of a built tool at the axial depth `ap_mm`:
-    /// `2 x tool.engagement_radius(max(ap, 0))`, never below 0.
+    /// `2 x tool.engagement_radius(max(ap, 0))`, never below 0. A tapered
+    /// ball clamps it at the body's cutting cap
+    /// (`ToolBody::max_cut_diameter_mm`, P22-0c-6 ruling 2), the cap of
+    /// the hint door: the plan and the simulation read one width. The
+    /// cap binds only a sample deeper than the flute length. The other
+    /// shapes keep the cutter's own width (P22-0c-6, the 6b open questions).
     #[must_use]
     pub fn of_tool(tool: &crate::tool::ToolDefinition, ap_mm: f64) -> Self {
+        let width = (2.0 * tool.engagement_radius(ap_mm.max(0.0))).max(0.0);
+        let d_eng = match tool.to_geometry_hint() {
+            ToolGeometryHint::TaperedBall { .. } => width.min(tool.body().max_cut_diameter_mm()),
+            ToolGeometryHint::Flat
+            | ToolGeometryHint::Ball
+            | ToolGeometryHint::Bull { .. }
+            | ToolGeometryHint::VBit { .. } => width,
+        };
         Self {
-            d_eng: (2.0 * tool.engagement_radius(ap_mm.max(0.0))).max(0.0),
+            d_eng,
             nominal: tool.diameter(),
         }
     }
@@ -711,8 +731,10 @@ pub(crate) struct PowerModelInputs {
 }
 
 impl PowerModelInputs {
-    /// P20d: the inputs of a straight plunge of a tool of shape `tool` and
-    /// diameter `diameter_mm` ([`EngagedSection::axial_plunge`]).
+    /// P20d: the inputs of a straight plunge of a tool of shape `tool`,
+    /// diameter `diameter_mm` and core `core_diameter_mm` (0 for a tool
+    /// that cuts at its centre; P22-0c-6 D6)
+    /// ([`EngagedSection::axial_plunge`]).
     ///
     /// # Errors
     ///
@@ -720,13 +742,14 @@ impl PowerModelInputs {
     pub(crate) fn axial_plunge(
         tool: ToolGeometryHint,
         diameter_mm: f64,
+        core_diameter_mm: f64,
         line: ForceLine,
         rpm: f64,
         flute_count: f64,
     ) -> Result<Self, AxialSectionRefusal> {
         Ok(Self {
             line,
-            section: EngagedSection::axial_plunge(tool, diameter_mm)?,
+            section: EngagedSection::axial_plunge(tool, diameter_mm, core_diameter_mm)?,
             spindle_rpm: rpm,
             flute_count,
         })

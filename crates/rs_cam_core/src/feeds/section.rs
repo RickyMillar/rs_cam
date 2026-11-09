@@ -31,7 +31,13 @@
 //! - [`EngagedSection::AxialCircle`]: a flat end mill in a straight
 //!   plunge. `A = pi D^2 / 4`; every flute cuts the whole turn along the
 //!   radius `0..R`, so `J = integral of 2 pi r dr = pi D^2 / 4`. The chip is
-//!   the axial chip `feed / (rpm Z)`.
+//!   the axial chip `feed / (rpm Z)`. P22-0c-6 D6: a tool that does not cut
+//!   at its centre (core diameter `d`, from the body core) cuts the ring
+//!   `d/2..R`: `A = pi (D^2 - d^2) / 4` and `J = integral from d/2 to R of
+//!   2 pi r dr`, the same value. Both take the factor
+//!   `k = 1 - (d / D)^2`, so the power and the MRR take it and the
+//!   specific energy does not change. A centre-cutting tool has `d = 0`,
+//!   `k = 1` exactly, and keeps its bits.
 //!
 //! The force line is measured in side milling (Curti 2021, Goli 2018). A
 //! V groove reads it on the cone; an axial plunge reads it on the end cut,
@@ -73,10 +79,15 @@ pub enum EngagedSection {
         /// The cutter diameter (mm).
         diameter_mm: f64,
     },
-    /// A straight plunge of a flat end mill: the full circle.
+    /// A straight plunge of a flat end mill: the full circle, or the ring
+    /// outside the core of a tool that does not cut at its centre.
     AxialCircle {
         /// The cutter diameter (mm).
         diameter_mm: f64,
+        /// The core diameter (mm), from the body core
+        /// (`tool::body::CoreZone::diameter_mm`); 0 for a tool that cuts at
+        /// its centre.
+        core_diameter_mm: f64,
     },
 }
 
@@ -135,6 +146,15 @@ impl SectionKind {
     }
 }
 
+/// P22-0c-6 D6: the share of the axial circle of diameter `diameter_mm`
+/// that a core of diameter `core_diameter_mm` leaves to the blades,
+/// `k = 1 - (d / D)^2`. A centre-cutting tool (`d = 0`) gives `k = 1`
+/// exactly (`0 / D = 0`, `1 - 0 = 1` in IEEE 754), so its section keeps its
+/// bits.
+fn ring_fraction(diameter_mm: f64, core_diameter_mm: f64) -> f64 {
+    1.0 - (core_diameter_mm / diameter_mm).powi(2)
+}
+
 /// Why [`EngagedSection::axial_plunge`] gives no section: the tip shape of
 /// the plunging tool has no axial power model.
 #[derive(Debug, Clone, Copy, PartialEq, Eq)]
@@ -182,8 +202,9 @@ impl EngagedSection {
         }
     }
 
-    /// The section of a straight plunge of a tool of shape `tool` and
-    /// diameter `diameter_mm`.
+    /// The section of a straight plunge of a tool of shape `tool`,
+    /// diameter `diameter_mm` and core `core_diameter_mm` (0 for a tool
+    /// that cuts at its centre).
     ///
     /// # Errors
     ///
@@ -192,9 +213,13 @@ impl EngagedSection {
     pub fn axial_plunge(
         tool: ToolGeometryHint,
         diameter_mm: f64,
+        core_diameter_mm: f64,
     ) -> Result<Self, AxialSectionRefusal> {
         match tool {
-            ToolGeometryHint::Flat => Ok(Self::AxialCircle { diameter_mm }),
+            ToolGeometryHint::Flat => Ok(Self::AxialCircle {
+                diameter_mm,
+                core_diameter_mm,
+            }),
             ToolGeometryHint::Ball
             | ToolGeometryHint::Bull { .. }
             | ToolGeometryHint::VBit { .. }
@@ -219,8 +244,12 @@ impl EngagedSection {
         let area = match *self {
             Self::Rectangle { ap_mm, ae_mm, .. } => ap_mm * ae_mm,
             Self::VGroove { .. } => self.v_integrals().map_or(0.0, |(a, _)| a),
-            Self::AxialCircle { diameter_mm } => {
+            Self::AxialCircle {
+                diameter_mm,
+                core_diameter_mm,
+            } => {
                 std::f64::consts::PI * diameter_mm * diameter_mm / 4.0
+                    * ring_fraction(diameter_mm, core_diameter_mm)
             }
         };
         area.max(0.0)
@@ -269,11 +298,18 @@ impl EngagedSection {
                 }
                 Some(_) | None => 0.0,
             },
-            Self::AxialCircle { diameter_mm } => {
+            Self::AxialCircle {
+                diameter_mm,
+                core_diameter_mm,
+            } => {
                 if !(diameter_mm.is_finite() && diameter_mm > 0.0) {
                     return 0.0;
                 }
-                let j = std::f64::consts::PI * diameter_mm * diameter_mm / 4.0;
+                let j = std::f64::consts::PI * diameter_mm * diameter_mm / 4.0
+                    * ring_fraction(diameter_mm, core_diameter_mm);
+                if j <= 0.0 {
+                    return 0.0;
+                }
                 edge_scale * flute_count * spindle_rpm * j / 60_000_000.0
             }
         }
@@ -426,7 +462,8 @@ mod tests {
     /// Only a flat end mill has an axial section; every other tip refuses.
     #[test]
     fn only_a_flat_tip_has_an_axial_section() {
-        let s = EngagedSection::axial_plunge(ToolGeometryHint::Flat, 6.0).map(|s| s.area_mm2());
+        let s =
+            EngagedSection::axial_plunge(ToolGeometryHint::Flat, 6.0, 0.0).map(|s| s.area_mm2());
         assert_eq!(s, Ok(PI * 9.0));
         for hint in [
             ToolGeometryHint::Ball,
@@ -441,7 +478,7 @@ mod tests {
             },
         ] {
             assert_eq!(
-                EngagedSection::axial_plunge(hint, 6.0),
+                EngagedSection::axial_plunge(hint, 6.0, 0.0),
                 Err(AxialSectionRefusal::TipShapeNotModelled)
             );
         }

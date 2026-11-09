@@ -105,10 +105,18 @@ fn hint_for(case: (f64, f64, f64)) -> ToolGeometryHint {
 #[test]
 fn the_hint_model_reproduces_the_canonical_profile_exactly() {
     for &case in CASES {
-        let (ball_d, _, shaft_d) = case;
+        let (ball_d, half_angle, shaft_d) = case;
+        // P22-0c-6b: the hint caps at the body's cutting cap. The cone of
+        // every case meets its shaft below the 30 mm flute, so the cap is
+        // the shaft.
+        let cap = rs_cam_core::feeds::CutBody::of_cutter(
+            &TaperedBallEndmill::new(ball_d, half_angle, shaft_d, 30.0).unwrap(),
+        )
+        .max_cut_diameter_mm;
+        assert_eq!(cap.to_bits(), shaft_d.to_bits(), "case={case:?}");
         for &doc in DOCS {
             let canonical = canonical_diameter_at(case, doc).min(shaft_d);
-            let hinted = hint_for(case).engaged_diameter_at_doc(doc, ball_d, shaft_d);
+            let hinted = hint_for(case).engaged_diameter_at_doc(doc, ball_d, cap);
             assert!(
                 (canonical - hinted).abs() < 1e-12,
                 "hint vs canonical diverged: case={case:?} doc={doc} \
@@ -166,6 +174,13 @@ fn tapered_finish_input<'a>(
         flute_count: 2,
         flute_length: 12.0,
         shank_diameter: Some(6.35),
+        // P22-0c-6b: the body of the CASES[0] tool with this 12 mm flute.
+        // Its cone meets the 6.35 mm shaft at 29.53 mm, so the cap is the
+        // width at the flute top, below 6.35; every pinned depth is far
+        // below 12 mm, so no pin reads it.
+        cut_body: rs_cam_core::feeds::CutBody::of_cutter(
+            &TaperedBallEndmill::new(CASES[0].0, CASES[0].1, CASES[0].2, 12.0).unwrap(),
+        ),
         tool_geometry: hint_for(CASES[0]),
         material,
         machine,

@@ -480,6 +480,10 @@ fn the_mdf_vcarve_rpm_stays_at_the_engaged_width_b4() {
         flute_count: 2,
         flute_length: 19.05,
         shank_diameter: Some(12.7),
+        cut_body: rs_cam_core::feeds::CutBody {
+            max_cut_diameter_mm: 12.7,
+            core_diameter_mm: 0.0,
+        },
         tool_geometry: ToolGeometryHint::VBit {
             included_angle: 60.0,
             tip_diameter: 0.1,
@@ -547,6 +551,10 @@ fn the_vbit_parallel_finish_cells_refuse_b4() {
                     flute_count: 2,
                     flute_length: 19.05,
                     shank_diameter: Some(d),
+                    cut_body: rs_cam_core::feeds::CutBody {
+                        max_cut_diameter_mm: d,
+                        core_diameter_mm: 0.0,
+                    },
                     tool_geometry: ToolGeometryHint::VBit {
                         included_angle: 60.0,
                         tip_diameter: 0.0,
@@ -690,6 +698,10 @@ fn the_v_bit_band_is_the_printed_band_at_every_depth_b4() {
             flute_count: 1,
             flute_length: 19.05,
             shank_diameter: Some(d),
+            cut_body: rs_cam_core::feeds::CutBody {
+                max_cut_diameter_mm: d,
+                core_diameter_mm: 0.0,
+            },
             tool_geometry: ToolGeometryHint::VBit {
                 included_angle: 15.0,
                 tip_diameter: 0.127,

@@ -51,6 +51,10 @@ fn wanaka_adaptive3d_6mm_em_lands_stepover_at_target() {
         flute_length: 18.0,
         tool_geometry: ToolGeometryHint::Flat,
         shank_diameter: None,
+        cut_body: rs_cam_core::feeds::CutBody {
+            max_cut_diameter_mm: 6.0,
+            core_diameter_mm: 0.0,
+        },
         material: &material,
         machine: &machine,
         operation: OperationFamily::Adaptive,
@@ -96,6 +100,10 @@ fn wanaka_1mm_tapered_ball_plunge_capped() {
                 taper_angle_deg: 7.0,
             },
             shank_diameter: Some(6.0),
+            cut_body: rs_cam_core::feeds::CutBody {
+                max_cut_diameter_mm: 6.0,
+                core_diameter_mm: 0.0,
+            },
             material: &material,
             machine: &machine,
             operation: op,
@@ -137,6 +145,10 @@ fn wanaka_6mm_em_plunge_not_derated() {
         flute_length: 18.0,
         tool_geometry: ToolGeometryHint::Flat,
         shank_diameter: None,
+        cut_body: rs_cam_core::feeds::CutBody {
+            max_cut_diameter_mm: 6.0,
+            core_diameter_mm: 0.0,
+        },
         material: &material,
         machine: &machine,
         operation: OperationFamily::Adaptive,

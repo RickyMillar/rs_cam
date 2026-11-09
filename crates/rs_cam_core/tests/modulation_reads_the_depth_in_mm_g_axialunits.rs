@@ -100,7 +100,7 @@ fn ctx<'a>(k: &'a MachineKinematics, available_kw: f64) -> ModulationContext<'a>
             cutter: rs_cam_core::dressup::feed_modulation::ModulationCutter {
                 geometry: rs_cam_core::feeds::ToolGeometryHint::Flat,
                 diameter_mm: 6.0,
-                shank_diameter_mm: 6.0,
+                max_cut_diameter_mm: 6.0,
                 helix_deg: 30.0,
             },
             available_kw,

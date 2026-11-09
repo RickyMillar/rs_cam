@@ -48,6 +48,10 @@ fn pocket_input(d: f64, flutes: u32, species: WoodSpecies) -> FeedsInput<'static
         flute_count: flutes,
         flute_length: d * 4.0,
         shank_diameter: None,
+        cut_body: rs_cam_core::feeds::CutBody {
+            max_cut_diameter_mm: d,
+            core_diameter_mm: 0.0,
+        },
         tool_geometry: ToolGeometryHint::Flat,
         material,
         machine,
@@ -75,6 +79,10 @@ fn adaptive_input(d: f64, flutes: u32, species: WoodSpecies) -> FeedsInput<'stat
         flute_count: flutes,
         flute_length: d * 4.0,
         shank_diameter: None,
+        cut_body: rs_cam_core::feeds::CutBody {
+            max_cut_diameter_mm: d,
+            core_diameter_mm: 0.0,
+        },
         tool_geometry: ToolGeometryHint::Flat,
         material,
         machine,

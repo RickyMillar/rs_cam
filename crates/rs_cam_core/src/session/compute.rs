@@ -2301,11 +2301,8 @@ fn modulate_annotated_against_trace(
     let cutter = crate::dressup::feed_modulation::ModulationCutter {
         geometry: tool_cfg.geometry_hint(),
         diameter_mm: tool_cfg.diameter,
-        // P22-0c-6a: the body's shank. `build_cutter` validated the tool
-        // above, and a shank is `> 0` (ruling 6), so the old "else the
-        // diameter" arm could not run. P22-0c-6b gives this cap the
-        // cutting cap (`ToolBody::max_cut_diameter_mm`).
-        shank_diameter_mm: tool_def.body().shank_diameter_mm(),
+        // P22-0c-6b: the body's cutting cap (ruling 1).
+        max_cut_diameter_mm: tool_def.body().max_cut_diameter_mm(),
         helix_deg: tool_cfg.helix_deg,
     };
     let machine_profile = context.machine;

@@ -1419,6 +1419,7 @@ fn the_two_doc_ratio_diameters_only_diverge_for_v_bit_geometry() {
                 flute_count: FLUTES,
                 flute_length: 40.0,
                 shank_diameter: Some(SHANK_DIAMETER_MM),
+                cut_body: rs_cam_core::feeds::CutBody::of_cutter(cutter.as_ref()),
                 tool_geometry: *hint,
                 material: &mat,
                 machine: &machine,

@@ -682,6 +682,10 @@ fn sweep() -> Vec<Row> {
                         flute_count: tool.flutes,
                         flute_length: tool.flute_length_mm,
                         shank_diameter: Some(tool.shank_mm),
+                        cut_body: rs_cam_core::feeds::CutBody {
+                            max_cut_diameter_mm: tool.shank_mm,
+                            core_diameter_mm: 0.0,
+                        },
                         tool_geometry: geometry,
                         material: &material,
                         machine: &machine,

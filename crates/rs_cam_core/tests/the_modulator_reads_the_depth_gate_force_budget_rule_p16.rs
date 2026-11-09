@@ -57,7 +57,7 @@ fn cutter() -> ModulationCutter {
     ModulationCutter {
         geometry: ToolGeometryHint::Flat,
         diameter_mm: D_MM,
-        shank_diameter_mm: D_MM,
+        max_cut_diameter_mm: D_MM,
         helix_deg: HELIX_DEG,
     }
 }

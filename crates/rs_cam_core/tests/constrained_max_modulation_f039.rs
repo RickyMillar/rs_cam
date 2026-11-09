@@ -207,7 +207,7 @@ fn constrained_max_binds_on_deflection_for_long_tool() {
         cutter: rs_cam_core::dressup::feed_modulation::ModulationCutter {
             geometry: rs_cam_core::feeds::ToolGeometryHint::Flat,
             diameter_mm: 3.0,
-            shank_diameter_mm: 3.0,
+            max_cut_diameter_mm: 3.0,
             helix_deg: 30.0,
         },
         compliance_mm_per_n: 0.029,
@@ -268,7 +268,7 @@ fn constrained_max_binds_on_power_for_low_rpm() {
         cutter: rs_cam_core::dressup::feed_modulation::ModulationCutter {
             geometry: rs_cam_core::feeds::ToolGeometryHint::Flat,
             diameter_mm: 6.0,
-            shank_diameter_mm: 6.0,
+            max_cut_diameter_mm: 6.0,
             helix_deg: 30.0,
         },
         available_kw: 0.01,

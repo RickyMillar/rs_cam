@@ -60,6 +60,10 @@ fn recipe(machine: &MachineProfile, pinned_depth: Option<f64>) -> rs_cam_core::f
         flute_count: 4,
         flute_length: 38.0,
         shank_diameter: None,
+        cut_body: rs_cam_core::feeds::CutBody {
+            max_cut_diameter_mm: 12.0,
+            core_diameter_mm: 0.0,
+        },
         tool_geometry: ToolGeometryHint::Flat,
         material: &material,
         machine,

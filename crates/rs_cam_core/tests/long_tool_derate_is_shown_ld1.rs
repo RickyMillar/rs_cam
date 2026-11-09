@@ -54,6 +54,10 @@ fn pocket(stickout_mm: Option<f64>) -> FeedsResult {
         flute_count: 2,
         flute_length: 22.0,
         shank_diameter: Some(DIAMETER_MM),
+        cut_body: rs_cam_core::feeds::CutBody {
+            max_cut_diameter_mm: DIAMETER_MM,
+            core_diameter_mm: 0.0,
+        },
         tool_geometry: ToolGeometryHint::Flat,
         material: &material,
         machine: &machine,

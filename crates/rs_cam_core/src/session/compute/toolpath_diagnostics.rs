@@ -43,7 +43,8 @@ impl ProjectSession {
             let d_eng = crate::feeds::engagement::EngagedDiameter::of_hint(
                 tool_cfg.geometry_hint(),
                 tool_cfg.diameter,
-                tool_cfg.shank_diameter_planning_mm(),
+                // P22-0c-6b: the body's cutting cap (ruling 1).
+                tool.body().max_cut_diameter_mm(),
                 ap,
             );
             crate::feeds::geometry::RadialThinning::of(family, pass_role).lift(ae, d_eng.mm())

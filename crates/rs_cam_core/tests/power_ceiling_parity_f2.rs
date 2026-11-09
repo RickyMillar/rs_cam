@@ -139,6 +139,10 @@ fn slot_cut(machine: &MachineProfile, species: WoodSpecies, diameter: f64) -> Fe
         flute_count: 2,
         flute_length: 3.0 * diameter,
         shank_diameter: None,
+        cut_body: rs_cam_core::feeds::CutBody {
+            max_cut_diameter_mm: diameter,
+            core_diameter_mm: 0.0,
+        },
         tool_geometry: ToolGeometryHint::Flat,
         material: &material,
         machine,
@@ -172,6 +176,10 @@ fn light_finish(machine: &MachineProfile) -> FeedsResult {
         flute_count: 2,
         flute_length: 18.0,
         shank_diameter: None,
+        cut_body: rs_cam_core::feeds::CutBody {
+            max_cut_diameter_mm: 3.0,
+            core_diameter_mm: 0.0,
+        },
         tool_geometry: ToolGeometryHint::Flat,
         material: &material,
         machine,

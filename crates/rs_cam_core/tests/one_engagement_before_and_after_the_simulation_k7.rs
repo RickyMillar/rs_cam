@@ -251,7 +251,8 @@ fn a_vbit_cut_has_one_section_in_the_modulator_and_the_gate() {
             cutter: rs_cam_core::dressup::feed_modulation::ModulationCutter {
                 geometry: tool.geometry_hint(),
                 diameter_mm: tool.diameter,
-                shank_diameter_mm: tool.shank_diameter_planning_mm(),
+                max_cut_diameter_mm: rs_cam_core::feeds::CutBody::of_tool(&tool)
+                    .max_cut_diameter_mm,
                 helix_deg: tool.helix_deg,
             },
             available_kw: budget,

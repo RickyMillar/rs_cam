@@ -137,6 +137,10 @@ fn run(probe: &Probe) -> FeedsResult {
         flute_count: probe.flutes,
         flute_length: probe.diameter_mm * 4.0,
         shank_diameter: None,
+        cut_body: rs_cam_core::feeds::CutBody {
+            max_cut_diameter_mm: probe.diameter_mm,
+            core_diameter_mm: 0.0,
+        },
         tool_geometry: probe.geometry,
         material: &probe.material,
         machine: &machine,

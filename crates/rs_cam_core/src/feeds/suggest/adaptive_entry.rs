@@ -161,7 +161,8 @@ fn kept_engaged_diameter(
     crate::feeds::engagement::EngagedDiameter::of_hint(
         geom,
         tool.diameter,
-        tool.shank_diameter_planning_mm(),
+        // P22-0c-6b: the body's cutting cap (ruling 4 (a)).
+        crate::feeds::CutBody::of_tool(tool).max_cut_diameter_mm,
         ap_mm,
     )
 }

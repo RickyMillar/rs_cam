@@ -471,6 +471,8 @@ fn run_cell_in_material(
         flute_count: tool.flute_count_planning(),
         flute_length: tool.cutting_length_planning_mm(),
         shank_diameter: Some(tool.shank_diameter_planning_mm()),
+        // P22-0c-6b: the body facts (ruling 4 (a)).
+        cut_body: rs_cam_core::feeds::CutBody::of_body(tool_def.body()),
         tool_geometry: tool_def.to_geometry_hint(),
         material,
         machine: &machine,

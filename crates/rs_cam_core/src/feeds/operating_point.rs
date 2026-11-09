@@ -565,12 +565,10 @@ fn resolve_operating_point(
     };
 
     let geom = tool.geometry_hint();
-    let shank = if usable(tool.shank_diameter_planning_mm()) {
-        tool.shank_diameter_planning_mm()
-    } else {
-        tool.diameter
-    };
-    let effective_d = EngagedDiameter::of_hint(geom, tool.diameter, shank, ap_mm);
+    // P22-0c-6b: the cutting cap of the body (ruling 4 (a)).
+    let cut_body = crate::feeds::CutBody::of_tool(tool);
+    let effective_d =
+        EngagedDiameter::of_hint(geom, tool.diameter, cut_body.max_cut_diameter_mm, ap_mm);
     if !usable(effective_d.mm()) {
         return Err(PowerUnmodeled::NoEngagementDiameter);
     }
@@ -635,9 +633,13 @@ fn resolve_axial_point(
     };
     let geom = tool.geometry_hint();
     let flute_count = f64::from(tool.flute_count_planning().max(1));
+    // P22-0c-6b: the cutting cap and the core of the body (ruling 4 (a));
+    // a tool that does not cut at its centre plunges on the ring (D6).
+    let cut_body = crate::feeds::CutBody::of_tool(tool);
     let axial = crate::feeds::engagement::PowerModelInputs::axial_plunge(
         geom,
         tool.diameter,
+        cut_body.core_diameter_mm,
         line,
         rpm,
         flute_count,
@@ -651,11 +653,6 @@ fn resolve_axial_point(
         return Err(PowerUnmodeled::NoEngagementDiameter);
     }
     let ap_mm = feed_mm_min / rpm;
-    let shank = if usable(tool.shank_diameter_planning_mm()) {
-        tool.shank_diameter_planning_mm()
-    } else {
-        tool.diameter
-    };
     Ok(ResolvedPoint {
         // The axial chip: each flute advances `feed / (rpm Z)` per turn.
         force: line.at_mean_chip(feed_mm_min / (rpm * flute_count)),
@@ -664,7 +661,12 @@ fn resolve_axial_point(
         ap_mm,
         rpm,
         available_kw,
-        effective_d: EngagedDiameter::of_hint(geom, tool.diameter, shank, ap_mm),
+        effective_d: EngagedDiameter::of_hint(
+            geom,
+            tool.diameter,
+            cut_body.max_cut_diameter_mm,
+            ap_mm,
+        ),
         geometry: geom,
         helix_deg: tool.helix_deg,
         flute_count,

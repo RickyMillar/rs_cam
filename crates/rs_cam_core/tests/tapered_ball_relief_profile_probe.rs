@@ -192,6 +192,10 @@ fn report_what_suggest_commands_for_a_relief_finish() {
             flute_count: 2,
             flute_length: 25.0,
             shank_diameter: Some(SHANK_DIAMETER_MM),
+            cut_body: rs_cam_core::feeds::CutBody {
+                max_cut_diameter_mm: SHANK_DIAMETER_MM,
+                core_diameter_mm: 0.0,
+            },
             tool_geometry: hint(),
             material: &material,
             machine: &machine,

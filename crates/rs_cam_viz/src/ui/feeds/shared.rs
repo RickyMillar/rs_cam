@@ -374,7 +374,7 @@ pub(crate) fn engaged_diameter_context(
     let engaged = explain.tool_geometry.engaged_diameter_at_doc(
         doc,
         explain.tool_diameter_mm,
-        explain.shank_diameter_mm,
+        explain.max_cut_diameter_mm,
     );
     Some((doc, engaged, tip_dia, kind))
 }

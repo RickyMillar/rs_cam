@@ -785,6 +785,9 @@ pub fn feeds_input_for_operation<'a>(
         flute_count: tool.flute_count_planning(),
         flute_length: tool.cutting_length_planning_mm(),
         shank_diameter: Some(tool.shank_diameter_planning_mm()),
+        // P22-0c-6b (ruling 4 (a)): the cutting cap and the core from the
+        // body that `build_cutter` builds.
+        cut_body: crate::feeds::CutBody::of_tool(tool),
         tool_geometry: tool.geometry_hint(),
         material,
         machine,

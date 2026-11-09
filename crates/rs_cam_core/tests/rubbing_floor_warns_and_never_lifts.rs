@@ -109,6 +109,10 @@ fn b3_scallop_on(machine: &MachineProfile) -> FeedsResult {
         flute_count: 2,
         flute_length: 20.0,
         shank_diameter: Some(6.0),
+        cut_body: rs_cam_core::feeds::CutBody {
+            max_cut_diameter_mm: 6.0,
+            core_diameter_mm: 0.0,
+        },
         tool_geometry: ToolGeometryHint::TaperedBall {
             tip_radius: 0.5,
             taper_angle_deg: 5.26,
@@ -313,6 +317,10 @@ fn a_tool_whose_band_sits_above_the_floor_does_not_warn() {
         flute_count: 2,
         flute_length: 22.0,
         shank_diameter: None,
+        cut_body: rs_cam_core::feeds::CutBody {
+            max_cut_diameter_mm: 6.35,
+            core_diameter_mm: 0.0,
+        },
         tool_geometry: ToolGeometryHint::Ball,
         material: &material,
         machine: &machine,

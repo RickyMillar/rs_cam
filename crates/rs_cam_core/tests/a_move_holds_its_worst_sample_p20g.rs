@@ -95,7 +95,7 @@ fn cutter(tool: &ToolConfig) -> ModulationCutter {
     ModulationCutter {
         geometry: tool.geometry_hint(),
         diameter_mm: tool.diameter,
-        shank_diameter_mm: tool.shank_diameter_planning_mm(),
+        max_cut_diameter_mm: rs_cam_core::feeds::CutBody::of_tool(tool).max_cut_diameter_mm,
         helix_deg: tool.helix_deg,
     }
 }

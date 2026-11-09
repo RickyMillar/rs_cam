@@ -70,10 +70,12 @@ pub struct FeedsExplain {
     /// Tool diameter (mm). Echoed so charts can mark "your tool" without
     /// reaching back into the input.
     pub tool_diameter_mm: f64,
-    /// Tool shank diameter (mm). Caps the engaged-diameter growth for
-    /// tapered-ball tools; echoed so the modal can render the
-    /// engaged-diameter-at-DOC annotation without rebuilding the input.
-    pub shank_diameter_mm: f64,
+    /// The widest cut of the tool (mm): the body's cutting cap
+    /// ([`crate::feeds::CutBody`], P22-0c-6 ruling 7). Caps the
+    /// engaged-diameter growth of a tapered ball; echoed so the modal can
+    /// render the engaged-diameter-at-DOC annotation without rebuilding
+    /// the input.
+    pub max_cut_diameter_mm: f64,
     /// Tool geometry hint. Echoed so the modal can show the
     /// engaged-diameter-at-DOC annotation for tapered-ball / V-bit tools
     /// via [`ToolGeometryHint::engaged_diameter_at_doc`](crate::feeds::ToolGeometryHint::engaged_diameter_at_doc).
@@ -180,7 +182,7 @@ pub fn explain(input: &FeedsInput<'_>) -> FeedsExplain {
         query: query.clone(),
         matched_row,
         tool_diameter_mm: input.tool_diameter,
-        shank_diameter_mm: input.shank_diameter.unwrap_or(input.tool_diameter),
+        max_cut_diameter_mm: input.cut_body.max_cut_diameter_mm,
         tool_geometry: input.tool_geometry,
         flute_count: input.flute_count,
         query_hardness_kind: query.hardness_kind,
@@ -226,6 +228,10 @@ mod tests {
             flute_count: 2,
             flute_length: 22.0,
             shank_diameter: Some(6.35),
+            cut_body: crate::feeds::CutBody {
+                max_cut_diameter_mm: 6.35,
+                core_diameter_mm: 0.0,
+            },
             tool_geometry: ToolGeometryHint::Flat,
             material,
             machine,

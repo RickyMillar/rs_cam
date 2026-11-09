@@ -173,6 +173,8 @@ fn a_tapered_row_is_read_at_the_tip_a1() {
         flute_count: tool.flute_count_planning(),
         flute_length: tool.cutting_length_planning_mm(),
         shank_diameter: Some(tool.shank_diameter_planning_mm()),
+        // P22-0c-6b: the body facts (ruling 4 (a)).
+        cut_body: rs_cam_core::feeds::CutBody::of_tool(&tool),
         tool_geometry: hint,
         material: &material,
         machine: &machine,

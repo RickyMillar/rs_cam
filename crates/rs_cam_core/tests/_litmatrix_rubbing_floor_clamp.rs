@@ -244,6 +244,10 @@ fn calc_ipe_6mm(setup: SetupContext) -> rs_cam_core::feeds::FeedsResult {
         flute_count: 2,
         flute_length: 22.0,
         shank_diameter: None,
+        cut_body: rs_cam_core::feeds::CutBody {
+            max_cut_diameter_mm: 6.0,
+            core_diameter_mm: 0.0,
+        },
         tool_geometry: ToolGeometryHint::Flat,
         material: &material,
         machine: &machine,
@@ -407,6 +411,10 @@ fn calc_oak_6mm() -> rs_cam_core::feeds::FeedsResult {
         flute_count: 2,
         flute_length: 22.0,
         shank_diameter: None,
+        cut_body: rs_cam_core::feeds::CutBody {
+            max_cut_diameter_mm: 6.0,
+            core_diameter_mm: 0.0,
+        },
         tool_geometry: ToolGeometryHint::Flat,
         material: &material,
         machine: &machine,

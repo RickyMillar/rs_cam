@@ -112,7 +112,9 @@ impl ToolGeometryHint {
     /// tools engage at their nominal diameter regardless of DOC.
     ///
     /// `tool_diameter_mm` is the nominal (tip, for tapered/V) diameter;
-    /// `shank_diameter_mm` caps the tapered-ball growth at the shank.
+    /// `max_cut_diameter_mm` caps the tapered-ball growth at the cutting
+    /// cap, `ToolBody::max_cut_diameter_mm` (P22-0c-6 ruling 1: the width
+    /// at the flute top, never above the shaft; the shank does not cut).
     /// Since ruling A1 (2026-09-24) the vendor-LUT lookup does not use
     /// this diameter for a tapered ball: the row is read at the tip
     /// ([`geometry::lut_key_diameter_mm`]). Since ruling B4 (2026-09-25)
@@ -140,7 +142,7 @@ impl ToolGeometryHint {
         self,
         axial_doc_mm: f64,
         tool_diameter_mm: f64,
-        shank_diameter_mm: f64,
+        max_cut_diameter_mm: f64,
     ) -> f64 {
         let axial_doc = axial_doc_mm.max(0.0);
         match self {
@@ -161,7 +163,7 @@ impl ToolGeometryHint {
                 let radius = crate::tool::ball_cone_radius_at_height(
                     tip_radius, sin_alpha, cos_alpha, tan_alpha, axial_doc,
                 );
-                (2.0 * radius).clamp(0.0, shank_diameter_mm)
+                (2.0 * radius).clamp(0.0, max_cut_diameter_mm)
             }
             ToolGeometryHint::VBit { included_angle, .. } => {
                 let half = (included_angle * 0.5).to_radians();
@@ -354,12 +356,77 @@ pub const MAX_SPINDLE_SPEEDUP: f64 = 1.5;
 /// some margin for transient overshoot.
 pub const SPINDLE_CEILING_HEADROOM: f64 = 0.95;
 
+/// P22-0c-6b: the two facts of the tool body that the feeds model reads.
+/// Both come from the body (`tool::body`); no feeds reader derives them.
+///
+/// - `max_cut_diameter_mm`: the cutting cap,
+///   [`crate::tool::body::ToolBody::max_cut_diameter_mm`]. A tapered ball
+///   cuts no wider than it at any depth (P22-0c-6 ruling 1); the hint door
+///   ([`effective_diameter`]) and the cutter door
+///   ([`engagement::EngagedDiameter::of_tool`]) clamp at it.
+/// - `core_diameter_mm`: the core diameter of a tool that does not cut at
+///   its centre ([`crate::tool::body::CoreZone::diameter_mm`]), else 0. A
+///   straight plunge of such a tool cuts the ring
+///   ([`section::EngagedSection::AxialCircle`], D6).
+#[derive(Debug, Clone, Copy, PartialEq)]
+pub struct CutBody {
+    /// The cutting cap (mm).
+    pub max_cut_diameter_mm: f64,
+    /// The core diameter (mm); 0 for a tool that cuts at its centre.
+    pub core_diameter_mm: f64,
+}
+
+impl CutBody {
+    /// The facts of `body`.
+    #[must_use]
+    pub fn of_body(body: &crate::tool::body::ToolBody) -> Self {
+        Self {
+            max_cut_diameter_mm: body.max_cut_diameter_mm(),
+            core_diameter_mm: body
+                .core()
+                .map_or(0.0, |core| crate::tool::body::CoreZone::diameter_mm(&core)),
+        }
+    }
+
+    /// The facts of the body of `cutter` ([`crate::tool::body::body_of`]):
+    /// the body of a whole tool, else the body of a bare shape (no core).
+    #[must_use]
+    pub fn of_cutter(cutter: &dyn crate::tool::MillingCutter) -> Self {
+        Self::of_body(&crate::tool::body::body_of(cutter))
+    }
+
+    /// The facts of the body that `build_cutter` builds for `tool`.
+    ///
+    /// A record outside its domain builds no body (F029). No product door
+    /// holds such a record: `ToolConfig::validate` refuses it at every tool
+    /// door and at load, and the Suggest doors validate again. This arm
+    /// keeps the readers total for a raw test record: the stated diameter
+    /// and no core, the values of a cylinder of that diameter.
+    #[must_use]
+    pub fn of_tool(tool: &crate::compute::tool_config::ToolConfig) -> Self {
+        match crate::compute::cutter::build_cutter(tool) {
+            Ok(tool_def) => Self::of_body(tool_def.body()),
+            Err(_) => Self {
+                max_cut_diameter_mm: tool.diameter,
+                core_diameter_mm: 0.0,
+            },
+        }
+    }
+}
+
 /// Input parameters for the feeds calculator.
 pub struct FeedsInput<'a> {
     pub tool_diameter: f64,
     pub flute_count: u32,
     pub flute_length: f64,
+    /// The shank in the collet (mm): Step 4c (a shank larger than the
+    /// machine collet) is its only reader.
     pub shank_diameter: Option<f64>,
+    /// P22-0c-6b: the facts of the tool body that the feeds model reads
+    /// (the cutting cap and the core), from the body
+    /// ([`CutBody::of_body`]). The product builder
+    /// (`suggest::feeds_input_for_operation`) reads [`CutBody::of_tool`].
+    pub cut_body: CutBody,
     pub tool_geometry: ToolGeometryHint,
     /// The tool's cutter series (operator ruling 2026-10-31,
     /// [`series::ToolSeries`]): `None` is a generic (plain upcut) tool, and
@@ -1836,6 +1903,7 @@ fn axial_power_terms(
     engagement::PowerModelInputs::axial_plunge(
         input.tool_geometry,
         input.tool_diameter,
+        input.cut_body.core_diameter_mm,
         line,
         rpm,
         f64::from(input.flute_count),
@@ -2707,7 +2775,7 @@ fn default_engagement(
 /// `engaged_diameter_at_doc` rather than carrying its own straight-cone
 /// approximation. The tapered ball's tip IS a ball, so below the tangency
 /// height this arm and the `Ball` arm agree to the last bit; above it the
-/// cone shoulder takes over, capped at the shank. See
+/// cone shoulder takes over, capped at the cutting cap. See
 /// `crates/rs_cam_core/src/feeds/geometry.rs` for what was retired and
 /// `tests/tapered_width_model_parity_c3.rs` for what it cost.
 ///
@@ -2717,15 +2785,19 @@ fn default_engagement(
 /// bit for bit, because each arm calls the cutter's own width function. A
 /// bull nose below its corner radius keeps its flat centre (`D - 2 r` plus
 /// the corner chord). A ball at `ap = 0` gives 0 (the cutter's rule; the
-/// old `0.01 x D` floor had no derivation). Two residuals stay open for a
+/// old `0.01 x D` floor had no derivation). One residual stays open for a
 /// ruling: a V-bit arm adds the flat tip (`tip_d + 2 cone`) and the cutter
-/// does not; a tapered-ball arm clamps at `shank_d`, the cutter at its own
-/// shaft. `tests/one_d_eng_door_for_every_engagement_p15.rs` holds the door.
+/// does not. P22-0c-6b closed the tapered residual: the tapered-ball arm
+/// clamps at `max_cut_d`, the body's cutting cap
+/// (`ToolBody::max_cut_diameter_mm`), and `EngagedDiameter::of_tool`
+/// clamps the cutter's width at the same cap, so the hint and the cutter
+/// give one width at every depth.
+/// `tests/one_d_eng_door_for_every_engagement_p15.rs` holds the door.
 ///
 /// Made `pub` on 2026-08-19 for a Suggest pass 9 sentry. Feeds contract P5
 /// deleted that sentry (`suggest_feed_matches_final_geometry`). Do not add
 /// a second copy of the chip-thinning diameter: C3 retired that copy.
-pub fn effective_diameter(geom: ToolGeometryHint, nominal_d: f64, shank_d: f64, ap: f64) -> f64 {
+pub fn effective_diameter(geom: ToolGeometryHint, nominal_d: f64, max_cut_d: f64, ap: f64) -> f64 {
     match geom {
         ToolGeometryHint::Flat => nominal_d,
         // P15: the Ball and Bull arms call the cutter's own width
@@ -2759,7 +2831,7 @@ pub fn effective_diameter(geom: ToolGeometryHint, nominal_d: f64, shank_d: f64, 
             .unwrap_or(nominal_d)
             .min(nominal_d),
         ToolGeometryHint::TaperedBall { .. } => {
-            geom.engaged_diameter_at_doc(ap, nominal_d, shank_d)
+            geom.engaged_diameter_at_doc(ap, nominal_d, max_cut_d)
         }
     }
 }

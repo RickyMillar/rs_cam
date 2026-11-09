@@ -12,6 +12,12 @@
 //! the modulator's `ModulationCutter::d_eng_at`. The value is the corner
 //! chord plus the flat centre, derived here from the geometry:
 //! `2 sqrt(r^2 - (r - ap)^2) + (D - 2 r)`.
+//!
+//! P22-0c-6b closes the tapered residual: a tapered ball whose shank (6.35)
+//! differs from its shaft (6) gives one `d_eng` through the same four doors
+//! at every depth, the cutter's width at `min(ap, L)` (the body's cutting
+//! cap, ruling 1). Before 6b the hint capped at the shank and the cutter at
+//! the shaft, so the two split above the flute top.
 
 #![expect(
     clippy::expect_used,
@@ -25,7 +31,7 @@ use rs_cam_core::feeds::ToolGeometryHint;
 use rs_cam_core::feeds::engagement::{EngagedDiameter, Engagement};
 use rs_cam_core::feeds::envelope::CutPoint;
 use rs_cam_core::stock::simulation_cut::SimulationCutSample;
-use rs_cam_core::tool::{BullNoseEndmill, ToolDefinition};
+use rs_cam_core::tool::{BullNoseEndmill, MillingCutter, TaperedBallEndmill, ToolDefinition};
 
 /// The fixture tool: a 6 mm bull nose with a 1 mm corner radius.
 const D: f64 = 6.0;
@@ -76,7 +82,7 @@ fn a_bull_nose_has_one_engaged_diameter_through_every_door_p15() {
     let modulator = ModulationCutter {
         geometry: hint(),
         diameter_mm: D,
-        shank_diameter_mm: D,
+        max_cut_diameter_mm: D,
         helix_deg: 30.0,
     };
     for ap in DEPTHS {
@@ -116,5 +122,69 @@ fn a_bull_nose_has_one_engaged_diameter_through_every_door_p15() {
             (planned - corner_circle_only).abs() >= 0.5 * (D - 2.0 * R),
             "the flat centre is in d_eng at ap {ap}"
         );
+    }
+}
+
+/// The tapered fixture (P22-0c-6b): wanaka tool 4, tip 2 mm, 5.7106 deg per
+/// side, shaft 6, flute 20, with the legacy shank 6.35 (shank != shaft).
+const TAPER_TIP: f64 = 2.0;
+const TAPER_DEG: f64 = 5.7106;
+const TAPER_SHAFT: f64 = 6.0;
+const TAPER_FLUTE: f64 = 20.0;
+const TAPER_SHANK: f64 = 6.35;
+/// Inside the ball, on the cone, at the flute top and above it.
+const TAPER_DEPTHS: [f64; 5] = [0.2, 10.0, 20.0, 21.0, 25.0];
+
+#[test]
+fn a_tapered_ball_has_one_engaged_diameter_through_every_door_p22_0c6() {
+    let tool = ToolDefinition::new(
+        Box::new(TaperedBallEndmill::new(TAPER_TIP, TAPER_DEG, TAPER_SHAFT, TAPER_FLUTE).unwrap()),
+        TAPER_SHANK,
+        40.0,
+        2,
+        ToolMaterial::Carbide,
+    );
+    let hint = ToolGeometryHint::TaperedBall {
+        tip_radius: TAPER_TIP / 2.0,
+        taper_angle_deg: TAPER_DEG,
+    };
+    let cap = tool.body().max_cut_diameter_mm();
+    // Non-vacuity: the shank is not the cap, and the cap is below the shaft.
+    assert!(cap < TAPER_SHAFT && TAPER_SHANK > TAPER_SHAFT, "cap {cap}");
+    let modulator = ModulationCutter {
+        geometry: hint,
+        diameter_mm: TAPER_TIP,
+        max_cut_diameter_mm: cap,
+        helix_deg: 30.0,
+    };
+    for ap in TAPER_DEPTHS {
+        let cut = CutPoint {
+            ap_mm: ap,
+            ae_mm: 0.5,
+        };
+        let planned = Engagement::from_cut(
+            cut,
+            hint,
+            EngagedDiameter::of_hint(hint, TAPER_TIP, cap, ap),
+            None,
+        )
+        .d_eng_mm();
+        let of_tool = Engagement::from_tool_cut(cut, &tool).d_eng_mm();
+        let measured = Engagement::from_sample(&sample(ap), &tool)
+            .expect("a cutting sample engages")
+            .d_eng_mm();
+        let modulated = modulator.d_eng_at(ap);
+        let want = 2.0 * tool.width_at_height(ap.min(TAPER_FLUTE));
+        for (door, value) in [
+            ("from_cut", planned),
+            ("from_tool_cut", of_tool),
+            ("from_sample", measured),
+            ("modulator", modulated),
+        ] {
+            assert!(
+                (value - want).abs() <= 1e-12 * want,
+                "{door} at ap {ap}: {value} mm, the cutter at min(ap, L) gives {want} mm"
+            );
+        }
     }
 }

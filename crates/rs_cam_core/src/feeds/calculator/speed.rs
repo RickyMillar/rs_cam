@@ -80,7 +80,7 @@ pub(super) fn engaged_diameter(input: &FeedsInput) -> EngagedDiameter {
         diameter: input.tool_geometry.engaged_diameter_at_doc(
             axial_doc_for_eff_d,
             d,
-            input.shank_diameter.unwrap_or(d),
+            input.cut_body.max_cut_diameter_mm,
         ),
         depth_basis,
     }

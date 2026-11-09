@@ -24,6 +24,11 @@
 
 use std::ops::RangeInclusive;
 
+/// The drag step of the GUI shank row (mm): the step the editor used
+/// before F210, a GUI convenience like [`ToolDimension::ui_range`]. The
+/// shank drag range starts one step above the open end of the domain.
+pub const SHANK_DRAG_STEP_MM: f64 = 0.1;
+
 /// A numeric tool field that has a domain.
 #[derive(Debug, Clone, Copy, PartialEq, Eq, Hash)]
 pub enum ToolDimension {
@@ -45,7 +50,8 @@ pub enum ToolDimension {
     TaperHalfAngle,
     /// Tapered-ball cone base ("shaft") diameter, mm.
     ShaftDiameter,
-    /// Shank diameter in the collet, mm. 0 means "not set".
+    /// Shank diameter in the collet, mm. A shank of 0 is outside the
+    /// domain (P22-0c-6 ruling 6); an unknown shank is `Unknown`.
     ShankDiameter,
     /// Stickout from the holder face, mm.
     Stickout,
@@ -105,6 +111,20 @@ impl std::fmt::Display for Requirement {
 impl ToolDomain {
     const fn new(lower: Bound, upper: Bound) -> Self {
         Self { lower, upper }
+    }
+
+    /// The smallest value of the domain on a grid of `step` from the
+    /// lower end: the closed end itself, else the open end plus one step
+    /// (P22-0c-6b). A GUI drag range starts here, so a drag never reaches
+    /// a value that every door refuses. An unbounded end gives
+    /// `f64::NEG_INFINITY`.
+    #[must_use]
+    pub fn lowest_on_grid(&self, step: f64) -> f64 {
+        match self.lower {
+            Bound::Closed(b) => b,
+            Bound::Open(b) => b + step,
+            Bound::Unbounded => f64::NEG_INFINITY,
+        }
     }
 
     /// `None` when `value` is in the domain, else the rule it breaks.
@@ -191,7 +211,11 @@ impl ToolDimension {
             ToolDimension::IncludedAngle => 1.0..=179.0,
             ToolDimension::TaperHalfAngle => 0.5..=89.0,
             ToolDimension::ShaftDiameter => diameter_mm..=100.0,
-            ToolDimension::ShankDiameter => 0.0..=100.0,
+            // P22-0c-6b: the lowest value the domain admits at the drag
+            // step of the shank row; the domain is `> 0`.
+            ToolDimension::ShankDiameter => {
+                self.domain(diameter_mm).lowest_on_grid(SHANK_DRAG_STEP_MM)..=100.0
+            }
             ToolDimension::Stickout => 0.0..=300.0,
             ToolDimension::CentreCoreDiameterMm => 0.01..=diameter_mm,
             ToolDimension::BladeProtrusionMm => 0.0..=diameter_mm,
@@ -254,6 +278,16 @@ mod tests {
         assert!(ToolDimension::HelixDeg.check(0.0, 6.0).is_ok());
         assert!(ToolDimension::HelixDeg.check(90.0, 6.0).is_err());
         assert!(ToolDimension::Diameter.check(0.0, 6.0).is_err());
+    }
+
+    /// P22-0c-6b: the shank drag range starts at the lowest value the
+    /// domain admits at the drag step, so a drag never reaches 0.
+    #[test]
+    fn the_shank_drag_range_starts_inside_the_domain() {
+        let low = *ToolDimension::ShankDiameter.ui_range(6.0).start();
+        assert_eq!(low.to_bits(), SHANK_DRAG_STEP_MM.to_bits());
+        assert!(ToolDimension::ShankDiameter.check(low, 6.0).is_ok());
+        assert!(ToolDimension::ShankDiameter.check(0.0, 6.0).is_err());
     }
 
     /// The GUI drag limits refuse nothing: a 200 mm, 12-flute tool is valid.

@@ -510,10 +510,11 @@ pub(crate) fn engaged_diameter_row(
     explain: &FeedsExplain,
 ) -> Option<Placement> {
     let (doc, engaged, tip_dia, kind) = engaged_diameter_context(current, explain)?;
-    // Flag when the engaged diameter has hit the shank, or differs from
-    // the published tip by more than 50 % — i.e. the cone shoulder is
-    // doing most of the work and the tip spec is misleading.
-    let flag = engaged >= explain.shank_diameter_mm - 1e-6
+    // Flag when the engaged diameter has reached the widest cut (the
+    // body's cutting cap, P22-0c-6 ruling 7), or differs from the
+    // published tip by more than 50 % — i.e. the cone shoulder is doing
+    // most of the work and the tip spec is misleading.
+    let flag = engaged >= explain.max_cut_diameter_mm - 1e-6
         || (tip_dia > 1e-6 && (engaged - tip_dia).abs() / tip_dia > 0.5);
     let hover = engaged_diameter_hover(explain.tool_geometry, kind, tip_dia);
     let face = format!("Engaged Ø {engaged:.2} mm at DOC {doc:.2} mm");

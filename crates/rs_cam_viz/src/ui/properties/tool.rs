@@ -485,7 +485,7 @@ pub(crate) fn draw_tool_fields(
                     "Shank \u{00D8} (in collet):",
                     &mut shank_diameter,
                     " mm",
-                    0.1,
+                    rs_cam_core::tool::domain::SHANK_DRAG_STEP_MM,
                     ToolDimension::ShankDiameter.ui_range(tool.diameter),
                 )
                 .keep_existing()

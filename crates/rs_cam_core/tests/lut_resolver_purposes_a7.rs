@@ -125,6 +125,10 @@ fn the_rpm_anchor_disclosure_renders_as_operator_text() {
         flute_count: 2,
         flute_length: 20.0,
         shank_diameter: Some(6.0),
+        cut_body: rs_cam_core::feeds::CutBody {
+            max_cut_diameter_mm: 6.0,
+            core_diameter_mm: 0.0,
+        },
         tool_geometry: ToolGeometryHint::VBit {
             included_angle: 60.0,
             tip_diameter: 0.2,
@@ -204,6 +208,10 @@ fn sweep(lut: &VendorLut) -> Sweep {
                             flute_count: flutes,
                             flute_length: 20.0,
                             shank_diameter: Some(6.0),
+                            cut_body: rs_cam_core::feeds::CutBody {
+                                max_cut_diameter_mm: 6.0,
+                                core_diameter_mm: 0.0,
+                            },
                             tool_geometry: geometry,
                             material: &material,
                             machine: &machine,

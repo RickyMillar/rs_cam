@@ -297,9 +297,9 @@ pub struct ModulationCutter {
     pub geometry: crate::feeds::ToolGeometryHint,
     /// The nominal cutting diameter (mm).
     pub diameter_mm: f64,
-    /// The shank diameter (mm); a tapered ball's engaged diameter stops
-    /// at it.
-    pub shank_diameter_mm: f64,
+    /// The cutting cap (mm), `ToolBody::max_cut_diameter_mm`: a tapered
+    /// ball's engaged diameter stops at it (P22-0c-6 ruling 1).
+    pub max_cut_diameter_mm: f64,
     /// The helix angle (degrees): the lag of the engaged edge.
     pub helix_deg: f64,
 }
@@ -316,7 +316,7 @@ impl ModulationCutter {
         crate::feeds::engagement::EngagedDiameter::of_hint(
             self.geometry,
             self.diameter_mm,
-            self.shank_diameter_mm,
+            self.max_cut_diameter_mm,
             ap_mm,
         )
     }
@@ -1857,7 +1857,7 @@ mod tests {
         ModulationCutter {
             geometry: crate::feeds::ToolGeometryHint::Flat,
             diameter_mm: 6.0,
-            shank_diameter_mm: 6.0,
+            max_cut_diameter_mm: 6.0,
             helix_deg: 30.0,
         }
     }
