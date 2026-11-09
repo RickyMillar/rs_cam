@@ -45,6 +45,10 @@ pub use region_map::{AreaRegion, AreaRegionMap, AreaRegionRun};
 // `test-support` (F085).
 #[cfg(feature = "test-support")]
 pub use path::debug_adaptive_3d_segments_for_f029_probe;
+// P22f-2a: the level plan probe (2D plan cut cells against the 3D planner
+// stock), a test door behind `test-support`.
+#[cfg(feature = "test-support")]
+pub use path::debug_level_plan_probe;
 
 /// Region ordering strategy for 3D adaptive clearing.
 ///
@@ -514,16 +518,22 @@ pub enum FeedCapSource {
     /// C4 "Contour each level" (`linking.level_contour`, off by default): a
     /// contour run whose load passes the ceiling (`level_contour_pass`).
     LevelContour,
+    /// P22f-2a: a step that the shape rule does not flag (flat, or shallow),
+    /// read on the 3D planner stock by the one load (`clearing::step_load`)
+    /// over the ceiling and at most a slot, so cut at a capped feed. The 3D
+    /// stock read of every fed step of a geodesic cut.
+    StockRead3d,
 }
 
 impl FeedCapSource {
     /// Every variant, in declaration order.
-    pub const ALL: [Self; 5] = [
+    pub const ALL: [Self; 6] = [
         Self::PlannedTurn,
         Self::Capped2d,
         Self::DepartureWindow,
         Self::CappedSplit3d,
         Self::LevelContour,
+        Self::StockRead3d,
     ];
 
     /// The stable snake_case key the semantic trace records.
@@ -535,6 +545,7 @@ impl FeedCapSource {
             Self::DepartureWindow => "departure_window",
             Self::CappedSplit3d => "capped_split_3d",
             Self::LevelContour => "level_contour",
+            Self::StockRead3d => "stock_read_3d",
         }
     }
 
@@ -638,6 +649,33 @@ impl RegionOpening {
             || self.stock_box_clip == OpeningClip::Empty
             || self.centre_reach_clip == OpeningClip::Empty
     }
+}
+
+/// P22f-2a probe (`path::debug_level_plan_probe`, test-support only): one
+/// cell that the 2D plan of a level holds cut, with the level's floor there
+/// and the 3D planner stock top after the level.
+#[derive(Debug, Clone, Copy, PartialEq)]
+pub struct PlanCutPoint {
+    pub x: f64,
+    pub y: f64,
+    /// The level's floor at the point: `max(surface + leave, z_level)`
+    /// (`clearing::lift_to_level`).
+    pub floor_z: f64,
+    /// The 3D planner stock top at the point after the level (the highest
+    /// column top within half a stock-cell diagonal), or `None` with no
+    /// material there.
+    pub top_after: Option<f64>,
+}
+
+/// P22f-2a probe: the cells the 2D plans of one level hold cut, read
+/// against the 3D planner stock after the level. Test-only; no product
+/// reader.
+#[derive(Debug, Clone, PartialEq, Default)]
+pub struct LevelPlanProbe {
+    pub z_level: f64,
+    /// The 3D planner stock cell (mm).
+    pub stock_cell_mm: f64,
+    pub points: Vec<PlanCutPoint>,
 }
 
 #[derive(Debug, Clone, PartialEq)]

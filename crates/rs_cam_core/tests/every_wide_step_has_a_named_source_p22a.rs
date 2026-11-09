@@ -37,8 +37,6 @@
 )]
 
 mod common;
-#[path = "common/source_scan.rs"]
-mod source_scan;
 
 use std::collections::BTreeMap;
 use std::fmt::Write as _;
@@ -97,6 +95,9 @@ enum Source {
     CapSplit3d,
     /// EXACT: a C4 contour run over the ceiling (`FeedCapSource::LevelContour`).
     CapLevelContour,
+    /// EXACT: a step the shape rule does not flag, capped by the 3D stock
+    /// read (`FeedCapSource::StockRead3d`, P22f-2a).
+    CapStockRead,
     /// A capped move that no `FeedCap` item covers: a defect of the door.
     CapUnnamed,
     /// INFERRED departure window (`geodesic::slice::fed_runs`): a capped
@@ -155,6 +156,7 @@ impl Source {
             Self::CapDeparture => "departure window (exact)",
             Self::CapSplit3d => "D65 3D split (exact)",
             Self::CapLevelContour => "C4 level contour (exact)",
+            Self::CapStockRead => "3D stock read (exact)",
             Self::CapUnnamed => "OTHER: capped move with no FeedCap item",
             Self::InferredDeparture => "departure window (inferred)",
             Self::InferredSplit3d => "D65 3D split (inferred)",
@@ -176,6 +178,7 @@ impl Source {
             FeedCapSource::DepartureWindow => Self::CapDeparture,
             FeedCapSource::CappedSplit3d => Self::CapSplit3d,
             FeedCapSource::LevelContour => Self::CapLevelContour,
+            FeedCapSource::StockRead3d => Self::CapStockRead,
         }
     }
 
@@ -191,6 +194,7 @@ impl Source {
             | Self::CapDeparture
             | Self::CapSplit3d
             | Self::CapLevelContour
+            | Self::CapStockRead
             | Self::InferredDeparture
             | Self::InferredSplit3d
             | Self::InferredCap2dShort
@@ -205,31 +209,12 @@ impl Source {
 
 // ── Planner constants, read from the repo source ────────────────────────
 
-/// The number in `src` between `prefix` and `suffix` (the first match).
-fn number_in(src: &str, prefix: &str, suffix: &str) -> f64 {
-    let start = src
-        .find(prefix)
-        .unwrap_or_else(|| panic_missing(prefix))
-        .saturating_add(prefix.len());
-    let rest = &src[start..];
-    let end = rest.find(suffix).unwrap_or_else(|| panic_missing(suffix));
-    rest[..end]
-        .trim()
-        .parse()
-        .unwrap_or_else(|_| panic_missing(prefix))
-}
-
 #[expect(
     clippy::panic,
     reason = "test code: a missing source line fails the test"
 )]
 fn panic_missing(what: &str) -> ! {
     panic!("the planner source no longer holds `{what}`: update the P22a readout")
-}
-
-fn core_source(rel: &str) -> String {
-    let path = std::path::Path::new(env!("CARGO_MANIFEST_DIR")).join(rel);
-    source_scan::strip_comments(&std::fs::read_to_string(&path).expect("the planner source reads"))
 }
 
 /// The planner rules the inference rebuilds, with each constant read from
@@ -242,30 +227,34 @@ struct PlannerRules {
     z_drop_floor: f64,
     /// The factor of `ctx.depth_per_pass * k` (`adaptive3d/clearing.rs`).
     z_drop_factor: f64,
-    /// `PLANNER_CELLS_PER_TOOL_RADIUS` (`adaptive/path.rs`).
-    cells_per_radius: f64,
 }
 
 impl PlannerRules {
     fn read() -> Self {
-        let clearing = core_source("src/adaptive3d/clearing.rs");
-        let path = core_source("src/adaptive/path.rs");
+        let clearing = common::wide_samples::core_source("src/adaptive3d/clearing.rs");
         Self {
-            slope_limit: number_in(&clearing, "const PLUNGE_SLOPE_LIMIT: f64 =", ";"),
-            z_drop_floor: number_in(&clearing, "const Z_DROP_FLOOR_MM: f64 =", ";"),
-            z_drop_factor: number_in(
+            slope_limit: common::wide_samples::number_in(
+                &clearing,
+                "const PLUNGE_SLOPE_LIMIT: f64 =",
+                ";",
+            ),
+            z_drop_floor: common::wide_samples::number_in(
+                &clearing,
+                "const Z_DROP_FLOOR_MM: f64 =",
+                ";",
+            ),
+            z_drop_factor: common::wide_samples::number_in(
                 &clearing,
                 "let z_drop_threshold = (ctx.depth_per_pass *",
                 ")",
             ),
-            cells_per_radius: number_in(&path, "const PLANNER_CELLS_PER_TOOL_RADIUS: f64 =", ";"),
         }
     }
 
-    /// The planner cell `max(R / cells_per_radius, tolerance)`
-    /// (`adaptive::path::planner_cell_size`).
+    /// The planner cell (`common::wide_samples::planner_cell`, the divisor
+    /// read from the source).
     fn planner_cell(self, tool_radius: f64, tolerance: f64) -> f64 {
-        (tool_radius / self.cells_per_radius).max(tolerance)
+        common::wide_samples::planner_cell(tool_radius, tolerance)
     }
 
     /// `adaptive::path::turn_bound`: `s + (1 + sqrt 2) cell`.
@@ -683,7 +672,12 @@ fn readout(inputs: &Inputs<'_>) -> Readout {
                 .flatten()
                 .unwrap_or(Source::OtherIntent);
             if source == Source::Uncapped
-                && at_cap_joint(tp, sample.move_index, sample.position, precision)
+                && common::wide_samples::at_cap_joint(
+                    &tp.moves,
+                    sample.move_index,
+                    sample.position,
+                    precision,
+                )
             {
                 Source::CapJoint
             } else {
@@ -717,24 +711,6 @@ fn readout(inputs: &Inputs<'_>) -> Readout {
         }
     }
     out
-}
-
-/// Whether a sample at `at` on move `i` lies within `reach` (XY) of the
-/// end of move `i` where move `i + 1` is capped or draped, or of its start
-/// where move `i - 1` is.
-fn at_cap_joint(tp: &Toolpath, i: usize, at: [f64; 3], reach: f64) -> bool {
-    let near = |p: P3| (p.x - at[0]).hypot(p.y - at[1]) <= reach;
-    // Move `k` is capped, or is a clearing move with a Z change.
-    let marked = |k: usize| {
-        k >= 1
-            && tp.moves.get(k).is_some_and(|m| {
-                m.feed_cap.is_some()
-                    || (m.intent == MoveIntent::ClearingCut
-                        && (m.target.z - tp.moves[k - 1].target.z).abs() > 1e-6)
-            })
-    };
-    (marked(i + 1) && near(tp.moves[i].target))
-        || (i >= 1 && marked(i - 1) && near(tp.moves[i - 1].target))
 }
 
 /// The kind and label of the smallest span that holds move `i`.
@@ -1133,6 +1109,42 @@ fn wanaka_readout(rapid_order: bool, out_name: &str) {
     );
     // Each unnamed wide move: its geometry and its neighbours.
     let moves = &session.result_at(index).expect("a result").toolpath().moves;
+    // P22f-2a ruling 3: moves 1610-1613 (the dip into the hollow at Z 15.5 on
+    // the P22f-1 plan), each with its intent, feed, cap and the exact cap
+    // source of the `FeedCap` item that covers it.
+    let semantic = session
+        .result_at(index)
+        .and_then(|r| r.semantic_trace.clone());
+    let (exact, _) = exact_sources(
+        &session
+            .result_at(index)
+            .expect("a result")
+            .annotated()
+            .toolpath,
+        semantic.as_deref(),
+    );
+    let _ = writeln!(text, "Moves 1610-1613 (P22f-2a ruling 3):\n");
+    for i in 1610..=1613 {
+        let Some(m) = moves.get(i) else {
+            continue;
+        };
+        let a = moves[i.saturating_sub(1)].target;
+        let _ = writeln!(
+            text,
+            "- {i}: ({:.1}, {:.1}, {:.2}) -> ({:.1}, {:.1}, {:.2}), {:?}, F {:?}, cap {:?}, source {:?}",
+            a.x,
+            a.y,
+            a.z,
+            m.target.x,
+            m.target.y,
+            m.target.z,
+            m.intent,
+            m.move_type.feed_rate(),
+            m.feed_cap,
+            exact.get(i).copied().flatten()
+        );
+    }
+    text.push('\n');
     let _ = writeln!(
         text,
         "Unnamed wide moves (index: from -> to, XY length, feed, cap; previous and next intent):\n"

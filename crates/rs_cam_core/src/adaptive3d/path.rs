@@ -85,8 +85,9 @@ use tracing::{debug, info};
 
 use super::centre_clip::CentreClip;
 use super::clearing::{
-    AreaMask, ClearZLevelContext, MaterialRegion, PlannerCursor, clear_z_level_contour_parallel,
-    clear_z_level_slice, detect_material_regions_labeled, waterline_cleanup,
+    AreaMask, ClearZLevelContext, LevelProbeBuffer, MaterialRegion, PlannerCursor,
+    clear_z_level_contour_parallel, clear_z_level_slice, detect_material_regions_labeled,
+    waterline_cleanup,
 };
 use super::region_map::AreaRegionMap;
 use super::search::{blend_corners_3d, material_remaining_at_level_diag};
@@ -809,6 +810,16 @@ pub(super) struct Adaptive3dSegmentsResult {
     /// P22f-1: the opening decision of each region at each level
     /// (`ClearZLevelContext::region_openings`).
     pub region_openings: Vec<super::RegionOpening>,
+    /// P22f-2a probe: one read per level the slice planned (empty unless
+    /// the run was a probe run).
+    #[cfg_attr(
+        not(feature = "test-support"),
+        expect(
+            dead_code,
+            reason = "only the `test-support` level probe reads it, so the default build reads it nowhere"
+        )
+    )]
+    pub level_probes: Vec<super::LevelPlanProbe>,
     /// Test-only: planner's internal dexel state at the end of the run.
     /// The F-029 probe and the `#[cfg(test)]` module read it.
     #[cfg_attr(
@@ -823,6 +834,22 @@ pub(super) struct Adaptive3dSegmentsResult {
     /// `#[cfg(test)]` module reads it.
     #[cfg_attr(not(test), expect(dead_code, reason = "only the unit tests read it"))]
     pub surface_heightmap: SurfaceHeightmap,
+}
+
+/// P22f-2a probe (`P22f-2_DESIGN.md` ruling 4): run the planner and return,
+/// per level the Geodesic Adaptive slice planned, the cells its 2D plans
+/// hold cut, each with the level's floor and the 3D planner stock top after
+/// the level. A cell where the top stands above the floor is stock the 2D
+/// plan holds cut. **Test door** behind `test-support`; no product reader.
+#[cfg(feature = "test-support")]
+pub fn debug_level_plan_probe(
+    mesh: &TriangleMesh,
+    index: &SpatialIndex,
+    cutter: &dyn MillingCutter,
+    params: &super::Adaptive3dParams,
+    cancel: &dyn CancelCheck,
+) -> Result<Vec<super::LevelPlanProbe>, Cancelled> {
+    Ok(adaptive_3d_segments_probed(mesh, index, cutter, params, None, cancel, true)?.level_probes)
 }
 
 /// F-029 probe: build the planner-internal segments + final material_stock
@@ -874,6 +901,21 @@ pub(super) fn adaptive_3d_segments(
     params: &Adaptive3dParams,
     debug_ctx: Option<&ToolpathDebugContext>,
     cancel: &dyn CancelCheck,
+) -> Result<Adaptive3dSegmentsResult, Cancelled> {
+    adaptive_3d_segments_probed(mesh, index, cutter, params, debug_ctx, cancel, false)
+}
+
+/// [`adaptive_3d_segments`] with the P22f-2a level probe on (`probe`): the
+/// result's `level_probes` then holds one [`super::LevelPlanProbe`] per
+/// level the slice planned. Off on every product path.
+fn adaptive_3d_segments_probed(
+    mesh: &TriangleMesh,
+    index: &SpatialIndex,
+    cutter: &dyn MillingCutter,
+    params: &Adaptive3dParams,
+    debug_ctx: Option<&ToolpathDebugContext>,
+    cancel: &dyn CancelCheck,
+    probe: bool,
 ) -> Result<Adaptive3dSegmentsResult, Cancelled> {
     let tool_radius = params.geometry.tool_radius;
     let r = cutter.radius();
@@ -1277,6 +1319,7 @@ pub(super) fn adaptive_3d_segments(
         region_clip,
         left_pieces: std::cell::RefCell::new(Vec::new()),
         region_openings: std::cell::RefCell::new(Vec::new()),
+        level_probe: probe.then(|| std::cell::RefCell::new(LevelProbeBuffer::default())),
         // C4: the reach band, when the option is on and the rough meets
         // stock beyond its containment.
         band_edge: std::cell::RefCell::new(params.linking.level_contour.as_ref().and_then(
@@ -1535,6 +1578,11 @@ pub(super) fn adaptive_3d_segments(
             })
             .collect(),
         region_openings: ctx.region_openings.take(),
+        level_probes: ctx
+            .level_probe
+            .as_ref()
+            .map(|probe| probe.take().done)
+            .unwrap_or_default(),
         final_material_stock: material_stock,
         surface_heightmap: surface_hm,
     })

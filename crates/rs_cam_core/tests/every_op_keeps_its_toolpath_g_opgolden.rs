@@ -70,6 +70,15 @@
 //! program that the session export door writes. A change of a move intent
 //! or a span label moves `moves_hash` or `spans_hash`, not `gcode_hash`.
 //!
+//! Bless log (scoped blesses with their reason):
+//! - P22f-2a (2026-11-10, lead ruling): field-only bless of
+//!   `adaptive3d/ramp_geodesic` (`move_count` 1122 -> 1145, `linear_count`
+//!   1100 -> 1123, `cutting_length_mm` 2428.636 -> 2412.764, `span_count`
+//!   95 -> 92, `moves_hash`, `spans_hash`, `gcode_hash`). A flat step that the
+//!   3D stock read caps (`FeedCapSource::StockRead3d`) is a cut of its own,
+//!   so the per-cut RDP moves its points inside the chord tolerance, as
+//!   D65's `CappedSplit3d` steps do; the cap sits in the move hash.
+//!
 //! `RS_CAM_OPGOLDEN_DUMP_GCODE=<dir>` writes the program of each arm into
 //! `<dir>/<op>__<arm>.nc`. Use it to show that a change of `gcode_hash`
 //! changes only header lines: dump before and after the change, then diff.

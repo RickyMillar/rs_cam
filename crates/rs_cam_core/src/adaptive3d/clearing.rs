@@ -424,6 +424,10 @@ pub(super) struct ClearZLevelContext<'a> {
     /// P22f-1: the opening decision of each region at each level
     /// (`grown_outlines`), in plan order; `Produced::region_openings`.
     pub(super) region_openings: std::cell::RefCell<Vec<super::RegionOpening>>,
+    /// P22f-2a probe (`path::debug_level_plan_probe`): `Some` only on a probe
+    /// run. The 2D plans of the level fill `pending` (test-support builds);
+    /// the level end reads them against the planner stock into `done`.
+    pub(super) level_probe: Option<std::cell::RefCell<LevelProbeBuffer>>,
     /// C4 (`Adaptive3dLinking::level_contour`): the reach band and its
     /// contour on each level. `None`: the option is off, or the rough has
     /// no band.
@@ -2663,6 +2667,19 @@ fn plan_one_outline(
     } else {
         segs_2d_raw
     };
+    // P22f-2a probe: the cells this plan holds cut (a probe run only).
+    #[cfg(feature = "test-support")]
+    if let Some(probe) = ctx.level_probe.as_ref() {
+        probe
+            .borrow_mut()
+            .pending
+            .extend(crate::adaptive::geodesic::replay_cut_cells(
+                polygon_for_adaptive,
+                params_2d,
+                &segs_2d,
+                &turns,
+            ));
+    }
     // Integration step 7.4, design part F: each planned turn and each
     // departure window of the plan that goes out is a cut of its own, with
     // the feed factor of its reading (`geodesic::feed_caps`).
@@ -2782,6 +2799,14 @@ fn slice_cleanup(
 /// cannot flip its points to rapids (O5b/O5c; see the sweep's comment).
 /// Geodesic Adaptive's grown 2D outline keeps the same margin (C31).
 const PERIMETER_INSET_MARGIN_MM: f64 = 0.25;
+
+/// P22f-2a probe buffer: the cells the level's 2D plans hold cut (filled by
+/// `plan_one_outline` on a probe run), and the finished level reads.
+#[derive(Debug, Default)]
+pub(super) struct LevelProbeBuffer {
+    pub(super) pending: Vec<P2>,
+    pub(super) done: Vec<super::LevelPlanProbe>,
+}
 
 /// Lift a 2D point of a level's plan to 3D: the level, raised over terrain
 /// that stands above it (the ONE level floor, `intended_floor::level_floor_z`).
@@ -3364,6 +3389,9 @@ fn plan_and_emit_region(
     // `FeedCapStart` and a `FeedCapEnd` marker, and the emitter writes the
     // cap on the moves of the 3D cuts between them (`segments_to_toolpath`).
     let mut cap_open = false;
+    // P22f-2a: the steps that the 3D stock read of a step the shape rule does
+    // not flag (capped, split), for the log line below.
+    let mut stock_read = (0usize, 0usize);
     for (seg, capped) in segs_2d.into_iter().zip(caps_2d) {
         if std::mem::take(&mut cap_open) {
             sink.emit(
@@ -3542,6 +3570,12 @@ fn plan_and_emit_region(
                 const PLUNGE_SLOPE_LIMIT: f64 = 0.3;
                 const Z_DROP_FLOOR_MM: f64 = 1.0;
                 let z_drop_threshold = (ctx.depth_per_pass * 1.1).max(Z_DROP_FLOOR_MM);
+                // The pass ceiling `c` (the radial fraction of
+                // `PassLoad::swept_width`) of the stock read; it reads only
+                // `ctx`, so once per cut.
+                let ceiling = crate::ops::adaptive_shared::radial_woc_fraction_from_leading_arc(
+                    crate::adaptive::pass_engagement_limit(ctx.stepover, ctx.tool_radius),
+                );
                 let mut sub_start = 0usize;
                 let mut sub_engaged = engaged.first().copied().unwrap_or(true);
                 for i in 1..path_3d.len() {
@@ -3568,33 +3602,32 @@ fn plan_and_emit_region(
                     // full-depth drop into fresh stock reads near a slot.
                     let engagement_change = engaged[i] != sub_engaged;
                     // D65: the feed factor of a load split admitted as a
-                    // capped cut (`None`: split as before, or no split).
-                    let mut capped_step: Option<f64> = None;
+                    // capped cut, with the rule that capped it (`None`: split
+                    // as before, or no split).
+                    let mut capped_step: Option<(f64, super::FeedCapSource)> = None;
+                    // The one load of this step on the 3D planner stock
+                    // (`step_load`), read only where a rule needs it.
+                    let read_load = || {
+                        step_load(
+                            sink.material_stock,
+                            prev,
+                            curr,
+                            ctx.tool_radius,
+                            ctx.stay_down_clearance_mm,
+                            &StepLoadCutter {
+                                lut: ctx.lut,
+                                diameter: 2.0 * ctx.tool_radius,
+                                depth_per_pass: ctx.depth_per_pass,
+                            },
+                        )
+                    };
                     let large_z = match ctx.step_split {
                         super::StepSplit::PathShape => shape_split,
                         super::StepSplit::StockDepth if shape_split => {
                             let ap =
                                 step_axial_depth(sink.material_stock, prev, curr, ctx.tool_radius);
                             let deep = ap > ctx.depth_per_pass + ctx.stay_down_clearance_mm;
-                            let ceiling =
-                                crate::ops::adaptive_shared::radial_woc_fraction_from_leading_arc(
-                                    crate::adaptive::pass_engagement_limit(
-                                        ctx.stepover,
-                                        ctx.tool_radius,
-                                    ),
-                                );
-                            let load = step_load(
-                                sink.material_stock,
-                                prev,
-                                curr,
-                                ctx.tool_radius,
-                                ctx.stay_down_clearance_mm,
-                                &StepLoadCutter {
-                                    lut: ctx.lut,
-                                    diameter: 2.0 * ctx.tool_radius,
-                                    depth_per_pass: ctx.depth_per_pass,
-                                },
-                            );
+                            let load = read_load();
                             // D65 (Geodesic Adaptive only): a load split that
                             // is not deep and reads at most a slot is cut at
                             // a capped feed, not split into an entry.
@@ -3604,23 +3637,72 @@ fn plan_and_emit_region(
                                 ceiling,
                                 !engagement_change && sub_engaged,
                             ) {
-                                capped_step = Some(capped_step_factor(
-                                    ceiling,
-                                    load,
-                                    prev,
-                                    curr,
-                                    ctx.feed_rate,
-                                    ctx.plunge_rate,
-                                    cap,
+                                capped_step = Some((
+                                    capped_step_factor(
+                                        ceiling,
+                                        load,
+                                        prev,
+                                        curr,
+                                        ctx.feed_rate,
+                                        ctx.plunge_rate,
+                                        cap,
+                                    ),
+                                    super::FeedCapSource::CappedSplit3d,
                                 ));
                                 false
                             } else {
                                 deep || load > ceiling
                             }
                         }
+                        // P22f-2a (`P22f-2_DESIGN.md` ruling 1): a step the
+                        // shape rule does not flag is read on the 3D planner
+                        // stock too, when it cuts (inside one engaged run).
+                        // The 2D plan holds its own swept cells cut, but the
+                        // lift drapes and splits some of them, so a flat step
+                        // can meet stock the 2D grid holds cut (C22 §11.10
+                        // H1). Over the ceiling and at most a slot: the D65
+                        // cap (`StockRead3d`); over a slot: split, as a
+                        // shape-split step is.
+                        super::StepSplit::StockDepth
+                            if !engagement_change && sub_engaged && xy_dist > 1e-6 =>
+                        {
+                            let load = read_load();
+                            if load > ceiling {
+                                // Ruling 1: cap up to a slot, split above. No
+                                // depth test: a flat step stays at the level,
+                                // and the conservative disc depth reads the
+                                // columns a wall-side disc only grazes.
+                                if admits_capped_split(false, load, ceiling, true) {
+                                    let factor = capped_step_factor(
+                                        ceiling,
+                                        load,
+                                        prev,
+                                        curr,
+                                        ctx.feed_rate,
+                                        ctx.plunge_rate,
+                                        cap,
+                                    );
+                                    // The open 2D cap already holds the step
+                                    // where it binds (the factor is its own):
+                                    // no second cap, so no two caps meet with
+                                    // the same feed (the merge would join them).
+                                    if cap.is_none_or(|outer| factor < outer) {
+                                        capped_step =
+                                            Some((factor, super::FeedCapSource::StockRead3d));
+                                        stock_read.0 += 1;
+                                    }
+                                    false
+                                } else {
+                                    stock_read.1 += 1;
+                                    true
+                                }
+                            } else {
+                                false
+                            }
+                        }
                         super::StepSplit::StockDepth => false,
                     };
-                    if let Some(factor) = capped_step {
+                    if let Some((factor, step_source)) = capped_step {
                         // The run so far, then the step on its own between
                         // cap markers, then the open 2D cap again.
                         if i - sub_start >= 2 {
@@ -3640,7 +3722,7 @@ fn plan_and_emit_region(
                             Adaptive3dSegment::Marker(
                                 super::Adaptive3dRuntimeEvent::FeedCapStart {
                                     factor,
-                                    source: super::FeedCapSource::CappedSplit3d,
+                                    source: step_source,
                                 },
                             ),
                         );
@@ -3750,6 +3832,15 @@ fn plan_and_emit_region(
         sink.emit(
             ctx,
             Adaptive3dSegment::Marker(super::Adaptive3dRuntimeEvent::FeedCapEnd),
+        );
+    }
+    if stock_read != (0, 0) {
+        tracing::info!(
+            z = z_level,
+            region = region_idx + 1,
+            capped = stock_read.0,
+            split = stock_read.1,
+            "P22f-2a stock read of the steps the shape rule does not flag"
         );
     }
 
@@ -3936,6 +4027,30 @@ pub(super) fn clear_z_level_slice(
 
     // The level end commits a trailing entry, as the coalescing pass kept it.
     emission.sink.commit_pending(ctx);
+    // P22f-2a probe: the cells the level's 2D plans hold cut, against the
+    // planner stock after the level.
+    if let Some(probe) = ctx.level_probe.as_ref() {
+        let mut probe = probe.borrow_mut();
+        let stock = &*emission.sink.material_stock;
+        let stock_cell = stock.z_grid.cell_size;
+        // Half a stock-cell diagonal: a disc that holds at least one column
+        // centre wherever it stands.
+        let read_radius = stock_cell * std::f64::consts::FRAC_1_SQRT_2;
+        let points = std::mem::take(&mut probe.pending)
+            .into_iter()
+            .map(|p| super::PlanCutPoint {
+                x: p.x,
+                y: p.y,
+                floor_z: lift_to_level(ctx, surface_hm, z_level, p).z,
+                top_after: stock.max_top_z_in_disc(p.x, p.y, read_radius),
+            })
+            .collect();
+        probe.done.push(super::LevelPlanProbe {
+            z_level,
+            stock_cell_mm: stock_cell,
+            points,
+        });
+    }
     let replaced_entries = emission.sink.replaced_entries;
     let coalesced_entries = coalesce_level_entries(
         segments,

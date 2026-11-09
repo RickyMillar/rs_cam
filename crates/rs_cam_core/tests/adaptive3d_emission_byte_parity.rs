@@ -76,6 +76,12 @@
 //!   (`detect_flat_areas` only), blessed alone. Its dump is the Z Blend off
 //!   output: 1197 moves before, 1124 moves after. Every other
 //!   fixture is unchanged.
+//! - P22f-2a (2026-11-10, lead ruling): `geodesic_adaptive` 1432 -> 1455
+//!   moves and `geodesic_adaptive_boundary` 839 -> 864. Every fed step the
+//!   shape rule does not flag is read on the 3D planner stock; a step over
+//!   the ceiling carries a `StockRead3d` cap and goes out as a cut of its
+//!   own (the per-cut RDP moves its points inside the chord tolerance). The
+//!   three Contour Parallel fixtures are unchanged.
 
 #![expect(
     clippy::unwrap_used,

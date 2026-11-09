@@ -26,6 +26,13 @@
 //! a capped feed instead of a re-entry. The pins below are the D65
 //! product's (the research numbers: 978, 2063, 1056, 0 moves). Every other
 //! move-by-move difference is still a defect.
+//!
+//! P22f-2a (`planning/feeds_contract_2026-11-03/phases/P22f-2a.md`, lead
+//! ruling 2026-11-10): every fed step that the shape rule does not flag is
+//! read on the 3D planner stock, and a step over the ceiling carries a
+//! `StockRead3d` cap as a cut of its own; the per-cut RDP moves its points
+//! inside the chord tolerance, as D65's capped steps do. The pins moved
+//! 957 -> 958, 1941 -> 1970, 1008 -> 1028 (the channel stays 0).
 
 #![expect(
     clippy::expect_used,
@@ -180,11 +187,14 @@ fn fixtures() -> Vec<(&'static str, TriangleMesh, f64)> {
 /// branch's, as D65 changed it (the capped steps; module doc). C3, the D55
 /// port (G-AIRPECK): "island pocket, two levels" 1976 → 1941 moves; 16
 /// `EntryPlunge` feeds and 19 `Retract` rapids go, every XY move is the
-/// same.
+/// same. P22f-2a (2026-11-10, lead ruling): a flat step that the 3D stock
+/// read caps (`StockRead3d`) is a cut of its own, so the per-cut RDP moves
+/// its points inside the chord tolerance: 957 → 958, 1941 → 1970,
+/// 1008 → 1028 moves; the channel (no plan) is unchanged.
 const PINS: [(usize, u64); 4] = [
-    (957, 5931675112365951456),
-    (1941, 14901688868866573348),
-    (1008, 6172482053443525791),
+    (958, 2683663895008439377),
+    (1970, 12290909445757566295),
+    (1028, 1495783163567024995),
     (0, 675868731199239589),
 ];
 

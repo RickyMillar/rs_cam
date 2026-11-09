@@ -80,18 +80,18 @@ gcode_hash = "b65900189376a512"
 
 ["adaptive3d/ramp_geodesic"]
 outcome = "ok"
-move_count = 1122
+move_count = 1145
 rapid_count = 9
-linear_count = 1100
+linear_count = 1123
 arc_count = 13
-cutting_length_mm = 2428.636
+cutting_length_mm = 2412.764
 rapid_length_mm = 114.908
 bbox_min = [-15.0, -15.0, 0.5]
 bbox_max = [20.3046, 15.0, 13.0]
-moves_hash = "a1859ac2a9bc34b5"
-span_count = 95
-spans_hash = "d2504b53ac6a84ee"
-gcode_hash = "df62f440464982b5"
+moves_hash = "f30f245ae27a6d7b"
+span_count = 92
+spans_hash = "65bc11cfc85e19a2"
+gcode_hash = "1ff2be7d43e638e0"
 
 ["adaptive3d/rest"]
 outcome = "ok"

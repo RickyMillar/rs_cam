@@ -85,6 +85,7 @@ pub mod reference_plate;
 pub mod scallop_oracle;
 pub mod session;
 pub mod tools;
+pub mod wide_samples;
 pub mod zladder;
 
 use std::path::PathBuf;

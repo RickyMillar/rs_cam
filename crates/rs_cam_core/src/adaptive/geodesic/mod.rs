@@ -105,6 +105,8 @@ mod tests;
 mod wraps;
 
 // The 3D door (`adaptive3d/clearing.rs`, Geodesic Adaptive).
+#[cfg(feature = "test-support")]
+pub(crate) use slice::replay_cut_cells;
 pub(crate) use slice::{
     HeldLinks, SliceCapKind, feed_caps, link_length, slice_cleanup, slice_load_margin,
     slice_replay, slice_segments,

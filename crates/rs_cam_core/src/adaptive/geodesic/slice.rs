@@ -193,7 +193,7 @@ pub(crate) fn feed_caps(
     segments: Vec<AdaptiveSegment>,
     turns: &[(P2, P2)],
 ) -> (Vec<AdaptiveSegment>, Vec<Option<(f64, SliceCapKind)>>) {
-    let (runs, first_capped, first_departure, ceiling) =
+    let (runs, first_capped, first_departure, ceiling, _grid) =
         fed_runs(polygon, params, &segments, turns);
     if runs.is_empty() {
         let n = segments.len();
@@ -281,19 +281,21 @@ pub(crate) fn feed_caps(
 
 /// The runs of [`feed_caps`]: the turns with a step, then the D65 capped
 /// windows, then the departure windows; the index of the first capped
-/// window; the index of the first departure window; and the pass ceiling.
+/// window; the index of the first departure window; the pass ceiling; and
+/// the replay grid after the last segment (`None` when the piece has no
+/// set-up).
 fn fed_runs(
     polygon: &Polygon2,
     params: &AdaptiveParams,
     segments: &[AdaptiveSegment],
     turns: &[(P2, P2)],
-) -> (Vec<FedRun>, usize, usize, f64) {
+) -> (Vec<FedRun>, usize, usize, f64, Option<MaterialGrid>) {
     let r = params.tool_radius;
     let cell = planner_cell(params);
     let pass = pass_load_for(params, cell);
     let area = PassLoad::area_per_mm(params.stepover, r, cell);
     let Some(mut setup) = PieceSetup::new(polygon, params, cell) else {
-        return (Vec::new(), 0, 0, pass.ceiling);
+        return (Vec::new(), 0, 0, pass.ceiling, None);
     };
     let step_len = pass_step_len(cell);
     let on_turn = |a: P2, b: P2| {
@@ -423,7 +425,41 @@ fn fed_runs(
     runs.extend(capped);
     let first_departure = runs.len();
     runs.extend(departures);
-    (runs, first_capped, first_departure, pass.ceiling)
+    (
+        runs,
+        first_capped,
+        first_departure,
+        pass.ceiling,
+        Some(setup.grid),
+    )
+}
+
+/// P22f-2a probe (test-support only): the centres of the cells that the
+/// replay of `segments` (the plan that goes out) holds cut, in the piece's
+/// 2D frame (world XY). The replay is [`feed_caps`]'s own (`fed_runs`).
+#[cfg(feature = "test-support")]
+pub(crate) fn replay_cut_cells(
+    polygon: &Polygon2,
+    params: &AdaptiveParams,
+    segments: &[AdaptiveSegment],
+    turns: &[(P2, P2)],
+) -> Vec<P2> {
+    let (_, _, _, _, grid) = fed_runs(polygon, params, segments, turns);
+    let Some(grid) = grid else {
+        return Vec::new();
+    };
+    let centre = |index: usize| (index as f64 + 0.5) * grid.cell_size;
+    grid.cells
+        .iter()
+        .enumerate()
+        .filter(|&(_, &cell)| cell == crate::adaptive::material_grid::CELL_CLEARED)
+        .map(|(i, _)| {
+            P2::new(
+                grid.origin_x + centre(i % grid.cols),
+                grid.origin_y + centre(i / grid.cols),
+            )
+        })
+        .collect()
 }
 
 /// C22: the length (mm) of the `Link`s of `segments` from the cutter
