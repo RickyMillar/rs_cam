@@ -227,3 +227,15 @@ P22b. P22b still removes the departure windows (79 samples, capped). P22c stays 
 its idx 1 effect depends on P22f. P22e has no case on idx 1 (ruling Q3 holds). The exact
 source door (P22a-2, `FeedCapSource`) is designed in `P22a.md` and deferred. The P22f design
 is `P22f_DESIGN.md` (in progress).
+
+## 11. Lead note before P22b (2026-11-10, ~06:00)
+
+The agent's P22b read (`P22b.md` section 2) found that section 4 (the "style Ramp" pitch row),
+section 5 step 1 and the section 6 row P22b give every geodesic entry a helix bore, while ruling
+Q1 (section 9) says "an op that says ramp gets a ramp". Q1 is the operator's word and outranks the
+table. Lead ruling (`P22b.md` section 3): the bore opens only a helix op; a ramp op keeps its ramp
+and its capped departure windows; the Q1 default (a new op defaults to helix) lands only if every
+saved file writes the entry-style key, so no stored op changes style on load. Wanaka idx 1 states
+ramp, so the predicted idx 1 effect of row P22b does not apply unless the operator sets idx 1 to
+helix. The planner's disc-of-R stamp at a ramp entry (the cut removes a ramp slot) is a candidate
+P22b-2, ruled after P22b lands.

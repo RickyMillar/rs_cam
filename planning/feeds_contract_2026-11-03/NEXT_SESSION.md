@@ -56,7 +56,10 @@ answers.
 Operator decisions waiting (plain words in `P21_DESIGN.md` section 9 and the lead's morning
 summary): (1) the wanaka project setting `spindle_strategy = "constant_chip"` with
 `spindle_rpm_ceiling = 24000` (needed for the 16 rpm acceptance rows; P21c); (2) the P21
-acceleration rule after the A3 share is visible on wanaka; (3) P4 (the ball feed lift, the taper).
+acceleration rule after the A3 share is visible on wanaka; (3) P4 (the ball feed lift, the taper);
+(4) wanaka idx 1 (Back bulk rough 18 mm) states `entry_style = "ramp"`: under ruling Q1 the P22b
+helix bore opens only a helix op, so idx 1 keeps its ramp and its 79 capped departure-window
+samples until the operator sets it to helix (`P22_DESIGN.md` section 11, `P22b.md` section 3).
 
 
 HEAD at the time of writing: `a52e88813` (P20d). The first edition of this brief (`02b832eb9`) is
