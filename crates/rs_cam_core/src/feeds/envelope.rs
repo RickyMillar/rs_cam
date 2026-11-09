@@ -514,24 +514,57 @@ fn interpolate_curve(points: &[[f64; 2]], ae_mm: f64) -> Option<f64> {
     })
 }
 
-/// K7: the facts of the tool that place a measured point
+/// K7: the facts of the tool and the sample that place a measured point
 /// ([`SafeEnvelope::placement_of_measured`]).
 #[derive(Debug, Clone, Copy, PartialEq)]
 pub struct MeasuredTool {
     /// The engaged diameter at the sample depth (mm),
     /// `Engagement::d_eng_mm`.
     pub d_eng_mm: f64,
+    /// P20i: the power of the sample as the power gate grades it
+    /// (`tool_load::power::gate_sample_power`). `None`: the gate does not
+    /// grade the sample (no force line, an air cut, a transit or entry
+    /// sample, a drill cycle), so the placement does not judge its power.
+    pub power: Option<MeasuredPower>,
+}
+
+/// P20i: the power figure of one measured sample, as the power gate
+/// grades it: the sample engagement at the feed the gate reads.
+#[derive(Debug, Clone, Copy, PartialEq, Serialize)]
+pub struct MeasuredPower {
+    /// The predicted spindle power (kW).
+    pub required_kw: f64,
+    /// The rated spindle power at the sample RPM (kW).
+    pub available_kw: f64,
+    /// The feed of the figure (mm/min): the emitted feed, or the reached
+    /// feed (P20c).
+    pub feed_mm_min: f64,
+}
+
+impl MeasuredPower {
+    /// The signed share of the rated power left: positive inside, negative
+    /// over the budget. `None` with no rated power.
+    #[must_use]
+    pub fn margin(&self) -> Option<f64> {
+        (self.available_kw > 0.0)
+            .then(|| (self.available_kw - self.required_kw) / self.available_kw)
+    }
 }
 
 /// K7: the value of a point that one limit judges, and the limit there.
 #[derive(Debug, Clone, Copy, PartialEq, Serialize)]
 pub struct JudgedValue {
-    /// `"depth"` or `"width"`.
+    /// `"depth"`, `"width"` or (P20i) `"power"`.
     pub axis: &'static str,
-    /// The value of the point on that axis (mm).
-    pub measured_mm: f64,
-    /// The limit at the point (mm).
-    pub limit_mm: f64,
+    /// The value of the point on that axis, in `unit`.
+    pub measured: f64,
+    /// The limit at the point, in `unit`.
+    pub limit: f64,
+    /// `"mm"` for a depth or a width, `"kW"` for power.
+    pub unit: &'static str,
+    /// P20i: the feed of a power value (mm/min), the feed the power gate
+    /// reads. `None` for a depth or a width.
+    pub feed_mm_min: Option<f64>,
 }
 
 /// Where a point sits against the boundary.
@@ -574,8 +607,17 @@ pub struct SpeedsPoint {
     #[serde(serialize_with = "value_only")]
     pub chip: Sourced<ChipMm>,
     /// The spindle power at the point (kW); `None` when not modelled
-    /// (P20d).
+    /// (P20d). It is the power of `power_case` at `power_width_mm`, not
+    /// always at `ae_mm` (K7 change 3).
     pub power_kw: Option<f64>,
+    /// P20i: the case of the pre-sim power set that `power_kw` is the
+    /// power of (`FeedsResult::power_case`): the nominal width, the planner
+    /// cap of a 3D Rough or the slot of a slot first pass.
+    pub power_case: crate::feeds::engagement::PowerCase,
+    /// P20i: the width (mm) that `power_kw` is evaluated at: `ae_mm` for
+    /// the nominal case, `min(trochoid_cap_mult x ae, D)` for the planner
+    /// cap, `D` for a slot.
+    pub power_width_mm: f64,
     /// The rated power at the point's RPM (kW).
     pub available_kw: f64,
     /// The full chip fits the rated power at the point.
@@ -594,7 +636,20 @@ fn value_only<T: Serialize, S: serde::Serializer>(
 }
 
 impl SpeedsPoint {
-    fn from_result(ap_mm: f64, ae_mm: f64, r: &FeedsResult, flutes: u32) -> Self {
+    fn from_result(
+        ap_mm: f64,
+        ae_mm: f64,
+        r: &FeedsResult,
+        flutes: u32,
+        cases: crate::feeds::engagement::PowerCases,
+        d_mm: f64,
+    ) -> Self {
+        // P20i: the width of the case that the result names.
+        let power_width_mm = cases
+            .widths(ae_mm, d_mm)
+            .into_iter()
+            .find(|(case, _)| *case == r.power_case)
+            .map_or(ae_mm, |(_, w)| w);
         let feed_capped = r
             .warnings
             .iter()
@@ -611,6 +666,8 @@ impl SpeedsPoint {
             plunge: Sourced::new(PlungeMmMin(r.plunge_rate_mm_min), r.bases.plunge.clone()),
             chip: Sourced::new(ChipMm(chip_of(r, flutes)), r.bases.chip.clone()),
             power_kw: r.power_kw,
+            power_case: r.power_case,
+            power_width_mm,
             available_kw: r.available_power_kw,
             fits_power: fits_power(r),
             rubbing,
@@ -1100,6 +1157,8 @@ impl SafeEnvelope {
                 vec![ae_mm]
             }
         };
+        // P20i: the cases and the diameter the calculator reads at each point.
+        let (cases, case_d) = (feeds_input.power_cases, feeds_input.tool_diameter);
         let mut points = Vec::with_capacity(ap_samples.len() * ae_samples.len());
         for &ae in &ae_samples {
             for &ap in &ap_samples {
@@ -1112,6 +1171,8 @@ impl SafeEnvelope {
                     ae,
                     &r,
                     input.tool.flute_count_planning(),
+                    cases,
+                    case_d,
                 ));
             }
         }
@@ -1338,6 +1399,8 @@ impl SafeEnvelope {
     /// limit of `kind` judges, and the limit there, by the rules of
     /// [`Self::placement_of_measured`]. `None` for a limit with no edge
     /// (judged per point, or unmodelled), or no limit of that kind.
+    /// P20i: `Power` gives the gate's figure of the sample (kW, at the
+    /// gate's feed), with or without a drawn Power edge.
     #[must_use]
     pub fn judged_value(
         &self,
@@ -1345,6 +1408,16 @@ impl SafeEnvelope {
         p: CutPoint,
         tool: MeasuredTool,
     ) -> Option<JudgedValue> {
+        if kind == LimitKind::Power {
+            let power = tool.power?;
+            return Some(JudgedValue {
+                axis: "power",
+                measured: power.required_kw,
+                limit: power.available_kw,
+                unit: "kW",
+                feed_mm_min: Some(power.feed_mm_min),
+            });
+        }
         let l = self.limit(kind)?;
         let edge = Self::measured_edge(l, tool);
         let judged = Limit { edge, ..l.clone() };
@@ -1366,9 +1439,18 @@ impl SafeEnvelope {
         };
         Some(JudgedValue {
             axis,
-            measured_mm,
-            limit_mm,
+            measured: measured_mm,
+            limit: limit_mm,
+            unit: "mm",
+            feed_mm_min: None,
         })
+    }
+
+    /// The machine the envelope is drawn for. P20i: the measured placement
+    /// reads its rated power curve, as the power gate does.
+    #[must_use]
+    pub const fn machine(&self) -> &MachineProfile {
+        &self.inputs.machine
     }
 
     /// Where the point `p` sits against the boundary. A query for any
@@ -1380,6 +1462,14 @@ impl SafeEnvelope {
 
     /// K7 (feeds contract P9): where a MEASURED point sits against the
     /// ceilings of the boundary.
+    ///
+    /// - P20i: power is judged by the gate's figure of the sample
+    ///   (`tool.power`: the sample engagement at the feed the gate reads,
+    ///   against the rated power at the sample RPM), not by the drawn Power
+    ///   edge. The drawn edge is a pre-simulation picture at the op's stated
+    ///   feed and at the worst `PowerCase` of the op (the slot of a pocket,
+    ///   the planner cap of a 3D Rough); a measured sample has its own arc
+    ///   and its own feed. With no figure the point's power is not judged.
     ///
     /// - A floor (the move budget, the engagement floor) is a rule for the
     ///   operator's stated point; a simulation sample with a lighter cut than
@@ -1438,6 +1528,10 @@ impl SafeEnvelope {
             if measured.is_some() && is_floor {
                 continue;
             }
+            // P20i: a measured point's power is the gate's figure (below).
+            if measured.is_some() && l.kind == LimitKind::Power {
+                continue;
+            }
             // A fixed axis is not the operator's choice: its edges do not
             // place the point.
             let on_fixed_axis = match l.edge {
@@ -1464,6 +1558,16 @@ impl SafeEnvelope {
             if m < -1e-9 {
                 if worst.is_none_or(|(w, _)| m < w) {
                     worst = Some((m, l.kind));
+                }
+            } else {
+                inside = inside.min(m);
+            }
+        }
+        // P20i: the power of a measured point, by the gate's figure.
+        if let Some(m) = measured.and_then(|t| t.power).and_then(|p| p.margin()) {
+            if m < -1e-9 {
+                if worst.is_none_or(|(w, _)| m < w) {
+                    worst = Some((m, LimitKind::Power));
                 }
             } else {
                 inside = inside.min(m);

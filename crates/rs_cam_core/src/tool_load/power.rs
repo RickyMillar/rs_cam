@@ -220,6 +220,68 @@ pub fn sample_power_kw(
     ))
 }
 
+/// P20i: the power of one sample as the gate grades it, and the ceiling
+/// the gate compares it with.
+#[derive(Debug, Clone, Copy, PartialEq, serde::Serialize)]
+pub struct GateSamplePower {
+    /// The predicted spindle power (kW), [`sample_power_kw`].
+    pub required_kw: f64,
+    /// The rated spindle power at the sample RPM (kW),
+    /// `MachineProfile::power_at_rpm` (ruling R4 Q2: no fraction).
+    pub available_kw: f64,
+    /// The feed of the figure (mm/min): [`super::effective_feed_for_sample`].
+    pub feed_mm_min: f64,
+}
+
+/// The power of `s` at the feed the gate reads, against the rated power at
+/// the sample RPM. [`evaluate`] and [`gate_sample_power`] call it: one
+/// figure. `None` as [`sample_power_kw`].
+fn power_at_gate_feed(
+    tool: &crate::tool::ToolDefinition,
+    line: &ForceLine,
+    machine: &crate::machine::MachineProfile,
+    s: &crate::stock::simulation_cut::SimulationCutSample,
+    predicted_feeds: &crate::machine::kinematics::PredictedFeedMap,
+) -> Option<GateSamplePower> {
+    let feed_mm_min = super::effective_feed_for_sample(s, predicted_feeds);
+    let required_kw = sample_power_kw(tool, line, s, feed_mm_min)?;
+    Some(GateSamplePower {
+        required_kw,
+        available_kw: machine.power_at_rpm(f64::from(s.spindle_rpm)),
+        feed_mm_min,
+    })
+}
+
+/// P20i: the power figure the gate GRADES for the sample `s` of the
+/// toolpath `ctx.toolpath_id`, or `None` when the gate does not grade it.
+///
+/// The gate grades a sample of a milling op (not a drill cycle) that cuts,
+/// is not an air cut, carries an arc and is steady state
+/// ([`super::locality::is_steady_state_for_gate`]). A configured entry goes
+/// to the entry advisory, not to the grade, so it gives `None` too. The
+/// envelope finding (`compute::simulate::envelope_placement`) reads this
+/// figure, so the finding and the gate judge power with one number.
+#[must_use]
+pub fn gate_sample_power(
+    ctx: &super::ToolpathLoadContext<'_>,
+    machine: &crate::machine::MachineProfile,
+    line: &ForceLine,
+    s: &crate::stock::simulation_cut::SimulationCutSample,
+    predicted_feeds: &crate::machine::kinematics::PredictedFeedMap,
+    span_lookup: Option<&SpanLookup<'_>>,
+) -> Option<GateSamplePower> {
+    if ctx.operation_kind.is_drill_kinematics()
+        || s.toolpath_id != ctx.toolpath_id
+        || !s.is_cutting
+        || s.radial_engagement_class() == RadialEngagementClass::Air
+        || s.arc_engagement_radians.is_none()
+        || !super::locality::is_steady_state_for_gate(s, span_lookup)
+    {
+        return None;
+    }
+    power_at_gate_feed(ctx.tool, line, machine, s, predicted_feeds)
+}
+
 #[tracing::instrument(level = "debug", skip_all, fields(toolpath_id = ctx.toolpath_id.raw(), op = ?ctx.operation_kind))]
 pub fn evaluate(ctx: &super::ToolpathLoadContext<'_>, env: &super::GateEnv<'_>) -> PowerVerdict {
     let &super::ToolpathLoadContext {
@@ -350,16 +412,19 @@ pub fn evaluate(ctx: &super::ToolpathLoadContext<'_>, env: &super::GateEnv<'_>) 
         // feed, so the substitution scales the predicted load
         // proportionally; corner-decel reduction in predicted feed
         // shows up directly as reduced predicted power.
-        let feed_for_power = super::effective_feed_for_sample(s, &trace.predicted_feeds);
         // The per-sample prediction lives in `sample_power_kw`, so the
         // cut-metrics distribution (`super::distribution`) reads the
-        // same number this gate compares.
-        let Some(p_kw) = sample_power_kw(tool, &line, s, feed_for_power) else {
+        // same number this gate compares. Ruling R4 Q2 (2026-09-24): the
+        // ceiling is the rated spindle curve, with no fraction. P20i: the
+        // envelope finding reads the same figure (`gate_sample_power`).
+        let Some(GateSamplePower {
+            required_kw: p_kw,
+            available_kw: avail,
+            ..
+        }) = power_at_gate_feed(tool, &line, machine, s, &trace.predicted_feeds)
+        else {
             continue;
         };
-        // Ruling R4 Q2 (2026-09-24): the ceiling is the rated spindle curve,
-        // with no fraction.
-        let avail = machine.power_at_rpm(s.spindle_rpm as f64);
 
         // Finding 3 split (2026-06-04): phantom-transit samples
         // (WaterlineCleanup / LinkBridge / LeadOut / DressupArtifact)

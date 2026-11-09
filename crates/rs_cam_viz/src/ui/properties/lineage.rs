@@ -193,8 +193,8 @@ pub fn lineage_rows(l: &Lineage) -> Vec<LineageRow> {
                 m.outside,
                 m.placed,
                 m.judged.map_or_else(String::new, |j| format!(
-                    " Worst: {} {:.2} mm against {:.2} mm.",
-                    j.axis, j.measured_mm, j.limit_mm
+                    " Worst: {} {:.2} {} against {:.2} {}.",
+                    j.axis, j.measured, j.unit, j.limit, j.unit
                 )),
             ),
         });

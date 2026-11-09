@@ -141,11 +141,12 @@ fn a_measured_point_outside_the_envelope_warns_once_with_its_limit() {
         .judged
         .expect("an outside point names its judged value");
     assert!(
-        judged.measured_mm > judged.limit_mm,
+        judged.measured > judged.limit,
         "the judged value crosses its ceiling: {judged:?}"
     );
     assert!(
-        row.message.contains(&format!("{:.2} mm", judged.limit_mm)),
+        row.message
+            .contains(&format!("{:.2} {}", judged.limit, judged.unit)),
         "the row names the limit value: {}",
         row.message
     );

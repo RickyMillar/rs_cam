@@ -901,6 +901,9 @@ pub struct MeasuredPoint {
     /// The power of the sample (kW) at its effective feed, the number the
     /// power gate reads. `None` for a material with no force line.
     pub power_kw: Option<f64>,
+    /// P20i: the feed of `power_kw` (mm/min), the feed the gates read
+    /// (`tool_load::effective_feed_for_sample`).
+    pub feed_mm_min: f64,
     /// Where the point sits against the ceilings of the envelope.
     pub placement: crate::feeds::envelope::Placement,
     /// For a point outside: the value the binding limit judges and the
@@ -933,9 +936,12 @@ impl EnvelopePlacement {
             return None;
         };
         let judged = worst.judged.map_or_else(String::new, |j| {
+            let at_feed = j.feed_mm_min.map_or_else(String::new, |f| {
+                format!(" at the feed the power gate reads, F {f:.0} mm/min")
+            });
             format!(
-                "; {} {:.2} mm against the limit {:.2} mm",
-                j.axis, j.measured_mm, j.limit_mm
+                "; {} {:.2} {} against the limit {:.2} {}{at_feed}",
+                j.axis, j.measured, j.unit, j.limit, j.unit
             )
         });
         Some(format!(
@@ -962,6 +968,12 @@ impl EnvelopePlacement {
 /// [`crate::tool_load::power::sample_power_kw`] at the effective feed. The
 /// point is placed against the ceilings
 /// ([`crate::feeds::envelope::SafeEnvelope::placement_of_measured`]).
+///
+/// P20i: the power of a point is judged by the gate's figure
+/// ([`crate::tool_load::power::gate_sample_power`]: the emitted or reached
+/// feed, the measured width, the rated power at the sample RPM of the
+/// envelope's machine), not by the drawn Power edge. The finding and the
+/// power gate therefore agree on every sample the gate grades.
 /// The caller states that `trace` is fresh for the toolpath
 /// (`ProjectSession::envelope_placement_measured`).
 #[must_use]
@@ -981,7 +993,7 @@ pub fn envelope_placement(
     };
     // Lead decision (2026-11-05): a cone tool is judged at its engaged
     // diameter (`placement_of_measured`).
-    let measured_tool = |d_eng_mm: f64| crate::feeds::envelope::MeasuredTool { d_eng_mm };
+    let machine = envelope.machine();
     for (i, s) in trace.samples.iter().enumerate() {
         if s.toolpath_id != ctx.toolpath_id
             || !crate::tool_load::locality::is_steady_state_for_gate(s, span_lookup.as_ref())
@@ -995,24 +1007,37 @@ pub fn envelope_placement(
         let feed = crate::tool_load::effective_feed_for_sample(s, &trace.predicted_feeds);
         let power_kw = line
             .and_then(|line| crate::tool_load::power::sample_power_kw(ctx.tool, &line, s, feed));
+        // P20i: the power figure the gate grades, when it grades the sample.
+        let graded = line.and_then(|line| {
+            crate::tool_load::power::gate_sample_power(
+                ctx,
+                machine,
+                &line,
+                s,
+                &trace.predicted_feeds,
+                span_lookup.as_ref(),
+            )
+        });
+        let measured_tool = crate::feeds::envelope::MeasuredTool {
+            d_eng_mm: engagement.d_eng_mm(),
+            power: graded.map(|g| crate::feeds::envelope::MeasuredPower {
+                required_kw: g.required_kw,
+                available_kw: g.available_kw,
+                feed_mm_min: g.feed_mm_min,
+            }),
+        };
         let point = MeasuredPoint {
             sample_index: i,
             move_index: s.move_index,
             point: engagement.cut_point(),
             power_kw,
-            placement: envelope.placement_of_measured(
-                engagement.cut_point(),
-                measured_tool(engagement.d_eng_mm()),
-            ),
+            feed_mm_min: feed,
+            placement: envelope.placement_of_measured(engagement.cut_point(), measured_tool),
             judged: None,
         };
         let point = match point.placement {
             Placement::Outside { binding, .. } => MeasuredPoint {
-                judged: envelope.judged_value(
-                    binding,
-                    point.point,
-                    measured_tool(engagement.d_eng_mm()),
-                ),
+                judged: envelope.judged_value(binding, point.point, measured_tool),
                 ..point
             },
             Placement::Inside { .. } => point,
