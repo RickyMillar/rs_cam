@@ -1,0 +1,16 @@
+diff --git a/crates/rs_cam_core/src/compute/operation_configs.rs b/crates/rs_cam_core/src/compute/operation_configs.rs
+index 15b96f14a..ba6df45c5 100644
+--- a/crates/rs_cam_core/src/compute/operation_configs.rs
++++ b/crates/rs_cam_core/src/compute/operation_configs.rs
+@@ -1958,7 +1958,10 @@ impl Default for Adaptive3dConfig {
+             ramp_feed_rate: None,
+             tolerance: 0.1,
+             min_cutting_radius: 0.0,
+-            entry_style: Adaptive3dEntryStyle::Plunge,
++            // Feeds contract P22b (ruling Q1): a new adaptive op enters with a
++            // helix. A stored op keeps its style: `entry_style` has no serde
++            // default, so every project file and job op states it.
++            entry_style: Adaptive3dEntryStyle::Helix,
+             ramp_angle_deg: default_adaptive3d_ramp_angle(),
+             helix_radius_factor: default_adaptive3d_helix_radius_factor(),
+             helix_pitch: default_adaptive3d_helix_pitch(),

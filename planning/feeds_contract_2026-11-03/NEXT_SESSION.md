@@ -1,5 +1,25 @@
 # Next session: feeds and speeds correctness (brief, 2026-11-08, second edition)
 
+## Restart hand-off, 2026-11-10 ~11:30 (the operator restarts the session for a model update)
+
+**In the tree, uncommitted, not yet gated: P22b** (the helix bore opening for a helix 3D geodesic op;
+implemented by agent `p22a-readout`, whose context ends with this session). The spec, the rulings, the
+gate results of the run that passed, the edits written after it and the exact gate list to run are
+in `phases/P22b.md` (section 5 "State of the tree at hand-off"). The Helix default for new ops is
+OUT of the tree as `phases/P22b_helix_default.patch` (P22b-1, apply and measure separately). Also in
+the tree, uncommitted: the operator's `crates/rs_cam_viz/src/ui/components/notice.rs` width fix with
+its own lib test. Every cargo job waited at the lane's 12 GB gate because the GUI held 9.3 GB after
+the wanaka simulation; the session restart restarts the GUI, which frees it.
+
+Next session, in order: (1) rebuild nothing yet; run the P22b gate list from `P22b.md` section 5 with
+a fresh implementer (one job at a time, -j 2), review by path, commit scoped to the P22b paths;
+(2) viz `--lib notice`, then commit `notice.rs` as the operator's change; (3) P22b-1 (the default
+patch, predictions first); (4) P21c (the engine reads the ceiling, the three `Legacy*` limits go,
+A3 reported; the operator's answers are in `P21_DESIGN.md` section 9 and 10); (5) P22f-2e (the
+operator's Go); (6) the GUI-thread defect on a post-config change (below); (7) the straight-flute
+tool fact and the Freud straight-bit rows (`P21_DESIGN.md` section 10). Rebuild the release GUI
+after every code commit before a wanaka read.
+
 ## Morning hand-off, 2026-11-10 (lead, written during the night run)
 
 Committed overnight, in order: `5a56654dd` P22-0c-5 (every body reader on the mounted zones;
