@@ -10,10 +10,10 @@ use crate::geometry::marching_squares::CHAIN_EPS;
 use crate::interrupt::{CancelCheck, Cancelled};
 use crate::polygon::{Polygon2, offset_polygon};
 
+use crate::adaptive::opening::emit_helical_starter_pocket;
 use crate::adaptive::path::{
     AdaptiveSegment, LinkLoad, apply_contour_parallel_residue_cleanup_turns,
-    apply_residue_mop_cleanup_turns, emit_helical_starter_pocket, pass_load_for, planner_cell_size,
-    turn_bound,
+    apply_residue_mop_cleanup_turns, pass_load_for, planner_cell_size, turn_bound,
 };
 use crate::adaptive::search::{PassLoadMeasure, ToolCentreRegion};
 

@@ -256,6 +256,109 @@ pub(super) struct StayDownProof {
     pub(super) ceiling_z: f64,
 }
 
+/// P22b (ruling Q1, option (a)): the entry of one `RapidWithFloor`, when the
+/// op states a helix on Geodesic Adaptive. The planner decides it per entry
+/// (`clearing.rs::plan_entry`, `adaptive::Bore`) and stamps the same entry
+/// the emitter cuts.
+#[derive(Debug, Clone, Copy, PartialEq)]
+pub(super) enum EntryBore {
+    /// The op's entry style, unchanged (every strategy and style but a
+    /// Geodesic Adaptive helix).
+    OpStyle,
+    /// A helix bore: the contained helix `radius` at `pitch`, ended with
+    /// the floor lap, so the hole is `R + radius` with a flat floor.
+    Helix { radius: f64, pitch: f64 },
+    /// No helix fits here (`fit_mm` under the core floor, or no room): the
+    /// entry ramps (ruling Q1; the G-CENTRECUT rules bind the ramp).
+    Fallback { fit_mm: f64, core_floor_mm: f64 },
+}
+
+/// The fixed inputs of a 3D entry's safety (`dressup::EntrySafety`): the
+/// emitter and the planner's bore stamp build the safety from here, so the
+/// helix the planner stamps is the helix the emitter cuts.
+pub(super) struct EntryFrame<'a> {
+    pub(super) mesh: &'a crate::mesh::TriangleMesh,
+    pub(super) index: &'a crate::mesh::SpatialIndex,
+    pub(super) cutter: &'a dyn crate::tool::MillingCutter,
+    pub(super) stock_to_leave: f64,
+    pub(super) entry_clearance_mm: f64,
+    pub(super) ramp_feed: Option<f64>,
+    pub(super) core: Option<crate::tool::body::CoreZone>,
+}
+
+impl<'a> EntryFrame<'a> {
+    /// The safety of one entry: the material top and whether the planner
+    /// measured it, the cell-centre contact top, the stock top under the
+    /// core, and whether a helix ends with the floor lap.
+    pub(super) fn safety(
+        &self,
+        stock_top: f64,
+        stock_top_measured: bool,
+        contact_top: Option<f64>,
+        core_top: Option<f64>,
+        helix_floor_lap: bool,
+    ) -> crate::dressup::EntrySafety<'a> {
+        crate::dressup::EntrySafety {
+            stock_top,
+            stock_top_measured,
+            contact_clearance: self.entry_clearance_mm,
+            contact_top,
+            core_top,
+            surface: Some(crate::dressup::EntrySurfaceProbe {
+                mesh: self.mesh,
+                index: self.index,
+                cutter: self.cutter,
+                stock_to_leave: self.stock_to_leave,
+                // Beyond the mesh footprint stands prism stock a 2.5D
+                // rough may cut; the planned leg z stands there
+                // (FINDINGS.md amendment 2).
+                off_mesh: crate::dressup::OffMeshEntry::Unconstrained,
+                // Adaptive3d clears PRISM stock and plans its own peck ladder;
+                // the bite-budgeted rest ramp is the surface family's door.
+                rest_stock: None,
+            }),
+            // R10: a rough keeps folding; the cap is for the finishing roles.
+            fold_lap_cap: None,
+            ramp_feed: self.ramp_feed,
+            // The planner floor is already each entry's `stock_top`.
+            own_stock: None,
+            helix_floor_lap,
+            helix_containment: None,
+            core: self.core,
+        }
+    }
+}
+
+/// P22b: the helix bore of one entry, from `(entry.xy, descent_floor)` down
+/// to the draped `entry`, ended with the floor lap. The emitter cuts it and
+/// the planner stamps the moves it writes (`clearing.rs`), so plan equals
+/// cut (G-PLANSIMGAP, G-SIMCORE).
+#[expect(
+    clippy::too_many_arguments,
+    reason = "the entry, its descent floor, the entry reads, the bore and the feed are each one input"
+)]
+pub(super) fn emit_bore_helix(
+    tp: &mut Toolpath,
+    frame: &EntryFrame<'_>,
+    entry: &P3,
+    descent_floor: f64,
+    (material_top, measured, contact_top, core_top): (f64, bool, Option<f64>, Option<f64>),
+    radius: f64,
+    pitch: f64,
+    feed_rate: f64,
+) -> Option<crate::compute::tool_config::NonCentreCuttingRefusal> {
+    let start = P3::new(entry.x, entry.y, descent_floor);
+    crate::dressup::emit_helix(
+        tp,
+        &start,
+        entry,
+        radius,
+        pitch,
+        feed_rate,
+        &frame.safety(material_top, measured, contact_top, core_top, true),
+    )
+}
+
 #[derive(Clone)]
 pub(super) enum Adaptive3dSegment {
     /// 3D cutting path with variable Z
@@ -288,6 +391,9 @@ pub(super) enum Adaptive3dSegment {
         contact_z: f64,
         core_top_z: Option<f64>,
         stay_down: Option<StayDownProof>,
+        /// P22b: the bore of a Geodesic Adaptive helix entry, as the
+        /// planner stamped it (`clearing.rs::plan_entry`).
+        bore: EntryBore,
     },
     /// Feed directly at cutting depth (no retract)
     Link(P3),
@@ -1311,6 +1417,7 @@ fn adaptive_3d_segments_probed(
         min_region_cut_length_mm: params.linking.min_region_cut_length_mm,
         rest_region_filter: params.linking.rest_region_filter,
         entry_floor_radius: entry_floor_radius(params, cutter.radius()),
+        entry_bore: entry_bore_rule(params, cutter),
         stay_down_mm: resolved_stay_down_mm(params, cutter.radius()),
         centre_clip: centre_clip.as_ref(),
         stay_down_clearance_mm: params.linking.stay_down_clearance_mm.max(0.0),
@@ -1672,6 +1779,34 @@ impl PlannerLuts {
     /// The table of the entry stamps.
     pub(super) fn entry(&self) -> &RadialProfileLUT {
         self.envelope.as_ref().unwrap_or(&self.cut)
+    }
+}
+
+/// P22b (ruling Q1, option (a)): the helix bore rule of the op, when it
+/// clears with Geodesic Adaptive and states a helix entry; else `None`. A
+/// ramp or plunge op keeps its entry (ruling Q1: no lie to the user).
+fn entry_bore_rule(
+    params: &Adaptive3dParams,
+    cutter: &dyn crate::tool::MillingCutter,
+) -> Option<super::clearing::EntryBoreRule> {
+    match (
+        params.clearing_strategy,
+        effective_entry_style(params.entry_style, cutter),
+    ) {
+        (ClearingStrategy3d::GeodesicAdaptive, EntryStyle3d::Helix { radius, pitch }) => {
+            Some(super::clearing::EntryBoreRule {
+                helix_radius: radius,
+                pitch,
+                core_floor_mm: crate::dressup::helix_core_floor_mm(crate::tool::body::core_of(
+                    cutter,
+                )),
+                entry_clearance_mm: params.entry_clearance_mm,
+            })
+        }
+        (
+            ClearingStrategy3d::GeodesicAdaptive | ClearingStrategy3d::ContourParallel,
+            EntryStyle3d::Helix { .. } | EntryStyle3d::Ramp { .. } | EntryStyle3d::Plunge,
+        ) => None,
     }
 }
 
@@ -2175,7 +2310,7 @@ pub(super) fn segments_to_toolpath(
     index: &crate::mesh::SpatialIndex,
     cutter: &dyn crate::tool::MillingCutter,
 ) -> (Toolpath, Vec<Adaptive3dRuntimeAnnotation>) {
-    let (tp, annotations, _refusal) =
+    let (tp, annotations, _refusal, _fallbacks) =
         segments_to_toolpath_checked(segments, params, mesh, index, cutter);
     (tp, annotations)
 }
@@ -2200,6 +2335,8 @@ pub(super) fn effective_entry_style(
 /// entry emitter (a non-centre-cutting tool that had to plunge straight
 /// into stock deeper than its protrusion). The run puts it in
 /// `Produced::non_centre_cutting_refusal`; the session refuses on it.
+/// P22b: and each helix entry that fell back for want of room for the core
+/// floor (`Produced::helix_core_fallbacks`).
 pub(super) fn segments_to_toolpath_checked(
     segments: &[Adaptive3dSegment],
     params: &Adaptive3dParams,
@@ -2210,6 +2347,7 @@ pub(super) fn segments_to_toolpath_checked(
     Toolpath,
     Vec<Adaptive3dRuntimeAnnotation>,
     Option<crate::compute::tool_config::NonCentreCuttingRefusal>,
+    Vec<crate::compute::tool_config::HelixCoreFallback>,
 ) {
     // G-DRAPEGAP: the chord-lift probe, the one the planner's stamp reads.
     let probe = params.geometry.gouge_probe.as_deref();
@@ -2256,49 +2394,37 @@ pub(super) fn segments_to_toolpath_checked(
     // both as the `style_label` field on the emitted `PassEntry`
     // annotation and downstream in `compute::spans` / `compute::annotate`
     // to label the resulting `SpanKind::Entry` / semantic `Entry`.
-    let entry_style_label: &'static str = match entry_style {
-        EntryStyle3d::Plunge => "plunge entry",
-        EntryStyle3d::Helix { .. } => "helix entry",
-        EntryStyle3d::Ramp { .. } => "ramp entry",
+    let entry_style_label = |style: EntryStyle3d| -> &'static str {
+        match style {
+            EntryStyle3d::Plunge => "plunge entry",
+            EntryStyle3d::Helix { .. } => "helix entry",
+            EntryStyle3d::Ramp { .. } => "ramp entry",
+        }
     };
 
     // G-RAMPTERRAIN: hand the entry emitters the drop-cutter surface so
     // ramp legs and helix turns clip to `surface + stock_to_leave` —
     // the same floor `drape_point` holds for the entry destination.
+    let frame = EntryFrame {
+        mesh,
+        index,
+        cutter,
+        stock_to_leave: params.depth.stock_to_leave,
+        entry_clearance_mm: params.entry_clearance_mm,
+        ramp_feed: params.ramp_feed_rate,
+        core,
+    };
+    // Byte parity: the op-style adaptive3d helix keeps its historical end
+    // (no floor lap); a P22b bore ends with the lap.
     let entry_safety = |stock_top: f64,
                         stock_top_measured: bool,
                         contact_top: Option<f64>,
                         core_top: Option<f64>| {
-        crate::dressup::EntrySafety {
-            stock_top,
-            stock_top_measured,
-            contact_clearance: params.entry_clearance_mm,
-            contact_top,
-            core_top,
-            surface: Some(crate::dressup::EntrySurfaceProbe {
-                mesh,
-                index,
-                cutter,
-                stock_to_leave: params.depth.stock_to_leave,
-                // Beyond the mesh footprint stands prism stock a 2.5D
-                // rough may cut; the planned leg z stands there
-                // (FINDINGS.md amendment 2).
-                off_mesh: crate::dressup::OffMeshEntry::Unconstrained,
-                // Adaptive3d clears PRISM stock and plans its own peck ladder;
-                // the bite-budgeted rest ramp is the surface family's door.
-                rest_stock: None,
-            }),
-            // R10: a rough keeps folding; the cap is for the finishing roles.
-            fold_lap_cap: None,
-            ramp_feed: params.ramp_feed_rate,
-            // The planner floor is already each entry's `stock_top`.
-            own_stock: None,
-            // Byte parity: the adaptive3d helix keeps its historical end.
-            helix_floor_lap: false,
-            helix_containment: None,
-            core,
-        }
+        frame.safety(stock_top, stock_top_measured, contact_top, core_top, false)
     };
+    // P22b: each helix entry that fell back for want of room for the core
+    // floor (`EntryBore::Fallback` on a non-centre-cutting tool).
+    let mut helix_core_fallbacks = Vec::new();
 
     // Geodesic Adaptive (design part F): the feed of the cut moves between a
     // `FeedCapStart` and a `FeedCapEnd` marker, written as the move's feed
@@ -2328,25 +2454,30 @@ pub(super) fn segments_to_toolpath_checked(
                 });
             }
             Adaptive3dSegment::Rapid(_) | Adaptive3dSegment::RapidWithFloor { .. } => {
-                let (raw_entry, rapid_floor_z, contact_z, core_top_z, stay_down) = match segment {
-                    Adaptive3dSegment::RapidWithFloor {
-                        entry,
-                        rapid_floor_z,
-                        contact_z,
-                        core_top_z,
-                        stay_down,
-                    } => (
-                        entry,
-                        Some(*rapid_floor_z),
-                        Some(*contact_z),
-                        *core_top_z,
-                        stay_down.as_ref(),
-                    ),
-                    Adaptive3dSegment::Rapid(entry) => (entry, None, None, None, None),
-                    Adaptive3dSegment::Cut(_)
-                    | Adaptive3dSegment::Link(_)
-                    | Adaptive3dSegment::Marker(_) => continue,
-                };
+                let (raw_entry, rapid_floor_z, contact_z, core_top_z, stay_down, bore) =
+                    match segment {
+                        Adaptive3dSegment::RapidWithFloor {
+                            entry,
+                            rapid_floor_z,
+                            contact_z,
+                            core_top_z,
+                            stay_down,
+                            bore,
+                        } => (
+                            entry,
+                            Some(*rapid_floor_z),
+                            Some(*contact_z),
+                            *core_top_z,
+                            stay_down.as_ref(),
+                            *bore,
+                        ),
+                        Adaptive3dSegment::Rapid(entry) => {
+                            (entry, None, None, None, None, EntryBore::OpStyle)
+                        }
+                        Adaptive3dSegment::Cut(_)
+                        | Adaptive3dSegment::Link(_)
+                        | Adaptive3dSegment::Marker(_) => continue,
+                    };
                 // Gouge guard: lift the entry destination to hold the leave, so
                 // a peck-plunge / helix / ramp whose footprint laps higher
                 // neighbouring material can't descend below `surface + leave`.
@@ -2410,7 +2541,41 @@ pub(super) fn segments_to_toolpath_checked(
                 // ramp take the full material depth from there). When the
                 // floor is at the entry, the column is open: no entry.
                 let material_top = rapid_floor_z.unwrap_or(params.depth.stock_top_z);
-                if descent_floor > entry.z + 1e-6 {
+                // P22b: a Geodesic Adaptive helix entry cuts the bore the
+                // planner stamped, or its ramp fallback (ruling Q1).
+                // The fallback of a non-centre-cutting tool is a finding
+                // (`HelixCoreFallback`), written once the ramp is cut: a ramp
+                // that had to plunge records `Plunge`.
+                let mut fallback = None;
+                let entry_style = match bore {
+                    EntryBore::OpStyle | EntryBore::Helix { .. } => entry_style,
+                    EntryBore::Fallback {
+                        fit_mm,
+                        core_floor_mm,
+                    } => {
+                        if core.is_some() {
+                            fallback = Some((fit_mm, core_floor_mm));
+                        }
+                        EntryStyle3d::Ramp {
+                            max_angle_deg: crate::compute::config::DRESSUP_RAMP_ANGLE_DEG,
+                        }
+                    }
+                };
+                if descent_floor > entry.z + 1e-6
+                    && let EntryBore::Helix { radius, pitch } = bore
+                {
+                    let refused = emit_bore_helix(
+                        &mut tp,
+                        &frame,
+                        entry,
+                        descent_floor,
+                        (material_top, rapid_floor_z.is_some(), contact_z, core_top_z),
+                        radius,
+                        pitch,
+                        params.plunge_rate,
+                    );
+                    refusal = refusal.or(refused);
+                } else if descent_floor > entry.z + 1e-6 {
                     let start = P3::new(entry.x, entry.y, descent_floor);
                     let refused = match entry_style {
                         EntryStyle3d::Plunge => {
@@ -2454,6 +2619,18 @@ pub(super) fn segments_to_toolpath_checked(
                         }
                     };
                     refusal = refusal.or(refused);
+                    if let Some((fit_mm, core_floor_mm)) = fallback {
+                        helix_core_fallbacks.push(crate::compute::tool_config::HelixCoreFallback {
+                            at: *entry,
+                            fit_mm,
+                            core_floor_mm,
+                            fallback: if refused.is_some() {
+                                crate::compute::tool_config::EntryFallback::Plunge
+                            } else {
+                                crate::compute::tool_config::EntryFallback::Ramp
+                            },
+                        });
+                    }
                 }
                 let entry_end = tp.moves.len();
                 if entry_end > entry_start {
@@ -2468,7 +2645,7 @@ pub(super) fn segments_to_toolpath_checked(
                             style_label: if stay_down_used {
                                 "keep-down link"
                             } else {
-                                entry_style_label
+                                entry_style_label(entry_style)
                             },
                         },
                     });
@@ -2552,7 +2729,7 @@ pub(super) fn segments_to_toolpath_checked(
         );
     }
 
-    (tp, annotations, refusal)
+    (tp, annotations, refusal, helix_core_fallbacks)
 }
 
 impl crate::compute::spans::RuntimeLabel for Adaptive3dRuntimeAnnotation {
@@ -2722,6 +2899,7 @@ mod tests {
                 contact_z,
                 core_top_z: None,
                 stay_down: None,
+                bore: EntryBore::OpStyle,
             }],
             params,
             &mesh,

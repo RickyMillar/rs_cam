@@ -3,7 +3,7 @@
 ## Files
 
 - `mod.rs` entry `adaptive_toolpath`, parameters, piece split; `path.rs` orchestrator, capped walker,
-  frontier hop, mop, links, emission; `spiral.rs` contour spiral; `search.rs` step measures, `PassLoad`,
+  frontier hop, mop, links, emission; `opening.rs` the starter pocket (P22b: moved from `path.rs`); `spiral.rs` contour spiral; `search.rs` step measures, `PassLoad`,
   `ToolCentreRegion`, direction search, entries; `material_grid.rs` 2D stock grid, fringe points;
   `geodesic/` Geodesic Adaptive, the 2D plan (its own `CLAUDE.md`).
 - Research (`--features research,test-support`, `-- --ignored`): `research_geodesic.rs`, test support of `geodesic/`

@@ -19,7 +19,8 @@ use tracing::debug;
 
 use super::centre_clip::{CentreClip, clip_segment};
 use super::path::{
-    Adaptive3dSegment, RAPID_DESCENT_BUFFER_MM, StayDownProof, descent_start_z, drape_point,
+    Adaptive3dSegment, EntryBore, RAPID_DESCENT_BUFFER_MM, StayDownProof, descent_start_z,
+    drape_point,
 };
 use super::search::is_clear_path_3d;
 use super::{
@@ -397,6 +398,9 @@ pub(super) struct ClearZLevelContext<'a> {
     /// The disc radius of an entry's rapid floor read; see
     /// `path.rs::entry_floor_radius`.
     pub(super) entry_floor_radius: f64,
+    /// P22b (ruling Q1, option (a)): the helix bore rule of a Geodesic
+    /// Adaptive op that states a helix entry, else `None`.
+    pub(super) entry_bore: Option<EntryBoreRule>,
     /// The resolved stay-down distance (`path.rs::resolved_stay_down_mm`).
     /// The planner writes a keep-down stock proof only inside it.
     pub(super) stay_down_mm: f64,
@@ -598,6 +602,57 @@ pub(super) struct StampDrape<'a> {
     /// envelope, because the shipped entry of a non-centre-cutting tool cuts
     /// the core column (`PlannerLuts::entry`, G-SIMCORE).
     pub(super) entry_lut: &'a RadialProfileLUT,
+    /// P22b: the bore rule and the tool-centre region of the outlines
+    /// planned so far at this level, or `None` (no bore: every other op,
+    /// and every door outside the Geodesic level sink).
+    pub(super) bore: Option<BoreAt<'a>>,
+}
+
+/// P22b (ruling Q1, option (a)): the helix bore of a Geodesic Adaptive op
+/// that states a helix entry. Every value comes from the op's helix entry
+/// (`Adaptive3dConfig::helix_radius_for`, the core floor included) and the
+/// tool body (`dressup::helix_core_floor_mm`).
+#[derive(Debug, Clone, Copy)]
+pub(super) struct EntryBoreRule {
+    /// The helix radius the op asks for (mm), before the per-entry fit.
+    pub(super) helix_radius: f64,
+    /// The helix pitch (mm per turn).
+    pub(super) pitch: f64,
+    /// The core floor of the tool (mm), 0 for a tool that cuts at its
+    /// centre.
+    pub(super) core_floor_mm: f64,
+    /// The entry clearance (mm) above the contact top, as the emitter's.
+    pub(super) entry_clearance_mm: f64,
+}
+
+/// The bore rule and the region a bore must stay inside.
+#[derive(Clone, Copy)]
+pub(super) struct BoreAt<'a> {
+    pub(super) rule: &'a EntryBoreRule,
+    /// The tool-centre pieces (`adaptive::bore_region`) of the outlines the
+    /// 2D plan planned so far at this level: the region its
+    /// `LinkLoad::entry_hole` read.
+    pub(super) region: &'a [crate::polygon::Polygon2],
+}
+
+impl BoreAt<'_> {
+    /// The entry of `entry`: a helix bore where one fits, else the
+    /// fallback (ruling Q1).
+    fn entry_bore(&self, entry: P3) -> EntryBore {
+        let centre = P2::new(entry.x, entry.y);
+        let rule = self.rule;
+        match crate::adaptive::Bore::at(self.region, centre, rule.helix_radius, rule.core_floor_mm)
+        {
+            Some(bore) => EntryBore::Helix {
+                radius: bore.helix_radius,
+                pitch: rule.pitch,
+            },
+            None => EntryBore::Fallback {
+                fit_mm: crate::adaptive::Bore::fit_mm(self.region, centre, rule.helix_radius),
+                core_floor_mm: rule.core_floor_mm,
+            },
+        }
+    }
 }
 
 impl<'a> ClearZLevelContext<'a> {
@@ -614,6 +669,18 @@ impl<'a> ClearZLevelContext<'a> {
             keep_down_route: self.keep_down_route,
             stay_down_clearance_mm: self.stay_down_clearance_mm,
             entry_lut: self.entry_lut,
+            bore: None,
+        }
+    }
+
+    /// [`Self::stamp_drape`] with the level sink's bore region (P22b).
+    pub(super) fn stamp_drape_with_bore<'b>(
+        &'b self,
+        region: &'b [crate::polygon::Polygon2],
+    ) -> StampDrape<'b> {
+        StampDrape {
+            bore: self.entry_bore.as_ref().map(|rule| BoreAt { rule, region }),
+            ..self.stamp_drape()
         }
     }
 }
@@ -760,6 +827,9 @@ fn stamp_emitted_segment(
         Adaptive3dSegment::RapidWithFloor {
             entry,
             rapid_floor_z,
+            contact_z,
+            core_top_z,
+            bore,
             ..
         } => {
             // Toolpath: rapid descent from safe_z (or a keep-down link) down
@@ -781,6 +851,39 @@ fn stamp_emitted_segment(
             );
             let descent_floor = descent_start_z(Some(*rapid_floor_z), safe_z, entry.z);
             let start = P3::new(entry.x, entry.y, descent_floor);
+            // P22b: a helix bore stamps the moves the emitter writes for it
+            // (`path::emit_bore_helix`, the floor lap included) with the cut
+            // table, as a cut: the stamp is the path that ships (G-SIMCORE).
+            if let (EntryBore::Helix { radius, pitch }, Some(at)) = (bore, drape.bore.as_ref())
+                && descent_floor > entry.z + 1e-6
+            {
+                let frame = super::path::EntryFrame {
+                    mesh: drape.mesh,
+                    index: drape.index,
+                    cutter: drape.cutter,
+                    stock_to_leave: drape.stock_to_leave,
+                    entry_clearance_mm: at.rule.entry_clearance_mm,
+                    // The feed does not move a point of the helix.
+                    ramp_feed: None,
+                    core: crate::tool::body::core_of(drape.cutter),
+                };
+                let mut helix = crate::toolpath::Toolpath::new();
+                let _refusal = super::path::emit_bore_helix(
+                    &mut helix,
+                    &frame,
+                    entry,
+                    descent_floor,
+                    (*rapid_floor_z, true, Some(*contact_z), *core_top_z),
+                    *radius,
+                    *pitch,
+                    0.0,
+                );
+                let mut fed = Vec::with_capacity(helix.moves.len() + 1);
+                fed.push(start);
+                fed.extend(helix.moves.iter().map(|m| m.target));
+                stamp_along_path(material_stock, lut, tool_radius, &fed);
+                return Some(emitted_entry_end(*entry, descent_floor));
+            }
             // G-SIMCORE: as the `Rapid` arm, the envelope.
             material_stock.stamp_linear_segment(
                 drape.entry_lut,
@@ -849,8 +952,18 @@ fn plan_entry(
     entry: P3,
     drape: &StampDrape<'_>,
 ) -> Adaptive3dSegment {
+    // P22b: the bore of a Geodesic Adaptive helix entry; the floor read
+    // covers its hole (`R + radius`) instead of the op-wide disc.
+    let bore = drape
+        .bore
+        .map_or(EntryBore::OpStyle, |at| at.entry_bore(entry));
+    let floor_radius = match bore {
+        EntryBore::Helix { radius, .. } => tool_radius + radius,
+        EntryBore::Fallback { .. } => tool_radius,
+        EntryBore::OpStyle => drape.entry_floor_radius,
+    };
     let Some(rapid_floor_z) =
-        material_stock.max_conservative_top_z_in_disc(entry.x, entry.y, drape.entry_floor_radius)
+        material_stock.max_conservative_top_z_in_disc(entry.x, entry.y, floor_radius)
     else {
         return Adaptive3dSegment::Rapid(entry);
     };
@@ -874,7 +987,7 @@ fn plan_entry(
     // The helix or ramp starts above the cell-centre read; the rapid floor
     // keeps the sliver-safe one.
     let contact_z = material_stock
-        .max_top_z_in_disc(entry.x, entry.y, drape.entry_floor_radius)
+        .max_top_z_in_disc(entry.x, entry.y, floor_radius)
         .map_or(rapid_floor_z, |z| z.min(rapid_floor_z));
     // P22-0c-3: the wood under the core disc, for the static plunge check.
     let core_top_z = crate::tool::body::core_of(drape.cutter).and_then(|core| {
@@ -886,6 +999,7 @@ fn plan_entry(
         contact_z,
         core_top_z,
         stay_down,
+        bore,
     }
 }
 
@@ -1951,6 +2065,7 @@ pub(super) fn waterline_cleanup(
         keep_down_route: super::KeepDownRoute::Off,
         stay_down_clearance_mm: 0.0,
         entry_lut: ctx.entry_lut,
+        bore: None,
     };
     #[cfg(not(target_arch = "wasm32"))]
     let t_waterline = Instant::now();
@@ -2459,6 +2574,10 @@ struct LevelSink<'a> {
     replaced_entries: usize,
     /// The F-038 gate. Off, every segment is stamped at push, as before.
     defer_entries: bool,
+    /// P22b: the tool-centre pieces (`adaptive::bore_region`) of the
+    /// outlines planned so far at this level, the region a helix bore must
+    /// stay inside. Empty unless the op has a bore rule.
+    bore_region: Vec<crate::polygon::Polygon2>,
 }
 
 impl LevelSink<'_> {
@@ -2490,7 +2609,7 @@ impl LevelSink<'_> {
                 ctx.safe_z,
                 ctx.cut_tolerance,
                 ctx.min_cutting_radius,
-                &ctx.stamp_drape(),
+                &ctx.stamp_drape_with_bore(&self.bore_region),
             );
             return;
         }
@@ -2521,7 +2640,7 @@ impl LevelSink<'_> {
                     ctx.safe_z,
                     ctx.cut_tolerance,
                     ctx.min_cutting_radius,
-                    &ctx.stamp_drape(),
+                    &ctx.stamp_drape_with_bore(&self.bore_region),
                 );
             }
         }
@@ -2547,7 +2666,7 @@ impl LevelSink<'_> {
         // An entry the routed keep-down travel can replace goes out as the
         // route, in the entry's place (only markers stand after a pending
         // entry, so the order holds). `KeepDownRoute::Off`: never.
-        let drape = ctx.stamp_drape();
+        let drape = ctx.stamp_drape_with_bore(&self.bore_region);
         if let Some(route) = routed_entry(
             self.material_stock,
             ctx.tool_radius,
@@ -3488,6 +3607,12 @@ fn plan_and_emit_region(
     // that capped it (`None`: no cap).
     let mut caps_2d: Vec<Option<(f64, super::FeedCapSource)>> = Vec::new();
     for outline in outlines {
+        // P22b: the region the 2D plan's helix holes read
+        // (`LinkLoad::entry_hole`); the 3D entries read the same.
+        if ctx.entry_bore.is_some() {
+            sink.bore_region
+                .extend(crate::adaptive::bore_region(outline, ctx.tool_radius));
+        }
         let (segs, caps) = plan_one_outline(
             ctx,
             params_2d,
@@ -4145,8 +4270,11 @@ pub(super) fn clear_z_level_slice(
         // Research C12: the arm plans under the 2D pass load and emits its
         // links as cuts (`plan_one_outline`).
         keep_down_links: crate::adaptive::KeepDownLinks::WithinPassLoad,
-        entry_helix_radius: 0.0,
-        entry_helix_core_floor: 0.0,
+        // P22b (ruling Q1, option (a)): a helix op plans its bores (the
+        // planner hole `R + fit`, no plunge exemption); every other op plans
+        // a straight plunge, as before.
+        entry_helix_radius: ctx.entry_bore.map_or(0.0, |rule| rule.helix_radius),
+        entry_helix_core_floor: ctx.entry_bore.map_or(0.0, |rule| rule.core_floor_mm),
     };
 
     if let Some(scope) = level_scope.as_ref() {
@@ -4170,6 +4298,7 @@ pub(super) fn clear_z_level_slice(
             pending_entry: None,
             replaced_entries: 0,
             defer_entries: ctx.min_region_cut_length_mm > 0.0,
+            bore_region: Vec::new(),
         },
         level_metrics: &mut level_metrics,
         cut_count: &mut cut_count,

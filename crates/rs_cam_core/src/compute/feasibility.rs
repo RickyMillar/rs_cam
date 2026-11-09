@@ -455,19 +455,37 @@ impl FeasibilityInputs<'_> {
             .iter()
             .partition(|f| f.fallback == EntryFallback::NoPass);
         let mut parts = Vec::new();
-        if let Some(head) = entries.first() {
-            let count = entries.len();
-            let plunges = entries
+        // P22b: one part per reason (`HelixFallbackReason`), one finding id.
+        for reason in [
+            crate::compute::tool_config::HelixFallbackReason::NoRoom,
+            crate::compute::tool_config::HelixFallbackReason::BelowCoreRadius,
+        ] {
+            let group: Vec<_> = entries.iter().filter(|f| f.reason() == reason).collect();
+            let Some(head) = group.first() else {
+                continue;
+            };
+            let count = group.len();
+            let plunges = group
                 .iter()
                 .filter(|f| f.fallback == EntryFallback::Plunge)
                 .count();
+            let room = match reason {
+                crate::compute::tool_config::HelixFallbackReason::NoRoom => {
+                    "the entry centre is on the edge of the region the helix must stay inside"
+                        .to_owned()
+                }
+                crate::compute::tool_config::HelixFallbackReason::BelowCoreRadius => format!(
+                    "room for r {} mm only, under the core radius {} mm (a smaller helix \
+                     leaves a post under the core)",
+                    mm(head.fit_mm),
+                    mm(head.core_floor_mm)
+                ),
+            };
             parts.push(format!(
-                "{count} helix entr{} had room for r {} mm only, under the core radius {} mm (a \
-                 smaller helix leaves a post under the core); the entry falls back to the {} \
+                "{count} helix entr{} with {}: {room}; the entry falls back to the {} \
                  ({plunges} plunge(s) in all), first at X{:.3} Y{:.3} Z{:.3}",
                 if count == 1 { "y" } else { "ies" },
-                mm(head.fit_mm),
-                mm(head.core_floor_mm),
+                reason.text(),
                 head.fallback.label(),
                 head.at.x,
                 head.at.y,
@@ -651,6 +669,40 @@ mod tests {
                 .iter()
                 .any(|r| r.rule() == PhysicalRule::HelixCore)
         );
+
+        // P22b: two reasons, one finding id. A fit of 0 (no room at all)
+        // and a fit under the core floor each name their own reason.
+        let both: &'static [HelixCoreFallback] = Box::leak(Box::new([
+            HelixCoreFallback {
+                at: P3::new(-30.0, 5.0, 7.0),
+                fit_mm: 0.0,
+                core_floor_mm: 4.0,
+                fallback: EntryFallback::Ramp,
+            },
+            HelixCoreFallback {
+                at: P3::new(10.0, 10.0, 7.0),
+                fit_mm: 3.0,
+                core_floor_mm: 4.0,
+                fallback: EntryFallback::Plunge,
+            },
+        ]));
+        let report = assess(&inputs(both));
+        let rows: Vec<_> = report
+            .rows()
+            .iter()
+            .filter(|r| r.rule() == PhysicalRule::HelixCore)
+            .collect();
+        assert_eq!(rows.len(), 1, "one finding id for both reasons");
+        let text = rows[0].text();
+        for needle in [
+            crate::compute::tool_config::HelixFallbackReason::NoRoom.text(),
+            crate::compute::tool_config::HelixFallbackReason::BelowCoreRadius.text(),
+            "X-30.000 Y5.000 Z7.000",
+            "r 3 mm",
+            "1 plunge(s)",
+        ] {
+            assert!(text.contains(needle), "{needle:?} not in {text:?}");
+        }
 
         // P22-0c-4: a ramp-finish ring inside the core diameter (fallback
         // `NoPass`) gives the same row with its own words.

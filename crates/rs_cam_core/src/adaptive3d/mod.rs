@@ -902,7 +902,7 @@ pub fn adaptive_3d_toolpath_output_with_cancel(
     });
     // F-038b: pass mesh + spatial index + cutter so segments_to_toolpath
     // can query the heightfield along each candidate stay-down link.
-    let (tp, annotations, non_centre_cutting_refusal) =
+    let (tp, annotations, non_centre_cutting_refusal, helix_core_fallbacks) =
         path::segments_to_toolpath_checked(&segments, params, mesh, index, cutter);
     if let Some(debug_ctx) = debug {
         for annotation in &annotations {
@@ -926,6 +926,7 @@ pub fn adaptive_3d_toolpath_output_with_cancel(
             rest_regions,
             rest_regions_top_z,
             non_centre_cutting_refusal,
+            helix_core_fallbacks,
             region_openings: result.region_openings,
             ..crate::trace::produced::Produced::default()
         },

@@ -404,6 +404,44 @@ impl std::fmt::Display for NonCentreCuttingRefusal {
     }
 }
 
+/// Why a helix entry fell back (feeds contract P22b, lead ruling on the
+/// fallback text): one finding id (`HelixCore`), two reasons.
+#[derive(Debug, Clone, Copy, PartialEq, Eq)]
+pub enum HelixFallbackReason {
+    /// The entry centre has no room for any helix: the circle of the
+    /// smallest helix leaves the region the entry must stay inside (a fit of
+    /// 0, `dressup::HELIX_MIN_FIT_MM`).
+    NoRoom,
+    /// The region holds a helix, but its radius is under the core radius of
+    /// a tool that does not cut at its centre (a smaller helix leaves a
+    /// post under the core).
+    BelowCoreRadius,
+}
+
+impl HelixFallbackReason {
+    /// The finding text of the reason.
+    #[must_use]
+    pub const fn text(self) -> &'static str {
+        match self {
+            Self::NoRoom => "no room for the helix",
+            Self::BelowCoreRadius => "helix radius below the core radius",
+        }
+    }
+}
+
+impl HelixCoreFallback {
+    /// Why this entry fell back: no room at all, or a fit under the core
+    /// floor (the fit decides, by the dressup's own room test).
+    #[must_use]
+    pub fn reason(&self) -> HelixFallbackReason {
+        if self.fit_mm > crate::dressup::HELIX_MIN_FIT_MM {
+            HelixFallbackReason::BelowCoreRadius
+        } else {
+            HelixFallbackReason::NoRoom
+        }
+    }
+}
+
 /// The entry that a helix fell back to (G-SIMCORE, `P22_DESIGN.md` section
 /// 9: helix, then ramp, then plunge).
 #[derive(Debug, Clone, Copy, PartialEq, Eq)]

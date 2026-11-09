@@ -6,10 +6,10 @@
 //! final Toolpath with rapids, plunges, feeds, and runtime annotations.
 
 use super::material_grid::polygon_bbox;
+use super::opening::emit_helical_starter_pocket;
 use super::search::{
-    NoStep, PassLoad, PassLoadMeasure, ToolCentreRegion, find_entry_point,
-    find_entry_via_distance_transform, path_bounds, search_direction_gradient,
-    search_direction_with_metrics, step_within_pass_load,
+    NoStep, PassLoad, PassLoadMeasure, ToolCentreRegion, find_entry_point, path_bounds,
+    search_direction_gradient, search_direction_with_metrics, step_within_pass_load,
 };
 use super::{
     AdaptiveParams, AdaptiveRuntimeAnnotation, AdaptiveRuntimeEvent, CleanupStrategy,
@@ -322,21 +322,17 @@ impl LinkLoad {
     /// (`dressup::contained_helix_radius`, the same function and region the
     /// dressup reads). Where no helix fits the dressup ramps along the cut
     /// it enters, which the planner stamps as that cut: the hole is R.
-    fn entry_hole(&self, p: P2) -> f64 {
+    pub(super) fn entry_hole(&self, p: P2) -> f64 {
         if self.entry_radius <= self.tool_radius {
             return self.tool_radius;
         }
-        let fit = crate::dressup::contained_helix_radius(
+        super::opening::Bore::at(
             self.region.as_ref().map_or(&[], |r| r.pieces()),
-            p.x,
-            p.y,
+            p,
             self.entry_radius - self.tool_radius,
-        );
-        if crate::dressup::helix_fit_holds(fit, self.entry_core_floor) {
-            self.tool_radius + fit
-        } else {
-            self.tool_radius
-        }
+            self.entry_core_floor,
+        )
+        .map_or(self.tool_radius, |bore| bore.hole_radius(self.tool_radius))
     }
 
     /// True when a re-entry is a straight plunge (no helix hole): under the
@@ -2802,160 +2798,6 @@ fn mop_capped_step_of(
 /// the Manhattan metric over-estimates depth at corners (e.g. a donut
 /// ring corner reads ~12 mm Manhattan but ~8 mm Euclidean), which
 /// matters for the gate threshold.
-/// Emit a circular starter pocket centred on the largest inscribed
-/// disk inside `machinable`, returning the cutter end position so the
-/// engagement-target spiral can continue from there with full swing
-/// room from move 1.
-///
-/// The cutter walks a circle of radius `tool_radius` around the
-/// medial-axis maximum, clearing a disc of radius `2 × tool_radius`.
-/// In 3D production this would be a helical plunge; for the 2D
-/// planner it's a single circular pass after a Rapid + Z-plunge.
-///
-/// Returns `None` when no DT-maximum cell with ≥ `2 × tool_radius`
-/// clearance exists (uniformly-narrow regions — the narrow gate
-/// would already have handled those).
-///
-/// Reference: Autodesk patent US7831332 (Fusion HSM transition
-/// portion), Bieterman & Sandström (Boeing, ~2003), Ren & Bi (2014).
-pub(super) fn emit_helical_starter_pocket(
-    grid: &mut MaterialGrid,
-    machinable_mask: &[bool],
-    boundary_distances: &[f64],
-    tool_radius: f64,
-    pass_load: Option<(&PassLoad, f64, &LinkLoad)>,
-) -> Option<(Vec<AdaptiveSegment>, P2)> {
-    // B10: under the 2D pass load the starter stands on material: on a
-    // rest level the medial point can lie where an earlier op cleared.
-    let medial = find_entry_via_distance_transform(
-        grid,
-        machinable_mask,
-        boundary_distances,
-        tool_radius,
-        pass_load.is_some(),
-    )?;
-    // Need the medial-axis disk to fit the helix (radius `tool_radius`)
-    // plus the cutter (radius `tool_radius`) plus a small safety margin.
-    let dt_at = grid.boundary_distance_at(boundary_distances, medial.x, medial.y);
-    let required = 2.0 * tool_radius;
-    if dt_at < required {
-        return None;
-    }
-
-    if let Some((load, stepover, link_load)) = pass_load {
-        let entry_radius = link_load.entry_hole(medial);
-        return emit_spiral_starter_pocket(grid, medial, tool_radius, stepover, load, entry_radius);
-    }
-
-    let helix_r = tool_radius;
-    let n_steps = 64;
-    let mut segments: Vec<AdaptiveSegment> = Vec::new();
-
-    // Clear the medial cell itself (the Z-plunge centre).
-    grid.clear_circle(medial.x, medial.y, tool_radius);
-
-    let start = P2::new(medial.x + helix_r, medial.y);
-    segments.push(AdaptiveSegment::Rapid(start));
-    grid.clear_circle(start.x, start.y, tool_radius);
-
-    let mut path: Vec<P2> = vec![start];
-    for i in 1..=n_steps {
-        let theta = (i as f64 / n_steps as f64) * std::f64::consts::TAU;
-        let x = medial.x + helix_r * theta.cos();
-        let y = medial.y + helix_r * theta.sin();
-        grid.clear_circle(x, y, tool_radius);
-        path.push(P2::new(x, y));
-    }
-    let end = *path.last()?;
-    segments.push(AdaptiveSegment::Cut(path));
-    Some((segments, end))
-}
-
-/// Angular steps per turn of the starter pocket (the historical helix's).
-const STARTER_STEPS_PER_TURN: usize = 64;
-
-/// The cutter-centre path of the 2D starter pocket: from the plunge at
-/// `medial`, an Archimedean spiral `r = pitch · θ / 2π` out to `r = R`, then
-/// one full lap at `R`. It clears the same `2R` disc the historical circle
-/// did, but each lap bites at most `pitch` sideways instead of a full slot.
-fn starter_spiral_points(medial: P2, tool_radius: f64, pitch: f64) -> Vec<P2> {
-    let dtheta = std::f64::consts::TAU / STARTER_STEPS_PER_TURN as f64;
-    let theta_end = std::f64::consts::TAU * tool_radius / pitch;
-    let at = |r: f64, theta: f64| P2::new(medial.x + r * theta.cos(), medial.y + r * theta.sin());
-    let mut pts = vec![medial];
-    let mut i = 1usize;
-    loop {
-        let theta = i as f64 * dtheta;
-        if theta >= theta_end {
-            break;
-        }
-        pts.push(at(pitch * theta / std::f64::consts::TAU, theta));
-        i += 1;
-    }
-    for k in 0..=STARTER_STEPS_PER_TURN {
-        pts.push(at(tool_radius, theta_end + k as f64 * dtheta));
-    }
-    pts
-}
-
-/// G-ADAPTPASSLOAD: the 2D starter pocket. The historical circle of radius
-/// R around the plunge ran a full slot (the sim read 0.83). Plunge at the
-/// medial point (the disc the grid clears there), then spiral out
-/// ([`starter_spiral_points`]) at pitch `min(stepover, R)`, halved up to
-/// three times until every step holds [`step_within_pass_load`]. `None`
-/// when no pitch does; the agent then enters from the boundary.
-fn emit_spiral_starter_pocket(
-    grid: &mut MaterialGrid,
-    medial: P2,
-    tool_radius: f64,
-    stepover: f64,
-    load: &PassLoad,
-    entry_radius: f64,
-) -> Option<(Vec<AdaptiveSegment>, P2)> {
-    let mut pitch = stepover.min(tool_radius);
-    for _ in 0..4 {
-        let pts = starter_spiral_points(medial, tool_radius, pitch);
-        let mut log = Vec::new();
-        grid.clear_circle_logged(medial.x, medial.y, entry_radius.max(tool_radius), &mut log);
-        let mut holds = true;
-        for w in pts.windows(2) {
-            let &[a, b] = w else {
-                continue;
-            };
-            let angle = (b.y - a.y).atan2(b.x - a.x);
-            // A straight plunge (no helix hole): the steps inside the
-            // plunge hole are exempt (`PassLoad::departing`).
-            let step_load = if entry_radius <= tool_radius
-                && (b.x - medial.x).hypot(b.y - medial.y) < tool_radius
-            {
-                load.departing()
-            } else {
-                *load
-            };
-            if !step_within_pass_load(grid, a, b.x, b.y, tool_radius, angle, &step_load) {
-                holds = false;
-                break;
-            }
-            grid.clear_segment_logged(a, b, tool_radius, &mut log);
-        }
-        if holds {
-            let end = *pts.last()?;
-            let segments = vec![
-                AdaptiveSegment::Marker(AdaptiveRuntimeEvent::StarterPocket {
-                    center_x: medial.x,
-                    center_y: medial.y,
-                }),
-                AdaptiveSegment::Rapid(medial),
-                AdaptiveSegment::Cut(pts),
-            ];
-            return Some((segments, end));
-        }
-        grid.restore_cleared(&log);
-        pitch *= 0.5;
-    }
-    None
-}
-
 fn is_narrow_machinable(machinable: &Polygon2, tool_radius: f64, stepover: f64) -> bool {
     // Probe radius: tool_radius + stepover. If the machinable region
     // inset by this much collapses to nothing or only tiny fragments,

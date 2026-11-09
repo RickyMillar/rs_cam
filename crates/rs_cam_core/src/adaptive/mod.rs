@@ -20,6 +20,7 @@
 /// (integration step 7.3). The 3D variant (step 7.4) is its first caller.
 pub mod geodesic;
 mod material_grid;
+mod opening;
 pub(crate) mod path;
 #[cfg(feature = "research")]
 pub mod research_geodesic;
@@ -30,6 +31,7 @@ pub(crate) use search::tool_centre_pieces;
 mod spiral;
 
 pub(crate) use material_grid::MaterialGrid;
+pub(crate) use opening::{Bore, bore_region};
 pub(crate) use path::{AdaptiveSegment, adaptive_segments_with_debug, planner_cell_size};
 use path::{apply_residue_mop_cleanup, segments_to_toolpath};
 
