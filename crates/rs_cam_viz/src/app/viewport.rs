@@ -834,18 +834,21 @@ impl RsCamApp {
             }
             (Workspace::Simulation, PickHit::CollisionMarker { index }) => {
                 // Jump playback to the collision move. The markers are the
-                // HOLDER report's positions (`collision_positions`), so the
+                // HOLDER report's positions, then the contact kernel's
+                // (P22-0c-3, `AppController::collision_positions`). A holder
                 // index is a holder-event index. G-RAPIDFRAME: it used to
                 // index the RAPID list, a different list, and the event's
                 // move is local to the checked toolpath, so the located
-                // list gives the run move.
+                // list gives the run move. A contact marker holds its run
+                // move.
                 let move_idx = self
                     .controller
                     .state()
                     .simulation
                     .located_holder_collisions()
                     .get(*index)
-                    .and_then(|hit| hit.global_move);
+                    .and_then(|hit| hit.global_move)
+                    .or_else(|| self.controller.contact_marker_move(*index));
                 if let Some(move_idx) = move_idx {
                     let pb = &mut self.controller.state_mut().simulation.playback;
                     pb.current_move = move_idx;
@@ -1070,6 +1073,25 @@ impl RsCamApp {
             )
             .show(|ui| {
                 ui.label(tip);
+            });
+        }
+
+        // P22-0c-3 (operator ruling Q6): the hovered collision marker shows
+        // one chip, the zone kind of the contact. No text block.
+        if let Some(crate::interaction::picking::PickHit::CollisionMarker { index }) = &hover.scene
+            && let Some(zone) = self.controller.collision_zone(*index)
+        {
+            egui::Tooltip::always_open(
+                ui.ctx().clone(),
+                response.layer_id,
+                egui::Id::new("collision_zone_chip"),
+                egui::PopupAnchor::Pointer,
+            )
+            .show(|ui| {
+                ui.add(crate::ui::components::StatusChip::new(
+                    zone.replace('_', " "),
+                    crate::ui::components::Role::Danger,
+                ));
             });
         }
 

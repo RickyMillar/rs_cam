@@ -28,7 +28,7 @@ Stamps a tool along a toolpath into a tri-dexel stock. Entry point:
 - The 0.02 mm Z subdivision serves the STAMP. A move keeps at most
   `⌈len/step⌉` samples (`sample_coalesce`); a sample per stamp was 20 GB.
 - `playback.rs` is the NON-metric replay route. Do not read a metric from it.
-- G-SIMCORE: a non-centre-cutting tool cuts with its blade ring only (`point_coverage`, `swept_coverage`; the ring from `tool::body::cut_table`). P22-0b: every fed move runs the core check; it flushes only on a strike read on the unflushed stock (`core_unflushed_strike`).
+- G-SIMCORE: a non-centre-cutting tool cuts with its blade ring only (`point_coverage`, `swept_coverage`; the ring from `tool::body::cut_table`). P22-0c-3: every fed move asks `stock::contact::StockContactCheck`; it flushes only for a zone that meets the unflushed stock.
 
 ## Sentries
 

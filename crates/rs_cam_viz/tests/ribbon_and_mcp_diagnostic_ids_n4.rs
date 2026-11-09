@@ -267,6 +267,7 @@ fn ribbon_diagnostics(session: &ProjectSession, idx: usize) -> Vec<Diagnostic> {
         snapshot.suggest_warnings.as_deref(),
         load_verdict,
         None,
+        None,
     )
 }
 

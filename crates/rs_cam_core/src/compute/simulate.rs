@@ -17,9 +17,7 @@ use crate::geo::{BoundingBox3, P3};
 use crate::ids::ToolpathId;
 use crate::interrupt::Cancelled;
 use crate::mesh::{SpatialIndex, TriangleMesh};
-use crate::stock::collision::{
-    RapidClearanceCheck, RapidCollision, check_rapid_collisions_against_stock,
-};
+use crate::stock::collision::{RapidCollision, check_rapid_collisions_against_stock};
 use crate::stock::dexel_mesh::dexel_stock_to_mesh_strided;
 use crate::stock::radial_profile::RadialProfileLUT;
 use crate::stock::simulation_cut::{
@@ -824,8 +822,8 @@ pub struct SimulationResult {
     /// at its centre goes down into stock steeper than its limit angle or
     /// plunges deeper than its blade protrusion, at most one per move, in
     /// run order. Absolute limits from the tool; a descent in air is not a
-    /// finding. Export refuses on any of them
-    /// ([`non_centre_cutting_refusal_rows`]).
+    /// finding. Export warns on any of them
+    /// ([`non_centre_cutting_warning_rows`]).
     pub non_centre_cutting_descents: Vec<ToolpathCoreDescent>,
     /// K5 ReachFlute (feeds contract P7): every fed move where wood stands
     /// over the tool tip higher than its flute length, inside the cutter
@@ -855,18 +853,35 @@ pub enum FluteReach {
 
 /// K5 ReachFlute, the ninth shared decision: what `result` measured for
 /// toolpath `id`. The caller states that the run carved the toolpath and
-/// is fresh for it (`ProjectSession::flute_reach_measured`).
+/// is fresh for it (`ProjectSession::flute_reach_measured`). `program_shift`
+/// moves a simulation position into the G-code frame
+/// ([`ContactFrame`], P22-0c-3).
 #[must_use]
-pub fn flute_reach(result: &SimulationResult, id: ToolpathId) -> FluteReach {
-    flute_overreach_row(result, id).map_or(FluteReach::Within, FluteReach::Over)
+pub fn flute_reach(result: &SimulationResult, id: ToolpathId, frame: ContactFrame) -> FluteReach {
+    flute_overreach_row(result, id, frame).map_or(FluteReach::Within, FluteReach::Over)
 }
 
 /// K5 ReachFlute: the row of the simulation for toolpath `id`, or `None`
-/// when the run recorded no flute overreach for it. The text gives the count and the worst overreach. The diagnostics
+/// when the run recorded no flute overreach for it. The text gives the count and the worst overreach,
+/// its position in the G-code frame (P22-0c-3). The diagnostics
 /// (`tool.flute_overreach`) and the export door read it on every surface.
-pub fn flute_overreach_row(result: &SimulationResult, id: ToolpathId) -> Option<String> {
-    let hits: Vec<_> = result
-        .flute_overreach
+pub fn flute_overreach_row(
+    result: &SimulationResult,
+    id: ToolpathId,
+    frame: ContactFrame,
+) -> Option<String> {
+    flute_contact_row(&result.flute_overreach, id, frame)
+}
+
+/// The row of [`flute_overreach_row`] over the flute-top contacts `all` of
+/// a run (the session result, or the GUI copy of the evidence).
+#[must_use]
+pub fn flute_contact_row(
+    all: &[ToolpathFluteOverreach],
+    id: ToolpathId,
+    frame: ContactFrame,
+) -> Option<String> {
+    let hits: Vec<_> = all
         .iter()
         .filter(|hit| hit.toolpath_id == id)
         .map(|hit| &hit.overreach)
@@ -876,15 +891,53 @@ pub fn flute_overreach_row(result: &SimulationResult, id: ToolpathId) -> Option<
         .max_by(|a, b| a.material_over_tip_mm.total_cmp(&b.material_over_tip_mm))?;
     Some(format!(
         "flute {:.2} mm: {} move(s) have wood over the tip above the flute, measured by the \
-         simulation (worst: move {} at X{:.3} Y{:.3} Z{:.3}, {:.2} mm of wood over the tip)",
+         simulation (worst: move {} at {}, {:.2} mm of wood over the tip)",
         worst.flute_length_mm,
         hits.len(),
         worst.move_index,
-        worst.position.x,
-        worst.position.y,
-        worst.position.z,
+        frame.text(worst.position),
         worst.material_over_tip_mm,
     ))
+}
+
+/// P22-0c-3 (one frame): the frame every contact finding states its
+/// position in, the G-code frame of the toolpath's setup. A simulation
+/// position is in the emission frame (the world frame on an identity
+/// setup, the zero-rooted setup frame on a flipped or rotated one); the
+/// export adds the setup's datum shift
+/// (`gcode::export_datum_shift_for_toolpath`), so the shift moves a
+/// position onto the G-code line the operator reads. The session builds
+/// it per toolpath; a caller with no session (a test) states
+/// [`Self::EMISSION`].
+#[derive(Debug, Clone, Copy, PartialEq)]
+pub struct ContactFrame {
+    /// The shift from the emission frame to the G-code frame (mm).
+    pub program_shift: P3,
+}
+
+impl ContactFrame {
+    /// No shift: the caller states that the emission frame is the G-code
+    /// frame.
+    pub const EMISSION: Self = Self {
+        program_shift: P3::new(0.0, 0.0, 0.0),
+    };
+
+    /// `p` (emission frame) in the G-code frame.
+    #[must_use]
+    pub fn to_program(self, p: P3) -> P3 {
+        P3::new(
+            p.x + self.program_shift.x,
+            p.y + self.program_shift.y,
+            p.z + self.program_shift.z,
+        )
+    }
+
+    /// The position text of a contact finding: `X.. Y.. Z.. (G-code frame)`.
+    #[must_use]
+    pub fn text(self, p: P3) -> String {
+        let q = self.to_program(p);
+        format!("X{:.3} Y{:.3} Z{:.3} (G-code frame)", q.x, q.y, q.z)
+    }
 }
 
 /// K7 (feeds contract P9): one measured point of a toolpath on its K2b
@@ -1074,43 +1127,96 @@ pub struct ToolpathCoreDescent {
     pub descent: crate::stock::collision::NonCentreCuttingDescent,
 }
 
-/// G-CENTRECUT, the eighth shared decision: the export refusal rows of a
-/// simulation for the toolpaths `emitted`. One row per toolpath that holds
-/// a core strike: its name (from `name_of`), the strike count and the
-/// worst strike. Empty: export may go on. The checked export door reads
-/// it on every surface.
-pub fn non_centre_cutting_refusal_rows<'n>(
+/// G-CENTRECUT, the eighth shared decision: the core row of toolpath `id`
+/// in `result`, or `None` when the run recorded no core contact for it.
+/// The text gives the count, the worst contact (its position in the G-code
+/// frame, [`ContactFrame`]) and the limits of the core zone: the plunge
+/// (the blade protrusion) and the dwell rule (`tool::body::CoreZone`: at
+/// most the protrusion of descent along any piece of path with an XY
+/// diameter of at most the core diameter). Every surface reads this one
+/// text: the export, the toolpath diagnostics, the project diagnostics and
+/// the triage.
+#[must_use]
+pub fn non_centre_cutting_row(
+    result: &SimulationResult,
+    id: ToolpathId,
+    frame: ContactFrame,
+) -> Option<String> {
+    core_contact_row(&result.non_centre_cutting_descents, id, frame)
+}
+
+/// The row of [`non_centre_cutting_row`] over the core contacts `all` of a
+/// run (the session result, or the GUI copy of the evidence).
+#[must_use]
+pub fn core_contact_row(
+    all: &[ToolpathCoreDescent],
+    id: ToolpathId,
+    frame: ContactFrame,
+) -> Option<String> {
+    let hits: Vec<_> = all
+        .iter()
+        .filter(|hit| hit.toolpath_id == id)
+        .map(|hit| &hit.descent)
+        .collect();
+    let worst = hits
+        .iter()
+        .max_by(|a, b| a.material_over_tip_mm.total_cmp(&b.material_over_tip_mm))?;
+    Some(format!(
+        "the tool does not cut at its centre, and {} move(s) push the centre into wood, \
+         measured by the simulation (worst: move {} at {}, {:.2} mm of wood over the tip, \
+         descent {:.1} deg; the limits are a {:.2} mm plunge, and at most {:.2} mm of \
+         descent along any {:.2} mm of path)",
+        hits.len(),
+        worst.move_index,
+        frame.text(worst.position),
+        worst.material_over_tip_mm,
+        worst.descent_angle_deg,
+        worst.max_plunge_depth_mm,
+        worst.max_plunge_depth_mm,
+        worst.dwell_window_mm,
+    ))
+}
+
+/// G-CENTRECUT (P22-0c-3, one answer per move): what a simulation measured
+/// on the core of one toolpath whose tool has a core zone. It supersedes
+/// the static `safety.non_centre_cutting_plunge` (as
+/// `tool.flute_reach_within` supersedes `tool.reach_past_flute`, operator
+/// ruling Q1): the static check reads the planner stock over the whole
+/// entry disc from the entry start height; the kernel reads the live stock
+/// under the core alone.
+#[derive(Debug, Clone, PartialEq, Eq)]
+pub enum CoreContact {
+    /// No wood stood under the core higher than the protrusion: measured
+    /// clean.
+    Clear,
+    /// The row of [`non_centre_cutting_row`].
+    Struck(String),
+}
+
+/// G-CENTRECUT: what `result` measured on the core for toolpath `id`. The
+/// caller states that the run carved the toolpath, is fresh for it and
+/// that its tool has a core (`ProjectSession::core_contact_measured`).
+#[must_use]
+pub fn core_contact(result: &SimulationResult, id: ToolpathId, frame: ContactFrame) -> CoreContact {
+    non_centre_cutting_row(result, id, frame).map_or(CoreContact::Clear, CoreContact::Struck)
+}
+
+/// G-CENTRECUT: the export warning rows of a simulation for the toolpaths
+/// `emitted` (P22-0b ruling 1: it warns, it never refuses). One row per
+/// toolpath that holds a core contact: its name (from `name_of`) and
+/// [`non_centre_cutting_row`] in the frame `frame_of` gives. The checked
+/// export door reads it on every surface.
+pub fn non_centre_cutting_warning_rows<'n>(
     result: &SimulationResult,
     emitted: &[ToolpathId],
     name_of: impl Fn(ToolpathId) -> Option<&'n str>,
+    frame_of: impl Fn(ToolpathId) -> ContactFrame,
 ) -> Vec<String> {
     emitted
         .iter()
         .filter_map(|id| {
-            let hits: Vec<_> = result
-                .non_centre_cutting_descents
-                .iter()
-                .filter(|hit| hit.toolpath_id == *id)
-                .map(|hit| &hit.descent)
-                .collect();
-            let worst = hits
-                .iter()
-                .max_by(|a, b| a.material_over_tip_mm.total_cmp(&b.material_over_tip_mm))?;
-            Some(format!(
-                "Toolpath '{}': the tool does not cut at its centre, and {} move(s) push the \
-                 centre into wood (worst: move {} at X{:.3} Y{:.3} Z{:.3}, {:.2} mm of wood over \
-                 the tip, descent {:.1} deg; the limits are a {:.2} mm plunge and {:.2} deg)",
-                name_of(*id).unwrap_or("?"),
-                hits.len(),
-                worst.move_index,
-                worst.position.x,
-                worst.position.y,
-                worst.position.z,
-                worst.material_over_tip_mm,
-                worst.descent_angle_deg,
-                worst.max_plunge_depth_mm,
-                worst.max_descent_angle_deg,
-            ))
+            let row = non_centre_cutting_row(result, *id, frame_of(*id))?;
+            Some(format!("Toolpath '{}': {row}", name_of(*id).unwrap_or("?")))
         })
         .collect()
 }
@@ -2025,10 +2131,10 @@ fn carve_entry(
         // K5 ReachFlute: the analytic removal never enters the walk, so the
         // holes are read here, against the stock before the drill carves.
         run.flute_overreach.extend(
-            crate::stock::collision::drill_flute_overreach(
+            crate::stock::contact::drill_flute_overreach(
                 group_stock,
                 drill_op_arc,
-                entry.tool.length(),
+                entry.tool.as_ref(),
                 entry_toolpath,
             )
             .into_iter()
@@ -2078,7 +2184,7 @@ fn carve_entry(
                 intent_transits,
             )
         };
-        let mut rapid_check = RapidClearanceCheck::new(entry.tool.as_ref());
+        let mut walk_checks = crate::stock::contact::WalkChecks::new(entry.tool.as_ref());
         // Every simulation records the cut samples and the arc engagement
         // (operator ruling 2026-10-02, "always capture").
         let samples = group_stock
@@ -2098,26 +2204,29 @@ fn carve_entry(
                 &transit_moves,
                 true,
                 &|| env.cancel.load(Ordering::SeqCst),
-                Some(&mut rapid_check),
+                Some(&mut walk_checks),
             )
             .map_err(|_cancelled| SimulationError::Cancelled)?;
         append_samples(&mut run.cut_samples, samples);
+        let found = walk_checks.into_findings();
         run.flute_overreach
-            .extend(rapid_check.take_flute_hits().into_iter().map(|overreach| {
-                ToolpathFluteOverreach {
-                    toolpath_id: entry.id,
-                    overreach,
-                }
-            }));
-        let (rapid_hits, core_hits) = rapid_check.into_parts();
+            .extend(
+                found
+                    .flute
+                    .into_iter()
+                    .map(|overreach| ToolpathFluteOverreach {
+                        toolpath_id: entry.id,
+                        overreach,
+                    }),
+            );
         collect_rapid_hits(
-            rapid_hits,
+            found.rapids,
             run.total_moves,
             &mut run.rapid_collisions,
             &mut run.rapid_collision_move_indices,
         );
         run.non_centre_cutting_descents
-            .extend(core_hits.into_iter().map(|descent| ToolpathCoreDescent {
+            .extend(found.core.into_iter().map(|descent| ToolpathCoreDescent {
                 toolpath_id: entry.id,
                 descent,
             }));

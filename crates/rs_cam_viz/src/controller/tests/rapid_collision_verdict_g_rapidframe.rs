@@ -238,7 +238,7 @@ fn every_surface_gives_the_edge_move_to_the_later_toolpath_g_rapidframe() {
     // MCP `inspect_collisions`.
     #[cfg(feature = "mcp")]
     {
-        let json = crate::app::mcp::inspect_collisions_json(sim);
+        let json = crate::app::mcp::inspect_collisions_json(sim, state.session());
         let rows = json["by_toolpath"].as_array().expect("rows");
         assert_eq!(rows.len(), 1, "{json:#}");
         assert_eq!(rows[0]["toolpath_id"].as_u64(), Some(second.raw() as u64));
@@ -335,7 +335,7 @@ fn a_holder_hit_on_the_second_toolpath_stays_on_it_g_rapidframe() {
 
     #[cfg(feature = "mcp")]
     {
-        let json = crate::app::mcp::inspect_collisions_json(sim);
+        let json = crate::app::mcp::inspect_collisions_json(sim, controller.state.session());
         let rows = json["by_toolpath"].as_array().expect("rows");
         assert_eq!(rows.len(), 1, "{json:#}");
         assert_eq!(rows[0]["toolpath_id"].as_u64(), Some(second.raw() as u64));

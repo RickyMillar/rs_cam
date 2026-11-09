@@ -39,6 +39,7 @@
 mod common;
 
 use rs_cam_core::compute::tool_config::ToolFact;
+use rs_cam_core::stock::contact::WalkChecks;
 use std::sync::atomic::AtomicBool;
 
 use rs_cam_core::compute::catalog::OperationConfig;
@@ -51,7 +52,6 @@ use rs_cam_core::geo::{BoundingBox3, P3};
 use rs_cam_core::ids::ToolpathId;
 use rs_cam_core::mesh::make_test_flat;
 use rs_cam_core::session::{SimulationOptions, SimulationResolution};
-use rs_cam_core::stock::collision::RapidClearanceCheck;
 use rs_cam_core::stock::radial_profile::{LUT_SAMPLES, RadialProfileLUT};
 use rs_cam_core::tool::MillingCutter;
 use rs_cam_core::toolpath::Toolpath;
@@ -178,7 +178,7 @@ fn strikes(tool: &ToolConfig, moves: &[P3]) -> Vec<usize> {
     for p in &moves[1..] {
         tp.feed_to(*p, 1000.0);
     }
-    let mut check = RapidClearanceCheck::new(&def);
+    let mut check = WalkChecks::new(&def);
     let never = || false;
     stock
         .simulate_toolpath_with_lut_metrics_rapid_checked(
@@ -200,7 +200,7 @@ fn strikes(tool: &ToolConfig, moves: &[P3]) -> Vec<usize> {
             Some(&mut check),
         )
         .expect("never cancelled");
-    let (_rapids, core) = check.into_parts();
+    let core = check.into_findings().core;
     core.into_iter().map(|hit| hit.move_index).collect()
 }
 

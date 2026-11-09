@@ -8,7 +8,7 @@ The entry point for an operator answer: `stock::sim_triage::SimulationTriage`.
 - `mod.rs`, `dexel.rs` — the facade and the core tri-dexel data types (`LatticeWindow`: a grid window, G-RESTLEVELS).
 - `simulation_cut.rs` + `simulation_cut/` — the cut trace, assembly, reports.
 - `sim_triage.rs` — "what should I act on?"; `sim_measurability.rs` — can it be measured?
-- `collision.rs` — three-state `HolderCollisionCheck`; `ToolAssembly` is the view `tool::body::MountedBody::assembly` (P22-0c-1); `RapidClearanceCheck` rides the walk (rapids; G-SIMCORE core: `core_candidate` → `core_strike` on every fed move, the stock history plus the exact in-move ring rule; K5 flute: `flute_candidate` → `flute_strike` → `record_flute`, one per move; `drill_flute_overreach` for an analytic drill); `radial_profile.rs` — the LUT.
+- `collision.rs` — three-state `HolderCollisionCheck`, the result types; `ToolAssembly` is the view `tool::body::MountedBody::assembly`; `RapidClearanceCheck` = the rapid arm only. `contact.rs` (P22-0c-3) — THE contact kernel `zone_contact` (a body contact zone vs a `ContactSolid`): `StockContactCheck` on fed moves (`Core` with `MoveSweep`, `FluteTop` on the pre-move stock), `WalkChecks` (rapid + contact) for the walk, `drill_flute_overreach`; `radial_profile.rs` — the LUT.
   `stock_mesh.rs`, `dexel_mesh.rs`, `dexel_mesh_mc.rs` — mesh extraction; colours: `export/`.
 - `material_slot.rs` — S1 slots; `cut_as.rs` — S6 `CutAs`; `standing_islands.rs` — THE walk of material above a target and its islands (union audit, 3D Rough coverage).
 
@@ -37,4 +37,4 @@ The entry point for an operator answer: `stock::sim_triage::SimulationTriage`.
   `--test narration_denominator_and_hints_d7`, `--test air_cut_one_time_base_g_airdenom`, `--test engagement_denominator_m3`,
   `--test a_fresh_stock_pass_at_its_own_depth_is_not_an_overcut_g_overcutref`,
   `--test a_link_through_stock_is_flagged_g_linkplough` (`link_cuts_stock`; `links_on_mesh` is out), `--test a_rough_island_above_the_stock_to_leave_is_flagged_g_roughcov`
-- `--test rapid_check_catches_real_side_strikes_g_rapid6497` and `--test rapid_check_catches_shallow_plunges_g_rapidplungetol`: the strike classes to keep.
+- `--test rapid_check_catches_real_side_strikes_g_rapid6497`, `--test rapid_check_catches_shallow_plunges_g_rapidplungetol` (strike classes to keep), `--features test-support --test one_contact_finding_on_every_surface_p22_0c`.

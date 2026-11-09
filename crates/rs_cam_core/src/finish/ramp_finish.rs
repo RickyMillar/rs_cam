@@ -379,11 +379,19 @@ fn match_contours(upper: &[ParamContour], lower: &[ParamContour]) -> Vec<(usize,
 ///
 /// Walks along the upper contour, continuously interpolating Z toward the lower
 /// contour. The descent rate is limited by `max_stepdown` per revolution.
+///
+/// P22-0c-3 (lead ruling 1 of P22-0c-2): a tool that does not cut at its
+/// centre also holds the one core rule of a closed ring,
+/// `CoreZone::max_ring_slope` of the upper contour: one revolution descends
+/// at most that slope times the contour length. A contour on which the core
+/// cannot descend at all (slope 0: the ring fits inside the core diameter)
+/// gets no ramp; the ramp never descends faster than the rule.
 fn ramp_between_contours(
     upper: &ParamContour,
     lower: &ParamContour,
     max_stepdown: f64,
     step_len: f64,
+    core: Option<crate::tool::body::CoreZone>,
 ) -> Vec<P3> {
     let z_upper = upper.points.iter().map(|p| p.z).sum::<f64>() / upper.points.len() as f64;
     let z_lower = lower.points.iter().map(|p| p.z).sum::<f64>() / lower.points.len() as f64;
@@ -393,8 +401,17 @@ fn ramp_between_contours(
         return Vec::new();
     }
 
-    // Number of revolutions needed to descend at max_stepdown rate
-    let n_revs = (z_drop / max_stepdown).ceil().max(1.0);
+    // The descent of one revolution: `max_stepdown`, and for a core tool
+    // no more than the core ring slope over the contour length.
+    let per_rev = match core {
+        Some(core) => max_stepdown.min(core.max_ring_slope(&upper.points) * upper.total_length),
+        None => max_stepdown,
+    };
+    if per_rev <= 0.0 {
+        return Vec::new();
+    }
+    // Number of revolutions needed to descend at the per-revolution rate
+    let n_revs = (z_drop / per_rev).ceil().max(1.0);
     // Total distance to cover = n_revs * upper contour length
     let total_dist = n_revs * upper.total_length;
     let n_points = (total_dist / step_len).ceil() as usize;
@@ -610,6 +627,8 @@ pub fn ramp_finish_toolpath_structured_annotated_with_resolution(
         ..RampReachClamp::default()
     };
     let z_step = params.max_stepdown;
+    // P22-0c-3: the core zone of a tool that does not cut at its centre.
+    let core = crate::tool::body::core_of(cutter);
 
     // Generate Z levels. `snap_to_bottom = true` guarantees the ladder ends
     // exactly at `z_bottom` (needed so the final terrace's lower contour is
@@ -694,6 +713,7 @@ pub fn ramp_finish_toolpath_structured_annotated_with_resolution(
                 &lower_contours[li],
                 params.max_stepdown,
                 step_len,
+                core,
             );
             if ramp_path.len() < 2 {
                 continue;
@@ -1042,7 +1062,7 @@ mod tests {
             P3::new(0.0, 10.0, 8.0),
         ]);
 
-        let path = ramp_between_contours(&upper, &lower, 1.0, 0.5);
+        let path = ramp_between_contours(&upper, &lower, 1.0, 0.5, None);
         assert!(path.len() > 10, "Should produce non-trivial path");
 
         // Z should always decrease (or stay same) along the path
@@ -1086,7 +1106,7 @@ mod tests {
             P3::new(0.0, 10.0, 8.0),
         ]);
 
-        let path = ramp_between_contours(&upper, &lower, 0.5, 0.5);
+        let path = ramp_between_contours(&upper, &lower, 0.5, 0.5, None);
 
         // Check that no consecutive segment drops more than max_stepdown
         // over one revolution's worth of points
@@ -1103,6 +1123,48 @@ mod tests {
                 );
             }
         }
+    }
+
+    /// P22-0c-3 (lead ruling 1 of P22-0c-2): a tool that does not cut at
+    /// its centre ramps no faster than the core ring rule
+    /// (`CoreZone::max_ring_slope`); a ring inside the core diameter gets
+    /// no ramp. Red before: the ramp read only `max_stepdown` (10 mm per
+    /// revolution, more than the rule allows on this ring).
+    #[test]
+    fn a_core_tool_ramps_at_the_core_ring_rule_p22_0c() {
+        let square = |half: f64, z: f64| {
+            ParamContour::from_contour(&[
+                P3::new(-half, -half, z),
+                P3::new(half, -half, z),
+                P3::new(half, half, z),
+                P3::new(-half, half, z),
+            ])
+        };
+        let core = crate::tool::body::CoreZone {
+            radius_mm: 4.0,
+            protrusion_mm: 0.5,
+        };
+        let (upper, lower) = (square(10.0, 10.0), square(10.0, -10.0));
+        let limit = core.max_ring_slope(&upper.points) * upper.total_length;
+        assert!(
+            limit > 0.0 && limit < 10.0,
+            "the fixture binds the rule: {limit}"
+        );
+        let path = ramp_between_contours(&upper, &lower, 10.0, 0.5, Some(core));
+        assert!(path.len() > 10, "a ramp");
+        let points_per_rev = (upper.total_length / 0.5).ceil() as usize;
+        let revs = (path.len() - 1) as f64 / points_per_rev as f64;
+        let per_rev = 20.0 / revs;
+        assert!(
+            per_rev <= limit + 1e-9,
+            "the ramp descends {per_rev:.4} mm per revolution, more than the core rule {limit:.4}"
+        );
+        // A ring inside the core diameter: no ramp.
+        let (small_upper, small_lower) = (square(2.0, 10.0), square(2.0, 8.0));
+        assert!(
+            ramp_between_contours(&small_upper, &small_lower, 1.0, 0.5, Some(core)).is_empty(),
+            "a ring inside the core diameter gets no ramp"
+        );
     }
 
     // ── Slope confinement tests ─────────────────────────────────────

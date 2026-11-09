@@ -115,6 +115,21 @@ pub enum ContactKind {
     Shoe,
 }
 
+impl ContactKind {
+    /// The wire and chip name of the zone kind (P22-0c-3, operator ruling
+    /// Q6): one word on the collision marker, one field in MCP and the CLI.
+    #[must_use]
+    pub fn as_str(self) -> &'static str {
+        match self {
+            Self::Core => "core",
+            Self::FluteTop => "flute_top",
+            Self::Shank => "shank",
+            Self::Holder => "holder",
+            Self::Shoe => "shoe",
+        }
+    }
+}
+
 impl From<HeadBandKind> for ContactKind {
     fn from(kind: HeadBandKind) -> Self {
         match kind {
@@ -377,6 +392,24 @@ pub fn cut_table(cutter: &dyn MillingCutter, samples: usize) -> RadialProfileLUT
 #[must_use]
 pub fn envelope_table(cutter: &dyn MillingCutter, samples: usize) -> RadialProfileLUT {
     RadialProfileLUT::from_cutter(cutter, samples)
+}
+
+/// The body of `cutter` (P22-0c-3): the body of a whole tool
+/// ([`MillingCutter::tool_body`]), else the body of a bare shape built by
+/// THE constructor with no core, no shank zone (stickout = flute length)
+/// and the shape's own flute length and envelope radius. The contact
+/// kernel reads the zones of either.
+#[must_use]
+pub fn body_of(cutter: &dyn MillingCutter) -> std::borrow::Cow<'_, ToolBody> {
+    match cutter.tool_body() {
+        Some(body) => std::borrow::Cow::Borrowed(body),
+        None => std::borrow::Cow::Owned(ToolBody::new(
+            cutter,
+            cutter.diameter(),
+            cutter.length(),
+            None,
+        )),
+    }
 }
 
 /// The core zone of `cutter`: the body core of a whole tool

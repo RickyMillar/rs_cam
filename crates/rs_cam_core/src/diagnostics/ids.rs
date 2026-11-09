@@ -602,8 +602,14 @@ diag_ids! {
     /// G-CENTRECUT (SAFETY): the simulation shows wood under the centre core
     /// of a tool that does not cut at its centre, higher over the tip than
     /// the blade protrusion, on a fed move of any op (G-SIMCORE, P22-0b;
-    /// `compute::simulate::non_centre_cutting_refusal_rows`).
+    /// `compute::simulate::non_centre_cutting_row`).
     pub const SAFETY_NON_CENTRE_CUTTING_DESCENT: &str = "safety.non_centre_cutting_descent" => warn(Danger::Tool);
+    /// G-CENTRECUT (P22-0c-3): a fresh simulation measured no wood under the
+    /// centre core higher than the blade protrusion (measured clean). With
+    /// `safety.non_centre_cutting_descent` it is the one answer per move:
+    /// both supersede the static `safety.non_centre_cutting_plunge`, which
+    /// reads the planner stock over the whole entry disc.
+    pub const SAFETY_NON_CENTRE_CUTTING_CLEAR: &str = "safety.non_centre_cutting_clear" => INFO;
     /// G-SIMCORE (P22-0b, SAFETY): a helix entry of a tool that does not cut
     /// at its centre had no room for the core floor (`r >= d_core / 2`), so
     /// the entry fell back to the ramp or the plunge (K5 rule `HelixCore`).

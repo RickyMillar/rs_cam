@@ -43,6 +43,10 @@ impl RsCamApp {
             "simulation_resolution": crate::controller::generate_all::ResolutionReport::of(
                 session, false,
             ),
+            // P22-0c-3 (operator ruling Q6): the contacts of the contact
+            // kernel in the stored simulation, by zone kind; `null` with no
+            // simulation.
+            "contact_zones": contact_zones(session),
             "build": rs_cam_mcp::server::build_info(),
         }))
     }
@@ -995,4 +999,24 @@ pub(crate) fn shoe_plan_wire(session: &rs_cam_core::session::ProjectSession) -> 
         ),
         Err(e) => serde_json::json!({ "error": e.to_string() }),
     }
+}
+
+/// P22-0c-3 (operator ruling Q6): the contacts of the contact kernel in the
+/// stored simulation, counted by zone kind (`core`, `flute_top`). `null`
+/// with no simulation; `{}` for a run with no contact.
+fn contact_zones(session: &rs_cam_core::session::ProjectSession) -> serde_json::Value {
+    use rs_cam_core::tool::body::ContactKind;
+    let Some(sim) = session.simulation_result() else {
+        return serde_json::Value::Null;
+    };
+    let mut zones = serde_json::Map::new();
+    for (kind, count) in [
+        (ContactKind::Core, sim.non_centre_cutting_descents.len()),
+        (ContactKind::FluteTop, sim.flute_overreach.len()),
+    ] {
+        if count > 0 {
+            zones.insert(kind.as_str().to_owned(), serde_json::json!(count));
+        }
+    }
+    serde_json::Value::Object(zones)
 }

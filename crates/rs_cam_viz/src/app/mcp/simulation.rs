@@ -132,7 +132,8 @@ impl RsCamApp {
     /// `get_diagnostics` and `get_project_diagnostics` read, so the surfaces
     /// cannot name two toolpaths for one collision.
     pub(super) fn mcp_inspect_collisions(&self) -> String {
-        json_str(inspect_collisions_json(&self.controller.state().simulation))
+        let state = self.controller.state();
+        json_str(inspect_collisions_json(&state.simulation, state.session()))
     }
 
     pub(super) fn mcp_run_simulation(
@@ -1173,6 +1174,7 @@ fn render_per_kinematics_json(
 /// can compare it with the core diagnostics (G-RAPIDFRAME).
 pub(crate) fn inspect_collisions_json(
     sim: &crate::state::simulation::SimulationState,
+    session: &rs_cam_core::session::ProjectSession,
 ) -> serde_json::Value {
     if !sim.has_results() {
         return serde_json::json!({
@@ -1198,6 +1200,8 @@ pub(crate) fn inspect_collisions_json(
                 "global_move": hit.global_move,
                 "local_move": hit.local_move,
                 "segment": hit.event.segment.as_str(),
+                // P22-0c-3 (Q6): the zone kind of the contact.
+                "zone": hit.event.segment.as_str(),
             }));
     }
 
@@ -1211,6 +1215,8 @@ pub(crate) fn inspect_collisions_json(
         let mut entry = serde_json::json!({
             "global_move": hit.global_move,
             "local_move": local_move,
+            // P22-0c-3 (Q6): a rapid is checked with the whole envelope.
+            "zone": "envelope",
         });
         if let (Some(c), Some(obj)) = (hit.collision.as_ref(), entry.as_object_mut()) {
             obj.insert(
@@ -1225,11 +1231,64 @@ pub(crate) fn inspect_collisions_json(
         rapid_by_tp.entry(tp_id).or_default().push(entry);
     }
 
+    // P22-0c-3: the contacts of the contact kernel (the core, the flute
+    // top), each with its zone kind and its position in the G-code frame of
+    // its setup (`ProjectSession::contact_frame_of`, the frame of every
+    // contact finding).
+    let mut contact_by_tp: std::collections::BTreeMap<usize, Vec<serde_json::Value>> =
+        std::collections::BTreeMap::new();
+    let ranges: Vec<_> = sim
+        .boundaries()
+        .iter()
+        .map(crate::state::simulation::ToolpathBoundary::range)
+        .collect();
+    let mut push_contact = |id: rs_cam_core::ids::ToolpathId,
+                            zone: rs_cam_core::tool::body::ContactKind,
+                            local: usize,
+                            position: rs_cam_core::geo::P3,
+                            over: f64| {
+        let p = session.contact_frame_of(id).to_program(position);
+        contact_by_tp
+            .entry(id.raw())
+            .or_default()
+            .push(serde_json::json!({
+                "zone": zone.as_str(),
+                "local_move": local,
+                "global_move": rs_cam_core::compute::simulate::global_move_of_local(
+                    ranges.iter().cloned(),
+                    id,
+                    local,
+                ),
+                "position": [p.x, p.y, p.z],
+                "position_frame": "gcode",
+                "material_over_tip_mm": over,
+            }));
+    };
+    for hit in &sim.checks.core_contacts {
+        push_contact(
+            hit.toolpath_id,
+            rs_cam_core::tool::body::ContactKind::Core,
+            hit.descent.move_index,
+            hit.descent.position,
+            hit.descent.material_over_tip_mm,
+        );
+    }
+    for hit in &sim.checks.flute_contacts {
+        push_contact(
+            hit.toolpath_id,
+            rs_cam_core::tool::body::ContactKind::FluteTop,
+            hit.overreach.move_index,
+            hit.overreach.position,
+            hit.overreach.material_over_tip_mm,
+        );
+    }
+
     // Build the per-toolpath rollup. Include every TP that has at least
-    // one of either kind so the agent doesn't have to merge two maps.
+    // one of any kind so the agent doesn't have to merge maps.
     let all_tps: std::collections::BTreeSet<usize> = holder_by_tp
         .keys()
         .chain(rapid_by_tp.keys())
+        .chain(contact_by_tp.keys())
         .copied()
         .collect();
 
@@ -1244,23 +1303,28 @@ pub(crate) fn inspect_collisions_json(
                 .unwrap_or_else(|| format!("(unknown {tp_id})"));
             let holder = holder_by_tp.get(tp_id).cloned().unwrap_or_default();
             let rapid = rapid_by_tp.get(tp_id).cloned().unwrap_or_default();
+            let contacts = contact_by_tp.get(tp_id).cloned().unwrap_or_default();
             serde_json::json!({
                 "toolpath_id": tp_id,
                 "toolpath_name": name,
                 "holder_collision_count": holder.len(),
                 "rapid_collision_count": rapid.len(),
+                "contact_count": contacts.len(),
                 "holder_collisions": holder,
                 "rapid_collisions": rapid,
+                "contacts": contacts,
             })
         })
         .collect();
 
     let total_holder: usize = holder_by_tp.values().map(|v| v.len()).sum();
     let total_rapid: usize = rapid_by_tp.values().map(|v| v.len()).sum();
+    let total_contact: usize = contact_by_tp.values().map(|v| v.len()).sum();
 
     serde_json::json!({
         "holder_collision_count": total_holder,
         "rapid_collision_count": total_rapid,
+        "contact_count": total_contact,
         "by_toolpath": by_toolpath,
     })
 }

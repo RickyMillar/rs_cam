@@ -36,6 +36,7 @@ pub(in crate::ui::properties) fn panel_diagnostics(
         suggest_warnings,
         inputs.load_verdict(),
         inputs.flute_reach.as_ref(),
+        inputs.core_contact.as_ref(),
     );
     diagnostics.extend(inputs.shoe.as_ref().and_then(|shoe| shoe.finding.clone()));
     diagnostics

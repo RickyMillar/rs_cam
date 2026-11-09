@@ -58,7 +58,65 @@ impl ProjectSession {
         }
         let simulation = self.simulation.as_ref()?;
         let id = self.toolpath_config_at(index)?.id;
-        Some(crate::compute::simulate::flute_reach(simulation, id))
+        Some(crate::compute::simulate::flute_reach(
+            simulation,
+            id,
+            self.contact_frame(index),
+        ))
+    }
+
+    /// P22-0c-3 (one frame): the frame the contact findings of the
+    /// toolpath at `index` state their positions in, the G-code frame of
+    /// its setup (`gcode::export_datum_shift_for_toolpath`). Every surface
+    /// (diagnostics, triage, export, MCP) reads this one frame.
+    #[must_use]
+    pub fn contact_frame(&self, index: usize) -> crate::compute::simulate::ContactFrame {
+        crate::compute::simulate::ContactFrame {
+            program_shift: crate::gcode::export_datum_shift_for_toolpath(self, index),
+        }
+    }
+
+    /// The [`Self::contact_frame`] of the toolpath with id `id`;
+    /// [`crate::compute::simulate::ContactFrame::EMISSION`] for an id the
+    /// project does not hold.
+    #[must_use]
+    pub fn contact_frame_of(
+        &self,
+        id: crate::ids::ToolpathId,
+    ) -> crate::compute::simulate::ContactFrame {
+        self.toolpath_configs
+            .iter()
+            .position(|tc| tc.id == id)
+            .map_or(crate::compute::simulate::ContactFrame::EMISSION, |index| {
+                self.contact_frame(index)
+            })
+    }
+
+    /// G-CENTRECUT (P22-0c-3, one answer per move): what the stored
+    /// simulation measured on the core of the toolpath at `index`, when
+    /// `trace` is fresh for it and its tool has a core zone (a
+    /// `CentreCutting::No` fact). `None`: no fresh run measured it, or the
+    /// tool cuts at its centre; then the static
+    /// `safety.non_centre_cutting_plunge` stands. `Some` supersedes it on
+    /// every surface: the diagnostics, the GUI inspector and the export.
+    #[must_use]
+    pub fn core_contact_measured(
+        &self,
+        index: usize,
+        trace: Option<&SimulationCutTrace>,
+    ) -> Option<crate::compute::simulate::CoreContact> {
+        let trace = trace?;
+        if !self.sim_trace_is_fresh_for(trace, index) {
+            return None;
+        }
+        let tc = self.toolpath_config_at(index)?;
+        self.toolpath_tool(tc)?.non_centre_cutting_geometry()?;
+        let simulation = self.simulation.as_ref()?;
+        Some(crate::compute::simulate::core_contact(
+            simulation,
+            tc.id,
+            self.contact_frame(index),
+        ))
     }
 
     /// K7 (feeds contract P9): the measured engagement of the toolpath at

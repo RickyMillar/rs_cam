@@ -542,8 +542,17 @@ impl SimulationTriage {
                 Scope::Toolpath { id } => Some(id),
                 Scope::Project | Scope::Setup { .. } | Scope::Tool { .. } => None,
             };
+            // P22-0c-3 (one finding, every surface): a contact of the one
+            // contact kernel (the core, the flute top) is physical damage
+            // to the tool if run: class A, one per toolpath, its text and
+            // frame from the project verdict.
+            let class = if is_contact_finding(d.id.as_str()) {
+                TriageClass::Safety
+            } else {
+                TriageClass::Action
+            };
             found.push(Finding {
-                class: TriageClass::Action,
+                class,
                 dedup_key: DedupKey {
                     id: d.id.clone(),
                     toolpath_id,
@@ -1953,6 +1962,12 @@ fn rapid_collision_message(
 /// `move_index` is the move the diagnostic evidence names: the toolpath's
 /// OWN move index when `toolpath_id` is `Some`. `run_move` is the run-global
 /// move index; it orders the findings in run order.
+/// P22-0c-3: the ids of the contact kernel's findings on the live stock.
+/// The triage lists them as safety findings.
+fn is_contact_finding(id: &str) -> bool {
+    id == ids::SAFETY_NON_CENTRE_CUTTING_DESCENT || id == ids::TOOL_FLUTE_OVERREACH
+}
+
 fn collision_finding(
     id: &str,
     message: String,

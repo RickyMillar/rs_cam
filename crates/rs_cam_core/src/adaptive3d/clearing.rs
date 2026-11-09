@@ -869,10 +869,15 @@ fn plan_entry(
     let contact_z = material_stock
         .max_top_z_in_disc(entry.x, entry.y, drape.entry_floor_radius)
         .map_or(rapid_floor_z, |z| z.min(rapid_floor_z));
+    // P22-0c-3: the wood under the core disc, for the static plunge check.
+    let core_top_z = crate::tool::body::core_of(drape.cutter).and_then(|core| {
+        crate::stock::contact::core_material_top(material_stock, &core, entry.x, entry.y)
+    });
     Adaptive3dSegment::RapidWithFloor {
         entry,
         rapid_floor_z,
         contact_z,
+        core_top_z,
         stay_down,
     }
 }

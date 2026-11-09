@@ -826,18 +826,6 @@ pub struct RapidClearanceCheck<'a> {
     /// probe keeps the full disc (G-SIMCORE, P22-0b).
     lut: RadialProfileLUT,
     hits: Vec<RapidCollision>,
-    /// G-CENTRECUT: the core zone of a tool that does not cut at its centre
-    /// (`tool::body::core_of`, P22-0c-2), or `None`. `Some` makes the walk
-    /// check each fed move against the live stock
-    /// ([`Self::core_candidate`], [`Self::core_strike`], G-SIMCORE).
-    core: Option<crate::tool::body::CoreZone>,
-    core_hits: Vec<NonCentreCuttingDescent>,
-    /// K5 ReachFlute (feeds contract P7): the flute length of the tool
-    /// (`MillingCutter::length`). The walk checks each fed move that can
-    /// reach more than this below the stock box top
-    /// ([`Self::flute_candidate`], [`Self::flute_strike`]).
-    flute_length_mm: f64,
-    flute_hits: Vec<FluteOverreach>,
 }
 
 /// K5 ReachFlute (feeds contract P7): a fed move where wood stands over the
@@ -855,83 +843,6 @@ pub struct FluteOverreach {
     pub material_over_tip_mm: f64,
     /// The flute length of the tool (mm).
     pub flute_length_mm: f64,
-}
-
-/// K5 ReachFlute: the strike rule of one tip position. `Some(over)` when
-/// the wood inside `radius` around the tip stands higher over the tip than
-/// `flute_length_mm`, by more than the float slack of the stored ray tops.
-fn flute_over_tip(
-    stock: &crate::dexel_stock::TriDexelStock,
-    tip: P3,
-    radius: f64,
-    flute_length_mm: f64,
-) -> Option<f64> {
-    let top = stock.max_top_z_in_disc(tip.x, tip.y, radius)?;
-    let over = top - tip.z;
-    (over > flute_length_mm + low_channel_epsilon_mm(top)).then_some(over)
-}
-
-/// K5 ReachFlute for a drill entry, whose removal is analytic and never
-/// enters the replay walk: per hole, the wood that stands inside the drill
-/// radius over the hole bottom, read from `stock` before the drill carves.
-/// One record per hole that reaches past the flute; `move_index` is the
-/// lowest fed move of `toolpath` at the hole, else 0.
-#[must_use]
-pub fn drill_flute_overreach(
-    stock: &crate::dexel_stock::TriDexelStock,
-    drill: &crate::ops::drill_op::DrillOp,
-    flute_length_mm: f64,
-    toolpath: &crate::toolpath::Toolpath,
-) -> Vec<FluteOverreach> {
-    let radius = drill.tool_diameter_mm / 2.0;
-    drill
-        .holes
-        .iter()
-        .filter_map(|hole| {
-            let tip = P3::new(hole.xy[0], hole.xy[1], hole.bottom_z);
-            let over = flute_over_tip(stock, tip, radius, flute_length_mm)?;
-            let move_index = toolpath
-                .moves
-                .iter()
-                .enumerate()
-                .filter(|(_, m)| m.move_type != MoveType::Rapid)
-                .filter(|(_, m)| (m.target.x - tip.x).hypot(m.target.y - tip.y) <= radius)
-                .min_by(|(_, a), (_, b)| a.target.z.total_cmp(&b.target.z))
-                .map_or(0, |(i, _)| i);
-            Some(FluteOverreach {
-                move_index,
-                position: tip,
-                material_over_tip_mm: over,
-                flute_length_mm,
-            })
-        })
-        .collect()
-}
-
-/// A ring of the tool that cuts no wood, around the tool axis: the radii
-/// and the height of its bottom over the tool tip (mm). G-SIMCORE (P22-0b):
-/// the centre core of a non-centre-cutting tool is the one zone the core
-/// check reads ([`Self::core`]). P22-0c makes the tool a list of axial zones
-/// (the core, the shank above the flute, the holder bands) and folds the
-/// flute and holder checks into this one.
-#[derive(Debug, Clone, Copy, PartialEq)]
-pub struct NonCuttingZone {
-    pub inner_radius_mm: f64,
-    pub outer_radius_mm: f64,
-    pub bottom_above_tip_mm: f64,
-}
-
-impl NonCuttingZone {
-    /// The centre core: radius `0..c` of the body core zone, its face one
-    /// blade protrusion over the tip.
-    #[must_use]
-    pub fn core(core: &crate::tool::body::CoreZone) -> Self {
-        Self {
-            inner_radius_mm: 0.0,
-            outer_radius_mm: core.radius_mm,
-            bottom_above_tip_mm: core.protrusion_mm,
-        }
-    }
 }
 
 /// G-CENTRECUT (SAFETY): a fed move where a tool that does not cut at its
@@ -952,8 +863,12 @@ pub struct NonCentreCuttingDescent {
     pub max_plunge_depth_mm: f64,
     /// The descent angle of the move (degrees; 90 for a plunge).
     pub descent_angle_deg: f64,
-    /// The limit angle of the tool (degrees).
-    pub max_descent_angle_deg: f64,
+    /// The dwell window of the core (mm): the core diameter `2 c`. The
+    /// dwell rule (`tool::body::CoreZone`) lets a path descend at most the
+    /// blade protrusion along any piece of path with an XY diameter of at
+    /// most this window (P22-0c-3: the text states this rule, not the
+    /// straight-line angle).
+    pub dwell_window_mm: f64,
 }
 
 /// Float slack of the low channel at a clearance of `low` mm.
@@ -963,222 +878,20 @@ pub struct NonCentreCuttingDescent {
 /// `f32::EPSILON` relative covers that rounding four times over, with room
 /// for the `f64` arithmetic on top. `max(|low|, 1)` keeps the slack from
 /// vanishing near zero Z.
-fn low_channel_epsilon_mm(low: f64) -> f64 {
+pub(crate) fn low_channel_epsilon_mm(low: f64) -> f64 {
     2.0 * f64::from(f32::EPSILON) * low.abs().max(1.0)
 }
 
 impl<'a> RapidClearanceCheck<'a> {
-    /// A check that will probe with `cutter`'s profile.
+    /// A check that will probe with `cutter`'s profile. P22-0c-3: it holds
+    /// only the rapid arm; the contact zones of fed moves are
+    /// [`super::contact::StockContactCheck`].
     pub fn new(cutter: &'a dyn crate::tool::MillingCutter) -> Self {
         Self {
             cutter,
             lut: crate::tool::body::envelope_table(cutter, LUT_SAMPLES),
             hits: Vec::new(),
-            core: crate::tool::body::core_of(cutter),
-            core_hits: Vec::new(),
-            flute_length_mm: cutter.length(),
-            flute_hits: Vec::new(),
         }
-    }
-
-    /// K5 ReachFlute: is this fed move a candidate for a flute overreach?
-    /// Only a move whose tip goes more than the flute length below the
-    /// stock box top can have wood over the tip higher than the flute. The
-    /// test reads no cell, so a move that is not a candidate pays no
-    /// flush.
-    pub fn flute_candidate(
-        &self,
-        stock: &crate::dexel_stock::TriDexelStock,
-        start: P3,
-        end: P3,
-    ) -> bool {
-        start.z.min(end.z) < stock.stock_bbox.max.z - self.flute_length_mm
-    }
-
-    /// K5 ReachFlute: the height of the wood over the tool tip inside the
-    /// cutter `radius` and the tip position, where the wood stands higher
-    /// than the flute length, for a candidate move
-    /// ([`Self::flute_candidate`]) against `stock` as it stands before the
-    /// move. The samples are those of [`Self::core_strike`]: at most 1 mm
-    /// apart, no closer than one cell, the end included. `None`: no wood
-    /// reaches past the flute.
-    pub fn flute_strike(
-        &self,
-        stock: &crate::dexel_stock::TriDexelStock,
-        start: P3,
-        end: P3,
-        radius: f64,
-    ) -> Option<(f64, P3)> {
-        let dx = end.x - start.x;
-        let dy = end.y - start.y;
-        let dz = end.z - start.z;
-        let dxy = dx.hypot(dy);
-        let cell = stock.z_grid.cell_size;
-        let step = (radius / 2.0).min(1.0).max(cell);
-        let n = crate::util::steps::steps(dxy, step).unwrap_or(0).max(1);
-        let below = stock.stock_bbox.max.z - self.flute_length_mm;
-        for k in 1..=n {
-            let t = k as f64 / n as f64;
-            let tip = P3::new(start.x + dx * t, start.y + dy * t, start.z + dz * t);
-            if tip.z >= below {
-                continue;
-            }
-            if let Some(over) = flute_over_tip(stock, tip, radius, self.flute_length_mm) {
-                return Some((over, tip));
-            }
-        }
-        None
-    }
-
-    /// K5 ReachFlute: record a flute overreach of move `move_index`. One
-    /// record per move: a later window of the same arc move adds none.
-    pub fn record_flute(&mut self, move_index: usize, strike: (f64, P3)) {
-        if self
-            .flute_hits
-            .last()
-            .is_some_and(|hit| hit.move_index == move_index)
-        {
-            return;
-        }
-        let (material_over_tip_mm, position) = strike;
-        self.flute_hits.push(FluteOverreach {
-            move_index,
-            position,
-            material_over_tip_mm,
-            flute_length_mm: self.flute_length_mm,
-        });
-    }
-
-    /// K5 ReachFlute: take the flute overreaches recorded so far.
-    pub fn take_flute_hits(&mut self) -> Vec<FluteOverreach> {
-        std::mem::take(&mut self.flute_hits)
-    }
-
-    /// G-CENTRECUT / G-SIMCORE (P22-0b): is this fed move a candidate for
-    /// a core strike? Every fed move of a tool that does not cut at its
-    /// centre is, when its lowest tip goes more than the blade protrusion
-    /// below the stock box top: only then can wood stand over the tip
-    /// higher than the protrusion. The test reads no cell.
-    pub fn core_candidate(
-        &self,
-        stock: &crate::dexel_stock::TriDexelStock,
-        start: P3,
-        end: P3,
-    ) -> bool {
-        self.core
-            .is_some_and(|core| start.z.min(end.z) < stock.stock_bbox.max.z - core.protrusion_mm)
-    }
-
-    /// G-CENTRECUT / G-SIMCORE (P22-0b): the height of the wood over the
-    /// tool tip under the centre core and the tip position, where the wood
-    /// stands higher than the blade protrusion, for a candidate move
-    /// ([`Self::core_candidate`]) against `stock` as it stands before the
-    /// move. `None`: the core meets no wood.
-    ///
-    /// The stock holds the history: the simulation stamps only the blade
-    /// ring of such a tool (`tool::body::cut_table`, P22-0a), so
-    /// the wood under the core of every earlier move is still in it. The
-    /// rule adds what this move's own ring cuts before each sample.
-    ///
-    /// At a sample `t` of the move `p(s)`, a cell `q` under the core
-    /// (`|q - p(t)| < core_r`) has this top:
-    ///
-    /// - `|q - p(0)| < core_r`: no blade has passed over `q` in this move;
-    ///   the top is the stock top.
-    /// - else: the distance `|q - p(s)|` is convex in `s`, so it falls
-    ///   through `core_r` once in `[0, t]`, at `s1`. The ring cut `q` while
-    ///   `q` was in it, from `s_in` (where `q` came inside the cutter radius,
-    ///   or the move start) to `s1`. The tip Z is linear in `s`, so the
-    ///   lowest cut is at one end. The top is the lower of the stock top and
-    ///   that cut.
-    ///
-    /// The core meets wood where such a top stands over the tip by more
-    /// than the protrusion. The samples are at most 1 mm apart, no closer
-    /// than one cell, the end included. A split descent, a helix inside the
-    /// core and a ramp steeper than the limit all strike by this one rule.
-    pub fn core_strike(
-        &self,
-        stock: &crate::dexel_stock::TriDexelStock,
-        start: P3,
-        end: P3,
-    ) -> Option<(f64, P3)> {
-        let zone = NonCuttingZone::core(&self.core?);
-        let core_r = zone.outer_radius_mm;
-        let core_sq = core_r * core_r;
-        let inner_sq = zone.inner_radius_mm * zone.inner_radius_mm;
-        let radius = self.cutter.radius();
-        let radius_sq = radius * radius;
-        let protrusion = zone.bottom_above_tip_mm;
-        let tol = crate::compute::tool_config::NON_CENTRE_CUTTING_TOL_MM;
-        // The removal surface over the tip where the ring cuts: at the core
-        // edge and at the cutter edge (both 0 for a flat bit).
-        let h_core = self.cutter.height_at_radius(core_r).unwrap_or(0.0);
-        let h_edge = self.cutter.height_at_radius(radius).unwrap_or(h_core);
-        let dx = end.x - start.x;
-        let dy = end.y - start.y;
-        let dz = end.z - start.z;
-        let len_sq = dx * dx + dy * dy;
-        let dxy = len_sq.sqrt();
-        let cell = stock.z_grid.cell_size;
-        let step = (core_r / 2.0).min(1.0).max(cell);
-        let n = crate::util::steps::steps(dxy, step).unwrap_or(0).max(1);
-        let z_at = |s: f64| start.z + dz * s;
-        for k in 1..=n {
-            let t = k as f64 / n as f64;
-            let tip = P3::new(start.x + dx * t, start.y + dy * t, z_at(t));
-            if tip.z + protrusion >= stock.stock_bbox.max.z {
-                continue;
-            }
-            let mut over_max = f64::NEG_INFINITY;
-            stock.for_each_top_in_disc(tip.x, tip.y, core_r, |x, y, top| {
-                // Cheap reject: this cell cannot strike at its stock top.
-                if top - tip.z <= protrusion + tol {
-                    return;
-                }
-                let (tu, tv) = (x - tip.x, y - tip.y);
-                if tu * tu + tv * tv < inner_sq {
-                    return;
-                }
-                let (qu, qv) = (x - start.x, y - start.y);
-                let d0_sq = qu * qu + qv * qv;
-                let cut_top = if d0_sq < core_sq || len_sq < 1e-18 {
-                    top
-                } else {
-                    let t0 = (qu * dx + qv * dy) / len_sq;
-                    let perp_sq = (d0_sq - t0 * t0 * len_sq).max(0.0);
-                    let s1 = (t0 - ((core_sq - perp_sq).max(0.0) / len_sq).sqrt()).clamp(0.0, t);
-                    let s_in =
-                        (t0 - ((radius_sq - perp_sq).max(0.0) / len_sq).sqrt()).clamp(0.0, s1);
-                    let ring = (z_at(s1) + h_core).min(z_at(s_in) + h_edge);
-                    top.min(ring)
-                };
-                let over = cut_top - tip.z;
-                if over > protrusion + tol + low_channel_epsilon_mm(cut_top) {
-                    over_max = over_max.max(over);
-                }
-            });
-            if over_max > f64::NEG_INFINITY {
-                return Some((over_max, tip));
-            }
-        }
-        None
-    }
-
-    /// G-CENTRECUT: record a core strike of move `move_index`.
-    pub fn record_core(&mut self, move_index: usize, start: P3, end: P3, strike: (f64, P3)) {
-        let (material_over_tip_mm, position) = strike;
-        let Some(core) = self.core else {
-            return;
-        };
-        let dxy = (end.x - start.x).hypot(end.y - start.y);
-        self.core_hits.push(NonCentreCuttingDescent {
-            move_index,
-            position,
-            material_over_tip_mm,
-            max_plunge_depth_mm: core.protrusion_mm,
-            descent_angle_deg: (start.z - end.z).atan2(dxy).to_degrees(),
-            max_descent_angle_deg: core.max_descent_angle_deg(),
-        });
     }
 
     /// Does this rapid enter material standing in `stock` right now?
@@ -1253,12 +966,6 @@ impl<'a> RapidClearanceCheck<'a> {
     /// Consume the check and take its findings.
     pub fn into_hits(self) -> Vec<RapidCollision> {
         self.hits
-    }
-
-    /// Consume the check and take both findings: the struck rapids and
-    /// the G-CENTRECUT core strikes.
-    pub fn into_parts(self) -> (Vec<RapidCollision>, Vec<NonCentreCuttingDescent>) {
-        (self.hits, self.core_hits)
     }
 }
 

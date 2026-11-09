@@ -39,7 +39,7 @@ use rs_cam_core::mesh::{SpatialIndex, make_test_hemisphere};
 use rs_cam_core::ops::waterline::{
     ChainLinkProbe, LevelRings, LevelRun, WaterlineParams, helical_waterline,
 };
-use rs_cam_core::stock::collision::RapidClearanceCheck;
+use rs_cam_core::stock::contact::WalkChecks;
 use rs_cam_core::stock::radial_profile::LUT_SAMPLES;
 use rs_cam_core::tool::body::{CoreZone, core_of, cut_table};
 use rs_cam_core::tool::{FlatEndmill, MillingCutter, ToolDefinition};
@@ -83,7 +83,7 @@ fn board() -> TriDexelStock {
 /// the simulation's own table (`tool::body::cut_table`).
 fn core_findings(tool: &ToolDefinition, tp: &Toolpath) -> Vec<usize> {
     let lut = cut_table(tool, LUT_SAMPLES);
-    let mut check = RapidClearanceCheck::new(tool);
+    let mut check = WalkChecks::new(tool);
     board()
         .simulate_toolpath_with_lut_metrics_rapid_checked(
             tp,
@@ -104,7 +104,7 @@ fn core_findings(tool: &ToolDefinition, tp: &Toolpath) -> Vec<usize> {
             Some(&mut check),
         )
         .expect("never cancelled");
-    let (_rapids, core) = check.into_parts();
+    let core = check.into_findings().core;
     core.into_iter().map(|hit| hit.move_index).collect()
 }
 

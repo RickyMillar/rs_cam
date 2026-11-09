@@ -100,6 +100,12 @@ pub struct ToolpathDiagnoseInputs<'a> {
     /// run measured it, and the pre-simulation row stands. `Some` gives a
     /// Current finding that supersedes `tool.reach_past_flute`.
     pub flute_reach: Option<&'a crate::compute::simulate::FluteReach>,
+    /// G-CENTRECUT, the simulation stage (P22-0c-3): what a fresh
+    /// simulation measured on the core (`ProjectSession::core_contact_measured`).
+    /// `None`: no fresh run measured it, or the tool cuts at its centre; the
+    /// static `safety.non_centre_cutting_plunge` stands. `Some` gives a
+    /// Current finding that supersedes it.
+    pub core_contact: Option<&'a crate::compute::simulate::CoreContact>,
     /// K7 (feeds contract P9): the measured engagement on the K2b
     /// envelope (`ProjectSession::envelope_placement_measured`). `None`: no
     /// fresh run. A point outside gives `project.sim_outside_envelope`.
@@ -180,6 +186,12 @@ pub fn diagnose_toolpath_inputs(inputs: &ToolpathDiagnoseInputs<'_>) -> Vec<Diag
         out.push(from_generation::flute_reach_measured(
             inputs.toolpath_id,
             reach,
+        ));
+    }
+    if let Some(contact) = inputs.core_contact {
+        out.push(from_generation::core_contact_measured(
+            inputs.toolpath_id,
+            contact,
         ));
     }
     if let Some(text) = inputs.envelope_placement.and_then(|p| p.outside_row()) {

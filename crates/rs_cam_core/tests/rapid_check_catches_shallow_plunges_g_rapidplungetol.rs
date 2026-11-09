@@ -42,6 +42,7 @@ use rs_cam_core::dexel_stock::{StockCutDirection, TriDexelStock};
 use rs_cam_core::geo::P3;
 use rs_cam_core::ids::ToolpathId;
 use rs_cam_core::stock::collision::RapidClearanceCheck;
+use rs_cam_core::stock::contact::WalkChecks;
 use rs_cam_core::stock::dexel::ray_subtract_above;
 use rs_cam_core::stock::radial_profile::{LUT_SAMPLES, RadialProfileLUT};
 use rs_cam_core::tool::{FlatEndmill, MillingCutter, TaperedBallEndmill};
@@ -152,7 +153,7 @@ fn live_hits_metric(stock: &mut TriDexelStock, tp: &Toolpath) -> Vec<usize> {
     let cutter = flat();
     let lut = RadialProfileLUT::from_cutter(&cutter, LUT_SAMPLES);
     let never_cancel = || false;
-    let mut check = RapidClearanceCheck::new(&cutter);
+    let mut check = WalkChecks::new(&cutter);
     stock
         .simulate_toolpath_with_lut_metrics_rapid_checked(
             tp,
@@ -174,7 +175,8 @@ fn live_hits_metric(stock: &mut TriDexelStock, tp: &Toolpath) -> Vec<usize> {
         )
         .expect("never cancelled");
     check
-        .into_hits()
+        .into_findings()
+        .rapids
         .into_iter()
         .map(|c| c.move_index)
         .collect()

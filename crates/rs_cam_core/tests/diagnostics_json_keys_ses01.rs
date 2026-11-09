@@ -83,6 +83,9 @@ fn populated() -> ProjectDiagnostics {
             // G-RESTRES (2026-09-24): the rest source record joins the
             // wire, after every older key.
             source_stock: None,
+            // P22-0c-3 (Q6): the contact zone counts join the wire, after
+            // every older key.
+            contact_zones: Some(std::collections::BTreeMap::from([("core", 38)])),
         }],
         verdicts: vec![Verdict {
             severity: VerdictSeverity::Important,
@@ -137,7 +140,8 @@ const PINNED: &str = concat!(
     r#""max_tip_float_mm":32.0,"#,
     r#""monotone_cells":{"regions":33,"regions_rotated":34,"cells_emitted":35,"#,
     r#""membership_fallbacks":36,"empty_fallbacks":37},"#,
-    r#""source_stock":null}],"#,
+    r#""source_stock":null,"#,
+    r#""contact_zones":{"core":38}}],"#,
     r#""verdicts":[{"severity":"important","#,
     r#""kind":"air_cut","#,
     r#""headline":"Air cut is high","#,
@@ -223,6 +227,8 @@ fn the_verdict_enums_write_their_own_string_tags() {
         VerdictKind::HolderCollision,
         VerdictKind::HolderCheckFailed,
         VerdictKind::RapidCollision,
+        VerdictKind::CoreContact,
+        VerdictKind::FluteOverreach,
         VerdictKind::PlungeStress,
         VerdictKind::AirCut,
         VerdictKind::GeneratedEmpty,

@@ -201,6 +201,8 @@ impl ProjectSession {
         let model_refs = self.model_ref_context_for_toolpath(tc);
         // K5 ReachFlute: the simulation stage, when a fresh run measured it.
         let flute_reach = self.flute_reach_measured(index, sim_trace);
+        // G-CENTRECUT (P22-0c-3): the core answer of a fresh run.
+        let core_contact = self.core_contact_measured(index, sim_trace);
         // K7: the measured engagement on the envelope, when a fresh run has it.
         let envelope_placement = self.envelope_placement_measured(index, sim_trace);
         // Generation-time findings ride on the stats of this toolpath's own
@@ -226,6 +228,7 @@ impl ProjectSession {
             model_refs: Some(&model_refs),
             stats,
             flute_reach: flute_reach.as_ref(),
+            core_contact: core_contact.as_ref(),
             envelope_placement: envelope_placement.as_ref(),
         };
         Ok(crate::diagnostics::diagnose_toolpath_inputs(&inputs))
@@ -271,10 +274,15 @@ impl ProjectSession {
                         if offender_toolpath_ids.contains(&id)
                 )
         };
+        // P22-0c-3: a contact row the toolpath list already holds (the
+        // measured core or flute answer of a fresh run) is not listed twice.
+        let own_ids: Vec<crate::diagnostics::DiagnosticId> =
+            out.iter().map(|diag| diag.id.clone()).collect();
         out.extend(
             self.diagnose_project_with_evidence(evidence)
                 .into_iter()
-                .filter(|diag| diag.category == Category::Safety && names_this_toolpath(diag)),
+                .filter(|diag| diag.category == Category::Safety && names_this_toolpath(diag))
+                .filter(|diag| !own_ids.contains(&diag.id)),
         );
         // Lead ruling 2026-10-23 (G-ROUGHCOV): the findings the simulation
         // triage computes itself for this toolpath (rough coverage islands,

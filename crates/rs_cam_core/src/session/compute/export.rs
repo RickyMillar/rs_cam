@@ -195,6 +195,13 @@ impl ProjectSession {
                 }
                 Gate::CentreCutPlunge => {
                     for &idx in emitted {
+                        // P22-0c-3 (one answer per move): a fresh
+                        // simulation measured the core on the live stock,
+                        // so its answer (`Gate::CentreCutDescent`) stands
+                        // for the static one.
+                        if self.core_contact_measured(idx, sim_trace).is_some() {
+                            continue;
+                        }
                         if let Some(plunge) = self
                             .result_at(idx)
                             .and_then(|r| r.stats.non_centre_cutting_plunge)
@@ -210,7 +217,7 @@ impl ProjectSession {
                 Gate::CentreCutDescent => {
                     if let Some(simulation) = self.simulation.as_ref() {
                         for tc in emitted.iter().filter_map(|i| self.toolpath_configs.get(*i)) {
-                            let rows = crate::compute::simulate::non_centre_cutting_refusal_rows(
+                            let rows = crate::compute::simulate::non_centre_cutting_warning_rows(
                                 simulation,
                                 &[tc.id],
                                 |id| {
@@ -219,6 +226,7 @@ impl ProjectSession {
                                         .find(|t| t.id == id)
                                         .map(|t| t.name.as_str())
                                 },
+                                |id| self.contact_frame_of(id),
                             );
                             for row in rows {
                                 push(ids::SAFETY_NON_CENTRE_CUTTING_DESCENT, tc.name.clone(), row);

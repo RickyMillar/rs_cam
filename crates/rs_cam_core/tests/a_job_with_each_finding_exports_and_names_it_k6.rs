@@ -38,14 +38,20 @@ use rs_cam_core::tool_load::verdict::{
 };
 use rs_cam_core::tool_load::{ChiploadVerdict, Confidence, DeflectionVerdict, UnmodeledReason};
 
-/// The ids of the findings the session doors raise from the project.
-const PROJECT_IDS: [&str; 5] = [
+/// The ids of the findings the session doors raise from the project with
+/// a fresh simulation. P22-0c-3 (one answer per move): the simulation's
+/// core answer (`safety.non_centre_cutting_descent`) supersedes the static
+/// `safety.non_centre_cutting_plunge` ([`STATIC_ONLY_IDS`]).
+const PROJECT_IDS: [&str; 4] = [
     ids::GEOM_CLEARANCE_Z_BELOW_RETRACT_Z,
     ids::SAFETY_CUTS_INTO_MODEL,
-    ids::SAFETY_NON_CENTRE_CUTTING_PLUNGE,
     ids::SAFETY_NON_CENTRE_CUTTING_DESCENT,
     ids::EXPORT_OP_LEFT_OUT,
 ];
+
+/// The ids that stand only while no fresh simulation measured the core:
+/// an export with no trace names them; a fresh trace supersedes them.
+const STATIC_ONLY_IDS: [&str; 1] = [ids::SAFETY_NON_CENTRE_CUTTING_PLUNGE];
 
 /// The ids the hand-built report adds.
 const LOAD_IDS: [&str; 3] = [
@@ -217,6 +223,22 @@ fn a_job_with_each_finding_exports_and_names_it_k6() {
         .export_gcode_checked(trace.as_deref())
         .expect("no finding refuses the export");
     assert_names_each(&checked, &PROJECT_IDS, "export_gcode_checked");
+    for id in STATIC_ONLY_IDS {
+        assert!(
+            !ids_of(&checked.warnings).contains(id),
+            "export_gcode_checked: a fresh simulation supersedes {id}"
+        );
+    }
+    // With no fresh trace the static answer stands (P22-0c-3).
+    let no_trace = session
+        .export_gcode_checked(None)
+        .expect("no finding refuses the export");
+    let before: Vec<&str> = PROJECT_IDS
+        .iter()
+        .chain(&STATIC_ONLY_IDS)
+        .copied()
+        .collect();
+    assert_names_each(&no_trace, &before, "export_gcode_checked (no trace)");
 
     let with_report = session
         .export_gcode_with_report(&load_report(&session))

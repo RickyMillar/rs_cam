@@ -23,6 +23,7 @@ use crate::geo::P3;
 use crate::geometry::arc_util::linearize_arc_into;
 use crate::interrupt::{CancelCheck, Cancelled, check_cancel};
 use crate::stock::collision::RapidClearanceCheck;
+use crate::stock::contact::WalkChecks;
 use crate::stock::material_slot::{MaterialCut, MaterialSlot};
 use crate::stock::radial_profile::RadialProfileLUT;
 use crate::stock::simulation_cut::{CutKinematics, SimulationCutSample};
@@ -449,14 +450,14 @@ impl TriDexelStock {
         transit_moves: &[bool],
         capture_arc_engagement: bool,
         cancel: &dyn CancelCheck,
-        rapid_check: Option<&mut RapidClearanceCheck<'_>>,
+        checks: Option<&mut WalkChecks<'_>>,
     ) -> Result<Vec<SimulationCutSample>, Cancelled> {
         if toolpath.moves.len() < 2 {
             return Ok(Vec::new());
         }
         // Same grid precondition as the playback walk — see `replay_moves`.
-        let mut rapid_check = if matches!(direction, StockCutDirection::FromTop) {
-            rapid_check
+        let mut checks = if matches!(direction, StockCutDirection::FromTop) {
+            checks
         } else {
             None
         };
@@ -594,9 +595,9 @@ impl TriDexelStock {
                     // HERE, mid-walk. Queued stamps can only REMOVE material,
                     // so a rapid that clears the un-flushed grid clears the
                     // flushed one too — the flush is paid only on a candidate.
-                    if rapid_check
+                    if checks
                         .as_deref()
-                        .is_some_and(|check| check.strikes(self, start, end, radius))
+                        .is_some_and(|c| c.rapid.strikes(self, start, end, radius))
                     {
                         self.flush_pending_stamps(
                             lut,
@@ -611,10 +612,10 @@ impl TriDexelStock {
                             flute_length,
                             cancel,
                         )?;
-                        if let Some(check) = rapid_check.as_deref_mut()
-                            && check.strikes(self, start, end, radius)
+                        if let Some(c) = checks.as_deref_mut()
+                            && c.rapid.strikes(self, start, end, radius)
                         {
-                            check.record(move_index, start, end);
+                            c.rapid.record(move_index, start, end);
                         }
                     }
                 }
@@ -643,19 +644,16 @@ impl TriDexelStock {
                     );
                 }
                 MoveType::Linear { feed_rate } => {
-                    // G-SIMCORE: each fed move of a non-centre-cutting tool is
-                    // judged against the stock as it stands HERE, before its own stamp. K5
-                    // ReachFlute: so is a move whose tip goes more than the flute below the
-                    // stock box top. The flush is paid only on a candidate, as the rapid arm
-                    // does; one flush serves both checks.
-                    let (core_candidate, flute_candidate) =
-                        rapid_check.as_deref().map_or((false, false), |check| {
-                            (
-                                core_unflushed_strike(check, self, start, end),
-                                check.flute_candidate(self, start, end),
-                            )
-                        });
-                    if core_candidate || flute_candidate {
+                    // P22-0c-3: the contact zones of the tool (G-SIMCORE core,
+                    // K5 ReachFlute flute top) are judged against the stock as it
+                    // stands HERE, before the move's own stamp, by the one kernel
+                    // (`stock::contact`). The flush is paid only for a zone that
+                    // meets the unflushed stock; one flush serves every zone.
+                    let contacts = checks
+                        .as_deref()
+                        .map(|c| c.contact.unflushed(self, start, end))
+                        .unwrap_or_default();
+                    if contacts.any() {
                         self.flush_pending_stamps(
                             lut,
                             radius,
@@ -669,17 +667,8 @@ impl TriDexelStock {
                             flute_length,
                             cancel,
                         )?;
-                        if let Some(check) = rapid_check.as_deref_mut() {
-                            if core_candidate
-                                && let Some(strike) = check.core_strike(self, start, end)
-                            {
-                                check.record_core(move_index, start, end, strike);
-                            }
-                            if flute_candidate
-                                && let Some(strike) = check.flute_strike(self, start, end, radius)
-                            {
-                                check.record_flute(move_index, strike);
-                            }
+                        if let Some(c) = checks.as_deref_mut() {
+                            c.contact.check(self, move_index, start, end, &contacts);
                         }
                     }
                     let first = samples.len();
@@ -727,19 +716,12 @@ impl TriDexelStock {
                     linearize_arc_into(&mut arc_buf, start, end, i, j, true, self.z_grid.cell_size);
                     for window in arc_buf.windows(2) {
                         check_cancel(cancel)?;
-                        // G-SIMCORE: each fed move of a non-centre-cutting tool is
-                        // judged against the stock as it stands HERE, before its own stamp. K5
-                        // ReachFlute: so is a move whose tip goes more than the flute below the
-                        // stock box top. The flush is paid only on a candidate, as the rapid arm
-                        // does; one flush serves both checks.
-                        let (core_candidate, flute_candidate) =
-                            rapid_check.as_deref().map_or((false, false), |check| {
-                                (
-                                    core_unflushed_strike(check, self, window[0], window[1]),
-                                    check.flute_candidate(self, window[0], window[1]),
-                                )
-                            });
-                        if core_candidate || flute_candidate {
+                        // P22-0c-3: the contact zones, as in the linear arm.
+                        let contacts = checks
+                            .as_deref()
+                            .map(|c| c.contact.unflushed(self, window[0], window[1]))
+                            .unwrap_or_default();
+                        if contacts.any() {
                             self.flush_pending_stamps(
                                 lut,
                                 radius,
@@ -753,19 +735,9 @@ impl TriDexelStock {
                                 flute_length,
                                 cancel,
                             )?;
-                            if let Some(check) = rapid_check.as_deref_mut() {
-                                if core_candidate
-                                    && let Some(strike) =
-                                        check.core_strike(self, window[0], window[1])
-                                {
-                                    check.record_core(move_index, window[0], window[1], strike);
-                                }
-                                if flute_candidate
-                                    && let Some(strike) =
-                                        check.flute_strike(self, window[0], window[1], radius)
-                                {
-                                    check.record_flute(move_index, strike);
-                                }
+                            if let Some(c) = checks.as_deref_mut() {
+                                c.contact
+                                    .check(self, move_index, window[0], window[1], &contacts);
                             }
                         }
                         let first = samples.len();
@@ -822,19 +794,12 @@ impl TriDexelStock {
                     );
                     for window in arc_buf.windows(2) {
                         check_cancel(cancel)?;
-                        // G-SIMCORE: each fed move of a non-centre-cutting tool is
-                        // judged against the stock as it stands HERE, before its own stamp. K5
-                        // ReachFlute: so is a move whose tip goes more than the flute below the
-                        // stock box top. The flush is paid only on a candidate, as the rapid arm
-                        // does; one flush serves both checks.
-                        let (core_candidate, flute_candidate) =
-                            rapid_check.as_deref().map_or((false, false), |check| {
-                                (
-                                    core_unflushed_strike(check, self, window[0], window[1]),
-                                    check.flute_candidate(self, window[0], window[1]),
-                                )
-                            });
-                        if core_candidate || flute_candidate {
+                        // P22-0c-3: the contact zones, as in the linear arm.
+                        let contacts = checks
+                            .as_deref()
+                            .map(|c| c.contact.unflushed(self, window[0], window[1]))
+                            .unwrap_or_default();
+                        if contacts.any() {
                             self.flush_pending_stamps(
                                 lut,
                                 radius,
@@ -848,19 +813,9 @@ impl TriDexelStock {
                                 flute_length,
                                 cancel,
                             )?;
-                            if let Some(check) = rapid_check.as_deref_mut() {
-                                if core_candidate
-                                    && let Some(strike) =
-                                        check.core_strike(self, window[0], window[1])
-                                {
-                                    check.record_core(move_index, window[0], window[1], strike);
-                                }
-                                if flute_candidate
-                                    && let Some(strike) =
-                                        check.flute_strike(self, window[0], window[1], radius)
-                                {
-                                    check.record_flute(move_index, strike);
-                                }
+                            if let Some(c) = checks.as_deref_mut() {
+                                c.contact
+                                    .check(self, move_index, window[0], window[1], &contacts);
                             }
                         }
                         let first = samples.len();
@@ -1224,20 +1179,6 @@ impl TriDexelStock {
         }
         Ok(())
     }
-}
-
-/// G-SIMCORE (P22-0b): does this fed move of a non-centre-cutting tool
-/// strike the core on the stock as it stands, with the stamps still queued?
-/// Queued stamps only remove wood, so a move that is clean here is clean on
-/// the flushed stock: only a move that reads a strike pays the flush, and
-/// the walk runs the check again on the flushed stock.
-fn core_unflushed_strike(
-    check: &crate::stock::collision::RapidClearanceCheck<'_>,
-    stock: &TriDexelStock,
-    start: P3,
-    end: P3,
-) -> bool {
-    check.core_candidate(stock, start, end) && check.core_strike(stock, start, end).is_some()
 }
 
 /// Emit one cutting subsegment's sample with its metric fields at their zero

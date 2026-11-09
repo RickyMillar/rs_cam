@@ -136,11 +136,39 @@ pub struct LoadRefusal {
     pub error: Box<rs_cam_core::session::SessionError>,
 }
 
+/// P22-0c-3: one collision marker of the contact kernel.
+#[derive(Debug, Clone, Copy)]
+struct ContactMarker {
+    position: [f32; 3],
+    /// The zone kind (`ContactKind::as_str`).
+    zone: &'static str,
+    /// The run move of the contact, for the playback jump.
+    global_move: Option<usize>,
+}
+
+#[expect(
+    clippy::cast_possible_truncation,
+    reason = "a marker position is drawn in f32, as the holder markers are"
+)]
+fn to_f32(p: rs_cam_core::geo::P3) -> [f32; 3] {
+    [p.x as f32, p.y as f32, p.z as f32]
+}
+
 pub struct AppController<B: ComputeBackend = ThreadedComputeBackend> {
     pub state: AppState,
     events: Vec<AppEvent>,
     compute: B,
     pending_upload: bool,
+    /// The holder check's collision markers (`CollisionResult::positions`).
+    holder_positions: Vec<[f32; 3]>,
+    /// P22-0c-3 (Q6): the zone kind of each holder marker, parallel to
+    /// `holder_positions` (`AssemblySegment::as_str`).
+    collision_zones: Vec<&'static str>,
+    /// P22-0c-3: the contact kernel's markers of the accepted run (the
+    /// core and the flute top): position, zone kind, run move.
+    contact_markers: Vec<ContactMarker>,
+    /// Every collision marker the viewport draws and picks: the holder
+    /// markers, then the contact markers ([`Self::rebuild_collision_markers`]).
     collision_positions: Vec<[f32; 3]>,
     load_warnings: Vec<String>,
     /// The load warnings that came from the pin check of the loader
@@ -297,6 +325,9 @@ impl<B: ComputeBackend> AppController<B> {
             events: Vec::new(),
             compute,
             pending_upload: false,
+            holder_positions: Vec::new(),
+            collision_zones: Vec::new(),
+            contact_markers: Vec::new(),
             collision_positions: Vec::new(),
             load_warnings: Vec::new(),
             load_pin_warnings: Vec::new(),
@@ -546,8 +577,78 @@ impl<B: ComputeBackend> AppController<B> {
         Ok(effects)
     }
 
+    /// Every collision marker the viewport draws and picks: the holder
+    /// check's markers, then the contact kernel's (P22-0c-3).
     pub fn collision_positions(&self) -> &[[f32; 3]] {
         &self.collision_positions
+    }
+
+    /// P22-0c-3 (operator ruling Q6): the zone kind of collision marker
+    /// `index` (`shank`, `holder`, `shoe`, `core`, `flute_top`): the one
+    /// chip the marker shows.
+    pub fn collision_zone(&self, index: usize) -> Option<&'static str> {
+        self.collision_zones.get(index).copied().or_else(|| {
+            index
+                .checked_sub(self.holder_positions.len())
+                .and_then(|i| self.contact_markers.get(i))
+                .map(|marker| marker.zone)
+        })
+    }
+
+    /// The run move of contact marker `index` (an index past the holder
+    /// markers), or `None` for a holder marker.
+    pub fn contact_marker_move(&self, index: usize) -> Option<usize> {
+        index
+            .checked_sub(self.holder_positions.len())
+            .and_then(|i| self.contact_markers.get(i))
+            .and_then(|marker| marker.global_move)
+    }
+
+    /// Rebuild the drawn marker list from the holder and contact markers.
+    pub(crate) fn rebuild_collision_markers(&mut self) {
+        self.collision_positions = self
+            .holder_positions
+            .iter()
+            .copied()
+            .chain(self.contact_markers.iter().map(|marker| marker.position))
+            .collect();
+        self.pending_upload = true;
+    }
+
+    /// P22-0c-3: the contact markers of the accepted run, from the contact
+    /// kernel's records (the emission frame of each toolpath, as the holder
+    /// markers).
+    pub(crate) fn set_contact_markers(&mut self) {
+        let sim = &self.state.simulation;
+        let ranges: Vec<_> = sim
+            .boundaries()
+            .iter()
+            .map(crate::state::simulation::ToolpathBoundary::range)
+            .collect();
+        let locate = |id, local| {
+            rs_cam_core::compute::simulate::global_move_of_local(ranges.iter().cloned(), id, local)
+        };
+        let core = sim.checks.core_contacts.iter().map(|hit| ContactMarker {
+            position: to_f32(hit.descent.position),
+            zone: rs_cam_core::tool::body::ContactKind::Core.as_str(),
+            global_move: locate(hit.toolpath_id, hit.descent.move_index),
+        });
+        let flute = sim.checks.flute_contacts.iter().map(|hit| ContactMarker {
+            position: to_f32(hit.overreach.position),
+            zone: rs_cam_core::tool::body::ContactKind::FluteTop.as_str(),
+            global_move: locate(hit.toolpath_id, hit.overreach.move_index),
+        });
+        let markers: Vec<ContactMarker> = core.chain(flute).collect();
+        self.contact_markers = markers;
+        self.rebuild_collision_markers();
+    }
+
+    /// Clear every collision marker.
+    pub(crate) fn clear_collision_markers(&mut self) {
+        self.holder_positions.clear();
+        self.collision_zones.clear();
+        self.contact_markers.clear();
+        self.rebuild_collision_markers();
     }
 
     pub fn lane_snapshot(&self, lane: ComputeLane) -> LaneSnapshot {

@@ -878,6 +878,12 @@ impl<B: ComputeBackend> AppController<B> {
                 }
                 self.state.simulation.checks.obstacle_collisions =
                     simulation.core.obstacle_collisions;
+                // P22-0c-3: the contact kernel's findings reach the GUI list,
+                // the triage and the collision markers.
+                self.state.simulation.checks.core_contacts =
+                    simulation.core.non_centre_cutting_descents.clone();
+                self.state.simulation.checks.flute_contacts =
+                    simulation.core.flute_overreach.clone();
 
                 self.state.simulation.playback.display_deviations = simulation.core.deviations;
                 self.state.simulation.playback.display_mesh = None;
@@ -908,6 +914,8 @@ impl<B: ComputeBackend> AppController<B> {
                     column_grid_cell_mm: simulation.core.column_grid_cell_mm,
                     prior_stocks,
                 });
+                // P22-0c-3 (Q6): the contact markers need the run's boundaries.
+                self.set_contact_markers();
 
                 // F-039 / F115 — adaptive feed modulation of the
                 // just-completed run (unified load model §10.6, option A).
@@ -1281,9 +1289,16 @@ impl<B: ComputeBackend> AppController<B> {
                 #[cfg(feature = "mcp")]
                 let mcp_is_clear = collision.report.is_clear();
 
+                // P22-0c-3 (Q6): the zone kind of each holder marker.
+                self.collision_zones = collision
+                    .report
+                    .collisions
+                    .iter()
+                    .map(|event| event.segment.as_str())
+                    .collect();
                 self.state.simulation.checks.collision_report = Some(collision.report);
-                self.collision_positions = collision.positions;
-                self.pending_upload = true;
+                self.holder_positions = collision.positions;
+                self.rebuild_collision_markers();
 
                 // Notify pending MCP collision request
                 #[cfg(feature = "mcp")]

@@ -138,6 +138,9 @@ impl SimulationState {
             rapid_collision_move_indices: &self.checks.rapid_collision_move_indices,
             // K1: the obstacle hits of the accepted run.
             obstacle_collisions: &self.checks.obstacle_collisions,
+            // P22-0c-3: the contacts of the contact kernel of the accepted run.
+            core_contacts: &self.checks.core_contacts,
+            flute_contacts: &self.checks.flute_contacts,
             cut_trace: self.results.as_ref().and_then(|r| r.cut_trace.as_deref()),
             holder_collisions: self.holder_collision_counts_by_tp(),
             // The cell the accepted run simulated at. Read only to enrich a
@@ -182,6 +185,8 @@ impl SimulationState {
             rapid_collisions,
             rapid_collision_move_indices,
             obstacle_collisions,
+            core_contacts,
+            flute_contacts,
             // The load report stamp holds the trace identity.
             cut_trace: _,
             holder_collisions,
@@ -232,6 +237,10 @@ impl SimulationState {
             // core digests.
             format!("{segment:?}|{kind:?}").hash(&mut hasher);
         }
+        // P22-0c-3: the contacts are set once per adopt; their address and
+        // length name them.
+        (core_contacts.as_ptr() as usize, core_contacts.len()).hash(&mut hasher);
+        (flute_contacts.as_ptr() as usize, flute_contacts.len()).hash(&mut hasher);
         holder_collisions.len().hash(&mut hasher);
         for (toolpath_id, check) in holder_collisions {
             toolpath_id.hash(&mut hasher);

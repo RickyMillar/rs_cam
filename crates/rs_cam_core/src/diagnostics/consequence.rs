@@ -60,7 +60,7 @@ pub enum Gate {
     GougeWarns,
     /// `ToolpathStats::non_centre_cutting_plunge` is `Some` (G-CENTRECUT).
     CentreCutPlunge,
-    /// `non_centre_cutting_refusal_rows` is not empty (G-CENTRECUT).
+    /// `non_centre_cutting_warning_rows` is not empty (G-CENTRECUT).
     CentreCutDescent,
     /// `CriterionStatus::warns_on_export` (S4).
     LoadRowRefuses,

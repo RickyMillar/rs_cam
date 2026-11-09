@@ -96,6 +96,11 @@ pub struct ToolpathDiagnostic {
     /// the snapshot digest, and the toolpaths carved before it. `None` for
     /// an operation that read no simulated stock.
     pub source_stock: Option<crate::compute::source_stock::SourceStockWire>,
+    /// P22-0c-3 (operator ruling Q6): the contacts of the contact kernel on
+    /// this toolpath, counted by zone kind (`ContactKind::as_str`: `core`,
+    /// `flute_top`). `None` = no simulation evidence (not measured);
+    /// `Some` of an empty map = measured, no contact.
+    pub contact_zones: Option<std::collections::BTreeMap<&'static str, usize>>,
 }
 
 /// Severity bucket for a [`Verdict`]. Ordered: `Critical < Important < Polish`
@@ -125,6 +130,13 @@ pub enum VerdictKind {
     RapidCollision,
     /// K1: a move puts the tool inside an obstacle of its setup.
     ObstacleCollision,
+    /// G-CENTRECUT (P22-0c-3): the contact kernel measured wood under the
+    /// centre core of a tool that does not cut at its centre
+    /// (`safety.non_centre_cutting_descent`).
+    CoreContact,
+    /// K5 ReachFlute (P22-0c-3): the contact kernel measured wood over the
+    /// tip above the flute (`tool.flute_overreach`).
+    FluteOverreach,
     PlungeStress,
     AirCut,
     GeneratedEmpty,
@@ -169,6 +181,8 @@ impl VerdictKind {
             Self::HolderCheckFailed => "holder_check_failed",
             Self::RapidCollision => "rapid_collision",
             Self::ObstacleCollision => "obstacle_collision",
+            Self::CoreContact => "core_contact",
+            Self::FluteOverreach => "flute_overreach",
             Self::PlungeStress => "plunge_stress",
             Self::AirCut => "air_cut",
             Self::GeneratedEmpty => "generated_empty",
@@ -217,6 +231,14 @@ pub struct ProjectEvidence<'a> {
     /// (`SimulationResult::obstacle_collisions`). A collision: the
     /// diagnostics add it to `collision_count` and the triage lists it.
     pub obstacle_collisions: &'a [crate::compute::obstacle::ObstacleCollision],
+    /// P22-0c-3: every core contact of the contact kernel
+    /// (`SimulationResult::non_centre_cutting_descents`). The project
+    /// diagnostics and the triage list each one.
+    pub core_contacts: &'a [crate::compute::simulate::ToolpathCoreDescent],
+    /// P22-0c-3: every flute-top contact of the contact kernel
+    /// (`SimulationResult::flute_overreach`). The project diagnostics and
+    /// the triage list each one.
+    pub flute_contacts: &'a [crate::compute::simulate::ToolpathFluteOverreach],
     pub cut_trace: Option<&'a crate::stock::simulation_cut::SimulationCutTrace>,
     /// Per-toolpath holder/shank collision outcomes, supplied by the
     /// caller from its most recent dedicated collision check. Empty =
@@ -264,6 +286,8 @@ impl<'a> ProjectEvidence<'a> {
             rapid_collisions: &sim.rapid_collisions,
             rapid_collision_move_indices: &sim.rapid_collision_move_indices,
             obstacle_collisions: &sim.obstacle_collisions,
+            core_contacts: &sim.non_centre_cutting_descents,
+            flute_contacts: &sim.flute_overreach,
             cut_trace: sim.cut_trace.as_deref(),
             holder_collisions: Vec::new(),
             resolution_mm: Some(sim.column_grid_cell_mm),

@@ -496,22 +496,24 @@ pub(crate) fn emit_stock_aware_plunge(
     safety: &EntrySafety<'_>,
 ) -> Option<NonCentreCuttingRefusal> {
     use crate::toolpath::MoveIntent;
-    let top = rapid_to_entry_top(tp, start, end, safety, feed_rate)?;
+    // `None`: the whole descent is air, no plunge into stock.
+    rapid_to_entry_top(tp, start, end, safety, feed_rate)?;
     tp.feed_to_with_intent(*end, feed_rate, MoveIntent::EntryPlunge);
-    plunge_refusal(safety, top, end)
+    plunge_refusal(safety, end)
 }
 
-/// G-CENTRECUT: the refusal of a straight plunge from `material_top_z` to
-/// `end` under the tool's core zone (`CoreZone::plunge_refusal`),
-/// or `None` for a centre-cutting tool.
-fn plunge_refusal(
-    safety: &EntrySafety<'_>,
-    material_top_z: f64,
-    end: &P3,
-) -> Option<NonCentreCuttingRefusal> {
-    safety
-        .core
-        .and_then(|core| core.plunge_refusal(material_top_z, *end))
+/// G-CENTRECUT: the warning of a straight plunge to `end` under the tool's
+/// core zone (`CoreZone::plunge_refusal`), or `None` for a centre-cutting
+/// tool.
+///
+/// P22-0c-3 (lead ruling on item 2, wanaka idx 14 move 21244): the depth
+/// is measured from the material top under the CORE disc
+/// (`EntrySafety::core_top`, the kernel's read), else from the material
+/// top the caller gives (`stock_top`); never from the entry start, whose
+/// clearance is air. The blade ring cuts the wood outside the core.
+fn plunge_refusal(safety: &EntrySafety<'_>, end: &P3) -> Option<NonCentreCuttingRefusal> {
+    let top = safety.core_top.unwrap_or(safety.stock_top);
+    safety.core.and_then(|core| core.plunge_refusal(top, *end))
 }
 
 #[expect(
@@ -635,10 +637,21 @@ pub(crate) fn emit_ramp(
                     tp.rapid_to_with_intent(P3::new(start.x, start.y, air_z), MoveIntent::Linking);
                 }
                 tp.feed_to_with_intent(*end, feed_rate, MoveIntent::EntryPlunge);
-                let top = stock
-                    .max_conservative_top_z_in_disc(end.x, end.y, contact)
-                    .unwrap_or(start.z);
-                return plunge_refusal(safety, top, end);
+                // P22-0c-3: the rest stock is the stock this plunge meets;
+                // the depth reads it under the core disc (the kernel's read).
+                let core_top = safety
+                    .core
+                    .and_then(|core| {
+                        crate::stock::contact::core_material_top(stock, &core, end.x, end.y)
+                    })
+                    .or(safety.core_top);
+                return plunge_refusal(
+                    &EntrySafety {
+                        core_top,
+                        ..*safety
+                    },
+                    end,
+                );
             }
         }
         return None;
@@ -717,7 +730,7 @@ pub(crate) fn emit_ramp(
             }
             None => {
                 tp.feed_to_with_intent(*end, feed_rate, MoveIntent::EntryPlunge);
-                return plunge_refusal(safety, ramp_start_z, end);
+                return plunge_refusal(safety, end);
             }
         }
     } else if let Some(fold) = fold {
@@ -748,7 +761,7 @@ pub(crate) fn emit_ramp(
         };
         if folded.is_empty() {
             tp.feed_to_with_intent(*end, feed_rate, MoveIntent::EntryPlunge);
-            return plunge_refusal(safety, ramp_start_z, end);
+            return plunge_refusal(safety, end);
         } else {
             for p in folded {
                 tp.feed_to_with_intent(p, ramp_feed, MoveIntent::EntryRamp);
@@ -981,7 +994,7 @@ pub(crate) fn emit_helix(
         if safety.helix_floor_lap && radius > 0.0 {
             emit_floor_lap(tp, end, radius, ramp_feed, 0.0, true);
         }
-        return plunge_refusal(safety, helix_top, end);
+        return plunge_refusal(safety, end);
     }
 
     // One step is 10 degrees of turn and descends at most `pitch / 36`.
@@ -1014,7 +1027,7 @@ pub(crate) fn emit_helix(
                 None => {
                     if probe.off_mesh == OffMeshEntry::PlungeFallback {
                         tp.feed_to_with_intent(*end, feed_rate, MoveIntent::EntryPlunge);
-                        return plunge_refusal(safety, helix_top, end);
+                        return plunge_refusal(safety, end);
                     }
                 }
             }

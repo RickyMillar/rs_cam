@@ -48,6 +48,8 @@ impl SimulationState {
                 rapid_collisions: Vec::new(),
                 rapid_collision_move_indices: Vec::new(),
                 obstacle_collisions: Vec::new(),
+                core_contacts: Vec::new(),
+                flute_contacts: Vec::new(),
                 collision_report: None,
                 holder_collision_count: 0,
                 min_safe_stickout: None,

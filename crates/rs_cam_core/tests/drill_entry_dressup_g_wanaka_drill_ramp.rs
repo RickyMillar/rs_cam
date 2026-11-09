@@ -284,6 +284,7 @@ fn the_ramp_transform_itself_is_alive() {
             stock_top_measured: false,
             contact_clearance: 0.5,
             contact_top: None,
+            core_top: None,
             helix_floor_lap: false,
             helix_containment: None,
             core: None,

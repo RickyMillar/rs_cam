@@ -32,8 +32,7 @@ impl<B: ComputeBackend> AppController<B> {
         sim.last_run = None;
         sim.submitted_edit_counter = None;
         sim.submitted_simulation_epoch = None;
-        self.collision_positions.clear();
-        self.pending_upload = true;
+        self.clear_collision_markers();
     }
 
     /// Tell the operator that a run which did not land left the view empty

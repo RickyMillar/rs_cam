@@ -1236,6 +1236,12 @@ pub struct SimulationChecks {
     /// K1: the obstacle hits of the last simulation
     /// (`SimulationResult::obstacle_collisions`). Each is a collision.
     pub obstacle_collisions: Vec<rs_cam_core::compute::obstacle::ObstacleCollision>,
+    /// P22-0c-3: the core contacts of the contact kernel in the last
+    /// simulation (`SimulationResult::non_centre_cutting_descents`).
+    pub core_contacts: Vec<rs_cam_core::compute::simulate::ToolpathCoreDescent>,
+    /// P22-0c-3: the flute-top contacts of the contact kernel in the last
+    /// simulation (`SimulationResult::flute_overreach`).
+    pub flute_contacts: Vec<rs_cam_core::compute::simulate::ToolpathFluteOverreach>,
     /// Full collision report from last dedicated collision check.
     pub collision_report: Option<CollisionReport>,
     /// Number of holder collisions from last dedicated collision check.
@@ -1721,6 +1727,8 @@ impl SimulationState {
         self.checks.rapid_collisions = Vec::new();
         self.checks.rapid_collision_move_indices = Vec::new();
         self.checks.obstacle_collisions = Vec::new();
+        self.checks.core_contacts = Vec::new();
+        self.checks.flute_contacts = Vec::new();
     }
 }
 

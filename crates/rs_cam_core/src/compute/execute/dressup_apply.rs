@@ -728,6 +728,7 @@ impl PipelineRun<'_> {
             stock_top_measured: false,
             contact_clearance: ctx.cfg.entry_clearance_mm,
             contact_top: None,
+            core_top: None,
             // G-CENTRECUT: the tool owns its limits.
             core: ctx.cutter.and_then(crate::tool::body::core_of),
             // Operator ruling 2026-09-24: a helix or ramp takes the full material

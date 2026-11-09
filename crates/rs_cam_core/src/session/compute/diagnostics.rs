@@ -1433,6 +1433,7 @@ impl ProjectSession {
                             result.stats.stock_snapshot.as_ref(),
                         )
                     }),
+                    contact_zones: contact_zones_of(evidence, tc.id),
                 });
             }
         }
@@ -1746,6 +1747,64 @@ impl ProjectSession {
             });
         }
 
+        // P22-0c-3 (one finding, every surface): the contacts of the one
+        // contact kernel, per toolpath, in the G-code frame of its setup.
+        // Critical: wood under the centre core; Important: wood above the
+        // flute (the severities of the toolpath rows).
+        for tc in &self.toolpath_configs {
+            let frame = self.contact_frame_of(tc.id);
+            let kinds = [
+                (
+                    VerdictKind::CoreContact,
+                    VerdictSeverity::Critical,
+                    crate::compute::simulate::core_contact_row(
+                        evidence.core_contacts,
+                        tc.id,
+                        frame,
+                    ),
+                    evidence
+                        .core_contacts
+                        .iter()
+                        .filter(|hit| hit.toolpath_id == tc.id)
+                        .map(|hit| (hit.descent.move_index, hit.descent.material_over_tip_mm))
+                        .collect::<Vec<_>>(),
+                    CORE_CONTACT_HINT,
+                ),
+                (
+                    VerdictKind::FluteOverreach,
+                    VerdictSeverity::Important,
+                    crate::compute::simulate::flute_contact_row(
+                        evidence.flute_contacts,
+                        tc.id,
+                        frame,
+                    ),
+                    evidence
+                        .flute_contacts
+                        .iter()
+                        .filter(|hit| hit.toolpath_id == tc.id)
+                        .map(|hit| (hit.overreach.move_index, hit.overreach.material_over_tip_mm))
+                        .collect::<Vec<_>>(),
+                    FLUTE_CONTACT_HINT,
+                ),
+            ];
+            for (kind, severity, row, hits, hint) in kinds {
+                let Some(row) = row else { continue };
+                let worst = hits.iter().max_by(|a, b| a.1.total_cmp(&b.1)).map(|w| w.0);
+                verdicts.push(Verdict {
+                    severity,
+                    kind,
+                    headline: format!("WARNING: TP{} '{}': {row}", tc.id, tc.name),
+                    offender_toolpath_ids: vec![tc.id],
+                    fix_hint: hint.to_owned(),
+                    evidence: VerdictEvidence {
+                        move_index: worst,
+                        z_value: None,
+                        count: Some(hits.len()),
+                    },
+                });
+            }
+        }
+
         // Important: unsafe plunge feed on small ball / tapered-ball tools.
         for (name, rate, cap) in &plunge_stress_offenders {
             verdicts.push(Verdict {
@@ -1991,6 +2050,42 @@ impl ProjectSession {
         }
     }
 }
+
+/// P22-0c-3 (operator ruling Q6): the contacts of the contact kernel on
+/// toolpath `id`, counted by zone kind. `None` with no simulation evidence
+/// (no cut trace).
+fn contact_zones_of(
+    evidence: &ProjectEvidence<'_>,
+    id: ToolpathId,
+) -> Option<std::collections::BTreeMap<&'static str, usize>> {
+    use crate::tool::body::ContactKind;
+    evidence.cut_trace?;
+    let mut zones = std::collections::BTreeMap::new();
+    let core = evidence
+        .core_contacts
+        .iter()
+        .filter(|hit| hit.toolpath_id == id)
+        .count();
+    let flute = evidence
+        .flute_contacts
+        .iter()
+        .filter(|hit| hit.toolpath_id == id)
+        .count();
+    for (kind, count) in [(ContactKind::Core, core), (ContactKind::FluteTop, flute)] {
+        if count > 0 {
+            zones.insert(kind.as_str(), count);
+        }
+    }
+    Some(zones)
+}
+
+/// P22-0c-3: the fix hint of a core contact verdict.
+const CORE_CONTACT_HINT: &str = "Lower the ramp angle or the helix pitch, or give the entry more room; \
+     the tool does not cut at its centre. Regenerate and simulate again.";
+
+/// P22-0c-3: the fix hint of a flute-top contact verdict.
+const FLUTE_CONTACT_HINT: &str = "Use a tool with a longer flute, or cut less deep per pass. \
+     Regenerate and simulate again.";
 
 /// The fix hint of a rapid-collision verdict.
 ///

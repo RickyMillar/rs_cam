@@ -35,7 +35,7 @@ use rs_cam_core::dexel_stock::{StockCutDirection, TriDexelStock};
 use rs_cam_core::feeds::engagement::Engagement;
 use rs_cam_core::geo::{BoundingBox3, P3};
 use rs_cam_core::ids::ToolpathId;
-use rs_cam_core::stock::collision::RapidClearanceCheck;
+use rs_cam_core::stock::contact::WalkChecks;
 use rs_cam_core::stock::radial_profile::{LUT_SAMPLES, RadialProfileLUT};
 use rs_cam_core::stock::simulation_cut::SimulationCutSample;
 use rs_cam_core::tool::{MillingCutter, ToolDefinition};
@@ -98,7 +98,7 @@ fn run(
     lut: &RadialProfileLUT,
     tp: &Toolpath,
 ) -> (Vec<SimulationCutSample>, Vec<usize>) {
-    let mut check = RapidClearanceCheck::new(tool);
+    let mut check = WalkChecks::new(tool);
     let samples = stock
         .simulate_toolpath_with_lut_metrics_rapid_checked(
             tp,
@@ -119,7 +119,7 @@ fn run(
             Some(&mut check),
         )
         .expect("never cancelled");
-    let (_rapids, core) = check.into_parts();
+    let core = check.into_findings().core;
     (
         samples,
         core.into_iter().map(|hit| hit.move_index).collect(),

@@ -71,11 +71,13 @@ pub(crate) const ENTRY_RAMP_MAX_ANGLE_DEG: f64 = 12.0;
 /// Shortest window (mm of path) worth ramping over. Below this the run is
 /// treated as too short to enter along and the legacy descent is kept.
 pub(crate) const ENTRY_RAMP_MIN_WINDOW_MM: f64 = 0.5;
-/// Hard cap on laps. When the stock standing over a crease is so deep that
-/// the budget would need more laps than this, the emission stays bounded and
-/// the per-lap step grows past the budget — which the post-simulation
-/// `project.entry_load` finding then reports. A silently unbounded ramp and a
-/// silent plunge are the same failure.
+/// Hard cap on laps of a centre-cutting tool. When the stock standing over
+/// a crease is so deep that the budget would need more laps than this, the
+/// emission stays bounded and the per-lap step grows past the budget — which
+/// the post-simulation `project.entry_load` finding then reports. A silently
+/// unbounded ramp and a silent plunge are the same failure. A tool that does
+/// not cut at its centre takes no cap (P22-0c-3): its count follows from the
+/// depth and the core rule ([`plan_entry_ramp`]).
 pub(crate) const ENTRY_RAMP_MAX_LAPS: usize = 64;
 
 /// The tool radius that actually nestles into a crease: the corner radius for
@@ -132,7 +134,7 @@ pub(crate) struct EntryRampPlan {
     /// and the caller resumes where it already was.
     pub(crate) window_end: usize,
     /// The per-lap Z step actually used (>= the budget only in the
-    /// [`ENTRY_RAMP_MAX_LAPS`] clamp case).
+    /// [`ENTRY_RAMP_MAX_LAPS`] clamp case, which a core tool never takes).
     pub(crate) step_mm: f64,
 }
 
@@ -276,17 +278,32 @@ pub(crate) fn plan_entry_ramp(
         return None;
     }
 
-    let per_lap = match core {
-        Some(core) => (window_len * tan_ramp)
-            .min(budget * 0.5)
-            .min(window_len * core.max_ramp_slope())
-            .max(1e-6),
-        None => (window_len * tan_ramp).min(budget * 0.5).max(1e-6),
+    let laps = match core {
+        // P22-0c-3 (lead ruling 3 of P22-0c-2): for a tool that does not cut
+        // at its centre the lap count follows from the depth and the core
+        // rule, with no lap cap: a cap would grow the step past
+        // `p / (4 c)` in silence. The count is bounded by the depth: the
+        // window is at least `d = 2 c` long, so
+        // `per_lap >= min(d tan(ENTRY_RAMP_MAX_ANGLE_DEG), budget / 2, p / 2)`,
+        // three positive facts of the tool, and
+        // `laps <= depth / that`. A count that `util::steps` cannot give
+        // (a zero slope, a count past `usize`) gives no ladder: the
+        // caller's plunge then records the G-CENTRECUT warning
+        // (`safety.non_centre_cutting_plunge`), never a silent breach.
+        Some(core) => {
+            let per_lap = (window_len * tan_ramp)
+                .min(budget * 0.5)
+                .min(window_len * core.max_ramp_slope());
+            crate::util::steps::steps(depth, per_lap)?.max(1)
+        }
+        None => {
+            let per_lap = (window_len * tan_ramp).min(budget * 0.5).max(1e-6);
+            let laps_f = (depth / per_lap)
+                .ceil()
+                .clamp(1.0, ENTRY_RAMP_MAX_LAPS as f64);
+            laps_f as usize
+        }
     };
-    let laps_f = (depth / per_lap)
-        .ceil()
-        .clamp(1.0, ENTRY_RAMP_MAX_LAPS as f64);
-    let laps = laps_f as usize;
     let step = depth / laps as f64;
 
     let mut levels: Vec<(f64, f64)> = (0..laps)

@@ -495,7 +495,7 @@ pub fn profile_through_cut(
 /// ribbon.
 #[expect(
     clippy::too_many_arguments,
-    reason = "the ribbon reads eight independent inputs of one toolpath. The snapshot owns three of them, and the panel borrows its entry mutably while it reads the others, so one struct would not remove a parameter."
+    reason = "the ribbon reads ten independent inputs of one toolpath. The snapshot owns three of them, and the panel borrows its entry mutably while it reads the others, so one struct would not remove a parameter."
 )]
 pub fn collect_diagnostics(
     entry: &ToolpathEntry,
@@ -507,6 +507,7 @@ pub fn collect_diagnostics(
     suggest_warnings: Option<&[rs_cam_core::feeds::suggest::SuggestWarning]>,
     load_verdict: Option<&rs_cam_core::tool_load::ToolpathLoadVerdict>,
     flute_reach: Option<&rs_cam_core::compute::simulate::FluteReach>,
+    core_contact: Option<&rs_cam_core::compute::simulate::CoreContact>,
 ) -> Vec<rs_cam_core::diagnostics::Diagnostic> {
     // R2, W2b: an op with no tool takes THE no-tool list of core (the
     // session's list too), so its no-tool finding has a place.
@@ -540,6 +541,9 @@ pub fn collect_diagnostics(
         // K5 ReachFlute: what a fresh simulation measured (core
         // `ProjectSession::flute_reach_measured`).
         flute_reach,
+        // G-CENTRECUT (P22-0c-3): what a fresh simulation measured on the
+        // core (core `ProjectSession::core_contact_measured`).
+        core_contact,
         // K7 (feeds contract P9): the ribbon does not place the measured
         // engagement yet; it needs a memo (the envelope costs a calculator
         // grid). The export, the pre-flight and MCP read

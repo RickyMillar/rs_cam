@@ -1108,6 +1108,51 @@ pub fn flute_reach_measured(
     }
 }
 
+/// G-CENTRECUT, the simulation stage (P22-0c-3, one answer per move): what
+/// a fresh simulation measured on the core of the toolpath. A contact is
+/// `safety.non_centre_cutting_descent` (Critical, the static plunge's
+/// severity); a clean run is `safety.non_centre_cutting_clear` (Info).
+/// Both are Current and supersede the static
+/// `safety.non_centre_cutting_plunge`: the one reducer
+/// ([`crate::diagnostics::apply_supersession`]) drops it.
+pub fn core_contact_measured(
+    toolpath_id: ToolpathId,
+    contact: &crate::compute::simulate::CoreContact,
+) -> Diagnostic {
+    use crate::compute::simulate::CoreContact;
+    let (id, severity, message) = match contact {
+        CoreContact::Struck(text) => (
+            ids::SAFETY_NON_CENTRE_CUTTING_DESCENT,
+            Severity::Critical,
+            format!("Core: {text}."),
+        ),
+        CoreContact::Clear => (
+            ids::SAFETY_NON_CENTRE_CUTTING_CLEAR,
+            Severity::Info,
+            "The simulation measured no wood under the centre core higher than the blade \
+             protrusion."
+                .to_owned(),
+        ),
+    };
+    Diagnostic {
+        id: DiagnosticId::from(id),
+        scope: Scope::Toolpath { id: toolpath_id },
+        category: Category::Safety,
+        severity,
+        // Measured on the carved stock of a fresh simulation.
+        confidence: Confidence::Verified,
+        state: DiagnosticState::Current,
+        source: Source::Simulation,
+        face: crate::diagnostics::presentation::face(id),
+        anchor: crate::diagnostics::presentation::anchor(id),
+        message,
+        evidence: None,
+        fix: None,
+        supersedes: vec![DiagnosticId::from(ids::SAFETY_NON_CENTRE_CUTTING_PLUNGE)],
+        suppressed_diagnostics: vec![],
+    }
+}
+
 #[cfg(test)]
 #[expect(
     clippy::indexing_slicing,

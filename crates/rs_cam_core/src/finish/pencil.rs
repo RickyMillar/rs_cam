@@ -31,6 +31,10 @@ pub(crate) use chain_paths::{OffsetFan, paths_from_sampled, reach_gap_threshold}
 /// module, so the re-export is `cfg(test)` to keep the lib build warning-free.
 #[cfg(test)]
 pub(crate) use detectors::NOMINAL_REFERENCE_BALL_LENGTH_MM;
+/// The lap cap of a centre-cutting ladder; the dressup test module reads it
+/// (P22-0c-3), so the re-export is `cfg(test)`.
+#[cfg(test)]
+pub(crate) use emission::ENTRY_RAMP_MAX_LAPS;
 pub use emission::{
     ENTRY_RAMP_MIN_BITE_MM, PencilLinkReport, entry_bite_budget_mm, entry_ramp_window_mm,
     tip_contact_radius,

@@ -220,6 +220,7 @@ fn header_diagnostics(
         snapshot.suggest_warnings.as_deref(),
         None,
         None,
+        None,
     )
 }
 

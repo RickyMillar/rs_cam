@@ -70,7 +70,7 @@ use rs_cam_core::dexel_stock::{StockCutDirection, TriDexelStock};
 use rs_cam_core::dressup::optimize_entry_descents;
 use rs_cam_core::geo::P3;
 use rs_cam_core::ids::ToolpathId;
-use rs_cam_core::stock::collision::RapidClearanceCheck;
+use rs_cam_core::stock::contact::WalkChecks;
 use rs_cam_core::stock::radial_profile::{LUT_SAMPLES, RadialProfileLUT};
 use rs_cam_core::tool::{FlatEndmill, MillingCutter, TaperedBallEndmill};
 use rs_cam_core::toolpath::{MoveIntent, MoveType, PLUNGE_CLEARANCE_MM, Toolpath};
@@ -486,7 +486,7 @@ fn a_ridge_the_taper_can_strike_still_holds_the_descent_up() {
 fn live_hits(stock: &mut TriDexelStock, tp: &Toolpath, cutter: &dyn MillingCutter) -> Vec<usize> {
     let lut = RadialProfileLUT::from_cutter(cutter, LUT_SAMPLES);
     let never_cancel = || false;
-    let mut check = RapidClearanceCheck::new(cutter);
+    let mut check = WalkChecks::new(cutter);
     stock
         .simulate_toolpath_with_lut_metrics_rapid_checked(
             tp,
@@ -508,7 +508,8 @@ fn live_hits(stock: &mut TriDexelStock, tp: &Toolpath, cutter: &dyn MillingCutte
         )
         .expect("never cancelled");
     check
-        .into_hits()
+        .into_findings()
+        .rapids
         .into_iter()
         .map(|c| c.move_index)
         .collect()

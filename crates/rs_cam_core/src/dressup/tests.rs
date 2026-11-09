@@ -1130,6 +1130,7 @@ fn no_probe(stock_top: f64) -> EntrySafety<'static> {
         stock_top_measured: false,
         contact_clearance: 0.5,
         contact_top: None,
+        core_top: None,
         helix_floor_lap: false,
         helix_containment: None,
         core: None,
@@ -1413,6 +1414,7 @@ fn a_rough_keeps_folding_over_a_short_run_r10() {
         stock_top_measured: false,
         contact_clearance: 0.5,
         contact_top: None,
+        core_top: None,
         helix_floor_lap: false,
         helix_containment: None,
         core: None,
@@ -2307,13 +2309,15 @@ fn a_non_centre_cutting_tool_ramps_at_its_limit_g_centrecut() {
         }
         assert!(entry_moves > 0, "{name}: no entry moves");
     }
-    // A zero-radius helix can only plunge: 8.5 mm into stock, refused.
+    // A zero-radius helix can only plunge: 8 mm into stock, a warning.
+    // P22-0c-3 (lead ruling on item 2): the depth runs from the material top
+    // (8 mm), not from the entry start 0.5 mm above it (8.5 mm before).
     let mut plunge = Toolpath::new();
     plunge.rapid_to(start);
     let refusal =
         super::entry_descent::emit_helix(&mut plunge, &start, &end, 0.0, 1.0, 300.0, &safety)
             .expect("a plunge deeper than the protrusion is refused");
-    assert!(refusal.depth_mm > 8.0, "{refusal:?}");
+    assert!((refusal.depth_mm - 8.0).abs() < 1e-9, "{refusal:?}");
 }
 
 /// G-SIMCORE (P22-0b): a contained helix of a tool that does not cut at its
@@ -2399,7 +2403,7 @@ fn core_findings_on(
     tp: &Toolpath,
 ) -> Vec<usize> {
     let lut = crate::tool::body::cut_table(tool, crate::stock::radial_profile::LUT_SAMPLES);
-    let mut check = crate::stock::collision::RapidClearanceCheck::new(tool);
+    let mut check = crate::stock::contact::WalkChecks::new(tool);
     let cell = stock.z_grid.cell_size;
     stock
         .simulate_toolpath_with_lut_metrics_rapid_checked(
@@ -2421,7 +2425,7 @@ fn core_findings_on(
             Some(&mut check),
         )
         .expect("never cancelled");
-    let (_rapids, core) = check.into_parts();
+    let core = check.into_findings().core;
     core.into_iter().map(|hit| hit.move_index).collect()
 }
 
@@ -2432,6 +2436,167 @@ fn core_findings_on(
 /// ladder gives zero core findings. The control: the same tool through
 /// the centre-cutting ladder (no core) strikes. Probe tool: 18 mm, core
 /// 8 mm, protrusion 1 mm; rest stock 5 mm over a flat surface at Z 0.
+/// P22-0c-3, design section 9 item 2 (wanaka 21, idx 14 move 21244: a
+/// static `safety.non_centre_cutting_plunge` of 1.79 mm, no simulation core
+/// finding). Before the fix the static check was wrong on such a move, for
+/// two reasons:
+///
+/// 1. It measured the plunge from the entry START, the contact height
+///    `material top + entry_clearance_mm`, so the 0.5 mm of air above the
+///    material counted as wood (wanaka: 1.79 mm = 1.29 mm + 0.5 mm).
+/// 2. It read the highest material over the whole entry disc, but only the
+///    wood within the core radius meets the core; the blade ring cuts the
+///    rest.
+///
+/// Lead ruling: the static check measures from the material top under the
+/// core disc (`EntrySafety::core_top`, the kernel's read
+/// `stock::contact::core_material_top`, which the entry callers set from
+/// their stock), so before a simulation the static answer and the kernel
+/// agree. Red before the fix: the static check warned on cases 1 and 2.
+#[test]
+fn the_static_plunge_and_the_kernel_give_one_answer_p22_0c() {
+    let mut config = crate::compute::tool_config::ToolConfig::test_default(
+        crate::compute::tool_config::ToolId::from_raw(0),
+        crate::compute::tool_config::ToolType::EndMill,
+    );
+    config.diameter = 18.0;
+    config.set_cutting_length(crate::compute::tool_config::ToolFact::Stated(30.0));
+    config.set_stickout(crate::compute::tool_config::ToolFact::Stated(45.0));
+    config.set_shank_diameter(crate::compute::tool_config::ToolFact::Stated(12.0));
+    config.set_centre_cutting(crate::compute::tool_config::ToolFact::Stated(
+        crate::compute::tool_config::CentreCutting::No(
+            crate::compute::tool_config::NonCentreCuttingGeometry {
+                centre_core_diameter_mm: 8.0,
+                blade_protrusion_mm: 1.0,
+            },
+        ),
+    ));
+    let tool = crate::compute::cutter::build_cutter(&config).expect("a valid tool");
+    let core = tool.body().core().expect("a non-centre-cutting tool");
+    let block = |top: f64| {
+        TriDexelStock::from_bounds(
+            &crate::geo::BoundingBox3 {
+                min: P3::new(-40.0, -40.0, -5.0),
+                max: P3::new(40.0, 40.0, top),
+            },
+            0.25,
+        )
+    };
+    let start = P3::new(0.0, 0.0, 10.0);
+    let end = P3::new(0.0, 0.0, 0.0);
+    // The entry as a caller with a stock builds it: the disc top for the
+    // rapid floor, the core read for the plunge depth.
+    let static_and_kernel = |stock: &TriDexelStock| {
+        let disc_top = stock
+            .max_conservative_top_z_in_disc(end.x, end.y, tool.radius())
+            .expect("stock under the disc");
+        let safety = EntrySafety {
+            core: Some(core),
+            stock_top_measured: true,
+            core_top: crate::stock::contact::core_material_top(stock, &core, end.x, end.y),
+            ..no_probe(disc_top)
+        };
+        let mut tp = Toolpath::new();
+        tp.rapid_to(start);
+        let refusal =
+            super::entry_descent::emit_stock_aware_plunge(&mut tp, &start, &end, 300.0, &safety);
+        let hits = core_findings_on(&mut stock.clone(), &tool, &tp);
+        (refusal, hits)
+    };
+
+    // Case 1: 0.7 mm of wood (inside the 1 mm protrusion) under 0.5 mm of
+    // entry clearance.
+    let (refusal, hits) = static_and_kernel(&block(0.7));
+    assert!(
+        hits.is_empty(),
+        "the kernel: 0.7 mm under the core is inside p"
+    );
+    assert!(
+        refusal.is_none(),
+        "case 1: the static check counts the clearance: {refusal:?}"
+    );
+
+    // Case 2: the disc stands at 5 mm, the column within 5 mm of the axis
+    // is cut to 0.7 mm.
+    let mut ring_only = block(5.0);
+    let (rows, cols, cs, u0, v0) = (
+        ring_only.z_grid.rows,
+        ring_only.z_grid.cols,
+        ring_only.z_grid.cell_size,
+        ring_only.z_grid.origin_u,
+        ring_only.z_grid.origin_v,
+    );
+    for row in 0..rows {
+        for col in 0..cols {
+            let (x, y) = (u0 + col as f64 * cs, v0 + row as f64 * cs);
+            if x.hypot(y) <= 5.0 {
+                ring_only.clear_above_at(row, col, 0.7);
+            }
+        }
+    }
+    let (refusal, hits) = static_and_kernel(&ring_only);
+    assert!(
+        hits.is_empty(),
+        "the kernel: the core meets only the cut column"
+    );
+    assert!(
+        refusal.is_none(),
+        "case 2: the static check reads the ring: {refusal:?}"
+    );
+
+    // Case 3 (non-vacuity): 5 mm of fresh wood. Both warn.
+    let (refusal, hits) = static_and_kernel(&block(5.0));
+    assert!(!hits.is_empty(), "the kernel strikes a 5 mm plunge");
+    let refusal = refusal.expect("the static check warns on a 5 mm plunge");
+    assert!(
+        (refusal.depth_mm - 5.0).abs() < 1e-6,
+        "the depth is the wood under the core: {}",
+        refusal.depth_mm
+    );
+}
+
+/// P22-0c-3 (lead ruling 3 of P22-0c-2): a deep rest column needs more
+/// laps under the core slope than the old cap of 64. The lap count follows
+/// from the depth and the rule: no lap steps more than `window * p / 4c`.
+/// Red before: the cap held 64 laps and the step grew to `depth / 64`.
+#[test]
+fn a_deep_rest_ladder_of_a_core_tool_keeps_the_core_slope_p22_0c() {
+    let block = TriDexelStock::from_bounds(
+        &crate::geo::BoundingBox3 {
+            min: P3::new(-40.0, -40.0, -5.0),
+            max: P3::new(40.0, 40.0, 20.0),
+        },
+        0.25,
+    );
+    let core = crate::tool::body::CoreZone {
+        radius_mm: 4.0,
+        protrusion_mm: 0.1,
+    };
+    let run = [P3::new(0.0, 0.0, 0.0), P3::new(20.0, 0.0, 0.0)];
+    let contact = 3.0;
+    let plan =
+        crate::finish::pencil::plan_entry_ramp(&run, &block, contact, 30.0, true, Some(core))
+            .expect("a ladder: the run is longer than the core diameter");
+    // The window the plan laps: the run up to its window end.
+    let window: f64 = run[..=plan.window_end]
+        .windows(2)
+        .map(|w| (w[1].x - w[0].x).hypot(w[1].y - w[0].y))
+        .sum();
+    assert!(window >= core.min_ramp_leg_mm(), "the window is at least d");
+    let depth = 20.0;
+    assert!(
+        depth / plan.step_mm > crate::finish::pencil::ENTRY_RAMP_MAX_LAPS as f64,
+        "the fixture needs more laps than the old cap: step {}",
+        plan.step_mm
+    );
+    assert!(
+        plan.step_mm <= window * core.max_ramp_slope() * (1.0 + 1e-9),
+        "a lap steps {} mm, more than the core rule {} mm over the {window} mm window",
+        plan.step_mm,
+        window * core.max_ramp_slope()
+    );
+}
+
 #[test]
 fn the_rest_ladder_of_a_non_centre_tool_keeps_the_core_out_of_wood_p22_0c() {
     let mut config = crate::compute::tool_config::ToolConfig::test_default(

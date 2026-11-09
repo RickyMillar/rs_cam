@@ -91,6 +91,8 @@ fn id_and_category_for(kind: VerdictKind) -> (&'static str, Category) {
         VerdictKind::ObstacleCollision => (ids::PROJECT_OBSTACLE_COLLISION, Category::Safety),
         VerdictKind::HolderCheckFailed => (ids::PROJECT_HOLDER_CHECK_FAILED, Category::Safety),
         VerdictKind::RapidCollision => (ids::PROJECT_RAPID_COLLISION, Category::Safety),
+        VerdictKind::CoreContact => (ids::SAFETY_NON_CENTRE_CUTTING_DESCENT, Category::Safety),
+        VerdictKind::FluteOverreach => (ids::TOOL_FLUTE_OVERREACH, Category::Safety),
         VerdictKind::PlungeStress => (ids::PROJECT_PLUNGE_STRESS, Category::Safety),
         VerdictKind::AirCut => (ids::PROJECT_AIR_CUT_HIGH, Category::Efficiency),
         VerdictKind::GeneratedEmpty => (ids::PROJECT_GENERATED_EMPTY, Category::State),
@@ -127,6 +129,8 @@ fn state_for(kind: VerdictKind) -> DiagnosticState {
         | VerdictKind::HolderCheckFailed
         | VerdictKind::RapidCollision
         | VerdictKind::ObstacleCollision
+        | VerdictKind::CoreContact
+        | VerdictKind::FluteOverreach
         | VerdictKind::PlungeStress
         | VerdictKind::AirCut
         | VerdictKind::GeneratedEmpty

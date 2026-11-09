@@ -108,6 +108,10 @@ struct ToolpathDiagnostic<'a> {
     /// an operation that read no simulated stock. The core record, as MCP
     /// `get_diagnostics` publishes it.
     source_stock: Option<&'a rs_cam_core::compute::source_stock::SourceStockWire>,
+    /// P22-0c-3 (operator ruling Q6): the contacts of the contact kernel,
+    /// counted by zone kind (`core`, `flute_top`). `null` = no simulation
+    /// evidence; `{}` = measured, no contact. The core record.
+    contact_zones: Option<&'a std::collections::BTreeMap<&'static str, usize>>,
 }
 
 impl<'a> ToolpathDiagnostic<'a> {
@@ -147,6 +151,7 @@ impl<'a> ToolpathDiagnostic<'a> {
             max_tip_float_mm,
             monotone_cells,
             source_stock,
+            contact_zones,
         } = core;
 
         Self {
@@ -171,6 +176,7 @@ impl<'a> ToolpathDiagnostic<'a> {
             max_tip_float_mm: *max_tip_float_mm,
             monotone_cells: *monotone_cells,
             source_stock: source_stock.as_ref(),
+            contact_zones: contact_zones.as_ref(),
         }
     }
 }
@@ -1672,6 +1678,8 @@ mod tests {
                 }],
                 stock_changes: Vec::new(),
             }),
+            // P22-0c-3 (Q6): a zone count, so its shape is pinned below.
+            contact_zones: Some(std::collections::BTreeMap::from([("flute_top", 2)])),
         }
     }
 
@@ -1752,6 +1760,9 @@ mod tests {
         "output": "00000000000000cd"
       }
     ]
+  },
+  "contact_zones": {
+    "flute_top": 2
   }
 }"#;
         assert_eq!(json, expected, "CLI per-toolpath JSON wire changed");
@@ -1770,6 +1781,7 @@ mod tests {
             max_tip_float_mm: None,
             monotone_cells: None,
             source_stock: None,
+            contact_zones: None,
             ..core_diagnostic()
         };
         let record = ToolpathDiagnostic::from_core(&core, None, None, 0, None);
@@ -1787,6 +1799,8 @@ mod tests {
             "monotone_cells",
             // G-RESTRES: `null` = the operation read no simulated stock.
             "source_stock",
+            // P22-0c-3: `null` = no simulation evidence.
+            "contact_zones",
         ] {
             assert!(
                 json.contains(&format!("\"{key}\":null")),
@@ -1843,7 +1857,9 @@ mod tests {
         for id in [
             ids::GEOM_CLEARANCE_Z_BELOW_RETRACT_Z,
             ids::SAFETY_CUTS_INTO_MODEL,
-            ids::SAFETY_NON_CENTRE_CUTTING_PLUNGE,
+            // P22-0c-3 (one answer per move): with the fresh trace the
+            // simulation's core answer supersedes the static
+            // `safety.non_centre_cutting_plunge`.
             ids::SAFETY_NON_CENTRE_CUTTING_DESCENT,
             ids::EXPORT_OP_LEFT_OUT,
         ] {

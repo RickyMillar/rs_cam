@@ -567,8 +567,7 @@ impl<B: ComputeBackend> AppController<B> {
             &mut self.state.simulation,
             &self.state.app_settings.simulation,
         );
-        self.collision_positions.clear();
-        self.pending_upload = true;
+        self.clear_collision_markers();
         // R5a: the pin door drops a pin warning when a pin edit fixes it.
         self.load_pin_warnings = load_warnings
             .iter()

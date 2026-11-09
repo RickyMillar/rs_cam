@@ -737,6 +737,11 @@ pub const TABLE: &[(&str, Anchor, &str)] = &[
         "Wood under the centre core of the tool",
     ),
     (
+        ids::SAFETY_NON_CENTRE_CUTTING_CLEAR,
+        NOTE,
+        "No wood under the centre core, measured by the simulation",
+    ),
+    (
         ids::SAFETY_HELIX_INSIDE_CORE,
         TOOL,
         "No room for a helix past the core: entry falls back",

@@ -11,7 +11,7 @@ Every 3D finishing strategy and the unified planner. The entry point is
   `rest_detector.rs` — the rest DETECTOR stage (W6.4.1) and the probe ball.
 - `scallop*.rs`, `scallop/` — rings, height formulas, iso-field. `pencil*.rs`, `pencil/` —
   detectors, chaining, emission. `crest_lines.rs`, `crease_paths.rs`, `classify_probe.rs`.
-- `steep_shallow.rs`, `horizontal_finish.rs`, `ramp_finish.rs`, `radial_finish.rs`, `spiral_finish*.rs`
+- `steep_shallow.rs`, `horizontal_finish.rs`, `ramp_finish.rs` (P22-0c-3: a core tool laps at `max_ring_slope`), `radial_finish.rs`, `spiral_finish*.rs`
   — single-strategy finishes. `surface_link.rs` — `relink_fragments`, `shape_under_ceiling`.
 - Research (`--features research,test-support`, `-- --ignored`): `conformal_spiral*.rs`, `direction_field.rs`, `spiral_finish_compact.rs`.
 

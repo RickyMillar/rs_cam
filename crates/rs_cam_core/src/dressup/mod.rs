@@ -213,6 +213,13 @@ pub struct EntrySafety<'a> {
     /// height above the cut, which started entries up to one level high.
     /// `None` uses `stock_top` for both.
     pub contact_top: Option<f64>,
+    /// G-CENTRECUT (P22-0c-3, lead ruling on item 2): the material top
+    /// under the core disc at the entry
+    /// (`stock::contact::core_material_top`, the kernel's read), when the
+    /// caller holds a stock. The static plunge check measures its depth
+    /// from it; `None` measures from `stock_top`. Never from the entry
+    /// start: the entry clearance is air.
+    pub core_top: Option<f64>,
     /// End a helix with one full lap at the target Z, for a flat floor
     /// (`OperationTransformCapabilities::helix_floor_lap`). The dressup door
     /// reads the capability; the adaptive3d door passes `false`.
@@ -379,6 +386,12 @@ impl OwnStockReplay {
         self.stock.max_conservative_top_z_in_disc(x, y, reach)
     }
 
+    /// G-CENTRECUT (P22-0c-3): the material top under the core disc, the
+    /// kernel's read (`stock::contact::core_material_top`).
+    fn core_top(&self, core: &crate::tool::body::CoreZone, x: f64, y: f64) -> Option<f64> {
+        crate::stock::contact::core_material_top(&self.stock, core, x, y)
+    }
+
     /// The highest cell-centre material top under a disc of `reach` (for
     /// the helix or ramp start).
     fn contact_top(&self, x: f64, y: f64, reach: f64) -> Option<f64> {
@@ -473,6 +486,11 @@ pub fn apply_entry(
                 stock_top: read.unwrap_or(safety.stock_top),
                 stock_top_measured: read.is_some(),
                 contact_top: contact.or(safety.contact_top),
+                core_top: own
+                    .as_ref()
+                    .zip(safety.core)
+                    .and_then(|(o, core)| o.core_top(&core, m.target.x, m.target.y))
+                    .or(safety.core_top),
                 ..safety
             };
             let entry_start = result.moves.len();

@@ -277,10 +277,15 @@ pub(super) enum Adaptive3dSegment {
     /// `contact_z` is the cell-centre stock top over the same footprint: the
     /// helix or ramp starts above it (the conservative read holds a cut
     /// edge cell at the height above the cut).
+    /// `core_top_z` (P22-0c-3): for a tool that does not cut at its
+    /// centre, the planner stock's top under the core disc at the entry
+    /// (`stock::contact::core_material_top`, the kernel's read); the static
+    /// plunge check measures from it. `None` for any other tool.
     RapidWithFloor {
         entry: P3,
         rapid_floor_z: f64,
         contact_z: f64,
+        core_top_z: Option<f64>,
         stay_down: Option<StayDownProof>,
     },
     /// Feed directly at cutting depth (no retract)
@@ -2207,12 +2212,16 @@ pub(super) fn segments_to_toolpath_checked(
     // G-RAMPTERRAIN: hand the entry emitters the drop-cutter surface so
     // ramp legs and helix turns clip to `surface + stock_to_leave` —
     // the same floor `drape_point` holds for the entry destination.
-    let entry_safety = |stock_top: f64, stock_top_measured: bool, contact_top: Option<f64>| {
+    let entry_safety = |stock_top: f64,
+                        stock_top_measured: bool,
+                        contact_top: Option<f64>,
+                        core_top: Option<f64>| {
         crate::dressup::EntrySafety {
             stock_top,
             stock_top_measured,
             contact_clearance: params.entry_clearance_mm,
             contact_top,
+            core_top,
             surface: Some(crate::dressup::EntrySurfaceProbe {
                 mesh,
                 index,
@@ -2255,19 +2264,21 @@ pub(super) fn segments_to_toolpath_checked(
                 });
             }
             Adaptive3dSegment::Rapid(_) | Adaptive3dSegment::RapidWithFloor { .. } => {
-                let (raw_entry, rapid_floor_z, contact_z, stay_down) = match segment {
+                let (raw_entry, rapid_floor_z, contact_z, core_top_z, stay_down) = match segment {
                     Adaptive3dSegment::RapidWithFloor {
                         entry,
                         rapid_floor_z,
                         contact_z,
+                        core_top_z,
                         stay_down,
                     } => (
                         entry,
                         Some(*rapid_floor_z),
                         Some(*contact_z),
+                        *core_top_z,
                         stay_down.as_ref(),
                     ),
-                    Adaptive3dSegment::Rapid(entry) => (entry, None, None, None),
+                    Adaptive3dSegment::Rapid(entry) => (entry, None, None, None, None),
                     Adaptive3dSegment::Cut(_)
                     | Adaptive3dSegment::Link(_)
                     | Adaptive3dSegment::Marker(_) => continue,
@@ -2349,7 +2360,12 @@ pub(super) fn segments_to_toolpath_checked(
                             radius,
                             pitch,
                             params.plunge_rate,
-                            &entry_safety(material_top, rapid_floor_z.is_some(), contact_z),
+                            &entry_safety(
+                                material_top,
+                                rapid_floor_z.is_some(),
+                                contact_z,
+                                core_top_z,
+                            ),
                         ),
                         EntryStyle3d::Ramp { max_angle_deg } => {
                             crate::dressup::emit_ramp(
@@ -2359,7 +2375,12 @@ pub(super) fn segments_to_toolpath_checked(
                                 (1.0, 0.0),
                                 max_angle_deg,
                                 params.plunge_rate,
-                                &entry_safety(material_top, rapid_floor_z.is_some(), contact_z),
+                                &entry_safety(
+                                    material_top,
+                                    rapid_floor_z.is_some(),
+                                    contact_z,
+                                    core_top_z,
+                                ),
                                 // G-RAMPCONTAIN: no fold. This door enters PRISM
                                 // stock with `dir = (1.0, 0.0)`; a leg past the
                                 // mesh footprint cuts stock this operation is
@@ -2635,6 +2656,7 @@ mod tests {
                 entry: P3::new(0.0, 0.0, 0.0),
                 rapid_floor_z,
                 contact_z,
+                core_top_z: None,
                 stay_down: None,
             }],
             params,
