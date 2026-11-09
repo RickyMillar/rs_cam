@@ -1,5 +1,32 @@
 # Next session: feeds and speeds correctness (brief, 2026-11-08, second edition)
 
+## Morning hand-off, 2026-11-10 (lead, written during the night run)
+
+Committed overnight, in order: `5a56654dd` P22-0c-5 (every body reader on the mounted zones;
+`ToolAssembly` gone; one holder answer on every surface); `ca13c390c` fourteen stale known-red
+tests re-pinned (viz suite 1601 pass / 1 red: `the_inspector_text_is_bounded_ic1`, a lead
+decision); `34c83e040` `perf_golden_sim_metrics` re-blessed (the bisect named 74af0f8e1, the S11
+ruling; not a simulation defect); `125bb15dd` P22-0c-6a and `129deb5c2` P22-0c-6b (one upper
+diameter rule, the cutting cap = width at the flute top never above the shaft on both engagement
+doors, the ring plunge section `k = 1 - (d/D)^2`, a shank of 0 is not a fact); `6fd852527` +
+`36b440b17` P22a (the wide steps on wanaka idx 1 were the 3D "Perimeter sweep", 72 %, not D65;
+the exact `FeedCapSource` door); `7ef7a1284` P22f-1 (the nominal-margin arm of `grown_outlines`
+deleted: the sweep is gone where the outline grows; idx 1 worst sample 1.98 -> 1.45 kW; Back bulk
+rough motion lines 22920 -> 19650). Designs with lead rulings: `phases/P21_DESIGN.md`,
+`P22-0c-6.md`, `P22f_DESIGN.md`, `P22f-2_DESIGN.md`, `KNOWN_REDS_TRIAGE.md`. Wanaka controller
+`$30` corrected to 24000 (operator). Disk: two `cargo sweep` runs freed 205 GB from target/.
+
+In the tree at hand-off (check `git status`): P22f-2a by agent `p22a-readout` (the D65 rule on
+every fed geodesic step, `FeedCapSource::StockRead3d`; the band-edge arcs 1.45 -> 0.91 kW
+predicted). Report: `phases/P22f-2a.md`. Then: P22f-2b (ops 20/21), P21a/P21b (byte-identical),
+the wanaka read (GUI rebuild + /mcp), P22b, P22f-3, P22-0c-7.
+
+Operator decisions waiting (plain words in `P21_DESIGN.md` section 9 and the lead's morning
+summary): (1) the wanaka project setting `spindle_strategy = "constant_chip"` with
+`spindle_rpm_ceiling = 24000` (needed for the 16 rpm acceptance rows; P21c); (2) the P21
+acceleration rule after the A3 share is visible on wanaka; (3) P4 (the ball feed lift, the taper).
+
+
 HEAD at the time of writing: `a52e88813` (P20d). The first edition of this brief (`02b832eb9`) is
 done in part: section 1 of that edition became P20a and P20b.
 The operator wants every feeds and speeds number to be correct and explainable, so that the app
