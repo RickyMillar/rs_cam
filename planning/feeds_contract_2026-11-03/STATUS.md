@@ -194,8 +194,9 @@ the full entry point. Read it first, then the files it names.
 Update 2026-11-09 (lead): `KNOWN_REDS_TRIAGE.md` classifies every red. Fourteen stale tests are
 fixed and green in the known-reds commit (viz fm5 deleted, its two live assertions moved into
 `one_draft_for_every_add_door_s11`; ui09, wp19, r2, genalldisabled, p4_3, fscontrol, wp12; core
-roughgouge, f065, p2_3, wp15a, p6_0c, model_bottom_d1). `perf_golden_sim_metrics` is deterministic
-(a Profile arc cut reads as air since b0a133614..): bisect after P22-0c. `adaptpassload` is a
+roughgouge, f065, p2_3, wp15a, p6_0c, model_bottom_d1). `perf_golden_sim_metrics` is deterministic;
+the bisect (lead, 2026-11-09 night, worktree) names 74af0f8e1 (S11: an underived default is gone)
+as the commit that moved the Profile arm: a ruling, not a simulation defect; re-blessed at HEAD. `adaptpassload` is a
 real defect (Residue mop step 0.94 D). Still red by design: the_inspector ic1 (Tool cap, lead
 decision), pipesmoke (flake), W4 check 6 (schema `optional`, one line), the 17 S11 fixtures,
 litmatrix (P13c chain), layered_w3, vendor_lut_sub_1mm, a5 (P21), adaptrapidlift (P22-0c).
