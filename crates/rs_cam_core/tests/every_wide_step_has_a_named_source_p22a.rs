@@ -603,6 +603,9 @@ struct Readout {
     capped_moves: usize,
     moves: usize,
     pin: CapPin,
+    /// P22f-1: the opening decision of each region and level
+    /// (`Produced::region_openings`).
+    openings: Vec<rs_cam_core::adaptive3d::RegionOpening>,
     /// Capped moves by (exact class, inferred class): the cross-check.
     agreement: BTreeMap<(Source, Source), usize>,
 }
@@ -610,6 +613,7 @@ struct Readout {
 /// The public inputs of one readout.
 struct Inputs<'a> {
     tp: &'a Toolpath,
+    openings: &'a [rs_cam_core::adaptive3d::RegionOpening],
     semantic: Option<&'a ToolpathSemanticTrace>,
     spans: Option<&'a [Span]>,
     trace: &'a SimulationCutTrace,
@@ -623,6 +627,7 @@ struct Inputs<'a> {
 fn readout(inputs: &Inputs<'_>) -> Readout {
     let &Inputs {
         tp,
+        openings,
         semantic,
         spans,
         trace,
@@ -653,6 +658,7 @@ fn readout(inputs: &Inputs<'_>) -> Readout {
         moves: tp.moves.len(),
         pin,
         agreement,
+        openings: openings.to_vec(),
         ..Readout::default()
     };
     for sample in &trace.samples {
@@ -838,7 +844,31 @@ fn table(name: &str, r: &Readout) -> String {
         r.pin.capped_twice,
         r.pin.uncapped_inside
     );
-    let _ = writeln!(s, "Cross-check, capped moves by (exact, inferred):\n");
+    let _ = writeln!(
+        s,
+        "Region openings (P22f-1 record): {} region-levels, {} keep the sweep:\n",
+        r.openings.len(),
+        r.openings.iter().filter(|o| o.cuts_sweep()).count()
+    );
+    for o in &r.openings {
+        let _ = writeln!(
+            s,
+            "- z {:.3} region {}: cell {:.3}, measured {:.3} -> {:.3}, closing {:.1} / {:.1} mm2, \
+             {:?}, clips {:?} / {:?}, sweep {}",
+            o.z_level,
+            o.region,
+            o.cell_mm,
+            o.measured_before_mm,
+            o.measured_after_mm,
+            o.excess_mm2,
+            o.allowed_mm2,
+            o.decision,
+            o.stock_box_clip,
+            o.centre_reach_clip,
+            o.cuts_sweep()
+        );
+    }
+    let _ = writeln!(s, "\nCross-check, capped moves by (exact, inferred):\n");
     for ((exact, inferred), n) in &r.agreement {
         let _ = writeln!(s, "- {} / {}: {n}", exact.label(), inferred.label());
     }
@@ -883,6 +913,7 @@ fn session_readout(session: &ProjectSession, index: usize, op: OpFacts, cell: f6
         .expect("a cut trace");
     readout(&Inputs {
         tp: &annotated.toolpath,
+        openings: &annotated.produced.region_openings,
         semantic: result.semantic_trace.as_deref(),
         spans: annotated.spans_valid.then_some(annotated.spans.as_slice()),
         trace,

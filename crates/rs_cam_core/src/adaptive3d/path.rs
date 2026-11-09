@@ -806,6 +806,9 @@ pub(super) struct Adaptive3dSegmentsResult {
     /// one). D50: each with the top Z of the slab it leaves
     /// ([`super::rest_regions::slab_top_z`]), not its level Z.
     pub left_pieces: Vec<(f64, crate::polygon::Polygon2)>,
+    /// P22f-1: the opening decision of each region at each level
+    /// (`ClearZLevelContext::region_openings`).
+    pub region_openings: Vec<super::RegionOpening>,
     /// Test-only: planner's internal dexel state at the end of the run.
     /// The F-029 probe and the `#[cfg(test)]` module read it.
     #[cfg_attr(
@@ -1273,6 +1276,7 @@ pub(super) fn adaptive_3d_segments(
         keep_down_route: super::effective_keep_down_route(params),
         region_clip,
         left_pieces: std::cell::RefCell::new(Vec::new()),
+        region_openings: std::cell::RefCell::new(Vec::new()),
         // C4: the reach band, when the option is on and the rough meets
         // stock beyond its containment.
         band_edge: std::cell::RefCell::new(params.linking.level_contour.as_ref().and_then(
@@ -1530,6 +1534,7 @@ pub(super) fn adaptive_3d_segments(
                 )
             })
             .collect(),
+        region_openings: ctx.region_openings.take(),
         final_material_stock: material_stock,
         surface_heightmap: surface_hm,
     })

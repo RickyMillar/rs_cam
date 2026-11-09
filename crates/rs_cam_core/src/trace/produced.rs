@@ -99,6 +99,11 @@ pub struct Produced {
     /// reads them. Empty before that stage and for a toolpath with no
     /// entry.
     pub entries: Vec<crate::compute::catalog::EntryRecord>,
+    /// P22f-1 (ruling 5): the opening decision of each Geodesic Adaptive
+    /// region at each level (`adaptive3d::RegionOpening`), in plan order: the
+    /// case, the margins and the two clip results. Empty for every other
+    /// toolpath.
+    pub region_openings: Vec<crate::adaptive3d::RegionOpening>,
 }
 
 impl Produced {
@@ -124,6 +129,8 @@ impl Produced {
     /// - `helix_core_fallbacks`: each entry target shifts.
     /// - `entries`: each point of each record shifts; the kind and the
     ///   feed do not.
+    /// - `region_openings`: each level Z shifts by `shift.z`; the margins,
+    ///   the areas and the decisions do not.
     #[must_use]
     pub fn translated(&self, shift: P3) -> Self {
         let Self {
@@ -136,6 +143,7 @@ impl Produced {
             non_centre_cutting_refusal,
             helix_core_fallbacks,
             entries,
+            region_openings,
         } = self;
 
         let planner_engagement = planner_engagement
@@ -220,6 +228,14 @@ impl Produced {
             .map(|record| record.translated(shift))
             .collect();
 
+        let region_openings = region_openings
+            .iter()
+            .map(|opening| crate::adaptive3d::RegionOpening {
+                z_level: opening.z_level + shift.z,
+                ..opening.clone()
+            })
+            .collect();
+
         Self {
             planner_engagement,
             rest_grid,
@@ -230,6 +246,7 @@ impl Produced {
             non_centre_cutting_refusal,
             helix_core_fallbacks,
             entries,
+            region_openings,
         }
     }
 }

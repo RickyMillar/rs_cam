@@ -421,6 +421,9 @@ pub(super) struct ClearZLevelContext<'a> {
     /// them), each with its Z level. The waterline cleanup of that level
     /// skips a contour inside one.
     pub(super) left_pieces: std::cell::RefCell<Vec<(f64, crate::polygon::Polygon2)>>,
+    /// P22f-1: the opening decision of each region at each level
+    /// (`grown_outlines`), in plan order; `Produced::region_openings`.
+    pub(super) region_openings: std::cell::RefCell<Vec<super::RegionOpening>>,
     /// C4 (`Adaptive3dLinking::level_contour`): the reach band and its
     /// contour on each level. `None`: the option is off, or the rough has
     /// no band.
@@ -2841,34 +2844,41 @@ fn grown_planner_outlines(
 /// The smoothing (`SIMPLIFY_INSET`, then the RDP) moves the outline inside
 /// and removes the staircase.
 ///
-/// The region keeps the shipped path, with one `info` line that says why,
-/// when:
+/// The region keeps the shipped path, with one `info` line that says why
+/// and one [`super::RegionOpening`] record, when:
 /// - the smoothing gives no outline, or the grow gives none;
-/// - the inside margin `SIMPLIFY_INSET + m` is under one planner cell
-///   (`cell`): the reach of an out cell's nearest read, half a cell, plus
-///   the boundary error, up to half a cell (the lead's condition);
 /// - the inset outline splits into more polygons (the shortfall inset,
 ///   below, cut a neck);
 /// - the measured margin, the least distance between the smoothed and the
-///   raw boundaries plus `m`, is under one planner cell (the same reach as
-///   the nominal condition) after the shortfall inset. The RDP can move
-///   the smoothed outline back out by up to its tolerance, so the nominal
-///   inset is not a bound. Where the measured margin is short, the smoothed
-///   outline is first inset by the shortfall (`cell - measured`), once,
-///   region-wide, and measured again;
+///   raw boundaries plus `m`, is under one planner cell (`cell`: the reach
+///   of an out cell's nearest read, half a cell, plus the boundary error,
+///   up to half a cell) after the shortfall inset. The RDP can move the
+///   smoothed outline back out by up to its tolerance, so the nominal inset
+///   `SIMPLIFY_INSET + m` is not a bound. Where the measured margin is
+///   short, the smoothed outline is first inset by the shortfall
+///   (`cell - measured`), once, region-wide, and measured again. P22f-1:
+///   no check of the nominal inset against the cell stays; it refused every
+///   region of a tool with R over 3.3 mm, and the inset makes the measured
+///   margin one cell by construction (C22 §11.9);
 /// - the closing guard: growing by `R - m` and insetting by R closes any
 ///   gap narrower than about 2R. The 2D tool-centre region (the grown
 ///   outline inset by R) may exceed the smoothed region inset by `m` by at
 ///   most one planner cell times the smoothed boundary length.
+///
+/// - a clip leaves nothing: the grow stops at the stock box, where no
+///   material stands beyond the edge (research C38 item B), and at the
+///   reach of the boundary clip, so that nothing is planned where the clip
+///   would drop it (C38 §13.7).
 ///
 /// No new constant: R, `m`, the two smoothing values and the planner cell.
 fn grown_outlines(
     ctx: &ClearZLevelContext<'_>,
     region_polygon: &crate::polygon::Polygon2,
     params_2d: &crate::adaptive::AdaptiveParams,
-    cell: f64,
+    stock: &TriDexelStock,
     (z_level, region_idx): (f64, usize),
 ) -> Option<Vec<crate::polygon::Polygon2>> {
+    let cell = stock.z_grid.cell_size;
     let r = ctx.tool_radius;
     let m = PERIMETER_INSET_MARGIN_MM;
     let separation = |polys: &[crate::polygon::Polygon2]| {
@@ -2929,26 +2939,74 @@ fn grown_outlines(
         .sum();
     let allowed_mm2 = cell * boundary_mm;
     let excess_mm2 = centre_area - target_area;
-    let nominal_margin = SIMPLIFY_INSET + m;
     let decision = if smoothed.is_empty() || grown.is_empty() {
-        "no smoothed or grown outline: shipped sweep"
+        super::OpeningDecision::NoOutline
     } else if inset_split {
-        "the shortfall inset split the outline: shipped sweep"
-    } else if nominal_margin < cell {
-        "inside margin under one planner cell: shipped sweep"
+        super::OpeningDecision::InsetSplit
     } else if measured_after < cell {
-        "measured margin under one planner cell: shipped sweep"
+        super::OpeningDecision::MeasuredMarginShort
     } else if excess_mm2 > allowed_mm2 {
-        "closing guard: shipped sweep"
+        super::OpeningDecision::ClosingGuard
     } else {
-        "grown, no sweep"
+        super::OpeningDecision::Grown
     };
-    let keep_grown = decision == "grown, no sweep";
+    // The two clips (C38 item B, §13.7); each states what it did.
+    let area = |polys: &[crate::polygon::Polygon2]| polys.iter().map(|p| p.area()).sum::<f64>();
+    let clip_with = |before: Vec<crate::polygon::Polygon2>,
+                     clip: &dyn Fn(
+        Vec<crate::polygon::Polygon2>,
+    ) -> Option<Vec<crate::polygon::Polygon2>>|
+     -> (Option<Vec<crate::polygon::Polygon2>>, super::OpeningClip) {
+        let area_before = area(&before);
+        match clip(before) {
+            None => (None, super::OpeningClip::Empty),
+            Some(after) => {
+                let outcome =
+                    if (area(&after) - area_before).abs() <= 1e-9 * area_before.abs().max(1.0) {
+                        super::OpeningClip::Kept
+                    } else {
+                        super::OpeningClip::Clipped
+                    };
+                (Some(after), outcome)
+            }
+        }
+    };
+    let (mut kept, mut stock_box_clip, mut centre_reach_clip) =
+        (None, super::OpeningClip::NotRun, super::OpeningClip::NotRun);
+    if decision == super::OpeningDecision::Grown {
+        let (boxed, outcome) =
+            clip_with(grown, &|g| super::outer_band::clip_to_stock_box(g, stock));
+        stock_box_clip = outcome;
+        if let Some(boxed) = boxed {
+            let (reached, outcome) = clip_with(boxed, &|g| {
+                super::outer_band::clip_to_centre_reach(
+                    g,
+                    ctx.centre_clip,
+                    ctx.tool_radius,
+                    PERIMETER_INSET_MARGIN_MM,
+                )
+            });
+            centre_reach_clip = outcome;
+            kept = reached;
+        }
+    }
+    let opening = super::RegionOpening {
+        z_level,
+        region: region_idx + 1,
+        cell_mm: cell,
+        measured_before_mm: measured_before,
+        shortfall_inset_mm: shortfall_mm,
+        measured_after_mm: measured_after,
+        excess_mm2,
+        allowed_mm2,
+        decision,
+        stock_box_clip,
+        centre_reach_clip,
+    };
     tracing::info!(
         z = z_level,
         region = region_idx + 1,
         cell_mm = cell,
-        nominal_margin_mm = %format!("{nominal_margin:.3}"),
         measured_before_mm = %format!("{measured_before:.3}"),
         shortfall_inset_mm = %format!("{shortfall_mm:.3}"),
         measured_after_mm = %format!("{measured_after:.3}"),
@@ -2957,10 +3015,14 @@ fn grown_outlines(
         target_area_mm2 = %format!("{target_area:.1}"),
         excess_mm2 = %format!("{excess_mm2:.2}"),
         allowed_mm2 = %format!("{allowed_mm2:.2}"),
-        decision,
+        decision = decision.text(),
+        stock_box_clip = ?stock_box_clip,
+        centre_reach_clip = ?centre_reach_clip,
+        sweep = opening.cuts_sweep(),
         "C31 region opening"
     );
-    keep_grown.then_some(grown)
+    ctx.region_openings.borrow_mut().push(opening);
+    kept
 }
 
 /// The rings of a polygon: its exterior, then its holes.
@@ -3158,26 +3220,15 @@ fn clear_one_region(
     // Geodesic Adaptive (research C31): when the 2D planner gets the region grown by
     // `R - PERIMETER_INSET_MARGIN_MM` (`grown_outlines`), its own
     // plan opens this band under the 2D pass load, and no sweep is cut.
+    // The grow, then the stock-box clip (research C38 item B) and the
+    // centre-reach clip (C38 §13.7), with the decision on record.
     let grown = grown_outlines(
         ctx,
         region_polygon,
         params_2d,
-        sink.material_stock.z_grid.cell_size,
+        &*sink.material_stock,
         (z_level, region_idx),
-    )
-    // Geodesic Adaptive (research C38 item B): the grow stops at the stock box, where
-    // no material stands beyond the edge.
-    .and_then(|grown| super::outer_band::clip_to_stock_box(grown, &*sink.material_stock))
-    // C38 §13.7: and at the reach of the boundary clip, so that nothing is
-    // planned where the clip would drop it.
-    .and_then(|grown| {
-        super::outer_band::clip_to_centre_reach(
-            grown,
-            ctx.centre_clip,
-            ctx.tool_radius,
-            PERIMETER_INSET_MARGIN_MM,
-        )
-    });
+    );
     let inset_polygons = if grown.is_some() {
         Vec::new()
     } else {

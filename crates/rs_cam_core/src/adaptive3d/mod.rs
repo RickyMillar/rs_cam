@@ -554,6 +554,92 @@ impl FeedCapSource {
     }
 }
 
+/// P22f-1: why a Geodesic Adaptive region at one level opens on its grown
+/// outline or keeps the shipped perimeter sweep (`clearing::grown_outlines`,
+/// research C31). The first case that holds, in this order.
+#[derive(Debug, Clone, Copy, PartialEq, Eq)]
+pub enum OpeningDecision {
+    /// The smoothing or the grow gives no outline.
+    NoOutline,
+    /// The shortfall inset split the outline into more polygons.
+    InsetSplit,
+    /// The measured margin after the shortfall inset is under one planner
+    /// cell.
+    MeasuredMarginShort,
+    /// The closing of the grow exceeds one planner cell times the boundary
+    /// length.
+    ClosingGuard,
+    /// The region opens on its grown outline (no sweep, unless a clip
+    /// leaves nothing).
+    Grown,
+}
+
+impl OpeningDecision {
+    /// The text of the "C31 region opening" log line.
+    #[must_use]
+    pub const fn text(self) -> &'static str {
+        match self {
+            Self::NoOutline => "no smoothed or grown outline: shipped sweep",
+            Self::InsetSplit => "the shortfall inset split the outline: shipped sweep",
+            Self::MeasuredMarginShort => "measured margin under one planner cell: shipped sweep",
+            Self::ClosingGuard => "closing guard: shipped sweep",
+            Self::Grown => "grown, no sweep",
+        }
+    }
+}
+
+/// P22f-1: what one clip of the grown outline did (research C38 item B, the
+/// stock box; §13.7, the centre reach).
+#[derive(Debug, Clone, Copy, PartialEq, Eq)]
+pub enum OpeningClip {
+    /// The grow refused before the clip, or an earlier clip left nothing.
+    NotRun,
+    /// The outline is unchanged (wholly inside, or no clip applies).
+    Kept,
+    /// The clip cut the outline; something is left.
+    Clipped,
+    /// The clip left nothing: the region keeps the shipped sweep.
+    Empty,
+}
+
+/// P22f-1: the opening decision of one Geodesic Adaptive region at one level,
+/// with the numbers the "C31 region opening" log line prints (ruling 5).
+/// `Produced::region_openings` holds one per region and level, in plan
+/// order, so a reader needs no tracing subscriber.
+#[derive(Debug, Clone, PartialEq)]
+pub struct RegionOpening {
+    /// The level Z (emission frame).
+    pub z_level: f64,
+    /// The region of the level, 1-based.
+    pub region: usize,
+    /// The planner cell (mm).
+    pub cell_mm: f64,
+    /// The least distance between the smoothed and the raw boundary, plus
+    /// `m`, before the shortfall inset (mm).
+    pub measured_before_mm: f64,
+    /// The shortfall inset (mm; 0 when none was needed).
+    pub shortfall_inset_mm: f64,
+    /// The measured margin after the shortfall inset (mm).
+    pub measured_after_mm: f64,
+    /// The closing guard: the excess area and its allowance (mm2).
+    pub excess_mm2: f64,
+    pub allowed_mm2: f64,
+    pub decision: OpeningDecision,
+    pub stock_box_clip: OpeningClip,
+    pub centre_reach_clip: OpeningClip,
+}
+
+impl RegionOpening {
+    /// Whether the region keeps the shipped perimeter sweep: the grow
+    /// refused, or a clip left nothing.
+    #[must_use]
+    pub fn cuts_sweep(&self) -> bool {
+        self.decision != OpeningDecision::Grown
+            || self.stock_box_clip == OpeningClip::Empty
+            || self.centre_reach_clip == OpeningClip::Empty
+    }
+}
+
 #[derive(Debug, Clone, PartialEq)]
 pub enum Adaptive3dRuntimeEvent {
     RegionStart {
@@ -799,6 +885,7 @@ pub fn adaptive_3d_toolpath_output_with_cancel(
             rest_regions,
             rest_regions_top_z,
             non_centre_cutting_refusal,
+            region_openings: result.region_openings,
             ..crate::trace::produced::Produced::default()
         },
     })
