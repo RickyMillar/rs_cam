@@ -14,7 +14,7 @@ Every viewport pipeline. The entry point is `render::mod`, called from `app/view
   P6.7 `PATH_SIDE`, `HOLE_MISFIT`. `face_palette`: the `FACE_SLOT_*` slots the face WGSL reads (`face_shader_reads_the_palette_slots`); Round 3: one material `MODEL_SURFACE`, the headlight `HEADLIGHT_VIEW` (`render::headlight_dir`), `LIGHT_SKY`/`LIGHT_GROUND` (mean `LIGHT_AMBIENT_MEAN`) in `MeshUniforms` (face + STL), `FACE_RIM_*`.
 - `mod.rs` — the pipeline facade. `hover_lines` (the pick hover ring) and `tab_lines` (the tab editor marks, `TAB_AUTO`, `TAB_HAND`,
   `TAB_DRAGGED`) — each its own buffer, drawn after the drawing. The tab marks draw with the curves off too.
-- `sim_render.rs` `head_draw_parts` — the H2 machine head and shoe; a soft part draws lighter.
+- `sim_render.rs` `ToolBodyDraw` (P22-0c-5, D7: shank and holder face from `MountedBody::zones`, the one builder of the tool panel and the sim tool mesh; pin `the_drawn_body_is_the_zone_table_p22_0c_5`), `head_draw_parts` (core `part_spans`; a soft part draws lighter).
 - `upload_cache.rs` — the content-addressed keys for the GPU upload pass. `outline.rs` — D §4: the `R32Uint` ID pass (slot = draw instance), the outline draw in the scene pass (ink: silhouette + planarity fold test; accent), `IdReadback`.
 - `gpu_safety.rs` — buffer size guards; `offscreen_bytes` + `log_offscreen_budget` (scene target bytes, a log, not a gate).
 

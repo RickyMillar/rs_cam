@@ -565,12 +565,6 @@ pub(crate) fn draw_tool_preview(
     };
     let cutter_r = tool_def.radius() as f32;
     let cutting_len = tool_def.length() as f32;
-    let shank_r = (tool_def.shank_diameter() / 2.0) as f32;
-    // The exposed shank runs from the flutes to the holder face, which is
-    // at the stickout above the tip. The holder has no top in the model;
-    // the preview draws it `HOLDER_DRAW_LENGTH_OVER_DIAMETER` diameters tall.
-    let shank_len = tool_def.exposed_shank_length() as f32;
-    let holder_face = tool_def.stickout() as f32;
     let unmodelled = rs_cam_core::machine::head::MachineHead::unmodelled();
     let head = head.unwrap_or(&unmodelled);
     let shoe = head
@@ -581,7 +575,14 @@ pub(crate) fn draw_tool_preview(
                 gap_mm: shoe.normal_gap_mm,
             }
         });
-    let parts = crate::render::sim_render::head_draw_parts(head, tool_def.stickout(), shoe);
+    // P22-0c-5 (design D7): the shank, the holder face and the head parts
+    // are the zones of the mounted body (`ToolBodyDraw`, the one builder of
+    // both drawings). The holder has no top in the model; the preview draws
+    // it `HOLDER_DRAW_LENGTH_OVER_DIAMETER` diameters tall.
+    let drawn = crate::render::sim_render::ToolBodyDraw::of(&tool_def, head, shoe);
+    let shank_r = drawn.shank.map_or(0.0, |shank| shank.radius);
+    let holder_face = drawn.holder_face;
+    let parts = &drawn.head;
     let parts_top = parts.iter().map(|part| part.top).fold(0.0_f32, f32::max);
     let parts_r = parts.iter().map(|part| part.radius).fold(0.0_f32, f32::max);
 
@@ -642,11 +643,14 @@ pub(crate) fn draw_tool_preview(
     }
     painter.add(egui::Shape::line(outline, cutter_stroke));
 
-    // --- Shank rectangle ---
-    let cutter_top_y = bottom - cutting_len * scale;
-    if shank_len > 0.01 && shank_r > 0.01 {
-        let shank_top_y = cutter_top_y - shank_len * scale;
-        let sr = shank_r * scale;
+    // --- Shank rectangle (the `Shank` zone) ---
+    if let Some(shank) = drawn.shank
+        && shank.top - shank.bottom > 0.01
+        && shank.radius > 0.01
+    {
+        let cutter_top_y = bottom - shank.bottom * scale;
+        let shank_top_y = bottom - shank.top * scale;
+        let sr = shank.radius * scale;
         painter.add(egui::Shape::line(
             vec![
                 egui::pos2(cx - sr, cutter_top_y),
@@ -660,7 +664,7 @@ pub(crate) fn draw_tool_preview(
     }
 
     // --- Head parts (H2) ---
-    for part in &parts {
+    for part in parts {
         let stroke = if part.soft {
             soft_stroke
         } else {

@@ -17,7 +17,7 @@ principal type is `MachineProfile` in `mod.rs`.
 - P20c: every machine limit on every move. `rate_bound_feed_mm_min` / `rate_bound_feed_of_move` read the one projection (`effective_max_rate_mm_min`); `cap_feeds_at_axis_rates` runs once in generation (`JobPhases::run_stages`, after the entry split) and the modulator caps last; a per-axis rate change drops every result. The gates grade the reached feed (`use_predicted_feed_in_gates` default on; the modulation stamp writes the reached feed). Sentry `every_machine_limit_runs_through_every_move_p20c`.
 - P20e: `op_cutting_ceiling(feed_max_rate)` is THE cut ceiling of one op (the modulator and the advisor cap at it); `op_steady_feed` = `min(op feed, that ceiling)` with its `SteadyFeedLimit` is the reference of the chip gate filter, the histogram and the Suggest power figure. Sentry `one_steady_feed_for_the_cap_the_gates_and_the_card_p20e`.
 - Machine acceleration decides parallel against spiral. The advisor reads the profile; do not hard-code a strategy preference.
-- H1: the head is a machine part, not a tool part; `MachineHead::bands` is the one band builder.
+- H1: the head is a machine part, not a tool part; `MachineHead::part_spans` is the one walk of the parts (the GUI drawing reads it); `bands` keeps its hard parts.
   Hard parts block, soft parts never; a shelf is a Z floor. The generation step reads the fixed
   head (`HeadFit::fixed`); the shoe enters only the checks, at the resolved gap (`compute::shoe`).
 - The cycle time and the predicted feed come from ONE pass: `digest_moves`

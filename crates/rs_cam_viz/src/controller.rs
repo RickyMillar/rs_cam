@@ -162,7 +162,7 @@ pub struct AppController<B: ComputeBackend = ThreadedComputeBackend> {
     /// The holder check's collision markers (`CollisionResult::positions`).
     holder_positions: Vec<[f32; 3]>,
     /// P22-0c-3 (Q6): the zone kind of each holder marker, parallel to
-    /// `holder_positions` (`AssemblySegment::as_str`).
+    /// `holder_positions` (`ZoneKind::as_str`).
     collision_zones: Vec<&'static str>,
     /// P22-0c-3: the contact kernel's markers of the accepted run (the
     /// core and the flute top): position, zone kind, run move.
@@ -617,7 +617,7 @@ impl<B: ComputeBackend> AppController<B> {
 
     /// P22-0c-3: the contact markers of the accepted run, from the contact
     /// kernel's records (the emission frame of each toolpath, as the holder
-    /// markers).
+    /// markers): the core, the flute top and (P22-0c-5) the body contacts.
     pub(crate) fn set_contact_markers(&mut self) {
         let sim = &self.state.simulation;
         let ranges: Vec<_> = sim
@@ -638,7 +638,15 @@ impl<B: ComputeBackend> AppController<B> {
             zone: rs_cam_core::tool::body::ContactKind::FluteTop.as_str(),
             global_move: locate(hit.toolpath_id, hit.overreach.move_index),
         });
-        let markers: Vec<ContactMarker> = core.chain(flute).collect();
+        // P22-0c-5 (P22-0c-4 open Q2, ruling Q6): a body contact (the
+        // shank, a holder band, a shoe part) is a marker too; its chip is
+        // the zone kind.
+        let body = sim.checks.body_contacts.iter().map(|hit| ContactMarker {
+            position: to_f32(hit.contact.position),
+            zone: hit.contact.zone.as_str(),
+            global_move: locate(hit.toolpath_id, hit.contact.move_index),
+        });
+        let markers: Vec<ContactMarker> = core.chain(flute).chain(body).collect();
         self.contact_markers = markers;
         self.rebuild_collision_markers();
     }

@@ -558,7 +558,7 @@ fn hash_entry_scalar(entry: &SimToolpathEntry) -> u64 {
     operation_config_hash.hash(&mut hasher);
     hash_tool(&mut hasher, tool);
     // P22-0c-4: the head bands the walk reads at this tool's holder face.
-    let bands = tool.to_assembly(head);
+    let bands = tool.mounted(head);
     bands.head().len().hash(&mut hasher);
     for band in bands.head() {
         let crate::machine::head::HeadBand {

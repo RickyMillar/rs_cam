@@ -24,7 +24,6 @@
 use crate::compute::obstacle::{JoinStart, ObstacleResolveError, ObstacleSet};
 use crate::geo::BoundingBox3;
 use crate::machine::head::{MachineHead, ResolvedShoe, ShoePosition, ShoeSetting};
-use crate::stock::collision::ToolAssembly;
 use crate::toolpath::Toolpath;
 
 /// The answer of the solver for one run.
@@ -63,14 +62,10 @@ pub fn solve_gap(
         parts: Vec::new(),
         shoe: Some(shoe.clone()),
     };
-    let assembly = ToolAssembly {
-        cutter_radius: 0.0,
-        cutter_length: 0.0,
-        shank_diameter: 0.0,
-        stickout: 0.0,
-        head: shoe_only.bands(0.0, ShoePosition::At { gap_mm: 0.0 }),
-    };
-    let view = obstacles.for_tool(&assembly, Some(stock))?;
+    let view = obstacles.for_head(
+        &shoe_only.bands(0.0, ShoePosition::At { gap_mm: 0.0 }),
+        Some(stock),
+    )?;
     let lift = run
         .iter()
         .map(|(toolpath, join)| view.required_lift(toolpath, *join))
@@ -232,13 +227,15 @@ mod tests {
         // gap 35. The shoe shelf (gap + 30) needs only 30.
         assert_eq!(solution.needed_gap_mm, 35.0);
         let check = |gap_mm: f64| {
-            let assembly = ToolAssembly {
-                cutter_radius: 3.0,
-                cutter_length: 20.0,
-                shank_diameter: 6.0,
-                stickout: 45.0,
-                head: head.bands(45.0, ShoePosition::At { gap_mm }),
-            };
+            let assembly = crate::tool::ToolDefinition::new(
+                Box::new(crate::tool::FlatEndmill::new(6.0, 20.0)),
+                6.0,
+                45.0,
+                2,
+                crate::compute::tool_config::ToolMaterial::Carbide,
+            )
+            .body()
+            .mounted(head.bands(45.0, ShoePosition::At { gap_mm }));
             ObstacleSet::default()
                 .for_tool(&assembly, Some(&stock()))
                 .unwrap()
@@ -249,7 +246,7 @@ mod tests {
         assert!(!hits.is_empty());
         assert_eq!(
             hits[0].segment,
-            crate::stock::collision::AssemblySegment::Shoe
+            crate::tool::body::ZoneKind::Contact(crate::tool::body::ContactKind::Shoe)
         );
         assert_eq!(hits[0].kind, crate::stock::collision::CollisionKind::Stock);
     }

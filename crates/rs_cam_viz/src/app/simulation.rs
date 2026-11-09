@@ -741,7 +741,7 @@ impl RsCamApp {
             && let Some(rs) = frame.wgpu_render_state()
         {
             let geom = ToolGeometry::from_tool_config(&tool);
-            let assembly_info = crate::render::sim_render::ToolAssemblyInfo::from_tool_definition(
+            let assembly_info = crate::render::sim_render::ToolBodyDraw::of(
                 &tool_def,
                 &self.controller.state().session().machine().head,
                 shoe,

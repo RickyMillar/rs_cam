@@ -1232,7 +1232,8 @@ pub(crate) fn inspect_collisions_json(
     }
 
     // P22-0c-3: the contacts of the contact kernel (the core, the flute
-    // top), each with its zone kind and its position in the G-code frame of
+    // top, and since P22-0c-5 the shank, holder and shoe), each with its
+    // zone kind and its position in the G-code frame of
     // its setup (`ProjectSession::contact_frame_of`, the frame of every
     // contact finding).
     let mut contact_by_tp: std::collections::BTreeMap<usize, Vec<serde_json::Value>> =
@@ -1243,7 +1244,7 @@ pub(crate) fn inspect_collisions_json(
         .map(crate::state::simulation::ToolpathBoundary::range)
         .collect();
     let mut push_contact = |id: rs_cam_core::ids::ToolpathId,
-                            zone: rs_cam_core::tool::body::ContactKind,
+                            zone: String,
                             local: usize,
                             position: rs_cam_core::geo::P3,
                             over: f64| {
@@ -1252,7 +1253,7 @@ pub(crate) fn inspect_collisions_json(
             .entry(id.raw())
             .or_default()
             .push(serde_json::json!({
-                "zone": zone.as_str(),
+                "zone": zone,
                 "local_move": local,
                 "global_move": rs_cam_core::compute::simulate::global_move_of_local(
                     ranges.iter().cloned(),
@@ -1267,7 +1268,9 @@ pub(crate) fn inspect_collisions_json(
     for hit in &sim.checks.core_contacts {
         push_contact(
             hit.toolpath_id,
-            rs_cam_core::tool::body::ContactKind::Core,
+            rs_cam_core::tool::body::ContactKind::Core
+                .as_str()
+                .to_owned(),
             hit.descent.move_index,
             hit.descent.position,
             hit.descent.material_over_tip_mm,
@@ -1276,10 +1279,23 @@ pub(crate) fn inspect_collisions_json(
     for hit in &sim.checks.flute_contacts {
         push_contact(
             hit.toolpath_id,
-            rs_cam_core::tool::body::ContactKind::FluteTop,
+            rs_cam_core::tool::body::ContactKind::FluteTop
+                .as_str()
+                .to_owned(),
             hit.overreach.move_index,
             hit.overreach.position,
             hit.overreach.material_over_tip_mm,
+        );
+    }
+    // P22-0c-5 (P22-0c-4 open Q4): each body contact with its zone: `shank`,
+    // `holder 'name'`, `shoe 'name'` (`BodyContact::zone_text`).
+    for hit in &sim.checks.body_contacts {
+        push_contact(
+            hit.toolpath_id,
+            hit.contact.zone_text(),
+            hit.contact.move_index,
+            hit.contact.position,
+            hit.contact.material_over_tip_mm,
         );
     }
 

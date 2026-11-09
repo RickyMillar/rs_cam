@@ -305,7 +305,7 @@ fn every_surface_gives_the_edge_move_to_the_later_toolpath_g_rapidframe() {
 #[test]
 fn a_holder_hit_on_the_second_toolpath_stays_on_it_g_rapidframe() {
     use rs_cam_core::stock::collision::{
-        AssemblySegment, CollisionEvent, CollisionKind, CollisionReport, HolderCollisionCheck,
+        CollisionEvent, CollisionKind, CollisionReport, HolderCollisionCheck,
     };
     let (mut controller, _first, second) = controller_with_hits_on_second(&[]);
     let checks = &mut controller.state.simulation.checks;
@@ -314,7 +314,9 @@ fn a_holder_hit_on_the_second_toolpath_stays_on_it_g_rapidframe() {
             move_index: 3,
             position: P3::new(1.0, 1.0, -1.0),
             penetration_depth: 0.5,
-            segment: AssemblySegment::Holder,
+            segment: rs_cam_core::tool::body::ZoneKind::Contact(
+                rs_cam_core::tool::body::ContactKind::Holder,
+            ),
             kind: CollisionKind::Workpiece,
         }],
         min_safe_stickout: 40.0,
@@ -349,6 +351,52 @@ fn a_holder_hit_on_the_second_toolpath_stays_on_it_g_rapidframe() {
     }
 }
 
+/// P22-0c-5 (P22-0c-4 open Q2 and Q4, ruling Q6): a body contact (the
+/// shank, a holder band, a shoe part) of the accepted run is a collision
+/// marker with one chip, its zone kind, that jumps playback to its run
+/// move; MCP `inspect_collisions` lists it with its zone text.
+#[test]
+fn a_body_contact_has_a_marker_chip_and_an_mcp_zone_p22_0c_5() {
+    use rs_cam_core::stock::collision::{BodyContact, ContactMotion};
+    use rs_cam_core::tool::body::ContactKind;
+    let (mut controller, _first, second) = controller_with_hits_on_second(&[]);
+    controller.state.simulation.checks.body_contacts =
+        vec![rs_cam_core::compute::simulate::ToolpathBodyContact {
+            toolpath_id: second,
+            contact: BodyContact {
+                move_index: 3,
+                position: P3::new(1.0, 1.0, -1.0),
+                zone: ContactKind::Holder,
+                name: Some("Collet nut".to_owned()),
+                zone_bottom_mm: 45.0,
+                material_over_tip_mm: 46.0,
+                motion: ContactMotion::Fed,
+            },
+        }];
+    controller.set_contact_markers();
+    // No holder marker: the body contact is marker 0.
+    assert_eq!(controller.collision_zone(0), Some("holder"));
+    assert_eq!(controller.contact_marker_move(0), Some(SECOND_START + 3));
+
+    #[cfg(feature = "mcp")]
+    {
+        let json = crate::app::mcp::inspect_collisions_json(
+            &controller.state.simulation,
+            controller.state.session(),
+        );
+        let rows = json["by_toolpath"].as_array().expect("rows");
+        assert_eq!(rows.len(), 1, "{json:#}");
+        let contacts = rows[0]["contacts"].as_array().expect("contacts");
+        assert_eq!(contacts.len(), 1, "{json:#}");
+        assert_eq!(contacts[0]["zone"].as_str(), Some("holder 'Collet nut'"));
+        assert_eq!(contacts[0]["local_move"].as_u64(), Some(3));
+        assert_eq!(
+            contacts[0]["global_move"].as_u64(),
+            Some((SECOND_START + 3) as u64)
+        );
+    }
+}
+
 // ── F113 (tech-debt review 2026-10-19): one project verdict ──────────────
 //
 // The MCP `get_diagnostics` ladder had no holder-collision arm. A project
@@ -361,9 +409,7 @@ fn a_holder_hit_on_the_second_toolpath_stays_on_it_g_rapidframe() {
 /// Two generated toolpaths, an adopted run with no rapid collision, and a
 /// holder check that found one hit on the second toolpath.
 fn controller_with_one_holder_hit() -> AppController<ScriptedBackend> {
-    use rs_cam_core::stock::collision::{
-        AssemblySegment, CollisionEvent, CollisionKind, CollisionReport,
-    };
+    use rs_cam_core::stock::collision::{CollisionEvent, CollisionKind, CollisionReport};
     let (mut controller, _first, second) = controller_with_hits_on_second(&[]);
     let checks = &mut controller.state.simulation.checks;
     checks.collision_report = Some(CollisionReport {
@@ -371,7 +417,9 @@ fn controller_with_one_holder_hit() -> AppController<ScriptedBackend> {
             move_index: 3,
             position: P3::new(1.0, 1.0, -1.0),
             penetration_depth: 0.5,
-            segment: AssemblySegment::Holder,
+            segment: rs_cam_core::tool::body::ZoneKind::Contact(
+                rs_cam_core::tool::body::ContactKind::Holder,
+            ),
             kind: CollisionKind::Workpiece,
         }],
         min_safe_stickout: 40.0,

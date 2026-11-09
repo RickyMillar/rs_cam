@@ -105,3 +105,33 @@ fn a_core_contact_reaches_every_gui_surface_p22_0c() {
         "the triage safety list names the contact"
     );
 }
+
+/// P22-0c-5 (P22-0c-4 open Q2): the GUI holder outcome reads the session
+/// door. With a fresh simulation every walked toolpath reads the stock
+/// answer (`MeasuredOnStock`), where the raw GUI evidence (no mesh check
+/// ran) holds no outcome; the GUI triage and the MCP diagnostics build from
+/// `SimulationState::project_evidence_for`.
+#[test]
+fn the_gui_holder_outcome_reads_the_session_door_p22_0c_5() {
+    use rs_cam_core::stock::collision::HolderCollisionCheck;
+    let session = k6_project::generated_and_simulated();
+    let sim = SimulationState::new();
+    assert!(sim.project_evidence().holder_collisions.is_empty());
+    let evidence = sim.project_evidence_for(&session);
+    assert_eq!(
+        evidence.holder_collisions,
+        session.holder_checks_with_stock(Vec::new())
+    );
+    assert!(
+        !evidence.holder_collisions.is_empty(),
+        "a fresh run measured the stock"
+    );
+    assert!(
+        evidence
+            .holder_collisions
+            .iter()
+            .all(|(_, check)| matches!(check, HolderCollisionCheck::MeasuredOnStock(_))),
+        "{:?}",
+        evidence.holder_collisions
+    );
+}

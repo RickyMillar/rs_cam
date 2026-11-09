@@ -497,7 +497,7 @@ pub struct ToolGeometry {
 }
 
 /// The holder has no length in the tool model: it starts at the holder
-/// face and continues upward (`rs_cam_core::stock::collision::ToolAssembly`).
+/// face and continues upward (`rs_cam_core::tool::body::SpanTop::Open`).
 /// A head part with no height that is the last part of its list has no top
 /// either. A drawing must stop somewhere, so it draws such a part this many
 /// part diameters tall. A drawing choice, not a model value.
@@ -534,55 +534,53 @@ pub struct HeadDrawPart {
     pub soft: bool,
 }
 
-/// The parts of `head` for a tool of `stickout`, with the shoe at `shoe`,
-/// in drawing order: the fixed parts from the holder face up, then the shoe
-/// parts from the brush end up. The shoe is drawn only at a gap; a raised
-/// or removed shoe is not in the model (`ShoePosition::Clear`).
+/// The parts of a head in drawing order, from core's one walk of the head
+/// (`MachineHead::part_spans`): the fixed parts from the holder face up,
+/// then the shoe parts from the brush end up. The shoe is in the walk only
+/// at a gap; a raised or removed shoe is not in the model
+/// (`ShoePosition::Clear`). A hard part is a contact zone of the mounted
+/// body (`MountedBody::zones`), at the same bottom and radius; the drawing
+/// adds the soft parts and the part tops, which no check reads.
 #[must_use]
-pub fn head_draw_parts(
-    head: &rs_cam_core::machine::head::MachineHead,
-    stickout: f64,
-    shoe: rs_cam_core::machine::head::ShoePosition,
-) -> Vec<HeadDrawPart> {
-    use rs_cam_core::machine::head::{HeadPart, PartKind, ShoePosition};
-    fn walk(parts: &[HeadPart], start: f64, out: &mut Vec<HeadDrawPart>) {
-        let mut offset = start;
-        for (index, part) in parts.iter().enumerate() {
-            let bottom = offset as f32;
+pub fn head_draw_parts(spans: &[rs_cam_core::machine::head::PartSpan<'_>]) -> Vec<HeadDrawPart> {
+    use rs_cam_core::machine::head::PartKind;
+    spans
+        .iter()
+        .enumerate()
+        .map(|(index, span)| {
+            let part = span.part;
+            let bottom = span.bottom_mm as f32;
             let soft = part.kind == PartKind::Soft;
             match part.diameter_mm {
-                None => out.push(HeadDrawPart {
+                None => HeadDrawPart {
                     bottom,
                     top: bottom,
                     radius: 0.0,
                     shelf: true,
                     soft,
-                }),
+                },
                 Some(diameter) => {
-                    let last = index + 1 == parts.len();
+                    // The last part of its own list with no height has no
+                    // top in the model: draw it a drawing length tall.
+                    let last = spans
+                        .get(index + 1)
+                        .is_none_or(|next| next.kind != span.kind);
                     let height = if part.height_mm <= 0.0 && last {
                         diameter * f64::from(HOLDER_DRAW_LENGTH_OVER_DIAMETER)
                     } else {
                         part.height_mm
                     };
-                    out.push(HeadDrawPart {
+                    HeadDrawPart {
                         bottom,
-                        top: (offset + height) as f32,
+                        top: (span.bottom_mm + height) as f32,
                         radius: (diameter / 2.0) as f32,
                         shelf: false,
                         soft,
-                    });
+                    }
                 }
             }
-            offset += part.height_mm;
-        }
-    }
-    let mut out = Vec::new();
-    walk(&head.parts, stickout + head.mount_mm, &mut out);
-    if let (ShoePosition::At { gap_mm }, Some(dust_shoe)) = (shoe, &head.shoe) {
-        walk(&dust_shoe.parts, gap_mm, &mut out);
-    }
-    out
+        })
+        .collect()
 }
 
 /// The radius the 3D ghost draws a shelf with: a multiple of the widest
@@ -597,20 +595,77 @@ pub fn shelf_draw_radius(parts: &[HeadDrawPart]) -> f32 {
     }
 }
 
-/// Full tool assembly dimensions for wireframe rendering (shank + head above cutter).
-/// All lengths in mm.
-pub struct ToolAssemblyInfo {
-    /// Shank cylinder radius (shank_diameter / 2).
-    pub shank_radius: f32,
-    /// Exposed shank length between the flutes and the holder face
-    /// (`ToolDefinition::exposed_shank_length`).
-    pub shank_length: f32,
+/// The shank as a drawing reads it, from the `Shank` zone of the mounted
+/// body. Heights are in mm above the tip.
+#[derive(Debug, Clone, Copy, PartialEq)]
+pub struct ShankDraw {
+    /// The zone bottom: the flute top.
+    pub bottom: f32,
+    /// The zone top: the holder face.
+    pub top: f32,
+    /// The zone radius.
+    pub radius: f32,
+}
+
+/// The body above the cutter as both drawings read it (P22-0c-5, design
+/// D7): the tool panel preview and the simulation tool mesh. Every span and
+/// radius comes from `MountedBody::zones` (the shank, the holder face) or
+/// from core's walk of the head (`MachineHead::part_spans`, whose hard
+/// parts are the head zones). No drawing re-derives a span.
+#[derive(Debug, Clone, PartialEq)]
+pub struct ToolBodyDraw {
+    /// The `Shank` zone; `None` when the body shows no shank.
+    pub shank: Option<ShankDraw>,
     /// H2: the machine head parts above the holder face, and the dust shoe
-    /// at the gap this toolpath runs with ([`head_draw_parts`]).
+    /// at the gap of the check ([`head_draw_parts`]).
     pub head: Vec<HeadDrawPart>,
-    /// Length from the holder face to the tool tip. The holder face is at
-    /// this height above the tip.
-    pub stickout: f32,
+    /// The holder face (mm above the tip).
+    pub holder_face: f32,
+}
+
+impl ToolBodyDraw {
+    /// The drawing of `tool` mounted in `head` with the shoe at `shoe`.
+    #[must_use]
+    pub fn of(
+        tool: &rs_cam_core::tool::ToolDefinition,
+        head: &rs_cam_core::machine::head::MachineHead,
+        shoe: rs_cam_core::machine::head::ShoePosition,
+    ) -> Self {
+        use rs_cam_core::tool::body::{ContactKind, ContactRadius, SpanTop, Zone};
+        let fit = rs_cam_core::machine::head::HeadFit {
+            head: std::sync::Arc::new(head.clone()),
+            shoe,
+        };
+        let mounted = tool.mounted(&fit);
+        let holder_face = mounted.body().holder_face_mm();
+        let shank = mounted.zones().into_iter().find_map(|zone| match zone {
+            Zone::Contact(contact) => match (contact.kind, contact.outer, contact.span.top) {
+                (ContactKind::Shank, ContactRadius::Mm(radius), SpanTop::At(top)) => {
+                    Some(ShankDraw {
+                        bottom: contact.span.bottom_mm as f32,
+                        top: top as f32,
+                        radius: radius as f32,
+                    })
+                }
+                (ContactKind::Shank, ContactRadius::Shelf, _)
+                | (ContactKind::Shank, _, SpanTop::Open)
+                | (
+                    ContactKind::Core
+                    | ContactKind::FluteTop
+                    | ContactKind::Holder
+                    | ContactKind::Shoe,
+                    _,
+                    _,
+                ) => None,
+            },
+            Zone::Cutting(_) => None,
+        });
+        Self {
+            shank,
+            head: head_draw_parts(&head.part_spans(holder_face, shoe)),
+            holder_face: holder_face as f32,
+        }
+    }
 }
 
 impl ToolGeometry {
@@ -640,23 +695,6 @@ impl ToolGeometry {
     }
 }
 
-impl ToolAssemblyInfo {
-    /// Build from a `ToolDefinition`, the machine head and the shoe
-    /// position of the toolpath the tool runs.
-    pub fn from_tool_definition(
-        td: &rs_cam_core::tool::ToolDefinition,
-        head: &rs_cam_core::machine::head::MachineHead,
-        shoe: rs_cam_core::machine::head::ShoePosition,
-    ) -> Self {
-        Self {
-            shank_radius: (td.shank_diameter() / 2.0) as f32,
-            shank_length: td.exposed_shank_length() as f32,
-            head: head_draw_parts(head, td.stickout(), shoe),
-            stickout: td.stickout() as f32,
-        }
-    }
-}
-
 impl ToolModelGpuData {
     /// Generate wireframe for the complete tool assembly with a custom cutter color.
     /// Used by simulation playback to tint the cutter by live deflection while
@@ -664,7 +702,7 @@ impl ToolModelGpuData {
     pub fn from_tool_assembly_colored(
         device: &wgpu::Device,
         geom: &ToolGeometry,
-        info: &ToolAssemblyInfo,
+        info: &ToolBodyDraw,
         position: [f32; 3],
         cutter_color: [f32; 3],
     ) -> Self {
@@ -717,13 +755,14 @@ impl ToolModelGpuData {
             }
         }
 
-        let cutter_top_z = tip_z + geom.cutting_length;
-
-        // --- Shank cylinder ---
-        if info.shank_radius > 0.01 && info.shank_length > 0.01 {
-            let shank_bottom_z = cutter_top_z;
-            let shank_top_z = cutter_top_z + info.shank_length;
-            let sr = info.shank_radius;
+        // --- Shank cylinder (the `Shank` zone) ---
+        if let Some(shank) = info.shank
+            && shank.radius > 0.01
+            && shank.top - shank.bottom > 0.01
+        {
+            let shank_bottom_z = tip_z + shank.bottom;
+            let shank_top_z = tip_z + shank.top;
+            let sr = shank.radius;
 
             let shank_ctx = ToolWireCtx {
                 cx: position[0],
@@ -1088,6 +1127,8 @@ impl ToolWireCtx {
 #[cfg(test)]
 #[expect(
     clippy::indexing_slicing,
+    clippy::unwrap_used,
+    clippy::panic,
     reason = "test code; a failed lookup is a failed test."
 )]
 mod head_draw_tests {
@@ -1097,7 +1138,7 @@ mod head_draw_tests {
     #[test]
     fn the_ghost_draws_the_head_parts_and_the_shoe_at_its_gap_h2() {
         let head = MachineHead::dust_shoe();
-        let parts = head_draw_parts(&head, 45.0, ShoePosition::At { gap_mm: 25.0 });
+        let parts = head_draw_parts(&head.part_spans(45.0, ShoePosition::At { gap_mm: 25.0 }));
         // Collet nut 45..75, spindle shelf at 75, brush 25..50 (soft),
         // plate 50..55, shoe mount shelf at 55.
         assert_eq!(parts.len(), 5);
@@ -1120,12 +1161,16 @@ mod head_draw_tests {
         );
 
         // A raised or removed shoe is not in the model: no shoe part draws.
-        assert_eq!(head_draw_parts(&head, 45.0, ShoePosition::Clear).len(), 2);
+        assert_eq!(
+            head_draw_parts(&head.part_spans(45.0, ShoePosition::Clear)).len(),
+            2
+        );
     }
 
     #[test]
     fn the_unmodelled_head_draws_the_old_holder_h2() {
-        let parts = head_draw_parts(&MachineHead::unmodelled(), 30.0, ShoePosition::Clear);
+        let parts =
+            head_draw_parts(&MachineHead::unmodelled().part_spans(30.0, ShoePosition::Clear));
         assert_eq!(parts.len(), 1);
         // One part of 25 mm diameter at the holder face, with no top in the
         // model: one diameter tall, as the holder drew before H2.
@@ -1133,5 +1178,94 @@ mod head_draw_tests {
             (parts[0].bottom, parts[0].top, parts[0].radius),
             (30.0, 55.0, 12.5)
         );
+    }
+
+    /// P22-0c-5 (design D7): the drawn body is the zone table. For every
+    /// tool kind, a stickout longer and shorter than the flutes, and three
+    /// heads, the drawn shank is the `Shank` zone and the drawn hard head
+    /// parts are the head zones of `MountedBody::zones`, in order, at the
+    /// same bottom and radius.
+    #[test]
+    fn the_drawn_body_is_the_zone_table_p22_0c_5() {
+        use rs_cam_core::compute::tool_config::ToolMaterial;
+        use rs_cam_core::machine::head::HeadFit;
+        use rs_cam_core::tool::body::{ContactKind, ContactRadius, SpanTop, Zone};
+        use rs_cam_core::tool::{
+            BallEndmill, FlatEndmill, MillingCutter, TaperedBallEndmill, ToolDefinition,
+        };
+        let cutters = |flute: f64| -> Vec<Box<dyn MillingCutter>> {
+            vec![
+                Box::new(FlatEndmill::new(6.0, flute)),
+                Box::new(BallEndmill::new(6.0, flute)),
+                Box::new(TaperedBallEndmill::new(2.0, 5.0, 6.0, flute).unwrap()),
+            ]
+        };
+        let heads = [
+            (MachineHead::unmodelled(), ShoePosition::Clear),
+            (MachineHead::dust_shoe(), ShoePosition::At { gap_mm: 25.0 }),
+            (MachineHead::bare_collet(), ShoePosition::Clear),
+        ];
+        let mut checked_shank = 0;
+        for stickout in [45.0, 15.0] {
+            for cutter in cutters(20.0) {
+                let tool = ToolDefinition::new(cutter, 8.0, stickout, 2, ToolMaterial::Carbide);
+                for (head, shoe) in &heads {
+                    let drawn = ToolBodyDraw::of(&tool, head, *shoe);
+                    let fit = HeadFit {
+                        head: std::sync::Arc::new(head.clone()),
+                        shoe: *shoe,
+                    };
+                    let zones = tool.mounted(&fit).zones();
+                    let shank = zones.iter().find_map(|zone| match zone {
+                        Zone::Contact(c) if c.kind == ContactKind::Shank => Some(c.clone()),
+                        Zone::Contact(_) | Zone::Cutting(_) => None,
+                    });
+                    match (&shank, drawn.shank) {
+                        (Some(zone), Some(draw)) => {
+                            checked_shank += 1;
+                            assert_eq!(draw.bottom, zone.span.bottom_mm as f32);
+                            let SpanTop::At(top) = zone.span.top else {
+                                panic!("a shank zone has a top");
+                            };
+                            assert_eq!(draw.top, top as f32);
+                            assert_eq!(ContactRadius::Mm(f64::from(draw.radius)), {
+                                let ContactRadius::Mm(r) = zone.outer else {
+                                    panic!("a shank zone has a radius");
+                                };
+                                ContactRadius::Mm(f64::from(r as f32))
+                            });
+                        }
+                        (None, None) => {}
+                        (zone, draw) => panic!("shank zone {zone:?} vs drawn {draw:?}"),
+                    }
+                    let head_zones: Vec<(f32, f32, bool)> = zones
+                        .iter()
+                        .filter_map(|zone| match zone {
+                            Zone::Contact(c) => match c.kind {
+                                ContactKind::Holder | ContactKind::Shoe => Some(match c.outer {
+                                    ContactRadius::Mm(r) => {
+                                        (c.span.bottom_mm as f32, r as f32, false)
+                                    }
+                                    ContactRadius::Shelf => (c.span.bottom_mm as f32, 0.0, true),
+                                }),
+                                ContactKind::Core | ContactKind::FluteTop | ContactKind::Shank => {
+                                    None
+                                }
+                            },
+                            Zone::Cutting(_) => None,
+                        })
+                        .collect();
+                    let drawn_hard: Vec<(f32, f32, bool)> = drawn
+                        .head
+                        .iter()
+                        .filter(|part| !part.soft)
+                        .map(|part| (part.bottom, part.radius, part.shelf))
+                        .collect();
+                    assert_eq!(drawn_hard, head_zones, "stickout {stickout}, {}", head.name);
+                    assert_eq!(drawn.holder_face, stickout as f32);
+                }
+            }
+        }
+        assert!(checked_shank > 0, "the fixture draws a shank");
     }
 }

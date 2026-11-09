@@ -447,9 +447,7 @@ impl ProjectSession {
         let obstacle_view = Arc::new(
             obstacles
                 .for_tool(
-                    &tool_def
-                        .to_assembly(&crate::machine::head::HeadFit::fixed(&self.machine.head))
-                        .assembly(),
+                    &tool_def.mounted(&crate::machine::head::HeadFit::fixed(&self.machine.head)),
                     Some(&emission_stock_bbox),
                 )
                 .map_err(SessionError::Obstacle)?,

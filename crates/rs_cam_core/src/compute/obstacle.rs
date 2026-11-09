@@ -78,7 +78,10 @@ use crate::geo::P3;
 use crate::geometry::boundary::{ClipPermit, maximal_inside_intervals};
 use crate::ids::{ModelId, ObstacleId};
 use crate::polygon::Polygon2;
-use crate::stock::collision::{AssemblySegment, CollisionEvent, CollisionKind, ToolAssembly};
+use crate::stock::collision::{CollisionEvent, CollisionKind};
+use crate::tool::body::{
+    ContactKind, ContactRadius, CuttingKind, MountedBody, Zone, ZoneKind, head_zone,
+};
 use crate::toolpath::{Move, MoveType, Toolpath};
 
 /// The geometry of an obstacle. Every value is in the setup frame (the
@@ -613,11 +616,13 @@ impl ObstacleSet {
             .collect()
     }
 
-    /// The per-tool view: one footprint per assembly band, grown by the
-    /// band radius.
+    /// The per-tool view: one footprint per band of the mounted body,
+    /// grown by the band radius.
     ///
-    /// H1: the bands are the cutter, the shank and every hard head part of
-    /// `assembly` (each part with a diameter). Two more rules read `stock`,
+    /// H1, P22-0c-5: the bands are read from `mounted.zones()`: the cutter
+    /// (the cutting zone, at the envelope radius), the shank and every hard
+    /// head part (each part with a diameter). The core and the flute top
+    /// are inside the cutter band. Two more rules read `stock`,
     /// the fresh stock box of the setup in the setup frame:
     ///
     /// - A hard SHOE part also keeps out of the stock box. The cutter, the
@@ -632,31 +637,79 @@ impl ObstacleSet {
     /// [`ObstacleResolveError`] when an outward offset fails.
     pub fn for_tool(
         &self,
-        assembly: &ToolAssembly,
+        mounted: &MountedBody,
         stock: Option<&crate::geo::BoundingBox3>,
     ) -> Result<ObstacleToolView, ObstacleResolveError> {
-        let mut bands: Vec<(AssemblySegment, f64, f64)> =
-            vec![(AssemblySegment::Cutter, 0.0, assembly.cutter_radius)];
-        bands.extend(
-            assembly
-                .segments()
-                .into_iter()
-                .map(|band| (band.segment, band.z_offset, band.radius)),
-        );
+        self.for_zones(&mounted.zones(), mounted.body().envelope_radius_mm(), stock)
+    }
+
+    /// The view of the head bands `bands` alone, with no tool (H1: the
+    /// shoe solver, `compute::shoe`). The same rules as [`Self::for_tool`].
+    ///
+    /// # Errors
+    /// [`ObstacleResolveError`] when an outward offset fails.
+    pub fn for_head(
+        &self,
+        bands: &[crate::machine::head::HeadBand],
+        stock: Option<&crate::geo::BoundingBox3>,
+    ) -> Result<ObstacleToolView, ObstacleResolveError> {
+        let zones: Vec<Zone> = bands.iter().map(|b| Zone::Contact(head_zone(b))).collect();
+        self.for_zones(&zones, 0.0, stock)
+    }
+
+    /// The view of `zones`; a cutting zone is a band of `cutter_radius_mm`.
+    fn for_zones(
+        &self,
+        zones: &[Zone],
+        cutter_radius_mm: f64,
+        stock: Option<&crate::geo::BoundingBox3>,
+    ) -> Result<ObstacleToolView, ObstacleResolveError> {
+        // The bands with a width, from the tip up, and the lowest shelf.
+        let mut bands: Vec<(ZoneKind, f64, f64)> = Vec::new();
+        let mut shelf: Option<(f64, ZoneKind)> = None;
+        for zone in zones {
+            match zone {
+                Zone::Cutting(cutting) => bands.push((
+                    ZoneKind::Cutting(cutting.kind),
+                    cutting.span.bottom_mm,
+                    cutter_radius_mm,
+                )),
+                Zone::Contact(contact) => match (contact.kind, contact.outer) {
+                    (ContactKind::Core | ContactKind::FluteTop, _) => {}
+                    (
+                        ContactKind::Shank | ContactKind::Holder | ContactKind::Shoe,
+                        ContactRadius::Mm(radius),
+                    ) => bands.push((
+                        ZoneKind::Contact(contact.kind),
+                        contact.span.bottom_mm,
+                        radius,
+                    )),
+                    (
+                        ContactKind::Shank | ContactKind::Holder | ContactKind::Shoe,
+                        ContactRadius::Shelf,
+                    ) => {
+                        let bottom = contact.span.bottom_mm;
+                        if shelf.is_none_or(|(lowest, _)| bottom < lowest) {
+                            shelf = Some((bottom, ZoneKind::Contact(contact.kind)));
+                        }
+                    }
+                },
+            }
+        }
         let mut entries = Vec::new();
         for (index, obstacle) in self.obstacles.iter().enumerate() {
-            for (band_index, &(segment, offset, radius)) in bands.iter().enumerate() {
+            for &(segment, offset, radius) in &bands {
                 if radius <= 0.0 || !radius.is_finite() {
                     continue;
                 }
                 let grown = grow(&obstacle.footprint, radius, &obstacle.name)?;
-                // K3: only the cutter band (the first band, offset 0) takes
-                // part in the territory pre-clip. Its material form is the
-                // footprint plus the margin: an area op insets its outline
-                // by the cutter radius, and the margin keeps the inset
-                // centre path clear of the flattened chords of both
+                // K3: only the cutter band (the cutting zone, offset 0)
+                // takes part in the territory pre-clip. Its material form
+                // is the footprint plus the margin: an area op insets its
+                // outline by the cutter radius, and the margin keeps the
+                // inset centre path clear of the flattened chords of both
                 // offsets.
-                let cutter = band_index == 0;
+                let cutter = segment == ZoneKind::Cutting(CuttingKind::Flutes);
                 let material = if cutter {
                     grow(&obstacle.footprint, MATERIAL_MARGIN_MM, &obstacle.name)?
                 } else {
@@ -683,7 +736,10 @@ impl ObstacleSet {
                 stock.max.y,
             )];
             for &(segment, offset, radius) in &bands {
-                if segment != AssemblySegment::Shoe || radius <= 0.0 || !radius.is_finite() {
+                if segment != ZoneKind::Contact(ContactKind::Shoe)
+                    || radius <= 0.0
+                    || !radius.is_finite()
+                {
                     continue;
                 }
                 let index = *stock_index.get_or_insert(names.len());
@@ -702,7 +758,7 @@ impl ObstacleSet {
             }
         }
         // H1: the lowest shelf is a Z floor under the highest top.
-        if let Some((shelf, segment)) = assembly.shelf_offset() {
+        if let Some((shelf, segment)) = shelf {
             let stock_top = stock.map(|b| (b.max.z, None));
             let obstacle_top = self
                 .obstacles
@@ -757,7 +813,7 @@ struct BandEntry {
     /// A floor: the entry holds at every XY, and `grown` is empty.
     everywhere: bool,
     obstacle: usize,
-    segment: AssemblySegment,
+    segment: ZoneKind,
     /// The band strikes the obstacle when the tip is below this Z and the
     /// tip XY is inside `grown`.
     tip_ceiling_z: f64,
@@ -777,7 +833,7 @@ struct BandEntry {
 impl BandEntry {
     fn new(
         obstacle: usize,
-        segment: AssemblySegment,
+        segment: ZoneKind,
         tip_ceiling_z: f64,
         cutter: bool,
         grown: Vec<Polygon2>,
@@ -803,7 +859,7 @@ impl BandEntry {
     }
 
     /// A shelf floor at `tip_floor_z`, at every XY (H1).
-    fn floor(obstacle: usize, segment: AssemblySegment, tip_floor_z: f64) -> Self {
+    fn floor(obstacle: usize, segment: ZoneKind, tip_floor_z: f64) -> Self {
         Self {
             everywhere: true,
             obstacle,
@@ -858,7 +914,7 @@ struct Forbidden {
     t0: f64,
     t1: f64,
     obstacle: usize,
-    segment: AssemblySegment,
+    segment: ZoneKind,
     tip_ceiling_z: f64,
 }
 
@@ -1472,14 +1528,18 @@ mod tests {
     use super::*;
 
     /// Cutter r = 3 (flutes 20), shank r = 3 for 20, holder r = 17.5 for 40.
-    fn assembly() -> ToolAssembly {
-        ToolAssembly {
-            cutter_radius: 3.0,
-            cutter_length: 20.0,
-            shank_diameter: 6.0,
-            head: vec![crate::machine::head::HeadBand::holder_at_face(35.0, 40.0)],
-            stickout: 40.0,
-        }
+    fn assembly() -> MountedBody {
+        crate::tool::ToolDefinition::new(
+            Box::new(crate::tool::FlatEndmill::new(6.0, 20.0)),
+            6.0,
+            40.0,
+            2,
+            crate::compute::tool_config::ToolMaterial::Carbide,
+        )
+        .body()
+        .mounted(vec![crate::machine::head::HeadBand::holder_at_face(
+            35.0, 40.0,
+        )])
     }
 
     /// A box clamp x 0..10, y 0..10, top 20, clearance 1.
@@ -1704,7 +1764,7 @@ mod tests {
                 name: "Clamp".to_owned()
             }
         );
-        assert_eq!(hits[0].segment, AssemblySegment::Cutter);
+        assert_eq!(hits[0].segment, ZoneKind::Cutting(CuttingKind::Flutes));
     }
 
     #[test]

@@ -83,7 +83,7 @@ impl From<Cancelled> for CollisionCheckError {
 
 /// Run a holder/shank collision check for a toolpath.
 ///
-/// Builds a spatial index for the mesh, constructs the tool assembly from
+/// Builds a spatial index for the mesh, mounts the tool body from
 /// the tool definition, and checks each cutting move for collisions with
 /// 1mm interpolation along moves.
 ///
@@ -100,7 +100,7 @@ pub fn run_collision_check(
     request: &CollisionCheckRequest<'_>,
     cancel: &AtomicBool,
 ) -> Result<CollisionCheckResult, CollisionCheckError> {
-    let assembly = request.tool.to_assembly(&request.head).assembly();
+    let mounted = request.tool.mounted(&request.head);
     let cancel_check = || cancel.load(Ordering::SeqCst);
 
     let mut report = match request.mesh {
@@ -115,7 +115,7 @@ pub fn run_collision_check(
             };
             check_collisions_interpolated_with_cancel(
                 request.toolpath,
-                &assembly,
+                &mounted,
                 mesh,
                 index,
                 1.0,
@@ -128,7 +128,7 @@ pub fn run_collision_check(
         // remedy either: a longer tool does not clear a clamp.
         None => CollisionReport {
             collisions: Vec::new(),
-            min_safe_stickout: assembly.stickout(),
+            min_safe_stickout: mounted.body().holder_face_mm(),
         },
     };
 
@@ -139,7 +139,7 @@ pub fn run_collision_check(
     // shelf floor, so it can have entries with no obstacle.
     let view = request
         .obstacles
-        .for_tool(&assembly, request.stock.as_ref())
+        .for_tool(&mounted, request.stock.as_ref())
         .map_err(|e| CollisionCheckError::Obstacles(e.to_string()))?;
     if !view.is_empty() {
         if cancel_check() {

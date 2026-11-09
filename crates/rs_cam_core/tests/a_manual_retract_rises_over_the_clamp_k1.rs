@@ -212,9 +212,7 @@ fn a_join_below_the_clamp_top_is_a_hit_k1() {
     let tool = rs_cam_core::compute::cutter::build_cutter(&session.tools()[0]).unwrap();
     let view = set
         .for_tool(
-            &tool
-                .to_assembly(&rs_cam_core::machine::head::HeadFit::default())
-                .assembly(),
+            &tool.mounted(&rs_cam_core::machine::head::HeadFit::default()),
             None,
         )
         .expect("a tool view");

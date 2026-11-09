@@ -122,9 +122,7 @@ fn assert_no_hit(session: &mut ProjectSession, tp: &Toolpath, label: &str) {
     let tool = rs_cam_core::compute::cutter::build_cutter(&session.tools()[0]).unwrap();
     let view = set
         .for_tool(
-            &tool
-                .to_assembly(&rs_cam_core::machine::head::HeadFit::default())
-                .assembly(),
+            &tool.mounted(&rs_cam_core::machine::head::HeadFit::default()),
             None,
         )
         .expect("a tool view");
@@ -209,9 +207,7 @@ fn k1_pipeline(mut free: ProjectSession, clamped: &ProjectSession) -> Toolpath {
     let tool = rs_cam_core::compute::cutter::build_cutter(&clamped.tools()[0]).unwrap();
     let view = set
         .for_tool(
-            &tool
-                .to_assembly(&rs_cam_core::machine::head::HeadFit::default())
-                .assembly(),
+            &tool.mounted(&rs_cam_core::machine::head::HeadFit::default()),
             None,
         )
         .expect("a tool view");

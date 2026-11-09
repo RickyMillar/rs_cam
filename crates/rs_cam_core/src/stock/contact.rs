@@ -36,8 +36,8 @@ use super::collision::{
 };
 
 /// A solid that a contact zone can meet: the material tops on a grid of
-/// columns. The live dexel stock is the one solid of this phase; the model
-/// mesh joins in P22-0c-5.
+/// columns. Two solids: the live dexel stock (P22-0c-3) and the model mesh
+/// ([`ModelMesh`], P22-0c-5).
 pub trait ContactSolid {
     /// The highest top the solid can hold (mm). A sample whose zone bottom
     /// is at or above it meets nothing; the kernel skips it.
@@ -49,6 +49,9 @@ pub trait ContactSolid {
     /// around `(x, y)` and that holds material: `visit` gets the column
     /// centre and the material top.
     fn for_each_top_in_disc(&self, x: f64, y: f64, radius: f64, visit: impl FnMut(f64, f64, f64));
+    /// The float slack (mm) of a stored top of `top` mm, added to the
+    /// zone bottom and the stated slack.
+    fn float_slack_mm(&self, top: f64) -> f64;
 }
 
 impl ContactSolid for crate::dexel_stock::TriDexelStock {
@@ -63,7 +66,72 @@ impl ContactSolid for crate::dexel_stock::TriDexelStock {
     fn for_each_top_in_disc(&self, x: f64, y: f64, radius: f64, visit: impl FnMut(f64, f64, f64)) {
         crate::dexel_stock::TriDexelStock::for_each_top_in_disc(self, x, y, radius, visit);
     }
+
+    fn float_slack_mm(&self, top: f64) -> f64 {
+        low_channel_epsilon_mm(top)
+    }
 }
+
+/// The model mesh as a [`ContactSolid`] (P22-0c-5): the solid of the mesh
+/// holder check (`stock::collision::check_collisions*`) and of the
+/// flute-reach map (`maps::tier_flute_reach`).
+///
+/// A mesh holds no columns. Its one "column" under a disc is the highest
+/// mesh point under the disc: the drop of a flat disc of that radius
+/// ([`Self::top_in_disc`]), visited at the disc centre. So a mesh probe
+/// reads a whole disc; [`ZoneProbe::on_mesh`] never asks a ring. The tops
+/// are `f64` mesh heights: no float slack.
+pub struct ModelMesh<'a> {
+    /// The mesh.
+    pub mesh: &'a crate::mesh::TriangleMesh,
+    /// A spatial index over `mesh`.
+    pub index: &'a crate::mesh::SpatialIndex,
+}
+
+impl ModelMesh<'_> {
+    /// The highest mesh point under the disc of `radius` around `(x, y)`,
+    /// or `None` when no triangle is under it: the drop-cutter height of a
+    /// flat end mill of that radius. THE mesh top every mesh reader takes.
+    #[must_use]
+    pub fn top_in_disc(&self, x: f64, y: f64, radius: f64) -> Option<f64> {
+        let disc = crate::tool::FlatEndmill::new(radius * 2.0, 1.0);
+        let cl = crate::surface::dropcutter::point_drop_cutter(x, y, self.mesh, self.index, &disc);
+        cl.contacted.then_some(cl.z)
+    }
+}
+
+impl ContactSolid for ModelMesh<'_> {
+    fn ceiling_z(&self) -> f64 {
+        self.mesh.bbox.max.z
+    }
+
+    /// The mesh has no column grid; the mesh walk keeps its own samples
+    /// (`stock::collision`), so the kernel sampler never reads this.
+    fn column_mm(&self) -> f64 {
+        0.0
+    }
+
+    fn for_each_top_in_disc(
+        &self,
+        x: f64,
+        y: f64,
+        radius: f64,
+        mut visit: impl FnMut(f64, f64, f64),
+    ) {
+        if let Some(top) = self.top_in_disc(x, y, radius) {
+            visit(x, y, top);
+        }
+    }
+
+    fn float_slack_mm(&self, _top: f64) -> f64 {
+        0.0
+    }
+}
+
+/// The shadow slack (mm) of the mesh probe: a zone no wider than the
+/// envelope radius plus this gives no mesh probe. The value of the old
+/// mesh skip (`seg_radius <= cutter_radius + 1e-6`), kept bit for bit.
+const MESH_SHADOW_SLACK_MM: f64 = 1e-6;
 
 /// P22-0b's exact in-move rule (G-SIMCORE): what the cutting ring of this
 /// move removes before a sample. The ring is the band from `inner_mm` (the
@@ -341,6 +409,46 @@ impl ZoneProbe {
         }
     }
 
+    /// The probe of `zone` on the model mesh ([`ModelMesh`], P22-0c-5),
+    /// or `None` when the zone gives no mesh probe. The mesh rule (design
+    /// section 5.3, "the skip stays a rule of the mesh solid"):
+    ///
+    /// - Only the zones above the cutting edge: the shank, a holder band, a
+    ///   hard shoe part. The core and the flute top are inside the cutter;
+    ///   the model-gouge guard reads the cutter against the mesh.
+    /// - A zone no wider than the envelope radius gives no probe. A wider
+    ///   zone reads its WHOLE disc, not the ring outside the envelope: on
+    ///   the mesh no flute-top probe meets the wood inside the envelope
+    ///   first, so a ring would drop a real contact where the cutter
+    ///   gouges. (The stock arm's ring holds because the flute top reads
+    ///   that wood.)
+    /// - A shelf gives no probe: the H1 head check reads it against the
+    ///   stock box.
+    ///
+    /// The probe has no slack and no sweep: the mesh walk applies
+    /// `BODY_STRIKE_THRESHOLD_MM` to the penetration.
+    #[must_use]
+    pub fn on_mesh(zone: &ContactZone, envelope_radius_mm: f64) -> Option<Self> {
+        let outer_mm = match zone.outer {
+            ContactRadius::Mm(r) => r,
+            ContactRadius::Shelf => return None,
+        };
+        match zone.kind {
+            ContactKind::Core | ContactKind::FluteTop => None,
+            ContactKind::Shank | ContactKind::Holder | ContactKind::Shoe => {
+                (outer_mm > envelope_radius_mm + MESH_SHADOW_SLACK_MM).then(|| Self {
+                    kind: zone.kind,
+                    name: zone.name.clone(),
+                    inner_mm: 0.0,
+                    outer_mm,
+                    bottom_mm: zone.span.bottom_mm,
+                    tol_mm: 0.0,
+                    sweep: None,
+                })
+            }
+        }
+    }
+
     /// Can this move meet the solid at all? Only a move whose lowest tip
     /// goes more than the zone bottom below the solid ceiling. The test
     /// reads no column, so a move that is not a candidate pays no flush.
@@ -355,9 +463,58 @@ impl ZoneProbe {
 /// when the zone meets nothing.
 ///
 /// The samples are at most 1 mm apart, no closer than one column (and no
-/// farther than half the zone radius), the end included. At a sample a
-/// column under the ring (`inner <= |q - tip| <= outer`, by column centre)
-/// has the top the solid holds, or with a sweep the lower of that and the
+/// farther than half the zone radius), the end included. At each sample
+/// [`zone_sample`] tests the zone, with the move for the in-move rule.
+#[must_use]
+pub fn zone_contact(
+    probe: &ZoneProbe,
+    solid: &impl ContactSolid,
+    start: P3,
+    end: P3,
+) -> Option<(f64, P3)> {
+    let outer = probe.outer_mm;
+    let dx = end.x - start.x;
+    let dy = end.y - start.y;
+    let dz = end.z - start.z;
+    let dxy = (dx * dx + dy * dy).sqrt();
+    let step = (outer / 2.0).min(1.0).max(solid.column_mm());
+    let n = crate::util::steps::steps(dxy, step).unwrap_or(0).max(1);
+    for k in 1..=n {
+        let t = k as f64 / n as f64;
+        let tip = P3::new(start.x + dx * t, start.y + dy * t, start.z + dz * t);
+        let at = SampleAt {
+            start,
+            d: (dx, dy, dz),
+            t,
+        };
+        if let Some((over, _top)) = zone_sample(probe, solid, tip, Some(at)) {
+            return Some((over, tip));
+        }
+    }
+    None
+}
+
+/// THE kernel at one tip (P22-0c-5): the highest material top that `probe`
+/// meets in `solid` with the tip at `tip`, the solid as it stands (no
+/// in-move rule); `None` when the zone meets nothing. The mesh holder
+/// check reads it per sample with its own samples.
+#[must_use]
+pub fn zone_top_at(probe: &ZoneProbe, solid: &impl ContactSolid, tip: P3) -> Option<f64> {
+    zone_sample(probe, solid, tip, None).map(|(_over, top)| top)
+}
+
+/// The move a sample sits on, for the in-move rule: the move start, its
+/// delta and the sample parameter.
+#[derive(Debug, Clone, Copy)]
+struct SampleAt {
+    start: P3,
+    d: (f64, f64, f64),
+    t: f64,
+}
+
+/// The test of one zone at one tip. A column under the ring
+/// (`inner <= |q - tip| <= outer`, by column centre) has the top the solid
+/// holds, or, with a sweep and a move (`at`), the lower of that and the
 /// lowest cut of this move's ring before the sample:
 ///
 /// - `|q - p(0)| < outer`: no blade passed over `q` in this move; the top
@@ -369,75 +526,66 @@ impl ZoneProbe {
 ///
 /// The zone meets the solid where such a top stands over the tip by more
 /// than the zone bottom, the stated slack and the float slack of the
-/// stored tops. The answer is the highest such top at the first sample.
-#[must_use]
-pub fn zone_contact(
+/// solid. The answer is `(over, top)` of the highest such column: `over`
+/// is its top over the tip.
+fn zone_sample(
     probe: &ZoneProbe,
     solid: &impl ContactSolid,
-    start: P3,
-    end: P3,
-) -> Option<(f64, P3)> {
+    tip: P3,
+    at: Option<SampleAt>,
+) -> Option<(f64, f64)> {
     let outer = probe.outer_mm;
     let outer_sq = outer * outer;
     let inner_sq = probe.inner_mm * probe.inner_mm;
     let bottom = probe.bottom_mm;
     let tol = probe.tol_mm;
-    let ceiling = solid.ceiling_z();
-    let dx = end.x - start.x;
-    let dy = end.y - start.y;
-    let dz = end.z - start.z;
-    let len_sq = dx * dx + dy * dy;
-    let dxy = len_sq.sqrt();
-    let step = (outer / 2.0).min(1.0).max(solid.column_mm());
-    let n = crate::util::steps::steps(dxy, step).unwrap_or(0).max(1);
-    let z_at = |s: f64| start.z + dz * s;
-    for k in 1..=n {
-        let t = k as f64 / n as f64;
-        let tip = P3::new(start.x + dx * t, start.y + dy * t, z_at(t));
-        if tip.z + bottom >= ceiling {
-            continue;
-        }
-        let mut over_max = f64::NEG_INFINITY;
-        solid.for_each_top_in_disc(tip.x, tip.y, outer, |x, y, top| {
-            // Cheap reject: this column cannot meet the zone at its top.
-            if top - tip.z <= bottom + tol {
-                return;
-            }
-            let (tu, tv) = (x - tip.x, y - tip.y);
-            if tu * tu + tv * tv < inner_sq {
-                return;
-            }
-            let cut_top = match probe.sweep {
-                None => top,
-                Some(ZoneSweep::Disc(disc)) => disc.cut_top(top, x, y, start, (dx, dy, dz), t),
-                Some(ZoneSweep::Core(sweep)) => {
-                    let (qu, qv) = (x - start.x, y - start.y);
-                    let d0_sq = qu * qu + qv * qv;
-                    if d0_sq < outer_sq || len_sq < 1e-18 {
-                        top
-                    } else {
-                        let radius_sq = sweep.radius_mm * sweep.radius_mm;
-                        let t0 = (qu * dx + qv * dy) / len_sq;
-                        let perp_sq = (d0_sq - t0 * t0 * len_sq).max(0.0);
-                        let s1 =
-                            (t0 - ((outer_sq - perp_sq).max(0.0) / len_sq).sqrt()).clamp(0.0, t);
-                        let s_in =
-                            (t0 - ((radius_sq - perp_sq).max(0.0) / len_sq).sqrt()).clamp(0.0, s1);
-                        let ring = (z_at(s1) + sweep.h_inner_mm).min(z_at(s_in) + sweep.h_edge_mm);
-                        top.min(ring)
-                    }
-                }
-            };
-            let over = cut_top - tip.z;
-            if over > bottom + tol + low_channel_epsilon_mm(cut_top) {
-                over_max = over_max.max(over);
-            }
-        });
-        if over_max > f64::NEG_INFINITY {
-            return Some((over_max, tip));
-        }
+    if tip.z + bottom >= solid.ceiling_z() {
+        return None;
     }
-    None
+    let mut best: Option<(f64, f64)> = None;
+    solid.for_each_top_in_disc(tip.x, tip.y, outer, |x, y, top| {
+        // Cheap reject: this column cannot meet the zone at its top.
+        if top - tip.z <= bottom + tol {
+            return;
+        }
+        let (tu, tv) = (x - tip.x, y - tip.y);
+        if tu * tu + tv * tv < inner_sq {
+            return;
+        }
+        let cut_top = match (probe.sweep, at) {
+            (None, _) | (Some(_), None) => top,
+            (Some(ZoneSweep::Disc(disc)), Some(at)) => {
+                disc.cut_top(top, x, y, at.start, at.d, at.t)
+            }
+            (Some(ZoneSweep::Core(sweep)), Some(at)) => {
+                let SampleAt { start, d, t } = at;
+                let (dx, dy, dz) = d;
+                let len_sq = dx * dx + dy * dy;
+                let z_at = |s: f64| start.z + dz * s;
+                let (qu, qv) = (x - start.x, y - start.y);
+                let d0_sq = qu * qu + qv * qv;
+                if d0_sq < outer_sq || len_sq < 1e-18 {
+                    top
+                } else {
+                    let radius_sq = sweep.radius_mm * sweep.radius_mm;
+                    let t0 = (qu * dx + qv * dy) / len_sq;
+                    let perp_sq = (d0_sq - t0 * t0 * len_sq).max(0.0);
+                    let s1 = (t0 - ((outer_sq - perp_sq).max(0.0) / len_sq).sqrt()).clamp(0.0, t);
+                    let s_in =
+                        (t0 - ((radius_sq - perp_sq).max(0.0) / len_sq).sqrt()).clamp(0.0, s1);
+                    let ring = (z_at(s1) + sweep.h_inner_mm).min(z_at(s_in) + sweep.h_edge_mm);
+                    top.min(ring)
+                }
+            }
+        };
+        let over = cut_top - tip.z;
+        if over > bottom + tol + solid.float_slack_mm(cut_top)
+            && best.is_none_or(|(best_over, _)| over > best_over)
+        {
+            best = Some((over, cut_top));
+        }
+    });
+    best
 }
 
 /// The material top under the core disc of `core` at `(x, y)` in `stock`

@@ -17,17 +17,21 @@
 //! [`crate::maps::tier_islands::TierIslandSet::owned_mask`]):
 //!
 //! 1. the tip is the tier tool's own drop at the cell centre;
-//! 2. the body is [`ToolAssembly::non_fluted_body`], a flat cylinder whose
-//!    bottom sits at the flute length above the tip;
+//! 2. the body is [`MountedBody::first_above_flutes`] (P22-0c-5: the shank,
+//!    else the first hard head band), a flat cylinder whose bottom is the
+//!    zone bottom above the tip;
 //! 3. the cell binds when [`body_segment_penetration_mm`] at that tip is
 //!    above [`BODY_STRIKE_THRESHOLD_MM`].
 //!
-//! Steps 2 and 3 are the rule [`crate::stock::collision::check_collisions`]
-//! applies to a generated toolpath, called, not copied. One difference is
-//! deliberate: `check_collisions` skips a segment no wider than the cutter's
-//! envelope radius, and on a tapered ball whose shank diameter equals its
-//! shaft diameter that skip removes the shank from the check. This module
-//! does not skip it.
+//! Steps 2 and 3 are the mesh top of the contact kernel
+//! (`stock::contact::ModelMesh::top_in_disc`, through
+//! [`body_segment_penetration_mm`]) that
+//! [`crate::stock::collision::check_collisions`] applies to a generated
+//! toolpath, called, not copied. One difference is deliberate:
+//! `check_collisions` gives no mesh probe to a zone no wider than the
+//! cutter's envelope radius, and on a tapered ball whose shank diameter
+//! equals its shaft diameter that rule removes the shank from the check.
+//! This module does not skip it.
 //!
 //! # Cost
 //!
@@ -42,11 +46,10 @@ use crate::maps::grid::walk_rows;
 use crate::maps::tier_islands::TierIslands;
 use crate::maps::tier_map::TierMap;
 use crate::mesh::{SpatialIndex, TriangleMesh};
-use crate::stock::collision::{
-    BODY_STRIKE_THRESHOLD_MM, ToolAssembly, body_segment_penetration_mm,
-};
+use crate::stock::collision::{BODY_STRIKE_THRESHOLD_MM, body_segment_penetration_mm};
 use crate::surface::dropcutter::point_drop_cutter;
 use crate::tool::MillingCutter;
+use crate::tool::body::{ContactRadius, MountedBody};
 
 /// One fine tier's flute-reach reading.
 #[derive(Debug, Clone, PartialEq)]
@@ -100,13 +103,13 @@ impl std::fmt::Display for TierFluteReach {
     }
 }
 
-/// One tier's tool: the cutter the tier map drops, and the assembly the
-/// body is read from.
+/// One tier's tool: the cutter the tier map drops, and the mounted body
+/// the zone above the flutes is read from.
 pub struct TierTool<'a> {
     /// The cutter.
     pub cutter: &'a dyn MillingCutter,
-    /// The cutter's holder and shank assembly.
-    pub assembly: ToolAssembly,
+    /// The tool body in the machine head.
+    pub mounted: MountedBody,
 }
 
 /// The flute-reach reading of every fine tier in `islands`, in the same
@@ -133,7 +136,13 @@ pub fn tier_flute_reach(
         let Some(tool) = tools.get(usize::from(set.tier)) else {
             continue;
         };
-        let body = tool.assembly.non_fluted_body();
+        let body = tool
+            .mounted
+            .first_above_flutes()
+            .and_then(|zone| match zone.outer {
+                ContactRadius::Mm(radius) => Some((zone.span.bottom_mm, radius)),
+                ContactRadius::Shelf => None,
+            });
         let owned = &set.owned_mask;
         // One entry per cell: `None` = not checked, `Some(b)` = checked.
         let verdicts: Vec<Option<bool>> = walk_rows(&map.grid, cancel, None, |row| {

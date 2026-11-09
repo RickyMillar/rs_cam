@@ -24,9 +24,10 @@ use rs_cam_core::interrupt::{CancelCheck, Cancelled, NeverCancel, check_cancel};
 use rs_cam_core::machine::head::HeadBand;
 use rs_cam_core::mesh::{SpatialIndex, TriangleMesh, make_test_hemisphere};
 use rs_cam_core::stock::collision::{
-    AssemblySegment, BODY_STRIKE_THRESHOLD_MM, CollisionEvent, CollisionKind, CollisionReport,
-    ToolAssembly, body_segment_penetration_mm, check_collisions_interpolated_with_cancel,
+    BODY_STRIKE_THRESHOLD_MM, CollisionEvent, CollisionKind, CollisionReport,
+    check_collisions_interpolated_with_cancel,
 };
+use rs_cam_core::tool::body::{ContactKind, MountedBody, ZoneKind};
 use rs_cam_core::toolpath::{MoveType, Toolpath};
 
 /// A copy of the private `interpolate_samples` from before the change.
@@ -51,17 +52,49 @@ fn reference_samples(prev: P3, target: P3, step_mm: f64) -> Vec<P3> {
     }
 }
 
+/// The old `ToolAssembly` as the reference reads it (P22-0c-5 deleted the
+/// type): the cutter radius, the bands above the flutes with a width
+/// `(part, bottom, radius)` from the tip up, and the stickout. Plain
+/// numbers, typed by hand, so the reference reads no body code.
+struct ReferenceAssembly {
+    cutter_radius: f64,
+    bands: Vec<(ZoneKind, f64, f64)>,
+    stickout: f64,
+}
+
+/// A copy of `body_segment_penetration_mm` from before P22-0c-5: the drop
+/// of a flat disc of the band radius, minus the band bottom.
+fn reference_penetration(
+    tip: P3,
+    z_offset: f64,
+    seg_radius: f64,
+    mesh: &TriangleMesh,
+    index: &SpatialIndex,
+) -> Option<f64> {
+    let virtual_cutter = rs_cam_core::tool::FlatEndmill::new(seg_radius * 2.0, 1.0);
+    let cl = rs_cam_core::surface::dropcutter::point_drop_cutter(
+        tip.x,
+        tip.y,
+        mesh,
+        index,
+        &virtual_cutter,
+    );
+    cl.contacted.then_some(cl.z - (tip.z + z_offset))
+}
+
 /// The serial body of `check_collisions_interpolated_with_cancel` at HEAD
-/// `bb179e8bd`, before W3b. Do not edit it: it is the reference.
+/// `bb179e8bd`, before W3b. Do not edit its logic: it is the reference.
+/// P22-0c-5 changed only its inputs (a plain band list for the deleted
+/// `ToolAssembly`, a local copy of the drop).
 fn reference_walk(
     toolpath: &Toolpath,
-    assembly: &ToolAssembly,
+    assembly: &ReferenceAssembly,
     mesh: &TriangleMesh,
     index: &SpatialIndex,
     step_mm: f64,
     cancel: &dyn CancelCheck,
 ) -> Result<CollisionReport, Cancelled> {
-    let segments = assembly.segments();
+    let segments = &assembly.bands;
     let mut collisions = Vec::new();
     let mut max_extra_stickout_needed = 0.0_f64;
 
@@ -82,13 +115,12 @@ fn reference_walk(
         let sample_points = reference_samples(prev, mv.target, step_mm);
         for tip in &sample_points {
             check_cancel(cancel)?;
-            for band in &segments {
-                let (z_offset, seg_radius) = (band.z_offset, band.radius);
+            for &(segment, z_offset, seg_radius) in segments {
                 if seg_radius <= assembly.cutter_radius + 1e-6 {
                     continue;
                 }
                 let Some(penetration) =
-                    body_segment_penetration_mm(*tip, z_offset, seg_radius, mesh, index)
+                    reference_penetration(*tip, z_offset, seg_radius, mesh, index)
                 else {
                     continue;
                 };
@@ -97,7 +129,7 @@ fn reference_walk(
                         move_index: move_idx,
                         position: *tip,
                         penetration_depth: penetration,
-                        segment: band.segment,
+                        segment,
                         kind: CollisionKind::Workpiece,
                     });
                     max_extra_stickout_needed = max_extra_stickout_needed.max(penetration);
@@ -107,7 +139,7 @@ fn reference_walk(
         }
     }
 
-    let min_safe_stickout = assembly.stickout() + max_extra_stickout_needed;
+    let min_safe_stickout = assembly.stickout + max_extra_stickout_needed;
     Ok(CollisionReport {
         collisions,
         min_safe_stickout,
@@ -116,12 +148,27 @@ fn reference_walk(
 
 /// A 6 mm cutter with a 10 mm shank (it strikes) and a 35 mm holder at a
 /// 15 mm stickout (it strikes the 20 mm hemisphere too).
-fn assembly() -> ToolAssembly {
-    ToolAssembly {
+fn assembly() -> MountedBody {
+    rs_cam_core::tool::ToolDefinition::new(
+        Box::new(rs_cam_core::tool::FlatEndmill::new(6.0, 8.0)),
+        10.0,
+        15.0,
+        2,
+        rs_cam_core::compute::tool_config::ToolMaterial::Carbide,
+    )
+    .body()
+    .mounted(vec![HeadBand::holder_at_face(35.0, 15.0)])
+}
+
+/// The same tool as the reference reads it: shank r 5 from the flute top
+/// (8 mm), holder r 17.5 at the stickout (15 mm).
+fn reference_assembly() -> ReferenceAssembly {
+    ReferenceAssembly {
         cutter_radius: 3.0,
-        cutter_length: 8.0,
-        shank_diameter: 10.0,
-        head: vec![HeadBand::holder_at_face(35.0, 15.0)],
+        bands: vec![
+            (ZoneKind::Contact(ContactKind::Shank), 8.0, 5.0),
+            (ZoneKind::Contact(ContactKind::Holder), 15.0, 17.5),
+        ],
         stickout: 15.0,
     }
 }
@@ -209,7 +256,15 @@ fn the_parallel_walk_gives_the_serial_report() {
     assert!(tp.moves.len() > 4000, "{} moves", tp.moves.len());
 
     for step_mm in [1.0, 0.0] {
-        let want = reference_walk(&tp, &asm, &mesh, &index, step_mm, &NeverCancel).unwrap();
+        let want = reference_walk(
+            &tp,
+            &reference_assembly(),
+            &mesh,
+            &index,
+            step_mm,
+            &NeverCancel,
+        )
+        .unwrap();
         let got = check_collisions_interpolated_with_cancel(
             &tp,
             &asm,
@@ -225,13 +280,13 @@ fn the_parallel_walk_gives_the_serial_report() {
         assert!(
             want.collisions
                 .iter()
-                .any(|c| c.segment == AssemblySegment::Shank),
+                .any(|c| c.segment == ZoneKind::Contact(ContactKind::Shank)),
             "step {step_mm}: the shank must strike"
         );
         assert!(
             want.collisions
                 .iter()
-                .any(|c| c.segment == AssemblySegment::Holder),
+                .any(|c| c.segment == ZoneKind::Contact(ContactKind::Holder)),
             "step {step_mm}: the holder must strike"
         );
         let last = want.collisions.last().unwrap().move_index;
@@ -239,7 +294,7 @@ fn the_parallel_walk_gives_the_serial_report() {
             last > 2048,
             "step {step_mm}: strikes past two chunks ({last})"
         );
-        assert!(want.min_safe_stickout > asm.stickout());
+        assert!(want.min_safe_stickout > asm.body().holder_face_mm());
     }
 }
 
@@ -250,7 +305,7 @@ fn a_preset_cancel_returns_cancelled() {
     let asm = assembly();
     let tp = toolpath();
     let cancel = || true;
-    assert!(reference_walk(&tp, &asm, &mesh, &index, 1.0, &cancel).is_err());
+    assert!(reference_walk(&tp, &reference_assembly(), &mesh, &index, 1.0, &cancel).is_err());
     assert!(
         check_collisions_interpolated_with_cancel(&tp, &asm, &mesh, &index, 1.0, &cancel).is_err()
     );
@@ -276,7 +331,7 @@ fn an_empty_toolpath_with_a_preset_cancel_is_clear() {
     let asm = assembly();
     let tp = Toolpath::new();
     let cancel = || true;
-    let want = reference_walk(&tp, &asm, &mesh, &index, 1.0, &cancel).unwrap();
+    let want = reference_walk(&tp, &reference_assembly(), &mesh, &index, 1.0, &cancel).unwrap();
     let got =
         check_collisions_interpolated_with_cancel(&tp, &asm, &mesh, &index, 1.0, &cancel).unwrap();
     assert_same(&got, &want);

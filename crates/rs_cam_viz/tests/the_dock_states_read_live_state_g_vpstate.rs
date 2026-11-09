@@ -48,9 +48,7 @@ use rs_cam_core::session::{
     AddToolpathArgs, AdoptResultArgs, Command, InvalidateStockArgs, LoadedModel,
     ProjectSessionBuilder, ToolpathConfig,
 };
-use rs_cam_core::stock::collision::{
-    AssemblySegment, CollisionEvent, CollisionKind, CollisionReport,
-};
+use rs_cam_core::stock::collision::{CollisionEvent, CollisionKind, CollisionReport};
 use rs_cam_core::surface::rest_field::RestGrid;
 use rs_cam_core::toolpath::Toolpath;
 use rs_cam_core::trace::toolpath_spans::AnnotatedToolpath;
@@ -270,7 +268,9 @@ fn report(collisions: usize) -> CollisionReport {
                 move_index: i,
                 position: P3::new(i as f64, 0.0, 0.0),
                 penetration_depth: 0.5,
-                segment: AssemblySegment::Holder,
+                segment: rs_cam_core::tool::body::ZoneKind::Contact(
+                    rs_cam_core::tool::body::ContactKind::Holder,
+                ),
                 kind: CollisionKind::Workpiece,
             })
             .collect(),

@@ -734,13 +734,14 @@ impl ToolDefinition {
     }
 
     /// The body mounted in the machine head, with the head and the shoe
-    /// position of `fit` (H1). [`MountedBody::assembly`] gives the old
-    /// `ToolAssembly` view.
+    /// position of `fit` (H1). THE constructor every reader of the mounted
+    /// zones calls (P22-0c-5): the collision checks, the obstacle footprints,
+    /// the flute-reach map and the GUI drawings.
     ///
     /// The cutter envelope is `envelope_radius_mm()`, which for
     /// `TaperedBallEndmill` correctly returns `shaft_diameter / 2` (the
     /// maximum cutting radius), not the ball tip radius.
-    pub fn to_assembly(&self, fit: &crate::machine::head::HeadFit) -> MountedBody {
+    pub fn mounted(&self, fit: &crate::machine::head::HeadFit) -> MountedBody {
         self.body
             .mounted(fit.head.bands(self.body.holder_face_mm(), fit.shoe))
     }
@@ -1320,17 +1321,15 @@ mod tests {
     fn test_tool_definition_assembly_flat() {
         let cutter = Box::new(FlatEndmill::new(10.0, 25.0));
         let td = ToolDefinition::new(cutter, 6.35, 50.0, 2, ToolMaterial::Carbide);
-        let asm = td
-            .to_assembly(&crate::machine::head::HeadFit::default())
-            .assembly();
-        assert!((asm.cutter_radius - 5.0).abs() < 1e-10);
-        assert!((asm.cutter_length - 25.0).abs() < 1e-10);
-        assert!((asm.shank_diameter - 6.35).abs() < 1e-10);
-        assert_eq!(asm.head[0].radius_mm, Some(12.5), "the unmodelled head");
+        let asm = td.mounted(&crate::machine::head::HeadFit::default());
+        assert!((asm.body().envelope_radius_mm() - 5.0).abs() < 1e-10);
+        assert!((asm.body().flute_length_mm() - 25.0).abs() < 1e-10);
+        assert!((asm.body().shank_diameter_mm() - 6.35).abs() < 1e-10);
+        assert_eq!(asm.head()[0].radius_mm, Some(12.5), "the unmodelled head");
         // The holder face is at the stickout; the exposed shank fills the
         // rest above the flutes: 50 - 25.
-        assert!((asm.stickout - 50.0).abs() < 1e-10);
-        assert!((asm.exposed_shank_length() - 25.0).abs() < 1e-10);
+        assert!((asm.body().holder_face_mm() - 50.0).abs() < 1e-10);
+        assert!((asm.body().exposed_shank_length_mm() - 25.0).abs() < 1e-10);
     }
 
     #[test]
@@ -1338,15 +1337,14 @@ mod tests {
         // This is the bug regression: collision must use shaft_radius, not ball_radius
         let cutter = Box::new(TaperedBallEndmill::new(3.175, 15.0, 6.35, 25.0).unwrap());
         let td = ToolDefinition::new(cutter, 6.35, 50.0, 2, ToolMaterial::Carbide);
-        let asm = td
-            .to_assembly(&crate::machine::head::HeadFit::default())
-            .assembly();
-        // cutter_radius must be shaft_diameter/2 = 3.175, NOT ball_diameter/2 = 1.5875
+        let asm = td.mounted(&crate::machine::head::HeadFit::default());
+        let radius = asm.body().envelope_radius_mm();
+        // the cutter radius must be shaft_diameter/2 = 3.175, NOT ball_diameter/2 = 1.5875
         assert!(
-            (asm.cutter_radius - 6.35 / 2.0).abs() < 1e-10,
+            (radius - 6.35 / 2.0).abs() < 1e-10,
             "expected shaft_radius {}, got {}",
             6.35 / 2.0,
-            asm.cutter_radius
+            radius
         );
     }
 
@@ -1578,6 +1576,27 @@ mod tests {
     /// shank length at or above the stickout had NO holder in the check.
     #[test]
     fn the_holder_face_is_at_the_stickout() {
+        // The contact zones above the flutes with a width, as
+        // `(bottom, radius)`, from the tip up (P22-0c-5: from the zones).
+        fn bands_above_flutes(td: &ToolDefinition) -> Vec<(f64, f64)> {
+            td.mounted(&crate::machine::head::HeadFit::default())
+                .zones()
+                .into_iter()
+                .filter_map(|zone| match zone {
+                    body::Zone::Contact(c) => match (c.kind, c.outer) {
+                        (
+                            body::ContactKind::Shank
+                            | body::ContactKind::Holder
+                            | body::ContactKind::Shoe,
+                            body::ContactRadius::Mm(r),
+                        ) => Some((c.span.bottom_mm, r)),
+                        (body::ContactKind::Core | body::ContactKind::FluteTop, _)
+                        | (_, body::ContactRadius::Shelf) => None,
+                    },
+                    body::Zone::Cutting(_) => None,
+                })
+                .collect()
+        }
         // 25 + 20 = 45 >= stickout 30: the old model gave no holder.
         let td = ToolDefinition::new(
             Box::new(FlatEndmill::new(10.0, 25.0)),
@@ -1587,20 +1606,11 @@ mod tests {
             ToolMaterial::Carbide,
         );
         assert!((td.exposed_shank_length() - 5.0).abs() < 1e-10);
-        let segs = td
-            .to_assembly(&crate::machine::head::HeadFit::default())
-            .assembly()
-            .segments();
+        let segs = bands_above_flutes(&td);
         assert_eq!(segs.len(), 2, "{segs:?}");
-        assert!(
-            (segs[0].z_offset - 25.0).abs() < 1e-10,
-            "shank above the flutes"
-        );
-        assert!(
-            (segs[1].z_offset - 30.0).abs() < 1e-10,
-            "holder face at stickout"
-        );
-        assert!((segs[1].radius - 12.5).abs() < 1e-10);
+        assert!((segs[0].0 - 25.0).abs() < 1e-10, "shank above the flutes");
+        assert!((segs[1].0 - 30.0).abs() < 1e-10, "holder face at stickout");
+        assert!((segs[1].1 - 12.5).abs() < 1e-10);
         // Stickout shorter than the flutes: no exposed shank, the holder
         // face is still at the stickout.
         let short = ToolDefinition::new(
@@ -1610,11 +1620,8 @@ mod tests {
             2,
             ToolMaterial::Carbide,
         );
-        let segs = short
-            .to_assembly(&crate::machine::head::HeadFit::default())
-            .assembly()
-            .segments();
+        let segs = bands_above_flutes(&short);
         assert_eq!(segs.len(), 1, "{segs:?}");
-        assert!((segs[0].z_offset - 20.0).abs() < 1e-10);
+        assert!((segs[0].0 - 20.0).abs() < 1e-10);
     }
 }

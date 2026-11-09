@@ -46,9 +46,8 @@ pub enum HeadBandKind {
 
 /// One hard band of the machine head above the tool (H1): a part with a
 /// diameter, or a shelf with no width limit. [`MachineHead::bands`] builds
-/// it. P22-0c: the machine owns it; the tool body reads it
-/// (`tool::body::MountedBody`), and the stock check names it
-/// (`stock::collision::AssemblySegment::from`).
+/// it. P22-0c: the machine owns it; the tool body reads it as a contact
+/// zone (`tool::body::head_zone`).
 #[derive(Debug, Clone, PartialEq)]
 pub struct HeadBand {
     /// The part list of the band: a fixed head part or a shoe part.
@@ -281,21 +280,30 @@ fn check_parts(parts: &[HeadPart], at: &str) -> Result<(), HeadRefusal> {
     Ok(())
 }
 
-/// The bands of `parts` that block a move, from `bottom` (mm above the
-/// tip) upward. A soft part is skipped, but its height still places the
-/// next part.
-fn hard_bands(parts: &[HeadPart], bottom: f64, kind: HeadBandKind) -> Vec<HeadBand> {
-    let mut out = Vec::new();
+/// One head part at its place for one check (P22-0c-5): the part, the
+/// list it belongs to and its bottom in mm above the tip. Soft parts are
+/// in it; [`MachineHead::bands`] keeps the hard ones.
+#[derive(Debug, Clone, Copy, PartialEq)]
+pub struct PartSpan<'a> {
+    /// The part list: a fixed head part or a shoe part.
+    pub kind: HeadBandKind,
+    /// The part.
+    pub part: &'a HeadPart,
+    /// The bottom of the part (mm above the tip).
+    pub bottom_mm: f64,
+}
+
+/// The parts of `parts` from `bottom` (mm above the tip) upward. Each
+/// height places the next part.
+fn part_spans_of(parts: &[HeadPart], bottom: f64, kind: HeadBandKind) -> Vec<PartSpan<'_>> {
+    let mut out = Vec::with_capacity(parts.len());
     let mut offset = bottom;
     for part in parts {
-        if part.kind == PartKind::Hard {
-            out.push(HeadBand {
-                kind,
-                name: part.name.clone(),
-                offset_mm: offset,
-                radius_mm: part.diameter_mm.map(|d| d / 2.0),
-            });
-        }
+        out.push(PartSpan {
+            kind,
+            part,
+            bottom_mm: offset,
+        });
         offset += part.height_mm;
     }
     out
@@ -428,9 +436,28 @@ impl MachineHead {
     /// at `shoe`. Offsets are in mm above the tip.
     #[must_use]
     pub fn bands(&self, stickout: f64, shoe: ShoePosition) -> Vec<HeadBand> {
-        let mut out = hard_bands(&self.parts, stickout + self.mount_mm, HeadBandKind::Holder);
+        self.part_spans(stickout, shoe)
+            .into_iter()
+            .filter(|span| span.part.kind == PartKind::Hard)
+            .map(|span| HeadBand {
+                kind: span.kind,
+                name: span.part.name.clone(),
+                offset_mm: span.bottom_mm,
+                radius_mm: span.part.diameter_mm.map(|d| d / 2.0),
+            })
+            .collect()
+    }
+
+    /// Every part of the head (hard and soft) for a tool of `stickout`,
+    /// with the shoe at `shoe`, from the holder face up, then the shoe
+    /// parts from the brush end up (P22-0c-5). THE walk of the head:
+    /// [`Self::bands`] reads it, and so does the GUI drawing, which also
+    /// draws the soft parts.
+    #[must_use]
+    pub fn part_spans(&self, stickout: f64, shoe: ShoePosition) -> Vec<PartSpan<'_>> {
+        let mut out = part_spans_of(&self.parts, stickout + self.mount_mm, HeadBandKind::Holder);
         if let (ShoePosition::At { gap_mm }, Some(dust_shoe)) = (shoe, &self.shoe) {
-            out.extend(hard_bands(&dust_shoe.parts, gap_mm, HeadBandKind::Shoe));
+            out.extend(part_spans_of(&dust_shoe.parts, gap_mm, HeadBandKind::Shoe));
         }
         out
     }

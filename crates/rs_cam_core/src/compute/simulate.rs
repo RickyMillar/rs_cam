@@ -2250,7 +2250,7 @@ fn carve_entry(
             )
         };
         // P22-0c-4: the body plus the head bands of this entry.
-        let mounted = entry.tool.to_assembly(&entry.head);
+        let mounted = entry.tool.mounted(&entry.head);
         let mut walk_checks =
             crate::stock::contact::WalkChecks::mounted(entry.tool.as_ref(), &mounted);
         // Every simulation records the cut samples and the arc engagement
@@ -2903,11 +2903,8 @@ fn group_obstacle_views(
                 .toolpaths
                 .iter()
                 .map(|entry| {
-                    set.for_tool(
-                        &entry.tool.to_assembly(&entry.head).assembly(),
-                        Some(&stock),
-                    )
-                    .map_err(|e| SimulationError::ObstacleRefused(e.to_string()))
+                    set.for_tool(&entry.tool.mounted(&entry.head), Some(&stock))
+                        .map_err(|e| SimulationError::ObstacleRefused(e.to_string()))
                 })
                 .collect()
         })

@@ -554,9 +554,7 @@ fn a_lateral_setup_keeps_the_tool_out_of_its_obstacle() {
     let tool = rs_cam_core::compute::cutter::build_cutter(&session.tools()[0]).unwrap();
     let view = set
         .for_tool(
-            &tool
-                .to_assembly(&session.head_fit_for_toolpath(0))
-                .assembly(),
+            &tool.mounted(&session.head_fit_for_toolpath(0)),
             Some(&session.setup_stock_box_for_toolpath(0)),
         )
         .expect("a tool view");

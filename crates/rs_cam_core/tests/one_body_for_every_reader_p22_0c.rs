@@ -7,7 +7,7 @@
 //!    when the stickout is longer than the flutes).
 //! 2. Each view of the body equals that table: the flute length, the
 //!    envelope radius, the shank, the holder face, the core limits, and
-//!    the old `ToolAssembly` view of the mounted body.
+//!    (P22-0c-5) the first zone above the flutes of the mounted body.
 //! 3. Memo arm: two tools that differ only in `centre_cutting` get two
 //!    simulation-prefix keys (D1); two equal tools share one.
 //! 4. P22-0c-2 search guard (design section 4): no source file under
@@ -37,7 +37,6 @@ use rs_cam_core::dexel_stock::StockCutDirection;
 use rs_cam_core::geo::{BoundingBox3, P3};
 use rs_cam_core::ids::ToolpathId;
 use rs_cam_core::machine::head::{HeadBandKind, HeadFit};
-use rs_cam_core::stock::collision::AssemblySegment;
 use rs_cam_core::tool::body::{
     AxialSpan, ContactKind, ContactRadius, ContactZone, CoreZone, CuttingKind, CuttingZone,
     SpanTop, Zone, core_of, cut_table, envelope_table,
@@ -282,7 +281,7 @@ fn one_body_for_every_reader_p22_0c() {
 
         // The mounted body: the tool zones, then the head bands.
         let fit = HeadFit::default();
-        let mounted = def.to_assembly(&fit);
+        let mounted = def.mounted(&fit);
         let zones = mounted.zones();
         let tool_zones = body.zones();
         assert_eq!(&zones[..tool_zones.len()], &tool_zones[..], "{label}");
@@ -308,35 +307,42 @@ fn one_body_for_every_reader_p22_0c() {
             assert_eq!(zone, &want, "{label}: head zone");
         }
 
-        // The old assembly view: the same facts, and its bands are the
-        // shank zone then the head bands with a width.
-        let asm = mounted.assembly();
-        assert_eq!(asm.cutter_radius, def.radius(), "{label}");
-        assert_eq!(asm.cutter_length, case.flute_mm, "{label}");
-        assert_eq!(asm.shank_diameter, case.shank_mm, "{label}");
-        assert_eq!(asm.stickout(), case.stickout_mm, "{label}");
-        let bands: Vec<(AssemblySegment, f64, f64)> = asm
-            .segments()
-            .iter()
-            .map(|b| (b.segment, b.z_offset, b.radius))
-            .collect();
-        let mut want: Vec<(AssemblySegment, f64, f64)> = Vec::new();
-        for zone in &zones {
+        // P22-0c-5: the views of the mounted body are the zone table. The
+        // first zone above the flutes (`maps::tier_flute_reach`) is the
+        // first shank, holder or shoe zone with a width; the body facts
+        // the readers take (the mesh check's envelope, the holder face)
+        // are the zone radii and spans.
+        let want_first = zones.iter().find_map(|zone| {
             let Zone::Contact(contact) = zone else {
-                continue;
+                return None;
             };
-            let ContactRadius::Mm(radius) = contact.outer else {
-                continue;
-            };
-            let segment = match contact.kind {
-                ContactKind::Core | ContactKind::FluteTop => continue,
-                ContactKind::Shank => AssemblySegment::Shank,
-                ContactKind::Holder => AssemblySegment::Holder,
-                ContactKind::Shoe => AssemblySegment::Shoe,
-            };
-            want.push((segment, contact.span.bottom_mm, radius));
-        }
-        assert_eq!(bands, want, "{label}: the assembly bands");
+            match (contact.kind, contact.outer) {
+                (ContactKind::Core | ContactKind::FluteTop, _) | (_, ContactRadius::Shelf) => None,
+                (
+                    ContactKind::Shank | ContactKind::Holder | ContactKind::Shoe,
+                    ContactRadius::Mm(_),
+                ) => Some(contact.clone()),
+            }
+        });
+        assert_eq!(
+            mounted.first_above_flutes(),
+            want_first,
+            "{label}: first above flutes"
+        );
+        let flute_top = zones
+            .iter()
+            .find_map(|zone| match zone {
+                Zone::Contact(c) if c.kind == ContactKind::FluteTop => Some(c.clone()),
+                Zone::Contact(_) | Zone::Cutting(_) => None,
+            })
+            .expect("every body has a flute top");
+        assert_eq!(
+            flute_top.outer,
+            ContactRadius::Mm(mounted.body().envelope_radius_mm()),
+            "{label}: envelope"
+        );
+        assert_eq!(mounted.body().envelope_radius_mm(), def.radius(), "{label}");
+        assert_eq!(mounted.body().holder_face_mm(), case.stickout_mm, "{label}");
     }
 }
 

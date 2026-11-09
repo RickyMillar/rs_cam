@@ -93,7 +93,15 @@ impl SimulationState {
                 .debug
                 .triage_cache
                 .matches(&report, session, evidence_fp))
-            .then(|| session.verdict_and_triage_with_report(&evidence, &report));
+            .then(|| {
+                // P22-0c-5 (P22-0c-4 open Q2): the build reads the session
+                // door, so a fresh stock answer supersedes the mesh count.
+                // The fingerprint reads the raw evidence: the cache key
+                // (the load report stamp, the session key) moves with every
+                // input of the freshness rule.
+                let evidence = self.project_evidence_for(session);
+                session.verdict_and_triage_with_report(&evidence, &report)
+            });
             (evidence_fp, built)
         };
         let Some((verdict, triage)) = built else {
@@ -152,6 +160,24 @@ impl SimulationState {
             // they belong to the shown run.
             rough_coverage: self.rough_coverage_of_results(),
         }
+    }
+
+    /// [`Self::project_evidence`] read through the session door (P22-0c-5,
+    /// P22-0c-4 open Q2): the holder outcomes are
+    /// `ProjectSession::holder_checks_with_stock` of the GUI's mesh counts,
+    /// so a fresh simulation's stock answer (`MeasuredOnStock`) supersedes
+    /// the mesh count, as on the CLI and MCP. THE evidence every GUI and
+    /// MCP diagnostics build reads. It hashes each toolpath for the
+    /// freshness rule, so a per-frame reader (a cache key) reads
+    /// [`Self::project_evidence`] instead.
+    pub fn project_evidence_for(
+        &self,
+        session: &ProjectSession,
+    ) -> rs_cam_core::session::ProjectEvidence<'_> {
+        let mut evidence = self.project_evidence();
+        evidence.holder_collisions =
+            session.holder_checks_with_stock(std::mem::take(&mut evidence.holder_collisions));
+        evidence
     }
 
     /// Fingerprint over every [`Self::project_evidence`] part that is **not**

@@ -715,11 +715,13 @@ impl RsCamApp {
 /// handlers can hand off to core diagnostics without GUI/MCP drift.
 /// Pulls boundaries from `state.simulation.results`, rapid collisions
 /// from `state.simulation.checks`, and the cut trace from the results
-/// arc.
+/// arc. P22-0c-5: through the session door
+/// (`SimulationState::project_evidence_for`), so a fresh stock answer
+/// supersedes the mesh holder count.
 pub(crate) fn viz_project_evidence(
     state: &crate::state::AppState,
 ) -> rs_cam_core::session::ProjectEvidence<'_> {
-    state.simulation.project_evidence()
+    state.simulation.project_evidence_for(state.session())
 }
 
 /// Generation-debug span "kind" strings that participate in a given

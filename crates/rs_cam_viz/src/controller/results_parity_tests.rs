@@ -411,7 +411,9 @@ fn mcp_get_diagnostics_collision_count_comes_from_evidence() {
                 move_index: 1,
                 position: rs_cam_core::geo::P3::new(10.0, 0.0, -1.0),
                 penetration_depth: 0.4,
-                segment: rs_cam_core::stock::collision::AssemblySegment::Holder,
+                segment: rs_cam_core::tool::body::ZoneKind::Contact(
+                    rs_cam_core::tool::body::ContactKind::Holder,
+                ),
                 kind: rs_cam_core::stock::collision::CollisionKind::Workpiece,
             }],
             min_safe_stickout: 30.0,

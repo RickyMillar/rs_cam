@@ -67,7 +67,9 @@ struct ToolpathDiagnostic<'a> {
     /// the full report of each row of the one
     /// [`rs_cam_core::session::ProjectSession::holder_collision_sweep`] (the
     /// answer of `collision_check` for that toolpath) and reports that.
-    /// Better data, not a second opinion on the same data.
+    /// Better data, not a second opinion on the same data. P22-0c-5: with a
+    /// fresh simulation the workpiece part is the stock answer
+    /// (`ProjectSession::holder_checks_with_stock`), as the core diagnostic.
     collision_count: usize,
     rapid_collision_count: usize,
     /// CLI-local for the same reason: it comes off the collision report the
@@ -177,6 +179,35 @@ impl<'a> ToolpathDiagnostic<'a> {
             monotone_cells: *monotone_cells,
             source_stock: source_stock.as_ref(),
             contact_zones: contact_zones.as_ref(),
+        }
+    }
+}
+
+/// P22-0c-5 (P22-0c-4 open Q3): the holder count of one toolpath in
+/// `summary.json` and its `tp_*.json`. `check` is the session-door outcome
+/// (`ProjectSession::holder_checks_with_stock`), `report` the CLI's own
+/// collision report of the toolpath, `failed` its failed mesh check. A
+/// stock answer (`MeasuredOnStock(n)`) takes the place of the mesh
+/// workpiece hits; the obstacle and stock-box hits of the report stay.
+/// `None` = the check failed (a count that does not exist).
+fn summary_holder_count(
+    check: Option<rs_cam_core::stock::collision::HolderCollisionCheck>,
+    report: Option<&rs_cam_core::stock::collision::CollisionReport>,
+    failed: bool,
+) -> Option<usize> {
+    use rs_cam_core::stock::collision::{CollisionKind, HolderCollisionCheck};
+    match check {
+        Some(HolderCollisionCheck::MeasuredOnStock(n)) => Some(
+            n + report.map_or(0, |r| {
+                r.collisions
+                    .iter()
+                    .filter(|c| c.kind != CollisionKind::Workpiece)
+                    .count()
+            }),
+        ),
+        Some(HolderCollisionCheck::Failed) => None,
+        Some(HolderCollisionCheck::Measured(_) | HolderCollisionCheck::NotApplicable) | None => {
+            (!failed).then(|| report.map_or(0, |r| r.collisions.len()))
         }
     }
 }
@@ -966,6 +997,23 @@ pub fn run_project_command(
         }
     }
 
+    // P22-0c-5 (P22-0c-4 open Q3): the per-toolpath holder count reads the
+    // session door, as the project `diag` does. With a fresh simulation the
+    // stock answer (`MeasuredOnStock`, the fed shank, holder and shoe
+    // contacts) takes the place of the mesh workpiece hits; the obstacle
+    // and stock-box hits of the report stay. `None` = the check failed.
+    let holder_checks = session.holder_checks_with_stock(holder_counts.clone());
+    let holder_count_of = |id: rs_cam_core::ToolpathId| -> Option<usize> {
+        summary_holder_count(
+            holder_checks
+                .iter()
+                .find(|(tp, _)| *tp == id)
+                .map(|(_, check)| *check),
+            collision_reports.get(&id),
+            collision_check_failed.contains(&id),
+        )
+    };
+
     // 6. Create output directory
     std::fs::create_dir_all(output_dir).context(format!(
         "Failed to create output dir: {}",
@@ -989,7 +1037,7 @@ pub fn run_project_command(
         // the CLI reading it off the core record is one derivation instead of
         // two identical ones (C3).
         let col_report = collision_reports.get(&tc.id);
-        let collision_count = col_report.map(|r| r.collisions.len()).unwrap_or(0);
+        let collision_count = holder_count_of(tc.id).unwrap_or(0);
         let min_safe = col_report.map(|r| r.min_safe_stickout);
 
         // The core per-toolpath diagnostic for this id. EVERY shared field is
@@ -1075,7 +1123,11 @@ pub fn run_project_command(
     let total_rapid: f64 = diag.per_toolpath.iter().map(|d| d.rapid_distance_mm).sum();
 
     // Gather collision counts including holder checks
-    let total_collision_count: usize = collision_reports.values().map(|r| r.collisions.len()).sum();
+    let total_collision_count: usize = diag
+        .per_toolpath
+        .iter()
+        .filter_map(|d| holder_count_of(d.toolpath_id))
+        .sum();
 
     let per_toolpath: Vec<ToolpathSummaryEntry> = diag
         .per_toolpath
@@ -1083,13 +1135,7 @@ pub fn run_project_command(
         .map(|d| {
             // Three states, not two. A failed check is neither clear nor
             // dirty, and it must not read as either.
-            let checked = !collision_check_failed.contains(&d.toolpath_id);
-            let holder_collisions = checked.then(|| {
-                collision_reports
-                    .get(&d.toolpath_id)
-                    .map(|r| r.collisions.len())
-                    .unwrap_or(0)
-            });
+            let holder_collisions = holder_count_of(d.toolpath_id);
             let status = match holder_collisions {
                 None => "collision_check_failed",
                 Some(h) if h + d.rapid_collision_count > 0 => "error",
@@ -1875,5 +1921,49 @@ mod tests {
                 "the program header does not hold `{line}`"
             );
         }
+    }
+
+    /// P22-0c-5 (P22-0c-4 open Q3): the per-toolpath count of
+    /// `summary.json` reads the session door. On the simulated K6 project
+    /// every walked toolpath has a fresh stock answer; its summary count is
+    /// that answer (plus the report's obstacle hits) and equals the core
+    /// diagnostic's `collision_count`, which the project `diag` prints.
+    #[test]
+    fn the_summary_count_reads_the_session_door_q3() {
+        use rs_cam_core::session::ProjectSession;
+        use rs_cam_core::stock::collision::{CollisionKind, HolderCollisionCheck};
+        let session = crate::k6_project::generated_and_simulated();
+        let cancel = std::sync::atomic::AtomicBool::new(false);
+        let sweep = session.holder_collision_sweep(&cancel);
+        let counts = ProjectSession::holder_collision_counts_of(&sweep);
+        let checks = session.holder_checks_with_stock(counts.clone());
+        let diag = session.diagnostics_with_holder_collisions(counts);
+        let mut stock_answers = 0;
+        for (_, id, outcome) in &sweep {
+            let report = outcome
+                .as_ref()
+                .ok()
+                .and_then(|o| o.as_ref())
+                .map(|o| &o.collision_report);
+            let check = checks.iter().find(|(tp, _)| tp == id).map(|(_, c)| *c);
+            let got = summary_holder_count(check, report, outcome.is_err());
+            if let Some(HolderCollisionCheck::MeasuredOnStock(n)) = check {
+                stock_answers += 1;
+                let others = report.map_or(0, |r| {
+                    r.collisions
+                        .iter()
+                        .filter(|c| c.kind != CollisionKind::Workpiece)
+                        .count()
+                });
+                assert_eq!(got, Some(n + others), "toolpath {id}");
+            }
+            let core = diag
+                .per_toolpath
+                .iter()
+                .find(|d| d.toolpath_id == *id)
+                .and_then(|d| d.collision_count);
+            assert_eq!(got, core, "toolpath {id}: the summary and the diag agree");
+        }
+        assert!(stock_answers > 0, "the fixture has a fresh stock answer");
     }
 }

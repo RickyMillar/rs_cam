@@ -1,160 +1,20 @@
-//! Tool holder collision detection — warn when the holder or shank would
-//! collide with the workpiece during a toolpath.
+//! Tool holder collision detection: warn when the shank, the holder or a
+//! hard shoe part would meet the workpiece mesh during a toolpath.
 //!
-//! MVP scope: holder modeled as a single cylinder above the cutter.
-//! Detection uses drop-cutter at the holder radius — if the mesh surface
-//! at a CL point is higher than the holder bottom, collision occurs.
-//!
-//! "Holder collision in 3-axis is just drop-cutter at larger radii"
+//! P22-0c-5: the mesh check runs THE contact kernel
+//! (`stock::contact::zone_top_at`) on the model mesh
+//! (`stock::contact::ModelMesh`): each contact zone of the mounted body
+//! (`tool::body::MountedBody::zones`) that gives a mesh probe
+//! (`ZoneProbe::on_mesh`) is tested at every sample of every cutting move.
+//! The mesh top under a zone is the drop of a flat disc of the zone radius.
 
 use crate::geo::P3;
 use crate::interrupt::{CancelCheck, Cancelled, check_cancel};
-use crate::machine::head::{HeadBand, HeadBandKind};
 use crate::mesh::{SpatialIndex, TriangleMesh};
+use crate::stock::contact::{ModelMesh, ZoneProbe, zone_top_at};
 use crate::stock::radial_profile::{LUT_SAMPLES, RadialProfileLUT};
-use crate::surface::dropcutter::point_drop_cutter;
-use crate::tool::FlatEndmill;
+use crate::tool::body::{MountedBody, Zone, ZoneKind};
 use crate::toolpath::{MoveType, Toolpath};
-
-/// A segment of the holder/shank geometry above the cutter.
-///
-/// Supports cylindrical and tapered (conical) sections. For tapered segments,
-/// collision checking uses the maximum radius (conservative).
-#[derive(Debug, Clone)]
-pub struct HolderSegment {
-    /// Distance from tool tip to bottom of this segment (mm).
-    pub z_offset: f64,
-    /// Radius at bottom of segment (mm).
-    pub radius_bottom: f64,
-    /// Radius at top of segment (mm). Equal to radius_bottom for cylinders.
-    pub radius_top: f64,
-    /// Length of this segment (mm).
-    pub length: f64,
-}
-
-impl HolderSegment {
-    /// Maximum radius of this segment (conservative for collision).
-    pub fn max_radius(&self) -> f64 {
-        self.radius_bottom.max(self.radius_top)
-    }
-}
-
-/// One band of the assembly above the flutes that has a width: the shank
-/// or a hard head part. Both collision kernels read it from its bottom
-/// offset upward.
-#[derive(Debug, Clone, Copy, PartialEq)]
-pub struct BodyBand {
-    /// The part a hit names.
-    pub segment: AssemblySegment,
-    /// The bottom of the band, in mm above the tip.
-    pub z_offset: f64,
-    /// The radius (mm).
-    pub radius: f64,
-}
-
-/// Describes the physical tool assembly: cutter, shank and the machine
-/// head above the holder face.
-///
-/// The model has one length rule: `stickout` is the length from the
-/// holder face to the tool tip. The holder face is therefore at
-/// `stickout` above the tip, always. The cutter occupies the first
-/// `cutter_length`; the exposed shank is the rest of the stickout,
-/// `max(stickout - cutter_length, 0)`. Above the face, the machine head
-/// (H1) gives the hard bands: the collet nut, a shelf, and the shoe parts
-/// at the gap of the check. Both collision kernels read a band from its
-/// bottom offset upward.
-#[derive(Debug, Clone)]
-pub struct ToolAssembly {
-    /// Radius of the cutting tool (from MillingCutter::radius())
-    pub cutter_radius: f64,
-    /// Cutting flute length (from MillingCutter::length())
-    pub cutter_length: f64,
-    /// Shank diameter above the cutting flutes (mm).
-    pub shank_diameter: f64,
-    /// Length from the holder face to the cutter tip (mm).
-    pub stickout: f64,
-    /// H1: the hard bands of the machine head, offsets above the tip.
-    pub head: Vec<HeadBand>,
-}
-
-impl ToolAssembly {
-    /// Total tool stickout from holder face to cutter tip.
-    pub fn stickout(&self) -> f64 {
-        self.stickout
-    }
-
-    /// The shank length between the flutes and the holder face (mm):
-    /// `max(stickout - cutter_length, 0)`.
-    pub fn exposed_shank_length(&self) -> f64 {
-        (self.stickout - self.cutter_length).max(0.0)
-    }
-
-    /// The body directly above the flutes, as `(z_offset, radius)`: the
-    /// shank when the assembly has one, else the first head part with a
-    /// width. `None` when the assembly models neither.
-    ///
-    /// This is the part a wall taller than the flutes meets first. Its
-    /// radius is taken as is, with no comparison against the cutter's
-    /// envelope radius: on a tapered ball whose shank diameter equals its
-    /// shaft diameter the two are equal, and the skip in
-    /// [`check_collisions`] then tests no shank at all.
-    pub fn non_fluted_body(&self) -> Option<(f64, f64)> {
-        self.segments().first().map(|b| (b.z_offset, b.radius))
-    }
-
-    /// The bands of the assembly above the flutes that have a width, from
-    /// the tip upward: the shank (from the top of the flutes to the holder
-    /// face; none when the flutes reach the face), then every hard head
-    /// part with a diameter. A shelf is not in it: read
-    /// [`Self::shelf_offset`].
-    pub fn segments(&self) -> Vec<BodyBand> {
-        let mut segs = Vec::new();
-        if self.exposed_shank_length() > 0.0 {
-            segs.push(BodyBand {
-                segment: AssemblySegment::Shank,
-                z_offset: self.cutter_length,
-                radius: self.shank_diameter / 2.0,
-            });
-        }
-        segs.extend(self.head.iter().filter_map(|band| {
-            band.radius_mm.map(|radius| BodyBand {
-                segment: band.kind.into(),
-                z_offset: band.offset_mm,
-                radius,
-            })
-        }));
-        segs
-    }
-
-    /// The lowest hard shelf of the head, in mm above the tip, with the
-    /// segment it belongs to. `None` when the head has no shelf.
-    pub fn shelf_offset(&self) -> Option<(f64, AssemblySegment)> {
-        self.head
-            .iter()
-            .filter(|band| band.radius_mm.is_none())
-            .map(|band| (band.offset_mm, band.kind.into()))
-            .min_by(|a, b| a.0.total_cmp(&b.0))
-    }
-
-    /// Build segments from a multi-segment holder profile.
-    ///
-    /// Each HolderSegment can have different bottom/top radii (tapered).
-    /// Collision checking uses max_radius per segment (conservative).
-    ///
-    /// **Test door.** The `#[cfg(test)]` module of this file is the only
-    /// caller. No production path reads it (S29, tech debt 2026-09-16).
-    #[cfg(test)]
-    pub(crate) fn segments_from_profile(
-        cutter_radius: f64,
-        profile: &[HolderSegment],
-    ) -> Vec<(f64, f64, f64)> {
-        profile
-            .iter()
-            .filter(|s| s.max_radius() > cutter_radius + 1e-6)
-            .map(|s| (s.z_offset, s.max_radius(), s.length))
-            .collect()
-    }
-}
 
 /// What the holder/shank collided with — the workpiece mesh, or a
 /// workholding fixture. Lets the UI attribute "holder crashed a clamp"
@@ -171,51 +31,6 @@ pub enum CollisionKind {
     Stock,
 }
 
-/// Which part of the assembly above the flutes collided.
-///
-/// STK-10: this was a `String` that both classifiers built from the same
-/// open-coded radius comparison. A stringly-typed door invites a fourth
-/// spelling. H1: each band carries its own segment ([`BodyBand`]).
-#[derive(Debug, Clone, Copy, PartialEq, Eq)]
-pub enum AssemblySegment {
-    /// The cutter itself (K1: the obstacle check includes the cutter).
-    Cutter,
-    /// The shank, immediately above the cutting flutes.
-    Shank,
-    /// The collet or holder body, above the shank: a fixed part of the
-    /// machine head (H1).
-    Holder,
-    /// A hard part of the dust shoe (H1).
-    Shoe,
-}
-
-impl From<HeadBandKind> for AssemblySegment {
-    fn from(kind: HeadBandKind) -> Self {
-        match kind {
-            HeadBandKind::Holder => Self::Holder,
-            HeadBandKind::Shoe => Self::Shoe,
-        }
-    }
-}
-
-impl AssemblySegment {
-    /// The wire and report name. Unchanged from the string this replaced.
-    pub fn as_str(self) -> &'static str {
-        match self {
-            Self::Cutter => "cutter",
-            Self::Shank => "shank",
-            Self::Holder => "holder",
-            Self::Shoe => "shoe",
-        }
-    }
-}
-
-impl std::fmt::Display for AssemblySegment {
-    fn fmt(&self, f: &mut std::fmt::Formatter<'_>) -> std::fmt::Result {
-        f.write_str(self.as_str())
-    }
-}
-
 /// A single collision event.
 #[derive(Debug, Clone)]
 pub struct CollisionEvent {
@@ -227,8 +42,9 @@ pub struct CollisionEvent {
     pub position: P3,
     /// How deep the holder penetrates the obstacle (mm, positive = penetration).
     pub penetration_depth: f64,
-    /// Which segment collided.
-    pub segment: AssemblySegment,
+    /// The zone that collided (P22-0c-5: the zone kind of the body; the
+    /// wire names are the old segment names).
+    pub segment: ZoneKind,
     /// What was hit — the workpiece mesh or a specific fixture.
     pub kind: CollisionKind,
 }
@@ -336,9 +152,51 @@ pub fn body_segment_penetration_mm(
     mesh: &TriangleMesh,
     index: &SpatialIndex,
 ) -> Option<f64> {
-    let virtual_cutter = FlatEndmill::new(seg_radius * 2.0, 1.0);
-    let cl = point_drop_cutter(tip.x, tip.y, mesh, index, &virtual_cutter);
-    cl.contacted.then_some(cl.z - (tip.z + z_offset))
+    ModelMesh { mesh, index }
+        .top_in_disc(tip.x, tip.y, seg_radius)
+        .map(|top| top - (tip.z + z_offset))
+}
+
+/// The mesh probes of `mounted` ([`ZoneProbe::on_mesh`]), from the tip up:
+/// the shank, then each hard head band, each only when wider than the
+/// cutter envelope.
+fn mesh_probes(mounted: &MountedBody) -> Vec<ZoneProbe> {
+    let envelope = mounted.body().envelope_radius_mm();
+    mounted
+        .zones()
+        .iter()
+        .filter_map(|zone| match zone {
+            Zone::Contact(contact) => ZoneProbe::on_mesh(contact, envelope),
+            Zone::Cutting(_) => None,
+        })
+        .collect()
+}
+
+/// The collision event of the first probe of `probes` that strikes the
+/// mesh with the tip at `tip`, with its penetration: THE kernel
+/// ([`zone_top_at`]) gives the mesh top the zone meets, and the strike is
+/// a penetration above [`BODY_STRIKE_THRESHOLD_MM`] (the subtraction of
+/// [`body_segment_penetration_mm`]).
+fn sample_strike(
+    probes: &[ZoneProbe],
+    solid: &ModelMesh<'_>,
+    move_index: usize,
+    tip: P3,
+) -> Option<(CollisionEvent, f64)> {
+    probes.iter().find_map(|probe| {
+        let top = zone_top_at(probe, solid, tip)?;
+        let penetration = top - (tip.z + probe.bottom_mm);
+        (penetration > BODY_STRIKE_THRESHOLD_MM).then_some((
+            CollisionEvent {
+                move_index,
+                position: tip,
+                penetration_depth: penetration,
+                segment: ZoneKind::Contact(probe.kind),
+                kind: CollisionKind::Workpiece,
+            },
+            penetration,
+        ))
+    })
 }
 
 /// Check a toolpath for holder/shank collisions against the mesh.
@@ -352,11 +210,11 @@ pub fn body_segment_penetration_mm(
 /// Use 0.0 to check endpoints only (legacy behavior).
 pub fn check_collisions(
     toolpath: &Toolpath,
-    assembly: &ToolAssembly,
+    mounted: &MountedBody,
     mesh: &TriangleMesh,
     index: &SpatialIndex,
 ) -> CollisionReport {
-    check_collisions_interpolated(toolpath, assembly, mesh, index, 0.0)
+    check_collisions_interpolated(toolpath, mounted, mesh, index, 0.0)
 }
 
 /// Check collisions with interpolated path sampling.
@@ -365,14 +223,14 @@ pub fn check_collisions(
 /// to catch collisions mid-travel on long linear moves.
 pub(crate) fn check_collisions_interpolated(
     toolpath: &Toolpath,
-    assembly: &ToolAssembly,
+    mounted: &MountedBody,
     mesh: &TriangleMesh,
     index: &SpatialIndex,
     step_mm: f64,
 ) -> CollisionReport {
     match check_collisions_interpolated_with_cancel(
         toolpath,
-        assembly,
+        mounted,
         mesh,
         index,
         step_mm,
@@ -381,7 +239,7 @@ pub(crate) fn check_collisions_interpolated(
         Ok(report) => report,
         Err(_) => CollisionReport {
             collisions: Vec::new(),
-            min_safe_stickout: assembly.stickout(),
+            min_safe_stickout: mounted.body().holder_face_mm(),
         },
     }
 }
@@ -408,7 +266,7 @@ const PARALLEL_MOVE_CHUNK: usize = 1024;
 /// gives `Err(Cancelled)` on both paths.
 pub fn check_collisions_interpolated_with_cancel(
     toolpath: &Toolpath,
-    assembly: &ToolAssembly,
+    mounted: &MountedBody,
     mesh: &TriangleMesh,
     index: &SpatialIndex,
     step_mm: f64,
@@ -418,8 +276,7 @@ pub fn check_collisions_interpolated_with_cancel(
     {
         use rayon::prelude::*;
 
-        let segments = assembly.segments();
-        let cutter_radius = assembly.cutter_radius;
+        let probes = mesh_probes(mounted);
         let move_count = toolpath.moves.len();
         let mut collisions = Vec::new();
         let mut max_extra_stickout_needed = 0.0_f64;
@@ -429,17 +286,7 @@ pub fn check_collisions_interpolated_with_cancel(
             let end = (start + PARALLEL_MOVE_CHUNK).min(move_count);
             let per_move: Vec<(Vec<CollisionEvent>, f64)> = (start..end)
                 .into_par_iter()
-                .map(|move_idx| {
-                    move_collisions(
-                        toolpath,
-                        move_idx,
-                        &segments,
-                        cutter_radius,
-                        mesh,
-                        index,
-                        step_mm,
-                    )
-                })
+                .map(|move_idx| move_collisions(toolpath, move_idx, &probes, mesh, index, step_mm))
                 .collect();
             for (events, move_max) in per_move {
                 collisions.extend(events);
@@ -453,7 +300,7 @@ pub fn check_collisions_interpolated_with_cancel(
             start = end;
         }
 
-        let min_safe_stickout = assembly.stickout() + max_extra_stickout_needed;
+        let min_safe_stickout = mounted.body().holder_face_mm() + max_extra_stickout_needed;
         Ok(CollisionReport {
             collisions,
             min_safe_stickout,
@@ -462,7 +309,8 @@ pub fn check_collisions_interpolated_with_cancel(
 
     #[cfg(not(feature = "parallel"))]
     {
-        let segments = assembly.segments();
+        let probes = mesh_probes(mounted);
+        let solid = ModelMesh { mesh, index };
         let mut collisions = Vec::new();
         let mut max_extra_stickout_needed = 0.0_f64;
 
@@ -490,36 +338,16 @@ pub fn check_collisions_interpolated_with_cancel(
 
             for tip in &sample_points {
                 check_cancel(cancel)?;
-                for band in &segments {
-                    let (z_offset, seg_radius) = (band.z_offset, band.radius);
-                    if seg_radius <= assembly.cutter_radius + 1e-6 {
-                        continue;
-                    }
-
-                    let Some(penetration) =
-                        body_segment_penetration_mm(*tip, z_offset, seg_radius, mesh, index)
-                    else {
-                        continue;
-                    };
-                    if penetration > BODY_STRIKE_THRESHOLD_MM {
-                        collisions.push(CollisionEvent {
-                            move_index: move_idx,
-                            position: *tip,
-                            penetration_depth: penetration,
-                            segment: band.segment,
-                            kind: CollisionKind::Workpiece,
-                        });
-
-                        max_extra_stickout_needed = max_extra_stickout_needed.max(penetration);
-                        // The first band that strikes at this sample is
-                        // enough; the walk goes on to the next sample.
-                        break;
-                    }
+                // The first zone that strikes at this sample is enough; the
+                // walk goes on to the next sample.
+                if let Some((event, penetration)) = sample_strike(&probes, &solid, move_idx, *tip) {
+                    collisions.push(event);
+                    max_extra_stickout_needed = max_extra_stickout_needed.max(penetration);
                 }
             }
         }
 
-        let min_safe_stickout = assembly.stickout() + max_extra_stickout_needed;
+        let min_safe_stickout = mounted.body().holder_face_mm() + max_extra_stickout_needed;
 
         Ok(CollisionReport {
             collisions,
@@ -535,8 +363,7 @@ pub fn check_collisions_interpolated_with_cancel(
 fn move_collisions(
     toolpath: &Toolpath,
     move_idx: usize,
-    segments: &[BodyBand],
-    cutter_radius: f64,
+    probes: &[ZoneProbe],
     mesh: &TriangleMesh,
     index: &SpatialIndex,
     step_mm: f64,
@@ -562,31 +389,13 @@ fn move_collisions(
         .and_then(|i| toolpath.moves.get(i))
         .map_or(mv.target, |p| p.target);
 
+    let solid = ModelMesh { mesh, index };
     for tip in &interpolate_samples(prev, mv.target, step_mm) {
-        for band in segments {
-            let (z_offset, seg_radius) = (band.z_offset, band.radius);
-            if seg_radius <= cutter_radius + 1e-6 {
-                continue;
-            }
-
-            let Some(penetration) =
-                body_segment_penetration_mm(*tip, z_offset, seg_radius, mesh, index)
-            else {
-                continue;
-            };
-            if penetration > BODY_STRIKE_THRESHOLD_MM {
-                events.push(CollisionEvent {
-                    move_index: move_idx,
-                    position: *tip,
-                    penetration_depth: penetration,
-                    segment: band.segment,
-                    kind: CollisionKind::Workpiece,
-                });
-                move_max = move_max.max(penetration);
-                // The first band that strikes at this sample is enough;
-                // the walk goes on to the next sample.
-                break;
-            }
+        // The first zone that strikes at this sample is enough; the walk
+        // goes on to the next sample.
+        if let Some((event, penetration)) = sample_strike(probes, &solid, move_idx, *tip) {
+            events.push(event);
+            move_max = move_max.max(penetration);
         }
     }
     (events, move_max)
@@ -1060,33 +869,42 @@ mod tests {
     use super::*;
     use crate::mesh::{SpatialIndex, make_test_hemisphere};
 
-    fn test_assembly() -> ToolAssembly {
-        ToolAssembly {
-            cutter_radius: 3.0, // 6mm ball endmill
-            cutter_length: 25.0,
-            shank_diameter: 6.0,
-            head: vec![crate::machine::head::HeadBand::holder_at_face(35.0, 35.0)],
-            stickout: 35.0,
-        }
+    /// A 6 mm cutter of `flute` mm, a 6 mm shank, a stickout of
+    /// `stickout` mm and one 35 mm holder band at the holder face.
+    fn mounted(flute: f64, stickout: f64) -> MountedBody {
+        crate::tool::ToolDefinition::new(
+            Box::new(crate::tool::FlatEndmill::new(6.0, flute)),
+            6.0,
+            stickout,
+            2,
+            crate::compute::tool_config::ToolMaterial::Carbide,
+        )
+        .body()
+        .mounted(vec![crate::machine::head::HeadBand::holder_at_face(
+            35.0, stickout,
+        )])
+    }
+
+    fn test_assembly() -> MountedBody {
+        mounted(25.0, 35.0)
     }
 
     #[test]
     fn test_stickout() {
         let asm = test_assembly();
-        assert!((asm.stickout() - 35.0).abs() < 0.01);
+        assert!((asm.body().holder_face_mm() - 35.0).abs() < 0.01);
     }
 
+    /// The mesh probes: the shank (no wider than the cutter) gives none;
+    /// the holder at the face reads its whole disc of radius 17.5.
     #[test]
     fn test_segments() {
-        let asm = test_assembly();
-        let segs = asm.segments();
-        assert_eq!(segs.len(), 2);
-        // Shank at z_offset=25, radius=3
-        assert!((segs[0].z_offset - 25.0).abs() < 0.01);
-        assert!((segs[0].radius - 3.0).abs() < 0.01);
-        // Holder at z_offset=35, radius=17.5
-        assert!((segs[1].z_offset - 35.0).abs() < 0.01);
-        assert!((segs[1].radius - 17.5).abs() < 0.01);
+        let probes = mesh_probes(&test_assembly());
+        assert_eq!(probes.len(), 1);
+        assert_eq!(probes[0].kind, crate::tool::body::ContactKind::Holder);
+        assert!((probes[0].bottom_mm - 35.0).abs() < 0.01);
+        assert!((probes[0].outer_mm - 17.5).abs() < 0.01);
+        assert_eq!(probes[0].inner_mm, 0.0);
     }
 
     #[test]
@@ -1112,13 +930,7 @@ mod tests {
     fn test_collision_detected_low_z() {
         let mesh = make_test_hemisphere(20.0, 32);
         let index = SpatialIndex::build(&mesh, 5.0);
-        let asm = ToolAssembly {
-            cutter_radius: 3.0,
-            cutter_length: 10.0, // short cutter
-            shank_diameter: 6.0,
-            head: vec![crate::machine::head::HeadBand::holder_at_face(35.0, 15.0)],
-            stickout: 15.0,
-        };
+        let asm = mounted(10.0, 15.0);
 
         // Toolpath at z=0 over the hemisphere center
         // Hemisphere is 20mm tall. With stickout=15, holder bottom at z=15.
@@ -1137,7 +949,7 @@ mod tests {
             "Short stickout over hemisphere should detect collisions"
         );
         assert!(
-            report.min_safe_stickout > asm.stickout(),
+            report.min_safe_stickout > asm.body().holder_face_mm(),
             "Safe stickout should exceed current stickout"
         );
     }
@@ -1146,13 +958,7 @@ mod tests {
     fn test_interpolated_catches_mid_move() {
         let mesh = make_test_hemisphere(20.0, 32);
         let index = SpatialIndex::build(&mesh, 5.0);
-        let asm = ToolAssembly {
-            cutter_radius: 3.0,
-            cutter_length: 10.0,
-            shank_diameter: 6.0,
-            head: vec![crate::machine::head::HeadBand::holder_at_face(35.0, 15.0)],
-            stickout: 15.0,
-        };
+        let asm = mounted(10.0, 15.0);
 
         // Long move that sweeps over the hemisphere center
         let mut tp = Toolpath::new();
@@ -1175,44 +981,12 @@ mod tests {
     }
 
     #[test]
-    fn test_tapered_holder_segment() {
-        // Test the HolderSegment API with a tapered collet nut
-        let profile = vec![
-            HolderSegment {
-                z_offset: 25.0,
-                radius_bottom: 5.0, // narrow bottom
-                radius_top: 10.0,   // wider top
-                length: 10.0,
-            },
-            HolderSegment {
-                z_offset: 35.0,
-                radius_bottom: 17.5,
-                radius_top: 17.5,
-                length: 40.0,
-            },
-        ];
-
-        let segs = ToolAssembly::segments_from_profile(3.0, &profile);
-        assert_eq!(segs.len(), 2);
-        // First segment: max_radius = 10.0 (tapered)
-        assert!((segs[0].1 - 10.0).abs() < 0.01);
-        // Second segment: max_radius = 17.5 (cylinder)
-        assert!((segs[1].1 - 17.5).abs() < 0.01);
-    }
-
-    #[test]
     fn test_no_collision_adequate_stickout() {
         let mesh = make_test_hemisphere(20.0, 16);
         let index = SpatialIndex::build(&mesh, 5.0);
 
         // Generous stickout — holder is well above mesh
-        let asm = ToolAssembly {
-            cutter_radius: 3.0,
-            cutter_length: 40.0, // 40mm cutter length
-            shank_diameter: 6.0,
-            head: vec![crate::machine::head::HeadBand::holder_at_face(35.0, 60.0)],
-            stickout: 60.0,
-        };
+        let asm = mounted(40.0, 60.0);
 
         // Toolpath at mesh surface level (z ~ 0)
         let mut tp = Toolpath::new();
@@ -1232,13 +1006,7 @@ mod tests {
     fn test_collision_report_safe_stickout() {
         let mesh = make_test_hemisphere(20.0, 32);
         let index = SpatialIndex::build(&mesh, 5.0);
-        let asm = ToolAssembly {
-            cutter_radius: 3.0,
-            cutter_length: 10.0,
-            shank_diameter: 6.0,
-            head: vec![crate::machine::head::HeadBand::holder_at_face(35.0, 15.0)],
-            stickout: 15.0,
-        };
+        let asm = mounted(10.0, 15.0);
 
         let mut tp = Toolpath::new();
         tp.feed_to(P3::new(0.0, 0.0, 0.0), 1000.0);

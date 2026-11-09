@@ -536,8 +536,9 @@ fn rivmap100_tiered_finish_step0() {
     use rs_cam_core::mesh::SpatialIndex;
     use rs_cam_core::session::{Command, MultitoolPlanSpec, ProjectSession, SetStockSourceArgs};
     use rs_cam_core::stock::collision::{
-        AssemblySegment, BODY_STRIKE_THRESHOLD_MM, body_segment_penetration_mm, check_collisions,
+        BODY_STRIKE_THRESHOLD_MM, body_segment_penetration_mm, check_collisions,
     };
+    use rs_cam_core::tool::body::{ContactKind, ContactRadius, ZoneKind};
     use rs_cam_core::toolpath::MoveType;
 
     let mut session =
@@ -644,9 +645,7 @@ fn rivmap100_tiered_finish_step0() {
         .unwrap()
         .clone();
     let def = build_cutter(&tool).unwrap();
-    let assembly = def
-        .to_assembly(&rs_cam_core::machine::head::HeadFit::default())
-        .assembly();
+    let assembly = def.mounted(&rs_cam_core::machine::head::HeadFit::default());
     let mesh = session
         .models()
         .iter()
@@ -668,21 +667,21 @@ fn rivmap100_tiered_finish_step0() {
         tp.moves.len(),
         cutting.len(),
         tool.name,
-        assembly.cutter_length,
-        assembly.shank_diameter / 2.0,
+        assembly.body().flute_length_mm(),
+        assembly.body().shank_diameter_mm() / 2.0,
         assembly
-            .head
+            .head()
             .first()
             .and_then(|b| b.radius_mm)
             .unwrap_or(0.0),
-        assembly.cutter_radius,
+        assembly.body().envelope_radius_mm(),
     );
 
     let report = check_collisions(&tp, &assembly, &mesh, &index);
     let shank = report
         .collisions
         .iter()
-        .filter(|c| c.segment == AssemblySegment::Shank)
+        .filter(|c| c.segment == ZoneKind::Contact(ContactKind::Shank))
         .count();
     let holder = report.collisions.len() - shank;
     eprintln!(
@@ -702,7 +701,15 @@ fn rivmap100_tiered_finish_step0() {
 
     // The same rule with no envelope skip: the body directly above the
     // flutes, at every cutting-move endpoint.
-    let (z_off, body_r) = assembly.non_fluted_body().expect("a body above the flutes");
+    let zone = assembly
+        .first_above_flutes()
+        .expect("a body above the flutes");
+    let body_r = match zone.outer {
+        ContactRadius::Mm(r) => Some(r),
+        ContactRadius::Shelf => None,
+    }
+    .expect("the first zone above the flutes has a width");
+    let z_off = zone.span.bottom_mm;
     let mut body_strikes = 0usize;
     let mut worst = 0.0f64;
     for &i in &cutting {

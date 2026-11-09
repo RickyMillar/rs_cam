@@ -212,7 +212,9 @@ pub(super) fn report_for(verdict: Verdict) -> CollisionReport {
                 move_index: 0,
                 position: P3::new(0.0, 0.0, 0.0),
                 penetration_depth: 1.5,
-                segment: rs_cam_core::stock::collision::AssemblySegment::Holder,
+                segment: rs_cam_core::tool::body::ZoneKind::Contact(
+                    rs_cam_core::tool::body::ContactKind::Holder,
+                ),
                 kind: CollisionKind::Workpiece,
             }],
             min_safe_stickout: 58.0,

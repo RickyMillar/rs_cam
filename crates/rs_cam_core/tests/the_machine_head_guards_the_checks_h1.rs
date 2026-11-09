@@ -15,7 +15,13 @@
 //!   the simulation finds no strike;
 //! - (d) a stated gap below the solver gap files a Caution that names the
 //!   op and the needed gap, and the simulation reports the shoe plate in
-//!   the stock.
+//!   the stock;
+//! - (e) P22-0c-5 (P22-0c-4 open item 6): a head change after a simulation
+//!   (a band radius of a fixed part, or of a hard shoe part) leaves no
+//!   trace of that run fresh: the session drops its own simulation, and a
+//!   trace a caller still holds reads stale (`sim_trace_is_fresh_for`).
+//!   A shoe-part change is a known red (an inverted assertion): a held
+//!   trace still reads fresh.
 
 #![expect(
     clippy::unwrap_used,
@@ -40,7 +46,8 @@ use rs_cam_core::machine::head::{HeadFit, MachineHead, ResolvedShoe, ShoeSetting
 use rs_cam_core::session::{
     Command, ProjectSession, SetMachineHeadArgs, SetToolpathShoeArgs, VerdictKind,
 };
-use rs_cam_core::stock::collision::{AssemblySegment, CollisionKind};
+use rs_cam_core::stock::collision::CollisionKind;
+use rs_cam_core::tool::body::{ContactKind, ZoneKind};
 use rs_cam_core::toolpath::Toolpath;
 use rs_cam_core::trace::toolpath_spans::AnnotatedToolpath;
 use rs_cam_core::trace::transform_provenance::ReconcileSet;
@@ -109,9 +116,7 @@ fn a_shelf_is_a_z_floor_under_the_highest_top_h1() {
             .build(),
     )
     .unwrap();
-    let assembly = cutter
-        .to_assembly(&HeadFit::fixed(&MachineHead::bare_collet()))
-        .assembly();
+    let assembly = cutter.mounted(&HeadFit::fixed(&MachineHead::bare_collet()));
     let view = ObstacleSet::default()
         .for_tool(&assembly, Some(&stock))
         .unwrap();
@@ -139,7 +144,7 @@ fn a_shelf_is_a_z_floor_under_the_highest_top_h1() {
         "a tip 80 mm down puts the spindle in the stock"
     );
     assert_eq!(deep[0].kind, CollisionKind::Stock);
-    assert_eq!(deep[0].segment, AssemblySegment::Holder);
+    assert_eq!(deep[0].segment, ZoneKind::Contact(ContactKind::Holder));
     assert!(
         view.check_toolpath(&pass(-70.0), JoinStart::Unknown)
             .is_empty()
@@ -227,6 +232,64 @@ fn the_shoe_plate_strikes_only_below_the_solver_gap_h1() {
         .obstacle_collisions
         .first()
         .expect("the plate strikes the stock at gap 25");
-    assert_eq!(hit.event.segment, AssemblySegment::Shoe);
+    assert_eq!(hit.event.segment, ZoneKind::Contact(ContactKind::Shoe));
     assert_eq!(hit.event.kind, CollisionKind::Stock);
+}
+
+/// A simulated session with the dust shoe head, and the cut trace of its
+/// run (fresh before any edit).
+fn simulated_with_shoe() -> (
+    ProjectSession,
+    std::sync::Arc<rs_cam_core::stock::simulation_cut::SimulationCutTrace>,
+) {
+    let mut s = session();
+    set_head(&mut s, MachineHead::dust_shoe());
+    generate(&mut s, 0);
+    simulate(&mut s);
+    let trace = s
+        .simulation_result()
+        .expect("a simulation")
+        .cut_trace
+        .clone()
+        .expect("a cut trace");
+    assert!(s.sim_trace_is_fresh_for(&trace, 0), "fresh before the edit");
+    (s, trace)
+}
+
+/// (e) A head change after a simulation stales the trace of the run: a
+/// fixed part (the collet nut grows from 20 to 24 mm). The edit drops
+/// every result (`drop_head_readers_if_moved`), so a held trace reads
+/// stale.
+#[test]
+fn a_fixed_head_change_after_a_simulation_stales_the_trace_p22_0c_5() {
+    let (mut s, trace) = simulated_with_shoe();
+    let mut head = MachineHead::dust_shoe();
+    head.parts[0].diameter_mm = Some(24.0);
+    set_head(&mut s, head);
+    assert!(s.simulation_result().is_none(), "the session drops its run");
+    assert!(
+        !s.sim_trace_is_fresh_for(&trace, 0),
+        "a held trace reads stale"
+    );
+}
+
+/// (e) The same for a hard shoe part (the shoe plate grows from 80 to
+/// 90 mm). KNOWN RED, inverted (P22-0c-5 item 6, open): a shoe edit moves
+/// no toolpath, so the results stay, and the freshness rule reads only the
+/// toolpath and config hashes (`SimulationProvenance` holds no head
+/// digest). A held trace therefore still reads fresh. The session drops its
+/// own simulation, so no session read uses the stale trace; only a caller
+/// that holds its own trace reads it as fresh. This test asserts the defect
+/// and fails when the freshness rule reads the head: then invert it.
+#[test]
+fn a_shoe_change_after_a_simulation_keeps_the_trace_fresh_known_red_p22_0c_5() {
+    let (mut s, trace) = simulated_with_shoe();
+    let mut head = MachineHead::dust_shoe();
+    head.shoe.as_mut().unwrap().parts[1].diameter_mm = Some(90.0);
+    set_head(&mut s, head);
+    assert!(s.simulation_result().is_none(), "the session drops its run");
+    assert!(
+        s.sim_trace_is_fresh_for(&trace, 0),
+        "the freshness rule now reads the shoe: invert this known red"
+    );
 }

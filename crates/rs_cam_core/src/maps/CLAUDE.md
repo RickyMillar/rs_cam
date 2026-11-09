@@ -23,7 +23,7 @@ are `maps::tier_map::compute_tier_map` and `maps::reach_map::compute_reach_map`.
 - `reach_map_for_mesh`, `stats`, `reset_stats`, `cache_len`, `clear`, `bvh_stats`,
   `bvh_cache_len` and `clear_bvh` are `test-support` doors, not product API.
 - A map states its grid once, as `map.grid` (`ReachMap.grid` is flattened).
-- The flute-reach pass calls `stock::collision::body_segment_penetration_mm`.
+- The flute-reach pass reads `MountedBody::first_above_flutes` and calls `stock::collision::body_segment_penetration_mm`.
   It reports; it never moves a cell out of a tier.
 
 ## Sentries

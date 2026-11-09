@@ -334,38 +334,80 @@ impl MountedBody {
     }
 
     /// Every zone: the tool zones from the tip up, then each head band as
-    /// a contact zone from its bottom upward (`SpanTop::Open`).
+    /// a contact zone from its bottom upward ([`head_zone`]).
     #[must_use]
     pub fn zones(&self) -> Vec<Zone> {
         let mut zones = self.body.zones();
-        zones.extend(self.head.iter().map(|band| {
-            Zone::Contact(ContactZone {
-                span: AxialSpan {
-                    bottom_mm: band.offset_mm,
-                    top: SpanTop::Open,
-                },
-                inner_mm: 0.0,
-                outer: band
-                    .radius_mm
-                    .map_or(ContactRadius::Shelf, ContactRadius::Mm),
-                kind: band.kind.into(),
-                name: Some(band.name.clone()),
-            })
-        }));
+        zones.extend(self.head.iter().map(|band| Zone::Contact(head_zone(band))));
         zones
     }
 
-    /// The old `ToolAssembly` view (P22-0c-1). The collision kernels read
-    /// it until P22-0c-5 moves them to the zones.
+    /// The first zone above the flutes that has a width (P22-0c-5): the
+    /// shank when the body shows one, else the first head band with a
+    /// diameter. `None` when the mounted body has neither. It is the part
+    /// a wall taller than the flutes meets first (`maps::tier_flute_reach`).
+    /// Its radius is taken as is, with no comparison against the envelope
+    /// radius.
     #[must_use]
-    pub fn assembly(&self) -> crate::stock::collision::ToolAssembly {
-        crate::stock::collision::ToolAssembly {
-            cutter_radius: self.body.envelope_radius_mm,
-            cutter_length: self.body.flute_length_mm,
-            shank_diameter: self.body.shank_diameter_mm,
-            stickout: self.body.stickout_mm,
-            head: self.head.clone(),
+    pub fn first_above_flutes(&self) -> Option<ContactZone> {
+        self.zones().into_iter().find_map(|zone| match zone {
+            Zone::Contact(contact) => match (contact.kind, contact.outer) {
+                (
+                    ContactKind::Shank | ContactKind::Holder | ContactKind::Shoe,
+                    ContactRadius::Mm(_),
+                ) => Some(contact),
+                (ContactKind::Core | ContactKind::FluteTop, _) | (_, ContactRadius::Shelf) => None,
+            },
+            Zone::Cutting(_) => None,
+        })
+    }
+}
+
+/// The contact zone of one head band (H1): from its bottom upward
+/// (`SpanTop::Open`); a band with no width limit is a shelf. THE mapping
+/// of a band to a zone: [`MountedBody::zones`] and the shoe solver
+/// (`compute::shoe`, a head with no tool) read it.
+#[must_use]
+pub fn head_zone(band: &HeadBand) -> ContactZone {
+    ContactZone {
+        span: AxialSpan {
+            bottom_mm: band.offset_mm,
+            top: SpanTop::Open,
+        },
+        inner_mm: 0.0,
+        outer: band
+            .radius_mm
+            .map_or(ContactRadius::Shelf, ContactRadius::Mm),
+        kind: band.kind.into(),
+        name: Some(band.name.clone()),
+    }
+}
+
+/// The kind of any zone (P22-0c-5): the part a collision event names. It
+/// replaces the old `AssemblySegment`; its wire names do not change
+/// (`cutter`, `shank`, `holder`, `shoe`, and `core`, `flute_top`).
+#[derive(Debug, Clone, Copy, PartialEq, Eq)]
+pub enum ZoneKind {
+    /// A cutting zone (K1: the obstacle check includes the cutter).
+    Cutting(CuttingKind),
+    /// A contact zone.
+    Contact(ContactKind),
+}
+
+impl ZoneKind {
+    /// The wire and report name.
+    #[must_use]
+    pub fn as_str(self) -> &'static str {
+        match self {
+            Self::Cutting(CuttingKind::Flutes) => "cutter",
+            Self::Contact(kind) => kind.as_str(),
         }
+    }
+}
+
+impl std::fmt::Display for ZoneKind {
+    fn fmt(&self, f: &mut std::fmt::Formatter<'_>) -> std::fmt::Result {
+        f.write_str(self.as_str())
     }
 }
 
