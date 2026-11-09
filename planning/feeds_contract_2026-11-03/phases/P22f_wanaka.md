@@ -200,3 +200,25 @@ of it; the read after P22b says.
 Lead recommendation to the operator: set idx 1 back to `ramp` in the file until P22b lands, or
 do not export the Back setup before then. The export warns (48 critical rows) but does not
 refuse (K6).
+
+### 9.4 What idx 1 cuts at (the operator's question on 8475 and the air moves)
+
+From the P22f-2a ramp-run G-code (section 2) and the load report's `modulation_summary`:
+
+| idx 1 feed band (F words of the fed moves) | share of fed length | share of fed time |
+|---|---|---|
+| 5000-7000 (the cut moves, the chip cap) | 72.4 % | 74.3 % |
+| 8475 exactly | 3.7 % | 3.0 % |
+| above 8500 (air moves lifted to the machine maximum 15000) | 13.1 % | 7.8 % |
+
+The modulator binds on `chipload_max` for 44 % of the touched moves, on `machine_max_feed` for
+52 % (the air moves, lifted), on `power_max` for 0.1 %. Median feed change -23.9 %: 8475 to about
+6450, the vendor band of the row at 18000 rpm (0.179 mm/tooth x 2 x 18000 = 6444). So the stored
+8475 (0.235 mm/tooth, 1.2 x the vendor maximum; `load.chipload.commanded_above_band`, info) is
+never cut: the cut runs at the chart feed, the air moves run faster, and the power cap decides
+almost nothing. The air moves do not bias the "rarely reaches 8475" reading; they lie above it.
+The operator's roughing tool has STRAIGHT cutting edges (a router bit, not a spiral end mill): the
+force model already runs Curti 2021 at helix 0 (the straight-flute case); the chip band, the RPM
+rule and the tool record do not know it. A research agent (`research/large_straight_router_bits_
+2026-11-10.md`) collects the published tables (max RPM by diameter, straight-bit chip loads,
+straight-vs-spiral force, small-shank limits) for P21c and the tool record.
