@@ -90,7 +90,7 @@ junction_deviation_mm = 0.1
 
 [job.machine.controller]
 firmware = "grbl_hal"
-rpm_max = 1000.0
+rpm_max = 24000.0
 rpm_min = 0.0
 mode = 0
 spindle_at_speed_tolerance_pct = 5.0
