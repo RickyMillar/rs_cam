@@ -206,3 +206,11 @@ reads 5 % low near a slot. The gate on a regenerated trace is the judge, on a GU
   radius"). Never a refusal.
 - Q3 ruled (operator, 2026-11-09): P22e waits; run P22-0a..P22c first, then decide P22e from the
   P22a readout (the share of wide or slow cutting that comes from corridors).
+- P22-0c added (operator direction, 2026-11-09): one tool body model for every tool with
+  non-cutting parts. The tool is a list of axial zones (z range, inner and outer radius, cuts or
+  not); the simulation stamps only cutting zones (P22-0a's blade ring is the first case); ONE
+  check flags any non-cutting zone that meets the stock, as a warning with its position, never a
+  refusal. It folds in today's four separate checks: `check_collisions` (shank, holder, head
+  bands; `ToolAssembly` in stock/collision.rs), `tool.flute_overreach` (the shank above the
+  flutes), `core_strike` (collision.rs:1096) and the P22-0b core check. Each zone kind keeps its
+  own finding id and text. Order: after P22-0b, before P22a.

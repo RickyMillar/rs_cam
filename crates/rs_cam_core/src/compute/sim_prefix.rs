@@ -190,6 +190,7 @@ use crate::compute::simulate::{
     SimulationRequest,
 };
 use crate::compute::stock_change::StockChangeSource;
+use crate::compute::tool_config::NonCentreCuttingLimits;
 use crate::dexel_stock::TriDexelStock;
 use crate::ids::ToolpathId;
 use crate::mesh::TriangleMesh;
@@ -448,6 +449,8 @@ pub(crate) mod digest {
 ///    function the stamp kernel consumes — and `engagement_radius_mm` /
 ///    `chip_geometry` probes cover the depth-dependent width and the chip model
 ///    that per-sample metrics read.
+/// 3. **Centre core.** `non_centre_cutting()` gives the limits that
+///    `RadialProfileLUT::for_stock_stamp` and the core gate read (D1).
 ///
 /// A new cutter shape whose behaviour is not a function of the hint plus these
 /// probes would need this extended. That is the residual risk and it is stated
@@ -471,6 +474,24 @@ fn hash_tool(hasher: &mut DefaultHasher, tool: &ToolDefinition) {
     tool.flute_count.hash(hasher);
     format!("{:?}", tool.tool_material).hash(hasher);
     format!("{:?}", tool.geometry_hint()).hash(hasher);
+    // D1 (P22-0c): the stamp of a non-centre-cutting tool cuts only the
+    // blade ring (`RadialProfileLUT::for_stock_stamp`), and the core gate
+    // reads every limit. Read them through the same accessor as the stamp.
+    // Destructured, `..`-free: a new limit field does not compile until it
+    // is in the key.
+    match tool.non_centre_cutting() {
+        Some(NonCentreCuttingLimits {
+            max_plunge_depth_mm,
+            max_descent_angle_deg,
+            centre_core_diameter_mm,
+        }) => {
+            1_u8.hash(hasher);
+            hash_f64_bits(hasher, max_plunge_depth_mm);
+            hash_f64_bits(hasher, max_descent_angle_deg);
+            hash_f64_bits(hasher, centre_core_diameter_mm);
+        }
+        None => 0_u8.hash(hasher),
+    }
 
     let radius = tool.radius();
     let length = tool.length();
@@ -1125,6 +1146,61 @@ mod tests {
         assert!(
             !key.is_prefix_of(&without),
             "a group that lost its stock change must miss"
+        );
+    }
+
+    /// D1 (P22-0c): the dexel stamp of a non-centre-cutting tool cuts only
+    /// the blade ring (`RadialProfileLUT::for_stock_stamp`), and the core
+    /// gate reads every limit. Two tools that differ only in those facts
+    /// must give different keys; two equal tools must give equal keys.
+    #[test]
+    fn a_core_change_changes_the_prefix_key_d1() {
+        use crate::compute::tool_config::{NonCentreCuttingGeometry, ToolMaterial};
+        use crate::tool::FlatEndmill;
+
+        fn key(limits: Option<crate::compute::tool_config::NonCentreCuttingLimits>) -> u64 {
+            let tool = ToolDefinition::new(
+                Box::new(FlatEndmill::new(20.0, 25.0)),
+                12.0,
+                45.0,
+                2,
+                ToolMaterial::Carbide,
+            )
+            .with_non_centre_cutting(limits);
+            let mut hasher = DefaultHasher::new();
+            hash_tool(&mut hasher, &tool);
+            hasher.finish()
+        }
+        let geometry = |core: f64, protrusion: f64| {
+            Some(
+                NonCentreCuttingGeometry {
+                    centre_core_diameter_mm: core,
+                    blade_protrusion_mm: protrusion,
+                }
+                .limits(),
+            )
+        };
+
+        assert_eq!(key(None), key(None), "equal tools give equal keys");
+        assert_eq!(
+            key(geometry(8.0, 1.0)),
+            key(geometry(8.0, 1.0)),
+            "equal non-centre-cutting tools give equal keys"
+        );
+        assert_ne!(
+            key(None),
+            key(geometry(8.0, 1.0)),
+            "a centre-cutting and a non-centre-cutting tool give different keys"
+        );
+        assert_ne!(
+            key(geometry(8.0, 1.0)),
+            key(geometry(10.0, 1.0)),
+            "two core diameters give different keys"
+        );
+        assert_ne!(
+            key(geometry(8.0, 1.0)),
+            key(geometry(8.0, 1.5)),
+            "two blade protrusions give different keys"
         );
     }
 }
