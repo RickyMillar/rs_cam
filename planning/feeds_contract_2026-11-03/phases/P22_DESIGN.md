@@ -214,3 +214,16 @@ reads 5 % low near a slot. The gate on a regenerated trace is the judge, on a GU
   bands; `ToolAssembly` in stock/collision.rs), `tool.flute_overreach` (the shank above the
   flutes), `core_strike` (collision.rs:1096) and the P22-0b core check. Each zone kind keeps its
   own finding id and text. Order: after P22-0b, before P22a.
+
+## 10. Lead note after the P22a readout (2026-11-09 night, commit 6fd852527)
+
+The wide samples of wanaka idx 1 are not D65 splits. The 3D clearing "Perimeter sweep"
+(`adaptive3d/clearing.rs clear_one_region`, the shipped path where `grown_outlines` returns None)
+gives 72 % of the samples past the pass ceiling: 22 moves in three loops right after a ramp
+entry, a full slot (ae 17.80 mm at ap 9.00 mm) at the full 8475 mm/min with no cap. D65 3D
+splits: 0. The order changes: a new phase P22f (stop the geodesic slice from cutting the
+sweep: find the None path, fix the grow or plan the band under the pass load) comes BEFORE
+P22b. P22b still removes the departure windows (79 samples, capped). P22c stays as a rule;
+its idx 1 effect depends on P22f. P22e has no case on idx 1 (ruling Q3 holds). The exact
+source door (P22a-2, `FeedCapSource`) is designed in `P22a.md` and deferred. The P22f design
+is `P22f_DESIGN.md` (in progress).
