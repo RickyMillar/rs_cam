@@ -64,6 +64,18 @@ straight-flute router bit: `research/large_straight_router_bits_2026-11-10.md` a
 section 10 (the 14000 tier has no source as a cap; a Freud straight-bit chip band exists; a tool
 edge-geometry fact is a new item after P21c).
 
+Open defect (2026-11-10, no fix landed): a post-config change (`SetPostConfig`, for example MCP
+`set_spindle_strategy`) on a project with a simulation held blocks the GUI main thread for minutes
+(wanaka: about 8 min, the depth gate log line every 11 s, 35 times for 18 ops). The operator's own
+agent read it as far as: the tool-load report is rebuilt on the GUI thread, and the rebuild evaluates
+both the stock and the own-material populations, so one op runs the depth gate more than once; it
+ran out of budget before a fix. Fix shape: the F216 memo takes the policy as an input and reads the
+gates from the stored simulation result, or the rebuild moves to a worker lane. In the tree,
+uncommitted and not yet gated (the cargo lane waited on memory while the GUI held 8.9 GB): the
+operator's `crates/rs_cam_viz/src/ui/components/notice.rs` empty-state width fix with its own lib
+test `an_empty_state_respects_its_parent_width`; run viz `--lib notice`, then commit it as the
+operator's change.
+
 Operator decisions that were waiting (plain words in `P21_DESIGN.md` section 9 and the lead's morning
 summary): (1) the wanaka project setting `spindle_strategy = "constant_chip"` with
 `spindle_rpm_ceiling = 24000` (needed for the 16 rpm acceptance rows; P21c); (2) the P21
