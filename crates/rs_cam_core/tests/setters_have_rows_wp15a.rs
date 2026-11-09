@@ -145,6 +145,9 @@ const CRATE_PRIVATE_HELPERS: &[&str] = &[
     "add_setup_impl",
     "add_tool_impl",
     "add_toolpath_impl",
+    // 4d684209c (W1-core + W2a): the raw half of `set_toolpath_tool`,
+    // with no effects wrapper. `add_tool` calls it too (P3 auto-bind).
+    "bind_tool_impl",
     "bump_all_revisions",
     "drop_all_results",
     // 424411da (G-RESTSTALE): the rest-result sweep that

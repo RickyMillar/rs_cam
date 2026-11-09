@@ -191,6 +191,16 @@ the full entry point. Read it first, then the files it names.
 
 ### Known reds (all pre-existing; do not chase in a phase)
 
+Update 2026-11-09 (lead): `KNOWN_REDS_TRIAGE.md` classifies every red. Fourteen stale tests are
+fixed and green in the known-reds commit (viz fm5 deleted, its two live assertions moved into
+`one_draft_for_every_add_door_s11`; ui09, wp19, r2, genalldisabled, p4_3, fscontrol, wp12; core
+roughgouge, f065, p2_3, wp15a, p6_0c, model_bottom_d1). `perf_golden_sim_metrics` is deterministic
+(a Profile arc cut reads as air since b0a133614..): bisect after P22-0c. `adaptpassload` is a
+real defect (Residue mop step 0.94 D). Still red by design: the_inspector ic1 (Tool cap, lead
+decision), pipesmoke (flake), W4 check 6 (schema `optional`, one line), the 17 S11 fixtures,
+litmatrix (P13c chain), layered_w3, vendor_lut_sub_1mm, a5 (P21), adaptrapidlift (P22-0c).
+The lists below are the state before that commit.
+
 - viz (10 targets): `an_unbacked_cell_still_adds_its_operation_fm5`, `effects_are_stamped_wp19`,
   `folder_maps_name_real_files_f140`, `generate_all_skips_disabled_g_genalldisabled`,
   `loose_executor_is_not_named_in_viz_wp12`, `new_3d_op_boundary_is_silhouette_plus_tool_r2`,

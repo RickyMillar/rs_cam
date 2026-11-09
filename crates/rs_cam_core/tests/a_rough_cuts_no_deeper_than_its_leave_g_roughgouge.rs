@@ -14,8 +14,10 @@
 //!    no finding. So does a path whose tool side grazes a wall by less than
 //!    `t` (the Corne hex-hole case of the evidence run).
 //! 2. A tip inside the leave band (below the limit, above the surface less
-//!    `t`) is a Caution finding: export does not refuse, and the finding
-//!    gives the depth below the limit and the height above the surface.
+//!    `t`) is a Caution finding: export does not warn on it, and the
+//!    finding gives the depth below the limit and the height above the
+//!    surface. Feeds contract P2 commit B (`c6826ad05`, K6: no finding
+//!    refuses a job) changed the text from "export does not refuse".
 //! 3. A tip below the surface less `t` is Severe, with both depths, at
 //!    the right place. One dip in one move gives the finding at the bottom
 //!    of the dip, on that move.
@@ -230,7 +232,9 @@ fn a_cut_into_the_leave_is_a_caution_g_roughgouge() {
         m.contains("not into the model") && m.contains("mm above"),
         "{m}"
     );
-    assert!(m.contains("export does not refuse"), "{m}");
+    // K6 (`c6826ad05`): no finding refuses a job, so the text says the
+    // export does not warn.
+    assert!(m.contains("export does not warn on it"), "{m}");
 }
 
 /// Claim 3: a tip below the surface less the tolerance is Severe, with

@@ -415,8 +415,10 @@ fn the_selection_section_writes_edits_only_p4_3() {
     assert!(matches!(edit, SelectionEdit::RemovePick(_)), "{edit:?}");
 }
 
-/// The text of the ⋯ menu act of a list line.
-const MENU: &str = "\u{22EF}";
+/// The text of the menu act of a list line. W3j (`6bb0d4820`) changed the
+/// glyph from U+22EF to U+2026, because no loaded font has U+22EF, so the
+/// test reads the kit constant.
+const MENU: &str = rs_cam_viz::ui::components::list_box::MENU;
 
 /// Every painted text of the production inspector for `state`, after the
 /// layout settles.

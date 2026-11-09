@@ -136,8 +136,11 @@ const MIN_FILES_WALKED: usize = 100;
 /// `controller::tests` — is a DIRECTORY module with eighteen theme
 /// children since SHL-03. The bar catches a resolver that starts
 /// excluding production code, not a new test file. W2c adds one theme
-/// child (`automatic_submit_skips_not_ready_w2c.rs`), so the bar is 42.
-const MAX_EXCLUDED_FILES: usize = 42;
+/// child (`automatic_submit_skips_not_ready_w2c.rs`), so the bar was 42.
+/// W3j (`6bb0d4820`) adds `#[cfg(test)] mod glyph_tests;` in
+/// `ui/components/mod.rs`, a file that holds only its two font tests, so
+/// the bar is 43.
+const MAX_EXCLUDED_FILES: usize = 43;
 
 /// The lowest number of CLI sites the one path rule must exempt.
 ///

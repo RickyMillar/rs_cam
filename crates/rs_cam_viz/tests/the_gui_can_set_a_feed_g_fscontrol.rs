@@ -297,24 +297,7 @@ fn the_speed_controls_write_through_the_panel_idiom_g_fscontrol() {
     );
 }
 
-// ── arm 3 — the component the spindle row needs is still wired ───────────
-
-/// `PrecedenceField` exists so the project default stays VISIBLE beside the
-/// override. The widget it replaced hid the real default behind a hardcoded
-/// 18 000, so the operator could not see which value would actually run
-/// (P1-005 / P2-006). Between UR4 and this fix the component had no call
-/// site at all, which is how it became deletable-looking.
-#[test]
-fn the_spindle_override_shows_the_project_default_g_fscontrol() {
-    let source = properties_src();
-    assert!(
-        source.contains("PrecedenceField::new(\"Spindle:\""),
-        "the spindle row no longer uses PrecedenceField, so the project \
-         default it overrides is not on screen"
-    );
-    let texts = painted_text();
-    assert!(
-        texts.iter().any(|t| t.contains("override")),
-        "the spindle row paints no override control"
-    );
-}
+// Arm 3 (the spindle `PrecedenceField` shows the project default RPM) is
+// gone. S11 (`74af0f8e1`, operator ruling 2026-10-23) removed the RPM
+// fallback to the post spindle speed, so no project default RPM exists to
+// show.

@@ -10,11 +10,13 @@
 //!    dressups, the heights and the boundary are equal. On a drawing with
 //!    a backed end mill the Pocket has no floor (`unset_fields` =
 //!    `["floor"]`); with a ball nose in plywood (an `Unbacked` cell) it has
-//!    no feeds either: the op names them as unset, and no toast repeats
-//!    that state (W2b).
+//!    no feeds either: the op names them as unset, no feeds provenance
+//!    claims a recipe, and no toast repeats that state (W2b).
 //! 2. The MCP `add_toolpath` arm (`RsCamApp::core_add_toolpath`) builds its
 //!    config through `draft_toolpath` and replies with `unset_fields`, and
-//!    the GUI door calls the same door. `RsCamApp` needs an
+//!    the GUI door calls the same door. The MCP arm stores the draft's
+//!    `feeds_refusal`, and the reply prints it. These two FM5 assertions
+//!    moved here when S11 (`74af0f8e1`) took the `Unbacked` arm into core. `RsCamApp` needs an
 //!    `eframe::CreationContext`, so a source scan pins the MCP arm (as the
 //!    R2 sentry does). The CLI twin is
 //!    `rs_cam_cli/src/job.rs::the_job_drafts_through_the_core_door_s11`.
@@ -138,6 +140,13 @@ fn assert_gui_is_the_draft(mut controller: AppController<SilentBackend>) -> Vec<
             unset.contains(&"feed_rate"),
             "the op names the unset feed rate: {unset:?}"
         );
+        // From FM5 (ruling R1): no recipe was written, so no provenance
+        // may claim one.
+        assert!(
+            gui.feeds_provenance.spindle_rpm.is_none() && gui.feeds_provenance.feed_rate.is_none(),
+            "no recipe was written, so no provenance may claim one: {:?}",
+            gui.feeds_provenance
+        );
     }
     unset
 }
@@ -228,8 +237,20 @@ fn the_mcp_and_gui_add_doors_call_the_draft_door_s11() {
         }
     }
     let mcp = code_of("src/app/mcp/commands.rs");
+    let add_arm = method_body(&mcp, "fn core_add_toolpath(");
     assert!(
-        method_body(&mcp, "fn core_add_toolpath(").contains("unset_fields()"),
+        add_arm.contains("unset_fields()"),
         "the MCP reply names the fields that are not set"
+    );
+    // From FM5 (ruling R1): the MCP door keeps the `Unbacked` text of the
+    // draft on the row, and the add reply prints it.
+    assert!(
+        add_arm.contains("draft.feeds_refusal")
+            && add_arm.contains("\"feeds_refusal\": feeds_refusal,"),
+        "the MCP add door stores the draft's feeds refusal on the row"
+    );
+    assert!(
+        mcp.contains("without a feeds recipe: {feeds_refusal}"),
+        "the add_toolpath reply must print the stored refusal"
     );
 }

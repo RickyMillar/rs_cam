@@ -525,7 +525,10 @@ fn the_lead_stays_where_the_side_is_free() {
 /// write it (their lead is held by the surface probe). The type
 /// (`toolpath.rs`) and its one reader (`dressup/lead_side.rs`) name it too.
 /// Test code is free to name it. The scan reads the source with comments
-/// removed, so a doc line that names it does not count.
+/// removed, so a doc line that names it does not count. A match pattern
+/// reads the variant and does not write it, so the scan skips it: feeds
+/// contract P1 (`b01777df5`, deny `wildcard_enum_match_arm`) made the
+/// chamfer `match` name every variant.
 #[test]
 fn only_the_surface_ops_state_no_side_p6_0c() {
     const NEEDLE: &str = "RingMaterial::NotStated";
@@ -538,7 +541,7 @@ fn only_the_surface_ops_state_no_side_p6_0c() {
         // Test code: a `tests.rs` file or the body of a `mod tests`.
         let production = text.split("mod tests {").next().unwrap_or("");
         let is_test_file = path.file_name().is_some_and(|n| n == "tests.rs");
-        if !is_test_file && production.contains(NEEDLE) {
+        if !is_test_file && writes_the_variant(production, NEEDLE) {
             let rel = path.strip_prefix(&src).unwrap();
             found.push(rel.to_string_lossy().replace('\\', "/"));
         }
@@ -559,6 +562,28 @@ fn only_the_surface_ops_state_no_side_p6_0c() {
         "`{NEEDLE}` is written outside the surface ops: {strays:?}. A 2.5D op must state \
          `Inside`, `Outside` or `BothSides` for each closed pass (P6.0c)."
     );
+}
+
+/// True when `code` names `needle` outside a match pattern. An occurrence is
+/// a pattern when `=>` follows it on its line, or when the pattern goes on
+/// over lines: its line starts with `|`, or the next code line starts with
+/// `|` or `=>`.
+fn writes_the_variant(code: &str, needle: &str) -> bool {
+    let lines: Vec<&str> = code.lines().collect();
+    lines.iter().enumerate().any(|(index, line)| {
+        let next = lines
+            .iter()
+            .skip(index + 1)
+            .map(|l| l.trim())
+            .find(|l| !l.is_empty())
+            .unwrap_or("");
+        let multi_line_pattern =
+            line.trim_start().starts_with('|') || next.starts_with('|') || next.starts_with("=>");
+        line.match_indices(needle).any(|(at, _)| {
+            let in_pattern = line[at..].contains("=>") || multi_line_pattern;
+            !in_pattern
+        })
+    })
 }
 
 #[test]

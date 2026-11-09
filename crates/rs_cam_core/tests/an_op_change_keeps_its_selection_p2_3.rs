@@ -98,7 +98,10 @@ fn a_change_to_an_op_with_no_selection_reports_the_drop() {
         "a dropped layer rule must be reported"
     );
 
-    let mut s = pocket_session(Selection::drawing());
+    // W3h (`ddb2f6d0d`) made `Selection::empty()` the default selection of
+    // a new 2.5D op, so `Selection::drawing()` is now a user choice and its
+    // drop is reported. The empty default holds no user choice.
+    let mut s = pocket_session(Selection::empty());
     let effects = change(
         &mut s,
         OperationConfig::DropCutter(DropCutterConfig::default()),

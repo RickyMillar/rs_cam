@@ -180,33 +180,48 @@ fn a_new_2d_op_keeps_the_disabled_default() {
 }
 
 /// The MCP door cannot be driven here (`RsCamApp` needs an
-/// `eframe::CreationContext`), so this pins that BOTH door files call the
-/// shared constructor on a code line, and that neither still spells the
-/// old `BoundarySource::ModelSilhouette, ..default()` literal.
+/// `eframe::CreationContext`), so this pins the rule by source. S11
+/// (`74af0f8e1`, operator ruling 2026-10-23) moved the B.7 has-mesh arm and
+/// the constructor call out of both door files into the one core draft door,
+/// `ProjectSession::draft_toolpath` in `session/op_draft.rs`. The core file
+/// therefore holds the anchor and the constructor. Each door file must call
+/// `draft_toolpath` and must not spell the old
+/// `BoundarySource::ModelSilhouette, ..default()` literal.
+/// `one_draft_for_every_add_door_s11` pins the rest of the door chain.
 #[test]
 fn both_creation_doors_call_the_shared_constructor() {
     let root = Path::new(env!("CARGO_MANIFEST_DIR"));
+    let code_lines_of = |rel: &str| -> Vec<String> {
+        let path = root.join(rel);
+        let text = std::fs::read_to_string(&path).expect("read door source");
+        text.lines()
+            .map(str::trim)
+            .filter(|l| !l.starts_with("//"))
+            .map(str::to_owned)
+            .collect()
+    };
+
+    let core_rel = "../rs_cam_core/src/session/op_draft.rs";
+    let core = code_lines_of(core_rel);
+    // Non-vacuity anchor: the B.7 arm is still in the core draft door.
+    assert!(
+        core.iter().any(|l| l.contains("m.mesh.is_some()")),
+        "{core_rel}: the B.7 has-mesh arm is gone; the scan below is vacuous"
+    );
+    assert!(
+        core.iter()
+            .any(|l| l.contains("BoundaryConfig::for_3d_op(")),
+        "{core_rel}: the core draft door must call BoundaryConfig::for_3d_op (R2)"
+    );
+
     for rel in [
         "src/controller/events/toolpath.rs",
         "src/app/mcp/commands.rs",
     ] {
-        let path = root.join(rel);
-        let text = std::fs::read_to_string(&path).expect("read door source");
-        let code_lines: Vec<&str> = text
-            .lines()
-            .map(str::trim)
-            .filter(|l| !l.starts_with("//"))
-            .collect();
-        // Non-vacuity anchor: the B.7 arm is still in this file.
+        let code_lines = code_lines_of(rel);
         assert!(
-            code_lines.iter().any(|l| l.contains("m.mesh.is_some()")),
-            "{rel}: the B.7 has-mesh arm is gone; the scan below is vacuous"
-        );
-        assert!(
-            code_lines
-                .iter()
-                .any(|l| l.contains("BoundaryConfig::for_3d_op(")),
-            "{rel}: the creation door must call BoundaryConfig::for_3d_op (R2)"
+            code_lines.iter().any(|l| l.contains(".draft_toolpath(")),
+            "{rel}: the creation door must build the op through the core draft door (S11)"
         );
         assert!(
             !code_lines

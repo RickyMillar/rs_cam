@@ -23,6 +23,10 @@
 //! ```text
 //! cargo test -p rs_cam_core -q --features step --test a_model_bottom_floor_reads_the_model_d1
 //! ```
+//!
+//! Claims 1 and 2 load a STEP file, so their arm and its helpers build only
+//! with the `step` feature, as the other STEP tests do. The arm was red
+//! without that feature since D1 (`a68cf4234`). Claim 3 needs no feature.
 
 #![expect(
     clippy::unwrap_used,
@@ -45,12 +49,15 @@ use rs_cam_core::compute::floor::{Floor, FloorRefusal};
 use rs_cam_core::compute::operation_configs::PocketConfig;
 use rs_cam_core::compute::stock_config::{ModelKind, ModelUnits};
 use rs_cam_core::ids::ModelId;
+#[cfg(feature = "step")]
 use rs_cam_core::selection::{Selection, Shape, SourceRef};
 use rs_cam_core::session::{
     Command, LoadedModel, ProjectSession, SessionError, SetToolpathFloorArgs,
 };
+#[cfg(feature = "step")]
 use rs_cam_core::toolpath::MoveType;
 
+#[cfg(feature = "step")]
 const STEPPED: &str = "tests/fixtures/step/stepped_block.step";
 const DXF: &str = "tests/fixtures/selection_p2_7/layers.dxf";
 
@@ -62,6 +69,7 @@ const STOCK_BELOW: f64 = 5.0;
 /// The tool diameter (mm).
 const TOOL_DIAMETER: f64 = 6.0;
 /// The tolerance of a Z (mm).
+#[cfg(feature = "step")]
 const EPS: f64 = 1e-6;
 
 fn load(rel: &str, kind: ModelKind) -> LoadedModel {
@@ -91,6 +99,7 @@ fn stock() -> StockConfig {
 }
 
 /// A Pocket of the Z 30 face of the stepped block.
+#[cfg(feature = "step")]
 fn step_session() -> ProjectSession {
     let model = load(STEPPED, ModelKind::Step);
     let top_face = model
@@ -120,6 +129,7 @@ fn step_session() -> ProjectSession {
 }
 
 /// The lowest Z of the model mesh: the model bottom in the Top setup.
+#[cfg(feature = "step")]
 fn model_bottom(s: &ProjectSession) -> f64 {
     let mesh = s.models()[0]
         .mesh
@@ -137,6 +147,7 @@ fn set_floor(s: &mut ProjectSession, floor: Floor) {
         .expect("the door takes the model bottom floor");
 }
 
+#[cfg(feature = "step")]
 fn resolved_floor(s: &ProjectSession) -> Result<f64, FloorRefusal> {
     let tc = s.toolpath_configs()[0].clone();
     let answer = s.toolpath_heights(&tc).expect("the heights resolve");
@@ -144,6 +155,7 @@ fn resolved_floor(s: &ProjectSession) -> Result<f64, FloorRefusal> {
 }
 
 /// The lowest Z of a feed move of the generated Pocket.
+#[cfg(feature = "step")]
 fn lowest_cut(s: &mut ProjectSession) -> f64 {
     let cancel = AtomicBool::new(false);
     let result = s
@@ -163,6 +175,7 @@ fn lowest_cut(s: &mut ProjectSession) -> f64 {
 /// Claims 1 and 2: the floor is the model bottom less the depth, and the
 /// cut goes down to it.
 #[test]
+#[cfg(feature = "step")]
 fn a_model_bottom_floor_cuts_to_the_model_bottom_d1() {
     let mut s = step_session();
     let bottom = model_bottom(&s);

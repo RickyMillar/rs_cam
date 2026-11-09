@@ -132,9 +132,11 @@ const ALLOWED_REFERENCES: &[AllowedReference] = &[
         // `ui/properties/mod.rs` and this line moved to its
         // `toolpath_panel.rs` child, which left the arm red from
         // 2026-09-17 until CMP-02 read it. The fragment is the directory
-        // now, so the next split inside it keeps the allowance.
+        // now, so the next split inside it keeps the allowance. W3
+        // (`20f25205d`) wrapped the comment again, so the marker is the
+        // text on the line that names the module.
         path_marker: "ui/properties",
-        line_marker: "one generation uses",
+        line_marker: "`session/compute.rs` clones `tc.boundary`",
         why: "UX-R03-009 (G-BOUNDARYINHERIT): the boundary panel names the \
               stored source generation reads, because the core door clones \
               `tc.boundary` unconditionally",

@@ -65,14 +65,20 @@ impl ComputeBackend for RecordingBackend {
     }
 }
 
+/// One Face op that is Ready. S11 (`74af0f8e1`, operator ruling
+/// 2026-10-23) left the feeds of a default op unset, and W2c (`14285edf6`)
+/// makes an automatic plan step skip an op that is not ready, so the
+/// fixture states the fixed pre-S11 values through `fill_unset`.
 fn toolpath(id: usize, enabled: bool) -> ToolpathConfig {
+    let mut operation = OperationConfig::new_default(OperationType::Face);
+    rs_cam_core::compute::fixture_values::fill_unset(&mut operation);
     ToolpathConfig {
         shoe: Default::default(),
         feeds_lock: Default::default(),
         id: rs_cam_core::ToolpathId::from_raw(id),
         name: format!("Op {id}"),
         enabled,
-        operation: OperationConfig::new_default(OperationType::Face),
+        operation,
         dressups: Default::default(),
         heights: Default::default(),
         tool_id: Some(rs_cam_core::ids::ToolId::from_raw(1)),
@@ -98,7 +104,12 @@ fn controller_with_a_disabled_op() -> (AppController<RecordingBackend>, Arc<Mute
     let log = Arc::clone(&backend.submitted);
     let mut controller = AppController::with_backend(backend);
     let tool = ToolConfig::test_default(ToolId::from_raw(1), ToolType::EndMill);
-    let mut builder = ProjectSessionBuilder::new().tool(tool);
+    // S11 (`74af0f8e1`): the default stock has no thickness, and a stock
+    // with no thickness makes every op Not ready, so the fixture states the
+    // fixed fixture thickness.
+    let mut stock = rs_cam_core::compute::StockConfig::default();
+    rs_cam_core::compute::fixture_values::fill_unset_stock(&mut stock);
+    let mut builder = ProjectSessionBuilder::new().stock(stock).tool(tool);
     for (id, enabled) in [(0, true), (1, false), (2, true)] {
         let _ = builder
             .add_toolpath(0, toolpath(id, enabled))

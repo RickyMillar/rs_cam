@@ -46,17 +46,23 @@ const EGUI_MEMORY_ALLOWANCE: &[(&str, usize, &str)] = &[
         "the UI-automation snapshot is a per-context sink the harness reads \
          back out of the same context; it is not project state",
     ),
+    // W3h (`ddb2f6d0d`) removed the 2 Geometry-list toggles of
+    // `ui/properties/selection_section.rs`, so that row is gone.
     (
-        "ui/properties/selection_section.rs",
-        2,
-        "the open and the show-all toggle of one group of the Geometry tab list (GT-2): a view \
-         toggle, as a collapsing header keeps; the filter text lives in `SelectionUi`",
-    ),
-    (
-        "ui/preflight.rs",
+        "ui/load_refusal_modal.rs",
         3,
-        "a per-modal confirmation tick that dies with the modal",
+        "view toggle: the expanded state of the notice disclosure of the load-refusal modal \
+         (G-D, `5974e642c`); it dies when the modal closes",
     ),
+    (
+        "ui/properties/toolpath_panel/issues.rs",
+        2,
+        "view toggle: the expanded state of the issue-stack disclosure (W7 `d34a2db7e` moved it \
+         out of `toolpath_panel.rs`)",
+    ),
+    // Feeds contract P2 commit B (`c6826ad05`, K6: no finding refuses a
+    // job) removed the 3 confirmation-tick sites of `ui/preflight.rs`, so
+    // that row is gone.
     (
         "ui/properties/pins/plan_view.rs",
         2,

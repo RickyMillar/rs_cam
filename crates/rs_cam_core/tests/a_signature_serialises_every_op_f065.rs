@@ -50,8 +50,13 @@ fn every_op_default_signs_and_no_two_ops_sign_equal() {
             rs_cam_core::ids::ModelId::from_raw(0),
         );
         let signature = tc.generation_inputs_signature();
+        // S11 (`74af0f8e1`, operator ruling 2026-10-23): the shared helper
+        // `common::session::toolpath_config` calls `fill_unset`, so the
+        // stored op is not the default op. The signature opens with the
+        // text of the stored op.
+        let stored_json = serde_json::to_string(&tc.operation).expect("the stored op serialises");
         assert!(
-            signature.starts_with(&operation_json),
+            signature.starts_with(&stored_json),
             "{op_type:?}: the signature must open with the op text"
         );
         if let Some(other) = by_signature.insert(signature, op_type) {
