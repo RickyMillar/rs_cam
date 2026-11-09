@@ -41,11 +41,17 @@ acceptance-table row). P22f-3 is dropped; P22f-2b waits for a section read of op
 P21a committed (the one RPM-choice door `calculator/spindle.rs::rpm_choice`,
 `FeedsResult::rpm_choice`, the limits `LegacySpeedup`, `LegacyHeadroom`, `LegacyTier`,
 `VendorRpmMax`; byte-identical, FM1 unchanged; sentry `every_rpm_cap_is_a_named_limit_p21`).
-In the tree at hand-off (check `git status`): P21b by agent `p22a-readout` (the strategy rename
-`MaxSpeed` -> `ConstantChip { rpm_ceiling }`, file token `constant_chip`, `max_speed` refused on
-load; `PostConfig::spindle_rpm_ceiling` on every surface, not yet read by the engine; the MCP
-wire snapshot re-blessed as a stated schema break). Then: the wanaka read (GUI rebuild + /mcp),
-P22b, P22-0c-7; P21c after the Q1/Q6/Q7 answers.
+`f06bde4e2` P21b (the strategy rename `MaxSpeed` -> `ConstantChip { rpm_ceiling }`; the file
+holds two flat keys of `[job.post]`, `spindle_strategy = "constant_chip"` and
+`spindle_rpm_ceiling`; `max_speed` refuses at load and names the new key, ruling Q16, the 39
+planning files that hold it are not migrated; a ceiling of 0 refuses, one above the spindle
+maximum warns with one sentence on every surface; the engine does not read the ceiling until
+P21c; the MCP wire snapshot is the one bless, a stated schema break; no numeric pin moved; lead
+rulings in `phases/P21b.md` section 5: the residual names `MaxSpeedPolicy` and
+`step2b_max_speed` go to P21c). The release GUI binary was rebuilt after P21b for the wanaka read
+(check its mtime against HEAD before you trust a GUI number; the running GUI needs `/mcp` or a
+`gui_restart` to pick it up). Then: the wanaka read, P22b, P22-0c-7; P21c after the Q1/Q6/Q7
+answers.
 
 Operator decisions waiting (plain words in `P21_DESIGN.md` section 9 and the lead's morning
 summary): (1) the wanaka project setting `spindle_strategy = "constant_chip"` with
