@@ -132,3 +132,71 @@ state is discarded on its restart. The next read loads this file.
    defect to log and fix: the handler re-runs a gate over the full cut trace per op on the GUI
    thread, and more than once per op (the F216 memo should take the policy as an input).
 3. **idx 2 reads 20.7 mm deep** where P22-0b read 14.71 at the same class (section 3).
+
+## 9. What the two settings do (read after the edit, 2026-11-10 ~10:40)
+
+The operator asked for the effect, not the edit alone. Read-only: `get_suggest_rationale` under
+`constant_chip` (the engine runs the P21a legacy caps until P21c; the ceiling 24000 is carried,
+not read), and one regeneration of idx 1 with `entry_style = "helix"`.
+
+### 9.1 Suggest under constant chip (nothing applied)
+
+| idx | Toolpath | Stored RPM / feed | Suggest RPM / feed under constant chip | The limit that binds (P21a names) |
+|---|---|---|---|---|
+| 1 | Back bulk rough 18 mm | 18000 / 8475 | **14000 / 5444** (ramp 5015, 0.77 of 0.875 kW at 14000) | `LegacyTier` (`milling_rpm_ceiling_for_diameter` large 14000, unsourced F201 row) |
+| 2 | Back rest 6 mm | 18000 / 5279 | 20000 / 5865 (ramp 5079) | `LegacySpeedup` (`MAX_SPINDLE_SPEEDUP` 1.5 x the chart, unsourced) |
+| 6 | Lake pocket 2 mm | 18000 / 1010 | 22000 / 1235 | `LegacySpeedup` |
+| 16 | Front scallop finish | 18000 / 2317 | 22800 / 2935 | `LegacyHeadroom` (24000 x 0.95) |
+| 17 | Outline profile | 10610 / 3165 | 15915 / 4748 (ramp 4748) | `LegacySpeedup` over the unsourced SFM RPM 10610 (Q6) |
+
+- The 18 mm roughs (idx 1, 14) go DOWN from 18000 to 14000 rpm and from 8475 to 5444 mm/min
+  under the legacy diameter tier. That is the opposite of the operator's intent (24000 ceiling).
+  P21c deletes the three `Legacy*` limits and reads the ceiling: do not run Apply under constant
+  chip on wanaka before P21c lands.
+- The small tools go up along the constant-chip line (feed scales with RPM), capped by the
+  unsourced 1.5 x speedup or the 0.95 headroom: the same P21_DESIGN.md section 3 constants that
+  P21c removes.
+- idx 17 and 5 (10610 "formula" RPM, the unsourced SFM) move to 15915 (1.5 x): the Q6 case.
+- Every rationale lists the unsourced rules it accepts (F201): `MAX_SPINDLE_SPEEDUP`,
+  `milling_rpm_ceiling_for_diameter.large_ceiling_rpm`, `material.plunge_rate_base`.
+
+### 9.2 idx 1 with `entry_style = "helix"` (regenerated once; no simulation)
+
+| Reading | ramp (section 2) | helix |
+|---|---|---|
+| moves | 19725 | **47060** |
+| cutting distance | 31363 mm | **59096 mm** |
+| rapid distance | 1456 mm | 1456 mm |
+
+The entries alone added 27.7 m of cutting path. Section 9.3 reads the G-code to say what the
+helix entries are (radius, pitch, the start height and the length per entry).
+
+### 9.3 What the idx 1 helix entries are (G-code read, Back file, section lines 358-47420)
+
+| Reading | ramp (P22f-2a read) | helix (today's 3D helix entry) |
+|---|---|---|
+| fed length / fed time (G-code, F words) | 31363 mm / 275.2 s | **59096 mm / 558.4 s** (2.0 x) |
+| fed length at the ramp feed F6448 | the entry runs only | **29073 mm, 270.5 s** (half the op) |
+| fed length at the cut feed F8475 | most of the op | 1127 mm |
+| helix-like descents (xy per mm of drop 12-24, drop >= 1.5 mm) | 0 | 91: radius 5.1-5.7 mm (r 5.4), pitch 1.7-1.95 mm/rev; 80 of them drop 1.5 mm, one 9.5, one 10.5 |
+| other fed descents (drop >= 0.5 mm) | 58 entry ramps + cut descents | 992, 19820 mm xy |
+| core finding (export header, from the partial simulation) | none | **48 moves push the centre into wood; worst move 28527, 7.17 mm over the tip, descent 0.0 deg** |
+
+Move 28527 is `G1 X106.119 Y88.847 Z15.5 F2162`: a straight vertical plunge of 7.09 mm from
+Z 22.588 to the level 15.5 at the plunge feed, right after five 0.02 mm descending micro-moves
+(the end of a helix or a spiral that the region refused). The tool is the 18 mm non-centre-cutting
+cutter (blade protrusion 1.00 mm). That is the "no helix fits" fallback of today's 3D helix entry:
+a plunge, not a ramp, and not clamped by `clamp_descents_to_limit` (K5 covers cuts and links, not
+this entry). 48 such plunges. The operator's "let's use helix" therefore cannot ship before P22b:
+P22b's Q1 fallback (helix at the floor, then ramp at the limit angle, then a plunge the
+G-CENTRECUT rules bind) is exactly this case, and its sentry must cover it.
+
+Second surprise: with helix entries half the op runs at the ramp feed 6448 (29 km), where the ramp
+op ran at the modulated cut feed. The entry span (helix plus the starter spiral out of it) is fed
+at the ramp feed, and on 91 entries per level it is half the path. P22b's bore (R + r_h, one
+spiral at the cut feed) and the per-entry drop of entries where no helix fits should remove most
+of it; the read after P22b says.
+
+Lead recommendation to the operator: set idx 1 back to `ramp` in the file until P22b lands, or
+do not export the Back setup before then. The export warns (48 critical rows) but does not
+refuse (K6).
