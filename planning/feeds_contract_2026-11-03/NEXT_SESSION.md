@@ -1,5 +1,23 @@
 # Next session: feeds and speeds correctness (brief, 2026-11-08, second edition)
 
+## Lead review after the restart, 2026-11-10 ~12:30 (read this first)
+
+Landed: `ef7e75977` P22b (accepted on wanaka idx 1 with helix: 47060 -> 14628 moves, fed time 558 ->
+250 s, the 48 core plunges gone; `P22b.md` section 6), `b361a7b18` the operator's notice.rs fix.
+Running: agent `p21c-impl` on P21c.
+
+The review's finding on scope (operator concern: the sessions rabbit-hole): the acceptance table
+(`acceptance/wanaka_21.md`) is the measure of done and was last graded at `b9e67b24e`: PASS 47, FAIL
+23, NEEDS-RULING 28. About 20 phases landed since and moved almost no row. 16 of the 23 FAIL rows are
+the RPM rows that P21c fixes. Order from here, by rows closed: (1) P21c; (2) re-grade the table
+(P21e); (3) the operator rules the 28 NEEDS-RULING rows in one sitting; (4) the remaining FAIL rows
+one by one. A new side phase starts only when it closes a table row or a safety finding of the
+operator's cut; anything else is logged in one line and left. Parked under that rule: P22b-1..4,
+P22-0c-7, P22f-2b, the straight-flute tool fact (it changes the chip band, so it gets a table row
+first), the GUI-thread defect. P22f-2e (the operator's Go) moves no table row and loosens a limit:
+it runs only after a conservation check shows the simulated removal summed over an op equals the
+stock volume removed (the `mrr` it divides by was never validated; `P22f-2d_DESIGN.md` section 3).
+
 ## Restart hand-off, 2026-11-10 ~11:30 (the operator restarts the session for a model update)
 
 **In the tree, uncommitted, not yet gated: P22b** (the helix bore opening for a helix 3D geodesic op;
