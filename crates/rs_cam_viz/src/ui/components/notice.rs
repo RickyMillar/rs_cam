@@ -532,7 +532,7 @@ impl EmptyState {
         ui.vertical_centered(|ui| {
             // §4.8: centred, and at most 280 points wide. An empty state that
             // runs the full panel width reads as a broken layout.
-            ui.set_max_width(tokens::EMPTY_STATE_MAX_WIDTH);
+            ui.set_max_width(ui.available_width().min(tokens::EMPTY_STATE_MAX_WIDTH));
             ui.add_space(tokens::SPACE_6);
             if let Some(glyph) = &self.glyph {
                 ui.label(
@@ -853,5 +853,56 @@ mod tests {
                 .button_count(),
             1
         );
+    }
+
+    /// A narrow setup rail must not be widened by the empty state; content
+    /// after it still receives the rail's width. A wider parent remains
+    /// within its available width.
+    #[test]
+    fn an_empty_state_respects_its_parent_width() {
+        fn draw(width: f32) -> (egui::Rect, egui::Rect) {
+            let ctx = egui::Context::default();
+            tokens::apply(&ctx);
+            tokens::apply_fonts(&ctx);
+            let mut warmup = ctx.run_ui(egui::RawInput::default(), |_ui| {});
+            warmup.textures_delta.clear();
+
+            let mut parent_after_empty = egui::Rect::NOTHING;
+            let mut following = egui::Rect::NOTHING;
+            let mut out = ctx.run_ui(egui::RawInput::default(), |ui| {
+                ui.set_max_width(width);
+                let top = ui.cursor().top();
+                let _ = EmptyState::new("No toolpaths yet")
+                    .detail("Add a toolpath to plan this setup.")
+                    .action("Add toolpath")
+                    .show(ui);
+                parent_after_empty = egui::Rect::from_min_max(
+                    egui::pos2(ui.min_rect().left(), top),
+                    ui.min_rect().right_bottom(),
+                );
+                following = ui
+                    .allocate_exact_size(
+                        egui::vec2(ui.available_width(), tokens::ROW_DENSE),
+                        egui::Sense::hover(),
+                    )
+                    .0;
+            });
+            out.textures_delta.clear();
+            (parent_after_empty, following)
+        }
+
+        let (narrow_parent_after_empty, narrow_following) = draw(240.0);
+        assert!(
+            narrow_parent_after_empty.right() <= 240.5,
+            "{narrow_parent_after_empty:?}"
+        );
+        assert!(narrow_following.right() <= 240.5, "{narrow_following:?}");
+
+        let (wide_parent_after_empty, wide_following) = draw(320.0);
+        assert!(
+            wide_parent_after_empty.right() <= 320.5,
+            "{wide_parent_after_empty:?}"
+        );
+        assert!(wide_following.right() <= 320.5, "{wide_following:?}");
     }
 }
