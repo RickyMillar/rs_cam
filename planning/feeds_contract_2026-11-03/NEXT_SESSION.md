@@ -56,7 +56,13 @@ answers.
 Operator answers, 2026-11-10 morning: (1) Go on P22f-2e ("if it is more correct, 100 % do it");
 (2) yes, constant chip on wanaka with the ceiling 24000; (3) idx 1 goes to helix; (4) the acceleration
 rule: "not sure", open (A3 ships in P21c, the share is shown first). The GUI restarted on the fresh
-binary at 09:10; the wanaka read runs from it.
+binary at 09:10; the wanaka read runs from it (`phases/P22f_wanaka.md`: the zone check reports 555
+real shank contacts on the 2 mm lake pockets; constant chip under the P21b legacy caps LOWERS the 18 mm
+roughs to 14000 rpm, so no Apply before P21c; idx 1 helix today plunges the core 7 mm on 48 entries,
+the P22b case; idx 1 cuts at the chart feed 6450, the chip cap binds). The 18 mm tool is a
+straight-flute router bit: `research/large_straight_router_bits_2026-11-10.md` and `P21_DESIGN.md`
+section 10 (the 14000 tier has no source as a cap; a Freud straight-bit chip band exists; a tool
+edge-geometry fact is a new item after P21c).
 
 Operator decisions that were waiting (plain words in `P21_DESIGN.md` section 9 and the lead's morning
 summary): (1) the wanaka project setting `spindle_strategy = "constant_chip"` with

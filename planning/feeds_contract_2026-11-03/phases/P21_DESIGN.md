@@ -583,3 +583,31 @@ Operator answers (2026-11-10 morning, in the operator's words):
   operator the share on wanaka before any cap rule.
 - Q6 stands as read (delete the SFM RPM where the constant-chip rule replaces it).
 P21c is therefore unblocked after P22b.
+
+## 10. Lead note on the router-bit research (2026-11-10, `research/large_straight_router_bits_2026-11-10.md`)
+
+The operator's 18 mm roughing tool is a straight-flute router bit, not a spiral end mill. A
+research agent read the vendor and literature sources (grades and snippet flags per row). What it
+changes for P21c and the tool record:
+
+1. The 14000 tier (`MILLING_CEILING_LARGE_RPM`) has no source as a cap. No vendor prints 14000 as
+   a maximum for an 18-20 mm cutter; printed maxima at 3/4 in are 18000 (Whiteside, CMT), 24000
+   (Freud 04-140, Wealden up to 25 mm) and 28000 (Trend up to 24 mm). The only 14000 is the top
+   of Whiteside's recommended range "12,000-14,000 (max 18,000)". P21c deletes the tier as ruled;
+   the vendor maximum is per tool, printed on the shank (`VendorRpmMax` when the record has it).
+2. The 1.5 speedup and the 0.95 headroom: nothing for or against. P21c deletes them as ruled.
+3. A straight-bit chip band exists at the tool's diameter: Freud 2017 CNC sheet (a source key in
+   the matrix already), table "carbide tipped straight and profile bits", hardwood 3/4 in
+   0.229-0.330 mm/tooth (verbatim); Onsrud 48-000 0.203-0.254 mm (column mapping to confirm). The
+   band in use today is the Amana Spektra spiral 12.7 mm row size-scaled (max 0.179). The stored
+   wanaka idx 1 chip 0.235 mm/tooth (8475 at 18000) is inside the Freud straight-bit band and
+   above the scaled spiral band. New item for the contract, after P21c: the tool record gains an
+   edge-geometry fact (straight or spiral; a vendor fact or a measurement, never a default), the
+   LUT resolver prefers a straight-bit row for a straight tool, and the matrix gains the Freud
+   straight-bit rows. Until then the calculator reads the spiral row and says so.
+4. The force model is right for the tool: the repo's Ks 58.5 N/mm2 at 762 kg/m3 reproduces Curti
+   2021's own straight-blade (helix 0) fit, the highest-Ks tool of the paper (1.1-1.9 x the
+   helical fits). The paper's chip regime is 40-100 um; the operator's chips are 2-3 x thicker,
+   which the rationale already flags (`chip_regime: above_measured_range`).
+5. Shank: no vendor limit ties depth, feed or RPM to a 6 mm shank under an 18 mm cutter; vendors
+   sell the combination with printed maxima of 24000 and 35000. Nothing to add to the app.
