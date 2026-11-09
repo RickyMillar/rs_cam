@@ -785,20 +785,22 @@ impl ToolDefinition {
         if load_pos <= 0.0 {
             return 0.0;
         }
-        let cutter_len = self.cutter.length();
         // Floor on local diameter to keep 1/d⁴ finite at degenerate
         // near-tip evaluations. 0.05 mm is well below any realistic
         // engaged cross-section.
         const D_FLOOR_MM: f64 = 0.05;
         // Split integration at the shank/cutter step so the discontinuity
         // never falls mid-segment (mid-point rule is O(1/N) at jumps,
-        // O(1/N²) on smooth pieces).
-        let shank_top = (l - cutter_len).max(0.0).min(load_pos);
+        // O(1/N²) on smooth pieces). P22-0c-6 D4: the shank span is the
+        // body's (`ToolBody::exposed_shank_length_mm`).
+        let shank_top = self.body.exposed_shank_length_mm().min(load_pos);
         let mut delta_at_load = 0.0_f64;
         let mut slope_at_load = 0.0_f64;
         // Region 1: shank, x ∈ [0, shank_top].
         if shank_top > 0.0 {
-            let d = self.shank_diameter().max(D_FLOOR_MM);
+            // P22-0c-6 (ruling 5): the section above the flutes is the
+            // body's upper diameter, the shank, else the envelope.
+            let d = self.body.upper_diameter_mm().max(D_FLOOR_MM);
             let i_mm4 = std::f64::consts::PI * d.powi(4) / 64.0;
             const N_SHANK: usize = 32;
             let dx = shank_top / N_SHANK as f64;

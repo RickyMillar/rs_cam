@@ -292,3 +292,129 @@ fn a_v_tip_outside_its_domain_is_refused_at_every_door() {
     }
     let _ = std::fs::remove_dir_all(&dir);
 }
+
+/// P22-0c-6a (ruling 6): a shank is a diameter, so `> 0`. A stated shank
+/// of 0 is not a fact: every door refuses it, as it refuses the V tip
+/// (the cutter door, `set_tool_param`, `AddTool`, `AddToolFromLibrary`,
+/// `ReplaceTool`, `ReplaceTools`, the project loader and the tool library,
+/// on write and on load). A tool that does not know its shank states
+/// `Unknown`; that is in, and plans on the legacy default.
+#[test]
+fn a_stated_shank_of_zero_is_refused_at_every_door_p22_0c6() {
+    use rs_cam_core::compute::tool_config::ToolFact;
+    let flat = |id: usize, shank: ToolFact<f64>| {
+        let mut tool = ToolConfig::test_default(ToolId::from_raw(id), ToolType::EndMill);
+        tool.name = "6 flat".to_owned();
+        tool.set_shank_diameter(shank);
+        tool
+    };
+    let bad = |id: usize| flat(id, ToolFact::Stated(0.0));
+    let assert_refused_shank =
+        |result: Result<rs_cam_core::session::Effects, SessionError>| match result {
+            Err(SessionError::ToolOutOfDomain { error, .. }) => {
+                assert_eq!(error.dimension, ToolDimension::ShankDiameter);
+                assert_eq!(error.value, 0.0);
+            }
+            other => panic!("expected the shank refusal, got {other:?}"),
+        };
+
+    // The domain ends: a shank above 0 and an Unknown shank are in; 0 and
+    // a negative shank are out, in every fact form.
+    assert!(build_cutter(&flat(0, ToolFact::Stated(6.0))).is_ok());
+    assert!(build_cutter(&flat(0, ToolFact::Unknown)).is_ok());
+    assert!(build_cutter(&bad(0)).is_err());
+    assert!(build_cutter(&flat(0, ToolFact::Stated(-0.1))).is_err());
+    assert!(
+        build_cutter(&flat(
+            0,
+            ToolFact::Estimated {
+                value: 0.0,
+                basis: "a test".to_owned(),
+            }
+        ))
+        .is_err()
+    );
+    assert!(
+        build_cutter(&flat(
+            0,
+            ToolFact::Catalogue {
+                value: 0.0,
+                source: "a test".to_owned(),
+            }
+        ))
+        .is_err()
+    );
+
+    let good = flat(0, ToolFact::Stated(6.0));
+    let mut session = ProjectSessionBuilder::new().tool(good.clone()).build();
+    assert_refused_shank(session.apply(Command::SetToolParam(SetToolParamArgs {
+        index: 0,
+        param: "shank_diameter".to_owned(),
+        value: serde_json::json!(0.0),
+    })));
+    assert_eq!(
+        session.tools()[0].shank_diameter_fact(),
+        good.shank_diameter_fact(),
+        "nothing written"
+    );
+    assert_refused_shank(session.apply(Command::AddTool(AddToolArgs {
+        tool: Box::new(bad(1)),
+    })));
+    assert_refused_shank(session.apply(Command::AddToolFromLibrary(AddToolArgs {
+        tool: Box::new(bad(1)),
+    })));
+    assert_refused_shank(session.apply(Command::ReplaceTool(ReplaceToolArgs {
+        tool_id: rs_cam_core::ids::ToolId::from_raw(0),
+        config: Box::new(bad(0)),
+    })));
+    assert_refused_shank(session.apply(Command::ReplaceTools(ReplaceToolsArgs {
+        tools: vec![good.clone(), bad(1)],
+    })));
+    assert_eq!(session.tools().len(), 1, "nothing added");
+    assert_eq!(
+        session.tools()[0].shank_diameter_fact(),
+        good.shank_diameter_fact(),
+        "nothing replaced"
+    );
+
+    let dir = std::env::temp_dir().join("rs_cam_f029_shank_zero");
+    let _ = std::fs::remove_dir_all(&dir);
+    std::fs::create_dir_all(&dir).unwrap();
+    let path = dir.join("bad_shank.toml");
+    ProjectSessionBuilder::new()
+        .tool(bad(0))
+        .build()
+        .save(&path)
+        .unwrap();
+    match ProjectSession::load(&path) {
+        Err(SessionError::ToolOutOfDomain { tool, error }) => {
+            assert_eq!(tool, "6 flat");
+            assert_eq!(error.dimension, ToolDimension::ShankDiameter);
+        }
+        Err(other) => panic!("expected the shank refusal, got {other}"),
+        Ok(_) => panic!("the loader accepted a shank of 0"),
+    }
+    assert!(matches!(
+        tool_library::append_to(&dir, "flats", bad(0)),
+        Err(ToolLibraryError::InvalidTool { .. })
+    ));
+    assert!(matches!(
+        tool_library::add_or_replace_to(&dir, "flats", bad(0)),
+        Err(ToolLibraryError::InvalidTool { .. })
+    ));
+    tool_library::save_to(
+        &dir,
+        "flats",
+        &ToolCatalog {
+            tools: vec![good, bad(1)],
+        },
+    )
+    .unwrap();
+    match tool_library::load_from(&dir, "flats") {
+        Err(ToolLibraryError::InvalidTool { source, .. }) => {
+            assert_eq!(source.dimension, ToolDimension::ShankDiameter);
+        }
+        other => panic!("expected InvalidTool, got {other:?}"),
+    }
+    let _ = std::fs::remove_dir_all(&dir);
+}

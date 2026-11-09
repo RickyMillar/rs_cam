@@ -11,7 +11,9 @@
 //!   corner (`> 0`), else it is a flat end mill;
 //! - a V-bit included angle is in `(0, 180)`, a taper half-angle in
 //!   `(0, 90)`: at the ends the cone is a line or a plane;
-//! - a taper shaft is at least the tip; a shank and a stickout are `>= 0`.
+//! - a taper shaft is at least the tip; a stickout is `>= 0`;
+//! - a shank is a diameter, so `> 0` (P22-0c-6, ruling 6: a stated 0 is
+//!   not a fact; a tool that does not know its shank states `Unknown`).
 //!
 //! The cutter constructors and `ToolConfig::validate` (the session
 //! commands, the project loader, the tool-library loader and writers, MCP
@@ -160,9 +162,10 @@ impl ToolDimension {
             ToolDimension::IncludedAngle => ToolDomain::new(Open(0.0), Open(180.0)),
             ToolDimension::TaperHalfAngle => ToolDomain::new(Open(0.0), Open(90.0)),
             ToolDimension::ShaftDiameter => ToolDomain::new(Closed(diameter_mm), Unbounded),
-            ToolDimension::ShankDiameter
-            | ToolDimension::Stickout
-            | ToolDimension::BladeProtrusionMm => ToolDomain::new(Closed(0.0), Unbounded),
+            ToolDimension::ShankDiameter => ToolDomain::new(Open(0.0), Unbounded),
+            ToolDimension::Stickout | ToolDimension::BladeProtrusionMm => {
+                ToolDomain::new(Closed(0.0), Unbounded)
+            }
             ToolDimension::CentreCoreDiameterMm => ToolDomain::new(Open(0.0), Open(diameter_mm)),
             // A flat tip narrower than the cutter: at the diameter the cone
             // has no height left (P7 A2, F029).

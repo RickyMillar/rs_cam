@@ -1208,13 +1208,14 @@ impl ToolConfig {
     }
 
     /// The diameter above the cutting tip that the size label calls the
-    /// shank: the collet shank when it is set, else the cone base.
+    /// shank: THE rule of the body, `tool::body::upper_diameter_mm` (the
+    /// shank, else the cone base; P22-0c-6). The label reads the record,
+    /// not a built body, so it cannot fail.
     fn upper_diameter_mm(&self) -> f64 {
-        if self.shank_diameter_planning_mm() > 0.0 {
-            self.shank_diameter_planning_mm()
-        } else {
-            self.envelope_diameter()
-        }
+        crate::tool::body::upper_diameter_mm(
+            self.shank_diameter_planning_mm(),
+            self.envelope_diameter(),
+        )
     }
 
     /// The label for the `diameter` field on an edit form. On a tapered

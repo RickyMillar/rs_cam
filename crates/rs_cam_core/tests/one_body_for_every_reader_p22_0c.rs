@@ -14,6 +14,12 @@
 //!    `src/` halves the core diameter outside `tool/body.rs`. Every reader
 //!    takes the core radius from the body (`ToolBody::core`). Comments do
 //!    not count; the anchor is the one site in `tool/body.rs`.
+//! 5. P22-0c-6a (`P22-0c-6.md` section 2.4 item 3): the upper diameter
+//!    (the shank, else the envelope) and the cutting cap
+//!    (`2 x min(width(L), envelope)`, ruling 1) of every case, a body with
+//!    a shank of 0 (upper = the envelope diameter), and the search guard:
+//!    no source file under `src/` tests `shank_diameter_planning_mm() >
+//!    0.0`; the one rule is `tool::body::upper_diameter_mm`.
 
 #![expect(
     clippy::unwrap_used,
@@ -59,7 +65,18 @@ struct Case {
     /// The radius the flute top reaches: the cutter envelope.
     envelope_mm: f64,
     core: Option<NonCentreCuttingGeometry>,
+    /// A tapered ball: the taper half-angle (deg) and the shaft (mm).
+    taper: Option<(f64, f64)>,
+    /// P22-0c-6a: `ToolBody::upper_diameter_mm`, the shank, else the
+    /// envelope diameter.
+    upper_mm: f64,
+    /// P22-0c-6a: `ToolBody::max_cut_diameter_mm` (ruling 1).
+    max_cut_mm: f64,
 }
+
+/// The six-decimal values of `P22-0c-6.md` section 2.4 hold to half a unit
+/// in the last place.
+const TABLE_TOL: f64 = 5e-7;
 
 fn config(case: &Case) -> ToolConfig {
     let mut tool = ToolConfig::new_default(ToolId::from_raw(0), case.tool_type);
@@ -80,8 +97,9 @@ fn config(case: &Case) -> ToolConfig {
             tool.set_v_tip_diameter(ToolFact::Stated(0.0));
         }
         ToolType::TaperedBallNose => {
-            tool.set_taper_half_angle(ToolFact::Stated(7.0));
-            tool.shaft_diameter = 6.0;
+            let (half_angle, shaft) = case.taper.expect("a tapered case states its taper");
+            tool.set_taper_half_angle(ToolFact::Stated(half_angle));
+            tool.shaft_diameter = shaft;
         }
     }
     tool
@@ -153,6 +171,9 @@ fn cases() -> Vec<Case> {
             stickout_mm: 35.0,
             envelope_mm: 3.0,
             core: None,
+            taper: None,
+            upper_mm: 6.0,
+            max_cut_mm: 6.0,
         },
         Case {
             label: "ball",
@@ -163,6 +184,9 @@ fn cases() -> Vec<Case> {
             stickout_mm: 30.0,
             envelope_mm: 1.5,
             core: None,
+            taper: None,
+            upper_mm: 6.0,
+            max_cut_mm: 3.0,
         },
         Case {
             label: "bull",
@@ -173,6 +197,9 @@ fn cases() -> Vec<Case> {
             stickout_mm: 40.0,
             envelope_mm: 5.0,
             core: None,
+            taper: None,
+            upper_mm: 10.0,
+            max_cut_mm: 10.0,
         },
         Case {
             label: "V-bit",
@@ -183,6 +210,9 @@ fn cases() -> Vec<Case> {
             stickout_mm: 30.0,
             envelope_mm: 6.0,
             core: None,
+            taper: None,
+            upper_mm: 6.35,
+            max_cut_mm: 12.0,
         },
         Case {
             label: "tapered ball (envelope = shaft / 2)",
@@ -193,6 +223,9 @@ fn cases() -> Vec<Case> {
             stickout_mm: 45.0,
             envelope_mm: 3.0,
             core: None,
+            taper: Some((7.0, 6.0)),
+            upper_mm: 6.0,
+            max_cut_mm: 6.0,
         },
         Case {
             label: "non-centre-cutting flat (wanaka tool 6)",
@@ -203,6 +236,9 @@ fn cases() -> Vec<Case> {
             stickout_mm: 45.0,
             envelope_mm: 9.0,
             core: Some(wanaka_core()),
+            taper: None,
+            upper_mm: 12.0,
+            max_cut_mm: 18.0,
         },
         Case {
             label: "stickout shorter than the flute (FC0): no shank zone",
@@ -213,6 +249,40 @@ fn cases() -> Vec<Case> {
             stickout_mm: 20.0,
             envelope_mm: 5.0,
             core: None,
+            taper: None,
+            upper_mm: 6.35,
+            max_cut_mm: 10.0,
+        },
+        // P22-0c-6a: wanaka tool 4 (R1, 2 mm tip, 5.7106 deg as the
+        // operator file states it, shaft 6, `L` 20). The cone meets the
+        // shaft at 20.95 mm, above `L`: the cap is width(20) = 5.809980.
+        Case {
+            label: "tapered ball whose cone meets the shaft above L (wanaka tool 4)",
+            tool_type: ToolType::TaperedBallNose,
+            diameter: 2.0,
+            flute_mm: 20.0,
+            shank_mm: 6.0,
+            stickout_mm: 30.0,
+            envelope_mm: 3.0,
+            core: None,
+            taper: Some((5.7106, 6.0)),
+            upper_mm: 6.0,
+            max_cut_mm: 5.809980,
+        },
+        // The operator's R2 x 6 x 30.5, the taper from the size:
+        // atan((3 - 2) / 30.5). The cone meets the shaft at 32.47 mm.
+        Case {
+            label: "the operator's R2 x 6 x 30.5",
+            tool_type: ToolType::TaperedBallNose,
+            diameter: 4.0,
+            flute_mm: 30.5,
+            shank_mm: 6.0,
+            stickout_mm: 45.0,
+            envelope_mm: 3.0,
+            core: None,
+            taper: Some(((1.0_f64 / 30.5).atan().to_degrees(), 6.0)),
+            upper_mm: 6.0,
+            max_cut_mm: 5.871002,
         },
     ]
 }
@@ -343,7 +413,42 @@ fn one_body_for_every_reader_p22_0c() {
         );
         assert_eq!(mounted.body().envelope_radius_mm(), def.radius(), "{label}");
         assert_eq!(mounted.body().holder_face_mm(), case.stickout_mm, "{label}");
+
+        // 5. P22-0c-6a: the upper diameter and the cutting cap.
+        assert_eq!(body.upper_diameter_mm(), case.upper_mm, "{label}: upper");
+        assert!(
+            (body.max_cut_diameter_mm() - case.max_cut_mm).abs() < TABLE_TOL,
+            "{label}: cutting cap {} against {}",
+            body.max_cut_diameter_mm(),
+            case.max_cut_mm
+        );
+        assert!(
+            body.max_cut_diameter_mm() <= 2.0 * body.envelope_radius_mm(),
+            "{label}: the cap is never above the envelope"
+        );
+        assert_eq!(
+            body.max_cut_diameter_mm(),
+            2.0 * def.width_at_height(case.flute_mm),
+            "{label}: the cap is the width at the flute top"
+        );
     }
+
+    // A body with a shank of 0: the domain refuses it at every tool door
+    // (ruling 6, the F029 sentry), so only a bare `ToolDefinition` holds
+    // one. Its upper diameter is the envelope diameter.
+    let bare = ToolDefinition::new(
+        Box::new(rs_cam_core::tool::FlatEndmill::new(8.0, 20.0)),
+        0.0,
+        30.0,
+        2,
+        rs_cam_core::compute::tool_config::ToolMaterial::Carbide,
+    );
+    assert_eq!(
+        bare.body().upper_diameter_mm(),
+        8.0,
+        "shank 0: the envelope"
+    );
+    assert_eq!(bare.body().max_cut_diameter_mm(), 8.0, "shank 0: the cap");
 }
 
 // ── Memo arm (D1) ────────────────────────────────────────────────────────
@@ -358,6 +463,9 @@ fn memo_tool(core: Option<NonCentreCuttingGeometry>) -> ToolDefinition {
         stickout_mm: 45.0,
         envelope_mm: 9.0,
         core,
+        taper: None,
+        upper_mm: 12.0,
+        max_cut_mm: 18.0,
     }))
     .unwrap()
 }
@@ -519,5 +627,60 @@ fn no_reader_halves_the_core_diameter_outside_the_body_p22_0c() {
     assert!(
         offenders.is_empty(),
         "these files halve the core diameter; read ToolBody::core instead: {offenders:?}"
+    );
+}
+
+/// The places in `text` (comments removed, white space removed) that test
+/// the planning shank against 0: `shank_diameter_planning_mm() > 0.0`.
+fn planning_shank_tests(text: &str) -> usize {
+    let flat: String = source_scan::strip_comments(text)
+        .chars()
+        .filter(|c| !c.is_whitespace())
+        .collect();
+    flat.matches("shank_diameter_planning_mm()>0.0").count()
+}
+
+/// P22-0c-6a search guard (D3): "the shank, else a fallback" has ONE
+/// definition, `tool::body::upper_diameter_mm`. No source file under
+/// `src/` tests the planning shank against 0 outside `tool/body.rs` (and
+/// `tool/body.rs` reads no `ToolConfig`, so it holds none either).
+#[test]
+fn no_reader_tests_the_planning_shank_outside_the_body_p22_0c6() {
+    let src = std::path::Path::new(env!("CARGO_MANIFEST_DIR")).join("src");
+    let body = src.join("tool").join("body.rs");
+    // Non-vacuity: the scanner finds the needle in code, not in a comment,
+    // and the source tree holds the reader the needle names.
+    assert_eq!(
+        planning_shank_tests("if tool.shank_diameter_planning_mm() > 0.0 { 1 } else { 2 }"),
+        1,
+        "the needle counts"
+    );
+    assert_eq!(
+        planning_shank_tests("// if tool.shank_diameter_planning_mm() > 0.0 {\nlet a = 1;"),
+        0,
+        "a comment does not count"
+    );
+    let files = source_scan::rust_files(&src);
+    let readers = files
+        .iter()
+        .filter(|path| {
+            source_scan::strip_comments(&std::fs::read_to_string(path).unwrap())
+                .contains("shank_diameter_planning_mm()")
+        })
+        .count();
+    assert!(
+        readers > 0,
+        "non-vacuity: some file reads the planning shank"
+    );
+    let offenders: Vec<String> = files
+        .into_iter()
+        .filter(|path| *path != body)
+        .filter(|path| planning_shank_tests(&std::fs::read_to_string(path).unwrap()) > 0)
+        .map(|path| path.display().to_string())
+        .collect();
+    assert!(
+        offenders.is_empty(),
+        "these files test the planning shank against 0; read \
+         tool::body::upper_diameter_mm (or the body view) instead: {offenders:?}"
     );
 }

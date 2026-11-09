@@ -153,6 +153,19 @@ pub struct ToolBody {
     /// The stickout (mm): the holder face is at this height above the
     /// tip, always (K1b, B18).
     stickout_mm: f64,
+    /// The cutter radius at the flute top (mm): `width(L)`, never above
+    /// the envelope radius (P22-0c-6, ruling 1). The cutting zone stops at
+    /// the flute length, so no cut is wider than this.
+    cut_radius_at_flute_top_mm: f64,
+}
+
+/// THE rule "the shank, else the envelope" (P22-0c-6 D3): the diameter
+/// above the cutting zone. A shank of 0 is outside its domain (ruling 6),
+/// so the envelope arm serves only a record that has not passed
+/// `ToolConfig::validate` (the size label must not fail).
+#[must_use]
+pub fn upper_diameter_mm(shank_d: f64, envelope_d: f64) -> f64 {
+    if shank_d > 0.0 { shank_d } else { envelope_d }
 }
 
 impl ToolBody {
@@ -166,12 +179,17 @@ impl ToolBody {
         stickout_mm: f64,
         core: Option<NonCentreCuttingGeometry>,
     ) -> Self {
+        let flute_length_mm = cutter.length();
+        let envelope_radius_mm = cutter.envelope_radius_mm();
         Self {
-            flute_length_mm: cutter.length(),
-            envelope_radius_mm: cutter.envelope_radius_mm(),
+            flute_length_mm,
+            envelope_radius_mm,
             core,
             shank_diameter_mm,
             stickout_mm,
+            cut_radius_at_flute_top_mm: cutter
+                .width_at_height(flute_length_mm)
+                .min(envelope_radius_mm),
         }
     }
 
@@ -249,6 +267,24 @@ impl ToolBody {
         self.shank_diameter_mm
     }
 
+    /// The diameter above the cutting zone (mm): the shank, else the
+    /// envelope diameter ([`upper_diameter_mm`]). The size label and the
+    /// shank section of `ToolDefinition::tip_deflection_mm` read it.
+    #[must_use]
+    pub fn upper_diameter_mm(&self) -> f64 {
+        upper_diameter_mm(self.shank_diameter_mm, 2.0 * self.envelope_radius_mm)
+    }
+
+    /// The widest diameter of the cutting zone (mm):
+    /// `2 x min(width(L), envelope radius)` (P22-0c-6, ruling 1). The
+    /// cutter width grows with the height, so a cap at this value equals
+    /// the width at `min(ap, L)`. A tapered ball whose cone meets the shaft
+    /// above `L` cuts no wider than its width at `L`.
+    #[must_use]
+    pub fn max_cut_diameter_mm(&self) -> f64 {
+        2.0 * self.cut_radius_at_flute_top_mm
+    }
+
     /// The holder face (mm above the tip): the stickout.
     #[must_use]
     pub fn holder_face_mm(&self) -> f64 {
@@ -280,12 +316,14 @@ impl ToolBody {
             core,
             shank_diameter_mm,
             stickout_mm,
+            cut_radius_at_flute_top_mm,
         } = self;
         for value in [
             *flute_length_mm,
             *envelope_radius_mm,
             *shank_diameter_mm,
             *stickout_mm,
+            *cut_radius_at_flute_top_mm,
         ] {
             hash_f64_bits(hasher, value);
         }
@@ -806,4 +844,100 @@ fn window_top(path: &[P3], anchor: Option<P3>, i: usize, reach: f64, bar: f64) -
         return Some(top.max(here.z + t * (q.z - here.z)));
     }
     Some(top)
+}
+
+#[cfg(test)]
+#[expect(
+    clippy::unwrap_used,
+    reason = "test code: a panic is how a test reports a failure"
+)]
+mod tests {
+    use super::*;
+    use crate::tool::{BallEndmill, BullNoseEndmill, FlatEndmill, TaperedBallEndmill, VBitEndmill};
+
+    /// The six-decimal values of the worked table (`P22-0c-6.md` section
+    /// 2.4) hold to half a unit in the last place.
+    const TABLE_TOL: f64 = 5e-7;
+
+    /// The cone width of a tapered ball at the height `h` (mm), in closed
+    /// form: the cone offset is `r (1 - sin a) - r cos a / tan a`.
+    fn cone_diameter(tip_d: f64, half_angle_deg: f64, h: f64) -> f64 {
+        let r = tip_d / 2.0;
+        let a = half_angle_deg.to_radians();
+        let offset = r * (1.0 - a.sin()) - r * a.cos() / a.tan();
+        2.0 * (h - offset) * a.tan()
+    }
+
+    /// P22-0c-6a, ruling 1: the cutting cap is the width at the flute top,
+    /// never above the shaft. The worked table of section 2.4: wanaka tool
+    /// 4 (tip 2 mm, 5.7106 deg as the operator file states it, shaft 6,
+    /// `L` 20) with the legacy shank 6.35.
+    #[test]
+    fn the_cutting_cap_is_the_width_at_the_flute_top_p22_0c6() {
+        let cutter = TaperedBallEndmill::new(2.0, 5.7106, 6.0, 20.0).unwrap();
+        let body = ToolBody::new(&cutter, 6.35, 30.0, None);
+        let cap = body.max_cut_diameter_mm();
+        assert!((cap - 5.809980).abs() < TABLE_TOL, "cap {cap}");
+        assert!((cap - cone_diameter(2.0, 5.7106, 20.0)).abs() < 1e-12);
+        // (ap, the cutter today: capped at the shaft, after: capped at
+        // `width(L)`).
+        for (ap, cutter_today, after) in [
+            (0.2, 1.200000, 1.200000),
+            (10.0, 3.809977, 3.809977),
+            (20.0, 5.809980, 5.809980),
+            (20.5, 5.909980, 5.809980),
+            (21.0, 6.000000, 5.809980),
+            (25.0, 6.000000, 5.809980),
+        ] {
+            let width = 2.0 * cutter.width_at_height(ap);
+            assert!((width - cutter_today).abs() < TABLE_TOL, "ap {ap}: {width}");
+            let capped = width.min(cap);
+            assert!((capped - after).abs() < TABLE_TOL, "ap {ap}: {capped}");
+            // One value gives both halves of the ruling: the cap equals
+            // the width at `min(ap, L)`.
+            assert_eq!(
+                capped,
+                2.0 * cutter.width_at_height(ap.min(20.0)),
+                "ap {ap}"
+            );
+        }
+
+        // The operator's R2 x 6 x 30.5: the taper from the size,
+        // atan((3 - 2) / 30.5). The cone meets the shaft at 32.47 mm,
+        // above the flute, so the cap is width(30.5), not the shaft.
+        let half_angle = (1.0_f64 / 30.5).atan().to_degrees();
+        let cutter = TaperedBallEndmill::new(4.0, half_angle, 6.0, 30.5).unwrap();
+        let body = ToolBody::new(&cutter, 6.0, 45.0, None);
+        let cap = body.max_cut_diameter_mm();
+        assert!((cap - 5.871002).abs() < TABLE_TOL, "cap {cap}");
+        assert!((cap - cone_diameter(4.0, half_angle, 30.5)).abs() < 1e-12);
+        assert_eq!(2.0 * cutter.width_at_height(33.0), 6.0, "the shaft above");
+
+        // A cone that meets the shaft below `L`: the cap is the shaft.
+        let cutter = TaperedBallEndmill::new(1.0, 7.0, 6.0, 30.5).unwrap();
+        let body = ToolBody::new(&cutter, 6.0, 45.0, None);
+        assert_eq!(body.max_cut_diameter_mm(), 6.0);
+    }
+
+    /// The other shapes cut to their diameter when the flute reaches the
+    /// widest point; the upper diameter is the shank, else the envelope.
+    #[test]
+    fn every_shape_caps_at_its_widest_flute_and_reads_one_upper_rule_p22_0c6() {
+        let flat = FlatEndmill::new(6.0, 20.0);
+        let ball = BallEndmill::new(3.0, 12.0);
+        let bull = BullNoseEndmill::new(10.0, 1.0, 25.0).unwrap();
+        // 90 deg, D 12: the cone height is 6 mm, below the flute.
+        let vbit = VBitEndmill::new(12.0, 90.0, 15.0).unwrap();
+        let shapes: [(&dyn MillingCutter, f64); 4] =
+            [(&flat, 6.0), (&ball, 3.0), (&bull, 10.0), (&vbit, 12.0)];
+        for (cutter, d) in shapes {
+            let body = ToolBody::new(cutter, 6.35, 30.0, None);
+            assert_eq!(body.max_cut_diameter_mm(), d);
+            assert_eq!(body.upper_diameter_mm(), 6.35);
+            let bare = ToolBody::new(cutter, 0.0, 30.0, None);
+            assert_eq!(bare.upper_diameter_mm(), 2.0 * cutter.envelope_radius_mm());
+        }
+        assert_eq!(upper_diameter_mm(6.0, 9.0), 6.0);
+        assert_eq!(upper_diameter_mm(0.0, 9.0), 9.0);
+    }
 }

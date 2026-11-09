@@ -301,9 +301,10 @@ pub(crate) struct FeasibilityInputs<'a> {
     pub toolpath: &'a Toolpath,
     /// The tool and its facts.
     pub tool: &'a ToolConfig,
-    /// The core zone of the tool body (`ToolBody::core`, P22-0c-2); `None`
-    /// for a centre-cutting tool. The CentreCut rule reads it.
-    pub core: Option<crate::tool::body::CoreZone>,
+    /// The tool body (P22-0c): the CentreCut rule reads its core
+    /// (`ToolBody::core`, P22-0c-2), the reach rules its spans (the flute
+    /// length and the holder face, P22-0c-6 D4).
+    pub body: &'a crate::tool::body::ToolBody,
     /// The stock box in the emission frame.
     pub stock_bbox: &'a BoundingBox3,
     /// The XY and the depth base of each hole of a Drill
@@ -384,7 +385,7 @@ impl FeasibilityInputs<'_> {
     pub(crate) fn straight_plunge_refusals(
         &self,
     ) -> Vec<crate::compute::tool_config::NonCentreCuttingRefusal> {
-        let Some(core) = self.core else {
+        let Some(core) = self.body.core() else {
             return Vec::new();
         };
         if !matches!(
@@ -500,13 +501,13 @@ impl FeasibilityInputs<'_> {
         let deepest = self.deepest_contact_mm()?;
         let (fact, (limit, kind), passes) = match rule {
             PhysicalRule::ReachFlute => {
-                let limit = self.tool.cutting_length_planning_mm();
+                let limit = self.body.flute_length_mm();
                 let kind = self.tool.cutting_length_fact().kind();
                 (RuleFact::CuttingLength, (limit, kind), deepest > limit)
             }
             // Equality warns: the holder face meets the stock top.
             PhysicalRule::ReachHolder => {
-                let limit = self.tool.stickout_planning_mm();
+                let limit = self.body.holder_face_mm();
                 let kind = self.tool.stickout_fact().kind();
                 (RuleFact::Stickout, (limit, kind), deepest >= limit)
             }
@@ -578,6 +579,7 @@ pub(crate) fn assess(inputs: &FeasibilityInputs<'_>) -> FeasibilityReport {
 #[cfg(test)]
 #[expect(
     clippy::indexing_slicing,
+    clippy::expect_used,
     reason = "test code: a panic is how a test reports a failure"
 )]
 mod tests {
@@ -600,6 +602,7 @@ mod tests {
                 blade_protrusion_mm: 1.0,
             },
         )));
+        let def = crate::compute::cutter::build_cutter(&tool).expect("an in-domain tool");
         let toolpath = Toolpath::new();
         let stock_bbox = BoundingBox3 {
             min: P3::new(-30.0, -30.0, 0.0),
@@ -614,9 +617,7 @@ mod tests {
         let inputs = |helix_fallbacks: &'static [HelixCoreFallback]| FeasibilityInputs {
             toolpath: &toolpath,
             tool: &tool,
-            core: tool
-                .non_centre_cutting_geometry()
-                .map(crate::tool::body::CoreZone::from_geometry),
+            body: def.body(),
             stock_bbox: &stock_bbox,
             depth_bases: &[],
             entry_contract: crate::compute::catalog::EntryContract::DescentIsCut,

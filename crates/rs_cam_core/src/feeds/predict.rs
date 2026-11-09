@@ -479,11 +479,11 @@ pub fn predict_peak_deflection_um(
     let d_eng = crate::feeds::engagement::EngagedDiameter::of_hint(
         tool.geometry_hint(),
         diameter_mm,
-        if tool.shank_diameter_planning_mm() > 0.0 {
-            tool.shank_diameter_planning_mm()
-        } else {
-            diameter_mm
-        },
+        // P22-0c-6a: the body's shank. `build_cutter` validated the tool
+        // above, and a shank is `> 0` (ruling 6), so the old "else the
+        // diameter" arm could not run. P22-0c-6b gives this cap the
+        // cutting cap (`ToolBody::max_cut_diameter_mm`).
+        tool_def.body().shank_diameter_mm(),
         axial_doc_mm,
     );
     let engagement = crate::feeds::engagement::Engagement::from_cut(
