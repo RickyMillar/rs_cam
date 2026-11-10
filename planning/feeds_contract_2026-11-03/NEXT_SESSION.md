@@ -18,6 +18,20 @@
 `6b4a74f74`: the micro-tool sentry follow-up and the scoped sweep of the core feeds integration tests
 (235 binaries, 932 tests pass; no new red beyond the three stale SpeTool pins, all fixed).
 
+## Operator finding, 2026-11-11: a limit that some toolpaths skip (top priority in this session)
+
+`phases/P26_survey.md` found that the Adaptive family reads neither the machine force budget nor the
+width rule: a P13c scope decision of 2026-11-05 (`P13.md`: "The Adaptive family keeps
+`adaptive_doc_factor`"; code comment "the lead rules it next") that never reached the operator. By
+the Pocket rule the operator's 18 mm rough (5.5 x 10 mm) is outside the 35.3 N budget by about 4 x,
+and the 6 mm dial-in cut (1.2 x 6 mm) by 56 % in depth. The operator: every limit applies to every
+toolpath unless there is a physical reason; an exemption is their decision. In progress: agent
+`p21c-impl` audits every op-family exemption (`phases/P28_limit_audit.md`) and sketches a declared
+op-family x limit table held by a sentry. Then: the Adaptive family reads the force budget (the
+operator's message is the ruling; predictions before it lands). Suggest's Pocket rule gives the 6 mm
+bulk roughs 5.12 x 3.0 mm; the lead proposed that cut for the working file; the operator has not
+confirmed. Memory: the operator has not yet said yes to clearing `/tmp/claude-1001`.
+
 ## For the dedicated modelling session (operator direction 2026-11-11)
 
 `phases/P27_BRIEF.md`: feeds from fundamentals. That session owns the project end to end: it works
