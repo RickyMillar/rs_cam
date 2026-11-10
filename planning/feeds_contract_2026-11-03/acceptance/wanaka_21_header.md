@@ -6,17 +6,22 @@ the project file, or arithmetic shown in the row. The app is the thing under
 test. No expected value comes from the engine code or from the app output.
 
 - Project: `planning/rivmap_block_job/nz_wanaka_21_operator.toml`, 18 toolpaths, white oak.
-- Graded build: `b9e67b24e` (P20e; HEAD commit time 1794168411, 2026-11-09 09:06). The
-  running `rs_cam_gui` binary (`target/release`) has mtime 1794168764 (09:12), later than
-  HEAD; the process started after that (2026-11-09 09:38); no edits under `crates/`.
-  Graded by a fresh agent on 2026-11-09: PASS 47, FAIL 23, NEEDS-RULING 28, N/A 10. The
-  previous grade (build `4b7aa0e96`, P20b-P20d, 2026-11-08) was PASS 47, FAIL 23,
-  NEEDS-RULING 28, N/A 10; the grade before it (build `998ac93a3`, before the rulings of
-  2026-11-08) was PASS 31, FAIL 12, NEEDS-RULING 55.
+- Graded build: `dce570108` (P21c; commit time 1794272543, 2026-11-10 14:02). The running
+  `rs_cam_gui` binary (`target/release`) has mtime 1794270915 (13:35), EARLIER than the commit;
+  the process started 2026-11-10 13:54. Lead statement: the binary was built from the P21c
+  working tree shortly before the commit, and after that build only test files, the
+  literature-matrix shim and one snapshot changed (no product source). The README step 1 rule
+  (binary later than HEAD) is thus not met to the letter; the lead ruled to grade. HEAD at the
+  read was `3898f1b82` (a planning-only commit after `dce570108`); no edits under `crates/`.
+  Graded by a fresh agent on 2026-11-10: PASS 64, FAIL 6, NEEDS-RULING 28, N/A 10. The
+  previous grade (build `b9e67b24e`, P20e, 2026-11-09) was PASS 47, FAIL 23, NEEDS-RULING 28,
+  N/A 10; build `4b7aa0e96` (2026-11-08) had the same counts; build `998ac93a3` (before the
+  rulings of 2026-11-08) was PASS 31, FAIL 12, NEEDS-RULING 55.
 - App values: MCP `get_suggest_rationale` (Suggest) and `get_toolpath_params`
-  (shipped), read on 2026-11-09 (unchanged from the read of 2026-11-08). The GUI state differs from the saved file
-  for idx 16 (GUI 2317 mm/min at 18000 rpm; file 4700 at 20611). The table
-  uses the GUI values.
+  (shipped), read on 2026-11-10. Nobody applied Suggest after P21c, so each shipped param
+  still holds its old value (18000 rpm; 10610 rpm on idx 5 and 17). The Suggest column is
+  the graded value. Suggest prints the RPM in `basis.rpm.value`, also for idx 5 and 9, where
+  `shipped_power` is unmodeled.
 - Script: `derive_wanaka_21.py` computes every number and every grade. The
   file `wanaka_21.toml` is its machine-readable output. The script asserts
   the force-line and chip identities that this page states.
@@ -49,7 +54,7 @@ toolpath parameter, which can be an operator value (for example idx 1 feed
 
 ## Common inputs
 
-**Machine** (project file lines 59-65 and 84-88): spindle 6000-24000 rpm;
+**Machine** (project file lines 60-66 and 85-89; the spindle policy is on lines 50-51): spindle 6000-24000 rpm;
 `VfdConstantTorque` 1.5 kW at 24000 rpm; XY rate 15000, Z rate 2500 mm/min.
 Available power below 24000 rpm is `1.5 x n / 24000` kW. At 18000 rpm it is 1.125 kW.
 
@@ -111,7 +116,25 @@ ramp cuts a full slot, so the ramp feed has lift 1.
 - **F3000**, operator: delete `feed_max_rate` from the wanaka toolpaths. The value is the old
   `DressupConfig` default (3000.0 until S11, `74af0f8e1`). Empty = the machine cutting ceiling.
 
+## Rulings (2026-11-10)
+
+- **Spindle policy: constant chip, ceiling 24000**, operator ("yes, try constant chip on
+  wanaka"; `P21_DESIGN.md` section 9). The project file states `spindle_strategy =
+  "constant_chip"` and `spindle_rpm_ceiling = 24000` (lines 50-51). This is the policy of P1
+  (b), which the table grades since 2026-11-08; the losing candidate (a) was deleted then. The
+  operator ceiling 24000 is equal to the spindle max, so no expected RPM changes. The
+  acceleration rule (P21 Q1) is open; the script grades no acceleration cap (lead ruling Q8).
+- **idx 1 entry: helix**, operator. `entry_style = "helix"` (radius 0.3 x D = 5.4 mm, pitch
+  2.0 mm). The script has a rule for a ramp feed (a full slot, lift 1) and none for a helix
+  bore. The idx 1 "ramp feed" row is thus NEEDS-RULING with no candidate; the row prints the
+  ramp-rule value as information. No other idx 1 row reads the entry style.
+
 ## Questions the operator must rule on
+
+- **H1. Helix entry feed (idx 1).** (a) Grade a helix as a ramp: chip x z x n, lift 1 (the
+  path radius 5.4 mm is less than the tool radius 9 mm, so the contact is full width). (b) A
+  different rule or a source. Under (a) the row joins the U1 rows (bracket 6949-10973 at
+  24000 rpm; the app prints 8597).
 
 - **P1. RPM.** (a) The chart test RPM, 18000, where the chart prints it. (b) A
   constant chip up to the binding limit: min(spindle max 24000, XY rate / (chip x z
@@ -138,7 +161,7 @@ ramp cuts a full slot, so the ramp feed has lift 1.
 - **U4. Drill power.** Curti covers peripheral milling only. A thrust and torque law is
   necessary, or the app must say "not modelled".
 
-## Cross-row consistency checks (observed at build 998ac93a3; re-check by hand)
+## Cross-row consistency checks (observed at build 998ac93a3; re-checked at dce570108, see the end of this section)
 
 - **C1 (FAIL).** Tool 0 in white oak gets target chip 0.127 mm (idx 2, 15) and
   0.149 mm (idx 5, 17). A chip per tooth is a property of the tool and the material.
@@ -148,6 +171,11 @@ ramp cuts a full slot, so the ramp feed has lift 1.
 - **C3 (information).** idx 6 applies the ae 0.8 radial lift (1010 mm/min) in a pocket
   whose first ring is a slot. With the 2F log-log chip the slot feed is 990; 1010 is +2.0 %.
 
-Not a feeds row: `[job.machine.controller] rpm_max = 1000.0` while the spindle is
-6000-24000 rpm. If grblHAL `$30` is 1000, the firmware clamps every S command.
+At build dce570108 (Suggest values): C1 holds (0.127 on idx 2 and 15; 0.149 on idx 5 and
+17). C2 is closed in Suggest: idx 5 and 17 both print rpm 24000 and plunge 2500 (the stored
+params still differ: 1347 and 1582). C3 holds at the new rpm: idx 6 prints 1347; the slot
+feed is 1320; +2.0 %.
+
+Closed (operator, 2026-11-09: "$30 is 24000 on the machine; the file is wrong"): the project
+now states `[job.machine.controller] rpm_max = 24000.0` (line 94).
 

@@ -4,7 +4,7 @@
 The script computes every expected value from printed source lines and
 physics. It does not import or read the engine. The app values below are
 copies of MCP read-tool output (get_toolpath_params, get_suggest_rationale,
-build b9e67b24e (P20e)). Re-grade a new build: replace the APP dict, run the script.
+build dce570108 (P21c)). Re-grade a new build: replace the APP dict, run the script.
 
 Output: wanaka_21.toml, and wanaka_21.md = wanaka_21_header.md + the row tables.
 """
@@ -67,11 +67,12 @@ SRC = {
             "footnote line 6866: 'Specific gravity is based on weight when ovendry and volume when green or at 12% moisture content.'"),
     "WSP": ("crates/rs_cam_core/data/wood_species.toml", 378,
             'display_name = "Oak, white" / janka_lbf = 1348.9 / specific_gravity_12 = 0.68 / source_id = "fpl_ch5_2010"'),
-    "MACH": ("planning/rivmap_block_job/nz_wanaka_21_operator.toml", 59,
-             "spindle Variable min_rpm 6000 max_rpm 24000; power VfdConstantTorque rated_power_kw 1.5 rated_rpm 24000 (lines 59-65); "
-             "max_rate_xyz_mm_min [15000, 15000, 2500] (lines 84-88)"),
+    "MACH": ("planning/rivmap_block_job/nz_wanaka_21_operator.toml", 60,
+             "spindle Variable min_rpm 6000 max_rpm 24000; power VfdConstantTorque rated_power_kw 1.5 rated_rpm 24000 (lines 60-66); "
+             "max_rate_xyz_mm_min [15000, 15000, 2500] (lines 85-89); "
+             "spindle_strategy = \"constant_chip\", spindle_rpm_ceiling = 24000 (lines 50-51)"),
     "T6CC": ("planning/rivmap_block_job/nz_wanaka_21_operator.toml", 384,
-             "[tools.centre_cutting] stated = \"no\", centre_core_diameter_mm = 8.0, blade_protrusion_mm = 1.0 (tool 6, lines 383-386)"),
+             "[tools.centre_cutting] stated = \"no\", centre_core_diameter_mm = 8.0, blade_protrusion_mm = 1.0 (tool 6, lines 384-387)"),
 }
 
 # ---------------------------------------------------------------- machine
@@ -132,49 +133,53 @@ def p_vgroove(vf, n, ap, half_deg, z):
 
 
 # ---------------------------------------------------------------- app values
-# From MCP, build b9e67b24e (P20e), 2026-11-09. sug = get_suggest_rationale,
+# From MCP, build dce570108 (P21c), 2026-11-10. sug = get_suggest_rationale,
 # shp = get_toolpath_params. chip = vendor_band.score_winner_chip_mm.
+# ae = shipped_power.case_ae_mm. The shp values are the stored params (no apply
+# since the read of 2026-11-09), so they still hold the 18000 / 10610 rpm values.
 APP = {
-    0: dict(sug=dict(feed=6488, rpm=18000, plunge=2162, ramp=6447, preq=0.04341691566912402, pav=1.125, ae=8.0, ap=0.5, chip=0.17912843029568412),
+    0: dict(sug=dict(feed=8651, rpm=24000, plunge=2162, ramp=8597, preq=0.05789052125364684, pav=1.5, ae=8.0, ap=0.5, chip=0.17912843029568412),
             shp=dict(feed=6488, rpm=18000, plunge=2162, ramp=6447)),
-    1: dict(sug=dict(feed=6999, rpm=18000, plunge=2162, ramp=6448, preq=0.9849273042542057, pav=1.125, ae=8.8, ap=10.0, chip=0.17912843029568412),
+    1: dict(sug=dict(feed=9332, rpm=24000, plunge=2162, ramp=8597, preq=1.3132364056722743, pav=1.5, ae=8.8, ap=10.0, chip=0.17912843029568412),
             shp=dict(feed=8475, rpm=18000, plunge=2162, ramp=6448)),
-    2: dict(sug=dict(feed=5279, rpm=18000, plunge=2285, ramp=4571, preq=0.14209732235325212, pav=1.125, ae=2.4, ap=6.0, chip=0.127),
+    2: dict(sug=dict(feed=7039, rpm=24000, plunge=2500, ramp=6095, preq=0.1894677777723362, pav=1.5, ae=2.4, ap=6.0, chip=0.127),
             shp=dict(feed=5279, rpm=18000, plunge=2285, ramp=4571)),
-    3: dict(sug=dict(feed=2286, rpm=18000, plunge=2286, ramp=None, preq=0.14098888469360185, pav=1.125, ae=6.0, ap=0.127, chip=0.0635,
+    3: dict(sug=dict(feed=2499, rpm=19685, plunge=2499, ramp=None, preq=0.15415957357877005, pav=1.2303125, ae=6.0, ap=0.1269494538989078, chip=0.0635,
                      padv=True, section="axial_circle"),
             shp=dict(feed=1000, rpm=18000, plunge=None, ramp=None)),
-    4: dict(sug=dict(feed=2286, rpm=18000, plunge=2286, ramp=None, preq=0.14098888469360185, pav=1.125, ae=6.0, ap=0.127, chip=0.0635,
+    4: dict(sug=dict(feed=2499, rpm=19685, plunge=2499, ramp=None, preq=0.15415957357877005, pav=1.2303125, ae=6.0, ap=0.1269494538989078, chip=0.0635,
                      padv=True, section="axial_circle"),
             shp=dict(feed=1000, rpm=18000, plunge=None, ramp=None)),
-    # idx 5: Suggest prints no feed or rpm (shipped_power unmodeled); the
-    # Suggest chip is score_winner 0.14919; plunge 1347 from basis.plunge.
-    5: dict(sug=dict(feed=None, rpm=None, plunge=1347, ramp=None, preq=None, pav=None, ae=None, ap=None, chip=0.14919260416145616),
+    # idx 5: Suggest prints no feed (shipped_power unmodeled). From P21c it prints
+    # the rpm in basis.rpm.value (24000, lead ruling Q13). The Suggest chip is
+    # score_winner 0.14919; plunge 2500 from basis.plunge.
+    5: dict(sug=dict(feed=None, rpm=24000, plunge=2500, ramp=None, preq=None, pav=None, ae=None, ap=None, chip=0.14919260416145616),
             shp=dict(feed=3165, rpm=10610, plunge=1347, ramp=None)),
-    6: dict(sug=dict(feed=1010, rpm=18000, plunge=240, ramp=None, preq=0.004410504385733152, pav=1.125, ae=2.0, ap=0.7, chip=0.05501007821762709),
+    6: dict(sug=dict(feed=1347, rpm=24000, plunge=240, ramp=None, preq=0.005881127640829388, pav=1.5, ae=2.0, ap=0.7, chip=0.05501007821762709),
             shp=dict(feed=1010, rpm=18000, plunge=240, ramp=None)),
-    7: dict(sug=dict(feed=990, rpm=18000, plunge=240, ramp=None, preq=0.0031308548533014575, pav=1.125, ae=2.0, ap=0.5, chip=0.05501007821762709),
+    7: dict(sug=dict(feed=1320, rpm=24000, plunge=240, ramp=None, preq=0.004174473137735276, pav=1.5, ae=2.0, ap=0.5, chip=0.05501007821762709),
             shp=dict(feed=1258, rpm=18000, plunge=240, ramp=None)),
-    8: dict(sug=dict(feed=990, rpm=18000, plunge=240, ramp=990, preq=0.0031308548533014575, pav=1.125, ae=2.0, ap=0.5, chip=0.05501007821762709),
+    8: dict(sug=dict(feed=1320, rpm=24000, plunge=240, ramp=1320, preq=0.004174473137735276, pav=1.5, ae=2.0, ap=0.5, chip=0.05501007821762709),
             shp=dict(feed=1258, rpm=18000, plunge=240, ramp=1258)),
-    # idx 9: Suggest prints no feed or rpm (unmodeled); chip = score_winner 0.127.
-    9: dict(sug=dict(feed=None, rpm=None, plunge=381, ramp=None, preq=None, pav=None, ae=None, ap=None, chip=0.127),
+    # idx 9: Suggest prints no feed (unmodeled); rpm 24000 from basis.rpm.value;
+    # chip = score_winner 0.127.
+    9: dict(sug=dict(feed=None, rpm=24000, plunge=381, ramp=None, preq=None, pav=None, ae=None, ap=None, chip=0.127),
             shp=dict(feed=2286, rpm=18000, plunge=381, ramp=None)),
-    10: dict(sug=dict(feed=2286, rpm=18000, plunge=762, ramp=None, preq=0.02821826960316605, pav=1.125, ae=6.35, ap=2.6, chip=0.0635),
+    10: dict(sug=dict(feed=3048, rpm=24000, plunge=1016, ramp=None, preq=0.03762435947088806, pav=1.5, ae=6.35, ap=2.6, chip=0.0635),
              shp=dict(feed=2286, rpm=18000, plunge=762, ramp=None)),
-    11: dict(sug=dict(feed=6488, rpm=18000, plunge=2162, ramp=None, preq=0.09592408687942625, pav=1.125, ae=18.0, ap=0.5, chip=0.17912843029568412),
+    11: dict(sug=dict(feed=8651, rpm=24000, plunge=2162, ramp=None, preq=0.12790170831923497, pav=1.5, ae=18.0, ap=0.5, chip=0.17912843029568412),
              shp=dict(feed=6488, rpm=18000, plunge=2162, ramp=None)),
-    12: dict(sug=dict(feed=6488, rpm=18000, plunge=2162, ramp=6447, preq=0.04341691566912402, pav=1.125, ae=8.0, ap=0.5, chip=0.17912843029568412),
+    12: dict(sug=dict(feed=8651, rpm=24000, plunge=2162, ramp=8597, preq=0.05789052125364684, pav=1.5, ae=8.0, ap=0.5, chip=0.17912843029568412),
              shp=dict(feed=6488, rpm=18000, plunge=2162, ramp=6447)),
-    13: dict(sug=dict(feed=2286, rpm=18000, plunge=762, ramp=None, preq=0.0015027480853757064, pav=1.125, ae=6.35, ap=0.6, chip=0.0635),
+    13: dict(sug=dict(feed=3048, rpm=24000, plunge=1016, ramp=None, preq=0.0020036641138342754, pav=1.5, ae=6.35, ap=0.6, chip=0.0635),
              shp=dict(feed=2286, rpm=18000, plunge=762, ramp=None)),
-    14: dict(sug=dict(feed=8060, rpm=18000, plunge=2162, ramp=6448, preq=0.3129324141800096, pav=1.125, ae=5.76, ap=4.166, chip=0.17912843029568412),
+    14: dict(sug=dict(feed=10747, rpm=24000, plunge=2162, ramp=8597, preq=0.41725101982722135, pav=1.5, ae=5.76, ap=4.166, chip=0.17912843029568412),
              shp=dict(feed=8060, rpm=18000, plunge=2162, ramp=6448)),
-    15: dict(sug=dict(feed=5429, rpm=18000, plunge=2285, ramp=4571, preq=0.12446544548149027, pav=1.125, ae=2.2112, ap=5.532, chip=0.127),
+    15: dict(sug=dict(feed=7239, rpm=24000, plunge=2500, ramp=6095, preq=0.16595790393057647, pav=1.5, ae=2.2112, ap=5.532, chip=0.127),
              shp=dict(feed=5429, rpm=18000, plunge=2285, ramp=4571)),
-    16: dict(sug=dict(feed=2317, rpm=18000, plunge=240, ramp=None, preq=0.0010691975045593193, pav=1.125, ae=0.8717797887081346, ap=0.2, chip=0.06437017664182963),
+    16: dict(sug=dict(feed=3089, rpm=24000, plunge=240, ramp=None, preq=0.0014255399913028802, pav=1.5, ae=0.8717797887081346, ap=0.2, chip=0.06437017664182963),
              shp=dict(feed=2317, rpm=18000, plunge=240, ramp=None)),
-    17: dict(sug=dict(feed=3165, rpm=10610, plunge=1347, ramp=3165, preq=0.042295681141273724, pav=0.663125, ae=6.0, ap=1.25, chip=0.14919260416145616),
+    17: dict(sug=dict(feed=7161, rpm=24000, plunge=2500, ramp=7161, preq=0.09568610226602917, pav=1.5, ae=6.0, ap=1.25, chip=0.14919260416145616),
              shp=dict(feed=3165, rpm=10610, plunge=1582, ramp=3165)),
 }
 
@@ -183,7 +188,7 @@ APP = {
 # trochoid_cap_mult, entry) and the project tools. No engine value.
 TP = {
     0: ("Face back to T1", 6, "face", dict(ae=8.0, ap=0.5, entry="ramp")),
-    1: ("Back bulk rough 18 mm", 6, "adaptive", dict(ae=5.5, cap=1.6, ap=10.0, entry="ramp")),
+    1: ("Back bulk rough 18 mm", 6, "adaptive", dict(ae=5.5, cap=1.6, ap=10.0, entry="helix", helix_r=5.4, helix_pitch=2.0)),
     2: ("Back rest 6 mm (cavity, hollow, lakes, pockets)", 0, "adaptive", dict(ae=1.5, cap=1.6, ap=6.0, entry="ramp")),
     3: ("Pin drill, flip pins", 0, "drill", dict()),
     4: ("Drill light holes 6 mm end mill", 0, "drill", dict()),
@@ -434,8 +439,8 @@ for idx, (name, tid, kind, g) in TP.items():
         note=("Suggest prints no feed; graded on the shipped param." if a["sug"]["feed"] is None else ""))
     ROWS[-1]["app_shipped"] = a["shp"]["feed"]
     if idx == 6:
-        ROWS[-1]["note"] += (" With the 2F log-log chip %.5f in a slot the feed is %.0f; the app's 1010 is %+.1f %%: it applies the ae 0.8 lift in a pocket that slots."
-                             % (c_2mm_log, c_2mm_log * 18000, (1010 / (c_2mm_log * 18000) - 1) * 100))
+        ROWS[-1]["note"] += (" With the 2F log-log chip %.5f in a slot the feed is %.0f at the app rpm; the app's %d is %+.1f %%: it applies the ae 0.8 lift in a pocket that slots."
+                             % (c_2mm_log, c_2mm_log * n_app, app_feed, (app_feed / (c_2mm_log * n_app) - 1) * 100))
     if idx == 1:
         p8475 = p_flat(8475, 18000, g["ae"] * g["cap"], g["ap"], d, z)[0]
         ROWS[-1]["note"] += " Shipped 8475 is the operator value: P at ae 8.8 = %.3f kW = %.1f %% of 1.125 kW." % (p8475, p8475 / 1.125 * 100)
@@ -448,7 +453,9 @@ for idx, (name, tid, kind, g) in TP.items():
         row(idx, "plunge", "DERIVED", "Z rate 2500", pc,
             "SPK26 Ramp Down 90\" = %.1f mm/min at 18000 (SPK52: Ramp Down = Feed / flutes = n x chip; the Spektra 6 mm chip 0.127 sets the plunge, P2 rules the side chip only). P1 (b): 0.127 x 24000 = %.0f > Z 2500 -> 2500. At the app rpm: 0.127 x n." % (rd, c_spk6 * N_MAX),
             app_key="plunge", grade_cands={"@app": (pa, pa)}, n_app=n_app,
-            note=("Same tool and rpm as idx 17, but a different plunge (1347 vs 1582): the two ops disagree." if idx in (5, 17) else ""))
+            note=("Same tool as idx %d, but a different Suggest plunge (%s vs %s): the two ops disagree (check C2)."
+                  % (22 - idx, fmt(APP[5]["sug"]["plunge"]), fmt(APP[17]["sug"]["plunge"]))
+                  if idx in (5, 17) and APP[5]["sug"]["plunge"] != APP[17]["sug"]["plunge"] else ""))
     elif tid == 6:
         row(idx, "plunge", "UNSOURCED", "Z rate 2500", {"<= Z rate": (0.0, V_Z)},
             "UNSOURCED. Tool 6 is not centre-cutting (T6CC). The Spektra Ramp Down rule (SPK52) is for spiral plunge bits; it does not transfer. Bound: Z rate 2500 (MACH). "
@@ -462,7 +469,8 @@ for idx, (name, tid, kind, g) in TP.items():
             "SPK47 + SPK52 give Ramp Down = n x chip, which does not depend on the flute count; so a 1F tool with the 2F chip plunges at the same rate. Every candidate is >= %.0f mm/min." % (35 * IN, 40 * IN, 35 * IN),
             app_key="plunge", n_app=n_app,
             grade_cands={"@app": (35 * IN, 40 * IN) if n_app == 18000 else (c_116 * n_app, c_332 * n_app)},
-            note="The app ships 240 from an unsourced repo rule (conservative: 3.7x slower than the lowest candidate).")
+            note="The app ships %s from an unsourced repo rule (conservative: %.1fx slower than the lowest candidate at the app rpm)."
+                 % (fmt(a["sug"]["plunge"]), (35 * IN if n_app == 18000 else c_116 * n_app) / a["sug"]["plunge"]))
     elif tid == 2:
         f_lo, f_hi = c_v60[0] * 2 * 18000, c_v60[1] * 2 * 18000
         pc = {"IDC ratio x feed (P1 b)": (c_v60[0] * 2 * N_MAX / 3, c_v60[1] * 2 * N_MAX / 2)}
@@ -494,6 +502,22 @@ for idx, (name, tid, kind, g) in TP.items():
         row(idx, "ramp feed", st, "slot chip (full-width ramp)", rc,
             "A ramp cuts a full slot: ramp feed = chip x z x n (lift 1)." + vert, app_key="ramp",
             grade_cands=grc, n_app=n_app)
+    elif g.get("entry") == "helix":
+        # Operator ruling 2026-11-10: idx 1 takes entry_style = "helix". The script has a
+        # rule for a ramp (a full slot, lift 1) and none for a helix bore. No candidate is
+        # typed here; the ramp-rule value is information only.
+        hr, hp = g["helix_r"], g["helix_pitch"]
+        info = "; ".join("%s %s-%s" % (cn.split(" ")[0], fmt(min(cv[0] * z * n_app, V_XY)), fmt(min(cv[1] * z * n_app, V_XY)))
+                         for cn, cv in chips.items())
+        row(idx, "ramp feed", "UNSOURCED", "none (helix entry: no rule)", {},
+            "The entry is a helix (operator ruling 2026-11-10): r = 0.3 x D = %.2f mm, pitch %.2f mm, slope atan(pitch / (2 pi r)) = %.2f deg (get_toolpath_params). "
+            "The script has no rule for the feed of a helix bore: the ramp rule (a full slot, lift 1) is stated for a straight ramp only. "
+            "Information: the ramp rule at the app rpm gives %s mm/min. The helix path radius %.2f mm is less than the tool radius %.1f mm, so the cutter is in full-width contact; "
+            "if the operator rules that a helix is graded as a ramp, this row takes the ramp candidates."
+            % (hr, hp, math.degrees(math.atan(hp / (2 * math.pi * hr))), info, hr, d / 2),
+            app_key="ramp", override="NEEDS-RULING",
+            expected_text="no rule for a helix entry (ramp rule, information only: %s)" % info, n_app=n_app,
+            note="NEEDS-RULING: entry_style changed from ramp to helix; no script rule covers a helix feed.")
     else:
         row(idx, "ramp feed", "N/A", "none", {}, "The entry is a straight plunge; no ramp.", app_key="ramp", override="N/A")
 
@@ -553,7 +577,7 @@ out = ["# Wanaka 21 feeds and speeds acceptance table (machine-readable twin of 
        "",
        "[meta]",
        'project = "planning/rivmap_block_job/nz_wanaka_21_operator.toml"',
-       'graded_build = "b9e67b24e"',
+       'graded_build = "dce570108"',
        "tolerance_rel = %s" % TOL,
        "force_ks_n_mm2 = %s" % round(KS, 6),
        "force_f_edge_n_mm = %s" % round(FE, 6),
