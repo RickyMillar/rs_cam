@@ -12,8 +12,10 @@ exact-size member outranks a size claim). The operator ruled every open table qu
 (`acceptance/grade_2d0f7849f.md`; it was 47 / 23 / 28 in the morning). The one FAIL: idx 6 feed +2 %,
 a pocket's slot-first ring fed at the lifted feed; survey `phases/P23d_survey.md`; the lead recommends
 candidate (a), Pocket only; it waits for the operator's yes because the row then grades the slot-ring
-feed. Also waiting for the operator: `.mcp.json` back on `rs_cam_mcp_proxy` so the lead can
-`gui_restart` (the working-tree file launches `scripts/gui_logged.sh` directly). Nothing was applied to
+feed. The operator approved candidate (a) ("yes to the lower feed"); agent `p21c-impl` is on it as P23d.
+`.mcp.json` (working tree, uncommitted) is back on `rs_cam_mcp_proxy` (proxy -> systemd-run 28 GB ->
+`scripts/gui_logged.sh --mcp`): after a release rebuild call `gui_restart`, check `gui_status`
+`binary.newer_than_process` is false; no `/mcp` from the operator is needed. Nothing was applied to
 the wanaka project: its stored feeds are the old ones; an Apply under constant chip writes the new.
 
 The review's finding on scope (operator concern: the sessions rabbit-hole): the acceptance table
