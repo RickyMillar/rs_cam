@@ -20,10 +20,10 @@
 
 ## For the dedicated modelling session (operator direction 2026-11-11)
 
-`phases/P27_BRIEF.md`: a chip-load model from fundamentals (tool geometry and material, stock,
-machine), reproducing the vendor tables inside the spread between vendors, judged on held-out rows;
-then Suggest reads the model first and the vendor rows are the validation. No product code in the
-first session; the deliverable is an interactive page with an asserting script and a design note.
+`phases/P27_BRIEF.md`: feeds from fundamentals. That session owns the project end to end: it works
+out the problem, chooses the approach, builds the model into the product and presents the
+verification. The brief gives the outcome, how the result is judged and the rules that do not bend;
+the earlier lead's hypotheses are in `phases/P27_NOTES.md`, to use or discard.
 P25 rulings 1 to 5 are given (`P25_DESIGN.md` section 8); ruling 6 (the no-row formula) is treated
 as "no row, no number" until the model exists. Open at the time of writing: the stepover of the
 6 mm bulk roughs (`P26_survey.md`, the Pocket width rule for adaptive ops), the deletion of idx 15
