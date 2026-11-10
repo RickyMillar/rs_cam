@@ -1,5 +1,12 @@
 # Next session: feeds and speeds correctness (brief, 2026-11-08, second edition)
 
+## P29 investigation DONE (2026-11-11): the operator reads `phases/P29_FINDINGS.md`
+
+The findings, the design (Cut, cuts(), CutLoad, Check, check_all), the estimate of what moves and
+the change list P29-0 to P29-last are in `phases/P29_FINDINGS.md`; the evidence is in
+`phases/P29_parts/A_cuts_and_limits.md` and `B_metrics_and_display.md`. Six rulings wait for the
+operator (R1 to R6, section 7). After the approval: compact, then P29-0 (probes), then P29-1.
+
 ## NEXT STEP (2026-11-11, written before a compaction): investigate, do not implement
 
 Follow `phases/P29_INVESTIGATION_PLAN.md`. The operator wants an architectural fix: every cut is
