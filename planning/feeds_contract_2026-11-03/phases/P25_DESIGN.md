@@ -261,3 +261,25 @@ gained). It runs once per ruling option of 3.1, 3.2, 3.3 and 3.5, so each ruling
 4. 3.4: the 6 mm tool: plain spiral reading Spektra, or down-cut?
 5. 3.5: may a bull nose read a flat-end row by a named rule?
 6. 3.10: does the formula with no row go?
+
+## 8. Operator rulings (2026-11-11, the operator's words; recorded by the lead)
+
+1. Size law forms B and C: "yeah. keep it." They stay as named calculations, labelled as past the
+   printed sizes.
+2. Flute count: "flute count should match! I'm pretty sure it changes a lot right?" A hard match.
+   The lead's rider (to confirm with the operator when the P25-0 list is in): a chart that prints
+   one flute count for a tool serves that tool only at that count; no borrowing across counts.
+3. ZrN rows join the category of their geometry: "yes".
+4. The wanaka 6 mm tool: "its up cut - I do own downcut bits". A plain spiral tool. It no longer
+   reads the Onsrud 60-200 down-cut row; this replaces ruling P2 (b) of 2026-11-08. The operator's
+   down-cut bits are separate tools that state `down_cut`.
+5. A bull nose reads a flat-end row: "no".
+6. The formula with no row: OPEN. The operator asked for the state of the math against the lookup
+   ("I thought we did a huge amount of force modelling to try and make this all based on math, not
+   just look up, then validate the math with the lookups"). The lead's answer: the chip per tooth
+   is the one looked-up input; force, power, deflection, the limits, the RPM, the lifts and the
+   pocket width are calculated; the no-row formula is an unsourced rule of thumb, not the force
+   model. Options put to the operator: (a) no number; (b) keep the formula; (c) a force-model
+   fallback (the largest chip inside the power, force-budget and deflection limits), as its own
+   designed phase. Lead recommendation: (a) now, (c) designed next.
+Spiral force (P24b): one force line for every tool stays ("I've never seen a helix quoted").
