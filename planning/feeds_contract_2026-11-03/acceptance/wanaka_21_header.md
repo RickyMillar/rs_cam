@@ -13,7 +13,9 @@ test. No expected value comes from the engine code or from the app output.
   literature-matrix shim and one snapshot changed (no product source). The README step 1 rule
   (binary later than HEAD) is thus not met to the letter; the lead ruled to grade. HEAD at the
   read was `3898f1b82` (a planning-only commit after `dce570108`); no edits under `crates/`.
-  Graded by a fresh agent on 2026-11-10: PASS 64, FAIL 6, NEEDS-RULING 28, N/A 10. The
+  Graded by a fresh agent on 2026-11-10: PASS 64, FAIL 6, NEEDS-RULING 28, N/A 10. After the
+  operator rulings of the afternoon (same build, same app values; `grade_dce570108_r2.md`):
+  PASS 92, FAIL 6, NEEDS-RULING 0, N/A 10. The
   previous grade (build `b9e67b24e`, P20e, 2026-11-09) was PASS 47, FAIL 23, NEEDS-RULING 28,
   N/A 10; build `4b7aa0e96` (2026-11-08) had the same counts; build `998ac93a3` (before the
   rulings of 2026-11-08) was PASS 31, FAIL 12, NEEDS-RULING 55.
@@ -129,13 +131,39 @@ ramp cuts a full slot, so the ramp feed has lift 1.
   bore. The idx 1 "ramp feed" row is thus NEEDS-RULING with no candidate; the row prints the
   ramp-rule value as information. No other idx 1 row reads the entry style.
 
+Afternoon, the six open questions (operator words in quotes). Each ruled value is a rule
+that the script computes from its SRC lines; no app number is copied.
+
+- **U1 (18 mm 2F chip): the app's stated rule**, operator: "1 and 2 sounds good". The chip is
+  the Amana Spektra 1/2 in 2F row (SPK37, 0.1448 mm) x (18 / 12.7)^0.61, the generic size law
+  (SIZEC) = 0.1791 mm. It lies inside the old bracket 0.1448-0.2286 mm and under the Freud
+  straight-bit band 0.229-0.330 mm (`research/large_straight_router_bits_2026-11-10.md`); the
+  tool is a straight-flute router bit. The bracket is deleted. Rows: chip, feed and entry feed
+  of tool 6.
+- **U3 tool 6 (18 mm plunge): the repo rule "material plunge base"**, operator (same words).
+  Base 1000 / h at 6 mm x clamp(D/6, 0.25, 3), h = (Janka / 600)^0.4, capped by the Z axis
+  rate (PLGTXT, PLGBASE, PLGH, PLGJANKA). DERIVED from a stated repo rule; no vendor source.
+- **U2 (2 mm 1F chip): the app's stated rule**, operator: "3 sounds good". Log-log
+  interpolation between the printed 1.5875 and 2.38125 mm 2F rows (SIZEA, SPK12, SPK17) =
+  0.0550 mm. The plunge of tool 5 is the same repo plunge rule (240 mm/min): the operator
+  keeps the slow plunge, so the `n x chip` candidate (1219-1402 at 24000 rpm) is deleted.
+- **U3 tool 1 (20 deg V-bit plunge) and U3 tool 4 (2 mm tapered ball plunge): the repo plunge
+  rule**, operator: "for the no source ones, if they look right, let's go for it". Tool 4
+  also takes the tip cap 150 mm/min per mm of tip (PLGTIP), as the app states it.
+- **H1: yes**, operator. The ramp rule (chip x z x n, lift 1) grades a helix entry feed.
+
+Effect of the rulings: no NEEDS-RULING row is left. Three feed rows now FAIL against a single
+value where a bracket hid the difference: idx 1 and 14 (the app lifts at the nominal stepover,
+P3 ruled the cap width) and idx 6 (the app lifts in a pocket that slots, check C3).
+
 ## Questions the operator must rule on
+
+Open: P4 (the idx 16 feed row fails both candidates) and the P21 acceleration rule. U1, U2, U3
+and H1 are ruled (2026-11-10); the text below is the record of each question.
 
 - **H1. Helix entry feed (idx 1).** (a) Grade a helix as a ramp: chip x z x n, lift 1 (the
   path radius 5.4 mm is less than the tool radius 9 mm, so the contact is full width). (b) A
-  different rule or a source. Under (a) the row joins the U1 rows (bracket 6949-10973 at
-  24000 rpm; the app prints 8597).
-
+  different rule or a source. Ruled (a).
 - **P1. RPM.** (a) The chart test RPM, 18000, where the chart prints it. (b) A
   constant chip up to the binding limit: min(spindle max 24000, XY rate / (chip x z
   x lift), Z rate / axial chip per rev for vertical moves). On this machine (b) is

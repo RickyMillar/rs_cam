@@ -35,6 +35,13 @@ CUR155 = { file = "planning/extrapolation_2026-09-24/fetch/G7/sources/marcon2021
 FPL = { file = "planning/extrapolation_2026-09-24/fetch/G7/pdf/fpl_gtr190_wood_handbook_2010.pdf", line = 6708, quote = "Table 5-3a, Oak, white: 'White Green 0.60 ...' / '12% 0.68 105,000 ...' (pdftotext -layout text lines 6707-6708); footnote line 6866: 'Specific gravity is based on weight when ovendry and volume when green or at 12% moisture content.'" }
 WSP = { file = "crates/rs_cam_core/data/wood_species.toml", line = 378, quote = "display_name = \"Oak, white\" / janka_lbf = 1348.9 / specific_gravity_12 = 0.68 / source_id = \"fpl_ch5_2010\"" }
 MACH = { file = "planning/rivmap_block_job/nz_wanaka_21_operator.toml", line = 60, quote = "spindle Variable min_rpm 6000 max_rpm 24000; power VfdConstantTorque rated_power_kw 1.5 rated_rpm 24000 (lines 60-66); max_rate_xyz_mm_min [15000, 15000, 2500] (lines 85-89); spindle_strategy = \"constant_chip\", spindle_rpm_ceiling = 24000 (lines 50-51)" }
+SIZEC = { file = "crates/rs_cam_core/src/feeds/extrapolation/size.rs", line = 87, quote = "const RULE_C: &str = \"G1 form C: the generic size law (d / d_row)^0.61 inside 0.5x-2x of the row\"; exponent: crates/rs_cam_core/src/feeds/vendor_lookup.rs line 791 'pub const CHIPLOAD_DIAMETER_EXPONENT: f64 = 0.61;'" }
+SIZEA = { file = "crates/rs_cam_core/src/feeds/extrapolation/size.rs", line = 82, quote = "const RULE_A: &str = \"G1 form A: log-log interpolation between two adjacent printed sizes of one chart series\"" }
+PLGTXT = { file = "crates/rs_cam_core/src/feeds/plunge.rs", line = 49, quote = "PLUNGE_BASE_RULE_TEXT = \"material base 1000/h (wood), 900/h (plywood, sheet) at 6 mm, x clamp(D/6, 0.25, 3), h = (Janka/600)^0.4 (a port of the Shapeoko reference calculator)\"" }
+PLGBASE = { file = "crates/rs_cam_core/src/material/mod.rs", line = 788, quote = "FormulaConstant::unsourced(\"material.plunge_rate_base.solid_wood\", 1000.0, PLUNGE_CLAIM); reference_diameter_mm 6.0 (line 810); diameter_scale_min 0.25 (line 815); diameter_scale_max 3.0 (line 820)" }
+PLGH = { file = "crates/rs_cam_core/src/material/mod.rs", line = 827, quote = "material.feed_scale_factor.janka_reference_lbf 600.0 (line 827); material.feed_scale_factor.exponent 0.4 (line 832): \"law (janka / 600)^0.4 ported from reference/ (not in the repo)\"" }
+PLGJANKA = { file = "crates/rs_cam_core/src/material/mod.rs", line = 153, quote = "WoodSpecies::WhiteOak => 1360.0 (janka_lbf); the project states [job.stock.material.SolidWood] species = \"WhiteOak\" (nz_wanaka_21_operator.toml lines 16-17)" }
+PLGTIP = { file = "crates/rs_cam_core/src/tool_load/plunge_stress.rs", line = 21, quote = "const PLUNGE_CAP_PER_MM_TIP_DIAMETER: f64 = 150.0; (comment: FSWizard / GWizard ranges, not stored in the repo)" }
 T6CC = { file = "planning/rivmap_block_job/nz_wanaka_21_operator.toml", line = 384, quote = "[tools.centre_cutting] stated = \"no\", centre_core_diameter_mm = 8.0, blade_protrusion_mm = 1.0 (tool 6, lines 384-387)" }
 
 [[row]]
@@ -42,17 +49,17 @@ idx = 0.0
 toolpath = "Face back to T1"
 quantity = "chip per tooth (target peak)"
 unit = "mm"
-status = "UNSOURCED"
+status = "DERIVED"
 binding = "chart"
-expected = "bracket: 0.14478-0.22860"
-candidates = { "bracket" = [0.14478, 0.2286] }
-grade_candidates = { "bracket" = [0.14478, 0.2286] }
+expected = "Spektra 1/2 in x size law: 0.17910"
+candidates = { "Spektra 1/2 in x size law" = [0.179104, 0.179104] }
+grade_candidates = { "Spektra 1/2 in x size law" = [0.179104, 0.179104] }
 n_app = "-"
-derivation = "UNSOURCED: no 18 mm 2F row. Bracket: SPK37 1/2 in 2F \".0057\"\" = 0.1448 mm (below), SPK54 3/4 in 3F \".009\"\" = 0.2286 mm (above) ap/D = 0.028 <= 1: the 1 x D chart condition holds (SPK38/AMS3/SPE14); no feed derate."
+derivation = "U1 ruled, operator 2026-11-10. SPK37 1/2 in 2F \".0057\"\" = 0.1448 mm x (18 / 12.7)^0.61 (SIZEC) = 0.17910 mm. Repo size law, no vendor row at 18 mm. It lies inside the old bracket 0.1448-0.2286 mm and under the Freud straight-bit band 0.229-0.330 mm (research/large_straight_router_bits_2026-11-10.md line 119); the tool is a straight-flute router bit ap/D = 0.028 <= 1: the 1 x D chart condition holds (SPK38/AMS3/SPE14); no feed derate."
 app_suggest = 0.179128
 app_shipped = "-"
-grade = "NEEDS-RULING"
-matched = ["bracket"]
+grade = "PASS"
+matched = ["Spektra 1/2 in x size law"]
 note = "App = vendor_band.score_winner_chip_mm (the target before the radial lift)."
 
 [[row]]
@@ -66,7 +73,7 @@ expected = "P1b binding limit: 24000"
 candidates = { "P1b binding limit" = [24000.0, 24000.0] }
 grade_candidates = { "P1b binding limit" = [24000.0, 24000.0] }
 n_app = "-"
-derivation = "P1 ruled (b), operator 2026-11-08 (the chart rpm: SPK3 18,000 RPM (nearest printed chart)). n_xy = 15000 / (chip_hi 0.2286 x 2 x lift 1.0062) = 32605; spindle max 24000; n_b = 24000 (spindle max 24000). Power does not bind: P_req and P_avail both scale with n (constant torque below 24000 rpm, MACH), so the ratio holds at every n."
+derivation = "P1 ruled (b), operator 2026-11-08 (the chart rpm: SPK3 18,000 RPM (the chart of the scaled row)). n_xy = 15000 / (chip_hi 0.1791 x 2 x lift 1.0062) = 41616; spindle max 24000; n_b = 24000 (spindle max 24000). Power does not bind: P_req and P_avail both scale with n (constant torque below 24000 rpm, MACH), so the ratio holds at every n."
 app_suggest = 24000.0
 app_shipped = 18000.0
 grade = "PASS"
@@ -78,16 +85,16 @@ idx = 0.0
 toolpath = "Face back to T1"
 quantity = "feed"
 unit = "mm/min"
-status = "UNSOURCED"
+status = "DERIVED"
 binding = "chart chip x lift; XY 15000"
-expected = "P1b: 6993-11041 // graded at app rpm 24000: @app: 6993-11041"
-candidates = { "P1b" = [6992.739111, 11041.167017] }
-grade_candidates = { "@app" = [6992.739111, 11041.167017] }
+expected = "P1b: 8651 // graded at app rpm 24000: @app: 8651"
+candidates = { "P1b" = [8650.541301, 8650.541301] }
+grade_candidates = { "@app" = [8650.541301, 8650.541301] }
 n_app = 24000.0
 derivation = "feed = chip x z x n x lift (SPK47), clamped to XY 15000. Face: max ae = stepover 8.0, r 0.4444, lift 1.0062."
 app_suggest = 8651.0
 app_shipped = 6488.0
-grade = "NEEDS-RULING"
+grade = "PASS"
 matched = ["@app"]
 note = ""
 
@@ -96,17 +103,17 @@ idx = 0.0
 toolpath = "Face back to T1"
 quantity = "plunge"
 unit = "mm/min"
-status = "UNSOURCED"
-binding = "Z rate 2500"
-expected = "<= Z rate: 0.00000-2500"
-candidates = { "<= Z rate" = [0.0, 2500.0] }
-grade_candidates = { "<= Z rate" = [0.0, 2500.0] }
+status = "DERIVED"
+binding = "repo rule, no vendor source"
+expected = "repo plunge rule: 2163"
+candidates = { "repo plunge rule" = [2162.550169, 2162.550169] }
+grade_candidates = { "repo plunge rule" = [2162.550169, 2162.550169] }
 n_app = "-"
-derivation = "UNSOURCED. Tool 6 is not centre-cutting (T6CC). The Spektra Ramp Down rule (SPK52) is for spiral plunge bits; it does not transfer. Bound: Z rate 2500 (MACH). Geometry (I: field meaning): a straight plunge is possible only to the blade protrusion 1.0 mm; a 3 deg ramp sinks 8 x tan 3 = 0.42 mm over the 8 mm core, < 1.0 mm. Needed: a plunge rate for this tool from its maker."
+derivation = "Repo rule, no vendor source (operator ruling 2026-11-10: U3 tool 6, accepted as the repo rule). PLGTXT: base 1000 / h at 6 mm x clamp(D/6, 0.25, 3), h = (Janka / 600)^0.4. Janka 1360 (PLGJANKA): h = 1.3873; 1000 / h = 720.9; x clamp(18.0 / 6) = 3.0000 -> 2162.6 mm/min; min with the Z rate 2500 (MACH) = 2162.6. The rule does not read the RPM. Tool 6 is not centre-cutting (T6CC); the rule does not read that fact."
 app_suggest = 2162.0
 app_shipped = 2162.0
-grade = "NEEDS-RULING"
-matched = ["<= Z rate"]
+grade = "PASS"
+matched = ["repo plunge rule"]
 note = ""
 
 [[row]]
@@ -114,16 +121,16 @@ idx = 0.0
 toolpath = "Face back to T1"
 quantity = "ramp feed"
 unit = "mm/min"
-status = "UNSOURCED"
+status = "DERIVED"
 binding = "slot chip (full-width ramp)"
-expected = "P1b: 6949-10973 // graded at app rpm 24000: @app: 6949-10973"
-candidates = { "P1b" = [6949.44, 10972.8] }
-grade_candidates = { "@app" = [6949.44, 10972.8] }
+expected = "P1b: 8597 // graded at app rpm 24000: @app: 8597"
+candidates = { "P1b" = [8596.977062, 8596.977062] }
+grade_candidates = { "@app" = [8596.977062, 8596.977062] }
 n_app = 24000.0
 derivation = "A ramp cuts a full slot: ramp feed = chip x z x n (lift 1)."
 app_suggest = 8597.0
 app_shipped = 6447.0
-grade = "NEEDS-RULING"
+grade = "PASS"
 matched = ["@app"]
 note = ""
 
@@ -151,17 +158,17 @@ idx = 1.0
 toolpath = "Back bulk rough 18 mm"
 quantity = "chip per tooth (target peak)"
 unit = "mm"
-status = "UNSOURCED"
+status = "DERIVED"
 binding = "chart"
-expected = "bracket: 0.14478-0.22860"
-candidates = { "bracket" = [0.14478, 0.2286] }
-grade_candidates = { "bracket" = [0.14478, 0.2286] }
+expected = "Spektra 1/2 in x size law: 0.17910"
+candidates = { "Spektra 1/2 in x size law" = [0.179104, 0.179104] }
+grade_candidates = { "Spektra 1/2 in x size law" = [0.179104, 0.179104] }
 n_app = "-"
-derivation = "UNSOURCED: no 18 mm 2F row. Bracket: SPK37 1/2 in 2F \".0057\"\" = 0.1448 mm (below), SPK54 3/4 in 3F \".009\"\" = 0.2286 mm (above) ap/D = 0.556 <= 1: the 1 x D chart condition holds (SPK38/AMS3/SPE14); no feed derate."
+derivation = "U1 ruled, operator 2026-11-10. SPK37 1/2 in 2F \".0057\"\" = 0.1448 mm x (18 / 12.7)^0.61 (SIZEC) = 0.17910 mm. Repo size law, no vendor row at 18 mm. It lies inside the old bracket 0.1448-0.2286 mm and under the Freud straight-bit band 0.229-0.330 mm (research/large_straight_router_bits_2026-11-10.md line 119); the tool is a straight-flute router bit ap/D = 0.556 <= 1: the 1 x D chart condition holds (SPK38/AMS3/SPE14); no feed derate."
 app_suggest = 0.179128
 app_shipped = "-"
-grade = "NEEDS-RULING"
-matched = ["bracket"]
+grade = "PASS"
+matched = ["Spektra 1/2 in x size law"]
 note = "App = vendor_band.score_winner_chip_mm (the target before the radial lift)."
 
 [[row]]
@@ -175,7 +182,7 @@ expected = "P1b binding limit: 24000"
 candidates = { "P1b binding limit" = [24000.0, 24000.0] }
 grade_candidates = { "P1b binding limit" = [24000.0, 24000.0] }
 n_app = "-"
-derivation = "P1 ruled (b), operator 2026-11-08 (the chart rpm: SPK3 18,000 RPM (nearest printed chart)). n_xy = 15000 / (chip_hi 0.2286 x 2 x lift 1.0002) = 32800; spindle max 24000; n_b = 24000 (spindle max 24000). Power does not bind: P_req and P_avail both scale with n (constant torque below 24000 rpm, MACH), so the ratio holds at every n."
+derivation = "P1 ruled (b), operator 2026-11-08 (the chart rpm: SPK3 18,000 RPM (the chart of the scaled row)). n_xy = 15000 / (chip_hi 0.1791 x 2 x lift 1.0002) = 41865; spindle max 24000; n_b = 24000 (spindle max 24000). Power does not bind: P_req and P_avail both scale with n (constant torque below 24000 rpm, MACH), so the ratio holds at every n."
 app_suggest = 24000.0
 app_shipped = 18000.0
 grade = "PASS"
@@ -187,17 +194,17 @@ idx = 1.0
 toolpath = "Back bulk rough 18 mm"
 quantity = "feed"
 unit = "mm/min"
-status = "UNSOURCED"
+status = "DERIVED"
 binding = "chart chip x lift; XY 15000"
-expected = "P1b: 6951-10976 // graded at app rpm 24000: @app: 6951-10976"
-candidates = { "P1b" = [6951.156547, 10975.510337] }
-grade_candidates = { "@app" = [6951.156547, 10975.510337] }
+expected = "P1b: 8599 // graded at app rpm 24000: @app: 8599"
+candidates = { "P1b" = [8599.100559, 8599.100559] }
+grade_candidates = { "@app" = [8599.100559, 8599.100559] }
 n_app = 24000.0
 derivation = "feed = chip x z x n x lift (SPK47), clamped to XY 15000. lift = 1 / (2 sqrt(r(1-r))), r = ae/D. P3 ruled (b): ae 5.500 x 1.6 = 8.8000, r 0.4889, lift 1.0002 (the nominal ae 5.500 would give lift 1.0854)."
 app_suggest = 9332.0
 app_shipped = 8475.0
-grade = "NEEDS-RULING"
-matched = ["@app"]
+grade = "FAIL"
+matched = []
 note = " Shipped 8475 is the operator value: P at ae 8.8 = 1.112 kW = 98.8 % of 1.125 kW."
 
 [[row]]
@@ -205,17 +212,17 @@ idx = 1.0
 toolpath = "Back bulk rough 18 mm"
 quantity = "plunge"
 unit = "mm/min"
-status = "UNSOURCED"
-binding = "Z rate 2500"
-expected = "<= Z rate: 0.00000-2500"
-candidates = { "<= Z rate" = [0.0, 2500.0] }
-grade_candidates = { "<= Z rate" = [0.0, 2500.0] }
+status = "DERIVED"
+binding = "repo rule, no vendor source"
+expected = "repo plunge rule: 2163"
+candidates = { "repo plunge rule" = [2162.550169, 2162.550169] }
+grade_candidates = { "repo plunge rule" = [2162.550169, 2162.550169] }
 n_app = "-"
-derivation = "UNSOURCED. Tool 6 is not centre-cutting (T6CC). The Spektra Ramp Down rule (SPK52) is for spiral plunge bits; it does not transfer. Bound: Z rate 2500 (MACH). Geometry (I: field meaning): a straight plunge is possible only to the blade protrusion 1.0 mm; a 3 deg ramp sinks 8 x tan 3 = 0.42 mm over the 8 mm core, < 1.0 mm. Needed: a plunge rate for this tool from its maker."
+derivation = "Repo rule, no vendor source (operator ruling 2026-11-10: U3 tool 6, accepted as the repo rule). PLGTXT: base 1000 / h at 6 mm x clamp(D/6, 0.25, 3), h = (Janka / 600)^0.4. Janka 1360 (PLGJANKA): h = 1.3873; 1000 / h = 720.9; x clamp(18.0 / 6) = 3.0000 -> 2162.6 mm/min; min with the Z rate 2500 (MACH) = 2162.6. The rule does not read the RPM. Tool 6 is not centre-cutting (T6CC); the rule does not read that fact."
 app_suggest = 2162.0
 app_shipped = 2162.0
-grade = "NEEDS-RULING"
-matched = ["<= Z rate"]
+grade = "PASS"
+matched = ["repo plunge rule"]
 note = ""
 
 [[row]]
@@ -223,18 +230,18 @@ idx = 1.0
 toolpath = "Back bulk rough 18 mm"
 quantity = "ramp feed"
 unit = "mm/min"
-status = "UNSOURCED"
-binding = "none (helix entry: no rule)"
-expected = "no rule for a helix entry (ramp rule, information only: bracket 6949-10973)"
-candidates = {  }
-grade_candidates = {  }
+status = "DERIVED"
+binding = "slot chip (full-width ramp)"
+expected = "P1b: 8597 // graded at app rpm 24000: @app: 8597"
+candidates = { "P1b" = [8596.977062, 8596.977062] }
+grade_candidates = { "@app" = [8596.977062, 8596.977062] }
 n_app = 24000.0
-derivation = "The entry is a helix (operator ruling 2026-11-10): r = 0.3 x D = 5.40 mm, pitch 2.00 mm, slope atan(pitch / (2 pi r)) = 3.37 deg (get_toolpath_params). The script has no rule for the feed of a helix bore: the ramp rule (a full slot, lift 1) is stated for a straight ramp only. Information: the ramp rule at the app rpm gives bracket 6949-10973 mm/min. The helix path radius 5.40 mm is less than the tool radius 9.0 mm, so the cutter is in full-width contact; if the operator rules that a helix is graded as a ramp, this row takes the ramp candidates."
+derivation = "A ramp cuts a full slot: ramp feed = chip x z x n (lift 1). The entry is a helix (r = 0.3 x D = 5.40 mm, pitch 2.00 mm, slope 3.37 deg). H1 ruled \"yes\", operator 2026-11-10: the ramp rule grades a helix entry feed. The path radius is less than the tool radius 9.0 mm, so the contact is full width."
 app_suggest = 8597.0
 app_shipped = 6448.0
-grade = "NEEDS-RULING"
-matched = []
-note = "NEEDS-RULING: entry_style changed from ramp to helix; no script rule covers a helix feed."
+grade = "PASS"
+matched = ["@app"]
+note = ""
 
 [[row]]
 idx = 1.0
@@ -693,17 +700,17 @@ idx = 6.0
 toolpath = "Lake pocket 2 mm, 11 lakes to Z 5.88"
 quantity = "chip per tooth (target peak)"
 unit = "mm"
-status = "UNSOURCED"
+status = "DERIVED"
 binding = "chart"
-expected = "bracket: 0.05080-0.05842"
-candidates = { "bracket" = [0.0508, 0.05842] }
-grade_candidates = { "bracket" = [0.0508, 0.05842] }
+expected = "Spektra 2F log-log: 0.05501"
+candidates = { "Spektra 2F log-log" = [0.05501, 0.05501] }
+grade_candidates = { "Spektra 2F log-log" = [0.05501, 0.05501] }
 n_app = "-"
-derivation = "UNSOURCED for 1F. 2F bracket: SPK12 1/16 in \".0020\"\" = 0.0508 mm, SPK17 3/32 in \".0023\"\" = 0.0584 mm; log-log at 2.0 mm = 0.05501, linear = 0.05476 ap/D = 0.350 <= 1: the 1 x D chart condition holds (SPK38/AMS3/SPE14); no feed derate."
+derivation = "U2 ruled, operator 2026-11-10. Log-log interpolation (SIZEA) between SPK12 1/16 in \".0020\"\" = 0.0508 mm and SPK17 3/32 in \".0023\"\" = 0.0584 mm at 2.0 mm = 0.05501 mm. The rows are 2F; the tool is 1F; the operator accepts the 2F chip per tooth for it ap/D = 0.350 <= 1: the 1 x D chart condition holds (SPK38/AMS3/SPE14); no feed derate."
 app_suggest = 0.05501
 app_shipped = "-"
-grade = "NEEDS-RULING"
-matched = ["bracket"]
+grade = "PASS"
+matched = ["Spektra 2F log-log"]
 note = "App = vendor_band.score_winner_chip_mm (the target before the radial lift)."
 
 [[row]]
@@ -717,7 +724,7 @@ expected = "P1b binding limit: 24000"
 candidates = { "P1b binding limit" = [24000.0, 24000.0] }
 grade_candidates = { "P1b binding limit" = [24000.0, 24000.0] }
 n_app = "-"
-derivation = "P1 ruled (b), operator 2026-11-08 (the chart rpm: SPK3 18,000 RPM). n_xy = 15000 / (chip_hi 0.0584 x 1 x lift 1.0000) = 256761; spindle max 24000; n_b = 24000 (spindle max 24000). Power does not bind: P_req and P_avail both scale with n (constant torque below 24000 rpm, MACH), so the ratio holds at every n."
+derivation = "P1 ruled (b), operator 2026-11-08 (the chart rpm: SPK3 18,000 RPM). n_xy = 15000 / (chip_hi 0.0550 x 1 x lift 1.0000) = 272677; spindle max 24000; n_b = 24000 (spindle max 24000). Power does not bind: P_req and P_avail both scale with n (constant torque below 24000 rpm, MACH), so the ratio holds at every n."
 app_suggest = 24000.0
 app_shipped = 18000.0
 grade = "PASS"
@@ -729,17 +736,17 @@ idx = 6.0
 toolpath = "Lake pocket 2 mm, 11 lakes to Z 5.88"
 quantity = "feed"
 unit = "mm/min"
-status = "UNSOURCED"
+status = "DERIVED"
 binding = "chart chip x lift; XY 15000"
-expected = "P1b: 1219-1402 // graded at app rpm 24000: @app: 1219-1402"
-candidates = { "P1b" = [1219.2, 1402.08] }
-grade_candidates = { "@app" = [1219.2, 1402.08] }
+expected = "P1b: 1320 // graded at app rpm 24000: @app: 1320"
+candidates = { "P1b" = [1320.241877, 1320.241877] }
+grade_candidates = { "@app" = [1320.241877, 1320.241877] }
 n_app = 24000.0
 derivation = "feed = chip x z x n x lift (SPK47), clamped to XY 15000. The op cuts a full slot (pocket first ring, profile, centre-line curve): r >= 0.5, lift 1."
 app_suggest = 1347.0
 app_shipped = 1010.0
-grade = "NEEDS-RULING"
-matched = ["@app"]
+grade = "FAIL"
+matched = []
 note = " With the 2F log-log chip 0.05501 in a slot the feed is 1320 at the app rpm; the app's 1347 is +2.0 %: it applies the ae 0.8 lift in a pocket that slots."
 
 [[row]]
@@ -747,18 +754,18 @@ idx = 6.0
 toolpath = "Lake pocket 2 mm, 11 lakes to Z 5.88"
 quantity = "plunge"
 unit = "mm/min"
-status = "UNSOURCED"
-binding = "chart (2F rule)"
-expected = "chip x 24000 (P1 b): 1219-1402 // graded at app rpm 24000: @app: 1219-1402"
-candidates = { "chip x 24000 (P1 b)" = [1219.2, 1402.08] }
-grade_candidates = { "@app" = [1219.2, 1402.08] }
-n_app = 24000.0
-derivation = "UNSOURCED for 1F. SPK12/SPK17 print Ramp Down 35\" and 40\" (= 889 and 1016 mm/min) at 1/16 and 3/32 in. SPK47 + SPK52 give Ramp Down = n x chip, which does not depend on the flute count; so a 1F tool with the 2F chip plunges at the same rate. Every candidate is >= 889 mm/min."
+status = "DERIVED"
+binding = "repo rule, no vendor source"
+expected = "repo plunge rule: 240"
+candidates = { "repo plunge rule" = [240.283352, 240.283352] }
+grade_candidates = { "repo plunge rule" = [240.283352, 240.283352] }
+n_app = "-"
+derivation = "Repo rule, no vendor source (operator ruling 2026-11-10: U2, the operator keeps the slow plunge; the n x chip candidate is deleted). PLGTXT: base 1000 / h at 6 mm x clamp(D/6, 0.25, 3), h = (Janka / 600)^0.4. Janka 1360 (PLGJANKA): h = 1.3873; 1000 / h = 720.9; x clamp(2.0 / 6) = 0.3333 -> 240.3 mm/min; min with the Z rate 2500 (MACH) = 240.3. The rule does not read the RPM."
 app_suggest = 240.0
 app_shipped = 240.0
-grade = "FAIL"
-matched = []
-note = "The app ships 240 from an unsourced repo rule (conservative: 5.1x slower than the lowest candidate at the app rpm)."
+grade = "PASS"
+matched = ["repo plunge rule"]
+note = ""
 
 [[row]]
 idx = 6.0
@@ -802,17 +809,17 @@ idx = 7.0
 toolpath = "Lake pocket 2 mm, 1 lake to Z 3.99"
 quantity = "chip per tooth (target peak)"
 unit = "mm"
-status = "UNSOURCED"
+status = "DERIVED"
 binding = "chart"
-expected = "bracket: 0.05080-0.05842"
-candidates = { "bracket" = [0.0508, 0.05842] }
-grade_candidates = { "bracket" = [0.0508, 0.05842] }
+expected = "Spektra 2F log-log: 0.05501"
+candidates = { "Spektra 2F log-log" = [0.05501, 0.05501] }
+grade_candidates = { "Spektra 2F log-log" = [0.05501, 0.05501] }
 n_app = "-"
-derivation = "UNSOURCED for 1F. 2F bracket: SPK12 1/16 in \".0020\"\" = 0.0508 mm, SPK17 3/32 in \".0023\"\" = 0.0584 mm; log-log at 2.0 mm = 0.05501, linear = 0.05476 ap/D = 0.250 <= 1: the 1 x D chart condition holds (SPK38/AMS3/SPE14); no feed derate."
+derivation = "U2 ruled, operator 2026-11-10. Log-log interpolation (SIZEA) between SPK12 1/16 in \".0020\"\" = 0.0508 mm and SPK17 3/32 in \".0023\"\" = 0.0584 mm at 2.0 mm = 0.05501 mm. The rows are 2F; the tool is 1F; the operator accepts the 2F chip per tooth for it ap/D = 0.250 <= 1: the 1 x D chart condition holds (SPK38/AMS3/SPE14); no feed derate."
 app_suggest = 0.05501
 app_shipped = "-"
-grade = "NEEDS-RULING"
-matched = ["bracket"]
+grade = "PASS"
+matched = ["Spektra 2F log-log"]
 note = "App = vendor_band.score_winner_chip_mm (the target before the radial lift)."
 
 [[row]]
@@ -826,7 +833,7 @@ expected = "P1b binding limit: 24000"
 candidates = { "P1b binding limit" = [24000.0, 24000.0] }
 grade_candidates = { "P1b binding limit" = [24000.0, 24000.0] }
 n_app = "-"
-derivation = "P1 ruled (b), operator 2026-11-08 (the chart rpm: SPK3 18,000 RPM). n_xy = 15000 / (chip_hi 0.0584 x 1 x lift 1.0000) = 256761; spindle max 24000; n_b = 24000 (spindle max 24000). Power does not bind: P_req and P_avail both scale with n (constant torque below 24000 rpm, MACH), so the ratio holds at every n."
+derivation = "P1 ruled (b), operator 2026-11-08 (the chart rpm: SPK3 18,000 RPM). n_xy = 15000 / (chip_hi 0.0550 x 1 x lift 1.0000) = 272677; spindle max 24000; n_b = 24000 (spindle max 24000). Power does not bind: P_req and P_avail both scale with n (constant torque below 24000 rpm, MACH), so the ratio holds at every n."
 app_suggest = 24000.0
 app_shipped = 18000.0
 grade = "PASS"
@@ -838,16 +845,16 @@ idx = 7.0
 toolpath = "Lake pocket 2 mm, 1 lake to Z 3.99"
 quantity = "feed"
 unit = "mm/min"
-status = "UNSOURCED"
+status = "DERIVED"
 binding = "chart chip x lift; XY 15000"
-expected = "P1b: 1219-1402 // graded at app rpm 24000: @app: 1219-1402"
-candidates = { "P1b" = [1219.2, 1402.08] }
-grade_candidates = { "@app" = [1219.2, 1402.08] }
+expected = "P1b: 1320 // graded at app rpm 24000: @app: 1320"
+candidates = { "P1b" = [1320.241877, 1320.241877] }
+grade_candidates = { "@app" = [1320.241877, 1320.241877] }
 n_app = 24000.0
 derivation = "feed = chip x z x n x lift (SPK47), clamped to XY 15000. The op cuts a full slot (pocket first ring, profile, centre-line curve): r >= 0.5, lift 1."
 app_suggest = 1320.0
 app_shipped = 1258.0
-grade = "NEEDS-RULING"
+grade = "PASS"
 matched = ["@app"]
 note = ""
 
@@ -856,18 +863,18 @@ idx = 7.0
 toolpath = "Lake pocket 2 mm, 1 lake to Z 3.99"
 quantity = "plunge"
 unit = "mm/min"
-status = "UNSOURCED"
-binding = "chart (2F rule)"
-expected = "chip x 24000 (P1 b): 1219-1402 // graded at app rpm 24000: @app: 1219-1402"
-candidates = { "chip x 24000 (P1 b)" = [1219.2, 1402.08] }
-grade_candidates = { "@app" = [1219.2, 1402.08] }
-n_app = 24000.0
-derivation = "UNSOURCED for 1F. SPK12/SPK17 print Ramp Down 35\" and 40\" (= 889 and 1016 mm/min) at 1/16 and 3/32 in. SPK47 + SPK52 give Ramp Down = n x chip, which does not depend on the flute count; so a 1F tool with the 2F chip plunges at the same rate. Every candidate is >= 889 mm/min."
+status = "DERIVED"
+binding = "repo rule, no vendor source"
+expected = "repo plunge rule: 240"
+candidates = { "repo plunge rule" = [240.283352, 240.283352] }
+grade_candidates = { "repo plunge rule" = [240.283352, 240.283352] }
+n_app = "-"
+derivation = "Repo rule, no vendor source (operator ruling 2026-11-10: U2, the operator keeps the slow plunge; the n x chip candidate is deleted). PLGTXT: base 1000 / h at 6 mm x clamp(D/6, 0.25, 3), h = (Janka / 600)^0.4. Janka 1360 (PLGJANKA): h = 1.3873; 1000 / h = 720.9; x clamp(2.0 / 6) = 0.3333 -> 240.3 mm/min; min with the Z rate 2500 (MACH) = 240.3. The rule does not read the RPM."
 app_suggest = 240.0
 app_shipped = 240.0
-grade = "FAIL"
-matched = []
-note = "The app ships 240 from an unsourced repo rule (conservative: 5.1x slower than the lowest candidate at the app rpm)."
+grade = "PASS"
+matched = ["repo plunge rule"]
+note = ""
 
 [[row]]
 idx = 7.0
@@ -911,17 +918,17 @@ idx = 8.0
 toolpath = "ANTENNA_D5.00 pocket 2 mm"
 quantity = "chip per tooth (target peak)"
 unit = "mm"
-status = "UNSOURCED"
+status = "DERIVED"
 binding = "chart"
-expected = "bracket: 0.05080-0.05842"
-candidates = { "bracket" = [0.0508, 0.05842] }
-grade_candidates = { "bracket" = [0.0508, 0.05842] }
+expected = "Spektra 2F log-log: 0.05501"
+candidates = { "Spektra 2F log-log" = [0.05501, 0.05501] }
+grade_candidates = { "Spektra 2F log-log" = [0.05501, 0.05501] }
 n_app = "-"
-derivation = "UNSOURCED for 1F. 2F bracket: SPK12 1/16 in \".0020\"\" = 0.0508 mm, SPK17 3/32 in \".0023\"\" = 0.0584 mm; log-log at 2.0 mm = 0.05501, linear = 0.05476 ap/D = 0.250 <= 1: the 1 x D chart condition holds (SPK38/AMS3/SPE14); no feed derate."
+derivation = "U2 ruled, operator 2026-11-10. Log-log interpolation (SIZEA) between SPK12 1/16 in \".0020\"\" = 0.0508 mm and SPK17 3/32 in \".0023\"\" = 0.0584 mm at 2.0 mm = 0.05501 mm. The rows are 2F; the tool is 1F; the operator accepts the 2F chip per tooth for it ap/D = 0.250 <= 1: the 1 x D chart condition holds (SPK38/AMS3/SPE14); no feed derate."
 app_suggest = 0.05501
 app_shipped = "-"
-grade = "NEEDS-RULING"
-matched = ["bracket"]
+grade = "PASS"
+matched = ["Spektra 2F log-log"]
 note = "App = vendor_band.score_winner_chip_mm (the target before the radial lift)."
 
 [[row]]
@@ -935,7 +942,7 @@ expected = "P1b binding limit: 24000"
 candidates = { "P1b binding limit" = [24000.0, 24000.0] }
 grade_candidates = { "P1b binding limit" = [24000.0, 24000.0] }
 n_app = "-"
-derivation = "P1 ruled (b), operator 2026-11-08 (the chart rpm: SPK3 18,000 RPM). n_xy = 15000 / (chip_hi 0.0584 x 1 x lift 1.0000) = 256761; spindle max 24000; n_b = 24000 (spindle max 24000). Power does not bind: P_req and P_avail both scale with n (constant torque below 24000 rpm, MACH), so the ratio holds at every n."
+derivation = "P1 ruled (b), operator 2026-11-08 (the chart rpm: SPK3 18,000 RPM). n_xy = 15000 / (chip_hi 0.0550 x 1 x lift 1.0000) = 272677; spindle max 24000; n_b = 24000 (spindle max 24000). Power does not bind: P_req and P_avail both scale with n (constant torque below 24000 rpm, MACH), so the ratio holds at every n."
 app_suggest = 24000.0
 app_shipped = 18000.0
 grade = "PASS"
@@ -947,16 +954,16 @@ idx = 8.0
 toolpath = "ANTENNA_D5.00 pocket 2 mm"
 quantity = "feed"
 unit = "mm/min"
-status = "UNSOURCED"
+status = "DERIVED"
 binding = "chart chip x lift; XY 15000"
-expected = "P1b: 1219-1402 // graded at app rpm 24000: @app: 1219-1402"
-candidates = { "P1b" = [1219.2, 1402.08] }
-grade_candidates = { "@app" = [1219.2, 1402.08] }
+expected = "P1b: 1320 // graded at app rpm 24000: @app: 1320"
+candidates = { "P1b" = [1320.241877, 1320.241877] }
+grade_candidates = { "@app" = [1320.241877, 1320.241877] }
 n_app = 24000.0
 derivation = "feed = chip x z x n x lift (SPK47), clamped to XY 15000. The op cuts a full slot (pocket first ring, profile, centre-line curve): r >= 0.5, lift 1."
 app_suggest = 1320.0
 app_shipped = 1258.0
-grade = "NEEDS-RULING"
+grade = "PASS"
 matched = ["@app"]
 note = ""
 
@@ -965,34 +972,34 @@ idx = 8.0
 toolpath = "ANTENNA_D5.00 pocket 2 mm"
 quantity = "plunge"
 unit = "mm/min"
-status = "UNSOURCED"
-binding = "chart (2F rule)"
-expected = "chip x 24000 (P1 b): 1219-1402 // graded at app rpm 24000: @app: 1219-1402"
-candidates = { "chip x 24000 (P1 b)" = [1219.2, 1402.08] }
-grade_candidates = { "@app" = [1219.2, 1402.08] }
-n_app = 24000.0
-derivation = "UNSOURCED for 1F. SPK12/SPK17 print Ramp Down 35\" and 40\" (= 889 and 1016 mm/min) at 1/16 and 3/32 in. SPK47 + SPK52 give Ramp Down = n x chip, which does not depend on the flute count; so a 1F tool with the 2F chip plunges at the same rate. Every candidate is >= 889 mm/min."
+status = "DERIVED"
+binding = "repo rule, no vendor source"
+expected = "repo plunge rule: 240"
+candidates = { "repo plunge rule" = [240.283352, 240.283352] }
+grade_candidates = { "repo plunge rule" = [240.283352, 240.283352] }
+n_app = "-"
+derivation = "Repo rule, no vendor source (operator ruling 2026-11-10: U2, the operator keeps the slow plunge; the n x chip candidate is deleted). PLGTXT: base 1000 / h at 6 mm x clamp(D/6, 0.25, 3), h = (Janka / 600)^0.4. Janka 1360 (PLGJANKA): h = 1.3873; 1000 / h = 720.9; x clamp(2.0 / 6) = 0.3333 -> 240.3 mm/min; min with the Z rate 2500 (MACH) = 240.3. The rule does not read the RPM."
 app_suggest = 240.0
 app_shipped = 240.0
-grade = "FAIL"
-matched = []
-note = "The app ships 240 from an unsourced repo rule (conservative: 5.1x slower than the lowest candidate at the app rpm)."
+grade = "PASS"
+matched = ["repo plunge rule"]
+note = ""
 
 [[row]]
 idx = 8.0
 toolpath = "ANTENNA_D5.00 pocket 2 mm"
 quantity = "ramp feed"
 unit = "mm/min"
-status = "UNSOURCED"
+status = "DERIVED"
 binding = "slot chip (full-width ramp)"
-expected = "P1b: 1219-1402 // graded at app rpm 24000: @app: 1219-1402"
-candidates = { "P1b" = [1219.2, 1402.08] }
-grade_candidates = { "@app" = [1219.2, 1402.08] }
+expected = "P1b: 1320 // graded at app rpm 24000: @app: 1320"
+candidates = { "P1b" = [1320.241877, 1320.241877] }
+grade_candidates = { "@app" = [1320.241877, 1320.241877] }
 n_app = 24000.0
 derivation = "A ramp cuts a full slot: ramp feed = chip x z x n (lift 1)."
 app_suggest = 1320.0
 app_shipped = 1258.0
-grade = "NEEDS-RULING"
+grade = "PASS"
 matched = ["@app"]
 note = ""
 
@@ -1074,18 +1081,18 @@ idx = 9.0
 toolpath = "V rivers and lakes"
 quantity = "plunge"
 unit = "mm/min"
-status = "UNSOURCED"
-binding = "none"
-expected = "none"
-candidates = {  }
-grade_candidates = {  }
+status = "DERIVED"
+binding = "repo rule, no vendor source"
+expected = "repo plunge rule: 381"
+candidates = { "repo plunge rule" = [381.449822, 381.449822] }
+grade_candidates = { "repo plunge rule" = [381.449822, 381.449822] }
 n_app = "-"
-derivation = "No repo source prints a plunge for a 20deg 1F V-bit. Needed: a vendor plunge or Ramp Down for this bit."
+derivation = "Repo rule, no vendor source (operator ruling 2026-11-10: \"for the no source ones, if they look right, let's go for it\"). PLGTXT: 1000 / h at 6 mm x clamp(D/6, 0.25, 3); h = 1.3873 (Janka 1360, PLGJANKA); x clamp(3.175 / 6) = 0.5292 -> 381.4 mm/min; Z rate 2500 (MACH); min = 381.4. No repo source prints a plunge for a 20deg 1F V-bit."
 app_suggest = 381.0
 app_shipped = 381.0
-grade = "NEEDS-RULING"
-matched = []
-note = "The app says 'no source' too."
+grade = "PASS"
+matched = ["repo plunge rule"]
+note = ""
 
 [[row]]
 idx = 9.0
@@ -1237,17 +1244,17 @@ idx = 11.0
 toolpath = "Face clamp pads 6 mm"
 quantity = "chip per tooth (target peak)"
 unit = "mm"
-status = "UNSOURCED"
+status = "DERIVED"
 binding = "chart"
-expected = "bracket: 0.14478-0.22860"
-candidates = { "bracket" = [0.14478, 0.2286] }
-grade_candidates = { "bracket" = [0.14478, 0.2286] }
+expected = "Spektra 1/2 in x size law: 0.17910"
+candidates = { "Spektra 1/2 in x size law" = [0.179104, 0.179104] }
+grade_candidates = { "Spektra 1/2 in x size law" = [0.179104, 0.179104] }
 n_app = "-"
-derivation = "UNSOURCED: no 18 mm 2F row. Bracket: SPK37 1/2 in 2F \".0057\"\" = 0.1448 mm (below), SPK54 3/4 in 3F \".009\"\" = 0.2286 mm (above) ap/D = 0.028 <= 1: the 1 x D chart condition holds (SPK38/AMS3/SPE14); no feed derate."
+derivation = "U1 ruled, operator 2026-11-10. SPK37 1/2 in 2F \".0057\"\" = 0.1448 mm x (18 / 12.7)^0.61 (SIZEC) = 0.17910 mm. Repo size law, no vendor row at 18 mm. It lies inside the old bracket 0.1448-0.2286 mm and under the Freud straight-bit band 0.229-0.330 mm (research/large_straight_router_bits_2026-11-10.md line 119); the tool is a straight-flute router bit ap/D = 0.028 <= 1: the 1 x D chart condition holds (SPK38/AMS3/SPE14); no feed derate."
 app_suggest = 0.179128
 app_shipped = "-"
-grade = "NEEDS-RULING"
-matched = ["bracket"]
+grade = "PASS"
+matched = ["Spektra 1/2 in x size law"]
 note = "App = vendor_band.score_winner_chip_mm (the target before the radial lift)."
 
 [[row]]
@@ -1261,7 +1268,7 @@ expected = "P1b binding limit: 24000"
 candidates = { "P1b binding limit" = [24000.0, 24000.0] }
 grade_candidates = { "P1b binding limit" = [24000.0, 24000.0] }
 n_app = "-"
-derivation = "P1 ruled (b), operator 2026-11-08 (the chart rpm: SPK3 18,000 RPM (nearest printed chart)). n_xy = 15000 / (chip_hi 0.2286 x 2 x lift 1.0000) = 32808; spindle max 24000; n_b = 24000 (spindle max 24000). Power does not bind: P_req and P_avail both scale with n (constant torque below 24000 rpm, MACH), so the ratio holds at every n."
+derivation = "P1 ruled (b), operator 2026-11-08 (the chart rpm: SPK3 18,000 RPM (the chart of the scaled row)). n_xy = 15000 / (chip_hi 0.1791 x 2 x lift 1.0000) = 41875; spindle max 24000; n_b = 24000 (spindle max 24000). Power does not bind: P_req and P_avail both scale with n (constant torque below 24000 rpm, MACH), so the ratio holds at every n."
 app_suggest = 24000.0
 app_shipped = 18000.0
 grade = "PASS"
@@ -1273,16 +1280,16 @@ idx = 11.0
 toolpath = "Face clamp pads 6 mm"
 quantity = "feed"
 unit = "mm/min"
-status = "UNSOURCED"
+status = "DERIVED"
 binding = "chart chip x lift; XY 15000"
-expected = "P1b: 6949-10973 // graded at app rpm 24000: @app: 6949-10973"
-candidates = { "P1b" = [6949.44, 10972.8] }
-grade_candidates = { "@app" = [6949.44, 10972.8] }
+expected = "P1b: 8597 // graded at app rpm 24000: @app: 8597"
+candidates = { "P1b" = [8596.977062, 8596.977062] }
+grade_candidates = { "@app" = [8596.977062, 8596.977062] }
 n_app = 24000.0
 derivation = "feed = chip x z x n x lift (SPK47), clamped to XY 15000. The op cuts a full slot (pocket first ring, profile, centre-line curve): r >= 0.5, lift 1."
 app_suggest = 8651.0
 app_shipped = 6488.0
-grade = "NEEDS-RULING"
+grade = "PASS"
 matched = ["@app"]
 note = ""
 
@@ -1291,17 +1298,17 @@ idx = 11.0
 toolpath = "Face clamp pads 6 mm"
 quantity = "plunge"
 unit = "mm/min"
-status = "UNSOURCED"
-binding = "Z rate 2500"
-expected = "<= Z rate: 0.00000-2500"
-candidates = { "<= Z rate" = [0.0, 2500.0] }
-grade_candidates = { "<= Z rate" = [0.0, 2500.0] }
+status = "DERIVED"
+binding = "repo rule, no vendor source"
+expected = "repo plunge rule: 2163"
+candidates = { "repo plunge rule" = [2162.550169, 2162.550169] }
+grade_candidates = { "repo plunge rule" = [2162.550169, 2162.550169] }
 n_app = "-"
-derivation = "UNSOURCED. Tool 6 is not centre-cutting (T6CC). The Spektra Ramp Down rule (SPK52) is for spiral plunge bits; it does not transfer. Bound: Z rate 2500 (MACH). Geometry (I: field meaning): a straight plunge is possible only to the blade protrusion 1.0 mm; a 3 deg ramp sinks 8 x tan 3 = 0.42 mm over the 8 mm core, < 1.0 mm. Needed: a plunge rate for this tool from its maker."
+derivation = "Repo rule, no vendor source (operator ruling 2026-11-10: U3 tool 6, accepted as the repo rule). PLGTXT: base 1000 / h at 6 mm x clamp(D/6, 0.25, 3), h = (Janka / 600)^0.4. Janka 1360 (PLGJANKA): h = 1.3873; 1000 / h = 720.9; x clamp(18.0 / 6) = 3.0000 -> 2162.6 mm/min; min with the Z rate 2500 (MACH) = 2162.6. The rule does not read the RPM. Tool 6 is not centre-cutting (T6CC); the rule does not read that fact."
 app_suggest = 2162.0
 app_shipped = 2162.0
-grade = "NEEDS-RULING"
-matched = ["<= Z rate"]
+grade = "PASS"
+matched = ["repo plunge rule"]
 note = "Straight plunge entry at ap 0.5 <= protrusion 1.0: geometrically possible."
 
 [[row]]
@@ -1346,17 +1353,17 @@ idx = 12.0
 toolpath = "Face front to T"
 quantity = "chip per tooth (target peak)"
 unit = "mm"
-status = "UNSOURCED"
+status = "DERIVED"
 binding = "chart"
-expected = "bracket: 0.14478-0.22860"
-candidates = { "bracket" = [0.14478, 0.2286] }
-grade_candidates = { "bracket" = [0.14478, 0.2286] }
+expected = "Spektra 1/2 in x size law: 0.17910"
+candidates = { "Spektra 1/2 in x size law" = [0.179104, 0.179104] }
+grade_candidates = { "Spektra 1/2 in x size law" = [0.179104, 0.179104] }
 n_app = "-"
-derivation = "UNSOURCED: no 18 mm 2F row. Bracket: SPK37 1/2 in 2F \".0057\"\" = 0.1448 mm (below), SPK54 3/4 in 3F \".009\"\" = 0.2286 mm (above) ap/D = 0.028 <= 1: the 1 x D chart condition holds (SPK38/AMS3/SPE14); no feed derate."
+derivation = "U1 ruled, operator 2026-11-10. SPK37 1/2 in 2F \".0057\"\" = 0.1448 mm x (18 / 12.7)^0.61 (SIZEC) = 0.17910 mm. Repo size law, no vendor row at 18 mm. It lies inside the old bracket 0.1448-0.2286 mm and under the Freud straight-bit band 0.229-0.330 mm (research/large_straight_router_bits_2026-11-10.md line 119); the tool is a straight-flute router bit ap/D = 0.028 <= 1: the 1 x D chart condition holds (SPK38/AMS3/SPE14); no feed derate."
 app_suggest = 0.179128
 app_shipped = "-"
-grade = "NEEDS-RULING"
-matched = ["bracket"]
+grade = "PASS"
+matched = ["Spektra 1/2 in x size law"]
 note = "App = vendor_band.score_winner_chip_mm (the target before the radial lift)."
 
 [[row]]
@@ -1370,7 +1377,7 @@ expected = "P1b binding limit: 24000"
 candidates = { "P1b binding limit" = [24000.0, 24000.0] }
 grade_candidates = { "P1b binding limit" = [24000.0, 24000.0] }
 n_app = "-"
-derivation = "P1 ruled (b), operator 2026-11-08 (the chart rpm: SPK3 18,000 RPM (nearest printed chart)). n_xy = 15000 / (chip_hi 0.2286 x 2 x lift 1.0062) = 32605; spindle max 24000; n_b = 24000 (spindle max 24000). Power does not bind: P_req and P_avail both scale with n (constant torque below 24000 rpm, MACH), so the ratio holds at every n."
+derivation = "P1 ruled (b), operator 2026-11-08 (the chart rpm: SPK3 18,000 RPM (the chart of the scaled row)). n_xy = 15000 / (chip_hi 0.1791 x 2 x lift 1.0062) = 41616; spindle max 24000; n_b = 24000 (spindle max 24000). Power does not bind: P_req and P_avail both scale with n (constant torque below 24000 rpm, MACH), so the ratio holds at every n."
 app_suggest = 24000.0
 app_shipped = 18000.0
 grade = "PASS"
@@ -1382,16 +1389,16 @@ idx = 12.0
 toolpath = "Face front to T"
 quantity = "feed"
 unit = "mm/min"
-status = "UNSOURCED"
+status = "DERIVED"
 binding = "chart chip x lift; XY 15000"
-expected = "P1b: 6993-11041 // graded at app rpm 24000: @app: 6993-11041"
-candidates = { "P1b" = [6992.739111, 11041.167017] }
-grade_candidates = { "@app" = [6992.739111, 11041.167017] }
+expected = "P1b: 8651 // graded at app rpm 24000: @app: 8651"
+candidates = { "P1b" = [8650.541301, 8650.541301] }
+grade_candidates = { "@app" = [8650.541301, 8650.541301] }
 n_app = 24000.0
 derivation = "feed = chip x z x n x lift (SPK47), clamped to XY 15000. Face: max ae = stepover 8.0, r 0.4444, lift 1.0062."
 app_suggest = 8651.0
 app_shipped = 6488.0
-grade = "NEEDS-RULING"
+grade = "PASS"
 matched = ["@app"]
 note = ""
 
@@ -1400,17 +1407,17 @@ idx = 12.0
 toolpath = "Face front to T"
 quantity = "plunge"
 unit = "mm/min"
-status = "UNSOURCED"
-binding = "Z rate 2500"
-expected = "<= Z rate: 0.00000-2500"
-candidates = { "<= Z rate" = [0.0, 2500.0] }
-grade_candidates = { "<= Z rate" = [0.0, 2500.0] }
+status = "DERIVED"
+binding = "repo rule, no vendor source"
+expected = "repo plunge rule: 2163"
+candidates = { "repo plunge rule" = [2162.550169, 2162.550169] }
+grade_candidates = { "repo plunge rule" = [2162.550169, 2162.550169] }
 n_app = "-"
-derivation = "UNSOURCED. Tool 6 is not centre-cutting (T6CC). The Spektra Ramp Down rule (SPK52) is for spiral plunge bits; it does not transfer. Bound: Z rate 2500 (MACH). Geometry (I: field meaning): a straight plunge is possible only to the blade protrusion 1.0 mm; a 3 deg ramp sinks 8 x tan 3 = 0.42 mm over the 8 mm core, < 1.0 mm. Needed: a plunge rate for this tool from its maker."
+derivation = "Repo rule, no vendor source (operator ruling 2026-11-10: U3 tool 6, accepted as the repo rule). PLGTXT: base 1000 / h at 6 mm x clamp(D/6, 0.25, 3), h = (Janka / 600)^0.4. Janka 1360 (PLGJANKA): h = 1.3873; 1000 / h = 720.9; x clamp(18.0 / 6) = 3.0000 -> 2162.6 mm/min; min with the Z rate 2500 (MACH) = 2162.6. The rule does not read the RPM. Tool 6 is not centre-cutting (T6CC); the rule does not read that fact."
 app_suggest = 2162.0
 app_shipped = 2162.0
-grade = "NEEDS-RULING"
-matched = ["<= Z rate"]
+grade = "PASS"
+matched = ["repo plunge rule"]
 note = ""
 
 [[row]]
@@ -1418,16 +1425,16 @@ idx = 12.0
 toolpath = "Face front to T"
 quantity = "ramp feed"
 unit = "mm/min"
-status = "UNSOURCED"
+status = "DERIVED"
 binding = "slot chip (full-width ramp)"
-expected = "P1b: 6949-10973 // graded at app rpm 24000: @app: 6949-10973"
-candidates = { "P1b" = [6949.44, 10972.8] }
-grade_candidates = { "@app" = [6949.44, 10972.8] }
+expected = "P1b: 8597 // graded at app rpm 24000: @app: 8597"
+candidates = { "P1b" = [8596.977062, 8596.977062] }
+grade_candidates = { "@app" = [8596.977062, 8596.977062] }
 n_app = 24000.0
 derivation = "A ramp cuts a full slot: ramp feed = chip x z x n (lift 1)."
 app_suggest = 8597.0
 app_shipped = 6447.0
-grade = "NEEDS-RULING"
+grade = "PASS"
 matched = ["@app"]
 note = ""
 
@@ -1564,17 +1571,17 @@ idx = 14.0
 toolpath = "Front bulk rough 18 mm"
 quantity = "chip per tooth (target peak)"
 unit = "mm"
-status = "UNSOURCED"
+status = "DERIVED"
 binding = "chart"
-expected = "bracket: 0.14478-0.22860"
-candidates = { "bracket" = [0.14478, 0.2286] }
-grade_candidates = { "bracket" = [0.14478, 0.2286] }
+expected = "Spektra 1/2 in x size law: 0.17910"
+candidates = { "Spektra 1/2 in x size law" = [0.179104, 0.179104] }
+grade_candidates = { "Spektra 1/2 in x size law" = [0.179104, 0.179104] }
 n_app = "-"
-derivation = "UNSOURCED: no 18 mm 2F row. Bracket: SPK37 1/2 in 2F \".0057\"\" = 0.1448 mm (below), SPK54 3/4 in 3F \".009\"\" = 0.2286 mm (above) ap/D = 0.231 <= 1: the 1 x D chart condition holds (SPK38/AMS3/SPE14); no feed derate."
+derivation = "U1 ruled, operator 2026-11-10. SPK37 1/2 in 2F \".0057\"\" = 0.1448 mm x (18 / 12.7)^0.61 (SIZEC) = 0.17910 mm. Repo size law, no vendor row at 18 mm. It lies inside the old bracket 0.1448-0.2286 mm and under the Freud straight-bit band 0.229-0.330 mm (research/large_straight_router_bits_2026-11-10.md line 119); the tool is a straight-flute router bit ap/D = 0.231 <= 1: the 1 x D chart condition holds (SPK38/AMS3/SPE14); no feed derate."
 app_suggest = 0.179128
 app_shipped = "-"
-grade = "NEEDS-RULING"
-matched = ["bracket"]
+grade = "PASS"
+matched = ["Spektra 1/2 in x size law"]
 note = "App = vendor_band.score_winner_chip_mm (the target before the radial lift)."
 
 [[row]]
@@ -1588,7 +1595,7 @@ expected = "P1b binding limit: 24000"
 candidates = { "P1b binding limit" = [24000.0, 24000.0] }
 grade_candidates = { "P1b binding limit" = [24000.0, 24000.0] }
 n_app = "-"
-derivation = "P1 ruled (b), operator 2026-11-08 (the chart rpm: SPK3 18,000 RPM (nearest printed chart)). n_xy = 15000 / (chip_hi 0.2286 x 2 x lift 1.0719) = 30609; spindle max 24000; n_b = 24000 (spindle max 24000). Power does not bind: P_req and P_avail both scale with n (constant torque below 24000 rpm, MACH), so the ratio holds at every n."
+derivation = "P1 ruled (b), operator 2026-11-08 (the chart rpm: SPK3 18,000 RPM (the chart of the scaled row)). n_xy = 15000 / (chip_hi 0.1791 x 2 x lift 1.0719) = 39068; spindle max 24000; n_b = 24000 (spindle max 24000). Power does not bind: P_req and P_avail both scale with n (constant torque below 24000 rpm, MACH), so the ratio holds at every n."
 app_suggest = 24000.0
 app_shipped = 18000.0
 grade = "PASS"
@@ -1600,17 +1607,17 @@ idx = 14.0
 toolpath = "Front bulk rough 18 mm"
 quantity = "feed"
 unit = "mm/min"
-status = "UNSOURCED"
+status = "DERIVED"
 binding = "chart chip x lift; XY 15000"
-expected = "P1b: 7449-11761 // graded at app rpm 24000: @app: 7449-11761"
-candidates = { "P1b" = [7448.869547, 11761.372969] }
-grade_candidates = { "@app" = [7448.869547, 11761.372969] }
+expected = "P1b: 9215 // graded at app rpm 24000: @app: 9215"
+candidates = { "P1b" = [9214.808767, 9214.808767] }
+grade_candidates = { "@app" = [9214.808767, 9214.808767] }
 n_app = 24000.0
 derivation = "feed = chip x z x n x lift (SPK47), clamped to XY 15000. lift = 1 / (2 sqrt(r(1-r))), r = ae/D. P3 ruled (b): ae 3.600 x 1.6 = 5.7600, r 0.3200, lift 1.0719 (the nominal ae 3.600 would give lift 1.2500)."
 app_suggest = 10747.0
 app_shipped = 8060.0
-grade = "NEEDS-RULING"
-matched = ["@app"]
+grade = "FAIL"
+matched = []
 note = ""
 
 [[row]]
@@ -1618,17 +1625,17 @@ idx = 14.0
 toolpath = "Front bulk rough 18 mm"
 quantity = "plunge"
 unit = "mm/min"
-status = "UNSOURCED"
-binding = "Z rate 2500"
-expected = "<= Z rate: 0.00000-2500"
-candidates = { "<= Z rate" = [0.0, 2500.0] }
-grade_candidates = { "<= Z rate" = [0.0, 2500.0] }
+status = "DERIVED"
+binding = "repo rule, no vendor source"
+expected = "repo plunge rule: 2163"
+candidates = { "repo plunge rule" = [2162.550169, 2162.550169] }
+grade_candidates = { "repo plunge rule" = [2162.550169, 2162.550169] }
 n_app = "-"
-derivation = "UNSOURCED. Tool 6 is not centre-cutting (T6CC). The Spektra Ramp Down rule (SPK52) is for spiral plunge bits; it does not transfer. Bound: Z rate 2500 (MACH). Geometry (I: field meaning): a straight plunge is possible only to the blade protrusion 1.0 mm; a 3 deg ramp sinks 8 x tan 3 = 0.42 mm over the 8 mm core, < 1.0 mm. Needed: a plunge rate for this tool from its maker."
+derivation = "Repo rule, no vendor source (operator ruling 2026-11-10: U3 tool 6, accepted as the repo rule). PLGTXT: base 1000 / h at 6 mm x clamp(D/6, 0.25, 3), h = (Janka / 600)^0.4. Janka 1360 (PLGJANKA): h = 1.3873; 1000 / h = 720.9; x clamp(18.0 / 6) = 3.0000 -> 2162.6 mm/min; min with the Z rate 2500 (MACH) = 2162.6. The rule does not read the RPM. Tool 6 is not centre-cutting (T6CC); the rule does not read that fact."
 app_suggest = 2162.0
 app_shipped = 2162.0
-grade = "NEEDS-RULING"
-matched = ["<= Z rate"]
+grade = "PASS"
+matched = ["repo plunge rule"]
 note = ""
 
 [[row]]
@@ -1636,16 +1643,16 @@ idx = 14.0
 toolpath = "Front bulk rough 18 mm"
 quantity = "ramp feed"
 unit = "mm/min"
-status = "UNSOURCED"
+status = "DERIVED"
 binding = "slot chip (full-width ramp)"
-expected = "P1b: 6949-10973 // graded at app rpm 24000: @app: 6949-10973"
-candidates = { "P1b" = [6949.44, 10972.8] }
-grade_candidates = { "@app" = [6949.44, 10972.8] }
+expected = "P1b: 8597 // graded at app rpm 24000: @app: 8597"
+candidates = { "P1b" = [8596.977062, 8596.977062] }
+grade_candidates = { "@app" = [8596.977062, 8596.977062] }
 n_app = 24000.0
 derivation = "A ramp cuts a full slot: ramp feed = chip x z x n (lift 1)."
 app_suggest = 8597.0
 app_shipped = 6448.0
-grade = "NEEDS-RULING"
+grade = "PASS"
 matched = ["@app"]
 note = ""
 
@@ -1836,18 +1843,18 @@ idx = 16.0
 toolpath = "Front scallop finish"
 quantity = "plunge"
 unit = "mm/min"
-status = "UNSOURCED"
-binding = "none"
-expected = "none"
-candidates = {  }
-grade_candidates = {  }
+status = "DERIVED"
+binding = "repo rule, no vendor source"
+expected = "repo plunge rule: 240"
+candidates = { "repo plunge rule" = [240.283352, 240.283352] }
+grade_candidates = { "repo plunge rule" = [240.283352, 240.283352] }
 n_app = "-"
-derivation = "SpeTool (SPE23) and Amana ZrN print no plunge. Needed: a vendor plunge for a 2 mm tapered ball."
+derivation = "Repo rule, no vendor source (operator ruling 2026-11-10: \"for the no source ones, if they look right, let's go for it\"). PLGTXT: 1000 / h at 6 mm x clamp(D/6, 0.25, 3); h = 1.3873 (Janka 1360, PLGJANKA); x clamp(2.000 / 6) = 0.3333 -> 240.3 mm/min; Z rate 2500 (MACH); tip cap 150 x tip 2.0 mm = 300 mm/min (PLGTIP); min = 240.3. SpeTool (SPE23) and Amana ZrN print no plunge."
 app_suggest = 240.0
 app_shipped = 240.0
-grade = "NEEDS-RULING"
-matched = []
-note = "The app says 'no source' too."
+grade = "PASS"
+matched = ["repo plunge rule"]
+note = ""
 
 [[row]]
 idx = 16.0

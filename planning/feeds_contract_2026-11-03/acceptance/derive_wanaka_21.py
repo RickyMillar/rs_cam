@@ -71,6 +71,23 @@ SRC = {
              "spindle Variable min_rpm 6000 max_rpm 24000; power VfdConstantTorque rated_power_kw 1.5 rated_rpm 24000 (lines 60-66); "
              "max_rate_xyz_mm_min [15000, 15000, 2500] (lines 85-89); "
              "spindle_strategy = \"constant_chip\", spindle_rpm_ceiling = 24000 (lines 50-51)"),
+    # Repo rules with no vendor source (operator rulings 2026-11-10). The quote is the product source line.
+    "SIZEC": ("crates/rs_cam_core/src/feeds/extrapolation/size.rs", 87,
+              'const RULE_C: &str = "G1 form C: the generic size law (d / d_row)^0.61 inside 0.5x-2x of the row"; '
+              "exponent: crates/rs_cam_core/src/feeds/vendor_lookup.rs line 791 'pub const CHIPLOAD_DIAMETER_EXPONENT: f64 = 0.61;'"),
+    "SIZEA": ("crates/rs_cam_core/src/feeds/extrapolation/size.rs", 82,
+              'const RULE_A: &str = "G1 form A: log-log interpolation between two adjacent printed sizes of one chart series"'),
+    "PLGTXT": ("crates/rs_cam_core/src/feeds/plunge.rs", 49,
+               'PLUNGE_BASE_RULE_TEXT = "material base 1000/h (wood), 900/h (plywood, sheet) at 6 mm, x clamp(D/6, 0.25, 3), h = (Janka/600)^0.4 (a port of the Shapeoko reference calculator)"'),
+    "PLGBASE": ("crates/rs_cam_core/src/material/mod.rs", 788,
+                'FormulaConstant::unsourced("material.plunge_rate_base.solid_wood", 1000.0, PLUNGE_CLAIM); reference_diameter_mm 6.0 (line 810); '
+                "diameter_scale_min 0.25 (line 815); diameter_scale_max 3.0 (line 820)"),
+    "PLGH": ("crates/rs_cam_core/src/material/mod.rs", 827,
+             'material.feed_scale_factor.janka_reference_lbf 600.0 (line 827); material.feed_scale_factor.exponent 0.4 (line 832): "law (janka / 600)^0.4 ported from reference/ (not in the repo)"'),
+    "PLGJANKA": ("crates/rs_cam_core/src/material/mod.rs", 153,
+                 "WoodSpecies::WhiteOak => 1360.0 (janka_lbf); the project states [job.stock.material.SolidWood] species = \"WhiteOak\" (nz_wanaka_21_operator.toml lines 16-17)"),
+    "PLGTIP": ("crates/rs_cam_core/src/tool_load/plunge_stress.rs", 21,
+               "const PLUNGE_CAP_PER_MM_TIP_DIAMETER: f64 = 150.0; (comment: FSWizard / GWizard ranges, not stored in the repo)"),
     "T6CC": ("planning/rivmap_block_job/nz_wanaka_21_operator.toml", 384,
              "[tools.centre_cutting] stated = \"no\", centre_core_diameter_mm = 8.0, blade_protrusion_mm = 1.0 (tool 6, lines 384-387)"),
 }
@@ -224,14 +241,38 @@ c_v20 = (0.003 * IN, 0.007 * IN)
 c_v60 = (90 * IN / (18000 * 2), 0.003 * IN)
 c_spe2 = 0.003 * IN
 
+# U1 ruled, operator 2026-11-10: the 18 mm 2F chip is the Spektra 1/2 in 2F row (SPK37)
+# scaled by the generic size law (SIZEC). 18 / 12.7 = 1.417 lies inside 0.5x-2x.
+SIZE_EXP = 0.61  # SIZEC
+assert 0.5 <= 18.0 / (IN / 2) <= 2.0
+c_18mm = c_spk12 * (18.0 / (IN / 2)) ** SIZE_EXP
+
+# Repo plunge rule (PLGTXT, PLGBASE, PLGH, PLGJANKA, PLGTIP); no vendor source.
+# Operator rulings 2026-11-10 (U3 tools 6, 1, 4; the tool 5 plunge under U2).
+JANKA_WHITE_OAK = 1360.0  # PLGJANKA
+H_OAK = (JANKA_WHITE_OAK / 600.0) ** 0.4  # PLGH
+PLG_BASE_6MM = 1000.0 / H_OAK  # PLGBASE
+
+
+def plunge_repo_rule(d_mm, tip_d_mm=None):
+    """base/h at 6 mm x clamp(D/6, 0.25, 3); the tip cap 150 x tip (ball tips only); the Z rate."""
+    v = PLG_BASE_6MM * min(max(d_mm / 6.0, 0.25), 3.0)
+    terms = [v, V_Z]
+    if tip_d_mm is not None:
+        terms.append(150.0 * tip_d_mm)
+    return min(terms), v
+
+
 CHIP = {
     # P2 ruled (b), operator 2026-11-08: the Onsrud 60-200 row stands for tool 0.
     0: {"Onsrud 60-200 1/4 in": (c_ons[0], c_ons[1], 'ONS46 ".005-.007" x 25.4 = %.4f-%.4f mm' % c_ons)},
-    6: {"bracket": (c_spk12, c_spk19_3f,
-                    'UNSOURCED: no 18 mm 2F row. Bracket: SPK37 1/2 in 2F ".0057"" = %.4f mm (below), SPK54 3/4 in 3F ".009"" = %.4f mm (above)' % (c_spk12, c_spk19_3f))},
-    5: {"bracket": (c_116, c_332,
-                    'UNSOURCED for 1F. 2F bracket: SPK12 1/16 in ".0020"" = %.4f mm, SPK17 3/32 in ".0023"" = %.4f mm; '
-                    'log-log at 2.0 mm = %.5f, linear = %.5f' % (c_116, c_332, c_2mm_log, c_2mm_lin))},
+    6: {"Spektra 1/2 in x size law": (c_18mm, c_18mm,
+                    'U1 ruled, operator 2026-11-10. SPK37 1/2 in 2F ".0057"" = %.4f mm x (18 / 12.7)^0.61 (SIZEC) = %.5f mm. Repo size law, no vendor row at 18 mm. '
+                    'It lies inside the old bracket %.4f-%.4f mm and under the Freud straight-bit band 0.229-0.330 mm '
+                    '(research/large_straight_router_bits_2026-11-10.md line 119); the tool is a straight-flute router bit' % (c_spk12, c_18mm, c_spk12, c_spk19_3f))},
+    5: {"Spektra 2F log-log": (c_2mm_log, c_2mm_log,
+                    'U2 ruled, operator 2026-11-10. Log-log interpolation (SIZEA) between SPK12 1/16 in ".0020"" = %.4f mm and SPK17 3/32 in ".0023"" = %.4f mm at 2.0 mm = %.5f mm. '
+                    'The rows are 2F; the tool is 1F; the operator accepts the 2F chip per tooth for it' % (c_116, c_332, c_2mm_log))},
     1: {"AMS 18/30 deg 1F": (c_v20[0], c_v20[1], 'AMS11 18deg and 30deg 1F both "0.003" - 0.007""; 20deg lies between equal cells: %.4f-%.4f mm' % c_v20)},
     2: {"AMS 60 deg 2F": (c_v60[0], c_v60[1], 'AMS11 60deg 2F: "90"" / (18000 x 2) x 25.4 = %.4f mm; printed "0.003"" = %.4f mm; the cell disagrees with itself' % c_v60)},
     4: {"SpeTool 2.0 mm": (c_spe2, c_spe2, 'SPE23 chipload "0.003" (inch, 2 flutes derived: 108/(18000 x 0.003) = %.2f) x 25.4 = %.4f mm' % (108 / (18000 * 0.003), c_spe2))},
@@ -318,7 +359,7 @@ for idx, (name, tid, kind, g) in TP.items():
     d, z = TOOLS[tid]
     a = APP[idx]
     chips = CHIP[tid]
-    chip_status = {0: "DERIVED", 6: "UNSOURCED", 5: "UNSOURCED", 1: "SOURCED", 2: "SOURCED", 4: "SOURCED"}[tid]
+    chip_status = {0: "DERIVED", 6: "DERIVED", 5: "DERIVED", 1: "SOURCED", 2: "SOURCED", 4: "SOURCED"}[tid]
     chip_bind = "chart"
     deriv_chip = " | ".join(v[2] for v in chips.values())
     if tid == 0:
@@ -398,7 +439,7 @@ for idx, (name, tid, kind, g) in TP.items():
     max_lift = max(lifts.values())
     nb, nb_bind = n_b_lateral(chip_hi, z, max_lift)
     pol_n["P1b binding limit"] = nb  # P1 ruled (b), operator 2026-11-08
-    chart_rpm = {0: "SPK3 18,000 RPM (Onsrud prints no RPM for 60-200: ONS61)", 6: "SPK3 18,000 RPM (nearest printed chart)",
+    chart_rpm = {0: "SPK3 18,000 RPM (Onsrud prints no RPM for 60-200: ONS61)", 6: "SPK3 18,000 RPM (the chart of the scaled row)",
                  5: "SPK3 18,000 RPM", 1: "AMS3 18,000", 2: "AMS3 18,000", 4: "SPE23 18,000"}[tid]
     deriv_n.append("P1 ruled (b), operator 2026-11-08 (the chart rpm: " + chart_rpm + ").")
     deriv_n.append("n_xy = 15000 / (chip_hi %.4f x %d x lift %.4f) = %.0f; spindle max 24000; n_b = %.0f (%s)."
@@ -425,8 +466,6 @@ for idx, (name, tid, kind, g) in TP.items():
     cands = feed_cands(pol_n)
     gfeed = feed_cands({"@app": n_app})
     feed_status = "POLICY" if kind == "ball" else "DERIVED"  # P4 open
-    if tid in (6, 5):
-        feed_status = "UNSOURCED"
     deriv_f = "feed = chip x z x n x lift (SPK47), clamped to XY 15000. " + lift_deriv
     if tid == 1 or tid == 2:
         deriv_f += " Printed IPM: " + ("50\"-130\" = 1270-3302 mm/min at 18000." if tid == 1 else "90\" = 2286 mm/min at 18000.")
@@ -456,21 +495,17 @@ for idx, (name, tid, kind, g) in TP.items():
             note=("Same tool as idx %d, but a different Suggest plunge (%s vs %s): the two ops disagree (check C2)."
                   % (22 - idx, fmt(APP[5]["sug"]["plunge"]), fmt(APP[17]["sug"]["plunge"]))
                   if idx in (5, 17) and APP[5]["sug"]["plunge"] != APP[17]["sug"]["plunge"] else ""))
-    elif tid == 6:
-        row(idx, "plunge", "UNSOURCED", "Z rate 2500", {"<= Z rate": (0.0, V_Z)},
-            "UNSOURCED. Tool 6 is not centre-cutting (T6CC). The Spektra Ramp Down rule (SPK52) is for spiral plunge bits; it does not transfer. Bound: Z rate 2500 (MACH). "
-            "Geometry (I: field meaning): a straight plunge is possible only to the blade protrusion 1.0 mm; a 3 deg ramp sinks 8 x tan 3 = %.2f mm over the 8 mm core, < 1.0 mm. Needed: a plunge rate for this tool from its maker." % (8 * math.tan(math.radians(3))),
+    elif tid in (6, 5):
+        pv, raw = plunge_repo_rule(d)
+        row(idx, "plunge", "DERIVED", "repo rule, no vendor source", {"repo plunge rule": (pv, pv)},
+            "Repo rule, no vendor source (operator ruling 2026-11-10: %s). "
+            "PLGTXT: base 1000 / h at 6 mm x clamp(D/6, 0.25, 3), h = (Janka / 600)^0.4. Janka 1360 (PLGJANKA): h = %.4f; 1000 / h = %.1f; "
+            "x clamp(%.1f / 6) = %.4f -> %.1f mm/min; min with the Z rate 2500 (MACH) = %.1f. The rule does not read the RPM."
+            % ("U3 tool 6, accepted as the repo rule" if tid == 6 else "U2, the operator keeps the slow plunge; the n x chip candidate is deleted",
+               H_OAK, PLG_BASE_6MM, d, min(max(d / 6.0, 0.25), 3.0), raw, pv)
+            + (" Tool 6 is not centre-cutting (T6CC); the rule does not read that fact." if tid == 6 else ""),
             app_key="plunge",
             note=("Straight plunge entry at ap 0.5 <= protrusion 1.0: geometrically possible." if idx == 11 else ""))
-    elif tid == 5:
-        pc = {"chip x 24000 (P1 b)": (c_116 * N_MAX, c_332 * N_MAX)}
-        row(idx, "plunge", "UNSOURCED", "chart (2F rule)", pc,
-            "UNSOURCED for 1F. SPK12/SPK17 print Ramp Down 35\" and 40\" (= %.0f and %.0f mm/min) at 1/16 and 3/32 in. "
-            "SPK47 + SPK52 give Ramp Down = n x chip, which does not depend on the flute count; so a 1F tool with the 2F chip plunges at the same rate. Every candidate is >= %.0f mm/min." % (35 * IN, 40 * IN, 35 * IN),
-            app_key="plunge", n_app=n_app,
-            grade_cands={"@app": (35 * IN, 40 * IN) if n_app == 18000 else (c_116 * n_app, c_332 * n_app)},
-            note="The app ships %s from an unsourced repo rule (conservative: %.1fx slower than the lowest candidate at the app rpm)."
-                 % (fmt(a["sug"]["plunge"]), (35 * IN if n_app == 18000 else c_116 * n_app) / a["sug"]["plunge"]))
     elif tid == 2:
         f_lo, f_hi = c_v60[0] * 2 * 18000, c_v60[1] * 2 * 18000
         pc = {"IDC ratio x feed (P1 b)": (c_v60[0] * 2 * N_MAX / 3, c_v60[1] * 2 * N_MAX / 2)}
@@ -480,13 +515,18 @@ for idx, (name, tid, kind, g) in TP.items():
             app_key="plunge", n_app=n_app,
             grade_cands={"@app": (c_v60[0] * 2 * n_app / 3, c_v60[1] * 2 * n_app / 2)})
     else:  # tid 1 (V20), 4 (tapered)
-        row(idx, "plunge", "UNSOURCED", "none", {},
-            ("No repo source prints a plunge for a 20deg 1F V-bit. Needed: a vendor plunge or Ramp Down for this bit." if tid == 1 else
-             "SpeTool (SPE23) and Amana ZrN print no plunge. Needed: a vendor plunge for a 2 mm tapered ball."),
-            app_key="plunge", note="The app says 'no source' too.")
+        tip = 2.0 * g["R"] if tid == 4 else None  # the app states a tip cap on the tapered ball only
+        pv, raw = plunge_repo_rule(d, tip)
+        row(idx, "plunge", "DERIVED", "repo rule, no vendor source", {"repo plunge rule": (pv, pv)},
+            "Repo rule, no vendor source (operator ruling 2026-11-10: \"for the no source ones, if they look right, let's go for it\"). "
+            "PLGTXT: 1000 / h at 6 mm x clamp(D/6, 0.25, 3); h = %.4f (Janka 1360, PLGJANKA); x clamp(%.3f / 6) = %.4f -> %.1f mm/min; Z rate 2500 (MACH)%s; min = %.1f."
+            % (H_OAK, d, min(max(d / 6.0, 0.25), 3.0), raw,
+               ("; tip cap 150 x tip %.1f mm = %.0f mm/min (PLGTIP)" % (tip, 150.0 * tip)) if tip is not None else "", pv)
+            + (" No repo source prints a plunge for a 20deg 1F V-bit." if tid == 1 else " SpeTool (SPE23) and Amana ZrN print no plunge."),
+            app_key="plunge")
 
     # -------------------------------------------------------- ramp row
-    if g.get("entry") == "ramp":
+    if g.get("entry") in ("ramp", "helix"):  # H1 ruled "yes", operator 2026-11-10: a helix entry feed takes the ramp rule
         def ramp_cands(pns):
             out = {}
             for (pn, n), (cn, cv) in itertools.product(pns.items(), chips.items()):
@@ -495,29 +535,18 @@ for idx, (name, tid, kind, g) in TP.items():
             return out
         rc = ramp_cands(pol_n)
         grc = ramp_cands({"@app": n_app})
-        st = "UNSOURCED" if tid in (6, 5) else "DERIVED"
+        st = "DERIVED"
         vert = ""
         if tid == 0:
             vert = " Vertical part: 4572 x sin 3deg = %.0f mm/min < Ramp Down 2286: the side chip binds." % (4572 * math.sin(math.radians(3)))
+        if g.get("entry") == "helix":
+            hr, hp = g["helix_r"], g["helix_pitch"]
+            vert += (" The entry is a helix (r = 0.3 x D = %.2f mm, pitch %.2f mm, slope %.2f deg). H1 ruled \"yes\", operator 2026-11-10: the ramp rule grades a helix entry feed. "
+                     "The path radius is less than the tool radius %.1f mm, so the contact is full width."
+                     % (hr, hp, math.degrees(math.atan(hp / (2 * math.pi * hr))), d / 2))
         row(idx, "ramp feed", st, "slot chip (full-width ramp)", rc,
             "A ramp cuts a full slot: ramp feed = chip x z x n (lift 1)." + vert, app_key="ramp",
             grade_cands=grc, n_app=n_app)
-    elif g.get("entry") == "helix":
-        # Operator ruling 2026-11-10: idx 1 takes entry_style = "helix". The script has a
-        # rule for a ramp (a full slot, lift 1) and none for a helix bore. No candidate is
-        # typed here; the ramp-rule value is information only.
-        hr, hp = g["helix_r"], g["helix_pitch"]
-        info = "; ".join("%s %s-%s" % (cn.split(" ")[0], fmt(min(cv[0] * z * n_app, V_XY)), fmt(min(cv[1] * z * n_app, V_XY)))
-                         for cn, cv in chips.items())
-        row(idx, "ramp feed", "UNSOURCED", "none (helix entry: no rule)", {},
-            "The entry is a helix (operator ruling 2026-11-10): r = 0.3 x D = %.2f mm, pitch %.2f mm, slope atan(pitch / (2 pi r)) = %.2f deg (get_toolpath_params). "
-            "The script has no rule for the feed of a helix bore: the ramp rule (a full slot, lift 1) is stated for a straight ramp only. "
-            "Information: the ramp rule at the app rpm gives %s mm/min. The helix path radius %.2f mm is less than the tool radius %.1f mm, so the cutter is in full-width contact; "
-            "if the operator rules that a helix is graded as a ramp, this row takes the ramp candidates."
-            % (hr, hp, math.degrees(math.atan(hp / (2 * math.pi * hr))), info, hr, d / 2),
-            app_key="ramp", override="NEEDS-RULING",
-            expected_text="no rule for a helix entry (ramp rule, information only: %s)" % info, n_app=n_app,
-            note="NEEDS-RULING: entry_style changed from ramp to helix; no script rule covers a helix feed.")
     else:
         row(idx, "ramp feed", "N/A", "none", {}, "The entry is a straight plunge; no ramp.", app_key="ramp", override="N/A")
 

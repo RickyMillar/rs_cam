@@ -13,7 +13,9 @@ test. No expected value comes from the engine code or from the app output.
   literature-matrix shim and one snapshot changed (no product source). The README step 1 rule
   (binary later than HEAD) is thus not met to the letter; the lead ruled to grade. HEAD at the
   read was `3898f1b82` (a planning-only commit after `dce570108`); no edits under `crates/`.
-  Graded by a fresh agent on 2026-11-10: PASS 64, FAIL 6, NEEDS-RULING 28, N/A 10. The
+  Graded by a fresh agent on 2026-11-10: PASS 64, FAIL 6, NEEDS-RULING 28, N/A 10. After the
+  operator rulings of the afternoon (same build, same app values; `grade_dce570108_r2.md`):
+  PASS 92, FAIL 6, NEEDS-RULING 0, N/A 10. The
   previous grade (build `b9e67b24e`, P20e, 2026-11-09) was PASS 47, FAIL 23, NEEDS-RULING 28,
   N/A 10; build `4b7aa0e96` (2026-11-08) had the same counts; build `998ac93a3` (before the
   rulings of 2026-11-08) was PASS 31, FAIL 12, NEEDS-RULING 55.
@@ -129,13 +131,39 @@ ramp cuts a full slot, so the ramp feed has lift 1.
   bore. The idx 1 "ramp feed" row is thus NEEDS-RULING with no candidate; the row prints the
   ramp-rule value as information. No other idx 1 row reads the entry style.
 
+Afternoon, the six open questions (operator words in quotes). Each ruled value is a rule
+that the script computes from its SRC lines; no app number is copied.
+
+- **U1 (18 mm 2F chip): the app's stated rule**, operator: "1 and 2 sounds good". The chip is
+  the Amana Spektra 1/2 in 2F row (SPK37, 0.1448 mm) x (18 / 12.7)^0.61, the generic size law
+  (SIZEC) = 0.1791 mm. It lies inside the old bracket 0.1448-0.2286 mm and under the Freud
+  straight-bit band 0.229-0.330 mm (`research/large_straight_router_bits_2026-11-10.md`); the
+  tool is a straight-flute router bit. The bracket is deleted. Rows: chip, feed and entry feed
+  of tool 6.
+- **U3 tool 6 (18 mm plunge): the repo rule "material plunge base"**, operator (same words).
+  Base 1000 / h at 6 mm x clamp(D/6, 0.25, 3), h = (Janka / 600)^0.4, capped by the Z axis
+  rate (PLGTXT, PLGBASE, PLGH, PLGJANKA). DERIVED from a stated repo rule; no vendor source.
+- **U2 (2 mm 1F chip): the app's stated rule**, operator: "3 sounds good". Log-log
+  interpolation between the printed 1.5875 and 2.38125 mm 2F rows (SIZEA, SPK12, SPK17) =
+  0.0550 mm. The plunge of tool 5 is the same repo plunge rule (240 mm/min): the operator
+  keeps the slow plunge, so the `n x chip` candidate (1219-1402 at 24000 rpm) is deleted.
+- **U3 tool 1 (20 deg V-bit plunge) and U3 tool 4 (2 mm tapered ball plunge): the repo plunge
+  rule**, operator: "for the no source ones, if they look right, let's go for it". Tool 4
+  also takes the tip cap 150 mm/min per mm of tip (PLGTIP), as the app states it.
+- **H1: yes**, operator. The ramp rule (chip x z x n, lift 1) grades a helix entry feed.
+
+Effect of the rulings: no NEEDS-RULING row is left. Three feed rows now FAIL against a single
+value where a bracket hid the difference: idx 1 and 14 (the app lifts at the nominal stepover,
+P3 ruled the cap width) and idx 6 (the app lifts in a pocket that slots, check C3).
+
 ## Questions the operator must rule on
+
+Open: P4 (the idx 16 feed row fails both candidates) and the P21 acceleration rule. U1, U2, U3
+and H1 are ruled (2026-11-10); the text below is the record of each question.
 
 - **H1. Helix entry feed (idx 1).** (a) Grade a helix as a ramp: chip x z x n, lift 1 (the
   path radius 5.4 mm is less than the tool radius 9 mm, so the contact is full width). (b) A
-  different rule or a source. Under (a) the row joins the U1 rows (bracket 6949-10973 at
-  24000 rpm; the app prints 8597).
-
+  different rule or a source. Ruled (a).
 - **P1. RPM.** (a) The chart test RPM, 18000, where the chart prints it. (b) A
   constant chip up to the binding limit: min(spindle max 24000, XY rate / (chip x z
   x lift), Z rate / axial chip per rev for vertical moves). On this machine (b) is
@@ -183,15 +211,15 @@ now states `[job.machine.controller] rpm_max = 24000.0` (line 94).
 
 108 rows (18 toolpaths x 6 quantities).
 
-- Status: SOURCED 6, DERIVED 58, POLICY 1, UNSOURCED 33, N/A 10
-- Grade: PASS 64, NEEDS-RULING 28, FAIL 6, N/A 10
+- Status: SOURCED 6, DERIVED 89, POLICY 1, UNSOURCED 2, N/A 10
+- Grade: PASS 92, NEEDS-RULING 0, FAIL 6, N/A 10
 
 FAIL rows:
 
+- idx 1 feed: app 9332; expected P1b: 8599 // graded at app rpm 24000: @app: 8599.
 - idx 5 feed: app 3165; expected P1b: 6096-8534 // graded at app rpm 24000: @app: 6096-8534.
-- idx 6 plunge: app 240; expected chip x 24000 (P1 b): 1219-1402 // graded at app rpm 24000: @app: 1219-1402.
-- idx 7 plunge: app 240; expected chip x 24000 (P1 b): 1219-1402 // graded at app rpm 24000: @app: 1219-1402.
-- idx 8 plunge: app 240; expected chip x 24000 (P1 b): 1219-1402 // graded at app rpm 24000: @app: 1219-1402.
+- idx 6 feed: app 1347; expected P1b: 1320 // graded at app rpm 24000: @app: 1320.
+- idx 14 feed: app 10747; expected P1b: 9215 // graded at app rpm 24000: @app: 9215.
 - idx 16 chip per tooth (target peak): app 0.06437; expected SpeTool 2.0 mm: 0.07620.
 - idx 16 feed: app 3089; expected P1b/P4a: 3658; P1b/P4b: 6096 // graded at app rpm 24000: @app/P4a: 3658; @app/P4b: 6096.
 
@@ -201,17 +229,17 @@ FAIL rows:
 
 | Quantity | Expected | Status | Binding | App Suggest | App shipped | Grade |
 |---|---|---|---|---|---|---|
-| chip per tooth (target peak) | bracket: 0.14478-0.22860 | UNSOURCED | chart | 0.17913 | - | **NEEDS-RULING** (matches: bracket) |
+| chip per tooth (target peak) | Spektra 1/2 in x size law: 0.17910 | DERIVED | chart | 0.17913 | - | **PASS** |
 | rpm | P1b binding limit: 24000 | DERIVED | spindle max 24000 | 24000 | 18000 | **PASS** |
-| feed | P1b: 6993-11041 // graded at app rpm 24000: @app: 6993-11041 | UNSOURCED | chart chip x lift; XY 15000 | 8651 | 6488 | **NEEDS-RULING** (matches: @app) |
-| plunge | <= Z rate: 0.00000-2500 | UNSOURCED | Z rate 2500 | 2162 | 2162 | **NEEDS-RULING** (matches: <= Z rate) |
-| ramp feed | P1b: 6949-10973 // graded at app rpm 24000: @app: 6949-10973 | UNSOURCED | slot chip (full-width ramp) | 8597 | 6447 | **NEEDS-RULING** (matches: @app) |
+| feed | P1b: 8651 // graded at app rpm 24000: @app: 8651 | DERIVED | chart chip x lift; XY 15000 | 8651 | 6488 | **PASS** |
+| plunge | repo plunge rule: 2163 | DERIVED | repo rule, no vendor source | 2162 | 2162 | **PASS** |
+| ramp feed | P1b: 8597 // graded at app rpm 24000: @app: 8597 | DERIVED | slot chip (full-width ramp) | 8597 | 6447 | **PASS** |
 | power required vs available | model: 0.05789 | DERIVED | power (ratio 0.039) | 0.05789 | - | **PASS** |
 
-- *chip per tooth (target peak)*: UNSOURCED: no 18 mm 2F row. Bracket: SPK37 1/2 in 2F ".0057"" = 0.1448 mm (below), SPK54 3/4 in 3F ".009"" = 0.2286 mm (above) ap/D = 0.028 <= 1: the 1 x D chart condition holds (SPK38/AMS3/SPE14); no feed derate. Note: App = vendor_band.score_winner_chip_mm (the target before the radial lift).
-- *rpm*: P1 ruled (b), operator 2026-11-08 (the chart rpm: SPK3 18,000 RPM (nearest printed chart)). n_xy = 15000 / (chip_hi 0.2286 x 2 x lift 1.0062) = 32605; spindle max 24000; n_b = 24000 (spindle max 24000). Power does not bind: P_req and P_avail both scale with n (constant torque below 24000 rpm, MACH), so the ratio holds at every n.
+- *chip per tooth (target peak)*: U1 ruled, operator 2026-11-10. SPK37 1/2 in 2F ".0057"" = 0.1448 mm x (18 / 12.7)^0.61 (SIZEC) = 0.17910 mm. Repo size law, no vendor row at 18 mm. It lies inside the old bracket 0.1448-0.2286 mm and under the Freud straight-bit band 0.229-0.330 mm (research/large_straight_router_bits_2026-11-10.md line 119); the tool is a straight-flute router bit ap/D = 0.028 <= 1: the 1 x D chart condition holds (SPK38/AMS3/SPE14); no feed derate. Note: App = vendor_band.score_winner_chip_mm (the target before the radial lift).
+- *rpm*: P1 ruled (b), operator 2026-11-08 (the chart rpm: SPK3 18,000 RPM (the chart of the scaled row)). n_xy = 15000 / (chip_hi 0.1791 x 2 x lift 1.0062) = 41616; spindle max 24000; n_b = 24000 (spindle max 24000). Power does not bind: P_req and P_avail both scale with n (constant torque below 24000 rpm, MACH), so the ratio holds at every n.
 - *feed*: feed = chip x z x n x lift (SPK47), clamped to XY 15000. Face: max ae = stepover 8.0, r 0.4444, lift 1.0062.
-- *plunge*: UNSOURCED. Tool 6 is not centre-cutting (T6CC). The Spektra Ramp Down rule (SPK52) is for spiral plunge bits; it does not transfer. Bound: Z rate 2500 (MACH). Geometry (I: field meaning): a straight plunge is possible only to the blade protrusion 1.0 mm; a 3 deg ramp sinks 8 x tan 3 = 0.42 mm over the 8 mm core, < 1.0 mm. Needed: a plunge rate for this tool from its maker.
+- *plunge*: Repo rule, no vendor source (operator ruling 2026-11-10: U3 tool 6, accepted as the repo rule). PLGTXT: base 1000 / h at 6 mm x clamp(D/6, 0.25, 3), h = (Janka / 600)^0.4. Janka 1360 (PLGJANKA): h = 1.3873; 1000 / h = 720.9; x clamp(18.0 / 6) = 3.0000 -> 2162.6 mm/min; min with the Z rate 2500 (MACH) = 2162.6. The rule does not read the RPM. Tool 6 is not centre-cutting (T6CC); the rule does not read that fact.
 - *ramp feed*: A ramp cuts a full slot: ramp feed = chip x z x n (lift 1).
 - *power required vs available*: At the app point: vf 8651, n 24000, ae 8.0000, ap 0.500, D 18.0, z 2; psi = acos(1 - 2ae/D) = 1.4595 rad; shear = Ks ae ap vf / 6e7 = 0.03375; edge = F_edge ap pi D n z psi / 2pi / 6e7 = 0.02414; total 0.05789 kW. P_avail = 1.5 x 24000 / 24000 = 1.5000 kW (MACH); ratio 0.039. Spindle efficiency: no source; the ratio assumes the rated shaft power.
 
@@ -219,18 +247,18 @@ FAIL rows:
 
 | Quantity | Expected | Status | Binding | App Suggest | App shipped | Grade |
 |---|---|---|---|---|---|---|
-| chip per tooth (target peak) | bracket: 0.14478-0.22860 | UNSOURCED | chart | 0.17913 | - | **NEEDS-RULING** (matches: bracket) |
+| chip per tooth (target peak) | Spektra 1/2 in x size law: 0.17910 | DERIVED | chart | 0.17913 | - | **PASS** |
 | rpm | P1b binding limit: 24000 | DERIVED | spindle max 24000 | 24000 | 18000 | **PASS** |
-| feed | P1b: 6951-10976 // graded at app rpm 24000: @app: 6951-10976 | UNSOURCED | chart chip x lift; XY 15000 | 9332 | 8475 | **NEEDS-RULING** (matches: @app) |
-| plunge | <= Z rate: 0.00000-2500 | UNSOURCED | Z rate 2500 | 2162 | 2162 | **NEEDS-RULING** (matches: <= Z rate) |
-| ramp feed | no rule for a helix entry (ramp rule, information only: bracket 6949-10973) | UNSOURCED | none (helix entry: no rule) | 8597 | 6448 | **NEEDS-RULING** |
+| feed | P1b: 8599 // graded at app rpm 24000: @app: 8599 | DERIVED | chart chip x lift; XY 15000 | 9332 | 8475 | **FAIL** |
+| plunge | repo plunge rule: 2163 | DERIVED | repo rule, no vendor source | 2162 | 2162 | **PASS** |
+| ramp feed | P1b: 8597 // graded at app rpm 24000: @app: 8597 | DERIVED | slot chip (full-width ramp) | 8597 | 6448 | **PASS** |
 | power required vs available | model: 1.313 | DERIVED | power (ratio 0.875) | 1.313 | - | **PASS** |
 
-- *chip per tooth (target peak)*: UNSOURCED: no 18 mm 2F row. Bracket: SPK37 1/2 in 2F ".0057"" = 0.1448 mm (below), SPK54 3/4 in 3F ".009"" = 0.2286 mm (above) ap/D = 0.556 <= 1: the 1 x D chart condition holds (SPK38/AMS3/SPE14); no feed derate. Note: App = vendor_band.score_winner_chip_mm (the target before the radial lift).
-- *rpm*: P1 ruled (b), operator 2026-11-08 (the chart rpm: SPK3 18,000 RPM (nearest printed chart)). n_xy = 15000 / (chip_hi 0.2286 x 2 x lift 1.0002) = 32800; spindle max 24000; n_b = 24000 (spindle max 24000). Power does not bind: P_req and P_avail both scale with n (constant torque below 24000 rpm, MACH), so the ratio holds at every n.
+- *chip per tooth (target peak)*: U1 ruled, operator 2026-11-10. SPK37 1/2 in 2F ".0057"" = 0.1448 mm x (18 / 12.7)^0.61 (SIZEC) = 0.17910 mm. Repo size law, no vendor row at 18 mm. It lies inside the old bracket 0.1448-0.2286 mm and under the Freud straight-bit band 0.229-0.330 mm (research/large_straight_router_bits_2026-11-10.md line 119); the tool is a straight-flute router bit ap/D = 0.556 <= 1: the 1 x D chart condition holds (SPK38/AMS3/SPE14); no feed derate. Note: App = vendor_band.score_winner_chip_mm (the target before the radial lift).
+- *rpm*: P1 ruled (b), operator 2026-11-08 (the chart rpm: SPK3 18,000 RPM (the chart of the scaled row)). n_xy = 15000 / (chip_hi 0.1791 x 2 x lift 1.0002) = 41865; spindle max 24000; n_b = 24000 (spindle max 24000). Power does not bind: P_req and P_avail both scale with n (constant torque below 24000 rpm, MACH), so the ratio holds at every n.
 - *feed*: feed = chip x z x n x lift (SPK47), clamped to XY 15000. lift = 1 / (2 sqrt(r(1-r))), r = ae/D. P3 ruled (b): ae 5.500 x 1.6 = 8.8000, r 0.4889, lift 1.0002 (the nominal ae 5.500 would give lift 1.0854). Note:  Shipped 8475 is the operator value: P at ae 8.8 = 1.112 kW = 98.8 % of 1.125 kW.
-- *plunge*: UNSOURCED. Tool 6 is not centre-cutting (T6CC). The Spektra Ramp Down rule (SPK52) is for spiral plunge bits; it does not transfer. Bound: Z rate 2500 (MACH). Geometry (I: field meaning): a straight plunge is possible only to the blade protrusion 1.0 mm; a 3 deg ramp sinks 8 x tan 3 = 0.42 mm over the 8 mm core, < 1.0 mm. Needed: a plunge rate for this tool from its maker.
-- *ramp feed*: The entry is a helix (operator ruling 2026-11-10): r = 0.3 x D = 5.40 mm, pitch 2.00 mm, slope atan(pitch / (2 pi r)) = 3.37 deg (get_toolpath_params). The script has no rule for the feed of a helix bore: the ramp rule (a full slot, lift 1) is stated for a straight ramp only. Information: the ramp rule at the app rpm gives bracket 6949-10973 mm/min. The helix path radius 5.40 mm is less than the tool radius 9.0 mm, so the cutter is in full-width contact; if the operator rules that a helix is graded as a ramp, this row takes the ramp candidates. Note: NEEDS-RULING: entry_style changed from ramp to helix; no script rule covers a helix feed.
+- *plunge*: Repo rule, no vendor source (operator ruling 2026-11-10: U3 tool 6, accepted as the repo rule). PLGTXT: base 1000 / h at 6 mm x clamp(D/6, 0.25, 3), h = (Janka / 600)^0.4. Janka 1360 (PLGJANKA): h = 1.3873; 1000 / h = 720.9; x clamp(18.0 / 6) = 3.0000 -> 2162.6 mm/min; min with the Z rate 2500 (MACH) = 2162.6. The rule does not read the RPM. Tool 6 is not centre-cutting (T6CC); the rule does not read that fact.
+- *ramp feed*: A ramp cuts a full slot: ramp feed = chip x z x n (lift 1). The entry is a helix (r = 0.3 x D = 5.40 mm, pitch 2.00 mm, slope 3.37 deg). H1 ruled "yes", operator 2026-11-10: the ramp rule grades a helix entry feed. The path radius is less than the tool radius 9.0 mm, so the contact is full width.
 - *power required vs available*: At the app point: vf 9332, n 24000, ae 8.8000, ap 10.000, D 18.0, z 2; psi = acos(1 - 2ae/D) = 1.5486 rad; shear = Ks ae ap vf / 6e7 = 0.80091; edge = F_edge ap pi D n z psi / 2pi / 6e7 = 0.51233; total 1.31324 kW. P_avail = 1.5 x 24000 / 24000 = 1.5000 kW (MACH); ratio 0.875. Spindle efficiency: no source; the ratio assumes the rated shaft power.
 
 ### idx 2: Back rest 6 mm (cavity, hollow, lakes, pockets) (tool 0)
@@ -309,17 +337,17 @@ FAIL rows:
 
 | Quantity | Expected | Status | Binding | App Suggest | App shipped | Grade |
 |---|---|---|---|---|---|---|
-| chip per tooth (target peak) | bracket: 0.05080-0.05842 | UNSOURCED | chart | 0.05501 | - | **NEEDS-RULING** (matches: bracket) |
+| chip per tooth (target peak) | Spektra 2F log-log: 0.05501 | DERIVED | chart | 0.05501 | - | **PASS** |
 | rpm | P1b binding limit: 24000 | DERIVED | spindle max 24000 | 24000 | 18000 | **PASS** |
-| feed | P1b: 1219-1402 // graded at app rpm 24000: @app: 1219-1402 | UNSOURCED | chart chip x lift; XY 15000 | 1347 | 1010 | **NEEDS-RULING** (matches: @app) |
-| plunge | chip x 24000 (P1 b): 1219-1402 // graded at app rpm 24000: @app: 1219-1402 | UNSOURCED | chart (2F rule) | 240 | 240 | **FAIL** |
+| feed | P1b: 1320 // graded at app rpm 24000: @app: 1320 | DERIVED | chart chip x lift; XY 15000 | 1347 | 1010 | **FAIL** |
+| plunge | repo plunge rule: 240 | DERIVED | repo rule, no vendor source | 240 | 240 | **PASS** |
 | ramp feed | none | N/A | none | - | - | **N/A** |
 | power required vs available | model: 0.00588 | DERIVED | power (ratio 0.004) | 0.00588 | - | **PASS** |
 
-- *chip per tooth (target peak)*: UNSOURCED for 1F. 2F bracket: SPK12 1/16 in ".0020"" = 0.0508 mm, SPK17 3/32 in ".0023"" = 0.0584 mm; log-log at 2.0 mm = 0.05501, linear = 0.05476 ap/D = 0.350 <= 1: the 1 x D chart condition holds (SPK38/AMS3/SPE14); no feed derate. Note: App = vendor_band.score_winner_chip_mm (the target before the radial lift).
-- *rpm*: P1 ruled (b), operator 2026-11-08 (the chart rpm: SPK3 18,000 RPM). n_xy = 15000 / (chip_hi 0.0584 x 1 x lift 1.0000) = 256761; spindle max 24000; n_b = 24000 (spindle max 24000). Power does not bind: P_req and P_avail both scale with n (constant torque below 24000 rpm, MACH), so the ratio holds at every n.
+- *chip per tooth (target peak)*: U2 ruled, operator 2026-11-10. Log-log interpolation (SIZEA) between SPK12 1/16 in ".0020"" = 0.0508 mm and SPK17 3/32 in ".0023"" = 0.0584 mm at 2.0 mm = 0.05501 mm. The rows are 2F; the tool is 1F; the operator accepts the 2F chip per tooth for it ap/D = 0.350 <= 1: the 1 x D chart condition holds (SPK38/AMS3/SPE14); no feed derate. Note: App = vendor_band.score_winner_chip_mm (the target before the radial lift).
+- *rpm*: P1 ruled (b), operator 2026-11-08 (the chart rpm: SPK3 18,000 RPM). n_xy = 15000 / (chip_hi 0.0550 x 1 x lift 1.0000) = 272677; spindle max 24000; n_b = 24000 (spindle max 24000). Power does not bind: P_req and P_avail both scale with n (constant torque below 24000 rpm, MACH), so the ratio holds at every n.
 - *feed*: feed = chip x z x n x lift (SPK47), clamped to XY 15000. The op cuts a full slot (pocket first ring, profile, centre-line curve): r >= 0.5, lift 1. Note:  With the 2F log-log chip 0.05501 in a slot the feed is 1320 at the app rpm; the app's 1347 is +2.0 %: it applies the ae 0.8 lift in a pocket that slots.
-- *plunge*: UNSOURCED for 1F. SPK12/SPK17 print Ramp Down 35" and 40" (= 889 and 1016 mm/min) at 1/16 and 3/32 in. SPK47 + SPK52 give Ramp Down = n x chip, which does not depend on the flute count; so a 1F tool with the 2F chip plunges at the same rate. Every candidate is >= 889 mm/min. Note: The app ships 240 from an unsourced repo rule (conservative: 5.1x slower than the lowest candidate at the app rpm).
+- *plunge*: Repo rule, no vendor source (operator ruling 2026-11-10: U2, the operator keeps the slow plunge; the n x chip candidate is deleted). PLGTXT: base 1000 / h at 6 mm x clamp(D/6, 0.25, 3), h = (Janka / 600)^0.4. Janka 1360 (PLGJANKA): h = 1.3873; 1000 / h = 720.9; x clamp(2.0 / 6) = 0.3333 -> 240.3 mm/min; min with the Z rate 2500 (MACH) = 240.3. The rule does not read the RPM.
 - *ramp feed*: The entry is a straight plunge; no ramp.
 - *power required vs available*: At the app point: vf 1347, n 24000, ae 2.0000, ap 0.700, D 2.0, z 1; psi = acos(1 - 2ae/D) = 3.1416 rad; shear = Ks ae ap vf / 6e7 = 0.00184; edge = F_edge ap pi D n z psi / 2pi / 6e7 = 0.00404; total 0.00588 kW. P_avail = 1.5 x 24000 / 24000 = 1.5000 kW (MACH); ratio 0.004. Spindle efficiency: no source; the ratio assumes the rated shaft power.
 
@@ -327,17 +355,17 @@ FAIL rows:
 
 | Quantity | Expected | Status | Binding | App Suggest | App shipped | Grade |
 |---|---|---|---|---|---|---|
-| chip per tooth (target peak) | bracket: 0.05080-0.05842 | UNSOURCED | chart | 0.05501 | - | **NEEDS-RULING** (matches: bracket) |
+| chip per tooth (target peak) | Spektra 2F log-log: 0.05501 | DERIVED | chart | 0.05501 | - | **PASS** |
 | rpm | P1b binding limit: 24000 | DERIVED | spindle max 24000 | 24000 | 18000 | **PASS** |
-| feed | P1b: 1219-1402 // graded at app rpm 24000: @app: 1219-1402 | UNSOURCED | chart chip x lift; XY 15000 | 1320 | 1258 | **NEEDS-RULING** (matches: @app) |
-| plunge | chip x 24000 (P1 b): 1219-1402 // graded at app rpm 24000: @app: 1219-1402 | UNSOURCED | chart (2F rule) | 240 | 240 | **FAIL** |
+| feed | P1b: 1320 // graded at app rpm 24000: @app: 1320 | DERIVED | chart chip x lift; XY 15000 | 1320 | 1258 | **PASS** |
+| plunge | repo plunge rule: 240 | DERIVED | repo rule, no vendor source | 240 | 240 | **PASS** |
 | ramp feed | none | N/A | none | - | - | **N/A** |
 | power required vs available | model: 0.00417 | DERIVED | power (ratio 0.003) | 0.00417 | - | **PASS** |
 
-- *chip per tooth (target peak)*: UNSOURCED for 1F. 2F bracket: SPK12 1/16 in ".0020"" = 0.0508 mm, SPK17 3/32 in ".0023"" = 0.0584 mm; log-log at 2.0 mm = 0.05501, linear = 0.05476 ap/D = 0.250 <= 1: the 1 x D chart condition holds (SPK38/AMS3/SPE14); no feed derate. Note: App = vendor_band.score_winner_chip_mm (the target before the radial lift).
-- *rpm*: P1 ruled (b), operator 2026-11-08 (the chart rpm: SPK3 18,000 RPM). n_xy = 15000 / (chip_hi 0.0584 x 1 x lift 1.0000) = 256761; spindle max 24000; n_b = 24000 (spindle max 24000). Power does not bind: P_req and P_avail both scale with n (constant torque below 24000 rpm, MACH), so the ratio holds at every n.
+- *chip per tooth (target peak)*: U2 ruled, operator 2026-11-10. Log-log interpolation (SIZEA) between SPK12 1/16 in ".0020"" = 0.0508 mm and SPK17 3/32 in ".0023"" = 0.0584 mm at 2.0 mm = 0.05501 mm. The rows are 2F; the tool is 1F; the operator accepts the 2F chip per tooth for it ap/D = 0.250 <= 1: the 1 x D chart condition holds (SPK38/AMS3/SPE14); no feed derate. Note: App = vendor_band.score_winner_chip_mm (the target before the radial lift).
+- *rpm*: P1 ruled (b), operator 2026-11-08 (the chart rpm: SPK3 18,000 RPM). n_xy = 15000 / (chip_hi 0.0550 x 1 x lift 1.0000) = 272677; spindle max 24000; n_b = 24000 (spindle max 24000). Power does not bind: P_req and P_avail both scale with n (constant torque below 24000 rpm, MACH), so the ratio holds at every n.
 - *feed*: feed = chip x z x n x lift (SPK47), clamped to XY 15000. The op cuts a full slot (pocket first ring, profile, centre-line curve): r >= 0.5, lift 1.
-- *plunge*: UNSOURCED for 1F. SPK12/SPK17 print Ramp Down 35" and 40" (= 889 and 1016 mm/min) at 1/16 and 3/32 in. SPK47 + SPK52 give Ramp Down = n x chip, which does not depend on the flute count; so a 1F tool with the 2F chip plunges at the same rate. Every candidate is >= 889 mm/min. Note: The app ships 240 from an unsourced repo rule (conservative: 5.1x slower than the lowest candidate at the app rpm).
+- *plunge*: Repo rule, no vendor source (operator ruling 2026-11-10: U2, the operator keeps the slow plunge; the n x chip candidate is deleted). PLGTXT: base 1000 / h at 6 mm x clamp(D/6, 0.25, 3), h = (Janka / 600)^0.4. Janka 1360 (PLGJANKA): h = 1.3873; 1000 / h = 720.9; x clamp(2.0 / 6) = 0.3333 -> 240.3 mm/min; min with the Z rate 2500 (MACH) = 240.3. The rule does not read the RPM.
 - *ramp feed*: The entry is a straight plunge; no ramp.
 - *power required vs available*: At the app point: vf 1320, n 24000, ae 2.0000, ap 0.500, D 2.0, z 1; psi = acos(1 - 2ae/D) = 3.1416 rad; shear = Ks ae ap vf / 6e7 = 0.00129; edge = F_edge ap pi D n z psi / 2pi / 6e7 = 0.00289; total 0.00417 kW. P_avail = 1.5 x 24000 / 24000 = 1.5000 kW (MACH); ratio 0.003. Spindle efficiency: no source; the ratio assumes the rated shaft power.
 
@@ -345,17 +373,17 @@ FAIL rows:
 
 | Quantity | Expected | Status | Binding | App Suggest | App shipped | Grade |
 |---|---|---|---|---|---|---|
-| chip per tooth (target peak) | bracket: 0.05080-0.05842 | UNSOURCED | chart | 0.05501 | - | **NEEDS-RULING** (matches: bracket) |
+| chip per tooth (target peak) | Spektra 2F log-log: 0.05501 | DERIVED | chart | 0.05501 | - | **PASS** |
 | rpm | P1b binding limit: 24000 | DERIVED | spindle max 24000 | 24000 | 18000 | **PASS** |
-| feed | P1b: 1219-1402 // graded at app rpm 24000: @app: 1219-1402 | UNSOURCED | chart chip x lift; XY 15000 | 1320 | 1258 | **NEEDS-RULING** (matches: @app) |
-| plunge | chip x 24000 (P1 b): 1219-1402 // graded at app rpm 24000: @app: 1219-1402 | UNSOURCED | chart (2F rule) | 240 | 240 | **FAIL** |
-| ramp feed | P1b: 1219-1402 // graded at app rpm 24000: @app: 1219-1402 | UNSOURCED | slot chip (full-width ramp) | 1320 | 1258 | **NEEDS-RULING** (matches: @app) |
+| feed | P1b: 1320 // graded at app rpm 24000: @app: 1320 | DERIVED | chart chip x lift; XY 15000 | 1320 | 1258 | **PASS** |
+| plunge | repo plunge rule: 240 | DERIVED | repo rule, no vendor source | 240 | 240 | **PASS** |
+| ramp feed | P1b: 1320 // graded at app rpm 24000: @app: 1320 | DERIVED | slot chip (full-width ramp) | 1320 | 1258 | **PASS** |
 | power required vs available | model: 0.00417 | DERIVED | power (ratio 0.003) | 0.00417 | - | **PASS** |
 
-- *chip per tooth (target peak)*: UNSOURCED for 1F. 2F bracket: SPK12 1/16 in ".0020"" = 0.0508 mm, SPK17 3/32 in ".0023"" = 0.0584 mm; log-log at 2.0 mm = 0.05501, linear = 0.05476 ap/D = 0.250 <= 1: the 1 x D chart condition holds (SPK38/AMS3/SPE14); no feed derate. Note: App = vendor_band.score_winner_chip_mm (the target before the radial lift).
-- *rpm*: P1 ruled (b), operator 2026-11-08 (the chart rpm: SPK3 18,000 RPM). n_xy = 15000 / (chip_hi 0.0584 x 1 x lift 1.0000) = 256761; spindle max 24000; n_b = 24000 (spindle max 24000). Power does not bind: P_req and P_avail both scale with n (constant torque below 24000 rpm, MACH), so the ratio holds at every n.
+- *chip per tooth (target peak)*: U2 ruled, operator 2026-11-10. Log-log interpolation (SIZEA) between SPK12 1/16 in ".0020"" = 0.0508 mm and SPK17 3/32 in ".0023"" = 0.0584 mm at 2.0 mm = 0.05501 mm. The rows are 2F; the tool is 1F; the operator accepts the 2F chip per tooth for it ap/D = 0.250 <= 1: the 1 x D chart condition holds (SPK38/AMS3/SPE14); no feed derate. Note: App = vendor_band.score_winner_chip_mm (the target before the radial lift).
+- *rpm*: P1 ruled (b), operator 2026-11-08 (the chart rpm: SPK3 18,000 RPM). n_xy = 15000 / (chip_hi 0.0550 x 1 x lift 1.0000) = 272677; spindle max 24000; n_b = 24000 (spindle max 24000). Power does not bind: P_req and P_avail both scale with n (constant torque below 24000 rpm, MACH), so the ratio holds at every n.
 - *feed*: feed = chip x z x n x lift (SPK47), clamped to XY 15000. The op cuts a full slot (pocket first ring, profile, centre-line curve): r >= 0.5, lift 1.
-- *plunge*: UNSOURCED for 1F. SPK12/SPK17 print Ramp Down 35" and 40" (= 889 and 1016 mm/min) at 1/16 and 3/32 in. SPK47 + SPK52 give Ramp Down = n x chip, which does not depend on the flute count; so a 1F tool with the 2F chip plunges at the same rate. Every candidate is >= 889 mm/min. Note: The app ships 240 from an unsourced repo rule (conservative: 5.1x slower than the lowest candidate at the app rpm).
+- *plunge*: Repo rule, no vendor source (operator ruling 2026-11-10: U2, the operator keeps the slow plunge; the n x chip candidate is deleted). PLGTXT: base 1000 / h at 6 mm x clamp(D/6, 0.25, 3), h = (Janka / 600)^0.4. Janka 1360 (PLGJANKA): h = 1.3873; 1000 / h = 720.9; x clamp(2.0 / 6) = 0.3333 -> 240.3 mm/min; min with the Z rate 2500 (MACH) = 240.3. The rule does not read the RPM.
 - *ramp feed*: A ramp cuts a full slot: ramp feed = chip x z x n (lift 1).
 - *power required vs available*: At the app point: vf 1320, n 24000, ae 2.0000, ap 0.500, D 2.0, z 1; psi = acos(1 - 2ae/D) = 3.1416 rad; shear = Ks ae ap vf / 6e7 = 0.00129; edge = F_edge ap pi D n z psi / 2pi / 6e7 = 0.00289; total 0.00417 kW. P_avail = 1.5 x 24000 / 24000 = 1.5000 kW (MACH); ratio 0.003. Spindle efficiency: no source; the ratio assumes the rated shaft power.
 
@@ -366,14 +394,14 @@ FAIL rows:
 | chip per tooth (target peak) | AMS 18/30 deg 1F: 0.07620-0.17780 | SOURCED | chart | 0.12700 | - | **PASS** |
 | rpm | P1b binding limit: 24000 | DERIVED | spindle max 24000 | 24000 | 18000 | **PASS** |
 | feed | P1b: 1829-4267 // graded at app rpm 24000: @app: 1829-4267 | DERIVED | chart chip x lift; XY 15000 | 2286 | 2286 | **PASS** |
-| plunge | none | UNSOURCED | none | 381 | 381 | **NEEDS-RULING** |
+| plunge | repo plunge rule: 381 | DERIVED | repo rule, no vendor source | 381 | 381 | **PASS** |
 | ramp feed | none | N/A | none | - | - | **N/A** |
 | power required vs available | none | UNSOURCED | none | - | - | **PASS** |
 
 - *chip per tooth (target peak)*: AMS11 18deg and 30deg 1F both "0.003" - 0.007""; 20deg lies between equal cells: 0.0762-0.1778 mm Note: App = vendor_band.score_winner_chip_mm (the target before the radial lift).
 - *rpm*: P1 ruled (b), operator 2026-11-08 (the chart rpm: AMS3 18,000). n_xy = 15000 / (chip_hi 0.1778 x 1 x lift 1.0000) = 84364; spindle max 24000; n_b = 24000 (spindle max 24000). Power does not bind: P_req and P_avail both scale with n (constant torque below 24000 rpm, MACH), so the ratio holds at every n.
 - *feed*: feed = chip x z x n x lift (SPK47), clamped to XY 15000. V trace is a slot; the V chart is for the same geometry: lift 1. Printed IPM: 50"-130" = 1270-3302 mm/min at 18000. Note: Suggest prints no feed; graded on the shipped param.
-- *plunge*: No repo source prints a plunge for a 20deg 1F V-bit. Needed: a vendor plunge or Ramp Down for this bit. Note: The app says 'no source' too.
+- *plunge*: Repo rule, no vendor source (operator ruling 2026-11-10: "for the no source ones, if they look right, let's go for it"). PLGTXT: 1000 / h at 6 mm x clamp(D/6, 0.25, 3); h = 1.3873 (Janka 1360, PLGJANKA); x clamp(3.175 / 6) = 0.5292 -> 381.4 mm/min; Z rate 2500 (MACH); min = 381.4. No repo source prints a plunge for a 20deg 1F V-bit.
 - *ramp feed*: The entry is a straight plunge; no ramp.
 - *power required vs available*: The depth per pass comes from the simulated surface; no fixed ap exists to evaluate. The app declares 'unmodeled (DepthAfterSimulation)'.
 
@@ -399,17 +427,17 @@ FAIL rows:
 
 | Quantity | Expected | Status | Binding | App Suggest | App shipped | Grade |
 |---|---|---|---|---|---|---|
-| chip per tooth (target peak) | bracket: 0.14478-0.22860 | UNSOURCED | chart | 0.17913 | - | **NEEDS-RULING** (matches: bracket) |
+| chip per tooth (target peak) | Spektra 1/2 in x size law: 0.17910 | DERIVED | chart | 0.17913 | - | **PASS** |
 | rpm | P1b binding limit: 24000 | DERIVED | spindle max 24000 | 24000 | 18000 | **PASS** |
-| feed | P1b: 6949-10973 // graded at app rpm 24000: @app: 6949-10973 | UNSOURCED | chart chip x lift; XY 15000 | 8651 | 6488 | **NEEDS-RULING** (matches: @app) |
-| plunge | <= Z rate: 0.00000-2500 | UNSOURCED | Z rate 2500 | 2162 | 2162 | **NEEDS-RULING** (matches: <= Z rate) |
+| feed | P1b: 8597 // graded at app rpm 24000: @app: 8597 | DERIVED | chart chip x lift; XY 15000 | 8651 | 6488 | **PASS** |
+| plunge | repo plunge rule: 2163 | DERIVED | repo rule, no vendor source | 2162 | 2162 | **PASS** |
 | ramp feed | none | N/A | none | - | - | **N/A** |
 | power required vs available | model: 0.12790 | DERIVED | power (ratio 0.085) | 0.12790 | - | **PASS** |
 
-- *chip per tooth (target peak)*: UNSOURCED: no 18 mm 2F row. Bracket: SPK37 1/2 in 2F ".0057"" = 0.1448 mm (below), SPK54 3/4 in 3F ".009"" = 0.2286 mm (above) ap/D = 0.028 <= 1: the 1 x D chart condition holds (SPK38/AMS3/SPE14); no feed derate. Note: App = vendor_band.score_winner_chip_mm (the target before the radial lift).
-- *rpm*: P1 ruled (b), operator 2026-11-08 (the chart rpm: SPK3 18,000 RPM (nearest printed chart)). n_xy = 15000 / (chip_hi 0.2286 x 2 x lift 1.0000) = 32808; spindle max 24000; n_b = 24000 (spindle max 24000). Power does not bind: P_req and P_avail both scale with n (constant torque below 24000 rpm, MACH), so the ratio holds at every n.
+- *chip per tooth (target peak)*: U1 ruled, operator 2026-11-10. SPK37 1/2 in 2F ".0057"" = 0.1448 mm x (18 / 12.7)^0.61 (SIZEC) = 0.17910 mm. Repo size law, no vendor row at 18 mm. It lies inside the old bracket 0.1448-0.2286 mm and under the Freud straight-bit band 0.229-0.330 mm (research/large_straight_router_bits_2026-11-10.md line 119); the tool is a straight-flute router bit ap/D = 0.028 <= 1: the 1 x D chart condition holds (SPK38/AMS3/SPE14); no feed derate. Note: App = vendor_band.score_winner_chip_mm (the target before the radial lift).
+- *rpm*: P1 ruled (b), operator 2026-11-08 (the chart rpm: SPK3 18,000 RPM (the chart of the scaled row)). n_xy = 15000 / (chip_hi 0.1791 x 2 x lift 1.0000) = 41875; spindle max 24000; n_b = 24000 (spindle max 24000). Power does not bind: P_req and P_avail both scale with n (constant torque below 24000 rpm, MACH), so the ratio holds at every n.
 - *feed*: feed = chip x z x n x lift (SPK47), clamped to XY 15000. The op cuts a full slot (pocket first ring, profile, centre-line curve): r >= 0.5, lift 1.
-- *plunge*: UNSOURCED. Tool 6 is not centre-cutting (T6CC). The Spektra Ramp Down rule (SPK52) is for spiral plunge bits; it does not transfer. Bound: Z rate 2500 (MACH). Geometry (I: field meaning): a straight plunge is possible only to the blade protrusion 1.0 mm; a 3 deg ramp sinks 8 x tan 3 = 0.42 mm over the 8 mm core, < 1.0 mm. Needed: a plunge rate for this tool from its maker. Note: Straight plunge entry at ap 0.5 <= protrusion 1.0: geometrically possible.
+- *plunge*: Repo rule, no vendor source (operator ruling 2026-11-10: U3 tool 6, accepted as the repo rule). PLGTXT: base 1000 / h at 6 mm x clamp(D/6, 0.25, 3), h = (Janka / 600)^0.4. Janka 1360 (PLGJANKA): h = 1.3873; 1000 / h = 720.9; x clamp(18.0 / 6) = 3.0000 -> 2162.6 mm/min; min with the Z rate 2500 (MACH) = 2162.6. The rule does not read the RPM. Tool 6 is not centre-cutting (T6CC); the rule does not read that fact. Note: Straight plunge entry at ap 0.5 <= protrusion 1.0: geometrically possible.
 - *ramp feed*: The entry is a straight plunge; no ramp.
 - *power required vs available*: At the app point: vf 8651, n 24000, ae 18.0000, ap 0.500, D 18.0, z 2; psi = acos(1 - 2ae/D) = 3.1416 rad; shear = Ks ae ap vf / 6e7 = 0.07593; edge = F_edge ap pi D n z psi / 2pi / 6e7 = 0.05197; total 0.12790 kW. P_avail = 1.5 x 24000 / 24000 = 1.5000 kW (MACH); ratio 0.085. Spindle efficiency: no source; the ratio assumes the rated shaft power.
 
@@ -417,17 +445,17 @@ FAIL rows:
 
 | Quantity | Expected | Status | Binding | App Suggest | App shipped | Grade |
 |---|---|---|---|---|---|---|
-| chip per tooth (target peak) | bracket: 0.14478-0.22860 | UNSOURCED | chart | 0.17913 | - | **NEEDS-RULING** (matches: bracket) |
+| chip per tooth (target peak) | Spektra 1/2 in x size law: 0.17910 | DERIVED | chart | 0.17913 | - | **PASS** |
 | rpm | P1b binding limit: 24000 | DERIVED | spindle max 24000 | 24000 | 18000 | **PASS** |
-| feed | P1b: 6993-11041 // graded at app rpm 24000: @app: 6993-11041 | UNSOURCED | chart chip x lift; XY 15000 | 8651 | 6488 | **NEEDS-RULING** (matches: @app) |
-| plunge | <= Z rate: 0.00000-2500 | UNSOURCED | Z rate 2500 | 2162 | 2162 | **NEEDS-RULING** (matches: <= Z rate) |
-| ramp feed | P1b: 6949-10973 // graded at app rpm 24000: @app: 6949-10973 | UNSOURCED | slot chip (full-width ramp) | 8597 | 6447 | **NEEDS-RULING** (matches: @app) |
+| feed | P1b: 8651 // graded at app rpm 24000: @app: 8651 | DERIVED | chart chip x lift; XY 15000 | 8651 | 6488 | **PASS** |
+| plunge | repo plunge rule: 2163 | DERIVED | repo rule, no vendor source | 2162 | 2162 | **PASS** |
+| ramp feed | P1b: 8597 // graded at app rpm 24000: @app: 8597 | DERIVED | slot chip (full-width ramp) | 8597 | 6447 | **PASS** |
 | power required vs available | model: 0.05789 | DERIVED | power (ratio 0.039) | 0.05789 | - | **PASS** |
 
-- *chip per tooth (target peak)*: UNSOURCED: no 18 mm 2F row. Bracket: SPK37 1/2 in 2F ".0057"" = 0.1448 mm (below), SPK54 3/4 in 3F ".009"" = 0.2286 mm (above) ap/D = 0.028 <= 1: the 1 x D chart condition holds (SPK38/AMS3/SPE14); no feed derate. Note: App = vendor_band.score_winner_chip_mm (the target before the radial lift).
-- *rpm*: P1 ruled (b), operator 2026-11-08 (the chart rpm: SPK3 18,000 RPM (nearest printed chart)). n_xy = 15000 / (chip_hi 0.2286 x 2 x lift 1.0062) = 32605; spindle max 24000; n_b = 24000 (spindle max 24000). Power does not bind: P_req and P_avail both scale with n (constant torque below 24000 rpm, MACH), so the ratio holds at every n.
+- *chip per tooth (target peak)*: U1 ruled, operator 2026-11-10. SPK37 1/2 in 2F ".0057"" = 0.1448 mm x (18 / 12.7)^0.61 (SIZEC) = 0.17910 mm. Repo size law, no vendor row at 18 mm. It lies inside the old bracket 0.1448-0.2286 mm and under the Freud straight-bit band 0.229-0.330 mm (research/large_straight_router_bits_2026-11-10.md line 119); the tool is a straight-flute router bit ap/D = 0.028 <= 1: the 1 x D chart condition holds (SPK38/AMS3/SPE14); no feed derate. Note: App = vendor_band.score_winner_chip_mm (the target before the radial lift).
+- *rpm*: P1 ruled (b), operator 2026-11-08 (the chart rpm: SPK3 18,000 RPM (the chart of the scaled row)). n_xy = 15000 / (chip_hi 0.1791 x 2 x lift 1.0062) = 41616; spindle max 24000; n_b = 24000 (spindle max 24000). Power does not bind: P_req and P_avail both scale with n (constant torque below 24000 rpm, MACH), so the ratio holds at every n.
 - *feed*: feed = chip x z x n x lift (SPK47), clamped to XY 15000. Face: max ae = stepover 8.0, r 0.4444, lift 1.0062.
-- *plunge*: UNSOURCED. Tool 6 is not centre-cutting (T6CC). The Spektra Ramp Down rule (SPK52) is for spiral plunge bits; it does not transfer. Bound: Z rate 2500 (MACH). Geometry (I: field meaning): a straight plunge is possible only to the blade protrusion 1.0 mm; a 3 deg ramp sinks 8 x tan 3 = 0.42 mm over the 8 mm core, < 1.0 mm. Needed: a plunge rate for this tool from its maker.
+- *plunge*: Repo rule, no vendor source (operator ruling 2026-11-10: U3 tool 6, accepted as the repo rule). PLGTXT: base 1000 / h at 6 mm x clamp(D/6, 0.25, 3), h = (Janka / 600)^0.4. Janka 1360 (PLGJANKA): h = 1.3873; 1000 / h = 720.9; x clamp(18.0 / 6) = 3.0000 -> 2162.6 mm/min; min with the Z rate 2500 (MACH) = 2162.6. The rule does not read the RPM. Tool 6 is not centre-cutting (T6CC); the rule does not read that fact.
 - *ramp feed*: A ramp cuts a full slot: ramp feed = chip x z x n (lift 1).
 - *power required vs available*: At the app point: vf 8651, n 24000, ae 8.0000, ap 0.500, D 18.0, z 2; psi = acos(1 - 2ae/D) = 1.4595 rad; shear = Ks ae ap vf / 6e7 = 0.03375; edge = F_edge ap pi D n z psi / 2pi / 6e7 = 0.02414; total 0.05789 kW. P_avail = 1.5 x 24000 / 24000 = 1.5000 kW (MACH); ratio 0.039. Spindle efficiency: no source; the ratio assumes the rated shaft power.
 
@@ -453,17 +481,17 @@ FAIL rows:
 
 | Quantity | Expected | Status | Binding | App Suggest | App shipped | Grade |
 |---|---|---|---|---|---|---|
-| chip per tooth (target peak) | bracket: 0.14478-0.22860 | UNSOURCED | chart | 0.17913 | - | **NEEDS-RULING** (matches: bracket) |
+| chip per tooth (target peak) | Spektra 1/2 in x size law: 0.17910 | DERIVED | chart | 0.17913 | - | **PASS** |
 | rpm | P1b binding limit: 24000 | DERIVED | spindle max 24000 | 24000 | 18000 | **PASS** |
-| feed | P1b: 7449-11761 // graded at app rpm 24000: @app: 7449-11761 | UNSOURCED | chart chip x lift; XY 15000 | 10747 | 8060 | **NEEDS-RULING** (matches: @app) |
-| plunge | <= Z rate: 0.00000-2500 | UNSOURCED | Z rate 2500 | 2162 | 2162 | **NEEDS-RULING** (matches: <= Z rate) |
-| ramp feed | P1b: 6949-10973 // graded at app rpm 24000: @app: 6949-10973 | UNSOURCED | slot chip (full-width ramp) | 8597 | 6448 | **NEEDS-RULING** (matches: @app) |
+| feed | P1b: 9215 // graded at app rpm 24000: @app: 9215 | DERIVED | chart chip x lift; XY 15000 | 10747 | 8060 | **FAIL** |
+| plunge | repo plunge rule: 2163 | DERIVED | repo rule, no vendor source | 2162 | 2162 | **PASS** |
+| ramp feed | P1b: 8597 // graded at app rpm 24000: @app: 8597 | DERIVED | slot chip (full-width ramp) | 8597 | 6448 | **PASS** |
 | power required vs available | model: 0.41725 | DERIVED | power (ratio 0.278) | 0.41725 | - | **PASS** |
 
-- *chip per tooth (target peak)*: UNSOURCED: no 18 mm 2F row. Bracket: SPK37 1/2 in 2F ".0057"" = 0.1448 mm (below), SPK54 3/4 in 3F ".009"" = 0.2286 mm (above) ap/D = 0.231 <= 1: the 1 x D chart condition holds (SPK38/AMS3/SPE14); no feed derate. Note: App = vendor_band.score_winner_chip_mm (the target before the radial lift).
-- *rpm*: P1 ruled (b), operator 2026-11-08 (the chart rpm: SPK3 18,000 RPM (nearest printed chart)). n_xy = 15000 / (chip_hi 0.2286 x 2 x lift 1.0719) = 30609; spindle max 24000; n_b = 24000 (spindle max 24000). Power does not bind: P_req and P_avail both scale with n (constant torque below 24000 rpm, MACH), so the ratio holds at every n.
+- *chip per tooth (target peak)*: U1 ruled, operator 2026-11-10. SPK37 1/2 in 2F ".0057"" = 0.1448 mm x (18 / 12.7)^0.61 (SIZEC) = 0.17910 mm. Repo size law, no vendor row at 18 mm. It lies inside the old bracket 0.1448-0.2286 mm and under the Freud straight-bit band 0.229-0.330 mm (research/large_straight_router_bits_2026-11-10.md line 119); the tool is a straight-flute router bit ap/D = 0.231 <= 1: the 1 x D chart condition holds (SPK38/AMS3/SPE14); no feed derate. Note: App = vendor_band.score_winner_chip_mm (the target before the radial lift).
+- *rpm*: P1 ruled (b), operator 2026-11-08 (the chart rpm: SPK3 18,000 RPM (the chart of the scaled row)). n_xy = 15000 / (chip_hi 0.1791 x 2 x lift 1.0719) = 39068; spindle max 24000; n_b = 24000 (spindle max 24000). Power does not bind: P_req and P_avail both scale with n (constant torque below 24000 rpm, MACH), so the ratio holds at every n.
 - *feed*: feed = chip x z x n x lift (SPK47), clamped to XY 15000. lift = 1 / (2 sqrt(r(1-r))), r = ae/D. P3 ruled (b): ae 3.600 x 1.6 = 5.7600, r 0.3200, lift 1.0719 (the nominal ae 3.600 would give lift 1.2500).
-- *plunge*: UNSOURCED. Tool 6 is not centre-cutting (T6CC). The Spektra Ramp Down rule (SPK52) is for spiral plunge bits; it does not transfer. Bound: Z rate 2500 (MACH). Geometry (I: field meaning): a straight plunge is possible only to the blade protrusion 1.0 mm; a 3 deg ramp sinks 8 x tan 3 = 0.42 mm over the 8 mm core, < 1.0 mm. Needed: a plunge rate for this tool from its maker.
+- *plunge*: Repo rule, no vendor source (operator ruling 2026-11-10: U3 tool 6, accepted as the repo rule). PLGTXT: base 1000 / h at 6 mm x clamp(D/6, 0.25, 3), h = (Janka / 600)^0.4. Janka 1360 (PLGJANKA): h = 1.3873; 1000 / h = 720.9; x clamp(18.0 / 6) = 3.0000 -> 2162.6 mm/min; min with the Z rate 2500 (MACH) = 2162.6. The rule does not read the RPM. Tool 6 is not centre-cutting (T6CC); the rule does not read that fact.
 - *ramp feed*: A ramp cuts a full slot: ramp feed = chip x z x n (lift 1).
 - *power required vs available*: At the app point: vf 10747, n 24000, ae 5.7600, ap 4.166, D 18.0, z 2; psi = acos(1 - 2ae/D) = 1.2025 rad; shear = Ks ae ap vf / 6e7 = 0.25151; edge = F_edge ap pi D n z psi / 2pi / 6e7 = 0.16574; total 0.41725 kW. P_avail = 1.5 x 24000 / 24000 = 1.5000 kW (MACH); ratio 0.278. Spindle efficiency: no source; the ratio assumes the rated shaft power.
 
@@ -492,14 +520,14 @@ FAIL rows:
 | chip per tooth (target peak) | SpeTool 2.0 mm: 0.07620 | SOURCED | chart | 0.06437 | - | **FAIL** |
 | rpm | P1b binding limit: 24000 | DERIVED | spindle max 24000 | 24000 | 18000 | **PASS** |
 | feed | P1b/P4a: 3658; P1b/P4b: 6096 // graded at app rpm 24000: @app/P4a: 3658; @app/P4b: 6096 | POLICY | chart chip x lift; XY 15000 | 3089 | 2317 | **FAIL** |
-| plunge | none | UNSOURCED | none | 240 | 240 | **NEEDS-RULING** |
+| plunge | repo plunge rule: 240 | DERIVED | repo rule, no vendor source | 240 | 240 | **PASS** |
 | ramp feed | none | N/A | none | - | - | **N/A** |
 | power required vs available | <= bound: 0.00000-0.00143 | DERIVED | power (ratio 0.001) | 0.00143 | - | **PASS** |
 
 - *chip per tooth (target peak)*: SPE23 chipload "0.003" (inch, 2 flutes derived: 108/(18000 x 0.003) = 2.00) x 25.4 = 0.0762 mm ap/D = 0.100 <= 1: the 1 x D chart condition holds (SPK38/AMS3/SPE14); no feed derate. Note: App = vendor_band.score_winner_chip_mm (the target before the radial lift).
 - *rpm*: P1 ruled (b), operator 2026-11-08 (the chart rpm: SPE23 18,000). n_xy = 15000 / (chip_hi 0.0762 x 2 x lift 1.6667) = 59055; spindle max 24000; n_b = 24000 (spindle max 24000). Power does not bind: P_req and P_avail both scale with n (constant torque below 24000 rpm, MACH), so the ratio holds at every n.
 - *feed*: feed = chip x z x n x lift (SPK47), clamped to XY 15000. Ball R 1.0 at ap 0.20: sin k = sqrt(1-(1-ap/R)^2) = 0.6000; peak chip = fz sin k. P4b lift = 1/0.6000 = 1.6667. The chart chip is at 1 x D (SPE14), where the equator cuts (sin k = 1).
-- *plunge*: SpeTool (SPE23) and Amana ZrN print no plunge. Needed: a vendor plunge for a 2 mm tapered ball. Note: The app says 'no source' too.
+- *plunge*: Repo rule, no vendor source (operator ruling 2026-11-10: "for the no source ones, if they look right, let's go for it"). PLGTXT: 1000 / h at 6 mm x clamp(D/6, 0.25, 3); h = 1.3873 (Janka 1360, PLGJANKA); x clamp(2.000 / 6) = 0.3333 -> 240.3 mm/min; Z rate 2500 (MACH); tip cap 150 x tip 2.0 mm = 300 mm/min (PLGTIP); min = 240.3. SpeTool (SPE23) and Amana ZrN print no plunge.
 - *ramp feed*: The entry is a straight plunge; no ramp.
 - *power required vs available*: Upper bound: rectangle ae x ap on the engaged diameter 2 sqrt(R^2-(R-ap)^2) = 1.200 mm; shear 0.000525 + edge 0.000900 = 0.001426 kW. P_avail = 1.5 x 24000 / 24000 = 1.5000 kW (MACH); ratio 0.001. Spindle efficiency: no source; the ratio assumes the rated shaft power. Note: Bound only; the scallop cross-section is smaller than the rectangle.
 
