@@ -3,7 +3,7 @@
 
 [meta]
 project = "planning/rivmap_block_job/nz_wanaka_21_operator.toml"
-graded_build = "dce570108"
+graded_build = "0c67ad7fe"
 tolerance_rel = 0.01
 force_ks_n_mm2 = 58.516267
 force_f_edge_n_mm = 4.594987
@@ -42,6 +42,10 @@ PLGBASE = { file = "crates/rs_cam_core/src/material/mod.rs", line = 788, quote =
 PLGH = { file = "crates/rs_cam_core/src/material/mod.rs", line = 827, quote = "material.feed_scale_factor.janka_reference_lbf 600.0 (line 827); material.feed_scale_factor.exponent 0.4 (line 832): \"law (janka / 600)^0.4 ported from reference/ (not in the repo)\"" }
 PLGJANKA = { file = "crates/rs_cam_core/src/material/mod.rs", line = 153, quote = "WoodSpecies::WhiteOak => 1360.0 (janka_lbf); the project states [job.stock.material.SolidWood] species = \"WhiteOak\" (nz_wanaka_21_operator.toml lines 16-17)" }
 PLGTIP = { file = "crates/rs_cam_core/src/tool_load/plunge_stress.rs", line = 21, quote = "const PLUNGE_CAP_PER_MM_TIP_DIAMETER: f64 = 150.0; (comment: FSWizard / GWizard ranges, not stored in the repo)" }
+PASSLIM = { file = "crates/rs_cam_core/src/adaptive/mod.rs", line = 185, quote = "pub fn pass_engagement_limit(stepover, tool_radius) = search::pass_engagement_ceiling(target_engagement_fraction(stepover, tool_radius))" }
+PASSTOL = { file = "crates/rs_cam_core/src/adaptive/search.rs", line = 599, quote = "pub(crate) const PASS_ENGAGEMENT_TOLERANCE: f64 = 0.05; (line 599; 'matches the libactp reference') pass_engagement_ceiling(target_frac) = target_frac * (1.0 + PASS_ENGAGEMENT_TOLERANCE) (lines 603-605)" }
+PASSSW = { file = "crates/rs_cam_core/src/adaptive/search.rs", line = 895, quote = "PassLoad::swept_width: ceiling = radial_woc_fraction_from_leading_arc(pass_engagement_ceiling(target_engagement_fraction(stepover, tool_radius))) (lines 895-900)" }
+PASSARC = { file = "crates/rs_cam_core/src/ops/adaptive_shared.rs", line = 10, quote = "target_engagement_fraction: alpha = acos(1 - woc / tool_radius); alpha / TAU (lines 10-14). radial_woc_fraction_from_leading_arc(f_arc) = (1 - cos(TAU * f)) / 2, f clamped to [0, 0.5] (lines 36-39)" }
 T6CC = { file = "planning/rivmap_block_job/nz_wanaka_21_operator.toml", line = 384, quote = "[tools.centre_cutting] stated = \"no\", centre_core_diameter_mm = 8.0, blade_protrusion_mm = 1.0 (tool 6, lines 384-387)" }
 
 [[row]]
@@ -182,7 +186,7 @@ expected = "P1b binding limit: 24000"
 candidates = { "P1b binding limit" = [24000.0, 24000.0] }
 grade_candidates = { "P1b binding limit" = [24000.0, 24000.0] }
 n_app = "-"
-derivation = "P1 ruled (b), operator 2026-11-08 (the chart rpm: SPK3 18,000 RPM (the chart of the scaled row)). n_xy = 15000 / (chip_hi 0.1791 x 2 x lift 1.0002) = 41865; spindle max 24000; n_b = 24000 (spindle max 24000). Power does not bind: P_req and P_avail both scale with n (constant torque below 24000 rpm, MACH), so the ratio holds at every n."
+derivation = "P1 ruled (b), operator 2026-11-08 (the chart rpm: SPK3 18,000 RPM (the chart of the scaled row)). n_xy = 15000 / (chip_hi 0.1791 x 2 x lift 1.0610) = 39466; spindle max 24000; n_b = 24000 (spindle max 24000). Power does not bind: P_req and P_avail both scale with n (constant torque below 24000 rpm, MACH), so the ratio holds at every n."
 app_suggest = 24000.0
 app_shipped = 18000.0
 grade = "PASS"
@@ -196,16 +200,16 @@ quantity = "feed"
 unit = "mm/min"
 status = "DERIVED"
 binding = "chart chip x lift; XY 15000"
-expected = "P1b: 8599 // graded at app rpm 24000: @app: 8599"
-candidates = { "P1b" = [8599.100559, 8599.100559] }
-grade_candidates = { "@app" = [8599.100559, 8599.100559] }
+expected = "P1b: 9122 // graded at app rpm 24000: @app: 9122"
+candidates = { "P1b" = [9121.76472, 9121.76472] }
+grade_candidates = { "@app" = [9121.76472, 9121.76472] }
 n_app = 24000.0
-derivation = "feed = chip x z x n x lift (SPK47), clamped to XY 15000. lift = 1 / (2 sqrt(r(1-r))), r = ae/D. P3 ruled (b): ae 5.500 x 1.6 = 8.8000, r 0.4889, lift 1.0002 (the nominal ae 5.500 would give lift 1.0854)."
-app_suggest = 9332.0
+derivation = "feed = chip x z x n x lift (SPK47), clamped to XY 15000. lift = 1 / (2 sqrt(r(1-r))), r = ae/D. P3 with ruling Q2 (2026-11-09): the width is the pass ceiling c D of the stepover 5.500 (clearing_strategy geodesic_adaptive): alpha = acos(1 - s/R) x 1.05 (PASSARC, PASSTOL), c = (1 - cos alpha) / 2 = 0.33285, c D = 5.9913 mm, lift 1.0610 (the nominal stepover would give lift 1.0854)."
+app_suggest = 9123.0
 app_shipped = 8475.0
-grade = "FAIL"
-matched = []
-note = " Shipped 8475 is the operator value: P at ae 8.8 = 1.112 kW = 98.8 % of 1.125 kW."
+grade = "PASS"
+matched = ["@app"]
+note = " Shipped 8475 (at 18000 rpm) is the operator value: P at the ceiling width 5.99 mm = 0.800 kW = 71.1 % of 1.125 kW."
 
 [[row]]
 idx = 1.0
@@ -237,7 +241,7 @@ candidates = { "P1b" = [8596.977062, 8596.977062] }
 grade_candidates = { "@app" = [8596.977062, 8596.977062] }
 n_app = 24000.0
 derivation = "A ramp cuts a full slot: ramp feed = chip x z x n (lift 1). The entry is a helix (r = 0.3 x D = 5.40 mm, pitch 2.00 mm, slope 3.37 deg). H1 ruled \"yes\", operator 2026-11-10: the ramp rule grades a helix entry feed. The path radius is less than the tool radius 9.0 mm, so the contact is full width."
-app_suggest = 8597.0
+app_suggest = 8598.0
 app_shipped = 6448.0
 grade = "PASS"
 matched = ["@app"]
@@ -249,18 +253,18 @@ toolpath = "Back bulk rough 18 mm"
 quantity = "power required vs available"
 unit = "kW"
 status = "DERIVED"
-binding = "power (ratio 0.875)"
-expected = "model: 1.313"
-candidates = { "model" = [1.313236, 1.313236] }
-grade_candidates = { "model" = [1.313236, 1.313236] }
+binding = "power (ratio 0.627)"
+expected = "model: 0.93999"
+candidates = { "model" = [0.939986, 0.939986] }
+grade_candidates = { "model" = [0.939986, 0.939986] }
 n_app = "-"
-derivation = "At the app point: vf 9332, n 24000, ae 8.8000, ap 10.000, D 18.0, z 2; psi = acos(1 - 2ae/D) = 1.5486 rad; shear = Ks ae ap vf / 6e7 = 0.80091; edge = F_edge ap pi D n z psi / 2pi / 6e7 = 0.51233; total 1.31324 kW. P_avail = 1.5 x 24000 / 24000 = 1.5000 kW (MACH); ratio 0.875. Spindle efficiency: no source; the ratio assumes the rated shaft power."
-app_suggest = 1.313236
+derivation = "At the app point: vf 9123, n 24000, ae 5.9913, ap 10.000, D 18.0, z 2; psi = acos(1 - 2ae/D) = 1.2299 rad; shear = Ks ae ap vf / 6e7 = 0.53307; edge = F_edge ap pi D n z psi / 2pi / 6e7 = 0.40691; total 0.93999 kW. P_avail = 1.5 x 24000 / 24000 = 1.5000 kW (MACH); ratio 0.627. Spindle efficiency: no source; the ratio assumes the rated shaft power."
+app_suggest = 0.939986
 app_shipped = "-"
 grade = "PASS"
 matched = ["model"]
 note = ""
-ratio = 0.8755
+ratio = 0.6267
 
 [[row]]
 idx = 2.0
@@ -291,7 +295,7 @@ expected = "P1b binding limit: 24000"
 candidates = { "P1b binding limit" = [24000.0, 24000.0] }
 grade_candidates = { "P1b binding limit" = [24000.0, 24000.0] }
 n_app = "-"
-derivation = "P1 ruled (b), operator 2026-11-08 (the chart rpm: SPK3 18,000 RPM (Onsrud prints no RPM for 60-200: ONS61)). n_xy = 15000 / (chip_hi 0.1778 x 2 x lift 1.0206) = 41330; spindle max 24000; n_b = 24000 (spindle max 24000). Power does not bind: P_req and P_avail both scale with n (constant torque below 24000 rpm, MACH), so the ratio holds at every n."
+derivation = "P1 ruled (b), operator 2026-11-08 (the chart rpm: SPK3 18,000 RPM (Onsrud prints no RPM for 60-200: ONS61)). n_xy = 15000 / (chip_hi 0.1778 x 2 x lift 1.1223) = 37585; spindle max 24000; n_b = 24000 (spindle max 24000). Power does not bind: P_req and P_avail both scale with n (constant torque below 24000 rpm, MACH), so the ratio holds at every n."
 app_suggest = 24000.0
 app_shipped = 18000.0
 grade = "PASS"
@@ -305,12 +309,12 @@ quantity = "feed"
 unit = "mm/min"
 status = "DERIVED"
 binding = "chart chip x lift; XY 15000"
-expected = "P1b: 6222-8710 // graded at app rpm 24000: @app: 6222-8710"
-candidates = { "P1b" = [6221.703947, 8710.385525] }
-grade_candidates = { "@app" = [6221.703947, 8710.385525] }
+expected = "P1b: 6842-9578 // graded at app rpm 24000: @app: 6842-9578"
+candidates = { "P1b" = [6841.700745, 9578.381042] }
+grade_candidates = { "@app" = [6841.700745, 9578.381042] }
 n_app = 24000.0
-derivation = "feed = chip x z x n x lift (SPK47), clamped to XY 15000. lift = 1 / (2 sqrt(r(1-r))), r = ae/D. P3 ruled (b): ae 1.500 x 1.6 = 2.4000, r 0.4000, lift 1.0206 (the nominal ae 1.500 would give lift 1.1547)."
-app_suggest = 7039.0
+derivation = "feed = chip x z x n x lift (SPK47), clamped to XY 15000. lift = 1 / (2 sqrt(r(1-r))), r = ae/D. P3 with ruling Q2 (2026-11-09): the width is the pass ceiling c D of the stepover 1.500 (clearing_strategy geodesic_adaptive): alpha = acos(1 - s/R) x 1.05 (PASSARC, PASSTOL), c = (1 - cos alpha) / 2 = 0.27300, c D = 1.6380 mm, lift 1.1223 (the nominal stepover would give lift 1.1547)."
+app_suggest = 6841.0
 app_shipped = 5279.0
 grade = "PASS"
 matched = ["@app"]
@@ -358,18 +362,18 @@ toolpath = "Back rest 6 mm (cavity, hollow, lakes, pockets)"
 quantity = "power required vs available"
 unit = "kW"
 status = "DERIVED"
-binding = "power (ratio 0.126)"
-expected = "model: 0.18947"
-candidates = { "model" = [0.189468, 0.189468] }
-grade_candidates = { "model" = [0.189468, 0.189468] }
+binding = "power (ratio 0.092)"
+expected = "model: 0.13833"
+candidates = { "model" = [0.138327, 0.138327] }
+grade_candidates = { "model" = [0.138327, 0.138327] }
 n_app = "-"
-derivation = "At the app point: vf 7039, n 24000, ae 2.4000, ap 6.000, D 6.0, z 2; psi = acos(1 - 2ae/D) = 1.3694 rad; shear = Ks ae ap vf / 6e7 = 0.09886; edge = F_edge ap pi D n z psi / 2pi / 6e7 = 0.09061; total 0.18947 kW. P_avail = 1.5 x 24000 / 24000 = 1.5000 kW (MACH); ratio 0.126. Spindle efficiency: no source; the ratio assumes the rated shaft power."
-app_suggest = 0.189468
+derivation = "At the app point: vf 6841, n 24000, ae 1.6380, ap 6.000, D 6.0, z 2; psi = acos(1 - 2ae/D) = 1.0996 rad; shear = Ks ae ap vf / 6e7 = 0.06557; edge = F_edge ap pi D n z psi / 2pi / 6e7 = 0.07276; total 0.13833 kW. P_avail = 1.5 x 24000 / 24000 = 1.5000 kW (MACH); ratio 0.092. Spindle efficiency: no source; the ratio assumes the rated shaft power."
+app_suggest = 0.138327
 app_shipped = "-"
 grade = "PASS"
 matched = ["model"]
 note = ""
-ratio = 0.1263
+ratio = 0.0922
 
 [[row]]
 idx = 3.0
@@ -635,11 +639,11 @@ candidates = { "P1b" = [6096.0, 8534.4] }
 grade_candidates = { "@app" = [6096.0, 8534.4] }
 n_app = 24000.0
 derivation = "feed = chip x z x n x lift (SPK47), clamped to XY 15000. The op cuts a full slot (pocket first ring, profile, centre-line curve): r >= 0.5, lift 1."
-app_suggest = 3165.0
+app_suggest = 7161.0
 app_shipped = 3165.0
-grade = "FAIL"
-matched = []
-note = "Suggest prints no feed; graded on the shipped param."
+grade = "PASS"
+matched = ["@app"]
+note = ""
 
 [[row]]
 idx = 5.0
@@ -1070,11 +1074,11 @@ candidates = { "P1b" = [1828.8, 4267.2] }
 grade_candidates = { "@app" = [1828.8, 4267.2] }
 n_app = 24000.0
 derivation = "feed = chip x z x n x lift (SPK47), clamped to XY 15000. V trace is a slot; the V chart is for the same geometry: lift 1. Printed IPM: 50\"-130\" = 1270-3302 mm/min at 18000."
-app_suggest = 2286.0
+app_suggest = 3048.0
 app_shipped = 2286.0
 grade = "PASS"
 matched = ["@app"]
-note = "Suggest prints no feed; graded on the shipped param."
+note = ""
 
 [[row]]
 idx = 9.0
@@ -1595,7 +1599,7 @@ expected = "P1b binding limit: 24000"
 candidates = { "P1b binding limit" = [24000.0, 24000.0] }
 grade_candidates = { "P1b binding limit" = [24000.0, 24000.0] }
 n_app = "-"
-derivation = "P1 ruled (b), operator 2026-11-08 (the chart rpm: SPK3 18,000 RPM (the chart of the scaled row)). n_xy = 15000 / (chip_hi 0.1791 x 2 x lift 1.0719) = 39068; spindle max 24000; n_b = 24000 (spindle max 24000). Power does not bind: P_req and P_avail both scale with n (constant torque below 24000 rpm, MACH), so the ratio holds at every n."
+derivation = "P1 ruled (b), operator 2026-11-08 (the chart rpm: SPK3 18,000 RPM (the chart of the scaled row)). n_xy = 15000 / (chip_hi 0.1791 x 2 x lift 1.2093) = 34629; spindle max 24000; n_b = 24000 (spindle max 24000). Power does not bind: P_req and P_avail both scale with n (constant torque below 24000 rpm, MACH), so the ratio holds at every n."
 app_suggest = 24000.0
 app_shipped = 18000.0
 grade = "PASS"
@@ -1609,15 +1613,15 @@ quantity = "feed"
 unit = "mm/min"
 status = "DERIVED"
 binding = "chart chip x lift; XY 15000"
-expected = "P1b: 9215 // graded at app rpm 24000: @app: 9215"
-candidates = { "P1b" = [9214.808767, 9214.808767] }
-grade_candidates = { "@app" = [9214.808767, 9214.808767] }
+expected = "P1b: 10396 // graded at app rpm 24000: @app: 10396"
+candidates = { "P1b" = [10396.016337, 10396.016337] }
+grade_candidates = { "@app" = [10396.016337, 10396.016337] }
 n_app = 24000.0
-derivation = "feed = chip x z x n x lift (SPK47), clamped to XY 15000. lift = 1 / (2 sqrt(r(1-r))), r = ae/D. P3 ruled (b): ae 3.600 x 1.6 = 5.7600, r 0.3200, lift 1.0719 (the nominal ae 3.600 would give lift 1.2500)."
-app_suggest = 10747.0
+derivation = "feed = chip x z x n x lift (SPK47), clamped to XY 15000. lift = 1 / (2 sqrt(r(1-r))), r = ae/D. P3 with ruling Q2 (2026-11-09): the width is the pass ceiling c D of the stepover 3.600 (clearing_strategy geodesic_adaptive): alpha = acos(1 - s/R) x 1.05 (PASSARC, PASSTOL), c = (1 - cos alpha) / 2 = 0.21886, c D = 3.9395 mm, lift 1.2093 (the nominal stepover would give lift 1.2500)."
+app_suggest = 10397.0
 app_shipped = 8060.0
-grade = "FAIL"
-matched = []
+grade = "PASS"
+matched = ["@app"]
 note = ""
 
 [[row]]
@@ -1662,18 +1666,18 @@ toolpath = "Front bulk rough 18 mm"
 quantity = "power required vs available"
 unit = "kW"
 status = "DERIVED"
-binding = "power (ratio 0.278)"
-expected = "model: 0.41725"
-candidates = { "model" = [0.417251, 0.417251] }
-grade_candidates = { "model" = [0.417251, 0.417251] }
+binding = "power (ratio 0.200)"
+expected = "model: 0.30061"
+candidates = { "model" = [0.300613, 0.300613] }
+grade_candidates = { "model" = [0.300613, 0.300613] }
 n_app = "-"
-derivation = "At the app point: vf 10747, n 24000, ae 5.7600, ap 4.166, D 18.0, z 2; psi = acos(1 - 2ae/D) = 1.2025 rad; shear = Ks ae ap vf / 6e7 = 0.25151; edge = F_edge ap pi D n z psi / 2pi / 6e7 = 0.16574; total 0.41725 kW. P_avail = 1.5 x 24000 / 24000 = 1.5000 kW (MACH); ratio 0.278. Spindle efficiency: no source; the ratio assumes the rated shaft power."
-app_suggest = 0.417251
+derivation = "At the app point: vf 10397, n 24000, ae 3.9395, ap 4.166, D 18.0, z 2; psi = acos(1 - 2ae/D) = 0.9737 rad; shear = Ks ae ap vf / 6e7 = 0.16642; edge = F_edge ap pi D n z psi / 2pi / 6e7 = 0.13420; total 0.30061 kW. P_avail = 1.5 x 24000 / 24000 = 1.5000 kW (MACH); ratio 0.200. Spindle efficiency: no source; the ratio assumes the rated shaft power."
+app_suggest = 0.300613
 app_shipped = "-"
 grade = "PASS"
 matched = ["model"]
 note = ""
-ratio = 0.2782
+ratio = 0.2004
 
 [[row]]
 idx = 15.0
@@ -1704,7 +1708,7 @@ expected = "P1b binding limit: 24000"
 candidates = { "P1b binding limit" = [24000.0, 24000.0] }
 grade_candidates = { "P1b binding limit" = [24000.0, 24000.0] }
 n_app = "-"
-derivation = "P1 ruled (b), operator 2026-11-08 (the chart rpm: SPK3 18,000 RPM (Onsrud prints no RPM for 60-200: ONS61)). n_xy = 15000 / (chip_hi 0.1778 x 2 x lift 1.0365) = 40698; spindle max 24000; n_b = 24000 (spindle max 24000). Power does not bind: P_req and P_avail both scale with n (constant torque below 24000 rpm, MACH), so the ratio holds at every n."
+derivation = "P1 ruled (b), operator 2026-11-08 (the chart rpm: SPK3 18,000 RPM (Onsrud prints no RPM for 60-200: ONS61)). n_xy = 15000 / (chip_hi 0.1778 x 2 x lift 1.1520) = 36615; spindle max 24000; n_b = 24000 (spindle max 24000). Power does not bind: P_req and P_avail both scale with n (constant torque below 24000 rpm, MACH), so the ratio holds at every n."
 app_suggest = 24000.0
 app_shipped = 18000.0
 grade = "PASS"
@@ -1718,12 +1722,12 @@ quantity = "feed"
 unit = "mm/min"
 status = "DERIVED"
 binding = "chart chip x lift; XY 15000"
-expected = "P1b: 6318-8846 // graded at app rpm 24000: @app: 6318-8846"
-candidates = { "P1b" = [6318.316251, 8845.642751] }
-grade_candidates = { "@app" = [6318.316251, 8845.642751] }
+expected = "P1b: 7023-9832 // graded at app rpm 24000: @app: 7023-9832"
+candidates = { "P1b" = [7022.84744, 9831.986415] }
+grade_candidates = { "@app" = [7022.84744, 9831.986415] }
 n_app = 24000.0
-derivation = "feed = chip x z x n x lift (SPK47), clamped to XY 15000. lift = 1 / (2 sqrt(r(1-r))), r = ae/D. P3 ruled (b): ae 1.382 x 1.6 = 2.2112, r 0.3685, lift 1.0365 (the nominal ae 1.382 would give lift 1.1875)."
-app_suggest = 7239.0
+derivation = "feed = chip x z x n x lift (SPK47), clamped to XY 15000. lift = 1 / (2 sqrt(r(1-r))), r = ae/D. P3 with ruling Q2 (2026-11-09): the width is the pass ceiling c D of the stepover 1.382 (clearing_strategy geodesic_adaptive): alpha = acos(1 - s/R) x 1.05 (PASSARC, PASSTOL), c = (1 - cos alpha) / 2 = 0.25174, c D = 1.5104 mm, lift 1.1520 (the nominal stepover would give lift 1.1875)."
+app_suggest = 7022.0
 app_shipped = 5429.0
 grade = "PASS"
 matched = ["@app"]
@@ -1771,18 +1775,18 @@ toolpath = "Front 3D rough"
 quantity = "power required vs available"
 unit = "kW"
 status = "DERIVED"
-binding = "power (ratio 0.111)"
-expected = "model: 0.16596"
-candidates = { "model" = [0.165958, 0.165958] }
-grade_candidates = { "model" = [0.165958, 0.165958] }
+binding = "power (ratio 0.081)"
+expected = "model: 0.12135"
+candidates = { "model" = [0.121354, 0.121354] }
+grade_candidates = { "model" = [0.121354, 0.121354] }
 n_app = "-"
-derivation = "At the app point: vf 7239, n 24000, ae 2.2112, ap 5.532, D 6.0, z 2; psi = acos(1 - 2ae/D) = 1.3047 rad; shear = Ks ae ap vf / 6e7 = 0.08636; edge = F_edge ap pi D n z psi / 2pi / 6e7 = 0.07960; total 0.16596 kW. P_avail = 1.5 x 24000 / 24000 = 1.5000 kW (MACH); ratio 0.111. Spindle efficiency: no source; the ratio assumes the rated shaft power."
-app_suggest = 0.165958
+derivation = "At the app point: vf 7022, n 24000, ae 1.5104, ap 5.532, D 6.0, z 2; psi = acos(1 - 2ae/D) = 1.0512 rad; shear = Ks ae ap vf / 6e7 = 0.05722; edge = F_edge ap pi D n z psi / 2pi / 6e7 = 0.06413; total 0.12135 kW. P_avail = 1.5 x 24000 / 24000 = 1.5000 kW (MACH); ratio 0.081. Spindle efficiency: no source; the ratio assumes the rated shaft power."
+app_suggest = 0.121354
 app_shipped = "-"
 grade = "PASS"
 matched = ["model"]
 note = ""
-ratio = 0.1106
+ratio = 0.0809
 
 [[row]]
 idx = 16.0

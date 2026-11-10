@@ -4,7 +4,7 @@
 The script computes every expected value from printed source lines and
 physics. It does not import or read the engine. The app values below are
 copies of MCP read-tool output (get_toolpath_params, get_suggest_rationale,
-build dce570108 (P21c)). Re-grade a new build: replace the APP dict, run the script.
+build 0c67ad7fe (P23b)). Re-grade a new build: replace the APP dict, run the script.
 
 Output: wanaka_21.toml, and wanaka_21.md = wanaka_21_header.md + the row tables.
 """
@@ -88,6 +88,17 @@ SRC = {
                  "WoodSpecies::WhiteOak => 1360.0 (janka_lbf); the project states [job.stock.material.SolidWood] species = \"WhiteOak\" (nz_wanaka_21_operator.toml lines 16-17)"),
     "PLGTIP": ("crates/rs_cam_core/src/tool_load/plunge_stress.rs", 21,
                "const PLUNGE_CAP_PER_MM_TIP_DIAMETER: f64 = 150.0; (comment: FSWizard / GWizard ranges, not stored in the repo)"),
+    # The pass ceiling c D (operator ruling Q2 of 2026-11-09, P22_DESIGN section 9).
+    "PASSLIM": ("crates/rs_cam_core/src/adaptive/mod.rs", 185,
+                "pub fn pass_engagement_limit(stepover, tool_radius) = search::pass_engagement_ceiling(target_engagement_fraction(stepover, tool_radius))"),
+    "PASSTOL": ("crates/rs_cam_core/src/adaptive/search.rs", 599,
+                "pub(crate) const PASS_ENGAGEMENT_TOLERANCE: f64 = 0.05; (line 599; 'matches the libactp reference') "
+                "pass_engagement_ceiling(target_frac) = target_frac * (1.0 + PASS_ENGAGEMENT_TOLERANCE) (lines 603-605)"),
+    "PASSSW": ("crates/rs_cam_core/src/adaptive/search.rs", 895,
+               "PassLoad::swept_width: ceiling = radial_woc_fraction_from_leading_arc(pass_engagement_ceiling(target_engagement_fraction(stepover, tool_radius))) (lines 895-900)"),
+    "PASSARC": ("crates/rs_cam_core/src/ops/adaptive_shared.rs", 10,
+                "target_engagement_fraction: alpha = acos(1 - woc / tool_radius); alpha / TAU (lines 10-14). "
+                "radial_woc_fraction_from_leading_arc(f_arc) = (1 - cos(TAU * f)) / 2, f clamped to [0, 0.5] (lines 36-39)"),
     "T6CC": ("planning/rivmap_block_job/nz_wanaka_21_operator.toml", 384,
              "[tools.centre_cutting] stated = \"no\", centre_core_diameter_mm = 8.0, blade_protrusion_mm = 1.0 (tool 6, lines 384-387)"),
 }
@@ -125,6 +136,19 @@ def lift(ae, d):
     return 1.0 / (2.0 * math.sqrt(r * (1.0 - r)))
 
 
+PASS_TOL = 0.05  # PASSTOL
+
+
+def pass_ceiling_width(stepover, d):
+    """The pass ceiling c D: the widest width the planner holds at the full feed.
+    alpha/2pi = acos(1 - s/R)/2pi (PASSARC); x (1 + 0.05) (PASSTOL, PASSLIM);
+    c = (1 - cos(2pi f)) / 2 (PASSARC, PASSSW); width = c D."""
+    r = d / 2.0
+    f = math.acos(max(-1.0, min(1.0, 1.0 - min(stepover, d) / r))) / (2 * math.pi)
+    f = min(max(f * (1.0 + PASS_TOL), 0.0), 0.5)
+    return (1.0 - math.cos(2 * math.pi * f)) / 2.0 * d
+
+
 def psi(ae, d):
     return math.acos(max(-1.0, 1.0 - 2.0 * min(ae, d) / d))
 
@@ -150,16 +174,18 @@ def p_vgroove(vf, n, ap, half_deg, z):
 
 
 # ---------------------------------------------------------------- app values
-# From MCP, build dce570108 (P21c), 2026-11-10. sug = get_suggest_rationale,
+# From MCP, build 0c67ad7fe (P23a, P23b), 2026-11-10. sug = get_suggest_rationale,
 # shp = get_toolpath_params. chip = vendor_band.score_winner_chip_mm.
+# idx 5 and 9 (shipped_power unmodeled): feed, rpm, plunge and ramp are
+# basis.rpm.feed_mm_min, .value, .plunge_mm_min and .ramp_feed_mm_min (P23b).
 # ae = shipped_power.case_ae_mm. The shp values are the stored params (no apply
 # since the read of 2026-11-09), so they still hold the 18000 / 10610 rpm values.
 APP = {
     0: dict(sug=dict(feed=8651, rpm=24000, plunge=2162, ramp=8597, preq=0.05789052125364684, pav=1.5, ae=8.0, ap=0.5, chip=0.17912843029568412),
             shp=dict(feed=6488, rpm=18000, plunge=2162, ramp=6447)),
-    1: dict(sug=dict(feed=9332, rpm=24000, plunge=2162, ramp=8597, preq=1.3132364056722743, pav=1.5, ae=8.8, ap=10.0, chip=0.17912843029568412),
+    1: dict(sug=dict(feed=9123, rpm=24000, plunge=2162, ramp=8598, preq=0.9399861902794343, pav=1.5, ae=5.9913484744305885, ap=10.0, chip=0.17912843029568412),
             shp=dict(feed=8475, rpm=18000, plunge=2162, ramp=6448)),
-    2: dict(sug=dict(feed=7039, rpm=24000, plunge=2500, ramp=6095, preq=0.1894677777723362, pav=1.5, ae=2.4, ap=6.0, chip=0.127),
+    2: dict(sug=dict(feed=6841, rpm=24000, plunge=2500, ramp=6095, preq=0.13832718775276132, pav=1.5, ae=1.6380285007813598, ap=6.0, chip=0.127),
             shp=dict(feed=5279, rpm=18000, plunge=2285, ramp=4571)),
     3: dict(sug=dict(feed=2499, rpm=19685, plunge=2499, ramp=None, preq=0.15415957357877005, pav=1.2303125, ae=6.0, ap=0.1269494538989078, chip=0.0635,
                      padv=True, section="axial_circle"),
@@ -167,10 +193,8 @@ APP = {
     4: dict(sug=dict(feed=2499, rpm=19685, plunge=2499, ramp=None, preq=0.15415957357877005, pav=1.2303125, ae=6.0, ap=0.1269494538989078, chip=0.0635,
                      padv=True, section="axial_circle"),
             shp=dict(feed=1000, rpm=18000, plunge=None, ramp=None)),
-    # idx 5: Suggest prints no feed (shipped_power unmodeled). From P21c it prints
-    # the rpm in basis.rpm.value (24000, lead ruling Q13). The Suggest chip is
-    # score_winner 0.14919; plunge 2500 from basis.plunge.
-    5: dict(sug=dict(feed=None, rpm=24000, plunge=2500, ramp=None, preq=None, pav=None, ae=None, ap=None, chip=0.14919260416145616),
+    # idx 5: shipped_power is unmodeled; feed, rpm and plunge are from basis.rpm (P23b).
+    5: dict(sug=dict(feed=7161, rpm=24000, plunge=2500, ramp=None, preq=None, pav=None, ae=None, ap=None, chip=0.14919260416145616),
             shp=dict(feed=3165, rpm=10610, plunge=1347, ramp=None)),
     6: dict(sug=dict(feed=1347, rpm=24000, plunge=240, ramp=None, preq=0.005881127640829388, pav=1.5, ae=2.0, ap=0.7, chip=0.05501007821762709),
             shp=dict(feed=1010, rpm=18000, plunge=240, ramp=None)),
@@ -178,9 +202,8 @@ APP = {
             shp=dict(feed=1258, rpm=18000, plunge=240, ramp=None)),
     8: dict(sug=dict(feed=1320, rpm=24000, plunge=240, ramp=1320, preq=0.004174473137735276, pav=1.5, ae=2.0, ap=0.5, chip=0.05501007821762709),
             shp=dict(feed=1258, rpm=18000, plunge=240, ramp=1258)),
-    # idx 9: Suggest prints no feed (unmodeled); rpm 24000 from basis.rpm.value;
-    # chip = score_winner 0.127.
-    9: dict(sug=dict(feed=None, rpm=24000, plunge=381, ramp=None, preq=None, pav=None, ae=None, ap=None, chip=0.127),
+    # idx 9: shipped_power is unmodeled; feed, rpm and plunge are from basis.rpm (P23b).
+    9: dict(sug=dict(feed=3048, rpm=24000, plunge=381, ramp=None, preq=None, pav=None, ae=None, ap=None, chip=0.127),
             shp=dict(feed=2286, rpm=18000, plunge=381, ramp=None)),
     10: dict(sug=dict(feed=3048, rpm=24000, plunge=1016, ramp=None, preq=0.03762435947088806, pav=1.5, ae=6.35, ap=2.6, chip=0.0635),
              shp=dict(feed=2286, rpm=18000, plunge=762, ramp=None)),
@@ -190,9 +213,9 @@ APP = {
              shp=dict(feed=6488, rpm=18000, plunge=2162, ramp=6447)),
     13: dict(sug=dict(feed=3048, rpm=24000, plunge=1016, ramp=None, preq=0.0020036641138342754, pav=1.5, ae=6.35, ap=0.6, chip=0.0635),
              shp=dict(feed=2286, rpm=18000, plunge=762, ramp=None)),
-    14: dict(sug=dict(feed=10747, rpm=24000, plunge=2162, ramp=8597, preq=0.41725101982722135, pav=1.5, ae=5.76, ap=4.166, chip=0.17912843029568412),
+    14: dict(sug=dict(feed=10397, rpm=24000, plunge=2162, ramp=8597, preq=0.30061307828110684, pav=1.5, ae=3.939509813596315, ap=4.166, chip=0.17912843029568412),
              shp=dict(feed=8060, rpm=18000, plunge=2162, ramp=6448)),
-    15: dict(sug=dict(feed=7239, rpm=24000, plunge=2500, ramp=6095, preq=0.16595790393057647, pav=1.5, ae=2.2112, ap=5.532, chip=0.127),
+    15: dict(sug=dict(feed=7022, rpm=24000, plunge=2500, ramp=6095, preq=0.12135369231685468, pav=1.5, ae=1.510433184138314, ap=5.532, chip=0.127),
              shp=dict(feed=5429, rpm=18000, plunge=2285, ramp=4571)),
     16: dict(sug=dict(feed=3089, rpm=24000, plunge=240, ramp=None, preq=0.0014255399913028802, pav=1.5, ae=0.8717797887081346, ap=0.2, chip=0.06437017664182963),
              shp=dict(feed=2317, rpm=18000, plunge=240, ramp=None)),
@@ -205,8 +228,8 @@ APP = {
 # trochoid_cap_mult, entry) and the project tools. No engine value.
 TP = {
     0: ("Face back to T1", 6, "face", dict(ae=8.0, ap=0.5, entry="ramp")),
-    1: ("Back bulk rough 18 mm", 6, "adaptive", dict(ae=5.5, cap=1.6, ap=10.0, entry="helix", helix_r=5.4, helix_pitch=2.0)),
-    2: ("Back rest 6 mm (cavity, hollow, lakes, pockets)", 0, "adaptive", dict(ae=1.5, cap=1.6, ap=6.0, entry="ramp")),
+    1: ("Back bulk rough 18 mm", 6, "adaptive", dict(ae=5.5, ap=10.0, entry="helix", helix_r=5.4, helix_pitch=2.0)),
+    2: ("Back rest 6 mm (cavity, hollow, lakes, pockets)", 0, "adaptive", dict(ae=1.5, ap=6.0, entry="ramp")),
     3: ("Pin drill, flip pins", 0, "drill", dict()),
     4: ("Drill light holes 6 mm end mill", 0, "drill", dict()),
     5: ("River channel 6 mm, pass 7 of 7", 0, "slot", dict(ae=6.0, ap=None, entry="plunge")),
@@ -218,8 +241,8 @@ TP = {
     11: ("Face clamp pads 6 mm", 6, "pocket", dict(ae=8.0, ap=0.5, entry="plunge")),
     12: ("Face front to T", 6, "face", dict(ae=8.0, ap=0.5, entry="ramp")),
     13: ("Engrave day labels V60", 2, "vtrace", dict(ap=0.6, entry="plunge")),
-    14: ("Front bulk rough 18 mm", 6, "adaptive", dict(ae=3.6, cap=1.6, ap=4.166, entry="ramp")),
-    15: ("Front 3D rough", 0, "adaptive", dict(ae=1.382, cap=1.6, ap=5.532, entry="ramp")),
+    14: ("Front bulk rough 18 mm", 6, "adaptive", dict(ae=3.6, ap=4.166, entry="ramp")),
+    15: ("Front 3D rough", 0, "adaptive", dict(ae=1.382, ap=5.532, entry="ramp")),
     16: ("Front scallop finish", 4, "ball", dict(ae=0.8717797887081346, ap=0.2, R=1.0, entry="plunge")),
     17: ("Outline profile with tabs", 0, "slot", dict(ae=6.0, ap=1.25, entry="ramp")),
 }
@@ -409,13 +432,16 @@ for idx, (name, tid, kind, g) in TP.items():
     lifts = {}
     lift_deriv = ""
     if kind == "adaptive":
-        ae_cap = g["ae"] * g["cap"]
+        ae_cap = pass_ceiling_width(g["ae"], d)
         la, lb = lift(g["ae"], d), lift(ae_cap, d)
-        # P3 ruled (b), lead 2026-11-08 (operator: "whichever is most correct"): the chart
-        # chip is a peak chip; the peak occurs at the largest engagement, the cap width.
-        lifts = {"cap ae": lb}
-        lift_deriv = ("lift = 1 / (2 sqrt(r(1-r))), r = ae/D. P3 ruled (b): ae %.3f x %.1f = %.4f, r %.4f, lift %.4f (the nominal ae %.3f would give lift %.4f)."
-                      % (g["ae"], g["cap"], ae_cap, ae_cap / d, lb, g["ae"], la))
+        # P3: the chart chip is a peak chip; the peak occurs at the largest engagement
+        # (lead 2026-11-08). Operator ruling Q2 of 2026-11-09 (P22_DESIGN section 9): that
+        # width is the pass ceiling c D; trochoid_cap_mult 1.6 is retired as unsourced.
+        lifts = {"ceiling ae": lb}
+        lift_deriv = ("lift = 1 / (2 sqrt(r(1-r))), r = ae/D. P3 with ruling Q2 (2026-11-09): the width is the pass ceiling c D of the stepover %.3f "
+                      "(clearing_strategy geodesic_adaptive): alpha = acos(1 - s/R) x 1.05 (PASSARC, PASSTOL), c = (1 - cos alpha) / 2 = %.5f, c D = %.4f mm, lift %.4f "
+                      "(the nominal stepover would give lift %.4f)."
+                      % (g["ae"], ae_cap / d, ae_cap, lb, la))
     elif kind == "face":
         la = lift(g["ae"], d)
         lifts = {"face ae": la}
@@ -445,11 +471,10 @@ for idx, (name, tid, kind, g) in TP.items():
     deriv_n.append("n_xy = 15000 / (chip_hi %.4f x %d x lift %.4f) = %.0f; spindle max 24000; n_b = %.0f (%s)."
                    % (chip_hi, z, max_lift, V_XY / (chip_hi * z * max_lift), nb, nb_bind))
     deriv_n.append("Power does not bind: P_req and P_avail both scale with n (constant torque below 24000 rpm, MACH), so the ratio holds at every n.")
-    app_rpm_val = a["sug"]["rpm"] if a["sug"]["rpm"] is not None else a["shp"]["rpm"]
+    app_rpm_val = a["sug"]["rpm"]  # basis.rpm.value on every op (P23b); no fallback to the stored param
     row(idx, "rpm", "DERIVED", nb_bind,
         {k: (v, v) for k, v in pol_n.items()}, " ".join(deriv_n),
-        app_val=app_rpm_val, unit="rpm",
-        note=("Suggest prints no rpm; graded on the shipped param." if a["sug"]["rpm"] is None else ""))
+        app_val=app_rpm_val, unit="rpm")
     ROWS[-1]["app_shipped"] = a["shp"]["rpm"]
 
     # -------------------------------------------------------- feed row
@@ -469,20 +494,19 @@ for idx, (name, tid, kind, g) in TP.items():
     deriv_f = "feed = chip x z x n x lift (SPK47), clamped to XY 15000. " + lift_deriv
     if tid == 1 or tid == 2:
         deriv_f += " Printed IPM: " + ("50\"-130\" = 1270-3302 mm/min at 18000." if tid == 1 else "90\" = 2286 mm/min at 18000.")
-    app_feed = a["sug"]["feed"] if a["sug"]["feed"] is not None else a["shp"]["feed"]
+    app_feed = a["sug"]["feed"]  # basis.rpm.feed_mm_min where shipped_power is unmodeled (P23b); no fallback
     if tid == 1:
         if n_app == 18000:
             gfeed = {"@app": (min(gfeed["@app"][0], 50 * IN), max(gfeed["@app"][1], 130 * IN))}
     row(idx, "feed", feed_status, "chart chip x lift; XY 15000", cands, deriv_f,
-        app_val=app_feed, grade_cands=gfeed, n_app=n_app,
-        note=("Suggest prints no feed; graded on the shipped param." if a["sug"]["feed"] is None else ""))
+        app_val=app_feed, grade_cands=gfeed, n_app=n_app)
     ROWS[-1]["app_shipped"] = a["shp"]["feed"]
     if idx == 6:
         ROWS[-1]["note"] += (" With the 2F log-log chip %.5f in a slot the feed is %.0f at the app rpm; the app's %d is %+.1f %%: it applies the ae 0.8 lift in a pocket that slots."
                              % (c_2mm_log, c_2mm_log * n_app, app_feed, (app_feed / (c_2mm_log * n_app) - 1) * 100))
     if idx == 1:
-        p8475 = p_flat(8475, 18000, g["ae"] * g["cap"], g["ap"], d, z)[0]
-        ROWS[-1]["note"] += " Shipped 8475 is the operator value: P at ae 8.8 = %.3f kW = %.1f %% of 1.125 kW." % (p8475, p8475 / 1.125 * 100)
+        p8475 = p_flat(8475, 18000, ae_cap, g["ap"], d, z)[0]
+        ROWS[-1]["note"] += " Shipped 8475 (at 18000 rpm) is the operator value: P at the ceiling width %.2f mm = %.3f kW = %.1f %% of 1.125 kW." % (ae_cap, p8475, p8475 / 1.125 * 100)
 
     # -------------------------------------------------------- plunge row
     if tid == 0:
@@ -606,7 +630,7 @@ out = ["# Wanaka 21 feeds and speeds acceptance table (machine-readable twin of 
        "",
        "[meta]",
        'project = "planning/rivmap_block_job/nz_wanaka_21_operator.toml"',
-       'graded_build = "dce570108"',
+       'graded_build = "0c67ad7fe"',
        "tolerance_rel = %s" % TOL,
        "force_ks_n_mm2 = %s" % round(KS, 6),
        "force_f_edge_n_mm = %s" % round(FE, 6),

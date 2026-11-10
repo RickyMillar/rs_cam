@@ -6,24 +6,19 @@ the project file, or arithmetic shown in the row. The app is the thing under
 test. No expected value comes from the engine code or from the app output.
 
 - Project: `planning/rivmap_block_job/nz_wanaka_21_operator.toml`, 18 toolpaths, white oak.
-- Graded build: `dce570108` (P21c; commit time 1794272543, 2026-11-10 14:02). The running
-  `rs_cam_gui` binary (`target/release`) has mtime 1794270915 (13:35), EARLIER than the commit;
-  the process started 2026-11-10 13:54. Lead statement: the binary was built from the P21c
-  working tree shortly before the commit, and after that build only test files, the
-  literature-matrix shim and one snapshot changed (no product source). The README step 1 rule
-  (binary later than HEAD) is thus not met to the letter; the lead ruled to grade. HEAD at the
-  read was `3898f1b82` (a planning-only commit after `dce570108`); no edits under `crates/`.
-  Graded by a fresh agent on 2026-11-10: PASS 64, FAIL 6, NEEDS-RULING 28, N/A 10. After the
-  operator rulings of the afternoon (same build, same app values; `grade_dce570108_r2.md`):
-  PASS 92, FAIL 6, NEEDS-RULING 0, N/A 10. The
-  previous grade (build `b9e67b24e`, P20e, 2026-11-09) was PASS 47, FAIL 23, NEEDS-RULING 28,
-  N/A 10; build `4b7aa0e96` (2026-11-08) had the same counts; build `998ac93a3` (before the
-  rulings of 2026-11-08) was PASS 31, FAIL 12, NEEDS-RULING 55.
-- App values: MCP `get_suggest_rationale` (Suggest) and `get_toolpath_params`
-  (shipped), read on 2026-11-10. Nobody applied Suggest after P21c, so each shipped param
-  still holds its old value (18000 rpm; 10610 rpm on idx 5 and 17). The Suggest column is
-  the graded value. Suggest prints the RPM in `basis.rpm.value`, also for idx 5 and 9, where
-  `shipped_power` is unmodeled.
+- Graded build: `0c67ad7fe` (P23a, P23b; commit time 1794276928, 2026-11-10 15:15). The
+  running `rs_cam_gui` binary (`target/release`) has mtime 1794277254 (15:20), later than
+  HEAD; the process started 2026-11-10 15:38; no edits under `crates/`. Graded by a fresh
+  agent on 2026-11-10: PASS 95, FAIL 3, NEEDS-RULING 0, N/A 10. The previous grades: build
+  `dce570108` (P21c) after the six rulings PASS 92, FAIL 6, NEEDS-RULING 0; the same build
+  before them PASS 64, FAIL 6, NEEDS-RULING 28; build `b9e67b24e` (P20e, 2026-11-09) PASS 47,
+  FAIL 23, NEEDS-RULING 28; build `998ac93a3` PASS 31, FAIL 12, NEEDS-RULING 55. N/A is 10
+  in each grade from `4b7aa0e96` on.
+- App values: MCP `get_suggest_rationale` (Suggest, all 18) and `get_toolpath_params`
+  (idx 1 and 14 re-read; the project file did not change since the read at `dce570108`),
+  on 2026-11-10. Nobody applied Suggest, so each stored param still holds its old value
+  (18000 rpm; 10610 rpm on idx 5 and 17). The Suggest column is the graded value. For idx 5
+  and 9 (`shipped_power` unmodeled) the feed, rpm and plunge come from `basis.rpm` (P23b).
 - Script: `derive_wanaka_21.py` computes every number and every grade. The
   file `wanaka_21.toml` is its machine-readable output. The script asserts
   the force-line and chip identities that this page states.
@@ -152,9 +147,21 @@ that the script computes from its SRC lines; no app number is copied.
   also takes the tip cap 150 mm/min per mm of tip (PLGTIP), as the app states it.
 - **H1: yes**, operator. The ramp rule (chip x z x n, lift 1) grades a helix entry feed.
 
+- **P3 width: the pass ceiling `c D`** (recorded 2026-11-10; operator ruling Q2 of 2026-11-09,
+  `P22_DESIGN.md` section 9: "not a magic number; choose the most correct one"; lead: the pass
+  ceiling). The lift of a geodesic Adaptive3d row reads the widest width the planner holds at
+  the full feed: alpha = acos(1 - s/R) x (1 + `PASS_ENGAGEMENT_TOLERANCE` 0.05), c = (1 - cos
+  alpha) / 2 (SRC PASSLIM, PASSTOL, PASSSW, PASSARC). `trochoid_cap_mult` 1.6 is retired as
+  unsourced; the candidate "stepover x 1.6" is deleted. idx 1, 2, 14 and 15 are all
+  `clearing_strategy = geodesic_adaptive`, so the rule covers the four adaptive rows.
+- **No fallback to a stored param** (recorded 2026-11-10, lead). Where `shipped_power` is
+  unmodeled (idx 5, 9) the script grades `basis.rpm.feed_mm_min`, `.value`, `.plunge_mm_min`
+  and `.ramp_feed_mm_min`.
+
 Effect of the rulings: no NEEDS-RULING row is left. Three feed rows now FAIL against a single
 value where a bracket hid the difference: idx 1 and 14 (the app lifts at the nominal stepover,
 P3 ruled the cap width) and idx 6 (the app lifts in a pocket that slots, check C3).
+At build `0c67ad7fe` idx 1 and 14 pass (P23a: the app lifts at the pass ceiling); idx 6 still fails.
 
 ## Questions the operator must rule on
 
@@ -212,14 +219,11 @@ now states `[job.machine.controller] rpm_max = 24000.0` (line 94).
 108 rows (18 toolpaths x 6 quantities).
 
 - Status: SOURCED 6, DERIVED 89, POLICY 1, UNSOURCED 2, N/A 10
-- Grade: PASS 92, NEEDS-RULING 0, FAIL 6, N/A 10
+- Grade: PASS 95, NEEDS-RULING 0, FAIL 3, N/A 10
 
 FAIL rows:
 
-- idx 1 feed: app 9332; expected P1b: 8599 // graded at app rpm 24000: @app: 8599.
-- idx 5 feed: app 3165; expected P1b: 6096-8534 // graded at app rpm 24000: @app: 6096-8534.
 - idx 6 feed: app 1347; expected P1b: 1320 // graded at app rpm 24000: @app: 1320.
-- idx 14 feed: app 10747; expected P1b: 9215 // graded at app rpm 24000: @app: 9215.
 - idx 16 chip per tooth (target peak): app 0.06437; expected SpeTool 2.0 mm: 0.07620.
 - idx 16 feed: app 3089; expected P1b/P4a: 3658; P1b/P4b: 6096 // graded at app rpm 24000: @app/P4a: 3658; @app/P4b: 6096.
 
@@ -249,17 +253,17 @@ FAIL rows:
 |---|---|---|---|---|---|---|
 | chip per tooth (target peak) | Spektra 1/2 in x size law: 0.17910 | DERIVED | chart | 0.17913 | - | **PASS** |
 | rpm | P1b binding limit: 24000 | DERIVED | spindle max 24000 | 24000 | 18000 | **PASS** |
-| feed | P1b: 8599 // graded at app rpm 24000: @app: 8599 | DERIVED | chart chip x lift; XY 15000 | 9332 | 8475 | **FAIL** |
+| feed | P1b: 9122 // graded at app rpm 24000: @app: 9122 | DERIVED | chart chip x lift; XY 15000 | 9123 | 8475 | **PASS** |
 | plunge | repo plunge rule: 2163 | DERIVED | repo rule, no vendor source | 2162 | 2162 | **PASS** |
-| ramp feed | P1b: 8597 // graded at app rpm 24000: @app: 8597 | DERIVED | slot chip (full-width ramp) | 8597 | 6448 | **PASS** |
-| power required vs available | model: 1.313 | DERIVED | power (ratio 0.875) | 1.313 | - | **PASS** |
+| ramp feed | P1b: 8597 // graded at app rpm 24000: @app: 8597 | DERIVED | slot chip (full-width ramp) | 8598 | 6448 | **PASS** |
+| power required vs available | model: 0.93999 | DERIVED | power (ratio 0.627) | 0.93999 | - | **PASS** |
 
 - *chip per tooth (target peak)*: U1 ruled, operator 2026-11-10. SPK37 1/2 in 2F ".0057"" = 0.1448 mm x (18 / 12.7)^0.61 (SIZEC) = 0.17910 mm. Repo size law, no vendor row at 18 mm. It lies inside the old bracket 0.1448-0.2286 mm and under the Freud straight-bit band 0.229-0.330 mm (research/large_straight_router_bits_2026-11-10.md line 119); the tool is a straight-flute router bit ap/D = 0.556 <= 1: the 1 x D chart condition holds (SPK38/AMS3/SPE14); no feed derate. Note: App = vendor_band.score_winner_chip_mm (the target before the radial lift).
-- *rpm*: P1 ruled (b), operator 2026-11-08 (the chart rpm: SPK3 18,000 RPM (the chart of the scaled row)). n_xy = 15000 / (chip_hi 0.1791 x 2 x lift 1.0002) = 41865; spindle max 24000; n_b = 24000 (spindle max 24000). Power does not bind: P_req and P_avail both scale with n (constant torque below 24000 rpm, MACH), so the ratio holds at every n.
-- *feed*: feed = chip x z x n x lift (SPK47), clamped to XY 15000. lift = 1 / (2 sqrt(r(1-r))), r = ae/D. P3 ruled (b): ae 5.500 x 1.6 = 8.8000, r 0.4889, lift 1.0002 (the nominal ae 5.500 would give lift 1.0854). Note:  Shipped 8475 is the operator value: P at ae 8.8 = 1.112 kW = 98.8 % of 1.125 kW.
+- *rpm*: P1 ruled (b), operator 2026-11-08 (the chart rpm: SPK3 18,000 RPM (the chart of the scaled row)). n_xy = 15000 / (chip_hi 0.1791 x 2 x lift 1.0610) = 39466; spindle max 24000; n_b = 24000 (spindle max 24000). Power does not bind: P_req and P_avail both scale with n (constant torque below 24000 rpm, MACH), so the ratio holds at every n.
+- *feed*: feed = chip x z x n x lift (SPK47), clamped to XY 15000. lift = 1 / (2 sqrt(r(1-r))), r = ae/D. P3 with ruling Q2 (2026-11-09): the width is the pass ceiling c D of the stepover 5.500 (clearing_strategy geodesic_adaptive): alpha = acos(1 - s/R) x 1.05 (PASSARC, PASSTOL), c = (1 - cos alpha) / 2 = 0.33285, c D = 5.9913 mm, lift 1.0610 (the nominal stepover would give lift 1.0854). Note:  Shipped 8475 (at 18000 rpm) is the operator value: P at the ceiling width 5.99 mm = 0.800 kW = 71.1 % of 1.125 kW.
 - *plunge*: Repo rule, no vendor source (operator ruling 2026-11-10: U3 tool 6, accepted as the repo rule). PLGTXT: base 1000 / h at 6 mm x clamp(D/6, 0.25, 3), h = (Janka / 600)^0.4. Janka 1360 (PLGJANKA): h = 1.3873; 1000 / h = 720.9; x clamp(18.0 / 6) = 3.0000 -> 2162.6 mm/min; min with the Z rate 2500 (MACH) = 2162.6. The rule does not read the RPM. Tool 6 is not centre-cutting (T6CC); the rule does not read that fact.
 - *ramp feed*: A ramp cuts a full slot: ramp feed = chip x z x n (lift 1). The entry is a helix (r = 0.3 x D = 5.40 mm, pitch 2.00 mm, slope 3.37 deg). H1 ruled "yes", operator 2026-11-10: the ramp rule grades a helix entry feed. The path radius is less than the tool radius 9.0 mm, so the contact is full width.
-- *power required vs available*: At the app point: vf 9332, n 24000, ae 8.8000, ap 10.000, D 18.0, z 2; psi = acos(1 - 2ae/D) = 1.5486 rad; shear = Ks ae ap vf / 6e7 = 0.80091; edge = F_edge ap pi D n z psi / 2pi / 6e7 = 0.51233; total 1.31324 kW. P_avail = 1.5 x 24000 / 24000 = 1.5000 kW (MACH); ratio 0.875. Spindle efficiency: no source; the ratio assumes the rated shaft power.
+- *power required vs available*: At the app point: vf 9123, n 24000, ae 5.9913, ap 10.000, D 18.0, z 2; psi = acos(1 - 2ae/D) = 1.2299 rad; shear = Ks ae ap vf / 6e7 = 0.53307; edge = F_edge ap pi D n z psi / 2pi / 6e7 = 0.40691; total 0.93999 kW. P_avail = 1.5 x 24000 / 24000 = 1.5000 kW (MACH); ratio 0.627. Spindle efficiency: no source; the ratio assumes the rated shaft power.
 
 ### idx 2: Back rest 6 mm (cavity, hollow, lakes, pockets) (tool 0)
 
@@ -267,17 +271,17 @@ FAIL rows:
 |---|---|---|---|---|---|---|
 | chip per tooth (target peak) | Onsrud 60-200 1/4 in: 0.12700-0.17780 | DERIVED | chart | 0.12700 | - | **PASS** |
 | rpm | P1b binding limit: 24000 | DERIVED | spindle max 24000 | 24000 | 18000 | **PASS** |
-| feed | P1b: 6222-8710 // graded at app rpm 24000: @app: 6222-8710 | DERIVED | chart chip x lift; XY 15000 | 7039 | 5279 | **PASS** |
+| feed | P1b: 6842-9578 // graded at app rpm 24000: @app: 6842-9578 | DERIVED | chart chip x lift; XY 15000 | 6841 | 5279 | **PASS** |
 | plunge | Z-bound: 2500 // graded at app rpm 24000: @app: 2500 | DERIVED | Z rate 2500 | 2500 | 2285 | **PASS** |
 | ramp feed | P1b: 6096-8534 // graded at app rpm 24000: @app: 6096-8534 | DERIVED | slot chip (full-width ramp) | 6095 | 4571 | **PASS** |
-| power required vs available | model: 0.18947 | DERIVED | power (ratio 0.126) | 0.18947 | - | **PASS** |
+| power required vs available | model: 0.13833 | DERIVED | power (ratio 0.092) | 0.13833 | - | **PASS** |
 
 - *chip per tooth (target peak)*: ONS46 ".005-.007" x 25.4 = 0.1270-0.1778 mm | P2 ruled (b), operator 2026-11-08: the Onsrud 60-200 row stands for the unbranded tool. Onsrud column read by text position (I). ap/D = 1.000 <= 1: the 1 x D chart condition holds (SPK38/AMS3/SPE14); no feed derate. Note: App = vendor_band.score_winner_chip_mm (the target before the radial lift).
-- *rpm*: P1 ruled (b), operator 2026-11-08 (the chart rpm: SPK3 18,000 RPM (Onsrud prints no RPM for 60-200: ONS61)). n_xy = 15000 / (chip_hi 0.1778 x 2 x lift 1.0206) = 41330; spindle max 24000; n_b = 24000 (spindle max 24000). Power does not bind: P_req and P_avail both scale with n (constant torque below 24000 rpm, MACH), so the ratio holds at every n.
-- *feed*: feed = chip x z x n x lift (SPK47), clamped to XY 15000. lift = 1 / (2 sqrt(r(1-r))), r = ae/D. P3 ruled (b): ae 1.500 x 1.6 = 2.4000, r 0.4000, lift 1.0206 (the nominal ae 1.500 would give lift 1.1547).
+- *rpm*: P1 ruled (b), operator 2026-11-08 (the chart rpm: SPK3 18,000 RPM (Onsrud prints no RPM for 60-200: ONS61)). n_xy = 15000 / (chip_hi 0.1778 x 2 x lift 1.1223) = 37585; spindle max 24000; n_b = 24000 (spindle max 24000). Power does not bind: P_req and P_avail both scale with n (constant torque below 24000 rpm, MACH), so the ratio holds at every n.
+- *feed*: feed = chip x z x n x lift (SPK47), clamped to XY 15000. lift = 1 / (2 sqrt(r(1-r))), r = ae/D. P3 with ruling Q2 (2026-11-09): the width is the pass ceiling c D of the stepover 1.500 (clearing_strategy geodesic_adaptive): alpha = acos(1 - s/R) x 1.05 (PASSARC, PASSTOL), c = (1 - cos alpha) / 2 = 0.27300, c D = 1.6380 mm, lift 1.1223 (the nominal stepover would give lift 1.1547).
 - *plunge*: SPK26 Ramp Down 90" = 2286.0 mm/min at 18000 (SPK52: Ramp Down = Feed / flutes = n x chip; the Spektra 6 mm chip 0.127 sets the plunge, P2 rules the side chip only). P1 (b): 0.127 x 24000 = 3048 > Z 2500 -> 2500. At the app rpm: 0.127 x n.
 - *ramp feed*: A ramp cuts a full slot: ramp feed = chip x z x n (lift 1). Vertical part: 4572 x sin 3deg = 239 mm/min < Ramp Down 2286: the side chip binds.
-- *power required vs available*: At the app point: vf 7039, n 24000, ae 2.4000, ap 6.000, D 6.0, z 2; psi = acos(1 - 2ae/D) = 1.3694 rad; shear = Ks ae ap vf / 6e7 = 0.09886; edge = F_edge ap pi D n z psi / 2pi / 6e7 = 0.09061; total 0.18947 kW. P_avail = 1.5 x 24000 / 24000 = 1.5000 kW (MACH); ratio 0.126. Spindle efficiency: no source; the ratio assumes the rated shaft power.
+- *power required vs available*: At the app point: vf 6841, n 24000, ae 1.6380, ap 6.000, D 6.0, z 2; psi = acos(1 - 2ae/D) = 1.0996 rad; shear = Ks ae ap vf / 6e7 = 0.06557; edge = F_edge ap pi D n z psi / 2pi / 6e7 = 0.07276; total 0.13833 kW. P_avail = 1.5 x 24000 / 24000 = 1.5000 kW (MACH); ratio 0.092. Spindle efficiency: no source; the ratio assumes the rated shaft power.
 
 ### idx 3: Pin drill, flip pins (tool 0)
 
@@ -321,14 +325,14 @@ FAIL rows:
 |---|---|---|---|---|---|---|
 | chip per tooth (target peak) | Onsrud 60-200 1/4 in: 0.12700-0.17780 | DERIVED | chart | 0.14919 | - | **PASS** |
 | rpm | P1b binding limit: 24000 | DERIVED | spindle max 24000 | 24000 | 10610 | **PASS** |
-| feed | P1b: 6096-8534 // graded at app rpm 24000: @app: 6096-8534 | DERIVED | chart chip x lift; XY 15000 | 3165 | 3165 | **FAIL** |
+| feed | P1b: 6096-8534 // graded at app rpm 24000: @app: 6096-8534 | DERIVED | chart chip x lift; XY 15000 | 7161 | 3165 | **PASS** |
 | plunge | Z-bound: 2500 // graded at app rpm 24000: @app: 2500 | DERIVED | Z rate 2500 | 2500 | 1347 | **PASS** |
 | ramp feed | none | N/A | none | - | - | **N/A** |
 | power required vs available | none | UNSOURCED | none | - | - | **PASS** |
 
 - *chip per tooth (target peak)*: ONS46 ".005-.007" x 25.4 = 0.1270-0.1778 mm | P2 ruled (b), operator 2026-11-08: the Onsrud 60-200 row stands for the unbranded tool. Onsrud column read by text position (I). Note: App = vendor_band.score_winner_chip_mm (the target before the radial lift).
 - *rpm*: P1 ruled (b), operator 2026-11-08 (the chart rpm: SPK3 18,000 RPM (Onsrud prints no RPM for 60-200: ONS61)). n_xy = 15000 / (chip_hi 0.1778 x 2 x lift 1.0000) = 42182; spindle max 24000; n_b = 24000 (spindle max 24000). Power does not bind: P_req and P_avail both scale with n (constant torque below 24000 rpm, MACH), so the ratio holds at every n.
-- *feed*: feed = chip x z x n x lift (SPK47), clamped to XY 15000. The op cuts a full slot (pocket first ring, profile, centre-line curve): r >= 0.5, lift 1. Note: Suggest prints no feed; graded on the shipped param.
+- *feed*: feed = chip x z x n x lift (SPK47), clamped to XY 15000. The op cuts a full slot (pocket first ring, profile, centre-line curve): r >= 0.5, lift 1.
 - *plunge*: SPK26 Ramp Down 90" = 2286.0 mm/min at 18000 (SPK52: Ramp Down = Feed / flutes = n x chip; the Spektra 6 mm chip 0.127 sets the plunge, P2 rules the side chip only). P1 (b): 0.127 x 24000 = 3048 > Z 2500 -> 2500. At the app rpm: 0.127 x n.
 - *ramp feed*: The entry is a straight plunge; no ramp.
 - *power required vs available*: The depth per pass comes from the simulated surface; no fixed ap exists to evaluate. The app declares 'unmodeled (DepthAfterSimulation)'.
@@ -393,14 +397,14 @@ FAIL rows:
 |---|---|---|---|---|---|---|
 | chip per tooth (target peak) | AMS 18/30 deg 1F: 0.07620-0.17780 | SOURCED | chart | 0.12700 | - | **PASS** |
 | rpm | P1b binding limit: 24000 | DERIVED | spindle max 24000 | 24000 | 18000 | **PASS** |
-| feed | P1b: 1829-4267 // graded at app rpm 24000: @app: 1829-4267 | DERIVED | chart chip x lift; XY 15000 | 2286 | 2286 | **PASS** |
+| feed | P1b: 1829-4267 // graded at app rpm 24000: @app: 1829-4267 | DERIVED | chart chip x lift; XY 15000 | 3048 | 2286 | **PASS** |
 | plunge | repo plunge rule: 381 | DERIVED | repo rule, no vendor source | 381 | 381 | **PASS** |
 | ramp feed | none | N/A | none | - | - | **N/A** |
 | power required vs available | none | UNSOURCED | none | - | - | **PASS** |
 
 - *chip per tooth (target peak)*: AMS11 18deg and 30deg 1F both "0.003" - 0.007""; 20deg lies between equal cells: 0.0762-0.1778 mm Note: App = vendor_band.score_winner_chip_mm (the target before the radial lift).
 - *rpm*: P1 ruled (b), operator 2026-11-08 (the chart rpm: AMS3 18,000). n_xy = 15000 / (chip_hi 0.1778 x 1 x lift 1.0000) = 84364; spindle max 24000; n_b = 24000 (spindle max 24000). Power does not bind: P_req and P_avail both scale with n (constant torque below 24000 rpm, MACH), so the ratio holds at every n.
-- *feed*: feed = chip x z x n x lift (SPK47), clamped to XY 15000. V trace is a slot; the V chart is for the same geometry: lift 1. Printed IPM: 50"-130" = 1270-3302 mm/min at 18000. Note: Suggest prints no feed; graded on the shipped param.
+- *feed*: feed = chip x z x n x lift (SPK47), clamped to XY 15000. V trace is a slot; the V chart is for the same geometry: lift 1. Printed IPM: 50"-130" = 1270-3302 mm/min at 18000.
 - *plunge*: Repo rule, no vendor source (operator ruling 2026-11-10: "for the no source ones, if they look right, let's go for it"). PLGTXT: 1000 / h at 6 mm x clamp(D/6, 0.25, 3); h = 1.3873 (Janka 1360, PLGJANKA); x clamp(3.175 / 6) = 0.5292 -> 381.4 mm/min; Z rate 2500 (MACH); min = 381.4. No repo source prints a plunge for a 20deg 1F V-bit.
 - *ramp feed*: The entry is a straight plunge; no ramp.
 - *power required vs available*: The depth per pass comes from the simulated surface; no fixed ap exists to evaluate. The app declares 'unmodeled (DepthAfterSimulation)'.
@@ -483,17 +487,17 @@ FAIL rows:
 |---|---|---|---|---|---|---|
 | chip per tooth (target peak) | Spektra 1/2 in x size law: 0.17910 | DERIVED | chart | 0.17913 | - | **PASS** |
 | rpm | P1b binding limit: 24000 | DERIVED | spindle max 24000 | 24000 | 18000 | **PASS** |
-| feed | P1b: 9215 // graded at app rpm 24000: @app: 9215 | DERIVED | chart chip x lift; XY 15000 | 10747 | 8060 | **FAIL** |
+| feed | P1b: 10396 // graded at app rpm 24000: @app: 10396 | DERIVED | chart chip x lift; XY 15000 | 10397 | 8060 | **PASS** |
 | plunge | repo plunge rule: 2163 | DERIVED | repo rule, no vendor source | 2162 | 2162 | **PASS** |
 | ramp feed | P1b: 8597 // graded at app rpm 24000: @app: 8597 | DERIVED | slot chip (full-width ramp) | 8597 | 6448 | **PASS** |
-| power required vs available | model: 0.41725 | DERIVED | power (ratio 0.278) | 0.41725 | - | **PASS** |
+| power required vs available | model: 0.30061 | DERIVED | power (ratio 0.200) | 0.30061 | - | **PASS** |
 
 - *chip per tooth (target peak)*: U1 ruled, operator 2026-11-10. SPK37 1/2 in 2F ".0057"" = 0.1448 mm x (18 / 12.7)^0.61 (SIZEC) = 0.17910 mm. Repo size law, no vendor row at 18 mm. It lies inside the old bracket 0.1448-0.2286 mm and under the Freud straight-bit band 0.229-0.330 mm (research/large_straight_router_bits_2026-11-10.md line 119); the tool is a straight-flute router bit ap/D = 0.231 <= 1: the 1 x D chart condition holds (SPK38/AMS3/SPE14); no feed derate. Note: App = vendor_band.score_winner_chip_mm (the target before the radial lift).
-- *rpm*: P1 ruled (b), operator 2026-11-08 (the chart rpm: SPK3 18,000 RPM (the chart of the scaled row)). n_xy = 15000 / (chip_hi 0.1791 x 2 x lift 1.0719) = 39068; spindle max 24000; n_b = 24000 (spindle max 24000). Power does not bind: P_req and P_avail both scale with n (constant torque below 24000 rpm, MACH), so the ratio holds at every n.
-- *feed*: feed = chip x z x n x lift (SPK47), clamped to XY 15000. lift = 1 / (2 sqrt(r(1-r))), r = ae/D. P3 ruled (b): ae 3.600 x 1.6 = 5.7600, r 0.3200, lift 1.0719 (the nominal ae 3.600 would give lift 1.2500).
+- *rpm*: P1 ruled (b), operator 2026-11-08 (the chart rpm: SPK3 18,000 RPM (the chart of the scaled row)). n_xy = 15000 / (chip_hi 0.1791 x 2 x lift 1.2093) = 34629; spindle max 24000; n_b = 24000 (spindle max 24000). Power does not bind: P_req and P_avail both scale with n (constant torque below 24000 rpm, MACH), so the ratio holds at every n.
+- *feed*: feed = chip x z x n x lift (SPK47), clamped to XY 15000. lift = 1 / (2 sqrt(r(1-r))), r = ae/D. P3 with ruling Q2 (2026-11-09): the width is the pass ceiling c D of the stepover 3.600 (clearing_strategy geodesic_adaptive): alpha = acos(1 - s/R) x 1.05 (PASSARC, PASSTOL), c = (1 - cos alpha) / 2 = 0.21886, c D = 3.9395 mm, lift 1.2093 (the nominal stepover would give lift 1.2500).
 - *plunge*: Repo rule, no vendor source (operator ruling 2026-11-10: U3 tool 6, accepted as the repo rule). PLGTXT: base 1000 / h at 6 mm x clamp(D/6, 0.25, 3), h = (Janka / 600)^0.4. Janka 1360 (PLGJANKA): h = 1.3873; 1000 / h = 720.9; x clamp(18.0 / 6) = 3.0000 -> 2162.6 mm/min; min with the Z rate 2500 (MACH) = 2162.6. The rule does not read the RPM. Tool 6 is not centre-cutting (T6CC); the rule does not read that fact.
 - *ramp feed*: A ramp cuts a full slot: ramp feed = chip x z x n (lift 1).
-- *power required vs available*: At the app point: vf 10747, n 24000, ae 5.7600, ap 4.166, D 18.0, z 2; psi = acos(1 - 2ae/D) = 1.2025 rad; shear = Ks ae ap vf / 6e7 = 0.25151; edge = F_edge ap pi D n z psi / 2pi / 6e7 = 0.16574; total 0.41725 kW. P_avail = 1.5 x 24000 / 24000 = 1.5000 kW (MACH); ratio 0.278. Spindle efficiency: no source; the ratio assumes the rated shaft power.
+- *power required vs available*: At the app point: vf 10397, n 24000, ae 3.9395, ap 4.166, D 18.0, z 2; psi = acos(1 - 2ae/D) = 0.9737 rad; shear = Ks ae ap vf / 6e7 = 0.16642; edge = F_edge ap pi D n z psi / 2pi / 6e7 = 0.13420; total 0.30061 kW. P_avail = 1.5 x 24000 / 24000 = 1.5000 kW (MACH); ratio 0.200. Spindle efficiency: no source; the ratio assumes the rated shaft power.
 
 ### idx 15: Front 3D rough (tool 0)
 
@@ -501,17 +505,17 @@ FAIL rows:
 |---|---|---|---|---|---|---|
 | chip per tooth (target peak) | Onsrud 60-200 1/4 in: 0.12700-0.17780 | DERIVED | chart | 0.12700 | - | **PASS** |
 | rpm | P1b binding limit: 24000 | DERIVED | spindle max 24000 | 24000 | 18000 | **PASS** |
-| feed | P1b: 6318-8846 // graded at app rpm 24000: @app: 6318-8846 | DERIVED | chart chip x lift; XY 15000 | 7239 | 5429 | **PASS** |
+| feed | P1b: 7023-9832 // graded at app rpm 24000: @app: 7023-9832 | DERIVED | chart chip x lift; XY 15000 | 7022 | 5429 | **PASS** |
 | plunge | Z-bound: 2500 // graded at app rpm 24000: @app: 2500 | DERIVED | Z rate 2500 | 2500 | 2285 | **PASS** |
 | ramp feed | P1b: 6096-8534 // graded at app rpm 24000: @app: 6096-8534 | DERIVED | slot chip (full-width ramp) | 6095 | 4571 | **PASS** |
-| power required vs available | model: 0.16596 | DERIVED | power (ratio 0.111) | 0.16596 | - | **PASS** |
+| power required vs available | model: 0.12135 | DERIVED | power (ratio 0.081) | 0.12135 | - | **PASS** |
 
 - *chip per tooth (target peak)*: ONS46 ".005-.007" x 25.4 = 0.1270-0.1778 mm | P2 ruled (b), operator 2026-11-08: the Onsrud 60-200 row stands for the unbranded tool. Onsrud column read by text position (I). ap/D = 0.922 <= 1: the 1 x D chart condition holds (SPK38/AMS3/SPE14); no feed derate. Note: App = vendor_band.score_winner_chip_mm (the target before the radial lift).
-- *rpm*: P1 ruled (b), operator 2026-11-08 (the chart rpm: SPK3 18,000 RPM (Onsrud prints no RPM for 60-200: ONS61)). n_xy = 15000 / (chip_hi 0.1778 x 2 x lift 1.0365) = 40698; spindle max 24000; n_b = 24000 (spindle max 24000). Power does not bind: P_req and P_avail both scale with n (constant torque below 24000 rpm, MACH), so the ratio holds at every n.
-- *feed*: feed = chip x z x n x lift (SPK47), clamped to XY 15000. lift = 1 / (2 sqrt(r(1-r))), r = ae/D. P3 ruled (b): ae 1.382 x 1.6 = 2.2112, r 0.3685, lift 1.0365 (the nominal ae 1.382 would give lift 1.1875).
+- *rpm*: P1 ruled (b), operator 2026-11-08 (the chart rpm: SPK3 18,000 RPM (Onsrud prints no RPM for 60-200: ONS61)). n_xy = 15000 / (chip_hi 0.1778 x 2 x lift 1.1520) = 36615; spindle max 24000; n_b = 24000 (spindle max 24000). Power does not bind: P_req and P_avail both scale with n (constant torque below 24000 rpm, MACH), so the ratio holds at every n.
+- *feed*: feed = chip x z x n x lift (SPK47), clamped to XY 15000. lift = 1 / (2 sqrt(r(1-r))), r = ae/D. P3 with ruling Q2 (2026-11-09): the width is the pass ceiling c D of the stepover 1.382 (clearing_strategy geodesic_adaptive): alpha = acos(1 - s/R) x 1.05 (PASSARC, PASSTOL), c = (1 - cos alpha) / 2 = 0.25174, c D = 1.5104 mm, lift 1.1520 (the nominal stepover would give lift 1.1875).
 - *plunge*: SPK26 Ramp Down 90" = 2286.0 mm/min at 18000 (SPK52: Ramp Down = Feed / flutes = n x chip; the Spektra 6 mm chip 0.127 sets the plunge, P2 rules the side chip only). P1 (b): 0.127 x 24000 = 3048 > Z 2500 -> 2500. At the app rpm: 0.127 x n.
 - *ramp feed*: A ramp cuts a full slot: ramp feed = chip x z x n (lift 1). Vertical part: 4572 x sin 3deg = 239 mm/min < Ramp Down 2286: the side chip binds.
-- *power required vs available*: At the app point: vf 7239, n 24000, ae 2.2112, ap 5.532, D 6.0, z 2; psi = acos(1 - 2ae/D) = 1.3047 rad; shear = Ks ae ap vf / 6e7 = 0.08636; edge = F_edge ap pi D n z psi / 2pi / 6e7 = 0.07960; total 0.16596 kW. P_avail = 1.5 x 24000 / 24000 = 1.5000 kW (MACH); ratio 0.111. Spindle efficiency: no source; the ratio assumes the rated shaft power.
+- *power required vs available*: At the app point: vf 7022, n 24000, ae 1.5104, ap 5.532, D 6.0, z 2; psi = acos(1 - 2ae/D) = 1.0512 rad; shear = Ks ae ap vf / 6e7 = 0.05722; edge = F_edge ap pi D n z psi / 2pi / 6e7 = 0.06413; total 0.12135 kW. P_avail = 1.5 x 24000 / 24000 = 1.5000 kW (MACH); ratio 0.081. Spindle efficiency: no source; the ratio assumes the rated shaft power.
 
 ### idx 16: Front scallop finish (tool 4)
 
