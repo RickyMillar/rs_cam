@@ -64,7 +64,7 @@
 
 use serde::Serialize;
 
-use crate::compute::catalog::{CutSpec, FirstPass, OperationConfig, Radial};
+use crate::compute::catalog::{CutSpec, FirstPass, OperationConfig, PlannerWidth, Radial};
 use crate::feeds::ToolGeometryHint;
 use crate::feeds::envelope::CutPoint;
 use crate::feeds::force::{DeflectionCapRefusal, immersion_angle};
@@ -817,8 +817,10 @@ pub enum PowerCase {
     /// The stated (or the default) width.
     #[default]
     Nominal,
-    /// The planner's engagement cap: `trochoid_cap_mult x ae`, at most D
-    /// (3D Rough).
+    /// The widest width that the planner holds: the pass ceiling `c D` (2D
+    /// Adaptive, 3D Rough under Geodesic Adaptive; P23a), or the unsourced
+    /// `trochoid_cap_mult x ae`, at most D (3D Rough under Contour
+    /// Parallel).
     PlannerCap,
     /// A slot (ae = D): `FirstPass::Slot` or `Radial::Slot`.
     Slot,
@@ -841,42 +843,50 @@ impl PowerCase {
 }
 
 /// The set of pre-sim power cases of one cut (K7 change 3). Built from the
-/// `CutSpec` (K1) and the planner cap; [`Self::NOMINAL`] is the set of a
-/// cut that states no slot and no cap.
+/// `CutSpec` (K1) and the planner width; [`Self::NOMINAL`] is the set of a
+/// cut that states no slot and no planner bound.
+///
+/// P23a: the set also answers [`Self::full_feed_width`], the width at which
+/// Suggest sizes the chip-thinning lift. One value, built in one place, for
+/// the power case and the lift.
 #[derive(Debug, Clone, Copy, PartialEq)]
 pub struct PowerCases {
     slot: bool,
-    planner_cap_mult: Option<f64>,
+    planner: PlannerWidth,
 }
 
 impl PowerCases {
     /// The nominal case only.
     pub const NOMINAL: Self = Self {
         slot: false,
-        planner_cap_mult: None,
+        planner: PlannerWidth::None,
     };
 
-    /// The cases that `spec` admits. `planner_cap_mult` is the planner's
-    /// engagement cap as a multiple of the nominal width (3D Rough
-    /// `trochoid_cap_mult`); a value that is not finite and positive gives
-    /// no cap case.
+    /// The cases that `spec` admits, with the planner width `planner`
+    /// ([`OperationConfig::planner_width`]).
     #[must_use]
-    pub fn of_cut(spec: &CutSpec, planner_cap_mult: Option<f64>) -> Self {
+    pub fn of_cut(spec: &CutSpec, planner: PlannerWidth) -> Self {
         let slot =
             matches!(spec.first_pass, FirstPass::Slot) || matches!(spec.radial, Radial::Slot);
-        Self {
-            slot,
-            planner_cap_mult: planner_cap_mult.filter(|m| m.is_finite() && *m > 0.0),
-        }
+        Self { slot, planner }
     }
 
-    /// The cases of `operation`: its `CutSpec` and its planner cap.
+    /// The cases of `operation`: its `CutSpec` and its planner width.
     #[must_use]
     pub fn of_operation(operation: &OperationConfig) -> Self {
-        Self::of_cut(
-            &operation.cut_spec(),
-            operation.planner_engagement_cap_mult(),
-        )
+        Self::of_cut(&operation.cut_spec(), operation.planner_width())
+    }
+
+    /// P23a: the width (mm) at which the chip-thinning lift is sized: the
+    /// widest width that the planner holds at the full feed
+    /// ([`PlannerWidth::full_feed_width_mm`]); the nominal width `ae` for
+    /// an op with no planner bound. `d` is the tool diameter. Every reader
+    /// of the Suggest lift takes its width here: Step 5, the unlifted feed,
+    /// the power ladder's width rung, pass 9, the efficiency figure and the
+    /// load context of the gates.
+    #[must_use]
+    pub fn full_feed_width(self, ae: f64, d: f64) -> f64 {
+        self.planner.full_feed_width_mm(ae, d)
     }
 
     /// Each admitted case with its width, in the tie order (a later case
@@ -885,8 +895,8 @@ impl PowerCases {
     #[must_use]
     pub fn widths(self, ae: f64, d: f64) -> Vec<(PowerCase, f64)> {
         let mut out = vec![(PowerCase::Nominal, ae)];
-        if let Some(m) = self.planner_cap_mult {
-            out.push((PowerCase::PlannerCap, (m * ae).min(d)));
+        if let Some(width) = self.planner.power_width_mm(ae, d) {
+            out.push((PowerCase::PlannerCap, width));
         }
         if self.slot {
             out.push((PowerCase::Slot, d));

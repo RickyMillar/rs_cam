@@ -142,13 +142,24 @@ pub(super) fn check_plunge_entry_stability(
 /// diameter (`feeds::effective_diameter` at `ap`), and a finish pass takes no
 /// lift (L2).
 fn geometry_feed_factor(
-    geom: ToolGeometryHint,
+    operation: &OperationConfig,
     tool: &ToolConfig,
     thinning: crate::feeds::geometry::RadialThinning,
     ae_mm: f64,
     ap_mm: f64,
 ) -> f64 {
-    thinning.lift(ae_mm, kept_engaged_diameter(geom, tool, ap_mm).mm())
+    thinning.lift(
+        full_feed_width(operation, tool, ae_mm),
+        kept_engaged_diameter(tool.geometry_hint(), tool, ap_mm).mm(),
+    )
+}
+
+/// P23a: the width of the calculator's lift at the nominal width `ae_mm`:
+/// the widest width that the op's planner holds at the full feed
+/// (`PowerCases::full_feed_width`, the one rule of Step 5).
+fn full_feed_width(operation: &OperationConfig, tool: &ToolConfig, ae_mm: f64) -> f64 {
+    crate::feeds::engagement::PowerCases::of_operation(operation)
+        .full_feed_width(ae_mm, tool.diameter)
 }
 
 /// The engaged diameter of `tool` at the depth `ap_mm`, as pass 9 and the
@@ -203,7 +214,7 @@ pub(super) fn unlifted_feed_at_kept_geometry(
     crate::feeds::geometry::UnliftedFeed::at_cut(
         feed_mm_min,
         crate::feeds::geometry::RadialThinning::of(family, role),
-        ae,
+        full_feed_width(operation, tool, ae),
         kept_engaged_diameter(tool.geometry_hint(), tool, ap),
     )
 }
@@ -306,17 +317,16 @@ pub(super) fn rescale_feed_to_final_geometry(
         return warnings;
     }
 
-    let geom = tool.geometry_hint();
     let (family, role) = operation.feeds_style();
     let thinning = crate::feeds::geometry::RadialThinning::of(family, role);
     let factor_at_calculator = geometry_feed_factor(
-        geom,
+        operation,
         tool,
         thinning,
         calc.radial_width_mm,
         calc.axial_depth_mm,
     );
-    let factor_at_final = geometry_feed_factor(geom, tool, thinning, final_ae, final_ap);
+    let factor_at_final = geometry_feed_factor(operation, tool, thinning, final_ae, final_ap);
     if !(usable(factor_at_calculator) && usable(factor_at_final)) {
         return warnings;
     }

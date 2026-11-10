@@ -25,8 +25,8 @@ pub use capabilities::{
 };
 
 pub use cut_spec::{
-    Axial, AxialRule, CutRule, CutSpec, DEPTH_AFTER_SIMULATION, FirstPass, Mm, Radial, RadialRule,
-    Stated, TotalDepth,
+    Axial, AxialRule, CutRule, CutSpec, DEPTH_AFTER_SIMULATION, FirstPass, Mm, PlannerWidth,
+    Radial, RadialRule, Stated, TotalDepth,
 };
 
 pub(crate) use entry_contract::entry_records;
@@ -1340,22 +1340,38 @@ impl OperationConfig {
         }
     }
 
-    /// K7 (feeds contract P9): the planner's engagement cap as a multiple of
-    /// the nominal width, for the pre-sim power case `PlannerCap`. Only 3D
-    /// Rough states one: the planner's value
-    /// (`adaptive3d::effective_trochoid_cap_mult` of
-    /// `Adaptive3dConfig::trochoid_cap_mult`; the folder file says the field
-    /// is load-only, and this read is a load read).
+    /// The widest width that the op's planner holds at the full feed
+    /// (K7, feeds contract P9; P23a). The pre-sim power case `PlannerCap`
+    /// and the chip-thinning lift of Suggest read it
+    /// ([`crate::feeds::engagement::PowerCases`]).
+    ///
+    /// - 2D Adaptive and 3D Rough under `GeodesicAdaptive`: the pass
+    ///   ceiling `c D` ([`PlannerWidth::PassCeiling`]). Both planners hold
+    ///   every fed step to it (`adaptive/CLAUDE.md`, `adaptive3d/CLAUDE.md`
+    ///   P22f-2a).
+    /// - 3D Rough under `ContourParallel`: that plan holds no bound. It
+    ///   keeps the multiplier of the load-only `trochoid_cap_mult`
+    ///   (`adaptive3d::effective_trochoid_cap_mult`) for the power case
+    ///   only. The value has no source (operator ruling Q2); it stays
+    ///   until a contour-parallel width rule exists (P23a open item).
+    /// - Every other op: no planner bound.
     #[must_use]
-    pub fn planner_engagement_cap_mult(&self) -> Option<f64> {
+    pub fn planner_width(&self) -> PlannerWidth {
         match self {
-            OperationConfig::Adaptive3d(c) => Some(crate::adaptive3d::effective_trochoid_cap_mult(
-                c.trochoid_cap_mult,
-            )),
+            OperationConfig::Adaptive3d(c) => match c.clearing_strategy {
+                super::operation_configs::ClearingStrategy::GeodesicAdaptive => {
+                    PlannerWidth::PassCeiling
+                }
+                super::operation_configs::ClearingStrategy::ContourParallel => {
+                    PlannerWidth::CapMult(crate::adaptive3d::effective_trochoid_cap_mult(
+                        c.trochoid_cap_mult,
+                    ))
+                }
+            },
+            OperationConfig::Adaptive(_) => PlannerWidth::PassCeiling,
             OperationConfig::Face(_)
             | OperationConfig::Pocket(_)
             | OperationConfig::Profile(_)
-            | OperationConfig::Adaptive(_)
             | OperationConfig::VCarve(_)
             | OperationConfig::Inlay(_)
             | OperationConfig::InlayPlug(_)
@@ -1375,7 +1391,7 @@ impl OperationConfig {
             | OperationConfig::RadialFinish(_)
             | OperationConfig::HorizontalFinish(_)
             | OperationConfig::ProjectCurve(_)
-            | OperationConfig::AlignmentPinDrill(_) => None,
+            | OperationConfig::AlignmentPinDrill(_) => PlannerWidth::None,
         }
     }
 

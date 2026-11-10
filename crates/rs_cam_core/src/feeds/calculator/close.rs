@@ -37,7 +37,18 @@ impl Entry {
 /// P18 (review D14): the feed of `s` before the radial chip-thinning lift,
 /// at the shipped width and engaged diameter. The plunge reads it.
 fn unlifted_feed(s: &CalcState) -> UnliftedFeed {
-    UnliftedFeed::at_cut(s.feed.feed, s.feed.thinning, s.cut.ae, s.feed.effective_d)
+    UnliftedFeed::at_cut(
+        s.feed.feed,
+        s.feed.thinning,
+        lift_width(s.input, s.cut.ae),
+        s.feed.effective_d,
+    )
+}
+
+/// P23a: the width of the Step 5 lift at the nominal width `ae`
+/// (`PowerCases::full_feed_width`).
+fn lift_width(input: &crate::feeds::FeedsInput, ae: f64) -> f64 {
+    input.power_cases.full_feed_width(ae, input.tool_diameter)
 }
 
 /// The basis of the plunge at `feed` and `rpm`: the binding term of the
@@ -314,7 +325,12 @@ pub(super) fn result(s: CalcState, entry: Entry) -> FeedsResult {
     // power basis.
     let plunge_value_basis = plunge_value_basis(
         &plunge_basis,
-        UnliftedFeed::at_cut(feed.feed, feed.thinning, cut.ae, feed.effective_d),
+        UnliftedFeed::at_cut(
+            feed.feed,
+            feed.thinning,
+            lift_width(input, cut.ae),
+            feed.effective_d,
+        ),
         speed.rpm,
         &feed.basis,
         &material_plunge_row,

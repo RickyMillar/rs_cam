@@ -192,6 +192,63 @@ pub enum TotalDepth {
     None(&'static str),
 }
 
+/// Feeds contract P23a: the widest width that an op's planner holds at the
+/// full feed ([`super::OperationConfig::planner_width`]). The chip-thinning
+/// lift of Suggest and the pre-sim power case `PlannerCap` read
+/// [`Self::full_feed_width_mm`] and [`Self::power_width_mm`].
+#[derive(Debug, Clone, Copy, PartialEq)]
+pub enum PlannerWidth {
+    /// The planner holds no bound: the nominal width.
+    None,
+    /// The planner holds every fed step to the pass ceiling `c D`: the
+    /// swept width of the stated stepover with the planner's tolerance
+    /// (operator ruling Q2, `P22_DESIGN.md` section 9).
+    PassCeiling,
+    /// A multiple of the nominal width, at most D, for the power case
+    /// only. Unsourced (the load-only `trochoid_cap_mult`); the lift does
+    /// not read it.
+    CapMult(f64),
+}
+
+impl PlannerWidth {
+    /// The pass ceiling width `c D` (mm) of the stepover `ae_mm` on a tool
+    /// of the diameter `d_mm`. The planner's own two functions:
+    /// `adaptive::pass_engagement_limit` (the contact fraction with the
+    /// tolerance) through `radial_woc_fraction_from_leading_arc` (the
+    /// radial fraction), the composition that `PassLoad::swept_width` and
+    /// the 3D slice (`adaptive3d/clearing.rs`) hold a step to.
+    #[must_use]
+    pub fn pass_ceiling_mm(ae_mm: f64, d_mm: f64) -> f64 {
+        let c = crate::ops::adaptive_shared::radial_woc_fraction_from_leading_arc(
+            crate::adaptive::pass_engagement_limit(ae_mm, d_mm / 2.0),
+        );
+        c * d_mm
+    }
+
+    /// The width (mm) at which Suggest sizes the chip-thinning lift: the
+    /// widest width that the planner holds at the full feed. With no such
+    /// bound it is the nominal width `ae_mm`.
+    #[must_use]
+    pub fn full_feed_width_mm(self, ae_mm: f64, d_mm: f64) -> f64 {
+        match self {
+            Self::PassCeiling if ae_mm > 0.0 && d_mm > 0.0 => Self::pass_ceiling_mm(ae_mm, d_mm),
+            Self::PassCeiling | Self::None | Self::CapMult(_) => ae_mm,
+        }
+    }
+
+    /// The width (mm) of the pre-sim power case `PlannerCap`, or `None`
+    /// when the op has no such case.
+    #[must_use]
+    pub fn power_width_mm(self, ae_mm: f64, d_mm: f64) -> Option<f64> {
+        match self {
+            Self::None => None,
+            Self::PassCeiling => Some(self.full_feed_width_mm(ae_mm, d_mm)),
+            Self::CapMult(m) if m.is_finite() && m > 0.0 => Some((m * ae_mm).min(d_mm)),
+            Self::CapMult(_) => None,
+        }
+    }
+}
+
 /// What the first pass meets (P4 decision D1). The stock source is not in
 /// the config, so P4 has no fresh-stock or rest-stock value.
 #[derive(Debug, Clone, Copy, PartialEq, Eq)]

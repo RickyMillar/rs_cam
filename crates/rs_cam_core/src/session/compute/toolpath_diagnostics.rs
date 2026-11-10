@@ -47,7 +47,11 @@ impl ProjectSession {
                 tool.body().max_cut_diameter_mm(),
                 ap,
             );
-            crate::feeds::geometry::RadialThinning::of(family, pass_role).lift(ae, d_eng.mm())
+            // P23a: the width of Suggest's lift (the pass ceiling of an
+            // adaptive plan; `PowerCases::full_feed_width`).
+            let width = crate::feeds::engagement::PowerCases::of_operation(&tc.operation)
+                .full_feed_width(ae, tool_cfg.diameter);
+            crate::feeds::geometry::RadialThinning::of(family, pass_role).lift(width, d_eng.mm())
         });
         // S11: an op with no feed has no load context.
         let op_feed = tc.operation.feed_rate()?;

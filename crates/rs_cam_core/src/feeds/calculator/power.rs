@@ -360,7 +360,14 @@ fn rungs2_3_geometry(
     let thinning = feed.thinning;
     let effective_d = feed.effective_d;
     let radial_lift = feed.radial_lift;
-    let lift_at = |c: f64| thinning.lift(c, effective_d.mm());
+    // P23a: the lift at a candidate width reads the full-feed width of that
+    // width (the pass ceiling is a function of the stepover).
+    let lift_at = |c: f64| {
+        thinning.lift(
+            input.power_cases.full_feed_width(c, input.tool_diameter),
+            effective_d.mm(),
+        )
+    };
     let feed_at_width = |c: f64| raw_feed * lift_at(c) / radial_lift;
     let ap = cut.ap;
     if ladder.required_at(rpm, ap, cut.ae, raw_feed) > ladder.budget_at(rpm)

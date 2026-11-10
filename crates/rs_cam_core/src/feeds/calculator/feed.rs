@@ -99,7 +99,15 @@ pub(super) fn step5_feed(input: &FeedsInput, speed: &Speed, chip: &Chip, cut: &C
     // 9c sets its feed. P11b2: the one rule (`geometry::RadialThinning`)
     // that the post-sim gate and the modulator also read.
     let thinning = geometry::RadialThinning::of(input.operation, input.pass_role);
-    let radial_lift = thinning.lift(cut.ae, effective_d.mm());
+    // P23a: the lift is sized at the widest width that the planner holds at
+    // the full feed (the pass ceiling `c D` of an adaptive plan), not at
+    // the nominal stepover: the plan may cut that wide at this feed, and
+    // the peak chip there must be the band chip. An op with no planner
+    // bound reads the nominal width (`PowerCases::full_feed_width`).
+    let radial_lift = thinning.lift(
+        input.power_cases.full_feed_width(cut.ae, d),
+        effective_d.mm(),
+    );
     let axial_thinning = match input.tool_geometry {
         ToolGeometryHint::Ball | ToolGeometryHint::TaperedBall { .. } => {
             geometry::axial_chip_thinning_factor_for_ball(d, effective_d.mm())
