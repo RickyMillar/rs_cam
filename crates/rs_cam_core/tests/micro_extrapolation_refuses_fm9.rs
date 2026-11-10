@@ -23,16 +23,18 @@
 //!
 //! The arms:
 //!
-//! - a 0.5 mm tapered ball Scallop in hardwood refuses, and the text names
-//!   0.5 mm and the row's 3.175 mm;
+//! - a 0.5 mm tapered ball Scallop in hardwood ships the printed SpeTool
+//!   0.5 mm row (P23c; it refused before, on the 3.175 mm row), and a tip
+//!   below the chart's printed range still refuses;
 //! - a 0.3 mm tapered ball Parallel (DropCutter) in hardwood refuses on the
 //!   tip floor (ruling B1), though the 0.5 mm SpeTool row is inside the 2x
 //!   window; a 0.3 mm tapered Scallop, which matches no row at all (every
 //!   Scallop row is more than 10x the tip), refuses on the same floor and
 //!   does not fall to the formula;
 //! - a 1.0 mm tapered ball Scallop in plywood refuses. In hardwood the same
-//!   cell refused until the operator ruling of 2026-10-01; it now ships the
-//!   printed Amana ZrN v8 1 mm row through the v8 family rule;
+//!   cell refused until the operator ruling of 2026-10-01; it then shipped
+//!   the printed Amana ZrN v8 1 mm row, and since P23c it ships the printed
+//!   SpeTool 1 mm point (the lower chip of the two printed rows);
 //! - a 1.0 mm ball nose Scallop in hardwood refuses: the only ball Scallop
 //!   rows are the Ø6 hardwood rows (6x); the 1 mm ball rows are Parallel
 //!   rows, and the MDF one is another material category;
@@ -57,6 +59,7 @@
 use rs_cam_core::compute::catalog::OperationType;
 use rs_cam_core::compute::tool_config::ToolFact;
 use rs_cam_core::compute::{ToolConfig, ToolId, ToolType};
+use rs_cam_core::feeds::extrapolation::{FAMILY_RULES, FamilyRule};
 use rs_cam_core::feeds::suggest::{
     StockContext, SuggestContext, SuggestParamsInput, SuggestedParams, suggest_params,
 };
@@ -188,25 +191,101 @@ fn the_rule_by_hand_fm9() {
     assert!(tapered_tip_floor_refusal(ToolFamily::BallNose, 0.3).is_none());
 }
 
+/// The SpeTool 2D/3D tapered rule of [`FAMILY_RULES`] (feeds contract P23c).
+fn spetool_rule() -> &'static FamilyRule {
+    FAMILY_RULES
+        .iter()
+        .find(|r| r.tool_subfamily == "spetool_2d3d_tapered")
+        .expect("the SpeTool 2D/3D tapered rule exists")
+}
+
+/// Re-premised 2026-11-11 (lead ruling). This arm was
+/// `a_half_millimetre_tapered_scallop_refuses_with_both_sizes_fm9`: the
+/// nearest Scallop row was 3.175 mm, 6.35x the tip, and the cell refused.
+/// P23c: the SpeTool 2D/3D tapered chart serves the 3D finish families
+/// (operator ruling 2026-11-10: a row printed at the tool's exact size is a
+/// source). The chart prints a 0.5 mm tip, so the cell ships that row.
+///
+/// The stored source line (`data/vendor_lut/sources/spetool_2d3d_tapered.txt`
+/// line 17): "0.5 | Wood, MDF, Sign-Foam | 18,000 | 0.0007 | 25.2 | 0.5 |
+/// 0.2". The chip is 0.0007 in x 25.4 = 0.01778 mm. The shipped feed is
+/// that chip x 2 flutes x the printed 18,000 RPM = 640.08 mm/min: no size
+/// scaling and no lift (a finish pass does not thin).
 #[test]
-fn a_half_millimetre_tapered_scallop_refuses_with_both_sizes_fm9() {
-    let err = suggest(
+fn a_half_millimetre_tapered_scallop_ships_the_printed_tip_row_fm9() {
+    const PRINTED_CHIP_IN: f64 = 0.0007;
+    const PRINTED_RPM: f64 = 18_000.0;
+    const ROW: &str = "spetool-tapered-hardwood-parallel-0500-2f";
+    let printed_mm = PRINTED_CHIP_IN * 25.4;
+    // The tip is the lower end of the range that the rule states.
+    let tip = spetool_rule().printed_mm.0;
+    assert_eq!(
+        tip, TAPERED_MIN_TIP_MM,
+        "the chart's lowest tip is the B1 floor"
+    );
+
+    let row = EMBEDDED_LUT
+        .observations
+        .iter()
+        .find(|o| o.observation_id == ROW)
+        .expect("the SpeTool 0.5 mm hardwood row loads");
+    assert_eq!(row.diameter_mm, Some(tip));
+    assert_eq!(
+        row.chipload_min_mm_tooth, None,
+        "the chart prints one value"
+    );
+    assert!((row.chipload_max_mm_tooth.expect("a printed value") - printed_mm).abs() < 1e-12);
+
+    let s = suggest(
         OperationType::Scallop,
-        &tool_of(ToolType::TaperedBallNose, 0.5),
+        &tool_of(ToolType::TaperedBallNose, tip),
         &hardwood(),
     )
-    .expect_err("a 0.5 mm tapered ball has no Scallop chart row near its size");
-    let reason = size_reason(&err);
-    // Ruling A1: the key is the 0.5 mm tip, so the text carries no
-    // "(engaged ...)" note. The tip is not under 0.5 mm, so the size rule,
-    // not the B1 tip floor, refuses: the nearest Scallop row is 3.175 mm,
-    // 6.35x the tip.
+    .expect("the SpeTool chart prints a 0.5 mm tip");
+    let r = &s.feeds_result;
+    let FeedsSupport::FamilyTransferred { family, size } = &r.support else {
+        panic!("expected FamilyTransferred, got {:?}", r.support);
+    };
+    assert!(size.is_none(), "the tip is the printed size: no size claim");
+    assert_eq!(family.source_rows, vec![ROW.to_owned()]);
+    assert_eq!(r.vendor_source.as_deref(), Some(ROW));
+    assert_eq!(r.rpm, PRINTED_RPM, "the printed RPM ships");
+    let printed_feed = printed_mm * 2.0 * PRINTED_RPM;
     assert!(
-        reason.starts_with("no published figure for a 0.50 mm tapered ball nose; ")
-            && reason.contains("the nearest chart row is 3.175 mm")
-            && !reason.contains("engaged"),
-        "the reason must name the tip and the nearest row size: {reason:?}"
+        (r.feed_rate_mm_min - printed_feed).abs() < 1e-9,
+        "the feed {} is the printed chip x Z x RPM ({printed_feed})",
+        r.feed_rate_mm_min
     );
+    assert!(
+        (r.chip_load_mm - printed_mm).abs() < 1e-12,
+        "the shipped chip {} is the printed {printed_mm}",
+        r.chip_load_mm
+    );
+}
+
+/// A tip below the printed range of the SpeTool chart still refuses. The
+/// size comes from the rule's `printed_mm` lower end, not from a typed
+/// number. That lower end is the B1 tip floor (0.5 mm), so the refusal is
+/// the floor text; the size rule with both sizes named is held by
+/// `a_one_millimetre_tapered_scallop_in_plywood_refuses_fm9` and
+/// `the_rule_by_hand_fm9`.
+#[test]
+fn a_tip_below_the_printed_range_still_refuses_fm9() {
+    let lowest = spetool_rule().printed_mm.0;
+    for share in [0.9, 0.8, 0.6] {
+        let tip = lowest * share;
+        for op in [OperationType::Scallop, OperationType::DropCutter] {
+            let err = suggest(op, &tool_of(ToolType::TaperedBallNose, tip), &hardwood())
+                .expect_err("no chart prints a tapered tip below the SpeTool range");
+            let reason = size_reason(&err);
+            assert!(
+                reason.starts_with(&format!(
+                    "no published figure for a {tip:.2} mm tapered ball nose"
+                )) && reason.contains(&format!("under {lowest} mm")),
+                "{op:?} at {tip} mm: {reason}"
+            );
+        }
+    }
 }
 
 #[test]
@@ -239,7 +318,7 @@ fn a_one_millimetre_tapered_scallop_ships_the_printed_tip_row_fm9() {
         &tool_of(ToolType::TaperedBallNose, 1.0),
         &hardwood(),
     )
-    .expect("the Amana ZrN v8 chart prints a 1 mm tip");
+    .expect("the SpeTool and the Amana ZrN v8 charts print a 1 mm tip");
     let FeedsSupport::FamilyTransferred { family, size } = &s.feeds_result.support else {
         panic!(
             "expected FamilyTransferred, got {:?}",
@@ -247,9 +326,14 @@ fn a_one_millimetre_tapered_scallop_ships_the_printed_tip_row_fm9() {
         );
     };
     assert!(size.is_none(), "the tip is the printed size");
+    // RE-PINNED 2026-11-11. P23c: the SpeTool 2D/3D tapered chart serves
+    // the 3D finish families (operator ruling 2026-11-10). The cell has two
+    // rows printed at the 1 mm tip, and the tie takes the lower printed
+    // chip (Q3): the SpeTool point 0.0254 mm, below the middle of the v8
+    // band (0.01905 to 0.0508 mm). This pin named the v8 row.
     assert_eq!(
         family.source_rows,
-        vec!["amana-tapered-hardwood-parallel-1000-2f-zrn-v8".to_owned()]
+        vec!["spetool-tapered-hardwood-parallel-1000-2f".to_owned()]
     );
 }
 

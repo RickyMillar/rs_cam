@@ -357,12 +357,12 @@ I read 1 setter(s) that no row calls: .../session/mutation/toolpath.rs:847: bind
 #### `vendor_lut_sub_1mm` (2 tests): class 1
 
 ```text
-expected 502 embedded observations ...  left: 514 right: 502
+expected 502 embedded observations ...  left: 567 right: 502
 expected the 1mm 2-flute ZrN v8 tapered row to win for a 1mm 2-flute query
   left: "spetool-tapered-softwood-parallel-1000-2f" right: "amana-tapered-softwood-parallel-1000-2f-zrn-v8"
 ```
 
-- The lib pin `feeds/vendor_lut.rs:854` reads 514 (P16 `bd72997c9`). This integration copy still reads 502.
+- The lib pin `feeds::vendor_lut::tests::test_embedded_loads_all_observations` reads 567 since P24a (`910dcf6d5`, + 53 straight rows; it read 514 at the triage, P16 `bd72997c9`). This integration copy still reads 502. Updated 2026-11-11 (sweep `phases/SWEEP_2026-11-11.md`).
 - The winner moved under the vendor-row rules of P13. `d82985059` is the likely commit ("industrial rows are baselines").
 - Fix. Do these steps:
   1. Copy the count and its chain text from the lib pin.
@@ -385,7 +385,7 @@ One shared fix covers all of them. Route each local builder through
 the local builder with `common::session::toolpath_config`. Do not make the
 harness apply Suggest. Suggest output moves with every feeds phase, and the
 pins would move with it. The fixture values are fixed and come from before S11.
-`adaptive3d_lift_bridge_b1` needs `heavy-tests`. `lateral_setup_end_to_end`
+`adaptive3d_lift_bridge_b1` needs no feature: `Cargo.toml` does not gate it, and it ran in the sweep of 2026-11-11 (this note said `heavy-tests` before). `lateral_setup_end_to_end`
 must wait until P22-0c is committed, because the P22-0c diff edits it now.
 The fix size is M, because it touches 17 files. Each edit is mechanical.
 
