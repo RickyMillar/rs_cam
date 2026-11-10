@@ -6,17 +6,18 @@ the project file, or arithmetic shown in the row. The app is the thing under
 test. No expected value comes from the engine code or from the app output.
 
 - Project: `planning/rivmap_block_job/nz_wanaka_21_operator.toml`, 18 toolpaths, white oak.
-- Graded build: `2d0f7849f` (P23c; commit time 1794280255, 2026-11-10 16:10). The running
-  `rs_cam_gui` binary (`target/release`) has mtime 1794280585 (16:16), later than HEAD; the
-  process started 2026-11-10 16:17; no edits under `crates/`. Graded by a fresh agent on
-  2026-11-10: PASS 97, FAIL 1, NEEDS-RULING 0, N/A 10. The previous grades: build `0c67ad7fe`
+- Graded build: `6f586706c` (P23d; commit time 1794282899, 2026-11-10 16:54). The running
+  `rs_cam_gui` binary (`target/release`) has mtime 1794283254 (17:00), later than HEAD;
+  `newer_than_process` is false; the process started 1794283259 (17:00); no edits under
+  `crates/`. Graded by a fresh agent on 2026-11-10: PASS 98, FAIL 0, NEEDS-RULING 0, N/A 10.
+  The previous grades: build `2d0f7849f` (P23c) PASS 97, FAIL 1; build `0c67ad7fe`
   (P23a, P23b) PASS 95, FAIL 3; build `dce570108` (P21c) after the six rulings PASS 92,
   FAIL 6, NEEDS-RULING 0; the same build before them PASS 64, FAIL 6, NEEDS-RULING 28; build
   `b9e67b24e` (P20e, 2026-11-09) PASS 47, FAIL 23, NEEDS-RULING 28; build `998ac93a3` PASS 31,
   FAIL 12, NEEDS-RULING 55. N/A is 10 in each grade from `4b7aa0e96` on.
-- App values: MCP `get_suggest_rationale` (Suggest, all 18), read on 2026-11-10 at this
-  build. The stored params (`get_toolpath_params`) are from the reads at `dce570108` and
-  `0c67ad7fe`; the project file did not change. Nobody applied Suggest, so each stored param
+- App values: MCP `get_suggest_rationale` (Suggest, all 18) and `get_toolpath_params` (all
+  18), read on 2026-11-10 at this build. No stored param changed since the read at
+  `0c67ad7fe`. Nobody applied Suggest, so each stored param
   still holds its old value (18000 rpm; 10610 rpm on idx 5 and 17). The Suggest column is
   the graded value. For idx 5 and 9 (`shipped_power` unmodeled) the feed, rpm and plunge
   come from `basis.rpm` (P23b).
@@ -167,10 +168,20 @@ that the script computes from its SRC lines; no app number is copied.
   pretty high generally"). The P4b candidate (lift 1 / sin k) is deleted. The idx 16 feed row
   is DERIVED: chip x z x n.
 
+- **Contour Pocket feed: "yes to the lower feed"** (2026-11-10, operator). A contour Pocket
+  feeds its slot-first ring at the unlifted feed. The feed row of a contour Pocket passes only
+  if both hold: (1) the slot-ring feed (`basis.rpm.slot_ring_feed_mm_min`) is equal to chip x
+  z x n; (2) the op feed is equal to chip x z x n x lift(stepover), by the radial chip
+  thinning rule of this page. The rule covers idx 6, 7, 8 and 11 (`pattern = contour`, read
+  from `get_toolpath_params`). Expected at 24000 rpm: idx 6 slot ring 1320, op feed 1347 (lift
+  1.0206); idx 7 and 8 both 1320 (stepover D/2, lift 1); idx 11 slot ring 8597, op feed 8651
+  (lift 1.0062). The old rule (a pocket slots, lift 1 for the op feed) is deleted.
+
 Effect of the rulings: no NEEDS-RULING row is left. Three feed rows now FAIL against a single
 value where a bracket hid the difference: idx 1 and 14 (the app lifts at the nominal stepover,
 P3 ruled the cap width) and idx 6 (the app lifts in a pocket that slots, check C3).
 At build `0c67ad7fe` idx 1 and 14 pass (P23a: the app lifts at the pass ceiling); idx 6 still fails.
+At build `6f586706c` (P23d) idx 6 passes under the contour Pocket ruling: no FAIL row is left.
 
 ## Questions the operator must rule on
 
@@ -219,6 +230,10 @@ At build dce570108 (Suggest values): C1 holds (0.127 on idx 2 and 15; 0.149 on i
 17). C2 is closed in Suggest: idx 5 and 17 both print rpm 24000 and plunge 2500 (the stored
 params still differ: 1347 and 1582). C3 holds at the new rpm: idx 6 prints 1347; the slot
 feed is 1320; +2.0 %.
+
+At build 6f586706c (P23d): C3 is closed. The slot-first ring of idx 6 feeds at 1320 (the app
+prints 1319.79); the op feed 1347 is the lifted feed of the later rings (ruling 2026-11-10).
+C1 holds (0.127 on idx 2 and 15; 0.149 on idx 5 and 17).
 
 Closed (operator, 2026-11-09: "$30 is 24000 on the machine; the file is wrong"): the project
 now states `[job.machine.controller] rpm_max = 24000.0` (line 94).

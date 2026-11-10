@@ -3,7 +3,7 @@
 
 [meta]
 project = "planning/rivmap_block_job/nz_wanaka_21_operator.toml"
-graded_build = "2d0f7849f"
+graded_build = "6f586706c"
 tolerance_rel = 0.01
 force_ks_n_mm2 = 58.516267
 force_f_edge_n_mm = 4.594987
@@ -638,7 +638,7 @@ expected = "P1b: 6096-8534 // graded at app rpm 24000: @app: 6096-8534"
 candidates = { "P1b" = [6096.0, 8534.4] }
 grade_candidates = { "@app" = [6096.0, 8534.4] }
 n_app = 24000.0
-derivation = "feed = chip x z x n x lift (SPK47), clamped to XY 15000. The op cuts a full slot (pocket first ring, profile, centre-line curve): r >= 0.5, lift 1."
+derivation = "feed = chip x z x n x lift (SPK47), clamped to XY 15000. The op cuts a full slot (profile, centre-line curve): r >= 0.5, lift 1."
 app_suggest = 7161.0
 app_shipped = 3165.0
 grade = "PASS"
@@ -728,7 +728,7 @@ expected = "P1b binding limit: 24000"
 candidates = { "P1b binding limit" = [24000.0, 24000.0] }
 grade_candidates = { "P1b binding limit" = [24000.0, 24000.0] }
 n_app = "-"
-derivation = "P1 ruled (b), operator 2026-11-08 (the chart rpm: SPK3 18,000 RPM). n_xy = 15000 / (chip_hi 0.0550 x 1 x lift 1.0000) = 272677; spindle max 24000; n_b = 24000 (spindle max 24000). Power does not bind: P_req and P_avail both scale with n (constant torque below 24000 rpm, MACH), so the ratio holds at every n."
+derivation = "P1 ruled (b), operator 2026-11-08 (the chart rpm: SPK3 18,000 RPM). n_xy = 15000 / (chip_hi 0.0550 x 1 x lift 1.0206) = 267168; spindle max 24000; n_b = 24000 (spindle max 24000). Power does not bind: P_req and P_avail both scale with n (constant torque below 24000 rpm, MACH), so the ratio holds at every n."
 app_suggest = 24000.0
 app_shipped = 18000.0
 grade = "PASS"
@@ -742,16 +742,18 @@ quantity = "feed"
 unit = "mm/min"
 status = "DERIVED"
 binding = "chart chip x lift; XY 15000"
-expected = "P1b: 1320 // graded at app rpm 24000: @app: 1320"
-candidates = { "P1b" = [1320.241877, 1320.241877] }
-grade_candidates = { "@app" = [1320.241877, 1320.241877] }
+expected = "P1b: 1347 // graded at app rpm 24000: @app: 1347 // slot ring (unlifted) at app rpm 24000: 1320"
+candidates = { "P1b" = [1347.466223, 1347.466223] }
+grade_candidates = { "@app" = [1347.466223, 1347.466223] }
 n_app = 24000.0
-derivation = "feed = chip x z x n x lift (SPK47), clamped to XY 15000. The op cuts a full slot (pocket first ring, profile, centre-line curve): r >= 0.5, lift 1."
+slot_ring_candidates = [1320.241877, 1320.241877]
+derivation = "feed = chip x z x n x lift (SPK47), clamped to XY 15000. Contour Pocket (pattern = contour; operator ruling 2026-11-10, \"yes to the lower feed\"): the first ring is a slot and takes the unlifted feed chip x z x n; the later rings cut the stepover 0.8, r 0.4000, lift 1.0206, and take the op feed. The row passes only if both hold."
 app_suggest = 1347.0
+app_slot_ring = 1319.785073
 app_shipped = 1010.0
-grade = "FAIL"
-matched = []
-note = " With the 2F log-log chip 0.05501 in a slot the feed is 1320 at the app rpm; the app's 1347 is +2.0 %: it applies the ae 0.8 lift in a pocket that slots."
+grade = "PASS"
+matched = ["@app"]
+note = " App slot ring (basis.rpm.slot_ring_feed_mm_min) = 1319.79: matches."
 
 [[row]]
 idx = 6.0
@@ -851,16 +853,18 @@ quantity = "feed"
 unit = "mm/min"
 status = "DERIVED"
 binding = "chart chip x lift; XY 15000"
-expected = "P1b: 1320 // graded at app rpm 24000: @app: 1320"
+expected = "P1b: 1320 // graded at app rpm 24000: @app: 1320 // slot ring (unlifted) at app rpm 24000: 1320"
 candidates = { "P1b" = [1320.241877, 1320.241877] }
 grade_candidates = { "@app" = [1320.241877, 1320.241877] }
 n_app = 24000.0
-derivation = "feed = chip x z x n x lift (SPK47), clamped to XY 15000. The op cuts a full slot (pocket first ring, profile, centre-line curve): r >= 0.5, lift 1."
+slot_ring_candidates = [1320.241877, 1320.241877]
+derivation = "feed = chip x z x n x lift (SPK47), clamped to XY 15000. Contour Pocket (pattern = contour; operator ruling 2026-11-10, \"yes to the lower feed\"): the first ring is a slot and takes the unlifted feed chip x z x n; the later rings cut the stepover 1.0, r 0.5000, lift 1.0000, and take the op feed. The row passes only if both hold."
 app_suggest = 1320.0
+app_slot_ring = 1320.0
 app_shipped = 1258.0
 grade = "PASS"
 matched = ["@app"]
-note = ""
+note = " App slot ring (basis.rpm.slot_ring_feed_mm_min) = 1320.00: matches."
 
 [[row]]
 idx = 7.0
@@ -960,16 +964,18 @@ quantity = "feed"
 unit = "mm/min"
 status = "DERIVED"
 binding = "chart chip x lift; XY 15000"
-expected = "P1b: 1320 // graded at app rpm 24000: @app: 1320"
+expected = "P1b: 1320 // graded at app rpm 24000: @app: 1320 // slot ring (unlifted) at app rpm 24000: 1320"
 candidates = { "P1b" = [1320.241877, 1320.241877] }
 grade_candidates = { "@app" = [1320.241877, 1320.241877] }
 n_app = 24000.0
-derivation = "feed = chip x z x n x lift (SPK47), clamped to XY 15000. The op cuts a full slot (pocket first ring, profile, centre-line curve): r >= 0.5, lift 1."
+slot_ring_candidates = [1320.241877, 1320.241877]
+derivation = "feed = chip x z x n x lift (SPK47), clamped to XY 15000. Contour Pocket (pattern = contour; operator ruling 2026-11-10, \"yes to the lower feed\"): the first ring is a slot and takes the unlifted feed chip x z x n; the later rings cut the stepover 1.0, r 0.5000, lift 1.0000, and take the op feed. The row passes only if both hold."
 app_suggest = 1320.0
+app_slot_ring = 1320.0
 app_shipped = 1258.0
 grade = "PASS"
 matched = ["@app"]
-note = ""
+note = " App slot ring (basis.rpm.slot_ring_feed_mm_min) = 1320.00: matches."
 
 [[row]]
 idx = 8.0
@@ -1272,7 +1278,7 @@ expected = "P1b binding limit: 24000"
 candidates = { "P1b binding limit" = [24000.0, 24000.0] }
 grade_candidates = { "P1b binding limit" = [24000.0, 24000.0] }
 n_app = "-"
-derivation = "P1 ruled (b), operator 2026-11-08 (the chart rpm: SPK3 18,000 RPM (the chart of the scaled row)). n_xy = 15000 / (chip_hi 0.1791 x 2 x lift 1.0000) = 41875; spindle max 24000; n_b = 24000 (spindle max 24000). Power does not bind: P_req and P_avail both scale with n (constant torque below 24000 rpm, MACH), so the ratio holds at every n."
+derivation = "P1 ruled (b), operator 2026-11-08 (the chart rpm: SPK3 18,000 RPM (the chart of the scaled row)). n_xy = 15000 / (chip_hi 0.1791 x 2 x lift 1.0062) = 41616; spindle max 24000; n_b = 24000 (spindle max 24000). Power does not bind: P_req and P_avail both scale with n (constant torque below 24000 rpm, MACH), so the ratio holds at every n."
 app_suggest = 24000.0
 app_shipped = 18000.0
 grade = "PASS"
@@ -1286,16 +1292,18 @@ quantity = "feed"
 unit = "mm/min"
 status = "DERIVED"
 binding = "chart chip x lift; XY 15000"
-expected = "P1b: 8597 // graded at app rpm 24000: @app: 8597"
-candidates = { "P1b" = [8596.977062, 8596.977062] }
-grade_candidates = { "@app" = [8596.977062, 8596.977062] }
+expected = "P1b: 8651 // graded at app rpm 24000: @app: 8651 // slot ring (unlifted) at app rpm 24000: 8597"
+candidates = { "P1b" = [8650.541301, 8650.541301] }
+grade_candidates = { "@app" = [8650.541301, 8650.541301] }
 n_app = 24000.0
-derivation = "feed = chip x z x n x lift (SPK47), clamped to XY 15000. The op cuts a full slot (pocket first ring, profile, centre-line curve): r >= 0.5, lift 1."
+slot_ring_candidates = [8596.977062, 8596.977062]
+derivation = "feed = chip x z x n x lift (SPK47), clamped to XY 15000. Contour Pocket (pattern = contour; operator ruling 2026-11-10, \"yes to the lower feed\"): the first ring is a slot and takes the unlifted feed chip x z x n; the later rings cut the stepover 8.0, r 0.4444, lift 1.0062, and take the op feed. The row passes only if both hold."
 app_suggest = 8651.0
+app_slot_ring = 8597.432921
 app_shipped = 6488.0
 grade = "PASS"
 matched = ["@app"]
-note = ""
+note = " App slot ring (basis.rpm.slot_ring_feed_mm_min) = 8597.43: matches."
 
 [[row]]
 idx = 11.0
@@ -1944,7 +1952,7 @@ expected = "P1b: 6096-8534 // graded at app rpm 24000: @app: 6096-8534"
 candidates = { "P1b" = [6096.0, 8534.4] }
 grade_candidates = { "@app" = [6096.0, 8534.4] }
 n_app = 24000.0
-derivation = "feed = chip x z x n x lift (SPK47), clamped to XY 15000. The op cuts a full slot (pocket first ring, profile, centre-line curve): r >= 0.5, lift 1."
+derivation = "feed = chip x z x n x lift (SPK47), clamped to XY 15000. The op cuts a full slot (profile, centre-line curve): r >= 0.5, lift 1."
 app_suggest = 7161.0
 app_shipped = 3165.0
 grade = "PASS"

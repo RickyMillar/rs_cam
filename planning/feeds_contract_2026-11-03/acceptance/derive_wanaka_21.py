@@ -4,7 +4,7 @@
 The script computes every expected value from printed source lines and
 physics. It does not import or read the engine. The app values below are
 copies of MCP read-tool output (get_toolpath_params, get_suggest_rationale,
-build 2d0f7849f (P23c)). Re-grade a new build: replace the APP dict, run the script.
+build 6f586706c (P23d)). Re-grade a new build: replace the APP dict, run the script.
 
 Output: wanaka_21.toml, and wanaka_21.md = wanaka_21_header.md + the row tables.
 """
@@ -174,11 +174,12 @@ def p_vgroove(vf, n, ap, half_deg, z):
 
 
 # ---------------------------------------------------------------- app values
-# From MCP, build 2d0f7849f (P23c), 2026-11-10. sug = get_suggest_rationale,
+# From MCP, build 6f586706c (P23d), 2026-11-10. sug = get_suggest_rationale,
 # shp = get_toolpath_params. chip = vendor_band.score_winner_chip_mm.
 # idx 5 and 9 (shipped_power unmodeled): feed, rpm, plunge and ramp are
 # basis.rpm.feed_mm_min, .value, .plunge_mm_min and .ramp_feed_mm_min (P23b).
-# ae = shipped_power.case_ae_mm. The shp values are the stored params (no apply
+# ae = shipped_power.case_ae_mm. slot = basis.rpm.slot_ring_feed_mm_min (P23d; null, here absent,
+# for an op with no slot-first ring: idx 0-5, 9, 10, 12-17). The shp values are the stored params (no apply
 # since the read of 2026-11-09), so they still hold the 18000 / 10610 rpm values.
 APP = {
     0: dict(sug=dict(feed=8651, rpm=24000, plunge=2162, ramp=8597, preq=0.05789052125364684, pav=1.5, ae=8.0, ap=0.5, chip=0.17912843029568412),
@@ -196,18 +197,18 @@ APP = {
     # idx 5: shipped_power is unmodeled; feed, rpm and plunge are from basis.rpm (P23b).
     5: dict(sug=dict(feed=7161, rpm=24000, plunge=2500, ramp=None, preq=None, pav=None, ae=None, ap=None, chip=0.14919260416145616),
             shp=dict(feed=3165, rpm=10610, plunge=1347, ramp=None)),
-    6: dict(sug=dict(feed=1347, rpm=24000, plunge=240, ramp=None, preq=0.005881127640829388, pav=1.5, ae=2.0, ap=0.7, chip=0.05501007821762709),
+    6: dict(sug=dict(feed=1347, rpm=24000, plunge=240, ramp=None, preq=0.005881127640829388, pav=1.5, ae=2.0, ap=0.7, chip=0.05501007821762709, slot=1319.7850734115766),
             shp=dict(feed=1010, rpm=18000, plunge=240, ramp=None)),
-    7: dict(sug=dict(feed=1320, rpm=24000, plunge=240, ramp=None, preq=0.004174473137735276, pav=1.5, ae=2.0, ap=0.5, chip=0.05501007821762709),
+    7: dict(sug=dict(feed=1320, rpm=24000, plunge=240, ramp=None, preq=0.004174473137735276, pav=1.5, ae=2.0, ap=0.5, chip=0.05501007821762709, slot=1320.0),
             shp=dict(feed=1258, rpm=18000, plunge=240, ramp=None)),
-    8: dict(sug=dict(feed=1320, rpm=24000, plunge=240, ramp=1320, preq=0.004174473137735276, pav=1.5, ae=2.0, ap=0.5, chip=0.05501007821762709),
+    8: dict(sug=dict(feed=1320, rpm=24000, plunge=240, ramp=1320, preq=0.004174473137735276, pav=1.5, ae=2.0, ap=0.5, chip=0.05501007821762709, slot=1320.0),
             shp=dict(feed=1258, rpm=18000, plunge=240, ramp=1258)),
     # idx 9: shipped_power is unmodeled; feed, rpm and plunge are from basis.rpm (P23b).
     9: dict(sug=dict(feed=3048, rpm=24000, plunge=381, ramp=None, preq=None, pav=None, ae=None, ap=None, chip=0.127),
             shp=dict(feed=2286, rpm=18000, plunge=381, ramp=None)),
     10: dict(sug=dict(feed=3048, rpm=24000, plunge=1016, ramp=None, preq=0.03762435947088806, pav=1.5, ae=6.35, ap=2.6, chip=0.0635),
              shp=dict(feed=2286, rpm=18000, plunge=762, ramp=None)),
-    11: dict(sug=dict(feed=8651, rpm=24000, plunge=2162, ramp=None, preq=0.12790170831923497, pav=1.5, ae=18.0, ap=0.5, chip=0.17912843029568412),
+    11: dict(sug=dict(feed=8651, rpm=24000, plunge=2162, ramp=None, preq=0.12790170831923497, pav=1.5, ae=18.0, ap=0.5, chip=0.17912843029568412, slot=8597.432921489191),
              shp=dict(feed=6488, rpm=18000, plunge=2162, ramp=None)),
     12: dict(sug=dict(feed=8651, rpm=24000, plunge=2162, ramp=8597, preq=0.05789052125364684, pav=1.5, ae=8.0, ap=0.5, chip=0.17912843029568412),
              shp=dict(feed=6488, rpm=18000, plunge=2162, ramp=6447)),
@@ -233,12 +234,12 @@ TP = {
     3: ("Pin drill, flip pins", 0, "drill", dict()),
     4: ("Drill light holes 6 mm end mill", 0, "drill", dict()),
     5: ("River channel 6 mm, pass 7 of 7", 0, "slot", dict(ae=6.0, ap=None, entry="plunge")),
-    6: ("Lake pocket 2 mm, 11 lakes to Z 5.88", 5, "pocket", dict(ae=0.8, ap=0.7, entry="plunge")),
-    7: ("Lake pocket 2 mm, 1 lake to Z 3.99", 5, "pocket", dict(ae=1.0, ap=0.5, entry="plunge")),
-    8: ("ANTENNA_D5.00 pocket 2 mm", 5, "pocket", dict(ae=1.0, ap=0.5, entry="ramp")),
+    6: ("Lake pocket 2 mm, 11 lakes to Z 5.88", 5, "pocket", dict(ae=0.8, ap=0.7, entry="plunge", pattern="contour")),
+    7: ("Lake pocket 2 mm, 1 lake to Z 3.99", 5, "pocket", dict(ae=1.0, ap=0.5, entry="plunge", pattern="contour")),
+    8: ("ANTENNA_D5.00 pocket 2 mm", 5, "pocket", dict(ae=1.0, ap=0.5, entry="ramp", pattern="contour")),
     9: ("V rivers and lakes", 1, "vtrace", dict(ap=None, entry="plunge")),
     10: ("Day strip slit V60", 2, "vtrace", dict(ap=2.6, entry="plunge")),
-    11: ("Face clamp pads 6 mm", 6, "pocket", dict(ae=8.0, ap=0.5, entry="plunge")),
+    11: ("Face clamp pads 6 mm", 6, "pocket", dict(ae=8.0, ap=0.5, entry="plunge", pattern="contour")),
     12: ("Face front to T", 6, "face", dict(ae=8.0, ap=0.5, entry="ramp")),
     13: ("Engrave day labels V60", 2, "vtrace", dict(ap=0.6, entry="plunge")),
     14: ("Front bulk rough 18 mm", 6, "adaptive", dict(ae=3.6, ap=4.166, entry="ramp")),
@@ -447,9 +448,19 @@ for idx, (name, tid, kind, g) in TP.items():
         la = lift(g["ae"], d)
         lifts = {"face ae": la}
         lift_deriv = "Face: max ae = stepover %.1f, r %.4f, lift %.4f." % (g["ae"], g["ae"] / d, la)
-    elif kind in ("pocket", "slot"):
+    elif kind == "pocket":
+        # Operator ruling 2026-11-10 ("yes to the lower feed"): a contour Pocket feeds its
+        # slot-first ring at the unlifted feed chip x z x n; the op feed (the later rings, at
+        # the stepover) is chip x z x n x lift(stepover, D). The feed row passes only if both hold.
+        assert g["pattern"] == "contour"  # get_toolpath_params, operation.params.pattern
+        la = lift(g["ae"], d)
+        lifts = {"stepover ae": la}
+        lift_deriv = ("Contour Pocket (pattern = contour; operator ruling 2026-11-10, \"yes to the lower feed\"): the first ring is a slot and takes the unlifted feed "
+                      "chip x z x n; the later rings cut the stepover %.1f, r %.4f, lift %.4f, and take the op feed. The row passes only if both hold."
+                      % (g["ae"], g["ae"] / d, la))
+    elif kind == "slot":
         lifts = {"slot": 1.0}
-        lift_deriv = "The op cuts a full slot (pocket first ring, profile, centre-line curve): r >= 0.5, lift 1."
+        lift_deriv = "The op cuts a full slot (profile, centre-line curve): r >= 0.5, lift 1."
     elif kind == "vtrace":
         lifts = {"slot": 1.0}
         lift_deriv = "V trace is a slot; the V chart is for the same geometry: lift 1."
@@ -504,9 +515,18 @@ for idx, (name, tid, kind, g) in TP.items():
     row(idx, "feed", feed_status, "chart chip x lift; XY 15000", cands, deriv_f,
         app_val=app_feed, grade_cands=gfeed, n_app=n_app)
     ROWS[-1]["app_shipped"] = a["shp"]["feed"]
-    if idx == 6:
-        ROWS[-1]["note"] += (" With the 2F log-log chip %.5f in a slot the feed is %.0f at the app rpm; the app's %d is %+.1f %%: it applies the ae 0.8 lift in a pocket that slots."
-                             % (c_2mm_log, c_2mm_log * n_app, app_feed, (app_feed / (c_2mm_log * n_app) - 1) * 100))
+    if kind == "pocket":
+        s_lo = min(min(v[0] for v in chips.values()) * z * n_app, V_XY)
+        s_hi = min(max(v[1] for v in chips.values()) * z * n_app, V_XY)
+        app_slot = a["sug"].get("slot")
+        slot_ok = app_slot is not None and within(app_slot, s_lo, s_hi)
+        ROWS[-1]["expected"] += " // slot ring (unlifted) at app rpm %.0f: %s" % (n_app, fmt(s_lo) if abs(s_hi - s_lo) < 1e-12 else "%s-%s" % (fmt(s_lo), fmt(s_hi)))
+        ROWS[-1]["app_slot_ring"] = app_slot
+        ROWS[-1]["slot_ring_candidates"] = [round(s_lo, 6), round(s_hi, 6)]
+        ROWS[-1]["note"] += (" App slot ring (basis.rpm.slot_ring_feed_mm_min) = %s: %s."
+                             % ("null" if app_slot is None else "%.2f" % app_slot, "matches" if slot_ok else "does not match"))
+        if not slot_ok:
+            ROWS[-1]["grade"], ROWS[-1]["matched"] = "FAIL", []
     if idx == 1:
         p8475 = p_flat(8475, 18000, ae_cap, g["ap"], d, z)[0]
         ROWS[-1]["note"] += " Shipped 8475 (at 18000 rpm) is the operator value: P at the ceiling width %.2f mm = %.3f kW = %.1f %% of 1.125 kW." % (ae_cap, p8475, p8475 / 1.125 * 100)
@@ -633,7 +653,7 @@ out = ["# Wanaka 21 feeds and speeds acceptance table (machine-readable twin of 
        "",
        "[meta]",
        'project = "planning/rivmap_block_job/nz_wanaka_21_operator.toml"',
-       'graded_build = "2d0f7849f"',
+       'graded_build = "6f586706c"',
        "tolerance_rel = %s" % TOL,
        "force_ks_n_mm2 = %s" % round(KS, 6),
        "force_f_edge_n_mm = %s" % round(FE, 6),
@@ -645,7 +665,7 @@ out.append("")
 for r in ROWS:
     out.append("[[row]]")
     for k in ("idx", "toolpath", "quantity", "unit", "status", "binding", "expected", "candidates",
-              "grade_candidates", "n_app", "derivation", "app_suggest", "app_shipped", "grade", "matched", "note", "ratio"):
+              "grade_candidates", "n_app", "slot_ring_candidates", "derivation", "app_suggest", "app_slot_ring", "app_shipped", "grade", "matched", "note", "ratio"):
         if k in r:
             out.append("%s = %s" % (k, toml_val(r[k])))
     out.append("")
@@ -695,3 +715,4 @@ assert abs(KS_N - 0.0768333) < 1e-6 and abs(IN_N - 0.0060333) < 1e-6
 assert abs(RHO - 761.6) < 1e-9
 assert abs(90 * IN / (18000 * 2) - 0.0635) < 1e-12
 assert abs(lift(5.5, 18) - 1.0854) < 1e-3
+assert abs(lift(0.8, 2.0) - 1.0206) < 1e-4 and lift(1.0, 2.0) == 1.0 and abs(lift(8.0, 18.0) - 1.0062) < 1e-4
