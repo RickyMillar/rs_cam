@@ -4,7 +4,7 @@
 The script computes every expected value from printed source lines and
 physics. It does not import or read the engine. The app values below are
 copies of MCP read-tool output (get_toolpath_params, get_suggest_rationale,
-build 0c67ad7fe (P23b)). Re-grade a new build: replace the APP dict, run the script.
+build 2d0f7849f (P23c)). Re-grade a new build: replace the APP dict, run the script.
 
 Output: wanaka_21.toml, and wanaka_21.md = wanaka_21_header.md + the row tables.
 """
@@ -74,7 +74,7 @@ SRC = {
     # Repo rules with no vendor source (operator rulings 2026-11-10). The quote is the product source line.
     "SIZEC": ("crates/rs_cam_core/src/feeds/extrapolation/size.rs", 87,
               'const RULE_C: &str = "G1 form C: the generic size law (d / d_row)^0.61 inside 0.5x-2x of the row"; '
-              "exponent: crates/rs_cam_core/src/feeds/vendor_lookup.rs line 791 'pub const CHIPLOAD_DIAMETER_EXPONENT: f64 = 0.61;'"),
+              "exponent: crates/rs_cam_core/src/feeds/vendor_lookup.rs line 802 'pub const CHIPLOAD_DIAMETER_EXPONENT: f64 = 0.61;'"),
     "SIZEA": ("crates/rs_cam_core/src/feeds/extrapolation/size.rs", 82,
               'const RULE_A: &str = "G1 form A: log-log interpolation between two adjacent printed sizes of one chart series"'),
     "PLGTXT": ("crates/rs_cam_core/src/feeds/plunge.rs", 49,
@@ -174,7 +174,7 @@ def p_vgroove(vf, n, ap, half_deg, z):
 
 
 # ---------------------------------------------------------------- app values
-# From MCP, build 0c67ad7fe (P23a, P23b), 2026-11-10. sug = get_suggest_rationale,
+# From MCP, build 2d0f7849f (P23c), 2026-11-10. sug = get_suggest_rationale,
 # shp = get_toolpath_params. chip = vendor_band.score_winner_chip_mm.
 # idx 5 and 9 (shipped_power unmodeled): feed, rpm, plunge and ramp are
 # basis.rpm.feed_mm_min, .value, .plunge_mm_min and .ramp_feed_mm_min (P23b).
@@ -217,7 +217,7 @@ APP = {
              shp=dict(feed=8060, rpm=18000, plunge=2162, ramp=6448)),
     15: dict(sug=dict(feed=7022, rpm=24000, plunge=2500, ramp=6095, preq=0.12135369231685468, pav=1.5, ae=1.510433184138314, ap=5.532, chip=0.127),
              shp=dict(feed=5429, rpm=18000, plunge=2285, ramp=4571)),
-    16: dict(sug=dict(feed=3089, rpm=24000, plunge=240, ramp=None, preq=0.0014255399913028802, pav=1.5, ae=0.8717797887081346, ap=0.2, chip=0.06437017664182963),
+    16: dict(sug=dict(feed=3657, rpm=24000, plunge=240, ramp=None, preq=0.0015221251699678547, pav=1.5, ae=0.8717797887081346, ap=0.2, chip=0.0762),
              shp=dict(feed=2317, rpm=18000, plunge=240, ramp=None)),
     17: dict(sug=dict(feed=7161, rpm=24000, plunge=2500, ramp=7161, preq=0.09568610226602917, pav=1.5, ae=6.0, ap=1.25, chip=0.14919260416145616),
              shp=dict(feed=3165, rpm=10610, plunge=1582, ramp=3165)),
@@ -298,7 +298,8 @@ CHIP = {
                     'The rows are 2F; the tool is 1F; the operator accepts the 2F chip per tooth for it' % (c_116, c_332, c_2mm_log))},
     1: {"AMS 18/30 deg 1F": (c_v20[0], c_v20[1], 'AMS11 18deg and 30deg 1F both "0.003" - 0.007""; 20deg lies between equal cells: %.4f-%.4f mm' % c_v20)},
     2: {"AMS 60 deg 2F": (c_v60[0], c_v60[1], 'AMS11 60deg 2F: "90"" / (18000 x 2) x 25.4 = %.4f mm; printed "0.003"" = %.4f mm; the cell disagrees with itself' % c_v60)},
-    4: {"SpeTool 2.0 mm": (c_spe2, c_spe2, 'SPE23 chipload "0.003" (inch, 2 flutes derived: 108/(18000 x 0.003) = %.2f) x 25.4 = %.4f mm' % (108 / (18000 * 0.003), c_spe2))},
+    4: {"SpeTool 2.0 mm": (c_spe2, c_spe2, 'SPE23 chipload "0.003" (inch, 2 flutes derived: 108/(18000 x 0.003) = %.2f) x 25.4 = %.4f mm. '
+                           'Operator ruling 2026-11-10 ("1, yes"): for the 2 mm tapered ball the row printed at exactly that size wins over a size claim from another chart' % (108 / (18000 * 0.003), c_spe2))},
 }
 
 # ---------------------------------------------------------------- grading
@@ -455,9 +456,11 @@ for idx, (name, tid, kind, g) in TP.items():
     elif kind == "ball":
         R = g["R"]
         sk = math.sqrt(1 - (1 - g["ap"] / R) ** 2)
-        lifts = {"P4a no lead-angle lift": 1.0, "P4b lead-angle lift": 1 / sk}
-        lift_deriv = ("Ball R %.1f at ap %.2f: sin k = sqrt(1-(1-ap/R)^2) = %.4f; peak chip = fz sin k. P4b lift = 1/%.4f = %.4f. "
-                      "The chart chip is at 1 x D (SPE14), where the equator cuts (sin k = 1)." % (R, g["ap"], sk, sk, 1 / sk))
+        # P4 ruled (a), operator 2026-11-10: no ball lead-angle lift ("finishing feeds are
+        # already pretty high generally"). The P4b candidate (lift 1 / sin k) is deleted.
+        lifts = {"no lead-angle lift": 1.0}
+        lift_deriv = ("P4 ruled (a), operator 2026-11-10: no ball lead-angle lift; feed = chart chip x z x n. "
+                      "Information: ball R %.1f at ap %.2f has sin k = sqrt(1-(1-ap/R)^2) = %.4f, so the peak chip is fz x %.4f, below the chart chip." % (R, g["ap"], sk, sk))
 
     # -------------------------------------------------------- rpm row
     pol_n = {}
@@ -490,7 +493,7 @@ for idx, (name, tid, kind, g) in TP.items():
         return out
     cands = feed_cands(pol_n)
     gfeed = feed_cands({"@app": n_app})
-    feed_status = "POLICY" if kind == "ball" else "DERIVED"  # P4 open
+    feed_status = "DERIVED"  # P4 ruled (a), operator 2026-11-10
     deriv_f = "feed = chip x z x n x lift (SPK47), clamped to XY 15000. " + lift_deriv
     if tid == 1 or tid == 2:
         deriv_f += " Printed IPM: " + ("50\"-130\" = 1270-3302 mm/min at 18000." if tid == 1 else "90\" = 2286 mm/min at 18000.")
@@ -630,7 +633,7 @@ out = ["# Wanaka 21 feeds and speeds acceptance table (machine-readable twin of 
        "",
        "[meta]",
        'project = "planning/rivmap_block_job/nz_wanaka_21_operator.toml"',
-       'graded_build = "0c67ad7fe"',
+       'graded_build = "2d0f7849f"',
        "tolerance_rel = %s" % TOL,
        "force_ks_n_mm2 = %s" % round(KS, 6),
        "force_f_edge_n_mm = %s" % round(FE, 6),

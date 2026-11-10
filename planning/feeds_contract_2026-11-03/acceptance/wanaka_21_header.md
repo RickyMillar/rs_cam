@@ -6,19 +6,20 @@ the project file, or arithmetic shown in the row. The app is the thing under
 test. No expected value comes from the engine code or from the app output.
 
 - Project: `planning/rivmap_block_job/nz_wanaka_21_operator.toml`, 18 toolpaths, white oak.
-- Graded build: `0c67ad7fe` (P23a, P23b; commit time 1794276928, 2026-11-10 15:15). The
-  running `rs_cam_gui` binary (`target/release`) has mtime 1794277254 (15:20), later than
-  HEAD; the process started 2026-11-10 15:38; no edits under `crates/`. Graded by a fresh
-  agent on 2026-11-10: PASS 95, FAIL 3, NEEDS-RULING 0, N/A 10. The previous grades: build
-  `dce570108` (P21c) after the six rulings PASS 92, FAIL 6, NEEDS-RULING 0; the same build
-  before them PASS 64, FAIL 6, NEEDS-RULING 28; build `b9e67b24e` (P20e, 2026-11-09) PASS 47,
-  FAIL 23, NEEDS-RULING 28; build `998ac93a3` PASS 31, FAIL 12, NEEDS-RULING 55. N/A is 10
-  in each grade from `4b7aa0e96` on.
-- App values: MCP `get_suggest_rationale` (Suggest, all 18) and `get_toolpath_params`
-  (idx 1 and 14 re-read; the project file did not change since the read at `dce570108`),
-  on 2026-11-10. Nobody applied Suggest, so each stored param still holds its old value
-  (18000 rpm; 10610 rpm on idx 5 and 17). The Suggest column is the graded value. For idx 5
-  and 9 (`shipped_power` unmodeled) the feed, rpm and plunge come from `basis.rpm` (P23b).
+- Graded build: `2d0f7849f` (P23c; commit time 1794280255, 2026-11-10 16:10). The running
+  `rs_cam_gui` binary (`target/release`) has mtime 1794280585 (16:16), later than HEAD; the
+  process started 2026-11-10 16:17; no edits under `crates/`. Graded by a fresh agent on
+  2026-11-10: PASS 97, FAIL 1, NEEDS-RULING 0, N/A 10. The previous grades: build `0c67ad7fe`
+  (P23a, P23b) PASS 95, FAIL 3; build `dce570108` (P21c) after the six rulings PASS 92,
+  FAIL 6, NEEDS-RULING 0; the same build before them PASS 64, FAIL 6, NEEDS-RULING 28; build
+  `b9e67b24e` (P20e, 2026-11-09) PASS 47, FAIL 23, NEEDS-RULING 28; build `998ac93a3` PASS 31,
+  FAIL 12, NEEDS-RULING 55. N/A is 10 in each grade from `4b7aa0e96` on.
+- App values: MCP `get_suggest_rationale` (Suggest, all 18), read on 2026-11-10 at this
+  build. The stored params (`get_toolpath_params`) are from the reads at `dce570108` and
+  `0c67ad7fe`; the project file did not change. Nobody applied Suggest, so each stored param
+  still holds its old value (18000 rpm; 10610 rpm on idx 5 and 17). The Suggest column is
+  the graded value. For idx 5 and 9 (`shipped_power` unmodeled) the feed, rpm and plunge
+  come from `basis.rpm` (P23b).
 - Script: `derive_wanaka_21.py` computes every number and every grade. The
   file `wanaka_21.toml` is its machine-readable output. The script asserts
   the force-line and chip identities that this page states.
@@ -158,6 +159,14 @@ that the script computes from its SRC lines; no app number is copied.
   unmodeled (idx 5, 9) the script grades `basis.rpm.feed_mm_min`, `.value`, `.plunge_mm_min`
   and `.ramp_feed_mm_min`.
 
+- **Tapered ball chip: the exact-size row wins** (2026-11-10, operator: "1, yes"). For the
+  2 mm tapered ball the row printed at exactly that size (SpeTool, SPE23, 0.0762 mm) wins
+  over a size claim from another chart. The table's expected chip did not change; the ruling
+  confirms it.
+- **P4: (a), no ball lead-angle lift** (2026-11-10, operator: "finishing feeds are already
+  pretty high generally"). The P4b candidate (lift 1 / sin k) is deleted. The idx 16 feed row
+  is DERIVED: chip x z x n.
+
 Effect of the rulings: no NEEDS-RULING row is left. Three feed rows now FAIL against a single
 value where a bracket hid the difference: idx 1 and 14 (the app lifts at the nominal stepover,
 P3 ruled the cap width) and idx 6 (the app lifts in a pocket that slots, check C3).
@@ -165,8 +174,8 @@ At build `0c67ad7fe` idx 1 and 14 pass (P23a: the app lifts at the pass ceiling)
 
 ## Questions the operator must rule on
 
-Open: P4 (the idx 16 feed row fails both candidates) and the P21 acceleration rule. U1, U2, U3
-and H1 are ruled (2026-11-10); the text below is the record of each question.
+Open: the P21 acceleration rule. P4, U1, U2, U3 and H1 are ruled (2026-11-10); the text below
+is the record of each question.
 
 - **H1. Helix entry feed (idx 1).** (a) Grade a helix as a ramp: chip x z x n, lift 1 (the
   path radius 5.4 mm is less than the tool radius 9 mm, so the contact is full width). (b) A

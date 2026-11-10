@@ -6,19 +6,20 @@ the project file, or arithmetic shown in the row. The app is the thing under
 test. No expected value comes from the engine code or from the app output.
 
 - Project: `planning/rivmap_block_job/nz_wanaka_21_operator.toml`, 18 toolpaths, white oak.
-- Graded build: `0c67ad7fe` (P23a, P23b; commit time 1794276928, 2026-11-10 15:15). The
-  running `rs_cam_gui` binary (`target/release`) has mtime 1794277254 (15:20), later than
-  HEAD; the process started 2026-11-10 15:38; no edits under `crates/`. Graded by a fresh
-  agent on 2026-11-10: PASS 95, FAIL 3, NEEDS-RULING 0, N/A 10. The previous grades: build
-  `dce570108` (P21c) after the six rulings PASS 92, FAIL 6, NEEDS-RULING 0; the same build
-  before them PASS 64, FAIL 6, NEEDS-RULING 28; build `b9e67b24e` (P20e, 2026-11-09) PASS 47,
-  FAIL 23, NEEDS-RULING 28; build `998ac93a3` PASS 31, FAIL 12, NEEDS-RULING 55. N/A is 10
-  in each grade from `4b7aa0e96` on.
-- App values: MCP `get_suggest_rationale` (Suggest, all 18) and `get_toolpath_params`
-  (idx 1 and 14 re-read; the project file did not change since the read at `dce570108`),
-  on 2026-11-10. Nobody applied Suggest, so each stored param still holds its old value
-  (18000 rpm; 10610 rpm on idx 5 and 17). The Suggest column is the graded value. For idx 5
-  and 9 (`shipped_power` unmodeled) the feed, rpm and plunge come from `basis.rpm` (P23b).
+- Graded build: `2d0f7849f` (P23c; commit time 1794280255, 2026-11-10 16:10). The running
+  `rs_cam_gui` binary (`target/release`) has mtime 1794280585 (16:16), later than HEAD; the
+  process started 2026-11-10 16:17; no edits under `crates/`. Graded by a fresh agent on
+  2026-11-10: PASS 97, FAIL 1, NEEDS-RULING 0, N/A 10. The previous grades: build `0c67ad7fe`
+  (P23a, P23b) PASS 95, FAIL 3; build `dce570108` (P21c) after the six rulings PASS 92,
+  FAIL 6, NEEDS-RULING 0; the same build before them PASS 64, FAIL 6, NEEDS-RULING 28; build
+  `b9e67b24e` (P20e, 2026-11-09) PASS 47, FAIL 23, NEEDS-RULING 28; build `998ac93a3` PASS 31,
+  FAIL 12, NEEDS-RULING 55. N/A is 10 in each grade from `4b7aa0e96` on.
+- App values: MCP `get_suggest_rationale` (Suggest, all 18), read on 2026-11-10 at this
+  build. The stored params (`get_toolpath_params`) are from the reads at `dce570108` and
+  `0c67ad7fe`; the project file did not change. Nobody applied Suggest, so each stored param
+  still holds its old value (18000 rpm; 10610 rpm on idx 5 and 17). The Suggest column is
+  the graded value. For idx 5 and 9 (`shipped_power` unmodeled) the feed, rpm and plunge
+  come from `basis.rpm` (P23b).
 - Script: `derive_wanaka_21.py` computes every number and every grade. The
   file `wanaka_21.toml` is its machine-readable output. The script asserts
   the force-line and chip identities that this page states.
@@ -158,6 +159,14 @@ that the script computes from its SRC lines; no app number is copied.
   unmodeled (idx 5, 9) the script grades `basis.rpm.feed_mm_min`, `.value`, `.plunge_mm_min`
   and `.ramp_feed_mm_min`.
 
+- **Tapered ball chip: the exact-size row wins** (2026-11-10, operator: "1, yes"). For the
+  2 mm tapered ball the row printed at exactly that size (SpeTool, SPE23, 0.0762 mm) wins
+  over a size claim from another chart. The table's expected chip did not change; the ruling
+  confirms it.
+- **P4: (a), no ball lead-angle lift** (2026-11-10, operator: "finishing feeds are already
+  pretty high generally"). The P4b candidate (lift 1 / sin k) is deleted. The idx 16 feed row
+  is DERIVED: chip x z x n.
+
 Effect of the rulings: no NEEDS-RULING row is left. Three feed rows now FAIL against a single
 value where a bracket hid the difference: idx 1 and 14 (the app lifts at the nominal stepover,
 P3 ruled the cap width) and idx 6 (the app lifts in a pocket that slots, check C3).
@@ -165,8 +174,8 @@ At build `0c67ad7fe` idx 1 and 14 pass (P23a: the app lifts at the pass ceiling)
 
 ## Questions the operator must rule on
 
-Open: P4 (the idx 16 feed row fails both candidates) and the P21 acceleration rule. U1, U2, U3
-and H1 are ruled (2026-11-10); the text below is the record of each question.
+Open: the P21 acceleration rule. P4, U1, U2, U3 and H1 are ruled (2026-11-10); the text below
+is the record of each question.
 
 - **H1. Helix entry feed (idx 1).** (a) Grade a helix as a ramp: chip x z x n, lift 1 (the
   path radius 5.4 mm is less than the tool radius 9 mm, so the contact is full width). (b) A
@@ -218,14 +227,12 @@ now states `[job.machine.controller] rpm_max = 24000.0` (line 94).
 
 108 rows (18 toolpaths x 6 quantities).
 
-- Status: SOURCED 6, DERIVED 89, POLICY 1, UNSOURCED 2, N/A 10
-- Grade: PASS 95, NEEDS-RULING 0, FAIL 3, N/A 10
+- Status: SOURCED 6, DERIVED 90, POLICY 0, UNSOURCED 2, N/A 10
+- Grade: PASS 97, NEEDS-RULING 0, FAIL 1, N/A 10
 
 FAIL rows:
 
 - idx 6 feed: app 1347; expected P1b: 1320 // graded at app rpm 24000: @app: 1320.
-- idx 16 chip per tooth (target peak): app 0.06437; expected SpeTool 2.0 mm: 0.07620.
-- idx 16 feed: app 3089; expected P1b/P4a: 3658; P1b/P4b: 6096 // graded at app rpm 24000: @app/P4a: 3658; @app/P4b: 6096.
 
 ## Rows
 
@@ -521,19 +528,19 @@ FAIL rows:
 
 | Quantity | Expected | Status | Binding | App Suggest | App shipped | Grade |
 |---|---|---|---|---|---|---|
-| chip per tooth (target peak) | SpeTool 2.0 mm: 0.07620 | SOURCED | chart | 0.06437 | - | **FAIL** |
+| chip per tooth (target peak) | SpeTool 2.0 mm: 0.07620 | SOURCED | chart | 0.07620 | - | **PASS** |
 | rpm | P1b binding limit: 24000 | DERIVED | spindle max 24000 | 24000 | 18000 | **PASS** |
-| feed | P1b/P4a: 3658; P1b/P4b: 6096 // graded at app rpm 24000: @app/P4a: 3658; @app/P4b: 6096 | POLICY | chart chip x lift; XY 15000 | 3089 | 2317 | **FAIL** |
+| feed | P1b: 3658 // graded at app rpm 24000: @app: 3658 | DERIVED | chart chip x lift; XY 15000 | 3657 | 2317 | **PASS** |
 | plunge | repo plunge rule: 240 | DERIVED | repo rule, no vendor source | 240 | 240 | **PASS** |
 | ramp feed | none | N/A | none | - | - | **N/A** |
-| power required vs available | <= bound: 0.00000-0.00143 | DERIVED | power (ratio 0.001) | 0.00143 | - | **PASS** |
+| power required vs available | <= bound: 0.00000-0.00152 | DERIVED | power (ratio 0.001) | 0.00152 | - | **PASS** |
 
-- *chip per tooth (target peak)*: SPE23 chipload "0.003" (inch, 2 flutes derived: 108/(18000 x 0.003) = 2.00) x 25.4 = 0.0762 mm ap/D = 0.100 <= 1: the 1 x D chart condition holds (SPK38/AMS3/SPE14); no feed derate. Note: App = vendor_band.score_winner_chip_mm (the target before the radial lift).
-- *rpm*: P1 ruled (b), operator 2026-11-08 (the chart rpm: SPE23 18,000). n_xy = 15000 / (chip_hi 0.0762 x 2 x lift 1.6667) = 59055; spindle max 24000; n_b = 24000 (spindle max 24000). Power does not bind: P_req and P_avail both scale with n (constant torque below 24000 rpm, MACH), so the ratio holds at every n.
-- *feed*: feed = chip x z x n x lift (SPK47), clamped to XY 15000. Ball R 1.0 at ap 0.20: sin k = sqrt(1-(1-ap/R)^2) = 0.6000; peak chip = fz sin k. P4b lift = 1/0.6000 = 1.6667. The chart chip is at 1 x D (SPE14), where the equator cuts (sin k = 1).
+- *chip per tooth (target peak)*: SPE23 chipload "0.003" (inch, 2 flutes derived: 108/(18000 x 0.003) = 2.00) x 25.4 = 0.0762 mm. Operator ruling 2026-11-10 ("1, yes"): for the 2 mm tapered ball the row printed at exactly that size wins over a size claim from another chart ap/D = 0.100 <= 1: the 1 x D chart condition holds (SPK38/AMS3/SPE14); no feed derate. Note: App = vendor_band.score_winner_chip_mm (the target before the radial lift).
+- *rpm*: P1 ruled (b), operator 2026-11-08 (the chart rpm: SPE23 18,000). n_xy = 15000 / (chip_hi 0.0762 x 2 x lift 1.0000) = 98425; spindle max 24000; n_b = 24000 (spindle max 24000). Power does not bind: P_req and P_avail both scale with n (constant torque below 24000 rpm, MACH), so the ratio holds at every n.
+- *feed*: feed = chip x z x n x lift (SPK47), clamped to XY 15000. P4 ruled (a), operator 2026-11-10: no ball lead-angle lift; feed = chart chip x z x n. Information: ball R 1.0 at ap 0.20 has sin k = sqrt(1-(1-ap/R)^2) = 0.6000, so the peak chip is fz x 0.6000, below the chart chip.
 - *plunge*: Repo rule, no vendor source (operator ruling 2026-11-10: "for the no source ones, if they look right, let's go for it"). PLGTXT: 1000 / h at 6 mm x clamp(D/6, 0.25, 3); h = 1.3873 (Janka 1360, PLGJANKA); x clamp(2.000 / 6) = 0.3333 -> 240.3 mm/min; Z rate 2500 (MACH); tip cap 150 x tip 2.0 mm = 300 mm/min (PLGTIP); min = 240.3. SpeTool (SPE23) and Amana ZrN print no plunge.
 - *ramp feed*: The entry is a straight plunge; no ramp.
-- *power required vs available*: Upper bound: rectangle ae x ap on the engaged diameter 2 sqrt(R^2-(R-ap)^2) = 1.200 mm; shear 0.000525 + edge 0.000900 = 0.001426 kW. P_avail = 1.5 x 24000 / 24000 = 1.5000 kW (MACH); ratio 0.001. Spindle efficiency: no source; the ratio assumes the rated shaft power. Note: Bound only; the scallop cross-section is smaller than the rectangle.
+- *power required vs available*: Upper bound: rectangle ae x ap on the engaged diameter 2 sqrt(R^2-(R-ap)^2) = 1.200 mm; shear 0.000622 + edge 0.000900 = 0.001522 kW. P_avail = 1.5 x 24000 / 24000 = 1.5000 kW (MACH); ratio 0.001. Spindle efficiency: no source; the ratio assumes the rated shaft power. Note: Bound only; the scallop cross-section is smaller than the rectangle.
 
 ### idx 17: Outline profile with tabs (tool 0)
 

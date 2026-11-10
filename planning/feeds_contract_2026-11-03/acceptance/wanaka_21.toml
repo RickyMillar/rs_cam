@@ -3,7 +3,7 @@
 
 [meta]
 project = "planning/rivmap_block_job/nz_wanaka_21_operator.toml"
-graded_build = "0c67ad7fe"
+graded_build = "2d0f7849f"
 tolerance_rel = 0.01
 force_ks_n_mm2 = 58.516267
 force_f_edge_n_mm = 4.594987
@@ -35,7 +35,7 @@ CUR155 = { file = "planning/extrapolation_2026-09-24/fetch/G7/sources/marcon2021
 FPL = { file = "planning/extrapolation_2026-09-24/fetch/G7/pdf/fpl_gtr190_wood_handbook_2010.pdf", line = 6708, quote = "Table 5-3a, Oak, white: 'White Green 0.60 ...' / '12% 0.68 105,000 ...' (pdftotext -layout text lines 6707-6708); footnote line 6866: 'Specific gravity is based on weight when ovendry and volume when green or at 12% moisture content.'" }
 WSP = { file = "crates/rs_cam_core/data/wood_species.toml", line = 378, quote = "display_name = \"Oak, white\" / janka_lbf = 1348.9 / specific_gravity_12 = 0.68 / source_id = \"fpl_ch5_2010\"" }
 MACH = { file = "planning/rivmap_block_job/nz_wanaka_21_operator.toml", line = 60, quote = "spindle Variable min_rpm 6000 max_rpm 24000; power VfdConstantTorque rated_power_kw 1.5 rated_rpm 24000 (lines 60-66); max_rate_xyz_mm_min [15000, 15000, 2500] (lines 85-89); spindle_strategy = \"constant_chip\", spindle_rpm_ceiling = 24000 (lines 50-51)" }
-SIZEC = { file = "crates/rs_cam_core/src/feeds/extrapolation/size.rs", line = 87, quote = "const RULE_C: &str = \"G1 form C: the generic size law (d / d_row)^0.61 inside 0.5x-2x of the row\"; exponent: crates/rs_cam_core/src/feeds/vendor_lookup.rs line 791 'pub const CHIPLOAD_DIAMETER_EXPONENT: f64 = 0.61;'" }
+SIZEC = { file = "crates/rs_cam_core/src/feeds/extrapolation/size.rs", line = 87, quote = "const RULE_C: &str = \"G1 form C: the generic size law (d / d_row)^0.61 inside 0.5x-2x of the row\"; exponent: crates/rs_cam_core/src/feeds/vendor_lookup.rs line 802 'pub const CHIPLOAD_DIAMETER_EXPONENT: f64 = 0.61;'" }
 SIZEA = { file = "crates/rs_cam_core/src/feeds/extrapolation/size.rs", line = 82, quote = "const RULE_A: &str = \"G1 form A: log-log interpolation between two adjacent printed sizes of one chart series\"" }
 PLGTXT = { file = "crates/rs_cam_core/src/feeds/plunge.rs", line = 49, quote = "PLUNGE_BASE_RULE_TEXT = \"material base 1000/h (wood), 900/h (plywood, sheet) at 6 mm, x clamp(D/6, 0.25, 3), h = (Janka/600)^0.4 (a port of the Shapeoko reference calculator)\"" }
 PLGBASE = { file = "crates/rs_cam_core/src/material/mod.rs", line = 788, quote = "FormulaConstant::unsourced(\"material.plunge_rate_base.solid_wood\", 1000.0, PLUNGE_CLAIM); reference_diameter_mm 6.0 (line 810); diameter_scale_min 0.25 (line 815); diameter_scale_max 3.0 (line 820)" }
@@ -1799,11 +1799,11 @@ expected = "SpeTool 2.0 mm: 0.07620"
 candidates = { "SpeTool 2.0 mm" = [0.0762, 0.0762] }
 grade_candidates = { "SpeTool 2.0 mm" = [0.0762, 0.0762] }
 n_app = "-"
-derivation = "SPE23 chipload \"0.003\" (inch, 2 flutes derived: 108/(18000 x 0.003) = 2.00) x 25.4 = 0.0762 mm ap/D = 0.100 <= 1: the 1 x D chart condition holds (SPK38/AMS3/SPE14); no feed derate."
-app_suggest = 0.06437
+derivation = "SPE23 chipload \"0.003\" (inch, 2 flutes derived: 108/(18000 x 0.003) = 2.00) x 25.4 = 0.0762 mm. Operator ruling 2026-11-10 (\"1, yes\"): for the 2 mm tapered ball the row printed at exactly that size wins over a size claim from another chart ap/D = 0.100 <= 1: the 1 x D chart condition holds (SPK38/AMS3/SPE14); no feed derate."
+app_suggest = 0.0762
 app_shipped = "-"
-grade = "FAIL"
-matched = []
+grade = "PASS"
+matched = ["SpeTool 2.0 mm"]
 note = "App = vendor_band.score_winner_chip_mm (the target before the radial lift)."
 
 [[row]]
@@ -1817,7 +1817,7 @@ expected = "P1b binding limit: 24000"
 candidates = { "P1b binding limit" = [24000.0, 24000.0] }
 grade_candidates = { "P1b binding limit" = [24000.0, 24000.0] }
 n_app = "-"
-derivation = "P1 ruled (b), operator 2026-11-08 (the chart rpm: SPE23 18,000). n_xy = 15000 / (chip_hi 0.0762 x 2 x lift 1.6667) = 59055; spindle max 24000; n_b = 24000 (spindle max 24000). Power does not bind: P_req and P_avail both scale with n (constant torque below 24000 rpm, MACH), so the ratio holds at every n."
+derivation = "P1 ruled (b), operator 2026-11-08 (the chart rpm: SPE23 18,000). n_xy = 15000 / (chip_hi 0.0762 x 2 x lift 1.0000) = 98425; spindle max 24000; n_b = 24000 (spindle max 24000). Power does not bind: P_req and P_avail both scale with n (constant torque below 24000 rpm, MACH), so the ratio holds at every n."
 app_suggest = 24000.0
 app_shipped = 18000.0
 grade = "PASS"
@@ -1829,17 +1829,17 @@ idx = 16.0
 toolpath = "Front scallop finish"
 quantity = "feed"
 unit = "mm/min"
-status = "POLICY"
+status = "DERIVED"
 binding = "chart chip x lift; XY 15000"
-expected = "P1b/P4a: 3658; P1b/P4b: 6096 // graded at app rpm 24000: @app/P4a: 3658; @app/P4b: 6096"
-candidates = { "P1b/P4a" = [3657.6, 3657.6], "P1b/P4b" = [6096.0, 6096.0] }
-grade_candidates = { "@app/P4a" = [3657.6, 3657.6], "@app/P4b" = [6096.0, 6096.0] }
+expected = "P1b: 3658 // graded at app rpm 24000: @app: 3658"
+candidates = { "P1b" = [3657.6, 3657.6] }
+grade_candidates = { "@app" = [3657.6, 3657.6] }
 n_app = 24000.0
-derivation = "feed = chip x z x n x lift (SPK47), clamped to XY 15000. Ball R 1.0 at ap 0.20: sin k = sqrt(1-(1-ap/R)^2) = 0.6000; peak chip = fz sin k. P4b lift = 1/0.6000 = 1.6667. The chart chip is at 1 x D (SPE14), where the equator cuts (sin k = 1)."
-app_suggest = 3089.0
+derivation = "feed = chip x z x n x lift (SPK47), clamped to XY 15000. P4 ruled (a), operator 2026-11-10: no ball lead-angle lift; feed = chart chip x z x n. Information: ball R 1.0 at ap 0.20 has sin k = sqrt(1-(1-ap/R)^2) = 0.6000, so the peak chip is fz x 0.6000, below the chart chip."
+app_suggest = 3657.0
 app_shipped = 2317.0
-grade = "FAIL"
-matched = []
+grade = "PASS"
+matched = ["@app"]
 note = ""
 
 [[row]]
@@ -1885,12 +1885,12 @@ quantity = "power required vs available"
 unit = "kW"
 status = "DERIVED"
 binding = "power (ratio 0.001)"
-expected = "<= bound: 0.00000-0.00143"
-candidates = { "<= bound" = [0.0, 0.001426] }
-grade_candidates = { "<= bound" = [0.0, 0.001426] }
+expected = "<= bound: 0.00000-0.00152"
+candidates = { "<= bound" = [0.0, 0.001522] }
+grade_candidates = { "<= bound" = [0.0, 0.001522] }
 n_app = "-"
-derivation = "Upper bound: rectangle ae x ap on the engaged diameter 2 sqrt(R^2-(R-ap)^2) = 1.200 mm; shear 0.000525 + edge 0.000900 = 0.001426 kW. P_avail = 1.5 x 24000 / 24000 = 1.5000 kW (MACH); ratio 0.001. Spindle efficiency: no source; the ratio assumes the rated shaft power."
-app_suggest = 0.001426
+derivation = "Upper bound: rectangle ae x ap on the engaged diameter 2 sqrt(R^2-(R-ap)^2) = 1.200 mm; shear 0.000622 + edge 0.000900 = 0.001522 kW. P_avail = 1.5 x 24000 / 24000 = 1.5000 kW (MACH); ratio 0.001. Spindle efficiency: no source; the ratio assumes the rated shaft power."
+app_suggest = 0.001522
 app_shipped = "-"
 grade = "PASS"
 matched = ["<= bound"]

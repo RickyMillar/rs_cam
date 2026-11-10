@@ -4,10 +4,17 @@
 
 Landed: `ef7e75977` P22b (accepted on wanaka idx 1 with helix: 47060 -> 14628 moves, fed time 558 ->
 250 s, the 48 core plunges gone; `P22b.md` section 6), `b361a7b18` the operator's notice.rs fix.
-`dce570108` P21c (the constant-chip rule with named limits; the 1.5 speedup, the 0.95 headroom and the
-diameter tiers deleted; live on wanaka idx 1: 24000 rpm / 9332 mm/min, spindle max binds; `P21c.md`
-section 6 and its open items). Running: agent `grader-p21c` re-grades the acceptance table on
-`dce570108` (`acceptance/grade_dce570108.md`); then the operator rules the NEEDS-RULING rows.
+`dce570108` P21c (the constant-chip rule with named limits; the three unsourced RPM caps deleted),
+`33d297758` P23a (the chip-thinning lift reads the pass ceiling width), `0c67ad7fe` P23b (the rationale
+prints the feed with the RPM), `2d0f7849f` P23c (the SpeTool tapered chart serves 3D finishing; an
+exact-size member outranks a size claim). The operator ruled every open table question on 2026-11-10
+(`acceptance/wanaka_21_header.md`). **Acceptance table on `2d0f7849f`: PASS 97, FAIL 1, NEEDS-RULING 0**
+(`acceptance/grade_2d0f7849f.md`; it was 47 / 23 / 28 in the morning). The one FAIL: idx 6 feed +2 %,
+a pocket's slot-first ring fed at the lifted feed; survey `phases/P23d_survey.md`; the lead recommends
+candidate (a), Pocket only; it waits for the operator's yes because the row then grades the slot-ring
+feed. Also waiting for the operator: `.mcp.json` back on `rs_cam_mcp_proxy` so the lead can
+`gui_restart` (the working-tree file launches `scripts/gui_logged.sh` directly). Nothing was applied to
+the wanaka project: its stored feeds are the old ones; an Apply under constant chip writes the new.
 
 The review's finding on scope (operator concern: the sessions rabbit-hole): the acceptance table
 (`acceptance/wanaka_21.md`) is the measure of done and was last graded at `b9e67b24e`: PASS 47, FAIL
