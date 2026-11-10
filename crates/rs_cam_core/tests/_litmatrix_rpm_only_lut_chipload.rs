@@ -32,7 +32,18 @@ const RUBBING_FLOOR_MM_TOOTH: f64 = 0.025;
 
 fn calc_oak_12mm(strategy: SpindleStrategy) -> rs_cam_core::feeds::FeedsResult {
     let lut = embedded_vendor_lut();
-    let machine = MachineProfile::generic_wood_router();
+    // P21c: `ConstantChip` needs a machine that states its axis rates and
+    // accelerations (a preset refuses at the Suggest door, and a raw
+    // `calculate` keeps the chart values). The values are the ones that
+    // `planning/rivmap_block_job/nz_wanaka_21_operator.toml` prints.
+    let machine = match strategy {
+        SpindleStrategy::MatchChart => MachineProfile::generic_wood_router(),
+        SpindleStrategy::ConstantChip { .. } => MachineProfile {
+            max_feed_mm_min: 15_000.0,
+            ..MachineProfile::generic_wood_router()
+        }
+        .with_axis_limits([15_000.0, 15_000.0, 2500.0], [1200.0, 1200.0, 550.0]),
+    };
     let material = Material::SolidWood {
         species: WoodSpecies::WhiteOak,
     };
@@ -58,6 +69,7 @@ fn calc_oak_12mm(strategy: SpindleStrategy) -> rs_cam_core::feeds::FeedsResult {
         target_scallop_mm: None,
         vendor_lut: Some(lut),
         setup: SetupContext::default(),
+        feed_max_rate: None,
         spindle_strategy: strategy,
         power_cases: rs_cam_core::feeds::engagement::PowerCases::NOMINAL,
         tool_facts: rs_cam_core::feeds::sourced::ToolFactKinds::STATED,
@@ -66,7 +78,13 @@ fn calc_oak_12mm(strategy: SpindleStrategy) -> rs_cam_core::feeds::FeedsResult {
 
 #[test]
 fn rpm_only_lut_row_does_not_collapse_chipload_to_zero() {
-    let result = calc_oak_12mm(SpindleStrategy::ConstantChip { rpm_ceiling: None });
+    let result = calc_oak_12mm(SpindleStrategy::ConstantChip {
+        rpm_ceiling: Some(24_000),
+    });
+    assert!(
+        result.rpm_choice.is_some(),
+        "the constant-chip rule ran: a machine with stated rates and a ceiling"
+    );
 
     let rpm = result.rpm;
     // The cell uses a 4-flute tool; flute_count flows through unchanged.
@@ -89,7 +107,7 @@ fn rpm_only_lut_row_does_not_collapse_chipload_to_zero() {
 #[test]
 fn rpm_only_lut_row_match_chart_also_produces_chipload() {
     // MatchChart goes through the same LUT branch but skips the
-    // MaxSpeed speedup — lock in that the fix works on both paths.
+    // constant-chip rise: the fix works on both paths.
     let result = calc_oak_12mm(SpindleStrategy::MatchChart);
 
     let rpm = result.rpm;

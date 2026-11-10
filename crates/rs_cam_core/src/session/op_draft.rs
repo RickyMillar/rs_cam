@@ -152,7 +152,8 @@ pub struct ToolpathDraft {
     /// The config to send as `Command::AddToolpath`.
     pub config: ToolpathConfig,
     /// The `FeedsError::Unbacked` text when Suggest had no data for the
-    /// tool, else `None`. The GUI shows it as a toast and MCP returns it as
+    /// tool, or the `FeedsError::ConstantChipUnstated` text when the
+    /// constant-chip policy gives no RPM (P21c), else `None`. The GUI shows it as a toast and MCP returns it as
     /// `feeds_refusal`.
     pub feeds_refusal: Option<String>,
     /// R2: the no-tool state ("No tool fits: needs a flat end mill") when
@@ -632,7 +633,8 @@ impl ProjectSession {
     }
 
     /// Suggest for a new op of `op_type` with `tool` on `model_id`:
-    /// `Unbacked` gives the registry and stock defaults with no feeds.
+    /// `Unbacked` and `ConstantChipUnstated` give the registry and stock
+    /// defaults with no feeds.
     fn suggest_for(
         &self,
         op_type: OperationType,
@@ -649,7 +651,9 @@ impl ProjectSession {
             material: &self.stock.material,
             lut: crate::feeds::embedded_vendor_lut(),
             stock_ctx: &stock_ctx,
-            spindle_strategy: crate::feeds::SpindleStrategy::default(),
+            // P21c (lead ruling): the project policy, as the card and the
+            // apply read it. A new op does not get a different answer.
+            spindle_strategy: self.post.spindle_policy(),
             context: crate::feeds::suggest::SuggestContext {
                 model_bbox: model_bbox.as_ref(),
                 ..crate::feeds::suggest::SuggestContext::default()
@@ -658,7 +662,11 @@ impl ProjectSession {
             Ok(s) => Ok((s.operation, s.provenance, None)),
             // Ruling R1 + S11: no feeds data. The op is added with the
             // registry and stock defaults and no feeds.
-            Err(e @ FeedsError::Unbacked { .. }) => {
+            //
+            // P21c: the constant-chip policy gives no RPM (the machine or
+            // the row states too little). The op is added in the same way,
+            // with no feeds: a refusal of Suggest refuses no op.
+            Err(e @ (FeedsError::Unbacked { .. } | FeedsError::ConstantChipUnstated { .. })) => {
                 // P10: the geometry rule needs no feeds data.
                 let (operation, stamps) = crate::feeds::suggest::default_operation_for_tool(
                     op_type,

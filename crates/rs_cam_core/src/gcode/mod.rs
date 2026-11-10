@@ -1289,8 +1289,8 @@ pub struct PostConfig {
     #[serde(default = "default_high_feedrate")]
     pub high_feedrate: f64,
     /// Project-level spindle policy used by Suggest: the token
-    /// `match_chart` (default, the chart RPM) or `constant_chip` (the
-    /// constant-chipload line). The old token `max_speed` refuses at load
+    /// `match_chart` (default, the chart RPM) or `constant_chip` (hold
+    /// the chip, raise the RPM to the first named limit). The old token `max_speed` refuses at load
     /// (feeds contract P21b, ruling Q16). Read the engine value with
     /// [`Self::spindle_policy`]; see [`crate::feeds::SpindleStrategy`].
     #[serde(default)]
@@ -1299,8 +1299,9 @@ pub struct PostConfig {
     /// constant-chip strategy, `[job.post] spindle_rpm_ceiling`. An
     /// operator policy, not a machine fact. Zero refuses at every door
     /// ([`Self::validate`]); a value above the spindle maximum warns
-    /// ([`Self::rpm_ceiling_above_spindle`]). P21b carries it; Suggest
-    /// does not read it yet.
+    /// ([`Self::rpm_ceiling_above_spindle`]). P21c: one of the named limits
+    /// of the constant-chip RPM ([`crate::feeds::RpmLimit::OperatorCeiling`]);
+    /// empty, the RPM does not rise above the chart RPM.
     #[serde(default, skip_serializing_if = "Option::is_none")]
     pub spindle_rpm_ceiling: Option<u32>,
     /// G5: the controller waits for the spindle after M3, so the export

@@ -4,8 +4,9 @@
 //! [`calculate_with`] is the sequence. Each step reads the values that the
 //! steps before it wrote and writes its own values with their bases:
 //!
-//! - [`speed`]: Step 1 (the RPM), the vendor RPM of Step 2, Steps 2b, 2b'
-//!   and 2c (the RPM ceilings).
+//! - [`speed`]: Step 1 (the RPM) and the vendor RPM of Step 2.
+//! - [`spindle`]: Step 5c (the constant-chip RPM and its named limits,
+//!   P21c).
 //! - [`chip`]: Step 2 (the chip load, the vendor row and its band).
 //! - [`cut`]: Steps 3 to 4c (the depth and the width, the flute guard, the
 //!   engagement floor, the shank check; P16 deleted the slot cap).
@@ -260,8 +261,6 @@ pub(crate) fn calculate_with(
     );
     speed::step2_vendor_rpm(input, &chip, &mut speed);
     log.speed("step2_vendor_rpm", &speed);
-    // P21a: Steps 2b and 2b' are one door; it writes their two records.
-    let rpm_choice = spindle::rpm_choice(input, &chip, &mut speed, &mut log);
     let mut cut = cut::step3_engagement(input, &mut warnings);
     log.cut("step3_engagement", &cut);
     cut::step4_flute_guard(input, clamps, &mut cut, &mut warnings);
@@ -281,6 +280,8 @@ pub(crate) fn calculate_with(
     log.state("step5_feed", &s);
     feed::step5b_long_tool(&mut s);
     log.state("step5b_long_tool", &s);
+    // P21c: Step 5c, the one RPM-choice door. It writes its own record.
+    let rpm_choice = spindle::step5c_constant_chip(&mut s, &mut log);
     power::step6_power(&mut s);
     // The feed basis after the power check changes a basis only; the note
     // after it gives the Step 6 records their final basis.

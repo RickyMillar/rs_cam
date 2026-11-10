@@ -221,6 +221,7 @@ fn calculator_and_gate_match_same_observation_id() {
             target_scallop_mm: None,
             vendor_lut: Some(&lut),
             setup: SetupContext::default(),
+            feed_max_rate: None,
             spindle_strategy: rs_cam_core::feeds::SpindleStrategy::default(),
             power_cases: rs_cam_core::feeds::engagement::PowerCases::NOMINAL,
             tool_facts: rs_cam_core::feeds::sourced::ToolFactKinds::STATED,

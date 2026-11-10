@@ -231,7 +231,7 @@ fn rung1_rpm(
     // A published RPM band is a statement about the cut, not about
     // the machine: below its minimum the surface speed is too low
     // for the material and the tool rubs or builds up an edge —
-    // acutely so in aluminium. Step 2b already honours the same
+    // acutely so in aluminium. Step 5c honours the same
     // row's `rpm_max` on the way up; this is the same rule facing
     // the other way.
     //

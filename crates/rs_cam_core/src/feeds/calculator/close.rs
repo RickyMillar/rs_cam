@@ -240,7 +240,7 @@ pub(super) fn step9c_drill(s: &mut CalcState, entry: &mut Entry) {
         let requested = s.feed.feed;
         let mut feed = requested;
         if feed < env_lo || feed > env_hi {
-            let commanded_cut_ceiling = machine.cutting_feed_ceiling_mm_min();
+            let commanded_cut_ceiling = super::spindle::op_ceiling(input).mm_min();
             let clamped = feed.clamp(env_lo, env_hi).min(commanded_cut_ceiling);
             s.warnings.push(FeedsWarning::DrillFeedClampedToEnvelope {
                 requested,

@@ -367,6 +367,14 @@ pub(super) fn draw_speed_controls(
     if out.lock_clicked {
         new_lock = FeedsLock::Spindle;
     }
+    rpm_limit_chip(
+        ui,
+        &out.rects,
+        entry
+            .feeds_result
+            .as_ref()
+            .and_then(|r| r.rpm_choice.as_ref()),
+    );
     if out.edited
         && let Some(rpm) = spindle
     {
@@ -550,24 +558,6 @@ fn feed_cap_chip(
     if steady.limit() == rs_cam_core::machine::SteadyFeedLimit::OpFeed {
         return;
     }
-    let right = rects.action.map_or(rects.label.right(), |a| {
-        a.left() - crate::ui::tokens::SPACE_2
-    });
-    // The slot starts after the painted label text.
-    let label_w = ui
-        .painter()
-        .layout_no_wrap(
-            "Feed".to_owned(),
-            egui::TextStyle::Body.resolve(ui.style()),
-            egui::Color32::PLACEHOLDER,
-        )
-        .size()
-        .x;
-    let left = (rects.label.left() + label_w + crate::ui::tokens::SPACE_2).min(right);
-    let slot = egui::Rect::from_min_max(
-        egui::pos2(left, rects.label.top()),
-        egui::pos2(right, rects.label.bottom()),
-    );
     let chip = crate::ui::components::StatusChip::new(
         format!("cap {:.0}", steady.mm_min()),
         crate::ui::components::Role::Info,
@@ -580,12 +570,74 @@ fn feed_cap_chip(
         steady.op_feed_mm_min(),
         steady.mm_min(),
     ));
+    label_slot_chip(ui, rects, "Feed", chip);
+}
+
+/// One chip in the label column of a speed row, right-aligned to the
+/// padlock, after the painted label text `label`. It takes no width from
+/// the well and adds no row.
+fn label_slot_chip(
+    ui: &mut egui::Ui,
+    rects: &crate::ui::components::RowRects,
+    label: &str,
+    chip: crate::ui::components::StatusChip,
+) {
+    let right = rects.action.map_or(rects.label.right(), |a| {
+        a.left() - crate::ui::tokens::SPACE_2
+    });
+    // The slot starts after the painted label text.
+    let label_w = ui
+        .painter()
+        .layout_no_wrap(
+            label.to_owned(),
+            egui::TextStyle::Body.resolve(ui.style()),
+            egui::Color32::PLACEHOLDER,
+        )
+        .size()
+        .x;
+    let left = (rects.label.left() + label_w + crate::ui::tokens::SPACE_2).min(right);
+    let slot = egui::Rect::from_min_max(
+        egui::pos2(left, rects.label.top()),
+        egui::pos2(right, rects.label.bottom()),
+    );
     let _ = ui.scope_builder(
         egui::UiBuilder::new()
             .max_rect(slot)
             .layout(egui::Layout::right_to_left(egui::Align::Center)),
         |ui| ui.add(chip),
     );
+}
+
+/// P21c: one chip beside the Spindle value under the constant-chip policy:
+/// the limit that sets the Suggest RPM. The hover lists every limit with
+/// its RPM. No chip under Match chart (`FeedsResult::rpm_choice` is
+/// `None`).
+fn rpm_limit_chip(
+    ui: &mut egui::Ui,
+    rects: &crate::ui::components::RowRects,
+    choice: Option<&rs_cam_core::feeds::RpmChoice>,
+) {
+    let Some(choice) = choice else {
+        return;
+    };
+    let chip = crate::ui::components::StatusChip::new(
+        choice.binding.label().to_owned(),
+        crate::ui::components::Role::Info,
+    )
+    .hover(rpm_limit_hover(choice));
+    label_slot_chip(ui, rects, "Spindle", chip);
+}
+
+/// The hover of [`rpm_limit_chip`]: the Suggest RPM, the limit that binds
+/// and each limit with its RPM.
+fn rpm_limit_hover(choice: &rs_cam_core::feeds::RpmChoice) -> String {
+    format!(
+        "Constant chip: Suggest gives {:.0} RPM, set by {}.\n{}\nAcceleration: no cap; \
+         the share of the cut at the full feed is known after generation.",
+        choice.rpm,
+        choice.binding.label(),
+        choice.limit_lines().join("\n"),
+    )
 }
 
 /// The text with its first letter in upper case.
@@ -1091,7 +1143,8 @@ const RPM_DRAG_SPEED: f64 = 100.0;
 /// `PostConfig::spindle_strategy` (MCP: `set_spindle_strategy`).
 ///
 /// Feeds contract P21b: one "RPM ceiling" row under it, drawn under
-/// Constant chip or while a ceiling is set. Empty is no ceiling; a ceiling
+/// Constant chip or while a ceiling is set. Empty is no ceiling (the RPM
+/// stays at the chart RPM, P21c); a ceiling
 /// above the spindle maximum takes the Caution state, the sentence on
 /// hover. The row never writes zero (core refuses it): its range starts
 /// at one RPM.
@@ -1109,14 +1162,12 @@ fn draw_spindle_policy_row(
         SpindleStrategyKind::ConstantChip => "Constant chip",
     };
     let hover = format!(
-        "Match chart: use the vendor row's published RPM, the closest match to the \
-         vendor's own test. Constant chip: push the RPM up to the spindle ceiling \
-         ({max_rpm:.0} RPM \u{00D7} {:.0} % headroom) and scale the feed to keep the \
-         commanded advance per tooth. The vendor rpm_max and a {:.1}\u{00D7} limit over \
-         the chart RPM cap it, and the power derate still applies. This is a project \
-         setting: it moves the recommendation of every toolpath.",
-        rs_cam_core::feeds::SPINDLE_CEILING_HEADROOM * 100.0,
-        rs_cam_core::feeds::MAX_SPINDLE_SPEEDUP,
+        "Match chart: use the RPM that the vendor row prints. Constant chip: hold the \
+         chip per tooth and raise the RPM to the first limit: the RPM ceiling, the \
+         spindle maximum ({max_rpm:.0} RPM), the cutting feed limit, the Z axis rate \
+         (a drill), the spindle power, or the vendor RPM maximum. The feed rises with \
+         the RPM. The machine must state its axis rates and accelerations. This is a \
+         project setting: it moves the recommendation of every toolpath."
     );
     let mut next = current;
     let _ = super::linking_dressup::combo_in_row(
@@ -1139,8 +1190,8 @@ fn draw_spindle_policy_row(
         let warning =
             rpm_ceiling.and_then(|c| rs_cam_core::gcode::rpm_ceiling_above_spindle(c, machine));
         let ceiling_hover = warning.clone().unwrap_or_else(|| {
-            "The operator RPM ceiling of the constant-chip strategy. Empty: no \
-             ceiling. Suggest does not read it yet."
+            "The operator RPM ceiling of the constant-chip strategy. Suggest never \
+             gives an RPM above it. Empty: the RPM stays at the chart RPM."
                 .to_owned()
         });
         let row = PropRow::new("RPM ceiling")

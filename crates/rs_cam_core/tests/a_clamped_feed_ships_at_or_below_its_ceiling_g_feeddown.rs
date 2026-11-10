@@ -123,6 +123,7 @@ fn feeds_input<'a>(
         target_scallop_mm: None,
         vendor_lut: Some(embedded_vendor_lut()),
         setup: SetupContext::default(),
+        feed_max_rate: None,
         spindle_strategy: SpindleStrategy::MatchChart,
         power_cases: rs_cam_core::feeds::engagement::PowerCases::NOMINAL,
         tool_facts: rs_cam_core::feeds::sourced::ToolFactKinds::STATED,

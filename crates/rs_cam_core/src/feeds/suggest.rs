@@ -573,8 +573,8 @@ pub struct SuggestParamsInput<'a> {
     pub stock_ctx: &'a StockContext,
     /// Spindle-RPM policy. See [`crate::feeds::SpindleStrategy`].
     /// Defaults to `MatchChart` if the caller doesn't care about the
-    /// distinction. `ConstantChip` walks the constant-chipload line up to
-    /// the spindle ceiling, capped by vendor.rpm_max when published.
+    /// distinction. `ConstantChip` holds the chip and raises the RPM to the
+    /// first named limit ([`crate::feeds::RpmLimit`]).
     pub spindle_strategy: crate::feeds::SpindleStrategy,
     /// Project-level context (model bbox, upstream leftover, etc.) used
     /// by gate-aware Suggest paths. See [`SuggestContext`]. Pass
@@ -806,6 +806,7 @@ pub fn feeds_input_for_operation<'a>(
         setup: SetupContext {
             tool_overhang_mm: Some(tool.stickout_planning_mm()),
         },
+        feed_max_rate: None,
         spindle_strategy,
         power_cases: crate::feeds::engagement::PowerCases::of_operation(operation),
         tool_facts: crate::feeds::sourced::ToolFactKinds::of_tool(tool),

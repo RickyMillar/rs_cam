@@ -83,6 +83,9 @@ pub(super) fn force_line_json(
 /// - B6: `force_line` is the material's one force line (plan §6), evaluated
 ///   at the mean chip of the cut Suggest ships; on a refusal every number is
 ///   null and `refused` names the variant.
+/// - P21c: `rpm` is the Suggest RPM; under `constant_chip` it carries
+///   `binding` and `limits` ({limit, label, rpm}; a `null` rpm is a limit
+///   that admits every RPM of the spindle).
 #[expect(
     clippy::wildcard_enum_match_arm,
     reason = "projection: only the named variant(s) carry this (named: SuggestWarning::RampFeed); projection: only the named variant(s) carry this (named: SuggestWarning::PlungeReDerived)"
@@ -157,6 +160,15 @@ pub fn suggest_basis_json(
         "detail": detail,
         "hardness": hardness,
         "vendor_band": vendor_band,
+        // P21c: the Suggest RPM. Under `constant_chip`: the value, the
+        // limit that binds and every limit with its RPM
+        // (`RpmChoice::to_json`, the CLI `suggest` record's
+        // `calculator.rpm_choice`). Under `match_chart`: the value alone.
+        // Present on every op, a surface-offset op included (Q13).
+        "rpm": feeds.rpm_choice.as_ref().map_or_else(
+            || serde_json::json!({ "value": feeds.rpm }),
+            rs_cam_core::feeds::RpmChoice::to_json,
+        ),
         "force_line": force_line,
         // P14 (review M9): the power at the shipped cut, the CLI
         // `suggest` record's `shipped_power` object.
@@ -225,7 +237,23 @@ impl RsCamApp {
                 let rationale = rs_cam_core::feeds::rationale::SuggestRationale::from_warnings(
                     &profile.warnings,
                 );
-                let basis = suggest_basis_json(&profile);
+                let mut basis = suggest_basis_json(&profile);
+                // P21c (A3): the share of the fed time of the generated
+                // toolpath at the commanded feed. A report, no cap; `null`
+                // before generation or with no machine kinematics.
+                if let Some(rpm) = basis.get_mut("rpm").and_then(|v| v.as_object_mut()) {
+                    let share = state.session().reached_feed_share_at(index);
+                    let _ = rpm.insert(
+                        "reached_feed_share".to_owned(),
+                        share.map_or(serde_json::Value::Null, |s| {
+                            serde_json::json!({
+                                "share": s.share(),
+                                "fed_time_s": s.fed_time_s,
+                                "at_feed_time_s": s.at_feed_time_s,
+                            })
+                        }),
+                    );
+                }
                 json_str(serde_json::json!({
                     "toolpath_id": tc.id,
                     "toolpath_name": tc.name,

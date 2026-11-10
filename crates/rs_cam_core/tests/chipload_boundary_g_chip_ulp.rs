@@ -199,6 +199,7 @@ fn b3_scallop() -> FeedsResult {
         target_scallop_mm: Some(0.01),
         vendor_lut: Some(&sub_floor_lut()),
         setup: SetupContext::default(),
+        feed_max_rate: None,
         spindle_strategy: SpindleStrategy::MatchChart,
         power_cases: rs_cam_core::feeds::engagement::PowerCases::NOMINAL,
         tool_facts: rs_cam_core::feeds::sourced::ToolFactKinds::STATED,

@@ -402,17 +402,25 @@ fn resolve_operation(op: &str) -> Result<(OperationFamily, PassRole), ShimError>
     })
 }
 
+/// The spindle policy of the matrix (P21c): constant chip, with the
+/// operator ceiling of the wanaka project file (`spindle_rpm_ceiling`).
+const MATRIX_STRATEGY: SpindleStrategy = SpindleStrategy::ConstantChip {
+    rpm_ceiling: Some(24_000),
+};
+
 /// Run the cell through the production Suggest pipeline and produce a
 /// snapshot. This is the exact code path GUI / CLI / MCP users hit, so
 /// the speeds chain (`enforce_invariants_at_fixed_geometry`), drill defaults, and the
 /// `apply_speeds_to_op` write-back all participate.
 pub fn run_cell(cell: &LiteratureCell) -> Result<ShimSnapshot, ShimError> {
     let material = resolve_material(&cell.inputs.material)?;
-    let mut snapshot = run_cell_in_material(
-        cell,
-        &material,
-        SpindleStrategy::ConstantChip { rpm_ceiling: None },
-    )?;
+    // P21c (lead ruling 2026-11-10): the matrix runs `ConstantChip` with a
+    // ceiling of 24000 on the cell's preset with its axis rates stated
+    // ([`stated_rates_machine`]). The matrix invariants were written for
+    // the lifted RPM; the rule now gives that lift from named limits. A
+    // preset alone refuses `ConstantChip`.
+    let machine = stated_rates_machine(cell)?;
+    let mut snapshot = run_cell_on_machine(cell, &material, MATRIX_STRATEGY, &machine)?;
 
     // Checkpoint K (e2) — the comparison arm. Same tool, same operation,
     // same machine, one material swapped, so a `ref_*`-bearing invariant
@@ -424,11 +432,7 @@ pub fn run_cell(cell: &LiteratureCell) -> Result<ShimSnapshot, ShimError> {
     // denominator could not be computed has not passed.
     if let Some(reference) = &cell.reference {
         let ref_material = resolve_material(&reference.material)?;
-        if let Ok(r) = run_cell_in_material(
-            cell,
-            &ref_material,
-            SpindleStrategy::ConstantChip { rpm_ceiling: None },
-        ) {
+        if let Ok(r) = run_cell_on_machine(cell, &ref_material, MATRIX_STRATEGY, &machine) {
             snapshot
                 .bindings
                 .insert("ref_fpt".into(), r.effective_chip_load_mm);
@@ -448,7 +452,8 @@ pub fn run_cell(cell: &LiteratureCell) -> Result<ShimSnapshot, ShimError> {
 }
 
 /// Feeds contract P21a: the primary arm of [`run_cell`] under the spindle
-/// strategy `strategy` (the matrix runs `ConstantChip`). No comparison arm.
+/// strategy `strategy` on the cell's preset (the matrix itself runs
+/// [`MATRIX_STRATEGY`] on [`stated_rates_machine`]). No comparison arm.
 pub fn run_cell_with_strategy(
     cell: &LiteratureCell,
     strategy: SpindleStrategy,
@@ -465,13 +470,47 @@ fn run_cell_in_material(
     material: &Material,
     strategy: SpindleStrategy,
 ) -> Result<ShimSnapshot, ShimError> {
+    let machine = resolve_machine(cell.inputs.machine_class.as_deref())?;
+    run_cell_on_machine(cell, material, strategy, &machine)
+}
+
+/// Feeds contract P21c: the machine of the cell with its axis rates and
+/// accelerations stated, so `ConstantChip` does not refuse. Each rate is
+/// the preset's travel rate (the cutting ceiling keeps its value) and each
+/// acceleration is the preset's own scalar
+/// (`MachineProfile::effective_kinematics`). No value is typed here.
+pub fn stated_rates_machine(cell: &LiteratureCell) -> Result<MachineProfile, ShimError> {
+    let machine = resolve_machine(cell.inputs.machine_class.as_deref())?;
+    let rate = machine.max_feed_mm_min;
+    let accel = machine.effective_kinematics().acceleration_mm_s2;
+    Ok(machine.with_axis_limits([rate; 3], [accel; 3]))
+}
+
+/// Feeds contract P21c: the primary arm of [`run_cell`] under `strategy`
+/// on `machine` (the sentry `every_rpm_cap_is_a_named_limit_p21` gives
+/// [`stated_rates_machine`]). No comparison arm.
+pub fn run_cell_on(
+    cell: &LiteratureCell,
+    strategy: SpindleStrategy,
+    machine: &MachineProfile,
+) -> Result<ShimSnapshot, ShimError> {
+    let material = resolve_material(&cell.inputs.material)?;
+    run_cell_on_machine(cell, &material, strategy, machine)
+}
+
+/// The body of [`run_cell_in_material`] on the machine `machine`.
+fn run_cell_on_machine(
+    cell: &LiteratureCell,
+    material: &Material,
+    strategy: SpindleStrategy,
+    machine: &MachineProfile,
+) -> Result<ShimSnapshot, ShimError> {
     // Validate user-facing tool_class × operation pairing first, before
     // the shim flattens tool_class into ToolType (which loses the drill
     // identity). Matches the GUI / CLI / MCP tool-picker contract.
     validate_tool_class_for_operation(&cell.inputs.tool_class, &cell.inputs.operation)?;
     let tool_type = resolve_tool_type(cell)?;
     let (op_family, pass_role) = resolve_operation(&cell.inputs.operation)?;
-    let machine = resolve_machine(cell.inputs.machine_class.as_deref())?;
     let lut = feeds::embedded_vendor_lut();
 
     let tool = build_tool(cell, tool_type);
@@ -501,7 +540,7 @@ fn run_cell_in_material(
         cut_body: rs_cam_core::feeds::CutBody::of_body(tool_def.body()),
         tool_geometry: tool_def.to_geometry_hint(),
         material,
-        machine: &machine,
+        machine,
         operation: op_family,
         // Checkpoint K (a4) — the shim's whole point is to be the
         // production path, so it supplies the operation's own kind and
@@ -517,6 +556,7 @@ fn run_cell_in_material(
         setup: SetupContext {
             tool_overhang_mm: Some(tool.stickout_planning_mm()),
         },
+        feed_max_rate: None,
         spindle_strategy: strategy,
         power_cases: rs_cam_core::feeds::engagement::PowerCases::NOMINAL,
         tool_facts: rs_cam_core::feeds::sourced::ToolFactKinds::of_tool(&tool),
@@ -545,7 +585,7 @@ fn run_cell_in_material(
         &mut provenance,
         &result,
         &tool,
-        &machine,
+        machine,
         material,
         pass_role,
         rs_cam_core::feeds::suggest::SuggestContext::default(),

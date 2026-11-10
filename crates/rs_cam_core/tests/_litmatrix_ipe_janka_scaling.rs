@@ -67,7 +67,14 @@ use rs_cam_core::material::{Material, WoodSpecies};
 
 fn calc_3mm_pocket(material: &Material) -> rs_cam_core::feeds::FeedsResult {
     let lut = embedded_vendor_lut();
-    let machine = MachineProfile::generic_wood_router();
+    // P21c: `ConstantChip` needs a machine that states its axis rates and
+    // accelerations. The values are the ones that
+    // `planning/rivmap_block_job/nz_wanaka_21_operator.toml` prints.
+    let machine = MachineProfile {
+        max_feed_mm_min: 15_000.0,
+        ..MachineProfile::generic_wood_router()
+    }
+    .with_axis_limits([15_000.0, 15_000.0, 2500.0], [1200.0, 1200.0, 550.0]);
 
     calculate(&FeedsInput {
         tool_series: None,
@@ -90,7 +97,10 @@ fn calc_3mm_pocket(material: &Material) -> rs_cam_core::feeds::FeedsResult {
         target_scallop_mm: None,
         vendor_lut: Some(lut),
         setup: SetupContext::default(),
-        spindle_strategy: SpindleStrategy::ConstantChip { rpm_ceiling: None },
+        feed_max_rate: None,
+        spindle_strategy: SpindleStrategy::ConstantChip {
+            rpm_ceiling: Some(24_000),
+        },
         power_cases: rs_cam_core::feeds::engagement::PowerCases::NOMINAL,
         tool_facts: rs_cam_core::feeds::sourced::ToolFactKinds::STATED,
     })

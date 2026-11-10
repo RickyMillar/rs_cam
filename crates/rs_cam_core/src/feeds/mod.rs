@@ -314,43 +314,34 @@ pub struct SetupContext {
     pub tool_overhang_mm: Option<f64>,
 }
 
-/// Policy for choosing operating-point RPM along the constant-chipload
-/// line.
+/// The policy that chooses the RPM of one op.
 ///
-/// Under [`SpindleStrategy::MatchChart`] (default) the feeds calculator
-/// returns the vendor LUT row's `rpm_nominal` verbatim — the chipload
-/// envelope is most defensible at the chart's tested RPM. Under
-/// [`SpindleStrategy::ConstantChip`] the calculator lifts RPM toward the
-/// spindle ceiling (capped by `vendor.rpm_max` when present, then by
-/// the machine's `spindle.max_rpm` and a small safety headroom) and
-/// scales feed proportionally to keep chipload constant — same
-/// operating point on the chipload axis, just moved along the speed
-/// axis. The existing power / feed-cap derates still apply on top, so
-/// if the higher RPM exceeds spindle power the `power_limit` derate
-/// claws feed back.
+/// - [`SpindleStrategy::MatchChart`] (the default) ships the RPM that the
+///   vendor row prints, or the surface-speed RPM when the row prints none.
+/// - [`SpindleStrategy::ConstantChip`] holds the chip per tooth and raises
+///   the RPM to the first named limit ([`RpmLimit`]). The feed scales with
+///   the RPM. No multiplier enters (feeds contract P21c,
+///   `calculator/spindle.rs::step5c_constant_chip`).
 ///
-/// `Default` is `MatchChart` so projects predating this enum behave
-/// identically.
-///
-/// Feeds contract P21b: `MaxSpeed` is renamed `ConstantChip` and carries
-/// the operator's RPM ceiling. The project file holds the two parts as
-/// two flat keys of `[job.post]` (`spindle_strategy`, a
-/// [`SpindleStrategyKind`] token, and `spindle_rpm_ceiling`);
-/// `PostConfig::spindle_policy` builds this value. P21b does not read the
-/// ceiling: `ConstantChip` runs the rule that `MaxSpeed` ran.
+/// The project file holds the two parts as two flat keys of `[job.post]`
+/// (`spindle_strategy`, a [`SpindleStrategyKind`] token, and
+/// `spindle_rpm_ceiling`); `PostConfig::spindle_policy` builds this value
+/// (P21b).
 #[derive(Debug, Clone, Copy, PartialEq, Eq, Default)]
 pub enum SpindleStrategy {
-    /// Use the LUT row's `rpm_nominal` (or the material-derived ideal
-    /// RPM when no vendor row matches). Preserves chart fidelity.
+    /// The RPM of the chart row, or the surface-speed RPM when the row
+    /// prints none.
     #[default]
     MatchChart,
-    /// Push RPM up to the spindle ceiling (clamped by vendor rpm_max
-    /// when present, capped by [`MAX_SPINDLE_SPEEDUP`] from the chart
-    /// nominal). Scales feed proportionally to keep chipload constant.
+    /// Hold the chip; raise the RPM to the first named limit. The machine
+    /// must state its axis rates and accelerations
+    /// ([`ConstantChipGap`]).
     ConstantChip {
-        /// The operator's RPM ceiling (`[job.post] spindle_rpm_ceiling`),
-        /// or `None`. P21b carries it; the calculator does not read it
-        /// yet (P21c).
+        /// The operator's RPM ceiling (`[job.post] spindle_rpm_ceiling`).
+        /// It always binds: a chart RPM above it comes down to it.
+        /// `None`: the RPM does not rise above the chart RPM, and a row
+        /// that prints no RPM has no RPM basis
+        /// ([`ConstantChipGap::RowPrintsNoRpm`]).
         rpm_ceiling: Option<u32>,
     },
 }
@@ -450,18 +441,6 @@ impl<'de> serde::Deserialize<'de> for SpindleStrategyKind {
 pub const MAX_SPEED_TOKEN_RENAMED: &str = "spindle_strategy \"max_speed\" was renamed: write \
      spindle_strategy = \"constant_chip\" (and, if you want one, \
      spindle_rpm_ceiling = <rpm>); the old token is not read";
-
-/// Hard cap on the speedup multiplier `ConstantChip` can apply over the
-/// chart's `rpm_nominal`. 1.5× is conservative — past it, chip-thinning
-/// at higher RPM enters territory the chart wasn't tested at. Matches
-/// the rough magnitude of the chart's own rpm_max-vs-rpm_nominal
-/// spread when vendors do publish a range.
-pub const MAX_SPINDLE_SPEEDUP: f64 = 1.5;
-
-/// Safety headroom below the machine's nominal spindle ceiling. Avoids
-/// commanding the spindle at exactly its max — leaves the controller
-/// some margin for transient overshoot.
-pub const SPINDLE_CEILING_HEADROOM: f64 = 0.95;
 
 /// P22-0c-6b: the two facts of the tool body that the feeds model reads.
 /// Both come from the body (`tool::body`); no feeds reader derives them.
@@ -575,10 +554,15 @@ pub struct FeedsInput<'a> {
     /// Physical setup context for feed derating.
     pub setup: SetupContext,
     /// Spindle-RPM policy. See [`SpindleStrategy`]. Defaults to
-    /// `MatchChart` (chart-fidelity, preserves pre-2026-06-01
-    /// behaviour). `ConstantChip` walks the constant-chipload line up to
-    /// the spindle ceiling.
+    /// `MatchChart` (the chart RPM). `ConstantChip` holds the chip and
+    /// raises the RPM to the first named limit.
     pub spindle_strategy: SpindleStrategy,
+    /// P21c (ruling Q11): the op's own feed cap
+    /// (`DressupConfig::feed_max_rate`). Step 7 and the constant-chip XY
+    /// limit read one ceiling,
+    /// [`crate::machine::MachineProfile::op_cutting_ceiling`], at it.
+    /// `None`: the machine ceiling alone.
+    pub feed_max_rate: Option<f64>,
     /// K7 (feeds contract P9): the cases of the pre-sim power set. Step 6
     /// and the published `power_kw` read the maximum over them. The
     /// production builder (`suggest::feeds_input_for_operation`) reads the
@@ -1110,19 +1094,16 @@ pub fn pick_cap_arm(lower: ArmPower, same: ArmPower) -> (ArmPower, CapArmReason)
 
 /// What moved the spindle off the RPM the chart or formula chose.
 ///
-/// Added 2026-09-16 with the power ladder. Before it, `why.rs` rendered
-/// "Spindle policy MaxSpeed lifted it" for ANY scale that was not 1.0,
-/// because `MaxSpeed` was the only thing that could move it. Once a power
-/// limit can move it the other way, that sentence names the wrong cause —
-/// the same defect shape this programme has been clearing throughout.
+/// Added 2026-09-16 with the power ladder: a scale that is not 1.0 has
+/// more than one possible cause, and the card must name the right one.
 #[derive(Debug, Clone, Copy, PartialEq, Eq, Default)]
 pub enum SpindleScaleReason {
     /// The scale is 1.0. The RPM is the chart's or the formula's.
     #[default]
     Unchanged,
-    /// [`SpindleStrategy::ConstantChip`] lifted the RPM toward the spindle
-    /// ceiling and scaled the feed with it.
-    MaxSpeedPolicy,
+    /// [`SpindleStrategy::ConstantChip`] set the RPM at the first named
+    /// limit and scaled the feed with it (Step 5c, P21c).
+    ConstantChip,
     /// The cut was over the spindle's power budget and the spindle is one
     /// where a slower RPM genuinely reduces the load. See the power ladder
     /// in [`calculate`].
@@ -1134,25 +1115,68 @@ pub enum SpindleScaleReason {
     FeedCeiling,
 }
 
-/// Feeds contract P21a: a named limit on the RPM that
-/// [`SpindleStrategy::ConstantChip`] chooses (`calculator/spindle.rs::rpm_choice`).
+/// Feeds contract P21: a named limit on the RPM that
+/// [`SpindleStrategy::ConstantChip`] chooses
+/// (`calculator/spindle.rs::step5c_constant_chip`). No wildcard arm reads
+/// it.
 ///
-/// The three `Legacy*` members are the caps of Steps 2b and 2b' before
-/// P21. They stay for one phase; P21c deletes them (`P21_DESIGN.md`
-/// section 7).
+/// The acceleration of the machine is not a member. P21c reports the
+/// reached share of the cutting time after generation
+/// ([`crate::machine::kinematics::reached_feed_share`], A3) and does not
+/// cap the RPM; the cap rule is P21d.
 #[derive(Debug, Clone, Copy, PartialEq, Eq)]
 pub enum RpmLimit {
-    /// The chart RPM times [`MAX_SPINDLE_SPEEDUP`].
-    LegacySpeedup,
-    /// The machine's top RPM times [`SPINDLE_CEILING_HEADROOM`]. A cap
-    /// under the chart RPM does not lower it.
-    LegacyHeadroom,
-    /// The diameter tier of the milling RPM ceiling. It lowers the RPM on
-    /// a milling op; on a drill it only stops the rise.
-    LegacyTier,
-    /// The `rpm_max` that the matched vendor row prints (ruling Q9). A cap
-    /// under the chart RPM does not lower it.
+    /// The spindle maximum ([`crate::machine::MachineProfile::rpm_range`]).
+    SpindleMax,
+    /// The op cutting ceiling
+    /// ([`crate::machine::MachineProfile::op_cutting_ceiling`]) over the
+    /// chip per rev, with what set the ceiling.
+    CuttingCeiling(crate::machine::CuttingCeilingSource),
+    /// The machine Z axis rate
+    /// ([`crate::machine::MachineProfile::z_axis_rate_mm_min`]) over the
+    /// chip per rev. A drill cycle only: its one feed is vertical.
+    ZAxisRate,
+    /// The spindle power at the RPM
+    /// ([`crate::machine::MachineProfile::power_at_rpm`]) against the
+    /// power of the cut, which is linear in the RPM at a held chip.
+    PowerAtRpm,
+    /// The operator's ceiling (`[job.post] spindle_rpm_ceiling`).
+    OperatorCeiling,
+    /// The chart RPM: the operator's ceiling is empty, so the RPM does
+    /// not rise above the RPM that the row prints.
+    ChartRpm,
+    /// The `rpm_max` that the matched vendor row prints (ruling Q9).
     VendorRpmMax,
+}
+
+impl RpmLimit {
+    /// The wire id (MCP `get_suggest_rationale`, CLI `suggest`).
+    #[must_use]
+    pub const fn wire_id(self) -> &'static str {
+        match self {
+            Self::SpindleMax => "spindle_max",
+            Self::CuttingCeiling(_) => "cutting_ceiling",
+            Self::ZAxisRate => "z_axis_rate",
+            Self::PowerAtRpm => "power_at_rpm",
+            Self::OperatorCeiling => "operator_ceiling",
+            Self::ChartRpm => "chart_rpm",
+            Self::VendorRpmMax => "vendor_rpm_max",
+        }
+    }
+
+    /// A short operator name of the limit.
+    #[must_use]
+    pub const fn label(self) -> &'static str {
+        match self {
+            Self::SpindleMax => "spindle max",
+            Self::CuttingCeiling(source) => source.label(),
+            Self::ZAxisRate => "Z axis rate",
+            Self::PowerAtRpm => "spindle power",
+            Self::OperatorCeiling => "RPM ceiling",
+            Self::ChartRpm => "chart RPM (no ceiling set)",
+            Self::VendorRpmMax => "vendor RPM max",
+        }
+    }
 }
 
 /// Feeds contract P21a: one limit of an [`RpmChoice`] and the highest RPM
@@ -1161,26 +1185,159 @@ pub enum RpmLimit {
 pub struct RpmLimitValue {
     /// The limit.
     pub limit: RpmLimit,
-    /// The highest RPM that the limit admits.
+    /// The highest RPM that the limit admits. Infinite for
+    /// [`RpmLimit::PowerAtRpm`] when the power admits every RPM of the
+    /// spindle (a constant-torque drive below its rated RPM: the required
+    /// and the available power both scale with the RPM).
     pub rpm: f64,
 }
 
-/// Feeds contract P21a: the RPM that [`SpindleStrategy::ConstantChip`] chose,
-/// the limit that binds and every limit with its RPM.
+/// Feeds contract P21c: the RPM that [`SpindleStrategy::ConstantChip`]
+/// chose, the limit that binds and every limit with its RPM.
 ///
-/// `rpm` is the RPM after Step 2b'. It is the minimum of `limits`, then
-/// [`crate::machine::MachineProfile::clamp_rpm`]: on a variable spindle
-/// inside its range the two are equal; a discrete spindle snaps the RPM.
-/// Steps 6 and 7 can lower the shipped RPM after this choice
-/// ([`SpindleScaleReason::PowerLimit`], [`SpindleScaleReason::FeedCeiling`]).
+/// The operator ceiling, the spindle maximum and the vendor maximum
+/// always bind: a chart RPM above one comes down to it. The other limits
+/// only stop the rise at the chart RPM. So `rpm` is `min(lowest always-
+/// binding limit, max(chart RPM, lowest limit))`, lowered to a whole RPM
+/// that the spindle can run
+/// ([`crate::machine::MachineProfile::next_rpm_at_or_below`]). With no
+/// chart RPM it is the lowest limit. Steps 6, 7 and 9c can lower the
+/// shipped RPM after this choice ([`SpindleScaleReason::PowerLimit`],
+/// [`SpindleScaleReason::FeedCeiling`], the drill feed envelope).
+///
+/// A seam for a later "N % of the limit" setting: it multiplies the RPM
+/// of `binding`. P21 adds no value.
 #[derive(Debug, Clone, PartialEq)]
 pub struct RpmChoice {
-    /// The RPM after Step 2b'.
+    /// The RPM after Step 5c.
     pub rpm: f64,
-    /// The limit with the lowest RPM in `limits`.
+    /// The RPM that the matched row prints, after the machine range.
+    /// `None`: the row prints no RPM.
+    pub chart_rpm: Option<f64>,
+    /// The limit that sets `rpm`, or that stops the rise at the chart RPM:
+    /// the limit with the lowest RPM in `limits`, except that an
+    /// always-binding limit below the chart RPM outranks a lower limit
+    /// that only stops the rise.
     pub binding: RpmLimit,
     /// Every limit that applies, with the RPM it admits.
     pub limits: Vec<RpmLimitValue>,
+}
+
+impl RpmChoice {
+    /// The record of MCP `get_suggest_rationale` (`basis.rpm`) and of the
+    /// CLI `suggest` record: `{value, chart_rpm, binding, limits: [{limit,
+    /// label, rpm}]}`. An infinite limit prints `null`. The acceleration
+    /// is not a limit (A3): MCP adds `reached_feed_share` after generation.
+    #[must_use]
+    pub fn to_json(&self) -> serde_json::Value {
+        let finite = |rpm: f64| rpm.is_finite().then_some(rpm);
+        serde_json::json!({
+            "value": self.rpm,
+            "chart_rpm": self.chart_rpm,
+            "binding": self.binding.wire_id(),
+            "limits": self
+                .limits
+                .iter()
+                .map(|l| serde_json::json!({
+                    "limit": l.limit.wire_id(),
+                    "label": l.limit.label(),
+                    "rpm": finite(l.rpm),
+                }))
+                .collect::<Vec<_>>(),
+        })
+    }
+
+    /// One line per limit for a hover: "24000 - spindle max".
+    #[must_use]
+    pub fn limit_lines(&self) -> Vec<String> {
+        self.limits
+            .iter()
+            .map(|l| {
+                if l.rpm.is_finite() {
+                    format!("{:.0} - {}", l.rpm.floor(), l.limit.label())
+                } else {
+                    format!("no cap - {}", l.limit.label())
+                }
+            })
+            .collect()
+    }
+}
+
+/// Feeds contract P21c (design section 4): what the machine or the row
+/// does not state, so [`SpindleStrategy::ConstantChip`] gives no RPM.
+#[derive(Debug, Clone, Copy, PartialEq, Eq)]
+pub enum ConstantChipGap {
+    /// The machine states no per-axis rates
+    /// (`kinematics.max_rate_xyz_mm_min`, GRBL `$110`-`$112`).
+    AxisRates,
+    /// The machine states no per-axis accelerations
+    /// (`kinematics.acceleration_xyz_mm_s2`, GRBL `$120`-`$122`; ruling
+    /// Q3: the scalar acceleration does not count).
+    Accelerations,
+    /// The RPM ceiling is empty and the matched row prints no RPM
+    /// (ruling Q5).
+    RowPrintsNoRpm,
+}
+
+impl ConstantChipGap {
+    /// The wire id.
+    #[must_use]
+    pub const fn wire_id(self) -> &'static str {
+        match self {
+            Self::AxisRates => "axis_rates",
+            Self::Accelerations => "accelerations",
+            Self::RowPrintsNoRpm => "row_prints_no_rpm",
+        }
+    }
+
+    /// The sentence of the refusal: what is missing and what to do.
+    #[must_use]
+    pub const fn sentence(self) -> &'static str {
+        match self {
+            Self::AxisRates => {
+                "the machine states no axis rates (GRBL $110-$112). Import the machine \
+                 settings, or set the spindle policy to Match chart"
+            }
+            Self::Accelerations => {
+                "the machine states no axis accelerations (GRBL $120-$122). Import the \
+                 machine settings, or set the spindle policy to Match chart"
+            }
+            Self::RowPrintsNoRpm => {
+                "the chart row prints no RPM and the RPM ceiling is empty. Set an RPM \
+                 ceiling, or set the spindle policy to Match chart"
+            }
+        }
+    }
+}
+
+/// P21c: the gap that stops [`SpindleStrategy::ConstantChip`] on `input`,
+/// or `None`. The one reader of the rule: the Suggest door
+/// ([`validate_tool_for_operation`]) refuses on it, and Step 5c of the
+/// calculator does nothing on it.
+#[must_use]
+pub fn constant_chip_gap(input: &FeedsInput) -> Option<ConstantChipGap> {
+    let rpm_ceiling = match input.spindle_strategy {
+        SpindleStrategy::MatchChart => return None,
+        SpindleStrategy::ConstantChip { rpm_ceiling } => rpm_ceiling,
+    };
+    if !input.machine.states_axis_rates() {
+        return Some(ConstantChipGap::AxisRates);
+    }
+    if !input.machine.states_axis_accelerations() {
+        return Some(ConstantChipGap::Accelerations);
+    }
+    if rpm_ceiling.is_none() {
+        let prints_rpm = match support::recipe_row_lookup(input) {
+            support::RecipeRowLookup::Row { row, .. } => row.rpm_nominal.is_some(),
+            support::RecipeRowLookup::NoLut
+            | support::RecipeRowLookup::NoRow
+            | support::RecipeRowLookup::RoutingRefused => false,
+        };
+        if !prints_rpm {
+            return Some(ConstantChipGap::RowPrintsNoRpm);
+        }
+    }
+    None
 }
 
 /// Empirical chipload formula evaluation `K₀ × D^p × (1/H)^q`.
@@ -1559,6 +1716,14 @@ pub enum FeedsError {
     /// ([`crate::compute::tool_config::ToolConfig::validate`], F029). Suggest
     /// writes no recipe for a tool that no cutter can be built from.
     ToolOutOfDomain(crate::tool::ToolGeometryError),
+    /// Feeds contract P21c (design section 4): the constant-chip policy
+    /// gives no RPM, so Suggest has no feed, plunge or ramp either.
+    /// Generation and export read the op's stored values and still run.
+    /// [`constant_chip_gap`] is the one rule.
+    ConstantChipUnstated {
+        /// What is not stated.
+        missing: ConstantChipGap,
+    },
 }
 
 impl std::fmt::Display for FeedsError {
@@ -1605,6 +1770,11 @@ impl std::fmt::Display for FeedsError {
                 material.label(),
             ),
             FeedsError::ToolOutOfDomain(e) => write!(f, "Suggest refuses this tool: {e}."),
+            FeedsError::ConstantChipUnstated { missing } => write!(
+                f,
+                "Suggest gives no RPM under the constant-chip policy: {}.",
+                missing.sentence()
+            ),
         }
     }
 }
@@ -1666,6 +1836,11 @@ pub fn validate_tool_for_operation(input: &FeedsInput) -> Result<(), FeedsError>
             material: vendor_normalize::material_to_lut(input.material).0,
             reason,
         });
+    }
+    // P21c: the constant-chip policy needs the machine limits and an RPM
+    // basis. A raw `calculate` caller with no operation is checked too.
+    if let Some(missing) = constant_chip_gap(input) {
+        return Err(FeedsError::ConstantChipUnstated { missing });
     }
     Ok(())
 }
@@ -1822,123 +1997,6 @@ const FALLBACK_RPM: FormulaConstant = FormulaConstant::unsourced(
     "feeds.calculate.fallback_rpm",
     18_000.0,
     "a guard value for a zero engaged diameter; no record in the repo",
-);
-
-/// The tiers of [`milling_rpm_ceiling_for_diameter`]: (largest diameter in
-/// mm, ceiling in RPM). The last row has an infinite diameter.
-const MILLING_CEILING_CLAIM: &str =
-    "the doc names Onsrud 70/85, Amana Spektra and GWizard bands; no file in the repo prints them";
-const MILLING_CEILING_TIERS: [(FormulaConstant, FormulaConstant); 4] = [
-    (
-        FormulaConstant::unsourced(
-            "feeds.milling_rpm_ceiling_for_diameter.tier1_max_d_mm",
-            3.0,
-            MILLING_CEILING_CLAIM,
-        ),
-        FormulaConstant::unsourced(
-            "feeds.milling_rpm_ceiling_for_diameter.tier1_ceiling_rpm",
-            22_000.0,
-            MILLING_CEILING_CLAIM,
-        ),
-    ),
-    (
-        FormulaConstant::unsourced(
-            "feeds.milling_rpm_ceiling_for_diameter.tier2_max_d_mm",
-            6.0,
-            MILLING_CEILING_CLAIM,
-        ),
-        FormulaConstant::unsourced(
-            "feeds.milling_rpm_ceiling_for_diameter.tier2_ceiling_rpm",
-            20_000.0,
-            MILLING_CEILING_CLAIM,
-        ),
-    ),
-    (
-        FormulaConstant::unsourced(
-            "feeds.milling_rpm_ceiling_for_diameter.tier3_max_d_mm",
-            8.0,
-            MILLING_CEILING_CLAIM,
-        ),
-        FormulaConstant::unsourced(
-            "feeds.milling_rpm_ceiling_for_diameter.tier3_ceiling_rpm",
-            18_000.0,
-            MILLING_CEILING_CLAIM,
-        ),
-    ),
-    (
-        FormulaConstant::unsourced(
-            "feeds.milling_rpm_ceiling_for_diameter.tier4_max_d_mm",
-            10.0,
-            MILLING_CEILING_CLAIM,
-        ),
-        FormulaConstant::unsourced(
-            "feeds.milling_rpm_ceiling_for_diameter.tier4_ceiling_rpm",
-            16_000.0,
-            MILLING_CEILING_CLAIM,
-        ),
-    ),
-];
-/// The ceiling above the last tier of [`MILLING_CEILING_TIERS`].
-const MILLING_CEILING_LARGE_RPM: FormulaConstant = FormulaConstant::unsourced(
-    "feeds.milling_rpm_ceiling_for_diameter.large_ceiling_rpm",
-    14_000.0,
-    MILLING_CEILING_CLAIM,
-);
-
-/// Diameter-tiered RPM ceiling for milling ops under
-/// [`SpindleStrategy::ConstantChip`]. The ConstantChip strategy walks RPM up
-/// toward the spindle ceiling (24 k × 0.95 = 22.8 k on the shapeoko_xxl
-/// profile). For small tools (≤ 6 mm) that's defensible — the chipload
-/// envelope tolerates near-spindle RPM on a 3-flute end mill. For
-/// **large** tools (≥ 10 mm) it pushes RPM well past the literature
-/// band: the surface-speed math (SFM = π·D·RPM) implies that the same
-/// chipload at 22.8 k on a 12 mm tool runs at twice the SFM the chart
-/// was tested at, well into the burning / glazing regime in hardwood.
-///
-/// Sources for the tier ceilings:
-/// - Onsrud Hardwood Feed Chart (series 70/85): 12 mm 2F in hardwood
-///   recommends 14-18 krpm; 10 mm 12-16 krpm; 6 mm 16-20 krpm; 3 mm
-///   18-22 krpm.
-/// - Amana Spektra hardwood chart: similar split, 12 mm 12-14 krpm.
-/// - GWizard hardwood defaults: SFM 500-1200 → 12 mm = 4.4-10.6 krpm
-///   floor, capped at 18 krpm at the high end.
-/// - Shapeoko community wiki: hobby derates further but the chart
-///   bands hold the relative shape.
-///
-/// Tiers (inclusive upper bound), chosen as the **max-across-materials**
-/// of the literature band so soft species can still push to the top of
-/// the envelope when vendor data anchors there. The 8 / 10 mm split
-/// matches the Onsrud series 70/85 chart's gradient (8 mm ≈ 14-18 k,
-/// 10 mm ≈ 12-16 k for hardwood 2F roughing):
-/// - D ≤ 3 mm:  22 000 RPM — small tools, near-spindle ceiling OK.
-/// - D ≤ 6 mm:  20 000 RPM — common 1/4" pocket / adaptive band top.
-/// - D ≤ 8 mm:  18 000 RPM — 5/16" mid-tool band top.
-/// - D ≤ 10 mm: 16 000 RPM — 3/8" mid-large mill (matches the
-///   literature-matrix cell `flat_10mm_pocket_maple` band-max).
-/// - D > 10 mm: 14 000 RPM — large-tool literature ceiling (Onsrud /
-///   Amana hardwood 12 mm bands).
-///
-/// Returns the ceiling the ConstantChip speedup may climb to. Combined
-/// with vendor `rpm_max` (when published) and the machine safety
-/// headroom via `.min()` — the lowest defensible cap wins.
-fn milling_rpm_ceiling_for_diameter(d_mm: f64) -> f64 {
-    milling_rpm_ceiling_row(d_mm).value
-}
-
-/// The F201 row of [`milling_rpm_ceiling_for_diameter`] at `d_mm` (P5: the
-/// basis of a tier-capped RPM).
-fn milling_rpm_ceiling_row(d_mm: f64) -> FormulaConstant {
-    MILLING_CEILING_TIERS
-        .iter()
-        .find(|(max_d, _)| d_mm <= max_d.value)
-        .map_or(MILLING_CEILING_LARGE_RPM, |(_, ceiling)| ceiling.clone())
-}
-
-/// The F201 row of [`MAX_SPINDLE_SPEEDUP`].
-const MAX_SPINDLE_SPEEDUP_ROW: FormulaConstant = FormulaConstant::unsourced(
-    "feeds.MAX_SPINDLE_SPEEDUP",
-    MAX_SPINDLE_SPEEDUP,
-    "the rough magnitude of a chart's rpm_max over rpm_nominal; no record in the repo",
 );
 
 /// The basis `b`, or a law over `b` and `cap` when a step moved the value
@@ -2364,7 +2422,7 @@ fn operation_default_profile(family: OperationFamily, role: PassRole) -> Default
 /// the number that the formula uses.
 ///
 /// Out of the list: design tolerances and solver limits with a stated reason
-/// (`SPINDLE_CEILING_HEADROOM`, the power-ladder floors, the bisection
+/// (the power-ladder floors, the bisection
 /// limits, the chip-thinning clamp), unit conversions, and the per-machine
 /// `RigidityProfile` values. P13a (review H3b, L3, L4) added the engagement
 /// floor (`MIN_AP_MM`, `MIN_AE_MM`), the cutter helix default and the drill
@@ -2373,11 +2431,6 @@ fn operation_default_profile(family: OperationFamily, role: PassRole) -> Default
 pub fn formula_constants() -> Vec<FormulaConstant> {
     let mut rows: Vec<FormulaConstant> = MATERIAL_FORMULA_CONSTANTS.to_vec();
     rows.push(FALLBACK_RPM);
-    for (max_d, ceiling) in MILLING_CEILING_TIERS {
-        rows.push(max_d);
-        rows.push(ceiling);
-    }
-    rows.push(MILLING_CEILING_LARGE_RPM);
     // K4 (feeds contract P3, lead decision D5): the plunge feed rule of the
     // dressup entry (`PlungeFeedRule::FirstLinearFeedFraction`).
     rows.extend([
@@ -2390,7 +2443,6 @@ pub fn formula_constants() -> Vec<FormulaConstant> {
     // P10 (ruling D8): the geometry rule rows of the add door.
     rows.extend(crate::compute::geometry_default::formula_constants());
     rows.extend([
-        MAX_SPINDLE_SPEEDUP_ROW,
         // P5 (K2b, card rows 25 and 27): the pass 3 move budget and the
         // pass 6 deflection target and floor, the bases of the `Runtime`
         // and `Deflection` limits of the envelope.

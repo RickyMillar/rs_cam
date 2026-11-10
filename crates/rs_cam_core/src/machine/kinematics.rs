@@ -1384,6 +1384,67 @@ pub fn predicted_feeds_for_toolpath(
     out
 }
 
+/// Feeds contract P21c (`P21_DESIGN.md` section 2.4, candidate A3): the
+/// time of the fed moves of one toolpath, and the part of it on moves that
+/// reach their commanded feed. It is a report. No rule turns it into an
+/// RPM cap (that is P21d, after the operator rules).
+///
+/// A higher constant-chip RPM commands a higher feed. A short move then
+/// runs out of distance before it reaches that feed, and its chip falls.
+/// The share says how much of the cut runs at the chip that Suggest
+/// printed.
+#[derive(Debug, Clone, Copy, PartialEq, Default)]
+pub struct ReachedFeedShare {
+    /// The time of every fed (non-rapid) move, seconds.
+    pub fed_time_s: f64,
+    /// The time of the fed moves whose peak velocity is their commanded
+    /// feed, seconds.
+    pub at_feed_time_s: f64,
+}
+
+impl ReachedFeedShare {
+    /// `at_feed_time_s / fed_time_s`, or `None` for a toolpath with no
+    /// fed move.
+    #[must_use]
+    pub fn share(&self) -> Option<f64> {
+        (self.fed_time_s > 0.0).then(|| self.at_feed_time_s / self.fed_time_s)
+    }
+}
+
+/// P21c (A3): the [`ReachedFeedShare`] of `toolpath` under `kinematics`.
+/// The same digest and junction walk as [`predicted_feeds_for_toolpath`]
+/// and the cycle time (EDG-07); the arguments are the same.
+///
+/// A move reaches its feed when the peak velocity of its trapezoid is the
+/// commanded feed (after the machine maximum feed). A move that a per-axis
+/// rate holds below its command does not reach it.
+#[must_use]
+pub fn reached_feed_share(
+    toolpath: &Toolpath,
+    kinematics: &MachineKinematics,
+    max_feed_mm_min: f64,
+    rapid_feed_mm_min: f64,
+) -> ReachedFeedShare {
+    let mut out = ReachedFeedShare::default();
+    if toolpath.moves.len() < 2 {
+        return out;
+    }
+    let max_feed_mm_s = (max_feed_mm_min / 60.0).max(1e-6);
+    let rapid_feed_mm_s = (rapid_feed_mm_min / 60.0).max(max_feed_mm_s);
+    let digests = digest_moves(toolpath, kinematics, max_feed_mm_s, rapid_feed_mm_s);
+    walk_junctions(&digests, kinematics, |digest, solution, _v_in, _v_out| {
+        if digest.is_rapid {
+            return;
+        }
+        out.fed_time_s += solution.time_s;
+        // A relative step of 1e-9 covers the rounding of the solver.
+        if solution.peak_mm_s >= digest.v_cmd_mm_s * (1.0 - 1e-9) {
+            out.at_feed_time_s += solution.time_s;
+        }
+    });
+    out
+}
+
 /// F-035 — single-move predicted achieved feed (mm/min) given the
 /// move's commanded feed, distance, and junction velocities with
 /// its prev/next neighbours.
@@ -2161,6 +2222,52 @@ mod tests {
         assert!(
             z_heavy < 300.0,
             "Z-dominant move should be limited near $122=270, got {z_heavy}"
+        );
+    }
+
+    /// P21c (A3): a long move reaches its feed, so its whole time counts;
+    /// a short move that runs out of distance does not. The triangular
+    /// peak of a move from rest to rest is `sqrt(a x L)`.
+    #[test]
+    fn the_reached_feed_share_counts_the_moves_that_reach_their_feed_p21c() {
+        let kin = MachineKinematics {
+            acceleration_mm_s2: 500.0,
+            ..MachineKinematics::default()
+        };
+        let feed_mm_min = 3000.0;
+        let v = feed_mm_min / 60.0;
+        // The shortest rest-to-rest move that reaches `v`: `v^2 / a`.
+        let reach_length = v * v / kin.acceleration_mm_s2;
+
+        let mut long = Toolpath::new();
+        long.rapid_to(P3::new(0.0, 0.0, 0.0));
+        long.feed_to(P3::new(4.0 * reach_length, 0.0, 0.0), feed_mm_min);
+        let share = reached_feed_share(&long, &kin, feed_mm_min, feed_mm_min);
+        assert!(share.fed_time_s > 0.0);
+        assert_eq!(share.share(), Some(1.0), "{share:?}");
+
+        let mut short = Toolpath::new();
+        short.rapid_to(P3::new(0.0, 0.0, 0.0));
+        short.feed_to(P3::new(0.25 * reach_length, 0.0, 0.0), feed_mm_min);
+        let share = reached_feed_share(&short, &kin, feed_mm_min, feed_mm_min);
+        assert!(share.fed_time_s > 0.0);
+        assert_eq!(share.share(), Some(0.0), "{share:?}");
+
+        // A lower feed is reached on the same short move: the share falls
+        // as the commanded feed rises.
+        let low_feed = feed_mm_min / 4.0;
+        let mut slow = Toolpath::new();
+        slow.rapid_to(P3::new(0.0, 0.0, 0.0));
+        slow.feed_to(P3::new(0.25 * reach_length, 0.0, 0.0), low_feed);
+        let share = reached_feed_share(&slow, &kin, feed_mm_min, feed_mm_min);
+        assert_eq!(share.share(), Some(1.0), "{share:?}");
+
+        // No fed move: no share.
+        let mut empty = Toolpath::new();
+        empty.rapid_to(P3::new(0.0, 0.0, 0.0));
+        assert_eq!(
+            reached_feed_share(&empty, &kin, feed_mm_min, feed_mm_min).share(),
+            None
         );
     }
 

@@ -1,222 +1,268 @@
-//! Feeds contract P21a: the one RPM-choice door. Steps 2b and 2b' of the
-//! calculator, and the named limits of the RPM they choose
-//! ([`crate::feeds::RpmChoice`]).
+//! Feeds contract P21c: Step 5c of the calculator, the constant-chip RPM.
+//!
+//! [`step5c_constant_chip`] is the one RPM-choice door (P21a). Under
+//! [`SpindleStrategy::ConstantChip`] the chip per tooth holds and the RPM
+//! rises to the first named limit ([`RpmLimit`]). The feed scales with the
+//! RPM. No multiplier enters (`P21_DESIGN.md` section 2).
+//!
+//! The step runs after Step 5, because each limit reads the chip per rev
+//! `c = fz x Z x lift`, and before Step 6, because the power check reads
+//! the RPM.
 
-use super::{Chip, Speed, StepLog};
-use crate::feeds::sourced::Basis;
+use super::feed::{feed_cap_basis, power_curve};
+use super::{CalcState, StepLog};
+use crate::feeds::sourced::{self, Basis};
 use crate::feeds::{
-    FeedsInput, MAX_SPINDLE_SPEEDUP, MAX_SPINDLE_SPEEDUP_ROW, OperationFamily, RpmChoice, RpmLimit,
-    RpmLimitValue, SPINDLE_CEILING_HEADROOM, SpindleScaleReason, SpindleStrategy, ToolGeometryHint,
-    milling_rpm_ceiling_for_diameter, milling_rpm_ceiling_row, moved_basis,
+    FeedsInput, OperationFamily, RpmChoice, RpmLimit, RpmLimitValue, SpindleScaleReason,
+    SpindleStrategy, cap_arm_demand_kw, constant_chip_gap,
 };
+use crate::machine::CuttingCeilingMmMin;
 
-/// Steps 2b and 2b': the RPM that [`SpindleStrategy::ConstantChip`] chooses,
-/// with its named limits. `None` under [`SpindleStrategy::MatchChart`],
-/// where both steps change nothing.
+/// THE cutting ceiling of the op (ruling Q11): Step 5c, Step 7 and the
+/// drill envelope clamp of Step 9c read this one value.
+pub(super) fn op_ceiling(input: &FeedsInput) -> CuttingCeilingMmMin {
+    input.machine.op_cutting_ceiling(input.feed_max_rate)
+}
+
+/// Step 5c: the RPM that [`SpindleStrategy::ConstantChip`] chooses, with
+/// its named limits. `None` under [`SpindleStrategy::MatchChart`], and
+/// `None` when the policy has a gap ([`constant_chip_gap`]): the Suggest
+/// door refuses that input, and a raw `calculate` keeps the chart values.
 ///
-/// The two steps run in their old order with their old arithmetic, and
-/// each writes its own step record, so no shipped value moves (P21a is
-/// byte-identical). The limits are read beside them: the minimum of the
-/// limits is the RPM of the steps before the machine clamp
-/// (`MachineProfile::clamp_rpm`).
-pub(super) fn rpm_choice(
-    input: &FeedsInput,
-    chip: &Chip,
-    speed: &mut Speed,
-    log: &mut StepLog,
-) -> Option<RpmChoice> {
-    let limits = named_limits(input, chip, speed.rpm);
-    step2b_max_speed(input, chip, speed);
-    log.speed("step2b_max_speed", speed);
-    step2b_milling_tier(input, speed);
-    log.speed("step2b_milling_tier", speed);
-    let limits = limits?;
-    let binding = limits
-        .iter()
-        .min_by(|a, b| a.rpm.total_cmp(&b.rpm))
-        .map_or(RpmLimit::LegacySpeedup, |l| l.limit);
+/// Lead ruling 2026-11-10: three limits always bind (the operator ceiling,
+/// the spindle maximum and the printed vendor maximum): a chart RPM above
+/// one of them comes down to it, and the feed follows to hold the chip. The
+/// other limits (the cutting ceiling, the Z axis rate, the power, the chart
+/// RPM of an empty ceiling) only stop the rise: the power ladder (Step 6),
+/// Step 7 and Step 9c own a move below the chart RPM.
+///
+/// With no chart RPM (the row prints none and the operator states a
+/// ceiling), the RPM is the lowest of all the limits; the surface-speed
+/// RPM of Step 1 is not read (ruling Q6).
+pub(super) fn step5c_constant_chip(s: &mut CalcState, log: &mut StepLog) -> Option<RpmChoice> {
+    let input = s.input;
+    let rpm_ceiling = match input.spindle_strategy {
+        SpindleStrategy::MatchChart => return None,
+        SpindleStrategy::ConstantChip { rpm_ceiling } => rpm_ceiling,
+    };
+    if constant_chip_gap(input).is_some() {
+        return None;
+    }
+    let before = s.speed.rpm;
+    if before <= 0.0 || s.feed.raw_feed <= 0.0 {
+        return None;
+    }
+    // The chip per rev, mm: `fz x Z x lift`. It holds over the step.
+    let chip_per_rev = s.feed.raw_feed / before;
+    // The RPM that the row prints, after the machine range (Step 2).
+    let chart_rpm = s.chip.vendor_rpm.map(|_| before);
+    let limits = named_limits(s, rpm_ceiling, chip_per_rev, chart_rpm);
+    let lowest_of = |always_binds: Option<bool>| {
+        limits
+            .iter()
+            .filter(|l| always_binds.is_none_or(|want| always_binds_limit(l.limit) == want))
+            .min_by(|a, b| a.rpm.total_cmp(&b.rpm))
+            .copied()
+    };
+    let lowest = lowest_of(None)?;
+    // The limit that sets the RPM, or that stops the rise at the chart RPM.
+    let (binding, limit_rpm) = match (chart_rpm, lowest_of(Some(true))) {
+        // A limit that always binds is below the chart RPM, and the lowest
+        // limit is one that only stops the rise: the RPM comes down to the
+        // first, not to the second.
+        (Some(chart), Some(hard)) if lowest.rpm < chart && hard.rpm < chart => {
+            (hard.limit, hard.rpm)
+        }
+        (Some(chart), _) if lowest.rpm < chart => (lowest.limit, chart),
+        (Some(_) | None, _) => (lowest.limit, lowest.rpm),
+    };
+    let machine = input.machine;
+    // A whole RPM that the spindle can run, at or below the limit (as
+    // Step 7 does): a rounded-up RPM would pass the limit. The chart RPM
+    // is such an RPM already.
+    let target = if chart_rpm.is_some_and(|chart| limit_rpm.to_bits() == chart.to_bits()) {
+        limit_rpm
+    } else {
+        machine.next_rpm_at_or_below(limit_rpm.floor())
+    };
+    if target.to_bits() != before.to_bits() && target > 0.0 {
+        s.speed.rpm = target;
+        if chart_rpm.is_some() {
+            s.speed.spindle_scale *= target / before;
+        }
+        s.speed.spindle_scale_reason = SpindleScaleReason::ConstantChip;
+        s.speed.basis = Basis::derived(
+            "constant chip to the first limit",
+            vec![s.chip.basis.clone(), limit_basis(s, binding)],
+        );
+        s.feed.raw_feed = chip_per_rev * target;
+        s.feed.feed = s.feed.raw_feed;
+        s.feed.basis = super::feed::feed_basis_now(s);
+    }
+    log.state("step5c_constant_chip", s);
     Some(RpmChoice {
-        rpm: speed.rpm,
+        rpm: s.speed.rpm,
+        chart_rpm,
         binding,
         limits,
     })
 }
 
-/// The named limits of Steps 2b and 2b' at the chart RPM `chart_rpm` (the
-/// RPM after Step 2), each with the highest RPM it admits. `None` under
-/// [`SpindleStrategy::MatchChart`].
-///
-/// Step 2b only lifts the RPM: it climbs to `min(ceiling, chart x 1.5)`
-/// when the ceiling is above the chart RPM, and else it keeps the chart
-/// RPM. So a cap of Step 2b admits the larger of the cap and the chart
-/// RPM. Step 2b' lowers the RPM to the tier on a milling op with a
-/// nominal-diameter tool, so there the tier admits the tier itself.
-fn named_limits(input: &FeedsInput, chip: &Chip, chart_rpm: f64) -> Option<Vec<RpmLimitValue>> {
-    match input.spindle_strategy {
-        SpindleStrategy::MatchChart => return None,
-        SpindleStrategy::ConstantChip { .. } => {}
+/// `true` for a limit that lowers a chart RPM above it (lead ruling
+/// 2026-11-10); `false` for a limit that only stops the rise.
+const fn always_binds_limit(limit: RpmLimit) -> bool {
+    match limit {
+        RpmLimit::OperatorCeiling | RpmLimit::SpindleMax | RpmLimit::VendorRpmMax => true,
+        RpmLimit::CuttingCeiling(_)
+        | RpmLimit::ZAxisRate
+        | RpmLimit::PowerAtRpm
+        | RpmLimit::ChartRpm => false,
     }
-    let (_, machine_max_rpm) = input.machine.rpm_range();
-    let mut limits = vec![
-        RpmLimitValue {
-            limit: RpmLimit::LegacySpeedup,
-            rpm: chart_rpm * MAX_SPINDLE_SPEEDUP,
-        },
-        RpmLimitValue {
-            limit: RpmLimit::LegacyHeadroom,
-            rpm: (machine_max_rpm * SPINDLE_CEILING_HEADROOM).max(chart_rpm),
-        },
-    ];
-    if let Some(vm) = chip.vendor_rpm_max
-        && vm.is_finite()
-        && vm > 0.0
+}
+
+/// The basis of the limit that binds.
+fn limit_basis(s: &CalcState, limit: RpmLimit) -> Basis {
+    match limit {
+        RpmLimit::SpindleMax => Basis::Machine(sourced::MachineField::SpindleRpm),
+        RpmLimit::CuttingCeiling(_) => feed_cap_basis(),
+        RpmLimit::ZAxisRate => Basis::Machine(sourced::MachineField::ZAxisRate),
+        RpmLimit::PowerAtRpm => power_curve(),
+        RpmLimit::OperatorCeiling => Basis::stated(),
+        RpmLimit::ChartRpm | RpmLimit::VendorRpmMax => Basis::Printed(sourced::RowRef(
+            s.chip.vendor_source.clone().unwrap_or_default(),
+        )),
+    }
+}
+
+/// Every limit that applies, with the highest RPM it admits
+/// (`P21_DESIGN.md` sections 2.1 to 2.6).
+fn named_limits(
+    s: &CalcState,
+    rpm_ceiling: Option<u32>,
+    chip_per_rev: f64,
+    chart_rpm: Option<f64>,
+) -> Vec<RpmLimitValue> {
+    let input = s.input;
+    let machine = input.machine;
+    let (machine_min_rpm, machine_max_rpm) = machine.rpm_range();
+    // 2.1: the spindle maximum.
+    let mut limits = vec![RpmLimitValue {
+        limit: RpmLimit::SpindleMax,
+        rpm: machine_max_rpm,
+    }];
+    // 2.2: the op cutting ceiling over the chip per rev.
+    let ceiling = op_ceiling(input);
+    limits.push(RpmLimitValue {
+        limit: RpmLimit::CuttingCeiling(ceiling.source()),
+        rpm: ceiling.mm_min() / chip_per_rev,
+    });
+    // 2.3: the Z axis rate. A drill cycle only: its one feed is vertical.
+    // A side op does not take it; its plunge and ramp go through
+    // `VerticalRateLimit::bound` at any RPM (P20b).
+    if input.operation == OperationFamily::Drill
+        && let Some(z_rate) = machine.z_axis_rate_mm_min()
     {
         limits.push(RpmLimitValue {
-            limit: RpmLimit::VendorRpmMax,
-            rpm: vm.max(chart_rpm),
+            limit: RpmLimit::ZAxisRate,
+            rpm: z_rate / chip_per_rev,
         });
     }
-    let geom_uses_nominal_d = !matches!(
-        input.tool_geometry,
-        ToolGeometryHint::VBit { .. } | ToolGeometryHint::TaperedBall { .. }
-    );
-    if geom_uses_nominal_d {
-        let tier = milling_rpm_ceiling_for_diameter(input.tool_diameter);
-        let rpm = if input.operation == OperationFamily::Drill {
-            tier.max(chart_rpm)
-        } else {
-            tier
-        };
+    // 2.5: the power at the RPM.
+    if let Some(rpm) = power_limit_rpm(
+        s,
+        chip_per_rev,
+        chart_rpm.unwrap_or(machine_min_rpm),
+        machine_max_rpm,
+    ) {
         limits.push(RpmLimitValue {
-            limit: RpmLimit::LegacyTier,
+            limit: RpmLimit::PowerAtRpm,
             rpm,
         });
     }
-    Some(limits)
+    // 2.6: the operator ceiling; with none, the chart RPM.
+    match (rpm_ceiling, chart_rpm) {
+        (Some(ceiling_rpm), _) => limits.push(RpmLimitValue {
+            limit: RpmLimit::OperatorCeiling,
+            rpm: f64::from(ceiling_rpm),
+        }),
+        (None, Some(chart)) => limits.push(RpmLimitValue {
+            limit: RpmLimit::ChartRpm,
+            rpm: chart,
+        }),
+        // `constant_chip_gap` refuses this input (`RowPrintsNoRpm`).
+        (None, None) => {}
+    }
+    // Ruling Q9: the RPM maximum that the row prints.
+    if let Some(vendor_max) = s.chip.vendor_rpm_max
+        && vendor_max.is_finite()
+        && vendor_max > 0.0
+    {
+        limits.push(RpmLimitValue {
+            limit: RpmLimit::VendorRpmMax,
+            rpm: vendor_max,
+        });
+    }
+    limits
 }
 
-/// Step 2b: the spindle speed-up along the constant-chipload line
-/// (`SpindleStrategy::ConstantChip`).
-fn step2b_max_speed(input: &FeedsInput, chip: &Chip, speed: &mut Speed) {
+/// The highest RPM that the spindle power admits at the held chip, in
+/// `[from_rpm, max_rpm]`. Infinite when the power admits `max_rpm`. `None`
+/// when the power of the cut is not judged before the simulation: no force
+/// line, a depth known after the simulation, or a drill cycle (Step 6
+/// does not act on those either).
+///
+/// At a held chip the required power is linear in the RPM:
+/// `P_req(n) = k x n` (`P21_DESIGN.md` section 2.5; both the shear term
+/// and the edge term carry one factor n). The available power is
+/// `MachineProfile::power_at_rpm(n)`. An RPM is admitted when the ratio
+/// `P_req / P_avail` is at or below 1, or at or below its value at
+/// `from_rpm`: a rise that does not raise the ratio does not make an
+/// over-power cut worse, and the Step 6 ladder then lowers the depth or
+/// the width as it does at the chart RPM. On a constant-torque drive below
+/// its rated RPM the ratio is constant, so the power sets no RPM there.
+fn power_limit_rpm(s: &CalcState, chip_per_rev: f64, from_rpm: f64, max_rpm: f64) -> Option<f64> {
+    let input = s.input;
+    if input.is_axial_plunge() {
+        return None;
+    }
     let machine = input.machine;
-    let d = input.tool_diameter;
-    // --- Step 2b: Spindle-speedup along the constant-chipload line ---
-    //
-    // Under `SpindleStrategy::ConstantChip` push RPM up toward the
-    // spindle ceiling (clamped by vendor.rpm_max when published,
-    // capped by MAX_SPINDLE_SPEEDUP and a small safety headroom).
-    // Feed scales proportionally below (the feed formula already
-    // multiplies by rpm), so chipload is preserved. Power and feed-
-    // cap derates apply on top — if the higher operating point
-    // exceeds spindle power the existing `power_limit` claws feed
-    // back, and the modal renders the resulting binding constraint.
-    //
-    // `spindle_scale` is captured into `FeedsDerates` for the modal.
-    // Default (MatchChart) leaves it at 1.0; smoke baselines unchanged.
-    if matches!(input.spindle_strategy, SpindleStrategy::ConstantChip { .. }) && speed.rpm > 0.0 {
-        let (_, machine_max_rpm) = machine.rpm_range();
-        let machine_ceiling = machine_max_rpm * SPINDLE_CEILING_HEADROOM;
-        // Diameter-tier literature ceiling for milling. The MaxSpeed
-        // speedup pre-2026-06-03 used machine_ceiling unconditionally,
-        // pushing a 12 mm hardwood adaptive2d cut to 22.8 k RPM —
-        // ~63% above the Onsrud/Amana 14 k literature ceiling
-        // (literature-matrix cell flat_12mm_adaptive2d_oak_power).
-        //
-        // The tier ceiling always applies for nominal-D == cutting-D
-        // geometries (Flat / Ball / Bull) — vendor `rpm_max` on the
-        // matched LUT row is treated as a per-row safety ceiling
-        // (often inherited from a small-diameter anchor row and not
-        // re-scaled by diameter), so it isn't a reliable per-diameter
-        // bound. We `.min()` all three: vendor rpm_max (when present),
-        // the machine safety headroom, and the diameter-tier
-        // literature ceiling. The lowest defensible cap wins.
-        //
-        // V-bit and tapered-ball geometries cut on the **engaged-D**
-        // circle, not nominal D — the tier table is calibrated on the
-        // cutting-D ≈ nominal-D assumption, so clamping nominal-D
-        // would force a 6.35 mm V-bit down to the 18 k tier even when
-        // engaged-D is ~1 mm and the engaged-D SFM math wants near-
-        // ceiling RPM (literature-matrix cell
-        // vbit_60deg_vcarve_oak_micro_depth).
-        let geom_uses_nominal_d = !matches!(
-            input.tool_geometry,
-            ToolGeometryHint::VBit { .. } | ToolGeometryHint::TaperedBall { .. }
-        );
-        let diameter_tier_ceiling = if geom_uses_nominal_d {
-            milling_rpm_ceiling_for_diameter(d)
+    let reference_rpm = s.speed.rpm;
+    let (_, required_kw) = cap_arm_demand_kw(
+        input,
+        s.cut.ap,
+        s.cut.ae,
+        s.feed.effective_d,
+        reference_rpm,
+        chip_per_rev * reference_rpm,
+    )?;
+    let k = required_kw / reference_rpm;
+    if !(k.is_finite() && k > 0.0) {
+        return None;
+    }
+    let ratio = |rpm: f64| {
+        let available = machine.power_at_rpm(rpm);
+        if available > 0.0 {
+            k * rpm / available
         } else {
             f64::INFINITY
-        };
-        let ceiling = match chip.vendor_rpm_max {
-            Some(vm) if vm.is_finite() && vm > 0.0 => {
-                vm.min(machine_ceiling).min(diameter_tier_ceiling)
-            }
-            _ => machine_ceiling.min(diameter_tier_ceiling),
-        };
-        if ceiling > speed.rpm {
-            let raw_speedup = ceiling / speed.rpm;
-            speed.spindle_scale = raw_speedup.min(MAX_SPINDLE_SPEEDUP);
-            speed.spindle_scale_reason = SpindleScaleReason::MaxSpeedPolicy;
-            let before = speed.rpm;
-            speed.rpm = machine.clamp_rpm(speed.rpm * speed.spindle_scale);
-            speed.basis = moved_basis(
-                speed.basis.clone(),
-                before,
-                speed.rpm,
-                "max speed policy",
-                Basis::Rule(MAX_SPINDLE_SPEEDUP_ROW),
-            );
+        }
+    };
+    let admitted_ratio = ratio(from_rpm).max(1.0);
+    let admits = |rpm: f64| ratio(rpm) <= admitted_ratio;
+    if max_rpm <= from_rpm || admits(max_rpm) {
+        return Some(f64::INFINITY);
+    }
+    // The ratio does not fall as the RPM rises (the required power is
+    // linear; the available power is flat or linear), so the highest
+    // admitted RPM is a bisection.
+    let (mut lo, mut hi) = (from_rpm, max_rpm);
+    for _ in 0..60 {
+        let mid = 0.5 * (lo + hi);
+        if admits(mid) {
+            lo = mid;
+        } else {
+            hi = mid;
         }
     }
-}
-
-/// Step 2b': the diameter-tier ceiling for milling under `ConstantChip`.
-fn step2b_milling_tier(input: &FeedsInput, speed: &mut Speed) {
-    // --- Step 2b': Diameter-tier ceiling for milling under ConstantChip ---
-    //
-    // The vendor LUT can publish `rpm_nominal` above the diameter-tier
-    // literature ceiling (e.g. a 12 mm hardwood adaptive2d row anchored
-    // on a 6 mm chart with vendor_rpm=18 000). Step 2's vendor-override
-    // path (`rpm = machine.clamp_rpm(v_rpm)`) then carries that value
-    // forward, and the Step 2b speedup branch is a no-op because the
-    // tier ceiling is already below `rpm`. Without this final clamp the
-    // engine emits the vendor-anchor RPM verbatim — overshooting the
-    // literature band whenever the vendor row outpaces the per-diameter
-    // wood-cutting envelope.
-    //
-    // Apply the tier ceiling as a hard cap under ConstantChip only —
-    // MatchChart explicitly opts into the vendor row's nominal RPM and
-    // shouldn't be silently re-clamped (the smoke baselines + chart-
-    // fidelity tests depend on that opt-in). This step does not clamp the
-    // Drill family. P20a removed the drill RPM tier (Step 2c), and this
-    // step kept its Drill exclusion, so a drill under ConstantChip reads only
-    // the Step 2b ceiling.
-    if matches!(input.spindle_strategy, SpindleStrategy::ConstantChip { .. })
-        && input.operation != OperationFamily::Drill
-        && !matches!(
-            input.tool_geometry,
-            ToolGeometryHint::VBit { .. } | ToolGeometryHint::TaperedBall { .. }
-        )
-    {
-        // Skip V-bit / tapered ball — see Step 2b note: tier ceiling
-        // is calibrated against nominal-D, but these geometries cut on
-        // engaged-D, so the nominal-D tier is a false constraint here.
-        let tier_row = milling_rpm_ceiling_row(input.tool_diameter);
-        let tier_ceiling = tier_row.value;
-        if speed.rpm > tier_ceiling {
-            let pre_clamp = speed.rpm;
-            speed.rpm = tier_ceiling;
-            speed.rpm = input.machine.clamp_rpm(speed.rpm);
-            if pre_clamp > 0.0 && speed.rpm < pre_clamp {
-                speed.spindle_scale *= speed.rpm / pre_clamp;
-            }
-            speed.basis = moved_basis(
-                speed.basis.clone(),
-                pre_clamp,
-                speed.rpm,
-                "milling RPM tier",
-                Basis::Rule(tier_row),
-            );
-        }
-    }
+    Some(lo)
 }

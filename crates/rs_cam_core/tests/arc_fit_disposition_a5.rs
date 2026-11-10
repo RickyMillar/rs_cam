@@ -192,6 +192,12 @@ struct Fixture {
     /// whether the ceiling binds decides whether the arc-fit lift is
     /// *realised* or merely *solved for*, and the two differ by a lot.
     max_cutting_feed_mm_min: Option<f64>,
+    /// Feeds contract P21c: `Some(ceiling)` runs the fixture under
+    /// `SpindleStrategy::ConstantChip` with that RPM ceiling, on a machine
+    /// that states its axis rates (each one the travel rate
+    /// `max_feed_mm_min`) and accelerations (the scalar of the kinematics
+    /// default). `None` is `MatchChart` on a machine with no kinematics.
+    constant_chip_ceiling: Option<u32>,
     /// **Arm A — the feed Suggest SHIPPED before the retirement** (mm/min),
     /// measured on this exact fixture at `719b92d7` and pinned here on
     /// 2026-08-13. Applied explicitly by `arc_fit_arms_gate_observation`
@@ -268,6 +274,7 @@ fn fixtures() -> Vec<Fixture> {
             rpm: 16_000,
             max_feed_mm_min: 15_000.0,
             max_cutting_feed_mm_min: Some(15_000.0),
+            constant_chip_ceiling: None,
             legacy_shipped_feed: 6912.0,
             // **RE-PINNED 2026-08-13, A-7 / Checkpoint K-(a4): 1215.0 →
             // 918.0** (×0.7556). Mechanism: a4 hoisted the LUT routing
@@ -345,6 +352,7 @@ fn fixtures() -> Vec<Fixture> {
             // that its legacy lift (6000) and every pin below were measured
             // against, the deleted `DEFAULT_CUTTING_FEED_CAP_MM_MIN`.
             max_cutting_feed_mm_min: Some(6000.0),
+            constant_chip_ceiling: None,
             legacy_shipped_feed: 6000.0,
             // **RE-PINNED 2026-08-13, A-7 / Checkpoint K-(a4): 2243.0 →
             // 1694.0** (×0.7552) — the same mechanism and, to three
@@ -402,6 +410,7 @@ fn fixtures() -> Vec<Fixture> {
             rpm: 18_000,
             max_feed_mm_min: 12_000.0,
             max_cutting_feed_mm_min: None,
+            constant_chip_ceiling: None,
             legacy_shipped_feed: 4405.0,
             // **RE-PINNED 2026-08-19, G-CHIPTHIN-HALFFIX: 1487.0 → 881.0**
             // (÷1.688). Unlike the two Adaptive3d fixtures this one does NOT
@@ -450,6 +459,7 @@ fn fixtures() -> Vec<Fixture> {
             rpm: 20_000,
             max_feed_mm_min: 2_500.0,
             max_cutting_feed_mm_min: None,
+            constant_chip_ceiling: Some(24_000),
             legacy_shipped_feed: 2500.0,
             // **RE-PINNED 2026-08-19, G-CHIPTHIN-HALFFIX: 1029.0 → 638.0**
             // (÷1.613). Same rubbing-floor-at-the-band-ceiling outcome as
@@ -478,6 +488,20 @@ fn fixtures() -> Vec<Fixture> {
             // 0.10417 mm; the RPM is floor(2500 / 0.10417) = 23 999 (one
             // whole rev under 24 000); the feed is 0.10417 x 23 999 =
             // 2499.896 mm/min, shipped floored to 2499.
+            //
+            // Before P21c this pin was a known red at 2317: under
+            // `MatchChart` the chart RPM 18 000 ships, and 0.06437 x 2 x
+            // 18 000 = 2317 is under the ceiling (`P21_DESIGN.md` sections
+            // 1.4 and 6.3).
+            //
+            // **P21c (2026-11-10): 2499 holds again, for a new reason.**
+            // The fixture opts into `ConstantChip` with a ceiling of 24 000
+            // on a machine that states its axis rates (X and Y 2500). The
+            // XY rate binds: n = floor(2500 / (0.06437 x 2)) = 19 419 RPM
+            // (`RpmLimit::CuttingCeiling(AxisRate)`), and the feed is
+            // 0.12874 x 19 419 = 2499.9, shipped floored to 2499
+            // (`P21_DESIGN.md` section 6.3). The 2499 no longer comes from
+            // 24 000 RPM.
             expected_suggest_feed: 2499.0,
         },
     ]
@@ -492,11 +516,28 @@ fn build_session(fx: &Fixture) -> ProjectSession {
     stock.material = fx.material.clone();
     builder = builder.stock(stock);
 
-    builder = builder.machine(MachineProfile {
+    let machine = MachineProfile {
         max_feed_mm_min: fx.max_feed_mm_min,
         max_cutting_feed_mm_min: fx.max_cutting_feed_mm_min,
         ..MachineProfile::default()
-    });
+    };
+    // P21c: the constant-chip policy needs stated axis rates and
+    // accelerations, and an RPM ceiling in the post block.
+    builder = match fx.constant_chip_ceiling {
+        Some(ceiling) => {
+            let accel = machine.effective_kinematics().acceleration_mm_s2;
+            let rate = fx.max_feed_mm_min;
+            let post = rs_cam_core::gcode::PostConfig {
+                spindle_strategy: rs_cam_core::feeds::SpindleStrategyKind::ConstantChip,
+                spindle_rpm_ceiling: Some(ceiling),
+                ..rs_cam_core::gcode::PostConfig::default()
+            };
+            builder
+                .machine(machine.with_axis_limits([rate; 3], [accel; 3]))
+                .post(post)
+        }
+        None => builder.machine(machine),
+    };
 
     let rt = builder.add_tool(fx.rough_tool.clone());
     let rough_id = builder.tools()[rt].id.raw();

@@ -423,6 +423,30 @@ impl ProjectSession {
         .ok()
     }
 
+    /// Feeds contract P21c (`P21_DESIGN.md` section 2.4, A3): the share of
+    /// the fed time of the generated toolpath at `index` that runs at the
+    /// commanded feed (`machine::kinematics::reached_feed_share`). A
+    /// report: no rule caps the RPM with it. `None` when the toolpath has
+    /// no result or the machine states no kinematics. The ceiling and the
+    /// rapid feed are the ones that the simulation reads.
+    #[must_use]
+    pub fn reached_feed_share_at(
+        &self,
+        index: usize,
+    ) -> Option<crate::machine::kinematics::ReachedFeedShare> {
+        let tc = self.toolpath_configs.get(index)?;
+        let result = self.results.get(&index)?;
+        let kinematics = self.machine.kinematics?;
+        Some(crate::machine::kinematics::reached_feed_share(
+            result.toolpath(),
+            &kinematics,
+            self.machine
+                .op_cutting_ceiling(tc.dressups.feed_max_rate)
+                .mm_min(),
+            self.post.rapid_feed_mm_min(&self.machine),
+        ))
+    }
+
     /// The records of the Suggest run behind this toolpath's recipe, for
     /// [`Self::diagnose_toolpath_with_trace`] (ruling R4, 2026-09-24: no
     /// invisible calculation).

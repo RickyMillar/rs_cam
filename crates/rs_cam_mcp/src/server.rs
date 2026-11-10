@@ -351,8 +351,9 @@ pub enum SpindleStrategyParam {
     /// Use the chart RPM of the vendor row as written.
     #[default]
     MatchChart,
-    /// Hold the chip and raise the RPM along the constant-chipload line
-    /// toward the spindle ceiling; the feed scales with it.
+    /// Hold the chip and raise the RPM to the first named limit (the RPM
+    /// ceiling, the spindle maximum, a machine rate, the spindle power,
+    /// the vendor RPM maximum); the feed scales with it.
     ConstantChip,
 }
 
@@ -3006,8 +3007,9 @@ pub struct SetSpindleStrategyParam {
     pub strategy: SpindleStrategyParam,
     /// Feeds contract P21b: the operator's RPM ceiling of the constant-chip
     /// strategy (`[job.post] spindle_rpm_ceiling`). `null` or omitted: no
-    /// ceiling. Zero refuses; a value above the spindle maximum warns.
-    /// Suggest does not read it yet.
+    /// ceiling: the RPM does not rise above the chart RPM, and a row that
+    /// prints no RPM refuses. Zero refuses; a value above the spindle
+    /// maximum warns.
     #[serde(default)]
     pub rpm_ceiling: Option<u32>,
 }
@@ -4016,6 +4018,11 @@ pub fn build_info() -> serde_json::Value {
             // `constant_chip` (the old `max_speed` is gone, break) and
             // `rpm_ceiling`.
             "spindle_rpm_ceiling",
+            // Feeds contract P21c: `constant_chip` raises the RPM to the
+            // first named limit; `get_suggest_rationale` prints the choice
+            // in `basis.rpm` ({value, binding, limits}); a machine with no
+            // stated axis rates or accelerations refuses Suggest.
+            "constant_chip_named_limits",
         ],
     })
 }

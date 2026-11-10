@@ -381,6 +381,18 @@ impl CuttingCeilingSource {
             Self::OpFeedCap => "op_feed_cap",
         }
     }
+
+    /// A short operator name of the source (P21c: the binding limit of a
+    /// constant-chip RPM, `feeds::RpmLimit::CuttingCeiling`).
+    #[must_use]
+    pub const fn label(self) -> &'static str {
+        match self {
+            Self::Stated => "cutting feed cap",
+            Self::AxisRate => "X/Y axis rate",
+            Self::TravelRate => "travel rate",
+            Self::OpFeedCap => "op feed cap (feed_max_rate)",
+        }
+    }
 }
 
 impl CuttingCeilingMmMin {
@@ -1071,6 +1083,41 @@ impl MachineProfile {
             .and_then(|k| k.max_rate_xyz_mm_min)
             .map(|[_, _, z]| z)
             .filter(|r| r.is_finite() && *r > 0.0)
+    }
+
+    /// P21c: this profile with the per-axis maximum rates (mm/min, GRBL
+    /// `$110`-`$112`) and accelerations (mm/s^2, `$120`-`$122`) stated,
+    /// as the `$$` import states them. The other kinematics values hold
+    /// (the defaults when the profile has no kinematics).
+    #[must_use]
+    pub fn with_axis_limits(
+        mut self,
+        max_rate_xyz_mm_min: [f64; 3],
+        acceleration_xyz_mm_s2: [f64; 3],
+    ) -> Self {
+        let mut kinematics = self.kinematics.unwrap_or_default();
+        kinematics.max_rate_xyz_mm_min = Some(max_rate_xyz_mm_min);
+        kinematics.acceleration_xyz_mm_s2 = Some(acceleration_xyz_mm_s2);
+        self.kinematics = Some(kinematics);
+        self
+    }
+
+    /// P21c: `true` when the machine states its per-axis maximum rates
+    /// (`kinematics.max_rate_xyz_mm_min`, GRBL `$110`-`$112`). The
+    /// constant-chip RPM rule needs them (`feeds::constant_chip_gap`).
+    #[must_use]
+    pub fn states_axis_rates(&self) -> bool {
+        self.kinematics
+            .is_some_and(|k| k.max_rate_xyz_mm_min.is_some())
+    }
+
+    /// P21c (ruling Q3): `true` when the machine states its per-axis
+    /// accelerations (`kinematics.acceleration_xyz_mm_s2`, GRBL
+    /// `$120`-`$122`). The scalar acceleration does not count.
+    #[must_use]
+    pub fn states_axis_accelerations(&self) -> bool {
+        self.kinematics
+            .is_some_and(|k| k.acceleration_xyz_mm_s2.is_some())
     }
 
     /// F002: the travel rate (`max_feed_mm_min`, the $110 class) as its own

@@ -189,19 +189,25 @@ fn explain_rpm(out: &mut String, explain: &FeedsExplain, applied: &AppliedRecipe
         },
         None => out.push_str("No vendor row matched. This is the empirical formula's RPM.\n"),
     }
-    // The sentence comes from the RECORDED reason, never from the factor.
-    // Until 2026-09-16 this read the factor alone and said "MaxSpeed lifted
-    // it" for anything that was not 1.0 — which was true only while MaxSpeed
-    // was the one thing that could move it. The power ladder walks the same
-    // line downward, so a factor-only reading would name the wrong cause.
+    // The sentence comes from the RECORDED reason, never from the factor:
+    // the power ladder and the feed ceiling move the RPM down the same
+    // line that the constant-chip policy moves it up.
     let scale = explain.recommended.derates.spindle_scale;
     let reason = explain.recommended.derates.spindle_scale_reason;
     match reason {
-        SpindleScaleReason::MaxSpeedPolicy => out.push_str(&format!(
-            "Spindle policy Constant chip lifted it ×{scale:.3} toward the spindle \
-             ceiling, and scaled the feed with it to hold the advance/tooth \
-             constant.\n"
-        )),
+        SpindleScaleReason::ConstantChip => {
+            // P21c: the limit that binds, from the recorded choice.
+            let limit = explain
+                .recommended
+                .rpm_choice
+                .as_ref()
+                .map_or("the first limit", |c| c.binding.label());
+            out.push_str(&format!(
+                "Spindle policy Constant chip set the RPM at {limit} (\u{00D7}{scale:.3} \
+                 of the chart RPM) and scaled the feed with it. The advance per tooth \
+                 holds.\n"
+            ));
+        }
         SpindleScaleReason::PowerLimit => out.push_str(&format!(
             "The cut was over the spindle's power budget, so the RPM came DOWN \
              ×{scale:.3} and the feed came down with it. The advance per tooth \

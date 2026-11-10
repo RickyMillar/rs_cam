@@ -1,6 +1,6 @@
 //! The spindle-speed steps of the calculator: the engaged diameter, Step 1
-//! and the vendor RPM of Step 2. Steps 2b and 2b' are in `spindle.rs`
-//! (feeds contract P21a: one RPM-choice door).
+//! and the vendor RPM of Step 2. The constant-chip RPM is Step 5c in
+//! `spindle.rs` (feeds contract P21c: the one RPM-choice door).
 
 use super::{Chip, Speed};
 use crate::feeds::sourced::{self, Basis};

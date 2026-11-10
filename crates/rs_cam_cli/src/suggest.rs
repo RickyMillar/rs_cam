@@ -101,6 +101,13 @@ fn profile_json(profile: &CutterOpProfile<'_>) -> Value {
     json!({
         "calculator": {
             "rpm": feeds.rpm,
+            // P21c: the constant-chip RPM choice (the binding limit and
+            // every limit with its RPM); `null` under `match_chart`. MCP
+            // `get_suggest_rationale` `basis.rpm` prints the same record.
+            "rpm_choice": feeds
+                .rpm_choice
+                .as_ref()
+                .map(rs_cam_core::feeds::RpmChoice::to_json),
             "chip_load_mm": feeds.chip_load_mm,
             "feed_rate_mm_min": feeds.feed_rate_mm_min,
             "plunge_rate_mm_min": feeds.plunge_rate_mm_min,
@@ -268,6 +275,14 @@ pub fn run_suggest(input: &Path, json_out: bool) -> Result<()> {
                 ),
                 cell(peck_depth(cur), sug.and_then(peck_depth)),
             );
+            // P21c: the limit that sets the constant-chip RPM.
+            if let Some(choice) = profile
+                .as_ref()
+                .and_then(|p| p.feeds.as_ref())
+                .and_then(|f| f.rpm_choice.as_ref())
+            {
+                println!("    rpm {:.0}: {}", choice.rpm, choice.binding.label());
+            }
             // P13c (O3): a computed width states its assumptions, the one
             // core line the GUI card and MCP print.
             if profile.as_ref().is_some_and(|p| {

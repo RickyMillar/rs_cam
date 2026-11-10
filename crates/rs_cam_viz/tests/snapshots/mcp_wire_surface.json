@@ -6865,7 +6865,7 @@
       "properties": {
         "rpm_ceiling": {
           "default": null,
-          "description": "Feeds contract P21b: the operator's RPM ceiling of the constant-chip\nstrategy (`[job.post] spindle_rpm_ceiling`). `null` or omitted: no\nceiling. Zero refuses; a value above the spindle maximum warns.\nSuggest does not read it yet.",
+          "description": "Feeds contract P21b: the operator's RPM ceiling of the constant-chip\nstrategy (`[job.post] spindle_rpm_ceiling`). `null` or omitted: no\nceiling: the RPM does not rise above the chart RPM, and a row that\nprints no RPM refuses. Zero refuses; a value above the spindle\nmaximum warns.",
           "format": "uint32",
           "minimum": 0,
           "type": [
@@ -6883,7 +6883,7 @@
             },
             {
               "const": "constant_chip",
-              "description": "Hold the chip and raise the RPM along the constant-chipload line\ntoward the spindle ceiling; the feed scales with it.",
+              "description": "Hold the chip and raise the RPM to the first named limit (the RPM\nceiling, the spindle maximum, a machine rate, the spindle power,\nthe vendor RPM maximum); the feed scales with it.",
               "type": "string"
             }
           ]

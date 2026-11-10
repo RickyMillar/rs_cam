@@ -100,7 +100,14 @@ use rs_cam_core::material::{
 /// were `feeds.drill_rpm_envelope_for_diameter.{small_max_d_mm,
 /// mid_max_d_mm, small_floor_rpm, small_ceiling_rpm, mid_floor_rpm,
 /// mid_ceiling_rpm, large_floor_rpm, large_ceiling_rpm}`.
-const PINNED_UNSOURCED_COUNT: usize = 152;
+///
+/// Feeds contract P21c (2026-11-10) lowered it from 152 to 142: the
+/// constant-chip RPM stops at a named limit, so the speed-up factor and the
+/// milling RPM tiers left. No file in the repo printed them. The ten rows
+/// were `feeds.MAX_SPINDLE_SPEEDUP`,
+/// `feeds.milling_rpm_ceiling_for_diameter.tier{1,2,3,4}_{max_d_mm,
+/// ceiling_rpm}` and `feeds.milling_rpm_ceiling_for_diameter.large_ceiling_rpm`.
+const PINNED_UNSOURCED_COUNT: usize = 142;
 
 fn repo_root() -> PathBuf {
     PathBuf::from(env!("CARGO_MANIFEST_DIR")).join("../..")

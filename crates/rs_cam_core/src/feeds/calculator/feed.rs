@@ -54,7 +54,7 @@ pub(super) const fn power_curve() -> Basis {
     Basis::Machine(sourced::MachineField::PowerCurve)
 }
 
-const fn feed_cap_basis() -> Basis {
+pub(super) const fn feed_cap_basis() -> Basis {
     Basis::Machine(sourced::MachineField::CuttingFeedCap)
 }
 
@@ -165,7 +165,7 @@ pub(super) fn step5b_long_tool(s: &mut CalcState) {
 
 /// The feed law over the bases after Step 6, and the power ceiling when
 /// the Step 6 feed rung cut the feed.
-fn feed_basis_now(s: &CalcState) -> Basis {
+pub(super) fn feed_basis_now(s: &CalcState) -> Basis {
     let basis = feed_law(
         s.feed.thinning,
         &s.chip.basis,
@@ -211,7 +211,11 @@ pub(super) fn step7_feed_ceiling(s: &mut CalcState) {
     // is deleted (Q1b): its middle RPM is a third arm the ruling does not
     // name. An arm with a chip under the rubbing floor is inside; Step 9b
     // warns (Q1c). Drill cycles keep their own RPM follow-down (Step 9c).
-    let machine_cut_ceiling = machine.cutting_feed_ceiling_mm_min();
+    // P21c (ruling Q11): THE cutting ceiling of the op
+    // (`MachineProfile::op_cutting_ceiling` at the op's `feed_max_rate`),
+    // the ceiling that the constant-chip XY limit of Step 5c reads.
+    let op_ceiling = super::spindle::op_ceiling(input);
+    let machine_cut_ceiling = op_ceiling.mm_min();
     let mut shipped_cap_arm = None;
     let rpm = s.speed.rpm;
     if s.feed.feed > machine_cut_ceiling
@@ -314,9 +318,7 @@ pub(super) fn step7_feed_ceiling(s: &mut CalcState) {
             FeedsWarning::RpmLoweredForFeedCeiling { .. } | FeedsWarning::FeedRateClamped { .. }
         )
     });
-    if cap_bound
-        && machine.cutting_ceiling().source() == crate::machine::CuttingCeilingSource::TravelRate
-    {
+    if cap_bound && op_ceiling.source() == crate::machine::CuttingCeilingSource::TravelRate {
         s.warnings.push(FeedsWarning::CuttingCapUnstated {
             travel_rate_mm_min: machine_cut_ceiling,
         });

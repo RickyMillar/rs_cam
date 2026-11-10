@@ -423,17 +423,17 @@ enum Commands {
 
         /// Override the project's spindle policy for this run.
         /// "match_chart" (default in code; preserved when unset) uses
-        /// the vendor LUT row's chart RPM verbatim. "constant_chip" walks
-        /// the constant-chipload line up to the spindle ceiling and
-        /// scales feed proportionally. When unset, the strategy from
+        /// the vendor LUT row's chart RPM verbatim. "constant_chip" holds
+        /// the chip and raises the RPM to the first named limit; the
+        /// feed scales with it. When unset, the strategy from
         /// the loaded project's post config is used.
         #[arg(long, value_enum)]
         spindle_strategy: Option<SpindleStrategyArg>,
 
         /// Override the project's spindle RPM ceiling for this run
         /// (`[job.post] spindle_rpm_ceiling`, feeds contract P21b). Zero
-        /// refuses; a value above the spindle maximum warns. Suggest does
-        /// not read it yet.
+        /// refuses; a value above the spindle maximum warns. Unset and no
+        /// project value: the RPM does not rise above the chart RPM.
         #[arg(long)]
         spindle_rpm_ceiling: Option<u32>,
 

@@ -1433,6 +1433,7 @@ fn the_two_doc_ratio_diameters_only_diverge_for_v_bit_geometry() {
                 target_scallop_mm: None,
                 vendor_lut: None,
                 setup: SetupContext::default(),
+                feed_max_rate: None,
                 spindle_strategy: SpindleStrategy::default(),
                 power_cases: rs_cam_core::feeds::engagement::PowerCases::NOMINAL,
                 tool_facts: rs_cam_core::feeds::sourced::ToolFactKinds::STATED,
