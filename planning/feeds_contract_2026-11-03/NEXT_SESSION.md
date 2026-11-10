@@ -1,21 +1,36 @@
 # Next session: feeds and speeds correctness (brief, 2026-11-08, second edition)
 
-## Overnight plan, 2026-11-10 evening (the operator is asleep: "if you see a path just start work")
+## Morning note, 2026-11-11 (the overnight work; read this first)
 
-Operator direction: build engine support for straight-flute bits like the 18 mm, then compare the
-18 mm and the 6 mm rough "apples to apples". Second research round committed (`cb652e2d0`,
-`P21_DESIGN.md` note 11: Woodson 1979 agrees with the force line within 19 %; Trend limits depth to
-the shank diameter; no shank limit exists; no hobby report at 10 mm depth).
-1. P24a (agent `p21c-impl`): a tool can state it is straight (one fact; helix 0 follows), a
-   `ToolSeries::Straight`, the Onsrud 48-000 and Freud straight-bit rows. The wanaka operator file and
-   the acceptance table are NOT touched: marking tool 6 straight changes its chip, which the operator
-   ruled on 2026-11-10 (U1), so that edit waits for the operator.
-2. After P24a lands: comparison variants of wanaka beside the original in `planning/rivmap_block_job/`
-   (18 mm as modelled, 18 mm straight, the bulk roughs on the 6 mm), each generated and simulated;
-   the comparison note goes to `phases/P24_compare.md`. `gui_restart` after each simulation (memory).
-3. For the operator in the morning: the bit's brand and part number or a photo; a magnet test of the
-   body (a steel body bends about 3 x a carbide one; the file says carbide); measured stick-out and
-   flute length; then the choice 18 mm gentler (6 mm depth, ceiling 18000) or rough with the 6 mm.
+Landed overnight: `910dcf6d5` P24a (a tool can state `cut_direction = "straight"`; it holds helix 0
+and reads the straight-bit rows; 53 Onsrud 48-000 and Freud rows; a straight row serves only a
+straight tool, so no existing value moved), `1a34bc612` (two pins the P23c gate list missed),
+`1b0273059` (`phases/P24b_survey.md`: a helix-dependent force line; the lead agrees to keep helix 0),
+`9e6130439` (`phases/P24_compare.md`: the 18 mm against 6 mm rough comparison, four variant project
+files beside the operator file). A regression sweep was clean (core `--lib` 2795 pass + the known
+timing trap; the viz suite with only `ic1` red). Running at the time of writing: agent `p21c-impl`
+on a scoped sweep of the core feeds integration tests (`phases/SWEEP_2026-11-11.md`).
+
+The comparison in one line: at ceiling 18000 the roughing chain takes 2113 s (18 mm as modelled),
+1953 s (18 mm straight), 2008 s (bulk roughs on the 6 mm), 2039 s (straight at 6 mm depth): an 8 %
+spread. The 6 mm variant is the only one with a clean simulation headline, no core finding and no
+op at the power limit (0.39 of 1.125 kW). Lead reading: `P24_compare.md` section 7.
+
+For the operator to decide:
+1. Rough with the 6 mm (variant C) or keep the 18 mm. The numbers favour C: the same time, a third
+   of the power, fewer findings. If the 18 mm stays: mark tool 6 straight in the operator file (its
+   chip moves 0.179 -> 0.220, which changes the U1 ruling of 2026-11-10 and the table rows of idx 0,
+   1, 11, 12, 14).
+2. The series-first question (`P24a.md` open item): should a tool's own series always outrank the
+   nearest diameter, as the ruling of 2026-10-31 reads?
+3. The spiral force line (`P24b_survey.md`): keep helix 0 for every tool (recommended) or let a
+   STATED helix read the paper's spiral fits.
+4. Facts about the 18 mm bit, if it stays: brand and part number or a photo; a magnet test of the
+   body (steel bends about 3 x carbide); measured stick-out and flute length.
+Open defects found by the comparison, logged, not chased: one rapid collision on idx 14 at 6 mm
+depth (variant D, cause unknown); idx 1 at depth per pass 6 measures a 9 mm engaged depth.
+Still owed before any cut: the pre-cut list of `phases/P22f_wanaka.md` sections 4 and 6, and a full
+apply + regenerate + simulate of the chosen variant on the final build.
 
 ## Lead review after the restart, 2026-11-10 ~12:30
 
