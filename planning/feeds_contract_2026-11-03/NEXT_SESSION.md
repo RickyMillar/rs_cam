@@ -1,6 +1,24 @@
 # Next session: feeds and speeds correctness (brief, 2026-11-08, second edition)
 
-## Morning note, 2026-11-11 (the overnight work; read this first)
+## Operator rulings, 2026-11-11 morning (read this first)
+
+1. "Let's use the 6mm": the two bulk roughs move to the 6 mm flat end mill. Agent `compare-runner`
+   dials it in on `planning/rivmap_block_job/nz_wanaka_21_6mm_rough_work.toml` (the app's own cut for
+   that tool, all 18 ops with Suggest applied, generated and simulated; `phases/P24_6mm_dialin.md`).
+   When it simulates clean the lead moves it into the operator file and the table is re-graded for
+   the changed ops. The 18 mm bit stays for facing.
+2. The row lookup becomes categories (the operator's words are quoted in `phases/P25_DESIGN.md`): a
+   tool is what it is (flute form straight or spiral; up-cut, down-cut and compression are kinds of
+   spiral that read the generic spiral rows by default); a number is sourced (a row of the category at
+   the size) or calculated by a stated rule inside the category; with neither, no number. Agent
+   `p21c-impl` writes the design and the measurement of what moves; no code before the operator sees
+   that list. This replaces the open series-first question.
+3. Spiral force: one force line for every tool stays (the operator has never seen a helix quoted);
+   `P24b_survey.md` is closed as "keep helix 0".
+`6b4a74f74`: the micro-tool sentry follow-up and the scoped sweep of the core feeds integration tests
+(235 binaries, 932 tests pass; no new red beyond the three stale SpeTool pins, all fixed).
+
+## Morning note, 2026-11-11 (the overnight work)
 
 Landed overnight: `910dcf6d5` P24a (a tool can state `cut_direction = "straight"`; it holds helix 0
 and reads the straight-bit rows; 53 Onsrud 48-000 and Freud rows; a straight row serves only a
