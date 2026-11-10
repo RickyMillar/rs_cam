@@ -1,5 +1,13 @@
 # Next session: feeds and speeds correctness (brief, 2026-11-08, second edition)
 
+## NEXT STEP (2026-11-11, written before a compaction): investigate, do not implement
+
+Follow `phases/P29_INVESTIGATION_PLAN.md`. The operator wants an architectural fix: every cut is
+one object, every limit and metric is a function of it and returns one record, the op type only
+decides which cuts exist (cause: `phases/P28_limit_audit.md`, 34 exemptions; the Adaptive family
+skips the force budget). Output: `phases/P29_FINDINGS.md` and a change list for the operator. The
+session compacts again before any implementation.
+
 ## Operator rulings, 2026-11-11 morning (read this first)
 
 1. "Let's use the 6mm": the two bulk roughs move to the 6 mm flat end mill. Agent `compare-runner`
