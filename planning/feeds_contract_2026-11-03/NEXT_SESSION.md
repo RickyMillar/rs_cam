@@ -1,6 +1,23 @@
 # Next session: feeds and speeds correctness (brief, 2026-11-08, second edition)
 
-## Lead review after the restart, 2026-11-10 ~12:30 (read this first)
+## Overnight plan, 2026-11-10 evening (the operator is asleep: "if you see a path just start work")
+
+Operator direction: build engine support for straight-flute bits like the 18 mm, then compare the
+18 mm and the 6 mm rough "apples to apples". Second research round committed (`cb652e2d0`,
+`P21_DESIGN.md` note 11: Woodson 1979 agrees with the force line within 19 %; Trend limits depth to
+the shank diameter; no shank limit exists; no hobby report at 10 mm depth).
+1. P24a (agent `p21c-impl`): a tool can state it is straight (one fact; helix 0 follows), a
+   `ToolSeries::Straight`, the Onsrud 48-000 and Freud straight-bit rows. The wanaka operator file and
+   the acceptance table are NOT touched: marking tool 6 straight changes its chip, which the operator
+   ruled on 2026-11-10 (U1), so that edit waits for the operator.
+2. After P24a lands: comparison variants of wanaka beside the original in `planning/rivmap_block_job/`
+   (18 mm as modelled, 18 mm straight, the bulk roughs on the 6 mm), each generated and simulated;
+   the comparison note goes to `phases/P24_compare.md`. `gui_restart` after each simulation (memory).
+3. For the operator in the morning: the bit's brand and part number or a photo; a magnet test of the
+   body (a steel body bends about 3 x a carbide one; the file says carbide); measured stick-out and
+   flute length; then the choice 18 mm gentler (6 mm depth, ceiling 18000) or rough with the 6 mm.
+
+## Lead review after the restart, 2026-11-10 ~12:30
 
 Landed: `ef7e75977` P22b (accepted on wanaka idx 1 with helix: 47060 -> 14628 moves, fed time 558 ->
 250 s, the 48 core plunges gone; `P22b.md` section 6), `b361a7b18` the operator's notice.rs fix.
