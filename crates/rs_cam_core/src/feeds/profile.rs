@@ -64,6 +64,30 @@ pub struct CutterOpProfileInput<'a, 'ctx> {
     pub context: SuggestContext<'ctx>,
 }
 
+/// Feeds contract P23b: the speeds of the operation that Suggest ships
+/// ([`CutterOpProfile::suggested_speeds`]): the values that an apply writes,
+/// read from [`CutterOpProfile::suggested_operation`], and the three terms
+/// of the feed. Before the caps, `feed = chip_load_mm x flutes x rpm x
+/// radial_lift`; the apply writes the feed as a whole mm/min, rounded down.
+#[derive(Debug, Clone, Copy, PartialEq, serde::Serialize)]
+pub struct SuggestedSpeeds {
+    /// The spindle speed (RPM) the apply writes.
+    pub rpm: Option<u32>,
+    /// The feed (mm/min) the apply writes.
+    pub feed_mm_min: Option<f64>,
+    /// The plunge (mm/min) the apply writes.
+    pub plunge_mm_min: Option<f64>,
+    /// The ramp feed (mm/min) the apply writes; `None` for an op with no
+    /// ramp field or no entry feed.
+    pub ramp_feed_mm_min: Option<f64>,
+    /// The target chip per tooth (mm), `FeedsResult::chip_load_mm`.
+    pub chip_load_mm: f64,
+    /// The flute count the calculator read.
+    pub flutes: u32,
+    /// The radial chip-thinning lift, `FeedsDerates::radial_chip_thinning`.
+    pub radial_lift: f64,
+}
+
 /// One preflight view of a cutter × operation combination — plan §3.2.
 ///
 /// Everything here is **pre-sim**: feasibility, the canonical Suggest
@@ -204,6 +228,27 @@ impl<'a> CutterOpProfile<'a> {
     #[must_use]
     pub fn shipped_operation(&self) -> &OperationConfig {
         self.suggested_operation.as_ref().unwrap_or(self.operation)
+    }
+
+    /// Feeds contract P23b: the speeds that Suggest ships for this op, the
+    /// one record that MCP `get_suggest_rationale` (`basis.rpm`) and the CLI
+    /// `suggest` record (`suggested_speeds`) print. `None` when Suggest
+    /// refused. It needs no power figure, so an op whose depth is known
+    /// after the simulation (Project Curve) has it too: the RPM and the feed
+    /// are never printed apart.
+    #[must_use]
+    pub fn suggested_speeds(&self) -> Option<SuggestedSpeeds> {
+        let feeds = self.feeds.as_ref()?;
+        let operation = self.suggested_operation.as_ref()?;
+        Some(SuggestedSpeeds {
+            rpm: operation.spindle_rpm(),
+            feed_mm_min: operation.feed_rate(),
+            plunge_mm_min: operation.plunge_rate(),
+            ramp_feed_mm_min: operation.ramp_feed_rate(),
+            chip_load_mm: feeds.chip_load_mm,
+            flutes: self.tool_cfg.flute_count_planning(),
+            radial_lift: feeds.derates.radial_chip_thinning,
+        })
     }
 
     /// Spindle power at the shipped cut (feeds contract P14, review M9):

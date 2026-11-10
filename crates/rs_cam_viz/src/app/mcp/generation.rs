@@ -83,6 +83,9 @@ pub(super) fn force_line_json(
 /// - B6: `force_line` is the material's one force line (plan §6), evaluated
 ///   at the mean chip of the cut Suggest ships; on a refusal every number is
 ///   null and `refused` names the variant.
+/// - P23b: `rpm` also holds the speeds an apply writes: `rpm`,
+///   `feed_mm_min`, `plunge_mm_min`, `ramp_feed_mm_min`, and the feed terms
+///   `chip_load_mm`, `flutes`, `radial_lift`; they need no power figure.
 /// - P21c: `rpm` is the Suggest RPM; under `constant_chip` it carries
 ///   `binding` and `limits` ({limit, label, rpm}; a `null` rpm is a limit
 ///   that admits every RPM of the spindle).
@@ -155,20 +158,45 @@ pub fn suggest_basis_json(
         .map_or(serde_json::Value::Null, |figure| {
             rs_cam_core::feeds::operating_point::shipped_power_json(&figure)
         });
+    // P21c: the Suggest RPM, with the constant-chip choice when one exists.
+    // P23b: the same object holds the speeds that an apply writes
+    // (`CutterOpProfile::suggested_speeds`, the record the CLI prints), so
+    // the RPM and the feed are printed together on every op, with or
+    // without a power figure.
+    let mut rpm = feeds.rpm_choice.as_ref().map_or_else(
+        || serde_json::json!({ "value": feeds.rpm }),
+        rs_cam_core::feeds::RpmChoice::to_json,
+    );
+    if let (Some(fields), Some(speeds)) = (rpm.as_object_mut(), profile.suggested_speeds()) {
+        let _ = fields.insert("rpm".to_owned(), serde_json::json!(speeds.rpm));
+        let _ = fields.insert(
+            "feed_mm_min".to_owned(),
+            serde_json::json!(speeds.feed_mm_min),
+        );
+        let _ = fields.insert(
+            "plunge_mm_min".to_owned(),
+            serde_json::json!(speeds.plunge_mm_min),
+        );
+        let _ = fields.insert(
+            "ramp_feed_mm_min".to_owned(),
+            serde_json::json!(speeds.ramp_feed_mm_min),
+        );
+        let _ = fields.insert(
+            "chip_load_mm".to_owned(),
+            serde_json::json!(speeds.chip_load_mm),
+        );
+        let _ = fields.insert("flutes".to_owned(), serde_json::json!(speeds.flutes));
+        let _ = fields.insert(
+            "radial_lift".to_owned(),
+            serde_json::json!(speeds.radial_lift),
+        );
+    }
     serde_json::json!({
         "headline": headline,
         "detail": detail,
         "hardness": hardness,
         "vendor_band": vendor_band,
-        // P21c: the Suggest RPM. Under `constant_chip`: the value, the
-        // limit that binds and every limit with its RPM
-        // (`RpmChoice::to_json`, the CLI `suggest` record's
-        // `calculator.rpm_choice`). Under `match_chart`: the value alone.
-        // Present on every op, a surface-offset op included (Q13).
-        "rpm": feeds.rpm_choice.as_ref().map_or_else(
-            || serde_json::json!({ "value": feeds.rpm }),
-            rs_cam_core::feeds::RpmChoice::to_json,
-        ),
+        "rpm": rpm,
         "force_line": force_line,
         // P14 (review M9): the power at the shipped cut, the CLI
         // `suggest` record's `shipped_power` object.

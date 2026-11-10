@@ -130,6 +130,9 @@ fn profile_json(profile: &CutterOpProfile<'_>) -> Value {
             "warnings": feeds.warnings.iter().map(|w| format!("{w:?}")).collect::<Vec<_>>(),
         },
         "shipped_power": shipped_power,
+        // P23b: the speeds an apply writes (the one core record; MCP
+        // `get_suggest_rationale` `basis.rpm` prints the same values).
+        "suggested_speeds": profile.suggested_speeds(),
         // P16 item 8: the vendor band of the matched row (members, lowest,
         // highest), the one core record; MCP `get_suggest_rationale`
         // `basis.vendor_band` prints the same JSON.
