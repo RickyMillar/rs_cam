@@ -129,3 +129,18 @@ Ask the operator two things, in this order; no code before the answers.
   `mcp_wire_surface_pin` 2 of 2, no diff; `the_card_names_every_entry_rule_g10` 4; full clippy
   clean.
 - Item 2 (idx 16) waits for the operator's two answers (section 2.4). Nothing is written for it.
+
+## 4. Operator rulings on idx 16 (2026-11-10, read by the lead)
+
+1. The chip row: "yes". An exact-size printed row outranks a lower interpolated member of
+   another series. Phase P23c implements it in the one vendor band rule.
+2. The feed row: no ball lead-angle lift (P4a): "finishing feeds are already pretty high
+   generally".
+
+## 5. Correction to section 2.1 (found in P23c, 2026-11-10)
+
+Section 2.1 says the SpeTool row "is a higher member" of the idx 16 band. That is wrong. The
+band of idx 16 has one member, the Amana ZrN interpolation. The SpeTool row is not a candidate
+for a Scallop op: the G3 family rules (`extrapolation/family.rs::FAMILY_RULES`) transfer a
+tapered-ball row to the 3D finish families only from the Onsrud 77-100 and the Amana ZrN v8
+sources. The arithmetic of 0.06437 stands. See `P23c.md` sections 2 and 4.

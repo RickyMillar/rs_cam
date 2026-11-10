@@ -230,6 +230,12 @@ pub struct LookupResult {
 /// size, hardness and drill scales: the chip each consumer reads for that
 /// row. The members are in ascending order of the chip middle.
 ///
+/// P23c (operator ruling 2026-11-10): among the members, a row printed at
+/// the query size (`SizeBasis::Exact`) outranks a member whose value is a
+/// size claim (a form A interpolation). The lowest `Exact` member ships
+/// ([`BandRule::ExactSize`] when a lower claim member exists). With no
+/// `Exact` member, or when the lowest member is `Exact`:
+///
 /// The shipped row (the matched row) is the member with the lowest chip
 /// middle ([`BandRule::Lowest`]). The no-rise rule: when the score winner is
 /// not a member and no member is strictly below its chip, or the score
@@ -289,6 +295,9 @@ pub struct BandMember {
 pub enum BandRule {
     /// The member with the lowest chip ships.
     Lowest,
+    /// P23c: the lowest member printed at the tool's size ships, over a
+    /// lower member whose value is a size claim.
+    ExactSize,
     /// The score winner is not a member and no member is strictly below its
     /// chip (or the winner has no chip to compare), so the score winner
     /// ships. No chip rises.
@@ -303,6 +312,7 @@ impl BandRule {
     pub const fn name(self) -> &'static str {
         match self {
             Self::Lowest => "lowest",
+            Self::ExactSize => "exact_size",
             Self::WinnerShips => "winner_ships",
             Self::NoMember => "no_member",
         }
@@ -429,6 +439,7 @@ impl VendorBand {
             .collect();
         let tail = match self.rule {
             BandRule::Lowest => "ships the lowest",
+            BandRule::ExactSize => "ships the lowest row printed at this size",
             BandRule::WinnerShips => "ships the score winner, which is not a member",
             BandRule::NoMember => "ships the score winner",
         };
@@ -1374,14 +1385,31 @@ fn with_band(
     // chip moves no number, so the winner keeps its row (its RPM and depth
     // fields).
     let winner_is_member = winner_outside.is_none();
-    let (rule, shipped): (BandRule, LookupResult) = match (built.first(), winner_chip) {
-        (None, _) => (BandRule::NoMember, winner),
-        (Some((_, lowest)), Some(chip))
-            if winner_is_member || lowest.chip_load_mm < chip * (1.0 - CHIP_EQUAL_REL) =>
+    // The members that may ship: every member when the winner is one;
+    // else only the members strictly below the winner's chip (no rise).
+    let may_ship = |r: &LookupResult| {
+        winner_is_member
+            || winner_chip.is_some_and(|chip| r.chip_load_mm < chip * (1.0 - CHIP_EQUAL_REL))
+    };
+    let lowest = built.iter().map(|(_, r)| r).find(|r| may_ship(r));
+    // P23c (operator ruling 2026-11-10): among those members, a row
+    // printed at the query size outranks a size claim. `built` is in
+    // ascending chip order, so each `find` gives the lowest of its class.
+    let lowest_exact = built
+        .iter()
+        .map(|(_, r)| r)
+        .find(|r| may_ship(r) && r.size_basis.claim().is_none());
+    let (rule, shipped): (BandRule, LookupResult) = match (lowest, lowest_exact, winner_chip) {
+        (None, _, _) if built.is_empty() => (BandRule::NoMember, winner),
+        // An equal chip (within `CHIP_EQUAL_REL`) moves no number, so the
+        // lowest keeps its row.
+        (Some(low), Some(exact), Some(_))
+            if low.chip_load_mm < exact.chip_load_mm * (1.0 - CHIP_EQUAL_REL) =>
         {
-            (BandRule::Lowest, lowest.clone())
+            (BandRule::ExactSize, exact.clone())
         }
-        (Some(_), Some(_) | None) => (BandRule::WinnerShips, winner),
+        (Some(low), Some(_) | None, Some(_)) => (BandRule::Lowest, low.clone()),
+        (Some(_) | None, Some(_) | None, Some(_) | None) => (BandRule::WinnerShips, winner),
     };
     let shipped_family = lut
         .observations

@@ -87,12 +87,18 @@ const SERVES_3D_FINISH: &[LutOperationFamily] = &[
     LutOperationFamily::Trace,
 ];
 
+/// The SpeTool 2D/3D tapered router bit chart, which prints the tapered
+/// ball rows by tip diameter
+/// (`data/vendor_lut/sources/spetool_2d3d_tapered.txt`).
+const SPETOOL_2D3D_TAPERED_SOURCES: &[&str] = &["spetool_2d3d_tapered_router_bit_chart"];
+
 /// The Amana corner-radius chart (46460 and 46462) that prints the bull
 /// nose rows.
 const AMANA_CORNER_RADIUS_SOURCES: &[&str] = &["amana_corner_radius_spiral_plunge_2f"];
 
 /// The family rules (A3): the tapered ball (step 2), the bull nose
-/// (step 4) and the Amana ZrN v8 tapered ball (operator ruling 2026-10-01).
+/// (step 4), the Amana ZrN v8 tapered ball (operator ruling 2026-10-01) and
+/// the SpeTool 2D/3D tapered ball (operator ruling 2026-11-10, P23c).
 /// There is no ball-nose rule: the 42 ball-nose finish cells stay separate
 /// until ruling B3 (orchestrator decision 6).
 pub const FAMILY_RULES: &[FamilyRule] = &[
@@ -119,6 +125,20 @@ pub const FAMILY_RULES: &[FamilyRule] = &[
         printed_mm: (0.79375, 6.35),
         witness: "vendor structure: the Amana ZrN 2D/3D carving chart (v8) prints one chip \
                   load per tip diameter, flute count and material, and names no operation",
+    },
+    // Operator ruling 2026-11-10 ("yes": the SpeTool row printed at exactly
+    // that size wins for the 2 mm tapered ball; feeds contract P23c): the
+    // SpeTool 2D/3D tapered chart serves every 3D finishing operation of a
+    // tapered ball, on the same witness as the Amana ZrN v8 rule.
+    FamilyRule {
+        tool_family: ToolFamily::TaperedBallNose,
+        source_ids: SPETOOL_2D3D_TAPERED_SOURCES,
+        tool_subfamily: "spetool_2d3d_tapered",
+        home: (LutOperationFamily::Parallel, LutPassRole::Finish),
+        serves: SERVES_3D_FINISH,
+        printed_mm: (0.5, 4.0),
+        witness: "vendor structure: the SpeTool 2D/3D tapered router bit chart prints one chip \
+                  load per tip diameter and material, and names no operation",
     },
     FamilyRule {
         tool_family: ToolFamily::BullNose,
@@ -423,8 +443,10 @@ mod tests {
 
     /// Operator ruling 2026-10-01: the Amana ZrN v8 rule carries its
     /// (Parallel, Finish) home row into Contour, Scallop and Trace, and into
-    /// no roughing family. A printed Parallel row of another chart (SpeTool)
-    /// does not transfer.
+    /// no roughing family. Operator ruling 2026-11-10 (P23c): the SpeTool
+    /// 2D/3D tapered chart transfers in the same way, by its own rule. A
+    /// printed Parallel row of a chart with no rule (the Amana 3D profiling
+    /// chart before v8) does not transfer.
     #[test]
     fn the_amana_v8_rule_serves_the_3d_finish_families() {
         use LutOperationFamily::{
@@ -454,10 +476,25 @@ mod tests {
         // A ball-nose query never reads a tapered row through the rule.
         let ball = query(ToolFamily::BallNose, Scallop, LutPassRole::Finish);
         assert!(transfer_rule(&ball, &home).is_none());
-        // Another chart's printed Parallel row does not transfer.
+        // P23c (operator ruling 2026-11-10): the SpeTool chart prints one
+        // chip per tip and material and names no operation, so its row
+        // transfers to the 3D finish families by its own rule. Until P23c
+        // this test held that it did not transfer.
         let spetool = row(&lut, "spetool-tapered-hardwood-parallel-1000-2f");
+        for family in [Contour, Scallop, Trace] {
+            let q = query(ToolFamily::TaperedBallNose, family, LutPassRole::Finish);
+            let rule = transfer_rule(&q, &spetool)
+                .unwrap_or_else(|| panic!("{family:?}: the SpeTool rule must carry the row"));
+            assert_eq!(rule.tool_subfamily, "spetool_2d3d_tapered");
+        }
+        for family in [Parallel, Pocket, Adaptive, Face, Drill] {
+            let q = query(ToolFamily::TaperedBallNose, family, LutPassRole::Finish);
+            assert!(transfer_rule(&q, &spetool).is_none(), "{family:?}");
+        }
+        // A chart with no rule: its printed Parallel row does not transfer.
+        let no_rule = row(&lut, "amana-tapered-hardwood-parallel-3175-2f");
         let scallop = query(ToolFamily::TaperedBallNose, Scallop, LutPassRole::Finish);
-        assert!(transfer_rule(&scallop, &spetool).is_none());
+        assert!(transfer_rule(&scallop, &no_rule).is_none());
     }
 
     /// The bull rule carries the Amana corner-radius home row into each

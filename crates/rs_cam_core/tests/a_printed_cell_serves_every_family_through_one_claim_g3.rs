@@ -181,9 +181,18 @@ fn printed_mdf_parallel_row(tip: f64) -> &'static str {
 /// same diameter, and both are transferred, so the id decides. At 6.35 mm
 /// the 2-flute rows tie the same way. In hardwood and softwood the v8 rows
 /// are grade b, derived, and the Onsrud row wins on score.
+///
+/// **RE-PINNED 2026-11-10, feeds contract P23c (operator ruling
+/// 2026-11-10): at 3.175 mm the row is now
+/// `spetool-tapered-mdf-parallel-3175-2f`, was
+/// `amana-tapered-mdf-parallel-3175-3f-zrn-v8`.** The SpeTool 2D/3D tapered
+/// chart now serves the 3D finish families by its own family rule. Its row
+/// prints the tool's exact tip and the tool's flute count (2), so it wins
+/// the score over the 3-flute v8 row, which shipped on a 2-flute tool
+/// before. SpeTool prints no 6.35 mm tip, so that arm does not move.
 fn transferred_mdf_v8_row(tip: f64) -> &'static str {
     if tip < 5.0 {
-        "amana-tapered-mdf-parallel-3175-3f-zrn-v8"
+        "spetool-tapered-mdf-parallel-3175-2f"
     } else {
         "amana-tapered-mdf-parallel-6350-2f-zrn-v8"
     }
@@ -548,15 +557,17 @@ fn a_printed_row_wins_a_tie_over_a_transfer_g3() {
 }
 
 /// (a) One rule per chart that prints a value with no operation: the bull
-/// nose (Amana corner radius) and two tapered-ball charts (Onsrud 77-100
-/// and, since the operator ruling of 2026-10-01, Amana ZrN v8). No
+/// nose (Amana corner radius) and three tapered-ball charts (Onsrud 77-100,
+/// since the operator ruling of 2026-10-01 Amana ZrN v8, and since the
+/// operator ruling of 2026-11-10 the SpeTool 2D/3D tapered chart). No
 /// ball-nose rule (ruling B3).
 #[test]
 fn the_rules_are_the_bull_and_the_tapered_ball_g3() {
     let families: Vec<ToolFamily> = FAMILY_RULES.iter().map(|r| r.tool_family).collect();
     // Was 2 (one bull, one tapered). The operator ruling of 2026-10-01 adds
-    // the Amana ZrN v8 tapered rule.
-    assert_eq!(families.len(), 3, "{families:?}");
+    // the Amana ZrN v8 tapered rule. RE-PINNED 2026-11-10 (P23c, operator
+    // ruling 2026-11-10): 3 -> 4, the SpeTool 2D/3D tapered rule.
+    assert_eq!(families.len(), 4, "{families:?}");
     assert_eq!(
         families
             .iter()
@@ -570,10 +581,16 @@ fn the_rules_are_the_bull_and_the_tapered_ball_g3() {
             .iter()
             .filter(|f| **f == ToolFamily::TaperedBallNose)
             .count(),
-        2,
+        3,
         "{families:?}"
     );
     assert!(!families.contains(&ToolFamily::BallNose), "{families:?}");
+    assert!(
+        FAMILY_RULES
+            .iter()
+            .any(|r| r.tool_subfamily == "spetool_2d3d_tapered"),
+        "the SpeTool 2D/3D tapered rule (P23c)"
+    );
     let v8 = FAMILY_RULES
         .iter()
         .find(|r| r.tool_subfamily == "zrn_2d3d_carving_tapered")

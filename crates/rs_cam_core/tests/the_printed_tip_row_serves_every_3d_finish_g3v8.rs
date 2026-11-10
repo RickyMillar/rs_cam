@@ -33,6 +33,15 @@
 //! candidate on Contour, Scallop and Trace (no family rule transfers it), so
 //! those operations still read the v8 row, Transferred. Open data question
 //! (lead, 2026-11-03): one Ø1 tapered tool reads two rows by finish family.
+//!
+//! **RE-PINNED 2026-11-10, feeds contract P23c (operator ruling
+//! 2026-11-10).** The SpeTool 2D/3D tapered chart now serves the 3D finish
+//! families by its own family rule, so the SpeTool row is a candidate on
+//! Contour, Scallop and Trace too. Both rows print the 1.0 mm tip (exact),
+//! and the lower printed chip ships (Q3): every 3D finish reads the SpeTool
+//! point 0.0254 mm, was the v8 band 0.01905-0.0508 on Contour, Scallop and
+//! Trace. The family basis there is `Transferred` from the SpeTool row.
+//! The open data question is closed: one tool reads one row.
 
 #![expect(
     clippy::expect_used,
@@ -120,8 +129,6 @@ fn a_one_millimetre_tapered_tip_reads_the_printed_band_on_every_3d_finish_g3v8()
         stock_z: Some(18.0),
         stock_padding: 2.0,
     };
-    let lo = PRINTED_MIN_IN * MM_PER_IN;
-    let hi = PRINTED_MAX_IN * MM_PER_IN;
     let spetool = SPETOOL_PRINTED_IN * MM_PER_IN;
     let mut checked = 0;
     for &(op, family) in FINISHES {
@@ -146,8 +153,9 @@ fn a_one_millimetre_tapered_tip_reads_the_printed_band_on_every_3d_finish_g3v8()
             .unwrap_or_else(|| panic!("{label}: a vendor row answered"));
         assert_eq!(recipe.size_basis, SizeBasis::Exact, "{label}");
         let parallel = family == LutOperationFamily::Parallel;
-        if parallel {
-            // Q3: the SpeTool point wins and names the v8 row.
+        {
+            // Q3: the SpeTool point wins and names the v8 row. P23c: on every
+            // family (the SpeTool rows transfer to Contour, Scallop and Trace).
             assert_eq!(recipe.observation_id, SPETOOL_ROW, "{label}");
             assert_eq!(
                 recipe
@@ -159,19 +167,22 @@ fn a_one_millimetre_tapered_tip_reads_the_printed_band_on_every_3d_finish_g3v8()
                 Some(ROW),
                 "{label}: the Q3 winner names the other row"
             );
+            // The band holds the v8 row with its printed band.
+            let v8 = recipe
+                .band
+                .members
+                .iter()
+                .find(|m| m.row.id() == ROW)
+                .unwrap_or_else(|| panic!("{label}: the band names the v8 row"));
+            let (lo, hi) = (PRINTED_MIN_IN * MM_PER_IN, PRINTED_MAX_IN * MM_PER_IN);
+            assert!(
+                (v8.chip_min_mm.expect("a printed minimum") - lo).abs() < TOL
+                    && (v8.chip_max_mm.expect("a printed maximum") - hi).abs() < TOL,
+                "{label}: {v8:?}"
+            );
             assert_eq!(recipe.chip_load_min_mm, None, "{label}: a point");
             assert!(
                 (recipe.chip_load_max_mm.expect("a printed value") - spetool).abs() < TOL,
-                "{label}: {recipe:?}"
-            );
-        } else {
-            assert_eq!(recipe.observation_id, ROW, "{label}");
-            assert!(
-                (recipe.chip_load_min_mm.expect("a printed minimum") - lo).abs() < TOL,
-                "{label}: {recipe:?}"
-            );
-            assert!(
-                (recipe.chip_load_max_mm.expect("a printed maximum") - hi).abs() < TOL,
                 "{label}: {recipe:?}"
             );
         }
@@ -189,7 +200,7 @@ fn a_one_millimetre_tapered_tip_reads_the_printed_band_on_every_3d_finish_g3v8()
                 );
             };
             assert!(size.is_none(), "{label}: the tip is the printed size");
-            assert_eq!(claim.source_rows, vec![ROW.to_owned()], "{label}");
+            assert_eq!(claim.source_rows, vec![SPETOOL_ROW.to_owned()], "{label}");
             assert_eq!(
                 claim.home,
                 (LutOperationFamily::Parallel, LutPassRole::Finish),
@@ -222,7 +233,7 @@ fn a_one_millimetre_tapered_tip_reads_the_printed_band_on_every_3d_finish_g3v8()
         let target =
             chip_target_for_toolpath(&material, &tool, &operation, ToolpathId::from_raw(0), None)
                 .unwrap_or_else(|| panic!("{label}: the door gave no target"));
-        if parallel {
+        {
             // A2: a point has no band; the door holds the printed point.
             match target {
                 ChipTarget::Point(v) => {
@@ -230,12 +241,6 @@ fn a_one_millimetre_tapered_tip_reads_the_printed_band_on_every_3d_finish_g3v8()
                 }
                 ChipTarget::Band(_) => panic!("{label}: a point row gave a band: {target:?}"),
             }
-        } else {
-            let door = target
-                .band_range()
-                .unwrap_or_else(|| panic!("{label}: the door gave no band"));
-            assert!((door.start - lo).abs() < TOL, "{label}: {door:?}");
-            assert!((door.end - hi).abs() < TOL, "{label}: {door:?}");
         }
         checked += 1;
     }
