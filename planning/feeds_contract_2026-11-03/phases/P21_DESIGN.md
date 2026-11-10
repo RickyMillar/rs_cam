@@ -611,3 +611,21 @@ changes for P21c and the tool record:
    which the rationale already flags (`chip_regime: above_measured_range`).
 5. Shank: no vendor limit ties depth, feed or RPM to a 6 mm shank under an 18 mm cutter; vendors
    sell the combination with printed maxima of 24000 and 35000. Nothing to add to the app.
+
+## 11. Lead note on the second research round (2026-11-10, `research/large_straight_bit_roughing_2026-11-10.md`)
+
+1. Correction to note 10 item 4 and to the lead's words to the operator: Curti's "40-100 um" is
+   the AVERAGE chip. The operator's idx 1 cut (fz 0.19, ae 6 on D 18) has an average chip of
+   0.103 mm, at the edge of Curti's range, not two to three times it (the app prints the same:
+   `mean_chip_mm` 0.101, `above_measured_range`). The input outside Curti's tests is the
+   engagement angle (70.5 deg against 18-41 deg).
+2. An independent source agrees on the force line: Woodson 1979 (USDA SO-146, white oak,
+   orthogonal, 20 deg rake) fits slope 57.6 N/mm2 and intercept 7.71 N/mm against the app's 58.5
+   and 4.6. At 0.19 mm that is 18.7 N/mm against 15.7 (1.19 x). The specific force falls with a
+   thicker chip in every source read. Rake matters (30 deg rake: 0.35 x); the bit's rake is unknown.
+3. Depth per pass: Trend (vendor prose, hand-held) limits the depth to the cutter diameter or the
+   shank diameter, whichever is smaller: 6 mm against the op's 10 mm. Onsrud and Freud print their
+   chips at 1 x D. No shank stress, fatigue or side-load limit was found anywhere.
+4. No published experience of a 3/4 in straight bit at 10 mm depth on a hobby gantry; the reports
+   found are surfacing at 0.25-1.6 mm depth.
+5. The Onsrud 48-000 straight-bit row is confirmed on the PDF: 3/4 in, 0.203-0.254 mm.
