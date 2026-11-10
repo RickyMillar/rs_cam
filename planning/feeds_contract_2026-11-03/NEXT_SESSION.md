@@ -4,7 +4,10 @@
 
 Landed: `ef7e75977` P22b (accepted on wanaka idx 1 with helix: 47060 -> 14628 moves, fed time 558 ->
 250 s, the 48 core plunges gone; `P22b.md` section 6), `b361a7b18` the operator's notice.rs fix.
-Running: agent `p21c-impl` on P21c.
+`dce570108` P21c (the constant-chip rule with named limits; the 1.5 speedup, the 0.95 headroom and the
+diameter tiers deleted; live on wanaka idx 1: 24000 rpm / 9332 mm/min, spindle max binds; `P21c.md`
+section 6 and its open items). Running: agent `grader-p21c` re-grades the acceptance table on
+`dce570108` (`acceptance/grade_dce570108.md`); then the operator rules the NEEDS-RULING rows.
 
 The review's finding on scope (operator concern: the sessions rabbit-hole): the acceptance table
 (`acceptance/wanaka_21.md`) is the measure of done and was last graded at `b9e67b24e`: PASS 47, FAIL
