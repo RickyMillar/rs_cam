@@ -16,7 +16,8 @@
 //!    table holds the ZrN rows (no subfamily states the coating in a
 //!    form the rule below can read) and the rows whose subfamily does not
 //!    state a geometry that the same vendor states elsewhere.
-//! 2. Else the subfamily states the geometry, in this order: `compression`
+//! 2. Else the subfamily states the geometry, in this order:
+//!    `straight_flute` is [`ToolSeries::Straight`] (P24a); `compression`
 //!    is [`ToolSeries::Compression`]; `roughing_` with `spiral` is
 //!    [`ToolSeries::Rougher`]; `o_flute` or `o-flute` is
 //!    [`ToolSeries::OFlute`]; `single_flute` is [`ToolSeries::SingleFlute`];
@@ -27,7 +28,8 @@
 //!
 //! The tool declares its geometry series through the existing
 //! `ToolConfig::cut_direction`: `UpCut` is a generic tool (no series),
-//! `DownCut` and `Compression` name their series. No tool field names the
+//! `DownCut`, `Compression` and `Straight` name their series. A straight
+//! row serves only a straight tool ([`serves_only_its_own_series`]). No tool field names the
 //! ZrN carving series yet: a lookup query can name it
 //! (`LookupQuery::tool_subfamily = Some("zrn_carving")`), the product
 //! doors do not.
@@ -61,17 +63,23 @@ pub enum ToolSeries {
     SingleFlute,
     /// A chipbreaker roughing spiral.
     Rougher,
+    /// A straight-flute bit (P24a): the edge is parallel to the axis
+    /// (helix 0). The one exclusive series: a straight row serves only a
+    /// straight tool ([`serves_only_its_own_series`], lead ruling
+    /// 2026-11-10).
+    Straight,
 }
 
 impl ToolSeries {
     /// Every series.
-    pub const ALL: [Self; 6] = [
+    pub const ALL: [Self; 7] = [
         Self::Compression,
         Self::Downcut,
         Self::ZrnCarving,
         Self::OFlute,
         Self::SingleFlute,
         Self::Rougher,
+        Self::Straight,
     ];
 
     /// The key that a lookup query carries (`LookupQuery::tool_subfamily`).
@@ -84,6 +92,7 @@ impl ToolSeries {
             Self::OFlute => "o_flute",
             Self::SingleFlute => "single_flute",
             Self::Rougher => "rougher",
+            Self::Straight => "straight",
         }
     }
 
@@ -101,6 +110,7 @@ impl ToolSeries {
             BitCutDirection::UpCut => None,
             BitCutDirection::DownCut => Some(Self::Downcut),
             BitCutDirection::Compression => Some(Self::Compression),
+            BitCutDirection::Straight => Some(Self::Straight),
         }
     }
 }
@@ -177,6 +187,14 @@ pub const SERIES_RULES: &[SeriesRule] = &[
                  ruling as the v8 tapered rows",
     },
     SeriesRule {
+        source_id: "freud_router_bit_feed_and_speed_for_cnc_20170822",
+        tool_subfamily: "carbide_tipped_straight_and_profile",
+        series: Some(ToolSeries::Straight),
+        reason: "the Freud table \"CARBIDE TIPPED STRAIGHT AND PROFILE BITS ONLY\" \
+                 (`sources/freud_router_bit_feed_and_speed_for_cnc_20170822.txt`): a second \
+                 table of the sheet, apart from the solid carbide (spiral) table",
+    },
+    SeriesRule {
         source_id: "onsrud_hard_plastic_cutting_data",
         tool_subfamily: "60_200_series",
         series: Some(ToolSeries::Downcut),
@@ -184,6 +202,43 @@ pub const SERIES_RULES: &[SeriesRule] = &[
                  series carry the subfamily `60_200_downcut`",
     },
 ];
+
+/// Feeds contract P24a (lead ruling 2026-11-10): `true` when a row of
+/// `series` is a candidate only for a tool of that series. The straight
+/// flute is the one such series: a straight edge shears the whole depth at
+/// once and a spiral edge slices it, so a straight-bit chip is not a value
+/// for a spiral tool. Every other specialty series stays a fallback for a
+/// generic tool (the rank rule of [`series_rank`]).
+///
+/// Open item (`P24a.md`): the operator ruling of 2026-10-31 reads "a
+/// generic tool ... falls back to a specialty row only when no standard row
+/// exists"; the rank rule in code decides only between rows that tie on
+/// material and size. A series-first rule for every series is its own
+/// phase.
+#[must_use]
+pub const fn serves_only_its_own_series(series: ToolSeries) -> bool {
+    match series {
+        ToolSeries::Straight => true,
+        ToolSeries::Compression
+        | ToolSeries::Downcut
+        | ToolSeries::ZrnCarving
+        | ToolSeries::OFlute
+        | ToolSeries::SingleFlute
+        | ToolSeries::Rougher => false,
+    }
+}
+
+/// `true` when the query whose series key is `query_key` may read `obs`
+/// under the exclusive-series rule ([`serves_only_its_own_series`]).
+#[must_use]
+pub fn row_admits_query(query_key: Option<&str>, obs: &VendorObservation) -> bool {
+    match row_series(obs) {
+        Some(series) if serves_only_its_own_series(series) => {
+            query_key.is_some_and(|key| row_matches_key(key, obs))
+        }
+        Some(_) | None => true,
+    }
+}
 
 /// The entry of [`SERIES_RULES`] that names `obs`, if any.
 #[must_use]
@@ -202,7 +257,9 @@ pub fn row_series(obs: &VendorObservation) -> Option<ToolSeries> {
         return rule.series;
     }
     let subfamily = obs.tool_subfamily.as_deref()?;
-    if subfamily.contains("compression") {
+    if subfamily.contains("straight_flute") {
+        Some(ToolSeries::Straight)
+    } else if subfamily.contains("compression") {
         Some(ToolSeries::Compression)
     } else if subfamily.contains("roughing_") && subfamily.contains("spiral") {
         Some(ToolSeries::Rougher)

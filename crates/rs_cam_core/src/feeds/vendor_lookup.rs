@@ -1536,6 +1536,11 @@ fn passes_must_match(query: &LookupQuery, obs: &VendorObservation, transferred: 
     if !tool_family_compatible(query.tool_family, obs.tool_family) {
         return false;
     }
+    // P24a: a row of an exclusive series (the straight flute) is a candidate
+    // only for a tool of that series.
+    if !super::series::row_admits_query(query.tool_subfamily.as_deref(), obs) {
+        return false;
+    }
     // Diameter ratio gate intentionally relaxed to a sanity floor only.
     // The query diameter is the lookup key (`lut_key_diameter_mm`; the tip
     // of a tapered ball since ruling A1). Chipload bounds get scaled to

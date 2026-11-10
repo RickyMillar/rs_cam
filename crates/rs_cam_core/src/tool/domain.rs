@@ -38,6 +38,9 @@ pub enum ToolDimension {
     CuttingLength,
     /// Helix angle, degrees.
     HelixDeg,
+    /// Helix angle of a straight-flute tool, degrees: exactly 0 (P24a,
+    /// `ToolConfig::hold_flute_form`).
+    StraightHelixDeg,
     /// Number of flutes.
     FluteCount,
     /// Corner radius of a flat end mill, mm.
@@ -146,12 +149,24 @@ impl ToolDomain {
 }
 
 impl ToolDimension {
+    /// The sentence that a refusal adds after the requirement, or the empty
+    /// text. P24a: a helix on a straight tool names the flute form, because
+    /// the requirement alone ("<= 0") does not say why.
+    #[must_use]
+    pub fn refusal_note(self) -> &'static str {
+        if self == ToolDimension::StraightHelixDeg {
+            " (a straight tool has helix 0; change the flute form first)"
+        } else {
+            ""
+        }
+    }
+
     /// The field name as spelled in project TOML and on the MCP wire.
     pub const fn field_name(self) -> &'static str {
         match self {
             ToolDimension::Diameter => "diameter",
             ToolDimension::CuttingLength => "cutting_length",
-            ToolDimension::HelixDeg => "helix_deg",
+            ToolDimension::HelixDeg | ToolDimension::StraightHelixDeg => "helix_deg",
             ToolDimension::FluteCount => "flute_count",
             ToolDimension::CornerRadiusMm => "corner_radius_mm",
             ToolDimension::CornerRadius => "corner_radius",
@@ -176,6 +191,7 @@ impl ToolDimension {
                 ToolDomain::new(Open(0.0), Unbounded)
             }
             ToolDimension::HelixDeg => ToolDomain::new(Closed(0.0), Open(90.0)),
+            ToolDimension::StraightHelixDeg => ToolDomain::new(Closed(0.0), Closed(0.0)),
             ToolDimension::FluteCount => ToolDomain::new(Closed(1.0), Unbounded),
             ToolDimension::CornerRadiusMm => ToolDomain::new(Closed(0.0), Closed(half)),
             ToolDimension::CornerRadius => ToolDomain::new(Open(0.0), Closed(half)),
@@ -205,6 +221,7 @@ impl ToolDimension {
             ToolDimension::Diameter => 0.1..=100.0,
             ToolDimension::CuttingLength => 0.1..=200.0,
             ToolDimension::HelixDeg => 0.0..=60.0,
+            ToolDimension::StraightHelixDeg => 0.0..=0.0,
             ToolDimension::FluteCount => 1.0..=8.0,
             ToolDimension::CornerRadiusMm => 0.0..=diameter_mm / 2.0,
             ToolDimension::CornerRadius => 0.01..=diameter_mm / 2.0,
@@ -239,7 +256,7 @@ impl ToolDimension {
 /// A tool dimension outside its domain. The cutter constructors and
 /// `ToolConfig::validate` return it; no door may build a cutter from it.
 #[derive(Debug, Clone, Copy, PartialEq, thiserror::Error)]
-#[error("tool {} = {value}: must be {requirement}", dimension.field_name())]
+#[error("tool {} = {value}: must be {requirement}{}", dimension.field_name(), dimension.refusal_note())]
 pub struct ToolGeometryError {
     pub dimension: ToolDimension,
     pub value: f64,

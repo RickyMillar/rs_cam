@@ -685,6 +685,11 @@ pub enum ProjectLoadWarning {
     /// not hold. The loader substitutes up-cut (FC0 item 6). The cut
     /// direction picks the vendor series of the feeds rows.
     UnknownCutDirection { tool: String, token: String },
+    /// Feeds contract P24a: a tool states `cut_direction = "straight"` and
+    /// a helix angle other than 0. The tool loads with helix 0
+    /// (`ToolConfig::hold_flute_form`); the file is not refused. The helix
+    /// is the stated number as text (the enum is `Eq`).
+    StraightToolHelix { tool: String, helix_deg: String },
     /// FC0 item 7 (decision D4 = warn): a tool section with a stick-out
     /// shorter than its flute. The loader keeps both values.
     StickoutShorterThanFlute { tool: String, text: String },
@@ -769,7 +774,11 @@ impl ProjectLoadWarning {
             Self::UnknownCutDirection { tool, token } => format!(
                 "Tool '{tool}' has unknown cut direction '{token}' — defaulted to up-cut. The cut \
                  direction picks the vendor series of the feeds rows. Valid values are up_cut, \
-                 down_cut and compression."
+                 down_cut, compression and straight."
+            ),
+            Self::StraightToolHelix { tool, helix_deg } => format!(
+                "Tool '{tool}' is a straight-flute tool and states helix_deg = {helix_deg}. A \
+                 straight flute has no helix: the tool is read with helix 0."
             ),
             Self::UnknownFaceUp { setup, token } => format!(
                 "Setup '{setup}' has unknown face up '{token}' — defaulted to Top. The cut \
@@ -1328,7 +1337,7 @@ pub(crate) fn tool_from_project_section(
     // K3 (feeds contract P6): each fact has the kind the file states. The
     // record literal names every field (no `..`), so a new `ToolConfig`
     // field does not compile here until the loader states it.
-    let tool = ToolConfig::from_record(ToolRecord {
+    let mut tool = ToolConfig::from_record(ToolRecord {
         id: tool_id,
         name: ts.name.clone(),
         tool_number,
@@ -1352,6 +1361,17 @@ pub(crate) fn tool_from_project_section(
         size_units: ts.size_units,
         centre_cutting: ts.centre_cutting.clone(),
     });
+    // P24a: a straight flute has no helix. A file that states one loads
+    // with helix 0 and a warning; no refusal. A file with no `helix_deg`
+    // key reads the loader default, which is not a statement: no warning.
+    if let Some(helix_deg) = tool.hold_flute_form()
+        && helix_deg.to_bits() != default_helix_deg().to_bits()
+    {
+        warnings.push(ProjectLoadWarning::StraightToolHelix {
+            tool: tool.name.clone(),
+            helix_deg: helix_deg.to_string(),
+        });
+    }
     // FC0 item 7 (decision D4 = warn, ruling Q6): no refusal.
     if tool.stickout_shorter_than_flute() {
         warnings.push(ProjectLoadWarning::StickoutShorterThanFlute {
@@ -1391,7 +1411,7 @@ fn parse_tool_material(
 }
 
 /// Read a tool's `cut_direction` key. The known tokens are the `save.rs`
-/// spellings (`up_cut`, `down_cut`, `compression`) and the alias
+/// spellings (`up_cut`, `down_cut`, `compression`, `straight`) and the alias
 /// `downcut`, in any case. An unknown token warns and takes up-cut (FC0
 /// item 6, the policy of [`parse_tool_type`]).
 fn parse_cut_direction(
@@ -1409,6 +1429,9 @@ fn parse_cut_direction(
     }
     if token == "compression" {
         return BitCutDirection::Compression;
+    }
+    if token == "straight" {
+        return BitCutDirection::Straight;
     }
     tracing::warn!(
         cut_direction = s,

@@ -3015,6 +3015,37 @@ mod tests {
         );
     }
 
+    /// Feeds contract P24a: `cut_direction = "straight"` loads as the
+    /// straight flute form with helix 0. A file that states another helix
+    /// gets one warning and no refusal; a file with no helix key gets none.
+    #[test]
+    fn a_straight_tool_loads_with_helix_zero_p24a() {
+        use crate::compute::tool_config::BitCutDirection;
+        let load = |helix: &str| {
+            let text = format!(
+                "name = \"T\"\ndiameter = 18.0\ncutting_length = {{ stated = 20.0 }}\n\
+                 cut_direction = \"straight\"\n{helix}"
+            );
+            let section: ProjectToolSection = toml::from_str(&text).expect("parse tool section");
+            let mut warnings = Vec::new();
+            let tool = super::project_file::tool_from_project_section(&section, 0, &mut warnings);
+            (tool, warnings)
+        };
+        for helix in ["", "helix_deg = 0.0\n"] {
+            let (tool, warnings) = load(helix);
+            assert_eq!(tool.cut_direction, BitCutDirection::Straight);
+            assert_eq!(tool.helix_deg, 0.0, "{helix:?}");
+            assert!(warnings.is_empty(), "{helix:?}: {warnings:?}");
+            assert!(tool.validate().is_ok());
+        }
+        let (tool, warnings) = load("helix_deg = 15.0\n");
+        assert_eq!(tool.helix_deg, 0.0);
+        assert_eq!(warnings.len(), 1, "{warnings:?}");
+        let text = warnings[0].message();
+        assert!(text.contains("'T'") && text.contains("15"), "{text}");
+        assert!(tool.validate().is_ok(), "the loaded tool is in its domain");
+    }
+
     /// FC0 item 6: an unknown tool material or cut direction warns, as an
     /// unknown tool type does. The known tokens are the `save.rs`
     /// spellings and the alias `downcut`; they give no warning.

@@ -111,7 +111,9 @@ impl ProjectSession {
     /// [`Effects::stale`] names each bound toolpath. The GUI, MCP
     /// (`add_tool`, `add_tool_from_library`) and the CLI share this door.
     #[instrument(skip(self, config))]
-    pub(crate) fn add_tool(&mut self, config: ToolConfig) -> Result<Effects, SessionError> {
+    pub(crate) fn add_tool(&mut self, mut config: ToolConfig) -> Result<Effects, SessionError> {
+        // P24a: a straight flute has no helix.
+        let _ = config.hold_flute_form();
         crate::session::validate_tool(&config)?;
         let mut created = None;
         let mut effects = self.with_effects(None, |session| {

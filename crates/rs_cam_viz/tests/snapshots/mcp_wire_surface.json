@@ -7090,7 +7090,7 @@
             },
             {
               "const": "cut_direction",
-              "description": "Cut direction: \"up_cut\", \"down_cut\" or \"compression\".",
+              "description": "The flute form: \"up_cut\", \"down_cut\", \"compression\" or \"straight\".\n\"straight\" (a straight-flute bit, feeds contract P24a) also writes\n`helix_deg` = 0, and the tool then reads the straight-bit vendor rows.",
               "type": "string"
             },
             {

@@ -33,6 +33,7 @@
 use std::collections::BTreeMap;
 
 use rs_cam_core::feeds::embedded_vendor_lut;
+use rs_cam_core::feeds::series::{ToolSeries, row_series};
 use rs_cam_core::feeds::vendor_lut::{
     EvidenceGrade, LutOperationFamily, LutPassRole, MaterialFamily, ObservationKind, ToolFamily,
     Vendor, VendorObservation,
@@ -103,6 +104,12 @@ fn points(rows: &[VendorObservation]) -> Vec<Point> {
     let mut seen: BTreeMap<String, Point> = BTreeMap::new();
     for o in rows {
         if o.tool_family != ToolFamily::FlatEnd || !is_series_row(o) {
+            continue;
+        }
+        // P24a (lead ruling 2026-11-10): the study is the spiral in-series
+        // law. A row of the straight series is not a point of the estimator
+        // and not an anchor.
+        if row_series(o) == Some(ToolSeries::Straight) {
             continue;
         }
         let Some(class) = wood_class(o.material_family) else {

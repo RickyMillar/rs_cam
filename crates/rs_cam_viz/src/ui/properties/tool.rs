@@ -278,10 +278,15 @@ pub(crate) fn draw_tool_fields(
         }
         ui.end_row();
 
+        // P24a: a straight flute has no helix. The row shows 0 and takes no
+        // edit; the Cut Dir combo is the control.
+        let straight = tool.cut_direction == BitCutDirection::Straight;
         let helix_range = ToolDimension::HelixDeg.ui_range(tool.diameter);
-        ValueRow::new("Helix:", &mut tool.helix_deg, " deg", 1.0, helix_range)
-            .keep_existing()
-            .show(ui);
+        ui.add_enabled_ui(!straight, |ui| {
+            ValueRow::new("Helix:", &mut tool.helix_deg, " deg", 1.0, helix_range)
+                .keep_existing()
+                .show(ui);
+        });
 
         if matches!(tool.tool_type, ToolType::EndMill) {
             ValueRow::new(
@@ -317,6 +322,8 @@ pub(crate) fn draw_tool_fields(
                     ui.selectable_value(&mut tool.cut_direction, cd, cd.label());
                 }
             });
+        // P24a: "Straight" writes helix 0 in the same edit.
+        let _ = tool.hold_flute_form();
         ui.end_row();
 
         // Type-specific parameters

@@ -23,12 +23,7 @@ fn tool_material_to_key(tm: ToolMaterial) -> String {
 
 /// Convert a `BitCutDirection` to the string key used in project files.
 fn cut_direction_to_key(cd: BitCutDirection) -> String {
-    match cd {
-        BitCutDirection::UpCut => "up_cut",
-        BitCutDirection::DownCut => "down_cut",
-        BitCutDirection::Compression => "compression",
-    }
-    .to_owned()
+    cd.token().to_owned()
 }
 
 /// How a model path is written to a project file (G-MODELRELINK, F4.3).

@@ -317,6 +317,22 @@ PCT-19* —
   were parked at P2. `planning/extrapolation_2026-09-24/scripts/check_onsrud_vbit_37.py`
   asserts each value of the 54 rows against the stored text.
 
+Straight-flute rows (feeds contract P24a, 2026-11-10; grade b, pocket /
+roughing; only a tool with the cut direction `straight` reads them):
+
+- Onsrud 48-000 "Carbide Tipped Straight" (`onsrud_straight_48.json`, 30
+  rows), transcribed by script from the stored text of the *Hard Wood*, *MDF*,
+  *Hard Plywood* and *Soft Plywood* sheets, 1/4 in to 1 in. The series name is
+  on pages 35 and 36 of the PCT-19 catalog (stored excerpt
+  `sources/onsrud_pct19_catalog.txt`). The MDF 7/8 in and 1 in cells are not
+  loaded: their columns do not read safely in the stored text. The *Soft Wood*
+  sheet prints no 48-000 row.
+- Freud "Carbide Tipped Straight and Profile Bits" (`freud_straight.json`, 23
+  rows), the second table of the Freud 2017 CNC sheet named below (stored text
+  `sources/freud_router_bit_feed_and_speed_for_cnc_20170822.txt`). The 1/8 in
+  Solid Surface / Plywood cell is not loaded: it prints `003"-005"` with no
+  decimal point.
+
 Retired 2026-10-01: the six `amana-vbit-*` rows that cited the Amana *Insert
 V-Groove Speed Chart v16*. No number in them is on that chart (finding G5 D1,
 `planning/extrapolation_2026-09-24/fetch/G5/lut_discrepancies.md`). The chart

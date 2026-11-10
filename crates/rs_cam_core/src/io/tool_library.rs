@@ -119,9 +119,19 @@ pub fn load_from(dir: &Path, name: &str) -> Result<ToolCatalog, ToolLibraryError
     let raw: toml::Value =
         toml::from_str(&text).map_err(|e| ToolLibraryError::Parse(name.to_owned(), e))?;
     check_tool_facts(name, &raw)?;
-    let catalog: ToolCatalog =
+    let mut catalog: ToolCatalog =
         toml::from_str(&text).map_err(|e| ToolLibraryError::Parse(name.to_owned(), e))?;
-    for tool in &catalog.tools {
+    for tool in &mut catalog.tools {
+        // P24a: a straight flute has no helix. A catalog that states one
+        // loads with helix 0 and a log line; no refusal.
+        if let Some(helix_deg) = tool.hold_flute_form() {
+            tracing::warn!(
+                catalog = name,
+                tool = tool.name,
+                helix_deg,
+                "a straight-flute tool states a helix angle; the tool is read with helix 0"
+            );
+        }
         check_tool(name, tool)?;
     }
     Ok(catalog)

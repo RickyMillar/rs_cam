@@ -152,18 +152,27 @@ impl ToolMaterial {
     }
 }
 
-/// Cut direction (affects chip evacuation and surface quality).
+/// The flute form of the tool: which way the flutes carry the chip (it
+/// affects chip evacuation and surface quality), or none.
+///
+/// Feeds contract P24a: `Straight` is a straight-flute bit (a carbide
+/// tipped straight router bit). Its edge is parallel to the tool axis, so
+/// its helix angle is 0: [`ToolConfig::hold_flute_form`] keeps the pair.
+/// The value also declares the vendor series of the tool
+/// (`feeds::series::ToolSeries::for_cut_direction`).
 #[derive(Debug, Clone, Copy, PartialEq, Eq, Serialize, Deserialize)]
 #[serde(rename_all = "snake_case")]
 pub enum BitCutDirection {
     UpCut,
     DownCut,
     Compression,
+    /// A straight flute: no helix (P24a).
+    Straight,
 }
 
 impl BitCutDirection {
     pub const ALL: &[BitCutDirection] = &crate::all_variants!(BitCutDirection:
-        UpCut, DownCut, Compression,
+        UpCut, DownCut, Compression, Straight,
     );
 
     pub fn label(&self) -> &'static str {
@@ -171,6 +180,20 @@ impl BitCutDirection {
             BitCutDirection::UpCut => "Up Cut",
             BitCutDirection::DownCut => "Down Cut",
             BitCutDirection::Compression => "Compression",
+            BitCutDirection::Straight => "Straight",
+        }
+    }
+
+    /// The file token of the value (`up_cut`, `down_cut`, `compression`,
+    /// `straight`): the serde spelling, which the project file, the tool
+    /// library, MCP and the CLI job file read.
+    #[must_use]
+    pub const fn token(self) -> &'static str {
+        match self {
+            BitCutDirection::UpCut => "up_cut",
+            BitCutDirection::DownCut => "down_cut",
+            BitCutDirection::Compression => "compression",
+            BitCutDirection::Straight => "straight",
         }
     }
 }
@@ -326,10 +349,12 @@ impl ToolParamKey {
             Self::CutDirection => {
                 tool.cut_direction = serde_json::from_value(value.clone()).map_err(|e| {
                     format!(
-                        "cut_direction must be \"up_cut\", \"down_cut\" or \"compression\" \
-                         (got {value}: {e})"
+                        "cut_direction must be \"up_cut\", \"down_cut\", \"compression\" or \
+                         \"straight\" (got {value}: {e})"
                     )
                 })?;
+                // P24a: a straight flute has no helix.
+                let _ = tool.hold_flute_form();
                 Ok(())
             }
             Self::SizeUnits => {
@@ -967,6 +992,29 @@ impl ToolConfig {
         )
     }
 
+    /// Feeds contract P24a: hold the one fact "a straight flute has no
+    /// helix". A tool whose flute form is [`BitCutDirection::Straight`]
+    /// takes `helix_deg = 0`. Returns the helix it replaced, when it was
+    /// not 0 (a loader files a warning with it; a setter needs no notice).
+    /// Every write door calls it: `ToolParamKey::CutDirection`, the session
+    /// commands `AddTool` and `ReplaceTool`, the project loader and the
+    /// tool-library loader. Every reader of `helix_deg` (the cutter, the
+    /// engaged-edge force, the modulator) then reads 0 with no rule of its
+    /// own.
+    pub fn hold_flute_form(&mut self) -> Option<f64> {
+        match self.cut_direction {
+            BitCutDirection::Straight if self.helix_deg != 0.0 => {
+                let stated = self.helix_deg;
+                self.helix_deg = 0.0;
+                Some(stated)
+            }
+            BitCutDirection::Straight
+            | BitCutDirection::UpCut
+            | BitCutDirection::DownCut
+            | BitCutDirection::Compression => None,
+        }
+    }
+
     /// F029 step 1: the one domain check of a tool record.
     ///
     /// Every door that creates or changes a tool calls it: the session
@@ -984,6 +1032,15 @@ impl ToolConfig {
         ToolDimension::Diameter.check(d, d)?;
         ToolDimension::CuttingLength.check(self.cutting_length_planning_mm(), d)?;
         ToolDimension::HelixDeg.check(self.helix_deg, d)?;
+        // P24a: a straight flute has helix 0. Every write door calls
+        // `hold_flute_form` first, so this refuses only a record that a
+        // caller built by hand with the pair apart.
+        match self.cut_direction {
+            BitCutDirection::Straight => {
+                ToolDimension::StraightHelixDeg.check(self.helix_deg, d)?;
+            }
+            BitCutDirection::UpCut | BitCutDirection::DownCut | BitCutDirection::Compression => {}
+        }
         ToolDimension::FluteCount.check(f64::from(self.flute_count_planning()), d)?;
         ToolDimension::ShankDiameter.check(self.shank_diameter_planning_mm(), d)?;
         ToolDimension::Stickout.check(self.stickout_planning_mm(), d)?;

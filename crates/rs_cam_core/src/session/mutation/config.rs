@@ -887,8 +887,11 @@ impl ProjectSession {
     pub(crate) fn replace_tool(
         &mut self,
         tool_id: ToolId,
-        tool: ToolConfig,
+        mut tool: ToolConfig,
     ) -> Result<Effects, SessionError> {
+        // P24a: a straight flute has no helix (the GUI editor writes the
+        // flute form and the helix as two fields of one record).
+        let _ = tool.hold_flute_form();
         crate::session::validate_tool(&tool)?;
         self.try_with_effects(None, move |session| {
             let Some(slot) = session.tools.iter_mut().find(|t| t.id == tool_id) else {

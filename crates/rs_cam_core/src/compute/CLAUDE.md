@@ -34,6 +34,7 @@ The operation registry and its dispatch, the configuration types, the guards, an
 - Pins and holes: `alignment_pin_keying_intrinsic_p1`, `alignment_pins_judge_the_full_setup_map_p2`, `alignment_pin_keying_g_pinauto`, `a_pin_set_edit_stales_only_the_pin_drill_p4`, `alignment_pin_walls_and_2d_placer_p6`, `dowel_holes_have_one_source_p8`, `pin_holes_are_drilled_by_size_r1`, `pin_holes_ignore_the_boundary_d2`, `a_drill_drills_only_the_tool_size_p6_5`, `a_bore_cuts_the_stated_size_p6_6`, `a_pocket_extends_an_open_path_to_the_stock_p6_4`.
 
 ## Traps
+- P24a: `BitCutDirection::Straight` is the one straight-flute fact; `ToolConfig::hold_flute_form` writes helix 0 at every write door (setter, `AddTool`, `ReplaceTool`, project and library load), and `validate` holds the pair (`ToolDimension::StraightHelixDeg`).
 - A config copy patched by session code is a second path: pins reach Pin Drill as `ctx.alignment_pins`.
 - `every_op_conforms_w4` check 6 is a known red (`contour_each_level` skips serialising its default).
 - Never bless the fields of the 46 known G-OPGOLDEN rows; diff against `planning/feeds_contract_2026-11-03/opgolden_known_46_rows.txt`.

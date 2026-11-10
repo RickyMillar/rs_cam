@@ -1399,7 +1399,9 @@ pub enum ToolParamKeyParam {
     FluteCount,
     /// Tool material: "carbide" or "hss".
     ToolMaterial,
-    /// Cut direction: "up_cut", "down_cut" or "compression".
+    /// The flute form: "up_cut", "down_cut", "compression" or "straight".
+    /// "straight" (a straight-flute bit, feeds contract P24a) also writes
+    /// `helix_deg` = 0, and the tool then reads the straight-bit vendor rows.
     CutDirection,
     /// The display unit: "metric" or "imperial". It changes no stored
     /// length and invalidates nothing.
