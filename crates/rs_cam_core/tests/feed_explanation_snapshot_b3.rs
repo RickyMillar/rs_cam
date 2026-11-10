@@ -1540,8 +1540,13 @@ fn the_old_scallop_premise_ships_the_printed_tip_row() {
     );
     // RE-PREMISED 2026-11-03 (P5, Q3). This read
     //     assert_eq!(scallop, parallel, "one printed row and one band: ...");
-    // Parallel now reads the Q3 winner (the SpeTool point) and Scallop the
-    // Amana v8 transfer: two rows, and each verdict uses its own band.
+    // Parallel read the Q3 winner (the SpeTool point) and Scallop the
+    // Amana v8 transfer: two rows, and each verdict used its own band.
+    // RE-PINNED 2026-11-10. P23c: the SpeTool 2D/3D tapered chart serves
+    // the 3D finish families (operator ruling 2026-11-10). Scallop now has
+    // the same two candidates as Parallel, and the Q3 tie takes the lower
+    // printed chip: the SpeTool point (0.0254 mm), below the v8 band
+    // middle. Both rows print the 1 mm tip.
     let bounds = |v: &ChiploadVerdict| match v {
         ChiploadVerdict::Within {
             approach_to_max, ..
@@ -1550,14 +1555,10 @@ fn the_old_scallop_premise_ships_the_printed_tip_row() {
     };
     let (scallop_bounds, parallel_bounds) = (bounds(&scallop), bounds(&parallel));
     assert!(
-        (scallop_bounds
-            .min_mm_per_tooth
-            .expect("the v8 row prints a minimum")
-            - PRINTED_MIN_IN * MM_PER_IN)
-            .abs()
-            < 1e-12
-            && (scallop_bounds.max_mm_per_tooth - PRINTED_MAX_IN * MM_PER_IN).abs() < 1e-12,
-        "Scallop judges on the v8 band: {scallop_bounds:?}"
+        scallop_bounds.min_mm_per_tooth.is_none()
+            && (scallop_bounds.max_mm_per_tooth - SPETOOL_PRINTED_IN * MM_PER_IN).abs() < 1e-12
+            && scallop_bounds.source == ChipBoundsSource::VendorLutPointPreset,
+        "Scallop judges on the SpeTool point: {scallop_bounds:?}"
     );
     assert!(
         parallel_bounds.min_mm_per_tooth.is_none()
@@ -1586,8 +1587,17 @@ fn the_old_scallop_premise_ships_the_printed_tip_row() {
         "ruling A1: a tapered ball is keyed at its tip; got {key}"
     );
     let row = matched_row_for(&tool, key, LutOperationFamily::Scallop, LutPassRole::Finish)
-        .expect("the v8 family rule serves the printed tip row to Scallop");
-    assert_eq!(row.observation_id, V8_ROW);
+        .expect("the SpeTool family rule serves the printed tip row to Scallop");
+    assert_eq!(row.observation_id, PREMISE_ROW);
+    assert_eq!(
+        row.band
+            .members
+            .iter()
+            .map(|m| m.row.id())
+            .find(|id| *id != row.observation_id),
+        Some(V8_ROW),
+        "the v8 row stays a member of the band"
+    );
     assert_eq!(
         row.size_basis,
         SizeBasis::Exact,
@@ -1605,17 +1615,18 @@ fn the_old_scallop_premise_ships_the_printed_tip_row() {
         claim.query,
         (LutOperationFamily::Scallop, LutPassRole::Finish)
     );
-    assert_eq!(claim.source_rows, vec![V8_ROW.to_owned()]);
-    let band_min = row.chip_load_min_mm.expect("the row prints a minimum");
-    let band_max = row.chip_load_max_mm.expect("the row prints a maximum");
+    assert_eq!(claim.source_rows, vec![PREMISE_ROW.to_owned()]);
     assert!(
-        (band_min - PRINTED_MIN_IN * MM_PER_IN).abs() < 1e-12,
-        "band min {band_min} must be the printed 0.00075 in x 25.4"
+        row.chip_load_min_mm.is_none(),
+        "the SpeTool chart prints one value, not a band"
     );
+    let band_max = row.chip_load_max_mm.expect("the row prints a value");
     assert!(
-        (band_max - PRINTED_MAX_IN * MM_PER_IN).abs() < 1e-12,
-        "band max {band_max} must be the printed 0.002 in x 25.4"
+        (band_max - SPETOOL_PRINTED_IN * MM_PER_IN).abs() < 1e-12,
+        "the value {band_max} must be the printed 0.001 in x 25.4"
     );
+    // The v8 band (0.00075 in to 0.002 in) holds the shipped point.
+    const { assert!(PRINTED_MIN_IN <= SPETOOL_PRINTED_IN && SPETOOL_PRINTED_IN <= PRINTED_MAX_IN) };
 
     // The size rule still refuses a Ø1 tip whose only row is more than 2x
     // its size: Baltic birch plywood, where the v8 chart prints no row.

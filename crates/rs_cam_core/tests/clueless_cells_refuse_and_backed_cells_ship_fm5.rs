@@ -342,9 +342,14 @@ fn the_tapered_cells_ship_the_family_claim_or_refuse_on_size_fm5() {
         );
     };
     assert!(size.is_none(), "the 1 mm tip is the printed size");
+    // RE-PINNED 2026-11-10. P23c: the SpeTool 2D/3D tapered chart serves
+    // the 3D finish families (operator ruling 2026-11-10). The cell has two
+    // rows printed at the 1 mm tip, and the tie takes the lower printed
+    // chip (Q3): the SpeTool point 0.0254 mm, below the middle of the v8
+    // band (0.01905 to 0.0508 mm). This pin named the v8 row.
     assert_eq!(
         family.source_rows,
-        vec!["amana-tapered-softwood-parallel-1000-2f-zrn-v8".to_owned()]
+        vec!["spetool-tapered-softwood-parallel-1000-2f".to_owned()]
     );
     // Decision 4, in plywood: the 1.0 mm tip reads the Onsrud 1/4 in pocket
     // row (6.35 mm, the exact flute count), 6.3x the tool, and no chart
