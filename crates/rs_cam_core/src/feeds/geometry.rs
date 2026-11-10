@@ -129,6 +129,91 @@ impl UnliftedFeed {
         Self::over_lift(feed_mm_min, thinning.lift(ae_mm, d_eng.mm()))
     }
 
+    /// Feeds contract P23d (operator ruling 2026-11-10): the feed of the
+    /// slot-first ring of `operation`, or `None` for an op with no such
+    /// ring or no feed. The first (outermost) ring of each level of a
+    /// contour Pocket cuts a full slot in fresh stock, where the radial
+    /// chip-thinning lift does not hold. Its feed is the op feed over the
+    /// lift that Suggest sized the op feed with: the thinning rule of the
+    /// op's feeds style at the lift width of its stepover
+    /// (`PowerCases::full_feed_width`), on the engaged diameter at its
+    /// depth per pass. The value is at or below the op feed; it equals the
+    /// op feed where the lift is 1.
+    ///
+    /// The one door: the Pocket generator (`compute::execute::clearing_2d`)
+    /// feeds the ring at it, and Suggest prints it
+    /// (`profile::SuggestedSpeeds::slot_ring_feed_mm_min`).
+    ///
+    /// Not covered (P23d open items): the first line of a Zigzag raster,
+    /// the opt-in slot lines of a 2D Adaptive, and the first ring round an
+    /// island.
+    #[must_use]
+    pub fn of_slot_ring(
+        operation: &crate::compute::catalog::OperationConfig,
+        geometry: crate::feeds::ToolGeometryHint,
+        tool_diameter_mm: f64,
+        max_cut_diameter_mm: f64,
+    ) -> Option<Self> {
+        use crate::compute::catalog::OperationConfig;
+        use crate::compute::operation_configs::PocketPattern;
+        let slot_first = match operation {
+            OperationConfig::Pocket(cfg) => match cfg.pattern {
+                PocketPattern::Contour => true,
+                PocketPattern::Zigzag => false,
+            },
+            OperationConfig::Face(_)
+            | OperationConfig::Profile(_)
+            | OperationConfig::Adaptive(_)
+            | OperationConfig::VCarve(_)
+            | OperationConfig::Inlay(_)
+            | OperationConfig::InlayPlug(_)
+            | OperationConfig::Zigzag(_)
+            | OperationConfig::Trace(_)
+            | OperationConfig::Drill(_)
+            | OperationConfig::Bore(_)
+            | OperationConfig::Chamfer(_)
+            | OperationConfig::DropCutter(_)
+            | OperationConfig::Adaptive3d(_)
+            | OperationConfig::Waterline(_)
+            | OperationConfig::Pencil(_)
+            | OperationConfig::Scallop(_)
+            | OperationConfig::UnifiedFinish(_)
+            | OperationConfig::SteepShallow(_)
+            | OperationConfig::RampFinish(_)
+            | OperationConfig::SpiralFinish(_)
+            | OperationConfig::RadialFinish(_)
+            | OperationConfig::HorizontalFinish(_)
+            | OperationConfig::ProjectCurve(_)
+            | OperationConfig::AlignmentPinDrill(_) => false,
+        };
+        if !slot_first {
+            return None;
+        }
+        let usable = |v: f64| v.is_finite() && v > 0.0;
+        let feed = operation.feed_rate().filter(|v| usable(*v))?;
+        let Some(ae) = operation.stepover().filter(|v| usable(*v)) else {
+            return Some(Self(feed));
+        };
+        let ap = operation
+            .depth_per_pass()
+            .filter(|v| usable(*v))
+            .unwrap_or(tool_diameter_mm);
+        let (family, role) = operation.feeds_style();
+        let width = crate::feeds::engagement::PowerCases::of_operation(operation)
+            .full_feed_width(ae, tool_diameter_mm);
+        Some(Self::at_cut(
+            feed,
+            RadialThinning::of(family, role),
+            width,
+            crate::feeds::engagement::EngagedDiameter::of_hint(
+                geometry,
+                tool_diameter_mm,
+                max_cut_diameter_mm,
+                ap,
+            ),
+        ))
+    }
+
     /// The feed `feed_mm_min` over the lift `lift`. A lift that is not
     /// finite or below 1 counts as 1.
     #[must_use]

@@ -86,6 +86,11 @@ pub struct SuggestedSpeeds {
     pub flutes: u32,
     /// The radial chip-thinning lift, `FeedsDerates::radial_chip_thinning`.
     pub radial_lift: f64,
+    /// P23d: the feed (mm/min) of the slot-first ring: the first ring of
+    /// each level of a contour Pocket, which the generator feeds at the op
+    /// feed over the lift (`geometry::UnliftedFeed::of_slot_ring`, the one
+    /// door). `None` for an op with no slot-first ring.
+    pub slot_ring_feed_mm_min: Option<f64>,
 }
 
 /// One preflight view of a cutter × operation combination — plan §3.2.
@@ -248,6 +253,13 @@ impl<'a> CutterOpProfile<'a> {
             chip_load_mm: feeds.chip_load_mm,
             flutes: self.tool_cfg.flute_count_planning(),
             radial_lift: feeds.derates.radial_chip_thinning,
+            slot_ring_feed_mm_min: crate::feeds::geometry::UnliftedFeed::of_slot_ring(
+                operation,
+                self.tool_cfg.geometry_hint(),
+                self.tool_cfg.diameter,
+                crate::feeds::CutBody::of_tool(self.tool_cfg).max_cut_diameter_mm,
+            )
+            .map(crate::feeds::geometry::UnliftedFeed::mm_min),
         })
     }
 

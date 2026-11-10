@@ -214,6 +214,16 @@ pub(crate) fn generate_pocket(
                 stepover: required_geometry(cfg.stepover, op.op_type().label(), "stepover")?,
                 rest_use,
                 feeds,
+                // P23d: the feed of the slot-first ring, when it is below
+                // the op feed (the op feed carries a chip-thinning lift).
+                slot_ring_feed: crate::feeds::geometry::UnliftedFeed::of_slot_ring(
+                    op,
+                    ctx.tool_def.to_geometry_hint(),
+                    ctx.tool_cfg.diameter,
+                    ctx.tool_def.body().max_cut_diameter_mm(),
+                )
+                .map(crate::feeds::geometry::UnliftedFeed::mm_min)
+                .filter(|slot| *slot < feeds.feed_rate),
             },
             ctx,
             prepared,
@@ -240,11 +250,23 @@ struct PocketContour<'a> {
     stepover: f64,
     rest_use: RestUse,
     feeds: LayerFeeds,
+    /// P23d: the feed of the first ring of each piece (a full slot in
+    /// fresh stock): the op feed over its chip-thinning lift
+    /// (`feeds::geometry::UnliftedFeed::of_slot_ring`). `None`: the op
+    /// feed has no lift, and every ring runs at the op feed.
+    slot_ring_feed: Option<f64>,
+}
+
+/// The rings of one Pocket region, and the index of the first ring of each
+/// piece (its compensated boundary, the slot-first ring; P23d).
+struct PocketRings {
+    rings: Vec<crate::toolpath::MaterialRing>,
+    first_rings: Vec<usize>,
 }
 
 impl LayeredOp for PocketContour<'_> {
     type Input = Polygon2;
-    type Geometry = Vec<crate::toolpath::MaterialRing>;
+    type Geometry = PocketRings;
     /// One report per piece. Each cascade adds its offset failures and,
     /// when a bound stopped it (Checkpoint C, Q3, F-10), the area it
     /// leaves standing. The runner records it once per region, never once
@@ -265,6 +287,7 @@ impl LayeredOp for PocketContour<'_> {
         layer: &LayerCtx<'_>,
     ) -> Result<(Self::Geometry, Self::Report), OperationError> {
         let mut contours = Vec::new();
+        let mut first_rings = Vec::new();
         let mut reports = Vec::with_capacity(region.len());
         for piece in region {
             let (rings, report) = crate::ops::pocket::pocket_contours_reported_with_cancel(
@@ -274,9 +297,19 @@ impl LayeredOp for PocketContour<'_> {
                 layer.cancel,
             )?;
             reports.push(report);
+            // The cascade pushes the compensated boundary of a piece first.
+            if !rings.is_empty() {
+                first_rings.push(contours.len());
+            }
             contours.extend(rings);
         }
-        Ok((contours, reports))
+        Ok((
+            PocketRings {
+                rings: contours,
+                first_rings,
+            },
+            reports,
+        ))
     }
 
     fn emit_level(
@@ -287,18 +320,27 @@ impl LayeredOp for PocketContour<'_> {
         _cancel: &dyn CancelCheck,
     ) -> Result<SidedToolpath, OperationError> {
         let feeds = &self.feeds;
-        Ok(crate::ops::pocket::pocket_contours_to_sided_toolpath(
-            geometry,
-            &crate::ops::pocket::PocketParams {
-                tool_radius: feeds.tool_radius,
-                stepover: self.stepover,
-                cut_depth: level.z,
-                feed_rate: feeds.feed_rate,
-                plunge_rate: feeds.plunge_rate,
-                safe_z: feeds.safe_z,
-                climb: self.cfg.climb,
-            },
-        ))
+        let slot = self
+            .slot_ring_feed
+            .map(|feed_mm_min| crate::ops::pocket::SlotFirstRings {
+                first_rings: &geometry.first_rings,
+                feed_mm_min,
+            });
+        Ok(
+            crate::ops::pocket::pocket_contours_to_sided_toolpath_slot_first(
+                &geometry.rings,
+                slot,
+                &crate::ops::pocket::PocketParams {
+                    tool_radius: feeds.tool_radius,
+                    stepover: self.stepover,
+                    cut_depth: level.z,
+                    feed_rate: feeds.feed_rate,
+                    plunge_rate: feeds.plunge_rate,
+                    safe_z: feeds.safe_z,
+                    climb: self.cfg.climb,
+                },
+            ),
+        )
     }
 }
 

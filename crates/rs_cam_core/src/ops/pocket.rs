@@ -366,9 +366,35 @@ pub fn pocket_contours_to_sided_toolpath(
     contours: &[MaterialRing],
     params: &PocketParams,
 ) -> SidedToolpath {
+    pocket_contours_to_sided_toolpath_slot_first(contours, None, params)
+}
+
+/// Feeds contract P23d: the slot-first rings of a contour set and their
+/// feed. `first_rings` holds the index of the first ring of each piece
+/// (its compensated boundary, the outermost contour): in fresh stock that
+/// ring cuts a full slot. `feed_mm_min` is the feed of those rings
+/// (`feeds::geometry::UnliftedFeed::of_slot_ring`), below the op feed.
+#[derive(Debug, Clone, Copy)]
+pub struct SlotFirstRings<'a> {
+    pub first_rings: &'a [usize],
+    pub feed_mm_min: f64,
+}
+
+/// [`pocket_contours_to_sided_toolpath`] with the slot-first rings fed at
+/// their own feed (P23d). The cutting moves of each ring in
+/// `slot.first_rings` take `slot.feed_mm_min` and hold it as
+/// [`crate::toolpath::Move::feed_cap`], so no later stage (the arc fit, the
+/// merge, the feed optimisation, the modulator) raises it. The plunge, the
+/// rapids, every other ring and the geometry do not change. `None` gives
+/// the same moves as the function above.
+pub fn pocket_contours_to_sided_toolpath_slot_first(
+    contours: &[MaterialRing],
+    slot: Option<SlotFirstRings<'_>>,
+    params: &PocketParams,
+) -> SidedToolpath {
     let mut tp = SidedToolpath::new();
 
-    for ring in contours {
+    for (index, ring) in contours.iter().enumerate() {
         let contour = &ring.points;
         if contour.is_empty() {
             continue;
@@ -385,16 +411,27 @@ pub fn pocket_contours_to_sided_toolpath(
             .map(|p| P3::new(p.x, p.y, params.cut_depth))
             .collect();
 
+        let slot_feed = slot
+            .filter(|s| s.first_rings.contains(&index))
+            .map(|s| s.feed_mm_min);
+        let first_move = tp.toolpath.moves.len();
         tp.emit_closed_pass(
             &points,
             ClosedPassMoves {
                 safe_z: params.safe_z,
-                feed: params.feed_rate,
+                feed: slot_feed.unwrap_or(params.feed_rate),
                 plunge: params.plunge_rate,
                 body_intent: MoveIntent::ClearingCut,
             },
             ring.material,
         );
+        if let Some(cap) = slot_feed {
+            for m in tp.toolpath.moves.iter_mut().skip(first_move) {
+                if m.intent == MoveIntent::ClearingCut {
+                    m.feed_cap = Some(cap);
+                }
+            }
+        }
     }
 
     tp
@@ -424,6 +461,65 @@ mod tests {
         )
         .expect("never cancelled");
         pocket_contours_to_sided_toolpath(&contours, params).toolpath
+    }
+
+    /// P23d: the slot-first form moves no geometry. Against the plain form
+    /// only the feed and the cap of the cutting moves of the named rings
+    /// differ.
+    #[test]
+    fn the_slot_first_form_changes_only_the_feed_of_the_first_ring_p23d() {
+        let square = Polygon2::rectangle(-20.0, -20.0, 20.0, 20.0);
+        let params = default_params();
+        let contours = pocket_contours(&square, params.tool_radius, params.stepover);
+        let rings: Vec<MaterialRing> = contours
+            .into_iter()
+            .map(|points| MaterialRing {
+                points,
+                material: RingMaterial::Outside,
+            })
+            .collect();
+        assert!(rings.len() >= 3, "non-vacuity: several rings");
+        let plain = pocket_contours_to_sided_toolpath(&rings, &params).toolpath;
+        let slot_feed = params.feed_rate * 0.9;
+        let capped = pocket_contours_to_sided_toolpath_slot_first(
+            &rings,
+            Some(SlotFirstRings {
+                first_rings: &[0],
+                feed_mm_min: slot_feed,
+            }),
+            &params,
+        )
+        .toolpath;
+        assert_eq!(plain.moves.len(), capped.moves.len());
+        let first_ring_cuts = rings[0].points.len();
+        let mut lowered = 0;
+        for (a, b) in plain.moves.iter().zip(&capped.moves) {
+            assert_eq!(a.target, b.target);
+            assert_eq!(a.intent, b.intent);
+            assert_eq!(a.feed_cap, None);
+            if a.move_type == b.move_type {
+                assert_eq!(b.feed_cap, None);
+            } else {
+                assert_eq!(a.intent, MoveIntent::ClearingCut);
+                assert_eq!(
+                    a.move_type,
+                    MoveType::Linear {
+                        feed_rate: params.feed_rate
+                    }
+                );
+                assert_eq!(
+                    b.move_type,
+                    MoveType::Linear {
+                        feed_rate: slot_feed
+                    }
+                );
+                assert_eq!(b.feed_cap, Some(slot_feed));
+                lowered += 1;
+            }
+        }
+        // The body of a closed pass is one move per point (the close
+        // included).
+        assert_eq!(lowered, first_ring_cuts);
     }
 
     fn default_params() -> PocketParams {

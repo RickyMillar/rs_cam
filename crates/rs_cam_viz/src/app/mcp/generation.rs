@@ -86,6 +86,8 @@ pub(super) fn force_line_json(
 /// - P23b: `rpm` also holds the speeds an apply writes: `rpm`,
 ///   `feed_mm_min`, `plunge_mm_min`, `ramp_feed_mm_min`, and the feed terms
 ///   `chip_load_mm`, `flutes`, `radial_lift`; they need no power figure.
+///   P23d: `slot_ring_feed_mm_min`, the feed of the first ring of each level
+///   of a contour Pocket (the op feed over the lift); null on other ops.
 /// - P21c: `rpm` is the Suggest RPM; under `constant_chip` it carries
 ///   `binding` and `limits` ({limit, label, rpm}; a `null` rpm is a limit
 ///   that admits every RPM of the spindle).
@@ -189,6 +191,10 @@ pub fn suggest_basis_json(
         let _ = fields.insert(
             "radial_lift".to_owned(),
             serde_json::json!(speeds.radial_lift),
+        );
+        let _ = fields.insert(
+            "slot_ring_feed_mm_min".to_owned(),
+            serde_json::json!(speeds.slot_ring_feed_mm_min),
         );
     }
     serde_json::json!({
