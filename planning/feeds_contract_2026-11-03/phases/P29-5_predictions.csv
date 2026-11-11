@@ -1,0 +1,149 @@
+table,op_or_file,tool_or_idx,tool_type,diameter_mm,material,stated,proposal_today,binding_today,proposal_pred,binding_pred,rigidity_ceiling_pred,fz_mm,hand_peak_n_at_ceiling,rigidity_edge_pred
+S,Trace,,EndMill,3.1750,softwood,1.5875,1.5875,,1.5875,,10.1623,0.101600,35.3081,ApCeiling
+S,Trace,,EndMill,3.1750,softwood,3.1750,3.1750,,3.1750,,10.1623,0.101600,35.3081,ApCeiling
+S,Trace,,EndMill,3.1750,softwood,6.3500,3.1750,VendorDepthTable,3.1750,VendorDepthTable,10.1623,0.101600,35.3081,ApCeiling
+S,ProjectCurve,,EndMill,3.1750,softwood,offset 1.5875,None(AfterSimulation),,None(AfterSimulation),,4.0576,0.250000,35.3109,ApCeiling
+S,ProjectCurve,,EndMill,3.1750,softwood,offset 3.1750,None(AfterSimulation),,None(AfterSimulation),,4.0576,0.250000,35.3109,ApCeiling
+S,ProjectCurve,,EndMill,3.1750,softwood,offset 6.3500,None(AfterSimulation),,None(AfterSimulation),,4.0576,0.250000,35.3109,ApCeiling
+S,Trace,,EndMill,3.1750,hardwood,1.5875,1.5875,,1.5875,,4.9846,0.088900,35.3153,ApCeiling
+S,Trace,,EndMill,3.1750,hardwood,3.1750,3.1750,,3.1750,,4.9846,0.088900,35.3153,ApCeiling
+S,Trace,,EndMill,3.1750,hardwood,6.3500,6.3500,,4.9846,Rigidity,4.9846,0.088900,35.3153,ApCeiling
+S,ProjectCurve,,EndMill,3.1750,hardwood,offset 1.5875,None(AfterSimulation),,None(AfterSimulation),,10.1437,0.022725,35.3096,ApCeiling
+S,ProjectCurve,,EndMill,3.1750,hardwood,offset 3.1750,None(AfterSimulation),,None(AfterSimulation),,10.1437,0.022725,35.3096,ApCeiling
+S,ProjectCurve,,EndMill,3.1750,hardwood,offset 6.3500,None(AfterSimulation),,None(AfterSimulation),,10.1437,0.022725,35.3096,ApCeiling
+S,Trace,,EndMill,3.1750,mdf,1.5875,1.5875,,1.5875,,7.5696,0.127000,35.3221,ApCeiling
+S,Trace,,EndMill,3.1750,mdf,3.1750,3.1750,,3.1750,,7.5696,0.127000,35.3221,ApCeiling
+S,Trace,,EndMill,3.1750,mdf,6.3500,3.1750,VendorDepthTable,3.1750,VendorDepthTable,7.5696,0.127000,35.3221,ApCeiling
+S,ProjectCurve,,EndMill,3.1750,mdf,offset 1.5875,None(AfterSimulation),,None(AfterSimulation),,3.5323,0.250000,35.3178,ApCeiling
+S,ProjectCurve,,EndMill,3.1750,mdf,offset 3.1750,None(AfterSimulation),,None(AfterSimulation),,3.5323,0.250000,35.3178,ApCeiling
+S,ProjectCurve,,EndMill,3.1750,mdf,offset 6.3500,None(AfterSimulation),,None(AfterSimulation),,3.5323,0.250000,35.3178,ApCeiling
+S,Trace,,EndMill,6.0000,softwood,3.0000,3.0000,,3.0000,,6.0748,0.127000,35.3082,ApCeiling
+S,Trace,,EndMill,6.0000,softwood,6.0000,6.0000,,6.0000,,6.0748,0.127000,35.3082,ApCeiling
+S,Trace,,EndMill,6.0000,softwood,12.0000,6.0000,VendorDepthTable,6.0000,VendorDepthTable,6.0748,0.127000,35.3082,ApCeiling
+S,ProjectCurve,,EndMill,6.0000,softwood,offset 3.0000,None(AfterSimulation),,None(AfterSimulation),,5.3889,0.149193,35.3210,ApCeiling
+S,ProjectCurve,,EndMill,6.0000,softwood,offset 6.0000,None(AfterSimulation),,None(AfterSimulation),,5.3889,0.149193,35.3210,ApCeiling
+S,ProjectCurve,,EndMill,6.0000,softwood,offset 12.0000,None(AfterSimulation),,None(AfterSimulation),,5.3889,0.149193,35.3210,ApCeiling
+S,Trace,,EndMill,6.0000,hardwood,3.0000,3.0000,,3.0000,,3.4056,0.127000,35.3058,ApCeiling
+S,Trace,,EndMill,6.0000,hardwood,6.0000,6.0000,,3.4056,Rigidity,3.4056,0.127000,35.3058,ApCeiling
+S,Trace,,EndMill,6.0000,hardwood,12.0000,6.0000,VendorDepthTable,3.4056,Rigidity,3.4056,0.127000,35.3058,ApCeiling
+S,ProjectCurve,,EndMill,6.0000,hardwood,offset 3.0000,None(AfterSimulation),,None(AfterSimulation),,3.0574,0.149193,35.2965,ApCeiling
+S,ProjectCurve,,EndMill,6.0000,hardwood,offset 6.0000,None(AfterSimulation),,None(AfterSimulation),,3.0574,0.149193,35.2965,ApCeiling
+S,ProjectCurve,,EndMill,6.0000,hardwood,offset 12.0000,None(AfterSimulation),,None(AfterSimulation),,3.0574,0.149193,35.2965,ApCeiling
+S,Trace,,EndMill,6.0000,mdf,3.0000,3.0000,,3.0000,,4.5581,0.152400,35.3214,ApCeiling
+S,Trace,,EndMill,6.0000,mdf,6.0000,6.0000,,4.5581,Rigidity,4.5581,0.152400,35.3214,ApCeiling
+S,Trace,,EndMill,6.0000,mdf,12.0000,6.0000,VendorDepthTable,4.5581,Rigidity,4.5581,0.152400,35.3214,ApCeiling
+S,ProjectCurve,,EndMill,6.0000,mdf,offset 3.0000,None(AfterSimulation),,None(AfterSimulation),,5.1587,0.124953,35.3114,ApCeiling
+S,ProjectCurve,,EndMill,6.0000,mdf,offset 6.0000,None(AfterSimulation),,None(AfterSimulation),,5.1587,0.124953,35.3114,ApCeiling
+S,ProjectCurve,,EndMill,6.0000,mdf,offset 12.0000,None(AfterSimulation),,None(AfterSimulation),,5.1587,0.124953,35.3114,ApCeiling
+S,Trace,,EndMill,12.0000,softwood,6.0000,6.0000,,5.1933,Rigidity,5.1933,0.144780,35.3160,ApCeiling
+S,Trace,,EndMill,12.0000,softwood,12.0000,12.0000,,5.1933,Rigidity,5.1933,0.144780,35.3160,ApCeiling
+S,Trace,,EndMill,12.0000,softwood,24.0000,12.0000,VendorDepthTable,5.1933,Rigidity,5.1933,0.144780,35.3160,ApCeiling
+S,ProjectCurve,,EndMill,12.0000,softwood,offset 6.0000,None(AfterSimulation),,None(AfterSimulation),,8.2519,0.065000,35.3210,ApCeiling
+S,ProjectCurve,,EndMill,12.0000,softwood,offset 12.0000,None(AfterSimulation),,None(AfterSimulation),,8.2519,0.065000,35.3210,ApCeiling
+S,ProjectCurve,,EndMill,12.0000,softwood,offset 24.0000,None(AfterSimulation),,None(AfterSimulation),,8.2519,0.065000,35.3210,ApCeiling
+S,Trace,,EndMill,12.0000,hardwood,6.0000,6.0000,,3.0636,Rigidity,3.0636,0.144800,35.3092,ApCeiling
+S,Trace,,EndMill,12.0000,hardwood,12.0000,12.0000,,3.0636,Rigidity,3.0636,0.144800,35.3092,ApCeiling
+S,Trace,,EndMill,12.0000,hardwood,24.0000,12.0000,VendorDepthTable,3.0636,Rigidity,3.0636,0.025000,16.3923,ApCeiling
+S,ProjectCurve,,EndMill,12.0000,hardwood,offset 6.0000,None(AfterSimulation),,None(AfterSimulation),,2.4698,0.197922,35.3063,ApCeiling
+S,ProjectCurve,,EndMill,12.0000,hardwood,offset 12.0000,None(AfterSimulation),,None(AfterSimulation),,2.4698,0.197922,35.3063,ApCeiling
+S,ProjectCurve,,EndMill,12.0000,hardwood,offset 24.0000,None(AfterSimulation),,None(AfterSimulation),,2.4698,0.197922,35.3063,ApCeiling
+S,Trace,,EndMill,12.0000,mdf,6.0000,6.0000,,3.2225,Rigidity,3.2225,0.243840,35.2925,ApCeiling
+S,Trace,,EndMill,12.0000,mdf,12.0000,12.0000,,3.2225,Rigidity,3.2225,0.243840,35.2925,ApCeiling
+S,Trace,,EndMill,12.0000,mdf,24.0000,12.0000,VendorDepthTable,3.2225,Rigidity,3.2225,0.025000,13.2972,ApCeiling
+S,ProjectCurve,,EndMill,12.0000,mdf,offset 6.0000,None(AfterSimulation),,None(AfterSimulation),,3.1682,0.250000,35.3136,ApCeiling
+S,ProjectCurve,,EndMill,12.0000,mdf,offset 12.0000,None(AfterSimulation),,None(AfterSimulation),,3.1682,0.250000,35.3136,ApCeiling
+S,ProjectCurve,,EndMill,12.0000,mdf,offset 24.0000,None(AfterSimulation),,None(AfterSimulation),,3.1682,0.250000,35.3136,ApCeiling
+S,Trace,,VBit,6.3500,softwood,3.1750,3.1750,,3.1750,,9.6183,0.063500,35.3113,ApCeiling
+S,Trace,,VBit,6.3500,softwood,6.3500,6.3500,,6.3500,,9.6183,0.063500,35.3113,ApCeiling
+S,Trace,,VBit,6.3500,softwood,12.7000,6.3500,VendorDepthTable,6.3500,VendorDepthTable,9.6183,0.063500,35.3113,ApCeiling
+S,VCarve,,VBit,6.3500,softwood,3.1750,3.1750,,3.1750,,,0.063500,,Unmodelled: no force-budget limit below the flute
+S,VCarve,,VBit,6.3500,softwood,6.3500,6.3500,,6.3500,,,0.063500,,Unmodelled: no force-budget limit below the flute
+S,VCarve,,VBit,6.3500,softwood,12.7000,6.3500,VendorAxial,6.3500,VendorAxial,,0.063500,,Unmodelled: no force-budget limit below the flute
+S,Chamfer,,VBit,6.3500,softwood,chamfer_width 1.0000,1.0000,,1.0000,,,0.063500,,Unmodelled: no force-budget limit below the flute
+S,Inlay,,VBit,6.3500,softwood,3.1750,3.1750,,3.1750,,,0.063500,,Unmodelled: no force-budget limit below the flute
+S,Inlay,,VBit,6.3500,softwood,6.3500,6.3500,,6.3500,,,0.063500,,Unmodelled: no force-budget limit below the flute
+S,Inlay,,VBit,6.3500,softwood,12.7000,12.7000,,12.7000,,,0.063500,,Unmodelled: no force-budget limit below the flute
+S,InlayPlug,,VBit,6.3500,softwood,3.1750,3.1750,,3.1750,,,0.063500,,Unmodelled: no force-budget limit below the flute
+S,InlayPlug,,VBit,6.3500,softwood,6.3500,6.3500,,6.3500,,,0.063500,,Unmodelled: no force-budget limit below the flute
+S,InlayPlug,,VBit,6.3500,softwood,12.7000,12.7000,,12.7000,,,0.063500,,Unmodelled: no force-budget limit below the flute
+S,ProjectCurve,,VBit,6.3500,softwood,offset 3.1750,None(AfterSimulation),,None(AfterSimulation),,9.6183,0.063500,35.3113,ApCeiling
+S,ProjectCurve,,VBit,6.3500,softwood,offset 6.3500,None(AfterSimulation),,None(AfterSimulation),,9.6183,0.063500,35.3113,ApCeiling
+S,ProjectCurve,,VBit,6.3500,softwood,offset 12.7000,None(AfterSimulation),,None(AfterSimulation),,9.6183,0.063500,35.3113,ApCeiling
+S,Trace,,VBit,6.3500,hardwood,3.1750,3.1750,,3.1750,,5.0842,0.063500,35.3079,ApCeiling
+S,Trace,,VBit,6.3500,hardwood,6.3500,6.3500,,5.0842,Rigidity,5.0842,0.063500,35.3079,ApCeiling
+S,Trace,,VBit,6.3500,hardwood,12.7000,6.3500,VendorDepthTable,5.0842,Rigidity,5.0842,0.063500,35.3079,ApCeiling
+S,VCarve,,VBit,6.3500,hardwood,3.1750,3.1750,,3.1750,,,0.063500,,Unmodelled: no force-budget limit below the flute
+S,VCarve,,VBit,6.3500,hardwood,6.3500,6.3500,,6.3500,,,0.063500,,Unmodelled: no force-budget limit below the flute
+S,VCarve,,VBit,6.3500,hardwood,12.7000,6.3500,VendorAxial,6.3500,VendorAxial,,0.063500,,Unmodelled: no force-budget limit below the flute
+S,Chamfer,,VBit,6.3500,hardwood,chamfer_width 1.0000,1.0000,,1.0000,,,0.063500,,Unmodelled: no force-budget limit below the flute
+S,Inlay,,VBit,6.3500,hardwood,3.1750,3.1750,,3.1750,,,0.063500,,Unmodelled: no force-budget limit below the flute
+S,Inlay,,VBit,6.3500,hardwood,6.3500,6.3500,,6.3500,,,0.063500,,Unmodelled: no force-budget limit below the flute
+S,Inlay,,VBit,6.3500,hardwood,12.7000,12.7000,,12.7000,,,0.063500,,Unmodelled: no force-budget limit below the flute
+S,InlayPlug,,VBit,6.3500,hardwood,3.1750,3.1750,,3.1750,,,0.063500,,Unmodelled: no force-budget limit below the flute
+S,InlayPlug,,VBit,6.3500,hardwood,6.3500,6.3500,,6.3500,,,0.063500,,Unmodelled: no force-budget limit below the flute
+S,InlayPlug,,VBit,6.3500,hardwood,12.7000,12.7000,,12.7000,,,0.063500,,Unmodelled: no force-budget limit below the flute
+S,ProjectCurve,,VBit,6.3500,hardwood,offset 3.1750,None(AfterSimulation),,None(AfterSimulation),,5.0842,0.063500,35.3079,ApCeiling
+S,ProjectCurve,,VBit,6.3500,hardwood,offset 6.3500,None(AfterSimulation),,None(AfterSimulation),,5.0842,0.063500,35.3079,ApCeiling
+S,ProjectCurve,,VBit,6.3500,hardwood,offset 12.7000,None(AfterSimulation),,None(AfterSimulation),,5.0842,0.063500,35.3079,ApCeiling
+S,Trace,,VBit,12.7000,softwood,6.3500,6.3500,,6.3500,,8.5217,0.063500,35.3118,ApCeiling
+S,Trace,,VBit,12.7000,softwood,12.7000,12.7000,,8.5217,Rigidity,8.5217,0.063500,35.3118,ApCeiling
+S,Trace,,VBit,12.7000,softwood,25.4000,12.7000,VendorDepthTable,8.5217,Rigidity,8.5217,0.063500,35.3118,ApCeiling
+S,VCarve,,VBit,12.7000,softwood,6.3500,6.3500,,6.3500,,,0.063500,,Unmodelled: no force-budget limit below the flute
+S,VCarve,,VBit,12.7000,softwood,12.7000,12.7000,,12.7000,,,0.063500,,Unmodelled: no force-budget limit below the flute
+S,VCarve,,VBit,12.7000,softwood,25.4000,12.7000,VendorAxial,12.7000,VendorAxial,,0.063500,,Unmodelled: no force-budget limit below the flute
+S,Chamfer,,VBit,12.7000,softwood,chamfer_width 1.0000,1.0000,,1.0000,,,0.063500,,Unmodelled: no force-budget limit below the flute
+S,Inlay,,VBit,12.7000,softwood,6.3500,6.3500,,6.3500,,,0.063500,,Unmodelled: no force-budget limit below the flute
+S,Inlay,,VBit,12.7000,softwood,12.7000,12.7000,,12.7000,,,0.063500,,Unmodelled: no force-budget limit below the flute
+S,Inlay,,VBit,12.7000,softwood,25.4000,25.4000,,25.4000,,,0.063500,,Unmodelled: no force-budget limit below the flute
+S,InlayPlug,,VBit,12.7000,softwood,6.3500,6.3500,,6.3500,,,0.063500,,Unmodelled: no force-budget limit below the flute
+S,InlayPlug,,VBit,12.7000,softwood,12.7000,12.7000,,12.7000,,,0.063500,,Unmodelled: no force-budget limit below the flute
+S,InlayPlug,,VBit,12.7000,softwood,25.4000,25.4000,,25.4000,,,0.063500,,Unmodelled: no force-budget limit below the flute
+S,ProjectCurve,,VBit,12.7000,softwood,offset 6.3500,None(AfterSimulation),,None(AfterSimulation),,8.5217,0.063500,35.3118,ApCeiling
+S,ProjectCurve,,VBit,12.7000,softwood,offset 12.7000,None(AfterSimulation),,None(AfterSimulation),,8.5217,0.063500,35.3118,ApCeiling
+S,ProjectCurve,,VBit,12.7000,softwood,offset 25.4000,None(AfterSimulation),,None(AfterSimulation),,8.5217,0.063500,35.3118,ApCeiling
+S,Trace,,VBit,12.7000,hardwood,6.3500,6.3500,,5.0858,Rigidity,5.0858,0.063500,35.3189,ApCeiling
+S,Trace,,VBit,12.7000,hardwood,12.7000,12.7000,,5.0858,Rigidity,5.0858,0.063500,35.3189,ApCeiling
+S,Trace,,VBit,12.7000,hardwood,25.4000,12.7000,VendorDepthTable,5.0858,Rigidity,5.0858,0.063500,35.3189,ApCeiling
+S,VCarve,,VBit,12.7000,hardwood,6.3500,6.3500,,6.3500,,,0.063500,,Unmodelled: no force-budget limit below the flute
+S,VCarve,,VBit,12.7000,hardwood,12.7000,12.7000,,12.7000,,,0.063500,,Unmodelled: no force-budget limit below the flute
+S,VCarve,,VBit,12.7000,hardwood,25.4000,12.7000,VendorAxial,12.7000,VendorAxial,,0.063500,,Unmodelled: no force-budget limit below the flute
+S,Chamfer,,VBit,12.7000,hardwood,chamfer_width 1.0000,1.0000,,1.0000,,,0.063500,,Unmodelled: no force-budget limit below the flute
+S,Inlay,,VBit,12.7000,hardwood,6.3500,6.3500,,6.3500,,,0.063500,,Unmodelled: no force-budget limit below the flute
+S,Inlay,,VBit,12.7000,hardwood,12.7000,12.7000,,12.7000,,,0.063500,,Unmodelled: no force-budget limit below the flute
+S,Inlay,,VBit,12.7000,hardwood,25.4000,25.4000,,25.4000,,,0.063500,,Unmodelled: no force-budget limit below the flute
+S,InlayPlug,,VBit,12.7000,hardwood,6.3500,6.3500,,6.3500,,,0.063500,,Unmodelled: no force-budget limit below the flute
+S,InlayPlug,,VBit,12.7000,hardwood,12.7000,12.7000,,12.7000,,,0.063500,,Unmodelled: no force-budget limit below the flute
+S,InlayPlug,,VBit,12.7000,hardwood,25.4000,25.4000,,25.4000,,,0.063500,,Unmodelled: no force-budget limit below the flute
+S,ProjectCurve,,VBit,12.7000,hardwood,offset 6.3500,None(AfterSimulation),,None(AfterSimulation),,5.0858,0.063500,35.3189,ApCeiling
+S,ProjectCurve,,VBit,12.7000,hardwood,offset 12.7000,None(AfterSimulation),,None(AfterSimulation),,5.0858,0.063500,35.3189,ApCeiling
+S,ProjectCurve,,VBit,12.7000,hardwood,offset 25.4000,None(AfterSimulation),,None(AfterSimulation),,5.0858,0.063500,35.3189,ApCeiling
+S,Trace,,VBit,12.7000,mdf,6.3500,6.3500,,6.2730,Rigidity,6.2730,0.083210,35.3198,ApCeiling
+S,Trace,,VBit,12.7000,mdf,12.7000,12.7000,,6.2730,Rigidity,6.2730,0.083210,35.3198,ApCeiling
+S,Trace,,VBit,12.7000,mdf,25.4000,21.1667,VendorDepthTable,6.2730,Rigidity,6.2730,0.083210,35.3198,ApCeiling
+S,VCarve,,VBit,12.7000,mdf,6.3500,6.3500,,6.3500,,,0.083210,,Unmodelled: no force-budget limit below the flute
+S,VCarve,,VBit,12.7000,mdf,12.7000,12.7000,,12.7000,,,0.083210,,Unmodelled: no force-budget limit below the flute
+S,VCarve,,VBit,12.7000,mdf,25.4000,25.4000,,25.4000,,,0.083210,,Unmodelled: no force-budget limit below the flute
+S,Chamfer,,VBit,12.7000,mdf,chamfer_width 1.0000,1.0000,,1.0000,,,0.083210,,Unmodelled: no force-budget limit below the flute
+S,Inlay,,VBit,12.7000,mdf,6.3500,6.3500,,6.3500,,,0.083210,,Unmodelled: no force-budget limit below the flute
+S,Inlay,,VBit,12.7000,mdf,12.7000,12.7000,,12.7000,,,0.083210,,Unmodelled: no force-budget limit below the flute
+S,Inlay,,VBit,12.7000,mdf,25.4000,25.4000,,25.4000,,,0.083210,,Unmodelled: no force-budget limit below the flute
+S,InlayPlug,,VBit,12.7000,mdf,6.3500,6.3500,,6.3500,,,0.083210,,Unmodelled: no force-budget limit below the flute
+S,InlayPlug,,VBit,12.7000,mdf,12.7000,12.7000,,12.7000,,,0.083210,,Unmodelled: no force-budget limit below the flute
+S,InlayPlug,,VBit,12.7000,mdf,25.4000,25.4000,,25.4000,,,0.083210,,Unmodelled: no force-budget limit below the flute
+S,ProjectCurve,,VBit,12.7000,mdf,offset 6.3500,None(AfterSimulation),,None(AfterSimulation),,6.2730,0.083210,35.3198,ApCeiling
+S,ProjectCurve,,VBit,12.7000,mdf,offset 12.7000,None(AfterSimulation),,None(AfterSimulation),,6.2730,0.083210,35.3198,ApCeiling
+S,ProjectCurve,,VBit,12.7000,mdf,offset 25.4000,None(AfterSimulation),,None(AfterSimulation),,6.2730,0.083210,35.3198,ApCeiling
+W,nz_wanaka_21_operator.toml,5,EndMill,6.0000,file stock,offset 4.0000 x 6.0000,None(AfterSimulation),,None(AfterSimulation),,2.6974,0.149152,35.2765,ApCeiling
+W,nz_wanaka_21_operator.toml,9,VBit,3.1750,file stock,offset 2.4178 x 3.1750,None(AfterSimulation),,None(AfterSimulation),,5.5414,0.127000,35.3087,ApCeiling
+W,nz_wanaka_21_operator.toml,10,VBit,6.3500,file stock,2.6000 x 6.3500,2.6000,,2.6000,,4.5107,0.063500,35.3060,ApCeiling
+W,nz_wanaka_21_operator.toml,13,VBit,6.3500,file stock,0.6000 x 6.3500,0.6000,,0.6000,,4.5107,0.063500,35.3060,ApCeiling
+W,nz_wanaka_21_6mm_rough_work.toml,5,EndMill,6.0000,file stock,offset 4.0000 x 6.0000,None(AfterSimulation),,None(AfterSimulation),,2.6972,0.149188,35.2795,ApCeiling
+W,nz_wanaka_21_6mm_rough_work.toml,9,VBit,3.1750,file stock,offset 2.4178 x 3.1750,None(AfterSimulation),,None(AfterSimulation),,5.5414,0.127000,35.3087,ApCeiling
+W,nz_wanaka_21_6mm_rough_work.toml,10,VBit,6.3500,file stock,2.6000 x 6.3500,2.6000,,2.6000,,4.5107,0.063500,35.3060,ApCeiling
+W,nz_wanaka_21_6mm_rough_work.toml,13,VBit,6.3500,file stock,0.6000 x 6.3500,0.6000,,0.6000,,4.5107,0.063500,35.3060,ApCeiling
+SP,sienci_quarter_softwood,,EndMill,6.3500,GenericSoftwood,printed ap 5.4000,,,,,6.4797,0.114167,30.2511,"budget depth at the printed chip, full slot; column 14 = peak force at the PRINTED depth"
+SP,sienci_quarter_mdf,,EndMill,6.3500,Mdf,printed ap 5.4000,,,,,5.3987,0.114167,35.3224,"budget depth at the printed chip, full slot; column 14 = peak force at the PRINTED depth"
+SP,sienci_quarter_hardwood,,EndMill,6.3500,GenericHardwood,printed ap 2.5000,,,,,3.6310,0.114167,24.6707,"budget depth at the printed chip, full slot; column 14 = peak force at the PRINTED depth"
+SP,carbide3d_s3_mdf,,EndMill,6.3500,Mdf,printed ap 7.6200,,,,,8.3500,0.039843,32.4011,"budget depth at the printed chip, full slot; column 14 = peak force at the PRINTED depth"
+SP,carbide3d_s3_pine,,EndMill,6.3500,GenericSoftwood,printed ap 10.1600,,,,,11.6555,0.030238,30.9915,"budget depth at the printed chip, full slot; column 14 = peak force at the PRINTED depth"
+SP,carbide3d_s3_mahogany,,EndMill,6.3500,GenericHardwood,printed ap 2.5400,,,,,6.8053,0.029041,14.0260,"budget depth at the printed chip, full slot; column 14 = peak force at the PRINTED depth"
