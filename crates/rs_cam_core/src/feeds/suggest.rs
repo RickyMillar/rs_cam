@@ -745,18 +745,12 @@ pub fn suggest_for_operation(
 
 /// P13c (O3): true for an op whose width is free and computed: a
 /// Pocket-family roughing op that cuts a stepover (the envelope's
-/// corner-coverage rule and removal-rate pick). The same rule as the
-/// envelope's `computed_width`.
+/// corner-coverage rule and removal-rate pick). P29-3: the offset-ring
+/// fact of the op's body cut, the fact of the envelope's `computed_width`.
 #[must_use]
 pub fn has_computed_width(operation: &OperationConfig) -> bool {
-    let (family, role) = operation.feeds_style();
     // EXEMPT(P28-05, P28-06, P28-07)
-    family == crate::feeds::OperationFamily::Pocket
-        && role == crate::feeds::PassRole::Roughing
-        && matches!(
-            operation.cut_spec().radial,
-            crate::compute::catalog::Radial::Width(_)
-        )
+    operation.cuts().body_facts().offset_ring
 }
 
 /// Build a [`FeedsInput`] for the given operation. Shared by both

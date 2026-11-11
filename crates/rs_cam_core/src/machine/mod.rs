@@ -295,16 +295,47 @@ impl RigidityProfile {
         family: crate::feeds::OperationFamily,
         pass_role: crate::feeds::PassRole,
     ) -> Option<DepthCapRule> {
+        self.depth_cap_of(Self::depth_limit(family, pass_role))
+    }
+
+    /// P29-3: the depth limit of one operation family and pass role, with
+    /// no number. The one filler of `limits::CutFacts::depth_rule`
+    /// (`OperationConfig::cuts`); [`Self::depth_cap_rule`] reads it too.
+    #[must_use]
+    pub const fn depth_limit(
+        family: crate::feeds::OperationFamily,
+        pass_role: crate::feeds::PassRole,
+    ) -> crate::limits::DepthLimit {
         use crate::feeds::{OperationFamily, PassRole};
+        use crate::limits::{DepthLimit, DepthRule, NoDepthLimit};
         match (family, pass_role) {
             // EXEMPT(P28-04)
-            (OperationFamily::Drill, _) => None,
+            (OperationFamily::Drill, _) => DepthLimit::NoLimit(NoDepthLimit::DrillCycle),
             // EXEMPT(P28-01, F-DepthRule)
-            (OperationFamily::Adaptive, _) => Some(DepthCapRule::Factor(self.adaptive_doc_factor)),
+            (OperationFamily::Adaptive, _) => DepthLimit::Rule(DepthRule::Factor),
             // EXEMPT(P28-34)
-            (_, PassRole::Roughing) => Some(DepthCapRule::ForceBudget(self.force_budget_n)),
+            (_, PassRole::Roughing) => DepthLimit::Rule(DepthRule::ForceBudget),
             // EXEMPT(P28-02, P28-03, S-NoBound)
-            (_, PassRole::SemiFinish | PassRole::Finish) => None,
+            (_, PassRole::SemiFinish | PassRole::Finish) => {
+                DepthLimit::NoLimit(NoDepthLimit::FinishPass)
+            }
+        }
+    }
+
+    /// P29-3: the rule of the axial depth cap for the depth limit of a cut
+    /// (`limits::CutFacts::depth_rule`), with this machine's numbers.
+    /// `None` when the cut has no depth limit.
+    #[must_use]
+    pub const fn depth_cap_of(&self, limit: crate::limits::DepthLimit) -> Option<DepthCapRule> {
+        use crate::limits::{DepthLimit, DepthRule, NoDepthLimit};
+        match limit {
+            DepthLimit::Rule(DepthRule::Factor) => {
+                Some(DepthCapRule::Factor(self.adaptive_doc_factor))
+            }
+            DepthLimit::Rule(DepthRule::ForceBudget) => {
+                Some(DepthCapRule::ForceBudget(self.force_budget_n))
+            }
+            DepthLimit::NoLimit(NoDepthLimit::DrillCycle | NoDepthLimit::FinishPass) => None,
         }
     }
 }

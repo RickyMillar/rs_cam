@@ -639,7 +639,7 @@ pub static EXEMPTIONS: [Exemption; 66] = [
             CutKind::SlotRing,
         ]),
         class: NR,
-        where_: &["src/feeds/engagement.rs", "src/feeds/envelope.rs"],
+        where_: &["src/compute/catalog/cuts.rs", "src/feeds/envelope.rs"],
         closes_in: "P29-7",
     },
     // S: the two scope reasons of P29-2 (`NoNumberReason`).
@@ -801,7 +801,11 @@ pub static EXEMPTIONS: [Exemption; 66] = [
         limit: &[LimitId::ChipMax],
         who: Who::Facts("thins_chip is set from the family and the role"),
         class: NR,
-        where_: &["src/feeds/geometry.rs", "src/feeds/calculator/feed.rs"],
+        where_: &[
+            "src/compute/catalog/cuts.rs",
+            "src/feeds/geometry.rs",
+            "src/feeds/calculator/feed.rs",
+        ],
         closes_in: "P29-4 to P29-7",
     },
     Exemption {
@@ -810,7 +814,7 @@ pub static EXEMPTIONS: [Exemption; 66] = [
         limit: &[LimitId::CornerCoverage],
         who: Who::Facts("offset_ring is set from the Pocket family and the Roughing role"),
         class: NR,
-        where_: &["src/feeds/envelope.rs"],
+        where_: &["src/compute/catalog/cuts.rs"],
         closes_in: "P29-4 to P29-7",
     },
     Exemption {
@@ -819,7 +823,7 @@ pub static EXEMPTIONS: [Exemption; 66] = [
         limit: &[LimitId::ToolDeflection],
         who: Who::Facts("leave_after_mm is set from the role and the stock-to-leave field"),
         class: NR,
-        where_: &["src/tool_load/deflection.rs"],
+        where_: &["src/compute/catalog/cuts.rs", "src/tool_load/deflection.rs"],
         closes_in: "P29-7",
     },
     Exemption {
@@ -828,7 +832,7 @@ pub static EXEMPTIONS: [Exemption; 66] = [
         limit: &[LimitId::ForceBudget, LimitId::DepthFactor],
         who: Who::Facts("depth_rule is set from the family and the role"),
         class: NR,
-        where_: &["src/machine/mod.rs"],
+        where_: &["src/compute/catalog/cuts.rs", "src/machine/mod.rs"],
         closes_in: "P29-4",
     },
 ];

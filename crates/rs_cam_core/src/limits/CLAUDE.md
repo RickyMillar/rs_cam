@@ -24,7 +24,7 @@ Feeds contract P29-2 and P29-3 (`planning/feeds_contract_2026-11-03/phases/P29-2
 - `NoNumberReason::NoBound` (the depth of a finish pass) and `NotJudgedHere` (a limit on a fixed axis, a per-point limit) are scope facts of today: the rows `S-NoBound` (ruled, = P28-02) and `S-NotJudgedHere` (needs a ruling) of `EXEMPTIONS`.
 - `Basis::setting` gives `"tool"` for every `Rule` and for a `Derived` basis that is not the drill envelope. It is exact only for a basis from `basis_of_bound`.
 - `DepthRule::of_limit` reads `feeds::envelope::Limit::depth_rule` (P29-3, `#[serde(skip)]`); the law text is the printed law only.
-- Commit B adds `cuts()` (in `compute/catalog/`); commit C adds `Cut::of_sample`. The marker link is weak (a read with no marker is not found); P29-last replaces it with a search guard.
+- Commit B: `compute/catalog/cuts.rs` (`OperationConfig::cuts`) fills the facts; `PowerCases`, the depth rule of the envelope, Suggest and the modulator, the offset ring and the session thinning read them. The gate readers wait (the gate context holds no config). Commit C adds `Cut::of_sample`. The marker link is weak (a read with no marker is not found); P29-last replaces it with a search guard.
 - No old type is built from `Check` yet, and no surface reads `Check` (P29-2b: MCP; P29-10: every surface).
 
 ## Sentry

@@ -2236,10 +2236,8 @@ fn modulate_annotated_against_trace(
     // samples bind, ruling 3). A move with no such sample keeps its
     // pre-P20g reading: the lift over all its cutting samples, and the mean
     // engagement.
-    let radial_thinning = {
-        let (family, role) = operation.feeds_style();
-        crate::feeds::geometry::RadialThinning::of(family, role)
-    };
+    // P29-3: the thinning rule of the op's body cut.
+    let radial_thinning = operation.cuts().body_facts().thins_chip;
     let span_lookup = annotated
         .spans_valid
         .then(|| crate::tool_load::locality::SpanLookup::new(&annotated.spans));
@@ -2310,14 +2308,13 @@ fn modulate_annotated_against_trace(
     let machine_profile = context.machine;
     let available_kw = machine_profile.power_at_rpm(spindle_rpm as f64);
     // Feeds contract P16 item 7 (D6): the force-budget limit applies only
-    // where the depth gate applies the force budget. Both read the one rule,
-    // `RigidityProfile::depth_cap_rule`, at the op's feeds family and pass
-    // role (the pair `tool_load::depth::evaluate` reads off the op's spec).
-    let depth_cap_rule = {
-        let (family, role) = operation.feeds_style();
+    // where the depth gate applies the force budget. Both read the one rule:
+    // P29-3, the depth limit of the op's body cut (`OperationConfig::cuts`),
+    // with the machine's numbers (`RigidityProfile::depth_cap_of`).
+    let depth_cap_rule = machine_profile
+        .rigidity
         // EXEMPT(P28-34)
-        machine_profile.rigidity.depth_cap_rule(family, role)
-    };
+        .depth_cap_of(operation.cuts().body_facts().depth_rule);
     // P16 item 7: set when a material in scope has no force line; the move
     // summary then states `FORCE_BUDGET_NO_FORCE_LINE_NOTE`.
     let force_budget_note: std::cell::Cell<Option<&'static str>> = std::cell::Cell::new(None);

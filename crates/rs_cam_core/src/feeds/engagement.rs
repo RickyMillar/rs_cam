@@ -64,11 +64,12 @@
 
 use serde::Serialize;
 
-use crate::compute::catalog::{CutSpec, FirstPass, OperationConfig, PlannerWidth, Radial};
+use crate::compute::catalog::{CutList, DeclaredWidth, OperationConfig, PlannerWidth};
 use crate::feeds::ToolGeometryHint;
 use crate::feeds::envelope::CutPoint;
 use crate::feeds::force::{DeflectionCapRefusal, immersion_angle};
 use crate::feeds::section::{AxialSectionRefusal, EngagedSection};
+use crate::limits::{CutKind, FirstPassKind};
 use crate::material::force_line::ForceLine;
 use crate::tool::MillingCutter;
 
@@ -832,7 +833,7 @@ pub enum PowerCase {
     /// `trochoid_cap_mult x ae`, at most D (3D Rough under Contour
     /// Parallel).
     PlannerCap,
-    /// A slot (ae = D): `FirstPass::Slot` or `Radial::Slot`.
+    /// A slot (ae = D): the op declares a first slot (`OperationConfig::cuts`).
     Slot,
     /// P20d: a straight plunge (`Radial::Axial`, a drill cycle): the axial
     /// circle, one case.
@@ -853,7 +854,7 @@ impl PowerCase {
 }
 
 /// The set of pre-sim power cases of one cut (K7 change 3). Built from the
-/// `CutSpec` (K1) and the planner width; [`Self::NOMINAL`] is the set of a
+/// cuts the op declares (P29-3, `OperationConfig::cuts`); [`Self::NOMINAL`] is the set of a
 /// cut that states no slot and no planner bound.
 ///
 /// P23a: the set also answers [`Self::full_feed_width`], the width at which
@@ -872,20 +873,31 @@ impl PowerCases {
         planner: PlannerWidth::None,
     };
 
-    /// The cases that `spec` admits, with the planner width `planner`
-    /// ([`OperationConfig::planner_width`]).
+    /// The cases of the cuts that an op declares (P29-3): the slot case
+    /// when the list declares a first slot, and the planner width of its
+    /// planner-cap cut. The tie order stays the order of [`Self::widths`].
     #[must_use]
-    pub fn of_cut(spec: &CutSpec, planner: PlannerWidth) -> Self {
-        let slot =
-            // EXEMPT(M12)
-            matches!(spec.first_pass, FirstPass::Slot) || matches!(spec.radial, Radial::Slot);
+    pub fn of_cuts(cuts: &CutList) -> Self {
+        let slot = cuts.declares(CutKind::FirstPass(FirstPassKind::Slot));
+        let planner = match cuts.of_kind(CutKind::FirstPass(FirstPassKind::PlannerCap)) {
+            Some(cap) => match cap.width {
+                DeclaredWidth::PassCeiling { .. } => PlannerWidth::PassCeiling,
+                DeclaredWidth::CapMult { mult, .. } => PlannerWidth::CapMult(mult),
+                DeclaredWidth::Stated(_)
+                | DeclaredWidth::Slot
+                | DeclaredWidth::Scallop(_)
+                | DeclaredWidth::None(_) => PlannerWidth::None,
+            },
+            None => PlannerWidth::None,
+        };
         Self { slot, planner }
     }
 
-    /// The cases of `operation`: its `CutSpec` and its planner width.
+    /// The cases of `operation`: the cuts it declares
+    /// ([`OperationConfig::cuts`]).
     #[must_use]
     pub fn of_operation(operation: &OperationConfig) -> Self {
-        Self::of_cut(&operation.cut_spec(), operation.planner_width())
+        Self::of_cuts(&operation.cuts())
     }
 
     /// P23a: the width (mm) at which the chip-thinning lift is sized: the

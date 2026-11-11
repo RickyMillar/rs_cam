@@ -156,38 +156,10 @@ impl UnliftedFeed {
         tool_diameter_mm: f64,
         max_cut_diameter_mm: f64,
     ) -> Option<Self> {
-        use crate::compute::catalog::OperationConfig;
-        use crate::compute::operation_configs::PocketPattern;
-        let slot_first = match operation {
-            OperationConfig::Pocket(cfg) => match cfg.pattern {
-                PocketPattern::Contour => true,
-                PocketPattern::Zigzag => false,
-            },
-            OperationConfig::Face(_)
-            | OperationConfig::Profile(_)
-            | OperationConfig::Adaptive(_)
-            | OperationConfig::VCarve(_)
-            | OperationConfig::Inlay(_)
-            | OperationConfig::InlayPlug(_)
-            | OperationConfig::Zigzag(_)
-            | OperationConfig::Trace(_)
-            | OperationConfig::Drill(_)
-            | OperationConfig::Bore(_)
-            | OperationConfig::Chamfer(_)
-            | OperationConfig::DropCutter(_)
-            | OperationConfig::Adaptive3d(_)
-            | OperationConfig::Waterline(_)
-            | OperationConfig::Pencil(_)
-            | OperationConfig::Scallop(_)
-            | OperationConfig::UnifiedFinish(_)
-            | OperationConfig::SteepShallow(_)
-            | OperationConfig::RampFinish(_)
-            | OperationConfig::SpiralFinish(_)
-            | OperationConfig::RadialFinish(_)
-            | OperationConfig::HorizontalFinish(_)
-            | OperationConfig::ProjectCurve(_)
-            | OperationConfig::AlignmentPinDrill(_) => false,
-        };
+        // P29-3: the op declares the slot ring (`OperationConfig::cuts`:
+        // a contour Pocket).
+        let cuts = operation.cuts();
+        let slot_first = cuts.declares(crate::limits::CutKind::SlotRing);
         if !slot_first {
             return None;
         }
@@ -200,12 +172,11 @@ impl UnliftedFeed {
             .depth_per_pass()
             .filter(|v| usable(*v))
             .unwrap_or(tool_diameter_mm);
-        let (family, role) = operation.feeds_style();
-        let width = crate::feeds::engagement::PowerCases::of_operation(operation)
+        let width = crate::feeds::engagement::PowerCases::of_cuts(&cuts)
             .full_feed_width(ae, tool_diameter_mm);
         Some(Self::at_cut(
             feed,
-            RadialThinning::of(family, role),
+            cuts.body_facts().thins_chip,
             width,
             crate::feeds::engagement::EngagedDiameter::of_hint(
                 geometry,

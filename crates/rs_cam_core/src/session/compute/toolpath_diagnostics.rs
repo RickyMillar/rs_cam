@@ -63,7 +63,8 @@ impl ProjectSession {
                     d_eng,
                     None,
                 ),
-                crate::feeds::geometry::RadialThinning::of(family, pass_role),
+                // P29-3: the thinning rule of the op's body cut.
+                tc.operation.cuts().body_facts().thins_chip,
             )
         });
         // S11: an op with no feed has no load context.

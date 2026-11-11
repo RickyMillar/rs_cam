@@ -13,6 +13,7 @@ use super::operation_configs::{
 
 mod capabilities;
 mod cut_spec;
+mod cuts;
 mod entry_contract;
 mod registry;
 mod schema;
@@ -28,6 +29,8 @@ pub use cut_spec::{
     Axial, AxialRule, CutRule, CutSpec, DEPTH_AFTER_SIMULATION, FirstPass, Mm, PlannerWidth,
     Radial, RadialRule, Stated, TotalDepth,
 };
+
+pub use cuts::{CutContext, CutList, DeclaredCut, DeclaredDepth, DeclaredWidth, MAX_DECLARED_CUTS};
 
 pub(crate) use entry_contract::entry_records;
 pub use entry_contract::{

@@ -207,12 +207,13 @@ pub(super) fn clamp_plunge_to_feed(operation: &mut OperationConfig) -> Vec<Sugge
 }
 
 /// The `adaptive_doc_factor x D` cap for a depth of `depth_mm` (the
-/// Adaptive family), or `None` when the family's rule is not a factor
+/// Adaptive family), or `None` when the depth limit `depth_limit` of the
+/// op's body cut (P29-3) is not the factor rule
 /// (P13c: the Pocket and Profile families read the force budget, which the
 /// envelope `Rigidity` limit solves per width) or no cap applies. P5: the
 /// `Rigidity` limit of the envelope reads this one rule.
 pub(crate) fn rigidity_cap_mm(
-    family: crate::feeds::OperationFamily,
+    depth_limit: crate::limits::DepthLimit,
     tool: &ToolConfig,
     machine: &MachineProfile,
     pass_role: PassRole,
@@ -223,7 +224,7 @@ pub(crate) fn rigidity_cap_mm(
     }
     let crate::machine::DepthCapRule::Factor(factor) =
         // EXEMPT(P28-34)
-        machine.rigidity.depth_cap_rule(family, pass_role)?
+        machine.rigidity.depth_cap_of(depth_limit)?
     else {
         return None;
     };

@@ -1243,14 +1243,7 @@ impl SafeEnvelope {
             operator,
         );
         deflection_limit(&mut boundary, &input, &speeds, &plan, role, operator);
-        let budget = rigidity_limit(
-            &mut boundary,
-            &inputs,
-            &speeds,
-            &plan,
-            (family, role),
-            operator,
-        );
+        let budget = rigidity_limit(&mut boundary, &inputs, &speeds, &plan, role, operator);
         let mut runtime_notes = Vec::new();
         let move_budget = runtime_limit(&mut boundary, &mut runtime_notes, &input, &plan, d);
         per_point_limits(&mut boundary, &base, &speeds);
@@ -2508,17 +2501,14 @@ fn axes_plan(operation: &OperationConfig, tool: &ToolConfig, base: &FeedsResult)
             ae_mm: fixed_ae,
         },
     };
-    let (family, role) = operation.feeds_style();
     AxesPlan {
         axes,
         stated_ap,
         stated_ae,
         peck: matches!(spec.axial, Axial::Peck(_)),
-        // EXEMPT(P28-05, P28-07, F-OffsetRing)
-        computed_width: radial_free
-            && matches!(spec.radial, Radial::Width(_))
-            && family == OperationFamily::Pocket
-            && role == PassRole::Roughing,
+        // P29-3: the offset-ring fact of the op's body cut.
+        // EXEMPT(P28-05, P28-07)
+        computed_width: radial_free && operation.cuts().body_facts().offset_ring,
     }
 }
 
@@ -3248,12 +3238,14 @@ fn rigidity_limit(
     inputs: &OwnedInputs,
     speeds: &SpeedsMap,
     plan: &AxesPlan,
-    (family, role): (OperationFamily, PassRole),
+    role: PassRole,
     operator: Option<OperatorChip>,
 ) -> Option<BudgetModel> {
     use crate::feeds::force_budget as fb;
+    // P29-3: the depth limit of the op's body cut.
+    let depth_limit = inputs.operation.cuts().body_facts().depth_rule;
     // EXEMPT(P28-01, P28-34, M12)
-    let rule = inputs.machine.rigidity.depth_cap_rule(family, role)?;
+    let rule = inputs.machine.rigidity.depth_cap_of(depth_limit)?;
     // EXEMPT(P28-02)
     if !matches!(role, PassRole::Roughing) {
         return None;
@@ -3265,7 +3257,7 @@ fn rigidity_limit(
                 EnvelopeAxes::RadialBar { ap_mm, .. } | EnvelopeAxes::Fixed { ap_mm, .. } => ap_mm,
             };
             if let Some(cap) = crate::feeds::suggest::rigidity_cap_mm(
-                family,
+                depth_limit,
                 &inputs.tool,
                 &inputs.machine,
                 role,
