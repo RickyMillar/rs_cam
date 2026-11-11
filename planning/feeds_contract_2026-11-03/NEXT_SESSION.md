@@ -1,5 +1,106 @@
 # Next session: feeds and speeds correctness (brief, 2026-11-08, second edition)
 
+## HAND-OVER 2026-11-11 evening (a new account takes over; read this section first)
+
+You are the lead of the feeds contract. No agent of the old session exists for you. Start one
+implementer of your own. The operator's standing rules are in the root `CLAUDE.md` and in the
+memory folder (`MEMORY.md`); the ones that bite most:
+
+- You decide and verify; agents implement and never commit. Review by path.
+- Every cargo command: `timeout <s> scripts/cargo_lane.sh <args> -j 2`, in the foreground. No
+  workspace-wide `cargo test`. No core full gate without the operator's go.
+- Ask before a test run over about three minutes. The operator gave a standing go for ONE set at
+  the end of each of P29-1, P29-2 and P29-3: the named sentries, `cargo test -p rs_cam_core -q
+  --lib`, FM1 (`feeds_matrix_instrument_fm1 --features heavy-tests`) and full clippy.
+- No heavy suite while the GUI holds a simulated big project (OOM). Check `gui_status`.
+- Git: other sessions share the tree. Scope every `git add` and `git commit` to your own paths.
+- A constant comes from math or from a source stored in the repo. Every finding warns; no job is
+  refused. A decision that leaves a toolpath out of a limit goes to the operator.
+- Never save over `planning/rivmap_block_job/nz_wanaka_21_operator.toml` without the operator's say.
+- Prose in ASD-STE100 (short active sentences).
+
+### What P29 is
+
+One cut object. Every limit and metric is a function of a cut and returns one record. The op type
+decides which cuts exist, never which limits apply. Read, in this order:
+`phases/P29_FINDINGS.md` (design in section 4, change list in section 6, the operator's rulings
+in sections 7 and 10, the probe result in section 11), then `phases/P29-0_probes.md`.
+
+### State of the change list
+
+| Step | State |
+|---|---|
+| P29-0 probes | DONE, committed `027cfa72c`. Section 9 of `P29-0_probes.md` corrects section 5 of the findings. |
+| P29-1 `CutLoad` | See "P29-1 status" below. |
+| P29-2 `Check`, `LimitId`, one basis | NEXT. Byte-identical. MCP gains the record beside the old fields. |
+| P29-3 `Cut` and `cuts()` | After P29-2. Byte-identical. Every exemption becomes a visible entry in one list. |
+| P29-4 to P29-6 | Behaviour steps; all come before the operator's cut. Write predictions before each. |
+| P29-7 to P29-last | After the cut. |
+
+### P29-1 status
+
+IN THE TREE, NOT COMMITTED, at the time of writing. The format check and the new sentry pass. The
+long gates (12 named sentries, core `--lib`, FM1, full clippy) were running. If `git log` shows no
+"P29-1" commit: run that gate set (the list is in the agent's design note, copied below), review
+the diff by path (`git diff -- crates/rs_cam_core`), and commit only those paths.
+
+The 12 sentries: `one_engagement_before_and_after_the_simulation_k7`,
+`pre_sim_power_ships_the_worst_case_k7`, `the_engaged_edge_force_sums_the_helix_p11a`,
+`one_d_eng_door_for_every_engagement_p15`, `power_reads_the_true_engaged_section_p20d`,
+`the_cut_force_is_the_deflection_force_p17`, `the_depth_that_cut_is_a_measured_load_g_s3depth`,
+`a_move_holds_its_worst_sample_p20g`, `constrained_max_modulation_f039`,
+`the_hobby_force_budget_recomputes_from_the_printed_rows_p13c`,
+`the_roughing_depth_meets_the_force_budget_p13c`, `the_envelope_keeps_each_limit_k2b`.
+
+What P29-1 is: `crates/rs_cam_core/src/feeds/cut_load.rs` (`CutLoad`, `OperatingPoint`,
+`NoNumber`), 11 product files that now call it, the sentry
+`tests/one_cut_gives_one_load_on_every_door_p29_1.rs` (bit identity per door, a source scan that
+keeps direct model calls out). No public signature changed.
+
+Open items that P29-1 names and does not change (they belong to P29-3 or P29-6):
+
+- M4: one sample gives two depths (`axial_doc_mm` for power and chip, `axial_engagement_mm` for
+  force and deflection).
+- The flute count and the chip differ by gate for one sample. With 3 flutes on the sample and 2
+  on the tool: power x 1.31, force and deflection x 0.84, peak chip x 0.67. Each rule is a named
+  `OperatingPoint` constructor in `cut_load.rs`.
+- Not on `CutLoad` yet: the straight plunge (`close.rs:369`, `operating_point.rs:270`),
+  `efficiency.rs:209`, `tool_load/depth.rs` (its own chip), every inverse.
+
+### Rulings in force (the operator, 2026-11-11)
+
+- R1: the force budget (35.3 N) sets the adaptive depth. R3: a slot is a slot under every op.
+  R4: entries and cleanup are judged as their own group.
+- R2 (lead default, no objection): Suggest keeps a stated stepover and caps the depth; with no
+  stepover it proposes the best pair inside the limits, width ceiling 0.5 D.
+- R5 (lead default): a rough pass may bend up to the stock it leaves, never above 200 um.
+- R6: one entry rule set in one piece of code for every emitter. The proposal and its 17 stored
+  sources: `research/entry_rules_2026-11-11.md`. OPEN with the operator: the hardwood ramp angle,
+  5 deg (Easel; the lead recommends it) or 20 deg (Shaper). It is needed at P29-8 only.
+
+### What the probes mean for the operator's cut
+
+- idx 5 (Project Curve, 6 mm) is 2.7 to 3.6 x over the force budget on about 90 % of its samples
+  and cuts up to 14 mm deep. No limit reads it today (P29-5).
+- 6 mm rough idx 1: the stated cut is 1.12 x the budget (budget depth 3.95 mm at 1.2 mm). The
+  cut reaches 12 mm in places; its cleanup holds the worst force of the op (90.3 N). No gate
+  reads cleanup today (P29-6).
+- The chip gate's 95 % feed filter drops the body of an op whose stated feed is above the
+  modulated feed (operator idx 8: 100 %, and the gate prints "Within" on zero samples).
+
+### Carried items (logged, not in work)
+
+- The 6 mm working file `planning/rivmap_block_job/nz_wanaka_21_6mm_rough_work.toml`: delete idx
+  15; simulate with the scallop finish (needs free memory); then move it into the operator file
+  with the operator's say and re-grade the acceptance table (PASS 98 / FAIL 0 on `6f586706c`).
+- P27 "feeds from fundamentals" (`phases/P27_BRIEF.md`): the operator wants a dedicated session.
+- P25 ruling 6; P22f-2e (waits for a conservation check).
+- Side defects: section 11 of `P29-0_probes.md` (the drill plunge gate prints Within at 166.7
+  against 50; idx 2 engages 17 to 21 mm with a 6 mm tool; the trace feed depends on the number
+  of simulation passes), and the list in the memory file
+  `project_feeds_contract_state_2026_11_09.md`.
+- `.mcp.json` is modified and not committed (the MCP proxy config). Leave it.
+
 ## P29 investigation DONE (2026-11-11): the operator reads `phases/P29_FINDINGS.md`
 
 The findings, the design (Cut, cuts(), CutLoad, Check, check_all), the estimate of what moves and
