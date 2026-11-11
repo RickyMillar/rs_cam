@@ -83,6 +83,48 @@ Findings logged, not fixed:
   unsourced `CapMult 1.6` power case.
 - A Profile of 40 x 24 mm that asks for 4 tabs gets 2 (`FewerThanAsked`).
 
+### P29-4 status (2026-11-12, night)
+
+Design and predictions: `phases/P29-4_DESIGN.md` (lead rulings in section 8),
+`phases/P29-4_predictions_fm1.csv`, `phases/P29-4_predictions.csv` (commit `46564a8b6`).
+
+- **Commit A is in** (`f5a5b4601`): the Adaptive roughing depth reads the force budget
+  (ruling R1). FM1 moved 220 cells in 80 matrix rows and 10 simulation rows; each cell equals
+  the prediction. The wanaka proposals equal the predictions. Exemption pins: ROWS 64,
+  PHYSICAL 8, RULED 3, MAX_NEEDS_RULING 53, ROWS_WITH_A_FILE 56.
+- **Commit B** (delete the dead Factor chain, no number moves): see `git log` after
+  `f5a5b4601`. If no commit B is there, it is still to do (brief in section 1.2 and
+  rulings Q4, Q7 of the design note).
+- **Commit C waits for the operator.** It deletes the machine field `adaptive_doc_factor`,
+  the default-depth floor and `ADAPTIVE_RIGIDITY_DOC_DIVISOR`. Both wanaka TOML files hold
+  the key at line 74 and do not load after it. Ask the operator for the one-line delete.
+
+Tell the operator before the cut (ruling Q3): after a simulation with modulation on, the
+exported feed of an Adaptive move over the force budget now falls. The depth stays.
+
+Findings of commit A (not fixed):
+
+- **The placement and the proposal read two chips.** `judged_ceiling` takes
+  `min(CurveChip, Pick)`; the Pick chip is `max(operator chip, suggested chip)`. `propose`
+  runs before the Pick entry exists and reads the operator chip. On the rivmap 3D Rough
+  (4.217 x 2.303 mm, white oak, 6 mm) the proposal keeps 4.217 mm, and `placement_of` says
+  Outside Rigidity (judged 3.27 mm). The force at the shipped chip is 31.25 N, under the
+  35.32 N budget; at the suggested chip it is 43.15 N. So the card warns on a cut that is
+  inside the budget as shipped, and a speeds-only apply puts it over. Every Adaptive op that
+  states a chip under the suggested chip shows this. The fix moves proposals: its own step,
+  predictions first. Lead proposal: `propose` reads the Pick chip, because an apply writes
+  the suggested speeds.
+- **The budget depth has a step over the width (Q5).** The force over the depth has a flat
+  stretch (at 1.2 mm width: 29.2 N from 5 to 15 mm deep). The force never falls, so there is
+  one root. When the width lifts the flat level to the budget, the root drops (rivmap: 16.3 mm
+  to 5.7 mm at 1.62 mm width). Carried to P27.
+- `exact` holds each Stated-phase CurveChip entry twice.
+- No Adaptive cell has power or deflection as the first limit on the hobby budget (probe over
+  4 presets, 5 tools, 11 materials). The two k2b cells state `force_budget_n = f64::MAX`.
+- The viz test p17b lost case C; no test reaches the two-flat-limit path of the sim chart.
+- The p5d label test accepts a side place for the move-budget line (both end places are
+  blocked by the Rigidity riser and the frame).
+
 ### P29-1 status
 
 DONE and committed (see `git log`, "P29-1"). Gates: fmt; the new sentry (5 pass, with an
