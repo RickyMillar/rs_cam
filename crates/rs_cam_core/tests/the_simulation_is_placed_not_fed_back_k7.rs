@@ -11,6 +11,9 @@
 //!   or `ToolpathLoadVerdict`, except `feeds/engagement.rs`: its
 //!   `Engagement::from_sample` is the one sample constructor of K7, and the
 //!   gate and the placement call it (Suggest does not).
+//!   P29-1 adds one more file: `feeds/cut_load.rs` holds the sample doors
+//!   of the operating point (`OperatingPoint::of_sample_*`); no other
+//!   `feeds/` file calls them.
 //!
 //! Red: make `EnvelopePlacement::outside_row` return `None`; (a) loses its
 //! warning.
@@ -194,16 +197,23 @@ fn feeds_code_names_no_simulation_result() {
         "ToolpathLoadVerdict",
     ];
     let mut anchor = false;
+    let mut sample_doors = false;
     let mut hits = Vec::new();
     for path in source_scan::rust_files(&feeds) {
         let text = source_scan::strip_comments(
             &std::fs::read_to_string(&path).expect("a readable source file"),
         );
         let is_engagement = path.ends_with("engagement.rs");
+        // P29-1: `feeds/cut_load.rs` holds the sample doors of the operating
+        // point (`OperatingPoint::of_sample_*`). The gates call them; the
+        // next test keeps every other `feeds/` file from a call.
+        let is_cut_load = path.ends_with("feeds/cut_load.rs");
         for needle in needles {
             if text.contains(needle) {
                 if is_engagement && needle == "SimulationCutSample" {
                     anchor = true;
+                } else if is_cut_load && needle == "SimulationCutSample" {
+                    sample_doors = true;
                 } else {
                     hits.push(format!("{}: {needle}", path.display()));
                 }
@@ -213,6 +223,10 @@ fn feeds_code_names_no_simulation_result() {
     assert!(
         anchor,
         "non-vacuity: the scan reads feeds/engagement.rs and finds its sample constructor"
+    );
+    assert!(
+        sample_doors,
+        "non-vacuity: feeds/cut_load.rs holds the sample doors of the operating point"
     );
     assert!(hits.is_empty(), "feeds code reads the simulation: {hits:?}");
 }
@@ -231,10 +245,15 @@ fn no_suggest_path_calls_the_sample_constructor() {
         let text = source_scan::strip_comments(
             &std::fs::read_to_string(&path).expect("a readable source file"),
         );
+        let in_feeds = path.components().any(|c| c.as_os_str() == "feeds");
+        // P29-1: the sample doors of the operating point. Only their
+        // definitions in `feeds/cut_load.rs` name them inside `feeds/`.
+        if in_feeds && !path.ends_with("feeds/cut_load.rs") && text.contains("of_sample_") {
+            hits.push(format!("{} (an operating point door)", path.display()));
+        }
         if !text.contains("from_sample(") {
             continue;
         }
-        let in_feeds = path.components().any(|c| c.as_os_str() == "feeds");
         if path.ends_with("feeds/engagement.rs") {
             defined = text.contains("pub fn from_sample(");
         } else if in_feeds {
