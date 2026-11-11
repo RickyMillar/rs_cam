@@ -95,7 +95,7 @@ pub(super) fn pick_adaptive3d_clearing_strategy(
 
 /// Pass 8: v1.3 combined-Suggest plunge-entry / DPP compatibility warning.
 ///
-/// The LUT + adaptive_doc_factor path can write a DPP whose plunge
+/// The LUT depth path can write a DPP whose plunge
 /// entry transient breaches the deflection gate on an Adaptive3d op
 /// whose entry_style is Plunge. The entry planner then refuses to
 /// engage and the generated toolpath contains no cutting moves

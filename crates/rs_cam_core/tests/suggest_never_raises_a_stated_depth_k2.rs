@@ -4,9 +4,9 @@
 //! The case is op 1 of the blind review (report 01 (a),
 //! `planning/feeds_blind_review_2026-11-03/rootcause/01_op1_op14_bulk_18mm.md`):
 //! a 3D Rough with a stated depth per pass of 9.0 mm, an 18 mm 2-flute
-//! bit with a 20 mm flute, White Oak, the Shapeoko VFD (adaptive
-//! rigidity factor 2.0). Before P5 the add door and "Apply all" wrote
-//! 14.047 mm: the rigidity floor gave 36 mm, the flute guard cut it to 16 mm
+//! bit with a 20 mm flute, White Oak, the Shapeoko VFD. Before P5 the add
+//! door and "Apply all" wrote 14.047 mm: the rigidity floor (the machine
+//! factor 2.0, deleted in P29-4) gave 36 mm, the flute guard cut it to 16 mm
 //! and the dial to 14.047 mm.
 //!
 //! 1. An apply with no pick writes the speeds only: the depth stays 9.0.
@@ -52,8 +52,7 @@ fn rough_3d() -> OperationConfig {
 
 fn apply(pick: Option<PickRequest>) -> OperationConfig {
     let tool = bulk_bit();
-    let mut machine = MachineProfile::shapeoko_vfd();
-    machine.rigidity.adaptive_doc_factor = 2.0;
+    let machine = MachineProfile::shapeoko_vfd();
     let material = Material::SolidWood {
         species: WoodSpecies::WhiteOak,
     };

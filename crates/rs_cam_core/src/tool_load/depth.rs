@@ -493,11 +493,9 @@ mod tests {
         material: &Material,
     ) -> DepthVerdict {
         let tool = tool();
-        // P29-4: the fixture factor 0.25 no longer reaches a cap (no family
-        // reads the factor rule). The mechanics arms run the Adaptive family
-        // on the force budget in oak (`oak_cap_mm`).
-        let mut machine = MachineProfile::shapeoko_makita();
-        machine.rigidity.adaptive_doc_factor = 0.25;
+        // P29-4: no family reads a factor rule. The mechanics arms run the
+        // Adaptive family on the force budget in oak (`oak_cap_mm`).
+        let machine = MachineProfile::shapeoko_makita();
         let tolerance = ToleranceBands::default();
         let ctx = ToolpathLoadContext {
             toolpath_id: TP,
@@ -529,8 +527,7 @@ mod tests {
         let mut s0 = sample(0, 0.8, true);
         s0.arc_engagement_radians = Some(std::f64::consts::FRAC_PI_2);
         let t = trace(vec![s0]);
-        let mut machine = MachineProfile::shapeoko_makita();
-        machine.rigidity.adaptive_doc_factor = 0.25;
+        let machine = MachineProfile::shapeoko_makita();
         let want = crate::feeds::force_budget::rigidity_depth_cap(
             &machine,
             crate::feeds::OperationFamily::Pocket,

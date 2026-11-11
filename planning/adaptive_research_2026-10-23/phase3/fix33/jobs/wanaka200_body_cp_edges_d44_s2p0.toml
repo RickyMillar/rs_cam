@@ -58,7 +58,6 @@ doc_finishing_factor = 0.08
 woc_roughing_factor = 0.7
 woc_roughing_max_mm = 5.0
 woc_finishing_mm = 0.5
-adaptive_doc_factor = 1.5
 adaptive_woc_factor = 0.2
 
 [job.machine.kinematics]

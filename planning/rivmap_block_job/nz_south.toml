@@ -74,7 +74,6 @@ k0 = 0.024
 p = 0.61
 q = 1.26
 [job.machine.rigidity]
-adaptive_doc_factor = 2.0
 adaptive_woc_factor = 0.25
 [job.machine.kinematics]
 acceleration_mm_s2 = 423.333333333

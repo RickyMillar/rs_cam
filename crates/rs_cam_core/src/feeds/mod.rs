@@ -2515,7 +2515,6 @@ pub fn formula_constants() -> Vec<FormulaConstant> {
         ADAPTIVE_SOFT_THRESHOLD,
         ADAPTIVE_SOFT_AP_SCALE,
         ADAPTIVE_SOFT_AE_SCALE,
-        ADAPTIVE_RIGIDITY_DOC_DIVISOR,
         FINISH_BALL_AP,
         FINISH_BALL_AE,
         SEMI_FINISH_BALL_AP,
@@ -2673,11 +2672,6 @@ const ADAPTIVE_SOFT_AP_SCALE: FormulaConstant = FormulaConstant::unsourced(
 const ADAPTIVE_SOFT_AE_SCALE: FormulaConstant = FormulaConstant::unsourced(
     "feeds.default_engagement.adaptive.soft_ae_scale",
     1.05,
-    ADAPTIVE_CLAIM,
-);
-const ADAPTIVE_RIGIDITY_DOC_DIVISOR: FormulaConstant = FormulaConstant::unsourced(
-    "feeds.default_engagement.adaptive.rigidity_doc_divisor",
-    1.50,
     ADAPTIVE_CLAIM,
 );
 const FINISH_BALL_AP: FormulaConstant = FormulaConstant::unsourced(
@@ -2889,10 +2883,11 @@ fn default_engagement(
             }
         }
 
-        // Apply machine rigidity bounds.
+        // Apply the machine rigidity bound to the width.
         //
-        // For ap (DOC) the rigidity factor is a target floor — the
-        // machine can sustain at least this much axial engagement.
+        // P29-4 commit C: the depth has no rigidity floor. The machine
+        // field `adaptive_doc_factor` and its floor are deleted; the
+        // envelope caps the default depth at the force budget.
         //
         // For ae (WOC) the rigidity factor is a ceiling by default
         // (don't exceed the machine's adaptive capability), but for
@@ -2903,19 +2898,6 @@ fn default_engagement(
         // sits in the "light" bin (≤ 0.10 D — too narrow), wasting
         // cycle time without improving safety. See
         // `planning/PRE_OPTIMIZE_DEFAULTS_AUDIT.md` Fix 1.
-        let rigidity_ap_floor = machine.rigidity.adaptive_doc_factor * profile.ap_factor
-            / ADAPTIVE_RIGIDITY_DOC_DIVISOR.value;
-        if rigidity_ap_floor > ap_factor {
-            ap_basis = Basis::derived(
-                "rigidity floor",
-                vec![
-                    rigidity_basis(machine),
-                    Basis::Rule(ADAPTIVE_RIGIDITY_DOC_DIVISOR),
-                    ap_basis,
-                ],
-            );
-        }
-        ap_factor = ap_factor.max(rigidity_ap_floor);
         // Wood-class match goes through Material::is_wood_class() so that
         // species-aware variants (SolidWoodByJanka — FPL Ch.5 species
         // library) qualify for the wood-router adaptive WOC floor.

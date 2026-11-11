@@ -301,11 +301,7 @@ fn p13c_report_instrument() {
                     let fz = at.feed_rate_mm_min / (at.rpm * 2.0);
                     let b =
                         depth_at_budget(&cutter, &m, p.ae_mm, fz, machine.rigidity.force_budget_n);
-                    println!(
-                        "  budget depth at the adaptive width {:.3}: {b:?} (factor cap {:.3})",
-                        p.ae_mm,
-                        machine.rigidity.adaptive_doc_factor * d
-                    );
+                    println!("  budget depth at the adaptive width {:.3}: {b:?}", p.ae_mm);
                     for frac in [0.1, 0.2, 0.25, 0.35] {
                         let b = depth_at_budget(
                             &cutter,

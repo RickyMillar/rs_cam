@@ -62,7 +62,6 @@ p = 0.61
 q = 1.26
 
 [job.machine.rigidity]
-adaptive_doc_factor = 1.5
 adaptive_woc_factor = 0.2
 
 [[tools]]

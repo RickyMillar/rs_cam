@@ -1042,8 +1042,7 @@ fn plunge_entry_unstable_warning_fires_when_dpp_exceeds_half_diameter() {
         // ∝ stickout³ → ~0.019×) so deflection doesn't force a DPP
         // rewrite and the warning-only behaviour is what's under test.
         tool.set_stickout(ToolFact::Stated(12.0));
-        let mut machine = MachineProfile::default();
-        machine.rigidity.adaptive_doc_factor = 1.50;
+        let machine = MachineProfile::default();
 
         let warnings = fixed_chain(
             &mut op,
@@ -1109,8 +1108,7 @@ fn plunge_entry_unstable_does_not_fire_below_half_diameter() {
     let mut tool = ToolConfig::test_default(ToolId::from_raw(0), ToolType::EndMill);
     tool.diameter = 6.0;
     tool.set_cutting_length(ToolFact::Stated(25.0));
-    let mut machine = MachineProfile::default();
-    machine.rigidity.adaptive_doc_factor = 1.50;
+    let machine = MachineProfile::default();
 
     let warnings = fixed_chain(
         &mut op,
@@ -1140,8 +1138,7 @@ fn plunge_entry_unstable_does_not_fire_for_helix_or_ramp() {
     let mut tool = ToolConfig::test_default(ToolId::from_raw(0), ToolType::EndMill);
     tool.diameter = 6.0;
     tool.set_cutting_length(ToolFact::Stated(25.0));
-    let mut machine = MachineProfile::default();
-    machine.rigidity.adaptive_doc_factor = 1.50;
+    let machine = MachineProfile::default();
 
     for style in [Adaptive3dEntryStyle::Helix, Adaptive3dEntryStyle::Ramp] {
         let mut op = OperationConfig::Adaptive3d(Adaptive3dConfig {
@@ -1292,10 +1289,10 @@ fn retired_lift_leaves_wanaka_back_rough_feed_untouched() {
     // to the one that produced 3456 mm/min.
     tool.set_stickout(ToolFact::Stated(18.0));
     tool.set_flute_count(ToolFact::Stated(2));
-    let mut machine = MachineProfile::default();
-    // Disable the rigidity clamp at DPP=3.69 (3.69 < 1.6 × 6 = 9.6 is OK).
-    machine.rigidity.adaptive_doc_factor = 1.60;
-    machine.max_feed_mm_min = 10_000.0;
+    let machine = MachineProfile {
+        max_feed_mm_min: 10_000.0,
+        ..MachineProfile::default()
+    };
     let material = Material::SolidWood {
         species: WoodSpecies::HardMaple,
     };
@@ -1401,9 +1398,10 @@ fn retired_lift_fires_no_cap_on_a_deflection_bound_fixture() {
         // 111 × (195 / 173.8)^(1/3) = 115.3.
         tool.set_stickout(ToolFact::Stated(115.0));
         tool.set_flute_count(ToolFact::Stated(2));
-        let mut machine = MachineProfile::default();
-        machine.rigidity.adaptive_doc_factor = 1.60;
-        machine.max_feed_mm_min = 20_000.0;
+        let machine = MachineProfile {
+            max_feed_mm_min: 20_000.0,
+            ..MachineProfile::default()
+        };
 
         // The fixture's premise, asserted rather than assumed: the
         // operating point really is deflection-bound. Without this the
@@ -1474,9 +1472,10 @@ fn retired_lift_reports_no_max_feed_shortfall() {
     tool.set_cutting_length(ToolFact::Stated(25.0));
     tool.set_stickout(ToolFact::Stated(25.0));
     tool.set_flute_count(ToolFact::Stated(2));
-    let mut machine = MachineProfile::default();
-    machine.rigidity.adaptive_doc_factor = 1.60;
-    machine.max_feed_mm_min = 4000.0;
+    let machine = MachineProfile {
+        max_feed_mm_min: 4000.0,
+        ..MachineProfile::default()
+    };
     let material = Material::SolidWood {
         species: WoodSpecies::HardMaple,
     };
@@ -1546,9 +1545,10 @@ fn feed_recalibration_skipped_when_already_in_band() {
     tool.set_cutting_length(ToolFact::Stated(25.0));
     tool.set_stickout(ToolFact::Stated(25.0));
     tool.set_flute_count(ToolFact::Stated(2));
-    let mut machine = MachineProfile::default();
-    machine.rigidity.adaptive_doc_factor = 1.60;
-    machine.max_feed_mm_min = 10_000.0;
+    let machine = MachineProfile {
+        max_feed_mm_min: 10_000.0,
+        ..MachineProfile::default()
+    };
     let material = Material::SolidWood {
         species: WoodSpecies::HardMaple,
     };

@@ -598,10 +598,9 @@ impl RsCamApp {
             "rigidity": {
                 "class": machine.class.label(),
                 "basis": machine.rigidity_basis().text(),
-                "adaptive_doc_factor": r.adaptive_doc_factor,
                 "adaptive_woc_factor": r.adaptive_woc_factor,
-                // P13c (O1): the force budget (N) that sets the roughing
-                // depth of the Pocket and Profile families.
+                // P13c (O1), P29-4: the force budget (N) that sets the
+                // roughing depth of the Pocket, Profile and Adaptive families.
                 "force_budget_n": r.force_budget_n,
             },
         }))

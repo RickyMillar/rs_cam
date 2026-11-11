@@ -107,7 +107,13 @@ use rs_cam_core::material::{
 /// were `feeds.MAX_SPINDLE_SPEEDUP`,
 /// `feeds.milling_rpm_ceiling_for_diameter.tier{1,2,3,4}_{max_d_mm,
 /// ceiling_rpm}` and `feeds.milling_rpm_ceiling_for_diameter.large_ceiling_rpm`.
-const PINNED_UNSOURCED_COUNT: usize = 142;
+///
+/// Feeds contract P29-4 commit C (2026-11-12) lowered it from 142 to 141:
+/// `feeds.default_engagement.adaptive.rigidity_doc_divisor` (1.50) left with
+/// the default-depth floor that read the machine `adaptive_doc_factor`. The
+/// force budget caps the Adaptive depth (ruling R1). The deleted
+/// `adaptive_doc_factor` was machine data, not a row.
+const PINNED_UNSOURCED_COUNT: usize = 141;
 
 fn repo_root() -> PathBuf {
     PathBuf::from(env!("CARGO_MANIFEST_DIR")).join("../..")

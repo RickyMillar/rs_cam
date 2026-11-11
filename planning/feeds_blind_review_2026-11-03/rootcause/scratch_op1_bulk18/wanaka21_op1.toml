@@ -71,7 +71,6 @@ q = 1.26
 
 [job.machine.rigidity]
 slot_doc_factor = 0.25
-adaptive_doc_factor = 2.0
 adaptive_woc_factor = 0.2
 
 [job.machine.kinematics]

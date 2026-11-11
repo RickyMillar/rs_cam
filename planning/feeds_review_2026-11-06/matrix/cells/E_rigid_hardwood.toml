@@ -40,7 +40,6 @@ q = 1.26
 [job.machine.rigidity]
 force_budget_n = 182.77763449001054
 slot_doc_factor = 0.25
-adaptive_doc_factor = 1.5
 adaptive_woc_factor = 0.2
 
 [[tools]]

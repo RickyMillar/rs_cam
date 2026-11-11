@@ -71,9 +71,12 @@ impl Default for ChipLoadFormula {
 /// (`feeds::force_budget::depth_at_budget`). A file reads through
 /// [`RigidityProfileWire`] inside [`MachineProfileWire`]: the class rule
 /// gives a hobby table with no budget the derived hobby budget.
+///
+/// Feeds contract P29-4 commit C: `adaptive_doc_factor` is deleted (a
+/// retired key). The force budget caps the Adaptive depth (ruling R1), so
+/// no reader of the factor stays.
 #[derive(Debug, Clone, Copy, PartialEq, Serialize)]
 pub struct RigidityProfile {
-    pub adaptive_doc_factor: f64,
     pub adaptive_woc_factor: f64,
     /// P13c (O1): the lateral force budget (N), a stand-in for the frame
     /// stiffness (frame deflection = F / k_frame). The hobby grade default
@@ -88,7 +91,6 @@ pub struct RigidityProfile {
 #[derive(Debug, Clone, Copy, PartialEq, Deserialize)]
 #[serde(deny_unknown_fields)]
 pub struct RigidityProfileWire {
-    adaptive_doc_factor: f64,
     adaptive_woc_factor: f64,
     #[serde(default)]
     force_budget_n: Option<f64>,
@@ -110,18 +112,12 @@ impl RigidityProfile {
     /// Each value with its field name and unit (P11c: the GUI machine
     /// panel lists them, with the class beside each value).
     #[must_use]
-    pub const fn values(&self) -> [RigidityValue; 3] {
-        const D: &str = "x D";
+    pub const fn values(&self) -> [RigidityValue; 2] {
         [
-            RigidityValue {
-                field: "adaptive_doc_factor",
-                value: self.adaptive_doc_factor,
-                unit: D,
-            },
             RigidityValue {
                 field: "adaptive_woc_factor",
                 value: self.adaptive_woc_factor,
-                unit: D,
+                unit: "x D",
             },
             RigidityValue {
                 field: "force_budget_n",
@@ -339,7 +335,6 @@ impl RigidityProfile {
 impl Default for RigidityProfile {
     fn default() -> Self {
         Self {
-            adaptive_doc_factor: 2.0,
             adaptive_woc_factor: 0.25,
             force_budget_n: crate::feeds::force_budget::hobby_budget().force_n,
         }
@@ -642,7 +637,7 @@ pub struct MachineProfileWire {
 
 /// The refusal of an industrial machine table with no `[rigidity]` block.
 pub const INDUSTRIAL_NEEDS_RIGIDITY: &str = "machine class `industrial` has no default rigidity: \
-     state a [rigidity] block (adaptive_doc_factor, adaptive_woc_factor, force_budget_n), or \
+     state a [rigidity] block (adaptive_woc_factor, force_budget_n), or \
      set \
      class = \"hobby\" to use the hobby grade default (Shapeoko port, Unsourced)";
 
@@ -658,7 +653,6 @@ impl TryFrom<MachineProfileWire> for MachineProfile {
     fn try_from(w: MachineProfileWire) -> Result<Self, Self::Error> {
         let rigidity = match (w.class, w.rigidity) {
             (class, Some(r)) => RigidityProfile {
-                adaptive_doc_factor: r.adaptive_doc_factor,
                 adaptive_woc_factor: r.adaptive_woc_factor,
                 force_budget_n: match (class, r.force_budget_n) {
                     (_, Some(n)) => n,

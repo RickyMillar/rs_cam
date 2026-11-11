@@ -522,6 +522,13 @@ mod tests {
                 "setups[0].toolpaths[0].type",
                 "kind",
             ),
+            // P29-4 commit C: the Adaptive depth factor left the machine.
+            (
+                "[job.machine.rigidity]\n",
+                "adaptive_doc_factor = 2.0\n",
+                "job.machine.rigidity.adaptive_doc_factor",
+                "force_budget_n",
+            ),
         ];
         for (anchor, line, key_path, replacement) in cases {
             assert!(

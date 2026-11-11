@@ -226,6 +226,12 @@ const RETIRED_KEYS: &[RetiredKey] = &[
                       force budget (force_budget_n) sets the slot depth. Delete the key",
     },
     RetiredKey {
+        table: &["job", "machine", "rigidity"],
+        key: "adaptive_doc_factor",
+        replacement: "Removed (feeds contract P29-4, ruling R1): the force budget \
+                      (force_budget_n) caps the Adaptive depth. Delete the key",
+    },
+    RetiredKey {
         table: &["job", "stock", "material", "Custom"],
         key: "kc",
         replacement: "Removed (ruling B6): a custom material has no force line and no Kc. \

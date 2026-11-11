@@ -242,6 +242,26 @@ mod tests {
         let _ = std::fs::remove_dir_all(&dir);
     }
 
+    /// P29-4 commit C: a machine file that states the retired
+    /// `adaptive_doc_factor` refuses, and the error names the key and what
+    /// replaced it.
+    #[test]
+    fn a_machine_file_with_the_retired_adaptive_depth_factor_refuses_p29_4() {
+        let dir = temp_dir("retired_adaptive_doc");
+        let path = save_to(&dir, "m", &MachineProfile::generic_wood_router()).unwrap();
+        let text = std::fs::read_to_string(&path).unwrap();
+        let text = text.replace("[rigidity]\n", "[rigidity]\nadaptive_doc_factor = 2.0\n");
+        assert!(text.contains("adaptive_doc_factor"), "non-vacuity: {text}");
+        std::fs::write(&path, text).unwrap();
+        let err = load_from(&dir, "m").unwrap_err();
+        let msg = err.to_string();
+        assert!(
+            msg.contains("rigidity.adaptive_doc_factor") && msg.contains("force_budget_n"),
+            "{msg}"
+        );
+        let _ = std::fs::remove_dir_all(&dir);
+    }
+
     #[test]
     fn list_returns_sorted_stems() {
         let dir = temp_dir("list");
