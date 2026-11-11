@@ -6,7 +6,7 @@ diagnostics, session state and G-code export. Keep it GUI-free. Read the root
 
 ## The folder map
 
-`src/` holds 8 files and 28 folders. The 8 root files are the crate spine —
+`src/` holds 8 files and 29 folders. The 8 root files are the crate spine —
 the vocabulary every layer names: `lib.rs`, `geo.rs`, `polygon.rs`, `mesh.rs`,
 `toolpath.rs`, `ids.rs`, `interrupt.rs` and `measurement.rs`. Everything else
 sits in a folder. Most folders carry their own `CLAUDE.md`; read that file
@@ -34,6 +34,7 @@ sentries and traps, which this file does not repeat.
 | `gcode/` | G-code emit and the post-processors | `gcode/CLAUDE.md` |
 | `export/` | Output that is not G-code: preview, fingerprints, the G-code validator | `export/CLAUDE.md` |
 | `feeds/`, `tool_load/` | Feeds and speeds, the cutting load model and its gates | `feeds/CLAUDE.md`, `tool_load/CLAUDE.md` |
+| `limits/` | One limit name (`LimitId`) and one check record (`Check`) for every limit of every surface (P29-2) | `limits/CLAUDE.md` |
 | `compute/` | Operation dispatch, configuration catalogue, simulation orchestration | `compute/CLAUDE.md` |
 | `session/` | `ProjectSession`, commands and effects | `session/CLAUDE.md` |
 | `diagnostics/` | Diagnostic findings and their adapters | `diagnostics/CLAUDE.md` |

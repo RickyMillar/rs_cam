@@ -43,6 +43,7 @@ pub mod geometry;
 pub mod ids;
 pub mod interrupt;
 pub mod io;
+pub mod limits;
 pub mod machine;
 pub mod maps;
 pub mod material;

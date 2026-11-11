@@ -274,6 +274,13 @@ pub enum LimitKind {
 }
 
 impl LimitKind {
+    /// Every variant, in declaration order (P29-2: `limits::LimitId` maps
+    /// each one).
+    pub const ALL: [Self; 14] = crate::all_variants!(LimitKind:
+        FluteGuard, CuttingLength, VendorAxial, VendorDepthTable, Rigidity, CornerCoverage,
+        Power, Deflection, ChipBand, RubbingFloor, FeedCap, Diameter, Runtime, EngagementFloor,
+    );
+
     /// The name that the card, the warning and MCP print.
     #[must_use]
     pub const fn label(self) -> &'static str {
@@ -346,6 +353,32 @@ pub enum Edge {
         /// The clause of the abstention.
         reason: &'static str,
     },
+}
+
+impl Edge {
+    /// `true` for an edge that bounds the cut from below (a depth floor, a
+    /// width floor, a floor curve). [`SafeEnvelope::place`] and
+    /// `limits::BoundSide` read it.
+    #[must_use]
+    pub const fn is_floor(&self) -> bool {
+        match self {
+            Self::ApFloor { .. }
+            | Self::AeFloor { .. }
+            | Self::AeCurve {
+                bound: CurveBound::Floor,
+                ..
+            } => true,
+            Self::ApCeiling { .. }
+            | Self::ApCurve { .. }
+            | Self::AeCeiling { .. }
+            | Self::AeCurve {
+                bound: CurveBound::Ceiling,
+                ..
+            }
+            | Self::PerPoint
+            | Self::Unmodelled { .. } => false,
+        }
+    }
 }
 
 /// P19b: which side of an [`Edge::AeCurve`] is inside.
@@ -1421,9 +1454,23 @@ impl SafeEnvelope {
         let l = self.limit(kind)?;
         let edge = Self::measured_edge(l, tool);
         let judged = Limit { edge, ..l.clone() };
-        let (axis, measured_mm, limit_mm) = match judged.edge {
+        let (axis, measured_mm, limit_mm) = self.axis_reading(&judged, p)?;
+        Some(JudgedValue {
+            axis,
+            measured: measured_mm,
+            limit: limit_mm,
+            unit: "mm",
+            feed_mm_min: None,
+        })
+    }
+
+    /// The axis, the value and the bound (mm) of `p` on the edge of
+    /// `judged`: the depth against an `ap` edge, the width against an `ae`
+    /// edge. `None` for an edge that judges no point.
+    fn axis_reading(&self, judged: &Limit, p: CutPoint) -> Option<(&'static str, f64, f64)> {
+        Some(match judged.edge {
             Edge::ApCeiling { .. } | Edge::ApCurve { .. } => {
-                ("depth", p.ap_mm, self.judged_ceiling(&judged, p.ae_mm)?)
+                ("depth", p.ap_mm, self.judged_ceiling(judged, p.ae_mm)?)
             }
             Edge::ApFloor { mm } => ("depth", p.ap_mm, mm),
             Edge::AeCeiling { mm } | Edge::AeFloor { mm } => ("width", p.ae_mm, mm),
@@ -1436,13 +1483,6 @@ impl SafeEnvelope {
                     .filter(|v| v.is_finite())?,
             ),
             Edge::PerPoint | Edge::Unmodelled { .. } => return None,
-        };
-        Some(JudgedValue {
-            axis,
-            measured: measured_mm,
-            limit: limit_mm,
-            unit: "mm",
-            feed_mm_min: None,
         })
     }
 
@@ -1496,7 +1536,36 @@ impl SafeEnvelope {
     fn place(&self, p: CutPoint, measured: Option<MeasuredTool>) -> Placement {
         let mut inside = f64::INFINITY;
         let mut worst: Option<(f64, LimitKind)> = None;
-        for l in &self.boundary {
+        self.each_placing_margin(p, measured, |m, kind, _| {
+            if m < -1e-9 {
+                if worst.is_none_or(|(w, _)| m < w) {
+                    worst = Some((m, kind));
+                }
+            } else {
+                inside = inside.min(m);
+            }
+        });
+        match worst {
+            Some((margin, binding)) => Placement::Outside { binding, margin },
+            None => Placement::Inside {
+                margin: if inside.is_finite() { inside } else { 1.0 },
+            },
+        }
+    }
+
+    /// Every margin that places the point `p`, in the order [`Self::place`]
+    /// folds them: each limit of the boundary that judges `p` (with its
+    /// index in `boundary`), then the gate's power of a measured point,
+    /// then the exact move budget (both with no index). P29-2:
+    /// `limits::project` reads the same margins, so a `Check` and the
+    /// `Placement` cannot judge a point by two rules.
+    fn each_placing_margin(
+        &self,
+        p: CutPoint,
+        measured: Option<MeasuredTool>,
+        mut each: impl FnMut(f64, LimitKind, Option<usize>),
+    ) {
+        for (index, l) in self.boundary.iter().enumerate() {
             let judged;
             let l = match measured {
                 None => l,
@@ -1508,23 +1577,7 @@ impl SafeEnvelope {
                     &judged
                 }
             };
-            let is_floor = match l.edge {
-                Edge::ApFloor { .. }
-                | Edge::AeFloor { .. }
-                | Edge::AeCurve {
-                    bound: CurveBound::Floor,
-                    ..
-                } => true,
-                Edge::ApCeiling { .. }
-                | Edge::ApCurve { .. }
-                | Edge::AeCeiling { .. }
-                | Edge::AeCurve {
-                    bound: CurveBound::Ceiling,
-                    ..
-                }
-                | Edge::PerPoint
-                | Edge::Unmodelled { .. } => false,
-            };
+            let is_floor = l.edge.is_floor();
             if measured.is_some() && is_floor {
                 continue;
             }
@@ -1555,23 +1608,11 @@ impl SafeEnvelope {
             let Some(m) = self.judged_margin(l, p) else {
                 continue;
             };
-            if m < -1e-9 {
-                if worst.is_none_or(|(w, _)| m < w) {
-                    worst = Some((m, l.kind));
-                }
-            } else {
-                inside = inside.min(m);
-            }
+            each(m, l.kind, Some(index));
         }
         // P20i: the power of a measured point, by the gate's figure.
         if let Some(m) = measured.and_then(|t| t.power).and_then(|p| p.margin()) {
-            if m < -1e-9 {
-                if worst.is_none_or(|(w, _)| m < w) {
-                    worst = Some((m, LimitKind::Power));
-                }
-            } else {
-                inside = inside.min(m);
-            }
+            each(m, LimitKind::Power, None);
         }
         // P19: a `Runtime` limit with no edge still judges the point by the
         // predicted moves at its own depth and width. A floor does not place
@@ -1579,20 +1620,28 @@ impl SafeEnvelope {
         if measured.is_none()
             && let Some(m) = self.move_budget_margin(p)
         {
-            if m < -1e-9 {
-                if worst.is_none_or(|(w, _)| m < w) {
-                    worst = Some((m, LimitKind::Runtime));
-                }
-            } else {
-                inside = inside.min(m);
-            }
+            each(m, LimitKind::Runtime, None);
         }
-        match worst {
-            Some((margin, binding)) => Placement::Outside { binding, margin },
-            None => Placement::Inside {
-                margin: if inside.is_finite() { inside } else { 1.0 },
-            },
-        }
+    }
+
+    /// P29-2: the margins that place the planned point `p`
+    /// ([`Self::each_placing_margin`], no measured tool): the limit kind,
+    /// the margin and the index of the limit in `boundary` (`None` for the
+    /// exact move budget).
+    #[must_use]
+    pub(crate) fn placing_margins(&self, p: CutPoint) -> Vec<(LimitKind, f64, Option<usize>)> {
+        let mut out = Vec::new();
+        self.each_placing_margin(p, None, |m, kind, index| out.push((kind, m, index)));
+        out
+    }
+
+    /// P29-2: the value and the bound of the planned point `p` on the limit
+    /// `l` of this envelope (the reading of [`Self::judged_value`] with no
+    /// measured tool): `(value, bound)` in mm.
+    #[must_use]
+    pub(crate) fn planned_reading(&self, l: &Limit, p: CutPoint) -> Option<(f64, f64)> {
+        self.axis_reading(l, p)
+            .map(|(_, value, bound)| (value, bound))
     }
 
     /// Pick a point. No request is refused (Q6). A point off the grid gets
@@ -2871,6 +2920,11 @@ fn vendor_depth_limit(
     });
 }
 
+/// The law of the `Rigidity` limit under the Factor rule (the Adaptive
+/// family). P29-2: `limits::DepthRule::of_limit` reads it to tell the
+/// Factor rule from the force budget.
+pub const RIGIDITY_FACTOR_LAW: &str = "machine rigidity depth cap (adaptive_doc_factor x D)";
+
 /// P11a (D-B): the reason of a `Deflection` entry when no depth below the
 /// flute reaches the target in any column.
 pub const NO_DEFLECTION_LIMIT_BELOW_THE_FLUTE: &str = "no deflection limit below the flute";
@@ -3193,7 +3247,7 @@ fn rigidity_limit(
             ) {
                 out.push(Limit {
                     kind: LimitKind::Rigidity,
-                    law: "machine rigidity depth cap (adaptive_doc_factor x D)",
+                    law: RIGIDITY_FACTOR_LAW,
                     basis: crate::feeds::rigidity_basis(&inputs.machine),
                     edge: Edge::ApCeiling { mm: cap },
                 });

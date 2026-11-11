@@ -1,11 +1,12 @@
 # P29-2 design note: `Check` and `LimitId`
 
 Written 2026-11-11 by the implementer, before any product edit. HEAD `2685c84f6` (P29-1).
-Status: waits for the lead's answer. Sources: `P29_FINDINGS.md` 4.4, `P29_parts/A_cuts_and_limits.md`
+Status: approved 2026-11-11 with four answers (section 9). P29-2a is implemented and its gates
+pass (section 10); it is not committed by the implementer. P29-2b is not started. Sources: `P29_FINDINGS.md` 4.4, `P29_parts/A_cuts_and_limits.md`
 (1.5), `P29_parts/B_metrics_and_display.md` (4.8, 5.1, 5.2). Paths are under
 `crates/rs_cam_core/src/`.
 
-## 1. `LimitId`: one list (28 members)
+## 1. `LimitId`: one list (29 members)
 
 | `LimitId` | Old variants it replaces |
 |---|---|
@@ -147,3 +148,80 @@ keeps one writer), or a new `Basis` variant now.
 (b) `DepthVerdict::Reported`: `NoNumber(NoBoundOnThisCut)` as in item 4, or another state?
 (c) `AxialBindingConstraint` in the mapping now (my choice: yes, it is 5 variants), or later?
 (d) The name: `limits/` as a new core folder, or `feeds/check.rs`?
+
+## 9. The lead's answers (2026-11-11)
+
+(a) `Check::bound_detail: Option<BoundSource>`, transitional; it goes at P29-10.
+(b) `DepthVerdict::Reported` is `NoNumber(NoBound)`: a P28 scope exemption, not geometry; P29-3
+lists it; it is never `NotApplicable`.
+(c) `AxialBindingConstraint` is in the mapping.
+(d) A new folder `limits/`. No signature of the folder holds an operation type, a family or a
+pass role; the folder imports nothing from `compute/` or `session/`. The sentry scans it.
+Also: the list has 29 members (the note said 28). A second mapping argument is a typed value.
+
+## 10. 2a result (2026-11-11, on top of `2685c84f6`; not committed)
+
+### What changed
+
+New: `crates/rs_cam_core/src/limits/` (`mod.rs`, `check.rs`, `project.rs`, `CLAUDE.md`) and
+`crates/rs_cam_core/tests/every_limit_is_a_limit_id_p29_2.rs`.
+
+Edited (7 files; `git diff --stat -- crates`: 182 insertions, 58 deletions):
+
+| File | Change |
+|---|---|
+| `src/lib.rs` | `pub mod limits;` |
+| `src/feeds/envelope.rs` | `LimitKind::ALL`; `Edge::is_floor` (the floor test of `place`, moved); `place` now folds the margins of `each_placing_margin` (the same loop, the same order, the same comparisons); `placing_margins` and `planned_reading` (`pub(crate)`, for `limits::of_envelope`); `axis_reading` (the match of `judged_value`, moved); `RIGIDITY_FACTOR_LAW` (the law text of the Factor limit, as a constant) |
+| `src/feeds/sourced.rs` | `Basis::setting`, `Basis::gates_export`, `DRILL_ENVELOPE_LAW` |
+| `src/feeds/mod.rs` | `RpmLimit::ALL` |
+| `src/feeds/cutter_constraints.rs` | `AxialBindingConstraint::ALL` |
+| `src/tool_load/verdict.rs` | `CriterionKind::ALL`, `BindingConstraint::ALL` |
+| `crates/rs_cam_core/CLAUDE.md` | the `limits/` row; 29 folders |
+
+No surface reads `limits/`. No public signature of an old type changed. No viz, cli or mcp
+file changed.
+
+### Differences from sections 1 to 8
+
+- `NoNumberReason` has two more members than the note: `NoMaterialRemoved`
+  (`AllSamplesAirCutOrRapid`) and `NotJudgedHere` (an envelope limit that `place` does not
+  judge at the point: a fixed axis, a per-point limit, the drawn move-budget curve). The second
+  is a scope fact of today, like `NoBound`; P29-3 lists it.
+- `basis_of_bound` is a function of `limits/` (not a method of `Basis`), so `feeds/sourced.rs`
+  does not name a gate type. `Basis::setting` and `Basis::gates_export` are methods of `Basis`.
+- `of_envelope` takes the margins from the envelope's own placement walk. For that, `place`
+  was split into the walk and the fold. This is the one edit of a product code path in 2a.
+- The envelope check of the exact move budget has a margin and no value or bound (the
+  envelope holds `budget / moves - 1` only).
+- `ModulationSummary` has no projection function: `LimitId::of_binding` is the whole mapping.
+- `LimitKind::ChipBand` maps to `ChipMax` only (the envelope judges the peak chip against the
+  band; its floor is the `RubbingFloor` kind).
+
+### Gates (each `timeout <s> scripts/cargo_lane.sh <args> -j 2`, foreground)
+
+| # | Command | Result | Time |
+|---|---|---|---|
+| 1 | `cargo fmt --all -- --check` | pass | seconds |
+| 2 | `--test every_limit_is_a_limit_id_p29_2` | 7 passed | 27 s build, 0.1 s |
+| 3 | `-q --test every_limit_is_a_limit_id_p29_2 --test a_criterion_carries_its_own_bound_g_s4bound --test the_envelope_keeps_each_limit_k2b --test every_rpm_cap_is_a_named_limit_p21 --test folder_maps_name_real_files_f140 --test a_pick_outside_the_envelope_warns_k2b --test the_envelope_finding_reads_the_gate_feed_p20i --test one_cut_gives_one_load_on_every_door_p29_1` | 8 binaries, 40 passed, 0 failed | 30 s |
+| 4 | `test -p rs_cam_core -q --lib` | 2795 passed, 1 failed, 13 ignored. The red is `the_envelope_meets_its_time_budget` (the timing trap). Alone, three runs: pass, 126, 120 and 119 ms (119 and 130 ms before this step; budget 300 ms) | 1 min 51 s |
+| 5 | `--features heavy-tests --test feeds_matrix_instrument_fm1` | 2 passed: the 1000 cells and the simulation subset equal the committed files | 1 min 10 s |
+| 6 | full clippy (root `CLAUDE.md` command) | clean | 2 min 50 s |
+
+Inject check of the sentry: `of_criterion` with the ceiling as the bound of a low-side chip
+row turns claim 2 red; `of_envelope` with `binding` on the wrong limits turns claim 3 red.
+Both were restored.
+
+No pin moved. No FM1 cell moved.
+
+### Open items
+
+- `Check::bound_detail` goes at P29-10.
+- `NoBound` and `NotJudgedHere` are scope facts for the P29-3 list.
+- `Basis::setting` is exact only for a basis from `basis_of_bound`: every `Rule` gives "tool".
+- Not projected: `EntrySpike`, `EntryLoadObservation`, `PlungeStressWarning`,
+  `CutForceReading`, `CutEfficiency`, `RuleResult`, `PowerFigure`, `DeflectionPrediction`,
+  `MeasuredPower` (part B section 5.2). They hold a value and a bound and no state of the
+  three; they join when their surface reads `Check` (P29-10) or when P29-6 judges the entries.
+- P29-2b (MCP additive) is not started. Before it: `rg` the viz and cli tests for a
+  comparison of a whole reply.

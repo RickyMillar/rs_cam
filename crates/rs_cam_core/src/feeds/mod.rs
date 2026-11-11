@@ -1151,6 +1151,20 @@ pub enum RpmLimit {
 }
 
 impl RpmLimit {
+    /// Every variant, with each source of the cutting ceiling (P29-2:
+    /// `limits::LimitId` maps each one).
+    pub const ALL: [Self; 9] = [
+        Self::SpindleMax,
+        Self::CuttingCeiling(crate::machine::CuttingCeilingSource::Stated),
+        Self::CuttingCeiling(crate::machine::CuttingCeilingSource::AxisRate),
+        Self::CuttingCeiling(crate::machine::CuttingCeilingSource::TravelRate),
+        Self::ZAxisRate,
+        Self::PowerAtRpm,
+        Self::OperatorCeiling,
+        Self::ChartRpm,
+        Self::VendorRpmMax,
+    ];
+
     /// The wire id (MCP `get_suggest_rationale`, CLI `suggest`).
     #[must_use]
     pub const fn wire_id(self) -> &'static str {

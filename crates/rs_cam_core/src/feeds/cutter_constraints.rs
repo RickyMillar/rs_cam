@@ -161,6 +161,14 @@ pub enum AxialBindingConstraint {
     SafeBandEmpty,
 }
 
+impl AxialBindingConstraint {
+    /// Every variant, in declaration order (P29-2: `limits::LimitId` maps
+    /// each one).
+    pub const ALL: [Self; 5] = crate::all_variants!(AxialBindingConstraint:
+        Unbounded, Deflection, VendorAp, Scallop, SafeBandEmpty,
+    );
+}
+
 impl CutterAxialConstraints {
     /// Min over all populated `max_doc_*` fields — the value the consumer
     /// should clamp commanded DOC to. Always ≥ 0. `None` when no bound

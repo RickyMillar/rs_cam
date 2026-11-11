@@ -211,6 +211,10 @@ impl ToolFactKinds {
     }
 }
 
+/// P29-2: the law of the basis of a drill gate's envelope
+/// (`limits::basis_of_bound`); [`Basis::setting`] reads it.
+pub const DRILL_ENVELOPE_LAW: &str = "drill envelope of the material";
+
 /// How one shipped value is known. CONTRACT K2.
 #[derive(Debug, Clone, PartialEq)]
 pub enum Basis {
@@ -243,6 +247,34 @@ pub enum Basis {
 }
 
 impl Basis {
+    /// P29-2: the setting an operator changes to move a bound with this
+    /// basis: `"machine"`, `"tool"`, `"material"`, `"vendor row"` or
+    /// `"operation"`. It equals `tool_load::verdict::BoundSource::setting`
+    /// for each basis that `limits::basis_of_bound` makes (sentry
+    /// `every_limit_is_a_limit_id_p29_2`). A constant (`Rule`) gives
+    /// `"tool"`: no setting moves the bound, the tool moves the reading
+    /// under it.
+    #[must_use]
+    pub fn setting(&self) -> &'static str {
+        match self {
+            Self::Operator { .. } => "operation",
+            Self::Printed(_) | Self::Claim(_) => "vendor row",
+            Self::Machine(_) => "machine",
+            Self::Rule(_) | Self::ToolFact(_) => "tool",
+            Self::Derived { law, .. } if *law == DRILL_ENVELOPE_LAW => "material",
+            Self::Derived { .. } => "tool",
+        }
+    }
+
+    /// P29-2: `false` when a bound with this basis must not refuse an
+    /// export: the machine rigidity values (the Factor rule of thumb and
+    /// the force budget of a machine class), as
+    /// `tool_load::verdict::BoundSource::gates_export`.
+    #[must_use]
+    pub const fn gates_export(&self) -> bool {
+        !matches!(self, Self::Machine(MachineField::Rigidity))
+    }
+
     /// A value that the operator states.
     #[must_use]
     pub const fn stated() -> Self {

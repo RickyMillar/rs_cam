@@ -91,6 +91,13 @@ pub enum BindingConstraint {
 }
 
 impl BindingConstraint {
+    /// Every variant, in declaration order (P29-2: `limits::LimitId` maps
+    /// each one).
+    pub const ALL: [Self; 9] = crate::all_variants!(BindingConstraint:
+        ChiploadMax, DeflectionMax, PowerMax, MachineMaxFeed, KinematicReach, ChiploadMin,
+        PlungeRate, FeedCap, ForceBudget,
+    );
+
     pub fn label(self) -> &'static str {
         match self {
             BindingConstraint::ChiploadMax => "chipload-max",
@@ -985,6 +992,13 @@ pub enum CriterionKind {
 }
 
 impl CriterionKind {
+    /// Every variant, in declaration order (P29-2: `limits::LimitId` maps
+    /// each one).
+    pub const ALL: [Self; 8] = crate::all_variants!(CriterionKind:
+        Chipload, Power, Deflection, DepthOfCut, GantryPush, DrillChipWelding,
+        DrillPeckAdequacy, DrillPlungeFeed,
+    );
+
     pub fn label(self) -> &'static str {
         match self {
             CriterionKind::Chipload => "chipload",
