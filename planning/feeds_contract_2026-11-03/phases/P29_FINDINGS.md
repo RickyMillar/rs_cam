@@ -226,3 +226,24 @@ implementer, one step at a time.
 - The zone checks (core, shank, holder, flute reach) were not re-read; the drill's missing
   body-zone walk needs a check against the mesh holder check.
 - Every figure of section 5 outside P26 is an estimate. P29-0 measures them.
+
+## 10. Operator answers (2026-11-11)
+
+- **R1: accepted.** "35.3 budget.. 1.2mm width at 4mm seems around ok. I imagine it would do ok
+  at 6 but it could be right that it's pushing the machine hard!" The budget stands; the
+  adaptive depth reads it.
+- **R2: open, the operator asked how the width is set.** "I thought this was just calculated on
+  the fly by the calcs trying to hold the load?" The lead's answer: the planner holds the
+  engagement at a target that comes from the stated stepover; it does not choose the stepover.
+  Lead default until the operator objects: Suggest keeps a stated stepover and caps the depth;
+  with no stepover it proposes the best pair inside the limits with a width ceiling of 0.5 D.
+- **R3: accepted.** "yeah, slot is a slot! it can vary in z depth due to rest and similar
+  though". Before the simulation the limit reads the stated depth (the worst case); after it,
+  each sample is judged at its real depth.
+- **R4: accepted.** Entries and cleanup are judged like any cut, as their own group.
+- **R5: the operator has no view.** Lead default: a rough pass may bend up to the stock it
+  leaves, never above 200 um; the same value before and after the simulation. Flagged as a
+  lead decision; the operator can change it at P29-7.
+- **R6: the operator asked what the question is.** Explained in the reply; it waits for P29-8.
+
+The operator has not yet said "approved" for the design and the order as a whole.
