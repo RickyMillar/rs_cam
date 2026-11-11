@@ -125,6 +125,24 @@ Design and predictions: `phases/P29-4_DESIGN.md` (lead rulings in section 8),
   follow from the code only); the slow wanaka integration tests. Prediction to check at the
   operator's next simulation: wanaka op 5 (Project Curve, 6 mm, offset 4.0) is up to 3.6
   times over the budget, so its exported feed falls heavily with modulation on.
+- **P29-6** (the gates judge every sample that removes material): design and predictions
+  `98890cc09`. The operator said "go" on 2026-11-12 and ruled Q1 yes: "I think all moves
+  should be judged", and "I want to leave the code in a place where its blatently obvious to
+  anyone in the future that adding a mechanism like force neds to happen acreoss all
+  movement." That sentence is the acceptance test: a limit is one function over a cut, the
+  match over `CutKind` / `CutGroup` has no wildcard, "not judged" is a named variant with an
+  exemption row. Lead rulings: Q2 to Q10 as the note recommends; Q7 an arc of 0 is no arc.
+  Commit 6a is in (`5c6ae274b`, byte-equal). For 6d: a fixed record with one field per group
+  (not a `Vec`), and one function `LimitId` x `CutGroup` to judged or not judged. See
+  `git log` for 6b to 6e. Not measured: the cost of the cap table that `load_context_parts`
+  builds on each call (the GUI thread calls it).
+- **Operator, 2026-11-12: finish P29 before P27**, all steps of the change list (P29-5b, 5c,
+  7, 8, 9, 10, 11, last), each with predictions first. The lead brings a prediction to the
+  operator only when it changes what they cut with. **After P29-last: a tech-debt and
+  clean-up pass** over the code that P29 moved (dead code, stale docs and folder `CLAUDE.md`
+  files, duplicate helpers, test helpers, the exemption list, names), with a review agent
+  that did not write the code. Then add the P29 state and the three findings (budget from
+  slot rows, the budget depth step, two chips) to `phases/P27_BRIEF.md`.
 - **New design step, from the operator (2026-11-12):** "simulation should run whats going to
   happen in real life. having a post-sim change seems not ideal". Today the modulator lowers
   feeds after the simulation and the export writes them. First task: a read-only check of
