@@ -293,6 +293,14 @@ impl RsCamApp {
                     "toolpath_name": tc.name,
                     "basis": basis,
                     "rationale": serde_json::to_value(&rationale).unwrap_or_default(),
+                    // P29-2b: the RPM limits as `Check` records, beside
+                    // `basis.rpm.limits`.
+                    "checks": rpm_checks_json(
+                        profile
+                            .feeds
+                            .as_ref()
+                            .and_then(|feeds| feeds.rpm_choice.as_ref()),
+                    ),
                 }))
             }
             Err(e) => json_str(serde_json::json!({
@@ -395,6 +403,9 @@ impl RsCamApp {
             "summary": summary_value,
             "load_report": load_value,
             "per_depth_pass": per_depth_pass,
+            // P29-2b: each gate row as a `Check` record, beside
+            // `load_report`.
+            "checks": load_report_checks_json(&report),
         }))
     }
 
@@ -1112,6 +1123,9 @@ impl RsCamApp {
                     "toolpath_id": tc.id,
                     "toolpath_name": tc.name,
                     "envelope": value,
+                    // P29-2b: the stated point against each limit as
+                    // `Check` records, beside `envelope.operator`.
+                    "checks": envelope_checks_json(&envelope),
                 }))
             }
         }
@@ -1198,4 +1212,56 @@ impl RsCamApp {
             progress_tx,
         );
     }
+}
+
+/// P29-2b: the gate rows of `report` as `rs_cam_core::limits::Check`
+/// records: one entry per toolpath, `{ toolpath_id, checks }`, the checks in
+/// the order of `ToolpathLoadVerdict::criteria`. The reply key `checks` of
+/// `get_tool_load_report`; `load_report` beside it keeps the old shape.
+pub(super) fn load_report_checks_json(
+    report: &rs_cam_core::tool_load::ToolLoadReport,
+) -> serde_json::Value {
+    serde_json::Value::Array(
+        report
+            .per_toolpath
+            .iter()
+            .map(|verdict| {
+                let checks: Vec<rs_cam_core::limits::Check> = verdict
+                    .criteria()
+                    .iter()
+                    .map(rs_cam_core::limits::of_criterion)
+                    .collect();
+                serde_json::json!({
+                    "toolpath_id": verdict.toolpath_id,
+                    "checks": serde_json::to_value(&checks).unwrap_or_default(),
+                })
+            })
+            .collect(),
+    )
+}
+
+/// P29-2b: the stated point of `envelope` against each of its limits, as
+/// `Check` records (`rs_cam_core::limits::of_envelope`). `null` when the
+/// operation states no point. The reply key `checks` of
+/// `get_safe_envelope`; `envelope.operator` beside it keeps the old shape.
+pub(super) fn envelope_checks_json(
+    envelope: &rs_cam_core::feeds::envelope::SafeEnvelope,
+) -> serde_json::Value {
+    envelope.stated.map_or(serde_json::Value::Null, |point| {
+        serde_json::to_value(rs_cam_core::limits::of_envelope(envelope, point)).unwrap_or_default()
+    })
+}
+
+/// P29-2b: the limits of an RPM choice as `Check` records
+/// (`rs_cam_core::limits::of_rpm_choice`). An empty list when Suggest made
+/// no choice (`MatchChart`). The reply key `checks` of
+/// `get_suggest_rationale`; `basis.rpm.limits` beside it keeps the old
+/// shape.
+pub(super) fn rpm_checks_json(choice: Option<&rs_cam_core::feeds::RpmChoice>) -> serde_json::Value {
+    choice.map_or_else(
+        || serde_json::Value::Array(Vec::new()),
+        |choice| {
+            serde_json::to_value(rs_cam_core::limits::of_rpm_choice(choice)).unwrap_or_default()
+        },
+    )
 }

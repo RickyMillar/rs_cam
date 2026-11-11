@@ -1071,3 +1071,168 @@ fn get_ui_view_reads_the_focus_kind_and_the_camera_echo_f3() {
     assert_eq!(answer["selection"]["kind"], "stock");
     assert!(answer["selection"]["toolpath_index"].is_null());
 }
+
+// ── P29-2b: the `checks` keys of three replies ──────────────────────
+//
+// The three builders add `rs_cam_core::limits::Check` records beside the
+// old fields. Each test holds a record equal to the old field it repeats.
+
+fn p29_power_verdict(
+    peak_kw: f64,
+    available_kw: f64,
+) -> rs_cam_core::tool_load::verdict::ToolpathLoadVerdict {
+    use rs_cam_core::tool_load::verdict::{
+        BoundSource, ChiploadVerdict, Confidence, DeflectionVerdict, DepthVerdict, PowerVerdict,
+        SampleEvidence, ToolpathLoadVerdict, UnmodeledReason,
+    };
+    ToolpathLoadVerdict {
+        toolpath_id: rs_cam_core::ids::ToolpathId::from_raw(7),
+        chipload: ChiploadVerdict::Unmodeled {
+            reason: UnmodeledReason::NoVendorData,
+        },
+        power: PowerVerdict::Exceeds {
+            peak_kw,
+            available_kw,
+            evidence: SampleEvidence::empty(),
+            confidence: Confidence::Validated,
+            bound_source: Some(BoundSource::MachinePowerCurve { rpm: 18_000.0 }),
+        },
+        deflection: DeflectionVerdict::Unmodeled {
+            reason: UnmodeledReason::SimulationRequired,
+        },
+        depth: DepthVerdict::Unmodeled {
+            reason: UnmodeledReason::SimulationRequired,
+        },
+        drill_gates: None,
+        modulation_summary: None,
+        feed_explanation: None,
+        kinematic_utilization: None,
+        material_split: None,
+        cut_force: None,
+    }
+}
+
+#[test]
+fn the_load_report_checks_repeat_the_criterion_rows_p29_2b() {
+    let report = rs_cam_core::tool_load::ToolLoadReport {
+        per_toolpath: vec![p29_power_verdict(2.0, 1.5)],
+    };
+    let value = super::generation::load_report_checks_json(&report);
+    let entries = value.as_array().expect("one entry per toolpath");
+    assert_eq!(entries.len(), 1);
+    let entry = entries.first().expect("the toolpath");
+    assert_eq!(entry["toolpath_id"], serde_json::json!(7));
+    let checks = entry["checks"].as_array().expect("the checks");
+    let rows = report
+        .per_toolpath
+        .first()
+        .expect("the verdict")
+        .criterion_rows();
+    assert_eq!(checks.len(), rows.len(), "one check per criterion row");
+    let power = checks
+        .iter()
+        .find(|c| c["limit"] == "spindle_power")
+        .expect("the power check");
+    assert_eq!(power["value"], serde_json::json!(2.0));
+    assert_eq!(power["bound"], serde_json::json!(1.5));
+    assert_eq!(power["state"]["state"], "exceeds");
+    assert_eq!(power["side"], "ceiling");
+    assert_eq!(power["binding"], serde_json::json!(false));
+    assert_eq!(power["bound_detail"]["kind"], "machine_power_curve");
+    let chip = checks
+        .iter()
+        .find(|c| c["limit"] == "chip_max")
+        .expect("the chip check");
+    assert_eq!(chip["state"]["state"], "no_number");
+    assert_eq!(chip["state"]["reason"], "no_vendor_row");
+    assert!(chip["value"].is_null() && chip["bound"].is_null());
+}
+
+#[test]
+fn the_envelope_checks_repeat_the_operator_placement_p29_2b() {
+    use rs_cam_core::compute::catalog::OperationType;
+    use rs_cam_core::feeds::envelope::{EnvelopeInput, Placement, SafeEnvelope};
+    let op = rs_cam_core::compute::fixture_values::fixture_op(OperationType::Pocket);
+    let mut tool = ToolConfig::test_default(ToolId::from_raw(0), ToolType::EndMill);
+    tool.diameter = 6.0;
+    let machine = rs_cam_core::machine::MachineProfile::default();
+    let material = rs_cam_core::material::Material::default();
+    let envelope = SafeEnvelope::for_cut(EnvelopeInput {
+        operation: &op,
+        tool: &tool,
+        machine: &machine,
+        material: &material,
+        lut: rs_cam_core::feeds::embedded_vendor_lut(),
+        spindle_strategy: rs_cam_core::feeds::SpindleStrategy::default(),
+        context: rs_cam_core::feeds::suggest::SuggestContext::default(),
+    })
+    .expect("a 6 mm end mill pocket is backed");
+    let value = super::generation::envelope_checks_json(&envelope);
+    let checks = value.as_array().expect("the fixture states its cut");
+    assert!(checks.len() >= envelope.boundary.len());
+    let binding: Vec<_> = checks.iter().filter(|c| c["binding"] == true).collect();
+    match envelope.operator.expect("a stated point has a placement") {
+        Placement::Inside { .. } => {
+            assert!(binding.is_empty());
+            assert!(checks.iter().all(|c| c["state"]["state"] != "exceeds"));
+        }
+        Placement::Outside { margin, .. } => {
+            assert_eq!(binding.len(), 1);
+            let check = binding.first().expect("the binding check");
+            assert_eq!(check["margin"], serde_json::json!(margin));
+            assert_eq!(check["state"]["state"], "exceeds");
+        }
+    }
+    // Each check names a limit id and a basis; a planned cut has no population.
+    for check in checks {
+        assert!(check["limit"].is_string());
+        assert!(!check["basis"].is_null());
+        assert!(check["population"].is_null());
+    }
+}
+
+#[test]
+fn the_rpm_checks_repeat_the_rpm_limits_p29_2b() {
+    use rs_cam_core::feeds::{RpmChoice, RpmLimit, RpmLimitValue};
+    assert_eq!(
+        super::generation::rpm_checks_json(None),
+        serde_json::json!([]),
+        "no choice: an empty list"
+    );
+    let choice = RpmChoice {
+        rpm: 18_000.0,
+        chart_rpm: Some(16_000.0),
+        binding: RpmLimit::OperatorCeiling,
+        limits: vec![
+            RpmLimitValue {
+                limit: RpmLimit::SpindleMax,
+                rpm: 24_000.0,
+            },
+            RpmLimitValue {
+                limit: RpmLimit::OperatorCeiling,
+                rpm: 18_000.0,
+            },
+        ],
+    };
+    let value = super::generation::rpm_checks_json(Some(&choice));
+    let checks = value.as_array().expect("one check per limit");
+    let old = choice.to_json();
+    let old_limits = old["limits"].as_array().expect("the old limits");
+    assert_eq!(checks.len(), old_limits.len());
+    for (check, old) in checks.iter().zip(old_limits) {
+        assert_eq!(check["bound"], old["rpm"]);
+        assert_eq!(check["value"], serde_json::json!(18_000.0));
+        assert_eq!(check["unit"], "rpm");
+    }
+    let seen: Vec<_> = checks
+        .iter()
+        .map(|c| (c["limit"].as_str(), c["binding"].as_bool()))
+        .collect();
+    assert_eq!(
+        seen,
+        [
+            (Some("spindle_max_rpm"), Some(false)),
+            (Some("operator_rpm_ceiling"), Some(true)),
+        ]
+    );
+}

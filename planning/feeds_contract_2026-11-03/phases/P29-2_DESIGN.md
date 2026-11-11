@@ -225,3 +225,76 @@ No pin moved. No FM1 cell moved.
   three; they join when their surface reads `Check` (P29-10) or when P29-6 judges the entries.
 - P29-2b (MCP additive) is not started. Before it: `rg` the viz and cli tests for a
   comparison of a whole reply.
+
+## 11. 2b (2026-11-11, on top of `8c8671f07`; not committed)
+
+### Plan (the lead's rulings)
+
+- Additive `checks` keys in three MCP replies, built in the viz handler from
+  `rs_cam_core::limits`. The old fields stay; no serde of `ToolLoadReport` or `SafeEnvelope`
+  changes.
+- One sentence about `checks` in each of the three tool descriptions. The wire snapshot
+  `crates/rs_cam_viz/tests/snapshots/mcp_wire_surface.json` then moves by those three strings
+  only. The lead sees the diff before any bless.
+- Gates: the named viz tests, the viz `--lib` once, full clippy. Each viz test run waits for
+  the operator's go.
+
+### What is implemented
+
+| File | Change |
+|---|---|
+| `crates/rs_cam_viz/src/app/mcp/generation.rs` | Three builders: `load_report_checks_json(&ToolLoadReport)` (per toolpath `{ toolpath_id, checks }`, the checks in the order of `criteria()`, each from `limits::of_criterion`); `envelope_checks_json(&SafeEnvelope)` (`limits::of_envelope` at `envelope.stated`, `null` with no stated point); `rpm_checks_json(Option<&RpmChoice>)` (`limits::of_rpm_choice`, an empty list with no choice). Each handler adds the key `checks` at the top level of its reply. |
+| `crates/rs_cam_viz/src/mcp_server.rs` | One sentence at the end of the description of `get_tool_load_report`, `get_safe_envelope` and `get_suggest_rationale`. |
+| `crates/rs_cam_viz/src/app/mcp/tests.rs` | Three lib tests (the sentry of 2b): `the_load_report_checks_repeat_the_criterion_rows_p29_2b`, `the_envelope_checks_repeat_the_operator_placement_p29_2b`, `the_rpm_checks_repeat_the_rpm_limits_p29_2b`. |
+
+`git diff --stat -- crates`: 3 files, 234 insertions, 3 deletions. No core file changed.
+
+The reply shapes:
+
+- `get_tool_load_report`: `{ summary, load_report, per_depth_pass, checks: [ { toolpath_id, checks: [Check] } ] }`.
+- `get_safe_envelope`: `{ toolpath_id, toolpath_name, envelope, checks: [Check] | null }`.
+- `get_suggest_rationale`: `{ toolpath_id, toolpath_name, basis, rationale, checks: [Check] }`.
+- A `Check` on the wire: `limit` (snake_case `LimitId`), `value`, `bound`, `unit`, `side`
+  (`ceiling` or `floor`), `margin`, `state` (`{ "state": "within" | "exceeds" | "no_number" |
+  "not_applicable", "reason": .. }`), `basis`, `bound_detail` (only when a gate row has a bound
+  source), `binding`, `population`.
+
+Difference from the plan: the sentry is three lib tests in `app/mcp/tests.rs`, not a new
+integration test file. The handlers are methods of `RsCamApp`, and the builders are private to
+`app::mcp`; a lib test can call them, an integration test cannot. So the viz `--lib` run is the
+gate that holds 2b.
+
+### State
+
+- `cargo fmt --all -- --check`: pass.
+- `cargo check -p rs_cam_viz --all-targets -j 2`: pass (45 s).
+- NOT RUN (they wait for the operator's go): `test -p rs_cam_viz -j 2 --test
+  mcp_wire_surface_pin --test the_limit_rows_read_their_own_bound_g_ownbound --test
+  ribbon_and_mcp_diagnostic_ids_n4`; `test -p rs_cam_viz -j 2 --lib`; full clippy.
+- Expected: `mcp_wire_surface_pin` goes RED (three description strings). No bless before the
+  lead sees the diff.
+
+### Docs
+
+No folder file names the reply keys of these three tools (`rs_cam_mcp/CLAUDE.md`,
+`rs_cam_viz/src/app/CLAUDE.md`, `app/mcp/CLAUDE.md` searched). `FEATURE_CATALOG.md` names
+`get_tool_load_report` in the kinematic utilization line only. A catalogue line for the
+`checks` keys is the lead's call (the catalogue defines shipped claims).
+
+### 2b gates (2026-11-11, the operator's go; no `rs_cam_gui` running)
+
+| # | Command (`timeout <s> scripts/cargo_lane.sh ..`, `-j 2`, foreground) | Result | Time |
+|---|---|---|---|
+| 1 | `test -p rs_cam_viz -j 2 --test mcp_wire_surface_pin --test the_limit_rows_read_their_own_bound_g_ownbound --test ribbon_and_mcp_diagnostic_ids_n4` | 2 + 10 + 6 = 18 passed, 0 failed | 54 s |
+| 2 | `test -p rs_cam_viz -j 2 --lib` | 706 passed, 0 failed, 2 ignored; the three `_p29_2b` tests pass | 50 s |
+| 3 | full clippy (root `CLAUDE.md` command) | clean | 3 min 03 s |
+
+`cargo fmt --all -- --check`: pass.
+
+Correction of the plan: NO pin moved. `mcp_wire_surface_pin` is GREEN. The snapshot
+`mcp_wire_surface.json` holds each tool's name and input schema (with the doc text of the
+parameter types), not the tool descriptions; the three description strings are not in it
+(`rg` for "Per-toolpath tool-load report" in the snapshot: no match). So the description
+sentences are in the code and no snapshot diff exists to review or to bless.
+
+State: P29-2b is complete in the tree (3 viz files), not committed by the implementer.
