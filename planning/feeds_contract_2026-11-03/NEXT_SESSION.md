@@ -114,7 +114,17 @@ Design and predictions: `phases/P29-4_DESIGN.md` (lead rulings in section 8),
   `3d9e33387`; the operator said "go" on 2026-11-12 for the depth-limit-only scope (the lead
   rulings are in the implementer brief: Q0 narrow, Q1 close `F-DepthRule`, Q2 filing fixes to
   "P29-5b", Q3 card text "no force limit on this cut", Q5, Q6, Q7 as the note recommends).
-  See `git log` for its state.
+  **Commit A is in** (`6adc14993`): 110 FM1 cells in 55 rows, equal to the predictions; the
+  simulation file byte-equal; pins ROWS 63, PHYSICAL 8, RULED 3, MAX_NEEDS_RULING 52,
+  ROWS_WITH_A_FILE 55; new sentry `a_slot_reads_the_force_budget_under_every_op_p29_5`.
+  **Commit B is in** (`884fea167`): texts only; 27 `force_detail` cells of the FM1 simulation
+  file moved for wording. The limit text says "an advisory", as the docs of
+  `BoundSource::gates_export()` do. Open after P29-5: P29-5b (the filing fixes of the
+  exemption rows), P29-5c (the groove width before the simulation; row `P28-03`). Not run:
+  any simulation of the six ops (force card, modulator scope, `project.sim_outside_envelope`
+  follow from the code only); the slow wanaka integration tests. Prediction to check at the
+  operator's next simulation: wanaka op 5 (Project Curve, 6 mm, offset 4.0) is up to 3.6
+  times over the budget, so its exported feed falls heavily with modulation on.
 - **New design step, from the operator (2026-11-12):** "simulation should run whats going to
   happen in real life. having a post-sim change seems not ideal". Today the modulator lowers
   feeds after the simulation and the export writes them. First task: a read-only check of
