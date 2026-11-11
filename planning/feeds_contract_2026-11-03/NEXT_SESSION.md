@@ -92,9 +92,13 @@ Design and predictions: `phases/P29-4_DESIGN.md` (lead rulings in section 8),
   (ruling R1). FM1 moved 220 cells in 80 matrix rows and 10 simulation rows; each cell equals
   the prediction. The wanaka proposals equal the predictions. Exemption pins: ROWS 64,
   PHYSICAL 8, RULED 3, MAX_NEEDS_RULING 53, ROWS_WITH_A_FILE 56.
-- **Commit B** (delete the dead Factor chain, no number moves): see `git log` after
-  `f5a5b4601`. If no commit B is there, it is still to do (brief in section 1.2 and
-  rulings Q4, Q7 of the design note).
+- **Commit B is in** (the "P29-4 commit B" commit after `f5a5b4601`): the dead Factor chain
+  is deleted. FM1 is byte-equal. Left by B, not fixed: three texts that users see still say
+  "rule of thumb" (the `ExceededCriterion::depth_of_cut` remedy in `tool_load/verdict.rs`,
+  `DEPTH_OF_CUT` in `tool_load/metric_guide.rs`, viz `sim_diagnostics.rs` "This limit is a
+  rule of thumb."); `feeds::geometry::depth_derate_diameter_for_cutter` has no caller; stale
+  docs in `feeds/geometry.rs` (~513, ~561) and
+  `tests/a_vbit_row_is_read_at_its_printed_key_b4.rs:679`.
 - **Commit C waits for the operator.** It deletes the machine field `adaptive_doc_factor`,
   the default-depth floor and `ADAPTIVE_RIGIDITY_DOC_DIVISOR`. Both wanaka TOML files hold
   the key at line 74 and do not load after it. Ask the operator for the one-line delete.
