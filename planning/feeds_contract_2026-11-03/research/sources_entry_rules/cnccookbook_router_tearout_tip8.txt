@@ -1,0 +1,11 @@
+source_id: cnccookbook_router_tearout_tip8
+vendor: CNCCookbook
+title: 16 CNC Router Tips to Avoid Tearout and Splintering
+url: https://www.cnccookbook.com/16-cnc-router-tips-to-avoid-tearout-and-splintering
+fetched: 2026-11-11 (HTTP 200)
+strength: secondary (blog)
+raw_sha256: 64967027e149f53a20839ca5e47f0280f4290deda93b968267b1a40a6910ac80
+extraction: HTML to text (tags removed); the passage below is verbatim from that text
+----- quoted passage -----
+Tip #8: Cut entry: ramp in and slow down instead of plunging.
+Plunge cuts are the most severe way to enter the cut and the most likely to cause tearout.  Ramping is gentler and therefore preferred.  The exception to the rule is that when using compression and downcut bits, you want to get them down into the cut as fast as possible so they can work their magic.

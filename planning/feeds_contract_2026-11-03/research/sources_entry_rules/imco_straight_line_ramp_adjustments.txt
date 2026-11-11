@@ -1,0 +1,65 @@
+source_id: imco_straight_line_ramp_adjustments
+vendor: IMCO Carbide Tool
+title: Technical Resources: Straight-Line Ramp Adjustments
+url: https://cms.imcousa.com/wp-content/uploads/2021/01/Straight-Line-Ramp-Adjustments.pdf
+fetched: 2026-11-11 (HTTP 200)
+strength: primary vendor (metal-cutting end mills; contrast for wood)
+raw_sha256: 9705a4fe15c2cfc4da869190e0cf68d753c7d407373c7db387fb9bf5ac9c0fd7
+extraction: pdftotext -layout
+----- quoted passage -----
+      Technical Resources
+      S T R A I G H T- L I N E R A M P A D J U S T M E N T S
+      Straight-line ramp moves are an alternative method to enter the middle of a part.
+      The following guide shows speed, feed and ramp angle data for different IMCO
+      end mills.
+
+
+
+      Use the following guide for speed, feed and ramp angle parameters. Note that the terms
+      “Same as chart,” “Slotting speed in chart,” and “Slotting IPT/MMPT,” and “Helical ramp”
+      (M223 and M233) reference the data shown in the speed and feed charts located in                                              Ramp angle
+      each tool series section. Not all tools are designed to allow the chip clearance required
+      for straight-line ramping, as indicated in the guide.
+
+                                                                                               Max Ramp
+            Tool           Max Ramp Angle        SFM / MMPM                 Feed                                  Max Ramp Length
+                                                                                                Depth
+           IPT/C 7        Not recommended              -                      -                       -                      -
+           IPT/C 9        Not recommended              -                      -                       -                      -
+          IPT/C 11        Not recommended              -                      -                       -                      -
+          IPT/C 13        Not recommended              -                      -                       -                      -
+          APT/C 5                   10°         Slotting speed    Slotting IPT or MMPT x .65   75% of D    (.75 x D) / drop per inch or mm
+           M525                     2.5°        Slotting speed    Slotting IPT or MMPT x .75   50% of D     (.5 x D) / drop per inch or mm
+           M527                     2.5°        Slotting speed    Slotting IPT or MMPT x .75   50% of D     (.5 x D) / drop per inch or mm
+           M503                     2.5°        Slotting speed        Slotting IPT x .75       50% of D         (.5 xD) / drop per inch
+           M726           Not recommended              -                      -                       -                      -
+           M706           Not recommended              -                      -                       -                      -
+           M806           Not recommended              -                      -                       -                      -
+           M924                     2.5°        Slotting speed    Slotting IPT or MMPT x .75   50% of D     (.5 x D) / drop per inch or mm
+           M904                     2.5°        Slotting speed        Slotting IPT x .75       50% of D         (.5 xD) / drop per inch
+           M905                     2.5°        Slotting speed        Slotting IPT x .75       50% of D         (.5 x D) / drop per inch
+           M223            Helical ramp x 5     Same as chart           Same as chart          100% of D   (.75 x D) / drop per inch or mm
+           M233            Helical ramp x 5     Same as chart           Same as chart          100% of D   (.75 x D) / drop per inch or mm
+           M203                     15°         Slotting speed    Slotting IPT or MMPT x .70   50% of D     (.5 x D) / drop per inch or mm
+           M202                     15°         Slotting speed    Slotting IPT or MMPT x .70   50% of D     (.5 x D) / drop per inch or mm
+            E14                     2.5°        Slotting speed    Slotting IPT or MMPT x .75   50% of D     (.5 x D) / drop per inch or mm
+            E13                     2.5°        Slotting speed    Slotting IPT or MMPTx .75    50% of D     (.5 x D) / drop per inch or mm
+            E12                     2.5°        Slotting speed    Slotting IPT or MMPT x .75   50% of D     (.5 x D) / drop per inch or mm
+           M104                     2.5°        Slotting speed        Slotting IPT x .75       50% of D         (.5 x D) / drop per inch
+      D = Tool Diameter
+                                                                                           Ramp Angle      Drop (per inch)       Drop (per mm)
+
+                                                                 Use this guide                0.5°           0.0088                0.224
+                                                                 to determine the               1°            0.0175                0.445
+                                                                 maximum ramp                   2°            0.0375                0.953
+                                                 Drop
+                                                 Percent
+                                                                 length.                       2.5°           0.0438                1.113
+                              RA Deg.
+                                                                                                3°            0.0525                1.334
+                            1.00”                                                               5°            0.0875                2.223
+                                                                                                10°           0.1750                4.445
+                                                                                                15°           0.2625                6.668
+
+132
+

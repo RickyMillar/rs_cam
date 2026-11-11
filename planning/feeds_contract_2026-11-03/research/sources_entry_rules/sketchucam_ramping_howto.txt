@@ -1,0 +1,33 @@
+source_id: sketchucam_ramping_howto
+vendor: SketchUcam (open-source CAM plugin)
+title: SketchUcam: how to use ramping
+url: https://swarfer.github.io/sketchucam/howto_ramping.html
+fetched: 2026-11-11 (HTTP 200)
+strength: CAM help (hobby, open source)
+raw_sha256: 546820d794232db028aa0678da8c3daeaf1e149f96777f85d649eb7e25eb6e21
+extraction: HTML to text (tags removed); the passage below is verbatim from that text
+----- quoted passage -----
+in at an angle until the cutter reaches the correct depth.
+Plunge bores use the ramp angle for the helix.
+to full depth. In this case the ramp angle
+limit is 5 degrees. 
+Ramping on an arc, 20 degree limit, 10mm deep, 12 segments in arc
+There are two modes of operation, with and without ramp angle limiting.
+With the ramp angle set to 0 degrees, the angle is not 
+before cutting to ensure that the angles are sensible. 
+However, ramping on arcs will be limited to 45 degrees 
+With the ramp angle limit set from 1 to 45 degrees the actual cut angle is always less than or equal to the given angle.
+As many ramp movements as are needed to get to depth at the angle given will be generated.
+The number of ramps must always be an even number so the count is rounded up, thus reducing the angle slightly in many cases.
+Set the 'Ramp angle limit' to 0 for no limit, or to a value from 1 to 45 degrees for a limited angle.
+Note that small angle limits may significantly increase your cut time.
+rectangle, the long cuts are just over 100mm, and the 
+If you use a 'normal' V-tab the angles may be much higher than the limit angle for your toolbit. To make it easy to 
+find a V-tab width that preserves the ramp angle limit, a tool has been added to the Tools|Phlatboyz menu.
+Set the ramp angle limit
+These values will preserve the selected ramp angle through V-tabs, and also preserve the actual V-tab height. (V-tabs
+limited ramp angle. Might not matter on plywood, but will matter on aluminum and on angle limited cutter types.
+The helix angle used for boring holes will be limited to the ramp angle if it is set > 0.
+Limiting the helix angle means that the number of cuts will vary with diameter, requiring more cuts for the inside of a hole
+than for the final diameter cuts. This is particularly noticeable at low ramp limit angles.
+Ramp limit 5 degrees.

@@ -1,0 +1,23 @@
+source_id: carbide3d_community_use_of_ramping_with_wood
+vendor: Carbide 3D community forum (user posts; "staff flag" marks a forum staff account)
+title: Use of Ramping with wood
+url: https://community.carbide3d.com/t/use-of-ramping-with-wood/66786 (read as https://community.carbide3d.com/t/use-of-ramping-with-wood/66786.json)
+fetched: 2026-11-11 (HTTP 200)
+strength: forum (weak)
+raw_sha256: 826a7d0c86f35901bb74627742298f1e73fe7bedd2773a405c3c5ed890a10b8d
+extraction: Discourse JSON, HTML tags removed; verbatim posts
+----- quoted passage -----
+--- post 1, user NancynBob, staff flag False, 2023-08-19
+Simple question and maybe a request.
+Working with wood.  When should I NOT use ramping?  It seems like it’s a stress reliever from plunging.
+If the answer is nearly always, how about making that a default?
+--- post 2, user WillAdams, staff flag True, 2023-08-19
+Usually ramping wouldn’t be used when one is in a hurry, or wants an efficient cut.
+I only turn it on for cut where I’m concerned the entry will show when cutting wood.
+--- post 3, user Bnturnbo, staff flag False, 2023-08-19
+Probably a silly question but what is ramping?
+--- post 4, user WillAdams, staff flag True, 2023-08-19
+It is having a cut angle in for entry — it’s an option in Carbide Create Pro and some other CAM tools:
+image1920×1152 61.3 KB
+as opposed to:
+image1920×1152 58.1 KB

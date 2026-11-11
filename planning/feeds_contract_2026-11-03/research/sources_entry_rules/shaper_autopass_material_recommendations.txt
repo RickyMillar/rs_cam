@@ -1,0 +1,62 @@
+source_id: shaper_autopass_material_recommendations
+vendor: Shaper Tools (Origin handheld CNC router)
+title: AutoPass Material Recommendations
+url: https://support.shapertools.com/hc/en-us/articles/10479614133915-autopass-material-recommendations
+fetched: 2026-11-11 (HTTP 200)
+strength: primary vendor (router maker)
+raw_sha256: cc1e04968004ddd1cf50a4f339f13cd0a939ea916262fded03beba0fe3b4aedc
+extraction: HTML to text; the table cells print one per line, in the column order of the header
+----- quoted passage -----
+AutoPass Material Recommendations
+The table below provides an overview of recommended cut settings for AutoPass based on material type. Note that this list is intended as a point of departure. You should take necessary precautions to ensure that your cut settings are appropriate for your specific material.
+Material
+Cutter diameter,
+flute type
+Spindle Speed 
+Plunge Speed (Ramp Angle)
+Auto Speed
+Pass Depth
+Non-ferrous metals (Brass, Aluminum)
+3mm/0.125in, single O-flute
+2
+50 mmpm
+2 ipm per min (~4°)
+100mmpm/
+4ipm
+1mm/0.04in
+Hardwoods (Oak, Walnut)
+6mm/0.25in, 2-flute Upcut spiral
+4
+250mmpm
+10ipm per min (~20°)
+250mmpm/
+10ipm
+6mm/0.25in
+Softwoods (Pine, Cedar)
+6mm/0.25in, 2-flute Upcut spiral
+5
+350mmpm/
+14ipm per min (~27°)
+250mmpm/
+10ipm
+6mm/0.25in
+Composites (Plywood, MDF)
+6mm/0.25in, 2-flute Upcut spiral
+5
+350mmpm/
+14ipm per min (~27°)
+250mmpm/
+10ipm
+6mm/0.25in
+Solid Surfaces (Corian, e.g.)
+6mm/0.25in, 2-flute Upcut spiral
+5
+350mmpm/
+14ipm per min (~27°)
+250mmpm/
+10ipm
+6mm/0.25in
+Plastics (Acrylic)
+3mm/0.125in, single O-flute
+4
+125mmpm/

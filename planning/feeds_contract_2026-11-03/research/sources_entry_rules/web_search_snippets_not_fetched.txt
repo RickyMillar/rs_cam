@@ -1,0 +1,26 @@
+source_id: web_search_snippets_not_fetched
+title: Leads read in web-search result text only, 2026-11-11. The page itself refused the fetch. These are NOT stored sources. Do not derive a constant from this file.
+strength: snippet (weaker than forum: the wording below is the search tool's rendering, not checked against the page)
+
+1. Autodesk Fusion forum, "Minimum Helix Diameter",
+   https://forums.autodesk.com/t5/fusion-manufacture-forum/minimum-helix-diameter/td-p/8516994 (HTTP 403 to two fetch tools)
+   search text: 'the Fusion built in default for 2d adaptive helix diameter is "Math.max((tool_diameter - 2 * tool_cornerRadius) * 0.95; tool_diameter * 0.25)", which for a flat end mill is pretty well just the end mill diameter.'
+   search text: 'most tools don't allow more than about 3 degrees of ramping motion'
+2. Autodesk Fusion forum, "2D Contour, Ramping Angle",
+   https://forums.autodesk.com/t5/fusion-manufacture-forum/2d-contour-ramping-angle/m-p/6480491 (HTTP 403)
+   search text: 'the ramp angle is by default 2 degrees'
+   (The stored Fusion help text, planning/extrapolation_2026-09-24/fetch/G10/sources/fusion_adaptive_roughing_reference.txt,
+   prints the fields "Ramping Angle (deg)", "Helical Ramp Diameter", "Minimum Ramp Diameter" with no default value.)
+3. Carveco help, "Toolpaths and Machining: Ramping",
+   https://support.carveco.com/hc/en-gb/articles/19574785213852 (HTTP 404 to two fetch tools)
+   search text: 'Ramp Angle: Controls slope steepness (e.g., 5° to 10°).'
+4. Seco Tools, "Helical Interpolate Like A Pro", https://www.secotools.com/article/helical_interpolate_like_a_pro
+   (HTTP 200, but the article text loads by script; not read)
+   search text: 'helical interpolation ramp angles should be kept between 0.5 and 1 degree'
+5. Ingersoll, PrimoAluR catalogue page, https://ssl.ingersoll-imc.com/resources/pdf/new-420-2-p15-primo-alu-r-scem-roughing.pdf (HTTP 403)
+   search text: 'HD = ((DC-(1 x RE)) x 1.9)' (helical hole diameter from cutter diameter DC and corner radius RE)
+6. Mastercam help (copy on scribd.com, not fetched)
+   search text: 'An entry helix will always try to use the maximum possible radius to use more of the side of the end mill and less plunging.'
+7. Easel support, "Easel Pro Feature: Ramping", https://support.easel.com/hc/en-us/articles/5503876590483-Easel-Pro-Feature-Ramping (HTTP 403)
+   The same 20° / 5° sentence is stored verbatim from easel.com in easel_toolpath_ramping.txt.
+8. Datron blog on the single-flute end mill, https://www.datron.com/?p=1530 (HTTP 403). No ramp angle was read.

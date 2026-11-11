@@ -1,0 +1,64 @@
+source_id: imco_m233_inch_helical_ramp_angle
+vendor: IMCO Carbide Tool
+title: M233 Series (inch) speed and feed chart
+url: https://cms.imcousa.com//wp-content/uploads/2019/11/M233-Series-Inch.pdf
+fetched: 2026-11-11 (HTTP 200)
+strength: primary vendor (metal-cutting end mills; contrast for wood)
+raw_sha256: bbc13cf56f67c2d0b9b97c26f74785d5e484002446a029963b034dd93d5c8d4e
+extraction: pdftotext -layout
+----- quoted passage -----
+M233 Series Application Guide – Speed & Feed (inch)
+
+      ISO                                   Type of             Axial       Radial     Number      Speed                   Feed (Inches per Tooth)
+                  Work Material
+     Code                                     Cut               DOC          DOC       of Flutes   (SFM)   1/4     3/8         1/2           5/8        3/4         1
+                                             Slotting            1xD         1xD          3         800    .0030   .0045      .0060         .0075      .0090       .0120
+                                        Peripheral - Rough      ≤2xD         .5 x D       3        1000    .0040   .0060      .0080         .0100      .0120       .0160
+                Aluminum Alloys                                                           3        1000    .0038   .0056      .0075         .0094      .0113       .0150
+                                        Peripheral - Rough     >2-3xD        .5 x D
+                2024, 6061, 7075
+                                        Peripheral - Rough     >3-4xD       .45 x D       3         900    .0033   .0049      .0065         .0081      .0098       .0130
+                                       *Helical Ramp Angle      3.0 deg.     1xD          3         800    .0024   .0036      .0048         .0060      .0072       .0096
+                                             Slotting           .75 x D      1xD          3         500    .0023   .0034      .0045         .0056      .0068       .0090
+
+                High Silicon            Peripheral - Rough      ≤2xD         .4 x D       3         700    .0029   .0043      .0057         .0071      .0086       .0114
+
+                Aluminum                Peripheral - Rough     >2-3xD        .4 x D       3         700    .0028   .0041      .0055         .0069      .0083       .0110
+
+                A380, A390              Peripheral - Rough     >3-4xD       .375 x D      3         600    .0024   .0036      .0048         .0060      .0072       .0096
+                                       *Helical Ramp Angle      2.5 deg.     1xD          3         500    .0018   .0027      .0036         .0045      .0054       .0072
+                                             Slotting            1xD         1xD          3         800    .0030   .0045      .0060         .0075      .0090       .0120
+                                        Peripheral - Rough      ≤2xD         .5 x D       3        1000    .0040   .0060      .0080         .0100      .0120       .0160
+
+                Magnesium Alloys        Peripheral - Rough     >2-3xD        .5 x D       3        1000    .0038   .0056      .0075         .0094      .0113       .0150
+                                        Peripheral - Rough     >3-4xD       .45 x D       3         900    .0033   .0049      .0065         .0081      .0098       .0130
+                                                                3.0 deg.                  3         800    .0024   .0036      .0048         .0060      .0072       .0096
+    N
+                                       *Helical Ramp Angle                   1xD
+                                             Slotting           .75 x D      1xD          3         500    .0019   .0028      .0037         .0046      .0056       .0074
+                                        Peripheral - Rough      ≤2xD         .4 x D       3         600    .0023   .0035      .0046         .0058      .0069       .0092
+                Copper Alloys,                                                            3         600    .0023   .0034      .0045         .0056      .0068       .0090
+                                        Peripheral - Rough     >2-3xD        .4 x D
+                Brass
+                                        Peripheral - Rough     >3-4xD       .375 x D      3         500    .0020   .0029      .0039         .0049      .0059       .0078
+                                       *Helical Ramp Angle      2.5 deg.     1xD          3         500    .0015   .0022      .0030         .0037      .0044       .0059
+                                             Slotting           .75 x D      1xD          3         500    .0018   .0026      .0035         .0044      .0053       .0070
+                                        Peripheral - Rough      ≤2xD         .4 x D       3         600    .0022   .0033      .0044         .0055      .0066       .0088
+
+                Bronze                  Peripheral - Rough     >2-3xD        .4 x D       3         600    .0021   .0032      .0042         .0053      .0063       .0084
+                                        Peripheral - Rough     >3-4xD       .375 x D      3         500    .0018   .0026      .0035         .0044      .0053       .0070
+                                       *Helical Ramp Angle      2.0 deg.     1xD          3         500    .0014   .0021      .0028         .0035      .0042       .0056
+                                             Slotting           .75 x D      1xD          3         500    .0023   .0034      .0045         .0056      .0068       .0090
+
+                Composites,             Peripheral - Rough      ≤2xD         .4 x D       3         700    .0029   .0043      .0057         .0071      .0086       .0114
+
+                Plastics,               Peripheral - Rough     >2-3xD        .4 x D       3         700    .0028   .0041      .0055         .0069      .0083       .0110
+
+                Fiberglass              Peripheral - Rough     >3-4xD       .375 x D      3         600    .0024   .0036      .0048         .0060      .0072       .0096
+                                       *Helical Ramp Angle      3.0 deg.     1xD          3         500    .0018   .0027      .0036         .0045      .0054       .0072
+
+*Straight-Line Ramp Angle = Helical ramp angle x 5 for entry up to 1 x D.                                                             ≈ Approximately Equals     < Less Than
+                                                                                                                                      ≤ Less Than or Equal To    > Greater Than
+Tool Tip: M233 Rougher end mills show up to 20% power reduction from M223 in the same cut.                                            ≥ Greater Than or Equal To = Equals
+                                                                                                                                      × Multiply
+

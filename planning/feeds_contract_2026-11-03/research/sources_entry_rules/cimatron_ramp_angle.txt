@@ -1,0 +1,17 @@
+source_id: cimatron_ramp_angle
+vendor: Cimatron
+title: Entry End: Max. Ramp Angle (Cimatron 2026 help)
+url: https://help.cimatron.com/en/2026/Parameters/Motion_Parameters/entry/entry_ramp_angle.htm
+fetched: 2026-11-11 (HTTP 200)
+strength: CAM help (no default value printed)
+raw_sha256: 4951a7ae34f4bce153c0f400a2effc8e2cd24e1b99f7b1ec9c9facec557a5e91
+extraction: HTML to text (tags removed); the passage below is verbatim from that text
+----- quoted passage -----
+Ramp Angle /
+ Max. Ramp Angle /
+ Plunge Ramp Angle
+Angle of cutter entry into the material. An angle of 90 degrees means that there is no ramping.
+Ramping is a tool entry method whereby the tool enters the part by gradually increasing in depth, preventing any shock loading on the tool to avoid poor tool life or premature tool failure. The angle of entry is determined by a defined ramp angle.
+If the angle is less than 90 degrees, the cutter approach will be by helical motions and the following additional parameters are displayed: Min. Plunge Size and Max. Ramp Radius (this parameter is the maximum radius of the helical approach).
+This parameter is set in the Entry & End Points section of the Procedure Parameter Table.
+For the Automated 

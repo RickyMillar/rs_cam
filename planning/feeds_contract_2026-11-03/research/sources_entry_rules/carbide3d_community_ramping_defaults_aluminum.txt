@@ -1,0 +1,15 @@
+source_id: carbide3d_community_ramping_defaults_aluminum
+vendor: Carbide 3D community forum (user posts; "staff flag" marks a forum staff account)
+title: Ramping defaults for Aluminum?
+url: https://community.carbide3d.com/t/ramping-defaults-for-aluminum/66390 (read as https://community.carbide3d.com/t/ramping-defaults-for-aluminum/66390.json)
+fetched: 2026-11-11 (HTTP 200)
+strength: forum (weak)
+raw_sha256: 3c5854cb2467f7237ae7dee3ebb4cdf883c4d52b1aa6d5d4d6b83feb8e4ebfe7
+extraction: Discourse JSON, HTML tags removed; verbatim posts
+----- quoted passage -----
+--- post 1, user RyanLM, staff flag False, 2023-08-06
+I see ramping is defaulted to 20 in Carbide Create Pro, I see some videos from Carbide where they lower that to 5.  Any community thoughts on what is good for ramping for Aluminum?  Also, is it worthwhile for wood?
+Thanks!
+--- post 2, user Tod1d, staff flag False, 2023-08-06
+For 1/4" cutters and up, I use 3° for aluminum.  Shallower for smaller cutters. 5° for wood.
+For wood, yes it does have it’s place. Anywhere a plunge will result in burning the wood. I use ramps on my surfacing paths.

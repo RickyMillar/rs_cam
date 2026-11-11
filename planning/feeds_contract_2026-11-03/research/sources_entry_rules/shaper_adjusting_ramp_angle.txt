@@ -1,0 +1,22 @@
+source_id: shaper_adjusting_ramp_angle
+vendor: Shaper Tools
+title: Adjusting the ramp angle (plunge speed); Ramping into Each Pass
+url: https://support.shapertools.com/hc/en-us/articles/10123216598427-adjusting-the-ramp-angle-plunge-speed and https://support.shapertools.com/hc/en-us/articles/10123238280219-ramping-into-each-pass
+fetched: 2026-11-11 (HTTP 200)
+strength: primary vendor (router maker)
+raw_sha256: c3a5aea93440fbb344e27c87afeac240ffc72349bcc24ea8ca59c6a4b5f1ce9a
+extraction: HTML to text (tags removed); the passage below is verbatim from that text
+----- quoted passage -----
+Adjusting the ramp angle (plunge speed)
+Adjusting the ramp angle
+You can use the Plunge Speed setting in Origin’s Speeds Menu to adjust the angle of the ramp between each pass. Ramping results in superior cut quality and prolongs the life of your router bits.
+To adjust the plunge speed, go to Cut Mode and tap Speeds.
+The angle of  the ramp is measured from the surface of your workpiece. 0 degrees is exactly parallel to the surface of your workpiece, 90 degrees is exactly perpendicular to the surface of your workpiece.
+A faster plunge speed will result in a steeper, shorter ramp into each pass.
+A slower plunge speed will result in a shallower, longer ramp angle.
+Learn more about which ramp angle is best for your project in our AutoPass Material Recommendations.
+
+[second page: Ramping into Each Pass]
+Ramping into Each Pass
+Using AutoPass, Origin will Ramp into each pass. You can adjust the angle of the ramp by adjusting your plunge speed. Learn more about adjusting your Ramp Angle here.
+Ramping on Origin's Screen

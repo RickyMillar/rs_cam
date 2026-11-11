@@ -1,0 +1,102 @@
+source_id: freecad_cam_ramp_entry_dressup_defaults
+vendor: FreeCAD project
+title: FreeCAD CAM workbench, Ramp Entry dressup: src/Mod/CAM/Path/Dressup/Gui/RampEntry.py (branch main; last commit 426d03d1bdbfab508be4476852b9e1756cbba6f0, 2026-09-30)
+url: https://raw.githubusercontent.com/FreeCAD/FreeCAD/main/src/Mod/CAM/Path/Dressup/Gui/RampEntry.py
+fetched: 2026-11-11 (HTTP 200)
+strength: CAM default (source code)
+raw_sha256: 9e14da8943a1e49f4f26361781132f02dd0af21e5965cc171e540287961abb2b
+extraction: source file, verbatim lines
+----- quoted passage -----
+[lines 50-102]
+        )
+        obj.addProperty(
+            "App::PropertyAngle",
+            "Angle",
+            "Path",
+            QT_TRANSLATE_NOOP("App::Property", "Angle of ramp"),
+        )
+        obj.addProperty(
+            "App::PropertyEnumeration",
+            "Method",
+            "Path",
+            QT_TRANSLATE_NOOP(
+                "App::Property",
+                "Select ramping method."
+                "\n\nRamp Method 0: Helix like path."
+                "\nRamp Method 1: Ramp down at rampangle along the path"
+                " and move backwards to the original plunge end point."
+                "\nRamp Method 2: Travel at start depth along the path"
+                " and Ramp backwards at rampangle along the path to the original plunge end point."
+                "\nRamp Method 3: Ramp down along the path until traveled half of the Z distance,"
+                " change direction and ramp backwards to the original plunge end point."
+                "\nRamp Method 4: Ramp down at rampangle along the path,"
+                " continue with the original path, extend and close the path on the final loop",
+            ),
+        )
+        obj.addProperty(
+            "App::PropertyBool",
+            "UseStartDepth",
+            "StartDepth",
+            QT_TRANSLATE_NOOP(
+                "App::Property",
+                "Should the dressup ignore motion commands above DressupStartDepth",
+            ),
+        )
+        obj.addProperty(
+            "App::PropertyDistance",
+            "DressupStartDepth",
+            "StartDepth",
+            QT_TRANSLATE_NOOP(
+                "App::Property",
+                "The depth where the ramp dressup is enabled."
+                "\nAbove this depth ramps are not generated,"
+                " but motion commands are passed through as is.",
+            ),
+        )
+        obj.addProperty(
+            "App::PropertyBool",
+            "RampVertical",
+            "Path",
+            QT_TRANSLATE_NOOP("App::Property", "Calculate ramp angle from vertical plane"),
+        )
+
+        # populate the enumerations
+
+[lines 195-231]
+
+    def setup(self, obj):
+        obj.Angle = 60
+        obj.Method = obj.Proxy.propertyEnumerations(dataType="data")[0][1].index("RampMethod3")
+        baseOp = PathDressup.baseOp(obj.Base)
+        if hasattr(baseOp, "StartDepth"):
+            obj.setExpression("DressupStartDepth", f"{baseOp.Name}.StartDepth")
+
+    def execute(self, obj):
+        if not obj.Base:
+            obj.Path = Path.Path()
+            return
+        if not obj.Base.isDerivedFrom("Path::Feature"):
+            obj.Path = Path.Path()
+            return
+        if not obj.Base.Path:
+            obj.Path = Path.Path()
+            return
+        if not PathDressup.baseOp(obj.Base).Active:
+            path = Path.Path("(inactive operation)")
+            obj.Path = path
+            return
+
+        PathDressup.placeWithBase(obj)
+
+        if obj.Angle >= 90:
+            obj.Angle = 89.9
+        elif obj.Angle <= 0:
+            obj.Angle = 0.1
+
+        angle_rad = math.radians(obj.Angle.Value)
+
+        args = {
+            "commands": obj.Base.Path.Commands,
+            "method": obj.Proxy.propertyEnumerations(dataType="data")[0][1].index(obj.Method),
+            "angle_rad": math.pi / 2 - angle_rad if obj.RampVertical else angle_rad,
+            "tc": PathDressup.toolController(obj.Base),

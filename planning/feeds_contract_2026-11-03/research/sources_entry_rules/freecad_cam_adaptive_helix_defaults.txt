@@ -1,0 +1,91 @@
+source_id: freecad_cam_adaptive_helix_defaults
+vendor: FreeCAD project
+title: FreeCAD CAM workbench, Adaptive operation: src/Mod/CAM/Path/Op/Adaptive.py and src/Mod/CAM/libarea/Adaptive.cpp (branch main; last commit on Adaptive.py 54157ea9ccef0036d1102887f933171dda2b2fd6, 2026-10-19)
+url: https://raw.githubusercontent.com/FreeCAD/FreeCAD/main/src/Mod/CAM/Path/Op/Adaptive.py and https://raw.githubusercontent.com/FreeCAD/FreeCAD/main/src/Mod/CAM/libarea/Adaptive.cpp
+fetched: 2026-11-11 (HTTP 200)
+strength: CAM default (source code)
+raw_sha256: b56dba1a09c15a3d41c3212f3d063e72970c83ad97fc1c59b1f071ce894ba65b
+extraction: source file, verbatim lines
+----- quoted passage -----
+[Adaptive.py, property texts, lines 1684-1740]
+        obj.setEditorMode("AdaptiveOutputState", 2)  # hide this property
+        obj.addProperty(
+            "App::PropertyAngle",
+            "HelixMaxRampAngle",
+            "AdaptiveHelixEntry",
+            QT_TRANSLATE_NOOP(
+                "App::Property",
+                "The maximum allowable helix ramp entry angle (degrees)"
+                "\nSet to zero to disable limitation by ramp angle",
+            ),
+        )
+        obj.addProperty(
+            "App::PropertyLength",
+            "HelixMaxPitch",
+            "AdaptiveHelixEntry",
+            QT_TRANSLATE_NOOP(
+                "App::Property",
+                "The maximum allowable descent in a single revolution of the helix"
+                "\nSet to zero to disable limitation by pitch",
+            ),
+        )
+        obj.addProperty(
+            "App::PropertyAngle",
+            "HelixConeAngle",
+            "AdaptiveHelixEntry",
+            QT_TRANSLATE_NOOP(
+                "App::Property",
+                "Helix cone angle (degrees)",
+            ),
+        )
+        obj.addProperty(
+            "App::PropertyPercent",
+            "HelixMaxDiameterPercent",
+            "AdaptiveHelixEntry",
+            QT_TRANSLATE_NOOP(
+                "App::Property",
+                "Maximum (and nominal) helix entry diameter, as a percentage of the tool diameter",
+            ),
+        )
+        obj.addProperty(
+            "App::PropertyPercent",
+            "HelixMinDiameterPercent",
+            "AdaptiveHelixEntry",
+            QT_TRANSLATE_NOOP(
+                "App::Property",
+                "Minimum acceptable helix entry diameter, as a percentage of the tool diameter",
+            ),
+        )
+        obj.addProperty(
+            "App::PropertyBool",
+            "UseOutline",
+            "Adaptive",
+            QT_TRANSLATE_NOOP(
+                "App::Property",
+                "Uses the outline of the base geometry.",
+            ),
+        )
+
+[Adaptive.py, defaults, lines 1795-1798]
+        obj.HelixMaxRampAngle = 5
+        obj.HelixConeAngle = 0
+        obj.HelixMaxDiameterPercent = 100
+        obj.HelixMinDiameterPercent = 10
+
+[Adaptive.py, lines 365-369]
+        obj.HelixMinDiameterPercent = max(obj.HelixMinDiameterPercent, 10)
+        obj.HelixMaxDiameterPercent = max(obj.HelixMaxDiameterPercent, obj.HelixMinDiameterPercent)
+
+        helixDiameter = obj.HelixMaxDiameterPercent / 100 * op.tool.Diameter.Value
+        helixMinDiameter = obj.HelixMinDiameterPercent / 100 * op.tool.Diameter.Value
+
+[Adaptive.cpp, lines 1763-1771]
+    if (helixRampTargetDiameter < NTOL) {
+        helixRampTargetDiameter = toolDiameter;
+    }
+    helixRampTargetDiameter = min(helixRampTargetDiameter, toolDiameter);
+    helixRampMinDiameter = max(helixRampMinDiameter, toolDiameter / 8);
+    helixRampTargetDiameter = max(helixRampTargetDiameter, helixRampMinDiameter);
+
+    helixRampMaxRadiusScaled = long(helixRampTargetDiameter * scaleFactor / 2);
+    helixRampMinRadiusScaled = long(helixRampMinDiameter * scaleFactor / 2);

@@ -1,0 +1,45 @@
+source_id: amana_spiral_plunge_solid_wood_v5
+vendor: Amana Tool (copy on a reseller CDN)
+title: 2 Flute Solid Carbide Spiral Plunge For Solid Wood Router Bits (speed chart v5; up-cut and down-cut tool numbers)
+url: https://cdn.shopify.com/s/files/1/1558/5651/files/Solid-Carbide-Spiral-Plunge-Solid-Wood-v5.pdf
+fetched: 2026-11-11 (HTTP 200)
+strength: primary vendor (wood)
+raw_sha256: 560de2ddcb99f48f4172c845404f7acd54bd4932c534860ef03736808ffeeb38
+extraction: pdftotext -layout
+----- quoted passage -----
+                                                                                                                INDUSTRIAL
+                         2 Flute Solid Carbide Spiral Plunge For Solid Wood Router Bits
+                                      CNC Operating Spindle Speed: 18,000 RPM / Depth of Cut: 1 x Tool Diameter †
+
+
+
+                                                                                                                                     Tool Reference #’s
+                              Diameter                                       Softwood/Hardwood                                Up-Cut Down-Cut            Dia.
+                              2 Flute                          Feed Rate IPM*             Chip Load Per Tooth                  46240       46340         1/8"
+                                                                                                                               46241       46341         1/8"
+                              1/8" (0.125)                          110" - 180"              0.003" - 0.005"
+                                                                                                                               46245       46345        3/16"
+                              3/16" (0.1875)                        150" - 210"              0.004" - 0.006"                   46247         —          7/32"
+                              7/32" (0.21875)                       150" - 210"              0.004" - 0.006"                   46248       46348         1/4"
+                                                                                                                               46249       46349         1/4"
+                              1/4" (0.25)                           180" - 250"              0.005" - 0.007"                   46250         —           1/4"
+                              5/16" (0.3125)                        180" - 250"              0.005" - 0.007"                   46253       46353        5/16"
+                                                                                                                               46257       46357         3/8"
+                              3/8" (0.375)                          210" - 290"              0.006" - 0.008"
+                                                                                                                               46259       46359         3/8"
+                              1/2" (0.50)                           250" - 320"              0.007" - 0.009"                  46259S         —           3/8"
+                                                                                                                               46261       46361         1/2"
+                            *IPM Inches per minute
+                                                                                                                               46263       46363         1/2"
+                                                                                                                                —          46365        1/4"
+
+† Depth of Cut: 1 x D Use recommended feed rate
+                 2 x D Reduce feed rate by 25%
+                 3 x D Reduce feed rate by 50%
+  Simple Machining Calculations:
+  To find RPM: (SFM x 3.82) / diameter of tool
+  To find SFM: 0.262 x diameter of tool x RPM
+  To find Feed Rate IPM: RPM x # of flutes x chip load
+  To find Chip Load: Feed Rate IPM / (RPM x # of flutes)
+  To find Ramp Down: Feed Rate IPM / # of flutes
+  Disclaimer: It is important to understand that these values are only recommendations.                         © Copyright Amana Tool® All Rights Reserved

@@ -1,0 +1,35 @@
+source_id: leitz_lexicon_ed7_ch05_plunging_methods
+vendor: Leitz (wood tooling maker)
+title: Leitz Lexicon Edition 7, Version 3, 05/2026, chapter 5 Routing
+url: https://www.leitz.org/fileadmin/Downloads/Lexicon/EN/Leitz_Lexicon_Edition_7_-_05_Routing.pdf
+fetched: 2026-11-10 by the session that wrote large_straight_bit_roughing_2026-11-10.md (11.4 MB PDF); this text was read from that copy on 2026-11-11
+strength: primary vendor (wood)
+raw_sha256: 76cbbc2490174bba48819d840712c078fdf5aa7bb662065580011e7a8db07072
+extraction: pdftotext -layout. Page 3 of the chapter (PDF page 5) was also rendered and read as an image: the three figures show a ramp, a spiral and an axial plunge and print NO angle, pitch or diameter.
+----- quoted passage -----
+[chapter page 3, section 5.1 Sizing and grooving, "Operation notes"]
+Operation notes                   Recommended plunging methods:
+The following plunging methods are recommended for sizing and grooving tools:
+Ramp plunging                                 Spiral plunging
+Router bits with mainly negative cutting shear angles and HW solid router bits with
+RH/LD and LH/RD and router bits without plunging edge are not suitable for axial
+plunging.
+Axial plunging
+
+[chapter page 4, tools with alternating twist (compression)]
+Tools with alternating twist should
+plunge at least 0.5 mm deeper into the
+material than the specified lpos.
+ap min = lpos. + 0.5 mm
+
+[insert cutter, text lines 808-810]
+Tungsten carbide turnblade knife clamped by wedge. Design without plunging tip
+only suitable for ramp plunging. Design with plunging tip limited suitable for axial
+plunging.
+
+[DP (diamond) shank cutter, text lines 3186-3190]
+Technical information:
+Solid tungsten carbide tool body for increased stability and smooth running. DP face
+edge suitable for plunging. Slightly positive shear angle for improved chip removal
+when ramp plunging. Axial infeed for grooving and sizing maximum 1.0 - 1.5 x D.
+Resharpenable up to 3 times with normal wear.

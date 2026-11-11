@@ -1,0 +1,14 @@
+source_id: easel_toolpath_ramping
+vendor: Inventables (Easel CAM)
+title: Toolpath Ramping (New in Easel, May 2021)
+url: https://easel.com/features/toolpath-ramping
+fetched: 2026-11-11 (HTTP 200)
+strength: CAM default (CAM vendor that also sells hobby routers)
+raw_sha256: a63971e255523ec537f118fec7741f9aef1f7bc13c421ad56d18e16baf6c8e6d
+extraction: HTML to text (tags removed); the passage below is verbatim from that text
+----- quoted passage -----
+ New in Easel · May 2021
+Toolpath Ramping
+Easel Pro users now have the option to enable ramping for all shapes on a workpiece. Instead of a vertical plunge, the bit will ramp-in at the specified angle along the original toolpath. This behavior lowers the physical forces on a bit when it engages with the material, thus extending tool life and reducing the possibility of broken bits.
+Ramping can be enabled under the "Cut Settings" menu for the current workpiece. We recommend using the 20° angle ramp for soft woods, plywood, and MDF like materials. The shallower 5° angle ramp is good for hardwoods and soft metals like aluminum.
+Once enabled, ramping applies to all shapes that are in the current workpiece. This means both offset fill and raster fill pocket cuts as well as any outline cut.

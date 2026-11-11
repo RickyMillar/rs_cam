@@ -1,0 +1,11 @@
+source_id: vectric_v12_pocket_ramp_plunge_moves
+vendor: Vectric
+title: Pocketing Toolpath (Aspire V12.0 help)
+url: https://docs.vectric.com/docs/V12.0/Aspire/ENU/Help/form/uiPocketMachineForm/index.html
+fetched: 2026-11-11 (HTTP 200)
+strength: CAM help (no default value printed)
+raw_sha256: d58ad61f0f364bfc8eb500cc06d973ea2c17afad8764f36e02b077c87d69bcee
+extraction: HTML to text (tags removed); the passage below is verbatim from that text
+----- quoted passage -----
+ Ramp Plunge Moves
+The cutter can be ramped over a distance into the pocket instead of plunging vertically. This approach reduces heat build-up that damages the cutter and also reduces the load on the spindle and z axis bearings.

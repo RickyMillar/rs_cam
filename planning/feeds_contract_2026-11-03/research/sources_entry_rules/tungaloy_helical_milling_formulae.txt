@@ -1,0 +1,31 @@
+source_id: tungaloy_helical_milling_formulae
+vendor: Tungaloy
+title: Mastering Helical Milling: Complete Guide to Tool Selection, Ramping Angle Calculation, and Cutting Parameter Optimization
+url: https://tungaloy.com/?p=747457
+fetched: 2026-11-11 (HTTP 200)
+strength: primary vendor (metal; formulae only)
+raw_sha256: 0430b152ef2335893f384cce9682ba62ce09c750983b6e1b4345ee055f9c41aa
+extraction: HTML to text (tags removed); the passage below is verbatim from that text
+----- quoted passage -----
+Helical pitch
+Ph
+Z-axis movement per one tool revolution
+Once these three values are set, the tool-center path diameter and the tool-center travel distance per revolution can be determined.
+ Tool-center path diameter = Dh - Dc
+Tool-center travel distance per revolution = (Dh - Dc) x pi
+How to Think About Ramping Angle
+Once the helical pitch is set, the ramping angle can be calculated.
+ Ramping angle = atan(helical pitch / tool-center travel distance per revolution)
+For example, when the hole diameter is 50 mm, the cutter diameter is 10 mm, and the helical pitch is 5 mm:
+ Tool-center path diameter = 50.0 - 10.0 = 40.0 mm
+Tool-center travel distance per revolution = 40.0 x pi = 125.7 mm
+Ramping angle = atan(5.0 / 125.7) = approx. 2.3 deg
+If you want to set the ramping angle first, calculate the helical pitch with the following formula.
+ Helical pitch = tool-center travel distance per revolution x tan(ramping angle)
+POINT
+The calculation basis is the tool-center path diameter, not the hole diameter itself
+In helical milling calculations, it is important to use the diameter of the path drawn by the tool center, not the hole diameter itself.
+3. Tool-Selection Points for Helical Milling
+In helical milling, any cutter that fits inside the hole diameter is not automatically suitable. You need to confirm whether the tool supports helical milling, whether the hole diameter is within the minimum and maximum supported helical-hole range, and whether the pitch and ramping angle are within the tool specifications.
+Types of Cutters Used for Helical Milling
+The main candidates are shoulder milling cutters with ramping capability and high-feed cutters with ramping capability. For both types, confirm whether the tool can be used for helical milling, what the maximum ramping angle is, and whether the target diameter falls within the minimum and maximum helical-hole range.
