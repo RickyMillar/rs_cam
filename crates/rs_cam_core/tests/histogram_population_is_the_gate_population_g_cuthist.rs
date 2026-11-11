@@ -53,7 +53,6 @@
 
 use rs_cam_core::compute::catalog::OperationType;
 use rs_cam_core::compute::tool_config::ToolMaterial;
-use rs_cam_core::feeds::vendor_lut::{LutOperationFamily, LutPassRole};
 use rs_cam_core::ids::ToolpathId;
 use rs_cam_core::machine::MachineProfile;
 use rs_cam_core::machine::kinematics::PredictedFeedMap;
@@ -227,20 +226,16 @@ fn histogram_population_is_the_gate_population() {
     let material = material();
     let machine = MachineProfile::shapeoko_makita();
     let tolerance = ToleranceBands::default();
-    let ctx = ToolpathLoadContext {
-        toolpath_id: TP,
-        tool: &tool,
-        material: &material,
-        operation_family: LutOperationFamily::Pocket,
-        pass_role: LutPassRole::Roughing,
-        operation_feed_rate_mm_min: OP_FEED,
-        steady_feed: rs_cam_core::machine::SteadyFeedMmMin::op_feed_only(OP_FEED),
-        operation_kind: OperationType::Pocket,
-        spans: None,
-        drill_op: None,
-        commanded_thinning_lift: None,
-        radial_stock_to_leave_mm: None,
-    };
+    let ctx = ToolpathLoadContext::of_operation(
+        TP,
+        &rs_cam_core::compute::catalog::OperationConfig::new_default(OperationType::Pocket),
+        &tool,
+        &material,
+        rs_cam_core::machine::SteadyFeedMmMin::op_feed_only(OP_FEED),
+        None,
+        rs_cam_core::limits::CapTable::empty(),
+        None,
+    );
     let env = GateEnv {
         sim_trace: Some(&trace),
         machine: Some(&machine),
@@ -405,20 +400,16 @@ fn not_applicable_has_no_card_and_unmodelled_is_not_measured() {
     let material = material();
     let machine = MachineProfile::shapeoko_makita();
     let tolerance = ToleranceBands::default();
-    let mut ctx = ToolpathLoadContext {
-        toolpath_id: TP,
-        tool: &tool,
-        material: &material,
-        operation_family: LutOperationFamily::Pocket,
-        pass_role: LutPassRole::Roughing,
-        operation_feed_rate_mm_min: OP_FEED,
-        steady_feed: rs_cam_core::machine::SteadyFeedMmMin::op_feed_only(OP_FEED),
-        operation_kind: OperationType::Pocket,
-        spans: None,
-        drill_op: None,
-        commanded_thinning_lift: None,
-        radial_stock_to_leave_mm: None,
-    };
+    let ctx = ToolpathLoadContext::of_operation(
+        TP,
+        &rs_cam_core::compute::catalog::OperationConfig::new_default(OperationType::Pocket),
+        &tool,
+        &material,
+        rs_cam_core::machine::SteadyFeedMmMin::op_feed_only(OP_FEED),
+        None,
+        rs_cam_core::limits::CapTable::empty(),
+        None,
+    );
     let env = GateEnv {
         sim_trace: None,
         machine: Some(&machine),
@@ -446,7 +437,17 @@ fn not_applicable_has_no_card_and_unmodelled_is_not_measured() {
         .is_none()
     );
 
-    ctx.operation_kind = OperationType::Drill;
+    // P29-6: the context of a drill op (its facts come from the op).
+    let ctx = ToolpathLoadContext::of_operation(
+        TP,
+        &rs_cam_core::compute::catalog::OperationConfig::new_default(OperationType::Drill),
+        &tool,
+        &material,
+        rs_cam_core::machine::SteadyFeedMmMin::op_feed_only(OP_FEED),
+        None,
+        rs_cam_core::limits::CapTable::empty(),
+        None,
+    );
     let verdict = evaluate_toolpath(&ctx, None, Some(&machine), &tolerance);
     for metric in [
         DistributionMetric::Criterion(CriterionKind::Chipload),

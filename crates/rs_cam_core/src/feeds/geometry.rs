@@ -67,19 +67,6 @@ impl RadialThinning {
         }
     }
 
-    /// The rule of a gate context: the op's own pass role (not a routed
-    /// row role). The gate refuses a drill cycle before it reads a chip, so
-    /// this never returns [`Self::DrillCycle`].
-    #[must_use]
-    pub fn of_lut_role(role: crate::feeds::vendor_lut::LutPassRole) -> Self {
-        // EXEMPT(P28-18, F-ThinsChip)
-        match role {
-            crate::feeds::vendor_lut::LutPassRole::Finish => Self::FinishPass,
-            crate::feeds::vendor_lut::LutPassRole::Roughing
-            | crate::feeds::vendor_lut::LutPassRole::SemiFinish => Self::Applied,
-        }
-    }
-
     /// The applied lift at the radial width `ae_mm` on the engaged
     /// diameter `d_eng_mm`: [`peak_chip_thinning_lift`] when the cut thins,
     /// else 1.

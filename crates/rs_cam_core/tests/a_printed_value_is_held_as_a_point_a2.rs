@@ -229,8 +229,6 @@ struct PointCell {
     expected_row: &'static str,
     /// The printed point on the resolved row (scaled; see the module doc).
     point_mm: f64,
-    operation_family: LutOperationFamily,
-    pass_role: LutPassRole,
     /// The axial depth the gate samples cut at.
     sample_doc_mm: f64,
     /// True when the gate resolves the same point row as Suggest. Both
@@ -271,8 +269,6 @@ fn ams159_trace() -> PointCell {
         // P16 item 5 (review D11, the D5 rule): the chip of the printed
         // feed, 90 in/min / (18 000 rpm x 2) x 25.4 = 0.0635 mm.
         point_mm: 0.0635,
-        operation_family: LutOperationFamily::Trace,
-        pass_role: LutPassRole::Finish,
         sample_doc_mm: 0.762,
         gate_reads_the_point: true,
     }
@@ -285,8 +281,6 @@ fn spektra_pocket() -> PointCell {
         tool: tool_of(ToolType::EndMill, 6.0),
         expected_row: "amana-flat-hardwood-pocket-6000-2f-spektra",
         point_mm: 0.127,
-        operation_family: LutOperationFamily::Pocket,
-        pass_role: LutPassRole::Roughing,
         sample_doc_mm: 2.0,
         gate_reads_the_point: true,
     }
@@ -405,20 +399,16 @@ fn assert_the_cell_is_held_as_a_point(cell: &PointCell) {
     let material = hardwood();
     let machine = MachineProfile::default();
     let tolerance = ToleranceBands::default();
-    let ctx = ToolpathLoadContext {
-        toolpath_id: ToolpathId::from_raw(0),
-        tool: &tool_def,
-        material: &material,
-        operation_family: cell.operation_family,
-        pass_role: cell.pass_role,
-        operation_feed_rate_mm_min: FEED,
-        steady_feed: rs_cam_core::machine::SteadyFeedMmMin::op_feed_only(FEED),
-        operation_kind: cell.op,
-        spans: None,
-        drill_op: None,
-        commanded_thinning_lift: None,
-        radial_stock_to_leave_mm: None,
-    };
+    let ctx = ToolpathLoadContext::of_operation(
+        ToolpathId::from_raw(0),
+        &rs_cam_core::compute::catalog::OperationConfig::new_default(cell.op),
+        &tool_def,
+        &material,
+        rs_cam_core::machine::SteadyFeedMmMin::op_feed_only(FEED),
+        None,
+        rs_cam_core::limits::CapTable::empty(),
+        None,
+    );
     let env = GateEnv {
         sim_trace: Some(&trace),
         machine: Some(&machine),

@@ -35,7 +35,6 @@ use rs_cam_core::compute::operation_configs::PocketConfig;
 use rs_cam_core::compute::tool_config::{ToolConfig, ToolFact, ToolId, ToolMaterial, ToolType};
 use rs_cam_core::diagnostics::adapters::from_tool_load::diagnostics_from_load_verdict;
 use rs_cam_core::feeds::suggest::feeds_input_for_operation;
-use rs_cam_core::feeds::vendor_lut::{LutOperationFamily, LutPassRole};
 use rs_cam_core::feeds::{FeedsResult, SpindleStrategy, calculate, embedded_vendor_lut};
 use rs_cam_core::ids::ToolpathId;
 use rs_cam_core::machine::kinematics::PredictedFeedMap;
@@ -192,20 +191,16 @@ fn suggests_own_light_stepover_recipe_is_not_above_the_band_p11b2() {
     let material = material();
     let trace = trace(r.feed_rate_mm_min, rpm_u32);
     let verdict = evaluate_toolpath(
-        &ToolpathLoadContext {
-            toolpath_id: TOOLPATH,
-            tool: &tool,
-            material: &material,
-            operation_family: LutOperationFamily::Pocket,
-            pass_role: LutPassRole::Roughing,
-            operation_feed_rate_mm_min: r.feed_rate_mm_min,
-            steady_feed: rs_cam_core::machine::SteadyFeedMmMin::op_feed_only(r.feed_rate_mm_min),
-            operation_kind: OperationType::Pocket,
-            spans: None,
-            drill_op: None,
-            commanded_thinning_lift: None,
-            radial_stock_to_leave_mm: None,
-        },
+        &ToolpathLoadContext::of_operation(
+            TOOLPATH,
+            &rs_cam_core::compute::catalog::OperationConfig::new_default(OperationType::Pocket),
+            &tool,
+            &material,
+            rs_cam_core::machine::SteadyFeedMmMin::op_feed_only(r.feed_rate_mm_min),
+            None,
+            rs_cam_core::limits::CapTable::empty(),
+            None,
+        ),
         Some(&trace),
         None,
         &ToleranceBands::default(),

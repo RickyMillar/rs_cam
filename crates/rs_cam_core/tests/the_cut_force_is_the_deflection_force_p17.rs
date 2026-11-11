@@ -35,7 +35,6 @@
 use rs_cam_core::compute::catalog::OperationType;
 use rs_cam_core::compute::tool_config::ToolMaterial;
 use rs_cam_core::feeds::predict::tip_deflection_from_engagement;
-use rs_cam_core::feeds::vendor_lut::{LutOperationFamily, LutPassRole};
 use rs_cam_core::ids::ToolpathId;
 use rs_cam_core::machine::{DepthCapRule, MachineProfile};
 use rs_cam_core::material::{Material, WoodSpecies};
@@ -141,22 +140,17 @@ fn ctx<'a>(
     tool: &'a ToolDefinition,
     material: &'a Material,
     op: OperationType,
-    pass_role: LutPassRole,
 ) -> ToolpathLoadContext<'a> {
-    ToolpathLoadContext {
-        toolpath_id: TP,
+    ToolpathLoadContext::of_operation(
+        TP,
+        &rs_cam_core::compute::catalog::OperationConfig::new_default(op),
         tool,
         material,
-        operation_family: LutOperationFamily::Pocket,
-        pass_role,
-        operation_feed_rate_mm_min: 1500.0,
-        steady_feed: rs_cam_core::machine::SteadyFeedMmMin::op_feed_only(1500.0),
-        operation_kind: op,
-        spans: None,
-        drill_op: None,
-        commanded_thinning_lift: None,
-        radial_stock_to_leave_mm: None,
-    }
+        rs_cam_core::machine::SteadyFeedMmMin::op_feed_only(1500.0),
+        None,
+        rs_cam_core::limits::CapTable::empty(),
+        None,
+    )
 }
 
 /// Claim 1: one law, at every sample.
@@ -167,12 +161,7 @@ fn the_force_card_peak_is_the_force_behind_the_deflection_gate() {
     let machine = MachineProfile::shapeoko_makita();
     let trace = trace();
     let tolerance = ToleranceBands::default();
-    let ctx = ctx(
-        &tool,
-        &material,
-        OperationType::Pocket,
-        LutPassRole::Roughing,
-    );
+    let ctx = ctx(&tool, &material, OperationType::Pocket);
     let env = GateEnv {
         sim_trace: Some(&trace),
         machine: Some(&machine),
@@ -267,30 +256,15 @@ fn the_budget_line_follows_the_depth_cap_of_the_body_cut() {
         "P29-4: the Adaptive family is under the force budget"
     );
 
-    let pocket_ctx = ctx(
-        &tool,
-        &material,
-        OperationType::Pocket,
-        LutPassRole::Roughing,
-    );
+    let pocket_ctx = ctx(&tool, &material, OperationType::Pocket);
     assert_eq!(budget_line(&pocket_ctx, &env), Some(budget_n));
-    let adaptive_ctx = ctx(
-        &tool,
-        &material,
-        OperationType::Adaptive,
-        LutPassRole::Roughing,
-    );
+    let adaptive_ctx = ctx(&tool, &material, OperationType::Adaptive);
     assert_eq!(
         budget_line(&adaptive_ctx, &env),
         Some(budget_n),
         "P29-4: the force-budget rule gives the line on an Adaptive"
     );
-    let finish_ctx = ctx(
-        &tool,
-        &material,
-        OperationType::Scallop,
-        LutPassRole::Finish,
-    );
+    let finish_ctx = ctx(&tool, &material, OperationType::Scallop);
     assert_eq!(budget_line(&finish_ctx, &env), None, "finish pass: no line");
     let no_machine = GateEnv {
         sim_trace: Some(&trace),
@@ -406,12 +380,7 @@ fn the_verdict_serialises_the_peak_and_the_budget() {
     let machine = MachineProfile::shapeoko_makita();
     let trace = trace();
     let tolerance = ToleranceBands::default();
-    let ctx = ctx(
-        &tool,
-        &material,
-        OperationType::Pocket,
-        LutPassRole::Roughing,
-    );
+    let ctx = ctx(&tool, &material, OperationType::Pocket);
     let verdict = evaluate_toolpath(&ctx, Some(&trace), Some(&machine), &tolerance);
     let json = serde_json::to_value(&verdict).expect("serialise");
     let reading = json.get("cut_force").expect("the `cut_force` key");
@@ -472,7 +441,7 @@ fn no_force_line_and_a_drill_refuse_as_the_deflection_gate_does() {
         name: "Mystery".to_owned(),
         feed_scale_factor: 1.0,
     };
-    let ctx_custom = ctx(&tool, &custom, OperationType::Pocket, LutPassRole::Roughing);
+    let ctx_custom = ctx(&tool, &custom, OperationType::Pocket);
     let verdict = evaluate_toolpath(&ctx_custom, Some(&trace), Some(&machine), &tolerance);
     assert!(verdict.cut_force.is_none(), "no force line: no reading");
     assert_eq!(
@@ -483,7 +452,7 @@ fn no_force_line_and_a_drill_refuse_as_the_deflection_gate_does() {
     );
 
     let maple = maple();
-    let ctx_drill = ctx(&tool, &maple, OperationType::Drill, LutPassRole::Roughing);
+    let ctx_drill = ctx(&tool, &maple, OperationType::Drill);
     let verdict = evaluate_toolpath(&ctx_drill, Some(&trace), Some(&machine), &tolerance);
     assert!(
         verdict.cut_force.is_none(),

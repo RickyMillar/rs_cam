@@ -137,20 +137,16 @@ fn verdict_and_explanation(
     let t = trace(feed);
     let tolerance = ToleranceBands::default();
     let full = rs_cam_core::tool_load::evaluate_toolpath(
-        &ToolpathLoadContext {
-            toolpath_id: ToolpathId::from_raw(0),
-            tool: &tool,
-            material: &material,
-            operation_family: LutOperationFamily::Scallop,
-            pass_role: LutPassRole::Finish,
-            operation_feed_rate_mm_min: feed,
-            steady_feed: rs_cam_core::machine::SteadyFeedMmMin::op_feed_only(feed),
-            operation_kind: OperationType::Scallop,
-            spans: None,
-            drill_op: None,
-            commanded_thinning_lift: None,
-            radial_stock_to_leave_mm: None,
-        },
+        &ToolpathLoadContext::of_operation(
+            ToolpathId::from_raw(0),
+            &rs_cam_core::compute::catalog::OperationConfig::new_default(OperationType::Scallop),
+            &tool,
+            &material,
+            rs_cam_core::machine::SteadyFeedMmMin::op_feed_only(feed),
+            None,
+            rs_cam_core::limits::CapTable::empty(),
+            None,
+        ),
         Some(&t),
         None,
         &tolerance,
@@ -170,20 +166,16 @@ fn rendered_diagnostics(feed: f64) -> Vec<String> {
     let t = trace(feed);
     let tolerance = ToleranceBands::default();
     let full = rs_cam_core::tool_load::evaluate_toolpath(
-        &ToolpathLoadContext {
-            toolpath_id: ToolpathId::from_raw(0),
-            tool: &tool,
-            material: &material,
-            operation_family: LutOperationFamily::Scallop,
-            pass_role: LutPassRole::Finish,
-            operation_feed_rate_mm_min: feed,
-            steady_feed: rs_cam_core::machine::SteadyFeedMmMin::op_feed_only(feed),
-            operation_kind: OperationType::Scallop,
-            spans: None,
-            drill_op: None,
-            commanded_thinning_lift: None,
-            radial_stock_to_leave_mm: None,
-        },
+        &ToolpathLoadContext::of_operation(
+            ToolpathId::from_raw(0),
+            &rs_cam_core::compute::catalog::OperationConfig::new_default(OperationType::Scallop),
+            &tool,
+            &material,
+            rs_cam_core::machine::SteadyFeedMmMin::op_feed_only(feed),
+            None,
+            rs_cam_core::limits::CapTable::empty(),
+            None,
+        ),
         Some(&t),
         None,
         &tolerance,

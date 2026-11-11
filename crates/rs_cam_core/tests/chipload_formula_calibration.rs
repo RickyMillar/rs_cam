@@ -72,7 +72,6 @@ use std::f64::consts::FRAC_PI_2;
 use rs_cam_core::compute::catalog::OperationType;
 use rs_cam_core::compute::tool_config::ToolMaterial;
 use rs_cam_core::dexel_stock::effective_chip_thickness_mm;
-use rs_cam_core::feeds::vendor_lut::{LutOperationFamily, LutPassRole};
 use rs_cam_core::material::{Material, WoodSpecies};
 use rs_cam_core::stock::simulation_cut::{
     CutKinematics, SimulationCutSample, SimulationCutSummary, SimulationCutTrace,
@@ -453,20 +452,16 @@ fn gate_verdict_at(
     };
     let tolerance = rs_cam_core::tool_load::ToleranceBands::default();
     chipload::evaluate(
-        &rs_cam_core::tool_load::ToolpathLoadContext {
-            toolpath_id: ToolpathId::from_raw(0),
-            tool: &wanaka_tool(),
-            material: &material,
-            operation_family: LutOperationFamily::Pocket,
-            pass_role: LutPassRole::Roughing,
-            operation_feed_rate_mm_min: feed_rate_mm_min,
-            steady_feed: rs_cam_core::machine::SteadyFeedMmMin::op_feed_only(feed_rate_mm_min),
-            operation_kind: OperationType::Pocket,
-            spans: None,
-            drill_op: None,
-            commanded_thinning_lift: None,
-            radial_stock_to_leave_mm: None,
-        },
+        &rs_cam_core::tool_load::ToolpathLoadContext::of_operation(
+            ToolpathId::from_raw(0),
+            &rs_cam_core::compute::catalog::OperationConfig::new_default(OperationType::Pocket),
+            &wanaka_tool(),
+            &material,
+            rs_cam_core::machine::SteadyFeedMmMin::op_feed_only(feed_rate_mm_min),
+            None,
+            rs_cam_core::limits::CapTable::empty(),
+            None,
+        ),
         &rs_cam_core::tool_load::GateEnv {
             sim_trace: Some(&trace),
             machine: None,

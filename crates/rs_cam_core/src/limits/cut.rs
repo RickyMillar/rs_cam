@@ -99,6 +99,50 @@ pub enum CutKind {
     Drill,
 }
 
+/// The group that a gate reports a cut in (P29-6, ruling R4: "Entries and
+/// cleanup are judged like any cut, as their own group"; operator Q1,
+/// 2026-11-12: "I think all moves should be judged"). Every kind belongs
+/// to exactly one group ([`CutKind::group`]). No group is "not judged".
+#[derive(Debug, Clone, Copy, PartialEq, Eq, PartialOrd, Ord, Hash)]
+pub enum CutGroup {
+    /// The pass that the operator states, the wider first passes, the
+    /// capped steps, the slot ring and the drill cycle. The headline
+    /// verdict of each gate.
+    Body,
+    /// An entry into material, the feed through air above it, and the
+    /// lead into the cut.
+    Entry,
+    /// A cleanup cut and a cut that a dressup adds (the dogbone relief).
+    Cleanup,
+    /// A link between two cuts and the lead out of the cut.
+    Link,
+}
+
+impl CutGroup {
+    /// Every group, in declaration order.
+    pub const ALL: [Self; 4] = [Self::Body, Self::Entry, Self::Cleanup, Self::Link];
+}
+
+impl CutKind {
+    /// The group of this kind. One match names every kind and has no
+    /// wildcard arm: a new kind does not compile until it states its
+    /// group, so no kind can fall outside the gates.
+    #[must_use]
+    pub const fn group(self) -> CutGroup {
+        match self {
+            Self::Body
+            | Self::FirstPass(_)
+            | Self::SpringPass
+            | Self::CappedStep(_)
+            | Self::SlotRing
+            | Self::Drill => CutGroup::Body,
+            Self::Entry(_) | Self::EntryApproach | Self::LeadIn => CutGroup::Entry,
+            Self::Cleanup(_) | Self::DressupRelief => CutGroup::Cleanup,
+            Self::Link | Self::LeadOut => CutGroup::Link,
+        }
+    }
+}
+
 /// Why a cut has no engagement model. `CutLoad` then gives no number.
 #[derive(Debug, Clone, Copy, PartialEq, Eq)]
 pub enum NoEngagementModel {

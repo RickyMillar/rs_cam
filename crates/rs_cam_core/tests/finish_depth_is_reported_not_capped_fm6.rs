@@ -46,7 +46,6 @@ use rs_cam_core::feeds::force_budget::{RigidityCapOutcome, rigidity_depth_cap};
 use rs_cam_core::feeds::suggest::{
     OperationApplyInput, StockContext, SuggestContext, SuggestWarning, apply_to_operation,
 };
-use rs_cam_core::feeds::vendor_lut::{LutOperationFamily, LutPassRole};
 use rs_cam_core::feeds::{EMBEDDED_LUT, PassRole, SpindleStrategy};
 use rs_cam_core::ids::ToolpathId;
 use rs_cam_core::machine::{MachineProfile, RigidityDepthCap};
@@ -234,25 +233,16 @@ fn ctx<'a>(
     material: &'a Material,
     op: OperationType,
 ) -> ToolpathLoadContext<'a> {
-    let spec = op.spec();
-    ToolpathLoadContext {
-        toolpath_id: TP,
+    ToolpathLoadContext::of_operation(
+        TP,
+        &rs_cam_core::compute::catalog::OperationConfig::new_default(op),
         tool,
         material,
-        operation_family: LutOperationFamily::Pocket,
-        pass_role: match spec.feeds_pass_role {
-            PassRole::Roughing => LutPassRole::Roughing,
-            PassRole::SemiFinish => LutPassRole::SemiFinish,
-            PassRole::Finish => LutPassRole::Finish,
-        },
-        operation_feed_rate_mm_min: 1500.0,
-        steady_feed: rs_cam_core::machine::SteadyFeedMmMin::op_feed_only(1500.0),
-        operation_kind: op,
-        spans: None,
-        drill_op: None,
-        commanded_thinning_lift: None,
-        radial_stock_to_leave_mm: None,
-    }
+        rs_cam_core::machine::SteadyFeedMmMin::op_feed_only(1500.0),
+        None,
+        rs_cam_core::limits::CapTable::empty(),
+        None,
+    )
 }
 
 fn depth_gate(

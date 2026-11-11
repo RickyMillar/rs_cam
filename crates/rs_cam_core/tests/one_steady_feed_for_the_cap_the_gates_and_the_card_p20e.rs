@@ -41,7 +41,6 @@ use rs_cam_core::compute::operation_configs::{PocketConfig, PocketPattern};
 use rs_cam_core::compute::stock_config::StockConfig;
 use rs_cam_core::compute::tool_config::{ToolConfig, ToolFact, ToolId, ToolMaterial, ToolType};
 use rs_cam_core::dressup::feed_modulation::ModulationStrategy;
-use rs_cam_core::feeds::vendor_lut::{LutOperationFamily, LutPassRole};
 use rs_cam_core::geo::P2;
 use rs_cam_core::ids::ToolpathId;
 use rs_cam_core::machine::kinematics::MachineKinematics;
@@ -142,20 +141,16 @@ fn chip_verdict(trace: &SimulationCutTrace, feed_max_rate: Option<f64>) -> Chipl
     let material = hardwood();
     let machine = open_machine();
     let tolerance = ToleranceBands::default();
-    let ctx = ToolpathLoadContext {
-        toolpath_id: TP,
-        tool: &tool,
-        material: &material,
-        operation_family: LutOperationFamily::Pocket,
-        pass_role: LutPassRole::Roughing,
-        operation_feed_rate_mm_min: OP_FEED,
-        steady_feed: machine.op_steady_feed(OP_FEED, feed_max_rate),
-        operation_kind: OperationType::Pocket,
-        spans: None,
-        drill_op: None,
-        commanded_thinning_lift: None,
-        radial_stock_to_leave_mm: None,
-    };
+    let ctx = ToolpathLoadContext::of_operation(
+        TP,
+        &rs_cam_core::compute::catalog::OperationConfig::new_default(OperationType::Pocket),
+        &tool,
+        &material,
+        machine.op_steady_feed(OP_FEED, feed_max_rate),
+        None,
+        rs_cam_core::limits::CapTable::empty(),
+        None,
+    );
     let env = GateEnv {
         sim_trace: Some(trace),
         machine: Some(&machine),
@@ -335,7 +330,7 @@ fn a_capped_session_op_grades_its_chip_and_the_cap_is_one_function_a_d() {
     // (d) path 2, the gate: the reference is THE op ceiling's steady feed.
     let (tp_id, steady) = {
         let parts = session.load_context_parts(0).expect("the op has a context");
-        (parts.toolpath_id, parts.ctx().steady_feed)
+        (parts.toolpath_id, parts.ctx().steady_feed())
     };
     assert_eq!(steady, ceiling.steady_feed(OP_FEED));
     assert_eq!(steady.mm_min(), CAP);

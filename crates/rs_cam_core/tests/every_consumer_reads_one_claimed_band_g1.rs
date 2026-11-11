@@ -75,7 +75,6 @@ use rs_cam_core::feeds::suggest::{
 use rs_cam_core::feeds::vendor_lookup::{
     LookupResult, PrintedChipload, find_best_chip_envelope_row,
 };
-use rs_cam_core::feeds::vendor_lut::{LutOperationFamily, LutPassRole};
 use rs_cam_core::feeds::vendor_normalize::to_lookup_query;
 use rs_cam_core::feeds::{
     ChiploadSource, EMBEDDED_LUT, FeedsError, FeedsSupport, FeedsWarning, SpindleStrategy,
@@ -354,20 +353,16 @@ fn the_gate_holds_the_form_a_point_with_no_minimum_g1() {
     };
     let machine = MachineProfile::default();
     let tolerance = ToleranceBands::default();
-    let ctx = ToolpathLoadContext {
-        toolpath_id: ToolpathId::from_raw(0),
-        tool: &tool,
-        material: &material,
-        operation_family: LutOperationFamily::Pocket,
-        pass_role: LutPassRole::Roughing,
-        operation_feed_rate_mm_min: FEED,
-        steady_feed: rs_cam_core::machine::SteadyFeedMmMin::op_feed_only(FEED),
-        operation_kind: OperationType::Pocket,
-        spans: None,
-        drill_op: None,
-        commanded_thinning_lift: None,
-        radial_stock_to_leave_mm: None,
-    };
+    let ctx = ToolpathLoadContext::of_operation(
+        ToolpathId::from_raw(0),
+        &rs_cam_core::compute::catalog::OperationConfig::new_default(OperationType::Pocket),
+        &tool,
+        &material,
+        rs_cam_core::machine::SteadyFeedMmMin::op_feed_only(FEED),
+        None,
+        rs_cam_core::limits::CapTable::empty(),
+        None,
+    );
     let env = GateEnv {
         sim_trace: Some(&trace),
         machine: Some(&machine),

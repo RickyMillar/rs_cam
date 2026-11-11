@@ -20,7 +20,8 @@
 //!
 //! Every context comes through the F070 door
 //! `ProjectSession::load_context_parts`, so the test holds the read of the
-//! op field (`OperationConfig::radial_stock_to_leave_mm`) too.
+//! op field (`OperationConfig::radial_stock_to_leave_mm`) too: the context
+//! carries it as the body fact `Leave` (P29-6, `CutFacts::leave_after_mm`).
 //!
 //! Non-vacuity: the one sample contributes, and its peak deflection is
 //! above the finish target, so the limit decides the verdict.
@@ -40,6 +41,7 @@ use rs_cam_core::compute::catalog::{OperationConfig, OperationType};
 use rs_cam_core::compute::operation_configs::{BoreConfig, PocketConfig, ScallopConfig};
 use rs_cam_core::compute::tool_config::{ToolConfig, ToolFact, ToolId, ToolMaterial};
 use rs_cam_core::ids::ToolpathId;
+use rs_cam_core::limits::Leave;
 use rs_cam_core::material::{Material, WoodSpecies};
 use rs_cam_core::session::ProjectSession;
 use rs_cam_core::stock::simulation_cut::{
@@ -161,14 +163,14 @@ fn trace(toolpath_id: ToolpathId) -> SimulationCutTrace {
 }
 
 /// The deflection verdict of `op`, through the F070 door.
-fn judge(op: OperationConfig) -> (DeflectionVerdict, Option<f64>) {
+fn judge(op: OperationConfig) -> (DeflectionVerdict, Leave) {
     let session = session_with(op);
     let parts = session
         .load_context_parts(0)
         .expect("the fixture op has a tool and a feed");
-    let leave = parts.radial_stock_to_leave_mm;
     let ctx = parts.ctx();
-    let trace = trace(ctx.toolpath_id);
+    let leave = ctx.body_facts().leave_after_mm;
+    let trace = trace(ctx.toolpath_id());
     let tolerance = ToleranceBands::default();
     let env = GateEnv {
         sim_trace: Some(&trace),
@@ -231,7 +233,7 @@ fn a_bore_with_a_leave_judges_at_the_leave() {
     let (v, leave) = judge(bore(0.5));
     assert_eq!(
         leave,
-        Some(0.5),
+        Leave::Mm(0.5),
         "the door reads the Bore's finish allowance"
     );
     let (peak, limit, basis, detail, state, bound, source) = parts_of(&v);
@@ -263,7 +265,7 @@ fn a_bore_with_a_leave_judges_at_the_leave() {
 #[test]
 fn a_bore_with_a_zero_leave_keeps_the_finish_target_and_says_so() {
     let (v, leave) = judge(bore(0.0));
-    assert_eq!(leave, Some(0.0));
+    assert_eq!(leave, Leave::Zero);
     let (peak, limit, basis, detail, state, bound, source) = parts_of(&v);
     assert!(peak > EXCEEDS_BOUND_MM);
     assert_eq!(limit, EXCEEDS_BOUND_MM);
@@ -280,7 +282,7 @@ fn a_bore_with_a_zero_leave_keeps_the_finish_target_and_says_so() {
 #[test]
 fn a_pocket_has_no_leave_field_and_says_so() {
     let (v, leave) = judge(pocket());
-    assert_eq!(leave, None, "a Pocket has no radial leave field");
+    assert_eq!(leave, Leave::NoField, "a Pocket has no radial leave field");
     let (peak, limit, basis, detail, state, bound, source) = parts_of(&v);
     assert!(peak > EXCEEDS_BOUND_MM);
     assert_eq!(limit, EXCEEDS_BOUND_MM);
@@ -298,7 +300,8 @@ fn a_pocket_has_no_leave_field_and_says_so() {
 fn a_finish_pass_keeps_the_finish_target() {
     let (v, leave) = judge(scallop());
     assert_eq!(
-        leave, None,
+        leave,
+        Leave::FinishPass,
         "a Scallop's stock_to_leave is a finish leave, not a radial rough leave"
     );
     let (peak, limit, basis, detail, state, bound, source) = parts_of(&v);

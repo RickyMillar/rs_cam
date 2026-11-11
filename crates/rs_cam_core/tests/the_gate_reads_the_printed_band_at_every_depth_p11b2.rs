@@ -24,7 +24,6 @@
 
 use rs_cam_core::compute::catalog::OperationType;
 use rs_cam_core::compute::tool_config::ToolMaterial;
-use rs_cam_core::feeds::vendor_lut::{LutOperationFamily, LutPassRole};
 use rs_cam_core::ids::ToolpathId;
 use rs_cam_core::machine::kinematics::PredictedFeedMap;
 use rs_cam_core::material::{Material, WoodSpecies};
@@ -92,20 +91,16 @@ fn gate_bounds_at_depth(ap_mm: f64) -> ChipBounds {
         ..SimulationCutTrace::test_fixture()
     };
     let verdict = evaluate_toolpath(
-        &ToolpathLoadContext {
-            toolpath_id: TOOLPATH,
-            tool: &tool,
-            material: &material,
-            operation_family: LutOperationFamily::Pocket,
-            pass_role: LutPassRole::Roughing,
-            operation_feed_rate_mm_min: FEED_MM_MIN,
-            steady_feed: rs_cam_core::machine::SteadyFeedMmMin::op_feed_only(FEED_MM_MIN),
-            operation_kind: OperationType::Pocket,
-            spans: None,
-            drill_op: None,
-            commanded_thinning_lift: None,
-            radial_stock_to_leave_mm: None,
-        },
+        &ToolpathLoadContext::of_operation(
+            TOOLPATH,
+            &rs_cam_core::compute::catalog::OperationConfig::new_default(OperationType::Pocket),
+            &tool,
+            &material,
+            rs_cam_core::machine::SteadyFeedMmMin::op_feed_only(FEED_MM_MIN),
+            None,
+            rs_cam_core::limits::CapTable::empty(),
+            None,
+        ),
         Some(&trace),
         None,
         &ToleranceBands::default(),

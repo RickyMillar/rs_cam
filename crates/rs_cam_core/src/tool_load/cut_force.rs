@@ -113,17 +113,17 @@ pub fn cut_points(ctx: &ToolpathLoadContext<'_>, env: &GateEnv<'_>) -> Vec<CutPo
     let Some(trace) = env.sim_trace else {
         return Vec::new();
     };
-    let span_lookup = ctx.spans.map(SpanLookup::new);
+    let span_lookup = ctx.spans().map(SpanLookup::new);
     let lookup = span_lookup.as_ref();
     trace
         .samples
         .iter()
         .enumerate()
-        .filter(|(_, s)| s.toolpath_id == ctx.toolpath_id && s.is_cutting)
+        .filter(|(_, s)| s.toolpath_id == ctx.toolpath_id() && s.is_cutting)
         .filter(|(_, s)| s.radial_engagement_class() != RadialEngagementClass::Air)
         .filter(|(_, s)| s.arc_engagement_radians.is_some())
         .filter_map(|(i, s)| {
-            let engagement = super::deflection::sample_engagement(ctx.tool, s)?;
+            let engagement = super::deflection::sample_engagement(ctx.tool(), s)?;
             // EXEMPT(P28-21, P28-22, P28-23)
             if !super::locality::is_steady_state_for_gate(s, lookup) {
                 return None;
@@ -132,7 +132,7 @@ pub fn cut_points(ctx: &ToolpathLoadContext<'_>, env: &GateEnv<'_>) -> Vec<CutPo
             Some(CutPoint3 {
                 ae_mm: engagement.ae_mm(),
                 ap_mm: s.axial_engagement_mm,
-                force_n: sample_peak_force_n(ctx.tool, ctx.material, s, fz),
+                force_n: sample_peak_force_n(ctx.tool(), ctx.material(), s, fz),
                 weight_s: s.segment_time_s,
                 move_index: s.move_index,
                 sample_index: i,
@@ -154,7 +154,7 @@ pub fn budget_line(ctx: &ToolpathLoadContext<'_>, env: &GateEnv<'_>) -> Option<f
     let machine = env.machine?;
     let DepthCapRule { budget_n } = machine
         .rigidity
-        .depth_cap_of(ctx.operation_kind.body_depth_limit())?;
+        .depth_cap_of(ctx.operation_kind().body_depth_limit())?;
     Some(budget_n)
 }
 
@@ -182,14 +182,14 @@ pub struct CutForceReading {
 pub fn evaluate(ctx: &ToolpathLoadContext<'_>, env: &GateEnv<'_>) -> Option<CutForceReading> {
     let trace = env.sim_trace?;
     // EXEMPT(P28-17)
-    if ctx.operation_kind.is_drill_kinematics() {
+    if ctx.operation_kind().is_drill_kinematics() {
         return None;
     }
-    ctx.material.force_line().ok()?;
+    ctx.material().force_line().ok()?;
     let offered = trace
         .samples
         .iter()
-        .filter(|s| s.toolpath_id == ctx.toolpath_id)
+        .filter(|s| s.toolpath_id == ctx.toolpath_id())
         .count();
     let points = cut_points(ctx, env);
     let mut contributing = 0_usize;

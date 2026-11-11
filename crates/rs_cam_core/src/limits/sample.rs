@@ -49,6 +49,18 @@ pub struct CapTable {
 }
 
 impl CapTable {
+    /// A table with no capped move and no semantic trace: every move is
+    /// [`MoveCap::Uncapped`]. The table of a toolpath with no result, and of
+    /// a hand-built trace in a test.
+    #[must_use]
+    pub fn empty() -> &'static Self {
+        static EMPTY: CapTable = CapTable {
+            moves: Vec::new(),
+            traced: false,
+        };
+        &EMPTY
+    }
+
     /// The cap table of `toolpath`. `semantic` is the semantic trace of the
     /// result, when the result holds one. A `FeedCap` item covers its moves
     /// from `move_start` to `move_end`, both inclusive; it names only the
@@ -108,11 +120,11 @@ impl CapTable {
 
 /// What [`Cut::of_sample`] reads beside the sample. Built once per toolpath,
 /// with the lifetime of the gate context.
-#[derive(Clone)]
+#[derive(Clone, Copy)]
 pub struct SampleContext<'a> {
     tool: &'a ToolDefinition,
     spans: Option<&'a [Span]>,
-    caps: CapTable,
+    caps: &'a CapTable,
     facts: CutFacts,
 }
 
@@ -130,7 +142,7 @@ impl<'a> SampleContext<'a> {
     pub fn new(
         tool: &'a ToolDefinition,
         spans: Option<&'a [Span]>,
-        caps: CapTable,
+        caps: &'a CapTable,
         facts: CutFacts,
     ) -> Self {
         Self {

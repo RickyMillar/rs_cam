@@ -125,20 +125,16 @@ fn milling_verdict() -> ToolpathLoadVerdict {
     let material = Material::default();
     let machine = MachineProfile::shapeoko_makita();
     let tolerance = ToleranceBands::default();
-    let ctx = ToolpathLoadContext {
-        toolpath_id: TP,
-        tool: &tool,
-        material: &material,
-        operation_family: rs_cam_core::feeds::vendor_lut::LutOperationFamily::Pocket,
-        pass_role: rs_cam_core::feeds::vendor_lut::LutPassRole::Roughing,
-        operation_feed_rate_mm_min: 2000.0,
-        steady_feed: rs_cam_core::machine::SteadyFeedMmMin::op_feed_only(2000.0),
-        operation_kind: OperationType::Pocket,
-        spans: None,
-        drill_op: None,
-        commanded_thinning_lift: None,
-        radial_stock_to_leave_mm: None,
-    };
+    let ctx = ToolpathLoadContext::of_operation(
+        TP,
+        &rs_cam_core::compute::catalog::OperationConfig::new_default(OperationType::Pocket),
+        &tool,
+        &material,
+        rs_cam_core::machine::SteadyFeedMmMin::op_feed_only(2000.0),
+        None,
+        rs_cam_core::limits::CapTable::empty(),
+        None,
+    );
     let env = GateEnv {
         sim_trace: Some(&trace),
         machine: Some(&machine),

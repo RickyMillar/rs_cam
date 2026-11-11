@@ -302,21 +302,28 @@ fn own_material_with_force_data_uses_it_s6() {
             .result_at(index)
             .filter(|r| r.annotated().spans_valid)
             .map(|r| r.annotated().spans.as_slice());
-        let ctx_for = |material| rs_cam_core::tool_load::ToolpathLoadContext {
-            toolpath_id: *id,
-            tool: &tool,
-            material,
-            operation_family: rs_cam_core::feeds::vendor_lut::LutOperationFamily::Pocket,
-            pass_role: rs_cam_core::feeds::vendor_lut::LutPassRole::Roughing,
-            operation_feed_rate_mm_min: tc.operation.feed_rate().expect("S11: the fixture sets it"),
-            steady_feed: rs_cam_core::machine::SteadyFeedMmMin::op_feed_only(
-                tc.operation.feed_rate().expect("S11: the fixture sets it"),
-            ),
-            operation_kind: tc.operation.op_type(),
-            spans,
-            drill_op: None,
-            commanded_thinning_lift: None,
-            radial_stock_to_leave_mm: None,
+        let caps = run.session.result_at(index).map_or_else(
+            || rs_cam_core::limits::CapTable::empty().clone(),
+            |r| {
+                rs_cam_core::limits::CapTable::of_toolpath(
+                    &r.annotated().toolpath,
+                    r.semantic_trace.as_deref(),
+                )
+            },
+        );
+        let ctx_for = |material| {
+            rs_cam_core::tool_load::ToolpathLoadContext::of_operation(
+                *id,
+                &tc.operation,
+                &tool,
+                material,
+                rs_cam_core::machine::SteadyFeedMmMin::op_feed_only(
+                    tc.operation.feed_rate().expect("S11: the fixture sets it"),
+                ),
+                spans,
+                &caps,
+                None,
+            )
         };
         let machine = run.session.machine();
         let env = rs_cam_core::tool_load::GateEnv {

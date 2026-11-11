@@ -98,7 +98,7 @@ use rs_cam_core::feeds::suggest::{
 use rs_cam_core::feeds::vendor_lookup::{
     PrintedChipload, find_best_chip_envelope_row, vbit_key_text,
 };
-use rs_cam_core::feeds::vendor_lut::{LutOperationFamily, LutPassRole, ToolFamily};
+use rs_cam_core::feeds::vendor_lut::ToolFamily;
 use rs_cam_core::feeds::vendor_normalize::to_lookup_query;
 use rs_cam_core::feeds::{
     EMBEDDED_LUT, FeedsError, FeedsInput, FeedsSupport, FeedsWarning, OperationFamily, PassRole,
@@ -300,20 +300,16 @@ fn gate_bounds(
     let tool_def = build_cutter(tool).unwrap();
     let machine = open_machine();
     let tolerance = ToleranceBands::default();
-    let ctx = ToolpathLoadContext {
-        toolpath_id: ToolpathId::from_raw(0),
-        tool: &tool_def,
+    let ctx = ToolpathLoadContext::of_operation(
+        ToolpathId::from_raw(0),
+        &rs_cam_core::compute::catalog::OperationConfig::new_default(op),
+        &tool_def,
         material,
-        operation_family: LutOperationFamily::Trace,
-        pass_role: LutPassRole::Finish,
-        operation_feed_rate_mm_min: 720.0,
-        steady_feed: rs_cam_core::machine::SteadyFeedMmMin::op_feed_only(720.0),
-        operation_kind: op,
-        spans: None,
-        drill_op: None,
-        commanded_thinning_lift: None,
-        radial_stock_to_leave_mm: None,
-    };
+        rs_cam_core::machine::SteadyFeedMmMin::op_feed_only(720.0),
+        None,
+        rs_cam_core::limits::CapTable::empty(),
+        None,
+    );
     let env = GateEnv {
         sim_trace: Some(&trace),
         machine: Some(&machine),

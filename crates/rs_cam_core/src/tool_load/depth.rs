@@ -105,16 +105,15 @@ const DRILL_NOT_APPLICABLE: &str = "drill cycle — no continuous engagement";
 /// at a 1.2 mm cap.
 pub const DEXEL_DEPTH_RESOLUTION_MM: f64 = 1.0e-4;
 
-#[tracing::instrument(level = "debug", skip_all, fields(toolpath_id = ctx.toolpath_id.raw(), op = ?ctx.operation_kind))]
+#[tracing::instrument(level = "debug", skip_all, fields(toolpath_id = ctx.toolpath_id().raw(), op = ?ctx.operation_kind()))]
 pub fn evaluate(ctx: &super::ToolpathLoadContext<'_>, env: &super::GateEnv<'_>) -> DepthVerdict {
-    let &super::ToolpathLoadContext {
-        toolpath_id,
-        tool,
-        material,
-        operation_kind,
-        spans,
-        ..
-    } = ctx;
+    let (toolpath_id, tool, material, operation_kind, spans) = (
+        ctx.toolpath_id(),
+        ctx.tool(),
+        ctx.material(),
+        ctx.operation_kind(),
+        ctx.spans(),
+    );
     let &super::GateEnv {
         sim_trace,
         machine,
@@ -412,7 +411,6 @@ mod tests {
     use super::*;
     use crate::compute::catalog::OperationType;
     use crate::compute::tool_config::ToolMaterial;
-    use crate::feeds::vendor_lut::{LutOperationFamily, LutPassRole};
     use crate::ids::ToolpathId;
     use crate::machine::MachineProfile;
     use crate::material::Material;
@@ -499,20 +497,16 @@ mod tests {
         // Adaptive family on the force budget in oak (`oak_cap_mm`).
         let machine = MachineProfile::shapeoko_makita();
         let tolerance = ToleranceBands::default();
-        let ctx = ToolpathLoadContext {
-            toolpath_id: TP,
-            tool: &tool,
+        let ctx = ToolpathLoadContext::of_operation(
+            TP,
+            &crate::compute::catalog::OperationConfig::new_default(op),
+            &tool,
             material,
-            operation_family: LutOperationFamily::Pocket,
-            pass_role: LutPassRole::Roughing,
-            operation_feed_rate_mm_min: 1500.0,
-            steady_feed: crate::machine::SteadyFeedMmMin::op_feed_only(1500.0),
-            operation_kind: op,
-            spans: None,
-            drill_op: None,
-            commanded_thinning_lift: None,
-            radial_stock_to_leave_mm: None,
-        };
+            crate::machine::SteadyFeedMmMin::op_feed_only(1500.0),
+            None,
+            crate::limits::CapTable::empty(),
+            None,
+        );
         let env = GateEnv {
             sim_trace: t,
             machine: Some(&machine),
@@ -693,20 +687,16 @@ mod tests {
         let material = Material::default();
         let tolerance = ToleranceBands::default();
         let t = trace(vec![sample(0, 1.0, true)]);
-        let ctx = ToolpathLoadContext {
-            toolpath_id: TP,
-            tool: &tool,
-            material: &material,
-            operation_family: LutOperationFamily::Pocket,
-            pass_role: LutPassRole::Roughing,
-            operation_feed_rate_mm_min: 1500.0,
-            steady_feed: crate::machine::SteadyFeedMmMin::op_feed_only(1500.0),
-            operation_kind: OperationType::Pocket,
-            spans: None,
-            drill_op: None,
-            commanded_thinning_lift: None,
-            radial_stock_to_leave_mm: None,
-        };
+        let ctx = ToolpathLoadContext::of_operation(
+            TP,
+            &crate::compute::catalog::OperationConfig::new_default(OperationType::Pocket),
+            &tool,
+            &material,
+            crate::machine::SteadyFeedMmMin::op_feed_only(1500.0),
+            None,
+            crate::limits::CapTable::empty(),
+            None,
+        );
         let env = GateEnv {
             sim_trace: Some(&t),
             machine: None,

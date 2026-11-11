@@ -335,20 +335,16 @@ fn place_one(
     let material = rs_cam_core::material::Material::SolidWood {
         species: rs_cam_core::material::WoodSpecies::GenericHardwood,
     };
-    let ctx = rs_cam_core::tool_load::ToolpathLoadContext {
-        toolpath_id: id,
-        tool: &tool_def,
-        material: &material,
-        operation_family: rs_cam_core::feeds::vendor_lut::LutOperationFamily::Pocket,
-        pass_role: rs_cam_core::feeds::vendor_lut::LutPassRole::Finish,
-        operation_feed_rate_mm_min: 1000.0,
-        steady_feed: rs_cam_core::machine::SteadyFeedMmMin::op_feed_only(1000.0),
-        operation_kind: kind,
-        spans: None,
-        drill_op: None,
-        commanded_thinning_lift: None,
-        radial_stock_to_leave_mm: None,
-    };
+    let ctx = rs_cam_core::tool_load::ToolpathLoadContext::of_operation(
+        id,
+        &rs_cam_core::compute::catalog::OperationConfig::new_default(kind),
+        &tool_def,
+        &material,
+        rs_cam_core::machine::SteadyFeedMmMin::op_feed_only(1000.0),
+        None,
+        rs_cam_core::limits::CapTable::empty(),
+        None,
+    );
     rs_cam_core::compute::simulate::envelope_placement(&trace, &ctx, envelope)
 }
 

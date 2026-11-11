@@ -407,20 +407,16 @@ fn gate_verdict(feed: f64, rpm: u32, flutes: u32, axial_doc_mm: f64) -> Chipload
     let trace = single_sample_trace(id, feed, rpm, flutes, axial_doc_mm);
     let tolerance = ToleranceBands::default();
     rs_cam_core::tool_load::chipload::evaluate(
-        &ToolpathLoadContext {
-            toolpath_id: id,
-            tool: &tool,
-            material: &material,
-            operation_family: LutOperationFamily::Parallel,
-            pass_role: LutPassRole::Finish,
-            operation_feed_rate_mm_min: feed,
-            steady_feed: rs_cam_core::machine::SteadyFeedMmMin::op_feed_only(feed),
-            operation_kind: OperationType::DropCutter,
-            spans: None,
-            drill_op: None,
-            commanded_thinning_lift: None,
-            radial_stock_to_leave_mm: None,
-        },
+        &ToolpathLoadContext::of_operation(
+            id,
+            &rs_cam_core::compute::catalog::OperationConfig::new_default(OperationType::DropCutter),
+            &tool,
+            &material,
+            rs_cam_core::machine::SteadyFeedMmMin::op_feed_only(feed),
+            None,
+            rs_cam_core::limits::CapTable::empty(),
+            None,
+        ),
         &GateEnv {
             sim_trace: Some(&trace),
             machine: None,

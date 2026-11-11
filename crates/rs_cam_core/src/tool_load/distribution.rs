@@ -356,7 +356,7 @@ pub enum DistributionOutcome {
 /// (for example from [`super::evaluate_toolpath`], or a cached copy of it).
 /// This function reads the state and the bounds from the verdict, and it
 /// reads the population from `env.sim_trace` through the gate's own
-/// filters. When `verdict.toolpath_id` is not `ctx.toolpath_id`, the
+/// filters. When `verdict.toolpath_id` is not `ctx.toolpath_id()`, the
 /// function returns `None`.
 ///
 /// Returns `None` when the metric has no card for this operation: the
@@ -369,10 +369,10 @@ pub fn metric_distribution(
     ctx: &ToolpathLoadContext<'_>,
     env: &GateEnv<'_>,
 ) -> Option<DistributionOutcome> {
-    if verdict.toolpath_id != ctx.toolpath_id {
+    if verdict.toolpath_id != ctx.toolpath_id() {
         tracing::warn!(
             verdict_toolpath = verdict.toolpath_id.raw(),
-            ctx_toolpath = ctx.toolpath_id.raw(),
+            ctx_toolpath = ctx.toolpath_id().raw(),
             "metric_distribution: the verdict is for a different toolpath"
         );
         return None;
@@ -385,7 +385,7 @@ pub fn metric_distribution(
             // `None` under the default: every sample is in it.
             let stock_view = env
                 .sim_trace
-                .and_then(|t| t.stock_population_view(ctx.toolpath_id, ctx.material));
+                .and_then(|t| t.stock_population_view(ctx.toolpath_id(), ctx.material()));
             match &stock_view {
                 Some(view) => {
                     let view_env = GateEnv {
@@ -403,7 +403,7 @@ pub fn metric_distribution(
             // (`evaluate_population`), so the histogram bins the same one.
             let stock_view = env
                 .sim_trace
-                .and_then(|t| t.stock_population_view(ctx.toolpath_id, ctx.material));
+                .and_then(|t| t.stock_population_view(ctx.toolpath_id(), ctx.material()));
             match &stock_view {
                 Some(view) => {
                     let view_env = GateEnv {
@@ -427,7 +427,7 @@ fn cut_force_distribution(
     ctx: &ToolpathLoadContext<'_>,
     env: &GateEnv<'_>,
 ) -> Option<DistributionOutcome> {
-    if ctx.operation_kind.is_drill_kinematics() {
+    if ctx.operation_kind().is_drill_kinematics() {
         return None;
     }
     let Some(trace) = env.sim_trace else {
@@ -435,7 +435,7 @@ fn cut_force_distribution(
             NotMeasuredReason::Unmodeled(UnmodeledReason::SimulationRequired),
         ));
     };
-    if ctx.material.force_line().is_err() {
+    if ctx.material().force_line().is_err() {
         return Some(DistributionOutcome::NotMeasured(
             NotMeasuredReason::Unmodeled(UnmodeledReason::MaterialUnvalidated),
         ));
@@ -443,7 +443,7 @@ fn cut_force_distribution(
     // The deflection gate's third refusal: no sample of this toolpath
     // carries an arc, so the force has no engagement to read.
     let any_arc_captured = trace.samples.iter().any(|s| {
-        s.toolpath_id == ctx.toolpath_id && s.is_cutting && s.arc_engagement_radians.is_some()
+        s.toolpath_id == ctx.toolpath_id() && s.is_cutting && s.arc_engagement_radians.is_some()
     });
     if !any_arc_captured {
         return Some(DistributionOutcome::NotMeasured(
@@ -489,7 +489,7 @@ fn cut_force_distribution(
             };
             let sample = trace.samples.get(peak.sample_index);
             let ae_mm = sample
-                .and_then(|s| super::deflection::sample_engagement(ctx.tool, s))
+                .and_then(|s| super::deflection::sample_engagement(ctx.tool(), s))
                 .map_or(0.0, |e| e.ae_mm());
             let fz_mm = sample.map_or(0.0, |s| {
                 super::deflection::deflection_feed_per_tooth_mm(s, &trace.predicted_feeds)
@@ -601,7 +601,7 @@ fn engagement_distribution(
 ) -> Option<DistributionOutcome> {
     // The same short-circuit every milling gate takes: a drill cycle has
     // no continuous engagement.
-    if ctx.operation_kind.is_drill_kinematics() {
+    if ctx.operation_kind().is_drill_kinematics() {
         return None;
     }
     let Some(trace) = env.sim_trace else {
@@ -610,7 +610,7 @@ fn engagement_distribution(
         ));
     };
     let any_arc_captured = trace.samples.iter().any(|s| {
-        s.toolpath_id == ctx.toolpath_id
+        s.toolpath_id == ctx.toolpath_id()
             && s.is_cutting
             && s.engagement.radial_woc_fraction >= 0.02
             && s.arc_engagement_radians.is_some()
@@ -649,7 +649,7 @@ fn offered_count(ctx: &ToolpathLoadContext<'_>, env: &GateEnv<'_>) -> usize {
     env.sim_trace.map_or(0, |t| {
         t.samples
             .iter()
-            .filter(|s| s.toolpath_id == ctx.toolpath_id)
+            .filter(|s| s.toolpath_id == ctx.toolpath_id())
             .count()
     })
 }
@@ -671,7 +671,7 @@ pub fn gate_population(
     let Some(trace) = env.sim_trace else {
         return Vec::new();
     };
-    let span_lookup = ctx.spans.map(SpanLookup::new);
+    let span_lookup = ctx.spans().map(SpanLookup::new);
     let lookup = span_lookup.as_ref();
     match metric {
         DistributionMetric::Criterion(CriterionKind::Chipload) => {
@@ -680,18 +680,18 @@ pub fn gate_population(
         DistributionMetric::Criterion(CriterionKind::Power) => {
             // The power gate refuses a material with no force line
             // (`Custom` included); so does this population.
-            let Ok(line) = ctx.material.force_line() else {
+            let Ok(line) = ctx.material().force_line() else {
                 return Vec::new();
             };
             collect(trace, ctx, lookup, |s| {
                 let feed = super::effective_feed_for_sample(s, &trace.predicted_feeds);
-                super::power::sample_power_kw(ctx.tool, &line, s, feed)
+                super::power::sample_power_kw(ctx.tool(), &line, s, feed)
             })
         }
         DistributionMetric::Criterion(CriterionKind::Deflection) => {
             collect(trace, ctx, lookup, |s| {
                 let fz = super::deflection::deflection_feed_per_tooth_mm(s, &trace.predicted_feeds);
-                super::deflection::sample_tip_deflection_mm(ctx.tool, ctx.material, s, fz)
+                super::deflection::sample_tip_deflection_mm(ctx.tool(), ctx.material(), s, fz)
             })
         }
         DistributionMetric::Criterion(CriterionKind::DepthOfCut) => {
@@ -739,7 +739,7 @@ fn collect(
         .samples
         .iter()
         .enumerate()
-        .filter(|(_, s)| s.toolpath_id == ctx.toolpath_id)
+        .filter(|(_, s)| s.toolpath_id == ctx.toolpath_id())
         .filter_map(|(i, s)| {
             let v = value(s)?;
             // EXEMPT(P28-21, P28-22, P28-23)
@@ -761,8 +761,11 @@ fn chipload_population(
     ctx: &ToolpathLoadContext<'_>,
     lookup: Option<&SpanLookup<'_>>,
 ) -> Vec<PopulationSample> {
-    let steady =
-        super::chipload::steady_state_samples_for_toolpath(trace, ctx.toolpath_id, ctx.steady_feed);
+    let steady = super::chipload::steady_state_samples_for_toolpath(
+        trace,
+        ctx.toolpath_id(),
+        ctx.steady_feed(),
+    );
     steady
         .samples
         .into_iter()
@@ -776,8 +779,9 @@ fn chipload_population(
             let reading = super::display::peak_chip_per_tooth(
                 s,
                 &trace.predicted_feeds,
-                ctx.tool,
-                crate::feeds::geometry::RadialThinning::of_lut_role(ctx.pass_role),
+                ctx.tool(),
+                // P29-6: the gate's own rule, the body cut's thinning.
+                ctx.body_facts().thins_chip,
             )
             .ok()?;
             // EXEMPT(P28-21, P28-22, P28-23)

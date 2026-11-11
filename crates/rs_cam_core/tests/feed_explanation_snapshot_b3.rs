@@ -650,16 +650,12 @@ fn gate_verdict(
     sample_arc_rad: f64,
     with_predicted_feeds: bool,
     operation_kind: OperationType,
-    operation_family: LutOperationFamily,
-    pass_role: LutPassRole,
 ) -> ChiploadVerdict {
     gate_verdict_in(
         &material(),
         sample_arc_rad,
         with_predicted_feeds,
         operation_kind,
-        operation_family,
-        pass_role,
     )
 }
 
@@ -669,27 +665,21 @@ fn gate_verdict_in(
     sample_arc_rad: f64,
     with_predicted_feeds: bool,
     operation_kind: OperationType,
-    operation_family: LutOperationFamily,
-    pass_role: LutPassRole,
 ) -> ChiploadVerdict {
     let tool = tool();
     let trace = trace(sample_arc_rad, with_predicted_feeds);
     let tolerance = ToleranceBands::default();
     chipload::evaluate(
-        &ToolpathLoadContext {
-            toolpath_id: TOOLPATH,
-            tool: &tool,
+        &ToolpathLoadContext::of_operation(
+            TOOLPATH,
+            &rs_cam_core::compute::catalog::OperationConfig::new_default(operation_kind),
+            &tool,
             material,
-            operation_family,
-            pass_role,
-            operation_feed_rate_mm_min: COMMANDED_FEED_MM_MIN,
-            steady_feed: rs_cam_core::machine::SteadyFeedMmMin::op_feed_only(COMMANDED_FEED_MM_MIN),
-            operation_kind,
-            spans: None,
-            drill_op: None,
-            commanded_thinning_lift: None,
-            radial_stock_to_leave_mm: None,
-        },
+            rs_cam_core::machine::SteadyFeedMmMin::op_feed_only(COMMANDED_FEED_MM_MIN),
+            None,
+            rs_cam_core::limits::CapTable::empty(),
+            None,
+        ),
         &GateEnv {
             sim_trace: Some(&trace),
             machine: None,
@@ -701,13 +691,7 @@ fn gate_verdict_in(
 /// Run the shipped gate over the fixture and assemble the five stages.
 fn explain(sample_arc_rad: f64, with_predicted_feeds: bool) -> FeedExplanation {
     let tool = tool();
-    let verdict = gate_verdict(
-        sample_arc_rad,
-        with_predicted_feeds,
-        OPERATION_KIND,
-        OPERATION_FAMILY,
-        PASS_ROLE,
-    );
+    let verdict = gate_verdict(sample_arc_rad, with_predicted_feeds, OPERATION_KIND);
 
     // The gate's own lookup key at the peak steady-state axial DOC. Since
     // ruling A1 (2026-09-24) that is the 1.0 mm tip of the tapered ball
@@ -1519,25 +1503,13 @@ fn the_old_scallop_premise_ships_the_printed_tip_row() {
     use rs_cam_core::tool_load::UnmodeledReason;
 
     // The gate judges the Scallop cell, on the Parallel premise's band.
-    let scallop = gate_verdict(
-        SAMPLE_ARC_A_RAD,
-        true,
-        OperationType::Scallop,
-        LutOperationFamily::Scallop,
-        LutPassRole::Finish,
-    );
+    let scallop = gate_verdict(SAMPLE_ARC_A_RAD, true, OperationType::Scallop);
     assert!(
         !matches!(scallop, ChiploadVerdict::Unmodeled { .. }),
         "the Ø1 tapered Scallop cell in hard maple is judged since the 2026-10-01 ruling; \
          got {scallop:?}"
     );
-    let parallel = gate_verdict(
-        SAMPLE_ARC_A_RAD,
-        true,
-        OPERATION_KIND,
-        OPERATION_FAMILY,
-        PASS_ROLE,
-    );
+    let parallel = gate_verdict(SAMPLE_ARC_A_RAD, true, OPERATION_KIND);
     // RE-PREMISED 2026-11-03 (P5, Q3). This read
     //     assert_eq!(scallop, parallel, "one printed row and one band: ...");
     // Parallel read the Q3 winner (the SpeTool point) and Scallop the
@@ -1633,14 +1605,7 @@ fn the_old_scallop_premise_ships_the_printed_tip_row() {
     let plywood = Material::Plywood {
         grade: PlywoodGrade::BalticBirch,
     };
-    let verdict = gate_verdict_in(
-        &plywood,
-        SAMPLE_ARC_A_RAD,
-        true,
-        OperationType::Scallop,
-        LutOperationFamily::Scallop,
-        LutPassRole::Finish,
-    );
+    let verdict = gate_verdict_in(&plywood, SAMPLE_ARC_A_RAD, true, OperationType::Scallop);
     assert!(
         matches!(
             verdict,

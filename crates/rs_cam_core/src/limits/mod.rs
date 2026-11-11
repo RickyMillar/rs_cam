@@ -10,7 +10,8 @@
 //!   to it in a match that names every variant.
 //! - [`Check`] (`check.rs`): the one record.
 //! - `project.rs`: the projections of the old records to [`Check`].
-//! - [`Cut`] (`cut.rs`, P29-3): one cut that a limit judges.
+//! - [`Cut`] (`cut.rs`, P29-3): one cut that a limit judges. [`CutGroup`]
+//!   (P29-6): the group of each kind that a gate reports it in.
 //! - [`EXEMPTIONS`] (`exemptions.rs`, P29-3): the one list of every
 //!   exemption from a limit.
 //! - [`SampleContext`] (`sample.rs`, P29-3): the side tables of
@@ -30,7 +31,7 @@ mod sample;
 
 pub use check::{BoundSide, Check, CheckState, Geometry, NoNumberReason, basis_of_bound};
 pub use cut::{
-    BodySides, CleanupKind, Cut, CutEngagement, CutFacts, CutKind, CutSource, DepthLimit,
+    BodySides, CleanupKind, Cut, CutEngagement, CutFacts, CutGroup, CutKind, CutSource, DepthLimit,
     EntryKind, FirstPassKind, Leave, NoDepthLimit, NoEngagementModel, SampleDepth,
 };
 pub use exemptions::{EXEMPTIONS, Exemption, ExemptionClass, Who};

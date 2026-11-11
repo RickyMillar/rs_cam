@@ -4,7 +4,7 @@ Independent gates over a simulated cut. Entry: `tool_load::evaluate_toolpath`.
 
 ## Files
 
-- `mod.rs` — the monitor and the report entry point. `chipload.rs`, `power.rs`,
+- `mod.rs` — the monitor and the report entry point. `context.rs` — `ToolpathLoadContext` (P29-6 6a: private fields, one constructor `of_operation`; the op fills the kind, the row key, `body_facts` and the commanded lift; the context carries the `CapTable` and lends `sample_context()`). `chipload.rs`, `power.rs`,
   `deflection.rs`, `depth.rs`, `plunge_stress.rs` — the milling gates; `cut_force.rs` — the
   report-only force reading (P17); `drill_gates.rs` — chip welding, peck, plunge feed.
   `load_fraction.rs` — the one load `L`.
@@ -15,7 +15,7 @@ Independent gates over a simulated cut. Entry: `tool_load::evaluate_toolpath`.
 ## Invariants
 
 - Every gate filters `in_transit_span` samples through the one predicate `locality::is_steady_state_for_gate`. Never write a second copy.
-- P11b2: the chipload gate quantity is the PEAK chip, `display::peak_chip_per_tooth` (advance / `RadialThinning::lift` at the measured arc, `Engagement::from_sample`; role `ctx.pass_role`, Finish lift 1; a drill is `NotApplicableForOp` first), on both sides, against the printed band at every depth (no de-rate). A thinning sample with no engagement counts in `missing_arc_count`. The histogram reads it; `commanded_above_band` reads `CommandedStage::peak_chip_mm` (median lift). The heat map (`advance_per_tooth_per_move`) still paints the advance: open gap.
+- P11b2: the chipload gate quantity is the PEAK chip, `display::peak_chip_per_tooth` (advance / `RadialThinning::lift` at the measured arc, `Engagement::from_sample`; rule `ctx.body_facts().thins_chip`, Finish lift 1; a drill is `NotApplicableForOp` first), on both sides, against the printed band at every depth (no de-rate). A thinning sample with no engagement counts in `missing_arc_count`. The histogram reads it; `commanded_above_band` reads `CommandedStage::peak_chip_mm` (median lift). The heat map (`advance_per_tooth_per_move`) still paints the advance: open gap.
 - The cutting load `L` of a pass (chip area over a full pass, per strip) is
   `load_fraction::chip_load_fraction` only (INTEGRATION_PLAN D5, Q1); it reads
   `mrr_cross_section_mm2`, as power does. Never write a second form.
@@ -26,9 +26,9 @@ Independent gates over a simulated cut. Entry: `tool_load::evaluate_toolpath`.
   grain_factor` (1.0 on every line); no line is `MaterialUnvalidated`. A
   force-line or grain-factor change needs the slow `--test` sims, not `--lib`.
 - F197: a stale trace rewrites a verdict through `ToolpathLoadVerdict::mark_simulation_stale` only; it
-  destructures every field. F070: build a gate context with `ProjectSession::load_context_parts(..).ctx()`.
+  destructures every field. F070: build a gate context with `ProjectSession::load_context_parts(..).ctx()`; a test calls `ToolpathLoadContext::of_operation` with a real op (`OperationConfig::new_default`) and `CapTable::empty()`.
 - P11a (L5): the deflection gate reads the PEAK engaged-edge force of the sample (`deflection::sample_engagement`: `Engagement::from_tool_cut` at `axial_engagement_mm` and the arc's width `r (1 - cos psi)`), through `feeds::predict::tip_deflection_from_engagement`; the power gate's mean is the same sum's mean. P17: `cut_force::sample_peak_force_n` is that force; the force card, `ToolpathLoadVerdict::cut_force` (report-only, not a criterion) and the deflection gate read one engagement and one law. The budget line exists only where the body cut has the force budget (`depth_cap_of(kind.body_depth_limit())`, `cut_force::budget_line`, lead ruling 3; P29-5: a slot or a groove under every role).
-- P17: the deflection `Exceeds` limit is `deflection::exceeds_limit`: the radial stock to leave of a rough pass (`ToolpathLoadContext::radial_stock_to_leave_mm`, `BoundSource::StockToLeave`), else the finish target `EXCEEDS_BOUND_MM`; `DeflectionBounds::basis` names the case. Suggest, the envelope and F082 keep the finish target.
+- P17: the deflection `Exceeds` limit is `deflection::exceeds_limit`: the radial stock to leave of a rough pass (`body_facts().leave_after_mm`, `Leave::Mm`, `BoundSource::StockToLeave`), else the finish target `EXCEEDS_BOUND_MM`; `DeflectionBounds::basis` names the case. Suggest, the envelope and F082 keep the finish target.
 - F082: the deflection-cap compliance is `deflection::tip_compliance_mm_per_n` (Suggest's ceiling and the modulator read it). F080: `UnmodeledReason::operator_text` is the reason's one clause.
 - The drill gates model the R-plane-rooted emitted schedule and read cutting
   geometry, not fed distance; a tapered drill uses the envelope diameter.

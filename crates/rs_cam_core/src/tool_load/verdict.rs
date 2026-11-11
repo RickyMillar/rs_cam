@@ -1083,8 +1083,8 @@ pub enum BoundSource {
     /// finish-quality figure in MILLIMETRES.
     DeflectionBudget,
     /// Feeds contract P17: the radial stock to leave of a rough op, in
-    /// MILLIMETRES (`ToolpathLoadContext::radial_stock_to_leave_mm`,
-    /// `deflection::exceeds_limit`). A tip that moves less than the leave
+    /// MILLIMETRES (the body fact `Leave::Mm` of
+    /// `ToolpathLoadContext::body_facts`, `deflection::exceeds_limit`). A tip that moves less than the leave
     /// stays inside the finish allowance; one that moves more cuts into
     /// the finish surface. An operation setting, and a stated bound, so it
     /// gates as [`Self::DeflectionBudget`] does.

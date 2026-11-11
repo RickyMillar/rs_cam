@@ -23,6 +23,7 @@
 
 pub mod boundary;
 pub mod chipload;
+mod context;
 pub mod cut_force;
 pub mod deflection;
 pub mod depth;
@@ -87,12 +88,12 @@ pub fn effective_feed_for_sample(
         .unwrap_or(sample.feed_rate_mm_min)
 }
 
-use crate::compute::catalog::OperationType;
 use crate::feeds::vendor_lut::{LutOperationFamily, LutPassRole};
 use crate::material::Material;
 use crate::tool::ToolDefinition;
 use serde::{Deserialize, Serialize};
 
+pub use context::ToolpathLoadContext;
 pub use distribution::{
     DistributionMetric, DistributionOutcome, Histogram, MetricDistribution, NotMeasuredReason,
     PopulationSample, metric_distribution,
@@ -422,125 +423,54 @@ pub struct ToleranceBands {
     pub deflection_breach: f64,
 }
 
-/// Per-toolpath inputs passed to `evaluate_toolpath`. Bundling avoids a
-/// 7-argument function and keeps call sites stable when later phases add
-/// inputs (e.g. `MachineProfile` for the power criterion).
-pub struct ToolpathLoadContext<'a> {
-    /// Stable simulator-side toolpath id (matches `SimulationCutSample::toolpath_id`).
-    pub toolpath_id: ToolpathId,
-    pub tool: &'a ToolDefinition,
-    pub material: &'a Material,
-    pub operation_family: LutOperationFamily,
-    pub pass_role: LutPassRole,
-    /// The toolpath operation's stated feed rate (`feed_rate`, mm/min).
-    /// Until P20e the chipload steady-state filter (Item C) and the
-    /// commanded stage read it; both read [`Self::steady_feed`] now.
-    pub operation_feed_rate_mm_min: f64,
-    /// P20e: the feed the op commands in steady cutting,
-    /// `min(op feed, feed_max_rate, machine cutting ceiling)`
-    /// (`MachineProfile::op_steady_feed`, the ceiling the modulator caps
-    /// at). The chipload steady-state filter and the histogram compare
-    /// each sample feed with it, and the commanded stage states it (the
-    /// G-code F word under a cap). `operation_feed_rate_mm_min` is the
-    /// stated op feed; since P20e no gate reads it.
-    pub steady_feed: crate::machine::SteadyFeedMmMin,
-    /// The toolpath's operation kind. Read by every gate: it drives the
-    /// drill-kinematics short-circuit (`NotApplicableForOp`) and the LUT
-    /// lookup family routing (`routed_lookup_family` reroutes
-    /// `ProjectCurve` and `Adaptive3d` so they match an appropriate
-    /// vendor row instead of falling through to `Unmodeled(NoVendorData)`
-    /// — Item D of the tool-load fidelity plan).
-    pub operation_kind: OperationType,
-    /// Structural spans on the (annotated) toolpath. Threaded into the
-    /// per-criterion evaluators so `tool_load::locality` can resolve
-    /// each sample's `span_path` ancestry — used by the span-aware
-    /// locality classifier (G17 D6) and the span-aware steady-state
-    /// gate filter (G17 D7). `None` when no annotated toolpath is
-    /// available; classifiers degrade to engagement-only labels.
-    pub spans: Option<&'a [crate::trace::toolpath_spans::Span]>,
-    /// `DrillOp` payload for drill toolpaths — `Some` for
-    /// `OperationType::{Drill, AlignmentPinDrill}`, `None` otherwise.
-    /// Drives the `drill_gates` field on the resulting verdict
-    /// (chip-welding / peck-adequacy / plunge-feed). Mills supply
-    /// `None` and `drill_gates` stays `None` on their verdict — the
-    /// existing chipload / power / deflection criteria do all the
-    /// load-checking for non-drill ops.
-    pub drill_op: Option<&'a crate::ops::drill_op::DrillOp>,
-    /// Feeds contract P11b2: the radial chip-thinning lift of the cut the op
-    /// STATES (`CutSpec::calc_inputs`: both a depth and a width), by the rule
-    /// Suggest sizes the feed with (`RadialThinning::lift` at the engaged
-    /// diameter of the stated depth). The `commanded_above_band` comparison
-    /// reads the commanded peak chip `fz / lift` with it, so Suggest's own
-    /// recipe does not trip it. `None` when the op states no width or no
-    /// depth: the gate then takes the median measured lift of its trip set.
-    pub commanded_thinning_lift: Option<f64>,
-    /// Feeds contract P17: the radial stock to leave of the operation
-    /// (`OperationConfig::radial_stock_to_leave_mm`), in mm. The deflection
-    /// gate reads it as the limit of a rough pass: a tip that moves less
-    /// than the leave stays inside the finish allowance
-    /// (`deflection::exceeds_limit`). `None` when the op has no radial
-    /// leave field; the finish target then applies.
-    pub radial_stock_to_leave_mm: Option<f64>,
-}
-
 /// F070: the parts of one operation's [`ToolpathLoadContext`], with the
-/// cutter OWNED.
+/// cutter and the cap table OWNED.
 ///
-/// The context borrows its `&ToolDefinition`, and the cutter is built
-/// from the tool config at the call site, so no door can hand back a
-/// finished context. This type holds the built cutter and the borrowed
-/// rest, and [`Self::ctx`] lends the context. The export load report and
-/// the GUI cut-metric cards build it through one door,
+/// The context borrows its `&ToolDefinition` and its `&CapTable`, and both
+/// are built at the call site, so no door can hand back a finished context.
+/// This type holds the built parts and the borrowed rest, and [`Self::ctx`]
+/// lends the context through its one constructor
+/// ([`ToolpathLoadContext::of_operation`]). The parts hold the operation,
+/// not facts of it: the facts come from the operation. The export load
+/// report and the GUI cut-metric cards build it through one door,
 /// `ProjectSession::load_context_parts`; neither assembles the fields by
 /// hand.
 pub struct LoadContextParts<'s> {
     pub toolpath_id: ToolpathId,
+    pub operation: &'s crate::compute::catalog::OperationConfig,
     pub tool: ToolDefinition,
     pub material: &'s Material,
-    pub operation_family: LutOperationFamily,
-    pub pass_role: LutPassRole,
-    pub operation_feed_rate_mm_min: f64,
     pub steady_feed: crate::machine::SteadyFeedMmMin,
-    pub operation_kind: OperationType,
     pub spans: Option<&'s [crate::trace::toolpath_spans::Span]>,
+    pub caps: crate::limits::CapTable,
     pub drill_op: Option<&'s crate::ops::drill_op::DrillOp>,
-    pub commanded_thinning_lift: Option<f64>,
-    pub radial_stock_to_leave_mm: Option<f64>,
 }
 
 impl LoadContextParts<'_> {
     /// The gate context, borrowed from these parts. The destructure names
-    /// every field, so a new context field must be added here.
+    /// every field, so a new part must be passed here.
     #[must_use]
     pub fn ctx(&self) -> ToolpathLoadContext<'_> {
         let Self {
             toolpath_id,
+            operation,
             tool,
             material,
-            operation_family,
-            pass_role,
-            operation_feed_rate_mm_min,
             steady_feed,
-            operation_kind,
             spans,
+            caps,
             drill_op,
-            commanded_thinning_lift,
-            radial_stock_to_leave_mm,
         } = self;
-        ToolpathLoadContext {
-            toolpath_id: *toolpath_id,
+        ToolpathLoadContext::of_operation(
+            *toolpath_id,
+            operation,
             tool,
             material,
-            operation_family: *operation_family,
-            pass_role: *pass_role,
-            operation_feed_rate_mm_min: *operation_feed_rate_mm_min,
-            steady_feed: *steady_feed,
-            operation_kind: *operation_kind,
-            spans: *spans,
-            drill_op: *drill_op,
-            commanded_thinning_lift: *commanded_thinning_lift,
-            radial_stock_to_leave_mm: *radial_stock_to_leave_mm,
-        }
+            *steady_feed,
+            *spans,
+            caps,
+            *drill_op,
+        )
     }
 }
 
@@ -644,33 +574,27 @@ pub fn evaluate_toolpath(
     let Some(trace) = sim_trace else {
         return evaluate_population(ctx, None, machine, tolerance);
     };
-    let populations = trace.material_populations(ctx.toolpath_id, ctx.material);
+    let populations = trace.material_populations(ctx.toolpath_id(), ctx.material());
     if populations.is_empty() {
         return evaluate_population(ctx, Some(trace), machine, tolerance);
     }
     // The stock population: every sample judged as the stock material.
-    let stock_view = trace.population_view(ctx.toolpath_id, |s| {
-        trace.judged_as(s, ctx.material, ctx.material)
+    let stock_view = trace.population_view(ctx.toolpath_id(), |s| {
+        trace.judged_as(s, ctx.material(), ctx.material())
     });
     let mut verdict = evaluate_population(ctx, Some(&stock_view), machine, tolerance);
     let stock_samples = stock_view
         .samples
         .iter()
-        .filter(|s| s.toolpath_id == ctx.toolpath_id)
+        .filter(|s| s.toolpath_id == ctx.toolpath_id())
         .count();
     drop(stock_view);
     let mut own = Vec::with_capacity(populations.own.len());
     for (material, samples) in &populations.own {
-        let view = trace.population_view(ctx.toolpath_id, |s| {
-            trace.judged_as(s, ctx.material, material)
+        let view = trace.population_view(ctx.toolpath_id(), |s| {
+            trace.judged_as(s, ctx.material(), material)
         });
-        let own_ctx = ToolpathLoadContext {
-            material,
-            spans: ctx.spans,
-            drill_op: None,
-            commanded_thinning_lift: None,
-            ..*ctx
-        };
+        let own_ctx = ctx.with_own_material(material);
         let v = evaluate_population(&own_ctx, Some(&view), machine, tolerance);
         own.push(OwnMaterialVerdict {
             material: material.label(),
@@ -733,10 +657,10 @@ fn evaluate_population(
     // carries a `DrillOp` payload. Mirrors what
     // `ProjectSession::build_tool_load_report` does for the user-facing report so
     // every report path agrees on drill-side verdicts.
-    let drill_gates = ctx.drill_op.map(|drill_op| {
-        let samples = crate::ops::drill_metrics::emit_drill_samples(ctx.toolpath_id, drill_op);
+    let drill_gates = ctx.drill_op().map(|drill_op| {
+        let samples = crate::ops::drill_metrics::emit_drill_samples(ctx.toolpath_id(), drill_op);
         let summary = crate::ops::drill_metrics::build_drill_toolpath_summary(
-            ctx.toolpath_id,
+            ctx.toolpath_id(),
             drill_op,
             &samples,
         );
@@ -748,7 +672,7 @@ fn evaluate_population(
     // export, GUI) sees the same one.
     let (chipload_verdict, feed_explanation) = chipload::evaluate_with_explanation(ctx, &env);
     ToolpathLoadVerdict {
-        toolpath_id: ctx.toolpath_id,
+        toolpath_id: ctx.toolpath_id(),
         chipload: chipload_verdict,
         power: power::evaluate(ctx, &env),
         deflection: deflection::evaluate(ctx, &env),
@@ -765,7 +689,7 @@ fn evaluate_population(
         // the call sites) so every report path agrees — this field is
         // the one that diverged when gcode re-assembled verdicts inline.
         modulation_summary: sim_trace
-            .and_then(|trace| trace.modulation_summaries.get(&ctx.toolpath_id).cloned()),
+            .and_then(|trace| trace.modulation_summaries.get(&ctx.toolpath_id()).cloned()),
         feed_explanation,
         // P4b (verifier): wire kinematic_utilization — needs the EMITTED
         // `&Toolpath` (the move list) and the operation's own
@@ -779,8 +703,9 @@ fn evaluate_population(
         // `evaluate_toolpath` directly therefore gets `None`. Closing that divergence — the exact
         // shape the Phase 6 doc comment above warns about — means threading
         // `toolpath: Option<&'a Toolpath>` and `plunge_rate_mm_min: f64`
-        // through `ToolpathLoadContext`, which has 22 literal sites across
-        // the workspace. That is the verifier's call, not a scaffold's.
+        // through `ToolpathLoadContext`. Since P29-6 the context has one
+        // constructor (`ToolpathLoadContext::of_operation`), so the cost is
+        // one signature. That is the verifier's call, not a scaffold's.
         kinematic_utilization: None,
         material_split: None,
     }
@@ -789,6 +714,7 @@ fn evaluate_population(
 #[cfg(test)]
 mod tests {
     use super::*;
+    use crate::compute::catalog::OperationType;
     use crate::compute::tool_config::ToolMaterial;
     use crate::tool::FlatEndmill;
     use verdict::LoadState;
@@ -808,20 +734,18 @@ mod tests {
         material: &'a Material,
         operation_kind: OperationType,
     ) -> ToolpathLoadContext<'a> {
-        ToolpathLoadContext {
-            toolpath_id: ToolpathId::from_raw(0),
+        // P29-6: the facts come from the op. A drill op (not a Pocket
+        // family with a drill kind) proves the drill short-circuit.
+        ToolpathLoadContext::of_operation(
+            ToolpathId::from_raw(0),
+            &crate::compute::catalog::OperationConfig::new_default(operation_kind),
             tool,
             material,
-            operation_family: LutOperationFamily::Pocket,
-            pass_role: LutPassRole::Roughing,
-            operation_feed_rate_mm_min: 1000.0,
-            steady_feed: crate::machine::SteadyFeedMmMin::op_feed_only(1000.0),
-            operation_kind,
-            spans: None,
-            drill_op: None,
-            commanded_thinning_lift: None,
-            radial_stock_to_leave_mm: None,
-        }
+            crate::machine::SteadyFeedMmMin::op_feed_only(1000.0),
+            None,
+            crate::limits::CapTable::empty(),
+            None,
+        )
     }
 
     /// Run one gate generically through `MetricEvaluator` and project

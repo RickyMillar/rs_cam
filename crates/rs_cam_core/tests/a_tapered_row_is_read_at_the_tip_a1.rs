@@ -32,7 +32,6 @@ use rs_cam_core::compute::cutter::build_cutter;
 use rs_cam_core::compute::tool_config::ToolFact;
 use rs_cam_core::compute::tool_config::{ToolConfig, ToolId, ToolType};
 use rs_cam_core::feeds::geometry::{lut_key_diameter_for_cutter, lut_key_diameter_mm};
-use rs_cam_core::feeds::vendor_lut::{LutOperationFamily, LutPassRole};
 use rs_cam_core::feeds::{
     FeedsInput, OperationFamily, PassRole, SetupContext, SpindleStrategy, calculate,
     embedded_vendor_lut, vendor_normalize,
@@ -211,20 +210,16 @@ fn a_tapered_row_is_read_at_the_tip_a1() {
     let feed = 0.03 * f64::from(RPM) * f64::from(FLUTES);
     let t = trace(feed);
     let verdict = evaluate_toolpath(
-        &ToolpathLoadContext {
-            toolpath_id: ToolpathId::from_raw(0),
-            tool: &cutter,
-            material: &material,
-            operation_family: LutOperationFamily::Parallel,
-            pass_role: LutPassRole::Finish,
-            operation_feed_rate_mm_min: feed,
-            steady_feed: rs_cam_core::machine::SteadyFeedMmMin::op_feed_only(feed),
-            operation_kind: OperationType::DropCutter,
-            spans: None,
-            drill_op: None,
-            commanded_thinning_lift: None,
-            radial_stock_to_leave_mm: None,
-        },
+        &ToolpathLoadContext::of_operation(
+            ToolpathId::from_raw(0),
+            &rs_cam_core::compute::catalog::OperationConfig::new_default(OperationType::DropCutter),
+            &cutter,
+            &material,
+            rs_cam_core::machine::SteadyFeedMmMin::op_feed_only(feed),
+            None,
+            rs_cam_core::limits::CapTable::empty(),
+            None,
+        ),
         Some(&t),
         None,
         &ToleranceBands::default(),

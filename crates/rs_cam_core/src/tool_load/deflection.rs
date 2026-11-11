@@ -49,7 +49,7 @@
 //!   this gate predicts therefore ignores torsion.
 
 use crate::feeds::engagement::Engagement;
-use crate::feeds::vendor_lut::LutPassRole;
+use crate::limits::Leave;
 use crate::material::Material;
 use crate::stock::simulation_cut::{RadialEngagementClass, SimulationCutSample};
 use crate::tool::ToolDefinition;
@@ -113,17 +113,21 @@ pub fn tip_compliance_mm_per_n(tool: &ToolDefinition, axial_doc_mm: f64) -> Opti
 /// other side of the force) a wall cut below the finish surface. So the
 /// deflection limit of a rough pass is `s`:
 ///
-/// - `pass_role == Roughing` and `radial_stock_to_leave_mm == Some(s)`
-///   with `s > 0`: the limit is `s` ([`DeflectionBasis::StockToLeave`]).
-/// - A finish or semi-finish pass has no stock to leave after it: the
-///   finish target [`EXCEEDS_BOUND_MM`] (200 um, the F201 row) stays its
-///   limit ([`DeflectionBasis::FinishTarget`]).
-/// - A rough op with no radial stock-to-leave field has no `s` to read:
-///   the finish target stays, and the clause says so
+/// The four cases are the arms of [`Leave`], the leave of the op's body
+/// cut (`CutFacts::leave_after_mm`, P29-6):
+///
+/// - [`Leave::Mm`]`(s)`, a rough pass that leaves `s > 0`: the limit is `s`
+///   ([`DeflectionBasis::StockToLeave`]).
+/// - [`Leave::FinishPass`]: a finish or semi-finish pass has no stock to
+///   leave after it: the finish target [`EXCEEDS_BOUND_MM`] (200 um, the
+///   F201 row) stays its limit ([`DeflectionBasis::FinishTarget`]).
+/// - [`Leave::NoField`]: a rough op with no radial stock-to-leave field has
+///   no `s` to read: the finish target stays, and the clause says so
 ///   ([`DeflectionBasis::NoLeaveField`]).
-/// - A rough op whose field is 0: the rough pass is the final wall, so the
-///   finish target applies ([`DeflectionBasis::ZeroLeave`]). A limit of 0
-///   would put every sample over it.
+/// - [`Leave::Zero`]: a rough op whose field is 0: the rough pass is the
+///   final wall, so the finish target applies
+///   ([`DeflectionBasis::ZeroLeave`]). A limit of 0 would put every sample
+///   over it.
 ///
 /// [`WITHIN_BOUND_MM`] (50 um, `Validated`) does not move. A leave below
 /// 50 um puts the `Exceeds` limit under the `Validated` band: every sample
@@ -135,20 +139,13 @@ pub fn tip_compliance_mm_per_n(tool: &ToolDefinition, axial_doc_mm: f64) -> Opti
 /// and the F082 compliance door keep the finish target on a rough pass:
 /// out of P17's scope, recorded in its card.
 #[must_use]
-pub fn exceeds_limit(
-    pass_role: LutPassRole,
-    radial_stock_to_leave_mm: Option<f64>,
-) -> (f64, DeflectionBasis) {
+pub fn exceeds_limit(leave: Leave) -> (f64, DeflectionBasis) {
     // EXEMPT(P28-16, F-LeaveAfter)
-    match (pass_role, radial_stock_to_leave_mm) {
-        (LutPassRole::Finish | LutPassRole::SemiFinish, _) => {
-            (EXCEEDS_BOUND_MM, DeflectionBasis::FinishTarget)
-        }
-        (LutPassRole::Roughing, None) => (EXCEEDS_BOUND_MM, DeflectionBasis::NoLeaveField),
-        (LutPassRole::Roughing, Some(mm)) if mm.is_finite() && mm > 0.0 => {
-            (mm, DeflectionBasis::StockToLeave { mm })
-        }
-        (LutPassRole::Roughing, Some(_)) => (EXCEEDS_BOUND_MM, DeflectionBasis::ZeroLeave),
+    match leave {
+        Leave::FinishPass => (EXCEEDS_BOUND_MM, DeflectionBasis::FinishTarget),
+        Leave::NoField => (EXCEEDS_BOUND_MM, DeflectionBasis::NoLeaveField),
+        Leave::Mm(mm) => (mm, DeflectionBasis::StockToLeave { mm }),
+        Leave::Zero => (EXCEEDS_BOUND_MM, DeflectionBasis::ZeroLeave),
     }
 }
 
@@ -256,21 +253,18 @@ pub fn deflection_feed_per_tooth_mm(
     )
 }
 
-#[tracing::instrument(level = "debug", skip_all, fields(toolpath_id = ctx.toolpath_id.raw(), op = ?ctx.operation_kind))]
+#[tracing::instrument(level = "debug", skip_all, fields(toolpath_id = ctx.toolpath_id().raw(), op = ?ctx.operation_kind()))]
 pub fn evaluate(
     ctx: &super::ToolpathLoadContext<'_>,
     env: &super::GateEnv<'_>,
 ) -> DeflectionVerdict {
-    let &super::ToolpathLoadContext {
-        toolpath_id,
-        tool,
-        material,
-        operation_kind,
-        pass_role,
-        spans,
-        radial_stock_to_leave_mm,
-        ..
-    } = ctx;
+    let (toolpath_id, tool, material, operation_kind, spans) = (
+        ctx.toolpath_id(),
+        ctx.tool(),
+        ctx.material(),
+        ctx.operation_kind(),
+        ctx.spans(),
+    );
     let &super::GateEnv {
         sim_trace,
         tolerance,
@@ -278,7 +272,7 @@ pub fn evaluate(
     } = env;
     // P17: one limit for the trip, the bounds and the entry spike.
     // EXEMPT(P28-16, F-LeaveAfter)
-    let (limit_mm, basis) = exceeds_limit(pass_role, radial_stock_to_leave_mm);
+    let (limit_mm, basis) = exceeds_limit(ctx.body_facts().leave_after_mm);
     // Roadmap F.8 — same short-circuit as power/chipload: drill cycles
     // have no continuous engagement, so the cantilever-deflection
     // metric is meaningless. Return "doesn't apply" rather than the
@@ -535,20 +529,16 @@ mod tests {
         tolerance: &crate::tool_load::ToleranceBands,
     ) -> DeflectionVerdict {
         evaluate(
-            &crate::tool_load::ToolpathLoadContext {
-                toolpath_id: ToolpathId::from_raw(toolpath_id),
+            &crate::tool_load::ToolpathLoadContext::of_operation(
+                ToolpathId::from_raw(toolpath_id),
+                &crate::compute::catalog::OperationConfig::new_default(operation_kind),
                 tool,
                 material,
-                operation_family: crate::feeds::vendor_lut::LutOperationFamily::Pocket,
-                pass_role: crate::feeds::vendor_lut::LutPassRole::Roughing,
-                operation_feed_rate_mm_min: 0.0,
-                steady_feed: crate::machine::SteadyFeedMmMin::op_feed_only(0.0),
-                operation_kind,
+                crate::machine::SteadyFeedMmMin::op_feed_only(0.0),
                 spans,
-                drill_op: None,
-                commanded_thinning_lift: None,
-                radial_stock_to_leave_mm: None,
-            },
+                crate::limits::CapTable::empty(),
+                None,
+            ),
             &crate::tool_load::GateEnv {
                 sim_trace,
                 machine: None,

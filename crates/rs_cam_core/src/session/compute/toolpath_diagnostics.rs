@@ -34,61 +34,34 @@ impl ProjectSession {
         let tc = self.toolpath_configs.get(index)?;
         let tool_cfg = self.toolpath_tool(tc)?;
         let tool = crate::compute::cutter::build_cutter(tool_cfg).ok()?;
-        let (family, pass_role) = tc.operation.feeds_style();
         let result = self.result_at(index);
-        // P11b2: the lift of the stated cut, by Suggest's own rule (the
-        // engaged diameter at the stated depth, `feeds::effective_diameter`).
-        let (stated_ap, stated_ae, _) = tc.operation.cut_spec().calc_inputs(tool_cfg.diameter);
-        let commanded_thinning_lift = stated_ap.zip(stated_ae).map(|(ap, ae)| {
-            let d_eng = crate::feeds::engagement::EngagedDiameter::of_hint(
-                tool_cfg.geometry_hint(),
-                tool_cfg.diameter,
-                // P22-0c-6b: the body's cutting cap (ruling 1).
-                tool.body().max_cut_diameter_mm(),
-                ap,
-            );
-            // P23a: the width of Suggest's lift (the pass ceiling of an
-            // adaptive plan; `PowerCases::full_feed_width`).
-            let width = crate::feeds::engagement::PowerCases::of_operation(&tc.operation)
-                .full_feed_width(ae, tool_cfg.diameter);
-            // P29-1: the lift of the one load, on the stated cut at the
-            // planner width.
-            crate::feeds::cut_load::CutLoad::thinning_lift(
-                &crate::feeds::engagement::Engagement::from_cut(
-                    crate::feeds::envelope::CutPoint {
-                        ap_mm: ap,
-                        ae_mm: width,
-                    },
-                    tool_cfg.geometry_hint(),
-                    d_eng,
-                    None,
-                ),
-                // P29-3: the thinning rule of the op's body cut.
-                tc.operation.cuts().body_facts().thins_chip,
-            )
-        });
         // S11: an op with no feed has no load context.
         let op_feed = tc.operation.feed_rate()?;
+        // P29-6: the facts of the context (kind, row key, body facts, the
+        // commanded lift) come from the op, in `ToolpathLoadContext::of_operation`.
         Some(crate::tool_load::LoadContextParts {
             toolpath_id: tc.id,
+            operation: &tc.operation,
             tool,
             material: &self.stock.material,
-            operation_family: crate::feeds::vendor_normalize::op_family_to_lut(family),
-            pass_role: pass_role.into(),
-            operation_feed_rate_mm_min: op_feed,
             // P20e: the steady feed through THE op ceiling, the cap the
             // modulator reads (G-FEEDMAX).
             steady_feed: self
                 .machine
                 .op_steady_feed(op_feed, tc.dressups.feed_max_rate),
-            operation_kind: tc.operation.op_type(),
             spans: result
                 .filter(|r| r.annotated().spans_valid)
                 .map(|r| r.annotated().spans.as_slice()),
+            caps: result.map_or_else(
+                || crate::limits::CapTable::empty().clone(),
+                |r| {
+                    crate::limits::CapTable::of_toolpath(
+                        &r.annotated().toolpath,
+                        r.semantic_trace.as_deref(),
+                    )
+                },
+            ),
             drill_op: result.and_then(|r| r.drill_op()).map(AsRef::as_ref),
-            commanded_thinning_lift,
-            // P17: the radial leave of the op, the rough deflection limit.
-            radial_stock_to_leave_mm: tc.operation.radial_stock_to_leave_mm(),
         })
     }
 

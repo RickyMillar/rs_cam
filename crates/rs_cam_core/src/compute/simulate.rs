@@ -1076,7 +1076,7 @@ impl EnvelopePlacement {
 }
 
 /// K7 (feeds contract P9), the tenth shared decision: place the measured
-/// engagement of toolpath `ctx.toolpath_id` against `envelope`.
+/// engagement of toolpath `ctx.toolpath_id()` against `envelope`.
 ///
 /// The population is the power gate's: a cutting sample with an arc that
 /// passes [`crate::tool_load::locality::is_steady_state_for_gate`] (never a
@@ -1100,8 +1100,8 @@ pub fn envelope_placement(
     envelope: &crate::feeds::envelope::SafeEnvelope,
 ) -> EnvelopePlacement {
     use crate::feeds::envelope::Placement;
-    let line = ctx.material.force_line().ok();
-    let span_lookup = ctx.spans.map(crate::tool_load::locality::SpanLookup::new);
+    let line = ctx.material().force_line().ok();
+    let span_lookup = ctx.spans().map(crate::tool_load::locality::SpanLookup::new);
     let mut out = EnvelopePlacement {
         placed: 0,
         outside: 0,
@@ -1112,19 +1112,19 @@ pub fn envelope_placement(
     // diameter (`placement_of_measured`).
     let machine = envelope.machine();
     for (i, s) in trace.samples.iter().enumerate() {
-        if s.toolpath_id != ctx.toolpath_id
+        if s.toolpath_id != ctx.toolpath_id()
             // EXEMPT(P28-21, P28-22, P28-23)
             || !crate::tool_load::locality::is_steady_state_for_gate(s, span_lookup.as_ref())
         {
             continue;
         }
-        let Some(engagement) = crate::feeds::engagement::Engagement::from_sample(s, ctx.tool)
+        let Some(engagement) = crate::feeds::engagement::Engagement::from_sample(s, ctx.tool())
         else {
             continue;
         };
         let feed = crate::tool_load::effective_feed_for_sample(s, &trace.predicted_feeds);
         let power_kw = line
-            .and_then(|line| crate::tool_load::power::sample_power_kw(ctx.tool, &line, s, feed));
+            .and_then(|line| crate::tool_load::power::sample_power_kw(ctx.tool(), &line, s, feed));
         // P20i: the power figure the gate grades, when it grades the sample.
         let graded = line.and_then(|line| {
             crate::tool_load::power::gate_sample_power(

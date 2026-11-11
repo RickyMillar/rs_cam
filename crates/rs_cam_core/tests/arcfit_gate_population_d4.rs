@@ -462,7 +462,6 @@ fn the_two_published_peaks_agree_on_an_arc_fitted_op() {
 fn modelled_gate_verdicts_across_the_two_classifications() {
     use rs_cam_core::compute::catalog::OperationType;
     use rs_cam_core::compute::tool_config::ToolMaterial;
-    use rs_cam_core::feeds::vendor_lut::{LutOperationFamily, LutPassRole};
     use rs_cam_core::material::Material;
     use rs_cam_core::stock::simulation_cut::SimulationCutTrace;
     use rs_cam_core::tool::ToolDefinition;
@@ -523,23 +522,19 @@ fn modelled_gate_verdicts_across_the_two_classifications() {
         ToolMaterial::Carbide,
     );
     let material = Material::default();
-    let ctx = ToolpathLoadContext {
-        toolpath_id: ToolpathId::from_raw(0),
-        tool: &tool,
-        material: &material,
-        operation_family: LutOperationFamily::Contour,
-        pass_role: LutPassRole::Finish,
-        operation_feed_rate_mm_min: 1200.0,
-        steady_feed: rs_cam_core::machine::SteadyFeedMmMin::op_feed_only(1200.0),
-        operation_kind: OperationType::Profile,
+    let ctx = ToolpathLoadContext::of_operation(
+        ToolpathId::from_raw(0),
+        &rs_cam_core::compute::catalog::OperationConfig::new_default(OperationType::Profile),
+        &tool,
+        &material,
+        rs_cam_core::machine::SteadyFeedMmMin::op_feed_only(1200.0),
         // The gates build their `SpanLookup` from here — without it
         // `is_phantom_transit` degrades to the flag-only fallback and the
         // ancestry half of the predicate is never exercised.
-        spans: Some(&fitted.spans),
-        drill_op: None,
-        commanded_thinning_lift: None,
-        radial_stock_to_leave_mm: None,
-    };
+        Some(&fitted.spans),
+        rs_cam_core::limits::CapTable::empty(),
+        None,
+    );
     let bands = ToleranceBands::default();
 
     // A machine profile, so the power gate models a verdict too rather than

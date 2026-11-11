@@ -68,7 +68,7 @@
 
 use rs_cam_core::compute::catalog::OperationType;
 use rs_cam_core::compute::tool_config::ToolMaterial;
-use rs_cam_core::feeds::vendor_lut::{LutOperationFamily, LutPassRole};
+use rs_cam_core::feeds::vendor_lut::LutPassRole;
 use rs_cam_core::ids::ToolpathId;
 use rs_cam_core::machine::kinematics::PredictedFeedMap;
 use rs_cam_core::material::{Material, WoodSpecies};
@@ -178,20 +178,16 @@ fn verdict_for(
     let material = material();
     let built = trace(with_predicted_feeds);
     evaluate_toolpath(
-        &ToolpathLoadContext {
-            toolpath_id: TOOLPATH,
-            tool: &tool,
-            material: &material,
-            operation_family: LutOperationFamily::Parallel,
-            pass_role: LutPassRole::Finish,
-            operation_feed_rate_mm_min: COMMANDED_FEED_MM_MIN,
-            steady_feed: rs_cam_core::machine::SteadyFeedMmMin::op_feed_only(COMMANDED_FEED_MM_MIN),
-            operation_kind: OperationType::DropCutter,
-            spans: None,
-            drill_op: None,
-            commanded_thinning_lift: None,
-            radial_stock_to_leave_mm: None,
-        },
+        &ToolpathLoadContext::of_operation(
+            TOOLPATH,
+            &rs_cam_core::compute::catalog::OperationConfig::new_default(OperationType::DropCutter),
+            &tool,
+            &material,
+            rs_cam_core::machine::SteadyFeedMmMin::op_feed_only(COMMANDED_FEED_MM_MIN),
+            None,
+            rs_cam_core::limits::CapTable::empty(),
+            None,
+        ),
         if with_trace { Some(&built) } else { None },
         None,
         &ToleranceBands::default(),

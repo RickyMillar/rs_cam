@@ -384,7 +384,7 @@ fn build_cut_metric_set(
         machine: Some(session.machine()),
         tolerance: &tolerance,
     };
-    let breaks = AirSamples::of(env.sim_trace, ctx.toolpath_id);
+    let breaks = AirSamples::of(env.sim_trace, ctx.toolpath_id());
     for metric in CUT_METRIC_ORDER {
         let Some(outcome) =
             rs_cam_core::tool_load::metric_distribution(metric, verdict, &ctx, &env)
@@ -414,11 +414,11 @@ fn build_cut_metric_set(
         .envelope
         .as_deref()
         .and_then(envelope_diameter_mm)
-        .unwrap_or_else(|| rs_cam_core::tool::MillingCutter::diameter(ctx.tool));
+        .unwrap_or_else(|| rs_cam_core::tool::MillingCutter::diameter(ctx.tool()));
     set.budget_n = rs_cam_core::tool_load::cut_force::budget_line(&ctx, &env);
     let stock_view = env
         .sim_trace
-        .and_then(|t| t.stock_population_view(ctx.toolpath_id, ctx.material));
+        .and_then(|t| t.stock_population_view(ctx.toolpath_id(), ctx.material()));
     set.samples = match &stock_view {
         Some(view) => {
             let view_env = GateEnv {
@@ -444,15 +444,20 @@ fn build_cut_metric_set(
             &tc.operation,
             session.post_config().spindle_speed,
         ));
-        let flutes = f64::from(ctx.tool.flute_count);
+        let flutes = f64::from(ctx.tool().flute_count);
         let fz_mm = if rpm > 0.0 && flutes > 0.0 {
-            ctx.steady_feed.mm_min() / (rpm * flutes)
+            ctx.steady_feed().mm_min() / (rpm * flutes)
         } else {
             0.0
         };
         let ap_top = force_field::field_top(env_arc, &set.samples);
-        set.force_field =
-            force_field::ForceField::build(ctx.tool, ctx.material, set.diameter_mm, ap_top, fz_mm);
+        set.force_field = force_field::ForceField::build(
+            ctx.tool(),
+            ctx.material(),
+            set.diameter_mm,
+            ap_top,
+            fz_mm,
+        );
     }
     set
 }

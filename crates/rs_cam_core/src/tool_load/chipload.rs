@@ -272,7 +272,7 @@ pub(crate) fn steady_state_samples_for_toolpath<'a>(
 /// `toolpath_id` matches `SimulationCutSample::toolpath_id` (the stable
 /// id from `SimToolpathEntry::id`, not a project-relative index).
 ///
-/// `ctx.steady_feed` is the feed the op commands in steady cutting (P20e:
+/// `ctx.steady_feed()` is the feed the op commands in steady cutting (P20e:
 /// `min(op feed, feed_max_rate, cutting ceiling)`); samples below 95% of
 /// it are filtered out as non-steady-state moves. See module doc.
 ///
@@ -357,7 +357,7 @@ pub(crate) fn evaluate_with_explanation(
     (verdict, explanation)
 }
 
-#[tracing::instrument(level = "debug", skip_all, fields(toolpath_id = ctx.toolpath_id.raw(), op = ?ctx.operation_kind))]
+#[tracing::instrument(level = "debug", skip_all, fields(toolpath_id = ctx.toolpath_id().raw(), op = ?ctx.operation_kind()))]
 pub fn evaluate(ctx: &super::ToolpathLoadContext<'_>, env: &super::GateEnv<'_>) -> ChiploadVerdict {
     evaluate_inner(ctx, env, &mut None)
 }
@@ -367,17 +367,16 @@ fn evaluate_inner(
     env: &super::GateEnv<'_>,
     partial_stages: &mut Option<PartialFeedStages>,
 ) -> ChiploadVerdict {
-    let &super::ToolpathLoadContext {
-        toolpath_id,
-        tool,
-        material,
-        operation_family,
-        pass_role,
-        steady_feed,
-        operation_kind,
-        spans,
-        ..
-    } = ctx;
+    let (toolpath_id, tool, material, steady_feed, operation_kind, spans) = (
+        ctx.toolpath_id(),
+        ctx.tool(),
+        ctx.material(),
+        ctx.steady_feed(),
+        ctx.operation_kind(),
+        ctx.spans(),
+    );
+    // The vendor row key: a row lookup, not a limit scope.
+    let (operation_family, pass_role) = ctx.row_key();
     let &super::GateEnv {
         sim_trace,
         tolerance,
@@ -602,11 +601,10 @@ fn evaluate_inner(
             peak_chip_mm: feed_per_tooth_mm,
         }
     });
-    // P11b2 (L1, L2): the op's own pass role decides whether the chip
-    // thins (`ctx.pass_role` is the op's feeds style, not the routed row
-    // role). A drill cycle never reaches this line (the short-circuit at
-    // the top).
-    let thinning = crate::feeds::geometry::RadialThinning::of_lut_role(pass_role);
+    // P11b2 (L1, L2), P29-6: the thinning rule of the op's body cut
+    // (`OperationConfig::cuts`), not the routed row role. A drill cycle
+    // never reaches this line (the short-circuit at the top).
+    let thinning = ctx.body_facts().thins_chip;
     let achieved_feed_stage = {
         let predicted_feeds_present = !trace.predicted_feeds.is_empty();
         let median_ratio = if predicted_feeds_present {
@@ -801,11 +799,11 @@ fn evaluate_inner(
     // filled in by `evaluate_with_explanation`. Nothing here is
     // recomputed: every field is a value this gate already derived.
     // P11b2: the commanded peak chip is the commanded advance over the lift
-    // of the STATED cut (`ctx.commanded_thinning_lift`, Suggest's own rule),
+    // of the STATED cut (`ctx.commanded_thinning_lift()`, Suggest's own rule),
     // so `commanded_above_band` compares the peak chip Suggest sized. With no
     // stated width or depth it is the median measured lift of the trip set
     // (1 on a finish pass or with no trip sample).
-    let commanded_lift = match ctx.commanded_thinning_lift {
+    let commanded_lift = match ctx.commanded_thinning_lift() {
         Some(lift) if lift.is_finite() && lift >= 1.0 => lift,
         Some(_) | None => {
             if trip_lifts.is_empty() {
@@ -1076,29 +1074,22 @@ mod tests {
         material: &crate::material::Material,
         sim_trace: Option<&crate::stock::simulation_cut::SimulationCutTrace>,
         spans: Option<&[crate::trace::toolpath_spans::Span]>,
-        operation_family: LutOperationFamily,
-        pass_role: LutPassRole,
         operation_feed_rate_mm_min: f64,
         operation_kind: crate::compute::catalog::OperationType,
         tolerance: &crate::tool_load::ToleranceBands,
     ) -> ChiploadVerdict {
+        // P29-6: the vendor row key and the body facts come from the op.
         evaluate(
-            &crate::tool_load::ToolpathLoadContext {
-                toolpath_id: ToolpathId::from_raw(toolpath_id),
+            &crate::tool_load::ToolpathLoadContext::of_operation(
+                ToolpathId::from_raw(toolpath_id),
+                &crate::compute::catalog::OperationConfig::new_default(operation_kind),
                 tool,
                 material,
-                operation_family,
-                pass_role,
-                operation_feed_rate_mm_min,
-                steady_feed: crate::machine::SteadyFeedMmMin::op_feed_only(
-                    operation_feed_rate_mm_min,
-                ),
-                operation_kind,
+                crate::machine::SteadyFeedMmMin::op_feed_only(operation_feed_rate_mm_min),
                 spans,
-                drill_op: None,
-                commanded_thinning_lift: None,
-                radial_stock_to_leave_mm: None,
-            },
+                crate::limits::CapTable::empty(),
+                None,
+            ),
             &crate::tool_load::GateEnv {
                 sim_trace,
                 machine: None,
@@ -1308,8 +1299,6 @@ mod tests {
             &maple,
             Some(&t),
             None,
-            LutOperationFamily::Trace,
-            LutPassRole::Finish,
             1000.0,
             OperationType::ProjectCurve,
             &crate::tool_load::ToleranceBands::default(),
@@ -1342,8 +1331,6 @@ mod tests {
             },
             Some(&t),
             None,
-            LutOperationFamily::Trace,
-            LutPassRole::Finish,
             1000.0,
             OperationType::ProjectCurve,
             &crate::tool_load::ToleranceBands::default(),
@@ -1442,8 +1429,6 @@ mod tests {
             },
             None,
             None,
-            LutOperationFamily::Pocket,
-            LutPassRole::Roughing,
             1000.0,
             OperationType::Pocket,
             &crate::tool_load::ToleranceBands::default(),
@@ -1474,8 +1459,6 @@ mod tests {
             },
             Some(&t),
             None,
-            LutOperationFamily::Pocket,
-            LutPassRole::Roughing,
             1000.0,
             OperationType::Pocket,
             &crate::tool_load::ToleranceBands::default(),
@@ -1501,8 +1484,6 @@ mod tests {
             },
             Some(&t),
             None,
-            LutOperationFamily::Pocket,
-            LutPassRole::Roughing,
             1000.0,
             OperationType::Pocket,
             &crate::tool_load::ToleranceBands::default(),
@@ -1535,8 +1516,6 @@ mod tests {
             },
             Some(&t),
             None,
-            LutOperationFamily::Pocket,
-            LutPassRole::Roughing,
             1000.0,
             OperationType::Pocket,
             &crate::tool_load::ToleranceBands::default(),
@@ -1596,8 +1575,6 @@ mod tests {
             },
             Some(&t),
             None,
-            LutOperationFamily::Scallop,
-            LutPassRole::Finish,
             1000.0,
             OperationType::Scallop,
             &crate::tool_load::ToleranceBands::default(),
@@ -1659,8 +1636,6 @@ mod tests {
             },
             Some(&t),
             None,
-            LutOperationFamily::Pocket,
-            LutPassRole::Roughing,
             1000.0,
             OperationType::Pocket,
             &crate::tool_load::ToleranceBands::default(),
@@ -1681,8 +1656,6 @@ mod tests {
             },
             Some(&t),
             None,
-            LutOperationFamily::Pocket,
-            LutPassRole::Roughing,
             1000.0,
             OperationType::Pocket,
             &crate::tool_load::ToleranceBands::default(),
@@ -1721,8 +1694,6 @@ mod tests {
             },
             Some(&t),
             None,
-            LutOperationFamily::Pocket,
-            LutPassRole::Roughing,
             1000.0,
             OperationType::Pocket,
             &crate::tool_load::ToleranceBands::default(),
@@ -1763,8 +1734,6 @@ mod tests {
             },
             Some(&t),
             None,
-            LutOperationFamily::Pocket,
-            LutPassRole::Roughing,
             1500.0,
             OperationType::Pocket,
             &crate::tool_load::ToleranceBands::default(),
@@ -1803,8 +1772,6 @@ mod tests {
             },
             Some(&t),
             None,
-            LutOperationFamily::Pocket,
-            LutPassRole::Roughing,
             1500.0,
             OperationType::Pocket,
             &crate::tool_load::ToleranceBands::default(),
@@ -1862,8 +1829,6 @@ mod tests {
             },
             Some(&t),
             None,
-            LutOperationFamily::Pocket,
-            LutPassRole::Roughing,
             1000.0,
             OperationType::Pocket,
             &crate::tool_load::ToleranceBands::default(),
@@ -1891,8 +1856,6 @@ mod tests {
             },
             Some(&t),
             None,
-            LutOperationFamily::Pocket,
-            LutPassRole::Roughing,
             1000.0,
             OperationType::Pocket,
             &crate::tool_load::ToleranceBands::default(),
@@ -1928,8 +1891,6 @@ mod tests {
             },
             Some(&t),
             None,
-            LutOperationFamily::Pocket,
-            LutPassRole::Roughing,
             1000.0,
             OperationType::Pocket,
             &crate::tool_load::ToleranceBands::default(),
@@ -1959,8 +1920,6 @@ mod tests {
             },
             Some(&t),
             None,
-            LutOperationFamily::Pocket,
-            LutPassRole::Roughing,
             1000.0,
             OperationType::Pocket,
             &crate::tool_load::ToleranceBands::default(),
@@ -1996,8 +1955,6 @@ mod tests {
             },
             Some(&t),
             None,
-            LutOperationFamily::Pocket,
-            LutPassRole::Roughing,
             1000.0,
             OperationType::Pocket,
             &crate::tool_load::ToleranceBands::default(),
@@ -2029,8 +1986,6 @@ mod tests {
             },
             Some(&t),
             None,
-            LutOperationFamily::Pocket,
-            LutPassRole::Roughing,
             1000.0,
             OperationType::Pocket,
             &crate::tool_load::ToleranceBands::default(),
@@ -2097,8 +2052,6 @@ mod tests {
             },
             Some(&t),
             None,
-            LutOperationFamily::Scallop,
-            LutPassRole::Finish,
             1000.0,
             OperationType::Scallop,
             bands,
@@ -2155,8 +2108,6 @@ mod tests {
             },
             Some(&t),
             None,
-            LutOperationFamily::Pocket,
-            LutPassRole::Roughing,
             1000.0,
             OperationType::Pocket,
             &bands,
@@ -2186,8 +2137,6 @@ mod tests {
             },
             Some(&t),
             None,
-            LutOperationFamily::Pocket,
-            LutPassRole::Roughing,
             1000.0,
             OperationType::Pocket,
             &bands,
@@ -2215,7 +2164,9 @@ mod tests {
             arc_engagement_radians: Some(psi),
             ..sample(0, 0, advance, 0.15)
         };
-        let observe = |role: LutPassRole| {
+        // P29-6: the op states the role. A Pocket roughs; a Drop Cutter
+        // finish is a finish pass (no thinning).
+        let observe = |op: OperationType| {
             let t = trace(vec![light.clone()]);
             let v = evaluate_args(
                 0,
@@ -2225,10 +2176,8 @@ mod tests {
                 },
                 Some(&t),
                 None,
-                LutOperationFamily::Pocket,
-                role,
                 1000.0,
-                OperationType::Pocket,
+                op,
                 &crate::tool_load::ToleranceBands::default(),
             );
             match v {
@@ -2239,12 +2188,12 @@ mod tests {
                 ChiploadVerdict::Unmodeled { reason } => panic!("Unmodeled({reason:?})"),
             }
         };
-        let rough = observe(LutPassRole::Roughing);
+        let rough = observe(OperationType::Pocket);
         assert!(
             (rough - advance * psi.sin()).abs() < 1e-9,
             "the peak chip is fz sin(psi): {rough}"
         );
-        let finish = observe(LutPassRole::Finish);
+        let finish = observe(OperationType::DropCutter);
         assert!(
             (finish - advance).abs() < 1e-12,
             "a finish pass observes the advance: {finish}"
@@ -2305,8 +2254,6 @@ mod tests {
             },
             Some(&t),
             None,
-            LutOperationFamily::Pocket,
-            LutPassRole::Roughing,
             1500.0,
             OperationType::Pocket,
             &crate::tool_load::ToleranceBands::default(),
@@ -2365,8 +2312,6 @@ mod tests {
             },
             Some(&t),
             None,
-            LutOperationFamily::Pocket,
-            LutPassRole::Roughing,
             1500.0,
             OperationType::Drill,
             &crate::tool_load::ToleranceBands::default(),
@@ -2405,8 +2350,6 @@ mod tests {
             },
             Some(&t),
             None,
-            LutOperationFamily::Pocket,
-            LutPassRole::Roughing,
             1500.0,
             OperationType::Pocket,
             &crate::tool_load::ToleranceBands::default(),

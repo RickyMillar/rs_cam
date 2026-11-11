@@ -390,12 +390,8 @@ fn readout(session: &ProjectSession, with_trace: bool) -> Readout {
     let spans = annotated.spans_valid.then_some(annotated.spans.as_slice());
     let lookup = spans.map(SpanLookup::new);
     let facts = tc.operation.cuts().body_facts();
-    let ctx = SampleContext::new(
-        &tool,
-        spans,
-        CapTable::of_toolpath(&annotated.toolpath, semantic),
-        facts,
-    );
+    let caps = CapTable::of_toolpath(&annotated.toolpath, semantic);
+    let ctx = SampleContext::new(&tool, spans, &caps, facts);
     let sources = item_sources(&annotated.toolpath, semantic);
     let mut out = Readout::default();
     for s in &trace.samples {
@@ -611,10 +607,11 @@ fn an_entry_plunge_in_no_span_is_not_judged() {
     let lookup = SpanLookup::new(&spans);
     let tool = build_cutter(&endmill_tool_config(TOOL_D)).expect("the cutter builds");
     let tp = Toolpath::new();
+    let caps = CapTable::of_toolpath(&tp, None);
     let ctx = SampleContext::new(
         &tool,
         Some(&spans),
-        CapTable::of_toolpath(&tp, None),
+        &caps,
         OperationConfig::Profile(ProfileConfig::default())
             .cuts()
             .body_facts(),

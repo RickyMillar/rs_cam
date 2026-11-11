@@ -155,20 +155,16 @@ fn with_ctx<R>(f: impl FnOnce(&ToolpathLoadContext<'_>) -> R) -> R {
     let tool = tool_definition();
     let material = oak();
     let machine = machine();
-    let ctx = ToolpathLoadContext {
-        toolpath_id: TP,
-        tool: &tool,
-        material: &material,
-        operation_family: rs_cam_core::feeds::vendor_lut::LutOperationFamily::Pocket,
-        pass_role: rs_cam_core::feeds::vendor_lut::LutPassRole::Roughing,
-        operation_feed_rate_mm_min: STATED_FEED,
-        steady_feed: machine.op_steady_feed(STATED_FEED, None),
-        operation_kind: OperationType::Pocket,
-        spans: None,
-        drill_op: None,
-        commanded_thinning_lift: None,
-        radial_stock_to_leave_mm: None,
-    };
+    let ctx = ToolpathLoadContext::of_operation(
+        TP,
+        &rs_cam_core::compute::catalog::OperationConfig::new_default(OperationType::Pocket),
+        &tool,
+        &material,
+        machine.op_steady_feed(STATED_FEED, None),
+        None,
+        rs_cam_core::limits::CapTable::empty(),
+        None,
+    );
     f(&ctx)
 }
 

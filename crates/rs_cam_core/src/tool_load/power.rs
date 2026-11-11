@@ -236,7 +236,7 @@ fn power_at_gate_feed(
 }
 
 /// P20i: the power figure the gate GRADES for the sample `s` of the
-/// toolpath `ctx.toolpath_id`, or `None` when the gate does not grade it.
+/// toolpath `ctx.toolpath_id()`, or `None` when the gate does not grade it.
 ///
 /// The gate grades a sample of a milling op (not a drill cycle) that cuts,
 /// is not an air cut, carries an arc and is steady state
@@ -254,8 +254,8 @@ pub fn gate_sample_power(
     span_lookup: Option<&SpanLookup<'_>>,
 ) -> Option<GateSamplePower> {
     // EXEMPT(P28-10)
-    if ctx.operation_kind.is_drill_kinematics()
-        || s.toolpath_id != ctx.toolpath_id
+    if ctx.operation_kind().is_drill_kinematics()
+        || s.toolpath_id != ctx.toolpath_id()
         || !s.is_cutting
         || s.radial_engagement_class() == RadialEngagementClass::Air
         || s.arc_engagement_radians.is_none()
@@ -264,19 +264,18 @@ pub fn gate_sample_power(
     {
         return None;
     }
-    power_at_gate_feed(ctx.tool, line, machine, s, predicted_feeds)
+    power_at_gate_feed(ctx.tool(), line, machine, s, predicted_feeds)
 }
 
-#[tracing::instrument(level = "debug", skip_all, fields(toolpath_id = ctx.toolpath_id.raw(), op = ?ctx.operation_kind))]
+#[tracing::instrument(level = "debug", skip_all, fields(toolpath_id = ctx.toolpath_id().raw(), op = ?ctx.operation_kind()))]
 pub fn evaluate(ctx: &super::ToolpathLoadContext<'_>, env: &super::GateEnv<'_>) -> PowerVerdict {
-    let &super::ToolpathLoadContext {
-        toolpath_id,
-        tool,
-        material,
-        operation_kind,
-        spans,
-        ..
-    } = ctx;
+    let (toolpath_id, tool, material, operation_kind, spans) = (
+        ctx.toolpath_id(),
+        ctx.tool(),
+        ctx.material(),
+        ctx.operation_kind(),
+        ctx.spans(),
+    );
     let &super::GateEnv {
         sim_trace,
         machine,
@@ -601,20 +600,16 @@ mod tests {
         tolerance: &crate::tool_load::ToleranceBands,
     ) -> PowerVerdict {
         evaluate(
-            &crate::tool_load::ToolpathLoadContext {
-                toolpath_id: ToolpathId::from_raw(toolpath_id),
+            &crate::tool_load::ToolpathLoadContext::of_operation(
+                ToolpathId::from_raw(toolpath_id),
+                &crate::compute::catalog::OperationConfig::new_default(operation_kind),
                 tool,
                 material,
-                operation_family: crate::feeds::vendor_lut::LutOperationFamily::Pocket,
-                pass_role: crate::feeds::vendor_lut::LutPassRole::Roughing,
-                operation_feed_rate_mm_min: 0.0,
-                steady_feed: crate::machine::SteadyFeedMmMin::op_feed_only(0.0),
-                operation_kind,
+                crate::machine::SteadyFeedMmMin::op_feed_only(0.0),
                 spans,
-                drill_op: None,
-                commanded_thinning_lift: None,
-                radial_stock_to_leave_mm: None,
-            },
+                crate::limits::CapTable::empty(),
+                None,
+            ),
             &crate::tool_load::GateEnv {
                 sim_trace,
                 machine: Some(machine),

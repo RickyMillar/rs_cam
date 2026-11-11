@@ -44,7 +44,6 @@ use rs_cam_core::compute::{ToolConfig, ToolId, ToolType};
 use rs_cam_core::feeds::envelope::{EnvelopeInput, LimitKind, PickRequest, SafeEnvelope};
 use rs_cam_core::feeds::force_budget::{RigidityCapOutcome, rigidity_depth_cap};
 use rs_cam_core::feeds::suggest::{OperationApplyInput, SuggestContext, apply_to_operation};
-use rs_cam_core::feeds::vendor_lut::{LutOperationFamily, LutPassRole};
 use rs_cam_core::feeds::{SpindleStrategy, embedded_vendor_lut};
 use rs_cam_core::gcode::load_findings;
 use rs_cam_core::ids::ToolpathId;
@@ -201,30 +200,21 @@ fn peak_axial_engagement(trace: &SimulationCutTrace) -> f64 {
         .fold(0.0_f64, f64::max)
 }
 
-fn depth_verdict_for(
-    op: OperationType,
-    family: LutOperationFamily,
-    pass_role: LutPassRole,
-    trace: &SimulationCutTrace,
-) -> DepthVerdict {
+fn depth_verdict_for(op: OperationType, trace: &SimulationCutTrace) -> DepthVerdict {
     let tool = tool();
     let material = Material::default();
     let machine = machine();
     let tolerance = ToleranceBands::default();
-    let ctx = ToolpathLoadContext {
-        toolpath_id: TP,
-        tool: &tool,
-        material: &material,
-        operation_family: family,
-        pass_role,
-        operation_feed_rate_mm_min: 2000.0,
-        steady_feed: rs_cam_core::machine::SteadyFeedMmMin::op_feed_only(2000.0),
-        operation_kind: op,
-        spans: None,
-        drill_op: None,
-        commanded_thinning_lift: None,
-        radial_stock_to_leave_mm: None,
-    };
+    let ctx = ToolpathLoadContext::of_operation(
+        TP,
+        &rs_cam_core::compute::catalog::OperationConfig::new_default(op),
+        &tool,
+        &material,
+        rs_cam_core::machine::SteadyFeedMmMin::op_feed_only(2000.0),
+        None,
+        rs_cam_core::limits::CapTable::empty(),
+        None,
+    );
     let env = GateEnv {
         sim_trace: Some(trace),
         machine: Some(&machine),
@@ -240,20 +230,16 @@ fn milling_verdict(op: OperationType, trace: &SimulationCutTrace) -> ToolpathLoa
     let material = Material::default();
     let machine = machine();
     let tolerance = ToleranceBands::default();
-    let ctx = ToolpathLoadContext {
-        toolpath_id: TP,
-        tool: &tool,
-        material: &material,
-        operation_family: LutOperationFamily::Pocket,
-        pass_role: LutPassRole::Roughing,
-        operation_feed_rate_mm_min: 2000.0,
-        steady_feed: rs_cam_core::machine::SteadyFeedMmMin::op_feed_only(2000.0),
-        operation_kind: op,
-        spans: None,
-        drill_op: None,
-        commanded_thinning_lift: None,
-        radial_stock_to_leave_mm: None,
-    };
+    let ctx = ToolpathLoadContext::of_operation(
+        TP,
+        &rs_cam_core::compute::catalog::OperationConfig::new_default(op),
+        &tool,
+        &material,
+        rs_cam_core::machine::SteadyFeedMmMin::op_feed_only(2000.0),
+        None,
+        rs_cam_core::limits::CapTable::empty(),
+        None,
+    );
     rs_cam_core::tool_load::evaluate_toolpath(&ctx, Some(trace), Some(&machine), &tolerance)
 }
 
@@ -389,12 +375,7 @@ fn each_family_reads_the_factor_its_own_pass_role_implies() {
     // Conventional roughing → the force budget (P13c, O1).
     let rough = cap_for(OperationType::Pocket);
     let rough_cap = rough.cap_mm();
-    let rough_verdict = depth_verdict_for(
-        OperationType::Pocket,
-        LutOperationFamily::Pocket,
-        LutPassRole::Roughing,
-        &trace,
-    );
+    let rough_verdict = depth_verdict_for(OperationType::Pocket, &trace);
     let rough_status = rough_verdict.as_criterion_status();
     assert_eq!(rough_status.bound, Some(rough_cap));
 
@@ -408,12 +389,7 @@ fn each_family_reads_the_factor_its_own_pass_role_implies() {
             .is_none(),
         "a one-sided finishing pass must carry no axial cap"
     );
-    let finish = depth_verdict_for(
-        OperationType::Scallop,
-        LutOperationFamily::Scallop,
-        LutPassRole::Finish,
-        &trace,
-    );
+    let finish = depth_verdict_for(OperationType::Scallop, &trace);
     assert!(
         matches!(finish, DepthVerdict::Reported { .. }),
         "a finishing pass must report its depth, got {finish:?}"
@@ -429,12 +405,7 @@ fn each_family_reads_the_factor_its_own_pass_role_implies() {
 
     // A finishing Trace slot → the force budget (P29-5, ruling R3: "slot
     // is a slot!"). At the same measured cut it reads the Pocket's cap.
-    let trace_slot = depth_verdict_for(
-        OperationType::Trace,
-        LutOperationFamily::Trace,
-        LutPassRole::Finish,
-        &trace,
-    );
+    let trace_slot = depth_verdict_for(OperationType::Trace, &trace);
     let trace_status = trace_slot.as_criterion_status();
     assert_eq!(
         trace_status.bound,
@@ -446,12 +417,7 @@ fn each_family_reads_the_factor_its_own_pass_role_implies() {
     // read `adaptive_doc_factor`.
     let adaptive_bound = cap_for(OperationType::Adaptive);
     let adaptive_cap = adaptive_bound.cap_mm();
-    let adaptive = depth_verdict_for(
-        OperationType::Adaptive,
-        LutOperationFamily::Adaptive,
-        LutPassRole::Roughing,
-        &trace,
-    );
+    let adaptive = depth_verdict_for(OperationType::Adaptive, &trace);
     let adaptive_status = adaptive.as_criterion_status();
     assert_eq!(adaptive_status.bound, Some(adaptive_cap));
 
@@ -478,12 +444,7 @@ fn each_family_reads_the_factor_its_own_pass_role_implies() {
 )]
 fn a_drill_cycle_carries_the_same_not_applicable_clause_as_the_milling_gates() {
     let trace = measured_trace();
-    let verdict = depth_verdict_for(
-        OperationType::Drill,
-        LutOperationFamily::Drill,
-        LutPassRole::Roughing,
-        &trace,
-    );
+    let verdict = depth_verdict_for(OperationType::Drill, &trace);
     match &verdict {
         DepthVerdict::Unmodeled {
             reason: UnmodeledReason::NotApplicableForOp(clause),
@@ -525,20 +486,16 @@ fn drill_verdict() -> ToolpathLoadVerdict {
     let material = Material::default();
     let machine = machine();
     let tolerance = ToleranceBands::default();
-    let ctx = ToolpathLoadContext {
-        toolpath_id: TP,
-        tool: &tool,
-        material: &material,
-        operation_family: LutOperationFamily::Drill,
-        pass_role: LutPassRole::Roughing,
-        operation_feed_rate_mm_min: 300.0,
-        steady_feed: rs_cam_core::machine::SteadyFeedMmMin::op_feed_only(300.0),
-        operation_kind: OperationType::Drill,
-        spans: None,
-        drill_op: Some(&d),
-        commanded_thinning_lift: None,
-        radial_stock_to_leave_mm: None,
-    };
+    let ctx = ToolpathLoadContext::of_operation(
+        TP,
+        &rs_cam_core::compute::catalog::OperationConfig::new_default(OperationType::Drill),
+        &tool,
+        &material,
+        rs_cam_core::machine::SteadyFeedMmMin::op_feed_only(300.0),
+        None,
+        rs_cam_core::limits::CapTable::empty(),
+        Some(&d),
+    );
     rs_cam_core::tool_load::evaluate_toolpath(&ctx, None, Some(&machine), &tolerance)
 }
 
@@ -652,12 +609,7 @@ fn a_power_exceedance_beside_the_depth_row_warns_and_names_both() {
 #[test]
 fn a_trace_with_no_cutting_samples_is_vacuous_not_a_green_zero() {
     let trace = air_trace();
-    let verdict = depth_verdict_for(
-        OperationType::Pocket,
-        LutOperationFamily::Pocket,
-        LutPassRole::Roughing,
-        &trace,
-    );
+    let verdict = depth_verdict_for(OperationType::Pocket, &trace);
     let status = verdict.as_criterion_status();
     assert_eq!(
         status.state,

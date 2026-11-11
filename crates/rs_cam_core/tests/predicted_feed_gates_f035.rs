@@ -58,7 +58,6 @@ use rs_cam_core::compute::config::{BoundaryConfig, DressupConfig, HeightsConfig,
 use rs_cam_core::compute::operation_configs::{PocketConfig, PocketPattern};
 use rs_cam_core::compute::stock_config::StockConfig;
 use rs_cam_core::compute::tool_config::{ToolConfig, ToolId, ToolMaterial, ToolType};
-use rs_cam_core::feeds::vendor_lut::{LutOperationFamily, LutPassRole};
 use rs_cam_core::gcode::CoolantMode;
 use rs_cam_core::geo::P2;
 use rs_cam_core::machine::kinematics::MachineKinematics;
@@ -209,22 +208,18 @@ fn evaluate_chipload_at(trace: &SimulationCutTrace, commanded_fpt: f64) -> Chipl
     };
     let tolerance = ToleranceBands::default();
     chipload::evaluate(
-        &rs_cam_core::tool_load::ToolpathLoadContext {
-            toolpath_id: ToolpathId::from_raw(0),
-            tool: &tool,
-            material: &material,
-            operation_family: LutOperationFamily::Scallop,
-            pass_role: LutPassRole::Finish,
-            operation_feed_rate_mm_min: commanded_fpt * f64::from(RPM) * f64::from(FLUTES),
-            steady_feed: rs_cam_core::machine::SteadyFeedMmMin::op_feed_only(
+        &rs_cam_core::tool_load::ToolpathLoadContext::of_operation(
+            ToolpathId::from_raw(0),
+            &rs_cam_core::compute::catalog::OperationConfig::new_default(OperationType::Scallop),
+            &tool,
+            &material,
+            rs_cam_core::machine::SteadyFeedMmMin::op_feed_only(
                 commanded_fpt * f64::from(RPM) * f64::from(FLUTES),
             ),
-            operation_kind: OperationType::Scallop,
-            spans: None,
-            drill_op: None,
-            commanded_thinning_lift: None,
-            radial_stock_to_leave_mm: None,
-        },
+            None,
+            rs_cam_core::limits::CapTable::empty(),
+            None,
+        ),
         &rs_cam_core::tool_load::GateEnv {
             sim_trace: Some(trace),
             machine: None,
