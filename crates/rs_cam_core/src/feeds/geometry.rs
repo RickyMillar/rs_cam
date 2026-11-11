@@ -462,14 +462,14 @@ pub fn vendor_depth_table_ceiling_ratio(chip_share: f64) -> f64 {
 ///   (`ToolGeometryHint::engaged_diameter_at_doc`, the parity twin).
 /// - V-bit, flat, ball, bull: the nominal diameter, `cutter.diameter()`.
 ///   A V-bit chart never prints its chip load against the engaged width.
-///   The depth cap and the band de-rate read the nominal diameter
-///   instead, the same key the lookup itself now reads (ruling B4).
+///   This function gives the nominal diameter instead, the same key the
+///   lookup itself now reads (ruling B4).
 ///   Before B4 the band de-rate alone stayed at `lookup_diameter_at`, the
 ///   engaged width.
 ///
-/// Callers: [`depth_cap_diameter_mm`] (the rigidity depth cap). P11b2
-/// retired the other caller, the band de-rate of `tool_load::chipload` and
-/// `tool_load::mod`.
+/// Callers: none in product code. P11b2 retired the band de-rate of
+/// `tool_load::chipload` and `tool_load::mod`; P29-4 retired the Adaptive
+/// factor depth cap, its last caller.
 ///
 /// A negative or non-finite depth reads as zero.
 #[must_use]
@@ -491,20 +491,6 @@ pub fn depth_derate_diameter_for_cutter(
     }
 }
 
-/// **The diameter the rigidity depth cap multiplies, at one axial depth.**
-/// The Adaptive cap is `factor × D` (`force_budget::rigidity_depth_cap`). Before R2
-/// the Suggest clamp gave it the tip of a tapered ball and the
-/// post-simulation depth gate gave it the shank (EVIDENCE 5.1-7, 3.5-15).
-/// Both doors now call this function, each at its own depth: Suggest at
-/// the depth it ships, the gate at the measured peak.
-///
-/// A thin name for [`depth_derate_diameter_for_cutter`]; see it for the
-/// per-shape rule.
-#[must_use]
-pub fn depth_cap_diameter_mm(cutter: &dyn crate::tool::MillingCutter, depth_mm: f64) -> f64 {
-    depth_derate_diameter_for_cutter(cutter, depth_mm)
-}
-
 /// **The diameter at which the vendor LUT row is looked up and scaled,
 /// at axial depth `ap`.** Ruling A1 (operator, 2026-09-24,
 /// `planning/extrapolation_2026-09-24/RULINGS.md`).
@@ -513,9 +499,9 @@ pub fn depth_cap_diameter_mm(cutter: &dyn crate::tool::MillingCutter, depth_mm: 
 ///   tapered chart (Onsrud, Amana, SpeTool, Whiteside) prints the
 ///   chipload against the tip, so the row is read at the tip at every
 ///   depth. A1 reopens the lookup half of feeds matrix R2 only. The depth
-///   half of R2 stands: the depth cap ([`depth_cap_diameter_mm`]) and the
-///   deflection gate still use the engaged cone diameter at the depth (the
-///   depth ladder and the band de-rate are retired, P11b and P11b2).
+///   half of R2 stands: the deflection gate still uses the engaged cone
+///   diameter at the depth (the depth ladder and the band de-rate are
+///   retired, P11b and P11b2).
 /// - V-bit: the nominal diameter at every depth (ruling B4, 2026-09-25,
 ///   G5). A V-bit chart prints its chip load against the tool's cutting
 ///   diameter (Onsrud 37-series, Whiteside) or against the included angle

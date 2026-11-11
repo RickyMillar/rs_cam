@@ -267,8 +267,8 @@ impl Basis {
     }
 
     /// P29-2: `false` when a bound with this basis must not refuse an
-    /// export: the machine rigidity values (the Factor rule of thumb and
-    /// the force budget of a machine class), as
+    /// export: the machine rigidity values (the force budget of a machine
+    /// class), as
     /// `tool_load::verdict::BoundSource::gates_export`.
     #[must_use]
     pub const fn gates_export(&self) -> bool {

@@ -15,7 +15,7 @@
 //!
 //! The force budget line exists only on an op whose
 //! `machine.rigidity.depth_cap_rule(family, role)` is
-//! [`DepthCapRule::ForceBudget`]: the one rule the depth gate
+//! `Some(`[`DepthCapRule`]`)`: the one rule the depth gate
 //! (`super::depth`) and the P16 modulator read (every roughing family; the
 //! Adaptive family since P29-4). On any other op (a finish pass, a drill,
 //! no machine) the force is a plain reading with no line.
@@ -52,8 +52,8 @@ use super::{GateEnv, ToolpathLoadContext};
 /// The rule clause of an op under the force budget.
 pub const RULE_FORCE_BUDGET: &str =
     "force budget of the machine (the depth-cap rule of this family)";
-/// The rule clause of an op with no force line: the Adaptive family under
-/// the Factor rule, a finish pass, or no machine.
+/// The rule clause of an op with no force line: a finish pass, a drill, or
+/// no machine.
 pub const RULE_NO_LIMIT: &str = "no force limit on this op family";
 
 /// **The peak engaged-edge force (N) of one sample**: the force behind
@@ -142,8 +142,8 @@ pub fn cut_points(ctx: &ToolpathLoadContext<'_>, env: &GateEnv<'_>) -> Vec<CutPo
 }
 
 /// **The force budget line (N) of this op, or `None`** (lead ruling 3).
-/// `Some(budget_n)` only when the machine's depth-cap rule for the op's
-/// family and pass role is [`DepthCapRule::ForceBudget`] (every roughing
+/// `Some(budget_n)` only when the machine has a depth-cap rule
+/// ([`DepthCapRule`]) for the op's family and pass role (every roughing
 /// family; P29-4, ruling R1, gave the Adaptive family the budget). `None`
 /// for a finish pass, a drill, or no machine. The family and the role come from the registry spec of the
 /// operation kind, as `super::depth` reads them.
@@ -151,14 +151,11 @@ pub fn cut_points(ctx: &ToolpathLoadContext<'_>, env: &GateEnv<'_>) -> Vec<CutPo
 pub fn budget_line(ctx: &ToolpathLoadContext<'_>, env: &GateEnv<'_>) -> Option<f64> {
     let machine = env.machine?;
     let spec = ctx.operation_kind.spec();
-    match machine
+    let DepthCapRule { budget_n } = machine
         .rigidity
         // EXEMPT(F-DepthRule)
-        .depth_cap_rule(spec.feeds_family, spec.feeds_pass_role)?
-    {
-        DepthCapRule::ForceBudget(budget_n) => Some(budget_n),
-        DepthCapRule::Factor(_) => None,
-    }
+        .depth_cap_rule(spec.feeds_family, spec.feeds_pass_role)?;
+    Some(budget_n)
 }
 
 /// **The cut-force reading of one toolpath**, report-only.

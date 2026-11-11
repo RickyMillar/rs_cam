@@ -116,9 +116,12 @@ fn deflection_within() -> DeflectionVerdict {
 fn depth_within() -> DepthVerdict {
     DepthVerdict::Within {
         peak_mm: 1.0,
-        bound: RigidityDepthCap::Factor {
-            factor: 0.25,
-            diameter_mm: 6.0,
+        bound: RigidityDepthCap::ForceBudget {
+            budget_n: 35.0,
+            ae_mm: 3.0,
+            fz_mm: 0.05,
+            depth_mm: 1.5,
+            below_floor: false,
         },
         evidence: SampleEvidence::empty(),
         confidence: Confidence::Validated,

@@ -15,21 +15,18 @@
 //! entry ramps, curved surfaces and arcs — so it belongs beside the
 //! other measured loads. That is Reading A, and this file pins it.
 //!
-//! **The row does not gate.** Its bound is
-//! `RigidityProfile::doc_*_factor` times the tool diameter: a rule of
-//! thumb with no published source. S4 typed that as
-//! `BoundSource::RigidityRuleOfThumb`, whose `gates_export()` is false,
-//! and wrote the export policy against hand-built rows because nothing
-//! produced the variant yet. S3 is its first producer, so arm (d) below
-//! is the first end-to-end exercise of that path: an exceeded depth row
-//! is REPORTED and the export still goes ahead, while an exceeded power
-//! row beside it still refuses.
+//! **The row does not gate.** Its bound is the machine force-budget
+//! depth (P13c; the Adaptive family since P29-4). The budget stands in
+//! for an unmeasured frame, so the bound is
+//! `BoundSource::MachineForceBudget`, whose `gates_export()` is false.
+//! Arm (d) below is the end-to-end exercise of that path: an exceeded
+//! depth row is REPORTED and the export still goes ahead, while an
+//! exceeded power row beside it still warns. P29-4 deleted the rule of
+//! thumb `factor x D` and its `BoundSource::RigidityRuleOfThumb`.
 //!
-//! **S3 adds no number.** Every bound here is the factor the profile
-//! already carries times the tool diameter, through the one shared
-//! producer `force_budget::rigidity_depth_cap` (P13c: the force budget on
-//! a roughing Pocket; P29-4: on an Adaptive too), which the envelope now
-//! calls too. The two cannot disagree.
+//! **S3 adds no number.** Every bound here comes through the one shared
+//! producer `force_budget::rigidity_depth_cap`, which the envelope calls
+//! too. The two cannot disagree.
 
 #![expect(
     clippy::unwrap_used,
@@ -285,17 +282,7 @@ fn cap_for(family: OperationFamily, pass_role: PassRole) -> RigidityDepthCap {
     let m = machine();
     let ae = DIAMETER_MM / 2.0 * (1.0 - std::f64::consts::FRAC_PI_2.cos());
     let fz = 2000.0 / (f64::from(SAMPLE_RPM) * 2.0);
-    let peak = peak_axial_engagement(&measured_trace());
-    match rigidity_depth_cap(
-        &m,
-        family,
-        pass_role,
-        &tool(),
-        &Material::default(),
-        ae,
-        fz,
-        peak,
-    ) {
+    match rigidity_depth_cap(&m, family, pass_role, &tool(), &Material::default(), ae, fz) {
         Some(RigidityCapOutcome::Cap(c)) => c,
         other => panic!("a milling roughing family carries an axial cap: {other:?}"),
     }
@@ -304,13 +291,6 @@ fn cap_for(family: OperationFamily, pass_role: PassRole) -> RigidityDepthCap {
 /// The bound source the depth row carries for `cap`.
 fn source_of(cap: RigidityDepthCap) -> BoundSource {
     match cap {
-        RigidityDepthCap::Factor {
-            factor,
-            diameter_mm,
-        } => BoundSource::RigidityRuleOfThumb {
-            factor,
-            diameter_mm,
-        },
         RigidityDepthCap::ForceBudget {
             budget_n,
             ae_mm,
@@ -342,11 +322,6 @@ fn a_roughing_depth_row_states_the_measured_peak_and_its_bound() {
         Some(cap_mm),
         "the depth row must read against the profile's own cap"
     );
-    // P13c (O1): a roughing Pocket reads the force budget.
-    assert!(
-        matches!(cap, RigidityDepthCap::ForceBudget { .. }),
-        "{cap:?}"
-    );
     assert_eq!(
         row.bound_source,
         Some(source_of(cap)),
@@ -369,24 +344,21 @@ fn a_roughing_depth_row_states_the_measured_peak_and_its_bound() {
     );
 }
 
-/// The bound a rule of thumb sets may never refuse an export, and the
-/// kind is NOT a known absence: a depth row is a real gate with a real
-/// producer, unlike the gantry-push row beside it.
+/// The force-budget bound may never refuse an export, and the kind is NOT
+/// a known absence: a depth row is a real gate with a real producer,
+/// unlike the gantry-push row beside it.
 #[test]
 fn the_depth_bound_does_not_gate_and_the_kind_is_not_a_known_absence() {
     assert!(
         !CriterionKind::DepthOfCut.is_unmodeled_by_design(),
         "the depth row is produced by a real gate"
     );
-    let source = BoundSource::RigidityRuleOfThumb {
-        factor: 0.25,
-        diameter_mm: DIAMETER_MM,
-    };
+    let source = source_of(cap_for(OperationFamily::Pocket, PassRole::Roughing));
     assert!(!source.gates_export());
     assert_eq!(source.setting(), "machine");
     assert!(
-        source.clause().contains("rule of thumb"),
-        "the clause must say the bound has no published source: {}",
+        source.clause().contains("unmeasured frame"),
+        "the clause must say the budget stands in for an unmeasured frame: {}",
         source.clause()
     );
 }
@@ -460,19 +432,13 @@ fn each_family_reads_the_factor_its_own_pass_role_implies() {
     // Pocket and the Adaptive family both read the force budget). At the
     // same cut the two caps are equal.
     let m = machine();
-    match (rough, adaptive_bound) {
-        (
-            RigidityDepthCap::ForceBudget { budget_n, .. },
-            RigidityDepthCap::ForceBudget {
-                budget_n: adaptive_budget_n,
-                ..
-            },
-        ) => {
-            assert_eq!(budget_n, m.rigidity.force_budget_n);
-            assert_eq!(adaptive_budget_n, m.rigidity.force_budget_n);
-        }
-        other => panic!("the two arms must read the force budget: {other:?}"),
-    }
+    let RigidityDepthCap::ForceBudget { budget_n, .. } = rough;
+    let RigidityDepthCap::ForceBudget {
+        budget_n: adaptive_budget_n,
+        ..
+    } = adaptive_bound;
+    assert_eq!(budget_n, m.rigidity.force_budget_n);
+    assert_eq!(adaptive_budget_n, m.rigidity.force_budget_n);
     assert_eq!(adaptive_bound, rough, "one rule at one cut gives one cap");
 }
 
@@ -551,7 +517,7 @@ fn drill_verdict() -> ToolpathLoadVerdict {
 
 // ── (d) the non-gating path, end to end ──────────────────────────────
 
-/// The first real producer of `BoundSource::RigidityRuleOfThumb`. An
+/// The end-to-end producer of `BoundSource::MachineForceBudget`. An
 /// operator typed a depth above the cap; no Suggest run lowered it. The
 /// row exceeds, `exceeded_criteria()` lists it, and the export goes
 /// ahead with a note.
@@ -577,7 +543,7 @@ fn a_hand_set_depth_above_the_cap_exceeds_but_does_not_refuse_the_export() {
     );
     assert!(
         !row.warns_on_export(),
-        "a rule-of-thumb bound may not warn on an export"
+        "a force-budget bound may not warn on an export"
     );
     assert!(
         v.exceeded_criteria()
@@ -606,10 +572,9 @@ fn a_hand_set_depth_above_the_cap_exceeds_but_does_not_refuse_the_export() {
         "the note must name the depth row: {note}"
     );
     // P13c (O1): the roughing Pocket bound is the force budget, which
-    // stands in for an unmeasured frame (the factor bound says "rule of
-    // thumb").
+    // stands in for an unmeasured frame.
     assert!(
-        note.contains("rule of thumb") || note.contains("unmeasured frame"),
+        note.contains("unmeasured frame"),
         "the note must say why the bound does not gate: {note}"
     );
 }
@@ -834,7 +799,6 @@ fn the_suggest_clamp_still_fires_at_the_helper_s_own_cap() {
         &material,
         STEPOVER_MM,
         fz,
-        REQUESTED_DPP_MM,
     ) {
         Some(RigidityCapOutcome::Cap(c)) => c.cap_mm(),
         other => panic!("a pocket roughing pass carries an axial cap: {other:?}"),

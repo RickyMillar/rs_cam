@@ -15,8 +15,8 @@
 //!   ONE cap rule, and the gate reads the width at the engaged cone
 //!   diameter (not the tip, not the shank). Before R2 the clamp multiplied
 //!   the tip and the gate the shank (EVIDENCE 5.1-7, 3.5-15). Until P29-4
-//!   the rule was the Adaptive factor x `depth_cap_diameter_mm`; since
-//!   P29-4 (ruling R1) it is the force budget, from one producer
+//!   the rule was the Adaptive factor x the engaged diameter; since P29-4
+//!   (ruling R1) it is the force budget, from one producer
 //!   (`force_budget::rigidity_depth_cap`);
 //! - (d) the diagnostics list carries the depth row: an `Exceeds` as
 //!   `load.depth.exceeds` (EVIDENCE 5.1-15), a finishing reading as
@@ -375,15 +375,14 @@ fn producer_cap(cutter: &ToolDefinition, depth_mm: f64) -> Option<RigidityCapOut
         &softwood(),
         0.4 * cutter.lookup_diameter_at(depth_mm),
         1500.0 / (18_000.0 * 2.0),
-        depth_mm,
     )
 }
 
 /// A Ø3.175-tip tapered ball Adaptive (7 deg, Ø6.175 shank) in softwood.
 /// P29-4 (ruling R1): the Adaptive family reads the force budget, so
 /// Suggest and the gate read one cap rule, the budget. Before P29-4 both
-/// read the factor `adaptive_doc_factor` x the engaged diameter
-/// (`depth_cap_diameter_mm`); no reader reads that diameter now. In
+/// read the factor `adaptive_doc_factor` x the engaged diameter; P29-4
+/// deleted that rule. In
 /// softwood the budget has no root below the flute on this tool (the FM1
 /// tapered-ball softwood rows print an empty cap), so the envelope draws
 /// no rigidity ceiling at the stated width, and the gate reports the peak
@@ -465,7 +464,6 @@ fn the_gate_reads_the_cone_diameter_fm6() {
         &jarrah,
         engaged,
         1500.0 / (18_000.0 * 2.0),
-        DEPTH_MM,
     );
     let tolerance = ToleranceBands::default();
     let env = GateEnv {
@@ -483,9 +481,7 @@ fn the_gate_reads_the_cone_diameter_fm6() {
             DepthVerdict::Within { bound, .. } | DepthVerdict::Exceeds { bound, .. },
         ) => {
             assert_eq!(*bound, want, "the gate reads the producer's cap");
-            let RigidityDepthCap::ForceBudget { ae_mm, .. } = *bound else {
-                panic!("an Adaptive cap is the force budget, got {bound:?}")
-            };
+            let RigidityDepthCap::ForceBudget { ae_mm, .. } = *bound;
             assert!(
                 (ae_mm - engaged).abs() < 1e-9,
                 "the slot width {ae_mm} is the cone diameter {engaged}"
@@ -509,7 +505,6 @@ fn pocket_cap() -> f64 {
         &softwood(),
         3.0,
         1500.0 / (18_000.0 * 2.0),
-        1.0,
     ) {
         Some(rs_cam_core::feeds::force_budget::RigidityCapOutcome::Cap(c)) => c.cap_mm(),
         other => panic!("the fixture cut has a force-budget cap: {other:?}"),

@@ -22,11 +22,10 @@
 //! above is unchanged.
 //!
 //! The arms run through the pure decision helpers, with hand-built
-//! `CriterionStatus` rows. That is deliberate: `RigidityRuleOfThumb`
-//! has no producer until S3 lands the depth-of-cut gate, so a report
-//! built from the shipped gates cannot reach the weak arm yet. The
-//! helpers are pure, so the rule is testable the day it is written
-//! rather than the day its first producer arrives.
+//! `CriterionStatus` rows. The helpers are pure, so the rule is testable
+//! with no simulation. P29-4 (ruling Q7): the weak source is
+//! `MachineForceBudget`, the one bound that does not gate since the rule
+//! of thumb `RigidityRuleOfThumb` was deleted.
 
 #![expect(
     clippy::expect_used,
@@ -44,16 +43,18 @@ use rs_cam_core::tool_load::{ChiploadVerdict, Confidence, DeflectionVerdict, Unm
 
 const TP: ToolpathId = ToolpathId::from_raw(4);
 
-/// The rule-of-thumb bound S3 will produce: the machine rigidity factor
-/// times the tool diameter. Nothing publishes it.
+/// The weak bound: the machine force-budget depth. The budget stands in
+/// for an unmeasured frame, so it does not gate (P29-4, ruling Q7).
 fn weak_source() -> BoundSource {
-    BoundSource::RigidityRuleOfThumb {
-        factor: 0.25,
-        diameter_mm: 12.0,
+    BoundSource::MachineForceBudget {
+        budget_n: 35.0,
+        ae_mm: 3.0,
+        fz_mm: 0.05,
+        depth_mm: 3.0,
     }
 }
 
-/// A row that exceeded a bound built from a rule of thumb. The KIND is
+/// A row that exceeded a weak bound. The KIND is
 /// borrowed from a shipped gate on purpose: the rule under test keys on
 /// the source, never on the quantity, and this arm proves it by putting
 /// a weak source on a kind that normally gates.
@@ -128,7 +129,7 @@ fn within_row() -> CriterionStatus<'static> {
 
 // ── (a) the filter itself ────────────────────────────────────────────
 
-/// A rule of thumb does not warn. A machine ceiling does. A bound
+/// A weak bound does not warn. A machine ceiling does. A bound
 /// with no source does, because absence must fail safe.
 #[test]
 fn only_a_bound_with_a_gating_source_warns() {
@@ -143,7 +144,7 @@ fn only_a_bound_with_a_gating_source_warns() {
     assert_eq!(
         kinds,
         vec![CriterionKind::Power, CriterionKind::Chipload],
-        "the power ceiling and the sourceless bound warn; the rule of thumb does not"
+        "the power ceiling and the sourceless bound warn; the weak bound does not"
     );
     // Non-vacuity in both directions: the list held four rows, one of
     // which is not an exceedance at all.
@@ -167,9 +168,10 @@ fn the_row_predicate_agrees_with_the_filter() {
     );
 }
 
-/// `gates_export` is false for exactly one variant today.
+/// `gates_export` is false for exactly one variant today: the machine
+/// force budget.
 #[test]
-fn only_the_rule_of_thumb_declines_to_gate() {
+fn only_the_machine_bounds_decline_to_gate() {
     assert!(!weak_source().gates_export());
     for source in [
         BoundSource::MachinePowerCurve { rpm: 18_000.0 },
@@ -218,7 +220,7 @@ fn a_weak_exceedance_alone_exports_and_is_still_reported() {
         "the note carries the bound it read against: {note}"
     );
     assert!(
-        note.contains("rule of thumb"),
+        note.contains("unmeasured frame"),
         "the note says why it did not warn: {note}"
     );
 }
@@ -255,7 +257,7 @@ fn a_hard_exceedance_warns_and_names_both() {
         "the advisory names what exceeded without gating: {note}"
     );
     assert!(
-        note.contains("rule of thumb"),
+        note.contains("unmeasured frame"),
         "and says why that one did not warn: {note}"
     );
 }

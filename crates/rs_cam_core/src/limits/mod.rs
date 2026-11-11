@@ -41,8 +41,8 @@ use serde::Serialize;
 
 use crate::feeds::RpmLimit;
 use crate::feeds::cutter_constraints::AxialBindingConstraint;
-use crate::feeds::envelope::{Limit, LimitKind};
-use crate::tool_load::verdict::{BindingConstraint, BoundSource, ChipSide, CriterionKind};
+use crate::feeds::envelope::LimitKind;
+use crate::tool_load::verdict::{BindingConstraint, ChipSide, CriterionKind};
 
 /// The one list of limits (P29-2). A member is a physical or a machine
 /// limit, not a surface: the spindle power is one member on the envelope,
@@ -56,8 +56,6 @@ pub enum LimitId {
     ToolDeflection,
     /// The machine force budget: the peak engaged-edge force.
     ForceBudget,
-    /// The depth rule of thumb `factor x D` (today: the Adaptive family).
-    DepthFactor,
     /// The printed chip band, upper edge (the peak chip).
     ChipMax,
     /// The printed chip band, lower edge.
@@ -112,29 +110,29 @@ pub enum LimitId {
 
 impl LimitId {
     /// Every member, in declaration order.
-    pub const ALL: [Self; 29] = crate::all_variants!(LimitId:
-        SpindlePower, ToolDeflection, ForceBudget, DepthFactor, ChipMax, ChipMin, RubbingFloor,
+    pub const ALL: [Self; 28] = crate::all_variants!(LimitId:
+        SpindlePower, ToolDeflection, ForceBudget, ChipMax, ChipMin, RubbingFloor,
         FluteGuard, CuttingLength, VendorAxial, VendorDepthTable, CornerCoverage, ScallopDepth,
         ToolDiameter, MoveBudget, EngagementFloor, CuttingFeedCap, PlannerFeedCap,
         KinematicReach, PlungeRate, SpindleMaxRpm, ZAxisRate, OperatorRpmCeiling, ChartRpm,
         VendorRpmMax, GantryPush, DrillChipWelding, DrillPeckAdequacy, DrillPlungeFeed,
     );
 
-    /// The limit of an envelope limit kind. `depth` tells the two limits
-    /// that `LimitKind::Rigidity` names.
+    /// The limit of an envelope limit kind. `LimitKind::Rigidity` is the
+    /// force budget (P29-4).
     ///
     /// One old name for two limits: `ChipBand` maps to [`Self::ChipMax`]
     /// (the envelope judges the peak chip against the band; its floor is
     /// the `RubbingFloor` kind), and `EngagementFloor` is one member for
     /// the depth floor and the width floor.
     #[must_use]
-    pub const fn of_limit_kind(kind: LimitKind, depth: DepthRule) -> Self {
+    pub const fn of_limit_kind(kind: LimitKind) -> Self {
         match kind {
             LimitKind::FluteGuard => Self::FluteGuard,
             LimitKind::CuttingLength => Self::CuttingLength,
             LimitKind::VendorAxial => Self::VendorAxial,
             LimitKind::VendorDepthTable => Self::VendorDepthTable,
-            LimitKind::Rigidity => depth.limit(),
+            LimitKind::Rigidity => Self::ForceBudget,
             LimitKind::CornerCoverage => Self::CornerCoverage,
             LimitKind::Power => Self::SpindlePower,
             LimitKind::Deflection => Self::ToolDeflection,
@@ -147,11 +145,11 @@ impl LimitId {
         }
     }
 
-    /// The limit of a gate criterion. `depth` tells the two limits that
-    /// `CriterionKind::DepthOfCut` names, and `side` the two that
+    /// The limit of a gate criterion. `CriterionKind::DepthOfCut` is the
+    /// force budget (P29-4); `side` tells the two limits that
     /// `CriterionKind::Chipload` names.
     #[must_use]
-    pub const fn of_criterion(kind: CriterionKind, depth: DepthRule, side: ChipSide) -> Self {
+    pub const fn of_criterion(kind: CriterionKind, side: ChipSide) -> Self {
         match kind {
             CriterionKind::Chipload => match side {
                 ChipSide::High => Self::ChipMax,
@@ -159,7 +157,7 @@ impl LimitId {
             },
             CriterionKind::Power => Self::SpindlePower,
             CriterionKind::Deflection => Self::ToolDeflection,
-            CriterionKind::DepthOfCut => depth.limit(),
+            CriterionKind::DepthOfCut => Self::ForceBudget,
             CriterionKind::GantryPush => Self::GantryPush,
             CriterionKind::DrillChipWelding => Self::DrillChipWelding,
             CriterionKind::DrillPeckAdequacy => Self::DrillPeckAdequacy,
@@ -214,59 +212,6 @@ impl LimitId {
             AxialBindingConstraint::VendorAp => Some(Self::VendorAxial),
             AxialBindingConstraint::Scallop => Some(Self::ScallopDepth),
             AxialBindingConstraint::Unbounded | AxialBindingConstraint::SafeBandEmpty => None,
-        }
-    }
-}
-
-/// Which of the two depth limits an old name states
-/// (`LimitKind::Rigidity`, `CriterionKind::DepthOfCut`).
-#[derive(Debug, Clone, Copy, PartialEq, Eq)]
-pub enum DepthRule {
-    /// The machine force budget.
-    ForceBudget,
-    /// The rule of thumb `factor x D`.
-    Factor,
-}
-
-impl DepthRule {
-    /// The limit this rule is.
-    #[must_use]
-    pub const fn limit(self) -> LimitId {
-        match self {
-            Self::ForceBudget => LimitId::ForceBudget,
-            Self::Factor => LimitId::DepthFactor,
-        }
-    }
-
-    /// The rule of an envelope limit: the typed fact `Limit::depth_rule`
-    /// that the envelope stores on each `Rigidity` limit it builds (P29-3).
-    /// A limit with no rule takes the force budget. Only a `Rigidity`
-    /// limit reads the answer.
-    #[must_use]
-    pub const fn of_limit(limit: &Limit) -> Self {
-        match limit.depth_rule {
-            Some(rule) => rule,
-            None => Self::ForceBudget,
-        }
-    }
-
-    /// The rule of a gate bound. A row with no bound source (the depth of
-    /// a finish pass, `DepthVerdict::Reported`) takes the force budget: the
-    /// limit that row has no bound for ([`NoNumberReason::NoBound`]). Only
-    /// a `DepthOfCut` row reads the answer.
-    #[must_use]
-    pub const fn of_bound(source: Option<&BoundSource>) -> Self {
-        match source {
-            Some(BoundSource::RigidityRuleOfThumb { .. }) => Self::Factor,
-            Some(
-                BoundSource::MachineForceBudget { .. }
-                | BoundSource::MachinePowerCurve { .. }
-                | BoundSource::VendorChipBand { .. }
-                | BoundSource::DeflectionBudget
-                | BoundSource::StockToLeave { .. }
-                | BoundSource::DrillEnvelope,
-            )
-            | None => Self::ForceBudget,
         }
     }
 }

@@ -122,8 +122,9 @@ impl ToolGeometryHint {
     /// the lookup does not use it for a V-bit either: the row is read at
     /// the nominal diameter, or at its printed angle.
     ///
-    /// For a tapered ball the depth cap still uses this engaged diameter
-    /// ([`geometry::depth_derate_diameter_for_cutter`]). For a V-bit, B4
+    /// For a tapered ball [`geometry::depth_derate_diameter_for_cutter`]
+    /// still uses this engaged diameter (P29-4 deleted its last caller,
+    /// the factor depth cap). For a V-bit, B4
     /// step 2 moves those three to the nominal diameter too; only the
     /// surface-speed RPM and the formula chip load still use this engaged
     /// diameter.

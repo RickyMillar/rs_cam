@@ -111,7 +111,8 @@ diag_ids! {
     /// (`tool_load::depth`, a roughing pass). Feeds matrix R2 (2026-09-23).
     pub const LOAD_DEPTH_WITHIN: &str = "load.depth.within" => INFO;
     /// The measured depth of cut is past the machine rigidity cap. The cap
-    /// is a rule of thumb, so the export lists it as an advisory, not a warning
+    /// is the machine force budget, which stands in for an unmeasured
+    /// frame, so the export lists it as an advisory, not a warning
     /// (EVIDENCE 5.1-15: before R2 no depth finding reached this list).
     pub const LOAD_DEPTH_EXCEEDS: &str = "load.depth.exceeds" => warn(Danger::Tool);
     /// The measured depth of a finishing or semi-finishing pass, reported

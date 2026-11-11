@@ -90,7 +90,7 @@ pub enum Cut {
     /// modelled and the depth row is `Within`.
     InsideTheRigidityCap,
     /// A hand-set depth per pass ABOVE the cap. The depth row exceeds; its
-    /// bound is a `RigidityRuleOfThumb`, so the export gate does not refuse.
+    /// bound is a `MachineForceBudget`, so the export gate does not refuse.
     PastTheRigidityCap,
 }
 
@@ -140,14 +140,7 @@ pub fn rigidity_cap_of(session: &ProjectSession, op: &OperationConfig) -> f64 {
     let cutter = rs_cam_core::compute::cutter::build_cutter(tool).expect("a cutter");
     let (family, role) = op.feeds_style();
     match rs_cam_core::feeds::force_budget::rigidity_depth_cap(
-        machine,
-        family,
-        role,
-        &cutter,
-        material,
-        ae,
-        fz,
-        op.depth_per_pass().unwrap_or(1.0),
+        machine, family, role, &cutter, material, ae, fz,
     ) {
         Some(rs_cam_core::feeds::force_budget::RigidityCapOutcome::Cap(c)) => Some(c.cap_mm()),
         Some(

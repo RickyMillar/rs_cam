@@ -132,8 +132,8 @@ fn readiness_paints_no_toolpath_verdict_pill_g_readylimits() {
 // ── arm 3 — a deep cut reddens the depth row and refuses no export ────────
 
 /// The depth row is a REAL gate with a real reading, and its bound is a
-/// `RigidityRuleOfThumb` — a factor times a diameter, with no published
-/// source. So it reports and it does not refuse (`BoundSource::gates_export`,
+/// `MachineForceBudget` — a budget that stands in for an unmeasured frame.
+/// So it reports and it does not refuse (`BoundSource::gates_export`,
 /// S4). This arm pins both halves on the one fixture they exist for.
 #[test]
 fn a_deep_cut_reddens_the_depth_row_and_refuses_no_export_g_readylimits() {

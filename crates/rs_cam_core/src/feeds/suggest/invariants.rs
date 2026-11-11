@@ -206,64 +206,6 @@ pub(super) fn clamp_plunge_to_feed(operation: &mut OperationConfig) -> Vec<Sugge
     warnings
 }
 
-/// The `adaptive_doc_factor x D` cap for a depth of `depth_mm` (the
-/// Adaptive family), or `None` when the depth limit `depth_limit` of the
-/// op's body cut (P29-3) is not the factor rule
-/// (P13c: the Pocket and Profile families read the force budget, which the
-/// envelope `Rigidity` limit solves per width) or no cap applies. P5: the
-/// `Rigidity` limit of the envelope reads this one rule.
-pub(crate) fn rigidity_cap_mm(
-    depth_limit: crate::limits::DepthLimit,
-    tool: &ToolConfig,
-    machine: &MachineProfile,
-    pass_role: PassRole,
-    depth_mm: f64,
-) -> Option<f64> {
-    if !matches!(pass_role, PassRole::Roughing) || !depth_mm.is_finite() {
-        return None;
-    }
-    let crate::machine::DepthCapRule::Factor(factor) =
-        machine.rigidity.depth_cap_of(depth_limit)?
-    else {
-        return None;
-    };
-    let cutter = crate::compute::cutter::build_cutter(tool).ok()?;
-    let cap_at = |depth: f64| -> Option<f64> {
-        let diameter = crate::feeds::geometry::depth_cap_diameter_mm(&cutter, depth);
-        Some(factor * diameter).filter(|cap| cap.is_finite() && *cap > 0.0)
-    };
-    let cap_at_depth = cap_at(depth_mm)?;
-    Some(deepest_depth_within_cap(cap_at_depth, &cap_at))
-}
-
-/// The deepest depth at or below `first_cap` that is inside the cap
-/// measured at that same depth. Feeds matrix R2 (2026-09-23).
-///
-/// When the cap diameter does not change with depth (flat, ball, bull,
-/// V-bit), the answer is `first_cap` itself, returned unchanged. On a
-/// tapered ball the cap grows with depth, so the cap at `first_cap` is
-/// smaller than `first_cap`. A bisection then finds the depth `d` where
-/// `d <= cap_at(d)`. The result is the low end of the bracket, so it is
-/// always inside its own cap, and the gate reads it as `Within`.
-fn deepest_depth_within_cap(first_cap: f64, cap_at: &dyn Fn(f64) -> Option<f64>) -> f64 {
-    const BISECTION_STEPS: usize = 64;
-    let inside = |d: f64| cap_at(d).is_some_and(|cap| d <= cap);
-    if inside(first_cap) {
-        return first_cap;
-    }
-    let mut lo = 0.0_f64;
-    let mut hi = first_cap;
-    for _ in 0..BISECTION_STEPS {
-        let mid = 0.5 * (lo + hi);
-        if inside(mid) {
-            lo = mid;
-        } else {
-            hi = mid;
-        }
-    }
-    lo
-}
-
 #[cfg(test)]
 mod row_tests {
     use super::*;

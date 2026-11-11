@@ -173,8 +173,8 @@ pub struct Check {
     /// Where the BOUND comes from. `None` when the old record states none.
     pub basis: Option<Basis>,
     /// Transitional: the numbers of the gate's bound source that `Basis`
-    /// does not hold (the RPM of the power curve, the leave, the factor and
-    /// the diameter, the cut of the force budget). The one writer of the
+    /// does not hold (the RPM of the power curve, the leave, the cut of the
+    /// force budget). The one writer of the
     /// card text, `BoundSource::clause`, reads it. It goes at P29-10.
     #[serde(skip_serializing_if = "Option::is_none")]
     pub bound_detail: Option<BoundSource>,
@@ -207,9 +207,7 @@ pub fn basis_of_bound(source: &BoundSource) -> Basis {
         BoundSource::StockToLeave { .. } => Basis::Operator {
             law: "radial stock to leave",
         },
-        BoundSource::RigidityRuleOfThumb { .. } | BoundSource::MachineForceBudget { .. } => {
-            Basis::Machine(MachineField::Rigidity)
-        }
+        BoundSource::MachineForceBudget { .. } => Basis::Machine(MachineField::Rigidity),
         BoundSource::DrillEnvelope => Basis::Derived {
             law: DRILL_ENVELOPE_LAW,
             from: Vec::new(),

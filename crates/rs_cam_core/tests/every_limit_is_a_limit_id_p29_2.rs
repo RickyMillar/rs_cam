@@ -14,13 +14,12 @@
 //!   the state and the binding limit of `SafeEnvelope::placement_of`.
 //! - Claim 4: the checks of an RPM choice hold its limits and its binding.
 //! - Claim 5: the basis join keeps `setting` and `gates_export` of each of
-//!   the 7 bound sources.
+//!   the 6 bound sources.
 //! - Claim 6: no code of `src/limits/` names an operation type, an
 //!   operation family, a pass role, `compute::` or `session::`.
-//! - Claim 7 (P29-3): `DepthRule::of_limit` reads the typed field
-//!   `Limit::depth_rule`. Each `Rigidity` limit holds it, and it agrees
-//!   with the printed law; no other limit holds it, and no limit JSON
-//!   names it.
+//! - Claim 7 (P29-3) is deleted (P29-4, ruling Q4): `DepthRule` and
+//!   `Limit::depth_rule` are gone; `Rigidity` and `DepthOfCut` name the
+//!   force budget only.
 //!
 //! Inject check (2026-11-11): with `of_criterion` giving the ceiling as the
 //! bound of a low-side chip row, claim 2 goes red (bound 0.12 against
@@ -42,9 +41,7 @@ use rs_cam_core::feeds::cutter_constraints::AxialBindingConstraint;
 use rs_cam_core::feeds::envelope::{CutPoint, EnvelopeInput, LimitKind, Placement, SafeEnvelope};
 use rs_cam_core::feeds::suggest::SuggestContext;
 use rs_cam_core::feeds::{RpmChoice, RpmLimit, RpmLimitValue, SpindleStrategy};
-use rs_cam_core::limits::{
-    self, BoundSide, Check, CheckState, DepthRule, Geometry, LimitId, NoNumberReason,
-};
+use rs_cam_core::limits::{self, BoundSide, Check, CheckState, Geometry, LimitId, NoNumberReason};
 use rs_cam_core::machine::{MachineProfile, RigidityDepthCap};
 use rs_cam_core::material::Material;
 use rs_cam_core::tool_load::verdict::{
@@ -57,14 +54,12 @@ use rs_cam_core::tool_load::verdict::{
 #[test]
 fn every_old_limit_name_maps_and_every_limit_id_has_a_source() {
     let mut seen = BTreeSet::new();
-    for depth in [DepthRule::ForceBudget, DepthRule::Factor] {
-        for kind in LimitKind::ALL {
-            seen.insert(LimitId::of_limit_kind(kind, depth));
-        }
-        for side in [ChipSide::High, ChipSide::Low] {
-            for kind in CriterionKind::ALL {
-                seen.insert(LimitId::of_criterion(kind, depth, side));
-            }
+    for kind in LimitKind::ALL {
+        seen.insert(LimitId::of_limit_kind(kind));
+    }
+    for side in [ChipSide::High, ChipSide::Low] {
+        for kind in CriterionKind::ALL {
+            seen.insert(LimitId::of_criterion(kind, side));
         }
     }
     for binding in BindingConstraint::ALL {
@@ -97,7 +92,7 @@ fn every_old_limit_name_maps_and_every_limit_id_has_a_source() {
         missing.is_empty(),
         "LimitId members with no old source: {missing:?}"
     );
-    assert_eq!(LimitId::ALL.len(), 29);
+    assert_eq!(LimitId::ALL.len(), 28);
 }
 
 fn population() -> GatePopulation {
@@ -265,24 +260,7 @@ fn a_gate_row_and_its_check_agree() {
     assert_eq!(check.side, BoundSide::Floor);
     assert!(check.margin.is_some_and(|m| m < 0.0));
 
-    // Depth: the Factor rule, the force budget, and a reading with no bound.
-    let factor = DepthVerdict::Within {
-        peak_mm: 6.0,
-        bound: RigidityDepthCap::Factor {
-            factor: 2.0,
-            diameter_mm: 6.0,
-        },
-        evidence: evidence(),
-        confidence: Confidence::Validated,
-    };
-    let status = factor.as_criterion_status();
-    let check = row_agrees(
-        &status,
-        LimitId::DepthFactor,
-        status.bound,
-        CheckState::Within,
-    );
-    assert!(check.basis.is_some_and(|b| !b.gates_export()));
+    // Depth: the force budget, and a reading with no bound.
     let budget = DepthVerdict::Exceeds {
         peak_mm: 6.0,
         bound: RigidityDepthCap::ForceBudget {
@@ -296,12 +274,13 @@ fn a_gate_row_and_its_check_agree() {
         confidence: Confidence::Validated,
     };
     let status = budget.as_criterion_status();
-    row_agrees(
+    let check = row_agrees(
         &status,
         LimitId::ForceBudget,
         status.bound,
         CheckState::Exceeds,
     );
+    assert!(check.basis.is_some_and(|b| !b.gates_export()));
     let reported = DepthVerdict::Reported {
         peak_mm: 2.0,
         evidence: evidence(),
@@ -458,10 +437,7 @@ fn the_checks_of_a_planned_point_hold_the_placement() {
                 let limit = env
                     .limit(kind)
                     .expect("the binding limit is in the boundary");
-                assert_eq!(
-                    check.limit,
-                    LimitId::of_limit_kind(kind, DepthRule::of_limit(limit))
-                );
+                assert_eq!(check.limit, LimitId::of_limit_kind(limit.kind));
                 assert!(exceeds >= 1);
             }
             Placement::Inside { margin } => {
@@ -551,10 +527,6 @@ fn the_basis_join_keeps_the_setting_and_the_export_rule() {
         },
         BoundSource::DeflectionBudget,
         BoundSource::StockToLeave { mm: 0.3 },
-        BoundSource::RigidityRuleOfThumb {
-            factor: 2.0,
-            diameter_mm: 6.0,
-        },
         BoundSource::MachineForceBudget {
             budget_n: 35.3,
             ae_mm: 1.2,
@@ -611,46 +583,4 @@ fn the_limits_folder_names_no_operation_type() {
              machine, never the operation type (P29 design 4.5)"
         );
     }
-}
-
-#[test]
-fn the_depth_rule_of_a_limit_is_a_typed_field() {
-    use rs_cam_core::feeds::envelope::RIGIDITY_FACTOR_LAW;
-    let (mut factor, mut budget) = (0, 0);
-    for op_type in [OperationType::Pocket, OperationType::Adaptive] {
-        let env = envelope_of(op_type);
-        for limit in &env.boundary {
-            let json = serde_json::to_value(limit).expect("a limit serialises");
-            assert!(
-                json.get("depth_rule").is_none(),
-                "the depth rule is not on the wire: {json}"
-            );
-            assert!(json.get("law").is_some(), "the scan reads the limit JSON");
-            if limit.kind != LimitKind::Rigidity {
-                assert_eq!(
-                    limit.depth_rule, None,
-                    "{:?} holds no depth rule",
-                    limit.kind
-                );
-                continue;
-            }
-            let rule = limit.depth_rule.expect("a Rigidity limit holds its rule");
-            assert_eq!(
-                rule == DepthRule::Factor,
-                limit.law == RIGIDITY_FACTOR_LAW,
-                "{op_type:?}: the field and the printed law agree"
-            );
-            assert_eq!(DepthRule::of_limit(limit), rule);
-            match rule {
-                DepthRule::Factor => factor += 1,
-                DepthRule::ForceBudget => budget += 1,
-            }
-        }
-    }
-    // P29-4 (ruling R1): the Adaptive envelope holds the force-budget
-    // limit; no envelope holds a Factor limit. Commit B deletes the field.
-    assert!(
-        factor == 0 && budget >= 2,
-        "the force budget only, on both ops: {factor} Factor, {budget} force budget"
-    );
 }

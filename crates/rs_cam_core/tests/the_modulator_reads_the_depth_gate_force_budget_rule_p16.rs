@@ -5,10 +5,10 @@
 //!
 //! The depth gate applies the force budget only where
 //! `RigidityProfile::depth_cap_rule(family, role)` is
-//! `Some(DepthCapRule::ForceBudget(_))`. The session builds the modulator's
+//! `Some(DepthCapRule { .. })`. The session builds the modulator's
 //! force-budget inputs through `ForceBudgetScope::of` from that same rule.
 //!
-//! 1. A cell where the rule is `ForceBudget` (Pocket, Roughing, the default
+//! 1. A cell where the rule is the force budget (Pocket, Roughing, the default
 //!    hobby machine): the limit binds a full-slot move, the move carries
 //!    `BindingConstraint::ForceBudget`, and the emitted feed is the feed of
 //!    `Engagement::fz_cap_for_peak_force` at the budget of the rule.
@@ -138,7 +138,7 @@ fn the_modulator_reads_the_depth_gate_force_budget_rule_p16() {
     let finish_rule = machine
         .rigidity
         .depth_cap_rule(OperationFamily::Trace, PassRole::Finish);
-    let Some(DepthCapRule::ForceBudget(budget_n)) = pocket_rule else {
+    let Some(DepthCapRule { budget_n }) = pocket_rule else {
         panic!("Pocket roughing must carry the force-budget rule: {pocket_rule:?}");
     };
     // P29-4 (ruling R1): the Adaptive family reads the force budget.

@@ -50,7 +50,7 @@ use rs_cam_core::feeds::engagement::{PowerCase, PowerCases};
 use rs_cam_core::feeds::geometry::RadialThinning;
 use rs_cam_core::feeds::{OperationFamily, PassRole};
 use rs_cam_core::limits::{
-    CutFacts, CutKind, DepthLimit, DepthRule, EntryKind, FirstPassKind, Leave, NoDepthLimit,
+    CutFacts, CutKind, DepthLimit, EntryKind, FirstPassKind, Leave, NoDepthLimit,
 };
 
 /// One config with its name.
@@ -215,7 +215,7 @@ fn old_facts(op: &OperationConfig) -> CutFacts {
     // (ruling R1): the Adaptive family has no arm of its own.
     let depth_rule = match (family, role) {
         (OperationFamily::Drill, _) => DepthLimit::NoLimit(NoDepthLimit::DrillCycle),
-        (_, PassRole::Roughing) => DepthLimit::Rule(DepthRule::ForceBudget),
+        (_, PassRole::Roughing) => DepthLimit::ForceBudget,
         (_, PassRole::SemiFinish | PassRole::Finish) => {
             DepthLimit::NoLimit(NoDepthLimit::FinishPass)
         }
@@ -267,7 +267,7 @@ fn claim_2_the_facts_equal_the_label_functions() {
         "DrillCycle",
         "ring=true",
         "ring=false",
-        "Rule(ForceBudget)",
+        "ForceBudget",
         "NoLimit(FinishPass)",
         "NoLimit(DrillCycle)",
         "leave:finish",
@@ -280,11 +280,6 @@ fn claim_2_the_facts_equal_the_label_functions() {
             "no config reaches the fact value {v}: {seen:?}"
         );
     }
-    // P29-4 (ruling R1): no config reaches the Factor rule.
-    assert!(
-        !seen.contains("Rule(Factor)"),
-        "a config reaches the Factor rule: {seen:?}"
-    );
 }
 
 #[test]

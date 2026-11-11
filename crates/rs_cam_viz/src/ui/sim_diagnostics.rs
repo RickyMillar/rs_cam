@@ -1220,7 +1220,6 @@ fn burn_floor(status: &CriterionStatus<'_>) -> Option<f64> {
         BoundSource::MachinePowerCurve { .. }
         | BoundSource::DeflectionBudget
         | BoundSource::StockToLeave { .. }
-        | BoundSource::RigidityRuleOfThumb { .. }
         | BoundSource::MachineForceBudget { .. }
         | BoundSource::DrillEnvelope => None,
     }

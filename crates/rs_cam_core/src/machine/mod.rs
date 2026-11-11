@@ -217,22 +217,14 @@ impl RigidityBasis {
 /// The cap carries its inputs, so the bound and the provenance beside it
 /// cannot disagree ([`Self::cap_mm`]). `feeds::force_budget::rigidity_depth_cap`
 /// is the one producer; the envelope `Rigidity` limit and the post-sim
-/// depth gate read it.
+/// depth gate read it. P29-4 deleted the Adaptive factor rule; the enum
+/// keeps its `kind` tag on the wire.
 #[derive(Debug, Clone, Copy, PartialEq, Serialize, Deserialize)]
 #[serde(tag = "kind", rename_all = "snake_case")]
 pub enum RigidityDepthCap {
-    /// The Adaptive family: `adaptive_doc_factor x diameter_mm`, a rule of
-    /// thumb with no published source. `diameter_mm` is the engaged
-    /// diameter at the judged depth (`feeds::geometry::depth_cap_diameter_mm`).
-    Factor {
-        /// The profile's `adaptive_doc_factor`.
-        factor: f64,
-        /// The diameter the factor multiplies (mm).
-        diameter_mm: f64,
-    },
-    /// The Pocket and Profile families (P13c, O1): the shallowest depth
-    /// where the peak engaged-edge force at `ae_mm` and `fz_mm` meets
-    /// `budget_n`.
+    /// Every roughing family (P13c, O1; the Adaptive family since P29-4):
+    /// the shallowest depth where the peak engaged-edge force at `ae_mm`
+    /// and `fz_mm` meets `budget_n`.
     ForceBudget {
         /// The machine force budget (N).
         budget_n: f64,
@@ -253,24 +245,18 @@ impl RigidityDepthCap {
     #[must_use]
     pub fn cap_mm(&self) -> f64 {
         match *self {
-            Self::Factor {
-                factor,
-                diameter_mm,
-            } => factor * diameter_mm,
             Self::ForceBudget { depth_mm, .. } => depth_mm,
         }
     }
 }
 
 /// The rule of the rigidity depth cap of one operation family
-/// ([`RigidityProfile::depth_cap_rule`]).
+/// ([`RigidityProfile::depth_cap_rule`]): the machine force budget. Every
+/// roughing family reads it (P29-4, ruling Q4: one named field).
 #[derive(Debug, Clone, Copy, PartialEq)]
-pub enum DepthCapRule {
-    /// `factor x D`. No family gives it since P29-4 (dead; commit B
-    /// deletes it).
-    Factor(f64),
-    /// The force budget (N) (every roughing family).
-    ForceBudget(f64),
+pub struct DepthCapRule {
+    /// The machine force budget (N).
+    pub budget_n: f64,
 }
 
 impl RigidityProfile {
@@ -291,7 +277,7 @@ impl RigidityProfile {
     /// | any other, `SemiFinish` or `Finish` | none (R2) |
     ///
     /// P29-4 (ruling R1, 2026-11-11): the Adaptive family reads the force
-    /// budget too. No family gives the Factor rule now; commit B deletes it.
+    /// budget too.
     #[must_use]
     pub fn depth_cap_rule(
         &self,
@@ -310,12 +296,12 @@ impl RigidityProfile {
         pass_role: crate::feeds::PassRole,
     ) -> crate::limits::DepthLimit {
         use crate::feeds::{OperationFamily, PassRole};
-        use crate::limits::{DepthLimit, DepthRule, NoDepthLimit};
+        use crate::limits::{DepthLimit, NoDepthLimit};
         match (family, pass_role) {
             // EXEMPT(P28-04)
             (OperationFamily::Drill, _) => DepthLimit::NoLimit(NoDepthLimit::DrillCycle),
             // EXEMPT(F-DepthRule)
-            (_, PassRole::Roughing) => DepthLimit::Rule(DepthRule::ForceBudget),
+            (_, PassRole::Roughing) => DepthLimit::ForceBudget,
             // EXEMPT(P28-02, P28-03, S-NoBound)
             (_, PassRole::SemiFinish | PassRole::Finish) => {
                 DepthLimit::NoLimit(NoDepthLimit::FinishPass)
@@ -328,14 +314,11 @@ impl RigidityProfile {
     /// `None` when the cut has no depth limit.
     #[must_use]
     pub const fn depth_cap_of(&self, limit: crate::limits::DepthLimit) -> Option<DepthCapRule> {
-        use crate::limits::{DepthLimit, DepthRule, NoDepthLimit};
+        use crate::limits::{DepthLimit, NoDepthLimit};
         match limit {
-            DepthLimit::Rule(DepthRule::Factor) => {
-                Some(DepthCapRule::Factor(self.adaptive_doc_factor))
-            }
-            DepthLimit::Rule(DepthRule::ForceBudget) => {
-                Some(DepthCapRule::ForceBudget(self.force_budget_n))
-            }
+            DepthLimit::ForceBudget => Some(DepthCapRule {
+                budget_n: self.force_budget_n,
+            }),
             DepthLimit::NoLimit(NoDepthLimit::DrillCycle | NoDepthLimit::FinishPass) => None,
         }
     }

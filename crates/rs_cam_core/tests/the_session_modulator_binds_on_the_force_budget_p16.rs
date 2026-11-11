@@ -11,7 +11,7 @@
 //! # The cells
 //!
 //! 1. A deep, wide Pocket roughing slot in generic hardwood on the default
-//!    (hobby) machine. The rule is `ForceBudget`, the material has a force
+//!    (hobby) machine. The rule is the force budget, the material has a force
 //!    line, and the cut is deep and wide enough that the budget feed is
 //!    below the chipload cap and the machine ceiling. The cell is the review
 //!    cell P_thin_005 (feeds review 2026-11-06), where the emitted feed fell
@@ -130,7 +130,7 @@ fn the_session_modulator_binds_on_the_force_budget_p16() {
         .rigidity
         .depth_cap_rule(OperationFamily::Pocket, PassRole::Roughing);
     assert!(
-        matches!(rule, Some(DepthCapRule::ForceBudget(_))),
+        matches!(rule, Some(DepthCapRule { .. })),
         "Pocket roughing on the default machine must carry the force-budget rule: {rule:?}"
     );
 

@@ -675,8 +675,8 @@ fn deflection_to_diagnostic(tp_id: ToolpathId, v: &DeflectionVerdict) -> Option<
 /// The depth row. Feeds matrix R2 (2026-09-23).
 ///
 /// - `Within` → `load.depth.within`, Info.
-/// - `Exceeds` → `load.depth.exceeds`, Caution. The cap is a rule of
-///   thumb that never refuses an export, so the severity is the power
+/// - `Exceeds` → `load.depth.exceeds`, Caution. The cap is the machine
+///   force budget, which never refuses an export, so the severity is the power
 ///   gate's `Caution`, not the deflection gate's `Critical`.
 /// - `Reported` → `load.depth.reported`, Info, with no threshold: a
 ///   finishing pass has no axial cap.
@@ -751,19 +751,6 @@ fn depth_to_diagnostic(tp_id: ToolpathId, v: &DepthVerdict) -> Option<Diagnostic
             Severity::Caution,
             confidence,
             match bound {
-                crate::machine::RigidityDepthCap::Factor {
-                    factor,
-                    diameter_mm,
-                } => format!(
-                    "Depth of cut {:.3} mm is more than the rule-of-thumb limit of {:.3} mm \
-                     ({:.2} \u{00D7} the {:.2} mm diameter). The rule has no published source \
-                     and does not stop the export{}",
-                    peak_mm,
-                    bound.cap_mm(),
-                    factor,
-                    diameter_mm,
-                    vacuity_clause(evidence)
-                ),
                 // P13c (O1): the force-budget depth.
                 crate::machine::RigidityDepthCap::ForceBudget {
                     budget_n,

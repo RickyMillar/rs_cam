@@ -246,10 +246,9 @@ pub enum LimitKind {
     /// width for it. A point past it is outside the envelope (a warning,
     /// Q6); the table no longer scales the chip.
     VendorDepthTable,
-    /// The machine rigidity cap (roughing). P13c (O1): on the Pocket and
-    /// Profile families an `ap(ae)` curve, the depth where the peak
-    /// engaged-edge force meets the machine force budget; on the Adaptive
-    /// family an `ap` ceiling (`adaptive_doc_factor x D`).
+    /// The machine rigidity cap (roughing). P13c (O1; the Adaptive family
+    /// since P29-4): an `ap(ae)` curve, the depth where the peak
+    /// engaged-edge force meets the machine force budget.
     Rigidity,
     /// P13c (O3, O4): the corner-coverage rule of a free-width pocket, an
     /// `ae` ceiling at `(1 + 1/sqrt 2) r`: a wider stepover leaves uncut
@@ -418,11 +417,6 @@ pub struct Limit {
     pub basis: Basis,
     /// The shape on the plane.
     pub edge: Edge,
-    /// P29-3: the depth rule of a `Rigidity` limit, `None` on every other
-    /// kind. `limits::DepthRule::of_limit` reads it; the law text is the
-    /// printed law only. Not on the wire.
-    #[serde(skip)]
-    pub depth_rule: Option<crate::limits::DepthRule>,
 }
 
 impl Limit {
@@ -2524,7 +2518,6 @@ fn geometric_limits(
         crate::feeds::flute_guard_of(input.tool.cutting_length_planning_mm(), length_kind, d);
     out.push(Limit {
         kind: LimitKind::FluteGuard,
-        depth_rule: None,
         law: "0.8 x flute",
         basis: guard_basis,
         edge: Edge::ApCeiling { mm: guard },
@@ -2532,7 +2525,6 @@ fn geometric_limits(
     if input.tool.cutting_length_planning_mm() > 0.0 {
         out.push(Limit {
             kind: LimitKind::CuttingLength,
-            depth_rule: None,
             law: "tool cutting length",
             basis: Basis::tool_fact(
                 crate::feeds::sourced::ToolFactName::CuttingLength,
@@ -2555,7 +2547,6 @@ fn geometric_limits(
     {
         out.push(Limit {
             kind: LimitKind::VendorAxial,
-            depth_rule: None,
             law: "vendor ap bound",
             basis: Basis::Printed(crate::feeds::sourced::RowRef(row.observation_id.clone())),
             edge: Edge::ApCeiling { mm },
@@ -2566,7 +2557,6 @@ fn geometric_limits(
     if plan.computed_width {
         out.push(Limit {
             kind: LimitKind::CornerCoverage,
-            depth_rule: None,
             law: crate::feeds::force_budget::CORNER_COVERAGE_LAW,
             basis: Basis::derived(
                 "corner coverage (1 + 1/sqrt 2) r",
@@ -2584,21 +2574,18 @@ fn geometric_limits(
     }
     out.push(Limit {
         kind: LimitKind::Diameter,
-        depth_rule: None,
         law: "ae <= D",
         basis: Basis::tool_diameter(),
         edge: diameter_edge(input, plan, d),
     });
     out.push(Limit {
         kind: LimitKind::EngagementFloor,
-        depth_rule: None,
         law: "smallest depth the calculator writes",
         basis: Basis::Rule(crate::feeds::MIN_AP_MM_ROW),
         edge: Edge::ApFloor { mm: MIN_AP_MM },
     });
     out.push(Limit {
         kind: LimitKind::EngagementFloor,
-        depth_rule: None,
         law: "smallest width the calculator writes",
         basis: Basis::Rule(crate::feeds::MIN_AE_MM_ROW),
         edge: Edge::AeFloor { mm: MIN_AE_MM },
@@ -2766,7 +2753,6 @@ fn power_limit(
     use crate::feeds::engagement::PowerCase;
     out.push(Limit {
         kind: LimitKind::Power,
-        depth_rule: None,
         law: match (operator.is_some(), case) {
             (false, PowerCase::Nominal) => "rated spindle power at the full chip (nominal case)",
             (false, PowerCase::PlannerCap) => {
@@ -2908,7 +2894,6 @@ fn vendor_depth_limit(
     let flat = curve.iter().all(|p| (p[1] - first).abs() < 1e-9);
     out.push(Limit {
         kind: LimitKind::VendorDepthTable,
-        depth_rule: None,
         law: if operator.is_some() {
             "vendor depth table at the operator's peak chip (1/2/3 x D)"
         } else {
@@ -2927,11 +2912,6 @@ fn vendor_depth_limit(
         },
     });
 }
-
-/// The law of the `Rigidity` limit under the Factor rule (the Adaptive
-/// family). P29-2: `limits::DepthRule::of_limit` reads it to tell the
-/// Factor rule from the force budget.
-pub const RIGIDITY_FACTOR_LAW: &str = "machine rigidity depth cap (adaptive_doc_factor x D)";
 
 /// P11a (D-B): the reason of a `Deflection` entry when no depth below the
 /// flute reaches the target in any column.
@@ -2959,7 +2939,6 @@ fn deflection_limit(
     // as a reading), so the refusal is decided here first.
     let unmodelled = |reason: crate::feeds::predict::DeflectionUnmodeled| Limit {
         kind: LimitKind::Deflection,
-        depth_rule: None,
         law: "tip deflection <= 200 um",
         basis: Basis::Rule(crate::feeds::suggest::DEFLECTION_BACKOFF_TARGET_ROW),
         edge: Edge::Unmodelled {
@@ -3018,7 +2997,6 @@ fn deflection_limit(
         // dropped and never drawn as an edge).
         out.push(Limit {
             kind: LimitKind::Deflection,
-            depth_rule: None,
             law: "tip deflection <= 200 um",
             basis: Basis::Rule(crate::feeds::suggest::DEFLECTION_BACKOFF_TARGET_ROW),
             edge: Edge::Unmodelled {
@@ -3037,7 +3015,6 @@ fn deflection_limit(
         .collect();
     out.push(Limit {
         kind: LimitKind::Deflection,
-        depth_rule: None,
         law: "tip deflection <= 200 um",
         basis: Basis::derived(
             "one beam (ToolDefinition::tip_deflection_mm)",
@@ -3217,20 +3194,17 @@ fn refine_columns<T: Copy>(
     }
 }
 
-/// The `Rigidity` limit (roughing). P13c (O1):
-///
-/// - The Adaptive family: `adaptive_doc_factor x D`, an `ap` ceiling
-///   (`suggest::rigidity_cap_mm`).
-/// - Every other roughing family: per width sample, the shallowest depth
-///   where the peak engaged-edge force at the column chip (the operator's,
-///   else the grid chip at the shallowest sample) meets the machine force
-///   budget. Extra exact samples at the slot threshold and the corner bound
-///   (P19: not at the stated width, see `add_exact_ceilings`). A column with no root takes the span top; no
-///   root anywhere, or no force line, is an `Unmodelled` entry with its
-///   reason. Between adjacent columns [`refine_budget_columns`] adds the
-///   samples of a cliff and of the smooth stretches, so the drawn edge
-///   stands on the solved depth. Returns the model the proposal solves
-///   exactly.
+/// The `Rigidity` limit (roughing). P13c (O1; the Adaptive family since
+/// P29-4): per width sample, the shallowest depth where the peak
+/// engaged-edge force at the column chip (the operator's, else the grid
+/// chip at the shallowest sample) meets the machine force budget. Extra
+/// exact samples at the slot threshold and the corner bound (P19: not at
+/// the stated width, see `add_exact_ceilings`). A column with no root
+/// takes the span top; no root anywhere, or no force line, is an
+/// `Unmodelled` entry with its reason. Between adjacent columns
+/// [`refine_budget_columns`] adds the samples of a cliff and of the smooth
+/// stretches, so the drawn edge stands on the solved depth. Returns the
+/// model the proposal solves exactly.
 fn rigidity_limit(
     out: &mut Vec<Limit>,
     inputs: &OwnedInputs,
@@ -3248,35 +3222,10 @@ fn rigidity_limit(
     if !matches!(role, PassRole::Roughing) {
         return None;
     }
-    let budget_n = match rule {
-        crate::machine::DepthCapRule::Factor(_) => {
-            let probe_depth = match plan.axes {
-                EnvelopeAxes::Plane { ap, .. } | EnvelopeAxes::AxialBar { ap, .. } => ap.max_mm,
-                EnvelopeAxes::RadialBar { ap_mm, .. } | EnvelopeAxes::Fixed { ap_mm, .. } => ap_mm,
-            };
-            if let Some(cap) = crate::feeds::suggest::rigidity_cap_mm(
-                depth_limit,
-                &inputs.tool,
-                &inputs.machine,
-                role,
-                probe_depth,
-            ) {
-                out.push(Limit {
-                    kind: LimitKind::Rigidity,
-                    depth_rule: Some(crate::limits::DepthRule::Factor),
-                    law: RIGIDITY_FACTOR_LAW,
-                    basis: crate::feeds::rigidity_basis(&inputs.machine),
-                    edge: Edge::ApCeiling { mm: cap },
-                });
-            }
-            return None;
-        }
-        crate::machine::DepthCapRule::ForceBudget(n) => n,
-    };
+    let crate::machine::DepthCapRule { budget_n } = rule;
     let basis = budget_basis(&inputs.machine);
     let unmodelled = |reason: &'static str| Limit {
         kind: LimitKind::Rigidity,
-        depth_rule: Some(crate::limits::DepthRule::ForceBudget),
         law: fb::FORCE_BUDGET_LAW,
         basis: basis.clone(),
         edge: Edge::Unmodelled { reason },
@@ -3380,7 +3329,6 @@ fn rigidity_limit(
     };
     out.push(Limit {
         kind: LimitKind::Rigidity,
-        depth_rule: Some(crate::limits::DepthRule::ForceBudget),
         law: if floored {
             fb::FORCE_BUDGET_FLOOR_LAW
         } else {
@@ -3486,7 +3434,6 @@ fn runtime_limit(
     };
     let limit = |edge: Edge| Limit {
         kind: LimitKind::Runtime,
-        depth_rule: None,
         law: "predicted moves <= the move budget",
         basis: Basis::derived(
             "move budget",
@@ -3607,7 +3554,6 @@ fn per_point_limits(out: &mut Vec<Limit>, base: &FeedsResult, speeds: &SpeedsMap
     {
         out.push(Limit {
             kind: LimitKind::ChipBand,
-            depth_rule: None,
             law: "printed chip band (peak chip)",
             basis: Basis::Printed(crate::feeds::sourced::RowRef(row.observation_id.clone())),
             edge: Edge::PerPoint,
@@ -3633,7 +3579,6 @@ fn per_point_limits(out: &mut Vec<Limit>, base: &FeedsResult, speeds: &SpeedsMap
         };
         out.push(Limit {
             kind: LimitKind::RubbingFloor,
-            depth_rule: None,
             law: "min(0.025, band min) per tooth (warns, never lifts)",
             basis,
             edge: Edge::PerPoint,
@@ -3642,7 +3587,6 @@ fn per_point_limits(out: &mut Vec<Limit>, base: &FeedsResult, speeds: &SpeedsMap
     if speeds.points.iter().any(|p| p.feed_capped) {
         out.push(Limit {
             kind: LimitKind::FeedCap,
-            depth_rule: None,
             law: "machine cutting-feed ceiling",
             basis: Basis::Machine(MachineField::CuttingFeedCap),
             edge: Edge::PerPoint,

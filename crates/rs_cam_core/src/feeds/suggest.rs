@@ -31,10 +31,10 @@ pub(crate) use axial_envelope::axial_envelope_for_operation;
 // against. The text cannot then drift from the number.
 pub(crate) use invariants::DEFLECTION_BACKOFF_TARGET_UM;
 // P5 (K2b): the F201 rows of the envelope's runtime and deflection limits,
-// and the rigidity cap, for `formula_constants` and the envelope.
+// for `formula_constants` and the envelope.
 pub(crate) use invariants::{
     DEFLECTION_BACKOFF_TARGET_ROW, STEPOVER_BACKOFF_DIAMETER_FRACTION_ROW,
-    STEPOVER_BACKOFF_TARGET_MOVES_ROW, rigidity_cap_mm,
+    STEPOVER_BACKOFF_TARGET_MOVES_ROW,
 };
 
 /// Stock-derived values used by stock-aware operation defaults.

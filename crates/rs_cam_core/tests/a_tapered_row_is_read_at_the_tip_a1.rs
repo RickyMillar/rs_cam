@@ -4,9 +4,9 @@
 //! Every tapered chart (Onsrud, Amana, SpeTool, Whiteside) prints the
 //! chipload against the TIP diameter. Before A1 the engine looked the row
 //! up at the engaged cone diameter at the cut depth (feeds matrix R2). A1
-//! moves the lookup key back to the tip. The depth half of R2 stands: the
-//! depth ladder, the depth cap, the band de-rate and the deflection gate
-//! still read the engaged cone diameter.
+//! moves the lookup key back to the tip. The depth half of R2 stands for
+//! the deflection gate, which still reads the engaged cone diameter (the
+//! depth ladder, the band de-rate and the factor depth cap are retired).
 //!
 //! The fixture is the wanaka 3D Finish tool: a 1.0 mm tip, 7 deg taper,
 //! 6 mm shank, 2 flutes, on a Parallel finish in hardwood. At a 2.0 mm cut
@@ -19,8 +19,7 @@
 //!   `tool_load::evaluate_toolpath`) is the tip;
 //! - the two keys agree, the two key helpers agree, and Suggest and the gate
 //!   match the same row;
-//! - the depth ladder and the depth cap divide by the cone diameter; the gate
-//!   band is the printed band (P11b2 removed the gate de-rate).
+//! - the gate band is the printed band (P11b2 removed the gate de-rate).
 
 #![expect(
     clippy::unwrap_used,
@@ -32,9 +31,7 @@ use rs_cam_core::compute::catalog::OperationType;
 use rs_cam_core::compute::cutter::build_cutter;
 use rs_cam_core::compute::tool_config::ToolFact;
 use rs_cam_core::compute::tool_config::{ToolConfig, ToolId, ToolType};
-use rs_cam_core::feeds::geometry::{
-    depth_cap_diameter_mm, lut_key_diameter_for_cutter, lut_key_diameter_mm,
-};
+use rs_cam_core::feeds::geometry::{lut_key_diameter_for_cutter, lut_key_diameter_mm};
 use rs_cam_core::feeds::vendor_lut::{LutOperationFamily, LutPassRole};
 use rs_cam_core::feeds::{
     FeedsInput, OperationFamily, PassRole, SetupContext, SpindleStrategy, calculate,
@@ -281,13 +278,11 @@ fn a_tapered_row_is_read_at_the_tip_a1() {
         band.diameter_scale
     );
 
-    // 5. The depth half of R2 stands for the cap (the cone). The feed
-    // ladder is retired (P11b); P14 deleted its diameter function.
-    let cap = depth_cap_diameter_mm(&cutter, DEPTH_MM);
-    assert!((cap - cone_mm).abs() < 1e-9, "{cap} vs {cone_mm}");
+    // 5. The feed ladder is retired (P11b); P14 deleted its diameter
+    // function. P29-4 deleted the factor depth cap and its cone diameter
+    // (`depth_cap_diameter_mm`).
     // P11b2 (ruling L6): the gate band is the printed band at every depth.
-    // The depth de-rate that divided by the cone is gone; the cone still
-    // keys the depth cap above.
+    // The depth de-rate that divided by the cone is gone.
     let row_max_mm = printed_max_mm(ROW_ID);
     assert!(
         (band.max_mm_per_tooth - row_max_mm).abs() < 1e-12,

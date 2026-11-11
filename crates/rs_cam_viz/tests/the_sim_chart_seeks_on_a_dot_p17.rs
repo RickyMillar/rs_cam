@@ -57,18 +57,14 @@ const OVER_MOVE: usize = 777;
 
 /// The fixture: the Pocket envelope (a 6 mm end mill, the default machine
 /// and material) and the force budget its rule gives (lead ruling 3: the
-/// budget exists only under the `ForceBudget` rule).
+/// budget exists only under a depth-cap rule).
 fn fixture() -> (SafeEnvelope, f64, f64) {
     let (config, env) = envelope_for(OperationType::Pocket).expect("the Pocket is backed");
     let (family, role) = config.feeds_style();
-    let budget = match MachineProfile::default()
+    let DepthCapRule { budget_n: budget } = MachineProfile::default()
         .rigidity
         .depth_cap_rule(family, role)
-        .expect("a Pocket has a depth-cap rule")
-    {
-        DepthCapRule::ForceBudget(n) => n,
-        DepthCapRule::Factor(f) => panic!("a Pocket is under the force budget, not a factor {f}"),
-    };
+        .expect("a Pocket has a depth-cap rule");
     let diameter = env
         .limit(rs_cam_core::feeds::envelope::LimitKind::Diameter)
         .map_or(6.0, |l| match l.edge {

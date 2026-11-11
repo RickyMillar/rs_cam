@@ -36,16 +36,12 @@
 //!
 //! ## The bound, and why it does not gate
 //!
-//! The cap is [`crate::feeds::force_budget::rigidity_depth_cap`] (P13c, O1): on the Pocket and
-//! Profile families the depth where the peak cutting force at the peak
-//! sample's width and chip meets the machine force budget; on the Adaptive
-//! family the profile's own
-//! factor for the operation family, times the diameter that
-//! `feeds::geometry::depth_cap_diameter_mm` gives at the measured peak
-//! (the engaged cone diameter on a tapered ball, the nominal diameter on
-//! every other shape). It is a
-//! RULE OF THUMB with no published source, so it carries
-//! [`BoundSource::RigidityRuleOfThumb`](crate::tool_load::verdict::BoundSource::RigidityRuleOfThumb), whose `gates_export()` is
+//! The cap is [`crate::feeds::force_budget::rigidity_depth_cap`] (P13c, O1;
+//! the Adaptive family since P29-4): on every roughing family the depth
+//! where the peak cutting force at the peak sample's width and chip meets
+//! the machine force budget. The budget stands in for an unmeasured
+//! frame, so the cap carries
+//! [`BoundSource::MachineForceBudget`](crate::tool_load::verdict::BoundSource::MachineForceBudget), whose `gates_export()` is
 //! false. An exceedance is reported; the export goes ahead. The day the
 //! machine is measured, the variant is replaced by a measured one and
 //! the row gates with no change to any renderer (`PLAN.md` §11).
@@ -127,7 +123,7 @@ pub fn evaluate(ctx: &super::ToolpathLoadContext<'_>, env: &super::GateEnv<'_>) 
 
     // Same short-circuit as chipload / power / deflection. A drill
     // cycle is Z-only: there is no lateral engagement to measure and no
-    // axial rule of thumb to measure it against.
+    // axial cap to measure it against.
     // EXEMPT(P28-04)
     if operation_kind.is_drill_kinematics() {
         tracing::debug!(
@@ -212,16 +208,12 @@ pub fn evaluate(ctx: &super::ToolpathLoadContext<'_>, env: &super::GateEnv<'_>) 
     // The family and the pass role the Suggest clamp keys on, read off
     // the operation's own registry spec — the same pair, from the same
     // place, so the two readers cannot classify one operation
-    // differently. The diameter is `depth_cap_diameter_mm` at the
-    // measured peak: the function the Suggest clamp calls at the depth
-    // it ships. On a tapered ball it is the engaged cone diameter at the
-    // peak, capped at the shank; on every other shape it is the nominal
-    // diameter.
+    // differently.
     let spec = operation_kind.spec();
     // P13c (O1): the force-budget cap (Pocket and Profile families) is
     // solved at the cut the peak sample measured: its engaged width (the
     // sample arc, `Engagement::from_sample`) and its chip (feed / (rpm x
-    // Z)). The Adaptive factor cap reads the engaged diameter at the peak.
+    // Z)). P29-4: the Adaptive family too.
     let peak_sample = peak_idx.and_then(|i| trace.samples.get(i));
     // X-VAC: with no contributing sample, the cut is read off the first
     // offered sample of the toolpath that states a feed and a speed (its
@@ -237,13 +229,11 @@ pub fn evaluate(ctx: &super::ToolpathLoadContext<'_>, env: &super::GateEnv<'_>) 
         })
     });
     if cut_sample.is_none()
-        && matches!(
-            machine
-                .rigidity
-                // EXEMPT(P28-02, F-DepthRule)
-                .depth_cap_rule(spec.feeds_family, spec.feeds_pass_role),
-            Some(crate::machine::DepthCapRule::ForceBudget(_))
-        )
+        && machine
+            .rigidity
+            // EXEMPT(P28-02, F-DepthRule)
+            .depth_cap_rule(spec.feeds_family, spec.feeds_pass_role)
+            .is_some()
     {
         return DepthVerdict::Reported {
             peak_mm,
@@ -288,7 +278,6 @@ pub fn evaluate(ctx: &super::ToolpathLoadContext<'_>, env: &super::GateEnv<'_>) 
         material,
         ae_mm,
         fz_mm,
-        peak_mm,
     );
     let bound = match outcome {
         Some(crate::feeds::force_budget::RigidityCapOutcome::Cap(c)) => c,
@@ -365,16 +354,9 @@ pub fn evaluate(ctx: &super::ToolpathLoadContext<'_>, env: &super::GateEnv<'_>) 
     let evidence = evidence_with(statistic);
     // Every figure here is formatted from the value it describes. The
     // confidence is `Approximate` on both decided arms because the
-    // bound is a rule of thumb, and that is a property of the bound,
-    // not of this cut.
+    // budget stands in for an unmeasured frame, and that is a property of
+    // the bound, not of this cut.
     let confidence = Confidence::Approximate(match bound {
-        crate::machine::RigidityDepthCap::Factor {
-            factor,
-            diameter_mm,
-        } => format!(
-            "peak engaged depth {peak_mm:.3} mm against the machine rigidity \
-             factor {factor:.2} times the engaged diameter {diameter_mm:.2} mm at that depth"
-        ),
         crate::machine::RigidityDepthCap::ForceBudget {
             budget_n,
             ae_mm,
@@ -498,7 +480,6 @@ mod tests {
             &oak(),
             0.4 * 6.0,
             1500.0 / (18_000.0 * 2.0),
-            0.0,
         );
         match cut {
             Some(crate::feeds::force_budget::RigidityCapOutcome::Cap(c)) => c.cap_mm(),
@@ -558,17 +539,12 @@ mod tests {
             &Material::default(),
             3.0,
             1500.0 / (18_000.0 * 2.0),
-            0.8,
         );
         match (run(OperationType::Pocket, Some(&t)), want) {
             (
                 DepthVerdict::Within { bound, .. } | DepthVerdict::Exceeds { bound, .. },
                 Some(crate::feeds::force_budget::RigidityCapOutcome::Cap(c)),
             ) => {
-                assert!(matches!(
-                    bound,
-                    crate::machine::RigidityDepthCap::ForceBudget { .. }
-                ));
                 // The sample arc gives r (1 - cos pi/2), equal to 3 mm to one ulp.
                 assert!(
                     (bound.cap_mm() - c.cap_mm()).abs() < 1e-9,
@@ -606,10 +582,6 @@ mod tests {
                 ..
             } => {
                 assert!((peak_mm - 0.8 * c).abs() < 1e-12);
-                assert!(
-                    matches!(bound, crate::machine::RigidityDepthCap::ForceBudget { .. }),
-                    "{bound:?}"
-                );
                 assert!((bound.cap_mm() - c).abs() < 1e-12);
                 assert_eq!(evidence.population.unwrap().contributing, 3);
             }

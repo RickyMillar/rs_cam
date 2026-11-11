@@ -428,8 +428,7 @@ pub struct ForceBudgetLimitInputs {
 /// op, from the one rule the depth gate reads.
 #[derive(Debug, Clone, Copy, PartialEq)]
 pub enum ForceBudgetScope {
-    /// The op's rule is not the force budget (the Adaptive factor, a finish
-    /// pass, a drill): no limit.
+    /// The op has no depth-cap rule (a finish pass, a drill): no limit.
     OutOfScope,
     /// The op's rule is the force budget, but the material has no force
     /// line: no limit, and the move summary states
@@ -441,7 +440,7 @@ pub enum ForceBudgetScope {
 
 impl ForceBudgetScope {
     /// **The one scope rule.** The limit applies only where
-    /// `rule == Some(DepthCapRule::ForceBudget(budget))`, the rule the depth
+    /// `rule == Some(DepthCapRule { budget_n })`, the rule the depth
     /// gate reads (`RigidityProfile::depth_cap_rule(family, role)`).
     #[must_use]
     pub fn of(
@@ -451,15 +450,13 @@ impl ForceBudgetScope {
     ) -> Self {
         use crate::machine::DepthCapRule;
         match (rule, line) {
-            (Some(DepthCapRule::ForceBudget(budget_n)), Some(line)) => {
-                Self::Limit(ForceBudgetLimitInputs {
-                    line,
-                    cutter,
-                    budget_n,
-                })
-            }
-            (Some(DepthCapRule::ForceBudget(_)), None) => Self::NoForceLine,
-            (Some(DepthCapRule::Factor(_)) | None, _) => Self::OutOfScope,
+            (Some(DepthCapRule { budget_n }), Some(line)) => Self::Limit(ForceBudgetLimitInputs {
+                line,
+                cutter,
+                budget_n,
+            }),
+            (Some(DepthCapRule { .. }), None) => Self::NoForceLine,
+            (None, _) => Self::OutOfScope,
         }
     }
 

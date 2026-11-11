@@ -3,7 +3,7 @@
 //! built from a `Check`.
 
 use super::check::basis_of_bound;
-use super::{BoundSide, Check, CheckState, DepthRule, LimitId, NoNumberReason};
+use super::{BoundSide, Check, CheckState, LimitId, NoNumberReason};
 use crate::feeds::RpmChoice;
 use crate::feeds::envelope::{CutPoint, Edge, JudgedValue, LimitKind, SafeEnvelope};
 use crate::tool_load::verdict::{
@@ -40,11 +40,7 @@ pub fn of_criterion(status: &CriterionStatus<'_>) -> Check {
     } else {
         ChipSide::High
     };
-    let limit = LimitId::of_criterion(
-        status.kind,
-        DepthRule::of_bound(status.bound_source.as_ref()),
-        chip_side,
-    );
+    let limit = LimitId::of_criterion(status.kind, chip_side);
     let (side, bound) = match (chip_side, status.bound_source.as_ref()) {
         (
             ChipSide::Low,
@@ -131,7 +127,7 @@ pub fn of_envelope(envelope: &SafeEnvelope, p: CutPoint) -> Vec<Check> {
             ) => (None, CheckState::NoNumber(NoNumberReason::NotJudgedHere)),
         };
         out.push(Check {
-            limit: LimitId::of_limit_kind(limit.kind, DepthRule::of_limit(limit)),
+            limit: LimitId::of_limit_kind(limit.kind),
             value: reading.map(|(value, _)| value),
             bound: reading.map(|(_, bound)| bound),
             unit: "mm",
@@ -150,7 +146,7 @@ pub fn of_envelope(envelope: &SafeEnvelope, p: CutPoint) -> Vec<Check> {
             continue;
         }
         out.push(Check {
-            limit: LimitId::of_limit_kind(*kind, DepthRule::ForceBudget),
+            limit: LimitId::of_limit_kind(*kind),
             value: None,
             bound: None,
             unit: "moves",

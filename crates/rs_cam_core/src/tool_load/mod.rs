@@ -9,7 +9,8 @@
 //!   50 µm / 200 µm bounds
 //! - `depth` — per-sample engaged depth vs the machine rigidity cap
 //!   (S3, 2026-09-18). It reports and never refuses an export: its
-//!   bound is a rule of thumb with no published source.
+//!   bound is the machine force budget, which stands in for an unmeasured
+//!   frame.
 //! - `cut_force` (P17) — the peak engaged-edge force of the deflection
 //!   gate's population against the machine force budget. A report-only
 //!   reading, not a criterion.

@@ -22,8 +22,6 @@ use crate::feeds::engagement::Engagement;
 use crate::feeds::geometry::RadialThinning;
 use crate::feeds::section::EngagedSection;
 
-use super::DepthRule;
-
 /// One kind of entry into material. `compute::catalog::entry_contract`
 /// re-exports it: the entry contract of each op names these kinds.
 #[derive(Debug, Clone, Copy, PartialEq, Eq)]
@@ -213,12 +211,12 @@ pub enum NoDepthLimit {
     FinishPass,
 }
 
-/// The depth limit of a cut: one of the two depth rules, or none.
+/// The depth limit of a cut: the machine force budget, or none.
 #[derive(Debug, Clone, Copy, PartialEq, Eq)]
 pub enum DepthLimit {
-    /// A depth rule applies.
-    Rule(DepthRule),
-    /// No depth rule applies.
+    /// The machine force budget sets the depth.
+    ForceBudget,
+    /// No depth limit applies.
     NoLimit(NoDepthLimit),
 }
 

@@ -501,17 +501,12 @@ pub const NO_BUDGET_LIMIT_BELOW_THE_FLUTE: &str = "no force-budget limit below t
 
 /// **The one producer of the rigidity depth cap** (S3, P13c O1).
 ///
-/// - The Adaptive family: `adaptive_doc_factor x` the engaged diameter at
-///   `depth_mm` (`geometry::depth_cap_diameter_mm`).
-/// - Every other roughing family: the force-budget depth at the width
-///   `ae_mm` and the advance per tooth `fz_mm` ([`depth_at_budget`]).
+/// Every roughing family (the Adaptive family since P29-4): the
+/// force-budget depth at the width `ae_mm` and the advance per tooth
+/// `fz_mm` ([`depth_at_budget`]).
 ///
 /// `None` when the family and role have no cap (a drill, a finish pass).
 #[must_use]
-#[expect(
-    clippy::too_many_arguments,
-    reason = "the cap reads the machine, the op class, the tool, the material and the cut"
-)]
 pub fn rigidity_depth_cap(
     machine: &crate::machine::MachineProfile,
     family: crate::feeds::OperationFamily,
@@ -520,35 +515,28 @@ pub fn rigidity_depth_cap(
     material: &Material,
     ae_mm: f64,
     fz_mm: f64,
-    depth_mm: f64,
 ) -> Option<RigidityCapOutcome> {
     use crate::machine::{DepthCapRule, RigidityDepthCap};
     // EXEMPT(F-DepthRule)
-    let rule = machine.rigidity.depth_cap_rule(family, pass_role)?;
-    Some(match rule {
-        DepthCapRule::Factor(factor) => RigidityCapOutcome::Cap(RigidityDepthCap::Factor {
-            factor,
-            diameter_mm: crate::feeds::geometry::depth_cap_diameter_mm(tool, depth_mm),
-        }),
-        DepthCapRule::ForceBudget(budget_n) => {
-            if material.force_line().is_err() {
-                return Some(RigidityCapOutcome::Unmodelled(NO_FORCE_LINE));
+    let DepthCapRule { budget_n } = machine.rigidity.depth_cap_rule(family, pass_role)?;
+    if material.force_line().is_err() {
+        return Some(RigidityCapOutcome::Unmodelled(NO_FORCE_LINE));
+    }
+    Some(
+        match depth_at_budget(tool, material, ae_mm, fz_mm, budget_n) {
+            None => RigidityCapOutcome::Unmodelled(NO_BUDGET_INPUT),
+            Some(BudgetDepth::NoRootBelowFlute) => RigidityCapOutcome::NoLimitBelowFlute,
+            Some(d @ (BudgetDepth::Solved(_) | BudgetDepth::BelowFloor)) => {
+                RigidityCapOutcome::Cap(RigidityDepthCap::ForceBudget {
+                    budget_n,
+                    ae_mm,
+                    fz_mm,
+                    depth_mm: d.ceiling_mm().unwrap_or(crate::feeds::MIN_AP_MM),
+                    below_floor: matches!(d, BudgetDepth::BelowFloor),
+                })
             }
-            match depth_at_budget(tool, material, ae_mm, fz_mm, budget_n) {
-                None => RigidityCapOutcome::Unmodelled(NO_BUDGET_INPUT),
-                Some(BudgetDepth::NoRootBelowFlute) => RigidityCapOutcome::NoLimitBelowFlute,
-                Some(d @ (BudgetDepth::Solved(_) | BudgetDepth::BelowFloor)) => {
-                    RigidityCapOutcome::Cap(RigidityDepthCap::ForceBudget {
-                        budget_n,
-                        ae_mm,
-                        fz_mm,
-                        depth_mm: d.ceiling_mm().unwrap_or(crate::feeds::MIN_AP_MM),
-                        below_floor: matches!(d, BudgetDepth::BelowFloor),
-                    })
-                }
-            }
-        }
-    })
+        },
+    )
 }
 
 /// The width and the advance per tooth that the rigidity cap of `op` is
