@@ -32,7 +32,7 @@ in sections 7 and 10, the probe result in section 11), then `phases/P29-0_probes
 |---|---|
 | P29-0 probes | DONE, committed `027cfa72c`. Section 9 of `P29-0_probes.md` corrects section 5 of the findings. |
 | P29-1 `CutLoad` | See "P29-1 status" below. |
-| P29-2 `Check`, `LimitId`, one basis | NEXT. Byte-identical. MCP gains the record beside the old fields. |
+| P29-2 `Check`, `LimitId`, one basis | IN WORK. Design and lead rulings: `phases/P29-2_DESIGN.md`. Two commits: 2a (new core folder `limits/`, mappings, projections, the sentry `every_limit_is_a_limit_id_p29_2`; no surface reads it) and 2b (MCP additive). If `git log` shows no "P29-2a" commit, 2a is in the tree, not committed: review it by path, run the gate set, commit. Lead rulings on the note: `Check::bound_detail` is transitional until P29-10; a finish depth with no bound is `NoNumber(NoBound)`, never `NotApplicable`; `limits/` takes no op type in any signature (source scan in the sentry). |
 | P29-3 `Cut` and `cuts()` | After P29-2. Byte-identical. Every exemption becomes a visible entry in one list. |
 | P29-4 to P29-6 | Behaviour steps; all come before the operator's cut. Write predictions before each. |
 | P29-7 to P29-last | After the cut. |
