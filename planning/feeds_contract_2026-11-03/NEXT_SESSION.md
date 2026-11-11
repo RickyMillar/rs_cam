@@ -92,7 +92,7 @@ Design and predictions: `phases/P29-4_DESIGN.md` (lead rulings in section 8),
   (ruling R1). FM1 moved 220 cells in 80 matrix rows and 10 simulation rows; each cell equals
   the prediction. The wanaka proposals equal the predictions. Exemption pins: ROWS 64,
   PHYSICAL 8, RULED 3, MAX_NEEDS_RULING 53, ROWS_WITH_A_FILE 56.
-- **Commit B is in** (the "P29-4 commit B" commit after `f5a5b4601`): the dead Factor chain
+- **Commit B is in** (`b6688d289`; lead re-ran fmt, full clippy and FM1 on it): the dead Factor chain
   is deleted. FM1 is byte-equal. Left by B, not fixed: three texts that users see still say
   "rule of thumb" (the `ExceededCriterion::depth_of_cut` remedy in `tool_load/verdict.rs`,
   `DEPTH_OF_CUT` in `tool_load/metric_guide.rs`, viz `sim_diagnostics.rs` "This limit is a
@@ -114,10 +114,19 @@ Findings of commit A (not fixed):
   (4.217 x 2.303 mm, white oak, 6 mm) the proposal keeps 4.217 mm, and `placement_of` says
   Outside Rigidity (judged 3.27 mm). The force at the shipped chip is 31.25 N, under the
   35.32 N budget; at the suggested chip it is 43.15 N. So the card warns on a cut that is
-  inside the budget as shipped, and a speeds-only apply puts it over. Every Adaptive op that
+  inside the budget as shipped. A speeds-only apply probably puts it over (inferred from the
+  force at the suggested chip; what the apply writes was not probed). Every Adaptive op that
   states a chip under the suggested chip shows this. The fix moves proposals: its own step,
   predictions first. Lead proposal: `propose` reads the Pick chip, because an apply writes
   the suggested speeds.
+- **Wanaka, probed on `b6688d289` (read-only loads).** Operator file idx 1, 2, 14, 15: the
+  stated chip is above the suggested chip, so the judged ceiling equals the proposal and the
+  conflict does not show. Work file: the suggested chip is about 1e-5 mm above the stated chip,
+  so a point at the proposal depth is Outside Rigidity by about 2e-5 mm (`placement_of` has no
+  tolerance); the card shows it on idx 15 only.
+- **The proposal can leave the move-budget floor.** On operator idx 2 and work idx 1, 2 the
+  point (proposal depth, stated width) is Outside Runtime (margins -0.184, -0.282, -0.167).
+  The Runtime width floor reads the depth; `propose` checks the ceilings, not that floor.
 - **The budget depth has a step over the width (Q5).** The force over the depth has a flat
   stretch (at 1.2 mm width: 29.2 N from 5 to 15 mm deep). The force never falls, so there is
   one root. When the width lifts the flat level to the budget, the root drops (rivmap: 16.3 mm
