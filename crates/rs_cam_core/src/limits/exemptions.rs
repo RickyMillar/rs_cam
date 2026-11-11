@@ -82,7 +82,6 @@ const GATES: &[LimitId] = &[
     LimitId::SpindlePower,
     LimitId::ToolDeflection,
     LimitId::ForceBudget,
-    LimitId::DepthFactor,
 ];
 
 /// The load caps of the feed modulator.
@@ -112,17 +111,8 @@ const R2: ExemptionClass = ExemptionClass::Ruled {
 const NR: ExemptionClass = ExemptionClass::NeedsRuling;
 
 /// Every exemption from a limit today. See the module doc.
-pub static EXEMPTIONS: [Exemption; 67] = [
+pub static EXEMPTIONS: [Exemption; 64] = [
     // P28: the limit audit.
-    Exemption {
-        id: "P28-01",
-        what: "the machine force budget (depth cap)",
-        limit: &[LimitId::ForceBudget],
-        who: Who::Facts("depth_rule is the Factor rule (the Adaptive family)"),
-        class: NR,
-        where_: &["src/machine/mod.rs", "src/feeds/envelope.rs"],
-        closes_in: "P29-4",
-    },
     Exemption {
         id: "P28-02",
         what: "the machine force budget",
@@ -485,27 +475,6 @@ pub static EXEMPTIONS: [Exemption; 67] = [
         where_: &["src/feeds/predict.rs"],
         closes_in: "later",
     },
-    Exemption {
-        id: "P28-34",
-        what: "the machine force budget, the other readers",
-        limit: &[LimitId::ForceBudget],
-        who: Who::Reader(
-            "the modulator, the force card and the depth gate take the exemptions of rows \
-             P28-01 to P28-04",
-        ),
-        class: NR,
-        where_: &[
-            "src/machine/mod.rs",
-            "src/tool_load/depth.rs",
-            "src/tool_load/cut_force.rs",
-            "src/session/compute.rs",
-            "src/dressup/feed_modulation.rs",
-            "src/feeds/envelope.rs",
-            "src/feeds/force_budget.rs",
-            "src/feeds/suggest/invariants.rs",
-        ],
-        closes_in: "P29-4",
-    },
     // The physical half of P28 row 30 (the plunge half is P28-30).
     Exemption {
         id: "P28-30p",
@@ -581,15 +550,6 @@ pub static EXEMPTIONS: [Exemption; 67] = [
         class: NR,
         where_: &["src/feeds/vendor_normalize.rs"],
         closes_in: "P25 / P27",
-    },
-    Exemption {
-        id: "M7",
-        what: "the width rule",
-        limit: &[],
-        who: Who::Reader("the Adaptive family is excluded by name on an axial bar"),
-        class: NR,
-        where_: &["src/feeds/envelope.rs"],
-        closes_in: "P29-4 (follows P28-05)",
     },
     Exemption {
         id: "M8",
@@ -846,10 +806,16 @@ pub static EXEMPTIONS: [Exemption; 67] = [
     Exemption {
         id: "F-DepthRule",
         what: "the depth limit",
-        limit: &[LimitId::ForceBudget, LimitId::DepthFactor],
+        limit: &[LimitId::ForceBudget],
         who: Who::Facts("depth_rule is set from the family and the role"),
         class: NR,
-        where_: &["src/compute/catalog/cuts.rs", "src/machine/mod.rs"],
-        closes_in: "P29-4",
+        where_: &[
+            "src/compute/catalog/cuts.rs",
+            "src/machine/mod.rs",
+            "src/tool_load/depth.rs",
+            "src/tool_load/cut_force.rs",
+            "src/feeds/force_budget.rs",
+        ],
+        closes_in: "P29-5 (P28-03)",
     },
 ];

@@ -13,8 +13,9 @@
 //! 2. Lead ruling 3 (2026-11-06). `cut_force::budget_line` is `Some` only
 //!    when `machine.rigidity.depth_cap_rule(family, role)` is
 //!    `DepthCapRule::ForceBudget`: `Some` on a Pocket (a roughing Pocket
-//!    family), `None` on an Adaptive (the Factor rule) and on a Scallop
-//!    finish pass. The card's state and bound source follow the line.
+//!    family) and on an Adaptive (P29-4, ruling R1: before P29-4 the
+//!    Factor rule gave `None`), `None` on a Scallop finish pass. The card's
+//!    state and bound source follow the line.
 //! 3. MCP parity. The verdict serialises `cut_force` with `peak_n` and
 //!    `budget_n`, so `get_tool_load_report` carries the reading.
 //! 4. The refusals: a material with no force line gives
@@ -260,14 +261,12 @@ fn the_budget_line_follows_the_depth_cap_rule() {
         panic!("a roughing Pocket is under the force budget");
     };
     let adaptive = OperationType::Adaptive.spec();
-    assert!(
-        matches!(
-            machine
-                .rigidity
-                .depth_cap_rule(adaptive.feeds_family, adaptive.feeds_pass_role),
-            Some(DepthCapRule::Factor(_))
-        ),
-        "the Adaptive family is under the Factor rule"
+    assert_eq!(
+        machine
+            .rigidity
+            .depth_cap_rule(adaptive.feeds_family, adaptive.feeds_pass_role),
+        Some(DepthCapRule::ForceBudget(budget_n)),
+        "P29-4: the Adaptive family is under the force budget"
     );
 
     let pocket_ctx = ctx(
@@ -285,8 +284,8 @@ fn the_budget_line_follows_the_depth_cap_rule() {
     );
     assert_eq!(
         budget_line(&adaptive_ctx, &env),
-        None,
-        "Factor rule: no line"
+        Some(budget_n),
+        "P29-4: the force-budget rule gives the line on an Adaptive"
     );
     let finish_ctx = ctx(
         &tool,
@@ -348,9 +347,40 @@ fn the_budget_line_follows_the_depth_cap_rule() {
     );
     assert_eq!(card.population.contributing, 3);
 
+    // P29-4: the Adaptive card reads the line as the Pocket card does.
     let adaptive_verdict =
         evaluate_toolpath(&adaptive_ctx, Some(&trace), Some(&machine), &tolerance);
-    let reading = adaptive_verdict.cut_force.as_ref().unwrap();
+    assert_eq!(
+        adaptive_verdict.cut_force.as_ref().unwrap().budget_n,
+        Some(budget_n)
+    );
+    let Some(DistributionOutcome::Measured(card)) = metric_distribution(
+        DistributionMetric::CutForce,
+        &adaptive_verdict,
+        &adaptive_ctx,
+        &env,
+    ) else {
+        panic!("an Adaptive has a measured force card");
+    };
+    assert!(
+        matches!(card.state, Some(LoadState::Within | LoadState::Exceeds)),
+        "under the line the Adaptive card has a state: {:?}",
+        card.state
+    );
+    assert_eq!(card.histogram.ceiling, Some(budget_n));
+    assert!(
+        matches!(
+            card.bound_source,
+            Some(BoundSource::MachineForceBudget { budget_n: b, .. }) if b == budget_n
+        ),
+        "the Adaptive bound source is the machine force budget: {:?}",
+        card.bound_source
+    );
+
+    // No line (a finish pass): a reading, not a verdict. Before P29-4 the
+    // Adaptive arm held this claim.
+    let finish_verdict = evaluate_toolpath(&finish_ctx, Some(&trace), Some(&machine), &tolerance);
+    let reading = finish_verdict.cut_force.as_ref().unwrap();
     assert_eq!(reading.budget_n, None);
     assert!(
         reading.peak_n > 0.0,
@@ -359,11 +389,11 @@ fn the_budget_line_follows_the_depth_cap_rule() {
     assert!(reading.rule.contains("no force limit"), "{}", reading.rule);
     let Some(DistributionOutcome::Measured(card)) = metric_distribution(
         DistributionMetric::CutForce,
-        &adaptive_verdict,
-        &adaptive_ctx,
+        &finish_verdict,
+        &finish_ctx,
         &env,
     ) else {
-        panic!("an Adaptive has a measured force card");
+        panic!("a finish pass has a measured force card");
     };
     assert_eq!(card.state, None, "no line: a reading, not a verdict");
     assert_eq!(card.bound_source, None);

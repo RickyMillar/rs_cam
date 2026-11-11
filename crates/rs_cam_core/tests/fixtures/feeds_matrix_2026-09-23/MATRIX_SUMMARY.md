@@ -31,7 +31,7 @@ Wood rows in `EMBEDDED_LUT`, read by the instrument:
 | BullNose | 12.7000: 3, 6.0000: 1, 6.3500: 3 | 2: 7 |
 | ChamferVbit | 12.0000: 2, 12.7000: 5, 19.0500: 4, 25.4000: 6, 4.7625: 4, 6.3500: 5, 9.5250: 8, none: 20 | 1: 17, 2: 37 |
 | FacingBit | 22.0000: 4, 25.0000: 2, 25.4000: 1 | 2: 6, 4: 1 |
-| FlatEnd | 0.7937: 4, 1.5000: 4, 1.5875: 4, 12.0000: 5, 12.7000: 26, 15.8750: 6, 19.0500: 6, 2.3813: 4, 3.0000: 4, 3.1750: 33, 4.7625: 10, 5.0000: 4, 6.0000: 24, 6.3500: 34, 9.5250: 35 | 2: 168, 3: 35 |
+| FlatEnd | 0.7937: 4, 1.5000: 4, 1.5875: 4, 12.0000: 5, 12.7000: 33, 15.8750: 13, 19.0500: 13, 2.3813: 4, 22.2250: 2, 25.4000: 2, 3.0000: 4, 3.1750: 36, 4.7625: 10, 5.0000: 4, 6.0000: 24, 6.3500: 41, 7.9375: 3, 9.5250: 42 | 2: 213, 3: 35 |
 | TaperedBallNose | 0.5000: 3, 0.7937: 6, 1.0000: 6, 1.4420: 1, 1.5000: 6, 1.5875: 9, 2.0000: 3, 2.9867: 1, 3.0000: 3, 3.1750: 17, 4.0000: 3, 4.7625: 3, 6.0000: 4, 6.3500: 7 | 2: 50, 3: 13, 4: 9 |
 
 ## Cell classes per tool type
@@ -122,7 +122,7 @@ The support arm is one axis: `Refused` (Suggest returned an error), `VendorBacke
 - 2D: Pocket, Profile, Adaptive on a 40 mm square polygon, stock 44 × 44 × 18 below z = 0; end_mill and bull_nose at 6 mm; the four materials.
 - 3D: a dome height field (top z = 0, flat base z = -8, 46 mm footprint) in the same stock; heights pinned to top 0 and bottom -8 on all 3D cells (`bottom_z: Auto` collapses a waterline band). Waterline, DropCutter, Adaptive3d with end_mill; Scallop and DropCutter with ball_nose and tapered_ball_nose; 6 mm; softwood and hardwood.
 - Simulation: resolution 1.0, metrics on, auto resolution off, other fields from `SimulationOptions::default()`. That default has `adaptive_feed_modulation: true`, so the post-simulation verdicts read the modulated feed, as the GUI default does.
-- Cells run: 35; errors: 0; left out (a fixed list, `sim_left_out`): 3; wall-clock of the subset: 43.2 s.
+- Cells run: 35; errors: 0; left out (a fixed list, `sim_left_out`): 3; wall-clock of the subset: 42.8 s.
 
 ## Post-simulation diagnostic ids (cells that fire each id)
 
@@ -139,9 +139,9 @@ The support arm is one axis: `Refused` (Suggest returned an error), `VendorBacke
 | `load.chipload.within` | 33 |
 | `load.deflection.unmodeled` | 8 |
 | `load.deflection.within` | 27 |
-| `load.depth.reported` | 13 |
-| `load.depth.unmodeled` | 4 |
-| `load.depth.within` | 18 |
+| `load.depth.reported` | 17 |
+| `load.depth.unmodeled` | 6 |
+| `load.depth.within` | 12 |
 | `load.power.unmodeled` | 8 |
 | `load.power.within` | 27 |
 | `project.sim_outside_envelope` | 2 |

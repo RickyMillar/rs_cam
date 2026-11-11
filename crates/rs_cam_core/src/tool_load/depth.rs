@@ -240,7 +240,7 @@ pub fn evaluate(ctx: &super::ToolpathLoadContext<'_>, env: &super::GateEnv<'_>) 
         && matches!(
             machine
                 .rigidity
-                // EXEMPT(P28-02, P28-34)
+                // EXEMPT(P28-02, F-DepthRule)
                 .depth_cap_rule(spec.feeds_family, spec.feeds_pass_role),
             Some(crate::machine::DepthCapRule::ForceBudget(_))
         )
@@ -473,18 +473,55 @@ mod tests {
     }
 
     fn run(op: OperationType, t: Option<&SimulationCutTrace>) -> DepthVerdict {
+        run_in(op, t, &Material::default())
+    }
+
+    /// The mechanics material. P29-4 (ruling R1): the Adaptive family reads
+    /// the force budget. In generic softwood (`Material::default()`) the
+    /// budget has no root below the flute at the fixture cut, so the gate
+    /// reports with no cap; white oak has a root there.
+    fn oak() -> Material {
+        Material::SolidWood {
+            species: crate::material::WoodSpecies::WhiteOak,
+        }
+    }
+
+    /// The force-budget cap (mm) of the mechanics arms, from the one
+    /// producer at the fixture cut: the width share 0.4 of the 6 mm tool
+    /// (`sample`, no arc) and the chip feed / (rpm x Z).
+    fn oak_cap_mm() -> f64 {
+        let cut = crate::feeds::force_budget::rigidity_depth_cap(
+            &MachineProfile::shapeoko_makita(),
+            crate::feeds::OperationFamily::Adaptive,
+            crate::feeds::PassRole::Roughing,
+            &tool(),
+            &oak(),
+            0.4 * 6.0,
+            1500.0 / (18_000.0 * 2.0),
+            0.0,
+        );
+        match cut {
+            Some(crate::feeds::force_budget::RigidityCapOutcome::Cap(c)) => c.cap_mm(),
+            other => panic!("the oak fixture cut has a force-budget cap: {other:?}"),
+        }
+    }
+
+    fn run_in(
+        op: OperationType,
+        t: Option<&SimulationCutTrace>,
+        material: &Material,
+    ) -> DepthVerdict {
         let tool = tool();
-        let material = Material::default();
-        // P13c: the mechanics arms run the factor rule (the Adaptive family)
-        // at a fixture factor of 0.25, so the cap stays 0.25 x 6 = 1.5 mm;
-        // the force-budget arm is `the_pocket_reads_the_force_budget_p13c`.
+        // P29-4: the fixture factor 0.25 no longer reaches a cap (no family
+        // reads the factor rule). The mechanics arms run the Adaptive family
+        // on the force budget in oak (`oak_cap_mm`).
         let mut machine = MachineProfile::shapeoko_makita();
         machine.rigidity.adaptive_doc_factor = 0.25;
         let tolerance = ToleranceBands::default();
         let ctx = ToolpathLoadContext {
             toolpath_id: TP,
             tool: &tool,
-            material: &material,
+            material,
             operation_family: LutOperationFamily::Pocket,
             pass_role: LutPassRole::Roughing,
             operation_feed_rate_mm_min: 1500.0,
@@ -546,28 +583,34 @@ mod tests {
         }
     }
 
-    /// The fixture factor 0.25 × Ø6 = 1.5 mm. A 1.2 mm peak is under
-    /// it, and the peak is the MAXIMUM of the three depths.
+    /// The cap `c` is the oak force-budget depth (P29-4; before, the
+    /// fixture factor 0.25 x 6 = 1.5 mm). A peak of 0.8 c is under it, and
+    /// the peak is the MAXIMUM of the three depths.
     #[test]
     #[expect(
         clippy::wildcard_enum_match_arm,
         reason = "test: an unexpected variant panics"
     )]
     fn the_peak_is_the_maximum_engaged_depth() {
+        let c = oak_cap_mm();
         let t = trace(vec![
-            sample(0, 0.4, true),
-            sample(1, 1.2, true),
-            sample(2, 0.9, true),
+            sample(0, 0.25 * c, true),
+            sample(1, 0.8 * c, true),
+            sample(2, 0.6 * c, true),
         ]);
-        match run(OperationType::Adaptive, Some(&t)) {
+        match run_in(OperationType::Adaptive, Some(&t), &oak()) {
             DepthVerdict::Within {
                 peak_mm,
                 bound,
                 evidence,
                 ..
             } => {
-                assert!((peak_mm - 1.2).abs() < 1e-12);
-                assert!((bound.cap_mm() - 1.5).abs() < 1e-12);
+                assert!((peak_mm - 0.8 * c).abs() < 1e-12);
+                assert!(
+                    matches!(bound, crate::machine::RigidityDepthCap::ForceBudget { .. }),
+                    "{bound:?}"
+                );
+                assert!((bound.cap_mm() - c).abs() < 1e-12);
                 assert_eq!(evidence.population.unwrap().contributing, 3);
             }
             other => panic!("expected Within, got {other:?}"),
@@ -580,8 +623,9 @@ mod tests {
         reason = "test: an unexpected variant panics"
     )]
     fn a_depth_past_the_cap_exceeds() {
-        let t = trace(vec![sample(0, 0.5, true), sample(1, 2.4, true)]);
-        match run(OperationType::Adaptive, Some(&t)) {
+        let c = oak_cap_mm();
+        let t = trace(vec![sample(0, c / 3.0, true), sample(1, 1.6 * c, true)]);
+        match run_in(OperationType::Adaptive, Some(&t), &oak()) {
             DepthVerdict::Exceeds { peak_mm, bound, .. } => {
                 assert!(peak_mm > bound.cap_mm());
             }
@@ -593,9 +637,9 @@ mod tests {
     /// contract is inclusive on every gate in this folder.
     #[test]
     fn a_cut_exactly_on_the_cap_is_within() {
-        let t = trace(vec![sample(0, 1.5, true)]);
+        let t = trace(vec![sample(0, oak_cap_mm(), true)]);
         assert!(matches!(
-            run(OperationType::Adaptive, Some(&t)),
+            run_in(OperationType::Adaptive, Some(&t), &oak()),
             DepthVerdict::Within { .. }
         ));
     }
@@ -607,7 +651,7 @@ mod tests {
     )]
     fn a_trace_with_no_cutting_samples_is_vacuous() {
         let t = trace(vec![sample(0, 0.0, false)]);
-        match run(OperationType::Adaptive, Some(&t)) {
+        match run_in(OperationType::Adaptive, Some(&t), &oak()) {
             DepthVerdict::Within {
                 peak_mm, evidence, ..
             } => {
@@ -636,7 +680,7 @@ mod tests {
                 ..sample(1, 9.0, true)
             },
         ]);
-        match run(OperationType::Adaptive, Some(&t)) {
+        match run_in(OperationType::Adaptive, Some(&t), &oak()) {
             DepthVerdict::Within {
                 peak_mm, evidence, ..
             } => {
@@ -739,9 +783,9 @@ mod tests {
     /// noise is inside [`DEXEL_DEPTH_RESOLUTION_MM`], so it is `Within`.
     #[test]
     fn f32_noise_at_the_cap_is_within() {
-        let t = trace(vec![sample(0, 1.5 + 7.6e-7, true)]);
+        let t = trace(vec![sample(0, oak_cap_mm() + 7.6e-7, true)]);
         assert!(matches!(
-            run(OperationType::Adaptive, Some(&t)),
+            run_in(OperationType::Adaptive, Some(&t), &oak()),
             DepthVerdict::Within { .. }
         ));
     }
@@ -750,9 +794,13 @@ mod tests {
     /// a real exceedance.
     #[test]
     fn a_depth_past_the_dexel_resolution_exceeds() {
-        let t = trace(vec![sample(0, 1.5 + 2.0 * DEXEL_DEPTH_RESOLUTION_MM, true)]);
+        let t = trace(vec![sample(
+            0,
+            oak_cap_mm() + 2.0 * DEXEL_DEPTH_RESOLUTION_MM,
+            true,
+        )]);
         assert!(matches!(
-            run(OperationType::Adaptive, Some(&t)),
+            run_in(OperationType::Adaptive, Some(&t), &oak()),
             DepthVerdict::Exceeds { .. }
         ));
     }

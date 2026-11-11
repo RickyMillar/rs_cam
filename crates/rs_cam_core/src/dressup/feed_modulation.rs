@@ -459,7 +459,6 @@ impl ForceBudgetScope {
                 })
             }
             (Some(DepthCapRule::ForceBudget(_)), None) => Self::NoForceLine,
-            // EXEMPT(P28-34)
             (Some(DepthCapRule::Factor(_)) | None, _) => Self::OutOfScope,
         }
     }

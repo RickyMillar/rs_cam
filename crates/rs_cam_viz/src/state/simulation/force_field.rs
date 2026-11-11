@@ -30,7 +30,8 @@
 //! `get_safe_envelope` and `get_tool_load_report`). It is built once per
 //! load report with the set (`build_cut_metric_set`), only under the
 //! `ForceBudget` depth-cap rule (`CutMetricSet::budget_n` is `Some`, lead
-//! ruling 3): the Factor rule and a finish pass get no field.
+//! ruling 3): a finish pass, a drill and no machine get no field. Since
+//! P29-4 (ruling R1) the Adaptive family is under the budget and draws one.
 //!
 //! `state/` reads `ui/feeds::EnvelopeScene` for the view top (the brief
 //! of 2026-11-07 names that door; `state/mod.rs` already reads

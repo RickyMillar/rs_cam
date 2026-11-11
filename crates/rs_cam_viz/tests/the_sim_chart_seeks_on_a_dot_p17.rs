@@ -546,9 +546,13 @@ fn flat_ceiling(env: &SafeEnvelope, kind: rs_cam_core::feeds::envelope::LimitKin
     }
 }
 
-/// The rivmap100 3D Rough envelope: two flat depth limits, the vendor
-/// DOC under the rigidity DOC.
-fn rough_env() -> (SafeEnvelope, f64, f64) {
+/// The rivmap100 3D Rough envelope and its one flat depth limit, the
+/// vendor DOC. P29-4 (ruling R1): before P29-4 the rigidity DOC
+/// (`adaptive_doc_factor x D`, 9 mm) was a second flat limit above it. The
+/// Adaptive family now reads the force budget, a curve over the width, and
+/// the chart extends to and notes only a flat limit (`depth_view`), as for
+/// the Pocket curve since P13c.
+fn rough_env() -> (SafeEnvelope, f64) {
     use rs_cam_core::feeds::envelope::LimitKind;
     let session = rs_cam_core::session::ProjectSession::load(std::path::Path::new(FIXTURE))
         .expect("the rivmap100 fixture loads");
@@ -563,9 +567,15 @@ fn rough_env() -> (SafeEnvelope, f64, f64) {
         .expect("a tool")
         .expect("a backed envelope");
     let low = flat_ceiling(&env, LimitKind::VendorAxial).expect("the vendor DOC is flat");
-    let high = flat_ceiling(&env, LimitKind::Rigidity).expect("the rigidity DOC is flat");
-    assert!(low < high, "fixture: vendor {low} under rigidity {high}");
-    (env, low, high)
+    assert!(
+        matches!(
+            env.limit(LimitKind::Rigidity).map(|l| &l.edge),
+            Some(rs_cam_core::feeds::envelope::Edge::ApCurve { .. })
+        ),
+        "fixture: the rigidity limit is the force-budget curve: {:?}",
+        env.limit(LimitKind::Rigidity)
+    );
+    (env, low)
 }
 
 /// Twenty samples, the first at `deep`, the rest at a third of it.
@@ -582,8 +592,8 @@ fn rough_samples(deep: f64) -> Vec<CutPoint3> {
         .collect()
 }
 
-/// The chart input of the rough envelope `env` over `samples`: no budget,
-/// no field (the Adaptive family is under the Factor rule).
+/// The chart input of the rough envelope `env` over `samples`: no budget
+/// line and no field (the axis claims read the depth limits only).
 fn rough_input<'a>(env: &'a SafeEnvelope, samples: &'a [CutPoint3]) -> CutChartInput<'a> {
     CutChartInput {
         env,
@@ -601,18 +611,19 @@ fn rough_input<'a>(env: &'a SafeEnvelope, samples: &'a [CutPoint3]) -> CutChartI
 ///
 /// - A cut whose data range is under the vendor DOC and within
 ///   `OFF_SCALE_FACTOR` of it: the axis extends to the vendor DOC, which
-///   paints as a line named on it inside the frame; the rigidity DOC,
-///   still above, keeps one quiet off-scale row above the frame.
-/// - A cut whose data range is under both and more than `OFF_SCALE_FACTOR`
-///   under the vendor DOC: no extension; both limits are off-scale rows.
-/// - A cut between the two: the axis extends to the rigidity DOC, which
-///   paints as a named line; no row.
+///   paints as a line named on it inside the frame, with no note.
+/// - A cut whose data range is more than `OFF_SCALE_FACTOR` under the
+///   vendor DOC: no extension; the vendor DOC is an off-scale row.
+///
+/// P29-4 (ruling R1): the arms of a second, higher flat limit (its quiet
+/// note above the frame, and the axis extended to it) are deleted: the
+/// rigidity DOC of this fixture is a curve now, and no flat limit of the
+/// scene sits above the vendor DOC.
 #[test]
 fn a_limit_above_the_range_extends_the_axis_or_keeps_a_quiet_note_p17b() {
     use rs_cam_core::feeds::envelope::LimitKind;
-    let (env, low, high) = rough_env();
+    let (env, low) = rough_env();
     let low_name = rs_cam_viz::ui::feeds::envelope::limit_name(&env, LimitKind::VendorAxial);
-    let high_name = rs_cam_viz::ui::feeds::envelope::limit_name(&env, LimitKind::Rigidity);
     let marker = |name: &str, mm: f64| {
         format!(
             "{name} {} mm",
@@ -622,7 +633,7 @@ fn a_limit_above_the_range_extends_the_axis_or_keeps_a_quiet_note_p17b() {
     let planned = env.stated.map_or(0.0, |p| p.ap_mm);
     let ctx = ctx();
 
-    // Case A: the vendor DOC within the factor; the rigidity DOC above.
+    // Case A: the vendor DOC within the factor.
     let deep = low / OFF_SCALE_FACTOR / VIEW_HEADROOM * 1.2;
     let deep = deep.max(planned);
     let data_top = VIEW_HEADROOM * deep;
@@ -636,8 +647,8 @@ fn a_limit_above_the_range_extends_the_axis_or_keeps_a_quiet_note_p17b() {
         let (shapes, response) = frame(&ctx, width, &extended, Vec::new());
         let map = response.map.expect("the chart drew");
         assert!(
-            map.y.1 > low && map.y.1 < high,
-            "at {width}: the axis {:?} extends past the vendor DOC {low} and not to the rigidity DOC {high}",
+            map.y.1 > low,
+            "at {width}: the axis {:?} extends past the vendor DOC {low}",
             map.y
         );
         let extents = text_extents(&shapes);
@@ -656,21 +667,13 @@ fn a_limit_above_the_range_extends_the_axis_or_keeps_a_quiet_note_p17b() {
             "at {width}: the line draws inside the frame, not on its top edge: y {line_y} vs {}",
             map.frame.top()
         );
-        let (_, _, right, rect) = extents
-            .iter()
-            .find(|t| t.0 == marker(&high_name, high))
-            .unwrap_or_else(|| panic!("at {width}: the rigidity DOC keeps a note: {texts:?}"));
-        assert!(
-            rect.bottom() <= map.frame.top() + 0.5 && (right - map.frame.right()).abs() <= 1.0,
-            "at {width}: the note sits above the frame, right-aligned: {rect:?}"
-        );
         assert!(
             !texts.contains(&marker(&low_name, low)),
             "at {width}: the extended-to limit has no note: {texts:?}"
         );
     }
 
-    // Case B: both limits more than the factor above the range. The
+    // Case B: the vendor DOC more than the factor above the range. The
     // drawn chart always holds the planned 2 mm of this fixture in its
     // data range, which puts the vendor DOC within the factor, so this
     // arm reads the pure view: a shallow cut planned shallow.
@@ -686,33 +689,12 @@ fn a_limit_above_the_range_extends_the_axis_or_keeps_a_quiet_note_p17b() {
             .iter()
             .map(|(name, mm)| (name.as_str(), *mm))
             .collect::<Vec<_>>(),
-        vec![(low_name.as_str(), low), (high_name.as_str(), high)],
-        "both limits keep a note, the lower first"
+        vec![(low_name.as_str(), low)],
+        "the vendor DOC keeps a note; the rigidity curve has none"
     );
     assert!(
         (view.data_top - VIEW_HEADROOM * shallow).abs() < 1e-9 && view.ap_top == view.data_top,
         "the axis is the data range: {view:?}"
-    );
-
-    // Case C: the range between the two; the rigidity DOC extends it.
-    let between = (low + high) / 2.0 / VIEW_HEADROOM;
-    let between_samples = rough_samples(between);
-    let one_line = rough_input(&env, &between_samples);
-    let (shapes, response) = frame(&ctx, 340.0, &one_line, Vec::new());
-    let map = response.map.expect("the chart drew");
-    assert!(
-        map.y.1 > high,
-        "the axis {:?} extends past the rigidity DOC {high}",
-        map.y
-    );
-    let texts: Vec<String> = text_extents(&shapes).into_iter().map(|t| t.0).collect();
-    assert!(
-        texts.contains(&low_name) && texts.contains(&high_name),
-        "both limits are named on their lines: {texts:?}"
-    );
-    assert!(
-        !texts.iter().any(|t| t.ends_with(" mm")),
-        "no note: {texts:?}"
     );
 }
 

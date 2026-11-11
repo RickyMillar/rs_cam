@@ -223,7 +223,6 @@ pub(crate) fn rigidity_cap_mm(
         return None;
     }
     let crate::machine::DepthCapRule::Factor(factor) =
-        // EXEMPT(P28-34)
         machine.rigidity.depth_cap_of(depth_limit)?
     else {
         return None;

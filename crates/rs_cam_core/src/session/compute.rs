@@ -2313,7 +2313,6 @@ fn modulate_annotated_against_trace(
     // with the machine's numbers (`RigidityProfile::depth_cap_of`).
     let depth_cap_rule = machine_profile
         .rigidity
-        // EXEMPT(P28-34)
         .depth_cap_of(operation.cuts().body_facts().depth_rule);
     // P16 item 7: set when a material in scope has no force line; the move
     // summary then states `FORCE_BUDGET_NO_FORCE_LINE_NOTE`.

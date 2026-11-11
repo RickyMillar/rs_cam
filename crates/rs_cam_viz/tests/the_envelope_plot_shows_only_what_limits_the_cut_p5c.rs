@@ -586,9 +586,18 @@ fn the_rivmap_rough_plot_draws_every_limit_in_view_p5c() {
     // straight Runtime floor of a move model that does not read the depth
     // is held on a Pocket below.
     let mut runtime_edges: Vec<Edge> = Vec::new();
-    for (tag, point) in [
-        ("fixture", None),
-        ("review ap 4.217 x ae 2.303", Some((4.217, 2.303))),
+    // P29-4 (ruling R1): the 3D Rough reads the force budget, a curve over
+    // the width. The scene's binding limit is the drawn limit with the
+    // smallest margin at the point (`binding_at`). At the review point that
+    // is the Rigidity curve (drawn about 4.9 mm at 2.303 mm width, over the
+    // stated 4.217 mm); the vendor DOC is still nearest the fixture point.
+    for (tag, point, binds) in [
+        ("fixture", None, LimitKind::VendorAxial),
+        (
+            "review ap 4.217 x ae 2.303",
+            Some((4.217, 2.303)),
+            LimitKind::Rigidity,
+        ),
     ] {
         let (config, env) = rivmap_rough(point);
         assert!(
@@ -655,11 +664,7 @@ fn the_rivmap_rough_plot_draws_every_limit_in_view_p5c() {
             raised > 0,
             "{tag}: non-vacuity: the floor curve raises a column"
         );
-        assert_eq!(
-            scene.binding,
-            Some(LimitKind::VendorAxial),
-            "{tag}: the vendor DOC binds this cut"
-        );
+        assert_eq!(scene.binding, Some(binds), "{tag}: the binding limit");
         // One label per drawn line: its name, once (round 2; P5d D4).
         let names: Vec<String> = scene.edges.iter().map(|e| e.label.clone()).collect();
         let painted = texts(&f.shapes);

@@ -11,7 +11,8 @@
 //! 2. A Profile (ae = D) has one `Rigidity` ceiling that meets the budget.
 //! 3. A tiny budget ships the minimum depth with a warning (Q6: never
 //!    refuse): the law says so and the envelope notes carry the warning.
-//! 4. The Adaptive family keeps `adaptive_doc_factor x D` in this phase.
+//! 4. Retired in P29-4 (ruling R1, 2026-11-11): the Adaptive family kept
+//!    `adaptive_doc_factor x D`. It reads the force budget now.
 //! 5. A material with no force line (plywood) states the abstention.
 //!
 //! Red before P13c (HEAD 4efcb4eaa): `feeds::force_budget` and
@@ -199,19 +200,6 @@ fn a_tiny_budget_ships_the_minimum_depth_with_a_warning_p13c() {
         (p.ap_mm - floor).abs() < 1e-12,
         "the minimum depth ships: {p:?}"
     );
-}
-
-#[test]
-fn the_adaptive_family_keeps_its_factor_this_phase_p13c() {
-    let machine = MachineProfile::default();
-    let t = tool(6.0);
-    let (_, m) = &materials()[1];
-    let env = envelope(&op(OperationType::Adaptive), &t, &machine, m);
-    let l = env.limit(LimitKind::Rigidity).expect("a Rigidity limit");
-    let Edge::ApCeiling { mm } = l.edge else {
-        panic!("an Adaptive ceiling, got {:?}", l.edge)
-    };
-    assert!((mm - machine.rigidity.adaptive_doc_factor * 6.0).abs() < 1e-9);
 }
 
 #[test]

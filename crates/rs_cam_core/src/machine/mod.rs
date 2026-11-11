@@ -266,9 +266,10 @@ impl RigidityDepthCap {
 /// ([`RigidityProfile::depth_cap_rule`]).
 #[derive(Debug, Clone, Copy, PartialEq)]
 pub enum DepthCapRule {
-    /// `factor x D` (the Adaptive family).
+    /// `factor x D`. No family gives it since P29-4 (dead; commit B
+    /// deletes it).
     Factor(f64),
-    /// The force budget (N) (every other roughing family).
+    /// The force budget (N) (every roughing family).
     ForceBudget(f64),
 }
 
@@ -279,16 +280,18 @@ impl RigidityProfile {
     /// `None` for an operation with no axial cap:
     ///
     /// - [`OperationFamily::Drill`](crate::feeds::OperationFamily::Drill): a drill cycle is Z-only.
-    /// - A `SemiFinish` or `Finish` pass outside the adaptive family.
+    /// - A `SemiFinish` or `Finish` pass.
     ///   Feeds matrix R2 (2026-09-23): no vendor publishes an axial
     ///   finishing cap for wood; the deflection gate is its limit.
     ///
     /// | Family / role | Rule |
     /// |---|---|
     /// | `Drill` | none |
-    /// | `Adaptive` | `adaptive_doc_factor` x D (kept in P13c; the lead rules it next) |
     /// | any other, `Roughing` | the force budget `force_budget_n` |
     /// | any other, `SemiFinish` or `Finish` | none (R2) |
+    ///
+    /// P29-4 (ruling R1, 2026-11-11): the Adaptive family reads the force
+    /// budget too. No family gives the Factor rule now; commit B deletes it.
     #[must_use]
     pub fn depth_cap_rule(
         &self,
@@ -311,9 +314,7 @@ impl RigidityProfile {
         match (family, pass_role) {
             // EXEMPT(P28-04)
             (OperationFamily::Drill, _) => DepthLimit::NoLimit(NoDepthLimit::DrillCycle),
-            // EXEMPT(P28-01, F-DepthRule)
-            (OperationFamily::Adaptive, _) => DepthLimit::Rule(DepthRule::Factor),
-            // EXEMPT(P28-34)
+            // EXEMPT(F-DepthRule)
             (_, PassRole::Roughing) => DepthLimit::Rule(DepthRule::ForceBudget),
             // EXEMPT(P28-02, P28-03, S-NoBound)
             (_, PassRole::SemiFinish | PassRole::Finish) => {

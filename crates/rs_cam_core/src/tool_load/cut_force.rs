@@ -16,9 +16,9 @@
 //! The force budget line exists only on an op whose
 //! `machine.rigidity.depth_cap_rule(family, role)` is
 //! [`DepthCapRule::ForceBudget`]: the one rule the depth gate
-//! (`super::depth`) and the P16 modulator read. On any other op (the
-//! Adaptive family under the Factor rule, a finish pass, a drill, no
-//! machine) the force is a plain reading with no line.
+//! (`super::depth`) and the P16 modulator read (every roughing family; the
+//! Adaptive family since P29-4). On any other op (a finish pass, a drill,
+//! no machine) the force is a plain reading with no line.
 //!
 //! ## Report-only
 //!
@@ -143,9 +143,9 @@ pub fn cut_points(ctx: &ToolpathLoadContext<'_>, env: &GateEnv<'_>) -> Vec<CutPo
 
 /// **The force budget line (N) of this op, or `None`** (lead ruling 3).
 /// `Some(budget_n)` only when the machine's depth-cap rule for the op's
-/// family and pass role is [`DepthCapRule::ForceBudget`]. `None` for the
-/// Factor rule (the Adaptive family), a finish pass, a drill, or no
-/// machine. The family and the role come from the registry spec of the
+/// family and pass role is [`DepthCapRule::ForceBudget`] (every roughing
+/// family; P29-4, ruling R1, gave the Adaptive family the budget). `None`
+/// for a finish pass, a drill, or no machine. The family and the role come from the registry spec of the
 /// operation kind, as `super::depth` reads them.
 #[must_use]
 pub fn budget_line(ctx: &ToolpathLoadContext<'_>, env: &GateEnv<'_>) -> Option<f64> {
@@ -153,7 +153,7 @@ pub fn budget_line(ctx: &ToolpathLoadContext<'_>, env: &GateEnv<'_>) -> Option<f
     let spec = ctx.operation_kind.spec();
     match machine
         .rigidity
-        // EXEMPT(P28-34)
+        // EXEMPT(F-DepthRule)
         .depth_cap_rule(spec.feeds_family, spec.feeds_pass_role)?
     {
         DepthCapRule::ForceBudget(budget_n) => Some(budget_n),

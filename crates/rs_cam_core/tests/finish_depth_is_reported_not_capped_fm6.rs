@@ -12,11 +12,12 @@
 //!   contract P5: as the envelope's rigidity ceiling, which "Apply all"
 //!   ships at or under);
 //! - (c) on a tapered ball, Suggest and the post-simulation depth gate read
-//!   ONE diameter at the shipped depth: `feeds::geometry::depth_cap_diameter_mm`,
-//!   the engaged diameter (not the tip, not the shank). Before R2 the clamp
-//!   multiplied the tip and the gate the shank (EVIDENCE 5.1-7, 3.5-15). The
-//!   feed's depth ladder reads the same engaged diameter as the gate's
-//!   chipload ladder (EVIDENCE 6-10);
+//!   ONE cap rule, and the gate reads the width at the engaged cone
+//!   diameter (not the tip, not the shank). Before R2 the clamp multiplied
+//!   the tip and the gate the shank (EVIDENCE 5.1-7, 3.5-15). Until P29-4
+//!   the rule was the Adaptive factor x `depth_cap_diameter_mm`; since
+//!   P29-4 (ruling R1) it is the force budget, from one producer
+//!   (`force_budget::rigidity_depth_cap`);
 //! - (d) the diagnostics list carries the depth row: an `Exceeds` as
 //!   `load.depth.exceeds` (EVIDENCE 5.1-15), a finishing reading as
 //!   `load.depth.reported` with no threshold, and a gate that did not
@@ -40,7 +41,7 @@ use rs_cam_core::compute::tool_config::{ToolConfig, ToolId, ToolMaterial, ToolTy
 use rs_cam_core::diagnostics::adapters::from_tool_load::diagnostics_from_load_verdict;
 use rs_cam_core::diagnostics::{DiagnosticEvidence, DiagnosticState, Severity, ids};
 use rs_cam_core::feeds::envelope::{EnvelopeInput, LimitKind, PickRequest, SafeEnvelope};
-use rs_cam_core::feeds::geometry::depth_cap_diameter_mm;
+use rs_cam_core::feeds::force_budget::{RigidityCapOutcome, rigidity_depth_cap};
 use rs_cam_core::feeds::suggest::{
     OperationApplyInput, StockContext, SuggestContext, SuggestWarning, apply_to_operation,
 };
@@ -361,91 +362,83 @@ fn a_roughing_depth_still_clamps_at_the_producer_s_cap_fm6() {
 
 // ── (c) one engaged diameter on a tapered ball ──────────────────────────
 
-/// A Ø3.175-tip tapered ball Adaptive (7 deg, Ø6.175 shank). P13c (O1):
-/// the Pocket family reads the force budget, so the factor cap of this
-/// arm is the Adaptive family's (`adaptive_doc_factor`). The envelope's
-/// rigidity ceiling (feeds contract P5) at the depth it ships and the gate's cap at a
-/// measured peak equal to that depth are one number, from one diameter:
-/// `depth_cap_diameter_mm`, the engaged diameter at that depth. It is
-/// neither the tip nor the shank.
+/// The force-budget cap that the one producer gives the tapered ball
+/// Adaptive at the gate's cut: the width share 0.4 of the engaged diameter
+/// at `depth_mm` (the fixture `sample` states no arc) and the chip
+/// feed / (rpm x Z) of the fixture sample.
+fn producer_cap(cutter: &ToolDefinition, depth_mm: f64) -> Option<RigidityCapOutcome> {
+    rigidity_depth_cap(
+        &machine(),
+        OperationFamily::Adaptive,
+        PassRole::Roughing,
+        cutter,
+        &softwood(),
+        0.4 * cutter.lookup_diameter_at(depth_mm),
+        1500.0 / (18_000.0 * 2.0),
+        depth_mm,
+    )
+}
+
+/// A Ø3.175-tip tapered ball Adaptive (7 deg, Ø6.175 shank) in softwood.
+/// P29-4 (ruling R1): the Adaptive family reads the force budget, so
+/// Suggest and the gate read one cap rule, the budget. Before P29-4 both
+/// read the factor `adaptive_doc_factor` x the engaged diameter
+/// (`depth_cap_diameter_mm`); no reader reads that diameter now. In
+/// softwood the budget has no root below the flute on this tool (the FM1
+/// tapered-ball softwood rows print an empty cap), so the envelope draws
+/// no rigidity ceiling at the stated width, and the gate reports the peak
+/// with no cap, as the producer says.
 #[test]
 #[expect(
     clippy::wildcard_enum_match_arm,
     reason = "test: an unexpected variant panics"
 )]
-fn suggest_and_the_gate_read_one_engaged_diameter_on_a_tapered_ball_fm6() {
-    let m = machine();
+fn suggest_and_the_gate_read_one_cap_rule_on_a_tapered_ball_fm6() {
     let tool = tool_of(ToolType::TaperedBallNose, 3.175);
     let s = suggest(OperationType::Adaptive, &tool);
-    let capped = rigidity_cap(&s)
-        .unwrap_or_else(|| panic!("the roughing envelope must carry a rigidity cap"));
-    let shipped = s.operation.depth_per_pass().expect("a pocket has a DPP");
-    assert!(
-        shipped <= capped,
-        "the shipped depth {shipped} must be at or under the clamp {capped}"
+    let limit = s
+        .envelope
+        .limit(LimitKind::Rigidity)
+        .unwrap_or_else(|| panic!("the roughing envelope keeps the Rigidity limit"));
+    assert_eq!(
+        limit.law,
+        rs_cam_core::feeds::force_budget::FORCE_BUDGET_LAW,
+        "the Adaptive Rigidity limit is the force budget"
+    );
+    assert_eq!(
+        rigidity_cap(&s),
+        None,
+        "no budget root below the flute: no ceiling at the stated width"
     );
 
     let cutter = build_cutter(&tool).unwrap();
-    let suggest_d = depth_cap_diameter_mm(&cutter, capped);
-    let factor = m.rigidity.adaptive_doc_factor;
+    let shipped = s.operation.depth_per_pass().expect("an adaptive has a DPP");
+    let t = trace(&[0.5 * shipped, shipped]);
+    let producer = producer_cap(&cutter, shipped);
     assert!(
-        (capped - factor * suggest_d).abs() <= 1e-9,
-        "the clamp must land where the depth equals its own cap: {capped} vs \
-         {factor} x {suggest_d}"
+        matches!(producer, Some(RigidityCapOutcome::NoLimitBelowFlute)),
+        "the producer: {producer:?}"
     );
-    assert!(
-        (suggest_d - tool.diameter).abs() > 0.1 && (suggest_d - cutter.diameter()).abs() > 0.1,
-        "vacuous: the engaged diameter {suggest_d} must differ from the tip {} and the \
-         shank {}",
-        tool.diameter,
-        cutter.diameter()
-    );
-
-    let t = trace(&[0.5 * capped, capped]);
     match depth_gate(&cutter, OperationType::Adaptive, Some(&t)) {
-        DepthVerdict::Within { peak_mm, bound, .. } => {
-            assert_eq!(peak_mm, capped);
-            let RigidityDepthCap::Factor {
-                factor: f,
-                diameter_mm,
-            } = bound
-            else {
-                panic!("an Adaptive cap is a factor, got {bound:?}")
-            };
-            assert_eq!(
-                diameter_mm, suggest_d,
-                "the gate and the clamp must read one diameter at one depth"
-            );
-            assert_eq!(f, factor);
-        }
-        other => panic!("the shipped depth must read Within its own cap, got {other:?}"),
+        DepthVerdict::Reported { peak_mm, .. } => assert_eq!(peak_mm, shipped),
+        other => panic!("no budget root: the gate reports with no cap, got {other:?}"),
     }
 }
 
-/// In the cone of the same tapered ball (6 mm deep, Adaptive), the gate's
-/// cap diameter is the engaged cone diameter. EVIDENCE 6-10: the gate's
-/// ×0.704 was the ladder at the cone diameter. The feed's depth ladder is
-/// retired (P11b); feeds contract P14 deleted its diameter function
-/// (`feed_ladder_diameter_mm`, no production reader).
+/// In the cone of the same tapered ball (6 mm deep, Adaptive), the gate
+/// reads the width at the engaged cone diameter. EVIDENCE 6-10: the
+/// gate's x0.704 was the ladder at the cone diameter. P29-4 (ruling R1):
+/// the cap is the force budget, solved at that width (before, the test
+/// read the cone diameter off the Factor cap). At the fixture width share
+/// 0.4 the budget has no root below the flute on this small tool, so this
+/// arm cuts a full slot (share 1) in jarrah, where a cap forms: the gate's
+/// cap is the producer's, and its width is the cone diameter.
 #[test]
 fn the_gate_reads_the_cone_diameter_fm6() {
     const DEPTH_MM: f64 = 6.0;
     let tool = tool_of(ToolType::TaperedBallNose, 3.175);
     let cutter = build_cutter(&tool).unwrap();
-    let t = trace(&[DEPTH_MM]);
-    #[expect(
-        clippy::wildcard_enum_match_arm,
-        reason = "test: an unexpected variant panics"
-    )]
-    let bound = match depth_gate(&cutter, OperationType::Adaptive, Some(&t)) {
-        DepthVerdict::Within { bound, .. } | DepthVerdict::Exceeds { bound, .. } => bound,
-        other => panic!("an adaptive pass carries a cap, got {other:?}"),
-    };
     let engaged = cutter.lookup_diameter_at(DEPTH_MM);
-    let RigidityDepthCap::Factor { diameter_mm, .. } = bound else {
-        panic!("an Adaptive cap is a factor, got {bound:?}")
-    };
-    assert_eq!(diameter_mm, engaged);
     assert!(
         engaged > tool.diameter + 0.1 && engaged < cutter.diameter() - 0.1,
         "vacuous: 6 mm deep must sit in the cone, between the tip {} and the shank {}: \
@@ -453,6 +446,53 @@ fn the_gate_reads_the_cone_diameter_fm6() {
         tool.diameter,
         cutter.diameter()
     );
+    let jarrah = Material::SolidWood {
+        species: WoodSpecies::Jarrah,
+    };
+    let t = SimulationCutTrace {
+        samples: vec![SimulationCutSample {
+            engagement: Engagement::with_radial_woc(1.0),
+            ..sample(0, DEPTH_MM)
+        }],
+        ..SimulationCutTrace::test_fixture()
+    };
+    let m = machine();
+    let want = rigidity_depth_cap(
+        &m,
+        OperationFamily::Adaptive,
+        PassRole::Roughing,
+        &cutter,
+        &jarrah,
+        engaged,
+        1500.0 / (18_000.0 * 2.0),
+        DEPTH_MM,
+    );
+    let tolerance = ToleranceBands::default();
+    let env = GateEnv {
+        sim_trace: Some(&t),
+        machine: Some(&m),
+        tolerance: &tolerance,
+    };
+    let gate = rs_cam_core::tool_load::depth::evaluate(
+        &ctx(&cutter, &jarrah, OperationType::Adaptive),
+        &env,
+    );
+    match (want, &gate) {
+        (
+            Some(RigidityCapOutcome::Cap(want)),
+            DepthVerdict::Within { bound, .. } | DepthVerdict::Exceeds { bound, .. },
+        ) => {
+            assert_eq!(*bound, want, "the gate reads the producer's cap");
+            let RigidityDepthCap::ForceBudget { ae_mm, .. } = *bound else {
+                panic!("an Adaptive cap is the force budget, got {bound:?}")
+            };
+            assert!(
+                (ae_mm - engaged).abs() < 1e-9,
+                "the slot width {ae_mm} is the cone diameter {engaged}"
+            );
+        }
+        (want, gate) => panic!("a cap at the cone width: producer {want:?}, gate {gate:?}"),
+    }
 }
 
 // ── (d) the diagnostics list carries the depth row ──────────────────────

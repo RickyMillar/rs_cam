@@ -525,14 +525,36 @@ fn every_limit_in_the_range_draws_a_line_and_a_label_p5d() {
             "P17b: `{}` {rect:?} does not touch its line {line:?}",
             e.label
         );
+        // P29-4: on this fixture both end places of the move-budget line
+        // are blocked, so the placer takes a side place by its rule (end
+        // places first, then side places). Measured at 340 points:
+        // - The top end (40.9, 41.0) is steep. Its right place spans x 41.9
+        //   to 141.9 at y 44 to 56 and crosses the riser of the Rigidity
+        //   curve at x 124.3 (the cliff of the force budget at ae 1.62 mm).
+        //   Its left place lies outside the frame.
+        // - The bottom end (196.3, 160.3) is level. Its place on the line
+        //   reaches y 166, under the frame bottom at y 161.4.
+        // A side-place label touches its line and lies inside the span of
+        // the line's points. Every other label sits at one end.
         let ends = [line.first(), line.last()];
-        assert!(
-            ends.into_iter()
-                .flatten()
-                .any(|q| rect.expand(END_REACH).contains(*q)),
-            "P17b: `{}` {rect:?} sits at neither end of its line {line:?}",
-            e.label
-        );
+        let at_end = ends
+            .into_iter()
+            .flatten()
+            .any(|q| rect.expand(END_REACH).contains(*q));
+        if e.kind == LimitKind::Runtime {
+            let span = egui::Rect::from_points(&line).expand(END_REACH);
+            assert!(
+                at_end || span.contains_rect(rect),
+                "P17b: `{}` {rect:?} is at no end and outside its line's span {span:?}",
+                e.label
+            );
+        } else {
+            assert!(
+                at_end,
+                "P17b: `{}` {rect:?} sits at neither end of its line {line:?}",
+                e.label
+            );
+        }
     }
 
     // D5: the D tick paints under the frame at the x of D. P17: the tick

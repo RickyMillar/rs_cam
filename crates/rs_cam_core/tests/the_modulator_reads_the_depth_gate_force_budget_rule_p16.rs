@@ -12,9 +12,11 @@
 //!    hobby machine): the limit binds a full-slot move, the move carries
 //!    `BindingConstraint::ForceBudget`, and the emitted feed is the feed of
 //!    `Engagement::fz_cap_for_peak_force` at the budget of the rule.
-//! 2. A cell where the rule is not `ForceBudget` (Adaptive, Roughing: the
-//!    factor rule): the scope gives no inputs, no move carries
-//!    `ForceBudget`, and the same move runs faster than the budget feed.
+//! 2. A cell where the rule is not `ForceBudget` (a finish pass: no depth
+//!    rule): the scope gives no inputs, no move carries `ForceBudget`, and
+//!    the same move runs faster than the budget feed. P29-4 (ruling R1):
+//!    before P29-4 this cell was Adaptive, Roughing (the factor rule). The
+//!    Adaptive family now carries the force-budget rule, as the Pocket.
 //! 3. The force-budget rule with no force line: no limit, and the scope
 //!    gives the summary note "force budget: no force line".
 //!
@@ -133,23 +135,28 @@ fn the_modulator_reads_the_depth_gate_force_budget_rule_p16() {
     let adaptive_rule = machine
         .rigidity
         .depth_cap_rule(OperationFamily::Adaptive, PassRole::Roughing);
+    let finish_rule = machine
+        .rigidity
+        .depth_cap_rule(OperationFamily::Trace, PassRole::Finish);
     let Some(DepthCapRule::ForceBudget(budget_n)) = pocket_rule else {
         panic!("Pocket roughing must carry the force-budget rule: {pocket_rule:?}");
     };
-    assert!(
-        matches!(adaptive_rule, Some(DepthCapRule::Factor(_))),
-        "Adaptive roughing must carry the factor rule: {adaptive_rule:?}"
+    // P29-4 (ruling R1): the Adaptive family reads the force budget.
+    assert_eq!(
+        adaptive_rule, pocket_rule,
+        "Adaptive roughing must carry the force-budget rule: {adaptive_rule:?}"
     );
+    assert_eq!(finish_rule, None, "a finish pass carries no depth rule");
 
     // The scope of the two cells, through the one constructor.
     let pocket_scope = ForceBudgetScope::of(pocket_rule, Some(line()), cutter());
-    let adaptive_scope = ForceBudgetScope::of(adaptive_rule, Some(line()), cutter());
+    let finish_scope = ForceBudgetScope::of(finish_rule, Some(line()), cutter());
     let inputs = pocket_scope
         .inputs()
         .expect("the force-budget rule with a line gives the limit");
     assert_eq!(inputs.budget_n.to_bits(), budget_n.to_bits());
-    assert_eq!(adaptive_scope.inputs(), None);
-    assert_eq!(adaptive_scope.note(), None);
+    assert_eq!(finish_scope.inputs(), None);
+    assert_eq!(finish_scope.note(), None);
     assert_eq!(pocket_scope.note(), None);
 
     // Cell 3: the force-budget rule with no force line.
@@ -218,8 +225,8 @@ fn the_modulator_reads_the_depth_gate_force_budget_rule_p16() {
 
     // Cell 2: the rule is not the force budget, and the limit is absent.
     let mut tp = straight_toolpath(3, commanded);
-    let outcome = adaptive_feed_modulate(&mut tp, &eng, &ctx_for(adaptive_scope))
-        .expect("a valid modulation");
+    let outcome =
+        adaptive_feed_modulate(&mut tp, &eng, &ctx_for(finish_scope)).expect("a valid modulation");
     assert!(!outcome.per_move.is_empty(), "non-vacuity: moves visited");
     for (i, (feed, binding)) in &outcome.per_move {
         assert_ne!(

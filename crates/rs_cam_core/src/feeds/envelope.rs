@@ -27,8 +27,8 @@ use crate::feeds::sourced::{
 };
 use crate::feeds::suggest::{SuggestContext, feeds_input_for_operation};
 use crate::feeds::{
-    FeedsError, FeedsResult, FeedsWarning, MIN_AE_MM, MIN_AP_MM, OperationFamily, PassRole,
-    SpindleStrategy, ToolGeometryHint, VendorLut, calculate,
+    FeedsError, FeedsResult, FeedsWarning, MIN_AE_MM, MIN_AP_MM, PassRole, SpindleStrategy,
+    ToolGeometryHint, VendorLut, calculate,
 };
 use crate::machine::MachineProfile;
 use crate::material::Material;
@@ -1181,7 +1181,7 @@ impl SafeEnvelope {
         let base = calculate(&feeds_input);
         let d = input.tool.diameter;
         let plan = axes_plan(input.operation, input.tool, &base);
-        let (family, role) = input.operation.feeds_style();
+        let (_, role) = input.operation.feeds_style();
 
         let ap_samples = match plan.axes {
             EnvelopeAxes::Plane { ap, .. } | EnvelopeAxes::AxialBar { ap, .. } => samples(ap),
@@ -1316,13 +1316,11 @@ impl SafeEnvelope {
             None
         };
         env.add_exact_ceilings(&plan, ExactPhase::Stated);
-        // EXEMPT(P28-05, P28-06, M7)
+        // EXEMPT(P28-05, P28-06)
         let removal_rate = matches!(role, PassRole::Roughing)
             && !plan.peck
             && no_depth.is_none()
-            && (plan.computed_width
-                || (family != OperationFamily::Adaptive
-                    && matches!(env.axes, EnvelopeAxes::AxialBar { .. })));
+            && (plan.computed_width || matches!(env.axes, EnvelopeAxes::AxialBar { .. }));
         let (point, binding, limits) = if removal_rate {
             let pick = env.propose_removal_rate(&plan);
             (pick.point, pick.limits.first().copied(), pick.limits)
@@ -3244,7 +3242,7 @@ fn rigidity_limit(
     use crate::feeds::force_budget as fb;
     // P29-3: the depth limit of the op's body cut.
     let depth_limit = inputs.operation.cuts().body_facts().depth_rule;
-    // EXEMPT(P28-01, P28-34, M12)
+    // EXEMPT(M12)
     let rule = inputs.machine.rigidity.depth_cap_of(depth_limit)?;
     // EXEMPT(P28-02)
     if !matches!(role, PassRole::Roughing) {

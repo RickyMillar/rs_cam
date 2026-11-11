@@ -523,7 +523,7 @@ pub fn rigidity_depth_cap(
     depth_mm: f64,
 ) -> Option<RigidityCapOutcome> {
     use crate::machine::{DepthCapRule, RigidityDepthCap};
-    // EXEMPT(P28-34)
+    // EXEMPT(F-DepthRule)
     let rule = machine.rigidity.depth_cap_rule(family, pass_role)?;
     Some(match rule {
         DepthCapRule::Factor(factor) => RigidityCapOutcome::Cap(RigidityDepthCap::Factor {

@@ -14,7 +14,8 @@
 //!   a date `YYYY-MM-DD`.
 //! - Claim 4: every id is unique, and the 34 ids of `P28_limit_audit.md`
 //!   and the 12 ids M1 to M12 of `P29_parts/A_cuts_and_limits.md` section
-//!   3.3 are in the list. The two id lists are constants here.
+//!   3.3 are in the list, or in `CLOSED` with the step that closed them,
+//!   never both. The id lists are constants here.
 //! - Claim 5: the link between the list and the code. A scope read in
 //!   product code carries the marker comment `// EXEMPT(<ids>)` on the line
 //!   above it. Each file of a row's `where_` holds a marker with the row
@@ -34,9 +35,9 @@ use std::path::{Path, PathBuf};
 use rs_cam_core::limits::{EXEMPTIONS, Exemption, ExemptionClass, Geometry, Who};
 
 /// The rows that need a ruling. Exact: a closed row lowers it.
-const MAX_NEEDS_RULING: usize = 56;
+const MAX_NEEDS_RULING: usize = 53;
 /// Every row.
-const ROWS: usize = 67;
+const ROWS: usize = 64;
 /// The rows with a geometry reason.
 const PHYSICAL: usize = 8;
 /// The rows that quote an operator ruling.
@@ -44,7 +45,8 @@ const RULED: usize = 3;
 /// The rows that name the files of their scope reads. The rows of an
 /// undeclared cut (no reader) name none. Commit C gave the two Q4 rows
 /// their file (`src/limits/sample.rs`), and added the row `C-LeadInApproach`.
-const ROWS_WITH_A_FILE: usize = 59;
+/// P29-4 closed three rows with a file (`P28-01`, `P28-34`, `M7`).
+const ROWS_WITH_A_FILE: usize = 56;
 
 /// The 34 rows of `phases/P28_limit_audit.md`.
 const P28_IDS: [&str; 34] = [
@@ -58,6 +60,11 @@ const P28_IDS: [&str; 34] = [
 const M_IDS: [&str; 12] = [
     "M1", "M2", "M3", "M4", "M5", "M6", "M7", "M8", "M9", "M10", "M11", "M12",
 ];
+
+/// The audit ids that a step closed, with the step (P29-4: ruling R1, the
+/// Adaptive family reads the force budget). An audit id is a row or in this
+/// list, never both; the two id lists above stay the record (ruling Q6).
+const CLOSED: &[(&str, &str)] = &[("P28-01", "P29-4"), ("P28-34", "P29-4"), ("M7", "P29-4")];
 
 /// The marker text before the ids.
 const MARKER: &str = "// EXEMPT(";
@@ -189,7 +196,18 @@ fn every_audit_id_is_a_row_and_no_id_repeats() {
         assert!(seen.insert(e.id), "the id {} repeats", e.id);
     }
     for id in P28_IDS.iter().chain(M_IDS.iter()) {
-        assert!(row(id).is_some(), "the audit id {id} has no row");
+        let closed = CLOSED.iter().any(|(c, _)| c == id);
+        assert!(
+            row(id).is_some() != closed,
+            "the audit id {id} is a row ({}) or closed ({closed}), never both and never neither",
+            row(id).is_some()
+        );
+    }
+    for (id, step) in CLOSED {
+        assert!(
+            P28_IDS.contains(id) || M_IDS.contains(id),
+            "the closed id {id} ({step}) is an audit id"
+        );
     }
 }
 

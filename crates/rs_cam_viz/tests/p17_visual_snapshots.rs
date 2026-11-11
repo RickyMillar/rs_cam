@@ -511,11 +511,13 @@ fn sim_set() -> CutMetricSet {
 }
 
 /// Round 3 (lead review): the chart images draw the rivmap100 3D Rough
-/// envelope, which has two flat depth limits (the vendor DOC and the
-/// rigidity DOC) above a cut at its planned depth, so the off-scale
-/// markers show. The samples are the four prototype classes about that
-/// envelope's planned point, with no force (the Adaptive family is under
-/// the Factor rule: no line, no dot). The cards stay the Pocket set's.
+/// envelope above a cut at its planned depth. Before P29-4 it had two flat
+/// depth limits (the vendor DOC and the rigidity DOC), so two off-scale
+/// markers showed; since P29-4 (ruling R1) the rigidity limit is the
+/// force-budget curve, and only the vendor DOC is flat. The samples are the
+/// four prototype classes about that envelope's planned point, with no
+/// force (the set states no budget line and no dot). The cards stay the
+/// Pocket set's.
 fn rough_chart_set(pocket: &CutMetricSet) -> CutMetricSet {
     let (_, env) = rivmap_env();
     let diameter = ae_ceiling(&env, LimitKind::Diameter).unwrap_or(6.0);

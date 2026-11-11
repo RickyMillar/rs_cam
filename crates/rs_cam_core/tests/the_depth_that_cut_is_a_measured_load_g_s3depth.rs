@@ -28,7 +28,7 @@
 //! **S3 adds no number.** Every bound here is the factor the profile
 //! already carries times the tool diameter, through the one shared
 //! producer `force_budget::rigidity_depth_cap` (P13c: the force budget on
-//! a roughing Pocket, the factor on an Adaptive), which the envelope now
+//! a roughing Pocket; P29-4: on an Adaptive too), which the envelope now
 //! calls too. The two cannot disagree.
 
 #![expect(
@@ -278,8 +278,8 @@ fn depth_row<'a>(criteria: &'a [CriterionStatus<'a>]) -> &'a CriterionStatus<'a>
 /// peak cut, read back through the one shared producer
 /// (`feeds::force_budget::rigidity_depth_cap`). P13c (O1): a roughing
 /// Pocket reads the force budget at the peak sample's width (arc pi/2:
-/// ae = r) and chip (feed / (rpm x Z)); the Adaptive family keeps its
-/// factor. Nothing in this file multiplies a factor or solves a depth
+/// ae = r) and chip (feed / (rpm x Z)); P29-4: the Adaptive family reads
+/// the same budget. Nothing in this file multiplies a factor or solves a depth
 /// itself.
 fn cap_for(family: OperationFamily, pass_role: PassRole) -> RigidityDepthCap {
     let m = machine();
@@ -398,8 +398,8 @@ fn the_depth_bound_does_not_gate_and_the_kind_is_not_a_known_absence() {
 /// profile). The operator ruled that a finishing or semi-finishing pass
 /// gets no axial ceiling: no vendor publishes one for wood (EVIDENCE
 /// 5.1-3, 5.1-12). The finishing arm now reports the measured peak with
-/// no bound and no bound source, and the state is `Within`. The two
-/// roughing arms keep their two distinct factors.
+/// no bound and no bound source, and the state is `Within`. P29-4
+/// (ruling R1): the two roughing arms read one rule, the force budget.
 #[test]
 fn each_family_reads_the_factor_its_own_pass_role_implies() {
     let trace = measured_trace();
@@ -443,7 +443,8 @@ fn each_family_reads_the_factor_its_own_pass_role_implies() {
         Some(peak_axial_engagement(&trace))
     );
 
-    // Adaptive → `adaptive_doc_factor`.
+    // Adaptive → the force budget (P29-4, ruling R1). Before P29-4 it
+    // read `adaptive_doc_factor`.
     let adaptive_bound = cap_for(OperationFamily::Adaptive, PassRole::Roughing);
     let adaptive_cap = adaptive_bound.cap_mm();
     let adaptive = depth_verdict_for(
@@ -455,20 +456,24 @@ fn each_family_reads_the_factor_its_own_pass_role_implies() {
     let adaptive_status = adaptive.as_criterion_status();
     assert_eq!(adaptive_status.bound, Some(adaptive_cap));
 
-    // Two DISTINCT rules, read back off the profile (P13c: the roughing
-    // Pocket reads the force budget, the Adaptive family its factor).
-    // Without this the two capped arms above could both read one field.
+    // One rule, read back off the profile (P29-4, ruling R1: the roughing
+    // Pocket and the Adaptive family both read the force budget). At the
+    // same cut the two caps are equal.
     let m = machine();
     match (rough, adaptive_bound) {
         (
             RigidityDepthCap::ForceBudget { budget_n, .. },
-            RigidityDepthCap::Factor { factor, .. },
+            RigidityDepthCap::ForceBudget {
+                budget_n: adaptive_budget_n,
+                ..
+            },
         ) => {
             assert_eq!(budget_n, m.rigidity.force_budget_n);
-            assert_eq!(factor, m.rigidity.adaptive_doc_factor);
+            assert_eq!(adaptive_budget_n, m.rigidity.force_budget_n);
         }
-        other => panic!("the two arms must read two rules: {other:?}"),
+        other => panic!("the two arms must read the force budget: {other:?}"),
     }
+    assert_eq!(adaptive_bound, rough, "one rule at one cut gives one cap");
 }
 
 // ── (c) a drill cycle has no axial cap ───────────────────────────────

@@ -311,12 +311,23 @@ fn the_tool_diameter_binds_the_width_k2b() {
     );
 }
 
+/// P29-4 (ruling R1): the Adaptive family reads the force budget. On the
+/// hobby budget this cell's budget depth (1.33 mm at 8 mm width) binds
+/// before power (12.46 mm), and a probe over the presets, five tools, ten
+/// species and MDF found no Adaptive cell where power binds first. So the
+/// cell states a budget that no cut reaches (`f64::MAX`): the force budget
+/// does not bind, and the power edge binds.
+fn unbounded_budget(mut machine: MachineProfile) -> MachineProfile {
+    machine.rigidity.force_budget_n = f64::MAX;
+    machine
+}
+
 #[test]
 fn the_spindle_power_binds_and_names_the_curve_k2b() {
     let env = envelope(&Cell {
         op: OperationType::Adaptive,
         tool: end_mill(12.0, 30.0),
-        machine: MachineProfile::default(),
+        machine: unbounded_budget(MachineProfile::default()),
         material: oak(),
         dpp: 15.0,
         stepover: 8.0,
@@ -332,13 +343,15 @@ fn the_deflection_target_binds_and_names_its_constant_k2b() {
     // P11a (L5, D-A): the engaged-edge force bends the 50 mm Ø12 less,
     // and the grid sizes power at the requested depth, so power binds
     // there first. A longer stickout (80 mm) and a narrower cut keep the
-    // deflection edge the binding one.
+    // deflection edge the binding one. P29-4: the hobby budget depth
+    // (1.45 mm) binds before deflection (2.92 mm), so the cell states a
+    // budget that no cut reaches (`unbounded_budget`).
     let mut tool = end_mill(12.0, 40.0);
     tool.set_stickout(ToolFact::Stated(80.0));
     let env = envelope(&Cell {
         op: OperationType::Adaptive,
         tool,
-        machine: MachineProfile::shapeoko_vfd(),
+        machine: unbounded_budget(MachineProfile::shapeoko_vfd()),
         material: oak(),
         dpp: 15.0,
         stepover: 2.0,

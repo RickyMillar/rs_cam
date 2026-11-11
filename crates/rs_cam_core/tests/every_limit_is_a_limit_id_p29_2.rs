@@ -647,8 +647,10 @@ fn the_depth_rule_of_a_limit_is_a_typed_field() {
             }
         }
     }
+    // P29-4 (ruling R1): the Adaptive envelope holds the force-budget
+    // limit; no envelope holds a Factor limit. Commit B deletes the field.
     assert!(
-        factor >= 1 && budget >= 1,
-        "both rules are reached: {factor} Factor, {budget} force budget"
+        factor == 0 && budget >= 2,
+        "the force budget only, on both ops: {factor} Factor, {budget} force budget"
     );
 }

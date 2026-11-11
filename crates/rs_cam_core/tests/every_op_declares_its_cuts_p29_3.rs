@@ -211,10 +211,10 @@ fn claim_1_the_power_cases_keep_the_widths_in_order() {
 fn old_facts(op: &OperationConfig) -> CutFacts {
     let (family, role) = op.feeds_style();
     // The table of `RigidityProfile::depth_cap_rule` (P13c, R2), written
-    // out: the product filler `depth_limit` is not the oracle.
+    // out: the product filler `depth_limit` is not the oracle. P29-4
+    // (ruling R1): the Adaptive family has no arm of its own.
     let depth_rule = match (family, role) {
         (OperationFamily::Drill, _) => DepthLimit::NoLimit(NoDepthLimit::DrillCycle),
-        (OperationFamily::Adaptive, _) => DepthLimit::Rule(DepthRule::Factor),
         (_, PassRole::Roughing) => DepthLimit::Rule(DepthRule::ForceBudget),
         (_, PassRole::SemiFinish | PassRole::Finish) => {
             DepthLimit::NoLimit(NoDepthLimit::FinishPass)
@@ -267,7 +267,6 @@ fn claim_2_the_facts_equal_the_label_functions() {
         "DrillCycle",
         "ring=true",
         "ring=false",
-        "Rule(Factor)",
         "Rule(ForceBudget)",
         "NoLimit(FinishPass)",
         "NoLimit(DrillCycle)",
@@ -281,6 +280,11 @@ fn claim_2_the_facts_equal_the_label_functions() {
             "no config reaches the fact value {v}: {seen:?}"
         );
     }
+    // P29-4 (ruling R1): no config reaches the Factor rule.
+    assert!(
+        !seen.contains("Rule(Factor)"),
+        "a config reaches the Factor rule: {seen:?}"
+    );
 }
 
 #[test]
