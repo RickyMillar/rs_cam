@@ -115,8 +115,10 @@ diag_ids! {
     /// frame, so the export lists it as an advisory, not a warning
     /// (EVIDENCE 5.1-15: before R2 no depth finding reached this list).
     pub const LOAD_DEPTH_EXCEEDS: &str = "load.depth.exceeds" => warn(Danger::Tool);
-    /// The measured depth of a finishing or semi-finishing pass, reported
-    /// with no bound. Feeds matrix R2: no axial cap applies to that pass.
+    /// The measured depth of a finishing or semi-finishing pass that cuts
+    /// on one side, reported with no bound. Feeds matrix R2: no axial cap
+    /// applies to that pass. A slot or a groove reads the force budget
+    /// (P29-5, ruling R3).
     pub const LOAD_DEPTH_REPORTED: &str = "load.depth.reported" => INFO;
     /// The depth gate did not measure (no simulation, stale simulation, no
     /// machine profile). Its own id, so a reader of ids alone never reads

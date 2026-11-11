@@ -50,12 +50,11 @@ use super::locality::SpanLookup;
 use super::verdict::{GatePopulation, PopulationUnit};
 use super::{GateEnv, ToolpathLoadContext};
 
-/// The rule clause of an op under the force budget.
-pub const RULE_FORCE_BUDGET: &str =
-    "force budget of the machine (the depth-cap rule of this family)";
-/// The rule clause of an op with no force line: a finish pass, a drill, or
-/// no machine.
-pub const RULE_NO_LIMIT: &str = "no force limit on this op family";
+/// The rule clause of a cut under the force budget.
+pub const RULE_FORCE_BUDGET: &str = "force budget of the machine (the depth limit of this cut)";
+/// The rule clause of a cut with no force line: a one-sided finish pass, a
+/// drill, or no machine.
+pub const RULE_NO_LIMIT: &str = "no force limit on this cut";
 
 /// **The peak engaged-edge force (N) of one sample**: the force behind
 /// [`crate::feeds::predict::tip_deflection_from_engagement`], so

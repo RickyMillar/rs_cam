@@ -37,9 +37,10 @@
 //! ## The bound, and why it does not gate
 //!
 //! The cap is [`crate::feeds::force_budget::rigidity_depth_cap`] (P13c, O1;
-//! the Adaptive family since P29-4): on every roughing family the depth
-//! where the peak cutting force at the peak sample's width and chip meets
-//! the machine force budget. The budget stands in for an unmeasured
+//! the Adaptive family since P29-4; a slot or a groove under every role
+//! since P29-5): on every roughing cut the depth where the peak cutting
+//! force at the peak sample's width and chip meets the machine force
+//! budget. The budget stands in for an unmeasured
 //! frame, so the cap carries
 //! [`BoundSource::MachineForceBudget`](crate::tool_load::verdict::BoundSource::MachineForceBudget), whose `gates_export()` is
 //! false. An exceedance is reported; the export goes ahead. The day the
@@ -50,13 +51,14 @@
 //! the Suggest clamp calls, so the cap the recipe was lowered to and the
 //! cap this row draws against cannot disagree.
 //!
-//! ## A finishing pass has no bound (feeds matrix R2, 2026-09-23)
+//! ## A one-sided finishing pass has no bound (feeds matrix R2, 2026-09-23)
 //!
 //! No vendor publishes an axial finishing cap as a fraction of D for
-//! wood. For a `Finish` or `SemiFinish` pass the profile gives no cap,
-//! and this gate returns [`DepthVerdict::Reported`]: the peak and its
-//! population, with no bound. The deflection gate is the limit on that
-//! pass.
+//! wood. For a `Finish` or `SemiFinish` pass that cuts on one side the
+//! profile gives no cap, and this gate returns [`DepthVerdict::Reported`]:
+//! the peak and its population, with no bound. The deflection gate is the
+//! limit on that pass. A slot or a groove reads the force budget under
+//! every role (P29-5, ruling R3).
 //!
 //! ## The comparison tolerance
 //!
@@ -301,20 +303,22 @@ pub fn evaluate(ctx: &super::ToolpathLoadContext<'_>, env: &super::GateEnv<'_>) 
         }
         None => {
             // Feeds matrix R2 (2026-09-23): a finishing or semi-finishing
-            // pass has no axial cap. The drill family also has none, but the
-            // drill arm above already took it. The gate reports the peak and
-            // judges nothing; the deflection gate is the limit on this pass.
+            // pass that cuts on one side has no axial cap; a slot or a
+            // groove reads the force budget (P29-5, ruling R3). The drill
+            // family also has none, but the drill arm above already took
+            // it. The gate reports the peak and judges nothing; the
+            // deflection gate is the limit on this pass.
             tracing::debug!(
                 verdict = "Reported",
                 peak_mm,
-                "depth gate reports: this pass role carries no axial cap"
+                "depth gate reports: this cut carries no axial cap"
             );
             return DepthVerdict::Reported {
                 peak_mm,
                 evidence: evidence_with(ChiploadStatistic::PeakInRange),
                 confidence: Confidence::Approximate(format!(
-                    "peak engaged depth {peak_mm:.3} mm; a finishing pass has no \
-                     axial cap, and the deflection gate is its limit"
+                    "peak engaged depth {peak_mm:.3} mm; a finishing pass that cuts \
+                     on one side has no depth limit, and the deflection gate is its limit"
                 )),
             };
         }

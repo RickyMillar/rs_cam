@@ -679,7 +679,8 @@ fn deflection_to_diagnostic(tp_id: ToolpathId, v: &DeflectionVerdict) -> Option<
 ///   force budget, which never refuses an export, so the severity is the power
 ///   gate's `Caution`, not the deflection gate's `Critical`.
 /// - `Reported` → `load.depth.reported`, Info, with no threshold: a
-///   finishing pass has no axial cap.
+///   finishing pass that cuts on one side has no axial cap. A slot or a
+///   groove reads the force budget (P29-5, ruling R3).
 /// - `Unmodeled` → `load.depth.unmodeled`, never a `*.within` id
 ///   (EVIDENCE 5.1-14).
 ///
@@ -783,8 +784,8 @@ fn depth_to_diagnostic(tp_id: ToolpathId, v: &DepthVerdict) -> Option<Diagnostic
             Severity::Info,
             confidence,
             format!(
-                "Depth of cut peaks at {:.3} mm. A finishing pass has no depth limit: \
-                 the deflection check limits it{}",
+                "Depth of cut peaks at {:.3} mm. A finishing pass that cuts on one \
+                 side has no depth limit: the deflection check limits it{}",
                 peak_mm,
                 vacuity_clause(evidence)
             ),

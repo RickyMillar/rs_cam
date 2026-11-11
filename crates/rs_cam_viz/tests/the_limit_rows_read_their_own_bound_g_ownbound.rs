@@ -403,8 +403,8 @@ fn every_banded_row_is_on_its_own_card_g_ownbound() {
         );
     }
 
-    // Feeds ruling R2: a finishing or semi-finishing pass has no depth cap,
-    // so the depth gate REPORTS its peak with no bound. The row (P17: in
+    // Feeds ruling R2: a finishing or semi-finishing pass that cuts on one
+    // side has no depth cap, so the depth gate REPORTS its peak with no bound. The row (P17: in
     // "Other limits") still draws, with no invented limit, and its hover
     // says which gate decides.
     let depth = criteria
@@ -481,7 +481,7 @@ fn every_modelled_row_names_its_setting_and_its_bound_g_ownbound() {
             panic!(
                 "the {:?} row painted no caption under its face. W1: the \
                  provenance rides in the caption the row already has, so a \
-                 measured bound and a rule of thumb keep one geometry.",
+                 measured bound and an advisory one keep one geometry.",
                 status.kind
             )
         });

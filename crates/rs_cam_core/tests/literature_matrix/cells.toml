@@ -165,8 +165,9 @@ sources = ["onsrud_plywood", "dapra_rctf", "gwizard_plywood"]
 #     1.0-1.5×D for woc/d < 0.20 in plywood/MDF.
 #   - onsrud_doc_rule: 1.5-4.5×D pre-derate; with hobby_derate=0.5
 #     the floor of that band is 0.75×D and the ceiling 2.25×D, so 1.5×D
-#     sits comfortably within. The engine emits adaptive_doc_factor×D
-#     = 1.5×6 = 9 mm; this is the canonical adaptive value.
+#     sits within. P29-4 deleted adaptive_doc_factor: the engine depth
+#     of an Adaptive op now meets the machine force budget. The band
+#     values are unchanged.
 [cell.expected.axial_doc]
 min = 4.0
 max = 9.0

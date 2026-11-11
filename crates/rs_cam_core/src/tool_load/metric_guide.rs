@@ -62,8 +62,10 @@ const DEPTH_OF_CUT: MetricGuide = MetricGuide {
     what: "How deep the tool is in the wood at this moment.",
     too_low: "Only a time cost: the job needs more passes.",
     too_high: "The tool and the gantry flex. You hear a deeper tone, and you \
-               see steps or a tapered wall. This limit is a rule of thumb \
-               for this machine, so it does not stop an export.",
+               see steps or a tapered wall. On a roughing cut, a slot or a \
+               groove the limit is the depth where the cut force meets the \
+               machine force budget; it does not stop an export. A \
+               finishing pass that cuts on one side has no depth limit.",
     levers: "Reduce the step-down, or use a stiffer tool (shorter, or a \
              larger diameter).",
 };

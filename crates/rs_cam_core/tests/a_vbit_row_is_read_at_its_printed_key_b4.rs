@@ -20,11 +20,11 @@
 //!   V-bit, so Suggest's row is the gate's row (before B4 the Whiteside
 //!   1540 / 1550 RPM anchors outscored the AMS-159 row);
 //! - a V-bit row with a printed diameter takes the G1 size claim;
-//! - `geometry::depth_derate_diameter_mm` and its cutter twin
-//!   `depth_derate_diameter_for_cutter` give the nominal diameter of a
-//!   V-bit at every depth too (step 2, G5 §3.3): the band de-rate no
-//!   longer reads the engaged width, so Suggest and the gate divide by
-//!   one diameter there as well.
+//! - step 2 (G5 §3.3) gave the band de-rate the nominal diameter of a
+//!   V-bit at every depth, so Suggest and the gate divided by one
+//!   diameter there as well. P11b2 retired the band de-rate, and P29-5
+//!   commit B deleted the last diameter helper of step 2
+//!   (`depth_derate_diameter_for_cutter`, no caller).
 //!
 //! How the numbers were derived (python3 over
 //! `data/vendor_lut/observations/*.json`, with the scorer, the angle bonus
@@ -70,11 +70,9 @@
 //!   engaged width `2 ap tan(7.5 deg)`, a ratio of `1 / (2 tan 7.5 deg)` =
 //!   3.798..., constant at every depth and past the last printed step
 //!   (3.0x): de-rate 0.5. At `ap = 2 D` the ratio is 2.0 and the de-rate
-//!   is `1.0 - 0.25 * (2.0 - 1.0)` = 0.75. Suggest (`feeds::calculate`,
-//!   through `geometry::depth_derate_diameter_mm`) and the gate
-//!   (`tool_load::chipload::evaluate`, through
-//!   `depth_derate_diameter_for_cutter`) read one nominal diameter, so
-//!   the two give one band at each depth.
+//!   is `1.0 - 0.25 * (2.0 - 1.0)` = 0.75. Suggest (`feeds::calculate`)
+//!   and the gate (`tool_load::chipload::evaluate`) read one nominal
+//!   diameter, so the two give one band at each depth.
 //!   P11b (L6) and P11b2 retired the band de-rate: Suggest and the gate
 //!   read the printed band at every depth (the test of part (g) step 2
 //!   states it).
@@ -676,7 +674,8 @@ fn a_hardwood_vbit_project_curve_ships_the_printed_trace_row_b4() {
 /// Feeds contract P11b (L6): Suggest's band is the printed band at every
 /// depth. P11b2 (break): the post-sim gate no longer de-rates either, so
 /// both doors read the printed band at the shallow and the deep cut. The
-/// B4 step-2 diameter rule now keys only the depth cap.
+/// B4 step-2 diameter rule keys nothing now: the depth limit of a cut is
+/// the depth where the cut force meets the machine force budget.
 #[test]
 fn the_v_bit_band_is_the_printed_band_at_every_depth_b4() {
     let d = 6.35;
@@ -685,10 +684,9 @@ fn the_v_bit_band_is_the_printed_band_at_every_depth_b4() {
     tool.set_flute_count(ToolFact::Stated(1));
     let material = softwood();
     let row_id = "amana-engrave-softwood-trace-15deg-1f";
-    // A wide `ae` on a Trace op reads as a slot (Step 4b) and caps `ap` at
-    // 0.25 x D, which would confound the depth de-rate this test measures.
-    // A narrow `ae` keeps Step 4b out of the way, as in
-    // `feed_explanation_snapshot_b3.rs`'s DOC-ratio sweep.
+    // A narrow `ae` keeps the cut off a full slot, as in
+    // `feed_explanation_snapshot_b3.rs`'s DOC-ratio sweep. (P16 deleted the
+    // Step 4b slot cap that a wide `ae` on a Trace op once met.)
     let radial_width_mm = Some(0.3 * d);
 
     for (label, ap) in [("shallow", 0.5 * d), ("deep", 2.0 * d)] {

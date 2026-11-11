@@ -448,49 +448,6 @@ pub fn vendor_depth_table_ceiling_ratio(chip_share: f64) -> f64 {
     }
 }
 
-/// **The diameter a depth-dependent de-rate multiplies or divides by, at
-/// one axial depth, from a cutter.** Ruling B4 (2026-09-25). Feeds matrix R2
-/// (2026-09-23) set the tapered-ball and the depth-cap rule; B4 moves the
-/// V-bit band de-rate here too.
-///
-/// - Tapered ball: [`MillingCutter::lookup_diameter_at`](crate::tool::MillingCutter::lookup_diameter_at), the engaged
-///   diameter at the depth. That is the ball chord below the tangency
-///   height and the cone diameter above it, capped at the shank. It is
-///   the same diameter at which the chipload gate applies the depth
-///   ladder (the ×0.704 of EVIDENCE 6-10), and at which
-///   `feeds::calculate` de-rates the feed and the band
-///   (`ToolGeometryHint::engaged_diameter_at_doc`, the parity twin).
-/// - V-bit, flat, ball, bull: the nominal diameter, `cutter.diameter()`.
-///   A V-bit chart never prints its chip load against the engaged width.
-///   This function gives the nominal diameter instead, the same key the
-///   lookup itself now reads (ruling B4).
-///   Before B4 the band de-rate alone stayed at `lookup_diameter_at`, the
-///   engaged width.
-///
-/// Callers: none in product code. P11b2 retired the band de-rate of
-/// `tool_load::chipload` and `tool_load::mod`; P29-4 retired the Adaptive
-/// factor depth cap, its last caller.
-///
-/// A negative or non-finite depth reads as zero.
-#[must_use]
-pub fn depth_derate_diameter_for_cutter(
-    cutter: &dyn crate::tool::MillingCutter,
-    depth_mm: f64,
-) -> f64 {
-    let depth = if depth_mm.is_finite() {
-        depth_mm.max(0.0)
-    } else {
-        0.0
-    };
-    match cutter.geometry_hint() {
-        crate::feeds::ToolGeometryHint::TaperedBall { .. } => cutter.lookup_diameter_at(depth),
-        crate::feeds::ToolGeometryHint::Flat
-        | crate::feeds::ToolGeometryHint::Ball
-        | crate::feeds::ToolGeometryHint::Bull { .. }
-        | crate::feeds::ToolGeometryHint::VBit { .. } => cutter.diameter(),
-    }
-}
-
 /// **The diameter at which the vendor LUT row is looked up and scaled,
 /// at axial depth `ap`.** Ruling A1 (operator, 2026-09-24,
 /// `planning/extrapolation_2026-09-24/RULINGS.md`).
@@ -510,14 +467,12 @@ pub fn depth_derate_diameter_for_cutter(
 ///   row is not scaled at any key (`SizeBasis::AngleKey`).
 /// - Flat, ball, bull: the nominal diameter, unchanged.
 ///
-/// The key is the lookup key only. The depth ladder and the depth cap of a
-/// V-bit already read the nominal diameter before B4
-/// ([`depth_derate_diameter_for_cutter`]).
-/// Step 2 of B4 moves the band de-rate of a V-bit to the nominal diameter
-/// too, so every depth-dependent consumer but one now agrees with this
-/// key. The surface-speed RPM, the formula chip load and the deflection of
-/// a V-bit stay at the engaged width (`feeds::calculate` step 1). `ap` and
-/// `shank_d` stay in the signature for the depth-dependent families.
+/// The key is the lookup key only. The depth ladder, the band de-rate and
+/// the factor depth cap are retired (P11b, P11b2, P29-4); the depth limit
+/// of a cut is the depth where the cut force meets the machine force
+/// budget. The surface-speed RPM, the formula chip load and the deflection
+/// of a V-bit stay at the engaged width (`feeds::calculate` step 1). `ap`
+/// and `shank_d` stay in the signature for the depth-dependent families.
 ///
 /// `nominal_d` is the tool diameter that Suggest carries
 /// (`ToolConfig::diameter`, the tip of a tapered ball). Suggest calls
@@ -555,14 +510,12 @@ pub fn lut_key_diameter_mm(
 ///   (ruling B4, 2026-09-25). See [`lut_key_diameter_mm`].
 /// - Flat, ball, bull: the nominal diameter.
 ///
-/// For a tapered ball the depth half of R2 stands: the depth ladder, the
-/// depth cap, the band de-rate and the deflection gate read the engaged
-/// cone diameter (`lookup_diameter_at`), not this key. For a V-bit the
-/// depth ladder, the depth cap and the band de-rate now read the nominal
-/// diameter too, through [`depth_derate_diameter_for_cutter`] (ruling B4
-/// step 2); only the surface-speed RPM, the formula chip load and the
-/// deflection gate still read the engaged width. `ap` moves no key since
-/// B4; it stays in the signature for the callers.
+/// For a tapered ball the depth half of R2 stands: the deflection gate
+/// reads the engaged cone diameter (`lookup_diameter_at`), not this key.
+/// The depth ladder, the band de-rate and the factor depth cap are retired
+/// (P11b, P11b2, P29-4). For a V-bit only the surface-speed RPM, the
+/// formula chip load and the deflection gate read the engaged width. `ap`
+/// moves no key since B4; it stays in the signature for the callers.
 #[must_use]
 pub fn lut_key_diameter_for_cutter(cutter: &dyn crate::tool::MillingCutter, ap: f64) -> f64 {
     let _ = ap;

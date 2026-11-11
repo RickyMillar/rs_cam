@@ -1054,8 +1054,8 @@ impl CriterionKind {
 ///
 /// [`Self::gates_export`] lives here, on the SOURCE, and not on
 /// [`CriterionKind`]. The reason a bound may not refuse an export is
-/// the bound's provenance, not the quantity it measures. The day a
-/// rule of thumb is measured, its variant is replaced by a measured
+/// the bound's provenance, not the quantity it measures. The day an
+/// advisory bound is measured, its variant is replaced by a measured
 /// one and the row starts gating with no change to any renderer.
 #[derive(Debug, Clone, PartialEq, Serialize, Deserialize)]
 #[serde(rename_all = "snake_case", tag = "kind")]
@@ -1091,9 +1091,10 @@ pub enum BoundSource {
     StockToLeave { mm: f64 },
     /// P13c (O1): the depth where the peak engaged-edge force at the
     /// recipe's width and chip meets the machine force budget (every
-    /// roughing family; the Adaptive family since P29-4). The depth gate
-    /// (`tool_load::depth`) is its producer. Feeds matrix R2 (2026-09-23):
-    /// a finishing pass has no such bound. The hobby budget is derived from printed
+    /// roughing cut; the Adaptive family since P29-4; a slot or a groove
+    /// under every role since P29-5). The depth gate (`tool_load::depth`)
+    /// is its producer. Feeds matrix R2 (2026-09-23): a finishing pass
+    /// that cuts on one side has no such bound. The hobby budget is derived from printed
     /// hobby slot charts, but the frame it stands in for is not measured,
     /// so it does not gate either ([`Self::gates_export`]); a P12 item asks
     /// whether a chart-derived bound may gate.
@@ -2226,10 +2227,11 @@ impl DeflectionVerdict {
 /// **This verdict never refuses an export.** The budget stands in for an
 /// unmeasured frame; see [`BoundSource::gates_export`].
 ///
-/// Feeds matrix R2 (2026-09-23): a finishing or semi-finishing pass has
-/// no axial cap, because no vendor publishes one for wood. Its depth is
-/// a [`DepthVerdict::Reported`] reading with no bound. The deflection
-/// gate is the limit on that pass.
+/// Feeds matrix R2 (2026-09-23): a finishing or semi-finishing pass that
+/// cuts on one side has no axial cap, because no vendor publishes one for
+/// wood. Its depth is a [`DepthVerdict::Reported`] reading with no bound.
+/// The deflection gate is the limit on that pass. A slot or a groove
+/// reads the force budget under every role (P29-5, ruling R3).
 #[derive(Debug, Clone, PartialEq, Serialize, Deserialize)]
 #[serde(rename_all = "snake_case", tag = "kind")]
 pub enum DepthVerdict {
@@ -2473,11 +2475,13 @@ impl ExceededCriterion {
             kind: CriterionKind::DepthOfCut,
             label: "depth of cut",
             reason_label: "machine rigidity",
-            remedy: "the measured depth of cut is deeper than the machine \
-                     rigidity factor allows for this operation family. That \
-                     factor is a rule of thumb with no published source, so \
-                     it reports and does not refuse the export. Reduce the \
-                     depth per pass, or take the cut deliberately.",
+            remedy: "the measured depth of cut is deeper than the depth where \
+                     the cut force meets the machine force budget. The budget \
+                     is a machine value (force_budget_n), derived from printed \
+                     hobby slot cuts unless the machine table states one. It \
+                     stands in for an unmeasured frame, so this limit is an \
+                     advisory and does not stop the export. Reduce the depth \
+                     per pass, or take the cut deliberately.",
         }
     }
 

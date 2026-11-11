@@ -1254,7 +1254,7 @@ fn caption_parts(row: &LimitRow<'_>) -> Vec<String> {
     let mut parts: Vec<String> = Vec::new();
     match status.bound_source.as_ref() {
         // W1 — the provenance rides in the caption the row already has, so
-        // the geometry is identical for a measured bound and a rule of thumb.
+        // the geometry is identical for a measured bound and an advisory one.
         Some(source) => parts.push(source.setting().to_owned()),
         // An unmodelled row has no setting to name. The reasons that carry
         // their own clause state it here, in core's words; the rest state it
@@ -1687,7 +1687,7 @@ fn cut_metric_guide(metric: DistributionMetric) -> Option<String> {
     ))
 }
 
-/// True when the bound is a rule of thumb that does not gate an export.
+/// True when the bound is an advisory that does not stop an export.
 pub(crate) fn is_advisory(distribution: &MetricDistribution) -> bool {
     distribution
         .bound_source
@@ -2311,7 +2311,8 @@ fn status_glyph(distribution: &MetricDistribution) -> (String, egui::Color32) {
     if hist.floor.is_none() && hist.ceiling.is_none() {
         // Two cases have no bound, and neither gets an invented one:
         // engagement has no gate, and a gate can report a reading it does
-        // not judge (feeds ruling R2: a finishing pass has no depth cap).
+        // not judge (feeds ruling R2: a finishing pass that cuts on one side
+        // has no depth cap; a slot or a groove reads the force budget, R3).
         return ("no limit".to_owned(), tokens::TEXT_MUTED);
     }
     let Some(share) = hist.in_band_share() else {
@@ -2478,7 +2479,8 @@ fn cut_metric_status_hover(
         lines.push(verdict_tooltip(row));
     }
     if distribution.is_some_and(is_advisory) {
-        lines.push("This limit is a rule of thumb. It does not stop an export.".to_owned());
+        lines
+            .push("This limit is the machine force budget. It does not stop an export.".to_owned());
     }
     lines.join("\n")
 }
