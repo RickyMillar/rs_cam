@@ -395,14 +395,15 @@ pub fn predict_peak_deflection_um(
     let rpm = operation
         .spindle_rpm()
         .map_or(PREDICTOR_FALLBACK_RPM, |r| r as f64);
-    let flute_count = tool.flute_count_planning().max(1) as f64;
     // S11: an unset feed gives no chipload (0, as a non-finite feed did).
-    let chipload_per_tooth_mm = match operation.feed_rate() {
-        Some(feed_rate) if rpm > 0.0 && flute_count > 0.0 && feed_rate.is_finite() => {
-            feed_rate / (rpm * flute_count)
-        }
-        Some(_) | None => 0.0,
-    };
+    // P29-1: the predictor's point (`OperatingPoint::of_predictor` states
+    // the chip rule and the two flute counts).
+    let point = crate::feeds::cut_load::OperatingPoint::of_predictor(
+        operation.feed_rate(),
+        rpm,
+        tool.flute_count_planning(),
+    );
+    let chipload_per_tooth_mm = point.fz_mm();
 
     // Zero feed → zero chipload → the calling Suggest path will have
     // already refused. Abstain here so the back-off loop doesn't see
@@ -492,11 +493,14 @@ pub fn predict_peak_deflection_um(
         d_eng,
         Some(tool.helix_deg),
     );
-    let f_lateral_n = material
-        .force_line()
-        .ok()
-        .and_then(|line| engagement.edge_force(line, chipload_per_tooth_mm, tool_def.flute_count))
-        .map_or(0.0, |f| f.peak_resultant_n);
+    // P29-1: the one load; the edge sum takes the built tool's flute count.
+    let load = crate::feeds::cut_load::CutLoad::of(
+        &engagement,
+        point.with_edge_flute_count(tool_def.flute_count),
+        &tool_def,
+        material,
+    );
+    let f_lateral_n = load.force().map_or(0.0, |f| f.peak_resultant_n);
 
     // Delegate the cantilever to the canonical integrated model. The
     // guards above cover every documented refusal of the delegate, so the
@@ -504,14 +508,9 @@ pub fn predict_peak_deflection_um(
     // figure out of the `Ok` branch, which must always carry a modelled
     // number. A figure of zero can only come from a load point at or
     // below the tip, which is the degenerate cantilever.
-    let predicted_um = match tip_deflection_from_engagement(
-        &tool_def,
-        material,
-        &engagement,
-        chipload_per_tooth_mm,
-    ) {
-        Some(delta_mm) if delta_mm.is_finite() && delta_mm > 0.0 => delta_mm * 1000.0,
-        _ => return Err(DeflectionUnmodeled::DegenerateCantilever),
+    let predicted_um = match load.deflection_mm() {
+        Ok(delta_mm) if delta_mm.is_finite() && delta_mm > 0.0 => delta_mm * 1000.0,
+        Ok(_) | Err(_) => return Err(DeflectionUnmodeled::DegenerateCantilever),
     };
 
     // A V-bit's cone is modelled; its flute relief is not, and that gap
@@ -627,13 +626,37 @@ pub fn tip_deflection_from_engagement(
     engagement: &crate::feeds::engagement::Engagement,
     fz_mm: f64,
 ) -> Option<f64> {
+    // P29-1: the one load. The edge sum takes the tool's flute count.
+    crate::feeds::cut_load::CutLoad::of(
+        engagement,
+        crate::feeds::cut_load::OperatingPoint::of_chip(fz_mm, tool.flute_count),
+        tool,
+        material,
+    )
+    .deflection_mm()
+    .ok()
+}
+
+/// THE deflection model (feeds contract P29-1): the tip deflection (mm) of
+/// `tool` under the PEAK resultant engaged-edge force of `engagement` at
+/// the chip `fz_mm`, summed for `flute_count` flutes on the force line
+/// `line`. Only `feeds::cut_load::CutLoad::deflection_mm` calls it.
+///
+/// `None` when the depth, the arc, the chip or the stickout is not
+/// positive, or the edge sum refuses (no helix).
+pub(crate) fn tip_deflection_at(
+    tool: &crate::tool::ToolDefinition,
+    line: crate::material::force_line::ForceLine,
+    engagement: &crate::feeds::engagement::Engagement,
+    fz_mm: f64,
+    flute_count: u32,
+) -> Option<f64> {
     let axial_mm = engagement.ap_mm();
     if axial_mm <= 0.0 || engagement.psi_rad() <= 0.0 || fz_mm <= 0.0 || tool.stickout() <= 0.0 {
         return None;
     }
-    let line = material.force_line().ok()?;
     let force_n = engagement
-        .edge_force(line, fz_mm, tool.flute_count)?
+        .edge_force(line, fz_mm, flute_count)?
         .peak_resultant_n;
     let e = tool.tool_material.youngs_modulus_n_per_mm2();
     Some(tool.tip_deflection_mm(force_n, axial_mm, e))

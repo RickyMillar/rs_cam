@@ -75,11 +75,16 @@ pub fn sample_peak_force_n(
         return None;
     }
     let line = material.force_line().ok()?;
-    Some(
-        super::deflection::sample_engagement(tool, sample)?
-            .edge_force(line, fz_mm, tool.flute_count)?
-            .peak_resultant_n,
+    // P29-1: the one load, on the deflection gate's engagement.
+    crate::feeds::cut_load::CutLoad::of_line(
+        &super::deflection::sample_engagement(tool, sample)?,
+        crate::feeds::cut_load::OperatingPoint::of_chip(fz_mm, tool.flute_count),
+        Some(tool),
+        Some(line),
     )
+    .force()
+    .ok()
+    .map(|f| f.peak_resultant_n)
 }
 
 /// One steady-state cutting sample on the width x depth plane, with its

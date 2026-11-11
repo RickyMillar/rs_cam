@@ -160,22 +160,6 @@ impl PowerTerms {
     }
 }
 
-/// Predicted instantaneous spindle power (kW) for an engaged cut at
-/// `feed_mm_min`. The single canonical formula:
-///
-/// ```text
-/// P_kW = A · ( Ks · cross_section · feed  +  F_edge · ap · π·D·n · z·ψ/2π ) / 60 000 000
-/// ```
-///
-/// The Sim verdict (`evaluate` below), the Suggest path
-/// (`feeds::calculate` Step 6) and the constrained-max solver in
-/// `feed_modulation` all route through here, so the gate, the
-/// recommendation and the optimizer can never predict different power
-/// for the same cut.
-pub(crate) fn predicted_power_kw(inputs: PowerModelInputs, feed_mm_min: f64) -> f64 {
-    PowerTerms::of(inputs).kw_at_feed(feed_mm_min)
-}
-
 /// **The predicted spindle power (kW) of one simulation sample**, as the
 /// power gate computes it.
 ///
@@ -207,17 +191,16 @@ pub fn sample_power_kw(
     // cut; the section is the cutter's own (a V-bit removes half the
     // rectangle). The old arc-equivalent slab `(psi / pi) x 2 r` is retired.
     let engagement = crate::feeds::engagement::Engagement::from_sample(sample, tool)?;
-    // The sample's own flute count, falling back to the tool's when the
-    // trace left it at zero: a zero would silently zero the edge term.
-    let flute_count = if sample.flute_count > 0 {
-        f64::from(sample.flute_count)
-    } else {
-        f64::from(tool.flute_count)
-    };
-    Some(predicted_power_kw(
-        engagement.power_inputs(*line, f64::from(sample.spindle_rpm), flute_count),
-        feed_mm_min,
-    ))
+    // P29-1: the one load. `OperatingPoint::of_sample_for_power` states the
+    // flute count (the sample's own, else the tool's).
+    crate::feeds::cut_load::CutLoad::of_line(
+        &engagement,
+        crate::feeds::cut_load::OperatingPoint::of_sample_for_power(sample, tool, feed_mm_min),
+        Some(tool),
+        Some(*line),
+    )
+    .power_kw()
+    .ok()
 }
 
 /// P20i: the power of one sample as the gate grades it, and the ceiling

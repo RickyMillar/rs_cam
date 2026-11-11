@@ -223,6 +223,13 @@ impl Engagement {
     /// The engaged diameter is [`EngagedDiameter::of_tool`]. The arc is
     /// the sample's own reading; the width is `r (1 - cos psi)` with psi
     /// clamped to a full slot (D-W).
+    ///
+    /// M4 (open item of P29, named in P29-1 and not changed): the depth is
+    /// `axial_doc_mm`, the depth of the layer the sample removes (the
+    /// section of the power model). The deflection gate's door,
+    /// `tool_load::deflection::sample_engagement`, reads
+    /// `axial_engagement_mm` (the engaged edge length). The power gate, the
+    /// chip gate and the depth gate read this door.
     #[must_use]
     pub fn from_sample(
         sample: &crate::stock::simulation_cut::SimulationCutSample,

@@ -39,18 +39,10 @@ in sections 7 and 10, the probe result in section 11), then `phases/P29-0_probes
 
 ### P29-1 status
 
-IN THE TREE, NOT COMMITTED, at the time of writing. The format check and the new sentry pass. The
-long gates (12 named sentries, core `--lib`, FM1, full clippy) were running. If `git log` shows no
-"P29-1" commit: run that gate set (the list is in the agent's design note, copied below), review
-the diff by path (`git diff -- crates/rs_cam_core`), and commit only those paths.
-
-The 12 sentries: `one_engagement_before_and_after_the_simulation_k7`,
-`pre_sim_power_ships_the_worst_case_k7`, `the_engaged_edge_force_sums_the_helix_p11a`,
-`one_d_eng_door_for_every_engagement_p15`, `power_reads_the_true_engaged_section_p20d`,
-`the_cut_force_is_the_deflection_force_p17`, `the_depth_that_cut_is_a_measured_load_g_s3depth`,
-`a_move_holds_its_worst_sample_p20g`, `constrained_max_modulation_f039`,
-`the_hobby_force_budget_recomputes_from_the_printed_rows_p13c`,
-`the_roughing_depth_meets_the_force_budget_p13c`, `the_envelope_keeps_each_limit_k2b`.
+DONE and committed (see `git log`, "P29-1"). Gates: fmt; the new sentry (5 pass, with an
+injected fault that turns it red); 12 named sentries (57 pass); core `--lib` (2795 pass; the one
+red is the known timing trap `the_envelope_meets_its_time_budget`, green alone twice); FM1 (the
+1000 cells and the simulation subset equal the committed CSVs); full clippy clean. No pin moved.
 
 What P29-1 is: `crates/rs_cam_core/src/feeds/cut_load.rs` (`CutLoad`, `OperatingPoint`,
 `NoNumber`), 11 product files that now call it, the sentry

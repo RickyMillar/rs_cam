@@ -442,8 +442,15 @@ fn wall_step_admits(
         },
         tool,
     );
-    crate::feeds::predict::tip_deflection_from_engagement(tool, material, &engagement, fz)
-        .is_some_and(|deflection| deflection <= crate::tool_load::deflection::WITHIN_BOUND_MM)
+    // P29-1: the one load, at the wall step's chip.
+    crate::feeds::cut_load::CutLoad::of(
+        &engagement,
+        crate::feeds::cut_load::OperatingPoint::of_chip(fz, tool.flute_count),
+        tool,
+        material,
+    )
+    .deflection_mm()
+    .is_ok_and(|deflection| deflection <= crate::tool_load::deflection::WITHIN_BOUND_MM)
 }
 
 impl WaterlinePass<'_> {

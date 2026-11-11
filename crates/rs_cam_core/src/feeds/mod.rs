@@ -16,6 +16,7 @@
 //! 10. Collect warnings
 
 mod calculator;
+pub mod cut_load;
 pub mod cutter_constraints;
 pub mod efficiency;
 pub mod engagement;
@@ -2060,8 +2061,9 @@ fn power_model_terms(
     effective_d: engagement::EngagedDiameter,
     rpm: f64,
 ) -> crate::tool_load::power::PowerTerms {
-    crate::tool_load::power::PowerTerms::of(
-        engagement::Engagement::from_cut(
+    // P29-1: the terms of the one load (`cut_load::CutLoad`).
+    cut_load::CutLoad::power_terms_at(
+        &engagement::Engagement::from_cut(
             envelope::CutPoint {
                 ap_mm: ap,
                 ae_mm: ae,
@@ -2069,8 +2071,10 @@ fn power_model_terms(
             input.tool_geometry,
             effective_d,
             None,
-        )
-        .power_inputs(line, rpm, f64::from(input.flute_count)),
+        ),
+        line,
+        rpm,
+        input.flute_count,
     )
 }
 

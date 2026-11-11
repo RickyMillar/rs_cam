@@ -89,11 +89,35 @@ pub fn peak_chip_per_tooth(
     let advance = achieved_advance_per_tooth(sample, predicted_feeds)
         .ok_or(PeakChipRefusal::NoDivisor)?
         .mm();
-    let lift = sample_thinning_lift(sample, tool, thinning).ok_or(PeakChipRefusal::NoEngagement)?;
-    Ok(PeakChipReading {
-        peak_chip_mm: advance / lift,
-        lift,
-    })
+    match thinning {
+        // P29-1: a cut that thins reads the chip of the one load, on the
+        // power gate's engagement of the sample.
+        crate::feeds::geometry::RadialThinning::Applied => {
+            let engagement = crate::feeds::engagement::Engagement::from_sample(sample, tool)
+                .ok_or(PeakChipRefusal::NoEngagement)?;
+            let chip = crate::feeds::cut_load::CutLoad::of_line(
+                &engagement,
+                crate::feeds::cut_load::OperatingPoint::of_sample_for_chip(sample, advance),
+                Some(tool),
+                None,
+            )
+            .chip(thinning);
+            Ok(PeakChipReading {
+                peak_chip_mm: chip.peak_mm,
+                lift: chip.lift,
+            })
+        }
+        // A finish pass and a drill cycle read no engagement: the lift is 1.
+        crate::feeds::geometry::RadialThinning::FinishPass
+        | crate::feeds::geometry::RadialThinning::DrillCycle => {
+            let lift = sample_thinning_lift(sample, tool, thinning)
+                .ok_or(PeakChipRefusal::NoEngagement)?;
+            Ok(PeakChipReading {
+                peak_chip_mm: advance / lift,
+                lift,
+            })
+        }
+    }
 }
 
 /// Feeds contract P11b2: the radial chip-thinning lift of one sample, the one
@@ -113,7 +137,11 @@ pub fn sample_thinning_lift(
     match thinning {
         crate::feeds::geometry::RadialThinning::Applied => {
             let engagement = crate::feeds::engagement::Engagement::from_sample(sample, tool)?;
-            Some(thinning.lift(engagement.ae_mm(), engagement.d_eng_mm()))
+            // P29-1: the lift of the one load.
+            Some(crate::feeds::cut_load::CutLoad::thinning_lift(
+                &engagement,
+                thinning,
+            ))
         }
         crate::feeds::geometry::RadialThinning::FinishPass
         | crate::feeds::geometry::RadialThinning::DrillCycle => Some(1.0),

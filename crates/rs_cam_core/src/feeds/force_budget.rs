@@ -94,7 +94,13 @@ impl HobbySlotPoint {
     /// The advance per tooth (mm): `feed / (rpm x Z)`.
     #[must_use]
     pub fn fz_mm(&self) -> f64 {
-        self.feed_mm_min / (self.rpm * f64::from(self.flutes))
+        self.operating_point().fz_mm()
+    }
+
+    /// P29-1: the operating point of the printed cut (the printed feed,
+    /// RPM and flute count).
+    fn operating_point(&self) -> crate::feeds::cut_load::OperatingPoint {
+        crate::feeds::cut_load::OperatingPoint::planned(self.feed_mm_min, self.rpm, self.flutes)
     }
 
     /// The peak engaged-edge resultant (N) of the printed cut: a flat end
@@ -115,9 +121,15 @@ impl HobbySlotPoint {
             EngagedDiameter::of_hint(ToolGeometryHint::Flat, d, d, self.ap_mm),
             Some(crate::tool::DEFAULT_HELIX_DEG),
         );
-        engagement
-            .edge_force(line, self.fz_mm(), self.flutes)
-            .map(|f| f.peak_resultant_n)
+        crate::feeds::cut_load::CutLoad::of_line(
+            &engagement,
+            self.operating_point(),
+            None,
+            Some(line),
+        )
+        .force()
+        .ok()
+        .map(|f| f.peak_resultant_n)
     }
 }
 
@@ -333,10 +345,16 @@ pub fn peak_force_n(
     ae_mm: f64,
     fz_mm: f64,
 ) -> Option<f64> {
-    let line = material.force_line().ok()?;
-    Engagement::from_tool_cut(CutPoint { ap_mm, ae_mm }, tool)
-        .edge_force(line, fz_mm, tool.flute_count)
-        .map(|f| f.peak_resultant_n)
+    // P29-1: the one load, at the stated chip, summed for the tool's flutes.
+    crate::feeds::cut_load::CutLoad::of(
+        &Engagement::from_tool_cut(CutPoint { ap_mm, ae_mm }, tool),
+        crate::feeds::cut_load::OperatingPoint::of_chip(fz_mm, tool.flute_count),
+        tool,
+        material,
+    )
+    .force()
+    .ok()
+    .map(|f| f.peak_resultant_n)
 }
 
 /// P13c (O1): the shallowest depth where the peak engaged-edge resultant of

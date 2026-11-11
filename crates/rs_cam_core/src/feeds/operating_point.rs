@@ -297,12 +297,14 @@ fn power_at_point(
             Some(point.helix_deg),
         )
     };
+    // P29-1: the terms of the one load.
     let terms_at = |ae: f64| {
-        PowerTerms::of(engagement_at(ae).power_inputs(
+        crate::feeds::cut_load::CutLoad::power_terms_at(
+            &engagement_at(ae),
             point.force.line,
             point.rpm,
-            point.flute_count,
-        ))
+            point.flutes,
+        )
     };
     let (case, required_kw, case_ae_mm) =
         PowerCases::of_operation(operation).worst(point.ae_mm, tool.diameter, |ae| {
@@ -474,7 +476,8 @@ struct ResolvedPoint {
     effective_d: EngagedDiameter,
     geometry: crate::feeds::ToolGeometryHint,
     helix_deg: f64,
-    flute_count: f64,
+    /// The planning flute count, at least 1 (`feeds::cut_load`, P29-1).
+    flutes: u32,
     /// P20d: the power inputs of a straight plunge (`Radial::Axial`);
     /// `None` for a side cut.
     axial: Option<crate::feeds::engagement::PowerModelInputs>,
@@ -597,7 +600,7 @@ fn resolve_operating_point(
         effective_d,
         geometry: geom,
         helix_deg: tool.helix_deg,
-        flute_count,
+        flutes: tool.flute_count_planning().max(1),
         axial: None,
     })
 }
@@ -669,7 +672,7 @@ fn resolve_axial_point(
         ),
         geometry: geom,
         helix_deg: tool.helix_deg,
-        flute_count,
+        flutes: tool.flute_count_planning().max(1),
         axial: Some(axial),
     })
 }

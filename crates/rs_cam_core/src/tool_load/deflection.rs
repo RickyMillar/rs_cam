@@ -163,8 +163,15 @@ pub fn exceeds_limit(
 /// `None` when the sample is air, has no positive engaged depth, or has no
 /// positive arc. [`sample_tip_deflection_mm`] and
 /// `cut_force::sample_peak_force_n` both read it (P17): one engagement,
-/// one force. This is NOT [`Engagement::from_sample`], which reads
-/// `axial_doc_mm`.
+/// one force.
+///
+/// M4 (open item of P29, named in P29-1 and not changed): this door reads
+/// `axial_engagement_mm`, the depth of the stock the cutter stands in at
+/// the sample (the engaged edge length that the force sum and the beam's
+/// load point read). [`Engagement::from_sample`] reads `axial_doc_mm`, the
+/// depth of the layer the sample removes (the section the power model
+/// reads). One sample so gives two engagements; `feeds::cut_load::CutLoad`
+/// takes the one its caller built.
 #[must_use]
 pub fn sample_engagement(
     tool: &ToolDefinition,
@@ -210,12 +217,17 @@ pub fn sample_tip_deflection_mm(
     // via `effective_feed_for_sample`, so a path the optimizer feeds down
     // for deflection reads safe here too. A sample with no chipload signal
     // yields `None` and is skipped (no deflection-relevant cutting load).
-    crate::feeds::predict::tip_deflection_from_engagement(
+    // P29-1: the one load. The chip is the caller's; the edge sum takes
+    // the tool's flute count (`OperatingPoint::of_sample_for_deflection`
+    // states the rule of the gate's chip).
+    crate::feeds::cut_load::CutLoad::of(
+        &engagement,
+        crate::feeds::cut_load::OperatingPoint::of_chip(feed_per_tooth_mm, tool.flute_count),
         tool,
         material,
-        &engagement,
-        feed_per_tooth_mm,
     )
+    .deflection_mm()
+    .ok()
 }
 
 /// **The feed per tooth the deflection gate evaluates one sample at.**
@@ -235,13 +247,11 @@ pub fn deflection_feed_per_tooth_mm(
     sample: &SimulationCutSample,
     predicted_feeds: &crate::machine::kinematics::PredictedFeedMap,
 ) -> f64 {
-    let eff_feed = super::effective_feed_for_sample(sample, predicted_feeds);
-    let flutes = sample.flute_count.max(1) as f64;
-    if sample.spindle_rpm > 0 {
-        eff_feed / (sample.spindle_rpm as f64 * flutes)
-    } else {
-        sample.chipload_mm_per_tooth
-    }
+    // P29-1: the chip rule lives with the other operating points.
+    crate::feeds::cut_load::OperatingPoint::deflection_chip_of_sample(
+        sample,
+        super::effective_feed_for_sample(sample, predicted_feeds),
+    )
 }
 
 #[tracing::instrument(level = "debug", skip_all, fields(toolpath_id = ctx.toolpath_id.raw(), op = ?ctx.operation_kind))]

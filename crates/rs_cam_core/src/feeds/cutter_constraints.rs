@@ -310,12 +310,15 @@ fn invert_deflection(
             },
             tool,
         );
-        super::predict::tip_deflection_from_engagement(
+        // P29-1: the forward read of the search, through the one load.
+        super::cut_load::CutLoad::of(
+            &engagement,
+            super::cut_load::OperatingPoint::of_chip(feed_per_tooth_mm, tool.flute_count),
             tool,
             material,
-            &engagement,
-            feed_per_tooth_mm,
         )
+        .deflection_mm()
+        .ok()
     };
     let lower = tool.stickout() * BINSEARCH_LOWER_FRACTION;
     let flute = tool.length();

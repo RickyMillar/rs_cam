@@ -51,7 +51,20 @@ impl ProjectSession {
             // adaptive plan; `PowerCases::full_feed_width`).
             let width = crate::feeds::engagement::PowerCases::of_operation(&tc.operation)
                 .full_feed_width(ae, tool_cfg.diameter);
-            crate::feeds::geometry::RadialThinning::of(family, pass_role).lift(width, d_eng.mm())
+            // P29-1: the lift of the one load, on the stated cut at the
+            // planner width.
+            crate::feeds::cut_load::CutLoad::thinning_lift(
+                &crate::feeds::engagement::Engagement::from_cut(
+                    crate::feeds::envelope::CutPoint {
+                        ap_mm: ap,
+                        ae_mm: width,
+                    },
+                    tool_cfg.geometry_hint(),
+                    d_eng,
+                    None,
+                ),
+                crate::feeds::geometry::RadialThinning::of(family, pass_role),
+            )
         });
         // S11: an op with no feed has no load context.
         let op_feed = tc.operation.feed_rate()?;
