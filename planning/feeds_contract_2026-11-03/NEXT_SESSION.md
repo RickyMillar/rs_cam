@@ -1,6 +1,6 @@
 # Next session: feeds and speeds correctness (brief, 2026-11-08, second edition)
 
-## HAND-OVER 2026-11-11 evening (a new account takes over; read this section first)
+## HAND-OVER 2026-11-11 evening, updated 2026-11-12 night (read this section first)
 
 You are the lead of the feeds contract. No agent of the old session exists for you. Start one
 implementer of your own. The operator's standing rules are in the root `CLAUDE.md` and in the
@@ -33,9 +33,55 @@ in sections 7 and 10, the probe result in section 11), then `phases/P29-0_probes
 | P29-0 probes | DONE, committed `027cfa72c`. Section 9 of `P29-0_probes.md` corrects section 5 of the findings. |
 | P29-1 `CutLoad` | See "P29-1 status" below. |
 | P29-2 `Check`, `LimitId`, one basis | DONE. 2a `8c8671f07` (core folder `limits/`, sentry `every_limit_is_a_limit_id_p29_2`). 2b committed after it ("P29-2b" in `git log`): the MCP replies `get_tool_load_report`, `get_safe_envelope`, `get_suggest_rationale` hold `checks` beside the old fields; three lib tests `_p29_2b` in `rs_cam_viz/src/app/mcp/tests.rs`. Gates: viz named tests 18 pass, viz `--lib` 706 pass, clippy clean; no pin moved. Not done: a live MCP read of the new keys (needs a rebuilt release GUI). Open items: `limits/CLAUDE.md` and section 10 of `phases/P29-2_DESIGN.md`. |
-| P29-3 `Cut` and `cuts()` | NEXT. DESIGNED AND RULED, no code yet: `phases/P29-3_DESIGN.md` (stands alone; lead rulings in its section 10). Three byte-identical commits: A (the `Cut` types in `limits/cut.rs`, the exemption list of about 56 rows in `limits/exemptions.rs`, the straight plunge onto `CutLoad`; about 9 min of gates), B (`OperationConfig::cuts()` in `compute/catalog/cuts.rs` and the planned readers; FM1 is the proof; about 12 min), C (`Cut::of_sample` and the kind sentry). Give the note to a new implementer and start with commit A. |
+| P29-3 `Cut` and `cuts()` | DONE, byte-identical, three commits. A `66e667ff8` (`limits/cut.rs`, `limits/exemptions.rs`, the straight plunge on `CutLoad::of_cut`, `Limit::depth_rule`). B `a26803721` (`compute/catalog/cuts.rs`; `PowerCases`, the slot ring, the offset-ring test and three depth-rule and five thinning readers read `cuts()`). C `8698facaf` (`limits/sample.rs`: `Cut::of_sample`, `is_judged_today`; sentry on four simulated fixtures). See "P29-3 status" below. |
 | P29-4 to P29-6 | Behaviour steps; all come before the operator's cut. Write predictions before each. |
 | P29-7 to P29-last | After the cut. |
+
+### P29-3 status (2026-11-12, night)
+
+Gates of each commit: fmt, the named sentries, core `--lib` (the one red is the timing trap,
+green alone), FM1 2/0 with no CSV change, full clippy clean; viz `--lib` 706/0 and the three
+named viz tests after commit B. No pin moved.
+
+The exemption list: 67 rows; 8 physical, 3 with an operator ruling, 56 need a ruling. The
+sentry `the_exemption_list_only_shrinks_p29_3` pins each count.
+
+Lead decisions in P29-3:
+
+- Row P28-13 (`trochoid_cap_mult` 1.6) is "needs a ruling", not "ruled": the operator said
+  to retire the 1.6, and a lead decision (P23a) kept the read. The operator now leaves the
+  call to the lead (see the rulings below).
+- A dogbone relief is its own kind, `CutKind::DressupRelief`, read from the `DressupArtifact`
+  span. The span wins over the cap table.
+- New row `C-LeadInApproach`: the gates drop lead-in and entry-approach samples by the intent
+  flag, and no row named them.
+- The red sentry `the_simulation_is_placed_not_fed_back_k7` (red since P29-1) is green:
+  `34e678d5f` gives `feeds/cut_load.rs` a named allowance for the sample doors.
+
+Readers that WAIT (their context holds no operation config; `ToolpathLoadContext` and
+`FeedsInput` must carry the body facts, about 140 test literals; do it at P29-6):
+`tool_load/depth.rs`, `tool_load/cut_force.rs`, `force_budget::rigidity_depth_cap`, Step 5
+of the calculator (`feeds/calculator/feed.rs`), `tool_load/chipload.rs`,
+`tool_load/distribution.rs`, `deflection::exceeds_limit`. They still call
+`depth_cap_rule(family, role)` and `RadialThinning::of`; both read the one filler.
+
+Findings logged, not fixed:
+
+- Scope reads with no marker and no row: `feeds/calculator/close.rs:248`,
+  `feeds/plunge.rs:430`, `feeds/ramp.rs:393`, `feeds/predict.rs:374`,
+  `feeds/suggest/adaptive_entry.rs:66`, `tool_load/distribution.rs:430` and `:604`. The
+  vendor-row family keys (`chipload.rs`, `vendor_lookup.rs`, `extrapolation/family.rs`) are
+  not audited. The list is not yet complete.
+- M8 has a third reader with no span lookup: `tool_load/mod.rs:302`. It tests only
+  `is_cutting`, so air-class fed samples enter the axial-depth population.
+- The span filter calls air samples steady; each gate adds its own air test.
+- An entry plunge after a tab that lies in no span is dropped as transit; it never reaches
+  the entry-spike report.
+- `is_judged_today` has no fixture for `Drill`, `Entry(Helix)`, `CappedStep(LevelContour)`,
+  `FirstPass`, `SpringPass`.
+- The default 3D Adaptive strategy is ContourParallel, so the default 3D rough holds the
+  unsourced `CapMult 1.6` power case.
+- A Profile of 40 x 24 mm that asks for 4 tabs gets 2 (`FewerThanAsked`).
 
 ### P29-1 status
 
@@ -69,6 +115,22 @@ Open items that P29-1 names and does not change (they belong to P29-3 or P29-6):
 - R6: one entry rule set in one piece of code for every emitter. The proposal and its 17 stored
   sources: `research/entry_rules_2026-11-11.md`. OPEN with the operator: the hardwood ramp angle,
   5 deg (Easel; the lead recommends it) or 20 deg (Shaper). It is needed at P29-8 only.
+
+### Operator rulings, 2026-11-11 night (before the operator went to bed)
+
+- P29-4: "implement P29-4 after the predictions are committed". The lead writes and commits
+  the predictions first. The result must match them; a mismatch stops the work.
+- Gates: the core gate set (named sentries, core `--lib`, FM1, full clippy) covers P29-3
+  commit C and P29-4. No core full gate.
+- 3D Adaptive default: "id actually rather geodesic was the default. but thats ok. It just
+  seems more consistent and peaks load less." A preference, not an order for tonight. It is
+  its own step with predictions (it moves the output of every default 3D rough).
+- `trochoid_cap_mult` 1.6 (row P28-13): "I am out of date. you make that call dependend on
+  what you think gets best results / makes sense. im not attached to it". The lead decides.
+- R6, the hardwood ramp angle: "probably a bit less than soft wood? does that help". Both
+  sources agree on the direction (Easel 5 against 20 deg, Shaper ~20 against ~27 deg). The
+  words "a bit less" fit the Shaper ratio better than the Easel ratio. Not closed; ask once
+  more at P29-8 with the two pairs side by side.
 
 ### What the probes mean for the operator's cut
 
