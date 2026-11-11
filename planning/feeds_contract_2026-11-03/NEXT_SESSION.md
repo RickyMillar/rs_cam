@@ -127,6 +127,14 @@ Findings of commit A (not fixed):
 - **The proposal can leave the move-budget floor.** On operator idx 2 and work idx 1, 2 the
   point (proposal depth, stated width) is Outside Runtime (margins -0.184, -0.282, -0.167).
   The Runtime width floor reads the depth; `propose` checks the ceilings, not that floor.
+- **The budget is probably low for a partial-width cut (operator, 2026-11-12: tune later, do
+  not chase it now; the project is architecture first).** The 35.3 N is the largest of six
+  printed SLOT rows. The Sienci hardwood chart prints a pocketing row for the same 1/4" tool:
+  5.6 mm deep at 2.85 mm width, 2740 mm/min, 12000 RPM. The budget gives the 6 mm wanaka work
+  ops 3.67 mm at 1.5 mm width (white oak, chip 0.143). Not probed: the model force at the
+  printed pocketing rows. The value is a machine field (`[job.machine.rigidity]
+  force_budget_n` in the project file), so a later tune needs no code. The operator says the
+  Shapeoko Pro XXL is fairly rigid and has cut deeper than the proposals.
 - **The budget depth has a step over the width (Q5).** The force over the depth has a flat
   stretch (at 1.2 mm width: 29.2 N from 5 to 15 mm deep). The force never falls, so there is
   one root. When the width lifts the flat level to the budget, the root drops (rivmap: 16.3 mm
