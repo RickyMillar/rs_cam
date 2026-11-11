@@ -4,7 +4,7 @@
 //! `the_modulator_reads_the_depth_gate_force_budget_rule_p16` pins the rule
 //! and the solver on a synthetic context. This file holds the session
 //! wiring: `ProjectSession` builds the modulator's force-budget inputs from
-//! `RigidityProfile::depth_cap_rule` (`session::compute`,
+//! `RigidityProfile::depth_cap_of` (`session::compute`,
 //! `modulate_annotated_against_trace`), for the toolpath material and for
 //! each own material.
 //!
@@ -37,11 +37,10 @@ use std::sync::atomic::AtomicBool;
 
 use common::session::{polygon_model, single_op_session, square_polygon, stock_under};
 use rs_cam_core::compute::StockConfig;
-use rs_cam_core::compute::catalog::OperationConfig;
+use rs_cam_core::compute::catalog::{OperationConfig, OperationType};
 use rs_cam_core::compute::operation_configs::PocketConfig;
 use rs_cam_core::compute::tool_config::{ToolConfig, ToolFact, ToolId, ToolType};
 use rs_cam_core::dressup::feed_modulation::{BindingConstraint, FORCE_BUDGET_NO_FORCE_LINE_NOTE};
-use rs_cam_core::feeds::{OperationFamily, PassRole};
 use rs_cam_core::machine::{DepthCapRule, MachineProfile};
 use rs_cam_core::material::{Material, PlywoodGrade, WoodSpecies};
 use rs_cam_core::session::{ProjectSession, SimulationOptions, SimulationResolution};
@@ -128,7 +127,7 @@ fn the_session_modulator_binds_on_the_force_budget_p16() {
     // The rule of the cell is the force budget on the session's machine.
     let rule = MachineProfile::default()
         .rigidity
-        .depth_cap_rule(OperationFamily::Pocket, PassRole::Roughing);
+        .depth_cap_of(OperationType::Pocket.body_depth_limit());
     assert!(
         matches!(rule, Some(DepthCapRule { .. })),
         "Pocket roughing on the default machine must carry the force-budget rule: {rule:?}"

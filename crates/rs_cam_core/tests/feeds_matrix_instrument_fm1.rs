@@ -673,7 +673,8 @@ fn recipe_diagnostics(s: &SuggestedParams, tool: &ToolConfig) -> Vec<Diagnostic>
 }
 
 /// The cap the one producer gives this cell. Feeds matrix R2
-/// (2026-09-23): a finishing role prints empty cap columns (no cap).
+/// (2026-09-23): a one-sided finishing cut prints empty cap columns (no
+/// cap); P29-5 (ruling R3): a slot finish prints the force-budget cap.
 fn cap_columns(
     machine: &MachineProfile,
     op: &OperationConfig,
@@ -681,16 +682,22 @@ fn cap_columns(
     material: &Material,
 ) -> [String; 4] {
     // P13c (O1): `cap_factor` is the force budget (N) of the cap (every
-    // roughing family since P29-4); `cap_mm` is the cap. The cap is
-    // solved at the op's stated width and chip
-    // (`force_budget::cap_cut_of_operation`), through the one producer.
+    // roughing family since P29-4; a slot or a groove under every role
+    // since P29-5); `cap_mm` is the cap. The cap is solved at the op's
+    // stated width and chip (`force_budget::cap_cut_of_operation`),
+    // through the one producer, for the depth limit of the op's body cut.
     let (family, role) = op.feeds_style();
     let cutter = rs_cam_core::compute::cutter::build_cutter(tool).unwrap();
     let (ae, fz) =
         rs_cam_core::feeds::force_budget::cap_cut_of_operation(op, tool, material, machine)
             .unwrap_or((0.0, 0.0));
     let cap = rs_cam_core::feeds::force_budget::rigidity_depth_cap(
-        machine, family, role, &cutter, material, ae, fz,
+        machine,
+        op.cuts().body_facts().depth_rule,
+        &cutter,
+        material,
+        ae,
+        fz,
     );
     use rs_cam_core::feeds::force_budget::RigidityCapOutcome;
     use rs_cam_core::machine::RigidityDepthCap;

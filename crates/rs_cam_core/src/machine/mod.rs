@@ -207,8 +207,8 @@ impl RigidityBasis {
     }
 }
 
-/// **The axial depth cap one rigidity profile implies for one
-/// operation family.** S3 (2026-09-18), P13c (O1).
+/// **The axial depth cap one rigidity profile implies for one body
+/// cut.** S3 (2026-09-18), P13c (O1).
 ///
 /// The cap carries its inputs, so the bound and the provenance beside it
 /// cannot disagree ([`Self::cap_mm`]). `feeds::force_budget::rigidity_depth_cap`
@@ -218,8 +218,8 @@ impl RigidityBasis {
 #[derive(Debug, Clone, Copy, PartialEq, Serialize, Deserialize)]
 #[serde(tag = "kind", rename_all = "snake_case")]
 pub enum RigidityDepthCap {
-    /// Every roughing family (P13c, O1; the Adaptive family since P29-4):
-    /// the shallowest depth where the peak engaged-edge force at `ae_mm`
+    /// Every roughing cut (P13c, O1; the Adaptive family since P29-4) and
+    /// every slot or groove (P29-5, R3): the shallowest depth where the peak engaged-edge force at `ae_mm`
     /// and `fz_mm` meets `budget_n`.
     ForceBudget {
         /// The machine force budget (N).
@@ -246,9 +246,10 @@ impl RigidityDepthCap {
     }
 }
 
-/// The rule of the rigidity depth cap of one operation family
-/// ([`RigidityProfile::depth_cap_rule`]): the machine force budget. Every
-/// roughing family reads it (P29-4, ruling Q4: one named field).
+/// The rule of the rigidity depth cap of one body cut
+/// ([`RigidityProfile::depth_cap_of`]): the machine force budget. Every
+/// cut whose depth limit is `DepthLimit::ForceBudget` reads it (P29-4,
+/// ruling Q4: one named field; P29-5, ruling R3: a slot or a groove too).
 #[derive(Debug, Clone, Copy, PartialEq)]
 pub struct DepthCapRule {
     /// The machine force budget (N).
@@ -256,50 +257,44 @@ pub struct DepthCapRule {
 }
 
 impl RigidityProfile {
-    /// **The rule of the axial depth cap for one operation family.** S3
-    /// (2026-09-18), P13c (O1).
+    /// **The depth limit of one body cut, with no number.** S3
+    /// (2026-09-18), P13c (O1), P29-3, P29-5.
     ///
-    /// `None` for an operation with no axial cap:
-    ///
-    /// - [`OperationFamily::Drill`](crate::feeds::OperationFamily::Drill): a drill cycle is Z-only.
-    /// - A `SemiFinish` or `Finish` pass.
-    ///   Feeds matrix R2 (2026-09-23): no vendor publishes an axial
-    ///   finishing cap for wood; the deflection gate is its limit.
-    ///
-    /// | Family / role | Rule |
+    /// | Family / role / sides | Limit |
     /// |---|---|
-    /// | `Drill` | none |
-    /// | any other, `Roughing` | the force budget `force_budget_n` |
-    /// | any other, `SemiFinish` or `Finish` | none (R2) |
+    /// | `Drill` | none: a drill cycle is Z-only |
+    /// | any other, `Roughing` | the force budget |
+    /// | any other, `SemiFinish` or `Finish`, `Both` | the force budget |
+    /// | any other, `SemiFinish` or `Finish`, `One` | none (R2) |
     ///
-    /// P29-4 (ruling R1, 2026-11-11): the Adaptive family reads the force
-    /// budget too.
-    #[must_use]
-    pub fn depth_cap_rule(
-        &self,
-        family: crate::feeds::OperationFamily,
-        pass_role: crate::feeds::PassRole,
-    ) -> Option<DepthCapRule> {
-        self.depth_cap_of(Self::depth_limit(family, pass_role))
-    }
-
-    /// P29-3: the depth limit of one operation family and pass role, with
-    /// no number. The one filler of `limits::CutFacts::depth_rule`
-    /// (`OperationConfig::cuts`); [`Self::depth_cap_rule`] reads it too.
+    /// Feeds matrix R2 (2026-09-23): no vendor publishes an axial
+    /// finishing cap for wood; the deflection gate is the limit of a
+    /// one-sided finish pass. Ruling R3 (2026-11-11, "slot is a slot!"):
+    /// a slot or a groove has material on both sides, so it reads the
+    /// force budget under every pass role. P29-4 (ruling R1): the Adaptive
+    /// family has no arm of its own.
+    ///
+    /// `OperationType::body_depth_limit` is the one caller: it reads the
+    /// three inputs from the registry row. [`Self::depth_cap_of`] adds the
+    /// numbers.
     #[must_use]
     pub const fn depth_limit(
         family: crate::feeds::OperationFamily,
         pass_role: crate::feeds::PassRole,
+        sides: crate::limits::BodySides,
     ) -> crate::limits::DepthLimit {
         use crate::feeds::{OperationFamily, PassRole};
-        use crate::limits::{DepthLimit, NoDepthLimit};
-        match (family, pass_role) {
+        use crate::limits::{BodySides, DepthLimit, NoDepthLimit};
+        match (family, pass_role, sides) {
             // EXEMPT(P28-04)
-            (OperationFamily::Drill, _) => DepthLimit::NoLimit(NoDepthLimit::DrillCycle),
-            // EXEMPT(F-DepthRule)
-            (_, PassRole::Roughing) => DepthLimit::ForceBudget,
-            // EXEMPT(P28-02, P28-03, S-NoBound)
-            (_, PassRole::SemiFinish | PassRole::Finish) => {
+            (OperationFamily::Drill, _, _) => DepthLimit::NoLimit(NoDepthLimit::DrillCycle),
+            (_, PassRole::Roughing, _) => DepthLimit::ForceBudget,
+            // R3: a slot is a slot under every op.
+            (_, PassRole::SemiFinish | PassRole::Finish, BodySides::Both) => {
+                DepthLimit::ForceBudget
+            }
+            // EXEMPT(P28-02, S-NoBound)
+            (_, PassRole::SemiFinish | PassRole::Finish, BodySides::One) => {
                 DepthLimit::NoLimit(NoDepthLimit::FinishPass)
             }
         }

@@ -19,14 +19,18 @@
 //! - Claim 2: the facts of every declared cut equal the four label
 //!   functions, written out here: `RadialThinning::of(family, role)`, the
 //!   Pocket roughing stepover test, the leave of the role and the
-//!   stock-to-leave field, and the depth rule of `depth_cap_rule`.
+//!   stock-to-leave field, and the depth rule (the family, the role and,
+//!   P29-5, the material sides of the radial rule).
 //! - Claim 3: the entry kinds of the list equal
 //!   `EntryContract::record_kinds()` of the op's row, in order.
 //! - Claim 4: a source scan of `src/` (comments stripped). The catalogue
-//!   `FirstPass`, `planner_width(` and `depth_cap_rule(` have no reader
-//!   outside `compute/catalog/cuts.rs` and their definitions, except the
-//!   named residue below. The residue is exact both ways: a site that
-//!   moves leaves the list in the same commit.
+//!   `FirstPass` and `planner_width(` have no reader outside
+//!   `compute/catalog/cuts.rs` and their definitions, except the named
+//!   residue below. The residue is exact both ways: a site that moves
+//!   leaves the list in the same commit. P29-5 deleted
+//!   `RigidityProfile::depth_cap_rule(family, role)` and its needle: every
+//!   reader reads `OperationType::body_depth_limit` through the registry
+//!   row.
 
 #![expect(
     clippy::expect_used,
@@ -44,6 +48,7 @@ use std::path::Path;
 
 use rs_cam_core::compute::catalog::{
     CutList, DeclaredWidth, FirstPass, OperationConfig, OperationType, PlannerWidth, Radial,
+    RadialRule,
 };
 use rs_cam_core::compute::operation_configs::{ClearingStrategy, PocketPattern};
 use rs_cam_core::feeds::engagement::{PowerCase, PowerCases};
@@ -210,13 +215,27 @@ fn claim_1_the_power_cases_keep_the_widths_in_order() {
 /// The old label functions, written out.
 fn old_facts(op: &OperationConfig) -> CutFacts {
     let (family, role) = op.feeds_style();
-    // The table of `RigidityProfile::depth_cap_rule` (P13c, R2), written
-    // out: the product filler `depth_limit` is not the oracle. P29-4
-    // (ruling R1): the Adaptive family has no arm of its own.
-    let depth_rule = match (family, role) {
-        (OperationFamily::Drill, _) => DepthLimit::NoLimit(NoDepthLimit::DrillCycle),
-        (_, PassRole::Roughing) => DepthLimit::ForceBudget,
-        (_, PassRole::SemiFinish | PassRole::Finish) => {
+    // The table of the depth limit (P13c, R2, R3), written out: the
+    // product filler `depth_limit` is not the oracle. P29-4 (ruling R1):
+    // the Adaptive family has no arm of its own. P29-5 (ruling R3): a slot
+    // or a groove (material on both sides) reads the force budget under
+    // every role.
+    let both_sides = match op.capabilities().cut_rule.radial {
+        RadialRule::Slot | RadialRule::Groove => true,
+        RadialRule::Stepover
+        | RadialRule::Scallop
+        | RadialRule::ScallopElseStepover
+        | RadialRule::OffsetStepoverElseSurface
+        | RadialRule::AngularStep
+        | RadialRule::SurfaceFollow
+        | RadialRule::NoRadial => false,
+    };
+    let depth_rule = match (family, role, both_sides) {
+        (OperationFamily::Drill, _, _) => DepthLimit::NoLimit(NoDepthLimit::DrillCycle),
+        (_, PassRole::Roughing, _) | (_, PassRole::SemiFinish | PassRole::Finish, true) => {
+            DepthLimit::ForceBudget
+        }
+        (_, PassRole::SemiFinish | PassRole::Finish, false) => {
             DepthLimit::NoLimit(NoDepthLimit::FinishPass)
         }
     };
@@ -332,7 +351,7 @@ struct Needle {
 
 const CUTS_RS: &str = "src/compute/catalog/cuts.rs";
 
-const NEEDLES: [Needle; 3] = [
+const NEEDLES: [Needle; 2] = [
     Needle {
         // The catalogue `FirstPass` (`CutKind::FirstPass` of `limits` does
         // not hold `FirstPass::`) and the field read.
@@ -353,27 +372,6 @@ const NEEDLES: [Needle; 3] = [
         anchor: CUTS_RS,
         allowed: &[CUTS_RS, "src/compute/catalog.rs"],
         residue: &[],
-    },
-    Needle {
-        text: &["depth_cap_rule("],
-        // The cut list fills the fact through `RigidityProfile::depth_limit`,
-        // the match that `depth_cap_rule` reads.
-        anchor: "src/machine/mod.rs",
-        allowed: &[CUTS_RS, "src/machine/mod.rs"],
-        residue: &[
-            (
-                "src/tool_load/depth.rs",
-                "WAITS: the gate context holds the op kind, not the config",
-            ),
-            (
-                "src/tool_load/cut_force.rs",
-                "WAITS: the gate context holds the op kind, not the config",
-            ),
-            (
-                "src/feeds/force_budget.rs",
-                "WAITS: rigidity_depth_cap takes (family, role); a viz test fixture calls it",
-            ),
-        ],
     },
 ];
 

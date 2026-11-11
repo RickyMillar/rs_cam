@@ -60,10 +60,9 @@ const OVER_MOVE: usize = 777;
 /// budget exists only under a depth-cap rule).
 fn fixture() -> (SafeEnvelope, f64, f64) {
     let (config, env) = envelope_for(OperationType::Pocket).expect("the Pocket is backed");
-    let (family, role) = config.feeds_style();
     let DepthCapRule { budget_n: budget } = MachineProfile::default()
         .rigidity
-        .depth_cap_rule(family, role)
+        .depth_cap_of(config.cuts().body_facts().depth_rule)
         .expect("a Pocket has a depth-cap rule");
     let diameter = env
         .limit(rs_cam_core::feeds::envelope::LimitKind::Diameter)

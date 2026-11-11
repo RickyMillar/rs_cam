@@ -205,11 +205,11 @@ pub fn evaluate(ctx: &super::ToolpathLoadContext<'_>, env: &super::GateEnv<'_>) 
             None => SampleEvidence::empty().with_population(population),
         };
 
-    // The family and the pass role the Suggest clamp keys on, read off
-    // the operation's own registry spec — the same pair, from the same
-    // place, so the two readers cannot classify one operation
-    // differently.
-    let spec = operation_kind.spec();
+    // The depth limit of the body cut, read off the operation's own
+    // registry row (`OperationType::body_depth_limit`), the one filler the
+    // envelope, the modulator and the force card read too, so the readers
+    // cannot classify one operation differently (P29-5).
+    let depth_limit = operation_kind.body_depth_limit();
     // P13c (O1): the force-budget cap (Pocket and Profile families) is
     // solved at the cut the peak sample measured: its engaged width (the
     // sample arc, `Engagement::from_sample`) and its chip (feed / (rpm x
@@ -231,8 +231,8 @@ pub fn evaluate(ctx: &super::ToolpathLoadContext<'_>, env: &super::GateEnv<'_>) 
     if cut_sample.is_none()
         && machine
             .rigidity
-            // EXEMPT(P28-02, F-DepthRule)
-            .depth_cap_rule(spec.feeds_family, spec.feeds_pass_role)
+            // EXEMPT(P28-02)
+            .depth_cap_of(depth_limit)
             .is_some()
     {
         return DepthVerdict::Reported {
@@ -272,8 +272,7 @@ pub fn evaluate(ctx: &super::ToolpathLoadContext<'_>, env: &super::GateEnv<'_>) 
     });
     let outcome = crate::feeds::force_budget::rigidity_depth_cap(
         machine,
-        spec.feeds_family,
-        spec.feeds_pass_role,
+        depth_limit,
         tool,
         material,
         ae_mm,
@@ -474,8 +473,7 @@ mod tests {
     fn oak_cap_mm() -> f64 {
         let cut = crate::feeds::force_budget::rigidity_depth_cap(
             &MachineProfile::shapeoko_makita(),
-            crate::feeds::OperationFamily::Adaptive,
-            crate::feeds::PassRole::Roughing,
+            OperationType::Adaptive.body_depth_limit(),
             &tool(),
             &oak(),
             0.4 * 6.0,
@@ -530,8 +528,7 @@ mod tests {
         let machine = MachineProfile::shapeoko_makita();
         let want = crate::feeds::force_budget::rigidity_depth_cap(
             &machine,
-            crate::feeds::OperationFamily::Pocket,
-            crate::feeds::PassRole::Roughing,
+            OperationType::Pocket.body_depth_limit(),
             &tool(),
             &Material::default(),
             3.0,
@@ -719,10 +716,12 @@ mod tests {
         ));
     }
 
-    /// Feeds matrix R2 (2026-09-23): a finishing operation has no axial
-    /// cap. Before R2 this 1.2 mm Trace cut read `Exceeds` against
-    /// `doc_finishing_factor` (0.10 × Ø6 = 0.6 mm). Now the gate reports
-    /// the peak with no bound, and the state is `Within`.
+    /// Feeds matrix R2 (2026-09-23): a one-sided finishing operation has
+    /// no axial cap. Before R2 a 1.2 mm Trace cut read `Exceeds` against
+    /// `doc_finishing_factor` (0.10 × Ø6 = 0.6 mm). P29-5 (ruling R3): a
+    /// Trace is a slot and reads the force budget, so the fixture is a
+    /// Scallop finish (material on one side). The gate reports the peak
+    /// with no bound, and the state is `Within`.
     #[test]
     #[expect(
         clippy::wildcard_enum_match_arm,
@@ -730,7 +729,7 @@ mod tests {
     )]
     fn a_finishing_pass_reports_its_depth_with_no_bound() {
         let t = trace(vec![sample(0, 0.4, true), sample(1, 1.2, true)]);
-        let v = run(OperationType::Trace, Some(&t));
+        let v = run(OperationType::Scallop, Some(&t));
         match &v {
             DepthVerdict::Reported {
                 peak_mm, evidence, ..

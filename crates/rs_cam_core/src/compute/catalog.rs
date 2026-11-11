@@ -782,6 +782,26 @@ impl OperationType {
         }
     }
 
+    /// P29-5 (ruling R3): the depth limit of the op's body cut, with no
+    /// number. THE one filler of `limits::CutFacts::depth_rule`: it reads
+    /// only the registry row (the family, the pass role and the material
+    /// sides of the radial rule), so a reader with the op kind and no
+    /// config (the gates) reads the same limit as the cut list.
+    /// `RigidityProfile::depth_cap_of` adds the machine's numbers.
+    #[must_use]
+    pub fn body_depth_limit(self) -> crate::limits::DepthLimit {
+        let spec = self.spec();
+        crate::machine::RigidityProfile::depth_limit(
+            spec.feeds_family,
+            spec.feeds_pass_role,
+            self.registry_entry()
+                .capabilities
+                .cut_rule
+                .radial
+                .body_sides(),
+        )
+    }
+
     /// R-A (SAFETY): what the op kind does with the part outline of a
     /// mesh model ([`OutlineUse`]). The match names every op, so a new op
     /// states its rule. [`OperationConfig::outline_use`] reads the Profile

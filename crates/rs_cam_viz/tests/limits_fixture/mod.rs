@@ -138,9 +138,13 @@ pub fn rigidity_cap_of(session: &ProjectSession, op: &OperationConfig) -> f64 {
     // ae = D, the widest cut the gate can measure (the smallest cap).
     let ae = tool.diameter;
     let cutter = rs_cam_core::compute::cutter::build_cutter(tool).expect("a cutter");
-    let (family, role) = op.feeds_style();
     match rs_cam_core::feeds::force_budget::rigidity_depth_cap(
-        machine, family, role, &cutter, material, ae, fz,
+        machine,
+        op.cuts().body_facts().depth_rule,
+        &cutter,
+        material,
+        ae,
+        fz,
     ) {
         Some(rs_cam_core::feeds::force_budget::RigidityCapOutcome::Cap(c)) => Some(c.cap_mm()),
         Some(

@@ -111,7 +111,7 @@ const R2: ExemptionClass = ExemptionClass::Ruled {
 const NR: ExemptionClass = ExemptionClass::NeedsRuling;
 
 /// Every exemption from a limit today. See the module doc.
-pub static EXEMPTIONS: [Exemption; 64] = [
+pub static EXEMPTIONS: [Exemption; 63] = [
     // P28: the limit audit.
     Exemption {
         id: "P28-02",
@@ -119,11 +119,7 @@ pub static EXEMPTIONS: [Exemption; 64] = [
         limit: &[LimitId::ForceBudget],
         who: Who::Facts("no depth limit, finish pass: wall and surface finishes"),
         class: R2,
-        where_: &[
-            "src/machine/mod.rs",
-            "src/tool_load/depth.rs",
-            "src/feeds/envelope.rs",
-        ],
+        where_: &["src/machine/mod.rs", "src/tool_load/depth.rs"],
         closes_in: "stays, as a ruling",
     },
     Exemption {
@@ -131,12 +127,12 @@ pub static EXEMPTIONS: [Exemption; 64] = [
         what: "the machine force budget",
         limit: &[LimitId::ForceBudget],
         who: Who::Facts(
-            "slot and groove cuts filed as a finish pass (Trace, VCarve, the Inlay ops, \
-             Chamfer, Project Curve)",
+            "groove cuts before the simulation (VCarve, Inlay, InlayPlug, Chamfer): the \
+             envelope reads no groove width",
         ),
         class: NR,
-        where_: &["src/machine/mod.rs"],
-        closes_in: "P29-5",
+        where_: &["src/feeds/envelope.rs"],
+        closes_in: "P29-5c",
     },
     Exemption {
         id: "P28-04",
@@ -234,7 +230,7 @@ pub static EXEMPTIONS: [Exemption; 64] = [
         ),
         class: NR,
         where_: &["src/compute/catalog.rs"],
-        closes_in: "P29-5 / P29-7",
+        closes_in: "P29-5b (filing)",
     },
     Exemption {
         id: "P28-13",
@@ -592,7 +588,7 @@ pub static EXEMPTIONS: [Exemption; 64] = [
         ),
         class: NR,
         where_: &["src/compute/catalog.rs"],
-        closes_in: "P29-5",
+        closes_in: "P29-5b (filing)",
     },
     Exemption {
         id: "M12",
@@ -627,7 +623,7 @@ pub static EXEMPTIONS: [Exemption; 64] = [
         ),
         class: NR,
         where_: &["src/limits/project.rs"],
-        closes_in: "P29-5 / P29-10",
+        closes_in: "P29-10",
     },
     // U: one row for each undeclared cut (ruling Q3). No reader reads
     // these cuts, so no file holds a scope read.
@@ -638,7 +634,7 @@ pub static EXEMPTIONS: [Exemption; 64] = [
         who: Who::Undeclared("the spring passes at the final depth (Pocket, Profile)"),
         class: NR,
         where_: &[],
-        closes_in: "P29-5",
+        closes_in: "P29-7",
     },
     Exemption {
         id: "U-ResidueCleanup",
@@ -650,7 +646,7 @@ pub static EXEMPTIONS: [Exemption; 64] = [
         ),
         class: NR,
         where_: &[],
-        closes_in: "P29-5 / P29-6",
+        closes_in: "P29-6 / P29-7",
     },
     Exemption {
         id: "U-PocketZigzag",
@@ -659,7 +655,7 @@ pub static EXEMPTIONS: [Exemption; 64] = [
         who: Who::Undeclared("the Zigzag pattern of a Pocket (no slot ring, no own cut)"),
         class: NR,
         where_: &[],
-        closes_in: "P29-5",
+        closes_in: "P29-7",
     },
     Exemption {
         id: "U-BoreWallFinish",
@@ -668,7 +664,7 @@ pub static EXEMPTIONS: [Exemption; 64] = [
         who: Who::Undeclared("the wall finish pass of a Bore (the allowance, the whole depth)"),
         class: NR,
         where_: &[],
-        closes_in: "P29-5",
+        closes_in: "P29-7",
     },
     Exemption {
         id: "U-TabReplunge",
@@ -686,7 +682,7 @@ pub static EXEMPTIONS: [Exemption; 64] = [
         who: Who::Undeclared("the row connectors of Face and Zigzag"),
         class: NR,
         where_: &[],
-        closes_in: "P29-5",
+        closes_in: "P29-7",
     },
     Exemption {
         id: "U-CappedStep",
@@ -707,7 +703,7 @@ pub static EXEMPTIONS: [Exemption; 64] = [
         who: Who::Undeclared("the full-slot perimeter sweep that opens a 3D Adaptive level"),
         class: NR,
         where_: &[],
-        closes_in: "P29-5",
+        closes_in: "P29-5b (filing)",
     },
     // Ruling Q7: `feeds/efficiency.rs` reads the nominal diameter.
     Exemption {
@@ -802,20 +798,5 @@ pub static EXEMPTIONS: [Exemption; 64] = [
         class: NR,
         where_: &["src/compute/catalog/cuts.rs", "src/tool_load/deflection.rs"],
         closes_in: "P29-7",
-    },
-    Exemption {
-        id: "F-DepthRule",
-        what: "the depth limit",
-        limit: &[LimitId::ForceBudget],
-        who: Who::Facts("depth_rule is set from the family and the role"),
-        class: NR,
-        where_: &[
-            "src/compute/catalog/cuts.rs",
-            "src/machine/mod.rs",
-            "src/tool_load/depth.rs",
-            "src/tool_load/cut_force.rs",
-            "src/feeds/force_budget.rs",
-        ],
-        closes_in: "P29-5 (P28-03)",
     },
 ];

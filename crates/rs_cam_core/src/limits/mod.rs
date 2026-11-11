@@ -30,8 +30,8 @@ mod sample;
 
 pub use check::{BoundSide, Check, CheckState, Geometry, NoNumberReason, basis_of_bound};
 pub use cut::{
-    CleanupKind, Cut, CutEngagement, CutFacts, CutKind, CutSource, DepthLimit, EntryKind,
-    FirstPassKind, Leave, NoDepthLimit, NoEngagementModel, SampleDepth,
+    BodySides, CleanupKind, Cut, CutEngagement, CutFacts, CutKind, CutSource, DepthLimit,
+    EntryKind, FirstPassKind, Leave, NoDepthLimit, NoEngagementModel, SampleDepth,
 };
 pub use exemptions::{EXEMPTIONS, Exemption, ExemptionClass, Who};
 pub use project::{of_criterion, of_envelope, of_judged_value, of_rpm_choice};

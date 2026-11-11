@@ -318,6 +318,26 @@ pub enum AxialRule {
     SurfaceOffset,
 }
 
+impl RadialRule {
+    /// P29-5 (ruling R3): the material sides of the body cut. A slot and a
+    /// groove have material on both sides; every other rule cuts one side
+    /// or no side.
+    #[must_use]
+    pub const fn body_sides(self) -> crate::limits::BodySides {
+        use crate::limits::BodySides;
+        match self {
+            Self::Slot | Self::Groove => BodySides::Both,
+            Self::Stepover
+            | Self::Scallop
+            | Self::ScallopElseStepover
+            | Self::OffsetStepoverElseSurface
+            | Self::AngularStep
+            | Self::SurfaceFollow
+            | Self::NoRadial => BodySides::One,
+        }
+    }
+}
+
 impl CutSpec {
     /// CONTRACT K2 (feeds contract P5): the calculator inputs of the cut,
     /// in the order `(axial_depth, radial_width, scallop)`. P5 replaces the

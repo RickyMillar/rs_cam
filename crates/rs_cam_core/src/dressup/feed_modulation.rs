@@ -412,7 +412,8 @@ pub const LOAD_CAP_BELOW_CHIP_FLOOR_NOTE: &str = "load cap below the chip floor:
 /// `Engagement::edge_force`.
 ///
 /// Build it only through [`ForceBudgetScope::of`], so the modulator and the
-/// depth gate read the one rule (`RigidityProfile::depth_cap_rule`).
+/// depth gate read the one rule (`RigidityProfile::depth_cap_of` of the
+/// body depth limit, `OperationType::body_depth_limit`).
 #[derive(Debug, Clone, Copy, PartialEq)]
 pub struct ForceBudgetLimitInputs {
     /// The material's force line (the line alone, as the depth gate reads
@@ -428,7 +429,8 @@ pub struct ForceBudgetLimitInputs {
 /// op, from the one rule the depth gate reads.
 #[derive(Debug, Clone, Copy, PartialEq)]
 pub enum ForceBudgetScope {
-    /// The op has no depth-cap rule (a finish pass, a drill): no limit.
+    /// The op has no depth-cap rule (a one-sided finish pass, a drill): no
+    /// limit.
     OutOfScope,
     /// The op's rule is the force budget, but the material has no force
     /// line: no limit, and the move summary states
@@ -441,7 +443,7 @@ pub enum ForceBudgetScope {
 impl ForceBudgetScope {
     /// **The one scope rule.** The limit applies only where
     /// `rule == Some(DepthCapRule { budget_n })`, the rule the depth
-    /// gate reads (`RigidityProfile::depth_cap_rule(family, role)`).
+    /// gate reads (`RigidityProfile::depth_cap_of(kind.body_depth_limit())`).
     #[must_use]
     pub fn of(
         rule: Option<crate::machine::DepthCapRule>,

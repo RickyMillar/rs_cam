@@ -211,6 +211,17 @@ pub enum NoDepthLimit {
     FinishPass,
 }
 
+/// The material sides of a body cut (P29-5, ruling R3). A geometry fact:
+/// a slot or a groove has material on both sides of the tool, every other
+/// side cut has material on one side.
+#[derive(Debug, Clone, Copy, PartialEq, Eq)]
+pub enum BodySides {
+    /// Material on both sides: a slot or a groove.
+    Both,
+    /// Material on one side, or no side cut.
+    One,
+}
+
 /// The depth limit of a cut: the machine force budget, or none.
 #[derive(Debug, Clone, Copy, PartialEq, Eq)]
 pub enum DepthLimit {

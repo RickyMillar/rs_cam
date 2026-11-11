@@ -30,7 +30,6 @@ use crate::limits::{
     Cut, CutEngagement, CutFacts, CutKind, CutSource, EntryKind, FirstPassKind, Leave,
     NoEngagementModel,
 };
-use crate::machine::RigidityProfile;
 
 use super::{Axial, FirstPass, OperationConfig, PlannerWidth, Radial};
 
@@ -430,8 +429,7 @@ impl OperationConfig {
                 (PassRole::Roughing, Some(mm)) if mm.is_finite() && mm > 0.0 => Leave::Mm(mm),
                 (PassRole::Roughing, Some(_)) => Leave::Zero,
             },
-            // EXEMPT(F-DepthRule)
-            depth_rule: RigidityProfile::depth_limit(family, role),
+            depth_rule: self.op_type().body_depth_limit(),
         }
     }
 }

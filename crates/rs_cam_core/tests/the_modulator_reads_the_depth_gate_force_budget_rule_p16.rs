@@ -4,7 +4,7 @@
 //! # The claim
 //!
 //! The depth gate applies the force budget only where
-//! `RigidityProfile::depth_cap_rule(family, role)` is
+//! `RigidityProfile::depth_cap_of(kind.body_depth_limit())` is
 //! `Some(DepthCapRule { .. })`. The session builds the modulator's
 //! force-budget inputs through `ForceBudgetScope::of` from that same rule.
 //!
@@ -12,11 +12,13 @@
 //!    hobby machine): the limit binds a full-slot move, the move carries
 //!    `BindingConstraint::ForceBudget`, and the emitted feed is the feed of
 //!    `Engagement::fz_cap_for_peak_force` at the budget of the rule.
-//! 2. A cell where the rule is not `ForceBudget` (a finish pass: no depth
-//!    rule): the scope gives no inputs, no move carries `ForceBudget`, and
-//!    the same move runs faster than the budget feed. P29-4 (ruling R1):
-//!    before P29-4 this cell was Adaptive, Roughing (the factor rule). The
-//!    Adaptive family now carries the force-budget rule, as the Pocket.
+//! 2. A cell where the rule is not `ForceBudget` (a one-sided finish pass,
+//!    a Scallop: no depth rule): the scope gives no inputs, no move carries
+//!    `ForceBudget`, and the same move runs faster than the budget feed.
+//!    P29-4 (ruling R1): before P29-4 this cell was Adaptive, Roughing (the
+//!    factor rule). The Adaptive family now carries the force-budget rule,
+//!    as the Pocket. P29-5 (ruling R3): before P29-5 this cell was a Trace
+//!    finish; a Trace slot now carries the force-budget rule too.
 //! 3. The force-budget rule with no force line: no limit, and the scope
 //!    gives the summary note "force budget: no force line".
 //!
@@ -33,14 +35,15 @@
     reason = "test code: a panic is how a test reports a failure"
 )]
 
+use rs_cam_core::compute::catalog::OperationType;
 use rs_cam_core::dressup::feed_modulation::{
     BindingConstraint, ChiploadBand, FORCE_BUDGET_NO_FORCE_LINE_NOTE, ForceBudgetScope,
     ModulationContext, ModulationCutter, ModulationStrategy, PerMoveEngagement, RadialThinning,
     adaptive_feed_modulate,
 };
+use rs_cam_core::feeds::ToolGeometryHint;
 use rs_cam_core::feeds::engagement::{EngagedDiameter, Engagement};
 use rs_cam_core::feeds::envelope::CutPoint;
-use rs_cam_core::feeds::{OperationFamily, PassRole, ToolGeometryHint};
 use rs_cam_core::geo::P3;
 use rs_cam_core::machine::kinematics::MachineKinematics;
 use rs_cam_core::machine::{DepthCapRule, MachineProfile};
@@ -129,15 +132,13 @@ fn cutting_ceiling(mm_min: f64) -> rs_cam_core::machine::CuttingCeilingMmMin {
 #[test]
 fn the_modulator_reads_the_depth_gate_force_budget_rule_p16() {
     let machine = MachineProfile::default();
-    let pocket_rule = machine
-        .rigidity
-        .depth_cap_rule(OperationFamily::Pocket, PassRole::Roughing);
-    let adaptive_rule = machine
-        .rigidity
-        .depth_cap_rule(OperationFamily::Adaptive, PassRole::Roughing);
-    let finish_rule = machine
-        .rigidity
-        .depth_cap_rule(OperationFamily::Trace, PassRole::Finish);
+    let rule_of = |op: OperationType| machine.rigidity.depth_cap_of(op.body_depth_limit());
+    let pocket_rule = rule_of(OperationType::Pocket);
+    let adaptive_rule = rule_of(OperationType::Adaptive);
+    // P29-5 (ruling R3): a Trace is a slot and reads the budget, so the
+    // finish pass with no rule is a one-sided Scallop.
+    let finish_rule = rule_of(OperationType::Scallop);
+    let trace_rule = rule_of(OperationType::Trace);
     let Some(DepthCapRule { budget_n }) = pocket_rule else {
         panic!("Pocket roughing must carry the force-budget rule: {pocket_rule:?}");
     };
@@ -146,7 +147,15 @@ fn the_modulator_reads_the_depth_gate_force_budget_rule_p16() {
         adaptive_rule, pocket_rule,
         "Adaptive roughing must carry the force-budget rule: {adaptive_rule:?}"
     );
-    assert_eq!(finish_rule, None, "a finish pass carries no depth rule");
+    assert_eq!(
+        finish_rule, None,
+        "a one-sided finish pass carries no depth rule"
+    );
+    // P29-5 (ruling R3): a finishing Trace slot reads the force budget.
+    assert_eq!(
+        trace_rule, pocket_rule,
+        "a Trace slot must carry the force-budget rule: {trace_rule:?}"
+    );
 
     // The scope of the two cells, through the one constructor.
     let pocket_scope = ForceBudgetScope::of(pocket_rule, Some(line()), cutter());

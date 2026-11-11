@@ -498,27 +498,33 @@ pub const NO_BUDGET_INPUT: &str =
     "no usable width, chip or flute length: the force budget cannot set a depth";
 /// The clause of [`RigidityCapOutcome::NoLimitBelowFlute`].
 pub const NO_BUDGET_LIMIT_BELOW_THE_FLUTE: &str = "no force-budget limit below the flute";
+/// The clause of the envelope `Rigidity` entry of a groove cut (P29-5, Q0,
+/// the narrow choice; row `P28-03`): the envelope holds no groove width,
+/// and the cut engages its whole cone at the depth.
+pub const GROOVE_WIDTH_AFTER_SIMULATION: &str =
+    "a groove engages its whole cone: the width is known after the simulation";
 
 /// **The one producer of the rigidity depth cap** (S3, P13c O1).
 ///
-/// Every roughing family (the Adaptive family since P29-4): the
+/// A cut whose depth limit is `DepthLimit::ForceBudget` (every roughing
+/// cut, and a slot or a groove under every role: P29-5, ruling R3): the
 /// force-budget depth at the width `ae_mm` and the advance per tooth
-/// `fz_mm` ([`depth_at_budget`]).
+/// `fz_mm` ([`depth_at_budget`]). The caller passes the depth limit of
+/// the body cut (`OperationType::body_depth_limit`).
 ///
-/// `None` when the family and role have no cap (a drill, a finish pass).
+/// `None` when the cut has no depth limit (a drill, a one-sided finish
+/// pass).
 #[must_use]
 pub fn rigidity_depth_cap(
     machine: &crate::machine::MachineProfile,
-    family: crate::feeds::OperationFamily,
-    pass_role: crate::feeds::PassRole,
+    depth_limit: crate::limits::DepthLimit,
     tool: &ToolDefinition,
     material: &Material,
     ae_mm: f64,
     fz_mm: f64,
 ) -> Option<RigidityCapOutcome> {
     use crate::machine::{DepthCapRule, RigidityDepthCap};
-    // EXEMPT(F-DepthRule)
-    let DepthCapRule { budget_n } = machine.rigidity.depth_cap_rule(family, pass_role)?;
+    let DepthCapRule { budget_n } = machine.rigidity.depth_cap_of(depth_limit)?;
     if material.force_line().is_err() {
         return Some(RigidityCapOutcome::Unmodelled(NO_FORCE_LINE));
     }

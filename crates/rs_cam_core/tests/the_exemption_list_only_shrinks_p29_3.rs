@@ -35,9 +35,9 @@ use std::path::{Path, PathBuf};
 use rs_cam_core::limits::{EXEMPTIONS, Exemption, ExemptionClass, Geometry, Who};
 
 /// The rows that need a ruling. Exact: a closed row lowers it.
-const MAX_NEEDS_RULING: usize = 53;
+const MAX_NEEDS_RULING: usize = 52;
 /// Every row.
-const ROWS: usize = 64;
+const ROWS: usize = 63;
 /// The rows with a geometry reason.
 const PHYSICAL: usize = 8;
 /// The rows that quote an operator ruling.
@@ -46,7 +46,9 @@ const RULED: usize = 3;
 /// undeclared cut (no reader) name none. Commit C gave the two Q4 rows
 /// their file (`src/limits/sample.rs`), and added the row `C-LeadInApproach`.
 /// P29-4 closed three rows with a file (`P28-01`, `P28-34`, `M7`).
-const ROWS_WITH_A_FILE: usize = 56;
+/// P29-5 closed the row `F-DepthRule` (ruling R3: the depth limit reads
+/// the material sides of the body cut, not only the family and the role).
+const ROWS_WITH_A_FILE: usize = 55;
 
 /// The 34 rows of `phases/P28_limit_audit.md`.
 const P28_IDS: [&str; 34] = [

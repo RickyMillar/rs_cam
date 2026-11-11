@@ -1237,7 +1237,7 @@ impl SafeEnvelope {
             operator,
         );
         deflection_limit(&mut boundary, &input, &speeds, &plan, role, operator);
-        let budget = rigidity_limit(&mut boundary, &inputs, &speeds, &plan, role, operator);
+        let budget = rigidity_limit(&mut boundary, &inputs, &speeds, &plan, operator);
         let mut runtime_notes = Vec::new();
         let move_budget = runtime_limit(&mut boundary, &mut runtime_notes, &input, &plan, d);
         per_point_limits(&mut boundary, &base, &speeds);
@@ -3194,8 +3194,9 @@ fn refine_columns<T: Copy>(
     }
 }
 
-/// The `Rigidity` limit (roughing). P13c (O1; the Adaptive family since
-/// P29-4): per width sample, the shallowest depth where the peak
+/// The `Rigidity` limit (every cut whose depth limit is the force budget:
+/// a roughing cut, and a slot or a groove under every role since P29-5).
+/// P13c (O1; the Adaptive family since P29-4): per width sample, the shallowest depth where the peak
 /// engaged-edge force at the column chip (the operator's, else the grid
 /// chip at the shallowest sample) meets the machine force budget. Extra
 /// exact samples at the slot threshold and the corner bound (P19: not at
@@ -3210,18 +3211,14 @@ fn rigidity_limit(
     inputs: &OwnedInputs,
     speeds: &SpeedsMap,
     plan: &AxesPlan,
-    role: PassRole,
     operator: Option<OperatorChip>,
 ) -> Option<BudgetModel> {
     use crate::feeds::force_budget as fb;
-    // P29-3: the depth limit of the op's body cut.
+    // P29-3: the depth limit of the op's body cut (P29-5: a slot or a
+    // groove reads the budget under every role, ruling R3).
     let depth_limit = inputs.operation.cuts().body_facts().depth_rule;
     // EXEMPT(M12)
     let rule = inputs.machine.rigidity.depth_cap_of(depth_limit)?;
-    // EXEMPT(P28-02)
-    if !matches!(role, PassRole::Roughing) {
-        return None;
-    }
     let crate::machine::DepthCapRule { budget_n } = rule;
     let basis = budget_basis(&inputs.machine);
     let unmodelled = |reason: &'static str| Limit {
@@ -3232,6 +3229,17 @@ fn rigidity_limit(
     };
     if inputs.material.force_line().is_err() {
         out.push(unmodelled(fb::NO_FORCE_LINE));
+        return None;
+    }
+    // P29-5 (Q0, the narrow choice): the envelope holds no groove width
+    // (the calculator width of a groove is not the cone the cut engages),
+    // so a groove gets its force number after the simulation only.
+    // EXEMPT(P28-03)
+    if matches!(
+        inputs.operation.cut_spec().radial,
+        crate::compute::catalog::Radial::Groove
+    ) {
+        out.push(unmodelled(fb::GROOVE_WIDTH_AFTER_SIMULATION));
         return None;
     }
     let Ok(tool) = crate::compute::cutter::build_cutter(&inputs.tool) else {

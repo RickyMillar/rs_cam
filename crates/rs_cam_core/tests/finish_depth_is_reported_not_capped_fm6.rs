@@ -5,9 +5,10 @@
 //! want the most flexibility for the user". No vendor publishes an axial
 //! finishing cap as a fraction of D for wood (EVIDENCE 5.1-3, 5.1-12), so:
 //!
-//! - (a) a finishing or semi-finishing pass gets no axial ceiling. Suggest
-//!   ships its depth with no depth clamp warning, and the profile's rule
-//!   `RigidityProfile::depth_cap_rule` returns `None` for it;
+//! - (a) a one-sided finishing or semi-finishing pass gets no axial
+//!   ceiling. Suggest ships its depth with no depth clamp warning, and the
+//!   profile's rule `RigidityProfile::depth_cap_of` returns `None` for it
+//!   (P29-5, ruling R3: a slot or a groove reads the force budget);
 //! - (b) a roughing pass keeps the cap, at the producer's own cap (feeds
 //!   contract P5: as the envelope's rigidity ceiling, which "Apply all"
 //!   ships at or under);
@@ -46,7 +47,7 @@ use rs_cam_core::feeds::suggest::{
     OperationApplyInput, StockContext, SuggestContext, SuggestWarning, apply_to_operation,
 };
 use rs_cam_core::feeds::vendor_lut::{LutOperationFamily, LutPassRole};
-use rs_cam_core::feeds::{EMBEDDED_LUT, OperationFamily, PassRole, SpindleStrategy};
+use rs_cam_core::feeds::{EMBEDDED_LUT, PassRole, SpindleStrategy};
 use rs_cam_core::ids::ToolpathId;
 use rs_cam_core::machine::{MachineProfile, RigidityDepthCap};
 use rs_cam_core::material::{Material, WoodSpecies};
@@ -297,10 +298,10 @@ fn a_finishing_depth_ships_above_the_old_cap_with_no_clamp_fm6() {
     ] {
         let tool = tool_of(kind, diameter);
         let s = suggest(op, &tool);
-        let (family, pass_role) = s.operation.feeds_style();
+        let (_, pass_role) = s.operation.feeds_style();
         assert_eq!(pass_role, role, "{op:?}: the registry role moved");
         assert!(
-            m.rigidity.depth_cap_rule(family, pass_role).is_none(),
+            m.rigidity.depth_cap_of(op.body_depth_limit()).is_none(),
             "{op:?}: a {role:?} pass must carry no axial cap (R2)"
         );
         let dpp = s
@@ -369,8 +370,7 @@ fn a_roughing_depth_still_clamps_at_the_producer_s_cap_fm6() {
 fn producer_cap(cutter: &ToolDefinition, depth_mm: f64) -> Option<RigidityCapOutcome> {
     rigidity_depth_cap(
         &machine(),
-        OperationFamily::Adaptive,
-        PassRole::Roughing,
+        OperationType::Adaptive.body_depth_limit(),
         cutter,
         &softwood(),
         0.4 * cutter.lookup_diameter_at(depth_mm),
@@ -458,8 +458,7 @@ fn the_gate_reads_the_cone_diameter_fm6() {
     let m = machine();
     let want = rigidity_depth_cap(
         &m,
-        OperationFamily::Adaptive,
-        PassRole::Roughing,
+        OperationType::Adaptive.body_depth_limit(),
         &cutter,
         &jarrah,
         engaged,
@@ -499,8 +498,7 @@ fn pocket_cap() -> f64 {
     let cutter = flat6();
     match rs_cam_core::feeds::force_budget::rigidity_depth_cap(
         &machine(),
-        OperationFamily::Pocket,
-        PassRole::Roughing,
+        OperationType::Pocket.body_depth_limit(),
         &cutter,
         &softwood(),
         3.0,

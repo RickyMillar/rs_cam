@@ -45,7 +45,7 @@ use rs_cam_core::feeds::envelope::{EnvelopeInput, LimitKind, PickRequest, SafeEn
 use rs_cam_core::feeds::force_budget::{RigidityCapOutcome, rigidity_depth_cap};
 use rs_cam_core::feeds::suggest::{OperationApplyInput, SuggestContext, apply_to_operation};
 use rs_cam_core::feeds::vendor_lut::{LutOperationFamily, LutPassRole};
-use rs_cam_core::feeds::{OperationFamily, PassRole, SpindleStrategy, embedded_vendor_lut};
+use rs_cam_core::feeds::{SpindleStrategy, embedded_vendor_lut};
 use rs_cam_core::gcode::load_findings;
 use rs_cam_core::ids::ToolpathId;
 use rs_cam_core::machine::{MachineProfile, RigidityDepthCap};
@@ -83,7 +83,7 @@ fn depths() -> Vec<f64> {
 /// 1 mm past it, read from the one producer (it was 3.000 mm against the
 /// 0.25 D cap).
 fn deep_mm() -> f64 {
-    cap_for(OperationFamily::Pocket, PassRole::Roughing).cap_mm() + 1.0
+    cap_for(OperationType::Pocket).cap_mm() + 1.0
 }
 
 fn tool() -> ToolDefinition {
@@ -276,15 +276,23 @@ fn depth_row<'a>(criteria: &'a [CriterionStatus<'a>]) -> &'a CriterionStatus<'a>
 /// (`feeds::force_budget::rigidity_depth_cap`). P13c (O1): a roughing
 /// Pocket reads the force budget at the peak sample's width (arc pi/2:
 /// ae = r) and chip (feed / (rpm x Z)); P29-4: the Adaptive family reads
-/// the same budget. Nothing in this file multiplies a factor or solves a depth
-/// itself.
-fn cap_for(family: OperationFamily, pass_role: PassRole) -> RigidityDepthCap {
+/// the same budget; P29-5 (ruling R3): a Trace slot too. The depth limit
+/// is the op kind's (`OperationType::body_depth_limit`). Nothing in this
+/// file multiplies a factor or solves a depth itself.
+fn cap_for(op: OperationType) -> RigidityDepthCap {
     let m = machine();
     let ae = DIAMETER_MM / 2.0 * (1.0 - std::f64::consts::FRAC_PI_2.cos());
     let fz = 2000.0 / (f64::from(SAMPLE_RPM) * 2.0);
-    match rigidity_depth_cap(&m, family, pass_role, &tool(), &Material::default(), ae, fz) {
+    match rigidity_depth_cap(
+        &m,
+        op.body_depth_limit(),
+        &tool(),
+        &Material::default(),
+        ae,
+        fz,
+    ) {
         Some(RigidityCapOutcome::Cap(c)) => c,
-        other => panic!("a milling roughing family carries an axial cap: {other:?}"),
+        other => panic!("a cut with the force budget carries an axial cap: {other:?}"),
     }
 }
 
@@ -315,7 +323,7 @@ fn a_roughing_depth_row_states_the_measured_peak_and_its_bound() {
     let criteria = v.criteria();
     let row = depth_row(&criteria);
 
-    let cap = cap_for(OperationFamily::Pocket, PassRole::Roughing);
+    let cap = cap_for(OperationType::Pocket);
     let cap_mm = cap.cap_mm();
     assert_eq!(
         row.bound,
@@ -353,7 +361,7 @@ fn the_depth_bound_does_not_gate_and_the_kind_is_not_a_known_absence() {
         !CriterionKind::DepthOfCut.is_unmodeled_by_design(),
         "the depth row is produced by a real gate"
     );
-    let source = source_of(cap_for(OperationFamily::Pocket, PassRole::Roughing));
+    let source = source_of(cap_for(OperationType::Pocket));
     assert!(!source.gates_export());
     assert_eq!(source.setting(), "machine");
     assert!(
@@ -372,12 +380,14 @@ fn the_depth_bound_does_not_gate_and_the_kind_is_not_a_known_absence() {
 /// 5.1-3, 5.1-12). The finishing arm now reports the measured peak with
 /// no bound and no bound source, and the state is `Within`. P29-4
 /// (ruling R1): the two roughing arms read one rule, the force budget.
+/// P29-5 (ruling R3): the finishing arm is a one-sided Scallop; a
+/// finishing Trace is a slot and reads the Pocket's cap at the same cut.
 #[test]
 fn each_family_reads_the_factor_its_own_pass_role_implies() {
     let trace = measured_trace();
 
     // Conventional roughing → the force budget (P13c, O1).
-    let rough = cap_for(OperationFamily::Pocket, PassRole::Roughing);
+    let rough = cap_for(OperationType::Pocket);
     let rough_cap = rough.cap_mm();
     let rough_verdict = depth_verdict_for(
         OperationType::Pocket,
@@ -388,17 +398,19 @@ fn each_family_reads_the_factor_its_own_pass_role_implies() {
     let rough_status = rough_verdict.as_criterion_status();
     assert_eq!(rough_status.bound, Some(rough_cap));
 
-    // Finishing → no cap (R2). The peak is reported with no bound.
+    // A one-sided finish → no cap (R2). The peak is reported with no
+    // bound. P29-5 (ruling R3): a Trace is a slot, so the one-sided finish
+    // here is a Scallop.
     assert!(
         machine()
             .rigidity
-            .depth_cap_rule(OperationFamily::Trace, PassRole::Finish)
+            .depth_cap_of(OperationType::Scallop.body_depth_limit())
             .is_none(),
-        "a finishing pass must carry no axial cap"
+        "a one-sided finishing pass must carry no axial cap"
     );
     let finish = depth_verdict_for(
-        OperationType::Trace,
-        LutOperationFamily::Trace,
+        OperationType::Scallop,
+        LutOperationFamily::Scallop,
         LutPassRole::Finish,
         &trace,
     );
@@ -415,9 +427,24 @@ fn each_family_reads_the_factor_its_own_pass_role_implies() {
         Some(peak_axial_engagement(&trace))
     );
 
+    // A finishing Trace slot → the force budget (P29-5, ruling R3: "slot
+    // is a slot!"). At the same measured cut it reads the Pocket's cap.
+    let trace_slot = depth_verdict_for(
+        OperationType::Trace,
+        LutOperationFamily::Trace,
+        LutPassRole::Finish,
+        &trace,
+    );
+    let trace_status = trace_slot.as_criterion_status();
+    assert_eq!(
+        trace_status.bound,
+        Some(cap_for(OperationType::Trace).cap_mm())
+    );
+    assert_eq!(trace_status.bound, Some(rough_cap));
+
     // Adaptive → the force budget (P29-4, ruling R1). Before P29-4 it
     // read `adaptive_doc_factor`.
-    let adaptive_bound = cap_for(OperationFamily::Adaptive, PassRole::Roughing);
+    let adaptive_bound = cap_for(OperationType::Adaptive);
     let adaptive_cap = adaptive_bound.cap_mm();
     let adaptive = depth_verdict_for(
         OperationType::Adaptive,
@@ -527,7 +554,7 @@ fn a_hand_set_depth_above_the_cap_exceeds_but_does_not_refuse_the_export() {
     let v = milling_verdict(OperationType::Pocket, &trace);
     let criteria = v.criteria();
     let row = depth_row(&criteria);
-    let cap_mm = cap_for(OperationFamily::Pocket, PassRole::Roughing).cap_mm();
+    let cap_mm = cap_for(OperationType::Pocket).cap_mm();
 
     assert_eq!(
         row.state,
@@ -793,8 +820,7 @@ fn the_suggest_clamp_still_fires_at_the_helper_s_own_cap() {
     let cutter = rs_cam_core::compute::cutter::build_cutter(&tool).unwrap();
     let expected = match rigidity_depth_cap(
         &machine,
-        OperationFamily::Pocket,
-        PassRole::Roughing,
+        OperationType::Pocket.body_depth_limit(),
         &cutter,
         &material,
         STEPOVER_MM,
@@ -841,7 +867,7 @@ fn a_drill_operation_has_no_depth_per_pass_for_the_clamp_to_read() {
     let m = machine();
     assert_eq!(
         m.rigidity
-            .depth_cap_rule(OperationFamily::Drill, PassRole::Roughing),
+            .depth_cap_of(OperationType::Drill.body_depth_limit()),
         None,
         "a drill cycle has no axial cap"
     );

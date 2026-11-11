@@ -11,7 +11,7 @@
 //!    to 1e-9 mm. The card's peak is the reading's peak
 //!    (`ToolpathLoadVerdict::cut_force`), at the same sample.
 //! 2. Lead ruling 3 (2026-11-06). `cut_force::budget_line` is `Some` only
-//!    when `machine.rigidity.depth_cap_rule(family, role)` is
+//!    when `machine.rigidity.depth_cap_of(kind.body_depth_limit())` is
 //!    `Some(DepthCapRule { .. })`: on a Pocket (a roughing Pocket
 //!    family) and on an Adaptive (P29-4, ruling R1: before P29-4 the
 //!    Factor rule gave `None`), `None` on a Scallop finish pass. The card's
@@ -240,7 +240,7 @@ fn the_force_card_peak_is_the_force_behind_the_deflection_gate() {
 
 /// Claim 2: the line exists exactly under the force-budget rule.
 #[test]
-fn the_budget_line_follows_the_depth_cap_rule() {
+fn the_budget_line_follows_the_depth_cap_of_the_body_cut() {
     let tool = tool();
     let material = maple();
     let machine = MachineProfile::shapeoko_makita();
@@ -253,18 +253,16 @@ fn the_budget_line_follows_the_depth_cap_rule() {
     };
 
     // The rule, read from the machine, so the test types no number.
-    let pocket = OperationType::Pocket.spec();
     let Some(DepthCapRule { budget_n }) = machine
         .rigidity
-        .depth_cap_rule(pocket.feeds_family, pocket.feeds_pass_role)
+        .depth_cap_of(OperationType::Pocket.body_depth_limit())
     else {
         panic!("a roughing Pocket is under the force budget");
     };
-    let adaptive = OperationType::Adaptive.spec();
     assert_eq!(
         machine
             .rigidity
-            .depth_cap_rule(adaptive.feeds_family, adaptive.feeds_pass_role),
+            .depth_cap_of(OperationType::Adaptive.body_depth_limit()),
         Some(DepthCapRule { budget_n }),
         "P29-4: the Adaptive family is under the force budget"
     );
