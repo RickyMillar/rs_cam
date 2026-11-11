@@ -8,7 +8,6 @@
 //! - `Current` — the gate has a `Within` or `Exceeds` verdict
 //! - `NeedsSimulation` — `Unmodeled::SimulationRequired` /
 //!   `Unmodeled::ArcEngagementNotCaptured` /
-//!   `Unmodeled::SteadyStateSamplesNotPresent` /
 //!   `Unmodeled::AllSamplesAirCutOrRapid`
 //! - `StaleEvidence` — `Unmodeled::StaleSimulation`
 //! - `NotApplicable` — `Unmodeled::NotApplicableForOp` *only* when the
@@ -1051,13 +1050,6 @@ fn unmodeled_to_diagnostic(
                  simulation again"
             ),
         ),
-        UnmodeledReason::SteadyStateSamplesNotPresent => (
-            DiagnosticState::NeedsSimulation,
-            format!(
-                "{label}: not enough steady cutting to check (the toolpath can be all \
-                 entry and exit moves)"
-            ),
-        ),
         UnmodeledReason::AllSamplesAirCutOrRapid => (
             DiagnosticState::NeedsSimulation,
             format!(
@@ -1095,9 +1087,9 @@ fn unmodeled_to_diagnostic(
     };
     // W1: the face names the gate and the one step that measures it.
     let face = match reason {
-        UnmodeledReason::SimulationRequired
-        | UnmodeledReason::ArcEngagementNotCaptured
-        | UnmodeledReason::SteadyStateSamplesNotPresent => format!("{label} not simulated"),
+        UnmodeledReason::SimulationRequired | UnmodeledReason::ArcEngagementNotCaptured => {
+            format!("{label} not simulated")
+        }
         UnmodeledReason::StaleSimulation => format!("{label}: simulation out of date"),
         UnmodeledReason::NoVendorData => format!("{label}: no vendor data"),
         UnmodeledReason::MaterialUnvalidated => format!("{label}: material not modelled"),

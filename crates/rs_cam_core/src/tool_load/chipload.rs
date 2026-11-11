@@ -79,18 +79,16 @@
 //! Suggest, the narration and this gate speak one unit; it does not
 //! promote a static band over a measured cut.
 //!
-//! **Steady-state filter (Item C).** Vendor LUT bounds are calibrated
-//! against steady-state cutting at the operation's commanded feed.
-//! Transient samples — plunge, ramp, helical entry, lead-in — run at
-//! lower feeds (`plunge_rate`, ramp feed, etc.) and produce
-//! correspondingly lower chipload-per-tooth. Comparing those low-feed
-//! samples to the steady-state LUT range produces false `BurnRisk`
-//! flags. We filter to samples whose feed is within 5% of the
-//! steady feed of the op (P20e: `min(op feed, feed_max_rate, cutting
-//! ceiling)`, the feed the modulator caps at). If the steady-state set is empty (e.g. an
-//! all-plunge drill cycle, where every sample runs at `plunge_rate`),
-//! we return `Unmodeled(SteadyStateSamplesNotPresent)` rather than
-//! flag against the wrong calibration.
+//! **The population (P29-6 6b).** The gate reads every sample of the
+//! toolpath that removes material
+//! ([`crate::stock::simulation_cut::SimulationCutSample::removes_material`]),
+//! at any feed. The 95 % feed filter (Item C) is deleted: it dropped capped
+//! steps and slot rings, which are body cuts, and it read the first-run feed
+//! of a modulated trace. An entry and a phantom transit sample still leave
+//! the trip set inside the loop until P29-6 6d. A removing sample with no
+//! chip number (no measured arc, an arc of 0) counts in `missing_arc_count`.
+//! With no removing sample the gate returns `AllSamplesAirCutOrRapid` (or
+//! `SimulationRequired` when the toolpath has no sample).
 //!
 //! No vendor LUT row matches → `Unmodeled(NoVendorData)`. We refuse to
 //! invent a chipload envelope from first principles.
@@ -187,65 +185,30 @@ use super::verdict::{
     Confidence, EntrySpike, SampleEvidence, UnmodeledReason,
 };
 
-/// Fraction of the commanded operation feed below which a sample is
-/// considered to be running on a transient feed (plunge, ramp, lead-in)
-/// rather than steady-state cutting.
-///
-/// 5% is loose enough to absorb sub-sample feed-integration noise but
-/// tight enough to exclude common ramp feeds (typically 50% of cutting
-/// feed) and plunge feeds (typically 10–30%).
-pub(crate) const STEADY_STATE_FEED_FRACTION: f64 = 0.95;
-
-/// Result of filtering a sim trace to in-cut, non-air, steady-state
-/// samples for a single toolpath. Borrows the underlying trace.
-pub(crate) struct SteadyStateSamples<'a> {
-    /// `(global_index_into_trace, sample)` tuples for samples whose
-    /// feed is within `STEADY_STATE_FEED_FRACTION` of the commanded
-    /// operation feed. Empty for an all-transient toolpath (e.g. an
-    /// all-plunge drill cycle).
-    pub samples: Vec<(usize, &'a crate::stock::simulation_cut::SimulationCutSample)>,
-    /// `true` if at least one sample for this toolpath was in-cut and
-    /// out of air, regardless of feed. Distinguishes "no usable cut
-    /// samples at all" (SimulationRequired) from "samples exist but
-    /// none meet the steady-state threshold" (SteadyStateSamplesNotPresent).
-    pub any_in_cut: bool,
-}
-
-/// Filter a sim trace down to the steady-state samples for one
-/// toolpath, applying the same cutting/air/feed filters used by the
-/// chipload gate. Extracted so the optimizer's pre-flight classifier
-/// can read the same sample set the gate verdict was computed from
-/// without duplicating the threshold constants.
-///
-/// P20e: the reference is the steady feed of the op
-/// ([`crate::machine::SteadyFeedMmMin`]: `min(op feed, feed_max_rate,
-/// cutting ceiling)`), not the stated op feed. Since G-FEEDMAX the op cap
-/// lowers every cutting move, so a stated-feed reference rejected every
-/// cutting sample of an op whose cap is below 0.95 x its feed.
-pub(crate) fn steady_state_samples_for_toolpath<'a>(
-    trace: &'a SimulationCutTrace,
+/// The samples of one toolpath that remove material
+/// ([`crate::stock::simulation_cut::SimulationCutSample::removes_material`],
+/// ruling Q2 of P29-6), as `(global_index_into_trace, sample)`. The chip
+/// gate and its histogram read this one set. No feed test: a sample at a
+/// capped or a ramp feed is a cut too (P29-6 6b, row `M1` closed).
+pub(crate) fn removing_samples_for_toolpath(
+    trace: &SimulationCutTrace,
     toolpath_id: ToolpathId,
-    steady_feed: crate::machine::SteadyFeedMmMin,
-) -> SteadyStateSamples<'a> {
-    // EXEMPT(M1)
-    let feed_threshold = STEADY_STATE_FEED_FRACTION * steady_feed.mm_min();
-    let mut any_in_cut = false;
-    let samples = trace
+) -> Vec<(usize, &crate::stock::simulation_cut::SimulationCutSample)> {
+    trace
         .samples
         .iter()
         .enumerate()
-        .filter_map(|(i, s)| {
-            if s.toolpath_id != toolpath_id || s.is_air() {
-                return None;
-            }
-            any_in_cut = true;
-            (s.feed_rate_mm_min >= feed_threshold).then_some((i, s))
-        })
-        .collect();
-    SteadyStateSamples {
-        samples,
-        any_in_cut,
-    }
+        .filter(|(_, s)| s.toolpath_id == toolpath_id && s.removes_material())
+        .collect()
+}
+
+/// The gate's sample-validity predicate: the sample carries a chip model
+/// and is not air class. P29-6 (ruling Q2): an air-class sample that
+/// removes material (a skin above the tip) is in the population, but the
+/// air test is a reason for no number, so it never reaches a comparison.
+/// The histogram reads this one predicate.
+pub(super) fn has_chip_number(s: &crate::stock::simulation_cut::SimulationCutSample) -> bool {
+    s.effective_chip_thickness_mm.is_some() && !s.is_air()
 }
 
 /// Burn-risk verdict semantics.
@@ -273,8 +236,8 @@ pub(crate) fn steady_state_samples_for_toolpath<'a>(
 /// id from `SimToolpathEntry::id`, not a project-relative index).
 ///
 /// `ctx.steady_feed()` is the feed the op commands in steady cutting (P20e:
-/// `min(op feed, feed_max_rate, cutting ceiling)`); samples below 95% of
-/// it are filtered out as non-steady-state moves. See module doc.
+/// `min(op feed, feed_max_rate, cutting ceiling)`). The commanded stage
+/// states it; no filter reads it (P29-6 6b). See module doc.
 ///
 /// `operation_kind` is the toolpath's `OperationType`. For most kinds
 /// the (operation_family, pass_role) tuple from the operation spec is
@@ -401,32 +364,17 @@ fn evaluate_inner(
         };
     };
 
-    // 2. Build the steady-state sample set before LUT lookup. The same
-    // set gives us the peak DOC for the lookup key and the depth de-rate.
-    //
-    // Skip rapids (`!is_cutting`) and air-cut samples (`radial_engagement
-    // < 0.02` — same threshold as `SimulationCutIssueKind::AirCut` per
-    // `simulation_cut.rs`). Air cuts have no real chip and produce
-    // misleading chipload readings. Steady-state filter (Item C): only
-    // count samples whose feed rate matches the commanded operation
-    // feed; transient samples (plunge, ramp, lead-in) at lower feeds
-    // get a separate non-decision rather than being measured against
-    // the steady-state LUT envelope. See
-    // `steady_state_samples_for_toolpath` for the canonical filter.
-    let SteadyStateSamples {
-        samples: steady_samples,
-        any_in_cut: any_in_cut_for_toolpath,
-    } = steady_state_samples_for_toolpath(trace, toolpath_id, steady_feed);
+    // 2. The population: every sample of the toolpath that removes
+    // material, at any feed (P29-6 6b). The same set gives the peak DOC for
+    // the lookup key.
+    let removing_samples = removing_samples_for_toolpath(trace, toolpath_id);
 
-    // 3. Build verdicts for no usable sample data before attempting a LUT
-    // lookup. This preserves the distinction between missing samples and
-    // missing vendor data.
-    //
-    // UX dial-in A10: when sim ran end-to-end but no sample was in-cut
-    // and out of air, surface the actual finding ("toolpath made no
-    // contact with material") rather than `SimulationRequired`, which
-    // misleadingly implies the user needs to re-sim.
-    if !any_in_cut_for_toolpath {
+    // 3. No removing sample: no chip to judge. Name the finding before
+    // the LUT lookup, so missing samples and missing vendor data stay
+    // distinct. UX dial-in A10: when the simulation ran but the toolpath
+    // removed nothing, say so rather than `SimulationRequired`, which
+    // implies a re-simulation.
+    if removing_samples.is_empty() {
         let reason = if trace.samples.iter().any(|s| s.toolpath_id == toolpath_id) {
             UnmodeledReason::AllSamplesAirCutOrRapid
         } else {
@@ -434,16 +382,11 @@ fn evaluate_inner(
         };
         return ChiploadVerdict::Unmodeled { reason };
     }
-    if steady_samples.is_empty() {
-        return ChiploadVerdict::Unmodeled {
-            reason: UnmodeledReason::SteadyStateSamplesNotPresent,
-        };
-    }
 
     // 4. Look up the vendor envelope. If no row matches, refuse.
     //
     // The LUT diameter query depends on `lookup_axial_doc_mm` (P11b2: the
-    // band no longer moves with it). Folding over every steady-state
+    // band no longer moves with it). Folding over every removing
     // sample (including transit-style samples whose dexel reading
     // captures `stock_top − cutter_z` over neighbouring stock — see
     // P3_TRANSIT_PEAK_DOC_RCA.md) silently inflates this metric on
@@ -454,7 +397,7 @@ fn evaluate_inner(
     // ancestor check), so the LUT lookup and the trip decision below
     // measure the same population of samples.
     let span_lookup = spans.map(SpanLookup::new);
-    let lookup_axial_doc_mm = steady_samples
+    let lookup_axial_doc_mm = removing_samples
         .iter()
         // EXEMPT(P28-21, P28-22, P28-23)
         .filter(|(_, s)| super::locality::is_steady_state_for_gate(s, span_lookup.as_ref()))
@@ -575,11 +518,11 @@ fn evaluate_inner(
     };
 
     // T1.1 — capture the commanded stage and the achieved-feed stage
-    // BEFORE the sample loop consumes `steady_samples`. Both are already
+    // BEFORE the sample loop consumes `removing_samples`. Both are already
     // computed by this gate; pre-T1.1 they were used and dropped, which
     // is why an operator could see the gate's number and the commanded
     // number and have nothing relating them.
-    let commanded_stage = steady_samples.first().map(|(_, s)| {
+    let commanded_stage = removing_samples.first().map(|(_, s)| {
         let divisor = f64::from(s.spindle_rpm) * f64::from(s.flute_count);
         // P20e: the stage states what the G-code commands: the steady
         // feed under the op cap and the machine ceiling, with its limit.
@@ -608,7 +551,7 @@ fn evaluate_inner(
     let achieved_feed_stage = {
         let predicted_feeds_present = !trace.predicted_feeds.is_empty();
         let median_ratio = if predicted_feeds_present {
-            let mut ratios: Vec<f64> = steady_samples
+            let mut ratios: Vec<f64> = removing_samples
                 .iter()
                 .map(|(_, s)| {
                     super::effective_feed_for_sample(s, &trace.predicted_feeds)
@@ -660,7 +603,7 @@ fn evaluate_inner(
     // Worst Entry-ancestry under-min sample (smallest observed_fpt < min).
     let mut entry_low: Option<(f64, usize)> = None;
     // X-VAC (`planning/review_2026-08-08/XVAC_CENSUS.md`). `offered` is
-    // the steady-state set handed to this loop; `contributing` is
+    // the removing set handed to this loop; `contributing` is
     // `burn_samples.len()` below — the samples that actually reached a
     // bound comparison. The two differ by the sample-validity predicate,
     // the no-divisor skip, and the phantom / configured-entry split, and
@@ -670,11 +613,13 @@ fn evaluate_inner(
     // transit skip and is documented at its own definition as
     // overstating the gate's denominator. Publishing an overstated count
     // as the vacuity marker would reproduce the defect in the fix.
-    let offered = steady_samples.len();
+    let offered = removing_samples.len();
 
-    for (i, s) in steady_samples {
-        // **The sample-validity predicate is deliberately unchanged, and
-        // is now vestigial.** Before 2026-08-06 the observation WAS
+    for (i, s) in removing_samples {
+        // **The sample-validity predicate** (`has_chip_number`). P29-6
+        // changed it twice: an air-class removing sample has no number
+        // (Q2), and an arc of 0 counts as no arc (Q7). The rest of this note
+        // is the record of 2026-08-06. Before 2026-08-06 the observation WAS
         // `effective_chip_thickness_mm`, so a sample without one had
         // nothing to report. The observation is now purely kinematic and
         // needs no chip model — but keeping the filter keeps the gate's
@@ -689,8 +634,11 @@ fn evaluate_inner(
         // tooth because a chip model did not resolve, which is no longer
         // a reason. Changing it is a population change and needs its own
         // before/after.
-        if s.effective_chip_thickness_mm.is_none() {
-            if s.arc_engagement_radians.is_none() {
+        if !has_chip_number(s) {
+            // P29-6 Q7: an arc of 0 is no arc. A removing skin above the
+            // tip has no measured arc, not an unsupported chip geometry.
+            // Q2: an air-class removing sample has no measured arc either.
+            if s.is_air() || s.arc_engagement_radians.is_none_or(|arc| arc <= 0.0) {
                 missing_arc_count += 1;
             } else {
                 chip_geometry_unsupported_count += 1;
@@ -877,7 +825,7 @@ fn evaluate_inner(
     };
 
     if valid_count == 0 {
-        // Every steady-state sample was discarded. Pick the dominant
+        // Every removing sample was discarded. Pick the dominant
         // cause. The first two are the vestigial chip-model predicate
         // (see the loop's note); the third is a sample that could not
         // state its own `rpm × flutes`, which the advance-per-tooth
@@ -1182,10 +1130,8 @@ mod tests {
     /// unchanged, and none of them went vacuous: the `chipload` argument
     /// still steers the verdict, exactly as loudly as it did.
     ///
-    /// The commanded `feed_rate_mm_min` is deliberately left where each
-    /// test set it, so `steady_state_samples_for_toolpath`'s population —
-    /// the 95 %-of-commanded-feed filter and the tests that exercise it —
-    /// is byte-identical.
+    /// The commanded `feed_rate_mm_min` stays where each test set it. Since
+    /// P29-6 6b no filter reads it: the population is every removing sample.
     fn trace(samples: Vec<SimulationCutSample>) -> SimulationCutTrace {
         let mut predicted_feeds = crate::machine::kinematics::PredictedFeedMap::new();
         for s in &samples {
@@ -1663,24 +1609,80 @@ mod tests {
         assert!(matches!(v, ChiploadVerdict::Within { .. }));
     }
 
-    // -------- Item C: steady-state feed-rate filter ---------
+    // -------- P29-6 6b: no feed filter ---------
 
-    /// Item C verify #1: a toolpath whose every in-cut sample runs at a
-    /// plunge feed below 95% of the commanded cutting feed (e.g. a pure
-    /// drill cycle whose plunge_rate is 30% of feed_rate) returns
-    /// `Unmodeled(SteadyStateSamplesNotPresent)` rather than measuring
-    /// the plunge-feed chipload against the steady-state LUT range.
-    /// Mirrors the wanaka TP 7 false-BurnRisk symptom.
+    /// The contributing count of a judged verdict (the trip set).
+    fn contributing(v: &ChiploadVerdict) -> usize {
+        match v {
+            ChiploadVerdict::Within {
+                approach_to_max, ..
+            } => approach_to_max
+                .evidence
+                .population
+                .map(|p| p.contributing)
+                .unwrap_or_default(),
+            ChiploadVerdict::Exceeds { triggering, .. } => triggering
+                .evidence
+                .population
+                .map(|p| p.contributing)
+                .unwrap_or_default(),
+            ChiploadVerdict::Unmodeled { reason } => {
+                panic!("expected a judged verdict, got Unmodeled({reason:?})")
+            }
+        }
+    }
+
+    /// P29-6 (ruling Q2): on a finish op (no thinning, so the peak chip
+    /// reads no engagement) an air-class sample that removes material and
+    /// carries a chip model is in the population with no number. A chip
+    /// far above the band on it does not trip the gate.
     #[test]
-    #[expect(
-        clippy::wildcard_enum_match_arm,
-        reason = "test: an unexpected variant panics"
-    )]
-    fn all_plunge_samples_returns_steady_state_not_present() {
-        // commanded operation feed = 1000 mm/min; every sample at the
-        // 300 mm/min plunge rate (= 0.30 × 1000, well below the 0.95
-        // threshold) and at a chipload that would otherwise read as
-        // BurnRisk against the LUT.
+    fn an_air_class_removing_sample_has_no_chip_number_on_a_finish_op() {
+        let lut_max = match burn_fixture_verdict(0.03, &crate::tool_load::ToleranceBands::default())
+        {
+            ChiploadVerdict::Within {
+                approach_to_max, ..
+            }
+            | ChiploadVerdict::Exceeds {
+                triggering: approach_to_max,
+                ..
+            } => approach_to_max.bounds.max_mm_per_tooth,
+            ChiploadVerdict::Unmodeled { reason } => {
+                panic!("the burn fixture must be judged, got Unmodeled({reason:?})")
+            }
+        };
+        let cut = burn_fixture_sample(0.03);
+        let mut skin = burn_fixture_sample(10.0 * lut_max);
+        skin.move_index = 1;
+        skin.sample_index = 1;
+        skin.engagement = crate::stock::simulation_cut::Engagement::with_radial_woc(0.01);
+        assert!(skin.is_air() && skin.removes_material(), "non-vacuity");
+        let t = trace(vec![cut, skin]);
+        let v = evaluate_args(
+            0,
+            &burn_fixture_tool(),
+            &Material::SolidWood {
+                species: WoodSpecies::HardMaple,
+            },
+            Some(&t),
+            None,
+            1000.0,
+            OperationType::Scallop,
+            &crate::tool_load::ToleranceBands::default(),
+        );
+        assert!(
+            matches!(v, ChiploadVerdict::Within { .. }),
+            "an air-class sample must not trip the gate, got {v:?}"
+        );
+        assert_eq!(contributing(&v), 1, "the air-class sample has no number");
+    }
+
+    /// P29-6 6b (was Item C verify #1, which pinned
+    /// `SteadyStateSamplesNotPresent`): a toolpath whose every removing
+    /// sample runs at 30 % of the commanded feed is judged. The gate grades
+    /// the chip of every removing sample at any feed.
+    #[test]
+    fn all_low_feed_samples_are_judged() {
         let mut s0 = sample(0, 0, 0.0083, 0.5);
         s0.feed_rate_mm_min = 300.0;
         let mut s1 = sample(0, 1, 0.0083, 0.5);
@@ -1698,24 +1700,15 @@ mod tests {
             OperationType::Pocket,
             &crate::tool_load::ToleranceBands::default(),
         );
-        match v {
-            ChiploadVerdict::Unmodeled {
-                reason: UnmodeledReason::SteadyStateSamplesNotPresent,
-            } => {}
-            other => panic!("expected Unmodeled(SteadyStateSamplesNotPresent), got {other:?}"),
-        }
+        assert_eq!(contributing(&v), 2, "both low-feed samples judged: {v:?}");
     }
 
-    /// Item C verify #2: a mix of steady-feed Linear, steady-feed Helix,
-    /// and ramp-feed Linear samples — the peak must be computed only over
-    /// the steady-feed samples. The ramp-feed sample carries an
-    /// otherwise-flagworthy chipload that must be ignored.
-    /// Mirrors the wanaka TP 10 false-BurnRisk symptom.
+    /// P29-6 6b (was Item C verify #2, which pinned that the ramp-feed
+    /// sample is dropped): steady-feed Linear, steady-feed Helix and a
+    /// ramp-feed Linear sample all enter the trip set. The median stays on
+    /// the two steady samples, so the verdict stays `Within`.
     #[test]
-    fn ramp_feed_samples_excluded_from_peak() {
-        // commanded feed 1500. Linear + Helix at 1500 mm/min carry an
-        // in-range chipload (0.04). Ramp at 500 mm/min carries 0.001
-        // (would trigger BurnRisk). Filter must drop the ramp sample.
+    fn ramp_feed_samples_are_judged() {
         let mut linear = sample(0, 0, 0.04, 0.5);
         linear.feed_rate_mm_min = 1500.0;
         linear.cut_kinematics = crate::stock::simulation_cut::CutKinematics::Linear;
@@ -1747,6 +1740,65 @@ mod tests {
                 }
             ),
             "expected Within(Validated), got {v:?}"
+        );
+        assert_eq!(contributing(&v), 3, "the ramp sample is judged: {v:?}");
+    }
+
+    /// P29-6 6b (was the 95 % boundary test): a sample at 94.9 % of the
+    /// commanded feed, which the deleted filter dropped, is judged.
+    #[test]
+    fn a_sample_below_the_old_feed_threshold_is_judged() {
+        let mut s = sample(0, 0, 0.04, 0.5);
+        s.feed_rate_mm_min = 949.0;
+        let t = trace(vec![s]);
+        let v = evaluate_args(
+            0,
+            &tool(),
+            &Material::SolidWood {
+                species: WoodSpecies::HardMaple,
+            },
+            Some(&t),
+            None,
+            1000.0,
+            OperationType::Pocket,
+            &crate::tool_load::ToleranceBands::default(),
+        );
+        assert!(
+            matches!(v, ChiploadVerdict::Within { .. }),
+            "a 94.9 % sample must be judged, got {v:?}"
+        );
+        assert_eq!(contributing(&v), 1);
+    }
+
+    /// P29-6 Q7: a removing sample with an arc of 0 and no chip model has
+    /// no measured arc. The refusal names `ArcEngagementNotCaptured`, not
+    /// an unsupported chip geometry.
+    #[test]
+    fn an_arc_of_zero_is_no_arc() {
+        let mut s0 = sample(0, 0, 0.04, 0.5);
+        s0.arc_engagement_radians = Some(0.0);
+        s0.effective_chip_thickness_mm = None;
+        let t = trace(vec![s0]);
+        let v = evaluate_args(
+            0,
+            &tool(),
+            &Material::SolidWood {
+                species: WoodSpecies::HardMaple,
+            },
+            Some(&t),
+            None,
+            1000.0,
+            OperationType::Pocket,
+            &crate::tool_load::ToleranceBands::default(),
+        );
+        assert!(
+            matches!(
+                v,
+                ChiploadVerdict::Unmodeled {
+                    reason: UnmodeledReason::ArcEngagementNotCaptured
+                }
+            ),
+            "an arc of 0 is no arc, got {v:?}"
         );
     }
 
@@ -1836,33 +1888,6 @@ mod tests {
         assert!(
             matches!(v, ChiploadVerdict::Within { .. }),
             "phantom-transit sample must not inflate DOC-derating ratio, got {v:?}"
-        );
-    }
-
-    /// Item C edge case: a sample at exactly 95% of the commanded feed
-    /// is included (boundary inclusive). A sample at 94.9% is excluded.
-    #[test]
-    fn feed_threshold_is_inclusive_at_95pct() {
-        // Sample at exactly 950 mm/min (= 0.95 × 1000) must be kept;
-        // value below would otherwise be filtered.
-        let mut s = sample(0, 0, 0.04, 0.5);
-        s.feed_rate_mm_min = 950.0;
-        let t = trace(vec![s]);
-        let v = evaluate_args(
-            0,
-            &tool(),
-            &Material::SolidWood {
-                species: WoodSpecies::HardMaple,
-            },
-            Some(&t),
-            None,
-            1000.0,
-            OperationType::Pocket,
-            &crate::tool_load::ToleranceBands::default(),
-        );
-        assert!(
-            matches!(v, ChiploadVerdict::Within { .. }),
-            "exactly-95% sample must be kept, got {v:?}"
         );
     }
 
@@ -2289,8 +2314,8 @@ mod tests {
         reason = "test: an unexpected variant panics"
     )]
     fn drill_like_no_arc_samples_route_to_unmodeled() {
-        // engagement above the air-cut threshold (`>= 0.02`) so the
-        // sample passes the steady-state filter and reaches the
+        // the sample removes material, so it is in the population and
+        // reaches the
         // chip-geometry path. arc=None mirrors a real plunge move
         // where the simulator can't compute an engagement arc.
         let mut s0 = sample(0, 0, 0.5, 0.5);

@@ -35,9 +35,9 @@ use std::path::{Path, PathBuf};
 use rs_cam_core::limits::{EXEMPTIONS, Exemption, ExemptionClass, Geometry, Who};
 
 /// The rows that need a ruling. Exact: a closed row lowers it.
-const MAX_NEEDS_RULING: usize = 52;
+const MAX_NEEDS_RULING: usize = 51;
 /// Every row.
-const ROWS: usize = 63;
+const ROWS: usize = 62;
 /// The rows with a geometry reason.
 const PHYSICAL: usize = 8;
 /// The rows that quote an operator ruling.
@@ -48,7 +48,8 @@ const RULED: usize = 3;
 /// P29-4 closed three rows with a file (`P28-01`, `P28-34`, `M7`).
 /// P29-5 closed the row `F-DepthRule` (ruling R3: the depth limit reads
 /// the material sides of the body cut, not only the family and the role).
-const ROWS_WITH_A_FILE: usize = 55;
+/// P29-6 6b closed the row `M1` (the chip gate reads every removing sample).
+const ROWS_WITH_A_FILE: usize = 54;
 
 /// The 34 rows of `phases/P28_limit_audit.md`.
 const P28_IDS: [&str; 34] = [
@@ -64,9 +65,15 @@ const M_IDS: [&str; 12] = [
 ];
 
 /// The audit ids that a step closed, with the step (P29-4: ruling R1, the
-/// Adaptive family reads the force budget). An audit id is a row or in this
-/// list, never both; the two id lists above stay the record (ruling Q6).
-const CLOSED: &[(&str, &str)] = &[("P28-01", "P29-4"), ("P28-34", "P29-4"), ("M7", "P29-4")];
+/// Adaptive family reads the force budget; P29-6: the chip gate reads every
+/// removing sample). An audit id is a row or in this list, never both; the
+/// two id lists above stay the record (ruling Q6).
+const CLOSED: &[(&str, &str)] = &[
+    ("P28-01", "P29-4"),
+    ("P28-34", "P29-4"),
+    ("M7", "P29-4"),
+    ("M1", "P29-6"),
+];
 
 /// The marker text before the ids.
 const MARKER: &str = "// EXEMPT(";

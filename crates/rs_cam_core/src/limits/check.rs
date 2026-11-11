@@ -58,8 +58,6 @@ pub enum NoNumberReason {
     StaleSimulation,
     /// No vendor row gives a chip band.
     NoVendorRow,
-    /// No sample is at the steady feed.
-    NoSteadySample,
     /// Every sample is a rapid or an air cut.
     NoMaterialRemoved,
     /// The trace holds no engagement arc.
@@ -120,9 +118,6 @@ impl CheckState {
             UnmodeledReason::StaleSimulation => Self::NoNumber(NoNumberReason::StaleSimulation),
             UnmodeledReason::ArcEngagementNotCaptured => Self::NoNumber(NoNumberReason::NoArc),
             UnmodeledReason::NoVendorData => Self::NoNumber(NoNumberReason::NoVendorRow),
-            UnmodeledReason::SteadyStateSamplesNotPresent => {
-                Self::NoNumber(NoNumberReason::NoSteadySample)
-            }
             UnmodeledReason::MaterialUnvalidated => Self::NoNumber(NoNumberReason::NoForceLine),
             UnmodeledReason::CutterModeUnsupported(_) | UnmodeledReason::NotImplemented(_) => {
                 Self::NoNumber(NoNumberReason::NotModelled)

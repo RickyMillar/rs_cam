@@ -19,7 +19,8 @@
 //!
 //! # The guarded defect, and which assertion goes red
 //!
-//! The fixture holds five decoy samples that the gates must NOT count:
+//! The fixture holds four decoy samples that the gates must NOT count, and one
+//! former decoy that the chip gate now counts:
 //!
 //! - a transit sample (`in_transit_span`, no spans, so phantom) with the
 //!   highest value in the trace. A population that skips
@@ -29,9 +30,9 @@
 //!   the `< 0.02` air rule holds it: claim 2 goes red for chipload, power and
 //!   deflection. The depth gate has no air rule, so it counts this sample,
 //!   and its population must count it too.
-//! - a sample at 80 % of the commanded feed. A chipload population that
-//!   skips `steady_state_samples_for_toolpath` holds it: claim 2 goes red
-//!   for chipload.
+//! - a sample at 80 % of the commanded feed. Since P29-6 6b the chip gate
+//!   judges it (no feed filter); the chipload population holds it because
+//!   it reads `removing_samples_for_toolpath`, the gate's own set.
 //! - a sample with no `effective_chip_thickness_mm`. A chipload population
 //!   that skips the gate's vestigial chip-model predicate holds it: claim 2
 //!   goes red for chipload.
@@ -96,7 +97,7 @@ fn material() -> Material {
 
 /// One cutting sample. `advance` is the advance per tooth the gate is to
 /// observe; the trace realises it through the predicted-feed map, so the
-/// commanded feed (which steers the steady-state filter) stays separate.
+/// commanded feed stays separate.
 /// `depth` and `arc` vary so the power, deflection and depth populations
 /// have distinct values and a distinct maximum.
 fn sample(idx: usize, advance: f64, depth: f64, arc: f64) -> (SimulationCutSample, f64) {
@@ -130,10 +131,9 @@ fn sample(idx: usize, advance: f64, depth: f64, arc: f64) -> (SimulationCutSampl
 ///
 /// Trace indices: 0..=12 are counted by every gate. 13 (transit) and 17
 /// (other toolpath) are counted by no gate. 14 (air) is counted by the depth
-/// gate only, which has no air rule. 15 (80 % feed) and 16 (no chip model)
-/// are decoys for chipload only: the power, deflection and depth gates count
-/// them, because those gates have no feed filter and no chip-model
-/// predicate.
+/// gate only, which has no air rule. 16 (no chip model) is a decoy for
+/// chipload only. 15 (80 % feed) was a chipload decoy until P29-6 6b deleted
+/// the feed filter; every gate counts it now.
 fn fixture() -> SimulationCutTrace {
     let mut rows: Vec<(SimulationCutSample, f64)> = Vec::new();
     // Counted: advance 0.028..0.0394 mm/tooth (the chipload unit tests
@@ -159,7 +159,7 @@ fn fixture() -> SimulationCutTrace {
     let (mut s, a) = sample(14, 0.050, 2.5, 1.9);
     s.engagement = Engagement::with_radial_woc(0.01);
     rows.push((s, a));
-    // Decoy: 80 % of the commanded feed (chipload only).
+    // Was a chipload decoy (80 % of the commanded feed); judged since P29-6 6b.
     let (mut s, a) = sample(15, 0.049, 1.0, 1.0);
     s.feed_rate_mm_min = 0.8 * OP_FEED;
     rows.push((s, a));
@@ -284,7 +284,9 @@ fn histogram_population_is_the_gate_population() {
             "{kind:?}: the fixture is not vacuous"
         );
         let decoys: &[usize] = match kind {
-            CriterionKind::Chipload => &[13, 14, 15, 16, 17],
+            // P29-6 6b: 15 (80 % feed) is judged; 14 (air class) is in the
+            // population with no number, so it reaches no comparison.
+            CriterionKind::Chipload => &[13, 14, 16, 17],
             CriterionKind::DepthOfCut => &[13, 17],
             CriterionKind::Power
             | CriterionKind::Deflection

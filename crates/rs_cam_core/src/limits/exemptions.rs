@@ -111,7 +111,7 @@ const R2: ExemptionClass = ExemptionClass::Ruled {
 const NR: ExemptionClass = ExemptionClass::NeedsRuling;
 
 /// Every exemption from a limit today. See the module doc.
-pub static EXEMPTIONS: [Exemption; 63] = [
+pub static EXEMPTIONS: [Exemption; 62] = [
     // P28: the limit audit.
     Exemption {
         id: "P28-02",
@@ -482,15 +482,6 @@ pub static EXEMPTIONS: [Exemption; 63] = [
         closes_in: "- (also a rapid and a retract: no cut)",
     },
     // M: the findings that P28 missed.
-    Exemption {
-        id: "M1",
-        what: "the chip band gate",
-        limit: &[LimitId::ChipMax, LimitId::ChipMin],
-        who: Who::Reader("samples below 95 % of the steady feed"),
-        class: NR,
-        where_: &["src/tool_load/chipload.rs"],
-        closes_in: "P29-6",
-    },
     Exemption {
         id: "M2",
         what: "the gates against the modulator",

@@ -5,7 +5,7 @@
 //! the op dressup `feed_max_rate` caps every modulated move, but the chip
 //! gate steady-state filter compared each sample feed with 0.95 x the
 //! UNCAPPED op `feed_rate`. On an op with `feed_max_rate < 0.95 x feed_rate`
-//! no sample passed, and the gate returned `SteadyStateSamplesNotPresent`.
+//! no sample passed, and the gate abstained (a reason P29-6 6b deleted).
 //! The Suggest power figure also read the uncapped op feed.
 //!
 //! Claims:
@@ -14,8 +14,11 @@
 //!   chip. Two arms: a hand-built trace at the cap, and a session pocket
 //!   simulated twice (the second run reads the modulated, capped IR, as a
 //!   GUI re-simulation does).
-//! - (b) An all-ramp op at its ramp feed stays unmodeled
-//!   (`SteadyStateSamplesNotPresent`).
+//! - (b) P29-6 6b (was: an all-ramp op stays `SteadyStateSamplesNotPresent`):
+//!   the gate grades the chip of every removing sample at any feed, so an
+//!   all-ramp op is judged on all its samples. The commanded stage states the
+//!   steady feed (the cap), not the sample feed. The 95 % filter and the
+//!   reason are deleted.
 //! - (c) The Suggest power figure of a capped op is the figure at the cap,
 //!   and it names the op feed cap (`shipped_power_json` `feed_limit`).
 //! - (d) The modulator cap and the gate reference come from one function,
@@ -26,6 +29,7 @@
 #![expect(
     clippy::expect_used,
     clippy::indexing_slicing,
+    clippy::panic,
     reason = "test code: a panic is how a test reports a failure"
 )]
 
@@ -54,7 +58,7 @@ use rs_cam_core::stock::simulation_cut::{
     CutKinematics, Engagement, SimulationCutSample, SimulationCutTrace,
 };
 use rs_cam_core::tool::{FlatEndmill, ToolDefinition};
-use rs_cam_core::tool_load::verdict::{ChiploadVerdict, UnmodeledReason};
+use rs_cam_core::tool_load::verdict::ChiploadVerdict;
 use rs_cam_core::tool_load::{GateEnv, ToleranceBands, ToolpathLoadContext, chipload};
 
 /// The wanaka "Back bulk rough 18 mm" op feed and cap
@@ -65,14 +69,15 @@ const RAMP_FEED: f64 = 1000.0;
 const RPM: u32 = 18_000;
 const FLUTES: u32 = 2;
 const TP: ToolpathId = ToolpathId::from_raw(0);
-/// The chip gate's steady-state fraction (`chipload.rs`,
-/// `STEADY_STATE_FEED_FRACTION`, crate-private).
+/// The fraction of the deleted 95 % feed filter (P20e record; P29-6 6b
+/// deleted the filter). The arms keep it to show which samples it dropped.
 const STEADY_FRACTION: f64 = 0.95;
 
 /// Non-vacuity of arm (a): a sample at the cap is below 0.95 x the stated
 /// op feed, so the old reference rejects every one.
 const _CAP_BELOW_OLD_REFERENCE: () = assert!(CAP < STEADY_FRACTION * OP_FEED);
-/// Arm (b): the ramp feed is below 0.95 x the steady feed (the cap).
+/// Arm (b): the ramp feed is below 0.95 x the steady feed (the cap), so the
+/// deleted filter dropped every sample.
 const _RAMP_IS_TRANSIENT: () = assert!(RAMP_FEED < STEADY_FRACTION * CAP);
 
 /// A machine whose cutting ceiling is above `OP_FEED`, so the op cap is
@@ -159,13 +164,9 @@ fn chip_verdict(trace: &SimulationCutTrace, feed_max_rate: Option<f64>) -> Chipl
     chipload::evaluate(&ctx, &env)
 }
 
-fn is_steady_abstain(v: &ChiploadVerdict) -> bool {
-    matches!(
-        v,
-        ChiploadVerdict::Unmodeled {
-            reason: UnmodeledReason::SteadyStateSamplesNotPresent
-        }
-    )
+/// The gate abstained: it judged no sample.
+fn is_abstain(v: &ChiploadVerdict) -> bool {
+    matches!(v, ChiploadVerdict::Unmodeled { .. })
 }
 
 #[test]
@@ -178,20 +179,68 @@ fn a_capped_op_grades_its_chip_on_a_hand_built_trace_a() {
 
     let verdict = chip_verdict(&trace_at(CAP), Some(CAP));
     assert!(
-        !is_steady_abstain(&verdict),
+        !is_abstain(&verdict),
         "a capped op must grade its chip, not abstain: {verdict:?}"
     );
 }
 
 #[test]
-fn an_all_ramp_op_stays_unmodeled_b() {
-    // Every in-cut sample runs at the ramp feed, below 0.95 x the steady
+fn an_all_ramp_op_is_judged_on_every_removing_sample_b() {
+    // Every removing sample runs at the ramp feed, below 0.95 x the steady
     // feed (the cap): `RAMP_IS_TRANSIENT`.
-    let verdict = chip_verdict(&trace_at(RAMP_FEED), Some(CAP));
-    assert!(
-        is_steady_abstain(&verdict),
-        "an all-ramp op must stay SteadyStateSamplesNotPresent: {verdict:?}"
+    let trace = trace_at(RAMP_FEED);
+    let removing = trace
+        .samples
+        .iter()
+        .filter(|s| s.removes_material())
+        .count();
+    assert_eq!(removing, 12, "non-vacuity: every sample removes material");
+    let tool = gate_tool();
+    let material = hardwood();
+    let machine = open_machine();
+    let ctx = ToolpathLoadContext::of_operation(
+        TP,
+        &OperationConfig::new_default(OperationType::Pocket),
+        &tool,
+        &material,
+        machine.op_steady_feed(OP_FEED, Some(CAP)),
+        None,
+        rs_cam_core::limits::CapTable::empty(),
+        None,
     );
+    let report = rs_cam_core::tool_load::evaluate_toolpath(
+        &ctx,
+        Some(&trace),
+        Some(&machine),
+        &ToleranceBands::default(),
+    );
+    let contributing = match &report.chipload {
+        ChiploadVerdict::Within {
+            approach_to_max, ..
+        } => approach_to_max.evidence.population.map(|p| p.contributing),
+        ChiploadVerdict::Exceeds { triggering, .. } => {
+            triggering.evidence.population.map(|p| p.contributing)
+        }
+        ChiploadVerdict::Unmodeled { reason } => {
+            panic!("an all-ramp op must be judged, not abstain: {reason:?}")
+        }
+    };
+    assert_eq!(
+        contributing,
+        Some(removing),
+        "the gate grades every removing sample: {:?}",
+        report.chipload
+    );
+    // The commanded stage states the steady feed (the G-code F word under
+    // the cap), not the sample feed.
+    let commanded = &report
+        .feed_explanation
+        .as_ref()
+        .expect("a judged verdict carries its stages")
+        .commanded;
+    assert_eq!(commanded.feed_rate_mm_min, CAP);
+    assert_eq!(commanded.feed_limit, SteadyFeedLimit::OpFeedCap);
+    assert_eq!(commanded.op_feed_mm_min, OP_FEED);
 }
 
 fn end_mill_6mm() -> ToolConfig {
@@ -359,7 +408,7 @@ fn a_capped_session_op_grades_its_chip_and_the_cap_is_one_function_a_d() {
     let report = session.tool_load_report();
     let verdict = &report.per_toolpath[0].chipload;
     assert!(
-        !is_steady_abstain(verdict),
+        !is_abstain(verdict),
         "the capped pocket must grade its chip: {verdict:?}"
     );
 }

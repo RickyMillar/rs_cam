@@ -299,7 +299,7 @@ fn a_gate_row_and_its_check_agree() {
 
 #[test]
 fn every_gate_refusal_has_a_state() {
-    let cases: [(UnmodeledReason, CheckState); 11] = [
+    let cases: [(UnmodeledReason, CheckState); 10] = [
         (
             UnmodeledReason::SimulationRequired,
             CheckState::NoNumber(NoNumberReason::NoSimulation),
@@ -315,10 +315,6 @@ fn every_gate_refusal_has_a_state() {
         (
             UnmodeledReason::NoVendorData,
             CheckState::NoNumber(NoNumberReason::NoVendorRow),
-        ),
-        (
-            UnmodeledReason::SteadyStateSamplesNotPresent,
-            CheckState::NoNumber(NoNumberReason::NoSteadySample),
         ),
         (
             UnmodeledReason::MaterialUnvalidated,

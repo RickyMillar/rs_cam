@@ -70,16 +70,6 @@ struct Allowed {
 const ALLOWED: &[Allowed] = &[
     Allowed {
         file: "chipload.rs",
-        func: "steady_state_samples_for_toolpath",
-        text: "s.feed_rate_mm_min >= feed_threshold",
-        count: 1,
-        reason: "the steady-state population filter: it compares the commanded feed of \
-                 the sample with a fraction of the op's commanded feed to drop entry and \
-                 ramp moves. It selects samples; it grades no feed. A modulated feed \
-                 here would drop moves that the modulator fed down.",
-    },
-    Allowed {
-        file: "chipload.rs",
         func: "evaluate_inner",
         text: "s.feed_rate_mm_min.max(1e-9)",
         count: 1,

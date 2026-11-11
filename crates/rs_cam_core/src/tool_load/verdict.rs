@@ -186,13 +186,6 @@ pub enum UnmodeledReason {
     /// No vendor LUT row matches the (tool family, material family) tuple
     /// for this toolpath. The chipload bounds are unknown.
     NoVendorData,
-    /// The simulation trace exists, but no samples for this toolpath are
-    /// running at the operation's commanded feed rate (steady-state
-    /// cutting). Typically a pure-plunge drill cycle, or a toolpath where
-    /// every sample is a ramp/entry move at a different feed. The
-    /// chipload-vs-LUT comparison is calibrated for steady-state cutting,
-    /// so we refuse rather than flag transient feeds against it.
-    SteadyStateSamplesNotPresent,
     /// The material has no measured force line (`Material::force_line`
     /// refuses; ruling B6). `Custom` is one case. We refuse to compute a
     /// force-derived envelope from a guessed constant.
@@ -241,11 +234,6 @@ impl UnmodeledReason {
                 "the cut trace holds no arc engagement — re-run the simulation".to_owned()
             }
             Self::NoVendorData => "no vendor LUT row for this tool/material combination".to_owned(),
-            Self::SteadyStateSamplesNotPresent => {
-                "no steady-state cutting samples — the toolpath runs entirely on transient \
-                 (plunge/ramp) feeds"
-                    .to_owned()
-            }
             Self::MaterialUnvalidated => {
                 "the material has no measured force line (ruling B6)".to_owned()
             }
@@ -1397,7 +1385,7 @@ impl CriterionStatus<'_> {
 /// indistinguishable on every surface from a measured clean cut. The
 /// verdict was *not* wrong; it was **vacuous**, and nothing said so.
 /// Every predicate that can shrink a gate's population (the phantom /
-/// configured-entry split, the steady-state feed filter, the fresh
+/// configured-entry split, the fresh
 /// material floor, the sample-validity predicate, a hole set with no
 /// depth) can drive `contributing` to zero while the gate still returns
 /// a healthy-looking `Within`.

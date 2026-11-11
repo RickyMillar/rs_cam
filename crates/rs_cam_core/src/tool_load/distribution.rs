@@ -15,7 +15,7 @@
 //!
 //! | Metric | Filters and per-sample value |
 //! |---|---|
-//! | Chipload | [`super::chipload::steady_state_samples_for_toolpath`] (cutting, `radial_woc_fraction >= 0.02`, 95 % of the steady feed, P20e), the vestigial `effective_chip_thickness_mm` predicate, [`super::display::peak_chip_per_tooth`] (P11b2: the peak chip), [`super::locality::is_steady_state_for_gate`] |
+//! | Chipload | [`super::chipload::removing_samples_for_toolpath`] (every sample that removes material, at any feed, P29-6 6b), the validity test [`super::chipload::has_chip_number`] (a chip model, not air class), [`super::display::peak_chip_per_tooth`] (P11b2: the peak chip), [`super::locality::is_steady_state_for_gate`] |
 //! | Power | [`super::power::sample_power_kw`] at [`super::effective_feed_for_sample`], then [`super::locality::is_steady_state_for_gate`] |
 //! | Deflection | [`super::deflection::sample_tip_deflection_mm`] at [`super::deflection::deflection_feed_per_tooth_mm`], then [`super::locality::is_steady_state_for_gate`] |
 //! | Depth of cut | the depth gate's `is_depth_sample`, then [`super::locality::is_steady_state_for_gate`]; the value is `axial_engagement_mm` |
@@ -754,24 +754,18 @@ fn collect(
 }
 
 /// The chipload gate's trip set (`burn_samples` in `chipload.rs`): the
-/// steady-state feed set, less the samples with no chip model, the
-/// samples with no `rpm × flutes` divisor, and the transit samples.
+/// removing samples, less the samples with no chip model, the samples with
+/// no `rpm × flutes` divisor, and the transit samples.
 fn chipload_population(
     trace: &SimulationCutTrace,
     ctx: &ToolpathLoadContext<'_>,
     lookup: Option<&SpanLookup<'_>>,
 ) -> Vec<PopulationSample> {
-    let steady = super::chipload::steady_state_samples_for_toolpath(
-        trace,
-        ctx.toolpath_id(),
-        ctx.steady_feed(),
-    );
-    steady
-        .samples
+    super::chipload::removing_samples_for_toolpath(trace, ctx.toolpath_id())
         .into_iter()
-        // The gate's vestigial sample-validity predicate: a sample with no
-        // chip model does not reach its comparison.
-        .filter(|(_, s)| s.effective_chip_thickness_mm.is_some())
+        // The gate's sample-validity predicate: a sample with no chip model
+        // or of air class does not reach its comparison.
+        .filter(|(_, s)| super::chipload::has_chip_number(s))
         .filter_map(|(i, s)| {
             // P11b2: the gate's measure, the peak chip (a sample with no
             // divisor or, on a thinning cut, no engagement is not in the

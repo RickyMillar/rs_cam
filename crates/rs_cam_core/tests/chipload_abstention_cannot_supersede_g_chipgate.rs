@@ -136,7 +136,6 @@ fn every_chipload_abstention_is_published_non_current() {
     let reasons = [
         UnmodeledReason::NoVendorData,
         UnmodeledReason::SimulationRequired,
-        UnmodeledReason::SteadyStateSamplesNotPresent,
         UnmodeledReason::AllSamplesAirCutOrRapid,
         UnmodeledReason::StaleSimulation,
         UnmodeledReason::MaterialUnvalidated,
@@ -164,7 +163,7 @@ fn every_chipload_abstention_is_published_non_current() {
         );
     }
     // Non-vacuity: the loop must have actually inspected rows.
-    assert_eq!(seen, 7, "every reason must produce a chipload row");
+    assert_eq!(seen, 6, "every reason must produce a chipload row");
 }
 
 /// The reducer half: an abstention sitting next to the breakage caution
