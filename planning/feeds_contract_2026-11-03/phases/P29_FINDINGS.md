@@ -247,3 +247,10 @@ implementer, one step at a time.
 - **R6: the operator asked what the question is.** Explained in the reply; it waits for P29-8.
 
 The operator has not yet said "approved" for the design and the order as a whole.
+- **R6: ruled (2026-11-11).** "arent they based on rules of thumb from industry? I would have
+  thought they differ per tool. But yeah.. it should be one bit of code shared for the
+  different tool paths. the 2d op one sounds most dialed. send a research agent to look for
+  good default numbers, but consolidate". So: one entry rule set in one place for every
+  emitter; defaults per tool category from printed sources; where no source exists the 2D
+  values (3 deg, 1 mm per turn) stand. Research: `research/entry_rules_2026-11-11.md`
+  (agent `entry-research`, running at the time of writing).
