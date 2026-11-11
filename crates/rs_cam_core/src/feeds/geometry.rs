@@ -57,6 +57,7 @@ impl RadialThinning {
     /// The rule of an operation's feeds style (family and pass role).
     #[must_use]
     pub fn of(family: crate::feeds::OperationFamily, role: crate::feeds::PassRole) -> Self {
+        // EXEMPT(P28-18, F-ThinsChip)
         if family == crate::feeds::OperationFamily::Drill {
             Self::DrillCycle
         } else if role == crate::feeds::PassRole::Finish {
@@ -71,6 +72,7 @@ impl RadialThinning {
     /// this never returns [`Self::DrillCycle`].
     #[must_use]
     pub fn of_lut_role(role: crate::feeds::vendor_lut::LutPassRole) -> Self {
+        // EXEMPT(P28-18, F-ThinsChip)
         match role {
             crate::feeds::vendor_lut::LutPassRole::Finish => Self::FinishPass,
             crate::feeds::vendor_lut::LutPassRole::Roughing

@@ -2079,6 +2079,7 @@ fn modulate_annotated_against_trace(
     // dangerously over-feed. See
     // planning/ADAPTIVE_CLEARING_ALGO_REVIEW_2026-06-12.md §"Stage 4".
     // C2: the `planner_uniform_engagement` capability states the gate.
+    // EXEMPT(M10)
     let is_contour_spiral = operation.capabilities().planner_uniform_engagement;
     let planner_uniform_woc: Option<f64> = if is_contour_spiral {
         operation.as_params().stepover().and_then(|s| {
@@ -2268,6 +2269,7 @@ fn modulate_annotated_against_trace(
         if let Some(lift) = lift {
             min_into(any_lift.get_mut(sample.move_index), lift);
         }
+        // EXEMPT(M2, P28-22, P28-23)
         if crate::tool_load::locality::is_phantom_transit(sample, span_lookup.as_ref()) {
             continue;
         }
@@ -2313,6 +2315,7 @@ fn modulate_annotated_against_trace(
     // role (the pair `tool_load::depth::evaluate` reads off the op's spec).
     let depth_cap_rule = {
         let (family, role) = operation.feeds_style();
+        // EXEMPT(P28-34)
         machine_profile.rigidity.depth_cap_rule(family, role)
     };
     // P16 item 7: set when a material in scope has no force line; the move
@@ -2341,6 +2344,7 @@ fn modulate_annotated_against_trace(
                 line,
                 cutter,
                 compliance_mm_per_n: compliance,
+                // EXEMPT(P28-16)
                 max_tip_deflection_mm: crate::tool_load::deflection::EXCEEDS_BOUND_MM,
             })
         });

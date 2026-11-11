@@ -115,6 +115,7 @@ pub(super) fn check_plunge_entry_stability(
     let mut warnings = Vec::new();
     if let Some(current) = operation.depth_per_pass()
         && matches!(pass_role, PassRole::Roughing)
+        // EXEMPT(P28-28)
         && operation.op_type().spec().feeds_family == FeedsOperationFamily::Adaptive
         && tool.diameter.is_finite()
         && tool.diameter > 0.0

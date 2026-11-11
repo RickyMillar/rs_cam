@@ -299,6 +299,7 @@ pub fn chip_target_for_toolpath(
                 .filter(|s| {
                     s.toolpath_id == toolpath_id
                         && s.is_cutting
+                        // EXEMPT(P28-21, M8)
                         && locality::is_steady_state_for_gate(s, None)
                 })
                 .map(|s| s.axial_doc_mm.max(0.0))

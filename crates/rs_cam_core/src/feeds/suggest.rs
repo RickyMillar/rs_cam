@@ -750,6 +750,7 @@ pub fn suggest_for_operation(
 #[must_use]
 pub fn has_computed_width(operation: &OperationConfig) -> bool {
     let (family, role) = operation.feeds_style();
+    // EXEMPT(P28-05, P28-06, P28-07)
     family == crate::feeds::OperationFamily::Pocket
         && role == crate::feeds::PassRole::Roughing
         && matches!(

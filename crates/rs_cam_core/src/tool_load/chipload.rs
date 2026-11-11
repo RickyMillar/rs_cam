@@ -227,6 +227,7 @@ pub(crate) fn steady_state_samples_for_toolpath<'a>(
     toolpath_id: ToolpathId,
     steady_feed: crate::machine::SteadyFeedMmMin,
 ) -> SteadyStateSamples<'a> {
+    // EXEMPT(M1)
     let feed_threshold = STEADY_STATE_FEED_FRACTION * steady_feed.mm_min();
     let mut any_in_cut = false;
     let samples = trace
@@ -386,6 +387,7 @@ fn evaluate_inner(
     // plunge-only. Drill cycles have no continuous chipload to
     // compare against an LUT envelope; the right answer is "doesn't
     // apply" not "samples not in steady state" or "no vendor data".
+    // EXEMPT(P28-20)
     if operation_kind.is_drill_kinematics() {
         return ChiploadVerdict::Unmodeled {
             reason: UnmodeledReason::NotApplicableForOp(
@@ -455,6 +457,7 @@ fn evaluate_inner(
     let span_lookup = spans.map(SpanLookup::new);
     let lookup_axial_doc_mm = steady_samples
         .iter()
+        // EXEMPT(P28-21, P28-22, P28-23)
         .filter(|(_, s)| super::locality::is_steady_state_for_gate(s, span_lookup.as_ref()))
         .map(|(_, s)| s.axial_doc_mm.max(0.0))
         .fold(0.0_f64, f64::max);
@@ -747,9 +750,11 @@ fn evaluate_inner(
         // operator). Configured Entry samples (real plunge / ramp /
         // helix transients) still route to the entry_spikes advisory.
         // Both bypass the steady-state trip set.
+        // EXEMPT(P28-22, P28-23)
         if super::locality::is_phantom_transit(s, span_lookup.as_ref()) {
             continue;
         }
+        // EXEMPT(P28-21, M3)
         if super::locality::is_configured_entry(s, span_lookup.as_ref()) {
             // Checkpoint K (b1) — the advisory sides read the same
             // boundary contract as the trip sides, at zero tolerance:

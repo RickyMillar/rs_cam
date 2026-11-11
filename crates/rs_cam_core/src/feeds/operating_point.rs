@@ -259,15 +259,16 @@ fn power_at_point(
 ) -> Result<PowerFigure, PowerUnmodeled> {
     // P16 (review D7): no depth before the simulation, so no power figure.
     // A material with no force line keeps its `MaterialUnvalidated` reason.
+    // EXEMPT(P28-11)
     if material.force_line().is_ok() && operation.cut_spec().axial.depth_after_simulation() {
         return Err(PowerUnmodeled::DepthAfterSimulation);
     }
     let point =
         resolve_operating_point(operation, tool, material, Some(machine), fallback, steady)?;
 
-    // P20d: a drill cycle cuts the axial circle, one case.
-    if let Some(axial) = point.axial {
-        let terms = PowerTerms::of(axial);
+    // P20d: a drill cycle cuts the axial circle, one case. P29-3: the terms
+    // of the one load of the planned drill cut (`resolve_axial_point`).
+    if let Some(terms) = point.axial {
         return Ok(PowerFigure {
             required_kw: terms.kw_at_feed(point.feed_mm_min),
             available_kw: point.available_kw,
@@ -352,6 +353,7 @@ pub fn force_at_operating_point(
     // P16 (item 2b): the guard of `power_at_operating_point`. No depth
     // before the simulation, so no force at D x D. A material with no force
     // line keeps its `MaterialUnvalidated` reason.
+    // EXEMPT(P28-11)
     if material.force_line().is_ok() && operation.cut_spec().axial.depth_after_simulation() {
         return Err(PowerUnmodeled::DepthAfterSimulation);
     }
@@ -406,6 +408,7 @@ pub fn force_at_shipped_point(
     recommended: &crate::feeds::FeedsResult,
     feed_max_rate: Option<f64>,
 ) -> Result<ForceAtPoint, PowerUnmodeled> {
+    // EXEMPT(P28-11)
     if material.force_line().is_ok() && operation.cut_spec().axial.depth_after_simulation() {
         return Err(PowerUnmodeled::DepthAfterSimulation);
     }
@@ -478,9 +481,9 @@ struct ResolvedPoint {
     helix_deg: f64,
     /// The planning flute count, at least 1 (`feeds::cut_load`, P29-1).
     flutes: u32,
-    /// P20d: the power inputs of a straight plunge (`Radial::Axial`);
-    /// `None` for a side cut.
-    axial: Option<crate::feeds::engagement::PowerModelInputs>,
+    /// P20d: the power terms of a straight plunge (`Radial::Axial`), from
+    /// `CutLoad::of_cut` (P29-3); `None` for a side cut.
+    axial: Option<PowerTerms>,
 }
 
 /// Resolve the operating point. With `machine` it also checks the ceiling,
@@ -639,22 +642,42 @@ fn resolve_axial_point(
     // P22-0c-6b: the cutting cap and the core of the body (ruling 4 (a));
     // a tool that does not cut at its centre plunges on the ring (D6).
     let cut_body = crate::feeds::CutBody::of_tool(tool);
-    let axial = crate::feeds::engagement::PowerModelInputs::axial_plunge(
+    // P29-3: the planned drill cut and its one load.
+    let cut = crate::limits::Cut::planned_drill(
         geom,
         tool.diameter,
         cut_body.core_diameter_mm,
-        line,
-        rpm,
-        flute_count,
-    )
-    .map_err(|refusal| match refusal {
-        crate::feeds::section::AxialSectionRefusal::TipShapeNotModelled => {
-            PowerUnmodeled::AxialTipNotModelled
+        crate::feeds::cut_load::OperatingPoint::planned(
+            feed_mm_min,
+            rpm,
+            tool.flute_count_planning().max(1),
+        ),
+    );
+    let area_mm2 = match cut.engagement {
+        crate::limits::CutEngagement::AxialPlunge {
+            diameter_mm,
+            core_diameter_mm,
+        } => crate::feeds::section::EngagedSection::AxialCircle {
+            diameter_mm,
+            core_diameter_mm,
         }
-    })?;
-    if !usable(axial.cross_section_mm2()) {
+        .area_mm2(),
+        crate::limits::CutEngagement::Side(_) | crate::limits::CutEngagement::NoModel(_) => {
+            return Err(PowerUnmodeled::AxialTipNotModelled);
+        }
+    };
+    if !usable(area_mm2) {
         return Err(PowerUnmodeled::NoEngagementDiameter);
     }
+    let axial = crate::feeds::cut_load::CutLoad::of_cut(&cut, None, Some(line))
+        .and_then(|load| load.power_terms())
+        .map_err(|refusal| match refusal {
+            crate::feeds::cut_load::NoNumber::NoForceLine => PowerUnmodeled::MaterialUnvalidated,
+            crate::feeds::cut_load::NoNumber::NoFeed => PowerUnmodeled::NoFeed,
+            crate::feeds::cut_load::NoNumber::NoSpeed => PowerUnmodeled::NoSpindleSpeed,
+            crate::feeds::cut_load::NoNumber::NoToolBody
+            | crate::feeds::cut_load::NoNumber::NotModelled => PowerUnmodeled::AxialTipNotModelled,
+        })?;
     let ap_mm = feed_mm_min / rpm;
     Ok(ResolvedPoint {
         // The axial chip: each flute advances `feed / (rpm Z)` per turn.

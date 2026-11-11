@@ -1167,6 +1167,7 @@ impl OperationConfig {
                 radial: Radial::Width(set(c.stepover)),
                 axial: Axial::PerPass(set(c.depth_per_pass)),
                 total: TotalDepth::Known(mm(c.depth)),
+                // EXEMPT(P28-12, M11)
                 first_pass: FirstPass::NotSlot,
             },
             OperationConfig::Pocket(c) => CutSpec {
@@ -1190,6 +1191,7 @@ impl OperationConfig {
                 first_pass: if c.slot_clearing {
                     FirstPass::Slot
                 } else {
+                    // EXEMPT(P28-12)
                     FirstPass::NotSlot
                 },
             },
@@ -1199,12 +1201,14 @@ impl OperationConfig {
                     max: c.max_depth.map(mm),
                 },
                 total: TotalDepth::None("the V depth follows the outline"),
+                // EXEMPT(M11)
                 first_pass: FirstPass::NotSlot,
             },
             OperationConfig::Inlay(c) => CutSpec {
                 radial: Radial::Groove,
                 axial: Axial::OnePass(c.pocket_depth.map(mm)),
                 total: known_or_unset(c.pocket_depth),
+                // EXEMPT(M11)
                 first_pass: FirstPass::NotSlot,
             },
             OperationConfig::InlayPlug(c) => CutSpec {
@@ -1258,6 +1262,7 @@ impl OperationConfig {
                 radial: Radial::Width(set(c.stepover)),
                 axial: Axial::PerPass(set(c.depth_per_pass)),
                 total: TotalDepth::FromHeights,
+                // EXEMPT(P28-12, M11)
                 first_pass: FirstPass::NotSlot,
             },
             OperationConfig::Waterline(c) => CutSpec {
@@ -1363,6 +1368,7 @@ impl OperationConfig {
                     PlannerWidth::PassCeiling
                 }
                 super::operation_configs::ClearingStrategy::ContourParallel => {
+                    // EXEMPT(P28-13, P28-14)
                     PlannerWidth::CapMult(crate::adaptive3d::effective_trochoid_cap_mult(
                         c.trochoid_cap_mult,
                     ))

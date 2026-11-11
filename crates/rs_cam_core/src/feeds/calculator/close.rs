@@ -355,8 +355,9 @@ pub(super) fn result(s: CalcState, entry: Entry) -> FeedsResult {
     // a plunge of a tip with no axial section. A drill cycle reads the axial
     // circle (advisory: Step 6 did not act on it).
     let line = input.power_force_line();
+    // EXEMPT(P28-10)
     let (power_case, actual_power, section_area) = if input.is_axial_plunge() {
-        let terms = line.and_then(|l| crate::feeds::axial_power_terms(input, l, speed.rpm));
+        let kw = line.and_then(|l| crate::feeds::axial_power_kw(input, l, speed.rpm, feed.feed));
         let area = crate::feeds::section::EngagedSection::axial_plunge(
             input.tool_geometry,
             input.tool_diameter,
@@ -364,11 +365,7 @@ pub(super) fn result(s: CalcState, entry: Entry) -> FeedsResult {
         )
         .ok()
         .map(|s| s.area_mm2());
-        (
-            engagement::PowerCase::AxialPlunge,
-            terms.map(|t| t.kw_at_feed(feed.feed)),
-            area,
-        )
+        (engagement::PowerCase::AxialPlunge, kw, area)
     } else {
         let section = engagement::Engagement::from_cut(
             crate::feeds::envelope::CutPoint {

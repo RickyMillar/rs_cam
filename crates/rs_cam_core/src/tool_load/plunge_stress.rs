@@ -33,6 +33,7 @@ pub fn effective_tip_diameter_mm(geometry: ToolGeometryHint, diameter_mm: f64) -
         ToolGeometryHint::TaperedBall { tip_radius, .. } => {
             Some((tip_radius * 2.0).max(MIN_TAPERED_TIP_DIAMETER_MM))
         }
+        // EXEMPT(P28-27)
         ToolGeometryHint::Flat | ToolGeometryHint::Bull { .. } | ToolGeometryHint::VBit { .. } => {
             None
         }

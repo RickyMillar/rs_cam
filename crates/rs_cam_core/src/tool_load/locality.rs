@@ -153,6 +153,7 @@ pub fn classify_sample_locality(
 /// the predicate returns `true` — conservatively treating every sample
 /// as steady-state preserves the pre-D7 trip behaviour for legacy
 /// callers rather than silently dropping samples from the gate.
+// EXEMPT(P28-21, Q10-LinkingInEntrySpan, Q10-EntryPlungeInNoSpan)
 pub fn is_steady_state_for_gate(
     sample: &SimulationCutSample,
     span_lookup: Option<&SpanLookup<'_>>,
@@ -191,6 +192,7 @@ pub fn is_steady_state_for_gate(
 /// a real Entry transient from the spike report than let a phantom
 /// reading slip through. Callers that need the precise Entry/phantom
 /// split must thread spans into the gate.
+// EXEMPT(P28-22, P28-23, M8)
 pub fn is_phantom_transit(
     sample: &SimulationCutSample,
     span_lookup: Option<&SpanLookup<'_>>,
@@ -235,6 +237,7 @@ pub fn is_phantom_transit(
 /// in_transit sample to "drop", never to entry_spike. Surface fewer
 /// false-positive advisories at the cost of a true-positive Entry
 /// spike going unreported. Most production traces have spans plumbed.
+// EXEMPT(P28-21)
 pub fn is_configured_entry(
     sample: &SimulationCutSample,
     span_lookup: Option<&SpanLookup<'_>>,

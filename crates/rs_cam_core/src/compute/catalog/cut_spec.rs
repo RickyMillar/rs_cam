@@ -164,6 +164,7 @@ impl Axial {
     #[must_use]
     pub const fn depth_after_simulation(&self) -> bool {
         match self {
+            // EXEMPT(P28-11)
             Self::SurfaceOffset(_) => true,
             Self::PerPass(_)
             | Self::ZStep(_)
@@ -340,6 +341,7 @@ impl CutSpec {
                     None => None,
                 }
             }
+            // EXEMPT(P28-32)
             Axial::Peck(_)
             | Axial::HelixPitch(_)
             | Axial::ChamferWidth(_)

@@ -253,11 +253,13 @@ pub fn gate_sample_power(
     predicted_feeds: &crate::machine::kinematics::PredictedFeedMap,
     span_lookup: Option<&SpanLookup<'_>>,
 ) -> Option<GateSamplePower> {
+    // EXEMPT(P28-10)
     if ctx.operation_kind.is_drill_kinematics()
         || s.toolpath_id != ctx.toolpath_id
         || !s.is_cutting
         || s.radial_engagement_class() == RadialEngagementClass::Air
         || s.arc_engagement_radians.is_none()
+        // EXEMPT(P28-21, P28-22, P28-23)
         || !super::locality::is_steady_state_for_gate(s, span_lookup)
     {
         return None;
@@ -295,6 +297,7 @@ pub fn evaluate(ctx: &super::ToolpathLoadContext<'_>, env: &super::GateEnv<'_>) 
     // the op is geometrically plunge-only. Drilling has no continuous
     // engagement to drive a power-vs-RPM curve; the right answer is
     // "doesn't apply" not "arc engagement not captured".
+    // EXEMPT(P28-10)
     if operation_kind.is_drill_kinematics() {
         tracing::debug!(
             reason = "NotApplicableForOp",
@@ -415,9 +418,11 @@ pub fn evaluate(ctx: &super::ToolpathLoadContext<'_>, env: &super::GateEnv<'_>) 
         // power is phantom — drop them entirely. Configured Entry
         // samples (real plunge / ramp / helix transients) still route
         // to the entry_spike advisory.
+        // EXEMPT(P28-22, P28-23)
         if super::locality::is_phantom_transit(s, span_lookup.as_ref()) {
             continue;
         }
+        // EXEMPT(P28-21, M3)
         if super::locality::is_configured_entry(s, span_lookup.as_ref()) {
             if p_kw > entry_peak_power {
                 entry_peak_power = p_kw;

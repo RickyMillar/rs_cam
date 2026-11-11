@@ -59,6 +59,7 @@ pub fn of_criterion(status: &CriterionStatus<'_>) -> Check {
         (Some(_) | None, _) => None,
     };
     let state = match status.state {
+        // EXEMPT(S-NoBound)
         LoadState::Within if bound.is_none() => CheckState::NoNumber(NoNumberReason::NoBound),
         LoadState::Within => CheckState::Within,
         LoadState::Exceeds => CheckState::Exceeds,
@@ -117,6 +118,7 @@ pub fn of_envelope(envelope: &SafeEnvelope, p: CutPoint) -> Vec<Check> {
             (None, Edge::Unmodelled { .. }) => {
                 (None, CheckState::NoNumber(NoNumberReason::NotModelled))
             }
+            // EXEMPT(S-NotJudgedHere)
             (
                 None,
                 Edge::ApCeiling { .. }

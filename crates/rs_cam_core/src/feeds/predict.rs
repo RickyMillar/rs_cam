@@ -310,6 +310,7 @@ pub fn predict_peak_deflection_um(
     // Drill ops: Z-only kinematics, no continuous radial engagement —
     // the cantilever-deflection model doesn't apply. Mirrors the
     // `NotApplicableForOp` refusal in `tool_load::deflection::evaluate`.
+    // EXEMPT(P28-17)
     if feeds_family == FeedsOperationFamily::Drill || op_type.is_drill_kinematics() {
         tracing::debug!(reason = "drill_not_applicable", "predictor abstains");
         return Err(DeflectionUnmodeled::NotApplicableForOp(op_type));
@@ -520,6 +521,7 @@ pub fn predict_peak_deflection_um(
     // exhaustive: a 6th cutter shape fails to compile here rather than
     // inheriting a silence.
     let caveat = match tool.tool_type.cutter_kind() {
+        // EXEMPT(P28-33)
         CutterKind::VBit => Some(DeflectionCaveat::FluteReliefUnmodeled),
         CutterKind::Flat | CutterKind::Ball | CutterKind::Bull | CutterKind::TaperedBall => None,
     };
@@ -750,6 +752,7 @@ pub fn predict_move_count(
     // input geometry (curve length, polygon perimeter, hole count) sets the
     // move count, not the bbox x stepover envelope, so return 0 and the
     // caller skips the gate. An op with no model returns 0 the same way.
+    // EXEMPT(P28-09)
     let model = operation.capabilities().move_count;
     if matches!(
         model,

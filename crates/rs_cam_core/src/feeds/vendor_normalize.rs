@@ -81,6 +81,7 @@ pub fn lut_query_for(
     // D2: the op's registry row states its route (`Capabilities::lut_route`).
     match operation_kind.capabilities().lut_route {
         LutRoute::AsStated => Some((operation_family, pass_role)),
+        // EXEMPT(M6)
         LutRoute::AdaptiveAsPocket => {
             if operation_family == LutOperationFamily::Adaptive {
                 Some((LutOperationFamily::Pocket, pass_role))

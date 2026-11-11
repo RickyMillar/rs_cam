@@ -297,9 +297,13 @@ impl RigidityProfile {
     ) -> Option<DepthCapRule> {
         use crate::feeds::{OperationFamily, PassRole};
         match (family, pass_role) {
+            // EXEMPT(P28-04)
             (OperationFamily::Drill, _) => None,
+            // EXEMPT(P28-01, F-DepthRule)
             (OperationFamily::Adaptive, _) => Some(DepthCapRule::Factor(self.adaptive_doc_factor)),
+            // EXEMPT(P28-34)
             (_, PassRole::Roughing) => Some(DepthCapRule::ForceBudget(self.force_budget_n)),
+            // EXEMPT(P28-02, P28-03, S-NoBound)
             (_, PassRole::SemiFinish | PassRole::Finish) => None,
         }
     }

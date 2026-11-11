@@ -17,6 +17,10 @@
 //!   the 7 bound sources.
 //! - Claim 6: no code of `src/limits/` names an operation type, an
 //!   operation family, a pass role, `compute::` or `session::`.
+//! - Claim 7 (P29-3): `DepthRule::of_limit` reads the typed field
+//!   `Limit::depth_rule`. Each `Rigidity` limit holds it, and it agrees
+//!   with the printed law; no other limit holds it, and no limit JSON
+//!   names it.
 //!
 //! Inject check (2026-11-11): with `of_criterion` giving the ceiling as the
 //! bound of a low-side chip row, claim 2 goes red (bound 0.12 against
@@ -375,7 +379,11 @@ fn every_gate_refusal_has_a_state() {
 }
 
 fn pocket_envelope() -> SafeEnvelope {
-    let op = rs_cam_core::compute::fixture_values::fixture_op(OperationType::Pocket);
+    envelope_of(OperationType::Pocket)
+}
+
+fn envelope_of(op_type: OperationType) -> SafeEnvelope {
+    let op = rs_cam_core::compute::fixture_values::fixture_op(op_type);
     let tool = common::tools::endmill_tool_config(6.0);
     let machine = MachineProfile::default();
     let material = Material::default();
@@ -603,4 +611,44 @@ fn the_limits_folder_names_no_operation_type() {
              machine, never the operation type (P29 design 4.5)"
         );
     }
+}
+
+#[test]
+fn the_depth_rule_of_a_limit_is_a_typed_field() {
+    use rs_cam_core::feeds::envelope::RIGIDITY_FACTOR_LAW;
+    let (mut factor, mut budget) = (0, 0);
+    for op_type in [OperationType::Pocket, OperationType::Adaptive] {
+        let env = envelope_of(op_type);
+        for limit in &env.boundary {
+            let json = serde_json::to_value(limit).expect("a limit serialises");
+            assert!(
+                json.get("depth_rule").is_none(),
+                "the depth rule is not on the wire: {json}"
+            );
+            assert!(json.get("law").is_some(), "the scan reads the limit JSON");
+            if limit.kind != LimitKind::Rigidity {
+                assert_eq!(
+                    limit.depth_rule, None,
+                    "{:?} holds no depth rule",
+                    limit.kind
+                );
+                continue;
+            }
+            let rule = limit.depth_rule.expect("a Rigidity limit holds its rule");
+            assert_eq!(
+                rule == DepthRule::Factor,
+                limit.law == RIGIDITY_FACTOR_LAW,
+                "{op_type:?}: the field and the printed law agree"
+            );
+            assert_eq!(DepthRule::of_limit(limit), rule);
+            match rule {
+                DepthRule::Factor => factor += 1,
+                DepthRule::ForceBudget => budget += 1,
+            }
+        }
+    }
+    assert!(
+        factor >= 1 && budget >= 1,
+        "both rules are reached: {factor} Factor, {budget} force budget"
+    );
 }

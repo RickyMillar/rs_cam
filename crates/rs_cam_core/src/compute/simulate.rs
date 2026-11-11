@@ -1113,6 +1113,7 @@ pub fn envelope_placement(
     let machine = envelope.machine();
     for (i, s) in trace.samples.iter().enumerate() {
         if s.toolpath_id != ctx.toolpath_id
+            // EXEMPT(P28-21, P28-22, P28-23)
             || !crate::tool_load::locality::is_steady_state_for_gate(s, span_lookup.as_ref())
         {
             continue;

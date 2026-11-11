@@ -98,6 +98,7 @@ pub(super) fn step5_feed(input: &FeedsInput, speed: &Speed, chip: &Chip, cut: &C
     // A drill cycle has no radial cut (`Radial::Axial`): no lift, and Step
     // 9c sets its feed. P11b2: the one rule (`geometry::RadialThinning`)
     // that the post-sim gate and the modulator also read.
+    // EXEMPT(P28-18, P28-19, F-ThinsChip)
     let thinning = geometry::RadialThinning::of(input.operation, input.pass_role);
     // P23a: the lift is sized at the widest width that the planner holds at
     // the full feed (the pass ceiling `c D` of an adaptive plan), not at
@@ -229,6 +230,7 @@ pub(super) fn step7_feed_ceiling(s: &mut CalcState) {
     if s.feed.feed > machine_cut_ceiling
         && machine_cut_ceiling > 0.0
         && rpm > 0.0
+        // EXEMPT(P28-26)
         && input.operation != OperationFamily::Drill
     {
         let machine_min = machine.rpm_range().0;

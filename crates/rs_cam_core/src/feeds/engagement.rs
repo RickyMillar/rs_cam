@@ -239,6 +239,7 @@ impl Engagement {
             return None;
         }
         let arc = sample.arc_engagement_radians?;
+        // EXEMPT(M4)
         let ap_mm = sample.axial_doc_mm;
         let r = EngagedDiameter::of_tool(tool, ap_mm).mm() / 2.0;
         let psi = arc.clamp(0.0, std::f64::consts::PI);
@@ -770,7 +771,9 @@ impl PowerModelInputs {
     pub(crate) const fn section(&self) -> EngagedSection {
         self.section
     }
-    /// The chip section (mm²).
+    /// The chip section (mm²). P29-3: only the tests of `tool_load::power`
+    /// read it; the plunge door reads the section of its cut.
+    #[cfg(test)]
     pub(crate) fn cross_section_mm2(&self) -> f64 {
         self.section.area_mm2()
     }
@@ -874,6 +877,7 @@ impl PowerCases {
     #[must_use]
     pub fn of_cut(spec: &CutSpec, planner: PlannerWidth) -> Self {
         let slot =
+            // EXEMPT(M12)
             matches!(spec.first_pass, FirstPass::Slot) || matches!(spec.radial, Radial::Slot);
         Self { slot, planner }
     }

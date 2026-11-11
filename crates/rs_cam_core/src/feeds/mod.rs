@@ -2129,23 +2129,24 @@ pub(crate) fn cap_arm_demand_kw(
     Some((case, kw))
 }
 
-/// P20d: the power terms of a straight plunge (the axial circle of the
-/// tool at `rpm`). `None` when the tip has no axial section.
-fn axial_power_terms(
+/// P20d: the power (kW) of a straight plunge (the axial circle of the tool
+/// at `rpm` and `feed`). `None` when the tip has no axial section. P29-3:
+/// the planned drill cut through the one load (`cut_load::CutLoad::of_cut`).
+fn axial_power_kw(
     input: &FeedsInput,
     line: crate::material::force_line::ForceLine,
     rpm: f64,
-) -> Option<crate::tool_load::power::PowerTerms> {
-    engagement::PowerModelInputs::axial_plunge(
+    feed: f64,
+) -> Option<f64> {
+    let cut = crate::limits::Cut::planned_drill(
         input.tool_geometry,
         input.tool_diameter,
         input.cut_body.core_diameter_mm,
-        line,
-        rpm,
-        f64::from(input.flute_count),
-    )
-    .ok()
-    .map(crate::tool_load::power::PowerTerms::of)
+        cut_load::OperatingPoint::planned(feed, rpm, input.flute_count),
+    );
+    cut_load::CutLoad::of_cut(&cut, None, Some(line))
+        .and_then(|load| load.power_kw())
+        .ok()
 }
 
 /// Step 4: the depth cap as a share of the flute length.
@@ -2320,6 +2321,7 @@ struct DefaultProfile {
     ae_factor: f64,
 }
 
+// EXEMPT(P28-31)
 fn operation_default_profile(family: OperationFamily, role: PassRole) -> DefaultProfile {
     match (family, role) {
         // Adaptive: deep and narrow
@@ -2808,6 +2810,7 @@ fn default_engagement(
     // From reference calcs.rs: separate entries for Flat/Ball/TaperedBall.
     // F201: that file is not in the repo; every factor below is a marked
     // unsourced constant (`ADAPTIVE_*`).
+    // EXEMPT(P28-08)
     if input.operation == OperationFamily::Adaptive {
         let roughing = input.pass_role == PassRole::Roughing;
         let semi = input.pass_role == PassRole::SemiFinish;

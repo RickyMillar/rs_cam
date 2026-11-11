@@ -128,6 +128,7 @@ pub fn evaluate(ctx: &super::ToolpathLoadContext<'_>, env: &super::GateEnv<'_>) 
     // Same short-circuit as chipload / power / deflection. A drill
     // cycle is Z-only: there is no lateral engagement to measure and no
     // axial rule of thumb to measure it against.
+    // EXEMPT(P28-04)
     if operation_kind.is_drill_kinematics() {
         tracing::debug!(
             reason = "NotApplicableForOp",
@@ -169,6 +170,7 @@ pub fn evaluate(ctx: &super::ToolpathLoadContext<'_>, env: &super::GateEnv<'_>) 
     let mut offered: usize = 0;
     let mut contributing: usize = 0;
     let mut peak_mm = 0.0_f64;
+    // EXEMPT(M5)
     let mut peak_idx: Option<usize> = None;
 
     for (i, s) in trace.samples.iter().enumerate() {
@@ -185,6 +187,7 @@ pub fn evaluate(ctx: &super::ToolpathLoadContext<'_>, env: &super::GateEnv<'_>) 
         // NEIGHBOURING uncleared stock, so its `axial_engagement_mm` is
         // exactly the inflated reading this gate would otherwise report
         // as the cut's depth.
+        // EXEMPT(P28-21, P28-22, P28-23)
         if !super::locality::is_steady_state_for_gate(s, span_lookup.as_ref()) {
             continue;
         }
@@ -237,6 +240,7 @@ pub fn evaluate(ctx: &super::ToolpathLoadContext<'_>, env: &super::GateEnv<'_>) 
         && matches!(
             machine
                 .rigidity
+                // EXEMPT(P28-02, P28-34)
                 .depth_cap_rule(spec.feeds_family, spec.feeds_pass_role),
             Some(crate::machine::DepthCapRule::ForceBudget(_))
         )

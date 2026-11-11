@@ -742,6 +742,7 @@ fn collect(
         .filter(|(_, s)| s.toolpath_id == ctx.toolpath_id)
         .filter_map(|(i, s)| {
             let v = value(s)?;
+            // EXEMPT(P28-21, P28-22, P28-23)
             super::locality::is_steady_state_for_gate(s, lookup).then_some(PopulationSample {
                 value: v,
                 weight_s: s.segment_time_s,
@@ -779,6 +780,7 @@ fn chipload_population(
                 crate::feeds::geometry::RadialThinning::of_lut_role(ctx.pass_role),
             )
             .ok()?;
+            // EXEMPT(P28-21, P28-22, P28-23)
             super::locality::is_steady_state_for_gate(s, lookup).then_some(PopulationSample {
                 value: reading.peak_chip_mm,
                 weight_s: s.segment_time_s,

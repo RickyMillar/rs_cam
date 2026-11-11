@@ -124,6 +124,7 @@ pub fn cut_points(ctx: &ToolpathLoadContext<'_>, env: &GateEnv<'_>) -> Vec<CutPo
         .filter(|(_, s)| s.arc_engagement_radians.is_some())
         .filter_map(|(i, s)| {
             let engagement = super::deflection::sample_engagement(ctx.tool, s)?;
+            // EXEMPT(P28-21, P28-22, P28-23)
             if !super::locality::is_steady_state_for_gate(s, lookup) {
                 return None;
             }
@@ -152,6 +153,7 @@ pub fn budget_line(ctx: &ToolpathLoadContext<'_>, env: &GateEnv<'_>) -> Option<f
     let spec = ctx.operation_kind.spec();
     match machine
         .rigidity
+        // EXEMPT(P28-34)
         .depth_cap_rule(spec.feeds_family, spec.feeds_pass_role)?
     {
         DepthCapRule::ForceBudget(budget_n) => Some(budget_n),
@@ -182,6 +184,7 @@ pub struct CutForceReading {
 #[must_use]
 pub fn evaluate(ctx: &ToolpathLoadContext<'_>, env: &GateEnv<'_>) -> Option<CutForceReading> {
     let trace = env.sim_trace?;
+    // EXEMPT(P28-17)
     if ctx.operation_kind.is_drill_kinematics() {
         return None;
     }

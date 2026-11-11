@@ -25,9 +25,14 @@
 //! the unknown, so no operating point exists
 //! (`Engagement::fz_cap_for_peak_force`, `PowerTerms::feed_for_kw`,
 //! `force_budget::depth_at_budget`, `cutter_constraints`, the feed that
-//! Step 5 sizes from the lift). The straight plunge of a drill cycle is not
-//! an [`Engagement`] (`PowerModelInputs::axial_plunge`); it stays outside
-//! too until the cut object of P29-3.
+//! Step 5 sizes from the lift).
+//!
+//! P29-3: [`CutLoad::of_cut`] reads a [`Cut`]. Its engagement is a side cut
+//! (as [`CutLoad::of`]), the straight plunge of a flat end mill
+//! (`PowerModelInputs::axial_plunge`: power only; force, deflection and
+//! chip are [`NoNumber::NotModelled`]), or no model (every value is
+//! [`NoNumber::NotModelled`]). The two plunge doors (the calculator and
+//! the operating-point figure) read it.
 //!
 //! # Open items of P29 (named here, not changed)
 //!
@@ -44,6 +49,7 @@
 
 use crate::feeds::engagement::{EdgeForce, Engagement};
 use crate::feeds::geometry::RadialThinning;
+use crate::limits::{Cut, CutEngagement};
 use crate::material::Material;
 use crate::material::force_line::ForceLine;
 use crate::stock::simulation_cut::SimulationCutSample;
@@ -250,7 +256,7 @@ pub struct PeakChip {
 /// The load of one cut. See the module doc.
 #[derive(Clone, Copy)]
 pub struct CutLoad<'a> {
-    engagement: Engagement,
+    engagement: CutEngagement,
     at: OperatingPoint,
     tool: Option<&'a ToolDefinition>,
     line: Option<ForceLine>,
@@ -281,10 +287,42 @@ impl<'a> CutLoad<'a> {
         line: Option<ForceLine>,
     ) -> Self {
         Self {
-            engagement: *engagement,
+            engagement: CutEngagement::Side(*engagement),
             at,
             tool,
             line,
+        }
+    }
+
+    /// The load of `cut` (P29-3), for a caller that holds the force line.
+    ///
+    /// # Errors
+    ///
+    /// [`NoNumber::NoFeed`] when the cut has no operating point.
+    pub const fn of_cut(
+        cut: &Cut,
+        tool: Option<&'a ToolDefinition>,
+        line: Option<ForceLine>,
+    ) -> Result<Self, NoNumber> {
+        match cut.point {
+            Some(at) => Ok(Self {
+                engagement: cut.engagement,
+                at,
+                tool,
+                line,
+            }),
+            None => Err(NoNumber::NoFeed),
+        }
+    }
+
+    /// The side-cut engagement, or [`NoNumber::NotModelled`] for a cut
+    /// whose force, deflection and chip have no model.
+    const fn side(&self) -> Result<&Engagement, NoNumber> {
+        match &self.engagement {
+            CutEngagement::Side(engagement) => Ok(engagement),
+            CutEngagement::AxialPlunge { .. } | CutEngagement::NoModel(_) => {
+                Err(NoNumber::NotModelled)
+            }
         }
     }
 
@@ -298,12 +336,35 @@ impl<'a> CutLoad<'a> {
     pub(crate) fn power_terms(&self) -> Result<PowerTerms, NoNumber> {
         let line = self.line.ok_or(NoNumber::NoForceLine)?;
         let rpm = self.at.rpm.ok_or(NoNumber::NoSpeed)?;
-        Ok(Self::power_terms_at(
-            &self.engagement,
-            line,
-            rpm,
-            self.at.flute_count,
-        ))
+        match self.engagement {
+            CutEngagement::Side(engagement) => Ok(Self::power_terms_at(
+                &engagement,
+                line,
+                rpm,
+                self.at.flute_count,
+            )),
+            // The one forward read of a straight plunge (P20d): the axial
+            // circle, or the ring outside the core. The variant holds a
+            // flat end only (`CutEngagement::axial_plunge`).
+            CutEngagement::AxialPlunge {
+                diameter_mm,
+                core_diameter_mm,
+            } => crate::feeds::engagement::PowerModelInputs::axial_plunge(
+                crate::feeds::ToolGeometryHint::Flat,
+                diameter_mm,
+                core_diameter_mm,
+                line,
+                rpm,
+                f64::from(self.at.flute_count),
+            )
+            .map(PowerTerms::of)
+            .map_err(|refusal| match refusal {
+                crate::feeds::section::AxialSectionRefusal::TipShapeNotModelled => {
+                    NoNumber::NotModelled
+                }
+            }),
+            CutEngagement::NoModel(_) => Err(NoNumber::NotModelled),
+        }
     }
 
     /// The two terms of the power model of `engagement` at `rpm` for
@@ -347,7 +408,7 @@ impl<'a> CutLoad<'a> {
     /// sum refuses.
     pub fn force(&self) -> Result<EdgeForce, NoNumber> {
         let line = self.line.ok_or(NoNumber::NoForceLine)?;
-        self.engagement
+        self.side()?
             .edge_force(line, self.at.fz_mm, self.at.flute_count)
             .ok_or(NoNumber::NotModelled)
     }
@@ -364,7 +425,7 @@ impl<'a> CutLoad<'a> {
         crate::feeds::predict::tip_deflection_at(
             tool,
             line,
-            &self.engagement,
+            self.side()?,
             self.at.fz_mm,
             self.at.flute_count,
         )
@@ -373,15 +434,18 @@ impl<'a> CutLoad<'a> {
 
     /// The peak chip (mm) under the thinning rule `thinning`: the advance
     /// of the point over the lift at the engaged width.
-    #[must_use]
-    pub fn chip(&self, thinning: RadialThinning) -> PeakChip {
+    ///
+    /// # Errors
+    ///
+    /// [`NoNumber::NotModelled`] for a cut that is not a side cut.
+    pub fn chip(&self, thinning: RadialThinning) -> Result<PeakChip, NoNumber> {
         let advance_mm = self.at.fz_mm;
-        let lift = Self::thinning_lift(&self.engagement, thinning);
-        PeakChip {
+        let lift = Self::thinning_lift(self.side()?, thinning);
+        Ok(PeakChip {
             advance_mm,
             lift,
             peak_mm: advance_mm / lift,
-        }
+        })
     }
 
     /// The radial chip-thinning lift of `engagement` under `thinning`

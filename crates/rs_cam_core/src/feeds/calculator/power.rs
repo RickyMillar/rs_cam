@@ -109,6 +109,7 @@ pub(super) fn step6_power(s: &mut CalcState) {
     // measured on an end cut), so the ladder does not act on it.
     if let Some(line) = input.power_force_line()
         && available_power > 0.0
+        // EXEMPT(P28-10)
         && !input.is_axial_plunge()
     {
         let ladder = Ladder {

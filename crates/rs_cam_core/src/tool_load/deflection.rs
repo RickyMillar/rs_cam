@@ -139,6 +139,7 @@ pub fn exceeds_limit(
     pass_role: LutPassRole,
     radial_stock_to_leave_mm: Option<f64>,
 ) -> (f64, DeflectionBasis) {
+    // EXEMPT(P28-16, F-LeaveAfter)
     match (pass_role, radial_stock_to_leave_mm) {
         (LutPassRole::Finish | LutPassRole::SemiFinish, _) => {
             (EXCEEDS_BOUND_MM, DeflectionBasis::FinishTarget)
@@ -173,6 +174,7 @@ pub fn exceeds_limit(
 /// reads). One sample so gives two engagements; `feeds::cut_load::CutLoad`
 /// takes the one its caller built.
 #[must_use]
+// EXEMPT(M4)
 pub fn sample_engagement(
     tool: &ToolDefinition,
     sample: &SimulationCutSample,
@@ -275,11 +277,13 @@ pub fn evaluate(
         ..
     } = env;
     // P17: one limit for the trip, the bounds and the entry spike.
+    // EXEMPT(P28-16, F-LeaveAfter)
     let (limit_mm, basis) = exceeds_limit(pass_role, radial_stock_to_leave_mm);
     // Roadmap F.8 — same short-circuit as power/chipload: drill cycles
     // have no continuous engagement, so the cantilever-deflection
     // metric is meaningless. Return "doesn't apply" rather than the
     // misleading `ArcEngagementNotCaptured`.
+    // EXEMPT(P28-17)
     if operation_kind.is_drill_kinematics() {
         tracing::debug!(
             reason = "NotApplicableForOp",
@@ -378,9 +382,11 @@ pub fn evaluate(
         // deflection is phantom — drop them entirely. Configured Entry
         // samples (real plunge / ramp / helix transients) still route
         // to the entry_spike advisory.
+        // EXEMPT(P28-22, P28-23)
         if super::locality::is_phantom_transit(s, span_lookup.as_ref()) {
             continue;
         }
+        // EXEMPT(P28-21, M3)
         if super::locality::is_configured_entry(s, span_lookup.as_ref()) {
             if delta_mm > entry_peak_delta_mm {
                 entry_peak_delta_mm = delta_mm;

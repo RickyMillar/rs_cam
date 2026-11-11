@@ -941,6 +941,7 @@ fn standing_material_population(
             s.toolpath_id == toolpath_id
                 && s.is_cutting
                 && s.axial_engagement_mm > 0.0
+                // EXEMPT(M8)
                 && crate::tool_load::locality::is_steady_state_for_gate(s, None)
         })
         .collect();
@@ -1710,6 +1711,7 @@ pub fn link_cut_observation(
         if is_link_intent(s) {
             links.push(s);
         } else if s.axial_engagement_mm > 0.0
+            // EXEMPT(M8)
             && crate::tool_load::locality::is_steady_state_for_gate(s, None)
         {
             body.push(s);

@@ -113,30 +113,17 @@ impl EntryContract {
     }
 }
 
-/// One kind of entry into material.
-#[derive(Debug, Clone, Copy, PartialEq, Eq)]
-pub enum EntryKind {
-    /// A straight descent at one XY.
-    Plunge,
-    /// A descent along a line or a zigzag.
-    Ramp,
-    /// A descent along a helix.
-    Helix,
-    /// Plunges at one XY with a retract between them (3D Rough).
-    PeckLadder,
-}
+/// One kind of entry into material. P29-3 (ruling Q1): the type lives in
+/// `limits::cut`, so the cut object names it with no `compute` import.
+pub use crate::limits::EntryKind;
 
-impl EntryKind {
-    /// Every kind, in declaration order.
-    pub const ALL: [Self; 4] = [Self::Plunge, Self::Ramp, Self::Helix, Self::PeckLadder];
-
-    const fn bit(self) -> u8 {
-        match self {
-            Self::Plunge => 1,
-            Self::Ramp => 2,
-            Self::Helix => 4,
-            Self::PeckLadder => 8,
-        }
+/// The bit of `kind` in an [`EntrySet`].
+const fn bit(kind: EntryKind) -> u8 {
+    match kind {
+        EntryKind::Plunge => 1,
+        EntryKind::Ramp => 2,
+        EntryKind::Helix => 4,
+        EntryKind::PeckLadder => 8,
     }
 }
 
@@ -164,7 +151,7 @@ impl EntrySet {
         let mut bits = 0_u8;
         let mut rest = kinds;
         while let [first, tail @ ..] = rest {
-            bits |= first.bit();
+            bits |= bit(*first);
             rest = tail;
         }
         Self(bits)
@@ -173,7 +160,7 @@ impl EntrySet {
     /// True when the set holds `kind`.
     #[must_use]
     pub const fn contains(self, kind: EntryKind) -> bool {
-        self.0 & kind.bit() != 0
+        self.0 & bit(kind) != 0
     }
 
     /// The kinds of this set or of `other`.

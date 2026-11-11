@@ -159,6 +159,7 @@ fn named_limits(
     // 2.3: the Z axis rate. A drill cycle only: its one feed is vertical.
     // A side op does not take it; its plunge and ramp go through
     // `VerticalRateLimit::bound` at any RPM (P20b).
+    // EXEMPT(M9)
     if input.operation == OperationFamily::Drill
         && let Some(z_rate) = machine.z_axis_rate_mm_min()
     {
@@ -222,6 +223,7 @@ fn named_limits(
 /// its rated RPM the ratio is constant, so the power sets no RPM there.
 fn power_limit_rpm(s: &CalcState, chip_per_rev: f64, from_rpm: f64, max_rpm: f64) -> Option<f64> {
     let input = s.input;
+    // EXEMPT(P28-10)
     if input.is_axial_plunge() {
         return None;
     }

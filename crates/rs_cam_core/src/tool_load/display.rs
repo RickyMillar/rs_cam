@@ -101,7 +101,9 @@ pub fn peak_chip_per_tooth(
                 Some(tool),
                 None,
             )
-            .chip(thinning);
+            .chip(thinning)
+            .ok()
+            .ok_or(PeakChipRefusal::NoEngagement)?;
             Ok(PeakChipReading {
                 peak_chip_mm: chip.peak_mm,
                 lift: chip.lift,

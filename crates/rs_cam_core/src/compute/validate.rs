@@ -280,6 +280,7 @@ fn check_wood_adaptive_stepover(
     if !matches!(tool_def.to_geometry_hint(), ToolGeometryHint::Flat) {
         return None;
     }
+    // EXEMPT(P28-08)
     if !tc.operation.capabilities().adaptive_woc {
         return None;
     }

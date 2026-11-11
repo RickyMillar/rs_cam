@@ -57,6 +57,7 @@ pub(crate) fn axial_envelope_for_operation(
     // W2.4: the registry row states the class; the WOC heuristics below
     // stay here.
     match operation.capabilities().axial_envelope {
+        // EXEMPT(P28-25)
         AxialEnvelope::NotApplied => None,
         AxialEnvelope::Roughing3d => {
             let radial_woc = radial.unwrap_or(tool.diameter * 0.4).max(1.0e-3);

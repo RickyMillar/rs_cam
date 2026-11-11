@@ -17,6 +17,11 @@
 //!   is the open item of P29 that `cut_load.rs` names.
 //! - Claim D: outside `feeds/cut_load.rs` no product code calls a model
 //!   function for a forward read. The exceptions are counted and named.
+//! - Claim E (P29-3): the two straight-plunge doors (the operating-point
+//!   figure and the calculator) equal `CutLoad::of_cut` on the planned
+//!   drill cut, bit for bit. A shaped tip has no plunge model on either
+//!   door, and the force, the deflection and the chip of a plunge are
+//!   `NotModelled`.
 //!
 //! Inject check (2026-11-11): with `sample_power_kw` building
 //! `OperatingPoint::planned(feed, rpm, tool.flute_count + 1)` in its own
@@ -34,7 +39,7 @@ mod common;
 use common::wide_samples::core_source;
 
 use rs_cam_core::compute::cutter::build_cutter;
-use rs_cam_core::feeds::cut_load::{CutLoad, OperatingPoint};
+use rs_cam_core::feeds::cut_load::{CutLoad, NoNumber, OperatingPoint};
 use rs_cam_core::feeds::engagement::Engagement;
 use rs_cam_core::feeds::envelope::CutPoint;
 use rs_cam_core::feeds::geometry::RadialThinning;
@@ -154,6 +159,7 @@ fn each_sample_door_equals_the_one_load_bit_for_bit() {
             &material,
         )
         .chip(RadialThinning::Applied)
+        .expect("a side cut has a chip")
         .peak_mm,
     );
 }
@@ -236,7 +242,10 @@ fn the_planned_doors_and_the_sample_doors_agree_on_one_cut() {
     close(
         "peak chip",
         chip,
-        planned.chip(RadialThinning::Applied).peak_mm,
+        planned
+            .chip(RadialThinning::Applied)
+            .expect("a side cut has a chip")
+            .peak_mm,
     );
     // The mean of the edge force is the power model's force: P = F v.
     let mean = planned.force().expect("force").mean_tangential_n;
@@ -301,7 +310,7 @@ fn rust_files(dir: &std::path::Path, out: &mut Vec<std::path::PathBuf>) {
 #[test]
 fn no_product_code_calls_a_model_function_outside_the_one_load() {
     // The needle, and each file that may hold it with its count and reason.
-    let rules: [(&str, &[Allowed]); 4] = [
+    let rules: [(&str, &[Allowed]); 5] = [
         (
             ".edge_force(",
             &[
@@ -318,11 +327,6 @@ fn no_product_code_calls_a_model_function_outside_the_one_load() {
                     "the one forward read of a side cut",
                 ),
                 (
-                    "src/feeds/operating_point.rs",
-                    1,
-                    "the straight plunge (no engagement until P29-3)",
-                ),
-                (
                     "src/dressup/feed_modulation.rs",
                     1,
                     "an inverse: the feed is the unknown",
@@ -335,6 +339,14 @@ fn no_product_code_calls_a_model_function_outside_the_one_load() {
                 ("src/feeds/cut_load.rs", 1, "the one forward read"),
                 ("src/feeds/predict.rs", 1, "the definition"),
             ],
+        ),
+        (
+            "PowerModelInputs::axial_plunge(",
+            &[(
+                "src/feeds/cut_load.rs",
+                1,
+                "the one forward read of a straight plunge (P29-3)",
+            )],
         ),
         (
             "tip_deflection_from_engagement(",
@@ -375,4 +387,141 @@ fn no_product_code_calls_a_model_function_outside_the_one_load() {
         // Non-vacuity: the needle is in the tree.
         assert!(seen > 0, "the needle `{needle}` is in no product file");
     }
+}
+
+/// Claim E: an end mill of diameter `d` with `z` flutes and core `core`
+/// (0: it cuts at its centre), or a ball nose.
+fn drill_tool(
+    d: f64,
+    z: u32,
+    core: f64,
+    ball: bool,
+) -> rs_cam_core::compute::tool_config::ToolConfig {
+    use rs_cam_core::compute::tool_config::{
+        CentreCutting, NonCentreCuttingGeometry, ToolConfig, ToolFact, ToolId, ToolType,
+    };
+    let kind = if ball {
+        ToolType::BallNose
+    } else {
+        ToolType::EndMill
+    };
+    let mut tool = ToolConfig::test_default(ToolId::from_raw(6), kind);
+    tool.diameter = d;
+    tool.shaft_diameter = d;
+    tool.set_cutting_length(ToolFact::Stated(20.0));
+    tool.set_shank_diameter(ToolFact::Stated(6.0));
+    tool.set_flute_count(ToolFact::Stated(z));
+    let centre = if core > 0.0 {
+        CentreCutting::No(NonCentreCuttingGeometry {
+            centre_core_diameter_mm: core,
+            blade_protrusion_mm: 1.0,
+        })
+    } else {
+        CentreCutting::Yes
+    };
+    tool.set_centre_cutting(ToolFact::Stated(centre));
+    tool
+}
+
+fn drill_op() -> rs_cam_core::compute::catalog::OperationConfig {
+    rs_cam_core::compute::catalog::OperationConfig::Drill(
+        rs_cam_core::compute::operation_configs::DrillConfig {
+            floor: rs_cam_core::compute::floor::Floor::Top { depth: 8.0 },
+            feed_rate: Some(1000.0),
+            spindle_rpm: Some(RPM),
+            ..rs_cam_core::compute::operation_configs::DrillConfig::default()
+        },
+    )
+}
+
+#[test]
+fn each_plunge_door_equals_the_one_load_bit_for_bit() {
+    use rs_cam_core::feeds::{SpindleStrategy, ToolGeometryHint, calculate, embedded_vendor_lut};
+    use rs_cam_core::limits::{Cut, CutEngagement, NoEngagementModel};
+
+    let machine = rs_cam_core::machine::MachineProfile::generic_wood_router();
+    let oak = Material::SolidWood {
+        species: WoodSpecies::WhiteOak,
+    };
+    let line = oak.force_line().expect("a force line");
+    let mut doors = 0;
+    for (d, z, core) in [(18.0, 2, 8.0), (18.0, 2, 0.0), (6.0, 3, 0.0)] {
+        let tool = drill_tool(d, z, core, false);
+        let body = rs_cam_core::feeds::CutBody::of_tool(&tool);
+        // The operating-point figure.
+        let figure =
+            rs_cam_core::feeds::power_at_operating_point(&drill_op(), &tool, &oak, &machine, None)
+                .expect("a flat end mill plunge has the axial section");
+        let cut = Cut::planned_drill(
+            ToolGeometryHint::Flat,
+            d,
+            body.core_diameter_mm,
+            OperatingPoint::planned(
+                figure.feed_mm_min,
+                figure.rpm,
+                tool.flute_count_planning().max(1),
+            ),
+        );
+        let load = CutLoad::of_cut(&cut, None, Some(line)).expect("a planned point");
+        bits(
+            "operating-point plunge power",
+            figure.required_kw,
+            load.power_kw().expect("power"),
+        );
+        // The calculator.
+        let input = rs_cam_core::feeds::suggest::feeds_input_for_operation(
+            &drill_op(),
+            &tool,
+            &oak,
+            &machine,
+            embedded_vendor_lut(),
+            SpindleStrategy::MatchChart,
+        );
+        let result = calculate(&input);
+        let cut = Cut::planned_drill(
+            input.tool_geometry,
+            input.tool_diameter,
+            input.cut_body.core_diameter_mm,
+            OperatingPoint::planned(result.feed_rate_mm_min, result.rpm, input.flute_count),
+        );
+        let load = CutLoad::of_cut(&cut, None, Some(line)).expect("a planned point");
+        bits(
+            "calculator plunge power",
+            result.power_kw.expect("the drill cycle has a power figure"),
+            load.power_kw().expect("power"),
+        );
+        // Power only: a plunge has no side engagement.
+        assert_eq!(load.force().err(), Some(NoNumber::NotModelled));
+        assert_eq!(
+            load.deflection_mm().err(),
+            Some(NoNumber::NoToolBody),
+            "no built tool given"
+        );
+        assert_eq!(
+            load.chip(RadialThinning::DrillCycle).err(),
+            Some(NoNumber::NotModelled)
+        );
+        doors += 2;
+    }
+    assert_eq!(doors, 6, "three tools, two doors each");
+
+    // A ball plunges on a curved tip: no model on either door.
+    let ball = drill_tool(6.0, 2, 0.0, true);
+    let cut = Cut::planned_drill(
+        ball.geometry_hint(),
+        6.0,
+        0.0,
+        OperatingPoint::planned(1000.0, f64::from(RPM), 2),
+    );
+    assert_eq!(
+        cut.engagement,
+        CutEngagement::NoModel(NoEngagementModel::PlungeOfShapedTip)
+    );
+    let load = CutLoad::of_cut(&cut, None, Some(line)).expect("a planned point");
+    assert_eq!(load.power_kw().err(), Some(NoNumber::NotModelled));
+    assert_eq!(
+        rs_cam_core::feeds::power_at_operating_point(&drill_op(), &ball, &oak, &machine, None)
+            .err(),
+        Some(rs_cam_core::feeds::PowerUnmodeled::AxialTipNotModelled)
+    );
 }

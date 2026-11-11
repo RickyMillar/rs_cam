@@ -459,6 +459,7 @@ impl ForceBudgetScope {
                 })
             }
             (Some(DepthCapRule::ForceBudget(_)), None) => Self::NoForceLine,
+            // EXEMPT(P28-34)
             (Some(DepthCapRule::Factor(_)) | None, _) => Self::OutOfScope,
         }
     }
@@ -677,14 +678,17 @@ impl ModulationOutcome {
 }
 
 /// Return `true` when the modulator should leave this move's feed alone.
+// EXEMPT(M2)
 fn should_skip_modulation(move_type: MoveType, intent: MoveIntent) -> bool {
     if matches!(move_type, MoveType::Rapid) {
         return true;
     }
     matches!(
         intent,
+        // EXEMPT(P28-30p)
         MoveIntent::Retract
             | MoveIntent::Drilling
+            // EXEMPT(P28-30)
             | MoveIntent::EntryPlunge
             // K4: the air lead above an entry keeps its feed, as it did
             // when it was an `EntryPlunge`.
@@ -694,6 +698,7 @@ fn should_skip_modulation(move_type: MoveType, intent: MoveIntent) -> bool {
             // user-tuned and skip modulation — the dressup's
             // `lead_in_feed_rate` / `lead_out_feed_rate` already carries
             // the operator's intent for these moves.
+            // EXEMPT(P28-29)
             | MoveIntent::LeadIn
             | MoveIntent::LeadOut
             // K3: the obstacle step adds this rapid after the modulator;

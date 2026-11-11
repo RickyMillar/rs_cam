@@ -206,6 +206,7 @@ pub fn cut_efficiency(
     // half the diameter and on a finish pass.
     let (family, role) = operation.feeds_style();
     // P23a: the width of Suggest's lift (`PowerCases::full_feed_width`).
+    // EXEMPT(U-efficiency)
     let lift = crate::feeds::geometry::RadialThinning::of(family, role).lift(
         crate::feeds::engagement::PowerCases::of_operation(operation)
             .full_feed_width(radial_width_mm, diameter_mm),

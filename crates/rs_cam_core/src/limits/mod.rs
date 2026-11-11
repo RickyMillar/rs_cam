@@ -10,6 +10,9 @@
 //!   to it in a match that names every variant.
 //! - [`Check`] (`check.rs`): the one record.
 //! - `project.rs`: the projections of the old records to [`Check`].
+//! - [`Cut`] (`cut.rs`, P29-3): one cut that a limit judges.
+//! - [`EXEMPTIONS`] (`exemptions.rs`, P29-3): the one list of every
+//!   exemption from a limit.
 //!
 //! In P29-2 the old types stay and no surface reads this folder.
 //!
@@ -18,16 +21,23 @@
 //! branch on what it cannot see.
 
 mod check;
+mod cut;
+mod exemptions;
 mod project;
 
 pub use check::{BoundSide, Check, CheckState, Geometry, NoNumberReason, basis_of_bound};
+pub use cut::{
+    CleanupKind, Cut, CutEngagement, CutFacts, CutKind, CutSource, DepthLimit, EntryKind,
+    FirstPassKind, Leave, NoDepthLimit, NoEngagementModel, SampleDepth,
+};
+pub use exemptions::{EXEMPTIONS, Exemption, ExemptionClass, Who};
 pub use project::{of_criterion, of_envelope, of_judged_value, of_rpm_choice};
 
 use serde::Serialize;
 
 use crate::feeds::RpmLimit;
 use crate::feeds::cutter_constraints::AxialBindingConstraint;
-use crate::feeds::envelope::{Limit, LimitKind, RIGIDITY_FACTOR_LAW};
+use crate::feeds::envelope::{Limit, LimitKind};
 use crate::tool_load::verdict::{BindingConstraint, BoundSource, ChipSide, CriterionKind};
 
 /// The one list of limits (P29-2). A member is a physical or a machine
@@ -224,15 +234,15 @@ impl DepthRule {
         }
     }
 
-    /// The rule of an envelope limit: the Factor rule when the limit
-    /// states the Factor law (`feeds::envelope::RIGIDITY_FACTOR_LAW`), else
-    /// the force budget. Only a `Rigidity` limit reads the answer.
+    /// The rule of an envelope limit: the typed fact `Limit::depth_rule`
+    /// that the envelope stores on each `Rigidity` limit it builds (P29-3).
+    /// A limit with no rule takes the force budget. Only a `Rigidity`
+    /// limit reads the answer.
     #[must_use]
-    pub fn of_limit(limit: &Limit) -> Self {
-        if limit.law == RIGIDITY_FACTOR_LAW {
-            Self::Factor
-        } else {
-            Self::ForceBudget
+    pub const fn of_limit(limit: &Limit) -> Self {
+        match limit.depth_rule {
+            Some(rule) => rule,
+            None => Self::ForceBudget,
         }
     }
 
