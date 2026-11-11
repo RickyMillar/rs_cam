@@ -99,9 +99,27 @@ Design and predictions: `phases/P29-4_DESIGN.md` (lead rulings in section 8),
   rule of thumb."); `feeds::geometry::depth_derate_diameter_for_cutter` has no caller; stale
   docs in `feeds/geometry.rs` (~513, ~561) and
   `tests/a_vbit_row_is_read_at_its_printed_key_b4.rs:679`.
-- **Commit C waits for the operator.** It deletes the machine field `adaptive_doc_factor`,
-  the default-depth floor and `ADAPTIVE_RIGIDITY_DOC_DIVISOR`. Both wanaka TOML files hold
-  the key at line 74 and do not load after it. Ask the operator for the one-line delete.
+- **Commit C is in** (`5549190ed`). The operator ruled on 2026-11-12: "go hard on any toml.
+  I dont mind". The field `adaptive_doc_factor`, the default-depth floor and
+  `ADAPTIVE_RIGIDITY_DOC_DIVISOR` are deleted; the key is a retired key (a file that holds it
+  refuses to load); 333 tracked TOML files lost that one line, and the lead deleted it from
+  the operator's machine library file `~/.config/rs_cam/machines/shapeoko_pro_xxl_scylla.toml`.
+  FM1 byte-equal; both wanaka files load with equal proposals. Left: 
+  `planning/rivmap_block_job/derive_wanaka21.py` (line 548 reads the key; a peer has
+  uncommitted edits there) and `derive.py:395` still name the key, so their next output
+  refuses to load or the script raises `KeyError`; four untracked play TOMLs under
+  `planning/adaptive_research_2026-10-23/play/` also lost the line (not committed);
+  `simulation_issue_channel_m1` was red before C (a Pocket with no stepover).
+- **P29-5** (a slot or groove op reads the force budget): design and predictions committed
+  `3d9e33387`; the operator said "go" on 2026-11-12 for the depth-limit-only scope (the lead
+  rulings are in the implementer brief: Q0 narrow, Q1 close `F-DepthRule`, Q2 filing fixes to
+  "P29-5b", Q3 card text "no force limit on this cut", Q5, Q6, Q7 as the note recommends).
+  See `git log` for its state.
+- **New design step, from the operator (2026-11-12):** "simulation should run whats going to
+  happen in real life. having a post-sim change seems not ideal". Today the modulator lowers
+  feeds after the simulation and the export writes them. First task: a read-only check of
+  what the load cards and the time estimate show after modulation (the first run or the
+  lowered feeds). Then a design: the simulation shows the feeds that the export writes.
 
 Tell the operator before the cut (ruling Q3): after a simulation with modulation on, the
 exported feed of an Adaptive move over the force budget now falls. The depth stays.
