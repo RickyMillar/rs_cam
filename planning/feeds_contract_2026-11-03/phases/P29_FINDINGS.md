@@ -254,3 +254,20 @@ The operator has not yet said "approved" for the design and the order as a whole
   emitter; defaults per tool category from printed sources; where no source exists the 2D
   values (3 deg, 1 mm per turn) stand. Research: `research/entry_rules_2026-11-11.md`
   (agent `entry-research`, running at the time of writing).
+
+## 11. P29-0 result (2026-11-11)
+
+The probes ran on both wanaka files (`P29-0_probes.md`, raw tables in `P29-0_raw/`). Feed
+modulation was on. The change list stands. Section 5 is corrected by section 9 of that note:
+
+- The force estimates hold: operator idx 1 is 4.11 x the budget; the 6 mm idx 1 is 1.12 x and
+  its budget depth is 3.95 mm at 1.2 mm.
+- New, for the operator's cut: idx 5 (Project Curve, 6 mm) is 2.7 to 3.6 x over the budget on
+  about 90 % of its samples; it cuts up to 14 mm deep. The cleanup of the 6 mm idx 1 holds
+  the worst force of the op (90.3 N at 13.6 mm). The capped steps hold the worst steady force
+  of each 3D rough.
+- M1 is not about slot rings. The 95 % filter drops the body of an op whose stated feed is
+  above the modulated feed (operator idx 1: 91 %; idx 8: 100 %, and the gate prints "Within"
+  on zero samples).
+- M5 by itself moves nothing on wanaka.
+- Plunge samples have no model; P29-8 gives them one.

@@ -1,0 +1,554 @@
+//! TEMPORARY: P29-0 measurement probes. Deleted after the run. Prints tables; asserts nothing.
+#![allow(
+    clippy::all,
+    clippy::pedantic,
+    clippy::restriction,
+    reason = "temporary measurement probe"
+)]
+
+mod common;
+
+use std::collections::BTreeMap;
+use std::fmt::Write as _;
+use std::sync::atomic::AtomicBool;
+
+use rs_cam_core::adaptive3d::FeedCapSource;
+use rs_cam_core::compute::catalog::Radial;
+use rs_cam_core::feeds::engagement::{Engagement, PowerCases};
+use rs_cam_core::feeds::envelope::CutPoint;
+use rs_cam_core::feeds::force_budget::{BudgetDepth, depth_at_budget};
+use rs_cam_core::feeds::geometry::RadialThinning;
+use rs_cam_core::machine::DepthCapRule;
+use rs_cam_core::session::generation_plan::{self, Scope, Step};
+use rs_cam_core::session::{ProjectSession, SimulationOptions, SimulationResolution};
+use rs_cam_core::tool_load::locality::{
+    SpanLookup, is_configured_entry, is_phantom_transit, is_steady_state_for_gate,
+};
+use rs_cam_core::toolpath::MoveIntent;
+use rs_cam_core::trace::semantic_trace::{SemanticKey, ToolpathSemanticKind};
+use rs_cam_core::trace::toolpath_spans::SpanKind;
+
+fn project() -> (String, std::path::PathBuf) {
+    let which = std::env::var("P29_PROJECT").unwrap_or_else(|_| "operator".to_owned());
+    let file = match which.as_str() {
+        "work" => "nz_wanaka_21_6mm_rough_work.toml",
+        _ => "nz_wanaka_21_operator.toml",
+    };
+    let path = std::path::Path::new(env!("CARGO_MANIFEST_DIR"))
+        .join("../../planning/rivmap_block_job")
+        .join(file);
+    (file.to_owned(), path)
+}
+
+fn targets(session: &ProjectSession) -> Vec<usize> {
+    match std::env::var("P29_TARGETS") {
+        Ok(s) => s.split(',').filter_map(|t| t.trim().parse().ok()).collect(),
+        Err(_) => (0..session.toolpath_count()).collect(),
+    }
+}
+
+fn out(name: &str, text: &str) {
+    eprintln!("{text}");
+    let p = std::path::Path::new(env!("CARGO_TARGET_TMPDIR")).join(name);
+    std::fs::write(&p, text).unwrap();
+    eprintln!("written: {}", p.display());
+}
+
+fn fmt(v: Option<f64>, prec: usize) -> String {
+    v.map_or_else(|| "-".to_owned(), |x| format!("{x:.prec$}"))
+}
+
+#[test]
+#[ignore = "P29-0 probe"]
+fn presim() {
+    let (file, path) = project();
+    let session = ProjectSession::load(&path).expect("loads");
+    let machine = session.machine();
+    let budget = machine.rigidity.force_budget_n;
+    let mut t = format!("# presim {file}\n\nforce budget {budget:.2} N\n\n");
+    let _ = writeln!(
+        t,
+        "| idx | id | op | family/role | rule | D | Z | ap | ae | ae note | rpm | feed | fz | mean N | peak N | peak/budget | depth_at_budget | swept ae | peak N at swept | depth_at_budget swept | defl um | power kW (case) / avail |"
+    );
+    let _ = writeln!(t, "|---|---|---|---|---|---|---|---|---|---|---|---|---|---|---|---|---|---|---|---|---|---|");
+    for idx in targets(&session) {
+        let Some(tc) = session.toolpath_config_at(idx) else { continue };
+        let op = &tc.operation;
+        let Some(tool_cfg) = tc.tool_id.and_then(|id| session.tool_by_id(id)) else { continue };
+        let Some(parts) = session.load_context_parts(idx) else {
+            let _ = writeln!(t, "| {idx} | {} | {} | no load context |", tc.id.raw(), op.op_type().label());
+            continue;
+        };
+        let tool = &parts.tool;
+        let material = parts.material;
+        let (family, role) = op.feeds_style();
+        let rule = machine.rigidity.depth_cap_rule(family, role);
+        let d = tool_cfg.diameter;
+        let z = tool.flute_count;
+        let spec = op.cut_spec();
+        let (ap_c, ae_c, _) = spec.calc_inputs(d);
+        // The depth: the stated depth; for a surface offset, the stated offset (labelled).
+        let (ap, ap_note) = match ap_c {
+            Some(v) => (Some(v), ""),
+            None => (spec.axial.stated_mm().map(f64::abs), "(axial value that calc_inputs drops)"),
+        };
+        let (ae, ae_note) = match (ae_c, spec.radial) {
+            (Some(v), Radial::Slot) => (Some(v), "slot=D"),
+            (Some(v), _) => (Some(v), "stated"),
+            (None, _) => (None, "none"),
+        };
+        let rpm = op.spindle_rpm().map(f64::from);
+        let feed = op.feed_rate();
+        let fz = match (feed, rpm) {
+            (Some(f), Some(r)) if r > 0.0 => Some(f / (r * f64::from(z.max(1)))),
+            _ => None,
+        };
+        let line = material.force_line().ok();
+        let force_at = |ap: f64, ae: f64, fz: f64| {
+            let e = Engagement::from_tool_cut(CutPoint { ap_mm: ap, ae_mm: ae }, tool);
+            line.and_then(|l| e.edge_force(l, fz, z)).map(|f| (f.mean_tangential_n, f.peak_resultant_n, e))
+        };
+        let bd = |ae: f64, fz: f64| match depth_at_budget(tool, material, ae, fz, budget) {
+            Some(BudgetDepth::Solved(mm)) => format!("{mm:.3}"),
+            Some(BudgetDepth::BelowFloor) => "below floor".to_owned(),
+            Some(BudgetDepth::NoRootBelowFlute) => "no root below flute".to_owned(),
+            None => "unmodelled".to_owned(),
+        };
+        let (mean, peak, defl, dab) = match (ap, ae, fz) {
+            (Some(ap), Some(ae), Some(fz)) => {
+                let f = force_at(ap, ae, fz);
+                let defl = f.as_ref().and_then(|(_, _, e)| {
+                    rs_cam_core::feeds::predict::tip_deflection_from_engagement(tool, material, e, fz)
+                });
+                (f.as_ref().map(|x| x.0), f.as_ref().map(|x| x.1), defl.map(|m| m * 1000.0), bd(ae, fz))
+            }
+            _ => (None, None, None, "-".to_owned()),
+        };
+        let swept = ae.map(|ae| PowerCases::of_operation(op).full_feed_width(ae, d));
+        let (peak_sw, dab_sw) = match (ap, swept, fz, ae) {
+            (Some(ap), Some(sw), Some(fz), Some(ae)) if (sw - ae).abs() > 1e-9 => {
+                (force_at(ap, sw, fz).map(|x| x.1), bd(sw, fz))
+            }
+            _ => (None, "-".to_owned()),
+        };
+        let power = match rs_cam_core::feeds::power_at_operating_point(op, tool_cfg, material, machine, None) {
+            Ok(p) => format!("{:.3} ({}, ae {:.2}) / {:.3}", p.required_kw, p.case.label(), p.case_ae_mm, p.available_kw),
+            Err(e) => format!("{e:?}"),
+        };
+        let _ = writeln!(
+            t,
+            "| {idx} | {} | {} | {family:?}/{role:?} | {rule:?} | {d} | {z} | {} {ap_note} | {} | {ae_note} | {} | {} | {} | {} | {} | {} | {dab} | {} | {} | {dab_sw} | {} | {power} |",
+            tc.id.raw(),
+            op.op_type().label(),
+            fmt(ap, 3),
+            fmt(ae, 3),
+            fmt(rpm, 0),
+            fmt(feed, 0),
+            fmt(fz, 4),
+            fmt(mean, 1),
+            fmt(peak, 1),
+            fmt(peak.map(|p| p / budget), 2),
+            fmt(swept, 3),
+            fmt(peak_sw, 1),
+            fmt(defl, 1),
+        );
+    }
+    out(&format!("p29_presim_{file}.md"), &t);
+}
+
+#[derive(Default)]
+struct Group {
+    n: usize,
+    time_s: f64,
+    no_arc: usize,
+    power: Vec<f64>,
+    power_over: usize,
+    force: Vec<f64>,
+    force_over: usize,
+    mean_force: Vec<f64>,
+    defl: Vec<f64>,
+    defl_over: usize,
+    chip: Vec<f64>,
+    chip_over: usize,
+    chip_under: usize,
+    ap: Vec<f64>,
+    feed: Vec<f64>,
+}
+
+fn stat(v: &mut Vec<f64>) -> String {
+    if v.is_empty() {
+        return "- / -".to_owned();
+    }
+    v.sort_by(f64::total_cmp);
+    let p95 = v[((v.len() as f64 * 0.95).ceil() as usize).clamp(1, v.len()) - 1];
+    format!("{:.3} / {:.3}", v[v.len() - 1], p95)
+}
+
+fn median(v: &mut Vec<f64>) -> Option<f64> {
+    if v.is_empty() {
+        return None;
+    }
+    v.sort_by(f64::total_cmp);
+    Some(v[v.len() / 2])
+}
+
+#[test]
+#[ignore = "P29-0 probe"]
+fn postsim() {
+    let (file, path) = project();
+    let mut session = ProjectSession::load(&path).expect("loads");
+    let targets = targets(&session);
+    let cancel = AtomicBool::new(false);
+    let cell = session.simulation_resolution_mm();
+    let modulate = std::env::var("P29_MODULATE").map_or(true, |v| v != "0");
+    let options = SimulationOptions {
+        resolution: SimulationResolution::Fixed(cell),
+        adaptive_feed_modulation: modulate,
+        use_predicted_feed_in_gates: modulate,
+        ..SimulationOptions::default()
+    };
+    // The wanted set: each target and its ancestors.
+    let mut wanted = std::collections::BTreeSet::new();
+    for &idx in &targets {
+        let id = session.toolpath_config_at(idx).expect("target").id;
+        for step in generation_plan::plan(&session, Scope::Ancestors(id)) {
+            if let Step::Generate { index, .. } = step {
+                wanted.insert(index);
+            }
+        }
+        wanted.insert(idx);
+    }
+    eprintln!("P29 {file}: targets {targets:?}, wanted {wanted:?}, cell {cell}, modulate {modulate}");
+    let started = std::time::Instant::now();
+    let mut generated = false;
+    for step in generation_plan::plan(&session, Scope::Project) {
+        match step {
+            Step::Simulate { upto, .. } => {
+                let needed = (0..session.toolpath_count()).any(|i| {
+                    wanted.contains(&i)
+                        && session.toolpath_config_at(i).is_some_and(|tc| tc.id == upto)
+                });
+                if needed && generated {
+                    let t0 = std::time::Instant::now();
+                    let r = session.run_simulation(&options, &cancel);
+                    eprintln!("P29 sim upto {upto:?}: {:.0} s ok={}", t0.elapsed().as_secs_f64(), r.is_ok());
+                }
+            }
+            Step::Generate { index, .. } => {
+                if !wanted.contains(&index) {
+                    continue;
+                }
+                let t0 = std::time::Instant::now();
+                let r = session.generate_toolpath(index, &cancel);
+                generated = true;
+                eprintln!(
+                    "P29 gen idx {index}: {:.0} s ok={} moves={}",
+                    t0.elapsed().as_secs_f64(),
+                    r.is_ok(),
+                    session.result_at(index).map_or(0, |r| r.toolpath().moves.len())
+                );
+            }
+        }
+    }
+    let t0 = std::time::Instant::now();
+    session.run_simulation(&options, &cancel).expect("closing sim");
+    eprintln!("P29 closing sim: {:.0} s; total {:.0} s", t0.elapsed().as_secs_f64(), started.elapsed().as_secs_f64());
+
+    let frac = common::wide_samples::number_in(
+        &common::wide_samples::core_source("src/tool_load/chipload.rs"),
+        "const STEADY_STATE_FEED_FRACTION: f64 =",
+        ";",
+    );
+    let machine = session.machine().clone();
+    let budget = machine.rigidity.force_budget_n;
+    let trace = session.simulation_result().and_then(|s| s.cut_trace.clone()).expect("trace");
+    let report = session.build_tool_load_report(Some(&trace));
+    let mut text = format!(
+        "# postsim {file}\n\ntargets {targets:?}; generated {wanted:?}; cell {cell} mm; modulation {modulate}; budget {budget:.2} N; feed filter {frac}; total {:.0} s\n\n",
+        started.elapsed().as_secs_f64()
+    );
+    for &idx in &targets {
+        let t0 = std::time::Instant::now();
+        let tc = session.toolpath_config_at(idx).expect("tc").clone();
+        let Some(parts) = session.load_context_parts(idx) else {
+            let _ = writeln!(text, "## idx {idx}: no load context\n");
+            continue;
+        };
+        let tool_cfg = session.tool_by_id(tc.tool_id.expect("tool")).expect("tool").clone();
+        let tool = &parts.tool;
+        let material = parts.material;
+        let steady = parts.steady_feed.mm_min();
+        let (family, role) = tc.operation.feeds_style();
+        let rule = machine.rigidity.depth_cap_rule(family, role);
+        let line = material.force_line().ok();
+        let thinning = RadialThinning::of_lut_role(parts.pass_role);
+        let (defl_limit, defl_basis) =
+            rs_cam_core::tool_load::deflection::exceeds_limit(parts.pass_role, parts.radial_stock_to_leave_mm);
+        let target = rs_cam_core::tool_load::chip_target_for_toolpath(material, &tool_cfg, &tc.operation, tc.id, Some(&trace));
+        let (band_min, band_max) = match &target {
+            Some(rs_cam_core::tool_load::ChipTarget::Band(r)) => (Some(r.start), Some(r.end)),
+            Some(rs_cam_core::tool_load::ChipTarget::Point(v)) => (None, Some(*v)),
+            None => (None, None),
+        };
+        let Some(result) = session.result_at(idx) else {
+            let _ = writeln!(text, "## idx {idx}: no result (not generated)\n");
+            continue;
+        };
+        let annotated = result.annotated();
+        let moves = &annotated.toolpath.moves;
+        let spans = annotated.spans_valid.then_some(annotated.spans.as_slice());
+        let lookup = spans.map(SpanLookup::new);
+        let lookup = lookup.as_ref();
+        // The exact cap source of each move (the FeedCap items of the semantic trace).
+        let mut cap_source: Vec<Option<FeedCapSource>> = vec![None; moves.len()];
+        if let Some(sem) = result.semantic_trace.as_deref() {
+            for item in &sem.items {
+                if item.kind != ToolpathSemanticKind::FeedCap {
+                    continue;
+                }
+                let key = item.params.get(SemanticKey::CapSource).and_then(|v| v.as_str()).and_then(FeedCapSource::from_key);
+                if let (Some(a), Some(b)) = (item.move_start, item.move_end) {
+                    for k in a..=b.min(moves.len().saturating_sub(1)) {
+                        if moves[k].feed_cap.is_some() {
+                            cap_source[k] = key;
+                        }
+                    }
+                }
+            }
+        }
+        let mut groups: BTreeMap<String, Group> = BTreeMap::new();
+        let mut caps: BTreeMap<String, Group> = BTreeMap::new();
+        let (mut removing, mut total, mut dropped_by_feed, mut steady_n, mut steady_dropped) = (0usize, 0usize, 0usize, 0usize, 0usize);
+        let (mut feed_differs, mut eff_dropped) = (0usize, 0usize);
+        // chip counts: [with filter, without filter] over the steady-span population
+        let mut chip_with: Vec<f64> = Vec::new();
+        let mut chip_without: Vec<f64> = Vec::new();
+        let (mut over_with, mut under_with, mut over_without, mut under_without) = (0usize, 0usize, 0usize, 0usize);
+        // M5
+        let (mut depth_pop, mut depth_over_budget, mut depth_over_factor) = (0usize, 0usize, 0usize);
+        let mut depth_peak: Option<(f64, usize)> = None;
+        for (si, s) in trace.samples.iter().enumerate() {
+            if s.toolpath_id != tc.id {
+                continue;
+            }
+            total += 1;
+            let steady_span = is_steady_state_for_gate(s, lookup);
+            let feed_eff = rs_cam_core::tool_load::effective_feed_for_sample(s, &trace.predicted_feeds);
+            // M5: the depth gate's own population (is_cutting, axial_engagement > 0, steady).
+            if s.is_cutting && s.axial_engagement_mm > 0.0 && steady_span {
+                depth_pop += 1;
+                if depth_peak.is_none_or(|(p, _)| s.axial_engagement_mm > p) {
+                    depth_peak = Some((s.axial_engagement_mm, si));
+                }
+                let zf = f64::from(s.flute_count.max(1));
+                let rpm = f64::from(s.spindle_rpm);
+                if let (Some(e), true) = (Engagement::from_sample(s, tool), rpm > 0.0) {
+                    let fz = feed_eff / (rpm * zf);
+                    if let Some(f) = rs_cam_core::feeds::force_budget::peak_force_n(tool, material, s.axial_engagement_mm, e.ae_mm(), fz) {
+                        if f > budget {
+                            depth_over_budget += 1;
+                        }
+                    }
+                }
+                if let Some(DepthCapRule::Factor(f)) = rule {
+                    let cap = f * rs_cam_core::feeds::geometry::depth_cap_diameter_mm(tool, s.axial_engagement_mm);
+                    if s.axial_engagement_mm > cap {
+                        depth_over_factor += 1;
+                    }
+                }
+            }
+            if s.is_air() {
+                continue;
+            }
+            removing += 1;
+            if (feed_eff - s.feed_rate_mm_min).abs() > 1e-6 {
+                feed_differs += 1;
+            }
+            let passes_feed = s.feed_rate_mm_min >= frac * steady;
+            if !passes_feed {
+                dropped_by_feed += 1;
+            }
+            if feed_eff < frac * steady {
+                eff_dropped += 1;
+            }
+            if steady_span {
+                steady_n += 1;
+                if !passes_feed {
+                    steady_dropped += 1;
+                }
+            }
+            let kind = if steady_span {
+                "body (steady)".to_owned()
+            } else if is_configured_entry(s, lookup) {
+                format!("entry: {:?}", s.source_intent.unwrap_or(MoveIntent::Unknown))
+            } else if is_phantom_transit(s, lookup) {
+                let k = [SpanKind::WaterlineCleanup, SpanKind::LinkBridge, SpanKind::LeadOut, SpanKind::DressupArtifact]
+                    .into_iter()
+                    .find(|k| lookup.is_some_and(|l| l.ancestors_contain_kind(&s.span_path, *k)));
+                format!(
+                    "phantom: {} / {:?}",
+                    k.map_or_else(|| "in_transit, no span".to_owned(), |k| format!("{k:?}")),
+                    s.source_intent.unwrap_or(MoveIntent::Unknown)
+                )
+            } else {
+                "other".to_owned()
+            };
+            let fz = rs_cam_core::tool_load::deflection::deflection_feed_per_tooth_mm(s, &trace.predicted_feeds);
+            let power = line.as_ref().and_then(|l| rs_cam_core::tool_load::power::sample_power_kw(tool, l, s, feed_eff));
+            let avail = machine.power_at_rpm(f64::from(s.spindle_rpm));
+            // sample_peak_force_n = sample_engagement(..).edge_force(..).peak_resultant_n; one call gives the mean too.
+            let ef = if fz > 0.0 {
+                line.and_then(|l| {
+                    rs_cam_core::tool_load::deflection::sample_engagement(tool, s)
+                        .and_then(|e| e.edge_force(l, fz, tool.flute_count))
+                })
+            } else {
+                None
+            };
+            let defl = rs_cam_core::tool_load::deflection::sample_tip_deflection_mm(tool, material, s, fz);
+            let chip = rs_cam_core::tool_load::display::peak_chip_per_tooth(s, &trace.predicted_feeds, tool, thinning)
+                .ok()
+                .map(|r| r.peak_chip_mm);
+            if steady_span {
+                if let Some(c) = chip {
+                    chip_without.push(c);
+                    let over = band_max.is_some_and(|m| c > m);
+                    let under = band_min.is_some_and(|m| c < m);
+                    over_without += usize::from(over);
+                    under_without += usize::from(under);
+                    if passes_feed {
+                        chip_with.push(c);
+                        over_with += usize::from(over);
+                        under_with += usize::from(under);
+                    }
+                }
+            }
+            let add = |g: &mut Group| {
+                g.n += 1;
+                g.time_s += s.segment_time_s;
+                g.ap.push(s.axial_engagement_mm.max(s.plunge_descent_mm));
+                g.feed.push(feed_eff);
+                if s.arc_engagement_radians.is_none() {
+                    g.no_arc += 1;
+                }
+                if let Some(p) = power {
+                    g.power.push(p);
+                    g.power_over += usize::from(p > avail);
+                }
+                if let Some(f) = ef {
+                    g.force.push(f.peak_resultant_n);
+                    g.mean_force.push(f.mean_tangential_n);
+                    g.force_over += usize::from(f.peak_resultant_n > budget);
+                }
+                if let Some(d) = defl {
+                    g.defl.push(d * 1000.0);
+                    g.defl_over += usize::from(d > defl_limit);
+                }
+                if let Some(c) = chip {
+                    g.chip.push(c);
+                    g.chip_over += usize::from(band_max.is_some_and(|m| c > m));
+                    g.chip_under += usize::from(band_min.is_some_and(|m| c < m));
+                }
+            };
+            add(groups.entry(kind).or_default());
+            if let Some(m) = moves.get(s.move_index) {
+                if m.feed_cap.is_some() {
+                    let key = cap_source
+                        .get(s.move_index)
+                        .copied()
+                        .flatten()
+                        .map_or_else(|| format!("feed_cap, no FeedCap item ({:?})", m.intent), |k| format!("feed_cap: {}", k.key()));
+                    add(caps.entry(key).or_default());
+                }
+            }
+        }
+        let capped_moves = moves.iter().filter(|m| m.feed_cap.is_some()).count();
+        let _ = writeln!(
+            text,
+            "## idx {idx} (id {}) {} '{}'\n\n- family/role {family:?}/{role:?}; rule {rule:?}; tool D {} Z {}; op feed {:?}; steady feed {steady:.0}; rpm {:?}\n- band min {} max {}; deflection limit {:.0} um ({defl_basis:?}); force line {}\n- moves {}; capped moves {capped_moves}; samples {total}; removing (not air) {removing}; effective feed differs from sample feed on {feed_differs}",
+            tc.id.raw(),
+            tc.operation.op_type().label(),
+            tc.name,
+            tool_cfg.diameter,
+            tool.flute_count,
+            tc.operation.feed_rate(),
+            tc.operation.spindle_rpm(),
+            fmt(band_min, 4),
+            fmt(band_max, 4),
+            defl_limit * 1000.0,
+            line.is_some(),
+            moves.len(),
+        );
+        let pct = |a: usize, b: usize| if b == 0 { "-".to_owned() } else { format!("{:.1} %", 100.0 * a as f64 / b as f64) };
+        let _ = writeln!(
+            text,
+            "- M1: feed filter (sample feed < {frac} x steady) drops {dropped_by_feed} of {removing} removing samples ({}); of the steady-span samples {steady_dropped} of {steady_n} ({}); by the effective feed {eff_dropped} of {removing} ({})",
+            pct(dropped_by_feed, removing),
+            pct(steady_dropped, steady_n),
+            pct(eff_dropped, removing)
+        );
+        let _ = writeln!(
+            text,
+            "- chip, steady-span samples with a chip: with filter n {} over {over_with} under {under_with} median {} max {}; without filter n {} over {over_without} under {under_without} median {} max {}",
+            chip_with.len(),
+            fmt(median(&mut chip_with), 4),
+            fmt(chip_with.last().copied(), 4),
+            chip_without.len(),
+            fmt(median(&mut chip_without), 4),
+            fmt(chip_without.last().copied(), 4),
+        );
+        let _ = writeln!(
+            text,
+            "- M5: depth population {depth_pop}; peak depth {:?}; samples with force at the gate cut > budget: {depth_over_budget}; samples over the Factor cap: {depth_over_factor}",
+            depth_peak
+        );
+        if let Some(v) = report.per_toolpath.iter().find(|v| v.toolpath_id == tc.id) {
+            for c in v.criteria() {
+                let _ = writeln!(
+                    text,
+                    "- verdict {:?}: {:?} peak {} bound {} population {:?} reason {:?}",
+                    c.kind,
+                    c.state,
+                    fmt(c.display_peak, 4),
+                    fmt(c.bound, 4),
+                    c.population.map(|p| (p.contributing, p.offered)),
+                    c.unmodeled_reason
+                );
+            }
+            if let Some(f) = &v.cut_force {
+                let _ = writeln!(text, "- cut_force card: peak {:.1} N, budget {:?}, rule {}", f.peak_n, f.budget_n, f.rule);
+            }
+        }
+        for (title, map) in [("by kind", &mut groups), ("capped moves, by source", &mut caps)] {
+            let _ = writeln!(
+                text,
+                "\n{title} (max / p95):\n\n| kind | n | time s | no arc | ap mm | feed | power kW | >avail | peak force N | >budget | mean force N | defl um | >limit | chip mm | >max | <min |\n|---|---|---|---|---|---|---|---|---|---|---|---|---|---|---|---|"
+            );
+            for (k, g) in map.iter_mut() {
+                let _ = writeln!(
+                    text,
+                    "| {k} | {} | {:.1} | {} | {} | {} | {} | {} | {} | {} | {} | {} | {} | {} | {} | {} |",
+                    g.n,
+                    g.time_s,
+                    g.no_arc,
+                    stat(&mut g.ap),
+                    stat(&mut g.feed),
+                    stat(&mut g.power),
+                    g.power_over,
+                    stat(&mut g.force),
+                    g.force_over,
+                    stat(&mut g.mean_force),
+                    stat(&mut g.defl),
+                    g.defl_over,
+                    stat(&mut g.chip),
+                    g.chip_over,
+                    g.chip_under,
+                );
+            }
+        }
+        text.push('\n');
+        eprintln!("P29 readout idx {idx}: {:.0} s", t0.elapsed().as_secs_f64());
+    }
+    let tag = targets.iter().map(ToString::to_string).collect::<Vec<_>>().join("_");
+    out(&format!("p29_postsim_{file}_{tag}_mod{}.md", u8::from(modulate)), &text);
+}
