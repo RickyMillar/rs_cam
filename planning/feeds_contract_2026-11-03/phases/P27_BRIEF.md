@@ -77,6 +77,11 @@ most correct thing the evidence supports.
 - The row lookup is mid-redesign as categories (`phases/P25_DESIGN.md`, operator rulings 1 to 5
   in section 8). Ruling 6, what to do when no row exists, is waiting for your model. You may find
   the category design changes once the model exists; say so if it does.
+- The cut object (P29, in work from 2026-11-11): `phases/P29_FINDINGS.md` section 4. A limit is
+  a function of a `Cut` (engagement, operating point, kind), the tool, the material and the
+  machine. It returns a `Check`. It never reads the op type. Each op declares its cuts through
+  `OperationConfig::cuts()`. Add a new limit or a new model there, not as a per-op rule. Read
+  the P29 change list for what has landed; your product wiring comes after P29-3.
 - First thoughts from the earlier lead, to use or discard: `phases/P27_NOTES.md`.
 - Benchmarks: `planning/rivmap_block_job/nz_wanaka_21_operator.toml` (the operator's real job;
   never save over it without their say), `planning/fixtures/` (rivmap100).
