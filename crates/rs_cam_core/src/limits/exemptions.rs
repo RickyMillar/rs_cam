@@ -14,7 +14,9 @@
 //!
 //! The row ids `P28-*` are the 34 rows of `phases/P28_limit_audit.md`; the
 //! ids `M1` to `M12` are section 3.3 of `phases/P29_parts/A_cuts_and_limits.md`.
-//! The other ids are named on their rows.
+//! The ids `C-*` are rows found while commit C was built
+//! (`Cut::of_sample` and its sentry). The other ids are named on their
+//! rows.
 
 use super::{CleanupKind, CutKind, EntryKind, Geometry, LimitId};
 
@@ -110,7 +112,7 @@ const R2: ExemptionClass = ExemptionClass::Ruled {
 const NR: ExemptionClass = ExemptionClass::NeedsRuling;
 
 /// Every exemption from a limit today. See the module doc.
-pub static EXEMPTIONS: [Exemption; 66] = [
+pub static EXEMPTIONS: [Exemption; 67] = [
     // P28: the limit audit.
     Exemption {
         id: "P28-01",
@@ -344,6 +346,7 @@ pub static EXEMPTIONS: [Exemption; 66] = [
             "src/tool_load/chipload.rs",
             "src/tool_load/mod.rs",
             "src/compute/simulate.rs",
+            "src/limits/sample.rs",
         ],
         closes_in: "P29-6",
     },
@@ -363,6 +366,7 @@ pub static EXEMPTIONS: [Exemption; 66] = [
             "src/tool_load/chipload.rs",
             "src/compute/simulate.rs",
             "src/session/compute.rs",
+            "src/limits/sample.rs",
         ],
         closes_in: "P29-6",
     },
@@ -370,7 +374,7 @@ pub static EXEMPTIONS: [Exemption; 66] = [
         id: "P28-23",
         what: "every load gate",
         limit: GATES,
-        who: Who::Kind(&[CutKind::LeadOut, CutKind::Link]),
+        who: Who::Kind(&[CutKind::LeadOut, CutKind::Link, CutKind::DressupRelief]),
         // Ruling Q5: the reading is of neighbour stock. The operator rules
         // at P29-6 how such a sample is judged.
         class: NR,
@@ -384,6 +388,7 @@ pub static EXEMPTIONS: [Exemption; 66] = [
             "src/tool_load/chipload.rs",
             "src/compute/simulate.rs",
             "src/session/compute.rs",
+            "src/limits/sample.rs",
         ],
         closes_in: "P29-6",
     },
@@ -762,7 +767,7 @@ pub static EXEMPTIONS: [Exemption; 66] = [
         limit: GATES,
         who: Who::Kind(&[CutKind::Link]),
         class: NR,
-        where_: &["src/tool_load/locality.rs"],
+        where_: &["src/tool_load/locality.rs", "src/limits/sample.rs"],
         closes_in: "P29-6",
     },
     Exemption {
@@ -771,18 +776,18 @@ pub static EXEMPTIONS: [Exemption; 66] = [
         limit: GATES,
         who: Who::Reader("the entry plunges of a Profile after a tab, in no span"),
         class: NR,
-        where_: &["src/tool_load/locality.rs"],
+        where_: &["src/tool_load/locality.rs", "src/limits/sample.rs"],
         closes_in: "P29-6",
     },
-    // Ruling Q4: two kinds that the sample door infers, not reads. The
-    // inference is in commit C; no file holds it yet.
+    // Ruling Q4: two kinds that the sample door infers, not reads
+    // (`Cut::of_sample`, commit C).
     Exemption {
         id: "Q4-SlotRingInferred",
         what: "every load gate",
         limit: GATES,
         who: Who::Kind(&[CutKind::SlotRing]),
         class: NR,
-        where_: &[],
+        where_: &["src/limits/sample.rs"],
         closes_in: "P29-6 (a planner marker)",
     },
     Exemption {
@@ -791,7 +796,19 @@ pub static EXEMPTIONS: [Exemption; 66] = [
         limit: GATES,
         who: Who::Reader("a capped move of a result with no semantic trace has no cap source"),
         class: NR,
-        where_: &[],
+        where_: &["src/limits/sample.rs"],
+        closes_in: "P29-6",
+    },
+    // C: found while commit C was built. The stamper flags a lead-in and
+    // an entry approach in transit by the intent, so every gate drops them;
+    // no other row names the two kinds (lead ruling, 2026-11-11).
+    Exemption {
+        id: "C-LeadInApproach",
+        what: "every load gate",
+        limit: GATES,
+        who: Who::Kind(&[CutKind::LeadIn, CutKind::EntryApproach]),
+        class: NR,
+        where_: &["src/limits/sample.rs", "src/compute/simulate.rs"],
         closes_in: "P29-6",
     },
     // F: the facts of the cut that hold a label value (ruling Q2).

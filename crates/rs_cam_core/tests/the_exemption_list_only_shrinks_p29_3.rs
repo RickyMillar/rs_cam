@@ -34,16 +34,17 @@ use std::path::{Path, PathBuf};
 use rs_cam_core::limits::{EXEMPTIONS, Exemption, ExemptionClass, Geometry, Who};
 
 /// The rows that need a ruling. Exact: a closed row lowers it.
-const MAX_NEEDS_RULING: usize = 55;
+const MAX_NEEDS_RULING: usize = 56;
 /// Every row.
-const ROWS: usize = 66;
+const ROWS: usize = 67;
 /// The rows with a geometry reason.
 const PHYSICAL: usize = 8;
 /// The rows that quote an operator ruling.
 const RULED: usize = 3;
 /// The rows that name the files of their scope reads. The rows of an
-/// undeclared cut (no reader) and of a commit C inference name none.
-const ROWS_WITH_A_FILE: usize = 56;
+/// undeclared cut (no reader) name none. Commit C gave the two Q4 rows
+/// their file (`src/limits/sample.rs`), and added the row `C-LeadInApproach`.
+const ROWS_WITH_A_FILE: usize = 59;
 
 /// The 34 rows of `phases/P28_limit_audit.md`.
 const P28_IDS: [&str; 34] = [

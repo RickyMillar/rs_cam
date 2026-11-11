@@ -92,6 +92,11 @@ pub enum CutKind {
     LeadOut,
     /// A link between two cuts.
     Link,
+    /// A cut that a dressup adds to the path: today only the dogbone
+    /// relief at an inside corner (`dressup::apply_dogbones`, the one
+    /// emitter of a `DressupArtifact` span). The `DressupArtifact` span
+    /// marks it; its moves keep the cut intent.
+    DressupRelief,
     /// A drill cycle.
     Drill,
 }
@@ -112,6 +117,10 @@ pub enum NoEngagementModel {
     NoStatedDepth,
     /// The cut states no width (P29-9).
     NoStatedWidth,
+    /// A simulation sample that removes material and states no arc of
+    /// engagement, or an arc that gives no width (a straight plunge
+    /// sample; `Cut::of_sample`).
+    NoMeasuredArc,
 }
 
 /// How the tool engages the stock in one cut.

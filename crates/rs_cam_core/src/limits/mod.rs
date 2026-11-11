@@ -13,6 +13,8 @@
 //! - [`Cut`] (`cut.rs`, P29-3): one cut that a limit judges.
 //! - [`EXEMPTIONS`] (`exemptions.rs`, P29-3): the one list of every
 //!   exemption from a limit.
+//! - [`SampleContext`] (`sample.rs`, P29-3): the side tables of
+//!   `Cut::of_sample`, the cut of one simulation sample.
 //!
 //! In P29-2 the old types stay and no surface reads this folder.
 //!
@@ -24,6 +26,7 @@ mod check;
 mod cut;
 mod exemptions;
 mod project;
+mod sample;
 
 pub use check::{BoundSide, Check, CheckState, Geometry, NoNumberReason, basis_of_bound};
 pub use cut::{
@@ -32,6 +35,7 @@ pub use cut::{
 };
 pub use exemptions::{EXEMPTIONS, Exemption, ExemptionClass, Who};
 pub use project::{of_criterion, of_envelope, of_judged_value, of_rpm_choice};
+pub use sample::{CapTable, MoveCap, SampleContext};
 
 use serde::Serialize;
 

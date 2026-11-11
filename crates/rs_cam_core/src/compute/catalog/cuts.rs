@@ -170,7 +170,8 @@ impl DeclaredCut {
             | CutKind::SlotRing
             | CutKind::LeadIn
             | CutKind::LeadOut
-            | CutKind::Link => side(),
+            | CutKind::Link
+            | CutKind::DressupRelief => side(),
         }
     }
 

@@ -2237,6 +2237,7 @@ fn carve_entry(
         // a transit span dropped by TSP (split LinkBridge)
         // leaves its moves without ancestry, but their intents
         // still classify them as transit.
+        // EXEMPT(C-LeadInApproach)
         let intent_transits = entry.annotated.transit_moves_bitmap_from_intents();
         let (span_paths_by_move, transit_moves) = if entry.annotated.spans_valid {
             let mut transit = entry.annotated.transit_moves_bitmap();

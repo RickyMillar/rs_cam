@@ -303,6 +303,7 @@ fn claim_3_the_entry_kinds_equal_the_contract() {
                 | CutKind::LeadIn
                 | CutKind::LeadOut
                 | CutKind::Link
+                | CutKind::DressupRelief
                 | CutKind::Drill => None,
             })
             .collect();
