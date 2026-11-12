@@ -344,11 +344,13 @@ impl CutSpec {
     /// P4 marker `PresentBasis`: the calculator reads the operator's cut,
     /// not a family default, wherever the spec states it.
     ///
-    /// - The depth: a depth per pass, a Z step, a one-pass depth, or the
-    ///   operator's surface cap, when it is above zero. A peck, a helix
-    ///   pitch and a chamfer width are not a side-cut depth, so the
-    ///   calculator reads none for them. A surface offset is not a depth
-    ///   (P16), so the calculator reads none for it.
+    /// - The depth: a depth per pass, a Z step, a one-pass depth, the
+    ///   operator's surface cap, or a helix pitch, when it is above zero.
+    ///   A helix of pitch `p` engages `p` of material at its leading edge,
+    ///   so one helix turn is the depth of a Bore (P29-5b). A peck and a
+    ///   chamfer width are not a side-cut depth, so the calculator reads
+    ///   none for them. A surface offset is not a depth (P16), so the
+    ///   calculator reads none for it.
     /// - The width: a stepover, or the tool diameter for a slot. A groove,
     ///   a surface width, an angular step and a drill give none.
     /// - The scallop target, when the radial cut is a scallop.
@@ -361,11 +363,9 @@ impl CutSpec {
                     None => None,
                 }
             }
+            Axial::HelixPitch(s) => Some(s.mm()),
             // EXEMPT(P28-32)
-            Axial::Peck(_)
-            | Axial::HelixPitch(_)
-            | Axial::ChamferWidth(_)
-            | Axial::SurfaceOffset(_) => None,
+            Axial::Peck(_) | Axial::ChamferWidth(_) | Axial::SurfaceOffset(_) => None,
         };
         // A depth at or below zero is not a cut depth: the calculator reads
         // none.

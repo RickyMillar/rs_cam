@@ -397,16 +397,17 @@ impl OperationConfig {
     }
 
     /// The depth of the op's side cuts: a depth per pass, a Z step, a
-    /// one-pass depth or the surface cap. A peck, a helix pitch and a
-    /// chamfer width are not a side-cut depth; a surface offset gives its
-    /// depth after the simulation.
+    /// one-pass depth, the surface cap or a helix pitch (one helix turn,
+    /// P29-5b). A peck and a chamfer width are not a side-cut depth; a
+    /// surface offset gives its depth after the simulation.
     fn declared_depth(&self) -> DeclaredDepth {
         let not_stated = DeclaredDepth::None(NoEngagementModel::NoStatedDepth);
         match self.cut_spec().axial {
             Axial::PerPass(s) | Axial::ZStep(s) | Axial::OnePass(s) | Axial::Surface { max: s } => {
                 s.map_or(not_stated, |s| DeclaredDepth::Stated(s.mm()))
             }
-            Axial::Peck(_) | Axial::HelixPitch(_) | Axial::ChamferWidth(_) => not_stated,
+            Axial::HelixPitch(s) => DeclaredDepth::Stated(s.mm()),
+            Axial::Peck(_) | Axial::ChamferWidth(_) => not_stated,
             Axial::SurfaceOffset(_) => DeclaredDepth::None(NoEngagementModel::DepthAfterSimulation),
         }
     }

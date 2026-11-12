@@ -1846,7 +1846,8 @@ fn operation_feeds_hints_is_an_explicit_per_op_decision() {
             OperationConfig::Zigzag(c) => (c.depth_per_pass, c.stepover, None),
             OperationConfig::Trace(c) => (c.depth_per_pass, Some(d), None),
             OperationConfig::Drill(_) => (None, None, None),
-            OperationConfig::Bore(_) => (None, Some(d), None),
+            // P29-5b: one helix turn is the depth of a Bore.
+            OperationConfig::Bore(c) => (positive(Some(c.pitch)), Some(d), None),
             OperationConfig::Chamfer(_) => (None, None, None),
             OperationConfig::DropCutter(c) => match c.scallop_height {
                 Some(h) => (None, None, Some(h)),

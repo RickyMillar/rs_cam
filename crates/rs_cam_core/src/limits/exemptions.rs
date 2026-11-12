@@ -388,7 +388,7 @@ pub static EXEMPTIONS: [Exemption; 51] = [
         id: "P28-32",
         what: "the depth that the calculator reads",
         limit: &[],
-        who: Who::Reader("a helix pitch, a chamfer width and a peck give no depth"),
+        who: Who::Reader("a chamfer width and a peck give no depth"),
         class: NR,
         where_: &["src/compute/catalog/cut_spec.rs"],
         closes_in: "P29-9",
