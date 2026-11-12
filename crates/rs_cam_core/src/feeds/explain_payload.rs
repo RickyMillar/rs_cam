@@ -208,45 +208,49 @@ fn synthetic_query(input: &FeedsInput<'_>) -> LookupQuery {
 )]
 mod tests {
     use super::*;
+    use crate::compute::ToolType;
+    use crate::compute::catalog::{OperationConfig, OperationType};
+    use crate::compute::tool_config::ToolConfig;
+    use crate::feeds::embedded_vendor_lut;
     use crate::feeds::vendor_lut::{
         LutOperationFamily, LutPassRole, MaterialFamily, ToolFamily, VendorLut,
     };
-    use crate::feeds::{
-        OperationFamily, PassRole, SetupContext, ToolGeometryHint, embedded_vendor_lut,
-    };
+    use crate::ids::ToolId;
     use crate::machine::MachineProfile;
     use crate::material::{Material, WoodSpecies};
 
+    /// The 6.35 mm 2-flute flat end mill of the fixture (diameter `d`),
+    /// each fact stated.
+    fn flat(d: f64) -> ToolConfig {
+        ToolConfig::builder(ToolId::from_raw(1), ToolType::EndMill)
+            .diameter(d)
+            .flutes(2)
+            .flute_mm(22.0)
+            .shank_mm(6.35)
+            .stickout_mm(25.4)
+            .build()
+    }
+
+    /// The input of a stock Face (Pocket, Roughing; no slot case) on
+    /// `tool`. `None` gives the input with no vendor table.
     fn make_input<'a>(
+        tool: &'a ToolConfig,
         material: &'a Material,
         machine: &'a MachineProfile,
         lut: Option<&'a VendorLut>,
     ) -> FeedsInput<'a> {
-        FeedsInput {
-            tool_series: None,
-            tool_diameter: 6.35,
-            flute_count: 2,
-            flute_length: 22.0,
-            shank_diameter: Some(6.35),
-            cut_body: crate::feeds::CutBody {
-                max_cut_diameter_mm: 6.35,
-                core_diameter_mm: 0.0,
-            },
-            tool_geometry: ToolGeometryHint::Flat,
+        let op = OperationConfig::new_default(OperationType::Face);
+        let input = FeedsInput::of_operation(
+            &op,
+            tool,
             material,
             machine,
-            operation: OperationFamily::Pocket,
-            operation_kind: None,
-            pass_role: PassRole::Roughing,
-            axial_depth_mm: None,
-            radial_width_mm: None,
-            target_scallop_mm: None,
-            vendor_lut: lut,
-            setup: SetupContext::default(),
-            feed_max_rate: None,
-            spindle_strategy: crate::feeds::SpindleStrategy::default(),
-            power_cases: crate::feeds::engagement::PowerCases::NOMINAL,
-            tool_facts: crate::feeds::sourced::ToolFactKinds::STATED,
+            lut.unwrap_or_else(|| embedded_vendor_lut()),
+            crate::feeds::SpindleStrategy::default(),
+        );
+        match lut {
+            Some(_) => input,
+            None => input.with_no_vendor_table(),
         }
     }
 
@@ -257,7 +261,8 @@ mod tests {
         };
         let mach = MachineProfile::shapeoko_vfd();
         let lut = embedded_vendor_lut();
-        let input = make_input(&mat, &mach, Some(lut));
+        let tool = flat(6.35);
+        let input = make_input(&tool, &mat, &mach, Some(lut));
 
         let exp = explain(&input);
 
@@ -278,7 +283,8 @@ mod tests {
         };
         let mach = MachineProfile::shapeoko_vfd();
         let lut = embedded_vendor_lut();
-        let input = make_input(&mat, &mach, Some(lut));
+        let tool = flat(6.35);
+        let input = make_input(&tool, &mat, &mach, Some(lut));
 
         let exp = explain(&input);
         let matched = exp.matched_row.as_ref().expect("LUT should match");
@@ -292,7 +298,8 @@ mod tests {
             species: WoodSpecies::HardMaple,
         };
         let mach = MachineProfile::shapeoko_vfd();
-        let input = make_input(&mat, &mach, None);
+        let tool = flat(6.35);
+        let input = make_input(&tool, &mat, &mach, None);
 
         let exp = explain(&input);
         assert!(exp.matched_row.is_none());
@@ -315,9 +322,9 @@ mod tests {
         };
         let mach = MachineProfile::shapeoko_vfd();
         let lut = embedded_vendor_lut();
-        let mut input = make_input(&mat, &mach, Some(lut));
-        // Push diameter far from any calibrated row to force extrapolation.
-        input.tool_diameter = 12.7;
+        // A diameter far from any calibrated row, to force extrapolation.
+        let tool = flat(12.7);
+        let input = make_input(&tool, &mat, &mach, Some(lut));
         let exp = explain(&input);
         if let Some(row) = &exp.matched_row {
             assert_eq!(exp.is_extrapolated(), row.is_extrapolated);
@@ -331,7 +338,8 @@ mod tests {
         };
         let mach = MachineProfile::shapeoko_vfd();
         let lut = embedded_vendor_lut();
-        let input = make_input(&mat, &mach, Some(lut));
+        let tool = flat(6.35);
+        let input = make_input(&tool, &mat, &mach, Some(lut));
 
         let exp = explain(&input);
         assert_eq!(exp.query.operation_family, LutOperationFamily::Pocket);

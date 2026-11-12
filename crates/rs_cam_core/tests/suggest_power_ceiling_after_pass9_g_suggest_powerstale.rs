@@ -154,18 +154,22 @@
 )]
 
 use rs_cam_core::compute::catalog::OperationConfig;
+use rs_cam_core::compute::catalog::OperationType;
 use rs_cam_core::compute::operation_configs::PocketConfig;
 use rs_cam_core::compute::tool_config::ToolFact;
 use rs_cam_core::compute::{ToolConfig, ToolId, ToolType};
 use rs_cam_core::feeds::envelope::{EnvelopeInput, PickRequest, SafeEnvelope};
 use rs_cam_core::feeds::suggest::{OperationApplyInput, SuggestContext, apply_to_operation};
 use rs_cam_core::feeds::{
-    FeedsInput, FeedsResult, FeedsWarning, OperationFamily, PassRole, SetupContext,
-    SpindleStrategy, ToolGeometryHint, calculate, embedded_vendor_lut,
+    FeedsInput, FeedsResult, FeedsWarning, SpindleStrategy, ToolGeometryHint, calculate,
+    embedded_vendor_lut,
 };
 use rs_cam_core::machine::MachineProfile;
 use rs_cam_core::material::force_line::ForceLine;
 use rs_cam_core::material::{Material, WoodSpecies};
+
+#[path = "common/feeds_input.rs"]
+mod feeds_input;
 
 /// Every shipped wood species — the sweep population, same list the
 /// sibling power instrument uses.
@@ -282,38 +286,34 @@ fn heavy_pocket() -> OperationConfig {
     })
 }
 
+/// P29-7 7a: the input of a full-width Pocket slot (the slot case is the
+/// nominal width) at the depth `ap_mm` and the width `ae_mm`, on `tool`.
 fn feeds_input<'a>(
     machine: &'a MachineProfile,
     material: &'a Material,
+    tool: &'a ToolConfig,
     ap_mm: f64,
     ae_mm: f64,
 ) -> FeedsInput<'a> {
-    FeedsInput {
-        tool_series: None,
-        tool_diameter: DIAMETER_MM,
-        flute_count: 2,
-        flute_length: 3.0 * DIAMETER_MM,
-        shank_diameter: None,
-        cut_body: rs_cam_core::feeds::CutBody {
-            max_cut_diameter_mm: DIAMETER_MM,
-            core_diameter_mm: 0.0,
-        },
-        tool_geometry: ToolGeometryHint::Flat,
+    FeedsInput::of_operation(
+        &feeds_input::op_with(OperationType::Pocket, Some(ap_mm), Some(ae_mm)),
+        tool,
         material,
         machine,
-        operation: OperationFamily::Pocket,
-        operation_kind: None,
-        pass_role: PassRole::Roughing,
-        axial_depth_mm: Some(ap_mm),
-        radial_width_mm: Some(ae_mm),
-        target_scallop_mm: None,
-        vendor_lut: Some(embedded_vendor_lut()),
-        setup: SetupContext::default(),
-        feed_max_rate: None,
-        spindle_strategy: SpindleStrategy::MatchChart,
-        power_cases: rs_cam_core::feeds::engagement::PowerCases::NOMINAL,
-        tool_facts: rs_cam_core::feeds::sourced::ToolFactKinds::STATED,
-    }
+        embedded_vendor_lut(),
+        SpindleStrategy::MatchChart,
+    )
+}
+
+/// The flat end mill of the calculator input: 2 flutes, a 3 x D flute.
+fn input_tool() -> ToolConfig {
+    feeds_input::tool_of_hint(
+        ToolGeometryHint::Flat,
+        DIAMETER_MM,
+        2,
+        3.0 * DIAMETER_MM,
+        DIAMETER_MM,
+    )
 }
 
 struct Shipped {
@@ -425,7 +425,8 @@ fn the_fixture_actually_reaches_the_power_branch() {
     let material = Material::SolidWood {
         species: WoodSpecies::WhiteOak,
     };
-    let input = feeds_input(&machine, &material, 2.0 * DIAMETER_MM, DIAMETER_MM);
+    let tool = input_tool();
+    let input = feeds_input(&machine, &material, &tool, 2.0 * DIAMETER_MM, DIAMETER_MM);
     let result = calculate(&input);
 
     assert!(
@@ -584,6 +585,7 @@ fn no_requested_depth_lets_the_rescale_outrun_the_ceiling() {
         species: WoodSpecies::WhiteOak,
     };
 
+    let input_tool = input_tool();
     let mut worst = 0.0_f64;
     let mut worst_ap = 0.0_f64;
     let mut worst_shipped = 0.0_f64;
@@ -594,7 +596,7 @@ fn no_requested_depth_lets_the_rescale_outrun_the_ceiling() {
     // boundaries (1, 2, 3) with plenty of points either side.
     for step in 1..=70 {
         let requested_ap = DIAMETER_MM * (step as f64) * 0.05;
-        let probe = feeds_input(&machine, &material, requested_ap, DIAMETER_MM);
+        let probe = feeds_input(&machine, &material, &input_tool, requested_ap, DIAMETER_MM);
         if calculate(&probe).power_limited {
             reached_branch += 1;
         }

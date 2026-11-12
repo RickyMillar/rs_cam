@@ -33,6 +33,7 @@
     reason = "test code: a panic is how a test reports a failure"
 )]
 
+use rs_cam_core::compute::catalog::OperationConfig;
 use rs_cam_core::compute::catalog::OperationType;
 use rs_cam_core::compute::tool_config::ToolFact;
 use rs_cam_core::compute::{ToolConfig, ToolId, ToolType};
@@ -44,13 +45,15 @@ use rs_cam_core::feeds::suggest::{
 };
 use rs_cam_core::feeds::vendor_lut::VendorLut;
 use rs_cam_core::feeds::{
-    EMBEDDED_LUT, FeedsInput, FeedsResult, FeedsWarning, OperationFamily, PassRole, RpmFloorSource,
-    SetupContext, SpindleScaleReason, SpindleStrategy, ToolGeometryHint, calculate,
-    embedded_vendor_lut,
+    EMBEDDED_LUT, FeedsInput, FeedsResult, FeedsWarning, RpmFloorSource, SpindleScaleReason,
+    SpindleStrategy, ToolGeometryHint, calculate, embedded_vendor_lut,
 };
 use rs_cam_core::ids::ToolpathId;
 use rs_cam_core::machine::MachineProfile;
 use rs_cam_core::material::{Material, WoodSpecies};
+
+#[path = "common/feeds_input.rs"]
+mod feeds_input;
 
 const ROW_ID: &str = "amana-ball-hardwood-pocket-6350-2f-v7";
 
@@ -70,32 +73,15 @@ fn ball_pocket(machine: &MachineProfile, lut: &VendorLut) -> FeedsResult {
     let material = Material::SolidWood {
         species: WoodSpecies::WhiteOak,
     };
-    calculate(&FeedsInput {
-        tool_series: None,
-        tool_diameter: 6.35,
-        flute_count: 2,
-        flute_length: 22.0,
-        shank_diameter: None,
-        cut_body: rs_cam_core::feeds::CutBody {
-            max_cut_diameter_mm: 6.35,
-            core_diameter_mm: 0.0,
-        },
-        tool_geometry: ToolGeometryHint::Ball,
-        material: &material,
+    calculate(&FeedsInput::of_operation(
+        // P29-7 7a: a stock Face, the (Pocket, Roughing) op with no slot case.
+        &OperationConfig::new_default(OperationType::Face),
+        &feeds_input::tool_of_hint(ToolGeometryHint::Ball, 6.35, 2, 22.0, 6.35),
+        &material,
         machine,
-        operation: OperationFamily::Pocket,
-        operation_kind: None,
-        pass_role: PassRole::Roughing,
-        axial_depth_mm: None,
-        radial_width_mm: None,
-        target_scallop_mm: None,
-        vendor_lut: Some(lut),
-        setup: SetupContext::default(),
-        feed_max_rate: None,
-        spindle_strategy: SpindleStrategy::MatchChart,
-        power_cases: rs_cam_core::feeds::engagement::PowerCases::NOMINAL,
-        tool_facts: rs_cam_core::feeds::sourced::ToolFactKinds::STATED,
-    })
+        lut,
+        SpindleStrategy::MatchChart,
+    ))
 }
 
 fn fpt(r: &FeedsResult) -> f64 {

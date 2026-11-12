@@ -34,12 +34,12 @@ use rs_cam_core::compute::cutter::build_cutter;
 use rs_cam_core::compute::operation_configs::PocketConfig;
 use rs_cam_core::compute::tool_config::{ToolConfig, ToolFact, ToolId, ToolType};
 use rs_cam_core::dressup::feed_modulation::ModulationCutter;
+use rs_cam_core::feeds::FeedsInput;
 use rs_cam_core::feeds::engagement::{EngagedDiameter, Engagement};
 use rs_cam_core::feeds::envelope::CutPoint;
 use rs_cam_core::feeds::force::immersion_angle;
 use rs_cam_core::feeds::operating_point::force_at_operating_point;
 use rs_cam_core::feeds::predict::tip_deflection_from_engagement;
-use rs_cam_core::feeds::suggest::feeds_input_for_operation;
 use rs_cam_core::feeds::{
     CutBody, SpindleStrategy, calculate, embedded_vendor_lut, predict_peak_deflection_um,
 };
@@ -187,7 +187,7 @@ fn a_tapered_ball_cuts_only_to_its_flute_top_p22_0c6() {
             }
 
             // Suggest: the Step 5 diameter at the stated depth.
-            let result = calculate(&feeds_input_for_operation(
+            let result = calculate(&FeedsInput::of_operation(
                 &pocket(ap),
                 &tool,
                 &material,

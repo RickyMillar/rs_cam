@@ -7,7 +7,7 @@
 
 use crate::compute::catalog::{OperationConfig, OperationType};
 use crate::compute::tool_config::ToolConfig;
-use crate::feeds::{FeedsError, FeedsInput, FeedsResult, SetupContext, VendorLut};
+use crate::feeds::{FeedsError, FeedsInput, FeedsResult, VendorLut};
 use crate::machine::MachineProfile;
 use crate::material::Material;
 
@@ -753,61 +753,6 @@ pub fn has_computed_width(operation: &OperationConfig) -> bool {
     operation.cuts().body_facts().offset_ring
 }
 
-/// Build a [`FeedsInput`] for the given operation. Shared by both
-/// [`feeds_result_for_operation`] and [`feeds_explain_for_operation`]
-/// so the recommendation and the explanation are always derived from
-/// identical inputs.
-///
-/// Public so that a test or an instrument can resolve
-/// [`crate::feeds::feeds_support`] on the input a production door builds,
-/// not on a second builder.
-#[must_use]
-pub fn feeds_input_for_operation<'a>(
-    operation: &OperationConfig,
-    tool: &'a ToolConfig,
-    material: &'a Material,
-    machine: &'a MachineProfile,
-    lut: &'a VendorLut,
-    spindle_strategy: crate::feeds::SpindleStrategy,
-) -> FeedsInput<'a> {
-    let (family, role) = operation.feeds_style();
-    let (axial_hint, radial_hint, scallop_hint) = operation_feeds_hints(operation, tool.diameter);
-    FeedsInput {
-        // Ruling 2026-10-31: the cut direction declares the cutter series;
-        // `UpCut` is a generic tool.
-        tool_series: crate::feeds::series::ToolSeries::for_cut_direction(tool.cut_direction),
-        tool_diameter: tool.diameter,
-        flute_count: tool.flute_count_planning(),
-        flute_length: tool.cutting_length_planning_mm(),
-        shank_diameter: Some(tool.shank_diameter_planning_mm()),
-        // P22-0c-6b (ruling 4 (a)): the cutting cap and the core from the
-        // body that `build_cutter` builds.
-        cut_body: crate::feeds::CutBody::of_tool(tool),
-        tool_geometry: tool.geometry_hint(),
-        material,
-        machine,
-        operation: family,
-        // Checkpoint K (a4) — the operation's own kind, so Suggest and
-        // the gate route the LUT query through the same
-        // `vendor_normalize::lut_query_for`. This is the single
-        // production Suggest/Explain input builder, so supplying it here
-        // is what closes the two-sided routing.
-        operation_kind: Some(operation.op_type()),
-        pass_role: role,
-        axial_depth_mm: axial_hint,
-        radial_width_mm: radial_hint,
-        target_scallop_mm: scallop_hint,
-        vendor_lut: Some(lut),
-        setup: SetupContext {
-            tool_overhang_mm: Some(tool.stickout_planning_mm()),
-        },
-        feed_max_rate: None,
-        spindle_strategy,
-        power_cases: crate::feeds::engagement::PowerCases::of_operation(operation),
-        tool_facts: crate::feeds::sourced::ToolFactKinds::of_tool(tool),
-    }
-}
-
 /// Run the feeds calculator for an operation and project context without
 /// mutating the operation.
 ///
@@ -828,8 +773,7 @@ pub fn feeds_result_for_operation(
     // F029: the one Suggest door refuses a tool outside its domain, so no
     // pass below meets a tool that builds no cutter.
     tool.validate().map_err(FeedsError::ToolOutOfDomain)?;
-    let input =
-        feeds_input_for_operation(operation, tool, material, machine, lut, spindle_strategy);
+    let input = FeedsInput::of_operation(operation, tool, material, machine, lut, spindle_strategy);
     crate::feeds::validate_tool_for_operation(&input)?;
     Ok(crate::feeds::calculate(&input))
 }
@@ -846,8 +790,7 @@ pub fn feeds_explain_for_operation(
     lut: &VendorLut,
     spindle_strategy: crate::feeds::SpindleStrategy,
 ) -> crate::feeds::FeedsExplain {
-    let input =
-        feeds_input_for_operation(operation, tool, material, machine, lut, spindle_strategy);
+    let input = FeedsInput::of_operation(operation, tool, material, machine, lut, spindle_strategy);
     crate::feeds::explain_feeds(&input)
 }
 

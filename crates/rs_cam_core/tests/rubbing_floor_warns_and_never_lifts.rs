@@ -43,13 +43,15 @@
     reason = "test code: a panic is how a test reports a failure; the test prints its measurements for the reader"
 )]
 
+use rs_cam_core::compute::catalog::{OperationConfig, OperationType};
+use rs_cam_core::compute::{ToolConfig, ToolId, ToolType};
 use rs_cam_core::feeds::vendor_lut::{
     EvidenceGrade, LutOperationFamily, LutPassRole, ObservationKind, VendorLut,
 };
 use rs_cam_core::feeds::{
-    ChiploadBounds, FeedsInput, FeedsResult, FeedsWarning, OperationFamily, PassRole,
-    RUBBING_FLOOR_MM_TOOTH, RubbingFloorSource, SetupContext, SpindleStrategy, ToolGeometryHint,
-    calculate, effective_rubbing_floor, embedded_vendor_lut, rubbing_floor,
+    ChiploadBounds, FeedsInput, FeedsResult, FeedsWarning, RUBBING_FLOOR_MM_TOOTH,
+    RubbingFloorSource, SpindleStrategy, calculate, effective_rubbing_floor, embedded_vendor_lut,
+    rubbing_floor,
 };
 use rs_cam_core::machine::MachineProfile;
 use rs_cam_core::material::{Material, WoodSpecies};
@@ -88,6 +90,34 @@ fn sub_floor_lut() -> VendorLut {
     }
 }
 
+/// P29-7 7a: the op that states a Scallop / Finish cut at a depth and a
+/// scallop target: a Unified Finish (its `z_step` and `scallop_height`).
+fn unified_finish(z_step: f64, scallop_mm: f64) -> OperationConfig {
+    let mut op = OperationConfig::new_default(OperationType::UnifiedFinish);
+    let OperationConfig::UnifiedFinish(c) = &mut op else {
+        panic!("a Unified Finish config");
+    };
+    c.z_step = Some(z_step);
+    c.scallop_height = scallop_mm;
+    op
+}
+
+/// The tapered ball of the fixture as a tool config: tip `tip_mm`,
+/// `flutes`, flute length `flute_mm`, taper `taper_deg`, a 6 mm shank and
+/// shaft, each fact stated. The stick-out is 4 x the tip: at that ratio the
+/// long-tool share is 1.
+fn tapered_tool(tip_mm: f64, flutes: u32, flute_mm: f64, taper_deg: f64) -> ToolConfig {
+    ToolConfig::builder(ToolId::from_raw(1), ToolType::TaperedBallNose)
+        .diameter(tip_mm)
+        .flutes(flutes)
+        .flute_mm(flute_mm)
+        .taper_half_angle_deg(taper_deg)
+        .shank_mm(6.0)
+        .shaft_mm(6.0)
+        .stickout_mm(4.0 * tip_mm)
+        .build()
+}
+
 /// The B3 reference operation, verbatim from
 /// `tests/feed_explanation_snapshot_b3.rs`: a Ø1 mm tapered ball nose,
 /// 2 flutes, 5.26° half-angle, scallop finish in hard maple, against the
@@ -103,35 +133,14 @@ fn b3_scallop_on(machine: &MachineProfile) -> FeedsResult {
         species: WoodSpecies::HardMaple,
     };
 
-    calculate(&FeedsInput {
-        tool_series: None,
-        tool_diameter: 1.0,
-        flute_count: 2,
-        flute_length: 20.0,
-        shank_diameter: Some(6.0),
-        cut_body: rs_cam_core::feeds::CutBody {
-            max_cut_diameter_mm: 6.0,
-            core_diameter_mm: 0.0,
-        },
-        tool_geometry: ToolGeometryHint::TaperedBall {
-            tip_radius: 0.5,
-            taper_angle_deg: 5.26,
-        },
-        material: &material,
+    calculate(&FeedsInput::of_operation(
+        &unified_finish(0.35, 0.01),
+        &tapered_tool(1.0, 2, 20.0, 5.26),
+        &material,
         machine,
-        operation: OperationFamily::Scallop,
-        operation_kind: None,
-        pass_role: PassRole::Finish,
-        axial_depth_mm: Some(0.35),
-        radial_width_mm: None,
-        target_scallop_mm: Some(0.01),
-        vendor_lut: Some(lut),
-        setup: SetupContext::default(),
-        feed_max_rate: None,
-        spindle_strategy: SpindleStrategy::MatchChart,
-        power_cases: rs_cam_core::feeds::engagement::PowerCases::NOMINAL,
-        tool_facts: rs_cam_core::feeds::sourced::ToolFactKinds::STATED,
-    })
+        lut,
+        SpindleStrategy::MatchChart,
+    ))
 }
 
 fn commanded_fpt(result: &FeedsResult, flutes: f64) -> f64 {
@@ -299,7 +308,8 @@ fn a_ceiling_that_pushes_the_advance_under_the_band_minimum_warns_and_does_not_l
 
 #[test]
 fn a_tool_whose_band_sits_above_the_floor_does_not_warn() {
-    // CONTROL. Ø6.35 ball 2-flute pocket rough in white oak: the matched
+    // CONTROL. Ø6.35 ball 2-flute pocket rough in white oak (P29-7 7a: a
+    // stock Face, the (Pocket, Roughing) op with no slot case): the matched
     // printed Amana ball-nose v7 row (`amana-ball-hardwood-pocket-6350-2f-v7`,
     // 0.127-0.1778 mm/tooth before the hardness scale) is entirely *above*
     // the 0.025 floor, so `min(0.025, band_min)` is the constant and
@@ -312,32 +322,20 @@ fn a_tool_whose_band_sits_above_the_floor_does_not_warn() {
         species: WoodSpecies::WhiteOak,
     };
 
-    let result = calculate(&FeedsInput {
-        tool_series: None,
-        tool_diameter: 6.35,
-        flute_count: 2,
-        flute_length: 22.0,
-        shank_diameter: None,
-        cut_body: rs_cam_core::feeds::CutBody {
-            max_cut_diameter_mm: 6.35,
-            core_diameter_mm: 0.0,
-        },
-        tool_geometry: ToolGeometryHint::Ball,
-        material: &material,
-        machine: &machine,
-        operation: OperationFamily::Pocket,
-        operation_kind: None,
-        pass_role: PassRole::Roughing,
-        axial_depth_mm: None,
-        radial_width_mm: None,
-        target_scallop_mm: None,
-        vendor_lut: Some(lut),
-        setup: SetupContext::default(),
-        feed_max_rate: None,
-        spindle_strategy: SpindleStrategy::MatchChart,
-        power_cases: rs_cam_core::feeds::engagement::PowerCases::NOMINAL,
-        tool_facts: rs_cam_core::feeds::sourced::ToolFactKinds::STATED,
-    });
+    let result = calculate(&FeedsInput::of_operation(
+        &OperationConfig::new_default(OperationType::Face),
+        &ToolConfig::builder(ToolId::from_raw(1), ToolType::BallNose)
+            .diameter(6.35)
+            .flutes(2)
+            .flute_mm(22.0)
+            .shank_mm(6.35)
+            .stickout_mm(25.4)
+            .build(),
+        &material,
+        &machine,
+        lut,
+        SpindleStrategy::MatchChart,
+    ));
 
     let bounds = band(&result);
     println!(

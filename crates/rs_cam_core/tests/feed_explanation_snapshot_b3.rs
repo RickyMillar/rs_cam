@@ -1326,16 +1326,53 @@ fn the_commanded_feed_per_tooth_is_never_compared_to_the_band() {
 /// finding nothing anywhere.
 #[test]
 fn the_two_doc_ratio_diameters_only_diverge_for_v_bit_geometry() {
+    use rs_cam_core::compute::catalog::OperationConfig;
+    use rs_cam_core::compute::tool_config::ToolFact;
+    use rs_cam_core::compute::{ToolConfig, ToolId};
     use rs_cam_core::feeds::geometry::doc_derating_scale;
-    use rs_cam_core::feeds::{
-        FeedsInput, OperationFamily, PassRole, SetupContext, SpindleStrategy, ToolGeometryHint,
-        calculate,
-    };
+    use rs_cam_core::feeds::{FeedsInput, SpindleStrategy, ToolGeometryHint, calculate};
     use rs_cam_core::machine::MachineProfile;
     use rs_cam_core::tool::{BallEndmill, BullNoseEndmill, FlatEndmill, VBitEndmill};
 
     let machine = MachineProfile::shapeoko_vfd();
     let mat = material();
+
+    // The tool config of a case: the shape `hint` at the nominal diameter
+    // `d`, the flute length and the shank of the cutter of the case, each
+    // fact stated. The stick-out is 4 x D (a long-tool share of 1).
+    let tool_config_of = |hint: ToolGeometryHint, d: f64| -> ToolConfig {
+        let builder = ToolConfig::builder(ToolId::from_raw(1), hint.cutter_kind().tool_type())
+            .diameter(d)
+            .flutes(FLUTES)
+            .shank_mm(SHANK_DIAMETER_MM)
+            .stickout_mm(4.0 * d);
+        let mut tool = match hint {
+            ToolGeometryHint::Flat | ToolGeometryHint::Ball => builder.flute_mm(40.0).build(),
+            ToolGeometryHint::Bull { corner_radius } => {
+                builder.flute_mm(40.0).corner_radius(corner_radius).build()
+            }
+            ToolGeometryHint::VBit { included_angle, .. } => builder
+                .flute_mm(40.0)
+                .included_angle_deg(included_angle)
+                .build(),
+            ToolGeometryHint::TaperedBall {
+                taper_angle_deg, ..
+            } => builder
+                .flute_mm(20.0)
+                .taper_half_angle_deg(taper_angle_deg)
+                .shaft_mm(SHANK_DIAMETER_MM)
+                .build(),
+        };
+        if let ToolGeometryHint::VBit { tip_diameter, .. } = hint {
+            tool.set_v_tip_diameter(ToolFact::Stated(tip_diameter));
+        }
+        assert_eq!(
+            tool.geometry_hint(),
+            hint,
+            "the tool config states the hint"
+        );
+        tool
+    };
 
     let cases: Vec<(&str, ToolGeometryHint, Box<dyn MillingCutter>, f64)> = vec![
         (
@@ -1397,31 +1434,23 @@ fn the_two_doc_ratio_diameters_only_diverge_for_v_bit_geometry() {
         let mut worst_at = 0.0_f64;
         for step in 1..=120 {
             let commanded_ap = f64::from(step) * 0.1;
-            let result = calculate(&FeedsInput {
-                tool_series: None,
-                tool_diameter: *nominal_d,
-                flute_count: FLUTES,
-                flute_length: 40.0,
-                shank_diameter: Some(SHANK_DIAMETER_MM),
-                cut_body: rs_cam_core::feeds::CutBody::of_cutter(cutter.as_ref()),
-                tool_geometry: *hint,
-                material: &mat,
-                machine: &machine,
-                operation: OperationFamily::Adaptive,
-                operation_kind: None,
-                pass_role: PassRole::Roughing,
-                axial_depth_mm: Some(commanded_ap),
-                // Well below the slotting threshold so Step 4b never
-                // re-caps DOC behind our back.
-                radial_width_mm: Some(nominal_d * 0.3),
-                target_scallop_mm: None,
-                vendor_lut: None,
-                setup: SetupContext::default(),
-                feed_max_rate: None,
-                spindle_strategy: SpindleStrategy::default(),
-                power_cases: rs_cam_core::feeds::engagement::PowerCases::NOMINAL,
-                tool_facts: rs_cam_core::feeds::sourced::ToolFactKinds::STATED,
-            });
+            // P29-7 7a: the input of an Adaptive op at this depth and a
+            // width well below a slot, on the tool config of the case.
+            let mut op = OperationConfig::new_default(OperationType::Adaptive);
+            assert!(op.set_depth_per_pass(commanded_ap));
+            assert!(op.set_stepover(nominal_d * 0.3));
+            let tool = tool_config_of(*hint, *nominal_d);
+            let result = calculate(
+                &FeedsInput::of_operation(
+                    &op,
+                    &tool,
+                    &mat,
+                    &machine,
+                    rs_cam_core::feeds::embedded_vendor_lut(),
+                    SpindleStrategy::default(),
+                )
+                .with_no_vendor_table(),
+            );
             // The DOC that actually survived every clamp inside calculate.
             let ap = result.axial_depth_mm;
             // Denominator A: what Suggest's post-mutation re-derivation uses.

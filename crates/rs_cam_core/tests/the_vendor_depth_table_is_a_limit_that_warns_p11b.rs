@@ -31,10 +31,11 @@
 use rs_cam_core::compute::catalog::OperationConfig;
 use rs_cam_core::compute::operation_configs::PocketConfig;
 use rs_cam_core::compute::tool_config::{ToolConfig, ToolFact, ToolId, ToolType};
+use rs_cam_core::feeds::FeedsInput;
 use rs_cam_core::feeds::envelope::{
     CutPoint, Edge, EnvelopeInput, LimitKind, Placement, SafeEnvelope,
 };
-use rs_cam_core::feeds::suggest::{SuggestContext, feeds_input_for_operation};
+use rs_cam_core::feeds::suggest::SuggestContext;
 use rs_cam_core::feeds::{SpindleStrategy, calculate, embedded_vendor_lut};
 use rs_cam_core::machine::MachineProfile;
 use rs_cam_core::material::{Material, WoodSpecies};
@@ -76,7 +77,7 @@ fn band_max() -> f64 {
     let material = oak();
     let machine = MachineProfile::default();
     let op = pocket(1000.0);
-    let r = calculate(&feeds_input_for_operation(
+    let r = calculate(&FeedsInput::of_operation(
         &op,
         &tool,
         &material,

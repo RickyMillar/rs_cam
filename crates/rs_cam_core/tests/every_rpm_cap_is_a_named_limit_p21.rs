@@ -25,7 +25,6 @@
 //! `MatchChart` RPM and feed. Under `MatchChart` the choice is `None`.
 
 #![expect(
-    clippy::unwrap_used,
     clippy::expect_used,
     clippy::panic,
     clippy::indexing_slicing,

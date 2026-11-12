@@ -270,11 +270,14 @@ use rs_cam_core::feeds::vendor_lookup::find_best_chip_envelope_row;
 use rs_cam_core::feeds::vendor_lut::MaterialFamily;
 use rs_cam_core::feeds::vendor_normalize::to_lookup_query;
 use rs_cam_core::feeds::{
-    FeedsInput, FeedsWarning, OperationFamily, PassRole, RUBBING_FLOOR_MM_TOOTH, SetupContext,
-    SpindleStrategy, ToolGeometryHint, calculate, effective_rubbing_floor, embedded_vendor_lut,
+    FeedsInput, FeedsWarning, OperationFamily, PassRole, RUBBING_FLOOR_MM_TOOTH, SpindleStrategy,
+    ToolGeometryHint, calculate, effective_rubbing_floor, embedded_vendor_lut,
 };
 use rs_cam_core::machine::MachineProfile;
 use rs_cam_core::material::{Material, WoodSpecies};
+
+#[path = "common/feeds_input.rs"]
+mod feeds_input;
 
 /// The anchor diameter P2 would scale from. Used **only** to print a model column
 /// beside the matrix's own floors for comparison — it applies nothing.
@@ -647,9 +650,9 @@ impl Row {
 /// depth de-rate (the printed band at every depth); `engaged_d` and `ap`
 /// no longer move the band.
 fn envelope_band_max(input: &FeedsInput<'_>, _engaged_d: f64, _ap: f64) -> Option<f64> {
-    let lut = input.vendor_lut?;
+    let lut = input.vendor_lut()?;
     let query = to_lookup_query(input)?;
-    let row = find_best_chip_envelope_row(lut, &query, &input.tool_geometry)?;
+    let row = find_best_chip_envelope_row(lut, &query, &input.tool_geometry())?;
     let band = validate_chipload_bounds(
         row.chip_load_min_mm,
         row.chip_load_max_mm,
@@ -673,35 +676,32 @@ fn sweep() -> Vec<Row> {
                 let ae = case.ae.mm(tool.diameter_mm);
                 let engaged_d =
                     geometry.engaged_diameter_at_doc(ap, tool.diameter_mm, tool.shank_mm);
+                let tool_config = feeds_input::tool_of_hint(
+                    geometry,
+                    tool.diameter_mm,
+                    tool.flutes,
+                    tool.flute_length_mm,
+                    tool.shank_mm,
+                );
 
                 for species in ALL_SPECIES {
                     let material = Material::SolidWood { species };
-                    let input = FeedsInput {
-                        tool_series: None,
-                        tool_diameter: tool.diameter_mm,
-                        flute_count: tool.flutes,
-                        flute_length: tool.flute_length_mm,
-                        shank_diameter: Some(tool.shank_mm),
-                        cut_body: rs_cam_core::feeds::CutBody {
-                            max_cut_diameter_mm: tool.shank_mm,
-                            core_diameter_mm: 0.0,
-                        },
-                        tool_geometry: geometry,
-                        material: &material,
-                        machine: &machine,
-                        operation: case.family,
-                        operation_kind: None,
-                        pass_role: case.role,
-                        axial_depth_mm: Some(ap),
-                        radial_width_mm: Some(ae),
-                        target_scallop_mm: None,
-                        vendor_lut: Some(lut),
-                        setup: SetupContext::default(),
-                        feed_max_rate: None,
-                        spindle_strategy: SpindleStrategy::MatchChart,
-                        power_cases: rs_cam_core::feeds::engagement::PowerCases::NOMINAL,
-                        tool_facts: rs_cam_core::feeds::sourced::ToolFactKinds::STATED,
-                    };
+                    // P29-7 7a: the input of the op of the row key that holds the
+                    // depth. A finish op of the Parallel or Scallop family holds
+                    // no width with its depth, so there the calculator picks the
+                    // width.
+                    let kind = feeds_input::op_of_row_key_with_depth(case.family, case.role)
+                        .expect("an op gives the row key");
+                    let mut op = feeds_input::op_at_depth(kind, ap);
+                    let _holds_a_width = op.set_stepover(ae);
+                    let input = FeedsInput::of_operation(
+                        &op,
+                        &tool_config,
+                        &material,
+                        &machine,
+                        lut,
+                        SpindleStrategy::MatchChart,
+                    );
                     let result = calculate(&input);
                     let divisor = result.rpm * f64::from(tool.flutes);
                     assert!(

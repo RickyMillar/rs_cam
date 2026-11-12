@@ -53,11 +53,12 @@ use rs_cam_core::compute::catalog::{OperationConfig, OperationType};
 use rs_cam_core::compute::config::DressupConfig;
 use rs_cam_core::compute::tool_config::ToolFact;
 use rs_cam_core::compute::tool_config::{ToolConfig, ToolId, ToolType};
+use rs_cam_core::feeds::FeedsInput;
 use rs_cam_core::feeds::extrapolation::{DRILL_RULES, PLUNGE_RULES, PlungeKey};
 use rs_cam_core::feeds::plunge::{PLUNGE_BASE_RULE_TEXT, resolve_plunge_at};
 use rs_cam_core::feeds::suggest::{
     ApplyContext, SuggestContext, SuggestForOperationInput, SuggestWarning, SuggestedParams, apply,
-    feeds_input_for_operation, feeds_preview_for_operation, suggest_for_operation,
+    feeds_preview_for_operation, suggest_for_operation,
 };
 use rs_cam_core::feeds::{
     FeedsProvenance, FeedsResult, PlungeBasis, PlungeBinding, ProvenanceSource, SpindleStrategy,
@@ -172,7 +173,7 @@ fn suggest(operation: &OperationConfig, tool: &ToolConfig, material: &Material) 
 /// pairing still reports its plunge basis).
 fn calculated(operation: &OperationConfig, tool: &ToolConfig, material: &Material) -> FeedsResult {
     let machine = router();
-    let input = feeds_input_for_operation(
+    let input = FeedsInput::of_operation(
         operation,
         tool,
         material,

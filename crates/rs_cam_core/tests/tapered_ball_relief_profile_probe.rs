@@ -31,13 +31,17 @@
     reason = "the test prints its measurements for the reader"
 )]
 
+use rs_cam_core::compute::catalog::OperationType;
 use rs_cam_core::feeds::geometry::scallop_stepover;
 use rs_cam_core::feeds::{
-    FeedsInput, OperationFamily, PassRole, SetupContext, SpindleStrategy, ToolGeometryHint,
-    calculate, effective_diameter, embedded_vendor_lut,
+    FeedsInput, SpindleStrategy, ToolGeometryHint, calculate, effective_diameter,
+    embedded_vendor_lut,
 };
 use rs_cam_core::machine::MachineProfile;
 use rs_cam_core::material::{Material, WoodSpecies};
+
+#[path = "common/feeds_input.rs"]
+mod feeds_input;
 
 const TIP_DIAMETER_MM: f64 = 1.0;
 const TAPER_HALF_ANGLE_DEG: f64 = 7.0;
@@ -186,33 +190,21 @@ fn report_what_suggest_commands_for_a_relief_finish() {
     let mut any_extrapolated = false;
     for ap in [0.1, 0.2, 0.3, 0.5, 1.0] {
         let d = engaged(ap);
-        let input = FeedsInput {
-            tool_series: None,
-            tool_diameter: TIP_DIAMETER_MM,
-            flute_count: 2,
-            flute_length: 25.0,
-            shank_diameter: Some(SHANK_DIAMETER_MM),
-            cut_body: rs_cam_core::feeds::CutBody {
-                max_cut_diameter_mm: SHANK_DIAMETER_MM,
-                core_diameter_mm: 0.0,
-            },
-            tool_geometry: hint(),
-            material: &material,
-            machine: &machine,
-            operation: OperationFamily::Contour,
-            operation_kind: None,
-            pass_role: PassRole::Finish,
-            axial_depth_mm: Some(ap),
-            // A finish pass steps over by the scallop, not the diameter.
-            radial_width_mm: Some(0.14),
-            target_scallop_mm: Some(0.01),
-            vendor_lut: Some(embedded_vendor_lut()),
-            setup: SetupContext::default(),
-            feed_max_rate: None,
-            spindle_strategy: SpindleStrategy::MatchChart,
-            power_cases: rs_cam_core::feeds::engagement::PowerCases::NOMINAL,
-            tool_facts: rs_cam_core::feeds::sourced::ToolFactKinds::STATED,
-        };
+        // P29-7 7a: a Steep/Shallow finish states the (Contour, Finish)
+        // cut at a depth and a width (a finish pass steps over by the
+        // scallop, not the diameter). The old literal also stated a
+        // scallop target, which this op does not hold.
+        let mut op = feeds_input::op_at_depth(OperationType::SteepShallow, ap);
+        assert!(op.set_stepover(0.14));
+        let tool = feeds_input::tool_of_hint(hint(), TIP_DIAMETER_MM, 2, 25.0, SHANK_DIAMETER_MM);
+        let input = FeedsInput::of_operation(
+            &op,
+            &tool,
+            &material,
+            &machine,
+            embedded_vendor_lut(),
+            SpindleStrategy::MatchChart,
+        );
         let r = calculate(&input);
         let advance = if r.rpm > 0.0 {
             r.feed_rate_mm_min / (r.rpm * 2.0)

@@ -198,7 +198,7 @@ pub fn op_family_to_lut(family: OperationFamily) -> LutOperationFamily {
 /// the declared family is used unchanged. That is the pre-a4 behaviour,
 /// retained for callers that genuinely have no operation identity (the
 /// `FeedsInput`-only unit fixtures); every production Suggest path goes
-/// through `suggest::feeds_input_for_operation`, which supplies it.
+/// through `FeedsInput::of_operation`, which supplies it.
 pub fn to_lookup_query(input: &FeedsInput) -> Option<LookupQuery> {
     let mut query = to_lookup_query_unrouted(input);
     if let Some(kind) = input.operation_kind {
@@ -432,43 +432,45 @@ pub(crate) fn material_to_lut(material: &Material) -> (MaterialFamily, HardnessK
 )]
 mod tests {
     use super::*;
+    use crate::compute::catalog::{OperationConfig, OperationType};
+    use crate::compute::tool_config::ToolConfig;
     use crate::feeds::ToolGeometryHint;
     use crate::feeds::vendor_lut::ToolFamily;
     use crate::machine::MachineProfile;
     use crate::material::{PlasticFamily, SheetGoodKind, WoodSpecies};
 
+    /// The input of the default op of `kind` on a 6 mm 2-flute tool of
+    /// shape `geom` (a flat end mill or a ball nose), each fact stated.
     fn make_input<'a>(
-        geom: ToolGeometryHint,
+        tool: &'a ToolConfig,
         material: &'a Material,
         machine: &'a MachineProfile,
-        op: OperationFamily,
+        kind: OperationType,
     ) -> FeedsInput<'a> {
-        FeedsInput {
-            tool_series: None,
-            tool_diameter: 6.0,
-            flute_count: 2,
-            flute_length: 18.0,
-            shank_diameter: None,
-            cut_body: crate::feeds::CutBody {
-                max_cut_diameter_mm: 6.0,
-                core_diameter_mm: 0.0,
-            },
-            tool_geometry: geom,
+        FeedsInput::of_operation(
+            &OperationConfig::new_default(kind),
+            tool,
             material,
             machine,
-            operation: op,
-            operation_kind: None,
-            pass_role: PassRole::Roughing,
-            axial_depth_mm: None,
-            radial_width_mm: None,
-            target_scallop_mm: None,
-            vendor_lut: None,
-            setup: Default::default(),
-            feed_max_rate: None,
-            spindle_strategy: crate::feeds::SpindleStrategy::default(),
-            power_cases: crate::feeds::engagement::PowerCases::NOMINAL,
-            tool_facts: crate::feeds::sourced::ToolFactKinds::STATED,
-        }
+            crate::feeds::embedded_vendor_lut(),
+            crate::feeds::SpindleStrategy::default(),
+        )
+    }
+
+    /// The 6 mm 2-flute tool of shape `geom`.
+    fn tool(geom: ToolGeometryHint) -> ToolConfig {
+        let tool = ToolConfig::builder(
+            crate::ids::ToolId::from_raw(1),
+            geom.cutter_kind().tool_type(),
+        )
+        .diameter(6.0)
+        .flutes(2)
+        .flute_mm(18.0)
+        .shank_mm(6.0)
+        .stickout_mm(24.0)
+        .build();
+        assert_eq!(tool.geometry_hint(), geom);
+        tool
     }
 
     #[test]
@@ -477,12 +479,8 @@ mod tests {
             species: WoodSpecies::GenericSoftwood,
         };
         let mach = MachineProfile::shapeoko_vfd();
-        let input = make_input(
-            ToolGeometryHint::Flat,
-            &mat,
-            &mach,
-            OperationFamily::Adaptive,
-        );
+        let cutter = tool(ToolGeometryHint::Flat);
+        let input = make_input(&cutter, &mat, &mach, OperationType::Adaptive);
         let query = to_lookup_query(&input).expect("no routing refusal in this fixture");
         assert_eq!(query.tool_family, ToolFamily::FlatEnd);
         assert_eq!(query.material_family, MaterialFamily::Softwood);
@@ -496,12 +494,8 @@ mod tests {
             species: WoodSpecies::HardMaple,
         };
         let mach = MachineProfile::shapeoko_vfd();
-        let input = make_input(
-            ToolGeometryHint::Ball,
-            &mat,
-            &mach,
-            OperationFamily::Parallel,
-        );
+        let cutter = tool(ToolGeometryHint::Ball);
+        let input = make_input(&cutter, &mat, &mach, OperationType::DropCutter);
         let query = to_lookup_query(&input).expect("no routing refusal in this fixture");
         assert_eq!(query.tool_family, ToolFamily::BallNose);
         assert_eq!(query.material_family, MaterialFamily::Hardwood);
@@ -522,12 +516,8 @@ mod tests {
             family: PlasticFamily::Acrylic,
         };
         let mach = MachineProfile::shapeoko_vfd();
-        let input = make_input(
-            ToolGeometryHint::Flat,
-            &mat,
-            &mach,
-            OperationFamily::Contour,
-        );
+        let cutter = tool(ToolGeometryHint::Flat);
+        let input = make_input(&cutter, &mat, &mach, OperationType::Profile);
         let query = to_lookup_query(&input).expect("no routing refusal in this fixture");
         assert_eq!(query.material_family, MaterialFamily::Acrylic);
         assert_eq!(query.hardness_kind, Some(HardnessKind::ShoreD));
@@ -540,7 +530,8 @@ mod tests {
             kind: SheetGoodKind::Mdf,
         };
         let mach = MachineProfile::shapeoko_vfd();
-        let input = make_input(ToolGeometryHint::Flat, &mat, &mach, OperationFamily::Pocket);
+        let cutter = tool(ToolGeometryHint::Flat);
+        let input = make_input(&cutter, &mat, &mach, OperationType::Face);
         let query = to_lookup_query(&input).expect("no routing refusal in this fixture");
         assert_eq!(query.material_family, MaterialFamily::Mdf);
         assert_eq!(query.hardness_value, Some(1100.0));

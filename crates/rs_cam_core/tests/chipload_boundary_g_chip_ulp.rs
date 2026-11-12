@@ -107,15 +107,17 @@
     reason = "test code: a panic is how a test reports a failure; the test prints its measurements for the reader"
 )]
 
+use rs_cam_core::compute::catalog::OperationConfig;
 use rs_cam_core::compute::catalog::OperationType;
 use rs_cam_core::compute::tool_config::ToolMaterial;
+use rs_cam_core::compute::{ToolConfig, ToolId, ToolType};
 use rs_cam_core::feeds::vendor_lut::{
     EvidenceGrade, LutOperationFamily, LutPassRole, ObservationKind, VendorLut,
 };
 use rs_cam_core::feeds::{
-    ChiploadBounds, FeedsInput, FeedsResult, FeedsWarning, OperationFamily, PassRole,
-    RUBBING_FLOOR_MM_TOOTH, RubbingFloorSource, SetupContext, SpindleStrategy, ToolGeometryHint,
-    calculate, effective_rubbing_floor, embedded_vendor_lut, rubbing_floor,
+    ChiploadBounds, FeedsInput, FeedsResult, FeedsWarning, RUBBING_FLOOR_MM_TOOTH,
+    RubbingFloorSource, SpindleStrategy, calculate, effective_rubbing_floor, embedded_vendor_lut,
+    rubbing_floor,
 };
 use rs_cam_core::ids::ToolpathId;
 use rs_cam_core::machine::MachineProfile;
@@ -168,42 +170,52 @@ fn sub_floor_lut() -> VendorLut {
     }
 }
 
+/// P29-7 7a: the op that states a Scallop / Finish cut at a depth and a
+/// scallop target: a Unified Finish (its `z_step` and `scallop_height`).
+fn unified_finish(z_step: f64, scallop_mm: f64) -> OperationConfig {
+    let mut op = OperationConfig::new_default(OperationType::UnifiedFinish);
+    let OperationConfig::UnifiedFinish(c) = &mut op else {
+        panic!("a Unified Finish config");
+    };
+    c.z_step = Some(z_step);
+    c.scallop_height = scallop_mm;
+    op
+}
+
+/// The tapered ball of the fixture as a tool config: tip `tip_mm`,
+/// `flutes`, flute length `flute_mm`, taper `taper_deg`, a 6 mm shank and
+/// shaft, each fact stated. The stick-out is 4 x the tip: at that ratio the
+/// long-tool share is 1.
+fn tapered_tool(tip_mm: f64, flutes: u32, flute_mm: f64, taper_deg: f64) -> ToolConfig {
+    ToolConfig::builder(ToolId::from_raw(1), ToolType::TaperedBallNose)
+        .diameter(tip_mm)
+        .flutes(flutes)
+        .flute_mm(flute_mm)
+        .taper_half_angle_deg(taper_deg)
+        .shank_mm(6.0)
+        .shaft_mm(6.0)
+        .stickout_mm(4.0 * tip_mm)
+        .build()
+}
+
 /// The B3 reference operation (`tests/rubbing_floor_warns_and_never_lifts.rs`,
 /// `tests/feed_explanation_snapshot_b3.rs`): Ø1 tapered ball, 2 flutes,
 /// scallop finish in hard maple. Its derated band is entirely below the
 /// 0.025 rubbing floor, so it is the canonical floor==ceiling case.
 fn b3_scallop() -> FeedsResult {
-    calculate(&FeedsInput {
-        tool_series: None,
-        tool_diameter: 1.0,
-        flute_count: 2,
-        flute_length: 20.0,
-        shank_diameter: Some(6.0),
-        cut_body: rs_cam_core::feeds::CutBody {
-            max_cut_diameter_mm: 6.0,
-            core_diameter_mm: 0.0,
-        },
-        tool_geometry: ToolGeometryHint::TaperedBall {
-            tip_radius: 0.5,
-            taper_angle_deg: 5.26,
-        },
-        material: &Material::SolidWood {
-            species: WoodSpecies::HardMaple,
-        },
-        machine: &MachineProfile::generic_wood_router(),
-        operation: OperationFamily::Scallop,
-        operation_kind: None,
-        pass_role: PassRole::Finish,
-        axial_depth_mm: Some(0.35),
-        radial_width_mm: None,
-        target_scallop_mm: Some(0.01),
-        vendor_lut: Some(&sub_floor_lut()),
-        setup: SetupContext::default(),
-        feed_max_rate: None,
-        spindle_strategy: SpindleStrategy::MatchChart,
-        power_cases: rs_cam_core::feeds::engagement::PowerCases::NOMINAL,
-        tool_facts: rs_cam_core::feeds::sourced::ToolFactKinds::STATED,
-    })
+    let material = Material::SolidWood {
+        species: WoodSpecies::HardMaple,
+    };
+    let machine = MachineProfile::generic_wood_router();
+    let lut = sub_floor_lut();
+    calculate(&FeedsInput::of_operation(
+        &unified_finish(0.35, 0.01),
+        &tapered_tool(1.0, 2, 20.0, 5.26),
+        &material,
+        &machine,
+        &lut,
+        SpindleStrategy::MatchChart,
+    ))
 }
 
 // ---------------------------------------------------------------------

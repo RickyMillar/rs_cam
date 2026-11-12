@@ -294,7 +294,7 @@ fn check_wood_adaptive_stepover(
     // calculator reads on an unstated axis for this op on this machine
     // (`feeds::default_radial_width`; on a wood flat adaptive it is the
     // machine's `adaptive_woc_factor` x D), not a typed copy (it was 0.20 x D).
-    let input = crate::feeds::suggest::feeds_input_for_operation(
+    let input = crate::feeds::FeedsInput::of_operation(
         &tc.operation,
         tool,
         material,

@@ -27,7 +27,7 @@
 
 use rs_cam_core::compute::catalog::OperationType;
 use rs_cam_core::compute::tool_config::{ToolConfig, ToolFact, ToolId, ToolType};
-use rs_cam_core::feeds::suggest::feeds_input_for_operation;
+use rs_cam_core::feeds::FeedsInput;
 use rs_cam_core::feeds::{FeedsResult, SpindleStrategy, calculate, embedded_vendor_lut};
 use rs_cam_core::machine::MachineProfile;
 use rs_cam_core::material::{Material, WoodSpecies};
@@ -146,7 +146,7 @@ fn every_calculator_step_leaves_one_record_p13b() {
                     let t = tool(*kind, d);
                     for op_type in ops {
                         let op = rs_cam_core::compute::fixture_values::fixture_op(op_type);
-                        let r = calculate(&feeds_input_for_operation(
+                        let r = calculate(&FeedsInput::of_operation(
                             &op,
                             &t,
                             &material,

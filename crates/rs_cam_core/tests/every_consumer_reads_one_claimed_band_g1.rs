@@ -65,12 +65,12 @@ use rs_cam_core::compute::tool_config::ToolMaterial;
 use rs_cam_core::compute::{ToolConfig, ToolId, ToolType};
 use rs_cam_core::diagnostics::adapters::from_tool_load::diagnostics_from_load_verdict;
 use rs_cam_core::diagnostics::ids;
+use rs_cam_core::feeds::FeedsInput;
 use rs_cam_core::feeds::extrapolation::{SizeBasis, SizeForm};
 use rs_cam_core::feeds::geometry::doc_derating_scale;
 use rs_cam_core::feeds::provenance::ValueProvenance;
 use rs_cam_core::feeds::suggest::{
-    StockContext, SuggestContext, SuggestParamsInput, SuggestedParams, feeds_input_for_operation,
-    suggest_params,
+    StockContext, SuggestContext, SuggestParamsInput, SuggestedParams, suggest_params,
 };
 use rs_cam_core::feeds::vendor_lookup::{
     LookupResult, PrintedChipload, find_best_chip_envelope_row,
@@ -153,7 +153,7 @@ fn suggest(
 fn envelope_row(op: OperationType, tool: &ToolConfig, material: &Material) -> LookupResult {
     let machine = MachineProfile::default();
     let operation = OperationConfig::new_default(op);
-    let input = feeds_input_for_operation(
+    let input = FeedsInput::of_operation(
         &operation,
         tool,
         material,
@@ -162,7 +162,7 @@ fn envelope_row(op: OperationType, tool: &ToolConfig, material: &Material) -> Lo
         SpindleStrategy::MatchChart,
     );
     let query = to_lookup_query(&input).expect("the routing answers");
-    find_best_chip_envelope_row(&EMBEDDED_LUT, &query, &input.tool_geometry)
+    find_best_chip_envelope_row(&EMBEDDED_LUT, &query, &input.tool_geometry())
         .expect("a chipload-bearing row matches")
 }
 
@@ -498,7 +498,7 @@ fn a_refused_cell_has_no_band_anywhere_g1() {
     // refusal, and it labels no value `VendorLut`.
     let machine = MachineProfile::default();
     let operation = OperationConfig::new_default(op);
-    let input = feeds_input_for_operation(
+    let input = FeedsInput::of_operation(
         &operation,
         &tool,
         &material,

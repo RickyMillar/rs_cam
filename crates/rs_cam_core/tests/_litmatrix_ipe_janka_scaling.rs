@@ -58,10 +58,12 @@
 //! adoption — the docstring had already been made law-agnostic, which
 //! is why.
 
-use rs_cam_core::feeds::{
-    FeedsInput, OperationFamily, PassRole, SetupContext, SpindleStrategy, ToolGeometryHint,
-    calculate, embedded_vendor_lut,
-};
+use rs_cam_core::compute::ToolConfig;
+use rs_cam_core::compute::ToolId;
+use rs_cam_core::compute::ToolType;
+use rs_cam_core::compute::catalog::OperationConfig;
+use rs_cam_core::compute::catalog::OperationType;
+use rs_cam_core::feeds::{FeedsInput, SpindleStrategy, calculate, embedded_vendor_lut};
 use rs_cam_core::machine::MachineProfile;
 use rs_cam_core::material::{Material, WoodSpecies};
 
@@ -76,34 +78,22 @@ fn calc_3mm_pocket(material: &Material) -> rs_cam_core::feeds::FeedsResult {
     }
     .with_axis_limits([15_000.0, 15_000.0, 2500.0], [1200.0, 1200.0, 550.0]);
 
-    calculate(&FeedsInput {
-        tool_series: None,
-        tool_diameter: 3.0,
-        flute_count: 2,
-        flute_length: 12.0,
-        shank_diameter: None,
-        cut_body: rs_cam_core::feeds::CutBody {
-            max_cut_diameter_mm: 3.0,
-            core_diameter_mm: 0.0,
-        },
-        tool_geometry: ToolGeometryHint::Flat,
+    calculate(&FeedsInput::of_operation(
+        &OperationConfig::new_default(OperationType::Face),
+        &ToolConfig::builder(ToolId::from_raw(1), ToolType::EndMill)
+            .diameter(3.0)
+            .flutes(2)
+            .flute_mm(12.0)
+            .shank_mm(3.0)
+            .stickout_mm(4.0 * 3.0)
+            .build(),
         material,
-        machine: &machine,
-        operation: OperationFamily::Pocket,
-        operation_kind: None,
-        pass_role: PassRole::Roughing,
-        axial_depth_mm: None,
-        radial_width_mm: None,
-        target_scallop_mm: None,
-        vendor_lut: Some(lut),
-        setup: SetupContext::default(),
-        feed_max_rate: None,
-        spindle_strategy: SpindleStrategy::ConstantChip {
+        &machine,
+        lut,
+        SpindleStrategy::ConstantChip {
             rpm_ceiling: Some(24_000),
         },
-        power_cases: rs_cam_core::feeds::engagement::PowerCases::NOMINAL,
-        tool_facts: rs_cam_core::feeds::sourced::ToolFactKinds::STATED,
-    })
+    ))
 }
 
 fn chipload(result: &rs_cam_core::feeds::FeedsResult, flutes: f64) -> f64 {

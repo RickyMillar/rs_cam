@@ -12,7 +12,7 @@
 
 use rs_cam_core::compute::catalog::{OperationConfig, OperationType};
 use rs_cam_core::compute::tool_config::{ToolConfig, ToolFact, ToolId, ToolType};
-use rs_cam_core::feeds::suggest::feeds_input_for_operation;
+use rs_cam_core::feeds::FeedsInput;
 use rs_cam_core::feeds::{FeedsResult, PassRole, SpindleStrategy, calculate, embedded_vendor_lut};
 use rs_cam_core::machine::{MachineProfile, PowerModel};
 use rs_cam_core::material::{Material, WoodSpecies};
@@ -44,7 +44,7 @@ fn result_of(op: &OperationConfig) -> FeedsResult {
         species: WoodSpecies::WhiteOak,
     };
     let machine = open_machine();
-    let input = feeds_input_for_operation(
+    let input = FeedsInput::of_operation(
         op,
         &tool,
         &material,

@@ -42,16 +42,18 @@
     reason = "test code: a panic is how a test reports a failure; the test prints its measurements for the reader"
 )]
 
+use rs_cam_core::compute::catalog::OperationConfig;
 use rs_cam_core::compute::catalog::OperationType;
 use rs_cam_core::compute::tool_config::ToolMaterial;
+use rs_cam_core::compute::{ToolConfig, ToolId, ToolType};
 use rs_cam_core::diagnostics::adapters::from_feeds::diagnostics_from_feeds_result;
 use rs_cam_core::diagnostics::ids;
 use rs_cam_core::feeds::vendor_lut::{
     EvidenceGrade, LutOperationFamily, LutPassRole, ObservationKind, VendorLut,
 };
 use rs_cam_core::feeds::{
-    FeedsInput, FeedsResult, OperationFamily, PassRole, RUBBING_FLOOR_MM_TOOTH, SetupContext,
-    SpindleStrategy, ToolGeometryHint, calculate, embedded_vendor_lut,
+    FeedsInput, FeedsResult, RUBBING_FLOOR_MM_TOOTH, SpindleStrategy, calculate,
+    embedded_vendor_lut,
 };
 use rs_cam_core::ids::ToolpathId;
 use rs_cam_core::machine::MachineProfile;
@@ -234,6 +236,34 @@ fn sub_floor_lut() -> VendorLut {
     }
 }
 
+/// P29-7 7a: the op that states a Scallop / Finish cut at a depth and a
+/// scallop target: a Unified Finish (its `z_step` and `scallop_height`).
+fn unified_finish(z_step: f64, scallop_mm: f64) -> OperationConfig {
+    let mut op = OperationConfig::new_default(OperationType::UnifiedFinish);
+    let OperationConfig::UnifiedFinish(c) = &mut op else {
+        panic!("a Unified Finish config");
+    };
+    c.z_step = Some(z_step);
+    c.scallop_height = scallop_mm;
+    op
+}
+
+/// The tapered ball of the fixture as a tool config: tip `tip_mm`,
+/// `flutes`, flute length `flute_mm`, taper `taper_deg`, a 6 mm shank and
+/// shaft, each fact stated. The stick-out is 4 x the tip: at that ratio the
+/// long-tool share is 1.
+fn tapered_tool(tip_mm: f64, flutes: u32, flute_mm: f64, taper_deg: f64) -> ToolConfig {
+    ToolConfig::builder(ToolId::from_raw(1), ToolType::TaperedBallNose)
+        .diameter(tip_mm)
+        .flutes(flutes)
+        .flute_mm(flute_mm)
+        .taper_half_angle_deg(taper_deg)
+        .shank_mm(6.0)
+        .shaft_mm(6.0)
+        .stickout_mm(4.0 * tip_mm)
+        .build()
+}
+
 /// The B3 scallop through the calculator, on the sub-floor LUT, on a machine
 /// whose 50 mm/min cutting ceiling pushes the advance under the band minimum.
 fn b3_recipe() -> FeedsResult {
@@ -243,35 +273,14 @@ fn b3_recipe() -> FeedsResult {
     let material = Material::SolidWood {
         species: WoodSpecies::HardMaple,
     };
-    calculate(&FeedsInput {
-        tool_series: None,
-        tool_diameter: 1.0,
-        flute_count: FLUTES,
-        flute_length: 20.0,
-        shank_diameter: Some(6.0),
-        cut_body: rs_cam_core::feeds::CutBody {
-            max_cut_diameter_mm: 6.0,
-            core_diameter_mm: 0.0,
-        },
-        tool_geometry: ToolGeometryHint::TaperedBall {
-            tip_radius: 0.5,
-            taper_angle_deg: 5.26,
-        },
-        material: &material,
-        machine: &machine,
-        operation: OperationFamily::Scallop,
-        operation_kind: None,
-        pass_role: PassRole::Finish,
-        axial_depth_mm: Some(AXIAL_DOC),
-        radial_width_mm: None,
-        target_scallop_mm: Some(0.01),
-        vendor_lut: Some(&lut),
-        setup: SetupContext::default(),
-        feed_max_rate: None,
-        spindle_strategy: SpindleStrategy::MatchChart,
-        power_cases: rs_cam_core::feeds::engagement::PowerCases::NOMINAL,
-        tool_facts: rs_cam_core::feeds::sourced::ToolFactKinds::STATED,
-    })
+    calculate(&FeedsInput::of_operation(
+        &unified_finish(AXIAL_DOC, 0.01),
+        &tapered_tool(1.0, FLUTES, 20.0, 5.26),
+        &material,
+        &machine,
+        &lut,
+        SpindleStrategy::MatchChart,
+    ))
 }
 
 /// Arm 1. The band minimum of the fixture is below 0.025, so the floor is the

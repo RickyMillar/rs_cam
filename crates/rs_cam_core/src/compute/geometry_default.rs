@@ -445,7 +445,7 @@ impl GeometryDefault {
                     stamp,
                 ),
                 KRow::FamilyProfile(_) => {
-                    let input = crate::feeds::suggest::feeds_input_for_operation(
+                    let input = crate::feeds::FeedsInput::of_operation(
                         op,
                         tool,
                         ctx.material,

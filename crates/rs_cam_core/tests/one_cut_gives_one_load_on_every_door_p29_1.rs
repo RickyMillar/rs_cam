@@ -469,7 +469,7 @@ fn each_plunge_door_equals_the_one_load_bit_for_bit() {
             load.power_kw().expect("power"),
         );
         // The calculator.
-        let input = rs_cam_core::feeds::suggest::feeds_input_for_operation(
+        let input = rs_cam_core::feeds::FeedsInput::of_operation(
             &drill_op(),
             &tool,
             &oak,
@@ -479,10 +479,10 @@ fn each_plunge_door_equals_the_one_load_bit_for_bit() {
         );
         let result = calculate(&input);
         let cut = Cut::planned_drill(
-            input.tool_geometry,
-            input.tool_diameter,
-            input.cut_body.core_diameter_mm,
-            OperatingPoint::planned(result.feed_rate_mm_min, result.rpm, input.flute_count),
+            input.tool_geometry(),
+            input.tool_diameter(),
+            input.cut_body().core_diameter_mm,
+            OperatingPoint::planned(result.feed_rate_mm_min, result.rpm, input.flute_count()),
         );
         let load = CutLoad::of_cut(&cut, None, Some(line)).expect("a planned point");
         bits(

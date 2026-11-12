@@ -121,48 +121,37 @@
     reason = "test code: a panic is how a test reports a failure; the test prints its measurements for the reader"
 )]
 
+use rs_cam_core::compute::catalog::OperationType;
 use rs_cam_core::feeds::{
-    FeedsInput, FeedsResult, OperationFamily, PassRole, SetupContext, SpindleStrategy,
-    ToolGeometryHint, calculate, embedded_vendor_lut,
+    FeedsInput, FeedsResult, SpindleStrategy, ToolGeometryHint, calculate, embedded_vendor_lut,
 };
 use rs_cam_core::machine::MachineProfile;
 use rs_cam_core::material::{Material, WoodSpecies};
+
+#[path = "common/feeds_input.rs"]
+mod feeds_input;
 
 /// The heaviest 2.5D roughing cut the calculator will entertain for a
 /// given tool: full-width slot, deep commanded DOC. Used as the sweep
 /// fixture — if the power ceiling binds anywhere, it binds here.
 fn slot_cut(machine: &MachineProfile, species: WoodSpecies, diameter: f64) -> FeedsResult {
     let material = Material::SolidWood { species };
-    calculate(&FeedsInput {
-        tool_series: None,
-        tool_diameter: diameter,
-        flute_count: 2,
-        flute_length: 3.0 * diameter,
-        shank_diameter: None,
-        cut_body: rs_cam_core::feeds::CutBody {
-            max_cut_diameter_mm: diameter,
-            core_diameter_mm: 0.0,
-        },
-        tool_geometry: ToolGeometryHint::Flat,
-        material: &material,
+    calculate(&FeedsInput::of_operation(
+        // P29-7 7a: a Pocket at a full-width slot (the slot case is the
+        // nominal width), at the slot cap (0.25 D).
+        &feeds_input::op_with(OperationType::Pocket, Some(0.25 * diameter), Some(diameter)),
+        &feeds_input::tool_of_hint(
+            ToolGeometryHint::Flat,
+            diameter,
+            2,
+            3.0 * diameter,
+            diameter,
+        ),
+        &material,
         machine,
-        operation: OperationFamily::Pocket,
-        operation_kind: None,
-        pass_role: PassRole::Roughing,
-        // A full-width slot at the slot cap (0.25 D). Until feeds contract
-        // P11b the fixture asked for 2 x D and the calculator lowered it to
-        // the slot cap; P11b ships a STATED depth (the cap only warns), so
-        // the fixture states the cap and the cut is the one it measured.
-        axial_depth_mm: Some(0.25 * diameter),
-        radial_width_mm: Some(diameter),
-        target_scallop_mm: None,
-        vendor_lut: Some(embedded_vendor_lut()),
-        setup: SetupContext::default(),
-        feed_max_rate: None,
-        spindle_strategy: SpindleStrategy::MatchChart,
-        power_cases: rs_cam_core::feeds::engagement::PowerCases::NOMINAL,
-        tool_facts: rs_cam_core::feeds::sourced::ToolFactKinds::STATED,
-    })
+        embedded_vendor_lut(),
+        SpindleStrategy::MatchChart,
+    ))
 }
 
 /// A light finishing cut — the control: whatever the heavy fixture does,
@@ -171,32 +160,20 @@ fn light_finish(machine: &MachineProfile) -> FeedsResult {
     let material = Material::SolidWood {
         species: WoodSpecies::RadiataPine,
     };
-    calculate(&FeedsInput {
-        tool_series: None,
-        tool_diameter: 3.0,
-        flute_count: 2,
-        flute_length: 18.0,
-        shank_diameter: None,
-        cut_body: rs_cam_core::feeds::CutBody {
-            max_cut_diameter_mm: 3.0,
-            core_diameter_mm: 0.0,
+    calculate(&FeedsInput::of_operation(
+        // P29-7 7a: a Steep/Shallow finish states the (Contour, Finish)
+        // cut at a depth and a width.
+        &{
+            let mut op = feeds_input::op_at_depth(OperationType::SteepShallow, 1.0);
+            assert!(op.set_stepover(0.5));
+            op
         },
-        tool_geometry: ToolGeometryHint::Flat,
-        material: &material,
+        &feeds_input::tool_of_hint(ToolGeometryHint::Flat, 3.0, 2, 18.0, 3.0),
+        &material,
         machine,
-        operation: OperationFamily::Contour,
-        operation_kind: None,
-        pass_role: PassRole::Finish,
-        axial_depth_mm: Some(1.0),
-        radial_width_mm: Some(0.5),
-        target_scallop_mm: None,
-        vendor_lut: Some(embedded_vendor_lut()),
-        setup: SetupContext::default(),
-        feed_max_rate: None,
-        spindle_strategy: SpindleStrategy::MatchChart,
-        power_cases: rs_cam_core::feeds::engagement::PowerCases::NOMINAL,
-        tool_facts: rs_cam_core::feeds::sourced::ToolFactKinds::STATED,
-    })
+        embedded_vendor_lut(),
+        SpindleStrategy::MatchChart,
+    ))
 }
 
 /// Every shipped wood species — the sweep population.

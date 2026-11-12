@@ -92,8 +92,7 @@ use rs_cam_core::compute::{ToolConfig, ToolId, ToolType};
 use rs_cam_core::feeds::extrapolation::{ClaimResidual, SizeBasis, SizeForm, SpreadFamily};
 use rs_cam_core::feeds::geometry::{lut_key_diameter_for_cutter, lut_key_diameter_mm};
 use rs_cam_core::feeds::suggest::{
-    StockContext, SuggestContext, SuggestParamsInput, SuggestedParams, feeds_input_for_operation,
-    suggest_params,
+    StockContext, SuggestContext, SuggestParamsInput, SuggestedParams, suggest_params,
 };
 use rs_cam_core::feeds::vendor_lookup::{
     PrintedChipload, find_best_chip_envelope_row, vbit_key_text,
@@ -101,8 +100,8 @@ use rs_cam_core::feeds::vendor_lookup::{
 use rs_cam_core::feeds::vendor_lut::ToolFamily;
 use rs_cam_core::feeds::vendor_normalize::to_lookup_query;
 use rs_cam_core::feeds::{
-    EMBEDDED_LUT, FeedsError, FeedsInput, FeedsSupport, FeedsWarning, OperationFamily, PassRole,
-    SetupContext, SpindleStrategy, ToolGeometryHint, calculate, embedded_vendor_lut, feeds_support,
+    EMBEDDED_LUT, FeedsError, FeedsInput, FeedsSupport, FeedsWarning, SpindleStrategy,
+    ToolGeometryHint, calculate, embedded_vendor_lut, feeds_support,
 };
 use rs_cam_core::ids::ToolpathId;
 use rs_cam_core::machine::{MachineProfile, PowerModel};
@@ -151,6 +150,31 @@ fn vbit(diameter: f64) -> ToolConfig {
     t.shaft_diameter = diameter;
     t.set_stickout(ToolFact::Stated(27.05));
     t
+}
+
+/// [`vbit`] with the tip `tip_mm` (stated).
+fn vbit_with_tip(diameter: f64, tip_mm: f64) -> ToolConfig {
+    let mut t = vbit(diameter);
+    t.set_v_tip_diameter(ToolFact::Stated(tip_mm));
+    t
+}
+
+/// A VCarve to the stated depth `max_depth`.
+fn vcarve_to_depth(max_depth: f64) -> OperationConfig {
+    let mut op = OperationConfig::new_default(OperationType::VCarve);
+    let OperationConfig::VCarve(c) = &mut op else {
+        panic!("a VCarve config");
+    };
+    c.max_depth = Some(max_depth);
+    op
+}
+
+/// A Trace at the depth per pass `ap`. A Trace is a slot: its width is the
+/// tool diameter.
+fn trace_to_depth(ap: f64) -> OperationConfig {
+    let mut op = OperationConfig::new_default(OperationType::Trace);
+    assert!(op.set_depth_per_pass(ap));
+    op
 }
 
 /// The generic wood router with the feed and power ceilings lifted, so no
@@ -383,7 +407,7 @@ fn suggest_and_the_gate_read_the_ams159_row_b4() {
                 // The envelope resolver on the query Suggest routes.
                 let operation = OperationConfig::new_default(op);
                 let machine = open_machine();
-                let input = feeds_input_for_operation(
+                let input = FeedsInput::of_operation(
                     &operation,
                     &tool,
                     &material,
@@ -393,8 +417,9 @@ fn suggest_and_the_gate_read_the_ams159_row_b4() {
                 );
                 let query = to_lookup_query(&input).expect("the routing answers");
                 assert_eq!(query.diameter_mm, d, "{cell}: the Suggest key");
-                let env = find_best_chip_envelope_row(&EMBEDDED_LUT, &query, &input.tool_geometry)
-                    .unwrap_or_else(|| panic!("{cell}: no envelope row"));
+                let env =
+                    find_best_chip_envelope_row(&EMBEDDED_LUT, &query, &input.tool_geometry())
+                        .unwrap_or_else(|| panic!("{cell}: no envelope row"));
                 assert_eq!(env.observation_id, expected, "{cell}: envelope row");
 
                 // The gate itself, at a shallow and a deep sample: it holds the
@@ -468,35 +493,14 @@ fn the_onsrud_mdf_row_is_read_at_its_printed_diameter_b4() {
 fn the_mdf_vcarve_rpm_stays_at_the_engaged_width_b4() {
     let machine = open_machine();
     let material = mdf();
-    let result = calculate(&FeedsInput {
-        tool_series: None,
-        tool_diameter: 12.7,
-        flute_count: 2,
-        flute_length: 19.05,
-        shank_diameter: Some(12.7),
-        cut_body: rs_cam_core::feeds::CutBody {
-            max_cut_diameter_mm: 12.7,
-            core_diameter_mm: 0.0,
-        },
-        tool_geometry: ToolGeometryHint::VBit {
-            included_angle: 60.0,
-            tip_diameter: 0.1,
-        },
-        material: &material,
-        machine: &machine,
-        operation: OperationFamily::Trace,
-        operation_kind: Some(OperationType::VCarve),
-        pass_role: PassRole::Finish,
-        axial_depth_mm: Some(3.0),
-        radial_width_mm: None,
-        target_scallop_mm: None,
-        vendor_lut: Some(embedded_vendor_lut()),
-        setup: SetupContext::default(),
-        feed_max_rate: None,
-        spindle_strategy: SpindleStrategy::MatchChart,
-        power_cases: rs_cam_core::feeds::engagement::PowerCases::NOMINAL,
-        tool_facts: rs_cam_core::feeds::sourced::ToolFactKinds::STATED,
-    });
+    let result = calculate(&FeedsInput::of_operation(
+        &vcarve_to_depth(3.0),
+        &vbit_with_tip(12.7, 0.1),
+        &material,
+        &machine,
+        embedded_vendor_lut(),
+        SpindleStrategy::MatchChart,
+    ));
     let row = result
         .matched_lut_row
         .as_ref()
@@ -540,35 +544,14 @@ fn the_vbit_parallel_finish_cells_refuse_b4() {
     ] {
         for material in &materials {
             for d in [6.35, 12.7] {
-                let support = feeds_support(&FeedsInput {
-                    tool_series: None,
-                    tool_diameter: d,
-                    flute_count: 2,
-                    flute_length: 19.05,
-                    shank_diameter: Some(d),
-                    cut_body: rs_cam_core::feeds::CutBody {
-                        max_cut_diameter_mm: d,
-                        core_diameter_mm: 0.0,
-                    },
-                    tool_geometry: ToolGeometryHint::VBit {
-                        included_angle: 60.0,
-                        tip_diameter: 0.0,
-                    },
+                let support = feeds_support(&FeedsInput::of_operation(
+                    &OperationConfig::new_default(kind),
+                    &vbit_with_tip(d, 0.0),
                     material,
-                    machine: &machine,
-                    operation: OperationFamily::Parallel,
-                    operation_kind: Some(kind),
-                    pass_role: PassRole::Finish,
-                    axial_depth_mm: Some(1.0),
-                    radial_width_mm: None,
-                    target_scallop_mm: None,
-                    vendor_lut: Some(embedded_vendor_lut()),
-                    setup: SetupContext::default(),
-                    feed_max_rate: None,
-                    spindle_strategy: SpindleStrategy::MatchChart,
-                    power_cases: rs_cam_core::feeds::engagement::PowerCases::NOMINAL,
-                    tool_facts: rs_cam_core::feeds::sourced::ToolFactKinds::STATED,
-                });
+                    &machine,
+                    embedded_vendor_lut(),
+                    SpindleStrategy::MatchChart,
+                ));
                 match support {
                     FeedsSupport::Refuse { reason } => {
                         assert_eq!(reason, VBIT_PARALLEL, "{kind:?} {d} mm in {material:?}");
@@ -680,43 +663,21 @@ fn the_v_bit_band_is_the_printed_band_at_every_depth_b4() {
     tool.set_flute_count(ToolFact::Stated(1));
     let material = softwood();
     let row_id = "amana-engrave-softwood-trace-15deg-1f";
-    // A narrow `ae` keeps the cut off a full slot, as in
-    // `feed_explanation_snapshot_b3.rs`'s DOC-ratio sweep. (P16 deleted the
-    // Step 4b slot cap that a wide `ae` on a Trace op once met.)
-    let radial_width_mm = Some(0.3 * d);
+    // P29-7 7a: the input comes from a Trace op, a slot (the width is D).
+    // The old literal stated a narrow width (0.3 D) that no Trace gives.
+    // P16 deleted the Step 4b slot cap that a wide width once met.
 
     for (label, ap) in [("shallow", 0.5 * d), ("deep", 2.0 * d)] {
         // Suggest: `feeds::calculate` at this depth.
         let machine = open_machine();
-        let result = calculate(&FeedsInput {
-            tool_series: None,
-            tool_diameter: d,
-            flute_count: 1,
-            flute_length: 19.05,
-            shank_diameter: Some(d),
-            cut_body: rs_cam_core::feeds::CutBody {
-                max_cut_diameter_mm: d,
-                core_diameter_mm: 0.0,
-            },
-            tool_geometry: ToolGeometryHint::VBit {
-                included_angle: 15.0,
-                tip_diameter: 0.127,
-            },
-            material: &material,
-            machine: &machine,
-            operation: OperationFamily::Trace,
-            operation_kind: Some(OperationType::Trace),
-            pass_role: PassRole::Finish,
-            axial_depth_mm: Some(ap),
-            radial_width_mm,
-            target_scallop_mm: None,
-            vendor_lut: Some(embedded_vendor_lut()),
-            setup: SetupContext::default(),
-            feed_max_rate: None,
-            spindle_strategy: SpindleStrategy::MatchChart,
-            power_cases: rs_cam_core::feeds::engagement::PowerCases::NOMINAL,
-            tool_facts: rs_cam_core::feeds::sourced::ToolFactKinds::STATED,
-        });
+        let result = calculate(&FeedsInput::of_operation(
+            &trace_to_depth(ap),
+            &tool,
+            &material,
+            &machine,
+            embedded_vendor_lut(),
+            SpindleStrategy::MatchChart,
+        ));
         // Non-vacuity: no clamp (the flute guard, the minimum engagement,
         // Step 4b slotting) moved `ap` away from the depth this test means
         // to measure.

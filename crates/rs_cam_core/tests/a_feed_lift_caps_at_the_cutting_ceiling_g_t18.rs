@@ -57,11 +57,11 @@
 //! preset and shows its feed lands above the slow-ceiling cap, so the fixture
 //! machine discriminates and the arm above is not an accident of it.
 
+use rs_cam_core::compute::catalog::{OperationConfig, OperationType};
 use rs_cam_core::compute::tool_config::ToolFact;
 use rs_cam_core::compute::tool_config::{ToolConfig, ToolId, ToolType};
 use rs_cam_core::feeds::{
-    FeedsInput, FeedsResult, FeedsWarning, OperationFamily, PassRole, SetupContext,
-    SpindleStrategy, ToolGeometryHint, calculate, embedded_vendor_lut,
+    FeedsInput, FeedsResult, FeedsWarning, SpindleStrategy, calculate, embedded_vendor_lut,
 };
 use rs_cam_core::machine::MachineProfile;
 use rs_cam_core::material::{Material, WoodSpecies};
@@ -113,65 +113,41 @@ fn drill_12mm() -> ToolConfig {
     tool
 }
 
+/// A stock Face (Pocket, Roughing; no slot case) at 3 mm deep and 2 mm
+/// wide.
+fn face_rough() -> OperationConfig {
+    let mut op = OperationConfig::new_default(OperationType::Face);
+    assert!(op.set_depth_per_pass(3.0));
+    assert!(op.set_stepover(2.0));
+    op
+}
+
 /// The calculator over a pocket rough. `spindle_strategy` is the shipped
 /// default so the rpm is the engine's own choice.
 fn pocket_rough(machine: &MachineProfile, tool: &ToolConfig) -> FeedsResult {
     let material = white_oak();
-    calculate(&FeedsInput {
-        tool_series: None,
-        tool_diameter: tool.diameter,
-        flute_count: tool.flute_count_planning(),
-        flute_length: tool.cutting_length_planning_mm(),
-        shank_diameter: Some(tool.shank_diameter_planning_mm()),
-        cut_body: rs_cam_core::feeds::CutBody::of_tool(tool),
-        tool_geometry: ToolGeometryHint::Flat,
-        material: &material,
+    calculate(&FeedsInput::of_operation(
+        &face_rough(),
+        tool,
+        &material,
         machine,
-        operation: OperationFamily::Pocket,
-        operation_kind: None,
-        pass_role: PassRole::Roughing,
-        axial_depth_mm: Some(3.0),
-        radial_width_mm: Some(2.0),
-        target_scallop_mm: None,
-        vendor_lut: Some(embedded_vendor_lut()),
-        setup: SetupContext {
-            tool_overhang_mm: Some(tool.stickout_planning_mm()),
-        },
-        feed_max_rate: None,
-        spindle_strategy: SpindleStrategy::MatchChart,
-        power_cases: rs_cam_core::feeds::engagement::PowerCases::NOMINAL,
-        tool_facts: rs_cam_core::feeds::sourced::ToolFactKinds::STATED,
-    })
+        embedded_vendor_lut(),
+        SpindleStrategy::MatchChart,
+    ))
 }
 
-/// The calculator over a drill cycle.
+/// The calculator over a drill cycle. P29-7 7a: the Drill op states no
+/// side-cut depth, so the input holds none (the literal stated 12 mm).
 fn drill_cycle(machine: &MachineProfile, tool: &ToolConfig) -> FeedsResult {
     let material = white_oak();
-    calculate(&FeedsInput {
-        tool_series: None,
-        tool_diameter: tool.diameter,
-        flute_count: tool.flute_count_planning(),
-        flute_length: tool.cutting_length_planning_mm(),
-        shank_diameter: Some(tool.shank_diameter_planning_mm()),
-        cut_body: rs_cam_core::feeds::CutBody::of_tool(tool),
-        tool_geometry: ToolGeometryHint::Flat,
-        material: &material,
+    calculate(&FeedsInput::of_operation(
+        &OperationConfig::new_default(OperationType::Drill),
+        tool,
+        &material,
         machine,
-        operation: OperationFamily::Drill,
-        operation_kind: None,
-        pass_role: PassRole::Roughing,
-        axial_depth_mm: Some(12.0),
-        radial_width_mm: None,
-        target_scallop_mm: None,
-        vendor_lut: Some(embedded_vendor_lut()),
-        setup: SetupContext {
-            tool_overhang_mm: Some(tool.stickout_planning_mm()),
-        },
-        feed_max_rate: None,
-        spindle_strategy: SpindleStrategy::MatchChart,
-        power_cases: rs_cam_core::feeds::engagement::PowerCases::NOMINAL,
-        tool_facts: rs_cam_core::feeds::sourced::ToolFactKinds::STATED,
-    })
+        embedded_vendor_lut(),
+        SpindleStrategy::MatchChart,
+    ))
 }
 
 /// The cap the travel rate would give. The test states it in full so the

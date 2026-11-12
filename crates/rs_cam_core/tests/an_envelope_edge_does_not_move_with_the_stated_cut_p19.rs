@@ -33,10 +33,11 @@
 
 use rs_cam_core::compute::catalog::OperationType;
 use rs_cam_core::compute::tool_config::{ToolConfig, ToolFact, ToolId, ToolType};
+use rs_cam_core::feeds::FeedsInput;
 use rs_cam_core::feeds::envelope::{
     CurveBound, Edge, EnvelopeInput, Limit, LimitKind, SafeEnvelope,
 };
-use rs_cam_core::feeds::suggest::{SuggestContext, feeds_input_for_operation};
+use rs_cam_core::feeds::suggest::SuggestContext;
 use rs_cam_core::feeds::{SpindleStrategy, calculate, embedded_vendor_lut};
 use rs_cam_core::geo::{BoundingBox3, P3};
 use rs_cam_core::machine::MachineProfile;
@@ -124,7 +125,7 @@ fn speeds(case: &Case) -> (f64, u32) {
     let mut op = rs_cam_core::compute::fixture_values::fixture_op(case.op);
     assert!(op.set_depth_per_pass(case.depths[0]));
     assert!(op.set_stepover(case.widths[0]));
-    let r = calculate(&feeds_input_for_operation(
+    let r = calculate(&FeedsInput::of_operation(
         &op,
         &tool,
         &case.material,
@@ -433,7 +434,7 @@ fn table_edge_stands_on_its_closed_form(case: &Case) -> bool {
     let mut op = rs_cam_core::compute::fixture_values::fixture_op(case.op);
     assert!(op.set_depth_per_pass(case.depths[0]));
     assert!(op.set_stepover(case.widths[0]));
-    let base = calculate(&feeds_input_for_operation(
+    let base = calculate(&FeedsInput::of_operation(
         &op,
         &tool,
         &case.material,

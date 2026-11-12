@@ -158,13 +158,18 @@
     reason = "test code: a panic is how a test reports a failure; the test prints its measurements for the reader"
 )]
 
+use rs_cam_core::compute::catalog::OperationConfig;
+use rs_cam_core::compute::catalog::OperationType;
 use rs_cam_core::feeds::vendor_lookup::PrintedChipload;
 use rs_cam_core::feeds::{
-    FeedsInput, FeedsWarning, OperationFamily, PassRole, RubbingFloorSource, SetupContext,
-    SpindleStrategy, ToolGeometryHint, calculate, embedded_vendor_lut, rubbing_floor_at,
+    FeedsInput, FeedsWarning, RubbingFloorSource, SpindleStrategy, ToolGeometryHint, calculate,
+    embedded_vendor_lut, rubbing_floor_at,
 };
 use rs_cam_core::machine::MachineProfile;
 use rs_cam_core::material::{Material, WoodSpecies};
+
+#[path = "common/feeds_input.rs"]
+mod feeds_input;
 
 /// The literature value, re-declared locally on purpose: a
 /// literature-matrix cell must pin the published number independently
@@ -231,46 +236,35 @@ const LONG_TOOL_FACTOR: f64 = 0.75;
 /// (1450/1290)^0.5. The advance sits at the derated printed point (A2).
 const IPE_MOVED_CELL_ADVANCE_MM_TOOTH: f64 = 0.048_864;
 
-fn calc_ipe_6mm(setup: SetupContext) -> rs_cam_core::feeds::FeedsResult {
+/// The Ipe 6 mm cell: a stock Face (the (Pocket, Roughing) op with no slot
+/// case) on a 6 mm 2-flute flat end mill at the stick-out `stickout_mm`.
+fn calc_ipe_6mm(stickout_mm: f64) -> rs_cam_core::feeds::FeedsResult {
     let lut = embedded_vendor_lut();
     let machine = MachineProfile::generic_wood_router();
     let material = Material::SolidWood {
         species: WoodSpecies::Ipe,
     };
 
-    calculate(&FeedsInput {
-        tool_series: None,
-        tool_diameter: 6.0,
-        flute_count: 2,
-        flute_length: 22.0,
-        shank_diameter: None,
-        cut_body: rs_cam_core::feeds::CutBody {
-            max_cut_diameter_mm: 6.0,
-            core_diameter_mm: 0.0,
-        },
-        tool_geometry: ToolGeometryHint::Flat,
-        material: &material,
-        machine: &machine,
-        operation: OperationFamily::Pocket,
-        operation_kind: None,
-        pass_role: PassRole::Roughing,
-        axial_depth_mm: None,
-        radial_width_mm: None,
-        target_scallop_mm: None,
-        vendor_lut: Some(lut),
-        setup,
-        feed_max_rate: None,
-        spindle_strategy: SpindleStrategy::MatchChart,
-        power_cases: rs_cam_core::feeds::engagement::PowerCases::NOMINAL,
-        tool_facts: rs_cam_core::feeds::sourced::ToolFactKinds::STATED,
-    })
+    calculate(&FeedsInput::of_operation(
+        &OperationConfig::new_default(OperationType::Face),
+        &feeds_input::tool_of_hint(ToolGeometryHint::Flat, 6.0, 2, 22.0, 6.0)
+            .to_builder()
+            .stickout_mm(stickout_mm)
+            .build(),
+        &material,
+        &machine,
+        lut,
+        SpindleStrategy::MatchChart,
+    ))
 }
 
-/// The moved cell: the Ipe Ø6 pocket with the default GUI stickout.
+/// P29-7 7a: the stick-out of the default setup (no stated overhang before
+/// 7a): 4 x D, where the long-tool share is 1.
+const SHORT_STICKOUT_MM: f64 = 4.0 * 6.0;
+
+/// The moved cell, at the default GUI stickout.
 fn calc_ipe_6mm_long_tool() -> rs_cam_core::feeds::FeedsResult {
-    calc_ipe_6mm(SetupContext {
-        tool_overhang_mm: Some(DEFAULT_TOOL_STICKOUT_MM),
-    })
+    calc_ipe_6mm(DEFAULT_TOOL_STICKOUT_MM)
 }
 
 /// Records the cell's live numbers so the re-pin table in this file's
@@ -280,7 +274,7 @@ fn calc_ipe_6mm_long_tool() -> rs_cam_core::feeds::FeedsResult {
 #[ignore = "instrument: prints the cell record; no assertion"]
 fn record_the_cell() {
     for (label, result) in [
-        ("ipe", calc_ipe_6mm(SetupContext::default())),
+        ("ipe", calc_ipe_6mm(SHORT_STICKOUT_MM)),
         ("ipe long tool", calc_ipe_6mm_long_tool()),
         ("oak", calc_oak_6mm()),
     ] {
@@ -364,7 +358,7 @@ fn ipe_pocket_ships_its_computed_feed_above_the_floor_after_r4() {
 
     // No feed factor is left between the two setups: the long-tool share is
     // a load target (ruling R4 Q7), and the workholding factor is gone (Q8).
-    let short = calc_ipe_6mm(SetupContext::default());
+    let short = calc_ipe_6mm(SHORT_STICKOUT_MM);
     let short_chipload = short.feed_rate_mm_min / (short.rpm * flutes);
     assert!(
         (chipload - short_chipload).abs() <= short_chipload * 1e-9,
@@ -406,32 +400,17 @@ fn calc_oak_6mm() -> rs_cam_core::feeds::FeedsResult {
         species: WoodSpecies::WhiteOak,
     };
 
-    calculate(&FeedsInput {
-        tool_series: None,
-        tool_diameter: 6.0,
-        flute_count: 2,
-        flute_length: 22.0,
-        shank_diameter: None,
-        cut_body: rs_cam_core::feeds::CutBody {
-            max_cut_diameter_mm: 6.0,
-            core_diameter_mm: 0.0,
-        },
-        tool_geometry: ToolGeometryHint::Flat,
-        material: &material,
-        machine: &machine,
-        operation: OperationFamily::Pocket,
-        operation_kind: None,
-        pass_role: PassRole::Roughing,
-        axial_depth_mm: None,
-        radial_width_mm: None,
-        target_scallop_mm: None,
-        vendor_lut: Some(lut),
-        setup: SetupContext::default(),
-        feed_max_rate: None,
-        spindle_strategy: SpindleStrategy::MatchChart,
-        power_cases: rs_cam_core::feeds::engagement::PowerCases::NOMINAL,
-        tool_facts: rs_cam_core::feeds::sourced::ToolFactKinds::STATED,
-    })
+    calculate(&FeedsInput::of_operation(
+        &OperationConfig::new_default(OperationType::Face),
+        &feeds_input::tool_of_hint(ToolGeometryHint::Flat, 6.0, 2, 22.0, 6.0)
+            .to_builder()
+            .stickout_mm(24.0)
+            .build(),
+        &material,
+        &machine,
+        lut,
+        SpindleStrategy::MatchChart,
+    ))
 }
 
 #[test]

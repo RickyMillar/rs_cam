@@ -94,14 +94,18 @@
     reason = "test code: a panic is how a test reports a failure"
 )]
 
+use rs_cam_core::compute::catalog::OperationType;
 use rs_cam_core::feeds::vendor_lookup;
 use rs_cam_core::feeds::vendor_lut::VendorLut;
 use rs_cam_core::feeds::{
     ChiploadBounds, FeedsInput, FeedsWarning, OperationFamily, PassRole, RUBBING_FLOOR_MM_TOOTH,
-    SetupContext, SpindleStrategy, ToolGeometryHint, calculate, effective_rubbing_floor,
+    SpindleStrategy, ToolGeometryHint, calculate, effective_rubbing_floor,
 };
 use rs_cam_core::machine::MachineProfile;
 use rs_cam_core::material::{Material, WoodSpecies};
+
+#[path = "common/feeds_input.rs"]
+mod feeds_input;
 
 /// The sweep. Wide on purpose.
 ///
@@ -210,32 +214,23 @@ fn observe(lut: &VendorLut) -> Vec<Observed> {
                             } else {
                                 (d * 0.3).min(1.0)
                             };
-                            let input = FeedsInput {
-                                tool_series: None,
-                                tool_diameter: d,
-                                flute_count: flutes,
-                                flute_length: d * 4.0,
-                                tool_geometry: geometry,
-                                shank_diameter: Some(6.0),
-                                cut_body: rs_cam_core::feeds::CutBody {
-                                    max_cut_diameter_mm: 6.0,
-                                    core_diameter_mm: 0.0,
-                                },
-                                material: &material,
-                                machine: &machine,
-                                operation,
-                                operation_kind: None,
-                                pass_role,
-                                axial_depth_mm: Some(axial),
-                                radial_width_mm: None,
-                                target_scallop_mm: None,
-                                vendor_lut: Some(lut),
-                                setup: SetupContext::default(),
-                                feed_max_rate: None,
-                                spindle_strategy: SpindleStrategy::default(),
-                                power_cases: rs_cam_core::feeds::engagement::PowerCases::NOMINAL,
-                                tool_facts: rs_cam_core::feeds::sourced::ToolFactKinds::STATED,
+                            // P29-7 7a: the op of the row key that holds the depth; a
+                            // key that no op gives is not a cell.
+                            let Some(kind) =
+                                feeds_input::op_of_row_key_with_depth(operation, pass_role)
+                            else {
+                                continue;
                             };
+                            let tool_config =
+                                feeds_input::tool_of_hint(geometry, d, flutes, d * 4.0, 6.0);
+                            let input = FeedsInput::of_operation(
+                                &feeds_input::op_at_depth(kind, axial),
+                                &tool_config,
+                                &material,
+                                &machine,
+                                lut,
+                                SpindleStrategy::default(),
+                            );
                             let result = calculate(&input);
                             for w in &result.warnings {
                                 if let FeedsWarning::VendorRowPublishesNoChipload {
@@ -394,39 +389,30 @@ fn tapered_ball_floor_lands_below_the_global_constant() {
     let material = Material::SolidWood {
         species: WoodSpecies::HardMaple,
     };
-    let input = FeedsInput {
-        tool_series: None,
-        tool_diameter: 1.5,
-        flute_count: 4,
-        flute_length: 4.0,
-        tool_geometry: ToolGeometryHint::TaperedBall {
+    // P29-7 7a: a Ramp Finish states the Parallel / Finish cut at
+    // its depth.
+    let tool_config = feeds_input::tool_of_hint(
+        ToolGeometryHint::TaperedBall {
             tip_radius: 0.75,
             taper_angle_deg: 7.0,
         },
-        shank_diameter: Some(6.0),
-        cut_body: rs_cam_core::feeds::CutBody {
-            max_cut_diameter_mm: 6.0,
-            core_diameter_mm: 0.0,
-        },
-        material: &material,
-        machine: &machine,
-        operation: OperationFamily::Parallel,
-        operation_kind: None,
-        pass_role: PassRole::Finish,
-        axial_depth_mm: Some(0.3),
-        radial_width_mm: None,
-        target_scallop_mm: None,
-        vendor_lut: Some(&lut),
-        setup: SetupContext::default(),
-        feed_max_rate: None,
-        spindle_strategy: SpindleStrategy::default(),
-        power_cases: rs_cam_core::feeds::engagement::PowerCases::NOMINAL,
-        tool_facts: rs_cam_core::feeds::sourced::ToolFactKinds::STATED,
-    };
+        1.5,
+        4,
+        4.0,
+        6.0,
+    );
+    let input = FeedsInput::of_operation(
+        &feeds_input::op_at_depth(OperationType::RampFinish, 0.3),
+        &tool_config,
+        &material,
+        &machine,
+        &lut,
+        SpindleStrategy::default(),
+    );
 
     let query = rs_cam_core::feeds::vendor_normalize::to_lookup_query(&input)
         .expect("a tapered-ball parallel finish in hard maple must route to a LUT query");
-    let envelope = vendor_lookup::find_best_chip_envelope_row(&lut, &query, &input.tool_geometry)
+    let envelope = vendor_lookup::find_best_chip_envelope_row(&lut, &query, &input.tool_geometry())
         .expect(
             "the envelope resolver must find a chipload-bearing tapered-ball row — \
              the LUT ships 8 of them",
@@ -566,32 +552,23 @@ fn the_fallback_lowers_the_floor_only_to_a_published_bound() {
                             } else {
                                 (d * 0.3).min(1.0)
                             };
-                            let input = FeedsInput {
-                                tool_series: None,
-                                tool_diameter: d,
-                                flute_count: flutes,
-                                flute_length: d * 4.0,
-                                tool_geometry: geometry,
-                                shank_diameter: Some(6.0),
-                                cut_body: rs_cam_core::feeds::CutBody {
-                                    max_cut_diameter_mm: 6.0,
-                                    core_diameter_mm: 0.0,
-                                },
-                                material: &material,
-                                machine: &machine,
-                                operation,
-                                operation_kind: None,
-                                pass_role,
-                                axial_depth_mm: Some(axial),
-                                radial_width_mm: None,
-                                target_scallop_mm: None,
-                                vendor_lut: Some(&lut),
-                                setup: SetupContext::default(),
-                                feed_max_rate: None,
-                                spindle_strategy: SpindleStrategy::default(),
-                                power_cases: rs_cam_core::feeds::engagement::PowerCases::NOMINAL,
-                                tool_facts: rs_cam_core::feeds::sourced::ToolFactKinds::STATED,
+                            // P29-7 7a: the op of the row key that holds the depth; a
+                            // key that no op gives is not a cell.
+                            let Some(kind) =
+                                feeds_input::op_of_row_key_with_depth(operation, pass_role)
+                            else {
+                                continue;
                             };
+                            let tool_config =
+                                feeds_input::tool_of_hint(geometry, d, flutes, d * 4.0, 6.0);
+                            let input = FeedsInput::of_operation(
+                                &feeds_input::op_at_depth(kind, axial),
+                                &tool_config,
+                                &material,
+                                &machine,
+                                &lut,
+                                SpindleStrategy::default(),
+                            );
                             let result = calculate(&input);
                             // Only the P1 shape: a recipe carrying no band of
                             // its own, whose floor nevertheless came out under

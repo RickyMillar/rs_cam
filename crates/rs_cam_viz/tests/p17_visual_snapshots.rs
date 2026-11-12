@@ -318,15 +318,14 @@ fn sim_set() -> CutMetricSet {
         .expect("the fixture states or proposes a point");
     // The chip band of the calculator: the row's band, else its one
     // printed chip as the ceiling (a point row).
-    let feeds =
-        rs_cam_core::feeds::calculate(&rs_cam_core::feeds::suggest::feeds_input_for_operation(
-            &config,
-            &tool_cfg,
-            &material,
-            &machine,
-            rs_cam_core::feeds::embedded_vendor_lut(),
-            rs_cam_core::feeds::SpindleStrategy::default(),
-        ));
+    let feeds = rs_cam_core::feeds::calculate(&rs_cam_core::feeds::FeedsInput::of_operation(
+        &config,
+        &tool_cfg,
+        &material,
+        &machine,
+        rs_cam_core::feeds::embedded_vendor_lut(),
+        rs_cam_core::feeds::SpindleStrategy::default(),
+    ));
     let (chip_floor, chip_ceiling) = match (feeds.chipload_bounds, feeds.chipload_point_mm) {
         (Some(b), _) => (Some(b.min_mm_per_tooth), Some(b.max_mm_per_tooth)),
         (None, point) => (None, point),

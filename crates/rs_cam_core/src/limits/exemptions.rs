@@ -564,12 +564,8 @@ pub static EXEMPTIONS: [Exemption; 48] = [
         limit: &[LimitId::ChipMax],
         who: Who::Facts("thins_chip is set from the family and the role"),
         class: NR,
-        where_: &[
-            "src/compute/catalog/cuts.rs",
-            "src/feeds/geometry.rs",
-            "src/feeds/calculator/feed.rs",
-        ],
-        closes_in: "P29-4 to P29-7",
+        where_: &["src/compute/catalog/cuts.rs", "src/feeds/geometry.rs"],
+        closes_in: "later (no geometry rule for a finish pass; P28-18 is a ruling)",
     },
     Exemption {
         id: "F-OffsetRing",

@@ -16,8 +16,8 @@ use crate::trace::lineage::{BasisRecord, StepQuantity, StepRecord, records_of};
 
 use super::invariants::enforce_invariants_at_fixed_geometry;
 use super::{
-    CalculatorOperatingPoint, StockContext, SuggestContext, SuggestWarning,
-    feeds_input_for_operation, round_suggestion_value, round_suggestion_value_down,
+    CalculatorOperatingPoint, StockContext, SuggestContext, SuggestWarning, round_suggestion_value,
+    round_suggestion_value_down,
 };
 
 /// Write the calculator's speeds (feed, plunge, RPM, ramp) to `operation`.
@@ -1398,8 +1398,7 @@ pub fn feeds_preview_for_operation(
     lut: &VendorLut,
     spindle_strategy: crate::feeds::SpindleStrategy,
 ) -> FeedsPreview {
-    let input =
-        feeds_input_for_operation(operation, tool, material, machine, lut, spindle_strategy);
+    let input = FeedsInput::of_operation(operation, tool, material, machine, lut, spindle_strategy);
     FeedsPreview::build(&input)
 }
 

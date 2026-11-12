@@ -34,7 +34,7 @@ use rs_cam_core::compute::catalog::{OperationConfig, OperationType};
 use rs_cam_core::compute::operation_configs::PocketConfig;
 use rs_cam_core::compute::tool_config::{ToolConfig, ToolFact, ToolId, ToolMaterial, ToolType};
 use rs_cam_core::diagnostics::adapters::from_tool_load::diagnostics_from_load_verdict;
-use rs_cam_core::feeds::suggest::feeds_input_for_operation;
+use rs_cam_core::feeds::FeedsInput;
 use rs_cam_core::feeds::{FeedsResult, SpindleStrategy, calculate, embedded_vendor_lut};
 use rs_cam_core::ids::ToolpathId;
 use rs_cam_core::machine::kinematics::PredictedFeedMap;
@@ -110,7 +110,7 @@ fn suggest() -> FeedsResult {
     let material = material();
     let machine = open_machine();
     let op = pocket();
-    let input = feeds_input_for_operation(
+    let input = FeedsInput::of_operation(
         &op,
         &tool,
         &material,

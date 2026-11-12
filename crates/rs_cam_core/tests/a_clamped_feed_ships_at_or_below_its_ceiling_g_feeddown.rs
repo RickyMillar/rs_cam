@@ -45,8 +45,7 @@ use rs_cam_core::feeds::suggest::{
     ApplyContext, FeedsPreview, SuggestContext, round_suggestion_value, round_suggestion_value_down,
 };
 use rs_cam_core::feeds::{
-    FeedsInput, FeedsWarning, OperationFamily, PassRole, SetupContext, SpindleStrategy,
-    ToolGeometryHint, embedded_vendor_lut,
+    FeedsInput, FeedsWarning, PassRole, SpindleStrategy, embedded_vendor_lut,
 };
 use rs_cam_core::machine::MachineProfile;
 use rs_cam_core::material::{Material, WoodSpecies};
@@ -96,40 +95,6 @@ fn heavy_pocket(ap_mm: f64) -> OperationConfig {
     })
 }
 
-fn feeds_input<'a>(
-    machine: &'a MachineProfile,
-    material: &'a Material,
-    ap_mm: f64,
-    ae_mm: f64,
-) -> FeedsInput<'a> {
-    FeedsInput {
-        tool_series: None,
-        tool_diameter: DIAMETER_MM,
-        flute_count: 2,
-        flute_length: 3.0 * DIAMETER_MM,
-        shank_diameter: None,
-        cut_body: rs_cam_core::feeds::CutBody {
-            max_cut_diameter_mm: DIAMETER_MM,
-            core_diameter_mm: 0.0,
-        },
-        tool_geometry: ToolGeometryHint::Flat,
-        material,
-        machine,
-        operation: OperationFamily::Pocket,
-        operation_kind: None,
-        pass_role: PassRole::Roughing,
-        axial_depth_mm: Some(ap_mm),
-        radial_width_mm: Some(ae_mm),
-        target_scallop_mm: None,
-        vendor_lut: Some(embedded_vendor_lut()),
-        setup: SetupContext::default(),
-        feed_max_rate: None,
-        spindle_strategy: SpindleStrategy::MatchChart,
-        power_cases: rs_cam_core::feeds::engagement::PowerCases::NOMINAL,
-        tool_facts: rs_cam_core::feeds::sourced::ToolFactKinds::STATED,
-    }
-}
-
 /// What one swept pair produced.
 struct Shipped {
     /// The calculator's feed, before the quantisation. Every ceiling is
@@ -150,7 +115,16 @@ fn run_funnel(machine: &MachineProfile, material: &Material, requested_ap: f64) 
     let mut operation = heavy_pocket(requested_ap);
     let mut provenance = rs_cam_core::feeds::FeedsProvenance::default();
 
-    let input = feeds_input(machine, material, requested_ap, DIAMETER_MM);
+    // P29-7 7a: the input of the op itself (a full-width slot: the slot
+    // case is the nominal width).
+    let input = FeedsInput::of_operation(
+        &operation,
+        &tool,
+        material,
+        machine,
+        embedded_vendor_lut(),
+        SpindleStrategy::MatchChart,
+    );
     let preview = FeedsPreview::build(&input);
     let rec = preview.applicable()?;
     let result = rec.result().clone();

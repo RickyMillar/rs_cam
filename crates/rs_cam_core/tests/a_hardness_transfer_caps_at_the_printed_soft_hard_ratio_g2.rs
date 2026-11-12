@@ -61,13 +61,13 @@
 use rs_cam_core::compute::catalog::{OperationConfig, OperationType};
 use rs_cam_core::compute::tool_config::ToolFact;
 use rs_cam_core::compute::{ToolConfig, ToolId, ToolType};
+use rs_cam_core::feeds::FeedsInput;
 use rs_cam_core::feeds::extrapolation::{
     HardnessBasis, JankaFrom, SOFT_OVER_HARD_PRINTED_MAX, SoftHardCap, hardness_basis,
     soft_hard_cap,
 };
 use rs_cam_core::feeds::suggest::{
-    StockContext, SuggestContext, SuggestParamsInput, SuggestedParams, feeds_input_for_operation,
-    suggest_params,
+    StockContext, SuggestContext, SuggestParamsInput, SuggestedParams, suggest_params,
 };
 use rs_cam_core::feeds::vendor_lookup::{
     LookupQuery, LookupResult, find_best_chip_envelope_row, lookup_best,
@@ -143,7 +143,7 @@ fn suggest(op: OperationType, tool: &ToolConfig, material: &Material) -> Suggest
 fn envelope_row(op: OperationType, tool: &ToolConfig, material: &Material) -> LookupResult {
     let machine = MachineProfile::default();
     let operation = OperationConfig::new_default(op);
-    let input = feeds_input_for_operation(
+    let input = FeedsInput::of_operation(
         &operation,
         tool,
         material,
@@ -152,7 +152,7 @@ fn envelope_row(op: OperationType, tool: &ToolConfig, material: &Material) -> Lo
         SpindleStrategy::MatchChart,
     );
     let query = to_lookup_query(&input).expect("the routing answers");
-    find_best_chip_envelope_row(&EMBEDDED_LUT, &query, &input.tool_geometry)
+    find_best_chip_envelope_row(&EMBEDDED_LUT, &query, &input.tool_geometry())
         .expect("a chipload-bearing row matches")
 }
 

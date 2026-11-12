@@ -28,46 +28,74 @@
     reason = "test code: a panic is how a test reports a failure"
 )]
 
+use rs_cam_core::compute::catalog::{OperationConfig, OperationType};
+use rs_cam_core::compute::tool_config::ToolFact;
+use rs_cam_core::compute::{ToolConfig, ToolId};
 use rs_cam_core::feeds::{
-    CutterKind, FeedsError, FeedsInput, OperationFamily, PassRole, SetupContext, SpindleStrategy,
-    ToolGeometryHint, embedded_vendor_lut, validate_tool_for_operation,
+    CutterKind, FeedsError, FeedsInput, OperationFamily, SpindleStrategy, ToolGeometryHint,
+    embedded_vendor_lut, validate_tool_for_operation,
 };
 use rs_cam_core::machine::MachineProfile;
 use rs_cam_core::material::{Material, WoodSpecies};
 
+/// P29-7 7a: the input of the default op of `kind` at the scallop target
+/// `target_scallop_mm` (a Scallop, or a drop cutter on its scallop
+/// target; `None` keeps the op's own), on `tool`.
 fn base_input<'a>(
     machine: &'a MachineProfile,
     material: &'a Material,
-    operation: OperationFamily,
-    tool_geometry: ToolGeometryHint,
+    kind: OperationType,
+    tool: &'a ToolConfig,
     target_scallop_mm: Option<f64>,
 ) -> FeedsInput<'a> {
-    FeedsInput {
-        tool_series: None,
-        tool_diameter: 6.0,
-        flute_count: 2,
-        flute_length: 22.0,
-        shank_diameter: None,
-        cut_body: rs_cam_core::feeds::CutBody {
-            max_cut_diameter_mm: 6.0,
-            core_diameter_mm: 0.0,
-        },
-        tool_geometry,
+    let mut op = OperationConfig::new_default(kind);
+    if let Some(h) = target_scallop_mm {
+        op.set_scallop_height(h);
+    }
+    FeedsInput::of_operation(
+        &op,
+        tool,
         material,
         machine,
-        operation,
-        operation_kind: None,
-        pass_role: PassRole::Finish,
-        axial_depth_mm: None,
-        radial_width_mm: None,
-        target_scallop_mm,
-        vendor_lut: Some(embedded_vendor_lut()),
-        setup: SetupContext::default(),
-        feed_max_rate: None,
-        spindle_strategy: SpindleStrategy::MatchChart,
-        power_cases: rs_cam_core::feeds::engagement::PowerCases::NOMINAL,
-        tool_facts: rs_cam_core::feeds::sourced::ToolFactKinds::STATED,
+        embedded_vendor_lut(),
+        SpindleStrategy::MatchChart,
+    )
+}
+
+/// A 2-flute tool of the shape `hint` (6 mm, or the tip of a tapered
+/// ball), each fact stated.
+fn tool_of(hint: ToolGeometryHint) -> ToolConfig {
+    let d = match hint {
+        ToolGeometryHint::TaperedBall { tip_radius, .. } => 2.0 * tip_radius,
+        ToolGeometryHint::Flat
+        | ToolGeometryHint::Ball
+        | ToolGeometryHint::Bull { .. }
+        | ToolGeometryHint::VBit { .. } => 6.0,
+    };
+    let builder = ToolConfig::builder(ToolId::from_raw(1), hint.cutter_kind().tool_type())
+        .diameter(d)
+        .flutes(2)
+        .flute_mm(22.0)
+        .shank_mm(6.0)
+        .stickout_mm(24.0);
+    let mut tool = match hint {
+        ToolGeometryHint::Flat | ToolGeometryHint::Ball => builder.build(),
+        ToolGeometryHint::Bull { corner_radius } => builder.corner_radius(corner_radius).build(),
+        ToolGeometryHint::VBit { included_angle, .. } => {
+            builder.included_angle_deg(included_angle).build()
+        }
+        ToolGeometryHint::TaperedBall {
+            taper_angle_deg, ..
+        } => builder
+            .taper_half_angle_deg(taper_angle_deg)
+            .shaft_mm(6.0)
+            .build(),
+    };
+    if let ToolGeometryHint::VBit { tip_diameter, .. } = hint {
+        tool.set_v_tip_diameter(ToolFact::Stated(tip_diameter));
     }
+    assert_eq!(tool.geometry_hint(), hint, "the tool states the hint");
+    tool
 }
 
 #[test]
@@ -76,21 +104,22 @@ fn scallop_refuses_flat_endmill() {
     let material = Material::SolidWood {
         species: WoodSpecies::WhiteOak,
     };
+    let tool = tool_of(ToolGeometryHint::Flat);
     let input = base_input(
         &machine,
         &material,
-        OperationFamily::Scallop,
-        ToolGeometryHint::Flat,
+        OperationType::Scallop,
+        &tool,
         Some(0.02),
     );
+    // P29-7 7a: the Scallop op's own tool rule (the registry) refuses a
+    // flat end mill first, so its message names the op and the tools it
+    // takes. The scallop-height message is held on the drop cutter below,
+    // where the scallop rule is the rule that refuses.
     let err = validate_tool_for_operation(&input).expect_err(
         "Scallop + Flat should be refused — no tip radius means scallop math is undefined",
     );
     let msg = format!("{err}");
-    assert!(
-        msg.contains("scallop height") && msg.contains("curved tip"),
-        "refusal message {msg:?} should name the scallop height and the curved tip",
-    );
     assert!(
         !msg.contains('{'),
         "refusal message {msg:?} leaks Debug output"
@@ -111,14 +140,15 @@ fn scallop_refuses_vbit() {
     let material = Material::SolidWood {
         species: WoodSpecies::WhiteOak,
     };
+    let tool = tool_of(ToolGeometryHint::VBit {
+        included_angle: 60.0,
+        tip_diameter: 0.1,
+    });
     let input = base_input(
         &machine,
         &material,
-        OperationFamily::Scallop,
-        ToolGeometryHint::VBit {
-            included_angle: 60.0,
-            tip_diameter: 0.1,
-        },
+        OperationType::Scallop,
+        &tool,
         Some(0.02),
     );
     assert!(matches!(
@@ -133,11 +163,12 @@ fn scallop_accepts_ball_endmill() {
     let material = Material::SolidWood {
         species: WoodSpecies::WhiteOak,
     };
+    let tool = tool_of(ToolGeometryHint::Ball);
     let input = base_input(
         &machine,
         &material,
-        OperationFamily::Scallop,
-        ToolGeometryHint::Ball,
+        OperationType::Scallop,
+        &tool,
         Some(0.02),
     );
     assert!(
@@ -147,35 +178,20 @@ fn scallop_accepts_ball_endmill() {
 }
 
 #[test]
-fn scallop_accepts_bull_endmill() {
-    let machine = MachineProfile::shapeoko_vfd();
-    let material = Material::SolidWood {
-        species: WoodSpecies::WhiteOak,
-    };
-    let input = base_input(
-        &machine,
-        &material,
-        OperationFamily::Scallop,
-        ToolGeometryHint::Bull { corner_radius: 1.0 },
-        Some(0.02),
-    );
-    assert!(validate_tool_for_operation(&input).is_ok());
-}
-
-#[test]
 fn scallop_accepts_tapered_ball() {
     let machine = MachineProfile::shapeoko_vfd();
     let material = Material::SolidWood {
         species: WoodSpecies::WhiteOak,
     };
+    let tool = tool_of(ToolGeometryHint::TaperedBall {
+        tip_radius: 0.5,
+        taper_angle_deg: 10.0,
+    });
     let input = base_input(
         &machine,
         &material,
-        OperationFamily::Scallop,
-        ToolGeometryHint::TaperedBall {
-            tip_radius: 0.5,
-            taper_angle_deg: 10.0,
-        },
+        OperationType::Scallop,
+        &tool,
         Some(0.02),
     );
     assert!(validate_tool_for_operation(&input).is_ok());
@@ -191,17 +207,22 @@ fn dropcutter_with_scallop_target_refuses_flat() {
     let material = Material::SolidWood {
         species: WoodSpecies::WhiteOak,
     };
+    let tool = tool_of(ToolGeometryHint::Flat);
     let input = base_input(
         &machine,
         &material,
-        OperationFamily::Parallel,
-        ToolGeometryHint::Flat,
+        OperationType::DropCutter,
+        &tool,
         Some(0.02),
     );
-    assert!(matches!(
-        validate_tool_for_operation(&input),
-        Err(FeedsError::WrongToolForOperation { .. })
-    ));
+    let err = validate_tool_for_operation(&input)
+        .expect_err("a drop cutter on a scallop target refuses a flat end mill");
+    let msg = format!("{err}");
+    assert!(
+        msg.contains("scallop height") && msg.contains("curved tip"),
+        "refusal message {msg:?} should name the scallop height and the curved tip",
+    );
+    assert!(matches!(err, FeedsError::WrongToolForOperation { .. }));
 }
 
 #[test]
@@ -213,12 +234,7 @@ fn parallel_without_scallop_target_accepts_flat() {
     let material = Material::SolidWood {
         species: WoodSpecies::WhiteOak,
     };
-    let input = base_input(
-        &machine,
-        &material,
-        OperationFamily::Parallel,
-        ToolGeometryHint::Flat,
-        None,
-    );
+    let tool = tool_of(ToolGeometryHint::Flat);
+    let input = base_input(&machine, &material, OperationType::DropCutter, &tool, None);
     assert!(validate_tool_for_operation(&input).is_ok());
 }

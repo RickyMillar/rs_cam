@@ -22,10 +22,10 @@
 
 use rs_cam_core::compute::catalog::{OperationConfig, OperationType};
 use rs_cam_core::compute::tool_config::{ToolConfig, ToolFact, ToolId, ToolType};
+use rs_cam_core::feeds::FeedsInput;
 use rs_cam_core::feeds::envelope::{EnvelopeInput, LimitKind, SafeEnvelope};
 use rs_cam_core::feeds::suggest::{
-    SuggestContext, SuggestForOperationInput, SuggestWarning, feeds_input_for_operation,
-    suggest_for_operation,
+    SuggestContext, SuggestForOperationInput, SuggestWarning, suggest_for_operation,
 };
 use rs_cam_core::feeds::{SpindleStrategy, calculate, embedded_vendor_lut};
 use rs_cam_core::machine::MachineProfile;
@@ -107,7 +107,7 @@ fn an_unknown_cutting_length_puts_its_legacy_row_in_the_flute_guard_p13a() {
     let mut op = rs_cam_core::compute::fixture_values::fixture_op(OperationType::Pocket);
     let machine = MachineProfile::generic_wood_router();
     let material = softwood();
-    let r = calculate(&feeds_input_for_operation(
+    let r = calculate(&FeedsInput::of_operation(
         &op,
         &tool,
         &material,

@@ -56,11 +56,12 @@ use rs_cam_core::compute::catalog::OperationConfig;
 use rs_cam_core::compute::operation_configs::PocketConfig;
 use rs_cam_core::compute::tool_config::ToolFact;
 use rs_cam_core::compute::tool_config::{ToolConfig, ToolId, ToolType};
+use rs_cam_core::feeds::FeedsInput;
 use rs_cam_core::feeds::envelope::PickRequest;
 use rs_cam_core::feeds::envelope::Placement;
 use rs_cam_core::feeds::suggest::{
     OperationApplyInput, SuggestContext, apply_speeds_to_op, apply_to_operation,
-    feeds_input_for_operation, feeds_result_for_operation, round_suggestion_value_down,
+    feeds_result_for_operation, round_suggestion_value_down,
 };
 use rs_cam_core::feeds::{
     FeedsProvenance, FeedsResult, SpindleStrategy, calculate, embedded_vendor_lut,
@@ -153,16 +154,17 @@ impl Fixture {
 
     /// The calculator run at the operation's own depth and stepover.
     fn result_at(&self, op: &OperationConfig, dpp: f64, stepover: f64) -> FeedsResult {
-        let mut input = feeds_input_for_operation(
-            op,
+        let mut op = op.clone();
+        assert!(op.set_depth_per_pass(dpp));
+        assert!(op.set_stepover(stepover));
+        let input = FeedsInput::of_operation(
+            &op,
             &self.tool,
             &self.material,
             &self.machine,
             embedded_vendor_lut(),
             SpindleStrategy::default(),
         );
-        input.axial_depth_mm = Some(dpp);
-        input.radial_width_mm = Some(stepover);
         validate_tool_for_operation(&input).expect("a flat end mill on a Pocket is valid");
         calculate(&input)
     }

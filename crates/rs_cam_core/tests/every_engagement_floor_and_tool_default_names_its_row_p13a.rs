@@ -25,8 +25,9 @@
 use rs_cam_core::compute::catalog::OperationType;
 use rs_cam_core::compute::operation_configs::DRILL_DWELL_S;
 use rs_cam_core::compute::tool_config::{ToolConfig, ToolFact, ToolId, ToolType};
+use rs_cam_core::feeds::FeedsInput;
 use rs_cam_core::feeds::envelope::{EnvelopeInput, LimitKind, SafeEnvelope};
-use rs_cam_core::feeds::suggest::{SuggestContext, feeds_input_for_operation};
+use rs_cam_core::feeds::suggest::SuggestContext;
 use rs_cam_core::feeds::{
     Basis, SpindleStrategy, calculate, embedded_vendor_lut, formula_constants,
 };
@@ -117,11 +118,14 @@ fn the_four_numbers_have_f201_rows_p13a() {
 
 #[test]
 fn a_floored_depth_and_width_read_the_floor_rows_p13a() {
-    let op = rs_cam_core::compute::fixture_values::fixture_op(OperationType::Pocket);
+    let mut op = rs_cam_core::compute::fixture_values::fixture_op(OperationType::Pocket);
+    // A stated depth and width under the floors: the calculator raises both.
+    assert!(op.set_depth_per_pass(row(MIN_AP_ROW).value * 0.5));
+    assert!(op.set_stepover(row(MIN_AE_ROW).value * 0.5));
     let machine = MachineProfile::generic_wood_router();
     let material = softwood();
     let tool = flat();
-    let mut input = feeds_input_for_operation(
+    let input = FeedsInput::of_operation(
         &op,
         &tool,
         &material,
@@ -129,9 +133,6 @@ fn a_floored_depth_and_width_read_the_floor_rows_p13a() {
         embedded_vendor_lut(),
         SpindleStrategy::MatchChart,
     );
-    // A stated depth and width under the floors: the calculator raises both.
-    input.axial_depth_mm = Some(row(MIN_AP_ROW).value * 0.5);
-    input.radial_width_mm = Some(row(MIN_AE_ROW).value * 0.5);
     let r = calculate(&input);
     assert!(
         (r.axial_depth_mm - row(MIN_AP_ROW).value).abs() < 1e-12,
@@ -149,7 +150,7 @@ fn the_envelope_engagement_floors_read_the_rows_p13a() {
     let machine = MachineProfile::generic_wood_router();
     let material = softwood();
     let tool = flat();
-    let r = calculate(&feeds_input_for_operation(
+    let r = calculate(&FeedsInput::of_operation(
         &op,
         &tool,
         &material,

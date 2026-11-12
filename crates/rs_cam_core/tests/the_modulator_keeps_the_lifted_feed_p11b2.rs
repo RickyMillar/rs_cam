@@ -38,7 +38,7 @@ use rs_cam_core::dressup::feed_modulation::{
     BindingConstraint, ChiploadBand, ModulationContext, ModulationStrategy, PerMoveEngagement,
     RadialThinning, adaptive_feed_modulate,
 };
-use rs_cam_core::feeds::suggest::feeds_input_for_operation;
+use rs_cam_core::feeds::FeedsInput;
 use rs_cam_core::feeds::{FeedsResult, SpindleStrategy, calculate, embedded_vendor_lut};
 use rs_cam_core::geo::P3;
 use rs_cam_core::machine::kinematics::MachineKinematics;
@@ -93,7 +93,7 @@ fn suggest() -> FeedsResult {
         species: WoodSpecies::WhiteOak,
     };
     let machine = open_machine();
-    let input = feeds_input_for_operation(
+    let input = FeedsInput::of_operation(
         &pocket(),
         &tool,
         &material,

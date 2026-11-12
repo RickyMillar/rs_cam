@@ -60,11 +60,12 @@
 use rs_cam_core::compute::catalog::{OperationConfig, OperationType};
 use rs_cam_core::compute::tool_config::ToolFact;
 use rs_cam_core::compute::{ToolConfig, ToolId, ToolType};
+use rs_cam_core::feeds::FeedsInput;
 use rs_cam_core::feeds::extrapolation::{
     FAMILY_RULE_TEXT, FAMILY_RULES, FamilyBasis, HardnessBasis,
 };
 use rs_cam_core::feeds::suggest::{
-    StockContext, SuggestContext, SuggestParamsInput, feeds_input_for_operation, suggest_params,
+    StockContext, SuggestContext, SuggestParamsInput, suggest_params,
 };
 use rs_cam_core::feeds::support::BULL_FINISH_PLYWOOD;
 use rs_cam_core::feeds::vendor_lookup::{
@@ -146,7 +147,7 @@ fn woods() -> [(&'static str, Material); 4] {
 fn both_rows(op: OperationType, tool: &ToolConfig, material: &Material) -> [LookupResult; 2] {
     let machine = MachineProfile::default();
     let operation = OperationConfig::new_default(op);
-    let input = feeds_input_for_operation(
+    let input = FeedsInput::of_operation(
         &operation,
         tool,
         material,
@@ -155,9 +156,9 @@ fn both_rows(op: OperationType, tool: &ToolConfig, material: &Material) -> [Look
         SpindleStrategy::MatchChart,
     );
     let query = to_lookup_query(&input).expect("the routing answers");
-    let recipe = find_best_row_for_geometry(&EMBEDDED_LUT, &query, &input.tool_geometry)
+    let recipe = find_best_row_for_geometry(&EMBEDDED_LUT, &query, &input.tool_geometry())
         .unwrap_or_else(|| panic!("{op:?}: the recipe resolver found no row"));
-    let envelope = find_best_chip_envelope_row(&EMBEDDED_LUT, &query, &input.tool_geometry)
+    let envelope = find_best_chip_envelope_row(&EMBEDDED_LUT, &query, &input.tool_geometry())
         .unwrap_or_else(|| panic!("{op:?}: the envelope resolver found no row"));
     [recipe, envelope]
 }
@@ -762,7 +763,7 @@ fn a_plywood_bull_finish_refuses_and_a_vbit_curve_routes_to_trace_g3() {
     };
     let tool = bull(6.0);
     for op in [OperationType::DropCutter, OperationType::ProjectCurve] {
-        let input = feeds_input_for_operation(
+        let input = FeedsInput::of_operation(
             &OperationConfig::new_default(op),
             &tool,
             &plywood,
@@ -777,7 +778,7 @@ fn a_plywood_bull_finish_refuses_and_a_vbit_curve_routes_to_trace_g3() {
             "{op:?}"
         );
         assert!(
-            find_best_row_for_geometry(&EMBEDDED_LUT, &query, &input.tool_geometry).is_none(),
+            find_best_row_for_geometry(&EMBEDDED_LUT, &query, &input.tool_geometry()).is_none(),
             "{op:?}: no bull row serves a plywood finish"
         );
         match feeds_support(&input) {
@@ -793,7 +794,7 @@ fn a_plywood_bull_finish_refuses_and_a_vbit_curve_routes_to_trace_g3() {
     let hardwood = Material::SolidWood {
         species: WoodSpecies::GenericHardwood,
     };
-    let input = feeds_input_for_operation(
+    let input = FeedsInput::of_operation(
         &OperationConfig::new_default(OperationType::ProjectCurve),
         &vbit,
         &hardwood,
@@ -812,7 +813,7 @@ fn a_plywood_bull_finish_refuses_and_a_vbit_curve_routes_to_trace_g3() {
         (LutOperationFamily::Trace, LutPassRole::Finish)
     );
     assert!(
-        find_best_row_for_geometry(&EMBEDDED_LUT, &query, &input.tool_geometry).is_some(),
+        find_best_row_for_geometry(&EMBEDDED_LUT, &query, &input.tool_geometry()).is_some(),
         "a 60 deg V-bit ProjectCurve in hardwood must read the printed AMS-159 trace row"
     );
     match feeds_support(&input) {

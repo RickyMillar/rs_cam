@@ -14,18 +14,15 @@
 use super::cell::LiteratureCell;
 use super::expr::Bindings;
 use rs_cam_core::compute::OperationConfig;
-use rs_cam_core::compute::build_cutter;
 use rs_cam_core::compute::operation_configs::{
     AdaptiveConfig, DrillConfig, PocketConfig, ScallopConfig, VCarveConfig,
 };
 use rs_cam_core::compute::tool_config::ToolFact;
 use rs_cam_core::compute::tool_config::{ToolConfig, ToolId, ToolType};
-use rs_cam_core::feeds::suggest::{
-    apply_drill_defaults, apply_speeds_to_op, operation_feeds_hints,
-};
+use rs_cam_core::feeds::suggest::{apply_drill_defaults, apply_speeds_to_op};
 use rs_cam_core::feeds::{
-    self, FeedsInput, FeedsResult, OperationFamily, PassRole, RpmChoice, SetupContext,
-    SpindleScaleReason, SpindleStrategy,
+    self, FeedsInput, FeedsResult, OperationFamily, PassRole, RpmChoice, SpindleScaleReason,
+    SpindleStrategy,
 };
 use rs_cam_core::machine::MachineProfile;
 use rs_cam_core::material::Material;
@@ -516,51 +513,15 @@ fn run_cell_on_machine(
     let tool = build_tool(cell, tool_type);
     let operation = build_operation(cell, op_family)?;
 
-    // If the cell pins DOC and/or WOC, thread them into the feeds
-    // calculator as input hints so the engine evaluates power, RCTF,
-    // MRR, and chipload at the cell's intended operating point —
-    // otherwise `feeds_result_for_operation` reads only what
-    // `operation_feeds_hints` exposes (which for Pocket/Adaptive is
-    // `(None, None, None)`), and the post-clamp `set_stepover` /
-    // `set_depth_per_pass` calls silently overwrite the pins with the
-    // engine's free-run values before the snapshot is taken. See
-    // shim docs above + Phase 1 fix group G1-shim-pinned-inputs.
+    // P29-7 7a: the input comes from the op. `build_operation` writes the
+    // cell's pinned DOC and WOC on the op, so the calculator evaluates
+    // power, RCTF, MRR and chipload at the cell's operating point, and the
+    // post-clamp `set_stepover` / `set_depth_per_pass` calls below keep
+    // them on the snapshot (Phase 1 fix group G1-shim-pinned-inputs).
     let pinned_doc = cell.fixed_inputs.as_ref().and_then(|f| f.doc_pinned_mm());
     let pinned_woc = cell.fixed_inputs.as_ref().and_then(|f| f.woc_pinned_mm());
 
-    let tool_def = build_cutter(&tool).unwrap();
-    let (auto_axial, auto_radial, auto_scallop) = operation_feeds_hints(&operation, tool.diameter);
-    let feeds_input = FeedsInput {
-        tool_series: None,
-        tool_diameter: tool.diameter,
-        flute_count: tool.flute_count_planning(),
-        flute_length: tool.cutting_length_planning_mm(),
-        shank_diameter: Some(tool.shank_diameter_planning_mm()),
-        // P22-0c-6b: the body facts (ruling 4 (a)).
-        cut_body: rs_cam_core::feeds::CutBody::of_body(tool_def.body()),
-        tool_geometry: tool_def.to_geometry_hint(),
-        material,
-        machine,
-        operation: op_family,
-        // Checkpoint K (a4) — the shim's whole point is to be the
-        // production path, so it supplies the operation's own kind and
-        // gets the same LUT routing (and the same refusals) a GUI / CLI
-        // / MCP user gets. No matrix cell currently exercises a
-        // ProjectCurve on a V-bit, so no cell moves.
-        operation_kind: Some(operation.op_type()),
-        pass_role,
-        axial_depth_mm: pinned_doc.or(auto_axial),
-        radial_width_mm: pinned_woc.or(auto_radial),
-        target_scallop_mm: auto_scallop,
-        vendor_lut: Some(lut),
-        setup: SetupContext {
-            tool_overhang_mm: Some(tool.stickout_planning_mm()),
-        },
-        feed_max_rate: None,
-        spindle_strategy: strategy,
-        power_cases: rs_cam_core::feeds::engagement::PowerCases::NOMINAL,
-        tool_facts: rs_cam_core::feeds::sourced::ToolFactKinds::of_tool(&tool),
-    };
+    let feeds_input = FeedsInput::of_operation(&operation, &tool, material, machine, lut, strategy);
     // Run the engine's refusal check FIRST so this shim matches the
     // production Suggest paths (`suggest_for_operation` /
     // `feeds_result_for_operation`), which now validate before

@@ -83,7 +83,7 @@ fn tool_at(tool_type: ToolType, d: f64) -> ToolConfig {
 /// (`feeds::default_radial_width`, lead gate A), for the session defaults.
 fn calculator_width(op: &OperationConfig, tool: &ToolConfig) -> f64 {
     let s = ProjectSession::new_empty();
-    let input = rs_cam_core::feeds::suggest::feeds_input_for_operation(
+    let input = rs_cam_core::feeds::FeedsInput::of_operation(
         op,
         tool,
         &s.stock_config().material,

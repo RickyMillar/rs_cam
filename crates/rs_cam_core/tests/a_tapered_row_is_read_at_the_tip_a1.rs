@@ -27,14 +27,14 @@
     reason = "test code: a panic is how a test reports a failure"
 )]
 
+use rs_cam_core::compute::catalog::OperationConfig;
 use rs_cam_core::compute::catalog::OperationType;
 use rs_cam_core::compute::cutter::build_cutter;
 use rs_cam_core::compute::tool_config::ToolFact;
 use rs_cam_core::compute::tool_config::{ToolConfig, ToolId, ToolType};
 use rs_cam_core::feeds::geometry::{lut_key_diameter_for_cutter, lut_key_diameter_mm};
 use rs_cam_core::feeds::{
-    FeedsInput, OperationFamily, PassRole, SetupContext, SpindleStrategy, calculate,
-    embedded_vendor_lut, vendor_normalize,
+    FeedsInput, SpindleStrategy, calculate, embedded_vendor_lut, vendor_normalize,
 };
 use rs_cam_core::ids::ToolpathId;
 use rs_cam_core::machine::MachineProfile;
@@ -163,32 +163,22 @@ fn a_tapered_row_is_read_at_the_tip_a1() {
     assert!((cutter.diameter() - SHANK_MM).abs() < 1e-12);
 
     // 1. The Suggest key: the query that `feeds::calculate` looks up.
-    let input = FeedsInput {
-        tool_series: None,
-        tool_diameter: tool.diameter,
-        flute_count: tool.flute_count_planning(),
-        flute_length: tool.cutting_length_planning_mm(),
-        shank_diameter: Some(tool.shank_diameter_planning_mm()),
-        // P22-0c-6b: the body facts (ruling 4 (a)).
-        cut_body: rs_cam_core::feeds::CutBody::of_tool(&tool),
-        tool_geometry: hint,
-        material: &material,
-        machine: &machine,
-        operation: OperationFamily::Parallel,
-        operation_kind: Some(OperationType::DropCutter),
-        pass_role: PassRole::Finish,
-        axial_depth_mm: Some(DEPTH_MM),
-        radial_width_mm: None,
-        target_scallop_mm: None,
-        vendor_lut: Some(lut),
-        setup: SetupContext::default(),
-        feed_max_rate: None,
-        spindle_strategy: SpindleStrategy::default(),
-        power_cases: rs_cam_core::feeds::engagement::PowerCases::NOMINAL,
-        tool_facts: rs_cam_core::feeds::sourced::ToolFactKinds::STATED,
+    let input = {
+        // P29-7 7a: the op that states a Parallel / Finish cut at a depth: a
+        // Ramp Finish (its `max_stepdown`). A drop cutter states no depth.
+        let mut op = OperationConfig::new_default(OperationType::RampFinish);
+        assert!(op.set_depth_per_pass(DEPTH_MM));
+        FeedsInput::of_operation(
+            &op,
+            &tool,
+            &material,
+            &machine,
+            lut,
+            SpindleStrategy::default(),
+        )
     };
     let suggest_key = vendor_normalize::to_lookup_query(&input)
-        .expect("a tapered ball on a DropCutter routes to Parallel / Finish")
+        .expect("a tapered ball on a Ramp Finish routes to Parallel / Finish")
         .diameter_mm;
     assert!(
         (suggest_key - TIP_MM).abs() < 1e-12,

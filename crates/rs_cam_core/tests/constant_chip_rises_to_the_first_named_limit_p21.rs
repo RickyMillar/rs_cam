@@ -46,8 +46,9 @@
 use rs_cam_core::compute::catalog::{OperationConfig, OperationType};
 use rs_cam_core::compute::fixture_values::fixture_op;
 use rs_cam_core::compute::tool_config::{ToolConfig, ToolFact, ToolId, ToolType};
+use rs_cam_core::feeds::FeedsInput;
 use rs_cam_core::feeds::suggest::{
-    SuggestContext, SuggestForOperationInput, feeds_input_for_operation, suggest_for_operation,
+    SuggestContext, SuggestForOperationInput, suggest_for_operation,
 };
 use rs_cam_core::feeds::{
     FeedsResult, RpmChoice, RpmLimit, SpindleScaleReason, SpindleStrategy, calculate,
@@ -263,15 +264,15 @@ fn a_small_xy_rate_binds_the_cutting_ceiling_p21() {
     let material = white_oak();
     let cap = xy;
     let wanaka = wanaka_like();
-    let mut input = feeds_input_for_operation(
+    let input = FeedsInput::of_operation(
         &op,
         &tool,
         &material,
         &wanaka,
         embedded_vendor_lut(),
         constant_chip(Some(CEILING)),
-    );
-    input.feed_max_rate = Some(cap);
+    )
+    .with_feed_max_rate(cap);
     let capped = calculate(&input);
     let c = choice(&capped);
     assert_eq!(
@@ -282,16 +283,16 @@ fn a_small_xy_rate_binds_the_cutting_ceiling_p21() {
     );
     assert_eq!(capped.rpm, want);
     // Under `MatchChart`, a cap below the chart feed binds Step 7.
-    let mut input = feeds_input_for_operation(
+    let low_cap = 0.5 * chart.feed_rate_mm_min;
+    let input = FeedsInput::of_operation(
         &op,
         &tool,
         &material,
         &wanaka,
         embedded_vendor_lut(),
         SpindleStrategy::MatchChart,
-    );
-    let low_cap = 0.5 * chart.feed_rate_mm_min;
-    input.feed_max_rate = Some(low_cap);
+    )
+    .with_feed_max_rate(low_cap);
     let lowered = calculate(&input);
     assert!(
         lowered.feed_rate_mm_min <= low_cap,
@@ -466,7 +467,7 @@ fn wanaka_18mm() -> ToolConfig {
 
 /// (i) The probe of the phase note: the 18 mm tool in white oak on the
 /// wanaka-like machine, ceiling 24000, through the production Suggest door
-/// (`suggest_for_operation`, which calls `feeds_input_for_operation`). The
+/// (`suggest_for_operation`, which calls `FeedsInput::of_operation`). The
 /// first row is the wanaka idx 1 cut: Adaptive 3D, stepover 5.5, depth per
 /// pass 10. `--nocapture` prints the values.
 #[test]

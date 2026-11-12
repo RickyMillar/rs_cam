@@ -184,7 +184,7 @@ impl ToolFactBasis {
 }
 
 /// The kinds of the tool facts that the calculator reads (feeds contract
-/// P13a). `suggest::feeds_input_for_operation` reads them from the tool; a
+/// P13a). `FeedsInput::of_operation` reads them from the tool; a
 /// caller that states each value (a test fixture) uses [`Self::STATED`].
 #[derive(Debug, Clone, Copy, PartialEq, Eq)]
 pub struct ToolFactKinds {

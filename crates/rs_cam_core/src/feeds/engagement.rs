@@ -854,8 +854,7 @@ impl PowerCase {
 }
 
 /// The set of pre-sim power cases of one cut (K7 change 3). Built from the
-/// cuts the op declares (P29-3, `OperationConfig::cuts`); [`Self::NOMINAL`] is the set of a
-/// cut that states no slot and no planner bound.
+/// cuts the op declares (P29-3, `OperationConfig::cuts`).
 ///
 /// P23a: the set also answers [`Self::full_feed_width`], the width at which
 /// Suggest sizes the chip-thinning lift. One value, built in one place, for
@@ -867,12 +866,6 @@ pub struct PowerCases {
 }
 
 impl PowerCases {
-    /// The nominal case only.
-    pub const NOMINAL: Self = Self {
-        slot: false,
-        planner: PlannerWidth::None,
-    };
-
     /// The cases of the cuts that an op declares (P29-3): the slot case
     /// when the list declares a first slot, and the planner width of its
     /// planner-cap cut. The tie order stays the order of [`Self::widths`].

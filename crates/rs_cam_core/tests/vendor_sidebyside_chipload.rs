@@ -34,11 +34,14 @@
 
 use rs_cam_core::feeds::vendor_lut::VendorLut;
 use rs_cam_core::feeds::{
-    ChiploadSource, FeedsInput, FeedsResult, OperationFamily, PassRole, SetupContext,
-    SpindleStrategy, ToolGeometryHint, calculate, embedded_vendor_lut,
+    ChiploadSource, FeedsInput, FeedsResult, OperationFamily, PassRole, SpindleStrategy,
+    ToolGeometryHint, calculate, embedded_vendor_lut,
 };
 use rs_cam_core::machine::MachineProfile;
 use rs_cam_core::material::{AluminumAlloy, Material, WoodSpecies};
+
+#[path = "common/feeds_input.rs"]
+mod feeds_input;
 
 struct Probe {
     label: &'static str,
@@ -131,32 +134,25 @@ fn probes() -> Vec<Probe> {
 fn run(probe: &Probe) -> FeedsResult {
     let lut = embedded_vendor_lut();
     let machine = MachineProfile::generic_wood_router();
-    calculate(&FeedsInput {
-        tool_series: None,
-        tool_diameter: probe.diameter_mm,
-        flute_count: probe.flutes,
-        flute_length: probe.diameter_mm * 4.0,
-        shank_diameter: None,
-        cut_body: rs_cam_core::feeds::CutBody {
-            max_cut_diameter_mm: probe.diameter_mm,
-            core_diameter_mm: 0.0,
-        },
-        tool_geometry: probe.geometry,
-        material: &probe.material,
-        machine: &machine,
-        operation: probe.operation,
-        operation_kind: None,
-        pass_role: probe.pass_role,
-        axial_depth_mm: Some(probe.doc_mm),
-        radial_width_mm: None,
-        target_scallop_mm: None,
-        vendor_lut: Some(lut),
-        setup: SetupContext::default(),
-        feed_max_rate: None,
-        spindle_strategy: SpindleStrategy::MatchChart,
-        power_cases: rs_cam_core::feeds::engagement::PowerCases::NOMINAL,
-        tool_facts: rs_cam_core::feeds::sourced::ToolFactKinds::STATED,
-    })
+    // P29-7 7a: the input of the op of the row key that holds the probe's
+    // depth, on the probe's tool.
+    let tool = feeds_input::tool_of_hint(
+        probe.geometry,
+        probe.diameter_mm,
+        probe.flutes,
+        probe.diameter_mm * 4.0,
+        probe.diameter_mm,
+    );
+    let kind = feeds_input::op_of_row_key_with_depth(probe.operation, probe.pass_role)
+        .expect("an op gives the row key");
+    calculate(&FeedsInput::of_operation(
+        &feeds_input::op_at_depth(kind, probe.doc_mm),
+        &tool,
+        &probe.material,
+        &machine,
+        lut,
+        SpindleStrategy::MatchChart,
+    ))
 }
 
 /// Raw (unscaled, underated) stored band for an observation id, read

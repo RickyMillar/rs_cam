@@ -52,9 +52,10 @@
 use rs_cam_core::compute::catalog::{OperationConfig, OperationType};
 use rs_cam_core::compute::tool_config::ToolFact;
 use rs_cam_core::compute::{ToolConfig, ToolId, ToolType};
+use rs_cam_core::feeds::FeedsInput;
 use rs_cam_core::feeds::extrapolation::{FamilyBasis, SizeBasis};
 use rs_cam_core::feeds::suggest::{
-    StockContext, SuggestContext, SuggestParamsInput, feeds_input_for_operation, suggest_params,
+    StockContext, SuggestContext, SuggestParamsInput, suggest_params,
 };
 use rs_cam_core::feeds::vendor_lookup::find_best_chip_envelope_row;
 use rs_cam_core::feeds::vendor_lut::{LutOperationFamily, LutPassRole};
@@ -211,7 +212,7 @@ fn a_one_millimetre_tapered_tip_reads_the_printed_band_on_every_3d_finish_g3v8()
 
         // The gate's resolver: the same row and the same band.
         let operation = OperationConfig::new_default(op);
-        let input = feeds_input_for_operation(
+        let input = FeedsInput::of_operation(
             &operation,
             &tool,
             &material,
@@ -221,7 +222,7 @@ fn a_one_millimetre_tapered_tip_reads_the_printed_band_on_every_3d_finish_g3v8()
         );
         let query = to_lookup_query(&input).expect("the routing answers");
         assert_eq!(query.operation_family, family, "{label}");
-        let env = find_best_chip_envelope_row(&EMBEDDED_LUT, &query, &input.tool_geometry)
+        let env = find_best_chip_envelope_row(&EMBEDDED_LUT, &query, &input.tool_geometry())
             .unwrap_or_else(|| panic!("{label}: a chipload-bearing row matches"));
         assert_eq!(env.observation_id, recipe.observation_id, "{label}");
         assert_eq!(env.size_basis, SizeBasis::Exact, "{label}");

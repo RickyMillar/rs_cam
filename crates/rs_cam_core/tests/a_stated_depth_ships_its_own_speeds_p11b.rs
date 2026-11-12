@@ -25,7 +25,8 @@
 
 use rs_cam_core::compute::catalog::{OperationConfig, OperationType};
 use rs_cam_core::compute::tool_config::{ToolConfig, ToolFact, ToolId, ToolType};
-use rs_cam_core::feeds::suggest::{CalculatorOperatingPoint, feeds_input_for_operation};
+use rs_cam_core::feeds::FeedsInput;
+use rs_cam_core::feeds::suggest::CalculatorOperatingPoint;
 use rs_cam_core::feeds::{
     FeedsResult, FeedsWarning, SpindleStrategy, calculate, embedded_vendor_lut,
     power_at_operating_point,
@@ -72,7 +73,7 @@ fn result_of(op: &OperationConfig) -> FeedsResult {
     let tool = end_mill();
     let material = oak();
     let machine = open_machine();
-    let input = feeds_input_for_operation(
+    let input = FeedsInput::of_operation(
         op,
         &tool,
         &material,

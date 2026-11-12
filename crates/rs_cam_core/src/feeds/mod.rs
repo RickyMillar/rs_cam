@@ -28,6 +28,7 @@ pub mod force;
 pub mod force_budget;
 pub mod geometry;
 pub mod geometry_class;
+mod input;
 pub mod lock;
 pub mod operating_point;
 pub mod plunge;
@@ -53,6 +54,7 @@ pub use feed_explanation::{
     ADVANCE_PER_TOOTH, AchievedFeedStage, CommandedStage, FeedExplanation, GateObservationStage,
     LutBandStage, ObservedStatistic,
 };
+pub use input::FeedsInput;
 pub use lock::{FeedsLock, SpeedEdit, SpeedField, SpeedRanges, SpeedWrite};
 pub use operating_point::{
     PowerFigure, PowerUnmodeled, power_at_operating_point, power_at_shipped_point,
@@ -83,7 +85,7 @@ pub fn embedded_vendor_lut() -> &'static VendorLut {
 }
 
 use crate::machine::MachineProfile;
-use crate::material::{ConstantSource, FormulaConstant, MATERIAL_FORMULA_CONSTANTS, Material};
+use crate::material::{ConstantSource, FormulaConstant, MATERIAL_FORMULA_CONSTANTS};
 
 /// Hint about the tool geometry for effective diameter calculation.
 #[derive(Debug, Clone, Copy, PartialEq)]
@@ -497,117 +499,6 @@ impl CutBody {
                 core_diameter_mm: 0.0,
             },
         }
-    }
-}
-
-/// Input parameters for the feeds calculator.
-pub struct FeedsInput<'a> {
-    pub tool_diameter: f64,
-    pub flute_count: u32,
-    pub flute_length: f64,
-    /// The shank in the collet (mm): Step 4c (a shank larger than the
-    /// machine collet) is its only reader.
-    pub shank_diameter: Option<f64>,
-    /// P22-0c-6b: the facts of the tool body that the feeds model reads
-    /// (the cutting cap and the core), from the body
-    /// ([`CutBody::of_body`]). The product builder
-    /// (`suggest::feeds_input_for_operation`) reads [`CutBody::of_tool`].
-    pub cut_body: CutBody,
-    pub tool_geometry: ToolGeometryHint,
-    /// The tool's cutter series (operator ruling 2026-10-31,
-    /// [`series::ToolSeries`]): `None` is a generic (plain upcut) tool, and
-    /// the vendor lookup reads the standard rows first. The product builder
-    /// (`suggest::feeds_input_for_operation`) reads
-    /// `ToolConfig::cut_direction`.
-    pub tool_series: Option<series::ToolSeries>,
-    pub material: &'a Material,
-    pub machine: &'a MachineProfile,
-    pub operation: OperationFamily,
-    /// **The operation's own kind.** Checkpoint K (a4), 2026-08-13.
-    ///
-    /// [`OperationFamily`] above is the *vendor-LUT* family the operation
-    /// declares (eight values). It cannot distinguish `Adaptive3d` from
-    /// 2D adaptive, nor `ProjectCurve` from `Trace` — and those are
-    /// exactly the two kinds
-    /// [`vendor_normalize::lut_query_for`] reroutes. Before a4 the
-    /// Suggest side had no way to ask, so it queried the declared family
-    /// while the gate queried the routed one: 489 of 3 024 pairs resolved
-    /// to different rows and 378 more left Suggest banded where the gate
-    /// refused (A-6 census, `LUT_BOUNDARY_EVIDENCE.md` §2).
-    ///
-    /// `None` means "no operation identity available", and the routing is
-    /// then a **no-op** — the declared family is used unchanged, i.e. the
-    /// pre-a4 behaviour. Every production Suggest path supplies it via
-    /// `suggest::feeds_input_for_operation`; the `None` arm exists for
-    /// unit fixtures that construct a `FeedsInput` with no operation
-    /// behind it.
-    pub operation_kind: Option<crate::compute::catalog::OperationType>,
-    pub pass_role: PassRole,
-    /// Optional DOC override (None = auto-calculate).
-    pub axial_depth_mm: Option<f64>,
-    /// Optional WOC/stepover override (None = auto-calculate).
-    pub radial_width_mm: Option<f64>,
-    /// Target scallop height for ball/tapered ball finishing (mm).
-    pub target_scallop_mm: Option<f64>,
-    /// Optional vendor LUT for chipload lookup (None = formula only).
-    pub vendor_lut: Option<&'a vendor_lut::VendorLut>,
-    /// Physical setup context for feed derating.
-    pub setup: SetupContext,
-    /// Spindle-RPM policy. See [`SpindleStrategy`]. Defaults to
-    /// `MatchChart` (the chart RPM). `ConstantChip` holds the chip and
-    /// raises the RPM to the first named limit.
-    pub spindle_strategy: SpindleStrategy,
-    /// P21c (ruling Q11): the op's own feed cap
-    /// (`DressupConfig::feed_max_rate`). Step 7 and the constant-chip XY
-    /// limit read one ceiling,
-    /// [`crate::machine::MachineProfile::op_cutting_ceiling`], at it.
-    /// `None`: the machine ceiling alone.
-    pub feed_max_rate: Option<f64>,
-    /// K7 (feeds contract P9): the cases of the pre-sim power set. Step 6
-    /// and the published `power_kw` read the maximum over them. The
-    /// production builder (`suggest::feeds_input_for_operation`) reads the
-    /// op's `CutSpec`; a caller with no op states
-    /// [`engagement::PowerCases::NOMINAL`].
-    pub power_cases: engagement::PowerCases,
-    /// P13a (review H3): the kinds of the tool facts that the calculator
-    /// reads. An `Unknown` fact plans at its legacy row, and the basis of
-    /// each value that reads the fact names that row. The production
-    /// builder reads the tool (`sourced::ToolFactKinds::of_tool`).
-    pub tool_facts: sourced::ToolFactKinds,
-}
-
-impl FeedsInput<'_> {
-    /// P16 (review D7): `true` when the simulation gives the depth into the
-    /// stock: the op's row reads its depth field as an offset from the
-    /// model surface (`AxialRule::SurfaceOffset`, Project Curve). The
-    /// calculator then has no depth: no family default depth, no flute
-    /// guard, no slot cap, no power figure, and one
-    /// [`FeedsWarning::DepthJudgedAfterSimulation`]. `None` for
-    /// `operation_kind` (a unit fixture) gives `false`.
-    #[must_use]
-    pub fn depth_after_simulation(&self) -> bool {
-        self.operation_kind.is_some_and(|k| {
-            k.capabilities().cut_rule.axial == crate::compute::catalog::AxialRule::SurfaceOffset
-        })
-    }
-
-    /// The force line of the power model: `None` when the material has no
-    /// force line, or when the depth is known only after the simulation
-    /// (P16: no power figure without a depth).
-    pub(crate) fn power_force_line(&self) -> Option<crate::material::force_line::ForceLine> {
-        if self.depth_after_simulation() {
-            return None;
-        }
-        self.material.force_line().ok()
-    }
-
-    /// P20d: `true` for a drill cycle (`OperationFamily::Drill`: Drill and
-    /// Pin Drill, `Radial::Axial`). Its power section is the axial circle
-    /// ([`section::EngagedSection::axial_plunge`]), and its power is
-    /// advisory: Step 6 does not act on it.
-    #[must_use]
-    pub fn is_axial_plunge(&self) -> bool {
-        self.operation == OperationFamily::Drill
     }
 }
 

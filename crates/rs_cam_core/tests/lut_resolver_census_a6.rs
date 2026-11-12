@@ -62,6 +62,9 @@ use rs_cam_core::feeds::vendor_lut::{
 };
 use rs_cam_core::feeds::vendor_normalize::lut_query_for;
 
+#[path = "common/feeds_input.rs"]
+mod feeds_input;
+
 /// Every operation family the LUT models.
 const FAMILIES: [LutOperationFamily; 8] = [
     LutOperationFamily::Adaptive,
@@ -564,9 +567,8 @@ fn operation_family_reroute_band_delta_report() {
 ///
 /// Returns `(pre_a4_banded, post_a4_banded)`.
 fn refusal_asymmetry_through_calculate() -> (usize, usize) {
-    use rs_cam_core::feeds::{
-        FeedsInput, OperationFamily, PassRole, SetupContext, SpindleStrategy, calculate,
-    };
+    use rs_cam_core::compute::catalog::OperationConfig;
+    use rs_cam_core::feeds::{FeedsInput, SpindleStrategy, calculate};
     use rs_cam_core::machine::MachineProfile;
     use rs_cam_core::material::{Material, WoodSpecies};
 
@@ -588,43 +590,27 @@ fn refusal_asymmetry_through_calculate() -> (usize, usize) {
         let material = Material::SolidWood { species };
         for d in [3.175_f64, 6.0, 12.0] {
             for flutes in [2u32, 3] {
-                let make = |kind: Option<OperationType>| {
-                    calculate(&FeedsInput {
-                        tool_series: None,
-                        tool_diameter: d,
-                        flute_count: flutes,
-                        flute_length: 20.0,
-                        shank_diameter: Some(6.0),
-                        cut_body: rs_cam_core::feeds::CutBody {
-                            max_cut_diameter_mm: 6.0,
-                            core_diameter_mm: 0.0,
-                        },
-                        tool_geometry: geom,
-                        material: &material,
-                        machine: &machine,
-                        // What a ProjectCurve op declares.
-                        operation: OperationFamily::Trace,
-                        operation_kind: kind,
-                        pass_role: PassRole::Finish,
-                        axial_depth_mm: Some(d * 0.25),
-                        radial_width_mm: Some(d * 0.4),
-                        target_scallop_mm: Some(0.01),
-                        vendor_lut: Some(lut),
-                        setup: SetupContext::default(),
-                        feed_max_rate: None,
-                        spindle_strategy: SpindleStrategy::MatchChart,
-                        power_cases: rs_cam_core::feeds::engagement::PowerCases::NOMINAL,
-                        tool_facts: rs_cam_core::feeds::sourced::ToolFactKinds::STATED,
-                    })
+                // P29-7 7a: the input comes from an op. The op of the
+                // pre-a4 arm is a Pencil: it states (Trace, Finish) and routes
+                // as stated, as a query with no op identity did.
+                let tool_config = feeds_input::tool_of_hint(geom, d, flutes, 20.0, 6.0);
+                let make = |kind: OperationType| {
+                    calculate(&FeedsInput::of_operation(
+                        &OperationConfig::new_default(kind),
+                        &tool_config,
+                        &material,
+                        &machine,
+                        lut,
+                        SpindleStrategy::MatchChart,
+                    ))
                 };
-                // Pre-a4: no operation identity, so no routing, so
-                // the query goes out at the declared `Trace` family
-                // and can match a row.
-                if make(None).vendor_source.is_some() {
+                // Pre-a4: no routing, so the query goes out at the
+                // declared `Trace` family and can match a row.
+                if make(OperationType::Pencil).vendor_source.is_some() {
                     before += 1;
                 }
                 // Post-a4: routed, and refused.
-                let routed = make(Some(OperationType::ProjectCurve));
+                let routed = make(OperationType::ProjectCurve);
                 if routed.vendor_source.is_some() {
                     after += 1;
                 } else {

@@ -28,13 +28,16 @@ use rs_cam_core::feeds::vendor_lookup::{LookupQuery, find_best_row_for_geometry}
 use rs_cam_core::feeds::vendor_lut::{
     HardnessKind, LutOperationFamily, LutPassRole, MaterialFamily, ToolFamily, VendorLut,
 };
-use rs_cam_core::feeds::{FeedsInput, OperationFamily, PassRole, SetupContext, ToolGeometryHint};
+use rs_cam_core::feeds::{FeedsInput, OperationFamily, PassRole, ToolGeometryHint};
 use rs_cam_core::feeds::{vendor_lookup, vendor_normalize};
 use rs_cam_core::machine::MachineProfile;
 use rs_cam_core::material::{Material, SheetGoodKind, WoodSpecies};
 use rs_cam_core::tool::{
     BallEndmill, FlatEndmill, MillingCutter, TaperedBallEndmill, ToolDefinition, VBitEndmill,
 };
+
+#[path = "common/feeds_input.rs"]
+mod feeds_input;
 
 struct Case {
     name: &'static str,
@@ -203,29 +206,28 @@ fn calculator_and_gate_match_same_observation_id() {
         let material = case.material.clone();
 
         // --- Calculator path ---
-        let input = FeedsInput {
-            tool_series: None,
-            tool_diameter: case.diameter_mm,
-            flute_count: case.flute_count,
-            flute_length: 18.0,
-            shank_diameter: None,
-            cut_body: rs_cam_core::feeds::CutBody::of_cutter(case.cutter.as_ref()),
-            tool_geometry: case.tool_geometry,
-            material: &material,
-            machine: &machine,
-            operation: case.operation,
-            operation_kind: None,
-            pass_role: case.pass_role,
-            axial_depth_mm: None,
-            radial_width_mm: None,
-            target_scallop_mm: None,
-            vendor_lut: Some(&lut),
-            setup: SetupContext::default(),
-            feed_max_rate: None,
-            spindle_strategy: rs_cam_core::feeds::SpindleStrategy::default(),
-            power_cases: rs_cam_core::feeds::engagement::PowerCases::NOMINAL,
-            tool_facts: rs_cam_core::feeds::sourced::ToolFactKinds::STATED,
-        };
+        // P29-7 7a: the input of the op of the row key, on the tool config
+        // of the case.
+        let tool_config = feeds_input::tool_of_hint(
+            case.tool_geometry,
+            case.diameter_mm,
+            case.flute_count,
+            18.0,
+            case.diameter_mm,
+        );
+        let input = FeedsInput::of_operation(
+            &feeds_input::op_with(
+                feeds_input::op_of_row_key(case.operation, case.pass_role)
+                    .expect("an op gives the row key"),
+                None,
+                None,
+            ),
+            &tool_config,
+            &material,
+            &machine,
+            &lut,
+            rs_cam_core::feeds::SpindleStrategy::default(),
+        );
         // Checkpoint K (a4) — `to_lookup_query` can refuse now. None of
         // this file's six cases is a rerouted operation (its header says
         // so, and that exclusion is what made it blind to the second

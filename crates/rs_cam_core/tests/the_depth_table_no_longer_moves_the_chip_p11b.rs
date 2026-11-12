@@ -17,7 +17,7 @@
 use rs_cam_core::compute::catalog::OperationConfig;
 use rs_cam_core::compute::operation_configs::PocketConfig;
 use rs_cam_core::compute::tool_config::{ToolConfig, ToolFact, ToolId, ToolType};
-use rs_cam_core::feeds::suggest::feeds_input_for_operation;
+use rs_cam_core::feeds::FeedsInput;
 use rs_cam_core::feeds::{FeedsResult, SpindleStrategy, calculate, embedded_vendor_lut};
 use rs_cam_core::machine::{MachineProfile, PowerModel};
 use rs_cam_core::material::{Material, WoodSpecies};
@@ -57,7 +57,7 @@ fn result_at(ap_mm: f64) -> FeedsResult {
         spindle_rpm: Some(18_000),
         ..PocketConfig::default()
     });
-    let input = feeds_input_for_operation(
+    let input = FeedsInput::of_operation(
         &op,
         &tool,
         &material,

@@ -1313,7 +1313,7 @@ mod tests {
         let material = crate::material::Material::SolidWood {
             species: crate::material::WoodSpecies::WhiteOak,
         };
-        let r = crate::feeds::calculate(&crate::feeds::suggest::feeds_input_for_operation(
+        let r = crate::feeds::calculate(&crate::feeds::FeedsInput::of_operation(
             &op,
             &tool,
             &material,

@@ -1,5 +1,5 @@
-//! Unit tests for the feeds calculator. Moved out of `feeds/mod.rs` by P4;
-//! the module body is unchanged.
+//! Unit tests for the feeds calculator. Moved out of `feeds/mod.rs` by P4.
+//! P29-7 7a: each input comes from an op (`FeedsInput::of_operation`).
 
 #![expect(
     clippy::unwrap_used,
@@ -8,8 +8,131 @@
 )]
 
 use super::*;
+use crate::compute::catalog::{OperationConfig, OperationType};
+use crate::compute::tool_config::{ToolConfig, ToolFact};
+use crate::ids::ToolId;
 use crate::machine::MachineProfile;
 use crate::material::{Material, WoodSpecies};
+
+/// The test tool of `hint`: the diameter `d`, `flutes`, the flute length
+/// `flute_mm` and the shank `shank_mm`, each fact stated. The stick-out is
+/// 4 x D: at that ratio the long-tool share is 1
+/// (`long_tool_load_share`), as for an input with no overhang.
+fn tool(hint: ToolGeometryHint, d: f64, flutes: u32, flute_mm: f64, shank_mm: f64) -> ToolConfig {
+    let mut builder = ToolConfig::builder(ToolId::from_raw(1), hint.cutter_kind().tool_type())
+        .diameter(d)
+        .flutes(flutes)
+        .flute_mm(flute_mm)
+        .shank_mm(shank_mm)
+        .stickout_mm(4.0 * d);
+    let mut v_tip = None;
+    match hint {
+        ToolGeometryHint::Flat | ToolGeometryHint::Ball => {}
+        ToolGeometryHint::Bull { corner_radius } => builder = builder.corner_radius(corner_radius),
+        ToolGeometryHint::VBit {
+            included_angle,
+            tip_diameter,
+        } => {
+            builder = builder.included_angle_deg(included_angle);
+            v_tip = Some(tip_diameter);
+        }
+        ToolGeometryHint::TaperedBall {
+            tip_radius,
+            taper_angle_deg,
+        } => {
+            assert!(
+                (2.0 * tip_radius - d).abs() < 1e-12,
+                "the tip is the diameter"
+            );
+            builder = builder
+                .taper_half_angle_deg(taper_angle_deg)
+                .shaft_mm(shank_mm);
+        }
+    }
+    let mut tool = builder.build();
+    if let Some(tip) = v_tip {
+        tool.set_v_tip_diameter(ToolFact::Stated(tip));
+    }
+    assert_eq!(tool.geometry_hint(), hint, "the tool states the hint");
+    tool
+}
+
+/// The default op of `kind` with the stated depth per pass `ap` and the
+/// stated stepover `ae`. An op that holds no such field panics: a test
+/// states only what an op gives.
+fn op(kind: OperationType, ap: Option<f64>, ae: Option<f64>) -> OperationConfig {
+    let mut op = OperationConfig::new_default(kind);
+    if let Some(ap) = ap {
+        assert!(
+            op.set_depth_per_pass(ap),
+            "{kind:?} holds no depth per pass"
+        );
+    }
+    if let Some(ae) = ae {
+        assert!(op.set_stepover(ae), "{kind:?} holds no stepover");
+    }
+    op
+}
+
+/// A VCarve to the stated depth `max_depth`.
+fn vcarve_to_depth(max_depth: f64) -> OperationConfig {
+    let mut op = OperationConfig::new_default(OperationType::VCarve);
+    let OperationConfig::VCarve(c) = &mut op else {
+        panic!("a VCarve config");
+    };
+    c.max_depth = Some(max_depth);
+    op
+}
+
+/// A drop cutter at the scallop target `scallop_mm`. A drop cutter holds no
+/// depth.
+fn drop_cutter_to_scallop(scallop_mm: f64) -> OperationConfig {
+    let mut op = OperationConfig::new_default(OperationType::DropCutter);
+    op.set_scallop_height(scallop_mm);
+    op
+}
+
+/// The calculator input of `op` on `tool` with no vendor table: the
+/// formula path ([`FeedsInput::with_no_vendor_table`]).
+fn formula_input<'a>(
+    op: &OperationConfig,
+    tool: &'a ToolConfig,
+    material: &'a Material,
+    machine: &'a MachineProfile,
+) -> FeedsInput<'a> {
+    FeedsInput::of_operation(
+        op,
+        tool,
+        material,
+        machine,
+        embedded_vendor_lut(),
+        SpindleStrategy::default(),
+    )
+    .with_no_vendor_table()
+}
+
+/// The calculator input of `op` on `tool` with the vendor table `lut`.
+fn table_input<'a>(
+    op: &OperationConfig,
+    tool: &'a ToolConfig,
+    material: &'a Material,
+    machine: &'a MachineProfile,
+    lut: &'a VendorLut,
+) -> FeedsInput<'a> {
+    table_input_with(op, tool, material, machine, lut, SpindleStrategy::default())
+}
+
+/// [`table_input`] with the spindle policy `strategy`.
+fn table_input_with<'a>(
+    op: &OperationConfig,
+    tool: &'a ToolConfig,
+    material: &'a Material,
+    machine: &'a MachineProfile,
+    lut: &'a VendorLut,
+    strategy: SpindleStrategy,
+) -> FeedsInput<'a> {
+    FeedsInput::of_operation(op, tool, material, machine, lut, strategy)
+}
 
 fn softwood_flat_6mm_pocket() -> FeedsInput<'static> {
     // We need 'static material/machine so use leaked boxes for test convenience
@@ -17,32 +140,14 @@ fn softwood_flat_6mm_pocket() -> FeedsInput<'static> {
         species: WoodSpecies::GenericSoftwood,
     }));
     let machine: &'static MachineProfile = Box::leak(Box::new(MachineProfile::shapeoko_vfd()));
-    FeedsInput {
-        tool_series: None,
-        tool_diameter: 6.0,
-        flute_count: 2,
-        flute_length: 18.0,
-        shank_diameter: None,
-        cut_body: crate::feeds::CutBody {
-            max_cut_diameter_mm: 6.0,
-            core_diameter_mm: 0.0,
-        },
-        tool_geometry: ToolGeometryHint::Flat,
+    let tool: &'static ToolConfig =
+        Box::leak(Box::new(tool(ToolGeometryHint::Flat, 6.0, 2, 18.0, 6.0)));
+    formula_input(
+        &op(OperationType::Face, None, None),
+        tool,
         material,
         machine,
-        operation: OperationFamily::Pocket,
-        operation_kind: None,
-        pass_role: PassRole::Roughing,
-        axial_depth_mm: None,
-        radial_width_mm: None,
-        target_scallop_mm: None,
-        vendor_lut: None,
-        setup: SetupContext::default(),
-        feed_max_rate: None,
-        spindle_strategy: crate::feeds::SpindleStrategy::default(),
-        power_cases: crate::feeds::engagement::PowerCases::NOMINAL,
-        tool_facts: crate::feeds::sourced::ToolFactKinds::STATED,
-    }
+    )
 }
 
 #[test]
@@ -121,58 +226,18 @@ fn test_adaptive_deeper_narrower_than_pocket() {
     };
     let machine = MachineProfile::shapeoko_vfd();
 
-    let adaptive = calculate(&FeedsInput {
-        tool_series: None,
-        tool_diameter: 6.0,
-        flute_count: 2,
-        flute_length: 18.0,
-        tool_geometry: ToolGeometryHint::Flat,
-        shank_diameter: None,
-        cut_body: crate::feeds::CutBody {
-            max_cut_diameter_mm: 6.0,
-            core_diameter_mm: 0.0,
-        },
-        material: &material,
-        machine: &machine,
-        operation: OperationFamily::Adaptive,
-        operation_kind: None,
-        pass_role: PassRole::Roughing,
-        axial_depth_mm: None,
-        radial_width_mm: None,
-        target_scallop_mm: None,
-        vendor_lut: None,
-        setup: SetupContext::default(),
-        feed_max_rate: None,
-        spindle_strategy: crate::feeds::SpindleStrategy::default(),
-        power_cases: crate::feeds::engagement::PowerCases::NOMINAL,
-        tool_facts: crate::feeds::sourced::ToolFactKinds::STATED,
-    });
-    let pocket = calculate(&FeedsInput {
-        tool_series: None,
-        tool_diameter: 6.0,
-        flute_count: 2,
-        flute_length: 18.0,
-        tool_geometry: ToolGeometryHint::Flat,
-        shank_diameter: None,
-        cut_body: crate::feeds::CutBody {
-            max_cut_diameter_mm: 6.0,
-            core_diameter_mm: 0.0,
-        },
-        material: &material,
-        machine: &machine,
-        operation: OperationFamily::Pocket,
-        operation_kind: None,
-        pass_role: PassRole::Roughing,
-        axial_depth_mm: None,
-        radial_width_mm: None,
-        target_scallop_mm: None,
-        vendor_lut: None,
-        setup: SetupContext::default(),
-        feed_max_rate: None,
-        spindle_strategy: crate::feeds::SpindleStrategy::default(),
-        power_cases: crate::feeds::engagement::PowerCases::NOMINAL,
-        tool_facts: crate::feeds::sourced::ToolFactKinds::STATED,
-    });
+    let adaptive = calculate(&formula_input(
+        &op(OperationType::Adaptive, None, None),
+        &tool(ToolGeometryHint::Flat, 6.0, 2, 18.0, 6.0),
+        &material,
+        &machine,
+    ));
+    let pocket = calculate(&formula_input(
+        &op(OperationType::Face, None, None),
+        &tool(ToolGeometryHint::Flat, 6.0, 2, 18.0, 6.0),
+        &material,
+        &machine,
+    ));
 
     assert!(
         adaptive.axial_depth_mm > pocket.axial_depth_mm,
@@ -195,83 +260,37 @@ fn test_roughing_deeper_than_finishing() {
     };
     let machine = MachineProfile::shapeoko_vfd();
 
-    let families = [
-        OperationFamily::Adaptive,
-        OperationFamily::Pocket,
-        OperationFamily::Contour,
-        OperationFamily::Parallel,
-        OperationFamily::Scallop,
-        OperationFamily::Trace,
-        OperationFamily::Face,
-    ];
+    // P29-7 7a: the input comes from an op. Of the families of the old
+    // loop, only the Contour family has an op of each role: Profile
+    // (roughing) and Steep/Shallow (finish). No op gives a roughing pass of
+    // the Parallel, Scallop or Trace family, a finish pass of the Pocket or
+    // Adaptive family, or the Face family.
+    let flat = tool(ToolGeometryHint::Flat, 6.0, 2, 18.0, 6.0);
+    let rough = calculate(&formula_input(
+        &op(OperationType::Profile, None, None),
+        &flat,
+        &material,
+        &machine,
+    ));
+    let finish = calculate(&formula_input(
+        &op(OperationType::SteepShallow, None, None),
+        &flat,
+        &material,
+        &machine,
+    ));
 
-    for family in families {
-        let rough = calculate(&FeedsInput {
-            tool_series: None,
-            tool_diameter: 6.0,
-            flute_count: 2,
-            flute_length: 18.0,
-            tool_geometry: ToolGeometryHint::Flat,
-            shank_diameter: None,
-            cut_body: crate::feeds::CutBody {
-                max_cut_diameter_mm: 6.0,
-                core_diameter_mm: 0.0,
-            },
-            material: &material,
-            machine: &machine,
-            operation: family,
-            operation_kind: None,
-            pass_role: PassRole::Roughing,
-            axial_depth_mm: None,
-            radial_width_mm: None,
-            target_scallop_mm: None,
-            vendor_lut: None,
-            setup: SetupContext::default(),
-            feed_max_rate: None,
-            spindle_strategy: crate::feeds::SpindleStrategy::default(),
-            power_cases: crate::feeds::engagement::PowerCases::NOMINAL,
-            tool_facts: crate::feeds::sourced::ToolFactKinds::STATED,
-        });
-        let finish = calculate(&FeedsInput {
-            tool_series: None,
-            tool_diameter: 6.0,
-            flute_count: 2,
-            flute_length: 18.0,
-            tool_geometry: ToolGeometryHint::Flat,
-            shank_diameter: None,
-            cut_body: crate::feeds::CutBody {
-                max_cut_diameter_mm: 6.0,
-                core_diameter_mm: 0.0,
-            },
-            material: &material,
-            machine: &machine,
-            operation: family,
-            operation_kind: None,
-            pass_role: PassRole::Finish,
-            axial_depth_mm: None,
-            radial_width_mm: None,
-            target_scallop_mm: None,
-            vendor_lut: None,
-            setup: SetupContext::default(),
-            feed_max_rate: None,
-            spindle_strategy: crate::feeds::SpindleStrategy::default(),
-            power_cases: crate::feeds::engagement::PowerCases::NOMINAL,
-            tool_facts: crate::feeds::sourced::ToolFactKinds::STATED,
-        });
-
-        assert!(
-            rough.axial_depth_mm >= finish.axial_depth_mm,
-            "{family:?}: roughing DOC {} should >= finishing DOC {}",
-            rough.axial_depth_mm,
-            finish.axial_depth_mm
-        );
-        assert!(
-            rough.radial_width_mm >= finish.radial_width_mm,
-            "{family:?}: roughing WOC {} should >= finishing WOC {}",
-            rough.radial_width_mm,
-            finish.radial_width_mm
-        );
-    }
+    assert!(
+        rough.axial_depth_mm >= finish.axial_depth_mm,
+        "Contour: roughing DOC {} should >= finishing DOC {}",
+        rough.axial_depth_mm,
+        finish.axial_depth_mm
+    );
+    assert!(
+        rough.radial_width_mm >= finish.radial_width_mm,
+        "Contour: roughing WOC {} should >= finishing WOC {}",
+        rough.radial_width_mm,
+        finish.radial_width_mm
+    );
 }
 
 /// Fix 2 (Wanaka audit): plunge for small ball/tapered-ball tools
@@ -287,35 +306,21 @@ fn test_small_tapered_ball_plunge_derated() {
     };
     let machine = MachineProfile::shapeoko_vfd();
 
-    let result = calculate(&FeedsInput {
-        tool_series: None,
-        tool_diameter: 1.0,
-        flute_count: 1,
-        flute_length: 6.0,
-        tool_geometry: ToolGeometryHint::TaperedBall {
-            tip_radius: 0.5,
-            taper_angle_deg: 7.0,
-        },
-        shank_diameter: Some(6.0),
-        cut_body: crate::feeds::CutBody {
-            max_cut_diameter_mm: 6.0,
-            core_diameter_mm: 0.0,
-        },
-        material: &material,
-        machine: &machine,
-        operation: OperationFamily::Parallel,
-        operation_kind: None,
-        pass_role: PassRole::Finish,
-        axial_depth_mm: None,
-        radial_width_mm: None,
-        target_scallop_mm: None,
-        vendor_lut: None,
-        setup: SetupContext::default(),
-        feed_max_rate: None,
-        spindle_strategy: crate::feeds::SpindleStrategy::default(),
-        power_cases: crate::feeds::engagement::PowerCases::NOMINAL,
-        tool_facts: crate::feeds::sourced::ToolFactKinds::STATED,
-    });
+    let result = calculate(&formula_input(
+        &op(OperationType::DropCutter, None, None),
+        &tool(
+            ToolGeometryHint::TaperedBall {
+                tip_radius: 0.5,
+                taper_angle_deg: 7.0,
+            },
+            1.0,
+            1,
+            6.0,
+            6.0,
+        ),
+        &material,
+        &machine,
+    ));
 
     assert!(
         result.plunge_rate_mm_min <= 200.0,
@@ -339,32 +344,12 @@ fn test_flat_endmill_plunge_is_the_g10_flat_claim() {
     };
     let machine = MachineProfile::shapeoko_vfd();
 
-    let result = calculate(&FeedsInput {
-        tool_series: None,
-        tool_diameter: 6.0,
-        flute_count: 2,
-        flute_length: 18.0,
-        tool_geometry: ToolGeometryHint::Flat,
-        shank_diameter: None,
-        cut_body: crate::feeds::CutBody {
-            max_cut_diameter_mm: 6.0,
-            core_diameter_mm: 0.0,
-        },
-        material: &material,
-        machine: &machine,
-        operation: OperationFamily::Adaptive,
-        operation_kind: None,
-        pass_role: PassRole::Roughing,
-        axial_depth_mm: None,
-        radial_width_mm: None,
-        target_scallop_mm: None,
-        vendor_lut: None,
-        setup: SetupContext::default(),
-        feed_max_rate: None,
-        spindle_strategy: crate::feeds::SpindleStrategy::default(),
-        power_cases: crate::feeds::engagement::PowerCases::NOMINAL,
-        tool_facts: crate::feeds::sourced::ToolFactKinds::STATED,
-    });
+    let result = calculate(&formula_input(
+        &op(OperationType::Adaptive, None, None),
+        &tool(ToolGeometryHint::Flat, 6.0, 2, 18.0, 6.0),
+        &material,
+        &machine,
+    ));
 
     // The G10 flat claim: plunge = floor(F / Z) at Z 2; no tip cap.
     // Re-pinned by feeds contract P18 (review D14): F is the feed BEFORE the
@@ -406,32 +391,12 @@ fn test_wood_adaptive_stepover_tracks_machine_factor() {
     let machine = MachineProfile::shapeoko_vfd();
     let target = machine.rigidity.adaptive_woc_factor * 6.0;
 
-    let result = calculate(&FeedsInput {
-        tool_series: None,
-        tool_diameter: 6.0,
-        flute_count: 2,
-        flute_length: 18.0,
-        tool_geometry: ToolGeometryHint::Flat,
-        shank_diameter: None,
-        cut_body: crate::feeds::CutBody {
-            max_cut_diameter_mm: 6.0,
-            core_diameter_mm: 0.0,
-        },
-        material: &material,
-        machine: &machine,
-        operation: OperationFamily::Adaptive,
-        operation_kind: None,
-        pass_role: PassRole::Roughing,
-        axial_depth_mm: None,
-        radial_width_mm: None,
-        target_scallop_mm: None,
-        vendor_lut: None,
-        setup: SetupContext::default(),
-        feed_max_rate: None,
-        spindle_strategy: crate::feeds::SpindleStrategy::default(),
-        power_cases: crate::feeds::engagement::PowerCases::NOMINAL,
-        tool_facts: crate::feeds::sourced::ToolFactKinds::STATED,
-    });
+    let result = calculate(&formula_input(
+        &op(OperationType::Adaptive, None, None),
+        &tool(ToolGeometryHint::Flat, 6.0, 2, 18.0, 6.0),
+        &material,
+        &machine,
+    ));
 
     assert!(
         (result.radial_width_mm - target).abs() < 1e-6,
@@ -453,32 +418,12 @@ fn test_metal_adaptive_stepover_keeps_metal_base() {
     let machine = MachineProfile::shapeoko_vfd();
     let machine_factor_ae = machine.rigidity.adaptive_woc_factor * 6.0;
 
-    let result = calculate(&FeedsInput {
-        tool_series: None,
-        tool_diameter: 6.0,
-        flute_count: 2,
-        flute_length: 18.0,
-        tool_geometry: ToolGeometryHint::Flat,
-        shank_diameter: None,
-        cut_body: crate::feeds::CutBody {
-            max_cut_diameter_mm: 6.0,
-            core_diameter_mm: 0.0,
-        },
-        material: &material,
-        machine: &machine,
-        operation: OperationFamily::Adaptive,
-        operation_kind: None,
-        pass_role: PassRole::Roughing,
-        axial_depth_mm: None,
-        radial_width_mm: None,
-        target_scallop_mm: None,
-        vendor_lut: None,
-        setup: SetupContext::default(),
-        feed_max_rate: None,
-        spindle_strategy: crate::feeds::SpindleStrategy::default(),
-        power_cases: crate::feeds::engagement::PowerCases::NOMINAL,
-        tool_facts: crate::feeds::sourced::ToolFactKinds::STATED,
-    });
+    let result = calculate(&formula_input(
+        &op(OperationType::Adaptive, None, None),
+        &tool(ToolGeometryHint::Flat, 6.0, 2, 18.0, 6.0),
+        &material,
+        &machine,
+    ));
 
     // Plastic is not wood-class; ae should sit below the
     // machine ceiling rather than being raised to it.
@@ -560,32 +505,12 @@ fn test_drill_family_rpm_is_the_surface_speed_rpm() {
     };
     let machine = MachineProfile::shapeoko_vfd();
 
-    let result = calculate(&FeedsInput {
-        tool_series: None,
-        tool_diameter: 6.0,
-        flute_count: 2,
-        flute_length: 18.0,
-        tool_geometry: ToolGeometryHint::Flat,
-        shank_diameter: None,
-        cut_body: crate::feeds::CutBody {
-            max_cut_diameter_mm: 6.0,
-            core_diameter_mm: 0.0,
-        },
-        material: &material,
-        machine: &machine,
-        operation: OperationFamily::Drill,
-        operation_kind: None,
-        pass_role: PassRole::Roughing,
-        axial_depth_mm: None,
-        radial_width_mm: None,
-        target_scallop_mm: None,
-        vendor_lut: None,
-        setup: SetupContext::default(),
-        feed_max_rate: None,
-        spindle_strategy: crate::feeds::SpindleStrategy::default(),
-        power_cases: crate::feeds::engagement::PowerCases::NOMINAL,
-        tool_facts: crate::feeds::sourced::ToolFactKinds::STATED,
-    });
+    let result = calculate(&formula_input(
+        &op(OperationType::Drill, None, None),
+        &tool(ToolGeometryHint::Flat, 6.0, 2, 18.0, 6.0),
+        &material,
+        &machine,
+    ));
 
     // The RPM is the Step 1 surface-speed RPM in the machine range.
     let speed = material.base_cutting_speed_constant().value;
@@ -628,32 +553,12 @@ fn test_drill_feed_within_envelope_and_plunge_aliased() {
         let material = Material::SolidWood { species };
         let machine = MachineProfile::shapeoko_vfd();
         for d in [3.0, 6.0, 12.0] {
-            let result = calculate(&FeedsInput {
-                tool_series: None,
-                tool_diameter: d,
-                flute_count: 2,
-                flute_length: 18.0,
-                tool_geometry: ToolGeometryHint::Flat,
-                shank_diameter: None,
-                cut_body: crate::feeds::CutBody {
-                    max_cut_diameter_mm: d,
-                    core_diameter_mm: 0.0,
-                },
-                material: &material,
-                machine: &machine,
-                operation: OperationFamily::Drill,
-                operation_kind: None,
-                pass_role: PassRole::Roughing,
-                axial_depth_mm: None,
-                radial_width_mm: None,
-                target_scallop_mm: None,
-                vendor_lut: None,
-                setup: SetupContext::default(),
-                feed_max_rate: None,
-                spindle_strategy: crate::feeds::SpindleStrategy::default(),
-                power_cases: crate::feeds::engagement::PowerCases::NOMINAL,
-                tool_facts: crate::feeds::sourced::ToolFactKinds::STATED,
-            });
+            let result = calculate(&formula_input(
+                &op(OperationType::Drill, None, None),
+                &tool(ToolGeometryHint::Flat, d, 2, 18.0, d),
+                &material,
+                &machine,
+            ));
             assert_eq!(
                 result.plunge_rate_mm_min, result.feed_rate_mm_min,
                 "Ø{d} {species:?}: drill plunge must alias the final feed"
@@ -693,32 +598,12 @@ fn test_drill_envelope_ceiling_drops_rpm_to_hold_chipload() {
         species: WoodSpecies::GenericSoftwood,
     };
     let machine = MachineProfile::shapeoko_vfd();
-    let result = calculate(&FeedsInput {
-        tool_series: None,
-        tool_diameter: 2.0,
-        flute_count: 3,
-        flute_length: 12.0,
-        tool_geometry: ToolGeometryHint::Flat,
-        shank_diameter: None,
-        cut_body: crate::feeds::CutBody {
-            max_cut_diameter_mm: 2.0,
-            core_diameter_mm: 0.0,
-        },
-        material: &material,
-        machine: &machine,
-        operation: OperationFamily::Drill,
-        operation_kind: None,
-        pass_role: PassRole::Roughing,
-        axial_depth_mm: None,
-        radial_width_mm: None,
-        target_scallop_mm: None,
-        vendor_lut: None,
-        setup: SetupContext::default(),
-        feed_max_rate: None,
-        spindle_strategy: crate::feeds::SpindleStrategy::default(),
-        power_cases: crate::feeds::engagement::PowerCases::NOMINAL,
-        tool_facts: crate::feeds::sourced::ToolFactKinds::STATED,
-    });
+    let result = calculate(&formula_input(
+        &op(OperationType::Drill, None, None),
+        &tool(ToolGeometryHint::Flat, 2.0, 3, 12.0, 2.0),
+        &material,
+        &machine,
+    ));
     let clamp_fired = result
         .warnings
         .iter()
@@ -774,32 +659,12 @@ fn test_drill_feed_clamp_emits_warning_when_binding() {
         species: WoodSpecies::GenericSoftwood,
     };
     let machine = MachineProfile::shapeoko_vfd();
-    let result = calculate(&FeedsInput {
-        tool_series: None,
-        tool_diameter: 2.0,
-        flute_count: 3,
-        flute_length: 12.0,
-        tool_geometry: ToolGeometryHint::Flat,
-        shank_diameter: None,
-        cut_body: crate::feeds::CutBody {
-            max_cut_diameter_mm: 2.0,
-            core_diameter_mm: 0.0,
-        },
-        material: &material,
-        machine: &machine,
-        operation: OperationFamily::Drill,
-        operation_kind: None,
-        pass_role: PassRole::Roughing,
-        axial_depth_mm: None,
-        radial_width_mm: None,
-        target_scallop_mm: None,
-        vendor_lut: None,
-        setup: SetupContext::default(),
-        feed_max_rate: None,
-        spindle_strategy: crate::feeds::SpindleStrategy::default(),
-        power_cases: crate::feeds::engagement::PowerCases::NOMINAL,
-        tool_facts: crate::feeds::sourced::ToolFactKinds::STATED,
-    });
+    let result = calculate(&formula_input(
+        &op(OperationType::Drill, None, None),
+        &tool(ToolGeometryHint::Flat, 2.0, 3, 12.0, 2.0),
+        &material,
+        &machine,
+    ));
     let ratio = result.feed_rate_mm_min / 2.0;
     let (lo, hi) = material.drill_plunge_feed_envelope_per_mm();
     assert!(ratio >= lo - 1e-9 && ratio <= hi + 1e-9);
@@ -848,32 +713,12 @@ fn test_pocket_family_unaffected_by_drill_fix() {
     };
     let machine = MachineProfile::shapeoko_vfd();
 
-    let result = calculate(&FeedsInput {
-        tool_series: None,
-        tool_diameter: 6.0,
-        flute_count: 2,
-        flute_length: 18.0,
-        tool_geometry: ToolGeometryHint::Flat,
-        shank_diameter: None,
-        cut_body: crate::feeds::CutBody {
-            max_cut_diameter_mm: 6.0,
-            core_diameter_mm: 0.0,
-        },
-        material: &material,
-        machine: &machine,
-        operation: OperationFamily::Pocket,
-        operation_kind: None,
-        pass_role: PassRole::Roughing,
-        axial_depth_mm: None,
-        radial_width_mm: None,
-        target_scallop_mm: None,
-        vendor_lut: None,
-        setup: SetupContext::default(),
-        feed_max_rate: None,
-        spindle_strategy: crate::feeds::SpindleStrategy::default(),
-        power_cases: crate::feeds::engagement::PowerCases::NOMINAL,
-        tool_facts: crate::feeds::sourced::ToolFactKinds::STATED,
-    });
+    let result = calculate(&formula_input(
+        &op(OperationType::Face, None, None),
+        &tool(ToolGeometryHint::Flat, 6.0, 2, 18.0, 6.0),
+        &material,
+        &machine,
+    ));
 
     // The pocket RPM is in the machine range.
     assert!(
@@ -907,35 +752,21 @@ fn test_vbit_rpm_uses_engaged_diameter() {
     // = 2 * 0.5 * tan(10°) ≈ 0.176 mm — small enough that SFM-derived
     // ideal RPM exceeds the machine ceiling, so the result clamps
     // to machine max.
-    let result = calculate(&FeedsInput {
-        tool_series: None,
-        tool_diameter: 5.5,
-        flute_count: 2,
-        flute_length: 12.0,
-        tool_geometry: ToolGeometryHint::VBit {
-            included_angle: 20.0,
-            tip_diameter: 0.0,
-        },
-        shank_diameter: None,
-        cut_body: crate::feeds::CutBody {
-            max_cut_diameter_mm: 5.5,
-            core_diameter_mm: 0.0,
-        },
-        material: &material,
-        machine: &machine,
-        operation: OperationFamily::Trace,
-        operation_kind: None,
-        pass_role: PassRole::Finish,
-        axial_depth_mm: Some(0.5),
-        radial_width_mm: None,
-        target_scallop_mm: None,
-        vendor_lut: None,
-        setup: SetupContext::default(),
-        feed_max_rate: None,
-        spindle_strategy: crate::feeds::SpindleStrategy::default(),
-        power_cases: crate::feeds::engagement::PowerCases::NOMINAL,
-        tool_facts: crate::feeds::sourced::ToolFactKinds::STATED,
-    });
+    let result = calculate(&formula_input(
+        &vcarve_to_depth(0.5),
+        &tool(
+            ToolGeometryHint::VBit {
+                included_angle: 20.0,
+                tip_diameter: 0.0,
+            },
+            5.5,
+            2,
+            12.0,
+            5.5,
+        ),
+        &material,
+        &machine,
+    ));
 
     assert!(
         result.rpm >= machine_max_rpm * 0.99,
@@ -961,32 +792,12 @@ fn test_flat_tool_rpm_chipload_unchanged_by_engaged_d() {
     let baseline_rpm =
         (material.base_cutting_speed_m_min() * 1000.0 / (std::f64::consts::PI * d)).round();
 
-    let result = calculate(&FeedsInput {
-        tool_series: None,
-        tool_diameter: d,
-        flute_count: 2,
-        flute_length: 18.0,
-        tool_geometry: ToolGeometryHint::Flat,
-        shank_diameter: None,
-        cut_body: crate::feeds::CutBody {
-            max_cut_diameter_mm: d,
-            core_diameter_mm: 0.0,
-        },
-        material: &material,
-        machine: &machine,
-        operation: OperationFamily::Adaptive,
-        operation_kind: None,
-        pass_role: PassRole::Roughing,
-        axial_depth_mm: Some(3.0), // DOC doesn't matter for Flat
-        radial_width_mm: None,
-        target_scallop_mm: None,
-        vendor_lut: None,
-        setup: SetupContext::default(),
-        feed_max_rate: None,
-        spindle_strategy: crate::feeds::SpindleStrategy::default(),
-        power_cases: crate::feeds::engagement::PowerCases::NOMINAL,
-        tool_facts: crate::feeds::sourced::ToolFactKinds::STATED,
-    });
+    let result = calculate(&formula_input(
+        &op(OperationType::Adaptive, Some(3.0), None),
+        &tool(ToolGeometryHint::Flat, d, 2, 18.0, d),
+        &material,
+        &machine,
+    ));
 
     // Allow the machine-clamp the formula was about to be passed
     // through (so we compare clamp(baseline) ≈ result.rpm).
@@ -1014,32 +825,12 @@ fn test_wood_adaptive_stepover_solid_wood_by_janka_eastern_white_pine() {
     let machine = MachineProfile::shapeoko_vfd();
     let target = machine.rigidity.adaptive_woc_factor * 6.0;
 
-    let result = calculate(&FeedsInput {
-        tool_series: None,
-        tool_diameter: 6.0,
-        flute_count: 2,
-        flute_length: 18.0,
-        tool_geometry: ToolGeometryHint::Flat,
-        shank_diameter: None,
-        cut_body: crate::feeds::CutBody {
-            max_cut_diameter_mm: 6.0,
-            core_diameter_mm: 0.0,
-        },
-        material: &material,
-        machine: &machine,
-        operation: OperationFamily::Adaptive,
-        operation_kind: None,
-        pass_role: PassRole::Roughing,
-        axial_depth_mm: None,
-        radial_width_mm: None,
-        target_scallop_mm: None,
-        vendor_lut: None,
-        setup: SetupContext::default(),
-        feed_max_rate: None,
-        spindle_strategy: crate::feeds::SpindleStrategy::default(),
-        power_cases: crate::feeds::engagement::PowerCases::NOMINAL,
-        tool_facts: crate::feeds::sourced::ToolFactKinds::STATED,
-    });
+    let result = calculate(&formula_input(
+        &op(OperationType::Adaptive, None, None),
+        &tool(ToolGeometryHint::Flat, 6.0, 2, 18.0, 6.0),
+        &material,
+        &machine,
+    ));
 
     assert!(
         (result.radial_width_mm - target).abs() < 1e-6,
@@ -1057,32 +848,12 @@ fn test_flute_guard_caps_doc() {
     };
     let machine = MachineProfile::shapeoko_vfd();
 
-    let result = calculate(&FeedsInput {
-        tool_series: None,
-        tool_diameter: 6.0,
-        flute_count: 2,
-        flute_length: 5.0, // very short flutes
-        tool_geometry: ToolGeometryHint::Flat,
-        shank_diameter: None,
-        cut_body: crate::feeds::CutBody {
-            max_cut_diameter_mm: 6.0,
-            core_diameter_mm: 0.0,
-        },
-        material: &material,
-        machine: &machine,
-        operation: OperationFamily::Adaptive,
-        operation_kind: None,
-        pass_role: PassRole::Roughing,
-        axial_depth_mm: None,
-        radial_width_mm: None,
-        target_scallop_mm: None,
-        vendor_lut: None,
-        setup: SetupContext::default(),
-        feed_max_rate: None,
-        spindle_strategy: crate::feeds::SpindleStrategy::default(),
-        power_cases: crate::feeds::engagement::PowerCases::NOMINAL,
-        tool_facts: crate::feeds::sourced::ToolFactKinds::STATED,
-    });
+    let result = calculate(&formula_input(
+        &op(OperationType::Adaptive, None, None),
+        &tool(ToolGeometryHint::Flat, 6.0, 2, 5.0, 6.0),
+        &material,
+        &machine,
+    ));
 
     assert!(
         result.axial_depth_mm <= 5.0 * 0.8 + 0.01,
@@ -1106,32 +877,12 @@ fn test_power_limiting_on_low_power_machine() {
     let mut machine = MachineProfile::shapeoko_vfd();
     machine.power = crate::machine::PowerModel::ConstantPower { power_kw: 0.01 }; // extremely tiny
 
-    let result = calculate(&FeedsInput {
-        tool_series: None,
-        tool_diameter: 12.0,
-        flute_count: 4,
-        flute_length: 25.0,
-        tool_geometry: ToolGeometryHint::Flat,
-        shank_diameter: None,
-        cut_body: crate::feeds::CutBody {
-            max_cut_diameter_mm: 12.0,
-            core_diameter_mm: 0.0,
-        },
-        material: &material,
-        machine: &machine,
-        operation: OperationFamily::Pocket,
-        operation_kind: None,
-        pass_role: PassRole::Roughing,
-        axial_depth_mm: Some(5.0),
-        radial_width_mm: Some(8.0),
-        target_scallop_mm: None,
-        vendor_lut: None,
-        setup: SetupContext::default(),
-        feed_max_rate: None,
-        spindle_strategy: crate::feeds::SpindleStrategy::default(),
-        power_cases: crate::feeds::engagement::PowerCases::NOMINAL,
-        tool_facts: crate::feeds::sourced::ToolFactKinds::STATED,
-    });
+    let result = calculate(&formula_input(
+        &op(OperationType::Face, Some(5.0), Some(8.0)),
+        &tool(ToolGeometryHint::Flat, 12.0, 4, 25.0, 12.0),
+        &material,
+        &machine,
+    ));
 
     assert!(
         result.power_limited,
@@ -1153,32 +904,12 @@ fn test_scallop_stepover_used_for_ball_nose() {
     };
     let machine = MachineProfile::shapeoko_vfd();
 
-    let result = calculate(&FeedsInput {
-        tool_series: None,
-        tool_diameter: 6.0,
-        flute_count: 2,
-        flute_length: 18.0,
-        tool_geometry: ToolGeometryHint::Ball,
-        shank_diameter: None,
-        cut_body: crate::feeds::CutBody {
-            max_cut_diameter_mm: 6.0,
-            core_diameter_mm: 0.0,
-        },
-        material: &material,
-        machine: &machine,
-        operation: OperationFamily::Parallel,
-        operation_kind: None,
-        pass_role: PassRole::Finish,
-        axial_depth_mm: Some(0.4),
-        radial_width_mm: None,
-        target_scallop_mm: Some(0.03),
-        vendor_lut: None,
-        setup: SetupContext::default(),
-        feed_max_rate: None,
-        spindle_strategy: crate::feeds::SpindleStrategy::default(),
-        power_cases: crate::feeds::engagement::PowerCases::NOMINAL,
-        tool_facts: crate::feeds::sourced::ToolFactKinds::STATED,
-    });
+    let result = calculate(&formula_input(
+        &drop_cutter_to_scallop(0.03),
+        &tool(ToolGeometryHint::Ball, 6.0, 2, 18.0, 6.0),
+        &material,
+        &machine,
+    ));
 
     // With 3mm ball radius, 0.03mm scallop → stepover should be small
     assert!(result.radial_width_mm > 0.0 && result.radial_width_mm < 6.0);
@@ -1192,32 +923,12 @@ fn test_machine_feed_clamp() {
     let mut machine = MachineProfile::generic_wood_router();
     machine.max_feed_mm_min = 500.0; // very low max feed
 
-    let result = calculate(&FeedsInput {
-        tool_series: None,
-        tool_diameter: 6.0,
-        flute_count: 2,
-        flute_length: 18.0,
-        tool_geometry: ToolGeometryHint::Flat,
-        shank_diameter: None,
-        cut_body: crate::feeds::CutBody {
-            max_cut_diameter_mm: 6.0,
-            core_diameter_mm: 0.0,
-        },
-        material: &material,
-        machine: &machine,
-        operation: OperationFamily::Pocket,
-        operation_kind: None,
-        pass_role: PassRole::Roughing,
-        axial_depth_mm: None,
-        radial_width_mm: None,
-        target_scallop_mm: None,
-        vendor_lut: None,
-        setup: SetupContext::default(),
-        feed_max_rate: None,
-        spindle_strategy: crate::feeds::SpindleStrategy::default(),
-        power_cases: crate::feeds::engagement::PowerCases::NOMINAL,
-        tool_facts: crate::feeds::sourced::ToolFactKinds::STATED,
-    });
+    let result = calculate(&formula_input(
+        &op(OperationType::Face, None, None),
+        &tool(ToolGeometryHint::Flat, 6.0, 2, 18.0, 6.0),
+        &material,
+        &machine,
+    ));
 
     // Ruling R4 (2026-09-24): no factor after the ceiling.
     assert!(
@@ -1239,32 +950,12 @@ fn no_machine_factor_multiplies_the_feed() {
     };
     let machine = MachineProfile::shapeoko_vfd();
 
-    let result = calculate(&FeedsInput {
-        tool_series: None,
-        tool_diameter: 6.0,
-        flute_count: 2,
-        flute_length: 18.0,
-        tool_geometry: ToolGeometryHint::Flat,
-        shank_diameter: None,
-        cut_body: crate::feeds::CutBody {
-            max_cut_diameter_mm: 6.0,
-            core_diameter_mm: 0.0,
-        },
-        material: &material,
-        machine: &machine,
-        operation: OperationFamily::Pocket,
-        operation_kind: None,
-        pass_role: PassRole::Roughing,
-        axial_depth_mm: None,
-        radial_width_mm: None,
-        target_scallop_mm: None,
-        vendor_lut: None,
-        setup: SetupContext::default(),
-        feed_max_rate: None,
-        spindle_strategy: crate::feeds::SpindleStrategy::default(),
-        power_cases: crate::feeds::engagement::PowerCases::NOMINAL,
-        tool_facts: crate::feeds::sourced::ToolFactKinds::STATED,
-    });
+    let result = calculate(&formula_input(
+        &op(OperationType::Face, None, None),
+        &tool(ToolGeometryHint::Flat, 6.0, 2, 18.0, 6.0),
+        &material,
+        &machine,
+    ));
 
     assert!(result.feed_rate_mm_min > 0.0);
     let d = &result.derates;
@@ -1284,32 +975,12 @@ fn a_stated_slot_depth_ships_with_no_slot_cap_p16() {
     };
     let machine = MachineProfile::shapeoko_vfd();
 
-    let result = calculate(&FeedsInput {
-        tool_series: None,
-        tool_diameter: 6.0,
-        flute_count: 2,
-        flute_length: 18.0,
-        tool_geometry: ToolGeometryHint::Flat,
-        shank_diameter: None,
-        cut_body: crate::feeds::CutBody {
-            max_cut_diameter_mm: 6.0,
-            core_diameter_mm: 0.0,
-        },
-        material: &material,
-        machine: &machine,
-        operation: OperationFamily::Pocket,
-        operation_kind: None,
-        pass_role: PassRole::Roughing,
-        axial_depth_mm: Some(10.0),
-        radial_width_mm: Some(5.5), // >85% of D = slotting
-        target_scallop_mm: None,
-        vendor_lut: None,
-        setup: SetupContext::default(),
-        feed_max_rate: None,
-        spindle_strategy: crate::feeds::SpindleStrategy::default(),
-        power_cases: crate::feeds::engagement::PowerCases::NOMINAL,
-        tool_facts: crate::feeds::sourced::ToolFactKinds::STATED,
-    });
+    let result = calculate(&formula_input(
+        &op(OperationType::Pocket, Some(10.0), Some(5.5)),
+        &tool(ToolGeometryHint::Flat, 6.0, 2, 18.0, 6.0),
+        &material,
+        &machine,
+    ));
 
     // Feeds contract P11b: the stated depth ships.
     assert!(
@@ -1329,58 +1000,19 @@ fn test_lut_chipload_overrides_formula() {
     };
     let machine = MachineProfile::shapeoko_vfd();
 
-    let with_lut = calculate(&FeedsInput {
-        tool_series: None,
-        tool_diameter: 6.0,
-        flute_count: 2,
-        flute_length: 18.0,
-        tool_geometry: ToolGeometryHint::Flat,
-        shank_diameter: None,
-        cut_body: crate::feeds::CutBody {
-            max_cut_diameter_mm: 6.0,
-            core_diameter_mm: 0.0,
-        },
-        material: &material,
-        machine: &machine,
-        operation: OperationFamily::Adaptive,
-        operation_kind: None,
-        pass_role: PassRole::Roughing,
-        axial_depth_mm: None,
-        radial_width_mm: None,
-        target_scallop_mm: None,
-        vendor_lut: Some(&lut),
-        setup: SetupContext::default(),
-        feed_max_rate: None,
-        spindle_strategy: crate::feeds::SpindleStrategy::default(),
-        power_cases: crate::feeds::engagement::PowerCases::NOMINAL,
-        tool_facts: crate::feeds::sourced::ToolFactKinds::STATED,
-    });
-    let without_lut = calculate(&FeedsInput {
-        tool_series: None,
-        tool_diameter: 6.0,
-        flute_count: 2,
-        flute_length: 18.0,
-        tool_geometry: ToolGeometryHint::Flat,
-        shank_diameter: None,
-        cut_body: crate::feeds::CutBody {
-            max_cut_diameter_mm: 6.0,
-            core_diameter_mm: 0.0,
-        },
-        material: &material,
-        machine: &machine,
-        operation: OperationFamily::Adaptive,
-        operation_kind: None,
-        pass_role: PassRole::Roughing,
-        axial_depth_mm: None,
-        radial_width_mm: None,
-        target_scallop_mm: None,
-        vendor_lut: None,
-        setup: SetupContext::default(),
-        feed_max_rate: None,
-        spindle_strategy: crate::feeds::SpindleStrategy::default(),
-        power_cases: crate::feeds::engagement::PowerCases::NOMINAL,
-        tool_facts: crate::feeds::sourced::ToolFactKinds::STATED,
-    });
+    let with_lut = calculate(&table_input(
+        &op(OperationType::Adaptive, None, None),
+        &tool(ToolGeometryHint::Flat, 6.0, 2, 18.0, 6.0),
+        &material,
+        &machine,
+        &lut,
+    ));
+    let without_lut = calculate(&formula_input(
+        &op(OperationType::Adaptive, None, None),
+        &tool(ToolGeometryHint::Flat, 6.0, 2, 18.0, 6.0),
+        &material,
+        &machine,
+    ));
 
     // Feeds matrix R5 (2026-09-23): the matched row is the printed Amana
     // Spektra v24 line "2 Flute 6mm (48118-K/48218-K) Wood/Plywood
@@ -1428,34 +1060,22 @@ fn chipload_bounds_hold_at_every_depth_p11b() {
         species: WoodSpecies::HardMaple,
     };
     let machine = MachineProfile::shapeoko_vfd();
-    let mut input = FeedsInput {
-        tool_series: None,
-        tool_diameter: 6.35,
-        flute_count: 2,
-        flute_length: 24.0,
-        tool_geometry: ToolGeometryHint::Ball,
-        shank_diameter: None,
-        cut_body: crate::feeds::CutBody {
-            max_cut_diameter_mm: 6.35,
-            core_diameter_mm: 0.0,
-        },
-        material: &material,
-        machine: &machine,
-        operation: OperationFamily::Pocket,
-        operation_kind: None,
-        pass_role: PassRole::Roughing,
-        axial_depth_mm: Some(6.35), // 1×D ratio → scale 1.0
-        radial_width_mm: None,
-        target_scallop_mm: None,
-        vendor_lut: Some(&lut),
-        setup: SetupContext::default(),
-        feed_max_rate: None,
-        spindle_strategy: crate::feeds::SpindleStrategy::default(),
-        power_cases: crate::feeds::engagement::PowerCases::NOMINAL,
-        tool_facts: crate::feeds::sourced::ToolFactKinds::STATED,
-    };
+    let ball = tool(ToolGeometryHint::Ball, 6.35, 2, 24.0, 6.35);
+    let input = table_input(
+        &op(OperationType::Face, Some(6.35), None),
+        &ball,
+        &material,
+        &machine,
+        &lut,
+    );
     let at_1x = calculate(&input);
-    input.axial_depth_mm = Some(19.05); // 3×D ratio → scale 0.5
+    let input = table_input(
+        &op(OperationType::Face, Some(19.05), None),
+        &ball,
+        &material,
+        &machine,
+        &lut,
+    );
     let at_3x = calculate(&input);
 
     // The printed Amana ball-nose v7 row publishes both bounds,
@@ -1465,77 +1085,36 @@ fn chipload_bounds_hold_at_every_depth_p11b() {
     assert_eq!(b1, b3, "L6: the band at 3 x D is the band at 1 x D");
 }
 
-/// Drill ops are explicitly excluded from chipload-bounds DOC
-/// derating: the post-sim chipload gate short-circuits drill ops
-/// (`NotApplicableForOp`), and the chip-evacuation rule that
-/// motivates derating in milling doesn't apply to drill bands
-/// (peck depth, not engagement). Bounds for a deep-peck drill cycle
-/// must equal the bounds at shallow peck.
+/// Ruling B5 (G6): a drill cycle reads the point of its side row. This
+/// cell (a 6 mm 2-flute flat end mill in hard maple) reads the Spektra
+/// 6 mm side row through the drill claim. The row prints one value, so it
+/// is a point (0.127 / 2 = 0.0635), not a band.
+///
+/// P29-7 7a: the old test compared a shallow and a deep peck. No op gives
+/// the calculator a drill depth (the Drill op states no side-cut depth,
+/// `CutSpec::calc_inputs`), so the depth half of the claim has no input
+/// that an op can give, and the test keeps the point only.
 #[test]
-fn chipload_bounds_skip_doc_derating_for_drill_ops() {
+fn a_drill_cycle_reads_the_point_of_its_side_row() {
     let lut = vendor_lut::VendorLut::embedded();
     let material = Material::SolidWood {
         species: WoodSpecies::HardMaple,
     };
     let machine = MachineProfile::shapeoko_vfd();
-    let mut input = FeedsInput {
-        tool_series: None,
-        tool_diameter: 6.0,
-        flute_count: 2,
-        flute_length: 30.0,
-        tool_geometry: ToolGeometryHint::Flat,
-        shank_diameter: None,
-        cut_body: crate::feeds::CutBody {
-            max_cut_diameter_mm: 6.0,
-            core_diameter_mm: 0.0,
-        },
-        material: &material,
-        machine: &machine,
-        operation: OperationFamily::Drill,
-        operation_kind: None,
-        pass_role: PassRole::Roughing,
-        axial_depth_mm: Some(6.0),
-        radial_width_mm: None,
-        target_scallop_mm: None,
-        vendor_lut: Some(&lut),
-        setup: SetupContext::default(),
-        feed_max_rate: None,
-        spindle_strategy: crate::feeds::SpindleStrategy::default(),
-        power_cases: crate::feeds::engagement::PowerCases::NOMINAL,
-        tool_facts: crate::feeds::sourced::ToolFactKinds::STATED,
-    };
-    let shallow = calculate(&input);
-    input.axial_depth_mm = Some(18.0);
-    let deep = calculate(&input);
-    if let (Some(s), Some(d)) = (shallow.chipload_bounds, deep.chipload_bounds) {
-        assert!(
-            (s.min_mm_per_tooth - d.min_mm_per_tooth).abs() < 1e-9,
-            "drill bounds.min must not derate with peck depth",
-        );
-        assert!(
-            (s.max_mm_per_tooth - d.max_mm_per_tooth).abs() < 1e-9,
-            "drill bounds.max must not derate with peck depth",
-        );
-    }
-    // If the LUT doesn't publish drill chipload bounds (None on either
-    // depth), the test is moot — derating exclusion is what we care
-    // about and both being None already satisfies the contract.
-    //
-    // Ruling B5 (G6): this cell (a 6 mm 2-flute flat end mill in hard
-    // maple) reads the Spektra 6 mm side row through the drill claim. The
-    // row prints one value, so it is a point (0.127 / 2 = 0.0635), not a
-    // band, and the point must not derate with the peck depth either.
-    let (Some(sp), Some(dp)) = (shallow.chipload_point_mm, deep.chipload_point_mm) else {
+    let result = calculate(&table_input(
+        &op(OperationType::Drill, None, None),
+        &tool(ToolGeometryHint::Flat, 6.0, 2, 30.0, 6.0),
+        &material,
+        &machine,
+        &lut,
+    ));
+    let Some(point) = result.chipload_point_mm else {
         panic!(
-            "the G6 drill claim serves this cell, so both depths carry a point: {:?} {:?}",
-            shallow.chipload_point_mm, deep.chipload_point_mm
+            "the G6 drill claim serves this cell, so it carries a point: {:?}",
+            result.chipload_point_mm
         );
     };
-    assert!((sp - 0.0635).abs() < 1e-12, "point {sp}");
-    assert!(
-        (sp - dp).abs() < 1e-12,
-        "drill point must not derate with peck depth"
-    );
+    assert!((point - 0.0635).abs() < 1e-12, "point {point}");
 }
 
 #[test]
@@ -1546,34 +1125,13 @@ fn test_lut_rpm_override_within_machine_range() {
     };
     let machine = MachineProfile::shapeoko_vfd();
 
-    let result = calculate(&FeedsInput {
-        tool_series: None,
-        tool_diameter: 6.0,
-        flute_count: 2,
-        flute_length: 18.0,
-        tool_geometry: ToolGeometryHint::Flat,
-        shank_diameter: None,
-        cut_body: crate::feeds::CutBody {
-            max_cut_diameter_mm: 6.0,
-            core_diameter_mm: 0.0,
-        },
-        material: &material,
-        machine: &machine,
-        operation: OperationFamily::Adaptive,
-        operation_kind: None,
-        pass_role: PassRole::Roughing,
-        axial_depth_mm: None,
-        // P11b: half the diameter, so the chip-thinning lift (L1) does
-        // not raise the feed to the machine cap and move the RPM.
-        radial_width_mm: Some(3.0),
-        target_scallop_mm: None,
-        vendor_lut: Some(&lut),
-        setup: SetupContext::default(),
-        feed_max_rate: None,
-        spindle_strategy: crate::feeds::SpindleStrategy::default(),
-        power_cases: crate::feeds::engagement::PowerCases::NOMINAL,
-        tool_facts: crate::feeds::sourced::ToolFactKinds::STATED,
-    });
+    let result = calculate(&table_input(
+        &op(OperationType::Adaptive, None, Some(3.0)),
+        &tool(ToolGeometryHint::Flat, 6.0, 2, 18.0, 6.0),
+        &material,
+        &machine,
+        &lut,
+    ));
 
     // Vendor RPM for amana 6mm softwood adaptive is 18000
     assert!(
@@ -1590,32 +1148,12 @@ fn test_no_lut_backward_compatible() {
     };
     let machine = MachineProfile::shapeoko_vfd();
 
-    let result = calculate(&FeedsInput {
-        tool_series: None,
-        tool_diameter: 6.0,
-        flute_count: 2,
-        flute_length: 18.0,
-        tool_geometry: ToolGeometryHint::Flat,
-        shank_diameter: None,
-        cut_body: crate::feeds::CutBody {
-            max_cut_diameter_mm: 6.0,
-            core_diameter_mm: 0.0,
-        },
-        material: &material,
-        machine: &machine,
-        operation: OperationFamily::Pocket,
-        operation_kind: None,
-        pass_role: PassRole::Roughing,
-        axial_depth_mm: None,
-        radial_width_mm: None,
-        target_scallop_mm: None,
-        vendor_lut: None,
-        setup: SetupContext::default(),
-        feed_max_rate: None,
-        spindle_strategy: crate::feeds::SpindleStrategy::default(),
-        power_cases: crate::feeds::engagement::PowerCases::NOMINAL,
-        tool_facts: crate::feeds::sourced::ToolFactKinds::STATED,
-    });
+    let result = calculate(&formula_input(
+        &op(OperationType::Face, None, None),
+        &tool(ToolGeometryHint::Flat, 6.0, 2, 18.0, 6.0),
+        &material,
+        &machine,
+    ));
 
     assert!(result.vendor_source.is_none());
     assert_eq!(result.chipload_source, ChiploadSource::FormulaFallback);
@@ -1631,63 +1169,25 @@ fn test_setup_derate_long_overhang() {
     };
     let machine = MachineProfile::shapeoko_vfd();
 
-    let normal = calculate(&FeedsInput {
-        tool_series: None,
-        tool_diameter: 6.0,
-        flute_count: 2,
-        flute_length: 18.0,
-        tool_geometry: ToolGeometryHint::Flat,
-        shank_diameter: None,
-        cut_body: crate::feeds::CutBody {
-            max_cut_diameter_mm: 6.0,
-            core_diameter_mm: 0.0,
-        },
-        material: &material,
-        machine: &machine,
-        operation: OperationFamily::Adaptive,
-        operation_kind: None,
-        pass_role: PassRole::Roughing,
-        axial_depth_mm: None,
-        radial_width_mm: None,
-        target_scallop_mm: None,
-        vendor_lut: None,
-        setup: SetupContext {
-            tool_overhang_mm: Some(20.0), // L/D = 20/6 = 3.3, no derate
-        },
-        feed_max_rate: None,
-        spindle_strategy: crate::feeds::SpindleStrategy::default(),
-        power_cases: crate::feeds::engagement::PowerCases::NOMINAL,
-        tool_facts: crate::feeds::sourced::ToolFactKinds::STATED,
-    });
+    let normal = calculate(&formula_input(
+        &op(OperationType::Adaptive, None, None),
+        &tool(ToolGeometryHint::Flat, 6.0, 2, 18.0, 6.0)
+            .to_builder()
+            .stickout_mm(20.0)
+            .build(),
+        &material,
+        &machine,
+    ));
 
-    let long = calculate(&FeedsInput {
-        tool_series: None,
-        tool_diameter: 6.0,
-        flute_count: 2,
-        flute_length: 18.0,
-        tool_geometry: ToolGeometryHint::Flat,
-        shank_diameter: None,
-        cut_body: crate::feeds::CutBody {
-            max_cut_diameter_mm: 6.0,
-            core_diameter_mm: 0.0,
-        },
-        material: &material,
-        machine: &machine,
-        operation: OperationFamily::Adaptive,
-        operation_kind: None,
-        pass_role: PassRole::Roughing,
-        axial_depth_mm: None,
-        radial_width_mm: None,
-        target_scallop_mm: None,
-        vendor_lut: None,
-        setup: SetupContext {
-            tool_overhang_mm: Some(40.0), // L/D = 40/6 = 6.67, 25% derate
-        },
-        feed_max_rate: None,
-        spindle_strategy: crate::feeds::SpindleStrategy::default(),
-        power_cases: crate::feeds::engagement::PowerCases::NOMINAL,
-        tool_facts: crate::feeds::sourced::ToolFactKinds::STATED,
-    });
+    let long = calculate(&formula_input(
+        &op(OperationType::Adaptive, None, None),
+        &tool(ToolGeometryHint::Flat, 6.0, 2, 18.0, 6.0)
+            .to_builder()
+            .stickout_mm(40.0)
+            .build(),
+        &material,
+        &machine,
+    ));
 
     // Ruling R4 Q7 (2026-09-24): the L/D share (0.75 above 6 x D) does NOT
     // cut the feed any more, so the ratio is 1.0 and the share is on the
@@ -1708,63 +1208,25 @@ fn test_setup_derate_medium_overhang() {
     };
     let machine = MachineProfile::shapeoko_vfd();
 
-    let normal = calculate(&FeedsInput {
-        tool_series: None,
-        tool_diameter: 6.0,
-        flute_count: 2,
-        flute_length: 18.0,
-        tool_geometry: ToolGeometryHint::Flat,
-        shank_diameter: None,
-        cut_body: crate::feeds::CutBody {
-            max_cut_diameter_mm: 6.0,
-            core_diameter_mm: 0.0,
-        },
-        material: &material,
-        machine: &machine,
-        operation: OperationFamily::Adaptive,
-        operation_kind: None,
-        pass_role: PassRole::Roughing,
-        axial_depth_mm: None,
-        radial_width_mm: None,
-        target_scallop_mm: None,
-        vendor_lut: None,
-        setup: SetupContext {
-            tool_overhang_mm: Some(20.0), // L/D = 3.3, no derate
-        },
-        feed_max_rate: None,
-        spindle_strategy: crate::feeds::SpindleStrategy::default(),
-        power_cases: crate::feeds::engagement::PowerCases::NOMINAL,
-        tool_facts: crate::feeds::sourced::ToolFactKinds::STATED,
-    });
+    let normal = calculate(&formula_input(
+        &op(OperationType::Adaptive, None, None),
+        &tool(ToolGeometryHint::Flat, 6.0, 2, 18.0, 6.0)
+            .to_builder()
+            .stickout_mm(20.0)
+            .build(),
+        &material,
+        &machine,
+    ));
 
-    let medium = calculate(&FeedsInput {
-        tool_series: None,
-        tool_diameter: 6.0,
-        flute_count: 2,
-        flute_length: 18.0,
-        tool_geometry: ToolGeometryHint::Flat,
-        shank_diameter: None,
-        cut_body: crate::feeds::CutBody {
-            max_cut_diameter_mm: 6.0,
-            core_diameter_mm: 0.0,
-        },
-        material: &material,
-        machine: &machine,
-        operation: OperationFamily::Adaptive,
-        operation_kind: None,
-        pass_role: PassRole::Roughing,
-        axial_depth_mm: None,
-        radial_width_mm: None,
-        target_scallop_mm: None,
-        vendor_lut: None,
-        setup: SetupContext {
-            tool_overhang_mm: Some(30.0), // L/D = 30/6 = 5.0, 12% derate
-        },
-        feed_max_rate: None,
-        spindle_strategy: crate::feeds::SpindleStrategy::default(),
-        power_cases: crate::feeds::engagement::PowerCases::NOMINAL,
-        tool_facts: crate::feeds::sourced::ToolFactKinds::STATED,
-    });
+    let medium = calculate(&formula_input(
+        &op(OperationType::Adaptive, None, None),
+        &tool(ToolGeometryHint::Flat, 6.0, 2, 18.0, 6.0)
+            .to_builder()
+            .stickout_mm(30.0)
+            .build(),
+        &material,
+        &machine,
+    ));
 
     // Ruling R4 Q7: the 0.88 share is a load target, not a feed factor.
     let ratio = medium.feed_rate_mm_min / normal.feed_rate_mm_min;
@@ -1783,58 +1245,20 @@ fn test_lut_ball_nose_different_chipload_than_flat() {
     };
     let machine = MachineProfile::shapeoko_vfd();
 
-    let flat = calculate(&FeedsInput {
-        tool_series: None,
-        tool_diameter: 6.0,
-        flute_count: 2,
-        flute_length: 18.0,
-        tool_geometry: ToolGeometryHint::Flat,
-        shank_diameter: None,
-        cut_body: crate::feeds::CutBody {
-            max_cut_diameter_mm: 6.0,
-            core_diameter_mm: 0.0,
-        },
-        material: &material,
-        machine: &machine,
-        operation: OperationFamily::Adaptive,
-        operation_kind: None,
-        pass_role: PassRole::Roughing,
-        axial_depth_mm: None,
-        radial_width_mm: None,
-        target_scallop_mm: None,
-        vendor_lut: Some(&lut),
-        setup: SetupContext::default(),
-        feed_max_rate: None,
-        spindle_strategy: crate::feeds::SpindleStrategy::default(),
-        power_cases: crate::feeds::engagement::PowerCases::NOMINAL,
-        tool_facts: crate::feeds::sourced::ToolFactKinds::STATED,
-    });
-    let ball = calculate(&FeedsInput {
-        tool_series: None,
-        tool_diameter: 6.0,
-        flute_count: 2,
-        flute_length: 18.0,
-        tool_geometry: ToolGeometryHint::Ball,
-        shank_diameter: None,
-        cut_body: crate::feeds::CutBody {
-            max_cut_diameter_mm: 6.0,
-            core_diameter_mm: 0.0,
-        },
-        material: &material,
-        machine: &machine,
-        operation: OperationFamily::Parallel,
-        operation_kind: None,
-        pass_role: PassRole::Finish,
-        axial_depth_mm: None,
-        radial_width_mm: None,
-        target_scallop_mm: None,
-        vendor_lut: Some(&lut),
-        setup: SetupContext::default(),
-        feed_max_rate: None,
-        spindle_strategy: crate::feeds::SpindleStrategy::default(),
-        power_cases: crate::feeds::engagement::PowerCases::NOMINAL,
-        tool_facts: crate::feeds::sourced::ToolFactKinds::STATED,
-    });
+    let flat = calculate(&table_input(
+        &op(OperationType::Adaptive, None, None),
+        &tool(ToolGeometryHint::Flat, 6.0, 2, 18.0, 6.0),
+        &material,
+        &machine,
+        &lut,
+    ));
+    let ball = calculate(&table_input(
+        &op(OperationType::DropCutter, None, None),
+        &tool(ToolGeometryHint::Ball, 6.0, 2, 18.0, 6.0),
+        &material,
+        &machine,
+        &lut,
+    ));
 
     // Ball nose finishing should have a different (lower) chipload than flat adaptive
     assert_ne!(
@@ -1858,32 +1282,13 @@ fn test_lut_fallback_when_no_match() {
     let machine = MachineProfile::shapeoko_vfd();
 
     // Foam has no LUT data — should fall back to formula
-    let result = calculate(&FeedsInput {
-        tool_series: None,
-        tool_diameter: 6.0,
-        flute_count: 2,
-        flute_length: 18.0,
-        tool_geometry: ToolGeometryHint::Flat,
-        shank_diameter: None,
-        cut_body: crate::feeds::CutBody {
-            max_cut_diameter_mm: 6.0,
-            core_diameter_mm: 0.0,
-        },
-        material: &material,
-        machine: &machine,
-        operation: OperationFamily::Pocket,
-        operation_kind: None,
-        pass_role: PassRole::Roughing,
-        axial_depth_mm: None,
-        radial_width_mm: None,
-        target_scallop_mm: None,
-        vendor_lut: Some(&lut),
-        setup: SetupContext::default(),
-        feed_max_rate: None,
-        spindle_strategy: crate::feeds::SpindleStrategy::default(),
-        power_cases: crate::feeds::engagement::PowerCases::NOMINAL,
-        tool_facts: crate::feeds::sourced::ToolFactKinds::STATED,
-    });
+    let result = calculate(&table_input(
+        &op(OperationType::Face, None, None),
+        &tool(ToolGeometryHint::Flat, 6.0, 2, 18.0, 6.0),
+        &material,
+        &machine,
+        &lut,
+    ));
 
     // Foam maps to softwood in normalize, but with hardness 200 which is far from
     // any observation. If it does match, that's fine. If not, formula is used.
@@ -1913,42 +1318,27 @@ fn constant_chip_lifts_the_rpm_to_the_first_limit_and_holds_the_chip() {
     let material = Material::SolidWood {
         species: crate::material::WoodSpecies::GenericSoftwood,
     };
-    let base = FeedsInput {
-        tool_series: None,
-        tool_diameter: 6.0,
-        flute_count: 2,
-        flute_length: 18.0,
-        shank_diameter: None,
-        cut_body: crate::feeds::CutBody {
-            max_cut_diameter_mm: 6.0,
-            core_diameter_mm: 0.0,
-        },
-        tool_geometry: ToolGeometryHint::Flat,
-        material: &material,
-        machine: &machine,
-        operation: OperationFamily::Adaptive,
-        operation_kind: None,
-        pass_role: PassRole::Roughing,
-        axial_depth_mm: None,
-        // Half the diameter: the chip-thinning lift is 1 (P11b).
-        radial_width_mm: Some(3.0),
-        target_scallop_mm: None,
-        vendor_lut: Some(&lut),
-        setup: SetupContext::default(),
-        feed_max_rate: None,
-        spindle_strategy: SpindleStrategy::MatchChart,
-        power_cases: crate::feeds::engagement::PowerCases::NOMINAL,
-        tool_facts: crate::feeds::sourced::ToolFactKinds::STATED,
-    };
+    let flat = tool(ToolGeometryHint::Flat, 6.0, 2, 18.0, 6.0);
+    let base = table_input_with(
+        &op(OperationType::Adaptive, None, Some(3.0)),
+        &flat,
+        &material,
+        &machine,
+        &lut,
+        SpindleStrategy::MatchChart,
+    );
     let match_chart = calculate(&base);
     assert!(match_chart.rpm_choice.is_none(), "MatchChart has no choice");
-    let constant_chip = calculate(&FeedsInput {
-        spindle_strategy: SpindleStrategy::ConstantChip {
+    let constant_chip = calculate(&table_input_with(
+        &op(OperationType::Adaptive, None, Some(3.0)),
+        &flat,
+        &material,
+        &machine,
+        &lut,
+        SpindleStrategy::ConstantChip {
             rpm_ceiling: Some(24_000),
         },
-        setup: SetupContext::default(),
-        ..base
-    });
+    ));
     let (_, spindle_max) = machine.rpm_range();
     assert_eq!(constant_chip.rpm, spindle_max, "the RPM is the spindle max");
     let choice = constant_chip.rpm_choice.as_ref();
@@ -1965,7 +1355,8 @@ fn constant_chip_lifts_the_rpm_to_the_first_limit_and_holds_the_chip() {
     );
 
     // The chip holds: the feed over (RPM x Z) is the same.
-    let chip = |r: &FeedsResult| r.feed_rate_mm_min / (r.rpm * f64::from(base.flute_count));
+    let chip =
+        |r: &FeedsResult| r.feed_rate_mm_min / (r.rpm * f64::from(flat.flute_count_planning()));
     assert!(
         (chip(&match_chart) - chip(&constant_chip)).abs() < 1e-9,
         "chip {} vs {}",
@@ -1986,11 +1377,14 @@ fn constant_chip_lifts_the_rpm_to_the_first_limit_and_holds_the_chip() {
     );
 
     // An empty ceiling: the RPM stays at the chart RPM.
-    let no_ceiling = calculate(&FeedsInput {
-        spindle_strategy: SpindleStrategy::ConstantChip { rpm_ceiling: None },
-        setup: SetupContext::default(),
-        ..base
-    });
+    let no_ceiling = calculate(&table_input_with(
+        &op(OperationType::Adaptive, None, Some(3.0)),
+        &flat,
+        &material,
+        &machine,
+        &lut,
+        SpindleStrategy::ConstantChip { rpm_ceiling: None },
+    ));
     assert_eq!(no_ceiling.rpm, match_chart.rpm);
     assert_eq!(no_ceiling.feed_rate_mm_min, match_chart.feed_rate_mm_min);
     assert_eq!(

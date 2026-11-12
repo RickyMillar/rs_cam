@@ -22,10 +22,11 @@ use serde::ser::SerializeMap;
 
 use crate::compute::catalog::{Axial, OperationConfig, Radial};
 use crate::compute::tool_config::ToolConfig;
+use crate::feeds::FeedsInput;
 use crate::feeds::sourced::{
     Basis, ChipMm, FeedMmMin, MachineField, PlungeMmMin, Rpm, Sourced, lower_to_cap,
 };
-use crate::feeds::suggest::{SuggestContext, feeds_input_for_operation};
+use crate::feeds::suggest::SuggestContext;
 use crate::feeds::{
     FeedsError, FeedsResult, FeedsWarning, MIN_AE_MM, MIN_AP_MM, PassRole, SpindleStrategy,
     ToolGeometryHint, VendorLut, calculate,
@@ -869,7 +870,7 @@ impl OwnedInputs {
     }
 
     fn calc_at_with(&self, p: CutPoint, recording: crate::feeds::StepRecording) -> FeedsResult {
-        let mut input = feeds_input_for_operation(
+        let mut input = FeedsInput::of_operation(
             &self.operation,
             &self.tool,
             &self.material,
@@ -1153,7 +1154,7 @@ impl SafeEnvelope {
     /// (D6: a missing input is not a finding).
     pub fn for_cut(input: EnvelopeInput<'_>) -> Result<Self, FeedsError> {
         input.tool.validate().map_err(FeedsError::ToolOutOfDomain)?;
-        let feeds_input = feeds_input_for_operation(
+        let feeds_input = FeedsInput::of_operation(
             input.operation,
             input.tool,
             input.material,

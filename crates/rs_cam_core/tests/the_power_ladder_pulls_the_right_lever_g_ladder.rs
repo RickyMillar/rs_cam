@@ -42,44 +42,30 @@
 //!
 //! See `planning/load_model_2026-09-16/DERATE_SPEC.md` and `derate_levers.py`.
 
+use rs_cam_core::compute::catalog::OperationType;
 use rs_cam_core::feeds::{
-    FeedsInput, FeedsWarning, OperationFamily, PassRole, SetupContext, SpindleStrategy,
-    ToolGeometryHint, calculate, embedded_vendor_lut,
+    FeedsInput, FeedsWarning, SpindleStrategy, ToolGeometryHint, calculate, embedded_vendor_lut,
 };
 use rs_cam_core::machine::{MachineProfile, PowerModel, SpindleConfig};
 use rs_cam_core::material::{Material, WoodSpecies};
+
+#[path = "common/feeds_input.rs"]
+mod feeds_input;
 
 /// A heavy cut in a hard wood on a small spindle, so the power limit binds.
 fn recipe(machine: &MachineProfile, pinned_depth: Option<f64>) -> rs_cam_core::feeds::FeedsResult {
     let material = Material::SolidWood {
         species: WoodSpecies::WhiteOak,
     };
-    calculate(&FeedsInput {
-        tool_series: None,
-        tool_diameter: 12.0,
-        flute_count: 4,
-        flute_length: 38.0,
-        shank_diameter: None,
-        cut_body: rs_cam_core::feeds::CutBody {
-            max_cut_diameter_mm: 12.0,
-            core_diameter_mm: 0.0,
-        },
-        tool_geometry: ToolGeometryHint::Flat,
-        material: &material,
+    calculate(&FeedsInput::of_operation(
+        // P29-7 7a: a stock Face, the (Pocket, Roughing) op with no slot case.
+        &feeds_input::op_with(OperationType::Face, pinned_depth, None),
+        &feeds_input::tool_of_hint(ToolGeometryHint::Flat, 12.0, 4, 38.0, 12.0),
+        &material,
         machine,
-        operation: OperationFamily::Pocket,
-        operation_kind: None,
-        pass_role: PassRole::Roughing,
-        axial_depth_mm: pinned_depth,
-        radial_width_mm: None,
-        target_scallop_mm: None,
-        vendor_lut: Some(embedded_vendor_lut()),
-        setup: SetupContext::default(),
-        feed_max_rate: None,
-        spindle_strategy: SpindleStrategy::MatchChart,
-        power_cases: rs_cam_core::feeds::engagement::PowerCases::NOMINAL,
-        tool_facts: rs_cam_core::feeds::sourced::ToolFactKinds::STATED,
-    })
+        embedded_vendor_lut(),
+        SpindleStrategy::MatchChart,
+    ))
 }
 
 /// A variable-speed spindle over the same range, so the two machines differ

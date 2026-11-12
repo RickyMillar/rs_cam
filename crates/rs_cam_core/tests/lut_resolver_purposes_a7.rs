@@ -39,10 +39,11 @@
     reason = "test code: a panic is how a test reports a failure; the test prints its measurements for the reader"
 )]
 
+use rs_cam_core::compute::catalog::OperationType;
 use rs_cam_core::feeds::vendor_lut::VendorLut;
 use rs_cam_core::feeds::{
-    ChiploadSource, FeedsInput, FeedsWarning, OperationFamily, PassRole, SetupContext,
-    SpindleStrategy, ToolGeometryHint, calculate, embedded_vendor_lut,
+    ChiploadSource, FeedsInput, FeedsWarning, OperationFamily, PassRole, SpindleStrategy,
+    ToolGeometryHint, calculate, embedded_vendor_lut,
 };
 
 /// The two Whiteside V-bit RPM anchors of the embedded LUT (60 deg, 1/4 in
@@ -71,6 +72,9 @@ fn rpm_anchor_lut() -> VendorLut {
 }
 use rs_cam_core::machine::MachineProfile;
 use rs_cam_core::material::{Material, WoodSpecies};
+
+#[path = "common/feeds_input.rs"]
+mod feeds_input;
 
 /// The three (op family, geometry) cells A-6 found the divergence in,
 /// plus two control cells that do not diverge — so a regression that
@@ -119,37 +123,31 @@ fn sweep_inputs() -> Vec<(&'static str, OperationFamily, ToolGeometryHint)> {
 fn the_rpm_anchor_disclosure_renders_as_operator_text() {
     let lut = rpm_anchor_lut();
     let machine = MachineProfile::generic_wood_router();
-    let result = calculate(&FeedsInput {
-        tool_series: None,
-        tool_diameter: 3.175,
-        flute_count: 2,
-        flute_length: 20.0,
-        shank_diameter: Some(6.0),
-        cut_body: rs_cam_core::feeds::CutBody {
-            max_cut_diameter_mm: 6.0,
-            core_diameter_mm: 0.0,
-        },
-        tool_geometry: ToolGeometryHint::VBit {
+    // P29-7 7a: no op gives (Trace, Roughing); the RPM anchors print
+    // (Trace, Finish), and an InlayPlug states that cut at a depth (the
+    // old literal also stated a 1.2 mm width and a scallop target, which
+    // no such op holds).
+    let tool_config = feeds_input::tool_of_hint(
+        ToolGeometryHint::VBit {
             included_angle: 60.0,
             tip_diameter: 0.2,
         },
-        material: &Material::SolidWood {
-            species: WoodSpecies::HardMaple,
-        },
-        machine: &machine,
-        operation: OperationFamily::Trace,
-        operation_kind: None,
-        pass_role: PassRole::Roughing,
-        axial_depth_mm: Some(1.0),
-        radial_width_mm: Some(1.2),
-        target_scallop_mm: Some(0.01),
-        vendor_lut: Some(&lut),
-        setup: SetupContext::default(),
-        feed_max_rate: None,
-        spindle_strategy: SpindleStrategy::MatchChart,
-        power_cases: rs_cam_core::feeds::engagement::PowerCases::NOMINAL,
-        tool_facts: rs_cam_core::feeds::sourced::ToolFactKinds::STATED,
-    });
+        3.175,
+        2,
+        20.0,
+        6.0,
+    );
+    let material = Material::SolidWood {
+        species: WoodSpecies::HardMaple,
+    };
+    let result = calculate(&FeedsInput::of_operation(
+        &feeds_input::op_at_depth(OperationType::InlayPlug, 1.0),
+        &tool_config,
+        &material,
+        &machine,
+        &lut,
+        SpindleStrategy::MatchChart,
+    ));
     let rendered: Vec<String> =
         rs_cam_core::diagnostics::adapters::from_feeds::diagnostics_from_feeds_result(
             rs_cam_core::ids::ToolpathId::from_raw(0),
@@ -202,35 +200,27 @@ fn sweep(lut: &VendorLut) -> Sweep {
             for diameter in [1.0_f64, 3.175, 6.0, 12.0] {
                 for flutes in [1u32, 2, 3] {
                     for pass_role in [PassRole::Roughing, PassRole::Finish] {
+                        // P29-7 7a: the op of the row key that holds the depth; a key
+                        // that no op gives is not a cell. The width is stated where the op
+                        // holds one.
+                        let Some(kind) =
+                            feeds_input::op_of_row_key_with_depth(operation, pass_role)
+                        else {
+                            continue;
+                        };
                         total += 1;
-                        let result = calculate(&FeedsInput {
-                            tool_series: None,
-                            tool_diameter: diameter,
-                            flute_count: flutes,
-                            flute_length: 20.0,
-                            shank_diameter: Some(6.0),
-                            cut_body: rs_cam_core::feeds::CutBody {
-                                max_cut_diameter_mm: 6.0,
-                                core_diameter_mm: 0.0,
-                            },
-                            tool_geometry: geometry,
-                            material: &material,
-                            machine: &machine,
-                            operation,
-                            // a3's disclosure is about the resolver, not
-                            // the a4 routing; no operation kind here.
-                            operation_kind: None,
-                            pass_role,
-                            axial_depth_mm: Some(diameter * 0.3),
-                            radial_width_mm: Some(diameter * 0.4),
-                            target_scallop_mm: Some(0.01),
-                            vendor_lut: Some(lut),
-                            setup: SetupContext::default(),
-                            feed_max_rate: None,
-                            spindle_strategy: SpindleStrategy::MatchChart,
-                            power_cases: rs_cam_core::feeds::engagement::PowerCases::NOMINAL,
-                            tool_facts: rs_cam_core::feeds::sourced::ToolFactKinds::STATED,
-                        });
+                        let mut op = feeds_input::op_at_depth(kind, diameter * 0.3);
+                        let _holds_a_width = op.set_stepover(diameter * 0.4);
+                        let tool_config =
+                            feeds_input::tool_of_hint(geometry, diameter, flutes, 20.0, 6.0);
+                        let result = calculate(&FeedsInput::of_operation(
+                            &op,
+                            &tool_config,
+                            &material,
+                            &machine,
+                            lut,
+                            SpindleStrategy::MatchChart,
+                        ));
                         // The condition the warning is *about*: a vendor
                         // row matched, and its chipload column was absent
                         // so the formula supplied the number.

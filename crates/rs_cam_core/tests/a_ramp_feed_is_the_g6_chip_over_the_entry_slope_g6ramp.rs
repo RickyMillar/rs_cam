@@ -64,11 +64,12 @@ use rs_cam_core::compute::config::{DressupConfig, DressupEntryStyle};
 use rs_cam_core::compute::operation_configs::Adaptive3dEntryStyle;
 use rs_cam_core::compute::tool_config::ToolFact;
 use rs_cam_core::compute::tool_config::{ToolConfig, ToolId, ToolType};
+use rs_cam_core::feeds::FeedsInput;
 use rs_cam_core::feeds::ramp::{EntrySource, RampArm, RampBasis, RampFallback, SourcedRamp};
 use rs_cam_core::feeds::suggest::{
     ApplyContext, SuggestContext, SuggestForOperationInput, SuggestWarning, SuggestedParams, apply,
-    apply_speeds_to_op, feeds_input_for_operation, feeds_preview_for_operation,
-    feeds_result_for_operation, suggest_for_operation,
+    apply_speeds_to_op, feeds_preview_for_operation, feeds_result_for_operation,
+    suggest_for_operation,
 };
 use rs_cam_core::feeds::{
     FeedsProvenance, ProvenanceSource, RampFeed, SpindleStrategy, ValueProvenance, calculate,
@@ -236,7 +237,7 @@ fn fallback(r: &RampFeed) -> RampFallback {
 /// so a tool that Suggest refuses on a pocket still reports its basis).
 fn basis(tool: &ToolConfig, material: &Material) -> RampBasis {
     let machine = MachineProfile::generic_wood_router();
-    let input = feeds_input_for_operation(
+    let input = FeedsInput::of_operation(
         &pocket(),
         tool,
         material,

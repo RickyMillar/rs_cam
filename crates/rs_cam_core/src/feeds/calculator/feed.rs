@@ -98,8 +98,11 @@ pub(super) fn step5_feed(input: &FeedsInput, speed: &Speed, chip: &Chip, cut: &C
     // A drill cycle has no radial cut (`Radial::Axial`): no lift, and Step
     // 9c sets its feed. P11b2: the one rule (`geometry::RadialThinning`)
     // that the post-sim gate and the modulator also read.
-    // EXEMPT(P28-18, P28-19, F-ThinsChip)
-    let thinning = geometry::RadialThinning::of(input.operation, input.pass_role);
+    // P29-7: the rule is a fact of the body cut (`CutFacts::thins_chip`,
+    // filled by `OperationConfig::cuts`); the family and the role are the
+    // vendor row key only.
+    // EXEMPT(P28-18, P28-19)
+    let thinning = input.body_facts.thins_chip;
     // P23a: the lift is sized at the widest width that the planner holds at
     // the full feed (the pass ceiling `c D` of an adaptive plan), not at
     // the nominal stepover: the plan may cut that wide at this feed, and

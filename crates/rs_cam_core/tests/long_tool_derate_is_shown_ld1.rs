@@ -26,56 +26,43 @@
 //!    feed is the same at every stickout (Q7: no feed cut).
 
 #![expect(
-    clippy::expect_used,
     clippy::panic,
     reason = "test code: a panic is how a test reports a failure"
 )]
 
+use rs_cam_core::compute::catalog::OperationType;
 use rs_cam_core::diagnostics::adapters::from_feeds::diagnostics_from_feeds_result;
 use rs_cam_core::diagnostics::{Severity, ids};
 use rs_cam_core::feeds::{
-    FeedsInput, FeedsResult, FeedsWarning, OperationFamily, PassRole, SetupContext,
-    SpindleStrategy, ToolGeometryHint, calculate, embedded_vendor_lut,
+    FeedsInput, FeedsResult, FeedsWarning, SpindleStrategy, ToolGeometryHint, calculate,
+    embedded_vendor_lut,
 };
 use rs_cam_core::machine::MachineProfile;
 use rs_cam_core::material::{Material, WoodSpecies};
 
+#[path = "common/feeds_input.rs"]
+mod feeds_input;
+
 const DIAMETER_MM: f64 = 6.0;
 
-/// Ø6 flat 2F pocket rough in white oak, with the given stickout.
-fn pocket(stickout_mm: Option<f64>) -> FeedsResult {
+/// Ø6 flat 2F pocket rough in white oak (a stock Face, 3 mm deep and 2 mm
+/// wide), with the given stickout.
+fn pocket(stickout_mm: f64) -> FeedsResult {
     let machine = MachineProfile::generic_wood_router();
     let material = Material::SolidWood {
         species: WoodSpecies::WhiteOak,
     };
-    calculate(&FeedsInput {
-        tool_series: None,
-        tool_diameter: DIAMETER_MM,
-        flute_count: 2,
-        flute_length: 22.0,
-        shank_diameter: Some(DIAMETER_MM),
-        cut_body: rs_cam_core::feeds::CutBody {
-            max_cut_diameter_mm: DIAMETER_MM,
-            core_diameter_mm: 0.0,
-        },
-        tool_geometry: ToolGeometryHint::Flat,
-        material: &material,
-        machine: &machine,
-        operation: OperationFamily::Pocket,
-        operation_kind: None,
-        pass_role: PassRole::Roughing,
-        axial_depth_mm: Some(3.0),
-        radial_width_mm: Some(2.0),
-        target_scallop_mm: None,
-        vendor_lut: Some(embedded_vendor_lut()),
-        setup: SetupContext {
-            tool_overhang_mm: stickout_mm,
-        },
-        feed_max_rate: None,
-        spindle_strategy: SpindleStrategy::MatchChart,
-        power_cases: rs_cam_core::feeds::engagement::PowerCases::NOMINAL,
-        tool_facts: rs_cam_core::feeds::sourced::ToolFactKinds::STATED,
-    })
+    calculate(&FeedsInput::of_operation(
+        &feeds_input::op_with(OperationType::Face, Some(3.0), Some(2.0)),
+        &feeds_input::tool_of_hint(ToolGeometryHint::Flat, DIAMETER_MM, 2, 22.0, DIAMETER_MM)
+            .to_builder()
+            .stickout_mm(stickout_mm)
+            .build(),
+        &material,
+        &machine,
+        embedded_vendor_lut(),
+        SpindleStrategy::MatchChart,
+    ))
 }
 
 /// The warning's fields, when it fired.
@@ -107,16 +94,13 @@ fn long_tool_warning(result: &FeedsResult) -> Option<(f64, f64, f64, f64)> {
 
 #[test]
 fn the_warning_fires_exactly_when_the_feed_takes_the_derate_ld1() {
-    // No stickout, 3 x D, 5 x D, 7.5 x D (the GUI default 45 mm on Ø6), 10 x D.
-    let cases: [(Option<f64>, f64); 5] = [
-        (None, 1.0),
-        (Some(18.0), 1.0),
-        (Some(30.0), 0.88),
-        (Some(45.0), 0.75),
-        (Some(60.0), 0.75),
-    ];
+    // 3 x D, 5 x D, 7.5 x D (the GUI default 45 mm on Ø6), 10 x D. P29-7
+    // 7a: a tool always states a stick-out (`FeedsInput::of_operation`
+    // reads it), so the old "no stickout" row is gone; the 3 x D row is the
+    // reference feed.
+    let cases: [(f64, f64); 4] = [(18.0, 1.0), (30.0, 0.88), (45.0, 0.75), (60.0, 0.75)];
     let mut fired = 0usize;
-    let no_stickout_feed = pocket(None).feed_rate_mm_min;
+    let no_stickout_feed = pocket(18.0).feed_rate_mm_min;
     for (stickout, expected_factor) in cases {
         let result = pocket(stickout);
         assert!(
@@ -143,7 +127,6 @@ fn the_warning_fires_exactly_when_the_feed_takes_the_derate_ld1() {
         );
         if let Some((stickout_mm, diameter_mm, ratio, factor)) = warning {
             fired += 1;
-            let stickout = stickout.expect("the warning fired, so a stickout was given");
             assert_eq!(stickout_mm, stickout);
             assert_eq!(diameter_mm, DIAMETER_MM);
             assert!(
@@ -170,7 +153,7 @@ fn the_diagnostic_is_an_info_finding_with_its_own_id_ld1() {
     );
     assert_eq!(ids::FEEDS_LONG_TOOL_DERATE, "feeds.long_tool_derate");
 
-    let result = pocket(Some(45.0));
+    let result = pocket(45.0);
     let diags = diagnostics_from_feeds_result(rs_cam_core::ids::ToolpathId::from_raw(0), &result);
     let finding = diags
         .iter()
@@ -188,7 +171,7 @@ fn the_diagnostic_is_an_info_finding_with_its_own_id_ld1() {
         finding.message
     );
 
-    let short = pocket(Some(18.0));
+    let short = pocket(18.0);
     assert!(
         diagnostics_from_feeds_result(rs_cam_core::ids::ToolpathId::from_raw(0), &short)
             .iter()

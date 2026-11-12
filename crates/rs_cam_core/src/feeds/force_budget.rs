@@ -598,7 +598,7 @@ pub fn cap_cut_of_operation(
     let fz = match stated {
         Some(fz) => fz,
         None => {
-            let input = crate::feeds::suggest::feeds_input_for_operation(
+            let input = crate::feeds::FeedsInput::of_operation(
                 op,
                 tool_cfg,
                 material,

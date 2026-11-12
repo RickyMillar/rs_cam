@@ -374,7 +374,7 @@ pub fn predict_peak_deflection_um(
             if feeds_family == FeedsOperationFamily::Adaptive {
                 machine.rigidity.adaptive_woc_factor.max(0.0) * diameter_mm
             } else {
-                let input = crate::feeds::suggest::feeds_input_for_operation(
+                let input = crate::feeds::FeedsInput::of_operation(
                     operation,
                     tool,
                     material,

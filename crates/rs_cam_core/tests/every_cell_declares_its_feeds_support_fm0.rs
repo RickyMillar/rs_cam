@@ -41,7 +41,7 @@
 
 use rs_cam_core::compute::catalog::{OperationConfig, OperationType};
 use rs_cam_core::compute::{ToolConfig, ToolId, ToolType};
-use rs_cam_core::feeds::suggest::feeds_input_for_operation;
+use rs_cam_core::feeds::FeedsInput;
 use rs_cam_core::feeds::support::{
     FormulaBacking, MILLING_FORMULA_SOURCE, NO_BASIS_REASON, formula_backing,
 };
@@ -121,7 +121,7 @@ fn every_cell() -> Vec<CellOutcome> {
             let tool = tool(tool_type);
             for (material_name, material_family, material) in &wood_materials() {
                 let (family, role) = operation.feeds_style();
-                let input = feeds_input_for_operation(
+                let input = FeedsInput::of_operation(
                     &operation,
                     &tool,
                     material,

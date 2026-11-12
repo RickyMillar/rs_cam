@@ -34,8 +34,8 @@ mod common;
 use rs_cam_core::compute::catalog::OperationType;
 use rs_cam_core::compute::tool_config::BitCutDirection;
 use rs_cam_core::compute::tool_config::ToolType;
+use rs_cam_core::feeds::FeedsInput;
 use rs_cam_core::feeds::series::{ToolSeries, is_standard, row_series};
-use rs_cam_core::feeds::suggest::feeds_input_for_operation;
 use rs_cam_core::feeds::vendor_lookup::{LookupQuery, find_best_row_for_geometry};
 use rs_cam_core::feeds::vendor_lut::{
     LutOperationFamily, LutPassRole, MaterialFamily, ToolFamily, VendorLut, VendorObservation,
@@ -104,7 +104,7 @@ fn no_generic_cell_reads_a_specialty_row_while_a_tied_standard_row_serves_g_seri
         }
         specialty_cells += 1;
         let tied = lut_where(|o| is_standard(o) && ties_on_material_and_size(o, feed_obs));
-        let input = feeds_input_for_operation(
+        let input = FeedsInput::of_operation(
             &cell.operation,
             &cell.tool,
             &cell.material,
@@ -113,7 +113,7 @@ fn no_generic_cell_reads_a_specialty_row_while_a_tied_standard_row_serves_g_seri
             SpindleStrategy::default(),
         );
         let query = to_lookup_query(&input).expect("Suggest answered, so the routing answers");
-        if let Some(std_row) = find_best_row_for_geometry(&tied, &query, &input.tool_geometry)
+        if let Some(std_row) = find_best_row_for_geometry(&tied, &query, &input.tool_geometry())
             && !std_row.size_basis.is_refused()
         {
             failures.push(format!(
@@ -210,7 +210,7 @@ fn softwood_flat_pocket_query(series: Option<&str>) -> LookupQuery {
     let tool = tool_of(ToolType::EndMill, 6.0, 2);
     let operation = add_time_op(OperationType::Pocket, &stock_ctx());
     let machine = MachineProfile::default();
-    let input = feeds_input_for_operation(
+    let input = FeedsInput::of_operation(
         &operation,
         &tool,
         &softwood,
@@ -290,7 +290,7 @@ fn a_tool_that_declares_a_series_reads_its_own_series_first_g_series() {
             let Some(s) = cell.suggested.as_ref() else {
                 continue;
             };
-            let input = feeds_input_for_operation(
+            let input = FeedsInput::of_operation(
                 &cell.operation,
                 &cell.tool,
                 &cell.material,
@@ -299,7 +299,7 @@ fn a_tool_that_declares_a_series_reads_its_own_series_first_g_series() {
                 SpindleStrategy::default(),
             );
             assert_eq!(
-                input.tool_series,
+                input.tool_series(),
                 Some(series),
                 "the cut direction declares the series"
             );
@@ -317,7 +317,7 @@ fn a_tool_that_declares_a_series_reads_its_own_series_first_g_series() {
             let tied = lut_where(|o| {
                 row_series(o) == Some(series) && ties_on_material_and_size(o, feed_obs)
             });
-            if let Some(own) = find_best_row_for_geometry(&tied, &query, &input.tool_geometry)
+            if let Some(own) = find_best_row_for_geometry(&tied, &query, &input.tool_geometry())
                 && !own.size_basis.is_refused()
             {
                 failures.push(format!(

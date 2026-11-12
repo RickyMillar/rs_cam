@@ -29,8 +29,8 @@ use rs_cam_core::compute::operation_configs::DrillConfig;
 use rs_cam_core::compute::tool_config::{
     CentreCutting, NonCentreCuttingGeometry, ToolConfig, ToolFact, ToolId, ToolType,
 };
+use rs_cam_core::feeds::FeedsInput;
 use rs_cam_core::feeds::section::{EngagedSection, SectionKind};
-use rs_cam_core::feeds::suggest::feeds_input_for_operation;
 use rs_cam_core::feeds::{
     SpindleStrategy, ToolGeometryHint, calculate, embedded_vendor_lut, power_at_operating_point,
 };
@@ -134,7 +134,7 @@ fn a_non_centre_plunge_cuts_the_ring_p22_0c6() {
 
     // Suggest: the published power and the removal rate.
     let suggest = |tool: &ToolConfig| {
-        calculate(&feeds_input_for_operation(
+        calculate(&FeedsInput::of_operation(
             &drill(),
             tool,
             &oak(),

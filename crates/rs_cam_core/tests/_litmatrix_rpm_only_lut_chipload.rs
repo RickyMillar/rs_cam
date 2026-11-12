@@ -21,10 +21,12 @@
 //! 0.025 mm/tooth rubbing floor, regardless of which row wins the
 //! score-based lookup.
 
-use rs_cam_core::feeds::{
-    FeedsInput, OperationFamily, PassRole, SetupContext, SpindleStrategy, ToolGeometryHint,
-    calculate, embedded_vendor_lut,
-};
+use rs_cam_core::compute::ToolConfig;
+use rs_cam_core::compute::ToolId;
+use rs_cam_core::compute::ToolType;
+use rs_cam_core::compute::catalog::OperationConfig;
+use rs_cam_core::compute::catalog::OperationType;
+use rs_cam_core::feeds::{FeedsInput, SpindleStrategy, calculate, embedded_vendor_lut};
 use rs_cam_core::machine::MachineProfile;
 use rs_cam_core::material::{Material, WoodSpecies};
 
@@ -48,32 +50,20 @@ fn calc_oak_12mm(strategy: SpindleStrategy) -> rs_cam_core::feeds::FeedsResult {
         species: WoodSpecies::WhiteOak,
     };
 
-    calculate(&FeedsInput {
-        tool_series: None,
-        tool_diameter: 12.0,
-        flute_count: 4,
-        flute_length: 38.0,
-        shank_diameter: None,
-        cut_body: rs_cam_core::feeds::CutBody {
-            max_cut_diameter_mm: 12.0,
-            core_diameter_mm: 0.0,
-        },
-        tool_geometry: ToolGeometryHint::Flat,
-        material: &material,
-        machine: &machine,
-        operation: OperationFamily::Adaptive,
-        operation_kind: None,
-        pass_role: PassRole::Roughing,
-        axial_depth_mm: None,
-        radial_width_mm: None,
-        target_scallop_mm: None,
-        vendor_lut: Some(lut),
-        setup: SetupContext::default(),
-        feed_max_rate: None,
-        spindle_strategy: strategy,
-        power_cases: rs_cam_core::feeds::engagement::PowerCases::NOMINAL,
-        tool_facts: rs_cam_core::feeds::sourced::ToolFactKinds::STATED,
-    })
+    calculate(&FeedsInput::of_operation(
+        &OperationConfig::new_default(OperationType::Adaptive),
+        &ToolConfig::builder(ToolId::from_raw(1), ToolType::EndMill)
+            .diameter(12.0)
+            .flutes(4)
+            .flute_mm(38.0)
+            .shank_mm(12.0)
+            .stickout_mm(4.0 * 12.0)
+            .build(),
+        &material,
+        &machine,
+        lut,
+        strategy,
+    ))
 }
 
 #[test]

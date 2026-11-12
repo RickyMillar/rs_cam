@@ -30,9 +30,10 @@
 use rs_cam_core::compute::catalog::OperationType;
 use rs_cam_core::compute::tool_config::ToolFact;
 use rs_cam_core::compute::tool_config::{ToolConfig, ToolId, ToolType};
+use rs_cam_core::feeds::FeedsInput;
 use rs_cam_core::feeds::envelope::{Edge, EnvelopeInput, LimitKind, Placement, SafeEnvelope};
 use rs_cam_core::feeds::sourced::MachineField;
-use rs_cam_core::feeds::suggest::{SuggestContext, feeds_input_for_operation};
+use rs_cam_core::feeds::suggest::SuggestContext;
 use rs_cam_core::feeds::{Basis, SpindleStrategy, calculate, embedded_vendor_lut};
 use rs_cam_core::geo::{BoundingBox3, P3};
 use rs_cam_core::machine::MachineProfile;
@@ -89,7 +90,7 @@ fn envelope_at_chip_share(cell: &Cell<'_>, share: f64) -> SafeEnvelope {
     // and the RPM before the Step 6 power ladder: an operator who keeps the
     // band chip), so the force limits read that chip, as the grid did before
     // P11b.
-    let r = calculate(&feeds_input_for_operation(
+    let r = calculate(&FeedsInput::of_operation(
         &op,
         &cell.tool,
         &cell.material,

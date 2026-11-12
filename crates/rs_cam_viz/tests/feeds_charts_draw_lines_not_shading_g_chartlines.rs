@@ -54,8 +54,7 @@
 use std::path::{Path, PathBuf};
 
 use rs_cam_core::feeds::{
-    FeedsExplain, FeedsInput, OperationFamily, PassRole, SetupContext, SpindleStrategy,
-    ToolGeometryHint, embedded_vendor_lut, explain_feeds,
+    FeedsExplain, FeedsInput, SpindleStrategy, embedded_vendor_lut, explain_feeds,
 };
 use rs_cam_core::machine::MachineProfile;
 use rs_cam_core::material::{Material, WoodSpecies};
@@ -207,32 +206,29 @@ fn explain_with_a_row() -> FeedsExplain {
         species: WoodSpecies::HardMaple,
     };
     let machine = MachineProfile::shapeoko_vfd();
-    let input = FeedsInput {
-        tool_series: None,
-        tool_diameter: 6.35,
-        flute_count: 2,
-        flute_length: 22.0,
-        shank_diameter: Some(6.35),
-        cut_body: rs_cam_core::feeds::CutBody {
-            max_cut_diameter_mm: 6.35,
-            core_diameter_mm: 0.0,
-        },
-        tool_geometry: ToolGeometryHint::Flat,
-        material: &material,
-        machine: &machine,
-        operation: OperationFamily::Pocket,
-        operation_kind: None,
-        pass_role: PassRole::Roughing,
-        axial_depth_mm: None,
-        radial_width_mm: None,
-        target_scallop_mm: None,
-        vendor_lut: Some(embedded_vendor_lut()),
-        setup: SetupContext::default(),
-        feed_max_rate: None,
-        spindle_strategy: SpindleStrategy::default(),
-        power_cases: rs_cam_core::feeds::engagement::PowerCases::NOMINAL,
-        tool_facts: rs_cam_core::feeds::sourced::ToolFactKinds::STATED,
-    };
+    // P29-7 7a: a stock Face (the (Pocket, Roughing) op with no slot case)
+    // on a 6.35 mm 2-flute flat end mill, each fact stated.
+    let tool = rs_cam_core::compute::ToolConfig::builder(
+        rs_cam_core::compute::ToolId::from_raw(1),
+        rs_cam_core::compute::ToolType::EndMill,
+    )
+    .diameter(6.35)
+    .flutes(2)
+    .flute_mm(22.0)
+    .shank_mm(6.35)
+    .stickout_mm(25.4)
+    .build();
+    let op = rs_cam_core::compute::catalog::OperationConfig::new_default(
+        rs_cam_core::compute::catalog::OperationType::Face,
+    );
+    let input = FeedsInput::of_operation(
+        &op,
+        &tool,
+        &material,
+        &machine,
+        embedded_vendor_lut(),
+        SpindleStrategy::default(),
+    );
     let explain = explain_feeds(&input);
     assert!(
         explain.matched_row.is_some(),

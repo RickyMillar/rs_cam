@@ -26,7 +26,7 @@
 
 use rs_cam_core::compute::catalog::{OperationConfig, OperationType};
 use rs_cam_core::compute::tool_config::{ToolConfig, ToolFact, ToolId, ToolType};
-use rs_cam_core::feeds::suggest::feeds_input_for_operation;
+use rs_cam_core::feeds::FeedsInput;
 use rs_cam_core::feeds::vendor_lut::VendorLut;
 use rs_cam_core::feeds::{
     ChiploadSource, FeedsResult, FeedsWarning, SpindleStrategy, calculate, embedded_vendor_lut,
@@ -68,7 +68,7 @@ fn result_of(op: &OperationConfig, tool: &ToolConfig, lut: &VendorLut) -> FeedsR
         species: WoodSpecies::GenericHardwood,
     };
     let machine = open_machine();
-    let input = feeds_input_for_operation(
+    let input = FeedsInput::of_operation(
         op,
         tool,
         &material,

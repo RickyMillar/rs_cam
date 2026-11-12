@@ -38,7 +38,7 @@
 //!
 //! Worse than any of that, its growth term was DEAD. `feeds::effective_
 //! diameter` was its only caller, reached only through
-//! `feeds::suggest::feeds_input_for_operation`, which sets `tool_diameter =
+//! `feeds::FeedsInput::of_operation`, which sets `tool_diameter =
 //! tool.diameter` and derives the hint from the SAME tool — so `tip_r ==
 //! nominal_d / 2` always, and `(nominal_d + 2*ap*tan(alpha)).clamp(0.01,
 //! nominal_d)` is the constant `nominal_d` for every `ap >= 0`. A tapered
@@ -63,13 +63,16 @@
     reason = "test code: a panic is how a test reports a failure; the test prints its measurements for the reader"
 )]
 
+use rs_cam_core::compute::ToolConfig;
+use rs_cam_core::compute::catalog::OperationType;
 use rs_cam_core::feeds::ToolGeometryHint;
-use rs_cam_core::feeds::{
-    FeedsInput, OperationFamily, PassRole, SetupContext, SpindleStrategy, calculate,
-};
+use rs_cam_core::feeds::{FeedsInput, SpindleStrategy, calculate};
 use rs_cam_core::machine::MachineProfile;
 use rs_cam_core::material::{Material, WoodSpecies};
 use rs_cam_core::tool::{MillingCutter, TaperedBallEndmill};
+
+#[path = "common/feeds_input.rs"]
+mod feeds_input;
 
 /// Realistic tapered-ball geometries: (ball tip Ø, taper half-angle°, shaft Ø).
 ///
@@ -141,10 +144,16 @@ fn the_published_effective_diameter_varies_with_depth_for_a_tapered_ball() {
         species: WoodSpecies::GenericSoftwood,
     };
     let machine = MachineProfile::shapeoko_vfd();
+    let tapered_tool = tapered_tool();
     let previous = &mut 0.0_f64;
 
     for &doc in &[0.05_f64, 0.1, 0.25, 0.5] {
-        let result = calculate(&tapered_finish_input(&material, &machine, doc));
+        let result = calculate(&tapered_finish_input(
+            &tapered_tool,
+            &material,
+            &machine,
+            doc,
+        ));
         let canonical = canonical_diameter_at(CASES[0], result.axial_depth_mm).min(6.35);
         assert!(
             (result.effective_diameter_mm - canonical).abs() < 1e-9,
@@ -163,40 +172,38 @@ fn the_published_effective_diameter_varies_with_depth_for_a_tapered_ball() {
     }
 }
 
+/// P29-7 7a: the input of a Unified Finish (a Scallop / Finish cut that
+/// states a depth: its `z_step`) at the depth `doc`, on `tool`, with no
+/// vendor table. The old literal stated a 0.1 mm width that no Scallop /
+/// Finish op holds with a depth; the effective diameter does not read the
+/// width.
 fn tapered_finish_input<'a>(
+    tool: &'a ToolConfig,
     material: &'a Material,
     machine: &'a MachineProfile,
     doc: f64,
 ) -> FeedsInput<'a> {
-    FeedsInput {
-        tool_series: None,
-        tool_diameter: 1.0,
-        flute_count: 2,
-        flute_length: 12.0,
-        shank_diameter: Some(6.35),
-        // P22-0c-6b: the body of the CASES[0] tool with this 12 mm flute.
-        // Its cone meets the 6.35 mm shaft at 29.53 mm, so the cap is the
-        // width at the flute top, below 6.35; every pinned depth is far
-        // below 12 mm, so no pin reads it.
-        cut_body: rs_cam_core::feeds::CutBody::of_cutter(
-            &TaperedBallEndmill::new(CASES[0].0, CASES[0].1, CASES[0].2, 12.0).unwrap(),
-        ),
-        tool_geometry: hint_for(CASES[0]),
+    FeedsInput::of_operation(
+        &feeds_input::op_at_depth(OperationType::UnifiedFinish, doc),
+        tool,
         material,
         machine,
-        operation: OperationFamily::Scallop,
-        operation_kind: None,
-        pass_role: PassRole::Finish,
-        axial_depth_mm: Some(doc),
-        radial_width_mm: Some(0.1),
-        target_scallop_mm: None,
-        vendor_lut: None,
-        setup: SetupContext::default(),
-        feed_max_rate: None,
-        spindle_strategy: SpindleStrategy::default(),
-        power_cases: rs_cam_core::feeds::engagement::PowerCases::NOMINAL,
-        tool_facts: rs_cam_core::feeds::sourced::ToolFactKinds::STATED,
-    }
+        rs_cam_core::feeds::embedded_vendor_lut(),
+        SpindleStrategy::default(),
+    )
+    .with_no_vendor_table()
+}
+
+/// The CASES[0] tool with a 12 mm flute. Its cone meets the 6.35 mm shaft
+/// at 29.53 mm, so the cutting cap is the width at the flute top, below
+/// 6.35; every pinned depth is far below 12 mm, so no pin reads it.
+fn tapered_tool() -> ToolConfig {
+    feeds_input::tool_of_hint(hint_for(CASES[0]), CASES[0].0, 2, 12.0, CASES[0].2)
+}
+
+/// The ball twin of [`tapered_tool`]: the same tip diameter.
+fn ball_twin() -> ToolConfig {
+    feeds_input::tool_of_hint(ToolGeometryHint::Ball, CASES[0].0, 2, 12.0, CASES[0].2)
 }
 
 /// A tapered ball's tip IS a ball. Below the tangency height the two must
@@ -221,15 +228,19 @@ fn the_tapered_ball_feed_recipe_matches_its_ball_twin_below_tangency() {
         species: WoodSpecies::GenericSoftwood,
     };
     let machine = MachineProfile::shapeoko_vfd();
+    let tapered_tool = tapered_tool();
+    let ball = ball_twin();
 
     // Tangency height for the Ø1 / 5.26° tip: R*(1 - sin(alpha)) = 0.4542 mm.
     // Every DOC below it engages ball geometry alone.
     for &doc in &[0.05_f64, 0.1, 0.25, 0.4] {
-        let tapered = calculate(&tapered_finish_input(&material, &machine, doc));
-        let ball = calculate(&FeedsInput {
-            tool_geometry: ToolGeometryHint::Ball,
-            ..tapered_finish_input(&material, &machine, doc)
-        });
+        let tapered = calculate(&tapered_finish_input(
+            &tapered_tool,
+            &material,
+            &machine,
+            doc,
+        ));
+        let ball = calculate(&tapered_finish_input(&ball, &material, &machine, doc));
         assert!(
             (tapered.effective_diameter_mm - ball.effective_diameter_mm).abs() < 1e-9,
             "below tangency a tapered ball engages exactly its ball twin: \
@@ -284,6 +295,7 @@ fn the_c3_feed_delta_is_pinned() {
         species: WoodSpecies::GenericSoftwood,
     };
     let machine = MachineProfile::shapeoko_vfd();
+    let tapered_tool = tapered_tool();
 
     // (doc, eff_d before C3, feed before C3, eff_d after, feed NOW)
     //
@@ -334,7 +346,12 @@ fn the_c3_feed_delta_is_pinned() {
     ];
 
     for &(doc, eff_before, feed_before, eff_after, feed_after) in rows {
-        let r = calculate(&tapered_finish_input(&material, &machine, doc));
+        let r = calculate(&tapered_finish_input(
+            &tapered_tool,
+            &material,
+            &machine,
+            doc,
+        ));
         assert!(
             (r.effective_diameter_mm - eff_after).abs() < 5e-6,
             "doc={doc}: effective_diameter_mm {} left its pinned post-C3 \
@@ -364,12 +381,16 @@ fn above_tangency_the_taper_outgrows_its_ball_twin() {
         species: WoodSpecies::GenericSoftwood,
     };
     let machine = MachineProfile::shapeoko_vfd();
+    let tapered_tool = tapered_tool();
+    let ball = ball_twin();
 
-    let tapered = calculate(&tapered_finish_input(&material, &machine, 3.0));
-    let ball = calculate(&FeedsInput {
-        tool_geometry: ToolGeometryHint::Ball,
-        ..tapered_finish_input(&material, &machine, 3.0)
-    });
+    let tapered = calculate(&tapered_finish_input(
+        &tapered_tool,
+        &material,
+        &machine,
+        3.0,
+    ));
+    let ball = calculate(&tapered_finish_input(&ball, &material, &machine, 3.0));
     assert!(
         tapered.effective_diameter_mm > ball.effective_diameter_mm + 1e-9,
         "tapered {} should outgrow ball {} at 3 mm DOC",
