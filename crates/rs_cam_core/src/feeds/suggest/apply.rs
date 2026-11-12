@@ -91,6 +91,16 @@ fn apply_feeds_subset(
     // writes above). The passes below can move them, never clear them.
     let scratch_feed = |op: &OperationConfig| op.feed_rate().unwrap_or(written_feed);
     let scratch_plunge = |op: &OperationConfig| op.plunge_rate().unwrap_or(written_plunge);
+    // P29-9 (lead ruling, section 15): the plunge rule and the ramp feed
+    // read the cut feed BEFORE the write step. Each of them rounds down once
+    // itself; a second rounding of the stored feed put a ramp up to
+    // `1 + 1 / lift` mm/min under its source. A feed that no pass moved is
+    // the calculator's feed; a feed that a pass moved (pass 9, pass 10) is
+    // the pass's own value, which no write step rounded.
+    let feed_before_write = |op: &OperationConfig| match op.feed_rate() {
+        Some(feed) if feed.to_bits() != written_feed.to_bits() => feed,
+        Some(_) | None => result.feed_rate_mm_min,
+    };
     // The calculator's geometry, rounded to the nearest 0.001 mm and snapped
     // as a geometry write would be, is the pass 9 baseline. This write does
     // not put it on the operation (G-SPEEDSAPPLY), so not holding it is the
@@ -206,7 +216,7 @@ fn apply_feeds_subset(
             &scratch,
             tool,
             result,
-            scratch_feed(&scratch),
+            feed_before_write(&scratch),
         ),
         shipped_rpm,
     );
@@ -284,7 +294,7 @@ fn apply_feeds_subset(
                 &scratch,
                 tool,
                 result,
-                scratch_feed(operation),
+                feed_before_write(operation),
             ),
             operation.spindle_rpm(),
             tool.flute_count_planning(),
