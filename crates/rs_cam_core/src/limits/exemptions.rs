@@ -96,7 +96,7 @@ const R2: ExemptionClass = ExemptionClass::Ruled {
 const NR: ExemptionClass = ExemptionClass::NeedsRuling;
 
 /// Every exemption from a limit today. See the module doc.
-pub static EXEMPTIONS: [Exemption; 41] = [
+pub static EXEMPTIONS: [Exemption; 39] = [
     // P28: the limit audit.
     Exemption {
         id: "P28-02",
@@ -216,22 +216,16 @@ pub static EXEMPTIONS: [Exemption; 41] = [
         closes_in: "later",
     },
     Exemption {
-        id: "P28-15",
-        what: "the tool deflection before the simulation",
-        limit: &[LimitId::ToolDeflection],
-        who: Who::Facts("finish and semi-finish cuts"),
-        class: NR,
-        where_: &["src/feeds/envelope.rs"],
-        closes_in: "P29-7",
-    },
-    Exemption {
         id: "P28-16",
-        what: "the tool deflection, two limit values",
+        what: "the tool deflection limit of the feed modulator",
         limit: &[LimitId::ToolDeflection],
-        who: Who::Reader("a rough cut: 200 um before the simulation, the leave after it"),
+        who: Who::Reader(
+            "the feed modulator caps at 200 um; the gate and the envelope read min(leave, 200 um) \
+             (P29-7 7d, lead ruling Q4)",
+        ),
         class: NR,
-        where_: &["src/tool_load/deflection.rs", "src/session/compute.rs"],
-        closes_in: "P29-7",
+        where_: &["src/session/compute.rs"],
+        closes_in: "the modulation design step (the simulation shows the feeds that the export writes)",
     },
     Exemption {
         id: "P28-17",
@@ -510,14 +504,5 @@ pub static EXEMPTIONS: [Exemption; 41] = [
         class: NR,
         where_: &["src/compute/catalog/cuts.rs"],
         closes_in: "P29-9",
-    },
-    Exemption {
-        id: "F-LeaveAfter",
-        what: "the tool deflection limit",
-        limit: &[LimitId::ToolDeflection],
-        who: Who::Facts("leave_after_mm is set from the role and the stock-to-leave field"),
-        class: NR,
-        where_: &["src/compute/catalog/cuts.rs", "src/tool_load/deflection.rs"],
-        closes_in: "P29-7",
     },
 ];

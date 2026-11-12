@@ -1268,7 +1268,45 @@ all 16 pass on the final tree.
 - `rs_cam_mcp`: 39 passed. `rs_cam_cli`: 13 binaries, all pass.
 - The op golden (run on the first 7c tree): its diff equals the known 46 rows.
 
-### 16.11 Not run
+### 16.11 Commit 7d: one deflection limit (ruling R5, ruling Q4)
+
+- `limits::Leave` has two arms: `Mm(s)` and `None`. `OperationConfig::cuts` fills it from the
+  radial leave field only (`radial_stock_to_leave_mm`); the role is not read.
+- `tool_load::deflection::exceeds_limit` gives `min(leave, 200 um)`; `deflection_limit_um` is the
+  same value in um. `DeflectionBasis` has two arms: `Target` (the 200 um target; it replaces
+  `FinishTarget`, `NoLeaveField` and `ZeroLeave`) and `StockToLeave { mm }` (a leave under the
+  target). The clause of the target is one text: "limit: the deflection target 200 um".
+- The envelope: the deflection edge, its exact solve and its per-cut rows read
+  `deflection_limit_um` of the body leave (`inputs_deflection_limit_um`); the role guard of
+  `deflection_limit` is gone (P28-15), so a finish cut with a free depth axis gets a deflection
+  edge or the `Unmodelled` entry "no deflection limit below the flute". The law text is
+  "tip deflection <= min(radial stock to leave, 200 um)".
+- Ruling Q4: the feed modulator is not changed. `session/compute.rs` keeps 200 um and its
+  `EXEMPT(P28-16)` marker. Row `P28-16` narrows to the modulator (`where_` only
+  `src/session/compute.rs`; `closes_in` "the modulation design step").
+- Rows closed: `P28-15` (`CLOSED` gains `("P28-15", "P29-7")`) and `F-LeaveAfter` (not an audit
+  id). Markers gone: `EXEMPT(P28-15)` in `envelope.rs`, `EXEMPT(F-LeaveAfter)` in `cuts.rs`,
+  `EXEMPT(P28-16, F-LeaveAfter)` twice in `deflection.rs`. Pins from the array: ROWS 39,
+  MAX_NEEDS_RULING 28, ROWS_WITH_A_FILE 38.
+- The predictions: FM1 0 cells in both files (FM1 passes with no re-bless). The wanaka and rivmap
+  probe gives the same output line for line (every proposal, binding and binding cut of both
+  wanaka files and the three rivmap files): 0 ops.
+- Re-claims: `a_rough_pass_deflects_up_to_its_stock_to_leave_p17` holds `min(leave, 0.2 mm)` (a
+  Bore at 0.1 mm judges at 0.1 mm with `StockToLeave`; a Bore at 0.5 mm judges at 0.2 mm, the
+  target: before 7d at 0.5 mm, and the sample was within; a zero leave, a Pocket and a Scallop
+  judge at the target with one clause); `every_op_declares_its_cuts_p29_3` claim 2 writes the leave
+  rule out from the field only; the variant rename in four test files and `gcode/mod.rs`.
+- Wire break: the deflection basis in a verdict serializes `target` in the place of
+  `finish_target`, `no_leave_field` and `zero_leave`; the card and export clause of the target is
+  one text.
+- The gates of 7d (the final tree): fmt check clean; full clippy clean; core `--lib` 2796 passed, 1
+  failed (`the_envelope_meets_its_time_budget` under the loaded run; alone it passes, 193 ms); FM1
+  2 passed; the named sentries, the new sentry and every edited test file: 29 binaries pass
+  (`p20i` with the derived rated power); viz `--lib` 706 passed and the viz tests of 16.10 pass;
+  `rs_cam_mcp` 39 passed; `rs_cam_cli` all pass. No red outside the note's list.
+
+### 16.12 Not run
 
 `wanaka_suggest_integration`; the core full gate; the whole viz crate; the instruments marked
-`#[ignore]` (`p17_visual_snapshots` runs 3 ignored tests).
+`#[ignore]` (`p17_visual_snapshots` runs 3 ignored tests). The doc comment of
+`p17_visual_snapshots` (an ignored instrument) still says "the finish target".

@@ -103,7 +103,7 @@ fn deflection_within() -> DeflectionVerdict {
         bounds: DeflectionBounds {
             validated_within_mm: 0.050,
             exceeds_mm: 0.200,
-            basis: rs_cam_core::tool_load::verdict::DeflectionBasis::FinishTarget,
+            basis: rs_cam_core::tool_load::verdict::DeflectionBasis::Target,
         },
         evidence: SampleEvidence::empty(),
         confidence: Confidence::Validated,

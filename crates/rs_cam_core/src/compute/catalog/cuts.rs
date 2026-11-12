@@ -692,12 +692,10 @@ impl OperationConfig {
             offset_ring: family == FeedsOperationFamily::Pocket
                 && role == PassRole::Roughing
                 && matches!(self.cut_spec().radial, Radial::Width(_)),
-            // EXEMPT(F-LeaveAfter)
-            leave_after_mm: match (role, self.radial_stock_to_leave_mm()) {
-                (PassRole::Finish | PassRole::SemiFinish, _) => Leave::FinishPass,
-                (PassRole::Roughing, None) => Leave::NoField,
-                (PassRole::Roughing, Some(mm)) if mm.is_finite() && mm > 0.0 => Leave::Mm(mm),
-                (PassRole::Roughing, Some(_)) => Leave::Zero,
+            // P29-7 7d (ruling R5): the radial leave field only.
+            leave_after_mm: match self.radial_stock_to_leave_mm() {
+                Some(mm) if mm.is_finite() && mm > 0.0 => Leave::Mm(mm),
+                Some(_) | None => Leave::None,
             },
             depth_rule: self.op_type().body_depth_limit(),
         }

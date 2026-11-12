@@ -2151,9 +2151,9 @@ pub struct DeflectionBounds {
     /// Below this peak tip deflection (mm), `Within(Validated)`.
     /// 0.050 mm in `tool_load::deflection`.
     pub validated_within_mm: f64,
-    /// Above this peak tip deflection (mm), `Exceeds`. The finish target
-    /// (`deflection::EXCEEDS_BOUND_MM`) or, on a rough pass with a radial
-    /// stock to leave, the leave (P17, [`Self::basis`]). Between the two
+    /// Above this peak tip deflection (mm), `Exceeds`: `min(radial stock to
+    /// leave, deflection::EXCEEDS_BOUND_MM)` (P17, P29-7 7d ruling R5,
+    /// [`Self::basis`]). Between the two
     /// thresholds, `Within(Approximate)` with a finish-degradation warning.
     pub exceeds_mm: f64,
     /// P17: what set `exceeds_mm`. `deflection::exceeds_limit` is the one
@@ -2167,18 +2167,13 @@ pub struct DeflectionBounds {
 #[derive(Debug, Clone, PartialEq, Serialize, Deserialize)]
 #[serde(rename_all = "snake_case", tag = "kind")]
 pub enum DeflectionBasis {
-    /// A finish or semi-finish pass: no stock is left after it, so the
-    /// finish target `deflection::EXCEEDS_BOUND_MM` applies.
-    FinishTarget,
-    /// A rough pass with a radial stock to leave above zero: the leave is
+    /// The deflection target `deflection::EXCEEDS_BOUND_MM` (200 um): the
+    /// op states no radial stock to leave, or a leave at or above the
+    /// target (P29-7 7d, ruling R5).
+    Target,
+    /// The op states a radial stock to leave under the target: the leave is
     /// the limit ([`BoundSource::StockToLeave`]).
     StockToLeave { mm: f64 },
-    /// A rough op with no radial stock-to-leave field: the finish target
-    /// applies, and the clause says so.
-    NoLeaveField,
-    /// A rough op whose radial stock to leave is zero: the rough pass is
-    /// the final wall, so the finish target applies.
-    ZeroLeave,
 }
 
 impl DeflectionBasis {
@@ -2188,17 +2183,11 @@ impl DeflectionBasis {
     pub fn clause(&self) -> String {
         let target_um = crate::tool_load::deflection::EXCEEDS_BOUND_MM * 1000.0;
         match self {
-            DeflectionBasis::FinishTarget => {
-                format!("finish pass: the finish target {target_um:.0} um applies")
+            DeflectionBasis::Target => {
+                format!("limit: the deflection target {target_um:.0} um")
             }
             DeflectionBasis::StockToLeave { mm } => {
                 format!("limit: the radial stock to leave {mm:.2} mm")
-            }
-            DeflectionBasis::NoLeaveField => format!(
-                "no stock-to-leave field on this op: the finish target {target_um:.0} um applies"
-            ),
-            DeflectionBasis::ZeroLeave => {
-                format!("stock to leave 0: the finish target {target_um:.0} um applies")
             }
         }
     }
@@ -2208,9 +2197,7 @@ impl DeflectionBasis {
     pub fn bound_source(&self) -> BoundSource {
         match self {
             DeflectionBasis::StockToLeave { mm } => BoundSource::StockToLeave { mm: *mm },
-            DeflectionBasis::FinishTarget
-            | DeflectionBasis::NoLeaveField
-            | DeflectionBasis::ZeroLeave => BoundSource::DeflectionBudget,
+            DeflectionBasis::Target => BoundSource::DeflectionBudget,
         }
     }
 }
@@ -2275,9 +2262,9 @@ impl DeflectionVerdict {
         // GUI drew this row against `DEFLECTION_SAFE_LD_RATIO = 4.0`,
         // an L over D ratio, which is a different quantity with a
         // similar magnitude — defect class 2 (`RESUME_PLAN` §9).
-        // P17: the bound is `bounds.exceeds_mm` under `bounds.basis`: the
-        // finish target (`BoundSource::DeflectionBudget`) or the radial
-        // stock to leave of a rough pass (`BoundSource::StockToLeave`).
+        // P17, P29-7 7d: the bound is `bounds.exceeds_mm` under
+        // `bounds.basis`: the target (`BoundSource::DeflectionBudget`) or a
+        // radial stock to leave under it (`BoundSource::StockToLeave`).
         let (state, peak, range, population, bounds) = match self {
             DeflectionVerdict::Within {
                 peak_mm,
@@ -2713,7 +2700,7 @@ mod tests {
                 bounds: DeflectionBounds {
                     validated_within_mm: 0.050,
                     exceeds_mm: 0.200,
-                    basis: DeflectionBasis::FinishTarget,
+                    basis: DeflectionBasis::Target,
                 },
                 evidence: SampleEvidence::empty(),
                 confidence: Confidence::Validated,
@@ -2772,7 +2759,7 @@ mod tests {
                     bounds: DeflectionBounds {
                         validated_within_mm: 0.050,
                         exceeds_mm: 0.200,
-                        basis: DeflectionBasis::FinishTarget,
+                        basis: DeflectionBasis::Target,
                     },
                     evidence: SampleEvidence::empty(),
                     confidence: Confidence::Approximate("L/D in 4-6 range".to_owned()),
@@ -2827,7 +2814,7 @@ mod tests {
                         bounds: DeflectionBounds {
                             validated_within_mm: 0.050,
                             exceeds_mm: 0.200,
-                            basis: DeflectionBasis::FinishTarget,
+                            basis: DeflectionBasis::Target,
                         },
                         evidence: SampleEvidence::empty(),
                         confidence: Confidence::Validated,
@@ -2870,7 +2857,7 @@ mod tests {
                         bounds: DeflectionBounds {
                             validated_within_mm: 0.050,
                             exceeds_mm: 0.200,
-                            basis: DeflectionBasis::FinishTarget,
+                            basis: DeflectionBasis::Target,
                         },
                         evidence: SampleEvidence::empty(),
                         confidence: Confidence::Validated,
@@ -3136,7 +3123,7 @@ mod tests {
                     bounds: DeflectionBounds {
                         validated_within_mm: 0.050,
                         exceeds_mm: 0.200,
-                        basis: DeflectionBasis::FinishTarget,
+                        basis: DeflectionBasis::Target,
                     },
                     evidence: SampleEvidence::empty(),
                     confidence: Confidence::Validated,
@@ -3191,7 +3178,7 @@ mod tests {
         DeflectionBounds {
             validated_within_mm: 0.050,
             exceeds_mm: 0.200,
-            basis: DeflectionBasis::FinishTarget,
+            basis: DeflectionBasis::Target,
         }
     }
 
@@ -3424,7 +3411,7 @@ mod tests {
                     bounds: DeflectionBounds {
                         validated_within_mm: 0.050,
                         exceeds_mm: 0.200,
-                        basis: DeflectionBasis::FinishTarget,
+                        basis: DeflectionBasis::Target,
                     },
                     evidence: SampleEvidence::at(5),
                     confidence: Confidence::Approximate("approximate band".to_owned()),
@@ -3500,7 +3487,7 @@ mod tests {
                     bounds: DeflectionBounds {
                         validated_within_mm: 0.050,
                         exceeds_mm: 0.200,
-                        basis: DeflectionBasis::FinishTarget,
+                        basis: DeflectionBasis::Target,
                     },
                     evidence: SampleEvidence::empty(),
                     confidence: Confidence::Validated,
@@ -3708,7 +3695,7 @@ mod tests {
             bounds: DeflectionBounds {
                 validated_within_mm: 0.050,
                 exceeds_mm: 0.200,
-                basis: DeflectionBasis::FinishTarget,
+                basis: DeflectionBasis::Target,
             },
             evidence: SampleEvidence::empty(),
             confidence: Confidence::Validated,
@@ -3753,7 +3740,7 @@ mod tests {
                     bounds: DeflectionBounds {
                         validated_within_mm: 0.050,
                         exceeds_mm: 0.200,
-                        basis: DeflectionBasis::FinishTarget,
+                        basis: DeflectionBasis::Target,
                     },
                     evidence: SampleEvidence::empty(),
                     confidence: Confidence::Validated,
@@ -3815,7 +3802,7 @@ mod tests {
                     bounds: DeflectionBounds {
                         validated_within_mm: 0.050,
                         exceeds_mm: 0.200,
-                        basis: DeflectionBasis::FinishTarget,
+                        basis: DeflectionBasis::Target,
                     },
                     evidence: SampleEvidence::empty(),
                     confidence: Confidence::Validated,

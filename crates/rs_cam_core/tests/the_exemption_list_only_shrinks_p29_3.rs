@@ -48,9 +48,9 @@ use rs_cam_core::limits::{
 };
 
 /// The rows that need a ruling. Exact: a closed row lowers it.
-const MAX_NEEDS_RULING: usize = 30;
+const MAX_NEEDS_RULING: usize = 28;
 /// Every row.
-const ROWS: usize = 41;
+const ROWS: usize = 39;
 /// The rows with a geometry reason.
 const PHYSICAL: usize = 8;
 /// The rows that quote an operator ruling.
@@ -79,8 +79,11 @@ const RULED: usize = 3;
 /// rule); the row `U-PerimeterSweep` gained the file of its `MayOccur`
 /// filing (`src/compute/catalog/cuts.rs`).
 /// P29-7 7c closed the row `M12` with two files: every limit before the
-/// simulation judges every declared cut (`feeds::planned`).
-const ROWS_WITH_A_FILE: usize = 40;
+/// simulation judges every declared cut (`feeds::planned`). P29-7 7d closed
+/// the rows `P28-15` and `F-LeaveAfter` (ruling R5: one deflection limit,
+/// `min(leave, 200 um)`, every role, the radial leave field only); the row
+/// `P28-16` narrowed to the feed modulator (lead ruling Q4).
+const ROWS_WITH_A_FILE: usize = 38;
 
 /// The 34 rows of `phases/P28_limit_audit.md`.
 const P28_IDS: [&str; 34] = [
@@ -117,6 +120,7 @@ const CLOSED: &[(&str, &str)] = &[
     ("M3", "P29-6"),
     ("M8", "P29-6"),
     ("M12", "P29-7"),
+    ("P28-15", "P29-7"),
 ];
 
 /// The marker text before the ids.

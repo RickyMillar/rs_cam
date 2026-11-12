@@ -1420,7 +1420,7 @@ impl SafeEnvelope {
                     operator,
                 ),
                 CeilingEdge::Deflection => {
-                    deflection_limit(&mut boundary, &inputs, &speeds, &plan, role, operator);
+                    deflection_limit(&mut boundary, &inputs, &speeds, &plan, operator);
                 }
                 CeilingEdge::ForceBudget => {
                     budget = rigidity_limit(&mut boundary, &inputs, &speeds, &plan, operator);
@@ -1453,7 +1453,7 @@ impl SafeEnvelope {
                         None,
                     ),
                     CeilingEdge::Deflection => {
-                        deflection_limit(&mut pick_limits, &inputs, &speeds, &plan, role, None);
+                        deflection_limit(&mut pick_limits, &inputs, &speeds, &plan, None);
                     }
                     // The exact solver reads the pick chip
                     // (`budget_depth_at`, `BudgetChip::Pick`).
@@ -2522,7 +2522,7 @@ impl SafeEnvelope {
                 let env = ForceEnv {
                     tool: tool?,
                     material: &self.inputs.material,
-                    bound: crate::feeds::suggest::DEFLECTION_BACKOFF_TARGET_UM,
+                    bound: inputs_deflection_limit_um(&self.inputs),
                 };
                 judge_declared_cuts::<DeflectionPlanned>(cuts, column(self.curve_fz(p.ae_mm)), &env)
                     .iter()
@@ -3515,22 +3515,34 @@ fn vendor_depth_limit(
 /// flute reaches the target in any column.
 pub const NO_DEFLECTION_LIMIT_BELOW_THE_FLUTE: &str = "no deflection limit below the flute";
 
-/// The tip-deflection edge (roughing, as pass 6): per width sample, the
-/// shallowest `ap` where the deflection meets the 200 µm target, by the
-/// one beam (`cutter_axial_constraints`). A column with no root below the
-/// flute adds no point (P11a, D-B). P29-7 7c: each column is the lowest
-/// root over the declared cuts that the plan always cuts
-/// ([`deflection_solve`]).
+/// The law of the `Deflection` limit (P29-7 7d, ruling R5).
+const DEFLECTION_LAW: &str = "tip deflection <= min(radial stock to leave, 200 um)";
+
+/// P29-7 7d (ruling R5): THE deflection limit (um) of the op's cuts:
+/// `min(leave, 200 um)`, the value of the gate
+/// (`tool_load::deflection::deflection_limit_um`).
+fn inputs_deflection_limit_um(inputs: &OwnedInputs) -> f64 {
+    crate::tool_load::deflection::deflection_limit_um(
+        inputs.cuts.list().body_facts().leave_after_mm,
+    )
+}
+
+/// The tip-deflection edge: per width sample, the shallowest `ap` where
+/// the deflection meets the limit, by the one beam
+/// (`cutter_axial_constraints`). A column with no root below the flute adds
+/// no point (P11a, D-B). P29-7 7c: each column is the lowest root over the
+/// declared cuts that the plan always cuts ([`deflection_solve`]). P29-7 7d
+/// (ruling R5): the limit is `min(leave, 200 um)`
+/// (`tool_load::deflection::deflection_limit_um`), the value of the gate,
+/// and every cut with a free depth axis reads it, whatever its role.
 fn deflection_limit(
     out: &mut Vec<Limit>,
     inputs: &OwnedInputs,
     speeds: &SpeedsMap,
     plan: &AxesPlan,
-    role: PassRole,
     operator: Option<OperatorChip>,
 ) {
-    // EXEMPT(P28-15)
-    if !plan.axes.ap_free() || !matches!(role, PassRole::Roughing) {
+    if !plan.axes.ap_free() {
         return;
     }
     // T-4: the beam cannot answer. State the abstention with its reason.
@@ -3540,7 +3552,7 @@ fn deflection_limit(
     let unmodelled = |reason: crate::feeds::predict::DeflectionUnmodeled| Limit {
         kind: LimitKind::Deflection,
         binding_cut: None,
-        law: "tip deflection <= 200 um",
+        law: DEFLECTION_LAW,
         basis: Basis::Rule(crate::feeds::suggest::DEFLECTION_BACKOFF_TARGET_ROW),
         edge: Edge::Unmodelled {
             reason: reason.clause(),
@@ -3591,7 +3603,7 @@ fn deflection_limit(
         out.push(Limit {
             kind: LimitKind::Deflection,
             binding_cut: None,
-            law: "tip deflection <= 200 um",
+            law: DEFLECTION_LAW,
             basis: Basis::Rule(crate::feeds::suggest::DEFLECTION_BACKOFF_TARGET_ROW),
             edge: Edge::Unmodelled {
                 reason: NO_DEFLECTION_LIMIT_BELOW_THE_FLUTE,
@@ -3610,7 +3622,7 @@ fn deflection_limit(
     out.push(Limit {
         kind: LimitKind::Deflection,
         binding_cut: None,
-        law: "tip deflection <= 200 um",
+        law: DEFLECTION_LAW,
         basis: Basis::derived(
             "one beam (ToolDefinition::tip_deflection_mm)",
             vec![Basis::Rule(
@@ -3994,7 +4006,7 @@ fn deflection_solve(
     let env = ForceEnv {
         tool,
         material: &inputs.material,
-        bound: crate::feeds::suggest::DEFLECTION_BACKOFF_TARGET_UM,
+        bound: inputs_deflection_limit_um(inputs),
     };
     let column = BodyColumn {
         ae_mm: ae,

@@ -102,7 +102,7 @@ fn load_report(session: &ProjectSession) -> ToolLoadReport {
         bounds: DeflectionBounds {
             validated_within_mm: 0.050,
             exceeds_mm: 0.200,
-            basis: rs_cam_core::tool_load::verdict::DeflectionBasis::FinishTarget,
+            basis: rs_cam_core::tool_load::verdict::DeflectionBasis::Target,
         },
         evidence: SampleEvidence::at(0),
         confidence: Confidence::Validated,

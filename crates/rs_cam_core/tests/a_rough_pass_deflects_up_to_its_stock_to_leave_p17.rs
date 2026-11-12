@@ -1,22 +1,24 @@
-//! **Feeds contract P17: a rough pass may deflect up to its radial stock to
-//! leave; every other pass keeps the finish target.**
+//! **Feeds contract P17 and P29-7 7d (ruling R5): a pass may deflect up to
+//! its radial stock to leave, never above the 200 um target.**
 //!
 //! # The claim
 //!
 //! The deflection gate's `Exceeds` limit is `deflection::exceeds_limit`
 //! (the derivation is in its doc): the wall error equals the tip
-//! deflection, and a rough pass leaves `s` for the finish pass to clean up.
+//! deflection, and a pass that leaves `s` for a later pass may bend up to
+//! `s`. P29-7 7d: the limit is `min(s, 200 um)`, the role is not read, and
+//! the envelope reads the same value.
 //!
-//! 1. A Bore with `finish_allowance` 0.5 mm (its doc: "Radial stock the
-//!    rough helix leaves on the wall") judges at 0.5 mm, with
-//!    `BoundSource::StockToLeave { mm: 0.5 }` (setting "operation", gates
+//! 1. A Bore with `finish_allowance` 0.1 mm (its doc: "Radial stock the
+//!    rough helix leaves on the wall") judges at 0.1 mm, with
+//!    `BoundSource::StockToLeave { mm: 0.1 }` (setting "operation", gates
 //!    an export), and the detail names the leave.
-//! 2. The same Bore with `finish_allowance` 0.0 judges at
-//!    `EXCEEDS_BOUND_MM` and the detail names the zero leave.
-//! 3. A Pocket (no radial leave field) judges at `EXCEEDS_BOUND_MM` and
-//!    the detail says no field.
-//! 4. A Scallop (a finish pass) judges at `EXCEEDS_BOUND_MM` and the
-//!    detail names the finish pass.
+//! 2. A Bore with `finish_allowance` 0.5 mm judges at `EXCEEDS_BOUND_MM`
+//!    (the leave is above the target), with the target's clause.
+//! 3. The same Bore with `finish_allowance` 0.0 judges at
+//!    `EXCEEDS_BOUND_MM`, with the target's clause.
+//! 4. A Pocket (no radial leave field) and a Scallop (a finish pass) judge
+//!    at `EXCEEDS_BOUND_MM`, with the target's clause.
 //!
 //! Every context comes through the F070 door
 //! `ProjectSession::load_context_parts`, so the test holds the read of the
@@ -24,7 +26,7 @@
 //! carries it as the body fact `Leave` (P29-6, `CutFacts::leave_after_mm`).
 //!
 //! Non-vacuity: the one sample contributes, and its peak deflection is
-//! above the finish target, so the limit decides the verdict.
+//! above the target, so the limit decides the verdict.
 
 #![expect(
     clippy::unwrap_used,
@@ -229,92 +231,85 @@ fn parts_of(
 }
 
 #[test]
-fn a_bore_with_a_leave_judges_at_the_leave() {
-    let (v, leave) = judge(bore(0.5));
+fn a_bore_with_a_leave_under_the_target_judges_at_the_leave() {
+    let (v, leave) = judge(bore(0.1));
     assert_eq!(
         leave,
-        Leave::Mm(0.5),
+        Leave::Mm(0.1),
         "the door reads the Bore's finish allowance"
     );
     let (peak, limit, basis, detail, state, bound, source) = parts_of(&v);
     assert!(
         peak > EXCEEDS_BOUND_MM,
-        "non-vacuity: the fixture deflects past the finish target ({peak} mm)"
+        "non-vacuity: the fixture deflects past the target ({peak} mm)"
     );
-    assert_eq!(limit, 0.5);
-    assert_eq!(basis, DeflectionBasis::StockToLeave { mm: 0.5 });
-    assert_eq!(bound, Some(0.5));
-    assert_eq!(source, Some(BoundSource::StockToLeave { mm: 0.5 }));
+    assert_eq!(limit, 0.1);
+    assert_eq!(basis, DeflectionBasis::StockToLeave { mm: 0.1 });
+    assert_eq!(bound, Some(0.1));
+    assert_eq!(source, Some(BoundSource::StockToLeave { mm: 0.1 }));
     let source = source.unwrap();
     assert_eq!(source.setting(), "operation");
     assert!(
         source.gates_export(),
-        "a stated bound gates as the finish target does"
+        "a stated bound gates as the target does"
     );
-    assert!(source.clause().contains("0.50 mm"), "{}", source.clause());
+    assert!(source.clause().contains("0.10 mm"), "{}", source.clause());
     assert!(
-        detail.contains("the radial stock to leave 0.50 mm"),
+        detail.contains("the radial stock to leave 0.10 mm"),
         "the detail names the leave: {detail}"
     );
-    // The verdict flips: the same sample Exceeds the 200 um target (the
-    // next test) and is Within the 0.5 mm leave.
+    assert_eq!(state, LoadState::Exceeds, "peak {peak} mm against 0.1 mm");
+}
+
+/// The clause of the target (ruling R5: one clause for every cut that
+/// leaves no stock under the target).
+const TARGET_CLAUSE: &str = "the deflection target 200 um";
+
+#[test]
+fn a_bore_with_a_leave_above_the_target_judges_at_the_target() {
+    let (v, leave) = judge(bore(0.5));
+    assert_eq!(leave, Leave::Mm(0.5));
+    let (peak, limit, basis, detail, state, bound, source) = parts_of(&v);
+    assert!(peak > EXCEEDS_BOUND_MM);
+    // P29-7 7d: min(0.5 mm, 200 um) (before 7d: the leave, 0.5 mm, and the
+    // verdict was Within).
     assert!(peak < 0.5, "the fixture stays under the leave ({peak} mm)");
-    assert_eq!(state, LoadState::Within, "peak {peak} mm against 0.5 mm");
+    assert_eq!(limit, EXCEEDS_BOUND_MM);
+    assert_eq!(basis, DeflectionBasis::Target);
+    assert_eq!(bound, Some(EXCEEDS_BOUND_MM));
+    assert_eq!(source, Some(BoundSource::DeflectionBudget));
+    assert!(detail.contains(TARGET_CLAUSE), "{detail}");
+    assert_eq!(state, LoadState::Exceeds);
 }
 
 #[test]
-fn a_bore_with_a_zero_leave_keeps_the_finish_target_and_says_so() {
+fn a_bore_with_a_zero_leave_judges_at_the_target() {
     let (v, leave) = judge(bore(0.0));
-    assert_eq!(leave, Leave::Zero);
+    assert_eq!(leave, Leave::None);
     let (peak, limit, basis, detail, state, bound, source) = parts_of(&v);
     assert!(peak > EXCEEDS_BOUND_MM);
     assert_eq!(limit, EXCEEDS_BOUND_MM);
-    assert_eq!(basis, DeflectionBasis::ZeroLeave);
+    assert_eq!(basis, DeflectionBasis::Target);
     assert_eq!(bound, Some(EXCEEDS_BOUND_MM));
     assert_eq!(source, Some(BoundSource::DeflectionBudget));
-    assert!(
-        detail.contains("stock to leave 0: the finish target 200 um applies"),
-        "{detail}"
-    );
+    assert!(detail.contains(TARGET_CLAUSE), "{detail}");
     assert_eq!(state, LoadState::Exceeds);
 }
 
 #[test]
-fn a_pocket_has_no_leave_field_and_says_so() {
-    let (v, leave) = judge(pocket());
-    assert_eq!(leave, Leave::NoField, "a Pocket has no radial leave field");
-    let (peak, limit, basis, detail, state, bound, source) = parts_of(&v);
-    assert!(peak > EXCEEDS_BOUND_MM);
-    assert_eq!(limit, EXCEEDS_BOUND_MM);
-    assert_eq!(basis, DeflectionBasis::NoLeaveField);
-    assert_eq!(bound, Some(EXCEEDS_BOUND_MM));
-    assert_eq!(source, Some(BoundSource::DeflectionBudget));
-    assert!(
-        detail.contains("no stock-to-leave field on this op: the finish target 200 um applies"),
-        "{detail}"
-    );
-    assert_eq!(state, LoadState::Exceeds);
-}
-
-#[test]
-fn a_finish_pass_keeps_the_finish_target() {
-    let (v, leave) = judge(scallop());
-    assert_eq!(
-        leave,
-        Leave::FinishPass,
-        "a Scallop's stock_to_leave is a finish leave, not a radial rough leave"
-    );
-    let (peak, limit, basis, detail, state, bound, source) = parts_of(&v);
-    assert!(peak > EXCEEDS_BOUND_MM);
-    assert_eq!(limit, EXCEEDS_BOUND_MM);
-    assert_eq!(basis, DeflectionBasis::FinishTarget);
-    assert_eq!(bound, Some(EXCEEDS_BOUND_MM));
-    assert_eq!(source, Some(BoundSource::DeflectionBudget));
-    assert!(
-        detail.contains("finish pass: the finish target 200 um applies"),
-        "{detail}"
-    );
-    assert_eq!(state, LoadState::Exceeds);
+fn a_pocket_and_a_finish_pass_judge_at_the_target() {
+    for (name, op) in [("pocket", pocket()), ("scallop", scallop())] {
+        let (v, leave) = judge(op);
+        assert_eq!(leave, Leave::None, "{name}: no radial leave above 0");
+        let (peak, limit, basis, detail, state, bound, source) = parts_of(&v);
+        assert!(peak > EXCEEDS_BOUND_MM, "{name}");
+        assert_eq!(limit, EXCEEDS_BOUND_MM, "{name}");
+        assert_eq!(basis, DeflectionBasis::Target, "{name}");
+        assert_eq!(bound, Some(EXCEEDS_BOUND_MM), "{name}");
+        assert_eq!(source, Some(BoundSource::DeflectionBudget), "{name}");
+        assert!(detail.contains(TARGET_CLAUSE), "{name}: {detail}");
+        assert_eq!(state, LoadState::Exceeds, "{name}");
+    }
 }
 
 /// The accessor itself, for the record: Bore only; the finish ops' leave

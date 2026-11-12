@@ -28,9 +28,9 @@
 //!   the planner cap, the first slot (or the slot ring).
 //! - Claim 2: the facts of every declared cut equal the four label
 //!   functions, written out here: `RadialThinning::of(family, role)`, the
-//!   Pocket roughing stepover test, the leave of the role and the
-//!   stock-to-leave field, and the depth rule (the family, the role and,
-//!   P29-5, the material sides of the radial rule).
+//!   Pocket roughing stepover test, the leave (P29-7 7d: the radial
+//!   stock-to-leave field only), and the depth rule (the family, the role
+//!   and, P29-5, the material sides of the radial rule).
 //! - Claim 3: the entry kinds of the list equal
 //!   `EntryContract::record_kinds()` of the op's row, in order.
 //! - Claim 4: a source scan of `src/` (comments stripped). The catalogue
@@ -346,11 +346,10 @@ fn old_facts(op: &OperationConfig) -> CutFacts {
             DepthLimit::NoLimit(NoDepthLimit::FinishPass)
         }
     };
-    let leave = match (role, op.radial_stock_to_leave_mm()) {
-        (PassRole::Finish | PassRole::SemiFinish, _) => Leave::FinishPass,
-        (PassRole::Roughing, None) => Leave::NoField,
-        (PassRole::Roughing, Some(mm)) if mm.is_finite() && mm > 0.0 => Leave::Mm(mm),
-        (PassRole::Roughing, Some(_)) => Leave::Zero,
+    // P29-7 7d (ruling R5): the radial leave field only, the role not read.
+    let leave = match op.radial_stock_to_leave_mm() {
+        Some(mm) if mm.is_finite() && mm > 0.0 => Leave::Mm(mm),
+        Some(_) | None => Leave::None,
     };
     CutFacts {
         thins_chip: RadialThinning::of(family, role),
@@ -380,9 +379,7 @@ fn claim_2_the_facts_equal_the_label_functions() {
         seen.insert(format!("ring={}", want.offset_ring));
         seen.insert(format!("{:?}", want.depth_rule));
         let leave = match want.leave_after_mm {
-            Leave::FinishPass => "leave:finish",
-            Leave::NoField => "leave:nofield",
-            Leave::Zero => "leave:zero",
+            Leave::None => "leave:none",
             Leave::Mm(_) => "leave:mm",
         };
         seen.insert(leave.to_owned());
@@ -396,10 +393,8 @@ fn claim_2_the_facts_equal_the_label_functions() {
         "ForceBudget",
         "NoLimit(FinishPass)",
         "NoLimit(DrillCycle)",
-        "leave:finish",
-        "leave:nofield",
+        "leave:none",
         "leave:mm",
-        "leave:zero",
     ] {
         assert!(
             seen.contains(v),

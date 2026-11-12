@@ -366,20 +366,17 @@ pub enum CutSource {
     },
 }
 
-/// The radial stock that a cut leaves on the wall for a later pass. The
-/// four cases of the deflection limit (`tool_load::deflection::
-/// exceeds_limit`), each with its own clause.
+/// The radial stock that a cut leaves on the wall for a later pass (P29-7
+/// 7d: the op's radial stock-to-leave field only; the role is not read).
+/// The deflection limit is `min(leave, 200 um)`
+/// (`tool_load::deflection::exceeds_limit`).
 #[derive(Debug, Clone, Copy, PartialEq)]
 pub enum Leave {
-    /// A finish or semi-finish pass: no later pass, the finish target
-    /// holds.
-    FinishPass,
-    /// A rough cut of an op with no stock-to-leave field.
-    NoField,
-    /// A rough cut whose leave is 0: the cut is the final wall.
-    Zero,
-    /// A rough cut that leaves this radial stock (mm), above 0.
+    /// The op leaves this radial stock (mm), above 0.
     Mm(f64),
+    /// The op states no radial stock to leave above 0: no field, a leave
+    /// of 0, or a finish pass.
+    None,
 }
 
 /// Why a cut has no depth limit.
@@ -433,7 +430,7 @@ impl CutFacts {
     pub const DRILL_CYCLE: Self = Self {
         thins_chip: RadialThinning::DrillCycle,
         offset_ring: false,
-        leave_after_mm: Leave::NoField,
+        leave_after_mm: Leave::None,
         depth_rule: DepthLimit::NoLimit(NoDepthLimit::DrillCycle),
     };
 }

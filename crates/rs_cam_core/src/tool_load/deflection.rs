@@ -113,21 +113,19 @@ pub fn tip_compliance_mm_per_n(tool: &ToolDefinition, axial_doc_mm: f64) -> Opti
 /// other side of the force) a wall cut below the finish surface. So the
 /// deflection limit of a rough pass is `s`:
 ///
-/// The four cases are the arms of [`Leave`], the leave of the op's body
-/// cut (`CutFacts::leave_after_mm`, P29-6):
+/// P29-7 7d (ruling R5: "a rough pass may bend up to the stock it leaves,
+/// never above 200 um; the same value before and after the simulation"):
+/// ONE limit for every cut, `min(leave, 200 um)`. The leave is the op's
+/// radial stock to leave (`CutFacts::leave_after_mm`); the role is not
+/// read.
 ///
-/// - [`Leave::Mm`]`(s)`, a rough pass that leaves `s > 0`: the limit is `s`
-///   ([`DeflectionBasis::StockToLeave`]).
-/// - [`Leave::FinishPass`]: a finish or semi-finish pass has no stock to
-///   leave after it: the finish target [`EXCEEDS_BOUND_MM`] (200 um, the
-///   F201 row) stays its limit ([`DeflectionBasis::FinishTarget`]).
-/// - [`Leave::NoField`]: a rough op with no radial stock-to-leave field has
-///   no `s` to read: the finish target stays, and the clause says so
-///   ([`DeflectionBasis::NoLeaveField`]).
-/// - [`Leave::Zero`]: a rough op whose field is 0: the rough pass is the
-///   final wall, so the finish target applies
-///   ([`DeflectionBasis::ZeroLeave`]). A limit of 0 would put every sample
-///   over it.
+/// - [`Leave::Mm`]`(s)`: the limit is `min(s, EXCEEDS_BOUND_MM)`; under the
+///   target it is `s` ([`DeflectionBasis::StockToLeave`]), else the target
+///   ([`DeflectionBasis::Target`]).
+/// - [`Leave::None`]: the op states no leave above 0 (a finish pass, a rough
+///   op with no field or a leave of 0): the target [`EXCEEDS_BOUND_MM`]
+///   (200 um, the F201 row; [`DeflectionBasis::Target`]). A limit of 0
+///   would put every sample over it.
 ///
 /// [`WITHIN_BOUND_MM`] (50 um, `Validated`) does not move. A leave below
 /// 50 um puts the `Exceeds` limit under the `Validated` band: every sample
@@ -135,18 +133,23 @@ pub fn tip_compliance_mm_per_n(tool: &ToolDefinition, axial_doc_mm: f64) -> Opti
 /// the two does not occur. A leave that small is a finish allowance no
 /// shipped op states; the case is named here, not clamped.
 ///
-/// The Suggest ceiling (`feeds::suggest`), the envelope's Deflection limit
-/// and the F082 compliance door keep the finish target on a rough pass:
-/// out of P17's scope, recorded in its card.
+/// The envelope's Deflection limit reads the same value
+/// ([`deflection_limit_um`]). The feed modulator keeps 200 um (lead ruling
+/// Q4 of P29-7: row `P28-16`, until the modulation design step).
 #[must_use]
 pub fn exceeds_limit(leave: Leave) -> (f64, DeflectionBasis) {
-    // EXEMPT(P28-16, F-LeaveAfter)
     match leave {
-        Leave::FinishPass => (EXCEEDS_BOUND_MM, DeflectionBasis::FinishTarget),
-        Leave::NoField => (EXCEEDS_BOUND_MM, DeflectionBasis::NoLeaveField),
-        Leave::Mm(mm) => (mm, DeflectionBasis::StockToLeave { mm }),
-        Leave::Zero => (EXCEEDS_BOUND_MM, DeflectionBasis::ZeroLeave),
+        Leave::Mm(mm) if mm < EXCEEDS_BOUND_MM => (mm, DeflectionBasis::StockToLeave { mm }),
+        Leave::Mm(_) | Leave::None => (EXCEEDS_BOUND_MM, DeflectionBasis::Target),
     }
+}
+
+/// THE deflection limit (um) of a cut that leaves `leave`:
+/// [`exceeds_limit`] in micrometres. The gate, the envelope edge and its
+/// per-cut checks read it (ruling R5).
+#[must_use]
+pub fn deflection_limit_um(leave: Leave) -> f64 {
+    exceeds_limit(leave).0 * 1000.0
 }
 
 /// **The engagement of one simulation sample, as the deflection gate reads
@@ -277,8 +280,7 @@ pub(super) fn judge(
         tolerance,
         ..
     } = env;
-    // P17: one limit for the trip and the bounds.
-    // EXEMPT(P28-16, F-LeaveAfter)
+    // P17, P29-7 7d: one limit for the trip and the bounds.
     let (limit_mm, basis) = exceeds_limit(ctx.body_facts().leave_after_mm);
     let Some(trace) = sim_trace else {
         tracing::debug!(
