@@ -426,3 +426,14 @@ the family default 0.762 mm.
   - After it, the 8 Face `ChipMin` entry rows read `Within`. The 4 rivmap rows stay `Exceeds`
     (a real chip under the band).
   A cell that moves in another way stops the work.
+
+**Result of the rounding commit against this prediction (lead, 2026-11-13).** Two points differ,
+and the lead accepts both:
+
+- FM1 also moves 7 `suggest_warnings` cells: `PlungeReDerived` leaves the same 7 cells whose
+  plunge rises by 1. The warning was a symptom of the defect (the funnel re-derived the plunge
+  from the rounded feed and got one less than the calculator). Moved: `plunge_mm_min` 7,
+  `ramp_feed_mm_min` 3, `suggest_warnings` 7.
+- The 8 Face `ChipMin` entry rows stay `Exceeds` on the stored project files, because a stored
+  ramp feed changes only on an apply. After a Suggest apply they read `Within`. The prediction
+  was wrong to expect the stored files to change.
