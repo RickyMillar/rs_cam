@@ -437,3 +437,80 @@ and the lead accepts both:
 - The 8 Face `ChipMin` entry rows stay `Exceeds` on the stored project files, because a stored
   ramp feed changes only on an apply. After a Suggest apply they read `Within`. The prediction
   was wrong to expect the stored files to change.
+
+## 16. The Project Curve frame (measured) and the amended 9b predictions
+
+Measured 2026-11-13 on HEAD `8ccd709f6` with throwaway probes (deleted): read-only loads, the
+session door `generate_toolpath`, an in-memory `SetToolpathParam` (no save). The probes compare
+the emitted fed moves (`Linear` targets) of one op at two settings at the same XY points.
+
+### 16.1 The frame facts
+
+| Op | Direction, depth | Setup (face up) | Measured | Tip against the model surface |
+|---|---|---|---|---|
+| wanaka operator idx 5 | from above, -4.0 | "1 Back" (top) | `z(-4.0) - z(0.0)` = +4.000000 at all 16792 points | 4 mm ABOVE the surface: outside the material |
+| wanaka operator idx 9 | from below, -2.418 | "1 Back" (top) | `z(-2.418) - z(0.0)` = -2.417820; `z(from above, 0.0) - z(-2.418)` = 2.417820 at all 21852 points | 2.418 mm BELOW the top surface: inside the material |
+| rivmap100 idx 3 | from above, +1.0 | "Setup 1" (top) | `z(+1.0) - z(0.0)` = -1.000000 at all 189 points | 1 mm below the surface: inside the material |
+
+Why (`ops/project_curve.rs`, `project_curve_toolpath_with_cancel`):
+
+- From above: the drop cutter finds the tip on the top surface, and the tip goes to `tip_z -
+  depth`. A positive depth is into the material. The lib test
+  `point_projection_follows_the_surface_where_the_cutter_cannot` holds it (from above, depth 0.4:
+  tip = surface - 0.4).
+- From below on a flipped setup (`setup_z_flipped`, `SetupTransformInfo::is_z_flipped`, face
+  Bottom): the setup transform has inverted the mesh, so the kernel runs as from above in the
+  local frame: `tip_z - depth`. A positive depth is into the material.
+- From below on a setup that is not flipped (the standalone arm): the kernel flips the mesh, finds
+  the bottom surface, and emits `-tip_z + depth` in the world frame, so the tip is `depth` above
+  the bottom surface. The machine cuts from +Z, so the tip is `top - bottom - depth` below the top
+  surface. That is at least `-depth`, because the top is never below the bottom. The wanaka model
+  4 is one sheet (the top and the bottom coincide at every measured point), so idx 9 is exactly
+  2.418 mm into the material. The test comment "From below, standalone: the case of the RivMap
+  back-side V lines" (depth -0.4) is this arm: a negative depth cuts into the material.
+
+### 16.2 The proven rule
+
+The lower bound `b` of the depth into the material (from the side the machine cuts from):
+
+| Direction | Setup | `b` |
+|---|---|---|
+| from above | any | `depth` |
+| from below | flipped | `depth` |
+| from below | not flipped | `-depth` (a lower bound; exact on a sheet) |
+| from below | not known (FM1, the add door, a reader with no setup) | no bound |
+
+`b > 0` gives `DeclaredDepth::AtLeast(b)`; `b <= 0` or no bound gives
+`None(DepthAfterSimulation)`, as today. One function owns the sign, next to the kernel in
+`ops/project_curve.rs`; the kernel computes its emitted Z through the same function (byte-equal),
+with one test per row of the table.
+
+The setup fact is new on the planned side. The design for 9b: the Suggest context gains the setup
+flip (`Option<bool>`), filled by the session doors from the toolpath's setup
+(`SetupTransformInfo::is_z_flipped`), as 9c fills the earlier leave. FM1 and the add door pass no
+setup, so a from-below cut there has no bound (FM1 has no Project Curve from below; 0 cells).
+
+### 16.3 The amended predictions of 9b
+
+The Project Curve envelope draws one depth limit on these ops: the force budget (`Rigidity`,
+`ApCeiling`, measured). The deflection, the vendor depth table and the power draw no edge, so they
+give no new row. Today the envelope gives no depth row for a Project Curve (no proposal depth),
+only the three chip rows of the body.
+
+| File, idx | Today | After 9b | Force-budget ceiling at the slot (measured) | New row |
+|---|---|---|---|---|
+| wanaka operator idx 5 | no depth row | no depth row: `None(DepthAfterSimulation)` (tip 4 mm above) | 2.697 mm | none |
+| wanaka work idx 5 | no depth row | as above | 2.697 mm | none |
+| wanaka operator idx 9 | no depth row | `AtLeast(2.418)` | 5.541 mm | body `ForceBudget` 2.418 against 5.54: `NoNumber(OnlyALowerBound)` |
+| wanaka work idx 9 | no depth row | `AtLeast(2.418)` | 5.541 mm | as above |
+| rivmap100 idx 3 | no depth row | `AtLeast(1.0)` | 9.735 mm | body `ForceBudget` 1.0 against 9.74: `NoNumber(OnlyALowerBound)` |
+| rivmap100_live_0925 idx 3 | no depth row | `AtLeast(1.0)` | 9.735 mm | as above |
+
+The row bound is the force-budget ceiling at the lower of the curve chip and the pick chip, the
+rule of every force-budget row, so it can sit a little under the measured ceiling; each state
+holds with a margin above 50 %. The section 9.2 rows of `P29-9_predictions.csv` for idx 5 (51.17
+N, `Exceeds`) and rivmap idx 3 (no bound) are withdrawn: the note read the sign from the file.
+
+Unchanged by 9b: every FM1 cell (0 cells, no re-bless), the op golden (the kernel reads the same
+Z through the one function), every proposal and Suggest value of the four files, and the chip
+rows. Pins after 9b (close `P28-11`): ROWS 38, MAX_NEEDS_RULING 27, ROWS_WITH_A_FILE 37.
