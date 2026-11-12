@@ -37,6 +37,24 @@ in sections 7 and 10, the probe result in section 11), then `phases/P29-0_probes
 | P29-4 to P29-6 | Behaviour steps; all come before the operator's cut. Write predictions before each. |
 | P29-7 to P29-last | After the cut. |
 
+### P29-8 and P29-9 status (2026-11-13)
+
+Notes and predictions: `phases/P29-8_DESIGN.md`, `phases/P29-9_DESIGN.md` (commit `5ed089621`;
+lead rulings in sections 13 and 11).
+
+| Commit | State |
+|---|---|
+| 8a `e88fe9491` | DONE, byte-equal. `feeds/entry_rule.rs`: `ResolvedEntry` is the one door from an op to both entry emitters and the ramp notes. A helix with no room ramps at the op's own angle. F201 pin 146. |
+| 8d `d7e6527b8` | DONE, no number moved. An entry is a declared cut (`DeclaredDepth::Own`, `Axial`; `planned::PlaneDepth`, `sets_a_ceiling`). It is a value check, never a ceiling. Row `U-EntryFallback`. Pins 40 / 29 / 39. |
+| 8b (stated or rule, the angle table) | HELD for the operator: question O2 (Easel 5/20, Shaper 20/27, or no change). Before 8b: list each project file with an entry and no angle key (section 13). |
+| 8c (the dressup plunge feed) | HELD for the operator: question O1. Branch (a) doubles the air-lead feed of wanaka idx 0, 8, 11, 12, 17. `entry_rule::DRESSUP_PLUNGE_RULE` is the one value. |
+| Tab re-plunge cause | Open, its own step with a prediction run. Wanaka idx 17: 42 tab re-plunges stay straight plunges at 1582 mm/min under the Ramp style; the plunge limit of that tool at its stored rpm is 1347.5 (finding F7, told to the operator). |
+| P29-9 | An agent fixes the entry chip rounding (30 false `ChipMin` rows) and traces the chamfer feed raise (Q5). 9a does not land before the lead rules on the trace. Then 9b, 9c, 9d with Q2 (b). |
+
+Open from 8d for P29-10: the GUI envelope passes no dressups, so its `cut_checks` read the
+registry default entry; the three or four entry `Exceeds` rows on the operator file are warnings
+against the parked 35.3 N budget.
+
 ### P29-3 status (2026-11-12, night)
 
 Gates of each commit: fmt, the named sentries, core `--lib` (the one red is the timing trap,
