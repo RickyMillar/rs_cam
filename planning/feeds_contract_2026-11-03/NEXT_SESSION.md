@@ -132,10 +132,28 @@ Design and predictions: `phases/P29-4_DESIGN.md` (lead rulings in section 8),
   movement." That sentence is the acceptance test: a limit is one function over a cut, the
   match over `CutKind` / `CutGroup` has no wildcard, "not judged" is a named variant with an
   exemption row. Lead rulings: Q2 to Q10 as the note recommends; Q7 an arc of 0 is no arc.
-  Commit 6a is in (`5c6ae274b`, byte-equal). For 6d: a fixed record with one field per group
-  (not a `Vec`), and one function `LimitId` x `CutGroup` to judged or not judged. See
-  `git log` for 6b to 6e. Not measured: the cost of the cap table that `load_context_parts`
-  builds on each call (the GUI thread calls it).
+  Commits: 6a `5c6ae274b` (the context constructor, byte-equal), 6b `230692ac4` (the chip
+  gate reads every removing sample; the 95 % filter is gone), 6c `adfda83de` (the depth gate
+  judges each sample against its own cap), 6d `6409d36c6` (one driver, every gate judges
+  every group). Each matched its predictions; one 6c cell differs in the last digit (a probe
+  rounding error). Pins after 6d: ROWS 51, PHYSICAL 8, RULED 3, MAX_NEEDS_RULING 40,
+  ROWS_WITH_A_FILE 43.
+  **How to add a limit** (also in `limits/CLAUDE.md`): add a `LimitId`
+  (`limits::scope(LimitId, CutGroup)` then does not compile until it answers every group);
+  write a `MetricEvaluator` (`tool_load::groups::judge_by_group` builds the `ByGroup`
+  record); by hand, one field of `GroupVerdicts` and one row of `GATE_LIMITS`.
+  **6e is HELD by the lead** (the modulator lowers the feed of a lead move): it widens the
+  post-simulation feed change that the operator wants redesigned, and the acceptance of
+  P29-6 holds without it. It goes into the modulation design step below.
+  Open after 6d: the depth card draws one bound over samples that each have their own cap;
+  the summary `exceeds_breakdown` names no group; the triage `DedupKey` merges a headline and
+  a group finding of one id; a `NotJudged` or `Unmodeled` group shows only in MCP;
+  `GroupVerdicts::headline_only` is a second constructor (tests); `P28-10` (power on a
+  drill) is NeedsRuling; a skin sample reads `ArcEngagementNotCaptured` and its text says
+  "Run the simulation again", which does not help; the load report of the shelf fixture
+  takes 373 ms, was 290 ms (debug build); the cap table of `load_context_parts` is built on
+  each call (GUI thread; not measured); section 6 of `P29_FINDINGS.md` does not hold the
+  P29-6 result. Not run: the slow 3D simulation tests whose docs name deleted predicates.
 - **Operator, 2026-11-12: finish P29 before P27**, all steps of the change list (P29-5b, 5c,
   7, 8, 9, 10, 11, last), each with predictions first. The lead brings a prediction to the
   operator only when it changes what they cut with. **After P29-last: a tech-debt and
