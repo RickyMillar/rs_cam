@@ -267,13 +267,17 @@ impl Default for PlanFacts {
 }
 
 impl BodyDepth {
-    /// The body depth of the declared depth `depth` on `tool`, with the
-    /// facts of the plan.
+    /// The body depth of the declared depth `depth` on a tool of shape
+    /// `hint`, with the facts of the plan.
     #[must_use]
-    pub fn of_declared(depth: DeclaredDepth, tool: &ToolConfig, facts: PlanFacts) -> Self {
+    pub fn of_declared(
+        depth: DeclaredDepth,
+        hint: crate::feeds::ToolGeometryHint,
+        facts: PlanFacts,
+    ) -> Self {
         match depth {
             DeclaredDepth::Stated(mm) => Self::Plane(mm),
-            DeclaredDepth::OfTool(of_tool) => match of_tool.mm(tool) {
+            DeclaredDepth::OfTool(of_tool) => match of_tool.mm(hint) {
                 Ok(mm) => Self::Plane(mm),
                 Err(reason) => Self::None(reason),
             },
@@ -310,6 +314,25 @@ impl BodyDepth {
             | Self::None(_) => None,
         }
     }
+}
+
+/// P29-9 c8: THE depth door for a reader that holds no declared cut list
+/// (the gate context, `operation_feeds_hints`): the body depth of
+/// `operation` on a tool of shape `hint`, as [`DeclaredCuts::body_depth`]
+/// gives it. `CutSpec::calc_inputs` gives no depth, so no reader keeps a
+/// second depth rule.
+#[must_use]
+pub fn body_depth_of(
+    operation: &OperationConfig,
+    hint: crate::feeds::ToolGeometryHint,
+    facts: PlanFacts,
+) -> BodyDepth {
+    operation
+        .cuts(&ConfiguredEntry::registry_default(operation))
+        .of_kind(CutKind::Body)
+        .map_or(BodyDepth::None(NoEngagementModel::NoStatedDepth), |c| {
+            BodyDepth::of_declared(c.depth, hint, facts)
+        })
 }
 
 /// The declared cuts of one op on one tool, with the facts that each width
@@ -371,7 +394,7 @@ impl DeclaredCuts {
             body: list
                 .of_kind(CutKind::Body)
                 .map_or(BodyDepth::None(NoEngagementModel::NoStatedDepth), |c| {
-                    BodyDepth::of_declared(c.depth, tool, facts)
+                    BodyDepth::of_declared(c.depth, tool.geometry_hint(), facts)
                 }),
             thinning: list.body_facts().thins_chip,
             lift_d_eng_mm,

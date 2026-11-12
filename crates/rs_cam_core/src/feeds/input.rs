@@ -128,7 +128,7 @@ impl<'a> FeedsInput<'a> {
         spindle_strategy: SpindleStrategy,
     ) -> Self {
         let (family, role) = operation.feeds_style();
-        let (_, radial_hint, scallop_hint) = operation.cut_spec().calc_inputs(tool.diameter);
+        let (radial_hint, scallop_hint) = operation.cut_spec().calc_inputs(tool.diameter);
         let cuts = planned::DeclaredCuts::of_operation(
             operation,
             tool,

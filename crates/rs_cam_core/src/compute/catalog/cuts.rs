@@ -184,28 +184,32 @@ pub enum ToolDepth {
 }
 
 impl ToolDepth {
-    /// The depth (mm) on `tool`.
+    /// The depth (mm) on a tool of shape `hint` (P29-9 c8: the shape, so a
+    /// reader that holds a built tool and a reader that holds a tool config
+    /// read one rule).
     ///
     /// # Errors
     ///
     /// [`NoEngagementModel::NotAVBit`] for a chamfer on a tool that is not
     /// a V-bit (no cone gives the depth).
-    pub fn mm(self, tool: &ToolConfig) -> Result<f64, NoEngagementModel> {
-        use crate::compute::tool_config::ToolType;
+    pub fn mm(self, hint: crate::feeds::ToolGeometryHint) -> Result<f64, NoEngagementModel> {
+        use crate::feeds::ToolGeometryHint;
         match self {
             Self::Chamfer {
                 width_mm,
                 tip_offset_mm,
-            } => match tool.tool_type {
-                ToolType::VBit => Ok(crate::ops::chamfer::chamfer_depth_mm(
-                    width_mm,
-                    tip_offset_mm,
-                    crate::ops::chamfer::vbit_half_angle(tool),
-                )),
-                ToolType::EndMill
-                | ToolType::BallNose
-                | ToolType::BullNose
-                | ToolType::TaperedBallNose => Err(NoEngagementModel::NotAVBit),
+            } => match hint {
+                ToolGeometryHint::VBit { included_angle, .. } => {
+                    Ok(crate::ops::chamfer::chamfer_depth_mm(
+                        width_mm,
+                        tip_offset_mm,
+                        crate::ops::chamfer::half_angle_of_included_deg(included_angle),
+                    ))
+                }
+                ToolGeometryHint::Flat
+                | ToolGeometryHint::Ball
+                | ToolGeometryHint::Bull { .. }
+                | ToolGeometryHint::TaperedBall { .. } => Err(NoEngagementModel::NotAVBit),
             },
         }
     }
@@ -393,7 +397,7 @@ impl DeclaredCut {
             let ap = match self.depth {
                 DeclaredDepth::Stated(ap) => ap,
                 DeclaredDepth::Own(own) => own.mm,
-                DeclaredDepth::OfTool(depth) => match depth.mm(ctx.tool) {
+                DeclaredDepth::OfTool(depth) => match depth.mm(hint) {
                     Ok(ap) => ap,
                     Err(reason) => return CutEngagement::NoModel(reason),
                 },

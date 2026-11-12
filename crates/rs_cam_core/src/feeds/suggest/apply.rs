@@ -1609,16 +1609,22 @@ pub fn apply_stock_defaults(operation: &mut OperationConfig, ctx: &StockContext)
 /// Extract operation-specific hints for the feeds calculator.
 /// Returns `(axial_depth_hint, radial_width_hint, scallop_hint)`.
 ///
-/// Thin tuple adapter over CONTRACT K1 and K2 (feeds contract P5): the op
-/// builds its [`CutSpec`](crate::compute::catalog::CutSpec) with
-/// `OperationConfig::cut_spec`, and
+/// Thin tuple adapter over CONTRACT K1 and K2 (feeds contract P5): the depth
+/// is the one depth door (`feeds::planned::body_depth_of`, P29-9 c8: a
+/// stated depth or a depth of the tool, at or above zero filtered as the
+/// calculator reads it); the width and the scallop target come from
 /// [`CutSpec::calc_inputs`](crate::compute::catalog::CutSpec::calc_inputs)
-/// gives the operator's cut to the calculator: the stated depth, the stated
-/// width (the tool diameter for a slot) and the scallop target. Both
-/// matches name every variant; no wildcard arm is left.
+/// (the tool diameter for a slot).
 pub fn operation_feeds_hints(
     operation: &OperationConfig,
-    tool_diameter_mm: f64,
+    tool: &ToolConfig,
 ) -> (Option<f64>, Option<f64>, Option<f64>) {
-    operation.cut_spec().calc_inputs(tool_diameter_mm)
+    let depth = crate::feeds::planned::body_depth_of(
+        operation,
+        tool.geometry_hint(),
+        crate::feeds::planned::PlanFacts::NONE,
+    )
+    .speeds_mm();
+    let (width, scallop) = operation.cut_spec().calc_inputs(tool.diameter);
+    (depth, width, scallop)
 }

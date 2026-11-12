@@ -1827,13 +1827,15 @@ fn clearing_strategy_recommendation_skips() {
 #[test]
 fn operation_feeds_hints_is_an_explicit_per_op_decision() {
     use crate::compute::catalog::OperationType;
-    // The tool diameter of the probe. A slot reads it as its width.
+    // The tool diameter of the probe. A slot reads it as its width. An end
+    // mill: a chamfer depth on it is no depth (`NotAVBit`).
     let d = 6.0;
+    let probe = tool(d);
     let positive = |v: Option<f64>| v.filter(|v| *v > 0.0);
 
     for &op_type in OperationType::ALL {
         let config = OperationConfig::new_default(op_type);
-        let actual = operation_feeds_hints(&config, d);
+        let actual = operation_feeds_hints(&config, &probe);
 
         #[expect(clippy::match_same_arms, reason = "one arm per op = the point")]
         let expected: (Option<f64>, Option<f64>, Option<f64>) = match &config {
@@ -1877,7 +1879,7 @@ fn operation_feeds_hints_is_an_explicit_per_op_decision() {
         assert_eq!(
             actual, expected,
             "{op_type:?}: operation_feeds_hints changed — update \
-                 CutSpec::calc_inputs AND this expected table deliberately"
+                 the depth door or CutSpec::calc_inputs AND this expected table deliberately"
         );
     }
 }

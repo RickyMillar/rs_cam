@@ -73,7 +73,7 @@ use std::path::Path;
 use rs_cam_core::adaptive::CleanupStrategy;
 use rs_cam_core::adaptive3d::FeedCapSource;
 use rs_cam_core::compute::catalog::{
-    CutList, DeclaredDepth, DeclaredFeed, DeclaredWidth, FirstPass, MAX_DECLARED_CUTS,
+    Axial, CutList, DeclaredDepth, DeclaredFeed, DeclaredWidth, FirstPass, MAX_DECLARED_CUTS,
     OperationConfig, OperationType, OwnDepthRule, PlannerWidth, Presence, Radial, RadialRule,
 };
 use rs_cam_core::compute::config::{DressupConfig, DressupEntryStyle};
@@ -721,10 +721,33 @@ fn claim_5_one_depth_door_p29_9() {
             | OperationConfig::RadialFinish(_)
             | OperationConfig::HorizontalFinish(_)
             | OperationConfig::ProjectCurve(_) => {
+                // P29-9 c8: the old hint is gone; the door gives the stated
+                // axial value above zero (written out here), and none for a
+                // peck, a chamfer width, a surface offset and a finish on
+                // the earlier leave.
+                let want = match op.cut_spec().axial {
+                    Axial::PerPass(s)
+                    | Axial::ZStep(s)
+                    | Axial::OnePass(s)
+                    | Axial::Surface { max: s } => s.map(|s| s.mm()),
+                    Axial::HelixPitch(s) => Some(s.mm()),
+                    Axial::Peck(_) | Axial::ChamferWidth(_) | Axial::SurfaceOffset(_) => None,
+                }
+                .filter(|v| *v > 0.0);
                 assert_eq!(
                     cuts.body_depth().speeds_mm(),
-                    op.cut_spec().calc_inputs(tool.diameter).0,
-                    "{}: the depth door equals the old hint",
+                    want,
+                    "{}: the depth door gives the stated depth",
+                    case.name
+                );
+                assert_eq!(
+                    rs_cam_core::feeds::planned::body_depth_of(
+                        op,
+                        tool.geometry_hint(),
+                        rs_cam_core::feeds::planned::PlanFacts::NONE,
+                    ),
+                    cuts.body_depth(),
+                    "{}: the two doors are one",
                     case.name
                 );
             }

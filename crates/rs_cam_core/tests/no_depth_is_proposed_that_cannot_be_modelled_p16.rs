@@ -122,8 +122,14 @@ fn the_project_curve_cut_states_an_offset_not_a_depth_p16() {
         OperationType::ProjectCurve.capabilities().cut_rule.axial,
         AxialRule::SurfaceOffset
     );
+    // P29-9 c8: the calculator reads its depth at the one depth door.
     assert_eq!(
-        spec.calc_inputs(6.0).0,
+        rs_cam_core::feeds::planned::body_depth_of(
+            &project_curve(),
+            tool().geometry_hint(),
+            rs_cam_core::feeds::planned::PlanFacts::NONE,
+        )
+        .speeds_mm(),
         None,
         "the calculator reads no depth"
     );

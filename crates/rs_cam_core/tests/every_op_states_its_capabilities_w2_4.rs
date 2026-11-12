@@ -416,11 +416,16 @@ fn a_surface_probe_reads_the_ops_own_leave() {
 #[test]
 fn the_feeds_hints_read_the_ops_own_fields() {
     let d = 6.0;
+    let mut tool = rs_cam_core::compute::tool_config::ToolConfig::test_default(
+        rs_cam_core::compute::tool_config::ToolId::from_raw(1),
+        rs_cam_core::compute::tool_config::ToolType::EndMill,
+    );
+    tool.diameter = d;
     let set = |op: OperationType, field: &str| {
         let mut value = serde_json::to_value(OperationConfig::new_default(op)).unwrap();
         value["params"][field] = serde_json::json!(0.437);
         let cfg: OperationConfig = serde_json::from_value(value).unwrap();
-        operation_feeds_hints(&cfg, d)
+        operation_feeds_hints(&cfg, &tool)
     };
     for (op, field) in [
         (OperationType::Scallop, "scallop_height"),
@@ -451,11 +456,10 @@ fn the_feeds_hints_read_the_ops_own_fields() {
     }
     for &op in OperationType::ALL {
         let cfg = OperationConfig::new_default(op);
-        assert_eq!(
-            operation_feeds_hints(&cfg, d),
-            cfg.cut_spec().calc_inputs(d),
-            "{op:?}"
-        );
+        // P29-9 c8: the width and the scallop come from `calc_inputs`;
+        // the depth from the one depth door.
+        let (_, width, scallop) = operation_feeds_hints(&cfg, &tool);
+        assert_eq!((width, scallop), cfg.cut_spec().calc_inputs(d), "{op:?}");
     }
 }
 

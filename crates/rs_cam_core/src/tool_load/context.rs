@@ -246,7 +246,14 @@ fn commanded_thinning_lift(
 ) -> Option<f64> {
     let hint = tool.to_geometry_hint();
     let diameter = stated_diameter_mm(tool);
-    let (stated_ap, stated_ae, _) = operation.cut_spec().calc_inputs(diameter);
+    let (stated_ae, _) = operation.cut_spec().calc_inputs(diameter);
+    // P29-9 c8: the depth is the one depth door.
+    let stated_ap = crate::feeds::planned::body_depth_of(
+        operation,
+        hint,
+        crate::feeds::planned::PlanFacts::NONE,
+    )
+    .speeds_mm();
     stated_ap.zip(stated_ae).map(|(ap, ae)| {
         let d_eng = crate::feeds::engagement::EngagedDiameter::of_hint(
             hint,

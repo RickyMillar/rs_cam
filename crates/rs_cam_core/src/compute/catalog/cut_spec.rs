@@ -342,45 +342,18 @@ impl RadialRule {
 
 impl CutSpec {
     /// CONTRACT K2 (feeds contract P5): the calculator inputs of the cut,
-    /// in the order `(axial_depth, radial_width, scallop)`. P5 replaces the
-    /// P4 marker `PresentBasis`: the calculator reads the operator's cut,
-    /// not a family default, wherever the spec states it.
+    /// in the order `(radial_width, scallop)`. The calculator reads the
+    /// operator's cut, not a family default, wherever the spec states it.
     ///
-    /// - The depth: a depth per pass, a Z step, a one-pass depth, the
-    ///   operator's surface cap, or a helix pitch, when it is above zero.
-    ///   A helix of pitch `p` engages `p` of material at its leading edge,
-    ///   so one helix turn is the depth of a Bore (P29-5b). A peck is a
-    ///   drill cycle and a surface offset is not a depth (P16): none. A
-    ///   chamfer gives none here because its depth needs the tool. P29-9
-    ///   9a: the calculator reads its depth at the one depth door
-    ///   (`feeds::planned::DeclaredCuts::body_depth`), which equals this
-    ///   hint on every other axial rule; the tool-free readers of this
-    ///   hint (the gate context, `operation_feeds_hints`) read none for a
-    ///   chamfer.
     /// - The width: a stepover, or the tool diameter for a slot. A groove,
     ///   a surface width, an angular step and a drill give none.
     /// - The scallop target, when the radial cut is a scallop.
+    ///
+    /// P29-9 c8: no depth. The depth is the one depth door
+    /// (`feeds::planned::DeclaredCuts::body_depth`, `body_depth_of`), so a
+    /// new depth source cannot be left out by a reader of a second hint.
     #[must_use]
-    pub const fn calc_inputs(&self, diameter_mm: f64) -> (Option<f64>, Option<f64>, Option<f64>) {
-        let ap = match self.axial {
-            Axial::PerPass(s) | Axial::ZStep(s) | Axial::OnePass(s) | Axial::Surface { max: s } => {
-                match s {
-                    Some(s) => Some(s.mm()),
-                    None => None,
-                }
-            }
-            Axial::HelixPitch(s) => Some(s.mm()),
-            // P29-9 9a: the chamfer depth needs the tool; the calculator
-            // reads it at the one depth door (`feeds::planned::DeclaredCuts::
-            // body_depth`). This tool-free hint gives none.
-            Axial::Peck(_) | Axial::ChamferWidth(_) | Axial::SurfaceOffset(_) => None,
-        };
-        // A depth at or below zero is not a cut depth: the calculator reads
-        // none.
-        let ap = match ap {
-            Some(v) if v > 0.0 => Some(v),
-            Some(_) | None => None,
-        };
+    pub const fn calc_inputs(&self, diameter_mm: f64) -> (Option<f64>, Option<f64>) {
         let ae = match self.radial {
             Radial::Width(Some(s)) => Some(s.mm()),
             Radial::Width(None) => None,
@@ -392,12 +365,12 @@ impl CutSpec {
             | Radial::Axial => None,
         };
         // A width at or below zero is not a cut width: the calculator reads
-        // none (the same rule as the depth above).
+        // none.
         let ae = match ae {
             Some(v) if v > 0.0 => Some(v),
             Some(_) | None => None,
         };
-        (ap, ae, self.radial.scallop_mm())
+        (ae, self.radial.scallop_mm())
     }
 }
 

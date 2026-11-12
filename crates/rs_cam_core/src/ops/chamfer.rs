@@ -138,7 +138,15 @@ pub fn chamfer_depth_mm(chamfer_width: f64, tip_offset: f64, half_angle_rad: f64
 /// `tool_constraints`), so this only converts.
 #[must_use]
 pub fn vbit_half_angle(tool_cfg: &crate::compute::tool_config::ToolConfig) -> f64 {
-    (tool_cfg.included_angle / 2.0).to_radians()
+    half_angle_of_included_deg(tool_cfg.included_angle)
+}
+
+/// The half angle (radians) of a V-bit of included angle
+/// `included_angle_deg` (degrees). [`vbit_half_angle`] and the declared
+/// chamfer depth (`compute::catalog::ToolDepth::mm`) read it.
+#[must_use]
+pub fn half_angle_of_included_deg(included_angle_deg: f64) -> f64 {
+    (included_angle_deg / 2.0).to_radians()
 }
 
 /// The tool-centre rings: every ring of the outline, moved `tip_offset` into
