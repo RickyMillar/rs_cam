@@ -39,13 +39,25 @@
 //! The cap is [`crate::feeds::force_budget::rigidity_depth_cap`] (P13c, O1;
 //! the Adaptive family since P29-4; a slot or a groove under every role
 //! since P29-5): on every roughing cut the depth where the peak cutting
-//! force at the peak sample's width and chip meets the machine force
-//! budget. The budget stands in for an unmeasured
+//! force at a sample's own width and chip meets the machine force budget.
+//! The budget stands in for an unmeasured
 //! frame, so the cap carries
 //! [`BoundSource::MachineForceBudget`](crate::tool_load::verdict::BoundSource::MachineForceBudget), whose `gates_export()` is
 //! false. An exceedance is reported; the export goes ahead. The day the
 //! machine is measured, the variant is replaced by a measured one and
 //! the row gates with no change to any renderer (`PLAN.md` §11).
+//!
+//! ## Every sample is judged against its own cap (P29-6 6c)
+//!
+//! The population is every sample of the toolpath that removes material
+//! and has a depth. Each sample with a width is judged: its depth against
+//! the cap at its own width and chip. The verdict names the sample with
+//! the largest depth over its own cap (the judged sample), and the row
+//! prints that sample's depth and cap (ruling Q3); the text names the
+//! deepest depth too. A sample with a depth and no width (no arc, an arc of
+//! 0, and no width share) gets no number: the full-slot fallback is
+//! deleted. A screen on the force at `depth / r*` solves the cap only for
+//! a sample that can beat the worst ratio `r*` so far.
 //!
 //! **This gate adds no number.** The two helpers it calls are the ones
 //! the Suggest clamp calls, so the cap the recipe was lowered to and the
@@ -78,7 +90,9 @@
 //!
 //! A trace whose samples all filter out is **not** a refusal: it is a
 //! vacuous `Within` that states its empty [`GatePopulation`] (X-VAC),
-//! the same contract `power.rs` and `deflection.rs` carry.
+//! the same contract `power.rs` and `deflection.rs` carry. Its cap is read
+//! at the first sample that states a feed, a speed and a width; with no
+//! such sample the gate reports with no cap.
 
 use crate::stock::simulation_cut::SimulationCutSample;
 use crate::tool::MillingCutter as _;
@@ -156,20 +170,20 @@ pub fn evaluate(ctx: &super::ToolpathLoadContext<'_>, env: &super::GateEnv<'_>) 
         };
     };
 
-    // X-VAC — the same population contract `power.rs` carries. With
-    // `peak_mm == 0.0` and an empty population the verdict below is a
-    // `Within` at zero depth, which is the most reassuring thing this
-    // gate can print, so the population has to say it rests on nothing.
-    //
-    // Feeds matrix R2 (2026-09-23): the walk comes BEFORE the bound,
-    // because the bound's diameter is read at the measured peak.
+    // The depth limit of the body cut, read off the cut facts of the
+    // operation (`CutFacts::depth_rule`, the one filler that the envelope,
+    // the modulator and the force card read too; the sentry
+    // `every_op_declares_its_cuts_p29_3` holds it equal to the registry
+    // row). P29-6 6c: the gate reads the facts, not the op kind.
+    let depth_limit = ctx.body_facts().depth_rule;
     let span_lookup = spans.map(SpanLookup::new);
-    let mut offered: usize = 0;
-    let mut contributing: usize = 0;
-    let mut peak_mm = 0.0_f64;
-    // EXEMPT(M5)
-    let mut peak_idx: Option<usize> = None;
 
+    // The population (P29-6 6c): every sample of the toolpath that removes
+    // material and has a depth. X-VAC: `offered` counts every sample of the
+    // toolpath, so an empty population says it rests on nothing.
+    let mut offered: usize = 0;
+    let mut population: Vec<(usize, &SimulationCutSample)> = Vec::new();
+    let mut deepest: Option<(usize, f64)> = None;
     for (i, s) in trace.samples.iter().enumerate() {
         if s.toolpath_id != toolpath_id {
             continue;
@@ -179,119 +193,154 @@ pub fn evaluate(ctx: &super::ToolpathLoadContext<'_>, env: &super::GateEnv<'_>) 
             continue;
         }
         // The one steady-state predicate every gate in this folder
-        // shares. It matters more here than anywhere else: a phantom
-        // transit sample's dexel reads `stock_top − cutter_z` over
-        // NEIGHBOURING uncleared stock, so its `axial_engagement_mm` is
-        // exactly the inflated reading this gate would otherwise report
-        // as the cut's depth.
+        // shares, until P29-6 6d gives each gate its cut groups.
         // EXEMPT(P28-21, P28-22, P28-23)
         if !super::locality::is_steady_state_for_gate(s, span_lookup.as_ref()) {
             continue;
         }
-        contributing += 1;
-        if s.axial_engagement_mm > peak_mm {
-            peak_mm = s.axial_engagement_mm;
-            peak_idx = Some(i);
+        if deepest.is_none_or(|(_, d)| s.axial_engagement_mm > d) {
+            deepest = Some((i, s.axial_engagement_mm));
         }
+        population.push((i, s));
     }
-
-    let population = GatePopulation::new(contributing, offered, PopulationUnit::Samples);
-    let evidence_with =
-        |statistic: ChiploadStatistic| match peak_idx {
+    let deepest_mm = deepest.map_or(0.0, |(_, d)| d);
+    let evidence_at = |idx: Option<usize>, contributing: usize, statistic: ChiploadStatistic| {
+        let population = GatePopulation::new(contributing, offered, PopulationUnit::Samples);
+        match idx {
             Some(idx) => SampleEvidence::at_with_stat(idx, statistic)
                 .with_locality(trace.samples.get(idx).and_then(|s| {
                     super::locality::classify_sample_locality(s, span_lookup.as_ref())
                 }))
                 .with_population(population),
             None => SampleEvidence::empty().with_population(population),
-        };
+        }
+    };
 
-    // The depth limit of the body cut, read off the operation's own
-    // registry row (`OperationType::body_depth_limit`), the one filler the
-    // envelope, the modulator and the force card read too, so the readers
-    // cannot classify one operation differently (P29-5).
-    let depth_limit = operation_kind.body_depth_limit();
-    // P13c (O1): the force-budget cap (Pocket and Profile families) is
-    // solved at the cut the peak sample measured: its engaged width (the
-    // sample arc, `Engagement::from_sample`) and its chip (feed / (rpm x
-    // Z)). P29-4: the Adaptive family too.
-    let peak_sample = peak_idx.and_then(|i| trace.samples.get(i));
-    // X-VAC: with no contributing sample, the cut is read off the first
-    // offered sample of the toolpath that states a feed and a speed (its
-    // chip), at its width or, with no width, a full slot (the widest cut,
-    // the smallest cap). The population still says the reading is vacuous.
-    // P16 item 7 (D3): "states a feed" reads the one gate feed, the feed
-    // the machine runs (`effective_feed_for_sample`).
-    let cut_sample = peak_sample.or_else(|| {
-        trace.samples.iter().find(|s| {
-            s.toolpath_id == toolpath_id
-                && s.spindle_rpm > 0
-                && super::effective_feed_for_sample(s, &trace.predicted_feeds) > 0.0
-        })
-    });
-    if cut_sample.is_none()
-        && machine
-            .rigidity
-            // EXEMPT(P28-02)
-            .depth_cap_of(depth_limit)
-            .is_some()
-    {
+    // EXEMPT(P28-02)
+    let Some(crate::machine::DepthCapRule { budget_n }) =
+        machine.rigidity.depth_cap_of(depth_limit)
+    else {
+        // Feeds matrix R2 (2026-09-23): a finishing or semi-finishing
+        // pass that cuts on one side has no axial cap; a slot or a groove
+        // reads the force budget (P29-5, ruling R3). The drill family also
+        // has none, but the drill arm above already took it. The gate
+        // reports the deepest depth and judges nothing; the deflection
+        // gate is the limit on this pass.
+        tracing::debug!(
+            verdict = "Reported",
+            deepest_mm,
+            "depth gate reports: this cut carries no axial cap"
+        );
         return DepthVerdict::Reported {
-            peak_mm,
-            evidence: evidence_with(ChiploadStatistic::PeakInRange),
-            confidence: Confidence::Approximate(
-                "no sample states a feed: the force budget has no cut to set a depth at".to_owned(),
+            peak_mm: deepest_mm,
+            evidence: evidence_at(
+                deepest.map(|(i, _)| i),
+                population.len(),
+                ChiploadStatistic::PeakInRange,
             ),
+            confidence: Confidence::Approximate(format!(
+                "peak engaged depth {deepest_mm:.3} mm; a finishing pass that cuts \
+                 on one side has no depth limit, and the deflection gate is its limit"
+            )),
         };
+    };
+
+    // P29-6 6c (row `M5` closed): each sample is judged against its OWN
+    // cap, the force-budget depth at its own width and chip
+    // (`force_budget::rigidity_depth_cap`). The verdict names the sample
+    // with the largest depth over its cap. A sample with no width gets no
+    // number: no full-slot fallback.
+    //
+    // The screen: the gate keeps the worst ratio `r*` so far. A sample can
+    // beat it only when its cap is below `depth / r*`, that is when the
+    // force at `depth / r*` is over the budget (the force does not fall
+    // with depth: one root, P29-4 finding Q5). Past the flute length the
+    // screen reads the force at the flute: with no force over the budget
+    // there, the sample has no root below the flute. Only a sample that
+    // passes the screen pays for a solve.
+    let flute_mm = tool.length();
+    let mut contributing: usize = 0;
+    let mut no_width: usize = 0;
+    let mut no_chip: usize = 0;
+    let mut unmodelled: Option<&'static str> = None;
+    let mut judged: Option<JudgedSample> = None;
+    for &(i, s) in &population {
+        let Some(ae_mm) = sample_width_mm(s, tool) else {
+            no_width += 1;
+            continue;
+        };
+        let Some(fz_mm) = sample_chip_mm(
+            s,
+            super::effective_feed_for_sample(s, &trace.predicted_feeds),
+        ) else {
+            no_chip += 1;
+            continue;
+        };
+        let depth_mm = s.axial_engagement_mm;
+        let screen_ap = judged
+            .as_ref()
+            .map_or(flute_mm, |j| (depth_mm / j.ratio).min(flute_mm));
+        let cannot_beat =
+            crate::feeds::force_budget::peak_force_n(tool, material, screen_ap, ae_mm, fz_mm)
+                .is_some_and(|f| f <= budget_n);
+        if cannot_beat {
+            contributing += 1;
+            continue;
+        }
+        match crate::feeds::force_budget::rigidity_depth_cap(
+            machine,
+            depth_limit,
+            tool,
+            material,
+            ae_mm,
+            fz_mm,
+        ) {
+            Some(crate::feeds::force_budget::RigidityCapOutcome::Cap(bound)) => {
+                let cap_mm = bound.cap_mm();
+                if !cap_mm.is_finite() || cap_mm <= 0.0 {
+                    unmodelled = Some("the tool reports no usable diameter for the rigidity cap");
+                    continue;
+                }
+                contributing += 1;
+                let ratio = depth_mm / cap_mm;
+                if judged.as_ref().is_none_or(|j| ratio > j.ratio) {
+                    judged = Some(JudgedSample {
+                        idx: i,
+                        depth_mm,
+                        ratio,
+                        bound,
+                    });
+                }
+            }
+            Some(crate::feeds::force_budget::RigidityCapOutcome::NoLimitBelowFlute) => {
+                contributing += 1;
+            }
+            Some(crate::feeds::force_budget::RigidityCapOutcome::Unmodelled(reason)) => {
+                unmodelled = Some(reason);
+            }
+            // The rule above holds a budget, so the producer answers.
+            None => {}
+        }
     }
-    // A sample with no arc gives its width as a share of the diameter
-    // (`Engagement::radial_woc_fraction`), at the engaged diameter of its
-    // depth; with neither, a full slot.
-    let ae_mm = cut_sample.map_or(0.0, |s| {
-        crate::feeds::engagement::Engagement::from_sample(s, tool)
-            .map(|e| e.ae_mm())
-            .or_else(|| {
-                let w = s.engagement.radial_woc_fraction;
-                (w.is_finite() && w > 0.0)
-                    .then(|| w * 2.0 * tool.engagement_radius(s.axial_engagement_mm.max(0.0)))
-            })
-            .unwrap_or_else(|| 2.0 * tool.engagement_radius(peak_mm.max(0.0)))
-    });
-    // P16 item 7 (D3): the chip is the one gate feed, the feed that the
-    // chip, power and deflection gates read (`effective_feed_for_sample`):
-    // the modulated feed when the trace holds one. The sample field is the
-    // feed of the simulation run, which the machine does not run after a
-    // modulation.
-    let fz_mm = cut_sample.map_or(0.0, |s| {
-        let z = f64::from(s.flute_count.max(1));
-        let rpm = f64::from(s.spindle_rpm);
-        if rpm > 0.0 {
-            super::effective_feed_for_sample(s, &trace.predicted_feeds) / (rpm * z)
-        } else {
-            0.0
-        }
-    });
-    let outcome = crate::feeds::force_budget::rigidity_depth_cap(
-        machine,
-        depth_limit,
-        tool,
-        material,
-        ae_mm,
-        fz_mm,
-    );
-    let bound = match outcome {
-        Some(crate::feeds::force_budget::RigidityCapOutcome::Cap(c)) => c,
-        Some(crate::feeds::force_budget::RigidityCapOutcome::NoLimitBelowFlute) => {
-            return DepthVerdict::Reported {
-                peak_mm,
-                evidence: evidence_with(ChiploadStatistic::PeakInRange),
-                confidence: Confidence::Approximate(format!(
-                    "peak engaged depth {peak_mm:.3} mm; {}",
-                    crate::feeds::force_budget::NO_BUDGET_LIMIT_BELOW_THE_FLUTE
-                )),
-            };
-        }
-        Some(crate::feeds::force_budget::RigidityCapOutcome::Unmodelled(reason)) => {
+    // The samples that removed material at a depth and got no number.
+    let no_number_clause = match (no_width, no_chip) {
+        (0, 0) => String::new(),
+        (w, 0) => format!("; {w} samples with a depth have no measured width (no number)"),
+        (0, c) => format!("; {c} samples with a depth state no feed or speed (no number)"),
+        (w, c) => format!(
+            "; {w} samples with a depth have no measured width and {c} state no feed or \
+             speed (no number)"
+        ),
+    };
+
+    let Some(JudgedSample {
+        idx,
+        depth_mm: peak_mm,
+        bound,
+        ..
+    }) = judged
+    else {
+        if let Some(reason) = unmodelled {
             tracing::debug!(
                 reason,
                 "depth gate refuses: the force budget cannot set a depth"
@@ -300,41 +349,50 @@ pub fn evaluate(ctx: &super::ToolpathLoadContext<'_>, env: &super::GateEnv<'_>) 
                 reason: UnmodeledReason::NotImplemented(reason.to_owned()),
             };
         }
-        None => {
-            // Feeds matrix R2 (2026-09-23): a finishing or semi-finishing
-            // pass that cuts on one side has no axial cap; a slot or a
-            // groove reads the force budget (P29-5, ruling R3). The drill
-            // family also has none, but the drill arm above already took
-            // it. The gate reports the peak and judges nothing; the
-            // deflection gate is the limit on this pass.
-            tracing::debug!(
-                verdict = "Reported",
-                peak_mm,
-                "depth gate reports: this cut carries no axial cap"
-            );
+        if contributing > 0 {
+            // Every judged sample has no force-budget root below the flute.
             return DepthVerdict::Reported {
-                peak_mm,
-                evidence: evidence_with(ChiploadStatistic::PeakInRange),
+                peak_mm: deepest_mm,
+                evidence: evidence_at(
+                    deepest.map(|(i, _)| i),
+                    contributing,
+                    ChiploadStatistic::PeakInRange,
+                ),
                 confidence: Confidence::Approximate(format!(
-                    "peak engaged depth {peak_mm:.3} mm; a finishing pass that cuts \
-                     on one side has no depth limit, and the deflection gate is its limit"
+                    "peak engaged depth {deepest_mm:.3} mm; {}{no_number_clause}",
+                    crate::feeds::force_budget::NO_BUDGET_LIMIT_BELOW_THE_FLUTE
                 )),
             };
         }
+        if !population.is_empty() {
+            // Every sample with a depth has no number: no cut to judge.
+            return DepthVerdict::Reported {
+                peak_mm: deepest_mm,
+                evidence: evidence_at(deepest.map(|(i, _)| i), 0, ChiploadStatistic::PeakInRange),
+                confidence: Confidence::Approximate(format!(
+                    "peak engaged depth {deepest_mm:.3} mm; no sample with a depth has a \
+                     number, so the force budget judges none{no_number_clause}"
+                )),
+            };
+        }
+        // X-VAC: the cut of the first sample of the toolpath that states a
+        // feed, a speed and a width.
+        let first_cut = trace.samples.iter().find_map(|s| {
+            if s.toolpath_id != toolpath_id {
+                return None;
+            }
+            Some((
+                sample_width_mm(s, tool)?,
+                sample_chip_mm(
+                    s,
+                    super::effective_feed_for_sample(s, &trace.predicted_feeds),
+                )?,
+            ))
+        });
+        return vacuous_verdict(ctx, machine, first_cut, || {
+            evidence_at(None, 0, ChiploadStatistic::PeakInRange)
+        });
     };
-    let cap_mm = bound.cap_mm();
-    if !cap_mm.is_finite() || cap_mm <= 0.0 {
-        tracing::debug!(
-            reason = "NotImplemented",
-            cap_mm,
-            "depth gate refuses: the rigidity cap is not a usable depth"
-        );
-        return DepthVerdict::Unmodeled {
-            reason: UnmodeledReason::NotImplemented(
-                "the tool reports no usable diameter for the rigidity cap".to_owned(),
-            ),
-        };
-    }
 
     // EVIDENCE 5.1-6 / 5.2-16: the dexel stock stores its segment ends
     // in `f32`, so a removed column is an `f32` difference. A Profile
@@ -342,22 +400,24 @@ pub fn evaluate(ctx: &super::ToolpathLoadContext<'_>, env: &super::GateEnv<'_>) 
     // `Exceeds` at 1.2000 against 1.2000. The tolerance is the dexel
     // resolution, as a fraction of the cap, in the form the other gates
     // pass their own tolerance.
+    let cap_mm = bound.cap_mm();
     let exceeds =
         super::boundary::exceeds_high(peak_mm, cap_mm, DEXEL_DEPTH_RESOLUTION_MM / cap_mm);
-    // The statistic is the chipload gate's own vocabulary, and it is
-    // the right one: a peak read against a high bound, `PeakHigh` when
-    // it trips and `PeakInRange` when it does not. One deep excursion is
-    // the finding, as it is for deflection — a median would hide it.
+    // The statistic is the chipload gate's own vocabulary: a peak read
+    // against a high bound, `PeakHigh` when it trips and `PeakInRange`
+    // when it does not. The judged sample is the worst depth over its own
+    // cap; a median would hide it.
     let statistic = if exceeds {
         ChiploadStatistic::PeakHigh
     } else {
         ChiploadStatistic::PeakInRange
     };
-    let evidence = evidence_with(statistic);
-    // Every figure here is formatted from the value it describes. The
-    // confidence is `Approximate` on both decided arms because the
-    // budget stands in for an unmeasured frame, and that is a property of
-    // the bound, not of this cut.
+    let evidence = evidence_at(Some(idx), contributing, statistic);
+    // Ruling Q3: the row prints the depth and the cap of the judged
+    // sample; the text names the deepest depth too. The confidence is
+    // `Approximate` on both decided arms because the budget stands in for
+    // an unmeasured frame, and that is a property of the bound, not of
+    // this cut.
     let confidence = Confidence::Approximate(match bound {
         crate::machine::RigidityDepthCap::ForceBudget {
             budget_n,
@@ -365,9 +425,10 @@ pub fn evaluate(ctx: &super::ToolpathLoadContext<'_>, env: &super::GateEnv<'_>) 
             fz_mm,
             ..
         } => format!(
-            "peak engaged depth {peak_mm:.3} mm against the depth where the peak cutting \
-             force at width {ae_mm:.2} mm and {fz_mm:.4} mm/tooth meets the machine force \
-             budget {budget_n:.1} N"
+            "judged sample: engaged depth {peak_mm:.3} mm against the depth {cap_mm:.3} mm \
+             where the peak cutting force at width {ae_mm:.2} mm and {fz_mm:.4} mm/tooth \
+             meets the machine force budget {budget_n:.1} N (the largest depth over its own \
+             cap); deepest engaged depth {deepest_mm:.3} mm{no_number_clause}"
         ),
     });
 
@@ -393,12 +454,144 @@ pub fn evaluate(ctx: &super::ToolpathLoadContext<'_>, env: &super::GateEnv<'_>) 
     }
 }
 
-/// A sample this gate can read a depth from: it is cutting, and it
-/// reports a positive engaged depth. A cutting sample at zero depth
-/// contributes nothing to a maximum, and counting it would make an
-/// air pass look like a measured population.
+/// The depth histogram's value of a sample: its engaged depth when the
+/// gate gives the sample a number, else `None`. The histogram calls it
+/// after the gate's span filter, so it bins the gate's own population: on
+/// a cut with no depth limit every sample with a depth; on a force-budget
+/// cut the samples with a width and a chip (P29-6 6c).
+pub(super) fn depth_number(
+    s: &SimulationCutSample,
+    ctx: &super::ToolpathLoadContext<'_>,
+    machine: Option<&crate::machine::MachineProfile>,
+    predicted_feeds: &crate::machine::kinematics::PredictedFeedMap,
+) -> Option<f64> {
+    if !is_depth_sample(s) {
+        return None;
+    }
+    // EXEMPT(P28-02)
+    let has_rule = machine
+        .and_then(|m| m.rigidity.depth_cap_of(ctx.body_facts().depth_rule))
+        .is_some();
+    if !has_rule {
+        return Some(s.axial_engagement_mm);
+    }
+    sample_width_mm(s, ctx.tool())?;
+    sample_chip_mm(s, super::effective_feed_for_sample(s, predicted_feeds))?;
+    Some(s.axial_engagement_mm)
+}
+
+/// The sample with the largest depth over its own cap so far.
+struct JudgedSample {
+    idx: usize,
+    depth_mm: f64,
+    /// `depth_mm / cap`.
+    ratio: f64,
+    bound: crate::machine::RigidityDepthCap,
+}
+
+/// The engaged width of a sample (mm): the measured arc
+/// (`Engagement::from_sample`, `r (1 - cos psi)`), else the width share
+/// (`Engagement::radial_woc_fraction`) at the engaged diameter of its
+/// depth. `None` when the sample has neither: no number (P29-6 6c, the
+/// full-slot fallback is deleted; ruling Q7, an arc of 0 is no arc).
+fn sample_width_mm(s: &SimulationCutSample, tool: &crate::tool::ToolDefinition) -> Option<f64> {
+    crate::feeds::engagement::Engagement::from_sample(s, tool)
+        .map(|e| e.ae_mm())
+        .or_else(|| {
+            let w = s.engagement.radial_woc_fraction;
+            (w.is_finite() && w > 0.0)
+                .then(|| w * 2.0 * tool.engagement_radius(s.axial_engagement_mm.max(0.0)))
+        })
+        .filter(|ae| ae.is_finite() && *ae > 0.0)
+}
+
+/// The advance per tooth of a sample (mm) at `gate_feed`. P16 item 7
+/// (D3): the caller passes the one gate feed, the feed that the chip,
+/// power and deflection gates read (`effective_feed_for_sample`): the
+/// modulated feed when the trace holds one. `None` with no speed or no
+/// feed.
+fn sample_chip_mm(s: &SimulationCutSample, gate_feed: f64) -> Option<f64> {
+    let z = f64::from(s.flute_count.max(1));
+    let rpm = f64::from(s.spindle_rpm);
+    let fz = gate_feed / (rpm * z);
+    (rpm > 0.0 && fz.is_finite() && fz > 0.0).then_some(fz)
+}
+
+/// X-VAC: with no sample that has a depth, the gate reads its bound off
+/// `first_cut`, the width and chip of the first sample of the toolpath
+/// that states a feed, a speed and a width, so a vacuous `Within` still
+/// prints a cap. The population says the reading rests on nothing. With no
+/// such sample there is no cut to set a depth at, and the gate reports.
+fn vacuous_verdict(
+    ctx: &super::ToolpathLoadContext<'_>,
+    machine: &crate::machine::MachineProfile,
+    first_cut: Option<(f64, f64)>,
+    evidence: impl Fn() -> SampleEvidence,
+) -> DepthVerdict {
+    let tool = ctx.tool();
+    let Some((ae_mm, fz_mm)) = first_cut else {
+        return DepthVerdict::Reported {
+            peak_mm: 0.0,
+            evidence: evidence(),
+            confidence: Confidence::Approximate(
+                "no sample states a feed and a width: the force budget has no cut to set a \
+                 depth at"
+                    .to_owned(),
+            ),
+        };
+    };
+    match crate::feeds::force_budget::rigidity_depth_cap(
+        machine,
+        ctx.body_facts().depth_rule,
+        tool,
+        ctx.material(),
+        ae_mm,
+        fz_mm,
+    ) {
+        Some(crate::feeds::force_budget::RigidityCapOutcome::Cap(bound))
+            if bound.cap_mm().is_finite() && bound.cap_mm() > 0.0 =>
+        {
+            DepthVerdict::Within {
+                peak_mm: 0.0,
+                bound,
+                evidence: evidence(),
+                confidence: Confidence::Approximate(
+                    "no sample removed material at a depth: the cap is read at the first \
+                     sample that states a feed and a width"
+                        .to_owned(),
+                ),
+            }
+        }
+        Some(crate::feeds::force_budget::RigidityCapOutcome::Cap(_)) => DepthVerdict::Unmodeled {
+            reason: UnmodeledReason::NotImplemented(
+                "the tool reports no usable diameter for the rigidity cap".to_owned(),
+            ),
+        },
+        Some(crate::feeds::force_budget::RigidityCapOutcome::Unmodelled(reason)) => {
+            DepthVerdict::Unmodeled {
+                reason: UnmodeledReason::NotImplemented(reason.to_owned()),
+            }
+        }
+        Some(crate::feeds::force_budget::RigidityCapOutcome::NoLimitBelowFlute) | None => {
+            DepthVerdict::Reported {
+                peak_mm: 0.0,
+                evidence: evidence(),
+                confidence: Confidence::Approximate(format!(
+                    "peak engaged depth 0.000 mm; {}",
+                    crate::feeds::force_budget::NO_BUDGET_LIMIT_BELOW_THE_FLUTE
+                )),
+            }
+        }
+    }
+}
+
+/// A sample this gate can read a depth from: it removes material
+/// ([`SimulationCutSample::removes_material`], P29-6 ruling Q2), and it
+/// reports a positive engaged depth. A removing sample at zero depth
+/// contributes nothing to a maximum, and counting it would make an air
+/// pass look like a measured population.
 pub(super) fn is_depth_sample(sample: &SimulationCutSample) -> bool {
-    sample.is_cutting && sample.axial_engagement_mm > 0.0
+    sample.removes_material() && sample.axial_engagement_mm > 0.0
 }
 
 #[cfg(test)]
@@ -443,6 +636,8 @@ mod tests {
             axial_doc_mm: 0.0,
             axial_engagement_mm: depth,
             engagement: Engagement::with_radial_woc(0.4),
+            // P29-6 6c: the gate reads the samples that remove material.
+            removed_volume_est_mm3: if cutting { 0.1 } else { 0.0 },
             in_transit_span: false,
             ..SimulationCutSample::test_fixture()
         }
@@ -515,7 +710,7 @@ mod tests {
         evaluate(&ctx, &env)
     }
 
-    /// P13c (O1): a roughing Pocket reads the force budget at the peak
+    /// P13c (O1): a roughing Pocket reads the force budget at the judged
     /// sample's cut: the arc pi/2 gives ae = r = 3 mm, the chip is the
     /// sample feed / (rpm x Z). The bound is the one producer's number.
     #[test]
@@ -552,14 +747,15 @@ mod tests {
     }
 
     /// The cap `c` is the oak force-budget depth (P29-4; before, the
-    /// fixture factor 0.25 x 6 = 1.5 mm). A peak of 0.8 c is under it, and
-    /// the peak is the MAXIMUM of the three depths.
+    /// fixture factor 0.25 x 6 = 1.5 mm). The three samples share one width
+    /// and one chip, so they share one cap: the judged sample (the largest
+    /// depth over its own cap) is the deepest one, 0.8 c, under the cap.
     #[test]
     #[expect(
         clippy::wildcard_enum_match_arm,
         reason = "test: an unexpected variant panics"
     )]
-    fn the_peak_is_the_maximum_engaged_depth() {
+    fn at_one_width_the_judged_sample_is_the_deepest() {
         let c = oak_cap_mm();
         let t = trace(vec![
             sample(0, 0.25 * c, true),
@@ -578,6 +774,122 @@ mod tests {
                 assert_eq!(evidence.population.unwrap().contributing, 3);
             }
             other => panic!("expected Within, got {other:?}"),
+        }
+    }
+
+    /// The oak force-budget cap (mm) at the width share `share` of the
+    /// 6 mm tool and the fixture chip.
+    fn oak_cap_at_share_mm(share: f64) -> f64 {
+        let cut = crate::feeds::force_budget::rigidity_depth_cap(
+            &MachineProfile::shapeoko_makita(),
+            OperationType::Adaptive.body_depth_limit(),
+            &tool(),
+            &oak(),
+            share * 6.0,
+            1500.0 / (18_000.0 * 2.0),
+        );
+        match cut {
+            Some(crate::feeds::force_budget::RigidityCapOutcome::Cap(c)) => c.cap_mm(),
+            other => panic!("the oak fixture cut has a force-budget cap: {other:?}"),
+        }
+    }
+
+    /// P29-6 6c (ruling Q3): each sample is judged against its own cap. A
+    /// deep narrow sample (0.8 of its cap) and a shallower wide sample (0.9
+    /// of its smaller cap): the verdict names the shallower wide sample,
+    /// with its depth and its cap, not the deepest sample.
+    #[test]
+    #[expect(
+        clippy::wildcard_enum_match_arm,
+        reason = "test: an unexpected variant panics"
+    )]
+    fn the_judged_sample_is_the_largest_depth_over_its_own_cap() {
+        let narrow_cap = oak_cap_at_share_mm(0.4);
+        let wide_cap = oak_cap_at_share_mm(1.0);
+        let deep = 0.8 * narrow_cap;
+        let wide_depth = 0.9 * wide_cap;
+        assert!(
+            wide_depth < deep,
+            "vacuous: the wide sample must be the shallower one ({wide_depth} vs {deep})"
+        );
+        let wide = SimulationCutSample {
+            engagement: Engagement::with_radial_woc(1.0),
+            ..sample(1, wide_depth, true)
+        };
+        let t = trace(vec![sample(0, deep, true), wide]);
+        match run_in(OperationType::Adaptive, Some(&t), &oak()) {
+            DepthVerdict::Within {
+                peak_mm,
+                bound,
+                evidence,
+                ..
+            } => {
+                assert!((peak_mm - wide_depth).abs() < 1e-12, "{peak_mm}");
+                assert!((bound.cap_mm() - wide_cap).abs() < 1e-12);
+                assert_eq!(evidence.sample_range.start, 1);
+                assert_eq!(evidence.population.unwrap().contributing, 2);
+            }
+            other => panic!("expected Within at the wide sample, got {other:?}"),
+        }
+    }
+
+    /// P29-6 6c: a sample with a depth and no width (no arc, a width share
+    /// of 0) gets no number. Before 6c it took a full-slot cap. Here it is
+    /// five caps deep, and it neither sets the bound nor counts.
+    #[test]
+    #[expect(
+        clippy::wildcard_enum_match_arm,
+        reason = "test: an unexpected variant panics"
+    )]
+    fn a_sample_with_no_width_gets_no_number() {
+        let c = oak_cap_mm();
+        let no_width = SimulationCutSample {
+            engagement: Engagement::with_radial_woc(0.0),
+            arc_engagement_radians: None,
+            ..sample(1, 5.0 * c, true)
+        };
+        let t = trace(vec![sample(0, 0.5 * c, true), no_width]);
+        match run_in(OperationType::Adaptive, Some(&t), &oak()) {
+            DepthVerdict::Within {
+                peak_mm,
+                bound,
+                evidence,
+                ..
+            } => {
+                assert!((peak_mm - 0.5 * c).abs() < 1e-12, "{peak_mm}");
+                assert!((bound.cap_mm() - c).abs() < 1e-12);
+                let p = evidence.population.unwrap();
+                assert_eq!((p.contributing, p.offered), (1, 2));
+            }
+            other => panic!("expected Within at the sample with a width, got {other:?}"),
+        }
+    }
+
+    /// P29-6 6c: when every sample with a depth has no width, no sample
+    /// has a number. The gate reports the deepest depth with no bound, and
+    /// the population is vacuous.
+    #[test]
+    #[expect(
+        clippy::wildcard_enum_match_arm,
+        reason = "test: an unexpected variant panics"
+    )]
+    fn only_samples_with_no_width_report_with_no_bound() {
+        let no_width = |idx: usize, depth: f64| SimulationCutSample {
+            engagement: Engagement::with_radial_woc(0.0),
+            arc_engagement_radians: None,
+            ..sample(idx, depth, true)
+        };
+        let t = trace(vec![no_width(0, 0.4), no_width(1, 0.9)]);
+        match run_in(OperationType::Adaptive, Some(&t), &oak()) {
+            DepthVerdict::Reported {
+                peak_mm, evidence, ..
+            } => {
+                assert!((peak_mm - 0.9).abs() < 1e-12, "{peak_mm}");
+                let p = evidence.population.unwrap();
+                assert!(p.is_vacuous());
+                assert_eq!(p.offered, 2);
+            }
+            other => panic!("expected Reported with no bound, got {other:?}"),
         }
     }
 

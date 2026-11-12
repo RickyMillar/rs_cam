@@ -202,6 +202,8 @@ fn sample(idx: usize, depth: f64) -> SimulationCutSample {
         axial_doc_mm: 0.0,
         axial_engagement_mm: depth,
         engagement: Engagement::with_radial_woc(0.4),
+        // P29-6 6c: the depth gate reads the samples that remove material.
+        removed_volume_est_mm3: 0.1,
         in_transit_span: false,
         ..SimulationCutSample::test_fixture()
     }
@@ -513,7 +515,7 @@ fn load_verdict(
 /// A Ø6 Pocket cut 1 mm deeper than its roughing cap: the diagnostics
 /// list carries `load.depth.exceeds` at `Caution`, with the peak and the
 /// cap as its evidence. P13c (O1): the cap is the force-budget depth at the
-/// peak sample's cut (arc pi/2, the sample feed), from the one producer.
+/// judged sample's cut (arc pi/2, the sample feed), from the one producer.
 #[test]
 fn a_depth_exceedance_reaches_the_diagnostics_list_fm6() {
     let cap = pocket_cap();

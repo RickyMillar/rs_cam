@@ -111,7 +111,7 @@ const R2: ExemptionClass = ExemptionClass::Ruled {
 const NR: ExemptionClass = ExemptionClass::NeedsRuling;
 
 /// Every exemption from a limit today. See the module doc.
-pub static EXEMPTIONS: [Exemption; 62] = [
+pub static EXEMPTIONS: [Exemption; 61] = [
     // P28: the limit audit.
     Exemption {
         id: "P28-02",
@@ -519,15 +519,6 @@ pub static EXEMPTIONS: [Exemption; 62] = [
         class: NR,
         where_: &["src/feeds/engagement.rs", "src/tool_load/deflection.rs"],
         closes_in: "P29-6 (a probe)",
-    },
-    Exemption {
-        id: "M5",
-        what: "the machine force budget (the depth gate)",
-        limit: &[LimitId::ForceBudget],
-        who: Who::Reader("every sample but the one at the peak depth"),
-        class: NR,
-        where_: &["src/tool_load/depth.rs"],
-        closes_in: "P29-6",
     },
     Exemption {
         id: "M6",

@@ -260,7 +260,7 @@ fn depth_row<'a>(criteria: &'a [CriterionStatus<'a>]) -> &'a CriterionStatus<'a>
 /// The cap the profile implies for one family at the measured trace's
 /// peak cut, read back through the one shared producer
 /// (`feeds::force_budget::rigidity_depth_cap`). P13c (O1): a roughing
-/// Pocket reads the force budget at the peak sample's width (arc pi/2:
+/// Pocket reads the force budget at the judged sample's width (arc pi/2:
 /// ae = r) and chip (feed / (rpm x Z)); P29-4: the Adaptive family reads
 /// the same budget; P29-5 (ruling R3): a Trace slot too. The depth limit
 /// is the op kind's (`OperationType::body_depth_limit`). Nothing in this

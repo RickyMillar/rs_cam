@@ -10,7 +10,9 @@
 //! one small synthetic trace:
 //!
 //! 1. the maximum of `distribution::gate_population` equals the gate's
-//!    `display_peak`;
+//!    `display_peak`; for the depth of cut (P29-6 6c, ruling Q3) the
+//!    `display_peak` is the judged sample (the largest depth over its own
+//!    cap): it is in the population, and the maximum is at least it;
 //! 2. the population size equals the gate's `population.contributing`, and
 //!    the histogram counts sum to the same number;
 //! 3. the histogram weights sum to `total_s`, `total_s` is positive, and
@@ -305,10 +307,27 @@ fn histogram_population_is_the_gate_population() {
             .iter()
             .map(|p| p.value)
             .fold(f64::NEG_INFINITY, f64::max);
-        assert!(
-            (max - peak).abs() <= 1e-12 * peak.abs().max(1.0),
-            "{kind:?}: population max {max} != gate display_peak {peak}"
-        );
+        if kind == CriterionKind::DepthOfCut {
+            // P29-6 6c (ruling Q3): the depth row prints the judged sample,
+            // the largest depth over its OWN cap, not the deepest sample.
+            // The judged sample is in the population, and the population
+            // maximum is at least its depth.
+            assert!(
+                population
+                    .iter()
+                    .any(|p| (p.value - peak).abs() <= 1e-12 * peak.abs().max(1.0)),
+                "{kind:?}: the judged depth {peak} is not in the population"
+            );
+            assert!(
+                max >= peak,
+                "{kind:?}: population max {max} below the judged depth {peak}"
+            );
+        } else {
+            assert!(
+                (max - peak).abs() <= 1e-12 * peak.abs().max(1.0),
+                "{kind:?}: population max {max} != gate display_peak {peak}"
+            );
+        }
 
         // Claim 3 — the shares, through the public door.
         let outcome =

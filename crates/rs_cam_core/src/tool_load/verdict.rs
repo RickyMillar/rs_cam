@@ -2224,8 +2224,9 @@ impl DeflectionVerdict {
 #[serde(rename_all = "snake_case", tag = "kind")]
 pub enum DepthVerdict {
     Within {
-        /// Peak `axial_engagement_mm` over the toolpath's contributing
-        /// cutting samples. `0.0` with a vacuous population means the
+        /// The `axial_engagement_mm` of the judged sample: the sample with
+        /// the largest depth over its own cap (P29-6 6c, ruling Q3); `bound`
+        /// is that sample's cap. `0.0` with a vacuous population means the
         /// gate measured nothing — read [`GatePopulation::is_vacuous`],
         /// never this field alone.
         peak_mm: f64,
@@ -2246,8 +2247,9 @@ pub enum DepthVerdict {
     /// peak and judges nothing. The state is `Within`: a reading with no
     /// bound cannot exceed. The criterion row carries `bound: None`.
     Reported {
-        /// Peak `axial_engagement_mm` over the contributing cutting
-        /// samples. Read [`GatePopulation::is_vacuous`] before this.
+        /// The deepest `axial_engagement_mm` over the samples that removed
+        /// material at a depth. Read [`GatePopulation::is_vacuous`] before
+        /// this.
         peak_mm: f64,
         evidence: SampleEvidence,
         confidence: Confidence,

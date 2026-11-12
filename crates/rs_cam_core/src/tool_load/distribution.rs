@@ -18,7 +18,7 @@
 //! | Chipload | [`super::chipload::removing_samples_for_toolpath`] (every sample that removes material, at any feed, P29-6 6b), the validity test [`super::chipload::has_chip_number`] (a chip model, not air class), [`super::display::peak_chip_per_tooth`] (P11b2: the peak chip), [`super::locality::is_steady_state_for_gate`] |
 //! | Power | [`super::power::sample_power_kw`] at [`super::effective_feed_for_sample`], then [`super::locality::is_steady_state_for_gate`] |
 //! | Deflection | [`super::deflection::sample_tip_deflection_mm`] at [`super::deflection::deflection_feed_per_tooth_mm`], then [`super::locality::is_steady_state_for_gate`] |
-//! | Depth of cut | the depth gate's `is_depth_sample`, then [`super::locality::is_steady_state_for_gate`]; the value is `axial_engagement_mm` |
+//! | Depth of cut | [`super::locality::is_steady_state_for_gate`], then the depth gate's `depth_number` (a sample with a number: P29-6 6c); the value is `axial_engagement_mm` |
 //! | Engagement | no gate; the power gate's pre-filter (cutting, not air, arc captured), then [`super::locality::is_steady_state_for_gate`]; the value is the arc in degrees |
 //! | Cut force (P17) | [`super::cut_force::cut_points`] (the deflection gate's filters, [`super::deflection::sample_engagement`], [`super::locality::is_steady_state_for_gate`]); the value is `force_n`, [`super::cut_force::sample_peak_force_n`]; the ceiling is [`super::cut_force::budget_line`] (lead ruling 3) |
 //!
@@ -696,7 +696,7 @@ pub fn gate_population(
         }
         DistributionMetric::Criterion(CriterionKind::DepthOfCut) => {
             collect(trace, ctx, lookup, |s| {
-                super::depth::is_depth_sample(s).then_some(s.axial_engagement_mm)
+                super::depth::depth_number(s, ctx, env.machine, &trace.predicted_feeds)
             })
         }
         DistributionMetric::Engagement => collect(trace, ctx, lookup, |s| {
