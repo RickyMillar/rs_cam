@@ -1362,7 +1362,7 @@ impl ToolConfig {
     /// reads any of these fields, so on a type that does not own the
     /// field the value was never read: `compute::cutter::build_cutter`
     /// (the only builder of a `MillingCutter` from a `ToolConfig`),
-    /// `ToolConfig::envelope_diameter`, `execute::vbit_half_angle`,
+    /// `ToolConfig::envelope_diameter`, `ops::chamfer::vbit_half_angle`,
     /// `feeds::predict::bending_diameter_mm`, and the viz wireframe
     /// builder `render::sim_render::ToolGeometry::from_tool_config`.
     ///

@@ -13,9 +13,9 @@ use crate::compute::catalog::{OperationConfig, OperationType, RestUse};
 use crate::compute::operation_configs::{
     ProjectCurveConfig, ProjectCurveDirection, RegionOrdering,
 };
-use crate::compute::tool_config::ToolConfig;
 use crate::finish::unified_finish::RelinkTotals;
 use crate::interrupt::CancelCheck;
+use crate::ops::chamfer::vbit_half_angle;
 use crate::ops::project_curve::ProjectCurveParams;
 use crate::polygon::Polygon2;
 use crate::tool::MillingCutter;
@@ -490,13 +490,6 @@ impl LayeredOp for ChamferPass {
     fn spans(&self, toolpath: Toolpath, _levels: &[f64]) -> GeneratedToolpath {
         generated_with_cut_run_spans(toolpath, "Chamfer run")
     }
-}
-
-/// The V-bit half-angle, in radians. The dispatch prologue already refused
-/// any tool that is not a V-bit (W2.2: the row's `tool_constraints`), so
-/// this only converts.
-fn vbit_half_angle(tool_cfg: &ToolConfig) -> f64 {
-    (tool_cfg.included_angle / 2.0).to_radians()
 }
 
 /// ProjectCurve family adapter (W6.5: the Curve shape, `curve.rs`). The

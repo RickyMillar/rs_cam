@@ -113,8 +113,9 @@ impl<'a> FeedsInput<'a> {
     /// The calculator input of `operation` on `tool`.
     ///
     /// The operation fills the row key (`OperationConfig::feeds_style`, the
-    /// kind), the stated depth, width and scallop (`CutSpec::calc_inputs`),
-    /// the declared cuts and the body facts. The tool fills the tool facts,
+    /// kind), the stated width and scallop (`CutSpec::calc_inputs`), the
+    /// depth (`planned::DeclaredCuts::body_depth`, P29-9), the declared cuts
+    /// and the body facts. The tool fills the tool facts,
     /// the body, the series and the stick-out. The caller gives the
     /// material, the machine, the vendor table and the spindle policy.
     #[must_use]
@@ -127,13 +128,15 @@ impl<'a> FeedsInput<'a> {
         spindle_strategy: SpindleStrategy,
     ) -> Self {
         let (family, role) = operation.feeds_style();
-        let (axial_hint, radial_hint, scallop_hint) =
-            operation.cut_spec().calc_inputs(tool.diameter);
+        let (_, radial_hint, scallop_hint) = operation.cut_spec().calc_inputs(tool.diameter);
         let cuts = planned::DeclaredCuts::of_operation(
             operation,
             tool,
             &crate::feeds::entry_rule::ConfiguredEntry::registry_default(operation),
         );
+        // P29-9 9a: the depth is the one depth door (`DeclaredCuts::
+        // body_depth`): a stated depth, or a depth of the tool (a chamfer).
+        let axial_hint = cuts.body_depth().speeds_mm();
         Self {
             // Ruling 2026-10-31: the cut direction declares the cutter series;
             // `UpCut` is a generic tool.

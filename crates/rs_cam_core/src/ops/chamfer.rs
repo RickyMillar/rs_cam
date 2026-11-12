@@ -116,7 +116,29 @@ pub struct ChamferParams {
 /// The Layered Chamfer (`compute/execute/curve_engrave.rs`) reads it as its
 /// one ladder level, `top_z - depth`.
 pub(crate) fn chamfer_depth(params: &ChamferParams) -> f64 {
-    (params.chamfer_width + params.tip_offset) / params.tool_half_angle.tan()
+    chamfer_depth_mm(
+        params.chamfer_width,
+        params.tip_offset,
+        params.tool_half_angle,
+    )
+}
+
+/// THE chamfer depth (mm): `(chamfer_width + tip_offset) / tan(half_angle)`,
+/// the half angle in radians. The generator ([`chamfer_depth`]) and the
+/// declared depth of the Chamfer cut (P29-9 9a,
+/// `compute::catalog::ToolDepth::Chamfer`) read this one formula.
+#[must_use]
+pub fn chamfer_depth_mm(chamfer_width: f64, tip_offset: f64, half_angle_rad: f64) -> f64 {
+    (chamfer_width + tip_offset) / half_angle_rad.tan()
+}
+
+/// The half angle (radians) of a V-bit: half its included angle. The
+/// generator and the declared depth read it. The dispatch prologue of a
+/// V-bit op refuses any tool that is not a V-bit (W2.2: the row's
+/// `tool_constraints`), so this only converts.
+#[must_use]
+pub fn vbit_half_angle(tool_cfg: &crate::compute::tool_config::ToolConfig) -> f64 {
+    (tool_cfg.included_angle / 2.0).to_radians()
 }
 
 /// The tool-centre rings: every ring of the outline, moved `tip_offset` into

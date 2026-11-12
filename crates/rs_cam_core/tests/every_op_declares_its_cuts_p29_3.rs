@@ -47,6 +47,13 @@
 //!   `RigidityProfile::depth_cap_rule(family, role)` and its needle: every
 //!   reader reads `OperationType::body_depth_limit` through the registry
 //!   row.
+//! - Claim 5 (P29-9): one depth door. For every config on its fixture
+//!   tool, the body depth of `DeclaredCuts::body_depth` gives the speeds
+//!   depth of the old hint (`CutSpec::calc_inputs`), except a Chamfer: a
+//!   Chamfer declares the depth of the tool (`ToolDepth::Chamfer`), on a
+//!   V-bit the generator's formula `(width + tip offset) / tan(half
+//!   angle)`, on any other tool no depth (`NotAVBit`). A peck declares a
+//!   drill cycle (`NoEngagementModel::DrillCycle`, ruling Q4).
 
 #![expect(
     clippy::expect_used,
@@ -636,4 +643,92 @@ fn claim_4_no_label_reader_outside_the_cut_list() {
             );
         }
     }
+}
+
+#[test]
+fn claim_5_one_depth_door_p29_9() {
+    use rs_cam_core::compute::catalog::ToolDepth;
+    use rs_cam_core::feeds::planned::BodyDepth;
+    use rs_cam_core::limits::NoEngagementModel;
+    let (mut chamfers, mut pecks) = (0, 0);
+    for case in cases() {
+        let op = &case.op;
+        let tool = common::op_fixtures::tool_for(op.op_type());
+        let cuts = DeclaredCuts::of_operation(op, &tool, &ConfiguredEntry::registry_default(op));
+        let declared = cuts
+            .list()
+            .of_kind(CutKind::Body)
+            .expect("every op declares its body")
+            .depth;
+        match op {
+            OperationConfig::Chamfer(c) => {
+                chamfers += 1;
+                assert_eq!(
+                    declared,
+                    DeclaredDepth::OfTool(ToolDepth::Chamfer {
+                        width_mm: c.chamfer_width,
+                        tip_offset_mm: c.tip_offset,
+                    }),
+                    "{}",
+                    case.name
+                );
+                let want = rs_cam_core::ops::chamfer::chamfer_depth_mm(
+                    c.chamfer_width,
+                    c.tip_offset,
+                    rs_cam_core::ops::chamfer::vbit_half_angle(&tool),
+                );
+                assert_eq!(cuts.body_depth(), BodyDepth::Plane(want), "{}", case.name);
+                // A chamfer on a tool that is not a V-bit has no depth.
+                let mut flat = tool.clone();
+                flat.tool_type = rs_cam_core::compute::tool_config::ToolType::EndMill;
+                let on_flat =
+                    DeclaredCuts::of_operation(op, &flat, &ConfiguredEntry::registry_default(op));
+                assert_eq!(
+                    on_flat.body_depth(),
+                    BodyDepth::None(NoEngagementModel::NotAVBit),
+                    "{}",
+                    case.name
+                );
+            }
+            OperationConfig::Drill(_) | OperationConfig::AlignmentPinDrill(_) => {
+                pecks += 1;
+                assert_eq!(
+                    declared,
+                    DeclaredDepth::None(NoEngagementModel::DrillCycle),
+                    "{}",
+                    case.name
+                );
+            }
+            OperationConfig::Pocket(_)
+            | OperationConfig::Profile(_)
+            | OperationConfig::Adaptive(_)
+            | OperationConfig::VCarve(_)
+            | OperationConfig::Inlay(_)
+            | OperationConfig::InlayPlug(_)
+            | OperationConfig::Zigzag(_)
+            | OperationConfig::Trace(_)
+            | OperationConfig::Bore(_)
+            | OperationConfig::Face(_)
+            | OperationConfig::DropCutter(_)
+            | OperationConfig::Adaptive3d(_)
+            | OperationConfig::Waterline(_)
+            | OperationConfig::Pencil(_)
+            | OperationConfig::Scallop(_)
+            | OperationConfig::UnifiedFinish(_)
+            | OperationConfig::SteepShallow(_)
+            | OperationConfig::RampFinish(_)
+            | OperationConfig::SpiralFinish(_)
+            | OperationConfig::RadialFinish(_)
+            | OperationConfig::HorizontalFinish(_)
+            | OperationConfig::ProjectCurve(_) => {
+                assert_eq!(
+                    cuts.body_depth().speeds_mm(),
+                    op.cut_spec().calc_inputs(tool.diameter).0,
+                    "{}: the depth door equals the old hint",
+                    case.name
+                );
+            }
+        }
+    }
+    assert!(chamfers > 0 && pecks > 0, "non-vacuity: {chamfers} {pecks}");
 }

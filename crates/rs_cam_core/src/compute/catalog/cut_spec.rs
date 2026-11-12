@@ -347,10 +347,14 @@ impl CutSpec {
     /// - The depth: a depth per pass, a Z step, a one-pass depth, the
     ///   operator's surface cap, or a helix pitch, when it is above zero.
     ///   A helix of pitch `p` engages `p` of material at its leading edge,
-    ///   so one helix turn is the depth of a Bore (P29-5b). A peck and a
-    ///   chamfer width are not a side-cut depth, so the calculator reads
-    ///   none for them. A surface offset is not a depth (P16), so the
-    ///   calculator reads none for it.
+    ///   so one helix turn is the depth of a Bore (P29-5b). A peck is a
+    ///   drill cycle and a surface offset is not a depth (P16): none. A
+    ///   chamfer gives none here because its depth needs the tool. P29-9
+    ///   9a: the calculator reads its depth at the one depth door
+    ///   (`feeds::planned::DeclaredCuts::body_depth`), which equals this
+    ///   hint on every other axial rule; the tool-free readers of this
+    ///   hint (the gate context, `operation_feeds_hints`) read none for a
+    ///   chamfer.
     /// - The width: a stepover, or the tool diameter for a slot. A groove,
     ///   a surface width, an angular step and a drill give none.
     /// - The scallop target, when the radial cut is a scallop.
@@ -364,7 +368,9 @@ impl CutSpec {
                 }
             }
             Axial::HelixPitch(s) => Some(s.mm()),
-            // EXEMPT(P28-32)
+            // P29-9 9a: the chamfer depth needs the tool; the calculator
+            // reads it at the one depth door (`feeds::planned::DeclaredCuts::
+            // body_depth`). This tool-free hint gives none.
             Axial::Peck(_) | Axial::ChamferWidth(_) | Axial::SurfaceOffset(_) => None,
         };
         // A depth at or below zero is not a cut depth: the calculator reads

@@ -96,7 +96,7 @@ const R2: ExemptionClass = ExemptionClass::Ruled {
 const NR: ExemptionClass = ExemptionClass::NeedsRuling;
 
 /// Every exemption from a limit today. See the module doc.
-pub static EXEMPTIONS: [Exemption; 40] = [
+pub static EXEMPTIONS: [Exemption; 39] = [
     // P28: the limit audit.
     Exemption {
         id: "P28-02",
@@ -359,19 +359,6 @@ pub static EXEMPTIONS: [Exemption; 40] = [
         class: NR,
         where_: &["src/feeds/mod.rs"],
         closes_in: "P27 (no source)",
-    },
-    Exemption {
-        id: "P28-32",
-        what: "the depth that the calculator reads, and the force budget before the simulation",
-        limit: &[LimitId::ForceBudget],
-        who: Who::Reader("a chamfer width and a peck give no depth"),
-        class: NR,
-        where_: &[
-            "src/compute/catalog/cut_spec.rs",
-            "src/feeds/envelope.rs",
-            "src/feeds/force_budget.rs",
-        ],
-        closes_in: "P29-9",
     },
     Exemption {
         id: "P28-33",

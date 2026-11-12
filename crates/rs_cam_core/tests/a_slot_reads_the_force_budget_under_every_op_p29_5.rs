@@ -26,8 +26,10 @@
 //!   simulation. VCarve, Inlay and InlayPlug with one V-bit, one material
 //!   and one stated chip give the same envelope `Rigidity` ceiling as a
 //!   Trace with that V-bit (bit-equal): the groove at its own fixed axis
-//!   width, the Trace at D. A Chamfer states its width, not a depth: its
-//!   `Rigidity` entry is `Unmodelled` with the chamfer clause.
+//!   width, the Trace at D. P29-9 9a: a Chamfer is a groove too, and it
+//!   states the depth of the tool that cuts its width (`ToolDepth::
+//!   Chamfer`): its ceiling equals the Trace ceiling, and its proposal is
+//!   the chamfer depth of the generator's formula.
 
 #![expect(
     clippy::expect_used,
@@ -40,9 +42,7 @@ use std::collections::BTreeSet;
 use rs_cam_core::compute::catalog::{OperationConfig, OperationType, RadialRule};
 use rs_cam_core::compute::tool_config::{ToolConfig, ToolFact, ToolId, ToolType};
 use rs_cam_core::feeds::envelope::{Edge, EnvelopeAxes, EnvelopeInput, LimitKind, SafeEnvelope};
-use rs_cam_core::feeds::force_budget::{
-    CHAMFER_STATES_NO_DEPTH, RigidityCapOutcome, rigidity_depth_cap,
-};
+use rs_cam_core::feeds::force_budget::{RigidityCapOutcome, rigidity_depth_cap};
 use rs_cam_core::feeds::suggest::SuggestContext;
 use rs_cam_core::feeds::{OperationFamily, PassRole, SpindleStrategy, embedded_vendor_lut};
 use rs_cam_core::limits::{DepthLimit, NoDepthLimit};
@@ -283,6 +283,7 @@ fn claim_4_a_groove_reads_the_slot_width_before_the_simulation_p29_5c() {
         OperationType::VCarve,
         OperationType::Inlay,
         OperationType::InlayPlug,
+        OperationType::Chamfer,
     ] {
         let env = envelope_of(&stated_op(kind), &tool, &material);
         let ae = match env.axes {
@@ -301,15 +302,34 @@ fn claim_4_a_groove_reads_the_slot_width_before_the_simulation_p29_5c() {
              Trace ceiling {trace}"
         );
     }
-    let chamfer = envelope_of(&stated_op(OperationType::Chamfer), &tool, &material);
+    // P29-9 9a: the Chamfer proposal is the chamfer depth of the
+    // generator's formula, not the chamfer width.
+    let op = stated_op(OperationType::Chamfer);
+    let OperationConfig::Chamfer(c) = &op else {
+        panic!("a Chamfer config");
+    };
+    let depth = rs_cam_core::ops::chamfer::chamfer_depth_mm(
+        c.chamfer_width,
+        c.tip_offset,
+        rs_cam_core::ops::chamfer::vbit_half_angle(&tool),
+    );
+    assert!(
+        (depth - c.chamfer_width).abs() > 0.1,
+        "non-vacuity: the depth {depth} differs from the width {}",
+        c.chamfer_width
+    );
+    let chamfer = envelope_of(&op, &tool, &material);
     let rigidity = chamfer
         .limit(LimitKind::Rigidity)
         .expect("a Chamfer states a Rigidity entry");
-    let Edge::Unmodelled { reason } = &rigidity.edge else {
-        panic!(
-            "a Chamfer states no depth, so no Rigidity edge: {:?}",
-            rigidity.edge
-        );
-    };
-    assert_eq!(*reason, CHAMFER_STATES_NO_DEPTH);
+    assert!(
+        !matches!(rigidity.edge, Edge::Unmodelled { .. }),
+        "a Chamfer states its depth, so it draws a Rigidity edge: {:?}",
+        rigidity.edge
+    );
+    assert_eq!(
+        chamfer.proposal.get().ap_mm().map(f64::to_bits),
+        Some(depth.to_bits()),
+        "the Chamfer proposal is the chamfer depth"
+    );
 }

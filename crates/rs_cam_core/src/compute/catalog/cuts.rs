@@ -118,8 +118,55 @@ pub enum DeclaredDepth {
     /// Only the spindle power reads it (`CutLoad`, the axial section); no
     /// side-cut limit has a model for it.
     Axial,
+    /// P29-9 9a: a depth of the tool, a depth of the body plane. The tool
+    /// resolves it ([`ToolDepth::mm`]); `feeds::planned::DeclaredCuts::
+    /// body_depth` is the one door that reads it.
+    OfTool(ToolDepth),
     /// No depth is stated, or the simulation gives it.
     None(NoEngagementModel),
+}
+
+/// P29-9 9a: a depth that the tool gives. One match names every rule
+/// ([`Self::mm`]): a new rule does not compile until it states its depth.
+#[derive(Debug, Clone, Copy, PartialEq)]
+pub enum ToolDepth {
+    /// The depth of a chamfer: the tip below the stock top that cuts the
+    /// stated width (`ops::chamfer::chamfer_depth_mm`, the formula of the
+    /// generator). The op states the width and the tip offset.
+    Chamfer {
+        /// The chamfer width (mm).
+        width_mm: f64,
+        /// The tip offset into the air (mm).
+        tip_offset_mm: f64,
+    },
+}
+
+impl ToolDepth {
+    /// The depth (mm) on `tool`.
+    ///
+    /// # Errors
+    ///
+    /// [`NoEngagementModel::NotAVBit`] for a chamfer on a tool that is not
+    /// a V-bit (no cone gives the depth).
+    pub fn mm(self, tool: &ToolConfig) -> Result<f64, NoEngagementModel> {
+        use crate::compute::tool_config::ToolType;
+        match self {
+            Self::Chamfer {
+                width_mm,
+                tip_offset_mm,
+            } => match tool.tool_type {
+                ToolType::VBit => Ok(crate::ops::chamfer::chamfer_depth_mm(
+                    width_mm,
+                    tip_offset_mm,
+                    crate::ops::chamfer::vbit_half_angle(tool),
+                )),
+                ToolType::EndMill
+                | ToolType::BallNose
+                | ToolType::BullNose
+                | ToolType::TaperedBallNose => Err(NoEngagementModel::NotAVBit),
+            },
+        }
+    }
 }
 
 /// P29-8 8d: the own depth of a cut that is not on the body plane (an
@@ -304,6 +351,10 @@ impl DeclaredCut {
             let ap = match self.depth {
                 DeclaredDepth::Stated(ap) => ap,
                 DeclaredDepth::Own(own) => own.mm,
+                DeclaredDepth::OfTool(depth) => match depth.mm(ctx.tool) {
+                    Ok(ap) => ap,
+                    Err(reason) => return CutEngagement::NoModel(reason),
+                },
                 // Not reached: an axial cut is the straight plunge above.
                 DeclaredDepth::Axial => {
                     return CutEngagement::NoModel(NoEngagementModel::NoStatedDepth);
@@ -552,7 +603,13 @@ impl OperationConfig {
             OperationConfig::Drill(_) | OperationConfig::AlignmentPinDrill(_) => {
                 declare.facts = CutFacts::DRILL_CYCLE;
                 self.declare_side_cuts(&mut declare, FirstSlot::OfSpec);
-                declare.unstated(CutKind::Drill);
+                // P29-9 (ruling Q4): the drill cycle has no side-cut depth.
+                declare.cut(
+                    CutKind::Drill,
+                    DeclaredWidth::None(NoEngagementModel::NoStatedWidth),
+                    DeclaredDepth::None(NoEngagementModel::DrillCycle),
+                    Presence::Always,
+                );
             }
             OperationConfig::Pocket(c) => {
                 match c.pattern {
@@ -684,9 +741,10 @@ impl OperationConfig {
         // with no depth would read the body depth).
         let slot_at = |depth: DeclaredDepth| match depth {
             DeclaredDepth::Own(_) => (DeclaredWidth::Slot, depth),
-            DeclaredDepth::Stated(_) | DeclaredDepth::Axial | DeclaredDepth::None(_) => {
-                (no_width, no_depth)
-            }
+            DeclaredDepth::Stated(_)
+            | DeclaredDepth::Axial
+            | DeclaredDepth::OfTool(_)
+            | DeclaredDepth::None(_) => (no_width, no_depth),
         };
         for kind in contract.record_kinds().kinds() {
             let (width, depth) = match kind {
@@ -695,10 +753,13 @@ impl OperationConfig {
                         mm,
                         rule: OwnDepthRule::RampDepthPerPass,
                     }),
-                    // The body depth is never an own depth.
-                    DeclaredDepth::Own(_) | DeclaredDepth::Axial | DeclaredDepth::None(_) => {
-                        no_depth
-                    }
+                    // The body depth is never an own depth. A depth of the
+                    // tool (a chamfer) takes no ramp: its contract is a
+                    // straight plunge.
+                    DeclaredDepth::Own(_)
+                    | DeclaredDepth::Axial
+                    | DeclaredDepth::OfTool(_)
+                    | DeclaredDepth::None(_) => no_depth,
                 }),
                 EntryKind::Helix => {
                     let pitch = entry.helix_pitch_mm();
@@ -824,8 +885,9 @@ impl OperationConfig {
 
     /// The depth of the op's side cuts: a depth per pass, a Z step, a
     /// one-pass depth, the surface cap or a helix pitch (one helix turn,
-    /// P29-5b). A peck and a chamfer width are not a side-cut depth; a
-    /// surface offset gives its depth after the simulation.
+    /// P29-5b). P29-9 9a: a chamfer states the depth of the tool that cuts
+    /// its width ([`ToolDepth::Chamfer`]); a peck is a drill cycle (ruling
+    /// Q4). A surface offset gives its depth after the simulation.
     fn declared_depth(&self) -> DeclaredDepth {
         let not_stated = DeclaredDepth::None(NoEngagementModel::NoStatedDepth);
         match self.cut_spec().axial {
@@ -833,7 +895,38 @@ impl OperationConfig {
                 s.map_or(not_stated, |s| DeclaredDepth::Stated(s.mm()))
             }
             Axial::HelixPitch(s) => DeclaredDepth::Stated(s.mm()),
-            Axial::Peck(_) | Axial::ChamferWidth(_) => not_stated,
+            Axial::Peck(_) => DeclaredDepth::None(NoEngagementModel::DrillCycle),
+            Axial::ChamferWidth(width) => match self {
+                OperationConfig::Chamfer(c) => DeclaredDepth::OfTool(ToolDepth::Chamfer {
+                    width_mm: width.mm(),
+                    tip_offset_mm: c.tip_offset,
+                }),
+                // Not reached: only a Chamfer states a chamfer width.
+                OperationConfig::Pocket(_)
+                | OperationConfig::Profile(_)
+                | OperationConfig::Adaptive(_)
+                | OperationConfig::VCarve(_)
+                | OperationConfig::Inlay(_)
+                | OperationConfig::InlayPlug(_)
+                | OperationConfig::Zigzag(_)
+                | OperationConfig::Trace(_)
+                | OperationConfig::Drill(_)
+                | OperationConfig::Bore(_)
+                | OperationConfig::Face(_)
+                | OperationConfig::DropCutter(_)
+                | OperationConfig::Adaptive3d(_)
+                | OperationConfig::Waterline(_)
+                | OperationConfig::Pencil(_)
+                | OperationConfig::Scallop(_)
+                | OperationConfig::UnifiedFinish(_)
+                | OperationConfig::SteepShallow(_)
+                | OperationConfig::RampFinish(_)
+                | OperationConfig::SpiralFinish(_)
+                | OperationConfig::RadialFinish(_)
+                | OperationConfig::HorizontalFinish(_)
+                | OperationConfig::ProjectCurve(_)
+                | OperationConfig::AlignmentPinDrill(_) => not_stated,
+            },
             Axial::SurfaceOffset(_) => DeclaredDepth::None(NoEngagementModel::DepthAfterSimulation),
         }
     }

@@ -48,9 +48,9 @@ use rs_cam_core::limits::{
 };
 
 /// The rows that need a ruling. Exact: a closed row lowers it.
-const MAX_NEEDS_RULING: usize = 29;
+const MAX_NEEDS_RULING: usize = 28;
 /// Every row.
-const ROWS: usize = 40;
+const ROWS: usize = 39;
 /// The rows with a geometry reason.
 const PHYSICAL: usize = 8;
 /// The rows that quote an operator ruling.
@@ -86,7 +86,10 @@ const RULED: usize = 3;
 /// P29-8 8d added the row `U-EntryFallback` with its file (the `MayOccur`
 /// entry kinds of `src/compute/catalog/cuts.rs`): ROWS 40, need a ruling
 /// 29. The row `U-TabReplunge` narrowed to its open cause, with no file.
-const ROWS_WITH_A_FILE: usize = 39;
+/// P29-9 9a closed the row `P28-32` with three files: a chamfer declares
+/// the depth of the tool that cuts its width (`ToolDepth::Chamfer`), and a
+/// peck declares a drill cycle (ruling Q4).
+const ROWS_WITH_A_FILE: usize = 38;
 
 /// The 34 rows of `phases/P28_limit_audit.md`.
 const P28_IDS: [&str; 34] = [
@@ -105,7 +108,7 @@ const M_IDS: [&str; 12] = [
 /// Adaptive family reads the force budget; P29-5b: the first-pass filings
 /// are true; P29-5c: a groove reads the slot width; P29-6: the chip gate reads every removing sample, and the
 /// depth gate judges every sample; P29-7: every limit before the simulation
-/// judges every declared cut). An audit id is
+/// judges every declared cut; P29-9: a chamfer and a peck declare their depth). An audit id is
 /// a row or in this list, never both; the two id lists above stay the
 /// record (ruling Q6).
 const CLOSED: &[(&str, &str)] = &[
@@ -124,6 +127,7 @@ const CLOSED: &[(&str, &str)] = &[
     ("M8", "P29-6"),
     ("M12", "P29-7"),
     ("P28-15", "P29-7"),
+    ("P28-32", "P29-9"),
 ];
 
 /// The marker text before the ids.

@@ -289,10 +289,16 @@ pub enum NoEngagementModel {
     PlungeOfShapedTip,
     /// The depth into the stock is known only after the simulation.
     DepthAfterSimulation,
-    /// The cut states no depth (P29-9).
+    /// The cut states no depth.
     NoStatedDepth,
-    /// The cut states no width (P29-9).
+    /// The cut states no width.
     NoStatedWidth,
+    /// P29-9 (ruling Q4): a peck is a drill cycle. It has no side-cut
+    /// depth; the drill gates judge it.
+    DrillCycle,
+    /// P29-9: the depth is a depth of the tool (a chamfer depth is the cone
+    /// of a V-bit), and this tool is not a V-bit.
+    NotAVBit,
     /// A simulation sample that removes material and states no arc of
     /// engagement, or an arc that gives no width (a straight plunge
     /// sample; `Cut::of_sample`).

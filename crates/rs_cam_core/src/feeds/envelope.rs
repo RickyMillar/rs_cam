@@ -25,8 +25,8 @@ use crate::compute::tool_config::ToolConfig;
 use crate::feeds::FeedsInput;
 use crate::feeds::force_budget::BudgetDepth;
 use crate::feeds::planned::{
-    BodyColumn, CeilingEdge, DeclaredCuts, DeflectionPlanned, ForceBudgetPlanned, ForceEnv,
-    PlaneDepth, PlaneRole, TableEnv, ValueCheck, VendorDepthTablePlanned, budget_rank,
+    BodyColumn, BodyDepth, CeilingEdge, DeclaredCuts, DeflectionPlanned, ForceBudgetPlanned,
+    ForceEnv, PlaneDepth, PlaneRole, TableEnv, ValueCheck, VendorDepthTablePlanned, budget_rank,
     judge_declared_cuts, planned_limit_of,
 };
 use crate::feeds::sourced::{
@@ -1403,7 +1403,7 @@ impl SafeEnvelope {
         // unstated axis, and the matched row.
         let base = calculate(&feeds_input);
         let d = input.tool.diameter;
-        let plan = axes_plan(input.operation, input.tool, &base);
+        let plan = axes_plan(input.operation, input.tool, &base, &inputs.cuts);
         let (_, role) = input.operation.feeds_style();
 
         let ap_samples = match plan.axes {
@@ -3130,7 +3130,12 @@ fn samples(span: AxisSpan) -> Vec<f64> {
 }
 
 /// The axes and the operator's values of an op (from its `CutSpec`).
-fn axes_plan(operation: &OperationConfig, tool: &ToolConfig, base: &FeedsResult) -> AxesPlan {
+fn axes_plan(
+    operation: &OperationConfig,
+    tool: &ToolConfig,
+    base: &FeedsResult,
+    cuts: &DeclaredCuts,
+) -> AxesPlan {
     let spec = operation.cut_spec();
     let d = tool.diameter;
     let ball_r = match tool.geometry_hint() {
@@ -3154,7 +3159,14 @@ fn axes_plan(operation: &OperationConfig, tool: &ToolConfig, base: &FeedsResult)
         }
     };
     let (axial_free, stated_ap, fixed_ap) = match spec.axial {
-        Axial::HelixPitch(s) | Axial::ChamferWidth(s) => (true, Some(s.mm()), s.mm()),
+        Axial::HelixPitch(s) => (true, Some(s.mm()), s.mm()),
+        // P29-9 9a: a chamfer states the depth of the tool that cuts its
+        // width (the one depth door), not the width as a depth. A tool that
+        // gives no depth leaves the axis free and not stated.
+        Axial::ChamferWidth(_) => match cuts.body_depth() {
+            BodyDepth::Plane(ap) => (true, Some(ap), ap),
+            BodyDepth::None(_) => (true, None, base.axial_depth_mm),
+        },
         // P10: an unset per-pass depth, Z step or peck is free and not
         // stated, as an unset one-pass depth (S11).
         Axial::PerPass(s)
@@ -3972,23 +3984,6 @@ fn rigidity_limit(
     if inputs.material.force_line().is_err() {
         out.push(unmodelled(fb::NO_FORCE_LINE));
         return None;
-    }
-    // P29-5c: a chamfer states its width, not a depth, so the depth axis
-    // holds no depth to solve. The force budget judges it after the
-    // simulation.
-    match inputs.operation.cut_spec().axial {
-        // EXEMPT(P28-32)
-        Axial::ChamferWidth(_) => {
-            out.push(unmodelled(fb::CHAMFER_STATES_NO_DEPTH));
-            return None;
-        }
-        Axial::PerPass(_)
-        | Axial::ZStep(_)
-        | Axial::OnePass(_)
-        | Axial::Surface { .. }
-        | Axial::HelixPitch(_)
-        | Axial::Peck(_)
-        | Axial::SurfaceOffset(_) => {}
     }
     let Ok(tool) = crate::compute::cutter::build_cutter(&inputs.tool) else {
         out.push(unmodelled(fb::NO_BUDGET_INPUT));

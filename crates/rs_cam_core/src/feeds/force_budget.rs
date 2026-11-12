@@ -498,11 +498,6 @@ pub const NO_BUDGET_INPUT: &str =
     "no usable width, chip or flute length: the force budget cannot set a depth";
 /// The clause of [`RigidityCapOutcome::NoLimitBelowFlute`].
 pub const NO_BUDGET_LIMIT_BELOW_THE_FLUTE: &str = "no force-budget limit below the flute";
-/// The clause of the envelope `Rigidity` entry of a chamfer (P29-5c, row
-/// `P28-32`): the depth axis of a chamfer holds its width, not a depth, so
-/// the envelope solves no depth for it.
-pub const CHAMFER_STATES_NO_DEPTH: &str =
-    "a chamfer states its width, not a depth: the force budget is judged after the simulation";
 
 /// **The one producer of the rigidity depth cap** (S3, P13c O1).
 ///
@@ -550,8 +545,9 @@ pub fn rigidity_depth_cap(
 /// a stated stepover, or D for a slot and a groove, P29-5c), and the stated
 /// chip (feed / (rpm x Z)), else the chip the calculator ships for the
 /// op's cut. A drill keeps the width D (it has no depth limit, so no
-/// reader caps it). `None` when the body states no width, for a chamfer
-/// (it states no depth), or when the calculator ships no feed.
+/// reader caps it). `None` when the body states no width, or when the
+/// calculator ships no feed. P29-9 9a: a chamfer is a groove (the slot
+/// width); its depth is the declared depth of the tool.
 #[must_use]
 pub fn cap_cut_of_operation(
     op: &crate::compute::catalog::OperationConfig,
@@ -559,19 +555,8 @@ pub fn cap_cut_of_operation(
     material: &Material,
     machine: &crate::machine::MachineProfile,
 ) -> Option<(f64, f64)> {
-    use crate::compute::catalog::{Axial, DeclaredWidth};
+    use crate::compute::catalog::DeclaredWidth;
     let d = tool_cfg.diameter;
-    match op.cut_spec().axial {
-        // EXEMPT(P28-32)
-        Axial::ChamferWidth(_) => return None,
-        Axial::PerPass(_)
-        | Axial::ZStep(_)
-        | Axial::OnePass(_)
-        | Axial::Surface { .. }
-        | Axial::HelixPitch(_)
-        | Axial::Peck(_)
-        | Axial::SurfaceOffset(_) => {}
-    }
     let cuts = op.cuts(&crate::feeds::entry_rule::ConfiguredEntry::registry_default(op));
     let ae = if cuts.declares(crate::limits::CutKind::Drill) {
         d

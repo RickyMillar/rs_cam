@@ -89,7 +89,9 @@ impl PlaneDepth {
     #[must_use]
     pub const fn of_declared(depth: DeclaredDepth) -> Self {
         match depth {
-            DeclaredDepth::Stated(_) | DeclaredDepth::None(_) => Self::Body,
+            DeclaredDepth::Stated(_) | DeclaredDepth::OfTool(_) | DeclaredDepth::None(_) => {
+                Self::Body
+            }
             DeclaredDepth::Own(own) => Self::Own(own),
             DeclaredDepth::Axial => Self::Axial,
         }
@@ -177,6 +179,51 @@ impl EntryChips {
     }
 }
 
+/// P29-9: the depth of the body cut of an op on a tool, resolved: THE depth
+/// door ([`DeclaredCuts::body_depth`]). The calculator (`FeedsInput`), the
+/// envelope axis and the planned limits read it. One match names every
+/// declared depth ([`Self::of_declared`]): a new depth source does not
+/// compile until it answers here, and each reader matches this enum with
+/// no wildcard.
+#[derive(Debug, Clone, Copy, PartialEq)]
+pub enum BodyDepth {
+    /// A depth of the body plane (mm): a stated depth, or a depth of the
+    /// tool (a chamfer, 9a).
+    Plane(f64),
+    /// No depth before the simulation, with the reason.
+    None(NoEngagementModel),
+}
+
+impl BodyDepth {
+    /// The body depth of the declared depth `depth` on `tool`.
+    #[must_use]
+    pub fn of_declared(depth: DeclaredDepth, tool: &ToolConfig) -> Self {
+        match depth {
+            DeclaredDepth::Stated(mm) => Self::Plane(mm),
+            DeclaredDepth::OfTool(of_tool) => match of_tool.mm(tool) {
+                Ok(mm) => Self::Plane(mm),
+                Err(reason) => Self::None(reason),
+            },
+            DeclaredDepth::None(reason) => Self::None(reason),
+            // Not reached: the body is on the body plane.
+            DeclaredDepth::Own(_) | DeclaredDepth::Axial => {
+                Self::None(NoEngagementModel::NoStatedDepth)
+            }
+        }
+    }
+
+    /// The depth (mm) at which the calculator sizes the speeds: a depth of
+    /// the body plane above zero, else `None` (the calculator then reads
+    /// its family default, row `P28-31`).
+    #[must_use]
+    pub fn speeds_mm(self) -> Option<f64> {
+        match self {
+            Self::Plane(mm) if mm > 0.0 => Some(mm),
+            Self::Plane(_) | Self::None(_) => None,
+        }
+    }
+}
+
 /// The declared cuts of one op on one tool, with the facts that each width
 /// column reads. Build it once per envelope ([`Self::of_operation`]).
 #[derive(Debug, Clone, Copy, PartialEq)]
@@ -184,6 +231,7 @@ pub struct DeclaredCuts {
     list: CutList,
     d_mm: f64,
     body_depth: Option<DeclaredDepth>,
+    body: BodyDepth,
     thinning: RadialThinning,
     lift_d_eng_mm: f64,
     entry_chips: EntryChips,
@@ -220,6 +268,11 @@ impl DeclaredCuts {
             list,
             d_mm,
             body_depth: list.of_kind(CutKind::Body).map(|c| c.depth),
+            body: list
+                .of_kind(CutKind::Body)
+                .map_or(BodyDepth::None(NoEngagementModel::NoStatedDepth), |c| {
+                    BodyDepth::of_declared(c.depth, tool)
+                }),
             thinning: list.body_facts().thins_chip,
             lift_d_eng_mm,
             entry_chips: EntryChips::of(operation, entry, tool.flute_count_planning()),
@@ -245,6 +298,12 @@ impl DeclaredCuts {
             Ok(_) => None,
             Err(reason) => Some(reason),
         }
+    }
+
+    /// P29-9: THE depth of the body cut on this tool ([`BodyDepth`]).
+    #[must_use]
+    pub const fn body_depth(&self) -> BodyDepth {
+        self.body
     }
 
     /// The declared cuts.
