@@ -780,3 +780,59 @@ identical to the run before the ruling (it records no site).
 
 - Open: a fold ramp for a surface-riding clip re-entry (a fold under the probe's Z clip is a new
   emitter path with no measurement; Q10).
+
+## 13. Predictions for the check (c), before the code
+
+Written 2026-11-13 on the tree of e1 and e2, before the code of e3. "Measured" is a throwaway probe
+(deleted) that computes, for each op of `nz_wanaka_21_operator.toml` (loaded read-only), the row
+the check will write: the stated entry feed of each declared cut (the entry rule,
+`ConfiguredEntry::planned_feed_mm_min`; for a ramp and a helix its vertical part: the ramp feed x
+sin(angle), the helix feed x pitch / sqrt((2 pi r)^2 + pitch^2), the angle, radius and pitch of
+`ResolvedEntry`; a drill its op feed) against `VerticalRateLimit::bound(value, stated rpm)`.
+
+### 13.1 The design
+
+- `LimitId::PlungeRate` ("the plunge rate of the operation on a descent", the existing member) is
+  the limit. Its role changes from `NotACutLimit(MachineOrRpm)` to `ValueCheck(VerticalRate)`.
+  `limits::scope` judges it on every cut group (Body, Entry, Cleanup, Link, Drill); a cut with no
+  vertical feed gives `NotApplicable(Geometry::NoVerticalFeed)`, the existing reason. No new scope
+  cell with a row and no new `Geometry` reason, so the work goes on (section 10.8).
+- `gate_of(PlungeRate)` stays empty; the row `P28-27` already names `PlungeRate` for the side after
+  the simulation (claim 1 of `every_limit_judges_every_declared_cut_p29_7`).
+- One row of `SafeEnvelope::cut_checks` per declared cut, unit mm/min, a warning row: no feed
+  moves, nothing refuses an export.
+- Every straight plunge that ships is the plunge entry cut (`Entry(Plunge)`): the stated plunge
+  of the style None (`Always`), and under a ramp or helix style the fallback plunge, the K1
+  backstop re-entry and the surface-riding re-entry of Q10 (`MayOccur`, row `U-EntryFallback`).
+  The check judges that cut in every case, so it closes the row `U-TabReplunge`: the pins of
+  `the_exemption_list_only_shrinks_p29_3` go from 38, 27, 37 to 37, 26, 37.
+
+### 13.2 The operator file (measured)
+
+| Op | Rows that the check writes | `Exceeds` |
+|---|---|---|
+| 0 Face back to T1 (Ramp, 18000 rpm) | plunge 2162, ramp 337.41, helix 189.93: each the candidate | none |
+| 1 Back bulk rough 18 mm (3D Rough, Helix) | plunge 2162, ramp 337.46, helix 379.43, peck 2162 | none |
+| 2 Back rest 6 mm (3D Rough, Ramp) | plunge 2285, ramp 239.23, helix 795.98, peck 2285 | none |
+| 3 Pin drill, 4 Drill light holes | drill 1000 | none |
+| 5 River channel (Project Curve, None, 10610 rpm) | plunge 1347 (the bound 1347.47: within, margin 0.0 %) | none |
+| 6, 7 Lake pockets (None) | plunge 240, ramp 12.56, helix 61.53 | none |
+| 8 ANTENNA pocket (Ramp) | plunge 240, ramp 65.84, helix 322.54 | none |
+| 9 V rivers and lakes, 10 Day strip slit, 13 Engrave labels (None) | plunge 381, 762, 762 | none |
+| 11 Face clamp pads (None) | plunge 2162, ramp 113.15, helix 63.69 | none |
+| 12 Face front to T (Ramp) | plunge 2162, ramp 337.41, helix 189.93 | none |
+| 14, 15 Front roughs (3D Rough, Ramp) | plunge 2162 / 2285, ramp 337.46 / 239.23, helix 379.43 / 795.98, peck as the plunge | none |
+| 16 Front scallop finish (None) | plunge 240, ramp 12.56, helix 61.53 | none |
+| **17 Outline profile with tabs (Ramp, 10610 rpm)** | **plunge 1582 against 1347.47 (`AxialChip`: G6 axial chip 0.0635 x 10610 x 2), margin -17.4 %**; ramp 165.64, helix 278.76 within | **the plunge entry** |
+
+Every body, slot, cleanup, link and capped-step cut gives `NotApplicable(NoVerticalFeed)`.
+
+### 13.3 Other predictions (reasoned)
+
+- No feed moves: the op golden stays at the known 46 rows; FM1 moves no cell (its columns do not
+  read `cut_checks`).
+- `every_limit_judges_every_declared_cut_p29_7` claim 5 ("a plunge holds a number only for the
+  spindle power") becomes "for the spindle power and the vertical rate": the claim text and its
+  assertion change in e3.
+- The MCP `get_safe_envelope` reply gains one `cut_checks` row per declared cut with the limit
+  `plunge_rate` (an added row; no key changes). The viz pills read the same record.
