@@ -46,9 +46,9 @@ lead rulings in sections 13 and 11).
 |---|---|
 | 8a `e88fe9491` | DONE, byte-equal. `feeds/entry_rule.rs`: `ResolvedEntry` is the one door from an op to both entry emitters and the ramp notes. A helix with no room ramps at the op's own angle. F201 pin 146. |
 | 8d `d7e6527b8` | DONE, no number moved. An entry is a declared cut (`DeclaredDepth::Own`, `Axial`; `planned::PlaneDepth`, `sets_a_ceiling`). It is a value check, never a ceiling. Row `U-EntryFallback`. Pins 40 / 29 / 39. |
-| 8b (stated or rule, the angle table) | HELD for the operator: question O2 (Easel 5/20, Shaper 20/27, or no change). Before 8b: list each project file with an entry and no angle key (section 13). |
-| 8c (the dressup plunge feed) | HELD for the operator: question O1. Branch (a) doubles the air-lead feed of wanaka idx 0, 8, 11, 12, 17. `entry_rule::DRESSUP_PLUNGE_RULE` is the one value. |
-| Tab re-plunge cause | Open, its own step with a prediction run. Wanaka idx 17: 42 tab re-plunges stay straight plunges at 1582 mm/min under the Ramp style; the plunge limit of that tool at its stored rpm is 1347.5 (finding F7, told to the operator). |
+| 8b `35f8e1a56` | DONE. Operator ruling O2: Easel, 5 degrees hardwood and 20 degrees softwood, plywood, MDF. `EntryAngle { Stated, Rule }`; 266 FM1 cells as predicted; wanaka byte-equal; op golden re-blessed in 22 arms; pin 144. |
+| 8c `0fad0599d` | DONE. Operator ruling O1: the op plunge rate. Table `G` exact (wanaka idx 0, 8, 11, 12, 17 entry feeds double); FM1 byte-equal; pin 142. |
+| Clip re-entries (was "tab re-plunge") | IN WORK. `phases/P29-8e_TAB_REPLUNGE.md` (`055e33784`): the 42 plunges of wanaka idx 17 are re-entries of the OBSTACLE clip, which runs after the entry step. Operator: "go for the fixes" (2026-11-13). One agent probes the obstacle frame (the clamp boxes of the operator file are off by the stock origin, 18.5 and 8.5 mm, in the frame the clip uses: file or code? NO edit of the operator file without the operator's word) and then makes clip re-entries follow the entry rule. |
 | Entry chip rounding | DONE. `01a2ff1cc` (`entry_rule::StoredFeedChip`: a stored whole-mm/min feed states a chip interval; the margin follows the judged value) and `e6b587a2e` (the ramp and the plunge read the feed before the write step; FM1 +1 mm/min on 10 cells, `PlungeReDerived` leaves 7 cells). |
 | P29-9 | DONE. 9a `8ccd709f6` (one depth door `DeclaredCuts::body_depth`, the true chamfer depth, 76 FM1 cells as predicted, `P28-32` closed). 9b `ef78cf0e6` (a Project Curve is judged at the lower bound of its depth; one sign rule `ops::project_curve::tip_depth_into_material_mm`; `P28-11` closed; the note's sign was wrong, sections 14 to 17 of `P29-9_DESIGN.md` hold the trace, the measured frame and the results). 9c + 9d `82ba2805f` (a finish is judged at the earlier op's leave; a depth limit with no edge writes a `NoNumber` row; `F-OffsetRing` re-filed). `a53e2c103` (`CutSpec::calc_inputs` gives no depth). Pins 38 / 27 / 37. |
 | GUI number parity | IN WORK (one agent). The viz doors built their own `SuggestContext` with no setup fact, no earlier leave and no dressups. Ruling: `SuggestContext` loses `Default`; the viz reads the session door; named constructors for the add door and for "no project"; a viz parity test. |
@@ -56,6 +56,13 @@ lead rulings in sections 13 and 11).
 Open from 8d for P29-10: the GUI envelope passes no dressups, so its `cut_checks` read the
 registry default entry; the three or four entry `Exceeds` rows on the operator file are warnings
 against the parked 35.3 N budget.
+
+**The operator is away 2026-11-13 to 2026-11-15** and said: keep going until a real wall. Not
+without the operator: an edit of the operator file, a push, the core full gate. Next in order
+after the clip re-entry fix: P29-10 (`phases/P29-10_DESIGN.md`, `422de05ef`, lead rulings in its
+section 12; start with 10a to 10d), 10i (every declared cut judged at the stated point; a note
+with predicted rows first), P29-11, P29-last, the modulation design step, the clean-up pass with
+a review agent that did not write the code, then P29 state into `phases/P27_BRIEF.md`.
 
 ### P29-3 status (2026-11-12, night)
 
