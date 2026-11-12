@@ -71,7 +71,7 @@ use crate::material::force_line::ForceLine;
 use crate::stock::simulation_cut::RadialEngagementClass;
 
 use super::locality::SpanLookup;
-use super::verdict::{Confidence, EntrySpike, PowerVerdict, SampleEvidence, UnmodeledReason};
+use super::verdict::{Confidence, PowerVerdict, SampleEvidence, UnmodeledReason};
 
 /// K7 (feeds contract P9): the inputs are built only by
 /// [`crate::feeds::engagement::Engagement::power_inputs`].
@@ -176,8 +176,8 @@ impl PowerTerms {
 /// model: it is not cutting, it is an air cut (`radial_woc_fraction <
 /// 0.02`), it carries no arc engagement, or the engaged radial width is
 /// not positive. The gate skips such a sample. A `Some` value does not
-/// say that the gate COUNTED the sample: the gate also removes transit
-/// samples through [`super::locality::is_steady_state_for_gate`].
+/// say that the gate COUNTED the sample in its headline: the gate judges
+/// each removing sample in its group ([`super::locality::judged_group`]).
 #[must_use]
 pub fn sample_power_kw(
     tool: &crate::tool::ToolDefinition,
@@ -235,15 +235,17 @@ fn power_at_gate_feed(
     })
 }
 
-/// P20i: the power figure the gate GRADES for the sample `s` of the
-/// toolpath `ctx.toolpath_id()`, or `None` when the gate does not grade it.
+/// P20i: the power figure the gate GRADES in its headline for the sample
+/// `s` of the toolpath `ctx.toolpath_id()`, or `None` when the headline
+/// does not grade it.
 ///
-/// The gate grades a sample of a milling op (not a drill cycle) that cuts,
-/// is not an air cut, carries an arc and is steady state
-/// ([`super::locality::is_steady_state_for_gate`]). A configured entry goes
-/// to the entry advisory, not to the grade, so it gives `None` too. The
-/// envelope finding (`compute::simulate::envelope_placement`) reads this
-/// figure, so the finding and the gate judge power with one number.
+/// The headline grades a sample of the body group
+/// ([`super::locality::judged_group`]) that cuts, is not an air cut and
+/// carries an arc, when `limits::scope` judges the spindle power on the
+/// body group. The envelope finding (`compute::simulate::envelope_placement`)
+/// reads this figure, so the finding and the gate judge power with one
+/// number. P29-6 ruling Q4: the finding places the body group only; an
+/// entry is a different cut (row `P28-21`, the marker at the reader).
 #[must_use]
 pub fn gate_sample_power(
     ctx: &super::ToolpathLoadContext<'_>,
@@ -251,31 +253,38 @@ pub fn gate_sample_power(
     line: &ForceLine,
     s: &crate::stock::simulation_cut::SimulationCutSample,
     predicted_feeds: &crate::machine::kinematics::PredictedFeedMap,
-    span_lookup: Option<&SpanLookup<'_>>,
+    sample_ctx: &crate::limits::SampleContext<'_>,
 ) -> Option<GateSamplePower> {
-    // EXEMPT(P28-10)
-    if ctx.operation_kind().is_drill_kinematics()
-        || s.toolpath_id != ctx.toolpath_id()
+    let body = crate::limits::CutGroup::Body;
+    if !matches!(
+        crate::limits::scope(crate::limits::LimitId::SpindlePower, body),
+        crate::limits::Scope::Judged
+    ) || s.toolpath_id != ctx.toolpath_id()
         || !s.is_cutting
         || s.radial_engagement_class() == RadialEngagementClass::Air
         || s.arc_engagement_radians.is_none()
-        // EXEMPT(P28-21, P28-22, P28-23)
-        || !super::locality::is_steady_state_for_gate(s, span_lookup)
+        || super::locality::judged_group(s, sample_ctx) != Some(body)
     {
         return None;
     }
     power_at_gate_feed(ctx.tool(), line, machine, s, predicted_feeds)
 }
 
-#[tracing::instrument(level = "debug", skip_all, fields(toolpath_id = ctx.toolpath_id().raw(), op = ?ctx.operation_kind()))]
+/// The headline power verdict of the toolpath (the one driver,
+/// `groups::judge_by_group`).
 pub fn evaluate(ctx: &super::ToolpathLoadContext<'_>, env: &super::GateEnv<'_>) -> PowerVerdict {
-    let (toolpath_id, tool, material, operation_kind, spans) = (
-        ctx.toolpath_id(),
-        ctx.tool(),
-        ctx.material(),
-        ctx.operation_kind(),
-        ctx.spans(),
-    );
+    super::groups::headline::<super::PowerGate>(ctx, env)
+}
+
+/// The power verdict of one group: the peak predicted power of its samples
+/// against the rated power at each sample's RPM.
+#[tracing::instrument(level = "debug", skip_all, fields(toolpath_id = ctx.toolpath_id().raw(), group = ?population.group))]
+pub(super) fn judge(
+    ctx: &super::ToolpathLoadContext<'_>,
+    env: &super::GateEnv<'_>,
+    population: super::groups::GroupPopulation<'_>,
+) -> PowerVerdict {
+    let (tool, material, spans) = (ctx.tool(), ctx.material(), ctx.spans());
     let &super::GateEnv {
         sim_trace,
         machine,
@@ -292,22 +301,6 @@ pub fn evaluate(ctx: &super::ToolpathLoadContext<'_>, env: &super::GateEnv<'_>) 
             ),
         };
     };
-    // Roadmap F.8 — short-circuit before any gate-input checks when
-    // the op is geometrically plunge-only. Drilling has no continuous
-    // engagement to drive a power-vs-RPM curve; the right answer is
-    // "doesn't apply" not "arc engagement not captured".
-    // EXEMPT(P28-10)
-    if operation_kind.is_drill_kinematics() {
-        tracing::debug!(
-            reason = "NotApplicableForOp",
-            "power gate refuses: plunge-only op has no continuous engagement"
-        );
-        return PowerVerdict::Unmodeled {
-            reason: UnmodeledReason::NotApplicableForOp(
-                "drill cycle — no continuous engagement".to_owned(),
-            ),
-        };
-    }
     let Some(trace) = sim_trace else {
         tracing::debug!(
             reason = "SimulationRequired",
@@ -341,7 +334,6 @@ pub fn evaluate(ctx: &super::ToolpathLoadContext<'_>, env: &super::GateEnv<'_>) 
     // Walk samples for this toolpath.
     let mut peak_power: f64 = 0.0;
     let mut peak_idx: Option<usize> = None;
-    let mut any_arc_captured = false;
     let mut any_slot = false;
     let mut peak_available_at_peak: f64 = 0.0;
     // Track an available_kw for any captured sample so the Within case
@@ -353,32 +345,20 @@ pub fn evaluate(ctx: &super::ToolpathLoadContext<'_>, env: &super::GateEnv<'_>) 
     // state where its ceiling came from.
     let mut last_rpm: f64 = 0.0;
     let mut peak_rpm_at_peak: f64 = 0.0;
-    // D7 — span-aware entry filter. Configured Entry transients
-    // (Adaptive3D plunge / helix / ramp, dressup lead-ins) bypass the
-    // trip decision and surface separately as `entry_spike` on the
-    // `Within` arm. The peak Entry-ancestry power sample (whether or
-    // not it exceeds available_kw) is recorded for the advisory.
     let span_lookup = spans.map(SpanLookup::new);
-    let mut entry_peak_power: f64 = 0.0;
-    let mut entry_peak_idx: Option<usize> = None;
-    let mut entry_peak_available: f64 = 0.0;
     // X-VAC (`planning/review_2026-08-08/XVAC_CENSUS.md`). `offered`
-    // counts every sample this toolpath emitted; `contributing` counts
-    // the samples that reached the peak comparison. The 2026-08-05
-    // measurement is exactly the case where the second is zero while the
-    // first is large: `any_arc_captured` is set BEFORE the phantom /
-    // entry split below, so a toolpath whose every cutting sample is
-    // transit reaches the `Within` arm with `peak_idx == None`,
-    // `available_kw == 0.0` and empty evidence — a healthy-looking pass
-    // resting on nothing.
-    let mut offered: usize = 0;
+    // counts every sample this toolpath emitted; `contributing` counts the
+    // samples of this group that reached the peak comparison. The arc
+    // capture is a fact of the trace, not of the group: a toolpath whose
+    // trace carries arcs and whose group has none reaches `Within` with a
+    // vacuous population, which the population states.
+    let offered = population.toolpath.toolpath_samples;
+    let any_arc_captured = population.toolpath.arc_captured;
     let mut contributing: usize = 0;
 
-    for (i, s) in trace.samples.iter().enumerate() {
-        if s.toolpath_id != toolpath_id {
-            continue;
-        }
-        offered += 1;
+    // P29-6 6d: the population is the group's removing samples
+    // (`groups::populations`); no span predicate drops a sample.
+    for &(i, s) in population.samples {
         if !s.is_cutting {
             continue;
         }
@@ -388,20 +368,16 @@ pub fn evaluate(ctx: &super::ToolpathLoadContext<'_>, env: &super::GateEnv<'_>) 
         let Some(arc) = s.arc_engagement_radians else {
             continue;
         };
-        any_arc_captured = true;
 
         // F-035: read the *effective* feed for this sample —
         // predicted (achieved) when the trace carries a populated
         // `predicted_feeds` map AND this `(toolpath_id, move_index)`
-        // lookup hits, commanded otherwise. Power is linear in
-        // feed, so the substitution scales the predicted load
-        // proportionally; corner-decel reduction in predicted feed
-        // shows up directly as reduced predicted power.
-        // The per-sample prediction lives in `sample_power_kw`, so the
-        // cut-metrics distribution (`super::distribution`) reads the
-        // same number this gate compares. Ruling R4 Q2 (2026-09-24): the
-        // ceiling is the rated spindle curve, with no fraction. P20i: the
-        // envelope finding reads the same figure (`gate_sample_power`).
+        // lookup hits, commanded otherwise. The per-sample prediction
+        // lives in `sample_power_kw`, so the cut-metrics distribution
+        // (`super::distribution`) reads the same number this gate
+        // compares. Ruling R4 Q2 (2026-09-24): the ceiling is the rated
+        // spindle curve, with no fraction. P20i: the envelope finding
+        // reads the same figure (`gate_sample_power`).
         let Some(GateSamplePower {
             required_kw: p_kw,
             available_kw: avail,
@@ -410,26 +386,6 @@ pub fn evaluate(ctx: &super::ToolpathLoadContext<'_>, env: &super::GateEnv<'_>) 
         else {
             continue;
         };
-
-        // Finding 3 split (2026-06-04): phantom-transit samples
-        // (WaterlineCleanup / LinkBridge / LeadOut / DressupArtifact)
-        // carry inflated dexel axial_doc, so the predicted cutting
-        // power is phantom — drop them entirely. Configured Entry
-        // samples (real plunge / ramp / helix transients) still route
-        // to the entry_spike advisory.
-        // EXEMPT(P28-22, P28-23)
-        if super::locality::is_phantom_transit(s, span_lookup.as_ref()) {
-            continue;
-        }
-        // EXEMPT(P28-21, M3)
-        if super::locality::is_configured_entry(s, span_lookup.as_ref()) {
-            if p_kw > entry_peak_power {
-                entry_peak_power = p_kw;
-                entry_peak_idx = Some(i);
-                entry_peak_available = avail;
-            }
-            continue;
-        }
 
         if arc >= std::f64::consts::PI - 1e-3 {
             any_slot = true;
@@ -532,36 +488,11 @@ pub fn evaluate(ctx: &super::ToolpathLoadContext<'_>, env: &super::GateEnv<'_>) 
             bound_source,
         };
     }
-    // D7 entry-spike advisory: surface a configured-entry sample whose
-    // power exceeded the (possibly tolerance-widened) machine ceiling,
-    // even though the steady-state trip didn't fire.
-    let entry_spike = match entry_peak_idx {
-        // Checkpoint K (b1) — the entry-spike advisory reads the same
-        // boundary contract as the trip, at zero tolerance.
-        Some(idx)
-            if entry_peak_available > 0.0
-                && super::boundary::exceeds_high(entry_peak_power, entry_peak_available, 0.0) =>
-        {
-            let locality = trace
-                .samples
-                .get(idx)
-                .and_then(|s| super::locality::classify_sample_locality(s, span_lookup.as_ref()))
-                .unwrap_or_else(|| "entry".to_owned());
-            Some(EntrySpike {
-                observed: entry_peak_power,
-                bound: entry_peak_available,
-                locality,
-                side: None,
-            })
-        }
-        _ => None,
-    };
     PowerVerdict::Within {
         peak_kw: peak_power,
         available_kw,
         evidence,
         confidence,
-        entry_spike,
         bound_source,
     }
 }

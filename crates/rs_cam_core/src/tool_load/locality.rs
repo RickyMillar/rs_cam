@@ -20,6 +20,7 @@
 
 use std::f64::consts::{FRAC_PI_2, PI};
 
+use crate::limits::{CutGroup, CutKind, SampleContext};
 use crate::stock::simulation_cut::SimulationCutSample;
 use crate::trace::toolpath_spans::{Span, SpanId, SpanKind};
 
@@ -105,147 +106,53 @@ pub fn classify_sample_locality(
     }
 }
 
-/// Predicate the per-gate trip loops use to decide whether a sample is
-/// part of steady-state cutting (and therefore eligible to drive the
-/// gate trip) or part of a transient transition (kept out of the
-/// trip; surfaced separately as an `EntrySpike` advisory).
+/// **The group a sample is judged in** (P29-6 6d): the group of its cut
+/// kind ([`CutKind::group`] of [`CutKind::of_sample`]) for a sample that
+/// removes material, `None` for a sample that removes nothing. It equals
+/// `Cut::of_sample(sample, ctx).map(|cut| cut.kind.group())` (the sentry
+/// `a_sample_states_its_cut_kind_p29_3` holds the two equal) without the
+/// engagement read.
 ///
-/// G17 D7 of `planning/STRUCTURAL_ENTRY_SPANS_AND_LOCALITY.md`. The
-/// pre-D3 kinematics-based heuristic
-/// (`CutKinematics::{Helix, Plunge}` → not steady-state) hid terrain-
-/// following Helix samples on adaptive3d 3D-rough cuts (D0 finding).
-/// The replacement reads structural span ancestry: a sample is
-/// steady-state iff none of its `span_path` ancestors is one of the
-/// transient kinds.
-///
-/// Transient kinds excluded:
-/// - [`SpanKind::Entry`] — configured entry transitions (plunge, ramp,
-///   helix).
-/// - [`SpanKind::WaterlineCleanup`] — adaptive3d's post-pass cleanup
-///   sweep. Lateral feeds in cleanup spans can briefly engage
-///   uncleared material the lift-bridge crosses; the simulator
-///   reports the engagement faithfully but it's not a steady-state
-///   condition the operator dialed in via feeds & speeds (Roadmap
-///   F.3).
-/// - All other transit-style spans tracked by the dexel stamper —
-///   `SpanKind::{LinkBridge, LeadOut, DressupArtifact}` (any span the
-///   stamper marks `in_transit_span = true`). Dexel readings at these
-///   samples report `stock_top − cutter_z` over *neighbouring* stock
-///   rather than steady-state engagement, so feeding them into any
-///   peak/LUT-lookup metric (e.g. `lookup_axial_doc_mm`, the chipload
-///   row key; the DOC de-rate it fed is retired, P11b2) silently
-///   inflates the gate's view of cutter engagement (P3_TRANSIT_PEAK_DOC_RCA.md).
-///
-/// [`SpanKind::GeometryRefit`] (arc-fit) is **not** in that set. Checkpoint
-/// D Q3 (2026-08-04) narrowed the predicate: until then arc-fit shared
-/// `DressupArtifact` with the dogbone bridge, and because arc-fitting is
-/// default-on for all three process roles that removed nearly every cutting
-/// sample of a curve-heavy operation from every gate
-/// (`planning/review_2026-08-04/SIMULATION_ISSUE_CHANNEL_CENSUS.md` §7).
-///
-/// Consulting `sample.in_transit_span` first makes this the canonical
-/// gate-side predicate — callers don't need to know whether they have
-/// span_lookup plumbed; the dexel-stamper-set flag covers every transit
-/// span the simulator marks.
-///
-/// When `span_lookup` is `None` and the trace predates `in_transit_span`
-/// (the field defaults to `false` on deserialize of older traces),
-/// the predicate returns `true` — conservatively treating every sample
-/// as steady-state preserves the pre-D7 trip behaviour for legacy
-/// callers rather than silently dropping samples from the gate.
-// EXEMPT(P28-21, Q10-LinkingInEntrySpan, Q10-EntryPlungeInNoSpan)
-pub fn is_steady_state_for_gate(
-    sample: &SimulationCutSample,
-    span_lookup: Option<&SpanLookup<'_>>,
-) -> bool {
-    !is_phantom_transit(sample, span_lookup) && !is_configured_entry(sample, span_lookup)
+/// The one population rule of every gate: each sample that removes
+/// material lands in exactly one group, and every gate judges every group
+/// that [`crate::limits::scope`] judges. The three span predicates that
+/// held entries, cleanup, links and leads out of the gates before P29-6
+/// are deleted.
+#[must_use]
+pub fn judged_group(sample: &SimulationCutSample, ctx: &SampleContext<'_>) -> Option<CutGroup> {
+    sample
+        .removes_material()
+        .then(|| CutKind::of_sample(sample, ctx).group())
 }
 
-/// Phantom-transit predicate: returns `true` when the sample sits in a
-/// transit-style span whose dexel reading does **not** reflect real
-/// cutter engagement.
-///
-/// Specifically: `LeadOut`, `LinkBridge`, `DressupArtifact`,
-/// `WaterlineCleanup`. The dexel reads `stock_top − cutter_z` over
-/// *neighbouring* uncleared stock the bridge crosses; any peak /
-/// extreme-value gate metric (LUT lookup, entry_spike report, trip
-/// decision) must drop these samples entirely — surfacing the inflated
-/// value as an `entry_spike` advisory misleads the operator
-/// (P3_TRANSIT_PEAK_DOC_RCA.md).
-///
-/// [`SpanKind::GeometryRefit`] is **not** phantom transit. Arc-fit's
-/// replacement arc follows the same path through the same material as the
-/// linear moves it collapsed; there is no neighbouring stock to misread.
-/// It shared `DressupArtifact` with the dogbone bridge until Checkpoint D
-/// Q3 (2026-08-04); the population effect of that conflation is pinned by
-/// `tests/arcfit_gate_population_d4.rs`.
-///
-/// `Entry` is **not** phantom-transit even though it's also marked
-/// `in_transit_span = true`: a configured plunge / ramp / helix entry
-/// IS a real engagement transient the operator can dial in, and the
-/// entry_spike report on those samples is actionable. Use
-/// [`is_configured_entry`] for that branch.
-///
-/// When `span_lookup` is `None`, the predicate falls back to the
-/// `sample.in_transit_span` flag and assumes the worst (returns `true`
-/// for any in_transit sample). This is conservative: we'd rather drop
-/// a real Entry transient from the spike report than let a phantom
-/// reading slip through. Callers that need the precise Entry/phantom
-/// split must thread spans into the gate.
-// EXEMPT(P28-22, P28-23, M8)
-pub fn is_phantom_transit(
-    sample: &SimulationCutSample,
-    span_lookup: Option<&SpanLookup<'_>>,
-) -> bool {
-    match span_lookup {
-        Some(lookup) => {
-            // With spans, we can split phantom from configured-entry
-            // precisely. A sample is phantom iff any non-Entry transit
-            // kind appears in its ancestry — OR the stamper flagged it
-            // `in_transit_span` without an Entry ancestor (F2.2: a
-            // transit span dropped by TSP leaves its moves without
-            // ancestry, but the per-move intent union still marks them
-            // in_transit; dropping them beats letting a phantom
-            // reading drive the gate).
-            lookup.ancestors_contain_kind(&sample.span_path, SpanKind::WaterlineCleanup)
-                || lookup.ancestors_contain_kind(&sample.span_path, SpanKind::LinkBridge)
-                || lookup.ancestors_contain_kind(&sample.span_path, SpanKind::LeadOut)
-                || lookup.ancestors_contain_kind(&sample.span_path, SpanKind::DressupArtifact)
-                || (sample.in_transit_span
-                    && !lookup.ancestors_contain_kind(&sample.span_path, SpanKind::Entry))
+/// **The body group of a sample when the reader holds no span table** (the
+/// simulation triage: the standing-material and the link rules, which read
+/// the body cut by design). The intent decides the entry, lead, link and
+/// drill kinds ([`CutKind::of_sample`]); a sample of a cut intent that the
+/// stamper flagged `in_transit_span` lies in a cleanup or a dressup span
+/// (or a link span that the TSP dropped), so it is not the body either.
+/// With a span table, read [`judged_group`].
+#[must_use]
+pub fn is_body_without_spans(sample: &SimulationCutSample) -> bool {
+    use crate::toolpath::MoveIntent;
+    let cut_intent = match sample.source_intent {
+        None | Some(MoveIntent::ClearingCut | MoveIntent::FinishingCut | MoveIntent::Unknown) => {
+            true
         }
-        // No span info → fall back to the conservative
-        // `in_transit_span` flag and treat anything in_transit as
-        // phantom (Entry transients lose their entry_spike report
-        // until spans are wired). Safer than letting phantoms surface.
-        None => sample.in_transit_span,
-    }
-}
-
-/// Configured-entry predicate: returns `true` when the sample sits in
-/// an `Entry` span (the configured plunge / ramp / helix entry the
-/// operation generator emitted).
-///
-/// Gates use this to route Entry-ancestry samples to their
-/// `entry_spike` reporting track — distinct from steady-state trip
-/// decisions (which exclude them) and from phantom transit samples
-/// (which are dropped entirely; see [`is_phantom_transit`]).
-///
-/// When `span_lookup` is `None`, no split is possible — returns
-/// `false`. Combined with [`is_phantom_transit`]'s conservative
-/// fallback above, this means a no-span trace will route every
-/// in_transit sample to "drop", never to entry_spike. Surface fewer
-/// false-positive advisories at the cost of a true-positive Entry
-/// spike going unreported. Most production traces have spans plumbed.
-// EXEMPT(P28-21)
-pub fn is_configured_entry(
-    sample: &SimulationCutSample,
-    span_lookup: Option<&SpanLookup<'_>>,
-) -> bool {
-    let Some(lookup) = span_lookup else {
-        return false;
+        Some(
+            MoveIntent::EntryPlunge
+            | MoveIntent::EntryRamp
+            | MoveIntent::EntryHelix
+            | MoveIntent::EntryApproach
+            | MoveIntent::LeadIn
+            | MoveIntent::LeadOut
+            | MoveIntent::Linking
+            | MoveIntent::Retract
+            | MoveIntent::ObstacleClearance
+            | MoveIntent::Drilling,
+        ) => false,
     };
-    lookup.ancestors_contain_kind(&sample.span_path, SpanKind::Entry)
+    cut_intent && !sample.in_transit_span
 }
 
 #[cfg(test)]
@@ -420,97 +327,6 @@ mod tests {
             classify_sample_locality(&s, None).as_deref(),
             Some("slot section"),
         );
-    }
-
-    #[test]
-    fn is_steady_state_for_gate_excludes_entry_ancestor() {
-        let spans = vec![
-            span(0, 10, SpanKind::Operation, "op"),
-            span(0, 3, SpanKind::Entry, "plunge entry"),
-        ];
-        let lookup = SpanLookup::new(&spans);
-        // Inside the Entry span — not steady-state.
-        let entry_sample = sample(Some(PI), vec![SpanId(0), SpanId(1)]);
-        assert!(!is_steady_state_for_gate(&entry_sample, Some(&lookup)));
-        // Past the Entry — steady-state.
-        let cut_sample = sample(Some(PI), vec![SpanId(0)]);
-        assert!(is_steady_state_for_gate(&cut_sample, Some(&lookup)));
-    }
-
-    #[test]
-    fn is_steady_state_for_gate_terrain_helix_is_steady_state() {
-        // The D7 regression: pre-D3, Helix-kinematics samples were
-        // dropped from the gate by `is_steady_state_for_gate`. With
-        // span ancestry as the signal, a terrain-following Helix sample
-        // *without* an Entry ancestor counts as steady-state and
-        // therefore drives the trip decision.
-        let spans = vec![span(0, 10, SpanKind::Operation, "op")];
-        let lookup = SpanLookup::new(&spans);
-        let mut s = sample(Some(PI), vec![SpanId(0)]);
-        s.cut_kinematics = CutKinematics::Helix;
-        assert!(is_steady_state_for_gate(&s, Some(&lookup)));
-    }
-
-    #[test]
-    fn is_steady_state_for_gate_no_lookup_assumes_steady_state() {
-        // No span data plumbed → conservatively trip on every sample
-        // rather than silently filter (matches pre-D3 behaviour).
-        let s = sample(Some(PI), vec![SpanId(0)]);
-        assert!(is_steady_state_for_gate(&s, None));
-    }
-
-    #[test]
-    fn is_steady_state_for_gate_excludes_waterline_cleanup_ancestor() {
-        // Roadmap F.3: a lift-bridge sample inside a WaterlineCleanup
-        // span has a real peak engagement reported by the simulator
-        // (e.g. the dexel says material is in the cutter's footprint),
-        // but it's a transient transition, not a steady-state cut. The
-        // gate must filter it out the same way it filters Entry
-        // transients.
-        let spans = vec![
-            span(0, 20, SpanKind::Operation, "op"),
-            span(10, 20, SpanKind::WaterlineCleanup, "Waterline cleanup"),
-        ];
-        let lookup = SpanLookup::new(&spans);
-        // Inside cleanup → not steady-state.
-        let cleanup_sample = sample(Some(PI), vec![SpanId(0), SpanId(1)]);
-        assert!(!is_steady_state_for_gate(&cleanup_sample, Some(&lookup)));
-        // Inside an earlier depth pass (no cleanup ancestor) → steady-state.
-        let cut_sample = sample(Some(PI), vec![SpanId(0)]);
-        assert!(is_steady_state_for_gate(&cut_sample, Some(&lookup)));
-    }
-
-    /// F2.2 — a sample the stamper flagged `in_transit_span` whose
-    /// transit span was dropped (TSP split) has no transit ancestry,
-    /// but must still be excluded from the steady-state trip. An
-    /// Entry-ancestry sample with the flag keeps routing to the
-    /// configured-entry track, not the phantom drop.
-    #[test]
-    fn in_transit_flag_without_ancestry_is_phantom_even_with_lookup() {
-        let spans = vec![
-            span(0, 10, SpanKind::Operation, "op"),
-            span(0, 3, SpanKind::Entry, "plunge entry"),
-        ];
-        let lookup = SpanLookup::new(&spans);
-
-        // Flagged transit, ancestry only reaches Operation (its
-        // LinkBridge span was dropped by the TSP remap).
-        let mut dropped_bridge = sample(Some(PI), vec![SpanId(0)]);
-        dropped_bridge.in_transit_span = true;
-        assert!(is_phantom_transit(&dropped_bridge, Some(&lookup)));
-        assert!(!is_steady_state_for_gate(&dropped_bridge, Some(&lookup)));
-
-        // Flagged transit WITH Entry ancestry → configured entry, not
-        // phantom.
-        let mut entry = sample(Some(PI), vec![SpanId(0), SpanId(1)]);
-        entry.in_transit_span = true;
-        assert!(!is_phantom_transit(&entry, Some(&lookup)));
-        assert!(is_configured_entry(&entry, Some(&lookup)));
-
-        // Unflagged steady-state sample unaffected.
-        let steady = sample(Some(PI), vec![SpanId(0)]);
-        assert!(!is_phantom_transit(&steady, Some(&lookup)));
-        assert!(is_steady_state_for_gate(&steady, Some(&lookup)));
     }
 
     #[test]

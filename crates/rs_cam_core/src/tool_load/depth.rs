@@ -103,11 +103,6 @@ use super::verdict::{
     UnmodeledReason,
 };
 
-/// The one operator-facing clause for "this gate has no meaning on a
-/// plunge-only cycle". Identical to the three milling gates', so a
-/// drill toolpath's rows read the same way across the whole tier.
-const DRILL_NOT_APPLICABLE: &str = "drill cycle — no continuous engagement";
-
 /// The depth resolution of the dexel stock, in mm. EVIDENCE 5.1-6.
 ///
 /// The stock stores each segment end as an `f32`, so a removed column
@@ -119,15 +114,22 @@ const DRILL_NOT_APPLICABLE: &str = "drill cycle — no continuous engagement";
 /// at a 1.2 mm cap.
 pub const DEXEL_DEPTH_RESOLUTION_MM: f64 = 1.0e-4;
 
-#[tracing::instrument(level = "debug", skip_all, fields(toolpath_id = ctx.toolpath_id().raw(), op = ?ctx.operation_kind()))]
+/// The headline depth verdict of the toolpath (the one driver,
+/// `groups::judge_by_group`).
 pub fn evaluate(ctx: &super::ToolpathLoadContext<'_>, env: &super::GateEnv<'_>) -> DepthVerdict {
-    let (toolpath_id, tool, material, operation_kind, spans) = (
-        ctx.toolpath_id(),
-        ctx.tool(),
-        ctx.material(),
-        ctx.operation_kind(),
-        ctx.spans(),
-    );
+    super::groups::headline::<super::DepthGate>(ctx, env)
+}
+
+/// The depth verdict of one group: each sample with a depth against the
+/// force-budget depth at its own width and chip.
+#[tracing::instrument(level = "debug", skip_all, fields(toolpath_id = ctx.toolpath_id().raw(), group = ?population.group))]
+pub(super) fn judge(
+    ctx: &super::ToolpathLoadContext<'_>,
+    env: &super::GateEnv<'_>,
+    population: super::groups::GroupPopulation<'_>,
+) -> DepthVerdict {
+    let (toolpath_id, tool, material, spans) =
+        (ctx.toolpath_id(), ctx.tool(), ctx.material(), ctx.spans());
     let &super::GateEnv {
         sim_trace,
         machine,
@@ -136,19 +138,6 @@ pub fn evaluate(ctx: &super::ToolpathLoadContext<'_>, env: &super::GateEnv<'_>) 
     } = env;
     let _ = tolerance;
 
-    // Same short-circuit as chipload / power / deflection. A drill
-    // cycle is Z-only: there is no lateral engagement to measure and no
-    // axial cap to measure it against.
-    // EXEMPT(P28-04)
-    if operation_kind.is_drill_kinematics() {
-        tracing::debug!(
-            reason = "NotApplicableForOp",
-            "depth gate refuses: plunge-only op has no continuous engagement"
-        );
-        return DepthVerdict::Unmodeled {
-            reason: UnmodeledReason::NotApplicableForOp(DRILL_NOT_APPLICABLE.to_owned()),
-        };
-    }
     let Some(trace) = sim_trace else {
         tracing::debug!(
             reason = "SimulationRequired",
@@ -178,24 +167,15 @@ pub fn evaluate(ctx: &super::ToolpathLoadContext<'_>, env: &super::GateEnv<'_>) 
     let depth_limit = ctx.body_facts().depth_rule;
     let span_lookup = spans.map(SpanLookup::new);
 
-    // The population (P29-6 6c): every sample of the toolpath that removes
+    // The population (P29-6 6c, 6d): every sample of the group that removes
     // material and has a depth. X-VAC: `offered` counts every sample of the
     // toolpath, so an empty population says it rests on nothing.
-    let mut offered: usize = 0;
+    let offered = population.toolpath.toolpath_samples;
+    let group_samples = population.samples;
     let mut population: Vec<(usize, &SimulationCutSample)> = Vec::new();
     let mut deepest: Option<(usize, f64)> = None;
-    for (i, s) in trace.samples.iter().enumerate() {
-        if s.toolpath_id != toolpath_id {
-            continue;
-        }
-        offered += 1;
+    for &(i, s) in group_samples {
         if !is_depth_sample(s) {
-            continue;
-        }
-        // The one steady-state predicate every gate in this folder
-        // shares, until P29-6 6d gives each gate its cut groups.
-        // EXEMPT(P28-21, P28-22, P28-23)
-        if !super::locality::is_steady_state_for_gate(s, span_lookup.as_ref()) {
             continue;
         }
         if deepest.is_none_or(|(_, d)| s.axial_engagement_mm > d) {
@@ -223,7 +203,7 @@ pub fn evaluate(ctx: &super::ToolpathLoadContext<'_>, env: &super::GateEnv<'_>) 
         // Feeds matrix R2 (2026-09-23): a finishing or semi-finishing
         // pass that cuts on one side has no axial cap; a slot or a groove
         // reads the force budget (P29-5, ruling R3). The drill family also
-        // has none, but the drill arm above already took it. The gate
+        // has none, but `limits::scope` does not judge the drill group. The gate
         // reports the deepest depth and judges nothing; the deflection
         // gate is the limit on this pass.
         tracing::debug!(
@@ -945,14 +925,14 @@ mod tests {
         clippy::wildcard_enum_match_arm,
         reason = "test: an unexpected variant panics"
     )]
-    fn a_transit_sample_never_sets_the_peak() {
-        // With no spans, `is_phantom_transit` falls back to the
-        // conservative `in_transit_span` flag, and the inflated dexel
-        // reading a bridge carries must not become the cut's depth.
+    fn a_link_sample_never_sets_the_headline_peak() {
+        // P29-6 6d: a link sample is judged in the Link group, so the deep
+        // reading a bridge carries never becomes the body cut's depth.
         let t = trace(vec![
             sample(0, 0.8, true),
             SimulationCutSample {
                 in_transit_span: true,
+                source_intent: Some(crate::toolpath::MoveIntent::Linking),
                 ..sample(1, 9.0, true)
             },
         ]);
@@ -988,7 +968,7 @@ mod tests {
         match run(OperationType::Drill, Some(&t)) {
             DepthVerdict::Unmodeled {
                 reason: UnmodeledReason::NotApplicableForOp(clause),
-            } => assert_eq!(clause, DRILL_NOT_APPLICABLE),
+            } => assert_eq!(clause, "drill cycle — no continuous engagement"),
             other => panic!("expected NotApplicableForOp, got {other:?}"),
         }
     }

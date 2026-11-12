@@ -96,7 +96,7 @@ fn tool() -> ToolDefinition {
 }
 
 /// One measured cutting sample at `axial_engagement_mm = depth`, not in
-/// a transit span, so `locality::is_steady_state_for_gate` keeps it.
+/// a transit span: a body-group sample (`locality::judged_group`).
 fn cutting_sample(idx: usize, depth: f64) -> SimulationCutSample {
     let feed = 2000.0;
     SimulationCutSample {

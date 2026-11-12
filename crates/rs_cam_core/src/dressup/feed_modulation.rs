@@ -275,9 +275,9 @@ impl SampleEngagement {
 /// [`ModulationContext::sample_engagements`].
 #[derive(Debug, Clone, PartialEq, Default)]
 pub struct MoveSampleEngagements {
-    /// One entry per cutting sample of the move that the gates grade (the
-    /// session drops the phantom-transit samples with the gate's own
-    /// `tool_load::locality::is_phantom_transit`). Empty: the load caps
+    /// One entry per sample of the move that removes material: every
+    /// sample the gates judge, in every cut group (P29-6 6d). Empty: the
+    /// load caps
     /// read the mean engagement of [`PerMoveEngagement`], as before P20g.
     pub samples: Vec<SampleEngagement>,
     /// The mean engagement binds too. The session sets it where the
@@ -676,7 +676,6 @@ impl ModulationOutcome {
 }
 
 /// Return `true` when the modulator should leave this move's feed alone.
-// EXEMPT(M2)
 fn should_skip_modulation(move_type: MoveType, intent: MoveIntent) -> bool {
     if matches!(move_type, MoveType::Rapid) {
         return true;

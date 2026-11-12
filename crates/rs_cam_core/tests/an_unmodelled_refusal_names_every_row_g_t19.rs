@@ -83,7 +83,6 @@ fn chipload_within() -> ChiploadVerdict {
             },
         },
         confidence: Confidence::Validated,
-        entry_spikes: Vec::new(),
         burn_advisory: None,
     }
 }
@@ -94,7 +93,6 @@ fn power_within() -> PowerVerdict {
         available_kw: 0.71,
         evidence: SampleEvidence::empty(),
         confidence: Confidence::Validated,
-        entry_spike: None,
         bound_source: None,
     }
 }
@@ -109,7 +107,6 @@ fn deflection_within() -> DeflectionVerdict {
         },
         evidence: SampleEvidence::empty(),
         confidence: Confidence::Validated,
-        entry_spike: None,
     }
 }
 
@@ -137,6 +134,9 @@ fn depth_unmodeled() -> DepthVerdict {
 fn milling_verdict(chipload: ChiploadVerdict, depth: DepthVerdict) -> ToolpathLoadVerdict {
     ToolpathLoadVerdict {
         toolpath_id: TP,
+        groups: rs_cam_core::tool_load::verdict::GroupVerdicts::headline_only(
+            rs_cam_core::limits::CutGroup::Body,
+        ),
         chipload,
         power: power_within(),
         deflection: deflection_within(),
@@ -204,6 +204,9 @@ fn drill_verdict() -> ToolpathLoadVerdict {
         || UnmodeledReason::NotApplicableForOp("drill cycle — no continuous engagement".to_owned());
     ToolpathLoadVerdict {
         toolpath_id: TP,
+        groups: rs_cam_core::tool_load::verdict::GroupVerdicts::headline_only(
+            rs_cam_core::limits::CutGroup::Body,
+        ),
         chipload: ChiploadVerdict::Unmodeled {
             reason: not_applicable(),
         },

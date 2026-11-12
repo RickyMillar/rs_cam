@@ -755,9 +755,20 @@ pub fn exceedance_findings(
             let Some(finding) = status.finding_id() else {
                 continue;
             };
-            let row = match &status.exceeded {
-                Some(ec) => format!("{}={}", ec.label, ec.reason_label),
-                None => status.kind.label().to_owned(),
+            let row = match (&status.exceeded, status.group) {
+                (
+                    Some(ec),
+                    Some(
+                        group @ (crate::limits::CutGroup::Entry
+                        | crate::limits::CutGroup::Cleanup
+                        | crate::limits::CutGroup::Link),
+                    ),
+                ) => format!("{} group {}={}", group.label(), ec.label, ec.reason_label),
+                (
+                    Some(ec),
+                    Some(crate::limits::CutGroup::Body | crate::limits::CutGroup::Drill) | None,
+                ) => format!("{}={}", ec.label, ec.reason_label),
+                (None, _) => status.row_label(),
             };
             found.rows.push(LoadWarningRow {
                 toolpath: *id,
@@ -776,7 +787,7 @@ pub fn exceedance_findings(
                 .map_or_else(|| "not stated".to_owned(), |p| format!("{p:.4}"));
             found.outcome.advisories.push(format!(
                 "  toolpath {id}: {}, peak {peak} {}, {}",
-                status.kind.label(),
+                status.row_label(),
                 status.unit,
                 status.bound_clause()
             ));
@@ -2669,6 +2680,9 @@ mod tests {
         ToolLoadReport {
             per_toolpath: vec![ToolpathLoadVerdict {
                 toolpath_id: ToolpathId::from_raw(4),
+                groups: crate::tool_load::verdict::GroupVerdicts::headline_only(
+                    crate::limits::CutGroup::Body,
+                ),
                 chipload,
                 power,
                 deflection,
@@ -2703,7 +2717,6 @@ mod tests {
                 bounds: chip_bounds(),
             },
             confidence: Confidence::Validated,
-            entry_spikes: Vec::new(),
             burn_advisory: None,
         }
     }
@@ -2732,7 +2745,6 @@ mod tests {
             bounds: deflection_bounds_default(),
             evidence: SampleEvidence::empty(),
             confidence: Confidence::Validated,
-            entry_spike: None,
         }
     }
 
@@ -2809,7 +2821,6 @@ mod tests {
                 available_kw: 0.71,
                 evidence: SampleEvidence::empty(),
                 confidence: Confidence::Approximate("isotropic Kc only".into()),
-                entry_spike: None,
                 bound_source: None,
             },
             deflection_within(3.5),
@@ -2856,7 +2867,6 @@ mod tests {
             available_kw: 0.71,
             evidence: SampleEvidence::empty(),
             confidence: Confidence::Validated,
-            entry_spike: None,
             bound_source: None,
         }
     }

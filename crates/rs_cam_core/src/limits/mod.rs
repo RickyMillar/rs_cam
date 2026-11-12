@@ -11,7 +11,10 @@
 //! - [`Check`] (`check.rs`): the one record.
 //! - `project.rs`: the projections of the old records to [`Check`].
 //! - [`Cut`] (`cut.rs`, P29-3): one cut that a limit judges. [`CutGroup`]
-//!   (P29-6): the group of each kind that a gate reports it in.
+//!   (P29-6): the group of each kind that a gate reports it in;
+//!   [`ByGroup`]: the fixed record of one value per group.
+//! - [`scope`] (`scope.rs`, P29-6 6d): for each limit and each group,
+//!   judged or not judged (with its exemption row).
 //! - [`EXEMPTIONS`] (`exemptions.rs`, P29-3): the one list of every
 //!   exemption from a limit.
 //! - [`SampleContext`] (`sample.rs`, P29-3): the side tables of
@@ -28,15 +31,17 @@ mod cut;
 mod exemptions;
 mod project;
 mod sample;
+mod scope;
 
 pub use check::{BoundSide, Check, CheckState, Geometry, NoNumberReason, basis_of_bound};
 pub use cut::{
-    BodySides, CleanupKind, Cut, CutEngagement, CutFacts, CutGroup, CutKind, CutSource, DepthLimit,
-    EntryKind, FirstPassKind, Leave, NoDepthLimit, NoEngagementModel, SampleDepth,
+    BodySides, ByGroup, CleanupKind, Cut, CutEngagement, CutFacts, CutGroup, CutKind, CutSource,
+    DepthLimit, EntryKind, FirstPassKind, Leave, NoDepthLimit, NoEngagementModel, SampleDepth,
 };
 pub use exemptions::{EXEMPTIONS, Exemption, ExemptionClass, Who};
 pub use project::{of_criterion, of_envelope, of_judged_value, of_rpm_choice};
 pub use sample::{CapTable, MoveCap, SampleContext};
+pub use scope::{NotJudged, Scope, scope, scope_of_all};
 
 use serde::Serialize;
 

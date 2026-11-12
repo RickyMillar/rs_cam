@@ -1087,6 +1087,9 @@ fn p29_power_verdict(
     };
     ToolpathLoadVerdict {
         toolpath_id: rs_cam_core::ids::ToolpathId::from_raw(7),
+        groups: rs_cam_core::tool_load::verdict::GroupVerdicts::headline_only(
+            rs_cam_core::limits::CutGroup::Body,
+        ),
         chipload: ChiploadVerdict::Unmodeled {
             reason: UnmodeledReason::NoVendorData,
         },

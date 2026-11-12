@@ -1078,9 +1078,10 @@ impl EnvelopePlacement {
 /// K7 (feeds contract P9), the tenth shared decision: place the measured
 /// engagement of toolpath `ctx.toolpath_id()` against `envelope`.
 ///
-/// The population is the power gate's: a cutting sample with an arc that
-/// passes [`crate::tool_load::locality::is_steady_state_for_gate`] (never a
-/// second copy). Each sample is one
+/// The population is the body group of the power gate
+/// ([`crate::tool_load::locality::judged_group`], P29-6 ruling Q4: an
+/// entry is a different cut and gets its own envelope in P29-8, row
+/// `P28-21`). Each sample is one
 /// [`crate::feeds::engagement::Engagement::from_sample`]; its power is
 /// [`crate::tool_load::power::sample_power_kw`] at the effective feed. The
 /// point is placed against the ceilings
@@ -1101,7 +1102,7 @@ pub fn envelope_placement(
 ) -> EnvelopePlacement {
     use crate::feeds::envelope::Placement;
     let line = ctx.material().force_line().ok();
-    let span_lookup = ctx.spans().map(crate::tool_load::locality::SpanLookup::new);
+    let sample_ctx = ctx.sample_context();
     let mut out = EnvelopePlacement {
         placed: 0,
         outside: 0,
@@ -1113,8 +1114,9 @@ pub fn envelope_placement(
     let machine = envelope.machine();
     for (i, s) in trace.samples.iter().enumerate() {
         if s.toolpath_id != ctx.toolpath_id()
-            // EXEMPT(P28-21, P28-22, P28-23)
-            || !crate::tool_load::locality::is_steady_state_for_gate(s, span_lookup.as_ref())
+            // EXEMPT(P28-21)
+            || crate::tool_load::locality::judged_group(s, &sample_ctx)
+                != Some(crate::limits::CutGroup::Body)
         {
             continue;
         }
@@ -1133,7 +1135,7 @@ pub fn envelope_placement(
                 &line,
                 s,
                 &trace.predicted_feeds,
-                span_lookup.as_ref(),
+                &sample_ctx,
             )
         });
         let measured_tool = crate::feeds::envelope::MeasuredTool {
@@ -2237,7 +2239,6 @@ fn carve_entry(
         // a transit span dropped by TSP (split LinkBridge)
         // leaves its moves without ancestry, but their intents
         // still classify them as transit.
-        // EXEMPT(C-LeadInApproach)
         let intent_transits = entry.annotated.transit_moves_bitmap_from_intents();
         let (span_paths_by_move, transit_moves) = if entry.annotated.spans_valid {
             let mut transit = entry.annotated.transit_moves_bitmap();

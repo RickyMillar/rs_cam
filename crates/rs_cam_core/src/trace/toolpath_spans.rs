@@ -199,11 +199,10 @@ pub enum SpanKind {
     /// overcut/return pair (`dressup::apply_dogbones`).
     ///
     /// This kind is on the transit list
-    /// ([`AnnotatedToolpath::transit_moves_bitmap`]) and in
-    /// `tool_load::locality::is_phantom_transit`'s phantom set, because at
-    /// such a bridge the dexel reads `stock_top − cutter_z` over
-    /// *neighbouring* uncleared stock rather than steady-state engagement
-    /// (`planning/archive/P3_TRANSIT_PEAK_DOC_RCA.md`).
+    /// ([`AnnotatedToolpath::transit_moves_bitmap`]). Its samples are the
+    /// `DressupRelief` kind, which the gates judge in the Cleanup group,
+    /// not in the body (P29-6 6d; the dexel at such a bridge reads
+    /// neighbouring stock, `planning/archive/P3_TRANSIT_PEAK_DOC_RCA.md`).
     ///
     /// Arc-fit replacements used to land here too. They do not any more —
     /// see [`Self::GeometryRefit`]. Checkpoint D Q3, ruled 2026-08-04.
@@ -212,8 +211,8 @@ pub enum SpanKind {
     /// today, the arc `arcfit::fit_arcs` fitted through a run of linear
     /// moves, within `arc_tolerance`.
     ///
-    /// Deliberately NOT on the transit list and NOT in
-    /// `is_phantom_transit`'s phantom set. A fitted arc engages the same
+    /// Deliberately NOT on the transit list, and its samples keep the kind
+    /// of the cut they refit (the body group). A fitted arc engages the same
     /// material along the same path as the moves it replaced; its dexel
     /// readings are steady-state cutting readings and belong in the
     /// chipload / power / deflection gate populations and in the peak

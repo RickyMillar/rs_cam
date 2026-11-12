@@ -14,7 +14,7 @@
 //! ## The line (lead ruling 3, 2026-11-06)
 //!
 //! The force budget line exists only on an op whose
-//! `machine.rigidity.depth_cap_of(kind.body_depth_limit())` is
+//! `machine.rigidity.depth_cap_of(body_facts().depth_rule)` is
 //! `Some(`[`DepthCapRule`]`)`: the one rule the depth gate
 //! (`super::depth`) and the P16 modulator read (every roughing cut, the
 //! Adaptive family since P29-4, and a slot or a groove under every role
@@ -31,10 +31,11 @@
 //!
 //! ## The population
 //!
-//! [`cut_points`] walks the trace with the deflection gate's own filters:
-//! this toolpath, `is_cutting`, not [`RadialEngagementClass::Air`], an
-//! arc captured, an engagement, and the one steady-state predicate
-//! [`super::locality::is_steady_state_for_gate`]. The feed per tooth is
+//! [`points_of`] reads the samples of one group (`groups::populations`,
+//! P29-6 6d) with the deflection gate's own filters: `is_cutting`, not
+//! [`RadialEngagementClass::Air`], an arc captured and an engagement. The
+//! driver (`groups::judge_by_group`) reads every group; [`cut_points`] is
+//! the headline group, the population of the force card. The feed per tooth is
 //! [`super::deflection::deflection_feed_per_tooth_mm`], which reads the one
 //! P16 feed door (`effective_feed_for_sample`). The force card bins the
 //! points whose `force_n` is `Some`.
@@ -46,7 +47,6 @@ use crate::material::Material;
 use crate::stock::simulation_cut::{RadialEngagementClass, SimulationCutSample};
 use crate::tool::ToolDefinition;
 
-use super::locality::SpanLookup;
 use super::verdict::{GatePopulation, PopulationUnit};
 use super::{GateEnv, ToolpathLoadContext};
 
@@ -106,28 +106,39 @@ pub struct CutPoint3 {
     pub sample_index: usize,
 }
 
-/// **The deflection gate's population, on the width x depth plane.** The
-/// filters are the gate's own (module doc). Empty with no trace.
+/// **The headline group's population, on the width x depth plane** (the
+/// force card). Empty with no trace, or when `limits::scope` does not
+/// judge the force budget on the headline group (a drill cycle).
 #[must_use]
 pub fn cut_points(ctx: &ToolpathLoadContext<'_>, env: &GateEnv<'_>) -> Vec<CutPoint3> {
     let Some(trace) = env.sim_trace else {
         return Vec::new();
     };
-    let span_lookup = ctx.spans().map(SpanLookup::new);
-    let lookup = span_lookup.as_ref();
-    trace
+    let group = ctx.headline_group();
+    if !matches!(
+        crate::limits::scope(crate::limits::LimitId::ForceBudget, group),
+        crate::limits::Scope::Judged
+    ) {
+        return Vec::new();
+    }
+    let populations = super::groups::populations(ctx, Some(trace));
+    points_of(ctx, trace, populations.of(group))
+}
+
+/// The points of one group's samples, with the deflection gate's filters.
+fn points_of(
+    ctx: &ToolpathLoadContext<'_>,
+    trace: &crate::stock::simulation_cut::SimulationCutTrace,
+    population: super::groups::GroupPopulation<'_>,
+) -> Vec<CutPoint3> {
+    population
         .samples
         .iter()
-        .enumerate()
-        .filter(|(_, s)| s.toolpath_id == ctx.toolpath_id() && s.is_cutting)
+        .filter(|(_, s)| s.is_cutting)
         .filter(|(_, s)| s.radial_engagement_class() != RadialEngagementClass::Air)
         .filter(|(_, s)| s.arc_engagement_radians.is_some())
-        .filter_map(|(i, s)| {
+        .filter_map(|&(i, s)| {
             let engagement = super::deflection::sample_engagement(ctx.tool(), s)?;
-            // EXEMPT(P28-21, P28-22, P28-23)
-            if !super::locality::is_steady_state_for_gate(s, lookup) {
-                return None;
-            }
             let fz = super::deflection::deflection_feed_per_tooth_mm(s, &trace.predicted_feeds);
             Some(CutPoint3 {
                 ae_mm: engagement.ae_mm(),
@@ -146,15 +157,12 @@ pub fn cut_points(ctx: &ToolpathLoadContext<'_>, env: &GateEnv<'_>) -> Vec<CutPo
 /// ([`DepthCapRule`]) for the op's body cut (every roughing cut; P29-4,
 /// ruling R1, gave the Adaptive family the budget; P29-5, ruling R3, gave
 /// it to a slot or a groove under every role). `None` for a one-sided
-/// finish pass, a drill, or no machine. The depth limit comes from the
-/// registry row of the operation kind
-/// (`OperationType::body_depth_limit`), as `super::depth` reads it.
+/// finish pass, a drill, or no machine. The depth limit is the body cut's
+/// fact (`CutFacts::depth_rule`), as `super::depth` reads it (P29-6 6d).
 #[must_use]
 pub fn budget_line(ctx: &ToolpathLoadContext<'_>, env: &GateEnv<'_>) -> Option<f64> {
     let machine = env.machine?;
-    let DepthCapRule { budget_n } = machine
-        .rigidity
-        .depth_cap_of(ctx.operation_kind().body_depth_limit())?;
+    let DepthCapRule { budget_n } = machine.rigidity.depth_cap_of(ctx.body_facts().depth_rule)?;
     Some(budget_n)
 }
 
@@ -176,22 +184,25 @@ pub struct CutForceReading {
     pub rule: String,
 }
 
-/// **Build the reading.** `None` with no trace, on a drill (no continuous
-/// engagement), or when the material has no force line.
+/// **The headline reading** (the one driver, `groups::judge_by_group`).
+/// `None` with no trace, on a drill (no continuous engagement), or when the
+/// material has no force line.
 #[must_use]
 pub fn evaluate(ctx: &ToolpathLoadContext<'_>, env: &GateEnv<'_>) -> Option<CutForceReading> {
+    super::groups::headline::<super::CutForceGate>(ctx, env)
+}
+
+/// The reading of one group. `None` with no trace or when the material has
+/// no force line.
+pub(super) fn judge(
+    ctx: &ToolpathLoadContext<'_>,
+    env: &GateEnv<'_>,
+    population: super::groups::GroupPopulation<'_>,
+) -> Option<CutForceReading> {
     let trace = env.sim_trace?;
-    // EXEMPT(P28-17)
-    if ctx.operation_kind().is_drill_kinematics() {
-        return None;
-    }
     ctx.material().force_line().ok()?;
-    let offered = trace
-        .samples
-        .iter()
-        .filter(|s| s.toolpath_id == ctx.toolpath_id())
-        .count();
-    let points = cut_points(ctx, env);
+    let offered = population.toolpath.toolpath_samples;
+    let points = points_of(ctx, trace, population);
     let mut contributing = 0_usize;
     let mut peak_n = 0.0_f64;
     let mut peak_sample_index = None;

@@ -1161,7 +1161,9 @@ pub(crate) fn limit_rows(verdict: &ToolpathLoadVerdict) -> Vec<LimitRow<'_>> {
             )
         })
         .map(|status| LimitRow {
-            burn_risk: burn_risk && status.kind == CriterionKind::Chipload,
+            burn_risk: burn_risk
+                && status.kind == CriterionKind::Chipload
+                && status.group == Some(verdict.groups.headline),
             status,
             source: None,
         })
@@ -1290,7 +1292,7 @@ fn caption_parts(row: &LimitRow<'_>) -> Vec<String> {
 /// on the first line of its status hover.
 fn verdict_face(row: &LimitRow<'_>) -> (egui::Color32, String) {
     let status = &row.status;
-    let label = status.kind.label();
+    let label = status.row_label();
     let peak = status.display_peak.unwrap_or(0.0);
     let (color, status_text) = if status.is_vacuous() {
         // X-VAC (2026-08-14) — a gate handed an empty population returns
@@ -1421,7 +1423,7 @@ fn verdict_tooltip(row: &LimitRow<'_>) -> String {
     // (audit WRONG #4, 2026-10-02).
     let vacuity = status.vacuity_clause();
     if !vacuity.is_empty() {
-        return format!("{}{vacuity}.", status.kind.label());
+        return format!("{}{vacuity}.", status.row_label());
     }
     // For burn-risk chipload, the bound the reading sits against is the LUT
     // FLOOR — render as "peak / floor" so the relationship reads correctly
@@ -2421,7 +2423,7 @@ fn cut_metric_status_hover(
                 });
                 lines.push(format!(
                     "{} peak{peak} \u{00b7} no limit",
-                    row.status.kind.label()
+                    row.status.row_label()
                 ));
             } else {
                 lines.push(verdict_face(row).1);
@@ -3061,6 +3063,7 @@ mod tests {
     fn arc_engagement_unmodeled_tooltip_says_re_run() {
         let reason = UnmodeledReason::ArcEngagementNotCaptured;
         let status = CriterionStatus {
+            group: None,
             kind: CriterionKind::Chipload,
             state: LoadState::Unmodeled,
             confidence: None,
@@ -3103,6 +3106,9 @@ mod tests {
         };
         let verdict = ToolpathLoadVerdict {
             toolpath_id: rs_cam_core::ToolpathId::from_raw(0),
+            groups: rs_cam_core::tool_load::verdict::GroupVerdicts::headline_only(
+                rs_cam_core::limits::CutGroup::Body,
+            ),
             chipload: ChiploadVerdict::Unmodeled { reason: na() },
             power: PowerVerdict::Unmodeled { reason: na() },
             deflection: DeflectionVerdict::Unmodeled { reason: na() },

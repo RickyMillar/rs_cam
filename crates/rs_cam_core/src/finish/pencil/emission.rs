@@ -27,8 +27,8 @@ use super::{PencilParams, PencilPath, PencilRuntimeAnnotation, PencilRuntimeEven
 // `CutKinematics::Plunge`, whose removal the simulator writes to
 // `plunge_descent_mm` and NOT to `axial_engagement_mm` — so the
 // crosses-standing caution (which reads the axial axis) never saw it, and the
-// chipload/deflection/power gates drop entry spans wholesale via
-// `tool_load::locality::is_steady_state_for_gate`. Nothing graded it. The
+// chipload/deflection/power gates dropped entry spans wholesale (until
+// P29-6 6d, which judges entries in their own group). Nothing graded it. The
 // second half of that hole is closed by `sim_triage::entry_load_finding`.
 //
 // The fix here is geometric: descend ALONG the valley being entered instead

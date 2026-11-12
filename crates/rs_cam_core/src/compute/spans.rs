@@ -884,8 +884,8 @@ mod tests {
         // index). Before F.3 it became a `DepthPass` span and the
         // gate predicate treated samples inside as steady-state — a
         // single transient lift-bridge sample could trip the gate.
-        // After F.3 it becomes a `WaterlineCleanup` span which
-        // `is_steady_state_for_gate` filters out.
+        // After F.3 it becomes a `WaterlineCleanup` span, which the gates
+        // judge in the Cleanup group (P29-6 6d), not in the body.
         let events = vec![
             ev(
                 0,

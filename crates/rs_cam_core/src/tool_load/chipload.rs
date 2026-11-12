@@ -102,8 +102,6 @@ use crate::compute::catalog::OperationType;
 use crate::feeds::vendor_lookup::{LookupQuery, LookupResult, find_best_chip_envelope_row};
 use crate::feeds::vendor_lut::{LutOperationFamily, LutPassRole};
 use crate::feeds::vendor_normalize::material_to_lut;
-use crate::ids::ToolpathId;
-use crate::stock::simulation_cut::SimulationCutTrace;
 
 use super::locality::SpanLookup;
 
@@ -182,25 +180,8 @@ pub(super) fn embedded_lut() -> &'static crate::feeds::VendorLut {
 
 use super::verdict::{
     ChipBounds, ChipBoundsSource, ChipSide, ChiploadMetric, ChiploadStatistic, ChiploadVerdict,
-    Confidence, EntrySpike, SampleEvidence, UnmodeledReason,
+    Confidence, SampleEvidence, UnmodeledReason,
 };
-
-/// The samples of one toolpath that remove material
-/// ([`crate::stock::simulation_cut::SimulationCutSample::removes_material`],
-/// ruling Q2 of P29-6), as `(global_index_into_trace, sample)`. The chip
-/// gate and its histogram read this one set. No feed test: a sample at a
-/// capped or a ramp feed is a cut too (P29-6 6b, row `M1` closed).
-pub(crate) fn removing_samples_for_toolpath(
-    trace: &SimulationCutTrace,
-    toolpath_id: ToolpathId,
-) -> Vec<(usize, &crate::stock::simulation_cut::SimulationCutSample)> {
-    trace
-        .samples
-        .iter()
-        .enumerate()
-        .filter(|(_, s)| s.toolpath_id == toolpath_id && s.removes_material())
-        .collect()
-}
 
 /// The gate's sample-validity predicate: the sample carries a chip model
 /// and is not air class. P29-6 (ruling Q2): an air-class sample that
@@ -263,12 +244,13 @@ struct PartialFeedStages {
 ///
 /// `None` for the explanation whenever the gate refused before matching
 /// a row — an `Unmodeled` verdict has no stages to label.
-pub(crate) fn evaluate_with_explanation(
+pub(super) fn judge_with_explanation(
     ctx: &super::ToolpathLoadContext<'_>,
     env: &super::GateEnv<'_>,
+    population: super::groups::GroupPopulation<'_>,
 ) -> (ChiploadVerdict, Option<Box<crate::feeds::FeedExplanation>>) {
     let mut partial = None;
-    let verdict = evaluate_inner(ctx, env, &mut partial);
+    let verdict = judge(ctx, env, population, &mut partial);
     let explanation = partial.map(|p| {
         // Stage 5 must name the statistic the VERDICT quotes, not a
         // statistic of this function's choosing — the two arms report
@@ -320,43 +302,33 @@ pub(crate) fn evaluate_with_explanation(
     (verdict, explanation)
 }
 
-#[tracing::instrument(level = "debug", skip_all, fields(toolpath_id = ctx.toolpath_id().raw(), op = ?ctx.operation_kind()))]
+/// The headline chipload verdict of the toolpath (the one driver,
+/// `groups::judge_by_group`).
 pub fn evaluate(ctx: &super::ToolpathLoadContext<'_>, env: &super::GateEnv<'_>) -> ChiploadVerdict {
-    evaluate_inner(ctx, env, &mut None)
+    super::groups::headline::<super::ChiploadGate>(ctx, env)
 }
 
-fn evaluate_inner(
+/// The chipload verdict of one group: the peak chip of its samples against
+/// the band max, the median against the band min. Every group reads the
+/// body row (the vendor row has no entry or cleanup row).
+#[tracing::instrument(level = "debug", skip_all, fields(toolpath_id = ctx.toolpath_id().raw(), group = ?population.group))]
+fn judge(
     ctx: &super::ToolpathLoadContext<'_>,
     env: &super::GateEnv<'_>,
+    population: super::groups::GroupPopulation<'_>,
     partial_stages: &mut Option<PartialFeedStages>,
 ) -> ChiploadVerdict {
-    let (toolpath_id, tool, material, steady_feed, operation_kind, spans) = (
-        ctx.toolpath_id(),
-        ctx.tool(),
-        ctx.material(),
-        ctx.steady_feed(),
-        ctx.operation_kind(),
-        ctx.spans(),
-    );
+    let (tool, material, steady_feed, spans) =
+        (ctx.tool(), ctx.material(), ctx.steady_feed(), ctx.spans());
     // The vendor row key: a row lookup, not a limit scope.
-    let (operation_family, pass_role) = ctx.row_key();
+    let row_key = ctx.chip_row_key();
+    let (operation_kind, operation_family, pass_role) =
+        (row_key.operation_kind, row_key.family, row_key.pass_role);
     let &super::GateEnv {
         sim_trace,
         tolerance,
         ..
     } = env;
-    // Roadmap F.8 — short-circuit when the op is geometrically
-    // plunge-only. Drill cycles have no continuous chipload to
-    // compare against an LUT envelope; the right answer is "doesn't
-    // apply" not "samples not in steady state" or "no vendor data".
-    // EXEMPT(P28-20)
-    if operation_kind.is_drill_kinematics() {
-        return ChiploadVerdict::Unmodeled {
-            reason: UnmodeledReason::NotApplicableForOp(
-                "drill cycle — no continuous engagement".to_owned(),
-            ),
-        };
-    }
     // 1. Provenance gate.
     let Some(trace) = sim_trace else {
         return ChiploadVerdict::Unmodeled {
@@ -364,18 +336,17 @@ fn evaluate_inner(
         };
     };
 
-    // 2. The population: every sample of the toolpath that removes
-    // material, at any feed (P29-6 6b). The same set gives the peak DOC for
-    // the lookup key.
-    let removing_samples = removing_samples_for_toolpath(trace, toolpath_id);
+    // 2. The population: every sample of the group that removes material,
+    // at any feed (P29-6 6b, 6d: `groups::populations`).
+    let removing_samples = population.samples;
 
-    // 3. No removing sample: no chip to judge. Name the finding before
-    // the LUT lookup, so missing samples and missing vendor data stay
-    // distinct. UX dial-in A10: when the simulation ran but the toolpath
-    // removed nothing, say so rather than `SimulationRequired`, which
-    // implies a re-simulation.
-    if removing_samples.is_empty() {
-        let reason = if trace.samples.iter().any(|s| s.toolpath_id == toolpath_id) {
+    // 3. No removing sample in the toolpath: no chip to judge. Name the
+    // finding before the LUT lookup, so missing samples and missing vendor
+    // data stay distinct. UX dial-in A10: when the simulation ran but the
+    // toolpath removed nothing, say so rather than `SimulationRequired`,
+    // which implies a re-simulation.
+    if population.toolpath.removing_samples == 0 {
+        let reason = if population.toolpath.toolpath_samples > 0 {
             UnmodeledReason::AllSamplesAirCutOrRapid
         } else {
             UnmodeledReason::SimulationRequired
@@ -385,24 +356,12 @@ fn evaluate_inner(
 
     // 4. Look up the vendor envelope. If no row matches, refuse.
     //
-    // The LUT diameter query depends on `lookup_axial_doc_mm` (P11b2: the
-    // band no longer moves with it). Folding over every removing
-    // sample (including transit-style samples whose dexel reading
-    // captures `stock_top − cutter_z` over neighbouring stock — see
-    // P3_TRANSIT_PEAK_DOC_RCA.md) silently inflates this metric on
-    // toolpaths whose only "deep" reading is a phantom waterline-cleanup
-    // or link-bridge sample. Filter through the canonical
-    // [`super::locality::is_steady_state_for_gate`] predicate (which
-    // consults `in_transit_span` plus the Entry / WaterlineCleanup
-    // ancestor check), so the LUT lookup and the trip decision below
-    // measure the same population of samples.
+    // The row key reads the peak removed-layer depth of the BODY group
+    // (`groups::ToolpathSamples::row_key_depth_mm`), so every group reads
+    // the body row (P11b2: the band no longer moves with the depth; F5: the
+    // key reads no depth).
     let span_lookup = spans.map(SpanLookup::new);
-    let lookup_axial_doc_mm = removing_samples
-        .iter()
-        // EXEMPT(P28-21, P28-22, P28-23)
-        .filter(|(_, s)| super::locality::is_steady_state_for_gate(s, span_lookup.as_ref()))
-        .map(|(_, s)| s.axial_doc_mm.max(0.0))
-        .fold(0.0_f64, f64::max);
+    let lookup_axial_doc_mm = population.toolpath.row_key_depth_mm;
     // F3.4 — resolve through the canonical chipload-envelope helper
     // (angle-aware dispatch, ProjectCurve/Adaptive3d routing, RPM-only
     // rows excluded) so the gate, the optimizer, and the viewport read
@@ -591,31 +550,16 @@ fn evaluate_inner(
     // P11b2: the lift of each trip-set sample, for the commanded peak chip
     // (the median lift of the measured cut).
     let mut trip_lifts: Vec<f64> = Vec::new();
-    // D7 — span-aware steady-state filter. Samples whose span_path
-    // contains a `SpanKind::Entry` ancestor (configured plunge / helix /
-    // ramp entries laid down by D4 / D5) are kept out of the
-    // steady-state trip set and surfaced separately as `entry_spikes`
-    // on the `Within` arm. Replaces the C1 kinematics filter reverted
-    // in D3 (commit `a07cfa2`). `span_lookup` was constructed alongside
-    // `lookup_axial_doc_mm` above.
-    // Worst Entry-ancestry over-max sample (largest observed_fpt > max).
-    let mut entry_high: Option<(f64, usize)> = None;
-    // Worst Entry-ancestry under-min sample (smallest observed_fpt < min).
-    let mut entry_low: Option<(f64, usize)> = None;
     // X-VAC (`planning/review_2026-08-08/XVAC_CENSUS.md`). `offered` is
-    // the removing set handed to this loop; `contributing` is
-    // `burn_samples.len()` below — the samples that actually reached a
-    // bound comparison. The two differ by the sample-validity predicate,
-    // the no-divisor skip, and the phantom / configured-entry split, and
-    // the second can be zero while the first is large.
+    // every removing sample of the toolpath; `contributing` is
+    // `burn_samples.len()` below — the samples of this group that reached
+    // a bound comparison. The two differ by the other groups, the
+    // sample-validity predicate and the no-divisor skip, and the second can
+    // be zero while the first is large.
     //
-    // Deliberately NOT `valid_count`: that counter increments before the
-    // transit skip and is documented at its own definition as
-    // overstating the gate's denominator. Publishing an overstated count
-    // as the vacuity marker would reproduce the defect in the fix.
-    let offered = removing_samples.len();
+    let offered = population.toolpath.removing_samples;
 
-    for (i, s) in removing_samples {
+    for &(i, s) in removing_samples {
         // **The sample-validity predicate** (`has_chip_number`). P29-6
         // changed it twice: an air-class removing sample has no number
         // (Q2), and an arc of 0 counts as no arc (Q7). The rest of this note
@@ -669,55 +613,10 @@ fn evaluate_inner(
                     continue;
                 }
             };
-        // R-10 (census §7.5, report-only). NOTE THE ORDER: this increments
-        // BEFORE the `is_phantom_transit` skip immediately below, so
-        // `valid_count` counts samples the loop then discards. It is
-        // published as `sample_count` on the verdict, where it reads as "the
-        // population that drove this gate" — and it OVERSTATES that
-        // population by however many transit samples the trip set rejected.
-        //
-        // The gap used to be enormous on curve-heavy finishing paths: arc-fit
-        // tagged every fitted arc `SpanKind::DressupArtifact`, which is on
-        // the transit list, so MORE arc-fitting meant FEWER samples actually
-        // gating — one committed fixture carries 630 such spans on a single
-        // op. Checkpoint D Q3 (2026-08-04) moved fitted arcs to
-        // `SpanKind::GeometryRefit`, which is not a transit kind, so that
-        // term is gone. What remains is the genuine transit population
-        // (entries, link bridges, lead-outs, dogbones, waterline cleanup).
-        //
-        // Left as-is deliberately: `sample_count` is a shipped wire field
-        // and moving it is a separate, gated change. Documented here so the
-        // next reader does not take it for the gate's true denominator.
+        // R-10 (census §7.5): `valid_count` is published as `sample_count`
+        // on the feed explanation. P29-6 6d: no transit skip follows it any
+        // more, so it equals the group's trip set.
         valid_count += 1;
-        // Finding 3 split (2026-06-04): phantom-transit samples
-        // (WaterlineCleanup / LinkBridge / LeadOut / DressupArtifact)
-        // carry phantom-deep dexel readings and must not surface as
-        // entry_spikes (the inflated chip-thickness misleads the
-        // operator). Configured Entry samples (real plunge / ramp /
-        // helix transients) still route to the entry_spikes advisory.
-        // Both bypass the steady-state trip set.
-        // EXEMPT(P28-22, P28-23)
-        if super::locality::is_phantom_transit(s, span_lookup.as_ref()) {
-            continue;
-        }
-        // EXEMPT(P28-21, M3)
-        if super::locality::is_configured_entry(s, span_lookup.as_ref()) {
-            // Checkpoint K (b1) — the advisory sides read the same
-            // boundary contract as the trip sides, at zero tolerance:
-            // an entry spike reported at 1 ulp over a bound is the same
-            // unexplainable reading as a verdict at 1 ulp over it.
-            if bounds.exceeds_high(observed_fpt, 0.0)
-                && entry_high.is_none_or(|(prev, _)| observed_fpt > prev)
-            {
-                entry_high = Some((observed_fpt, i));
-            }
-            if bounds.below_low(observed_fpt, 0.0).unwrap_or(false)
-                && entry_low.is_none_or(|(prev, _)| observed_fpt < prev)
-            {
-                entry_low = Some((observed_fpt, i));
-            }
-            continue;
-        }
         burn_samples.push((observed_fpt, i));
         trip_lifts.push(sample_lift);
         // Layer 1 tolerance band: a single sample 1-2% over `max` (e.g.
@@ -958,34 +857,10 @@ fn evaluate_inner(
         },
         bounds,
     };
-    // D7 — entry-spike advisories. Each side reports the worst Entry-
-    // ancestry sample whose normalized chip-thickness landed outside
-    // the LUT envelope. The trip itself fired on steady-state samples
-    // only (or didn't fire — this is the `Within` arm); these spikes
-    // exist purely so the operator sees that an entry transient
-    // touched the bound without flipping the verdict.
-    let mut entry_spikes: Vec<EntrySpike> = Vec::new();
-    if let Some((observed, idx)) = entry_high {
-        entry_spikes.push(EntrySpike {
-            observed,
-            bound: max,
-            locality: locality_for(idx).unwrap_or_else(|| "entry".to_owned()),
-            side: Some(ChipSide::High),
-        });
-    }
-    if let (Some((observed, idx)), Some(min_value)) = (entry_low, min) {
-        entry_spikes.push(EntrySpike {
-            observed,
-            bound: min_value,
-            locality: locality_for(idx).unwrap_or_else(|| "entry".to_owned()),
-            side: Some(ChipSide::Low),
-        });
-    }
     ChiploadVerdict::Within {
         approach_to_min,
         approach_to_max,
         confidence: chipload_confidence,
-        entry_spikes,
         burn_advisory,
     }
 }
@@ -1002,6 +877,7 @@ mod tests {
     use crate::compute::catalog::OperationType;
     use crate::feeds::vendor_lut::ToolFamily;
     use crate::feeds::vendor_normalize::lut_query_for;
+    use crate::ids::ToolpathId;
     use crate::material::Material;
     use crate::material::WoodSpecies;
     use crate::stock::simulation_cut::{

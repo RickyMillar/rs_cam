@@ -22,6 +22,12 @@
 //!   id; each marker id is a row; each marker sits in a file that its row
 //!   names. A scope read with no marker is not found (the weak point of
 //!   design section 4.2, ruling Q8).
+//! - Claim 6 (P29-6 6d): every cell of `limits::scope` that is not judged
+//!   names a row of the list, the row exempts that limit, and the row names
+//!   `src/limits/scope.rs`, which holds its marker. A sample gate names
+//!   only limits that a sample gate judges (no `NotASampleLimit`), and the
+//!   five sample limits are judged on the Body, Entry, Cleanup and Link
+//!   groups (operator Q1: "I think all moves should be judged").
 
 #![expect(
     clippy::expect_used,
@@ -32,12 +38,14 @@
 use std::collections::{BTreeMap, BTreeSet};
 use std::path::{Path, PathBuf};
 
-use rs_cam_core::limits::{EXEMPTIONS, Exemption, ExemptionClass, Geometry, Who};
+use rs_cam_core::limits::{
+    CutGroup, EXEMPTIONS, Exemption, ExemptionClass, Geometry, LimitId, Scope, Who, scope,
+};
 
 /// The rows that need a ruling. Exact: a closed row lowers it.
-const MAX_NEEDS_RULING: usize = 50;
+const MAX_NEEDS_RULING: usize = 40;
 /// Every row.
-const ROWS: usize = 61;
+const ROWS: usize = 51;
 /// The rows with a geometry reason.
 const PHYSICAL: usize = 8;
 /// The rows that quote an operator ruling.
@@ -50,7 +58,11 @@ const RULED: usize = 3;
 /// the material sides of the body cut, not only the family and the role).
 /// P29-6 6b closed the row `M1` (the chip gate reads every removing sample).
 /// P29-6 6c closed the row `M5` (the depth gate judges every sample).
-const ROWS_WITH_A_FILE: usize = 53;
+/// P29-6 6d closed ten rows with a file: every gate judges every cut group
+/// (`P28-22`, `P28-23`, `M2`, `M3`, `M8`, `Q10-LinkingInEntrySpan`,
+/// `Q10-EntryPlungeInNoSpan`, `Q4-SlotRingInferred`,
+/// `Q4-CappedStepNoTrace`, `C-LeadInApproach`).
+const ROWS_WITH_A_FILE: usize = 43;
 
 /// The 34 rows of `phases/P28_limit_audit.md`.
 const P28_IDS: [&str; 34] = [
@@ -76,6 +88,11 @@ const CLOSED: &[(&str, &str)] = &[
     ("M7", "P29-4"),
     ("M1", "P29-6"),
     ("M5", "P29-6"),
+    ("P28-22", "P29-6"),
+    ("P28-23", "P29-6"),
+    ("M2", "P29-6"),
+    ("M3", "P29-6"),
+    ("M8", "P29-6"),
 ];
 
 /// The marker text before the ids.
@@ -263,4 +280,58 @@ fn every_row_and_every_marker_name_each_other() {
         with_a_file, ROWS_WITH_A_FILE,
         "the rows that name the files of their scope reads"
     );
+}
+
+#[test]
+fn every_not_judged_cell_names_its_row_p29_6() {
+    let mut not_judged = 0;
+    for limit in LimitId::ALL {
+        for group in CutGroup::ALL {
+            match scope(limit, group) {
+                Scope::Judged | Scope::NotASampleLimit => {}
+                Scope::NotJudged(cell) => {
+                    not_judged += 1;
+                    let e = row(cell.row).unwrap_or_else(|| {
+                        panic!("{limit:?} x {group:?}: not judged, and no row {}", cell.row)
+                    });
+                    assert!(
+                        e.limit.contains(&limit),
+                        "{limit:?} x {group:?}: the row {} does not exempt the limit",
+                        cell.row
+                    );
+                    assert!(
+                        e.where_.contains(&"src/limits/scope.rs"),
+                        "{limit:?} x {group:?}: the row {} does not name src/limits/scope.rs",
+                        cell.row
+                    );
+                    assert!(!cell.reason.trim().is_empty(), "the cell states a reason");
+                }
+            }
+        }
+    }
+    assert!(not_judged > 0, "the scope holds the drill cells");
+    // Operator Q1 (2026-11-12): every sample limit judges every group of a
+    // milling cut.
+    for (gate, limits) in rs_cam_core::tool_load::groups::GATE_LIMITS {
+        assert!(!limits.is_empty(), "{gate}: names its limits");
+        for &limit in limits {
+            for group in [
+                CutGroup::Body,
+                CutGroup::Entry,
+                CutGroup::Cleanup,
+                CutGroup::Link,
+            ] {
+                assert_eq!(
+                    scope(limit, group),
+                    Scope::Judged,
+                    "{gate}: {limit:?} on {group:?}"
+                );
+            }
+            assert_ne!(
+                scope(limit, CutGroup::Drill),
+                Scope::NotASampleLimit,
+                "{gate}: {limit:?} is a sample limit"
+            );
+        }
+    }
 }

@@ -74,6 +74,9 @@ fn gates(d: &DrillOp) -> DrillGatesVerdict {
 fn verdict_with(drill: DrillGatesVerdict) -> ToolpathLoadVerdict {
     ToolpathLoadVerdict {
         toolpath_id: ToolpathId::from_raw(0),
+        groups: rs_cam_core::tool_load::verdict::GroupVerdicts::headline_only(
+            rs_cam_core::limits::CutGroup::Body,
+        ),
         chipload: ChiploadVerdict::Unmodeled {
             reason: UnmodeledReason::NotApplicableForOp("drill cycle".to_owned()),
         },

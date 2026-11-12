@@ -102,12 +102,17 @@ pub enum CutKind {
 /// The group that a gate reports a cut in (P29-6, ruling R4: "Entries and
 /// cleanup are judged like any cut, as their own group"; operator Q1,
 /// 2026-11-12: "I think all moves should be judged"). Every kind belongs
-/// to exactly one group ([`CutKind::group`]). No group is "not judged".
-#[derive(Debug, Clone, Copy, PartialEq, Eq, PartialOrd, Ord, Hash)]
+/// to exactly one group ([`CutKind::group`]). Each gate gives one verdict
+/// per group in a fixed record ([`ByGroup`]), and the one function
+/// [`super::scope`] states for each limit and each group whether the
+/// limit judges it.
+#[derive(
+    Debug, Clone, Copy, PartialEq, Eq, PartialOrd, Ord, Hash, serde::Serialize, serde::Deserialize,
+)]
+#[serde(rename_all = "snake_case")]
 pub enum CutGroup {
     /// The pass that the operator states, the wider first passes, the
-    /// capped steps, the slot ring and the drill cycle. The headline
-    /// verdict of each gate.
+    /// capped steps and the slot ring.
     Body,
     /// An entry into material, the feed through air above it, and the
     /// lead into the cut.
@@ -116,11 +121,34 @@ pub enum CutGroup {
     Cleanup,
     /// A link between two cuts and the lead out of the cut.
     Link,
+    /// A drill cycle: an axial cut with no radial engagement. The side
+    /// limits do not judge it (rows `P28-04`, `P28-10`, `P28-17`,
+    /// `P28-20`); the drill gates do.
+    Drill,
 }
 
 impl CutGroup {
     /// Every group, in declaration order.
-    pub const ALL: [Self; 4] = [Self::Body, Self::Entry, Self::Cleanup, Self::Link];
+    pub const ALL: [Self; 5] = [
+        Self::Body,
+        Self::Entry,
+        Self::Cleanup,
+        Self::Link,
+        Self::Drill,
+    ];
+
+    /// The group in words, for a message: "body", "entry", "cleanup",
+    /// "link", "drill".
+    #[must_use]
+    pub const fn label(self) -> &'static str {
+        match self {
+            Self::Body => "body",
+            Self::Entry => "entry",
+            Self::Cleanup => "cleanup",
+            Self::Link => "link",
+            Self::Drill => "drill",
+        }
+    }
 }
 
 impl CutKind {
@@ -134,12 +162,87 @@ impl CutKind {
             | Self::FirstPass(_)
             | Self::SpringPass
             | Self::CappedStep(_)
-            | Self::SlotRing
-            | Self::Drill => CutGroup::Body,
+            | Self::SlotRing => CutGroup::Body,
             Self::Entry(_) | Self::EntryApproach | Self::LeadIn => CutGroup::Entry,
             Self::Cleanup(_) | Self::DressupRelief => CutGroup::Cleanup,
             Self::Link | Self::LeadOut => CutGroup::Link,
+            Self::Drill => CutGroup::Drill,
         }
+    }
+}
+
+/// One value for each [`CutGroup`] (P29-6 6d, lead ruling 1): the fixed
+/// record of a gate result. The fields are private and the one
+/// constructor [`Self::from_fn`] calls its closure once for each group, in
+/// one exhaustive struct literal, so a record cannot leave a group out: a
+/// new group does not compile until every record holds it.
+#[derive(Debug, Clone, PartialEq, serde::Serialize, serde::Deserialize)]
+pub struct ByGroup<T> {
+    body: T,
+    entry: T,
+    cleanup: T,
+    link: T,
+    drill: T,
+}
+
+impl<T> ByGroup<T> {
+    /// The record with `f(group)` for each group, called in the order of
+    /// [`CutGroup::ALL`].
+    pub fn from_fn(mut f: impl FnMut(CutGroup) -> T) -> Self {
+        Self {
+            body: f(CutGroup::Body),
+            entry: f(CutGroup::Entry),
+            cleanup: f(CutGroup::Cleanup),
+            link: f(CutGroup::Link),
+            drill: f(CutGroup::Drill),
+        }
+    }
+
+    /// The value of `group`.
+    #[must_use]
+    pub const fn get(&self, group: CutGroup) -> &T {
+        match group {
+            CutGroup::Body => &self.body,
+            CutGroup::Entry => &self.entry,
+            CutGroup::Cleanup => &self.cleanup,
+            CutGroup::Link => &self.link,
+            CutGroup::Drill => &self.drill,
+        }
+    }
+
+    /// The value of `group`, to change.
+    pub fn get_mut(&mut self, group: CutGroup) -> &mut T {
+        match group {
+            CutGroup::Body => &mut self.body,
+            CutGroup::Entry => &mut self.entry,
+            CutGroup::Cleanup => &mut self.cleanup,
+            CutGroup::Link => &mut self.link,
+            CutGroup::Drill => &mut self.drill,
+        }
+    }
+
+    /// Each group with its value, in the order of [`CutGroup::ALL`].
+    pub fn iter(&self) -> impl Iterator<Item = (CutGroup, &T)> {
+        CutGroup::ALL.into_iter().map(move |g| (g, self.get(g)))
+    }
+
+    /// Each group with its value, to change.
+    pub fn iter_mut(&mut self) -> impl Iterator<Item = (CutGroup, &mut T)> {
+        let Self {
+            body,
+            entry,
+            cleanup,
+            link,
+            drill,
+        } = self;
+        [
+            (CutGroup::Body, body),
+            (CutGroup::Entry, entry),
+            (CutGroup::Cleanup, cleanup),
+            (CutGroup::Link, link),
+            (CutGroup::Drill, drill),
+        ]
+        .into_iter()
     }
 }
 

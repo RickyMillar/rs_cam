@@ -24,17 +24,18 @@
 //! The fixture holds four decoy samples that the gates must NOT count, and one
 //! former decoy that the chip gate now counts:
 //!
-//! - a transit sample (`in_transit_span`, no spans, so phantom) with the
-//!   highest value in the trace. A population that skips
-//!   `locality::is_steady_state_for_gate` holds it: claim 1 goes red on
-//!   every criterion (its value is the new maximum), and claim 2 goes red.
+//! - a link sample (`MoveIntent::Linking`: the Link group, not the
+//!   headline group) with the highest value in the trace. A population that
+//!   skips the group of `locality::judged_group` holds it: claim 1 goes red
+//!   on every criterion (its value is the new maximum), and claim 2 goes
+//!   red (P29-6 6d: the card bins the headline group).
 //! - an air-cut sample (`radial_woc_fraction` 0.01). A population that skips
 //!   the `< 0.02` air rule holds it: claim 2 goes red for chipload, power and
 //!   deflection. The depth gate has no air rule, so it counts this sample,
 //!   and its population must count it too.
 //! - a sample at 80 % of the commanded feed. Since P29-6 6b the chip gate
 //!   judges it (no feed filter); the chipload population holds it because
-//!   it reads `removing_samples_for_toolpath`, the gate's own set.
+//!   it reads the gate's own group population (`groups::populations`).
 //! - a sample with no `effective_chip_thickness_mm`. A chipload population
 //!   that skips the gate's vestigial chip-model predicate holds it: claim 2
 //!   goes red for chipload.
@@ -131,7 +132,7 @@ fn sample(idx: usize, advance: f64, depth: f64, arc: f64) -> (SimulationCutSampl
 /// The fixture: twelve counted samples, one far below any chip floor, and
 /// the five decoys named in the module header.
 ///
-/// Trace indices: 0..=12 are counted by every gate. 13 (transit) and 17
+/// Trace indices: 0..=12 are counted by every gate. 13 (a link) and 17
 /// (other toolpath) are counted by no gate. 14 (air) is counted by the depth
 /// gate only, which has no air rule. 16 (no chip model) is a decoy for
 /// chipload only. 15 (80 % feed) was a chipload decoy until P29-6 6b deleted
@@ -156,6 +157,7 @@ fn fixture() -> SimulationCutTrace {
     // Decoy: phantom transit, the highest value of every quantity.
     let (mut s, a) = sample(13, 0.058, 2.8, 2.0);
     s.in_transit_span = true;
+    s.source_intent = Some(rs_cam_core::toolpath::MoveIntent::Linking);
     rows.push((s, a));
     // Decoy: air cut.
     let (mut s, a) = sample(14, 0.050, 2.5, 1.9);

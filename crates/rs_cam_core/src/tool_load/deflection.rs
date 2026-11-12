@@ -56,7 +56,7 @@ use crate::tool::ToolDefinition;
 
 use super::locality::SpanLookup;
 use super::verdict::{
-    Confidence, DeflectionBasis, DeflectionBounds, DeflectionVerdict, EntrySpike, SampleEvidence,
+    Confidence, DeflectionBasis, DeflectionBounds, DeflectionVerdict, SampleEvidence,
     UnmodeledReason,
 };
 
@@ -253,42 +253,33 @@ pub fn deflection_feed_per_tooth_mm(
     )
 }
 
-#[tracing::instrument(level = "debug", skip_all, fields(toolpath_id = ctx.toolpath_id().raw(), op = ?ctx.operation_kind()))]
+/// The headline deflection verdict of the toolpath (the one driver,
+/// `groups::judge_by_group`).
 pub fn evaluate(
     ctx: &super::ToolpathLoadContext<'_>,
     env: &super::GateEnv<'_>,
 ) -> DeflectionVerdict {
-    let (toolpath_id, tool, material, operation_kind, spans) = (
-        ctx.toolpath_id(),
-        ctx.tool(),
-        ctx.material(),
-        ctx.operation_kind(),
-        ctx.spans(),
-    );
+    super::groups::headline::<super::DeflectionGate>(ctx, env)
+}
+
+/// The deflection verdict of one group: the peak tip deflection of its
+/// samples against the limit of the body cut (every group of a rough op
+/// leaves the same wall stock).
+#[tracing::instrument(level = "debug", skip_all, fields(toolpath_id = ctx.toolpath_id().raw(), group = ?population.group))]
+pub(super) fn judge(
+    ctx: &super::ToolpathLoadContext<'_>,
+    env: &super::GateEnv<'_>,
+    population: super::groups::GroupPopulation<'_>,
+) -> DeflectionVerdict {
+    let (tool, material, spans) = (ctx.tool(), ctx.material(), ctx.spans());
     let &super::GateEnv {
         sim_trace,
         tolerance,
         ..
     } = env;
-    // P17: one limit for the trip, the bounds and the entry spike.
+    // P17: one limit for the trip and the bounds.
     // EXEMPT(P28-16, F-LeaveAfter)
     let (limit_mm, basis) = exceeds_limit(ctx.body_facts().leave_after_mm);
-    // Roadmap F.8 — same short-circuit as power/chipload: drill cycles
-    // have no continuous engagement, so the cantilever-deflection
-    // metric is meaningless. Return "doesn't apply" rather than the
-    // misleading `ArcEngagementNotCaptured`.
-    // EXEMPT(P28-17)
-    if operation_kind.is_drill_kinematics() {
-        tracing::debug!(
-            reason = "NotApplicableForOp",
-            "deflection gate refuses: plunge-only op has no continuous engagement"
-        );
-        return DeflectionVerdict::Unmodeled {
-            reason: UnmodeledReason::NotApplicableForOp(
-                "drill cycle — no continuous engagement".to_owned(),
-            ),
-        };
-    }
     let Some(trace) = sim_trace else {
         tracing::debug!(
             reason = "SimulationRequired",
@@ -326,29 +317,21 @@ pub fn evaluate(
 
     let mut peak_delta_mm = 0.0_f64;
     let mut peak_idx: Option<usize> = None;
-    let mut any_arc_captured = false;
     let mut any_slot = false;
-    // D7 — span-aware entry filter. Configured Entry transients bypass
-    // the steady-state trip and surface separately as `entry_spike` on
-    // `Within`. The peak Entry-ancestry tip-deflection sample (above
-    // the EXCEEDS bound) is recorded for the advisory.
     let span_lookup = spans.map(SpanLookup::new);
-    let mut entry_peak_delta_mm = 0.0_f64;
-    let mut entry_peak_idx: Option<usize> = None;
     // X-VAC (`planning/review_2026-08-08/XVAC_CENSUS.md`) — see the same
     // block in `power.rs`. This gate's vacuous case is the worse of the
     // two: with `peak_delta_mm == 0.0` and `any_slot == false` the
     // confidence tier below resolves to `Confidence::Validated`, so an
     // empty population renders as the most trustworthy label the gate
-    // can print.
-    let mut offered: usize = 0;
+    // can print. The arc capture is a fact of the trace, not of the group.
+    let offered = population.toolpath.toolpath_samples;
+    let any_arc_captured = population.toolpath.arc_captured;
     let mut contributing: usize = 0;
 
-    for (i, s) in trace.samples.iter().enumerate() {
-        if s.toolpath_id != toolpath_id {
-            continue;
-        }
-        offered += 1;
+    // P29-6 6d: the population is the group's removing samples; no span
+    // predicate drops a sample.
+    for &(i, s) in population.samples {
         if !s.is_cutting {
             continue;
         }
@@ -358,7 +341,6 @@ pub fn evaluate(
         let Some(arc) = s.arc_engagement_radians else {
             continue;
         };
-        any_arc_captured = true;
 
         // Effective feed per tooth (after kinematic prediction / F-039
         // modulation), mirroring the power + chipload gates so all three
@@ -369,25 +351,6 @@ pub fn evaluate(
         let Some(delta_mm) = sample_tip_deflection_mm(tool, material, s, eff_fz) else {
             continue;
         };
-
-        // Finding 3 split (2026-06-04): phantom-transit samples
-        // (WaterlineCleanup / LinkBridge / LeadOut / DressupArtifact)
-        // carry inflated dexel axial_engagement, so the computed tip
-        // deflection is phantom — drop them entirely. Configured Entry
-        // samples (real plunge / ramp / helix transients) still route
-        // to the entry_spike advisory.
-        // EXEMPT(P28-22, P28-23)
-        if super::locality::is_phantom_transit(s, span_lookup.as_ref()) {
-            continue;
-        }
-        // EXEMPT(P28-21, M3)
-        if super::locality::is_configured_entry(s, span_lookup.as_ref()) {
-            if delta_mm > entry_peak_delta_mm {
-                entry_peak_delta_mm = delta_mm;
-                entry_peak_idx = Some(i);
-            }
-            continue;
-        }
 
         if arc >= std::f64::consts::PI - 1e-3 {
             any_slot = true;
@@ -472,31 +435,11 @@ pub fn evaluate(
     } else {
         Confidence::Validated
     };
-    // D7 entry-spike advisory: an Entry-ancestry sample whose tip
-    // deflection landed past the EXCEEDS bound, even though the
-    // steady-state trip didn't fire.
-    let entry_spike = match entry_peak_idx {
-        Some(idx) if super::boundary::exceeds_high(entry_peak_delta_mm, limit_mm, 0.0) => {
-            let locality = trace
-                .samples
-                .get(idx)
-                .and_then(|s| super::locality::classify_sample_locality(s, span_lookup.as_ref()))
-                .unwrap_or_else(|| "entry".to_owned());
-            Some(EntrySpike {
-                observed: entry_peak_delta_mm,
-                bound: limit_mm,
-                locality,
-                side: None,
-            })
-        }
-        _ => None,
-    };
     DeflectionVerdict::Within {
         peak_mm: peak_delta_mm,
         bounds,
         evidence,
         confidence,
-        entry_spike,
     }
 }
 
@@ -1134,35 +1077,27 @@ mod tests {
     /// gates: drill cycles have no continuous engagement, so the
     /// cantilever-deflection metric has no meaning. Refuse with
     /// `NotApplicableForOp` even on a fully-engaged sample stream.
-    /// Finding 3 split sentry (2026-06-04): phantom-transit samples
-    /// must NOT surface as an `entry_spike` — their dexel-inflated
-    /// axial_engagement produces a phantom deflection that misleads
-    /// the operator. The wanaka Back Rough symptom was a 608 µm
-    /// "waterline cleanup" entry_spike alongside a healthy 165 µm
-    /// steady-state peak.
-    ///
-    /// Mirror the structure here: one steady-state sample with
-    /// realistic engagement, plus one WaterlineCleanup-ancestry
-    /// sample with deeply-inflated engagement. Pre-fix the inflated
-    /// sample routed to entry_spike with phantom-large delta. Post-fix
-    /// it's dropped, entry_spike is `None`, steady-state peak is what
-    /// the verdict reports.
+    /// P29-6 6d (was the Finding 3 phantom-transit sentry of 2026-06-04): a
+    /// waterline cleanup sample is judged in the Cleanup group, not in the
+    /// headline. One body sample with a 2 mm depth and one cleanup sample
+    /// with a 20 mm depth: the headline peak is the body sample's, and the
+    /// Cleanup group holds the deeper sample with its own verdict.
     #[test]
     #[expect(
         clippy::wildcard_enum_match_arm,
         reason = "test: an unexpected variant panics"
     )]
-    fn phantom_waterline_cleanup_does_not_surface_as_entry_spike() {
+    fn a_waterline_cleanup_sample_is_judged_in_the_cleanup_group() {
         use crate::trace::toolpath_spans::Span;
         use std::borrow::Cow;
 
         // Milling-Kc calibration (2026-06-17, milling factor 2.7, removed
         // by ruling B6) lifted the deflection force ~2.7×; the original 45 mm-stickout
         // steady sample now reads ~399 µm and Exceeds. This test is about
-        // phantom-sample FILTERING (entry_spike must stay None), not the
+        // the group split, not the
         // deflection magnitude — so shorten stickout 45 → 30 mm (δ ∝
         // stickout³ → ~0.30×) to keep the steady sample Within and keep
-        // the phantom-filter assertion the thing under test.
+        // the group split the thing under test.
         let tool = carbide_flat(6.0, 30.0);
         // Steady-state sample: in DepthPass, healthy 2 mm axial DOC.
         let mut steady = cutting_sample(0, 0, 2.0, std::f64::consts::PI, 1500.0, 1.0);
@@ -1205,42 +1140,50 @@ mod tests {
         ];
 
         let trace = trace_with(vec![steady, phantom]);
-        let v = evaluate_args(
-            0,
+        let material = Material::SolidWood {
+            species: WoodSpecies::HardMaple,
+        };
+        let op = crate::compute::catalog::OperationConfig::new_default(OperationType::Adaptive3d);
+        let ctx = crate::tool_load::ToolpathLoadContext::of_operation(
+            ToolpathId::from_raw(0),
+            &op,
             &tool,
-            &Material::SolidWood {
-                species: WoodSpecies::HardMaple,
-            },
-            Some(&trace),
+            &material,
+            crate::machine::SteadyFeedMmMin::op_feed_only(0.0),
             Some(&spans),
-            OperationType::Adaptive3d,
-            &crate::tool_load::ToleranceBands::default(),
+            crate::limits::CapTable::empty(),
+            None,
         );
-        match v {
-            DeflectionVerdict::Within {
-                entry_spike,
-                peak_mm,
-                ..
-            } => {
-                assert!(
-                    entry_spike.is_none(),
-                    "phantom WaterlineCleanup must NOT surface as entry_spike, got {entry_spike:?}"
-                );
-                // Sanity: peak comes from the 2 mm steady sample, not
-                // the 20 mm phantom. Tip deflection scales linearly
-                // with axial engagement → if the phantom leaked into
-                // the steady-state track, peak would be ~10× the
-                // steady-only value for these inputs).
-                // The realistic 2 mm-axial slot peak for a 6 mm carbide
-                // flat at 30 mm stickout, 1500 mm/min in HardMaple lands
-                // around ~120 µm under the milling-Kc calibration.
-                assert!(
-                    peak_mm < 0.5,
-                    "steady-state peak should reflect the 2 mm steady sample (~150 µm), \
-                     got {peak_mm} mm — phantom 20 mm sample leaked into peak",
-                );
-            }
-            other => panic!("expected Within, got {other:?}"),
+        let env = crate::tool_load::GateEnv {
+            sim_trace: Some(&trace),
+            machine: None,
+            tolerance: &crate::tool_load::ToleranceBands::default(),
+        };
+        let pops = crate::tool_load::groups::populations(&ctx, Some(&trace));
+        let judged = crate::tool_load::groups::judge_by_group::<crate::tool_load::DeflectionGate>(
+            &ctx, &env, &pops,
+        );
+        let headline_peak = match judged.headline {
+            DeflectionVerdict::Within { peak_mm, .. } => peak_mm,
+            other => panic!("expected a Within headline, got {other:?}"),
+        };
+        // The realistic 2 mm-axial slot peak for a 6 mm carbide flat at
+        // 30 mm stickout, 1500 mm/min in HardMaple lands around ~120 µm.
+        assert!(
+            headline_peak < 0.5,
+            "the headline reads the 2 mm body sample, got {headline_peak} mm"
+        );
+        match judged.groups.get(crate::limits::CutGroup::Cleanup) {
+            crate::tool_load::GroupCell::Judged {
+                samples: 1,
+                verdict:
+                    DeflectionVerdict::Exceeds { peak_mm, .. }
+                    | DeflectionVerdict::Within { peak_mm, .. },
+            } => assert!(
+                *peak_mm > headline_peak,
+                "the Cleanup group holds the 20 mm sample: {peak_mm} mm"
+            ),
+            other => panic!("expected the Cleanup group judged on one sample, got {other:?}"),
         }
     }
 

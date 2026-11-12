@@ -173,7 +173,6 @@ fn a_gate_row_and_its_check_agree() {
                 available_kw: 1.5,
                 evidence: evidence(),
                 confidence: Confidence::Validated,
-                entry_spike: None,
                 bound_source: source,
             }
         } else {
@@ -214,7 +213,6 @@ fn a_gate_row_and_its_check_agree() {
         },
         evidence: evidence(),
         confidence: Confidence::Validated,
-        entry_spike: None,
     };
     let status = deflection.as_criterion_status();
     row_agrees(
@@ -229,7 +227,6 @@ fn a_gate_row_and_its_check_agree() {
         approach_to_min: None,
         approach_to_max: metric(0.10, Some(0.05), 0.12, ChiploadStatistic::PeakHigh),
         confidence: Confidence::Validated,
-        entry_spikes: Vec::new(),
         burn_advisory: None,
     };
     row_agrees(

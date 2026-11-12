@@ -6,7 +6,9 @@
 //! cannot be evaluated honestly returns `Unmodeled` with a typed reason; it
 //! never silently falls back to a passing or failing value.
 
+use super::groups::GroupCell;
 use crate::ids::ToolpathId;
+use crate::limits::{ByGroup, CutGroup};
 use std::collections::BTreeMap;
 use std::ops::Range;
 use std::sync::LazyLock;
@@ -372,6 +374,132 @@ pub struct ToolpathLoadVerdict {
     /// and the budget the force card shows.
     #[serde(default, skip_serializing_if = "Option::is_none")]
     pub cut_force: Option<super::cut_force::CutForceReading>,
+    /// P29-6 6d: every gate over every cut group, one fixed record per gate
+    /// (`groups::judge_by_group`). The headline fields above are the
+    /// verdicts of the headline group, whose cell here is
+    /// `GroupCell::Headline`. A group that `Exceeds` joins
+    /// [`Self::criteria`] (ruling Q5: a `Within` group gives no
+    /// diagnostic); every cell reaches MCP through this field.
+    pub groups: GroupVerdicts,
+}
+
+/// P29-6 6d: the fixed record of every gate over every cut group. Each
+/// field is the result of the one driver (`groups::judge_by_group`) for one
+/// gate, so no gate can leave a group out.
+#[derive(Debug, Clone, Serialize, Deserialize)]
+pub struct GroupVerdicts {
+    /// The group of the op's own cut: its verdicts are the headline fields
+    /// of [`ToolpathLoadVerdict`].
+    pub headline: CutGroup,
+    pub chipload: ByGroup<GroupCell<ChiploadVerdict>>,
+    pub power: ByGroup<GroupCell<PowerVerdict>>,
+    pub deflection: ByGroup<GroupCell<DeflectionVerdict>>,
+    pub depth: ByGroup<GroupCell<DepthVerdict>>,
+    pub cut_force: ByGroup<GroupCell<Option<super::cut_force::CutForceReading>>>,
+}
+
+impl GroupVerdicts {
+    /// The record of a verdict with no group but the headline group (a
+    /// verdict that a test or a door builds by hand): the headline group's
+    /// cells are [`GroupCell::Headline`], every other cell
+    /// [`GroupCell::NoSamples`].
+    #[must_use]
+    pub fn headline_only(headline: CutGroup) -> Self {
+        fn cells<V>(headline: CutGroup) -> ByGroup<GroupCell<V>> {
+            ByGroup::from_fn(|g| {
+                if g == headline {
+                    GroupCell::Headline
+                } else {
+                    GroupCell::NoSamples
+                }
+            })
+        }
+        Self {
+            headline,
+            chipload: cells(headline),
+            power: cells(headline),
+            deflection: cells(headline),
+            depth: cells(headline),
+            cut_force: cells(headline),
+        }
+    }
+
+    /// The rows of the groups that `Exceed` a bound, each placed in its
+    /// group (ruling Q5: a group that is `Within`, has no number or no
+    /// sample gives no row).
+    fn exceeding_rows(&self) -> Vec<CriterionStatus<'_>> {
+        let Self {
+            headline: _,
+            chipload,
+            power,
+            deflection,
+            depth,
+            // Report-only: the force reading is no criterion.
+            cut_force: _,
+        } = self;
+        let mut rows = Vec::new();
+        for group in CutGroup::ALL {
+            let statuses = [
+                chipload
+                    .get(group)
+                    .verdict()
+                    .map(ChiploadVerdict::as_criterion_status),
+                power
+                    .get(group)
+                    .verdict()
+                    .map(PowerVerdict::as_criterion_status),
+                deflection
+                    .get(group)
+                    .verdict()
+                    .map(DeflectionVerdict::as_criterion_status),
+                depth
+                    .get(group)
+                    .verdict()
+                    .map(DepthVerdict::as_criterion_status),
+            ];
+            rows.extend(
+                statuses
+                    .into_iter()
+                    .flatten()
+                    .filter(|s| s.state == LoadState::Exceeds)
+                    .map(|s| s.in_group(group)),
+            );
+        }
+        rows
+    }
+
+    /// F197: rewrite every group verdict that asked for a simulation.
+    fn mark_simulation_stale(&mut self) {
+        let Self {
+            headline: _,
+            chipload,
+            power,
+            deflection,
+            depth,
+            // No `Unmodeled` arm.
+            cut_force: _,
+        } = self;
+        for (_, cell) in chipload.iter_mut() {
+            if let Some(v) = cell.verdict_mut() {
+                stale_chipload(v);
+            }
+        }
+        for (_, cell) in power.iter_mut() {
+            if let Some(v) = cell.verdict_mut() {
+                stale_power(v);
+            }
+        }
+        for (_, cell) in deflection.iter_mut() {
+            if let Some(v) = cell.verdict_mut() {
+                stale_deflection(v);
+            }
+        }
+        for (_, cell) in depth.iter_mut() {
+            if let Some(v) = cell.verdict_mut() {
+                stale_depth(v);
+            }
+        }
+    }
 }
 
 /// F197: `SimulationRequired` → `StaleSimulation` on one reason; every
@@ -445,7 +573,9 @@ impl ToolpathLoadVerdict {
             // P17: a report-only reading with no `Unmodeled` arm; it is
             // `None` when no trace was read, so a stale trace leaves it.
             cut_force: _,
+            groups,
         } = self;
+        groups.mark_simulation_stale();
         stale_chipload(chipload);
         stale_power(power);
         stale_deflection(deflection);
@@ -530,35 +660,40 @@ impl ToolpathLoadVerdict {
     /// export gating — a forgotten gate is structurally impossible.
     pub fn criteria(&self) -> Vec<CriterionStatus<'_>> {
         let mut all = self.milling_criteria();
+        // P29-6 6d: a group that exceeds a bound joins the tier, so it warns
+        // on export exactly as a headline trip (ruling Q5: no row for a
+        // group that is `Within`, has no number or no sample).
+        all.extend(self.groups.exceeding_rows());
         // F1.7: drill gates join the criterion tier when present, so a
         // Critical drill exceedance blocks export exactly like a
         // milling trip (pre-fix `drill_gates` was display-only and
         // `enforce_load_policy` never saw it).
         if let Some(d) = &self.drill_gates {
-            all.push(d.chip_welding.as_criterion_status(
-                CriterionKind::DrillChipWelding,
-                d.cycle,
-                d.population,
-            ));
-            all.push(d.peck_adequacy.as_criterion_status(
-                CriterionKind::DrillPeckAdequacy,
-                d.cycle,
-                d.population,
-            ));
-            all.push(d.plunge_feed.as_criterion_status(
-                CriterionKind::DrillPlungeFeed,
-                d.cycle,
-                d.population,
-            ));
+            all.push(
+                d.chip_welding
+                    .as_criterion_status(CriterionKind::DrillChipWelding, d.cycle, d.population)
+                    .in_group(CutGroup::Drill),
+            );
+            all.push(
+                d.peck_adequacy
+                    .as_criterion_status(CriterionKind::DrillPeckAdequacy, d.cycle, d.population)
+                    .in_group(CutGroup::Drill),
+            );
+            all.push(
+                d.plunge_feed
+                    .as_criterion_status(CriterionKind::DrillPlungeFeed, d.cycle, d.population)
+                    .in_group(CutGroup::Drill),
+            );
         }
         // S6: an own-material population joins the criterion tier, so its
         // `Exceeds` gates an export exactly as a stock-population trip.
         if let Some(split) = &self.material_split {
             for own in &split.own {
-                all.push(own.chipload.as_criterion_status());
-                all.push(own.power.as_criterion_status());
-                all.push(own.deflection.as_criterion_status());
-                all.push(own.depth.as_criterion_status());
+                let g = self.groups.headline;
+                all.push(own.chipload.as_criterion_status().in_group(g));
+                all.push(own.power.as_criterion_status().in_group(g));
+                all.push(own.deflection.as_criterion_status().in_group(g));
+                all.push(own.depth.as_criterion_status().in_group(g));
             }
         }
         all
@@ -582,18 +717,19 @@ impl ToolpathLoadVerdict {
     /// producer, so it counts in every tally the way the three above it
     /// do; only its bound's provenance stops it refusing an export.
     pub(crate) fn milling_criteria(&self) -> Vec<CriterionStatus<'_>> {
+        let g = self.groups.headline;
         let mut rows = vec![
-            self.chipload.as_criterion_status(),
-            self.power.as_criterion_status(),
-            self.deflection.as_criterion_status(),
-            self.depth.as_criterion_status(),
+            self.chipload.as_criterion_status().in_group(g),
+            self.power.as_criterion_status().in_group(g),
+            self.deflection.as_criterion_status().in_group(g),
+            self.depth.as_criterion_status().in_group(g),
         ];
         // Read the drill answer off the gates that already decided it,
         // not off `drill_gates`: a direct `evaluate_toolpath` call leaves `drill_gates`
         // `None` on a drill toolpath, and the row must still say
         // "doesn't apply" there.
         let plunge_only = rows.iter().all(|s| is_not_applicable(s.unmodeled_reason));
-        rows.push(gantry_push_criterion(plunge_only));
+        rows.push(gantry_push_criterion(plunge_only).in_group(g));
         rows
     }
 
@@ -642,6 +778,8 @@ impl ToolpathLoadVerdict {
 #[serde(bound(deserialize = "'de: 'static"))]
 pub struct CriterionRow {
     pub kind: CriterionKind,
+    /// P29-6 6d: the cut group of the row (`CriterionStatus::group`).
+    pub group: Option<CutGroup>,
     pub state: LoadState,
     /// The bound `display_peak` was judged against, in `unit`.
     pub bound: Option<f64>,
@@ -660,6 +798,7 @@ impl CriterionRow {
     pub fn from_status(status: &CriterionStatus<'_>) -> Self {
         Self {
             kind: status.kind,
+            group: status.group,
             state: status.state,
             bound: status.bound,
             bound_source: status.bound_source.clone(),
@@ -919,6 +1058,7 @@ static GANTRY_PUSH_NOT_APPLICABLE: LazyLock<UnmodeledReason> = LazyLock::new(|| 
 /// engagement to push against.
 fn gantry_push_criterion(plunge_only: bool) -> CriterionStatus<'static> {
     CriterionStatus {
+        group: None,
         kind: CriterionKind::GantryPush,
         state: LoadState::Unmodeled,
         confidence: None,
@@ -1204,6 +1344,11 @@ impl BoundSource {
 #[derive(Debug, Clone)]
 pub struct CriterionStatus<'a> {
     pub kind: CriterionKind,
+    /// P29-6 6d: the cut group of the row. `None` from a bare projection
+    /// of one verdict (`as_criterion_status`), which does not know the
+    /// walk; `Some` on every row of [`ToolpathLoadVerdict::criteria`],
+    /// which places each row ([`Self::in_group`]).
+    pub group: Option<CutGroup>,
     pub state: LoadState,
     pub confidence: Option<&'a Confidence>,
     pub unmodeled_reason: Option<&'a UnmodeledReason>,
@@ -1243,6 +1388,28 @@ pub struct CriterionStatus<'a> {
 }
 
 impl CriterionStatus<'_> {
+    /// This row, placed in `group`.
+    #[must_use]
+    pub fn in_group(mut self, group: CutGroup) -> Self {
+        self.group = Some(group);
+        self
+    }
+
+    /// **The label of the row**: [`CriterionKind::label`], with the cut
+    /// group in front for a row of the Entry, Cleanup or Link group, for
+    /// example `entry power` (P29-6 6d: such a row reaches
+    /// [`ToolpathLoadVerdict::criteria`] only when it exceeds a bound,
+    /// ruling Q5). Every surface (the GUI rows, the export lines) reads it.
+    #[must_use]
+    pub fn row_label(&self) -> String {
+        match self.group {
+            Some(group @ (CutGroup::Entry | CutGroup::Cleanup | CutGroup::Link)) => {
+                format!("{} {}", group.label(), self.kind.label())
+            }
+            Some(CutGroup::Body | CutGroup::Drill) | None => self.kind.label().to_owned(),
+        }
+    }
+
     /// **The X-VAC bar, and it is a POPULATION bar.** True only when the
     /// gate stated its population and that population was empty.
     ///
@@ -1629,40 +1796,6 @@ impl ChipBoundsSource {
     }
 }
 
-/// G17 C2 — informational entry-sample spike that exceeded the
-/// gate's bound but was *excluded* from the trip decision because it
-/// sat in a transient entry move (helix / plunge). Carries the worst
-/// reading observed in the entry samples so the UI can surface it as
-/// a "Note:" advisory without flipping the verdict to `Exceeds`.
-///
-/// Only present on the `Within` arm of each gate verdict. When the
-/// gate trips on a steady-state sample (`Exceeds`), the trip itself
-/// is the loud signal and the entry spike is omitted to keep the
-/// payload focused.
-///
-/// `side` is meaningful only on chipload spikes (which can spike
-/// independently on the burn / breakage sides). Power and deflection
-/// always set `side: None`.
-#[derive(Debug, Clone, PartialEq, Serialize, Deserialize)]
-pub struct EntrySpike {
-    /// Worst observed value in the entry samples for this gate's
-    /// concerning direction.
-    pub observed: f64,
-    /// The bound the entry sample exceeded. Same semantics as
-    /// `LimitingGate.bound` — chipload max for breakage, chipload
-    /// min for burn, `available_kw` for power, `bounds.exceeds_mm`
-    /// for deflection.
-    pub bound: f64,
-    /// Locality label for the entry sample
-    /// (`"helix entry"` / `"plunge entry"` /
-    /// occasionally `"heavy engagement"`). Mirrors
-    /// [`SampleEvidence::locality`].
-    pub locality: String,
-    /// For chipload: which side spiked. `None` for power / deflection.
-    #[serde(default, skip_serializing_if = "Option::is_none")]
-    pub side: Option<ChipSide>,
-}
-
 /// Vendor LUT chip-load bounds. `min_mm_per_tooth` is `Option` because
 /// some LUT rows ship only an upper bound — the chipload evaluator can
 /// still flag breakage from `PeakHigh` while burn-risk falls back to
@@ -1776,12 +1909,6 @@ pub enum ChiploadVerdict {
         /// rejects rows with no max).
         approach_to_max: ChiploadMetric,
         confidence: Confidence,
-        /// G17 C2 — entry-sample spike(s) that exceeded the LUT
-        /// bounds but were excluded from the gate trip. Up to two
-        /// entries (one per side: high / low). Empty when no entry
-        /// sample exceeded its bound.
-        #[serde(default, skip_serializing_if = "Vec::is_empty")]
-        entry_spikes: Vec<EntrySpike>,
         /// F3.3 — the median chip thickness sat below the row's burn
         /// floor, but the floor's provenance is too weak to refuse on
         /// ([`ChipBoundsSource::low_side_is_advisory`]): surfaced as a
@@ -1868,6 +1995,7 @@ impl ChiploadVerdict {
             }
         };
         CriterionStatus {
+            group: None,
             kind: CriterionKind::Chipload,
             state,
             confidence: self.confidence(),
@@ -1897,10 +2025,6 @@ pub enum PowerVerdict {
         available_kw: f64,
         evidence: SampleEvidence,
         confidence: Confidence,
-        /// G17 C2 — entry-sample power spike that exceeded
-        /// `available_kw` but was excluded from the gate trip.
-        #[serde(default, skip_serializing_if = "Option::is_none")]
-        entry_spike: Option<EntrySpike>,
         /// **S4 — where `available_kw` came from.** The input the gate
         /// read: the sample's spindle speed on the rated machine power
         /// curve (ruling R4 Q2, 2026-09-24: no fraction).
@@ -2004,6 +2128,7 @@ impl PowerVerdict {
             PowerVerdict::Unmodeled { .. } => (LoadState::Unmodeled, None, None, None, None, None),
         };
         CriterionStatus {
+            group: None,
             kind: CriterionKind::Power,
             state,
             confidence: self.confidence(),
@@ -2100,10 +2225,6 @@ pub enum DeflectionVerdict {
         bounds: DeflectionBounds,
         evidence: SampleEvidence,
         confidence: Confidence,
-        /// G17 C2 — entry-sample deflection spike that exceeded
-        /// `bounds.exceeds_mm` but was excluded from the gate trip.
-        #[serde(default, skip_serializing_if = "Option::is_none")]
-        entry_spike: Option<EntrySpike>,
     },
     Exceeds {
         peak_mm: f64,
@@ -2185,6 +2306,7 @@ impl DeflectionVerdict {
             DeflectionVerdict::Unmodeled { .. } => (LoadState::Unmodeled, None, None, None, None),
         };
         CriterionStatus {
+            group: None,
             kind: CriterionKind::Deflection,
             state,
             confidence: self.confidence(),
@@ -2361,6 +2483,7 @@ impl DepthVerdict {
             DepthVerdict::Unmodeled { .. } => (LoadState::Unmodeled, None, None, None, None),
         };
         CriterionStatus {
+            group: None,
             kind: CriterionKind::DepthOfCut,
             state,
             confidence: self.confidence(),
@@ -2564,6 +2687,9 @@ mod tests {
     fn modeled_count_ignores_unmodeled() {
         let v = ToolpathLoadVerdict {
             toolpath_id: ToolpathId::from_raw(0),
+            groups: crate::tool_load::verdict::GroupVerdicts::headline_only(
+                crate::limits::CutGroup::Body,
+            ),
             chipload: ChiploadVerdict::Within {
                 approach_to_min: None,
                 approach_to_max: ChiploadMetric {
@@ -2577,7 +2703,6 @@ mod tests {
                     },
                 },
                 confidence: Confidence::Validated,
-                entry_spikes: Vec::new(),
                 burn_advisory: None,
             },
             power: PowerVerdict::Unmodeled {
@@ -2592,7 +2717,6 @@ mod tests {
                 },
                 evidence: SampleEvidence::empty(),
                 confidence: Confidence::Validated,
-                entry_spike: None,
             },
             // S3: a hand-built fixture states no measured depth; the
             // row keeps the posture of the gates beside it.
@@ -2622,6 +2746,9 @@ mod tests {
         let r = ToolLoadReport {
             per_toolpath: vec![ToolpathLoadVerdict {
                 toolpath_id: ToolpathId::from_raw(0),
+                groups: crate::tool_load::verdict::GroupVerdicts::headline_only(
+                    crate::limits::CutGroup::Body,
+                ),
                 chipload: ChiploadVerdict::Within {
                     approach_to_min: None,
                     approach_to_max: ChiploadMetric {
@@ -2635,7 +2762,6 @@ mod tests {
                         },
                     },
                     confidence: Confidence::Approximate("isotropic Kc only".to_owned()),
-                    entry_spikes: Vec::new(),
                     burn_advisory: None,
                 },
                 power: PowerVerdict::Unmodeled {
@@ -2650,7 +2776,6 @@ mod tests {
                     },
                     evidence: SampleEvidence::empty(),
                     confidence: Confidence::Approximate("L/D in 4-6 range".to_owned()),
-                    entry_spike: None,
                 },
                 // S3: a hand-built fixture states no measured depth; the
                 // row keeps the posture of the gates beside it.
@@ -2676,6 +2801,9 @@ mod tests {
             per_toolpath: vec![
                 ToolpathLoadVerdict {
                     toolpath_id: ToolpathId::from_raw(0),
+                    groups: crate::tool_load::verdict::GroupVerdicts::headline_only(
+                        crate::limits::CutGroup::Body,
+                    ),
                     chipload: ChiploadVerdict::Within {
                         approach_to_min: None,
                         approach_to_max: ChiploadMetric {
@@ -2689,7 +2817,6 @@ mod tests {
                             },
                         },
                         confidence: Confidence::Validated,
-                        entry_spikes: Vec::new(),
                         burn_advisory: None,
                     },
                     power: PowerVerdict::Unmodeled {
@@ -2717,6 +2844,9 @@ mod tests {
                 },
                 ToolpathLoadVerdict {
                     toolpath_id: ToolpathId::from_raw(1),
+                    groups: crate::tool_load::verdict::GroupVerdicts::headline_only(
+                        crate::limits::CutGroup::Body,
+                    ),
                     chipload: ChiploadVerdict::Within {
                         approach_to_min: None,
                         approach_to_max: ChiploadMetric {
@@ -2730,7 +2860,6 @@ mod tests {
                             },
                         },
                         confidence: Confidence::Validated,
-                        entry_spikes: Vec::new(),
                         burn_advisory: None,
                     },
                     power: PowerVerdict::Unmodeled {
@@ -2745,7 +2874,6 @@ mod tests {
                         },
                         evidence: SampleEvidence::empty(),
                         confidence: Confidence::Validated,
-                        entry_spike: None,
                     },
                     // S3: a hand-built fixture states no measured depth; the
                     // row keeps the posture of the gates beside it.
@@ -2780,6 +2908,9 @@ mod tests {
         let na = || UnmodeledReason::NotApplicableForOp("drill cycle".to_owned());
         let drill_verdict = |plunge: DrillGateOutcome| ToolpathLoadVerdict {
             toolpath_id: ToolpathId::from_raw(0),
+            groups: crate::tool_load::verdict::GroupVerdicts::headline_only(
+                crate::limits::CutGroup::Body,
+            ),
             chipload: ChiploadVerdict::Unmodeled { reason: na() },
             power: PowerVerdict::Unmodeled { reason: na() },
             deflection: DeflectionVerdict::Unmodeled { reason: na() },
@@ -2877,6 +3008,9 @@ mod tests {
                 // Drill cycle — every gate N/A.
                 ToolpathLoadVerdict {
                     toolpath_id: ToolpathId::from_raw(0),
+                    groups: crate::tool_load::verdict::GroupVerdicts::headline_only(
+                        crate::limits::CutGroup::Body,
+                    ),
                     chipload: ChiploadVerdict::Unmodeled {
                         reason: UnmodeledReason::NotApplicableForOp("drill cycle".to_owned()),
                     },
@@ -2901,6 +3035,9 @@ mod tests {
                 // Operator action: run the sim.
                 ToolpathLoadVerdict {
                     toolpath_id: ToolpathId::from_raw(1),
+                    groups: crate::tool_load::verdict::GroupVerdicts::headline_only(
+                        crate::limits::CutGroup::Body,
+                    ),
                     chipload: ChiploadVerdict::Unmodeled {
                         reason: UnmodeledReason::SimulationRequired,
                     },
@@ -2926,6 +3063,9 @@ mod tests {
                 // `fully_unmodeled` (not `not_applicable`).
                 ToolpathLoadVerdict {
                     toolpath_id: ToolpathId::from_raw(2),
+                    groups: crate::tool_load::verdict::GroupVerdicts::headline_only(
+                        crate::limits::CutGroup::Body,
+                    ),
                     chipload: ChiploadVerdict::Unmodeled {
                         reason: UnmodeledReason::NotApplicableForOp("drill cycle".to_owned()),
                     },
@@ -2971,6 +3111,9 @@ mod tests {
         let r = ToolLoadReport {
             per_toolpath: vec![ToolpathLoadVerdict {
                 toolpath_id: ToolpathId::from_raw(42),
+                groups: crate::tool_load::verdict::GroupVerdicts::headline_only(
+                    crate::limits::CutGroup::Body,
+                ),
                 chipload: ChiploadVerdict::Exceeds {
                     side: ChipSide::High,
                     triggering: ChiploadMetric {
@@ -2997,7 +3140,6 @@ mod tests {
                     },
                     evidence: SampleEvidence::empty(),
                     confidence: Confidence::Validated,
-                    entry_spike: None,
                 },
                 // S3: a hand-built fixture states no measured depth; the
                 // row keeps the posture of the gates beside it.
@@ -3064,7 +3206,6 @@ mod tests {
                 bounds: chip_bounds_with_min(),
             },
             confidence: Confidence::Validated,
-            entry_spikes: Vec::new(),
             burn_advisory: None,
         };
         assert_eq!(within.state(), LoadState::Within);
@@ -3104,7 +3245,6 @@ mod tests {
                 bounds: chip_bounds_no_min(),
             },
             confidence: Confidence::Validated,
-            entry_spikes: Vec::new(),
             burn_advisory: None,
         };
         let json = serde_json::to_string(&v).expect("ser");
@@ -3146,7 +3286,6 @@ mod tests {
             available_kw: 0.71,
             evidence: SampleEvidence::at(2),
             confidence: Confidence::Approximate("isotropic Kc".to_owned()),
-            entry_spike: None,
             bound_source: None,
         };
         match &v {
@@ -3198,7 +3337,6 @@ mod tests {
             bounds: deflection_bounds(),
             evidence: SampleEvidence::at(5),
             confidence: Confidence::Approximate("approximate band".to_owned()),
-            entry_spike: None,
         };
         let json = serde_json::to_string(&v).expect("ser");
         let back: DeflectionVerdict = serde_json::from_str(&json).expect("de");
@@ -3219,7 +3357,6 @@ mod tests {
             available_kw: 0.71,
             evidence: SampleEvidence::empty(),
             confidence: Confidence::Validated,
-            entry_spike: None,
             bound_source: None,
         };
         let s = v.as_criterion_status();
@@ -3258,6 +3395,9 @@ mod tests {
         let r = ToolLoadReport {
             per_toolpath: vec![ToolpathLoadVerdict {
                 toolpath_id: ToolpathId::from_raw(7),
+                groups: crate::tool_load::verdict::GroupVerdicts::headline_only(
+                    crate::limits::CutGroup::Body,
+                ),
                 chipload: ChiploadVerdict::Exceeds {
                     side: ChipSide::Low,
                     triggering: ChiploadMetric {
@@ -3277,7 +3417,6 @@ mod tests {
                     available_kw: 0.71,
                     evidence: SampleEvidence::at(2),
                     confidence: Confidence::Approximate("isotropic Kc".to_owned()),
-                    entry_spike: None,
                     bound_source: None,
                 },
                 deflection: DeflectionVerdict::Within {
@@ -3289,7 +3428,6 @@ mod tests {
                     },
                     evidence: SampleEvidence::at(5),
                     confidence: Confidence::Approximate("approximate band".to_owned()),
-                    entry_spike: None,
                 },
                 // S3: a hand-built fixture states no measured depth; the
                 // row keeps the posture of the gates beside it.
@@ -3337,6 +3475,9 @@ mod tests {
         let r = ToolLoadReport {
             per_toolpath: vec![ToolpathLoadVerdict {
                 toolpath_id: ToolpathId::from_raw(0),
+                groups: crate::tool_load::verdict::GroupVerdicts::headline_only(
+                    crate::limits::CutGroup::Body,
+                ),
                 chipload: ChiploadVerdict::Exceeds {
                     side: ChipSide::High,
                     triggering: ChiploadMetric {
@@ -3363,7 +3504,6 @@ mod tests {
                     },
                     evidence: SampleEvidence::empty(),
                     confidence: Confidence::Validated,
-                    entry_spike: None,
                 },
                 // S3: a hand-built fixture states no measured depth; the
                 // row keeps the posture of the gates beside it.
@@ -3419,6 +3559,9 @@ mod tests {
     fn gating_tier_derives_from_criteria() {
         let v = ToolpathLoadVerdict {
             toolpath_id: ToolpathId::from_raw(7),
+            groups: crate::tool_load::verdict::GroupVerdicts::headline_only(
+                crate::limits::CutGroup::Body,
+            ),
             chipload: ChiploadVerdict::Exceeds {
                 side: ChipSide::Low,
                 triggering: ChiploadMetric {
@@ -3484,6 +3627,9 @@ mod tests {
         );
         ToolpathLoadVerdict {
             toolpath_id: ToolpathId::from_raw(id),
+            groups: crate::tool_load::verdict::GroupVerdicts::headline_only(
+                crate::limits::CutGroup::Body,
+            ),
             chipload: ChiploadVerdict::Unmodeled {
                 reason: reason.clone(),
             },
@@ -3509,6 +3655,9 @@ mod tests {
     fn vd_all_sim_required(id: usize) -> ToolpathLoadVerdict {
         ToolpathLoadVerdict {
             toolpath_id: ToolpathId::from_raw(id),
+            groups: crate::tool_load::verdict::GroupVerdicts::headline_only(
+                crate::limits::CutGroup::Body,
+            ),
             chipload: ChiploadVerdict::Unmodeled {
                 reason: UnmodeledReason::SimulationRequired,
             },
@@ -3563,7 +3712,6 @@ mod tests {
             },
             evidence: SampleEvidence::empty(),
             confidence: Confidence::Validated,
-            entry_spike: None,
         };
         let r = ToolLoadReport {
             per_toolpath: vec![v],
@@ -3579,6 +3727,9 @@ mod tests {
         let r = ToolLoadReport {
             per_toolpath: vec![ToolpathLoadVerdict {
                 toolpath_id: ToolpathId::from_raw(42),
+                groups: crate::tool_load::verdict::GroupVerdicts::headline_only(
+                    crate::limits::CutGroup::Body,
+                ),
                 chipload: ChiploadVerdict::Within {
                     approach_to_min: None,
                     approach_to_max: ChiploadMetric {
@@ -3592,7 +3743,6 @@ mod tests {
                         },
                     },
                     confidence: Confidence::Validated,
-                    entry_spikes: Vec::new(),
                     burn_advisory: None,
                 },
                 power: PowerVerdict::Unmodeled {
@@ -3640,6 +3790,9 @@ mod tests {
         let r = ToolLoadReport {
             per_toolpath: vec![ToolpathLoadVerdict {
                 toolpath_id: ToolpathId::from_raw(0),
+                groups: crate::tool_load::verdict::GroupVerdicts::headline_only(
+                    crate::limits::CutGroup::Body,
+                ),
                 chipload: ChiploadVerdict::Exceeds {
                     side: ChipSide::High,
                     triggering: ChiploadMetric {
@@ -3666,7 +3819,6 @@ mod tests {
                     },
                     evidence: SampleEvidence::empty(),
                     confidence: Confidence::Validated,
-                    entry_spike: None,
                 },
                 // S3: a hand-built fixture states no measured depth; the
                 // row keeps the posture of the gates beside it.

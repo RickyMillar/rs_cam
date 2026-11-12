@@ -54,13 +54,14 @@ use rs_cam_core::compute::operation_configs::{
 use rs_cam_core::feeds::engagement::Engagement;
 use rs_cam_core::geo::P3;
 use rs_cam_core::ids::ToolpathId;
+use rs_cam_core::limits::{CapTable, CutFacts, CutGroup, SampleContext};
 use rs_cam_core::session::generation_plan::{self, Scope, Step};
 use rs_cam_core::session::{
     Command, ProjectSession, SetDressupConfigArgs, SimulationOptions, SimulationResolution,
 };
 use rs_cam_core::stock::simulation_cut::SimulationCutTrace;
 use rs_cam_core::tool::ToolDefinition;
-use rs_cam_core::tool_load::locality::{SpanLookup, is_phantom_transit};
+use rs_cam_core::tool_load::locality::judged_group;
 use rs_cam_core::toolpath::{MoveIntent, MoveType, Toolpath};
 use rs_cam_core::trace::semantic_trace::{
     SemanticKey, ToolpathSemanticKind, ToolpathSemanticTrace,
@@ -75,9 +76,10 @@ use rs_cam_core::trace::toolpath_spans::Span;
 /// inferred (no marker names it).
 #[derive(Debug, Clone, Copy, PartialEq, Eq, PartialOrd, Ord)]
 enum Source {
-    /// A sample whose span ancestry the gates drop as phantom transit
-    /// (`is_phantom_transit`: waterline cleanup, link bridge, lead-out,
-    /// dressup artifact). No gate grades it.
+    /// A sample of the Cleanup or the Link group (`judged_group`: waterline
+    /// cleanup, dressup relief, link, lead-out). Before P29-6 the gates
+    /// dropped it as phantom transit; since P29-6 6d each gate judges it in
+    /// its own group, not in the body.
     PhantomTransit,
     /// An entry move (`EntryRamp`, `EntryHelix`, `EntryPlunge`).
     RampEntry,
@@ -146,7 +148,7 @@ enum Source {
 impl Source {
     const fn label(self) -> &'static str {
         match self {
-            Self::PhantomTransit => "phantom transit (gates drop)",
+            Self::PhantomTransit => "cleanup or link group (not the body)",
             Self::RampEntry => "ramp entry",
             Self::HelixEntry => "helix entry",
             Self::PlungeEntry => "plunge entry",
@@ -647,7 +649,10 @@ fn readout(inputs: &Inputs<'_>) -> Readout {
             *agreement.entry((*s, *i)).or_default() += 1;
         }
     }
-    let lookup = spans.map(SpanLookup::new);
+    // The kind reads the spans and the cap table only; the facts ride on
+    // the cut and decide no kind.
+    let caps = CapTable::of_toolpath(tp, semantic);
+    let sample_ctx = SampleContext::new(tool, spans, &caps, CutFacts::DRILL_CYCLE);
     let ceiling_mm = op.ceiling_mm();
     let ends = common::wide_samples::move_end_samples(&trace.samples, id);
     let mut out = Readout {
@@ -678,7 +683,10 @@ fn readout(inputs: &Inputs<'_>) -> Readout {
             continue;
         }
         let precision = out.planner_cell + cell;
-        let source = if is_phantom_transit(sample, lookup.as_ref()) {
+        let source = if matches!(
+            judged_group(sample, &sample_ctx),
+            Some(CutGroup::Cleanup | CutGroup::Link)
+        ) {
             Source::PhantomTransit
         } else {
             let source = sources

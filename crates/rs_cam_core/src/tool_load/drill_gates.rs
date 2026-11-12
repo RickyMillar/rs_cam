@@ -383,6 +383,7 @@ impl DrillGateOutcome {
         };
         CriterionStatus {
             kind,
+            group: None,
             state,
             confidence: None,
             unmodeled_reason: None,

@@ -15,7 +15,7 @@
 use crate::compute::catalog::{OperationConfig, OperationType};
 use crate::feeds::vendor_lut::{LutOperationFamily, LutPassRole};
 use crate::ids::ToolpathId;
-use crate::limits::{CapTable, CutFacts, SampleContext};
+use crate::limits::{CapTable, CutFacts, CutGroup, CutKind, SampleContext};
 use crate::machine::SteadyFeedMmMin;
 use crate::material::Material;
 use crate::ops::drill_op::DrillOp;
@@ -46,11 +46,16 @@ pub struct ToolpathLoadContext<'a> {
     /// sample feed with it, and the commanded stage states it (the G-code F
     /// word under a cap).
     steady_feed: SteadyFeedMmMin,
-    /// The toolpath's operation kind. It drives the drill-kinematics
-    /// short-circuit (`NotApplicableForOp`), the LUT lookup family routing
-    /// (`routed_lookup_family`) and the depth limit of the body cut
-    /// (`OperationType::body_depth_limit`).
+    /// The toolpath's operation kind. Only the chip row lookup reads it
+    /// (`chipload::routed_lookup_family`, through [`Self::chip_row_key`]); no
+    /// gate reads it to decide a scope (P29-6 6d).
     operation_kind: OperationType,
+    /// The group of the op's own cut: [`CutGroup::Drill`] when the op
+    /// declares a drill cycle (`CutList::declares(CutKind::Drill)`), else
+    /// [`CutGroup::Body`]. The headline verdict of each gate is the verdict
+    /// of this group (`groups::judge_by_group`); with no trace it still
+    /// tells a drill cycle, which has no sample yet.
+    headline_group: CutGroup,
     /// Structural spans on the (annotated) toolpath, for the span lookup of
     /// `tool_load::locality`. `None` when the spans are not valid.
     spans: Option<&'a [Span]>,
@@ -106,7 +111,13 @@ impl<'a> ToolpathLoadContext<'a> {
         drill_op: Option<&'a DrillOp>,
     ) -> Self {
         let (family, pass_role) = operation.feeds_style();
-        let body_facts = operation.cuts().body_facts();
+        let cuts = operation.cuts();
+        let body_facts = cuts.body_facts();
+        let headline_group = if cuts.declares(CutKind::Drill) {
+            CutKind::Drill.group()
+        } else {
+            CutKind::Body.group()
+        };
         Self {
             toolpath_id,
             tool,
@@ -115,6 +126,7 @@ impl<'a> ToolpathLoadContext<'a> {
             row_pass_role: pass_role.into(),
             steady_feed,
             operation_kind: operation.op_type(),
+            headline_group,
             spans,
             caps,
             body_facts,
@@ -158,23 +170,29 @@ impl<'a> ToolpathLoadContext<'a> {
         self.material
     }
 
-    /// The vendor row key (the op's feeds family and pass role). Only the
-    /// chip row lookup reads it.
+    /// The vendor row key of the chip gate: the op kind (the row routing of
+    /// `chipload::routed_lookup_family`), the feeds family and the pass
+    /// role. Only the chip row lookup reads it; it is a row key, not a limit
+    /// scope (P29-6 6d: the op kind has no other reader in the gates).
     #[must_use]
-    pub fn row_key(&self) -> (LutOperationFamily, LutPassRole) {
-        (self.row_family, self.row_pass_role)
+    pub(super) fn chip_row_key(&self) -> ChipRowKey {
+        ChipRowKey {
+            operation_kind: self.operation_kind,
+            family: self.row_family,
+            pass_role: self.row_pass_role,
+        }
+    }
+
+    /// The group of the op's own cut (the headline group of each gate).
+    #[must_use]
+    pub fn headline_group(&self) -> CutGroup {
+        self.headline_group
     }
 
     /// The steady feed (P20e).
     #[must_use]
     pub fn steady_feed(&self) -> SteadyFeedMmMin {
         self.steady_feed
-    }
-
-    /// The operation kind.
-    #[must_use]
-    pub fn operation_kind(&self) -> OperationType {
-        self.operation_kind
     }
 
     /// The valid spans of the toolpath, or `None`.
@@ -207,6 +225,14 @@ impl<'a> ToolpathLoadContext<'a> {
     pub fn sample_context(&self) -> SampleContext<'a> {
         SampleContext::new(self.tool, self.spans, self.caps, self.body_facts)
     }
+}
+
+/// The vendor row key of the chip gate ([`ToolpathLoadContext::chip_row_key`]).
+#[derive(Debug, Clone, Copy)]
+pub(super) struct ChipRowKey {
+    pub(super) operation_kind: OperationType,
+    pub(super) family: LutOperationFamily,
+    pub(super) pass_role: LutPassRole,
 }
 
 /// P11b2: the lift of the stated cut, by Suggest's own rule (the engaged

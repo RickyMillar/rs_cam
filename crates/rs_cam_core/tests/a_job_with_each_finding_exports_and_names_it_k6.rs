@@ -77,6 +77,9 @@ fn unmodelled(id: rs_cam_core::ids::ToolpathId) -> ToolpathLoadVerdict {
     let none = || UnmodeledReason::SimulationRequired;
     ToolpathLoadVerdict {
         toolpath_id: id,
+        groups: rs_cam_core::tool_load::verdict::GroupVerdicts::headline_only(
+            rs_cam_core::limits::CutGroup::Body,
+        ),
         chipload: ChiploadVerdict::Unmodeled { reason: none() },
         power: PowerVerdict::Unmodeled { reason: none() },
         deflection: DeflectionVerdict::Unmodeled { reason: none() },

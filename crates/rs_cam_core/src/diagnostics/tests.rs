@@ -401,6 +401,9 @@ fn tool_load_adapter_drops_milling_na_on_drill_with_drill_gates() {
 
     let verdict = ToolpathLoadVerdict {
         toolpath_id: ToolpathId::from_raw(0),
+        groups: crate::tool_load::verdict::GroupVerdicts::headline_only(
+            crate::limits::CutGroup::Body,
+        ),
         chipload: ChiploadVerdict::Unmodeled {
             reason: UnmodeledReason::NotApplicableForOp(
                 "drill cycle — no continuous engagement".to_owned(),
@@ -488,6 +491,9 @@ fn tool_load_adapter_emits_chipload_exceeds_with_evidence() {
     };
     let verdict = ToolpathLoadVerdict {
         toolpath_id: ToolpathId::from_raw(12),
+        groups: crate::tool_load::verdict::GroupVerdicts::headline_only(
+            crate::limits::CutGroup::Body,
+        ),
         chipload: ChiploadVerdict::Exceeds {
             side: ChipSide::Low,
             triggering,
@@ -537,6 +543,9 @@ fn tool_load_adapter_marks_stale_simulation_as_stale_evidence_state() {
 
     let verdict = ToolpathLoadVerdict {
         toolpath_id: ToolpathId::from_raw(4),
+        groups: crate::tool_load::verdict::GroupVerdicts::headline_only(
+            crate::limits::CutGroup::Body,
+        ),
         chipload: ChiploadVerdict::Unmodeled {
             reason: UnmodeledReason::StaleSimulation,
         },
@@ -579,6 +588,9 @@ fn tool_load_adapter_marks_sim_required_as_needs_simulation_state() {
 
     let verdict = ToolpathLoadVerdict {
         toolpath_id: ToolpathId::from_raw(7),
+        groups: crate::tool_load::verdict::GroupVerdicts::headline_only(
+            crate::limits::CutGroup::Body,
+        ),
         chipload: ChiploadVerdict::Unmodeled {
             reason: UnmodeledReason::SimulationRequired,
         },

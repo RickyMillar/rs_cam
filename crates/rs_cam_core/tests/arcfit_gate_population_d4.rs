@@ -80,9 +80,10 @@ use rs_cam_core::dressup::arcfit::fit_arcs;
 use rs_cam_core::dressup::without_provenance;
 use rs_cam_core::geo::{BoundingBox3, P3};
 use rs_cam_core::ids::ToolpathId;
+use rs_cam_core::limits::{CapTable, CutGroup, SampleContext};
 use rs_cam_core::stock::simulation_cut::SimulationCutSample;
 use rs_cam_core::tool::FlatEndmill;
-use rs_cam_core::tool_load::locality::{SpanLookup, is_steady_state_for_gate};
+use rs_cam_core::tool_load::locality::judged_group;
 use rs_cam_core::toolpath::{MoveIntent, MoveType, Toolpath};
 use rs_cam_core::trace::toolpath_spans::{AnnotatedToolpath, Span, SpanKind};
 
@@ -219,15 +220,45 @@ fn gate_population(
     annotated: &AnnotatedToolpath,
     intent: MoveIntent,
 ) -> Population {
-    let lookup = SpanLookup::new(&annotated.spans);
+    let tool = fixture_tool();
+    let ctx = body_ctx(&tool, annotated);
     let mine = samples
         .iter()
         .filter(|s| s.is_cutting && s.source_intent == Some(intent));
     let emitted = mine.clone().count();
     let in_gate = mine
-        .filter(|s| is_steady_state_for_gate(s, Some(&lookup)))
+        .filter(|s| judged_group(s, &ctx) == Some(CutGroup::Body))
         .count();
     Population { emitted, in_gate }
+}
+
+/// The Ø2 flat end mill of [`simulate`], as a tool record.
+fn fixture_tool() -> rs_cam_core::tool::ToolDefinition {
+    rs_cam_core::tool::ToolDefinition::new(
+        Box::new(FlatEndmill::new(TOOL_RADIUS_MM * 2.0, 25.0)),
+        TOOL_RADIUS_MM * 2.0,
+        30.0,
+        2,
+        rs_cam_core::compute::tool_config::ToolMaterial::Carbide,
+    )
+}
+
+/// The sample context of the gates on `annotated` (P29-6 6d: the group of
+/// each sample, `locality::judged_group`). The fixture has no cap table.
+fn body_ctx<'a>(
+    tool: &'a rs_cam_core::tool::ToolDefinition,
+    annotated: &'a AnnotatedToolpath,
+) -> SampleContext<'a> {
+    SampleContext::new(
+        tool,
+        Some(&annotated.spans),
+        CapTable::empty(),
+        rs_cam_core::compute::catalog::OperationConfig::new_default(
+            rs_cam_core::compute::catalog::OperationType::Profile,
+        )
+        .cuts()
+        .body_facts(),
+    )
 }
 
 fn count_arcs(tp: &Toolpath) -> usize {
@@ -319,13 +350,14 @@ fn fitted_arcs_stay_in_the_gate_population() {
 /// **The exclusion the P3 RCA earned must survive the narrowing.** A dogbone
 /// overcut flies over neighbouring uncleared stock; the dexel reads
 /// `stock_top − cutter_z` there, not engagement. Those samples stay out of
-/// the gate population.
+/// the BODY population; P29-6 6d (operator ruling Q1, "I think all moves
+/// should be judged") judges them in the Cleanup group.
 ///
 /// This test passes on the parent revision too — that is the point. It is
 /// the guard against "fixing" §7 by deleting `DressupArtifact` from the
 /// transit set, which census §7.5 warns against by name.
 #[test]
-fn dogbone_bridge_samples_stay_out_of_the_gate_population() {
+fn dogbone_bridge_samples_stay_out_of_the_body_and_in_the_cleanup_group() {
     let annotated = square_profile_with_dogbones();
 
     let dogbones: Vec<&Span> = annotated
@@ -351,24 +383,39 @@ fn dogbone_bridge_samples_stay_out_of_the_gate_population() {
     }
 
     let samples = simulate(&annotated);
-    let lookup = SpanLookup::new(&annotated.spans);
+    let tool = fixture_tool();
+    let ctx = body_ctx(&tool, &annotated);
     let mut checked = 0_usize;
+    let mut in_cleanup = 0_usize;
     for s in &samples {
         if dogbone_moves.contains(&s.move_index) {
             checked += 1;
-            assert!(
-                !is_steady_state_for_gate(s, Some(&lookup)),
-                "dogbone sample {} (move {}) reached the gate population",
+            let group = judged_group(s, &ctx);
+            assert_ne!(
+                group,
+                Some(CutGroup::Body),
+                "dogbone sample {} (move {}) reached the body population",
                 s.sample_index,
                 s.move_index
             );
+            if s.removes_material() {
+                assert_eq!(
+                    group,
+                    Some(CutGroup::Cleanup),
+                    "a dogbone sample that removes material is judged in the Cleanup group"
+                );
+                in_cleanup += 1;
+            }
         }
     }
     assert!(
-        checked > 0,
-        "no sample landed on a dogbone move — the guard would be vacuous"
+        checked > 0 && in_cleanup > 0,
+        "no dogbone sample removed material — the guard would be vacuous"
     );
-    println!("{checked} dogbone samples, all excluded from the gate population");
+    println!(
+        "{checked} dogbone samples, none in the body; {in_cleanup} remove material, all in the \
+         Cleanup group"
+    );
 }
 
 // ── The two published peaks (census §6.4 sub-finding) ────────────────────
@@ -528,9 +575,7 @@ fn modelled_gate_verdicts_across_the_two_classifications() {
         &tool,
         &material,
         rs_cam_core::machine::SteadyFeedMmMin::op_feed_only(1200.0),
-        // The gates build their `SpanLookup` from here — without it
-        // `is_phantom_transit` degrades to the flag-only fallback and the
-        // ancestry half of the predicate is never exercised.
+        // The gates read the group of each sample through these spans.
         Some(&fitted.spans),
         rs_cam_core::limits::CapTable::empty(),
         None,
@@ -824,7 +869,19 @@ fn verdict_delta_probe_on_the_committed_fixture() {
         let arc_spans = arc_spans_by_id.get(&id).copied().unwrap_or(0);
         total_arc_spans += arc_spans;
 
-        let lookup = SpanLookup::new(&annotated.spans);
+        let probe_tool = rs_cam_core::compute::cutter::build_cutter(
+            session
+                .tool_by_id(tc.tool_id.expect("a tool"))
+                .expect("the tool"),
+        )
+        .expect("the cutter builds");
+        let caps = CapTable::of_toolpath(&annotated.toolpath, result.semantic_trace.as_deref());
+        let group_ctx = SampleContext::new(
+            &probe_tool,
+            annotated.spans_valid.then_some(annotated.spans.as_slice()),
+            &caps,
+            tc.operation.cuts().body_facts(),
+        );
         let cutting_fixed: Vec<&SimulationCutSample> = trace_fixed
             .samples
             .iter()
@@ -837,11 +894,11 @@ fn verdict_delta_probe_on_the_committed_fixture() {
             .collect();
         let in_gate_fixed = cutting_fixed
             .iter()
-            .filter(|s| is_steady_state_for_gate(s, Some(&lookup)))
+            .filter(|s| judged_group(s, &group_ctx) == Some(CutGroup::Body))
             .count();
         let in_gate_parent = cutting_parent
             .iter()
-            .filter(|s| is_steady_state_for_gate(s, Some(&lookup)))
+            .filter(|s| judged_group(s, &group_ctx) == Some(CutGroup::Body))
             .count();
 
         // The two published peaks, recomputed under each arm's filter.

@@ -86,6 +86,69 @@ pub fn diagnostics_from_load_verdict(verdict: &ToolpathLoadVerdict) -> Vec<Diagn
         out.extend(material_split_to_diagnostics(verdict.toolpath_id, split));
     }
 
+    out.extend(group_diagnostics(verdict));
+
+    out
+}
+
+/// P29-6 6d: the groups other than the headline, through the same per-gate
+/// converters with the group named in the message. Ruling Q5: only a group
+/// that `Exceeds` a bound gives a diagnostic; a group that is `Within`, has
+/// no number or no sample gives none (the MCP report holds every cell).
+fn group_diagnostics(verdict: &ToolpathLoadVerdict) -> Vec<Diagnostic> {
+    use crate::tool_load::GroupCell;
+    let tp_id = verdict.toolpath_id;
+    let groups = &verdict.groups;
+    let mut out = Vec::new();
+    for group in crate::limits::CutGroup::ALL {
+        let mut rows: Vec<(usize, Diagnostic)> = Vec::new();
+        if let GroupCell::Judged {
+            samples,
+            verdict: v,
+        } = groups.chipload.get(group)
+            && v.is_exceeded()
+            && let Some(d) = chipload_to_diagnostic(tp_id, v, None)
+        {
+            rows.push((*samples, d));
+        }
+        if let GroupCell::Judged {
+            samples,
+            verdict: v,
+        } = groups.power.get(group)
+            && v.is_exceeded()
+            && let Some(d) = power_to_diagnostic(tp_id, v)
+        {
+            rows.push((*samples, d));
+        }
+        if let GroupCell::Judged {
+            samples,
+            verdict: v,
+        } = groups.deflection.get(group)
+            && v.is_exceeded()
+            && let Some(d) = deflection_to_diagnostic(tp_id, v)
+        {
+            rows.push((*samples, d));
+        }
+        if let GroupCell::Judged {
+            samples,
+            verdict: v,
+        } = groups.depth.get(group)
+            && v.is_exceeded()
+            && let Some(d) = depth_to_diagnostic(tp_id, v)
+        {
+            rows.push((*samples, d));
+        }
+        for (samples, mut d) in rows {
+            d.message = format!(
+                "{} group ({samples} samples that remove material): {}",
+                group.label(),
+                d.message
+            );
+            // The face is what the list draws: it names the group too.
+            d.face = format!("{} group: {}", group.label(), d.face);
+            out.push(d);
+        }
+    }
     out
 }
 

@@ -1226,14 +1226,28 @@ pub(super) fn load_report_checks_json(
             .per_toolpath
             .iter()
             .map(|verdict| {
-                let checks: Vec<rs_cam_core::limits::Check> = verdict
+                // P29-6 6d: each check names its cut group (a group other
+                // than the headline reaches `criteria()` only when it
+                // exceeds a bound, ruling Q5).
+                let checks: Vec<serde_json::Value> = verdict
                     .criteria()
                     .iter()
-                    .map(rs_cam_core::limits::of_criterion)
+                    .map(|status| {
+                        let mut value =
+                            serde_json::to_value(rs_cam_core::limits::of_criterion(status))
+                                .unwrap_or_default();
+                        if let Some(map) = value.as_object_mut() {
+                            map.insert(
+                                "group".to_owned(),
+                                serde_json::to_value(status.group).unwrap_or_default(),
+                            );
+                        }
+                        value
+                    })
                     .collect();
                 serde_json::json!({
                     "toolpath_id": verdict.toolpath_id,
-                    "checks": serde_json::to_value(&checks).unwrap_or_default(),
+                    "checks": checks,
                 })
             })
             .collect(),

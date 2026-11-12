@@ -14,11 +14,12 @@
 //!
 //! The row ids `P28-*` are the 34 rows of `phases/P28_limit_audit.md`; the
 //! ids `M1` to `M12` are section 3.3 of `phases/P29_parts/A_cuts_and_limits.md`.
-//! The ids `C-*` are rows found while commit C was built
-//! (`Cut::of_sample` and its sentry). The other ids are named on their
-//! rows.
+//! The other ids are named on their rows. P29-6 6d closed every row of a
+//! cut group that no gate judged (`P28-22`, `P28-23`, `M2`, `M3`, `M8`,
+//! the `Q10-*`, `Q4-*` and `C-*` rows): a gate now asks
+//! [`super::scope`] for each group.
 
-use super::{CleanupKind, CutKind, EntryKind, Geometry, LimitId};
+use super::{CutKind, EntryKind, Geometry, LimitId};
 
 /// Who is exempt.
 #[derive(Debug, Clone, Copy, PartialEq)]
@@ -75,15 +76,6 @@ pub struct Exemption {
     pub closes_in: &'static str,
 }
 
-/// The gate limits (a sample gate judges each one).
-const GATES: &[LimitId] = &[
-    LimitId::ChipMax,
-    LimitId::ChipMin,
-    LimitId::SpindlePower,
-    LimitId::ToolDeflection,
-    LimitId::ForceBudget,
-];
-
 /// The load caps of the feed modulator.
 const MODULATOR_CAPS: &[LimitId] = &[
     LimitId::ChipMax,
@@ -91,13 +83,6 @@ const MODULATOR_CAPS: &[LimitId] = &[
     LimitId::SpindlePower,
     LimitId::ToolDeflection,
     LimitId::ForceBudget,
-];
-
-const ENTRIES: &[CutKind] = &[
-    CutKind::Entry(EntryKind::Plunge),
-    CutKind::Entry(EntryKind::Ramp),
-    CutKind::Entry(EntryKind::Helix),
-    CutKind::Entry(EntryKind::PeckLadder),
 ];
 
 const DRILL: &[CutKind] = &[CutKind::Drill];
@@ -111,7 +96,7 @@ const R2: ExemptionClass = ExemptionClass::Ruled {
 const NR: ExemptionClass = ExemptionClass::NeedsRuling;
 
 /// Every exemption from a limit today. See the module doc.
-pub static EXEMPTIONS: [Exemption; 61] = [
+pub static EXEMPTIONS: [Exemption; 51] = [
     // P28: the limit audit.
     Exemption {
         id: "P28-02",
@@ -140,7 +125,7 @@ pub static EXEMPTIONS: [Exemption; 61] = [
         limit: &[LimitId::ForceBudget],
         who: Who::Facts("no depth limit, drill cycle"),
         class: ExemptionClass::Physical(Geometry::NoRadialEngagement),
-        where_: &["src/machine/mod.rs", "src/tool_load/depth.rs"],
+        where_: &["src/machine/mod.rs", "src/limits/scope.rs"],
         closes_in: "-",
     },
     Exemption {
@@ -198,7 +183,7 @@ pub static EXEMPTIONS: [Exemption; 61] = [
             "src/feeds/calculator/power.rs",
             "src/feeds/calculator/spindle.rs",
             "src/feeds/calculator/close.rs",
-            "src/tool_load/power.rs",
+            "src/limits/scope.rs",
         ],
         closes_in: "P29-8 (no end-cut force source)",
     },
@@ -278,11 +263,7 @@ pub static EXEMPTIONS: [Exemption; 61] = [
         limit: &[LimitId::ToolDeflection],
         who: Who::Kind(DRILL),
         class: ExemptionClass::Physical(Geometry::NoRadialEngagement),
-        where_: &[
-            "src/tool_load/deflection.rs",
-            "src/feeds/predict.rs",
-            "src/tool_load/cut_force.rs",
-        ],
+        where_: &["src/limits/scope.rs", "src/feeds/predict.rs"],
         closes_in: "-",
     },
     Exemption {
@@ -313,70 +294,20 @@ pub static EXEMPTIONS: [Exemption; 61] = [
         limit: &[LimitId::ChipMax, LimitId::ChipMin],
         who: Who::Kind(DRILL),
         class: ExemptionClass::Physical(Geometry::NoRadialEngagement),
-        where_: &["src/tool_load/chipload.rs"],
+        where_: &["src/limits/scope.rs"],
         closes_in: "-",
     },
     Exemption {
         id: "P28-21",
-        what: "every load gate",
-        limit: GATES,
-        who: Who::Kind(ENTRIES),
+        what: "the envelope finding of the simulation",
+        limit: &[LimitId::SpindlePower],
+        who: Who::Reader(
+            "the envelope finding places the body group only; an entry is a different cut \
+             (P29-6 ruling Q4)",
+        ),
         class: NR,
-        where_: &[
-            "src/tool_load/locality.rs",
-            "src/tool_load/depth.rs",
-            "src/tool_load/power.rs",
-            "src/tool_load/cut_force.rs",
-            "src/tool_load/deflection.rs",
-            "src/tool_load/distribution.rs",
-            "src/tool_load/chipload.rs",
-            "src/tool_load/mod.rs",
-            "src/compute/simulate.rs",
-            "src/limits/sample.rs",
-        ],
-        closes_in: "P29-6",
-    },
-    Exemption {
-        id: "P28-22",
-        what: "every load gate",
-        limit: GATES,
-        who: Who::Kind(&[CutKind::Cleanup(CleanupKind::WaterlineSweep)]),
-        class: NR,
-        where_: &[
-            "src/tool_load/locality.rs",
-            "src/tool_load/depth.rs",
-            "src/tool_load/power.rs",
-            "src/tool_load/cut_force.rs",
-            "src/tool_load/deflection.rs",
-            "src/tool_load/distribution.rs",
-            "src/tool_load/chipload.rs",
-            "src/compute/simulate.rs",
-            "src/session/compute.rs",
-            "src/limits/sample.rs",
-        ],
-        closes_in: "P29-6",
-    },
-    Exemption {
-        id: "P28-23",
-        what: "every load gate",
-        limit: GATES,
-        who: Who::Kind(&[CutKind::LeadOut, CutKind::Link, CutKind::DressupRelief]),
-        // Ruling Q5: the reading is of neighbour stock. The operator rules
-        // at P29-6 how such a sample is judged.
-        class: NR,
-        where_: &[
-            "src/tool_load/locality.rs",
-            "src/tool_load/depth.rs",
-            "src/tool_load/power.rs",
-            "src/tool_load/cut_force.rs",
-            "src/tool_load/deflection.rs",
-            "src/tool_load/distribution.rs",
-            "src/tool_load/chipload.rs",
-            "src/compute/simulate.rs",
-            "src/session/compute.rs",
-            "src/limits/sample.rs",
-        ],
-        closes_in: "P29-6",
+        where_: &["src/compute/simulate.rs"],
+        closes_in: "P29-8 (entries get their own envelope)",
     },
     Exemption {
         id: "P28-24",
@@ -483,42 +414,13 @@ pub static EXEMPTIONS: [Exemption; 61] = [
     },
     // M: the findings that P28 missed.
     Exemption {
-        id: "M2",
-        what: "the gates against the modulator",
-        limit: &[
-            LimitId::SpindlePower,
-            LimitId::ToolDeflection,
-            LimitId::ForceBudget,
-        ],
-        who: Who::Kind(&[
-            CutKind::Entry(EntryKind::Ramp),
-            CutKind::Entry(EntryKind::Helix),
-        ]),
-        class: NR,
-        where_: &["src/session/compute.rs", "src/dressup/feed_modulation.rs"],
-        closes_in: "P29-6",
-    },
-    Exemption {
-        id: "M3",
-        what: "every load gate",
-        limit: GATES,
-        who: Who::Reader("entry samples go to the entry_spike advisory, not to the verdict"),
-        class: NR,
-        where_: &[
-            "src/tool_load/power.rs",
-            "src/tool_load/deflection.rs",
-            "src/tool_load/chipload.rs",
-        ],
-        closes_in: "P29-6 (follows P28-21)",
-    },
-    Exemption {
         id: "M4",
         what: "the spindle power against the tool deflection",
         limit: &[LimitId::SpindlePower, LimitId::ToolDeflection],
         who: Who::Reader("one sample has two depths (axial_doc_mm, axial_engagement_mm)"),
         class: NR,
         where_: &["src/feeds/engagement.rs", "src/tool_load/deflection.rs"],
-        closes_in: "P29-6 (a probe)",
+        closes_in: "P29-7 (a probe on ball and V tools)",
     },
     Exemption {
         id: "M6",
@@ -528,19 +430,6 @@ pub static EXEMPTIONS: [Exemption; 61] = [
         class: NR,
         where_: &["src/feeds/vendor_normalize.rs"],
         closes_in: "P25 / P27",
-    },
-    Exemption {
-        id: "M8",
-        what: "every load gate (the triage readers)",
-        limit: GATES,
-        who: Who::Reader("the span filter with no span lookup drops every entry sample"),
-        class: NR,
-        where_: &[
-            "src/stock/sim_triage.rs",
-            "src/tool_load/mod.rs",
-            "src/tool_load/locality.rs",
-        ],
-        closes_in: "P29-6",
     },
     Exemption {
         id: "M9",
@@ -628,7 +517,7 @@ pub static EXEMPTIONS: [Exemption; 61] = [
         ),
         class: NR,
         where_: &[],
-        closes_in: "P29-6 / P29-7",
+        closes_in: "P29-7",
     },
     Exemption {
         id: "U-PocketZigzag",
@@ -696,58 +585,6 @@ pub static EXEMPTIONS: [Exemption; 61] = [
         class: NR,
         where_: &["src/feeds/efficiency.rs"],
         closes_in: "P29-11",
-    },
-    // Ruling Q10: the span filter states today's behaviour; the cut kind
-    // disagrees on these two classes of samples.
-    Exemption {
-        id: "Q10-LinkingInEntrySpan",
-        what: "every load gate",
-        limit: GATES,
-        who: Who::Kind(&[CutKind::Link]),
-        class: NR,
-        where_: &["src/tool_load/locality.rs", "src/limits/sample.rs"],
-        closes_in: "P29-6",
-    },
-    Exemption {
-        id: "Q10-EntryPlungeInNoSpan",
-        what: "every load gate",
-        limit: GATES,
-        who: Who::Reader("the entry plunges of a Profile after a tab, in no span"),
-        class: NR,
-        where_: &["src/tool_load/locality.rs", "src/limits/sample.rs"],
-        closes_in: "P29-6",
-    },
-    // Ruling Q4: two kinds that the sample door infers, not reads
-    // (`Cut::of_sample`, commit C).
-    Exemption {
-        id: "Q4-SlotRingInferred",
-        what: "every load gate",
-        limit: GATES,
-        who: Who::Kind(&[CutKind::SlotRing]),
-        class: NR,
-        where_: &["src/limits/sample.rs"],
-        closes_in: "P29-6 (a planner marker)",
-    },
-    Exemption {
-        id: "Q4-CappedStepNoTrace",
-        what: "every load gate",
-        limit: GATES,
-        who: Who::Reader("a capped move of a result with no semantic trace has no cap source"),
-        class: NR,
-        where_: &["src/limits/sample.rs"],
-        closes_in: "P29-6",
-    },
-    // C: found while commit C was built. The stamper flags a lead-in and
-    // an entry approach in transit by the intent, so every gate drops them;
-    // no other row names the two kinds (lead ruling, 2026-11-11).
-    Exemption {
-        id: "C-LeadInApproach",
-        what: "every load gate",
-        limit: GATES,
-        who: Who::Kind(&[CutKind::LeadIn, CutKind::EntryApproach]),
-        class: NR,
-        where_: &["src/limits/sample.rs", "src/compute/simulate.rs"],
-        closes_in: "P29-6",
     },
     // F: the facts of the cut that hold a label value (ruling Q2).
     Exemption {

@@ -36,6 +36,12 @@
 //!    `SimulationCutSample {`: a destructure would read the field without a
 //!    dot.
 //!
+//! 4. P29-6 6d: no `judge` of a gate walks the trace (`.samples.iter()`)
+//!    for its population: a gate reads the samples of its group
+//!    (`groups::GroupPopulation`). One line is allowed: the depth gate's
+//!    X-VAC fallback (`first_cut`, the cut a vacuous verdict reads its cap
+//!    at). Non-vacuity: the five gate files each hold a `judge`.
+//!
 //! The scan skips comments and each column-0 `#[cfg(test)]` item (the test
 //! modules and fixtures).
 
@@ -70,7 +76,7 @@ struct Allowed {
 const ALLOWED: &[Allowed] = &[
     Allowed {
         file: "chipload.rs",
-        func: "evaluate_inner",
+        func: "judge",
         text: "s.feed_rate_mm_min.max(1e-9)",
         count: 1,
         reason: "the denominator of `AchievedFeedStage::median_ratio`, the ratio of the \
@@ -188,6 +194,9 @@ fn every_gate_reads_one_feed_p16() {
     let mut depth_door_calls = 0_usize;
     let mut allowed_hits = vec![0_usize; ALLOWED.len()];
     let mut offenders: Vec<String> = Vec::new();
+    // Claim 4.
+    let mut judge_files: std::collections::BTreeSet<String> = std::collections::BTreeSet::new();
+    let mut depth_fallback_walks = 0_usize;
 
     for path in &entries {
         let file = path
@@ -198,7 +207,21 @@ fn every_gate_reads_one_feed_p16() {
         let src = std::fs::read_to_string(path).expect("read source");
         for line in production_lines(&src) {
             let func = line.func.as_deref().unwrap_or("");
-            if file == "depth.rs" && func == "evaluate" {
+            if func == "judge" {
+                judge_files.insert(file.clone());
+                if line.code.contains(".samples.iter()") {
+                    if file == "depth.rs" {
+                        depth_fallback_walks += 1;
+                    } else {
+                        offenders.push(format!(
+                            "{file}:{} (judge): a gate walks the trace for its population; \
+                             read the samples of the group it is given",
+                            line.number
+                        ));
+                    }
+                }
+            }
+            if file == "depth.rs" && func == "judge" {
                 depth_door_calls += line.code.matches("effective_feed_for_sample(").count();
             }
             if line.code.contains("SimulationCutSample {") {
@@ -244,9 +267,25 @@ fn every_gate_reads_one_feed_p16() {
         "non-vacuity: the door `{DOOR_FN}` in {DOOR_FILE} must read the sample field \
          {DOOR_READS} times"
     );
+    for gate in [
+        "chipload.rs",
+        "power.rs",
+        "deflection.rs",
+        "depth.rs",
+        "cut_force.rs",
+    ] {
+        assert!(
+            judge_files.contains(gate),
+            "non-vacuity: {gate} holds a `judge` ({judge_files:?})"
+        );
+    }
+    assert_eq!(
+        depth_fallback_walks, 1,
+        "the depth gate walks the trace once, for its X-VAC first-cut fallback"
+    );
     assert!(
         depth_door_calls >= 2,
-        "the depth gate (`depth.rs` `evaluate`) must read the door for its chip and \
+        "the depth gate (`depth.rs` `judge`) must read the door for its chip and \
          for its X-VAC fallback filter; found {depth_door_calls} calls"
     );
     for (a, hits) in ALLOWED.iter().zip(&allowed_hits) {

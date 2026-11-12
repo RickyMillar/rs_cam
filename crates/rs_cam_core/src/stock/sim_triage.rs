@@ -941,8 +941,7 @@ fn standing_material_population(
             s.toolpath_id == toolpath_id
                 && s.is_cutting
                 && s.axial_engagement_mm > 0.0
-                // EXEMPT(M8)
-                && crate::tool_load::locality::is_steady_state_for_gate(s, None)
+                && crate::tool_load::locality::is_body_without_spans(s)
         })
         .collect();
     let reference = if population.is_empty() {
@@ -988,7 +987,7 @@ fn bite_reference(
 /// The steady-state cutting samples of the toolpath that removed material
 /// on the lateral axis (`axial_engagement_mm > 0`). Transit samples go
 /// through the one predicate,
-/// [`crate::tool_load::locality::is_steady_state_for_gate`]: a link-bridge
+/// [`crate::tool_load::locality::is_body_without_spans`]: a link-bridge
 /// sample reads `stock_top - cutter_z` over NEIGHBOURING stock, and that
 /// inflated reading is not a bite. The triage has no span lookup, so the
 /// predicate drops every `in_transit_span` sample.
@@ -1265,17 +1264,16 @@ pub(crate) fn rough_coverage_finding(
 
 // ── G-ENTRYLOAD: entries get their own envelope ─────────────────────────
 //
-// The load gates (chipload, deflection, power) filter their populations to
-// steady-state samples via `tool_load::locality::is_steady_state_for_gate`,
-// which drops entry and transit spans wholesale. That filter is correct and
-// is NOT weakened here: a dexel reading at a transit sample reports
-// `stock_top - cutter_z` over neighbouring stock, not steady-state
-// engagement, and gate verdicts built on it were exactly the P3 lift-bridge
-// artifact.
+// P29-6 6d: the load gates judge entry samples in their own Entry group
+// (`tool_load::groups`), with the side engagement of each sample. A
+// straight plunge has no side engagement, so the gates give it no number;
+// this relative rule stays the grader of a plunge until P29-8 (ruling Q8).
 //
+// The history: before P29-6 the gates dropped entry and transit spans
+// wholesale.
 // The consequence, though, was that entry motion had NO grader at all:
 //
-//  * the three load gates exclude it by span;
+//  * the three load gates excluded it by span (until P29-6);
 //  * `standing_material_finding` above reads `axial_engagement_mm`, and a
 //    pure-vertical descent samples as `CutKinematics::Plunge`, whose removal
 //    the simulator deliberately writes to `plunge_descent_mm` instead — so a
@@ -1711,8 +1709,7 @@ pub fn link_cut_observation(
         if is_link_intent(s) {
             links.push(s);
         } else if s.axial_engagement_mm > 0.0
-            // EXEMPT(M8)
-            && crate::tool_load::locality::is_steady_state_for_gate(s, None)
+            && crate::tool_load::locality::is_body_without_spans(s)
         {
             body.push(s);
         }

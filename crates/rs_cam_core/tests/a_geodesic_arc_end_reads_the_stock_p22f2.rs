@@ -60,10 +60,11 @@ use rs_cam_core::compute::catalog::OperationConfig;
 use rs_cam_core::compute::operation_configs::{
     Adaptive3dConfig, Adaptive3dEntryStyle, ClearingStrategy,
 };
+use rs_cam_core::limits::{CapTable, CutGroup, SampleContext};
 use rs_cam_core::mesh::{SpatialIndex, TriangleMesh};
 use rs_cam_core::session::{ProjectSession, SimulationOptions, SimulationResolution};
 use rs_cam_core::tool::FlatEndmill;
-use rs_cam_core::tool_load::locality::{SpanLookup, is_phantom_transit};
+use rs_cam_core::tool_load::locality::judged_group;
 use rs_cam_core::toolpath::MoveIntent;
 
 /// The tool diameter of this sentry and of the D65 fixture (mm).
@@ -233,9 +234,9 @@ fn a_geodesic_arc_end_reads_the_stock() {
     let result = s.result_at(0).expect("a result");
     let moves = &result.toolpath().moves;
     let annotated = result.annotated();
-    let lookup = annotated
-        .spans_valid
-        .then(|| SpanLookup::new(&annotated.spans));
+    let spans = annotated.spans_valid.then_some(annotated.spans.as_slice());
+    let caps = CapTable::of_toolpath(&annotated.toolpath, result.semantic_trace.as_deref());
+    let sample_ctx = SampleContext::new(&tool, spans, &caps, tc.operation.cuts().body_facts());
     let mut phantom = 0usize;
     let mut joint = 0usize;
     let trace = s
@@ -261,9 +262,13 @@ fn a_geodesic_arc_end_reads_the_stock() {
         if m.intent != MoveIntent::ClearingCut || m.feed_cap.is_some() {
             continue;
         }
-        // The gates' own filter: a waterline cleanup, link bridge or other
-        // transit span is not a steady cut (P22a's phantom class).
-        if is_phantom_transit(sample, lookup.as_ref()) {
+        // P29-6 6d: a sample of the Cleanup or the Link group (a waterline
+        // cleanup, a link) is judged in its own group, not in the body
+        // (P22a's former phantom class).
+        if matches!(
+            judged_group(sample, &sample_ctx),
+            Some(CutGroup::Cleanup | CutGroup::Link)
+        ) {
             phantom += 1;
             continue;
         }

@@ -2231,16 +2231,13 @@ fn modulate_annotated_against_trace(
     // `tool_load::deflection::sample_engagement` (the deflection gate and the
     // force card). The modulator's power, deflection and force-budget caps of
     // a move are the minimum over these samples. One population for the lift
-    // and the table: the move's cutting samples that the gate's own
-    // `tool_load::locality::is_phantom_transit` keeps (configured-entry
-    // samples bind, ruling 3). A move with no such sample keeps its
+    // and the table: the move's samples that remove material, the samples
+    // the gates judge (P29-6 6d: every group; cleanup, link and entry
+    // samples bind). A move with no such sample keeps its
     // pre-P20g reading: the lift over all its cutting samples, and the mean
     // engagement.
     // P29-3: the thinning rule of the op's body cut.
     let radial_thinning = operation.cuts().body_facts().thins_chip;
-    let span_lookup = annotated
-        .spans_valid
-        .then(|| crate::tool_load::locality::SpanLookup::new(&annotated.spans));
     let mut sample_engagements: Vec<crate::dressup::feed_modulation::MoveSampleEngagements> =
         planner_lifted
             .iter()
@@ -2267,8 +2264,7 @@ fn modulate_annotated_against_trace(
         if let Some(lift) = lift {
             min_into(any_lift.get_mut(sample.move_index), lift);
         }
-        // EXEMPT(M2, P28-22, P28-23)
-        if crate::tool_load::locality::is_phantom_transit(sample, span_lookup.as_ref()) {
+        if !sample.removes_material() {
             continue;
         }
         if let Some(lift) = lift {

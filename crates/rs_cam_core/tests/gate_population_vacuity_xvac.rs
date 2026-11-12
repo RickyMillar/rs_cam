@@ -74,8 +74,8 @@ fn tool() -> ToolDefinition {
 }
 
 /// One cutting sample with real engagement, real arc and real feed. The
-/// only thing that varies between the two fixtures is `in_transit_span`.
-fn cutting_sample(idx: usize, in_transit: bool) -> SimulationCutSample {
+/// only thing that varies between the two fixtures is the removed volume.
+fn cutting_sample(idx: usize, removes_material: bool) -> SimulationCutSample {
     let feed = 2000.0;
     SimulationCutSample {
         toolpath_id: TP,
@@ -95,13 +95,13 @@ fn cutting_sample(idx: usize, in_transit: bool) -> SimulationCutSample {
         chipload_mm_per_tooth: feed / (18_000.0 * 2.0),
         effective_chip_thickness_mm: Some(feed / (18_000.0 * 2.0)),
         engagement: Engagement::with_radial_woc(0.5),
-        removed_volume_est_mm3: 0.1,
+        // THE emptying predicate (P29-6 6d). Every gate judges the samples
+        // that remove material (`locality::judged_group`); a sample that
+        // removes nothing is in no group, so a trace of such samples hands
+        // the gates 12 samples and a population of 0. (Before P29-6 the
+        // fixture emptied the gates with the `in_transit_span` flag.)
+        removed_volume_est_mm3: if removes_material { 0.1 } else { 0.0 },
         mrr_mm3_s: 1.0,
-        // THE emptying predicate. With `spans: None` the gate cannot
-        // split configured entries from phantom transit, so
-        // `locality::is_phantom_transit` degrades to this bare flag and
-        // drops every sample carrying it (`locality.rs:219`).
-        in_transit_span: in_transit,
         ..SimulationCutSample::test_fixture()
     }
 }
@@ -133,16 +133,16 @@ fn trace(samples: Vec<SimulationCutSample>) -> SimulationCutTrace {
     }
 }
 
-/// 12 cutting samples, all of them phantom transit. The population the
+/// 12 cutting samples, none of which removes material. The population the
 /// gates are *offered* is 12; the population that *contributes* is 0.
 fn vacuous_trace() -> SimulationCutTrace {
-    trace((0..12).map(|i| cutting_sample(i, true)).collect())
+    trace((0..12).map(|i| cutting_sample(i, false)).collect())
 }
 
-/// Same 12 samples, none in transit — a genuinely measured cut, the
+/// Same 12 samples, each removing material — a genuinely measured cut, the
 /// control arm every vacuity assertion below is contrasted against.
 fn measured_trace() -> SimulationCutTrace {
-    trace((0..12).map(|i| cutting_sample(i, false)).collect())
+    trace((0..12).map(|i| cutting_sample(i, true)).collect())
 }
 
 fn verdicts(t: &SimulationCutTrace) -> (PowerVerdict, DeflectionVerdict, DepthVerdict) {
@@ -176,6 +176,9 @@ fn verdict_for(t: &SimulationCutTrace) -> ToolpathLoadVerdict {
     let (power, deflection, depth) = verdicts(t);
     ToolpathLoadVerdict {
         toolpath_id: TP,
+        groups: rs_cam_core::tool_load::verdict::GroupVerdicts::headline_only(
+            rs_cam_core::limits::CutGroup::Body,
+        ),
         chipload: rs_cam_core::tool_load::verdict::ChiploadVerdict::Unmodeled {
             reason: rs_cam_core::tool_load::verdict::UnmodeledReason::NoVendorData,
         },
@@ -539,6 +542,9 @@ fn the_drill_criteria_and_diagnostics_carry_the_hole_population() {
 
     let v = ToolpathLoadVerdict {
         toolpath_id: TP,
+        groups: rs_cam_core::tool_load::verdict::GroupVerdicts::headline_only(
+            rs_cam_core::limits::CutGroup::Body,
+        ),
         chipload: rs_cam_core::tool_load::verdict::ChiploadVerdict::Unmodeled {
             reason: rs_cam_core::tool_load::verdict::UnmodeledReason::NotApplicableForOp(
                 "drill".to_owned(),

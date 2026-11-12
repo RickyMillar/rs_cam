@@ -15,12 +15,12 @@
 //!
 //! | Metric | Filters and per-sample value |
 //! |---|---|
-//! | Chipload | [`super::chipload::removing_samples_for_toolpath`] (every sample that removes material, at any feed, P29-6 6b), the validity test [`super::chipload::has_chip_number`] (a chip model, not air class), [`super::display::peak_chip_per_tooth`] (P11b2: the peak chip), [`super::locality::is_steady_state_for_gate`] |
-//! | Power | [`super::power::sample_power_kw`] at [`super::effective_feed_for_sample`], then [`super::locality::is_steady_state_for_gate`] |
-//! | Deflection | [`super::deflection::sample_tip_deflection_mm`] at [`super::deflection::deflection_feed_per_tooth_mm`], then [`super::locality::is_steady_state_for_gate`] |
-//! | Depth of cut | [`super::locality::is_steady_state_for_gate`], then the depth gate's `depth_number` (a sample with a number: P29-6 6c); the value is `axial_engagement_mm` |
-//! | Engagement | no gate; the power gate's pre-filter (cutting, not air, arc captured), then [`super::locality::is_steady_state_for_gate`]; the value is the arc in degrees |
-//! | Cut force (P17) | [`super::cut_force::cut_points`] (the deflection gate's filters, [`super::deflection::sample_engagement`], [`super::locality::is_steady_state_for_gate`]); the value is `force_n`, [`super::cut_force::sample_peak_force_n`]; the ceiling is [`super::cut_force::budget_line`] (lead ruling 3) |
+//! | Chipload | the headline group's removing samples (every sample that removes material, at any feed, P29-6 6b, 6d), the validity test [`super::chipload::has_chip_number`] (a chip model, not air class), [`super::display::peak_chip_per_tooth`] (P11b2: the peak chip) |
+//! | Power | [`super::power::sample_power_kw`] at [`super::effective_feed_for_sample`], over the headline group |
+//! | Deflection | [`super::deflection::sample_tip_deflection_mm`] at [`super::deflection::deflection_feed_per_tooth_mm`], over the headline group |
+//! | Depth of cut | the headline group, then the depth gate's `depth_number` (a sample with a number: P29-6 6c); the value is `axial_engagement_mm` |
+//! | Engagement | no gate; the power gate's pre-filter (cutting, not air, arc captured), over the headline group; the value is the arc in degrees |
+//! | Cut force (P17) | [`super::cut_force::cut_points`] (the deflection gate's filters, [`super::deflection::sample_engagement`], the headline group); the value is `force_n`, [`super::cut_force::sample_peak_force_n`]; the ceiling is [`super::cut_force::budget_line`] (lead ruling 3) |
 //!
 //! The sentry `tests/histogram_population_is_the_gate_population_g_cuthist.rs`
 //! holds this: the population maximum equals the gate's `display_peak`, and
@@ -66,7 +66,6 @@ use serde::{Deserialize, Serialize};
 
 use crate::stock::simulation_cut::SimulationCutTrace;
 
-use super::locality::SpanLookup;
 use super::verdict::{
     BoundSource, CriterionKind, CriterionStatus, GatePopulation, LoadState, PopulationUnit,
     ToolpathLoadVerdict, UnmodeledReason,
@@ -427,7 +426,7 @@ fn cut_force_distribution(
     ctx: &ToolpathLoadContext<'_>,
     env: &GateEnv<'_>,
 ) -> Option<DistributionOutcome> {
-    if ctx.operation_kind().is_drill_kinematics() {
+    if !super::groups::headline_is_judged(ctx, crate::limits::LimitId::ForceBudget) {
         return None;
     }
     let Some(trace) = env.sim_trace else {
@@ -599,9 +598,9 @@ fn engagement_distribution(
     ctx: &ToolpathLoadContext<'_>,
     env: &GateEnv<'_>,
 ) -> Option<DistributionOutcome> {
-    // The same short-circuit every milling gate takes: a drill cycle has
-    // no continuous engagement.
-    if ctx.operation_kind().is_drill_kinematics() {
+    // The same scope every side gate reads: `limits::scope` does not judge
+    // a drill cycle (no continuous engagement).
+    if !super::groups::headline_is_judged(ctx, crate::limits::LimitId::SpindlePower) {
         return None;
     }
     let Some(trace) = env.sim_trace else {
@@ -671,8 +670,10 @@ pub fn gate_population(
     let Some(trace) = env.sim_trace else {
         return Vec::new();
     };
-    let span_lookup = ctx.spans().map(SpanLookup::new);
-    let lookup = span_lookup.as_ref();
+    // P29-6 6d: the card bins the headline group, the population of the
+    // headline verdict (`groups::populations`).
+    let populations = super::groups::populations(ctx, Some(trace));
+    let lookup = populations.of(ctx.headline_group());
     match metric {
         DistributionMetric::Criterion(CriterionKind::Chipload) => {
             chipload_population(trace, ctx, lookup)
@@ -683,23 +684,19 @@ pub fn gate_population(
             let Ok(line) = ctx.material().force_line() else {
                 return Vec::new();
             };
-            collect(trace, ctx, lookup, |s| {
+            collect(lookup, |s| {
                 let feed = super::effective_feed_for_sample(s, &trace.predicted_feeds);
                 super::power::sample_power_kw(ctx.tool(), &line, s, feed)
             })
         }
-        DistributionMetric::Criterion(CriterionKind::Deflection) => {
-            collect(trace, ctx, lookup, |s| {
-                let fz = super::deflection::deflection_feed_per_tooth_mm(s, &trace.predicted_feeds);
-                super::deflection::sample_tip_deflection_mm(ctx.tool(), ctx.material(), s, fz)
-            })
-        }
-        DistributionMetric::Criterion(CriterionKind::DepthOfCut) => {
-            collect(trace, ctx, lookup, |s| {
-                super::depth::depth_number(s, ctx, env.machine, &trace.predicted_feeds)
-            })
-        }
-        DistributionMetric::Engagement => collect(trace, ctx, lookup, |s| {
+        DistributionMetric::Criterion(CriterionKind::Deflection) => collect(lookup, |s| {
+            let fz = super::deflection::deflection_feed_per_tooth_mm(s, &trace.predicted_feeds);
+            super::deflection::sample_tip_deflection_mm(ctx.tool(), ctx.material(), s, fz)
+        }),
+        DistributionMetric::Criterion(CriterionKind::DepthOfCut) => collect(lookup, |s| {
+            super::depth::depth_number(s, ctx, env.machine, &trace.predicted_feeds)
+        }),
+        DistributionMetric::Engagement => collect(lookup, |s| {
             if !s.is_cutting || s.engagement.radial_woc_fraction < 0.02 {
                 return None;
             }
@@ -727,24 +724,18 @@ pub fn gate_population(
     }
 }
 
-/// Walk this toolpath's samples in trace order. Keep each sample that
-/// `value` accepts and that the one shared steady-state predicate keeps.
+/// Walk the headline group's samples in trace order. Keep each sample
+/// that `value` accepts.
 fn collect(
-    trace: &SimulationCutTrace,
-    ctx: &ToolpathLoadContext<'_>,
-    lookup: Option<&SpanLookup<'_>>,
+    population: super::groups::GroupPopulation<'_>,
     value: impl Fn(&crate::stock::simulation_cut::SimulationCutSample) -> Option<f64>,
 ) -> Vec<PopulationSample> {
-    trace
+    population
         .samples
         .iter()
-        .enumerate()
-        .filter(|(_, s)| s.toolpath_id == ctx.toolpath_id())
-        .filter_map(|(i, s)| {
-            let v = value(s)?;
-            // EXEMPT(P28-21, P28-22, P28-23)
-            super::locality::is_steady_state_for_gate(s, lookup).then_some(PopulationSample {
-                value: v,
+        .filter_map(|&(i, s)| {
+            Some(PopulationSample {
+                value: value(s)?,
                 weight_s: s.segment_time_s,
                 move_index: s.move_index,
                 sample_index: i,
@@ -753,16 +744,18 @@ fn collect(
         .collect()
 }
 
-/// The chipload gate's trip set (`burn_samples` in `chipload.rs`): the
-/// removing samples, less the samples with no chip model, the samples with
-/// no `rpm × flutes` divisor, and the transit samples.
+/// The chipload gate's trip set of the headline group (`burn_samples` in
+/// `chipload.rs`): the group's removing samples, less the samples with no
+/// chip model and the samples with no `rpm × flutes` divisor.
 fn chipload_population(
     trace: &SimulationCutTrace,
     ctx: &ToolpathLoadContext<'_>,
-    lookup: Option<&SpanLookup<'_>>,
+    population: super::groups::GroupPopulation<'_>,
 ) -> Vec<PopulationSample> {
-    super::chipload::removing_samples_for_toolpath(trace, ctx.toolpath_id())
-        .into_iter()
+    population
+        .samples
+        .iter()
+        .copied()
         // The gate's sample-validity predicate: a sample with no chip model
         // or of air class does not reach its comparison.
         .filter(|(_, s)| super::chipload::has_chip_number(s))
@@ -778,8 +771,7 @@ fn chipload_population(
                 ctx.body_facts().thins_chip,
             )
             .ok()?;
-            // EXEMPT(P28-21, P28-22, P28-23)
-            super::locality::is_steady_state_for_gate(s, lookup).then_some(PopulationSample {
+            Some(PopulationSample {
                 value: reading.peak_chip_mm,
                 weight_s: s.segment_time_s,
                 move_index: s.move_index,

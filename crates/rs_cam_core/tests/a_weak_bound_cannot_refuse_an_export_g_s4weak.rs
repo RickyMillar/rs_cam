@@ -60,6 +60,7 @@ fn weak_source() -> BoundSource {
 /// a weak source on a kind that normally gates.
 fn weak_exceedance() -> CriterionStatus<'static> {
     CriterionStatus {
+        group: None,
         kind: CriterionKind::Deflection,
         state: LoadState::Exceeds,
         confidence: None,
@@ -77,6 +78,7 @@ fn weak_exceedance() -> CriterionStatus<'static> {
 /// A row that exceeded the machine's own power ceiling.
 fn power_exceedance() -> CriterionStatus<'static> {
     CriterionStatus {
+        group: None,
         kind: CriterionKind::Power,
         state: LoadState::Exceeds,
         confidence: None,
@@ -96,6 +98,7 @@ fn power_exceedance() -> CriterionStatus<'static> {
 /// source today, so a row without one is a gate that forgot.
 fn sourceless_exceedance() -> CriterionStatus<'static> {
     CriterionStatus {
+        group: None,
         kind: CriterionKind::Chipload,
         state: LoadState::Exceeds,
         confidence: None,
@@ -113,6 +116,7 @@ fn sourceless_exceedance() -> CriterionStatus<'static> {
 /// A plain `Within` row, so no arm below passes on an empty list.
 fn within_row() -> CriterionStatus<'static> {
     CriterionStatus {
+        group: None,
         kind: CriterionKind::Power,
         state: LoadState::Within,
         confidence: None,
@@ -281,6 +285,9 @@ fn the_shipped_gate_still_warns_on_a_deflection_exceedance() {
     let report = ToolLoadReport {
         per_toolpath: vec![ToolpathLoadVerdict {
             toolpath_id: TP,
+            groups: rs_cam_core::tool_load::verdict::GroupVerdicts::headline_only(
+                rs_cam_core::limits::CutGroup::Body,
+            ),
             chipload: ChiploadVerdict::Unmodeled {
                 reason: UnmodeledReason::NoVendorData,
             },

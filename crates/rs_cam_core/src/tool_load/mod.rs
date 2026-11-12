@@ -30,6 +30,7 @@ pub mod depth;
 pub mod display;
 pub mod distribution;
 pub mod drill_gates;
+pub mod groups;
 pub mod load_fraction;
 pub mod locality;
 pub mod metric_guide;
@@ -289,20 +290,25 @@ pub fn chip_target_for_toolpath(
     let spec = operation.spec();
     let lut_op_family: LutOperationFamily = spec.feeds_family.into();
     let lut_pass_role: LutPassRole = spec.feeds_pass_role.into();
-    // Peak axial DOC over the same sample population the gate
-    // measures: steady-state only. F3.4 — pre-fix this folded over
-    // every cutting sample, so a phantom transit reading (the F2
-    // class) inflated the engaged-diameter lookup and the viewport
-    // colors could disagree with the export verdict.
+    // The row key depth: the peak removed layer of the body group, the
+    // depth the gate keys its row with (`groups::ToolpathSamples::
+    // row_key_depth_mm`). No spans and no cap table reach this door, so the
+    // group comes from the intent; the key reads no depth (finding F5).
+    let body_facts = operation.cuts().body_facts();
+    let sample_ctx = crate::limits::SampleContext::new(
+        &tool_def,
+        None,
+        crate::limits::CapTable::empty(),
+        body_facts,
+    );
     let axial_doc = sim_trace
         .map(|t| {
             t.samples
                 .iter()
                 .filter(|s| {
                     s.toolpath_id == toolpath_id
-                        && s.is_cutting
-                        // EXEMPT(P28-21, M8)
-                        && locality::is_steady_state_for_gate(s, None)
+                        && locality::judged_group(s, &sample_ctx)
+                            == Some(crate::limits::CutGroup::Body)
                 })
                 .map(|s| s.axial_doc_mm.max(0.0))
                 .fold(0.0_f64, f64::max)
@@ -491,54 +497,114 @@ pub struct GateEnv<'a> {
     pub tolerance: &'a ToleranceBands,
 }
 
-/// Internal organizational trait (Phase 6 task 3): every milling gate
-/// is a `(ctx, env) → typed verdict` function plus a projection into
-/// the generic `CriterionStatus`. Lets tests sweep all gates uniformly
-/// (e.g. "every gate refuses drill kinematics the same way") without
-/// erasing the typed verdicts — `evaluate_toolpath` still names each
-/// gate's field explicitly and report construction stays typed.
-pub trait MetricEvaluator {
-    type Verdict;
-    fn evaluate_gate(ctx: &ToolpathLoadContext<'_>, env: &GateEnv<'_>) -> Self::Verdict;
-    fn status(verdict: &Self::Verdict) -> verdict::CriterionStatus<'_>;
+pub use groups::{GroupCell, MetricEvaluator};
+
+/// The NotApplicableForOp verdict of a gate on a group that
+/// `limits::scope` does not judge.
+fn not_applicable(cell: crate::limits::NotJudged) -> UnmodeledReason {
+    UnmodeledReason::NotApplicableForOp(cell.reason.to_owned())
 }
 
 /// `MetricEvaluator` handle for the chipload gate.
 pub struct ChiploadGate;
 impl MetricEvaluator for ChiploadGate {
+    const LIMITS: &'static [crate::limits::LimitId] = &[
+        crate::limits::LimitId::ChipMax,
+        crate::limits::LimitId::ChipMin,
+    ];
     type Verdict = ChiploadVerdict;
-    fn evaluate_gate(ctx: &ToolpathLoadContext<'_>, env: &GateEnv<'_>) -> ChiploadVerdict {
-        chipload::evaluate(ctx, env)
+    type Extra = Option<Box<crate::feeds::FeedExplanation>>;
+    fn judge(
+        ctx: &ToolpathLoadContext<'_>,
+        env: &GateEnv<'_>,
+        population: groups::GroupPopulation<'_>,
+    ) -> (ChiploadVerdict, Self::Extra) {
+        chipload::judge_with_explanation(ctx, env, population)
     }
-    fn status(verdict: &ChiploadVerdict) -> verdict::CriterionStatus<'_> {
-        verdict.as_criterion_status()
+    fn not_judged(cell: crate::limits::NotJudged) -> ChiploadVerdict {
+        ChiploadVerdict::Unmodeled {
+            reason: not_applicable(cell),
+        }
     }
 }
 
 /// `MetricEvaluator` handle for the power gate.
 pub struct PowerGate;
 impl MetricEvaluator for PowerGate {
+    const LIMITS: &'static [crate::limits::LimitId] = &[crate::limits::LimitId::SpindlePower];
     type Verdict = PowerVerdict;
-    fn evaluate_gate(ctx: &ToolpathLoadContext<'_>, env: &GateEnv<'_>) -> PowerVerdict {
-        power::evaluate(ctx, env)
+    type Extra = ();
+    fn judge(
+        ctx: &ToolpathLoadContext<'_>,
+        env: &GateEnv<'_>,
+        population: groups::GroupPopulation<'_>,
+    ) -> (PowerVerdict, ()) {
+        (power::judge(ctx, env, population), ())
     }
-    fn status(verdict: &PowerVerdict) -> verdict::CriterionStatus<'_> {
-        verdict.as_criterion_status()
+    fn not_judged(cell: crate::limits::NotJudged) -> PowerVerdict {
+        PowerVerdict::Unmodeled {
+            reason: not_applicable(cell),
+        }
     }
 }
 
 /// `MetricEvaluator` handle for the deflection gate.
 pub struct DeflectionGate;
 impl MetricEvaluator for DeflectionGate {
-    type Verdict = verdict::DeflectionVerdict;
-    fn evaluate_gate(
+    const LIMITS: &'static [crate::limits::LimitId] = &[crate::limits::LimitId::ToolDeflection];
+    type Verdict = DeflectionVerdict;
+    type Extra = ();
+    fn judge(
         ctx: &ToolpathLoadContext<'_>,
         env: &GateEnv<'_>,
-    ) -> verdict::DeflectionVerdict {
-        deflection::evaluate(ctx, env)
+        population: groups::GroupPopulation<'_>,
+    ) -> (DeflectionVerdict, ()) {
+        (deflection::judge(ctx, env, population), ())
     }
-    fn status(verdict: &verdict::DeflectionVerdict) -> verdict::CriterionStatus<'_> {
-        verdict.as_criterion_status()
+    fn not_judged(cell: crate::limits::NotJudged) -> DeflectionVerdict {
+        DeflectionVerdict::Unmodeled {
+            reason: not_applicable(cell),
+        }
+    }
+}
+
+/// `MetricEvaluator` handle for the depth gate (the force budget, S3).
+pub struct DepthGate;
+impl MetricEvaluator for DepthGate {
+    const LIMITS: &'static [crate::limits::LimitId] = &[crate::limits::LimitId::ForceBudget];
+    type Verdict = DepthVerdict;
+    type Extra = ();
+    fn judge(
+        ctx: &ToolpathLoadContext<'_>,
+        env: &GateEnv<'_>,
+        population: groups::GroupPopulation<'_>,
+    ) -> (DepthVerdict, ()) {
+        (depth::judge(ctx, env, population), ())
+    }
+    fn not_judged(cell: crate::limits::NotJudged) -> DepthVerdict {
+        DepthVerdict::Unmodeled {
+            reason: not_applicable(cell),
+        }
+    }
+}
+
+/// `MetricEvaluator` handle for the cut-force reading (P17, report-only;
+/// the force budget). `None`: no reading (no trace, no force line, or a
+/// group the scope does not judge).
+pub struct CutForceGate;
+impl MetricEvaluator for CutForceGate {
+    const LIMITS: &'static [crate::limits::LimitId] = &[crate::limits::LimitId::ForceBudget];
+    type Verdict = Option<cut_force::CutForceReading>;
+    type Extra = ();
+    fn judge(
+        ctx: &ToolpathLoadContext<'_>,
+        env: &GateEnv<'_>,
+        population: groups::GroupPopulation<'_>,
+    ) -> (Option<cut_force::CutForceReading>, ()) {
+        (cut_force::judge(ctx, env, population), ())
+    }
+    fn not_judged(_cell: crate::limits::NotJudged) -> Option<cut_force::CutForceReading> {
+        None
     }
 }
 
@@ -666,23 +732,35 @@ fn evaluate_population(
         );
         drill_gates::evaluate(drill_op, &summary)
     });
-    // T1.1 — the chipload gate hands back its stage-labelled record
-    // alongside the verdict. Assembled here, at the single
-    // `ToolpathLoadVerdict` assembly site, so every report path (gcode
-    // export, GUI) sees the same one.
-    let (chipload_verdict, feed_explanation) = chipload::evaluate_with_explanation(ctx, &env);
+    // P29-6 6d: one walk puts each removing sample in its group; the one
+    // driver runs every gate over every group (`groups::judge_by_group`).
+    // The headline field of each gate is the verdict of the headline group;
+    // `groups` holds every other group. T1.1: the chipload gate hands back
+    // its stage-labelled record beside the headline verdict.
+    let populations = groups::populations(ctx, sim_trace);
+    let chipload = groups::judge_by_group::<ChiploadGate>(ctx, &env, &populations);
+    let power = groups::judge_by_group::<PowerGate>(ctx, &env, &populations);
+    let deflection = groups::judge_by_group::<DeflectionGate>(ctx, &env, &populations);
+    // S3 — the depth row, at the single assembly site.
+    let depth = groups::judge_by_group::<DepthGate>(ctx, &env, &populations);
+    // P17: the peak cutting force, report-only.
+    let cut_force = groups::judge_by_group::<CutForceGate>(ctx, &env, &populations);
+    let feed_explanation = chipload.extra;
     ToolpathLoadVerdict {
         toolpath_id: ctx.toolpath_id(),
-        chipload: chipload_verdict,
-        power: power::evaluate(ctx, &env),
-        deflection: deflection::evaluate(ctx, &env),
-        // S3 — the depth row. Assembled HERE, at the single
-        // `ToolpathLoadVerdict` assembly site, so the g-code export path
-        // and the GUI see one depth verdict.
-        depth: depth::evaluate(ctx, &env),
-        // P17: the peak cutting force, report-only, from the same points
-        // the force card bins.
-        cut_force: cut_force::evaluate(ctx, &env),
+        chipload: chipload.headline,
+        power: power.headline,
+        deflection: deflection.headline,
+        depth: depth.headline,
+        cut_force: cut_force.headline,
+        groups: verdict::GroupVerdicts {
+            headline: ctx.headline_group(),
+            chipload: chipload.groups,
+            power: power.groups,
+            deflection: deflection.groups,
+            depth: depth.groups,
+            cut_force: cut_force.groups,
+        },
         drill_gates,
         // Feed-modulation rollup captured by the simulator for this
         // toolpath, when the trace carries one. Populated here (not at
@@ -748,14 +826,15 @@ mod tests {
         )
     }
 
-    /// Run one gate generically through `MetricEvaluator` and project
-    /// the result into `(state, unmodeled-reason debug)`.
+    /// Run one gate through the one driver and project the headline into
+    /// `(state, unmodeled-reason debug)`.
     fn sweep<G: MetricEvaluator>(
         ctx: &ToolpathLoadContext<'_>,
         env: &GateEnv<'_>,
+        status: impl Fn(&G::Verdict) -> verdict::CriterionStatus<'_>,
     ) -> (LoadState, Option<String>) {
-        let v = G::evaluate_gate(ctx, env);
-        let s = G::status(&v);
+        let v = groups::headline::<G>(ctx, env);
+        let s = status(&v);
         (s.state, s.unmodeled_reason.map(|r| format!("{r:?}")))
     }
 
@@ -784,9 +863,18 @@ mod tests {
 
         let drill_ctx = ctx_for(&tool, &material, OperationType::Drill);
         for (label, (state, reason)) in [
-            ("chipload", sweep::<ChiploadGate>(&drill_ctx, &env)),
-            ("power", sweep::<PowerGate>(&drill_ctx, &env)),
-            ("deflection", sweep::<DeflectionGate>(&drill_ctx, &env)),
+            (
+                "chipload",
+                sweep::<ChiploadGate>(&drill_ctx, &env, ChiploadVerdict::as_criterion_status),
+            ),
+            (
+                "power",
+                sweep::<PowerGate>(&drill_ctx, &env, PowerVerdict::as_criterion_status),
+            ),
+            (
+                "deflection",
+                sweep::<DeflectionGate>(&drill_ctx, &env, DeflectionVerdict::as_criterion_status),
+            ),
         ] {
             assert_eq!(state, LoadState::Unmodeled, "{label}: drill kinematics");
             let reason = reason.unwrap_or_default();
@@ -798,9 +886,18 @@ mod tests {
 
         let mill_ctx = ctx_for(&tool, &material, OperationType::Pocket);
         for (label, (state, reason)) in [
-            ("chipload", sweep::<ChiploadGate>(&mill_ctx, &env)),
-            ("power", sweep::<PowerGate>(&mill_ctx, &env)),
-            ("deflection", sweep::<DeflectionGate>(&mill_ctx, &env)),
+            (
+                "chipload",
+                sweep::<ChiploadGate>(&mill_ctx, &env, ChiploadVerdict::as_criterion_status),
+            ),
+            (
+                "power",
+                sweep::<PowerGate>(&mill_ctx, &env, PowerVerdict::as_criterion_status),
+            ),
+            (
+                "deflection",
+                sweep::<DeflectionGate>(&mill_ctx, &env, DeflectionVerdict::as_criterion_status),
+            ),
         ] {
             assert_eq!(state, LoadState::Unmodeled, "{label}: no sim trace");
             let reason = reason.unwrap_or_default();
@@ -810,19 +907,28 @@ mod tests {
             );
         }
 
-        // The power gate is the only machine consumer: no machine →
-        // its dedicated `NotImplemented` refusal, evaluated before any
-        // other input check (pre-Phase-6 `evaluate_toolpath` parity).
+        // The power gate is the only machine consumer: no machine on a
+        // milling op → its dedicated `NotImplemented` refusal, before any
+        // other input check. P29-6 6d: on a drill the scope of the drill
+        // group answers first (`NotApplicableForOp`), with or without a
+        // machine.
         let no_machine = GateEnv {
             sim_trace: None,
             machine: None,
             tolerance: &tolerance,
         };
-        let (state, reason) = sweep::<PowerGate>(&drill_ctx, &no_machine);
+        let (state, reason) =
+            sweep::<PowerGate>(&mill_ctx, &no_machine, PowerVerdict::as_criterion_status);
         assert_eq!(state, LoadState::Unmodeled);
         assert!(
             reason.unwrap_or_default().contains("NotImplemented"),
             "power without machine must refuse NotImplemented"
+        );
+        let (_, reason) =
+            sweep::<PowerGate>(&drill_ctx, &no_machine, PowerVerdict::as_criterion_status);
+        assert!(
+            reason.unwrap_or_default().contains("NotApplicableForOp"),
+            "a drill is not judged by the side gates, with or without a machine"
         );
     }
 }

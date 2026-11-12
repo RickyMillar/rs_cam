@@ -6,11 +6,8 @@
 //! side tables that [`SampleContext`] holds, by `sample.move_index`, from
 //! `sample.source_intent` and from the span lookup of the gates.
 //!
-//! [`CutKind::is_judged_today`] states which kinds a gate judges today. The
-//! gates still read the span filter (`tool_load::locality::
-//! is_steady_state_for_gate`); the sentry
-//! `tests/a_sample_states_its_cut_kind_p29_3.rs` holds the two equal on
-//! every sample that is not air. P29-6 moves the gates onto the kind.
+//! P29-6 6d: every gate judges each sample that removes material in the
+//! group of its kind (`CutKind::group`, `tool_load::locality::judged_group`).
 //!
 //! The per-sample cost: one index into the cap table, one walk of the span
 //! path (2 to 4 ids, as the gates walk it), one `match`. No allocation.
@@ -184,9 +181,7 @@ impl<'a> SampleContext<'a> {
     /// capped step or a slot ring by the cap table, else the body.
     fn body_kind(&self, sample: &SimulationCutSample) -> CutKind {
         match self.cut_span(sample) {
-            // EXEMPT(P28-23)
             Some(SpanKind::DressupArtifact) => return CutKind::DressupRelief,
-            // EXEMPT(P28-22)
             Some(SpanKind::WaterlineCleanup) => {
                 return CutKind::Cleanup(CleanupKind::WaterlineSweep);
             }
@@ -208,13 +203,13 @@ impl<'a> SampleContext<'a> {
             // A capped move that no item names. With a semantic trace it is
             // the slot ring of a contour pocket (ruling Q4: inferred, not
             // stated). With no trace, no rule tells a slot ring from a
-            // capped step: the sample is the body.
+            // capped step: the sample is the body. Both kinds are in the
+            // body group, so every gate judges them; only the label is
+            // inferred (open item of `limits/CLAUDE.md`).
             MoveCap::NoItem => {
                 if self.caps.has_trace() {
-                    // EXEMPT(Q4-SlotRingInferred)
                     CutKind::SlotRing
                 } else {
-                    // EXEMPT(Q4-CappedStepNoTrace)
                     CutKind::Body
                 }
             }
@@ -233,12 +228,11 @@ impl CutKind {
     /// [`Self::DressupRelief`], not a [`Self::SlotRing`]: the span wins. When
     /// the spans are not valid, no span is read: the kind is the kind of
     /// the intent and the cap table (a relief or a cleanup move is then the
-    /// body), as the gates then read only the transit flag.
+    /// body).
     ///
     /// The intent wins over the span (`P29-3_DESIGN.md` section 3): a
-    /// `Linking` move inside an entry span is a link (row
-    /// `Q10-LinkingInEntrySpan`), and an `EntryPlunge` move in no entry span
-    /// is an entry (row `Q10-EntryPlungeInNoSpan`). A `Retract` feed and the
+    /// `Linking` move inside an entry span is a link, and an `EntryPlunge`
+    /// move in no entry span is an entry. A `Retract` feed and the
     /// obstacle rapid join two cuts: they are links. A peck ladder has no
     /// intent of its own: its plunges are plunges.
     #[must_use]
@@ -258,48 +252,13 @@ impl CutKind {
             | None => ctx.body_kind(sample),
         }
     }
-
-    /// True when a gate judges a cut of this kind today: the kind form of
-    /// the span filter `tool_load::locality::is_steady_state_for_gate`. The
-    /// sentry holds the two equal on every sample that is not air.
-    ///
-    /// The span filter states today's behaviour (ruling Q10). The stamper
-    /// flags each move of an entry, lead or link intent `in_transit_span`
-    /// (`AnnotatedToolpath::transit_moves_bitmap_from_intents`), so the
-    /// filter drops each such sample, in an entry span or not.
-    #[must_use]
-    pub fn is_judged_today(self) -> bool {
-        match self {
-            Self::Body
-            | Self::FirstPass(_)
-            | Self::SpringPass
-            | Self::CappedStep(_)
-            | Self::SlotRing
-            | Self::Drill => true,
-            // The configured entries: `is_configured_entry`. An entry
-            // plunge in no entry span is dropped as phantom transit by its
-            // flag, so it is not judged either.
-            // EXEMPT(P28-21, Q10-EntryPlungeInNoSpan)
-            Self::Entry(_) => false,
-            // The phantom transit of `is_phantom_transit`. A `Linking`
-            // sample inside an entry span is dropped as a configured entry.
-            // EXEMPT(P28-22, P28-23, Q10-LinkingInEntrySpan)
-            Self::Cleanup(_) | Self::LeadOut | Self::Link => false,
-            // A dogbone relief: its `DressupArtifact` span is phantom
-            // transit.
-            // EXEMPT(P28-23)
-            Self::DressupRelief => false,
-            // A feed through air above an entry, and a lead into the cut:
-            // the flag of the intent drops them.
-            // EXEMPT(C-LeadInApproach)
-            Self::EntryApproach | Self::LeadIn => false,
-        }
-    }
 }
 
 impl Cut {
-    /// The cut of one simulation sample; `None` for an air sample
-    /// (`SimulationCutSample::is_air`).
+    /// The cut of one simulation sample; `None` exactly when the sample
+    /// removes no material (`SimulationCutSample::removes_material`, P29-6
+    /// ruling Q2). An air-class sample that removes material (a skin above
+    /// the tip) is a cut; with no measured arc it has no engagement model.
     ///
     /// - The kind: [`CutKind::of_sample`].
     /// - The engagement: the door of the gates, `Engagement::from_sample`
@@ -310,7 +269,7 @@ impl Cut {
     /// - The facts: the facts of the body cut of the op.
     #[must_use]
     pub fn of_sample(sample: &SimulationCutSample, ctx: &SampleContext<'_>) -> Option<Self> {
-        if sample.is_air() {
+        if !sample.removes_material() {
             return None;
         }
         let engagement = Engagement::from_sample(sample, ctx.tool).map_or(

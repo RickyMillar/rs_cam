@@ -87,6 +87,9 @@ const TP: ToolpathId = ToolpathId::from_raw(15);
 fn abstaining_verdict(reason: UnmodeledReason) -> ToolpathLoadVerdict {
     ToolpathLoadVerdict {
         toolpath_id: TP,
+        groups: rs_cam_core::tool_load::verdict::GroupVerdicts::headline_only(
+            rs_cam_core::limits::CutGroup::Body,
+        ),
         chipload: ChiploadVerdict::Unmodeled { reason },
         power: PowerVerdict::Unmodeled {
             reason: UnmodeledReason::SimulationRequired,

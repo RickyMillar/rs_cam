@@ -108,6 +108,9 @@ fn metric(observed: f64, source: ChipBoundsSource) -> ChiploadMetric {
 fn verdict_with(chipload: ChiploadVerdict) -> ToolpathLoadVerdict {
     ToolpathLoadVerdict {
         toolpath_id: ToolpathId::from_raw(8),
+        groups: rs_cam_core::tool_load::verdict::GroupVerdicts::headline_only(
+            rs_cam_core::limits::CutGroup::Body,
+        ),
         chipload,
         power: PowerVerdict::Unmodeled {
             reason: UnmodeledReason::SimulationRequired,
@@ -143,7 +146,6 @@ fn live_op8_verdict() -> ToolpathLoadVerdict {
              diameter scale x0.42, hardness scale x1.00"
                 .to_owned(),
         ),
-        entry_spikes: vec![],
         burn_advisory: Some(Box::new(metric(
             LIVE_OBSERVED,
             ChipBoundsSource::VendorLutExtrapolated,
@@ -229,7 +231,6 @@ fn a_genuine_within_still_reads_within_band() {
         approach_to_min: Some(metric(0.006, ChipBoundsSource::VendorLut)),
         approach_to_max: metric(0.006, ChipBoundsSource::VendorLut),
         confidence: Confidence::Validated,
-        entry_spikes: vec![],
         burn_advisory: None,
     });
     let diags = diagnostics_from_load_verdict(&clean);

@@ -42,6 +42,7 @@
 //! | [`gcode_fixtures`] | the G-code golden corpus: one builder per fixture, the dialect list and the golden paths (G9) |
 //! | [`fingerprint`] | the single canonical FNV-1a-over-`Debug` toolpath fingerprint |
 //! | [`scallop_oracle`] | M4's analytic tool-envelope surface scorer + its ground-truth validation helpers |
+//! | [`kind_fixtures`] | the five simulated fixtures of the cut-kind sentries (Pocket with a ramp, Pocket with dogbones, Profile with tabs and leads, the D65 shelf, a 2D Adaptive helix) |
 //! | [`zladder`] | the commanded Z ladder read from `SpanKind::DepthPass` spans, plus the sample→`pass_index` join — and the measured record that the AS013 ladder has a SHORT FINAL PASS, which is why the F-027/F-031 bars were NOT converted to per-pass ratios |
 //!
 //! # Migration policy
@@ -71,6 +72,7 @@ pub mod fingerprint;
 pub mod gcode_fixtures;
 pub mod k5_cases;
 pub mod kernels;
+pub mod kind_fixtures;
 pub mod meshes;
 // `monge`, `reference_plate` and `scallop_oracle` read `rs_cam_core::metrology`,
 // which sits behind `test-support` (F085). A binary that uses one of them
