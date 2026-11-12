@@ -175,6 +175,22 @@ Design and predictions: `phases/P29-4_DESIGN.md` (lead rulings in section 8),
   `binding_limit`; the vendor depth table cells; a rivmap100 row for trap 1), then 7c, 7d.
   7c lowers the wanaka 3D rough proposals by 2 to 5 % (table in section 10.3); the operator
   has that table.
+- **P29-7 DONE** (2026-11-12): 7a `cf0c421d3` (`FeedsInput::of_operation`, the one
+  constructor), 7b `3e63a0902` (every op declares the rest of its cuts; `DeclaredFeed`,
+  `Presence`), amendment `f27ff3444`, 7c `eb6a4a4a7` (`feeds/planned.rs`, the driver, one
+  envelope loop over `LimitId::ALL`, `binding_cut`; 104 FM1 cells, lead recount 0 mismatches;
+  47 wanaka and rivmap probe rows equal), 7d `0807a9ff3` (one deflection limit; the modulator
+  part HELD). Test fix `abf09c546` (a k7 test red since 6d). Pins now: ROWS 39,
+  MAX_NEEDS_RULING 28, ROWS_WITH_A_FILE 38. Result and findings: section 16 of
+  `phases/P29-7_DESIGN.md`. What moved for the operator: wanaka 3D rough proposals fall 1.8 to
+  5.2 %; the rivmap100 live copy 3D Rough (ContourParallel, stated 8 mm) proposal goes 6.00 to
+  2.585 mm; groove ops read the full cone on every planned limit. Open: no repo machine and
+  op has Power as the lowest depth ceiling of a slot-declaring rough (p20i derives a test
+  machine); the chip rows of `cut_checks` reach no card (a zigzag Pocket first slot gives
+  ChipMax 0.1704 against 0.127 mm; a geodesic rough body exceeds ChipMin) and the `MayOccur`
+  note fills the card header (both P29-10); the unlifted slot-ring power gap (Q5); each op
+  declares one capped-step source; `U-PerimeterSweep` keeps `Who::Undeclared`;
+  `operation_kind: Option` is always `Some`. Next: design notes and predictions for P29-8.
 - **Known reds, not from P29-5b or later** (clean-up pass): `layered_framework_owns_the_ladder_w3`
   (pinned move hashes stale since `5d700703a`, which added `Move::feed_cap`; traced from git
   history, not from a build); `_litmatrix_rubbing_floor_clamp::ipe_pocket_ships_its_computed_
