@@ -85,6 +85,10 @@ pub struct SuggestSlots {
     /// (`SetupTransformInfo::is_z_flipped`); `None` when the toolpath has
     /// no setup.
     pub setup_z_flipped: Option<bool>,
+    /// P29-9 9c (ruling Q1 (a)): the axial stock (mm) that the nearest
+    /// earlier enabled op of the setup that cuts the same model leaves;
+    /// `None` when no such op states a leave above 0.
+    pub earlier_leave_mm: Option<f64>,
 }
 
 impl SuggestSlots {
@@ -100,6 +104,7 @@ impl SuggestSlots {
             stock: Some(&self.stock),
             dressups: Some(dressups),
             setup_z_flipped: self.setup_z_flipped,
+            upstream_leftover_stock_mm: self.earlier_leave_mm,
             ..SuggestContext::default()
         }
     }
@@ -169,8 +174,9 @@ pub struct SuggestContext<'a> {
     pub stock: Option<&'a StockContext>,
     /// Amount of material left from the upstream toolpath in this
     /// setup, in mm. `None` when this is the first op in the setup or
-    /// when the caller can't cheaply compute it. v1 doesn't use this;
-    /// v2 finish-DPP selection will.
+    /// when the caller can't cheaply compute it. P29-9 9c: the envelope
+    /// judges a finish pass at it (`feeds::planned::EarlierLeave`); the
+    /// speeds do not read it (ruling Q3).
     pub upstream_leftover_stock_mm: Option<f64>,
     /// Strategy choice from a neighboring (rough → finish) op. `None`
     /// when not applicable. v1 doesn't use this.

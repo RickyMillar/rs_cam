@@ -2320,7 +2320,36 @@ impl ProjectSession {
                     self.setup_transform_info(setup.face_up, setup.z_rotation)
                         .is_z_flipped()
                 }),
+            earlier_leave_mm: self.earlier_leave_mm(tc),
         }
+    }
+
+    /// P29-9 9c (ruling Q1 (a)): the axial stock (mm) that the nearest
+    /// earlier enabled op of `tc`'s setup that cuts the same model states
+    /// (`OperationConfig::axial_stock_to_leave_mm`, above 0), or `None`.
+    /// The order is the setup's toolpath order, the order of the
+    /// simulation (S0).
+    #[must_use]
+    pub fn earlier_leave_mm(&self, tc: &ToolpathConfig) -> Option<f64> {
+        let index = self.toolpath_configs.iter().position(|t| t.id == tc.id)?;
+        let setup = self
+            .setups
+            .iter()
+            .find(|s| s.toolpath_indices.contains(&index))?;
+        let at = setup.toolpath_indices.iter().position(|&i| i == index)?;
+        setup
+            .toolpath_indices
+            .get(..at)?
+            .iter()
+            .rev()
+            .filter_map(|&i| self.toolpath_configs.get(i))
+            .filter(|earlier| earlier.enabled && earlier.model_id == tc.model_id)
+            .find_map(|earlier| {
+                earlier
+                    .operation
+                    .axial_stock_to_leave_mm()
+                    .filter(|mm| mm.is_finite() && *mm > 0.0)
+            })
     }
 
     /// Build the pre-sim [`CutterOpProfile`] for one toolpath config —

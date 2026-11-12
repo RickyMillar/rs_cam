@@ -59,6 +59,14 @@
 //!   and with no margin inside. A tip on or outside the surface gives no
 //!   depth row. From below the rule needs the setup: no setup gives no row;
 //!   a setup that is not flipped judges `-depth`; a flipped setup `depth`.
+//! - Claim 8 (P29-9 9c, ruling Q1 (a), lead ruling after 9c): a finish pass
+//!   on one side with no cap is judged at the stock the earlier op leaves.
+//!   With a leave, the body power row reads the power at the leave (at the
+//!   proposal speeds); with no leave, it is `NoNumber(NoEarlierLeave)`. A
+//!   finish has no force-budget edge (`NoNumber(NoBound)`, row `S-NoBound`)
+//!   and, on its fixed depth axis, no deflection edge (`NoNumber(
+//!   NotJudgedHere)`, row `S-NotJudgedHere`): each says so on the record,
+//!   one row per declared cut, never a silent missing row.
 
 #![expect(
     clippy::expect_used,
@@ -996,4 +1004,71 @@ fn claim_7_a_project_curve_is_judged_at_the_lower_bound_of_its_depth_p29_9() {
         Some(1.0),
         "a flipped setup judges depth"
     );
+}
+
+#[test]
+fn claim_8_a_finish_is_judged_at_the_earlier_leave_p29_9() {
+    use rs_cam_core::limits::{CheckState, NoNumberReason};
+    let machine = MachineProfile::default();
+    let tool = fm1_tool(ToolType::BallNose, 6.0);
+    let op = rs_cam_core::compute::fixture_values::fixture_op(OperationType::Scallop);
+    let rows = |leave: Option<f64>| {
+        SafeEnvelope::for_cut(EnvelopeInput {
+            operation: &op,
+            tool: &tool,
+            machine: &machine,
+            material: &hardwood(),
+            lut: rs_cam_core::feeds::embedded_vendor_lut(),
+            spindle_strategy: SpindleStrategy::default(),
+            context: SuggestContext {
+                upstream_leftover_stock_mm: leave,
+                ..SuggestContext::default()
+            },
+        })
+        .expect("the Scallop envelope builds")
+        .cut_checks
+    };
+    let body = |rows: &[rs_cam_core::feeds::envelope::CutCheck], limit: LimitId| {
+        rows.iter()
+            .find(|r| r.cut == CutKind::Body && r.check.limit == limit)
+            .map(|r| r.check.clone())
+            .unwrap_or_else(|| panic_row(limit))
+    };
+    let with = rows(Some(0.5));
+    let without = rows(None);
+    let power = body(&with, LimitId::SpindlePower);
+    assert!(
+        power.value.is_some_and(|kw| kw > 0.0),
+        "the power at the leave: {power:?}"
+    );
+    // The power reads the leave: a deeper leave gives more power.
+    let deeper = body(&rows(Some(1.0)), LimitId::SpindlePower);
+    assert!(
+        deeper.value > power.value,
+        "the power at 1.0 mm {:?} is over the power at 0.5 mm {:?}",
+        deeper.value,
+        power.value
+    );
+    assert_eq!(
+        body(&without, LimitId::SpindlePower).state,
+        CheckState::NoNumber(NoNumberReason::NoEarlierLeave)
+    );
+    for rows in [&with, &without] {
+        assert_eq!(
+            body(rows, LimitId::ForceBudget).state,
+            CheckState::NoNumber(NoNumberReason::NoBound)
+        );
+        assert_eq!(
+            body(rows, LimitId::ToolDeflection).state,
+            CheckState::NoNumber(NoNumberReason::NotJudgedHere)
+        );
+    }
+}
+
+#[expect(
+    clippy::panic,
+    reason = "test code: a panic is how a test reports a failure"
+)]
+fn panic_row(limit: LimitId) -> rs_cam_core::limits::Check {
+    panic!("no body row of {limit:?}")
 }

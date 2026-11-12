@@ -1507,6 +1507,42 @@ impl OperationConfig {
         }
     }
 
+    /// P29-9 9c (ruling Q1 (a)): the axial stock (mm) that this op leaves
+    /// for the next op, or `None` when the op states none: the 3D Rough
+    /// `stock_to_leave_axial` (the planner offsets in Z), else the
+    /// `stock_to_leave` dial of a finish op ([`Self::stock_to_leave_dial`]).
+    /// The match names every variant.
+    #[must_use]
+    pub fn axial_stock_to_leave_mm(&self) -> Option<f64> {
+        match self {
+            OperationConfig::Adaptive3d(c) => Some(c.stock_to_leave_axial),
+            OperationConfig::Pencil(_)
+            | OperationConfig::Scallop(_)
+            | OperationConfig::UnifiedFinish(_)
+            | OperationConfig::SteepShallow(_)
+            | OperationConfig::RampFinish(_)
+            | OperationConfig::SpiralFinish(_)
+            | OperationConfig::RadialFinish(_)
+            | OperationConfig::HorizontalFinish(_)
+            | OperationConfig::Face(_)
+            | OperationConfig::Pocket(_)
+            | OperationConfig::Profile(_)
+            | OperationConfig::Adaptive(_)
+            | OperationConfig::VCarve(_)
+            | OperationConfig::Inlay(_)
+            | OperationConfig::InlayPlug(_)
+            | OperationConfig::Zigzag(_)
+            | OperationConfig::Trace(_)
+            | OperationConfig::Drill(_)
+            | OperationConfig::Bore(_)
+            | OperationConfig::Chamfer(_)
+            | OperationConfig::DropCutter(_)
+            | OperationConfig::Waterline(_)
+            | OperationConfig::ProjectCurve(_)
+            | OperationConfig::AlignmentPinDrill(_) => self.stock_to_leave_dial(),
+        }
+    }
+
     /// The config's `stock_to_leave` dial, or `None` when the op has none.
     /// The match names every variant, so a new op states whether it has
     /// the dial.

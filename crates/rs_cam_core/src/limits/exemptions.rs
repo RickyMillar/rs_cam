@@ -405,7 +405,11 @@ pub static EXEMPTIONS: [Exemption; 38] = [
         limit: &[LimitId::ForceBudget],
         who: Who::Reader("the depth row of a finish pass (NoNumberReason::NoBound) = P28-02"),
         class: R2,
-        where_: &["src/limits/project.rs", "src/machine/mod.rs"],
+        where_: &[
+            "src/feeds/envelope.rs",
+            "src/limits/project.rs",
+            "src/machine/mod.rs",
+        ],
         closes_in: "stays, as P28-02",
     },
     Exemption {
@@ -417,7 +421,7 @@ pub static EXEMPTIONS: [Exemption; 38] = [
              (NoNumberReason::NotJudgedHere)",
         ),
         class: NR,
-        where_: &["src/limits/project.rs"],
+        where_: &["src/feeds/envelope.rs", "src/limits/project.rs"],
         closes_in: "P29-10",
     },
     // U: one row for each cut that no limit reads before the simulation
@@ -495,6 +499,6 @@ pub static EXEMPTIONS: [Exemption; 38] = [
         who: Who::Facts("offset_ring is set from the Pocket family and the Roughing role"),
         class: NR,
         where_: &["src/compute/catalog/cuts.rs"],
-        closes_in: "P29-9",
+        closes_in: "later (a raster width rule; P29-9 ruling Q2 (b))",
     },
 ];

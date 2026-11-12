@@ -92,6 +92,7 @@ impl PlaneDepth {
             DeclaredDepth::Stated(_)
             | DeclaredDepth::OfTool(_)
             | DeclaredDepth::AtLeast(_)
+            | DeclaredDepth::EarlierLeave
             | DeclaredDepth::None(_) => Self::Body,
             DeclaredDepth::Own(own) => Self::Own(own),
             DeclaredDepth::Axial => Self::Axial,
@@ -196,25 +197,73 @@ pub enum BodyDepth {
     /// the bound proves `Exceeds` and never `Within`
     /// (`NoNumberReason::OnlyALowerBound`).
     AtLeast(f64),
+    /// P29-9 9c: the axial stock (mm) that the earlier op leaves; the
+    /// checks judge the finish cut at it.
+    EarlierLeave(f64),
+    /// P29-9 9c: a finish pass on the earlier op's leave, and no earlier op
+    /// states one: the checks of the body give `NoNumber(NoEarlierLeave)`.
+    NoEarlierLeave(NoEarlierLeave),
     /// No depth before the simulation, with the reason.
     None(NoEngagementModel),
+}
+
+/// P29-9 9c (ruling Q1 (a)): the axial stock that the earlier op leaves for
+/// a finish pass. The session fills it (`ProjectSession::suggest_slots`):
+/// the nearest earlier enabled op of the same setup that cuts the same
+/// model and states an axial leave above 0.
+#[derive(Debug, Clone, Copy, PartialEq)]
+pub enum EarlierLeave {
+    /// The leave (mm), above 0.
+    Mm(f64),
+    /// No leave, with the reason.
+    None(NoEarlierLeave),
+}
+
+/// Why a finish pass has no earlier leave.
+#[derive(Debug, Clone, Copy, PartialEq, Eq)]
+pub enum NoEarlierLeave {
+    /// No earlier enabled op of the setup that cuts the same model states
+    /// an axial leave above 0, or the reader holds no project.
+    NoEarlierOp,
+}
+
+impl EarlierLeave {
+    /// The leave of an optional value (mm): a value above 0 is a leave,
+    /// anything else is no earlier op.
+    #[must_use]
+    pub fn of_mm(mm: Option<f64>) -> Self {
+        match mm {
+            Some(v) if v.is_finite() && v > 0.0 => Self::Mm(v),
+            Some(_) | None => Self::None(NoEarlierLeave::NoEarlierOp),
+        }
+    }
 }
 
 /// P29-9: the facts of the plan that a declared depth reads beside the op
 /// and the tool. A reader with no project (FM1, the add door) passes
 /// [`Self::NONE`].
-#[derive(Debug, Clone, Copy, PartialEq, Eq, Default)]
+#[derive(Debug, Clone, Copy, PartialEq)]
 pub struct PlanFacts {
     /// 9b: whether the toolpath's setup inverts Z
     /// (`SetupTransformInfo::is_z_flipped`); `None`: not known.
     pub setup_z_flipped: Option<bool>,
+    /// 9c: the axial stock that the earlier op leaves.
+    pub earlier_leave: EarlierLeave,
 }
 
 impl PlanFacts {
-    /// No fact of the project.
+    /// No fact of the project (FM1, the add door): no setup, and no earlier
+    /// op (`None(NoEarlierOp)`).
     pub const NONE: Self = Self {
         setup_z_flipped: None,
+        earlier_leave: EarlierLeave::None(NoEarlierLeave::NoEarlierOp),
     };
+}
+
+impl Default for PlanFacts {
+    fn default() -> Self {
+        Self::NONE
+    }
 }
 
 impl BodyDepth {
@@ -231,6 +280,10 @@ impl BodyDepth {
             DeclaredDepth::AtLeast(tip) => match tip.lower_bound_mm(facts.setup_z_flipped) {
                 Some(mm) => Self::AtLeast(mm),
                 None => Self::None(NoEngagementModel::DepthAfterSimulation),
+            },
+            DeclaredDepth::EarlierLeave => match facts.earlier_leave {
+                EarlierLeave::Mm(mm) => Self::EarlierLeave(mm),
+                EarlierLeave::None(reason) => Self::NoEarlierLeave(reason),
             },
             DeclaredDepth::None(reason) => Self::None(reason),
             // Not reached: the body is on the body plane.
@@ -249,7 +302,12 @@ impl BodyDepth {
             Self::Plane(mm) if mm > 0.0 => Some(mm),
             // 9b: the calculator does not size the speeds at a lower bound
             // (P16: the depth is known after the simulation).
-            Self::Plane(_) | Self::AtLeast(_) | Self::None(_) => None,
+            // 9c (ruling Q3): the speeds of a finish keep the default table.
+            Self::Plane(_)
+            | Self::AtLeast(_)
+            | Self::EarlierLeave(_)
+            | Self::NoEarlierLeave(_)
+            | Self::None(_) => None,
         }
     }
 }

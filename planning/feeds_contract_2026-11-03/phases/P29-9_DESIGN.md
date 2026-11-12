@@ -514,3 +514,48 @@ N, `Exceeds`) and rivmap idx 3 (no bound) are withdrawn: the note read the sign 
 Unchanged by 9b: every FM1 cell (0 cells, no re-bless), the op golden (the kernel reads the same
 Z through the one function), every proposal and Suggest value of the four files, and the chip
 rows. Pins after 9b (close `P28-11`): ROWS 38, MAX_NEEDS_RULING 27, ROWS_WITH_A_FILE 37.
+
+## 17. The result of 9c against the prediction
+
+Measured 2026-11-13 on HEAD `ef78cf0e6` plus the 9c code: read-only loads, the session doors, every
+`cut_checks` row of the four project files against HEAD. FM1: 0 cells. No Suggest or proposal value
+moves.
+
+| Op | Row | Today (at the 0.2 mm proposal) | 9c (at the 0.5 mm leave) | Predicted (section 9.2) |
+|---|---|---|---|---|
+| wanaka operator idx 16 | body `SpindlePower` | 0.00152 kW | 0.00407 kW | 0.0029 kW |
+| wanaka work idx 16 | body `SpindlePower` | 0.00152 kW | 0.00407 kW | 0.0041 kW |
+| rivmap100 and rivmap100_live_0925 idx 2 | body `SpindlePower` | 0.00049 kW | 0.00137 kW | 0.0015 kW |
+
+The predicted force (4.13 N, 4.46 N, 2.65 N) and deflection (3.2 um, 3.4 um) have no row.
+
+Causes:
+
+1. Every check row reads the proposal speeds (P29-7 7c): 24000 rpm and the band chip 0.0762 mm on
+   both wanaka files. The prediction read each file's own stated speeds through the model
+   functions (chip 0.06436 mm and 0.07619 mm).
+2. The envelope draws no force-budget edge on a finish pass (ruling R2, the depth limit
+   `NoLimit(FinishPass)`) and no deflection edge on a fixed depth axis (`deflection_limit` returns
+   when `!plan.axes.ap_free()`; a finish with no cap and a Project Curve have a fixed depth axis).
+   So no force or deflection row exists for these ops.
+
+Lead ruling (2026-11-13): option 1, accept as built. One rule for every row: a check row reads the
+proposal speeds. A leave row that read the stated speeds would be a second rule.
+
+The silent gap is closed on the record in the same commit (the P29-9 acceptance: no op has a silent
+missing value): a depth ceiling that draws no edge for a reason of scope gives one row per
+declared cut with the reason, and no number moves (`SafeEnvelope::no_edge_reason`):
+
+- the force budget of a finish pass: `NoNumber(NoBound)` (row `S-NoBound`, = `P28-02`);
+- the deflection on a fixed depth axis: `NoNumber(NotJudgedHere)` (row `S-NotJudgedHere`).
+
+New rows on the four files: wanaka idx 16 and rivmap idx 2 (both files each), 4 force-budget and
+4 deflection rows per op; wanaka idx 5 and idx 9 and rivmap idx 3 (both files each), 3 deflection
+rows per op.
+
+OPEN: a finish pass has no force-budget row with a number (`P28-02`, ruled) and these ops have no
+deflection row with a number (`S-NotJudgedHere`, needs a ruling; closes in P29-10), so the earlier
+leave reaches only the power row today.
+
+9d (ruling Q2 (b)) is folded into this commit: the row `F-OffsetRing` is re-filed, `closes_in`
+"later (a raster width rule)". Text only.

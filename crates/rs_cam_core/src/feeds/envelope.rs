@@ -1430,6 +1430,9 @@ impl SafeEnvelope {
             &entry,
             crate::feeds::planned::PlanFacts {
                 setup_z_flipped: input.context.setup_z_flipped,
+                earlier_leave: crate::feeds::planned::EarlierLeave::of_mm(
+                    input.context.upstream_leftover_stock_mm,
+                ),
             },
         );
         let inputs = OwnedInputs {
@@ -2485,6 +2488,26 @@ impl SafeEnvelope {
         let mut out = Vec::new();
         for edge in self.ceilings.clone() {
             let Some(rows) = self.ceiling_rows(edge, tool.as_ref(), speeds.as_ref()) else {
+                // P29-9 9c: a limit that draws no edge for a reason of scope
+                // says so on the record, one row per declared cut (no op has
+                // a silent missing value). No number moves.
+                if let Some(reason) = self.no_edge_reason(edge) {
+                    out.extend(self.inputs.cuts.list().iter().map(|c| {
+                        let depth = PlaneDepth::of_declared(c.depth);
+                        // A cut at its own depth holds that depth, as on
+                        // every depth row (P29-8 8d).
+                        let value = match depth {
+                            PlaneDepth::Own(own) => Some(own.mm),
+                            PlaneDepth::Body | PlaneDepth::Axial => None,
+                        };
+                        CutRow::of(c.kind, c.presence, depth, value, Err(reason)).check(
+                            edge.limit(),
+                            "mm",
+                            BoundSide::Ceiling,
+                            None,
+                        )
+                    }));
+                }
                 continue;
             };
             let always = || {
@@ -2533,6 +2556,39 @@ impl SafeEnvelope {
                 );
             }
         }
+        // P29-9 9c: a finish pass on the earlier op's leave with no leave
+        // has no depth: every depth and power row of a cut on the body plane
+        // gives `NoNumber(NoEarlierLeave)`.
+        if let BodyDepth::NoEarlierLeave(_) = self.inputs.cuts.body_depth() {
+            for row in &mut out {
+                // A scope answer (no bound, not judged here) stays: the
+                // limit draws no edge whatever the depth.
+                if row.own_depth.is_none()
+                    && !matches!(row.cut, CutKind::Entry(_))
+                    && !matches!(
+                        row.check.state,
+                        crate::limits::CheckState::NoNumber(
+                            crate::limits::NoNumberReason::NoBound
+                                | crate::limits::NoNumberReason::NotJudgedHere
+                        )
+                    )
+                    && matches!(
+                        row.check.limit,
+                        crate::limits::LimitId::ForceBudget
+                            | crate::limits::LimitId::ToolDeflection
+                            | crate::limits::LimitId::VendorDepthTable
+                            | crate::limits::LimitId::SpindlePower
+                    )
+                {
+                    row.check.value = None;
+                    row.check.bound = None;
+                    row.check.margin = None;
+                    row.check.state = crate::limits::CheckState::NoNumber(
+                        crate::limits::NoNumberReason::NoEarlierLeave,
+                    );
+                }
+            }
+        }
         // P29-8 8d: an entry row names why its entry rule gives no feed.
         for row in &mut out {
             if let CutKind::Entry(kind) = row.cut {
@@ -2544,6 +2600,31 @@ impl SafeEnvelope {
             }
         }
         self.cut_checks = out;
+    }
+
+    /// P29-9 9c: why a depth ceiling draws no edge on this envelope, when
+    /// the reason is a scope fact of today; `None` for every other reason
+    /// (the depth ceiling then gives no row, as before). One match, no
+    /// wildcard.
+    ///
+    /// - The deflection on a fixed depth axis (a finish with no cap, a
+    ///   Project Curve): the envelope solves no depth there,
+    ///   `NoNumber(NotJudgedHere)`.
+    /// - The force budget of a finish pass (ruling R2, the depth limit
+    ///   `NoLimit(FinishPass)`): `NoNumber(NoBound)`.
+    fn no_edge_reason(&self, edge: CeilingEdge) -> Option<crate::limits::NoNumberReason> {
+        use crate::limits::{DepthLimit, NoDepthLimit, NoNumberReason};
+        match edge {
+            // EXEMPT(S-NotJudgedHere)
+            CeilingEdge::Deflection => {
+                (!self.axes.ap_free()).then_some(NoNumberReason::NotJudgedHere)
+            }
+            // EXEMPT(S-NoBound)
+            CeilingEdge::ForceBudget => (self.inputs.cuts.list().body_facts().depth_rule
+                == DepthLimit::NoLimit(NoDepthLimit::FinishPass))
+            .then_some(NoNumberReason::NoBound),
+            CeilingEdge::VendorDepthTable | CeilingEdge::Power => None,
+        }
     }
 
     /// The speeds that the proposal ships (one calculator call), for the
@@ -2570,9 +2651,15 @@ impl SafeEnvelope {
         // P29-9 9b: a body that states a lower bound of its depth is judged
         // at the bound (a Project Curve has no proposal depth); every other
         // body at the proposal depth.
+        // P29-9 9c: a finish pass on the earlier op's leave is judged at
+        // the leave; with no leave its body rows have no number (set after
+        // the rows, `read_declared_cuts`).
         let (ap, lower_bound) = match cuts.body_depth() {
             BodyDepth::AtLeast(b) => (b, true),
-            BodyDepth::Plane(_) | BodyDepth::None(_) => (self.proposal.get().ap_mm()?, false),
+            BodyDepth::EarlierLeave(leave) => (leave, false),
+            BodyDepth::Plane(_) | BodyDepth::NoEarlierLeave(_) | BodyDepth::None(_) => {
+                (self.proposal.get().ap_mm()?, false)
+            }
         };
         let bound_of = |depth: PlaneDepth| match depth {
             PlaneDepth::Body => lower_bound,
@@ -2710,6 +2797,15 @@ impl SafeEnvelope {
                     return None;
                 }
                 let sp = speeds?;
+                // P29-9 9c: the body power at the earlier op's leave, else at
+                // the proposal depth.
+                let power_ap = match cuts.body_depth() {
+                    BodyDepth::EarlierLeave(leave) => leave,
+                    BodyDepth::Plane(_)
+                    | BodyDepth::AtLeast(_)
+                    | BodyDepth::NoEarlierLeave(_)
+                    | BodyDepth::None(_) => p.ap_mm,
+                };
                 let mut input = FeedsInput::of_operation(
                     &self.inputs.operation,
                     &self.inputs.tool,
@@ -2718,17 +2814,17 @@ impl SafeEnvelope {
                     self.inputs.lut,
                     self.inputs.spindle_strategy,
                 );
-                input.axial_depth_mm = Some(p.ap_mm);
+                input.axial_depth_mm = Some(power_ap);
                 input.radial_width_mm = Some(p.ae_mm);
                 let line = input.power_force_line()?;
                 let effective_d = crate::feeds::engagement::EngagedDiameter::of_hint(
                     input.tool_geometry,
                     input.tool_diameter,
                     input.cut_body.max_cut_diameter_mm,
-                    p.ap_mm,
+                    power_ap,
                 );
                 let power = |w: f64| {
-                    super::power_model_terms(&input, line, p.ap_mm, w, effective_d, sp.r.rpm)
+                    super::power_model_terms(&input, line, power_ap, w, effective_d, sp.r.rpm)
                         .kw_at_feed(sp.r.feed_rate_mm_min)
                 };
                 // P29-8 8d: an entry (at its own depth, or a plunge) at its
@@ -3229,8 +3325,12 @@ fn axes_plan(
         // gives no depth leaves the axis free and not stated.
         Axial::ChamferWidth(_) => match cuts.body_depth() {
             BodyDepth::Plane(ap) => (true, Some(ap), ap),
-            // Not reached for a chamfer: a lower bound is a surface offset.
-            BodyDepth::AtLeast(_) | BodyDepth::None(_) => (true, None, base.axial_depth_mm),
+            // Not reached for a chamfer: a lower bound is a surface offset,
+            // an earlier leave a finish pass.
+            BodyDepth::AtLeast(_)
+            | BodyDepth::EarlierLeave(_)
+            | BodyDepth::NoEarlierLeave(_)
+            | BodyDepth::None(_) => (true, None, base.axial_depth_mm),
         },
         // P10: an unset per-pass depth, Z step or peck is free and not
         // stated, as an unset one-pass depth (S11).

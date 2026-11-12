@@ -72,6 +72,10 @@ pub enum NoNumberReason {
     /// holds at the bound, so the check proves nothing: only a bound that
     /// fails proves `Exceeds`.
     OnlyALowerBound,
+    /// P29-9 9c: the cut is a finish pass on the stock that the earlier op
+    /// leaves, and no earlier op of the setup that cuts the same model
+    /// states a leave (or the reader has no project).
+    NoEarlierLeave,
     /// A value with no bound. This is a scope exemption of the P28 audit
     /// (today: the depth of a finish or semi-finish pass, ruling R2), NOT a
     /// geometry reason. P29-3 lists it for a ruling. It is never

@@ -126,6 +126,11 @@ pub enum DeclaredDepth {
     /// Curve: the tip below the model surface; the stock above the surface
     /// adds to it). The setup frame resolves it ([`TipDepth::lower_bound_mm`]).
     AtLeast(TipDepth),
+    /// P29-9 9c (ruling Q1 (a)): the axial stock that the earlier op leaves
+    /// (a finish pass on one side). The session gives the leave
+    /// (`feeds::planned::EarlierLeave`); the calculator does not read it
+    /// (ruling Q3: the speeds keep the default table, row `P28-31`).
+    EarlierLeave,
     /// No depth is stated, or the simulation gives it.
     None(NoEngagementModel),
 }
@@ -399,6 +404,10 @@ impl DeclaredCut {
                         return CutEngagement::NoModel(NoEngagementModel::DepthAfterSimulation);
                     }
                 },
+                // The earlier leave needs the session; this reader holds none.
+                DeclaredDepth::EarlierLeave => {
+                    return CutEngagement::NoModel(NoEngagementModel::NoStatedDepth);
+                }
                 // Not reached: an axial cut is the straight plunge above.
                 DeclaredDepth::Axial => {
                     return CutEngagement::NoModel(NoEngagementModel::NoStatedDepth);
@@ -789,6 +798,7 @@ impl OperationConfig {
             | DeclaredDepth::Axial
             | DeclaredDepth::OfTool(_)
             | DeclaredDepth::AtLeast(_)
+            | DeclaredDepth::EarlierLeave
             | DeclaredDepth::None(_) => (no_width, no_depth),
         };
         for kind in contract.record_kinds().kinds() {
@@ -805,6 +815,7 @@ impl OperationConfig {
                     | DeclaredDepth::Axial
                     | DeclaredDepth::OfTool(_)
                     | DeclaredDepth::AtLeast(_)
+                    | DeclaredDepth::EarlierLeave
                     | DeclaredDepth::None(_) => no_depth,
                 }),
                 EntryKind::Helix => {
@@ -934,10 +945,24 @@ impl OperationConfig {
     /// P29-5b). P29-9 9a: a chamfer states the depth of the tool that cuts
     /// its width ([`ToolDepth::Chamfer`]); a peck is a drill cycle (ruling
     /// Q4). P29-9 9b: a surface offset states a lower bound of the depth
-    /// ([`TipDepth`]); the simulation gives the depth.
+    /// ([`TipDepth`]); the simulation gives the depth. P29-9 9c: a finish
+    /// pass on one side with no cap states the earlier op's leave
+    /// ([`DeclaredDepth::EarlierLeave`]).
     fn declared_depth(&self) -> DeclaredDepth {
         let not_stated = DeclaredDepth::None(NoEngagementModel::NoStatedDepth);
         match self.cut_spec().axial {
+            // P29-9 9c (ruling Q1 (a)): a finish pass on one side (the depth
+            // limit `FinishPass`) with no cap cuts the stock that the
+            // earlier op leaves. A groove (VCarve) follows its outline: no
+            // earlier op's leave is its depth.
+            Axial::Surface { max: None }
+                if self.op_type().body_depth_limit()
+                    == crate::limits::DepthLimit::NoLimit(
+                        crate::limits::NoDepthLimit::FinishPass,
+                    ) =>
+            {
+                DeclaredDepth::EarlierLeave
+            }
             Axial::PerPass(s) | Axial::ZStep(s) | Axial::OnePass(s) | Axial::Surface { max: s } => {
                 s.map_or(not_stated, |s| DeclaredDepth::Stated(s.mm()))
             }
