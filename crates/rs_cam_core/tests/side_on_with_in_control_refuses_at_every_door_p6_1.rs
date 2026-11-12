@@ -275,7 +275,7 @@ fn the_profile_generator_cuts_side_on_p6_3() {
         .toolpath()
         .moves
         .iter()
-        .filter(|m| m.intent == MoveIntent::FinishingCut)
+        .filter(|m| m.intent == MoveIntent::ClearingCut)
         .map(|m| m.target)
         .collect();
     assert!(!cuts.is_empty(), "side On cuts");

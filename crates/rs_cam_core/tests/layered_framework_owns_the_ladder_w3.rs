@@ -606,14 +606,14 @@ fn zigzag_trace_and_profile_take_the_region_order() {
 
 /// The fed cuts that stand on a tab top (`-DEPTH + TAB_H`), with their
 /// index in the toolpath. An entry ramp can pass through that Z, so only a
-/// `FinishingCut` counts.
+/// `ClearingCut` counts (P29-5b: a Profile level clears).
 fn tab_top_moves(moves: &[Move]) -> Vec<usize> {
     moves
         .iter()
         .enumerate()
         .filter(|(_, m)| {
             matches!(m.move_type, MoveType::Linear { .. })
-                && m.intent == MoveIntent::FinishingCut
+                && m.intent == MoveIntent::ClearingCut
                 && (m.target.z - (-DEPTH + TAB_H)).abs() < 1e-6
         })
         .map(|(i, _)| i)

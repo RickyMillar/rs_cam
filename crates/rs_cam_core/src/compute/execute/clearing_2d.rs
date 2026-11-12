@@ -21,7 +21,7 @@ use crate::geo::P2;
 use crate::interrupt::CancelCheck;
 use crate::polygon::Polygon2;
 use crate::tool::MillingCutter;
-use crate::toolpath::{SidedToolpath, Toolpath};
+use crate::toolpath::{MoveIntent, SidedToolpath, Toolpath};
 use crate::trace::semantic_trace::ToolpathSemanticContext;
 
 use super::OffsetFailures;
@@ -714,13 +714,17 @@ impl LayeredOp for ProfilePass<'_> {
                 tp.append(crate::ops::profile::profile_path_open_to_toolpath(
                     &contour.ring,
                     &params,
+                    MoveIntent::ClearingCut,
                 ));
                 continue;
             }
+            // P29-5b: a Profile level is a full slot into fresh stock (D3)
+            // and the op is a roughing op, so its fed moves clear.
             let pass = crate::ops::profile::profile_ring_to_toolpath(
                 &contour.ring,
                 &params,
                 params.side.ring_material(),
+                MoveIntent::ClearingCut,
             );
             let tabbed =
                 crate::dressup::apply_tabs(pass.toolpath, &contour.tabs, level.z, level.final_z);

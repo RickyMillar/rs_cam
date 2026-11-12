@@ -282,7 +282,8 @@ fn an_open_path_is_cut_on_the_line_with_no_chord_p6_3() {
 /// move leaves the line, so none goes past its end normals. The ramp is
 /// emitted on the L (it walks back and forth on the first leg). On the
 /// 2 mm line the ramp has no room, and the entry stays a plunge (measured
-/// 2026-10-22: each level is `EntryPlunge` then `FinishingCut`).
+/// 2026-10-22: each level is `EntryPlunge` then a fed cut; P29-5b: the
+/// fed cut is `ClearingCut`).
 #[test]
 fn a_ramp_entry_stays_on_an_open_path_p6_3() {
     let mut dressups = dressed();

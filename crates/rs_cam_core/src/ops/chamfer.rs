@@ -30,7 +30,7 @@ use crate::ops::profile::{
 use crate::polygon::Polygon2;
 use crate::selection::EdgeMaterial;
 use crate::toolpath::RingMaterial;
-use crate::toolpath::{MaterialRing, SidedToolpath, Toolpath};
+use crate::toolpath::{MaterialRing, MoveIntent, SidedToolpath, Toolpath};
 
 /// Where the material is beside a chamfered outline (the module doc).
 ///
@@ -214,6 +214,7 @@ pub(crate) fn chamfer_rings_at_z(
             &ring.points,
             &profile_params,
             ring.material,
+            MoveIntent::FinishingCut,
         ));
     }
     tp
@@ -292,7 +293,11 @@ pub(crate) fn chamfer_open_at_z(
     };
     let mut tp = SidedToolpath::new();
     for path in paths {
-        tp.append(profile_path_open_to_toolpath(path, &profile_params));
+        tp.append(profile_path_open_to_toolpath(
+            path,
+            &profile_params,
+            MoveIntent::FinishingCut,
+        ));
     }
     tp
 }

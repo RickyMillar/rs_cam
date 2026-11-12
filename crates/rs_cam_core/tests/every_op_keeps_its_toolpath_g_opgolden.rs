@@ -78,6 +78,12 @@
 //!   3D stock read caps (`FeedCapSource::StockRead3d`) is a cut of its own,
 //!   so the per-cut RDP moves its points inside the chord tolerance, as
 //!   D65's `CappedSplit3d` steps do; the cap sits in the move hash.
+//! - P29-5b-1 (2026-11-12, lead ruling Q4): field-only bless of
+//!   `moves_hash` of `profile/each_face`, `profile/fresh`,
+//!   `profile/inside`, `profile/on_closed`, `profile/on_open` and
+//!   `profile/rest`. The fed moves of a Profile level are now
+//!   `ClearingCut` (they were `FinishingCut`). The intent sits in the move
+//!   hash; `gcode_hash` and every other field stay.
 //!
 //! `RS_CAM_OPGOLDEN_DUMP_GCODE=<dir>` writes the program of each arm into
 //! `<dir>/<op>__<arm>.nc`. Use it to show that a change of `gcode_hash`

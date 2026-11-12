@@ -15,7 +15,7 @@ use rs_cam_core::ops::pocket::{
 use rs_cam_core::ops::profile::{ProfileParams, profile_path_reported, profile_path_to_toolpath};
 use rs_cam_core::ops::zigzag::{ZigzagParams, lines_to_toolpath, zigzag_lines_reported};
 use rs_cam_core::polygon::Polygon2;
-use rs_cam_core::toolpath::Toolpath;
+use rs_cam_core::toolpath::{MoveIntent, Toolpath};
 
 /// One pocket level: the ring cascade, then the stamp at `params.cut_depth`.
 pub fn pocket_level(polygon: &Polygon2, params: &PocketParams) -> Toolpath {
@@ -34,7 +34,13 @@ pub fn pocket_level(polygon: &Polygon2, params: &PocketParams) -> Toolpath {
 pub fn profile_level(polygon: &Polygon2, params: &ProfileParams) -> Toolpath {
     match profile_path_reported(polygon, params).0 {
         Some(contour) => {
-            profile_path_to_toolpath(&contour, params, params.side.ring_material()).toolpath
+            profile_path_to_toolpath(
+                &contour,
+                params,
+                params.side.ring_material(),
+                MoveIntent::ClearingCut,
+            )
+            .toolpath
         }
         None => Toolpath::new(),
     }

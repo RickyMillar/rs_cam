@@ -51,7 +51,7 @@ use rs_cam_core::ops::profile::{
 };
 use rs_cam_core::polygon::Polygon2;
 use rs_cam_core::session::{Command, SetToolpathParamArgs};
-use rs_cam_core::toolpath::{MoveType, Toolpath};
+use rs_cam_core::toolpath::{MoveIntent, MoveType, Toolpath};
 
 /// Tool diameter (mm): radius 3.
 const TOOL_D: f64 = 6.0;
@@ -459,7 +459,12 @@ fn tabs_lifts_match_apply_tabs_for_the_same_points_p5() {
     // The point snaps to the outline at (13, 20); the ring takes its
     // nearest point.
     let tabbed = tabbed_ring(&ring, &[P2::new(13.0, 20.0)], W, R);
-    let pass = profile_ring_to_toolpath(&tabbed.ring, &params, params.side.ring_material());
+    let pass = profile_ring_to_toolpath(
+        &tabbed.ring,
+        &params,
+        params.side.ring_material(),
+        MoveIntent::ClearingCut,
+    );
     let want = cut_tabs(&apply_tabs(pass.toolpath, &tabbed.tabs(H), Z, Z));
     assert_eq!(want.len(), 1);
     for (g, w) in got.iter().zip(&want) {

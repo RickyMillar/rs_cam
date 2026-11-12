@@ -207,9 +207,15 @@ pub fn on_line_contours(polygon: &Polygon2) -> Vec<OnLineContour> {
 /// the last point, retract. No move goes back to the first point, and the
 /// pass states no closed side, so no lead goes on it. `params.climb` is
 /// not read: an open path keeps its drawn direction (L-1). A path below 2
-/// points emits nothing.
+/// points emits nothing. The caller states the intent of the fed moves
+/// (`body_intent`, P29-5b): Profile states `ClearingCut`, Chamfer states
+/// `FinishingCut`.
 #[must_use]
-pub fn profile_path_open_to_toolpath(path: &[P2], params: &ProfileParams) -> SidedToolpath {
+pub fn profile_path_open_to_toolpath(
+    path: &[P2],
+    params: &ProfileParams,
+    body_intent: MoveIntent,
+) -> SidedToolpath {
     let mut tp = SidedToolpath::new();
     if path.len() < 2 {
         return tp;
@@ -223,7 +229,7 @@ pub fn profile_path_open_to_toolpath(path: &[P2], params: &ProfileParams) -> Sid
         params.safe_z,
         params.feed_rate,
         params.plunge_rate,
-        MoveIntent::FinishingCut,
+        body_intent,
     );
     tp
 }
@@ -243,12 +249,22 @@ pub fn profile_path_open_to_toolpath(path: &[P2], params: &ProfileParams) -> Sid
 ///
 /// `material` (P6.0c): where the material is beside the ring. Profile
 /// states [`ProfileSide::ring_material`]; Chamfer states it per ring.
+///
+/// `body_intent` (P29-5b): the intent of the fed moves of the ring. Profile
+/// states `ClearingCut`, because each level is a full slot into fresh stock
+/// (D3) and the op is a roughing op. Chamfer states `FinishingCut`.
 pub fn profile_path_to_toolpath(
     contour: &[P2],
     params: &ProfileParams,
     material: RingMaterial,
+    body_intent: MoveIntent,
 ) -> SidedToolpath {
-    profile_ring_to_toolpath(&profile_ring(contour, params.climb), params, material)
+    profile_ring_to_toolpath(
+        &profile_ring(contour, params.climb),
+        params,
+        material,
+        body_intent,
+    )
 }
 
 /// The closed ring a profile pass cuts, in cut order: the contour, reversed
@@ -265,11 +281,14 @@ pub fn profile_ring(contour: &[P2], climb: bool) -> Vec<P2> {
 }
 
 /// One pass along `ring` (already in cut order, see [`profile_ring`]) at
-/// `params.cut_depth`, with the stated `material` side (P6.0c).
+/// `params.cut_depth`, with the stated `material` side (P6.0c). The fed
+/// moves of the ring take the intent `body_intent` (P29-5b, see
+/// [`profile_path_to_toolpath`]).
 pub fn profile_ring_to_toolpath(
     ring: &[P2],
     params: &ProfileParams,
     material: RingMaterial,
+    body_intent: MoveIntent,
 ) -> SidedToolpath {
     let mut tp = SidedToolpath::new();
     let points: Vec<P3> = ring
@@ -282,7 +301,7 @@ pub fn profile_ring_to_toolpath(
             safe_z: params.safe_z,
             feed: params.feed_rate,
             plunge: params.plunge_rate,
-            body_intent: MoveIntent::FinishingCut,
+            body_intent,
         },
         material,
     );
@@ -306,7 +325,13 @@ mod tests {
     fn profile_level(polygon: &Polygon2, params: &ProfileParams) -> Toolpath {
         match profile_path_reported(polygon, params).0 {
             Some(contour) => {
-                profile_path_to_toolpath(&contour, params, params.side.ring_material()).toolpath
+                profile_path_to_toolpath(
+                    &contour,
+                    params,
+                    params.side.ring_material(),
+                    MoveIntent::ClearingCut,
+                )
+                .toolpath
             }
             None => Toolpath::new(),
         }
