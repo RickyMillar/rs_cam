@@ -100,6 +100,7 @@ fn readout(session: &ProjectSession) -> Readout {
             | CutKind::Body
             | CutKind::FirstPass(_)
             | CutKind::SpringPass
+            | CutKind::WallFinish
             | CutKind::EntryApproach
             | CutKind::Cleanup(_)
             | CutKind::CappedStep(_)

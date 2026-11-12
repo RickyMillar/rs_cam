@@ -728,3 +728,125 @@ Pins with these rulings (after 5b option A and 5c: 48 / 37 / 41):
 | 7d | `P28-15`, `F-LeaveAfter` | 39 | 28 | 38 |
 
 The implementer recounts each pin from the array; the array wins over this table.
+
+## 14. Result of 7a and 7b
+
+Written 2026-11-12 by the implementer, on HEAD `267dee41c`. Two patches, in order:
+`step_7a.patch`, `step_7b.patch`. No number of the product moved: FM1 is byte-equal after each
+commit with no re-bless, and the op golden diff equals `opgolden_known_46_rows.txt` after each.
+
+### 14.1 Commit 7a: one constructor of `FeedsInput`
+
+- `FeedsInput` moved to `feeds/input.rs`. It has one constructor, `FeedsInput::of_operation`
+  (the body of the deleted `suggest::feeds_input_for_operation`), and a private zero-size
+  field `door: Door`. The other fields are `pub(in crate::feeds)`. A new field `body_facts`
+  holds `operation.cuts().body_facts()`; Step 5 (`calculator/feed.rs`) reads
+  `input.body_facts.thins_chip`. The marker there keeps `P28-18, P28-19`.
+- Compile-fail proof (throwaway, deleted): a struct update in an integration test fails with
+  E0451 on every field; a struct update inside `feeds/tests.rs` fails with E0451 on `door`.
+  `rg -n "FeedsInput \{" crates/` finds no site (the struct line in `input.rs` reads
+  `FeedsInput<'a> {`).
+- The named `with_*` methods: `with_no_vendor_table` (the formula path; no product door reaches
+  it) and `with_feed_max_rate` (the op feed cap of P21c; no product door states it, Q11). Read
+  accessors where a reader outside `feeds` exists: `material`, `machine`, `tool_diameter`,
+  `flute_count`, `cut_body`, `tool_geometry`, `tool_series`, `vendor_lut`.
+- Deleted: `suggest::feeds_input_for_operation`, `PowerCases::NOMINAL` (no reader).
+- Row `F-ThinsChip`: `where_` loses `src/feeds/calculator/feed.rs`; `closes_in` "later (no
+  geometry rule for a finish pass; P28-18 is a ruling)".
+- Sites moved: the 82 literals (39 `feeds/tests.rs`, 1 `explain_payload.rs`, 1
+  `vendor_normalize.rs`, 40 in 27 core integration files, 1 viz test) and every caller of the
+  old door (8 product files with `suggest.rs`, 29 test files with one viz test). New helper `tests/common/feeds_input.rs`
+  (`op_of_row_key`, `op_of_row_key_with_depth`, `op_at_depth`, `op_with`, `tool_of_hint`).
+  A (Pocket, Roughing) literal became a stock Face; a slot became a Pocket; a (Contour, Finish)
+  cut became a Steep/Shallow; a (Scallop, Finish) cut with a depth became a Unified Finish; a
+  (Parallel, Finish) cut with a depth became a Ramp Finish.
+- Expectations that moved: 2, both in `_litmatrix_scallop_refuses_flat`. A Scallop op refuses a
+  bull nose by its registry tool rule (old: `Ok`), and its refusal of a flat end mill names the
+  op and its tools (old: the scallop-height text). Not blessed: the bull test is deleted (no
+  Scallop-family op takes a bull nose), and the message claim moved to the drop cutter case,
+  where the scallop rule is the rule that refuses (same text as before).
+- The implementer's own deletions and narrowings (the limit was five deletions; one test was
+  deleted), each with a proposal the lead can reverse:
+  1. `scallop_accepts_bull_endmill` deleted; the flat-message claim moved to the drop cutter.
+  2. `chipload_bounds_skip_doc_derating_for_drill_ops` lost its depth half (renamed
+     `a_drill_cycle_reads_the_point_of_its_side_row`): no op gives a drill depth.
+  3. `test_roughing_deeper_than_finishing` keeps one of seven families (Contour: Profile against
+     Steep/Shallow); no op gives the other six pairs.
+  4. `long_tool_derate_is_shown_ld1` lost its "no stickout" row: a tool states one.
+  5. `lut_resolver_census_a6`: the pre-a4 arm (no op kind) is a Pencil, which routes as stated.
+- Inputs that changed in tests that still pass:
+  - The row-key sweeps skip a key that no op gives: `rubbing_floor_envelope_band_p1` keeps 7 of
+    14 keys per tool and species; `lut_resolver_purposes_a7` keeps 5 of 10 (180 of 360 cells).
+  - `a_tapered_row_is_read_at_the_tip_a1`: the kind is a Ramp Finish (was DropCutter), so that
+    the input holds the depth.
+  - `wanaka_defaults_validation`: Adaptive3d and Adaptive (was the Adaptive family), and
+    ProjectCurve and DropCutter (was the Trace and Parallel families).
+  - `a_vbit_row_is_read_at_its_printed_key_b4` (Trace): the tool tip is 0 (was 0.127 in the
+    literal; the gate side already read 0), and the width is D (a Trace is a slot; was 0.3 D).
+  - Depths that no op holds are gone: the drill depth of `g_t18`, the depth of
+    `test_scallop_stepover_used_for_ball_nose`. Widths or scallop targets that no op of the key
+    holds with a depth are gone: a7 purposes (Trace, Roughing is now an InlayPlug at
+    (Trace, Finish)), the relief probe, c3, and the finish rows of the diameter-scaling
+    instrument (its rows still print the width label that the calculator no longer reads).
+  - The tool facts that the door reads: every test tool states its shank (the old input often
+    had none; the lookup read the diameter, so the shank is the diameter where it was none),
+    a stick-out of 4 x D (the long-tool share is 1, as with no overhang), and its fact kinds.
+- Known red `_litmatrix_rubbing_floor_clamp::ipe_pocket_ships_its_computed_feed_above_the_floor_after_r4`:
+  it fails with the text that `KNOWN_REDS_TRIAGE.md` B8 records (left
+  `amana-flat-hardwood-pocket-6000-2f-spektra`, right `amana-compression-wood-pocket-6350-2f`).
+  The red does not change. Not run at HEAD.
+
+### 14.2 The readers of the cut list (checked before 7b)
+
+`body_facts()` (first cut, the body stays first), `declares(Drill)`, `declares(SlotRing)` and
+`of_kind(Body)` do not change. `PowerCases::of_cuts` would change twice, so 7b changed it: it
+reads `SlotRing` as the slot case (the contour Pocket dedupe), and it skips a `MayOccur` cut
+(the geodesic sweep). No product code iterates the whole list.
+
+### 14.3 Commit 7b: the generated cuts are declared
+
+- `DeclaredFeed` (`OpFeed`, `Unlifted`, `PlannerCapped`, and two not in 2.2: `EntryRule`,
+  `DrillCycle`, because an entry and a drill cycle are not cut at the op feed) with one match
+  `DeclaredFeed::of_kind` (no wildcard). Departure from 2.2: `Declare::cut` takes the presence
+  only; the feed comes from `DeclaredFeed::of_kind`, so no arm can state a second feed for a
+  kind. `PowerCases::of_cuts` now reads `Presence`. `Presence::{Always, MayOccur(MayOccur { row,
+  reason }})`. `CutKind::WallFinish` (group `Body`; `CutKind::of_sample` does not emit it).
+- `MAX_DECLARED_CUTS` 12. `CutList::push` returns `Result<(), CutListFull>`; `cuts()` keeps the
+  first dropped kind (`CutList::dropped`), and the sentry holds `None` for every config.
+- The lists are design 2.2 (the sentry writes them out for each op at its default, each 3D
+  strategy, each 2D cleanup strategy and slot clearing, Pocket contour and zigzag with and
+  without a spring pass, Profile with spring passes, Face on the stock and on a drawing region,
+  Bore with and without an allowance), with the conditions of the generators: a spring pass only with
+  `finishing_passes > 0`, a Bore wall finish only with `finish_allowance > 0`, the 2D Adaptive
+  cleanup by `cleanup_strategy`. A geodesic 3D Rough declares 10 cuts (the note said 11).
+- Ruling Q1: the geodesic `FirstPass(Slot)` is `MayOccur` with row `U-PerimeterSweep` and a
+  marker in `cuts.rs`. New claim 7 of `the_exemption_list_only_shrinks_p29_3` holds the link;
+  an injected bad row id goes red. An injected missing wall finish turns
+  `every_op_declares_its_cuts_p29_3` red.
+- Two cuts stay outside the list: the tab re-plunge of a Profile (`U-TabReplunge`, P29-8), and
+  the capped-step sources other than the one each op declares (the module doc of `cuts.rs` and
+  `compute/CLAUDE.md` say so).
+- Rows closed: `U-SpringPass`, `U-ResidueCleanup`, `U-PocketZigzag`, `U-BoreWallFinish`,
+  `U-RowConnector`, `U-CappedStep`. Pins from the array: ROWS 42, MAX_NEEDS_RULING 31,
+  ROWS_WITH_A_FILE 41, PHYSICAL 8, RULED 3.
+
+### 14.4 Findings outside the scope
+
+- The constructor always writes `operation_kind: Some`: the `None` arms of the readers are dead.
+  `chip.rs` formats the kind with `{:?}`, so a type change moves a warning text.
+- The `NoLut` path of the calculator has no product reach; `OperationFamily::Face` has no op.
+- The fields stay writable inside `crate::feeds`: `envelope.rs` writes the grid point
+  (`axial_depth_mm`, `radial_width_mm`, `target_scallop_mm`) after the door.
+- One capped-step kind per op is declared (2.2), but the geodesic planner emits more sources
+  (`PlannedTurn`, `Capped2d`, `DepartureWindow`, `CappedSplit3d`, `StockRead3d`,
+  `LevelContour`), and a ContourParallel 3D Rough may emit no `StockRead3d`. Not checked.
+- The row `U-PerimeterSweep` keeps `Who::Undeclared`, but the cut is now declared.
+- `U-CappedStep` closes on one declared source per op (2D Adaptive `DepartureWindow`, 3D Rough
+  `StockRead3d`); whether each op emits that source was not checked against the kind fixtures.
+
+### 14.5 Placement and what was not run
+
+Section 14 is in `step_7b.patch` and reports both commits. Not run: any HEAD baseline; the 55
+edited test binaries of 7a on the 7b tree (only the 7b sentries, the op golden, the lib, FM1 and
+clippy ran after 7b); the edited tests marked `#[ignore]` (instruments); the whole viz crate (only
+`--lib` and the five named viz tests); the cli tests (no cli code reads `FeedsInput` or `CutKind`).

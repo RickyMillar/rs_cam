@@ -96,7 +96,7 @@ const R2: ExemptionClass = ExemptionClass::Ruled {
 const NR: ExemptionClass = ExemptionClass::NeedsRuling;
 
 /// Every exemption from a limit today. See the module doc.
-pub static EXEMPTIONS: [Exemption; 48] = [
+pub static EXEMPTIONS: [Exemption; 42] = [
     // P28: the limit audit.
     Exemption {
         id: "P28-02",
@@ -464,47 +464,10 @@ pub static EXEMPTIONS: [Exemption; 48] = [
         where_: &["src/limits/project.rs"],
         closes_in: "P29-10",
     },
-    // U: one row for each undeclared cut (ruling Q3). No reader reads
-    // these cuts, so no file holds a scope read.
-    Exemption {
-        id: "U-SpringPass",
-        what: "every limit",
-        limit: &[],
-        who: Who::Undeclared("the spring passes at the final depth (Pocket, Profile)"),
-        class: NR,
-        where_: &[],
-        closes_in: "P29-7",
-    },
-    Exemption {
-        id: "U-ResidueCleanup",
-        what: "every limit",
-        limit: &[],
-        who: Who::Undeclared(
-            "the residue cleanup of a geodesic slice and of 2D Adaptive (residue mop, \
-             contour residue)",
-        ),
-        class: NR,
-        where_: &[],
-        closes_in: "P29-7",
-    },
-    Exemption {
-        id: "U-PocketZigzag",
-        what: "every limit",
-        limit: &[],
-        who: Who::Undeclared("the Zigzag pattern of a Pocket (no slot ring, no own cut)"),
-        class: NR,
-        where_: &[],
-        closes_in: "P29-7",
-    },
-    Exemption {
-        id: "U-BoreWallFinish",
-        what: "every limit",
-        limit: &[],
-        who: Who::Undeclared("the wall finish pass of a Bore (the allowance, the whole depth)"),
-        class: NR,
-        where_: &[],
-        closes_in: "P29-7",
-    },
+    // U: one row for each cut that no limit reads before the simulation
+    // (ruling Q3). P29-7 7b declared six of them with their feed rules and
+    // closed their rows. A cut that is still undeclared has no file; the
+    // residual sweep names the files of its `MayOccur` filing.
     Exemption {
         id: "U-TabReplunge",
         what: "every limit",
@@ -515,36 +478,16 @@ pub static EXEMPTIONS: [Exemption; 48] = [
         closes_in: "P29-8",
     },
     Exemption {
-        id: "U-RowConnector",
-        what: "every limit",
-        limit: &[],
-        who: Who::Undeclared("the row connectors of Face and Zigzag"),
-        class: NR,
-        where_: &[],
-        closes_in: "P29-7",
-    },
-    Exemption {
-        id: "U-CappedStep",
-        what: "every limit",
-        limit: &[],
-        who: Who::Undeclared(
-            "the steps a planner cuts at a capped feed, up to a slot (3D Adaptive, the \
-             departure out of a plunge)",
-        ),
-        class: NR,
-        where_: &[],
-        closes_in: "P29-7",
-    },
-    Exemption {
         id: "U-PerimeterSweep",
         what: "every limit",
         limit: &[],
         who: Who::Undeclared(
             "the residual full-slot sweep of a geodesic 3D Adaptive level where the grow \
-             refuses (a generation fact); the gates judge it after the simulation",
+             refuses (a generation fact): P29-7 declares it with `Presence::MayOccur`, and no \
+             limit caps it before the simulation; the gates judge it after the simulation",
         ),
         class: NR,
-        where_: &["src/compute/catalog.rs"],
+        where_: &["src/compute/catalog.rs", "src/compute/catalog/cuts.rs"],
         closes_in: "later (the planner feeds the sweep unlifted, or the sweep is a ceiling)",
     },
     // Ruling Q7: `feeds/efficiency.rs` reads the nominal diameter.

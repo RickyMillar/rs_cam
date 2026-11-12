@@ -72,6 +72,9 @@ pub enum CutKind {
     FirstPass(FirstPassKind),
     /// A repeat at the final depth.
     SpringPass,
+    /// The wall finish of a Bore: the allowance, up the whole wall
+    /// (P29-7 7b).
+    WallFinish,
     /// An entry into material.
     Entry(EntryKind),
     /// A feed through air above an entry.
@@ -112,7 +115,7 @@ pub enum CutKind {
 #[serde(rename_all = "snake_case")]
 pub enum CutGroup {
     /// The pass that the operator states, the wider first passes, the
-    /// capped steps and the slot ring.
+    /// spring passes, the wall finish, the capped steps and the slot ring.
     Body,
     /// An entry into material, the feed through air above it, and the
     /// lead into the cut.
@@ -161,6 +164,7 @@ impl CutKind {
             Self::Body
             | Self::FirstPass(_)
             | Self::SpringPass
+            | Self::WallFinish
             | Self::CappedStep(_)
             | Self::SlotRing => CutGroup::Body,
             Self::Entry(_) | Self::EntryApproach | Self::LeadIn => CutGroup::Entry,

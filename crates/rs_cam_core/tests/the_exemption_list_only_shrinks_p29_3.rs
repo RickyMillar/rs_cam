@@ -28,6 +28,11 @@
 //!   only limits that a sample gate judges (no `NotASampleLimit`), and the
 //!   five sample limits are judged on the Body, Entry, Cleanup and Link
 //!   groups (operator Q1: "I think all moves should be judged").
+//! - Claim 7 (P29-7 7b, lead ruling Q1): every declared cut with
+//!   `Presence::MayOccur` names a row of the list, as a not-judged cell
+//!   does, and the row names `src/compute/catalog/cuts.rs`, which holds its
+//!   marker. The configs: each op at its default and each `ClearingStrategy`
+//!   of 3D Rough (the geodesic sweep is the non-vacuity case).
 
 #![expect(
     clippy::expect_used,
@@ -43,9 +48,9 @@ use rs_cam_core::limits::{
 };
 
 /// The rows that need a ruling. Exact: a closed row lowers it.
-const MAX_NEEDS_RULING: usize = 37;
+const MAX_NEEDS_RULING: usize = 31;
 /// Every row.
-const ROWS: usize = 48;
+const ROWS: usize = 42;
 /// The rows with a geometry reason.
 const PHYSICAL: usize = 8;
 /// The rows that quote an operator ruling.
@@ -68,6 +73,11 @@ const RULED: usize = 3;
 /// P29-5c closed the row `P28-03` (a groove reads the slot width before
 /// the simulation); the row `P28-32` gained two files (the chamfer arms
 /// of the envelope and of `cap_cut_of_operation`).
+/// P29-7 7b closed six rows with no file (`U-SpringPass`,
+/// `U-ResidueCleanup`, `U-PocketZigzag`, `U-BoreWallFinish`,
+/// `U-RowConnector`, `U-CappedStep`: each cut is declared with its feed
+/// rule); the row `U-PerimeterSweep` gained the file of its `MayOccur`
+/// filing (`src/compute/catalog/cuts.rs`).
 const ROWS_WITH_A_FILE: usize = 41;
 
 /// The 34 rows of `phases/P28_limit_audit.md`.
@@ -344,4 +354,53 @@ fn every_not_judged_cell_names_its_row_p29_6() {
             );
         }
     }
+}
+
+#[test]
+fn every_may_occur_cut_names_its_row_p29_7() {
+    use rs_cam_core::compute::catalog::{OperationConfig, OperationType, Presence};
+    use rs_cam_core::compute::operation_configs::ClearingStrategy;
+    let mut configs: Vec<OperationConfig> = OperationType::ALL
+        .iter()
+        .map(|&op| OperationConfig::new_default(op))
+        .collect();
+    for strategy in [
+        ClearingStrategy::GeodesicAdaptive,
+        ClearingStrategy::ContourParallel,
+    ] {
+        let mut op = OperationConfig::new_default(OperationType::Adaptive3d);
+        if let OperationConfig::Adaptive3d(c) = &mut op {
+            c.clearing_strategy = strategy;
+        }
+        configs.push(op);
+    }
+    let mut may_occur = 0;
+    for op in &configs {
+        for cut in op.cuts().iter() {
+            let Presence::MayOccur(may) = cut.presence else {
+                continue;
+            };
+            may_occur += 1;
+            let e = row(may.row).unwrap_or_else(|| {
+                panic!(
+                    "{:?} {:?}: may occur, and no row {}",
+                    op.op_type(),
+                    cut.kind,
+                    may.row
+                )
+            });
+            assert!(
+                e.where_.contains(&"src/compute/catalog/cuts.rs"),
+                "{:?} {:?}: the row {} does not name src/compute/catalog/cuts.rs",
+                op.op_type(),
+                cut.kind,
+                may.row
+            );
+            assert!(!may.reason.trim().is_empty(), "the cut states its reason");
+        }
+    }
+    assert!(
+        may_occur > 0,
+        "the geodesic 3D Rough declares its residual sweep"
+    );
 }

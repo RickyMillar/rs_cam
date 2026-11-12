@@ -30,7 +30,10 @@ pub use cut_spec::{
     Radial, RadialRule, Stated, TotalDepth,
 };
 
-pub use cuts::{CutContext, CutList, DeclaredCut, DeclaredDepth, DeclaredWidth, MAX_DECLARED_CUTS};
+pub use cuts::{
+    CutContext, CutList, CutListFull, DeclaredCut, DeclaredDepth, DeclaredFeed, DeclaredWidth,
+    MAX_DECLARED_CUTS, MayOccur, Presence,
+};
 
 pub(crate) use entry_contract::entry_records;
 pub use entry_contract::{

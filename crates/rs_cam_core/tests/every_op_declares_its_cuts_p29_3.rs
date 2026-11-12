@@ -5,7 +5,10 @@
 //!
 //! The configs: each op of `OperationType::ALL` at its default, each
 //! `ClearingStrategy` of 3D Rough, 2D Adaptive with `slot_clearing` on and
-//! off, Pocket contour and zigzag, and Bore with a leave above 0 and at 0.
+//! off and with each `cleanup_strategy`, Pocket contour and zigzag with and
+//! without a spring pass, Profile with spring passes, Face on the stock
+//! and on a drawing region, and Bore with a
+//! leave above 0 and at 0.
 //! The tool diameter of each op is the fixture tool of
 //! `common::op_fixtures::tool_for`.
 //!
@@ -14,8 +17,12 @@
 //!   the nominal width, the planner cap (`planner_width().power_width_mm`),
 //!   and the slot (`first_pass == Slot || radial == Slot`). The rule is
 //!   written out here, so the oracle does not read `cuts()`. The lift
-//!   width (`full_feed_width`) is the old one too. The cuts stand in the
-//!   tie order: the body, the planner cap, the first slot.
+//!   width (`full_feed_width`) is the old one too. P29-7 7b: the side
+//!   cuts of each config, with the feed rule and the presence, equal a
+//!   written-out list (`want_side_cuts`), the list drops no cut and holds
+//!   at most `MAX_DECLARED_CUTS`, and each feed rule is
+//!   `DeclaredFeed::of_kind`. The cuts stand in the tie order: the body,
+//!   the planner cap, the first slot (or the slot ring).
 //! - Claim 2: the facts of every declared cut equal the four label
 //!   functions, written out here: `RadialThinning::of(family, role)`, the
 //!   Pocket roughing stepover test, the leave of the role and the
@@ -34,6 +41,7 @@
 
 #![expect(
     clippy::expect_used,
+    clippy::panic,
     clippy::indexing_slicing,
     reason = "test code: a panic is how a test reports a failure; the shared source scan indexes its own char buffer"
 )]
@@ -46,16 +54,18 @@ mod source_scan;
 use std::collections::BTreeSet;
 use std::path::Path;
 
+use rs_cam_core::adaptive::CleanupStrategy;
+use rs_cam_core::adaptive3d::FeedCapSource;
 use rs_cam_core::compute::catalog::{
-    CutList, DeclaredWidth, FirstPass, OperationConfig, OperationType, PlannerWidth, Radial,
-    RadialRule,
+    CutList, DeclaredFeed, DeclaredWidth, FirstPass, MAX_DECLARED_CUTS, OperationConfig,
+    OperationType, PlannerWidth, Presence, Radial, RadialRule,
 };
 use rs_cam_core::compute::operation_configs::{ClearingStrategy, PocketPattern};
 use rs_cam_core::feeds::engagement::{PowerCase, PowerCases};
 use rs_cam_core::feeds::geometry::RadialThinning;
 use rs_cam_core::feeds::{OperationFamily, PassRole};
 use rs_cam_core::limits::{
-    CutFacts, CutKind, DepthLimit, EntryKind, FirstPassKind, Leave, NoDepthLimit,
+    CleanupKind, CutFacts, CutKind, DepthLimit, EntryKind, FirstPassKind, Leave, NoDepthLimit,
 };
 
 /// One config with its name.
@@ -91,13 +101,39 @@ fn cases() -> Vec<Case> {
         }
         add(format!("adaptive/slot_clearing={slot}"), op);
     }
-    for pattern in [PocketPattern::Contour, PocketPattern::Zigzag] {
-        let mut op = OperationConfig::new_default(OperationType::Pocket);
-        if let OperationConfig::Pocket(c) = &mut op {
-            c.pattern = pattern;
+    for cleanup in [
+        CleanupStrategy::Legacy,
+        CleanupStrategy::ResidueMop,
+        CleanupStrategy::ContourParallelNarrow,
+    ] {
+        let mut op = OperationConfig::new_default(OperationType::Adaptive);
+        if let OperationConfig::Adaptive(c) = &mut op {
+            c.cleanup_strategy = cleanup;
         }
-        add(format!("pocket/{pattern:?}"), op);
+        add(format!("adaptive/cleanup={cleanup:?}"), op);
     }
+    for pattern in [PocketPattern::Contour, PocketPattern::Zigzag] {
+        for spring in [0, 1] {
+            let mut op = OperationConfig::new_default(OperationType::Pocket);
+            if let OperationConfig::Pocket(c) = &mut op {
+                c.pattern = pattern;
+                c.finishing_passes = spring;
+            }
+            add(format!("pocket/{pattern:?}/spring={spring}"), op);
+        }
+    }
+    let mut op = OperationConfig::new_default(OperationType::Profile);
+    if let OperationConfig::Profile(c) = &mut op {
+        c.finishing_passes = 2;
+    }
+    add("profile/spring=2".to_owned(), op);
+    // P29-5b: a Face on a drawing region keeps the tool inside the outline,
+    // so its first row is a slot.
+    let mut op = OperationConfig::new_default(OperationType::Face);
+    if let OperationConfig::Face(c) = &mut op {
+        c.selection = rs_cam_core::selection::Selection::drawing();
+    }
+    add("face/drawing".to_owned(), op);
     for leave in [0.3, 0.0] {
         let mut op = OperationConfig::new_default(OperationType::Bore);
         if let OperationConfig::Bore(c) = &mut op {
@@ -121,12 +157,75 @@ fn old_widths(op: &OperationConfig, ae: f64, d: f64) -> Vec<(PowerCase, f64)> {
     out
 }
 
-/// The kinds of the side cuts of a list, in order (no entry).
-fn side_kinds(list: &CutList) -> Vec<CutKind> {
+/// The side cuts of a list, in order (no entry): the kind, the feed rule
+/// and `true` for a cut with `Presence::MayOccur`.
+fn side_cuts(list: &CutList) -> Vec<(CutKind, DeclaredFeed, bool)> {
     list.iter()
-        .map(|c| c.kind)
-        .filter(|k| !matches!(k, CutKind::Entry(_)))
+        .filter(|c| !matches!(c.kind, CutKind::Entry(_)))
+        .map(|c| (c.kind, c.feed, matches!(c.presence, Presence::MayOccur(_))))
         .collect()
+}
+
+/// P29-7 7b: the side cuts of each config, written out (design section
+/// 2.2, with the conditions of the generators: a spring pass only with
+/// `finishing_passes` above 0, a Bore wall finish only with an allowance
+/// above 0, the 2D Adaptive cleanup by `cleanup_strategy`). The tie order
+/// of the power cases stands first: the body, the planner cap, the first
+/// slot (or the slot ring of a contour Pocket, which is its first slot).
+fn want_side_cuts(name: &str) -> Vec<(CutKind, DeclaredFeed, bool)> {
+    use DeclaredFeed::{DrillCycle, OpFeed, PlannerCapped, Unlifted};
+    let body = (CutKind::Body, OpFeed, false);
+    let cap = (CutKind::FirstPass(FirstPassKind::PlannerCap), OpFeed, false);
+    let slot = (CutKind::FirstPass(FirstPassKind::Slot), OpFeed, false);
+    let maybe_slot = (CutKind::FirstPass(FirstPassKind::Slot), OpFeed, true);
+    let ring = (CutKind::SlotRing, Unlifted, false);
+    let spring = (CutKind::SpringPass, OpFeed, false);
+    let link = (CutKind::Link, OpFeed, false);
+    let drill = (CutKind::Drill, DrillCycle, false);
+    let wall = (CutKind::WallFinish, OpFeed, false);
+    let sweep = (CutKind::Cleanup(CleanupKind::WaterlineSweep), OpFeed, false);
+    let mop = (CutKind::Cleanup(CleanupKind::ResidueMop), OpFeed, false);
+    let contour_residue = (CutKind::Cleanup(CleanupKind::ContourResidue), OpFeed, false);
+    let departure = (
+        CutKind::CappedStep(FeedCapSource::DepartureWindow),
+        PlannerCapped,
+        false,
+    );
+    let stock_read = (
+        CutKind::CappedStep(FeedCapSource::StockRead3d),
+        PlannerCapped,
+        false,
+    );
+    match name {
+        "face" => vec![body, link],
+        "face/drawing" => vec![body, slot, link],
+        "pocket" | "pocket/Contour/spring=0" => vec![body, ring],
+        "pocket/Contour/spring=1" => vec![body, ring, spring],
+        "pocket/Zigzag/spring=0" => vec![body, slot, link],
+        "pocket/Zigzag/spring=1" => vec![body, slot, link, spring],
+        "profile" => vec![body, slot],
+        "profile/spring=2" => vec![body, slot, spring],
+        "zigzag" => vec![body, slot, link],
+        "adaptive" | "adaptive/slot_clearing=false" => {
+            vec![body, cap, contour_residue, departure]
+        }
+        "adaptive/slot_clearing=true" => vec![body, cap, slot, contour_residue, departure],
+        "adaptive/cleanup=Legacy" => vec![body, cap, departure],
+        "adaptive/cleanup=ResidueMop" | "adaptive/cleanup=ContourParallelNarrow" => {
+            vec![body, cap, mop, departure]
+        }
+        "adaptive3d" | "adaptive3d/ContourParallel" => vec![body, cap, slot, sweep, stock_read],
+        "adaptive3d/GeodesicAdaptive" => vec![body, cap, maybe_slot, sweep, mop, stock_read],
+        "v_carve" | "inlay" | "trace" | "project_curve" | "bore" | "bore/leave=0" => {
+            vec![body, slot]
+        }
+        "bore/leave=0.3" => vec![body, slot, wall],
+        "drill" | "alignment_pin_drill" => vec![body, drill],
+        "inlay_plug" | "chamfer" | "drop_cutter" | "waterline" | "pencil" | "scallop"
+        | "unified_finish" | "steep_shallow" | "ramp_finish" | "spiral_finish"
+        | "radial_finish" | "horizontal_finish" => vec![body],
+        other => panic!("{other}: no written-out list"),
+    }
 }
 
 #[test]
@@ -134,8 +233,6 @@ fn claim_1_the_power_cases_keep_the_widths_in_order() {
     let mut slot_seen = false;
     let mut cap_seen = false;
     for case in cases() {
-        // A list over `MAX_DECLARED_CUTS` drops its last cuts, the entries:
-        // claim 3 then goes red.
         let list = case.op.cuts();
         let cases = PowerCases::of_operation(&case.op);
         for ae in [0.3, 1.0, 2.5, 0.4 * case.d, case.d] {
@@ -163,32 +260,24 @@ fn claim_1_the_power_cases_keep_the_widths_in_order() {
             slot_seen |= old.iter().any(|(c, _)| *c == PowerCase::Slot);
             cap_seen |= old.iter().any(|(c, _)| *c == PowerCase::PlannerCap);
         }
-        // The tie order of the declared cuts: body, planner cap, slot.
-        let spec = case.op.cut_spec();
-        let mut want = vec![CutKind::Body];
-        match case.op.planner_width() {
-            PlannerWidth::None => {}
-            PlannerWidth::PassCeiling | PlannerWidth::CapMult(_) => {
-                want.push(CutKind::FirstPass(FirstPassKind::PlannerCap));
-            }
-        }
-        if matches!(spec.first_pass, FirstPass::Slot) || matches!(spec.radial, Radial::Slot) {
-            want.push(CutKind::FirstPass(FirstPassKind::Slot));
-        }
-        let pocket_contour = matches!(
-            &case.op,
-            OperationConfig::Pocket(c) if c.pattern == PocketPattern::Contour
+        // P29-7 7b: the declared cuts, written out; no cut is dropped.
+        assert_eq!(
+            side_cuts(&list),
+            want_side_cuts(&case.name),
+            "{}: the declared cuts",
+            case.name
         );
-        if pocket_contour {
-            want.push(CutKind::SlotRing);
+        assert_eq!(list.dropped(), None, "{}: a cut was dropped", case.name);
+        assert!(list.len() <= MAX_DECLARED_CUTS, "{}: the bound", case.name);
+        for cut in list.iter() {
+            assert_eq!(
+                cut.feed,
+                DeclaredFeed::of_kind(cut.kind),
+                "{}: the feed rule of {:?}",
+                case.name,
+                cut.kind
+            );
         }
-        if matches!(
-            case.op.op_type(),
-            OperationType::Drill | OperationType::AlignmentPinDrill
-        ) {
-            want.push(CutKind::Drill);
-        }
-        assert_eq!(side_kinds(&list), want, "{}: the declared cuts", case.name);
         // A planner cap states the planner width that the power case reads.
         if let Some(cap) = list.of_kind(CutKind::FirstPass(FirstPassKind::PlannerCap)) {
             let ok = match (cap.width, case.op.planner_width()) {
@@ -314,6 +403,7 @@ fn claim_3_the_entry_kinds_equal_the_contract() {
                 CutKind::Body
                 | CutKind::FirstPass(_)
                 | CutKind::SpringPass
+                | CutKind::WallFinish
                 | CutKind::EntryApproach
                 | CutKind::Cleanup(_)
                 | CutKind::CappedStep(_)

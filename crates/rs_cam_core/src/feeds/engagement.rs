@@ -64,7 +64,7 @@
 
 use serde::Serialize;
 
-use crate::compute::catalog::{CutList, DeclaredWidth, OperationConfig, PlannerWidth};
+use crate::compute::catalog::{CutList, DeclaredWidth, OperationConfig, PlannerWidth, Presence};
 use crate::feeds::ToolGeometryHint;
 use crate::feeds::envelope::CutPoint;
 use crate::feeds::force::{DeflectionCapRefusal, immersion_angle};
@@ -867,11 +867,20 @@ pub struct PowerCases {
 
 impl PowerCases {
     /// The cases of the cuts that an op declares (P29-3): the slot case
-    /// when the list declares a first slot, and the planner width of its
-    /// planner-cap cut. The tie order stays the order of [`Self::widths`].
+    /// when the list declares a first slot or a slot ring (P29-7 7b: the
+    /// ring of a contour Pocket IS its first slot), and the planner width
+    /// of its planner-cap cut. A cut with [`Presence::MayOccur`] is not a
+    /// case: the plan may not cut it, and its row of `limits::EXEMPTIONS`
+    /// names it. The tie order stays the order of [`Self::widths`].
     #[must_use]
     pub fn of_cuts(cuts: &CutList) -> Self {
-        let slot = cuts.declares(CutKind::FirstPass(FirstPassKind::Slot));
+        let slot = cuts.iter().any(|c| {
+            c.presence == Presence::Always
+                && matches!(
+                    c.kind,
+                    CutKind::FirstPass(FirstPassKind::Slot) | CutKind::SlotRing
+                )
+        });
         let planner = match cuts.of_kind(CutKind::FirstPass(FirstPassKind::PlannerCap)) {
             Some(cap) => match cap.width {
                 DeclaredWidth::PassCeiling { .. } => PlannerWidth::PassCeiling,

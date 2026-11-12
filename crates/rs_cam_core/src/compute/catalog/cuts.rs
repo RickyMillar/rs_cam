@@ -2,11 +2,16 @@
 //!
 //! [`OperationConfig::cuts`] is the one list of the planned cuts of an op:
 //! the body pass, the wider cuts that the plan makes first or holds as a
-//! cap, the slot ring, the drill cycle and the entry kinds. It holds
-//! today's cuts and today's scope only: a cut is in the list when a reader
-//! before the simulation reads it today (`P29-3_DESIGN.md` section 2.1).
-//! A cut that the generator makes and no reader reads is a row `U-*` of
-//! `limits::EXEMPTIONS`.
+//! cap, the slot ring, the spring passes, the row connectors, the cleanup
+//! cuts, the capped steps, the wall finish of a Bore, the drill cycle and
+//! the entry kinds. P29-7 7b: each cut that the generator makes is in the
+//! list, with its feed rule ([`DeclaredFeed`]) and its presence
+//! ([`Presence`]), with two exceptions: the re-plunge after a tab of a
+//! Profile (row `U-TabReplunge`, P29-8), and the capped steps, where each
+//! op declares one `FeedCapSource` of the several that its planner can
+//! write. A cut that the plan makes only where a generation fact
+//! asks is [`Presence::MayOccur`]; it names a row of `limits::EXEMPTIONS`,
+//! because no limit caps it before the simulation.
 //!
 //! `cuts()` is the one filler of the facts of a cut (`limits::CutFacts`).
 //! In P29-3 each fact holds the value of today's label (rows `F-*` of the
@@ -35,8 +40,11 @@ use crate::limits::{
 
 use super::{Axial, FirstPass, OperationConfig, PlannerWidth, Radial};
 
-/// The most cuts that one op declares. The sentry holds every op below it.
-pub const MAX_DECLARED_CUTS: usize = 8;
+/// The most cuts that one op declares (P29-7 7b: a geodesic 3D Rough
+/// declares 10). A cut over the bound is not lost silently:
+/// [`CutList::dropped`] names it, and the sentry holds every op fixture
+/// with no dropped cut.
+pub const MAX_DECLARED_CUTS: usize = 12;
 
 /// The tool of a planned cut: what [`DeclaredCut::at`] reads to make a
 /// [`Cut`]. `cuts()` reads no tool: the list of an op is the same for
@@ -96,8 +104,78 @@ pub enum DeclaredDepth {
     None(NoEngagementModel),
 }
 
-/// One cut that an op declares before the simulation: the stated numbers
-/// and the facts. [`Self::at`] makes the [`Cut`].
+/// The feed at which the emitter cuts a declared cut (P29-7 7b).
+#[derive(Debug, Clone, Copy, PartialEq, Eq)]
+pub enum DeclaredFeed {
+    /// The op feed (the emitter writes `feed_rate`).
+    OpFeed,
+    /// The op feed over the lift of the body (P23d: the slot ring,
+    /// `feeds::geometry::UnliftedFeed::of_slot_ring`).
+    Unlifted,
+    /// A feed the planner caps on its own stock read; no number before the
+    /// simulation.
+    PlannerCapped,
+    /// The feed of an entry rule: the plunge or the ramp feed (P29-8).
+    EntryRule,
+    /// The feed of the drill cycle (Step 9c).
+    DrillCycle,
+}
+
+impl DeclaredFeed {
+    /// The feed rule of a cut of `kind`. One match names every kind and
+    /// has no wildcard arm: a new kind does not compile until it states its
+    /// feed.
+    #[must_use]
+    pub const fn of_kind(kind: CutKind) -> Self {
+        match kind {
+            CutKind::Body
+            | CutKind::FirstPass(_)
+            | CutKind::SpringPass
+            | CutKind::Cleanup(_)
+            | CutKind::WallFinish
+            | CutKind::LeadIn
+            | CutKind::LeadOut
+            | CutKind::Link
+            | CutKind::DressupRelief => Self::OpFeed,
+            CutKind::SlotRing => Self::Unlifted,
+            CutKind::CappedStep(_) => Self::PlannerCapped,
+            CutKind::Entry(_) | CutKind::EntryApproach => Self::EntryRule,
+            CutKind::Drill => Self::DrillCycle,
+        }
+    }
+}
+
+/// A declared cut that the plan cuts only where a generation fact asks.
+/// No limit caps it before the simulation, so it is an exemption: `row`
+/// is the id of its row of `limits::EXEMPTIONS` (lead ruling Q1 of
+/// P29-7). The sentry `the_exemption_list_only_shrinks_p29_3` holds the
+/// link, as for a `limits::NotJudged` cell.
+#[derive(Debug, Clone, Copy, PartialEq, Eq)]
+pub struct MayOccur {
+    /// The id of the row of `EXEMPTIONS`.
+    pub row: &'static str,
+    /// The generation fact that asks for the cut.
+    pub reason: &'static str,
+}
+
+/// Whether the plan always cuts a declared cut (P29-7 7b).
+#[derive(Debug, Clone, Copy, PartialEq, Eq)]
+pub enum Presence {
+    /// The plan cuts it wherever its rule applies (a spring pass at the
+    /// final depth, a wall finish, a capped step where the planner caps):
+    /// no generation fact can leave it out. The limits read it as a ceiling.
+    Always,
+    /// The plan cuts it only where a generation fact asks.
+    MayOccur(MayOccur),
+}
+
+/// The generation fact of the residual sweep of a geodesic 3D Rough.
+const GEODESIC_SWEEP: &str =
+    "the residual full-slot sweep of a geodesic level where the grow refuses";
+
+/// One cut that an op declares before the simulation: the stated numbers,
+/// the feed rule, the presence and the facts. [`Self::at`] makes the
+/// [`Cut`].
 #[derive(Debug, Clone, Copy, PartialEq)]
 pub struct DeclaredCut {
     /// The kind.
@@ -106,6 +184,10 @@ pub struct DeclaredCut {
     pub width: DeclaredWidth,
     /// The depth.
     pub depth: DeclaredDepth,
+    /// The feed rule ([`DeclaredFeed::of_kind`]).
+    pub feed: DeclaredFeed,
+    /// Whether the plan always cuts it.
+    pub presence: Presence,
     /// The facts.
     pub facts: CutFacts,
 }
@@ -166,6 +248,7 @@ impl DeclaredCut {
             CutKind::Body
             | CutKind::FirstPass(_)
             | CutKind::SpringPass
+            | CutKind::WallFinish
             | CutKind::EntryApproach
             | CutKind::Cleanup(_)
             | CutKind::CappedStep(_)
@@ -198,25 +281,44 @@ impl DeclaredCut {
 }
 
 /// The cuts of one op, in the declaration order: the body, the planner
-/// cap, the first slot, the slot ring, the drill cycle, then the entry
-/// kinds in the order of `EntryKind::ALL`. A fixed array: no heap.
+/// cap, the first slot, the slot ring, the other cuts of the op, the drill
+/// cycle, then the entry kinds in the order of `EntryKind::ALL`. A fixed
+/// array: no heap.
 #[derive(Debug, Clone, Copy, PartialEq)]
 pub struct CutList {
     cuts: [Option<DeclaredCut>; MAX_DECLARED_CUTS],
+    /// The kind of the first cut that the full list could not hold.
+    dropped: Option<CutKind>,
 }
+
+/// The list holds [`MAX_DECLARED_CUTS`] cuts and has no free place.
+#[derive(Debug, Clone, Copy, PartialEq, Eq)]
+pub struct CutListFull;
 
 impl CutList {
     const EMPTY: Self = Self {
         cuts: [None; MAX_DECLARED_CUTS],
+        dropped: None,
     };
 
-    /// Adds `cut` in the first free place. The list holds at most
-    /// [`MAX_DECLARED_CUTS`]; the sentry holds every op below it, so no
-    /// cut is lost.
-    fn push(&mut self, cut: DeclaredCut) {
-        if let Some(free) = self.cuts.iter_mut().find(|c| c.is_none()) {
-            *free = Some(cut);
-        }
+    /// Adds `cut` in the first free place, or `Err(CutListFull)` when the
+    /// list holds [`MAX_DECLARED_CUTS`] cuts.
+    fn push(&mut self, cut: DeclaredCut) -> Result<(), CutListFull> {
+        let free = self
+            .cuts
+            .iter_mut()
+            .find(|c| c.is_none())
+            .ok_or(CutListFull)?;
+        *free = Some(cut);
+        Ok(())
+    }
+
+    /// The kind of the first cut that the list could not hold, or `None`
+    /// when it holds every cut of the op. The sentry
+    /// `every_op_declares_its_cuts_p29_3` holds `None` for every op fixture.
+    #[must_use]
+    pub fn dropped(&self) -> Option<CutKind> {
+        self.dropped
     }
 
     /// The declared cuts, in order.
@@ -261,20 +363,55 @@ impl CutList {
     }
 }
 
-/// The builder of one op's list. Every cut of the op takes the op's facts.
+/// How [`OperationConfig::cuts`] declares the first slot of an op.
+#[derive(Debug, Clone, Copy)]
+enum FirstSlot {
+    /// From the cut spec: a first pass that is a slot, or a slot cut.
+    OfSpec,
+    /// The slot ring of a contour Pocket, in the place of the first slot.
+    Ring,
+    /// A full slot that the plan cuts only where a generation fact asks.
+    MayOccur(MayOccur),
+}
+
+/// The builder of one op's list. Every cut of the op takes the op's facts
+/// and the feed rule of its kind.
 struct Declare {
     list: CutList,
     facts: CutFacts,
 }
 
 impl Declare {
-    fn cut(&mut self, kind: CutKind, width: DeclaredWidth, depth: DeclaredDepth) {
-        self.list.push(DeclaredCut {
+    fn cut(
+        &mut self,
+        kind: CutKind,
+        width: DeclaredWidth,
+        depth: DeclaredDepth,
+        presence: Presence,
+    ) {
+        let cut = DeclaredCut {
             kind,
             width,
             depth,
+            feed: DeclaredFeed::of_kind(kind),
+            presence,
             facts: self.facts,
-        });
+        };
+        // The named fallback of a full list: the first cut that it could
+        // not hold is kept by kind (`CutList::dropped`), not lost.
+        if let Err(CutListFull) = self.list.push(cut) {
+            self.list.dropped = self.list.dropped.or(Some(kind));
+        }
+    }
+
+    /// A cut with no stated width and no stated depth.
+    fn unstated(&mut self, kind: CutKind) {
+        self.cut(
+            kind,
+            DeclaredWidth::None(NoEngagementModel::NoStatedWidth),
+            DeclaredDepth::None(NoEngagementModel::NoStatedDepth),
+            Presence::Always,
+        );
     }
 }
 
@@ -283,9 +420,15 @@ impl OperationConfig {
     /// match names every op and has no wildcard arm: a new op does not
     /// compile until it states its cuts. Each arm states what is special
     /// to the op; the body, the planner cap and the first slot come from
-    /// the op's cut spec and planner width (K1, P23a).
+    /// the op's cut spec and planner width (K1, P23a). P29-7 7b: each arm
+    /// also states the spring passes, the row connectors, the cleanup cuts,
+    /// the capped steps and the wall finish that its generator makes.
     #[must_use]
     pub fn cuts(&self) -> CutList {
+        use super::super::operation_configs::{ClearingStrategy, PocketPattern};
+        use crate::adaptive::CleanupStrategy;
+        use crate::adaptive3d::FeedCapSource;
+        use crate::limits::CleanupKind;
         let mut declare = Declare {
             list: CutList::EMPTY,
             facts: self.label_facts(),
@@ -295,38 +438,91 @@ impl OperationConfig {
             // same facts (`CutFacts::DRILL_CYCLE`).
             OperationConfig::Drill(_) | OperationConfig::AlignmentPinDrill(_) => {
                 declare.facts = CutFacts::DRILL_CYCLE;
-                self.declare_side_cuts(&mut declare);
-                declare.cut(
-                    CutKind::Drill,
-                    DeclaredWidth::None(NoEngagementModel::NoStatedWidth),
-                    DeclaredDepth::None(NoEngagementModel::NoStatedDepth),
-                );
+                self.declare_side_cuts(&mut declare, FirstSlot::OfSpec);
+                declare.unstated(CutKind::Drill);
             }
-            // P23d: the first ring of each level of a contour Pocket is a
-            // full slot (`UnliftedFeed::of_slot_ring`).
             OperationConfig::Pocket(c) => {
-                self.declare_side_cuts(&mut declare);
                 match c.pattern {
-                    super::super::operation_configs::PocketPattern::Contour => declare.cut(
-                        CutKind::SlotRing,
-                        DeclaredWidth::Slot,
-                        self.declared_depth(),
-                    ),
-                    super::super::operation_configs::PocketPattern::Zigzag => {}
+                    // P23d: the first ring of each level of a contour Pocket
+                    // is a full slot (`UnliftedFeed::of_slot_ring`). The
+                    // ring IS the first slot: no second first-slot cut.
+                    PocketPattern::Contour => self.declare_side_cuts(&mut declare, FirstSlot::Ring),
+                    PocketPattern::Zigzag => {
+                        self.declare_side_cuts(&mut declare, FirstSlot::OfSpec);
+                        self.declare_row_connector(&mut declare);
+                    }
+                }
+                if c.finishing_passes > 0 {
+                    declare.unstated(CutKind::SpringPass);
                 }
             }
-            OperationConfig::Face(_)
-            | OperationConfig::Profile(_)
-            | OperationConfig::Adaptive(_)
-            | OperationConfig::VCarve(_)
+            OperationConfig::Profile(c) => {
+                self.declare_side_cuts(&mut declare, FirstSlot::OfSpec);
+                if c.finishing_passes > 0 {
+                    declare.unstated(CutKind::SpringPass);
+                }
+            }
+            OperationConfig::Face(_) | OperationConfig::Zigzag(_) => {
+                self.declare_side_cuts(&mut declare, FirstSlot::OfSpec);
+                self.declare_row_connector(&mut declare);
+            }
+            OperationConfig::Adaptive(c) => {
+                self.declare_side_cuts(&mut declare, FirstSlot::OfSpec);
+                match c.cleanup_strategy {
+                    CleanupStrategy::Legacy => {}
+                    CleanupStrategy::ResidueMop | CleanupStrategy::ContourParallelNarrow => {
+                        declare.unstated(CutKind::Cleanup(CleanupKind::ResidueMop));
+                    }
+                    CleanupStrategy::ContourParallelHybrid => {
+                        declare.unstated(CutKind::Cleanup(CleanupKind::ContourResidue));
+                    }
+                }
+                declare.unstated(CutKind::CappedStep(FeedCapSource::DepartureWindow));
+            }
+            OperationConfig::Adaptive3d(c) => {
+                match c.clearing_strategy {
+                    ClearingStrategy::ContourParallel => {
+                        self.declare_side_cuts(&mut declare, FirstSlot::OfSpec);
+                        declare.unstated(CutKind::Cleanup(CleanupKind::WaterlineSweep));
+                    }
+                    // P29-5b option A: the sweep runs only where the grow
+                    // refuses, a generation fact. Lead ruling Q1 of P29-7:
+                    // the cut is an exemption, so it names its row.
+                    ClearingStrategy::GeodesicAdaptive => {
+                        self.declare_side_cuts(
+                            &mut declare,
+                            // EXEMPT(U-PerimeterSweep)
+                            FirstSlot::MayOccur(MayOccur {
+                                row: "U-PerimeterSweep",
+                                reason: GEODESIC_SWEEP,
+                            }),
+                        );
+                        declare.unstated(CutKind::Cleanup(CleanupKind::WaterlineSweep));
+                        declare.unstated(CutKind::Cleanup(CleanupKind::ResidueMop));
+                    }
+                }
+                declare.unstated(CutKind::CappedStep(FeedCapSource::StockRead3d));
+            }
+            // The finish pass of a Bore: out to the bore radius, one turn on
+            // the floor, a helix up the wall (`ops::bore::bore_hole`). Its
+            // width is the allowance; it states no side-cut depth.
+            OperationConfig::Bore(c) => {
+                self.declare_side_cuts(&mut declare, FirstSlot::OfSpec);
+                if c.finish_allowance.is_finite() && c.finish_allowance > 0.0 {
+                    declare.cut(
+                        CutKind::WallFinish,
+                        DeclaredWidth::Stated(c.finish_allowance),
+                        DeclaredDepth::None(NoEngagementModel::NoStatedDepth),
+                        Presence::Always,
+                    );
+                }
+            }
+            OperationConfig::VCarve(_)
             | OperationConfig::Inlay(_)
             | OperationConfig::InlayPlug(_)
-            | OperationConfig::Zigzag(_)
             | OperationConfig::Trace(_)
-            | OperationConfig::Bore(_)
             | OperationConfig::Chamfer(_)
             | OperationConfig::DropCutter(_)
-            | OperationConfig::Adaptive3d(_)
             | OperationConfig::Waterline(_)
             | OperationConfig::Pencil(_)
             | OperationConfig::Scallop(_)
@@ -336,22 +532,20 @@ impl OperationConfig {
             | OperationConfig::SpiralFinish(_)
             | OperationConfig::RadialFinish(_)
             | OperationConfig::HorizontalFinish(_)
-            | OperationConfig::ProjectCurve(_) => self.declare_side_cuts(&mut declare),
+            | OperationConfig::ProjectCurve(_) => {
+                self.declare_side_cuts(&mut declare, FirstSlot::OfSpec);
+            }
         }
         for kind in self.op_type().registry_entry().entry.record_kinds().kinds() {
-            declare.cut(
-                CutKind::Entry(kind),
-                DeclaredWidth::None(NoEngagementModel::NoStatedWidth),
-                DeclaredDepth::None(NoEngagementModel::NoStatedDepth),
-            );
+            declare.unstated(CutKind::Entry(kind));
         }
         declare.list
     }
 
     /// The body, the planner cap and the first slot of the op, in the tie
     /// order of the power cases (`PowerCases::worst`: a later case wins a
-    /// tie).
-    fn declare_side_cuts(&self, declare: &mut Declare) {
+    /// tie). `first_slot` says how the first slot is declared.
+    fn declare_side_cuts(&self, declare: &mut Declare, first_slot: FirstSlot) {
         let spec = self.cut_spec();
         let depth = self.declared_depth();
         // P29-5c: a groove engages its whole cone on both sides, so its body
@@ -366,8 +560,72 @@ impl OperationConfig {
             | Radial::SurfaceFollow
             | Radial::Axial => DeclaredWidth::None(NoEngagementModel::NoStatedWidth),
         };
-        declare.cut(CutKind::Body, body_width, depth);
-        let stepover = match spec.radial {
+        declare.cut(CutKind::Body, body_width, depth, Presence::Always);
+        let stepover = self.stated_stepover();
+        match self.planner_width() {
+            PlannerWidth::None => {}
+            PlannerWidth::PassCeiling => declare.cut(
+                CutKind::FirstPass(FirstPassKind::PlannerCap),
+                DeclaredWidth::PassCeiling { stepover },
+                depth,
+                Presence::Always,
+            ),
+            PlannerWidth::CapMult(mult) => declare.cut(
+                CutKind::FirstPass(FirstPassKind::PlannerCap),
+                DeclaredWidth::CapMult { stepover, mult },
+                depth,
+                Presence::Always,
+            ),
+        }
+        match first_slot {
+            FirstSlot::OfSpec => {
+                // K7: a slot case for a first pass that meets material on
+                // both sides, or a radial cut that is a slot.
+                // EXEMPT(M12)
+                if matches!(spec.first_pass, FirstPass::Slot) || matches!(spec.radial, Radial::Slot)
+                {
+                    declare.cut(
+                        CutKind::FirstPass(FirstPassKind::Slot),
+                        DeclaredWidth::Slot,
+                        depth,
+                        Presence::Always,
+                    );
+                }
+            }
+            FirstSlot::Ring => declare.cut(
+                CutKind::SlotRing,
+                DeclaredWidth::Slot,
+                depth,
+                Presence::Always,
+            ),
+            FirstSlot::MayOccur(may) => declare.cut(
+                CutKind::FirstPass(FirstPassKind::Slot),
+                DeclaredWidth::Slot,
+                depth,
+                Presence::MayOccur(may),
+            ),
+        }
+    }
+
+    /// The row connectors of a raster (Face, Zigzag, a zigzag Pocket): a
+    /// fed move along the boundary, one stepover long, at the depth of the
+    /// level.
+    fn declare_row_connector(&self, declare: &mut Declare) {
+        let width = match self.stated_stepover() {
+            Some(s) => DeclaredWidth::Stated(s),
+            None => DeclaredWidth::None(NoEngagementModel::NoStatedWidth),
+        };
+        declare.cut(
+            CutKind::Link,
+            width,
+            self.declared_depth(),
+            Presence::Always,
+        );
+    }
+
+    /// The stated stepover of a stepover cut, else `None`.
+    fn stated_stepover(&self) -> Option<f64> {
+        match self.cut_spec().radial {
             Radial::Width(s) => s.map(|s| s.mm()),
             Radial::Slot
             | Radial::Groove
@@ -375,29 +633,6 @@ impl OperationConfig {
             | Radial::AngularStep(_)
             | Radial::SurfaceFollow
             | Radial::Axial => None,
-        };
-        match self.planner_width() {
-            PlannerWidth::None => {}
-            PlannerWidth::PassCeiling => declare.cut(
-                CutKind::FirstPass(FirstPassKind::PlannerCap),
-                DeclaredWidth::PassCeiling { stepover },
-                depth,
-            ),
-            PlannerWidth::CapMult(mult) => declare.cut(
-                CutKind::FirstPass(FirstPassKind::PlannerCap),
-                DeclaredWidth::CapMult { stepover, mult },
-                depth,
-            ),
-        }
-        // K7: a slot case for a first pass that meets material on both
-        // sides, or a radial cut that is a slot.
-        // EXEMPT(M12)
-        if matches!(spec.first_pass, FirstPass::Slot) || matches!(spec.radial, Radial::Slot) {
-            declare.cut(
-                CutKind::FirstPass(FirstPassKind::Slot),
-                DeclaredWidth::Slot,
-                depth,
-            );
         }
     }
 
