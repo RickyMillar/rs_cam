@@ -330,3 +330,99 @@ The check values of 9b and 9c were computed by the model functions (`CutLoad::of
 `Engagement::from_cut` at the declared width, depth and chip, with the tool helix) in a probe test,
 deleted. Calibration: see section 9.1 (no off run on this build; each mode left every other row
 equal).
+
+## 14. The chamfer feed raise (trace)
+
+Traced 2026-11-13 on HEAD `d7e6527b8` (P29-8 8d), by the accused path itself: the FM1 door
+`suggest_for_operation` with `DressupConfig::for_op(Chamfer)`, the FM1 tool (V-bit 12.7 mm, 60
+deg, 2 flutes), `MachineProfile::default()` (generic wood router: 8000 to 24000 rpm, 0.8 kW,
+cutting ceiling 4000 mm/min, no Z axis rate) and `SpindleStrategy::default()` (`MatchChart`). A
+throwaway switch in `FeedsInput::of_operation` gave the calculator the depth `(chamfer_width +
+tip_offset) / tan(half angle)` = (1.0 + 0.1) / tan 30 deg = 1.9053 mm. Only the calculator was
+switched: that alone gives 24000 rpm and 3994 mm/min, so the envelope and the force-budget cap
+are not the cause. The edit was restored from byte copies (`sha256sum -c` OK) and the probe was
+deleted.
+
+### 14.1 The steps (MDF; plywood is the same with 180 m/min)
+
+| Step | Off (today) | On (true depth) |
+|---|---|---|
+| vendor row | `onsrud-mdf-37-80-1-trace`, band 0.06657 to 0.09985 mm, no printed RPM | same |
+| `step1_rpm` | 8000 | 24000 |
+| `step3_engagement` depth | 0.762 (family default) | 1.9053 |
+| chip (band) | 0.08321 | 0.08321 |
+| `step5_feed` | 1331.36 | 3994.08 |
+| `step8_plunge` (`g10_plunge_vbit60`, 1/3) | 443 | 1331 |
+| Step 5c (`rpm_choice`) | not run (`MatchChart`) | not run |
+| power | 0.00039 kW | 0.00406 kW |
+
+The first step that differs is `step1_rpm`. Nothing else moves: the row, the band and the chip
+are equal; the feed is the chip x Z x rpm; the plunge is 1/3 of the feed.
+
+### 14.2 The mechanism
+
+The row prints no RPM, so Step 2 does not replace the Step 1 RPM. Step 1 is the surface-speed
+rule: `rpm = V x 1000 / (pi x d_eng)`, clamped to the spindle range (`calculator/speed.rs`).
+`d_eng` is the cone width at the depth that `FeedsInput::axial_depth_mm` states, else at the
+tool diameter (`input.axial_depth_mm.unwrap_or(d)`, `engaged_diameter`).
+
+- Today `CutSpec::calc_inputs` gives no depth for `Axial::ChamferWidth`, so Step 1 reads a depth
+  of 12.7 mm. The cone width is `2 x 12.7 x tan 30 deg` = 14.66 mm, clamped to 12.7 mm. Then
+  `170000 / (pi x 12.7)` = 4261 rpm (plywood 4511), clamped UP to the spindle minimum 8000.
+- With the true depth the cone width is `2 x 1.9053 x tan 30 deg` = 2.200 mm (= 2 x (width +
+  tip offset)). Then `170000 / (pi x 2.2)` = 24597 rpm (plywood 26043), clamped DOWN to the
+  spindle maximum 24000.
+
+Today the calculator reads two different depths in one call: Step 1 reads 12.7 mm, Step 3 reads
+the family default 0.762 mm.
+
+### 14.3 The answers
+
+1. Mechanism: Step 1, the surface-speed RPM at the engaged cone width. The width moves from
+   12.7 mm (no depth: the tool diameter) to 2.2 mm (the chamfer depth). The RPM moves from the
+   spindle minimum to the spindle maximum; the feed follows at the held chip.
+2. Today's 8000 rpm is the defect. It is the spindle minimum, reached because Step 1 reads the
+   full tool diameter: the cut engages 2.2 mm, so 8000 rpm gives `pi x 2.2 x 8000 / 1000` =
+   55.3 m/min against the 170 m/min of the rule (MDF). 24000 rpm is the same rule at the true
+   width, under its ideal 24597 rpm. It is not a new defect. Both values stand on the surface
+   speeds `material.base_cutting_speed_m_min.sheet_good` (170) and `.plywood` (180), which are
+   `Unsourced` F201 rows.
+3. The new point at the true depth (MDF): chip 0.0832 mm inside the band 0.0666 to 0.0999 mm and
+   above the rubbing floor 0.025 mm; feed 3994 mm/min under the cutting ceiling 4000 mm/min (6
+   mm/min of room); power 0.0041 kW of 0.8 kW; force 5.48 N with a force-budget cap of 6.27 mm
+   over the 1.905 mm depth (section 9.1, `P29-9_predictions_fm1.csv`). Plywood has no power or
+   force number (power `None`; `force_n` is empty in FM1 today too). The vertical rate has no
+   number on this machine: the plunge limit holds no axial chip (`axial: None`) and the machine
+   states no Z axis rate (`NotStated`), so the plunge 1331 mm/min is not judged. The ramp feed
+   is none (`EntryOff`).
+4. Recommendation for 9a: land the true depth. The raise is the correct reading of the existing
+   rule; today's 8000 rpm is an artefact of the missing depth (row `P28-32`). Name Step 1 as the
+   cause in the commit and list the four moved `rpm`, `feed_mm_min` and `plunge_mm_min` cells.
+   Two follow-ups outside 9a: (a) Step 1 reads the full tool diameter for every cone tool with
+   no stated depth while Step 3 reads the family default; one depth door (section 2.1) closes
+   this for every op, not only the Chamfer; (b) the feed sits 6 mm/min under the machine
+   ceiling, so a wider chamfer reaches the Step 7 feed cap.
+
+## 15. Lead rulings after the trace (2026-11-13)
+
+- **Q5: 9a lands with the true chamfer depth.** The trace (section 14) shows that today's 8000 rpm
+  is the defect: Step 1 reads the cone at the tool diameter when the op states no depth. The
+  commit names Step 1 as the cause. The predicted cells of 9a stand.
+- **The entry chip rule (`StoredFeedChip`).** The margin of a check follows the judged value, so
+  a row never reads `Within` with a margin below zero.
+- **The double rounding is fixed at its source, as its own commit before 9a.** Today Suggest
+  rounds the lifted cut feed down to a whole mm/min, and the ramp and the plunge then read that
+  stored feed over the lift and round down again. So a ramp can sit `1 + 1/lift` mm/min under
+  the band feed. The ramp and the plunge read the unlifted feed before the first rounding.
+
+  Prediction of that commit (reasoned, written before the code):
+  - FM1: only `ramp_feed_mm_min` and `plunge_mm_min` cells move. Each moved cell rises by
+    exactly 1 mm/min. No cell falls. No other column moves, and the simulation file is
+    byte-equal.
+  - No shipped ramp or plunge is above the shipped cut feed of its cell, and none is above its
+    vertical-rate bound.
+  - The project files: a Suggest ramp or plunge value rises by 0 or 1 mm/min (wanaka idx 0 and
+    12: ramp 6447 to 6448). No G-code moves: a stored value changes only on an apply.
+  - After it, the 8 Face `ChipMin` entry rows read `Within`. The 4 rivmap rows stay `Exceeds`
+    (a real chip under the band).
+  A cell that moves in another way stops the work.
