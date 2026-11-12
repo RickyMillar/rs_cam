@@ -154,6 +154,32 @@ Design and predictions: `phases/P29-4_DESIGN.md` (lead rulings in section 8),
   takes 373 ms, was 290 ms (debug build); the cap table of `load_context_parts` is built on
   each call (GUI thread; not measured); section 6 of `P29_FINDINGS.md` does not hold the
   P29-6 result. Not run: the slow 3D simulation tests whose docs name deleted predicates.
+- **P29-5b DONE** (2026-11-12): design `8e28c1913`; `6e1e5a731` (a Profile writes
+  `ClearingCut`; the G-code of operator idx 17 is byte-equal), `a5c697775` (the Bore depth is
+  one helix turn; 41 FM1 cells), `eca178bd4` (first-pass filings, option A; 24 FM1 cells;
+  rows `M11`, `P28-12` closed). Lead recount 65 of 65 cells. **Behaviour change the note did
+  not predict:** a ContourParallel 3D rough ships the slot power case of its perimeter sweep,
+  so a deep stated cut gets a lower Suggest feed (18 mm tool, 10 x 5.5 mm: 9123 to 2624
+  mm/min, `PowerLimited`). The wanaka roughs are geodesic and do not move. Open: the `CapMult`
+  power case can no longer be the largest case under ContourParallel (rows `P28-13`,
+  `P28-14`); the planner could feed the sweep unlifted (5b note F1), which also closes
+  `U-PerimeterSweep`.
+- **P29-5c DONE**: `267dee41c` (VCarve, Inlay, InlayPlug solve the force budget at the slot
+  width; Chamfer to `P28-32`; row `P28-03` closed; 162 FM1 cells, lead recount 0 mismatches).
+  Pins now: ROWS 48, MAX_NEEDS_RULING 37, ROWS_WITH_A_FILE 41.
+- **P29-7 in work**: design and lead rulings in `phases/P29-7_DESIGN.md` section 13
+  (`MayOccur` names an exemption row and `U-PerimeterSweep` stays open; the modulator part of
+  R5 is HELD, `P28-16` narrows; `VendorDepthTable` joins the driver in 7c, no 7c2). Order: 7a
+  and 7b (no number moves), then a **prediction amendment before the 7c code** (the
+  removal-rate pick with the new ceilings: `proposal_ae_mm`, `proposal_ap_mm`,
+  `binding_limit`; the vendor depth table cells; a rivmap100 row for trap 1), then 7c, 7d.
+  7c lowers the wanaka 3D rough proposals by 2 to 5 % (table in section 10.3); the operator
+  has that table.
+- **Known reds, not from P29-5b or later** (clean-up pass): `layered_framework_owns_the_ladder_w3`
+  (pinned move hashes stale since `5d700703a`, which added `Move::feed_cap`; traced from git
+  history, not from a build); `_litmatrix_rubbing_floor_clamp::ipe_pocket_ships_its_computed_
+  feed_above_the_floor_after_r4` (the vendor row changed; cause not traced);
+  `every_op_conforms_w4` check6.
 - **Operator, 2026-11-12: finish P29 before P27**, all steps of the change list (P29-5b, 5c,
   7, 8, 9, 10, 11, last), each with predictions first. The lead brings a prediction to the
   operator only when it changes what they cut with. **After P29-last: a tech-debt and
