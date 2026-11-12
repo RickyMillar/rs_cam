@@ -99,7 +99,7 @@ For source attribution and upstream lineage, see [`CREDITS.md`](CREDITS.md).
 ## Toolpath modifiers and control layers
 
 - heights system: clearance, retract, feed, top, bottom
-- entry dressups: plunge replacement via ramp or helix. The helix radius is the repo rule 0.3 x D or an operator value, capped at the tool's flat bottom so the helix leaves no core; a helix or ramp entry never runs above the cut feed (G10 Part B)
+- entry dressups: plunge replacement via ramp or helix. The ramp angle of a new op is the rule of the stock material (Easel: 5° hardwood, 20° softwood, plywood and MDF; P29-8 8b); a stated angle stands, and an empty GUI field shows the rule. The helix radius is the repo rule 0.3 x D or an operator value, capped at the tool's flat bottom so the helix leaves no core; a helix or ramp entry never runs above the cut feed (G10 Part B)
 - dogbone overcuts
 - lead-in / lead-out arcs. **A lead arc turns away from the material** (P6.0c, 2026-10-21): each 2.5D op states the material side of each closed pass, an arc that would leave the air side of the pass keeps the plunge, and a pass on the line (Trace None) or an open 2.5D pass gets no lead. Sentry: `a_lead_curls_away_from_the_part_p6_0c`
 - link moves / keep-tool-down linking

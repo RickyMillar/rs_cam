@@ -22,6 +22,7 @@
 #![expect(
     clippy::expect_used,
     clippy::indexing_slicing,
+    clippy::panic,
     reason = "test code: a panic is how a test reports a failure"
 )]
 
@@ -36,7 +37,7 @@ use rs_cam_core::compute::catalog::{EntryContract, OperationConfig, OperationTyp
 use rs_cam_core::compute::config::{DressupConfig, DressupEntryStyle, StockSource};
 use rs_cam_core::compute::execute::{DressupContext, apply_dressups};
 use rs_cam_core::compute::operation_configs::Adaptive3dEntryStyle;
-use rs_cam_core::feeds::entry_rule::{EntryDoor, ResolvedEntry};
+use rs_cam_core::feeds::entry_rule::{EntryAngle, EntryDoor, ResolvedEntry};
 use rs_cam_core::geo::P3;
 use rs_cam_core::polygon::Polygon2;
 use rs_cam_core::toolpath::{Move, MoveIntent, MoveType, Toolpath};
@@ -83,9 +84,11 @@ fn names(text: &str, needle: &str, field: bool) -> bool {
 }
 
 /// The entry constants that `entry_rule.rs` holds.
-const ENTRY_CONSTANTS: [&str; 7] = [
-    "DRESSUP_RAMP_ANGLE_DEG",
-    "ADAPTIVE3D_RAMP_ANGLE_DEG",
+const ENTRY_CONSTANTS: [&str; 9] = [
+    "RAMP_ANGLE_HARDWOOD_DEG",
+    "RAMP_ANGLE_SOFTWOOD_AND_COMPOSITE_DEG",
+    "RAMP_ANGLE_NON_FERROUS_DEG",
+    "RAMP_ANGLE_PLASTIC_DEG",
     "DRESSUP_HELIX_PITCH_MM",
     "ADAPTIVE3D_HELIX_PITCH_MM",
     "HELIX_RADIUS_OVER_D",
@@ -245,10 +248,19 @@ fn plunging_toolpath() -> Toolpath {
     tp
 }
 
+/// The stock material of the dressup door cases: generic softwood (the
+/// ramp angle rule reads its class, P29-8 8b).
+fn stock_material() -> rs_cam_core::material::Material {
+    rs_cam_core::material::Material::SolidWood {
+        species: rs_cam_core::material::WoodSpecies::GenericSoftwood,
+    }
+}
+
 fn dress(cfg: &DressupConfig, containment: Option<&[Polygon2]>) -> Toolpath {
     apply_dressups(
         AnnotatedToolpath::new(plunging_toolpath()),
         DressupContext {
+            material: &stock_material(),
             cfg,
             nominal_feed_rate: FEED,
             plunge_rate_mm_min: None,
@@ -322,17 +334,22 @@ fn feeds(tp: &Toolpath, intent: MoveIntent) -> Vec<f64> {
 fn the_dressup_door_emits_the_resolved_entry_p29_8() {
     // A stated angle, pitch and radius that no rule holds, and the rule.
     for (style, ramp_angle, helix_pitch, helix_radius) in [
-        (DressupEntryStyle::Ramp, 7.0, 1.0, None),
+        (DressupEntryStyle::Ramp, EntryAngle::Stated(7.0), 1.0, None),
         (
             DressupEntryStyle::Ramp,
             DressupConfig::default().ramp_angle,
             1.0,
             None,
         ),
-        (DressupEntryStyle::Helix, 3.0, 1.5, Some(1.2)),
         (
             DressupEntryStyle::Helix,
-            3.0,
+            EntryAngle::Stated(3.0),
+            1.5,
+            Some(1.2),
+        ),
+        (
+            DressupEntryStyle::Helix,
+            EntryAngle::Stated(3.0),
             DressupConfig::default().helix_pitch,
             None,
         ),
@@ -348,7 +365,7 @@ fn the_dressup_door_emits_the_resolved_entry_p29_8() {
         };
         // No cutter, as the K4 sentry: the air lead is fed (no replayed
         // stock), and the helix radius is the request.
-        let entry = ResolvedEntry::of_dressup(&cfg, None, TOOL_D);
+        let entry = ResolvedEntry::of_dressup(&cfg, None, TOOL_D, &stock_material());
         assert_eq!(entry.door(), EntryDoor::Dressup);
         let tp = dress(&cfg, None);
 
@@ -396,13 +413,13 @@ fn the_dressup_door_emits_the_resolved_entry_p29_8() {
 fn a_dressup_helix_with_no_room_ramps_at_the_op_angle_p29_8() {
     let cfg = DressupConfig {
         entry_style: DressupEntryStyle::Helix,
-        ramp_angle: 7.0,
+        ramp_angle: EntryAngle::Stated(7.0),
         link_moves: None,
         feed_optimization: false,
         ..DressupConfig::default()
     };
-    let entry = ResolvedEntry::of_dressup(&cfg, None, TOOL_D);
-    assert_eq!(entry.fallback_ramp_angle_deg(), cfg.ramp_angle);
+    let entry = ResolvedEntry::of_dressup(&cfg, None, TOOL_D, &stock_material());
+    assert_eq!(entry.fallback_ramp_angle_deg(), 7.0);
     let away = [rectangle(100.0, 100.0, 110.0, 110.0)];
     let tp = dress(&cfg, Some(&away));
     assert!(
@@ -429,7 +446,7 @@ fn rough_3d(style: Adaptive3dEntryStyle) -> (Toolpath, ResolvedEntry) {
     cfg.entry_style = style;
     let cutter = rs_cam_core::compute::build_cutter(&tool_for(OperationType::Adaptive3d))
         .expect("the fixture tool builds");
-    let entry = ResolvedEntry::of_adaptive3d(cfg, &cutter);
+    let config = cfg.clone();
     let (mut session, index) = case_session(CaseSpec {
         name: "rough_3d_entry",
         op,
@@ -439,6 +456,8 @@ fn rough_3d(style: Adaptive3dEntryStyle) -> (Toolpath, ResolvedEntry) {
         fixture: Fixture::Standard,
         tool: None,
     });
+    // The session's own stock material: the ramp angle rule reads it.
+    let entry = ResolvedEntry::of_adaptive3d(&config, &cutter, &session.stock_config().material);
     common::session::generate(&mut session, index);
     let tp = session
         .result_at(index)
@@ -495,4 +514,90 @@ fn the_3d_rough_door_emits_the_resolved_entry_p29_8() {
         entries > 0,
         "non-vacuity: the 3D Rough op has helix entries"
     );
+}
+
+// ── Stated or the rule (P29-8 8b) ───────────────────────────────────────
+
+/// A setter writes a stated angle; `null` and the token `"rule"` write the
+/// rule; the writer omits the rule and saves a stated angle as the number.
+/// The 3D Rough param door and the dressup field door read one shape.
+#[test]
+fn a_setter_writes_a_stated_angle_and_the_token_writes_the_rule_p29_8() {
+    use rs_cam_core::session::{Command, SetDressupFieldArgs, SetToolpathParamArgs};
+    let (mut session, index) = case_session(CaseSpec {
+        name: "entry_angle_setter",
+        op: OperationConfig::new_default(OperationType::Adaptive3d),
+        prior: Prior::None,
+        stock_source: StockSource::Fresh,
+        frame: Frame::TopUp,
+        fixture: Fixture::Standard,
+        tool: None,
+    });
+    #[expect(
+        clippy::wildcard_enum_match_arm,
+        reason = "test: an unexpected variant panics"
+    )]
+    let a3d =
+        |s: &rs_cam_core::session::ProjectSession| match &s.toolpath_configs()[index].operation {
+            OperationConfig::Adaptive3d(c) => c.ramp_angle_deg,
+            other => panic!("the case op is a 3D Rough: {other:?}"),
+        };
+    assert_eq!(a3d(&session), EntryAngle::Rule, "a new op holds the rule");
+    for (value, want) in [
+        (serde_json::json!(7.0), EntryAngle::Stated(7.0)),
+        (serde_json::json!("rule"), EntryAngle::Rule),
+        (serde_json::json!(12), EntryAngle::Stated(12.0)),
+        (serde_json::Value::Null, EntryAngle::Rule),
+    ] {
+        let _ = session
+            .apply(Command::SetToolpathParam(SetToolpathParamArgs {
+                index,
+                param: "ramp_angle_deg".to_owned(),
+                value: value.clone(),
+            }))
+            .unwrap_or_else(|e| panic!("ramp_angle_deg = {value}: {e}"));
+        assert_eq!(a3d(&session), want, "ramp_angle_deg = {value}");
+        let text =
+            toml::to_string(&session.toolpath_configs()[index].operation).expect("the op writes");
+        assert_eq!(
+            text.contains("ramp_angle_deg"),
+            !want.is_rule(),
+            "the writer omits the rule only: {text}"
+        );
+    }
+    // The schema range still holds a stated angle.
+    assert!(
+        session
+            .apply(Command::SetToolpathParam(SetToolpathParamArgs {
+                index,
+                param: "ramp_angle_deg".to_owned(),
+                value: serde_json::json!(80.0),
+            }))
+            .is_err(),
+        "80 degrees is outside the schema range"
+    );
+
+    // The dressup field door.
+    for (value, want) in [
+        (serde_json::json!(4.5), EntryAngle::Stated(4.5)),
+        (serde_json::json!("rule"), EntryAngle::Rule),
+        (serde_json::json!(4.5), EntryAngle::Stated(4.5)),
+        (serde_json::Value::Null, EntryAngle::Rule),
+    ] {
+        let _ = session
+            .apply(Command::SetDressupField(SetDressupFieldArgs {
+                index,
+                key: "ramp_angle".to_owned(),
+                value: value.clone(),
+            }))
+            .unwrap_or_else(|e| panic!("ramp_angle = {value}: {e}"));
+        let dressups = &session.toolpath_configs()[index].dressups;
+        assert_eq!(dressups.ramp_angle, want, "ramp_angle = {value}");
+        let text = toml::to_string(dressups).expect("the dressups write");
+        assert_eq!(
+            text.contains("ramp_angle"),
+            !want.is_rule(),
+            "the writer omits the rule only: {text}"
+        );
+    }
 }

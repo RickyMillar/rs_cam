@@ -132,6 +132,7 @@ fn run_full_pipeline(
     apply_dressups(
         annotated,
         rs_cam_core::compute::execute::DressupContext {
+            material: &rs_cam_core::material::Material::default(),
             ramp_feed_rate_mm_min: None,
             cfg,
             nominal_feed_rate: 1000.0,
@@ -197,6 +198,7 @@ fn synthetic_three_pass_preserves_invariants_across_all_combos() {
         let output = apply_dressups(
             input,
             rs_cam_core::compute::execute::DressupContext {
+                material: &rs_cam_core::material::Material::default(),
                 ramp_feed_rate_mm_min: None,
                 cfg: &cfg,
                 nominal_feed_rate: 1000.0,
@@ -248,6 +250,7 @@ fn synthetic_three_pass_link_moves_never_straddles_barrier() {
     let output = apply_dressups(
         input,
         rs_cam_core::compute::execute::DressupContext {
+            material: &rs_cam_core::material::Material::default(),
             ramp_feed_rate_mm_min: None,
             cfg: &cfg,
             nominal_feed_rate: 1000.0,
@@ -315,6 +318,7 @@ fn synthetic_with_invalid_input_spans_stays_invalid() {
     let output = apply_dressups(
         input,
         rs_cam_core::compute::execute::DressupContext {
+            material: &rs_cam_core::material::Material::default(),
             ramp_feed_rate_mm_min: None,
             cfg: &cfg,
             nominal_feed_rate: 1000.0,
@@ -406,6 +410,7 @@ fn one_way_face_vetoes_rapid_order_but_runs_other_dressups() {
     let output = apply_dressups(
         annotated,
         rs_cam_core::compute::execute::DressupContext {
+            material: &rs_cam_core::material::Material::default(),
             ramp_feed_rate_mm_min: None,
             cfg: &cfg,
             nominal_feed_rate: 1500.0,
@@ -467,7 +472,7 @@ fn dressup_stages_run_in_the_order_the_pipeline_lists() {
     let root = recorder.root_context();
     let cfg = DressupConfig {
         entry_style: DressupEntryStyle::Ramp,
-        ramp_angle: 5.0,
+        ramp_angle: rs_cam_core::feeds::entry_rule::EntryAngle::Stated(5.0),
         dogbone: Some(DogboneParams { angle: 90.0 }),
         lead_in_out: Some(LeadParams {
             radius: 1.0,
@@ -485,6 +490,7 @@ fn dressup_stages_run_in_the_order_the_pipeline_lists() {
     let _ = apply_dressups(
         synthetic_three_pass(),
         rs_cam_core::compute::execute::DressupContext {
+            material: &rs_cam_core::material::Material::default(),
             ramp_feed_rate_mm_min: None,
             cfg: &cfg,
             nominal_feed_rate: 1000.0,

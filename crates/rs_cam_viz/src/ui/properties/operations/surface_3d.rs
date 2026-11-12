@@ -59,6 +59,10 @@ pub(in crate::ui::properties) fn draw_dropcutter_params(
     });
 }
 
+#[expect(
+    clippy::too_many_arguments,
+    reason = "the editor inputs of the op, and the stock material that the ramp angle rule reads (P29-8 8b)"
+)]
 pub(in crate::ui::properties) fn draw_adaptive3d_params(
     ui: &mut egui::Ui,
     cfg: &mut Adaptive3dConfig,
@@ -66,6 +70,7 @@ pub(in crate::ui::properties) fn draw_adaptive3d_params(
     strategy_suggestion: Option<ClearingStrategy>,
     contour_each_level_offered: bool,
     remaining_stock: bool,
+    material: &rs_cam_core::material::Material,
     fields: Fields<'_>,
 ) {
     // Spec: pill stepover + depth_per_pass. Removal step R2: the
@@ -129,14 +134,20 @@ pub(in crate::ui::properties) fn draw_adaptive3d_params(
     match cfg.entry_style {
         Adaptive3dEntryStyle::Plunge => {}
         Adaptive3dEntryStyle::Ramp => {
-            dv(
+            // P29-8 8b: an empty field is the rule of the stock material; the
+            // hint names its value and source, the "×" goes back to it.
+            let hint = crate::ui::properties::linking_dressup::ramp_rule_hint(material);
+            let mut stated = cfg.ramp_angle_deg.stated();
+            dv_opt(
                 ui,
                 p(OperationType::Adaptive3d, "ramp_angle_deg", "Ramp angle"),
-                &mut cfg.ramp_angle_deg,
+                &mut stated,
                 " deg",
                 0.5,
+                Some(&hint),
                 fields,
             );
+            cfg.ramp_angle_deg = rs_cam_core::feeds::entry_rule::EntryAngle::from_stated(stated);
             dv(
                 ui,
                 p(

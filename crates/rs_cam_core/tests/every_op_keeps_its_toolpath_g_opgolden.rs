@@ -84,6 +84,14 @@
 //!   `profile/rest`. The fed moves of a Profile level are now
 //!   `ClearingCut` (they were `FinishingCut`). The intent sits in the move
 //!   hash; `gcode_hash` and every other field stay.
+//! - P29-8 8b (2026-11-13, operator ruling O2, Easel): field-only bless of
+//!   22 arms (107 fields): `adaptive/rest`, `adaptive3d/ramp_geodesic`, the
+//!   `pocket`, `profile` and `zigzag` arms, and `gcode_hash` alone of
+//!   `bore/rest`, `chamfer/rest`, `drill/rest`, `face/rest`, `trace/rest`.
+//!   The fixtures build their dressups from `DressupConfig::for_op`, so a
+//!   ramp now holds the rule of the stock (generic softwood: 20 degrees,
+//!   was 3; the 3D Rough was 10). A rest arm exports its prior Pocket, whose
+//!   ramps moved. No known row moved.
 //!
 //! `RS_CAM_OPGOLDEN_DUMP_GCODE=<dir>` writes the program of each arm into
 //! `<dir>/<op>__<arm>.nc`. Use it to show that a change of `gcode_hash`

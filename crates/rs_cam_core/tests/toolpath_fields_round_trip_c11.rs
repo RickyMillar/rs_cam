@@ -122,7 +122,7 @@ fn default_config(tool_id: usize, name: &str, operation: OperationConfig) -> Too
 fn finish_dressups() -> DressupConfig {
     DressupConfig {
         entry_style: DressupEntryStyle::Ramp,
-        ramp_angle: 12.0,
+        ramp_angle: rs_cam_core::feeds::entry_rule::EntryAngle::Stated(12.0),
         dogbone: Some(DogboneParams::default()),
         feed_optimization: true,
         segment_merge: Some(SegmentMergeParams::default()),
@@ -326,7 +326,7 @@ fn every_editable_toolpath_field_survives_a_save_and_a_load() {
     // Dressups.
     let expected_dressups = finish_dressups();
     assert_eq!(finish.dressups.entry_style, expected_dressups.entry_style);
-    assert!((finish.dressups.ramp_angle - expected_dressups.ramp_angle).abs() < 1e-9);
+    assert_eq!(finish.dressups.ramp_angle, expected_dressups.ramp_angle);
     assert_eq!(finish.dressups.dogbone, expected_dressups.dogbone);
     assert!(finish.dressups.feed_optimization);
     assert_eq!(

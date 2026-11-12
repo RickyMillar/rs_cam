@@ -164,6 +164,7 @@ fn dress(planned: &Toolpath, cutter: &FlatEndmill) -> Toolpath {
     apply_dressups(
         AnnotatedToolpath::new(planned.clone()),
         DressupContext {
+            material: &rs_cam_core::material::Material::default(),
             cfg: &cfg,
             nominal_feed_rate: FEED,
             plunge_rate_mm_min: Some(PLUNGE),

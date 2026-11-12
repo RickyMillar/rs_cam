@@ -1740,6 +1740,7 @@ fn the_strategy_row_carries_the_suggest_chip_g_d() {
                     suggestion,
                     false,
                     false,
+                    &rs_cam_core::material::Material::default(),
                     Default::default(),
                 );
             });
@@ -1869,6 +1870,7 @@ fn the_entry_style_row_hides_where_the_op_owns_the_entry_w3e() {
                     &mut entry,
                     None,
                     None,
+                    &rs_cam_core::material::Material::default(),
                     super::linking_dressup::Fields::default(),
                 );
             });
@@ -2291,6 +2293,7 @@ fn contour_each_level_shows_where_it_acts_c4() {
                 None,
                 offered,
                 false,
+                &rs_cam_core::material::Material::default(),
                 Default::default(),
             );
         });

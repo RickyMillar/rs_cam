@@ -1808,14 +1808,20 @@ pub struct Adaptive3dConfig {
     #[param(help = HELP_MIN_CUTTING_RADIUS, range = 0.0..=50.0)]
     pub min_cutting_radius: f64,
     pub entry_style: Adaptive3dEntryStyle,
-    /// Ramp entry: maximum descent angle in degrees. Only honored when
-    /// `entry_style == Ramp`.
-    #[serde(default = "default_adaptive3d_ramp_angle")]
+    /// Ramp entry: maximum descent angle in degrees, stated or the rule of
+    /// the stock material (P29-8 8b, `feeds::entry_rule::EntryAngle`). The
+    /// Ramp style reads it; the geodesic helix that has no room falls back
+    /// to a ramp at it. Absent (or `"rule"`) is the rule; the writer omits
+    /// the rule.
+    #[serde(
+        default,
+        skip_serializing_if = "crate::feeds::entry_rule::EntryAngle::is_rule"
+    )]
     #[param(
-        help = "Ramp entry angle from horizontal (degrees), for the Ramp entry style.",
+        help = "Ramp entry angle from horizontal (degrees), for the Ramp entry style. Empty = the rule of the stock material (Easel: 5 hardwood, 20 softwood, plywood, MDF).",
         range = 0.5..=45.0,
     )]
-    pub ramp_angle_deg: f64,
+    pub ramp_angle_deg: crate::feeds::entry_rule::EntryAngle,
     /// Helix entry: helix radius as a fraction of the tool's nominal cutting
     /// diameter (`compute::config::helix_entry_diameter_mm`; the tip ball on
     /// a tapered ball, not the shaft). Only honored when `entry_style == Helix`. The engine caps
@@ -1963,7 +1969,7 @@ impl Default for Adaptive3dConfig {
             tolerance: 0.1,
             min_cutting_radius: 0.0,
             entry_style: Adaptive3dEntryStyle::Plunge,
-            ramp_angle_deg: default_adaptive3d_ramp_angle(),
+            ramp_angle_deg: crate::feeds::entry_rule::EntryAngle::Rule,
             helix_radius_factor: default_adaptive3d_helix_radius_factor(),
             helix_pitch: default_adaptive3d_helix_pitch(),
             entry_clearance_mm: crate::compute::config::default_entry_clearance_mm(),
@@ -2001,10 +2007,6 @@ fn default_clearing_strategy() -> ClearingStrategy {
 /// rule (`feeds::entry_rule`).
 fn adaptive3d_stored_entry() -> crate::feeds::entry_rule::StoredDefault {
     crate::feeds::entry_rule::stored_default(crate::feeds::entry_rule::EntryDoor::Adaptive3d)
-}
-
-fn default_adaptive3d_ramp_angle() -> f64 {
-    adaptive3d_stored_entry().ramp_angle_deg
 }
 
 fn default_adaptive3d_helix_radius_factor() -> f64 {

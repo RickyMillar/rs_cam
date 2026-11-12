@@ -73,6 +73,14 @@ pub(crate) fn generate_adaptive3d(
             "depth_per_pass",
         )?,
         tool: ctx.tool_def,
+        // P29-8 8b: the ramp angle rule reads the stock material class.
+        // The session always passes it.
+        material: ctx.material.ok_or_else(|| {
+            OperationError::Internal(
+                "the 3D Rough entry rule reads the stock material, and the context holds none"
+                    .to_owned(),
+            )
+        })?,
         gouge_probe,
         feed_rate: op.cut_feeds()?.feed_rate,
         plunge_rate: op.cut_feeds()?.plunge_rate,
@@ -90,6 +98,8 @@ pub(crate) struct Adaptive3dRough<'a> {
     stepover: f64,
     depth_per_pass: f64,
     tool: &'a ToolDefinition,
+    /// The stock material: the ramp angle rule reads its class (P29-8 8b).
+    material: &'a crate::material::Material,
     /// G-DRAPEGAP: the guard's reduced tool (`Adaptive3dGeometry::gouge_probe`).
     gouge_probe: Option<std::sync::Arc<dyn MillingCutter>>,
     feed_rate: f64,
@@ -105,7 +115,8 @@ impl Adaptive3dRough<'_> {
     /// Q6: the helix radius D x factor, capped at the flat bottom so the
     /// helix leaves no core).
     fn entry_style(&self) -> crate::adaptive3d::EntryStyle3d {
-        crate::feeds::entry_rule::ResolvedEntry::of_adaptive3d(self.cfg, self.tool).style_3d()
+        crate::feeds::entry_rule::ResolvedEntry::of_adaptive3d(self.cfg, self.tool, self.material)
+            .style_3d()
     }
 
     /// The planner params, from the config and the runner's inputs.

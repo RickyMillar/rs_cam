@@ -58,7 +58,9 @@ use rs_cam_core::compute::operation_configs::{
 };
 use rs_cam_core::compute::tool_config::{ToolConfig, ToolId, ToolType};
 use rs_cam_core::feeds::PassRole;
+use rs_cam_core::feeds::entry_rule::{EntryAngle, RampAngle};
 use rs_cam_core::feeds::ramp::entry_notes;
+use rs_cam_core::material::{Material, WoodSpecies};
 use rs_cam_core::mesh::make_test_flat;
 use rs_cam_core::session::{Command, ProjectSession, SetDressupFieldArgs};
 use rs_cam_core::toolpath::{MoveIntent, Toolpath};
@@ -216,6 +218,7 @@ fn a_flat_or_bull_helix_is_emitted_at_the_flat_bottom_g10() {
         &pocket_op(None),
         Some(&dressups),
         &tool(ToolType::EndMill, 3.175),
+        &Material::default(),
         PassRole::Roughing,
     );
     assert!(
@@ -244,7 +247,13 @@ fn a_ball_helix_is_not_capped_and_the_card_shows_the_pip_g10() {
         entry_style: DressupEntryStyle::Helix,
         ..DressupConfig::default()
     };
-    let notes = entry_notes(&pocket_op(None), Some(&dressups), &ball, PassRole::Roughing);
+    let notes = entry_notes(
+        &pocket_op(None),
+        Some(&dressups),
+        &ball,
+        &Material::default(),
+        PassRole::Roughing,
+    );
     let pip = 3.0 - (9.0_f64 - 1.8 * 1.8).sqrt();
     assert!((pip - 0.6).abs() < 1e-12);
     assert!(
@@ -301,6 +310,7 @@ fn a_tapered_helix_reads_the_nominal_diameter_g10() {
         &pocket_op(None),
         Some(&dressups),
         &tapered,
+        &Material::default(),
         PassRole::Roughing,
     );
     assert!(
@@ -500,14 +510,24 @@ fn the_entry_defaults_are_the_named_repo_rules_g10() {
             .unwrap_or_else(|| panic!("F201 row `{name}`"))
             .value
     };
+    // P29-8 8b (operator ruling O2): a new op holds the ramp angle rule,
+    // and the rule reads the stock class (Easel: 5 hardwood, 20 softwood).
     let d = DressupConfig::default();
-    assert_eq!(d.ramp_angle, row("entry_rule.ramp_angle_deg.dressup"));
+    assert_eq!(d.ramp_angle, EntryAngle::Rule);
     assert_eq!(d.helix_pitch, row("entry_rule.helix_pitch_mm.dressup"));
     assert_eq!(d.helix_radius, None, "None is the rule 0.3 x D");
     let a = Adaptive3dConfig::default();
+    assert_eq!(a.ramp_angle_deg, EntryAngle::Rule);
+    let hard = Material::SolidWood {
+        species: WoodSpecies::WhiteOak,
+    };
     assert_eq!(
-        a.ramp_angle_deg,
-        row("entry_rule.ramp_angle_deg.adaptive3d")
+        RampAngle::resolve(a.ramp_angle_deg, &hard).deg,
+        row("entry_rule.ramp_angle_deg.hardwood")
+    );
+    assert_eq!(
+        RampAngle::resolve(d.ramp_angle, &Material::default()).deg,
+        row("entry_rule.ramp_angle_deg.softwood_and_composite")
     );
     assert_eq!(a.helix_pitch, row("entry_rule.helix_pitch_mm.adaptive3d"));
     assert_eq!(a.helix_radius_factor, row("entry_rule.helix_radius_over_d"));

@@ -39,6 +39,7 @@ fn helix_radius() -> f64 {
         &rs_cam_core::compute::config::DressupConfig::default(),
         Some(&tool),
         2.0 * R,
+        &rs_cam_core::material::Material::default(),
     )
     .helix_radius()
     .emitted_mm

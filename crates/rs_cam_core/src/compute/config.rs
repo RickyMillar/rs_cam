@@ -1178,7 +1178,9 @@ impl Default for SegmentMergeParams {
 #[serde(from = "DressupConfigWire", into = "DressupConfigWire")]
 pub struct DressupConfig {
     pub entry_style: DressupEntryStyle,
-    pub ramp_angle: f64,
+    /// The ramp entry angle: stated, or the rule of the stock material
+    /// (P29-8 8b, `feeds::entry_rule::EntryAngle`). A new op holds the rule.
+    pub ramp_angle: crate::feeds::entry_rule::EntryAngle,
     /// The helix entry radius (mm). `None` is the rule 0.3 x D
     /// (`feeds::entry_rule`), applied where the tool is known;
     /// `Some(r)` is an operator value (G10 D2). Either way the engine emits
@@ -1232,7 +1234,13 @@ pub struct DressupConfig {
 )]
 struct DressupConfigWire {
     entry_style: DressupEntryStyle,
-    ramp_angle: f64,
+    /// P29-8 8b: a number is a stated angle; absent (or `"rule"`) is the
+    /// rule of the stock material. The writer omits the rule.
+    #[serde(
+        default,
+        skip_serializing_if = "crate::feeds::entry_rule::EntryAngle::is_rule"
+    )]
+    ramp_angle: crate::feeds::entry_rule::EntryAngle,
     /// G10 D2: absent (or null) is the rule 0.3 x D. A saved project's
     /// `helix_radius = 2.0` loads as the operator value `Some(2.0)`.
     #[serde(default, skip_serializing_if = "Option::is_none")]
@@ -1413,7 +1421,7 @@ impl DressupConfig {
         },
         DressupFieldDef {
             name: "ramp_angle",
-            description: "ramp entry angle (degrees)",
+            description: "ramp entry angle (degrees); null or \"rule\" = the rule of the stock material (Easel: 5 hardwood, 20 softwood, plywood, MDF)",
             owner: None,
         },
         DressupFieldDef {
@@ -1531,12 +1539,13 @@ impl Default for DressupConfig {
         // optimize_rapid_order. All are wins for the typical case;
         // operations that can't tolerate them are stripped by
         // `normalize_for_op` (which `for_op` now also calls on construct).
-        // P29-8: the entry values of a new op are the dressup door's rule.
+        // P29-8: the entry values of a new op are the dressup door's rule;
+        // 8b: the ramp angle is the rule of the stock material.
         let entry =
             crate::feeds::entry_rule::stored_default(crate::feeds::entry_rule::EntryDoor::Dressup);
         Self {
             entry_style: DressupEntryStyle::None,
-            ramp_angle: entry.ramp_angle_deg,
+            ramp_angle: crate::feeds::entry_rule::EntryAngle::Rule,
             helix_radius: None,
             helix_pitch: entry.helix_pitch_mm,
             entry_clearance_mm: default_entry_clearance_mm(),
@@ -1915,6 +1924,8 @@ mod tests {
             // G10 D2: the rule (`None`) is not written, so an operator value
             // puts the key on the wire.
             helix_radius: Some(2.0),
+            // P29-8 8b: the ramp angle rule is not written either.
+            ramp_angle: crate::feeds::entry_rule::EntryAngle::Stated(3.0),
             // S11: the rules (`None`) are not written either.
             link_moves: Some(LinkDressupParams {
                 max_distance: Some(10.0),

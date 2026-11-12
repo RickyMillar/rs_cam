@@ -506,6 +506,9 @@ fn toolpath_is_drill_cycle(annotated: &AnnotatedToolpath) -> bool {
 /// context mutably borrowed while each stage reads its constants.
 pub struct DressupContext<'a> {
     pub cfg: &'a DressupConfig,
+    /// The stock material. The ramp angle rule reads its class (P29-8 8b,
+    /// `feeds::entry_rule::RampAngle`).
+    pub material: &'a crate::material::Material,
     pub nominal_feed_rate: f64,
     /// WP22 (G-FEEDOPTPLUNGE): the OPERATION's own plunge rate (mm/min).
     /// The feed-optimisation pass caps a geometric plunge at it. `None`
@@ -590,7 +593,7 @@ pub fn apply_dressups(
         barrier_count: annotated.rapid_order_barriers().len(),
         tool_radius: ctx.tool_diameter / 2.0,
         entry_style: None,
-        entry: ResolvedEntry::of_dressup(ctx.cfg, ctx.cutter, ctx.tool_diameter),
+        entry: ResolvedEntry::of_dressup(ctx.cfg, ctx.cutter, ctx.tool_diameter, ctx.material),
         ctx,
     };
     let input_valid = annotated.spans_valid;

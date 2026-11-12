@@ -135,15 +135,18 @@ fn dressup_keys() -> Vec<(String, String)> {
     let mut out = Vec::new();
     for (rel, text) in properties_source() {
         let flat: String = text.split_whitespace().collect();
-        let needle = "dv_dressup(ui,\"";
-        let mut from = 0usize;
-        while let Some(i) = flat[from..].find(needle) {
-            let start = from + i + needle.len();
-            let rest = &flat[start..];
-            if let Some(e) = rest.find('"') {
-                out.push((rel.clone(), rest[..e].to_owned()));
+        // `dv_dressup_rule` is the same row with a rule for the empty value
+        // (the ramp angle since P29-8 8b).
+        for needle in ["dv_dressup(ui,\"", "dv_dressup_rule(ui,\""] {
+            let mut from = 0usize;
+            while let Some(i) = flat[from..].find(needle) {
+                let start = from + i + needle.len();
+                let rest = &flat[start..];
+                if let Some(e) = rest.find('"') {
+                    out.push((rel.clone(), rest[..e].to_owned()));
+                }
+                from = start;
             }
-            from = start;
         }
     }
     out

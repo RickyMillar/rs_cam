@@ -421,6 +421,7 @@ fn project_curve_cutting_moves_follow_rivers_dxf() {
     let tp_with_links = apply_dressups(
         AnnotatedToolpath::new(all_moves.clone()),
         rs_cam_core::compute::execute::DressupContext {
+            material: &rs_cam_core::material::Material::default(),
             ramp_feed_rate_mm_min: None,
             cfg: &with_links,
             nominal_feed_rate: 1000.0,
@@ -449,6 +450,7 @@ fn project_curve_cutting_moves_follow_rivers_dxf() {
     let tp_no_links = apply_dressups(
         AnnotatedToolpath::new(all_moves.clone()),
         rs_cam_core::compute::execute::DressupContext {
+            material: &rs_cam_core::material::Material::default(),
             ramp_feed_rate_mm_min: None,
             cfg: &DressupConfig::default(),
             nominal_feed_rate: 1000.0,
@@ -479,7 +481,7 @@ fn project_curve_cutting_moves_follow_rivers_dxf() {
     // we can see which dressups introduce phantom lateral moves at cut depth.
     let mut finish_defaults = DressupConfig::default();
     finish_defaults.entry_style = DressupEntryStyle::Ramp;
-    finish_defaults.ramp_angle = 3.0;
+    finish_defaults.ramp_angle = rs_cam_core::feeds::entry_rule::EntryAngle::Stated(3.0);
     finish_defaults.lead_in_out = Some(LeadParams {
         radius: 2.0,
         ..LeadParams::default()
@@ -487,6 +489,7 @@ fn project_curve_cutting_moves_follow_rivers_dxf() {
     let tp_finish = apply_dressups(
         AnnotatedToolpath::new(all_moves.clone()),
         rs_cam_core::compute::execute::DressupContext {
+            material: &rs_cam_core::material::Material::default(),
             ramp_feed_rate_mm_min: None,
             cfg: &finish_defaults,
             nominal_feed_rate: 1000.0,
@@ -516,10 +519,11 @@ fn project_curve_cutting_moves_follow_rivers_dxf() {
     // Same but ramp only (no lead-in/out).
     let mut ramp_only = DressupConfig::default();
     ramp_only.entry_style = DressupEntryStyle::Ramp;
-    ramp_only.ramp_angle = 3.0;
+    ramp_only.ramp_angle = rs_cam_core::feeds::entry_rule::EntryAngle::Stated(3.0);
     let tp_ramp = apply_dressups(
         AnnotatedToolpath::new(all_moves.clone()),
         rs_cam_core::compute::execute::DressupContext {
+            material: &rs_cam_core::material::Material::default(),
             ramp_feed_rate_mm_min: None,
             cfg: &ramp_only,
             nominal_feed_rate: 1000.0,

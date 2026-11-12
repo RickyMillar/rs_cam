@@ -113,7 +113,7 @@ fn dress_on_ridge(entry_x: f64, style: DressupEntryStyle, tool_diameter_mm: f64)
     let tp = plunging_toolpath(entry_x, 0.0, &mesh, &index, &cutter);
     let cfg = DressupConfig {
         entry_style: style,
-        ramp_angle: 3.0,
+        ramp_angle: rs_cam_core::feeds::entry_rule::EntryAngle::Stated(3.0),
         helix_radius: Some(HELIX_RADIUS_MM),
         helix_pitch: 1.0,
         // Finish-role default: arc fitting on. The sentry audits the
@@ -134,6 +134,7 @@ fn dress_on_ridge(entry_x: f64, style: DressupEntryStyle, tool_diameter_mm: f64)
     let dressed = apply_dressups(
         AnnotatedToolpath::new(tp),
         rs_cam_core::compute::execute::DressupContext {
+            material: &rs_cam_core::material::Material::default(),
             ramp_feed_rate_mm_min: None,
             cfg: &cfg,
             nominal_feed_rate: FEED,
@@ -277,7 +278,7 @@ fn unclipped_ramp_keeps_its_planned_legs() {
     tp.feed_to(P3::new(-16.0, 0.0, z_next), FEED);
     let cfg = DressupConfig {
         entry_style: DressupEntryStyle::Ramp,
-        ramp_angle: 3.0,
+        ramp_angle: rs_cam_core::feeds::entry_rule::EntryAngle::Stated(3.0),
         // Bare entry transform: this test pins the emitted leg count,
         // and arc fitting may legally merge or split moves.
         arc_fitting: None,
@@ -296,6 +297,7 @@ fn unclipped_ramp_keeps_its_planned_legs() {
     let dressed = apply_dressups(
         AnnotatedToolpath::new(tp),
         rs_cam_core::compute::execute::DressupContext {
+            material: &rs_cam_core::material::Material::default(),
             ramp_feed_rate_mm_min: None,
             cfg: &cfg,
             nominal_feed_rate: FEED,

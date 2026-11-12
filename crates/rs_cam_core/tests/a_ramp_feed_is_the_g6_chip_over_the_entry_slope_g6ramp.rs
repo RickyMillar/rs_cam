@@ -143,7 +143,7 @@ fn helix_dressup(radius_mm: f64, pitch_mm: f64) -> DressupConfig {
 fn ramp_dressup(angle_deg: f64) -> DressupConfig {
     DressupConfig {
         entry_style: DressupEntryStyle::Ramp,
-        ramp_angle: angle_deg,
+        ramp_angle: rs_cam_core::feeds::entry_rule::EntryAngle::Stated(angle_deg),
         ..DressupConfig::default()
     }
 }

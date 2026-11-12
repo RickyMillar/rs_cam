@@ -1080,6 +1080,7 @@ impl JobPhases<'_, '_> {
             annotated,
             crate::compute::execute::DressupContext {
                 cfg: &self.context.dressups,
+                material: &self.context.material,
                 nominal_feed_rate: self.context.feed_rate,
                 plunge_rate_mm_min: Some(self.context.plunge_rate),
                 ramp_feed_rate_mm_min: self.context.ramp_feed_rate,
@@ -1530,6 +1531,7 @@ pub fn execute_generation(
                     &context.dressups,
                     Some(&inputs.tool_def),
                     inputs.tool_def.diameter(),
+                    &context.material,
                 )
                 .helix_radius()
                 .emitted_mm
@@ -1811,6 +1813,8 @@ pub fn execute_recommend_clearing_strategy(
             selection: crate::compute::execute::SelectionInputs::resolved(&resolved.selection),
             territory_inputs: crate::compute::execute::TerritoryInputs::default()
                 .boundary(resolved.pre_boundary.as_ref()),
+            // P29-8 8b: the 3D Rough entry rule reads the stock material.
+            material: Some(material),
             // Everything else stays at the constructor default. The probe
             // records no trace, seeds no stock, resolves no reference tool
             // (it plans clearing ops only, never pencil) and discards its

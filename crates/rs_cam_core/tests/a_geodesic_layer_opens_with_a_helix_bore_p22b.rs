@@ -98,7 +98,12 @@ fn style(helix: bool, cutter: &dyn MillingCutter) -> EntryStyle3d {
         },
         ..Adaptive3dConfig::default()
     };
-    rs_cam_core::feeds::entry_rule::ResolvedEntry::of_adaptive3d(&cfg, cutter).style_3d()
+    rs_cam_core::feeds::entry_rule::ResolvedEntry::of_adaptive3d(
+        &cfg,
+        cutter,
+        &rs_cam_core::material::Material::default(),
+    )
+    .style_3d()
 }
 
 fn params(entry_style: EntryStyle3d, radius: f64, z_floor: Option<f64>) -> Adaptive3dParams {

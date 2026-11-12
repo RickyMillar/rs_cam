@@ -275,7 +275,7 @@ fn ramp_record(s: &SuggestedParams) -> &RampFeed {
 fn a_ramp_above_the_z_rate_ships_the_z_rate_over_tan_theta_p20b() {
     let dressups = DressupConfig {
         entry_style: DressupEntryStyle::Ramp,
-        ramp_angle: 60.0,
+        ramp_angle: rs_cam_core::feeds::entry_rule::EntryAngle::Stated(60.0),
         ..DressupConfig::default()
     };
     let tan60 = 60.0_f64.to_radians().tan();
@@ -311,7 +311,7 @@ fn a_ramp_above_the_z_rate_ships_the_z_rate_over_tan_theta_p20b() {
 fn a_machine_with_no_kinematics_has_no_z_cap_and_says_so_p20b() {
     let dressups = DressupConfig {
         entry_style: DressupEntryStyle::Ramp,
-        ramp_angle: 3.0,
+        ramp_angle: rs_cam_core::feeds::entry_rule::EntryAngle::Stated(3.0),
         ..DressupConfig::default()
     };
     let pocket = OperationConfig::new_default(OperationType::Pocket);

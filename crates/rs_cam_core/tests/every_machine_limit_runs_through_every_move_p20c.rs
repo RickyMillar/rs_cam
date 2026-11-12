@@ -230,7 +230,8 @@ fn pocket_session(kinematics: MachineKinematics) -> ProjectSession {
         op,
         |tc| {
             tc.dressups.entry_style = DressupEntryStyle::Ramp;
-            tc.dressups.ramp_angle = RAMP_ANGLE_DEG;
+            tc.dressups.ramp_angle =
+                rs_cam_core::feeds::entry_rule::EntryAngle::Stated(RAMP_ANGLE_DEG);
             tc.dressups.feed_optimization = false;
             tc.dressups.arc_fitting = None;
         },

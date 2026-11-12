@@ -94,7 +94,7 @@ fn rough_and_simulate(entry_style: Adaptive3dEntryStyle) -> rs_cam_core::session
         // the limit, so the clamp must act.
         helix_pitch: 6.0,
         // A 15 deg ramp is steeper than the limit.
-        ramp_angle_deg: 15.0,
+        ramp_angle_deg: rs_cam_core::feeds::entry_rule::EntryAngle::Stated(15.0),
         clearing_strategy: ClearingStrategy::ContourParallel,
         max_stay_down_distance_mm: Some(0.0),
         ..Adaptive3dConfig::default()

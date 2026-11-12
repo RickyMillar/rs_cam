@@ -70,6 +70,7 @@ mod tests {
         let optimized = apply_dressups(
             AnnotatedToolpath::with_spans(raw, spans),
             rs_cam_core::compute::execute::DressupContext {
+                material: &rs_cam_core::material::Material::default(),
                 ramp_feed_rate_mm_min: None,
                 cfg: &cfg,
                 nominal_feed_rate: 1000.0,
@@ -123,6 +124,7 @@ mod tests {
         let optimized = apply_dressups(
             AnnotatedToolpath::new(raw),
             rs_cam_core::compute::execute::DressupContext {
+                material: &rs_cam_core::material::Material::default(),
                 ramp_feed_rate_mm_min: None,
                 cfg: &cfg,
                 nominal_feed_rate: 1000.0,

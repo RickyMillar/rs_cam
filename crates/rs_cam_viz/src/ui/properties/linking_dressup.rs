@@ -560,6 +560,17 @@ pub(super) fn dv_dressup_rule(
     );
 }
 
+/// P29-8 8b: the hint of an empty ramp angle field: the value of the rule
+/// for the stock material and its source, "20° rule (Easel)". The card
+/// names the material class.
+pub(super) fn ramp_rule_hint(material: &rs_cam_core::material::Material) -> String {
+    let rule = rs_cam_core::feeds::entry_rule::RampAngle::resolve(
+        rs_cam_core::feeds::entry_rule::EntryAngle::Rule,
+        material,
+    );
+    format!("{}° rule ({})", rule.deg, rule.source)
+}
+
 /// The hover of the G-DEPTHSTOCK caution.
 ///
 /// F1.18: the last clause used to name the Bottom Z on the Heights tab as a
@@ -759,6 +770,7 @@ pub(super) fn draw_linking_params(
     entry: &mut ToolpathEntry,
     tool: Option<&rs_cam_core::compute::tool_config::ToolConfig>,
     toolpath_heights: Option<&rs_cam_core::session::ToolpathHeights>,
+    material: &rs_cam_core::material::Material,
     fields: Fields<'_>,
 ) {
     // Some dressups are geometrically incompatible with specific operations
@@ -797,22 +809,38 @@ pub(super) fn draw_linking_params(
         // it draws nothing rather than invented planes.
         if let Some(answer) = toolpath_heights {
             let helix_radius_mm = cutter.as_ref().map(|c| cfg.helix_radius_for(c).emitted_mm);
-            draw_entry_preview_diagram(ui, cfg, helix_radius_mm, answer, &entry.heights);
+            let ramp_angle_deg =
+                rs_cam_core::feeds::entry_rule::RampAngle::resolve(cfg.ramp_angle, material).deg;
+            draw_entry_preview_diagram(
+                ui,
+                cfg,
+                ramp_angle_deg,
+                helix_radius_mm,
+                answer,
+                &entry.heights,
+            );
             ui.add_space(4.0);
         }
         entry_style_row(ui, &mut cfg.entry_style, fields);
         match cfg.entry_style {
             DressupEntryStyle::Ramp => {
-                dv_dressup(
+                // P29-8 8b: an empty field is the rule of the stock material
+                // (Easel); the hint names its value and source, and the "×"
+                // goes back to it. The range holds the 20° rule and the
+                // 3D Rough schema range.
+                let mut stated = cfg.ramp_angle.stated();
+                dv_dressup_rule(
                     ui,
                     "ramp_angle",
                     "Max angle",
-                    &mut cfg.ramp_angle,
+                    &mut stated,
                     " deg",
                     0.5,
-                    0.5..=15.0,
+                    0.5..=45.0,
+                    &ramp_rule_hint(material),
                     fields,
                 );
+                cfg.ramp_angle = rs_cam_core::feeds::entry_rule::EntryAngle::from_stated(stated);
                 dv_dressup(
                     ui,
                     "entry_clearance_mm",

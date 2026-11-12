@@ -621,7 +621,7 @@ fn pocket_toolpath(style: Style) -> Toolpath {
     };
     dressups.helix_radius = Some(HELIX_RADIUS);
     dressups.helix_pitch = HELIX_PITCH;
-    dressups.ramp_angle = RAMP_ANGLE_DEG;
+    dressups.ramp_angle = rs_cam_core::feeds::entry_rule::EntryAngle::Stated(RAMP_ANGLE_DEG);
     dressups.arc_fitting = None;
     let tc = ToolpathConfig {
         shoe: Default::default(),
@@ -735,7 +735,7 @@ fn session_terrain_rough(style: Style) -> Toolpath {
         entry_style,
         helix_radius_factor: HELIX_RADIUS / 6.0,
         helix_pitch: HELIX_PITCH,
-        ramp_angle_deg: RAMP_ANGLE_DEG,
+        ramp_angle_deg: rs_cam_core::feeds::entry_rule::EntryAngle::Stated(RAMP_ANGLE_DEG),
         entry_clearance_mm: ENTRY_CLEARANCE_MM,
         region_ordering: CfgOrdering::ByArea,
         clearing_strategy: ClearingStrategy::ContourParallel,

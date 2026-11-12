@@ -263,7 +263,14 @@ pub(super) fn draw_toolpath_panel(
         // strategy, then arc fitting and dogbone (R2: the Dressup tab is
         // deleted; its rows are here).
         ToolpathTab::Linking => {
-            draw_linking_tab(ui, entry, tool_for_diags, toolpath_heights, &placement);
+            draw_linking_tab(
+                ui,
+                entry,
+                tool_for_diags,
+                toolpath_heights,
+                &inputs.material,
+                &placement,
+            );
         }
 
         ToolpathTab::Heights => {

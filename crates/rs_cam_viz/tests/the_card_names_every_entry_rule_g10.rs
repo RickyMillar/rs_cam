@@ -43,6 +43,7 @@ use rs_cam_core::compute::catalog::{OperationConfig, OperationType};
 use rs_cam_core::compute::config::{DressupConfig, DressupEntryStyle};
 use rs_cam_core::compute::stock_config::{ModelKind, ModelUnits, StockConfig};
 use rs_cam_core::compute::tool_config::{ToolConfig, ToolId, ToolType};
+use rs_cam_core::feeds::entry_rule::EntryAngle;
 use rs_cam_core::feeds::ramp::EntryNote;
 use rs_cam_core::feeds::suggest::{SuggestForOperationInput, SuggestWarning};
 use rs_cam_core::feeds::{FeedsExplain, PlungeBasis, embedded_vendor_lut};
@@ -88,10 +89,10 @@ fn helix(radius_mm: f64, pitch_mm: f64) -> DressupConfig {
     }
 }
 
-fn ramp(angle_deg: f64) -> DressupConfig {
+fn ramp(angle: EntryAngle) -> DressupConfig {
     DressupConfig {
         entry_style: DressupEntryStyle::Ramp,
-        ramp_angle: angle_deg,
+        ramp_angle: angle,
         ..DressupConfig::default()
     }
 }
@@ -279,7 +280,7 @@ fn the_plunge_line_names_its_claim_or_rule_g10() {
             false,
         ),
     ] {
-        let mut state = state_for(tool, softwood(), operation, ramp(3.0));
+        let mut state = state_for(tool, softwood(), operation, ramp(EntryAngle::Stated(3.0)));
         let plunge = explain(&state).recommended.plunge;
         // Non-vacuity: the fixture is the basis the arm names.
         match (&plunge, claimed) {
@@ -332,9 +333,18 @@ fn the_entry_lines_name_angle_pitch_pip_and_clearance_g10() {
         (
             "flat 6 mm ramp 3°",
             tool_of(ToolType::EndMill, 6.0),
-            ramp(3.0),
+            ramp(EntryAngle::Stated(3.0)),
             &[
-                "Ramp angle 3.00°: repo rule (default 3.00°), no wood or router source",
+                "Ramp angle 3.00°: operator value (the rule for softwood, plywood, MDF: 20.00°, Easel)",
+                "Entry starts 0.50 mm above the material: no source; operator rule 0.5 mm",
+            ][..],
+        ),
+        (
+            "flat 6 mm ramp, the rule",
+            tool_of(ToolType::EndMill, 6.0),
+            ramp(EntryAngle::Rule),
+            &[
+                "Ramp angle 20.00°: the rule for softwood, plywood, MDF (Easel)",
                 "Entry starts 0.50 mm above the material: no source; operator rule 0.5 mm",
             ][..],
         ),

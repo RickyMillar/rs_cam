@@ -97,6 +97,8 @@ pub(in crate::ui::properties) struct OpDrawCtx<'a> {
     pub boundary_enabled: bool,
     /// W3b: the field state of each parameter row, from
     /// `placement::place(..).by_field`. Every editor passes it to its rows.
+    /// The stock material: the ramp angle rule reads its class (P29-8 8b).
+    pub material: &'a rs_cam_core::material::Material,
     pub fields: crate::ui::properties::linking_dressup::Fields<'a>,
 }
 
@@ -364,6 +366,7 @@ editor!(ed_adaptive3d, Adaptive3d, |ui, cfg, cx| {
         cx.strategy_suggestion,
         cx.stock_source == StockSource::FromRemainingStock && cx.boundary_enabled,
         cx.stock_source == StockSource::FromRemainingStock,
+        cx.material,
         cx.fields,
     );
 });

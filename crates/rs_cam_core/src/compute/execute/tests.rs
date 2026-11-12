@@ -927,11 +927,14 @@ fn all_operation_families_emit_expected_structural_span_kinds() {
         };
 
         let findings = std::cell::RefCell::new(GenerationFindings::default());
+        // P29-8 8b: the 3D Rough entry rule reads the stock material.
+        let stock_material = crate::material::Material::default();
         let ctx = ExecutionContext {
             mesh: mesh_and_index.map(|(mesh, _)| mesh),
             index: mesh_and_index.map(|(_, index)| index),
             selection,
             alignment_pins: &pins,
+            material: Some(&stock_material),
             ..ExecutionContext::new(
                 &findings,
                 &tool_def,
@@ -1194,10 +1197,13 @@ fn every_generator_polls_a_preset_cancel_flag_past_the_prologue() {
                 crate::compute::execute::SelectionInputs::from_polygons(polygons.as_slice())
             }
         };
+        // P29-8 8b: the 3D Rough entry rule reads the stock material.
+        let stock_material = crate::material::Material::default();
         let ctx = ExecutionContext {
             mesh: Some(&mesh),
             index: Some(&index),
             selection,
+            material: Some(&stock_material),
             ..ExecutionContext::new(
                 &findings,
                 &tool_def,
@@ -1580,6 +1586,7 @@ fn feed_optimization_uses_configured_nominal_feed_not_entry_plunge() {
     let _result = apply_dressups(
         AnnotatedToolpath::new(tp),
         crate::compute::execute::DressupContext {
+            material: &crate::material::Material::default(),
             ramp_feed_rate_mm_min: None,
             cfg: &cfg,
             nominal_feed_rate: configured_feed,
@@ -1632,6 +1639,7 @@ fn apply_dressups_preserves_moves() {
     let result = apply_dressups(
         AnnotatedToolpath::new(tp),
         crate::compute::execute::DressupContext {
+            material: &crate::material::Material::default(),
             ramp_feed_rate_mm_min: None,
             cfg: &cfg,
             nominal_feed_rate: 1000.0,

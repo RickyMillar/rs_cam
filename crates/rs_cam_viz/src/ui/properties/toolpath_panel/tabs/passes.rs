@@ -173,6 +173,7 @@ pub(in crate::ui::properties) fn draw_passes_tab(
             .is_some_and(rs_cam_core::session::SelectionReport::holds_a_model_area),
         strategy_suggestion,
         boundary_enabled: entry.boundary.enabled,
+        material: &inputs.material,
         fields,
     };
     operations::registry::draw_editor_and_diagram(ui, &mut entry.operation, &mut draw_ctx);

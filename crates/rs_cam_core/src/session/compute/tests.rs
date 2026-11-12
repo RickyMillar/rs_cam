@@ -2129,7 +2129,7 @@ fn terrain_adaptive3d_session(strategy: ClearingStrategy) -> ProjectSession {
         tolerance: 0.25,
         min_cutting_radius: 0.0,
         entry_style: Adaptive3dEntryStyle::Plunge,
-        ramp_angle_deg: 3.0,
+        ramp_angle_deg: crate::feeds::entry_rule::EntryAngle::Stated(3.0),
         helix_radius_factor: 0.4,
         helix_pitch: 1.0,
         detect_flat_areas: false,
@@ -2243,10 +2243,12 @@ fn advisor_modulates_candidate_feeds_before_timing() {
     // feeds the planned path carries, so the commanded 2500 mm/min is a
     // fair starting point for the "did feeds change?" check).
     let findings = std::cell::RefCell::new(crate::compute::execute::GenerationFindings::default());
+    let stock_material = session.stock_config().material.clone();
     let ctx = crate::compute::execute::ExecutionContext {
         mesh: resolved.mesh.as_deref(),
         index: resolved.spatial_index(),
         selection: crate::compute::execute::SelectionInputs::resolved(&resolved.selection),
+        material: Some(&stock_material),
         territory_inputs: crate::compute::execute::TerritoryInputs::default()
             .boundary(resolved.pre_boundary.as_ref()),
         ..crate::compute::execute::ExecutionContext::new(

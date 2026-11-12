@@ -62,6 +62,7 @@ fn dress(style: DressupEntryStyle) -> (Toolpath, f64) {
     let dressed = apply_dressups(
         AnnotatedToolpath::new(plunging_toolpath()),
         DressupContext {
+            material: &rs_cam_core::material::Material::default(),
             cfg: &cfg,
             nominal_feed_rate: FEED,
             plunge_rate_mm_min: None,

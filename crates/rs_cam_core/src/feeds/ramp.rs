@@ -51,6 +51,7 @@ use crate::compute::config::{DressupConfig, HelixRadius, default_entry_clearance
 use crate::compute::tool_config::ToolConfig;
 use crate::feeds::entry_rule::{EntryDoor, ResolvedEntry};
 use crate::limits::EntryKind;
+use crate::material::Material;
 use crate::tool::MillingCutter;
 
 /// The ramp rule in words, for the detail line.
@@ -320,8 +321,10 @@ pub struct Entry {
 /// - Every other operation reads `dressups` (`ResolvedEntry::of_dressup`).
 ///   `None` gives `EntryUnknown`. `DressupEntryStyle::None` gives
 ///   `EntryOff`.
-/// - Ramp gives the stated angle. Helix gives the emitted radius (the
-///   operator value or the rule, capped at the flat bottom) and the pitch.
+/// - Ramp gives the angle the emitter cuts at: the stated angle, or the
+///   rule of the stock class of `material` (P29-8 8b). Helix gives the
+///   emitted radius (the operator value or the rule, capped at the flat
+///   bottom) and the pitch.
 ///
 /// θ is the slope of the helix the engine emits, so the ramp feed and the
 /// card read the capped radius (G10 Q6).
@@ -333,11 +336,12 @@ pub fn entry_geometry(
     op: &OperationConfig,
     dressups: Option<&DressupConfig>,
     tool: &ToolConfig,
+    material: &Material,
 ) -> Result<Entry, RampFallback> {
     let cutter = crate::compute::cutter::build_cutter(tool)
         .ok()
         .ok_or(RampFallback::ToolOutOfDomain)?;
-    resolved_entry(op, dressups, &cutter)
+    resolved_entry(op, dressups, &cutter, material)
         .and_then(|(resolved, clearance_mm)| entry_of_resolved(&resolved, clearance_mm))
 }
 
@@ -346,10 +350,11 @@ fn resolved_entry(
     op: &OperationConfig,
     dressups: Option<&DressupConfig>,
     cutter: &dyn MillingCutter,
+    material: &Material,
 ) -> Result<(ResolvedEntry, f64), RampFallback> {
     if let OperationConfig::Adaptive3d(cfg) = op {
         return Ok((
-            ResolvedEntry::of_adaptive3d(cfg, cutter),
+            ResolvedEntry::of_adaptive3d(cfg, cutter, material),
             cfg.entry_clearance_mm,
         ));
     }
@@ -357,7 +362,7 @@ fn resolved_entry(
         return Err(RampFallback::EntryUnknown);
     };
     Ok((
-        ResolvedEntry::of_dressup(cfg, Some(cutter), cutter.diameter()),
+        ResolvedEntry::of_dressup(cfg, Some(cutter), cutter.diameter(), material),
         cfg.entry_clearance_mm,
     ))
 }
@@ -943,7 +948,8 @@ fn helix_geometry_note(cutter: &dyn MillingCutter, helix: &HelixRadius) -> Entry
 /// note is one face line on the card.
 ///
 /// - A straight plunge on a Roughing pass: the Q12 caution.
-/// - A ramp: the angle, a repo rule or an operator value (Q9).
+/// - A ramp: the angle and its source: the rule of the stock class
+///   (Easel, operator ruling O2) or an operator value beside the rule.
 /// - A helix: r, r / D, the pitch and θ (Q8), then the core or the pip
 ///   from the tool profile (Q6, Q7).
 /// - A helix or a ramp: the clearance above the material (Q10).
@@ -954,6 +960,7 @@ pub fn entry_notes(
     op: &OperationConfig,
     dressups: Option<&DressupConfig>,
     tool: &ToolConfig,
+    material: &Material,
     pass_role: PassRole,
 ) -> EntryNotes {
     let mut notes = Vec::new();
@@ -961,7 +968,7 @@ pub fn entry_notes(
     let resolved = crate::compute::cutter::build_cutter(tool)
         .ok()
         .ok_or(RampFallback::ToolOutOfDomain)
-        .and_then(|cutter| resolved_entry(op, dressups, &cutter));
+        .and_then(|cutter| resolved_entry(op, dressups, &cutter, material));
     let entry = match resolved
         .as_ref()
         .map_err(|e| *e)
@@ -982,17 +989,12 @@ pub fn entry_notes(
     };
     match entry.geometry {
         EntryGeometry::Ramp { angle_deg } => {
-            let default = resolved.rule_ramp_angle_deg();
-            let who = if same(angle_deg, default) {
-                format!("repo rule (default {default:.2}°)")
-            } else {
-                format!("operator value (repo rule default {default:.2}°)")
-            };
+            let source = resolved.ramp_angle().source_text();
             notes.push(EntryNote {
-                headline: format!("Ramp angle {angle_deg:.2}°: {who}, no wood or router source"),
-                detail: "The ramp angle is a repo rule or an operator value (ruling Q9). No wood \
-                         or router source prints a ramp angle. Metal context only: Harvey 3-10° \
-                         in soft material (grade c); SGS compression router bits 5° at most."
+                headline: format!("Ramp angle {angle_deg:.2}°: {source}"),
+                detail: "The ramp angle rule is printed by material (operator ruling O2): Easel \
+                         prints 20° for soft woods, plywood and MDF, and 5° for hardwoods and \
+                         aluminium; Shaper prints about 10° for acrylic. A stated angle stands."
                     .to_owned(),
                 caution: false,
             });
@@ -1420,7 +1422,7 @@ mod tests {
         let pocket = OperationConfig::new_default(OperationType::Pocket);
         let flat = tool(ToolType::EndMill, 6.0);
         assert_eq!(
-            entry_geometry(&pocket, None, &flat),
+            entry_geometry(&pocket, None, &flat, &softwood()),
             Err(RampFallback::EntryUnknown)
         );
         let off = DressupConfig {
@@ -1428,7 +1430,7 @@ mod tests {
             ..DressupConfig::default()
         };
         assert_eq!(
-            entry_geometry(&pocket, Some(&off), &flat),
+            entry_geometry(&pocket, Some(&off), &flat, &softwood()),
             Err(RampFallback::EntryOff)
         );
         let helix = DressupConfig {
@@ -1439,7 +1441,7 @@ mod tests {
             ..DressupConfig::default()
         };
         assert_eq!(
-            entry_geometry(&pocket, Some(&helix), &flat),
+            entry_geometry(&pocket, Some(&helix), &flat, &softwood()),
             Ok(Entry {
                 geometry: HELIX,
                 source: EntrySource::Dressup,
@@ -1453,7 +1455,7 @@ mod tests {
             cfg.helix_radius_factor = 0.3;
             cfg.helix_pitch = 2.0;
         }
-        let e = entry_geometry(&a3d, None, &flat).unwrap();
+        let e = entry_geometry(&a3d, None, &flat, &softwood()).unwrap();
         assert_eq!(e.source, EntrySource::Adaptive3d);
         assert!((e.geometry.theta_deg().unwrap() - 10.03).abs() < 0.01);
         assert!((e.clearance_mm - default_entry_clearance_mm()).abs() < 1e-12);
@@ -1461,9 +1463,17 @@ mod tests {
             cfg.entry_style = Adaptive3dEntryStyle::Plunge;
         }
         assert_eq!(
-            entry_geometry(&a3d, Some(&helix), &flat),
+            entry_geometry(&a3d, Some(&helix), &flat, &softwood()),
             Err(RampFallback::EntryOff)
         );
+    }
+
+    /// The stock of these tests: generic softwood (the ramp angle rule
+    /// reads its class).
+    fn softwood() -> crate::material::Material {
+        crate::material::Material::SolidWood {
+            species: crate::material::WoodSpecies::GenericSoftwood,
+        }
     }
 
     fn tool(kind: ToolType, diameter: f64) -> ToolConfig {
@@ -1484,7 +1494,13 @@ mod tests {
             helix_pitch: 1.0,
             ..DressupConfig::default()
         };
-        entry_notes(&pocket, Some(&dressups), tool, PassRole::Roughing)
+        entry_notes(
+            &pocket,
+            Some(&dressups),
+            tool,
+            &softwood(),
+            PassRole::Roughing,
+        )
     }
 
     fn geometry_note(notes: &EntryNotes) -> &EntryNote {
@@ -1547,17 +1563,29 @@ mod tests {
             entry_style: DressupEntryStyle::Ramp,
             ..DressupConfig::default()
         };
-        let notes = entry_notes(&pocket, Some(&ramp), &flat, PassRole::Roughing);
+        let notes = entry_notes(&pocket, Some(&ramp), &flat, &softwood(), PassRole::Roughing);
         let lines: Vec<&str> = notes
             .as_slice()
             .iter()
             .map(|n| n.headline.as_str())
             .collect();
         assert!(
-            lines
-                .iter()
-                .any(|l| l.starts_with("Ramp angle 3.00°: repo rule")),
+            lines.contains(&"Ramp angle 20.00°: the rule for softwood, plywood, MDF (Easel)"),
             "{lines:?}"
+        );
+        // A stated angle stands, and the card names the rule beside it.
+        let stated = DressupConfig {
+            ramp_angle: crate::feeds::entry_rule::EntryAngle::Stated(3.0),
+            ..ramp
+        };
+        let oak = crate::material::Material::SolidWood {
+            species: crate::material::WoodSpecies::WhiteOak,
+        };
+        let stated_notes = entry_notes(&pocket, Some(&stated), &flat, &oak, PassRole::Roughing);
+        assert_eq!(
+            stated_notes.as_slice().first().map(|n| n.headline.as_str()),
+            Some("Ramp angle 3.00°: operator value (the rule for hardwood: 5.00°, Easel)"),
+            "{stated_notes:?}"
         );
         assert!(
             lines
@@ -1570,11 +1598,11 @@ mod tests {
             entry_style: DressupEntryStyle::None,
             ..DressupConfig::default()
         };
-        let notes = entry_notes(&pocket, Some(&off), &flat, PassRole::Roughing);
+        let notes = entry_notes(&pocket, Some(&off), &flat, &softwood(), PassRole::Roughing);
         assert_eq!(notes.as_slice().len(), 1, "{notes:?}");
         assert!(notes.as_slice().iter().all(|n| n.caution), "{notes:?}");
-        let notes = entry_notes(&pocket, Some(&off), &flat, PassRole::Finish);
+        let notes = entry_notes(&pocket, Some(&off), &flat, &softwood(), PassRole::Finish);
         assert!(notes.is_empty(), "{notes:?}");
-        assert!(entry_notes(&pocket, None, &flat, PassRole::Roughing).is_empty());
+        assert!(entry_notes(&pocket, None, &flat, &softwood(), PassRole::Roughing).is_empty());
     }
 }

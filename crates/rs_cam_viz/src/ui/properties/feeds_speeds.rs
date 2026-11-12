@@ -1236,6 +1236,7 @@ fn draw_spindle_policy_row(
 pub(super) fn draw_entry_preview_diagram(
     ui: &mut egui::Ui,
     dressups: &DressupConfig,
+    ramp_angle_deg: f64,
     helix_radius_mm: Option<f64>,
     answer: &rs_cam_core::session::ToolpathHeights,
     heights: &HeightsConfig,
@@ -1331,7 +1332,7 @@ pub(super) fn draw_entry_preview_diagram(
 
     match dressups.entry_style {
         DressupEntryStyle::Ramp => {
-            let angle_rad = (dressups.ramp_angle as f32).to_radians();
+            let angle_rad = (ramp_angle_deg as f32).to_radians();
             let ramp_horiz = z_drop as f32 / angle_rad.tan().max(0.01);
 
             // Scale horizontal distance to fit canvas
@@ -1367,7 +1368,7 @@ pub(super) fn draw_entry_preview_diagram(
             painter.text(
                 egui::pos2(start_x + arc_r + 4.0, feed_y - 8.0),
                 egui::Align2::LEFT_CENTER,
-                format!("{:.1}\u{00B0}", dressups.ramp_angle),
+                format!("{ramp_angle_deg:.1}\u{00B0}"),
                 egui::FontId::proportional(9.0),
                 entry_color,
             );

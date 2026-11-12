@@ -14,33 +14,64 @@
 //! sentry `one_entry_rule_two_emitters_p29_8` holds that no other file calls
 //! it and that no emitter reads an entry field of a config.
 //!
-//! 8a moves no number: each row keeps the value it had at its old site.
+//! 8b (operator ruling O2, 2026-11-13: Easel): the ramp angle of an op is
+//! [`EntryAngle`], stated or the rule. The rule is one table by the material
+//! class of the stock ([`EntryMaterialClass`]), the same for both doors.
 
 use crate::compute::catalog::PlungeFeedRule;
 use crate::compute::config::{DressupConfig, DressupEntryStyle, HelixRadius};
 use crate::compute::operation_configs::{Adaptive3dConfig, Adaptive3dEntryStyle};
+use crate::feeds::vendor_lut::MaterialFamily;
 use crate::limits::EntryKind;
-use crate::material::FormulaConstant;
+use crate::material::{FormulaConstant, Material};
 use crate::tool::MillingCutter;
 use crate::toolpath::{MoveType, Toolpath};
 
-/// F201: the dressup ramp entry angle (degrees) a new toolpath starts with.
-/// Repo rule, no source (G10). No wood or router source prints a ramp angle
-/// (ruling Q9). It was `compute::config::DRESSUP_RAMP_ANGLE_DEG`.
-const DRESSUP_RAMP_ANGLE_DEG: FormulaConstant = FormulaConstant::unsourced(
-    "entry_rule.ramp_angle_deg.dressup",
-    3.0,
-    "repo rule with no primary source (G10 ruling Q9; P29-8 O2 asks the operator)",
+/// The stored Easel page (operator ruling O2: "lets do 5 and 20").
+const EASEL_RAMPING: &str =
+    "planning/feeds_contract_2026-11-03/research/sources_entry_rules/easel_toolpath_ramping.txt";
+
+/// The R6 research note. Its row A4 quotes the Shaper acrylic cell; the
+/// stored Shaper page (`shaper_autopass_material_recommendations.txt`) ends
+/// at line 62, before the angle of that cell.
+const ENTRY_RULES_NOTE: &str =
+    "planning/feeds_contract_2026-11-03/research/entry_rules_2026-11-11.md";
+
+/// F201: the ramp angle rule (degrees) for hardwood. Easel,
+/// `easel_toolpath_ramping.txt:13`.
+const RAMP_ANGLE_HARDWOOD_DEG: FormulaConstant = FormulaConstant::cited(
+    "entry_rule.ramp_angle_deg.hardwood",
+    5.0,
+    EASEL_RAMPING,
+    "The shallower 5° angle ramp is good for hardwoods",
 );
 
-/// F201: the 3D Rough ramp entry angle (degrees) a new toolpath starts
-/// with. Repo rule, no source (G10, operator decision D4 2026-09-25: one
-/// rule for the GUI and the CLI). It was
-/// `compute::operation_configs::ADAPTIVE3D_RAMP_ANGLE_DEG`.
-const ADAPTIVE3D_RAMP_ANGLE_DEG: FormulaConstant = FormulaConstant::unsourced(
-    "entry_rule.ramp_angle_deg.adaptive3d",
+/// F201: the ramp angle rule (degrees) for softwood, plywood, MDF, HDF and
+/// particleboard. Easel, `easel_toolpath_ramping.txt:13`.
+const RAMP_ANGLE_SOFTWOOD_AND_COMPOSITE_DEG: FormulaConstant = FormulaConstant::cited(
+    "entry_rule.ramp_angle_deg.softwood_and_composite",
+    20.0,
+    EASEL_RAMPING,
+    "We recommend using the 20° angle ramp for soft woods, plywood, and MDF like materials.",
+);
+
+/// F201: the ramp angle rule (degrees) for a non-ferrous metal. Easel,
+/// `easel_toolpath_ramping.txt:13` ("soft metals like aluminum").
+const RAMP_ANGLE_NON_FERROUS_DEG: FormulaConstant = FormulaConstant::cited(
+    "entry_rule.ramp_angle_deg.non_ferrous",
+    5.0,
+    EASEL_RAMPING,
+    "The shallower 5° angle ramp is good for hardwoods and soft metals like aluminum.",
+);
+
+/// F201: the ramp angle rule (degrees) for a plastic. Easel prints none.
+/// Shaper prints about 10 degrees for acrylic (research note row A4,
+/// `entry_rules_2026-11-11.md:62`).
+const RAMP_ANGLE_PLASTIC_DEG: FormulaConstant = FormulaConstant::cited(
+    "entry_rule.ramp_angle_deg.plastic",
     10.0,
-    "repo rule with no primary source (G10 ruling Q9, decision D4; P29-8 O2 asks the operator)",
+    ENTRY_RULES_NOTE,
+    "5ipm per min (~10°)",
 );
 
 /// F201: the dressup helix entry pitch (mm per turn) a new toolpath starts
@@ -91,10 +122,12 @@ const ENTRY_PLUNGE_FALLBACK_MM_MIN: FormulaConstant = FormulaConstant::unsourced
 
 /// The F201 rows of this file (`feeds::formula_constants` reads them).
 #[must_use]
-pub fn formula_constants() -> [FormulaConstant; 7] {
+pub fn formula_constants() -> [FormulaConstant; 9] {
     [
-        DRESSUP_RAMP_ANGLE_DEG,
-        ADAPTIVE3D_RAMP_ANGLE_DEG,
+        RAMP_ANGLE_HARDWOOD_DEG,
+        RAMP_ANGLE_SOFTWOOD_AND_COMPOSITE_DEG,
+        RAMP_ANGLE_NON_FERROUS_DEG,
+        RAMP_ANGLE_PLASTIC_DEG,
         DRESSUP_HELIX_PITCH_MM,
         ADAPTIVE3D_HELIX_PITCH_MM,
         HELIX_RADIUS_OVER_D,
@@ -112,10 +145,207 @@ pub enum EntryDoor {
     Adaptive3d,
 }
 
+/// The material class that the ramp-angle sources print (Easel prints the
+/// angle by material, not by tool; research note 2.4).
+#[derive(Debug, Clone, Copy, PartialEq, Eq)]
+pub enum EntryMaterialClass {
+    /// Solid hardwood (Janka above 800 lbf).
+    Hardwood,
+    /// Softwood, plywood (both grades), MDF, HDF, particleboard.
+    SoftwoodAndComposite,
+    /// Acrylic, HDPE, polycarbonate, Delrin, fibreglass.
+    Plastic,
+    /// Aluminium.
+    NonFerrous,
+}
+
+impl EntryMaterialClass {
+    /// The class of `material`, from its vendor-table family
+    /// (`vendor_normalize::material_to_lut`).
+    #[must_use]
+    pub fn of(material: &Material) -> Self {
+        match crate::feeds::vendor_normalize::material_to_lut(material).0 {
+            MaterialFamily::Hardwood => Self::Hardwood,
+            MaterialFamily::Softwood
+            | MaterialFamily::PlywoodSoftwood
+            | MaterialFamily::PlywoodHardwood
+            | MaterialFamily::Mdf
+            | MaterialFamily::Hdf
+            | MaterialFamily::Particleboard => Self::SoftwoodAndComposite,
+            MaterialFamily::Acrylic
+            | MaterialFamily::Hdpe
+            | MaterialFamily::Polycarbonate
+            | MaterialFamily::Delrin
+            | MaterialFamily::Fiberglass => Self::Plastic,
+            MaterialFamily::Aluminum => Self::NonFerrous,
+        }
+    }
+
+    /// The class in words, for the card.
+    #[must_use]
+    pub const fn label(self) -> &'static str {
+        match self {
+            Self::Hardwood => "hardwood",
+            Self::SoftwoodAndComposite => "softwood, plywood, MDF",
+            Self::Plastic => "plastic",
+            Self::NonFerrous => "non-ferrous metal",
+        }
+    }
+
+    /// The F201 row of the ramp angle rule of this class, and the source
+    /// that prints it.
+    const fn ramp_rule(self) -> (FormulaConstant, &'static str) {
+        match self {
+            Self::Hardwood => (RAMP_ANGLE_HARDWOOD_DEG, "Easel"),
+            Self::SoftwoodAndComposite => (RAMP_ANGLE_SOFTWOOD_AND_COMPOSITE_DEG, "Easel"),
+            Self::Plastic => (RAMP_ANGLE_PLASTIC_DEG, "Shaper"),
+            Self::NonFerrous => (RAMP_ANGLE_NON_FERROUS_DEG, "Easel"),
+        }
+    }
+}
+
+/// The ramp angle of one op: stated by the operator, or the rule.
+///
+/// Wire form (P29-8 8b): a number loads as `Stated`; an absent key, `null`
+/// or the token `"rule"` loads as `Rule`. The writer saves `Stated` as the
+/// number and omits `Rule` (`skip_serializing_if = "EntryAngle::is_rule"`
+/// on the field). A new op holds `Rule`; a setter writes `Stated`.
+#[derive(Debug, Clone, Copy, PartialEq, Default)]
+pub enum EntryAngle {
+    /// An angle (degrees) the operator stated. It stands.
+    Stated(f64),
+    /// The rule of the stock material ([`EntryMaterialClass`]).
+    #[default]
+    Rule,
+}
+
+/// The token of [`EntryAngle::Rule`] on the wire.
+const RULE_TOKEN: &str = "rule";
+
+impl EntryAngle {
+    /// True for [`Self::Rule`] (the writer omits it).
+    #[must_use]
+    pub const fn is_rule(&self) -> bool {
+        matches!(self, Self::Rule)
+    }
+
+    /// The stated angle, or `None` for the rule.
+    #[must_use]
+    pub const fn stated(self) -> Option<f64> {
+        match self {
+            Self::Stated(v) => Some(v),
+            Self::Rule => None,
+        }
+    }
+
+    /// `Some(v)` is `Stated(v)`; `None` is the rule.
+    #[must_use]
+    pub const fn from_stated(v: Option<f64>) -> Self {
+        match v {
+            Some(v) => Self::Stated(v),
+            None => Self::Rule,
+        }
+    }
+}
+
+impl serde::Serialize for EntryAngle {
+    fn serialize<S: serde::Serializer>(&self, serializer: S) -> Result<S::Ok, S::Error> {
+        match self {
+            Self::Stated(v) => serializer.serialize_f64(*v),
+            Self::Rule => serializer.serialize_str(RULE_TOKEN),
+        }
+    }
+}
+
+impl<'de> serde::Deserialize<'de> for EntryAngle {
+    fn deserialize<D: serde::Deserializer<'de>>(deserializer: D) -> Result<Self, D::Error> {
+        #[derive(serde::Deserialize)]
+        #[serde(untagged)]
+        enum Wire {
+            Number(f64),
+            Token(String),
+        }
+        match Option::<Wire>::deserialize(deserializer)? {
+            None => Ok(Self::Rule),
+            Some(Wire::Number(v)) => Ok(Self::Stated(v)),
+            Some(Wire::Token(t)) if t == RULE_TOKEN => Ok(Self::Rule),
+            // An MCP client that sends every number as text.
+            Some(Wire::Token(t)) => match t.trim().parse::<f64>() {
+                Ok(v) => Ok(Self::Stated(v)),
+                Err(_) => Err(serde::de::Error::custom(format!(
+                    "a ramp angle is a number (degrees) or \"{RULE_TOKEN}\", not \"{t}\""
+                ))),
+            },
+        }
+    }
+}
+
+impl crate::compute::catalog::ParamType for EntryAngle {
+    // The schema publishes the angle as an optional number: absent is the
+    // rule.
+    const TYPE_NAME: &'static str = "option<f64>";
+    const OPTION_TYPE_NAME: &'static str = "option<f64>";
+    const KIND: crate::compute::catalog::ParamKind = crate::compute::catalog::ParamKind::Real;
+    const OPTIONAL: bool = true;
+}
+
+/// The ramp angle an op cuts at, with its source.
+#[derive(Debug, Clone, Copy, PartialEq)]
+pub struct RampAngle {
+    /// The angle (degrees) the emitter cuts at.
+    pub deg: f64,
+    /// True when the operator stated it.
+    pub stated: bool,
+    /// The rule of the stock class (degrees).
+    pub rule_deg: f64,
+    /// The stock class.
+    pub class: EntryMaterialClass,
+    /// The source that prints the rule ("Easel", "Shaper").
+    pub source: &'static str,
+}
+
+impl RampAngle {
+    /// The ramp angle of `angle` in `material`.
+    #[must_use]
+    pub fn resolve(angle: EntryAngle, material: &Material) -> Self {
+        let class = EntryMaterialClass::of(material);
+        let (row, source) = class.ramp_rule();
+        Self {
+            deg: angle.stated().unwrap_or(row.value),
+            stated: !angle.is_rule(),
+            rule_deg: row.value,
+            class,
+            source,
+        }
+    }
+
+    /// The rule in words: "the rule for hardwood (Easel)".
+    #[must_use]
+    pub fn rule_text(&self) -> String {
+        format!("the rule for {} ({})", self.class.label(), self.source)
+    }
+
+    /// The source of the angle in words, for the card: the rule, or an
+    /// operator value beside the rule.
+    #[must_use]
+    pub fn source_text(&self) -> String {
+        if self.stated {
+            format!(
+                "operator value (the rule for {}: {:.2}°, {})",
+                self.class.label(),
+                self.rule_deg,
+                self.source
+            )
+        } else {
+            self.rule_text()
+        }
+    }
+}
+
 /// The entry values a new op of one door stores: the rule of that door.
+/// The ramp angle is not here: a new op holds [`EntryAngle::Rule`].
 #[derive(Debug, Clone, Copy, PartialEq)]
 pub(crate) struct StoredDefault {
-    pub(crate) ramp_angle_deg: f64,
     pub(crate) helix_pitch_mm: f64,
     /// The helix radius over D (the 3D Rough `helix_radius_factor`).
     pub(crate) helix_radius_over_d: f64,
@@ -125,19 +355,17 @@ pub(crate) struct StoredDefault {
 /// call this (sentry `one_entry_rule_two_emitters_p29_8`).
 #[must_use]
 pub(crate) fn stored_default(door: EntryDoor) -> StoredDefault {
-    let (ramp, pitch) = door_rows(door);
     StoredDefault {
-        ramp_angle_deg: ramp.value,
-        helix_pitch_mm: pitch.value,
+        helix_pitch_mm: door_pitch_row(door).value,
         helix_radius_over_d: HELIX_RADIUS_OVER_D.value,
     }
 }
 
-/// The ramp-angle row and the helix-pitch row of `door`.
-fn door_rows(door: EntryDoor) -> (FormulaConstant, FormulaConstant) {
+/// The helix-pitch row of `door` (P29-8 Q2: two rows by door).
+fn door_pitch_row(door: EntryDoor) -> FormulaConstant {
     match door {
-        EntryDoor::Dressup => (DRESSUP_RAMP_ANGLE_DEG, DRESSUP_HELIX_PITCH_MM),
-        EntryDoor::Adaptive3d => (ADAPTIVE3D_RAMP_ANGLE_DEG, ADAPTIVE3D_HELIX_PITCH_MM),
+        EntryDoor::Dressup => DRESSUP_HELIX_PITCH_MM,
+        EntryDoor::Adaptive3d => ADAPTIVE3D_HELIX_PITCH_MM,
     }
 }
 
@@ -190,10 +418,9 @@ pub struct ResolvedEntry {
     door: EntryDoor,
     /// The configured entry kind. `None`: no entry (dressup style None).
     kind: Option<EntryKind>,
-    /// The ramp angle (degrees) the op states.
-    ramp_angle_deg: f64,
-    /// The ramp angle of the door's rule (the card compares the two).
-    rule_ramp_angle_deg: f64,
+    /// The ramp angle the op cuts at: the stated value or the rule of the
+    /// stock class (P29-8 8b).
+    ramp_angle: RampAngle,
     /// The angle (degrees) of the ramp that replaces a helix with no room.
     /// Lead ruling 2026-11-12: the op's own ramp angle.
     fallback_ramp_angle_deg: f64,
@@ -210,12 +437,14 @@ impl ResolvedEntry {
     ///
     /// `cutter` is the op's tool. With no cutter (a test context) the flat
     /// bottom and the nominal D are unknown, so the helix radius is the
-    /// request: the operator value, or 0.3 x `tool_diameter`.
+    /// request: the operator value, or 0.3 x `tool_diameter`. `material` is
+    /// the stock material: the ramp angle rule reads its class.
     #[must_use]
     pub fn of_dressup(
         cfg: &DressupConfig,
         cutter: Option<&dyn MillingCutter>,
         tool_diameter: f64,
+        material: &Material,
     ) -> Self {
         let helix_radius = match cutter {
             Some(cutter) => dressup_helix_radius(cfg, cutter),
@@ -233,32 +462,34 @@ impl ResolvedEntry {
             }
         };
         let kind = dressup_kind(cfg);
-        let (rule_ramp, rule_pitch) = door_rows(EntryDoor::Dressup);
+        let ramp_angle = RampAngle::resolve(cfg.ramp_angle, material);
         Self {
             door: EntryDoor::Dressup,
             kind,
-            ramp_angle_deg: cfg.ramp_angle,
-            rule_ramp_angle_deg: rule_ramp.value,
-            fallback_ramp_angle_deg: cfg.ramp_angle,
+            ramp_angle,
+            fallback_ramp_angle_deg: ramp_angle.deg,
             helix_radius,
             helix_pitch_mm: cfg.helix_pitch,
-            rule_helix_pitch_mm: rule_pitch.value,
+            rule_helix_pitch_mm: door_pitch_row(EntryDoor::Dressup).value,
         }
     }
 
-    /// The entry of a 3D Rough config on `cutter`.
+    /// The entry of a 3D Rough config on `cutter` in the stock `material`.
     #[must_use]
-    pub fn of_adaptive3d(cfg: &Adaptive3dConfig, cutter: &dyn MillingCutter) -> Self {
-        let (rule_ramp, rule_pitch) = door_rows(EntryDoor::Adaptive3d);
+    pub fn of_adaptive3d(
+        cfg: &Adaptive3dConfig,
+        cutter: &dyn MillingCutter,
+        material: &Material,
+    ) -> Self {
+        let ramp_angle = RampAngle::resolve(cfg.ramp_angle_deg, material);
         Self {
             door: EntryDoor::Adaptive3d,
             kind: Some(adaptive3d_kind(cfg)),
-            ramp_angle_deg: cfg.ramp_angle_deg,
-            rule_ramp_angle_deg: rule_ramp.value,
-            fallback_ramp_angle_deg: cfg.ramp_angle_deg,
+            ramp_angle,
+            fallback_ramp_angle_deg: ramp_angle.deg,
             helix_radius: adaptive3d_helix_radius(cfg, cutter),
             helix_pitch_mm: cfg.helix_pitch,
-            rule_helix_pitch_mm: rule_pitch.value,
+            rule_helix_pitch_mm: door_pitch_row(EntryDoor::Adaptive3d).value,
         }
     }
 
@@ -274,16 +505,16 @@ impl ResolvedEntry {
         self.kind
     }
 
-    /// The ramp angle (degrees) the op states.
+    /// The ramp angle (degrees) the emitter cuts at.
     #[must_use]
     pub fn ramp_angle_deg(&self) -> f64 {
-        self.ramp_angle_deg
+        self.ramp_angle.deg
     }
 
-    /// The ramp angle (degrees) of the door's rule.
+    /// The ramp angle with its source (stated or the rule).
     #[must_use]
-    pub fn rule_ramp_angle_deg(&self) -> f64 {
-        self.rule_ramp_angle_deg
+    pub fn ramp_angle(&self) -> RampAngle {
+        self.ramp_angle
     }
 
     /// The angle (degrees) of the ramp that replaces a helix with no room.
@@ -314,7 +545,7 @@ impl ResolvedEntry {
     #[must_use]
     pub fn dressup_ramp(&self) -> crate::dressup::EntryStyle {
         crate::dressup::EntryStyle::Ramp {
-            max_angle_deg: self.ramp_angle_deg,
+            max_angle_deg: self.ramp_angle.deg,
         }
     }
 
@@ -337,7 +568,7 @@ impl ResolvedEntry {
                 crate::adaptive3d::EntryStyle3d::Plunge
             }
             Some(EntryKind::Ramp) => crate::adaptive3d::EntryStyle3d::Ramp {
-                max_angle_deg: self.ramp_angle_deg,
+                max_angle_deg: self.ramp_angle.deg,
             },
             Some(EntryKind::Helix) => crate::adaptive3d::EntryStyle3d::Helix {
                 radius: self.helix_radius.emitted_mm,
@@ -696,11 +927,56 @@ mod tests {
     #[test]
     fn the_stored_defaults_are_the_door_rows() {
         let d = stored_default(EntryDoor::Dressup);
-        assert_eq!(d.ramp_angle_deg, DRESSUP_RAMP_ANGLE_DEG.value);
         assert_eq!(d.helix_pitch_mm, DRESSUP_HELIX_PITCH_MM.value);
         let a = stored_default(EntryDoor::Adaptive3d);
-        assert_eq!(a.ramp_angle_deg, ADAPTIVE3D_RAMP_ANGLE_DEG.value);
         assert_eq!(a.helix_pitch_mm, ADAPTIVE3D_HELIX_PITCH_MM.value);
         assert_eq!(a.helix_radius_over_d, HELIX_RADIUS_OVER_D.value);
+    }
+
+    #[test]
+    fn the_ramp_angle_rule_reads_the_material_class() {
+        use crate::material::{PlywoodGrade, SheetGoodKind, WoodSpecies};
+        let rule = |m: Material| RampAngle::resolve(EntryAngle::Rule, &m);
+        let oak = rule(Material::SolidWood {
+            species: WoodSpecies::WhiteOak,
+        });
+        assert_eq!(oak.class, EntryMaterialClass::Hardwood);
+        assert_eq!(oak.deg, RAMP_ANGLE_HARDWOOD_DEG.value);
+        assert!(!oak.stated);
+        for soft in [
+            Material::default(),
+            Material::Plywood {
+                grade: PlywoodGrade::BalticBirch,
+            },
+            Material::SheetGood {
+                kind: SheetGoodKind::Mdf,
+            },
+        ] {
+            assert_eq!(rule(soft).deg, RAMP_ANGLE_SOFTWOOD_AND_COMPOSITE_DEG.value);
+        }
+        let stated = RampAngle::resolve(EntryAngle::Stated(3.0), &Material::default());
+        assert_eq!(stated.deg, 3.0);
+        assert!(stated.stated);
+        assert_eq!(stated.rule_deg, RAMP_ANGLE_SOFTWOOD_AND_COMPOSITE_DEG.value);
+    }
+
+    #[test]
+    fn an_angle_loads_as_stated_and_the_rule_as_absent() {
+        #[derive(serde::Serialize, serde::Deserialize)]
+        struct Row {
+            #[serde(default, skip_serializing_if = "EntryAngle::is_rule")]
+            a: EntryAngle,
+        }
+        let load = |text: &str| toml::from_str::<Row>(text).map(|r| r.a);
+        assert_eq!(load("a = 3.0").ok(), Some(EntryAngle::Stated(3.0)));
+        assert_eq!(load("a = 3").ok(), Some(EntryAngle::Stated(3.0)));
+        assert_eq!(load("").ok(), Some(EntryAngle::Rule));
+        assert_eq!(load("a = \"rule\"").ok(), Some(EntryAngle::Rule));
+        assert!(load("a = \"steep\"").is_err());
+        let json = |text: &str| serde_json::from_str::<Row>(text).map(|r| r.a);
+        assert_eq!(json("{\"a\": null}").ok(), Some(EntryAngle::Rule));
+        let save = |a| toml::to_string(&Row { a }).unwrap_or_default();
+        assert_eq!(save(EntryAngle::Stated(3.0)), "a = 3.0\n");
+        assert_eq!(save(EntryAngle::Rule), "");
     }
 }

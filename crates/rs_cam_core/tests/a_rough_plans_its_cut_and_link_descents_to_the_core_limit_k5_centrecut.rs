@@ -90,7 +90,7 @@ fn op1() -> OperationConfig {
         stock_to_leave_axial: 0.0,
         feed_rate: Some(4200.0),
         entry_style: Adaptive3dEntryStyle::Ramp,
-        ramp_angle_deg: 3.0,
+        ramp_angle_deg: rs_cam_core::feeds::entry_rule::EntryAngle::Stated(3.0),
         clearing_strategy: ClearingStrategy::GeodesicAdaptive,
         max_stay_down_distance_mm: None,
         ..Adaptive3dConfig::default()

@@ -525,7 +525,7 @@ fn dressed_entry(stock: &TriDexelStock, carry_rest_stock: bool) -> Toolpath {
     let cutter = tapered_ball();
     let cfg = DressupConfig {
         entry_style: DressupEntryStyle::Ramp,
-        ramp_angle: 3.0,
+        ramp_angle: rs_cam_core::feeds::entry_rule::EntryAngle::Stated(3.0),
         arc_fitting: None,
         segment_merge: None,
         link_moves: None,
@@ -545,6 +545,7 @@ fn dressed_entry(stock: &TriDexelStock, carry_rest_stock: bool) -> Toolpath {
     apply_dressups(
         AnnotatedToolpath::new(plunge_then_cut()),
         rs_cam_core::compute::execute::DressupContext {
+            material: &rs_cam_core::material::Material::default(),
             ramp_feed_rate_mm_min: None,
             cfg: &cfg,
             nominal_feed_rate: CUT_FEED,
@@ -660,7 +661,7 @@ fn dressed_entry_wide(stock: &TriDexelStock) -> Toolpath {
     let cutter = tapered_ball();
     let cfg = DressupConfig {
         entry_style: DressupEntryStyle::Ramp,
-        ramp_angle: 3.0,
+        ramp_angle: rs_cam_core::feeds::entry_rule::EntryAngle::Stated(3.0),
         arc_fitting: None,
         segment_merge: None,
         link_moves: None,
@@ -680,6 +681,7 @@ fn dressed_entry_wide(stock: &TriDexelStock) -> Toolpath {
     apply_dressups(
         AnnotatedToolpath::new(plunge_then_cut()),
         rs_cam_core::compute::execute::DressupContext {
+            material: &rs_cam_core::material::Material::default(),
             ramp_feed_rate_mm_min: None,
             cfg: &cfg,
             nominal_feed_rate: CUT_FEED,

@@ -241,7 +241,13 @@ fn inputs<'a>(
                 };
                 toolpath_render::EntryPreviewConfig {
                     entry_style,
-                    ramp_angle_deg: tc.dressups.ramp_angle,
+                    // P29-8 8b: the angle the emitter cuts at (stated, or
+                    // the rule of the stock material).
+                    ramp_angle_deg: rs_cam_core::feeds::entry_rule::RampAngle::resolve(
+                        tc.dressups.ramp_angle,
+                        &session.stock_config().material,
+                    )
+                    .deg,
                     // G10 Q6 and D2: the radius the engine emits
                     // (the operator value or 0.3 x D, capped at the
                     // flat bottom). With no tool bound, the rule has

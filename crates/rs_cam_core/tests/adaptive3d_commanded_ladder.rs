@@ -88,7 +88,7 @@ fn build_as013_terrain_session() -> ProjectSession {
         tolerance: 0.25,
         min_cutting_radius: 0.0,
         entry_style: Adaptive3dEntryStyle::Plunge,
-        ramp_angle_deg: 3.0,
+        ramp_angle_deg: rs_cam_core::feeds::entry_rule::EntryAngle::Stated(3.0),
         helix_radius_factor: 0.4,
         helix_pitch: 1.0,
         detect_flat_areas: false,

@@ -68,7 +68,7 @@ fn pocket() -> OperationConfig {
 fn ramp_dressup(angle_deg: f64) -> DressupConfig {
     DressupConfig {
         entry_style: DressupEntryStyle::Ramp,
-        ramp_angle: angle_deg,
+        ramp_angle: rs_cam_core::feeds::entry_rule::EntryAngle::Stated(angle_deg),
         ..DressupConfig::default()
     }
 }
@@ -165,16 +165,18 @@ fn a_bull_ramp_ships_the_cut_feed_under_the_plunge_limit_g10() {
         "{detail}"
     );
 
-    // The notes: the angle (the default 3°, a repo rule) and the clearance.
+    // The notes: the stated angle beside the rule of the softwood stock
+    // (P29-8 8b, Easel), and the clearance.
     let lines: Vec<&str> = notes
         .as_slice()
         .iter()
         .map(|n| n.headline.as_str())
         .collect();
     assert!(
-        lines
-            .iter()
-            .any(|l| l.starts_with("Ramp angle 3.00°: repo rule")),
+        lines.contains(
+            &"Ramp angle 3.00°: operator value (the rule for softwood, plywood, MDF: 20.00°, \
+              Easel)"
+        ),
         "{lines:?}"
     );
     assert!(
@@ -245,6 +247,7 @@ fn the_helix_notes_read_the_tool_profile_g10() {
         &pocket(),
         Some(&helix),
         &tool_of(ToolType::BallNose, 6.0, 2),
+        &Material::default(),
         PassRole::Roughing,
     );
     let pip = notes
@@ -260,6 +263,7 @@ fn the_helix_notes_read_the_tool_profile_g10() {
         &pocket(),
         Some(&helix),
         &tool_of(ToolType::EndMill, 3.175, 2),
+        &Material::default(),
         PassRole::Roughing,
     );
     let cap = notes
@@ -321,6 +325,12 @@ fn a_straight_roughing_plunge_carries_the_q12_caution_g10() {
     );
     assert!(caution.detail.contains("ruling Q12"), "{}", caution.detail);
 
-    let finish = entry_notes(&pocket(), Some(&off), &tool, PassRole::Finish);
+    let finish = entry_notes(
+        &pocket(),
+        Some(&off),
+        &tool,
+        &Material::default(),
+        PassRole::Finish,
+    );
     assert!(finish.is_empty(), "{finish:?}");
 }

@@ -19,10 +19,11 @@ pub(in crate::ui::properties::toolpath_panel) fn draw_linking_tab(
     entry: &mut crate::state::toolpath::ToolpathEntry,
     tool: Option<&crate::state::job::ToolConfig>,
     toolpath_heights: Option<&rs_cam_core::session::ToolpathHeights>,
+    material: &rs_cam_core::material::Material,
     placement: &crate::ui::properties::placement::Placement<'_>,
 ) {
     let fields = Fields::new(&placement.by_field);
-    draw_linking_params(ui, entry, tool, toolpath_heights, fields);
+    draw_linking_params(ui, entry, tool, toolpath_heights, material, fields);
     let dogbone_applies = !entry.operation.is_3d() || entry.dressups.dogbone.is_some();
     draw_dressup_params(ui, &mut entry.dressups, dogbone_applies, fields);
     draw_linking_advanced(ui, entry, fields);

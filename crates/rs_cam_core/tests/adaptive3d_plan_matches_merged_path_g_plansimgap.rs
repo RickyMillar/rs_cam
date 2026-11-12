@@ -150,6 +150,7 @@ fn ship(planned: &Toolpath, cfg: &DressupConfig) -> Toolpath {
     apply_dressups(
         AnnotatedToolpath::new(planned.clone()),
         DressupContext {
+            material: &rs_cam_core::material::Material::default(),
             cfg,
             nominal_feed_rate: 2400.0,
             plunge_rate_mm_min: Some(500.0),

@@ -338,6 +338,7 @@ fn c_no_rapid_crosses_the_rest_stock() {
     let dressed = apply_dressups(
         AnnotatedToolpath::new(two_island_pass()),
         rs_cam_core::compute::execute::DressupContext {
+            material: &rs_cam_core::material::Material::default(),
             ramp_feed_rate_mm_min: None,
             cfg: &cfg,
             nominal_feed_rate: CUT_FEED,

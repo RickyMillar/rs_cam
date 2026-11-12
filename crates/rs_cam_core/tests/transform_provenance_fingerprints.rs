@@ -238,7 +238,7 @@ fn face_fixture() -> AnnotatedToolpath {
 fn full_dressups() -> DressupConfig {
     DressupConfig {
         entry_style: DressupEntryStyle::Ramp,
-        ramp_angle: 15.0,
+        ramp_angle: rs_cam_core::feeds::entry_rule::EntryAngle::Stated(15.0),
         dogbone: Some(DogboneParams { angle: 90.0 }),
         lead_in_out: Some(LeadParams {
             radius: 1.5,
@@ -291,6 +291,7 @@ fn three_pass_full_dressups_fingerprint() {
     let out = apply_dressups(
         input,
         rs_cam_core::compute::execute::DressupContext {
+            material: &rs_cam_core::material::Material::default(),
             ramp_feed_rate_mm_min: None,
             cfg: &full_dressups(),
             nominal_feed_rate: 1000.0,
@@ -373,6 +374,7 @@ fn arc_raster_full_dressups_fingerprint() {
     let out = apply_dressups(
         input,
         rs_cam_core::compute::execute::DressupContext {
+            material: &rs_cam_core::material::Material::default(),
             ramp_feed_rate_mm_min: None,
             cfg: &full_dressups(),
             nominal_feed_rate: 1200.0,
@@ -514,6 +516,7 @@ fn face_full_chain_fingerprint() {
     let mut current = apply_dressups(
         input,
         rs_cam_core::compute::execute::DressupContext {
+            material: &rs_cam_core::material::Material::default(),
             ramp_feed_rate_mm_min: None,
             cfg: &full_dressups(),
             nominal_feed_rate: 1500.0,

@@ -120,7 +120,15 @@ use rs_cam_core::material::{
 /// the repo prints them. The five rows are `entry_rule.ramp_angle_deg.{dressup,
 /// adaptive3d}`, `entry_rule.helix_pitch_mm.{dressup, adaptive3d}` and
 /// `entry_rule.helix_radius_over_d`. No number moved.
-const PINNED_UNSOURCED_COUNT: usize = 146;
+///
+/// Feeds contract P29-8 commit 8b (2026-11-13) lowered it from 146 to 144:
+/// the two door ramp-angle rows (`entry_rule.ramp_angle_deg.{dressup,
+/// adaptive3d}`, 3 and 10 degrees) left. Operator ruling O2 (Easel) made
+/// the ramp angle rule one table by the stock class, and each of its four
+/// rows is `Cited` (`entry_rule.ramp_angle_deg.{hardwood,
+/// softwood_and_composite, non_ferrous}` from the stored Easel page,
+/// `entry_rule.ramp_angle_deg.plastic` from the R6 research note row A4).
+const PINNED_UNSOURCED_COUNT: usize = 144;
 
 fn repo_root() -> PathBuf {
     PathBuf::from(env!("CARGO_MANIFEST_DIR")).join("../..")
@@ -169,8 +177,11 @@ fn every_feeds_formula_constant_states_its_source_f201() {
         "dressup.entry_plunge_rate.first_linear_feed_fraction",
         "dressup.entry_plunge_rate.fallback_mm_min",
         // P29-8 8a: every entry number of THE entry rule.
-        "entry_rule.ramp_angle_deg.dressup",
-        "entry_rule.ramp_angle_deg.adaptive3d",
+        // P29-8 8b: the ramp angle rule by the stock class (Easel).
+        "entry_rule.ramp_angle_deg.hardwood",
+        "entry_rule.ramp_angle_deg.softwood_and_composite",
+        "entry_rule.ramp_angle_deg.non_ferrous",
+        "entry_rule.ramp_angle_deg.plastic",
         "entry_rule.helix_pitch_mm.dressup",
         "entry_rule.helix_pitch_mm.adaptive3d",
         "entry_rule.helix_radius_over_d",

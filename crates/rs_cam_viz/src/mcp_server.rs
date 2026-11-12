@@ -1468,7 +1468,7 @@ impl EmbeddedCamServer {
         // literal, so the list cannot be built here; the
         // `dressup_field_names_are_published` test holds this string against
         // the table and fails when a field is added without a word here.
-        description = "Set dressup configuration for a toolpath. Pass a JSON object with dressup fields: entry_style, ramp_angle, helix_radius, helix_pitch, entry_clearance_mm, dogbone, dogbone_angle, lead_in_out, lead_radius, lead_in_feed_rate, lead_out_feed_rate, link_moves, link_max_distance, link_feed_rate, arc_fitting, arc_tolerance, segment_merge, segment_merge_tolerance, feed_optimization, feed_max_rate, feed_ramp_rate, optimize_rapid_order. helix_radius is in mm; null = 0.3 x tool diameter (repo rule), and the engine caps every helix radius at the tool's flat bottom so the helix leaves no core."
+        description = "Set dressup configuration for a toolpath. Pass a JSON object with dressup fields: entry_style, ramp_angle, helix_radius, helix_pitch, entry_clearance_mm, dogbone, dogbone_angle, lead_in_out, lead_radius, lead_in_feed_rate, lead_out_feed_rate, link_moves, link_max_distance, link_feed_rate, arc_fitting, arc_tolerance, segment_merge, segment_merge_tolerance, feed_optimization, feed_max_rate, feed_ramp_rate, optimize_rapid_order. ramp_angle is in degrees; null or \"rule\" = the rule of the stock material (Easel: 5 hardwood, 20 softwood, plywood, MDF). helix_radius is in mm; null = 0.3 x tool diameter (repo rule), and the engine caps every helix radius at the tool's flat bottom so the helix leaves no core."
     )]
     async fn set_dressup_config(
         &self,

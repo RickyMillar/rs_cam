@@ -280,7 +280,7 @@ fn apply_feeds_subset(
     let mut ramp_record = None;
     {
         let from_mm_min = operation.ramp_feed_rate();
-        let entry = crate::feeds::ramp::entry_geometry(operation, context.dressups, tool);
+        let entry = crate::feeds::ramp::entry_geometry(operation, context.dressups, tool, material);
         // P18 (review D14): the cut term of the ramp reads the feed before
         // the lift too (an entry cuts the full width of the tool).
         // P20b: the vertical part of the ramp goes through the one
@@ -302,8 +302,13 @@ fn apply_feeds_subset(
         );
         if operation.as_params_mut().set_ramp_feed_rate(record.value()) {
             ramp_record = Some(record.clone());
-            let notes =
-                crate::feeds::ramp::entry_notes(operation, context.dressups, tool, pass_role);
+            let notes = crate::feeds::ramp::entry_notes(
+                operation,
+                context.dressups,
+                tool,
+                material,
+                pass_role,
+            );
             warnings.push(SuggestWarning::RampFeed {
                 from_mm_min,
                 record,

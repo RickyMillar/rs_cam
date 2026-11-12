@@ -126,7 +126,7 @@ fn seam_census(at: &AnnotatedToolpath) -> (usize, usize, usize, usize) {
 fn full_dressups() -> DressupConfig {
     DressupConfig {
         entry_style: DressupEntryStyle::Ramp,
-        ramp_angle: 15.0,
+        ramp_angle: rs_cam_core::feeds::entry_rule::EntryAngle::Stated(15.0),
         dogbone: Some(DogboneParams { angle: 90.0 }),
         lead_in_out: Some(LeadParams {
             radius: 1.5,
@@ -274,6 +274,7 @@ fn run(
     let pre = apply_dressups(
         input.clone(),
         rs_cam_core::compute::execute::DressupContext {
+            material: &rs_cam_core::material::Material::default(),
             ramp_feed_rate_mm_min: None,
             cfg: &pre_cfg,
             nominal_feed_rate: feed,
@@ -301,6 +302,7 @@ fn run(
     let out = apply_dressups(
         input,
         rs_cam_core::compute::execute::DressupContext {
+            material: &rs_cam_core::material::Material::default(),
             ramp_feed_rate_mm_min: None,
             cfg,
             nominal_feed_rate: feed,

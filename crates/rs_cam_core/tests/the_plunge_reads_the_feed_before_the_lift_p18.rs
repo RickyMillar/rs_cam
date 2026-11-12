@@ -202,7 +202,7 @@ fn a_ramp_entry_reads_the_feed_before_the_lift_p18() {
     // or the chip term does; the test reads the record for both arms.
     let dressups = DressupConfig {
         entry_style: DressupEntryStyle::Ramp,
-        ramp_angle: 3.0,
+        ramp_angle: rs_cam_core::feeds::entry_rule::EntryAngle::Stated(3.0),
         ..DressupConfig::default()
     };
     let s = suggest(&pocket(THIN_AE_MM), Some(&dressups));
