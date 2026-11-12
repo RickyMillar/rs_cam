@@ -1,33 +1,105 @@
 commit,file,operation,tool_type,diameter_mm,material,column,committed,predicted
-7c,matrix,Pocket,EndMill,3.1750,hardwood,proposal_ap_mm,6.9850,4.9846
-7c,matrix,Pocket,EndMill,3.1750,hardwood,binding_limit,,Rigidity
-7c,matrix,Pocket,EndMill,3.1750,hardwood,proposal_ae_mm,2.3210,2.3210 or wider up to the CornerCoverage width (removal-rate pick; not predicted)
-7c,matrix,Zigzag,EndMill,3.1750,hardwood,proposal_ap_mm,6.9850,4.9846
-7c,matrix,Zigzag,EndMill,3.1750,hardwood,binding_limit,,Rigidity
-7c,matrix,Zigzag,EndMill,3.1750,hardwood,proposal_ae_mm,2.3210,2.3210 or wider up to the CornerCoverage width (removal-rate pick; not predicted)
+7c,matrix,Pocket,BallNose,3.1750,hardwood,depth_per_pass_mm,4.4723,4.4691
+7c,matrix,Pocket,BallNose,3.1750,hardwood,force_n,35.3152,35.2981
+7c,matrix,Pocket,BallNose,3.1750,hardwood,power_kw,0.0995,0.0994
 7c,matrix,Pocket,BallNose,3.1750,hardwood,proposal_ap_mm,4.4723,4.4691
-7c,matrix,Pocket,BallNose,3.1750,hardwood,binding_limit,CornerCoverage,Rigidity or CornerCoverage (removal-rate pick; not predicted)
-7c,matrix,Pocket,BallNose,3.1750,hardwood,proposal_ae_mm,2.7100,2.7100 or wider up to the CornerCoverage width (removal-rate pick; not predicted)
-7c,matrix,Zigzag,BallNose,3.1750,hardwood,proposal_ap_mm,4.4723,4.4691
-7c,matrix,Zigzag,BallNose,3.1750,hardwood,binding_limit,CornerCoverage,Rigidity or CornerCoverage (removal-rate pick; not predicted)
-7c,matrix,Zigzag,BallNose,3.1750,hardwood,proposal_ae_mm,2.7100,2.7100 or wider up to the CornerCoverage width (removal-rate pick; not predicted)
+7c,matrix,Pocket,BallNose,3.1750,hardwood,r_axial_depth_mm,4.4723,4.4691
+7c,matrix,Pocket,BullNose,3.1750,hardwood,binding_limit,,CornerCoverage
+7c,matrix,Pocket,BullNose,3.1750,hardwood,cap_mm,8.6383,5.0171
+7c,matrix,Pocket,BullNose,3.1750,hardwood,depth_per_pass_mm,6.9850,4.9846
+7c,matrix,Pocket,BullNose,3.1750,hardwood,force_n,35.3171,35.1917
+7c,matrix,Pocket,BullNose,3.1750,hardwood,power_kw,0.1633,0.1166
+7c,matrix,Pocket,BullNose,3.1750,hardwood,proposal_ae_mm,2.3210,2.7100
 7c,matrix,Pocket,BullNose,3.1750,hardwood,proposal_ap_mm,6.9850,4.9846
-7c,matrix,Pocket,BullNose,3.1750,hardwood,binding_limit,,Rigidity
-7c,matrix,Pocket,BullNose,3.1750,hardwood,proposal_ae_mm,2.3210,2.3210 or wider up to the CornerCoverage width (removal-rate pick; not predicted)
-7c,matrix,Zigzag,BullNose,3.1750,hardwood,proposal_ap_mm,6.9850,4.9846
-7c,matrix,Zigzag,BullNose,3.1750,hardwood,binding_limit,,Rigidity
-7c,matrix,Zigzag,BullNose,3.1750,hardwood,proposal_ae_mm,2.3210,2.3210 or wider up to the CornerCoverage width (removal-rate pick; not predicted)
+7c,matrix,Pocket,BullNose,3.1750,hardwood,r_axial_depth_mm,6.9850,4.9846
+7c,matrix,Pocket,BullNose,3.1750,hardwood,r_radial_width_mm,2.3210,2.7100
+7c,matrix,Pocket,BullNose,3.1750,hardwood,stepover_mm,2.3210,2.7100
+7c,matrix,Pocket,EndMill,3.1750,hardwood,binding_limit,,CornerCoverage
+7c,matrix,Pocket,EndMill,3.1750,hardwood,cap_mm,8.6383,5.0171
+7c,matrix,Pocket,EndMill,3.1750,hardwood,depth_per_pass_mm,6.9850,4.9846
+7c,matrix,Pocket,EndMill,3.1750,hardwood,force_n,35.3171,35.1917
+7c,matrix,Pocket,EndMill,3.1750,hardwood,power_kw,0.1633,0.1166
+7c,matrix,Pocket,EndMill,3.1750,hardwood,proposal_ae_mm,2.3210,2.7100
+7c,matrix,Pocket,EndMill,3.1750,hardwood,proposal_ap_mm,6.9850,4.9846
+7c,matrix,Pocket,EndMill,3.1750,hardwood,r_axial_depth_mm,6.9850,4.9846
+7c,matrix,Pocket,EndMill,3.1750,hardwood,r_radial_width_mm,2.3210,2.7100
+7c,matrix,Pocket,EndMill,3.1750,hardwood,stepover_mm,2.3210,2.7100
+7c,matrix,Pocket,TaperedBallNose,3.1750,hardwood,binding_limit,,CornerCoverage
+7c,matrix,Pocket,TaperedBallNose,3.1750,hardwood,cap_mm,4.2519,4.2453
+7c,matrix,Pocket,TaperedBallNose,3.1750,hardwood,depth_per_pass_mm,4.2518,4.1827
+7c,matrix,Pocket,TaperedBallNose,3.1750,hardwood,feed_mm_min,3357.0000,3372.0000
+7c,matrix,Pocket,TaperedBallNose,3.1750,hardwood,force_n,35.3182,34.8958
+7c,matrix,Pocket,TaperedBallNose,3.1750,hardwood,power_kw,0.0811,0.0801
+7c,matrix,Pocket,TaperedBallNose,3.1750,hardwood,proposal_ae_mm,2.7075,2.7100
 7c,matrix,Pocket,TaperedBallNose,3.1750,hardwood,proposal_ap_mm,4.2518,4.1827
-7c,matrix,Pocket,TaperedBallNose,3.1750,hardwood,binding_limit,,Rigidity
-7c,matrix,Pocket,TaperedBallNose,3.1750,hardwood,proposal_ae_mm,2.7075,2.7075 or wider up to the CornerCoverage width (removal-rate pick; not predicted)
+7c,matrix,Pocket,TaperedBallNose,3.1750,hardwood,r_axial_depth_mm,4.2518,4.1827
+7c,matrix,Pocket,TaperedBallNose,3.1750,hardwood,r_radial_width_mm,2.7075,2.7100
+7c,matrix,Pocket,TaperedBallNose,3.1750,hardwood,ramp_feed_mm_min,3357.0000,3372.0000
+7c,matrix,Pocket,TaperedBallNose,3.1750,hardwood,rpm,16522.0000,16595.0000
+7c,matrix,Pocket,TaperedBallNose,3.1750,hardwood,stepover_mm,2.7075,2.7100
+7c,matrix,Pocket,TaperedBallNose,6.0000,hardwood,binding_limit,,CornerCoverage
+7c,matrix,Pocket,TaperedBallNose,6.0000,hardwood,cap_mm,3.7796,3.0854
+7c,matrix,Pocket,TaperedBallNose,6.0000,hardwood,chip_regime,measured,above_measured_range
+7c,matrix,Pocket,TaperedBallNose,6.0000,hardwood,depth_per_pass_mm,14.3398,3.0853
+7c,matrix,Pocket,TaperedBallNose,6.0000,hardwood,feed_mm_min,3631.0000,3090.0000
+7c,matrix,Pocket,TaperedBallNose,6.0000,hardwood,force_n,42.7039,35.3138
+7c,matrix,Pocket,TaperedBallNose,6.0000,hardwood,power_kw,0.4037,0.0886
+7c,matrix,Pocket,TaperedBallNose,6.0000,hardwood,proposal_ae_mm,1.0527,5.1213
+7c,matrix,Pocket,TaperedBallNose,6.0000,hardwood,proposal_ap_mm,14.3398,3.0853
+7c,matrix,Pocket,TaperedBallNose,6.0000,hardwood,r_axial_depth_mm,14.3398,3.0853
+7c,matrix,Pocket,TaperedBallNose,6.0000,hardwood,r_radial_width_mm,1.0547,5.1213
+7c,matrix,Pocket,TaperedBallNose,6.0000,hardwood,ramp_feed_mm_min,2355.0000,3090.0000
+7c,matrix,Pocket,TaperedBallNose,6.0000,hardwood,rpm,8000.0000,10495.0000
+7c,matrix,Pocket,TaperedBallNose,6.0000,hardwood,stepover_mm,1.0547,5.1213
+7c,matrix,Zigzag,BallNose,3.1750,hardwood,depth_per_pass_mm,4.4723,4.4691
+7c,matrix,Zigzag,BallNose,3.1750,hardwood,force_n,35.3152,35.2981
+7c,matrix,Zigzag,BallNose,3.1750,hardwood,power_kw,0.0995,0.0994
+7c,matrix,Zigzag,BallNose,3.1750,hardwood,proposal_ap_mm,4.4723,4.4691
+7c,matrix,Zigzag,BallNose,3.1750,hardwood,r_axial_depth_mm,4.4723,4.4691
+7c,matrix,Zigzag,BullNose,3.1750,hardwood,binding_limit,,CornerCoverage
+7c,matrix,Zigzag,BullNose,3.1750,hardwood,cap_mm,8.6383,5.0171
+7c,matrix,Zigzag,BullNose,3.1750,hardwood,depth_per_pass_mm,6.9850,4.9846
+7c,matrix,Zigzag,BullNose,3.1750,hardwood,force_n,35.3171,35.1917
+7c,matrix,Zigzag,BullNose,3.1750,hardwood,power_kw,0.1633,0.1166
+7c,matrix,Zigzag,BullNose,3.1750,hardwood,proposal_ae_mm,2.3210,2.7100
+7c,matrix,Zigzag,BullNose,3.1750,hardwood,proposal_ap_mm,6.9850,4.9846
+7c,matrix,Zigzag,BullNose,3.1750,hardwood,r_axial_depth_mm,6.9850,4.9846
+7c,matrix,Zigzag,BullNose,3.1750,hardwood,r_radial_width_mm,2.3210,2.7100
+7c,matrix,Zigzag,BullNose,3.1750,hardwood,stepover_mm,2.3210,2.7100
+7c,matrix,Zigzag,EndMill,3.1750,hardwood,binding_limit,,CornerCoverage
+7c,matrix,Zigzag,EndMill,3.1750,hardwood,cap_mm,8.6383,5.0171
+7c,matrix,Zigzag,EndMill,3.1750,hardwood,depth_per_pass_mm,6.9850,4.9846
+7c,matrix,Zigzag,EndMill,3.1750,hardwood,force_n,35.3171,35.1917
+7c,matrix,Zigzag,EndMill,3.1750,hardwood,power_kw,0.1633,0.1166
+7c,matrix,Zigzag,EndMill,3.1750,hardwood,proposal_ae_mm,2.3210,2.7100
+7c,matrix,Zigzag,EndMill,3.1750,hardwood,proposal_ap_mm,6.9850,4.9846
+7c,matrix,Zigzag,EndMill,3.1750,hardwood,r_axial_depth_mm,6.9850,4.9846
+7c,matrix,Zigzag,EndMill,3.1750,hardwood,r_radial_width_mm,2.3210,2.7100
+7c,matrix,Zigzag,EndMill,3.1750,hardwood,stepover_mm,2.3210,2.7100
+7c,matrix,Zigzag,TaperedBallNose,3.1750,hardwood,binding_limit,,CornerCoverage
+7c,matrix,Zigzag,TaperedBallNose,3.1750,hardwood,cap_mm,4.2519,4.2453
+7c,matrix,Zigzag,TaperedBallNose,3.1750,hardwood,depth_per_pass_mm,4.2518,4.1827
+7c,matrix,Zigzag,TaperedBallNose,3.1750,hardwood,feed_mm_min,3357.0000,3372.0000
+7c,matrix,Zigzag,TaperedBallNose,3.1750,hardwood,force_n,35.3182,34.8958
+7c,matrix,Zigzag,TaperedBallNose,3.1750,hardwood,power_kw,0.0811,0.0801
+7c,matrix,Zigzag,TaperedBallNose,3.1750,hardwood,proposal_ae_mm,2.7075,2.7100
 7c,matrix,Zigzag,TaperedBallNose,3.1750,hardwood,proposal_ap_mm,4.2518,4.1827
-7c,matrix,Zigzag,TaperedBallNose,3.1750,hardwood,binding_limit,,Rigidity
-7c,matrix,Zigzag,TaperedBallNose,3.1750,hardwood,proposal_ae_mm,2.7075,2.7075 or wider up to the CornerCoverage width (removal-rate pick; not predicted)
-7c,matrix,Pocket,TaperedBallNose,6.0000,hardwood,proposal_ap_mm,14.3398,4.0493
-7c,matrix,Pocket,TaperedBallNose,6.0000,hardwood,binding_limit,,Rigidity
-7c,matrix,Pocket,TaperedBallNose,6.0000,hardwood,proposal_ae_mm,1.0527,1.0527 or wider up to the CornerCoverage width (removal-rate pick; not predicted)
-7c,matrix,Zigzag,TaperedBallNose,6.0000,hardwood,proposal_ap_mm,14.3398,3.0853 (conditional: at the lifted chip of the width 1.0527; up to 4.0493 if the pick widens)
-7c,matrix,Zigzag,TaperedBallNose,6.0000,hardwood,binding_limit,,Rigidity
-7c,matrix,Zigzag,TaperedBallNose,6.0000,hardwood,proposal_ae_mm,1.0527,1.0527 or wider up to the CornerCoverage width (removal-rate pick; not predicted)
-7c,matrix,Adaptive3d,TaperedBallNose,6.0000,hardwood,proposal_ap_mm,3.0000,2.0957
-7c,matrix,Adaptive3d,TaperedBallNose,6.0000,hardwood,binding_limit,,Rigidity
+7c,matrix,Zigzag,TaperedBallNose,3.1750,hardwood,r_axial_depth_mm,4.2518,4.1827
+7c,matrix,Zigzag,TaperedBallNose,3.1750,hardwood,r_radial_width_mm,2.7075,2.7100
+7c,matrix,Zigzag,TaperedBallNose,3.1750,hardwood,ramp_feed_mm_min,3357.0000,3372.0000
+7c,matrix,Zigzag,TaperedBallNose,3.1750,hardwood,rpm,16522.0000,16595.0000
+7c,matrix,Zigzag,TaperedBallNose,3.1750,hardwood,stepover_mm,2.7075,2.7100
+7c,matrix,Zigzag,TaperedBallNose,6.0000,hardwood,binding_limit,,CornerCoverage
+7c,matrix,Zigzag,TaperedBallNose,6.0000,hardwood,cap_mm,3.7796,3.0854
+7c,matrix,Zigzag,TaperedBallNose,6.0000,hardwood,chip_regime,measured,above_measured_range
+7c,matrix,Zigzag,TaperedBallNose,6.0000,hardwood,depth_per_pass_mm,14.3398,3.0853
+7c,matrix,Zigzag,TaperedBallNose,6.0000,hardwood,feed_mm_min,3631.0000,3090.0000
+7c,matrix,Zigzag,TaperedBallNose,6.0000,hardwood,force_n,42.7039,35.3138
+7c,matrix,Zigzag,TaperedBallNose,6.0000,hardwood,power_kw,0.4037,0.0886
+7c,matrix,Zigzag,TaperedBallNose,6.0000,hardwood,proposal_ae_mm,1.0527,5.1213
+7c,matrix,Zigzag,TaperedBallNose,6.0000,hardwood,proposal_ap_mm,14.3398,3.0853
+7c,matrix,Zigzag,TaperedBallNose,6.0000,hardwood,r_axial_depth_mm,14.3398,3.0853
+7c,matrix,Zigzag,TaperedBallNose,6.0000,hardwood,r_radial_width_mm,1.0547,5.1213
+7c,matrix,Zigzag,TaperedBallNose,6.0000,hardwood,ramp_feed_mm_min,2355.0000,3090.0000
+7c,matrix,Zigzag,TaperedBallNose,6.0000,hardwood,rpm,8000.0000,10495.0000
+7c,matrix,Zigzag,TaperedBallNose,6.0000,hardwood,stepover_mm,1.0547,5.1213

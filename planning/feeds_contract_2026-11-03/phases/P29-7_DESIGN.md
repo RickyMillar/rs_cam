@@ -637,6 +637,9 @@ Before a simulation the card of each 3D rough names the planner cap. After a sim
 judged the `c D` samples already (P29-6), so the post-simulation numbers do not move until the
 operator applies the new depth.
 
+Amendment (2026-11-12): section 15.3 holds the run of the prototype on HEAD `3e63a0902`. The
+option A column above holds to 0.0001 mm; table `W` of `P29-7_predictions.csv` is replaced.
+
 ### 10.4 Hand checks (table `H`)
 
 The peak force at the predicted ceiling, at the cut width and chip, against 35.3224 N:
@@ -850,3 +853,164 @@ Section 14 is in `step_7b.patch` and reports both commits. Not run: any HEAD bas
 edited test binaries of 7a on the 7b tree (only the 7b sentries, the op golden, the lib, FM1 and
 clippy ran after 7b); the edited tests marked `#[ignore]` (instruments); the whole viz crate (only
 `--lib` and the five named viz tests); the cli tests (no cli code reads `FeedsInput` or `CutKind`).
+
+## 15. Prediction amendment (2026-11-12, HEAD `3e63a0902`)
+
+Written after the lead rulings of section 13, on the tree after 5b (option A), 5c, 7a and 7b. It
+replaces the predictions of section 10 where they differ. `P29-7_predictions_fm1.csv` and
+`P29-7_predictions.csv` are replaced (the old trap tables are folded into table `W`).
+
+### 15.1 Method
+
+A throwaway prototype edit of `feeds/envelope.rs` only (restored from a byte copy, `sha256sum -c`
+OK, touched). An environment variable picks one of four modes in one build:
+
+| Mode | What it does |
+|---|---|
+| off | HEAD behaviour, byte for byte |
+| pick | only trap 1: the stated-width exact ceiling also takes the pick chip (`ExactRole::Pick` in the `Stated` phase), so `propose` reads `min(curve chip, pick chip)` as the card does |
+| novt | pick, plus the force budget and the deflection read every declared cut with `Presence::Always` and a number |
+| all | novt, plus the vendor depth table on every such cut (Q8) |
+
+The rule of a declared cut at a body column `(ae, fz)`, where `fz` is the chip the limit reads
+there (the operator chip, the grid chip of the column, or the pick chip of the exact solve):
+
+- width: `Stated` gives `ae`; `Slot` gives D; `PassCeiling` gives `c(ae) D`; `CapMult` gives
+  `min(m ae, D)`; `Scallop` and `None` give no number (skipped);
+- chip: `OpFeed` gives `fz`; `Unlifted` gives `fz` over the body lift (`RadialThinning::lift` at
+  `PowerCases::full_feed_width(ae)` on the engaged diameter at the depth per pass, the rule of
+  `UnliftedFeed::of_slot_ring`); `PlannerCapped`, `EntryRule`, `DrillCycle` give no number;
+- `Presence::MayOccur` gives no ceiling (ruling Q1);
+- the body keeps its own width (`budget_width` for the force budget; the declared slot width for
+  the deflection and the table when the body declares `Slot`).
+
+Each edge builder takes the minimum over the cuts per width column: `rigidity_limit` (the grid
+columns and the refinement), `deflection_limit`, `vendor_depth_limit` (its "binds" flag follows
+the minimum), and the exact solvers `budget_depth_at`, `deflection_ceiling_at`,
+`table_ceiling_at`. So `propose`, the removal-rate pick (`deepest_at` through
+`exact_ap_ceiling_at`, and the coarse rank through the drawn edges) and the card placement all
+read the minimum. Power keeps `PowerCases` (Q5). The deflection target stays 200 um (R5 is 7d).
+The prototype has not the final shape of the driver (2.3); it proves the numbers.
+
+### 15.2 Calibration and FM1
+
+- Calibration: the mode "off" FM1 walk (matrix and simulation file) equals the committed fixtures
+  byte for byte (both tests pass, no update variable, walk copies in the scratchpad).
+- Mode "all": 10 matrix rows, 104 cells (`P29-7_predictions_fm1.csv`). Per column:
+  `proposal_ap_mm` 10, `depth_per_pass_mm` 10, `r_axial_depth_mm` 10, `force_n` 10, `power_kw` 10,
+  `proposal_ae_mm` 8, `stepover_mm` 8, `r_radial_width_mm` 8, `cap_mm` 8, `binding_limit` 8,
+  `rpm` 4, `feed_mm_min` 4, `ramp_feed_mm_min` 4, `chip_regime` 2. The recipe columns move because
+  the add door writes the envelope pick (K2b).
+- Simulation file: 0 cells (byte-equal in both modes).
+- Mode "novt" gives the same 104 cells: the vendor depth table moves no FM1 cell (15.5).
+
+| Op | Tool, D, hardwood | Today (ap x ae, binding) | After (ap x ae, binding) |
+|---|---|---|---|
+| Pocket, Zigzag | EndMill 3.175 | 6.9850 x 2.3210, none | 4.9846 x 2.7100, CornerCoverage |
+| Pocket, Zigzag | BullNose 3.175 | 6.9850 x 2.3210, none | 4.9846 x 2.7100, CornerCoverage |
+| Pocket, Zigzag | BallNose 3.175 | 4.4723 x 2.7100, CornerCoverage | 4.4691 x 2.7100, CornerCoverage |
+| Pocket, Zigzag | TaperedBallNose 3.175 | 4.2518 x 2.7075, none | 4.1827 x 2.7100, CornerCoverage |
+| Pocket, Zigzag | TaperedBallNose 6 | 14.3398 x 1.0527, none | 3.0853 x 5.1213, CornerCoverage |
+
+The removal-rate pick widens to the corner-coverage width once the slot caps the depth, as Q3
+expected. At 5.1213 mm on a 6 mm tool the lift is 1, so the contour Pocket ring (unlifted) and
+the Zigzag first row (op feed) give the same 3.0853 mm.
+
+Earlier predictions that changed, and why:
+
+- Pocket TaperedBallNose 6 mm: 4.0493 (the ring at the unlifted chip of today's narrow width)
+  becomes 3.0853 at the wider pick, where the ring is not lifted.
+- Adaptive3d TaperedBallNose 6 mm: 2.0957 becomes no move (3.0000 stays). The first probe read
+  the grid chip of the nearest column (0.25 mm at 0.02 mm width); the envelope reads the chip at
+  the stated width 0.432 mm (the column chip there is 0.147 mm), and the slot root at that chip
+  is above 3.0 mm.
+- The binding of the five removal-rate pairs is `CornerCoverage` (the pick sits on the width
+  ceiling and on a depth ceiling; the first limit is the width).
+- Every other first prediction stands: the depth of the 3.175 mm cells, and no move on Profile,
+  Trace, Bore, Face, 2D Adaptive and the other 3D Adaptive cells.
+
+### 15.3 The wanaka files (table `W`)
+
+Read-only loads of both files; each op's proposal `ap x ae`, binding and placement in modes off,
+pick, novt and all. Moves (every other op of both files: no move in any mode):
+
+| File | idx | Today | Pick only | 7c (all) | Binding | Cut that binds (stated chip) | Move |
+|---|---|---|---|---|---|---|---|
+| operator | 1 | 2.0924 x 5.5 | 2.0924 | 2.0552 x 5.5 | Rigidity | PlannerCap, 5.9913 mm | -1.8 % |
+| operator | 2 | 3.5932 x 1.5 | 3.5932 | 3.4391 x 1.5 | Rigidity | PlannerCap, 1.6380 mm | -4.3 % |
+| operator | 14 | 2.4547 x 3.6 | 2.4547 | 2.4021 x 3.6 | Rigidity | PlannerCap, 3.9395 mm | -2.1 % |
+| operator | 15 | 3.6983 x 1.382 | 3.6983 | 3.5172 x 1.382 | Rigidity | PlannerCap, 1.5104 mm | -4.9 % |
+| work | 1 | 3.9543 x 1.2 | 3.9542 | 3.7498 x 1.2 | Rigidity | PlannerCap, 1.3132 mm | -5.2 % |
+| work | 2 | 3.6696 x 1.5 | 3.6695 | 3.5118 x 1.5 | Rigidity | PlannerCap, 1.6380 mm | -4.3 % |
+| work | 15 | 3.7837 x 1.382 | 3.7836 | 3.5988 x 1.382 | Rigidity | PlannerCap, 1.5104 mm | -4.9 % |
+| work | 14 | 3.0 x 1.2 (stated) | 3.0 | 3.0 x 1.2 | none | (3.7499 > 3.0) | 0 |
+
+The option A column of section 10.3 holds: every value equals the run within 0.0001 mm (the work
+file's pick chip is about 1e-5 mm above its stated chip). No width moves. The operator file moves
+only on the 3D roughs idx 1, 2, 14, 15; the largest move on any wanaka op is 5.2 %. Runtime
+placement at the proposal: operator idx 2 -0.184 -> -0.219, work idx 1 -0.282 -> -0.319, work
+idx 2 -0.167 -> -0.203 (the section 2.6 values). None of the lead's stop conditions is met.
+
+### 15.4 rivmap100 (table `R`)
+
+`planning/fixtures/rivmap100/rivmap100_live_0925.toml` (the copy most roughing measurements
+use), 3D Rough (toolpath 1: 6 mm flat, ContourParallel, white oak, stated 8.0 x 1.2 mm, stated
+chip 0.0667 mm):
+
+| Mode | Proposal | Binding |
+|---|---|---|
+| today | 6.0000 x 1.2 | VendorAxial (placement at the proposal: Outside Rigidity -0.558) |
+| pick only | 3.8518 x 1.2 | Rigidity |
+| 7c (all) | 2.5851 x 1.2 (-56.9 %) | Rigidity: the ContourParallel perimeter sweep (`FirstPass(Slot)`, `Always` under ContourParallel) at the pick chip |
+
+`planning/fixtures/rivmap100/rivmap100.toml` (stated 2.0 x 1.2): no move (the slot root at the
+stated chip is 4.3358 mm). The test fixture
+`crates/rs_cam_core/tests/fixtures/rivmap100_rough_2026-11-04_7effc804/rivmap100.toml` (the same
+3D Rough), at the points its viz tests set:
+
+| Point (ap, ae) | Today | Pick only | 7c (all) |
+|---|---|---|---|
+| as saved (2.0, 1.2) | 2.0000, none | 2.0000 | 2.0000 (placement margin 0.481 -> 0.226) |
+| (4.217, 2.303), the review point | 4.2170, none (Outside Rigidity -0.289) | 3.2723 | 2.9502, Rigidity |
+| (8.0, 2.303) | 4.9402, Rigidity | 3.2723 | 2.9502, Rigidity |
+
+The pick-only value 3.2723 is the hand-over's 3.27 mm. The 7c value adds the sweep slot.
+
+The rivmap live copy moves by more than 10 %; it is not a wanaka file, so the stop rule does not
+name it, but it is the roughing benchmark and the lead should see it: most of the move is trap 1
+(6.0 -> 3.85 mm), and the rest is the ContourParallel sweep (3.85 -> 2.59 mm).
+
+Tests that read that 3D Rough (`rg -l rivmap100` with `proposal`, `safe_envelope` or a depth),
+each at risk of a pinned number or a pinned binding: viz
+`the_envelope_plot_shows_only_what_limits_the_cut_p5c` (points None and (4.217, 2.303)),
+`every_limit_is_drawn_and_named_p5d` (points None and (8.0, 2.303); line 466 pins
+`scene.binding == VendorAxial` at the saved point), `p17_visual_snapshots` (the envelope images),
+`the_chart_kit_draws_the_envelope_p17` and `the_sim_chart_seeks_on_a_dot_p17` (the proposal
+point), `the_step_records_reach_every_surface_p13b` and core
+`the_step_records_are_stored_and_bounded_p13b` (they apply the proposal),
+`the_nomogram_readout_abstains_g_hoverbound`. Not run.
+
+### 15.5 The vendor depth table alone (Q8)
+
+Modes "novt" and "all" give the same proposal on every FM1 cell, every wanaka op and both rivmap
+files. The table edge moves in on each 3D rough (the slot share `fz sin(psi) / band max` is the
+largest at a slot), but it binds no proposal: on these cells the force budget is lower. So the
+vendor depth table moves 0 FM1 cells and 0 ops by itself; it moves drawn edges and the `Check`
+rows only.
+
+### 15.6 Envelope time
+
+FM1 Adaptive3d EndMill 6 mm hardwood, `SafeEnvelope::for_cut`, mean of 10 in a test build after
+one warm-up: off 173 and 178 ms; pick 180 ms; novt 197 and 198 ms; all 156 and 161 ms. The runs
+shared the machine with other jobs, so the spread (156 to 198 ms) is noise of the same size as
+any effect. No growth beyond about 15 % is visible; the implementer measures it again on the
+final driver.
+
+### 15.7 What is still reasoned
+
+- The final driver shape (2.3) gives the same numbers as the prototype: reasoned (the same
+  minimum over the same cuts and chips).
+- The test list of 15.4 and of section 5: not run.
+- 7d (R5, the finish deflection edge): unchanged from section 10 (0 FM1 cells, 0 wanaka ops).
+- The binding cut named in table `W` is the cut with the lowest force-budget root at the stated
+  chip; the run proves the proposal and the binding limit, not the cut name at the pick chip.
