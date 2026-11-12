@@ -748,7 +748,14 @@ Lead, 2026-11-12.
 
 ## 14. Operator rulings
 
-(Empty until the operator rules on O1 and O2.)
+Operator, 2026-11-13.
+
+- **O1: (a), the op plunge rate.** "yeah, lets just go for the plunge rate!" The dressup door
+  feeds the air lead, the stock-aware plunge and the fallback plunge at the op plunge rate. The
+  operator saw the table of the doubled moves (idx 0, 8, 11, 12, 17) and the idx 17 air lead above
+  the stale 1347.5 bound.
+- **O2: Easel.** "lets do 5 and 20". The default ramp angle of a new op is 5 degrees in hardwood
+  and 20 degrees in softwood, plywood and MDF. A stated angle stands.
 
 ## 15. Prototype and runs
 
