@@ -249,16 +249,13 @@ fn body_ctx<'a>(
     tool: &'a rs_cam_core::tool::ToolDefinition,
     annotated: &'a AnnotatedToolpath,
 ) -> SampleContext<'a> {
-    SampleContext::new(
-        tool,
-        Some(&annotated.spans),
-        CapTable::empty(),
-        rs_cam_core::compute::catalog::OperationConfig::new_default(
+    SampleContext::new(tool, Some(&annotated.spans), CapTable::empty(), {
+        let op = rs_cam_core::compute::catalog::OperationConfig::new_default(
             rs_cam_core::compute::catalog::OperationType::Profile,
-        )
-        .cuts()
-        .body_facts(),
-    )
+        );
+        op.cuts(&rs_cam_core::feeds::entry_rule::ConfiguredEntry::registry_default(&op))
+            .body_facts()
+    })
 }
 
 fn count_arcs(tp: &Toolpath) -> usize {
@@ -880,7 +877,13 @@ fn verdict_delta_probe_on_the_committed_fixture() {
             &probe_tool,
             annotated.spans_valid.then_some(annotated.spans.as_slice()),
             &caps,
-            tc.operation.cuts().body_facts(),
+            tc.operation
+                .cuts(
+                    &rs_cam_core::feeds::entry_rule::ConfiguredEntry::registry_default(
+                        &tc.operation,
+                    ),
+                )
+                .body_facts(),
         );
         let cutting_fixed: Vec<&SimulationCutSample> = trace_fixed
             .samples

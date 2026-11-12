@@ -572,7 +572,7 @@ pub fn cap_cut_of_operation(
         | Axial::Peck(_)
         | Axial::SurfaceOffset(_) => {}
     }
-    let cuts = op.cuts();
+    let cuts = op.cuts(&crate::feeds::entry_rule::ConfiguredEntry::registry_default(op));
     let ae = if cuts.declares(crate::limits::CutKind::Drill) {
         d
     } else {

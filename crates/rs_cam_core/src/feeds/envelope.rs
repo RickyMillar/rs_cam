@@ -26,8 +26,8 @@ use crate::feeds::FeedsInput;
 use crate::feeds::force_budget::BudgetDepth;
 use crate::feeds::planned::{
     BodyColumn, CeilingEdge, DeclaredCuts, DeflectionPlanned, ForceBudgetPlanned, ForceEnv,
-    PlaneRole, TableEnv, ValueCheck, VendorDepthTablePlanned, budget_rank, judge_declared_cuts,
-    planned_limit_of,
+    PlaneDepth, PlaneRole, TableEnv, ValueCheck, VendorDepthTablePlanned, budget_rank,
+    judge_declared_cuts, planned_limit_of,
 };
 use crate::feeds::sourced::{
     Basis, ChipMm, FeedMmMin, MachineField, PlungeMmMin, Rpm, Sourced, lower_to_cap,
@@ -1110,8 +1110,25 @@ pub struct CutCheck {
     /// (`Presence::MayOccur`, lead ruling Q1): its check is a warning row,
     /// never a ceiling. `None` for a cut that the plan always cuts.
     pub may_occur_row: Option<&'static str>,
+    /// P29-8 8d: the own depth of a cut that is not on the body plane (an
+    /// entry) and its rule in words. The check then holds the own depth as
+    /// its value, against the cut's root (a value check, never a ceiling).
+    /// `None` for a cut on the body plane.
+    pub own_depth: Option<OwnDepthRecord>,
+    /// P29-8 8d: why the entry rule gives the cut no feed before the
+    /// simulation (`EntryNoNumber::clause`), or `None`.
+    pub entry_no_number: Option<&'static str>,
     /// The check.
     pub check: crate::limits::Check,
+}
+
+/// P29-8 8d: the own depth of a checked cut, for the record.
+#[derive(Debug, Clone, Copy, PartialEq, Serialize)]
+pub struct OwnDepthRecord {
+    /// The depth (mm).
+    pub mm: f64,
+    /// The rule in words (`OwnDepthRule::clause`).
+    pub rule: &'static str,
 }
 
 fn cut_label_of<S: serde::Serializer>(cut: &CutKind, serializer: S) -> Result<S::Ok, S::Error> {
@@ -1162,6 +1179,8 @@ struct CutRows {
 struct CutRow {
     cut: CutKind,
     presence: crate::compute::catalog::Presence,
+    /// P29-8 8d: the body plane, or the cut's own depth.
+    depth: PlaneDepth,
     value: Option<f64>,
     /// The bound, `Ok(None)` with no bound (the cut is inside), or the
     /// reason for no number.
@@ -1172,12 +1191,14 @@ impl CutRow {
     fn of(
         cut: CutKind,
         presence: crate::compute::catalog::Presence,
+        depth: PlaneDepth,
         value: Option<f64>,
         bound: Result<Option<f64>, crate::limits::NoNumberReason>,
     ) -> Self {
         Self {
             cut,
             presence,
+            depth,
             value,
             bound,
         }
@@ -1212,6 +1233,14 @@ impl CutRow {
                 crate::compute::catalog::Presence::Always => None,
                 crate::compute::catalog::Presence::MayOccur(may) => Some(may.row),
             },
+            own_depth: match self.depth {
+                PlaneDepth::Body | PlaneDepth::Axial => None,
+                PlaneDepth::Own(own) => Some(OwnDepthRecord {
+                    mm: own.mm,
+                    rule: own.rule.clause(),
+                }),
+            },
+            entry_no_number: None,
             check: Check {
                 limit,
                 value: self.value,
@@ -1337,6 +1366,17 @@ impl SafeEnvelope {
             input.spindle_strategy,
         );
         crate::feeds::validate_tool_for_operation(&feeds_input)?;
+        // P29-8 8d (lead ruling Q5): the declared cuts with the toolpath's
+        // configured entry (the Suggest context's dressups, else the
+        // registry default). The calculator's own list reads the registry
+        // default; both lists hold the same cuts on the body plane, and only
+        // a cut on the body plane sets the pre-sim power
+        // (`planned::sets_a_ceiling`).
+        let entry = crate::feeds::entry_rule::ConfiguredEntry::of_operation(
+            input.operation,
+            input.context.dressups,
+        );
+        let declared = DeclaredCuts::of_operation(input.operation, input.tool, &entry);
         let inputs = OwnedInputs {
             operation: input.operation.clone(),
             tool: input.tool.clone(),
@@ -1344,7 +1384,7 @@ impl SafeEnvelope {
             material: input.material.clone(),
             lut: input.lut,
             spindle_strategy: input.spindle_strategy,
-            cuts: feeds_input.cuts,
+            cuts: declared,
         };
         // The calculator at the op's own inputs: the family default of an
         // unstated axis, and the matched row.
@@ -1366,7 +1406,7 @@ impl SafeEnvelope {
             }
         };
         // P20i: the declared cuts the calculator reads at each point.
-        let cuts = feeds_input.cuts;
+        let cuts = declared;
         let mut points = Vec::with_capacity(ap_samples.len() * ae_samples.len());
         for &ae in &ae_samples {
             for &ap in &ap_samples {
@@ -2394,7 +2434,7 @@ impl SafeEnvelope {
             let always = || {
                 rows.rows
                     .iter()
-                    .filter(|r| r.presence == crate::compute::catalog::Presence::Always)
+                    .filter(|r| crate::feeds::planned::sets_a_ceiling(r.presence, r.depth))
             };
             let first_by = |key: &dyn Fn(&CutRow) -> Option<f64>| {
                 let mut best: Option<(f64, CutKind)> = None;
@@ -2437,6 +2477,16 @@ impl SafeEnvelope {
                 );
             }
         }
+        // P29-8 8d: an entry row names why its entry rule gives no feed.
+        for row in &mut out {
+            if let CutKind::Entry(kind) = row.cut {
+                row.entry_no_number = self
+                    .inputs
+                    .cuts
+                    .entry_no_number(kind)
+                    .map(crate::feeds::entry_rule::EntryNoNumber::clause);
+            }
+        }
         self.cut_checks = out;
     }
 
@@ -2467,6 +2517,15 @@ impl SafeEnvelope {
             chip_mm: Some(fz),
         };
         let not_judged = Err(NoNumberReason::NotJudgedHere);
+        // P29-8 8d: a cut on the body plane is judged at the proposal
+        // depth; a cut at its own depth (an entry) at that depth, a value
+        // check against its root; an axial cut (a plunge) has no depth on
+        // the plane.
+        let value_of = |depth: PlaneDepth| match depth {
+            PlaneDepth::Body => Some(ap),
+            PlaneDepth::Own(own) => Some(own.mm),
+            PlaneDepth::Axial => None,
+        };
         let rows: Vec<CutRow> = match edge {
             CeilingEdge::ForceBudget => {
                 let model = self.budget.as_ref()?;
@@ -2508,7 +2567,7 @@ impl SafeEnvelope {
                                 _,
                             ) => not_judged,
                         };
-                        CutRow::of(a.kind, a.presence, Some(ap), bound)
+                        CutRow::of(a.kind, a.presence, a.depth, value_of(a.depth), bound)
                     })
                     .collect()
             }
@@ -2527,11 +2586,20 @@ impl SafeEnvelope {
                 judge_declared_cuts::<DeflectionPlanned>(cuts, column(self.curve_fz(p.ae_mm)), &env)
                     .iter()
                     .map(|e| {
-                        let bound = match e.value {
-                            PlannedCell::Judged(root) => Ok(root),
-                            PlannedCell::NotJudged(_) | PlannedCell::NotACutLimit(_) => not_judged,
+                        let bound = match (e.value, e.depth) {
+                            // P29-8 8d: a plunge has no side-cut model; no
+                            // root is no number here, not "inside".
+                            (PlannedCell::Judged(_), PlaneDepth::Axial) => {
+                                Err(NoNumberReason::NotModelled)
+                            }
+                            (PlannedCell::Judged(root), PlaneDepth::Body | PlaneDepth::Own(_)) => {
+                                Ok(root)
+                            }
+                            (PlannedCell::NotJudged(_) | PlannedCell::NotACutLimit(_), _) => {
+                                not_judged
+                            }
                         };
-                        CutRow::of(e.kind, e.presence, Some(ap), bound)
+                        CutRow::of(e.kind, e.presence, e.depth, value_of(e.depth), bound)
                     })
                     .collect()
             }
@@ -2556,7 +2624,7 @@ impl SafeEnvelope {
                         PlannedCell::Judged(None) => Err(NoNumberReason::NotModelled),
                         PlannedCell::NotJudged(_) | PlannedCell::NotACutLimit(_) => not_judged,
                     };
-                    CutRow::of(e.kind, e.presence, Some(ap), bound)
+                    CutRow::of(e.kind, e.presence, e.depth, value_of(e.depth), bound)
                 })
                 .collect()
             }
@@ -2586,22 +2654,54 @@ impl SafeEnvelope {
                     super::power_model_terms(&input, line, p.ap_mm, w, effective_d, sp.r.rpm)
                         .kw_at_feed(sp.r.feed_rate_mm_min)
                 };
+                // P29-8 8d: an entry (at its own depth, or a plunge) at its
+                // own engagement (the declared cut, `DeclaredCut::at`) and its
+                // own feed (the entry chip at the stated speed), through the
+                // one forward read of a load (`CutLoad::of_cut`), against the
+                // rated power at that speed.
+                let entry_rpm = cuts.entry_rpm().ok();
+                let z = self.inputs.tool.flute_count_planning().max(1);
+                let cut_ctx = crate::compute::catalog::CutContext::of_tool(&self.inputs.tool);
+                let entry_power = |kind: CutKind, fz: f64| {
+                    let rpm = entry_rpm?;
+                    let declared = cuts.list().of_kind(kind)?;
+                    let at = crate::feeds::cut_load::OperatingPoint::planned(
+                        fz * rpm * f64::from(z),
+                        rpm,
+                        z,
+                    );
+                    let cut = declared.at(&cut_ctx, Some(at));
+                    crate::feeds::cut_load::CutLoad::of_cut(&cut, tool, Some(line))
+                        .and_then(|load| load.power_kw())
+                        .ok()
+                };
                 let env = PowerEnv {
                     column_ae_mm: p.ae_mm,
                     power_kw: &power,
+                    entry_power_kw: &entry_power,
                 };
-                let available = Ok(Some(sp.r.available_power_kw));
+                let available = |depth: PlaneDepth| match depth {
+                    PlaneDepth::Body => Ok(Some(sp.r.available_power_kw)),
+                    PlaneDepth::Own(_) | PlaneDepth::Axial => match entry_rpm {
+                        Some(rpm) => Ok(Some(self.inputs.machine.power_at_rpm(rpm))),
+                        None => Err(NoNumberReason::NotModelled),
+                    },
+                };
                 judge_declared_cuts::<SpindlePowerPlanned>(cuts, column(sp.fz), &env)
                     .iter()
                     .map(|e| match e.value {
                         PlannedCell::Judged(Some((_, kw, _))) => {
-                            CutRow::of(e.kind, e.presence, Some(kw), available)
+                            CutRow::of(e.kind, e.presence, e.depth, Some(kw), available(e.depth))
                         }
-                        PlannedCell::Judged(None) => {
-                            CutRow::of(e.kind, e.presence, None, Err(NoNumberReason::NotModelled))
-                        }
+                        PlannedCell::Judged(None) => CutRow::of(
+                            e.kind,
+                            e.presence,
+                            e.depth,
+                            None,
+                            Err(NoNumberReason::NotModelled),
+                        ),
                         PlannedCell::NotJudged(_) | PlannedCell::NotACutLimit(_) => {
-                            CutRow::of(e.kind, e.presence, None, not_judged)
+                            CutRow::of(e.kind, e.presence, e.depth, None, not_judged)
                         }
                     })
                     .collect()
@@ -2684,7 +2784,7 @@ impl SafeEnvelope {
                         (None, Err(NoNumberReason::NotJudgedHere))
                     }
                 };
-                CutRow::of(e.kind, e.presence, value, bound)
+                CutRow::of(e.kind, e.presence, e.depth, value, bound)
             })
             .collect();
         (side, kind, rows)
@@ -2699,6 +2799,16 @@ impl SafeEnvelope {
             let crate::compute::catalog::Presence::MayOccur(may) = cut.presence else {
                 continue;
             };
+            // P29-8 8d: an entry is a value check, never a ceiling (lead
+            // ruling Q1), so the note "it is not a ceiling" says nothing of
+            // it. Its rows of `cut_checks` name its row (`U-EntryFallback`).
+            match cut.kind.group() {
+                crate::limits::CutGroup::Entry => continue,
+                crate::limits::CutGroup::Body
+                | crate::limits::CutGroup::Cleanup
+                | crate::limits::CutGroup::Link
+                | crate::limits::CutGroup::Drill => {}
+            }
             let budget = self.cut_checks.iter().find(|c| {
                 c.cut == cut.kind && c.check.limit == crate::limits::LimitId::ForceBudget
             });
@@ -3094,7 +3204,11 @@ fn axes_plan(operation: &OperationConfig, tool: &ToolConfig, base: &FeedsResult)
         peck: matches!(spec.axial, Axial::Peck(_)),
         // P29-3: the offset-ring fact of the op's body cut.
         // EXEMPT(P28-05, P28-07)
-        computed_width: radial_free && operation.cuts().body_facts().offset_ring,
+        computed_width: radial_free
+            && operation
+                .cuts(&crate::feeds::entry_rule::ConfiguredEntry::registry_default(operation))
+                .body_facts()
+                .offset_ring,
     }
 }
 

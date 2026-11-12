@@ -106,7 +106,11 @@ fn envelope(tool: &ToolConfig, machine: &MachineProfile) -> SafeEnvelope {
 fn binding_cut_at(tool: &ToolConfig, ae: f64, target_um: f64) -> (CutKind, f64, f64) {
     let op = roughing_pocket();
     let tool_def = rs_cam_core::compute::cutter::build_cutter(tool).expect("the tool builds");
-    let cuts = DeclaredCuts::of_operation(&op, tool);
+    let cuts = DeclaredCuts::of_operation(
+        &op,
+        tool,
+        &rs_cam_core::feeds::entry_rule::ConfiguredEntry::registry_default(&op),
+    );
     let fz = 4800.0 / (18_000.0 * 2.0);
     let column = BodyColumn {
         ae_mm: ae,

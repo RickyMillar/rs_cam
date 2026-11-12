@@ -68,7 +68,7 @@ use crate::feeds::ToolGeometryHint;
 use crate::feeds::envelope::CutPoint;
 use crate::feeds::force::{DeflectionCapRefusal, immersion_angle};
 use crate::feeds::section::{AxialSectionRefusal, EngagedSection};
-use crate::limits::{CutKind, FirstPassKind};
+use crate::limits::{CutKind, EntryKind, FirstPassKind};
 use crate::material::force_line::ForceLine;
 use crate::tool::MillingCutter;
 
@@ -844,8 +844,9 @@ impl PowerCase {
     /// pre-sim set is the largest power over the declared cuts,
     /// `feeds::planned::worst_power`). One match names every kind. A cut
     /// at the body width is the nominal case; a planner cap, a first slot
-    /// and a slot ring name their own case; an entry and the drill cycle are
-    /// axial cuts.
+    /// and a slot ring name their own case; a ramp and a helix entry are a
+    /// slot at their own depth (P29-8 8d); a plunge entry, a peck ladder
+    /// and the drill cycle are axial cuts.
     #[must_use]
     pub const fn of_cut_kind(kind: crate::limits::CutKind) -> Self {
         match kind {
@@ -861,8 +862,12 @@ impl PowerCase {
             | CutKind::Link
             | CutKind::DressupRelief => Self::Nominal,
             CutKind::FirstPass(FirstPassKind::PlannerCap) => Self::PlannerCap,
-            CutKind::FirstPass(FirstPassKind::Slot) | CutKind::SlotRing => Self::Slot,
-            CutKind::Entry(_) | CutKind::Drill => Self::AxialPlunge,
+            CutKind::FirstPass(FirstPassKind::Slot)
+            | CutKind::SlotRing
+            | CutKind::Entry(EntryKind::Ramp | EntryKind::Helix) => Self::Slot,
+            CutKind::Entry(EntryKind::Plunge | EntryKind::PeckLadder) | CutKind::Drill => {
+                Self::AxialPlunge
+            }
         }
     }
 

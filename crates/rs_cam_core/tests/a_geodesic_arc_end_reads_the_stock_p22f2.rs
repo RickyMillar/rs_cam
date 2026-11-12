@@ -236,7 +236,14 @@ fn a_geodesic_arc_end_reads_the_stock() {
     let annotated = result.annotated();
     let spans = annotated.spans_valid.then_some(annotated.spans.as_slice());
     let caps = CapTable::of_toolpath(&annotated.toolpath, result.semantic_trace.as_deref());
-    let sample_ctx = SampleContext::new(&tool, spans, &caps, tc.operation.cuts().body_facts());
+    let sample_ctx = SampleContext::new(
+        &tool,
+        spans,
+        &caps,
+        tc.operation
+            .cuts(&rs_cam_core::feeds::entry_rule::ConfiguredEntry::registry_default(&tc.operation))
+            .body_facts(),
+    );
     let mut phantom = 0usize;
     let mut joint = 0usize;
     let trace = s

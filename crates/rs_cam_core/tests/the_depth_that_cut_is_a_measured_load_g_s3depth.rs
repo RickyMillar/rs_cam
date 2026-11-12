@@ -780,7 +780,11 @@ fn the_suggest_clamp_still_fires_at_the_helper_s_own_cap() {
     use rs_cam_core::feeds::planned::{
         BodyColumn, DeclaredCuts, ForceBudgetPlanned, ForceEnv, PlannedCell, judge_declared_cuts,
     };
-    let cuts = DeclaredCuts::of_operation(&operation, &tool);
+    let cuts = DeclaredCuts::of_operation(
+        &operation,
+        &tool,
+        &rs_cam_core::feeds::entry_rule::ConfiguredEntry::registry_default(&operation),
+    );
     let column = BodyColumn {
         ae_mm: STEPOVER_MM,
         chip_mm: Some(fz),

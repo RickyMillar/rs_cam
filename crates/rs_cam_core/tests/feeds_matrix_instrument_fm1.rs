@@ -693,7 +693,9 @@ fn cap_columns(
             .unwrap_or((0.0, 0.0));
     let cap = rs_cam_core::feeds::force_budget::rigidity_depth_cap(
         machine,
-        op.cuts().body_facts().depth_rule,
+        op.cuts(&rs_cam_core::feeds::entry_rule::ConfiguredEntry::registry_default(op))
+            .body_facts()
+            .depth_rule,
         &cutter,
         material,
         ae,

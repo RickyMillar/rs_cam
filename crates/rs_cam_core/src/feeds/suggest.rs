@@ -750,7 +750,10 @@ pub fn suggest_for_operation(
 #[must_use]
 pub fn has_computed_width(operation: &OperationConfig) -> bool {
     // EXEMPT(P28-05, P28-06, P28-07)
-    operation.cuts().body_facts().offset_ring
+    operation
+        .cuts(&crate::feeds::entry_rule::ConfiguredEntry::registry_default(operation))
+        .body_facts()
+        .offset_ring
 }
 
 /// Run the feeds calculator for an operation and project context without

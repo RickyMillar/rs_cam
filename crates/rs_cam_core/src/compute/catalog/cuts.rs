@@ -6,10 +6,16 @@
 //! cuts, the capped steps, the wall finish of a Bore, the drill cycle and
 //! the entry kinds. P29-7 7b: each cut that the generator makes is in the
 //! list, with its feed rule ([`DeclaredFeed`]) and its presence
-//! ([`Presence`]), with two exceptions: the re-plunge after a tab of a
-//! Profile (row `U-TabReplunge`, P29-8), and the capped steps, where each
-//! op declares one `FeedCapSource` of the several that its planner can
-//! write. A cut that the plan makes only where a generation fact
+//! ([`Presence`]), with one exception: the capped steps, where each op
+//! declares one `FeedCapSource` of the several that its planner can write.
+//! P29-8 8d: an entry is a declared cut with an engagement, a feed and a
+//! presence. A ramp or a helix is a slot at its own depth
+//! ([`DeclaredDepth::Own`]); the planned limits judge it as a value check,
+//! never as a ceiling of the body plane. The configured kind
+//! ([`ConfiguredEntry`]) is `Always`; every other kind of the op's entry
+//! contract is `MayOccur` (row `U-EntryFallback`). The re-plunge after a
+//! tab of a Profile is the plunge entry cut (row `U-TabReplunge` holds the
+//! open cause). A cut that the plan makes only where a generation fact
 //! asks is [`Presence::MayOccur`]; it names a row of `limits::EXEMPTIONS`,
 //! because no limit caps it before the simulation.
 //!
@@ -32,6 +38,7 @@
 use crate::compute::tool_config::ToolConfig;
 use crate::feeds::cut_load::OperatingPoint;
 use crate::feeds::engagement::{EngagedDiameter, Engagement};
+use crate::feeds::entry_rule::ConfiguredEntry;
 use crate::feeds::envelope::CutPoint;
 use crate::feeds::geometry::RadialThinning;
 use crate::feeds::{CutBody, OperationFamily as FeedsOperationFamily, PassRole};
@@ -100,10 +107,54 @@ pub enum DeclaredWidth {
 /// The depth that a declared cut states.
 #[derive(Debug, Clone, Copy, PartialEq)]
 pub enum DeclaredDepth {
-    /// A stated depth (mm).
+    /// A stated depth (mm): a depth of the body plane.
     Stated(f64),
+    /// P29-8 8d: the cut's own depth, not the body depth (an entry). The
+    /// planned limits judge it as a value check, never as a ceiling of the
+    /// body plane (lead ruling Q1).
+    Own(OwnDepth),
+    /// P29-8 8d: a straight descent (a plunge or a peck ladder entry): the
+    /// axial circle of the tool at its own feed, with no side-cut depth.
+    /// Only the spindle power reads it (`CutLoad`, the axial section); no
+    /// side-cut limit has a model for it.
+    Axial,
     /// No depth is stated, or the simulation gives it.
     None(NoEngagementModel),
+}
+
+/// P29-8 8d: the own depth of a cut that is not on the body plane (an
+/// entry), and the rule that gives it.
+#[derive(Debug, Clone, Copy, PartialEq)]
+pub struct OwnDepth {
+    /// The depth (mm).
+    pub mm: f64,
+    /// The rule that gives the depth.
+    pub rule: OwnDepthRule,
+}
+
+/// The rule of an [`OwnDepth`]. One match names every rule
+/// ([`Self::clause`]): a new rule does not compile until it states its
+/// words for the card.
+#[derive(Debug, Clone, Copy, PartialEq, Eq)]
+pub enum OwnDepthRule {
+    /// A ramp entry: the depth per pass. The ramp takes the full material
+    /// depth (operator ruling 2026-09-24), so its last lap is a slot of that
+    /// depth. The worst case (lead ruling Q1b): a lap ladder engages less.
+    RampDepthPerPass,
+    /// A helix entry: one pitch. One lap engages one pitch at the leading
+    /// edge (the Bore rule of P29-5b).
+    HelixPitch,
+}
+
+impl OwnDepthRule {
+    /// The rule in words, for the card and MCP.
+    #[must_use]
+    pub const fn clause(self) -> &'static str {
+        match self {
+            Self::RampDepthPerPass => "the ramp's last lap at full depth (worst case)",
+            Self::HelixPitch => "one helix pitch at the leading edge",
+        }
+    }
 }
 
 /// The feed at which the emitter cuts a declared cut (P29-7 7b).
@@ -117,8 +168,10 @@ pub enum DeclaredFeed {
     /// A feed the planner caps on its own stock read; no number before the
     /// simulation.
     PlannerCapped,
-    /// The feed of an entry rule: the plunge or the ramp feed (P29-8).
-    EntryRule,
+    /// The feed of the entry rule of this entry kind (P29-8 8d: the ramp
+    /// feed of a ramp or a helix, the plunge feed of the door for a plunge
+    /// or a peck ladder; `ConfiguredEntry::planned_feed_mm_min`).
+    EntryRule(EntryKind),
     /// The feed of the drill cycle (Step 9c).
     DrillCycle,
 }
@@ -141,7 +194,9 @@ impl DeclaredFeed {
             | CutKind::DressupRelief => Self::OpFeed,
             CutKind::SlotRing => Self::Unlifted,
             CutKind::CappedStep(_) => Self::PlannerCapped,
-            CutKind::Entry(_) | CutKind::EntryApproach => Self::EntryRule,
+            CutKind::Entry(kind) => Self::EntryRule(kind),
+            // The air lead runs at the plunge feed of the door.
+            CutKind::EntryApproach => Self::EntryRule(EntryKind::Plunge),
             CutKind::Drill => Self::DrillCycle,
         }
     }
@@ -169,6 +224,25 @@ pub enum Presence {
     Always,
     /// The plan cuts it only where a generation fact asks.
     MayOccur(MayOccur),
+}
+
+/// The generation fact of an entry kind that the op does not configure
+/// (row `U-EntryFallback`). One match names every kind.
+const fn entry_fallback_reason(kind: EntryKind) -> &'static str {
+    match kind {
+        EntryKind::Plunge => {
+            "a ramp with no run or a helix with no room falls back to a plunge; a Profile \
+             re-plunges after each tab (row U-TabReplunge)"
+        }
+        EntryKind::Ramp => {
+            "a helix with no room falls back to a ramp at the op's own angle; a non-centre-cutting \
+             tool ramps under the style None; a Pencil ramps its crease on rest stock"
+        }
+        EntryKind::Helix => "the contract allows a helix, and the op states another entry kind",
+        EntryKind::PeckLadder => {
+            "the contract allows a peck ladder, and the op states another entry kind"
+        }
+    }
 }
 
 /// The generation fact of the residual sweep of a geodesic 3D Rough.
@@ -202,11 +276,12 @@ impl DeclaredCut {
     ///
     /// - [`CutKind::Drill`]: the straight plunge of the tool
     ///   ([`CutEngagement::axial_plunge`]).
-    /// - An entry: no model (a ramp, a helix; a plunge or a peck states no
-    ///   depth; P29-8).
-    /// - Every other kind: a side cut at the stated width and depth, with no
-    ///   helix (as the calculator's power door), or no model when one of the
-    ///   two is not stated. A scallop width is not stated here.
+    /// - A plunge or a peck ladder entry: the straight plunge of the tool.
+    /// - A ramp or a helix entry (P29-8 8d), and every other kind: a side
+    ///   cut at the stated width and depth (an entry: the slot at its own
+    ///   depth), with no helix (as the calculator's power door), or no model
+    ///   when one of the two is not stated. A scallop width is not stated
+    ///   here.
     #[must_use]
     pub fn at(&self, ctx: &CutContext<'_>, point: Option<OperatingPoint>) -> Cut {
         Cut {
@@ -228,6 +303,11 @@ impl DeclaredCut {
             };
             let ap = match self.depth {
                 DeclaredDepth::Stated(ap) => ap,
+                DeclaredDepth::Own(own) => own.mm,
+                // Not reached: an axial cut is the straight plunge above.
+                DeclaredDepth::Axial => {
+                    return CutEngagement::NoModel(NoEngagementModel::NoStatedDepth);
+                }
                 DeclaredDepth::None(reason) => return CutEngagement::NoModel(reason),
             };
             CutEngagement::Side(Engagement::from_cut(
@@ -241,13 +321,11 @@ impl DeclaredCut {
             ))
         };
         match self.kind {
-            CutKind::Drill => CutEngagement::axial_plunge(hint, d, ctx.body.core_diameter_mm),
-            CutKind::Entry(EntryKind::Ramp) => CutEngagement::NoModel(NoEngagementModel::Ramp),
-            CutKind::Entry(EntryKind::Helix) => CutEngagement::NoModel(NoEngagementModel::Helix),
-            CutKind::Entry(EntryKind::Plunge | EntryKind::PeckLadder) => {
-                CutEngagement::NoModel(NoEngagementModel::NoStatedDepth)
+            CutKind::Drill | CutKind::Entry(EntryKind::Plunge | EntryKind::PeckLadder) => {
+                CutEngagement::axial_plunge(hint, d, ctx.body.core_diameter_mm)
             }
-            CutKind::Body
+            CutKind::Entry(EntryKind::Ramp | EntryKind::Helix)
+            | CutKind::Body
             | CutKind::FirstPass(_)
             | CutKind::SpringPass
             | CutKind::WallFinish
@@ -453,8 +531,13 @@ impl OperationConfig {
     /// the op's cut spec and planner width (K1, P23a). P29-7 7b: each arm
     /// also states the spring passes, the row connectors, the cleanup cuts,
     /// the capped steps and the wall finish that its generator makes.
+    ///
+    /// P29-8 8d (lead ruling Q5): `entry` is the op's configured entry
+    /// ([`ConfiguredEntry`]: from the toolpath's dressups, or the registry
+    /// default for a reader that holds no toolpath). It sets which entry
+    /// kind is `Always` and the depth of a helix entry.
     #[must_use]
-    pub fn cuts(&self) -> CutList {
+    pub fn cuts(&self, entry: &ConfiguredEntry) -> CutList {
         use super::super::operation_configs::{ClearingStrategy, PocketPattern};
         use crate::adaptive::CleanupStrategy;
         use crate::adaptive3d::FeedCapSource;
@@ -566,10 +649,84 @@ impl OperationConfig {
                 self.declare_side_cuts(&mut declare, FirstSlot::OfSpec);
             }
         }
-        for kind in self.op_type().registry_entry().entry.record_kinds().kinds() {
-            declare.unstated(CutKind::Entry(kind));
-        }
+        self.declare_entries(&mut declare, entry);
         declare.list
+    }
+
+    /// P29-8 8d: the entry cuts, one per kind of the op's entry contract
+    /// (`EntryContract::record_kinds`), in the order of `EntryKind::ALL`.
+    ///
+    /// | Kind | Width | Depth | Engagement |
+    /// |---|---|---|---|
+    /// | ramp | slot | own: the depth per pass ([`OwnDepthRule::RampDepthPerPass`]) | a slot at a slope |
+    /// | helix | slot | own: one pitch ([`OwnDepthRule::HelixPitch`]) | a slot of depth `pitch` |
+    /// | plunge, peck ladder | slot (the circle) | axial ([`DeclaredDepth::Axial`]) | the straight plunge |
+    ///
+    /// The configured kind is `Always` (the style None of a dressup op and
+    /// a planner op with no style enter by the plunge); every other kind is
+    /// `MayOccur` with the row `U-EntryFallback`. The plunge cut of a
+    /// Profile holds the re-plunge after each tab (row `U-TabReplunge`).
+    fn declare_entries(&self, declare: &mut Declare, entry: &ConfiguredEntry) {
+        use super::EntryContract;
+        let contract = self.op_type().registry_entry().entry;
+        let always = match contract {
+            EntryContract::Dressup { .. } | EntryContract::Planner { .. } => {
+                Some(entry.kind().unwrap_or(EntryKind::Plunge))
+            }
+            EntryContract::StraightPlunge { .. } => Some(EntryKind::Plunge),
+            EntryContract::DescentIsCut => None,
+        };
+        let body_depth = self.declared_depth();
+        let no_width = DeclaredWidth::None(NoEngagementModel::NoStatedWidth);
+        let no_depth = DeclaredDepth::None(NoEngagementModel::NoStatedDepth);
+        // A slot at its own depth; with no own depth the entry has no
+        // engagement, so it states no width either (a cut on the body plane
+        // with no depth would read the body depth).
+        let slot_at = |depth: DeclaredDepth| match depth {
+            DeclaredDepth::Own(_) => (DeclaredWidth::Slot, depth),
+            DeclaredDepth::Stated(_) | DeclaredDepth::Axial | DeclaredDepth::None(_) => {
+                (no_width, no_depth)
+            }
+        };
+        for kind in contract.record_kinds().kinds() {
+            let (width, depth) = match kind {
+                EntryKind::Ramp => slot_at(match body_depth {
+                    DeclaredDepth::Stated(mm) => DeclaredDepth::Own(OwnDepth {
+                        mm,
+                        rule: OwnDepthRule::RampDepthPerPass,
+                    }),
+                    // The body depth is never an own depth.
+                    DeclaredDepth::Own(_) | DeclaredDepth::Axial | DeclaredDepth::None(_) => {
+                        no_depth
+                    }
+                }),
+                EntryKind::Helix => {
+                    let pitch = entry.helix_pitch_mm();
+                    slot_at(if pitch.is_finite() && pitch > 0.0 {
+                        DeclaredDepth::Own(OwnDepth {
+                            mm: pitch,
+                            rule: OwnDepthRule::HelixPitch,
+                        })
+                    } else {
+                        no_depth
+                    })
+                }
+                // The full circle of the tool, descending.
+                EntryKind::Plunge | EntryKind::PeckLadder => {
+                    (DeclaredWidth::Slot, DeclaredDepth::Axial)
+                }
+            };
+            let presence = if always == Some(kind) {
+                Presence::Always
+            } else {
+                // EXEMPT(U-EntryFallback)
+                Presence::MayOccur(MayOccur {
+                    row: "U-EntryFallback",
+                    reason: entry_fallback_reason(kind),
+                })
+            };
+            declare.cut(CutKind::Entry(kind), width, depth, presence);
+        }
     }
 
     /// The body, the planner cap and the first slot of the op, in the tie

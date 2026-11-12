@@ -48,9 +48,9 @@ use rs_cam_core::limits::{
 };
 
 /// The rows that need a ruling. Exact: a closed row lowers it.
-const MAX_NEEDS_RULING: usize = 28;
+const MAX_NEEDS_RULING: usize = 29;
 /// Every row.
-const ROWS: usize = 39;
+const ROWS: usize = 40;
 /// The rows with a geometry reason.
 const PHYSICAL: usize = 8;
 /// The rows that quote an operator ruling.
@@ -83,7 +83,10 @@ const RULED: usize = 3;
 /// the rows `P28-15` and `F-LeaveAfter` (ruling R5: one deflection limit,
 /// `min(leave, 200 um)`, every role, the radial leave field only); the row
 /// `P28-16` narrowed to the feed modulator (lead ruling Q4).
-const ROWS_WITH_A_FILE: usize = 38;
+/// P29-8 8d added the row `U-EntryFallback` with its file (the `MayOccur`
+/// entry kinds of `src/compute/catalog/cuts.rs`): ROWS 40, need a ruling
+/// 29. The row `U-TabReplunge` narrowed to its open cause, with no file.
+const ROWS_WITH_A_FILE: usize = 39;
 
 /// The 34 rows of `phases/P28_limit_audit.md`.
 const P28_IDS: [&str; 34] = [
@@ -384,7 +387,10 @@ fn every_may_occur_cut_names_its_row_p29_7() {
     }
     let mut may_occur = 0;
     for op in &configs {
-        for cut in op.cuts().iter() {
+        for cut in op
+            .cuts(&rs_cam_core::feeds::entry_rule::ConfiguredEntry::registry_default(op))
+            .iter()
+        {
             let Presence::MayOccur(may) = cut.presence else {
                 continue;
             };

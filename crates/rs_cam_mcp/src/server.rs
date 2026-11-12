@@ -4033,6 +4033,14 @@ pub fn build_info() -> serde_json::Value {
             // the proposal, with `may_occur_row` for a cut the plan may not
             // cut).
             "envelope_declared_cuts",
+            // Feeds contract P29-8 8d: an entry is a declared cut. A ramp or
+            // a helix row of `envelope.cut_checks` carries `own_depth`
+            // ({mm, rule}: the depth per pass of a ramp, worst case; one
+            // pitch of a helix) and holds that depth as its value, a value
+            // check against the cut's root, never a ceiling. An entry row
+            // whose entry rule gives no feed names why in
+            // `entry_no_number`.
+            "envelope_entry_value_checks",
         ],
     })
 }

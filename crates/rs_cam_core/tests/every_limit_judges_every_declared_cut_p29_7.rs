@@ -33,9 +33,17 @@
 //! - Claim 4: non-vacuity. A contour Pocket (EndMill 3.175 mm, hardwood)
 //!   sets its force budget on the slot ring, a geodesic 3D Rough (EndMill
 //!   6 mm, stepover 1.2 mm) on the planner cap, and the configs give a
-//!   planned cut of each chip reason (`PlannerCapped`, `EntryRule`,
-//!   `DrillCycle`) and of each width reason (`NoStatedWidth`,
+//!   planned cut of each chip reason (`PlannerCapped`, an entry rule with
+//!   no number, `DrillCycle`) and of each width reason (`NoStatedWidth`,
 //!   `NoStatedDepth`).
+//! - Claim 5 (P29-8 8d, lead ruling Q1): an entry at its own depth is a
+//!   value check, never a ceiling. Every row of a cut at its own depth holds
+//!   the own depth as its value; a depth-ceiling row is `Exceeds` exactly
+//!   when the own depth is above the bound; no entry is the binding cut of
+//!   an edge; claims 2 and 3 skip a cut at its own depth. A plunge (the
+//!   axial circle) holds a number only for the spindle power. Non-vacuity:
+//!   a ramp and a helix row hold a force-budget number and a plunge row a
+//!   power number on a config with stated speeds.
 
 #![expect(
     clippy::expect_used,
@@ -48,11 +56,12 @@ use rs_cam_core::compute::catalog::{OperationConfig, OperationType, Presence};
 use rs_cam_core::compute::operation_configs::ClearingStrategy;
 use rs_cam_core::compute::tool_config::{ToolConfig, ToolFact, ToolId, ToolType};
 use rs_cam_core::feeds::SpindleStrategy;
+use rs_cam_core::feeds::entry_rule::ConfiguredEntry;
 use rs_cam_core::feeds::envelope::{EnvelopeInput, LimitKind, SafeEnvelope};
 use rs_cam_core::feeds::planned::{
     BodyColumn, CeilingEdge, ChipEnv, ChipMaxPlanned, ChipMinPlanned, DeclaredCuts,
-    DeflectionPlanned, ForceBudgetPlanned, ForceEnv, PlaneRole, PlannedCell, PlannedLimit,
-    PlannedNoNumber, PowerEnv, RubbingFloorPlanned, SpindlePowerPlanned, TableEnv,
+    DeflectionPlanned, ForceBudgetPlanned, ForceEnv, PlaneDepth, PlaneRole, PlannedCell,
+    PlannedLimit, PlannedNoNumber, PowerEnv, RubbingFloorPlanned, SpindlePowerPlanned, TableEnv,
     VendorDepthTablePlanned, judge_declared_cuts, planned_limit_of,
 };
 use rs_cam_core::feeds::suggest::{StockContext, SuggestContext};
@@ -310,7 +319,7 @@ fn claim_1_one_cell_for_each_cut_and_the_scope_decides_it() {
         let Ok(tool_def) = rs_cam_core::compute::cutter::build_cutter(&tool) else {
             continue;
         };
-        let cuts = DeclaredCuts::of_operation(&op, &tool);
+        let cuts = DeclaredCuts::of_operation(&op, &tool, &ConfiguredEntry::registry_default(&op));
         let declared: Vec<CutKind> = cuts.list().iter().map(|c| c.kind).collect();
         let column = BodyColumn {
             ae_mm: 0.4 * tool.diameter,
@@ -327,9 +336,11 @@ fn claim_1_one_cell_for_each_cut_and_the_scope_decides_it() {
             top_mm: 3.0 * tool.diameter,
         };
         let power_kw = |w: f64| w;
+        let entry_power_kw = |_, fz: f64| Some(fz);
         let power = PowerEnv {
             column_ae_mm: column.ae_mm,
             power_kw: &power_kw,
+            entry_power_kw: &entry_power_kw,
         };
         let chip = ChipEnv {
             thinning: cuts.thinning(),
@@ -389,15 +400,16 @@ fn claim_1_one_cell_for_each_cut_and_the_scope_decides_it() {
     );
 }
 
-/// The lowest depth over the judged `Always` cells, taken here (no driver
-/// fold): the force-budget ceiling ranks no root at `top`.
+/// The lowest depth over the judged `Always` cells on the body plane, taken
+/// here (no driver fold): the force-budget ceiling ranks no root at `top`.
+/// P29-8 8d: a cut at its own depth (an entry) is no ceiling.
 fn lowest<A: Copy>(
     cells: &rs_cam_core::feeds::planned::ByCut<PlannedCell<A>>,
     value: impl Fn(A) -> Option<f64>,
 ) -> Option<f64> {
     let mut best: Option<f64> = None;
     for e in cells.iter() {
-        if e.presence != Presence::Always {
+        if e.presence != Presence::Always || matches!(e.depth, PlaneDepth::Own(_)) {
             continue;
         }
         if let PlannedCell::Judged(a) = e.value
@@ -436,7 +448,7 @@ fn claim_2_each_drawn_edge_is_the_lowest_over_the_declared_cuts() {
                 drawn_kinds.insert(format!("{:?}", l.kind));
             }
         }
-        let cuts = DeclaredCuts::of_operation(&op, &tool);
+        let cuts = DeclaredCuts::of_operation(&op, &tool, &ConfiguredEntry::registry_default(&op));
         let Some(&top) = env.speeds.aps.last() else {
             continue;
         };
@@ -519,6 +531,7 @@ fn claim_3_the_proposal_sits_inside_every_declared_cut() {
         };
         for row in &env.cut_checks {
             if row.may_occur_row.is_some()
+                || row.own_depth.is_some()
                 || !matches!(
                     row.check.limit,
                     LimitId::ForceBudget | LimitId::ToolDeflection | LimitId::VendorDepthTable
@@ -585,7 +598,7 @@ fn claim_4_the_slot_ring_and_the_planner_cap_bind_and_each_reason_occurs() {
     let mut chips = BTreeSet::new();
     let mut widths = BTreeSet::new();
     for (_, op, tool) in configs(&machine) {
-        let cuts = DeclaredCuts::of_operation(&op, &tool);
+        let cuts = DeclaredCuts::of_operation(&op, &tool, &ConfiguredEntry::registry_default(&op));
         let column = BodyColumn {
             ae_mm: 0.4 * tool.diameter,
             chip_mm: Some(0.05),
@@ -600,16 +613,16 @@ fn claim_4_the_slot_ring_and_the_planner_cap_bind_and_each_reason_occurs() {
             }
         }
     }
-    for reason in [
-        PlannedNoNumber::PlannerCapped,
-        PlannedNoNumber::EntryRule,
-        PlannedNoNumber::DrillCycle,
-    ] {
+    for reason in [PlannedNoNumber::PlannerCapped, PlannedNoNumber::DrillCycle] {
         assert!(
             chips.contains(&format!("{reason:?}")),
             "a cut with no chip: {reason:?}"
         );
     }
+    assert!(
+        chips.iter().any(|c| c.starts_with("Entry(")),
+        "an entry with no chip: {chips:?}"
+    );
     for reason in [
         NoEngagementModel::NoStatedWidth,
         NoEngagementModel::NoStatedDepth,
@@ -619,4 +632,143 @@ fn claim_4_the_slot_ring_and_the_planner_cap_bind_and_each_reason_occurs() {
             "a cut with no width: {reason:?}"
         );
     }
+}
+
+/// P29-8 8d: the envelope of a config with stated speeds (the fixture
+/// values), so the entry rule gives a chip.
+#[test]
+fn claim_5_an_entry_is_a_value_check_never_a_ceiling_p29_8() {
+    use rs_cam_core::limits::{CheckState, EntryKind};
+    let machine = MachineProfile::default();
+    let (mut rows, mut ramp_numbers, mut helix_numbers, mut plunge_power) = (0, 0, 0, 0);
+    for (name, mut op, tool) in configs(&machine) {
+        // The fixture values state no ramp feed: state the cut feed, so a
+        // ramp and a helix entry have a chip.
+        let feed = op.feed_rate();
+        let _ = op.as_params_mut().set_ramp_feed_rate(feed);
+        let Some(env) = envelope(&op, &tool, &machine) else {
+            continue;
+        };
+        for l in &env.boundary {
+            assert!(
+                !matches!(l.binding_cut, Some(CutKind::Entry(_))),
+                "{name}: an entry binds the {:?} edge",
+                l.kind
+            );
+        }
+        for row in &env.cut_checks {
+            // A plunge is the axial circle: only the power has a number.
+            if matches!(
+                row.cut,
+                CutKind::Entry(EntryKind::Plunge | EntryKind::PeckLadder)
+            ) && matches!(row.check.state, CheckState::Within | CheckState::Exceeds)
+            {
+                assert_eq!(
+                    row.check.limit,
+                    LimitId::SpindlePower,
+                    "{name}: a {} row with a number",
+                    row.cut.label()
+                );
+                plunge_power += 1;
+            }
+            let Some(own) = row.own_depth else {
+                // A ramp or a helix with no own depth has no engagement:
+                // its rows hold no number.
+                assert!(
+                    !matches!(row.cut, CutKind::Entry(EntryKind::Ramp | EntryKind::Helix))
+                        || matches!(row.check.state, CheckState::NoNumber(_))
+                        || !matches!(
+                            row.check.limit,
+                            LimitId::ForceBudget
+                                | LimitId::ToolDeflection
+                                | LimitId::VendorDepthTable
+                        ),
+                    "{name}: a {} row on the body plane",
+                    row.cut.label()
+                );
+                continue;
+            };
+            rows += 1;
+            if !matches!(
+                row.check.limit,
+                LimitId::ForceBudget | LimitId::ToolDeflection | LimitId::VendorDepthTable
+            ) {
+                continue;
+            }
+            assert_eq!(
+                row.check.value.map(f64::to_bits),
+                Some(own.mm.to_bits()),
+                "{name}: the {} row holds its own depth",
+                row.cut.label()
+            );
+            if let Some(bound) = row.check.bound {
+                let over = own.mm > bound * (1.0 + 1e-9);
+                assert_eq!(
+                    row.check.state == CheckState::Exceeds,
+                    over,
+                    "{name}: the {} row: {} mm against {bound} mm",
+                    row.cut.label(),
+                    own.mm
+                );
+            }
+            if row.check.limit == LimitId::ForceBudget
+                && matches!(row.check.state, CheckState::Within | CheckState::Exceeds)
+            {
+                match row.cut {
+                    CutKind::Entry(EntryKind::Ramp) => ramp_numbers += 1,
+                    CutKind::Entry(EntryKind::Helix) => helix_numbers += 1,
+                    CutKind::Entry(EntryKind::Plunge | EntryKind::PeckLadder)
+                    | CutKind::Body
+                    | CutKind::FirstPass(_)
+                    | CutKind::SpringPass
+                    | CutKind::WallFinish
+                    | CutKind::EntryApproach
+                    | CutKind::Cleanup(_)
+                    | CutKind::CappedStep(_)
+                    | CutKind::SlotRing
+                    | CutKind::LeadIn
+                    | CutKind::LeadOut
+                    | CutKind::Link
+                    | CutKind::DressupRelief
+                    | CutKind::Drill => {}
+                }
+            }
+        }
+    }
+    assert!(rows > 0, "the configs give rows at an own depth");
+    assert!(plunge_power > 0, "a plunge row holds a power number");
+    // The worst case of the operator file (wanaka idx 2, `P29-8_DESIGN.md`
+    // table `W`): a geodesic 3D Rough, EndMill 6 mm, a 6 mm depth per pass,
+    // a ramp entry at the stated speeds. The ramp's root is under the
+    // proposal depth: the row `Exceeds`, and the proposal does not move
+    // down to it (an entry is no ceiling).
+    let tool = fm1_tool(ToolType::EndMill, 6.0);
+    let mut rough = add_door_op(OperationType::Adaptive3d, &tool, &machine);
+    if let OperationConfig::Adaptive3d(c) = &mut rough {
+        c.clearing_strategy = ClearingStrategy::GeodesicAdaptive;
+        c.stepover = Some(1.2);
+        c.depth_per_pass = Some(6.0);
+        c.entry_style = rs_cam_core::compute::operation_configs::Adaptive3dEntryStyle::Ramp;
+    }
+    // The speeds of wanaka idx 2: 4571 mm/min at 18000 rpm.
+    rough.set_spindle_rpm(Some(18_000));
+    rough.set_feed_rate(4571.0);
+    let _ = rough.as_params_mut().set_ramp_feed_rate(Some(4571.0));
+    let env = envelope(&rough, &tool, &machine).expect("the 3D Rough is backed");
+    let ap = env.proposal.get().ap_mm().expect("a depth");
+    let ramp = env
+        .cut_checks
+        .iter()
+        .find(|r| r.cut == CutKind::Entry(EntryKind::Ramp) && r.check.limit == LimitId::ForceBudget)
+        .expect("the ramp row");
+    let root = ramp.check.bound.expect("the ramp has a root");
+    assert_eq!(ramp.check.state, CheckState::Exceeds, "the ramp at 6 mm");
+    assert!(
+        root < ap,
+        "the ramp root {root} mm is under the proposal {ap} mm: the entry sets no ceiling"
+    );
+    assert!(
+        ramp_numbers > 0 && helix_numbers > 0,
+        "a ramp ({ramp_numbers}) and a helix ({helix_numbers}) row hold a force-budget number"
+    );
 }

@@ -189,7 +189,11 @@ fn binding_cut_at(
     fz: f64,
     budget: f64,
 ) -> (CutKind, f64, f64) {
-    let cuts = DeclaredCuts::of_operation(op, tool);
+    let cuts = DeclaredCuts::of_operation(
+        op,
+        tool,
+        &rs_cam_core::feeds::entry_rule::ConfiguredEntry::registry_default(op),
+    );
     let column = BodyColumn {
         ae_mm: ae,
         chip_mm: Some(fz),

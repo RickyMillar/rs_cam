@@ -32,7 +32,7 @@ pub use cut_spec::{
 
 pub use cuts::{
     CutContext, CutList, CutListFull, DeclaredCut, DeclaredDepth, DeclaredFeed, DeclaredWidth,
-    MAX_DECLARED_CUTS, MayOccur, Presence,
+    MAX_DECLARED_CUTS, MayOccur, OwnDepth, OwnDepthRule, Presence,
 };
 
 pub(crate) use entry_contract::entry_records;

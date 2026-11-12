@@ -32,7 +32,13 @@
 //!   stock-to-leave field only), and the depth rule (the family, the role
 //!   and, P29-5, the material sides of the radial rule).
 //! - Claim 3: the entry kinds of the list equal
-//!   `EntryContract::record_kinds()` of the op's row, in order.
+//!   `EntryContract::record_kinds()` of the op's row, in order. P29-8 8d:
+//!   under each dressup entry style (and the 3D Rough config) the
+//!   configured kind is `Always` and every other kind is `MayOccur` with the
+//!   row `U-EntryFallback`; a ramp is a slot at the depth per pass, a helix
+//!   a slot at one pitch (an own depth), a plunge and a peck ladder are the
+//!   axial circle (`DeclaredDepth::Axial`); each entry feed rule names its kind. Claim 1
+//!   runs under each style too: no entry sets the pre-sim power.
 //! - Claim 4: a source scan of `src/` (comments stripped). The catalogue
 //!   `FirstPass` and `planner_width(` have no reader outside
 //!   `compute/catalog/cuts.rs` and their definitions, except the named
@@ -60,11 +66,13 @@ use std::path::Path;
 use rs_cam_core::adaptive::CleanupStrategy;
 use rs_cam_core::adaptive3d::FeedCapSource;
 use rs_cam_core::compute::catalog::{
-    CutList, DeclaredFeed, DeclaredWidth, FirstPass, MAX_DECLARED_CUTS, OperationConfig,
-    OperationType, PlannerWidth, Presence, Radial, RadialRule,
+    CutList, DeclaredDepth, DeclaredFeed, DeclaredWidth, FirstPass, MAX_DECLARED_CUTS,
+    OperationConfig, OperationType, OwnDepthRule, PlannerWidth, Presence, Radial, RadialRule,
 };
+use rs_cam_core::compute::config::{DressupConfig, DressupEntryStyle};
 use rs_cam_core::compute::operation_configs::{ClearingStrategy, PocketPattern};
 use rs_cam_core::feeds::engagement::PowerCase;
+use rs_cam_core::feeds::entry_rule::ConfiguredEntry;
 use rs_cam_core::feeds::geometry::RadialThinning;
 use rs_cam_core::feeds::planned::{DeclaredCuts, power_case_width, worst_power};
 use rs_cam_core::feeds::{OperationFamily, PassRole};
@@ -237,46 +245,49 @@ fn claim_1_the_power_cases_keep_the_widths_in_order() {
     let mut slot_seen = false;
     let mut cap_seen = false;
     for case in cases() {
-        let list = case.op.cuts();
+        let list = case.op.cuts(&ConfiguredEntry::registry_default(&case.op));
         let tool = common::op_fixtures::tool_for(case.op.op_type());
-        let declared = DeclaredCuts::of_operation(&case.op, &tool);
-        for ae in [0.3, 1.0, 2.5, 0.4 * case.d, case.d] {
-            let old = old_widths(&case.op, ae, case.d);
-            // The worst case of a power that grows with the width: the
-            // widest old case; a tie goes to the later case.
-            let mut want = (PowerCase::Nominal, ae);
-            for &(c, w) in &old {
-                if w >= want.1 {
-                    want = (c, w);
+        // P29-8 8d: under every entry style, no entry sets the power.
+        for entry in entries_of(&case.op) {
+            let declared = DeclaredCuts::of_operation(&case.op, &tool, &entry);
+            for ae in [0.3, 1.0, 2.5, 0.4 * case.d, case.d] {
+                let old = old_widths(&case.op, ae, case.d);
+                // The worst case of a power that grows with the width: the
+                // widest old case; a tie goes to the later case.
+                let mut want = (PowerCase::Nominal, ae);
+                for &(c, w) in &old {
+                    if w >= want.1 {
+                        want = (c, w);
+                    }
                 }
-            }
-            let (nc, _, nw) = worst_power(&declared, ae, |w| w);
-            assert_eq!(nc, want.0, "{} ae {ae}: the worst case", case.name);
-            assert_eq!(
-                nw.to_bits(),
-                want.1.to_bits(),
-                "{} ae {ae}: {nc:?}",
-                case.name
-            );
-            for &(oc, ow) in &old {
+                let (nc, _, nw) = worst_power(&declared, ae, |w| w);
+                assert_eq!(nc, want.0, "{} ae {ae}: the worst case", case.name);
                 assert_eq!(
-                    power_case_width(&declared, oc, ae).to_bits(),
-                    ow.to_bits(),
-                    "{} ae {ae}: the width of {oc:?}",
+                    nw.to_bits(),
+                    want.1.to_bits(),
+                    "{} ae {ae}: {nc:?}",
                     case.name
                 );
+                for &(oc, ow) in &old {
+                    assert_eq!(
+                        power_case_width(&declared, oc, ae).to_bits(),
+                        ow.to_bits(),
+                        "{} ae {ae}: the width of {oc:?}",
+                        case.name
+                    );
+                }
+                assert_eq!(
+                    list.full_feed_width(ae, case.d).to_bits(),
+                    case.op
+                        .planner_width()
+                        .full_feed_width_mm(ae, case.d)
+                        .to_bits(),
+                    "{} ae {ae}: the lift width",
+                    case.name
+                );
+                slot_seen |= old.iter().any(|(c, _)| *c == PowerCase::Slot);
+                cap_seen |= old.iter().any(|(c, _)| *c == PowerCase::PlannerCap);
             }
-            assert_eq!(
-                list.full_feed_width(ae, case.d).to_bits(),
-                case.op
-                    .planner_width()
-                    .full_feed_width_mm(ae, case.d)
-                    .to_bits(),
-                "{} ae {ae}: the lift width",
-                case.name
-            );
-            slot_seen |= old.iter().any(|(c, _)| *c == PowerCase::Slot);
-            cap_seen |= old.iter().any(|(c, _)| *c == PowerCase::PlannerCap);
         }
         // P29-7 7b: the declared cuts, written out; no cut is dropped.
         assert_eq!(
@@ -366,7 +377,7 @@ fn claim_2_the_facts_equal_the_label_functions() {
     let mut seen = BTreeSet::new();
     for case in cases() {
         let want = old_facts(&case.op);
-        let list = case.op.cuts();
+        let list = case.op.cuts(&ConfiguredEntry::registry_default(&case.op));
         assert_eq!(list.body_facts(), want, "{}: the body facts", case.name);
         for cut in list.iter() {
             assert_eq!(
@@ -403,13 +414,108 @@ fn claim_2_the_facts_equal_the_label_functions() {
     }
 }
 
+/// The configured entries of `op`: the registry default, and each dressup
+/// entry style (a 3D Rough reads its own config under each).
+fn entries_of(op: &OperationConfig) -> Vec<ConfiguredEntry> {
+    let mut out = vec![ConfiguredEntry::registry_default(op)];
+    for style in [
+        DressupEntryStyle::None,
+        DressupEntryStyle::Ramp,
+        DressupEntryStyle::Helix,
+    ] {
+        let mut d = DressupConfig::for_op(op.op_type());
+        d.entry_style = style;
+        out.push(ConfiguredEntry::of_operation(op, Some(&d)));
+    }
+    out
+}
+
+/// P29-8 8d: the entry cuts of each config under each configured entry.
+#[test]
+fn claim_3_the_configured_entry_is_always_and_the_rest_may_occur_p29_8() {
+    use rs_cam_core::compute::catalog::EntryContract;
+    let (mut own_seen, mut may_seen) = (0, 0);
+    for case in cases() {
+        let contract = case.op.op_type().registry_entry().entry;
+        for entry in entries_of(&case.op) {
+            let list = case.op.cuts(&entry);
+            let want_always = match contract {
+                EntryContract::Dressup { .. } | EntryContract::Planner { .. } => {
+                    Some(entry.kind().unwrap_or(EntryKind::Plunge))
+                }
+                EntryContract::StraightPlunge { .. } => Some(EntryKind::Plunge),
+                EntryContract::DescentIsCut => None,
+            };
+            let body = list.of_kind(CutKind::Body).expect("a body").depth;
+            for cut in list.iter() {
+                let CutKind::Entry(kind) = cut.kind else {
+                    continue;
+                };
+                assert_eq!(
+                    cut.feed,
+                    DeclaredFeed::EntryRule(kind),
+                    "{}: the feed of {kind:?}",
+                    case.name
+                );
+                match cut.presence {
+                    Presence::Always => assert_eq!(
+                        Some(kind),
+                        want_always,
+                        "{}: {kind:?} is always cut",
+                        case.name
+                    ),
+                    Presence::MayOccur(may) => {
+                        may_seen += 1;
+                        assert_ne!(Some(kind), want_always, "{}: {kind:?}", case.name);
+                        assert_eq!(may.row, "U-EntryFallback", "{}: {kind:?}", case.name);
+                    }
+                }
+                match kind {
+                    EntryKind::Ramp => match (cut.depth, body) {
+                        (DeclaredDepth::Own(own), DeclaredDepth::Stated(mm)) => {
+                            own_seen += 1;
+                            assert_eq!(cut.width, DeclaredWidth::Slot, "{}: ramp", case.name);
+                            assert_eq!(own.rule, OwnDepthRule::RampDepthPerPass);
+                            assert_eq!(own.mm.to_bits(), mm.to_bits(), "{}", case.name);
+                        }
+                        // With no body depth the ramp has no engagement.
+                        (got, _) => assert!(
+                            matches!(cut.width, DeclaredWidth::None(_))
+                                && matches!(got, DeclaredDepth::None(_)),
+                            "{}: the ramp with no depth per pass: {got:?}",
+                            case.name
+                        ),
+                    },
+                    EntryKind::Helix => {
+                        assert_eq!(cut.width, DeclaredWidth::Slot, "{}: helix", case.name);
+                        let DeclaredDepth::Own(own) = cut.depth else {
+                            panic!("{}: the helix depth is its own: {:?}", case.name, cut.depth);
+                        };
+                        own_seen += 1;
+                        assert_eq!(own.rule, OwnDepthRule::HelixPitch);
+                        assert_eq!(own.mm.to_bits(), entry.helix_pitch_mm().to_bits());
+                    }
+                    EntryKind::Plunge | EntryKind::PeckLadder => {
+                        assert!(
+                            cut.width == DeclaredWidth::Slot && cut.depth == DeclaredDepth::Axial,
+                            "{}: {kind:?} is the axial circle",
+                            case.name
+                        );
+                    }
+                }
+            }
+        }
+    }
+    assert!(own_seen > 0 && may_seen > 0, "the configs reach both");
+}
+
 #[test]
 fn claim_3_the_entry_kinds_equal_the_contract() {
     let mut entries = 0;
     for case in cases() {
         let got: Vec<EntryKind> = case
             .op
-            .cuts()
+            .cuts(&ConfiguredEntry::registry_default(&case.op))
             .iter()
             .filter_map(|c| match c.kind {
                 CutKind::Entry(k) => Some(k),

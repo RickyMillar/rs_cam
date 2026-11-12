@@ -145,7 +145,8 @@ impl UnliftedFeed {
     ) -> Option<Self> {
         // P29-3: the op declares the slot ring (`OperationConfig::cuts`:
         // a contour Pocket).
-        let cuts = operation.cuts();
+        let cuts =
+            operation.cuts(&crate::feeds::entry_rule::ConfiguredEntry::registry_default(operation));
         let slot_first = cuts.declares(crate::limits::CutKind::SlotRing);
         if !slot_first {
             return None;

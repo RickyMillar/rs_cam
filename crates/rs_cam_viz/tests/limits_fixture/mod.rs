@@ -140,7 +140,9 @@ pub fn rigidity_cap_of(session: &ProjectSession, op: &OperationConfig) -> f64 {
     let cutter = rs_cam_core::compute::cutter::build_cutter(tool).expect("a cutter");
     match rs_cam_core::feeds::force_budget::rigidity_depth_cap(
         machine,
-        op.cuts().body_facts().depth_rule,
+        op.cuts(&rs_cam_core::feeds::entry_rule::ConfiguredEntry::registry_default(op))
+            .body_facts()
+            .depth_rule,
         &cutter,
         material,
         ae,

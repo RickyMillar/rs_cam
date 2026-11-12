@@ -308,7 +308,11 @@ fn power_at_point(
         )
     };
     let (case, required_kw, case_ae_mm) = crate::feeds::planned::worst_power(
-        &crate::feeds::planned::DeclaredCuts::of_operation(operation, tool),
+        &crate::feeds::planned::DeclaredCuts::of_operation(
+            operation,
+            tool,
+            &crate::feeds::entry_rule::ConfiguredEntry::registry_default(operation),
+        ),
         point.ae_mm,
         |ae| terms_at(ae).kw_at_feed(point.feed_mm_min),
     );

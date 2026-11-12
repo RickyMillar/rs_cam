@@ -96,7 +96,7 @@ const R2: ExemptionClass = ExemptionClass::Ruled {
 const NR: ExemptionClass = ExemptionClass::NeedsRuling;
 
 /// Every exemption from a limit today. See the module doc.
-pub static EXEMPTIONS: [Exemption; 39] = [
+pub static EXEMPTIONS: [Exemption; 40] = [
     // P28: the limit audit.
     Exemption {
         id: "P28-02",
@@ -282,7 +282,7 @@ pub static EXEMPTIONS: [Exemption; 39] = [
         ),
         class: NR,
         where_: &["src/compute/simulate.rs"],
-        closes_in: "P29-8 (entries get their own envelope)",
+        closes_in: "the modulation design step (the sample side; P29-8 changes no sample)",
     },
     Exemption {
         id: "P28-24",
@@ -321,7 +321,7 @@ pub static EXEMPTIONS: [Exemption; 39] = [
         who: Who::Reader("flat, bull nose and V-bit tools"),
         class: NR,
         where_: &["src/tool_load/plunge_stress.rs"],
-        closes_in: "P29-8 (no source)",
+        closes_in: "later (no source)",
     },
     Exemption {
         id: "P28-28",
@@ -330,7 +330,7 @@ pub static EXEMPTIONS: [Exemption; 39] = [
         who: Who::Reader("every family but Adaptive"),
         class: NR,
         where_: &["src/feeds/suggest/adaptive_entry.rs"],
-        closes_in: "P29-8",
+        closes_in: "later (a plunge deflection model)",
     },
     Exemption {
         id: "P28-29",
@@ -348,7 +348,8 @@ pub static EXEMPTIONS: [Exemption; 39] = [
         who: Who::Kind(&[CutKind::Entry(EntryKind::Plunge)]),
         class: NR,
         where_: &["src/dressup/feed_modulation.rs"],
-        closes_in: "P29-8 (no plunge model)",
+        closes_in: "the modulation design step (P29-8 gives the plunge a planned engagement; \
+                    the modulator is held)",
     },
     Exemption {
         id: "P28-31",
@@ -453,15 +454,37 @@ pub static EXEMPTIONS: [Exemption; 39] = [
     // U: one row for each cut that no limit reads before the simulation
     // (ruling Q3). P29-7 7b declared six of them with their feed rules and
     // closed their rows. A cut that is still undeclared has no file; the
-    // residual sweep names the files of its `MayOccur` filing.
+    // residual sweep names the files of its `MayOccur` filing. P29-8 8d
+    // declared the tab re-plunge (the plunge entry cut): its row holds only
+    // the open cause, with no file.
     Exemption {
         id: "U-TabReplunge",
-        what: "every limit",
+        what: "the ramp or helix entry style of a Profile with tabs",
         limit: &[],
-        who: Who::Undeclared("the re-plunge after each tab of a Profile"),
+        who: Who::Kind(&[CutKind::Entry(EntryKind::Plunge)]),
         class: NR,
         where_: &[],
-        closes_in: "P29-8",
+        closes_in: "the tab re-plunge stays a straight plunge under a ramp or helix style; cause \
+                    open (its own step after P29-8, with a prediction run: it moves the G-code \
+                    of wanaka idx 17)",
+    },
+    // P29-8 8d (lead ruling Q5): the entry kinds of the contract that the
+    // op does not configure.
+    Exemption {
+        id: "U-EntryFallback",
+        what: "every limit as a ceiling (the entry is a value check)",
+        limit: &[],
+        who: Who::Kind(&[
+            CutKind::Entry(EntryKind::Plunge),
+            CutKind::Entry(EntryKind::Ramp),
+            CutKind::Entry(EntryKind::Helix),
+            CutKind::Entry(EntryKind::PeckLadder),
+        ]),
+        class: NR,
+        where_: &["src/compute/catalog/cuts.rs"],
+        closes_in: "stays open: a generation fact (a helix that has no room falls back to a \
+                    ramp, a ramp with no run to a plunge); the gates judge it after the \
+                    simulation",
     },
     Exemption {
         id: "U-PerimeterSweep",

@@ -84,7 +84,7 @@ impl<'a> ToolpathLoadContext<'a> {
     ///
     /// The operation fills the operation kind, the vendor row key
     /// (`OperationConfig::feeds_style`), the body facts
-    /// (`operation.cuts().body_facts()`) and the commanded thinning lift.
+    /// (`operation.cuts(&crate::feeds::entry_rule::ConfiguredEntry::registry_default(operation)).body_facts()`) and the commanded thinning lift.
     /// The caller gives the rest:
     ///
     /// - `tool`: the built tool of the op.
@@ -111,7 +111,8 @@ impl<'a> ToolpathLoadContext<'a> {
         drill_op: Option<&'a DrillOp>,
     ) -> Self {
         let (family, pass_role) = operation.feeds_style();
-        let cuts = operation.cuts();
+        let cuts =
+            operation.cuts(&crate::feeds::entry_rule::ConfiguredEntry::registry_default(operation));
         let body_facts = cuts.body_facts();
         let headline_group = if cuts.declares(CutKind::Drill) {
             CutKind::Drill.group()
@@ -256,7 +257,9 @@ fn commanded_thinning_lift(
         );
         // P23a: the width of Suggest's lift (the pass ceiling of an
         // adaptive plan; `CutList::full_feed_width`).
-        let width = operation.cuts().full_feed_width(ae, diameter);
+        let width = operation
+            .cuts(&crate::feeds::entry_rule::ConfiguredEntry::registry_default(operation))
+            .full_feed_width(ae, diameter);
         // P29-1: the lift of the one load, on the stated cut at the
         // planner width.
         crate::feeds::cut_load::CutLoad::thinning_lift(

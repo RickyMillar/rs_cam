@@ -271,7 +271,10 @@ fn readout(session: &ProjectSession, with_trace: bool) -> Readout {
     };
     // The spans of the gates (`ProjectSession::load_context_parts`).
     let spans = annotated.spans_valid.then_some(annotated.spans.as_slice());
-    let facts = tc.operation.cuts().body_facts();
+    let facts = tc
+        .operation
+        .cuts(&rs_cam_core::feeds::entry_rule::ConfiguredEntry::registry_default(&tc.operation))
+        .body_facts();
     let caps = CapTable::of_toolpath(&annotated.toolpath, semantic);
     let ctx = SampleContext::new(&tool, spans, &caps, facts);
     let sources = item_sources(&annotated.toolpath, semantic);
@@ -502,14 +505,11 @@ fn an_entry_plunge_in_no_span_is_judged_in_the_entry_group() {
     let tool = build_cutter(&endmill_tool_config(TOOL_D)).expect("the cutter builds");
     let tp = Toolpath::new();
     let caps = CapTable::of_toolpath(&tp, None);
-    let ctx = SampleContext::new(
-        &tool,
-        Some(&spans),
-        &caps,
-        OperationConfig::Profile(ProfileConfig::default())
-            .cuts()
-            .body_facts(),
-    );
+    let ctx = SampleContext::new(&tool, Some(&spans), &caps, {
+        let op = OperationConfig::Profile(ProfileConfig::default());
+        op.cuts(&rs_cam_core::feeds::entry_rule::ConfiguredEntry::registry_default(&op))
+            .body_facts()
+    });
     // The stamper rule: a move of the entry plunge intent is transit by its
     // intent, with or without a span.
     let mut plunge = Toolpath::new();

@@ -159,7 +159,9 @@ fn geometry_feed_factor(
 /// the widest width that the op's planner holds at the full feed
 /// (`CutList::full_feed_width`, the one rule of Step 5).
 fn full_feed_width(operation: &OperationConfig, tool: &ToolConfig, ae_mm: f64) -> f64 {
-    operation.cuts().full_feed_width(ae_mm, tool.diameter)
+    operation
+        .cuts(&crate::feeds::entry_rule::ConfiguredEntry::registry_default(operation))
+        .full_feed_width(ae_mm, tool.diameter)
 }
 
 /// The engaged diameter of `tool` at the depth `ap_mm`, as pass 9 and the
@@ -213,7 +215,10 @@ pub(super) fn unlifted_feed_at_kept_geometry(
     crate::feeds::geometry::UnliftedFeed::at_cut(
         feed_mm_min,
         // P29-3: the thinning rule of the op's body cut.
-        operation.cuts().body_facts().thins_chip,
+        operation
+            .cuts(&crate::feeds::entry_rule::ConfiguredEntry::registry_default(operation))
+            .body_facts()
+            .thins_chip,
         full_feed_width(operation, tool, ae),
         kept_engaged_diameter(tool.geometry_hint(), tool, ap),
     )
@@ -318,7 +323,10 @@ pub(super) fn rescale_feed_to_final_geometry(
     }
 
     // P29-3: the thinning rule of the op's body cut.
-    let thinning = operation.cuts().body_facts().thins_chip;
+    let thinning = operation
+        .cuts(&crate::feeds::entry_rule::ConfiguredEntry::registry_default(operation))
+        .body_facts()
+        .thins_chip;
     let factor_at_calculator = geometry_feed_factor(
         operation,
         tool,

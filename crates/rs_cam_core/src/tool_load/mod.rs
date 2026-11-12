@@ -294,7 +294,9 @@ pub fn chip_target_for_toolpath(
     // depth the gate keys its row with (`groups::ToolpathSamples::
     // row_key_depth_mm`). No spans and no cap table reach this door, so the
     // group comes from the intent; the key reads no depth (finding F5).
-    let body_facts = operation.cuts().body_facts();
+    let body_facts = operation
+        .cuts(&crate::feeds::entry_rule::ConfiguredEntry::registry_default(operation))
+        .body_facts();
     let sample_ctx = crate::limits::SampleContext::new(
         &tool_def,
         None,

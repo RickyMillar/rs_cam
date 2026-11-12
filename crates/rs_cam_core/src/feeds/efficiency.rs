@@ -209,7 +209,7 @@ pub fn cut_efficiency(
     // EXEMPT(U-efficiency)
     let lift = crate::feeds::geometry::RadialThinning::of(family, role).lift(
         operation
-            .cuts()
+            .cuts(&crate::feeds::entry_rule::ConfiguredEntry::registry_default(operation))
             .full_feed_width(radial_width_mm, diameter_mm),
         diameter_mm,
     );

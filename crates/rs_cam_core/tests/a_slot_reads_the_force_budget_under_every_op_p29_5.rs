@@ -228,7 +228,9 @@ fn claim_3_the_config_and_the_kind_read_one_depth_limit() {
     for &kind in OperationType::ALL {
         let op = OperationConfig::new_default(kind);
         assert_eq!(
-            op.cuts().body_facts().depth_rule,
+            op.cuts(&rs_cam_core::feeds::entry_rule::ConfiguredEntry::registry_default(&op))
+                .body_facts()
+                .depth_rule,
             kind.body_depth_limit(),
             "{kind:?}: the cut list and the registry row disagree"
         );

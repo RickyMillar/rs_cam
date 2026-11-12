@@ -76,7 +76,14 @@ fn readout(session: &ProjectSession) -> Readout {
         .expect("a cut trace");
     let spans = annotated.spans_valid.then_some(annotated.spans.as_slice());
     let caps = CapTable::of_toolpath(&annotated.toolpath, result.semantic_trace.as_deref());
-    let ctx = SampleContext::new(&tool, spans, &caps, tc.operation.cuts().body_facts());
+    let ctx = SampleContext::new(
+        &tool,
+        spans,
+        &caps,
+        tc.operation
+            .cuts(&rs_cam_core::feeds::entry_rule::ConfiguredEntry::registry_default(&tc.operation))
+            .body_facts(),
+    );
     let mut removing = 0;
     let mut by_group = ByGroup::from_fn(|_| 0_usize);
     let (mut entry_plunges, mut helix) = (0, 0);

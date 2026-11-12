@@ -280,12 +280,10 @@ impl<T> ByGroup<T> {
 }
 
 /// Why a cut has no engagement model. `CutLoad` then gives no number.
+/// P29-8 8d: a ramp and a helix entry have a model (a slot at their own
+/// depth), so no variant names them.
 #[derive(Debug, Clone, Copy, PartialEq, Eq)]
 pub enum NoEngagementModel {
-    /// An inclined entry along a line (P29-8).
-    Ramp,
-    /// An inclined entry along a helix (P29-8).
-    Helix,
     /// A straight plunge of a ball, a bull nose, a V-bit or a tapered ball
     /// (`feeds::section::AxialSectionRefusal`).
     PlungeOfShapedTip,

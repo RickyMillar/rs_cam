@@ -4,7 +4,7 @@
 //! facts of the calculator input come from the operation, and only from it:
 //! the row key (family, role, kind), the stated depth, width and scallop,
 //! the power cases and the facts of the body cut
-//! (`operation.cuts().body_facts()`). The private zero-size field `door`
+//! (`operation.cuts(..).body_facts()`). The private zero-size field `door`
 //! makes every struct literal and every struct update outside this module
 //! fail (E0451), the lib tests of `feeds` included. So no code can build a
 //! calculator input that states a cut fact that no op gives.
@@ -99,7 +99,7 @@ pub struct FeedsInput<'a> {
     /// the tool (`sourced::ToolFactKinds::of_tool`).
     pub(in crate::feeds) tool_facts: sourced::ToolFactKinds,
     /// P29-7: the facts of the op's body cut
-    /// (`operation.cuts().body_facts()`). Step 5 reads the thinning rule
+    /// (`operation.cuts(..).body_facts()`). Step 5 reads the thinning rule
     /// from it.
     pub(in crate::feeds) body_facts: CutFacts,
     #[expect(
@@ -129,7 +129,11 @@ impl<'a> FeedsInput<'a> {
         let (family, role) = operation.feeds_style();
         let (axial_hint, radial_hint, scallop_hint) =
             operation.cut_spec().calc_inputs(tool.diameter);
-        let cuts = planned::DeclaredCuts::of_operation(operation, tool);
+        let cuts = planned::DeclaredCuts::of_operation(
+            operation,
+            tool,
+            &crate::feeds::entry_rule::ConfiguredEntry::registry_default(operation),
+        );
         Self {
             // Ruling 2026-10-31: the cut direction declares the cutter series;
             // `UpCut` is a generic tool.

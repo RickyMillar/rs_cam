@@ -16,6 +16,7 @@
 //!
 //! 8a moves no number: each row keeps the value it had at its old site.
 
+use crate::compute::catalog::PlungeFeedRule;
 use crate::compute::config::{DressupConfig, DressupEntryStyle, HelixRadius};
 use crate::compute::operation_configs::{Adaptive3dConfig, Adaptive3dEntryStyle};
 use crate::limits::EntryKind;
@@ -231,11 +232,7 @@ impl ResolvedEntry {
                 }
             }
         };
-        let kind = match cfg.entry_style {
-            DressupEntryStyle::None => None,
-            DressupEntryStyle::Ramp => Some(EntryKind::Ramp),
-            DressupEntryStyle::Helix => Some(EntryKind::Helix),
-        };
+        let kind = dressup_kind(cfg);
         let (rule_ramp, rule_pitch) = door_rows(EntryDoor::Dressup);
         Self {
             door: EntryDoor::Dressup,
@@ -252,15 +249,10 @@ impl ResolvedEntry {
     /// The entry of a 3D Rough config on `cutter`.
     #[must_use]
     pub fn of_adaptive3d(cfg: &Adaptive3dConfig, cutter: &dyn MillingCutter) -> Self {
-        let kind = match cfg.entry_style {
-            Adaptive3dEntryStyle::Plunge => EntryKind::PeckLadder,
-            Adaptive3dEntryStyle::Ramp => EntryKind::Ramp,
-            Adaptive3dEntryStyle::Helix => EntryKind::Helix,
-        };
         let (rule_ramp, rule_pitch) = door_rows(EntryDoor::Adaptive3d);
         Self {
             door: EntryDoor::Adaptive3d,
-            kind: Some(kind),
+            kind: Some(adaptive3d_kind(cfg)),
             ramp_angle_deg: cfg.ramp_angle_deg,
             rule_ramp_angle_deg: rule_ramp.value,
             fallback_ramp_angle_deg: cfg.ramp_angle_deg,
@@ -376,6 +368,244 @@ impl ResolvedEntry {
                 MoveType::Rapid | MoveType::ArcCW { .. } | MoveType::ArcCCW { .. } => None,
             })
             .unwrap_or(ENTRY_PLUNGE_FALLBACK_MM_MIN.value)
+    }
+}
+
+/// The plunge feed rule of the dressup door (the air lead, the stock-aware
+/// plunge and the fallback plunge). [`ResolvedEntry::dressup_plunge_feed_mm_min`]
+/// evaluates it on a toolpath; [`ConfiguredEntry::planned_feed_mm_min`]
+/// reads it before generation. P29-8 O1 (commit 8c) changes this one value.
+const DRESSUP_PLUNGE_RULE: PlungeFeedRule = PlungeFeedRule::FirstLinearFeedFraction;
+
+/// The configured entry kind of a dressup config. `None`: the style None
+/// (the op enters by the plunge of its contract).
+fn dressup_kind(cfg: &DressupConfig) -> Option<EntryKind> {
+    match cfg.entry_style {
+        DressupEntryStyle::None => None,
+        DressupEntryStyle::Ramp => Some(EntryKind::Ramp),
+        DressupEntryStyle::Helix => Some(EntryKind::Helix),
+    }
+}
+
+/// The configured entry kind of a 3D Rough config. The planner's plunge is
+/// a peck ladder.
+fn adaptive3d_kind(cfg: &Adaptive3dConfig) -> EntryKind {
+    match cfg.entry_style {
+        Adaptive3dEntryStyle::Plunge => EntryKind::PeckLadder,
+        Adaptive3dEntryStyle::Ramp => EntryKind::Ramp,
+        Adaptive3dEntryStyle::Helix => EntryKind::Helix,
+    }
+}
+
+/// True for a feed or a speed that a cut can run at.
+fn usable(v: &f64) -> bool {
+    v.is_finite() && *v > 0.0
+}
+
+/// P29-8 8d: what `OperationConfig::cuts` reads of an op's entry. It is a
+/// projection of [`ResolvedEntry`]: the configured kind
+/// ([`ResolvedEntry::kind`]) and the helix pitch (the depth of a helix
+/// entry cut). It needs no cutter, so every reader of the cut list can
+/// build it.
+///
+/// The fields are private. The constructors are [`Self::of_resolved`] (an
+/// emitter that holds a [`ResolvedEntry`]) and [`Self::of_operation`] (a
+/// reader with the op and, when it holds the toolpath, its dressups).
+#[derive(Debug, Clone, Copy, PartialEq)]
+pub struct ConfiguredEntry {
+    /// The configured kind; `None` for the dressup style None.
+    kind: Option<EntryKind>,
+    /// The helix pitch (mm per turn) the op states.
+    helix_pitch_mm: f64,
+}
+
+/// Why a declared entry cut has no feed or no chip before the simulation
+/// (P29-8 8d). Each reason is a fact of the plan, not a defect.
+#[derive(Debug, Clone, Copy, PartialEq, Eq)]
+pub enum EntryNoNumber {
+    /// The op states no plunge rate (S11).
+    NoPlungeRate,
+    /// The dressup door plunges at a fraction of the first linear feed of
+    /// the toolpath, else at a fixed feed (`PlungeFeedRule::
+    /// FirstLinearFeedFraction`). The first linear feed is known only
+    /// after generation (P29-8 O1, commit 8c). On a Profile with tabs the
+    /// same cut holds the tab re-plunge at the op plunge rate (row
+    /// `U-TabReplunge`), so the cut has no one feed.
+    FirstLinearFeedAfterGeneration,
+    /// The op states no spindle speed, so its entry feed gives no chip
+    /// (S11).
+    NoSpindleSpeed,
+    /// The descent is the cut: the op has no entry (`EntryContract::
+    /// DescentIsCut`).
+    DescentIsCut,
+}
+
+impl EntryNoNumber {
+    /// The reason in words, for the card and MCP.
+    #[must_use]
+    pub const fn clause(self) -> &'static str {
+        match self {
+            Self::NoPlungeRate => "the op states no plunge rate",
+            Self::FirstLinearFeedAfterGeneration => {
+                "the dressup plunge feed reads the first linear feed of the toolpath, known only \
+                 after generation"
+            }
+            Self::NoSpindleSpeed => "the op states no spindle speed",
+            Self::DescentIsCut => "the descent is the cut: the op has no entry",
+        }
+    }
+}
+
+impl ConfiguredEntry {
+    /// The projection of an emitter's resolved entry.
+    #[must_use]
+    pub fn of_resolved(entry: &ResolvedEntry) -> Self {
+        Self {
+            kind: entry.kind,
+            helix_pitch_mm: entry.helix_pitch_mm,
+        }
+    }
+
+    /// The configured entry of `op`. A 3D Rough reads its own config; any
+    /// other op reads `dressups`, else the dressups that a new toolpath of
+    /// the op gets (`DressupConfig::for_op`, the registry default). An op
+    /// whose contract ignores the dressup entry style has no configured
+    /// kind.
+    #[must_use]
+    pub fn of_operation(
+        op: &crate::compute::catalog::OperationConfig,
+        dressups: Option<&DressupConfig>,
+    ) -> Self {
+        if let crate::compute::catalog::OperationConfig::Adaptive3d(c) = op {
+            return Self {
+                kind: Some(adaptive3d_kind(c)),
+                helix_pitch_mm: c.helix_pitch,
+            };
+        }
+        let fresh;
+        let cfg = match dressups {
+            Some(cfg) => cfg,
+            None => {
+                fresh = DressupConfig::for_op(op.op_type());
+                &fresh
+            }
+        };
+        let applies = op.op_type().registry_entry().entry.entry_style_applies();
+        Self {
+            kind: if applies { dressup_kind(cfg) } else { None },
+            helix_pitch_mm: cfg.helix_pitch,
+        }
+    }
+
+    /// The registry default of `op`: [`Self::of_operation`] with no
+    /// dressups. A reader that holds no toolpath passes it.
+    #[must_use]
+    pub fn registry_default(op: &crate::compute::catalog::OperationConfig) -> Self {
+        Self::of_operation(op, None)
+    }
+
+    /// The configured kind; `None` for the dressup style None.
+    #[must_use]
+    pub fn kind(&self) -> Option<EntryKind> {
+        self.kind
+    }
+
+    /// The helix pitch (mm per turn) the op states.
+    #[must_use]
+    pub fn helix_pitch_mm(&self) -> f64 {
+        self.helix_pitch_mm
+    }
+
+    /// The feed (mm/min) at which the plan cuts an entry of `kind` on
+    /// `op`, before generation:
+    ///
+    /// - a ramp or a helix: the op's entry feed (`entry_feed_rate`: the
+    ///   ramp feed at or below the cut feed), the feed both emitters write.
+    ///   With no ramp feed both emitters take the plunge feed of the door
+    ///   (`unwrap_or(feed_rate)` in `dressup::entry_descent`);
+    /// - a plunge or a peck ladder: the plunge feed of the door. The 3D
+    ///   Rough door and a straight-plunge contract with
+    ///   `PlungeFeedRule::OpPlungeRate` read the op plunge rate; the
+    ///   generator plunge of a dressup op with the style None too; every
+    ///   other dressup plunge reads [`DRESSUP_PLUNGE_RULE`].
+    ///
+    /// # Errors
+    ///
+    /// An [`EntryNoNumber`] when the plan has no feed before generation.
+    pub fn planned_feed_mm_min(
+        &self,
+        op: &crate::compute::catalog::OperationConfig,
+        kind: EntryKind,
+    ) -> Result<f64, EntryNoNumber> {
+        use crate::compute::catalog::{EntryContract, NoneEntry};
+        let op_rate = || {
+            op.plunge_rate()
+                .filter(usable)
+                .ok_or(EntryNoNumber::NoPlungeRate)
+        };
+        let of_rule = |rule: PlungeFeedRule| match rule {
+            PlungeFeedRule::OpPlungeRate => op_rate(),
+            PlungeFeedRule::FirstLinearFeedFraction => {
+                Err(EntryNoNumber::FirstLinearFeedAfterGeneration)
+            }
+        };
+        let door_plunge = || match op.op_type().registry_entry().entry {
+            EntryContract::Planner { .. } => op_rate(),
+            EntryContract::StraightPlunge { feed, .. } => of_rule(feed),
+            EntryContract::Dressup { none_is, .. } => match (self.kind, none_is) {
+                // The style None keeps the generator plunge.
+                (None, NoneEntry::GeneratorPlunge) => op_rate(),
+                (None, NoneEntry::StockAwarePlunge) | (Some(_), _) => of_rule(DRESSUP_PLUNGE_RULE),
+            },
+            EntryContract::DescentIsCut => Err(EntryNoNumber::DescentIsCut),
+        };
+        match kind {
+            EntryKind::Ramp | EntryKind::Helix => match op.entry_feed_rate().filter(usable) {
+                Some(feed) => Ok(feed),
+                // The dressup door emits every ramp and helix of a dressup
+                // op, at its own plunge rule (the generator plunge of the
+                // style None is not a ramp).
+                None => match op.op_type().registry_entry().entry {
+                    EntryContract::Dressup { .. } => of_rule(DRESSUP_PLUNGE_RULE),
+                    EntryContract::Planner { .. }
+                    | EntryContract::StraightPlunge { .. }
+                    | EntryContract::DescentIsCut => door_plunge(),
+                },
+            },
+            EntryKind::Plunge | EntryKind::PeckLadder => door_plunge(),
+        }
+    }
+
+    /// The chip (mm per tooth) of an entry of `kind` on `op` with
+    /// `flute_count` flutes: [`Self::planned_feed_mm_min`] over the stated
+    /// spindle speed times the flute count. The stated values only: the
+    /// entry is a value check of the cut the op states.
+    ///
+    /// # Errors
+    ///
+    /// The errors of [`Self::planned_feed_mm_min`], and
+    /// [`EntryNoNumber::NoSpindleSpeed`].
+    pub fn planned_chip_mm(
+        &self,
+        op: &crate::compute::catalog::OperationConfig,
+        kind: EntryKind,
+        flute_count: u32,
+    ) -> Result<f64, EntryNoNumber> {
+        let feed = self.planned_feed_mm_min(op, kind)?;
+        let rpm = Self::stated_rpm(op)?;
+        Ok(feed / (rpm * f64::from(flute_count.max(1))))
+    }
+
+    /// The spindle speed (rpm) the op states.
+    ///
+    /// # Errors
+    ///
+    /// [`EntryNoNumber::NoSpindleSpeed`] when the op states none.
+    pub fn stated_rpm(op: &crate::compute::catalog::OperationConfig) -> Result<f64, EntryNoNumber> {
+        op.spindle_rpm()
+            .map(f64::from)
+            .filter(usable)
+            .ok_or(EntryNoNumber::NoSpindleSpeed)
     }
 }
 

@@ -19,22 +19,32 @@
 //!    cell for each declared cut; its one constructor calls the closure once
 //!    for each cut, so a record cannot leave a cut out.
 //! 5. The envelope draws ONE edge per limit: at each width column the lowest
-//!    value over the judged cuts with `Presence::Always`
-//!    ([`ByCut::lowest_always`]). A cut with `Presence::MayOccur` is judged
-//!    too, but it gives a check row and a note, never a ceiling (lead ruling
-//!    Q1): its exemption row names it.
+//!    value over the judged cuts that set a ceiling ([`sets_a_ceiling`]: a
+//!    cut with `Presence::Always` on the body plane, [`ByCut::lowest_always`]).
+//!    A cut with `Presence::MayOccur` is judged too, but it gives a check row
+//!    and a note, never a ceiling (lead ruling Q1 of P29-7): its exemption
+//!    row names it.
+//! 6. P29-8 8d: an entry is a declared cut with its own depth
+//!    ([`PlaneDepth::Own`]: the depth per pass of a ramp, one pitch of a
+//!    helix), its own width (a slot) and its own chip (the entry feed of
+//!    the op over the stated spindle speed, `ConfiguredEntry::
+//!    planned_chip_mm`). Every limit judges it like any cut, as a VALUE
+//!    CHECK: the depth ceilings compare the own depth with the cut's root
+//!    (lead ruling Q1). An own-depth cut never sets a ceiling of the body
+//!    plane and never sets the pre-sim power ([`worst_power`]).
 //!
 //! To add a limit before the simulation: add a `LimitId` (the compiler asks
 //! `limits::scope`, [`planned_limit_of`] and `tool_load::groups::gate_of`),
 //! write one `impl PlannedLimit`, and read its edge through the driver.
 
 use crate::compute::catalog::{
-    CutList, DeclaredCut, DeclaredDepth, DeclaredFeed, DeclaredWidth, MAX_DECLARED_CUTS,
-    OperationConfig, PlannerWidth, Presence,
+    CutList, DeclaredCut, DeclaredDepth, DeclaredFeed, DeclaredWidth, EntryKind, MAX_DECLARED_CUTS,
+    OperationConfig, OwnDepth, PlannerWidth, Presence,
 };
 use crate::compute::tool_config::ToolConfig;
 use crate::feeds::CutBody;
 use crate::feeds::engagement::{EngagedDiameter, PowerCase};
+use crate::feeds::entry_rule::{ConfiguredEntry, EntryNoNumber};
 use crate::feeds::force_budget::BudgetDepth;
 use crate::feeds::geometry::{RadialThinning, UnliftedFeed};
 use crate::limits::{CutGroup, CutKind, LimitId, NoEngagementModel, NotJudged, PlanReason, Scope};
@@ -47,13 +57,58 @@ pub enum PlannedNoNumber {
     /// The planner caps the feed on its own stock read
     /// (`DeclaredFeed::PlannerCapped`).
     PlannerCapped,
-    /// An entry rule sets the feed (P29-8).
-    EntryRule,
+    /// P29-8 8d: the entry rule gives no feed or no chip before the
+    /// simulation, for this reason.
+    Entry(EntryNoNumber),
     /// The drill cycle sets the feed (Step 9c).
     DrillCycle,
     /// The column states no body chip (the power fold reads the width
     /// only).
     NoBodyChip,
+}
+
+/// P29-8 8d: where the depth of a planned cut comes from.
+#[derive(Debug, Clone, Copy, PartialEq)]
+pub enum PlaneDepth {
+    /// The depth of the body plane: the depth axis of the envelope.
+    Body,
+    /// The cut's own depth (an entry): a value check, never a ceiling of
+    /// the body plane.
+    Own(OwnDepth),
+    /// A straight descent (a plunge or a peck ladder entry): the axial
+    /// circle at its own feed. Only the spindle power has a model for it;
+    /// a value check, never a ceiling.
+    Axial,
+}
+
+impl PlaneDepth {
+    /// The plane depth of a declared depth. A stated depth and no depth are
+    /// on the body plane; an own depth is the cut's own.
+    #[must_use]
+    pub const fn of_declared(depth: DeclaredDepth) -> Self {
+        match depth {
+            DeclaredDepth::Stated(_) | DeclaredDepth::None(_) => Self::Body,
+            DeclaredDepth::Own(own) => Self::Own(own),
+            DeclaredDepth::Axial => Self::Axial,
+        }
+    }
+}
+
+/// True when a judged cut of `presence` and `depth` sets a depth ceiling of
+/// the body plane, and so the pre-sim power: a cut that the plan always
+/// cuts, on the body plane. THE one rule of [`ByCut::lowest_always`],
+/// [`worst_power`], [`power_case_width`] and the binding cut of the
+/// envelope. One match, no wildcard: a new presence or depth source does
+/// not compile until it answers here.
+#[must_use]
+pub const fn sets_a_ceiling(presence: Presence, depth: PlaneDepth) -> bool {
+    match (presence, depth) {
+        (Presence::Always, PlaneDepth::Body) => true,
+        // P29-7 Q1: a cut that the plan may not cut is no ceiling.
+        // P29-8 Q1: an entry is a value check at its own depth.
+        (Presence::MayOccur(_), PlaneDepth::Body | PlaneDepth::Own(_) | PlaneDepth::Axial)
+        | (Presence::Always, PlaneDepth::Own(_) | PlaneDepth::Axial) => false,
+    }
 }
 
 /// One declared cut at one body column of the envelope plane.
@@ -63,6 +118,8 @@ pub struct PlannedCut {
     pub kind: CutKind,
     /// The group of the kind (`CutKind::group`).
     pub group: CutGroup,
+    /// P29-8 8d: the body plane, or the cut's own depth.
+    pub depth: PlaneDepth,
     /// The width of the cut (mm), or why the cut has none on this plane.
     pub width_mm: Result<f64, NoEngagementModel>,
     /// The advance per tooth of the cut (mm), or why it has none.
@@ -82,6 +139,38 @@ pub struct BodyColumn {
     pub chip_mm: Option<f64>,
 }
 
+/// P29-8 8d: the chip of each entry kind of one op, from the entry rule
+/// (`ConfiguredEntry::planned_chip_mm`). The fields are private; one
+/// match names every kind ([`Self::get`]).
+#[derive(Debug, Clone, Copy, PartialEq)]
+struct EntryChips {
+    plunge: Result<f64, EntryNoNumber>,
+    ramp: Result<f64, EntryNoNumber>,
+    helix: Result<f64, EntryNoNumber>,
+    peck_ladder: Result<f64, EntryNoNumber>,
+}
+
+impl EntryChips {
+    fn of(operation: &OperationConfig, entry: &ConfiguredEntry, flute_count: u32) -> Self {
+        let chip = |kind| entry.planned_chip_mm(operation, kind, flute_count);
+        Self {
+            plunge: chip(EntryKind::Plunge),
+            ramp: chip(EntryKind::Ramp),
+            helix: chip(EntryKind::Helix),
+            peck_ladder: chip(EntryKind::PeckLadder),
+        }
+    }
+
+    const fn get(&self, kind: EntryKind) -> Result<f64, EntryNoNumber> {
+        match kind {
+            EntryKind::Plunge => self.plunge,
+            EntryKind::Ramp => self.ramp,
+            EntryKind::Helix => self.helix,
+            EntryKind::PeckLadder => self.peck_ladder,
+        }
+    }
+}
+
 /// The declared cuts of one op on one tool, with the facts that each width
 /// column reads. Build it once per envelope ([`Self::of_operation`]).
 #[derive(Debug, Clone, Copy, PartialEq)]
@@ -91,15 +180,23 @@ pub struct DeclaredCuts {
     body_depth: Option<DeclaredDepth>,
     thinning: RadialThinning,
     lift_d_eng_mm: f64,
+    entry_chips: EntryChips,
+    entry_rpm: Result<f64, EntryNoNumber>,
 }
 
 impl DeclaredCuts {
-    /// The cuts of `operation` on `tool`. The lift of the unlifted feed is
-    /// read at the stated depth per pass (else the tool diameter), the rule
-    /// of `UnliftedFeed::of_slot_ring`.
+    /// The cuts of `operation` on `tool`, with the configured entry `entry`
+    /// (P29-8 8d). The lift of the unlifted feed is read at the stated depth
+    /// per pass (else the tool diameter), the rule of
+    /// `UnliftedFeed::of_slot_ring`. The chip of each entry kind is the
+    /// entry rule's.
     #[must_use]
-    pub fn of_operation(operation: &OperationConfig, tool: &ToolConfig) -> Self {
-        let list = operation.cuts();
+    pub fn of_operation(
+        operation: &OperationConfig,
+        tool: &ToolConfig,
+        entry: &ConfiguredEntry,
+    ) -> Self {
+        let list = operation.cuts(entry);
         let d_mm = tool.diameter;
         let usable = |v: f64| v.is_finite() && v > 0.0;
         let ap = operation
@@ -119,6 +216,28 @@ impl DeclaredCuts {
             body_depth: list.of_kind(CutKind::Body).map(|c| c.depth),
             thinning: list.body_facts().thins_chip,
             lift_d_eng_mm,
+            entry_chips: EntryChips::of(operation, entry, tool.flute_count_planning()),
+            entry_rpm: ConfiguredEntry::stated_rpm(operation),
+        }
+    }
+
+    /// P29-8 8d: the spindle speed (rpm) at which the entry chips are read
+    /// (the stated speed), or why none.
+    ///
+    /// # Errors
+    ///
+    /// [`EntryNoNumber::NoSpindleSpeed`] when the op states no speed.
+    pub const fn entry_rpm(&self) -> Result<f64, EntryNoNumber> {
+        self.entry_rpm
+    }
+
+    /// P29-8 8d: why the entry rule gives an entry of `kind` no chip, or
+    /// `None` when it gives one.
+    #[must_use]
+    pub const fn entry_no_number(&self, kind: EntryKind) -> Option<EntryNoNumber> {
+        match self.entry_chips.get(kind) {
+            Ok(_) => None,
+            Err(reason) => Some(reason),
         }
     }
 
@@ -160,12 +279,29 @@ impl DeclaredCuts {
     ///
     /// The chip: `OpFeed` gives the body chip; `Unlifted` gives the body
     /// chip over the body lift (`UnliftedFeed`: the lift at the full-feed
-    /// width of the column, on the engaged diameter of the lift); the
-    /// planner-capped, entry and drill feeds give no number.
+    /// width of the column, on the engaged diameter of the lift); an entry
+    /// gives the chip of its entry rule (P29-8 8d), the same at every
+    /// column; the planner-capped and drill feeds give no number.
+    ///
+    /// A cut at its own depth (an entry) reads its own width rule, not the
+    /// body depth.
     #[must_use]
     pub fn planned(&self, cut: &DeclaredCut, column: BodyColumn) -> PlannedCut {
         let d = self.d_mm;
         let ae = column.ae_mm;
+        let depth = PlaneDepth::of_declared(cut.depth);
+        let of_rule = || match cut.width {
+            DeclaredWidth::Stated(_) => Ok(ae),
+            DeclaredWidth::Slot => Ok(d),
+            DeclaredWidth::PassCeiling { .. } => {
+                Ok(PlannerWidth::PassCeiling.full_feed_width_mm(ae, d))
+            }
+            DeclaredWidth::CapMult { mult, .. } => PlannerWidth::CapMult(mult)
+                .power_width_mm(ae, d)
+                .ok_or(NoEngagementModel::NoStatedWidth),
+            DeclaredWidth::Scallop(_) => Err(NoEngagementModel::NoStatedWidth),
+            DeclaredWidth::None(reason) => Err(reason),
+        };
         let width_mm = match cut.kind {
             CutKind::Body => Ok(match cut.width {
                 DeclaredWidth::Slot => d,
@@ -187,24 +323,18 @@ impl DeclaredCuts {
             | CutKind::LeadOut
             | CutKind::Link
             | CutKind::DressupRelief
-            | CutKind::Drill => {
-                if self.body_depth.is_some_and(|body| body != cut.depth) {
-                    Err(NoEngagementModel::NoStatedDepth)
-                } else {
-                    match cut.width {
-                        DeclaredWidth::Stated(_) => Ok(ae),
-                        DeclaredWidth::Slot => Ok(d),
-                        DeclaredWidth::PassCeiling { .. } => {
-                            Ok(PlannerWidth::PassCeiling.full_feed_width_mm(ae, d))
-                        }
-                        DeclaredWidth::CapMult { mult, .. } => PlannerWidth::CapMult(mult)
-                            .power_width_mm(ae, d)
-                            .ok_or(NoEngagementModel::NoStatedWidth),
-                        DeclaredWidth::Scallop(_) => Err(NoEngagementModel::NoStatedWidth),
-                        DeclaredWidth::None(reason) => Err(reason),
+            | CutKind::Drill => match depth {
+                // P29-8 8d: a cut at its own depth, or an axial cut, has
+                // its own width.
+                PlaneDepth::Own(_) | PlaneDepth::Axial => of_rule(),
+                PlaneDepth::Body => {
+                    if self.body_depth.is_some_and(|body| body != cut.depth) {
+                        Err(NoEngagementModel::NoStatedDepth)
+                    } else {
+                        of_rule()
                     }
                 }
-            }
+            },
         };
         let body_chip = column.chip_mm.ok_or(PlannedNoNumber::NoBodyChip);
         let chip_mm = match cut.feed {
@@ -216,12 +346,15 @@ impl DeclaredCuts {
                 UnliftedFeed::over_lift(fz, lift).mm_min()
             }),
             DeclaredFeed::PlannerCapped => Err(PlannedNoNumber::PlannerCapped),
-            DeclaredFeed::EntryRule => Err(PlannedNoNumber::EntryRule),
+            DeclaredFeed::EntryRule(kind) => {
+                self.entry_chips.get(kind).map_err(PlannedNoNumber::Entry)
+            }
             DeclaredFeed::DrillCycle => Err(PlannedNoNumber::DrillCycle),
         };
         PlannedCut {
             kind: cut.kind,
             group: cut.kind.group(),
+            depth,
             width_mm,
             chip_mm,
             presence: cut.presence,
@@ -263,6 +396,8 @@ pub struct CutEntry<T> {
     pub kind: CutKind,
     /// Whether the plan always cuts it.
     pub presence: Presence,
+    /// P29-8 8d: the body plane, or the cut's own depth.
+    pub depth: PlaneDepth,
     /// The value of the cut.
     pub value: T,
 }
@@ -284,6 +419,7 @@ impl<T> ByCut<T> {
                 each.next().map(|cut| CutEntry {
                     kind: cut.kind,
                     presence: cut.presence,
+                    depth: PlaneDepth::of_declared(cut.depth),
                     value: f(cut),
                 })
             }),
@@ -297,18 +433,20 @@ impl<T> ByCut<T> {
 }
 
 impl<A: Copy> ByCut<PlannedCell<A>> {
-    /// The lowest `value` over the judged cuts with `Presence::Always`, and
-    /// the cut that gives it. `value` gives `None` for an answer with no
+    /// The lowest `value` over the judged cuts that set a ceiling
+    /// ([`sets_a_ceiling`]), and the cut that gives it. `value` gives `None` for an answer with no
     /// number. A tie keeps the first cut (the body is first). `None` when no
     /// such cut has a number.
     #[must_use]
     pub fn lowest_always(&self, value: impl Fn(&A) -> Option<f64>) -> Option<(CutKind, A)> {
         let mut best: Option<(f64, CutKind, A)> = None;
         for entry in self.iter() {
-            let (Presence::Always, PlannedCell::Judged(answer)) = (entry.presence, entry.value)
-            else {
+            let PlannedCell::Judged(answer) = entry.value else {
                 continue;
             };
+            if !sets_a_ceiling(entry.presence, entry.depth) {
+                continue;
+            }
             let Some(v) = value(&answer) else {
                 continue;
             };
@@ -337,8 +475,15 @@ pub fn judge_declared_cuts<L: PlannedLimit>(
     })
 }
 
-/// The width and the chip of a planned cut, when it has both.
+/// The width and the chip of a planned side cut, when it has both. An
+/// axial cut (a plunge, P29-8 8d) is no side cut: the force budget, the
+/// deflection, the vendor depth table and the chip band have no model for
+/// it.
 fn width_and_chip(cut: &PlannedCut) -> Option<(f64, f64)> {
+    match cut.depth {
+        PlaneDepth::Body | PlaneDepth::Own(_) => {}
+        PlaneDepth::Axial => return None,
+    }
     match (cut.width_mm, cut.chip_mm) {
         (Ok(w), Ok(fz)) => Some((w, fz)),
         (Err(_), _) | (_, Err(_)) => None,
@@ -464,8 +609,15 @@ pub fn table_ceiling(ae_mm: f64, fz: f64, env: &TableEnv) -> (f64, bool) {
 pub struct PowerEnv<'e> {
     /// The body width of the column (mm): the width of the nominal case.
     pub column_ae_mm: f64,
-    /// The power (kW) of a cut at a width (mm), at the op feed.
+    /// The power (kW) of a cut on the body plane at a width (mm), at the
+    /// op feed.
     pub power_kw: &'e dyn Fn(f64) -> f64,
+    /// P29-8 8d: the power (kW) of a cut off the body plane (an entry at
+    /// its own depth, or a plunge): the declared cut of the kind at its own
+    /// engagement (`DeclaredCut::at`) and the chip (mm) of the cut, at its
+    /// own feed. `None`: the reader gives no number (a reader of the body
+    /// plane only: the cut sets no pre-sim power, [`sets_a_ceiling`]).
+    pub entry_power_kw: &'e dyn Fn(CutKind, f64) -> Option<f64>,
 }
 
 /// The spindle power before the simulation (K7 change 3, today's rule):
@@ -487,13 +639,20 @@ impl PlannedLimit for SpindlePowerPlanned {
             PowerCase::Nominal => env.column_ae_mm,
             PowerCase::PlannerCap | PowerCase::Slot | PowerCase::AxialPlunge => w,
         };
-        Some((case, (env.power_kw)(width), width))
+        match cut.depth {
+            PlaneDepth::Body => Some((case, (env.power_kw)(width), width)),
+            // P29-8 8d: an entry at its own engagement and its own feed.
+            PlaneDepth::Own(_) | PlaneDepth::Axial => {
+                let fz = cut.chip_mm.ok()?;
+                Some((case, (env.entry_power_kw)(cut.kind, fz)?, width))
+            }
+        }
     }
 }
 
 /// The worst case of the pre-sim power set at the body width `ae`: the
-/// largest power over the declared cuts with `Presence::Always`, its case
-/// and its width. A tie goes to the more specific case
+/// largest power over the declared cuts that set a ceiling
+/// ([`sets_a_ceiling`]: never an entry, P29-8 8d), its case and its width. A tie goes to the more specific case
 /// (`PowerCase::tie_rank`). With no judged cut, the nominal case at `ae`.
 pub fn worst_power(
     cuts: &DeclaredCuts,
@@ -503,6 +662,7 @@ pub fn worst_power(
     let env = PowerEnv {
         column_ae_mm: ae,
         power_kw: &power_kw,
+        entry_power_kw: &|_, _| None,
     };
     let column = BodyColumn {
         ae_mm: ae,
@@ -511,10 +671,12 @@ pub fn worst_power(
     let cells = judge_declared_cuts::<SpindlePowerPlanned>(cuts, column, &env);
     let mut best: Option<(PowerCase, f64, f64)> = None;
     for entry in cells.iter() {
-        let (Presence::Always, PlannedCell::Judged(Some(this))) = (entry.presence, entry.value)
-        else {
+        let PlannedCell::Judged(Some(this)) = entry.value else {
             continue;
         };
+        if !sets_a_ceiling(entry.presence, entry.depth) {
+            continue;
+        }
         let wins = best
             .is_none_or(|b| this.1 > b.1 || (this.1 >= b.1 && this.0.tie_rank() > b.0.tie_rank()));
         if wins {
@@ -525,14 +687,15 @@ pub fn worst_power(
 }
 
 /// The width (mm) of the power case `case` at the body width `ae`: the
-/// width of the first declared cut with `Presence::Always` of that case,
-/// else `ae`.
+/// width of the first declared cut that sets a ceiling
+/// ([`sets_a_ceiling`]) of that case, else `ae`.
 #[must_use]
 pub fn power_case_width(cuts: &DeclaredCuts, case: PowerCase, ae: f64) -> f64 {
     let none = |_: f64| 0.0;
     let env = PowerEnv {
         column_ae_mm: ae,
         power_kw: &none,
+        entry_power_kw: &|_, _| None,
     };
     let column = BodyColumn {
         ae_mm: ae,
@@ -540,9 +703,15 @@ pub fn power_case_width(cuts: &DeclaredCuts, case: PowerCase, ae: f64) -> f64 {
     };
     judge_declared_cuts::<SpindlePowerPlanned>(cuts, column, &env)
         .iter()
-        .find_map(|entry| match (entry.presence, entry.value) {
-            (Presence::Always, PlannedCell::Judged(Some((c, _, w)))) if c == case => Some(w),
-            (Presence::Always | Presence::MayOccur(_), _) => None,
+        .find_map(|entry| match entry.value {
+            PlannedCell::Judged(Some((c, _, w)))
+                if c == case && sets_a_ceiling(entry.presence, entry.depth) =>
+            {
+                Some(w)
+            }
+            PlannedCell::Judged(_) | PlannedCell::NotJudged(_) | PlannedCell::NotACutLimit(_) => {
+                None
+            }
         })
         .unwrap_or(ae)
 }
