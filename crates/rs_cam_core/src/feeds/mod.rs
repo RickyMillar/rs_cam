@@ -2343,10 +2343,10 @@ fn operation_default_profile(family: OperationFamily, role: PassRole) -> Default
 pub fn formula_constants() -> Vec<FormulaConstant> {
     let mut rows: Vec<FormulaConstant> = MATERIAL_FORMULA_CONSTANTS.to_vec();
     rows.push(FALLBACK_RPM);
-    // P29-8 8a: every entry number, the private rows of `entry_rule.rs`:
-    // the ramp angle and the helix pitch of each door, the helix radius
-    // rule, and the plunge feed rule of the dressup entry (K4, lead
-    // decision D5: `PlungeFeedRule::FirstLinearFeedFraction`).
+    // P29-8: every entry number, the private rows of `entry_rule.rs`: the
+    // ramp angle rule by the stock class (8b, Easel), the helix pitch of
+    // each door and the helix radius rule. 8c deleted the dressup plunge
+    // fraction rows: every door plunges at the op plunge rate.
     rows.extend(entry_rule::formula_constants());
     // K3 (feeds contract P6, decision E4): the legacy loader default of
     // each tool fact. An `Unknown` fact plans at it (`tool.fact_unknown`).

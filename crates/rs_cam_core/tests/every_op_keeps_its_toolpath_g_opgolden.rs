@@ -92,6 +92,12 @@
 //!   ramp now holds the rule of the stock (generic softwood: 20 degrees,
 //!   was 3; the 3D Rough was 10). A rest arm exports its prior Pocket, whose
 //!   ramps moved. No known row moved.
+//! - P29-8 8c (2026-11-13, operator ruling O1): field-only bless of
+//!   `moves_hash` and `gcode_hash` of `adaptive/rest`, `pocket/rest`,
+//!   `profile/rest` and `zigzag/rest`. The dressup air lead and fallback
+//!   plunge now run at the op plunge rate (they ran at half the first
+//!   linear feed). Only feeds move: no count, length or box moved, and no
+//!   fresh arm moved. No known row moved.
 //!
 //! `RS_CAM_OPGOLDEN_DUMP_GCODE=<dir>` writes the program of each arm into
 //! `<dir>/<op>__<arm>.nc`. Use it to show that a change of `gcode_hash`

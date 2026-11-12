@@ -207,13 +207,13 @@ pub enum PlungeFeedRule {
     /// G6 axial chip and the machine Z axis rate). P20b deleted the
     /// `AxialChip` variant (Q8): the limit now bounds every op, so the
     /// contract no longer states it.
+    ///
+    /// P29-8 8c (operator ruling O1): it is the one plunge rule. The
+    /// dressup door feeds its air lead, its stock-aware plunge and its
+    /// fallback plunge at it too (`DressupContext::plunge_rate_mm_min`),
+    /// as the 3D Rough planner does. The fraction of the first linear feed
+    /// and its 500 mm/min fallback are deleted.
     OpPlungeRate,
-    /// The feed of the dressup entry for the air lead and for the plunge
-    /// fallback: the first linear feed of the toolpath times a fraction,
-    /// else a fixed feed. The emitters then take the `min` with the feed of
-    /// the plunge move. P29-8: the one evaluation and its two rows are in
-    /// `feeds::entry_rule` (`ResolvedEntry::dressup_plunge_feed_mm_min`).
-    FirstLinearFeedFraction,
 }
 
 /// CONTRACT K4 (record). One entry of a generated toolpath. The fields are

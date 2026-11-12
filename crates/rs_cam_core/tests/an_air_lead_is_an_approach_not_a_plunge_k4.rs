@@ -65,7 +65,9 @@ fn dress(style: DressupEntryStyle) -> (Toolpath, f64) {
             material: &rs_cam_core::material::Material::default(),
             cfg: &cfg,
             nominal_feed_rate: FEED,
-            plunge_rate_mm_min: None,
+            // P29-8 8c: the dressup door needs the op plunge rate; this fixture
+            // plunges at its cut feed.
+            plunge_rate_mm_min: FEED,
             ramp_feed_rate_mm_min: None,
             tool_diameter: 6.0,
             safe_z: SAFE_Z,

@@ -1082,7 +1082,7 @@ impl JobPhases<'_, '_> {
                 cfg: &self.context.dressups,
                 material: &self.context.material,
                 nominal_feed_rate: self.context.feed_rate,
-                plunge_rate_mm_min: Some(self.context.plunge_rate),
+                plunge_rate_mm_min: self.context.plunge_rate,
                 ramp_feed_rate_mm_min: self.context.ramp_feed_rate,
                 tool_diameter: self.inputs.tool_def.diameter(),
                 safe_z: self.inputs.heights.retract_z,

@@ -25,7 +25,6 @@ use crate::feeds::vendor_lut::MaterialFamily;
 use crate::limits::EntryKind;
 use crate::material::{FormulaConstant, Material};
 use crate::tool::MillingCutter;
-use crate::toolpath::{MoveType, Toolpath};
 
 /// The stored Easel page (operator ruling O2: "lets do 5 and 20").
 const EASEL_RAMPING: &str =
@@ -102,27 +101,9 @@ const HELIX_RADIUS_OVER_D: FormulaConstant = FormulaConstant::unsourced(
     "repo rule with no primary source (G10 rulings Q6 and Q8)",
 );
 
-/// F201: the fraction of the first linear feed that the dressup entry
-/// plunges at ([`ResolvedEntry::dressup_plunge_feed_mm_min`]). It was
-/// `compute::catalog::ENTRY_PLUNGE_FIRST_FEED_FRACTION`; the name stays.
-const ENTRY_PLUNGE_FIRST_FEED_FRACTION: FormulaConstant = FormulaConstant::unsourced(
-    "dressup.entry_plunge_rate.first_linear_feed_fraction",
-    0.5,
-    "repo rule with no primary source (dressup_apply.rs entry_plunge_rate, feeds contract P3)",
-);
-
-/// F201: the plunge feed of the dressup entry (mm/min) when the toolpath
-/// has no linear move ([`ResolvedEntry::dressup_plunge_feed_mm_min`]). It
-/// was `compute::catalog::ENTRY_PLUNGE_FALLBACK_MM_MIN`; the name stays.
-const ENTRY_PLUNGE_FALLBACK_MM_MIN: FormulaConstant = FormulaConstant::unsourced(
-    "dressup.entry_plunge_rate.fallback_mm_min",
-    500.0,
-    "repo rule with no primary source (dressup_apply.rs entry_plunge_rate, feeds contract P3)",
-);
-
 /// The F201 rows of this file (`feeds::formula_constants` reads them).
 #[must_use]
-pub fn formula_constants() -> [FormulaConstant; 9] {
+pub fn formula_constants() -> [FormulaConstant; 7] {
     [
         RAMP_ANGLE_HARDWOOD_DEG,
         RAMP_ANGLE_SOFTWOOD_AND_COMPOSITE_DEG,
@@ -131,8 +112,6 @@ pub fn formula_constants() -> [FormulaConstant; 9] {
         DRESSUP_HELIX_PITCH_MM,
         ADAPTIVE3D_HELIX_PITCH_MM,
         HELIX_RADIUS_OVER_D,
-        ENTRY_PLUNGE_FIRST_FEED_FRACTION,
-        ENTRY_PLUNGE_FALLBACK_MM_MIN,
     ]
 }
 
@@ -577,36 +556,7 @@ impl ResolvedEntry {
             },
         }
     }
-
-    /// The dressup door's plunge feed (mm/min) for the air lead, the
-    /// stock-aware plunge and the plunge fallback, on `toolpath` as the
-    /// entry step sees it: the first linear feed times 0.5, else 500 mm/min
-    /// (the contract rule `PlungeFeedRule::FirstLinearFeedFraction`). The
-    /// emitters then take the `min` with the feed of the plunge move.
-    ///
-    /// The 3D Rough door feeds the same moves at the op plunge rate
-    /// (`Adaptive3dParams::plunge_rate`). P29-8 O1 asks the operator whether
-    /// the dressup door does too.
-    #[must_use]
-    pub fn dressup_plunge_feed_mm_min(toolpath: &Toolpath) -> f64 {
-        toolpath
-            .moves
-            .iter()
-            .find_map(|m| match m.move_type {
-                MoveType::Linear { feed_rate } => {
-                    Some(feed_rate * ENTRY_PLUNGE_FIRST_FEED_FRACTION.value)
-                }
-                MoveType::Rapid | MoveType::ArcCW { .. } | MoveType::ArcCCW { .. } => None,
-            })
-            .unwrap_or(ENTRY_PLUNGE_FALLBACK_MM_MIN.value)
-    }
 }
-
-/// The plunge feed rule of the dressup door (the air lead, the stock-aware
-/// plunge and the fallback plunge). [`ResolvedEntry::dressup_plunge_feed_mm_min`]
-/// evaluates it on a toolpath; [`ConfiguredEntry::planned_feed_mm_min`]
-/// reads it before generation. P29-8 O1 (commit 8c) changes this one value.
-const DRESSUP_PLUNGE_RULE: PlungeFeedRule = PlungeFeedRule::FirstLinearFeedFraction;
 
 /// The configured entry kind of a dressup config. `None`: the style None
 /// (the op enters by the plunge of its contract).
@@ -656,13 +606,6 @@ pub struct ConfiguredEntry {
 pub enum EntryNoNumber {
     /// The op states no plunge rate (S11).
     NoPlungeRate,
-    /// The dressup door plunges at a fraction of the first linear feed of
-    /// the toolpath, else at a fixed feed (`PlungeFeedRule::
-    /// FirstLinearFeedFraction`). The first linear feed is known only
-    /// after generation (P29-8 O1, commit 8c). On a Profile with tabs the
-    /// same cut holds the tab re-plunge at the op plunge rate (row
-    /// `U-TabReplunge`), so the cut has no one feed.
-    FirstLinearFeedAfterGeneration,
     /// The op states no spindle speed, so its entry feed gives no chip
     /// (S11).
     NoSpindleSpeed,
@@ -677,10 +620,6 @@ impl EntryNoNumber {
     pub const fn clause(self) -> &'static str {
         match self {
             Self::NoPlungeRate => "the op states no plunge rate",
-            Self::FirstLinearFeedAfterGeneration => {
-                "the dressup plunge feed reads the first linear feed of the toolpath, known only \
-                 after generation"
-            }
             Self::NoSpindleSpeed => "the op states no spindle speed",
             Self::DescentIsCut => "the descent is the cut: the op has no entry",
         }
@@ -754,11 +693,11 @@ impl ConfiguredEntry {
     ///   ramp feed at or below the cut feed), the feed both emitters write.
     ///   With no ramp feed both emitters take the plunge feed of the door
     ///   (`unwrap_or(feed_rate)` in `dressup::entry_descent`);
-    /// - a plunge or a peck ladder: the plunge feed of the door. The 3D
-    ///   Rough door and a straight-plunge contract with
-    ///   `PlungeFeedRule::OpPlungeRate` read the op plunge rate; the
-    ///   generator plunge of a dressup op with the style None too; every
-    ///   other dressup plunge reads [`DRESSUP_PLUNGE_RULE`].
+    /// - a plunge or a peck ladder: the plunge feed of the door. P29-8 8c
+    ///   (operator ruling O1): every door plunges at the op plunge rate
+    ///   (`PlungeFeedRule::OpPlungeRate`): the 3D Rough planner, a
+    ///   straight-plunge contract, the generator plunge of a dressup op,
+    ///   and the dressup air lead, stock-aware plunge and fallback plunge.
     ///
     /// # Errors
     ///
@@ -768,40 +707,23 @@ impl ConfiguredEntry {
         op: &crate::compute::catalog::OperationConfig,
         kind: EntryKind,
     ) -> Result<f64, EntryNoNumber> {
-        use crate::compute::catalog::{EntryContract, NoneEntry};
+        use crate::compute::catalog::EntryContract;
         let op_rate = || {
             op.plunge_rate()
                 .filter(usable)
                 .ok_or(EntryNoNumber::NoPlungeRate)
         };
-        let of_rule = |rule: PlungeFeedRule| match rule {
-            PlungeFeedRule::OpPlungeRate => op_rate(),
-            PlungeFeedRule::FirstLinearFeedFraction => {
-                Err(EntryNoNumber::FirstLinearFeedAfterGeneration)
-            }
-        };
         let door_plunge = || match op.op_type().registry_entry().entry {
-            EntryContract::Planner { .. } => op_rate(),
-            EntryContract::StraightPlunge { feed, .. } => of_rule(feed),
-            EntryContract::Dressup { none_is, .. } => match (self.kind, none_is) {
-                // The style None keeps the generator plunge.
-                (None, NoneEntry::GeneratorPlunge) => op_rate(),
-                (None, NoneEntry::StockAwarePlunge) | (Some(_), _) => of_rule(DRESSUP_PLUNGE_RULE),
+            EntryContract::Planner { .. } | EntryContract::Dressup { .. } => op_rate(),
+            EntryContract::StraightPlunge { feed, .. } => match feed {
+                PlungeFeedRule::OpPlungeRate => op_rate(),
             },
             EntryContract::DescentIsCut => Err(EntryNoNumber::DescentIsCut),
         };
         match kind {
             EntryKind::Ramp | EntryKind::Helix => match op.entry_feed_rate().filter(usable) {
                 Some(feed) => Ok(feed),
-                // The dressup door emits every ramp and helix of a dressup
-                // op, at its own plunge rule (the generator plunge of the
-                // style None is not a ramp).
-                None => match op.op_type().registry_entry().entry {
-                    EntryContract::Dressup { .. } => of_rule(DRESSUP_PLUNGE_RULE),
-                    EntryContract::Planner { .. }
-                    | EntryContract::StraightPlunge { .. }
-                    | EntryContract::DescentIsCut => door_plunge(),
-                },
+                None => door_plunge(),
             },
             EntryKind::Plunge | EntryKind::PeckLadder => door_plunge(),
         }
@@ -906,23 +828,6 @@ impl StoredFeedChip {
 #[cfg(test)]
 mod tests {
     use super::*;
-    use crate::geo::P3;
-
-    #[test]
-    fn the_dressup_plunge_feed_reads_the_first_linear_feed() {
-        let mut t = Toolpath::new();
-        t.rapid_to(P3::new(0.0, 0.0, 10.0));
-        t.feed_to(P3::new(1.0, 0.0, 10.0), 1000.0);
-        let half = 1000.0 * ENTRY_PLUNGE_FIRST_FEED_FRACTION.value;
-        assert_eq!(
-            ResolvedEntry::dressup_plunge_feed_mm_min(&t).to_bits(),
-            half.to_bits()
-        );
-        assert_eq!(
-            ResolvedEntry::dressup_plunge_feed_mm_min(&Toolpath::new()).to_bits(),
-            ENTRY_PLUNGE_FALLBACK_MM_MIN.value.to_bits()
-        );
-    }
 
     #[test]
     fn the_stored_defaults_are_the_door_rows() {

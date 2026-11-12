@@ -305,7 +305,9 @@ fn dressup(tp: Toolpath, cfg: &DressupConfig, op: OperationType, tool_diameter: 
             ramp_feed_rate_mm_min: None,
             cfg,
             nominal_feed_rate: 1000.0,
-            plunge_rate_mm_min: None,
+            // P29-8 8c: the dressup door needs the op plunge rate; this fixture
+            // plunges at its cut feed.
+            plunge_rate_mm_min: 1000.0,
             tool_diameter,
             safe_z: /* safe_z */ 30.0,
             stock_top: /* stock_top */ 0.0,
@@ -346,7 +348,9 @@ fn dressup_with_caps(
             ramp_feed_rate_mm_min: None,
             cfg,
             nominal_feed_rate: 1000.0,
-            plunge_rate_mm_min: None,
+            // P29-8 8c: the dressup door needs the op plunge rate; this fixture
+            // plunges at its cut feed.
+            plunge_rate_mm_min: 1000.0,
             tool_diameter,
             safe_z: /* safe_z */ 30.0,
             stock_top: /* stock_top */ 0.0,
@@ -1826,7 +1830,9 @@ fn unified_finish_node_barriers_allow_intra_region_reorder_and_pin_depth() {
                 ramp_feed_rate_mm_min: None,
                 cfg,
                 nominal_feed_rate: 1000.0,
-                plunge_rate_mm_min: None,
+                // P29-8 8c: the dressup door needs the op plunge rate; this fixture
+                // plunges at its cut feed.
+                plunge_rate_mm_min: 1000.0,
                 tool_diameter: /* tool_diameter */ 3.0,
                 safe_z: /* safe_z */ 30.0,
                 stock_top: /* stock_top */ 0.0,

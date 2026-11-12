@@ -138,7 +138,9 @@ fn dress_on_ridge(entry_x: f64, style: DressupEntryStyle, tool_diameter_mm: f64)
             ramp_feed_rate_mm_min: None,
             cfg: &cfg,
             nominal_feed_rate: FEED,
-            plunge_rate_mm_min: None,
+            // P29-8 8c: the dressup door needs the op plunge rate; this fixture
+            // plunges at its cut feed.
+            plunge_rate_mm_min: FEED,
             tool_diameter: cutter.diameter(),
             safe_z: SAFE_Z,
             stock_top: RIDGE_HEIGHT_MM,
@@ -301,7 +303,9 @@ fn unclipped_ramp_keeps_its_planned_legs() {
             ramp_feed_rate_mm_min: None,
             cfg: &cfg,
             nominal_feed_rate: FEED,
-            plunge_rate_mm_min: None,
+            // P29-8 8c: the dressup door needs the op plunge rate; this fixture
+            // plunges at its cut feed.
+            plunge_rate_mm_min: FEED,
             tool_diameter: cutter.diameter(),
             safe_z: SAFE_Z,
             stock_top: RIDGE_HEIGHT_MM,

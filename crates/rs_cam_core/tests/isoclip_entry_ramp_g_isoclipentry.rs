@@ -549,7 +549,9 @@ fn dressed_entry(stock: &TriDexelStock, carry_rest_stock: bool) -> Toolpath {
             ramp_feed_rate_mm_min: None,
             cfg: &cfg,
             nominal_feed_rate: CUT_FEED,
-            plunge_rate_mm_min: None,
+            // P29-8 8c: the dressup door needs the op plunge rate; this fixture
+            // plunges at its cut feed.
+            plunge_rate_mm_min: CUT_FEED,
             tool_diameter: cutter.diameter(),
             safe_z: SAFE_Z,
             stock_top: STOCK_TOP_Z,
@@ -685,7 +687,9 @@ fn dressed_entry_wide(stock: &TriDexelStock) -> Toolpath {
             ramp_feed_rate_mm_min: None,
             cfg: &cfg,
             nominal_feed_rate: CUT_FEED,
-            plunge_rate_mm_min: None,
+            // P29-8 8c: the dressup door needs the op plunge rate; this fixture
+            // plunges at its cut feed.
+            plunge_rate_mm_min: CUT_FEED,
             tool_diameter: cutter.diameter(),
             safe_z: SAFE_Z,
             stock_top: STOCK_TOP_Z,

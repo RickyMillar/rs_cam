@@ -74,7 +74,9 @@ mod tests {
                 ramp_feed_rate_mm_min: None,
                 cfg: &cfg,
                 nominal_feed_rate: 1000.0,
-                plunge_rate_mm_min: None,
+                // P29-8 8c: the dressup door needs the op plunge rate; this fixture
+                // plunges at its cut feed.
+                plunge_rate_mm_min: 1000.0,
                 tool_diameter: 6.0,
                 safe_z,
                 stock_top: 0.0,
@@ -128,7 +130,9 @@ mod tests {
                 ramp_feed_rate_mm_min: None,
                 cfg: &cfg,
                 nominal_feed_rate: 1000.0,
-                plunge_rate_mm_min: None,
+                // P29-8 8c: the dressup door needs the op plunge rate; this fixture
+                // plunges at its cut feed.
+                plunge_rate_mm_min: 1000.0,
                 tool_diameter: 6.0,
                 safe_z,
                 stock_top: 0.0,

@@ -153,7 +153,7 @@ fn ship(planned: &Toolpath, cfg: &DressupConfig) -> Toolpath {
             material: &rs_cam_core::material::Material::default(),
             cfg,
             nominal_feed_rate: 2400.0,
-            plunge_rate_mm_min: Some(500.0),
+            plunge_rate_mm_min: 500.0,
             ramp_feed_rate_mm_min: None,
             tool_diameter: 6.0,
             safe_z: SAFE_Z,

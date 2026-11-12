@@ -43,10 +43,10 @@ cutting_length_mm = 2552.162
 rapid_length_mm = 525.2
 bbox_min = [-16.825, -8.825, -6.0]
 bbox_max = [16.825, 8.825, 10.0]
-moves_hash = "33f69d089e2dce04"
+moves_hash = "3a7cbcea7d802454"
 span_count = 425
 spans_hash = "ccf8f20e1f7ed169"
-gcode_hash = "ccebee9ed1123faa"
+gcode_hash = "4ee47a3dbcb329ea"
 
 ["adaptive3d/by_area_helix_cp"]
 outcome = "ok"
@@ -595,10 +595,10 @@ cutting_length_mm = 475.299
 rapid_length_mm = 286.832
 bbox_min = [-4.1519, -8.825, -3.0]
 bbox_max = [16.825, 8.825, 10.0]
-moves_hash = "0e9d8de1b8c1061a"
+moves_hash = "afd25aafaf838df6"
 span_count = 49
 spans_hash = "9c268f8ce4503743"
-gcode_hash = "db815364e7c3271f"
+gcode_hash = "578ef1355fe80eff"
 
 ["pocket/zigzag"]
 outcome = "ok"
@@ -700,10 +700,10 @@ cutting_length_mm = 451.778
 rapid_length_mm = 70.5
 bbox_min = [-23.175, -15.175, -6.0]
 bbox_max = [23.175, 15.175, 10.0]
-moves_hash = "657c191e152a0dc3"
+moves_hash = "cc6fd65cc11d0673"
 span_count = 31
 spans_hash = "996d2d9e295a4d7a"
-gcode_hash = "6438bdf8789785a4"
+gcode_hash = "3091049be372678c"
 
 ["project_curve/fresh"]
 outcome = "ok"
@@ -1357,7 +1357,7 @@ cutting_length_mm = 432.162
 rapid_length_mm = 461.882
 bbox_min = [-4.1519, -8.825, -3.0]
 bbox_max = [16.825, 7.175, 10.0]
-moves_hash = "fe90e349a7c82d83"
+moves_hash = "30489d5ccb1c2977"
 span_count = 77
 spans_hash = "f4dd8c3ba184e74e"
-gcode_hash = "3cfb5edb3b31e1a5"
+gcode_hash = "baa0400aa99eb33d"

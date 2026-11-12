@@ -136,7 +136,9 @@ fn run_full_pipeline(
             ramp_feed_rate_mm_min: None,
             cfg,
             nominal_feed_rate: 1000.0,
-            plunge_rate_mm_min: None,
+            // P29-8 8c: the dressup door needs the op plunge rate; this fixture
+            // plunges at its cut feed.
+            plunge_rate_mm_min: 1000.0,
             tool_diameter,
             safe_z: /* safe_z */ 30.0,
             stock_top: /* stock_top */ 0.0,
@@ -202,7 +204,9 @@ fn synthetic_three_pass_preserves_invariants_across_all_combos() {
                 ramp_feed_rate_mm_min: None,
                 cfg: &cfg,
                 nominal_feed_rate: 1000.0,
-                plunge_rate_mm_min: None,
+                // P29-8 8c: the dressup door needs the op plunge rate; this fixture
+                // plunges at its cut feed.
+                plunge_rate_mm_min: 1000.0,
                 tool_diameter: 6.0,
                 safe_z: 10.0,
                 stock_top: 0.0,
@@ -254,7 +258,9 @@ fn synthetic_three_pass_link_moves_never_straddles_barrier() {
             ramp_feed_rate_mm_min: None,
             cfg: &cfg,
             nominal_feed_rate: 1000.0,
-            plunge_rate_mm_min: None,
+            // P29-8 8c: the dressup door needs the op plunge rate; this fixture
+            // plunges at its cut feed.
+            plunge_rate_mm_min: 1000.0,
             tool_diameter: 6.0,
             safe_z: 10.0,
             stock_top: 0.0,
@@ -322,7 +328,9 @@ fn synthetic_with_invalid_input_spans_stays_invalid() {
             ramp_feed_rate_mm_min: None,
             cfg: &cfg,
             nominal_feed_rate: 1000.0,
-            plunge_rate_mm_min: None,
+            // P29-8 8c: the dressup door needs the op plunge rate; this fixture
+            // plunges at its cut feed.
+            plunge_rate_mm_min: 1000.0,
             tool_diameter: 6.0,
             safe_z: 10.0,
             stock_top: 0.0,
@@ -414,7 +422,9 @@ fn one_way_face_vetoes_rapid_order_but_runs_other_dressups() {
             ramp_feed_rate_mm_min: None,
             cfg: &cfg,
             nominal_feed_rate: 1500.0,
-            plunge_rate_mm_min: None,
+            // P29-8 8c: the dressup door needs the op plunge rate; this fixture
+            // plunges at its cut feed.
+            plunge_rate_mm_min: 1500.0,
             tool_diameter: 6.0,
             safe_z: 30.0,
             stock_top: 0.0,
@@ -494,7 +504,9 @@ fn dressup_stages_run_in_the_order_the_pipeline_lists() {
             ramp_feed_rate_mm_min: None,
             cfg: &cfg,
             nominal_feed_rate: 1000.0,
-            plunge_rate_mm_min: None,
+            // P29-8 8c: the dressup door needs the op plunge rate; this fixture
+            // plunges at its cut feed.
+            plunge_rate_mm_min: 1000.0,
             tool_diameter: 6.0,
             safe_z: 30.0,
             stock_top: 0.0,

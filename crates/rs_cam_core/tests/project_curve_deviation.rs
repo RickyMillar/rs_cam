@@ -425,7 +425,9 @@ fn project_curve_cutting_moves_follow_rivers_dxf() {
             ramp_feed_rate_mm_min: None,
             cfg: &with_links,
             nominal_feed_rate: 1000.0,
-            plunge_rate_mm_min: None,
+            // P29-8 8c: the dressup door needs the op plunge rate; this fixture
+            // plunges at its cut feed.
+            plunge_rate_mm_min: 1000.0,
             tool_diameter: 1.0,
             safe_z: 10.0,
             stock_top: 0.0,
@@ -454,7 +456,9 @@ fn project_curve_cutting_moves_follow_rivers_dxf() {
             ramp_feed_rate_mm_min: None,
             cfg: &DressupConfig::default(),
             nominal_feed_rate: 1000.0,
-            plunge_rate_mm_min: None,
+            // P29-8 8c: the dressup door needs the op plunge rate; this fixture
+            // plunges at its cut feed.
+            plunge_rate_mm_min: 1000.0,
             tool_diameter: 1.0,
             safe_z: 10.0,
             stock_top: 0.0,
@@ -493,7 +497,9 @@ fn project_curve_cutting_moves_follow_rivers_dxf() {
             ramp_feed_rate_mm_min: None,
             cfg: &finish_defaults,
             nominal_feed_rate: 1000.0,
-            plunge_rate_mm_min: None,
+            // P29-8 8c: the dressup door needs the op plunge rate; this fixture
+            // plunges at its cut feed.
+            plunge_rate_mm_min: 1000.0,
             tool_diameter: 1.0,
             safe_z: 10.0,
             stock_top: 0.0,
@@ -527,7 +533,9 @@ fn project_curve_cutting_moves_follow_rivers_dxf() {
             ramp_feed_rate_mm_min: None,
             cfg: &ramp_only,
             nominal_feed_rate: 1000.0,
-            plunge_rate_mm_min: None,
+            // P29-8 8c: the dressup door needs the op plunge rate; this fixture
+            // plunges at its cut feed.
+            plunge_rate_mm_min: 1000.0,
             tool_diameter: 1.0,
             safe_z: 10.0,
             stock_top: 0.0,

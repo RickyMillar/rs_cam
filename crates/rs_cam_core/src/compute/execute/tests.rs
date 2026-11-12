@@ -1590,7 +1590,9 @@ fn feed_optimization_uses_configured_nominal_feed_not_entry_plunge() {
             ramp_feed_rate_mm_min: None,
             cfg: &cfg,
             nominal_feed_rate: configured_feed,
-            plunge_rate_mm_min: None,
+            // P29-8 8c: the dressup door needs the op plunge rate; this fixture
+            // plunges at its cut feed.
+            plunge_rate_mm_min: configured_feed,
             tool_diameter: tool_def.diameter(),
             safe_z: 30.0,
             stock_top: 25.0,
@@ -1643,7 +1645,9 @@ fn apply_dressups_preserves_moves() {
             ramp_feed_rate_mm_min: None,
             cfg: &cfg,
             nominal_feed_rate: 1000.0,
-            plunge_rate_mm_min: None,
+            // P29-8 8c: the dressup door needs the op plunge rate; this fixture
+            // plunges at its cut feed.
+            plunge_rate_mm_min: 1000.0,
             tool_diameter: 6.35,
             safe_z: 30.0,
             stock_top: 0.0,

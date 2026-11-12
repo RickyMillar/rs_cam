@@ -295,7 +295,9 @@ fn three_pass_full_dressups_fingerprint() {
             ramp_feed_rate_mm_min: None,
             cfg: &full_dressups(),
             nominal_feed_rate: 1000.0,
-            plunge_rate_mm_min: None,
+            // P29-8 8c: the dressup door feeds its entry at the op plunge
+            // rate: here the feed of its plunge moves (`three_pass`).
+            plunge_rate_mm_min: 500.0,
             tool_diameter: 6.0,
             safe_z: /* safe_z */ 30.0,
             stock_top: /* stock_top */ 0.0,
@@ -341,7 +343,10 @@ fn three_pass_full_dressups_fingerprint() {
     // RE-PINNED 2026-10-21 (P6.0c): the fixture runs under a flat-floor probe, so the lead step still runs. Was `(27, 11_349_734_258_744_810_814)`.
     assert_eq!(
         fingerprint(&out.toolpath),
-        (41, 14_029_208_319_767_395_834),
+        // RE-PINNED 2026-11-13 (P29-8 8c): the air leads run at the op plunge
+        // rate (500, the feed of the plunge moves), not half the first linear
+        // feed (250). Only feeds moved. Was `(41, 14_029_208_319_767_395_834)`.
+        (41, 9_885_381_240_452_128_106),
         "three_pass geometry moved; re-pinned 2026-09-25 for the full-depth entry helix and ramp (operator ruling 2026-09-24), re-pinned 2026-08-14 for the lead-out retract \
          lift (f86a38c), previously re-pinned by PR-6, originally captured at \
          HEAD 4787421 before C1"
@@ -378,7 +383,9 @@ fn arc_raster_full_dressups_fingerprint() {
             ramp_feed_rate_mm_min: None,
             cfg: &full_dressups(),
             nominal_feed_rate: 1200.0,
-            plunge_rate_mm_min: None,
+            // P29-8 8c: the dressup door feeds its entry at the op plunge
+            // rate: here the feed of its plunge moves (`arc_raster`).
+            plunge_rate_mm_min: 400.0,
             tool_diameter: 6.0,
             safe_z: /* safe_z */ 30.0,
             stock_top: /* stock_top */ 0.0,
@@ -462,7 +469,10 @@ fn arc_raster_full_dressups_fingerprint() {
     // RE-PINNED 2026-10-21 (P6.0c): the fixture runs under a flat-floor probe, so the lead step still runs. Was `(74, 16_089_843_138_892_888_458)`.
     assert_eq!(
         fingerprint(&out.toolpath),
-        (62, 15_416_015_386_050_228_380),
+        // RE-PINNED 2026-11-13 (P29-8 8c): the air leads run at the op plunge
+        // rate (400, the feed of the plunge moves), not half the first linear
+        // feed (200). Only feeds moved. Was `(62, 15_416_015_386_050_228_380)`.
+        (62, 11_149_036_718_235_479_600),
         "arc_raster geometry moved; re-pinned 2026-09-25 for the full-depth entry helix and ramp (operator ruling 2026-09-24), re-pinned 2026-09-10 for the G-RAMPCONTAIN \
          ramp fold, 2026-08-14 for the lead-out retract lift (f86a38c), before \
          that by PR-6 (arcfit intent key), originally captured at HEAD 4787421 \
@@ -520,7 +530,9 @@ fn face_full_chain_fingerprint() {
             ramp_feed_rate_mm_min: None,
             cfg: &full_dressups(),
             nominal_feed_rate: 1500.0,
-            plunge_rate_mm_min: None,
+            // P29-8 8c: the dressup door feeds its entry at the op plunge
+            // rate: here the plunge rate of `op_fixtures::dressup_face`.
+            plunge_rate_mm_min: 500.0,
             tool_diameter: 6.0,
             safe_z: /* safe_z */ 30.0,
             stock_top: /* stock_top */ 0.0,
@@ -561,7 +573,10 @@ fn face_full_chain_fingerprint() {
     // RE-PINNED 2026-10-21 (P6.0c): Face rows are open 2.5D passes with no stated side and no probe, so they take no lead. Was `(80, 767_530_421_739_535_607)`.
     assert_eq!(
         fingerprint(&current.toolpath),
-        (49, 13_542_266_753_643_846_094),
+        // RE-PINNED 2026-11-13 (P29-8 8c): the air leads run at the op plunge
+        // rate (500), not half the first linear feed (250). Only feeds moved.
+        // Was `(49, 13_542_266_753_643_846_094)`.
+        (49, 5_097_663_182_501_875_082),
         "face stage-1 (dressups) geometry moved; re-pinned 2026-09-25 for the full-depth entry helix and ramp (operator ruling 2026-09-24), re-pinned 2026-08-14 for the \
          lead-out retract lift (f86a38c), originally captured at HEAD 4787421 \
          before C1"
@@ -581,7 +596,9 @@ fn face_full_chain_fingerprint() {
     // RE-PINNED 2026-10-21 (P6.0c): stage 1 has no Face lead, so the clip sees 49 moves. Was `(110, 6_464_368_178_452_633_664)`.
     assert_eq!(
         fingerprint(&current.toolpath),
-        (66, 15_944_127_856_327_971_097),
+        // RE-PINNED 2026-11-13 (P29-8 8c): stage 1 feeds its air leads at the
+        // op plunge rate. Was `(66, 15_944_127_856_327_971_097)`.
+        (66, 18_241_979_882_462_495_001),
         "face stage-2 (boundary clip) geometry moved; re-pinned 2026-09-25 for the full-depth entry helix and ramp (operator ruling 2026-09-24), re-pinned 2026-09-21 for \
          interval boundary clipping retaining in-boundary portions of seven \
          inside-to-outside Face row feeds, originally captured at HEAD 4787421 \
@@ -612,7 +629,9 @@ fn face_full_chain_fingerprint() {
     // RE-PINNED 2026-10-21 (P6.0c): the six splits were the six lead-in plunges from safe Z; with no Face lead there is no descent to split. Was `(6, (116, 11_850_581_506_010_120_143))`.
     assert_eq!(
         (split_count, fingerprint(&current.toolpath)),
-        (0, (66, 15_944_127_856_327_971_097)),
+        // RE-PINNED 2026-11-13 (P29-8 8c): stage 2 moved by the air-lead feed
+        // only. Was `(0, (66, 15_944_127_856_327_971_097))`.
+        (0, (66, 18_241_979_882_462_495_001)),
         "face stage-3 (entry-descent split) geometry moved; re-pinned 2026-09-25 for the full-depth entry helix and ramp (operator ruling 2026-09-24), the six descent \
          splits hold; re-pinned 2026-09-21 for \
          interval clipping retaining seven inside-to-outside Face row feeds, then the \

@@ -838,7 +838,9 @@ fn chained_junctions_survive_the_rapid_order_dressup() {
             ramp_feed_rate_mm_min: None,
             cfg: &dressups,
             nominal_feed_rate: 800.0,
-            plunge_rate_mm_min: None,
+            // P29-8 8c: the dressup door needs the op plunge rate; this fixture
+            // plunges at its cut feed.
+            plunge_rate_mm_min: 800.0,
             tool_diameter: TOOL_DIAMETER_MM,
             safe_z: SAFE_Z_MM,
             stock_top: 0.0,

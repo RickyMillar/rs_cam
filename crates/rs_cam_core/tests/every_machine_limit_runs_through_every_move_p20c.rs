@@ -20,9 +20,9 @@
 //!   changes nothing;
 //! - (b) the modulator's chipload-min floor does not lift a move above its
 //!   bound (the floor 0.05 x 18 000 x 2 = 1800 mm/min is above 1414.21);
-//! - (c) a Pocket's dressup ramp entry at 60° (the dressup entry feed, P20.md
-//!   audit row 14: `min(plunge move feed, 0.5 x first linear feed)` >= 1500
-//!   mm/min) descends above its Z-bound rate 1000 / sin 60° = 1154.70; it is
+//! - (c) a Pocket's dressup ramp entry at 60° (the dressup entry feed, P29-8
+//!   8c: `min(plunge move feed, op plunge rate)` = 3000 >= 1500 mm/min)
+//!   descends above its Z-bound rate 1000 / sin 60° = 1154.70; it is
 //!   emitted at that rate, and no emitted fed move is above its bound;
 //!   without per-axis rates the same ramp is above it;
 //! - (d) on a machine with the lowest admitted acceleration, every cutting
@@ -197,8 +197,8 @@ fn the_modulator_floor_does_not_lift_a_move_above_its_axis_rate_p20c() {
 }
 
 /// The cut feed and the plunge feed of the Pocket (mm/min). The dressup
-/// entry ramps at `min(plunge move feed, 0.5 x first linear feed)` =
-/// `min(3000, 0.5 x 3000 or 0.5 x 5000)` >= 1500, above 1154.70.
+/// entry ramps at `min(plunge move feed, op plunge rate)` (P29-8 8c) =
+/// `min(3000, 3000)` = 3000, above 1154.70.
 const FEED: f64 = 5000.0;
 const PLUNGE: f64 = 3000.0;
 const POCKET_HALF: f64 = 20.0;

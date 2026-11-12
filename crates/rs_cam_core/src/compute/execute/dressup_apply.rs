@@ -510,12 +510,12 @@ pub struct DressupContext<'a> {
     /// `feeds::entry_rule::RampAngle`).
     pub material: &'a crate::material::Material,
     pub nominal_feed_rate: f64,
-    /// WP22 (G-FEEDOPTPLUNGE): the OPERATION's own plunge rate (mm/min).
-    /// The feed-optimisation pass caps a geometric plunge at it. `None`
-    /// names a caller with no operation in scope, and the cap does not
-    /// apply. This is NOT the `plunge_rate` local inside the pipeline,
-    /// which is a heuristic for the entry and link dressups.
-    pub plunge_rate_mm_min: Option<f64>,
+    /// The OPERATION's own plunge rate (mm/min). Required: P29-8 8c
+    /// (operator ruling O1, `PlungeFeedRule::OpPlungeRate`) feeds the air
+    /// lead, the stock-aware plunge and the fallback plunge of the entry
+    /// dressup at it, as the 3D Rough door does; WP22 (G-FEEDOPTPLUNGE):
+    /// the feed-optimisation pass caps a geometric plunge at it.
+    pub plunge_rate_mm_min: f64,
     /// The operation's helix and ramp entry feed through material
     /// (mm/min). `None` keeps the entry dressup's own feed (the plunge
     /// feed it derives), which was the behaviour before the field.
@@ -748,11 +748,11 @@ impl PipelineRun<'_> {
         }
     }
 
-    /// The entry dressup's plunge feed: the K4 rule
-    /// `PlungeFeedRule::FirstLinearFeedFraction` on the toolpath as the
-    /// entry step sees it, evaluated by THE entry rule.
-    fn entry_plunge_rate(current: &AnnotatedToolpath) -> f64 {
-        ResolvedEntry::dressup_plunge_feed_mm_min(&current.toolpath)
+    /// The entry dressup's plunge feed: the op plunge rate (P29-8 8c, the
+    /// one plunge rule `PlungeFeedRule::OpPlungeRate`). The emitters take
+    /// the `min` with the feed of the plunge move they replace.
+    fn entry_plunge_rate(&self) -> f64 {
+        self.ctx.plunge_rate_mm_min
     }
 
     /// The barriered rapid-order pass: the input has barriers and the op
@@ -795,7 +795,7 @@ impl PipelineRun<'_> {
         }
         let ramp = self.entry.dressup_ramp();
         let ramp_angle = self.entry.ramp_angle_deg();
-        let plunge_rate = Self::entry_plunge_rate(&current);
+        let plunge_rate = self.entry_plunge_rate();
         let entry_safety = self.entry_safety();
         let tool_radius = self.tool_radius;
         self.traced(
@@ -826,7 +826,7 @@ impl PipelineRun<'_> {
         let helix = self.entry.dressup_helix();
         let helix_radius = self.entry.helix_radius().emitted_mm;
         let helix_pitch = self.entry.helix_pitch_mm();
-        let plunge_rate = Self::entry_plunge_rate(&current);
+        let plunge_rate = self.entry_plunge_rate();
         let entry_safety = self.entry_safety();
         let tool_radius = self.tool_radius;
         self.traced(
@@ -856,7 +856,7 @@ impl PipelineRun<'_> {
         {
             return current;
         }
-        let plunge_rate = Self::entry_plunge_rate(&current);
+        let plunge_rate = self.entry_plunge_rate();
         let entry_safety = self.entry_safety();
         let tool_radius = self.tool_radius;
         self.traced(
@@ -1174,7 +1174,7 @@ impl PipelineRun<'_> {
             // WP22 (G-FEEDOPTPLUNGE): the operation's own plunge rate. The
             // pass caps a geometric plunge at it, so a vertical descent no
             // longer leaves this pass at the CUTTING feed.
-            plunge_rate_mm_min: self.ctx.plunge_rate_mm_min,
+            plunge_rate_mm_min: Some(self.ctx.plunge_rate_mm_min),
         };
         self.traced(
             current,

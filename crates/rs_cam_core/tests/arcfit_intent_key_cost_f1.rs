@@ -278,7 +278,9 @@ fn run(
             ramp_feed_rate_mm_min: None,
             cfg: &pre_cfg,
             nominal_feed_rate: feed,
-            plunge_rate_mm_min: None,
+            // P29-8 8c: the dressup door needs the op plunge rate; this fixture
+            // plunges at its cut feed.
+            plunge_rate_mm_min: feed,
             tool_diameter: 6.0,
             safe_z: 30.0,
             stock_top: 0.0,
@@ -306,7 +308,9 @@ fn run(
             ramp_feed_rate_mm_min: None,
             cfg,
             nominal_feed_rate: feed,
-            plunge_rate_mm_min: None,
+            // P29-8 8c: the dressup door needs the op plunge rate; this fixture
+            // plunges at its cut feed.
+            plunge_rate_mm_min: feed,
             tool_diameter: 6.0,
             safe_z: 30.0,
             stock_top: 0.0,

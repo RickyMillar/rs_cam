@@ -84,7 +84,7 @@ fn names(text: &str, needle: &str, field: bool) -> bool {
 }
 
 /// The entry constants that `entry_rule.rs` holds.
-const ENTRY_CONSTANTS: [&str; 9] = [
+const ENTRY_CONSTANTS: [&str; 7] = [
     "RAMP_ANGLE_HARDWOOD_DEG",
     "RAMP_ANGLE_SOFTWOOD_AND_COMPOSITE_DEG",
     "RAMP_ANGLE_NON_FERROUS_DEG",
@@ -92,8 +92,6 @@ const ENTRY_CONSTANTS: [&str; 9] = [
     "DRESSUP_HELIX_PITCH_MM",
     "ADAPTIVE3D_HELIX_PITCH_MM",
     "HELIX_RADIUS_OVER_D",
-    "ENTRY_PLUNGE_FIRST_FEED_FRACTION",
-    "ENTRY_PLUNGE_FALLBACK_MM_MIN",
 ];
 
 /// The files that emit an entry or resolve one for an emitter. The bore
@@ -237,6 +235,9 @@ fn no_emitter_reads_an_entry_field_of_a_config_p29_8() {
 const SAFE_Z: f64 = 20.0;
 const DEPTH: f64 = -3.0;
 const FEED: f64 = 1200.0;
+/// The op plunge rate of the dressup cases: under the feed of the plunge
+/// move, so the air lead shows which one it reads.
+const PLUNGE: f64 = 400.0;
 const TOOL_D: f64 = 6.0;
 
 /// A rapid over the entry, a plunge to the depth, then a cut.
@@ -263,7 +264,7 @@ fn dress(cfg: &DressupConfig, containment: Option<&[Polygon2]>) -> Toolpath {
             material: &stock_material(),
             cfg,
             nominal_feed_rate: FEED,
-            plunge_rate_mm_min: None,
+            plunge_rate_mm_min: PLUNGE,
             ramp_feed_rate_mm_min: None,
             tool_diameter: TOOL_D,
             safe_z: SAFE_Z,
@@ -369,11 +370,12 @@ fn the_dressup_door_emits_the_resolved_entry_p29_8() {
         assert_eq!(entry.door(), EntryDoor::Dressup);
         let tp = dress(&cfg, None);
 
-        // The air lead runs at the dressup plunge rule on the toolpath the
-        // entry step saw (`min` with the plunge move's own feed).
+        // P29-8 8c (operator ruling O1): the air lead runs at the op plunge
+        // rate, the one plunge rule of both doors (`min` with the plunge
+        // move's own feed).
         let lead = feeds(&tp, MoveIntent::EntryApproach);
         assert!(!lead.is_empty(), "non-vacuity: {style:?} has an air lead");
-        let rule = ResolvedEntry::dressup_plunge_feed_mm_min(&plunging_toolpath()).min(FEED);
+        let rule = PLUNGE.min(FEED);
         for feed in lead {
             assert_eq!(feed.to_bits(), rule.to_bits(), "{style:?}: air-lead feed");
         }

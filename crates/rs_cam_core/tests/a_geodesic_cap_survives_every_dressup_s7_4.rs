@@ -167,7 +167,7 @@ fn dress(planned: &Toolpath, cutter: &FlatEndmill) -> Toolpath {
             material: &rs_cam_core::material::Material::default(),
             cfg: &cfg,
             nominal_feed_rate: FEED,
-            plunge_rate_mm_min: Some(PLUNGE),
+            plunge_rate_mm_min: PLUNGE,
             ramp_feed_rate_mm_min: None,
             tool_diameter: 2.0 * TOOL_RADIUS,
             safe_z: SAFE_Z,
