@@ -325,6 +325,11 @@ fn place_one(
             radial_woc_fraction: 0.5,
             ..Default::default()
         },
+        // P29-6 6d: the placement reads the body group of the samples that
+        // remove material (`locality::judged_group`); the sample states a
+        // removed volume, so it is a body sample. A case value: any
+        // volume above zero places it.
+        removed_volume_est_mm3: 1.0,
         ..SimulationCutSample::test_fixture()
     };
     let trace = SimulationCutTrace {
