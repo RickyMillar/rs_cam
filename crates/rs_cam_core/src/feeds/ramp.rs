@@ -47,11 +47,10 @@ use super::vendor_lut::{LutOperationFamily, LutPassRole, ToolFamily};
 use super::vertical::{VerticalBinding, VerticalRateLimit, ZAxisRate};
 use super::{FeedsInput, OperationFamily, PassRole};
 use crate::compute::catalog::OperationConfig;
-use crate::compute::config::{
-    DressupConfig, DressupEntryStyle, HELIX_RADIUS_OVER_D, HelixRadius, default_entry_clearance_mm,
-};
-use crate::compute::operation_configs::{Adaptive3dConfig, Adaptive3dEntryStyle};
+use crate::compute::config::{DressupConfig, HelixRadius, default_entry_clearance_mm};
 use crate::compute::tool_config::ToolConfig;
+use crate::feeds::entry_rule::{EntryDoor, ResolvedEntry};
+use crate::limits::EntryKind;
 use crate::tool::MillingCutter;
 
 /// The ramp rule in words, for the detail line.
@@ -312,16 +311,17 @@ pub struct Entry {
 /// There are two θ systems: a helix slope is `pitch / (2π r)`, and a ramp
 /// slope is `tan(angle)`.
 ///
-/// - Adaptive3d reads its own `entry_style`. Plunge gives `EntryOff`. Ramp
-///   gives `ramp_angle_deg`. Helix gives the radius
-///   `Adaptive3dConfig::helix_radius_for` emits (D x `helix_radius_factor`,
-///   capped at the flat bottom) and `helix_pitch`. This is the mapping of
-///   `compute::execute::finish_3d::generate_adaptive3d`.
-/// - Every other operation reads `dressups`. `None` gives `EntryUnknown`.
-///   `DressupEntryStyle::None` gives `EntryOff`. Ramp gives `ramp_angle`,
-///   and Helix gives the radius `DressupConfig::helix_radius_for` emits
-///   (the operator value or 0.3 x D, capped at the flat bottom) and
-///   `helix_pitch`. This is the mapping of `compute::execute::dressup_apply`.
+/// P29-8: the values are THE entry rule of the op
+/// (`feeds::entry_rule::ResolvedEntry`), the value the emitter reads, so the
+/// card says what the emitter does.
+///
+/// - Adaptive3d reads its own config (`ResolvedEntry::of_adaptive3d`).
+///   Plunge gives `EntryOff`.
+/// - Every other operation reads `dressups` (`ResolvedEntry::of_dressup`).
+///   `None` gives `EntryUnknown`. `DressupEntryStyle::None` gives
+///   `EntryOff`.
+/// - Ramp gives the stated angle. Helix gives the emitted radius (the
+///   operator value or the rule, capped at the flat bottom) and the pitch.
 ///
 /// θ is the slope of the helix the engine emits, so the ramp feed and the
 /// card read the capped radius (G10 Q6).
@@ -337,40 +337,53 @@ pub fn entry_geometry(
     let cutter = crate::compute::cutter::build_cutter(tool)
         .ok()
         .ok_or(RampFallback::ToolOutOfDomain)?;
+    resolved_entry(op, dressups, &cutter)
+        .and_then(|(resolved, clearance_mm)| entry_of_resolved(&resolved, clearance_mm))
+}
+
+/// THE entry rule of the op on `cutter`, with the entry clearance (mm).
+fn resolved_entry(
+    op: &OperationConfig,
+    dressups: Option<&DressupConfig>,
+    cutter: &dyn MillingCutter,
+) -> Result<(ResolvedEntry, f64), RampFallback> {
     if let OperationConfig::Adaptive3d(cfg) = op {
-        let geometry = match cfg.entry_style {
-            Adaptive3dEntryStyle::Plunge => return Err(RampFallback::EntryOff),
-            Adaptive3dEntryStyle::Ramp => EntryGeometry::Ramp {
-                angle_deg: cfg.ramp_angle_deg,
-            },
-            Adaptive3dEntryStyle::Helix => EntryGeometry::Helix {
-                radius_mm: cfg.helix_radius_for(&cutter).emitted_mm,
-                pitch_mm: cfg.helix_pitch,
-            },
-        };
-        return Ok(Entry {
-            geometry,
-            source: EntrySource::Adaptive3d,
-            clearance_mm: cfg.entry_clearance_mm,
-        });
+        return Ok((
+            ResolvedEntry::of_adaptive3d(cfg, cutter),
+            cfg.entry_clearance_mm,
+        ));
     }
     let Some(cfg) = dressups else {
         return Err(RampFallback::EntryUnknown);
     };
-    let geometry = match cfg.entry_style {
-        DressupEntryStyle::None => return Err(RampFallback::EntryOff),
-        DressupEntryStyle::Ramp => EntryGeometry::Ramp {
-            angle_deg: cfg.ramp_angle,
+    Ok((
+        ResolvedEntry::of_dressup(cfg, Some(cutter), cutter.diameter()),
+        cfg.entry_clearance_mm,
+    ))
+}
+
+/// The card's view of a resolved entry.
+fn entry_of_resolved(resolved: &ResolvedEntry, clearance_mm: f64) -> Result<Entry, RampFallback> {
+    let geometry = match resolved.kind() {
+        None | Some(EntryKind::Plunge | EntryKind::PeckLadder) => {
+            return Err(RampFallback::EntryOff);
+        }
+        Some(EntryKind::Ramp) => EntryGeometry::Ramp {
+            angle_deg: resolved.ramp_angle_deg(),
         },
-        DressupEntryStyle::Helix => EntryGeometry::Helix {
-            radius_mm: cfg.helix_radius_for(&cutter).emitted_mm,
-            pitch_mm: cfg.helix_pitch,
+        Some(EntryKind::Helix) => EntryGeometry::Helix {
+            radius_mm: resolved.helix_radius().emitted_mm,
+            pitch_mm: resolved.helix_pitch_mm(),
         },
+    };
+    let source = match resolved.door() {
+        EntryDoor::Dressup => EntrySource::Dressup,
+        EntryDoor::Adaptive3d => EntrySource::Adaptive3d,
     };
     Ok(Entry {
         geometry,
-        source: EntrySource::Dressup,
-        clearance_mm: cfg.entry_clearance_mm,
+        source,
+        clearance_mm,
     })
 }
 
@@ -839,8 +852,7 @@ fn rule_or_operator(value: f64, default: f64, unit: &str) -> String {
 /// "a repo rule (0.3 x D = 0.95 mm)" or "an operator value 2.00 mm (repo
 /// rule 0.3 x D = 0.95 mm)". `diameter_mm` is the cutter's `diameter()`.
 fn radius_rule_or_operator(helix: &HelixRadius, diameter_mm: f64) -> String {
-    let rule_mm = HELIX_RADIUS_OVER_D * diameter_mm;
-    let rule = format!("{HELIX_RADIUS_OVER_D} x D = {rule_mm:.2} mm");
+    let rule = crate::feeds::entry_rule::helix_rule_line(diameter_mm);
     if helix.from_rule {
         format!("a repo rule ({rule})")
     } else {
@@ -941,7 +953,16 @@ pub fn entry_notes(
     pass_role: PassRole,
 ) -> EntryNotes {
     let mut notes = Vec::new();
-    let entry = match entry_geometry(op, dressups, tool) {
+    // P29-8: the notes read THE entry rule, the value the emitter reads.
+    let resolved = crate::compute::cutter::build_cutter(tool)
+        .ok()
+        .ok_or(RampFallback::ToolOutOfDomain)
+        .and_then(|cutter| resolved_entry(op, dressups, &cutter));
+    let entry = match resolved
+        .as_ref()
+        .map_err(|e| *e)
+        .and_then(|(resolved, clearance_mm)| entry_of_resolved(resolved, *clearance_mm))
+    {
         Ok(entry) => entry,
         Err(RampFallback::EntryOff) => {
             if matches!(pass_role, PassRole::Roughing) {
@@ -951,14 +972,13 @@ pub fn entry_notes(
         }
         Err(_) => return EntryNotes(notes),
     };
-    let dressup_default = DressupConfig::default();
-    let adaptive3d_default = Adaptive3dConfig::default();
+    // `entry_of_resolved` gave an entry, so the rule resolved.
+    let Ok((resolved, _)) = resolved else {
+        return EntryNotes(notes);
+    };
     match entry.geometry {
         EntryGeometry::Ramp { angle_deg } => {
-            let default = match entry.source {
-                EntrySource::Dressup => dressup_default.ramp_angle,
-                EntrySource::Adaptive3d => adaptive3d_default.ramp_angle_deg,
-            };
+            let default = resolved.rule_ramp_angle_deg();
             let who = if same(angle_deg, default) {
                 format!("repo rule (default {default:.2}°)")
             } else {
@@ -981,18 +1001,7 @@ pub fn entry_notes(
             let Ok(cutter) = crate::compute::cutter::build_cutter(tool) else {
                 return EntryNotes(notes);
             };
-            let (helix, pitch_default) = match (op, dressups) {
-                (OperationConfig::Adaptive3d(cfg), _) => (
-                    cfg.helix_radius_for(&cutter),
-                    adaptive3d_default.helix_pitch,
-                ),
-                (_, Some(cfg)) => (cfg.helix_radius_for(&cutter), dressup_default.helix_pitch),
-                // `entry_geometry` gave a helix, so one of the two holds it.
-                (_, None) => (
-                    HelixRadius::resolve(radius_mm, false, &cutter),
-                    dressup_default.helix_pitch,
-                ),
-            };
+            let (helix, pitch_default) = (resolved.helix_radius(), resolved.rule_helix_pitch_mm());
             let theta = entry
                 .geometry
                 .theta_deg()
@@ -1046,6 +1055,8 @@ pub fn entry_notes(
 mod tests {
     use super::*;
     use crate::compute::catalog::OperationType;
+    use crate::compute::config::DressupEntryStyle;
+    use crate::compute::operation_configs::Adaptive3dEntryStyle;
     use crate::compute::tool_config::ToolFact;
     use crate::compute::tool_config::{ToolId, ToolType};
     use crate::feeds::extrapolation::{ClaimConfidence, DRILL_RULE_TEXT, Gap};

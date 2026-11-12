@@ -4,7 +4,7 @@
 //! and `Produced`. Moved out of `finish_3d.rs` (W6.5).
 
 use crate::compute::catalog::OperationConfig;
-use crate::compute::operation_configs::{Adaptive3dConfig, Adaptive3dEntryStyle};
+use crate::compute::operation_configs::Adaptive3dConfig;
 use crate::interrupt::CancelCheck;
 use crate::tool::{MillingCutter, ToolDefinition};
 use crate::toolpath::Toolpath;
@@ -100,21 +100,12 @@ pub(crate) struct Adaptive3dRough<'a> {
 }
 
 impl Adaptive3dRough<'_> {
-    /// The planner entry. Helix and Ramp carry values from the config and
-    /// the tool, so this is a method, not a `From`.
+    /// The planner entry: P29-8, THE entry rule
+    /// (`feeds::entry_rule::ResolvedEntry`) of the config on the tool (G10
+    /// Q6: the helix radius D x factor, capped at the flat bottom so the
+    /// helix leaves no core).
     fn entry_style(&self) -> crate::adaptive3d::EntryStyle3d {
-        match self.cfg.entry_style {
-            Adaptive3dEntryStyle::Plunge => crate::adaptive3d::EntryStyle3d::Plunge,
-            Adaptive3dEntryStyle::Ramp => crate::adaptive3d::EntryStyle3d::Ramp {
-                max_angle_deg: self.cfg.ramp_angle_deg,
-            },
-            // G10 Q6: D x factor, capped at the flat bottom so the helix
-            // leaves no core.
-            Adaptive3dEntryStyle::Helix => crate::adaptive3d::EntryStyle3d::Helix {
-                radius: self.cfg.helix_radius_for(self.tool).emitted_mm,
-                pitch: self.cfg.helix_pitch,
-            },
-        }
+        crate::feeds::entry_rule::ResolvedEntry::of_adaptive3d(self.cfg, self.tool).style_3d()
     }
 
     /// The planner params, from the config and the runner's inputs.

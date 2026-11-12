@@ -113,7 +113,14 @@ use rs_cam_core::material::{
 /// the default-depth floor that read the machine `adaptive_doc_factor`. The
 /// force budget caps the Adaptive depth (ruling R1). The deleted
 /// `adaptive_doc_factor` was machine data, not a row.
-const PINNED_UNSOURCED_COUNT: usize = 141;
+///
+/// Feeds contract P29-8 commit 8a (2026-11-12) raised it from 141 to 146:
+/// the five entry numbers that were plain constants became private rows of
+/// `feeds::entry_rule`, so every entry number is on the list. No file in
+/// the repo prints them. The five rows are `entry_rule.ramp_angle_deg.{dressup,
+/// adaptive3d}`, `entry_rule.helix_pitch_mm.{dressup, adaptive3d}` and
+/// `entry_rule.helix_radius_over_d`. No number moved.
+const PINNED_UNSOURCED_COUNT: usize = 146;
 
 fn repo_root() -> PathBuf {
     PathBuf::from(env!("CARGO_MANIFEST_DIR")).join("../..")
@@ -161,6 +168,12 @@ fn every_feeds_formula_constant_states_its_source_f201() {
         // K4 (feeds contract P3, D5): the dressup entry plunge feed rule.
         "dressup.entry_plunge_rate.first_linear_feed_fraction",
         "dressup.entry_plunge_rate.fallback_mm_min",
+        // P29-8 8a: every entry number of THE entry rule.
+        "entry_rule.ramp_angle_deg.dressup",
+        "entry_rule.ramp_angle_deg.adaptive3d",
+        "entry_rule.helix_pitch_mm.dressup",
+        "entry_rule.helix_pitch_mm.adaptive3d",
+        "entry_rule.helix_radius_over_d",
     ] {
         assert!(
             named.contains_key(anchor),

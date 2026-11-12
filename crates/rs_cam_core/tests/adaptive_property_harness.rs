@@ -32,9 +32,16 @@ use rs_cam_core::toolpath::{MoveType, Toolpath};
 const R: f64 = 3.175;
 
 /// The default helix entry radius the product's dressup cuts for 2D
-/// Adaptive: `HELIX_RADIUS_OVER_D` x D.
+/// Adaptive on a flat end mill of radius `R`: THE entry rule (P29-8).
 fn helix_radius() -> f64 {
-    rs_cam_core::compute::config::HELIX_RADIUS_OVER_D * 2.0 * R
+    let tool = rs_cam_core::tool::FlatEndmill::new(2.0 * R, 20.0);
+    rs_cam_core::feeds::entry_rule::ResolvedEntry::of_dressup(
+        &rs_cam_core::compute::config::DressupConfig::default(),
+        Some(&tool),
+        2.0 * R,
+    )
+    .helix_radius()
+    .emitted_mm
 }
 const STEPOVER: f64 = 2.0;
 

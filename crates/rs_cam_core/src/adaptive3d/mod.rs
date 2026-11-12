@@ -124,7 +124,14 @@ pub enum EntryStyle3d {
     #[default]
     Plunge,
     /// Helical entry: spiral down with given radius and pitch (mm/rev).
-    Helix { radius: f64, pitch: f64 },
+    /// `fallback_ramp_angle_deg` is the angle of the ramp that replaces a
+    /// helix bore with no room (P29-8, lead ruling 2026-11-12: the op's own
+    /// ramp angle, from `feeds::entry_rule::ResolvedEntry`).
+    Helix {
+        radius: f64,
+        pitch: f64,
+        fallback_ramp_angle_deg: f64,
+    },
     /// Ramp entry: descend at a shallow angle along the next cutting direction.
     Ramp { max_angle_deg: f64 },
 }

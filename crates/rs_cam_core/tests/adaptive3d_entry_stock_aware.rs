@@ -108,6 +108,8 @@ impl Style {
             Style::Helix => EntryStyle3d::Helix {
                 radius: HELIX_RADIUS,
                 pitch: HELIX_PITCH,
+                // The fallback angle of every helix before P29-8.
+                fallback_ramp_angle_deg: 3.0,
             },
             Style::Ramp => EntryStyle3d::Ramp {
                 max_angle_deg: RAMP_ANGLE_DEG,

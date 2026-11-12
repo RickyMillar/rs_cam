@@ -46,8 +46,9 @@
 //! toolpath would lose entry styling for the whole op — none does, and
 //! `narrate.rs` already names that hypothetical as the thing to watch.
 
-use crate::compute::catalog::{EntryContract, OperationTransformCapabilities, PlungeFeedRule};
+use crate::compute::catalog::{EntryContract, OperationTransformCapabilities};
 use crate::compute::config::{DressupConfig, DressupEntryStyle};
+use crate::feeds::entry_rule::ResolvedEntry;
 use crate::mesh::{SpatialIndex, TriangleMesh};
 use crate::tool::{MillingCutter, ToolDefinition};
 use crate::trace::debug_trace::{DebugSpanKind, ToolpathDebugContext};
@@ -589,6 +590,7 @@ pub fn apply_dressups(
         barrier_count: annotated.rapid_order_barriers().len(),
         tool_radius: ctx.tool_diameter / 2.0,
         entry_style: None,
+        entry: ResolvedEntry::of_dressup(ctx.cfg, ctx.cutter, ctx.tool_diameter),
         ctx,
     };
     let input_valid = annotated.spans_valid;
@@ -629,6 +631,9 @@ struct PipelineRun<'a> {
     /// The entry style after the drill-cycle strip. The first entry step
     /// fills it from the toolpath as that step sees it.
     entry_style: Option<DressupEntryStyle>,
+    /// P29-8: THE entry rule of this op. The entry steps read every entry
+    /// number from it and from nothing else.
+    entry: ResolvedEntry,
 }
 
 impl PipelineRun<'_> {
@@ -741,10 +746,10 @@ impl PipelineRun<'_> {
     }
 
     /// The entry dressup's plunge feed: the K4 rule
-    /// [`PlungeFeedRule::FirstLinearFeedFraction`] on the toolpath as the
-    /// entry step sees it.
+    /// `PlungeFeedRule::FirstLinearFeedFraction` on the toolpath as the
+    /// entry step sees it, evaluated by THE entry rule.
     fn entry_plunge_rate(current: &AnnotatedToolpath) -> f64 {
-        PlungeFeedRule::first_linear_feed_fraction(&current.toolpath)
+        ResolvedEntry::dressup_plunge_feed_mm_min(&current.toolpath)
     }
 
     /// The barriered rapid-order pass: the input has barriers and the op
@@ -785,7 +790,8 @@ impl PipelineRun<'_> {
         if self.effective_entry_style(&current) != DressupEntryStyle::Ramp {
             return current;
         }
-        let ramp_angle = self.ctx.cfg.ramp_angle;
+        let ramp = self.entry.dressup_ramp();
+        let ramp_angle = self.entry.ramp_angle_deg();
         let plunge_rate = Self::entry_plunge_rate(&current);
         let entry_safety = self.entry_safety();
         let tool_radius = self.tool_radius;
@@ -797,17 +803,7 @@ impl PipelineRun<'_> {
                 scope.set_param(SemanticKey::Kind, "ramp");
                 scope.set_param(SemanticKey::MaxAngleDeg, ramp_angle);
             },
-            |at| {
-                crate::dressup::apply_entry(
-                    at,
-                    crate::dressup::EntryStyle::Ramp {
-                        max_angle_deg: ramp_angle,
-                    },
-                    plunge_rate,
-                    entry_safety,
-                    tool_radius,
-                )
-            },
+            |at| crate::dressup::apply_entry(at, ramp, plunge_rate, entry_safety, tool_radius),
         )
     }
 
@@ -820,19 +816,13 @@ impl PipelineRun<'_> {
         if self.effective_entry_style(&current) != DressupEntryStyle::Helix {
             return current;
         }
-        let cfg = self.ctx.cfg;
         // G10 Q6 and D2: the radius is the operator value or the rule
-        // 0.3 x D, capped at the flat bottom so the helix leaves no
-        // core. The trace records the radius that is emitted. With no
-        // cutter (a test context) the flat bottom and the nominal D are
-        // unknown, so the request (or 0.3 x the context's D) is emitted.
-        let helix_radius = match self.ctx.cutter {
-            Some(cutter) => cfg.helix_radius_for(cutter).emitted_mm,
-            None => cfg
-                .helix_radius
-                .unwrap_or(crate::compute::config::HELIX_RADIUS_OVER_D * self.ctx.tool_diameter),
-        };
-        let helix_pitch = cfg.helix_pitch;
+        // 0.3 x D, capped at the flat bottom so the helix leaves no core
+        // (`ResolvedEntry::of_dressup`). The trace records the radius that
+        // is emitted.
+        let helix = self.entry.dressup_helix();
+        let helix_radius = self.entry.helix_radius().emitted_mm;
+        let helix_pitch = self.entry.helix_pitch_mm();
         let plunge_rate = Self::entry_plunge_rate(&current);
         let entry_safety = self.entry_safety();
         let tool_radius = self.tool_radius;
@@ -845,18 +835,7 @@ impl PipelineRun<'_> {
                 scope.set_param(SemanticKey::Radius, helix_radius);
                 scope.set_param(SemanticKey::Pitch, helix_pitch);
             },
-            |at| {
-                crate::dressup::apply_entry(
-                    at,
-                    crate::dressup::EntryStyle::Helix {
-                        radius: helix_radius,
-                        pitch: helix_pitch,
-                    },
-                    plunge_rate,
-                    entry_safety,
-                    tool_radius,
-                )
-            },
+            |at| crate::dressup::apply_entry(at, helix, plunge_rate, entry_safety, tool_radius),
         )
     }
 

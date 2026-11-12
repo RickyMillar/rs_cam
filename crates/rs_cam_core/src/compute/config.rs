@@ -948,53 +948,8 @@ pub enum DressupEntryStyle {
     Helix,
 }
 
-impl DressupEntryStyle {
-    /// Convert to core `EntryStyle` using parameters from the dressup config.
-    /// Returns `None` for `DressupEntryStyle::None` (no entry transformation).
-    ///
-    /// The helix radius is the one [`DressupConfig::helix_radius_for`]
-    /// resolves for `cutter`: the rule or the operator value, capped at the
-    /// flat bottom (G10 Q6).
-    pub fn to_core(
-        self,
-        cfg: &DressupConfig,
-        cutter: &dyn crate::tool::MillingCutter,
-    ) -> Option<crate::dressup::EntryStyle> {
-        use crate::dressup::EntryStyle;
-        match self {
-            Self::None => None,
-            Self::Ramp => Some(EntryStyle::Ramp {
-                max_angle_deg: cfg.ramp_angle,
-            }),
-            Self::Helix => Some(EntryStyle::Helix {
-                radius: cfg.helix_radius_for(cutter).emitted_mm,
-                pitch: cfg.helix_pitch,
-            }),
-        }
-    }
-}
-
-/// The dressup ramp entry angle (degrees) a new toolpath starts with.
-///
-/// Repo rule, no source (G10). No wood or router source prints a ramp
-/// angle (ruling Q9); the card says so.
-pub const DRESSUP_RAMP_ANGLE_DEG: f64 = 3.0;
-
-/// The dressup helix entry pitch (mm per turn) a new toolpath starts with.
-///
-/// Repo rule, no source (G10). No wood source prints a helix pitch
-/// (ruling Q8); the card says so.
-pub const DRESSUP_HELIX_PITCH_MM: f64 = 1.0;
-
-/// The helix entry radius as a fraction of the tool diameter, when the
-/// operator has not set one: r = 0.3 x D.
-///
-/// Repo rule, no source (G10). No wood source prints a helix radius
-/// (rulings Q6 and Q8). The dressup and the Adaptive3d entry both read it.
-pub const HELIX_RADIUS_OVER_D: f64 = 0.3;
-
-/// The diameter D (mm) that the helix rule [`HELIX_RADIUS_OVER_D`] and the
-/// Adaptive3d `helix_radius_factor` scale: the tool's nominal cutting
+/// The diameter D (mm) that the helix rule (0.3 x D, `feeds::entry_rule`)
+/// and the Adaptive3d `helix_radius_factor` scale: the tool's nominal cutting
 /// diameter, `ToolConfig::diameter`, the one the operator enters.
 ///
 /// For every cutter but a tapered ball this is `diameter()`. A tapered
@@ -1017,8 +972,8 @@ pub fn helix_entry_diameter_mm(cutter: &dyn crate::tool::MillingCutter) -> f64 {
 /// of a tool that does not cut at its centre (G-SIMCORE, P22-0b).
 #[derive(Debug, Clone, Copy, PartialEq)]
 pub struct HelixRadius {
-    /// The radius asked for (mm): the operator value, or
-    /// [`HELIX_RADIUS_OVER_D`] x D.
+    /// The radius asked for (mm): the operator value, or the rule
+    /// 0.3 x D (`feeds::entry_rule`).
     pub requested_mm: f64,
     /// The radius the engine emits (mm): the request raised to the core
     /// floor, then capped at the flat bottom.
@@ -1224,8 +1179,8 @@ impl Default for SegmentMergeParams {
 pub struct DressupConfig {
     pub entry_style: DressupEntryStyle,
     pub ramp_angle: f64,
-    /// The helix entry radius (mm). `None` is the rule
-    /// [`HELIX_RADIUS_OVER_D`] x D, applied where the tool is known;
+    /// The helix entry radius (mm). `None` is the rule 0.3 x D
+    /// (`feeds::entry_rule`), applied where the tool is known;
     /// `Some(r)` is an operator value (G10 D2). Either way the engine emits
     /// the radius capped at the flat bottom: [`Self::helix_radius_for`].
     pub helix_radius: Option<f64>,
@@ -1576,11 +1531,14 @@ impl Default for DressupConfig {
         // optimize_rapid_order. All are wins for the typical case;
         // operations that can't tolerate them are stripped by
         // `normalize_for_op` (which `for_op` now also calls on construct).
+        // P29-8: the entry values of a new op are the dressup door's rule.
+        let entry =
+            crate::feeds::entry_rule::stored_default(crate::feeds::entry_rule::EntryDoor::Dressup);
         Self {
             entry_style: DressupEntryStyle::None,
-            ramp_angle: DRESSUP_RAMP_ANGLE_DEG,
+            ramp_angle: entry.ramp_angle_deg,
             helix_radius: None,
-            helix_pitch: DRESSUP_HELIX_PITCH_MM,
+            helix_pitch: entry.helix_pitch_mm,
             entry_clearance_mm: default_entry_clearance_mm(),
             dogbone: None,
             lead_in_out: None,
@@ -1613,17 +1571,11 @@ impl DressupConfig {
     }
 
     /// The helix radius this config emits on `cutter`: the operator value,
-    /// or [`HELIX_RADIUS_OVER_D`] x D, capped at the flat bottom (G10 Q6).
+    /// or the rule 0.3 x D, capped at the flat bottom (G10 Q6). The rule is
+    /// [`crate::feeds::entry_rule::dressup_helix_radius`].
     #[must_use]
     pub fn helix_radius_for(&self, cutter: &dyn crate::tool::MillingCutter) -> HelixRadius {
-        match self.helix_radius {
-            Some(r) => HelixRadius::resolve(r, false, cutter),
-            None => HelixRadius::resolve(
-                HELIX_RADIUS_OVER_D * helix_entry_diameter_mm(cutter),
-                true,
-                cutter,
-            ),
-        }
+        crate::feeds::entry_rule::dressup_helix_radius(self, cutter)
     }
 
     /// Whether the dressup is on. An entry style of `None` is off.
@@ -2373,7 +2325,10 @@ mod tests {
         let flat = FlatEndmill::new(3.175, 20.0);
         let rule = DressupConfig::default().helix_radius_for(&flat);
         assert!(rule.from_rule && !rule.capped());
-        assert!((rule.emitted_mm - HELIX_RADIUS_OVER_D * 3.175).abs() < 1e-12);
+        let over_d =
+            crate::feeds::entry_rule::stored_default(crate::feeds::entry_rule::EntryDoor::Dressup)
+                .helix_radius_over_d;
+        assert!((rule.emitted_mm - over_d * 3.175).abs() < 1e-12);
         let op = DressupConfig {
             helix_radius: Some(2.0),
             ..DressupConfig::default()

@@ -37,8 +37,8 @@ pub use cuts::{
 
 pub(crate) use entry_contract::entry_records;
 pub use entry_contract::{
-    ENTRY_PLUNGE_FALLBACK_MM_MIN, ENTRY_PLUNGE_FIRST_FEED_FRACTION, EntryContract, EntryKind,
-    EntryRecord, EntrySet, NoneEntry, PlungeFeedRule, RoleDefault, entry_contract_refusals,
+    EntryContract, EntryKind, EntryRecord, EntrySet, NoneEntry, PlungeFeedRule, RoleDefault,
+    entry_contract_refusals,
 };
 
 pub use schema::{

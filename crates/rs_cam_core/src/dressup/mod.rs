@@ -97,7 +97,14 @@ pub enum EntryStyle {
     Ramp { max_angle_deg: f64 },
     /// Helical entry: spiral down at the plunge point.
     /// `radius` is the helix radius (mm), `pitch` is Z drop per revolution (mm).
-    Helix { radius: f64, pitch: f64 },
+    /// `fallback_ramp_angle_deg` is the angle of the ramp that replaces a
+    /// helix with no room (P29-8, lead ruling 2026-11-12: the op's own ramp
+    /// angle, from `feeds::entry_rule::ResolvedEntry`).
+    Helix {
+        radius: f64,
+        pitch: f64,
+        fallback_ramp_angle_deg: f64,
+    },
     /// A straight plunge that goes down through air by rapid: the shared
     /// first half of a helix or ramp entry (`rapid_to_entry_top`, the op's
     /// own replayed stock under the entry), then one straight feed to the
@@ -497,7 +504,8 @@ pub fn apply_entry(
             // G-ADAPTPASSLOAD round 3: a contained helix shrinks to the
             // largest radius that keeps its circle inside the machinable
             // region (`contained_helix_radius`); where none fits it becomes
-            // a ramp at the G10 ramp angle, folded along the cut it enters.
+            // a ramp at the op's own ramp angle (P29-8), folded along the cut
+            // it enters.
             //
             // G-SIMCORE (P22-0b): a tool that does not cut at its centre needs
             // the core floor (`helix_fit_holds`); with less room it ramps, and
@@ -505,17 +513,25 @@ pub fn apply_entry(
             let core_floor = helix_core_floor_mm(safety.core);
             let mut core_fallback = None;
             let style = match style {
-                EntryStyle::Helix { radius, pitch } => match safety.helix_containment {
+                EntryStyle::Helix {
+                    radius,
+                    pitch,
+                    fallback_ramp_angle_deg,
+                } => match safety.helix_containment {
                     Some(region) => {
                         let fit = contained_helix_radius(region, m.target.x, m.target.y, radius);
                         if helix_fit_holds(fit, core_floor) {
-                            EntryStyle::Helix { radius: fit, pitch }
+                            EntryStyle::Helix {
+                                radius: fit,
+                                pitch,
+                                fallback_ramp_angle_deg,
+                            }
                         } else {
                             if safety.core.is_some() {
                                 core_fallback = Some(fit);
                             }
                             EntryStyle::Ramp {
-                                max_angle_deg: crate::compute::config::DRESSUP_RAMP_ANGLE_DEG,
+                                max_angle_deg: fallback_ramp_angle_deg,
                             }
                         }
                     }
@@ -578,7 +594,7 @@ pub fn apply_entry(
                     );
                     refusal = refusal.or(refused);
                 }
-                EntryStyle::Helix { radius, pitch } => {
+                EntryStyle::Helix { radius, pitch, .. } => {
                     let refused = emit_helix(
                         &mut result,
                         &toolpath.moves[i - 1].target,

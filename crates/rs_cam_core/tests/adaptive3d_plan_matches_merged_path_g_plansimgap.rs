@@ -137,6 +137,8 @@ fn params(merge: Option<f64>) -> Adaptive3dParams {
         entry_style: EntryStyle3d::Helix {
             radius: 1.8,
             pitch: 1.0,
+            // The fallback angle of every helix before P29-8.
+            fallback_ramp_angle_deg: 3.0,
         },
         initial_stock: None,
         clearing_strategy: ClearingStrategy3d::ContourParallel,

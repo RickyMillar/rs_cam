@@ -1829,7 +1829,11 @@ mod tests {
     /// end mill, the default helix, the 2D pass-load rule.
     fn test_params() -> AdaptiveParams {
         let (s, tol) = op_defaults();
-        let helix = crate::compute::config::HELIX_RADIUS_OVER_D * 2.0 * R;
+        let helix =
+            crate::feeds::entry_rule::stored_default(crate::feeds::entry_rule::EntryDoor::Dressup)
+                .helix_radius_over_d
+                * 2.0
+                * R;
         AdaptiveParams {
             tool_radius: R,
             stepover: s,

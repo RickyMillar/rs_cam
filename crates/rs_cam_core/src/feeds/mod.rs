@@ -20,6 +20,7 @@ pub mod cut_load;
 pub mod cutter_constraints;
 pub mod efficiency;
 pub mod engagement;
+pub mod entry_rule;
 pub mod envelope;
 pub mod explain_payload;
 pub mod extrapolation;
@@ -2342,12 +2343,11 @@ fn operation_default_profile(family: OperationFamily, role: PassRole) -> Default
 pub fn formula_constants() -> Vec<FormulaConstant> {
     let mut rows: Vec<FormulaConstant> = MATERIAL_FORMULA_CONSTANTS.to_vec();
     rows.push(FALLBACK_RPM);
-    // K4 (feeds contract P3, lead decision D5): the plunge feed rule of the
-    // dressup entry (`PlungeFeedRule::FirstLinearFeedFraction`).
-    rows.extend([
-        crate::compute::catalog::ENTRY_PLUNGE_FIRST_FEED_FRACTION,
-        crate::compute::catalog::ENTRY_PLUNGE_FALLBACK_MM_MIN,
-    ]);
+    // P29-8 8a: every entry number, the private rows of `entry_rule.rs`:
+    // the ramp angle and the helix pitch of each door, the helix radius
+    // rule, and the plunge feed rule of the dressup entry (K4, lead
+    // decision D5: `PlungeFeedRule::FirstLinearFeedFraction`).
+    rows.extend(entry_rule::formula_constants());
     // K3 (feeds contract P6, decision E4): the legacy loader default of
     // each tool fact. An `Unknown` fact plans at it (`tool.fact_unknown`).
     rows.extend(crate::compute::tool_config::LEGACY_DEFAULT_ROWS);

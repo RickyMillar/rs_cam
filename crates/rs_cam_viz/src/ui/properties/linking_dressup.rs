@@ -832,8 +832,8 @@ pub(super) fn draw_linking_params(
                 let radius_range = 0.5..=20.0;
                 let mut rule = cfg.helix_radius.is_none();
                 let rule_label = format!(
-                    "Radius {} x D",
-                    rs_cam_core::compute::config::HELIX_RADIUS_OVER_D
+                    "Radius {}",
+                    rs_cam_core::feeds::entry_rule::helix_rule_text()
                 );
                 if check_row(
                     ui,

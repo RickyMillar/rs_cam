@@ -2,7 +2,7 @@
 
 Status: OPEN. Operator ruling 6 (2026-10-22), option B. The values stay.
 The sentry `every_feeds_formula_constant_states_its_source_f201` lists them
-and pins the count (161 unsourced, 6 cited; 162 before feeds contract P13c, 158 before feeds contract P13a, 159 before P11c, 154 before P10, 149 before P6; 150 before the P5 chain ruling deleted the deflection back-off floor, 146 before feeds contract P5, 144 before P3). Option A (the formula path
+and pins the count (146 unsourced since P29-8 commit 8a; 141 before it; earlier 161 unsourced, 6 cited; 162 before feeds contract P13c, 158 before feeds contract P13a, 159 before P11c, 154 before P10, 149 before P6; 150 before the P5 chain ruling deleted the deflection back-off floor, 146 before feeds contract P5, 144 before P3). Option A (the formula path
 refuses an unsourced value) applies only if one of these values causes an
 issue.
 
@@ -148,17 +148,30 @@ Source kind: vendor DOC/WOC rules per operation; the claimed origin is
   (0.06, 0.025), ball semi (0.10, 0.04), tapered finish (0.10, 0.03),
   tapered semi (0.14, 0.05).
 
-### Dressup entry plunge feed (feeds contract P3, K4, lead decision D5)
+### Entry numbers (feeds contract P3 K4 lead decision D5; P29-8 commit 8a)
 
-`PlungeFeedRule::FirstLinearFeedFraction` (`compute/catalog/entry_contract.rs`):
-the plunge feed of the dressup entry for the air lead and the plunge
-fallback. The rule moved here from `dressup_apply.rs` `entry_plunge_rate`;
-the values did not change. Phase 8 replaces the rule.
+`PlungeFeedRule::FirstLinearFeedFraction`: the plunge feed of the dressup
+entry for the air lead and the plunge fallback. P3 moved the rule from
+`dressup_apply.rs` `entry_plunge_rate` to `compute/catalog/entry_contract.rs`.
+P29-8 commit 8a (2026-11-12) moved it to `feeds/entry_rule.rs`
+(`ResolvedEntry::dressup_plunge_feed_mm_min`), with the five other entry
+numbers. Each row is a private constant of that file. The pin rose from 141
+to 146 (the five new rows). No value changed. P29-8 O1 and O2 (operator)
+can replace the angle rows and the two plunge rows.
 
-| Row | Value | Site |
+| Row | Value | Site (all `feeds/entry_rule.rs`) |
 |---|---|---|
 | `dressup.entry_plunge_rate.first_linear_feed_fraction` | 0.5 | `ENTRY_PLUNGE_FIRST_FEED_FRACTION` |
 | `dressup.entry_plunge_rate.fallback_mm_min` | 500 | `ENTRY_PLUNGE_FALLBACK_MM_MIN` |
+| `entry_rule.ramp_angle_deg.dressup` | 3.0 deg | `DRESSUP_RAMP_ANGLE_DEG` (was `compute/config.rs`) |
+| `entry_rule.ramp_angle_deg.adaptive3d` | 10.0 deg | `ADAPTIVE3D_RAMP_ANGLE_DEG` (was `compute/operation_configs.rs`) |
+| `entry_rule.helix_pitch_mm.dressup` | 1.0 mm | `DRESSUP_HELIX_PITCH_MM` (was `compute/config.rs`) |
+| `entry_rule.helix_pitch_mm.adaptive3d` | 2.0 mm | `ADAPTIVE3D_HELIX_PITCH_MM` (was `compute/operation_configs.rs`) |
+| `entry_rule.helix_radius_over_d` | 0.3 | `HELIX_RADIUS_OVER_D` (was `compute/config.rs`) |
+
+Out of the list: `ops::waterline::WATERLINE_RING_DESCENT_DEG` (3.0 deg).
+It is the slope limit of a helical waterline ring, a cut path, not on the
+feeds formula path (finding F2 of the P29-8 design).
 
 ### Suggest back-off numbers (feeds contract P5, K2b)
 

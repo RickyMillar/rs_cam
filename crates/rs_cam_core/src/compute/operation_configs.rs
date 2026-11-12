@@ -628,7 +628,7 @@ pub struct BoreConfig {
     pub floor: Floor,
     /// The helix pitch (mm per turn). The op divides the depth into whole
     /// turns, so the pitch it cuts is this value or less. The default is
-    /// the dressup helix pitch (`DRESSUP_HELIX_PITCH_MM`, a repo rule with
+    /// the dressup helix pitch (`feeds::entry_rule`, a repo rule with
     /// no source); the range is the existing range of the 3D Rough helix
     /// pitch (`Adaptive3dConfig::helix_pitch`).
     #[param(
@@ -696,7 +696,11 @@ impl Default for BoreConfig {
         Self {
             // S11: no rule gives a floor for a drawing.
             floor: Floor::Unset,
-            pitch: super::config::DRESSUP_HELIX_PITCH_MM,
+            // The dressup door's helix pitch rule (`feeds::entry_rule`).
+            pitch: crate::feeds::entry_rule::stored_default(
+                crate::feeds::entry_rule::EntryDoor::Dressup,
+            )
+            .helix_pitch_mm,
             climb: true,
             finish_allowance: 0.0,
             feed_rate: None,
@@ -1993,30 +1997,22 @@ fn default_clearing_strategy() -> ClearingStrategy {
     ClearingStrategy::ContourParallel
 }
 
-/// The Adaptive3d ramp entry angle (degrees) a new toolpath starts with.
-///
-/// Repo rule, no source (G10). No wood or router source prints a ramp
-/// angle (ruling Q9). Operator decision D4 (2026-09-25): one Adaptive3d
-/// entry rule for the GUI and the CLI.
-pub const ADAPTIVE3D_RAMP_ANGLE_DEG: f64 = 10.0;
-
-/// The Adaptive3d helix entry pitch (mm per turn) a new toolpath starts
-/// with.
-///
-/// Repo rule, no source (G10). No wood source prints a helix pitch (ruling
-/// Q8). Operator decision D4: the GUI and the CLI read this one value.
-pub const ADAPTIVE3D_HELIX_PITCH_MM: f64 = 2.0;
+/// P29-8: the entry values of a new 3D Rough op are the 3D Rough door's
+/// rule (`feeds::entry_rule`).
+fn adaptive3d_stored_entry() -> crate::feeds::entry_rule::StoredDefault {
+    crate::feeds::entry_rule::stored_default(crate::feeds::entry_rule::EntryDoor::Adaptive3d)
+}
 
 fn default_adaptive3d_ramp_angle() -> f64 {
-    ADAPTIVE3D_RAMP_ANGLE_DEG
+    adaptive3d_stored_entry().ramp_angle_deg
 }
 
 fn default_adaptive3d_helix_radius_factor() -> f64 {
-    crate::compute::config::HELIX_RADIUS_OVER_D
+    adaptive3d_stored_entry().helix_radius_over_d
 }
 
 fn default_adaptive3d_helix_pitch() -> f64 {
-    ADAPTIVE3D_HELIX_PITCH_MM
+    adaptive3d_stored_entry().helix_pitch_mm
 }
 
 impl Adaptive3dConfig {
@@ -2032,20 +2028,14 @@ impl Adaptive3dConfig {
     }
 
     /// The helix radius this config emits on `cutter`: D x
-    /// `helix_radius_factor`, capped at the flat bottom (G10 Q6). The
-    /// request is the rule when the factor is
-    /// [`crate::compute::config::HELIX_RADIUS_OVER_D`].
+    /// `helix_radius_factor`, capped at the flat bottom (G10 Q6). The rule
+    /// is [`crate::feeds::entry_rule::adaptive3d_helix_radius`].
     #[must_use]
     pub fn helix_radius_for(
         &self,
         cutter: &dyn crate::tool::MillingCutter,
     ) -> crate::compute::config::HelixRadius {
-        let rule = crate::compute::config::HELIX_RADIUS_OVER_D;
-        crate::compute::config::HelixRadius::resolve(
-            crate::compute::config::helix_entry_diameter_mm(cutter) * self.helix_radius_factor,
-            (self.helix_radius_factor - rule).abs() <= 1e-9,
-            cutter,
-        )
+        crate::feeds::entry_rule::adaptive3d_helix_radius(self, cutter)
     }
 }
 

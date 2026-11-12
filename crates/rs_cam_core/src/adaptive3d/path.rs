@@ -269,8 +269,13 @@ pub(super) enum EntryBore {
     /// the floor lap, so the hole is `R + radius` with a flat floor.
     Helix { radius: f64, pitch: f64 },
     /// No helix fits here (`fit_mm` under the core floor, or no room): the
-    /// entry ramps (ruling Q1; the G-CENTRECUT rules bind the ramp).
-    Fallback { fit_mm: f64, core_floor_mm: f64 },
+    /// entry ramps at `ramp_angle_deg`, the op's own ramp angle (ruling Q1;
+    /// P29-8 lead ruling 2026-11-12; the G-CENTRECUT rules bind the ramp).
+    Fallback {
+        fit_mm: f64,
+        core_floor_mm: f64,
+        ramp_angle_deg: f64,
+    },
 }
 
 /// The fixed inputs of a 3D entry's safety (`dressup::EntrySafety`): the
@@ -1793,16 +1798,20 @@ fn entry_bore_rule(
         params.clearing_strategy,
         effective_entry_style(params.entry_style, cutter),
     ) {
-        (ClearingStrategy3d::GeodesicAdaptive, EntryStyle3d::Helix { radius, pitch }) => {
-            Some(super::clearing::EntryBoreRule {
-                helix_radius: radius,
+        (
+            ClearingStrategy3d::GeodesicAdaptive,
+            EntryStyle3d::Helix {
+                radius,
                 pitch,
-                core_floor_mm: crate::dressup::helix_core_floor_mm(crate::tool::body::core_of(
-                    cutter,
-                )),
-                entry_clearance_mm: params.entry_clearance_mm,
-            })
-        }
+                fallback_ramp_angle_deg,
+            },
+        ) => Some(super::clearing::EntryBoreRule {
+            helix_radius: radius,
+            pitch,
+            core_floor_mm: crate::dressup::helix_core_floor_mm(crate::tool::body::core_of(cutter)),
+            entry_clearance_mm: params.entry_clearance_mm,
+            fallback_ramp_angle_deg,
+        }),
         (
             ClearingStrategy3d::GeodesicAdaptive | ClearingStrategy3d::ContourParallel,
             EntryStyle3d::Helix { .. } | EntryStyle3d::Ramp { .. } | EntryStyle3d::Plunge,
@@ -2552,12 +2561,13 @@ pub(super) fn segments_to_toolpath_checked(
                     EntryBore::Fallback {
                         fit_mm,
                         core_floor_mm,
+                        ramp_angle_deg,
                     } => {
                         if core.is_some() {
                             fallback = Some((fit_mm, core_floor_mm));
                         }
                         EntryStyle3d::Ramp {
-                            max_angle_deg: crate::compute::config::DRESSUP_RAMP_ANGLE_DEG,
+                            max_angle_deg: ramp_angle_deg,
                         }
                     }
                 };
@@ -2582,7 +2592,7 @@ pub(super) fn segments_to_toolpath_checked(
                             emit_peck_plunge(&mut tp, entry, descent_floor, contact_z, params);
                             None
                         }
-                        EntryStyle3d::Helix { radius, pitch } => crate::dressup::emit_helix(
+                        EntryStyle3d::Helix { radius, pitch, .. } => crate::dressup::emit_helix(
                             &mut tp,
                             &start,
                             entry,

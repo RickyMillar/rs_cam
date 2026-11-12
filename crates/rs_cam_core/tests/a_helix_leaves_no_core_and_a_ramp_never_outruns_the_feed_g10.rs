@@ -52,13 +52,9 @@ use rs_cam_core::compute::tool_config::ToolFact;
 use std::path::{Path, PathBuf};
 
 use rs_cam_core::compute::catalog::{OperationConfig, OperationType};
-use rs_cam_core::compute::config::{
-    DRESSUP_HELIX_PITCH_MM, DRESSUP_RAMP_ANGLE_DEG, DressupConfig, DressupEntryStyle,
-    HELIX_RADIUS_OVER_D,
-};
+use rs_cam_core::compute::config::{DressupConfig, DressupEntryStyle};
 use rs_cam_core::compute::operation_configs::{
-    ADAPTIVE3D_HELIX_PITCH_MM, ADAPTIVE3D_RAMP_ANGLE_DEG, Adaptive3dConfig, Adaptive3dEntryStyle,
-    ClearingStrategy,
+    Adaptive3dConfig, Adaptive3dEntryStyle, ClearingStrategy,
 };
 use rs_cam_core::compute::tool_config::{ToolConfig, ToolId, ToolType};
 use rs_cam_core::feeds::PassRole;
@@ -397,7 +393,10 @@ fn an_adaptive3d_entry_never_outruns_the_feed_and_leaves_no_core_g10() {
         3.0,
     );
 
-    let ramp = adaptive3d_toolpath(Adaptive3dEntryStyle::Ramp, HELIX_RADIUS_OVER_D);
+    let ramp = adaptive3d_toolpath(
+        Adaptive3dEntryStyle::Ramp,
+        Adaptive3dConfig::default().helix_radius_factor,
+    );
     assert_clamped("Adaptive3d Ramp", &ramp);
 }
 
@@ -490,15 +489,26 @@ fn an_operator_ramp_on_an_adaptive_survives_write_and_load_g10() {
     );
 }
 
-/// D4 and the named repo rules: the defaults read the constants.
+/// D4 and the named repo rules: the defaults read the F201 rows of THE
+/// entry rule (P29-8, `feeds::entry_rule`).
 #[test]
 fn the_entry_defaults_are_the_named_repo_rules_g10() {
+    let rows = rs_cam_core::feeds::formula_constants();
+    let row = |name: &str| {
+        rows.iter()
+            .find(|r| r.name == name)
+            .unwrap_or_else(|| panic!("F201 row `{name}`"))
+            .value
+    };
     let d = DressupConfig::default();
-    assert_eq!(d.ramp_angle, DRESSUP_RAMP_ANGLE_DEG);
-    assert_eq!(d.helix_pitch, DRESSUP_HELIX_PITCH_MM);
+    assert_eq!(d.ramp_angle, row("entry_rule.ramp_angle_deg.dressup"));
+    assert_eq!(d.helix_pitch, row("entry_rule.helix_pitch_mm.dressup"));
     assert_eq!(d.helix_radius, None, "None is the rule 0.3 x D");
     let a = Adaptive3dConfig::default();
-    assert_eq!(a.ramp_angle_deg, ADAPTIVE3D_RAMP_ANGLE_DEG);
-    assert_eq!(a.helix_pitch, ADAPTIVE3D_HELIX_PITCH_MM);
-    assert_eq!(a.helix_radius_factor, HELIX_RADIUS_OVER_D);
+    assert_eq!(
+        a.ramp_angle_deg,
+        row("entry_rule.ramp_angle_deg.adaptive3d")
+    );
+    assert_eq!(a.helix_pitch, row("entry_rule.helix_pitch_mm.adaptive3d"));
+    assert_eq!(a.helix_radius_factor, row("entry_rule.helix_radius_over_d"));
 }

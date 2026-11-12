@@ -19,7 +19,6 @@
 //! doctests on [`entry_contract_refusals`].
 
 use crate::geo::P3;
-use crate::material::FormulaConstant;
 use crate::toolpath::{MoveIntent, MoveType, Toolpath};
 
 /// CONTRACT K4. How one op enters material. A required registry field; no
@@ -210,48 +209,11 @@ pub enum PlungeFeedRule {
     /// contract no longer states it.
     OpPlungeRate,
     /// The feed of the dressup entry for the air lead and for the plunge
-    /// fallback: the first linear feed of the toolpath times
-    /// [`ENTRY_PLUNGE_FIRST_FEED_FRACTION`], else
-    /// [`ENTRY_PLUNGE_FALLBACK_MM_MIN`]. The emitters then take the `min`
-    /// with the feed of the plunge move. [`Self::first_linear_feed_fraction`]
-    /// is the one evaluation.
+    /// fallback: the first linear feed of the toolpath times a fraction,
+    /// else a fixed feed. The emitters then take the `min` with the feed of
+    /// the plunge move. P29-8: the one evaluation and its two rows are in
+    /// `feeds::entry_rule` (`ResolvedEntry::dressup_plunge_feed_mm_min`).
     FirstLinearFeedFraction,
-}
-
-/// F201: the fraction of the first linear feed that the dressup entry
-/// plunges at ([`PlungeFeedRule::FirstLinearFeedFraction`]).
-pub const ENTRY_PLUNGE_FIRST_FEED_FRACTION: FormulaConstant = FormulaConstant::unsourced(
-    "dressup.entry_plunge_rate.first_linear_feed_fraction",
-    0.5,
-    "repo rule with no primary source (dressup_apply.rs entry_plunge_rate, feeds contract P3)",
-);
-
-/// F201: the plunge feed of the dressup entry (mm/min) when the toolpath has
-/// no linear move ([`PlungeFeedRule::FirstLinearFeedFraction`]).
-pub const ENTRY_PLUNGE_FALLBACK_MM_MIN: FormulaConstant = FormulaConstant::unsourced(
-    "dressup.entry_plunge_rate.fallback_mm_min",
-    500.0,
-    "repo rule with no primary source (dressup_apply.rs entry_plunge_rate, feeds contract P3)",
-);
-
-impl PlungeFeedRule {
-    /// The one evaluation of [`Self::FirstLinearFeedFraction`] on
-    /// `toolpath`: the first linear feed times
-    /// [`ENTRY_PLUNGE_FIRST_FEED_FRACTION`], else
-    /// [`ENTRY_PLUNGE_FALLBACK_MM_MIN`].
-    #[must_use]
-    pub fn first_linear_feed_fraction(toolpath: &Toolpath) -> f64 {
-        toolpath
-            .moves
-            .iter()
-            .find_map(|m| match m.move_type {
-                MoveType::Linear { feed_rate } => {
-                    Some(feed_rate * ENTRY_PLUNGE_FIRST_FEED_FRACTION.value)
-                }
-                MoveType::Rapid | MoveType::ArcCW { .. } | MoveType::ArcCCW { .. } => None,
-            })
-            .unwrap_or(ENTRY_PLUNGE_FALLBACK_MM_MIN.value)
-    }
 }
 
 /// CONTRACT K4 (record). One entry of a generated toolpath. The fields are
@@ -594,23 +556,6 @@ mod tests {
             (MoveIntent::EntryPlunge, Some(300.0), [0.0, 0.0, 1.0]),
         ]);
         assert!(entry_records(&t, EntryContract::DescentIsCut).is_empty());
-    }
-
-    #[test]
-    fn the_first_linear_feed_fraction_reads_the_first_linear_feed() {
-        let t = tp(&[
-            (MoveIntent::Linking, None, [0.0, 0.0, 10.0]),
-            (MoveIntent::ClearingCut, Some(1000.0), [1.0, 0.0, 10.0]),
-        ]);
-        let half = 1000.0 * ENTRY_PLUNGE_FIRST_FEED_FRACTION.value;
-        assert_eq!(
-            PlungeFeedRule::first_linear_feed_fraction(&t).to_bits(),
-            half.to_bits()
-        );
-        assert_eq!(
-            PlungeFeedRule::first_linear_feed_fraction(&Toolpath::new()).to_bits(),
-            ENTRY_PLUNGE_FALLBACK_MM_MIN.value.to_bits()
-        );
     }
 
     #[test]

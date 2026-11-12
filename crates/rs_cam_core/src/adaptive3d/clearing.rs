@@ -623,6 +623,9 @@ pub(super) struct EntryBoreRule {
     pub(super) core_floor_mm: f64,
     /// The entry clearance (mm) above the contact top, as the emitter's.
     pub(super) entry_clearance_mm: f64,
+    /// The angle (degrees) of the ramp where no helix fits: the op's own
+    /// ramp angle (P29-8, `feeds::entry_rule::ResolvedEntry`).
+    pub(super) fallback_ramp_angle_deg: f64,
 }
 
 /// The bore rule and the region a bore must stay inside.
@@ -650,6 +653,7 @@ impl BoreAt<'_> {
             None => EntryBore::Fallback {
                 fit_mm: crate::adaptive::Bore::fit_mm(self.region, centre, rule.helix_radius),
                 core_floor_mm: rule.core_floor_mm,
+                ramp_angle_deg: rule.fallback_ramp_angle_deg,
             },
         }
     }

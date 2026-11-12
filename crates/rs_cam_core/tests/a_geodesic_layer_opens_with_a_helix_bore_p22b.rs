@@ -37,7 +37,7 @@ use rs_cam_core::adaptive3d::{
     Adaptive3dRuntimeEvent, ClearingStrategy3d, EntryStyle3d, FeedCapSource, RegionOrdering,
     adaptive_3d_toolpath_output_with_cancel, debug_adaptive_3d_segments_for_f029_probe,
 };
-use rs_cam_core::compute::operation_configs::Adaptive3dConfig;
+use rs_cam_core::compute::operation_configs::{Adaptive3dConfig, Adaptive3dEntryStyle};
 use rs_cam_core::compute::tool_config::{
     CentreCutting, EntryFallback, HelixCoreFallback, HelixFallbackReason, NonCentreCuttingGeometry,
     ToolConfig, ToolFact, ToolId, ToolType,
@@ -88,19 +88,17 @@ fn tool() -> ToolDefinition {
 }
 
 /// The op's helix entry and the op's ramp entry on `cutter`, from the
-/// config defaults (no typed value).
+/// config defaults (no typed value), through THE entry rule (P29-8).
 fn style(helix: bool, cutter: &dyn MillingCutter) -> EntryStyle3d {
-    let cfg = Adaptive3dConfig::default();
-    if helix {
-        EntryStyle3d::Helix {
-            radius: cfg.helix_radius_for(cutter).emitted_mm,
-            pitch: cfg.helix_pitch,
-        }
-    } else {
-        EntryStyle3d::Ramp {
-            max_angle_deg: cfg.ramp_angle_deg,
-        }
-    }
+    let cfg = Adaptive3dConfig {
+        entry_style: if helix {
+            Adaptive3dEntryStyle::Helix
+        } else {
+            Adaptive3dEntryStyle::Ramp
+        },
+        ..Adaptive3dConfig::default()
+    };
+    rs_cam_core::feeds::entry_rule::ResolvedEntry::of_adaptive3d(&cfg, cutter).style_3d()
 }
 
 fn params(entry_style: EntryStyle3d, radius: f64, z_floor: Option<f64>) -> Adaptive3dParams {

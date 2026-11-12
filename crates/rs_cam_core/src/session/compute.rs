@@ -1522,13 +1522,17 @@ pub fn execute_generation(
         link_kinematics: context.link_kinematics.clone(),
         rest_analysis: Some(&context.rest_analysis),
         segment_merge_tolerance: context.dressups.segment_merge.map(|m| m.tolerance),
+        // P29-8: the helix the entry dressup cuts, from THE entry rule.
         entry_helix_radius: (context.dressups.entry_style
             == crate::compute::config::DressupEntryStyle::Helix)
             .then(|| {
-                context
-                    .dressups
-                    .helix_radius_for(&inputs.tool_def)
-                    .emitted_mm
+                crate::feeds::entry_rule::ResolvedEntry::of_dressup(
+                    &context.dressups,
+                    Some(&inputs.tool_def),
+                    inputs.tool_def.diameter(),
+                )
+                .helix_radius()
+                .emitted_mm
             }),
         ..crate::compute::execute::ExecutionContext::new(
             &findings,

@@ -193,6 +193,8 @@ fn test_helix_entry_replaces_plunge() {
         EntryStyle::Helix {
             radius: 2.0,
             pitch: 1.0,
+            // The fallback angle of every helix before P29-8.
+            fallback_ramp_angle_deg: 3.0,
         },
         500.0,
         no_probe(0.0),
@@ -219,6 +221,8 @@ fn test_helix_entry_reaches_target_z() {
         EntryStyle::Helix {
             radius: 2.0,
             pitch: 1.0,
+            // The fallback angle of every helix before P29-8.
+            fallback_ramp_angle_deg: 3.0,
         },
         500.0,
         no_probe(0.0),
@@ -240,6 +244,8 @@ fn test_helix_moves_are_circular() {
         EntryStyle::Helix {
             radius: 3.0,
             pitch: 1.0,
+            // The fallback angle of every helix before P29-8.
+            fallback_ramp_angle_deg: 3.0,
         },
         500.0,
         no_probe(0.0),
@@ -1570,6 +1576,8 @@ fn helix_entry_zero_radius_falls_back() {
     let style = EntryStyle::Helix {
         radius: 0.0,
         pitch: 2.0,
+        // The fallback angle of every helix before P29-8.
+        fallback_ramp_angle_deg: 3.0,
     };
     let result = without_provenance(apply_entry(
         AnnotatedToolpath::new(tp.clone()),
@@ -1595,6 +1603,8 @@ fn helix_entry_negative_radius_falls_back() {
     let style = EntryStyle::Helix {
         radius: -1.0,
         pitch: 2.0,
+        // The fallback angle of every helix before P29-8.
+        fallback_ramp_angle_deg: 3.0,
     };
     let result = without_provenance(apply_entry(
         AnnotatedToolpath::new(tp.clone()),
@@ -2351,6 +2361,8 @@ fn a_helix_with_no_room_for_the_core_ramps_and_names_it_g_simcore() {
             EntryStyle::Helix {
                 radius: 5.4,
                 pitch: 1.0,
+                // The fallback angle of every helix before P29-8.
+                fallback_ramp_angle_deg: 3.0,
             },
             500.0,
             safety,

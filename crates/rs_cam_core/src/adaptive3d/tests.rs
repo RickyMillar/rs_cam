@@ -569,6 +569,8 @@ fn test_helix_entry_no_vertical_plunge() {
         p.entry_style = EntryStyle3d::Helix {
             radius: cutter.radius() * 0.8,
             pitch: 1.0,
+            // The fallback angle of every helix before P29-8.
+            fallback_ramp_angle_deg: 3.0,
         };
         p
     };

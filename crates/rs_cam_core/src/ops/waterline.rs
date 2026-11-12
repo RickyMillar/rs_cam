@@ -828,11 +828,18 @@ fn ring_length(ring: &[P3]) -> f64 {
         .sum()
 }
 
+/// The steepest descent (degrees) of a helical waterline ring
+/// ([`lap_count`]): the bottom of the tool cuts on the descent as on a ramp.
+///
+/// P29-8 (finding F2): a ring descent is a cut path, not an entry, so it has
+/// its own constant. It keeps the number it read before, the dressup ramp
+/// entry angle of that time (3.0, now the row
+/// `entry_rule.ramp_angle_deg.dressup`). No source prints it.
+pub const WATERLINE_RING_DESCENT_DEG: f64 = 3.0;
+
 /// The laps a descent of `dz` along the closed ring `ring` takes, so that
-/// no lap descends steeper than the dressup ramp angle
-/// ([`crate::compute::config::DRESSUP_RAMP_ANGLE_DEG`], the angle of a
-/// ramp entry: the bottom of the tool cuts on the descent as on a ramp).
-/// At least one.
+/// no lap descends steeper than [`WATERLINE_RING_DESCENT_DEG`]. At least
+/// one.
 ///
 /// P22-0c-2: a tool that does not cut at its centre also holds the dwell
 /// rule of its core zone on the ring (`CoreZone::max_ring_slope`, the one
@@ -840,9 +847,7 @@ fn ring_length(ring: &[P3]) -> f64 {
 /// the core diameter: no descent along it keeps the core out of wood, so
 /// the chain ends there.
 fn lap_count(dz: f64, ring: &[P3], core: Option<CoreZone>) -> Option<usize> {
-    let ramp = crate::compute::config::DRESSUP_RAMP_ANGLE_DEG
-        .to_radians()
-        .tan();
+    let ramp = WATERLINE_RING_DESCENT_DEG.to_radians().tan();
     let slope = match core {
         Some(core) => ramp.min(core.max_ring_slope(ring)),
         None => ramp,

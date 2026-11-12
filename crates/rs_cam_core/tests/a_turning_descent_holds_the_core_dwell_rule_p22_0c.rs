@@ -239,7 +239,7 @@ fn a_helical_waterline_lap_holds_the_core_dwell_rule_p22_0c() {
     let core = core_of(&tool).expect("a non-centre-cutting tool");
     let ring = circle(RING_MM, 0.0);
     let slope = core.max_ring_slope(&ring);
-    let ramp = rs_cam_core::compute::config::DRESSUP_RAMP_ANGLE_DEG
+    let ramp = rs_cam_core::ops::waterline::WATERLINE_RING_DESCENT_DEG
         .to_radians()
         .tan();
     assert!(
