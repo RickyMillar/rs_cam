@@ -707,3 +707,76 @@ toolpath (the K1 backstop now leaves its own re-entries as plunges, `PlungesStay
   `P29-8e_OBSTACLE_FRAME.md` section 5. `nz_wanaka_21_operator.toml`, `nz_wanaka_21.toml` and
   `derive_wanaka21.py` hold the same error. The lead edits none of them without the operator.
   F-OF1 (one obstacle frame on every face) goes to the P27 brief.
+
+## 11 (addendum). Rulings Q9 and Q10 and the measurements before the commit of e1
+
+Written 2026-11-13 after section 12. "Measured" is a throwaway probe on the e1 tree (deleted).
+
+### Q9: a clip re-entry under the style Helix is the fold ramp
+
+Measured before the ruling: rivmap100 Face 5 (test fixture) under Helix gave 94 helix entries of
+the step, all centred on the left boundary edge (centre X -5.46 to -4.77); 1699 `EntryHelix`
+moves lay outside the boundary, by up to 2.0 mm (the helix radius 2.0). No guard holds a helix of
+the step: the helix containment (`entry_containment_regions`) is `Some` only for a 2D Adaptive.
+
+Lead ruling Q9: a clip re-entry is on the clip edge by construction, a site with no room for a
+helix; it takes the 8a rule of a helix with no room, the ramp at the op's own angle, folded along
+the kept cut. Built as one door, `ResolvedEntry::clip_reentry` (`feeds/entry_rule.rs`), which
+gives `ClipReentryEntry::Ramp` for Ramp and Helix and `StatedPlunge` for None; the step holds no
+style rule.
+
+Measured after the ruling:
+
+| Case | Result |
+|---|---|
+| rivmap100 Face 5 under Helix | 0 fed moves outside the boundary; 0 obstacle hits; 99 converted sites, all folds, the worst point 0.0 mm off the kept cut |
+| The 22 plunges that stay in that run | each is a clip re-entry onto a piece of a pipeline helix that the boundary clip kept as a point: the next move is the retract, so the fold has no run and the descent stays a plunge |
+| wanaka idx 17 under Helix | 0 obstacle hits, 0 collisions; 43 converted sites, all folds, worst 0.0 mm. The 83 plunges at X 377.7 of the run before the ruling are gone (they came with the step's helices); 1 plunge stays: an air lead to Z 3.42 and a fed descent onto the tab top at Z 2.0 (no run on the tab top) |
+
+The run of Face 5 under Helix on HEAD was skipped: a `git worktree` probe needs a build.
+
+### Q10: a clip re-entry of a surface-riding op stays the straight plunge
+
+With a surface probe, `emit_ramp` (`dressup/entry_descent.rs`) does not fold: it walks straight
+legs along the direction of the next move, each up to `ENTRY_CLEARANCE / tan(angle) / 2` long
+(19.1 mm at 3 degrees, 2.75 mm at 20 degrees), and `clip_polyline_to_floor` clips them in Z only.
+No clip runs after the step. Measured: the step reached this branch once (rivmap100 Scallop on
+fresh stock under Helix, one recorded site, 0.0 mm off the cut on that site).
+
+Lead ruling Q10: the step converts only where the ramp folds along the kept cut. Built in
+`session/compute/clip_entry.rs`: `ReentryOwner::SurfaceProbe` (an op that names
+`entry_probe_leave` on fresh stock) gives `PlungesStay::SurfaceProbe`; the rest case keeps
+`RestRamp` / `PlungesStay::RestEntryRamp`. The step builds its context with no surface probe, and
+`enter_clip_reentries` holds a `debug_assert` that the probe is absent, so the step reaches only
+the fold branch of `emit_ramp`. The fold walks only along the kept cut (`fold_ramp_points`,
+`extend_fold_path` laps the run or goes round the ring); when it falls short it returns no points
+and the emitter plunges after the air lead.
+
+Measured after the ruling: the recorded site of the rivmap100 Scallop on fresh stock under Helix
+is again the straight plunge (`EntryPlunge` F240 at (-1.25, 0, 12)); under Ramp the run is
+identical to the run before the ruling (it records no site).
+
+### The other items of section 12
+
+- The final toolpath of wanaka operator idx 17 on e1 (after the split and the K1 backstop): 0
+  obstacle hits, 0 collisions (`ProjectSession::collision_check`, which runs `check_toolpath`).
+- The move dump of idx 17 on e1 is `scratchpad/p29_8e/e1_17.csv` (the format of `head_17.csv`);
+  it is byte-identical to the list of section 10.1.
+- Two lib tests in `compute/obstacle.rs`:
+  `a_boundary_reentry_is_carried_through_the_obstacle_clip_p29_8e` (one boundary re-entry carried
+  through the obstacle clip and its K3 start rapid; the index moves up by one and names the same
+  descent; the step converts exactly that descent, onto the kept cut) and
+  `a_helix_op_reenters_a_boundary_by_the_fold_ramp_q9` (no `EntryHelix` of the step, every fed
+  move inside the boundary). Each went red on its defect (the shift removed; a helix at the
+  re-entry). A recorded site that is not a vertical descent is copied as it is:
+  `dressup::apply_entry_at` converts a move only when `sites.selects(i)` and `is_plunge` both hold.
+- The row `U-TabReplunge` stays open (pins 38, 27, 37) with the cause that remains: a straight
+  plunge that ships with no judge of its vertical rate (the style None, the K1 backstop re-entry,
+  the pipeline fallback plunge, and now the surface-riding re-entry of Q10).
+- The section 10 results do not move: idx 17, rivmap100 Face 5 and the viz Face 5 are
+  byte-identical to their section 10 lists.
+
+### Log
+
+- Open: a fold ramp for a surface-riding clip re-entry (a fold under the probe's Z clip is a new
+  emitter path with no measurement; Q10).

@@ -427,19 +427,23 @@ pub static EXEMPTIONS: [Exemption; 38] = [
     // U: one row for each cut that no limit reads before the simulation
     // (ruling Q3). P29-7 7b declared six of them with their feed rules and
     // closed their rows. A cut that is still undeclared has no file; the
-    // residual sweep names the files of its `MayOccur` filing. P29-8 8d
-    // declared the tab re-plunge (the plunge entry cut): its row holds only
-    // the open cause, with no file.
+    // residual sweep names the files of its `MayOccur` filing. P29-8e: the
+    // straight plunges of wanaka idx 17 under the Ramp style were
+    // re-entries of the obstacle clip, not tab descents; every clip
+    // re-entry now goes through the op's entry rule
+    // (`compute::execute::enter_clip_reentries`). The row keeps the cause
+    // that remains (lead ruling, section 12); the commit of the check (c)
+    // closes it.
     Exemption {
         id: "U-TabReplunge",
-        what: "the ramp or helix entry style of a Profile with tabs",
+        what: "a straight plunge into stock that ships with no judge of its vertical rate",
         limit: &[],
         who: Who::Kind(&[CutKind::Entry(EntryKind::Plunge)]),
         class: NR,
         where_: &[],
-        closes_in: "the tab re-plunge stays a straight plunge under a ramp or helix style; cause \
-                    open (its own step after P29-8, with a prediction run: it moves the G-code \
-                    of wanaka idx 17)",
+        closes_in: "the check (c) of P29-8e: the plunge entry of the style None, the re-entry of \
+                    the K1 obstacle backstop and the fallback plunge of the entry pipeline are \
+                    judged against `VerticalRateLimit::bound`",
     },
     // P29-8 8d (lead ruling Q5): the entry kinds of the contract that the
     // op does not configure.

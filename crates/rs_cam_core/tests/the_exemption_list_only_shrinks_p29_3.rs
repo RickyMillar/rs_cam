@@ -85,12 +85,15 @@ const RULED: usize = 3;
 /// `P28-16` narrowed to the feed modulator (lead ruling Q4).
 /// P29-8 8d added the row `U-EntryFallback` with its file (the `MayOccur`
 /// entry kinds of `src/compute/catalog/cuts.rs`): ROWS 40, need a ruling
-/// 29. The row `U-TabReplunge` narrowed to its open cause, with no file.
+/// 29. The row `U-TabReplunge` narrowed to its open cause, with no file
+/// (P29-8e: the cause was the obstacle clip, not the tabs).
 /// P29-9 9a closed the row `P28-32` with three files: a chamfer declares
 /// the depth of the tool that cuts its width (`ToolDepth::Chamfer`), and a
 /// peck declares a drill cycle (ruling Q4). P29-9 9b closed the row
 /// `P28-11` with three files: the checks judge a Project Curve at the
-/// lower bound of its depth (`TipDepth`, `BodyDepth::AtLeast`).
+/// lower bound of its depth (`TipDepth`, `BodyDepth::AtLeast`). P29-8e
+/// rewrote the row `U-TabReplunge` (no file, needs a ruling) to the cause
+/// that remains: a straight plunge that ships with no judge.
 const ROWS_WITH_A_FILE: usize = 37;
 
 /// The 34 rows of `phases/P28_limit_audit.md`.

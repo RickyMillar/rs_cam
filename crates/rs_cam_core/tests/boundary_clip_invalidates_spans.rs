@@ -54,7 +54,7 @@ fn boundary_clip_preserves_spans_when_all_moves_inside() {
     let semantic_ctx = recorder.root_context();
 
     let clipped = ProjectSession::apply_boundary_clip(
-        annotated,
+        rs_cam_core::geometry::boundary::Reentering::none(annotated),
         &boundary,
         &stock_bbox,
         None,
@@ -67,7 +67,8 @@ fn boundary_clip_preserves_spans_when_all_moves_inside() {
         &semantic_ctx,
         &mut ReconcileSet::new(Some(&recorder), None),
     )
-    .expect("apply_boundary_clip must succeed on a fully-inside toolpath");
+    .expect("apply_boundary_clip must succeed on a fully-inside toolpath")
+    .stay_plunges(rs_cam_core::geometry::boundary::PlungesStay::NoOperation);
 
     assert!(
         clipped.spans_valid,
@@ -107,7 +108,7 @@ fn boundary_clip_with_no_input_spans_emits_no_spans() {
     let semantic_ctx = recorder.root_context();
 
     let clipped = ProjectSession::apply_boundary_clip(
-        annotated,
+        rs_cam_core::geometry::boundary::Reentering::none(annotated),
         &boundary,
         &stock_bbox,
         None,
@@ -120,7 +121,8 @@ fn boundary_clip_with_no_input_spans_emits_no_spans() {
         &semantic_ctx,
         &mut ReconcileSet::new(Some(&recorder), None),
     )
-    .expect("apply_boundary_clip must succeed with no input spans");
+    .expect("apply_boundary_clip must succeed with no input spans")
+    .stay_plunges(rs_cam_core::geometry::boundary::PlungesStay::NoOperation);
 
     assert!(clipped.spans_valid);
     assert!(clipped.spans.is_empty());

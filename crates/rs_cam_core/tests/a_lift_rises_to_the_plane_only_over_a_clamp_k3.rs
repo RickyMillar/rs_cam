@@ -218,10 +218,15 @@ fn k1_pipeline(mut free: ProjectSession, clamped: &ProjectSession) -> Toolpath {
         .heights
         .retract_z;
     let mut channels = ReconcileSet::empty();
-    clip_annotated_to_obstacles(AnnotatedToolpath::new(tp), &view, retract, Some(300.0))
-        .reconcile(&mut channels)
-        .into_inner()
-        .toolpath
+    clip_annotated_to_obstacles(
+        rs_cam_core::geometry::boundary::Reentering::none(AnnotatedToolpath::new(tp)),
+        &view,
+        retract,
+        rs_cam_core::feeds::entry_rule::EntryPlungeFeed::of_op_plunge_rate(Some(300.0)).ok(),
+    )
+    .reconcile(&mut channels)
+    .stay_plunges(rs_cam_core::geometry::boundary::PlungesStay::NoOperation)
+    .toolpath
 }
 
 /// (c) a 3D Finish raster (rows along X) beside a clamp at the +X edge,

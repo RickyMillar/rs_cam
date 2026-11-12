@@ -13,9 +13,10 @@
 //! ([`DeclaredDepth::Own`]); the planned limits judge it as a value check,
 //! never as a ceiling of the body plane. The configured kind
 //! ([`ConfiguredEntry`]) is `Always`; every other kind of the op's entry
-//! contract is `MayOccur` (row `U-EntryFallback`). The re-plunge after a
-//! tab of a Profile is the plunge entry cut (row `U-TabReplunge` holds the
-//! open cause). A cut that the plan makes only where a generation fact
+//! contract is `MayOccur` (row `U-EntryFallback`). A straight descent into
+//! stock that is not the configured entry (a tab descent under the style
+//! None, a clip re-entry under the style None, a ramp with no run) is the
+//! plunge entry cut (P29-8e). A cut that the plan makes only where a generation fact
 //! asks is [`Presence::MayOccur`]; it names a row of `limits::EXEMPTIONS`,
 //! because no limit caps it before the simulation.
 //!
@@ -324,8 +325,8 @@ pub enum Presence {
 const fn entry_fallback_reason(kind: EntryKind) -> &'static str {
     match kind {
         EntryKind::Plunge => {
-            "a ramp with no run or a helix with no room falls back to a plunge; a Profile \
-             re-plunges after each tab (row U-TabReplunge)"
+            "a ramp with no run or a helix with no room falls back to a plunge; the K1 \
+             obstacle backstop re-enters by a plunge"
         }
         EntryKind::Ramp => {
             "a helix with no room falls back to a ramp at the op's own angle; a non-centre-cutting \
@@ -778,8 +779,9 @@ impl OperationConfig {
     ///
     /// The configured kind is `Always` (the style None of a dressup op and
     /// a planner op with no style enter by the plunge); every other kind is
-    /// `MayOccur` with the row `U-EntryFallback`. The plunge cut of a
-    /// Profile holds the re-plunge after each tab (row `U-TabReplunge`).
+    /// `MayOccur` with the row `U-EntryFallback`. Under a ramp or helix
+    /// style a clip re-entry takes the configured kind (P29-8e); a fallback
+    /// plunge is the plunge cut.
     fn declare_entries(&self, declare: &mut Declare, entry: &ConfiguredEntry) {
         use super::EntryContract;
         let contract = self.op_type().registry_entry().entry;

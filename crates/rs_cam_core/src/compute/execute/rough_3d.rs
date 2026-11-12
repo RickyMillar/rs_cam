@@ -115,8 +115,13 @@ impl Adaptive3dRough<'_> {
     /// Q6: the helix radius D x factor, capped at the flat bottom so the
     /// helix leaves no core).
     fn entry_style(&self) -> crate::adaptive3d::EntryStyle3d {
-        crate::feeds::entry_rule::ResolvedEntry::of_adaptive3d(self.cfg, self.tool, self.material)
-            .style_3d()
+        crate::feeds::entry_rule::ResolvedEntry::of_adaptive3d(
+            self.cfg,
+            self.tool,
+            self.material,
+            Some(self.plunge_rate),
+        )
+        .style_3d()
     }
 
     /// The planner params, from the config and the runner's inputs.

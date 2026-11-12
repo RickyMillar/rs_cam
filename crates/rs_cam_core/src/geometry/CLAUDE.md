@@ -2,7 +2,7 @@
 
 Regions, grids, distance fields, contours and the machining boundary. The
 principal type is `RegionSet`; the boundary entry points are
-`effective_boundary` and `clip_annotated_to_boundary_set`.
+`effective_boundary` and `clip_annotated_to_boundary_set` (P29-8e: it takes and gives a `Reentering`; the clip walk records its re-entry descents in `ClipReentries`, and `stay_plunges` names why they stay plunges).
 
 ## Files
 

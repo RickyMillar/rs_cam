@@ -194,7 +194,7 @@ fn a_collapsed_user_offset_refuses_at_the_clip() {
     // reused the un-offset stock rectangle; until 2026-10-28 it passed the
     // path through unclipped with a report-only finding.
     let err = ProjectSession::apply_boundary_clip(
-        annotated,
+        rs_cam_core::geometry::boundary::Reentering::none(annotated),
         &boundary,
         &stock_bbox,
         None,

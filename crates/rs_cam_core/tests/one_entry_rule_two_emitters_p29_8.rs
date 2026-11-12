@@ -366,7 +366,7 @@ fn the_dressup_door_emits_the_resolved_entry_p29_8() {
         };
         // No cutter, as the K4 sentry: the air lead is fed (no replayed
         // stock), and the helix radius is the request.
-        let entry = ResolvedEntry::of_dressup(&cfg, None, TOOL_D, &stock_material());
+        let entry = ResolvedEntry::of_dressup(&cfg, None, TOOL_D, &stock_material(), Some(PLUNGE));
         assert_eq!(entry.door(), EntryDoor::Dressup);
         let tp = dress(&cfg, None);
 
@@ -375,7 +375,10 @@ fn the_dressup_door_emits_the_resolved_entry_p29_8() {
         // move's own feed).
         let lead = feeds(&tp, MoveIntent::EntryApproach);
         assert!(!lead.is_empty(), "non-vacuity: {style:?} has an air lead");
-        let rule = PLUNGE.min(FEED);
+        // P29-8e: the pipeline reads the plunge feed of `ResolvedEntry`.
+        let plunge = entry.plunge_feed().expect("the op states a plunge rate");
+        assert_eq!(plunge.mm_min().to_bits(), PLUNGE.to_bits());
+        let rule = plunge.mm_min().min(FEED);
         for feed in lead {
             assert_eq!(feed.to_bits(), rule.to_bits(), "{style:?}: air-lead feed");
         }
@@ -420,7 +423,7 @@ fn a_dressup_helix_with_no_room_ramps_at_the_op_angle_p29_8() {
         feed_optimization: false,
         ..DressupConfig::default()
     };
-    let entry = ResolvedEntry::of_dressup(&cfg, None, TOOL_D, &stock_material());
+    let entry = ResolvedEntry::of_dressup(&cfg, None, TOOL_D, &stock_material(), Some(PLUNGE));
     assert_eq!(entry.fallback_ramp_angle_deg(), 7.0);
     let away = [rectangle(100.0, 100.0, 110.0, 110.0)];
     let tp = dress(&cfg, Some(&away));
@@ -459,7 +462,12 @@ fn rough_3d(style: Adaptive3dEntryStyle) -> (Toolpath, ResolvedEntry) {
         tool: None,
     });
     // The session's own stock material: the ramp angle rule reads it.
-    let entry = ResolvedEntry::of_adaptive3d(&config, &cutter, &session.stock_config().material);
+    let entry = ResolvedEntry::of_adaptive3d(
+        &config,
+        &cutter,
+        &session.stock_config().material,
+        session.toolpath_configs()[index].operation.plunge_rate(),
+    );
     common::session::generate(&mut session, index);
     let tp = session
         .result_at(index)

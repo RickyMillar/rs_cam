@@ -102,6 +102,7 @@ fn style(helix: bool, cutter: &dyn MillingCutter) -> EntryStyle3d {
         &cfg,
         cutter,
         &rs_cam_core::material::Material::default(),
+        None,
     )
     .style_3d()
 }

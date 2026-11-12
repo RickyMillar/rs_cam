@@ -1182,15 +1182,17 @@ impl ProjectSession {
     /// doing the cut for region X" still covers them post-clip plus any
     /// retracts inserted into the middle. `spans_valid` stays `true`.
     ///
-    /// `plunge_rate_mm_min` is the operation's own plunge rate, used for the
+    /// `plunge_feed` is the plunge feed of the op's entry rule, used for the
     /// re-entry descent the clipper emits (G-BOUNDARYPLUNGE) — see
     /// [`crate::geometry::boundary::clip_toolpath_to_boundary_set_with_provenance`].
+    /// P29-8e: it takes and gives a [`crate::geometry::boundary::Reentering`],
+    /// so the re-entries reach the entry step after the clips.
     #[expect(
         clippy::too_many_arguments,
         reason = "each parameter is a separate input that the callers supply"
     )]
     pub fn apply_boundary_clip(
-        annotated: crate::trace::toolpath_spans::AnnotatedToolpath,
+        annotated: crate::geometry::boundary::Reentering,
         boundary_config: &crate::compute::config::BoundaryConfig,
         stock_bbox: &BoundingBox3,
         // G8: `&Arc` rather than `&TriangleMesh` so a `ModelSilhouette`
@@ -1201,13 +1203,11 @@ impl ProjectSession {
         keep_out_footprints: &[crate::polygon::Polygon2],
         tool_diameter: f64,
         safe_z: f64,
-        plunge_rate_mm_min: Option<f64>,
+        plunge_feed: Option<crate::feeds::entry_rule::EntryPlungeFeed>,
         semantic_ctx: &crate::trace::semantic_trace::ToolpathSemanticContext,
         channels: &mut crate::trace::transform_provenance::ReconcileSet<'_>,
-    ) -> Result<
-        crate::trace::toolpath_spans::AnnotatedToolpath,
-        crate::compute::execute::OperationError,
-    > {
+    ) -> Result<crate::geometry::boundary::Reentering, crate::compute::execute::OperationError>
+    {
         use crate::geometry::boundary::clip_annotated_to_boundary_set;
 
         // The source polygon (ModelSilhouette falls back to the stock
@@ -1241,9 +1241,8 @@ impl ProjectSession {
         // The multi-region semantics win: membership downstream is "inside
         // ANY", which is what a split containment means.
         let clipped =
-            clip_annotated_to_boundary_set(annotated, &set.boundaries, safe_z, plunge_rate_mm_min)
-                .reconcile(channels)
-                .into_inner();
+            clip_annotated_to_boundary_set(annotated, &set.boundaries, safe_z, plunge_feed)
+                .reconcile(channels);
 
         // Recorded AFTER the reconcile so this item's own link is bound to
         // post-clip indices and is not then remapped a second time.
@@ -1258,8 +1257,9 @@ impl ProjectSession {
             },
         );
         clip_scope.set_param(SemanticKey::KeepOutCount, keep_out_footprints.len());
-        if !clipped.toolpath.moves.is_empty() {
-            clip_scope.bind_to_toolpath(&clipped.toolpath, 0, clipped.toolpath.moves.len());
+        let moves = &clipped.annotated().toolpath;
+        if !moves.moves.is_empty() {
+            clip_scope.bind_to_toolpath(moves, 0, moves.moves.len());
         }
 
         Ok(clipped)
@@ -1590,27 +1590,27 @@ impl ProjectSession {
     /// — the set clipper never drops input moves, so `spans_valid` stays
     /// `true`.
     ///
-    /// `plunge_rate_mm_min` is the operation's own plunge rate, used for the
+    /// `plunge_feed` is the plunge feed of the op's entry rule, used for the
     /// re-entry descent the clipper emits (G-BOUNDARYPLUNGE) — see
     /// [`crate::geometry::boundary::clip_toolpath_to_boundary_set_with_provenance`].
+    /// P29-8e: it takes and gives a [`crate::geometry::boundary::Reentering`],
+    /// so the re-entries reach the entry step after the clips.
     #[expect(
         clippy::too_many_arguments,
         reason = "each parameter is a separate input that the callers supply"
     )]
     pub fn apply_boundary_clip_multi(
-        annotated: crate::trace::toolpath_spans::AnnotatedToolpath,
+        annotated: crate::geometry::boundary::Reentering,
         boundary_config: &crate::compute::config::BoundaryConfig,
         regions: &[crate::polygon::Polygon2],
         keep_out_footprints: &[crate::polygon::Polygon2],
         tool_diameter: f64,
         safe_z: f64,
-        plunge_rate_mm_min: Option<f64>,
+        plunge_feed: Option<crate::feeds::entry_rule::EntryPlungeFeed>,
         semantic_ctx: &crate::trace::semantic_trace::ToolpathSemanticContext,
         channels: &mut crate::trace::transform_provenance::ReconcileSet<'_>,
-    ) -> Result<
-        crate::trace::toolpath_spans::AnnotatedToolpath,
-        crate::compute::execute::OperationError,
-    > {
+    ) -> Result<crate::geometry::boundary::Reentering, crate::compute::execute::OperationError>
+    {
         use crate::geometry::boundary::clip_annotated_to_boundary_set;
 
         // Per-region keep-out subtraction, user offset and containment
@@ -1633,10 +1633,8 @@ impl ProjectSession {
         }
         let boundaries = set.boundaries;
 
-        let clipped =
-            clip_annotated_to_boundary_set(annotated, &boundaries, safe_z, plunge_rate_mm_min)
-                .reconcile(channels)
-                .into_inner();
+        let clipped = clip_annotated_to_boundary_set(annotated, &boundaries, safe_z, plunge_feed)
+            .reconcile(channels);
 
         // Recorded AFTER the reconcile so this item's own link is bound to
         // post-clip indices and is not then remapped a second time.
@@ -1652,8 +1650,9 @@ impl ProjectSession {
         );
         clip_scope.set_param(SemanticKey::KeepOutCount, keep_out_footprints.len());
         clip_scope.set_param(SemanticKey::RegionCount, boundaries.len());
-        if !clipped.toolpath.moves.is_empty() {
-            clip_scope.bind_to_toolpath(&clipped.toolpath, 0, clipped.toolpath.moves.len());
+        let moves = &clipped.annotated().toolpath;
+        if !moves.moves.is_empty() {
+            clip_scope.bind_to_toolpath(moves, 0, moves.moves.len());
         }
 
         Ok(clipped)

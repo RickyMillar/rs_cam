@@ -354,7 +354,7 @@ fn resolved_entry(
 ) -> Result<(ResolvedEntry, f64), RampFallback> {
     if let OperationConfig::Adaptive3d(cfg) = op {
         return Ok((
-            ResolvedEntry::of_adaptive3d(cfg, cutter, material),
+            ResolvedEntry::of_adaptive3d(cfg, cutter, material, op.plunge_rate()),
             cfg.entry_clearance_mm,
         ));
     }
@@ -362,7 +362,13 @@ fn resolved_entry(
         return Err(RampFallback::EntryUnknown);
     };
     Ok((
-        ResolvedEntry::of_dressup(cfg, Some(cutter), cutter.diameter(), material),
+        ResolvedEntry::of_dressup(
+            cfg,
+            Some(cutter),
+            cutter.diameter(),
+            material,
+            op.plunge_rate(),
+        ),
         cfg.entry_clearance_mm,
     ))
 }

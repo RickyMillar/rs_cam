@@ -689,7 +689,8 @@ pub(crate) use curve_engrave::{
 };
 use dressup_apply::attach_generic_rest_analysis;
 pub use dressup_apply::{
-    DRESSUP_PIPELINE, DressupContext, DressupStage, DressupStep, apply_dressups,
+    DRESSUP_PIPELINE, DressupContext, DressupStage, DressupStep, PipelineEntry, apply_dressups,
+    apply_dressups_with_entry, enter_clip_reentries,
 };
 pub use drilling::{build_drill_op_for_config, drill_depth_bases};
 pub(crate) use drilling::{

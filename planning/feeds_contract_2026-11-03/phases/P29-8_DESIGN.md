@@ -53,7 +53,7 @@ rate". The stop report measured that this doubles five ops' entry feeds on the o
 
 | Row | Verdict | Why |
 |---|---|---|
-| `U-TabReplunge` (the re-plunge after each tab of a Profile, no limit reads it) | stays; narrows in 8d | Measured on wanaka idx 17 (style Ramp, tabs): 42 `EntryPlunge` moves at the op plunge rate (1582) stay straight plunges at X 379.5, one at each end of a tab gap on each level (Z from the retract 27.5 down to the level, 23.75 to 1.5): the ramp dressup does not turn them into ramps. Cause not traced (they are not at the dressup feed `min(move, 791)`, so the dressup did not handle them). In 8d they are declared `Entry(Plunge)` cuts (`AxialPlunge`, value check), so a limit reads them; the row stays open for the open question of why no ramp replaces them (Q4). The `dressup/tabs.rs:218`, `:257` re-plunge writes the CUT feed of the interrupted move; on idx 17 no such move appears. |
+| `U-TabReplunge` (the re-plunge after each tab of a Profile, no limit reads it; P29-8e: the cause was the obstacle clip, not the tabs, see `P29-8e_TAB_REPLUNGE.md`) | stays; narrows in 8d | Measured on wanaka idx 17 (style Ramp, tabs): 42 `EntryPlunge` moves at the op plunge rate (1582) stay straight plunges at X 379.5, one at each end of a tab gap on each level (Z from the retract 27.5 down to the level, 23.75 to 1.5): the ramp dressup does not turn them into ramps. Cause not traced (they are not at the dressup feed `min(move, 791)`, so the dressup did not handle them). In 8d they are declared `Entry(Plunge)` cuts (`AxialPlunge`, value check), so a limit reads them; the row stays open for the open question of why no ramp replaces them (Q4). The `dressup/tabs.rs:218`, `:257` re-plunge writes the CUT feed of the interrupted move; on idx 17 no such move appears. |
 | `P28-30` (the modulator skips a plunge) | re-file: `closes_in` "the modulation design step" | lead ruling (the modulator hold); the plunge now has a planned engagement (`AxialPlunge`), but the modulator is not widened |
 | `P28-21` (the envelope finding of the simulation places the body group only) | re-file: `closes_in` "the modulation design step (the sample side)" | placing an entry sample is a sample-side change; the lead ruled that the sample side does not change in P29-8 |
 | `P28-10` (spindle power is no limit on a drill cycle) | stays; `closes_in` "later (a drill-cycle power limit moves Drill cells; not measured)" | the plunge entry gets the axial power check (8d) through the Entry group; the drill cycle is the Drill group, whose power ladder and RPM limit are a different reader. Making it a limit moves FM1 Drill cells (6 cells hold a power today) and was not prototyped |
@@ -462,7 +462,8 @@ below the derived value from its own 20, Shaper's 20 is above the derived value 
   the dressup `helix_radius` (a stored mm value or the rule): one shape? My choice: not in P29-8
   (no number moves; the stored fields stand); a finding (F3).
 - **Q4. The tab re-plunge.** On wanaka idx 17 the 42 tab re-plunges stay straight plunges at the
-  op plunge rate under the Ramp style (measured; cause not traced). Trace and fix it in P29-8, or
+  op plunge rate under the Ramp style (measured; cause not traced. P29-8e: they are re-entries of
+  the obstacle clip, not tab descents; `P29-8e_TAB_REPLUNGE.md` sections 0 and 2). Trace and fix it in P29-8, or
   declare them and leave the row open? My choice: declare them in 8d (a limit then reads them) and
   give the cause its own step with a prediction run (a fix moves idx 17 G-code).
 - **Q5. `cuts()` reads the configured entry kind** (a new argument). Or keep `cuts()` pure and file
@@ -701,7 +702,8 @@ and 2 of the 12 default-machine cells (3 materials x 2 tools x 2 ops per machine
   `helix_radius_factor` as a factor of D).
 - F4. `SuggestContext::upstream_leftover_stock_mm` (`feeds/suggest.rs:165`) is documented "v1
   doesn't use this". P29-9 can use it (P29-9 Q1).
-- F5. The tab re-plunge under style None runs at the cut feed (Q4).
+- F5. The tab re-plunge under style None runs at the cut feed (Q4). (P29-8e: right in kind; the
+  emitted feed is 2500, the Z axis cap of the cut feed 3165, `P29-8e_TAB_REPLUNGE.md` 2.3.)
 - F6. The air lead of the dressup door is a fed move through air at a plunge feed; a rapid would be
   faster. Not in scope.
 - F7. Wanaka idx 17 (Profile, 6 mm) stores `plunge_rate = 1582`; at its RPM (10610) the
@@ -728,7 +730,7 @@ Lead, 2026-11-12.
 - **Q2: keep the two pitch rows.** The helix rule by angle is logged for the R6 follow-up.
 - **Q3: not in P29-8.** Finding F3 stays.
 - **Q4: declare the tab re-plunges in 8d.** The cause gets its own step after 8d, with a
-  prediction run (it moves the G-code of idx 17). Finding F7 goes to the operator now: it is a
+  prediction run (it moves the G-code of idx 17). (P29-8e found the cause: the obstacle clip.) Finding F7 goes to the operator now: it is a
   fact of today's cut and does not depend on P29-8.
 - **Q5: the argument.** `cuts()` takes the configured entry kind.
 - **The 0 FM1 cells of 8d are reasoned.** The implementer checks the columns `diagnostic_ids`,

@@ -587,14 +587,64 @@ pub fn apply_dressups(
     ctx: DressupContext<'_>,
     channels: &mut ReconcileSet<'_>,
 ) -> AnnotatedToolpath {
+    apply_dressups_with_entry(annotated, ctx, channels).0
+}
+
+/// P29-8e: the entry the dressup pipeline resolved for one op, for the
+/// entry step after the clips ([`enter_clip_reentries`]): the effective
+/// entry style (after the K4 contract, the drill-cycle strip and the
+/// G-CENTRECUT ramp) and THE entry rule, its plunge feed included. Only
+/// [`apply_dressups_with_entry`] builds it, so the step reads the values
+/// the pipeline used and works no style or feed out again (lead ruling Q6).
+#[derive(Debug, Clone, Copy, PartialEq)]
+pub struct PipelineEntry {
+    style: DressupEntryStyle,
+    resolved: ResolvedEntry,
+}
+
+impl PipelineEntry {
+    /// The effective entry style of the pipeline.
+    #[must_use]
+    pub fn style(&self) -> DressupEntryStyle {
+        self.style
+    }
+
+    /// THE entry rule of the op.
+    #[must_use]
+    pub fn resolved(&self) -> &ResolvedEntry {
+        &self.resolved
+    }
+
+    /// The plunge feed of the entry rule, for the re-entry descent of the
+    /// clips; `None` when the op states no usable plunge rate.
+    #[must_use]
+    pub fn plunge_feed(&self) -> Option<crate::feeds::entry_rule::EntryPlungeFeed> {
+        self.resolved.plunge_feed().ok()
+    }
+}
+
+/// [`apply_dressups`], and the entry it resolved ([`PipelineEntry`]). The
+/// session reads the entry for the clips and the entry step after them.
+pub fn apply_dressups_with_entry(
+    annotated: AnnotatedToolpath,
+    ctx: DressupContext<'_>,
+    channels: &mut ReconcileSet<'_>,
+) -> (AnnotatedToolpath, PipelineEntry) {
     let mut run = PipelineRun {
         // Capability gate: barriered TSP only fires when the input has
         // barriers. The count is read from the INPUT, once.
         barrier_count: annotated.rapid_order_barriers().len(),
         tool_radius: ctx.tool_diameter / 2.0,
         entry_style: None,
-        entry: ResolvedEntry::of_dressup(ctx.cfg, ctx.cutter, ctx.tool_diameter, ctx.material),
+        entry: ResolvedEntry::of_dressup(
+            ctx.cfg,
+            ctx.cutter,
+            ctx.tool_diameter,
+            ctx.material,
+            Some(ctx.plunge_rate_mm_min),
+        ),
         ctx,
+        sites: None,
     };
     let input_valid = annotated.spans_valid;
     let mut current = annotated;
@@ -616,11 +666,67 @@ pub fn apply_dressups(
         };
     }
 
-    AnnotatedToolpath {
-        toolpath: current.toolpath,
-        spans: current.spans,
-        spans_valid: input_valid && current.spans_valid,
-        produced: current.produced,
+    let entry = PipelineEntry {
+        style: run.effective_entry_style(&current),
+        resolved: run.entry,
+    };
+    (
+        AnnotatedToolpath {
+            toolpath: current.toolpath,
+            spans: current.spans,
+            spans_valid: input_valid && current.spans_valid,
+            produced: current.produced,
+        },
+        entry,
+    )
+}
+
+/// P29-8e: THE entry step after the clips. It sends every re-entry descent
+/// of the boundary clip and the obstacle clip through the shared entry
+/// pass (`dressup::apply_entry_at`) with the entry that
+/// `ResolvedEntry::clip_reentry` gives for the style the pipeline ran
+/// (this step holds no style rule of its own):
+///
+/// - style Ramp, and style Helix by lead ruling Q9: the ramp of the entry
+///   rule, folded along the kept cut (never a helix: the site is on the
+///   clip edge);
+/// - style None: the descent stays the straight plunge the operator asked
+///   for, at the plunge feed of the entry rule (the clip wrote it).
+///
+/// A toolpath with no re-entry comes back as it came in. The rest arm
+/// (a rest-driven surface pass) is the caller's: the entry-descent split
+/// (`RestEntryRamp`) owns those descents.
+pub fn enter_clip_reentries(
+    clipped: crate::geometry::boundary::Reentering,
+    entry: &PipelineEntry,
+    ctx: DressupContext<'_>,
+    channels: &mut ReconcileSet<'_>,
+) -> AnnotatedToolpath {
+    let (annotated, reentries) = clipped.into_parts();
+    if reentries.is_empty() {
+        return annotated;
+    }
+    // Lead ruling Q10: the step emits only the fold ramp along the kept
+    // cut. With a surface probe `emit_ramp` would walk straight legs that
+    // only a Z clip holds, and no clip runs after this step; the caller
+    // keeps a surface-riding op's re-entries as plunges.
+    debug_assert!(
+        ctx.entry_surface.is_none(),
+        "the entry step after the clips runs with no surface probe (Q10)"
+    );
+    let run = PipelineRun {
+        barrier_count: 0,
+        tool_radius: ctx.tool_diameter / 2.0,
+        entry_style: Some(entry.style),
+        entry: entry.resolved,
+        ctx,
+        sites: Some(&reentries),
+    };
+    match entry.resolved.clip_reentry(entry.style) {
+        crate::feeds::entry_rule::ClipReentryEntry::Ramp { max_angle_deg } => {
+            run.clip_reentry_ramp(annotated, max_angle_deg, channels)
+        }
+        crate::feeds::entry_rule::ClipReentryEntry::StatedPlunge => annotated,
     }
 }
 
@@ -637,9 +743,13 @@ struct PipelineRun<'a> {
     /// P29-8: THE entry rule of this op. The entry steps read every entry
     /// number from it and from nothing else.
     entry: ResolvedEntry,
+    /// P29-8e: the descents the entry steps convert: `None` is every
+    /// vertical descent (the pipeline); `Some` the clip re-entries (the
+    /// entry step after the clips).
+    sites: Option<&'a crate::geometry::boundary::ClipReentries>,
 }
 
-impl PipelineRun<'_> {
+impl<'a> PipelineRun<'a> {
     /// Run `transform` under `stage`, with this run's tracing scopes.
     fn traced(
         &self,
@@ -748,11 +858,25 @@ impl PipelineRun<'_> {
         }
     }
 
-    /// The entry dressup's plunge feed: the op plunge rate (P29-8 8c, the
-    /// one plunge rule `PlungeFeedRule::OpPlungeRate`). The emitters take
-    /// the `min` with the feed of the plunge move they replace.
+    /// The entry dressup's plunge feed: the plunge feed of THE entry rule
+    /// (P29-8 8c, the one plunge rule `PlungeFeedRule::OpPlungeRate`; P29-8e:
+    /// `ResolvedEntry::plunge_feed`, one value for the pipeline and the
+    /// step after the clips). The emitters take the `min` with the feed of
+    /// the plunge move they replace, so an op with no usable plunge rate
+    /// keeps the feed of that move (`f64::INFINITY` is no bound).
     fn entry_plunge_rate(&self) -> f64 {
-        self.ctx.plunge_rate_mm_min
+        self.entry.plunge_feed().map_or(
+            f64::INFINITY,
+            crate::feeds::entry_rule::EntryPlungeFeed::mm_min,
+        )
+    }
+
+    /// The sites of the entry steps of this run.
+    fn entry_sites(&self) -> crate::dressup::EntrySites<'a> {
+        match self.sites {
+            Some(list) => crate::dressup::EntrySites::ClipReentries(list),
+            None => crate::dressup::EntrySites::EveryVerticalDescent,
+        }
     }
 
     /// The barriered rapid-order pass: the input has barriers and the op
@@ -796,6 +920,7 @@ impl PipelineRun<'_> {
         let ramp = self.entry.dressup_ramp();
         let ramp_angle = self.entry.ramp_angle_deg();
         let plunge_rate = self.entry_plunge_rate();
+        let sites = self.entry_sites();
         let entry_safety = self.entry_safety();
         let tool_radius = self.tool_radius;
         self.traced(
@@ -806,7 +931,52 @@ impl PipelineRun<'_> {
                 scope.set_param(SemanticKey::Kind, "ramp");
                 scope.set_param(SemanticKey::MaxAngleDeg, ramp_angle);
             },
-            |at| crate::dressup::apply_entry(at, ramp, plunge_rate, entry_safety, tool_radius),
+            |at| {
+                crate::dressup::apply_entry_at(
+                    at,
+                    ramp,
+                    plunge_rate,
+                    entry_safety,
+                    tool_radius,
+                    sites,
+                )
+            },
+        )
+    }
+
+    /// P29-8e: the ramp of a clip re-entry (`ResolvedEntry::clip_reentry`),
+    /// on the recorded sites only.
+    fn clip_reentry_ramp(
+        &self,
+        current: AnnotatedToolpath,
+        ramp_angle: f64,
+        channels: &mut ReconcileSet<'_>,
+    ) -> AnnotatedToolpath {
+        let ramp = crate::dressup::EntryStyle::Ramp {
+            max_angle_deg: ramp_angle,
+        };
+        let plunge_rate = self.entry_plunge_rate();
+        let sites = self.entry_sites();
+        let entry_safety = self.entry_safety();
+        let tool_radius = self.tool_radius;
+        self.traced(
+            current,
+            channels,
+            DressupStep::RampEntry.stage(),
+            |scope| {
+                scope.set_param(SemanticKey::Kind, "ramp");
+                scope.set_param(SemanticKey::MaxAngleDeg, ramp_angle);
+            },
+            |at| {
+                crate::dressup::apply_entry_at(
+                    at,
+                    ramp,
+                    plunge_rate,
+                    entry_safety,
+                    tool_radius,
+                    sites,
+                )
+            },
         )
     }
 
@@ -827,6 +997,7 @@ impl PipelineRun<'_> {
         let helix_radius = self.entry.helix_radius().emitted_mm;
         let helix_pitch = self.entry.helix_pitch_mm();
         let plunge_rate = self.entry_plunge_rate();
+        let sites = self.entry_sites();
         let entry_safety = self.entry_safety();
         let tool_radius = self.tool_radius;
         self.traced(
@@ -838,7 +1009,16 @@ impl PipelineRun<'_> {
                 scope.set_param(SemanticKey::Radius, helix_radius);
                 scope.set_param(SemanticKey::Pitch, helix_pitch);
             },
-            |at| crate::dressup::apply_entry(at, helix, plunge_rate, entry_safety, tool_radius),
+            |at| {
+                crate::dressup::apply_entry_at(
+                    at,
+                    helix,
+                    plunge_rate,
+                    entry_safety,
+                    tool_radius,
+                    sites,
+                )
+            },
         )
     }
 

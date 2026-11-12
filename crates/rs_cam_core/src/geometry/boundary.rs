@@ -4,11 +4,174 @@
 //! toolpath clipping to keep moves within a boundary polygon, and model
 //! silhouette extraction for automatic machining boundaries.
 
+use crate::feeds::entry_rule::EntryPlungeFeed;
 use crate::geo::{P2, P3};
 use crate::geometry::marching_squares::{cell_case, cell_segments};
 use crate::mesh::TriangleMesh;
 use crate::polygon::{Polygon2, detect_containment};
 use crate::toolpath::{MoveIntent, MoveType, Toolpath};
+use crate::trace::toolpath_spans::AnnotatedToolpath;
+use crate::trace::transform_provenance::{ReconcileSet, Transformed};
+
+// ── P29-8e: the clip re-entries ─────────────────────────────────────────
+
+/// The re-entry descents of a clip (P29-8e): the index of each vertical
+/// descent that a clip walk emitted where a cut comes back into the
+/// allowed region, sorted, into the walk's output. A clip that runs after
+/// another clip maps the list of the earlier clip through its own walk.
+///
+/// The entry step after the clips
+/// (`compute::execute::enter_clip_reentries`) reads this list; it does not
+/// test the move shape. The field is private: only [`clip_walk`] writes it.
+#[derive(Debug, Clone, Default, PartialEq, Eq)]
+pub struct ClipReentries(Vec<usize>);
+
+impl ClipReentries {
+    /// The indices of the re-entry descents, sorted.
+    #[must_use]
+    pub fn indices(&self) -> &[usize] {
+        &self.0
+    }
+
+    /// True when the clips emitted no re-entry descent.
+    #[must_use]
+    pub fn is_empty(&self) -> bool {
+        self.0.is_empty()
+    }
+
+    /// The number of re-entry descents.
+    #[must_use]
+    pub fn len(&self) -> usize {
+        self.0.len()
+    }
+
+    fn contains(&self, index: usize) -> bool {
+        self.0.binary_search(&index).is_ok()
+    }
+
+    /// Record the output index `index`. The walk emits in order, so the
+    /// list stays sorted.
+    fn record(&mut self, index: usize) {
+        debug_assert!(self.0.last().is_none_or(|last| *last < index));
+        self.0.push(index);
+    }
+
+    /// One move was put in front of the output at `at` (the K3 start
+    /// rapid): every index at or after it moves up by `by`.
+    pub(crate) fn shift_from(&mut self, at: usize, by: usize) {
+        for index in &mut self.0 {
+            if *index >= at {
+                *index += by;
+            }
+        }
+    }
+}
+
+/// The output of a clip door before the reconcile (P29-8e): the C1
+/// transform and the re-entries of the walk. [`Self::reconcile`] gives the
+/// one value that leaves a clip, [`Reentering`].
+#[must_use = "reconcile the clip, then send its re-entries through the entry step"]
+pub struct Clipped {
+    transformed: Transformed,
+    reentries: ClipReentries,
+}
+
+impl Clipped {
+    /// The two clip doors (this file and `compute::obstacle`) build it.
+    pub(crate) fn new(transformed: Transformed, reentries: ClipReentries) -> Self {
+        Self {
+            transformed,
+            reentries,
+        }
+    }
+
+    /// Hand the clip's index mapping to every channel (C1), and keep the
+    /// re-entries.
+    pub fn reconcile(self, channels: &mut ReconcileSet<'_>) -> Reentering {
+        Reentering {
+            annotated: self.transformed.reconcile(channels).into_inner(),
+            reentries: self.reentries,
+        }
+    }
+}
+
+/// A clipped toolpath whose re-entry descents have not met the entry rule
+/// yet (P29-8e, operator intent: a new clip cannot skip the entry rule).
+///
+/// The toolpath leaves this value only through the entry step
+/// (`compute::execute::enter_clip_reentries`, which reads the op's resolved
+/// entry) or through [`Self::stay_plunges`], which names why the descents
+/// stay straight plunges. The next clip takes this value, so it maps the
+/// re-entries of the clip before it.
+#[must_use = "send the re-entries through the entry step, or name why they stay plunges"]
+#[derive(Debug)]
+pub struct Reentering {
+    annotated: AnnotatedToolpath,
+    reentries: ClipReentries,
+}
+
+/// Why the re-entry descents of a clip stay straight plunges with no entry
+/// step (P29-8e).
+#[derive(Debug, Clone, Copy, PartialEq, Eq)]
+pub enum PlungesStay {
+    /// No operation and so no entry rule: a test or a probe of the clip
+    /// alone.
+    NoOperation,
+    /// The K1 obstacle backstop after the entry-descent split. A vertical
+    /// descent keeps the tool in a column that the obstacle check allowed;
+    /// a ramp after the last obstacle clip would have no check.
+    ObstacleBackstop,
+    /// A rest-driven surface pass: the entry-descent split ramps these
+    /// descents on the rest stock (`dressup::RestEntryRamp`, the rest arm of
+    /// the entry step, G-ISOCLIPENTRY).
+    RestEntryRamp,
+    /// A surface-riding op on fresh stock (lead ruling Q10, P29-8e): its
+    /// ramp is the zigzag along one direction that only a Z clip holds, and
+    /// no clip runs after the entry step, so the re-entry stays the straight
+    /// plunge of HEAD.
+    SurfaceProbe,
+}
+
+impl Reentering {
+    /// A toolpath before any clip, or one whose re-entries all met the
+    /// entry rule: no open re-entry.
+    pub fn none(annotated: AnnotatedToolpath) -> Self {
+        Self {
+            annotated,
+            reentries: ClipReentries::default(),
+        }
+    }
+
+    /// The toolpath.
+    #[must_use]
+    pub fn annotated(&self) -> &AnnotatedToolpath {
+        &self.annotated
+    }
+
+    /// The re-entry descents of the clips.
+    #[must_use]
+    pub fn reentries(&self) -> &ClipReentries {
+        &self.reentries
+    }
+
+    /// The toolpath with each re-entry descent left a straight plunge, for
+    /// the reason `why`.
+    #[must_use]
+    pub fn stay_plunges(self, why: PlungesStay) -> AnnotatedToolpath {
+        match why {
+            PlungesStay::NoOperation
+            | PlungesStay::ObstacleBackstop
+            | PlungesStay::RestEntryRamp
+            | PlungesStay::SurfaceProbe => self.annotated,
+        }
+    }
+
+    /// The toolpath and its re-entries, for the entry step and the next
+    /// clip only.
+    pub(crate) fn into_parts(self) -> (AnnotatedToolpath, ClipReentries) {
+        (self.annotated, self.reentries)
+    }
+}
 
 /// How the tool relates to the machining boundary.
 #[derive(Debug, Clone, Copy, PartialEq, Eq)]
@@ -183,18 +346,20 @@ pub fn clip_toolpath_to_boundary(tp: &Toolpath, boundary: &Polygon2, safe_z: f64
 /// session never passes an empty set: it refuses a collapse
 /// (G-BOUNDCOLLAPSE, `ProjectSession::boundary_collapse`).
 ///
-/// `plunge_rate_mm_min` is the operation's own plunge rate, handed straight
+/// `plunge_feed` is the plunge feed of the op's entry rule, handed straight
 /// to the walk for the re-entry descent (G-BOUNDARYPLUNGE). See
 /// [`clip_toolpath_to_boundary_set_with_provenance`] for what `None` means.
+///
+/// P29-8e: the input carries the re-entries of an earlier clip, and the
+/// output carries every re-entry of both ([`Clipped`]); the entry step
+/// after the clips reads them.
 pub fn clip_annotated_to_boundary_set(
-    annotated: crate::trace::toolpath_spans::AnnotatedToolpath,
+    input: Reentering,
     boundaries: &[Polygon2],
     safe_z: f64,
-    plunge_rate_mm_min: Option<f64>,
-) -> crate::trace::transform_provenance::Transformed {
-    use crate::trace::toolpath_spans::AnnotatedToolpath;
-    use crate::trace::transform_provenance::Transformed;
-
+    plunge_feed: Option<EntryPlungeFeed>,
+) -> Clipped {
+    let (annotated, carried) = input.into_parts();
     let AnnotatedToolpath {
         toolpath,
         spans,
@@ -202,15 +367,16 @@ pub fn clip_annotated_to_boundary_set(
         produced,
     } = annotated;
 
-    let (clipped, mapping) = if boundaries.is_empty() {
+    let (clipped, mapping, reentries) = if boundaries.is_empty() {
         let n = toolpath.moves.len();
-        (toolpath, (0..=n).collect::<Vec<usize>>())
+        (toolpath, (0..=n).collect::<Vec<usize>>(), carried)
     } else {
-        clip_toolpath_to_boundary_set_with_provenance(
+        clip_walk(
             &toolpath,
-            boundaries,
+            &BoundaryPermit { boundaries },
             safe_z,
-            plunge_rate_mm_min,
+            plunge_feed,
+            &carried,
         )
     };
 
@@ -221,14 +387,17 @@ pub fn clip_annotated_to_boundary_set(
     let spans: Vec<crate::trace::toolpath_spans::Span> =
         spans.iter().map(|s| s.remap(&mapping)).collect();
 
-    Transformed::from_mapping(
-        AnnotatedToolpath {
-            toolpath: clipped,
-            spans,
-            spans_valid,
-            produced,
-        },
-        mapping,
+    Clipped::new(
+        Transformed::from_mapping(
+            AnnotatedToolpath {
+                toolpath: clipped,
+                spans,
+                spans_valid,
+                produced,
+            },
+            mapping,
+        ),
+        reentries,
     )
 }
 
@@ -249,7 +418,7 @@ pub fn clip_annotated_to_boundary_set(
 /// Kept in-boundary moves clone the input's original intent unchanged.
 ///
 /// Re-entry always feeds the *entire* height from `safe_z` down to the
-/// segment's interpolated entry point at `plunge_rate_mm_min`
+/// segment's interpolated entry point at `plunge_feed`
 /// (G-BOUNDARYPLUNGE — see
 /// [`clip_toolpath_to_boundary_set_with_provenance`]). A
 /// rapid-down-to-clearance split is NOT done here — the actual input stock
@@ -297,7 +466,7 @@ pub fn clip_toolpath_to_boundary_with_provenance(
 /// retract/re-entry behaviour — this function is the sole implementation of
 /// the walk.
 ///
-/// # `plunge_rate_mm_min` (G-BOUNDARYPLUNGE, 2026-09-07)
+/// # `plunge_feed` (G-BOUNDARYPLUNGE, 2026-09-07; P29-8e: `EntryPlungeFeed`)
 ///
 /// The re-entry descent this walk emits is a NEW move the clipper invents,
 /// not the operator's cutting move. It descends the whole height from
@@ -335,14 +504,16 @@ pub fn clip_toolpath_to_boundary_set_with_provenance(
     tp: &Toolpath,
     boundaries: &[Polygon2],
     safe_z: f64,
-    plunge_rate_mm_min: Option<f64>,
+    plunge_feed: Option<EntryPlungeFeed>,
 ) -> (Toolpath, Vec<usize>) {
-    clip_walk(
+    let (clipped, mapping, _reentries) = clip_walk(
         tp,
         &BoundaryPermit { boundaries },
         safe_z,
-        plunge_rate_mm_min,
-    )
+        plunge_feed,
+        &ClipReentries::default(),
+    );
+    (clipped, mapping)
 }
 
 /// Where the clip walk may keep motion (K1).
@@ -386,18 +557,28 @@ impl ClipPermit for BoundaryPermit<'_> {
 /// THE clip walk. [`clip_toolpath_to_boundary_set_with_provenance`] and
 /// the K1 obstacle step call it; the doc of the first states the move
 /// rules, the provenance map and the re-entry feed.
+///
+/// P29-8e: it returns the re-entry descents it emitted ([`ClipReentries`])
+/// beside the mapping, and it carries the re-entries of an earlier clip
+/// (`carried`, input indices): a carried descent that the walk keeps from
+/// its start is a re-entry of the output too; a carried descent that the
+/// walk cuts short gets the walk's own descent, which is recorded instead.
+/// A vertical descent into stock takes the plunge rule
+/// ([`EntryPlungeFeed`]).
 pub(crate) fn clip_walk(
     tp: &Toolpath,
     permit: &dyn ClipPermit,
     safe_z: f64,
-    plunge_rate_mm_min: Option<f64>,
-) -> (Toolpath, Vec<usize>) {
+    plunge_feed: Option<EntryPlungeFeed>,
+    carried: &ClipReentries,
+) -> (Toolpath, Vec<usize>, ClipReentries) {
     let mut result = Toolpath::new();
     let mut mapping: Vec<usize> = Vec::with_capacity(tp.moves.len() + 1);
+    let mut reentries = ClipReentries::default();
 
     if tp.moves.is_empty() {
         mapping.push(0);
-        return (result, mapping);
+        return (result, mapping, reentries);
     }
 
     let mut prev_pos: Option<P3> = None;
@@ -406,15 +587,14 @@ pub(crate) fn clip_walk(
     // decide whether a t=0 interval needs a re-entry plunge.
     let mut at_source_target = false;
 
-    // G-BOUNDARYPLUNGE: the same disable condition the Phase 3 modulation
-    // guard uses (`feed_modulation.rs`). `OperationConfig::plunge_rate`
-    // returns a bare `f64`, an operation may carry none, and a zero rate
-    // would stop the machine — so an unusable rate falls back to the
-    // crossing move's own feed, which is what this walk always did.
-    let usable_plunge_rate = plunge_rate_mm_min.filter(|rate| rate.is_finite() && *rate > 1e-9);
+    // G-BOUNDARYPLUNGE: `EntryPlungeFeed` is a usable feed by construction
+    // (finite, above zero). With no operation (`None`) the re-entry keeps
+    // the crossing move's own feed, which is what this walk always did.
+    let usable_plunge_rate = plunge_feed.map(EntryPlungeFeed::mm_min);
 
-    for m in &tp.moves {
+    for (input_index, m) in tp.moves.iter().enumerate() {
         mapping.push(result.moves.len());
+        let carried_here = carried.contains(input_index);
 
         let target_inside = permit.point_allowed(m.target);
         let Some(start) = prev_pos else {
@@ -422,6 +602,9 @@ pub(crate) fn clip_walk(
             // target; otherwise establish the same safe outside position as
             // the existing endpoint-only walk.
             if target_inside {
+                if carried_here {
+                    reentries.record(result.moves.len());
+                }
                 result.moves.push(m.clone());
                 at_source_target = true;
             } else {
@@ -474,6 +657,9 @@ pub(crate) fn clip_walk(
             // endpoints are contained, otherwise replace it with the same
             // safe retract/link/re-entry sequence as the former endpoint walk.
             if target_inside && permit.arc_allowed(start, m) {
+                if carried_here && at_source_target {
+                    reentries.record(result.moves.len());
+                }
                 result.moves.push(m.clone());
                 at_source_target = true;
             } else {
@@ -488,6 +674,7 @@ pub(crate) fn clip_walk(
                     MoveIntent::Linking,
                 );
                 if target_inside {
+                    reentries.record(result.moves.len());
                     result.feed_to_with_intent(
                         m.target,
                         usable_plunge_rate.unwrap_or(source_feed),
@@ -529,11 +716,16 @@ pub(crate) fn clip_walk(
                     at_source_target = false;
                 }
                 result.rapid_to_with_intent(P3::new(entry.x, entry.y, safe_z), MoveIntent::Linking);
+                reentries.record(result.moves.len());
                 result.feed_to_with_intent(entry, descent_feed, MoveIntent::EntryPlunge);
             } else if !at_source_target {
                 // The prior clipped input already left us above this same XY.
                 // Only the vertical descent is needed for a t=0 re-entry.
+                reentries.record(result.moves.len());
                 result.feed_to_with_intent(entry, descent_feed, MoveIntent::EntryPlunge);
+            } else if carried_here {
+                // P29-8e: a descent of an earlier clip, kept from its start.
+                reentries.record(result.moves.len());
             }
 
             result.moves.push(clipped_linear_move(m, exit));
@@ -554,7 +746,7 @@ pub(crate) fn clip_walk(
     }
 
     mapping.push(result.moves.len());
-    (result, mapping)
+    (result, mapping, reentries)
 }
 
 const CLIP_PARAMETER_EPSILON: f64 = 1e-9;
@@ -1285,7 +1477,7 @@ mod tests {
             &tp,
             std::slice::from_ref(&boundary),
             safe_z,
-            Some(plunge_rate),
+            crate::feeds::entry_rule::EntryPlungeFeed::of_op_plunge_rate(Some(plunge_rate)).ok(),
         )
         .0;
 
@@ -1692,8 +1884,12 @@ mod tests {
         tp.rapid_to(P3::new(-1.0, 1.0, safe_z));
         tp.feed_to_with_intent(P3::new(7.0, 1.0, -2.0), 1_000.0, MoveIntent::ClearingCut);
 
-        let (clipped, mapping) =
-            clip_toolpath_to_boundary_set_with_provenance(&tp, &regions, safe_z, Some(250.0));
+        let (clipped, mapping) = clip_toolpath_to_boundary_set_with_provenance(
+            &tp,
+            &regions,
+            safe_z,
+            crate::feeds::entry_rule::EntryPlungeFeed::of_op_plunge_rate(Some(250.0)).ok(),
+        );
         let cuts: Vec<_> = clipped
             .moves
             .iter()

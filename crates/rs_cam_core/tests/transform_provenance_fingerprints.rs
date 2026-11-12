@@ -587,9 +587,14 @@ fn face_full_chain_fingerprint() {
     let boundary = Polygon2::rectangle(2.0, 2.0, 34.0, 26.0);
     // G-BOUNDARYPLUNGE: `None` keeps the re-entry at the crossing move's cut
     // feed, so the pinned fingerprint below still describes the same motion.
-    current = clip_annotated_to_boundary_set(current, &[boundary], 30.0, None)
-        .reconcile(&mut ReconcileSet::new(Some(&recorder), None))
-        .into_inner();
+    current = clip_annotated_to_boundary_set(
+        rs_cam_core::geometry::boundary::Reentering::none(current),
+        &[boundary],
+        30.0,
+        None,
+    )
+    .reconcile(&mut ReconcileSet::new(Some(&recorder), None))
+    .stay_plunges(rs_cam_core::geometry::boundary::PlungesStay::NoOperation);
     // RE-PINNED 2026-09-21: interval boundary clipping now retains the
     // in-boundary portions of seven inside→outside Face row feeds, adding
     // seven safe emitted moves. Was `(103, 10_899_331_192_678_125_387)`.

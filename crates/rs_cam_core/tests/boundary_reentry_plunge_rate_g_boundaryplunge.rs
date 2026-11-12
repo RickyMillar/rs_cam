@@ -97,7 +97,7 @@ fn clip_with(plunge_rate: Option<f64>) -> Toolpath {
         &path_crossing_into_the_boundary(),
         &[boundary()],
         SAFE_Z,
-        plunge_rate,
+        rs_cam_core::feeds::entry_rule::EntryPlungeFeed::of_op_plunge_rate(plunge_rate).ok(),
     )
     .0
 }
@@ -190,7 +190,7 @@ fn the_reentry_descent_is_pure_vertical_and_plunge_rated() {
         &tp,
         &[boundary()],
         SAFE_Z,
-        Some(PLUNGE_RATE),
+        rs_cam_core::feeds::entry_rule::EntryPlungeFeed::of_op_plunge_rate(Some(PLUNGE_RATE)).ok(),
     )
     .0;
     let k = only_entry_plunge(&clipped);

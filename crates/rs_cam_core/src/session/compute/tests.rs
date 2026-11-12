@@ -2676,7 +2676,7 @@ fn apply_boundary_clip_multi_clips_to_disjoint_regions() {
     let semantic_ctx = recorder.root_context();
 
     let clipped = ProjectSession::apply_boundary_clip_multi(
-        annotated,
+        crate::geometry::boundary::Reentering::none(annotated),
         &boundary,
         &regions,
         &[],
@@ -2688,7 +2688,8 @@ fn apply_boundary_clip_multi_clips_to_disjoint_regions() {
         &semantic_ctx,
         &mut crate::trace::transform_provenance::ReconcileSet::new(Some(&recorder), None),
     )
-    .expect("a boundary that resolves cannot refuse");
+    .expect("a boundary that resolves cannot refuse")
+    .stay_plunges(crate::geometry::boundary::PlungesStay::NoOperation);
 
     assert!(clipped.spans_valid, "spans stay valid through the set clip");
     assert_eq!(clipped.spans.len(), 1);
@@ -2742,7 +2743,7 @@ fn apply_boundary_clip_multi_all_regions_collapsed_refuses() {
     let semantic_ctx = recorder.root_context();
 
     let err = ProjectSession::apply_boundary_clip_multi(
-        annotated,
+        crate::geometry::boundary::Reentering::none(annotated),
         &boundary,
         &regions,
         &[],

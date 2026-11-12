@@ -154,17 +154,27 @@ fn a_shelf_is_a_z_floor_under_the_highest_top_h1() {
     // start rapid (that is the obstacle join rule), no lift.
     let mut channels = ReconcileSet::new(None, None);
     let above = pass(-70.0);
-    let out = clip_annotated_to_obstacles(AnnotatedToolpath::new(above.clone()), &view, 10.0, None)
-        .reconcile(&mut channels)
-        .into_inner();
+    let out = clip_annotated_to_obstacles(
+        rs_cam_core::geometry::boundary::Reentering::none(AnnotatedToolpath::new(above.clone())),
+        &view,
+        10.0,
+        None,
+    )
+    .reconcile(&mut channels)
+    .stay_plunges(rs_cam_core::geometry::boundary::PlungesStay::NoOperation);
     assert_eq!(
         format!("{:?}", out.toolpath.moves),
         format!("{:?}", above.moves)
     );
     // A toolpath below the floor loses the cut under it.
-    let out = clip_annotated_to_obstacles(AnnotatedToolpath::new(pass(-80.0)), &view, 10.0, None)
-        .reconcile(&mut channels)
-        .into_inner();
+    let out = clip_annotated_to_obstacles(
+        rs_cam_core::geometry::boundary::Reentering::none(AnnotatedToolpath::new(pass(-80.0))),
+        &view,
+        10.0,
+        None,
+    )
+    .reconcile(&mut channels)
+    .stay_plunges(rs_cam_core::geometry::boundary::PlungesStay::NoOperation);
     assert!(
         view.check_toolpath(&out.toolpath, JoinStart::Unknown)
             .is_empty()

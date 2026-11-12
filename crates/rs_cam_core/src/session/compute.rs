@@ -26,6 +26,7 @@ use super::{
     multitool,
 };
 
+mod clip_entry;
 mod diagnostics;
 mod export;
 mod generation;
@@ -754,8 +755,8 @@ impl JobPhases<'_, '_> {
         let (annotated, mut findings) = self.generate(cancel)?;
         let mut channels =
             crate::trace::transform_provenance::ReconcileSet::new(Some(semantic_recorder), None);
-        let annotated = self.apply_dressups(annotated, &mut channels);
-        let mut annotated = self.clip_and_split_entries(annotated, &mut channels)?;
+        let (annotated, entry) = self.apply_dressups(annotated, &mut channels);
+        let mut annotated = self.clip_and_split_entries(annotated, &entry, &mut channels)?;
         // P20c: every machine limit on every move. The entry split above is
         // the last stage that writes a feed, so the per-axis rate cap runs
         // here, once, over every fed move (the generator's, the dressups'
@@ -987,7 +988,10 @@ impl JobPhases<'_, '_> {
         &self,
         annotated: crate::compute::execute::GeneratedToolpath,
         channels: &mut crate::trace::transform_provenance::ReconcileSet<'_>,
-    ) -> crate::compute::execute::GeneratedToolpath {
+    ) -> (
+        crate::compute::execute::GeneratedToolpath,
+        crate::compute::execute::PipelineEntry,
+    ) {
         let prior_stock_ref = self.context.prior_stock.as_deref();
         self.observer.set_phase("Apply dressups");
         // N12 item 3: the feed-optimisation stock. The GUI worker built
@@ -1023,60 +1027,18 @@ impl JobPhases<'_, '_> {
         } else {
             None
         };
-        // G-RAMPTERRAIN: entry moves of SURFACE-RIDING
-        // operations clip to the drop-cutter surface
-        // (`entry_probe_leave` names them). Prism operations
-        // get no probe: their entries legitimately descend
-        // below the model surface (FINDINGS.md amendment 1).
-        let entry_surface = match (
-            self.inputs.mesh.as_deref(),
-            self.inputs.spatial_index(),
-            self.context.entry_probe_leave,
-        ) {
-            (Some(m), Some(idx), Some(leave)) => Some(crate::dressup::EntrySurfaceProbe {
-                mesh: m,
-                index: idx,
-                cutter: &self.inputs.tool_def,
-                stock_to_leave: leave,
-                off_mesh: crate::dressup::OffMeshEntry::PlungeFallback,
-                // G-ISOCLIPENTRY: `Some` only on a rest-driven pass —
-                // `gen_initial_stock` is `None` for `StockSource::Fresh`.
-                rest_stock: self.gen_initial_stock,
-            }),
-            _ => None,
-        };
+        // G-RAMPTERRAIN: entry moves of SURFACE-RIDING operations clip to
+        // the drop-cutter surface (`clip_entry::entry_surface_probe`).
+        let entry_surface = self.entry_surface_probe();
         let dressup_scope = self.observer.records_dressup_items().then(|| {
             self.debug_root
                 .start_span(DebugSpanKind::Dressups, "Apply dressups")
         });
         let dressup_debug_ctx = dressup_scope.as_ref().map(|scope| scope.context());
         // G-ADAPTPASSLOAD round 3: 2D Adaptive's helix entries stay inside
-        // the machinable region (the same region its planner stamps from).
-        // The regions are the view the prologue gave the op: `view` is a
-        // pure function of the resolved selection and the item use.
-        let entry_containment: Option<Vec<crate::polygon::Polygon2>> = self
-            .context
-            .transform_capabilities
-            .helix_floor_lap
-            .then(|| {
-                crate::selection::view(
-                    &self.inputs.selection,
-                    self.inputs.operation.capabilities().item_use,
-                )
-                .ok()
-            })
-            .flatten()
-            .and_then(|(items, _)| {
-                let r = self.inputs.tool_def.radius();
-                items.regions().map(|regions| {
-                    regions
-                        .as_slice()
-                        .iter()
-                        .flat_map(|p| crate::adaptive::tool_centre_pieces(p, r))
-                        .collect()
-                })
-            });
-        crate::compute::execute::apply_dressups(
+        // the machinable region (`clip_entry::entry_containment_regions`).
+        let entry_containment = self.entry_containment_regions();
+        crate::compute::execute::apply_dressups_with_entry(
             annotated,
             crate::compute::execute::DressupContext {
                 cfg: &self.context.dressups,
@@ -1122,9 +1084,14 @@ impl JobPhases<'_, '_> {
     fn clip_and_split_entries(
         &self,
         annotated: crate::compute::execute::GeneratedToolpath,
+        entry: &crate::compute::execute::PipelineEntry,
         channels: &mut crate::trace::transform_provenance::ReconcileSet<'_>,
     ) -> Result<crate::compute::execute::GeneratedToolpath, SessionError> {
-        let mut annotated = annotated;
+        // P29-8e: the clips carry their re-entry descents to ONE entry step
+        // (`clip_entry`), and every descent takes the plunge feed of the
+        // op's entry rule, the value the dressups used.
+        let plunge_feed = entry.plunge_feed();
+        let mut clipped = crate::geometry::boundary::Reentering::none(annotated);
         // ── Boundary clipping ─────────────────────────────────
         // After dressups, clip the toolpath to the machining boundary
         // (matching the GUI compute path). Spans are precisely
@@ -1143,7 +1110,7 @@ impl JobPhases<'_, '_> {
                     | crate::compute::config::BoundarySource::DerivedRestRegions { .. }
                     | crate::compute::config::BoundarySource::Selection { .. }
             );
-            annotated = if resolves_to_a_region_set {
+            clipped = if resolves_to_a_region_set {
                 // The submit step resolved this set, for exactly
                 // these three sources. It re-read the SAME memoised
                 // tier map `pre_boundary` came off, so agreement
@@ -1162,26 +1129,26 @@ impl JobPhases<'_, '_> {
                     ))
                 })?;
                 ProjectSession::apply_boundary_clip_multi(
-                    annotated,
+                    clipped,
                     &self.inputs.boundary_config,
                     regions.as_slice(),
                     &self.inputs.keep_out_footprints,
                     self.inputs.tool_def.diameter(),
                     self.inputs.heights.retract_z,
-                    Some(self.context.plunge_rate),
+                    plunge_feed,
                     self.semantic_root,
                     channels,
                 )?
             } else {
                 ProjectSession::apply_boundary_clip(
-                    annotated,
+                    clipped,
                     &self.inputs.boundary_config,
                     &self.inputs.emission_stock_bbox,
                     self.inputs.mesh.as_ref(),
                     &self.inputs.keep_out_footprints,
                     self.inputs.tool_def.diameter(),
                     self.inputs.heights.retract_z,
-                    Some(self.context.plunge_rate),
+                    plunge_feed,
                     self.semantic_root,
                     channels,
                 )?
@@ -1201,15 +1168,21 @@ impl JobPhases<'_, '_> {
                 self.debug_root
                     .start_span(DebugSpanKind::ObstacleClip, "Keep out of obstacles")
             });
-            annotated = crate::compute::obstacle::clip_annotated_to_obstacles(
-                annotated,
+            clipped = crate::compute::obstacle::clip_annotated_to_obstacles(
+                clipped,
                 &self.inputs.obstacle_view,
                 self.inputs.heights.retract_z,
-                Some(self.context.plunge_rate),
+                plunge_feed,
             )
-            .reconcile(channels)
-            .into_inner();
+            .reconcile(channels);
         }
+
+        // ── P29-8e: the entry step after the clips ────────────
+        // Every re-entry descent of the two clips goes through the op's
+        // entry rule (a ramp or a helix under that style; a plunge at the
+        // plunge feed under the style None). The step runs before the
+        // entry-descent split, which reads the final descents.
+        let annotated = self.enter_clip_reentries(clipped, entry, channels);
 
         // ── Entry-descent optimization ────────────────────────
         // P1 W2 (reworked): split long safe_z-to-cut-depth plunges
@@ -1268,18 +1241,20 @@ impl JobPhases<'_, '_> {
         let annotated = transformed.reconcile(channels).into_inner();
         // K1 backstop: the split above can turn a descent into a ramp
         // (G-ISOCLIPENTRY), which moves in XY. The obstacle step runs once
-        // more; it changes nothing when every move already keeps out.
+        // more; it changes nothing when every move already keeps out. A
+        // re-entry it makes stays a vertical plunge (P29-8e): no obstacle
+        // clip runs after it, so a ramp there would have no check.
         if self.inputs.obstacles.is_empty() {
             return Ok(annotated);
         }
         Ok(crate::compute::obstacle::clip_annotated_to_obstacles(
-            annotated,
+            crate::geometry::boundary::Reentering::none(annotated),
             &self.inputs.obstacle_view,
             self.inputs.heights.retract_z,
-            Some(self.context.plunge_rate),
+            plunge_feed,
         )
         .reconcile(channels)
-        .into_inner())
+        .stay_plunges(crate::geometry::boundary::PlungesStay::ObstacleBackstop))
     }
 
     /// Phase 4 — the empty gate, then the stats and the result.
@@ -1532,6 +1507,7 @@ pub fn execute_generation(
                     Some(&inputs.tool_def),
                     inputs.tool_def.diameter(),
                     &context.material,
+                    Some(context.plunge_rate),
                 )
                 .helix_radius()
                 .emitted_mm

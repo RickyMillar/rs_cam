@@ -5,7 +5,7 @@ The passes run after an op generates a toolpath. `apply_dressups` in
 `DRESSUP_PIPELINE` there lists every `DressupStep` in run order (F128: one fn and one exhaustive arm per step). Only these run outside
 it: `apply_tabs`, in `ProfilePass::emit_level` of `compute/execute/clearing_2d.rs`
 (each level below the tab top lifts, P5b), and `optimize_entry_descents_annotated` and
-`adaptive_feed_modulate_with_materials`, in `session/compute.rs` (prior stock, engagement). 3D Rough calls the emitters `emit_helix` and `emit_ramp`. Add no other pass outside it.
+`adaptive_feed_modulate_with_materials`, in `session/compute.rs` (prior stock, engagement). 3D Rough calls the emitters `emit_helix` and `emit_ramp`. P29-8e: the entry step after the clips (`compute::execute::enter_clip_reentries`, called from `session/compute/clip_entry.rs`) runs the shared `apply_entry_at` on the clip re-entries only (`EntrySites::ClipReentries`), with `ResolvedEntry::clip_reentry` (Q9: under Helix the fold ramp; Q10: never with a surface probe, so only the fold). Add no other pass outside it.
 
 ## Files
 

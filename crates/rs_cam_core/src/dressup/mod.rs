@@ -420,16 +420,58 @@ impl OwnStockReplay {
 ///
 /// Hands back the 1→K plunge expansion under the C1 provenance contract,
 /// so channels other than the spans can follow it.
-#[expect(
-    clippy::indexing_slicing,
-    reason = "bounded indexing in algorithmic code"
-)]
 pub fn apply_entry(
     annotated: AnnotatedToolpath,
     style: EntryStyle,
     plunge_rate: f64,
     safety: EntrySafety<'_>,
     tool_radius_mm: f64,
+) -> Transformed {
+    apply_entry_at(
+        annotated,
+        style,
+        plunge_rate,
+        safety,
+        tool_radius_mm,
+        EntrySites::EveryVerticalDescent,
+    )
+}
+
+/// The descents an entry pass converts (P29-8e). Typed, so no pass guesses
+/// a site from the move shape.
+#[derive(Debug, Clone, Copy)]
+pub enum EntrySites<'a> {
+    /// Every vertical descent: the dressup pipeline.
+    EveryVerticalDescent,
+    /// Only the re-entry descents of the clips: the entry step after the
+    /// clips (`compute::execute::enter_clip_reentries`).
+    ClipReentries(&'a crate::geometry::boundary::ClipReentries),
+}
+
+impl EntrySites<'_> {
+    /// Whether the descent at input index `index` is a site.
+    fn selects(self, index: usize) -> bool {
+        match self {
+            Self::EveryVerticalDescent => true,
+            Self::ClipReentries(list) => list.indices().binary_search(&index).is_ok(),
+        }
+    }
+}
+
+/// THE entry pass: [`apply_entry`] on the vertical descents that `sites`
+/// names. The dressup pipeline and the entry step after the clips share
+/// it (P29-8e).
+#[expect(
+    clippy::indexing_slicing,
+    reason = "bounded indexing in algorithmic code"
+)]
+pub fn apply_entry_at(
+    annotated: AnnotatedToolpath,
+    style: EntryStyle,
+    plunge_rate: f64,
+    safety: EntrySafety<'_>,
+    tool_radius_mm: f64,
+    sites: EntrySites<'_>,
 ) -> Transformed {
     let AnnotatedToolpath {
         toolpath,
@@ -478,6 +520,7 @@ pub fn apply_entry(
         // Detect a plunge: Linear move that goes downward with no XY change
         if let MoveType::Linear { feed_rate } = m.move_type
             && i > 0
+            && sites.selects(i)
             && is_plunge(&toolpath.moves[i - 1], m)
         {
             // The material top under this entry: the op's own stock after

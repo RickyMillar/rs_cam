@@ -366,7 +366,7 @@ fn c_no_rapid_crosses_the_rest_stock() {
         &dressed.toolpath,
         &islands(),
         RETRACT_Z,
-        Some(PLUNGE_RATE),
+        rs_cam_core::feeds::entry_rule::EntryPlungeFeed::of_op_plunge_rate(Some(PLUNGE_RATE)).ok(),
     );
 
     // Precondition: the fixture must actually put a lead-in on the far side of

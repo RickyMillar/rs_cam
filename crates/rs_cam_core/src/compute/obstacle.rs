@@ -1443,15 +1443,21 @@ impl ClipPermit for ObstaclePermit<'_> {
 /// first ([`JoinStart::Unknown`]).
 ///
 /// An empty view passes the toolpath through with an identity mapping.
+///
+/// P29-8e: the input carries the re-entries of the boundary clip; the
+/// output carries those it keeps and its own
+/// ([`crate::geometry::boundary::Clipped`]). `plunge_feed` is the plunge
+/// feed of the op's entry rule.
 pub fn clip_annotated_to_obstacles(
-    annotated: crate::trace::toolpath_spans::AnnotatedToolpath,
+    input: crate::geometry::boundary::Reentering,
     view: &ObstacleToolView,
     safe_z: f64,
-    plunge_rate_mm_min: Option<f64>,
-) -> crate::trace::transform_provenance::Transformed {
+    plunge_feed: Option<crate::feeds::entry_rule::EntryPlungeFeed>,
+) -> crate::geometry::boundary::Clipped {
     use crate::trace::toolpath_spans::AnnotatedToolpath;
     use crate::trace::transform_provenance::Transformed;
 
+    let (annotated, carried) = input.into_parts();
     let AnnotatedToolpath {
         toolpath,
         spans,
@@ -1463,32 +1469,36 @@ pub fn clip_annotated_to_obstacles(
     // K3 start rapid: that rapid is the obstacle join rule.
     let floor_only_and_clear =
         view.plane_z().is_none() && toolpath.moves.iter().all(|m| view.point_allowed(m.target));
-    let (clipped, mapping) = if view.is_empty() || floor_only_and_clear {
+    let (clipped, mapping, reentries) = if view.is_empty() || floor_only_and_clear {
         let n = toolpath.moves.len();
-        (toolpath, (0..=n).collect::<Vec<usize>>())
+        (toolpath, (0..=n).collect::<Vec<usize>>(), carried)
     } else {
         let plane = view.plane_z().map_or(safe_z, |p| p.max(safe_z));
-        let (mut clipped, mut mapping) = crate::geometry::boundary::clip_walk(
+        let (mut clipped, mut mapping, mut reentries) = crate::geometry::boundary::clip_walk(
             &toolpath,
             &ObstaclePermit { view },
             plane,
-            plunge_rate_mm_min,
+            plunge_feed,
+            &carried,
         );
-        if view.plane_z().is_some() {
-            start_at_the_plane(&mut clipped, &mut mapping, plane);
+        if view.plane_z().is_some() && start_at_the_plane(&mut clipped, &mut mapping, plane) {
+            reentries.shift_from(0, 1);
         }
-        (clipped, mapping)
+        (clipped, mapping, reentries)
     };
     let spans: Vec<crate::trace::toolpath_spans::Span> =
         spans.iter().map(|s| s.remap(&mapping)).collect();
-    Transformed::from_mapping(
-        AnnotatedToolpath {
-            toolpath: clipped,
-            spans,
-            spans_valid,
-            produced,
-        },
-        mapping,
+    crate::geometry::boundary::Clipped::new(
+        Transformed::from_mapping(
+            AnnotatedToolpath {
+                toolpath: clipped,
+                spans,
+                spans_valid,
+                produced,
+            },
+            mapping,
+        ),
+        reentries,
     )
 }
 
@@ -1496,15 +1506,16 @@ pub fn clip_annotated_to_obstacles(
 /// it, when the first move is below `plane`. The inserted move belongs to
 /// input move 0, so every later entry of `mapping` moves up by one. Its
 /// intent is [`MoveIntent::ObstacleClearance`]: the G-code drill reader
-/// reads that intent, not the move shape.
+/// reads that intent, not the move shape. Returns `true` when it inserts
+/// the move (P29-8e: the caller then moves each re-entry index up by one).
 ///
 /// [`MoveIntent::ObstacleClearance`]: crate::toolpath::MoveIntent::ObstacleClearance
-fn start_at_the_plane(toolpath: &mut Toolpath, mapping: &mut [usize], plane: f64) {
+fn start_at_the_plane(toolpath: &mut Toolpath, mapping: &mut [usize], plane: f64) -> bool {
     let Some(first) = toolpath.moves.first() else {
-        return;
+        return false;
     };
     if first.target.z >= plane - Z_EPS_MM {
-        return;
+        return false;
     }
     let lift = Move {
         target: P3::new(first.target.x, first.target.y, plane),
@@ -1516,6 +1527,7 @@ fn start_at_the_plane(toolpath: &mut Toolpath, mapping: &mut [usize], plane: f64
     for entry in mapping.iter_mut().skip(1) {
         *entry += 1;
     }
+    true
 }
 
 #[cfg(test)]
@@ -1662,9 +1674,14 @@ mod tests {
         let n = tp.moves.len();
         let annotated = crate::trace::toolpath_spans::AnnotatedToolpath::new(tp);
         let mut channels = crate::trace::transform_provenance::ReconcileSet::new(None, None);
-        let out = clip_annotated_to_obstacles(annotated, &view, 10.0, Some(300.0))
-            .reconcile(&mut channels)
-            .into_inner();
+        let out = clip_annotated_to_obstacles(
+            crate::geometry::boundary::Reentering::none(annotated),
+            &view,
+            10.0,
+            crate::feeds::entry_rule::EntryPlungeFeed::of_op_plunge_rate(Some(300.0)).ok(),
+        )
+        .reconcile(&mut channels)
+        .stay_plunges(crate::geometry::boundary::PlungesStay::NoOperation);
         assert_eq!(out.toolpath.moves.len(), n + 1);
         assert_eq!(out.toolpath.moves[0].target, P3::new(-50.0, 5.0, plane));
         assert_eq!(
@@ -1674,9 +1691,14 @@ mod tests {
         // The traverse far from the clamp stays at its own Z.
         assert_eq!(out.toolpath.moves[n].target, P3::new(-50.0, 40.0, 10.0));
         // A second pass changes nothing.
-        let again = clip_annotated_to_obstacles(out, &view, 10.0, Some(300.0))
-            .reconcile(&mut channels)
-            .into_inner();
+        let again = clip_annotated_to_obstacles(
+            crate::geometry::boundary::Reentering::none(out),
+            &view,
+            10.0,
+            crate::feeds::entry_rule::EntryPlungeFeed::of_op_plunge_rate(Some(300.0)).ok(),
+        )
+        .reconcile(&mut channels)
+        .stay_plunges(crate::geometry::boundary::PlungesStay::NoOperation);
         assert_eq!(again.toolpath.moves.len(), n + 1);
     }
 
@@ -1716,9 +1738,14 @@ mod tests {
         tp.feed_to(P3::new(30.0, 5.0, 0.0), 1000.0);
         let annotated = crate::trace::toolpath_spans::AnnotatedToolpath::new(tp);
         let mut channels = crate::trace::transform_provenance::ReconcileSet::new(None, None);
-        let out = clip_annotated_to_obstacles(annotated, &view, 10.0, Some(300.0))
-            .reconcile(&mut channels)
-            .into_inner();
+        let out = clip_annotated_to_obstacles(
+            crate::geometry::boundary::Reentering::none(annotated),
+            &view,
+            10.0,
+            crate::feeds::entry_rule::EntryPlungeFeed::of_op_plunge_rate(Some(300.0)).ok(),
+        )
+        .reconcile(&mut channels)
+        .stay_plunges(crate::geometry::boundary::PlungesStay::NoOperation);
         let plane = set.plane_z().unwrap();
         assert!(
             view.check_toolpath(&out.toolpath, JoinStart::Unknown)
@@ -1848,5 +1875,263 @@ mod tests {
             "a vertex is {min_gap} mm from the box"
         );
         assert!(max_gap <= 5.05, "a vertex is {max_gap} mm from the box");
+    }
+
+    /// P29-8e (lead ruling, section 12 item 4): a boundary re-entry is
+    /// carried through the obstacle clip and its K3 start rapid
+    /// (`ClipReentries::shift_from`), and the entry step after the clips
+    /// converts exactly the recorded descent: the ramp of the entry rule,
+    /// folded along the kept cut. A recorded site that is not a vertical
+    /// descent is copied as it is (`dressup::apply_entry_at` tests
+    /// `sites.selects(i)` and `is_plunge` together).
+    #[test]
+    fn a_boundary_reentry_is_carried_through_the_obstacle_clip_p29_8e() {
+        use crate::compute::config::{DressupConfig, DressupEntryStyle};
+        use crate::geometry::boundary::{Reentering, clip_annotated_to_boundary_set};
+        use crate::toolpath::MoveIntent;
+        let set = clamp(20.0);
+        let view = set.for_tool(&assembly(), None).unwrap();
+        let safe_z = 10.0;
+        // One cut at Z 0 along Y 40, far from the clamp (X 0 to 10, Y 0 to 10).
+        let mut tp = Toolpath::new();
+        tp.rapid_to(P3::new(-60.0, 40.0, safe_z));
+        tp.feed_to_with_intent(P3::new(-60.0, 40.0, 0.0), 300.0, MoveIntent::EntryPlunge);
+        tp.feed_to_with_intent(P3::new(60.0, 40.0, 0.0), 1000.0, MoveIntent::ClearingCut);
+        tp.rapid_to(P3::new(60.0, 40.0, safe_z));
+        let cfg = DressupConfig {
+            entry_style: DressupEntryStyle::Ramp,
+            link_moves: None,
+            lead_in_out: None,
+            arc_fitting: None,
+            segment_merge: None,
+            dogbone: None,
+            feed_optimization: false,
+            optimize_rapid_order: false,
+            ..DressupConfig::default()
+        };
+        let material = crate::material::Material::default();
+        let ctx = || crate::compute::execute::DressupContext {
+            cfg: &cfg,
+            material: &material,
+            nominal_feed_rate: 1000.0,
+            plunge_rate_mm_min: 300.0,
+            ramp_feed_rate_mm_min: None,
+            tool_diameter: 6.0,
+            safe_z,
+            // 5 mm of stock over the cut at Z 0.
+            stock_top: 5.0,
+            prior_stock: None,
+            link_kinematics: None,
+            op_cutting_ceiling: None,
+            feed_opt_stock: None,
+            cutter: None,
+            entry_surface: None,
+            transform_capabilities: crate::compute::catalog::OperationType::Pocket
+                .capabilities()
+                .transform,
+            entry: crate::compute::catalog::EntryContract::ANY_DRESSUP_FROM_ROLE,
+            debug_ctx: None,
+            semantic_ctx: None,
+            entry_containment: None,
+        };
+        let mut channels = crate::trace::transform_provenance::ReconcileSet::empty();
+        let (dressed, entry) = crate::compute::execute::apply_dressups_with_entry(
+            crate::trace::toolpath_spans::AnnotatedToolpath::new(tp),
+            ctx(),
+            &mut channels,
+        );
+        let ramps_before = dressed
+            .toolpath
+            .moves
+            .iter()
+            .filter(|m| m.intent == MoveIntent::EntryRamp)
+            .count();
+        assert!(
+            ramps_before > 0,
+            "non-vacuity: the pipeline ramps the first descent"
+        );
+        // The boundary leaves out X -10 to 10: the cut re-enters at X 10.
+        let boundary = [
+            Polygon2::rectangle(-70.0, 0.0, -10.0, 80.0),
+            Polygon2::rectangle(10.0, 0.0, 70.0, 80.0),
+        ];
+        let after_boundary = clip_annotated_to_boundary_set(
+            Reentering::none(dressed),
+            &boundary,
+            safe_z,
+            entry.plunge_feed(),
+        )
+        .reconcile(&mut channels);
+        assert_eq!(after_boundary.reentries().len(), 1, "one boundary re-entry");
+        let r = after_boundary.reentries().indices()[0];
+        let descent = after_boundary.annotated().toolpath.moves[r].clone();
+        assert_eq!(descent.intent, MoveIntent::EntryPlunge);
+        assert_eq!(descent.target, P3::new(10.0, 40.0, 0.0));
+        // The obstacle clip keeps the descent, and its K3 start rapid (the
+        // first move is below the plane) moves the index up by one.
+        let after_obstacle =
+            clip_annotated_to_obstacles(after_boundary, &view, safe_z, entry.plunge_feed())
+                .reconcile(&mut channels);
+        let moves = &after_obstacle.annotated().toolpath.moves;
+        assert_eq!(
+            moves[0].intent,
+            MoveIntent::ObstacleClearance,
+            "K3 start rapid"
+        );
+        assert_eq!(after_obstacle.reentries().indices(), &[r + 1]);
+        assert_eq!(
+            format!("{:?}", moves[r + 1]),
+            format!("{descent:?}"),
+            "the index names the same descent"
+        );
+        // The entry step converts exactly that descent.
+        let out = crate::compute::execute::enter_clip_reentries(
+            after_obstacle,
+            &entry,
+            ctx(),
+            &mut channels,
+        );
+        let plunges_at_reentry = out
+            .toolpath
+            .moves
+            .iter()
+            .filter(|m| m.intent == MoveIntent::EntryPlunge && m.target == descent.target)
+            .count();
+        assert_eq!(plunges_at_reentry, 0, "the re-entry is no longer a plunge");
+        let new_ramps: Vec<&crate::toolpath::Move> = out
+            .toolpath
+            .moves
+            .iter()
+            .skip(r + 1)
+            .take_while(|m| m.intent != MoveIntent::ClearingCut)
+            .filter(|m| m.intent == MoveIntent::EntryRamp)
+            .collect();
+        assert!(!new_ramps.is_empty(), "the re-entry becomes a ramp");
+        for m in &new_ramps {
+            assert!(
+                (m.target.y - 40.0).abs() < 1e-9 && (10.0 - 1e-9..=70.0).contains(&m.target.x),
+                "a ramp point stays on the kept cut: {:?}",
+                m.target
+            );
+        }
+        let ramps_after = out
+            .toolpath
+            .moves
+            .iter()
+            .filter(|m| m.intent == MoveIntent::EntryRamp)
+            .count();
+        assert_eq!(
+            ramps_after,
+            ramps_before + new_ramps.len(),
+            "no other descent changes"
+        );
+    }
+
+    /// P29-8e, lead ruling Q9: under the style Helix a clip re-entry is the
+    /// ramp of the entry rule (the 8a ramp of a helix with no room), never
+    /// a helix: the step emits no `EntryHelix` move, and every fed move of
+    /// the result stays inside the boundary.
+    #[test]
+    fn a_helix_op_reenters_a_boundary_by_the_fold_ramp_q9() {
+        use crate::compute::config::{DressupConfig, DressupEntryStyle};
+        use crate::geometry::boundary::{Reentering, clip_annotated_to_boundary_set};
+        use crate::toolpath::{MoveIntent, MoveType};
+        let safe_z = 10.0;
+        let mut tp = Toolpath::new();
+        tp.rapid_to(P3::new(-60.0, 40.0, safe_z));
+        tp.feed_to_with_intent(P3::new(-60.0, 40.0, 0.0), 300.0, MoveIntent::EntryPlunge);
+        tp.feed_to_with_intent(P3::new(60.0, 40.0, 0.0), 1000.0, MoveIntent::ClearingCut);
+        tp.rapid_to(P3::new(60.0, 40.0, safe_z));
+        let cfg = DressupConfig {
+            entry_style: DressupEntryStyle::Helix,
+            link_moves: None,
+            lead_in_out: None,
+            arc_fitting: None,
+            segment_merge: None,
+            dogbone: None,
+            feed_optimization: false,
+            optimize_rapid_order: false,
+            ..DressupConfig::default()
+        };
+        let material = crate::material::Material::default();
+        let ctx = || crate::compute::execute::DressupContext {
+            cfg: &cfg,
+            material: &material,
+            nominal_feed_rate: 1000.0,
+            plunge_rate_mm_min: 300.0,
+            ramp_feed_rate_mm_min: None,
+            tool_diameter: 6.0,
+            safe_z,
+            stock_top: 5.0,
+            prior_stock: None,
+            link_kinematics: None,
+            op_cutting_ceiling: None,
+            feed_opt_stock: None,
+            cutter: None,
+            entry_surface: None,
+            transform_capabilities: crate::compute::catalog::OperationType::Pocket
+                .capabilities()
+                .transform,
+            entry: crate::compute::catalog::EntryContract::ANY_DRESSUP_FROM_ROLE,
+            debug_ctx: None,
+            semantic_ctx: None,
+            entry_containment: None,
+        };
+        let mut channels = crate::trace::transform_provenance::ReconcileSet::empty();
+        let (dressed, entry) = crate::compute::execute::apply_dressups_with_entry(
+            crate::trace::toolpath_spans::AnnotatedToolpath::new(tp),
+            ctx(),
+            &mut channels,
+        );
+        assert_eq!(entry.style(), DressupEntryStyle::Helix);
+        let boundary = [
+            Polygon2::rectangle(-70.0, 0.0, -10.0, 80.0),
+            Polygon2::rectangle(10.0, 0.0, 70.0, 80.0),
+        ];
+        let clipped = clip_annotated_to_boundary_set(
+            Reentering::none(dressed),
+            &boundary,
+            safe_z,
+            entry.plunge_feed(),
+        )
+        .reconcile(&mut channels);
+        assert!(
+            !clipped.reentries().is_empty(),
+            "non-vacuity: a boundary re-entry"
+        );
+        let first_reentry = clipped.reentries().indices()[0];
+        let out =
+            crate::compute::execute::enter_clip_reentries(clipped, &entry, ctx(), &mut channels);
+        let moves = &out.toolpath.moves;
+        assert!(
+            moves[first_reentry..]
+                .iter()
+                .all(|m| m.intent != MoveIntent::EntryHelix),
+            "the step emits no helix"
+        );
+        assert!(
+            moves[first_reentry..]
+                .iter()
+                .any(|m| m.intent == MoveIntent::EntryRamp),
+            "the re-entry becomes a ramp"
+        );
+        let inside = |m: &crate::toolpath::Move| {
+            boundary.iter().any(|b| {
+                b.contains_point(&crate::geo::P2::new(m.target.x, m.target.y))
+                    || (m.target.y - 40.0).abs() < 1e-9
+                        && ((10.0 - 1e-9..=70.0).contains(&m.target.x)
+                            || (-70.0..=-10.0 + 1e-9).contains(&m.target.x))
+            })
+        };
+        for m in moves
+            .iter()
+            .filter(|m| !matches!(m.move_type, MoveType::Rapid))
+        {
+            assert!(
+                inside(m),
+                "a fed move stays inside the boundary: {:?}",
+                m.target
+            );
+        }
     }
 }

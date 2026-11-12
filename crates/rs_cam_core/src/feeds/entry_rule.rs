@@ -388,6 +388,53 @@ pub fn adaptive3d_helix_radius(cfg: &Adaptive3dConfig, cutter: &dyn MillingCutte
     )
 }
 
+/// P29-8e: the feed (mm/min) of a straight descent into stock: the plunge
+/// rule (`PlungeFeedRule::OpPlungeRate`, P29-8 8c, operator ruling O1).
+/// The dressup emitters, the clip re-entry of the clip walk and the tab
+/// descent read it. The field is private: [`Self::of_op_plunge_rate`] is
+/// the one builder, so a new descent source takes this rule or does not
+/// compile.
+#[derive(Debug, Clone, Copy, PartialEq)]
+pub struct EntryPlungeFeed {
+    mm_min: f64,
+}
+
+impl EntryPlungeFeed {
+    /// THE plunge rule: the op plunge rate, when it is a usable feed
+    /// (finite and above zero).
+    ///
+    /// # Errors
+    ///
+    /// [`EntryNoNumber::NoPlungeRate`] when the op states no usable plunge
+    /// rate (S11).
+    pub fn of_op_plunge_rate(op_plunge_rate: Option<f64>) -> Result<Self, EntryNoNumber> {
+        op_plunge_rate
+            .filter(usable)
+            .map(|mm_min| Self { mm_min })
+            .ok_or(EntryNoNumber::NoPlungeRate)
+    }
+
+    /// The feed (mm/min).
+    #[must_use]
+    pub const fn mm_min(self) -> f64 {
+        self.mm_min
+    }
+}
+
+/// P29-8e: the entry of a clip re-entry ([`ResolvedEntry::clip_reentry`]).
+#[derive(Debug, Clone, Copy, PartialEq)]
+pub enum ClipReentryEntry {
+    /// The ramp of the entry rule, folded along the kept cut (style Ramp;
+    /// style Helix by lead ruling Q9: the 8a ramp of a helix with no room).
+    Ramp {
+        /// The ramp angle (degrees).
+        max_angle_deg: f64,
+    },
+    /// The style None: the straight plunge the operator stated, at the
+    /// plunge feed of the entry rule.
+    StatedPlunge,
+}
+
 /// Everything an emitter needs for one op's entries, resolved once.
 ///
 /// The fields are private: the two constructors are the only builders, so
@@ -409,6 +456,9 @@ pub struct ResolvedEntry {
     helix_pitch_mm: f64,
     /// The helix pitch of the door's rule.
     rule_helix_pitch_mm: f64,
+    /// P29-8e: the plunge feed of the door ([`EntryPlungeFeed`]), one value
+    /// for the dressup pipeline and the step after the clips.
+    plunge_feed: Result<EntryPlungeFeed, EntryNoNumber>,
 }
 
 impl ResolvedEntry {
@@ -418,12 +468,15 @@ impl ResolvedEntry {
     /// bottom and the nominal D are unknown, so the helix radius is the
     /// request: the operator value, or 0.3 x `tool_diameter`. `material` is
     /// the stock material: the ramp angle rule reads its class.
+    /// `op_plunge_rate` is the op plunge rate: the plunge feed
+    /// ([`EntryPlungeFeed::of_op_plunge_rate`]).
     #[must_use]
     pub fn of_dressup(
         cfg: &DressupConfig,
         cutter: Option<&dyn MillingCutter>,
         tool_diameter: f64,
         material: &Material,
+        op_plunge_rate: Option<f64>,
     ) -> Self {
         let helix_radius = match cutter {
             Some(cutter) => dressup_helix_radius(cfg, cutter),
@@ -450,15 +503,18 @@ impl ResolvedEntry {
             helix_radius,
             helix_pitch_mm: cfg.helix_pitch,
             rule_helix_pitch_mm: door_pitch_row(EntryDoor::Dressup).value,
+            plunge_feed: EntryPlungeFeed::of_op_plunge_rate(op_plunge_rate),
         }
     }
 
-    /// The entry of a 3D Rough config on `cutter` in the stock `material`.
+    /// The entry of a 3D Rough config on `cutter` in the stock `material`,
+    /// with the op plunge rate `op_plunge_rate`.
     #[must_use]
     pub fn of_adaptive3d(
         cfg: &Adaptive3dConfig,
         cutter: &dyn MillingCutter,
         material: &Material,
+        op_plunge_rate: Option<f64>,
     ) -> Self {
         let ramp_angle = RampAngle::resolve(cfg.ramp_angle_deg, material);
         Self {
@@ -469,6 +525,7 @@ impl ResolvedEntry {
             helix_radius: adaptive3d_helix_radius(cfg, cutter),
             helix_pitch_mm: cfg.helix_pitch,
             rule_helix_pitch_mm: door_pitch_row(EntryDoor::Adaptive3d).value,
+            plunge_feed: EntryPlungeFeed::of_op_plunge_rate(op_plunge_rate),
         }
     }
 
@@ -514,6 +571,16 @@ impl ResolvedEntry {
         self.helix_pitch_mm
     }
 
+    /// P29-8e: the plunge feed of the door, or why the op has none.
+    ///
+    /// # Errors
+    ///
+    /// [`EntryNoNumber::NoPlungeRate`] when the op states no usable plunge
+    /// rate.
+    pub fn plunge_feed(&self) -> Result<EntryPlungeFeed, EntryNoNumber> {
+        self.plunge_feed
+    }
+
     /// The helix pitch (mm per turn) of the door's rule.
     #[must_use]
     pub fn rule_helix_pitch_mm(&self) -> f64 {
@@ -525,6 +592,28 @@ impl ResolvedEntry {
     pub fn dressup_ramp(&self) -> crate::dressup::EntryStyle {
         crate::dressup::EntryStyle::Ramp {
             max_angle_deg: self.ramp_angle.deg,
+        }
+    }
+
+    /// P29-8e: THE entry of a clip re-entry, for the effective dressup
+    /// style `effective` (the style the pipeline ran, after the K4 contract,
+    /// the drill strip and the G-CENTRECUT ramp).
+    ///
+    /// Lead ruling Q9 (2026-11-13): a clip re-entry sits on the clip edge by
+    /// construction, so it is a site with no room for a helix. It takes the
+    /// rule of a helix with no room (8a): the ramp at the op's own angle,
+    /// folded along the kept cut, which both clips allowed. It is never a
+    /// helix.
+    #[must_use]
+    pub fn clip_reentry(&self, effective: DressupEntryStyle) -> ClipReentryEntry {
+        match effective {
+            DressupEntryStyle::Ramp => ClipReentryEntry::Ramp {
+                max_angle_deg: self.ramp_angle.deg,
+            },
+            DressupEntryStyle::Helix => ClipReentryEntry::Ramp {
+                max_angle_deg: self.fallback_ramp_angle_deg,
+            },
+            DressupEntryStyle::None => ClipReentryEntry::StatedPlunge,
         }
     }
 
@@ -708,11 +797,8 @@ impl ConfiguredEntry {
         kind: EntryKind,
     ) -> Result<f64, EntryNoNumber> {
         use crate::compute::catalog::EntryContract;
-        let op_rate = || {
-            op.plunge_rate()
-                .filter(usable)
-                .ok_or(EntryNoNumber::NoPlungeRate)
-        };
+        let op_rate =
+            || EntryPlungeFeed::of_op_plunge_rate(op.plunge_rate()).map(EntryPlungeFeed::mm_min);
         let door_plunge = || match op.op_type().registry_entry().entry {
             EntryContract::Planner { .. } | EntryContract::Dressup { .. } => op_rate(),
             EntryContract::StraightPlunge { feed, .. } => match feed {
