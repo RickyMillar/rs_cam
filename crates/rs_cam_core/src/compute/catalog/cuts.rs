@@ -122,8 +122,45 @@ pub enum DeclaredDepth {
     /// resolves it ([`ToolDepth::mm`]); `feeds::planned::DeclaredCuts::
     /// body_depth` is the one door that reads it.
     OfTool(ToolDepth),
+    /// P29-9 9b: a lower bound of the depth into the material (a Project
+    /// Curve: the tip below the model surface; the stock above the surface
+    /// adds to it). The setup frame resolves it ([`TipDepth::lower_bound_mm`]).
+    AtLeast(TipDepth),
     /// No depth is stated, or the simulation gives it.
     None(NoEngagementModel),
+}
+
+/// P29-9 9b: the stated depth of a Project Curve tip and its direction. The
+/// sign rule is `ops::project_curve::tip_depth_into_material_mm`, the rule
+/// the kernel emits its Z by.
+#[derive(Debug, Clone, Copy, PartialEq)]
+pub struct TipDepth {
+    /// The stated depth (mm), signed as the op states it.
+    pub depth_mm: f64,
+    /// The side the curve is projected from.
+    pub direction: crate::ops::project_curve::ProjectDirection,
+}
+
+impl TipDepth {
+    /// The lower bound (mm) of the depth into the material, given whether
+    /// the setup inverts Z (`None`: the setup is not known). `None` when
+    /// the tip is on or outside the surface, or when the sign needs the
+    /// setup and the setup is not known (from below).
+    #[must_use]
+    pub fn lower_bound_mm(self, setup_z_flipped: Option<bool>) -> Option<f64> {
+        use crate::ops::project_curve::ProjectDirection;
+        let flipped = match self.direction {
+            // The rule does not read the setup from above.
+            ProjectDirection::FromAbove => setup_z_flipped.unwrap_or(false),
+            ProjectDirection::FromBelow => setup_z_flipped?,
+        };
+        let b = crate::ops::project_curve::tip_depth_into_material_mm(
+            self.depth_mm,
+            self.direction,
+            flipped,
+        );
+        (b > 0.0).then_some(b)
+    }
 }
 
 /// P29-9 9a: a depth that the tool gives. One match names every rule
@@ -354,6 +391,13 @@ impl DeclaredCut {
                 DeclaredDepth::OfTool(depth) => match depth.mm(ctx.tool) {
                     Ok(ap) => ap,
                     Err(reason) => return CutEngagement::NoModel(reason),
+                },
+                // A lower bound needs the setup; this reader holds none.
+                DeclaredDepth::AtLeast(tip) => match tip.lower_bound_mm(None) {
+                    Some(ap) => ap,
+                    None => {
+                        return CutEngagement::NoModel(NoEngagementModel::DepthAfterSimulation);
+                    }
                 },
                 // Not reached: an axial cut is the straight plunge above.
                 DeclaredDepth::Axial => {
@@ -744,6 +788,7 @@ impl OperationConfig {
             DeclaredDepth::Stated(_)
             | DeclaredDepth::Axial
             | DeclaredDepth::OfTool(_)
+            | DeclaredDepth::AtLeast(_)
             | DeclaredDepth::None(_) => (no_width, no_depth),
         };
         for kind in contract.record_kinds().kinds() {
@@ -759,6 +804,7 @@ impl OperationConfig {
                     DeclaredDepth::Own(_)
                     | DeclaredDepth::Axial
                     | DeclaredDepth::OfTool(_)
+                    | DeclaredDepth::AtLeast(_)
                     | DeclaredDepth::None(_) => no_depth,
                 }),
                 EntryKind::Helix => {
@@ -887,7 +933,8 @@ impl OperationConfig {
     /// one-pass depth, the surface cap or a helix pitch (one helix turn,
     /// P29-5b). P29-9 9a: a chamfer states the depth of the tool that cuts
     /// its width ([`ToolDepth::Chamfer`]); a peck is a drill cycle (ruling
-    /// Q4). A surface offset gives its depth after the simulation.
+    /// Q4). P29-9 9b: a surface offset states a lower bound of the depth
+    /// ([`TipDepth`]); the simulation gives the depth.
     fn declared_depth(&self) -> DeclaredDepth {
         let not_stated = DeclaredDepth::None(NoEngagementModel::NoStatedDepth);
         match self.cut_spec().axial {
@@ -927,7 +974,48 @@ impl OperationConfig {
                 | OperationConfig::ProjectCurve(_)
                 | OperationConfig::AlignmentPinDrill(_) => not_stated,
             },
-            Axial::SurfaceOffset(_) => DeclaredDepth::None(NoEngagementModel::DepthAfterSimulation),
+            // P29-9 9b: the tip depth of a Project Curve is a lower bound
+            // of the depth into the material, resolved with the setup.
+            Axial::SurfaceOffset(offset) => {
+                let after = DeclaredDepth::None(NoEngagementModel::DepthAfterSimulation);
+                match (self, offset) {
+                    (OperationConfig::ProjectCurve(c), Some(offset)) => {
+                        DeclaredDepth::AtLeast(TipDepth {
+                            depth_mm: offset.mm(),
+                            direction: c.direction.into(),
+                        })
+                    }
+                    (OperationConfig::ProjectCurve(_), None) => after,
+                    // Not reached: only a Project Curve states an offset.
+                    (
+                        OperationConfig::Pocket(_)
+                        | OperationConfig::Profile(_)
+                        | OperationConfig::Adaptive(_)
+                        | OperationConfig::VCarve(_)
+                        | OperationConfig::Inlay(_)
+                        | OperationConfig::InlayPlug(_)
+                        | OperationConfig::Zigzag(_)
+                        | OperationConfig::Trace(_)
+                        | OperationConfig::Drill(_)
+                        | OperationConfig::Bore(_)
+                        | OperationConfig::Face(_)
+                        | OperationConfig::Chamfer(_)
+                        | OperationConfig::DropCutter(_)
+                        | OperationConfig::Adaptive3d(_)
+                        | OperationConfig::Waterline(_)
+                        | OperationConfig::Pencil(_)
+                        | OperationConfig::Scallop(_)
+                        | OperationConfig::UnifiedFinish(_)
+                        | OperationConfig::SteepShallow(_)
+                        | OperationConfig::RampFinish(_)
+                        | OperationConfig::SpiralFinish(_)
+                        | OperationConfig::RadialFinish(_)
+                        | OperationConfig::HorizontalFinish(_)
+                        | OperationConfig::AlignmentPinDrill(_),
+                        _,
+                    ) => after,
+                }
+            }
         }
     }
 

@@ -1194,6 +1194,7 @@ fn suggest_context_is_no_op_in_v1_1() {
         calculator_operating_point: None,
         policy: SuggestPolicy::default(),
         dressups: None,
+        setup_z_flipped: Some(false),
     };
 
     let baseline = suggest_params(SuggestParamsInput {

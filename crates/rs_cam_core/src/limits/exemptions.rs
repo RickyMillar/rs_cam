@@ -96,7 +96,7 @@ const R2: ExemptionClass = ExemptionClass::Ruled {
 const NR: ExemptionClass = ExemptionClass::NeedsRuling;
 
 /// Every exemption from a limit today. See the module doc.
-pub static EXEMPTIONS: [Exemption; 39] = [
+pub static EXEMPTIONS: [Exemption; 38] = [
     // P28: the limit audit.
     Exemption {
         id: "P28-02",
@@ -174,24 +174,6 @@ pub static EXEMPTIONS: [Exemption; 39] = [
             "src/limits/scope.rs",
         ],
         closes_in: "P29-8 (no end-cut force source)",
-    },
-    Exemption {
-        id: "P28-11",
-        what: "every pre-simulation limit that reads a depth",
-        limit: &[
-            LimitId::SpindlePower,
-            LimitId::ToolDeflection,
-            LimitId::ForceBudget,
-            LimitId::FluteGuard,
-        ],
-        who: Who::Facts("the depth is known after the simulation (Project Curve)"),
-        class: NR,
-        where_: &[
-            "src/compute/catalog/cut_spec.rs",
-            "src/feeds/envelope.rs",
-            "src/feeds/operating_point.rs",
-        ],
-        closes_in: "P29-9",
     },
     Exemption {
         id: "P28-13",

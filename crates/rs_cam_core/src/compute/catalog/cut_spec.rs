@@ -164,7 +164,9 @@ impl Axial {
     #[must_use]
     pub const fn depth_after_simulation(&self) -> bool {
         match self {
-            // EXEMPT(P28-11)
+            // P29-9 9b: the checks read a lower bound of the depth
+            // (`compute::catalog::TipDepth`); the depth is known after the
+            // simulation.
             Self::SurfaceOffset(_) => true,
             Self::PerPass(_)
             | Self::ZStep(_)

@@ -1056,6 +1056,8 @@ fn session_cutter_op_profile_matches_gui_rationale_assembly() {
             // G6 ramp: the toolpath's dressups, as `cutter_op_profile`
             // passes them, so the two assemblies stay one.
             dressups: Some(&tc.dressups),
+            // P29-9 9b: the setup frame, as the session slots fill it.
+            setup_z_flipped: session.suggest_slots(tc).setup_z_flipped,
         };
         let direct = suggest_for_operation(SuggestForOperationInput {
             operation: &tc.operation,

@@ -259,7 +259,9 @@ fn power_at_point(
 ) -> Result<PowerFigure, PowerUnmodeled> {
     // P16 (review D7): no depth before the simulation, so no power figure.
     // A material with no force line keeps its `MaterialUnvalidated` reason.
-    // EXEMPT(P28-11)
+    // P29-9 9b: the checks judge a Project Curve at the lower bound of its
+    // depth (`BodyDepth::AtLeast`); the power figure is known after the
+    // simulation (P16, review D7).
     if material.force_line().is_ok() && operation.cut_spec().axial.depth_after_simulation() {
         return Err(PowerUnmodeled::DepthAfterSimulation);
     }
@@ -358,7 +360,9 @@ pub fn force_at_operating_point(
     // P16 (item 2b): the guard of `power_at_operating_point`. No depth
     // before the simulation, so no force at D x D. A material with no force
     // line keeps its `MaterialUnvalidated` reason.
-    // EXEMPT(P28-11)
+    // P29-9 9b: the checks judge a Project Curve at the lower bound of its
+    // depth (`BodyDepth::AtLeast`); the power figure is known after the
+    // simulation (P16, review D7).
     if material.force_line().is_ok() && operation.cut_spec().axial.depth_after_simulation() {
         return Err(PowerUnmodeled::DepthAfterSimulation);
     }
@@ -413,7 +417,9 @@ pub fn force_at_shipped_point(
     recommended: &crate::feeds::FeedsResult,
     feed_max_rate: Option<f64>,
 ) -> Result<ForceAtPoint, PowerUnmodeled> {
-    // EXEMPT(P28-11)
+    // P29-9 9b: the checks judge a Project Curve at the lower bound of its
+    // depth (`BodyDepth::AtLeast`); the power figure is known after the
+    // simulation (P16, review D7).
     if material.force_line().is_ok() && operation.cut_spec().axial.depth_after_simulation() {
         return Err(PowerUnmodeled::DepthAfterSimulation);
     }

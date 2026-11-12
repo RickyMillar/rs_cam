@@ -2311,6 +2311,15 @@ impl ProjectSession {
                 self.stock_config().padding,
             ),
             model_bbox: self.model_bbox_by_id(tc.model_id),
+            // P29-9 9b: the Z frame of the toolpath's setup, by the one
+            // rule `SetupTransformInfo::is_z_flipped`.
+            setup_z_flipped: self
+                .setup_of_toolpath_id(tc.id)
+                .and_then(|i| self.list_setups().get(i))
+                .map(|setup| {
+                    self.setup_transform_info(setup.face_up, setup.z_rotation)
+                        .is_z_flipped()
+                }),
         }
     }
 

@@ -81,6 +81,10 @@ pub struct SuggestSlots {
     /// The bbox of the model the toolpath machines; `None` when the id
     /// names no model or the model has no finite geometry.
     pub model_bbox: Option<crate::geo::BoundingBox3>,
+    /// P29-9 9b: whether the toolpath's setup inverts Z
+    /// (`SetupTransformInfo::is_z_flipped`); `None` when the toolpath has
+    /// no setup.
+    pub setup_z_flipped: Option<bool>,
 }
 
 impl SuggestSlots {
@@ -95,6 +99,7 @@ impl SuggestSlots {
             model_bbox: self.model_bbox.as_ref(),
             stock: Some(&self.stock),
             dressups: Some(dressups),
+            setup_z_flipped: self.setup_z_flipped,
             ..SuggestContext::default()
         }
     }
@@ -221,6 +226,11 @@ pub struct SuggestContext<'a> {
     /// ramp). `None` means not known; the ramp then falls back to the plunge
     /// rate. Adaptive3d reads its own entry and does not use this slot.
     pub dressups: Option<&'a crate::compute::config::DressupConfig>,
+    /// P29-9 9b: whether the toolpath's setup inverts Z; `None` when not
+    /// known. The declared depth of a Project Curve from below reads it
+    /// (`compute::catalog::TipDepth`); a reader with no setup passes
+    /// `None`, and then a from-below cut has no lower bound.
+    pub setup_z_flipped: Option<bool>,
 }
 
 /// The point [`crate::feeds::calculate`] evaluated its feed expression at.

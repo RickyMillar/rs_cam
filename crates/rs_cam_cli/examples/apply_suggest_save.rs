@@ -84,6 +84,8 @@ fn main() -> Result<()> {
             calculator_operating_point: None,
             policy: SuggestPolicy::default(),
             dressups: Some(&tc.dressups),
+            // P29-9 9b: this example reads no setup frame.
+            setup_z_flipped: None,
         };
         let suggested = match suggest_for_operation(SuggestForOperationInput {
             operation: &tc.operation,

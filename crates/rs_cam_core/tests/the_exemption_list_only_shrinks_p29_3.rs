@@ -48,9 +48,9 @@ use rs_cam_core::limits::{
 };
 
 /// The rows that need a ruling. Exact: a closed row lowers it.
-const MAX_NEEDS_RULING: usize = 28;
+const MAX_NEEDS_RULING: usize = 27;
 /// Every row.
-const ROWS: usize = 39;
+const ROWS: usize = 38;
 /// The rows with a geometry reason.
 const PHYSICAL: usize = 8;
 /// The rows that quote an operator ruling.
@@ -88,8 +88,10 @@ const RULED: usize = 3;
 /// 29. The row `U-TabReplunge` narrowed to its open cause, with no file.
 /// P29-9 9a closed the row `P28-32` with three files: a chamfer declares
 /// the depth of the tool that cuts its width (`ToolDepth::Chamfer`), and a
-/// peck declares a drill cycle (ruling Q4).
-const ROWS_WITH_A_FILE: usize = 38;
+/// peck declares a drill cycle (ruling Q4). P29-9 9b closed the row
+/// `P28-11` with three files: the checks judge a Project Curve at the
+/// lower bound of its depth (`TipDepth`, `BodyDepth::AtLeast`).
+const ROWS_WITH_A_FILE: usize = 37;
 
 /// The 34 rows of `phases/P28_limit_audit.md`.
 const P28_IDS: [&str; 34] = [
@@ -128,6 +130,7 @@ const CLOSED: &[(&str, &str)] = &[
     ("M12", "P29-7"),
     ("P28-15", "P29-7"),
     ("P28-32", "P29-9"),
+    ("P28-11", "P29-9"),
 ];
 
 /// The marker text before the ids.

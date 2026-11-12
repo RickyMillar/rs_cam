@@ -80,6 +80,42 @@ pub enum ProjectProjection {
     Point,
 }
 
+/// P29-9 9b: THE sign of the Project Curve depth. The depth (mm) of the
+/// tip into the material, measured from the side the machine cuts from
+/// (+Z of the emitted frame), for a stated `depth`.
+///
+/// - From above: the tip goes `depth` below the top surface.
+/// - From below on a flipped setup (`SetupTransformInfo::is_z_flipped`):
+///   the setup transform has inverted the mesh, so the kernel runs as from
+///   above in the local frame: `depth`.
+/// - From below on a setup that is not flipped: the kernel finds the
+///   bottom surface and puts the tip `depth` above it in the world frame.
+///   The top is never below the bottom, so the tip is at least `-depth`
+///   below the top surface (exact on a sheet).
+///
+/// The kernel emits its Z through this rule, and the declared depth of the
+/// cut (`compute::catalog::TipDepth`) reads it. A value above zero is a
+/// lower bound of the depth into the material; the stock above the surface
+/// adds to it. Measured on the emitted moves in `P29-9_DESIGN.md` section
+/// 16.
+#[must_use]
+pub fn tip_depth_into_material_mm(
+    depth: f64,
+    direction: ProjectDirection,
+    setup_z_flipped: bool,
+) -> f64 {
+    match direction {
+        ProjectDirection::FromAbove => depth,
+        ProjectDirection::FromBelow => {
+            if setup_z_flipped {
+                depth
+            } else {
+                -depth
+            }
+        }
+    }
+}
+
 impl From<crate::compute::operation_configs::ProjectCurveDirection> for ProjectDirection {
     fn from(d: crate::compute::operation_configs::ProjectCurveDirection) -> Self {
         use crate::compute::operation_configs::ProjectCurveDirection as Config;
@@ -337,13 +373,17 @@ fn project_polygon_rings_with_cancel(
         let tip_zs = project_tip_zs(&resampled, mesh, index, cutter, params.projection, cancel)?;
         let mut current_chain: Vec<P3> = Vec::new();
 
+        // P29-9 9b: the one sign rule of the depth.
+        let into =
+            tip_depth_into_material_mm(params.depth, params.direction, params.setup_z_flipped);
         for (pt, surface_tip_z) in resampled.iter().zip(tip_zs) {
             if let Some(tip_z) = surface_tip_z {
                 let z = if z_flip {
-                    // Flip Z back to world space and go depth INTO the bottom surface (upward).
-                    -tip_z + params.depth
+                    // Flip Z back to world space: the tip is `depth` above
+                    // the bottom surface (`into` = -depth).
+                    -tip_z - into
                 } else {
-                    tip_z - params.depth
+                    tip_z - into
                 };
                 current_chain.push(P3::new(pt.x, pt.y, z));
             } else {
@@ -451,6 +491,30 @@ fn project_tip_zs(
 )]
 mod tests {
     use super::*;
+
+    /// P29-9 9b: one row per frame of the sign rule (`P29-9_DESIGN.md`
+    /// section 16.2): from above, from below on a flipped setup, and from
+    /// below on a setup that is not flipped.
+    #[test]
+    fn the_tip_depth_rule_has_one_row_per_frame() {
+        let d = 2.417_820_455;
+        assert_eq!(
+            tip_depth_into_material_mm(d, ProjectDirection::FromAbove, false),
+            d
+        );
+        assert_eq!(
+            tip_depth_into_material_mm(d, ProjectDirection::FromAbove, true),
+            d
+        );
+        assert_eq!(
+            tip_depth_into_material_mm(d, ProjectDirection::FromBelow, true),
+            d
+        );
+        assert_eq!(
+            tip_depth_into_material_mm(-d, ProjectDirection::FromBelow, false),
+            d
+        );
+    }
 
     #[test]
     fn test_resample_polyline_basic() {
@@ -641,6 +705,14 @@ mod tests {
         );
         for p in &pts {
             let want = original_surface_z(p.x) + depth;
+            // P29-9 9b: from below on a setup that is not flipped, the
+            // tip is `-depth` into the material from the cut side.
+            assert_eq!(
+                want.to_bits(),
+                (original_surface_z(p.x)
+                    - tip_depth_into_material_mm(depth, ProjectDirection::FromBelow, false))
+                .to_bits()
+            );
             assert!(
                 (p.z - want).abs() < 1e-6,
                 "Point tip at ({:.3}, {:.3}) is {:.9}, want surface + depth = {want:.9}",
@@ -699,6 +771,13 @@ mod tests {
         );
         for p in fed_points(&above) {
             let want = original_surface_z(p.x) - 0.4;
+            // P29-9 9b: from above, the tip is `depth` into the material.
+            assert_eq!(
+                want.to_bits(),
+                (original_surface_z(p.x)
+                    - tip_depth_into_material_mm(0.4, ProjectDirection::FromAbove, false))
+                .to_bits()
+            );
             assert!(
                 (p.z - want).abs() < 1e-6,
                 "FromAbove Point tip {} != {want}",

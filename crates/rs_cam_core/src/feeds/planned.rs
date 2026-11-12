@@ -89,9 +89,10 @@ impl PlaneDepth {
     #[must_use]
     pub const fn of_declared(depth: DeclaredDepth) -> Self {
         match depth {
-            DeclaredDepth::Stated(_) | DeclaredDepth::OfTool(_) | DeclaredDepth::None(_) => {
-                Self::Body
-            }
+            DeclaredDepth::Stated(_)
+            | DeclaredDepth::OfTool(_)
+            | DeclaredDepth::AtLeast(_)
+            | DeclaredDepth::None(_) => Self::Body,
             DeclaredDepth::Own(own) => Self::Own(own),
             DeclaredDepth::Axial => Self::Axial,
         }
@@ -190,19 +191,46 @@ pub enum BodyDepth {
     /// A depth of the body plane (mm): a stated depth, or a depth of the
     /// tool (a chamfer, 9a).
     Plane(f64),
+    /// P29-9 9b: a lower bound (mm, above zero) of the depth into the
+    /// material (a Project Curve tip below the model surface). A check at
+    /// the bound proves `Exceeds` and never `Within`
+    /// (`NoNumberReason::OnlyALowerBound`).
+    AtLeast(f64),
     /// No depth before the simulation, with the reason.
     None(NoEngagementModel),
 }
 
+/// P29-9: the facts of the plan that a declared depth reads beside the op
+/// and the tool. A reader with no project (FM1, the add door) passes
+/// [`Self::NONE`].
+#[derive(Debug, Clone, Copy, PartialEq, Eq, Default)]
+pub struct PlanFacts {
+    /// 9b: whether the toolpath's setup inverts Z
+    /// (`SetupTransformInfo::is_z_flipped`); `None`: not known.
+    pub setup_z_flipped: Option<bool>,
+}
+
+impl PlanFacts {
+    /// No fact of the project.
+    pub const NONE: Self = Self {
+        setup_z_flipped: None,
+    };
+}
+
 impl BodyDepth {
-    /// The body depth of the declared depth `depth` on `tool`.
+    /// The body depth of the declared depth `depth` on `tool`, with the
+    /// facts of the plan.
     #[must_use]
-    pub fn of_declared(depth: DeclaredDepth, tool: &ToolConfig) -> Self {
+    pub fn of_declared(depth: DeclaredDepth, tool: &ToolConfig, facts: PlanFacts) -> Self {
         match depth {
             DeclaredDepth::Stated(mm) => Self::Plane(mm),
             DeclaredDepth::OfTool(of_tool) => match of_tool.mm(tool) {
                 Ok(mm) => Self::Plane(mm),
                 Err(reason) => Self::None(reason),
+            },
+            DeclaredDepth::AtLeast(tip) => match tip.lower_bound_mm(facts.setup_z_flipped) {
+                Some(mm) => Self::AtLeast(mm),
+                None => Self::None(NoEngagementModel::DepthAfterSimulation),
             },
             DeclaredDepth::None(reason) => Self::None(reason),
             // Not reached: the body is on the body plane.
@@ -219,7 +247,9 @@ impl BodyDepth {
     pub fn speeds_mm(self) -> Option<f64> {
         match self {
             Self::Plane(mm) if mm > 0.0 => Some(mm),
-            Self::Plane(_) | Self::None(_) => None,
+            // 9b: the calculator does not size the speeds at a lower bound
+            // (P16: the depth is known after the simulation).
+            Self::Plane(_) | Self::AtLeast(_) | Self::None(_) => None,
         }
     }
 }
@@ -250,6 +280,18 @@ impl DeclaredCuts {
         tool: &ToolConfig,
         entry: &ConfiguredEntry,
     ) -> Self {
+        Self::of_operation_with(operation, tool, entry, PlanFacts::NONE)
+    }
+
+    /// [`Self::of_operation`] with the facts of the plan (P29-9: the
+    /// session doors fill them from the toolpath's setup).
+    #[must_use]
+    pub fn of_operation_with(
+        operation: &OperationConfig,
+        tool: &ToolConfig,
+        entry: &ConfiguredEntry,
+        facts: PlanFacts,
+    ) -> Self {
         let list = operation.cuts(entry);
         let d_mm = tool.diameter;
         let usable = |v: f64| v.is_finite() && v > 0.0;
@@ -271,7 +313,7 @@ impl DeclaredCuts {
             body: list
                 .of_kind(CutKind::Body)
                 .map_or(BodyDepth::None(NoEngagementModel::NoStatedDepth), |c| {
-                    BodyDepth::of_declared(c.depth, tool)
+                    BodyDepth::of_declared(c.depth, tool, facts)
                 }),
             thinning: list.body_facts().thins_chip,
             lift_d_eng_mm,

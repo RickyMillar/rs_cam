@@ -67,6 +67,11 @@ pub enum NoNumberReason {
     /// The model does not cover the cut (the cutter mode, a model that
     /// does not exist yet).
     NotModelled,
+    /// P29-9 9b: the value is a lower bound of the cut (a Project Curve
+    /// depth: the stock above the model surface adds to it). The limit
+    /// holds at the bound, so the check proves nothing: only a bound that
+    /// fails proves `Exceeds`.
+    OnlyALowerBound,
     /// A value with no bound. This is a scope exemption of the P28 audit
     /// (today: the depth of a finish or semi-finish pass, ruling R2), NOT a
     /// geometry reason. P29-3 lists it for a ruling. It is never

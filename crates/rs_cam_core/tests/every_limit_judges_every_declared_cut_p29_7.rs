@@ -51,6 +51,14 @@
 //!   the feed `Exceeds`; a feed at the band maximum is `Within` it (a
 //!   ceiling reads the stated chip). The margin follows the judged end:
 //!   a row inside never holds a margin below zero.
+//! - Claim 7 (P29-9 9b, `P29-9_DESIGN.md` section 16): a Project Curve is
+//!   judged at the lower bound of its depth into the material
+//!   (`TipDepth`, the sign rule of the kernel). From above, a positive
+//!   depth gives a body force-budget row at that depth: `NoNumber(
+//!   OnlyALowerBound)` inside, `Exceeds` over the ceiling, never `Within`,
+//!   and with no margin inside. A tip on or outside the surface gives no
+//!   depth row. From below the rule needs the setup: no setup gives no row;
+//!   a setup that is not flipped judges `-depth`; a flipped setup `depth`.
 
 #![expect(
     clippy::expect_used,
@@ -900,4 +908,92 @@ fn claim_6_a_stored_entry_feed_is_judged_over_its_write_step_p29_9() {
         assert!((at + FEED_WRITE_STEP_MM_MIN) / per_rev > max, "non-vacuity");
         assert_eq!(row.check.state, CheckState::Within, "at the band maximum");
     }
+}
+
+/// P29-9 9b: the envelope of a Project Curve at `depth` from `direction`,
+/// with the setup fact `flipped`.
+fn project_curve_rows(
+    depth: f64,
+    direction: rs_cam_core::compute::operation_configs::ProjectCurveDirection,
+    flipped: Option<bool>,
+) -> Vec<rs_cam_core::feeds::envelope::CutCheck> {
+    let machine = MachineProfile::default();
+    let tool = fm1_tool(ToolType::EndMill, 6.0);
+    let mut op = rs_cam_core::compute::fixture_values::fixture_op(OperationType::ProjectCurve);
+    if let OperationConfig::ProjectCurve(c) = &mut op {
+        c.depth = Some(depth);
+        c.direction = direction;
+    }
+    SafeEnvelope::for_cut(EnvelopeInput {
+        operation: &op,
+        tool: &tool,
+        machine: &machine,
+        material: &hardwood(),
+        lut: rs_cam_core::feeds::embedded_vendor_lut(),
+        spindle_strategy: SpindleStrategy::default(),
+        context: SuggestContext {
+            setup_z_flipped: flipped,
+            ..SuggestContext::default()
+        },
+    })
+    .expect("the Project Curve envelope builds")
+    .cut_checks
+    .into_iter()
+    .filter(|r| r.cut == CutKind::Body && r.check.limit == LimitId::ForceBudget)
+    .collect()
+}
+
+#[test]
+fn claim_7_a_project_curve_is_judged_at_the_lower_bound_of_its_depth_p29_9() {
+    use rs_cam_core::compute::operation_configs::ProjectCurveDirection::{FromAbove, FromBelow};
+    use rs_cam_core::limits::{CheckState, NoNumberReason};
+    let one = |depth, direction, flipped| {
+        let rows = project_curve_rows(depth, direction, flipped);
+        assert!(rows.len() <= 1, "one body force-budget row: {rows:?}");
+        rows.into_iter().next()
+    };
+    // From above, 1 mm into the material: inside the ceiling, so the
+    // bound proves nothing.
+    let row = one(1.0, FromAbove, None).expect("a body row at the bound");
+    assert_eq!(row.check.value, Some(1.0));
+    let ceiling = row.check.bound.expect("a force-budget ceiling");
+    assert!(
+        ceiling > 1.0,
+        "non-vacuity: the ceiling {ceiling} is over 1 mm"
+    );
+    assert_eq!(
+        row.check.state,
+        CheckState::NoNumber(NoNumberReason::OnlyALowerBound)
+    );
+    assert_eq!(row.check.margin, None, "no margin at a lower bound inside");
+    // Over the ceiling: the real cut is at least as deep, so it exceeds.
+    let deep = (ceiling + 1.0).ceil();
+    let row = one(deep, FromAbove, None).expect("a body row at the deep bound");
+    assert_eq!(row.check.value, Some(deep));
+    assert_eq!(
+        row.check.state,
+        CheckState::Exceeds,
+        "{deep} mm over {ceiling}"
+    );
+    // A tip above the surface: no depth row.
+    assert!(
+        one(-1.0, FromAbove, None).is_none(),
+        "a tip above the surface"
+    );
+    // From below, the sign reads the setup.
+    assert!(one(-1.0, FromBelow, None).is_none(), "no setup, no bound");
+    assert_eq!(
+        one(-1.0, FromBelow, Some(false)).and_then(|r| r.check.value),
+        Some(1.0),
+        "a setup that is not flipped judges -depth"
+    );
+    assert!(
+        one(-1.0, FromBelow, Some(true)).is_none(),
+        "a flipped setup judges depth: -1 is outside"
+    );
+    assert_eq!(
+        one(1.0, FromBelow, Some(true)).and_then(|r| r.check.value),
+        Some(1.0),
+        "a flipped setup judges depth"
+    );
 }

@@ -1190,6 +1190,9 @@ struct CutRow {
     /// The bound, `Ok(None)` with no bound (the cut is inside), or the
     /// reason for no number.
     bound: Result<Option<f64>, crate::limits::NoNumberReason>,
+    /// P29-9 9b: the value is a lower bound of the cut (`BodyDepth::
+    /// AtLeast`): a row inside reads `NoNumber(OnlyALowerBound)`.
+    lower_bound: bool,
 }
 
 impl CutRow {
@@ -1207,6 +1210,15 @@ impl CutRow {
             value,
             judged: None,
             bound,
+            lower_bound: false,
+        }
+    }
+
+    /// P29-9 9b: the row of a value that is a lower bound of the cut.
+    fn at_lower_bound(self, lower_bound: bool) -> Self {
+        Self {
+            lower_bound,
+            ..self
         }
     }
 
@@ -1233,10 +1245,31 @@ impl CutRow {
                     CheckState::NoNumber(NoNumberReason::NotModelled),
                     CheckState::of_margin,
                 );
-                (Some(b), margin, state)
+                match (self.lower_bound, state) {
+                    // P29-9 9b: a lower bound inside its limit proves
+                    // nothing (the real cut is at least as deep).
+                    (true, CheckState::Within) => (
+                        Some(b),
+                        None,
+                        CheckState::NoNumber(NoNumberReason::OnlyALowerBound),
+                    ),
+                    (
+                        true | false,
+                        CheckState::Within
+                        | CheckState::Exceeds
+                        | CheckState::NoNumber(_)
+                        | CheckState::NotApplicable(_),
+                    ) => (Some(b), margin, state),
+                }
             }
             // No bound (no root below the flute, a table that holds every
-            // printed depth): the cut is inside.
+            // printed depth): the cut is inside; a lower bound proves
+            // nothing (9b).
+            Ok(None) if self.lower_bound => (
+                None,
+                None,
+                CheckState::NoNumber(NoNumberReason::OnlyALowerBound),
+            ),
             Ok(None) => (None, None, CheckState::Within),
             Err(reason) => (None, None, CheckState::NoNumber(reason)),
         };
@@ -1389,7 +1422,16 @@ impl SafeEnvelope {
             input.operation,
             input.context.dressups,
         );
-        let declared = DeclaredCuts::of_operation(input.operation, input.tool, &entry);
+        // P29-9 9b: the facts of the plan (the setup frame of a Project
+        // Curve from below) from the Suggest context.
+        let declared = DeclaredCuts::of_operation_with(
+            input.operation,
+            input.tool,
+            &entry,
+            crate::feeds::planned::PlanFacts {
+                setup_z_flipped: input.context.setup_z_flipped,
+            },
+        );
         let inputs = OwnedInputs {
             operation: input.operation.clone(),
             tool: input.tool.clone(),
@@ -1557,7 +1599,8 @@ impl SafeEnvelope {
         // model. A surface-offset op has no depth before the simulation; a
         // material with no force line has no limit that models the depth
         // (a drill peck is a drill rule, not a force depth).
-        // EXEMPT(P28-11)
+        // P29-9 9b: the checks judge a Project Curve at the lower bound of
+        // its depth (`BodyDepth::AtLeast`); no proposal moves.
         let no_depth = if input.operation.cut_spec().axial.depth_after_simulation() {
             Some(NoDepthProposal::AfterSimulation)
         } else if plan.axes.ap_free() && !plan.peck && input.material.force_line().is_err() {
@@ -2524,7 +2567,17 @@ impl SafeEnvelope {
         use crate::feeds::planned::{PlannedCell, PowerEnv, SpindlePowerPlanned};
         let p = self.proposal_point;
         let cuts = &self.inputs.cuts;
-        let ap = self.proposal.get().ap_mm()?;
+        // P29-9 9b: a body that states a lower bound of its depth is judged
+        // at the bound (a Project Curve has no proposal depth); every other
+        // body at the proposal depth.
+        let (ap, lower_bound) = match cuts.body_depth() {
+            BodyDepth::AtLeast(b) => (b, true),
+            BodyDepth::Plane(_) | BodyDepth::None(_) => (self.proposal.get().ap_mm()?, false),
+        };
+        let bound_of = |depth: PlaneDepth| match depth {
+            PlaneDepth::Body => lower_bound,
+            PlaneDepth::Own(_) | PlaneDepth::Axial => false,
+        };
         let column = |fz: f64| BodyColumn {
             ae_mm: p.ae_mm,
             chip_mm: Some(fz),
@@ -2581,6 +2634,7 @@ impl SafeEnvelope {
                             ) => not_judged,
                         };
                         CutRow::of(a.kind, a.presence, a.depth, value_of(a.depth), bound)
+                            .at_lower_bound(bound_of(a.depth))
                     })
                     .collect()
             }
@@ -2613,6 +2667,8 @@ impl SafeEnvelope {
                             }
                         };
                         CutRow::of(e.kind, e.presence, e.depth, value_of(e.depth), bound)
+                            .at_lower_bound(bound_of(e.depth))
+                            .at_lower_bound(bound_of(e.depth))
                     })
                     .collect()
             }
@@ -2638,6 +2694,7 @@ impl SafeEnvelope {
                         PlannedCell::NotJudged(_) | PlannedCell::NotACutLimit(_) => not_judged,
                     };
                     CutRow::of(e.kind, e.presence, e.depth, value_of(e.depth), bound)
+                        .at_lower_bound(bound_of(e.depth))
                 })
                 .collect()
             }
@@ -2645,6 +2702,13 @@ impl SafeEnvelope {
             // through the calculator's power terms (Step 6 reads the same
             // terms, `planned::worst_power`), against the rated power.
             CeilingEdge::Power => {
+                // P29-9 9b (P16, review D7): the power of a surface offset
+                // is known after the simulation, so a body at a lower bound
+                // gives no power row (the power figure stays
+                // `DepthAfterSimulation`).
+                if lower_bound {
+                    return None;
+                }
                 let sp = speeds?;
                 let mut input = FeedsInput::of_operation(
                     &self.inputs.operation,
@@ -3165,7 +3229,8 @@ fn axes_plan(
         // gives no depth leaves the axis free and not stated.
         Axial::ChamferWidth(_) => match cuts.body_depth() {
             BodyDepth::Plane(ap) => (true, Some(ap), ap),
-            BodyDepth::None(_) => (true, None, base.axial_depth_mm),
+            // Not reached for a chamfer: a lower bound is a surface offset.
+            BodyDepth::AtLeast(_) | BodyDepth::None(_) => (true, None, base.axial_depth_mm),
         },
         // P10: an unset per-pass depth, Z step or peck is free and not
         // stated, as an unset one-pass depth (S11).
