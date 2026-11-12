@@ -22,7 +22,7 @@ use rs_cam_core::compute::catalog::{OperationConfig, OperationType};
 use rs_cam_core::compute::tool_config::ToolFact;
 use rs_cam_core::compute::tool_config::{ToolConfig, ToolId, ToolType};
 use rs_cam_core::feeds::suggest::{
-    OperationApplyInput, StockContext, SuggestContext, apply_to_operation,
+    NoProject, OperationApplyInput, StockContext, SuggestContext, apply_to_operation,
 };
 use rs_cam_core::feeds::{FeedsProvenance, SpindleStrategy, embedded_vendor_lut};
 use rs_cam_core::machine::MachineProfile;
@@ -79,10 +79,10 @@ fn apply_speeds(op: &OperationConfig, tool: &ToolConfig) -> Option<OperationConf
             material: &material,
             spindle_strategy: SpindleStrategy::default(),
             lut: embedded_vendor_lut(),
-            suggest: SuggestContext {
+            suggest: SuggestContext::no_project(NoProject {
                 stock: Some(&stock),
-                ..SuggestContext::default()
-            },
+                ..NoProject::NONE
+            }),
         },
         None,
         None,

@@ -121,26 +121,18 @@ pub(crate) fn compute_preview(
 /// warnings of the invariant pass and, on a pairing that is not refused,
 /// the funnel dry run of `⚡ Apply all` (G-RECOMAPPLIED: the recommended
 /// column prints what the apply writes).
-#[expect(
-    clippy::too_many_arguments,
-    reason = "each parameter is one input of the funnel; the memo keys on all of them"
-)]
 pub(crate) fn build_card(
     operation: &crate::state::toolpath::OperationConfig,
-    dressups: &crate::state::toolpath::DressupConfig,
     tool: &crate::state::job::ToolConfig,
     material: &rs_cam_core::material::Material,
     machine: &rs_cam_core::machine::MachineProfile,
     spindle_strategy: rs_cam_core::feeds::SpindleStrategy,
-    model_bbox: Option<&rs_cam_core::geo::BoundingBox3>,
+    // F114, P29-9: THE Suggest context of the panel: the session door's
+    // slots and the toolpath's dressups (the G6 entry θ too).
+    context: rs_cam_core::feeds::suggest::SuggestContext<'_>,
     preview: &FeedsPreview,
 ) -> crate::state::runtime::FeedsCard {
-    let context = || rs_cam_core::feeds::suggest::SuggestContext {
-        model_bbox,
-        // G6 ramp: the entry θ the apply writes the ramp feed for.
-        dressups: Some(dressups),
-        ..rs_cam_core::feeds::suggest::SuggestContext::default()
-    };
+    let context = || context;
     // `FeedsPreview` carries calculator warnings; the rows also quote the
     // invariant pass's own account of what it did (ruling R4, 2026-09-24).
     let suggest_warnings = rs_cam_core::feeds::suggest::suggest_for_operation(

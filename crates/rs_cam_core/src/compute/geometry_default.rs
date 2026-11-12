@@ -289,7 +289,13 @@ fn envelope_proposal(
         material: ctx.material,
         lut: crate::feeds::embedded_vendor_lut(),
         spindle_strategy: crate::feeds::SpindleStrategy::default(),
-        context: crate::feeds::suggest::SuggestContext::default(),
+        // P29-9: a geometry rule reads the tool, the material and the
+        // machine only (`RuleContext`); it holds no project. The add door
+        // passes its own context (`NewOpSlots`) to Suggest after this rule.
+        // P29-9 open: the model box of the add door is not read here.
+        context: crate::feeds::suggest::SuggestContext::no_project(
+            crate::feeds::suggest::NoProject::NONE,
+        ),
     })
     .ok()
 }

@@ -36,7 +36,7 @@ use rs_cam_core::compute::tool_config::{ToolConfig, ToolId, ToolType};
 use rs_cam_core::feeds::FeedsInput;
 use rs_cam_core::feeds::envelope::{Edge, EnvelopeInput, LimitKind, Placement, SafeEnvelope};
 use rs_cam_core::feeds::sourced::MachineField;
-use rs_cam_core::feeds::suggest::SuggestContext;
+use rs_cam_core::feeds::suggest::{NoProject, SuggestContext};
 use rs_cam_core::feeds::{Basis, SpindleStrategy, calculate, embedded_vendor_lut};
 use rs_cam_core::geo::{BoundingBox3, P3};
 use rs_cam_core::limits::{CutKind, FirstPassKind};
@@ -132,10 +132,10 @@ fn envelope_of(
         material: &cell.material,
         lut: embedded_vendor_lut(),
         spindle_strategy: SpindleStrategy::default(),
-        context: SuggestContext {
+        context: SuggestContext::no_project(NoProject {
             model_bbox: cell.bbox,
-            ..SuggestContext::default()
-        },
+            ..NoProject::NONE
+        }),
     })
     .expect("the cell is backed")
 }

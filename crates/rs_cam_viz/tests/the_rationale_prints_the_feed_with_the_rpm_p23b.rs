@@ -37,7 +37,7 @@ use rs_cam_core::compute::catalog::{OperationConfig, OperationType};
 use rs_cam_core::compute::fixture_values::fixture_op;
 use rs_cam_core::compute::tool_config::{ToolConfig, ToolFact, ToolId, ToolType};
 use rs_cam_core::feeds::profile::{CutterOpProfile, CutterOpProfileInput};
-use rs_cam_core::feeds::suggest::SuggestContext;
+use rs_cam_core::feeds::suggest::{NoProject, SuggestContext};
 use rs_cam_core::feeds::{SpindleStrategy, embedded_vendor_lut};
 use rs_cam_core::machine::MachineProfile;
 use rs_cam_core::material::{Material, WoodSpecies};
@@ -91,7 +91,7 @@ fn basis_of(
         spindle_strategy: SpindleStrategy::ConstantChip {
             rpm_ceiling: Some(24_000),
         },
-        context: SuggestContext::default(),
+        context: SuggestContext::no_project(NoProject::NONE),
     })
     .expect("the tool builds a cutter");
     assert!(

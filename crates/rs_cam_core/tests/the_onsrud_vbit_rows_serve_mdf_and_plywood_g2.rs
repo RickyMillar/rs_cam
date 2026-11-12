@@ -66,7 +66,7 @@ use rs_cam_core::compute::tool_config::ToolFact;
 use rs_cam_core::compute::tool_config::{ToolConfig, ToolId, ToolType};
 use rs_cam_core::feeds::extrapolation::{ClaimResidual, SizeBasis, SizeForm, SpreadFamily};
 use rs_cam_core::feeds::suggest::{
-    StockContext, SuggestContext, SuggestParamsInput, suggest_params,
+    NoProject, StockContext, SuggestContext, SuggestParamsInput, suggest_params,
 };
 use rs_cam_core::feeds::vendor_lookup::{LookupQuery, LookupResult, find_best_vbit_row};
 use rs_cam_core::feeds::vendor_lut::{
@@ -288,7 +288,7 @@ fn suggest_mdf_trace(
         lut: &EMBEDDED_LUT,
         stock_ctx: &stock,
         spindle_strategy: SpindleStrategy::default(),
-        context: SuggestContext::default(),
+        context: SuggestContext::no_project(NoProject::NONE),
     })
 }
 

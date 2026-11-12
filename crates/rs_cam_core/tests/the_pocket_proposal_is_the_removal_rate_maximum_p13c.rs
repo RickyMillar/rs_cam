@@ -33,7 +33,7 @@ use rs_cam_core::compute::catalog::{OperationConfig, OperationType};
 use rs_cam_core::compute::geometry_default::slot_mut;
 use rs_cam_core::compute::tool_config::{ToolConfig, ToolFact, ToolId, ToolType};
 use rs_cam_core::feeds::envelope::{CutPoint, EnvelopeInput, PickRequest, Placement, SafeEnvelope};
-use rs_cam_core::feeds::suggest::SuggestContext;
+use rs_cam_core::feeds::suggest::{NoProject, SuggestContext};
 use rs_cam_core::feeds::{SpindleStrategy, embedded_vendor_lut};
 use rs_cam_core::machine::MachineProfile;
 use rs_cam_core::material::{Material, SheetGoodKind, WoodSpecies};
@@ -99,7 +99,7 @@ fn the_pocket_proposal_is_the_most_removal_inside_the_limits_p13c() {
                 material: m,
                 lut: embedded_vendor_lut(),
                 spindle_strategy: SpindleStrategy::default(),
-                context: SuggestContext::default(),
+                context: SuggestContext::no_project(NoProject::NONE),
             })
             .expect("the FM1 cell is backed");
             let p = env.proposal.get().point().expect("a proposed depth");

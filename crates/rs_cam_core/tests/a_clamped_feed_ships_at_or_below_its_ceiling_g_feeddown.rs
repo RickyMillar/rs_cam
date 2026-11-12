@@ -42,7 +42,8 @@ use rs_cam_core::compute::operation_configs::PocketConfig;
 use rs_cam_core::compute::tool_config::ToolFact;
 use rs_cam_core::compute::{ToolConfig, ToolId, ToolType};
 use rs_cam_core::feeds::suggest::{
-    ApplyContext, FeedsPreview, SuggestContext, round_suggestion_value, round_suggestion_value_down,
+    ApplyContext, FeedsPreview, NoProject, SuggestContext, round_suggestion_value,
+    round_suggestion_value_down,
 };
 use rs_cam_core::feeds::{
     FeedsInput, FeedsWarning, PassRole, SpindleStrategy, embedded_vendor_lut,
@@ -138,7 +139,7 @@ fn run_funnel(machine: &MachineProfile, material: &Material, requested_ap: f64) 
             machine,
             material,
             pass_role: PassRole::Roughing,
-            suggest: SuggestContext::default(),
+            suggest: SuggestContext::no_project(NoProject::NONE),
         },
     );
 

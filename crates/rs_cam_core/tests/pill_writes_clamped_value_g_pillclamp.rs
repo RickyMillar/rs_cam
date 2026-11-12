@@ -60,8 +60,8 @@
 use rs_cam_core::compute::catalog::{OperationConfig, OperationType};
 use rs_cam_core::compute::tool_config::{ToolConfig, ToolId, ToolType};
 use rs_cam_core::feeds::suggest::{
-    FieldApplyPreviews, SuggestContext, feeds_result_for_operation, preview_field_applies,
-    preview_field_apply, round_suggestion_value,
+    FieldApplyPreviews, NoProject, SuggestContext, feeds_result_for_operation,
+    preview_field_applies, preview_field_apply, round_suggestion_value,
 };
 use rs_cam_core::feeds::{FeedsField, FeedsProvenance, FeedsResult};
 use rs_cam_core::session::ProjectSession;
@@ -104,7 +104,7 @@ fn apply_proposal(
             material: &session.stock_config().material,
             spindle_strategy: session.post_config().spindle_policy(),
             lut: rs_cam_core::feeds::embedded_vendor_lut(),
-            suggest: SuggestContext::default(),
+            suggest: SuggestContext::no_project(NoProject::NONE),
         },
         Some(rs_cam_core::feeds::envelope::PickRequest::Proposal),
         None,
@@ -193,7 +193,7 @@ fn previews(
         &session.stock_config().material,
         rs_cam_core::feeds::embedded_vendor_lut(),
         session.post_config().spindle_policy(),
-        SuggestContext::default(),
+        SuggestContext::no_project(NoProject::NONE),
     )
 }
 
@@ -230,7 +230,7 @@ fn depth_per_pass_pill_offers_the_funnel_value_not_the_calculator_value() {
         &session.stock_config().material,
         rs_cam_core::feeds::embedded_vendor_lut(),
         session.post_config().spindle_policy(),
-        SuggestContext::default(),
+        SuggestContext::no_project(NoProject::NONE),
         FeedsField::DepthPerPass,
     )
     .expect("the funnel writes DOC on a Pocket");

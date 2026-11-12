@@ -44,7 +44,8 @@ use rs_cam_core::diagnostics::{DiagnosticEvidence, DiagnosticState, Severity, id
 use rs_cam_core::feeds::envelope::{EnvelopeInput, LimitKind, PickRequest, SafeEnvelope};
 use rs_cam_core::feeds::force_budget::{RigidityCapOutcome, rigidity_depth_cap};
 use rs_cam_core::feeds::suggest::{
-    OperationApplyInput, StockContext, SuggestContext, SuggestWarning, apply_to_operation,
+    NoProject, OperationApplyInput, StockContext, SuggestContext, SuggestWarning,
+    apply_to_operation,
 };
 use rs_cam_core::feeds::{EMBEDDED_LUT, PassRole, SpindleStrategy};
 use rs_cam_core::ids::ToolpathId;
@@ -144,10 +145,10 @@ fn suggest_at(op: OperationType, tool: &ToolConfig, depth_mm: Option<f64>) -> Sh
     if let Some(depth) = depth_mm {
         let _ = operation.set_depth_per_pass(depth);
     }
-    let context = SuggestContext {
+    let context = SuggestContext::no_project(NoProject {
         stock: Some(&s),
-        ..SuggestContext::default()
-    };
+        ..NoProject::NONE
+    });
     let envelope = SafeEnvelope::for_cut(EnvelopeInput {
         operation: &operation,
         tool,

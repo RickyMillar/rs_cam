@@ -36,7 +36,7 @@ use rs_cam_core::compute::geometry_default::slot_mut;
 use rs_cam_core::compute::tool_config::{ToolConfig, ToolFact, ToolId, ToolType};
 use rs_cam_core::feeds::envelope::{EnvelopeInput, SafeEnvelope};
 use rs_cam_core::feeds::rationale::SuggestRationale;
-use rs_cam_core::feeds::suggest::SuggestContext;
+use rs_cam_core::feeds::suggest::{NoProject, SuggestContext};
 use rs_cam_core::feeds::{SpindleStrategy, embedded_vendor_lut};
 use rs_cam_core::session::{AddToolArgs, AddToolpathArgs, Command, DraftRequest, ProjectSession};
 
@@ -86,7 +86,7 @@ fn the_add_door_writes_the_proposal_and_states_its_assumptions_p13c() {
             material: &s.stock_config().material,
             lut: embedded_vendor_lut(),
             spindle_strategy: SpindleStrategy::default(),
-            context: SuggestContext::default(),
+            context: SuggestContext::no_project(NoProject::NONE),
         })
         .expect("an envelope");
         let p = env.proposal.get().point().expect("a proposed depth");
@@ -167,7 +167,7 @@ fn with_no_force_line_the_width_is_written_and_the_depth_is_not_p13c() {
         material: &s.stock_config().material,
         lut: embedded_vendor_lut(),
         spindle_strategy: SpindleStrategy::default(),
-        context: SuggestContext::default(),
+        context: SuggestContext::no_project(NoProject::NONE),
     })
     .expect("a backed plywood pocket");
     let want = corner;

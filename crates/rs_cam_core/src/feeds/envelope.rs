@@ -1420,7 +1420,7 @@ impl SafeEnvelope {
         // (`planned::sets_a_ceiling`).
         let entry = crate::feeds::entry_rule::ConfiguredEntry::of_operation(
             input.operation,
-            input.context.dressups,
+            input.context.dressups(),
         );
         // P29-9 9b: the facts of the plan (the setup frame of a Project
         // Curve from below) from the Suggest context.
@@ -1428,12 +1428,7 @@ impl SafeEnvelope {
             input.operation,
             input.tool,
             &entry,
-            crate::feeds::planned::PlanFacts {
-                setup_z_flipped: input.context.setup_z_flipped,
-                earlier_leave: crate::feeds::planned::EarlierLeave::of_mm(
-                    input.context.upstream_leftover_stock_mm,
-                ),
-            },
+            input.context.plan_facts(),
         );
         let inputs = OwnedInputs {
             operation: input.operation.clone(),
@@ -3252,7 +3247,7 @@ fn drill_peck_rule(input: &EnvelopeInput<'_>) -> Option<f64> {
             peck,
             input
                 .context
-                .stock
+                .stock()
                 .and_then(|s| s.stock_z)
                 .map(|z| z + cfg.spoilboard_penetration),
         )),
@@ -4396,7 +4391,7 @@ fn runtime_limit(
     if !plan.axes.ae_free() || input.operation.stepover().is_none() {
         return None;
     }
-    let bbox = *input.context.model_bbox?;
+    let bbox = *input.context.model_bbox()?;
     let target = crate::feeds::suggest::STEPOVER_BACKOFF_TARGET_MOVES_ROW.value;
     let ceiling = d * crate::feeds::suggest::STEPOVER_BACKOFF_DIAMETER_FRACTION_ROW.value;
     let ap_span = match plan.axes {
@@ -4649,10 +4644,10 @@ mod tests {
             material: &material,
             lut: crate::feeds::embedded_vendor_lut(),
             spindle_strategy: SpindleStrategy::default(),
-            context: SuggestContext {
+            context: SuggestContext::no_project(crate::feeds::suggest::NoProject {
                 model_bbox: Some(&bbox),
-                ..SuggestContext::default()
-            },
+                ..crate::feeds::suggest::NoProject::NONE
+            }),
         })
         .expect("a 6 mm end mill pocket is backed")
     }
@@ -4725,7 +4720,7 @@ mod tests {
             material: &material,
             lut: crate::feeds::embedded_vendor_lut(),
             spindle_strategy: SpindleStrategy::default(),
-            context: SuggestContext::default(),
+            context: SuggestContext::no_project(crate::feeds::suggest::NoProject::NONE),
         })
         .unwrap()
     }

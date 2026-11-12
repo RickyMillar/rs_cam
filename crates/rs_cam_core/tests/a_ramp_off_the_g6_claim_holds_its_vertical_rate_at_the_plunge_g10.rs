@@ -33,7 +33,7 @@ use rs_cam_core::compute::tool_config::ToolFact;
 use rs_cam_core::compute::tool_config::{ToolConfig, ToolId, ToolType};
 use rs_cam_core::feeds::ramp::{EntryNotes, PlungeSlopeRamp, RampArm, RampFallback, entry_notes};
 use rs_cam_core::feeds::suggest::{
-    SuggestContext, SuggestForOperationInput, SuggestWarning, SuggestedParams,
+    NoProject, SuggestContext, SuggestForOperationInput, SuggestWarning, SuggestedParams,
     suggest_for_operation,
 };
 use rs_cam_core::feeds::{PassRole, RampFeed, SpindleStrategy, embedded_vendor_lut};
@@ -94,10 +94,10 @@ fn suggest(
         material: &softwood(),
         lut: embedded_vendor_lut(),
         spindle_strategy: SpindleStrategy::MatchChart,
-        context: SuggestContext {
+        context: SuggestContext::no_project(NoProject {
             dressups,
-            ..SuggestContext::default()
-        },
+            ..NoProject::NONE
+        }),
     })
     .unwrap_or_else(|e| panic!("Suggest must serve {:?}: {e}", operation.op_type()))
 }

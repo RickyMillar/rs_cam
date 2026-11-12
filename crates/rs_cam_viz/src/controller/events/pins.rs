@@ -566,7 +566,15 @@ impl<B: ComputeBackend> AppController<B> {
         let stock_padding = self.state.session().stock_config().padding;
         let stock_ctx =
             rs_cam_core::feeds::suggest::StockContext::from_stock_bbox(stock_bbox, stock_padding);
-        let model_bbox = self.state.session().model_bbox_by_id(model_id);
+        // P29-9: THE context of a new op (the add door): the model box the
+        // runtime-sanity back-off reads (Q1), the setup fact of the setup
+        // the pin drill goes into, the registry-default dressups and no
+        // earlier leave. The stock reaches Suggest through `stock_ctx`.
+        let slots = self.state.session().new_op_suggest_slots(
+            crate::state::toolpath::OperationType::AlignmentPinDrill,
+            model_id,
+            Some(setup_idx),
+        );
         let suggested = self
             .state
             .session()
@@ -583,17 +591,7 @@ impl<B: ComputeBackend> AppController<B> {
                         lut: rs_cam_core::feeds::embedded_vendor_lut(),
                         stock_ctx: &stock_ctx,
                         spindle_strategy: rs_cam_core::feeds::SpindleStrategy::default(),
-                        // Q1: the bbox the runtime-sanity
-                        // back-off reads. `model_id` is already
-                        // resolved above. The stock reaches
-                        // Suggest through `stock_ctx`, so
-                        // `SuggestContext::stock` stays empty.
-                        // `upstream_leftover_stock_mm` stays
-                        // `None`: no lookup here gives it.
-                        context: rs_cam_core::feeds::suggest::SuggestContext {
-                            model_bbox: model_bbox.as_ref(),
-                            ..rs_cam_core::feeds::suggest::SuggestContext::default()
-                        },
+                        context: slots.context(),
                     },
                 )
                 .ok()

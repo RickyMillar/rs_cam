@@ -41,7 +41,7 @@ use rs_cam_core::compute::operation_configs::ClearingStrategy;
 use rs_cam_core::compute::tool_config::{ToolConfig, ToolFact, ToolId, ToolType};
 use rs_cam_core::feeds::engagement::PowerCase;
 use rs_cam_core::feeds::suggest::{
-    SuggestContext, SuggestForOperationInput, suggest_for_operation,
+    NoProject, SuggestContext, SuggestForOperationInput, suggest_for_operation,
 };
 use rs_cam_core::feeds::{FeedsResult, FeedsWarning, SpindleStrategy, embedded_vendor_lut};
 use rs_cam_core::machine::MachineProfile;
@@ -106,7 +106,7 @@ fn run(op: &OperationConfig, tool: &ToolConfig) -> FeedsResult {
         spindle_strategy: SpindleStrategy::ConstantChip {
             rpm_ceiling: Some(24_000),
         },
-        context: SuggestContext::default(),
+        context: SuggestContext::no_project(NoProject::NONE),
     })
     .unwrap_or_else(|e| panic!("Suggest serves {:?}: {e}", op.op_type()))
     .feeds_result

@@ -32,7 +32,7 @@ const NOT_SET_HOVER: &str = "Not set. The calculator has no data for this tool a
 pub(super) fn refresh_feeds_memo(
     entry: &mut ToolpathEntry,
     inputs: &super::ToolpathPanelInputs,
-    model_bbox: Option<&rs_cam_core::geo::BoundingBox3>,
+    suggest_slots: &rs_cam_core::feeds::suggest::SuggestSlots,
 ) {
     let Some(tool) = inputs
         .tool_configs
@@ -50,7 +50,8 @@ pub(super) fn refresh_feeds_memo(
             material: &inputs.material,
             machine: &inputs.machine,
             spindle_strategy: inputs.spindle_strategy,
-            model_bbox,
+            suggest_slots,
+            dressups: &entry.dressups,
         },
         super::pills::pill_previews,
     );
@@ -69,9 +70,10 @@ pub(super) struct FeedsBlock<'a> {
     /// Feeds contract P21b: the stored operator RPM ceiling.
     pub spindle_rpm_ceiling: Option<u32>,
     pub load_verdict: Option<&'a rs_cam_core::tool_load::ToolpathLoadVerdict>,
-    /// Q1: the bbox of the model this toolpath machines, from
-    /// `ToolpathPanelSnapshot`. The memo key reads it.
-    pub model_bbox: Option<&'a rs_cam_core::geo::BoundingBox3>,
+    /// F114, P29-9: the session door's slots, from
+    /// `ToolpathPanelSnapshot`. The card builds its context from them and
+    /// the entry's dressups; the memo key reads them.
+    pub suggest_slots: &'a rs_cam_core::feeds::suggest::SuggestSlots,
 }
 
 /// The card's funnel answers, once per input change (W3i), and the
@@ -91,22 +93,21 @@ fn feeds_card(
         material,
         machine,
         spindle_strategy,
-        model_bbox,
+        suggest_slots,
         ..
     } = *block;
     let key = format!(
-        "{:?}|{tool:?}|{material:?}|{machine:?}|{spindle_strategy:?}|{model_bbox:?}|{:?}",
+        "{:?}|{tool:?}|{material:?}|{machine:?}|{spindle_strategy:?}|{suggest_slots:?}|{:?}",
         entry.operation, entry.dressups
     );
     let card = entry.feeds_memo.card(key, || {
         crate::ui::feeds::compare::build_card(
             &entry.operation,
-            &entry.dressups,
             tool,
             material,
             machine,
             spindle_strategy,
-            model_bbox,
+            suggest_slots.context(&entry.dressups),
             &preview,
         )
     });

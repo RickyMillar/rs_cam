@@ -37,7 +37,7 @@
 use rs_cam_core::compute::catalog::{OperationConfig, OperationType};
 use rs_cam_core::compute::fixture_values::fixture_op;
 use rs_cam_core::feeds::suggest::{
-    SuggestContext, SuggestForOperationInput, SuggestedParams, suggest_for_operation,
+    NoProject, SuggestContext, SuggestForOperationInput, SuggestedParams, suggest_for_operation,
 };
 use rs_cam_core::feeds::{
     ConstantChipGap, FeedsError, SpindleStrategy, SpindleStrategyKind, embedded_vendor_lut,
@@ -105,7 +105,7 @@ fn suggest(
         material: &white_oak(),
         lut: embedded_vendor_lut(),
         spindle_strategy: strategy,
-        context: SuggestContext::default(),
+        context: SuggestContext::no_project(NoProject::NONE),
     })
 }
 

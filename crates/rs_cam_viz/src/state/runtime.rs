@@ -301,8 +301,12 @@ pub struct FeedsInputs<'a> {
     pub material: &'a rs_cam_core::material::Material,
     pub machine: &'a rs_cam_core::machine::MachineProfile,
     pub spindle_strategy: rs_cam_core::feeds::SpindleStrategy,
-    /// The box the funnel's runtime-sanity stepover back-off reads (Q1).
-    pub model_bbox: Option<&'a rs_cam_core::geo::BoundingBox3>,
+    /// F114, P29-9: the session door's slots of the toolpath
+    /// (`ProjectSession::suggest_slots`): the model box (Q1), the stock,
+    /// the setup fact and the earlier leave.
+    pub suggest_slots: &'a rs_cam_core::feeds::suggest::SuggestSlots,
+    /// The toolpath's dressups (the configured entry, P29-8 8d).
+    pub dressups: &'a rs_cam_core::compute::config::DressupConfig,
 }
 
 /// The stored key of [`FeedsMemo`]. Built only by [`SlotInputs::key`].
@@ -318,8 +322,10 @@ pub struct FeedsKey {
     material: rs_cam_core::material::Material,
     machine: String,
     spindle_strategy: rs_cam_core::feeds::SpindleStrategy,
-    /// `BoundingBox3` has no `PartialEq`: the two corners.
-    model_bbox: Option<[f64; 6]>,
+    /// The `Debug` text of the slots (`BoundingBox3` has no `PartialEq`).
+    suggest_slots: String,
+    /// The `Debug` text of the dressups.
+    dressups: String,
 }
 
 impl SlotInputs for FeedsInputs<'_> {
@@ -332,7 +338,8 @@ impl SlotInputs for FeedsInputs<'_> {
             material,
             machine,
             spindle_strategy,
-            model_bbox,
+            suggest_slots,
+            dressups,
         } = self;
         // The vendor LUT is not an input: `embedded_vendor_lut` is one
         // static value for the life of the process.
@@ -342,7 +349,8 @@ impl SlotInputs for FeedsInputs<'_> {
             material: (*material).clone(),
             machine: format!("{machine:?}"),
             spindle_strategy: *spindle_strategy,
-            model_bbox: model_bbox.map(|b| [b.min.x, b.min.y, b.min.z, b.max.x, b.max.y, b.max.z]),
+            suggest_slots: format!("{suggest_slots:?}"),
+            dressups: format!("{dressups:?}"),
         }
     }
 }
@@ -358,7 +366,7 @@ pub type PillDryRun = fn(
     &rs_cam_core::machine::MachineProfile,
     &rs_cam_core::material::Material,
     rs_cam_core::feeds::SpindleStrategy,
-    Option<&rs_cam_core::geo::BoundingBox3>,
+    rs_cam_core::feeds::suggest::SuggestContext<'_>,
 ) -> rs_cam_core::feeds::suggest::FieldApplyPreviews;
 
 impl FeedsInputs<'_> {
@@ -374,7 +382,8 @@ impl FeedsInputs<'_> {
             material,
             machine,
             spindle_strategy,
-            model_bbox,
+            suggest_slots: _,
+            dressups: _,
         } = self;
         let result = rs_cam_core::feeds::suggest::feeds_result_for_operation(
             operation,
@@ -390,9 +399,17 @@ impl FeedsInputs<'_> {
             machine,
             material,
             *spindle_strategy,
-            *model_bbox,
+            self.context(),
         );
         Ok((result, previews))
+    }
+
+    /// F114, P29-9: THE Suggest context of the panel, built from the
+    /// session door's slots and the toolpath's dressups. The pills, the
+    /// envelope and the card read it, so the GUI reads the plan facts
+    /// that MCP and the CLI read.
+    fn context(&self) -> rs_cam_core::feeds::suggest::SuggestContext<'_> {
+        self.suggest_slots.context(self.dressups)
     }
 
     /// K2b (feeds contract P5b): the safe envelope of the same inputs, which
@@ -408,10 +425,7 @@ impl FeedsInputs<'_> {
                 material: self.material,
                 lut: rs_cam_core::feeds::embedded_vendor_lut(),
                 spindle_strategy: self.spindle_strategy,
-                context: rs_cam_core::feeds::suggest::SuggestContext {
-                    model_bbox: self.model_bbox,
-                    ..rs_cam_core::feeds::suggest::SuggestContext::default()
-                },
+                context: self.context(),
             },
         )
         .ok()

@@ -36,7 +36,7 @@ use rs_cam_core::compute::tool_config::ToolFact;
 use rs_cam_core::compute::tool_config::{ToolConfig, ToolId, ToolType};
 use rs_cam_core::feeds::envelope::{EnvelopeInput, SafeEnvelope};
 use rs_cam_core::feeds::predict::DeflectionUnmodeled;
-use rs_cam_core::feeds::suggest::SuggestContext;
+use rs_cam_core::feeds::suggest::{NoProject, SuggestContext};
 use rs_cam_core::feeds::{SpindleStrategy, embedded_vendor_lut};
 use rs_cam_core::machine::MachineProfile;
 use rs_cam_core::material::{Material, PlasticFamily, WoodSpecies};
@@ -94,7 +94,7 @@ fn deflection_entry(material: &Material, tool: &ToolConfig) -> Option<serde_json
         material,
         lut: embedded_vendor_lut(),
         spindle_strategy: SpindleStrategy::MatchChart,
-        context: SuggestContext::default(),
+        context: SuggestContext::no_project(NoProject::NONE),
     })
     .expect("a flat end mill on a roughing pocket has an envelope");
     let json = serde_json::to_value(&envelope).expect("the envelope serialises");

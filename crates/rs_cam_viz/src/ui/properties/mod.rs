@@ -371,17 +371,13 @@ pub struct ToolpathPanelSnapshot {
     pub entry: ToolpathEntry,
     pub preconditions: rs_cam_core::diagnostics::diagnose::PreconditionContext,
     pub model_refs: rs_cam_core::diagnostics::diagnose::ModelRefContext,
-    /// Q1: the bounding box of the model this toolpath machines, read
-    /// once here through `ProjectSession::model_bbox_by_id`.
-    ///
-    /// The panel's two Suggest sites — the Geometry-tab pill funnel and
-    /// the Feeds-tab card — put it in `SuggestContext::model_bbox`,
-    /// which gates the runtime-sanity stepover back-off. Both sites
-    /// passed `SuggestContext::default()` before, so the back-off read
-    /// "no constraint signal" in the GUI while the controller and the
-    /// MCP surfaces read the real box. `None` means the id names no
-    /// model, or the model carries no finite geometry.
-    pub model_bbox: Option<rs_cam_core::geo::BoundingBox3>,
+    /// F114, P29-9: the session door's Suggest slots of this toolpath
+    /// (`ProjectSession::suggest_slots`): the model box (Q1), the stock,
+    /// the setup fact and the earlier leave. Every feeds door of the panel
+    /// (the memo, the pills, the envelope and the card) builds its context
+    /// from them with the entry's dressups (`SuggestSlots::context`), so
+    /// the GUI reads the plan facts that MCP and the CLI read.
+    pub suggest_slots: rs_cam_core::feeds::suggest::SuggestSlots,
     /// The records of the Suggest run behind this toolpath's recipe, from
     /// `ProjectSession::suggest_warnings_for_toolpath`. The diagnostics
     /// ribbon reads them, so the GUI and MCP report the same rule ids
@@ -438,10 +434,9 @@ pub fn toolpath_panel_snapshot(
         entry,
         preconditions: session.precondition_context_for_toolpath(tc),
         model_refs: session.model_ref_context_for_toolpath(tc),
-        // Q1: the one place the panel's model bbox enters. The id is the
-        // STORED `tc.model_id`, so the box is the box of the model this
-        // toolpath machines.
-        model_bbox: session.model_bbox_by_id(tc.model_id),
+        // F114, P29-9: the one place the panel's Suggest slots enter: the
+        // session door of the STORED toolpath.
+        suggest_slots: session.suggest_slots(tc),
         suggest_warnings: session
             .tools()
             .iter()
@@ -921,7 +916,12 @@ pub(crate) fn toolpath_panel_inputs(
                 .iter()
                 .filter_map(|t| {
                     session
-                        .tool_fit(tc.operation.op_type(), t.id, tc.model_id)
+                        .tool_fit(
+                            tc.operation.op_type(),
+                            t.id,
+                            tc.model_id,
+                            session.setup_of_toolpath_id(tc.id),
+                        )
                         .err()
                         .map(|refusal| (t.id, refusal.to_string()))
                 })

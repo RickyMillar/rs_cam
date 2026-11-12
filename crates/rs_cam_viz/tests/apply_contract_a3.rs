@@ -500,7 +500,9 @@ fn modal_apply_all_writes_what_the_panel_writes() {
         &session_machine,
         &session_material,
         pass_role,
-        rs_cam_core::feeds::suggest::SuggestContext::default(),
+        rs_cam_core::feeds::suggest::SuggestContext::no_project(
+            rs_cam_core::feeds::suggest::NoProject::NONE,
+        ),
     );
     let speeds_only_woc = speeds_op.stepover();
     let speeds_only_doc = speeds_op.depth_per_pass();
@@ -524,7 +526,9 @@ fn modal_apply_all_writes_what_the_panel_writes() {
         &session_material,
         rs_cam_core::feeds::embedded_vendor_lut(),
         controller.state.session().post_config().spindle_policy(),
-        rs_cam_core::feeds::suggest::SuggestContext::default(),
+        rs_cam_core::feeds::suggest::SuggestContext::no_project(
+            rs_cam_core::feeds::suggest::NoProject::NONE,
+        ),
     );
     let mut panel_op = before;
     for field in [
@@ -654,7 +658,9 @@ fn surviving_apply_paths_produce_the_funnelled_doc_exactly() {
         &material,
         rs_cam_core::feeds::embedded_vendor_lut(),
         controller.state.session().post_config().spindle_policy(),
-        rs_cam_core::feeds::suggest::SuggestContext::default(),
+        rs_cam_core::feeds::suggest::SuggestContext::no_project(
+            rs_cam_core::feeds::suggest::NoProject::NONE,
+        ),
         rs_cam_core::feeds::FeedsField::DepthPerPass,
     )
     .expect("the funnel writes DOC on a Pocket");
@@ -1108,7 +1114,9 @@ fn per_field_pill_offers_the_funnelled_doc_exactly() {
         &material,
         rs_cam_core::feeds::embedded_vendor_lut(),
         controller.state.session().post_config().spindle_policy(),
-        rs_cam_core::feeds::suggest::SuggestContext::default(),
+        rs_cam_core::feeds::suggest::SuggestContext::no_project(
+            rs_cam_core::feeds::suggest::NoProject::NONE,
+        ),
         rs_cam_core::feeds::FeedsField::DepthPerPass,
     )
     .expect("the funnel writes DOC on a Pocket");

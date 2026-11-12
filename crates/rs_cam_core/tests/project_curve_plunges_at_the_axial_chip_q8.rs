@@ -45,7 +45,7 @@ use rs_cam_core::compute::tool_config::{
 use rs_cam_core::diagnostics::ids;
 use rs_cam_core::feeds::plunge::PlungeBinding;
 use rs_cam_core::feeds::suggest::{
-    SuggestContext, SuggestForOperationInput, SuggestedParams, suggest_for_operation,
+    NoProject, SuggestContext, SuggestForOperationInput, SuggestedParams, suggest_for_operation,
 };
 use rs_cam_core::feeds::{RampBasis, SpindleStrategy, embedded_vendor_lut};
 use rs_cam_core::machine::MachineProfile;
@@ -88,7 +88,7 @@ fn suggested(op: &OperationConfig, tool: &ToolConfig) -> SuggestedParams {
         material: &oak(),
         lut: embedded_vendor_lut(),
         spindle_strategy: SpindleStrategy::MatchChart,
-        context: SuggestContext::default(),
+        context: SuggestContext::no_project(NoProject::NONE),
     })
     .unwrap_or_else(|e| panic!("Suggest serves {:?}: {e}", op.op_type()))
 }

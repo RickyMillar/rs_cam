@@ -44,7 +44,7 @@ use rs_cam_core::compute::config::{DressupConfig, DressupEntryStyle};
 use rs_cam_core::compute::tool_config::{ToolConfig, ToolFact, ToolId, ToolType};
 use rs_cam_core::feeds::geometry::peak_chip_thinning_lift;
 use rs_cam_core::feeds::suggest::{
-    SuggestContext, SuggestForOperationInput, SuggestWarning, SuggestedParams,
+    NoProject, SuggestContext, SuggestForOperationInput, SuggestWarning, SuggestedParams,
     suggest_for_operation,
 };
 use rs_cam_core::feeds::{RampFeed, SpindleStrategy, embedded_vendor_lut};
@@ -91,10 +91,10 @@ fn suggest(operation: &OperationConfig, dressups: Option<&DressupConfig>) -> Sug
         material: &hardwood(),
         lut: embedded_vendor_lut(),
         spindle_strategy: SpindleStrategy::MatchChart,
-        context: SuggestContext {
+        context: SuggestContext::no_project(NoProject {
             dressups,
-            ..SuggestContext::default()
-        },
+            ..NoProject::NONE
+        }),
     })
     .unwrap_or_else(|e| panic!("Suggest must serve the 6 mm flat Pocket: {e}"))
 }

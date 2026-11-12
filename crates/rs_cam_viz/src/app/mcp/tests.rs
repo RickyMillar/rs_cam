@@ -1167,7 +1167,9 @@ fn the_envelope_checks_repeat_the_operator_placement_p29_2b() {
         material: &material,
         lut: rs_cam_core::feeds::embedded_vendor_lut(),
         spindle_strategy: rs_cam_core::feeds::SpindleStrategy::default(),
-        context: rs_cam_core::feeds::suggest::SuggestContext::default(),
+        context: rs_cam_core::feeds::suggest::SuggestContext::no_project(
+            rs_cam_core::feeds::suggest::NoProject::NONE,
+        ),
     })
     .expect("a 6 mm end mill pocket is backed");
     let value = super::generation::envelope_checks_json(&envelope);

@@ -24,7 +24,9 @@ use rs_cam_core::compute::catalog::{OperationConfig, OperationType};
 use rs_cam_core::compute::tool_config::ToolFact;
 use rs_cam_core::compute::tool_config::{ToolConfig, ToolId, ToolType};
 use rs_cam_core::feeds::envelope::PickRequest;
-use rs_cam_core::feeds::suggest::{OperationApplyInput, SuggestContext, apply_to_operation};
+use rs_cam_core::feeds::suggest::{
+    NoProject, OperationApplyInput, SuggestContext, apply_to_operation,
+};
 use rs_cam_core::feeds::{FeedsProvenance, SpindleStrategy, embedded_vendor_lut};
 use rs_cam_core::machine::MachineProfile;
 use rs_cam_core::material::{Material, WoodSpecies};
@@ -65,7 +67,7 @@ fn apply(pick: Option<PickRequest>) -> OperationConfig {
             material: &material,
             spindle_strategy: SpindleStrategy::default(),
             lut: embedded_vendor_lut(),
-            suggest: SuggestContext::default(),
+            suggest: SuggestContext::no_project(NoProject::NONE),
         },
         pick,
         None,

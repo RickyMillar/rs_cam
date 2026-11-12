@@ -13,8 +13,7 @@ use anyhow::{Context, Result, anyhow};
 use rs_cam_core::feeds::{
     SpindleStrategy, embedded_vendor_lut,
     suggest::{
-        StockContext, SuggestContext, SuggestForOperationInput, SuggestPolicy,
-        suggest_for_operation,
+        NoProject, StockContext, SuggestContext, SuggestForOperationInput, suggest_for_operation,
     },
 };
 use rs_cam_core::session::{Command, ProjectSession, ReplaceToolpathConfigArgs};
@@ -73,20 +72,14 @@ fn main() -> Result<()> {
             .iter()
             .find(|(id, _)| *id == tc.model_id)
             .map(|(_, b)| b);
-        let context = SuggestContext {
+        // P29-9: this example holds no session door; it states the model,
+        // the stock and the dressups, and no setup frame or earlier leave.
+        let context = SuggestContext::no_project(NoProject {
             model_bbox,
             stock: Some(&stock_ctx),
-            upstream_leftover_stock_mm: None,
-            neighboring_strategy_hint: None,
-            chipload_bounds: None,
-            matched_lut_row: None,
-            effective_diameter_mm: 0.0,
-            calculator_operating_point: None,
-            policy: SuggestPolicy::default(),
             dressups: Some(&tc.dressups),
-            // P29-9 9b: this example reads no setup frame.
-            setup_z_flipped: None,
-        };
+            ..NoProject::NONE
+        });
         let suggested = match suggest_for_operation(SuggestForOperationInput {
             operation: &tc.operation,
             tool,

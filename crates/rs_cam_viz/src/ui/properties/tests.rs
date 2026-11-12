@@ -154,8 +154,10 @@ fn the_panel_snapshot_carries_the_model_bbox() {
     let expected = session
         .model_bbox_by_id(tc.model_id)
         .expect("the fixture model carries a finite bbox");
+    // P29-9: the bbox reaches the panel inside the session door's slots.
     let carried = snapshot
-        .model_bbox
+        .suggest_slots
+        .model_bbox()
         .expect("the snapshot must carry the model bbox, not None");
     assert_eq!(
         format!("{carried:?}"),
@@ -475,7 +477,7 @@ fn tab_texts(
             None,
             &mut crate::state::pick::SelectionUi::default(),
             super::linking_dressup::Fields::default(),
-            None,
+            &session.suggest_slots(tc),
             &mut crate::state::panels::EnvelopeCandidates::default(),
             &mut events,
         ),
@@ -1638,6 +1640,7 @@ fn the_tool_picker_greys_refused_tools_r2() {
     let mut warmup = ctx.run_ui(egui::RawInput::default(), |_ui| {});
     warmup.textures_delta.clear();
     let mut events = Vec::new();
+    let slots = session.suggest_slots(&tc);
     let mut painted = |entry: &mut ToolpathEntry, passes: bool| {
         let mut out = ctx.run_ui(egui::RawInput::default(), |ui| {
             if passes {
@@ -1648,7 +1651,7 @@ fn the_tool_picker_greys_refused_tools_r2() {
                     None,
                     &mut crate::state::pick::SelectionUi::default(),
                     super::linking_dressup::Fields::default(),
-                    None,
+                    &slots,
                     &mut crate::state::panels::EnvelopeCandidates::default(),
                     &mut events,
                 );

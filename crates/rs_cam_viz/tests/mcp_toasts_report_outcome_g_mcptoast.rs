@@ -286,7 +286,9 @@ fn suggest_for(
         lut: rs_cam_core::feeds::embedded_vendor_lut(),
         stock_ctx: &stock_ctx,
         spindle_strategy: rs_cam_core::feeds::SpindleStrategy::default(),
-        context: rs_cam_core::feeds::suggest::SuggestContext::default(),
+        context: rs_cam_core::feeds::suggest::SuggestContext::no_project(
+            rs_cam_core::feeds::suggest::NoProject::NONE,
+        ),
     })
     .map(|_| ())
     .map_err(|e| e.to_string())

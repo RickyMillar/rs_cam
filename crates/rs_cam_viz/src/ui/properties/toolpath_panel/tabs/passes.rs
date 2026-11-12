@@ -37,7 +37,7 @@ pub(in crate::ui::properties) fn draw_passes_tab(
     strategy_suggestion: Option<crate::state::toolpath::ClearingStrategy>,
     selection_ui: &mut crate::state::pick::SelectionUi,
     fields: Fields<'_>,
-    model_bbox: Option<&rs_cam_core::geo::BoundingBox3>,
+    suggest_slots: &rs_cam_core::feeds::suggest::SuggestSlots,
     candidates: &mut crate::state::panels::EnvelopeCandidates,
     events: &mut Vec<AppEvent>,
 ) {
@@ -70,7 +70,7 @@ pub(in crate::ui::properties) fn draw_passes_tab(
         spindle_strategy: inputs.spindle_strategy,
         spindle_rpm_ceiling: inputs.spindle_rpm_ceiling,
         load_verdict: inputs.load_verdict(),
-        model_bbox,
+        suggest_slots,
     });
 
     if let Some(block) = &block {

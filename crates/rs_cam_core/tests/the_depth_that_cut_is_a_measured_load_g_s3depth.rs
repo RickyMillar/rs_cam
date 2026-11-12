@@ -43,7 +43,9 @@ use rs_cam_core::compute::tool_config::ToolMaterial;
 use rs_cam_core::compute::{ToolConfig, ToolId, ToolType};
 use rs_cam_core::feeds::envelope::{EnvelopeInput, LimitKind, PickRequest, SafeEnvelope};
 use rs_cam_core::feeds::force_budget::{RigidityCapOutcome, rigidity_depth_cap};
-use rs_cam_core::feeds::suggest::{OperationApplyInput, SuggestContext, apply_to_operation};
+use rs_cam_core::feeds::suggest::{
+    NoProject, OperationApplyInput, SuggestContext, apply_to_operation,
+};
 use rs_cam_core::feeds::{SpindleStrategy, embedded_vendor_lut};
 use rs_cam_core::gcode::load_findings;
 use rs_cam_core::ids::ToolpathId;
@@ -730,7 +732,7 @@ fn the_suggest_clamp_still_fires_at_the_helper_s_own_cap() {
         material: &material,
         lut: embedded_vendor_lut(),
         spindle_strategy: SpindleStrategy::MatchChart,
-        context: SuggestContext::default(),
+        context: SuggestContext::no_project(NoProject::NONE),
     })
     .expect("a roughing pocket with a flat end mill has an envelope");
     let mut provenance = rs_cam_core::feeds::FeedsProvenance::default();
@@ -741,7 +743,7 @@ fn the_suggest_clamp_still_fires_at_the_helper_s_own_cap() {
             material: &material,
             spindle_strategy: SpindleStrategy::MatchChart,
             lut: embedded_vendor_lut(),
-            suggest: SuggestContext::default(),
+            suggest: SuggestContext::no_project(NoProject::NONE),
         },
         Some(PickRequest::Proposal),
         None,

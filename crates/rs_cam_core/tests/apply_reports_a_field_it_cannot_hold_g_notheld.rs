@@ -49,8 +49,8 @@ use rs_cam_core::compute::catalog::{OperationConfig, OperationType};
 use rs_cam_core::compute::tool_config::{ToolConfig, ToolId, ToolType};
 use rs_cam_core::feeds::envelope::{EnvelopeAxes, EnvelopeInput, PickRequest, SafeEnvelope};
 use rs_cam_core::feeds::suggest::{
-    OperationApplyInput, SuggestContext, SuggestWarning, apply_speeds_to_op, apply_to_operation,
-    feeds_result_for_operation,
+    NoProject, OperationApplyInput, SuggestContext, SuggestWarning, apply_speeds_to_op,
+    apply_to_operation, feeds_result_for_operation,
 };
 use rs_cam_core::feeds::{FeedsProvenance, FeedsResult};
 use rs_cam_core::session::ProjectSession;
@@ -130,7 +130,7 @@ fn the_funnel_reports_a_depth_it_could_not_hold_g_notheld() {
             material,
             lut: rs_cam_core::feeds::embedded_vendor_lut(),
             spindle_strategy: session.post_config().spindle_policy(),
-            context: SuggestContext::default(),
+            context: SuggestContext::no_project(NoProject::NONE),
         }) else {
             continue;
         };
@@ -158,7 +158,7 @@ fn the_funnel_reports_a_depth_it_could_not_hold_g_notheld() {
                 material,
                 spindle_strategy: session.post_config().spindle_policy(),
                 lut: rs_cam_core::feeds::embedded_vendor_lut(),
-                suggest: SuggestContext::default(),
+                suggest: SuggestContext::no_project(NoProject::NONE),
             },
             Some(PickRequest::Proposal),
             None,
@@ -221,7 +221,7 @@ fn a_speeds_only_apply_does_not_report_a_dropped_geometry_g_notheld() {
             session.machine(),
             &session.stock_config().material,
             op.feeds_style().1,
-            SuggestContext::default(),
+            SuggestContext::no_project(NoProject::NONE),
         );
 
         assert!(

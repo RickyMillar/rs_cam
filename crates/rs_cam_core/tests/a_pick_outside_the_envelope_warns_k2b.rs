@@ -28,7 +28,7 @@ use rs_cam_core::feeds::envelope::{
     EnvelopeInput, LimitKind, PickRequest, Placement, SafeEnvelope,
 };
 use rs_cam_core::feeds::suggest::{
-    OperationApplyInput, SuggestContext, SuggestWarning, apply_to_operation,
+    NoProject, OperationApplyInput, SuggestContext, SuggestWarning, apply_to_operation,
     round_suggestion_value_down,
 };
 use rs_cam_core::feeds::{FeedsProvenance, SpindleStrategy, embedded_vendor_lut};
@@ -77,7 +77,7 @@ fn a_pick_outside_the_envelope_is_written_and_warns_k2b() {
         material: &material,
         lut: embedded_vendor_lut(),
         spindle_strategy: SpindleStrategy::default(),
-        context: SuggestContext::default(),
+        context: SuggestContext::no_project(NoProject::NONE),
     })
     .expect("a 6 mm end mill on a 3D Rough is backed");
     let pick = env.pick(request);
@@ -102,7 +102,7 @@ fn a_pick_outside_the_envelope_is_written_and_warns_k2b() {
             material: &material,
             spindle_strategy: SpindleStrategy::default(),
             lut: embedded_vendor_lut(),
-            suggest: SuggestContext::default(),
+            suggest: SuggestContext::no_project(NoProject::NONE),
         },
         Some(request),
         None,

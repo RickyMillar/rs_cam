@@ -37,7 +37,7 @@ use rs_cam_core::feeds::FeedsInput;
 use rs_cam_core::feeds::envelope::{
     CurveBound, Edge, EnvelopeInput, Limit, LimitKind, SafeEnvelope,
 };
-use rs_cam_core::feeds::suggest::SuggestContext;
+use rs_cam_core::feeds::suggest::{NoProject, SuggestContext};
 use rs_cam_core::feeds::{SpindleStrategy, calculate, embedded_vendor_lut};
 use rs_cam_core::geo::{BoundingBox3, P3};
 use rs_cam_core::machine::MachineProfile;
@@ -109,10 +109,10 @@ fn envelope_in(
         material: &case.material,
         lut: embedded_vendor_lut(),
         spindle_strategy: SpindleStrategy::default(),
-        context: SuggestContext {
+        context: SuggestContext::no_project(NoProject {
             model_bbox: Some(bbox),
-            ..SuggestContext::default()
-        },
+            ..NoProject::NONE
+        }),
     })
     .expect("the case is backed")
 }
@@ -579,10 +579,10 @@ fn the_stated_point_still_warns_on_the_move_budget_p19() {
         material: &material,
         lut: embedded_vendor_lut(),
         spindle_strategy: SpindleStrategy::default(),
-        context: SuggestContext {
+        context: SuggestContext::no_project(NoProject {
             model_bbox: Some(&bbox),
-            ..SuggestContext::default()
-        },
+            ..NoProject::NONE
+        }),
     })
     .expect("the case is backed");
     let runtime = env.limit(LimitKind::Runtime).expect("a Runtime entry");
@@ -792,7 +792,7 @@ fn a_ball_width_ceiling_is_its_engaged_diameter_over_the_depth_p19() {
             material: &material,
             lut: embedded_vendor_lut(),
             spindle_strategy: SpindleStrategy::default(),
-            context: SuggestContext::default(),
+            context: SuggestContext::no_project(NoProject::NONE),
         })
         .expect("the case is backed")
     };

@@ -25,7 +25,7 @@ use rs_cam_core::compute::tool_config::{ToolConfig, ToolFact, ToolId, ToolType};
 use rs_cam_core::feeds::FeedsInput;
 use rs_cam_core::feeds::envelope::{EnvelopeInput, LimitKind, SafeEnvelope};
 use rs_cam_core::feeds::suggest::{
-    SuggestContext, SuggestForOperationInput, SuggestWarning, suggest_for_operation,
+    NoProject, SuggestContext, SuggestForOperationInput, SuggestWarning, suggest_for_operation,
 };
 use rs_cam_core::feeds::{SpindleStrategy, calculate, embedded_vendor_lut};
 use rs_cam_core::machine::MachineProfile;
@@ -64,7 +64,7 @@ fn unsourced_rows(tool: &ToolConfig) -> Vec<String> {
         material: &material,
         lut: embedded_vendor_lut(),
         spindle_strategy: SpindleStrategy::MatchChart,
-        context: SuggestContext::default(),
+        context: SuggestContext::no_project(NoProject::NONE),
     })
     .unwrap_or_else(|e| panic!("Suggest must serve the Pocket: {e}"));
     s.warnings
@@ -129,7 +129,7 @@ fn an_unknown_cutting_length_puts_its_legacy_row_in_the_flute_guard_p13a() {
         material: &material,
         lut: embedded_vendor_lut(),
         spindle_strategy: SpindleStrategy::MatchChart,
-        context: SuggestContext::default(),
+        context: SuggestContext::no_project(NoProject::NONE),
     })
     .unwrap_or_else(|e| panic!("the Pocket envelope is backed: {e}"));
     let guard = env

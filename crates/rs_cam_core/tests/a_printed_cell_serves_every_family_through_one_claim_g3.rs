@@ -65,7 +65,7 @@ use rs_cam_core::feeds::extrapolation::{
     FAMILY_RULE_TEXT, FAMILY_RULES, FamilyBasis, HardnessBasis,
 };
 use rs_cam_core::feeds::suggest::{
-    StockContext, SuggestContext, SuggestParamsInput, suggest_params,
+    NoProject, StockContext, SuggestContext, SuggestParamsInput, suggest_params,
 };
 use rs_cam_core::feeds::support::BULL_FINISH_PLYWOOD;
 use rs_cam_core::feeds::vendor_lookup::{
@@ -437,7 +437,7 @@ fn every_consumer_reads_the_transferred_band_g3() {
         lut: &EMBEDDED_LUT,
         stock_ctx: &stock,
         spindle_strategy: SpindleStrategy::default(),
-        context: SuggestContext::default(),
+        context: SuggestContext::no_project(NoProject::NONE),
     })
     .expect("a tapered Trace in hardwood ships through the family claim");
     let FeedsSupport::FamilyTransferred { family, size } = &s.feeds_result.support else {
@@ -657,7 +657,7 @@ fn a_bull_finish_reads_the_home_row_through_two_claims_g3() {
         lut: &EMBEDDED_LUT,
         stock_ctx: &stock,
         spindle_strategy: SpindleStrategy::default(),
-        context: SuggestContext::default(),
+        context: SuggestContext::no_project(NoProject::NONE),
     })
     .expect("a bull DropCutter in hardwood ships through the family claim");
     let FeedsSupport::FamilyTransferred { family, size } = &s.feeds_result.support else {

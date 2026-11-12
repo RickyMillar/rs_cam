@@ -41,7 +41,7 @@ use rs_cam_core::compute::tool_config::ToolFact;
 use rs_cam_core::compute::{ToolConfig, ToolId, ToolType};
 use rs_cam_core::feeds::extrapolation::SizeBasis;
 use rs_cam_core::feeds::suggest::{
-    StockContext, SuggestContext, SuggestParamsInput, suggest_params,
+    NoProject, StockContext, SuggestContext, SuggestParamsInput, suggest_params,
 };
 use rs_cam_core::feeds::vendor_lookup::{
     LookupQuery, find_best_chip_envelope_row, find_best_row_for_geometry, lookup_best,
@@ -202,7 +202,7 @@ fn suggest_ships_the_printed_tip_row_g1() {
         lut: &EMBEDDED_LUT,
         stock_ctx: &stock,
         spindle_strategy: SpindleStrategy::default(),
-        context: SuggestContext::default(),
+        context: SuggestContext::no_project(NoProject::NONE),
     })
     .expect("the printed 1.0 mm tip row answers");
     assert_eq!(s.feeds_result.support, FeedsSupport::VendorBacked);

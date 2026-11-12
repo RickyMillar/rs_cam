@@ -74,19 +74,18 @@ pub(super) fn suggestion_for<'a>(
 /// pill offers. `state::runtime::FeedsMemo` runs it once per input change
 /// (F216); its signature is `state::runtime::PillDryRun`.
 ///
-/// Q1: `model_bbox` is the box of the model this toolpath machines,
-/// carried in by `ToolpathPanelSnapshot`. The funnel's runtime-sanity
-/// stepover back-off reads it; this site passed `SuggestContext::default()`
-/// before, so the back-off could not fire and the pill offered a value the
-/// controller and the MCP surfaces would have backed off. `None` when the
-/// toolpath names no model with finite geometry.
+/// F114, P29-9: `context` is THE Suggest context of the panel
+/// (`FeedsInputs::context`: the session door's slots and the toolpath's
+/// dressups), so the pill offers what `Command::ApplyFeeds` writes on every
+/// surface: the model box of the runtime-sanity back-off (Q1), the stock,
+/// the configured entry and the plan facts.
 pub(super) fn pill_previews(
     operation: &rs_cam_core::compute::catalog::OperationConfig,
     tool: &rs_cam_core::compute::tool_config::ToolConfig,
     machine: &rs_cam_core::machine::MachineProfile,
     material: &rs_cam_core::material::Material,
     spindle_strategy: rs_cam_core::feeds::SpindleStrategy,
-    model_bbox: Option<&rs_cam_core::geo::BoundingBox3>,
+    context: SuggestContext<'_>,
 ) -> FieldApplyPreviews {
     // K2b (feeds contract P5): the pill offers what "Apply all" writes, the
     // envelope proposal and the speeds at it (P5 card trap).
@@ -97,13 +96,7 @@ pub(super) fn pill_previews(
         material,
         rs_cam_core::feeds::embedded_vendor_lut(),
         spindle_strategy,
-        // The stock is not carried here: this preview reads the
-        // operation the panel already holds, and the wired Suggest
-        // sites leave `SuggestContext::stock` empty too.
-        SuggestContext {
-            model_bbox,
-            ..SuggestContext::default()
-        },
+        context,
     )
 }
 
@@ -182,7 +175,7 @@ impl<'a> PillSuggestions<'a> {
         tool: &rs_cam_core::compute::tool_config::ToolConfig,
         machine: &rs_cam_core::machine::MachineProfile,
         material: &rs_cam_core::material::Material,
-        model_bbox: Option<&rs_cam_core::geo::BoundingBox3>,
+        context: SuggestContext<'_>,
     ) -> Self {
         let previews = pill_previews(
             operation,
@@ -190,7 +183,7 @@ impl<'a> PillSuggestions<'a> {
             machine,
             material,
             rs_cam_core::feeds::SpindleStrategy::default(),
-            model_bbox,
+            context,
         );
         Self {
             result,
@@ -279,6 +272,7 @@ mod tests {
     use crate::ui::components::number::near_match;
     use rs_cam_core::compute::catalog::{OperationConfig, OperationType};
     use rs_cam_core::compute::tool_config::{ToolConfig, ToolId, ToolType};
+    use rs_cam_core::feeds::suggest::NoProject;
     use rs_cam_core::material::{Material, WoodSpecies};
     use rs_cam_core::session::{Command, ProjectSession, SetMachineArgs};
 
@@ -432,7 +426,7 @@ mod tests {
             &tool,
             session.machine(),
             &session.stock_config().material,
-            None,
+            SuggestContext::no_project(NoProject::NONE),
         );
         let dpp = pills.depth_per_pass();
         assert!(dpp.suggestion.clamped);
@@ -447,7 +441,9 @@ mod tests {
                 material: &session.stock_config().material,
                 lut: rs_cam_core::feeds::embedded_vendor_lut(),
                 spindle_strategy: rs_cam_core::feeds::SpindleStrategy::default(),
-                context: rs_cam_core::feeds::suggest::SuggestContext::default(),
+                context: rs_cam_core::feeds::suggest::SuggestContext::no_project(
+                    rs_cam_core::feeds::suggest::NoProject::NONE,
+                ),
             },
         )
         .expect("the demo pocket has an envelope");
@@ -523,7 +519,14 @@ mod tests {
         // per rev, so the arm-L RPM and the feed under the ceiling move
         // (measured 3999.738 -> 3999.895879); the feed still sits under 4000.
         let (session, tool, op, result, material) = hardwood_pocket();
-        let pills = PillSuggestions::new(&op, &result, &tool, session.machine(), &material, None);
+        let pills = PillSuggestions::new(
+            &op,
+            &result,
+            &tool,
+            session.machine(),
+            &material,
+            SuggestContext::no_project(NoProject::NONE),
+        );
         let feed_pill = pills.feed_rate();
         let calculator = result.feed_rate_mm_min;
         assert!(
@@ -603,7 +606,7 @@ mod tests {
             &tool,
             session.machine(),
             &session.stock_config().material,
-            None,
+            SuggestContext::no_project(NoProject::NONE),
         );
         assert!(pills.take_clicked().is_none());
         let dpp = pills.depth_per_pass();
@@ -644,7 +647,7 @@ mod tests {
             &tool,
             session.machine(),
             &stock.material,
-            None,
+            SuggestContext::no_project(NoProject::NONE),
         );
         let max_depth = pills.depth_per_pass();
         assert!(!max_depth.suggestion.clamped);

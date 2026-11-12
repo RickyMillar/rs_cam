@@ -1059,9 +1059,9 @@ pub struct ApplyContext<'a> {
     pub machine: &'a MachineProfile,
     pub material: &'a Material,
     pub pass_role: PassRole,
-    /// Project-level slots (model bbox, stock, policy). Pass
-    /// [`SuggestContext::default()`] when the caller doesn't cheaply have
-    /// them; the funnel enriches it with the recommendation's own LUT band,
+    /// Project-level slots (model bbox, stock, dressups, plan facts,
+    /// policy). See [`SuggestContext`] for its three constructors (P29-9).
+    /// The funnel enriches it with the recommendation's own LUT band,
     /// matched row and effective diameter regardless.
     pub suggest: SuggestContext<'a>,
 }
@@ -1452,8 +1452,8 @@ pub fn feeds_preview_for_operation(
 /// `stock` is `Option` because not every Suggest caller has a project:
 /// the canonical GUI/MCP path
 /// ([`crate::session::ProjectSession::cutter_op_profile`]) populates
-/// [`SuggestContext::stock`], the strategy-advisor probe in
-/// `session::compute` passes `SuggestContext::default()`. **`None` means
+/// [`SuggestContext::stock()`]; the add door (`NewOpSlots::context`) and a
+/// context with no project leave it empty. **`None` means
 /// the pin depth cap cannot be applied**, not that it was applied and
 /// found nothing to do. The value is the Suggest default inside the
 /// schema range ([`peck_for_hole`]), and generation's own emitter guard

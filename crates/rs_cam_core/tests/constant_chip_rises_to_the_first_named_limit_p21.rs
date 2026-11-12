@@ -48,7 +48,7 @@ use rs_cam_core::compute::fixture_values::fixture_op;
 use rs_cam_core::compute::tool_config::{ToolConfig, ToolFact, ToolId, ToolType};
 use rs_cam_core::feeds::FeedsInput;
 use rs_cam_core::feeds::suggest::{
-    SuggestContext, SuggestForOperationInput, suggest_for_operation,
+    NoProject, SuggestContext, SuggestForOperationInput, suggest_for_operation,
 };
 use rs_cam_core::feeds::{
     FeedsResult, RpmChoice, RpmLimit, SpindleScaleReason, SpindleStrategy, calculate,
@@ -115,7 +115,7 @@ fn run(
         material: &white_oak(),
         lut: embedded_vendor_lut(),
         spindle_strategy: strategy,
-        context: SuggestContext::default(),
+        context: SuggestContext::no_project(NoProject::NONE),
     })
     .unwrap_or_else(|e| panic!("Suggest serves {:?}: {e}", op.op_type()))
     .feeds_result
@@ -493,7 +493,7 @@ fn the_18_mm_probe_names_its_binding_limit_p21() {
                 material: &white_oak(),
                 lut: embedded_vendor_lut(),
                 spindle_strategy: strategy,
-                context: SuggestContext::default(),
+                context: SuggestContext::no_project(NoProject::NONE),
             })
             .unwrap_or_else(|e| panic!("Suggest serves {label}: {e}"));
             let r = &s.feeds_result;

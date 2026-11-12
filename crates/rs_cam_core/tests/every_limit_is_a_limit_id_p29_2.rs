@@ -39,7 +39,7 @@ use std::collections::BTreeSet;
 use rs_cam_core::compute::catalog::OperationType;
 use rs_cam_core::feeds::cutter_constraints::AxialBindingConstraint;
 use rs_cam_core::feeds::envelope::{CutPoint, EnvelopeInput, LimitKind, Placement, SafeEnvelope};
-use rs_cam_core::feeds::suggest::SuggestContext;
+use rs_cam_core::feeds::suggest::{NoProject, SuggestContext};
 use rs_cam_core::feeds::{RpmChoice, RpmLimit, RpmLimitValue, SpindleStrategy};
 use rs_cam_core::limits::{self, BoundSide, Check, CheckState, Geometry, LimitId, NoNumberReason};
 use rs_cam_core::machine::{MachineProfile, RigidityDepthCap};
@@ -370,10 +370,10 @@ fn envelope_of(op_type: OperationType) -> SafeEnvelope {
         material: &material,
         lut: rs_cam_core::feeds::embedded_vendor_lut(),
         spindle_strategy: SpindleStrategy::default(),
-        context: SuggestContext {
+        context: SuggestContext::no_project(NoProject {
             model_bbox: Some(&bbox),
-            ..SuggestContext::default()
-        },
+            ..NoProject::NONE
+        }),
     })
     .expect("a 6 mm end mill pocket is backed")
 }

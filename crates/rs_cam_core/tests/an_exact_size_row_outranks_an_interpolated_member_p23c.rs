@@ -39,7 +39,7 @@ use rs_cam_core::compute::catalog::{OperationConfig, OperationType};
 use rs_cam_core::compute::tool_config::{ToolConfig, ToolType};
 use rs_cam_core::feeds::extrapolation::SizeBasis;
 use rs_cam_core::feeds::suggest::{
-    SuggestContext, SuggestForOperationInput, suggest_for_operation,
+    NoProject, SuggestContext, SuggestForOperationInput, suggest_for_operation,
 };
 use rs_cam_core::feeds::vendor_lookup::{BandMember, BandRule};
 use rs_cam_core::feeds::{FeedsResult, SpindleStrategy, embedded_vendor_lut};
@@ -71,7 +71,7 @@ fn run(
         material: &Material::SolidWood { species },
         lut: embedded_vendor_lut(),
         spindle_strategy: strategy,
-        context: SuggestContext::default(),
+        context: SuggestContext::no_project(NoProject::NONE),
     })
     .unwrap_or_else(|e| panic!("Suggest serves {:?}: {e}", op.op_type()))
     .feeds_result

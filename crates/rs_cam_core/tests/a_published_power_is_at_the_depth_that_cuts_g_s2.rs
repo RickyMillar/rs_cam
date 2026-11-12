@@ -83,7 +83,9 @@ use rs_cam_core::compute::operation_configs::{DrillConfig, PocketConfig};
 use rs_cam_core::compute::tool_config::ToolFact;
 use rs_cam_core::compute::{ToolConfig, ToolId, ToolType};
 use rs_cam_core::feeds::envelope::PickRequest;
-use rs_cam_core::feeds::suggest::{OperationApplyInput, SuggestContext, apply_to_operation};
+use rs_cam_core::feeds::suggest::{
+    NoProject, OperationApplyInput, SuggestContext, apply_to_operation,
+};
 use rs_cam_core::feeds::{
     PowerUnmodeled, SpindleStrategy, embedded_vendor_lut, power_at_operating_point,
 };
@@ -155,7 +157,7 @@ fn apply_all(machine: &MachineProfile, material: &Material, requested_ap: f64) -
             material,
             spindle_strategy: SpindleStrategy::MatchChart,
             lut: embedded_vendor_lut(),
-            suggest: SuggestContext::default(),
+            suggest: SuggestContext::no_project(NoProject::NONE),
         },
         Some(PickRequest::Proposal),
         None,

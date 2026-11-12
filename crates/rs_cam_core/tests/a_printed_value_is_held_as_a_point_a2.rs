@@ -61,7 +61,7 @@ use rs_cam_core::compute::{ToolConfig, ToolId, ToolType};
 use rs_cam_core::feeds::ToolGeometryHint;
 use rs_cam_core::feeds::geometry::doc_derating_scale;
 use rs_cam_core::feeds::suggest::{
-    StockContext, SuggestContext, SuggestParamsInput, SuggestedParams, suggest_params,
+    NoProject, StockContext, SuggestContext, SuggestParamsInput, SuggestedParams, suggest_params,
 };
 use rs_cam_core::feeds::vendor_lookup::{
     LookupQuery, LookupResult, PrintedChipload, find_best_chip_envelope_row,
@@ -302,7 +302,7 @@ fn suggest(cell: &PointCell) -> SuggestedParams {
         lut: &EMBEDDED_LUT,
         stock_ctx: &stock,
         spindle_strategy: SpindleStrategy::default(),
-        context: SuggestContext::default(),
+        context: SuggestContext::no_project(NoProject::NONE),
     })
     .unwrap_or_else(|e| panic!("{}: Suggest refused: {e}", cell.label))
 }

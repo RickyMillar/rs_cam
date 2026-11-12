@@ -320,8 +320,6 @@ struct MultitoolPlanContext {
     /// G-OVERLAPFILL advisories off an already cached tier map, or `None`
     /// when nothing measured them.
     band_advisories: Option<Vec<TierBandAdvisory>>,
-    /// The bbox the Suggest funnel reads for the stepover back-off.
-    model_bbox: Option<crate::geo::BoundingBox3>,
 }
 
 impl ProjectSession {
@@ -450,11 +448,6 @@ impl ProjectSession {
             .as_ref()
             .and_then(|mesh| Self::peek_band_advisories(mesh, &refs, &cusp_radii, spec));
 
-        // Q1: the bbox the Suggest funnel reads for the runtime-sanity
-        // stepover back-off. One read for the whole ladder — every tier
-        // machines `spec.model_id`.
-        let model_bbox = self.model_bbox_by_id(spec.model_id);
-
         Ok(MultitoolPlanContext {
             ladder_tools,
             tier_count,
@@ -462,7 +455,6 @@ impl ProjectSession {
             cusp_radii,
             heights,
             band_advisories,
-            model_bbox,
         })
     }
 
@@ -494,12 +486,7 @@ impl ProjectSession {
         // G6 ramp: the tier's own dressups, so Suggest reads the entry the
         // tier ships ("entry off" on a finish tier, not "entry unknown").
         let dressups = plan_tier_dressups(dressup_op, spec.cusp_height_mm);
-        let feeds_provenance = self.suggest_feeds_for(
-            &mut operation,
-            tool,
-            ctx.model_bbox.as_ref(),
-            Some(&dressups),
-        );
+        let feeds_provenance = self.suggest_feeds_for(&mut operation, tool, spec, &dressups);
         let strategy_tag = match strategy {
             TierStrategy::UnifiedFinish => "",
             TierStrategy::Scallop => " scallop",
@@ -884,10 +871,19 @@ impl ProjectSession {
         &self,
         operation: &mut OperationConfig,
         tool: &ToolConfig,
-        model_bbox: Option<&crate::geo::BoundingBox3>,
-        dressups: Option<&DressupConfig>,
+        spec: &MultitoolPlanSpec,
+        dressups: &DressupConfig,
     ) -> crate::feeds::FeedsProvenance {
         let planned = operation.clone();
+        // P29-9: a tier is a new op with no toolpath yet, so it reads the
+        // add door: the model box (Q1), the setup fact of the setup the
+        // tier goes into, and no earlier leave (`NoEarlierOp`). The tier's
+        // own dressups (G6 ramp: "entry off" on a finish tier, not "entry
+        // unknown") replace the registry default. `restore_planned_geometry`
+        // below re-applies the planner's equal-cusp stepover, so the
+        // back-off cannot move the tier's stepover.
+        let slots =
+            self.new_op_suggest_slots(operation.op_type(), spec.model_id, Some(spec.setup_index));
         let suggested = crate::feeds::suggest::suggest_for_operation(
             crate::feeds::suggest::SuggestForOperationInput {
                 operation: &planned,
@@ -896,19 +892,7 @@ impl ProjectSession {
                 material: &self.stock.material,
                 lut: crate::feeds::embedded_vendor_lut(),
                 spindle_strategy: crate::feeds::SpindleStrategy::default(),
-                // Q1: the bbox the runtime-sanity back-off reads.
-                // `restore_planned_geometry` below re-applies the
-                // planner's equal-cusp stepover, so the back-off cannot
-                // move the tier's stepover; it stays populated so the
-                // funnel sees the same context every other surface does.
-                // `upstream_leftover_stock_mm` stays `None`: no lookup
-                // here gives it, and v1 does not read it.
-                context: crate::feeds::suggest::SuggestContext {
-                    model_bbox,
-                    // G6 ramp: the entry θ of the tier.
-                    dressups,
-                    ..crate::feeds::suggest::SuggestContext::default()
-                },
+                context: slots.context_with_dressups(dressups),
             },
         );
         match suggested {

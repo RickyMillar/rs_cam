@@ -467,7 +467,7 @@ impl ProjectSession {
         tool: &ToolConfig,
     ) -> Option<Vec<crate::feeds::suggest::SuggestWarning>> {
         use crate::feeds::ProvenanceSource;
-        use crate::feeds::suggest::{StockContext, SuggestContext, SuggestForOperationInput};
+        use crate::feeds::suggest::SuggestForOperationInput;
 
         let from_suggest = |v: &Option<crate::feeds::ValueProvenance>| {
             v.as_ref().is_some_and(|p| {
@@ -517,12 +517,8 @@ impl ProjectSession {
         if !any_from_suggest {
             return outside.map(|w| vec![w]);
         }
-        let stock_ctx = StockContext::from_stock_bbox(self.stock_bbox(), self.stock.padding);
-        let model_bboxes = self.collect_model_bboxes();
-        let model_bbox = model_bboxes
-            .iter()
-            .find(|(id, _)| *id == tc.model_id)
-            .map(|(_, b)| b);
+        // F114, P29-9: the one session door for the context of a toolpath.
+        let slots = self.suggest_slots(tc);
         crate::feeds::suggest::suggest_for_operation(SuggestForOperationInput {
             operation: &tc.operation,
             tool,
@@ -530,12 +526,7 @@ impl ProjectSession {
             material: &self.stock.material,
             lut: crate::feeds::embedded_vendor_lut(),
             spindle_strategy: self.post.spindle_policy(),
-            context: SuggestContext {
-                model_bbox,
-                stock: Some(&stock_ctx),
-                dressups: Some(&tc.dressups),
-                ..SuggestContext::default()
-            },
+            context: slots.context(&tc.dressups),
         })
         .ok()
         .map(|s| {

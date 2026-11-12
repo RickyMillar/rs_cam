@@ -245,10 +245,10 @@ fn door_point(fixture: &Fixture) -> ForceAtPoint {
         &stock.material,
         feeds::embedded_vendor_lut(),
         state.session().post_config().spindle_policy(),
-        feeds::suggest::SuggestContext {
+        feeds::suggest::SuggestContext::no_project(feeds::suggest::NoProject {
             model_bbox: model_bbox.as_ref(),
-            ..feeds::suggest::SuggestContext::default()
-        },
+            ..feeds::suggest::NoProject::NONE
+        }),
     );
     let mut applied = tc.operation.clone();
     let mut scratch = feeds::FeedsProvenance::default();

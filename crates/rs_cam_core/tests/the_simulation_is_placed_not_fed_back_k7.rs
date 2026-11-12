@@ -295,7 +295,9 @@ fn envelope_of(
             },
             lut: rs_cam_core::feeds::embedded_vendor_lut(),
             spindle_strategy: rs_cam_core::feeds::SpindleStrategy::MatchChart,
-            context: rs_cam_core::feeds::suggest::SuggestContext::default(),
+            context: rs_cam_core::feeds::suggest::SuggestContext::no_project(
+                rs_cam_core::feeds::suggest::NoProject::NONE,
+            ),
         },
     )
     .expect("a runnable pairing")

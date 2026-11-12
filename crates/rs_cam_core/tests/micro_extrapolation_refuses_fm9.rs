@@ -61,7 +61,7 @@ use rs_cam_core::compute::tool_config::ToolFact;
 use rs_cam_core::compute::{ToolConfig, ToolId, ToolType};
 use rs_cam_core::feeds::extrapolation::{FAMILY_RULES, FamilyRule};
 use rs_cam_core::feeds::suggest::{
-    StockContext, SuggestContext, SuggestParamsInput, SuggestedParams, suggest_params,
+    NoProject, StockContext, SuggestContext, SuggestParamsInput, SuggestedParams, suggest_params,
 };
 use rs_cam_core::feeds::support::{
     MICRO_ROW_RATIO_MAX, MICRO_ROW_RATIO_MIN, MICRO_TOOL_DIAMETER_MM, TAPERED_MIN_TIP_MM,
@@ -112,7 +112,7 @@ fn suggest(
         lut: &EMBEDDED_LUT,
         stock_ctx: &stock,
         spindle_strategy: SpindleStrategy::default(),
-        context: SuggestContext::default(),
+        context: SuggestContext::no_project(NoProject::NONE),
     })
 }
 

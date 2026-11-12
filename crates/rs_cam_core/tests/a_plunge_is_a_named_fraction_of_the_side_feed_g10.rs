@@ -57,8 +57,8 @@ use rs_cam_core::feeds::FeedsInput;
 use rs_cam_core::feeds::extrapolation::{DRILL_RULES, PLUNGE_RULES, PlungeKey};
 use rs_cam_core::feeds::plunge::{PLUNGE_BASE_RULE_TEXT, resolve_plunge_at};
 use rs_cam_core::feeds::suggest::{
-    ApplyContext, SuggestContext, SuggestForOperationInput, SuggestWarning, SuggestedParams, apply,
-    feeds_preview_for_operation, suggest_for_operation,
+    ApplyContext, NoProject, SuggestContext, SuggestForOperationInput, SuggestWarning,
+    SuggestedParams, apply, feeds_preview_for_operation, suggest_for_operation,
 };
 use rs_cam_core::feeds::{
     FeedsProvenance, FeedsResult, PlungeBasis, PlungeBinding, ProvenanceSource, SpindleStrategy,
@@ -157,10 +157,10 @@ fn suggest_in(
         material,
         lut: embedded_vendor_lut(),
         spindle_strategy: SpindleStrategy::MatchChart,
-        context: SuggestContext {
+        context: SuggestContext::no_project(NoProject {
             dressups,
-            ..SuggestContext::default()
-        },
+            ..NoProject::NONE
+        }),
     })
     .unwrap_or_else(|e| panic!("Suggest must serve {:?}: {e}", operation.op_type()))
 }
@@ -469,7 +469,7 @@ fn an_explored_feed_moves_the_plunge_with_it_g10() {
             machine: &machine,
             material: &material,
             pass_role: operation.feeds_style().1,
-            suggest: SuggestContext::default(),
+            suggest: SuggestContext::no_project(NoProject::NONE),
         },
     );
     assert_eq!(applied.feed_rate(), Some(1200.0));

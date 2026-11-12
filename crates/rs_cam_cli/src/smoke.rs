@@ -428,6 +428,9 @@ fn went_blind(base: &str, curr: &str) -> bool {
 
 // ── Case execution ──────────────────────────────────────────────────────
 
+/// The setup that each smoke case adds its op into.
+const SMOKE_SETUP_INDEX: usize = 0;
+
 /// Materializes one case's toolpath into an existing session: resolves
 /// op + tool, calls `suggest_params`, adds the `ToolpathConfig` with the
 /// caller-supplied `stock_source`, and applies the case's baseline_params.
@@ -490,14 +493,16 @@ fn materialize_case_toolpath(
     let machine = session.machine().clone();
     let material = session.stock_config().material.clone();
     // Q1: the model this case machines is the one the `ToolpathConfig`
-    // below binds. Reading it BEFORE the Suggest call is the whole fix —
-    // `SuggestContext::model_bbox` gates the runtime-sanity stepover
-    // back-off, and this harness used to pass `None`.
+    // below binds. Read it BEFORE the Suggest call: the model box gates the
+    // runtime-sanity stepover back-off.
     let model_id = session
         .models()
         .first()
         .map_or(rs_cam_core::ids::ModelId::placeholder(), |m| m.id);
-    let model_bbox = session.model_bbox_by_id(model_id);
+    // P29-9: THE context of a new op (the add door), in the setup the op
+    // goes into below (index 0). The stock reaches Suggest through
+    // `stock_ctx`.
+    let slots = session.new_op_suggest_slots(op_type, model_id, Some(SMOKE_SETUP_INDEX));
     let operation = match suggest_params(SuggestParamsInput {
         op_type,
         tool: &tool,
@@ -506,15 +511,7 @@ fn materialize_case_toolpath(
         lut: embedded_vendor_lut(),
         stock_ctx: &stock_ctx,
         spindle_strategy: rs_cam_core::feeds::SpindleStrategy::default(),
-        // Q1: the bbox the runtime-sanity back-off reads. The stock
-        // reaches Suggest through `stock_ctx` above, so
-        // `SuggestContext::stock` stays empty rather than carrying the
-        // same value twice. `upstream_leftover_stock_mm` stays `None`:
-        // no lookup here gives it, and v1 does not read it.
-        context: rs_cam_core::feeds::suggest::SuggestContext {
-            model_bbox: model_bbox.as_ref(),
-            ..rs_cam_core::feeds::suggest::SuggestContext::default()
-        },
+        context: slots.context(),
     }) {
         Ok(s) => s.operation,
         Err(e) => {
@@ -551,7 +548,7 @@ fn materialize_case_toolpath(
     };
 
     let command = Command::AddToolpath(AddToolpathArgs {
-        setup_index: 0,
+        setup_index: SMOKE_SETUP_INDEX,
         config: Box::new(tc),
     });
     let tp_idx = match crate::command::apply_command(session, command) {

@@ -26,7 +26,7 @@ use rs_cam_core::compute::catalog::OperationType;
 use rs_cam_core::compute::tool_config::ToolFact;
 use rs_cam_core::compute::tool_config::{ToolConfig, ToolId, ToolType};
 use rs_cam_core::feeds::suggest::{
-    StockContext, SuggestContext, SuggestParamsInput, SuggestedParams, suggest_params,
+    NoProject, StockContext, SuggestContext, SuggestParamsInput, SuggestedParams, suggest_params,
 };
 use rs_cam_core::feeds::{EMBEDDED_LUT, FeedsError, SpindleStrategy};
 use rs_cam_core::machine::MachineProfile;
@@ -85,7 +85,7 @@ fn suggest(op: OperationType, kind: ToolType) -> Result<SuggestedParams, FeedsEr
         lut: &EMBEDDED_LUT,
         stock_ctx: &stock,
         spindle_strategy: SpindleStrategy::default(),
-        context: SuggestContext::default(),
+        context: SuggestContext::no_project(NoProject::NONE),
     })
 }
 

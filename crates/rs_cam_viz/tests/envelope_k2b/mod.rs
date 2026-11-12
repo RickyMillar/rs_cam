@@ -42,7 +42,9 @@ pub fn envelope_of(config: OperationConfig) -> Option<(OperationConfig, SafeEnve
             material: &material,
             lut: rs_cam_core::feeds::embedded_vendor_lut(),
             spindle_strategy: rs_cam_core::feeds::SpindleStrategy::default(),
-            context: rs_cam_core::feeds::suggest::SuggestContext::default(),
+            context: rs_cam_core::feeds::suggest::SuggestContext::no_project(
+                rs_cam_core::feeds::suggest::NoProject::NONE,
+            ),
         }) {
             return Some((config, env));
         }

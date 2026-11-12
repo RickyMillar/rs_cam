@@ -38,7 +38,7 @@
 use rs_cam_core::compute::catalog::OperationType;
 use rs_cam_core::compute::tool_config::{ToolConfig, ToolFact, ToolId, ToolType};
 use rs_cam_core::feeds::envelope::{EnvelopeInput, SafeEnvelope};
-use rs_cam_core::feeds::suggest::SuggestContext;
+use rs_cam_core::feeds::suggest::{NoProject, SuggestContext};
 use rs_cam_core::feeds::{SpindleStrategy, embedded_vendor_lut};
 use rs_cam_core::session::{AddToolArgs, Command, DraftRequest, ProjectSession};
 
@@ -86,7 +86,7 @@ fn no_force_limit_binds_the_pocket_width_below_the_corner_rule_p11c() {
             material: &s.stock_config().material,
             lut: embedded_vendor_lut(),
             spindle_strategy: SpindleStrategy::MatchChart,
-            context: SuggestContext::default(),
+            context: SuggestContext::no_project(NoProject::NONE),
         })
         .expect("an envelope");
         // 1. The width sits on a width rule.

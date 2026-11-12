@@ -748,7 +748,9 @@ fn suggest_output_matches_feed_vs_lut_high_diagnostic_recommendation() {
             material: &s.stock_config().material,
             lut: crate::feeds::embedded_vendor_lut(),
             spindle_strategy: crate::feeds::SpindleStrategy::default(),
-            context: crate::feeds::suggest::SuggestContext::default(),
+            context: crate::feeds::suggest::SuggestContext::no_project(
+                crate::feeds::suggest::NoProject::NONE,
+            ),
         },
     )
     .expect("test fixture pairs a flat endmill with a Pocket op — not a refused combination");

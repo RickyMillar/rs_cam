@@ -19,8 +19,8 @@
 //! 1. The real inspector: 100 frames with no edit run the calculator once,
 //!    the Feeds tab reads the same memo, and one session edit of each input
 //!    runs it once more. An edit that is not an input runs nothing.
-//! 2. The memo itself: a move of each of the six `FeedsInputs` fields runs
-//!    the build again (the model box has no session edit in this fixture).
+//! 2. The memo itself: a move of each of the seven `FeedsInputs` fields runs
+//!    the build again (P29-9: the session door's slots and the dressups).
 
 #![expect(
     clippy::expect_used,
@@ -38,7 +38,6 @@ use rs_cam_core::compute::stock_config::{ModelKind, ModelUnits, StockConfig};
 use rs_cam_core::compute::tool_config::{ToolConfig, ToolId, ToolType};
 use rs_cam_core::feeds::suggest::FieldApplyPreviews;
 use rs_cam_core::feeds::{SpindleStrategy, SpindleStrategyKind};
-use rs_cam_core::geo::{BoundingBox3, P3};
 use rs_cam_core::material::{Material, PlywoodGrade};
 use rs_cam_core::polygon::Polygon2;
 use rs_cam_core::session::{
@@ -324,7 +323,7 @@ fn no_dry_run(
     _machine: &rs_cam_core::machine::MachineProfile,
     _material: &Material,
     _spindle_strategy: SpindleStrategy,
-    _model_bbox: Option<&BoundingBox3>,
+    _context: rs_cam_core::feeds::suggest::SuggestContext<'_>,
 ) -> FieldApplyPreviews {
     FieldApplyPreviews::default()
 }
@@ -339,17 +338,21 @@ fn every_feeds_input_moves_the_memo_key_f216() {
     let machine = rs_cam_core::session::ProjectSession::new_empty()
         .machine()
         .clone();
-    let bbox = BoundingBox3 {
-        min: P3::new(0.0, 0.0, -10.0),
-        max: P3::new(40.0, 40.0, 0.0),
-    };
+    // P29-9: the slots come from the session door only. The base is the
+    // fixture's; the moved slots are those of the same toolpath after a
+    // stock edit (the stock is one slot).
+    let state = fixture();
+    let tc = state.session().toolpath_configs()[0].clone();
+    let slots = state.session().suggest_slots(&tc);
+    let dressups = tc.dressups.clone();
     let base = || FeedsInputs {
         operation: &operation,
         tool: &tool,
         material: &material,
         machine: &machine,
         spindle_strategy: SpindleStrategy::MatchChart,
-        model_bbox: Some(&bbox),
+        suggest_slots: &slots,
+        dressups: &dressups,
     };
 
     let mut memo = FeedsMemo::default();
@@ -373,10 +376,18 @@ fn every_feeds_input_moves_the_memo_key_f216() {
     };
     let mut moved_machine = machine.clone();
     moved_machine.max_shank_mm += 1.0;
-    let moved_bbox = BoundingBox3 {
-        min: P3::new(0.0, 0.0, -10.0),
-        max: P3::new(80.0, 40.0, 0.0),
-    };
+    let mut moved_state = fixture();
+    let mut moved_stock = moved_state.session().stock_config().clone();
+    moved_stock.padding += 1.0;
+    apply(
+        &mut moved_state,
+        Command::SetStockConfig(SetStockConfigArgs {
+            stock: Box::new(moved_stock),
+        }),
+    );
+    let moved_slots = moved_state.session().suggest_slots(&tc);
+    let mut moved_dressups = dressups.clone();
+    moved_dressups.feed_max_rate = Some(1234.0);
 
     let cases: Vec<(&str, FeedsInputs<'_>)> = vec![
         (
@@ -415,16 +426,16 @@ fn every_feeds_input_moves_the_memo_key_f216() {
             },
         ),
         (
-            "model_bbox",
+            "suggest_slots",
             FeedsInputs {
-                model_bbox: Some(&moved_bbox),
+                suggest_slots: &moved_slots,
                 ..base()
             },
         ),
         (
-            "model_bbox gone",
+            "dressups",
             FeedsInputs {
-                model_bbox: None,
+                dressups: &moved_dressups,
                 ..base()
             },
         ),

@@ -35,7 +35,7 @@ use rs_cam_core::feeds::FeedsInput;
 use rs_cam_core::feeds::envelope::{
     CutPoint, Edge, EnvelopeInput, LimitKind, Placement, SafeEnvelope,
 };
-use rs_cam_core::feeds::suggest::SuggestContext;
+use rs_cam_core::feeds::suggest::{NoProject, SuggestContext};
 use rs_cam_core::feeds::{SpindleStrategy, calculate, embedded_vendor_lut};
 use rs_cam_core::machine::MachineProfile;
 use rs_cam_core::material::{Material, WoodSpecies};
@@ -103,7 +103,7 @@ fn envelope_at_chip(fz: f64) -> SafeEnvelope {
         material: &material,
         lut: embedded_vendor_lut(),
         spindle_strategy: SpindleStrategy::MatchChart,
-        context: SuggestContext::default(),
+        context: SuggestContext::no_project(NoProject::NONE),
     })
     .expect("a flat end mill on a roughing pocket has an envelope")
 }

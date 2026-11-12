@@ -39,7 +39,7 @@ use rs_cam_core::feeds::envelope::{
 };
 use rs_cam_core::feeds::predict::DeflectionUnmodeled;
 use rs_cam_core::feeds::suggest::{
-    OperationApplyInput, SuggestContext, SuggestForOperationInput, SuggestedParams,
+    NoProject, OperationApplyInput, SuggestContext, SuggestForOperationInput, SuggestedParams,
     apply_to_operation, suggest_for_operation,
 };
 use rs_cam_core::feeds::{
@@ -88,7 +88,7 @@ fn suggested(op: &OperationConfig, material: &Material) -> SuggestedParams {
         material,
         lut: embedded_vendor_lut(),
         spindle_strategy: SpindleStrategy::MatchChart,
-        context: SuggestContext::default(),
+        context: SuggestContext::no_project(NoProject::NONE),
     })
     .unwrap_or_else(|e| panic!("Suggest serves {:?}: {e}", op.op_type()))
 }
@@ -101,7 +101,7 @@ fn envelope(op: &OperationConfig, material: &Material) -> SafeEnvelope {
         material,
         lut: embedded_vendor_lut(),
         spindle_strategy: SpindleStrategy::MatchChart,
-        context: SuggestContext::default(),
+        context: SuggestContext::no_project(NoProject::NONE),
     })
     .expect("an envelope")
 }
@@ -262,7 +262,7 @@ fn a_material_with_no_force_line_gets_no_depth_proposal_p16() {
             material: &birch(),
             spindle_strategy: SpindleStrategy::MatchChart,
             lut: embedded_vendor_lut(),
-            suggest: SuggestContext::default(),
+            suggest: SuggestContext::no_project(NoProject::NONE),
         },
         Some(PickRequest::Proposal),
         None,

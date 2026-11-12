@@ -53,7 +53,7 @@ use rs_cam_core::feeds::extrapolation::SizeBasis;
 use rs_cam_core::feeds::predict::tip_deflection_from_engagement;
 use rs_cam_core::feeds::series::{ToolSeries, row_series};
 use rs_cam_core::feeds::suggest::{
-    SuggestContext, SuggestForOperationInput, suggest_for_operation,
+    NoProject, SuggestContext, SuggestForOperationInput, suggest_for_operation,
 };
 use rs_cam_core::feeds::vendor_lut::VendorObservation;
 use rs_cam_core::feeds::{EMBEDDED_LUT, FeedsResult, SpindleStrategy};
@@ -88,7 +88,7 @@ fn run(op: &OperationConfig, tool: &ToolConfig) -> FeedsResult {
         material: &white_oak(),
         lut: &EMBEDDED_LUT,
         spindle_strategy: SpindleStrategy::MatchChart,
-        context: SuggestContext::default(),
+        context: SuggestContext::no_project(NoProject::NONE),
     })
     .unwrap_or_else(|e| panic!("Suggest serves {:?}: {e}", op.op_type()))
     .feeds_result

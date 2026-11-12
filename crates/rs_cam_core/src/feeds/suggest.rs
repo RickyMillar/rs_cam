@@ -66,32 +66,72 @@ impl StockContext {
     }
 }
 
-/// The owned project slots of one toolpath's Suggest call: the stock and
-/// the bbox of the model it machines (F114).
+/// The owned project slots of one toolpath's Suggest call: the stock, the
+/// bbox of the model it machines and the plan facts (F114, P29-9).
 ///
 /// [`SuggestContext`] borrows its slots, so a session method cannot hand
 /// one back over locals. [`crate::session::ProjectSession::suggest_slots`]
 /// gives this owned carrier, and [`Self::context`] lends the context. Every
-/// project door (the Apply funnel, the profile behind the card, MCP and the
-/// CLI) assembles its context here, so the stock slot is set on each one.
+/// door that reads an existing toolpath (the Apply funnel, the profile
+/// behind the card, the GUI panel, MCP and the CLI) assembles its context
+/// here, so each plan fact is set on each one.
+///
+/// The fields are private: only the session builds a value
+/// (`ProjectSession::suggest_slots`), so no surface can drop a fact.
 #[derive(Debug, Clone, Copy)]
 pub struct SuggestSlots {
     /// The stock of the project.
-    pub stock: StockContext,
+    stock: StockContext,
     /// The bbox of the model the toolpath machines; `None` when the id
     /// names no model or the model has no finite geometry.
-    pub model_bbox: Option<crate::geo::BoundingBox3>,
+    model_bbox: Option<crate::geo::BoundingBox3>,
     /// P29-9 9b: whether the toolpath's setup inverts Z
     /// (`SetupTransformInfo::is_z_flipped`); `None` when the toolpath has
     /// no setup.
-    pub setup_z_flipped: Option<bool>,
-    /// P29-9 9c (ruling Q1 (a)): the axial stock (mm) that the nearest
-    /// earlier enabled op of the setup that cuts the same model leaves;
-    /// `None` when no such op states a leave above 0.
-    pub earlier_leave_mm: Option<f64>,
+    setup_z_flipped: Option<bool>,
+    /// P29-9 9c (ruling Q1 (a)): the axial stock that the nearest earlier
+    /// enabled op of the setup that cuts the same model leaves.
+    earlier_leave: crate::feeds::planned::EarlierLeave,
 }
 
 impl SuggestSlots {
+    /// The slots of one existing toolpath. Only
+    /// `ProjectSession::suggest_slots` calls it.
+    pub(crate) fn of_toolpath(
+        stock: StockContext,
+        model_bbox: Option<crate::geo::BoundingBox3>,
+        setup_z_flipped: Option<bool>,
+        earlier_leave_mm: Option<f64>,
+    ) -> Self {
+        Self {
+            stock,
+            model_bbox,
+            setup_z_flipped,
+            earlier_leave: crate::feeds::planned::EarlierLeave::of_mm(earlier_leave_mm),
+        }
+    }
+
+    /// The bbox of the model the toolpath machines.
+    #[must_use]
+    pub fn model_bbox(&self) -> Option<&crate::geo::BoundingBox3> {
+        self.model_bbox.as_ref()
+    }
+
+    /// P29-9 9b: whether the toolpath's setup inverts Z.
+    #[must_use]
+    pub fn setup_z_flipped(&self) -> Option<bool> {
+        self.setup_z_flipped
+    }
+
+    /// P29-9 9c: the earlier leave (mm), or `None` with no earlier op.
+    #[must_use]
+    pub fn earlier_leave_mm(&self) -> Option<f64> {
+        match self.earlier_leave {
+            crate::feeds::planned::EarlierLeave::Mm(mm) => Some(mm),
+            crate::feeds::planned::EarlierLeave::None(_) => None,
+        }
+    }
+
     /// The Suggest context of these slots and the toolpath's dressups (the
     /// G6 entry θ), with the default policy.
     #[must_use]
@@ -104,10 +144,98 @@ impl SuggestSlots {
             stock: Some(&self.stock),
             dressups: Some(dressups),
             setup_z_flipped: self.setup_z_flipped,
-            upstream_leftover_stock_mm: self.earlier_leave_mm,
-            ..SuggestContext::default()
+            earlier_leave: self.earlier_leave,
+            ..SuggestContext::no_project(NoProject::NONE)
         }
     }
+}
+
+/// The owned slots of a NEW op that has no toolpath yet (the add door,
+/// `ProjectSession::new_op_suggest_slots`, P29-9).
+///
+/// - The setup fact is read from the setup that the op is added into.
+/// - The dressups are the registry defaults of the op type
+///   (`DressupConfig::for_op`), which the add door ships.
+/// - The earlier leave is not known: `None(NoEarlierOp)`, by name.
+/// - The stock slot stays empty: the add door states the stock through
+///   `SuggestParamsInput::stock_ctx`. The stock slot sets the pin-drill
+///   peck (`peck_for_hole`), so a full slot would move an add-door number
+///   (P29-9 open).
+#[derive(Debug, Clone)]
+pub struct NewOpSlots {
+    model_bbox: Option<crate::geo::BoundingBox3>,
+    setup_z_flipped: Option<bool>,
+    dressups: crate::compute::config::DressupConfig,
+}
+
+impl NewOpSlots {
+    /// The slots of a new op. Only `ProjectSession::new_op_suggest_slots`
+    /// calls it.
+    pub(crate) fn of_new_op(
+        op_type: OperationType,
+        model_bbox: Option<crate::geo::BoundingBox3>,
+        setup_z_flipped: Option<bool>,
+    ) -> Self {
+        Self {
+            model_bbox,
+            setup_z_flipped,
+            dressups: crate::compute::config::DressupConfig::for_op(op_type),
+        }
+    }
+
+    /// The Suggest context of the new op, with the default policy.
+    #[must_use]
+    pub fn context(&self) -> SuggestContext<'_> {
+        self.context_with_dressups(&self.dressups)
+    }
+
+    /// The Suggest context of a new op that ships its own dressups in
+    /// place of the registry defaults (a multi-tool tier: "entry off").
+    #[must_use]
+    pub fn context_with_dressups<'a>(
+        &'a self,
+        dressups: &'a crate::compute::config::DressupConfig,
+    ) -> SuggestContext<'a> {
+        SuggestContext {
+            model_bbox: self.model_bbox.as_ref(),
+            dressups: Some(dressups),
+            setup_z_flipped: self.setup_z_flipped,
+            earlier_leave: crate::feeds::planned::EarlierLeave::None(
+                crate::feeds::planned::NoEarlierLeave::NoEarlierOp,
+            ),
+            ..SuggestContext::no_project(NoProject::NONE)
+        }
+    }
+}
+
+/// The plan facts of a context with NO project (FM1, unit tests,
+/// examples, and a core rule that holds no project). Each fact is stated
+/// by hand; [`Self::NONE`] states none. A product door that reads a
+/// toolpath or adds an op never builds one: it reads
+/// [`SuggestSlots::context`] or [`NewOpSlots::context`].
+#[derive(Debug, Clone, Copy)]
+pub struct NoProject<'a> {
+    /// The bbox of the model.
+    pub model_bbox: Option<&'a crate::geo::BoundingBox3>,
+    /// The stock.
+    pub stock: Option<&'a StockContext>,
+    /// The dressups (the G6 entry θ).
+    pub dressups: Option<&'a crate::compute::config::DressupConfig>,
+    /// Whether the setup inverts Z.
+    pub setup_z_flipped: Option<bool>,
+    /// The axial stock (mm) that an earlier op leaves.
+    pub earlier_leave_mm: Option<f64>,
+}
+
+impl NoProject<'_> {
+    /// No fact: no model, no stock, no dressups, no setup, no earlier op.
+    pub const NONE: Self = Self {
+        model_bbox: None,
+        stock: None,
+        dressups: None,
+        setup_z_flipped: None,
+        earlier_leave_mm: None,
+    };
 }
 
 /// v3.3a (2026-06-04): How aggressively the orchestrator rewrites
@@ -151,33 +279,35 @@ pub struct SuggestPolicy {
 }
 
 /// Project-level context that gate-aware Suggest needs to forward-predict
-/// runtime + cross-toolpath constraints. Slots that aren't relevant for a
-/// given Suggest invocation should be `None` — the caller provides what
-/// it can, the calculator gracefully degrades.
+/// runtime + cross-toolpath constraints.
 ///
-/// v1.1 ignores every field on this struct; it exists so v1.2
-/// (runtime-sanity stepover floor) and v2 (finish-DPP from upstream
-/// leftover) can read project state without grabbing the whole
-/// [`crate::session::ProjectSession`]. Callers should populate what
-/// they cheaply have and pass [`SuggestContext::default()`] when they
-/// don't.
-#[derive(Debug, Clone, Copy, Default)]
+/// P29-9: the plan facts (the model bbox, the stock, the dressups, the
+/// setup fact and the earlier leave) are private fields, and the type has
+/// no `Default`. So the compiler holds one rule: a surface cannot build a
+/// context that silently lacks a plan fact. The three constructors are:
+///
+/// - [`SuggestSlots::context`]: an existing toolpath (the session door).
+/// - [`NewOpSlots::context`]: a new op that has no toolpath yet (the add
+///   door).
+/// - [`Self::no_project`]: a context with no project (FM1, unit tests,
+///   examples). `rg no_project` finds every such site.
+///
+/// The other fields are what `apply` fills from a calculator result.
+#[derive(Debug, Clone, Copy)]
 pub struct SuggestContext<'a> {
     /// AABB of the model this toolpath is operating on. Used by v1.2 to
     /// estimate move count at a proposed stepover, and by future
     /// strategy selection to classify model complexity.
-    pub model_bbox: Option<&'a crate::geo::BoundingBox3>,
+    model_bbox: Option<&'a crate::geo::BoundingBox3>,
     /// Stock context (top/bottom Z, stock_z, padding). Same struct
     /// Suggest already uses for stock-aware defaults — re-exposed here
     /// so v1.2+ paths can read stock dimensions without a second
     /// out-of-band parameter.
-    pub stock: Option<&'a StockContext>,
-    /// Amount of material left from the upstream toolpath in this
-    /// setup, in mm. `None` when this is the first op in the setup or
-    /// when the caller can't cheaply compute it. P29-9 9c: the envelope
-    /// judges a finish pass at it (`feeds::planned::EarlierLeave`); the
-    /// speeds do not read it (ruling Q3).
-    pub upstream_leftover_stock_mm: Option<f64>,
+    stock: Option<&'a StockContext>,
+    /// P29-9 9c: the axial stock that the earlier op of this setup leaves
+    /// (`ProjectSession::earlier_leave_mm`). The envelope judges a finish
+    /// pass at it; the speeds do not read it (ruling Q3).
+    earlier_leave: crate::feeds::planned::EarlierLeave,
     /// Strategy choice from a neighboring (rough → finish) op. `None`
     /// when not applicable. v1 doesn't use this.
     pub neighboring_strategy_hint: Option<&'a str>,
@@ -231,12 +361,68 @@ pub struct SuggestContext<'a> {
     /// The toolpath's dressups, for the entry θ of a dressup operation (G6
     /// ramp). `None` means not known; the ramp then falls back to the plunge
     /// rate. Adaptive3d reads its own entry and does not use this slot.
-    pub dressups: Option<&'a crate::compute::config::DressupConfig>,
+    dressups: Option<&'a crate::compute::config::DressupConfig>,
     /// P29-9 9b: whether the toolpath's setup inverts Z; `None` when not
     /// known. The declared depth of a Project Curve from below reads it
     /// (`compute::catalog::TipDepth`); a reader with no setup passes
     /// `None`, and then a from-below cut has no lower bound.
-    pub setup_z_flipped: Option<bool>,
+    setup_z_flipped: Option<bool>,
+}
+
+impl<'a> SuggestContext<'a> {
+    /// A context with NO project: the plan facts are what `facts` states
+    /// by hand (FM1, unit tests, examples). A product door that reads a
+    /// toolpath or adds an op does not call it (P29-9).
+    #[must_use]
+    pub fn no_project(facts: NoProject<'a>) -> Self {
+        let NoProject {
+            model_bbox,
+            stock,
+            dressups,
+            setup_z_flipped,
+            earlier_leave_mm,
+        } = facts;
+        Self {
+            model_bbox,
+            stock,
+            earlier_leave: crate::feeds::planned::EarlierLeave::of_mm(earlier_leave_mm),
+            neighboring_strategy_hint: None,
+            chipload_bounds: None,
+            matched_lut_row: None,
+            effective_diameter_mm: 0.0,
+            calculator_operating_point: None,
+            policy: SuggestPolicy::default(),
+            dressups,
+            setup_z_flipped,
+        }
+    }
+
+    /// The bbox of the model this toolpath machines.
+    #[must_use]
+    pub fn model_bbox(&self) -> Option<&'a crate::geo::BoundingBox3> {
+        self.model_bbox
+    }
+
+    /// The stock.
+    #[must_use]
+    pub fn stock(&self) -> Option<&'a StockContext> {
+        self.stock
+    }
+
+    /// The toolpath's dressups.
+    #[must_use]
+    pub fn dressups(&self) -> Option<&'a crate::compute::config::DressupConfig> {
+        self.dressups
+    }
+
+    /// P29-9: the plan facts that a declared depth reads.
+    #[must_use]
+    pub fn plan_facts(&self) -> crate::feeds::planned::PlanFacts {
+        crate::feeds::planned::PlanFacts {
+            setup_z_flipped: self.setup_z_flipped,
+            earlier_leave: self.earlier_leave,
+        }
+    }
 }
 
 /// The point [`crate::feeds::calculate`] evaluated its feed expression at.
@@ -592,10 +778,9 @@ pub struct SuggestParamsInput<'a> {
     /// distinction. `ConstantChip` holds the chip and raises the RPM to the
     /// first named limit ([`crate::feeds::RpmLimit`]).
     pub spindle_strategy: crate::feeds::SpindleStrategy,
-    /// Project-level context (model bbox, upstream leftover, etc.) used
-    /// by gate-aware Suggest paths. See [`SuggestContext`]. Pass
-    /// `SuggestContext::default()` when the caller has nothing to
-    /// contribute — v1.1 ignores every field.
+    /// Project-level context (model bbox, stock, dressups, plan facts)
+    /// used by gate-aware Suggest paths. See [`SuggestContext`] for its
+    /// three constructors (P29-9).
     pub context: SuggestContext<'a>,
 }
 
@@ -609,10 +794,9 @@ pub struct SuggestForOperationInput<'a> {
     pub lut: &'a VendorLut,
     /// Spindle-RPM policy. See [`crate::feeds::SpindleStrategy`].
     pub spindle_strategy: crate::feeds::SpindleStrategy,
-    /// Project-level context (model bbox, upstream leftover, etc.) used
-    /// by gate-aware Suggest paths. See [`SuggestContext`]. Pass
-    /// `SuggestContext::default()` when the caller has nothing to
-    /// contribute — v1.1 ignores every field.
+    /// Project-level context (model bbox, stock, dressups, plan facts)
+    /// used by gate-aware Suggest paths. See [`SuggestContext`] for its
+    /// three constructors (P29-9).
     pub context: SuggestContext<'a>,
 }
 

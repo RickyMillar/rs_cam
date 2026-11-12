@@ -1643,13 +1643,13 @@ struct AdvisorContext {
     feed_max_rate: Option<f64>,
     /// The world-frame stock bounding box.
     stock_bbox: BoundingBox3,
-    /// Q1: the bbox of the model this toolpath machines, matched on
-    /// `tc.model_id`. Every candidate re-runs Suggest, and
-    /// `SuggestContext::model_bbox` gates the runtime-sanity stepover
-    /// back-off and the Adaptive3d entry-style pass. Without it the
-    /// advisor ranked candidates at parameters the generation path
-    /// would never emit. `None` when the id names no model.
-    model_bbox: Option<BoundingBox3>,
+    /// P29-9: the session door's slots of the toolpath
+    /// (`ProjectSession::suggest_slots`), captured on the main thread.
+    /// Every candidate re-runs Suggest; the slots carry the model box
+    /// (Q1) that gates the runtime-sanity stepover back-off.
+    suggest_slots: crate::feeds::suggest::SuggestSlots,
+    /// The toolpath's dressups, for the Suggest context.
+    dressups: crate::compute::config::DressupConfig,
     /// The setup frame the candidate simulation runs in.
     setup_ctx: super::SetupEvalContext,
 }
@@ -1780,17 +1780,9 @@ pub fn execute_recommend_clearing_strategy(
                 material,
                 lut: crate::feeds::embedded_vendor_lut(),
                 spindle_strategy: crate::feeds::SpindleStrategy::default(),
-                // Q1: the bbox the runtime-sanity back-off and the
-                // Adaptive3d entry-style pass read. The stock reaches
-                // the ranking through `context.stock` below, so
-                // `SuggestContext::stock` stays empty rather than
-                // carrying the same value twice.
-                // `upstream_leftover_stock_mm` stays `None`: no lookup
-                // here gives it, and v1 does not read it.
-                context: crate::feeds::suggest::SuggestContext {
-                    model_bbox: context.model_bbox.as_ref(),
-                    ..crate::feeds::suggest::SuggestContext::default()
-                },
+                // P29-9: the session door of the toolpath (the model box
+                // of Q1, the stock, the dressups and the plan facts).
+                context: context.suggest_slots.context(&context.dressups),
             },
         );
         // The regime before modulation reads `Unconstrained`: no Suggest

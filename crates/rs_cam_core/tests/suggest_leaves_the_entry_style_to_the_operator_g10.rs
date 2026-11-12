@@ -32,7 +32,7 @@ use rs_cam_core::compute::operation_configs::{Adaptive3dConfig, Adaptive3dEntryS
 use rs_cam_core::compute::tool_config::ToolFact;
 use rs_cam_core::compute::tool_config::{ToolConfig, ToolId, ToolType};
 use rs_cam_core::feeds::suggest::{
-    ApplyContext, SuggestContext, SuggestForOperationInput, SuggestWarning, apply,
+    ApplyContext, NoProject, SuggestContext, SuggestForOperationInput, SuggestWarning, apply,
     feeds_preview_for_operation, suggest_for_operation,
 };
 use rs_cam_core::feeds::{FeedsProvenance, SpindleStrategy, embedded_vendor_lut};
@@ -118,10 +118,10 @@ fn shipped(
             machine: &machine,
             material: &material,
             pass_role: base.feeds_style().1,
-            suggest: SuggestContext {
+            suggest: SuggestContext::no_project(NoProject {
                 model_bbox,
-                ..SuggestContext::default()
-            },
+                ..NoProject::NONE
+            }),
         },
     );
     (applied, warnings)
@@ -152,10 +152,10 @@ fn a_deep_plunge_entry_stays_a_plunge_and_warns_g10() {
             material: &material,
             lut: embedded_vendor_lut(),
             spindle_strategy: SpindleStrategy::MatchChart,
-            context: SuggestContext {
+            context: SuggestContext::no_project(NoProject {
                 model_bbox,
-                ..SuggestContext::default()
-            },
+                ..NoProject::NONE
+            }),
         })
         .expect("Suggest serves the Adaptive3d cell");
         assert_eq!(

@@ -322,12 +322,12 @@ impl ProjectSession {
             ToolChoice::Exact(id) => {
                 let tool = self.tool_by_id(id).ok_or(DraftRefusal::NoSuchTool(id))?;
                 let suggested = self
-                    .suggest_for(op_type, tool, model_id)
+                    .suggest_for(op_type, tool, model_id, Some(setup_index))
                     .map_err(DraftRefusal::Feeds)?;
                 Some((tool, suggested))
             }
             ToolChoice::FirstFitting => self.tools.iter().find_map(|t| {
-                self.suggest_for(op_type, t, model_id)
+                self.suggest_for(op_type, t, model_id, Some(setup_index))
                     .ok()
                     .map(|suggested| (t, suggested))
             }),
@@ -481,11 +481,12 @@ impl ProjectSession {
         op_type: OperationType,
         tool_id: ToolId,
         model_id: ModelId,
+        setup_index: Option<usize>,
     ) -> Result<(), DraftRefusal> {
         let tool = self
             .tool_by_id(tool_id)
             .ok_or(DraftRefusal::NoSuchTool(tool_id))?;
-        self.suggest_for(op_type, tool, model_id)
+        self.suggest_for(op_type, tool, model_id, setup_index)
             .map(|_| ())
             .map_err(DraftRefusal::Feeds)
     }
@@ -508,6 +509,8 @@ impl ProjectSession {
             return None;
         }
         let op_type = tc.operation.op_type();
+        // P29-9: the setup of the op, for the setup fact of the add door.
+        let setup = self.setup_of_toolpath_id(tc.id);
         let holes = if op_type == OperationType::Bore {
             self.bore_holes(tc, index)
         } else {
@@ -516,7 +519,7 @@ impl ProjectSession {
         if let Some(limit) = bore_size_text(&holes) {
             let fits = self.tools.iter().any(|t| {
                 bore_tool_fits(t.diameter, &holes)
-                    && self.tool_fit(op_type, t.id, tc.model_id).is_ok()
+                    && self.tool_fit(op_type, t.id, tc.model_id, setup).is_ok()
             });
             return Some(if fits {
                 "No tool set".to_owned()
@@ -524,7 +527,7 @@ impl ProjectSession {
                 format!("No tool fits: {} {limit}", op_type.needs_text())
             });
         }
-        Some(self.no_tool_state_for(op_type, tc.model_id))
+        Some(self.no_tool_state_for(op_type, tc.model_id, setup))
     }
 
     /// Q9: the diameters of the held holes that the Drill `drill` skips as
@@ -586,11 +589,13 @@ impl ProjectSession {
     /// the Bore then has no tool (R2).
     pub(crate) fn bore_tool_for(&self, drill: &ToolpathConfig) -> Option<ToolId> {
         let holes = self.drill_bore_holes(drill);
+        // P29-9: the Bore goes into the setup of its Drill.
+        let setup = self.setup_of_toolpath_id(drill.id);
         self.tools
             .iter()
             .filter(|t| bore_tool_fits(t.diameter, &holes))
             .find(|t| {
-                self.tool_fit(OperationType::Bore, t.id, drill.model_id)
+                self.tool_fit(OperationType::Bore, t.id, drill.model_id, setup)
                     .is_ok()
             })
             .map(|t| t.id)
@@ -598,11 +603,16 @@ impl ProjectSession {
 
     /// The no-tool state of an op of `op_type` on `model_id` (no size
     /// limit).
-    fn no_tool_state_for(&self, op_type: OperationType, model_id: ModelId) -> String {
+    fn no_tool_state_for(
+        &self,
+        op_type: OperationType,
+        model_id: ModelId,
+        setup: Option<usize>,
+    ) -> String {
         if self
             .tools
             .iter()
-            .any(|t| self.tool_fit(op_type, t.id, model_id).is_ok())
+            .any(|t| self.tool_fit(op_type, t.id, model_id, setup).is_ok())
         {
             "No tool set".to_owned()
         } else {
@@ -640,10 +650,13 @@ impl ProjectSession {
         op_type: OperationType,
         tool: &ToolConfig,
         model_id: ModelId,
+        setup_index: Option<usize>,
     ) -> Result<Suggested, FeedsError> {
         let stock_ctx = self.stock_context();
-        // Q1: the bbox the runtime-sanity stepover back-off reads.
-        let model_bbox = self.model_bbox_by_id(model_id);
+        // P29-9: THE context of a new op: the bbox the runtime-sanity
+        // stepover back-off reads (Q1), the setup fact of the setup it goes
+        // into, the registry-default dressups and no earlier leave.
+        let slots = self.new_op_suggest_slots(op_type, model_id, setup_index);
         match crate::feeds::suggest::suggest_params(crate::feeds::suggest::SuggestParamsInput {
             op_type,
             tool,
@@ -654,10 +667,7 @@ impl ProjectSession {
             // P21c (lead ruling): the project policy, as the card and the
             // apply read it. A new op does not get a different answer.
             spindle_strategy: self.post.spindle_policy(),
-            context: crate::feeds::suggest::SuggestContext {
-                model_bbox: model_bbox.as_ref(),
-                ..crate::feeds::suggest::SuggestContext::default()
-            },
+            context: slots.context(),
         }) {
             Ok(s) => Ok((s.operation, s.provenance, None)),
             // Ruling R1 + S11: no feeds data. The op is added with the

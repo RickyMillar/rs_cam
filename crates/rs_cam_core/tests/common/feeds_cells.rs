@@ -8,7 +8,7 @@
 
 use rs_cam_core::compute::catalog::{OperationConfig, OperationType};
 use rs_cam_core::compute::tool_config::{BitCutDirection, ToolConfig, ToolId, ToolType};
-use rs_cam_core::feeds::suggest::{StockContext, SuggestContext, SuggestedParams};
+use rs_cam_core::feeds::suggest::{NoProject, StockContext, SuggestContext, SuggestedParams};
 use rs_cam_core::feeds::{EMBEDDED_LUT, SpindleStrategy};
 use rs_cam_core::machine::MachineProfile;
 use rs_cam_core::material::{Material, PlywoodGrade, SheetGoodKind, WoodSpecies};
@@ -172,10 +172,10 @@ pub fn suggest(
             material,
             lut: &EMBEDDED_LUT,
             spindle_strategy: SpindleStrategy::default(),
-            context: SuggestContext {
+            context: SuggestContext::no_project(NoProject {
                 dressups: Some(&dressups),
-                ..SuggestContext::default()
-            },
+                ..NoProject::NONE
+            }),
         },
     )
     .ok()

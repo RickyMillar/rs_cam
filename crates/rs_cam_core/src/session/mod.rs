@@ -2305,23 +2305,48 @@ impl ProjectSession {
     /// both read it, so no door leaves the stock slot empty.
     #[must_use]
     pub fn suggest_slots(&self, tc: &ToolpathConfig) -> crate::feeds::suggest::SuggestSlots {
-        crate::feeds::suggest::SuggestSlots {
-            stock: crate::feeds::suggest::StockContext::from_stock_bbox(
+        crate::feeds::suggest::SuggestSlots::of_toolpath(
+            crate::feeds::suggest::StockContext::from_stock_bbox(
                 self.stock_bbox(),
                 self.stock_config().padding,
             ),
-            model_bbox: self.model_bbox_by_id(tc.model_id),
+            self.model_bbox_by_id(tc.model_id),
             // P29-9 9b: the Z frame of the toolpath's setup, by the one
             // rule `SetupTransformInfo::is_z_flipped`.
-            setup_z_flipped: self
-                .setup_of_toolpath_id(tc.id)
-                .and_then(|i| self.list_setups().get(i))
-                .map(|setup| {
-                    self.setup_transform_info(setup.face_up, setup.z_rotation)
-                        .is_z_flipped()
-                }),
-            earlier_leave_mm: self.earlier_leave_mm(tc),
-        }
+            self.setup_of_toolpath_id(tc.id)
+                .and_then(|i| self.setup_z_flipped(i)),
+            self.earlier_leave_mm(tc),
+        )
+    }
+
+    /// P29-9: the project slots of a Suggest call for a NEW op of `op_type`
+    /// on `model_id`, added into the setup at `setup_index` (the add door:
+    /// `draft_toolpath`, `tool_fit`, the pin drill, the multi-tool tiers).
+    /// The setup fact is read from that setup; `None` when the caller adds
+    /// into no known setup. The dressups are the registry defaults; the
+    /// earlier leave is not known (`NoEarlierOp`). See
+    /// [`crate::feeds::suggest::NewOpSlots`].
+    #[must_use]
+    pub fn new_op_suggest_slots(
+        &self,
+        op_type: crate::compute::catalog::OperationType,
+        model_id: ModelId,
+        setup_index: Option<usize>,
+    ) -> crate::feeds::suggest::NewOpSlots {
+        crate::feeds::suggest::NewOpSlots::of_new_op(
+            op_type,
+            self.model_bbox_by_id(model_id),
+            setup_index.and_then(|i| self.setup_z_flipped(i)),
+        )
+    }
+
+    /// P29-9 9b: whether the setup at `setup_index` inverts Z (the one rule
+    /// `SetupTransformInfo::is_z_flipped`); `None` for an unknown index.
+    fn setup_z_flipped(&self, setup_index: usize) -> Option<bool> {
+        self.list_setups().get(setup_index).map(|setup| {
+            self.setup_transform_info(setup.face_up, setup.z_rotation)
+                .is_z_flipped()
+        })
     }
 
     /// P29-9 9c (ruling Q1 (a)): the axial stock (mm) that the nearest

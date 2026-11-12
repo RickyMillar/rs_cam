@@ -549,7 +549,9 @@ fn run_cell_on_machine(
         machine,
         material,
         pass_role,
-        rs_cam_core::feeds::suggest::SuggestContext::default(),
+        rs_cam_core::feeds::suggest::SuggestContext::no_project(
+            rs_cam_core::feeds::suggest::NoProject::NONE,
+        ),
     );
 
     // The speeds-only write keeps the geometry; the pins are restored

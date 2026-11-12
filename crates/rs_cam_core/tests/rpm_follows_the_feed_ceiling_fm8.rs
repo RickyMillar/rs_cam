@@ -41,7 +41,7 @@ use rs_cam_core::diagnostics::adapters::from_feeds::diagnostics_from_feeds_resul
 use rs_cam_core::diagnostics::{Severity, ids};
 use rs_cam_core::feeds::rationale::{RationaleParam, SuggestRationale};
 use rs_cam_core::feeds::suggest::{
-    StockContext, SuggestContext, SuggestParamsInput, SuggestWarning, suggest_params,
+    NoProject, StockContext, SuggestContext, SuggestParamsInput, SuggestWarning, suggest_params,
 };
 use rs_cam_core::feeds::vendor_lut::VendorLut;
 use rs_cam_core::feeds::{
@@ -287,7 +287,7 @@ fn suggest_ships_the_lowered_rpm_with_a_rationale_row_fm8() {
         lut: &EMBEDDED_LUT,
         stock_ctx: &stock,
         spindle_strategy: SpindleStrategy::MatchChart,
-        context: SuggestContext::default(),
+        context: SuggestContext::no_project(NoProject::NONE),
     })
     .expect("a Ø6 end mill pocket in hardwood ships");
 

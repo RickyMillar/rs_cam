@@ -43,7 +43,7 @@ use rs_cam_core::compute::catalog::{OperationConfig, OperationType, RadialRule};
 use rs_cam_core::compute::tool_config::{ToolConfig, ToolFact, ToolId, ToolType};
 use rs_cam_core::feeds::envelope::{Edge, EnvelopeAxes, EnvelopeInput, LimitKind, SafeEnvelope};
 use rs_cam_core::feeds::force_budget::{RigidityCapOutcome, rigidity_depth_cap};
-use rs_cam_core::feeds::suggest::SuggestContext;
+use rs_cam_core::feeds::suggest::{NoProject, SuggestContext};
 use rs_cam_core::feeds::{OperationFamily, PassRole, SpindleStrategy, embedded_vendor_lut};
 use rs_cam_core::limits::{DepthLimit, NoDepthLimit};
 use rs_cam_core::machine::MachineProfile;
@@ -191,7 +191,7 @@ fn claim_2_three_slot_ops_read_one_cap_at_full_width() {
             material: &material,
             lut: embedded_vendor_lut(),
             spindle_strategy: SpindleStrategy::default(),
-            context: SuggestContext::default(),
+            context: SuggestContext::no_project(NoProject::NONE),
         })
         .unwrap_or_else(|e| panic!("{kind:?}: the envelope builds: {e}"));
         let ceiling = env
@@ -260,7 +260,7 @@ fn envelope_of(op: &OperationConfig, tool: &ToolConfig, material: &Material) -> 
         material,
         lut: embedded_vendor_lut(),
         spindle_strategy: SpindleStrategy::default(),
-        context: SuggestContext::default(),
+        context: SuggestContext::no_project(NoProject::NONE),
     })
     .unwrap_or_else(|e| panic!("{:?}: the envelope builds: {e}", op.op_type()))
 }

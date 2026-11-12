@@ -60,7 +60,7 @@ use rs_cam_core::feeds::FeedsInput;
 use rs_cam_core::feeds::envelope::PickRequest;
 use rs_cam_core::feeds::envelope::Placement;
 use rs_cam_core::feeds::suggest::{
-    OperationApplyInput, SuggestContext, apply_speeds_to_op, apply_to_operation,
+    NoProject, OperationApplyInput, SuggestContext, apply_speeds_to_op, apply_to_operation,
     feeds_result_for_operation, round_suggestion_value_down,
 };
 use rs_cam_core::feeds::{
@@ -180,7 +180,7 @@ impl Fixture {
             &self.machine,
             &self.material,
             op.feeds_style().1,
-            SuggestContext::default(),
+            SuggestContext::no_project(NoProject::NONE),
         );
         applied
     }
@@ -199,7 +199,7 @@ impl Fixture {
                 material: &self.material,
                 spindle_strategy: SpindleStrategy::default(),
                 lut: embedded_vendor_lut(),
-                suggest: SuggestContext::default(),
+                suggest: SuggestContext::no_project(NoProject::NONE),
             },
             Some(PickRequest::Proposal),
             None,
@@ -236,7 +236,7 @@ impl Fixture {
                 material: &self.material,
                 lut: embedded_vendor_lut(),
                 spindle_strategy: SpindleStrategy::default(),
-                context: SuggestContext::default(),
+                context: SuggestContext::no_project(NoProject::NONE),
             },
         )
         .expect("a pocket envelope")

@@ -27,7 +27,7 @@ use rs_cam_core::compute::operation_configs::DRILL_DWELL_S;
 use rs_cam_core::compute::tool_config::{ToolConfig, ToolFact, ToolId, ToolType};
 use rs_cam_core::feeds::FeedsInput;
 use rs_cam_core::feeds::envelope::{EnvelopeInput, LimitKind, SafeEnvelope};
-use rs_cam_core::feeds::suggest::SuggestContext;
+use rs_cam_core::feeds::suggest::{NoProject, SuggestContext};
 use rs_cam_core::feeds::{
     Basis, SpindleStrategy, calculate, embedded_vendor_lut, formula_constants,
 };
@@ -172,7 +172,7 @@ fn the_envelope_engagement_floors_read_the_rows_p13a() {
         material: &material,
         lut: embedded_vendor_lut(),
         spindle_strategy: SpindleStrategy::MatchChart,
-        context: SuggestContext::default(),
+        context: SuggestContext::no_project(NoProject::NONE),
     })
     .unwrap_or_else(|e| panic!("the Pocket envelope is backed: {e}"));
     let floors: Vec<Vec<String>> = env

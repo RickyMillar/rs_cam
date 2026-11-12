@@ -165,7 +165,7 @@ impl<'a> CutterOpProfile<'a> {
         input: CutterOpProfileInput<'a, '_>,
     ) -> Result<Self, crate::tool::ToolGeometryError> {
         let op_type = input.operation.op_type();
-        let feed_max_rate = input.context.dressups.and_then(|d| d.feed_max_rate);
+        let feed_max_rate = input.context.dressups().and_then(|d| d.feed_max_rate);
         let spec = op_type.spec();
         let tool_def = build_cutter(input.tool)?;
         let cutter_kind = tool_def.to_geometry_hint().cutter_kind();
@@ -341,7 +341,7 @@ mod tests {
             material,
             lut: embedded_vendor_lut(),
             spindle_strategy: crate::feeds::SpindleStrategy::default(),
-            context: SuggestContext::default(),
+            context: SuggestContext::no_project(crate::feeds::suggest::NoProject::NONE),
         }
     }
 
@@ -366,7 +366,7 @@ mod tests {
             material: &material,
             lut: embedded_vendor_lut(),
             spindle_strategy: crate::feeds::SpindleStrategy::default(),
-            context: SuggestContext::default(),
+            context: SuggestContext::no_project(crate::feeds::suggest::NoProject::NONE),
         })
         .expect("endmill × adaptive3d must be feasible");
 

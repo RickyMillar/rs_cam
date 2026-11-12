@@ -44,7 +44,7 @@ use rs_cam_core::feeds::force_budget::{
 use rs_cam_core::feeds::planned::{
     BodyColumn, DeclaredCuts, ForceBudgetPlanned, ForceEnv, PlannedCell, judge_declared_cuts,
 };
-use rs_cam_core::feeds::suggest::SuggestContext;
+use rs_cam_core::feeds::suggest::{NoProject, SuggestContext};
 use rs_cam_core::feeds::{SpindleStrategy, embedded_vendor_lut};
 use rs_cam_core::limits::CutKind;
 use rs_cam_core::machine::MachineProfile;
@@ -110,7 +110,7 @@ fn envelope(
         material,
         lut: embedded_vendor_lut(),
         spindle_strategy: SpindleStrategy::default(),
-        context: SuggestContext::default(),
+        context: SuggestContext::no_project(NoProject::NONE),
     })
     .expect("the FM1 cell is backed")
 }

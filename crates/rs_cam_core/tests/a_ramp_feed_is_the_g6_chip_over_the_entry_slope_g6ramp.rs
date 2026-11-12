@@ -67,9 +67,9 @@ use rs_cam_core::compute::tool_config::{ToolConfig, ToolId, ToolType};
 use rs_cam_core::feeds::FeedsInput;
 use rs_cam_core::feeds::ramp::{EntrySource, RampArm, RampBasis, RampFallback, SourcedRamp};
 use rs_cam_core::feeds::suggest::{
-    ApplyContext, SuggestContext, SuggestForOperationInput, SuggestWarning, SuggestedParams, apply,
-    apply_speeds_to_op, feeds_preview_for_operation, feeds_result_for_operation,
-    suggest_for_operation,
+    ApplyContext, NoProject, SuggestContext, SuggestForOperationInput, SuggestWarning,
+    SuggestedParams, apply, apply_speeds_to_op, feeds_preview_for_operation,
+    feeds_result_for_operation, suggest_for_operation,
 };
 use rs_cam_core::feeds::{
     FeedsProvenance, ProvenanceSource, RampFeed, SpindleStrategy, ValueProvenance, calculate,
@@ -160,10 +160,10 @@ fn pocket() -> OperationConfig {
 }
 
 fn context(dressups: Option<&DressupConfig>) -> SuggestContext<'_> {
-    SuggestContext {
+    SuggestContext::no_project(NoProject {
         dressups,
-        ..SuggestContext::default()
-    }
+        ..NoProject::NONE
+    })
 }
 
 fn suggest(

@@ -55,7 +55,7 @@ use rs_cam_core::compute::{ToolConfig, ToolId, ToolType};
 use rs_cam_core::feeds::FeedsInput;
 use rs_cam_core::feeds::extrapolation::{FamilyBasis, SizeBasis};
 use rs_cam_core::feeds::suggest::{
-    StockContext, SuggestContext, SuggestParamsInput, suggest_params,
+    NoProject, StockContext, SuggestContext, SuggestParamsInput, suggest_params,
 };
 use rs_cam_core::feeds::vendor_lookup::find_best_chip_envelope_row;
 use rs_cam_core::feeds::vendor_lut::{LutOperationFamily, LutPassRole};
@@ -144,7 +144,7 @@ fn a_one_millimetre_tapered_tip_reads_the_printed_band_on_every_3d_finish_g3v8()
             lut: &EMBEDDED_LUT,
             stock_ctx: &stock,
             spindle_strategy: SpindleStrategy::default(),
-            context: SuggestContext::default(),
+            context: SuggestContext::no_project(NoProject::NONE),
         })
         .unwrap_or_else(|e| panic!("{label}: a Ø1 tapered finish in hardwood ships, got {e}"));
         let recipe = s

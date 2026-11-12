@@ -87,7 +87,7 @@ use rs_cam_core::feeds::planned::{
     PlannedLimit, PlannedNoNumber, PowerEnv, RubbingFloorPlanned, SpindlePowerPlanned, TableEnv,
     VendorDepthTablePlanned, judge_declared_cuts, planned_limit_of,
 };
-use rs_cam_core::feeds::suggest::{StockContext, SuggestContext};
+use rs_cam_core::feeds::suggest::{NoProject, StockContext, SuggestContext};
 use rs_cam_core::limits::{
     CutGroup, CutKind, DepthLimit, LimitId, NoEngagementModel, Scope, scope,
 };
@@ -224,7 +224,7 @@ fn envelope(
         material: &hardwood(),
         lut: rs_cam_core::feeds::embedded_vendor_lut(),
         spindle_strategy: SpindleStrategy::default(),
-        context: SuggestContext::default(),
+        context: SuggestContext::no_project(NoProject::NONE),
     })
     .ok()
 }
@@ -838,10 +838,10 @@ fn claim_6_a_stored_entry_feed_is_judged_over_its_write_step_p29_9() {
         material: &hardwood(),
         lut: rs_cam_core::feeds::embedded_vendor_lut(),
         spindle_strategy: SpindleStrategy::default(),
-        context: SuggestContext {
+        context: SuggestContext::no_project(NoProject {
             dressups: Some(&dressups),
-            ..SuggestContext::default()
-        },
+            ..NoProject::NONE
+        }),
     })
     .expect("the FM1 Face is backed");
     let mut op = suggested.operation;
@@ -939,10 +939,10 @@ fn project_curve_rows(
         material: &hardwood(),
         lut: rs_cam_core::feeds::embedded_vendor_lut(),
         spindle_strategy: SpindleStrategy::default(),
-        context: SuggestContext {
+        context: SuggestContext::no_project(NoProject {
             setup_z_flipped: flipped,
-            ..SuggestContext::default()
-        },
+            ..NoProject::NONE
+        }),
     })
     .expect("the Project Curve envelope builds")
     .cut_checks
@@ -1020,10 +1020,10 @@ fn claim_8_a_finish_is_judged_at_the_earlier_leave_p29_9() {
             material: &hardwood(),
             lut: rs_cam_core::feeds::embedded_vendor_lut(),
             spindle_strategy: SpindleStrategy::default(),
-            context: SuggestContext {
-                upstream_leftover_stock_mm: leave,
-                ..SuggestContext::default()
-            },
+            context: SuggestContext::no_project(NoProject {
+                earlier_leave_mm: leave,
+                ..NoProject::NONE
+            }),
         })
         .expect("the Scallop envelope builds")
         .cut_checks

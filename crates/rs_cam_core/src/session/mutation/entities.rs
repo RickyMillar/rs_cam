@@ -142,7 +142,15 @@ impl ProjectSession {
             .filter(|(_, tc)| tc.tool_id.is_none())
             .filter(|(index, tc)| {
                 let op_type = tc.operation.op_type();
-                if self.tool_fit(op_type, tool_id, tc.model_id).is_err() {
+                if self
+                    .tool_fit(
+                        op_type,
+                        tool_id,
+                        tc.model_id,
+                        self.setup_of_toolpath_id(tc.id),
+                    )
+                    .is_err()
+                {
                     return false;
                 }
                 if op_type != crate::compute::catalog::OperationType::Bore {

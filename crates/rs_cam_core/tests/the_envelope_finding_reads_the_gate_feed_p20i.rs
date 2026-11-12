@@ -40,7 +40,7 @@ use rs_cam_core::compute::tool_config::{CentreCutting, ToolConfig, ToolFact, Too
 use rs_cam_core::feeds::envelope::{
     CutPoint, Edge, EnvelopeInput, LimitKind, Placement, SafeEnvelope,
 };
-use rs_cam_core::feeds::suggest::{CalculatorOperatingPoint, SuggestContext};
+use rs_cam_core::feeds::suggest::{CalculatorOperatingPoint, NoProject, SuggestContext};
 use rs_cam_core::ids::ToolpathId;
 use rs_cam_core::machine::{MachineProfile, PowerModel};
 use rs_cam_core::material::{Material, WoodSpecies};
@@ -145,7 +145,7 @@ fn envelope_with(op: &OperationConfig, machine: &MachineProfile) -> SafeEnvelope
         material: &material,
         lut: rs_cam_core::feeds::embedded_vendor_lut(),
         spindle_strategy: rs_cam_core::feeds::SpindleStrategy::default(),
-        context: SuggestContext::default(),
+        context: SuggestContext::no_project(NoProject::NONE),
     })
     .expect("a 6 mm end mill in white oak is backed")
 }

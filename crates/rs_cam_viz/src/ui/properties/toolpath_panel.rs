@@ -70,11 +70,9 @@ pub(super) fn draw_toolpath_panel(
     let preconditions = &snapshot.preconditions;
     let model_refs = &snapshot.model_refs;
     let suggest_warnings = snapshot.suggest_warnings.as_deref();
-    // Q1: what both Suggest sites below put in
-    // `SuggestContext::model_bbox`. The pill funnel and the Feeds card
-    // passed `SuggestContext::default()` before, so the runtime-sanity
-    // stepover back-off could not fire in the GUI.
-    let model_bbox = snapshot.model_bbox.as_ref();
+    // F114, P29-9: the session door's slots that every feeds door below
+    // builds its Suggest context from (with the entry's dressups).
+    let suggest_slots = &snapshot.suggest_slots;
 
     // UI-01: what the HOST itself draws from. Every other field of
     // `inputs` belongs to one tab and is re-bound in that tab's function.
@@ -115,7 +113,7 @@ pub(super) fn draw_toolpath_panel(
     // F216, W3i: fill the feeds memo before the placement and before any
     // tab draws, so the feed findings are placed on the first frame of a
     // selection whatever tab is active.
-    super::feeds_speeds::refresh_feeds_memo(entry, inputs, model_bbox);
+    super::feeds_speeds::refresh_feeds_memo(entry, inputs, suggest_slots);
     let diagnostics = panel_diagnostics(entry, preconditions, model_refs, suggest_warnings, inputs);
     let placement = super::placement::place(&diagnostics, &entry.operation);
 
@@ -255,7 +253,7 @@ pub(super) fn draw_toolpath_panel(
                 strategy_suggestion(suggest_warnings),
                 selection_ui,
                 super::linking_dressup::Fields::new(&placement.by_field),
-                model_bbox,
+                suggest_slots,
                 envelope_candidates,
                 events,
             );

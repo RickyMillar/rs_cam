@@ -159,7 +159,9 @@ use rs_cam_core::compute::operation_configs::PocketConfig;
 use rs_cam_core::compute::tool_config::ToolFact;
 use rs_cam_core::compute::{ToolConfig, ToolId, ToolType};
 use rs_cam_core::feeds::envelope::{EnvelopeInput, PickRequest, SafeEnvelope};
-use rs_cam_core::feeds::suggest::{OperationApplyInput, SuggestContext, apply_to_operation};
+use rs_cam_core::feeds::suggest::{
+    NoProject, OperationApplyInput, SuggestContext, apply_to_operation,
+};
 use rs_cam_core::feeds::{
     FeedsInput, FeedsResult, FeedsWarning, SpindleStrategy, ToolGeometryHint, calculate,
     embedded_vendor_lut,
@@ -348,7 +350,7 @@ fn run_funnel_at(machine: &MachineProfile, material: &Material, requested_ap: f6
         material,
         lut: embedded_vendor_lut(),
         spindle_strategy: SpindleStrategy::MatchChart,
-        context: SuggestContext::default(),
+        context: SuggestContext::no_project(NoProject::NONE),
     })
     .expect("heavy pocket with a flat endmill has an envelope");
     let recommended = envelope
@@ -364,7 +366,7 @@ fn run_funnel_at(machine: &MachineProfile, material: &Material, requested_ap: f6
             material,
             spindle_strategy: SpindleStrategy::MatchChart,
             lut: embedded_vendor_lut(),
-            suggest: SuggestContext::default(),
+            suggest: SuggestContext::no_project(NoProject::NONE),
         },
         Some(PickRequest::Proposal),
         None,

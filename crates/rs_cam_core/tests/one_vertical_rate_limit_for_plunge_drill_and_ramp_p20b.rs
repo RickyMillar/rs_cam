@@ -42,7 +42,7 @@ use rs_cam_core::compute::tool_config::{ToolConfig, ToolFact, ToolId, ToolType};
 use rs_cam_core::feeds::plunge::{PlungeBinding, resolve_plunge_at};
 use rs_cam_core::feeds::ramp::{RampArm, RampBasis};
 use rs_cam_core::feeds::suggest::{
-    SuggestContext, SuggestForOperationInput, SuggestWarning, SuggestedParams,
+    NoProject, SuggestContext, SuggestForOperationInput, SuggestWarning, SuggestedParams,
     suggest_for_operation,
 };
 use rs_cam_core::feeds::vertical::ZAxisRate;
@@ -118,10 +118,10 @@ fn suggest(
         material,
         lut: embedded_vendor_lut(),
         spindle_strategy: SpindleStrategy::MatchChart,
-        context: SuggestContext {
+        context: SuggestContext::no_project(NoProject {
             dressups,
-            ..SuggestContext::default()
-        },
+            ..NoProject::NONE
+        }),
     })
     .unwrap_or_else(|e| panic!("Suggest serves {:?}: {e}", op.op_type()))
 }

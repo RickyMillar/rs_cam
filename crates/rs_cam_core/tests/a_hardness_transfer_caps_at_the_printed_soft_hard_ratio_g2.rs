@@ -67,7 +67,7 @@ use rs_cam_core::feeds::extrapolation::{
     soft_hard_cap,
 };
 use rs_cam_core::feeds::suggest::{
-    StockContext, SuggestContext, SuggestParamsInput, SuggestedParams, suggest_params,
+    NoProject, StockContext, SuggestContext, SuggestParamsInput, SuggestedParams, suggest_params,
 };
 use rs_cam_core::feeds::vendor_lookup::{
     LookupQuery, LookupResult, find_best_chip_envelope_row, lookup_best,
@@ -133,7 +133,7 @@ fn suggest(op: OperationType, tool: &ToolConfig, material: &Material) -> Suggest
         lut: &EMBEDDED_LUT,
         stock_ctx: &stock,
         spindle_strategy: SpindleStrategy::default(),
-        context: SuggestContext::default(),
+        context: SuggestContext::no_project(NoProject::NONE),
     })
     .unwrap_or_else(|e| panic!("{op:?} {} mm ships: {e}", tool.diameter))
 }

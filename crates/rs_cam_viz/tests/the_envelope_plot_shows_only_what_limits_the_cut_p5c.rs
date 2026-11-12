@@ -767,10 +767,12 @@ fn a_pocket_draws_its_move_budget_floor_and_it_does_not_move_p19() {
             material: &material,
             lut: rs_cam_core::feeds::embedded_vendor_lut(),
             spindle_strategy: rs_cam_core::feeds::SpindleStrategy::default(),
-            context: rs_cam_core::feeds::suggest::SuggestContext {
-                model_bbox: Some(&bbox),
-                ..rs_cam_core::feeds::suggest::SuggestContext::default()
-            },
+            context: rs_cam_core::feeds::suggest::SuggestContext::no_project(
+                rs_cam_core::feeds::suggest::NoProject {
+                    model_bbox: Some(&bbox),
+                    ..rs_cam_core::feeds::suggest::NoProject::NONE
+                },
+            ),
         })
         .expect("the Pocket is backed");
         let Some(Edge::AeFloor { mm }) = env.limit(LimitKind::Runtime).map(|l| l.edge.clone())

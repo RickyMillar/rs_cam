@@ -84,7 +84,9 @@ use rs_cam_core::diagnostics::adapters::from_feeds::{
 };
 use rs_cam_core::diagnostics::adapters::from_static_checks::diagnostics_from_static_checks;
 use rs_cam_core::feeds::plunge::resolve_plunge;
-use rs_cam_core::feeds::suggest::{StockContext, SuggestContext, SuggestWarning, SuggestedParams};
+use rs_cam_core::feeds::suggest::{
+    NoProject, StockContext, SuggestContext, SuggestWarning, SuggestedParams,
+};
 use rs_cam_core::feeds::vendor_lookup::vbit_key_text;
 use rs_cam_core::feeds::vendor_lut::{MaterialFamily, VendorObservation};
 use rs_cam_core::feeds::{EMBEDDED_LUT, FeedsSupport, PlungeBasis, SpindleStrategy};
@@ -252,10 +254,10 @@ fn suggest(
             material,
             lut: &EMBEDDED_LUT,
             spindle_strategy: SpindleStrategy::default(),
-            context: SuggestContext {
+            context: SuggestContext::no_project(NoProject {
                 dressups: Some(&dressups),
-                ..SuggestContext::default()
-            },
+                ..NoProject::NONE
+            }),
         },
     )
 }
@@ -339,7 +341,7 @@ fn envelope_columns(
             material,
             lut: &EMBEDDED_LUT,
             spindle_strategy: SpindleStrategy::default(),
-            context: SuggestContext::default(),
+            context: SuggestContext::no_project(NoProject::NONE),
         },
     ) {
         Ok(env) => {

@@ -114,8 +114,8 @@ use std::path::PathBuf;
 use rs_cam_core::feeds::{
     FeedsError, embedded_vendor_lut,
     suggest::{
-        StockContext, SuggestContext, SuggestForOperationInput, SuggestWarning, SuggestedParams,
-        suggest_for_operation,
+        NoProject, StockContext, SuggestContext, SuggestForOperationInput, SuggestWarning,
+        SuggestedParams, suggest_for_operation,
     },
 };
 use rs_cam_core::session::ProjectSession;
@@ -923,7 +923,7 @@ fn wanaka_suggest_baseline() {
 fn wanaka_suggest_idempotent_on_second_run() {
     use rs_cam_core::feeds::{
         SpindleStrategy, embedded_vendor_lut,
-        suggest::{SuggestContext, SuggestForOperationInput, suggest_for_operation},
+        suggest::{NoProject, SuggestContext, SuggestForOperationInput, suggest_for_operation},
     };
 
     let path = wanaka_project_path();
@@ -948,11 +948,11 @@ fn wanaka_suggest_idempotent_on_second_run() {
         .iter()
         .find(|(id, _)| *id == tc.model_id)
         .map(|(_, b)| b);
-    let context = SuggestContext {
+    let context = SuggestContext::no_project(NoProject {
         model_bbox,
         stock: Some(&stock_ctx),
-        ..SuggestContext::default()
-    };
+        ..NoProject::NONE
+    });
 
     let first = suggest_for_operation(SuggestForOperationInput {
         operation: &tc.operation,
@@ -1018,8 +1018,6 @@ fn wanaka_suggest_idempotent_on_second_run() {
 /// silently diverge from the Suggest button.
 #[test]
 fn session_cutter_op_profile_matches_gui_rationale_assembly() {
-    use rs_cam_core::feeds::suggest::SuggestPolicy;
-
     let path = wanaka_project_path();
     let session = ProjectSession::load(&path).expect("Load wanaka.toml");
     let lut = embedded_vendor_lut();
@@ -1043,22 +1041,18 @@ fn session_cutter_op_profile_matches_gui_rationale_assembly() {
             .iter()
             .find(|(id, _)| *id == tc.model_id)
             .map(|(_, b)| b);
-        let context = SuggestContext {
+        // P29-9: the hand assembly states each plan fact that the session
+        // slots read, so the two assemblies stay one.
+        let slots = session.suggest_slots(tc);
+        let context = SuggestContext::no_project(NoProject {
             model_bbox,
             stock: Some(&stock_ctx),
-            upstream_leftover_stock_mm: None,
-            neighboring_strategy_hint: None,
-            chipload_bounds: None,
-            matched_lut_row: None,
-            effective_diameter_mm: 0.0,
-            calculator_operating_point: None,
-            policy: SuggestPolicy::default(),
             // G6 ramp: the toolpath's dressups, as `cutter_op_profile`
-            // passes them, so the two assemblies stay one.
+            // passes them.
             dressups: Some(&tc.dressups),
-            // P29-9 9b: the setup frame, as the session slots fill it.
-            setup_z_flipped: session.suggest_slots(tc).setup_z_flipped,
-        };
+            setup_z_flipped: slots.setup_z_flipped(),
+            earlier_leave_mm: slots.earlier_leave_mm(),
+        });
         let direct = suggest_for_operation(SuggestForOperationInput {
             operation: &tc.operation,
             tool,

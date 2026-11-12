@@ -203,7 +203,7 @@ fn vendor_lut_row_present_path_is_used() {
         lut: &EMBEDDED_LUT,
         stock_ctx: &stock_ctx(),
         spindle_strategy: crate::feeds::SpindleStrategy::default(),
-        context: SuggestContext::default(),
+        context: SuggestContext::no_project(NoProject::NONE),
     })
     .expect("pocket + flat is not a refused combination");
     assert!(matches!(
@@ -242,7 +242,7 @@ fn drill_apply_round_trips_suggested_feed() {
             lut: &EMBEDDED_LUT,
             stock_ctx: &stock_ctx(),
             spindle_strategy: crate::feeds::SpindleStrategy::default(),
-            context: SuggestContext::default(),
+            context: SuggestContext::no_project(NoProject::NONE),
         })
         .expect("a 6 mm 2-flute flat plunge in hardwood ships through the G6 claim");
         assert!(
@@ -302,7 +302,7 @@ fn split_fixture() -> (
         lut: &EMBEDDED_LUT,
         stock_ctx: &stock_ctx(),
         spindle_strategy: crate::feeds::SpindleStrategy::default(),
-        context: SuggestContext::default(),
+        context: SuggestContext::no_project(NoProject::NONE),
     })
     .expect("pocket + flat is not a refused combination");
 
@@ -332,7 +332,7 @@ fn apply_speeds_changes_speeds_leaves_cut_geometry() {
             material: &material,
             spindle_strategy: crate::feeds::SpindleStrategy::default(),
             lut: &EMBEDDED_LUT,
-            suggest: SuggestContext::default(),
+            suggest: SuggestContext::no_project(NoProject::NONE),
         },
         Some(crate::feeds::envelope::PickRequest::Proposal),
         None,
@@ -351,7 +351,7 @@ fn apply_speeds_changes_speeds_leaves_cut_geometry() {
         &machine,
         &material,
         role,
-        SuggestContext::default(),
+        SuggestContext::no_project(NoProject::NONE),
     );
 
     // the speeds are written
@@ -394,7 +394,7 @@ fn apply_speeds_changes_speeds_leaves_cut_geometry() {
         &machine,
         &material,
         role,
-        SuggestContext::default(),
+        SuggestContext::no_project(NoProject::NONE),
     );
     assert_eq!(
         kept.feed_rate().map(f64::to_bits),
@@ -509,7 +509,7 @@ fn apply_matches_the_speeds_entry_point_exactly() {
         machine: &machine,
         material: &material,
         pass_role: role,
-        suggest: SuggestContext::default(),
+        suggest: SuggestContext::no_project(NoProject::NONE),
     };
 
     let mut legacy_op = base.clone();
@@ -522,7 +522,7 @@ fn apply_matches_the_speeds_entry_point_exactly() {
         &machine,
         &material,
         role,
-        SuggestContext::default(),
+        SuggestContext::no_project(NoProject::NONE),
     );
 
     let mut funnel_op = base.clone();
@@ -569,7 +569,7 @@ fn explored_speeds_survive_the_funnel_but_still_get_clamped() {
             machine: &machine,
             material: &material,
             pass_role: role,
-            suggest: SuggestContext::default(),
+            suggest: SuggestContext::no_project(NoProject::NONE),
         },
     );
     assert_eq!(
@@ -637,7 +637,7 @@ fn fallback_formula_path_is_used_without_matching_lut_row() {
         lut: &EMBEDDED_LUT,
         stock_ctx: &stock_ctx(),
         spindle_strategy: crate::feeds::SpindleStrategy::default(),
-        context: SuggestContext::default(),
+        context: SuggestContext::no_project(NoProject::NONE),
     })
     .expect("pocket + flat is not a refused combination");
     assert_eq!(
@@ -667,7 +667,7 @@ fn invariants_clamp_and_warn() {
         &machine,
         &Material::default(),
         PassRole::Roughing,
-        SuggestContext::default(),
+        SuggestContext::no_project(NoProject::NONE),
     );
 
     assert_eq!(op.plunge_rate(), Some(100.0));
@@ -1058,7 +1058,7 @@ fn plunge_entry_unstable_warning_fires_when_dpp_exceeds_half_diameter() {
                 policy: SuggestPolicy {
                     scope: SuggestScope::FeedsWithGates,
                 },
-                ..SuggestContext::default()
+                ..SuggestContext::no_project(NoProject::NONE)
             },
         );
 
@@ -1116,7 +1116,7 @@ fn plunge_entry_unstable_does_not_fire_below_half_diameter() {
         &machine,
         &Material::default(),
         PassRole::Roughing,
-        SuggestContext::default(),
+        SuggestContext::no_project(NoProject::NONE),
     );
 
     assert!(
@@ -1155,7 +1155,7 @@ fn plunge_entry_unstable_does_not_fire_for_helix_or_ramp() {
             &machine,
             &Material::default(),
             PassRole::Roughing,
-            SuggestContext::default(),
+            SuggestContext::no_project(NoProject::NONE),
         );
         assert!(
             !warnings
@@ -1171,7 +1171,7 @@ fn plunge_entry_unstable_does_not_fire_for_helix_or_ramp() {
 /// gate-aware context plumbed onto `SuggestParamsInput` /
 /// `SuggestForOperationInput` is *carried* by v1.1 but not yet
 /// *consumed*. A populated context must therefore produce
-/// bit-identical Suggest output to `SuggestContext::default()` —
+/// bit-identical Suggest output to `SuggestContext::no_project(NoProject::NONE)` —
 /// guards against an accidental v1.1 read of the v1.2 slots.
 #[test]
 fn suggest_context_is_no_op_in_v1_1() {
@@ -1184,17 +1184,14 @@ fn suggest_context_is_no_op_in_v1_1() {
         max: crate::geo::P3::new(200.0, 150.0, 0.0),
     };
     let populated = SuggestContext {
-        model_bbox: Some(&bbox),
-        stock: Some(&stock),
-        upstream_leftover_stock_mm: Some(1.2),
         neighboring_strategy_hint: Some("adaptive3d"),
-        chipload_bounds: None,
-        matched_lut_row: None,
-        effective_diameter_mm: 0.0,
-        calculator_operating_point: None,
-        policy: SuggestPolicy::default(),
-        dressups: None,
-        setup_z_flipped: Some(false),
+        ..SuggestContext::no_project(NoProject {
+            model_bbox: Some(&bbox),
+            stock: Some(&stock),
+            setup_z_flipped: Some(false),
+            earlier_leave_mm: Some(1.2),
+            ..NoProject::NONE
+        })
     };
 
     let baseline = suggest_params(SuggestParamsInput {
@@ -1205,7 +1202,7 @@ fn suggest_context_is_no_op_in_v1_1() {
         lut: &EMBEDDED_LUT,
         stock_ctx: &stock,
         spindle_strategy: crate::feeds::SpindleStrategy::default(),
-        context: SuggestContext::default(),
+        context: SuggestContext::no_project(NoProject::NONE),
     })
     .expect("pocket + flat is not a refused combination");
     let with_ctx = suggest_params(SuggestParamsInput {
@@ -1311,7 +1308,7 @@ fn retired_lift_leaves_wanaka_back_rough_feed_untouched() {
         PassRole::Roughing,
         SuggestContext {
             chipload_bounds: bounds,
-            ..SuggestContext::default()
+            ..SuggestContext::no_project(NoProject::NONE)
         },
     );
 
@@ -1426,7 +1423,7 @@ fn retired_lift_fires_no_cap_on_a_deflection_bound_fixture() {
             PassRole::Roughing,
             SuggestContext {
                 chipload_bounds: bounds,
-                ..SuggestContext::default()
+                ..SuggestContext::no_project(NoProject::NONE)
             },
         );
 
@@ -1497,7 +1494,7 @@ fn retired_lift_reports_no_max_feed_shortfall() {
         PassRole::Roughing,
         SuggestContext {
             chipload_bounds: bounds,
-            ..SuggestContext::default()
+            ..SuggestContext::no_project(NoProject::NONE)
         },
     );
 
@@ -1567,7 +1564,7 @@ fn feed_recalibration_skipped_when_already_in_band() {
         PassRole::Roughing,
         SuggestContext {
             chipload_bounds: bounds,
-            ..SuggestContext::default()
+            ..SuggestContext::no_project(NoProject::NONE)
         },
     );
 
@@ -1624,9 +1621,11 @@ fn suggest_never_writes_entry_style() {
                     &material,
                     PassRole::Roughing,
                     SuggestContext {
-                        model_bbox,
                         policy: SuggestPolicy { scope },
-                        ..SuggestContext::default()
+                        ..SuggestContext::no_project(NoProject {
+                            model_bbox,
+                            ..NoProject::NONE
+                        })
                     },
                 );
                 let OperationConfig::Adaptive3d(cfg) = &op else {
@@ -1683,11 +1682,13 @@ fn clearing_strategy_recommendation_is_warn_only() {
         &material,
         PassRole::Roughing,
         SuggestContext {
-            model_bbox: Some(&bbox),
             policy: SuggestPolicy {
                 scope: SuggestScope::StrategyAndFeeds,
             },
-            ..SuggestContext::default()
+            ..SuggestContext::no_project(NoProject {
+                model_bbox: Some(&bbox),
+                ..NoProject::NONE
+            })
         },
     );
     let recommended = warnings.iter().find_map(|w| match w {
@@ -1765,9 +1766,11 @@ fn clearing_strategy_recommendation_skips() {
             &material,
             PassRole::Roughing,
             SuggestContext {
-                model_bbox,
                 policy: SuggestPolicy { scope },
-                ..SuggestContext::default()
+                ..SuggestContext::no_project(NoProject {
+                    model_bbox,
+                    ..NoProject::NONE
+                })
             },
         )
     };

@@ -44,7 +44,7 @@ use rs_cam_core::compute::config::{DressupConfig, DressupEntryStyle};
 use rs_cam_core::compute::stock_config::{ModelKind, ModelUnits, StockConfig};
 use rs_cam_core::compute::tool_config::{ToolConfig, ToolId, ToolType};
 use rs_cam_core::feeds::ramp::EntryNote;
-use rs_cam_core::feeds::suggest::{SuggestContext, SuggestForOperationInput, SuggestWarning};
+use rs_cam_core::feeds::suggest::{SuggestForOperationInput, SuggestWarning};
 use rs_cam_core::feeds::{FeedsExplain, PlungeBasis, embedded_vendor_lut};
 use rs_cam_core::material::{Material, WoodSpecies};
 use rs_cam_core::polygon::Polygon2;
@@ -191,11 +191,9 @@ fn entry_notes(state: &AppState) -> Vec<EntryNote> {
         material: &session.stock_config().material,
         lut: embedded_vendor_lut(),
         spindle_strategy: session.post_config().spindle_policy(),
-        context: SuggestContext {
-            model_bbox: snapshot.model_bbox.as_ref(),
-            dressups: Some(&snapshot.entry.dressups),
-            ..SuggestContext::default()
-        },
+        // P29-9: the card's own context, the session door's slots and the
+        // entry's dressups.
+        context: snapshot.suggest_slots.context(&snapshot.entry.dressups),
     })
     .expect("Suggest serves the fixture");
     suggested

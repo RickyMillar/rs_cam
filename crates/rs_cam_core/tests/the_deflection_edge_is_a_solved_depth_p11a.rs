@@ -47,7 +47,7 @@ use rs_cam_core::feeds::planned::{
     BodyColumn, DeclaredCuts, DeflectionPlanned, ForceEnv, PlannedCell, judge_declared_cuts,
 };
 use rs_cam_core::feeds::predict::{predict_peak_deflection_um, tip_deflection_from_engagement};
-use rs_cam_core::feeds::suggest::SuggestContext;
+use rs_cam_core::feeds::suggest::{NoProject, SuggestContext};
 use rs_cam_core::feeds::{Basis, SpindleStrategy, embedded_vendor_lut};
 use rs_cam_core::limits::CutKind;
 use rs_cam_core::machine::MachineProfile;
@@ -95,7 +95,7 @@ fn envelope(tool: &ToolConfig, machine: &MachineProfile) -> SafeEnvelope {
         material: &oak(),
         lut: embedded_vendor_lut(),
         spindle_strategy: SpindleStrategy::MatchChart,
-        context: SuggestContext::default(),
+        context: SuggestContext::no_project(NoProject::NONE),
     })
     .expect("a flat end mill on a roughing pocket has an envelope")
 }
