@@ -255,3 +255,50 @@ depends on the 35.3 N budget, which the operator parked for a later tune.
 - **Q1: only the force-budget solve reads the slot width.** The radial axis does not move.
 - **Q2: Chamfer moves to `P28-32`.** The filing of a Chamfer as a groove (F1) is a later ruling.
 - **Q3: noted.**
+
+## 12. Result
+
+Run on HEAD `eca178bd4` (P29-5b option A is in) with the 5c edit. No commit by the implementer.
+
+What matched:
+
+- FM1 matrix file: 162 cells in 81 rows, `cap_factor` 81 and `cap_mm` 81, 54 cells each for
+  VCarve, Inlay and InlayPlug. A script compared each cell with `P29-5c_predictions_fm1.csv`: 0
+  missing, 0 extra, 0 value mismatches. No other column moved. Simulation file: 0 cells (the
+  sim test passed before the re-bless, and the file is unchanged).
+- Table `S`: a throwaway probe (deleted) printed all 60 rows of the 5c tree. The probe read
+  `SafeEnvelope::for_cut` on `new_default` plus `fill_unset` with the stated depth, not the
+  Suggest door with the FM1 add-time op. The "today" side is the prediction file; the probe did
+  not run on HEAD. The five ceilings are equal to
+  section 8.2: 9.6183, 5.0842, 8.5217, 5.0858, 6.2730. 32 proposals move, all to `Rigidity`, at
+  the ops and stated depths of section 8.2. VCarve 6.35 mm softwood at 12.7 mm keeps
+  `VendorAxial` 6.3500. VCarve 6.35 mm hardwood at 12.7 mm changes from `VendorAxial` 6.3500 to
+  `Rigidity` 5.0842. Chamfer keeps the proposal 1.0000 and has the new clause. 6.35 mm MDF
+  refuses.
+- Pins: `ROWS` 48, `MAX_NEEDS_RULING` 37, `ROWS_WITH_A_FILE` 41, `EXEMPTIONS` length 48. `CLOSED`
+  has `("P28-03", "P29-5c")`.
+- Section 5: the FM1 matrix golden went red (162 cells, as predicted). The pins of the
+  exemption sentry were changed before its first run, so it was not seen red. The at-risk tests
+  stay green: viz `--lib` (with
+  `vcarve_max_depth_falls_back_to_the_raw_value_labelled_not_clamped`),
+  `pill_writes_clamped_value_g_pillclamp`, the viz tests
+  `the_envelope_plot_shows_only_what_limits_the_cut_p5c`, `every_limit_is_drawn_and_named_p5d`,
+  `one_apply_feeds_funnel_for_every_surface_f114`, `the_limit_rows_read_their_own_bound_g_ownbound`,
+  `the_sim_inspector_is_tabbed_ic3` and `readiness_shows_the_limits_g_readylimits` (the last
+  three read `limits_fixture`). `cargo test -p rs_cam_mcp` is green, but that crate holds the
+  wire types only, so it does not cover `get_safe_envelope`. A literal search for the old clause
+  text finds no snapshot or golden file. The three tests of `p17_visual_snapshots` are
+  `#[ignore]` (GPU, PNG output) and did not run; the file holds no VCarve or Inlay op.
+- Not checked: the placement columns of table `S`, table `W`, table `H` and the op golden.
+
+What the note got wrong or did not say:
+
+- Section 2 item 2 says that the width is the declared width "when the envelope width is
+  fixed". The product form reads the declared body width only: `DeclaredWidth::Slot` gives D,
+  and every other declared width gives the axis width. A `Slot` body occurs only on a fixed
+  width axis (`Radial::Slot`, `Radial::Groove`), so the two forms give the same width on every
+  op. The helper does not read the axes.
+- Section 2 item 4: the drill keeps the width D through `cuts().declares(CutKind::Drill)`, not a
+  match on `Radial::Axial`.
+- Section 4: the row `P28-32` `what` text also gained "and the force budget before the
+  simulation", because the row now exempts `LimitId::ForceBudget`.

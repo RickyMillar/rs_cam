@@ -1865,8 +1865,9 @@ const REMOVAL_RATE_EXACT_CANDIDATES: usize = 3;
 
 impl SafeEnvelope {
     /// P13c (O1): the force-budget depth at the width `ae_mm`, solved
-    /// exactly (not interpolated between grid columns). `None` when the op
-    /// has no budget edge or the model cannot answer.
+    /// exactly (not interpolated between grid columns). The solve reads
+    /// [`budget_width`] at `ae_mm` (P29-5c). `None` when the op has no
+    /// budget edge or the model cannot answer.
     fn budget_depth_at(
         &self,
         ae_mm: f64,
@@ -1902,7 +1903,7 @@ impl SafeEnvelope {
         crate::feeds::force_budget::depth_at_budget(
             &tool,
             &self.inputs.material,
-            ae_mm,
+            budget_width(&self.inputs, ae_mm),
             fz,
             model.budget_n,
         )
@@ -3204,8 +3205,11 @@ fn refine_columns<T: Copy>(
 /// takes the span top; no root anywhere, or no force line, is an
 /// `Unmodelled` entry with its reason. Between adjacent columns
 /// [`refine_budget_columns`] adds the samples of a cliff and of the smooth
-/// stretches, so the drawn edge stands on the solved depth. Returns the
-/// model the proposal solves exactly.
+/// stretches, so the drawn edge stands on the solved depth. P29-5c: each
+/// solve reads [`budget_width`] (the tool diameter for a slot or a groove);
+/// the column keeps its axis width. A chamfer states no depth: it is an
+/// `Unmodelled` entry, judged after the simulation. Returns the model the
+/// proposal solves exactly.
 fn rigidity_limit(
     out: &mut Vec<Limit>,
     inputs: &OwnedInputs,
@@ -3231,16 +3235,22 @@ fn rigidity_limit(
         out.push(unmodelled(fb::NO_FORCE_LINE));
         return None;
     }
-    // P29-5 (Q0, the narrow choice): the envelope holds no groove width
-    // (the calculator width of a groove is not the cone the cut engages),
-    // so a groove gets its force number after the simulation only.
-    // EXEMPT(P28-03)
-    if matches!(
-        inputs.operation.cut_spec().radial,
-        crate::compute::catalog::Radial::Groove
-    ) {
-        out.push(unmodelled(fb::GROOVE_WIDTH_AFTER_SIMULATION));
-        return None;
+    // P29-5c: a chamfer states its width, not a depth, so the depth axis
+    // holds no depth to solve. The force budget judges it after the
+    // simulation.
+    match inputs.operation.cut_spec().axial {
+        // EXEMPT(P28-32)
+        Axial::ChamferWidth(_) => {
+            out.push(unmodelled(fb::CHAMFER_STATES_NO_DEPTH));
+            return None;
+        }
+        Axial::PerPass(_)
+        | Axial::ZStep(_)
+        | Axial::OnePass(_)
+        | Axial::Surface { .. }
+        | Axial::HelixPitch(_)
+        | Axial::Peck(_)
+        | Axial::SurfaceOffset(_) => {}
     }
     let Ok(tool) = crate::compute::cutter::build_cutter(&inputs.tool) else {
         out.push(unmodelled(fb::NO_BUDGET_INPUT));
@@ -3291,7 +3301,13 @@ fn rigidity_limit(
         };
         columns.push((
             ae,
-            fb::depth_at_budget(&tool, &inputs.material, ae.max(1.0e-3), fz, budget_n),
+            fb::depth_at_budget(
+                &tool,
+                &inputs.material,
+                budget_width(inputs, ae).max(1.0e-3),
+                fz,
+                budget_n,
+            ),
         ));
     }
     if columns.iter().all(|(_, c)| c.is_none()) {
@@ -3309,7 +3325,13 @@ fn rigidity_limit(
                 flutes,
             )
         });
-        fb::depth_at_budget(&tool, &inputs.material, ae.max(1.0e-3), fz, budget_n)
+        fb::depth_at_budget(
+            &tool,
+            &inputs.material,
+            budget_width(inputs, ae).max(1.0e-3),
+            fz,
+            budget_n,
+        )
     });
     model.solved = SolvedColumns(
         columns
@@ -3346,6 +3368,33 @@ fn rigidity_limit(
         edge,
     });
     Some(model)
+}
+
+/// P29-5c: the width (mm) that the force-budget solve reads at the axis
+/// width `ae_column`. A body that declares the slot width (a slot, and a
+/// groove that engages its whole cone) has a fixed width axis, and the
+/// solve reads the tool diameter there; the engagement clamps a V-bit at
+/// the cone at the depth. Every other body reads the axis width. Only the
+/// solve reads this width: the axis, the speeds grid and every other limit
+/// keep the axis width (lead ruling Q1).
+fn budget_width(inputs: &OwnedInputs, ae_column: f64) -> f64 {
+    use crate::compute::catalog::DeclaredWidth;
+    let body = inputs
+        .operation
+        .cuts()
+        .of_kind(crate::limits::CutKind::Body)
+        .map(|c| c.width);
+    match body {
+        Some(DeclaredWidth::Slot) => inputs.tool.diameter,
+        Some(
+            DeclaredWidth::Stated(_)
+            | DeclaredWidth::PassCeiling { .. }
+            | DeclaredWidth::CapMult { .. }
+            | DeclaredWidth::Scallop(_)
+            | DeclaredWidth::None(_),
+        )
+        | None => ae_column,
+    }
 }
 
 /// P13c (O1): the basis of a force-budget value: the machine rigidity (its

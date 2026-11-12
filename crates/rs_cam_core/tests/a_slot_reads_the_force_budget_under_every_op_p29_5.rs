@@ -13,7 +13,7 @@
 //!   `OperationType::body_depth_limit() == ForceBudget`. Every row with a
 //!   one-sided radial rule and a finish or semi-finish role has
 //!   `NoLimit(FinishPass)`. The rows that move from R2 to R3 are exactly
-//!   the six ops of audit row `P28-03`. The scan reaches Trace and Pencil
+//!   the six ops of audit row `P28-03` (closed in P29-5c). The scan reaches Trace and Pencil
 //!   (one family, two answers).
 //! - Claim 2: Trace (a finish slot), Profile (a rough slot) and Project
 //!   Curve (a finish slot) with one tool, one material and one stated chip
@@ -22,6 +22,12 @@
 //! - Claim 3: the config and the kind cannot disagree:
 //!   `OperationConfig::cuts().body_facts().depth_rule ==
 //!   op_type().body_depth_limit()` for every op at its default.
+//! - Claim 4 (P29-5c): a groove reads the slot width before the
+//!   simulation. VCarve, Inlay and InlayPlug with one V-bit, one material
+//!   and one stated chip give the same envelope `Rigidity` ceiling as a
+//!   Trace with that V-bit (bit-equal): the groove at its own fixed axis
+//!   width, the Trace at D. A Chamfer states its width, not a depth: its
+//!   `Rigidity` entry is `Unmodelled` with the chamfer clause.
 
 #![expect(
     clippy::expect_used,
@@ -33,8 +39,10 @@ use std::collections::BTreeSet;
 
 use rs_cam_core::compute::catalog::{OperationConfig, OperationType, RadialRule};
 use rs_cam_core::compute::tool_config::{ToolConfig, ToolFact, ToolId, ToolType};
-use rs_cam_core::feeds::envelope::{EnvelopeInput, LimitKind, SafeEnvelope};
-use rs_cam_core::feeds::force_budget::{RigidityCapOutcome, rigidity_depth_cap};
+use rs_cam_core::feeds::envelope::{Edge, EnvelopeAxes, EnvelopeInput, LimitKind, SafeEnvelope};
+use rs_cam_core::feeds::force_budget::{
+    CHAMFER_STATES_NO_DEPTH, RigidityCapOutcome, rigidity_depth_cap,
+};
 use rs_cam_core::feeds::suggest::SuggestContext;
 use rs_cam_core::feeds::{OperationFamily, PassRole, SpindleStrategy, embedded_vendor_lut};
 use rs_cam_core::limits::{DepthLimit, NoDepthLimit};
@@ -225,4 +233,81 @@ fn claim_3_the_config_and_the_kind_read_one_depth_limit() {
             "{kind:?}: the cut list and the registry row disagree"
         );
     }
+}
+
+/// A 60 degree V-bit of 6.35 mm (the FM1 tool builder).
+fn vbit_6_35() -> ToolConfig {
+    let d = 6.35;
+    let mut t = ToolConfig::test_default(ToolId::from_raw(2), ToolType::VBit);
+    t.diameter = d;
+    t.included_angle = 60.0;
+    t.set_flute_count(ToolFact::Stated(2));
+    t.set_cutting_length(ToolFact::Stated((d * 3.0).max(12.0)));
+    t.set_shank_diameter(ToolFact::Stated(d));
+    t.shaft_diameter = d;
+    t.set_stickout(ToolFact::Stated(t.cutting_length_planning_mm() + 8.0));
+    t
+}
+
+fn envelope_of(op: &OperationConfig, tool: &ToolConfig, material: &Material) -> SafeEnvelope {
+    let machine = MachineProfile::generic_wood_router();
+    SafeEnvelope::for_cut(EnvelopeInput {
+        operation: op,
+        tool,
+        machine: &machine,
+        material,
+        lut: embedded_vendor_lut(),
+        spindle_strategy: SpindleStrategy::default(),
+        context: SuggestContext::default(),
+    })
+    .unwrap_or_else(|e| panic!("{:?}: the envelope builds: {e}", op.op_type()))
+}
+
+#[test]
+fn claim_4_a_groove_reads_the_slot_width_before_the_simulation_p29_5c() {
+    let material = Material::SolidWood {
+        species: WoodSpecies::GenericHardwood,
+    };
+    let tool = vbit_6_35();
+    let d = tool.diameter;
+    let trace = envelope_of(&stated_op(OperationType::Trace), &tool, &material)
+        .judged_ap_ceiling(LimitKind::Rigidity, d)
+        .expect("a Trace with a V-bit draws a Rigidity ceiling at D");
+    assert!(
+        trace.is_finite() && trace > 0.0,
+        "the Trace ceiling {trace} is a depth"
+    );
+    for kind in [
+        OperationType::VCarve,
+        OperationType::Inlay,
+        OperationType::InlayPlug,
+    ] {
+        let env = envelope_of(&stated_op(kind), &tool, &material);
+        let ae = match env.axes {
+            EnvelopeAxes::AxialBar { ae_mm, .. } | EnvelopeAxes::Fixed { ae_mm, .. } => ae_mm,
+            EnvelopeAxes::Plane { .. } | EnvelopeAxes::RadialBar { .. } => {
+                panic!("{kind:?}: a groove has a fixed width axis: {:?}", env.axes)
+            }
+        };
+        let ceiling = env
+            .judged_ap_ceiling(LimitKind::Rigidity, ae)
+            .unwrap_or_else(|| panic!("{kind:?}: the envelope draws a Rigidity ceiling"));
+        assert_eq!(
+            ceiling.to_bits(),
+            trace.to_bits(),
+            "{kind:?}: the groove ceiling {ceiling} at the axis width {ae} differs from the \
+             Trace ceiling {trace}"
+        );
+    }
+    let chamfer = envelope_of(&stated_op(OperationType::Chamfer), &tool, &material);
+    let rigidity = chamfer
+        .limit(LimitKind::Rigidity)
+        .expect("a Chamfer states a Rigidity entry");
+    let Edge::Unmodelled { reason } = &rigidity.edge else {
+        panic!(
+            "a Chamfer states no depth, so no Rigidity edge: {:?}",
+            rigidity.edge
+        );
+    };
+    assert_eq!(*reason, CHAMFER_STATES_NO_DEPTH);
 }

@@ -96,7 +96,7 @@ const R2: ExemptionClass = ExemptionClass::Ruled {
 const NR: ExemptionClass = ExemptionClass::NeedsRuling;
 
 /// Every exemption from a limit today. See the module doc.
-pub static EXEMPTIONS: [Exemption; 49] = [
+pub static EXEMPTIONS: [Exemption; 48] = [
     // P28: the limit audit.
     Exemption {
         id: "P28-02",
@@ -106,18 +106,6 @@ pub static EXEMPTIONS: [Exemption; 49] = [
         class: R2,
         where_: &["src/machine/mod.rs", "src/tool_load/depth.rs"],
         closes_in: "stays, as a ruling",
-    },
-    Exemption {
-        id: "P28-03",
-        what: "the machine force budget",
-        limit: &[LimitId::ForceBudget],
-        who: Who::Facts(
-            "groove cuts before the simulation (VCarve, Inlay, InlayPlug, Chamfer): the \
-             envelope reads no groove width",
-        ),
-        class: NR,
-        where_: &["src/feeds/envelope.rs"],
-        closes_in: "P29-5c",
     },
     Exemption {
         id: "P28-04",
@@ -374,11 +362,15 @@ pub static EXEMPTIONS: [Exemption; 49] = [
     },
     Exemption {
         id: "P28-32",
-        what: "the depth that the calculator reads",
-        limit: &[],
+        what: "the depth that the calculator reads, and the force budget before the simulation",
+        limit: &[LimitId::ForceBudget],
         who: Who::Reader("a chamfer width and a peck give no depth"),
         class: NR,
-        where_: &["src/compute/catalog/cut_spec.rs"],
+        where_: &[
+            "src/compute/catalog/cut_spec.rs",
+            "src/feeds/envelope.rs",
+            "src/feeds/force_budget.rs",
+        ],
         closes_in: "P29-9",
     },
     Exemption {

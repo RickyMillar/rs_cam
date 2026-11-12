@@ -15,8 +15,10 @@
 //! The readers: `feeds::engagement::PowerCases` (the slot case and the
 //! planner width), the depth rule of the envelope, Suggest and the feed
 //! modulator, the offset-ring test of the envelope and Suggest, the
-//! thinning rule of the session and Suggest doors, and the slot ring of
-//! `feeds::geometry::UnliftedFeed::of_slot_ring`.
+//! thinning rule of the session and Suggest doors, the slot ring of
+//! `feeds::geometry::UnliftedFeed::of_slot_ring`, and (P29-5c) the body
+//! width that the force-budget solve reads (`feeds::envelope` and
+//! `feeds::force_budget::cap_cut_of_operation`).
 //!
 //! The sentry is `tests/every_op_declares_its_cuts_p29_3.rs`.
 
@@ -64,7 +66,8 @@ impl<'a> CutContext<'a> {
 pub enum DeclaredWidth {
     /// A stated width (mm).
     Stated(f64),
-    /// A full slot: the tool diameter.
+    /// A full slot: the tool diameter. A groove declares it too (P29-5c):
+    /// on a V-bit the engagement clamps the width at the cone at the depth.
     Slot,
     /// The pass ceiling `c D` of the stated stepover (`None`: not set).
     PassCeiling {
@@ -351,12 +354,14 @@ impl OperationConfig {
     fn declare_side_cuts(&self, declare: &mut Declare) {
         let spec = self.cut_spec();
         let depth = self.declared_depth();
+        // P29-5c: a groove engages its whole cone on both sides, so its body
+        // width is the slot width. The engagement clamps the width at the
+        // cone at the depth (`EngagedDiameter::of_hint`).
         let body_width = match spec.radial {
             Radial::Width(Some(s)) => DeclaredWidth::Stated(s.mm()),
-            Radial::Slot => DeclaredWidth::Slot,
+            Radial::Slot | Radial::Groove => DeclaredWidth::Slot,
             Radial::Scallop(s) => DeclaredWidth::Scallop(s.mm()),
             Radial::Width(None)
-            | Radial::Groove
             | Radial::AngularStep(_)
             | Radial::SurfaceFollow
             | Radial::Axial => DeclaredWidth::None(NoEngagementModel::NoStatedWidth),

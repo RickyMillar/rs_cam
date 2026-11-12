@@ -498,11 +498,11 @@ pub const NO_BUDGET_INPUT: &str =
     "no usable width, chip or flute length: the force budget cannot set a depth";
 /// The clause of [`RigidityCapOutcome::NoLimitBelowFlute`].
 pub const NO_BUDGET_LIMIT_BELOW_THE_FLUTE: &str = "no force-budget limit below the flute";
-/// The clause of the envelope `Rigidity` entry of a groove cut (P29-5, Q0,
-/// the narrow choice; row `P28-03`): the envelope holds no groove width,
-/// and the cut engages its whole cone at the depth.
-pub const GROOVE_WIDTH_AFTER_SIMULATION: &str =
-    "a groove engages its whole cone: the width is known after the simulation";
+/// The clause of the envelope `Rigidity` entry of a chamfer (P29-5c, row
+/// `P28-32`): the depth axis of a chamfer holds its width, not a depth, so
+/// the envelope solves no depth for it.
+pub const CHAMFER_STATES_NO_DEPTH: &str =
+    "a chamfer states its width, not a depth: the force budget is judged after the simulation";
 
 /// **The one producer of the rigidity depth cap** (S3, P13c O1).
 ///
@@ -546,10 +546,12 @@ pub fn rigidity_depth_cap(
 }
 
 /// The width and the advance per tooth that the rigidity cap of `op` is
-/// solved at: the stated stepover (D for a slot), and the stated chip
-/// (feed / (rpm x Z)), else the chip the calculator ships for the op's
-/// cut. `None` when the op states no width or the calculator ships no
-/// feed.
+/// solved at: the declared width of the body cut (`OperationConfig::cuts`:
+/// a stated stepover, or D for a slot and a groove, P29-5c), and the stated
+/// chip (feed / (rpm x Z)), else the chip the calculator ships for the
+/// op's cut. A drill keeps the width D (it has no depth limit, so no
+/// reader caps it). `None` when the body states no width, for a chamfer
+/// (it states no depth), or when the calculator ships no feed.
 #[must_use]
 pub fn cap_cut_of_operation(
     op: &crate::compute::catalog::OperationConfig,
@@ -557,16 +559,34 @@ pub fn cap_cut_of_operation(
     material: &Material,
     machine: &crate::machine::MachineProfile,
 ) -> Option<(f64, f64)> {
-    use crate::compute::catalog::Radial;
+    use crate::compute::catalog::{Axial, DeclaredWidth};
     let d = tool_cfg.diameter;
-    let ae = match op.cut_spec().radial {
-        Radial::Width(Some(s)) => s.mm(),
-        Radial::Slot | Radial::Axial => d,
-        Radial::Width(None)
-        | Radial::Scallop(_)
-        | Radial::Groove
-        | Radial::AngularStep(_)
-        | Radial::SurfaceFollow => return None,
+    match op.cut_spec().axial {
+        // EXEMPT(P28-32)
+        Axial::ChamferWidth(_) => return None,
+        Axial::PerPass(_)
+        | Axial::ZStep(_)
+        | Axial::OnePass(_)
+        | Axial::Surface { .. }
+        | Axial::HelixPitch(_)
+        | Axial::Peck(_)
+        | Axial::SurfaceOffset(_) => {}
+    }
+    let cuts = op.cuts();
+    let ae = if cuts.declares(crate::limits::CutKind::Drill) {
+        d
+    } else {
+        match cuts.of_kind(crate::limits::CutKind::Body).map(|c| c.width) {
+            Some(DeclaredWidth::Stated(ae)) => ae,
+            Some(DeclaredWidth::Slot) => d,
+            Some(
+                DeclaredWidth::PassCeiling { .. }
+                | DeclaredWidth::CapMult { .. }
+                | DeclaredWidth::Scallop(_)
+                | DeclaredWidth::None(_),
+            )
+            | None => return None,
+        }
     };
     let z = f64::from(tool_cfg.flute_count_planning().max(1));
     let stated = match (op.feed_rate(), op.spindle_rpm()) {

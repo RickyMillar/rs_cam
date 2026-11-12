@@ -43,9 +43,9 @@ use rs_cam_core::limits::{
 };
 
 /// The rows that need a ruling. Exact: a closed row lowers it.
-const MAX_NEEDS_RULING: usize = 38;
+const MAX_NEEDS_RULING: usize = 37;
 /// Every row.
-const ROWS: usize = 49;
+const ROWS: usize = 48;
 /// The rows with a geometry reason.
 const PHYSICAL: usize = 8;
 /// The rows that quote an operator ruling.
@@ -65,7 +65,10 @@ const RULED: usize = 3;
 /// P29-5b closed two rows with a file (`M11`, `P28-12`: the first-pass
 /// filings), and the row `U-PerimeterSweep` got its first file (the
 /// marker on the geodesic arm of the 3D Adaptive filing).
-const ROWS_WITH_A_FILE: usize = 42;
+/// P29-5c closed the row `P28-03` (a groove reads the slot width before
+/// the simulation); the row `P28-32` gained two files (the chamfer arms
+/// of the envelope and of `cap_cut_of_operation`).
+const ROWS_WITH_A_FILE: usize = 41;
 
 /// The 34 rows of `phases/P28_limit_audit.md`.
 const P28_IDS: [&str; 34] = [
@@ -82,7 +85,7 @@ const M_IDS: [&str; 12] = [
 
 /// The audit ids that a step closed, with the step (P29-4: ruling R1, the
 /// Adaptive family reads the force budget; P29-5b: the first-pass filings
-/// are true; P29-6: the chip gate reads every removing sample, and the
+/// are true; P29-5c: a groove reads the slot width; P29-6: the chip gate reads every removing sample, and the
 /// depth gate judges every sample). An audit id is
 /// a row or in this list, never both; the two id lists above stay the
 /// record (ruling Q6).
@@ -92,6 +95,7 @@ const CLOSED: &[(&str, &str)] = &[
     ("M7", "P29-4"),
     ("M11", "P29-5b"),
     ("P28-12", "P29-5b"),
+    ("P28-03", "P29-5c"),
     ("M1", "P29-6"),
     ("M5", "P29-6"),
     ("P28-22", "P29-6"),
