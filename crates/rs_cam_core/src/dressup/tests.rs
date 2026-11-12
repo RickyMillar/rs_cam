@@ -426,7 +426,7 @@ fn profile_toolpath_for_tabs() -> Toolpath {
 fn test_tabs_lift_at_positions() {
     let tp = profile_toolpath_for_tabs();
     let tabs = even_tabs(4, 5.0, 3.0);
-    let result = apply_tabs(tp.clone(), &tabs, -5.0, -5.0);
+    let result = apply_tabs(tp.clone(), &tabs, -5.0, -5.0, None);
 
     // Some moves should be at tab height (-5 + 3 = -2)
     let tab_moves: Vec<_> = result
@@ -440,11 +440,49 @@ fn test_tabs_lift_at_positions() {
     );
 }
 
+/// P29-8e (lead ruling Q2): a descent into stock never runs at the cut
+/// feed. The descent after each tab runs at the plunge feed of the entry
+/// rule; with no rule (`None`) it keeps the cut feed of the interrupted move.
+#[test]
+fn a_tab_descent_reads_the_plunge_feed_of_the_entry_rule_p29_8e() {
+    let tp = profile_toolpath_for_tabs();
+    let tabs = even_tabs(4, 5.0, 3.0);
+    let plunge = crate::feeds::entry_rule::EntryPlungeFeed::of_op_plunge_rate(Some(400.0)).ok();
+    let descents = |t: &Toolpath| -> Vec<f64> {
+        t.moves
+            .windows(2)
+            .filter(|w| {
+                w[1].intent == crate::toolpath::MoveIntent::EntryPlunge
+                    && w[1].target.z < w[0].target.z
+                    && (w[1].target.x - w[0].target.x).abs() < 1e-9
+                    && (w[1].target.y - w[0].target.y).abs() < 1e-9
+                    && (w[1].target.z - -5.0).abs() < 1e-9
+                    && (w[0].target.z - -2.0).abs() < 1e-9
+            })
+            .filter_map(|w| match w[1].move_type {
+                MoveType::Linear { feed_rate } => Some(feed_rate),
+                MoveType::Rapid | MoveType::ArcCW { .. } | MoveType::ArcCCW { .. } => None,
+            })
+            .collect()
+    };
+    let with_rule = descents(&apply_tabs(tp.clone(), &tabs, -5.0, -5.0, plunge));
+    assert!(!with_rule.is_empty(), "non-vacuity: the tabs have descents");
+    assert!(
+        with_rule.iter().all(|f| (*f - 400.0).abs() < 1e-9),
+        "{with_rule:?}"
+    );
+    let no_rule = descents(&apply_tabs(tp, &tabs, -5.0, -5.0, None));
+    assert!(
+        no_rule.iter().all(|f| (*f - 1000.0).abs() < 1e-9),
+        "{no_rule:?}"
+    );
+}
+
 #[test]
 fn test_tabs_preserve_non_tab_moves() {
     let tp = profile_toolpath_for_tabs();
     let tabs = even_tabs(2, 3.0, 2.0);
-    let result = apply_tabs(tp.clone(), &tabs, -5.0, -5.0);
+    let result = apply_tabs(tp.clone(), &tabs, -5.0, -5.0, None);
 
     // Should still have moves at cut_depth
     let cut_moves: Vec<_> = result
@@ -461,7 +499,7 @@ fn test_tabs_preserve_non_tab_moves() {
 #[test]
 fn test_no_tabs_returns_unchanged() {
     let tp = profile_toolpath_for_tabs();
-    let result = apply_tabs(tp.clone(), &[], -5.0, -5.0);
+    let result = apply_tabs(tp.clone(), &[], -5.0, -5.0, None);
     assert_eq!(result.moves.len(), tp.moves.len());
 }
 
@@ -484,7 +522,7 @@ fn test_even_tabs_spacing() {
 fn test_tabs_have_sharp_transitions() {
     let tp = profile_toolpath_for_tabs();
     let tabs = even_tabs(2, 10.0, 3.0);
-    let result = apply_tabs(tp.clone(), &tabs, -5.0, -5.0);
+    let result = apply_tabs(tp.clone(), &tabs, -5.0, -5.0, None);
 
     // Find vertical step-up feed moves (same XY, Z increases sharply)
     let mut found_step_up = false;
@@ -723,7 +761,7 @@ fn test_dogbone_respects_angle_threshold() {
 fn test_tabs_add_transition_moves() {
     let tp = profile_toolpath_for_tabs();
     let tabs = even_tabs(4, 5.0, 3.0);
-    let result = apply_tabs(tp.clone(), &tabs, -5.0, -5.0);
+    let result = apply_tabs(tp.clone(), &tabs, -5.0, -5.0, None);
 
     // Tab dressup adds step-up/step-down moves at tab edges
     assert!(
@@ -783,7 +821,7 @@ fn apply_tabs_carries_the_move_intent_cut08() {
             "fixture precondition: the input carries no Unknown intent"
         );
 
-        let result = apply_tabs(tp, &tabs, -5.0, -5.0);
+        let result = apply_tabs(tp, &tabs, -5.0, -5.0, None);
 
         let unknown = result
             .moves

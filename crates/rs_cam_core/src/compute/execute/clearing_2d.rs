@@ -726,8 +726,18 @@ impl LayeredOp for ProfilePass<'_> {
                 params.side.ring_material(),
                 MoveIntent::ClearingCut,
             );
-            let tabbed =
-                crate::dressup::apply_tabs(pass.toolpath, &contour.tabs, level.z, level.final_z);
+            // P29-8e (lead ruling Q2): the descent after a tab reads the
+            // plunge feed of the entry rule, never the cut feed.
+            let tabbed = crate::dressup::apply_tabs(
+                pass.toolpath,
+                &contour.tabs,
+                level.z,
+                level.final_z,
+                crate::feeds::entry_rule::EntryPlungeFeed::of_op_plunge_rate(Some(
+                    params.plunge_rate,
+                ))
+                .ok(),
+            );
             tp.append(SidedToolpath {
                 toolpath: tabbed,
                 closed_passes: pass.closed_passes,

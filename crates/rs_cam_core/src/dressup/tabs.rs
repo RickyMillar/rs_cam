@@ -63,11 +63,24 @@ pub struct Tab {
 /// The fed lift onto a tab keeps the cut intent. It removes material, and a
 /// `Retract`-tagged feed is forbidden — see
 /// `tests/retract_intent_move_type_census_w6.rs`.
+///
+/// P29-8e (lead ruling Q2): a descent into stock never runs at the cut feed.
+/// Each descent after a tab runs at `descent`, the plunge feed of the entry
+/// rule (`EntryPlungeFeed`, the op plunge rate). Under a ramp or helix style
+/// the dressup pipeline turns the descent into its entry, so the feed then
+/// reads only on a fallback plunge. `None` (no operation, or an op with no
+/// usable plunge rate) keeps the feed of the interrupted cut move.
 #[expect(
     clippy::indexing_slicing,
     reason = "`cp` indexes `cutting_indices` and `cum_dist` (same length) below their length; each entry of `cutting_indices` indexes `toolpath.moves`"
 )]
-pub fn apply_tabs(toolpath: Toolpath, tabs: &[Tab], cut_depth: f64, floor_z: f64) -> Toolpath {
+pub fn apply_tabs(
+    toolpath: Toolpath,
+    tabs: &[Tab],
+    cut_depth: f64,
+    floor_z: f64,
+    descent: Option<crate::feeds::entry_rule::EntryPlungeFeed>,
+) -> Toolpath {
     use crate::toolpath::MoveIntent;
 
     // A tab whose top is not above this level leaves the level as it is.
@@ -214,7 +227,10 @@ pub fn apply_tabs(toolpath: Toolpath, tabs: &[Tab], cut_depth: f64, floor_z: f64
                     {
                         result.feed_to_with_intent(
                             P3::new(last.target.x, last.target.y, cut_depth),
-                            feed_rate,
+                            descent.map_or(
+                                feed_rate,
+                                crate::feeds::entry_rule::EntryPlungeFeed::mm_min,
+                            ),
                             MoveIntent::EntryPlunge,
                         );
                     }
@@ -253,7 +269,10 @@ pub fn apply_tabs(toolpath: Toolpath, tabs: &[Tab], cut_depth: f64, floor_z: f64
                         // Step down
                         result.feed_to_with_intent(
                             P3::new(split_x, split_y, cut_depth),
-                            feed_rate,
+                            descent.map_or(
+                                feed_rate,
+                                crate::feeds::entry_rule::EntryPlungeFeed::mm_min,
+                            ),
                             MoveIntent::EntryPlunge,
                         );
                         on_tab = None;

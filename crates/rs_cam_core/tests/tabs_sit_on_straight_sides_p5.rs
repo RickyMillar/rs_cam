@@ -465,7 +465,7 @@ fn tabs_lifts_match_apply_tabs_for_the_same_points_p5() {
         params.side.ring_material(),
         MoveIntent::ClearingCut,
     );
-    let want = cut_tabs(&apply_tabs(pass.toolpath, &tabbed.tabs(H), Z, Z));
+    let want = cut_tabs(&apply_tabs(pass.toolpath, &tabbed.tabs(H), Z, Z, None));
     assert_eq!(want.len(), 1);
     for (g, w) in got.iter().zip(&want) {
         for (a, b) in [(g.up, w.up), (g.down, w.down)] {
