@@ -8,7 +8,10 @@
 //!    `cut_rule` names. A rule that reads the config runs in both states:
 //!    DropCutter `scallop_height` set and not set, Pencil
 //!    `num_offset_passes` 1 and 2, Adaptive `slot_clearing` true and false,
-//!    and each `Option` depth set and not set.
+//!    Face `selection` the stock and a drawing region, 3D Adaptive
+//!    `clearing_strategy` `ContourParallel` and `GeodesicAdaptive`
+//!    (P29-5b), and each `Option` depth set and not set. The first pass
+//!    of these three ops reads the config, so the sentry checks it too.
 //! 2. Each field that the rule names reaches the spec bit for bit. The
 //!    probe value comes from the field's own `ParamDef` range in the op's
 //!    `PARAMS`: the midpoint of a closed range, else twice the default
@@ -33,6 +36,7 @@ use rs_cam_core::compute::catalog::{
     Axial, AxialRule, CutRule, CutSpec, FirstPass, OperationConfig, OperationType, ParamDef,
     Radial, RadialRule, TotalDepth,
 };
+use rs_cam_core::selection::Selection;
 use serde_json::{Value, json};
 
 fn defs(op: OperationType) -> &'static [ParamDef] {
@@ -173,6 +177,40 @@ fn states(
             vec![("slot_clearing", json!(true))],
             vec![("slot_clearing", json!(false))],
         ];
+    }
+    // P29-5b: the Face first pass reads the selection (the stock region or
+    // another region), and the 3D Adaptive first pass reads the strategy.
+    // Each state runs on top of the states above.
+    let config_states: Vec<(&'static str, Value)> = if op == OperationType::Face {
+        vec![
+            (
+                "selection",
+                serde_json::to_value(Selection::stock()).unwrap(),
+            ),
+            (
+                "selection",
+                serde_json::to_value(Selection::drawing()).unwrap(),
+            ),
+        ]
+    } else if op == OperationType::Adaptive3d {
+        vec![
+            ("clearing_strategy", json!("contour_parallel")),
+            ("clearing_strategy", json!("geodesic_adaptive")),
+        ]
+    } else {
+        Vec::new()
+    };
+    if !config_states.is_empty() {
+        states = states
+            .iter()
+            .flat_map(|state| {
+                config_states.iter().map(move |edit| {
+                    let mut next = state.clone();
+                    next.push(edit.clone());
+                    next
+                })
+            })
+            .collect();
     }
     // Total depth: an `Option` depth that no axis rule reads (Trace
     // `depth`, InlayPlug `pocket_depth`) runs set and not set.
@@ -328,6 +366,8 @@ fn check_total(op: OperationType, spec: &CutSpec, params: &Value) {
 #[test]
 fn every_op_states_its_cut_k1() {
     let mut runs = 0_usize;
+    let mut face_states = std::collections::BTreeSet::new();
+    let mut strategy_states = std::collections::BTreeSet::new();
     for &op in OperationType::ALL {
         let rule = op.capabilities().cut_rule;
         let fields = rule_fields(op, rule);
@@ -366,6 +406,33 @@ fn every_op_states_its_cut_k1() {
                 };
                 assert_eq!(spec.first_pass, want, "{op:?}: first pass");
             }
+            // P29-5b: a Face of the stock region grows by its stock offset,
+            // so its first row is open on one side; a Face of another
+            // region keeps the tool inside the outline (ruling O-3).
+            if op == OperationType::Face {
+                let OperationConfig::Face(face) = &cfg else {
+                    panic!("{op:?}: the config is a Face");
+                };
+                let want = if face.selection.is_stock() {
+                    FirstPass::NotSlot
+                } else {
+                    FirstPass::Slot
+                };
+                assert_eq!(spec.first_pass, want, "{op:?}: first pass");
+                face_states.insert(face.selection.is_stock());
+            }
+            // P29-5b (option A): the contour-parallel sweep opens every
+            // level, a slot; the geodesic sweep is a generation fact.
+            if op == OperationType::Adaptive3d {
+                let strategy = params["clearing_strategy"].as_str().unwrap();
+                let want = match strategy {
+                    "contour_parallel" => FirstPass::Slot,
+                    "geodesic_adaptive" => FirstPass::NotSlot,
+                    other => panic!("{op:?}: unknown strategy {other}"),
+                };
+                assert_eq!(spec.first_pass, want, "{op:?} {strategy}: first pass");
+                strategy_states.insert(strategy.to_owned());
+            }
             runs += 1;
         }
     }
@@ -373,4 +440,6 @@ fn every_op_states_its_cut_k1() {
         runs > OperationType::ALL.len(),
         "the config-dependent states ran"
     );
+    assert_eq!(face_states.len(), 2, "both Face selections ran");
+    assert_eq!(strategy_states.len(), 2, "both 3D Adaptive strategies ran");
 }

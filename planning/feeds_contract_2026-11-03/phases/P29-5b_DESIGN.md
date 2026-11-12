@@ -374,3 +374,32 @@ depth (section 7 Q1).
 - The option A cell count of 5b-3 (24 `power_kw` cells) holds because the FM1 Adaptive3d rows use
   the default strategy, `ContourParallel`. The run used the option B filing. A different count is
   a mismatch.
+
+## 12. Result (2026-11-12)
+
+The FM1 diffs equal the prediction files on every commit: 5b-1 0 cells, 5b-2 41 cells in 22 Bore
+rows, 5b-3 24 `power_kw` cells. The simulation file stays byte-equal. The op golden moved only the
+`moves_hash` of the six Profile arms. The G-code of the tabbed Profile of the operator file
+(idx 17) is byte-equal before and after 5b-1.
+
+Section 5 missed two tests:
+
+- 5b-2: `feeds::suggest::tests::operation_feeds_hints_is_an_explicit_per_op_decision` pinned the
+  Bore depth hint as `None`. The arm now reads the pitch (lead ruling).
+- 5b-3: `the_lift_reads_the_pass_ceiling_width_p23a` (the contour arm) and
+  `the_envelope_finding_reads_the_gate_feed_p20i::one_engagement_gives_one_kw_through_every_door_b`
+  (no grid point in the planner cap case). Both are re-claimed: p23a holds the contour lift at a
+  depth under the rated power and asserts that the deep cut ships `Slot` with `PowerLimited`;
+  p20i reads the planner cap of a geodesic rough.
+
+Sections 8.1 and 9 hold only for the FM1 cuts and the two wanaka files (every wanaka 3D rough is
+geodesic). Under option A a deep stated cut of a 3D Rough under `ContourParallel` gets the option B
+number: the p23a cut (18 mm tool, white oak, 10 x 5.5 mm, wanaka-like machine) ships case `Slot`,
+2.68 kW required against 1.5 kW, and the Suggest feed falls from 9123 to 2624 mm/min
+(`PowerLadderReducedCut`, feed factor 0.281). The lead accepted this (R3: the sweep is a full slot
+at the full depth and the op feed on every level).
+
+Finding outside the scope: under `ContourParallel` the slot case (width D) is at least the
+`CapMult` planner cap case (width `min(m ae, D)`) at the same feed, so the `CapMult` case can no
+longer be the largest case. Rows `P28-13` and `P28-14` and the power use of `trochoid_cap_mult`
+may now have no effect on a shipped number. Not changed here.

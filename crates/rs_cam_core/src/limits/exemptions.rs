@@ -96,7 +96,7 @@ const R2: ExemptionClass = ExemptionClass::Ruled {
 const NR: ExemptionClass = ExemptionClass::NeedsRuling;
 
 /// Every exemption from a limit today. See the module doc.
-pub static EXEMPTIONS: [Exemption; 51] = [
+pub static EXEMPTIONS: [Exemption; 49] = [
     // P28: the limit audit.
     Exemption {
         id: "P28-02",
@@ -204,18 +204,6 @@ pub static EXEMPTIONS: [Exemption; 51] = [
             "src/feeds/operating_point.rs",
         ],
         closes_in: "P29-9",
-    },
-    Exemption {
-        id: "P28-12",
-        what: "the spindle power, the slot case",
-        limit: &[LimitId::SpindlePower],
-        who: Who::Undeclared(
-            "the first slots of 3D Adaptive, region Face and 2D Adaptive without slot \
-             clearing",
-        ),
-        class: NR,
-        where_: &["src/compute/catalog.rs"],
-        closes_in: "P29-5b (filing)",
     },
     Exemption {
         id: "P28-13",
@@ -450,18 +438,6 @@ pub static EXEMPTIONS: [Exemption; 51] = [
         closes_in: "later",
     },
     Exemption {
-        id: "M11",
-        what: "the spindle power, the slot case",
-        limit: &[LimitId::SpindlePower],
-        who: Who::Reader(
-            "wrong first-pass filings (region Face, 3D sweep, Bore depth, VCarve stepover, \
-             Inlay one pass)",
-        ),
-        class: NR,
-        where_: &["src/compute/catalog.rs"],
-        closes_in: "P29-5b (filing)",
-    },
-    Exemption {
         id: "M12",
         what: "the machine force budget and the tool deflection",
         limit: &[LimitId::ForceBudget, LimitId::ToolDeflection],
@@ -571,10 +547,13 @@ pub static EXEMPTIONS: [Exemption; 51] = [
         id: "U-PerimeterSweep",
         what: "every limit",
         limit: &[],
-        who: Who::Undeclared("the full-slot perimeter sweep that opens a 3D Adaptive level"),
+        who: Who::Undeclared(
+            "the residual full-slot sweep of a geodesic 3D Adaptive level where the grow \
+             refuses (a generation fact); the gates judge it after the simulation",
+        ),
         class: NR,
-        where_: &[],
-        closes_in: "P29-5b (filing)",
+        where_: &["src/compute/catalog.rs"],
+        closes_in: "later (the planner feeds the sweep unlifted, or the sweep is a ceiling)",
     },
     // Ruling Q7: `feeds/efficiency.rs` reads the nominal diameter.
     Exemption {

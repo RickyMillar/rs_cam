@@ -1190,8 +1190,15 @@ impl OperationConfig {
                 radial: Radial::Width(set(c.stepover)),
                 axial: Axial::PerPass(set(c.depth_per_pass)),
                 total: TotalDepth::Known(mm(c.depth)),
-                // EXEMPT(P28-12, M11)
-                first_pass: FirstPass::NotSlot,
+                // P29-5b: the stock region grows by `stock_offset`, so its
+                // first row is open on one side. Any other region keeps
+                // the tool inside the outline as a pocket does (ruling
+                // O-3), so its first row is a slot.
+                first_pass: if c.selection.is_stock() {
+                    FirstPass::NotSlot
+                } else {
+                    FirstPass::Slot
+                },
             },
             OperationConfig::Pocket(c) => CutSpec {
                 radial: Radial::Width(set(c.stepover)),
@@ -1214,7 +1221,10 @@ impl OperationConfig {
                 first_pass: if c.slot_clearing {
                     FirstPass::Slot
                 } else {
-                    // EXEMPT(P28-12)
+                    // P29-5b: the planner holds every fed step to the pass
+                    // ceiling `c D` (`adaptive/CLAUDE.md`). The opening is
+                    // a helix bore, which the op declares as its entry
+                    // (`Entry(Helix)`). So the body cuts no slot.
                     FirstPass::NotSlot
                 },
             },
@@ -1224,15 +1234,16 @@ impl OperationConfig {
                     max: c.max_depth.map(mm),
                 },
                 total: TotalDepth::None("the V depth follows the outline"),
-                // EXEMPT(M11)
-                first_pass: FirstPass::NotSlot,
+                // P29-5b: the first row is a full V slot.
+                first_pass: FirstPass::Slot,
             },
             OperationConfig::Inlay(c) => CutSpec {
                 radial: Radial::Groove,
                 axial: Axial::OnePass(c.pocket_depth.map(mm)),
                 total: known_or_unset(c.pocket_depth),
-                // EXEMPT(M11)
-                first_pass: FirstPass::NotSlot,
+                // P29-5b: the wall pass is a full V slot at the pocket
+                // depth.
+                first_pass: FirstPass::Slot,
             },
             OperationConfig::InlayPlug(c) => CutSpec {
                 radial: Radial::Groove,
@@ -1285,8 +1296,17 @@ impl OperationConfig {
                 radial: Radial::Width(set(c.stepover)),
                 axial: Axial::PerPass(set(c.depth_per_pass)),
                 total: TotalDepth::FromHeights,
-                // EXEMPT(P28-12, M11)
-                first_pass: FirstPass::NotSlot,
+                // P29-5b (lead ruling Q1, option A): under `ContourParallel`
+                // the perimeter sweep opens every level, a full slot at
+                // the full depth. Under `GeodesicAdaptive` the sweep runs
+                // only where the grow refuses, a fact of the generation.
+                first_pass: match c.clearing_strategy {
+                    super::operation_configs::ClearingStrategy::ContourParallel => FirstPass::Slot,
+                    super::operation_configs::ClearingStrategy::GeodesicAdaptive => {
+                        // EXEMPT(U-PerimeterSweep)
+                        FirstPass::NotSlot
+                    }
+                },
             },
             OperationConfig::Waterline(c) => CutSpec {
                 radial: Radial::SurfaceFollow,

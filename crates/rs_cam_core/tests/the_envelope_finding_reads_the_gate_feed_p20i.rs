@@ -17,8 +17,10 @@
 //!   door (`power_at_operating_point`) and the power gate
 //!   (`sample_power_kw`), within 1e-9 relative. The grid point names the
 //!   deliberate case and its width (`power_case`, `power_width_mm`): the
-//!   planner cap of a 3D Rough with `trochoid_cap_mult` 1.6 is
-//!   `min(1.6 ae, D)`.
+//!   planner cap of a 3D Rough under Geodesic Adaptive is the pass ceiling
+//!   `c D`. P29-5b: a 3D Rough under Contour Parallel ships the slot of its
+//!   perimeter sweep, so its planner cap is never the largest case; the
+//!   claim reads the geodesic plan.
 //! - (c) A sample above the power budget at its emitted feed is reported by
 //!   the gate and by the envelope finding.
 //!
@@ -31,8 +33,9 @@
     reason = "test code: a panic is how a test reports a failure"
 )]
 
-use rs_cam_core::compute::catalog::{OperationConfig, OperationType};
+use rs_cam_core::compute::catalog::{OperationConfig, OperationType, PlannerWidth};
 use rs_cam_core::compute::fixture_values::fixture_op;
+use rs_cam_core::compute::operation_configs::ClearingStrategy;
 use rs_cam_core::compute::tool_config::{CentreCutting, ToolConfig, ToolFact, ToolId, ToolType};
 use rs_cam_core::feeds::envelope::{
     CutPoint, Edge, EnvelopeInput, LimitKind, Placement, SafeEnvelope,
@@ -297,9 +300,10 @@ fn a_sample_within_at_its_emitted_feed_is_not_outside_for_power_a() {
 #[test]
 fn one_engagement_gives_one_kw_through_every_door_b() {
     let mut op = fixture_op(OperationType::Adaptive3d);
-    if let OperationConfig::Adaptive3d(c) = &mut op {
-        c.trochoid_cap_mult = 1.6;
-    }
+    let OperationConfig::Adaptive3d(c) = &mut op else {
+        panic!("the fixture is a 3D Rough");
+    };
+    c.clearing_strategy = ClearingStrategy::GeodesicAdaptive;
     let env = envelope_of(&op);
     let tool = tool_config();
     let material = oak();
@@ -333,10 +337,10 @@ fn one_engagement_gives_one_kw_through_every_door_b() {
             let (ap, ae) = (point.ap_mm, point.ae_mm);
             if case == "planner_cap" {
                 planner_cap_seen = true;
-                let expect = (1.6 * ae).min(D);
+                let expect = PlannerWidth::PassCeiling.full_feed_width_mm(ae, D);
                 assert!(
                     (width - expect).abs() <= REL * expect,
-                    "the planner cap width is min(1.6 ae, D) = {expect}: {json}"
+                    "the planner cap width is the pass ceiling c D = {expect}: {json}"
                 );
             }
 

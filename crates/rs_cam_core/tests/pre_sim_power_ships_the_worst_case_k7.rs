@@ -16,8 +16,10 @@
     reason = "test code: a panic is how a test reports a failure"
 )]
 
-use rs_cam_core::compute::catalog::OperationConfig;
-use rs_cam_core::compute::operation_configs::{Adaptive3dConfig, FaceConfig, PocketConfig};
+use rs_cam_core::compute::catalog::{OperationConfig, PlannerWidth};
+use rs_cam_core::compute::operation_configs::{
+    Adaptive3dConfig, ClearingStrategy, FaceConfig, PocketConfig,
+};
 use rs_cam_core::compute::tool_config::ToolFact;
 use rs_cam_core::compute::{ToolConfig, ToolId, ToolType};
 use rs_cam_core::feeds::engagement::PowerCase;
@@ -42,7 +44,8 @@ fn flat(id: usize, diameter: f64) -> ToolConfig {
     t
 }
 
-/// The reference: a Face states its width and has no slot and no cap.
+/// The reference: a Face of the stock region (the default selection)
+/// states its width and has no slot and no cap (P29-5b).
 fn face(ap: f64, ae: f64) -> OperationConfig {
     OperationConfig::Face(FaceConfig {
         stepover: Some(ae),
@@ -129,31 +132,70 @@ fn a_profile_states_its_slot_and_has_a_power() {
     assert!(same(figure.required_kw, slot.required_kw));
 }
 
-#[test]
-fn an_op_one_rough_ships_the_planner_cap() {
-    let machine = MachineProfile::generic_wood_router();
-    let material = oak();
-    // Report 01 op 1: an 18 mm 2F flat end mill.
-    let tool = flat(2, 18.0);
-    let defaults = Adaptive3dConfig::default();
+/// Report 01 op 1 (an 18 mm 2F flat end mill), with the fixture geometry
+/// and the stated speeds, under `strategy`.
+fn op_one_rough(tool: &ToolConfig, strategy: ClearingStrategy) -> (OperationConfig, f64, f64) {
     let mut rough = OperationConfig::Adaptive3d(Adaptive3dConfig {
         feed_rate: Some(FEED_MM_MIN),
         plunge_rate: Some(300.0),
         spindle_rpm: Some(RPM),
-        ..defaults
+        clearing_strategy: strategy,
+        ..Adaptive3dConfig::default()
     });
     // P10: the fixture states the geometry the registry held before P10.
     rs_cam_core::compute::fixture_values::fill_unset_geometry(&mut rough);
-    let (ap, ae, mult) = (
-        rough.depth_per_pass().expect("the fixture states a depth"),
-        rough.stepover().expect("the fixture states a stepover"),
-        defaults.trochoid_cap_mult,
+    let ap = rough.depth_per_pass().expect("the fixture states a depth");
+    let ae = rough.stepover().expect("the fixture states a stepover");
+    assert!(
+        ae < tool.diameter,
+        "non-vacuity: the stepover is less than a slot"
     );
-    assert!(mult > 1.0, "non-vacuity: the cap widens the cut");
+    (rough, ap, ae)
+}
+
+/// P29-5b (lead ruling Q1, option A): under `ContourParallel` (the
+/// default) the perimeter sweep opens every level, a full slot. So the
+/// rough ships the slot case: the power of a Face at the tool diameter.
+#[test]
+fn a_contour_parallel_rough_ships_its_sweep_slot() {
+    let machine = MachineProfile::generic_wood_router();
+    let material = oak();
+    let tool = flat(2, 18.0);
+    assert_eq!(
+        Adaptive3dConfig::default().clearing_strategy,
+        ClearingStrategy::ContourParallel,
+        "the default strategy"
+    );
+    let (rough, ap, _) = op_one_rough(&tool, ClearingStrategy::ContourParallel);
+    let figure = power_at_operating_point(&rough, &tool, &material, &machine, None)
+        .expect("the rough is modelled");
+    assert_eq!(figure.case, PowerCase::Slot, "{figure:?}");
+    assert!(same(figure.case_ae_mm, tool.diameter), "{figure:?}");
+    let reference =
+        power_at_operating_point(&face(ap, tool.diameter), &tool, &material, &machine, None)
+            .expect("the face is modelled");
+    assert!(
+        same(figure.required_kw, reference.required_kw),
+        "the slot case is the power at the tool diameter: {} vs {}",
+        figure.required_kw,
+        reference.required_kw
+    );
+}
+
+/// P29-5b (option A): under `GeodesicAdaptive` the sweep runs only where
+/// the grow refuses (row `U-PerimeterSweep`), so the rough files no slot.
+/// It ships the planner cap: the power at the pass ceiling width.
+#[test]
+fn a_geodesic_rough_ships_the_planner_cap() {
+    let machine = MachineProfile::generic_wood_router();
+    let material = oak();
+    let tool = flat(2, 18.0);
+    let (rough, ap, ae) = op_one_rough(&tool, ClearingStrategy::GeodesicAdaptive);
     let figure = power_at_operating_point(&rough, &tool, &material, &machine, None)
         .expect("the rough is modelled");
     assert_eq!(figure.case, PowerCase::PlannerCap, "{figure:?}");
-    let capped = (mult * ae).min(tool.diameter);
+    let capped = PlannerWidth::PassCeiling.full_feed_width_mm(ae, tool.diameter);
+    assert!(capped > ae, "non-vacuity: the ceiling widens the cut");
     assert!(same(figure.case_ae_mm, capped), "{figure:?}");
     let reference = power_at_operating_point(&face(ap, capped), &tool, &material, &machine, None)
         .expect("the face is modelled");

@@ -17,8 +17,12 @@
 //!   2-flute tool, white oak, stepover 5.5, depth 10): the lift is the lift
 //!   at `c D` = 5.9913 mm, and the feed is the unlifted feed times that lift;
 //! - (b) the same op under Contour Parallel: the lift is the lift at the
-//!   nominal 5.5 mm (that plan holds no bound), and the power case is still
-//!   the planner cap;
+//!   nominal 5.5 mm (that plan holds no bound). P29-5b (lead ruling Q1):
+//!   the perimeter sweep of that plan is a full slot on every level, so the
+//!   power case is the slot. At the 10 mm depth the slot needs more than
+//!   the spindle power, so the cut ships `Slot` with `PowerLimited` and the
+//!   power ladder lowers the feed. The lift claim runs at a depth where the
+//!   slot power is under the rated power, so no ladder step moves the feed;
 //! - (c) 2D Adaptive (6 mm tool, stepover 2): the lift at `c D`, c = 0.3626;
 //! - (d) a Pocket: the lift at its nominal stepover;
 //! - (e) the unlifted feed (the plunge and ramp door) is the feed over the
@@ -39,7 +43,7 @@ use rs_cam_core::feeds::engagement::PowerCase;
 use rs_cam_core::feeds::suggest::{
     SuggestContext, SuggestForOperationInput, suggest_for_operation,
 };
-use rs_cam_core::feeds::{FeedsResult, SpindleStrategy, embedded_vendor_lut};
+use rs_cam_core::feeds::{FeedsResult, FeedsWarning, SpindleStrategy, embedded_vendor_lut};
 use rs_cam_core::machine::MachineProfile;
 use rs_cam_core::material::{Material, WoodSpecies};
 
@@ -108,9 +112,16 @@ fn run(op: &OperationConfig, tool: &ToolConfig) -> FeedsResult {
     .feeds_result
 }
 
+/// The depth of the wanaka idx 1 cut (mm).
+const WANAKA_DEPTH_MM: f64 = 10.0;
+
 fn rough_3d(strategy: ClearingStrategy) -> OperationConfig {
+    rough_3d_at(strategy, WANAKA_DEPTH_MM)
+}
+
+fn rough_3d_at(strategy: ClearingStrategy, depth: f64) -> OperationConfig {
     let mut op = fixture_op(OperationType::Adaptive3d);
-    assert!(op.set_stepover(5.5) && op.set_depth_per_pass(10.0));
+    assert!(op.set_stepover(5.5) && op.set_depth_per_pass(depth));
     let OperationConfig::Adaptive3d(config) = &mut op else {
         panic!("the fixture is a 3D Rough");
     };
@@ -158,16 +169,57 @@ fn a_geodesic_rough_lifts_at_the_pass_ceiling_and_contour_parallel_at_the_stepov
     // The wanaka idx 1 Suggest feed: 0.17913 x 2 x 24000 x 1.06104.
     assert_eq!(geodesic.feed_rate_mm_min.floor(), 9123.0);
 
-    let contour = run(&rough_3d(ClearingStrategy::ContourParallel), &tool);
-    assert_lift_at(&contour, 5.5, 18.0, "contour parallel");
-    assert_eq!(contour.power_case, PowerCase::PlannerCap);
+    // P29-5b: the deep contour-parallel cut ships the slot of its sweep.
+    // The slot needs more than the spindle power, so the cut warns and the
+    // power ladder lowers the feed.
+    let deep = run(&rough_3d(ClearingStrategy::ContourParallel), &tool);
+    assert_eq!(deep.power_case, PowerCase::Slot, "{deep:?}");
+    let (required, available) = deep
+        .warnings
+        .iter()
+        .find_map(|w| {
+            if let FeedsWarning::PowerLimited {
+                required_kw,
+                available_kw,
+            } = w
+            {
+                Some((*required_kw, *available_kw))
+            } else {
+                None
+            }
+        })
+        .unwrap_or_else(|| panic!("the deep slot is power limited: {:?}", deep.warnings));
+    assert!(required > available, "{required} kW vs {available} kW");
     assert!(
-        geodesic.feed_rate_mm_min < contour.feed_rate_mm_min,
+        deep.feed_rate_mm_min < geodesic.feed_rate_mm_min,
+        "the power ladder lowers the feed of the deep slot"
+    );
+
+    // The lift claim of (b) at a depth where the slot power is under the
+    // rated power. At one feed the slot power is linear in the depth (the
+    // section and the edge term both scale with it), so the depth
+    // `WANAKA_DEPTH_MM x available / required` meets the rated power. Half
+    // of it leaves a margin, and the assert below holds that no ladder step
+    // moved the feed.
+    let shallow_depth = WANAKA_DEPTH_MM * available / required / 2.0;
+    let contour = run(
+        &rough_3d_at(ClearingStrategy::ContourParallel, shallow_depth),
+        &tool,
+    );
+    assert!(
+        !contour
+            .warnings
+            .iter()
+            .any(|w| matches!(w, FeedsWarning::PowerLimited { .. })),
+        "the shallow slot is under the rated power: {:?}",
+        contour.warnings
+    );
+    assert_lift_at(&contour, 5.5, 18.0, "contour parallel");
+    assert_eq!(contour.power_case, PowerCase::Slot);
+    assert!(
+        geodesic.derates.radial_chip_thinning < contour.derates.radial_chip_thinning,
         "the lift at the wider width is the smaller lift"
     );
-    // The planner cap of the geodesic arm is narrower than 1.6 x 5.5, so
-    // its power at a lower feed is lower.
-    assert!(geodesic.power_kw < contour.power_kw);
 }
 
 /// (c) and (d): 2D Adaptive reads `c D`; a Pocket reads its stepover.
