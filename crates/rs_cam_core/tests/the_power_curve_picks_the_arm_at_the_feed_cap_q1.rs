@@ -11,7 +11,7 @@
 //!   `FeedsWarning::PowerLimited` names the power limit.
 //!
 //! The tool is the op 1 tool of report 01 (b): an 18 mm 2F flat end mill.
-//! The cut is a Pocket, whose first pass is a slot (`PowerCases` Slot), on
+//! The cut is a Pocket, whose first pass is a slot (the `PowerCase::Slot` case), on
 //! the Shapeoko VFD (constant torque below its rated RPM).
 //!
 //! Every expected value comes from the doors under test: arm L's RPM from

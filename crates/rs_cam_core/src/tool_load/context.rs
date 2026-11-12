@@ -255,9 +255,8 @@ fn commanded_thinning_lift(
             ap,
         );
         // P23a: the width of Suggest's lift (the pass ceiling of an
-        // adaptive plan; `PowerCases::full_feed_width`).
-        let width = crate::feeds::engagement::PowerCases::of_operation(operation)
-            .full_feed_width(ae, diameter);
+        // adaptive plan; `CutList::full_feed_width`).
+        let width = operation.cuts().full_feed_width(ae, diameter);
         // P29-1: the lift of the one load, on the stated cut at the
         // planner width.
         crate::feeds::cut_load::CutLoad::thinning_lift(

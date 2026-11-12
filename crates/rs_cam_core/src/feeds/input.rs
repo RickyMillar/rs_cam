@@ -21,7 +21,7 @@ use crate::material::Material;
 
 use super::{
     CutBody, OperationFamily, PassRole, SetupContext, SpindleStrategy, ToolGeometryHint, VendorLut,
-    engagement, series, sourced, vendor_lut,
+    planned, series, sourced, vendor_lut,
 };
 
 /// The private door of [`FeedsInput`]: only this module can name it, so
@@ -88,11 +88,11 @@ pub struct FeedsInput<'a> {
     /// `None`: the machine ceiling alone. The constructor writes `None`
     /// (no product door states it today).
     pub(in crate::feeds) feed_max_rate: Option<f64>,
-    /// K7 (feeds contract P9): the cases of the pre-sim power set. Step 6
-    /// and the published `power_kw` read the maximum over them. The
-    /// constructor reads the op's declared cuts
-    /// ([`engagement::PowerCases::of_operation`]).
-    pub(in crate::feeds) power_cases: engagement::PowerCases,
+    /// P29-7 7c: the declared cuts of the op on the tool
+    /// ([`planned::DeclaredCuts::of_operation`]). Step 6 and the published
+    /// `power_kw` read the largest power over them
+    /// ([`planned::worst_power`]); the lift reads their full-feed width.
+    pub(in crate::feeds) cuts: planned::DeclaredCuts,
     /// P13a (review H3): the kinds of the tool facts that the calculator
     /// reads. An `Unknown` fact plans at its legacy row, and the basis of
     /// each value that reads the fact names that row. The constructor reads
@@ -114,7 +114,7 @@ impl<'a> FeedsInput<'a> {
     ///
     /// The operation fills the row key (`OperationConfig::feeds_style`, the
     /// kind), the stated depth, width and scallop (`CutSpec::calc_inputs`),
-    /// the power cases and the body facts. The tool fills the tool facts,
+    /// the declared cuts and the body facts. The tool fills the tool facts,
     /// the body, the series and the stick-out. The caller gives the
     /// material, the machine, the vendor table and the spindle policy.
     #[must_use]
@@ -129,6 +129,7 @@ impl<'a> FeedsInput<'a> {
         let (family, role) = operation.feeds_style();
         let (axial_hint, radial_hint, scallop_hint) =
             operation.cut_spec().calc_inputs(tool.diameter);
+        let cuts = planned::DeclaredCuts::of_operation(operation, tool);
         Self {
             // Ruling 2026-10-31: the cut direction declares the cutter series;
             // `UpCut` is a generic tool.
@@ -158,9 +159,9 @@ impl<'a> FeedsInput<'a> {
             },
             feed_max_rate: None,
             spindle_strategy,
-            power_cases: engagement::PowerCases::of_operation(operation),
+            cuts,
             tool_facts: sourced::ToolFactKinds::of_tool(tool),
-            body_facts: operation.cuts().body_facts(),
+            body_facts: cuts.list().body_facts(),
             door: Door,
         }
     }

@@ -107,9 +107,9 @@ pub(super) fn step5_feed(input: &FeedsInput, speed: &Speed, chip: &Chip, cut: &C
     // the full feed (the pass ceiling `c D` of an adaptive plan), not at
     // the nominal stepover: the plan may cut that wide at this feed, and
     // the peak chip there must be the band chip. An op with no planner
-    // bound reads the nominal width (`PowerCases::full_feed_width`).
+    // bound reads the nominal width (`CutList::full_feed_width`).
     let radial_lift = thinning.lift(
-        input.power_cases.full_feed_width(cut.ae, d),
+        input.cuts.list().full_feed_width(cut.ae, d),
         effective_d.mm(),
     );
     let axial_thinning = match input.tool_geometry {

@@ -27,8 +27,8 @@
 //! (`power_model_terms`), this door, the post-simulation gate
 //! (`tool_load::power::sample_power_kw`, `Engagement::from_sample`) and the
 //! modulator power cap. This door ships the maximum over the op's
-//! [`crate::feeds::engagement::PowerCases`] and names the case
-//! ([`PowerFigure::case`]).
+//! declared cuts ([`crate::feeds::planned::worst_power`]) and names the
+//! case ([`PowerFigure::case`]).
 //!
 //! ## The axis
 //!
@@ -56,7 +56,7 @@
 
 use crate::compute::catalog::OperationConfig;
 use crate::compute::tool_config::ToolConfig;
-use crate::feeds::engagement::{EngagedDiameter, Engagement, PowerCase, PowerCases};
+use crate::feeds::engagement::{EngagedDiameter, Engagement, PowerCase};
 use crate::feeds::envelope::CutPoint;
 use crate::feeds::section::SectionKind;
 use crate::feeds::suggest::CalculatorOperatingPoint;
@@ -159,7 +159,7 @@ pub struct PowerFigure {
     pub force: ForceAtPoint,
     /// K7 (feeds contract P9): the case of the pre-sim power set that
     /// `required_kw` is the power of: the maximum over the cases the
-    /// operation's `CutSpec` admits ([`PowerCases::of_operation`]).
+    /// operation declares (`feeds::planned::worst_power`).
     pub case: PowerCase,
     /// The radial width (mm) of [`Self::case`]: `ae_mm` for the nominal
     /// case, D for a slot, the capped width for the planner cap.
@@ -307,10 +307,11 @@ fn power_at_point(
             point.flutes,
         )
     };
-    let (case, required_kw, case_ae_mm) =
-        PowerCases::of_operation(operation).worst(point.ae_mm, tool.diameter, |ae| {
-            terms_at(ae).kw_at_feed(point.feed_mm_min)
-        });
+    let (case, required_kw, case_ae_mm) = crate::feeds::planned::worst_power(
+        &crate::feeds::planned::DeclaredCuts::of_operation(operation, tool),
+        point.ae_mm,
+        |ae| terms_at(ae).kw_at_feed(point.feed_mm_min),
+    );
     let terms = terms_at(case_ae_mm);
 
     Ok(PowerFigure {

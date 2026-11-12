@@ -4025,6 +4025,14 @@ pub fn build_info() -> serde_json::Value {
             // in `basis.rpm` ({value, binding, limits}); a machine with no
             // stated axis rates or accelerations refuses Suggest.
             "constant_chip_named_limits",
+            // Feeds contract P29-7 7c: every limit before the simulation
+            // judges every declared cut. `get_safe_envelope` gives
+            // `envelope.binding_cut` (the cut that sets the binding limit at
+            // the proposal), `binding_cut` on each `boundary` row, and
+            // `envelope.cut_checks` (one check per declared cut and limit at
+            // the proposal, with `may_occur_row` for a cut the plan may not
+            // cut).
+            "envelope_declared_cuts",
         ],
     })
 }

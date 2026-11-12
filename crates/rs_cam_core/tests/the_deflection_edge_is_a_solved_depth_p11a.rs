@@ -17,10 +17,17 @@
 //!    flute", and no curve point sits at the bracket (red before: a curve
 //!    at 42.75 mm).
 //! 2. A slender end mill (D 3, flute 12, stickout 30) in white oak:
-//!    deflection binds. At each curve point the predictor gives at most
-//!    the target, and one convergence step deeper it gives more. The
-//!    predictor (`predict_peak_deflection_um`) is the door that reads the
-//!    op, so the check does not reuse the solver.
+//!    deflection binds. Feeds contract P29-7 7c: the edge is the root of
+//!    the declared cut that binds each column (`feeds::planned`: the lowest
+//!    root over the cuts that the plan always cuts; on this contour Pocket,
+//!    the slot ring at its unlifted chip). At each curve point the binding
+//!    cut, at its own width and chip, deflects at most the target, and one
+//!    convergence step deeper it deflects more (the forward model
+//!    `tip_deflection_from_engagement`, not the solver). The body alone
+//!    (`predict_peak_deflection_um`, the door that reads the op) is not
+//!    deeper than its own root: at the edge it deflects at most the
+//!    target. At the proposal width the binding cut is the cut that
+//!    `Limit::binding_cut` names.
 
 #![expect(
     clippy::expect_used,
@@ -29,13 +36,20 @@
 )]
 
 use rs_cam_core::compute::catalog::OperationConfig;
+use rs_cam_core::compute::catalog::Presence;
 use rs_cam_core::compute::operation_configs::PocketConfig;
 use rs_cam_core::compute::tool_config::{ToolConfig, ToolFact, ToolId, ToolType};
 use rs_cam_core::feeds::cutter_constraints::BINSEARCH_CONVERGENCE_MM;
+use rs_cam_core::feeds::engagement::Engagement;
+use rs_cam_core::feeds::envelope::CutPoint;
 use rs_cam_core::feeds::envelope::{Edge, EnvelopeInput, Limit, LimitKind, SafeEnvelope};
-use rs_cam_core::feeds::predict::predict_peak_deflection_um;
+use rs_cam_core::feeds::planned::{
+    BodyColumn, DeclaredCuts, DeflectionPlanned, ForceEnv, PlannedCell, judge_declared_cuts,
+};
+use rs_cam_core::feeds::predict::{predict_peak_deflection_um, tip_deflection_from_engagement};
 use rs_cam_core::feeds::suggest::SuggestContext;
 use rs_cam_core::feeds::{Basis, SpindleStrategy, embedded_vendor_lut};
+use rs_cam_core::limits::CutKind;
 use rs_cam_core::machine::MachineProfile;
 use rs_cam_core::material::{Material, WoodSpecies};
 
@@ -84,6 +98,50 @@ fn envelope(tool: &ToolConfig, machine: &MachineProfile) -> SafeEnvelope {
         context: SuggestContext::default(),
     })
     .expect("a flat end mill on a roughing pocket has an envelope")
+}
+
+/// The declared cut that binds the deflection at the body width `ae` (the
+/// lowest root over the cuts that the plan always cuts, at the operator's
+/// chip), with its width and chip. A tie keeps the first cut.
+fn binding_cut_at(tool: &ToolConfig, ae: f64, target_um: f64) -> (CutKind, f64, f64) {
+    let op = roughing_pocket();
+    let tool_def = rs_cam_core::compute::cutter::build_cutter(tool).expect("the tool builds");
+    let cuts = DeclaredCuts::of_operation(&op, tool);
+    let fz = 4800.0 / (18_000.0 * 2.0);
+    let column = BodyColumn {
+        ae_mm: ae,
+        chip_mm: Some(fz),
+    };
+    let material = oak();
+    let env = ForceEnv {
+        tool: &tool_def,
+        material: &material,
+        bound: target_um,
+    };
+    let cells = judge_declared_cuts::<DeflectionPlanned>(&cuts, column, &env);
+    let mut best: Option<(f64, CutKind)> = None;
+    for e in cells.iter() {
+        if e.presence != Presence::Always {
+            continue;
+        }
+        if let PlannedCell::Judged(Some(root)) = e.value
+            && best.is_none_or(|(b, _)| root < b)
+        {
+            best = Some((root, e.kind));
+        }
+    }
+    let kind = best.expect("a cut has a root").1;
+    let cut = cuts
+        .list()
+        .iter()
+        .find(|c| c.kind == kind)
+        .expect("a declared cut");
+    let planned = cuts.planned(cut, column);
+    (
+        kind,
+        planned.width_mm.expect("a width"),
+        planned.chip_mm.expect("a chip"),
+    )
 }
 
 /// The deflection target (µm) that the limit names in its basis.
@@ -145,6 +203,8 @@ fn a_solved_edge_sits_where_deflection_meets_its_target_p11a() {
         panic!("the slender tool binds on deflection: {limit:?}");
     };
     assert!(!points.is_empty(), "the curve has points");
+    let tool_def = rs_cam_core::compute::cutter::build_cutter(&tool).expect("the tool builds");
+    let mut kinds = std::collections::BTreeSet::new();
     let mut checked = 0;
     for &[ae, ap] in points {
         // P11b (L7): the column's chip is the operator's (the op's own feed
@@ -173,18 +233,53 @@ fn a_solved_edge_sits_where_deflection_meets_its_target_p11a() {
             );
             continue;
         }
-        let deeper = delta_at(ap + BINSEARCH_CONVERGENCE_MM);
+        // The body alone: the edge is not deeper than its root.
         assert!(
             at_edge <= target * (1.0 + 1e-9),
-            "D-B: at the edge ap {ap} (ae {ae}) the predictor gives {at_edge} um, above the \
+            "D-B: at the edge ap {ap} (ae {ae}) the body deflects {at_edge} um, above the \
              {target} um target"
         );
+        // P29-7 7c: the cut that binds this column, at its own width and
+        // chip; the edge is its root.
+        let (kind, width, chip) = binding_cut_at(&tool, ae, target);
+        let cut_at = |depth: f64| {
+            let e = Engagement::from_tool_cut(
+                CutPoint {
+                    ap_mm: depth,
+                    ae_mm: width.max(1.0e-3),
+                },
+                &tool_def,
+            );
+            tip_deflection_from_engagement(&tool_def, &oak(), &e, chip).expect("a modelled cut")
+                * 1000.0
+        };
         assert!(
-            deeper > target,
-            "D-B: one convergence step past the edge ap {ap} (ae {ae}) the predictor gives \
-             {deeper} um, not above the {target} um target: the edge is not the root"
+            cut_at(ap) <= target * (1.0 + 1e-9),
+            "at the edge ap {ap} (ae {ae}) the {} deflects {} um, above the {target} um target",
+            kind.label(),
+            cut_at(ap)
         );
+        assert!(
+            cut_at(ap + BINSEARCH_CONVERGENCE_MM) > target,
+            "D-B: one convergence step past the edge ap {ap} (ae {ae}) the {} deflects {} um, \
+             not above the {target} um target: the edge is not its root",
+            kind.label(),
+            cut_at(ap + BINSEARCH_CONVERGENCE_MM)
+        );
+        kinds.insert(kind.label());
         checked += 1;
     }
     assert!(checked > 0);
+    assert!(
+        kinds.contains("slot ring"),
+        "non-vacuity: the slot ring binds a column: {kinds:?}"
+    );
+    // At the proposal width the binding cut is `Limit::binding_cut`.
+    let p = env.proposal.get();
+    let (kind, _, _) = binding_cut_at(&tool, p.ae_mm, target);
+    assert_eq!(
+        limit.binding_cut,
+        Some(kind),
+        "the binding cut at the proposal"
+    );
 }

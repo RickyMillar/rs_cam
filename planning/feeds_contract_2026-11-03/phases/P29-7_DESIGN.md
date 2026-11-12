@@ -1014,3 +1014,261 @@ final driver.
 - 7d (R5, the finish deflection edge): unchanged from section 10 (0 FM1 cells, 0 wanaka ops).
 - The binding cut named in table `W` is the cut with the lowest force-budget root at the stated
   chip; the run proves the proposal and the binding limit, not the cut name at the pick chip.
+
+## 16. Result of 7c and 7d
+
+Written 2026-11-12 by the implementer, on HEAD `f27ff3444`. Two patches, in order:
+`step_7c.patch`, `step_7d.patch`. The first report of 7c stopped on seven reds; the lead ruled on
+each (2026-11-12), and 16.5 gives what was done.
+
+### 16.1 Commit 7c: the shape
+
+- `limits::scope` is the one table of both sides. `Scope::NotASampleLimit` became
+  `Scope::NotACutLimit(PlanReason)` (`DepthOnly`, `PlanLevel`, `MachineOrRpm`, `DrillGate`).
+  `VendorDepthTable` and `RubbingFloor` are limits of each cut (ruling Q8): judged on the body,
+  entry, cleanup and link groups; the drill group is not judged, with the row `P28-20`, which now
+  also exempts these two limits (its count and the pins do not change). `ScallopDepth` (not in the
+  table of 2.1) answers `PlanLevel`.
+- New `feeds/planned.rs`: `DeclaredCuts` (the cut list of an op on a tool, built once per
+  envelope), `PlannedCut`, `BodyColumn`, the trait `PlannedLimit` (`judge` over one cut, with its
+  own `Env` and `Answer`), the one driver `judge_declared_cuts`, the record `ByCut` (a private fixed
+  array, one constructor `from_fn` that calls its closure once per declared cut),
+  `ByCut::lowest_always` (the lowest value over the judged `Always` cuts; a tie keeps the first cut,
+  the body). The planned limits: `ForceBudgetPlanned`, `DeflectionPlanned`,
+  `VendorDepthTablePlanned`, `SpindlePowerPlanned`, `ChipMaxPlanned`, `ChipMinPlanned`,
+  `RubbingFloorPlanned`.
+- The one exhaustive door (lead ruling on the hand list): `planned_limit_of(LimitId) -> PlaneRole`,
+  one match with no wildcard: `DepthCeiling(CeilingEdge)` (`VendorDepthTable`, `Power`,
+  `Deflection`, `ForceBudget`, declared in the draw order of the boundary), `ValueCheck(ValueCheck)`
+  (`ChipMax`, `ChipMin`, `RubbingFloor`) or `NotACutLimit(PlanReason)`. The envelope reads every
+  limit through one loop over `LimitId::ALL` (`envelope::plane_roles`); the drawn edges, the
+  pick-chip edges, the exact solves, the exact ceilings at the stated and proposal widths, the
+  binding cuts and the per-cut checks each dispatch through one match on `CeilingEdge` or
+  `ValueCheck` with no wildcard. FM1 and the probe are byte-equal before and after this change (the
+  boundary keeps its order). `tool_load::groups::gate_of(LimitId)` is a match with no wildcard;
+  `GATE_LIMITS` is gone (`groups::Gate` lists the gates).
+- The width and chip rules are those of the prototype (`am/envelope_proto.rs`), which made the
+  predictions: the body reads the column width, or D when it declares the slot width; another cut
+  reads `Stated` as the column, `Slot` as D, `PassCeiling` as `c(ae) D`, `CapMult` as
+  `min(m ae, D)`; a cut that states no depth of the body's depth axis (the Bore `WallFinish`) has
+  no number (`NoStatedDepth`); the unlifted chip is the body chip over the lift at the full-feed
+  width, on the engaged diameter at the stated depth per pass (`UnliftedFeed::of_slot_ring`).
+- `PowerCases` is deleted. The power fold is `planned::worst_power` (today's rule, ruling Q5: each
+  cut at the op feed, the slot ring too; a tie goes to the more specific case,
+  `PowerCase::tie_rank`). The lift width is `CutList::full_feed_width`. FM1 was byte-equal after
+  this stage alone.
+- The envelope: the force budget, the deflection and the table read the driver (`budget_solve`,
+  `deflection_solve`, `table_solve`); `budget_width` is gone. `BUDGET_EDGE_SPLIT_LEVELS` rose from
+  4 to 12 passes (they stop when no segment splits; red 6 of 16.5).
+- The chips (trap 1): the force budget at the stated and the proposal width reads the curve chip
+  and the pick chip (`max(stated, suggested)`), the lower ceiling holds, so `propose` reads the chip
+  that the card judges at. The deflection and the vendor table in `propose` read the curve chip
+  (the operator's chip, else the suggested chip at the shallowest depth); in the removal-rate pick
+  they read the pick chip (`exact_ap_ceiling_at`). The power edge reads the operator's chip, else
+  the full suggested chip of the grid. The chip rows of the checks read the commanded chip of the
+  proposal.
+- Trap 2: `MOVE_BUDGET_CONFLICT`, a note when the force budget sets the depth and the move budget
+  is not met there; no number moves.
+- `Limit::binding_cut`: the cut that sets each depth ceiling at the proposal width (the lowest
+  ceiling over the `Always` cuts; the power: the cut of the largest power). An op with no proposed
+  depth (Project Curve) names no binding cut. `SafeEnvelope::cut_checks`: one `Check` per declared
+  cut and planned limit at the proposal (the depth ceilings against the proposal depth, the power of
+  each cut against the rated power, the chip band and the rubbing floor against the planned peak
+  chip). A `MayOccur` cut gives its row and a note, never a ceiling (ruling Q1).
+- The ⚡ hover names the limit and the cut ("The proposal stands on the Rigidity DOC, slot ring").
+- The chart label kit: a flat line whose two end places are taken offers places ON the line
+  (`labels::on_places`), before the places beside it (red 7).
+- Markers gone: `EXEMPT(M12)` in `cuts.rs` and `envelope.rs`; `EXEMPT(P28-15, M12)` became
+  `EXEMPT(P28-15)`. Row `M12` closed (`CLOSED` gains `("M12", "P29-7")`). Text only: `M4`
+  `closes_in` "P29-10 (one depth predicate, P29-6 F6)", `F-OffsetRing` `closes_in` "P29-9".
+  Pins from the array: ROWS 41, MAX_NEEDS_RULING 30, ROWS_WITH_A_FILE 40.
+- New sentry `every_limit_judges_every_declared_cut_p29_7`, four claims. Claim 1: one cell per
+  cut and planned limit, the scope decides it; a limit that the scope judges on a group has a
+  planned role that names it and a gate OR a named exemption row for the side after the
+  simulation; a `NotACutLimit` role states the reason of the scope on every group; `gate_of`
+  equals the gates whose `LIMITS` name the limit. Claim 2: each drawn force-budget and deflection
+  column is the lowest over the `Always` cuts (the test takes the minimum itself), and every
+  `CeilingEdge` draws an edge on a config (the slender end mill of the p11a sentry joined the
+  configs: no FM1 tool has a deflection root below the flute). Claim 3: the proposal is inside
+  the ceiling of every `Always` cut. Claim 4: the slot ring binds a contour Pocket, the planner cap
+  a geodesic rough, and each no-number reason occurs. Each claim went red on its injected defect
+  and green after the restore (run on the first form of the claims).
+
+### 16.2 The predictions
+
+- FM1: exactly the 104 cells of `P29-7_predictions_fm1.csv` in 10 matrix rows, no other cell. Per
+  column: `proposal_ap_mm` 10, `depth_per_pass_mm` 10, `r_axial_depth_mm` 10, `force_n` 10,
+  `power_kw` 10, `proposal_ae_mm` 8, `stepover_mm` 8, `r_radial_width_mm` 8, `cap_mm` 8,
+  `binding_limit` 8, `rpm` 4, `feed_mm_min` 4, `ramp_feed_mm_min` 4, `chip_regime` 2. The
+  simulation file is byte-equal. The matrix file is byte-equal to the prototype walk
+  (`am/all`). Re-blessed on that exact match; byte-equal again after the red 6 fix and after the
+  role door.
+- Tables `W` and `R`: all 47 rows equal the `proposal_7c` column to 0.0001 mm and the
+  `binding_7c` column (also after the red 6 fix and the role door). The binding cut: the planner
+  cap on every wanaka 3D rough (as table `W` names it at the stated chip); the first slot on the
+  rivmap live copy; the planner cap at the two test-fixture points (4.217, 2.303) and
+  (8.0, 2.303), where 15.4 names the sweep slot. There the ContourParallel planner cap is
+  `min(1.6 x 2.303, 6) = 3.685` mm (`trochoid_cap_mult` 1.6, read from the fixture). The edge keeps
+  the first cut on a tie (strict `<`), so the first-slot root is not below the planner-cap root at
+  that chip: equal on the plateau of the peak force, or higher. The two roots were not printed
+  apart.
+- Table `V`: with the table limited to the body cut (the HEAD rule), the FM1 walk, the simulation
+  file and every proposal and binding of the probe are the same as 7c.
+- The work and operator files gain the trap 2 note on operator idx 2, work idx 1 and 2, and the
+  `MayOccur` note on each geodesic 3D rough.
+
+### 16.3 Envelope time
+
+FM1 Adaptive3d EndMill 6 mm hardwood, `SafeEnvelope::for_cut`, test build, one warm-up, 9 runs
+each: HEAD median 176.2 ms; 7c median 168.3 ms (two runs of 9: 168.31, 168.37), before the red 6
+fix and the role door. No growth. The lib timing test (one Pocket plane envelope with a model box)
+measured 180 ms and 190 ms alone after 7c, under its 300 ms budget.
+
+### 16.4 The wire
+
+`get_safe_envelope`: `envelope.binding_cut`, `binding_cut` on each `envelope.boundary` row,
+`envelope.cut_checks` (key name `cut_checks`: the reply has a top-level `checks` since P29-2b). The
+feature token `envelope_declared_cuts` records the capability. The tool description names the keys.
+
+### 16.5 The reds and the rulings
+
+1. `the_deflection_edge_is_a_solved_depth_p11a`: re-claimed. At each curve point the body alone
+   is not deeper than its own root (the op predictor), and the cut that binds the column (the
+   lowest root over the `Always` cuts, at its own width and chip) deflects at most the target at
+   the edge and more one convergence step deeper (the forward model
+   `tip_deflection_from_engagement`). The slot ring binds a column; at the proposal width the
+   binding cut equals `Limit::binding_cut`.
+2. `the_envelope_keeps_each_limit_k2b` vendor axial: re-claimed. The cell is a geodesic 3D Rough
+   (no full slot that the plan always cuts), where `VendorAxial` still binds the stated 9 mm. New
+   assertion: the same cell as a ContourParallel rough binds Rigidity on the first slot (3.85 mm;
+   the old value 6.0 mm VendorAxial).
+3. `the_roughing_depth_meets_the_force_budget_p13c` Pocket edge: re-claimed. The body is at most
+   the budget at the edge; the cut that binds the column is at most the budget at the edge and
+   over it 0.01 mm deeper; the slot ring binds a column.
+4. `g_s3depth::the_suggest_clamp_still_fires_at_the_helper_s_own_cap`: re-claimed with no wider
+   tolerance. For each declared cut with a number (the body and the slot ring of the contour
+   Pocket) the planned ceiling and `rigidity_depth_cap` of a sample of that width and chip are one
+   number, bit for bit; the envelope ceiling is the lowest of them, bit for bit.
+5. `the_envelope_finding_reads_the_gate_feed_p20i` (two tests): re-claimed (lead ruling). On the
+   test's contour Pocket the slot power case (op feed, ruling Q5) held the drawn Power edge flat at
+   2.598 mm at every width at the old case value 0.25 kW, and the force budget of the declared cuts
+   is under it at every width (1.471 to 2.194 mm), so no width had Power as the lowest ceiling. The
+   test machine's rated power is now DERIVED in the test (`rated_kw`): one half
+   (`RATED_SHARE`) of the power of the stated cut at its force-budget depth at the full width (the
+   lowest force-budget depth over the widths), on the same machine. Power is then the lowest
+   ceiling by construction; the three claims stand unchanged and pass.
+6. The drawn force-budget edge 3 % over the solved minimum: fixed. The split passes stopped after
+   4 levels while segments still stood over the minimum (the kink where the body and the slot
+   ring cross, and the steep stretch of the ring at a narrow width); they now run until no segment
+   splits, up to 12 (the cap of the table edge). Worst after: 0.05 % (ae 0.0752 mm, 5.7062 drawn,
+   5.7033 solved). FM1 byte-equal to the blessed 7c fixture; the probe equal.
+7. p5d label 7 px off its line: the placement follows its own line now (`on_places`). Both end
+   places of the vendor DOC line are taken on this fixture: at the right end the vendor DOC line
+   (6 mm) and the Rigidity line (4.34 mm) are about 10 px apart and the two chips do not fit; the
+   left end of the Rigidity line is crossed by the move-budget curve, and the left end of the
+   vendor DOC line is held by the move-budget label. No order of the labels puts both at an end (a
+   layout that preferred more labels at their ends found no gain and was removed). The label now
+   touches its line; the test's end clause for the vendor DOC takes the rule of the move-budget
+   label (at an end, or on its line inside its span). This is a re-claim of a clause; the lead can
+   reverse it. The fixture change "the view top is the hard top" stands by geometry: the depth
+   table edge is flat at 17.40 mm (2.9 x D), under the hard top of 20 mm, and 1.3 x 17.40 = 22.6
+   mm is over it, so the range reaches the hard top.
+
+`the_simulation_is_placed_not_fed_back_k7::a_tapered_ball_wider_than_its_tip_is_judged_at_its_engaged_diameter`,
+red on HEAD (`non-vacuity: EnvelopePlacement { placed: 0, .. }`): commit `6409d36c6` (P29-6 6d)
+added to `compute::simulate::envelope_placement` the filter `judged_group(s, ..) !=
+Some(CutGroup::Body) => continue`; `judged_group` is `None` when the sample removes no material
+(`removed_volume_est_mm3 > 0.0` is false), and the test's sample takes
+`SimulationCutSample::test_fixture()` with `removed_volume_est_mm3: 0.0`. 6d did not edit the test
+(its last change is `5c6ae274b`, 6a). The 7b gates did not run it (14.5 lists them). Fixed in
+its own patch `step_k7fix.patch` (lead ruling): the sample states `removed_volume_est_mm3: 1.0`, so
+it is a body sample; the claim and the non-vacuity check stand. It applies before or after 7c and
+7d (checked in five orders on a scratch index). The other tests that build
+`SimulationCutSample::test_fixture()` samples for a group read (`envelope_placement`,
+`judged_group`, `populations`, `judge_by_group`, `evaluate_toolpath`, `headline`): 16 files, among
+them ones no gate list runs (`histogram_population_is_the_gate_population_g_cuthist`,
+`ceiling_advisory_and_clamp_record_a7`, `chipload_report_wording_t12_t15`,
+`heatmap_two_arc_divergence_a1`, `feed_explanation_record_t1`, `a_tapered_row_is_read_at_the_tip_a1`):
+all 16 pass on the final tree.
+
+### 16.6 Re-claims of sections 5 and 15.4
+
+- `every_limit_is_drawn_and_named_p5d` line 466: `scene.binding == Rigidity` (predicted); the
+  body and muted lines swap; the drawn kinds gain `VendorDepthTable`; the view top is the hard top
+  (by geometry, 16.5 item 7); the end clause of the vendor DOC label (16.5 item 7).
+- `the_envelope_plot_shows_only_what_limits_the_cut_p5c`: the fixture point binds `Rigidity` (the
+  margin 0.481 -> 0.226 of 15.4); the drawn kinds gain `VendorDepthTable`; the amber candidate
+  crosses `VendorAxial` and `Rigidity`.
+- `the_sim_chart_seeks_on_a_dot_p17`: the off-scale rows gain the depth table.
+- `every_op_declares_its_cuts_p29_3` claim 1 reads `worst_power` and `power_case_width`;
+  `the_exemption_list_only_shrinks_p29_3` reads `Gate::ALL` and `NotACutLimit`; the doc of
+  `the_power_curve_picks_the_arm_at_the_feed_cap_q1` names `PowerCase::Slot`.
+
+### 16.7 Where the final shape differs from section 2
+
+- The trait has an associated `Env` and `Answer` per limit; the driver is generic.
+- Grooves (accepted by the lead): on a groove body (VCarve, Inlay, InlayPlug) every planned limit
+  reads the declared slot width D; the P29-5c ruling Q1 stands for the radial axis and the speeds
+  grid only. The P29-5c table `S` probe (60 degree V-bit 6.35 and 12.7 mm, softwood, hardwood,
+  MDF; VCarve, Inlay, InlayPlug at 0.5 D, 1 D, 2 D; Chamfer and Trace) against
+  `P29-5c_predictions.csv`: 60 rows, 11 differ (the MDF rows are refused in both).
+  - Inlay and InlayPlug, 6.35 mm, softwood, stated 12.7 mm: the proposal 9.6183 -> 6.3500 mm,
+    the binding Rigidity -> VendorDepthTable (the table at 1 x D: the slot share
+    `fz sin(psi) / band max` with `sin psi = 1`), the placement Outside Rigidity -0.320 ->
+    Outside VendorDepthTable -1.000.
+  - The same two ops at 3.175 and 6.35 mm: the placement Inside 0.670 -> 0.500 and 0.340 ->
+    0.000 (the table ceiling 6.35 mm).
+  - Chamfer: the placement 0.934 -> 0.843 (6.35 mm, softwood and hardwood, stated 3.175), 0.967 ->
+    0.921 (12.7 mm, softwood and hardwood) and 0.967 -> 0.953 (12.7 mm, MDF). The cause is not
+    separated.
+  - VCarve and Trace: no difference.
+- `gate_of` is empty for `VendorDepthTable` and `RubbingFloor` (accepted with the row `P28-20`);
+  the sentry says exactly: a gate OR a named exemption row.
+
+### 16.8 What a future author must do by hand
+
+- A new `LimitId` does not compile until `limits::scope`, `planned_limit_of` and `gate_of` state
+  it. A new role (`CeilingEdge` or `ValueCheck` variant) does not compile until each envelope
+  match states it (the edge builder, the pick edge, the exact solve, the exact ceilings, the rows,
+  the binding rule, the unit). By hand: the `PlannedLimit` impl itself and its solver; a new
+  `Gate` variant and a field of `GroupVerdicts`.
+- The `MayOccur` note and the trap 2 note are text on `notes`; no surface test pins them.
+
+### 16.9 Findings outside the scope
+
+- Chip rows of `cut_checks` (left for P29-10, display): 6 mm 2F end mill, hardwood, add door, the
+  default machine. The first slot of a zigzag Pocket at a 1.0 mm stepover, fed at the op feed under
+  the lifted body, gives ChipMax exceeds: 0.1704 against 0.127 mm. The body of a geodesic 3D Rough
+  (stepover 1.2 mm, stated depth 6 mm) gives ChipMin exceeds: 0.1229 against a point band of
+  0.127 mm (the feed is sized at the planner-cap width). No card shows these rows.
+- The `MayOccur` note is the first note of a geodesic 3D Rough, and the card header prints the
+  first note in full when it has no short face (`force_budget::note_face`). Not a small change in
+  the notes path (the header shows the first note); logged for P29-10.
+- No repo machine and op has Power as the lowest depth ceiling on a slot-declaring rough: the force
+  budget of the declared cuts sits under the power ceiling at every width (16.5 item 5: 2.598 mm
+  against 1.471 to 2.194 mm on the p20i contour Pocket at 0.25 kW; no repo machine is rated under
+  0.71 kW).
+
+### 16.10 The gates of 7c (the final 7c tree)
+
+- fmt check: clean. Full clippy (`--workspace --all-targets`, heavy-tests, research,
+  test-support, `-D warnings`): clean.
+- `cargo test -p rs_cam_core -q --lib`: 2796 passed, 1 failed
+  (`the_envelope_meets_its_time_budget` under the loaded run; alone it passes, 198 ms).
+- FM1: 2 passed (the matrix and the simulation file equal the 7c fixture).
+- The named sentries of section 3, the new sentry, `g_s3depth`, `p20i`,
+  `the_step_records_are_stored_and_bounded_p13b`: 25 binaries pass; `p20i` failed its two tests
+  until the derived rated power (16.5 item 5), and passes after it (run on the final tree).
+- The op golden on the final tree: its diff equals the known 46 rows. The re-injection of one
+  defect into each reworded claim (16.5 items 1 to 4, sentry claims 1 and 2) turned each red; the
+  sources were restored byte for byte.
+- Viz `--lib`: 706 passed. Viz tests p5c, p5d, `mcp_wire_surface_pin`, `p17_visual_snapshots`
+  (3 ignored), the chart kit, the sim chart, the step records, the hover bound, the chart lines:
+  all pass.
+- `rs_cam_mcp`: 39 passed. `rs_cam_cli`: 13 binaries, all pass.
+- The op golden (run on the first 7c tree): its diff equals the known 46 rows.
+
+### 16.11 Not run
+
+`wanaka_suggest_integration`; the core full gate; the whole viz crate; the instruments marked
+`#[ignore]` (`p17_visual_snapshots` runs 3 ignored tests).

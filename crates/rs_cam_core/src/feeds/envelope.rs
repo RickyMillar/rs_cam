@@ -23,6 +23,12 @@ use serde::ser::SerializeMap;
 use crate::compute::catalog::{Axial, OperationConfig, Radial};
 use crate::compute::tool_config::ToolConfig;
 use crate::feeds::FeedsInput;
+use crate::feeds::force_budget::BudgetDepth;
+use crate::feeds::planned::{
+    BodyColumn, CeilingEdge, DeclaredCuts, DeflectionPlanned, ForceBudgetPlanned, ForceEnv,
+    PlaneRole, TableEnv, ValueCheck, VendorDepthTablePlanned, budget_rank, judge_declared_cuts,
+    planned_limit_of,
+};
 use crate::feeds::sourced::{
     Basis, ChipMm, FeedMmMin, MachineField, PlungeMmMin, Rpm, Sourced, lower_to_cap,
 };
@@ -31,8 +37,10 @@ use crate::feeds::{
     FeedsError, FeedsResult, FeedsWarning, MIN_AE_MM, MIN_AP_MM, PassRole, SpindleStrategy,
     ToolGeometryHint, VendorLut, calculate,
 };
+use crate::limits::{BoundSide, CutKind, NoNumberReason};
 use crate::machine::MachineProfile;
 use crate::material::Material;
+use crate::tool::ToolDefinition;
 
 /// The number of samples per free axis of the speeds grid.
 ///
@@ -418,6 +426,19 @@ pub struct Limit {
     pub basis: Basis,
     /// The shape on the plane.
     pub edge: Edge,
+    /// P29-7 7c: the declared cut that sets this limit at the proposal
+    /// width (the card prints "machine rigidity, slot ring"). `None` for a
+    /// limit that does not change with the cut, or with no number there.
+    #[serde(serialize_with = "cut_label")]
+    pub binding_cut: Option<CutKind>,
+}
+
+/// The words of a binding cut on the wire (`CutKind::label`).
+fn cut_label<S: serde::Serializer>(
+    cut: &Option<CutKind>,
+    serializer: S,
+) -> Result<S::Ok, S::Error> {
+    cut.map(CutKind::label).serialize(serializer)
 }
 
 impl Limit {
@@ -674,15 +695,10 @@ impl SpeedsPoint {
         ae_mm: f64,
         r: &FeedsResult,
         flutes: u32,
-        cases: crate::feeds::engagement::PowerCases,
-        d_mm: f64,
+        cuts: &crate::feeds::planned::DeclaredCuts,
     ) -> Self {
         // P20i: the width of the case that the result names.
-        let power_width_mm = cases
-            .widths(ae_mm, d_mm)
-            .into_iter()
-            .find(|(case, _)| *case == r.power_case)
-            .map_or(ae_mm, |(_, w)| w);
+        let power_width_mm = crate::feeds::planned::power_case_width(cuts, r.power_case, ae_mm);
         let feed_capped = r
             .warnings
             .iter()
@@ -838,6 +854,10 @@ struct OwnedInputs {
     material: Material,
     lut: &'static VendorLut,
     spindle_strategy: SpindleStrategy,
+    /// P29-7 7c: the declared cuts of the op on the tool, built once. Every
+    /// limit that changes with the cut reads them through the one driver
+    /// (`planned::judge_declared_cuts`).
+    cuts: DeclaredCuts,
 }
 
 impl std::fmt::Debug for OwnedInputs {
@@ -938,8 +958,20 @@ pub struct SafeEnvelope {
     /// assumptions of a computed width (`force_budget::COMPUTED_WIDTH_ASSUMPTIONS`)
     /// and the warning when no depth meets the force budget.
     pub notes: Vec<String>,
+    /// P29-7 7c: the check of each declared cut at the proposal, for each
+    /// limit that changes with the cut: the force budget, the deflection
+    /// and the vendor depth table (the depth of the proposal against the
+    /// ceiling of the cut), and the chip band and the rubbing floor (the
+    /// planned peak chip of the cut). A cut that the plan may not cut
+    /// (`Presence::MayOccur`) is judged here, never drawn as a ceiling, and
+    /// names its exemption row.
+    pub cut_checks: Vec<CutCheck>,
     /// The operator's stated point, when every free axis is stated.
     pub stated: Option<CutPoint>,
+    /// P29-7 7c: the limits that draw a depth ceiling, in the draw order,
+    /// and the limits that check a value of each cut ([`plane_roles`]).
+    ceilings: Vec<CeilingEdge>,
+    value_checks: Vec<ValueCheck>,
     /// Where the operator's stated point sits.
     pub operator: Option<Placement>,
     inputs: OwnedInputs,
@@ -1028,10 +1060,14 @@ enum BudgetChip {
 /// The force-budget depths the `Rigidity` limit solved, by width: the
 /// proposal reads a width it holds instead of solving it again.
 #[derive(Debug, Clone, Default, PartialEq)]
-struct SolvedColumns(Vec<(f64, crate::feeds::force_budget::BudgetDepth)>);
+struct SolvedColumns(Vec<(f64, Solved)>);
+
+/// P29-7 7c: a force-budget depth and the declared cut that gives it (the
+/// lowest over the cuts that the plan always cuts).
+type Solved = (BudgetDepth, CutKind);
 
 impl SolvedColumns {
-    fn get(&self, ae: f64) -> Option<crate::feeds::force_budget::BudgetDepth> {
+    fn get(&self, ae: f64) -> Option<Solved> {
         self.0
             .iter()
             .find(|(w, _)| w.to_bits() == ae.to_bits())
@@ -1048,10 +1084,148 @@ impl Serialize for SafeEnvelope {
         map.serialize_entry("proposal", &self.proposal)?;
         map.serialize_entry("proposal_binding", &self.proposal_binding)?;
         map.serialize_entry("proposal_limits", &self.proposal_limits)?;
+        map.serialize_entry(
+            "binding_cut",
+            &self
+                .proposal_binding
+                .and_then(|kind| self.limit(kind))
+                .and_then(|l| l.binding_cut)
+                .map(CutKind::label),
+        )?;
+        map.serialize_entry("cut_checks", &self.cut_checks)?;
         map.serialize_entry("notes", &self.notes)?;
         map.serialize_entry("stated", &self.stated)?;
         map.serialize_entry("operator", &self.operator)?;
         map.end()
+    }
+}
+
+/// P29-7 7c: the check of one declared cut at the proposal.
+#[derive(Debug, Clone, PartialEq, Serialize)]
+pub struct CutCheck {
+    /// The declared cut.
+    #[serde(serialize_with = "cut_label_of")]
+    pub cut: CutKind,
+    /// The exemption row of a cut that the plan may not cut
+    /// (`Presence::MayOccur`, lead ruling Q1): its check is a warning row,
+    /// never a ceiling. `None` for a cut that the plan always cuts.
+    pub may_occur_row: Option<&'static str>,
+    /// The check.
+    pub check: crate::limits::Check,
+}
+
+fn cut_label_of<S: serde::Serializer>(cut: &CutKind, serializer: S) -> Result<S::Ok, S::Error> {
+    serializer.serialize_str(cut.label())
+}
+
+/// P29-7 7c: THE one loop over every limit. Each limit states its role on
+/// the plane (`planned::planned_limit_of`, one match with no wildcard); the
+/// envelope draws the depth ceilings in the draw order of `CeilingEdge`
+/// and writes the value checks. A new limit is read with no edit here.
+fn plane_roles() -> (Vec<CeilingEdge>, Vec<ValueCheck>) {
+    let mut ceilings = Vec::new();
+    let mut checks = Vec::new();
+    for limit in crate::limits::LimitId::ALL {
+        match planned_limit_of(limit) {
+            PlaneRole::DepthCeiling(edge) => ceilings.push(edge),
+            PlaneRole::ValueCheck(check) => checks.push(check),
+            PlaneRole::NotACutLimit(_) => {}
+        }
+    }
+    ceilings.sort_unstable();
+    checks.sort_unstable();
+    (ceilings, checks)
+}
+
+/// The depth ceiling that draws the envelope kind `kind`, if one does.
+fn ceiling_edge_of(kind: LimitKind) -> Option<CeilingEdge> {
+    match planned_limit_of(crate::limits::LimitId::of_limit_kind(kind)) {
+        PlaneRole::DepthCeiling(edge) => (edge.kind() == kind).then_some(edge),
+        PlaneRole::ValueCheck(_) | PlaneRole::NotACutLimit(_) => None,
+    }
+}
+
+/// The speeds that the proposal ships: the calculator result and its
+/// commanded advance per tooth.
+struct ProposalSpeeds {
+    r: FeedsResult,
+    fz: f64,
+}
+
+/// The rows of one planned limit at the proposal, with their unit.
+struct CutRows {
+    unit: &'static str,
+    rows: Vec<CutRow>,
+}
+
+/// One declared cut against one planned limit at the proposal.
+struct CutRow {
+    cut: CutKind,
+    presence: crate::compute::catalog::Presence,
+    value: Option<f64>,
+    /// The bound, `Ok(None)` with no bound (the cut is inside), or the
+    /// reason for no number.
+    bound: Result<Option<f64>, crate::limits::NoNumberReason>,
+}
+
+impl CutRow {
+    fn of(
+        cut: CutKind,
+        presence: crate::compute::catalog::Presence,
+        value: Option<f64>,
+        bound: Result<Option<f64>, crate::limits::NoNumberReason>,
+    ) -> Self {
+        Self {
+            cut,
+            presence,
+            value,
+            bound,
+        }
+    }
+
+    /// The check record of the row.
+    fn check(
+        &self,
+        limit: crate::limits::LimitId,
+        unit: &'static str,
+        side: crate::limits::BoundSide,
+        basis: Option<Basis>,
+    ) -> CutCheck {
+        use crate::limits::{Check, CheckState, NoNumberReason};
+        let (bound, margin, state) = match self.bound {
+            Ok(Some(b)) => {
+                let margin = self.value.and_then(|v| side.margin(v, b));
+                let state = margin.map_or(
+                    CheckState::NoNumber(NoNumberReason::NotModelled),
+                    CheckState::of_margin,
+                );
+                (Some(b), margin, state)
+            }
+            // No bound (no root below the flute, a table that holds every
+            // printed depth): the cut is inside.
+            Ok(None) => (None, None, CheckState::Within),
+            Err(reason) => (None, None, CheckState::NoNumber(reason)),
+        };
+        CutCheck {
+            cut: self.cut,
+            may_occur_row: match self.presence {
+                crate::compute::catalog::Presence::Always => None,
+                crate::compute::catalog::Presence::MayOccur(may) => Some(may.row),
+            },
+            check: Check {
+                limit,
+                value: self.value,
+                bound,
+                unit,
+                side,
+                margin,
+                state,
+                basis,
+                bound_detail: None,
+                binding: false,
+                population: None,
+            },
+        }
     }
 }
 
@@ -1170,6 +1344,7 @@ impl SafeEnvelope {
             material: input.material.clone(),
             lut: input.lut,
             spindle_strategy: input.spindle_strategy,
+            cuts: feeds_input.cuts,
         };
         // The calculator at the op's own inputs: the family default of an
         // unstated axis, and the matched row.
@@ -1190,8 +1365,8 @@ impl SafeEnvelope {
                 vec![ae_mm]
             }
         };
-        // P20i: the cases and the diameter the calculator reads at each point.
-        let (cases, case_d) = (feeds_input.power_cases, feeds_input.tool_diameter);
+        // P20i: the declared cuts the calculator reads at each point.
+        let cuts = feeds_input.cuts;
         let mut points = Vec::with_capacity(ap_samples.len() * ae_samples.len());
         for &ae in &ae_samples {
             for &ap in &ap_samples {
@@ -1204,8 +1379,7 @@ impl SafeEnvelope {
                     ae,
                     &r,
                     input.tool.flute_count_planning(),
-                    cases,
-                    case_d,
+                    &cuts,
                 ));
             }
         }
@@ -1221,46 +1395,71 @@ impl SafeEnvelope {
         let operator = operator_chip(input.operation, input.tool);
         let mut boundary = Vec::new();
         geometric_limits(&mut boundary, &input, &base, &plan, d);
-        vendor_depth_limit(
-            &mut boundary,
-            (&input, &inputs),
-            &base,
-            &speeds,
-            &plan,
-            (operator, Drawn::Yes),
-        );
-        power_limit(
-            &mut boundary,
-            &inputs,
-            &speeds,
-            &plan,
-            base.power_case,
-            operator,
-        );
-        deflection_limit(&mut boundary, &input, &speeds, &plan, role, operator);
-        let budget = rigidity_limit(&mut boundary, &inputs, &speeds, &plan, operator);
+        // P29-7 7c: every limit that changes with the cut draws its edge
+        // through its role (`planned::planned_limit_of`), in the draw order
+        // of `CeilingEdge`. A new role does not compile until each match
+        // below states it.
+        let (ceilings, value_checks) = plane_roles();
+        let mut budget = None;
+        for &edge in &ceilings {
+            match edge {
+                CeilingEdge::VendorDepthTable => vendor_depth_limit(
+                    &mut boundary,
+                    (&input, &inputs),
+                    &base,
+                    &speeds,
+                    &plan,
+                    (operator, Drawn::Yes),
+                ),
+                CeilingEdge::Power => power_limit(
+                    &mut boundary,
+                    &inputs,
+                    &speeds,
+                    &plan,
+                    base.power_case,
+                    operator,
+                ),
+                CeilingEdge::Deflection => {
+                    deflection_limit(&mut boundary, &inputs, &speeds, &plan, role, operator);
+                }
+                CeilingEdge::ForceBudget => {
+                    budget = rigidity_limit(&mut boundary, &inputs, &speeds, &plan, operator);
+                }
+            }
+        }
         let mut runtime_notes = Vec::new();
         let move_budget = runtime_limit(&mut boundary, &mut runtime_notes, &input, &plan, d);
         per_point_limits(&mut boundary, &base, &speeds);
+        // The chip-sized edges at the suggested chip, when the boundary is
+        // drawn at the operator's chip (a pick writes the suggested speeds).
         let mut pick_limits = Vec::new();
         if operator.is_some() {
-            vendor_depth_limit(
-                &mut pick_limits,
-                (&input, &inputs),
-                &base,
-                &speeds,
-                &plan,
-                (None, Drawn::No),
-            );
-            power_limit(
-                &mut pick_limits,
-                &inputs,
-                &speeds,
-                &plan,
-                base.power_case,
-                None,
-            );
-            deflection_limit(&mut pick_limits, &input, &speeds, &plan, role, None);
+            for &edge in &ceilings {
+                match edge {
+                    CeilingEdge::VendorDepthTable => vendor_depth_limit(
+                        &mut pick_limits,
+                        (&input, &inputs),
+                        &base,
+                        &speeds,
+                        &plan,
+                        (None, Drawn::No),
+                    ),
+                    CeilingEdge::Power => power_limit(
+                        &mut pick_limits,
+                        &inputs,
+                        &speeds,
+                        &plan,
+                        base.power_case,
+                        None,
+                    ),
+                    CeilingEdge::Deflection => {
+                        deflection_limit(&mut pick_limits, &inputs, &speeds, &plan, role, None);
+                    }
+                    // The exact solver reads the pick chip
+                    // (`budget_depth_at`, `BudgetChip::Pick`).
+                    CeilingEdge::ForceBudget => {}
+                }
+            }
         }
 
         let base_point = CutPoint {
@@ -1282,6 +1481,9 @@ impl SafeEnvelope {
             proposal_binding: None,
             proposal_limits: Vec::new(),
             notes: Vec::new(),
+            cut_checks: Vec::new(),
+            ceilings,
+            value_checks,
             stated: None,
             operator: None,
             inputs,
@@ -1359,6 +1561,8 @@ impl SafeEnvelope {
             env.notes.push(reason.clause().to_owned());
         }
         env.add_exact_ceilings(&plan, ExactPhase::Proposal);
+        env.read_declared_cuts();
+        env.notes.extend(env.may_occur_notes());
         env.notes.extend(runtime_notes);
         if plan.computed_width {
             env.notes
@@ -1392,6 +1596,9 @@ impl SafeEnvelope {
             ) => None,
         };
         env.operator = env.stated.map(|p| env.placement_of(p));
+        if let Some(note) = env.move_budget_conflict_note() {
+            env.notes.push(note);
+        }
         Ok(env)
     }
 
@@ -1866,14 +2073,11 @@ const REMOVAL_RATE_EXACT_CANDIDATES: usize = 3;
 
 impl SafeEnvelope {
     /// P13c (O1): the force-budget depth at the width `ae_mm`, solved
-    /// exactly (not interpolated between grid columns). The solve reads
-    /// [`budget_width`] at `ae_mm` (P29-5c). `None` when the op has no
-    /// budget edge or the model cannot answer.
-    fn budget_depth_at(
-        &self,
-        ae_mm: f64,
-        chip: BudgetChip,
-    ) -> Option<crate::feeds::force_budget::BudgetDepth> {
+    /// exactly (not interpolated between grid columns), and the declared
+    /// cut that gives it (P29-7 7c: the lowest over the declared cuts,
+    /// [`budget_solve`]). `None` when the op has no budget edge or the model
+    /// cannot answer.
+    fn budget_depth_at(&self, ae_mm: f64, chip: BudgetChip) -> Option<Solved> {
         let model = self.budget.as_ref()?;
         // The solved columns are at the curve chip; a pick with no operator
         // chip reads the same chip.
@@ -1901,13 +2105,7 @@ impl SafeEnvelope {
             (BudgetChip::Pick, Some(fz)) => fz.max(suggested()),
             (BudgetChip::Pick, None) => suggested(),
         };
-        crate::feeds::force_budget::depth_at_budget(
-            &tool,
-            &self.inputs.material,
-            budget_width(&self.inputs, ae_mm),
-            fz,
-            model.budget_n,
-        )
+        budget_solve(&self.inputs, &tool, ae_mm, fz, model.budget_n)
     }
 
     /// The advance per tooth a pick at the width `ae_mm` is judged at: the
@@ -1925,40 +2123,26 @@ impl SafeEnvelope {
     }
 
     /// The vendor depth table ceiling at `ae_mm` and the chip `fz`, in
-    /// closed form (`vendor_depth_limit` at one width), or the span top
-    /// where the table holds every printed depth.
+    /// closed form (`vendor_depth_limit` at one width, the lowest over the
+    /// declared cuts), or the span top where the table holds every printed
+    /// depth.
     fn table_ceiling_at(&self, ae_mm: f64, fz: f64) -> Option<f64> {
         let band_max = self.table_band_max?;
-        let d = self.inputs.tool.diameter;
-        let top = self.speeds.aps.last().copied().unwrap_or(MIN_AP_MM);
-        let psi = crate::feeds::force::immersion_angle(ae_mm, 0.5 * d);
-        let share = fz * psi.min(std::f64::consts::FRAC_PI_2).sin() / band_max;
-        Some(if share > 0.5 {
-            crate::feeds::geometry::vendor_depth_table_ceiling_ratio(share) * d
-        } else {
-            top
-        })
+        let env = TableEnv {
+            band_max_mm: band_max,
+            d_mm: self.inputs.tool.diameter,
+            top_mm: self.speeds.aps.last().copied().unwrap_or(MIN_AP_MM),
+        };
+        Some(table_solve(&self.inputs.cuts, ae_mm, fz, &env).0.0)
     }
 
     /// The tip-deflection ceiling at `ae_mm` and the chip `fz` (the one
-    /// solver of `deflection_limit`), or the span top with no root.
+    /// solver of `deflection_limit`, the lowest over the declared cuts), or
+    /// the span top with no root.
     fn deflection_ceiling_at(&self, ae_mm: f64, fz: f64) -> Option<f64> {
         let tool = crate::compute::cutter::build_cutter(&self.inputs.tool).ok()?;
         let top = self.speeds.aps.last().copied().unwrap_or(MIN_AP_MM);
-        let c = crate::feeds::cutter_constraints::cutter_axial_constraints(
-            &tool,
-            &self.inputs.material,
-            ae_mm.max(1.0e-3),
-            fz,
-            None,
-            None,
-            Some(crate::feeds::suggest::DEFLECTION_BACKOFF_TARGET_UM),
-        );
-        Some(
-            c.max_doc_deflection_mm
-                .filter(|v| v.is_finite() && *v >= 0.0)
-                .unwrap_or(top),
-        )
+        Some(deflection_solve(&self.inputs, &tool, ae_mm, fz).map_or(top, |(mm, _)| mm))
     }
 
     /// The lowest `ap` ceiling at `ae_mm` and its limit, with the force
@@ -1972,24 +2156,32 @@ impl SafeEnvelope {
             .iter()
             .chain(self.pick_limits.iter())
             .filter_map(|l| {
-                let exact = match (l.kind, &l.edge) {
-                    (LimitKind::Rigidity, Edge::ApCurve { .. } | Edge::ApCeiling { .. })
-                        if self.budget.is_some() =>
-                    {
+                let depth_edge = matches!(l.edge, Edge::ApCurve { .. } | Edge::ApCeiling { .. });
+                let drawn = || l.ap_ceiling_at(ae_mm);
+                // P29-7 7c: the exact solve of each depth ceiling, through
+                // its role; a power edge and every other limit read the
+                // drawn edge.
+                let exact = match ceiling_edge_of(l.kind) {
+                    Some(CeilingEdge::ForceBudget) if depth_edge && self.budget.is_some() => {
                         let top = self.speeds.aps.last().copied().unwrap_or(MIN_AP_MM);
                         match self.budget_depth_at(ae_mm, BudgetChip::Pick) {
-                            Some(d) => Some(d.ceiling_mm().unwrap_or(top)),
-                            None => l.ap_ceiling_at(ae_mm),
+                            Some((d, _)) => Some(d.ceiling_mm().unwrap_or(top)),
+                            None => drawn(),
                         }
                     }
-                    (
-                        LimitKind::VendorDepthTable,
-                        Edge::ApCurve { .. } | Edge::ApCeiling { .. },
-                    ) => self.table_ceiling_at(ae_mm, pick_fz()),
-                    (LimitKind::Deflection, Edge::ApCurve { .. }) => {
+                    Some(CeilingEdge::VendorDepthTable) if depth_edge => {
+                        self.table_ceiling_at(ae_mm, pick_fz())
+                    }
+                    Some(CeilingEdge::Deflection) if matches!(l.edge, Edge::ApCurve { .. }) => {
                         self.deflection_ceiling_at(ae_mm, pick_fz())
                     }
-                    _ => l.ap_ceiling_at(ae_mm),
+                    Some(
+                        CeilingEdge::ForceBudget
+                        | CeilingEdge::VendorDepthTable
+                        | CeilingEdge::Deflection
+                        | CeilingEdge::Power,
+                    )
+                    | None => drawn(),
                 };
                 exact.map(|c| (c, l.kind))
             })
@@ -1998,9 +2190,11 @@ impl SafeEnvelope {
 
     /// P13c (O1), P19: solve the ceilings at the stated width and the
     /// proposal width exactly, so a point at that width is placed against
-    /// the solved value, not an interpolation. The proposal width also takes
-    /// the pick's own force-budget depth (the chip it ships, at or under the
-    /// curve depth), so the proposal sits on the edge it names.
+    /// the solved value, not an interpolation. Both widths also take the
+    /// pick's own force-budget depth (the chip it ships, at or under the
+    /// curve depth), so the proposal sits on the edge it names. P29-7 7c
+    /// (trap 1): before 7c only the proposal width took it, so `propose`
+    /// read the stated chip while the card judged at the pick chip.
     ///
     /// P19: the values go to `exact`, not to the drawn boundary. A sample
     /// at the stated or the proposal width in the drawn curve moved the
@@ -2025,37 +2219,49 @@ impl SafeEnvelope {
             return;
         };
         let mut exact = Vec::new();
-        if curve(LimitKind::Rigidity) && self.budget.is_some() {
-            let chips: &[(BudgetChip, ExactRole)] = match phase {
-                ExactPhase::Stated => &[(BudgetChip::Curve, ExactRole::CurveChip)],
-                ExactPhase::Proposal => &[
-                    (BudgetChip::Curve, ExactRole::CurveChip),
-                    (BudgetChip::Pick, ExactRole::Pick),
-                ],
-            };
-            for &(chip, role) in chips {
-                if let Some(d) = self.budget_depth_at(ae, chip) {
-                    exact.push(ExactCeiling {
-                        kind: LimitKind::Rigidity,
-                        role,
-                        ae_mm: ae,
-                        ap_mm: d.ceiling_mm().unwrap_or(top),
-                    });
+        for edge in self.ceilings.clone() {
+            match edge {
+                CeilingEdge::ForceBudget => {
+                    if curve(LimitKind::Rigidity) && self.budget.is_some() {
+                        // P29-7 7c (trap 1, lead ruling Q6): the stated width
+                        // reads the pick chip too, so `propose` reads the chip
+                        // the card judges at (`max(stated chip, suggested
+                        // chip)`).
+                        let chips: &[(BudgetChip, ExactRole)] = &[
+                            (BudgetChip::Curve, ExactRole::CurveChip),
+                            (BudgetChip::Pick, ExactRole::Pick),
+                        ];
+                        for &(chip, role) in chips {
+                            if let Some((d, _)) = self.budget_depth_at(ae, chip) {
+                                exact.push(ExactCeiling {
+                                    kind: LimitKind::Rigidity,
+                                    role,
+                                    ae_mm: ae,
+                                    ap_mm: d.ceiling_mm().unwrap_or(top),
+                                });
+                            }
+                        }
+                    }
                 }
+                // The vendor depth table is drawn at the operator's chip when
+                // the op states one; with none, the drawn columns read the
+                // grid chip.
+                CeilingEdge::VendorDepthTable => {
+                    if curve(LimitKind::VendorDepthTable)
+                        && let Some(fz) = self.operator_fz
+                        && let Some(ap_mm) = self.table_ceiling_at(ae, fz)
+                    {
+                        exact.push(ExactCeiling {
+                            kind: LimitKind::VendorDepthTable,
+                            role: ExactRole::CurveChip,
+                            ae_mm: ae,
+                            ap_mm,
+                        });
+                    }
+                }
+                // The drawn edge judges the point: no exact solve.
+                CeilingEdge::Power | CeilingEdge::Deflection => {}
             }
-        }
-        // The vendor depth table is drawn at the operator's chip when the op
-        // states one; with none, the drawn columns read the grid chip.
-        if curve(LimitKind::VendorDepthTable)
-            && let Some(fz) = self.operator_fz
-            && let Some(ap_mm) = self.table_ceiling_at(ae, fz)
-        {
-            exact.push(ExactCeiling {
-                kind: LimitKind::VendorDepthTable,
-                role: ExactRole::CurveChip,
-                ae_mm: ae,
-                ap_mm,
-            });
         }
         self.exact.extend(exact);
     }
@@ -2145,6 +2351,392 @@ impl SafeEnvelope {
             kind = Some(k);
         }
         (ap, kind)
+    }
+
+    /// The chip that a drawn edge reads at the width `ae_mm`: the
+    /// operator's chip, else the suggested chip at the shallowest depth.
+    fn curve_fz(&self, ae_mm: f64) -> f64 {
+        self.operator_fz.unwrap_or_else(|| {
+            chip_of(
+                &self.inputs.calc_at(CutPoint {
+                    ap_mm: MIN_AP_MM,
+                    ae_mm,
+                }),
+                self.inputs.tool.flute_count_planning(),
+            )
+        })
+    }
+
+    /// P29-7 7c: the binding cut of each depth ceiling and the check of
+    /// each declared cut at the proposal, for every planned role
+    /// (`self.ceilings` and `self.value_checks`, from [`plane_roles`]). One
+    /// match per role, no wildcard: a new role does not compile until it
+    /// states its rows.
+    ///
+    /// - A depth ceiling gives one row per declared cut: the proposal
+    ///   depth against the ceiling of the cut (the force budget at the
+    ///   lower of the curve chip and the pick chip, the ceiling that
+    ///   `judged_ceiling` reads; the deflection and the vendor depth table
+    ///   at the curve chip); the power gives the power of each cut at the
+    ///   speeds of the proposal against the rated power. The binding cut is
+    ///   the cut with the lowest ceiling (the power: the highest power) over
+    ///   the cuts that the plan always cuts.
+    /// - A value check gives one row per declared cut: the planned peak
+    ///   chip of the cut at the speeds of the proposal against the bound.
+    fn read_declared_cuts(&mut self) {
+        let tool = crate::compute::cutter::build_cutter(&self.inputs.tool).ok();
+        let speeds = self.proposal_speeds();
+        let mut out = Vec::new();
+        for edge in self.ceilings.clone() {
+            let Some(rows) = self.ceiling_rows(edge, tool.as_ref(), speeds.as_ref()) else {
+                continue;
+            };
+            let always = || {
+                rows.rows
+                    .iter()
+                    .filter(|r| r.presence == crate::compute::catalog::Presence::Always)
+            };
+            let first_by = |key: &dyn Fn(&CutRow) -> Option<f64>| {
+                let mut best: Option<(f64, CutKind)> = None;
+                for r in always() {
+                    if let Some(v) = key(r)
+                        && best.is_none_or(|(b, _)| v < b)
+                    {
+                        best = Some((v, r.cut));
+                    }
+                }
+                best.map(|(_, cut)| cut)
+            };
+            let binding = match edge {
+                CeilingEdge::ForceBudget
+                | CeilingEdge::Deflection
+                | CeilingEdge::VendorDepthTable => first_by(&|r| r.bound.ok().flatten()),
+                CeilingEdge::Power => first_by(&|r| r.value.map(|v| -v)),
+            };
+            let kind = edge.kind();
+            for l in &mut self.boundary {
+                if l.kind == kind && matches!(l.edge, Edge::ApCurve { .. } | Edge::ApCeiling { .. })
+                {
+                    l.binding_cut = binding;
+                }
+            }
+            let basis = self.limit(kind).map(|l| l.basis.clone());
+            out.extend(
+                rows.rows
+                    .iter()
+                    .map(|r| r.check(edge.limit(), rows.unit, BoundSide::Ceiling, basis.clone())),
+            );
+        }
+        if let Some(sp) = speeds.as_ref() {
+            for check in self.value_checks.clone() {
+                let (side, kind, rows) = self.value_rows(check, sp);
+                let basis = self.limit(kind).map(|l| l.basis.clone());
+                out.extend(
+                    rows.iter()
+                        .map(|r| r.check(check.limit(), "mm", side, basis.clone())),
+                );
+            }
+        }
+        self.cut_checks = out;
+    }
+
+    /// The speeds that the proposal ships (one calculator call), for the
+    /// power rows and the chip rows. `None` with no commanded chip.
+    fn proposal_speeds(&self) -> Option<ProposalSpeeds> {
+        let p = self.proposal_point;
+        let r = self.inputs.calc_at(p);
+        let fz = chip_of(&r, self.inputs.tool.flute_count_planning());
+        (fz > 0.0).then_some(ProposalSpeeds { r, fz })
+    }
+
+    /// The rows of one depth ceiling at the proposal (see
+    /// [`Self::read_declared_cuts`]), or `None` when the op gives the limit
+    /// no number there.
+    fn ceiling_rows(
+        &self,
+        edge: CeilingEdge,
+        tool: Option<&ToolDefinition>,
+        speeds: Option<&ProposalSpeeds>,
+    ) -> Option<CutRows> {
+        use crate::feeds::planned::{PlannedCell, PowerEnv, SpindlePowerPlanned};
+        let p = self.proposal_point;
+        let cuts = &self.inputs.cuts;
+        let ap = self.proposal.get().ap_mm()?;
+        let column = |fz: f64| BodyColumn {
+            ae_mm: p.ae_mm,
+            chip_mm: Some(fz),
+        };
+        let not_judged = Err(NoNumberReason::NotJudgedHere);
+        let rows: Vec<CutRow> = match edge {
+            CeilingEdge::ForceBudget => {
+                let model = self.budget.as_ref()?;
+                self.limit(LimitKind::Rigidity)?;
+                let env = ForceEnv {
+                    tool: tool?,
+                    material: &self.inputs.material,
+                    bound: model.budget_n,
+                };
+                let curve = judge_declared_cuts::<ForceBudgetPlanned>(
+                    cuts,
+                    column(self.curve_fz(p.ae_mm)),
+                    &env,
+                );
+                let pick = judge_declared_cuts::<ForceBudgetPlanned>(
+                    cuts,
+                    column(self.pick_fz(p.ae_mm)),
+                    &env,
+                );
+                curve
+                    .iter()
+                    .zip(pick.iter())
+                    .map(|(a, b)| {
+                        let bound = match (a.value, b.value) {
+                            (PlannedCell::Judged(Some(x)), PlannedCell::Judged(Some(y))) => {
+                                Ok(match (x.ceiling_mm(), y.ceiling_mm()) {
+                                    (Some(u), Some(v)) => Some(u.min(v)),
+                                    (Some(u), None) | (None, Some(u)) => Some(u),
+                                    (None, None) => None,
+                                })
+                            }
+                            (PlannedCell::Judged(_), PlannedCell::Judged(_)) => {
+                                Err(NoNumberReason::NotModelled)
+                            }
+                            (
+                                PlannedCell::Judged(_)
+                                | PlannedCell::NotJudged(_)
+                                | PlannedCell::NotACutLimit(_),
+                                _,
+                            ) => not_judged,
+                        };
+                        CutRow::of(a.kind, a.presence, Some(ap), bound)
+                    })
+                    .collect()
+            }
+            CeilingEdge::Deflection => {
+                if !self
+                    .limit(LimitKind::Deflection)
+                    .is_some_and(|l| matches!(l.edge, Edge::ApCurve { .. }))
+                {
+                    return None;
+                }
+                let env = ForceEnv {
+                    tool: tool?,
+                    material: &self.inputs.material,
+                    bound: crate::feeds::suggest::DEFLECTION_BACKOFF_TARGET_UM,
+                };
+                judge_declared_cuts::<DeflectionPlanned>(cuts, column(self.curve_fz(p.ae_mm)), &env)
+                    .iter()
+                    .map(|e| {
+                        let bound = match e.value {
+                            PlannedCell::Judged(root) => Ok(root),
+                            PlannedCell::NotJudged(_) | PlannedCell::NotACutLimit(_) => not_judged,
+                        };
+                        CutRow::of(e.kind, e.presence, Some(ap), bound)
+                    })
+                    .collect()
+            }
+            CeilingEdge::VendorDepthTable => {
+                let band_max = self.table_band_max?;
+                self.limit(LimitKind::VendorDepthTable)?;
+                let env = TableEnv {
+                    band_max_mm: band_max,
+                    d_mm: self.inputs.tool.diameter,
+                    top_mm: self.speeds.aps.last().copied().unwrap_or(MIN_AP_MM),
+                };
+                judge_declared_cuts::<VendorDepthTablePlanned>(
+                    cuts,
+                    column(self.curve_fz(p.ae_mm)),
+                    &env,
+                )
+                .iter()
+                .map(|e| {
+                    let bound = match e.value {
+                        PlannedCell::Judged(Some((mm, true))) => Ok(Some(mm)),
+                        PlannedCell::Judged(Some((_, false))) => Ok(None),
+                        PlannedCell::Judged(None) => Err(NoNumberReason::NotModelled),
+                        PlannedCell::NotJudged(_) | PlannedCell::NotACutLimit(_) => not_judged,
+                    };
+                    CutRow::of(e.kind, e.presence, Some(ap), bound)
+                })
+                .collect()
+            }
+            // The power of each declared cut at the speeds of the proposal,
+            // through the calculator's power terms (Step 6 reads the same
+            // terms, `planned::worst_power`), against the rated power.
+            CeilingEdge::Power => {
+                let sp = speeds?;
+                let mut input = FeedsInput::of_operation(
+                    &self.inputs.operation,
+                    &self.inputs.tool,
+                    &self.inputs.material,
+                    &self.inputs.machine,
+                    self.inputs.lut,
+                    self.inputs.spindle_strategy,
+                );
+                input.axial_depth_mm = Some(p.ap_mm);
+                input.radial_width_mm = Some(p.ae_mm);
+                let line = input.power_force_line()?;
+                let effective_d = crate::feeds::engagement::EngagedDiameter::of_hint(
+                    input.tool_geometry,
+                    input.tool_diameter,
+                    input.cut_body.max_cut_diameter_mm,
+                    p.ap_mm,
+                );
+                let power = |w: f64| {
+                    super::power_model_terms(&input, line, p.ap_mm, w, effective_d, sp.r.rpm)
+                        .kw_at_feed(sp.r.feed_rate_mm_min)
+                };
+                let env = PowerEnv {
+                    column_ae_mm: p.ae_mm,
+                    power_kw: &power,
+                };
+                let available = Ok(Some(sp.r.available_power_kw));
+                judge_declared_cuts::<SpindlePowerPlanned>(cuts, column(sp.fz), &env)
+                    .iter()
+                    .map(|e| match e.value {
+                        PlannedCell::Judged(Some((_, kw, _))) => {
+                            CutRow::of(e.kind, e.presence, Some(kw), available)
+                        }
+                        PlannedCell::Judged(None) => {
+                            CutRow::of(e.kind, e.presence, None, Err(NoNumberReason::NotModelled))
+                        }
+                        PlannedCell::NotJudged(_) | PlannedCell::NotACutLimit(_) => {
+                            CutRow::of(e.kind, e.presence, None, not_judged)
+                        }
+                    })
+                    .collect()
+            }
+        };
+        let unit = match edge {
+            CeilingEdge::ForceBudget | CeilingEdge::Deflection | CeilingEdge::VendorDepthTable => {
+                "mm"
+            }
+            CeilingEdge::Power => "kW",
+        };
+        Some(CutRows { unit, rows })
+    }
+
+    /// The rows of one value check at the proposal: the planned peak chip
+    /// of each declared cut at the speeds of the proposal against the
+    /// bound, its side and the envelope kind of its basis. No rows with no
+    /// matched row or no band.
+    fn value_rows(
+        &self,
+        check: ValueCheck,
+        sp: &ProposalSpeeds,
+    ) -> (BoundSide, LimitKind, Vec<CutRow>) {
+        use crate::feeds::planned::{
+            ChipEnv, ChipMaxPlanned, ChipMinPlanned, ChipReading, PlannedCell, RubbingFloorPlanned,
+        };
+        let (side, kind) = match check {
+            ValueCheck::ChipMax => (BoundSide::Ceiling, LimitKind::ChipBand),
+            ValueCheck::ChipMin => (BoundSide::Floor, LimitKind::ChipBand),
+            ValueCheck::RubbingFloor => (BoundSide::Floor, LimitKind::RubbingFloor),
+        };
+        let r = &sp.r;
+        let band = r
+            .chipload_bounds
+            .map(|b| (b.min_mm_per_tooth, b.max_mm_per_tooth))
+            .or(r.chipload_point_mm.map(|v| (v, v)));
+        let Some((band_min, band_max)) = band.filter(|_| r.matched_lut_row.is_some()) else {
+            return (side, kind, Vec::new());
+        };
+        let p = self.proposal_point;
+        let cuts = &self.inputs.cuts;
+        let column = BodyColumn {
+            ae_mm: p.ae_mm,
+            chip_mm: Some(sp.fz),
+        };
+        let d_eng = crate::feeds::engagement::EngagedDiameter::of_hint(
+            self.inputs.tool.geometry_hint(),
+            self.inputs.tool.diameter,
+            crate::feeds::CutBody::of_tool(&self.inputs.tool).max_cut_diameter_mm,
+            p.ap_mm,
+        )
+        .mm();
+        let env = |bound_mm: f64| ChipEnv {
+            thinning: cuts.thinning(),
+            d_eng_mm: d_eng,
+            bound_mm,
+        };
+        let cells: ByCutChip = match check {
+            ValueCheck::ChipMax => {
+                judge_declared_cuts::<ChipMaxPlanned>(cuts, column, &env(band_max))
+            }
+            ValueCheck::ChipMin => {
+                judge_declared_cuts::<ChipMinPlanned>(cuts, column, &env(band_min))
+            }
+            ValueCheck::RubbingFloor => {
+                let (floor, _) =
+                    crate::feeds::rubbing_floor_at(r.chipload_bounds, r.chipload_point_mm);
+                judge_declared_cuts::<RubbingFloorPlanned>(cuts, column, &env(floor))
+            }
+        };
+        let rows = cells
+            .iter()
+            .map(|e| {
+                let (value, bound) = match e.value {
+                    PlannedCell::<Option<ChipReading>>::Judged(Some(c)) => {
+                        (Some(c.peak_mm), Ok(Some(c.bound_mm)))
+                    }
+                    PlannedCell::Judged(None) => (None, Err(NoNumberReason::NotModelled)),
+                    PlannedCell::NotJudged(_) | PlannedCell::NotACutLimit(_) => {
+                        (None, Err(NoNumberReason::NotJudgedHere))
+                    }
+                };
+                CutRow::of(e.kind, e.presence, value, bound)
+            })
+            .collect();
+        (side, kind, rows)
+    }
+
+    /// P29-7 7c (lead ruling Q1): the note of each declared cut that the
+    /// plan may not cut. It is judged (a row of `cut_checks`) but it is no
+    /// ceiling; the note states its force-budget row at the proposal.
+    fn may_occur_notes(&self) -> Vec<String> {
+        let mut notes = Vec::new();
+        for cut in self.inputs.cuts.list().iter() {
+            let crate::compute::catalog::Presence::MayOccur(may) = cut.presence else {
+                continue;
+            };
+            let budget = self.cut_checks.iter().find(|c| {
+                c.cut == cut.kind && c.check.limit == crate::limits::LimitId::ForceBudget
+            });
+            let tail = match budget.map(|c| (c.check.state, c.check.bound)) {
+                Some((crate::limits::CheckState::Exceeds, Some(b))) => {
+                    format!("at the proposal depth it is over the force budget (ceiling {b:.2} mm)")
+                }
+                Some((crate::limits::CheckState::Within, Some(b))) => {
+                    format!(
+                        "at the proposal depth it is inside the force budget (ceiling {b:.2} mm)"
+                    )
+                }
+                Some(_) | None => "the force budget gives it no ceiling here".to_owned(),
+            };
+            notes.push(format!(
+                "{} (row {}, {}): the plan may not cut it, so it is not a ceiling; {tail}",
+                cut.kind.label(),
+                may.row,
+                may.reason,
+            ));
+        }
+        notes
+    }
+
+    /// P29-7 7c (trap 2): the note when the force budget sets the proposal
+    /// depth and the move budget is not met at that depth. No number moves:
+    /// `propose` cannot raise a capped depth (K2) and keeps a stated width
+    /// (R2), so the card and the record state the conflict.
+    fn move_budget_conflict_note(&self) -> Option<String> {
+        let p = self.proposal.get().point()?;
+        if !self.proposal_limits.contains(&LimitKind::Rigidity) {
+            return None;
+        }
+        let unmet = self
+            .placing_margins(p)
+            .iter()
+            .any(|(kind, margin, _)| *kind == LimitKind::Runtime && *margin < -1e-9);
+        unmet.then(|| MOVE_BUDGET_CONFLICT.to_owned())
     }
 
     /// P13c (O4): the proposal of a roughing op is the cut with the most
@@ -2520,6 +3112,7 @@ fn geometric_limits(
         crate::feeds::flute_guard_of(input.tool.cutting_length_planning_mm(), length_kind, d);
     out.push(Limit {
         kind: LimitKind::FluteGuard,
+        binding_cut: None,
         law: "0.8 x flute",
         basis: guard_basis,
         edge: Edge::ApCeiling { mm: guard },
@@ -2527,6 +3120,7 @@ fn geometric_limits(
     if input.tool.cutting_length_planning_mm() > 0.0 {
         out.push(Limit {
             kind: LimitKind::CuttingLength,
+            binding_cut: None,
             law: "tool cutting length",
             basis: Basis::tool_fact(
                 crate::feeds::sourced::ToolFactName::CuttingLength,
@@ -2549,6 +3143,7 @@ fn geometric_limits(
     {
         out.push(Limit {
             kind: LimitKind::VendorAxial,
+            binding_cut: None,
             law: "vendor ap bound",
             basis: Basis::Printed(crate::feeds::sourced::RowRef(row.observation_id.clone())),
             edge: Edge::ApCeiling { mm },
@@ -2559,6 +3154,7 @@ fn geometric_limits(
     if plan.computed_width {
         out.push(Limit {
             kind: LimitKind::CornerCoverage,
+            binding_cut: None,
             law: crate::feeds::force_budget::CORNER_COVERAGE_LAW,
             basis: Basis::derived(
                 "corner coverage (1 + 1/sqrt 2) r",
@@ -2576,18 +3172,21 @@ fn geometric_limits(
     }
     out.push(Limit {
         kind: LimitKind::Diameter,
+        binding_cut: None,
         law: "ae <= D",
         basis: Basis::tool_diameter(),
         edge: diameter_edge(input, plan, d),
     });
     out.push(Limit {
         kind: LimitKind::EngagementFloor,
+        binding_cut: None,
         law: "smallest depth the calculator writes",
         basis: Basis::Rule(crate::feeds::MIN_AP_MM_ROW),
         edge: Edge::ApFloor { mm: MIN_AP_MM },
     });
     out.push(Limit {
         kind: LimitKind::EngagementFloor,
+        binding_cut: None,
         law: "smallest width the calculator writes",
         basis: Basis::Rule(crate::feeds::MIN_AE_MM_ROW),
         edge: Edge::AeFloor { mm: MIN_AE_MM },
@@ -2755,6 +3354,7 @@ fn power_limit(
     use crate::feeds::engagement::PowerCase;
     out.push(Limit {
         kind: LimitKind::Power,
+        binding_cut: None,
         law: match (operator.is_some(), case) {
             (false, PowerCase::Nominal) => "rated spindle power at the full chip (nominal case)",
             (false, PowerCase::PlannerCap) => {
@@ -2785,7 +3385,9 @@ fn power_limit(
 /// P11b (L6): the vendor depth table as a limit. Per width sample, the
 /// deepest `ap` where the table's allowed chip (`band max x
 /// doc_derating_scale(ap / D)`) still holds the PEAK chip at that width
-/// (`geometry::vendor_depth_table_ceiling_ratio`). The chip is the
+/// (`geometry::vendor_depth_table_ceiling_ratio`). P29-7 7c (ruling Q8):
+/// each column is the lowest ceiling over the declared cuts that the plan
+/// always cuts (a slot has the largest chip share). The chip is the
 /// operator's (L7), else the suggested chip of the grid. The table is
 /// printed as a chip rule at 1, 2 and 3 x D with no width (step 0 found that
 /// it holds neither the force nor the chip), so it is drawn, not derived
@@ -2824,21 +3426,14 @@ fn vendor_depth_limit(
     // span top (the power edge's rule). No binding column: no limit.
     let top = speeds.aps.last().copied().unwrap_or(MIN_AP_MM);
     let flutes = input.tool.flute_count_planning();
-    // The ceiling at the width `ae` and the chip `fz`, and whether the table
-    // binds there.
-    let ceiling = |ae: f64, fz: f64| {
-        let psi = crate::feeds::force::immersion_angle(ae, 0.5 * d);
-        let peak = fz * psi.min(std::f64::consts::FRAC_PI_2).sin();
-        let share = peak / band_max;
-        if share > 0.5 {
-            (
-                crate::feeds::geometry::vendor_depth_table_ceiling_ratio(share) * d,
-                true,
-            )
-        } else {
-            (top, false)
-        }
+    // The ceiling at the body width `ae` and the body chip `fz`, and whether
+    // the table binds there: the lowest over the declared cuts (P29-7 7c).
+    let env = TableEnv {
+        band_max_mm: band_max,
+        d_mm: d,
+        top_mm: top,
     };
+    let ceiling = |ae: f64, fz: f64| table_solve(&inputs.cuts, ae, fz, &env).0;
     // P19: the columns are the grid widths only (no sample at the stated
     // width: it moved the drawn edge when the stated width moved;
     // `add_exact_ceilings` solves the stated point). Between the columns the
@@ -2896,6 +3491,7 @@ fn vendor_depth_limit(
     let flat = curve.iter().all(|p| (p[1] - first).abs() < 1e-9);
     out.push(Limit {
         kind: LimitKind::VendorDepthTable,
+        binding_cut: None,
         law: if operator.is_some() {
             "vendor depth table at the operator's peak chip (1/2/3 x D)"
         } else {
@@ -2922,16 +3518,18 @@ pub const NO_DEFLECTION_LIMIT_BELOW_THE_FLUTE: &str = "no deflection limit below
 /// The tip-deflection edge (roughing, as pass 6): per width sample, the
 /// shallowest `ap` where the deflection meets the 200 µm target, by the
 /// one beam (`cutter_axial_constraints`). A column with no root below the
-/// flute adds no point (P11a, D-B).
+/// flute adds no point (P11a, D-B). P29-7 7c: each column is the lowest
+/// root over the declared cuts that the plan always cuts
+/// ([`deflection_solve`]).
 fn deflection_limit(
     out: &mut Vec<Limit>,
-    input: &EnvelopeInput<'_>,
+    inputs: &OwnedInputs,
     speeds: &SpeedsMap,
     plan: &AxesPlan,
     role: PassRole,
     operator: Option<OperatorChip>,
 ) {
-    // EXEMPT(P28-15, M12)
+    // EXEMPT(P28-15)
     if !plan.axes.ap_free() || !matches!(role, PassRole::Roughing) {
         return;
     }
@@ -2941,25 +3539,27 @@ fn deflection_limit(
     // as a reading), so the refusal is decided here first.
     let unmodelled = |reason: crate::feeds::predict::DeflectionUnmodeled| Limit {
         kind: LimitKind::Deflection,
+        binding_cut: None,
         law: "tip deflection <= 200 um",
         basis: Basis::Rule(crate::feeds::suggest::DEFLECTION_BACKOFF_TARGET_ROW),
         edge: Edge::Unmodelled {
             reason: reason.clause(),
         },
     };
-    let Ok(tool_def) = crate::compute::cutter::build_cutter(input.tool) else {
+    let Ok(tool_def) = crate::compute::cutter::build_cutter(&inputs.tool) else {
         out.push(unmodelled(
             crate::feeds::predict::DeflectionUnmodeled::ToolOutOfDomain,
         ));
         return;
     };
-    if input.material.force_line().is_err() {
+    if inputs.material.force_line().is_err() {
         out.push(unmodelled(
             crate::feeds::predict::DeflectionUnmodeled::MaterialUnvalidated,
         ));
         return;
     }
-    if !(input.tool.stickout_planning_mm().is_finite() && input.tool.stickout_planning_mm() > 0.0) {
+    if !(inputs.tool.stickout_planning_mm().is_finite() && inputs.tool.stickout_planning_mm() > 0.0)
+    {
         out.push(unmodelled(
             crate::feeds::predict::DeflectionUnmodeled::NoStickout,
         ));
@@ -2976,21 +3576,12 @@ fn deflection_limit(
                 None => continue,
             },
         };
-        let c = crate::feeds::cutter_constraints::cutter_axial_constraints(
-            &tool_def,
-            input.material,
-            ae.max(1.0e-3),
-            fz,
-            None,
-            None,
-            Some(crate::feeds::suggest::DEFLECTION_BACKOFF_TARGET_UM),
-        );
         // P11a (D-B): the solved depth, or `None` when no depth below the
         // flute reaches the target. The search bracket is never drawn.
+        // P29-7 7c: the lowest over the declared cuts.
         columns.push((
             ae,
-            c.max_doc_deflection_mm
-                .filter(|v| v.is_finite() && *v >= 0.0),
+            deflection_solve(inputs, &tool_def, ae, fz).map(|(mm, _)| mm),
         ));
     }
     if columns.iter().all(|(_, mm)| mm.is_none()) {
@@ -2999,6 +3590,7 @@ fn deflection_limit(
         // dropped and never drawn as an edge).
         out.push(Limit {
             kind: LimitKind::Deflection,
+            binding_cut: None,
             law: "tip deflection <= 200 um",
             basis: Basis::Rule(crate::feeds::suggest::DEFLECTION_BACKOFF_TARGET_ROW),
             edge: Edge::Unmodelled {
@@ -3017,6 +3609,7 @@ fn deflection_limit(
         .collect();
     out.push(Limit {
         kind: LimitKind::Deflection,
+        binding_cut: None,
         law: "tip deflection <= 200 um",
         basis: Basis::derived(
             "one beam (ToolDefinition::tip_deflection_mm)",
@@ -3033,10 +3626,16 @@ fn deflection_limit(
 /// put the sample within 1/4096 of the column gap.
 const BUDGET_EDGE_REFINE_STEPS: usize = 12;
 
-/// The midpoint split passes on the smooth stretches of the force-budget
-/// edge (a numerical step, not a formula constant): each pass halves every
-/// segment whose straight line stands above the solved depth.
-const BUDGET_EDGE_SPLIT_LEVELS: usize = 4;
+/// The most midpoint split passes on the smooth stretches of the
+/// force-budget edge (a numerical step, not a formula constant): each pass
+/// halves every segment whose straight line stands above the solved depth,
+/// and the passes stop when no segment splits. P29-7 7c: the edge is the
+/// lowest over the declared cuts, which has a kink where two cuts cross and
+/// a steep stretch where the slot ring's unlifted chip moves with the lift
+/// at a narrow width; four passes left the line 3 % above the solved depth
+/// there (3.175 mm 2F hardwood Pocket, ae 0.059 mm). Twelve is the cap of
+/// the vendor depth table edge.
+const BUDGET_EDGE_SPLIT_LEVELS: usize = 12;
 
 /// P19: the most midpoint split passes on the vendor depth table edge (a
 /// numerical step, not a formula constant). The edge has corners where the
@@ -3081,16 +3680,13 @@ struct SplitRule {
 /// column's value for the right one's and adds the two bracketing samples,
 /// so a cliff stands at its own width and a smooth stretch gains a midpoint.
 fn refine_budget_columns(
-    columns: &mut Vec<(f64, Option<crate::feeds::force_budget::BudgetDepth>)>,
+    columns: &mut Vec<(f64, Option<Solved>)>,
     top: f64,
-    solve: impl Fn(f64) -> Option<crate::feeds::force_budget::BudgetDepth>,
+    solve: impl Fn(f64) -> Option<Solved>,
 ) {
     refine_columns(
         columns,
-        |c: Option<crate::feeds::force_budget::BudgetDepth>| {
-            c.and_then(crate::feeds::force_budget::BudgetDepth::ceiling_mm)
-                .unwrap_or(top)
-        },
+        |c: Option<Solved>| c.and_then(|(d, _)| d.ceiling_mm()).unwrap_or(top),
         solve,
         SplitRule {
             levels: BUDGET_EDGE_SPLIT_LEVELS,
@@ -3206,8 +3802,10 @@ fn refine_columns<T: Copy>(
 /// takes the span top; no root anywhere, or no force line, is an
 /// `Unmodelled` entry with its reason. Between adjacent columns
 /// [`refine_budget_columns`] adds the samples of a cliff and of the smooth
-/// stretches, so the drawn edge stands on the solved depth. P29-5c: each
-/// solve reads [`budget_width`] (the tool diameter for a slot or a groove);
+/// stretches, so the drawn edge stands on the solved depth. P29-7 7c: each
+/// solve is the lowest depth over the declared cuts that the plan always
+/// cuts ([`budget_solve`]: the slot ring, the first slot, the planner cap);
+/// the body reads the tool diameter for a slot or a groove (P29-5c), and
 /// the column keeps its axis width. A chamfer states no depth: it is an
 /// `Unmodelled` entry, judged after the simulation. Returns the model the
 /// proposal solves exactly.
@@ -3221,13 +3819,13 @@ fn rigidity_limit(
     use crate::feeds::force_budget as fb;
     // P29-3: the depth limit of the op's body cut (P29-5: a slot or a
     // groove reads the budget under every role, ruling R3).
-    let depth_limit = inputs.operation.cuts().body_facts().depth_rule;
-    // EXEMPT(M12)
+    let depth_limit = inputs.cuts.list().body_facts().depth_rule;
     let rule = inputs.machine.rigidity.depth_cap_of(depth_limit)?;
     let crate::machine::DepthCapRule { budget_n } = rule;
     let basis = budget_basis(&inputs.machine);
     let unmodelled = |reason: &'static str| Limit {
         kind: LimitKind::Rigidity,
+        binding_cut: None,
         law: fb::FORCE_BUDGET_LAW,
         basis: basis.clone(),
         edge: Edge::Unmodelled { reason },
@@ -3284,7 +3882,7 @@ fn rigidity_limit(
         }
     }
     widths.sort_by(|a, b| a.0.total_cmp(&b.0));
-    let mut columns: Vec<(f64, Option<fb::BudgetDepth>)> = Vec::with_capacity(widths.len());
+    let mut columns: Vec<(f64, Option<Solved>)> = Vec::with_capacity(widths.len());
     for (ae, column) in widths {
         let fz = match (model.operator_fz, column) {
             (Some(fz), _) => fz,
@@ -3300,16 +3898,7 @@ fn rigidity_limit(
                 flutes,
             ),
         };
-        columns.push((
-            ae,
-            fb::depth_at_budget(
-                &tool,
-                &inputs.material,
-                budget_width(inputs, ae).max(1.0e-3),
-                fz,
-                budget_n,
-            ),
-        ));
+        columns.push((ae, budget_solve(inputs, &tool, ae, fz, budget_n)));
     }
     if columns.iter().all(|(_, c)| c.is_none()) {
         out.push(unmodelled(fb::NO_BUDGET_INPUT));
@@ -3326,13 +3915,7 @@ fn rigidity_limit(
                 flutes,
             )
         });
-        fb::depth_at_budget(
-            &tool,
-            &inputs.material,
-            budget_width(inputs, ae).max(1.0e-3),
-            fz,
-            budget_n,
-        )
+        budget_solve(inputs, &tool, ae, fz, budget_n)
     });
     model.solved = SolvedColumns(
         columns
@@ -3342,17 +3925,17 @@ fn rigidity_limit(
     );
     if columns
         .iter()
-        .all(|(_, c)| matches!(c, None | Some(fb::BudgetDepth::NoRootBelowFlute)))
+        .all(|(_, c)| matches!(c, None | Some((fb::BudgetDepth::NoRootBelowFlute, _))))
     {
         out.push(unmodelled(fb::NO_BUDGET_LIMIT_BELOW_THE_FLUTE));
         return Some(model);
     }
     let floored = columns
         .iter()
-        .any(|(_, c)| matches!(c, Some(fb::BudgetDepth::BelowFloor)));
+        .any(|(_, c)| matches!(c, Some((fb::BudgetDepth::BelowFloor, _))));
     let curve: Vec<[f64; 2]> = columns
         .into_iter()
-        .map(|(ae, c)| [ae, c.and_then(fb::BudgetDepth::ceiling_mm).unwrap_or(top)])
+        .map(|(ae, c)| [ae, c.and_then(|(d, _)| d.ceiling_mm()).unwrap_or(top)])
         .collect();
     let edge = match curve.as_slice() {
         [only] => Edge::ApCeiling { mm: only[1] },
@@ -3360,6 +3943,7 @@ fn rigidity_limit(
     };
     out.push(Limit {
         kind: LimitKind::Rigidity,
+        binding_cut: None,
         law: if floored {
             fb::FORCE_BUDGET_FLOOR_LAW
         } else {
@@ -3371,31 +3955,69 @@ fn rigidity_limit(
     Some(model)
 }
 
-/// P29-5c: the width (mm) that the force-budget solve reads at the axis
-/// width `ae_column`. A body that declares the slot width (a slot, and a
-/// groove that engages its whole cone) has a fixed width axis, and the
-/// solve reads the tool diameter there; the engagement clamps a V-bit at
-/// the cone at the depth. Every other body reads the axis width. Only the
-/// solve reads this width: the axis, the speeds grid and every other limit
-/// keep the axis width (lead ruling Q1).
-fn budget_width(inputs: &OwnedInputs, ae_column: f64) -> f64 {
-    use crate::compute::catalog::DeclaredWidth;
-    let body = inputs
-        .operation
-        .cuts()
-        .of_kind(crate::limits::CutKind::Body)
-        .map(|c| c.width);
-    match body {
-        Some(DeclaredWidth::Slot) => inputs.tool.diameter,
-        Some(
-            DeclaredWidth::Stated(_)
-            | DeclaredWidth::PassCeiling { .. }
-            | DeclaredWidth::CapMult { .. }
-            | DeclaredWidth::Scallop(_)
-            | DeclaredWidth::None(_),
-        )
-        | None => ae_column,
-    }
+/// P29-7 7c: the force-budget depth at the body column `(ae, fz)`: the
+/// lowest over the declared cuts that the plan always cuts, through the one
+/// driver, and the cut that gives it. The body reads the tool diameter when
+/// it declares the slot width (a slot, a groove; P29-5c), and the column
+/// width else; every other cut reads its own width and chip
+/// (`planned::DeclaredCuts::planned`). A tie keeps the body.
+fn budget_solve(
+    inputs: &OwnedInputs,
+    tool: &ToolDefinition,
+    ae: f64,
+    fz: f64,
+    budget_n: f64,
+) -> Option<Solved> {
+    let env = ForceEnv {
+        tool,
+        material: &inputs.material,
+        bound: budget_n,
+    };
+    let column = BodyColumn {
+        ae_mm: ae,
+        chip_mm: Some(fz),
+    };
+    judge_declared_cuts::<ForceBudgetPlanned>(&inputs.cuts, column, &env)
+        .lowest_always(budget_rank)
+        .and_then(|(kind, answer)| answer.map(|d| (d, kind)))
+}
+
+/// P29-7 7c: the tip-deflection depth (mm) at the body column `(ae, fz)`:
+/// the lowest root over the declared cuts that the plan always cuts, and
+/// the cut that gives it. `None`: no cut has a root below the flute.
+fn deflection_solve(
+    inputs: &OwnedInputs,
+    tool: &ToolDefinition,
+    ae: f64,
+    fz: f64,
+) -> Option<(f64, CutKind)> {
+    let env = ForceEnv {
+        tool,
+        material: &inputs.material,
+        bound: crate::feeds::suggest::DEFLECTION_BACKOFF_TARGET_UM,
+    };
+    let column = BodyColumn {
+        ae_mm: ae,
+        chip_mm: Some(fz),
+    };
+    judge_declared_cuts::<DeflectionPlanned>(&inputs.cuts, column, &env)
+        .lowest_always(|answer| *answer)
+        .and_then(|(kind, answer)| answer.map(|mm| (mm, kind)))
+}
+
+/// P29-7 7c (ruling Q8): the vendor depth table ceiling at the body column
+/// `(ae, fz)`: the lowest over the declared cuts that the plan always cuts,
+/// whether the table binds there, and the cut that gives it. With no cut
+/// that has a number, the span top (the table holds every printed depth).
+fn table_solve(cuts: &DeclaredCuts, ae: f64, fz: f64, env: &TableEnv) -> ((f64, bool), CutKind) {
+    let column = BodyColumn {
+        ae_mm: ae,
+        chip_mm: Some(fz),
+    };
+    judge_declared_cuts::<VendorDepthTablePlanned>(cuts, column, env)
+        .lowest_always(|answer| answer.map(|(mm, _)| mm))
+        .and_then(|(kind, answer)| answer.map(|c| (c, kind)))
+        .unwrap_or(((env.top_mm, false), CutKind::Body))
 }
 
 /// P13c (O1): the basis of a force-budget value: the machine rigidity (its
@@ -3415,6 +4037,16 @@ fn budget_basis(machine: &MachineProfile) -> Basis {
 /// in mm ([`move_budget_not_met_note`]).
 pub const MOVE_BUDGET_NOT_MET: &str =
     "the move budget is not met at any width up to the width ceiling";
+
+/// P29-7 7c (trap 2): the note when the move budget is not met at the depth
+/// that the force budget allows. Suggest moves no number for it.
+pub const MOVE_BUDGET_CONFLICT: &str = "the move budget is not met at the force-budget depth: \
+     Suggest keeps the stated width and does not raise the depth over the force budget";
+
+/// The cells of one chip check over the declared cuts.
+type ByCutChip = crate::feeds::planned::ByCut<
+    crate::feeds::planned::PlannedCell<Option<crate::feeds::planned::ChipReading>>,
+>;
 
 /// P19: the note that gives the width ceiling (mm) when the move budget is
 /// not met at any width up to it.
@@ -3492,6 +4124,7 @@ fn runtime_limit(
     };
     let limit = |edge: Edge| Limit {
         kind: LimitKind::Runtime,
+        binding_cut: None,
         law: "predicted moves <= the move budget",
         basis: Basis::derived(
             "move budget",
@@ -3612,6 +4245,7 @@ fn per_point_limits(out: &mut Vec<Limit>, base: &FeedsResult, speeds: &SpeedsMap
     {
         out.push(Limit {
             kind: LimitKind::ChipBand,
+            binding_cut: None,
             law: "printed chip band (peak chip)",
             basis: Basis::Printed(crate::feeds::sourced::RowRef(row.observation_id.clone())),
             edge: Edge::PerPoint,
@@ -3637,6 +4271,7 @@ fn per_point_limits(out: &mut Vec<Limit>, base: &FeedsResult, speeds: &SpeedsMap
         };
         out.push(Limit {
             kind: LimitKind::RubbingFloor,
+            binding_cut: None,
             law: "min(0.025, band min) per tooth (warns, never lifts)",
             basis,
             edge: Edge::PerPoint,
@@ -3645,6 +4280,7 @@ fn per_point_limits(out: &mut Vec<Limit>, base: &FeedsResult, speeds: &SpeedsMap
     if speeds.points.iter().any(|p| p.feed_capped) {
         out.push(Limit {
             kind: LimitKind::FeedCap,
+            binding_cut: None,
             law: "machine cutting-feed ceiling",
             basis: Basis::Machine(MachineField::CuttingFeedCap),
             edge: Edge::PerPoint,
@@ -3818,7 +4454,7 @@ mod tests {
             let drawn = edge.ap_ceiling_at(ae).unwrap();
             let solved = env
                 .budget_depth_at(ae, BudgetChip::Curve)
-                .and_then(crate::feeds::force_budget::BudgetDepth::ceiling_mm)
+                .and_then(|(d, _)| d.ceiling_mm())
                 .unwrap_or(top);
             if drawn - solved > worst.1 - worst.2 {
                 worst = (ae, drawn, solved);

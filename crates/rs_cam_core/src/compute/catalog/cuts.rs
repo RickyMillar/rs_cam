@@ -17,8 +17,10 @@
 //! In P29-3 each fact holds the value of today's label (rows `F-*` of the
 //! exemption list); P29-4 to P29-7 replace each value with geometry.
 //!
-//! The readers: `feeds::engagement::PowerCases` (the slot case and the
-//! planner width), the depth rule of the envelope, Suggest and the feed
+//! The readers: `feeds::planned` (P29-7 7c: every limit before the
+//! simulation judges every declared cut, and the pre-sim power is the
+//! largest power over them), [`CutList::full_feed_width`] (the width of
+//! the Suggest lift), the depth rule of the envelope, Suggest and the feed
 //! modulator, the offset-ring test of the envelope and Suggest, the
 //! thinning rule of the session and Suggest doors, the slot ring of
 //! `feeds::geometry::UnliftedFeed::of_slot_ring`, and (P29-5c) the body
@@ -351,6 +353,34 @@ impl CutList {
         self.of_kind(kind).is_some()
     }
 
+    /// P23a: the widest width (mm) that the planner holds at the full feed,
+    /// at the stated stepover `ae` on a tool of diameter `d`: the width of
+    /// the planner-cap cut ([`PlannerWidth::full_feed_width_mm`]), else
+    /// `ae`. Every reader of the Suggest lift takes its width here: Step 5,
+    /// the unlifted feed, the power ladder's width rung, pass 9, the
+    /// efficiency figure and the load context of the gates.
+    #[must_use]
+    pub fn full_feed_width(&self, ae: f64, d: f64) -> f64 {
+        self.planner_width().full_feed_width_mm(ae, d)
+    }
+
+    /// The planner width rule of the planner-cap cut, or
+    /// [`PlannerWidth::None`] when the op declares none.
+    #[must_use]
+    pub fn planner_width(&self) -> PlannerWidth {
+        match self.of_kind(CutKind::FirstPass(FirstPassKind::PlannerCap)) {
+            Some(cap) => match cap.width {
+                DeclaredWidth::PassCeiling { .. } => PlannerWidth::PassCeiling,
+                DeclaredWidth::CapMult { mult, .. } => PlannerWidth::CapMult(mult),
+                DeclaredWidth::Stated(_)
+                | DeclaredWidth::Slot
+                | DeclaredWidth::Scallop(_)
+                | DeclaredWidth::None(_) => PlannerWidth::None,
+            },
+            None => PlannerWidth::None,
+        }
+    }
+
     /// The facts of the body pass. Every op declares its body first, so
     /// this is the facts of the first cut.
     #[must_use]
@@ -543,7 +573,7 @@ impl OperationConfig {
     }
 
     /// The body, the planner cap and the first slot of the op, in the tie
-    /// order of the power cases (`PowerCases::worst`: a later case wins a
+    /// order of the power cases (`feeds::planned::worst_power`: a later case wins a
     /// tie). `first_slot` says how the first slot is declared.
     fn declare_side_cuts(&self, declare: &mut Declare, first_slot: FirstSlot) {
         let spec = self.cut_spec();
@@ -579,9 +609,8 @@ impl OperationConfig {
         }
         match first_slot {
             FirstSlot::OfSpec => {
-                // K7: a slot case for a first pass that meets material on
-                // both sides, or a radial cut that is a slot.
-                // EXEMPT(M12)
+                // K7: a first pass that meets material on both sides, or a
+                // radial cut that is a slot.
                 if matches!(spec.first_pass, FirstPass::Slot) || matches!(spec.radial, Radial::Slot)
                 {
                     declare.cut(

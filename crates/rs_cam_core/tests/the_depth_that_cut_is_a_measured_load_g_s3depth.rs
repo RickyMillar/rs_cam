@@ -689,8 +689,10 @@ fn the_measured_trace_varies_so_a_peak_means_something() {
 /// The Suggest clamp and the criterion now read ONE helper, so the cap
 /// the operator's recipe was lowered to and the cap the row draws
 /// against cannot disagree. This arm runs the production apply ("Apply
-/// all", feeds contract P5) and asserts the envelope's rigidity ceiling is
-/// the helper's own number, bit for bit. Byte-identity of every other Suggest figure is carried by the
+/// all", feeds contract P5). P29-7 7c: for each declared cut with a number
+/// (the body and the slot ring of this contour Pocket), the planned ceiling
+/// and the helper's cap of a sample of that width and chip are one number,
+/// bit for bit, and the envelope's rigidity ceiling is the lowest of them. Byte-identity of every other Suggest figure is carried by the
 /// apply-door sentries this change re-runs.
 #[test]
 fn the_suggest_clamp_still_fires_at_the_helper_s_own_cap() {
@@ -770,17 +772,69 @@ fn the_suggest_clamp_still_fires_at_the_helper_s_own_cap() {
         .clone();
     let fz = at_floor.feed_rate_mm_min / (at_floor.rpm * 2.0);
     let cutter = rs_cam_core::compute::cutter::build_cutter(&tool).unwrap();
-    let expected = match rigidity_depth_cap(
-        &machine,
-        OperationType::Pocket.body_depth_limit(),
-        &cutter,
-        &material,
-        STEPOVER_MM,
-        fz,
-    ) {
-        Some(RigidityCapOutcome::Cap(c)) => c.cap_mm(),
-        other => panic!("a pocket roughing pass carries an axial cap: {other:?}"),
+    // P29-7 7c: for each declared cut with a number, the ceiling before the
+    // simulation (the one driver, `feeds::planned`) and the gate cap of a
+    // sample of that width and chip after it (`rigidity_depth_cap`) are ONE
+    // number. The envelope edge is the lowest of them.
+    use rs_cam_core::compute::catalog::Presence;
+    use rs_cam_core::feeds::planned::{
+        BodyColumn, DeclaredCuts, ForceBudgetPlanned, ForceEnv, PlannedCell, judge_declared_cuts,
     };
+    let cuts = DeclaredCuts::of_operation(&operation, &tool);
+    let column = BodyColumn {
+        ae_mm: STEPOVER_MM,
+        chip_mm: Some(fz),
+    };
+    let budget_n = machine
+        .rigidity
+        .depth_cap_of(OperationType::Pocket.body_depth_limit())
+        .expect("a pocket roughing pass reads the force budget")
+        .budget_n;
+    let env = ForceEnv {
+        tool: &cutter,
+        material: &material,
+        bound: budget_n,
+    };
+    let cells = judge_declared_cuts::<ForceBudgetPlanned>(&cuts, column, &env);
+    let mut expected = f64::INFINITY;
+    let mut kinds = Vec::new();
+    for (cut, cell) in cuts.list().iter().zip(cells.iter()) {
+        let planned = cuts.planned(cut, column);
+        let (Ok(w), Ok(cut_fz), PlannedCell::Judged(Some(depth))) =
+            (planned.width_mm, planned.chip_mm, cell.value)
+        else {
+            continue;
+        };
+        let gate = match rigidity_depth_cap(
+            &machine,
+            OperationType::Pocket.body_depth_limit(),
+            &cutter,
+            &material,
+            w,
+            cut_fz,
+        ) {
+            Some(RigidityCapOutcome::Cap(c)) => c.cap_mm(),
+            other => panic!(
+                "{:?}: a roughing cut carries an axial cap: {other:?}",
+                cut.kind
+            ),
+        };
+        assert_eq!(
+            depth.ceiling_mm(),
+            Some(gate),
+            "{:?}: the planned ceiling and the gate cap must be ONE number",
+            cut.kind
+        );
+        if cut.presence == Presence::Always {
+            expected = expected.min(gate);
+        }
+        kinds.push(cut.kind);
+    }
+    assert!(
+        kinds.contains(&rs_cam_core::limits::CutKind::Body)
+            && kinds.contains(&rs_cam_core::limits::CutKind::SlotRing),
+        "non-vacuity: the body and the slot ring have a number: {kinds:?}"
+    );
 
     // P19: the drawn curve holds no sample at the stated width; the
     // judged ceiling there is the exact one.
@@ -790,7 +844,7 @@ fn the_suggest_clamp_still_fires_at_the_helper_s_own_cap() {
 
     assert_eq!(
         capped, expected,
-        "the clamp and the criterion must read ONE cap"
+        "the clamp is the lowest cap of the declared cuts"
     );
     // P13c (O4): the proposal is the removal-rate pick inside the stated
     // box, so it may trade width for depth; it ships inside the rigidity

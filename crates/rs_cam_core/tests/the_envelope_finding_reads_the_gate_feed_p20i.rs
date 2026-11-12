@@ -81,19 +81,62 @@ fn oak() -> Material {
     }
 }
 
-/// The rated spindle power of the case (kW): low, so the drawn Power edge
-/// is the lowest ceiling at some width. A case value, not a machine.
-const RATED_KW: f64 = 0.25;
+/// The share of the derived power that the case machine is rated at (see
+/// [`rated_kw`]).
+const RATED_SHARE: f64 = 0.5;
+
+/// The rated spindle power of the case (kW), DERIVED, not typed: one half
+/// of the power of the stated cut at the force-budget depth of the fixture
+/// at the full width (the lowest force-budget depth over the widths), on the
+/// same machine. So the drawn Power edge is the lowest ceiling by
+/// construction. P29-7 7c: the force budget reads every declared cut, and
+/// on every repo machine (none is rated under 0.71 kW) the force budget of
+/// this contour Pocket is under the power ceiling at every width: at the
+/// old case value 0.25 kW the Power edge was 2.598 mm at every width (the
+/// slot power case), the force budget 1.471 to 2.194 mm.
+fn rated_kw() -> f64 {
+    static RATED: std::sync::OnceLock<f64> = std::sync::OnceLock::new();
+    *RATED.get_or_init(|| {
+        let reference = MachineProfile::shapeoko_makita();
+        let op = stated_pocket();
+        let env = envelope_with(&op, &reference);
+        let depth = env
+            .judged_ap_ceiling(LimitKind::Rigidity, D)
+            .expect("the stated pocket has a force-budget depth at the full width");
+        let mut at = op;
+        assert!(at.set_depth_per_pass(depth) && at.set_stepover(D));
+        let figure = rs_cam_core::feeds::power_at_operating_point(
+            &at,
+            &tool_config(),
+            &oak(),
+            &reference,
+            Some(rs_cam_core::feeds::suggest::CalculatorOperatingPoint {
+                radial_width_mm: D,
+                axial_depth_mm: depth,
+                feed_rate_mm_min: STATED_FEED,
+                rpm: f64::from(RPM),
+            }),
+        )
+        .expect("white oak gives a power figure");
+        RATED_SHARE * figure.required_kw
+    })
+}
 
 fn machine() -> MachineProfile {
     let mut machine = MachineProfile::shapeoko_makita();
-    machine.power = PowerModel::ConstantPower { power_kw: RATED_KW };
+    machine.power = PowerModel::ConstantPower {
+        power_kw: rated_kw(),
+    };
     machine
 }
 
 fn envelope_of(op: &OperationConfig) -> SafeEnvelope {
+    envelope_with(op, &machine())
+}
+
+fn envelope_with(op: &OperationConfig, machine: &MachineProfile) -> SafeEnvelope {
     let tool = tool_config();
-    let machine = machine();
+    let machine = machine.clone();
     let material = oak();
     SafeEnvelope::for_cut(EnvelopeInput {
         operation: op,

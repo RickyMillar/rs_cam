@@ -31,6 +31,7 @@ pub mod geometry_class;
 mod input;
 pub mod lock;
 pub mod operating_point;
+pub mod planned;
 pub mod plunge;
 pub mod predict;
 pub mod profile;
@@ -568,8 +569,8 @@ pub struct FeedsResult {
     /// no axial section); never 0.0 for "not modelled".
     pub power_kw: Option<f64>,
     /// K7 (feeds contract P9): the case of the pre-sim power set that
-    /// `power_kw` is the power of (the maximum over the cases that
-    /// [`FeedsInput::power_cases`] admits).
+    /// `power_kw` is the power of (the maximum over the declared cuts,
+    /// [`planned::worst_power`]).
     pub power_case: engagement::PowerCase,
     /// The ceiling `power_kw` is quoted against (kW): the rated spindle
     /// curve `power_at_rpm(rpm)`, the gate's own ceiling (ruling R4 Q2: no
@@ -1983,8 +1984,8 @@ fn power_model_terms(
 }
 
 /// K7 change 3: the power (kW) at `feed` of the worst case of the pre-sim
-/// set (`FeedsInput::power_cases`) at the nominal width `ae`, with the case
-/// and its width. Both terms grow with the width, so the worst case is the
+/// set at the nominal width `ae` (P29-7 7c: the largest power over the
+/// declared cuts, `planned::worst_power`), with the case and its width. Both terms grow with the width, so the worst case is the
 /// widest one at every feed and RPM.
 fn worst_case_power(
     input: &FeedsInput,
@@ -1995,13 +1996,13 @@ fn worst_case_power(
     rpm: f64,
     feed: f64,
 ) -> (engagement::PowerCase, f64, f64) {
-    input.power_cases.worst(ae, input.tool_diameter, |w| {
+    planned::worst_power(&input.cuts, ae, |w| {
         power_model_terms(input, line, ap, w, effective_d, rpm).kw_at_feed(feed)
     })
 }
 
 /// Q1 (feeds contract P8): THE demand of a cap arm. The worst case of the
-/// K7 pre-sim set of the `CutSpec` (`FeedsInput::power_cases` at the stated
+/// K7 pre-sim set of the declared cuts (`planned::worst_power` at the stated
 /// `ap` and `ae`) at the arm's `rpm` and `feed`, through `Engagement`, with
 /// its case. `None` when the material has no force line, or when the depth
 /// is known after the simulation (P16).

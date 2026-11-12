@@ -1,15 +1,17 @@
-//! Feeds contract P29-6 6d: the one scope of every limit over every cut
-//! group.
+//! Feeds contract P29-6 6d and P29-7 7c: the one scope of every limit
+//! over every cut group, before and after the simulation.
 //!
 //! [`scope`] answers, for each [`LimitId`] and each [`CutGroup`], whether
-//! a sample gate judges the limit on the samples of that group. It is one
+//! the limit judges the cuts of that group: the declared cuts before the
+//! simulation (`feeds::planned::judge_declared_cuts`, P29-7) and the
+//! samples after it (`tool_load::groups::judge_by_group`, P29-6). It is one
 //! match with no wildcard arm, so a new limit or a new group does not
-//! compile until it answers every cell. Every gate asks it through the one
-//! driver (`tool_load::groups::judge_by_group`); no gate decides its own
-//! scope. A cell that is not judged names its row of
-//! [`super::EXEMPTIONS`] and carries the marker of that row on the line
-//! above it; the sentry `tests/the_exemption_list_only_shrinks_p29_3.rs`
-//! holds the link.
+//! compile until it answers every cell. No limit decides its own scope. A
+//! cell that is not judged names its row of [`super::EXEMPTIONS`] and
+//! carries the marker of that row on the line above it; the sentry
+//! `tests/the_exemption_list_only_shrinks_p29_3.rs` holds the link. A limit
+//! that does not change with the cut answers [`Scope::NotACutLimit`] with
+//! its [`PlanReason`].
 
 use super::{CutGroup, LimitId};
 
@@ -23,18 +25,36 @@ pub struct NotJudged {
     pub reason: &'static str,
 }
 
+/// Why a limit is not a limit of each cut (P29-7 7c). A closed list: a new
+/// limit that does not change with the width or the chip of a cut picks one
+/// reason, or it answers each group, and the compiler asks.
+#[derive(Debug, Clone, Copy, PartialEq, Eq)]
+pub enum PlanReason {
+    /// The bound reads the depth alone (the flute guard, the cutting
+    /// length, the vendor axial bound): every declared cut at one depth
+    /// gives the same answer.
+    DepthOnly,
+    /// A rule of the body plan (the corner coverage, the move budget, the
+    /// engagement floor, the tool diameter, the scallop depth).
+    PlanLevel,
+    /// A limit of the machine, of the RPM choice or of the feed.
+    MachineOrRpm,
+    /// A gate of the drill cycle, which reads the cycle and not a cut.
+    DrillGate,
+}
+
 /// The answer of [`scope`] for one limit and one group.
 #[derive(Debug, Clone, Copy, PartialEq, Eq)]
 pub enum Scope {
-    /// A sample gate judges the limit on the samples of the group.
+    /// The limit judges the cuts of the group: each declared cut before the
+    /// simulation, each sample after it.
     Judged,
-    /// A sample gate does not judge the limit on this group.
+    /// The limit does not judge the cuts of this group.
     NotJudged(NotJudged),
-    /// No sample gate judges this limit: it is a limit of the plan before
-    /// the simulation (the envelope, Suggest, the RPM choice), of the feed
-    /// modulator, or of the drill gates, which read the drill cycle and
-    /// not the samples. It needs no row.
-    NotASampleLimit,
+    /// The limit is not a limit of each cut: its bound does not change with
+    /// the width or the chip of the cut, for the reason given. It needs no
+    /// row, and no sample gate judges it.
+    NotACutLimit(PlanReason),
 }
 
 /// The clause of a drill cycle (the four side gates printed it before
@@ -77,17 +97,25 @@ pub const fn scope(limit: LimitId, group: CutGroup) -> Scope {
                 reason: DRILL_CYCLE,
             }),
         },
-        LimitId::RubbingFloor
-        | LimitId::FluteGuard
-        | LimitId::CuttingLength
-        | LimitId::VendorAxial
-        | LimitId::VendorDepthTable
-        | LimitId::CornerCoverage
+        // P29-7 7c: a chip rule reads the chip of the cut (a slot has the
+        // largest chip share), so it is a limit of each cut.
+        LimitId::RubbingFloor | LimitId::VendorDepthTable => match group {
+            CutGroup::Body | CutGroup::Entry | CutGroup::Cleanup | CutGroup::Link => Scope::Judged,
+            // EXEMPT(P28-20)
+            CutGroup::Drill => Scope::NotJudged(NotJudged {
+                row: "P28-20",
+                reason: DRILL_CYCLE,
+            }),
+        },
+        LimitId::FluteGuard | LimitId::CuttingLength | LimitId::VendorAxial => {
+            Scope::NotACutLimit(PlanReason::DepthOnly)
+        }
+        LimitId::CornerCoverage
         | LimitId::ScallopDepth
         | LimitId::ToolDiameter
         | LimitId::MoveBudget
-        | LimitId::EngagementFloor
-        | LimitId::CuttingFeedCap
+        | LimitId::EngagementFloor => Scope::NotACutLimit(PlanReason::PlanLevel),
+        LimitId::CuttingFeedCap
         | LimitId::PlannerFeedCap
         | LimitId::KinematicReach
         | LimitId::PlungeRate
@@ -96,17 +124,17 @@ pub const fn scope(limit: LimitId, group: CutGroup) -> Scope {
         | LimitId::OperatorRpmCeiling
         | LimitId::ChartRpm
         | LimitId::VendorRpmMax
-        | LimitId::GantryPush
-        | LimitId::DrillChipWelding
-        | LimitId::DrillPeckAdequacy
-        | LimitId::DrillPlungeFeed => Scope::NotASampleLimit,
+        | LimitId::GantryPush => Scope::NotACutLimit(PlanReason::MachineOrRpm),
+        LimitId::DrillChipWelding | LimitId::DrillPeckAdequacy | LimitId::DrillPlungeFeed => {
+            Scope::NotACutLimit(PlanReason::DrillGate)
+        }
     }
 }
 
 /// The scope of a gate that judges every limit of `limits` at once (the
 /// chip gate judges [`LimitId::ChipMax`] and [`LimitId::ChipMin`] in one
-/// walk): the first cell that is not judged, else judged. A limit that no
-/// sample gate judges gives [`Scope::NotASampleLimit`]; the sentry holds
+/// walk): the first cell that is not judged, else judged. A limit that is
+/// not a limit of each cut gives [`Scope::NotACutLimit`]; the sentry holds
 /// that no gate names one.
 #[must_use]
 pub fn scope_of_all(limits: &[LimitId], group: CutGroup) -> Scope {
@@ -114,7 +142,7 @@ pub fn scope_of_all(limits: &[LimitId], group: CutGroup) -> Scope {
     for &limit in limits {
         match scope(limit, group) {
             Scope::Judged => {}
-            other @ (Scope::NotJudged(_) | Scope::NotASampleLimit) => {
+            other @ (Scope::NotJudged(_) | Scope::NotACutLimit(_)) => {
                 out = other;
                 break;
             }

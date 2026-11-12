@@ -612,13 +612,20 @@ fn rough_input<'a>(env: &'a SafeEnvelope, samples: &'a [CutPoint3]) -> CutChartI
 ///
 /// P29-4 (ruling R1): the arms of a second, higher flat limit (its quiet
 /// note above the frame, and the axis extended to it) are deleted: the
-/// rigidity DOC of this fixture is a curve now, and no flat limit of the
-/// scene sits above the vendor DOC.
+/// rigidity DOC of this fixture is a curve now. P29-7 7c: the vendor depth
+/// table reads the first slot of this ContourParallel rough (the largest
+/// chip share), so it is a flat limit above the vendor DOC (2.9 x D); the
+/// pure view of case B gives it an off-scale row too.
 #[test]
 fn a_limit_above_the_range_extends_the_axis_or_keeps_a_quiet_note_p17b() {
     use rs_cam_core::feeds::envelope::LimitKind;
     let (env, low) = rough_env();
     let low_name = rs_cam_viz::ui::feeds::envelope::limit_name(&env, LimitKind::VendorAxial);
+    let table_name = rs_cam_viz::ui::feeds::envelope::limit_name(&env, LimitKind::VendorDepthTable);
+    let table_mm = match env.limit(LimitKind::VendorDepthTable).map(|l| &l.edge) {
+        Some(rs_cam_core::feeds::envelope::Edge::ApCeiling { mm }) => *mm,
+        other => panic!("fixture: a flat depth table, got {other:?}"),
+    };
     let marker = |name: &str, mm: f64| {
         format!(
             "{name} {} mm",
@@ -684,8 +691,8 @@ fn a_limit_above_the_range_extends_the_axis_or_keeps_a_quiet_note_p17b() {
             .iter()
             .map(|(name, mm)| (name.as_str(), *mm))
             .collect::<Vec<_>>(),
-        vec![(low_name.as_str(), low)],
-        "the vendor DOC keeps a note; the rigidity curve has none"
+        vec![(low_name.as_str(), low), (table_name.as_str(), table_mm)],
+        "the vendor DOC and the depth table keep a note; the rigidity curve has none"
     );
     assert!(
         (view.data_top - VIEW_HEADROOM * shallow).abs() < 1e-9 && view.ap_top == view.data_top,

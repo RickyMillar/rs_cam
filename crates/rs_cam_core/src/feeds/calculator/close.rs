@@ -46,9 +46,9 @@ fn unlifted_feed(s: &CalcState) -> UnliftedFeed {
 }
 
 /// P23a: the width of the Step 5 lift at the nominal width `ae`
-/// (`PowerCases::full_feed_width`).
+/// (`CutList::full_feed_width`).
 fn lift_width(input: &crate::feeds::FeedsInput, ae: f64) -> f64 {
-    input.power_cases.full_feed_width(ae, input.tool_diameter)
+    input.cuts.list().full_feed_width(ae, input.tool_diameter)
 }
 
 /// The basis of the plunge at `feed` and `rpm`: the binding term of the

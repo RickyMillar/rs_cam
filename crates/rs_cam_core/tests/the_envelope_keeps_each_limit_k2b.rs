@@ -19,7 +19,10 @@
 //!   with its basis.
 //!
 //! The cells were found by a probe over ops, tools, machines and stated
-//! points (P5 report); each is a plain configuration here.
+//! points (P5 report); each is a plain configuration here. P29-7 7c: the
+//! vendor axial cell is a geodesic 3D Rough (no full slot that the plan
+//! always cuts); the same cell as a ContourParallel rough binds the force
+//! budget on its first slot, and the test holds that too.
 
 #![expect(
     clippy::expect_used,
@@ -36,6 +39,7 @@ use rs_cam_core::feeds::sourced::MachineField;
 use rs_cam_core::feeds::suggest::SuggestContext;
 use rs_cam_core::feeds::{Basis, SpindleStrategy, calculate, embedded_vendor_lut};
 use rs_cam_core::geo::{BoundingBox3, P3};
+use rs_cam_core::limits::{CutKind, FirstPassKind};
 use rs_cam_core::machine::MachineProfile;
 use rs_cam_core::material::{Material, WoodSpecies};
 
@@ -74,7 +78,17 @@ fn envelope(cell: &Cell<'_>) -> SafeEnvelope {
 
 /// [`envelope`] with the stated chip at `share` of the full Suggest chip.
 fn envelope_at_chip_share(cell: &Cell<'_>, share: f64) -> SafeEnvelope {
+    envelope_of(cell, share, |_| {})
+}
+
+/// [`envelope_at_chip_share`] of the fixture op after `edit`.
+fn envelope_of(
+    cell: &Cell<'_>,
+    share: f64,
+    edit: impl Fn(&mut rs_cam_core::compute::catalog::OperationConfig),
+) -> SafeEnvelope {
     let mut op = rs_cam_core::compute::fixture_values::fixture_op(cell.op);
+    edit(&mut op);
     assert!(
         op.set_depth_per_pass(cell.dpp),
         "{:?} holds a depth",
@@ -242,7 +256,9 @@ fn the_flute_guard_binds_and_names_its_factor_k2b() {
 
 #[test]
 fn the_vendor_axial_bound_binds_and_names_its_row_k2b() {
-    let env = envelope(&Cell {
+    use rs_cam_core::compute::catalog::OperationConfig;
+    use rs_cam_core::compute::operation_configs::ClearingStrategy;
+    let cell = Cell {
         op: OperationType::Adaptive3d,
         tool: end_mill(6.0, 20.0),
         machine: MachineProfile::default(),
@@ -250,10 +266,31 @@ fn the_vendor_axial_bound_binds_and_names_its_row_k2b() {
         dpp: 9.0,
         stepover: 0.5,
         bbox: None,
-    });
+    };
+    let strategy = |s: ClearingStrategy| {
+        move |op: &mut OperationConfig| {
+            if let OperationConfig::Adaptive3d(c) = op {
+                c.clearing_strategy = s;
+            }
+        }
+    };
+    // A geodesic 3D Rough declares no full slot that it always cuts (its
+    // residual sweep may occur: a note, never a ceiling), so the vendor
+    // DOC still binds the stated 9 mm.
+    let env = envelope_of(&cell, 1.0, strategy(ClearingStrategy::GeodesicAdaptive));
     assert_binds(&env, LimitKind::VendorAxial);
     let basis = &env.limit(LimitKind::VendorAxial).expect("kept").basis;
     assert!(matches!(basis, Basis::Printed(_)), "{basis:?}");
+    // P29-7 7c: the ContourParallel 3D Rough always cuts its perimeter
+    // sweep, a full slot, and the force budget of that slot binds under the
+    // vendor DOC (3.85 mm in this softwood cell).
+    let env = envelope_of(&cell, 1.0, strategy(ClearingStrategy::ContourParallel));
+    assert_binds(&env, LimitKind::Rigidity);
+    assert_eq!(
+        env.limit(LimitKind::Rigidity).and_then(|l| l.binding_cut),
+        Some(CutKind::FirstPass(FirstPassKind::Slot)),
+        "the first slot sets the force budget"
+    );
 }
 
 #[test]

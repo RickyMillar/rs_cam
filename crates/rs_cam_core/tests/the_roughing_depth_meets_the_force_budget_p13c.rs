@@ -6,8 +6,11 @@
 //! flute + 8) and the default (hobby) machine:
 //!
 //! 1. The envelope `Rigidity` limit of a Pocket is a curve over the width.
-//!    At each sample with an edge, the peak force at the column chip is at
-//!    most the budget at the edge depth and over it 0.01 mm deeper.
+//!    At each sample with an edge, the peak force of the body at the column
+//!    chip is at most the budget at the edge depth. P29-7 7c: the edge is
+//!    the root of the declared cut that binds the column (the body or the
+//!    slot ring, at its own width and chip): that cut is at most the budget
+//!    at the edge and over it 0.01 mm deeper; the slot ring binds a column.
 //! 2. A Profile (ae = D) has one `Rigidity` ceiling that meets the budget.
 //! 3. A tiny budget ships the minimum depth with a warning (Q6: never
 //!    refuse): the law says so and the envelope notes carry the warning.
@@ -30,6 +33,7 @@
     reason = "test code: a panic is how a test reports a failure"
 )]
 
+use rs_cam_core::compute::catalog::Presence;
 use rs_cam_core::compute::catalog::{OperationConfig, OperationType};
 use rs_cam_core::compute::geometry_default::slot_mut;
 use rs_cam_core::compute::tool_config::{ToolConfig, ToolFact, ToolId, ToolType};
@@ -37,8 +41,12 @@ use rs_cam_core::feeds::envelope::{Edge, EnvelopeInput, LimitKind, SafeEnvelope}
 use rs_cam_core::feeds::force_budget::{
     FORCE_BUDGET_FLOOR_LAW, FORCE_BUDGET_FLOOR_NOTE, FORCE_BUDGET_LAW, NO_FORCE_LINE, peak_force_n,
 };
+use rs_cam_core::feeds::planned::{
+    BodyColumn, DeclaredCuts, ForceBudgetPlanned, ForceEnv, PlannedCell, judge_declared_cuts,
+};
 use rs_cam_core::feeds::suggest::SuggestContext;
 use rs_cam_core::feeds::{SpindleStrategy, embedded_vendor_lut};
+use rs_cam_core::limits::CutKind;
 use rs_cam_core::machine::MachineProfile;
 use rs_cam_core::material::{Material, PlywoodGrade, SheetGoodKind, WoodSpecies};
 
@@ -118,11 +126,13 @@ fn the_pocket_rigidity_edge_meets_the_budget_at_each_width_p13c() {
     let machine = MachineProfile::default();
     let budget = machine.rigidity.force_budget_n;
     let mut checked = 0_usize;
+    let mut ring_binds = false;
     for d in [3.175, 6.0] {
         let t = tool(d);
         let cutter = rs_cam_core::compute::cutter::build_cutter(&t).expect("a cutter");
         for (name, m) in materials() {
-            let env = envelope(&op(OperationType::Pocket), &t, &machine, &m);
+            let pocket = op(OperationType::Pocket);
+            let env = envelope(&pocket, &t, &machine, &m);
             let l = env.limit(LimitKind::Rigidity).expect("a Rigidity limit");
             assert_eq!(l.law, FORCE_BUDGET_LAW, "{name} D {d}");
             let Edge::ApCurve { points } = &l.edge else {
@@ -136,21 +146,83 @@ fn the_pocket_rigidity_edge_meets_the_budget_at_each_width_p13c() {
                 if ap >= top {
                     continue; // no root below the flute
                 }
+                // The body alone is not deeper than its own root.
                 let at = peak_force_n(&cutter, &m, ap, ae, fz).expect("a force");
-                let past = peak_force_n(&cutter, &m, ap + 0.01, ae, fz).expect("a force");
                 assert!(
                     at <= budget * (1.0 + 1e-9),
                     "{name} D {d} ae {ae}: {at} N at {ap} mm over {budget}"
                 );
+                // P29-7 7c: the edge is the root of the declared cut that
+                // binds the column (the lowest over the cuts that the plan
+                // always cuts): one step deeper, that cut is past the budget.
+                let (kind, w, cut_fz) = binding_cut_at(&pocket, &t, &cutter, &m, ae, fz, budget);
+                let at = peak_force_n(&cutter, &m, ap, w, cut_fz).expect("a force");
+                let past = peak_force_n(&cutter, &m, ap + 0.01, w, cut_fz).expect("a force");
+                assert!(
+                    at <= budget * (1.0 + 1e-9),
+                    "{name} D {d} ae {ae}: the {} gives {at} N at {ap} mm over {budget}",
+                    kind.label()
+                );
                 assert!(
                     past > budget,
-                    "{name} D {d} ae {ae}: {past} N at {ap}+0.01 mm not past {budget}"
+                    "{name} D {d} ae {ae}: the {} gives {past} N at {ap}+0.01 mm, not past {budget}",
+                    kind.label()
                 );
+                ring_binds |= kind == CutKind::SlotRing;
                 checked += 1;
             }
         }
     }
     assert!(checked >= 20, "non-vacuity: {checked} edge samples");
+    assert!(ring_binds, "non-vacuity: the slot ring binds a column");
+}
+
+/// The declared cut that binds the force budget at the body column
+/// `(ae, fz)` of `op` (the lowest root over the cuts that the plan always
+/// cuts; a tie keeps the first cut), with its width and chip.
+fn binding_cut_at(
+    op: &OperationConfig,
+    tool: &ToolConfig,
+    cutter: &rs_cam_core::tool::ToolDefinition,
+    m: &Material,
+    ae: f64,
+    fz: f64,
+    budget: f64,
+) -> (CutKind, f64, f64) {
+    let cuts = DeclaredCuts::of_operation(op, tool);
+    let column = BodyColumn {
+        ae_mm: ae,
+        chip_mm: Some(fz),
+    };
+    let env = ForceEnv {
+        tool: cutter,
+        material: m,
+        bound: budget,
+    };
+    let mut best: Option<(f64, CutKind)> = None;
+    for e in judge_declared_cuts::<ForceBudgetPlanned>(&cuts, column, &env).iter() {
+        if e.presence != Presence::Always {
+            continue;
+        }
+        if let PlannedCell::Judged(Some(b)) = e.value
+            && let Some(mm) = b.ceiling_mm()
+            && best.is_none_or(|(v, _)| mm < v)
+        {
+            best = Some((mm, e.kind));
+        }
+    }
+    let kind = best.expect("a cut has a root").1;
+    let cut = cuts
+        .list()
+        .iter()
+        .find(|c| c.kind == kind)
+        .expect("a declared cut");
+    let planned = cuts.planned(cut, column);
+    (
+        kind,
+        planned.width_mm.expect("a width"),
+        planned.chip_mm.expect("a chip"),
+    )
 }
 
 #[test]

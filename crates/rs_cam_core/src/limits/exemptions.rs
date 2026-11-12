@@ -96,7 +96,7 @@ const R2: ExemptionClass = ExemptionClass::Ruled {
 const NR: ExemptionClass = ExemptionClass::NeedsRuling;
 
 /// Every exemption from a limit today. See the module doc.
-pub static EXEMPTIONS: [Exemption; 42] = [
+pub static EXEMPTIONS: [Exemption; 41] = [
     // P28: the limit audit.
     Exemption {
         id: "P28-02",
@@ -266,8 +266,13 @@ pub static EXEMPTIONS: [Exemption; 42] = [
     },
     Exemption {
         id: "P28-20",
-        what: "the chip band gate",
-        limit: &[LimitId::ChipMax, LimitId::ChipMin],
+        what: "the chip band, the rubbing floor and the vendor depth table",
+        limit: &[
+            LimitId::ChipMax,
+            LimitId::ChipMin,
+            LimitId::RubbingFloor,
+            LimitId::VendorDepthTable,
+        ],
         who: Who::Kind(DRILL),
         class: ExemptionClass::Physical(Geometry::NoRadialEngagement),
         where_: &["src/limits/scope.rs"],
@@ -400,7 +405,7 @@ pub static EXEMPTIONS: [Exemption; 42] = [
         who: Who::Reader("one sample has two depths (axial_doc_mm, axial_engagement_mm)"),
         class: NR,
         where_: &["src/feeds/engagement.rs", "src/tool_load/deflection.rs"],
-        closes_in: "P29-7 (a probe on ball and V tools)",
+        closes_in: "P29-10 (one depth predicate, P29-6 F6)",
     },
     Exemption {
         id: "M6",
@@ -428,19 +433,6 @@ pub static EXEMPTIONS: [Exemption; 42] = [
         class: NR,
         where_: &["src/session/compute.rs"],
         closes_in: "later",
-    },
-    Exemption {
-        id: "M12",
-        what: "the machine force budget and the tool deflection",
-        limit: &[LimitId::ForceBudget, LimitId::ToolDeflection],
-        who: Who::Kind(&[
-            CutKind::FirstPass(super::FirstPassKind::Slot),
-            CutKind::FirstPass(super::FirstPassKind::PlannerCap),
-            CutKind::SlotRing,
-        ]),
-        class: NR,
-        where_: &["src/compute/catalog/cuts.rs", "src/feeds/envelope.rs"],
-        closes_in: "P29-7",
     },
     // S: the two scope reasons of P29-2 (`NoNumberReason`).
     Exemption {
@@ -517,7 +509,7 @@ pub static EXEMPTIONS: [Exemption; 42] = [
         who: Who::Facts("offset_ring is set from the Pocket family and the Roughing role"),
         class: NR,
         where_: &["src/compute/catalog/cuts.rs"],
-        closes_in: "P29-4 to P29-7",
+        closes_in: "P29-9",
     },
     Exemption {
         id: "F-LeaveAfter",

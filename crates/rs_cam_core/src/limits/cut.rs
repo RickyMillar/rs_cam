@@ -155,6 +155,35 @@ impl CutGroup {
 }
 
 impl CutKind {
+    /// The kind in words, for the card and the envelope record ("slot
+    /// ring", "planner cap"). One match names every kind.
+    #[must_use]
+    pub const fn label(self) -> &'static str {
+        match self {
+            Self::Body => "body",
+            Self::FirstPass(FirstPassKind::Slot) => "first slot",
+            Self::FirstPass(FirstPassKind::FirstRow) => "first row",
+            Self::FirstPass(FirstPassKind::PlannerCap) => "planner cap",
+            Self::SpringPass => "spring pass",
+            Self::WallFinish => "wall finish",
+            Self::Entry(EntryKind::Plunge) => "plunge entry",
+            Self::Entry(EntryKind::Ramp) => "ramp entry",
+            Self::Entry(EntryKind::Helix) => "helix entry",
+            Self::Entry(EntryKind::PeckLadder) => "peck ladder entry",
+            Self::EntryApproach => "entry approach",
+            Self::Cleanup(CleanupKind::WaterlineSweep) => "waterline sweep",
+            Self::Cleanup(CleanupKind::ResidueMop) => "residue mop",
+            Self::Cleanup(CleanupKind::ContourResidue) => "contour residue",
+            Self::CappedStep(_) => "capped step",
+            Self::SlotRing => "slot ring",
+            Self::LeadIn => "lead in",
+            Self::LeadOut => "lead out",
+            Self::Link => "link",
+            Self::DressupRelief => "dogbone relief",
+            Self::Drill => "drill cycle",
+        }
+    }
+
     /// The group of this kind. One match names every kind and has no
     /// wildcard arm: a new kind does not compile until it states its
     /// group, so no kind can fall outside the gates.

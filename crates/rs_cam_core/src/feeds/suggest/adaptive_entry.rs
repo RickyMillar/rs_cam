@@ -157,10 +157,9 @@ fn geometry_feed_factor(
 
 /// P23a: the width of the calculator's lift at the nominal width `ae_mm`:
 /// the widest width that the op's planner holds at the full feed
-/// (`PowerCases::full_feed_width`, the one rule of Step 5).
+/// (`CutList::full_feed_width`, the one rule of Step 5).
 fn full_feed_width(operation: &OperationConfig, tool: &ToolConfig, ae_mm: f64) -> f64 {
-    crate::feeds::engagement::PowerCases::of_operation(operation)
-        .full_feed_width(ae_mm, tool.diameter)
+    operation.cuts().full_feed_width(ae_mm, tool.diameter)
 }
 
 /// The engaged diameter of `tool` at the depth `ap_mm`, as pass 9 and the

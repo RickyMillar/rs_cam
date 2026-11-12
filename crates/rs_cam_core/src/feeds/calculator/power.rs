@@ -365,7 +365,7 @@ fn rungs2_3_geometry(
     // width (the pass ceiling is a function of the stepover).
     let lift_at = |c: f64| {
         thinning.lift(
-            input.power_cases.full_feed_width(c, input.tool_diameter),
+            input.cuts.list().full_feed_width(c, input.tool_diameter),
             effective_d.mm(),
         )
     };

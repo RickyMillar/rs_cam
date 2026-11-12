@@ -125,7 +125,7 @@ impl UnliftedFeed {
     /// chip-thinning lift does not hold. Its feed is the op feed over the
     /// lift that Suggest sized the op feed with: the thinning rule of the
     /// op's feeds style at the lift width of its stepover
-    /// (`PowerCases::full_feed_width`), on the engaged diameter at its
+    /// (`CutList::full_feed_width`), on the engaged diameter at its
     /// depth per pass. The value is at or below the op feed; it equals the
     /// op feed where the lift is 1.
     ///
@@ -159,8 +159,7 @@ impl UnliftedFeed {
             .depth_per_pass()
             .filter(|v| usable(*v))
             .unwrap_or(tool_diameter_mm);
-        let width = crate::feeds::engagement::PowerCases::of_cuts(&cuts)
-            .full_feed_width(ae, tool_diameter_mm);
+        let width = cuts.full_feed_width(ae, tool_diameter_mm);
         Some(Self::at_cut(
             feed,
             cuts.body_facts().thins_chip,

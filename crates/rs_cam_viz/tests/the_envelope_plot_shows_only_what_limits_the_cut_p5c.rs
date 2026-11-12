@@ -590,9 +590,12 @@ fn the_rivmap_rough_plot_draws_every_limit_in_view_p5c() {
     // the width. The scene's binding limit is the drawn limit with the
     // smallest margin at the point (`binding_at`). At the review point that
     // is the Rigidity curve (drawn about 4.9 mm at 2.303 mm width, over the
-    // stated 4.217 mm); the vendor DOC is still nearest the fixture point.
+    // stated 4.217 mm). P29-7 7c: the force budget reads the first slot of
+    // this ContourParallel rough, so the Rigidity curve is nearest the
+    // fixture point too (the margin falls from 0.481 to 0.226, design note
+    // section 15.4).
     for (tag, point, binds) in [
-        ("fixture", None, LimitKind::VendorAxial),
+        ("fixture", None, LimitKind::Rigidity),
         (
             "review ap 4.217 x ae 2.303",
             Some((4.217, 2.303)),
@@ -627,10 +630,12 @@ fn the_rivmap_rough_plot_draws_every_limit_in_view_p5c() {
             vec![
                 LimitKind::Rigidity,
                 LimitKind::Runtime,
-                LimitKind::VendorAxial
+                LimitKind::VendorAxial,
+                LimitKind::VendorDepthTable
             ],
-            "{tag}: P5d D1, the vendor, rigidity and move-budget limits draw (P16 \
-             deleted the slot limit; P19b: the move budget is a curve)"
+            "{tag}: P5d D1, the vendor, rigidity, move-budget and depth-table limits draw \
+             (P16 deleted the slot limit; P19b: the move budget is a curve; P29-7 7c: the \
+             depth table reads the first slot of the ContourParallel rough)"
         );
         runtime_edges.extend(env.limit(LimitKind::Runtime).map(|l| l.edge.clone()));
         // P19b: the safe-region fill respects the floor curve: the bottom
@@ -815,7 +820,14 @@ fn a_crossed_limit_and_the_candidate_turn_amber_p5c() {
         .filter(|e| scene.edge_color(e) == tokens::CAUTION)
         .map(|e| e.kind)
         .collect();
-    assert_eq!(crossed, vec![LimitKind::VendorAxial], "the crossed line");
+    // P29-7 7c: the force budget reads the first slot of this
+    // ContourParallel rough, so its edge at 1 mm is under the vendor DOC
+    // too: the candidate crosses both lines.
+    assert_eq!(
+        crossed,
+        vec![LimitKind::VendorAxial, LimitKind::Rigidity],
+        "the crossed lines"
+    );
     for e in &scene.edges {
         assert_ne!(scene.edge_color(e), tokens::DANGER);
     }

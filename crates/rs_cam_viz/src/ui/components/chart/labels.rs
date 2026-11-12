@@ -497,7 +497,8 @@ pub(crate) fn candidates(anchor: &LabelAnchor, size: egui::Vec2) -> Vec<Quad> {
             .collect(),
         LabelAnchor::LineEnd(lines) => {
             // The end of each polyline, then its start, then touching the
-            // side of each steep segment, then beside each segment of each.
+            // side of each steep segment, then on each flat segment, then
+            // beside each segment of each.
             let mut out: Vec<Quad> = lines
                 .iter()
                 .filter_map(|line| end_places(line, true, size))
@@ -509,6 +510,7 @@ pub(crate) fn candidates(anchor: &LabelAnchor, size: egui::Vec2) -> Vec<Quad> {
                 .flatten()
                 .collect();
             out.extend(lines.iter().flat_map(|line| side_places(line, size)));
+            out.extend(lines.iter().flat_map(|line| on_places(line, size)));
             out.extend(lines.iter().flat_map(|line| {
                 line.windows(2)
                     .flat_map(|w| candidates(&LabelAnchor::Line(w.to_vec()), size))
@@ -650,6 +652,37 @@ fn side_places(line: &[egui::Pos2], size: egui::Vec2) -> Vec<Quad> {
                     angle: 0.0,
                 });
             }
+        }
+    }
+    out
+}
+
+/// The places of a label of `size` ON each flat segment of `line` (no
+/// steeper than `MAX_LABEL_ANGLE`), along the segment, at the fractions of
+/// [`line_fractions`]. A flat line whose two ends are taken keeps its name
+/// on it (P29-7 7c: on the rivmap envelope the depth-table line took the
+/// places near the ends of the vendor DOC line, and its name floated off
+/// the line). The layout does not test a label against its own line.
+fn on_places(line: &[egui::Pos2], size: egui::Vec2) -> Vec<Quad> {
+    let half = size / 2.0;
+    let mut out = Vec::new();
+    for w in line.windows(2) {
+        let [a, b] = w else { continue };
+        let along = *b - *a;
+        if along.length() < 1.0 {
+            continue;
+        }
+        let dir = if along.x < 0.0 { -along } else { along };
+        let angle = dir.y.atan2(dir.x);
+        if angle.abs() > MAX_LABEL_ANGLE {
+            continue;
+        }
+        for t in line_fractions() {
+            out.push(Quad {
+                center: *a + along * t,
+                half,
+                angle,
+            });
         }
     }
     out

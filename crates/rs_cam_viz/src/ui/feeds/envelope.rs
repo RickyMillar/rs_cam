@@ -971,7 +971,22 @@ fn apply_hover(env: &SafeEnvelope, scene: &EnvelopeScene, unsourced: &[String]) 
             "Apply ap {:.2} \u{00D7} ae {:.2} and its speeds.",
             c.ap_mm, c.ae_mm
         ),
-        None => "Apply the proposal and its speeds.".to_owned(),
+        // P29-7 7c: the hover names the limit that sets the proposal and
+        // the declared cut that sets that limit ("Rigidity DOC, slot ring").
+        None => match env.proposal_binding {
+            Some(kind) => match env.limit(kind).and_then(|l| l.binding_cut) {
+                Some(cut) => format!(
+                    "Apply the proposal and its speeds. The proposal stands on the {}, {}.",
+                    limit_name(env, kind),
+                    cut.label()
+                ),
+                None => format!(
+                    "Apply the proposal and its speeds. The proposal stands on the {}.",
+                    limit_name(env, kind)
+                ),
+            },
+            None => "Apply the proposal and its speeds.".to_owned(),
+        },
     };
     let outside = match scene.candidate_placement {
         Some(Placement::Outside { binding, .. }) => {

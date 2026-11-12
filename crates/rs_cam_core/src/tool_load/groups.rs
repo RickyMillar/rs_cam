@@ -20,8 +20,10 @@
 //!    judged even with no sample, so it always holds a verdict.
 //!
 //! To add a mechanism: add a `LimitId`, answer its cells in
-//! `limits::scope` (the compiler asks for every group), and write a
-//! `MetricEvaluator` whose `judge` reads the samples it is given.
+//! `limits::scope` (the compiler asks for every group), name its gate in
+//! [`gate_of`] (the compiler asks again), and write a `MetricEvaluator`
+//! whose `judge` reads the samples it is given. The side before the
+//! simulation has the same shape (`feeds::planned`, P29-7).
 
 use crate::limits::{ByGroup, CutGroup, LimitId, NotJudged, Scope};
 use crate::stock::simulation_cut::{SimulationCutSample, SimulationCutTrace};
@@ -229,7 +231,7 @@ pub fn judge_by_group<G: MetricEvaluator>(
             headline = Some(match scope {
                 Scope::Judged => G::judge(ctx, env, population),
                 Scope::NotJudged(cell) => (G::not_judged(cell), G::Extra::default()),
-                Scope::NotASampleLimit => (G::not_judged(NOT_A_SAMPLE_LIMIT), G::Extra::default()),
+                Scope::NotACutLimit(_) => (G::not_judged(NOT_A_CUT_LIMIT), G::Extra::default()),
             });
             return GroupCell::Headline;
         }
@@ -240,14 +242,14 @@ pub fn judge_by_group<G: MetricEvaluator>(
                 verdict: G::judge(ctx, env, population).0,
             },
             Scope::NotJudged(cell) => not_judged_cell(samples, cell),
-            Scope::NotASampleLimit => not_judged_cell(samples, NOT_A_SAMPLE_LIMIT),
+            Scope::NotACutLimit(_) => not_judged_cell(samples, NOT_A_CUT_LIMIT),
         }
     });
     // `from_fn` calls the closure once for every group, the headline group
     // included, so the headline is always set; the fallback is the verdict
     // of a scope that judges nothing.
     let (headline, extra) =
-        headline.unwrap_or_else(|| (G::not_judged(NOT_A_SAMPLE_LIMIT), G::Extra::default()));
+        headline.unwrap_or_else(|| (G::not_judged(NOT_A_CUT_LIMIT), G::Extra::default()));
     GroupJudgement {
         headline,
         extra,
@@ -274,11 +276,11 @@ pub fn headline_is_judged(ctx: &ToolpathLoadContext<'_>, limit: LimitId) -> bool
     )
 }
 
-/// A gate that names a limit no sample gate judges. The sentry
+/// A gate that names a limit that is not a limit of each cut. The sentry
 /// `the_exemption_list_only_shrinks_p29_3` holds that no gate does.
-const NOT_A_SAMPLE_LIMIT: NotJudged = NotJudged {
+const NOT_A_CUT_LIMIT: NotJudged = NotJudged {
     row: "-",
-    reason: "no sample gate judges this limit",
+    reason: "this limit is not a limit of each cut",
 };
 
 fn not_judged_cell<V>(samples: usize, cell: NotJudged) -> GroupCell<V> {
@@ -289,12 +291,91 @@ fn not_judged_cell<V>(samples: usize, cell: NotJudged) -> GroupCell<V> {
     }
 }
 
-/// The limits of every sample gate, for the sentry: each one names its
-/// limits here.
-pub const GATE_LIMITS: [(&str, &[LimitId]); 5] = [
-    ("chipload", super::ChiploadGate::LIMITS),
-    ("power", super::PowerGate::LIMITS),
-    ("deflection", super::DeflectionGate::LIMITS),
-    ("depth", super::DepthGate::LIMITS),
-    ("cut_force", super::CutForceGate::LIMITS),
-];
+/// One sample gate (a [`MetricEvaluator`]).
+#[derive(Debug, Clone, Copy, PartialEq, Eq)]
+pub enum Gate {
+    /// The chip band gate (`super::ChiploadGate`).
+    Chipload,
+    /// The spindle power gate (`super::PowerGate`).
+    Power,
+    /// The tool deflection gate (`super::DeflectionGate`).
+    Deflection,
+    /// The depth gate (`super::DepthGate`).
+    Depth,
+    /// The cut force reading (`super::CutForceGate`).
+    CutForce,
+}
+
+impl Gate {
+    /// Every gate, in declaration order.
+    pub const ALL: [Self; 5] = crate::all_variants!(Gate:
+        Chipload, Power, Deflection, Depth, CutForce,
+    );
+
+    /// The name of the gate, as the verdict record names its field.
+    #[must_use]
+    pub const fn name(self) -> &'static str {
+        match self {
+            Self::Chipload => "chipload",
+            Self::Power => "power",
+            Self::Deflection => "deflection",
+            Self::Depth => "depth",
+            Self::CutForce => "cut_force",
+        }
+    }
+
+    /// The limits that the gate judges: its `MetricEvaluator::LIMITS`.
+    #[must_use]
+    pub const fn limits(self) -> &'static [LimitId] {
+        match self {
+            Self::Chipload => super::ChiploadGate::LIMITS,
+            Self::Power => super::PowerGate::LIMITS,
+            Self::Deflection => super::DeflectionGate::LIMITS,
+            Self::Depth => super::DepthGate::LIMITS,
+            Self::CutForce => super::CutForceGate::LIMITS,
+        }
+    }
+}
+
+/// The sample gates of one limit (P29-7 7c, in the place of the hand list
+/// `GATE_LIMITS`). One match names every limit and has no wildcard arm: a
+/// new limit does not compile until it names its gates, or states that no
+/// sample gate judges it (an empty list). The sentry
+/// `every_limit_judges_every_declared_cut_p29_7` holds that this list
+/// equals the gates whose [`Gate::limits`] name the limit.
+///
+/// The vendor depth table and the rubbing floor are limits of each cut
+/// (`limits::scope` judges them) with no sample gate yet: the envelope
+/// judges them before the simulation only.
+#[must_use]
+pub const fn gate_of(limit: LimitId) -> &'static [Gate] {
+    match limit {
+        LimitId::ChipMax | LimitId::ChipMin => &[Gate::Chipload],
+        LimitId::SpindlePower => &[Gate::Power],
+        LimitId::ToolDeflection => &[Gate::Deflection],
+        LimitId::ForceBudget => &[Gate::Depth, Gate::CutForce],
+        LimitId::RubbingFloor
+        | LimitId::VendorDepthTable
+        | LimitId::FluteGuard
+        | LimitId::CuttingLength
+        | LimitId::VendorAxial
+        | LimitId::CornerCoverage
+        | LimitId::ScallopDepth
+        | LimitId::ToolDiameter
+        | LimitId::MoveBudget
+        | LimitId::EngagementFloor
+        | LimitId::CuttingFeedCap
+        | LimitId::PlannerFeedCap
+        | LimitId::KinematicReach
+        | LimitId::PlungeRate
+        | LimitId::SpindleMaxRpm
+        | LimitId::ZAxisRate
+        | LimitId::OperatorRpmCeiling
+        | LimitId::ChartRpm
+        | LimitId::VendorRpmMax
+        | LimitId::GantryPush
+        | LimitId::DrillChipWelding
+        | LimitId::DrillPeckAdequacy
+        | LimitId::DrillPlungeFeed => &[],
+    }
+}

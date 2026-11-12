@@ -41,7 +41,7 @@ pub use cut::{
 pub use exemptions::{EXEMPTIONS, Exemption, ExemptionClass, Who};
 pub use project::{of_criterion, of_envelope, of_judged_value, of_rpm_choice};
 pub use sample::{CapTable, MoveCap, SampleContext};
-pub use scope::{NotJudged, Scope, scope, scope_of_all};
+pub use scope::{NotJudged, PlanReason, Scope, scope, scope_of_all};
 
 use serde::Serialize;
 

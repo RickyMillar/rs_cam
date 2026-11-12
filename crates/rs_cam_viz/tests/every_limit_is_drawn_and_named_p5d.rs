@@ -386,8 +386,19 @@ fn every_limit_in_the_range_draws_a_line_and_a_label_p5d() {
         "D2: the depth range {:?}, derived {ap_max}",
         scene.ap_range
     );
-    assert!(ap_max < hard_top, "fixture: the view top is not a stop");
-    assert!(scene.top.is_none(), "no frame top label under the hard top");
+    // Feeds contract P29-7 7c (ruling Q8, design note section 15.5): the
+    // vendor depth table reads every declared cut, and the first slot of
+    // this ContourParallel 3D Rough has the largest chip share, so the
+    // table (2.9 x D) enters the range. The view then reaches the hard top,
+    // and the frame top carries its name.
+    assert!(
+        (ap_max - hard_top).abs() < 1e-9,
+        "fixture: the view top is the hard top"
+    );
+    assert!(
+        scene.top.is_some(),
+        "the frame top label names the hard top"
+    );
     let d = ceiling(&env, LimitKind::Diameter).expect("fixture: a diameter");
     assert_eq!(scene.ae_range, (0.0, d), "D2: the width range is 0..D");
 
@@ -425,10 +436,12 @@ fn every_limit_in_the_range_draws_a_line_and_a_label_p5d() {
         vec![
             LimitKind::Rigidity,
             LimitKind::Runtime,
-            LimitKind::VendorAxial
+            LimitKind::VendorAxial,
+            LimitKind::VendorDepthTable
         ],
-        "D1: the vendor, rigidity and move-budget limits draw at rest (P16: no slot \
-         limit; P19b: the move budget is a curve)"
+        "D1: the vendor, rigidity, move-budget and depth-table limits draw at rest (P16: \
+         no slot limit; P19b: the move budget is a curve; P29-7 7c: the depth table at \
+         the slot share)"
     );
     // Every non-frame limit whose edge enters the view is drawn, or hugs
     // the frame (D1 exception).
@@ -462,8 +475,11 @@ fn every_limit_in_the_range_draws_a_line_and_a_label_p5d() {
     assert_eq!(v, limit_name(&env, LimitKind::VendorAxial));
     assert_eq!(label_of(LimitKind::Rigidity), "Rigidity DOC");
 
-    // D4: the colours. The binding line is TEXT_BODY and wider.
-    assert_eq!(scene.binding, Some(LimitKind::VendorAxial), "fixture");
+    // D4: the colours. The binding line is TEXT_BODY and wider. Feeds
+    // contract P29-7 7c: the force budget reads every declared cut, and the
+    // first slot of this ContourParallel 3D Rough (at the pick chip, trap 1)
+    // sets the depth under the vendor DOC (design note section 15.4).
+    assert_eq!(scene.binding, Some(LimitKind::Rigidity), "fixture");
     for e in &drawn {
         let want = if Some(e.kind) == scene.binding {
             tokens::TEXT_BODY
@@ -473,8 +489,8 @@ fn every_limit_in_the_range_draws_a_line_and_a_label_p5d() {
         assert_eq!(scene.edge_color(e), want, "{:?}", e.kind);
         assert_ne!(scene.edge_color(e), tokens::DANGER);
     }
-    let body = drawn.iter().find(|e| e.kind == LimitKind::VendorAxial);
-    let muted = drawn.iter().find(|e| e.kind == LimitKind::Rigidity);
+    let body = drawn.iter().find(|e| e.kind == LimitKind::Rigidity);
+    let muted = drawn.iter().find(|e| e.kind == LimitKind::VendorAxial);
     if let (Some(b), Some(m)) = (body, muted) {
         assert!(
             scene.edge_width(b) > scene.edge_width(m),
@@ -541,7 +557,15 @@ fn every_limit_in_the_range_draws_a_line_and_a_label_p5d() {
             .into_iter()
             .flatten()
             .any(|q| rect.expand(END_REACH).contains(*q));
-        if e.kind == LimitKind::Runtime {
+        // P29-7 7c: on this fixture the vendor DOC line (6 mm) and the
+        // Rigidity line (4.34 mm, the first slot) are flat and about 10 px
+        // apart, so the two chips do not fit at the right end together; the
+        // left end of the Rigidity line is crossed by the move-budget curve,
+        // and the left end of the vendor DOC line is held by the move-budget
+        // label. A label whose end places are held sits ON its line (it
+        // touches it, above) inside the line's span, as the move-budget
+        // label does.
+        if e.kind == LimitKind::Runtime || e.kind == LimitKind::VendorAxial {
             let span = egui::Rect::from_points(&line).expand(END_REACH);
             assert!(
                 at_end || span.contains_rect(rect),

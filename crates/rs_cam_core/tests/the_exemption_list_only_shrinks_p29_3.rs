@@ -25,7 +25,7 @@
 //! - Claim 6 (P29-6 6d): every cell of `limits::scope` that is not judged
 //!   names a row of the list, the row exempts that limit, and the row names
 //!   `src/limits/scope.rs`, which holds its marker. A sample gate names
-//!   only limits that a sample gate judges (no `NotASampleLimit`), and the
+//!   only limits of each cut (no `NotACutLimit`), and the
 //!   five sample limits are judged on the Body, Entry, Cleanup and Link
 //!   groups (operator Q1: "I think all moves should be judged").
 //! - Claim 7 (P29-7 7b, lead ruling Q1): every declared cut with
@@ -48,9 +48,9 @@ use rs_cam_core::limits::{
 };
 
 /// The rows that need a ruling. Exact: a closed row lowers it.
-const MAX_NEEDS_RULING: usize = 31;
+const MAX_NEEDS_RULING: usize = 30;
 /// Every row.
-const ROWS: usize = 42;
+const ROWS: usize = 41;
 /// The rows with a geometry reason.
 const PHYSICAL: usize = 8;
 /// The rows that quote an operator ruling.
@@ -78,7 +78,9 @@ const RULED: usize = 3;
 /// `U-RowConnector`, `U-CappedStep`: each cut is declared with its feed
 /// rule); the row `U-PerimeterSweep` gained the file of its `MayOccur`
 /// filing (`src/compute/catalog/cuts.rs`).
-const ROWS_WITH_A_FILE: usize = 41;
+/// P29-7 7c closed the row `M12` with two files: every limit before the
+/// simulation judges every declared cut (`feeds::planned`).
+const ROWS_WITH_A_FILE: usize = 40;
 
 /// The 34 rows of `phases/P28_limit_audit.md`.
 const P28_IDS: [&str; 34] = [
@@ -96,7 +98,8 @@ const M_IDS: [&str; 12] = [
 /// The audit ids that a step closed, with the step (P29-4: ruling R1, the
 /// Adaptive family reads the force budget; P29-5b: the first-pass filings
 /// are true; P29-5c: a groove reads the slot width; P29-6: the chip gate reads every removing sample, and the
-/// depth gate judges every sample). An audit id is
+/// depth gate judges every sample; P29-7: every limit before the simulation
+/// judges every declared cut). An audit id is
 /// a row or in this list, never both; the two id lists above stay the
 /// record (ruling Q6).
 const CLOSED: &[(&str, &str)] = &[
@@ -113,6 +116,7 @@ const CLOSED: &[(&str, &str)] = &[
     ("M2", "P29-6"),
     ("M3", "P29-6"),
     ("M8", "P29-6"),
+    ("M12", "P29-7"),
 ];
 
 /// The marker text before the ids.
@@ -308,7 +312,7 @@ fn every_not_judged_cell_names_its_row_p29_6() {
     for limit in LimitId::ALL {
         for group in CutGroup::ALL {
             match scope(limit, group) {
-                Scope::Judged | Scope::NotASampleLimit => {}
+                Scope::Judged | Scope::NotACutLimit(_) => {}
                 Scope::NotJudged(cell) => {
                     not_judged += 1;
                     let e = row(cell.row).unwrap_or_else(|| {
@@ -332,7 +336,8 @@ fn every_not_judged_cell_names_its_row_p29_6() {
     assert!(not_judged > 0, "the scope holds the drill cells");
     // Operator Q1 (2026-11-12): every sample limit judges every group of a
     // milling cut.
-    for (gate, limits) in rs_cam_core::tool_load::groups::GATE_LIMITS {
+    for gate in rs_cam_core::tool_load::groups::Gate::ALL {
+        let (gate, limits) = (gate.name(), gate.limits());
         assert!(!limits.is_empty(), "{gate}: names its limits");
         for &limit in limits {
             for group in [
@@ -347,10 +352,9 @@ fn every_not_judged_cell_names_its_row_p29_6() {
                     "{gate}: {limit:?} on {group:?}"
                 );
             }
-            assert_ne!(
-                scope(limit, CutGroup::Drill),
-                Scope::NotASampleLimit,
-                "{gate}: {limit:?} is a sample limit"
+            assert!(
+                !matches!(scope(limit, CutGroup::Drill), Scope::NotACutLimit(_)),
+                "{gate}: {limit:?} is a limit of each cut"
             );
         }
     }

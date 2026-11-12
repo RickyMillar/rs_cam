@@ -64,7 +64,6 @@
 
 use serde::Serialize;
 
-use crate::compute::catalog::{CutList, DeclaredWidth, OperationConfig, PlannerWidth, Presence};
 use crate::feeds::ToolGeometryHint;
 use crate::feeds::envelope::CutPoint;
 use crate::feeds::force::{DeflectionCapRefusal, immersion_angle};
@@ -841,6 +840,44 @@ pub enum PowerCase {
 }
 
 impl PowerCase {
+    /// The case of a declared cut of `kind` (P29-7 7c: the power of the
+    /// pre-sim set is the largest power over the declared cuts,
+    /// `feeds::planned::worst_power`). One match names every kind. A cut
+    /// at the body width is the nominal case; a planner cap, a first slot
+    /// and a slot ring name their own case; an entry and the drill cycle are
+    /// axial cuts.
+    #[must_use]
+    pub const fn of_cut_kind(kind: crate::limits::CutKind) -> Self {
+        match kind {
+            CutKind::Body
+            | CutKind::FirstPass(FirstPassKind::FirstRow)
+            | CutKind::SpringPass
+            | CutKind::WallFinish
+            | CutKind::EntryApproach
+            | CutKind::Cleanup(_)
+            | CutKind::CappedStep(_)
+            | CutKind::LeadIn
+            | CutKind::LeadOut
+            | CutKind::Link
+            | CutKind::DressupRelief => Self::Nominal,
+            CutKind::FirstPass(FirstPassKind::PlannerCap) => Self::PlannerCap,
+            CutKind::FirstPass(FirstPassKind::Slot) | CutKind::SlotRing => Self::Slot,
+            CutKind::Entry(_) | CutKind::Drill => Self::AxialPlunge,
+        }
+    }
+
+    /// The tie order of the worst case: a later case wins a tie (the more
+    /// specific name), as the order nominal, planner cap, slot.
+    #[must_use]
+    pub const fn tie_rank(self) -> u8 {
+        match self {
+            Self::Nominal => 0,
+            Self::PlannerCap => 1,
+            Self::Slot => 2,
+            Self::AxialPlunge => 3,
+        }
+    }
+
     /// The name that the card, the CLI and MCP print.
     #[must_use]
     pub const fn label(self) -> &'static str {
@@ -850,96 +887,6 @@ impl PowerCase {
             Self::Slot => "slot",
             Self::AxialPlunge => "axial plunge",
         }
-    }
-}
-
-/// The set of pre-sim power cases of one cut (K7 change 3). Built from the
-/// cuts the op declares (P29-3, `OperationConfig::cuts`).
-///
-/// P23a: the set also answers [`Self::full_feed_width`], the width at which
-/// Suggest sizes the chip-thinning lift. One value, built in one place, for
-/// the power case and the lift.
-#[derive(Debug, Clone, Copy, PartialEq)]
-pub struct PowerCases {
-    slot: bool,
-    planner: PlannerWidth,
-}
-
-impl PowerCases {
-    /// The cases of the cuts that an op declares (P29-3): the slot case
-    /// when the list declares a first slot or a slot ring (P29-7 7b: the
-    /// ring of a contour Pocket IS its first slot), and the planner width
-    /// of its planner-cap cut. A cut with [`Presence::MayOccur`] is not a
-    /// case: the plan may not cut it, and its row of `limits::EXEMPTIONS`
-    /// names it. The tie order stays the order of [`Self::widths`].
-    #[must_use]
-    pub fn of_cuts(cuts: &CutList) -> Self {
-        let slot = cuts.iter().any(|c| {
-            c.presence == Presence::Always
-                && matches!(
-                    c.kind,
-                    CutKind::FirstPass(FirstPassKind::Slot) | CutKind::SlotRing
-                )
-        });
-        let planner = match cuts.of_kind(CutKind::FirstPass(FirstPassKind::PlannerCap)) {
-            Some(cap) => match cap.width {
-                DeclaredWidth::PassCeiling { .. } => PlannerWidth::PassCeiling,
-                DeclaredWidth::CapMult { mult, .. } => PlannerWidth::CapMult(mult),
-                DeclaredWidth::Stated(_)
-                | DeclaredWidth::Slot
-                | DeclaredWidth::Scallop(_)
-                | DeclaredWidth::None(_) => PlannerWidth::None,
-            },
-            None => PlannerWidth::None,
-        };
-        Self { slot, planner }
-    }
-
-    /// The cases of `operation`: the cuts it declares
-    /// ([`OperationConfig::cuts`]).
-    #[must_use]
-    pub fn of_operation(operation: &OperationConfig) -> Self {
-        Self::of_cuts(&operation.cuts())
-    }
-
-    /// P23a: the width (mm) at which the chip-thinning lift is sized: the
-    /// widest width that the planner holds at the full feed
-    /// ([`PlannerWidth::full_feed_width_mm`]); the nominal width `ae` for
-    /// an op with no planner bound. `d` is the tool diameter. Every reader
-    /// of the Suggest lift takes its width here: Step 5, the unlifted feed,
-    /// the power ladder's width rung, pass 9, the efficiency figure and the
-    /// load context of the gates.
-    #[must_use]
-    pub fn full_feed_width(self, ae: f64, d: f64) -> f64 {
-        self.planner.full_feed_width_mm(ae, d)
-    }
-
-    /// Each admitted case with its width, in the tie order (a later case
-    /// wins a tie: the more specific name). `ae` is the nominal width and
-    /// `d` the tool diameter.
-    #[must_use]
-    pub fn widths(self, ae: f64, d: f64) -> Vec<(PowerCase, f64)> {
-        let mut out = vec![(PowerCase::Nominal, ae)];
-        if let Some(width) = self.planner.power_width_mm(ae, d) {
-            out.push((PowerCase::PlannerCap, width));
-        }
-        if self.slot {
-            out.push((PowerCase::Slot, d));
-        }
-        out
-    }
-
-    /// The case of the largest `power(ae)` over [`Self::widths`], with that
-    /// power and its width. A tie goes to the later (more specific) case.
-    pub fn worst(self, ae: f64, d: f64, power: impl Fn(f64) -> f64) -> (PowerCase, f64, f64) {
-        let mut best = (PowerCase::Nominal, power(ae), ae);
-        for (case, width) in self.widths(ae, d).into_iter().skip(1) {
-            let p = power(width);
-            if p >= best.1 {
-                best = (case, p, width);
-            }
-        }
-        best
     }
 }
 

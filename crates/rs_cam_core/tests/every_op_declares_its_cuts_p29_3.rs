@@ -12,12 +12,15 @@
 //! The tool diameter of each op is the fixture tool of
 //! `common::op_fixtures::tool_for`.
 //!
-//! - Claim 1: the power cases of the cut list
-//!   (`PowerCases::of_operation`) give the widths of the old rule, in order:
-//!   the nominal width, the planner cap (`planner_width().power_width_mm`),
-//!   and the slot (`first_pass == Slot || radial == Slot`). The rule is
-//!   written out here, so the oracle does not read `cuts()`. The lift
-//!   width (`full_feed_width`) is the old one too. P29-7 7b: the side
+//! - Claim 1: the power cases of the cut list give the widths of the old
+//!   rule: the nominal width, the planner cap
+//!   (`planner_width().power_width_mm`), and the slot (`first_pass ==
+//!   Slot || radial == Slot`). The rule is written out here, so the oracle
+//!   does not read `cuts()`. P29-7 7c: the power fold is the driver over
+//!   the declared cuts (`feeds::planned::worst_power`); with a power that
+//!   grows with the width it picks the widest old case (a tie goes to the
+//!   later case), and `power_case_width` gives the width of each old case.
+//!   The lift width (`CutList::full_feed_width`) is the old one too. P29-7 7b: the side
 //!   cuts of each config, with the feed rule and the presence, equal a
 //!   written-out list (`want_side_cuts`), the list drops no cut and holds
 //!   at most `MAX_DECLARED_CUTS`, and each feed rule is
@@ -61,8 +64,9 @@ use rs_cam_core::compute::catalog::{
     OperationType, PlannerWidth, Presence, Radial, RadialRule,
 };
 use rs_cam_core::compute::operation_configs::{ClearingStrategy, PocketPattern};
-use rs_cam_core::feeds::engagement::{PowerCase, PowerCases};
+use rs_cam_core::feeds::engagement::PowerCase;
 use rs_cam_core::feeds::geometry::RadialThinning;
+use rs_cam_core::feeds::planned::{DeclaredCuts, power_case_width, worst_power};
 use rs_cam_core::feeds::{OperationFamily, PassRole};
 use rs_cam_core::limits::{
     CleanupKind, CutFacts, CutKind, DepthLimit, EntryKind, FirstPassKind, Leave, NoDepthLimit,
@@ -234,22 +238,36 @@ fn claim_1_the_power_cases_keep_the_widths_in_order() {
     let mut cap_seen = false;
     for case in cases() {
         let list = case.op.cuts();
-        let cases = PowerCases::of_operation(&case.op);
+        let tool = common::op_fixtures::tool_for(case.op.op_type());
+        let declared = DeclaredCuts::of_operation(&case.op, &tool);
         for ae in [0.3, 1.0, 2.5, 0.4 * case.d, case.d] {
-            let new = cases.widths(ae, case.d);
             let old = old_widths(&case.op, ae, case.d);
+            // The worst case of a power that grows with the width: the
+            // widest old case; a tie goes to the later case.
+            let mut want = (PowerCase::Nominal, ae);
+            for &(c, w) in &old {
+                if w >= want.1 {
+                    want = (c, w);
+                }
+            }
+            let (nc, _, nw) = worst_power(&declared, ae, |w| w);
+            assert_eq!(nc, want.0, "{} ae {ae}: the worst case", case.name);
             assert_eq!(
-                new.len(),
-                old.len(),
-                "{} ae {ae}: the case count",
+                nw.to_bits(),
+                want.1.to_bits(),
+                "{} ae {ae}: {nc:?}",
                 case.name
             );
-            for ((nc, nw), (oc, ow)) in new.iter().zip(&old) {
-                assert_eq!(nc, oc, "{} ae {ae}: the case order", case.name);
-                assert_eq!(nw.to_bits(), ow.to_bits(), "{} ae {ae}: {nc:?}", case.name);
+            for &(oc, ow) in &old {
+                assert_eq!(
+                    power_case_width(&declared, oc, ae).to_bits(),
+                    ow.to_bits(),
+                    "{} ae {ae}: the width of {oc:?}",
+                    case.name
+                );
             }
             assert_eq!(
-                cases.full_feed_width(ae, case.d).to_bits(),
+                list.full_feed_width(ae, case.d).to_bits(),
                 case.op
                     .planner_width()
                     .full_feed_width_mm(ae, case.d)

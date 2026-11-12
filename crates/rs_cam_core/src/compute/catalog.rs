@@ -1393,8 +1393,8 @@ impl OperationConfig {
 
     /// The widest width that the op's planner holds at the full feed
     /// (K7, feeds contract P9; P23a). The pre-sim power case `PlannerCap`
-    /// and the chip-thinning lift of Suggest read it
-    /// ([`crate::feeds::engagement::PowerCases`]).
+    /// and the chip-thinning lift of Suggest read it through the declared
+    /// planner-cap cut ([`CutList::full_feed_width`]).
     ///
     /// - 2D Adaptive and 3D Rough under `GeodesicAdaptive`: the pass
     ///   ceiling `c D` ([`PlannerWidth::PassCeiling`]). Both planners hold
