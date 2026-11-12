@@ -1,0 +1,33 @@
+commit,file,operation,tool_type,diameter_mm,material,column,committed,predicted
+7c,matrix,Pocket,EndMill,3.1750,hardwood,proposal_ap_mm,6.9850,4.9846
+7c,matrix,Pocket,EndMill,3.1750,hardwood,binding_limit,,Rigidity
+7c,matrix,Pocket,EndMill,3.1750,hardwood,proposal_ae_mm,2.3210,2.3210 or wider up to the CornerCoverage width (removal-rate pick; not predicted)
+7c,matrix,Zigzag,EndMill,3.1750,hardwood,proposal_ap_mm,6.9850,4.9846
+7c,matrix,Zigzag,EndMill,3.1750,hardwood,binding_limit,,Rigidity
+7c,matrix,Zigzag,EndMill,3.1750,hardwood,proposal_ae_mm,2.3210,2.3210 or wider up to the CornerCoverage width (removal-rate pick; not predicted)
+7c,matrix,Pocket,BallNose,3.1750,hardwood,proposal_ap_mm,4.4723,4.4691
+7c,matrix,Pocket,BallNose,3.1750,hardwood,binding_limit,CornerCoverage,Rigidity or CornerCoverage (removal-rate pick; not predicted)
+7c,matrix,Pocket,BallNose,3.1750,hardwood,proposal_ae_mm,2.7100,2.7100 or wider up to the CornerCoverage width (removal-rate pick; not predicted)
+7c,matrix,Zigzag,BallNose,3.1750,hardwood,proposal_ap_mm,4.4723,4.4691
+7c,matrix,Zigzag,BallNose,3.1750,hardwood,binding_limit,CornerCoverage,Rigidity or CornerCoverage (removal-rate pick; not predicted)
+7c,matrix,Zigzag,BallNose,3.1750,hardwood,proposal_ae_mm,2.7100,2.7100 or wider up to the CornerCoverage width (removal-rate pick; not predicted)
+7c,matrix,Pocket,BullNose,3.1750,hardwood,proposal_ap_mm,6.9850,4.9846
+7c,matrix,Pocket,BullNose,3.1750,hardwood,binding_limit,,Rigidity
+7c,matrix,Pocket,BullNose,3.1750,hardwood,proposal_ae_mm,2.3210,2.3210 or wider up to the CornerCoverage width (removal-rate pick; not predicted)
+7c,matrix,Zigzag,BullNose,3.1750,hardwood,proposal_ap_mm,6.9850,4.9846
+7c,matrix,Zigzag,BullNose,3.1750,hardwood,binding_limit,,Rigidity
+7c,matrix,Zigzag,BullNose,3.1750,hardwood,proposal_ae_mm,2.3210,2.3210 or wider up to the CornerCoverage width (removal-rate pick; not predicted)
+7c,matrix,Pocket,TaperedBallNose,3.1750,hardwood,proposal_ap_mm,4.2518,4.1827
+7c,matrix,Pocket,TaperedBallNose,3.1750,hardwood,binding_limit,,Rigidity
+7c,matrix,Pocket,TaperedBallNose,3.1750,hardwood,proposal_ae_mm,2.7075,2.7075 or wider up to the CornerCoverage width (removal-rate pick; not predicted)
+7c,matrix,Zigzag,TaperedBallNose,3.1750,hardwood,proposal_ap_mm,4.2518,4.1827
+7c,matrix,Zigzag,TaperedBallNose,3.1750,hardwood,binding_limit,,Rigidity
+7c,matrix,Zigzag,TaperedBallNose,3.1750,hardwood,proposal_ae_mm,2.7075,2.7075 or wider up to the CornerCoverage width (removal-rate pick; not predicted)
+7c,matrix,Pocket,TaperedBallNose,6.0000,hardwood,proposal_ap_mm,14.3398,4.0493
+7c,matrix,Pocket,TaperedBallNose,6.0000,hardwood,binding_limit,,Rigidity
+7c,matrix,Pocket,TaperedBallNose,6.0000,hardwood,proposal_ae_mm,1.0527,1.0527 or wider up to the CornerCoverage width (removal-rate pick; not predicted)
+7c,matrix,Zigzag,TaperedBallNose,6.0000,hardwood,proposal_ap_mm,14.3398,3.0853 (conditional: at the lifted chip of the width 1.0527; up to 4.0493 if the pick widens)
+7c,matrix,Zigzag,TaperedBallNose,6.0000,hardwood,binding_limit,,Rigidity
+7c,matrix,Zigzag,TaperedBallNose,6.0000,hardwood,proposal_ae_mm,1.0527,1.0527 or wider up to the CornerCoverage width (removal-rate pick; not predicted)
+7c,matrix,Adaptive3d,TaperedBallNose,6.0000,hardwood,proposal_ap_mm,3.0000,2.0957
+7c,matrix,Adaptive3d,TaperedBallNose,6.0000,hardwood,binding_limit,,Rigidity
