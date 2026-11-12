@@ -44,6 +44,13 @@
 //!   axial circle) holds a number only for the spindle power. Non-vacuity:
 //!   a ramp and a helix row hold a force-budget number and a plunge row a
 //!   power number on a config with stated speeds.
+//! - Claim 6 (P29-9 task 1): a chip check of a stored entry feed reads the
+//!   interval `[f, f + step) / (rpm x Z)` that the write step states
+//!   (`entry_rule::StoredFeedChip`). Through the real Suggest write, a ramp
+//!   feed one step under a point band is `Within` the band minimum; half
+//!   the feed `Exceeds`; a feed at the band maximum is `Within` it (a
+//!   ceiling reads the stated chip). The margin follows the judged end:
+//!   a row inside never holds a margin below zero.
 
 #![expect(
     clippy::expect_used,
@@ -657,6 +664,17 @@ fn claim_5_an_entry_is_a_value_check_never_a_ceiling_p29_8() {
             );
         }
         for row in &env.cut_checks {
+            // P29-9 (lead ruling): the state and the margin agree.
+            assert!(
+                row.check
+                    .margin
+                    .map(CheckState::of_margin)
+                    .is_none_or(|s| s == row.check.state),
+                "{name}: the {} row: the state {:?} against the margin {:?}",
+                row.cut.label(),
+                row.check.state,
+                row.check.margin
+            );
             // A plunge is the axial circle: only the power has a number.
             if matches!(
                 row.cut,
@@ -771,4 +789,115 @@ fn claim_5_an_entry_is_a_value_check_never_a_ceiling_p29_8() {
         ramp_numbers > 0 && helix_numbers > 0,
         "a ramp ({ramp_numbers}) and a helix ({helix_numbers}) row hold a force-budget number"
     );
+}
+
+/// P29-9 task 1: a chip check of a stored entry feed reads the interval
+/// that the write step states (`entry_rule::StoredFeedChip`). Suggest
+/// writes the ramp feed rounded down to a whole mm/min, so the stated entry
+/// chip sits under the band point by less than one step: the band-minimum
+/// row is `Within`, and its value is still the stated chip. A ramp feed far
+/// under the band stays `Exceeds`, and a ceiling reads the stated chip.
+#[test]
+fn claim_6_a_stored_entry_feed_is_judged_over_its_write_step_p29_9() {
+    use rs_cam_core::feeds::suggest::{
+        FEED_WRITE_STEP_MM_MIN, SuggestForOperationInput, suggest_for_operation,
+    };
+    use rs_cam_core::limits::{BoundSide, CheckState, EntryKind};
+    let machine = MachineProfile::default();
+    // A Face, EndMill 6 mm, hardwood, at the add door: the band is a point
+    // (0.127 mm), and the feed stops at the machine feed ceiling, so the
+    // ramp feed is the stored cut feed (one write).
+    let tool = fm1_tool(ToolType::EndMill, 6.0);
+    let op = add_door_op(OperationType::Face, &tool, &machine);
+    // The real Suggest write: the speeds, the feed and the ramp feed as the
+    // funnel rounds them. A ramp entry, so the funnel writes a ramp feed.
+    let dressups = rs_cam_core::compute::config::DressupConfig {
+        entry_style: rs_cam_core::compute::config::DressupEntryStyle::Ramp,
+        ..Default::default()
+    };
+    let suggested = suggest_for_operation(SuggestForOperationInput {
+        operation: &op,
+        tool: &tool,
+        machine: &machine,
+        material: &hardwood(),
+        lut: rs_cam_core::feeds::embedded_vendor_lut(),
+        spindle_strategy: SpindleStrategy::default(),
+        context: SuggestContext {
+            dressups: Some(&dressups),
+            ..SuggestContext::default()
+        },
+    })
+    .expect("the FM1 Face is backed");
+    let mut op = suggested.operation;
+    let ramp = op.ramp_feed_rate().expect("Suggest writes a ramp feed");
+    let rpm = f64::from(op.spindle_rpm().expect("Suggest writes the speed"));
+    let per_rev = rpm * f64::from(tool.flute_count_planning());
+    let entry_rows = |op: &OperationConfig, limit: LimitId| {
+        let env = envelope(op, &tool, &machine).expect("the Face is backed");
+        env.cut_checks
+            .into_iter()
+            .filter(|r| {
+                r.check.limit == limit
+                    && matches!(r.cut, CutKind::Entry(EntryKind::Ramp | EntryKind::Helix))
+                    && matches!(r.check.state, CheckState::Within | CheckState::Exceeds)
+            })
+            .collect::<Vec<_>>()
+    };
+    let rows = entry_rows(&op, LimitId::ChipMin);
+    assert!(!rows.is_empty(), "the Face has a ramp or helix ChipMin row");
+    for row in &rows {
+        let bound = row.check.bound.expect("a band minimum");
+        let value = row.check.value.expect("a chip");
+        assert_eq!(row.check.side, BoundSide::Floor);
+        assert_eq!(
+            value.to_bits(),
+            (ramp / per_rev).to_bits(),
+            "the stated chip"
+        );
+        // Non-vacuity: the stated chip is under the band, by less than one
+        // write step.
+        assert!(
+            value < bound && bound * per_rev - ramp < FEED_WRITE_STEP_MM_MIN,
+            "the stored ramp {ramp} mm/min against the band feed {} mm/min",
+            bound * per_rev
+        );
+        assert_eq!(
+            row.check.state,
+            CheckState::Within,
+            "a stored feed one step under the band is inside"
+        );
+        // The margin follows the judged end (lead ruling): never below zero
+        // on a row that reads `Within`.
+        assert!(
+            row.check.margin.is_some_and(|m| m >= 0.0),
+            "the margin {:?} of a row inside",
+            row.check.margin
+        );
+    }
+    // A ramp feed far under the band: the whole interval is outside.
+    let _ = op
+        .as_params_mut()
+        .set_ramp_feed_rate(Some((ramp / 2.0).floor()));
+    let low = entry_rows(&op, LimitId::ChipMin);
+    assert!(!low.is_empty());
+    for row in &low {
+        assert_eq!(row.check.state, CheckState::Exceeds, "half the band feed");
+    }
+    // A ceiling reads the stated chip (the low end): a stored feed at the
+    // band maximum, whose interval reaches over it, is inside.
+    let max = entry_rows(&op, LimitId::ChipMax)
+        .first()
+        .and_then(|r| r.check.bound)
+        .expect("a band maximum");
+    // The entry feed is the ramp feed at or below the cut feed: set both.
+    let at = (max * per_rev).floor();
+    op.set_feed_rate(at);
+    let _ = op.as_params_mut().set_ramp_feed_rate(Some(at));
+    let rows = entry_rows(&op, LimitId::ChipMax);
+    assert!(!rows.is_empty());
+    for row in &rows {
+        assert!(row.check.value.expect("a chip") <= max);
+        assert!((at + FEED_WRITE_STEP_MM_MIN) / per_rev > max, "non-vacuity");
+        assert_eq!(row.check.state, CheckState::Within, "at the band maximum");
+    }
 }

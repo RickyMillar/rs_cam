@@ -81,8 +81,10 @@ fn apply_feeds_subset(
     // correct. `a_clamped_feed_ships_at_or_below_its_ceiling_g_feeddown`
     // pins the direction and `rubbing_floor_never_exceeds_band` pins the
     // band.
-    let written_feed = round_suggestion_value_down(result.feed_rate_mm_min, 1.0);
-    let written_plunge = round_suggestion_value_down(result.plunge_rate_mm_min, 1.0);
+    let written_feed =
+        round_suggestion_value_down(result.feed_rate_mm_min, super::FEED_WRITE_STEP_MM_MIN);
+    let written_plunge =
+        round_suggestion_value_down(result.plunge_rate_mm_min, super::FEED_WRITE_STEP_MM_MIN);
     scratch.set_feed_rate(written_feed);
     scratch.set_plunge_rate(written_plunge);
     // S11: the scratch holds a feed and a plunge from here on (the two

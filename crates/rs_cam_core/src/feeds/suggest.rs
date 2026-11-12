@@ -815,6 +815,12 @@ pub fn round_suggestion_value(value: f64, step: f64) -> f64 {
     (value / step).round() * step
 }
 
+/// The step (mm/min) at which Suggest writes a feed: the cut feed, the
+/// plunge feed and the ramp feed round DOWN to a whole mm/min (T-9). A
+/// stored feed thus states the interval `[f, f + step)`; the entry chip
+/// check reads that interval (`entry_rule::StoredFeedChip`).
+pub const FEED_WRITE_STEP_MM_MIN: f64 = 1.0;
+
 /// Round a suggestion value DOWN to a multiple of `step`.
 ///
 /// [`round_suggestion_value`] snaps to the NEAREST multiple, which goes UP

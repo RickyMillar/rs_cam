@@ -1182,6 +1182,11 @@ struct CutRow {
     /// P29-8 8d: the body plane, or the cut's own depth.
     depth: PlaneDepth,
     value: Option<f64>,
+    /// P29-9 task 1: the value that the state judges, when it is not
+    /// `value`: the end of a stored entry feed's chip interval toward the
+    /// inside (`entry_rule::StoredFeedChip`). The margin and the state read
+    /// it; the record keeps `value`.
+    judged: Option<f64>,
     /// The bound, `Ok(None)` with no bound (the cut is inside), or the
     /// reason for no number.
     bound: Result<Option<f64>, crate::limits::NoNumberReason>,
@@ -1200,8 +1205,14 @@ impl CutRow {
             presence,
             depth,
             value,
+            judged: None,
             bound,
         }
+    }
+
+    /// P29-9 task 1: the row with the value that its state judges.
+    fn judged_at(self, judged: Option<f64>) -> Self {
+        Self { judged, ..self }
     }
 
     /// The check record of the row.
@@ -1215,7 +1226,9 @@ impl CutRow {
         use crate::limits::{Check, CheckState, NoNumberReason};
         let (bound, margin, state) = match self.bound {
             Ok(Some(b)) => {
-                let margin = self.value.and_then(|v| side.margin(v, b));
+                // P29-9 (lead ruling): the margin follows the judged value,
+                // so a row never reads `Within` with a margin below zero.
+                let margin = self.judged.or(self.value).and_then(|v| side.margin(v, b));
                 let state = margin.map_or(
                     CheckState::NoNumber(NoNumberReason::NotModelled),
                     CheckState::of_margin,
@@ -2775,16 +2788,16 @@ impl SafeEnvelope {
         let rows = cells
             .iter()
             .map(|e| {
-                let (value, bound) = match e.value {
+                let (value, judged, bound) = match e.value {
                     PlannedCell::<Option<ChipReading>>::Judged(Some(c)) => {
-                        (Some(c.peak_mm), Ok(Some(c.bound_mm)))
+                        (Some(c.peak_mm), Some(c.judged_mm), Ok(Some(c.bound_mm)))
                     }
-                    PlannedCell::Judged(None) => (None, Err(NoNumberReason::NotModelled)),
+                    PlannedCell::Judged(None) => (None, None, Err(NoNumberReason::NotModelled)),
                     PlannedCell::NotJudged(_) | PlannedCell::NotACutLimit(_) => {
-                        (None, Err(NoNumberReason::NotJudgedHere))
+                        (None, None, Err(NoNumberReason::NotJudgedHere))
                     }
                 };
-                CutRow::of(e.kind, e.presence, e.depth, value, bound)
+                CutRow::of(e.kind, e.presence, e.depth, value, bound).judged_at(judged)
             })
             .collect();
         (side, kind, rows)

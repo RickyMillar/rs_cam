@@ -578,8 +578,9 @@ impl ConfiguredEntry {
 
     /// The chip (mm per tooth) of an entry of `kind` on `op` with
     /// `flute_count` flutes: [`Self::planned_feed_mm_min`] over the stated
-    /// spindle speed times the flute count. The stated values only: the
-    /// entry is a value check of the cut the op states.
+    /// spindle speed times the flute count, as a [`StoredFeedChip`]. The
+    /// stated values only: the entry is a value check of the cut the op
+    /// states.
     ///
     /// # Errors
     ///
@@ -590,10 +591,10 @@ impl ConfiguredEntry {
         op: &crate::compute::catalog::OperationConfig,
         kind: EntryKind,
         flute_count: u32,
-    ) -> Result<f64, EntryNoNumber> {
+    ) -> Result<StoredFeedChip, EntryNoNumber> {
         let feed = self.planned_feed_mm_min(op, kind)?;
         let rpm = Self::stated_rpm(op)?;
-        Ok(feed / (rpm * f64::from(flute_count.max(1))))
+        Ok(StoredFeedChip::of(feed, rpm, flute_count))
     }
 
     /// The spindle speed (rpm) the op states.
@@ -606,6 +607,68 @@ impl ConfiguredEntry {
             .map(f64::from)
             .filter(usable)
             .ok_or(EntryNoNumber::NoSpindleSpeed)
+    }
+}
+
+/// **The chip of a stored feed** (P29-9 task 1): the chip interval that a
+/// feed the op stores states, and the end of it that a chip check reads.
+///
+/// Why: Suggest writes every feed rounded DOWN to a whole
+/// [`FEED_WRITE_STEP_MM_MIN`](crate::feeds::suggest::FEED_WRITE_STEP_MM_MIN)
+/// (T-9). A stored whole feed `f` is thus any true feed in `[f, f + step)`,
+/// and its chip is any value in `[f, f + step) / (rpm x Z)`. A feed that is
+/// not a whole step states itself only (the interval is one point).
+///
+/// The rule: a chip check of a stored feed is `Exceeds` only when the whole
+/// interval is outside the bound. A ceiling (the band maximum) reads the low
+/// end, the stated chip. A floor (the band minimum, the rubbing floor) reads
+/// the high end. The equality rule of the check (`CheckState::of_margin`)
+/// then decides. The record keeps the stated chip as its value; the margin
+/// follows the end that the check reads (lead ruling, P29-9 section 15).
+///
+/// The interval is derived from the write step, not a typed tolerance. It
+/// covers one write. A value that went through two writes (the ramp feed
+/// reads the stored cut feed over the lift, then rounds again) can sit up to
+/// `1 + 1 / lift` steps under its source; this rule does not cover that.
+#[derive(Debug, Clone, Copy, PartialEq)]
+pub struct StoredFeedChip {
+    stated_mm: f64,
+    high_mm: f64,
+}
+
+impl StoredFeedChip {
+    /// The chip of the stored feed `feed_mm_min` at `rpm` with
+    /// `flute_count` flutes.
+    #[must_use]
+    pub fn of(feed_mm_min: f64, rpm: f64, flute_count: u32) -> Self {
+        let per_rev = rpm * f64::from(flute_count.max(1));
+        let step = crate::feeds::suggest::FEED_WRITE_STEP_MM_MIN;
+        let whole_step = (feed_mm_min / step).fract() == 0.0;
+        let high_feed = if whole_step {
+            feed_mm_min + step
+        } else {
+            feed_mm_min
+        };
+        Self {
+            stated_mm: feed_mm_min / per_rev,
+            high_mm: high_feed / per_rev,
+        }
+    }
+
+    /// The stated chip: the stored feed over `rpm x Z`.
+    #[must_use]
+    pub const fn stated_mm(self) -> f64 {
+        self.stated_mm
+    }
+
+    /// The end of the interval that a check on `side` reads: the low end
+    /// (the stated chip) for a ceiling, the high end for a floor.
+    #[must_use]
+    pub const fn toward_inside(self, side: crate::limits::BoundSide) -> f64 {
+        match side {
+            crate::limits::BoundSide::Ceiling => self.stated_mm,
+            crate::limits::BoundSide::Floor => self.high_mm,
+        }
     }
 }
 

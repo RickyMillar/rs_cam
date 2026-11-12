@@ -751,7 +751,10 @@ pub fn resolve_ramp_feed(
                 VerticalBinding::AxialChip => (bounded.mm_min() / tan_theta, RampArm::ChipTerm),
                 VerticalBinding::ZAxisRate => (bounded.mm_min() / tan_theta, RampArm::ZAxisRate),
             };
-            let value_mm_min = super::suggest::round_suggestion_value_down(raw, 1.0);
+            let value_mm_min = super::suggest::round_suggestion_value_down(
+                raw,
+                super::suggest::FEED_WRITE_STEP_MM_MIN,
+            );
             if !(value_mm_min.is_finite() && value_mm_min > 0.0) {
                 return fallback(RampFallback::NoCutFeed);
             }
@@ -782,7 +785,8 @@ pub fn resolve_ramp_feed(
     }
     let plunge_term_mm_min = plunge_mm_min / tan_theta;
     let raw = cut_feed_mm_min.min(plunge_term_mm_min);
-    let value_mm_min = super::suggest::round_suggestion_value_down(raw, 1.0);
+    let value_mm_min =
+        super::suggest::round_suggestion_value_down(raw, super::suggest::FEED_WRITE_STEP_MM_MIN);
     if !(value_mm_min.is_finite() && value_mm_min > 0.0) {
         return fallback(RampFallback::NoPlunge);
     }

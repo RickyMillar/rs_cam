@@ -541,7 +541,8 @@ pub fn resolve_plunge(
         value = feed_mm_min;
         binding = PlungeBinding::Feed;
     }
-    let value = super::suggest::round_suggestion_value_down(value, 1.0);
+    let value =
+        super::suggest::round_suggestion_value_down(value, super::suggest::FEED_WRITE_STEP_MM_MIN);
     (value.is_finite() && value > 0.0).then_some((value, binding))
 }
 

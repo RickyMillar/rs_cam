@@ -44,10 +44,12 @@ use crate::compute::catalog::{
 use crate::compute::tool_config::ToolConfig;
 use crate::feeds::CutBody;
 use crate::feeds::engagement::{EngagedDiameter, PowerCase};
-use crate::feeds::entry_rule::{ConfiguredEntry, EntryNoNumber};
+use crate::feeds::entry_rule::{ConfiguredEntry, EntryNoNumber, StoredFeedChip};
 use crate::feeds::force_budget::BudgetDepth;
 use crate::feeds::geometry::{RadialThinning, UnliftedFeed};
-use crate::limits::{CutGroup, CutKind, LimitId, NoEngagementModel, NotJudged, PlanReason, Scope};
+use crate::limits::{
+    BoundSide, CutGroup, CutKind, LimitId, NoEngagementModel, NotJudged, PlanReason, Scope,
+};
 use crate::material::Material;
 use crate::tool::ToolDefinition;
 
@@ -124,6 +126,10 @@ pub struct PlannedCut {
     pub width_mm: Result<f64, NoEngagementModel>,
     /// The advance per tooth of the cut (mm), or why it has none.
     pub chip_mm: Result<f64, PlannedNoNumber>,
+    /// P29-9 task 1: the chip interval of a stored entry feed
+    /// ([`StoredFeedChip`]); `None` for a chip that the calculator gives
+    /// (a point). `chip_mm` is its stated chip.
+    pub stored_chip: Option<StoredFeedChip>,
     /// Whether the plan always cuts it.
     pub presence: Presence,
 }
@@ -144,10 +150,10 @@ pub struct BodyColumn {
 /// match names every kind ([`Self::get`]).
 #[derive(Debug, Clone, Copy, PartialEq)]
 struct EntryChips {
-    plunge: Result<f64, EntryNoNumber>,
-    ramp: Result<f64, EntryNoNumber>,
-    helix: Result<f64, EntryNoNumber>,
-    peck_ladder: Result<f64, EntryNoNumber>,
+    plunge: Result<StoredFeedChip, EntryNoNumber>,
+    ramp: Result<StoredFeedChip, EntryNoNumber>,
+    helix: Result<StoredFeedChip, EntryNoNumber>,
+    peck_ladder: Result<StoredFeedChip, EntryNoNumber>,
 }
 
 impl EntryChips {
@@ -161,7 +167,7 @@ impl EntryChips {
         }
     }
 
-    const fn get(&self, kind: EntryKind) -> Result<f64, EntryNoNumber> {
+    const fn get(&self, kind: EntryKind) -> Result<StoredFeedChip, EntryNoNumber> {
         match kind {
             EntryKind::Plunge => self.plunge,
             EntryKind::Ramp => self.ramp,
@@ -337,6 +343,13 @@ impl DeclaredCuts {
             },
         };
         let body_chip = column.chip_mm.ok_or(PlannedNoNumber::NoBodyChip);
+        let stored_chip = match cut.feed {
+            DeclaredFeed::EntryRule(kind) => self.entry_chips.get(kind).ok(),
+            DeclaredFeed::OpFeed
+            | DeclaredFeed::Unlifted
+            | DeclaredFeed::PlannerCapped
+            | DeclaredFeed::DrillCycle => None,
+        };
         let chip_mm = match cut.feed {
             DeclaredFeed::OpFeed => body_chip,
             DeclaredFeed::Unlifted => body_chip.map(|fz| {
@@ -346,9 +359,11 @@ impl DeclaredCuts {
                 UnliftedFeed::over_lift(fz, lift).mm_min()
             }),
             DeclaredFeed::PlannerCapped => Err(PlannedNoNumber::PlannerCapped),
-            DeclaredFeed::EntryRule(kind) => {
-                self.entry_chips.get(kind).map_err(PlannedNoNumber::Entry)
-            }
+            DeclaredFeed::EntryRule(kind) => self
+                .entry_chips
+                .get(kind)
+                .map(StoredFeedChip::stated_mm)
+                .map_err(PlannedNoNumber::Entry),
             DeclaredFeed::DrillCycle => Err(PlannedNoNumber::DrillCycle),
         };
         PlannedCut {
@@ -357,6 +372,7 @@ impl DeclaredCuts {
             depth,
             width_mm,
             chip_mm,
+            stored_chip,
             presence: cut.presence,
         }
     }
@@ -735,15 +751,21 @@ pub struct ChipReading {
     /// The peak chip of the cut (mm): its advance per tooth over the lift
     /// at its width.
     pub peak_mm: f64,
+    /// P29-9 task 1: the peak chip that the check judges: `peak_mm`, or for
+    /// a stored entry feed the end of its interval toward the inside of the
+    /// bound ([`StoredFeedChip::toward_inside`]).
+    pub judged_mm: f64,
     /// The bound (mm).
     pub bound_mm: f64,
 }
 
-fn peak_chip(cut: &PlannedCut, env: &ChipEnv) -> Option<ChipReading> {
+fn peak_chip(cut: &PlannedCut, env: &ChipEnv, side: BoundSide) -> Option<ChipReading> {
     let (w, fz) = width_and_chip(cut)?;
     let lift = env.thinning.lift(w, env.d_eng_mm);
+    let judged_fz = cut.stored_chip.map_or(fz, |c| c.toward_inside(side));
     Some(ChipReading {
         peak_mm: UnliftedFeed::over_lift(fz, lift).mm_min(),
+        judged_mm: UnliftedFeed::over_lift(judged_fz, lift).mm_min(),
         bound_mm: env.bound_mm,
     })
 }
@@ -757,7 +779,7 @@ impl PlannedLimit for ChipMaxPlanned {
     type Env<'e> = ChipEnv;
     type Answer = Option<ChipReading>;
     fn judge(cut: &PlannedCut, env: &ChipEnv) -> Option<ChipReading> {
-        peak_chip(cut, env)
+        peak_chip(cut, env, BoundSide::Ceiling)
     }
 }
 
@@ -769,7 +791,7 @@ impl PlannedLimit for ChipMinPlanned {
     type Env<'e> = ChipEnv;
     type Answer = Option<ChipReading>;
     fn judge(cut: &PlannedCut, env: &ChipEnv) -> Option<ChipReading> {
-        peak_chip(cut, env)
+        peak_chip(cut, env, BoundSide::Floor)
     }
 }
 
@@ -781,7 +803,7 @@ impl PlannedLimit for RubbingFloorPlanned {
     type Env<'e> = ChipEnv;
     type Answer = Option<ChipReading>;
     fn judge(cut: &PlannedCut, env: &ChipEnv) -> Option<ChipReading> {
-        peak_chip(cut, env)
+        peak_chip(cut, env, BoundSide::Floor)
     }
 }
 
