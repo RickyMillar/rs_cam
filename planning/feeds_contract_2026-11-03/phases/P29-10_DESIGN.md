@@ -744,3 +744,113 @@ S10; a ruling that the operator overrules is one constant or one drawer.
 - **A known red:** viz `the_envelope_plot_marks_the_operator_and_the_proposal_k2b` (an edge colour
   of `CornerCoverage`, older than P29-9). 10g touches that chart: trace the cause there and fix
   the test or the colour, and say which was wrong.
+
+## 13. Measured before the code
+
+Measured on 2026-11-13 at HEAD `3a351d9a2` by the 10a to 10d implementer. A throwaway core probe
+test (deleted before every gate; a copy is outside the repo) loaded each file read-only through
+`ProjectSession::load` and read the session doors (`safe_envelope`, `of_envelope` at `stated`,
+`tool_load_report`). No GUI ran. No file was saved.
+
+The four files are the files of `P29-0_probes.md` and the P29-7 and P29-9 notes:
+`planning/rivmap_block_job/nz_wanaka_21_operator.toml` ("operator"),
+`planning/rivmap_block_job/nz_wanaka_21_6mm_rough_work.toml` ("work"),
+`planning/fixtures/rivmap100/rivmap100.toml` and
+`planning/fixtures/rivmap100/rivmap100_live_0925.toml` ("live").
+
+### 13.1 Item 1: the baseline row counts
+
+Planned rows are `SafeEnvelope::cut_checks`; stated rows are `of_envelope(env, stated)`.
+
+| File | Planned | Exceeds | Within | `NotApplicable` | `NoNumber` (reason: count) | Stated | Stated exceeds |
+|---|---|---|---|---|---|---|---|
+| operator | 662 | 36 | 365 | 51 | NotModelled 186, NotJudgedHere 18, NoBound 4, OnlyALowerBound 2 | 187 | 4 |
+| work | 662 | 31 | 370 | 51 | NotModelled 186, NotJudgedHere 18, NoBound 4, OnlyALowerBound 2 | 185 | 3 |
+| rivmap100 | 139 | 12 | 66 | 10 | NotModelled 38, NotJudgedHere 7, NoBound 4, OnlyALowerBound 2 | 38 | 0 |
+| live | 139 | 11 | 67 | 10 | NotModelled 38, NotJudgedHere 7, NoBound 4, OnlyALowerBound 2 | 38 | 2 |
+
+Operator file, per op (planned rows, of them exceeds; stated rows, of them exceeds; envelope
+axes): idx 0 Face 35/2, 12/0, plane; 1 Adaptive3d 70/5, 14/1, plane; 2 Adaptive3d 70/4, 13/1,
+plane; 3 AlignmentPinDrill 10/0, 7/0, axial bar; 4 Drill 10/0, 7/0, axial bar; 5 ProjectCurve
+15/0, 8/0, fixed; 6 Pocket 42/4, 11/0, plane; 7 Pocket 42/4, 10/0, plane; 8 Pocket 35/2, 10/0,
+plane; 9 ProjectCurve 18/0, 8/0, fixed; 10 Trace 21/0, 9/0, axial bar; 11 Pocket 35/2, 13/0,
+plane; 12 Face 35/2, 12/0, plane; 13 Trace 21/0, 9/0, axial bar; 14 Adaptive3d 70/4, 14/1, plane;
+15 Adaptive3d 70/4, 13/1, plane; 16 Scallop 28/2, 7/0, radial bar; 17 Profile 35/1, 10/0, axial
+bar. The planned exceeds of the operator file by kind: entry `ChipMin` 16, entry `RubbingFloor` 6,
+entry `ChipMax` 2 (idx 8), entry `ForceBudget` 4 (ramp, idx 1, 2, 14, 15), entry `SpindlePower` 1
+(idx 1 ramp), first slot `ForceBudget` 4 and `ChipMax` 4 (`U-PerimeterSweep`), body `ChipMin` 4
+(idx 1, 2, 14, 15, margins -2.2 % to -3.3 %), idx 17 plunge entry `PlungeRate` 1 (1582 against
+1347.47 mm/min, as `cc0a3cb74` says).
+
+Group rows after the simulation: the four files were NOT simulated (minutes each, and the lead
+forbids the long wanaka runs). The five simulated fixtures of `common::kind_fixtures` give, per
+fixture, one cell per gate and group (5 gates of `GroupVerdicts` x 5 groups): every milling
+fixture has the Drill cell `NotJudged`; Cleanup is `NoSamples` on the plain Pocket, the Profile
+and the 2D Adaptive; Link is `NoSamples` on both Pockets.
+
+### 13.2 Item 2: the entry `ChipMin` rows that exceed
+
+| File | Ops | Rows | Margin |
+|---|---|---|---|
+| operator | idx 0, 12 (Face) | ramp entry and helix entry, 2 per op | -9.67e-5 (-0.0097 %) |
+| work | idx 0, 12 (Face) | ramp entry and helix entry, 2 per op | -1.91e-5 (-0.0019 %) |
+| operator | idx 6, 7 (Pocket) | ramp and helix | -75.7 % (chip 0.0133 against 0.0550 mm) |
+| operator | idx 11 (Pocket) | ramp and helix | -66.5 % |
+| operator | idx 16 (Scallop) | helix | -91.2 % |
+| rivmap100, live | idx 0 Face, idx 1 3D Rough, idx 2 Scallop | ramp and helix | -47.5 % to -93.4 % |
+
+The Face rows are the stored-feed rows of `e6b587a2e`: a margin of less than 0.01 %. On the face
+"0 %" is wrong for them; section 3.3 prints "< 0.1 %". The other rows are real: a chip far under
+the floor.
+
+### 13.3 Item 4 (F6): the depth row and the force reading do not agree in state
+
+Measured on the five fixtures only (the four files were not simulated). Every judged group has
+the depth gate `Within` and the force under the budget, with the same sign of margin, EXCEPT one
+cell: the 2D Adaptive fixture, Link group: the depth gate is `Reported` (no cap: a
+`NoNumber(NoBound)` row) and the force reading has a budget, 1.73 N against 35.32 N (margin
++0.951). So a merged row changes a `NoNumber(NoBound)` row to a `Within` row: a state moves.
+No fixture sample exceeds, so the `Exceeds` side is not tested at all.
+
+Under ruling O3 the merge stops. 10a writes the depth row as the gate writes it (`of_criterion`)
+and writes no force row: the force reading stays report-only (the gate record `load_report`
+keeps it). The lead rules again before 10e.
+
+### 13.4 Item 6: the triage split and FM1
+
+FM1 builds its diagnostic columns from `diagnostics_from_static_checks`,
+`diagnostics_from_feeds_result`, `heuristic_hints_from_recommendation` and
+`diagnostic_from_suggest_warning` (the planned cells) and from `ProjectSession::diagnose_toolpath`
+(the simulated subset). None of them reads `stock::sim_triage` or `DedupKey`. The export header
+reads no triage (`session/compute/export.rs`). Reasoned: 10c moves no FM1 cell and no export
+header count. The FM1 gate of 10c checks it.
+
+### 13.5 Item 7: who deserializes the load verdict
+
+`rg` over `crates/` finds one deserializer of `ToolLoadReport` (and so of `ToolpathLoadVerdict` and
+`GroupVerdicts`): the round-trip unit test of `tool_load/verdict.rs`. `gate_population_vacuity_xvac`
+deserializes a `PowerVerdict` only. No product code deserializes them. The design rule ("if no
+reader deserializes it") is met by product code but not by test code. 10d keeps `groups` on the
+wire, so no `serde` attribute moves; the lead decides if it goes.
+
+### 13.6 Item 9: the stated-point arm of `S-NotJudgedHere` has instances
+
+`of_envelope` at the stated point gives `NoNumber(NotJudgedHere)` 55 times on the operator file, 53
+on the work file and 18 on each rivmap file: `ChipMax` on every op with a stated point,
+`CuttingFeedCap` on the Face and the Pocket ops, `MoveBudget` on the 3D roughs, `ToolDiameter` and
+`EngagementFloor` on the bars, and all 8 limits of a Project Curve. So the row does not close in
+10h: it narrows to the stated-point arm, and no pin moves (section 5).
+
+### 13.7 Item 11: FM1 holds no note text
+
+FM1 prints no `SafeEnvelope::notes` (`envelope_columns` prints the binding kind and the proposal
+`ap` and `ae`). Its column `entry_notes` is the note list of `SuggestWarning::RampFeed`, not an
+envelope note. Its diagnostic columns hold the ids and the severities, not the messages. So 10b
+cannot move an FM1 cell.
+
+### 13.8 Item 12: the envelopes with no plane
+
+Operator file: plane 11 ops; axial bar 5 (idx 3, 4, 10, 13, 17); radial bar 1 (idx 16); fixed 2
+(idx 5, 9). No op refuses an envelope. The notes on the four files: "Width assumes: chips clear;
+tool life not modelled" (50 characters, 14 ops), the no-depth reason (73), the move-budget
+conflict (135) and the `MayOccur` first-slot sentence (224 characters, 8 ops).
