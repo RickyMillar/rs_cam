@@ -45,8 +45,13 @@ The "before" files were shot on a GUI built from `ef25930d6` (commit
 | S9 | `before/S9_sim_idx16_10g.png` | `after/S9_sim_idx16_chart.png` | operator idx 16, playhead at its start | the field draws with faint 25 / 50 / 75 % lines; no "budget, no limit here" line on this op (the field stays under 100 %) | `de37ede1c` |
 | S10 | `before/S10_live_idx1_passes_10g.png` | `after/S10_live_idx1_passes.png` | live file, 3D Rough ladder 8 > 2 | the proposal ⚡ 2.58 (2.585 mm); the face line "stated point · depth 33 % over vendor depth cap" in danger | `a381097c7`, `de37ede1c` |
 | S10 | none | `after/S10_live_idx1_limits_open.png` | live file, 3D Rough ladder 8 > 2 | the "first slot" and "planner cap" rows with "chip max .. over limit" in danger; "proposal 2.59 x 1.20 mm" | `a381097c7`, `de37ede1c` |
+| S11 | `after/S1b_idx1_limits_open.png` | `after/S11_idx1_10h_passes.png`, `after/S11_idx1_10h_limits_open.png` | operator idx 1, PB + 10h tree (no 10i) | PB: the body "chip min 2.2 % under floor" reads the caution chip "advisory" (one printed value; the reason is on the hover); the face line is still "stated point · depth 387 % over force cap" | PB + 10h patches, release build 2026-11-14 04:28 |
+| S11 | `after/S4_idx16_limits_open.png` | `after/S11_idx16_10h_passes.png`, `after/S11_idx16_10h_limits_open.png` | operator idx 16, PB + 10h tree | 10h: the helix entry reads "depth inside, no bound here" (deflection at its own depth); the body cut folds to "5 within · 2 no number" (deflection `Within` at the 0.5 mm leave) | PB + 10h patches |
+| S11 | `after/S4_idx5_limits_open.png` | `after/S11_idx5_10h_limits_open.png` | operator idx 5, PB + 10h tree | 10h: the deflection rows of idx 5 are "not modelled" (no body depth before the simulation), folded in "no number" | PB + 10h patches |
 
 ## Not shot
+
+- S11 of step 10i (`S11_idx<N>_10i_*`): 10i stopped after its note (`P29-10i_DESIGN.md` section 8), so no 10i code exists. The S11 rows above show the PB + 10h tree; idx 0 and 6 were not shot.
 
 - The tool panel (`tool_panel_helix_10e2.png` in the 10e set): `set_ui_view`
   cannot select a tool, and no input tool can click the GUI on this Wayland

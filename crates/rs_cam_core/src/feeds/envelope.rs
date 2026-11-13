@@ -3042,23 +3042,18 @@ impl SafeEnvelope {
     /// (the depth ceiling then gives no row, as before). One match, no
     /// wildcard.
     ///
-    /// - The deflection on a fixed depth axis (a finish with no cap, a
-    ///   Project Curve): the envelope solves no depth there,
-    ///   `NoNumber(NotJudgedHere)`.
     /// - The force budget of a finish pass (ruling R2, the depth limit
     ///   `NoLimit(FinishPass)`): `NoNumber(NoBound)`.
+    /// - P29-10 10h: the deflection on a fixed depth axis has no scope
+    ///   reason now: `ceiling_rows` judges each cut at the fixed depth.
     fn no_edge_reason(&self, edge: CeilingEdge) -> Option<crate::limits::NoNumberReason> {
         use crate::limits::{DepthLimit, NoDepthLimit, NoNumberReason};
         match edge {
-            // EXEMPT(S-NotJudgedHere)
-            CeilingEdge::Deflection => {
-                (!self.axes.ap_free()).then_some(NoNumberReason::NotJudgedHere)
-            }
             // EXEMPT(S-NoBound)
             CeilingEdge::ForceBudget => (self.inputs.cuts.list().body_facts().depth_rule
                 == DepthLimit::NoLimit(NoDepthLimit::FinishPass))
             .then_some(NoNumberReason::NoBound),
-            CeilingEdge::VendorDepthTable | CeilingEdge::Power => None,
+            CeilingEdge::Deflection | CeilingEdge::VendorDepthTable | CeilingEdge::Power => None,
         }
     }
 
@@ -3089,11 +3084,14 @@ impl SafeEnvelope {
         // P29-9 9c: a finish pass on the earlier op's leave is judged at
         // the leave; with no leave its body rows have no number (set after
         // the rows, `read_declared_cuts`).
-        let (ap, lower_bound) = match cuts.body_depth() {
-            BodyDepth::AtLeast(b) => (b, true),
-            BodyDepth::EarlierLeave(leave) => (leave, false),
+        // P29-10 10h: the depth may be absent (no proposal depth); the
+        // deflection on a fixed depth axis then says so on its rows, every
+        // other limit gives no rows, as before.
+        let (body_ap, lower_bound) = match cuts.body_depth() {
+            BodyDepth::AtLeast(b) => (Some(b), true),
+            BodyDepth::EarlierLeave(leave) => (Some(leave), false),
             BodyDepth::Plane(_) | BodyDepth::NoEarlierLeave(_) | BodyDepth::None(_) => {
-                (self.proposal.get().ap_mm()?, false)
+                (self.proposal.get().ap_mm(), false)
             }
         };
         let bound_of = |depth: PlaneDepth| match depth {
@@ -3110,12 +3108,13 @@ impl SafeEnvelope {
         // check against its root; an axial cut (a plunge) has no depth on
         // the plane.
         let value_of = |depth: PlaneDepth| match depth {
-            PlaneDepth::Body => Some(ap),
+            PlaneDepth::Body => body_ap,
             PlaneDepth::Own(own) => Some(own.mm),
             PlaneDepth::Axial => None,
         };
         let rows: Vec<CutRow> = match edge {
             CeilingEdge::ForceBudget => {
+                body_ap?;
                 let model = self.budget.as_ref()?;
                 self.limit(LimitKind::Rigidity)?;
                 let env = ForceEnv {
@@ -3161,40 +3160,103 @@ impl SafeEnvelope {
                     .collect()
             }
             CeilingEdge::Deflection => {
-                if !self
+                // P29-10 10h (lead ruling L3): on a fixed depth axis the
+                // envelope draws no deflection edge, and each declared cut is
+                // a value check at the fixed depth (the earlier op's leave,
+                // the lower bound of a Project Curve, an entry's own depth),
+                // with the basis of the drawn edge. On a free axis the rows
+                // read the drawn edge, as before. The boundary does not
+                // change, so no placement and no proposal moves.
+                let fixed = !self.axes.ap_free();
+                let drawn = self
                     .limit(LimitKind::Deflection)
-                    .is_some_and(|l| matches!(l.edge, Edge::ApCurve { .. }))
-                {
+                    .is_some_and(|l| matches!(l.edge, Edge::ApCurve { .. }));
+                if !fixed && !drawn {
                     return None;
                 }
-                let env = ForceEnv {
-                    tool: tool?,
-                    material: &self.inputs.material,
-                    bound: inputs_deflection_limit_um(&self.inputs),
+                if !fixed {
+                    body_ap?;
+                }
+                let own_basis = fixed.then(deflection_edge_basis);
+                // The beam abstains (T-4): every cut says why, no row is
+                // silent.
+                let stickout = self.inputs.tool.stickout_planning_mm();
+                let abstains = match tool {
+                    None => Some(NoNumberReason::NoToolBody),
+                    Some(_) if self.inputs.material.force_line().is_err() => {
+                        Some(NoNumberReason::NoForceLine)
+                    }
+                    Some(_) if !(stickout.is_finite() && stickout > 0.0) => {
+                        Some(NoNumberReason::NotModelled)
+                    }
+                    Some(_) => None,
                 };
-                judge_declared_cuts::<DeflectionPlanned>(cuts, column(self.curve_fz(p.ae_mm)), &env)
-                    .iter()
-                    .map(|e| {
-                        let bound = match (e.value, e.depth) {
-                            // P29-8 8d: a plunge has no side-cut model; no
-                            // root is no number here, not "inside".
-                            (PlannedCell::Judged(_), PlaneDepth::Axial) => {
-                                Err(NoNumberReason::NotModelled)
-                            }
-                            (PlannedCell::Judged(root), PlaneDepth::Body | PlaneDepth::Own(_)) => {
-                                Ok(root)
-                            }
-                            (PlannedCell::NotJudged(_) | PlannedCell::NotACutLimit(_), _) => {
-                                not_judged
-                            }
+                match (abstains, tool) {
+                    (Some(reason), _) if fixed => cuts
+                        .list()
+                        .iter()
+                        .map(|c| {
+                            let depth = PlaneDepth::of_declared(c.depth);
+                            CutRow::of(c.kind, c.presence, depth, value_of(depth), Err(reason))
+                                .with_basis(own_basis.clone())
+                        })
+                        .collect(),
+                    (Some(_) | None, None) => return None,
+                    (Some(_) | None, Some(tool)) => {
+                        let env = ForceEnv {
+                            tool,
+                            material: &self.inputs.material,
+                            bound: inputs_deflection_limit_um(&self.inputs),
                         };
-                        CutRow::of(e.kind, e.presence, e.depth, value_of(e.depth), bound)
-                            .at_lower_bound(bound_of(e.depth))
-                            .at_lower_bound(bound_of(e.depth))
-                    })
-                    .collect()
+                        judge_declared_cuts::<DeflectionPlanned>(
+                            cuts,
+                            column(self.curve_fz(p.ae_mm)),
+                            &env,
+                        )
+                        .iter()
+                        .map(|e| {
+                            let value = value_of(e.depth);
+                            let bound = match (e.value, e.depth) {
+                                // P29-8 8d: a plunge has no side-cut model; no
+                                // root is no number here, not "inside".
+                                (PlannedCell::Judged(_), PlaneDepth::Axial) => {
+                                    Err(NoNumberReason::NotModelled)
+                                }
+                                // 10h: a body with no depth before the
+                                // simulation has no value to judge. A ramp
+                                // or a helix with no own depth has no
+                                // engagement (P29-8 8d: an entry is a slot
+                                // at its own depth only).
+                                (PlannedCell::Judged(_), PlaneDepth::Body)
+                                    if value.is_none()
+                                        || matches!(
+                                            e.kind,
+                                            CutKind::Entry(
+                                                crate::limits::EntryKind::Ramp
+                                                    | crate::limits::EntryKind::Helix,
+                                            )
+                                        ) =>
+                                {
+                                    Err(NoNumberReason::NotModelled)
+                                }
+                                (
+                                    PlannedCell::Judged(root),
+                                    PlaneDepth::Body | PlaneDepth::Own(_),
+                                ) => Ok(root),
+                                (PlannedCell::NotJudged(_) | PlannedCell::NotACutLimit(_), _) => {
+                                    not_judged
+                                }
+                            };
+                            CutRow::of(e.kind, e.presence, e.depth, value, bound)
+                                .at_lower_bound(bound_of(e.depth))
+                                .with_basis(own_basis.clone())
+                        })
+                        .collect()
+                    }
+                }
             }
             CeilingEdge::VendorDepthTable => {
+                body_ap?;
                 let band_max = self.table_band_max?;
                 self.limit(LimitKind::VendorDepthTable)?;
                 let env = TableEnv {
@@ -3231,6 +3293,7 @@ impl SafeEnvelope {
                 if lower_bound {
                     return None;
                 }
+                body_ap?;
                 let sp = speeds?;
                 // P29-9 9c: the body power at the earlier op's leave, else at
                 // the proposal depth.
@@ -4393,14 +4456,20 @@ fn deflection_limit(
         kind: LimitKind::Deflection,
         binding_cut: None,
         law: DEFLECTION_LAW,
-        basis: Basis::derived(
-            "one beam (ToolDefinition::tip_deflection_mm)",
-            vec![Basis::Rule(
-                crate::feeds::suggest::DEFLECTION_BACKOFF_TARGET_ROW,
-            )],
-        ),
+        basis: deflection_edge_basis(),
         edge: Edge::ApCurve { points: curve },
     });
+}
+
+/// The basis of the drawn deflection edge, and of the deflection rows on a
+/// fixed depth axis (P29-10 10h): the one beam at the deflection target.
+fn deflection_edge_basis() -> Basis {
+    Basis::derived(
+        "one beam (ToolDefinition::tip_deflection_mm)",
+        vec![Basis::Rule(
+            crate::feeds::suggest::DEFLECTION_BACKOFF_TARGET_ROW,
+        )],
+    )
 }
 
 /// The bisection steps that place a force-budget depth between two solved

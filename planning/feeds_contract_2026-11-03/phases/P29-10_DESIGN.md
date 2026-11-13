@@ -1178,3 +1178,49 @@ idx 1, 2, 14, 15 "stated point · depth 387 % / 74 % / 73 % / 57 % over
 force cap" (advisory); every other op no line. Readiness: no change (10h
 touches no gate). FM1 and the op golden: no cell and no row (no edge, no
 proposal, no feed moves).
+
+### Measured beside predicted (10h)
+
+The same row probe ran on the 10h tree; "measured" is the diff of the PB
+dump and the 10h dump.
+
+| Quantity | Predicted | Measured |
+|---|---|---|
+| Rows that leave `NotJudgedHere` | 34 (10, 10, 7, 7) | 34, the rows of the table above |
+| `Within`, no bound (Scallop body, ramp, helix) | 12 | 8 (mismatch: the ramp, below) |
+| `NoNumber(OnlyALowerBound)` (Project Curve body and first slot, idx 9 and rivmap idx 3) | 8 | 8 |
+| `NoNumber(NotModelled)` (plunge entries; idx 5 body and first slot) | 14 | 18 (the 4 Scallop ramp rows join) |
+| Rows that exceed | 0 | 0 |
+| Other rows that change | 0 | 0 |
+| Face lines of the 18 operator ops | no change | no change |
+| Verdict rows (Readiness) | no change | no change |
+
+The mismatch: the ramp entry of a Scallop has no own depth (a Scallop states
+no depth per pass), so it sits on the body plane. The prediction probe
+judged it as a slot at the leave (`Within`). The first 10h build did the
+same, and claim 5 of `every_limit_judges_every_declared_cut_p29_7` failed
+(P29-8 8d: a ramp or a helix with no own depth has no engagement; its depth
+rows hold no number). The build now gives such a ramp `NotModelled`. The
+prediction rule missed the P29-8 rule; the product follows P29-8.
+
+Pins: no pin moves (ROWS 37, MAX_NEEDS_RULING 26, ROWS_WITH_A_FILE 37). The
+row `S-NotJudgedHere` narrows: `where_` is `src/limits/project.rs` and
+`src/limits/row.rs`.
+
+Finding outside the scope: `nz_wanaka_21*` idx 5 (Project Curve, no lower
+bound from the setup) has no force-budget, vendor depth table or power row
+at all: `ceiling_rows` returns `None` with no proposal depth, and no scope
+reason covers it. 10h keeps that behaviour for those three limits (no
+number moves) and gives the deflection rows `NotModelled`.
+
+Explainer data (`P29-10_explainer/data/`): regenerated on the PB + 10h tree,
+so this commit also carries the PB rows of the page. The six
+`mcp_safe_envelope_operator_*.json` files come from a throwaway probe that
+builds the `get_safe_envelope` reply as `mcp_get_safe_envelope` does (the
+core serialiser and the grid cap of `rs_cam_mcp::response`) on a read-only
+load; against the old files only `limit_rows` differs, and only in the
+`ChipMin` rows (the caveat `advisory_floor`; the body tone of idx 1, 2, 14,
+15). The two `cli_suggest_*.jsonl` files are the release CLI
+(`rs_cam_cli suggest --json`). The field and tool-load files are unchanged
+(no simulation). `build_page.py` rebuilt `index.html`; `assert_claims.py`:
+11 of 11 PASS.

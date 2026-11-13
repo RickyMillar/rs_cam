@@ -418,16 +418,14 @@ pub static EXEMPTIONS: [Exemption; 37] = [
         id: "S-NotJudgedHere",
         what: "every envelope limit",
         limit: &[],
+        // P29-10 10h: the deflection on a fixed depth axis is a value check
+        // at the fixed depth; the stated-point arm stays (`of_envelope`).
         who: Who::Reader(
-            "a limit on a fixed axis, a per-point limit, the drawn move-budget curve \
-             (NoNumberReason::NotJudgedHere)",
+            "the stated point against a limit on a fixed axis, a per-point limit, \
+             the drawn move-budget curve (NoNumberReason::NotJudgedHere)",
         ),
         class: NR,
-        where_: &[
-            "src/feeds/envelope.rs",
-            "src/limits/project.rs",
-            "src/limits/row.rs",
-        ],
+        where_: &["src/limits/project.rs", "src/limits/row.rs"],
         closes_in: "P29-10",
     },
     // U: one row for each cut that no limit reads before the simulation

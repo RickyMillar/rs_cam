@@ -65,10 +65,12 @@
 //!   on one side with no cap is judged at the stock the earlier op leaves.
 //!   With a leave, the body power row reads the power at the leave (at the
 //!   proposal speeds); with no leave, it is `NoNumber(NoEarlierLeave)`. A
-//!   finish has no force-budget edge (`NoNumber(NoBound)`, row `S-NoBound`)
-//!   and, on its fixed depth axis, no deflection edge (`NoNumber(
-//!   NotJudgedHere)`, row `S-NotJudgedHere`): each says so on the record,
-//!   one row per declared cut, never a silent missing row.
+//!   finish has no force-budget edge (`NoNumber(NoBound)`, row `S-NoBound`),
+//!   one row per declared cut, never a silent missing row. P29-10 10h (lead
+//!   ruling L3): on its fixed depth axis the deflection is a value check at
+//!   the fixed depth: the body reads the earlier leave, with the basis of
+//!   the beam and the caveat `AtEarlierLeave`; no deflection row of a fixed
+//!   axis on any op is `NotJudgedHere`.
 
 #![expect(
     clippy::expect_used,
@@ -1099,11 +1101,70 @@ fn claim_8_a_finish_is_judged_at_the_earlier_leave_p29_9() {
             body(rows, LimitId::ForceBudget).state,
             CheckState::NoNumber(NoNumberReason::NoBound)
         );
+    }
+    // P29-10 10h (lead ruling L3): the deflection of a fixed depth axis is a
+    // value check at the fixed depth. The finish body reads the earlier
+    // leave, with a basis and the caveat; with no leave it has no number
+    // for that reason, never "not judged here".
+    for leave in [0.5, 1.0] {
+        let rows = rows(Some(leave));
+        let row = rows
+            .iter()
+            .find(|r| cut(r) == CutKind::Body && r.check().limit == LimitId::ToolDeflection)
+            .expect("the body deflection row");
         assert_eq!(
-            body(rows, LimitId::ToolDeflection).state,
-            CheckState::NoNumber(NoNumberReason::NotJudgedHere)
+            row.check().value,
+            Some(leave),
+            "the deflection at the leave"
+        );
+        assert!(
+            matches!(row.check().state, CheckState::Within | CheckState::Exceeds),
+            "a judged state at the leave: {:?}",
+            row.check().state
+        );
+        assert!(row.check().basis.is_some(), "the basis of the beam");
+        assert!(
+            row.caveats()
+                .contains(&rs_cam_core::limits::Caveat::AtEarlierLeave),
+            "the caveat of the leave: {}",
+            row.face()
         );
     }
+    assert_eq!(
+        body(&without, LimitId::ToolDeflection).state,
+        CheckState::NoNumber(NoNumberReason::NoEarlierLeave)
+    );
+    // No deflection row of any op says "not judged here" for a fixed axis.
+    let machine = MachineProfile::default();
+    let mut fixed = 0;
+    for (name, op, tool) in configs(&machine) {
+        let Some(env) = envelope(&op, &tool, &machine) else {
+            continue;
+        };
+        if !matches!(
+            env.axes,
+            rs_cam_core::feeds::envelope::EnvelopeAxes::RadialBar { .. }
+                | rs_cam_core::feeds::envelope::EnvelopeAxes::Fixed { .. }
+        ) {
+            continue;
+        }
+        for row in planned(&env)
+            .iter()
+            .filter(|r| r.check().limit == LimitId::ToolDeflection)
+        {
+            fixed += 1;
+            assert_ne!(
+                row.check().state,
+                CheckState::NoNumber(NoNumberReason::NotJudgedHere),
+                "{name}: {}",
+                row.face()
+            );
+        }
+    }
+    assert!(
+        fixed > 0,
+        "non-vacuity: deflection rows on a fixed depth axis"
+    );
 }
 
 #[expect(
