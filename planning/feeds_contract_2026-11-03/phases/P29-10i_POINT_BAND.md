@@ -345,3 +345,27 @@ change.
   drills) and whether a stated chip reads the stored-feed high end.
 - FM1 was not run. The "no cell moves" claim is from the column sources.
 - The viz crate and the GUI were not built or opened.
+
+## Lead rulings (2026-11-14)
+
+- **One classification of the low side, for the planned row and the gate.** Ruling A2 stands: a
+  row that prints one chip value is a point, not a band. The sample gate already treats the low
+  side as advisory for a point, an extrapolated row, or a row with no `ae` window
+  (`low_side_is_advisory`). The planned `ChipMin` row follows the same rule through the SAME
+  function: options (b) and (d). It keeps its value and the printed value as a reference, so a
+  chip between the rubbing floor and the printed value is visible before a simulation. Its tone is
+  advisory, and a caveat names the reason ("one printed value", "extrapolated", "no width
+  window").
+- **No silent band.** `envelope.rs` must not write `(v, v)`. The chip floor that the envelope
+  hands to the planned check is a typed value: a band minimum, or a reference from a point. The
+  check reads the type; the tone rule reads the type. A future limit cannot make a floor from a
+  point without a new variant.
+- **Not option (a):** it hides a chip of 0.031 against a printed 0.127 until a simulation.
+  **Not (c):** one cut with two widths in one table. **Not (e):** it moves a feed and reverses
+  P23a; the feed rule is not in question here.
+- **Stated chip rows (10i)** read the stored feed as the entry rows do (`StoredFeedChip`, the
+  interval [f, f+1)): a row that only the rounding puts under the reference is `Within` with the
+  `stored feed` caveat.
+- **Expected after the change (to verify, not to assume):** the 8 body rows and the 2 helix rows
+  with the gating tone become advisory; no state changes; FM1 and the op golden do not move. After
+  10i the face line of wanaka idx 16 reads its stated chip under the printed value, in caution.
