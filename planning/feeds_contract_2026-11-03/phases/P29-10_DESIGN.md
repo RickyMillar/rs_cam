@@ -1104,3 +1104,77 @@ widths; at ae 0.445 mm the edge rides the flute top).
   10i, because 10i gives the stated point chip rows, and the face line of the card reads the stated
   rows. The 10h and 10i notes predict the face line of every operator op and the Readiness rows
   before the code.
+
+## 18. Step 10h: predicted rows (before the code)
+
+Baseline: HEAD `702c8e97b` plus `pb.patch` (P29-10i PB). A throwaway probe
+(deleted; a copy is in the agent scratchpad `p29_10hi/`) loaded the four
+files read-only and wrote every row of `ProjectSession::limit_rows`. A
+second throwaway probe judged the deflection of each declared cut at the
+fixed depth from the public pieces (the declared cuts of the Suggest
+context, `DeflectionPlanned`, the target `deflection_limit_um` of the body
+leave, the operator chip of the drawn edge), with no 10h code.
+
+### Section 9 item 9, measured again
+
+`of_envelope` at the stated point gives `NoNumber(NotJudgedHere)` 55 times
+on `nz_wanaka_21_operator.toml`, 53 on `nz_wanaka_21.toml` and 18 on each
+rivmap file (the same counts as section 13.6): `ChipMax` on every op with a
+stated point, `CuttingFeedCap` on the Face, Pocket and 3D Rough ops,
+`MoveBudget` on the 3D roughs, `ToolDiameter` and `EngagementFloor` on the
+bars, and the limits of a Project Curve (flute guard, cutting length,
+vendor axial, force budget, engagement floor, tool diameter, chip max). So
+`S-NotJudgedHere` narrows and does not close: its `where_` loses
+`src/feeds/envelope.rs` (the one marker there was the deflection arm of
+`no_edge_reason`), its `who` names the stated point only, and no pin moves
+(ROWS 37, MAX_NEEDS_RULING 26, ROWS_WITH_A_FILE 37).
+
+### The rule of the step
+
+On a fixed depth axis the envelope draws no deflection edge (the boundary
+does not change: no `Limit` is added, so `place`, `propose` and the
+placement do not move). Each declared cut is a value check at the fixed
+depth: the body at the earlier op's leave (9c) or at the lower bound of a
+Project Curve (9b), an entry at its own depth, against the root of the one
+beam at the operator chip (the chip of the drawn edge on a free axis). The
+basis is the basis of the drawn deflection edge. A cut the beam cannot
+judge says why: no built tool `NoToolBody`, no force line `NoForceLine`, no
+stickout or no depth before the simulation `NotModelled`, a straight plunge
+`NotModelled` (no side-cut model). No row is silent.
+
+### Predicted rows (the list for the commit message)
+
+Each row is `NoNumber(NotJudgedHere)` with row `S-NotJudgedHere` today. The
+beam reaches the 200 um target at no depth below the flute on any of these
+cuts (no root), so a row with a value is `Within` with no bound; on a lower
+bound it is `NoNumber(OnlyALowerBound)` with the caveat `lower bound`.
+
+| File | idx (op) | Cut | After 10h |
+|---|---|---|---|
+| operator, nz_wanaka_21 | 16 (Scallop) | body | `Within`, no bound, depth 0.5 mm (the leave), caveat `at earlier leave` |
+| operator, nz_wanaka_21 | 16 | ramp entry | `Within`, no bound, depth 0.5 mm, caveats `may not occur`, `at earlier leave` |
+| operator, nz_wanaka_21 | 16 | helix entry | `Within`, no bound, own depth 1.0 mm, caveat `may not occur` |
+| operator, nz_wanaka_21 | 16 | plunge entry | `NoNumber(NotModelled)` |
+| operator, nz_wanaka_21 | 9 (Project Curve) | body | `NoNumber(OnlyALowerBound)`, depth 2.418 mm, caveat `lower bound` |
+| operator, nz_wanaka_21 | 9 | first slot | `NoNumber(OnlyALowerBound)`, depth 2.418 mm, caveat `lower bound` |
+| operator, nz_wanaka_21 | 9 | plunge entry | `NoNumber(NotModelled)` |
+| operator, nz_wanaka_21 | 5 (Project Curve) | body | `NoNumber(NotModelled)`: the body depth is known after the simulation (`BodyDepth::None(DepthAfterSimulation)`; the setup gives no lower bound) |
+| operator, nz_wanaka_21 | 5 | first slot | `NoNumber(NotModelled)`, same reason |
+| operator, nz_wanaka_21 | 5 | plunge entry | `NoNumber(NotModelled)` |
+| rivmap100, live_0925 | 2 (Scallop) | body, ramp entry, helix entry, plunge entry | as idx 16 (body and ramp at 0.5 mm, helix 1.0 mm, plunge `NotModelled`) |
+| rivmap100, live_0925 | 3 (Project Curve) | body, first slot, plunge entry | body and first slot `NoNumber(OnlyALowerBound)` at 1.0 mm; plunge `NotModelled` |
+
+Counts: 34 rows leave `NotJudgedHere` (10 on each wanaka file, 7 on each
+rivmap file). On each wanaka file 3 become `Within`, 2 `OnlyALowerBound`
+and 5 `NotModelled`; on each rivmap file 3 `Within`, 2 `OnlyALowerBound`
+and 2 `NotModelled`. No row exceeds. No other row changes (no state, tone,
+caveat or face of another limit). The 34 rows lose the exemption row
+`S-NotJudgedHere`; the 8 ramp and helix entry rows of the Scallops keep `U-EntryFallback`
+where they hold `may not occur`.
+
+Face line of the Passes card on the 18 operator ops: no change (a planned
+row never reaches the face; 10h writes no stated row). Before and after:
+idx 1, 2, 14, 15 "stated point · depth 387 % / 74 % / 73 % / 57 % over
+force cap" (advisory); every other op no line. Readiness: no change (10h
+touches no gate). FM1 and the op golden: no cell and no row (no edge, no
+proposal, no feed moves).
