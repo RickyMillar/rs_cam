@@ -369,3 +369,70 @@ change.
 - **Expected after the change (to verify, not to assume):** the 8 body rows and the 2 helix rows
   with the gating tone become advisory; no state changes; FM1 and the op golden do not move. After
   10i the face line of wanaka idx 16 reads its stated chip under the printed value, in caution.
+
+## 9. Step PB: predicted (before the code)
+
+Baseline: HEAD `702c8e97b`. A throwaway probe (`zz_probe_p29_10hi.rs`, deleted;
+copy and dumps in the agent scratchpad `p29_10hi/`) loaded the four files
+read-only and wrote every row of `ProjectSession::limit_rows` (envelope and
+verdict) as JSON. The prediction comes from that dump and the rule below; it
+is not the output of the new code.
+
+The rule of the step:
+
+- One classification: `ChipBoundsSource::of_row(&LookupResult)` (the F3.3
+  rule that the gate now holds inline). The gate and the envelope call it.
+- The planned `ChipMin` check reads a typed floor (`planned::ChipFloor`): a
+  band minimum, or the printed point of a one-value row. No `(v, v)`.
+- A `ChipMin` row with a reading takes the caveat `AdvisoryFloor` when the
+  low side of its row is advisory (a point, an extrapolated row, a row with
+  no width window). The caveat softens the tone. Its face word is "one
+  printed value", "extrapolated" or "no width window"; it ranks after
+  "stored feed" and before "may not occur".
+
+On the four files every matched row is a point or a band with no width
+window (section 1 and the trace probe), so every `ChipMin` row with a
+reading takes the caveat.
+
+| Quantity | operator | nz_wanaka_21 | rivmap100 | live_0925 | Sum |
+|---|---|---|---|---|---|
+| `ChipMin` rows with a reading (take the caveat) | 60 | 44 | 13 | 13 | 130 |
+| Rows that change tone `Exceeds` to `ExceedsAdvisory` | 4 | 4 | 1 | 1 | 10 |
+| Rows that change state | 0 | 0 | 0 | 0 | 0 |
+
+Faces that change: 106 of the 130 (the caveat word is added, or it
+replaces "may not occur" on an entry row; a face that already shows "worst
+case", "lower bound" or "stored feed", or that would pass 60 characters,
+keeps its face).
+
+The 10 tone changes (the trace table of section 4):
+
+| File | idx | Cut | Margin | Face after |
+|---|---|---|---|---|
+| operator | 1 | body | -2.25 % | body · chip min 2.2 % under floor · one printed value |
+| operator | 2 | body | -2.80 % | body · chip min 2.8 % under floor · one printed value |
+| operator | 14 | body | -3.26 % | body · chip min 3.3 % under floor · one printed value |
+| operator | 15 | body | -2.99 % | body · chip min 3.0 % under floor · one printed value |
+| nz_wanaka_21 | 1 | body | -3.26 % | body · chip min 3.3 % under floor · one printed value |
+| nz_wanaka_21 | 2 | body | -3.26 % | body · chip min 3.3 % under floor · one printed value |
+| nz_wanaka_21 | 14 | body | -3.26 % | body · chip min 3.3 % under floor · one printed value |
+| nz_wanaka_21 | 15 | body | -2.99 % | body · chip min 3.0 % under floor · one printed value |
+| rivmap100 | 1 | helix entry | -89.0 % | helix entry · chip min 89 % under floor · one printed value |
+| live_0925 | 1 | helix entry | -47.5 % | helix entry · chip min 47 % under floor · one printed value |
+
+The face line of the Passes card (the worst stated row that exceeds, by
+`CheckRow::rank_cmp`): no change on any of the 18 operator ops. The stated
+rows hold no `ChipMin` row today (the stated chip band row is `ChipMax`,
+`NotJudgedHere`). Before and after:
+
+| idx | Face line |
+|---|---|
+| 1 | stated point · depth 387 % over force cap (advisory) |
+| 2 | stated point · depth 74 % over force cap (advisory) |
+| 14 | stated point · depth 73 % over force cap (advisory) |
+| 15 | stated point · depth 57 % over force cap (advisory) |
+| 0, 3 to 13, 16, 17 | none |
+
+Readiness tool-load rows: no change. They read the gate rows, and the gate
+keeps its verdicts (the gate builds the same `ChipBoundsSource`). FM1 and
+the op golden: no cell and no row moves (section 6).
