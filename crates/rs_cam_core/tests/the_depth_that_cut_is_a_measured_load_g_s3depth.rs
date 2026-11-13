@@ -733,6 +733,7 @@ fn the_suggest_clamp_still_fires_at_the_helper_s_own_cap() {
         lut: embedded_vendor_lut(),
         spindle_strategy: SpindleStrategy::MatchChart,
         context: SuggestContext::no_project(NoProject::NONE),
+        modulation: rs_cam_core::dressup::feed_modulation::RunModulation::Off,
     })
     .expect("a roughing pocket with a flat end mill has an envelope");
     let mut provenance = rs_cam_core::feeds::FeedsProvenance::default();

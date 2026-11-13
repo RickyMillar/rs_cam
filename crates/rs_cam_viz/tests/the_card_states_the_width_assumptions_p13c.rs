@@ -194,7 +194,9 @@ fn the_card_and_mcp_state_the_width_assumptions_p13c() {
     {
         let session = state.session();
         let tc = &session.toolpath_configs()[0];
-        let profile = session.cutter_op_profile(tc).expect("the profile");
+        let profile = session
+            .cutter_op_profile(tc, rs_cam_viz::state::simulation::run_modulation())
+            .expect("the profile");
         let rationale =
             rs_cam_core::feeds::rationale::SuggestRationale::from_warnings(&profile.warnings);
         let text = serde_json::to_string(&rationale).expect("json");

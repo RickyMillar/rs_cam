@@ -58,10 +58,11 @@ code { font-size: 12.5px; }
 <body>
 <main>
 <h1>One plane: the planned cuts, the force field and the limit rows</h1>
-<p class="sub">Feeds contract P29-10, commit 10g and its review. The data in this page comes from
-the files in <code>data/</code>: MCP replies and the CLI output of the 10g tree, and the force
-planes that the core door builds on the review tree at the depth top of the GUI chart of the
-review build. <code>assert_claims.py</code> asserts each numbered claim.</p>
+<p class="sub">Feeds contract P29-10, from commit 10g to 10z. The data in this page comes from
+the files in <code>data/</code>: the MCP <code>get_safe_envelope</code> replies and the CLI
+<code>suggest</code> output of the 10z tree (the run modulation of the GUI), and the force planes
+that the core door builds on the review tree at the depth top of the GUI chart of the review
+build. <code>assert_claims.py</code> asserts each numbered claim.</p>
 
 <div class="grid">
   <section class="card">
@@ -108,8 +109,11 @@ on the same plane. The page covers the six ops of the operator file that have an
 and planned limit, and the load report holds one row per gate and cut group.</p>
 <p class="claim" data-claim="2"><b>2.</b> Every margin is the side rule of its judged value and
 its bound (a ceiling: (bound - value) / bound; a floor: (value - bound) / bound). The judged value
-is the value, except on an entry chip row: its chip reads a stored whole-mm/min entry feed, and
-the row judges the end of that feed interval (one mm/min).</p>
+is the value, except on a chip floor row that reads a stored whole-mm/min feed f: the row judges
+the high end of the interval [f, f + k). One write, k = 1: a stated cut (f is the op feed), a
+plunge, and a ramp or helix that runs at the plunge feed. Two writes, k = 1 + 1/L: a ramp or helix
+entry feed, which Suggest writes from the stored cut feed over the body lift L at the full-feed
+width.</p>
 <p class="claim" data-claim="3"><b>3.</b> Each planned mark sits at the (ae, ap) of its rows.</p>
 <p class="claim" data-claim="4"><b>4.</b> A mark takes its tone from its row, never from its
 position. For the body cut (the chip and the width model of the field) the force-budget row

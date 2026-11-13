@@ -1363,6 +1363,8 @@ pub fn apply_to_operation(
                 lut: input.lut,
                 spindle_strategy: input.spindle_strategy,
                 context: input.suggest,
+                // P29-10z: a pick reads the proposal, not a limit row.
+                modulation: crate::dressup::feed_modulation::RunModulation::Off,
             },
         )?),
         None => None,

@@ -60,7 +60,7 @@ parameter-sweep entry points. Read root `CLAUDE.md` first and
   each outside-envelope warning. `suggest` prints `envelope` (the `get_safe_envelope` JSON)
   and `profile.vendor_band` (P16 item 8; `basis.tied_rows` deleted). P29-10: `suggest` prints
   `limit_rows` (the RPM rows) and `project` writes `summary.json` `per_toolpath[].limit_rows` (the
-  verdict rows), both from `ProjectSession::limit_rows`, the door MCP reads.
+  verdict rows), both from `ProjectSession::limit_rows`, the door MCP reads. P29-10z: `suggest` runs no simulation, so its rows state the default run (`SimulationOptions::default().run_modulation()`, printed as `run_modulation`); `project` states the run of its flags.
 - `suggest` prints `peck_depth` for a Drill and a Pin Drill. `shipped_power`
   reads the calculator point where the operation has no stepover, depth or
   rpm, as the GUI does; `point_source` names the source of each value. That

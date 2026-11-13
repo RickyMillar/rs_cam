@@ -190,7 +190,10 @@ fn run_suggest_for_enabled(session: &ProjectSession) -> SuggestRun {
             continue;
         }
         let profile = session
-            .cutter_op_profile(tc)
+            .cutter_op_profile(
+                tc,
+                rs_cam_core::dressup::feed_modulation::RunModulation::Off,
+            )
             .unwrap_or_else(|| panic!("Tool {:?} missing for toolpath {}", tc.tool_id, tc.id));
         match &profile.feasibility {
             Err(e @ FeedsError::Unbacked { .. }) => {
@@ -351,7 +354,10 @@ fn wanaka_suggest_baseline() {
             "{ctx}: the speeds write must keep the stated DPP (K2)"
         );
         let as_stated = session
-            .safe_envelope(tc)
+            .safe_envelope(
+                tc,
+                rs_cam_core::dressup::feed_modulation::RunModulation::Off,
+            )
             .unwrap_or_else(|| panic!("{ctx}: the toolpath has a tool"))
             .unwrap_or_else(|e| panic!("{ctx}: the envelope builds: {e}"));
         assert!(
@@ -365,7 +371,10 @@ fn wanaka_suggest_baseline() {
         let mut deep = tc.clone();
         deep.operation.set_depth_per_pass(PRE_P5_CALCULATOR_DPP_MM);
         let envelope = session
-            .safe_envelope(&deep)
+            .safe_envelope(
+                &deep,
+                rs_cam_core::dressup::feed_modulation::RunModulation::Off,
+            )
             .unwrap_or_else(|| panic!("{ctx}: the toolpath has a tool"))
             .unwrap_or_else(|e| panic!("{ctx}: the envelope builds: {e}"));
         assert_eq!(
@@ -518,7 +527,10 @@ fn wanaka_suggest_baseline() {
             suggested.warnings
         );
         let deep_warnings = session
-            .cutter_op_profile(&deep)
+            .cutter_op_profile(
+                &deep,
+                rs_cam_core::dressup::feed_modulation::RunModulation::Off,
+            )
             .unwrap_or_else(|| panic!("{ctx}: the toolpath has a tool"))
             .warnings;
         assert!(
@@ -593,7 +605,10 @@ fn wanaka_suggest_baseline() {
         let mut deep = tc.clone();
         deep.operation.set_depth_per_pass(9.0);
         let envelope = session
-            .safe_envelope(&deep)
+            .safe_envelope(
+                &deep,
+                rs_cam_core::dressup::feed_modulation::RunModulation::Off,
+            )
             .unwrap_or_else(|| panic!("{ctx}: the toolpath has a tool"))
             .unwrap_or_else(|e| panic!("{ctx}: the envelope builds: {e}"));
         assert_eq!(
@@ -1064,7 +1079,10 @@ fn session_cutter_op_profile_matches_gui_rationale_assembly() {
         });
 
         let profile = session
-            .cutter_op_profile(tc)
+            .cutter_op_profile(
+                tc,
+                rs_cam_core::dressup::feed_modulation::RunModulation::Off,
+            )
             .unwrap_or_else(|| panic!("profile tool lookup failed for toolpath {}", tc.id));
 
         // Ruling R1 (2026-09-23) refused the two drills; ruling B5 ships

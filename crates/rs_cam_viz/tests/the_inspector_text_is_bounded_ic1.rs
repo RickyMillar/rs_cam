@@ -644,14 +644,14 @@ fn the_face_line_is_bounded_ic1() {
     let (mut state, id) = face_line_fixture();
     let envelope = state
         .session()
-        .limit_rows(0, None)
+        .limit_rows(0, None, rs_cam_viz::state::simulation::run_modulation())
         .expect("the toolpath exists")
         .envelope()
         .expect("the op has a tool")
         .expect("the session envelope builds");
     let face = envelope
         .iter()
-        .filter(|row| row.is_stated() && row.tone().exceeds() && row.ranks_for_the_face())
+        .filter(|row| row.is_stated() && row.tone().exceeds())
         .min_by(|a, b| a.rank_cmp(b))
         .map(|row| row.face().to_owned())
         .expect("non-vacuity: a stated row exceeds, so the card paints a face line");

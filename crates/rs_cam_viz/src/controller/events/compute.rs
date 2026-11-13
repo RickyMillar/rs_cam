@@ -1,8 +1,6 @@
 use std::sync::Arc;
 
-use rs_cam_core::session::{
-    AdoptSimulationArgs, Command, Effects, FeedModulation, ForgetResultArgs,
-};
+use rs_cam_core::session::{AdoptSimulationArgs, Command, Effects, ForgetResultArgs};
 
 use crate::compute::{ComputeBackend, ComputeError, ComputeMessage, ComputeRequest};
 use crate::state::runtime::ToolpathRun;
@@ -968,12 +966,9 @@ impl<B: ComputeBackend> AppController<B> {
                             result: Box::new(adopted),
                             epoch,
                             // Default-on in the GUI and MCP, as the CLI
-                            // default is.
-                            modulation: Some(FeedModulation {
-                                strategy:
-                                    rs_cam_core::dressup::feed_modulation::ModulationStrategy::ConstrainedMax,
-                                feed_scale: 1.0,
-                            }),
+                            // default is. P29-10z: the one value that the
+                            // limit rows state too.
+                            modulation: Some(crate::state::simulation::FEED_MODULATION),
                         };
                         match self.apply(Command::AdoptSimulation(args)) {
                             Ok(effects) => {

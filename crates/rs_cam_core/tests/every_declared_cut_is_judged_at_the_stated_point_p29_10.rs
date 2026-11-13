@@ -23,9 +23,14 @@
 //!   the curve chip and the pick chip (`judged_ceiling`, P29-7 trap 1), the
 //!   stated cut at the stated chip only, so the stated ceiling is at or
 //!   above the planned ceiling (a smaller or equal chip).
-//! - Claim 3 (Q2 open, lead ruling 2): a stated cut row of the chip
-//!   maximum never ranks for the face line (`CheckRow::ranks_for_the_face`);
-//!   every other row ranks.
+//! - Claim 3 (P29-10z, lead ruling Q2): when the run modulates
+//!   (`RunModulation::Runs`), a planned or stated cut row of a limit that
+//!   the modulator declares (`RunModulation::capped_limits`), on a cut that
+//!   it re-times (`feed_modulation::re_times`), that holds a number, carries
+//!   `Caveat::BeforeModulation`; no other row carries it. Such a row keeps
+//!   its value, bound and state; an `Exceeds` row of it is a caution. With
+//!   `RunModulation::Off` no row carries it. Every stated row ranks for the
+//!   face (the 10i predicate is gone).
 //!
 //! `cargo test -p rs_cam_core -q --test every_declared_cut_is_judged_at_the_stated_point_p29_10`
 
@@ -39,10 +44,13 @@ use std::collections::BTreeMap;
 use rs_cam_core::compute::catalog::{OperationConfig, OperationType};
 use rs_cam_core::compute::config::{DressupConfig, DressupEntryStyle};
 use rs_cam_core::compute::tool_config::{ToolConfig, ToolFact, ToolId, ToolType};
+use rs_cam_core::dressup::feed_modulation::{ModulationStrategy, RunModulation, re_times};
 use rs_cam_core::feeds::SpindleStrategy;
 use rs_cam_core::feeds::envelope::{EnvelopeInput, PickRequest, SafeEnvelope};
 use rs_cam_core::feeds::suggest::{NoProject, SuggestContext};
-use rs_cam_core::limits::{CheckRow, CheckState, EXEMPTIONS, LimitId, NoNumberReason, Subject};
+use rs_cam_core::limits::{
+    Caveat, CheckRow, CheckState, EXEMPTIONS, LimitId, NoNumberReason, Subject, Tone,
+};
 use rs_cam_core::machine::MachineProfile;
 use rs_cam_core::material::{Material, WoodSpecies};
 
@@ -62,6 +70,15 @@ fn envelope(
     tool: &ToolConfig,
     dressups: Option<&DressupConfig>,
 ) -> Option<SafeEnvelope> {
+    envelope_with(op, tool, dressups, RunModulation::Off)
+}
+
+fn envelope_with(
+    op: &OperationConfig,
+    tool: &ToolConfig,
+    dressups: Option<&DressupConfig>,
+    modulation: RunModulation,
+) -> Option<SafeEnvelope> {
     SafeEnvelope::for_cut(EnvelopeInput {
         operation: op,
         tool,
@@ -75,6 +92,7 @@ fn envelope(
             dressups,
             ..NoProject::NONE
         }),
+        modulation,
     })
     .ok()
 }
@@ -243,26 +261,59 @@ fn claim_2_one_judge_at_the_proposal_and_at_the_stated_point() {
 }
 
 #[test]
-fn claim_3_a_stated_chip_maximum_does_not_rank_for_the_face() {
-    let mut held_out = 0;
-    let mut ranked = 0;
-    for (_, op, t, dressups) in cases() {
-        let Some(env) = envelope(&op, &t, dressups.as_ref()) else {
+fn claim_3_a_modulated_limit_row_is_read_before_modulation() {
+    let runs = RunModulation::Runs {
+        strategy: ModulationStrategy::ConstrainedMax,
+        feed_scale: 1.0,
+    };
+    let (mut carried, mut softened, mut plain) = (0, 0, 0);
+    for (name, op, t, dressups) in cases() {
+        let (Some(off), Some(on)) = (
+            envelope_with(&op, &t, dressups.as_ref(), RunModulation::Off),
+            envelope_with(&op, &t, dressups.as_ref(), runs),
+        ) else {
             continue;
         };
-        for row in env.rows() {
-            let stated_chip_max = matches!(row.subject(), Subject::StatedCut { .. })
-                && row.check().limit == LimitId::ChipMax;
-            assert_eq!(row.ranks_for_the_face(), !stated_chip_max, "{}", row.face());
-            if stated_chip_max {
-                held_out += 1;
+        assert_eq!(off.rows().len(), on.rows().len(), "{name}: one row set");
+        for (a, b) in off.rows().iter().zip(on.rows()) {
+            assert!(
+                !a.caveats().contains(&Caveat::BeforeModulation),
+                "{name}: no run, no caveat: {}",
+                a.face()
+            );
+            assert_eq!(
+                (a.check().value, a.check().bound, a.check().state),
+                (b.check().value, b.check().bound, b.check().state),
+                "{name}: the caveat moves no number: {}",
+                b.face()
+            );
+            let declared = b.cut().is_some_and(|cut| runs.caps(b.check().limit, cut));
+            let want = declared && b.holds_a_number();
+            assert_eq!(
+                b.caveats().contains(&Caveat::BeforeModulation),
+                want,
+                "{name}: {}",
+                b.face()
+            );
+            if want {
+                carried += 1;
+                assert!(b.cut().is_some_and(re_times));
+                if b.check().state == CheckState::Exceeds {
+                    assert_eq!(b.tone(), Tone::ExceedsAdvisory, "{name}: {}", b.face());
+                    softened += 1;
+                }
             } else {
-                ranked += 1;
+                plain += 1;
             }
         }
     }
     assert!(
-        held_out > 0 && ranked > 0,
-        "non-vacuity: {held_out} held out, {ranked} ranked"
+        carried > 0 && softened > 0 && plain > 0,
+        "non-vacuity: {carried} carry the caveat, {softened} soften, {plain} plain"
+    );
+    assert_eq!(
+        runs.capped_limits(),
+        &[LimitId::ChipMax],
+        "the declared list of the default run"
     );
 }

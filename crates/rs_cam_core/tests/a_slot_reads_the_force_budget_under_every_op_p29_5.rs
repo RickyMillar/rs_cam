@@ -192,6 +192,7 @@ fn claim_2_three_slot_ops_read_one_cap_at_full_width() {
             lut: embedded_vendor_lut(),
             spindle_strategy: SpindleStrategy::default(),
             context: SuggestContext::no_project(NoProject::NONE),
+            modulation: rs_cam_core::dressup::feed_modulation::RunModulation::Off,
         })
         .unwrap_or_else(|e| panic!("{kind:?}: the envelope builds: {e}"));
         let ceiling = env
@@ -261,6 +262,7 @@ fn envelope_of(op: &OperationConfig, tool: &ToolConfig, material: &Material) -> 
         lut: embedded_vendor_lut(),
         spindle_strategy: SpindleStrategy::default(),
         context: SuggestContext::no_project(NoProject::NONE),
+        modulation: rs_cam_core::dressup::feed_modulation::RunModulation::Off,
     })
     .unwrap_or_else(|e| panic!("{:?}: the envelope builds: {e}", op.op_type()))
 }

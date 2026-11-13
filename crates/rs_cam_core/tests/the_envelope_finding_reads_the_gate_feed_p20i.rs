@@ -146,6 +146,7 @@ fn envelope_with(op: &OperationConfig, machine: &MachineProfile) -> SafeEnvelope
         lut: rs_cam_core::feeds::embedded_vendor_lut(),
         spindle_strategy: rs_cam_core::feeds::SpindleStrategy::default(),
         context: SuggestContext::no_project(NoProject::NONE),
+        modulation: rs_cam_core::dressup::feed_modulation::RunModulation::Off,
     })
     .expect("a 6 mm end mill in white oak is backed")
 }

@@ -1187,6 +1187,15 @@ pub fn run_project_command(
                             session
                                 .simulation_result()
                                 .and_then(|sim| sim.cut_trace.as_ref()),
+                            // P29-10z: the modulation of this run.
+                            if adaptive_feed_modulation {
+                                rs_cam_core::dressup::feed_modulation::RunModulation::Runs {
+                                    strategy: modulation_strategy,
+                                    feed_scale: modulation_feed_scale,
+                                }
+                            } else {
+                                rs_cam_core::dressup::feed_modulation::RunModulation::Off
+                            },
                         )
                     })
                     .map(|rows| rows.verdict())

@@ -180,23 +180,41 @@ def main():
 
     # Claim 2: every margin is the side rule of its judged value and its
     # bound (section 6 claim 3). The judged value is the value, except on a
-    # chip row that reads a stored whole-mm/min feed: it judges the end of
-    # that feed's interval toward the inside. An entry chip row reads the
-    # entry feed; P29-10 10i (lead ruling 1) a ramp or helix feed written
-    # from the stored cut feed over the lift L has the interval of both
-    # writes, [f, f + k) with k = 1 + 1/L in [1, 2], so the judged chip is
-    # value x (f + k) / f for a floor. The script recovers f for k = 1 and
-    # k = 2 and asserts that a whole feed lies between them. A stated cut
-    # chip row (P29-10 10i) reads the stored op feed, one write (k = 1): the
-    # script asserts f is the op feed of the CLI record.
+    # chip row that reads a stored whole-mm/min feed f: a floor judges the
+    # high end of that feed's interval [f, f + k), value x (f + k) / f. The
+    # script asserts the EXACT interval rule by the row's own facts
+    # (P29-10z; the rule of `ConfiguredEntry::planned_chip_mm`):
+    #   - f is the row's value x rpm x Z (the CLI record's stated rpm and
+    #     flute count), and it is a whole feed;
+    #   - one write, k = 1: a plunge or peck entry, a ramp or helix entry of
+    #     an op with no entry feed (it runs at the plunge feed; f is the
+    #     plunge feed), and a stated cut row (f is the op feed);
+    #   - two writes, k = 1 + 1/L (P29-10 10i, lead ruling 1): a ramp or
+    #     helix entry of an op that stores an entry feed (f is that feed),
+    #     written from the stored cut feed over the body lift L at the
+    #     full-feed width of the stated width. L is the op feed over
+    #     rpm x Z x the stated chip of the full-feed cut (the planner cap
+    #     where the op declares one, else the body).
+    # The margin must equal the side rule of the judged value to 1e-9.
     detail, ok, n, n_entry = [], True, 0, 0
     entry_feeds = {}
     chip_limits = {"chip_min", "chip_max", "rubbing_floor"}
-    op_feed = {line["index"]: (line.get("current") or {}).get("feed_rate")
-               for line in cli_lines("operator")}
+    records = {line["index"]: line for line in cli_lines("operator")}
     sources = [(idx, r) for idx, env in envs.items() for r in env["limit_rows"]]
-    tp_index = {tp["toolpath_id"]: i for i, tp in enumerate(report["limit_rows"])}
     sources += [(None, r) for tp in report["limit_rows"] for r in tp["rows"]]
+
+    def full_feed_lift(idx):
+        rec = records.get(idx)
+        rows = envs[idx]["limit_rows"] if idx in envs else []
+        chips = {r["subject"].get("cut"): r["check"]["value"] for r in rows
+                 if r["subject"]["kind"] == "stated_cut" and r["check"]["limit"] == "chip_max"
+                 and r["check"]["value"] is not None}
+        chip = chips.get("planner cap", chips.get("body"))
+        if rec is None or chip is None:
+            return None
+        cur = rec["current"]
+        return cur["feed_rate"] / (cur["spindle_rpm"] * rec["tool"]["flute_count"] * chip)
+
     for idx, r in sources:
         c = r["check"]
         if c["value"] is None or c["bound"] is None or c["margin"] is None:
@@ -210,44 +228,61 @@ def main():
         if abs(want - c["margin"]) <= REL * max(1.0, abs(want)):
             continue
         kind = r["subject"]["kind"]
-        is_entry = kind in ("planned", "stated_cut") and "entry" in (r["subject"]["cut"] or "")
+        cut = r["subject"].get("cut") or ""
+        is_entry = kind in ("planned", "stated_cut") and "entry" in cut
         is_stated_cut = kind == "stated_cut" and not is_entry
-        if c["limit"] not in chip_limits or not (is_entry or is_stated_cut):
+        rec = records.get(idx)
+        if (c["limit"] not in chip_limits or not (is_entry or is_stated_cut)
+                or c["side"] != "floor" or rec is None):
             ok = False
-            detail.append(f"{r['face']}: margin {c['margin']} against {want}")
+            detail.append(f"idx {idx}: {r['face']}: margin {c['margin']} against {want}")
             continue
-        # The judged value from the margin, then the feed of the interval.
-        judged = (c["bound"] * (1 - c["margin"]) if c["side"] == "ceiling"
-                  else c["bound"] * (1 + c["margin"]))
-        ratio = judged / c["value"]
-        if c["side"] == "ceiling":
-            ratio = 1 / ratio  # a ceiling judges the low end: value x f / (f + k)
-        if ratio <= 1:
-            ok = False
-            detail.append(f"idx {idx}: {r['face']}: the judged value is not inside the value")
-            continue
-        n_entry += 1
+        cur = rec["current"]
+        rpm, z = cur["spindle_rpm"], rec["tool"]["flute_count"]
         if is_stated_cut:
-            f = 1 / (ratio - 1)
-            want_f = op_feed.get(idx)
-            if want_f is None or abs(f - want_f) > 0.5:
+            # The stated cut reads the op feed over its own lift: f is the op
+            # feed, one write.
+            f, k, why = cur["feed_rate"], 1.0, "op feed, one write"
+            lift = f / (rpm * z * c["value"])
+            judged = c["value"] * (f + k) / f
+        else:
+            f = c["value"] * rpm * z
+            if abs(f - round(f)) > 1e-6:
                 ok = False
-                detail.append(f"idx {idx}: {r['face']}: f = {f:.4f}, the op feed {want_f}")
-            entry_feeds.setdefault(idx, set()).add(f"op {f:.1f}")
-            continue
-        f1, f2 = 1 / (ratio - 1), 2 / (ratio - 1)
-        whole = math.floor(f2 + 1e-6) >= math.ceil(f1 - 1e-6)
-        entry_feeds.setdefault(idx, set()).add(f"{f1:.1f}..{f2:.1f}")
-        if not whole:
+                detail.append(f"idx {idx}: {r['face']}: the entry feed {f} is not whole")
+                continue
+            f = round(f)
+            two_writes = (cut in ("ramp entry", "helix entry")
+                          and cur.get("entry_feed_rate") is not None)
+            if two_writes:
+                lift = full_feed_lift(idx)
+                if lift is None or abs(f - cur["entry_feed_rate"]) > 1e-9:
+                    ok = False
+                    detail.append(f"idx {idx}: {r['face']}: f {f}, entry feed "
+                                  f"{cur.get('entry_feed_rate')}, lift {lift}")
+                    continue
+                k, why = 1.0 + 1.0 / lift, f"entry feed, two writes, L {lift:.4f}"
+            else:
+                if abs(f - cur["plunge_rate"]) > 1e-9:
+                    ok = False
+                    detail.append(f"idx {idx}: {r['face']}: f {f} is not the plunge feed "
+                                  f"{cur['plunge_rate']}")
+                    continue
+                k, why = 1.0, "plunge feed, one write"
+            judged = c["value"] * (f + k) / f
+        exact = side_margin(c["side"], judged, c["bound"])
+        n_entry += 1
+        entry_feeds.setdefault(idx, set()).add(f"{cut}: f {f:g}, k {k:.4f} ({why})")
+        if abs(exact - c["margin"]) > REL * max(1.0, abs(exact)):
             ok = False
-            detail.append(f"idx {idx}: {r['face']}: no whole feed between {f1:.4f} and {f2:.4f}")
+            detail.append(f"idx {idx}: {r['face']}: margin {c['margin']} against the interval "
+                          f"rule {exact} ({why})")
     for idx, feeds in sorted(entry_feeds.items(), key=lambda kv: str(kv[0])):
-        detail.append(f"idx {idx}: entry chip rows judge the end of the interval of the stored "
-                      f"feed {sorted(feeds)} mm/min")
+        detail.append(f"idx {idx}: {sorted(feeds)}")
     detail.append(f"{n} rows with a value, a bound and a margin; {n - n_entry} on the plain side "
-                  f"rule, {n_entry} chip rows (entries, stated cuts) at the end of their "
-                  f"stored-feed interval")
-    claim("2", "Every margin is the side rule of its judged value and its bound.", ok, detail[:14],
+                  f"rule, {n_entry} chip floor rows (entries, stated cuts) on the exact interval "
+                  f"rule of their stored feed")
+    claim("2", "Every margin is the side rule of its judged value and its bound.", ok, detail[:20],
           n)
 
     # Claim 3: each planned mark sits at the plane point of its rows.

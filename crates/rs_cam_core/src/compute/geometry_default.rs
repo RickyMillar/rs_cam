@@ -296,6 +296,8 @@ fn envelope_proposal(
         context: crate::feeds::suggest::SuggestContext::no_project(
             crate::feeds::suggest::NoProject::NONE,
         ),
+        // P29-10z: a geometry rule reads the proposal and holds no run.
+        modulation: crate::dressup::feed_modulation::RunModulation::Off,
     })
     .ok()
 }

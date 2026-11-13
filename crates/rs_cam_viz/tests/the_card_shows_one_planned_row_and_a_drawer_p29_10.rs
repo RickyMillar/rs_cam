@@ -276,7 +276,7 @@ fn the_card_shows_one_planned_row_and_a_drawer_p29_10() {
         let closed = draw(&mut state, id, false, false);
         let session = state.session();
         let door = session
-            .limit_rows(index, None)
+            .limit_rows(index, None, rs_cam_viz::state::simulation::run_modulation())
             .expect("the toolpath exists");
         let envelope = door
             .envelope()
@@ -340,12 +340,11 @@ fn the_card_shows_one_planned_row_and_a_drawer_p29_10() {
         let faces: BTreeSet<&str> = all.iter().map(|row| row.face()).collect();
         // The face row describes the op as it stands (lead ruling 1 on
         // 10f): the worst STATED row by the rank, only when it exceeds.
-        // P29-10 10i: a row that core keeps out of the face rank (Q2 open)
-        // never paints the face.
+        // P29-10z: every stated row ranks.
         let expected = stated
             .iter()
             .copied()
-            .filter(|row| row.tone().exceeds() && row.ranks_for_the_face())
+            .filter(|row| row.tone().exceeds())
             .min_by(|a, b| a.rank_cmp(b));
         let over = all.iter().filter(|row| row.tone().exceeds()).count();
         let applied_over = applied.iter().filter(|row| row.tone().exceeds()).count();

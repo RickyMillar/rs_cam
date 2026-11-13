@@ -44,8 +44,8 @@ pub use exemptions::{EXEMPTIONS, Exemption, ExemptionClass, Who};
 pub use project::{of_criterion, of_envelope, of_judged_value, of_rpm_choice};
 pub use row::{
     Caveat, CeilingChipSource, CheckRow, Compared, JudgedAt, Occurs, PlanePoint, PlannedFacts,
-    PlannedOwnDepth, ROW_FACE_MAX_CHARS, Subject, Tone, margin_face, quiet_summary,
-    rows_of_rpm_choice, rows_of_verdict, rows_without_a_verdict,
+    PlannedOwnDepth, ROW_FACE_MAX_CHARS, RowModulation, STATED_POINT_TITLE, Subject, Tone,
+    margin_face, quiet_summary, rows_of_rpm_choice, rows_of_verdict, rows_without_a_verdict,
 };
 pub use sample::{CapTable, MoveCap, SampleContext};
 pub use scope::{NotJudged, PlanReason, Scope, scope, scope_of_all};

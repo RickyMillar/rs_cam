@@ -102,6 +102,7 @@ fn envelope(op: &OperationConfig, material: &Material) -> SafeEnvelope {
         lut: embedded_vendor_lut(),
         spindle_strategy: SpindleStrategy::MatchChart,
         context: SuggestContext::no_project(NoProject::NONE),
+        modulation: rs_cam_core::dressup::feed_modulation::RunModulation::Off,
     })
     .expect("an envelope")
 }

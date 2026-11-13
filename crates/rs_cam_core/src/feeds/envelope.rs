@@ -1013,6 +1013,12 @@ pub struct EnvelopeInput<'a> {
     pub spindle_strategy: SpindleStrategy,
     /// The Suggest context (the model box).
     pub context: SuggestContext<'a>,
+    /// P29-10z (lead ruling Q2): the feed modulation of the simulation run
+    /// (`RunModulation`). A planned or stated row of a limit that the
+    /// modulator caps, on a cut it re-times, carries
+    /// `Caveat::BeforeModulation`. No default: a surface states the value
+    /// of its run, a reader with no run states `Off`.
+    pub modulation: crate::dressup::feed_modulation::RunModulation,
 }
 
 /// The owned inputs that a pick off the grid needs.
@@ -1031,6 +1037,8 @@ struct OwnedInputs {
     /// P29-8e (c): the vertical feed of each entry kind and of the drill
     /// cut, for the vertical-rate check.
     vertical: crate::feeds::planned::VerticalFeeds,
+    /// P29-10z (lead ruling Q2): the feed modulation of the run.
+    modulation: crate::dressup::feed_modulation::RunModulation,
 }
 
 impl std::fmt::Debug for OwnedInputs {
@@ -1377,6 +1385,7 @@ impl PlannedRow {
         self,
         at_earlier_leave: bool,
         at: Option<crate::limits::PlanePoint>,
+        modulation: crate::dressup::feed_modulation::RunModulation,
     ) -> crate::limits::CheckRow {
         use crate::limits::{CheckState, LimitId};
         let reads_leave = at_earlier_leave
@@ -1390,6 +1399,11 @@ impl PlannedRow {
                     | LimitId::SpindlePower
             );
         let compared = compared_of_planned(self.check.limit);
+        let modulation = if modulation.caps(self.check.limit, self.cut) {
+            crate::limits::RowModulation::CapsTheBound
+        } else {
+            crate::limits::RowModulation::NotCapped
+        };
         crate::limits::CheckRow::planned(
             self.cut,
             self.check,
@@ -1403,6 +1417,7 @@ impl PlannedRow {
                 lower_bound: self.lower_bound,
                 stored_feed: self.stored_feed,
                 advisory_floor: self.advisory_floor,
+                modulation,
                 judged_at: self.judged_at,
                 ceiling_chip: if self.at_suggested_chip {
                     crate::limits::CeilingChipSource::Suggested
@@ -1878,6 +1893,7 @@ impl SafeEnvelope {
             spindle_strategy: input.spindle_strategy,
             cuts: declared,
             vertical,
+            modulation: input.modulation,
         };
         // The calculator at the op's own inputs: the family default of an
         // unstated axis, and the matched row.
@@ -3064,6 +3080,7 @@ impl SafeEnvelope {
     /// second number of one limit).
     fn write_rows(&mut self) {
         let at_earlier_leave = matches!(self.inputs.cuts.body_depth(), BodyDepth::EarlierLeave(_));
+        let modulation = self.inputs.modulation;
         // P29-10 10g: the planned rows read the proposal point, so the marks
         // there are the points of the rows; the marks at the stated point
         // are the cut that the op holds (one set when the two are one point).
@@ -3078,7 +3095,7 @@ impl SafeEnvelope {
             .into_iter()
             .map(|r| {
                 let at = proposal.of_cut(r.cut).map(|m| m.at);
-                r.into_row(at_earlier_leave, at)
+                r.into_row(at_earlier_leave, at, modulation)
             })
             .collect();
         self.marks_at_proposal = Some(proposal);
@@ -3089,7 +3106,7 @@ impl SafeEnvelope {
             let marks = self.marks_at_stated.as_ref();
             rows.extend(stated.into_iter().map(|r| {
                 let at = marks.and_then(|m| m.of_cut(r.cut)).map(|m| m.at);
-                r.into_row(at_earlier_leave, at)
+                r.into_row(at_earlier_leave, at, modulation)
             }));
             // `of_envelope` gives one check per boundary limit, in order,
             // then the exact move budget (a count of moves).
@@ -5473,6 +5490,7 @@ mod tests {
                 model_bbox: Some(&bbox),
                 ..crate::feeds::suggest::NoProject::NONE
             }),
+            modulation: crate::dressup::feed_modulation::RunModulation::Off,
         })
         .expect("a 6 mm end mill pocket is backed")
     }
@@ -5615,6 +5633,7 @@ mod tests {
             lut: crate::feeds::embedded_vendor_lut(),
             spindle_strategy: SpindleStrategy::default(),
             context: SuggestContext::no_project(crate::feeds::suggest::NoProject::NONE),
+            modulation: crate::dressup::feed_modulation::RunModulation::Off,
         })
         .unwrap()
     }

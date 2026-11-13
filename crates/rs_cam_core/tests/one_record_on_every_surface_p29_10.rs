@@ -39,7 +39,9 @@
 //!   edge; every other row names its limit.
 //! - Claim 7: `CheckRow::worse_than` is a total order: an `Exceeds` row
 //!   before an `ExceedsAdvisory` row before every other row; inside one
-//!   tone the stated point first (ruling O6), then the lower margin.
+//!   tone a cut that always occurs before a cut that may not occur
+//!   (P29-10z, lead ruling R), then the stated point (ruling O6), then the
+//!   lower margin.
 //! - Claim 8 (lead ruling 6): the door never gives an empty verdict list.
 //!   A disabled toolpath (the report leaves it out) gets its rows with no
 //!   trace; a drill cycle gives its three drill rows and the side gates as
@@ -110,6 +112,7 @@ fn envelope(
             dressups,
             ..NoProject::NONE
         }),
+        modulation: rs_cam_core::dressup::feed_modulation::RunModulation::Off,
     })
     .ok()
 }
@@ -414,7 +417,8 @@ fn claim_1_one_planned_row_per_cut_and_limit_and_the_stated_rows() {
                     Caveat::MayOccur { .. } => "MayOccur".to_owned(),
                     Caveat::SampleDepth { .. } => "SampleDepth".to_owned(),
                     Caveat::AdvisoryFloor { .. } => "AdvisoryFloor".to_owned(),
-                    Caveat::WorstCase
+                    Caveat::BeforeModulation
+                    | Caveat::WorstCase
                     | Caveat::LowerBound
                     | Caveat::StoredFeed
                     | Caveat::Advisory
@@ -599,7 +603,13 @@ fn verdict_rows(name: &str, session: &ProjectSession) {
     let trace = session
         .simulation_result()
         .and_then(|s| s.cut_trace.as_ref());
-    let door = session.limit_rows(0, trace).expect("the toolpath");
+    let door = session
+        .limit_rows(
+            0,
+            trace,
+            rs_cam_core::dressup::feed_modulation::RunModulation::Off,
+        )
+        .expect("the toolpath");
     assert_eq!(door.verdict(), rows, "{name}: the door verdict rows");
     let env_rows = door
         .envelope()
@@ -607,7 +617,10 @@ fn verdict_rows(name: &str, session: &ProjectSession) {
         .expect("the envelope builds");
     let tc = session.toolpath_config_at(0).expect("the op");
     let direct = session
-        .safe_envelope(tc)
+        .safe_envelope(
+            tc,
+            rs_cam_core::dressup::feed_modulation::RunModulation::Off,
+        )
         .expect("a tool")
         .expect("the envelope builds");
     assert_eq!(env_rows, direct.rows(), "{name}: the door envelope rows");
@@ -802,14 +815,24 @@ fn worse_than_is_a_total_order(rows: &[CheckRow]) {
         let (ta, tb) = (tone_rank(a.tone()), tone_rank(b.tone()));
         assert!(ta <= tb, "the tone order: {} then {}", a.face(), b.face());
         if ta == tb && ta < 2 {
-            let stated = |r: &CheckRow| r.is_stated();
+            // P29-10z (lead ruling R): a cut that always occurs first.
+            let certain = |r: &CheckRow| r.may_occur_row().is_none();
             assert!(
-                stated(a) || !stated(b),
-                "a stated row first: {} then {}",
+                certain(a) || !certain(b),
+                "a certain cut first: {} then {}",
                 a.face(),
                 b.face()
             );
-            if stated(a) == stated(b) {
+            let stated = |r: &CheckRow| r.is_stated();
+            if certain(a) == certain(b) {
+                assert!(
+                    stated(a) || !stated(b),
+                    "a stated row first: {} then {}",
+                    a.face(),
+                    b.face()
+                );
+            }
+            if certain(a) == certain(b) && stated(a) == stated(b) {
                 let m = |r: &CheckRow| r.check().margin.unwrap_or(f64::INFINITY);
                 assert!(m(a) <= m(b), "the lower margin first");
             }
@@ -950,7 +973,14 @@ fn claim_8_a_disabled_toolpath_and_a_drill_give_their_rows() {
         session.tool_load_report().per_toolpath.is_empty(),
         "non-vacuity: the report leaves the disabled op out"
     );
-    let rows = session.limit_rows(0, None).expect("the op").verdict();
+    let rows = session
+        .limit_rows(
+            0,
+            None,
+            rs_cam_core::dressup::feed_modulation::RunModulation::Off,
+        )
+        .expect("the op")
+        .verdict();
     assert_eq!(
         rows.len(),
         4 * CutGroup::ALL.len() + 1,
@@ -985,7 +1015,11 @@ fn claim_8_a_disabled_toolpath_and_a_drill_give_their_rows() {
         .simulation_result()
         .and_then(|s| s.cut_trace.as_ref());
     let rows = session
-        .limit_rows(index, trace)
+        .limit_rows(
+            index,
+            trace,
+            rs_cam_core::dressup::feed_modulation::RunModulation::Off,
+        )
         .expect("the drill")
         .verdict();
     assert_eq!(
@@ -1095,7 +1129,8 @@ fn claim_10_no_row_holds_a_nan_or_an_infinity() {
 fn advisory_floor(row: &CheckRow) -> Option<rs_cam_core::tool_load::verdict::AdvisoryLowSide> {
     row.caveats().iter().find_map(|c| match c {
         Caveat::AdvisoryFloor { why } => Some(*why),
-        Caveat::WorstCase
+        Caveat::BeforeModulation
+        | Caveat::WorstCase
         | Caveat::LowerBound
         | Caveat::StoredFeed
         | Caveat::MayOccur { .. }
@@ -1139,7 +1174,10 @@ fn claim_11_the_gate_and_the_planned_floor_share_one_classification() {
         };
         let tc = session.toolpath_config_at(0).expect("the op");
         let env = session
-            .safe_envelope(tc)
+            .safe_envelope(
+                tc,
+                rs_cam_core::dressup::feed_modulation::RunModulation::Off,
+            )
             .expect("a tool")
             .expect("the envelope builds");
         let floors: Vec<&CheckRow> = env

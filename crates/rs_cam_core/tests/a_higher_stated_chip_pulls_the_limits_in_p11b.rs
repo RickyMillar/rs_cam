@@ -84,6 +84,7 @@ fn envelope(feed: f64) -> SafeEnvelope {
         lut: embedded_vendor_lut(),
         spindle_strategy: SpindleStrategy::MatchChart,
         context: SuggestContext::no_project(NoProject::NONE),
+        modulation: rs_cam_core::dressup::feed_modulation::RunModulation::Off,
     })
     .expect("a flat end mill on a roughing pocket has an envelope")
 }

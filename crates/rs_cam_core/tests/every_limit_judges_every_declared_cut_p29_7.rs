@@ -243,6 +243,7 @@ fn envelope(
         lut: rs_cam_core::feeds::embedded_vendor_lut(),
         spindle_strategy: SpindleStrategy::default(),
         context: SuggestContext::no_project(NoProject::NONE),
+        modulation: rs_cam_core::dressup::feed_modulation::RunModulation::Off,
     })
     .ok()
 }
@@ -985,6 +986,7 @@ fn project_curve_rows(
             setup_z_flipped: flipped,
             ..NoProject::NONE
         }),
+        modulation: rs_cam_core::dressup::feed_modulation::RunModulation::Off,
     })
     .expect("the Project Curve envelope builds")
     .rows()
@@ -1073,6 +1075,7 @@ fn claim_8_a_finish_is_judged_at_the_earlier_leave_p29_9() {
                 earlier_leave_mm: leave,
                 ..NoProject::NONE
             }),
+            modulation: rs_cam_core::dressup::feed_modulation::RunModulation::Off,
         })
         .expect("the Scallop envelope builds")
         .rows()

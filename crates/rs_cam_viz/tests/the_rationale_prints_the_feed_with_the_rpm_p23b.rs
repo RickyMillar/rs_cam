@@ -92,6 +92,7 @@ fn basis_of(
             rpm_ceiling: Some(24_000),
         },
         context: SuggestContext::no_project(NoProject::NONE),
+        modulation: rs_cam_core::dressup::feed_modulation::RunModulation::Off,
     })
     .expect("the tool builds a cutter");
     assert!(

@@ -237,19 +237,31 @@ impl CutKind {
     /// intent of its own: its plunges are plunges.
     #[must_use]
     pub fn of_sample(sample: &SimulationCutSample, ctx: &SampleContext<'_>) -> Self {
-        match sample.source_intent {
-            Some(MoveIntent::EntryPlunge) => Self::Entry(EntryKind::Plunge),
-            Some(MoveIntent::EntryRamp) => Self::Entry(EntryKind::Ramp),
-            Some(MoveIntent::EntryHelix) => Self::Entry(EntryKind::Helix),
-            Some(MoveIntent::EntryApproach) => Self::EntryApproach,
-            Some(MoveIntent::LeadIn) => Self::LeadIn,
-            Some(MoveIntent::LeadOut) => Self::LeadOut,
-            Some(MoveIntent::Linking | MoveIntent::Retract | MoveIntent::ObstacleClearance) => {
-                Self::Link
+        sample
+            .source_intent
+            .and_then(Self::of_intent)
+            .unwrap_or_else(|| ctx.body_kind(sample))
+    }
+
+    /// The kind that the intent of a move decides: the entry, lead, link
+    /// and drill kinds. `None` for a cut intent: the spans and the cap
+    /// table then decide the kind ([`SampleContext::body_kind`]). P29-10z:
+    /// the modulator's cut rule (`dressup::feed_modulation::re_times`) is
+    /// held against this map.
+    #[must_use]
+    pub const fn of_intent(intent: MoveIntent) -> Option<Self> {
+        match intent {
+            MoveIntent::EntryPlunge => Some(Self::Entry(EntryKind::Plunge)),
+            MoveIntent::EntryRamp => Some(Self::Entry(EntryKind::Ramp)),
+            MoveIntent::EntryHelix => Some(Self::Entry(EntryKind::Helix)),
+            MoveIntent::EntryApproach => Some(Self::EntryApproach),
+            MoveIntent::LeadIn => Some(Self::LeadIn),
+            MoveIntent::LeadOut => Some(Self::LeadOut),
+            MoveIntent::Linking | MoveIntent::Retract | MoveIntent::ObstacleClearance => {
+                Some(Self::Link)
             }
-            Some(MoveIntent::Drilling) => Self::Drill,
-            Some(MoveIntent::ClearingCut | MoveIntent::FinishingCut | MoveIntent::Unknown)
-            | None => ctx.body_kind(sample),
+            MoveIntent::Drilling => Some(Self::Drill),
+            MoveIntent::ClearingCut | MoveIntent::FinishingCut | MoveIntent::Unknown => None,
         }
     }
 }

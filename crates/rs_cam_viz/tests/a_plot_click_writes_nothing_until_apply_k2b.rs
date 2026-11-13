@@ -216,7 +216,7 @@ fn the_session_is_unchanged_until_the_apply_and_an_outside_pick_warns_k2b() {
     let env = controller
         .state
         .session()
-        .safe_envelope(&tc)
+        .safe_envelope(&tc, rs_cam_viz::state::simulation::run_modulation())
         .expect("a tool")
         .expect("a backed Pocket");
     // A point near the right edge of the view (past the corner width):
@@ -277,7 +277,7 @@ fn the_session_is_unchanged_until_the_apply_and_an_outside_pick_warns_k2b() {
     let placed = controller
         .state
         .session()
-        .safe_envelope(&after)
+        .safe_envelope(&after, rs_cam_viz::state::simulation::run_modulation())
         .expect("a tool")
         .expect("a backed Pocket");
     match placed.operator {

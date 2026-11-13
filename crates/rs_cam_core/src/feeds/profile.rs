@@ -62,6 +62,9 @@ pub struct CutterOpProfileInput<'a, 'ctx> {
     /// Project-level context (model bbox, stock, policy). Consumed
     /// during construction only — the profile does not retain it.
     pub context: SuggestContext<'ctx>,
+    /// P29-10z (lead ruling Q2): the feed modulation of the simulation run,
+    /// for the envelope rows (`EnvelopeInput::modulation`).
+    pub modulation: crate::dressup::feed_modulation::RunModulation,
 }
 
 /// Feeds contract P23b: the speeds of the operation that Suggest ships
@@ -207,6 +210,7 @@ impl<'a> CutterOpProfile<'a> {
             lut: input.lut,
             spindle_strategy: input.spindle_strategy,
             context: input.context,
+            modulation: input.modulation,
         });
 
         Ok(Self {
@@ -342,6 +346,7 @@ mod tests {
             lut: embedded_vendor_lut(),
             spindle_strategy: crate::feeds::SpindleStrategy::default(),
             context: SuggestContext::no_project(crate::feeds::suggest::NoProject::NONE),
+            modulation: crate::dressup::feed_modulation::RunModulation::Off,
         }
     }
 

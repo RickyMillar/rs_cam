@@ -157,6 +157,7 @@ fn suggest_at(op: OperationType, tool: &ToolConfig, depth_mm: Option<f64>) -> Sh
         lut: &EMBEDDED_LUT,
         spindle_strategy: SpindleStrategy::default(),
         context,
+        modulation: rs_cam_core::dressup::feed_modulation::RunModulation::Off,
     })
     .unwrap_or_else(|e| panic!("{op:?} on {:?} must have an envelope: {e}", tool.tool_type));
     let mut provenance = rs_cam_core::feeds::FeedsProvenance::default();

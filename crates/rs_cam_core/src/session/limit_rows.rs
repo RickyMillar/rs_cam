@@ -17,6 +17,8 @@ pub struct LimitRows<'a> {
     index: usize,
     toolpath: &'a ToolpathConfig,
     trace: Option<&'a Arc<SimulationCutTrace>>,
+    /// P29-10z (lead ruling Q2): the feed modulation of the caller's run.
+    modulation: crate::dressup::feed_modulation::RunModulation,
 }
 
 impl LimitRows<'_> {
@@ -27,7 +29,7 @@ impl LimitRows<'_> {
     #[must_use]
     pub fn envelope(&self) -> Option<Result<Vec<CheckRow>, FeedsError>> {
         self.session
-            .safe_envelope(self.toolpath)
+            .safe_envelope(self.toolpath, self.modulation)
             .map(|env| env.map(|env| env.rows().to_vec()))
     }
 
@@ -64,7 +66,7 @@ impl LimitRows<'_> {
     #[must_use]
     pub fn rpm(&self) -> Vec<CheckRow> {
         self.session
-            .cutter_op_profile(self.toolpath)
+            .cutter_op_profile(self.toolpath, self.modulation)
             .and_then(|profile| {
                 profile
                     .feeds
@@ -112,13 +114,16 @@ impl ProjectSession {
     /// **THE door to the limit rows of the toolpath at `index`** (P29-10,
     /// lead ruling L7). `trace` is the simulation the caller reads, as the
     /// `Arc` that holds it (the GUI keeps its trace beside the session; the
-    /// CLI passes the session's own). `None` when no toolpath has the
-    /// index.
+    /// CLI passes the session's own). `modulation` is the feed modulation
+    /// of the caller's simulation run (P29-10z, lead ruling Q2: the GUI and
+    /// MCP state the value of the GUI adopt step, the CLI the value of its
+    /// options). `None` when no toolpath has the index.
     #[must_use]
     pub fn limit_rows<'a>(
         &'a self,
         index: usize,
         trace: Option<&'a Arc<SimulationCutTrace>>,
+        modulation: crate::dressup::feed_modulation::RunModulation,
     ) -> Option<LimitRows<'a>> {
         let toolpath = self.toolpath_config_at(index)?;
         Some(LimitRows {
@@ -126,6 +131,7 @@ impl ProjectSession {
             index,
             toolpath,
             trace,
+            modulation,
         })
     }
 }

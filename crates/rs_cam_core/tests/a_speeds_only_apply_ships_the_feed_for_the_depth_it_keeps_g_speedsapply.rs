@@ -237,6 +237,7 @@ impl Fixture {
                 lut: embedded_vendor_lut(),
                 spindle_strategy: SpindleStrategy::default(),
                 context: SuggestContext::no_project(NoProject::NONE),
+                modulation: rs_cam_core::dressup::feed_modulation::RunModulation::Off,
             },
         )
         .expect("a pocket envelope")

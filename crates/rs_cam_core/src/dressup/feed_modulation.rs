@@ -103,6 +103,142 @@ impl ModulationStrategy {
     }
 }
 
+/// Feeds contract P29-10z (lead ruling Q2): the feed modulation that the
+/// simulation run applies after it measures the engagement. A limit row
+/// before the simulation reads it to know if the modulator re-times the
+/// stated feed of a cut (`limits::Caveat::BeforeModulation`).
+///
+/// No `Default`: every reader states the value. A surface that runs the
+/// simulation states the modulation of its run; a reader with no run (FM1,
+/// a geometry rule, a unit test) states [`Self::Off`].
+#[derive(Debug, Clone, Copy, PartialEq)]
+pub enum RunModulation {
+    /// No run modulates the feed: the option is off, the op is not
+    /// simulated (a disabled op), or the reader has no run.
+    Off,
+    /// The run modulates with this strategy and feed scale
+    /// (`SimulationOptions::modulation_strategy`, `modulation_feed_scale`).
+    Runs {
+        /// The strategy.
+        strategy: ModulationStrategy,
+        /// The feed scale.
+        feed_scale: f64,
+    },
+}
+
+impl RunModulation {
+    /// **THE declared list (lead ruling Q2): the limits whose bound the
+    /// modulator holds on every engaged cutting move that it re-times.**
+    /// The list holds a limit only where the code of the strategy caps the
+    /// move at the bound of that limit; the test
+    /// `the_declared_list_is_what_the_modulator_caps_p29_10` ties each
+    /// member to that behaviour.
+    ///
+    /// - `ChipMax`: [`constrained_max_move`] step 1 caps the peak chip at
+    ///   the band maximum (`band max x lift x rpm x Z`). A feed scale above
+    ///   1 multiplies the cap, so the move can pass the band: then the list
+    ///   is empty. [`band_mid_feed_for_move`] clamps the advance at the band
+    ///   maximum with no lift, which is lower; it ignores the scale.
+    /// - Not in the list: the power, deflection and force-budget arms can
+    ///   pin a move at the chip floor when no feed holds the budget, so the
+    ///   move is not proved inside those limits. `ChipMin`: a point band has
+    ///   no floor, and a load cap wins over the floor (P20g).
+    #[must_use]
+    pub fn capped_limits(self) -> &'static [crate::limits::LimitId] {
+        const CHIP_MAX: &[crate::limits::LimitId] = &[crate::limits::LimitId::ChipMax];
+        match self {
+            Self::Off => &[],
+            Self::Runs {
+                strategy: ModulationStrategy::ConstrainedMax,
+                feed_scale,
+            } => {
+                if feed_scale <= 1.0 {
+                    CHIP_MAX
+                } else {
+                    &[]
+                }
+            }
+            Self::Runs {
+                strategy: ModulationStrategy::BandMid,
+                feed_scale: _,
+            } => CHIP_MAX,
+        }
+    }
+
+    /// The modulation that the run applies to one toolpath. The run
+    /// modulates only the enabled toolpaths that it simulates
+    /// (`ProjectSession::apply_adaptive_feed_modulation` walks the enabled
+    /// toolpaths), so a disabled toolpath reads [`Self::Off`]. Every door that
+    /// builds the envelope rows of a toolpath reads it
+    /// (`ProjectSession::safe_envelope`, `cutter_op_profile`, the GUI feeds
+    /// memo).
+    #[must_use]
+    pub const fn for_toolpath(self, enabled: bool) -> Self {
+        if enabled { self } else { Self::Off }
+    }
+
+    /// `true` when the run re-times the moves of `cut` and caps them at
+    /// the bound of `limit`: the limit is in [`Self::capped_limits`] and
+    /// the modulator re-times the cut ([`re_times`]).
+    #[must_use]
+    pub fn caps(self, limit: crate::limits::LimitId, cut: crate::limits::CutKind) -> bool {
+        re_times(cut) && self.capped_limits().contains(&limit)
+    }
+}
+
+/// The intents of the moves of each cut kind: the inverse of the intent
+/// arm of `limits::CutKind::of_sample` (the test
+/// `the_cut_kinds_follow_the_modulator_skip_p29_10` holds the two against
+/// each other). A cut intent (`ClearingCut`, `FinishingCut`, `Unknown`)
+/// gives the body kinds; an empty list is a kind that the code does not
+/// tie to an intent (the peck ladder: its plunges carry no intent of their
+/// own).
+const fn intents_of(cut: crate::limits::CutKind) -> &'static [MoveIntent] {
+    use crate::limits::{CutKind, EntryKind};
+    const CUT: &[MoveIntent] = &[
+        MoveIntent::ClearingCut,
+        MoveIntent::FinishingCut,
+        MoveIntent::Unknown,
+    ];
+    match cut {
+        CutKind::Body
+        | CutKind::FirstPass(_)
+        | CutKind::SpringPass
+        | CutKind::WallFinish
+        | CutKind::Cleanup(_)
+        | CutKind::CappedStep(_)
+        | CutKind::SlotRing
+        | CutKind::DressupRelief => CUT,
+        CutKind::Entry(EntryKind::Plunge) => &[MoveIntent::EntryPlunge],
+        CutKind::Entry(EntryKind::Ramp) => &[MoveIntent::EntryRamp],
+        CutKind::Entry(EntryKind::Helix) => &[MoveIntent::EntryHelix],
+        CutKind::Entry(EntryKind::PeckLadder) => &[],
+        CutKind::EntryApproach => &[MoveIntent::EntryApproach],
+        CutKind::LeadIn => &[MoveIntent::LeadIn],
+        CutKind::LeadOut => &[MoveIntent::LeadOut],
+        CutKind::Link => &[
+            MoveIntent::Linking,
+            MoveIntent::Retract,
+            MoveIntent::ObstacleClearance,
+        ],
+        CutKind::Drill => &[MoveIntent::Drilling],
+    }
+}
+
+/// **P29-10z (lead ruling Q2): `true` when the modulator re-times every
+/// fed move of `cut`**: each intent of the cut ([`intents_of`]) is one that
+/// [`should_skip_modulation`] does not skip. A cut with no intent (the peck
+/// ladder) or with a mix (a link: `Linking` is re-timed, `Retract` and
+/// `ObstacleClearance` are not) is `false`: the code does not decide it.
+#[must_use]
+pub fn re_times(cut: crate::limits::CutKind) -> bool {
+    let intents = intents_of(cut);
+    !intents.is_empty()
+        && intents
+            .iter()
+            .all(|intent| !should_skip_modulation(MoveType::Linear { feed_rate: 1.0 }, *intent))
+}
+
 /// Chipload band (`mm/tooth`) sourced from the vendor LUT for a given
 /// tool / material pair.
 ///
@@ -2436,5 +2572,181 @@ mod tests {
             (feed - 1800.0).abs() < 1e-6,
             "expected floor 1800, got {feed}"
         );
+    }
+
+    /// The position of each move intent in [`ALL_INTENTS`]. The match has
+    /// no wildcard: a new intent does not compile until the list holds it.
+    const fn intent_slot(intent: MoveIntent) -> usize {
+        match intent {
+            MoveIntent::Drilling => 0,
+            MoveIntent::EntryPlunge => 1,
+            MoveIntent::EntryApproach => 2,
+            MoveIntent::ClearingCut => 3,
+            MoveIntent::FinishingCut => 4,
+            MoveIntent::EntryHelix => 5,
+            MoveIntent::EntryRamp => 6,
+            MoveIntent::Linking => 7,
+            MoveIntent::Retract => 8,
+            MoveIntent::LeadIn => 9,
+            MoveIntent::LeadOut => 10,
+            MoveIntent::ObstacleClearance => 11,
+            MoveIntent::Unknown => 12,
+        }
+    }
+
+    const ALL_INTENTS: [MoveIntent; 13] = [
+        MoveIntent::Drilling,
+        MoveIntent::EntryPlunge,
+        MoveIntent::EntryApproach,
+        MoveIntent::ClearingCut,
+        MoveIntent::FinishingCut,
+        MoveIntent::EntryHelix,
+        MoveIntent::EntryRamp,
+        MoveIntent::Linking,
+        MoveIntent::Retract,
+        MoveIntent::LeadIn,
+        MoveIntent::LeadOut,
+        MoveIntent::ObstacleClearance,
+        MoveIntent::Unknown,
+    ];
+
+    /// P29-10z (lead ruling Q2): the cut rule of the modulator
+    /// (`re_times`, through `intents_of`) agrees with the intent map of the
+    /// samples (`CutKind::of_intent`) and with the skip rule
+    /// (`should_skip_modulation`). Each intent maps to a kind whose intent
+    /// list holds it; a kind that `re_times` names re-times every one of its
+    /// intents; a kind with a skipped intent is not re-timed.
+    #[test]
+    fn the_cut_kinds_follow_the_modulator_skip_p29_10() {
+        use crate::limits::{CutKind, EntryKind};
+        let feed = MoveType::Linear { feed_rate: 1.0 };
+        for (i, intent) in ALL_INTENTS.iter().enumerate() {
+            assert_eq!(intent_slot(*intent), i, "the intent list is complete");
+            let kind = CutKind::of_intent(*intent).unwrap_or(CutKind::Body);
+            assert!(
+                intents_of(kind).contains(intent),
+                "{intent:?}: the kind {kind:?} lists its intent"
+            );
+            if re_times(kind) {
+                assert!(
+                    !should_skip_modulation(feed, *intent),
+                    "{kind:?} is re-timed, so {intent:?} is not skipped"
+                );
+            }
+        }
+        for kind in [
+            CutKind::Body,
+            CutKind::Entry(EntryKind::Ramp),
+            CutKind::Entry(EntryKind::Helix),
+            CutKind::Entry(EntryKind::Plunge),
+            CutKind::Entry(EntryKind::PeckLadder),
+            CutKind::EntryApproach,
+            CutKind::LeadIn,
+            CutKind::LeadOut,
+            CutKind::Link,
+            CutKind::Drill,
+        ] {
+            for intent in intents_of(kind) {
+                let back = CutKind::of_intent(*intent);
+                assert!(
+                    back == Some(kind) || (back.is_none() && kind == CutKind::Body),
+                    "{intent:?} maps back to {kind:?}"
+                );
+            }
+            let skipped = intents_of(kind)
+                .iter()
+                .any(|intent| should_skip_modulation(feed, *intent));
+            assert_eq!(
+                re_times(kind),
+                !intents_of(kind).is_empty() && !skipped,
+                "{kind:?}"
+            );
+        }
+        assert!(re_times(CutKind::Body));
+        assert!(re_times(CutKind::Entry(EntryKind::Ramp)));
+        assert!(re_times(CutKind::Entry(EntryKind::Helix)));
+        assert!(!re_times(CutKind::Entry(EntryKind::Plunge)));
+        assert!(!re_times(CutKind::Entry(EntryKind::PeckLadder)));
+        assert!(!re_times(CutKind::Link));
+        assert!(!re_times(CutKind::Drill));
+    }
+
+    /// **P29-10z (lead ruling Q2): THE declared list is what the modulator
+    /// caps.** A fixture whose stated feed puts the peak chip over the band
+    /// maximum: for every limit of `RunModulation::capped_limits` the
+    /// modulated move holds the bound of that limit, at the band; with a
+    /// feed scale above 1 the list is empty and the move passes the band.
+    /// The match names every member of the list (no wildcard): a new member
+    /// needs its own proof here.
+    #[test]
+    #[expect(
+        clippy::wildcard_enum_match_arm,
+        clippy::panic,
+        reason = "test: an unexpected variant panics"
+    )]
+    fn the_declared_list_is_what_the_modulator_caps_p29_10() {
+        use crate::limits::LimitId;
+        let k = shapeoko();
+        let band = ChiploadBand::new(0.02, 0.05).unwrap();
+        let lift = 1.5;
+        let engaged = PerMoveEngagement {
+            radial_woc_fraction: 0.2,
+            axial_doc_fraction: 0.1,
+            axial_doc_mm: 2.0,
+            thinning_lift: Some(lift),
+        };
+        let teeth_per_min = 18_000.0 * 2.0;
+        // The stated feed: a peak chip of 0.065 mm against the band maximum
+        // of 0.05 mm.
+        let commanded = 0.065 * lift * teeth_per_min;
+        let peak_chip = |feed: f64| feed / teeth_per_min / lift;
+        assert!(peak_chip(commanded) > band.max_mm_per_tooth);
+        for (strategy, feed_scale) in [
+            (ModulationStrategy::ConstrainedMax, 1.0),
+            (ModulationStrategy::ConstrainedMax, 0.8),
+            (ModulationStrategy::ConstrainedMax, 1.2),
+            (ModulationStrategy::BandMid, 1.0),
+        ] {
+            let mut ctx = make_ctx(&k, band);
+            ctx.cutting_ceiling = ceiling(1.0e5);
+            ctx.strategy = strategy;
+            ctx.feed_scale = feed_scale;
+            let run = RunModulation::Runs {
+                strategy,
+                feed_scale,
+            };
+            let mut tp = straight_toolpath(3, commanded);
+            let engagements = vec![engaged; tp.moves.len()];
+            let out = adaptive_feed_modulate(&mut tp, &engagements, &ctx).unwrap();
+            assert!(!out.per_move.is_empty(), "non-vacuity");
+            let worst = out
+                .per_move
+                .values()
+                .map(|(feed, _)| peak_chip(*feed))
+                .fold(0.0_f64, f64::max);
+            for limit in run.capped_limits() {
+                match limit {
+                    LimitId::ChipMax => assert!(
+                        worst <= band.max_mm_per_tooth * (1.0 + 1e-9),
+                        "{strategy:?} x {feed_scale}: the modulated peak chip {worst} \
+                         holds the band maximum"
+                    ),
+                    other => panic!("{other:?}: a declared limit has no proof here"),
+                }
+            }
+            if strategy == ModulationStrategy::ConstrainedMax && feed_scale <= 1.0 {
+                assert!(
+                    (worst - band.max_mm_per_tooth * feed_scale).abs() < 1e-9,
+                    "{feed_scale}: the move is at the band ({worst})"
+                );
+            }
+            if run.capped_limits().is_empty() {
+                assert!(
+                    worst > band.max_mm_per_tooth,
+                    "{strategy:?} x {feed_scale}: an empty list is a move past the band"
+                );
+            }
+        }
+        assert!(RunModulation::Off.capped_limits().is_empty());
     }
 }

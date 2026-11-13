@@ -294,13 +294,11 @@ impl CardLimits<'_> {
     /// THE face row (ruling O1, lead ruling 1 on 10f): the worst row of
     /// part one by the one core rank (`CheckRow::rank_cmp`), only when it
     /// exceeds. A proposal row never reaches the face: the face describes
-    /// the op as it stands. P29-10 10i: a row that core keeps out of the
-    /// face rank (`CheckRow::ranks_for_the_face`, Q2 open) is in the drawer
-    /// only.
+    /// the op as it stands. P29-10z: every stated row ranks.
     pub(crate) fn face_row(&self) -> Option<&CheckRow> {
         self.as_it_stands()
             .into_iter()
-            .filter(|row| row.tone().exceeds() && row.ranks_for_the_face())
+            .filter(|row| row.tone().exceeds())
             .min_by(|a, b| a.rank_cmp(b))
     }
 
@@ -470,6 +468,16 @@ pub(crate) fn draw_limits_drawer<B>(
                     .into_iter()
                     .filter(|row| row.cut().is_none())
                     .collect();
+                // P29-10z (lead ruling T): the stated-point rows take a
+                // title in the style of a cut title; the words are core's.
+                if !point_rows.is_empty() {
+                    DataTable::new("feeds_card_limits_stands_title")
+                        .row(
+                            DataRow::record(rs_cam_core::limits::STATED_POINT_TITLE)
+                                .tone(tokens::TEXT_BODY),
+                        )
+                        .show(ui);
+                }
                 draw_group_rows(ui, "feeds_card_limits_stands", &point_rows);
                 for group in &limits.stated_cuts() {
                     draw_cut(ui, "stands", group);

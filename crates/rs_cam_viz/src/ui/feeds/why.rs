@@ -1243,6 +1243,7 @@ mod tests {
             lut: rs_cam_core::feeds::embedded_vendor_lut(),
             spindle_strategy: rs_cam_core::feeds::SpindleStrategy::MatchChart,
             context: SuggestContext::no_project(NoProject::NONE),
+            modulation: rs_cam_core::dressup::feed_modulation::RunModulation::Off,
         })
         .expect("the envelope builds");
         let stated = env

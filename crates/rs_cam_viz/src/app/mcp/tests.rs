@@ -1098,7 +1098,9 @@ fn the_mcp_rows_are_the_session_rows_p29_10() {
             .enumerate()
             .find(|(_, tc)| serde_json::json!(tc.id) == id)
             .expect("the entry names a toolpath");
-        let door = session.limit_rows(index, None).expect("the toolpath");
+        let door = session
+            .limit_rows(index, None, crate::state::simulation::run_modulation())
+            .expect("the toolpath");
         assert_eq!(
             entry["rows"],
             serde_json::to_value(door.verdict()).expect("the rows serialise"),
@@ -1109,7 +1111,9 @@ fn the_mcp_rows_are_the_session_rows_p29_10() {
     assert!(verdict_rows > 0, "non-vacuity: verdict rows");
     let mut envelope_rows = 0;
     for index in 0..count {
-        let door = session.limit_rows(index, None).expect("the toolpath");
+        let door = session
+            .limit_rows(index, None, crate::state::simulation::run_modulation())
+            .expect("the toolpath");
         // The RPM rows.
         let rpm = super::generation::rpm_limit_rows_json(&session, index);
         assert_eq!(
@@ -1119,7 +1123,9 @@ fn the_mcp_rows_are_the_session_rows_p29_10() {
         );
         // The envelope rows: the serialised envelope holds the door rows.
         let tc = session.toolpath_config_at(index).expect("the toolpath");
-        if let Some(Ok(envelope)) = session.safe_envelope(tc) {
+        if let Some(Ok(envelope)) =
+            session.safe_envelope(tc, crate::state::simulation::run_modulation())
+        {
             let value = serde_json::to_value(&envelope).expect("the envelope serialises");
             let rows = door
                 .envelope()
@@ -1185,7 +1191,11 @@ fn the_mcp_rows_read_a_real_trace_p29_10() {
     let mut judged = 0;
     for (index, entry) in entries.iter().enumerate() {
         let door = session
-            .limit_rows(index, trace.as_ref())
+            .limit_rows(
+                index,
+                trace.as_ref(),
+                crate::state::simulation::run_modulation(),
+            )
             .expect("the toolpath");
         let rows = door.verdict();
         assert_eq!(

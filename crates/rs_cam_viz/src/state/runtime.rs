@@ -307,6 +307,9 @@ pub struct FeedsInputs<'a> {
     pub suggest_slots: &'a rs_cam_core::feeds::suggest::SuggestSlots,
     /// The toolpath's dressups (the configured entry, P29-8 8d).
     pub dressups: &'a rs_cam_core::compute::config::DressupConfig,
+    /// P29-10z (lead ruling Q2): the feed modulation of the run for this
+    /// toolpath (`RunModulation::for_toolpath`), for the envelope rows.
+    pub modulation: rs_cam_core::dressup::feed_modulation::RunModulation,
 }
 
 /// The stored key of [`FeedsMemo`]. Built only by [`SlotInputs::key`].
@@ -326,6 +329,8 @@ pub struct FeedsKey {
     suggest_slots: String,
     /// The `Debug` text of the dressups.
     dressups: String,
+    /// The `Debug` text of the run's modulation (`f64` has no `Eq`).
+    modulation: String,
 }
 
 impl SlotInputs for FeedsInputs<'_> {
@@ -340,6 +345,7 @@ impl SlotInputs for FeedsInputs<'_> {
             spindle_strategy,
             suggest_slots,
             dressups,
+            modulation,
         } = self;
         // The vendor LUT is not an input: `embedded_vendor_lut` is one
         // static value for the life of the process.
@@ -351,6 +357,7 @@ impl SlotInputs for FeedsInputs<'_> {
             spindle_strategy: *spindle_strategy,
             suggest_slots: format!("{suggest_slots:?}"),
             dressups: format!("{dressups:?}"),
+            modulation: format!("{modulation:?}"),
         }
     }
 }
@@ -384,6 +391,7 @@ impl FeedsInputs<'_> {
             spindle_strategy,
             suggest_slots: _,
             dressups: _,
+            modulation: _,
         } = self;
         let result = rs_cam_core::feeds::suggest::feeds_result_for_operation(
             operation,
@@ -426,6 +434,7 @@ impl FeedsInputs<'_> {
                 lut: rs_cam_core::feeds::embedded_vendor_lut(),
                 spindle_strategy: self.spindle_strategy,
                 context: self.context(),
+                modulation: self.modulation,
             },
         )
         .ok()

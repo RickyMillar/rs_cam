@@ -136,6 +136,7 @@ fn envelope_of(
             model_bbox: cell.bbox,
             ..NoProject::NONE
         }),
+        modulation: rs_cam_core::dressup::feed_modulation::RunModulation::Off,
     })
     .expect("the cell is backed")
 }

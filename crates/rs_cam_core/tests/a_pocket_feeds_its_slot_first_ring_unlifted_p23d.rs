@@ -194,7 +194,12 @@ fn the_first_ring_of_each_level_runs_at_the_unlifted_feed_with_the_cap_p23d() {
 fn suggest_prints_the_slot_ring_feed_that_the_generator_cuts_p23d() {
     let session = generated(pocket(STEPOVER, PocketPattern::Contour));
     let tc = session.toolpath_configs()[0].clone();
-    let profile = session.cutter_op_profile(&tc).expect("the op has a tool");
+    let profile = session
+        .cutter_op_profile(
+            &tc,
+            rs_cam_core::dressup::feed_modulation::RunModulation::Off,
+        )
+        .expect("the op has a tool");
     let speeds = profile
         .suggested_speeds()
         .expect("Suggest serves the fixture");
@@ -215,7 +220,10 @@ fn suggest_prints_the_slot_ring_feed_that_the_generator_cuts_p23d() {
     let zigzag = generated(pocket(STEPOVER, PocketPattern::Zigzag));
     let tc = zigzag.toolpath_configs()[0].clone();
     let speeds = zigzag
-        .cutter_op_profile(&tc)
+        .cutter_op_profile(
+            &tc,
+            rs_cam_core::dressup::feed_modulation::RunModulation::Off,
+        )
         .expect("the op has a tool")
         .suggested_speeds()
         .expect("Suggest serves the fixture");

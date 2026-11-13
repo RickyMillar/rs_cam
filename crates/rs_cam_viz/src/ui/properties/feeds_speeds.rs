@@ -52,6 +52,9 @@ pub(super) fn refresh_feeds_memo(
             spindle_strategy: inputs.spindle_strategy,
             suggest_slots,
             dressups: &entry.dressups,
+            // P29-10z (lead ruling Q2): the modulation of the GUI run for
+            // this toolpath, as the session doors read it.
+            modulation: crate::state::simulation::run_modulation().for_toolpath(entry.enabled),
         },
         super::pills::pill_previews,
     );

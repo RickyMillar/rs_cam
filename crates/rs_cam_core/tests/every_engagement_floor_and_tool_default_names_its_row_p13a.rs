@@ -173,6 +173,7 @@ fn the_envelope_engagement_floors_read_the_rows_p13a() {
         lut: embedded_vendor_lut(),
         spindle_strategy: SpindleStrategy::MatchChart,
         context: SuggestContext::no_project(NoProject::NONE),
+        modulation: rs_cam_core::dressup::feed_modulation::RunModulation::Off,
     })
     .unwrap_or_else(|e| panic!("the Pocket envelope is backed: {e}"));
     let floors: Vec<Vec<String>> = env

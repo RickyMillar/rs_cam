@@ -1748,6 +1748,22 @@ pub struct SimulationOptions {
     pub modulation_feed_scale: f64,
 }
 
+impl SimulationOptions {
+    /// P29-10z (lead ruling Q2): the feed modulation of a run with these
+    /// options, for the limit rows before the simulation.
+    #[must_use]
+    pub const fn run_modulation(&self) -> crate::dressup::feed_modulation::RunModulation {
+        if self.adaptive_feed_modulation {
+            crate::dressup::feed_modulation::RunModulation::Runs {
+                strategy: self.modulation_strategy,
+                feed_scale: self.modulation_feed_scale,
+            }
+        } else {
+            crate::dressup::feed_modulation::RunModulation::Off
+        }
+    }
+}
+
 impl Default for SimulationOptions {
     fn default() -> Self {
         Self {
@@ -2401,6 +2417,7 @@ impl ProjectSession {
     pub fn cutter_op_profile<'a>(
         &'a self,
         tc: &'a ToolpathConfig,
+        modulation: crate::dressup::feed_modulation::RunModulation,
     ) -> Option<crate::feeds::profile::CutterOpProfile<'a>> {
         use crate::feeds::profile::{CutterOpProfile, CutterOpProfileInput};
 
@@ -2420,6 +2437,7 @@ impl ProjectSession {
             lut: crate::feeds::embedded_vendor_lut(),
             spindle_strategy: self.post_config().spindle_policy(),
             context,
+            modulation: modulation.for_toolpath(tc.enabled),
         })
         .ok()
     }
@@ -2435,6 +2453,7 @@ impl ProjectSession {
     pub fn safe_envelope(
         &self,
         tc: &ToolpathConfig,
+        modulation: crate::dressup::feed_modulation::RunModulation,
     ) -> Option<Result<crate::feeds::envelope::SafeEnvelope, crate::feeds::FeedsError>> {
         let tool = self.toolpath_tool(tc)?;
         let slots = self.suggest_slots(tc);
@@ -2447,6 +2466,7 @@ impl ProjectSession {
                 lut: crate::feeds::embedded_vendor_lut(),
                 spindle_strategy: self.post_config().spindle_policy(),
                 context: slots.context(&tc.dressups),
+                modulation: modulation.for_toolpath(tc.enabled),
             },
         ))
     }

@@ -234,7 +234,7 @@ fn rivmap_rough(point: Option<(f64, f64)>) -> (OperationConfig, SafeEnvelope) {
         c.stepover = Some(ae);
     }
     let env = session
-        .safe_envelope(&tc)
+        .safe_envelope(&tc, rs_cam_viz::state::simulation::run_modulation())
         .expect("a tool")
         .expect("a backed envelope");
     (tc.operation, env)
@@ -773,6 +773,7 @@ fn a_pocket_draws_its_move_budget_floor_and_it_does_not_move_p19() {
                     ..rs_cam_core::feeds::suggest::NoProject::NONE
                 },
             ),
+            modulation: rs_cam_core::dressup::feed_modulation::RunModulation::Off,
         })
         .expect("the Pocket is backed");
         let Some(Edge::AeFloor { mm }) = env.limit(LimitKind::Runtime).map(|l| l.edge.clone())

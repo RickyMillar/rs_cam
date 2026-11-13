@@ -373,6 +373,7 @@ fn envelope_of(op_type: OperationType) -> SafeEnvelope {
             model_bbox: Some(&bbox),
             ..NoProject::NONE
         }),
+        modulation: rs_cam_core::dressup::feed_modulation::RunModulation::Off,
     })
     .expect("a 6 mm end mill pocket is backed")
 }

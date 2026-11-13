@@ -87,6 +87,7 @@ fn no_force_limit_binds_the_pocket_width_below_the_corner_rule_p11c() {
             lut: embedded_vendor_lut(),
             spindle_strategy: SpindleStrategy::MatchChart,
             context: SuggestContext::no_project(NoProject::NONE),
+            modulation: rs_cam_core::dressup::feed_modulation::RunModulation::Off,
         })
         .expect("an envelope");
         // 1. The width sits on a width rule.

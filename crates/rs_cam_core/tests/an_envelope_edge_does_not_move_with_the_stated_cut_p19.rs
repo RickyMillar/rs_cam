@@ -113,6 +113,7 @@ fn envelope_in(
             model_bbox: Some(bbox),
             ..NoProject::NONE
         }),
+        modulation: rs_cam_core::dressup::feed_modulation::RunModulation::Off,
     })
     .expect("the case is backed")
 }
@@ -583,6 +584,7 @@ fn the_stated_point_still_warns_on_the_move_budget_p19() {
             model_bbox: Some(&bbox),
             ..NoProject::NONE
         }),
+        modulation: rs_cam_core::dressup::feed_modulation::RunModulation::Off,
     })
     .expect("the case is backed");
     let runtime = env.limit(LimitKind::Runtime).expect("a Runtime entry");
@@ -793,6 +795,7 @@ fn a_ball_width_ceiling_is_its_engaged_diameter_over_the_depth_p19() {
             lut: embedded_vendor_lut(),
             spindle_strategy: SpindleStrategy::default(),
             context: SuggestContext::no_project(NoProject::NONE),
+            modulation: rs_cam_core::dressup::feed_modulation::RunModulation::Off,
         })
         .expect("the case is backed")
     };

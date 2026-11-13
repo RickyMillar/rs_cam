@@ -82,7 +82,7 @@ fn rivmap_env(point: Option<(f64, f64)>) -> (OperationConfig, SafeEnvelope) {
         c.stepover = Some(ae);
     }
     let env = session
-        .safe_envelope(&tc)
+        .safe_envelope(&tc, rs_cam_viz::state::simulation::run_modulation())
         .expect("a tool")
         .expect("a backed envelope");
     (tc.operation, env)
@@ -966,7 +966,7 @@ fn quarter_inch_pocket() -> (OperationConfig, SafeEnvelope, f64) {
         .clone();
     tc.tool_id = Some(tool.id);
     let env = session
-        .safe_envelope(&tc)
+        .safe_envelope(&tc, rs_cam_viz::state::simulation::run_modulation())
         .expect("a tool")
         .expect("a backed envelope");
     (tc.operation, env, tool.diameter)

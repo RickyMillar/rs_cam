@@ -29,6 +29,11 @@ use crate::tool_load::{GroupCell, MaterialSplit, OwnMaterialVerdict};
 /// text (`diagnostics::FACE_MAX_CHARS`, design rule 6, IC1).
 pub const ROW_FACE_MAX_CHARS: usize = crate::diagnostics::FACE_MAX_CHARS;
 
+/// P29-10z (lead ruling T): the title of the stated-point rows of the
+/// limits that are not limits of each cut, in part one of the drawer
+/// ([`Subject::Stated`]), in the style of a cut title.
+pub const STATED_POINT_TITLE: &str = "the stated point";
+
 /// What a row is about.
 #[derive(Debug, Clone, PartialEq, Serialize)]
 #[serde(tag = "kind", rename_all = "snake_case")]
@@ -220,6 +225,12 @@ pub enum Occurs {
 #[derive(Debug, Clone, Copy, PartialEq, Eq, Serialize)]
 #[serde(tag = "kind", rename_all = "snake_case")]
 pub enum Caveat {
+    /// P29-10z (lead ruling Q2): the row reads the stated feed, before the
+    /// simulation's feed modulation re-times the moves of the cut and caps
+    /// them at the bound of this limit (`dressup::feed_modulation::
+    /// RunModulation::caps`, the modulator's declared list). The row keeps
+    /// its true value and state; the caveat softens the tone.
+    BeforeModulation,
     /// An entry at its own depth: the depth per pass of a ramp, the worst
     /// case (lead ruling Q1b of P29-8).
     WorstCase,
@@ -265,22 +276,26 @@ impl Caveat {
     /// The order of the caveats on a row.
     const fn rank(self) -> u8 {
         match self {
-            Self::WorstCase => 0,
-            Self::LowerBound => 1,
-            Self::StoredFeed => 2,
-            Self::AdvisoryFloor { .. } => 3,
-            Self::MayOccur { .. } => 4,
-            Self::Advisory => 5,
-            Self::NoSamples => 6,
-            Self::SampleDepth { .. } => 7,
-            Self::AtEarlierLeave => 8,
-            Self::AtSuggestedChip => 9,
+            Self::BeforeModulation => 0,
+            Self::WorstCase => 1,
+            Self::LowerBound => 2,
+            Self::StoredFeed => 3,
+            Self::AdvisoryFloor { .. } => 4,
+            Self::MayOccur { .. } => 5,
+            Self::Advisory => 6,
+            Self::NoSamples => 7,
+            Self::SampleDepth { .. } => 8,
+            Self::AtEarlierLeave => 9,
+            Self::AtSuggestedChip => 10,
         }
     }
 
     /// The word on the face, for a caveat that the face names.
     const fn face_word(self) -> Option<&'static str> {
         match self {
+            // P29-10z: the face holds it; the longest face with the word on
+            // the four project files is 59 characters.
+            Self::BeforeModulation => Some("before modulation"),
             Self::WorstCase => Some("worst case"),
             Self::LowerBound => Some("lower bound"),
             Self::StoredFeed => Some("stored feed"),
@@ -305,7 +320,8 @@ impl Caveat {
     const fn of_the_cut(self) -> bool {
         match self {
             Self::WorstCase | Self::MayOccur { .. } => true,
-            Self::LowerBound
+            Self::BeforeModulation
+            | Self::LowerBound
             | Self::StoredFeed
             | Self::AdvisoryFloor { .. }
             | Self::Advisory
@@ -320,7 +336,8 @@ impl Caveat {
     /// danger (ruling O2: the caveat is a fact of the record).
     const fn softens(self) -> bool {
         match self {
-            Self::WorstCase
+            Self::BeforeModulation
+            | Self::WorstCase
             | Self::LowerBound
             | Self::StoredFeed
             | Self::AdvisoryFloor { .. }
@@ -333,10 +350,36 @@ impl Caveat {
         }
     }
 
+    /// The word of a row under the title of its cut (the drawer,
+    /// [`CheckRow::face_in_group`]). P29-10z: "before modulation" is not
+    /// there: the row is clipped at the rail width (340 points) with the
+    /// word, as the advisory-floor word was in PB; the chip word and the
+    /// hover carry it.
+    const fn group_word(self) -> Option<&'static str> {
+        match self {
+            Self::BeforeModulation => None,
+            Self::WorstCase
+            | Self::LowerBound
+            | Self::StoredFeed
+            | Self::AdvisoryFloor { .. }
+            | Self::MayOccur { .. }
+            | Self::Advisory
+            | Self::NoSamples
+            | Self::SampleDepth { .. }
+            | Self::AtEarlierLeave
+            | Self::AtSuggestedChip => self.face_word(),
+        }
+    }
+
     /// The caveat in one clause, for the detail.
     #[must_use]
     pub fn clause(self) -> String {
         match self {
+            Self::BeforeModulation => {
+                "before modulation: the simulation re-times the moves of this cut and caps them \
+                 at this bound; the row reads the stated feed"
+                    .to_owned()
+            }
             Self::WorstCase => {
                 "worst case: the ramp is judged at its full depth per pass".to_owned()
             }
@@ -382,6 +425,19 @@ const fn advisory_floor_clause(why: AdvisoryLowSide) -> &'static str {
     }
 }
 
+/// P29-10z (lead ruling Q2): whether the run's feed modulation caps the
+/// bound of a planned row on its cut (`RunModulation::caps`).
+#[derive(Debug, Clone, Copy, PartialEq, Eq)]
+pub enum RowModulation {
+    /// No run re-times the cut at this bound: the row reads the feed that
+    /// the machine runs.
+    NotCapped,
+    /// The run re-times the moves of the cut and caps them at this bound:
+    /// the row reads the stated feed, before modulation
+    /// (`Caveat::BeforeModulation`).
+    CapsTheBound,
+}
+
 /// P29-10 10i (lead ruling 5): the chip a depth ceiling row reads.
 #[derive(Debug, Clone, Copy, PartialEq, Eq)]
 pub enum CeilingChipSource {
@@ -422,8 +478,9 @@ pub enum Tone {
 
 impl Tone {
     /// THE tone rule. `Exceeds` softens to [`Self::ExceedsAdvisory`] when
-    /// the bound does not gate an export or a caveat among `WorstCase`,
-    /// `LowerBound`, `StoredFeed`, `MayOccur` holds. No threshold: a caveat
+    /// the bound does not gate an export or a caveat among
+    /// `BeforeModulation`, `WorstCase`, `LowerBound`, `StoredFeed`,
+    /// `AdvisoryFloor`, `MayOccur` holds. No threshold: a caveat
     /// is a fact of the record. No tone refuses (K6).
     #[must_use]
     pub fn of(check: &Check, caveats: &[Caveat]) -> Self {
@@ -502,6 +559,11 @@ pub struct PlannedFacts {
     pub stored_feed: bool,
     /// P29-10 PB: the chip floor is a reference, with the reason.
     pub advisory_floor: Option<AdvisoryLowSide>,
+    /// P29-10z (lead ruling Q2): whether the run's feed modulation re-times
+    /// the moves of the cut and caps them at the bound of this limit
+    /// (`RunModulation::caps`). Only a row that holds a number takes the
+    /// caveat.
+    pub modulation: RowModulation,
     /// P29-10 10i: the point the row judges (the proposal or the stated
     /// cut).
     pub judged_at: JudgedAt,
@@ -608,6 +670,7 @@ impl CheckRow {
             lower_bound,
             stored_feed,
             advisory_floor,
+            modulation,
             judged_at,
             ceiling_chip,
             scope_row,
@@ -617,6 +680,14 @@ impl CheckRow {
             at,
         } = facts;
         let mut caveats = Vec::new();
+        match modulation {
+            RowModulation::CapsTheBound
+                if matches!(check.state, CheckState::Within | CheckState::Exceeds) =>
+            {
+                caveats.push(Caveat::BeforeModulation);
+            }
+            RowModulation::CapsTheBound | RowModulation::NotCapped => {}
+        }
         if own_depth.is_some_and(|o| o.worst_case) {
             caveats.push(Caveat::WorstCase);
         }
@@ -814,7 +885,8 @@ impl CheckRow {
     pub fn may_occur_row(&self) -> Option<&'static str> {
         self.caveats.iter().find_map(|c| match c {
             Caveat::MayOccur { row } => Some(*row),
-            Caveat::WorstCase
+            Caveat::BeforeModulation
+            | Caveat::WorstCase
             | Caveat::LowerBound
             | Caveat::StoredFeed
             | Caveat::AdvisoryFloor { .. }
@@ -902,30 +974,22 @@ impl CheckRow {
         }
     }
 
-    /// **P29-10 10i, Q2 open (lead ruling 2 of `P29-10i_DESIGN.md`
-    /// section 10): `true` when a row may reach the face line of the
-    /// Suggest card.** A stated cut row of the chip maximum does not rank:
-    /// the stored op feed is the cut before the simulation's feed
-    /// modulation, which caps the chip at the band (the measurement of
-    /// section 11), and the lead rules the face of that row later. The
-    /// drawer shows the row as it is. Every other row ranks. The Q2 ruling
-    /// changes this one predicate.
-    #[must_use]
-    pub const fn ranks_for_the_face(&self) -> bool {
-        !matches!(
-            (&self.subject, self.check.limit),
-            (Subject::StatedCut { .. }, LimitId::ChipMax)
-        )
-    }
-
     /// THE rank of two rows (ruling O6, lead rulings after 10d): an
     /// `Exceeds` row before an `ExceedsAdvisory` row before every other
-    /// row; inside one tone group the stated point first (it is the cut of
+    /// row; inside one tone group a row of a cut that always occurs before
+    /// a row with the caveat "may not occur" (P29-10z, lead ruling R: the
+    /// certain cut ranks first), then the stated point (it is the cut of
     /// today), then the lower margin (a row with no margin last). A total
     /// preorder: two rows with equal keys rank equal.
     #[must_use]
     pub fn rank_cmp(&self, other: &Self) -> std::cmp::Ordering {
-        let key = |r: &Self| (r.tone.rank(), r.subject.rank());
+        let key = |r: &Self| {
+            (
+                r.tone.rank(),
+                u8::from(r.may_occur_row().is_some()),
+                r.subject.rank(),
+            )
+        };
         key(self).cmp(&key(other)).then_with(|| {
             let m = |r: &Self| r.check.margin.unwrap_or(f64::INFINITY);
             m(self).total_cmp(&m(other))
@@ -998,7 +1062,8 @@ fn exemption_of(check: &Check, caveats: &[Caveat]) -> Option<&'static str> {
     state_row.or_else(|| {
         caveats.iter().find_map(|c| match c {
             Caveat::MayOccur { row } => Some(*row),
-            Caveat::WorstCase
+            Caveat::BeforeModulation
+            | Caveat::WorstCase
             | Caveat::LowerBound
             | Caveat::StoredFeed
             | Caveat::AdvisoryFloor { .. }
@@ -1120,7 +1185,7 @@ fn group_face_of(
     let word = caveats
         .iter()
         .filter(|c| !c.of_the_cut())
-        .find_map(|c| c.face_word());
+        .find_map(|c| c.group_word());
     match word {
         Some(w) if reading.chars().count() + w.chars().count() + 3 <= ROW_FACE_MAX_CHARS => {
             format!("{reading} · {w}")
@@ -1749,6 +1814,74 @@ mod tests {
             quiet_summary(&[&within, &over]),
             None,
             "a row over keeps the cut open"
+        );
+    }
+
+    /// A stated force-budget depth row of one cut: `margin` over its cap,
+    /// with the presence row of a cut that may not occur, else a worst-case
+    /// own depth (a caveat that softens the tone and is no presence).
+    fn stated_cut(cut: CutKind, margin: f64, may_occur_row: Option<&'static str>) -> CheckRow {
+        CheckRow::planned(
+            cut,
+            Check {
+                limit: LimitId::ForceBudget,
+                value: Some(1.0 - margin),
+                bound: Some(1.0),
+                unit: "mm",
+                side: BoundSide::Ceiling,
+                margin: Some(margin),
+                state: CheckState::Exceeds,
+                basis: None,
+                binding: false,
+                population: None,
+            },
+            PlannedFacts {
+                may_occur_row,
+                own_depth: may_occur_row.is_none().then_some(PlannedOwnDepth {
+                    mm: 1.0 - margin,
+                    rule: "test",
+                    worst_case: true,
+                }),
+                lower_bound: false,
+                stored_feed: false,
+                advisory_floor: None,
+                modulation: RowModulation::NotCapped,
+                judged_at: JudgedAt::Stated,
+                ceiling_chip: CeilingChipSource::OfThePoint,
+                scope_row: None,
+                at_earlier_leave: false,
+                entry_no_number: None,
+                compared: Compared::Depth,
+                at: None,
+            },
+        )
+    }
+
+    /// P29-10z (lead ruling R): inside one tone group the row of a cut that
+    /// always occurs ranks before the row of a cut that may not occur, even
+    /// when the second is further over (operator idx 1: the planner cap at
+    /// 387 % before the first slot at 420 %); then the existing order.
+    #[test]
+    fn the_certain_cut_ranks_first_p29_10() {
+        use super::super::FirstPassKind;
+        let slot = stated_cut(
+            CutKind::FirstPass(FirstPassKind::Slot),
+            -4.2,
+            Some("P28-01"),
+        );
+        let cap = stated_cut(CutKind::FirstPass(FirstPassKind::PlannerCap), -3.87, None);
+        let body = stated_cut(CutKind::Body, -3.78, None);
+        for r in [&slot, &cap, &body] {
+            assert_eq!(r.tone(), Tone::ExceedsAdvisory, "one tone group");
+        }
+        assert!(cap.worse_than(&slot), "the certain cut first");
+        assert!(body.worse_than(&slot), "the certain cut first");
+        assert!(cap.worse_than(&body), "then the lower margin");
+        let mut rows = [&slot, &body, &cap];
+        rows.sort_by(|a, b| a.rank_cmp(b));
+        assert_eq!(
+            rows.map(CheckRow::face),
+            [cap.face(), body.face(), slot.face()]
         );
     }
 }

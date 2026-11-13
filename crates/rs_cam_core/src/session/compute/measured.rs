@@ -183,7 +183,11 @@ impl ProjectSession {
             return None;
         }
         let tc = self.toolpath_config_at(index)?;
-        let envelope = self.safe_envelope(tc)?.ok()?;
+        // P29-10z: the placement reads no limit row, so the run's
+        // modulation does not change it.
+        let envelope = self
+            .safe_envelope(tc, crate::dressup::feed_modulation::RunModulation::Off)?
+            .ok()?;
         let parts = self.load_context_parts(index)?;
         Some(crate::compute::simulate::envelope_placement(
             trace,

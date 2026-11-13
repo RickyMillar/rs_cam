@@ -101,7 +101,10 @@ fn suggest_text(session: &ProjectSession) -> String {
     let tool = session.toolpath_tool(tc).expect("the tool");
     let feeds = session.feeds_result_for_toolpath(tc, tool);
     let envelope = session
-        .safe_envelope(tc)
+        .safe_envelope(
+            tc,
+            rs_cam_core::dressup::feed_modulation::RunModulation::Off,
+        )
         .expect("a tool")
         .expect("a runnable pairing");
     format!(
@@ -298,6 +301,7 @@ fn envelope_of(
             context: rs_cam_core::feeds::suggest::SuggestContext::no_project(
                 rs_cam_core::feeds::suggest::NoProject::NONE,
             ),
+            modulation: rs_cam_core::dressup::feed_modulation::RunModulation::Off,
         },
     )
     .expect("a runnable pairing")

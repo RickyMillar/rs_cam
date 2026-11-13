@@ -78,6 +78,7 @@ fn a_pick_outside_the_envelope_is_written_and_warns_k2b() {
         lut: embedded_vendor_lut(),
         spindle_strategy: SpindleStrategy::default(),
         context: SuggestContext::no_project(NoProject::NONE),
+        modulation: rs_cam_core::dressup::feed_modulation::RunModulation::Off,
     })
     .expect("a 6 mm end mill on a 3D Rough is backed");
     let pick = env.pick(request);

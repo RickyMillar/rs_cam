@@ -351,6 +351,7 @@ fn run_funnel_at(machine: &MachineProfile, material: &Material, requested_ap: f6
         lut: embedded_vendor_lut(),
         spindle_strategy: SpindleStrategy::MatchChart,
         context: SuggestContext::no_project(NoProject::NONE),
+        modulation: rs_cam_core::dressup::feed_modulation::RunModulation::Off,
     })
     .expect("heavy pocket with a flat endmill has an envelope");
     let recommended = envelope

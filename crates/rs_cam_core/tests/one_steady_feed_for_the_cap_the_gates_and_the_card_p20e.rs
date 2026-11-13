@@ -459,7 +459,12 @@ fn the_suggest_power_figure_grades_the_capped_feed_c() {
     let cap = 100.0;
     let session = pocket_session(OP_FEED, Some(cap));
     let tc = session.toolpath_configs().last().expect("one toolpath");
-    let profile = session.cutter_op_profile(tc).expect("the tool resolves");
+    let profile = session
+        .cutter_op_profile(
+            tc,
+            rs_cam_core::dressup::feed_modulation::RunModulation::Off,
+        )
+        .expect("the tool resolves");
     let shipped_feed = profile
         .shipped_operation()
         .feed_rate()
@@ -521,7 +526,12 @@ fn the_suggest_power_figure_grades_the_capped_feed_c() {
     // With no cap the op feed binds and the figure is the uncapped one.
     let open = pocket_session(OP_FEED, None);
     let tc = open.toolpath_configs().last().expect("one toolpath");
-    let profile = open.cutter_op_profile(tc).expect("the tool resolves");
+    let profile = open
+        .cutter_op_profile(
+            tc,
+            rs_cam_core::dressup::feed_modulation::RunModulation::Off,
+        )
+        .expect("the tool resolves");
     let figure = profile
         .shipped_power()
         .expect("Suggest serves the fixture")

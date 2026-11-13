@@ -641,7 +641,10 @@ impl SuggestRead {
 fn suggest_read(session: &ProjectSession, fx: &Fixture) -> SuggestRead {
     let tc = &session.toolpath_configs()[1];
     let profile = session
-        .cutter_op_profile(tc)
+        .cutter_op_profile(
+            tc,
+            rs_cam_core::dressup::feed_modulation::RunModulation::Off,
+        )
         .expect("measured op resolves a tool");
     assert!(
         profile.feasibility.is_ok(),

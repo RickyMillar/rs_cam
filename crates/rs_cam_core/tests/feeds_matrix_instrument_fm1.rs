@@ -342,6 +342,7 @@ fn envelope_columns(
             lut: &EMBEDDED_LUT,
             spindle_strategy: SpindleStrategy::default(),
             context: SuggestContext::no_project(NoProject::NONE),
+            modulation: rs_cam_core::dressup::feed_modulation::RunModulation::Off,
         },
     ) {
         Ok(env) => {

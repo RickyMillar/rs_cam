@@ -255,7 +255,10 @@ impl RsCamApp {
                 "error": format!("Toolpath index {index} not found")
             }));
         };
-        let Some(profile) = state.session().cutter_op_profile(tc) else {
+        let Some(profile) = state
+            .session()
+            .cutter_op_profile(tc, crate::state::simulation::run_modulation())
+        else {
             return json_str(serde_json::json!({
                 "error": match tc.tool_id {
                     Some(tool_id) => format!("Tool {tool_id} for toolpath {} not found", tc.id),
@@ -1075,7 +1078,10 @@ impl RsCamApp {
                 "error": format!("Toolpath index {index} not found")
             }));
         };
-        match state.session().safe_envelope(tc) {
+        match state
+            .session()
+            .safe_envelope(tc, crate::state::simulation::run_modulation())
+        {
             None => json_str(serde_json::json!({
                 "error": format!(
                     "Toolpath {} has no tool. Set one with `set_toolpath_tool`.",
@@ -1226,7 +1232,9 @@ pub(super) fn load_report_limit_rows_json(
             .iter()
             .enumerate()
             .filter_map(|(index, tc)| {
-                let rows = session.limit_rows(index, trace)?.verdict();
+                let rows = session
+                    .limit_rows(index, trace, crate::state::simulation::run_modulation())?
+                    .verdict();
                 Some(serde_json::json!({
                     "toolpath_id": tc.id,
                     "toolpath_name": tc.name,
@@ -1246,7 +1254,7 @@ pub(super) fn rpm_limit_rows_json(
     index: usize,
 ) -> serde_json::Value {
     session
-        .limit_rows(index, None)
+        .limit_rows(index, None, crate::state::simulation::run_modulation())
         .map_or(serde_json::Value::Array(Vec::new()), |rows| {
             serde_json::to_value(rows.rpm()).unwrap_or_default()
         })

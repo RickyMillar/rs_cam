@@ -588,3 +588,94 @@ The operator said on 2026-11-12: "simulation should run whats going to
 happen in real life. having a post-sim change seems not ideal". This
 caveat only names the split between the stated feed and the feed that the
 modulator emits. The modulation design step decides the split.
+
+## 14. P29-10z: measured beside predicted
+
+The row probe of section 13 ran on the 10z tree (`p29_10z/dump_after.jsonl`,
+the run modulation of `SimulationOptions::default()`, which is the value of
+the GUI run). The script `p29_10z/measure.py` compares it with the
+prediction and with the HEAD dump.
+
+### The face line
+
+44 of 44 face lines of the four files are as predicted (the cut, the
+limit, the tone and the words). The 18 operator ops:
+
+| idx | Predicted | Measured |
+|---|---|---|
+| 0, 3, 4, 5, 9, 10, 12, 13 | none | none |
+| 1 | caution: planner cap · depth 387 % over force cap | the same |
+| 2 | caution: ramp entry · depth 100 % over force cap · worst case | the same |
+| 6 | caution: ramp entry · chip min 76 % under floor · worst case | the same |
+| 7 | caution: body · chip max 27 % over limit · before modulation | the same |
+| 8 | caution: body · chip max 27 % over limit · before modulation | the same |
+| 11 | caution: ramp entry · chip min 66 % under floor · worst case | the same |
+| 14 | caution: ramp entry · depth 78 % over force cap · worst case | the same |
+| 15 | caution: ramp entry · depth 84 % over force cap · worst case | the same |
+| 16 | caution: body · chip min 16 % under floor | the same |
+| 17 | caution: plunge entry · plunge rate 17 % over limit · may not occur | the same |
+
+10 of the 18 operator ops carry a face line, all in the caution tone; no
+operator op has a danger line.
+
+### The rows
+
+| Quantity | Predicted | Measured |
+|---|---|---|
+| Rows with the caveat (operator, `nz_wanaka_21`, rivmap100, live) | 112, 64, 24, 24 | 112, 64, 24, 16 |
+| Tone `Exceeds` to `ExceedsAdvisory` | 14 | 14, the same rows |
+| Changes of state, value, bound or margin | 0 | 0 (the probe asserts the check of every row equal to HEAD) |
+| Verdict rows (readiness) | no change | no change (equal to HEAD) |
+
+The departure: `rivmap100_live_0925.toml` idx 2 and 3 are disabled. The
+run does not simulate a disabled op, so the session door gives it
+`RunModulation::Off` (the rule of section 13), and their 8 rows have no
+caveat. The prediction script did not apply that rule.
+
+### The face word
+
+Decided by measurement:
+
+- The card face carries the word. The longest exceeding face with the
+  word on the four files is 59 characters ("planner cap · chip max 2.9 %
+  over limit · before modulation", operator idx 2). A row whose face with
+  the word passes 60 characters drops the word by the face rule (one row
+  with no number on `nz_wanaka_21` would have 61; such a row takes no
+  caveat).
+- The drawer row does not carry the word. With the word in
+  `face_in_group`, `the_card_shows_one_planned_row_and_a_drawer_p29_10`
+  failed: "the rough: the drawer row "chip max 100 % of limit · before
+  modulation ⓘ" is clipped at 340 points". The chip word "advisory" and
+  the hover clause carry it there, as for the advisory floor of PB.
+
+### Cost
+
+The time-budget test alone, six runs (load average 4.67): 181, 183, 199,
+182, 180, 204 ms (budget 300 ms; 10i read 182 to 193 ms at 2.27).
+
+### Gaps and departures (for the lead)
+
+- Ruling R moves the face of idx 2, 14 and 15 to the ramp entry line
+  ("depth .. over force cap · worst case"), not to the planner cap: the
+  ramp always occurs and its share over is larger. The ruling ranks only
+  "may not occur" after a certain cut, not "worst case".
+- Not decided from the code, so no caveat: the link (`Linking` is
+  re-timed, `Retract` and `ObstacleClearance` are not) and the peck ladder
+  (its plunges carry no intent of their own).
+- The declared list holds `ChipMax` only. The power, deflection and
+  force-budget arms can pin a move at the chip floor; `ChipMin` has no floor
+  on a point band and a load cap wins over the floor. The chip minimum lines
+  of idx 6, 11 and 16 are also numbers before modulation (`ConstrainedMax`
+  raises a light move), but the code does not prove where the modulated
+  chip ends, so they keep their tone.
+- The test of the list proves the cap at the modulator's own band and lift.
+  No test ties the band of `modulation_bands_for_session` to the bound of
+  the envelope row, and no test reads simulated samples. A bandless toolpath
+  and an own-material or not-judged move (S6) are not capped at the vendor
+  band; the caveat does not see them.
+- Only a row that holds a number takes the caveat. A disabled op reads
+  `RunModulation::Off`, so its rows keep the gating tone; no test covers
+  this rule.
+- The face word: "before modulation" ranks first among the caveat words,
+  so on the wire it replaces "stored feed", "worst case" and "may not
+  occur" on the face of a capped row, `Within` rows included.

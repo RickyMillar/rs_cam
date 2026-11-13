@@ -498,8 +498,10 @@ impl ProjectSession {
         // safe envelope is a warning that names the binding limit. A typed
         // value gets it too, so it does not wait for a Suggest stamp. This
         // helper is the one source of the GUI ribbon and of MCP.
+        // P29-10z: the placement reads no limit row, so the run's
+        // modulation does not change it.
         let outside = self
-            .safe_envelope(tc)
+            .safe_envelope(tc, crate::dressup::feed_modulation::RunModulation::Off)
             .and_then(Result::ok)
             .and_then(|envelope| match (envelope.stated, envelope.operator) {
                 (Some(point), Some(crate::feeds::envelope::Placement::Outside { binding, .. })) => {

@@ -444,6 +444,7 @@ mod tests {
                 context: rs_cam_core::feeds::suggest::SuggestContext::no_project(
                     rs_cam_core::feeds::suggest::NoProject::NONE,
                 ),
+                modulation: rs_cam_core::dressup::feed_modulation::RunModulation::Off,
             },
         )
         .expect("the demo pocket has an envelope");

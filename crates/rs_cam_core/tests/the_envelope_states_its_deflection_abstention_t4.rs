@@ -95,6 +95,7 @@ fn deflection_entry(material: &Material, tool: &ToolConfig) -> Option<serde_json
         lut: embedded_vendor_lut(),
         spindle_strategy: SpindleStrategy::MatchChart,
         context: SuggestContext::no_project(NoProject::NONE),
+        modulation: rs_cam_core::dressup::feed_modulation::RunModulation::Off,
     })
     .expect("a flat end mill on a roughing pocket has an envelope");
     let json = serde_json::to_value(&envelope).expect("the envelope serialises");

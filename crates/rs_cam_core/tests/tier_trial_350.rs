@@ -612,7 +612,10 @@ fn apply_suggest(session: &mut ProjectSession) -> Result<Vec<Value>, String> {
         if !tc.enabled {
             continue;
         }
-        let Some(profile) = session.cutter_op_profile(tc) else {
+        let Some(profile) = session.cutter_op_profile(
+            tc,
+            rs_cam_core::dressup::feed_modulation::RunModulation::Off,
+        ) else {
             return Err(format!(
                 "toolpath {} ({}): tool {:?} not found",
                 tc.id.raw(),
