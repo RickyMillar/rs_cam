@@ -137,22 +137,6 @@ const END_INSET: f32 = 2.5;
 /// the text starts `LABEL_PADDING.x` past it.
 const SIDE_TOUCH: f32 = 1.0;
 
-/// The drop of a chip that hangs from a steep end, in points (P29-10 10g,
-/// lead ruling R8). Two needs set it:
-///
-/// - The chip clears a 2 pt line that meets the end (the feed cap on top
-///   of an RPM wall): the layout refuses a chip within `half_width + 0.5`
-///   = 1.5 pt of a line ([`line_hits_quad`]).
-/// - The text shares the row of the meeting line's label, whose text is
-///   centred on that line: with `LABEL_PADDING.y` the text top must be
-///   less than half a text row (6.5 pt) minus the 3 pt row overlap under
-///   the line, that is under 3.5 pt.
-///
-/// `2 x SIDE_TOUCH` (the width of a 2 pt line, 2 pt) meets both. The
-/// general gap `LABEL_GAP` (3 pt) put the text of "Max RPM" 0.5 pt below
-/// the row of "Max feed": a text line of its own.
-const END_HANG: f32 = 2.0 * SIDE_TOUCH;
-
 /// One drawn line in screen space, for the label layout.
 pub(crate) struct DrawnLine {
     pub(crate) points: Vec<egui::Pos2>,
@@ -614,11 +598,11 @@ fn end_places(line: &[egui::Pos2], last: bool, size: egui::Vec2) -> Option<Vec<Q
     }
     // Steep: horizontal text beside the end, the chip's near edge on the
     // edge of a 2 pt line (touching it), hanging into the line's own
-    // extent (down from a top end), `END_HANG` past the end.
+    // extent (down from a top end).
     let y = if inward.y > 0.0 {
-        end.y + END_HANG + half.y
+        end.y + LABEL_GAP + half.y
     } else {
-        end.y - END_HANG - half.y
+        end.y - LABEL_GAP - half.y
     };
     let dx = SIDE_TOUCH + half.x;
     Some(vec![

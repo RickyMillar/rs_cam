@@ -750,13 +750,16 @@ impl Details {
         open: &mut bool,
         add: impl FnOnce(&mut egui::Ui) -> R,
     ) -> egui::CollapsingResponse<R> {
-        let label = self.header_text();
-        let response = egui::CollapsingHeader::new(caption(label, tokens::TEXT_MUTED))
+        let (galley, full) = header_galley(ui, self.header_text());
+        let mut response = egui::CollapsingHeader::new(galley)
             .id_salt(self.id_salt)
             .open(Some(*open))
             .show(ui, add);
         if response.header_response.clicked() {
             *open = !*open;
+        }
+        if let Some(full) = full {
+            response.header_response = response.header_response.on_hover_text(full);
         }
         response
     }
@@ -767,10 +770,35 @@ impl Details {
         ui: &mut egui::Ui,
         add: impl FnOnce(&mut egui::Ui) -> R,
     ) -> egui::CollapsingResponse<R> {
-        let label = self.header_text();
-        egui::CollapsingHeader::new(caption(label, tokens::TEXT_MUTED))
+        let (galley, full) = header_galley(ui, self.header_text());
+        let mut response = egui::CollapsingHeader::new(galley)
             .id_salt(self.id_salt)
             .default_open(false)
-            .show(ui, add)
+            .show(ui, add);
+        if let Some(full) = full {
+            response.header_response = response.header_response.on_hover_text(full);
+        }
+        response
     }
+}
+
+/// The header text of a [`Details`], laid out on ONE line that ends where
+/// the header ends (P29-10 review item 1). `egui::CollapsingHeader` lays its
+/// text out with `TextWrapMode::Extend`, so a long header ("ramp entry ·
+/// may not occur · 7 not modelled") made the panel wider than its rail.
+/// The header takes the indent, the text and one `button_padding.x` (egui
+/// `CollapsingHeader::show_header`), so the text gets the rest of the row
+/// and an elided text ends in "…". The full text is the second value when
+/// the text is elided; the caller puts it on the hover, as `Label::truncate`
+/// does.
+fn header_galley(ui: &egui::Ui, text: String) -> (egui::WidgetText, Option<String>) {
+    let width = ui.available_width() - ui.spacing().indent - ui.spacing().button_padding.x;
+    let galley = egui::WidgetText::from(caption(text.clone(), tokens::TEXT_MUTED)).into_galley(
+        ui,
+        Some(egui::TextWrapMode::Truncate),
+        width.max(0.0),
+        egui::TextStyle::Button,
+    );
+    let full = galley.elided.then_some(text);
+    (egui::WidgetText::Galley(galley), full)
 }

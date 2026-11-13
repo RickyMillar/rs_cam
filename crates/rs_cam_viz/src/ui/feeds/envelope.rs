@@ -1314,7 +1314,7 @@ pub fn planned_marks(
             marks
                 .marks()
                 .iter()
-                .map(|m| (*m, mark_color(env.rows(), m.cut)))
+                .map(|m| (*m, mark_tone_color(env.rows(), m.cut)))
                 .collect()
         })
         .unwrap_or_default();
@@ -1324,21 +1324,21 @@ pub fn planned_marks(
     out
 }
 
-/// The colour of the mark of `cut`: `CAUTION` when one of its planned rows
-/// exceeds, else `TEXT_MUTED`.
+/// The colour of the mark of `cut`: the tone of its worst planned row
+/// (`CheckRow::rank_cmp`: a row that exceeds ranks first) through the one
+/// tone colour map, `tone_color` on a `ToneSurface::PlotMark`. A cut with
+/// no row has no number.
 #[must_use]
-pub fn mark_color(
+pub fn mark_tone_color(
     rows: &[rs_cam_core::limits::CheckRow],
     cut: rs_cam_core::limits::CutKind,
 ) -> egui::Color32 {
-    if rows
+    let tone = rows
         .iter()
-        .any(|r| r.cut() == Some(cut) && r.tone().exceeds())
-    {
-        tokens::CAUTION
-    } else {
-        tokens::TEXT_MUTED
-    }
+        .filter(|r| r.cut() == Some(cut))
+        .min_by(|a, b| a.rank_cmp(b))
+        .map_or(rs_cam_core::limits::Tone::NoNumber, |r| r.tone());
+    crate::ui::components::tone_color(tone, crate::ui::components::ToneSurface::PlotMark)
 }
 
 /// The hover of a planned mark: the cut and its point, then each planned

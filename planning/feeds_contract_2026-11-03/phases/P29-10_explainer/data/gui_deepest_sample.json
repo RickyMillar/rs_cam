@@ -1,0 +1,4 @@
+{
+  "_source": "rs_cam_gui release build of the P29-10 review tree (binary 2026-11-14 02:19), operator file loaded read-only, then generate_all (its fixpoint ran 3 simulations and left a simulation of all 18 operations: 18 traces, Readiness 'Simulation: Up to date'; no separate run_simulation, which the kernel OOM killer stopped): the line 'Depth a to b mm' of the cut force card of each op in the Simulation inspector (Metrics tab, playhead at the start of the op). idx 0 has no sample on the card (cut force N/A), so it keeps the no-sample top.",
+  "operator": {"1": 10.0, "2": 20.7, "6": 6.47, "14": 5.73, "15": 6.41}
+}

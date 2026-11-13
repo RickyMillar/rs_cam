@@ -38,7 +38,7 @@ select, button { font: inherit; color: var(--ink); background: var(--panel);
 button[aria-pressed="true"] { border-color: var(--accent); color: var(--accent); }
 table { width: 100%; border-collapse: collapse; font-size: 12.5px; }
 th { text-align: left; color: var(--muted); font-weight: 500; border-bottom: 1px solid var(--line); padding: 4px; }
-td { border-bottom: 1px solid var(--line); padding: 3px 4px; vertical-align: top; overflow-wrap: anywhere; }
+td { border-bottom: 1px solid var(--line); padding: 3px 4px; vertical-align: top; overflow-wrap: break-word; }
 tr.row { cursor: pointer; }
 tr.row:hover { background: var(--pick); }
 tr.row.lit { background: var(--pick); }
@@ -48,7 +48,7 @@ tr.row.lit { background: var(--pick); }
 .scroll { max-height: 470px; overflow: auto; }
 svg { width: 100%; height: auto; display: block; }
 .legend { display: flex; flex-wrap: wrap; gap: 12px; color: var(--muted); font-size: 12px; margin-top: 6px; }
-.claim { padding-left: 8px; border-left: 3px solid var(--line); }
+p.claim { padding-left: 8px; border-left: 3px solid var(--line); }
 .claim b { color: var(--accent); }
 .tools { display: flex; flex-wrap: wrap; gap: 8px; align-items: center; margin-bottom: 8px; }
 .note { color: var(--muted); font-size: 12.5px; }
@@ -58,9 +58,10 @@ code { font-size: 12.5px; }
 <body>
 <main>
 <h1>One plane: the planned cuts, the force field and the limit rows</h1>
-<p class="sub">Feeds contract P29-10, commit 10g. The data in this page comes from the files in
-<code>data/</code>: MCP replies of a GUI built from the 10g tree, the CLI output and the force
-planes that the core door builds. <code>assert_claims.py</code> asserts each numbered claim.</p>
+<p class="sub">Feeds contract P29-10, commit 10g and its review. The data in this page comes from
+the files in <code>data/</code>: MCP replies and the CLI output of the 10g tree, and the force
+planes that the core door builds on the review tree at the depth top of the GUI chart of the
+review build. <code>assert_claims.py</code> asserts each numbered claim.</p>
 
 <div class="grid">
   <section class="card">
@@ -88,7 +89,9 @@ planes that the core door builds. <code>assert_claims.py</code> asserts each num
 
 <h2>What the plane shows</h2>
 <p>The x axis is the engaged width (mm, 0 to the tool diameter D). The y axis is the depth
-(mm, 0 to the top of the GUI chart).
+(mm, 0 to the top of the GUI simulation chart: the deepest simulated sample of the op lifts it,
+read from the GUI after <code>generate_all</code> simulated every operation,
+<code>data/gui_deepest_sample.json</code>).
 <span class="claim" data-claim="3">Each hollow square is one declared cut of the op at its point
 of the plane: the body at the point, a slot ring at D, a planner cap at its own wider width, an
 entry at D and its own depth (claim 3).</span>
@@ -111,12 +114,18 @@ the row judges the end of that feed interval (one mm/min).</p>
 <p class="claim" data-claim="4"><b>4.</b> A mark takes its tone from its row, never from its
 position. For the body cut (the chip and the width model of the field) the force-budget row
 exceeds when the mark is above the 100 % line by more than one cell. For every other cut the
-row is the truth and its own bound is on the hover. Example: on idx 1 the helix mark (D, 2.0 mm)
-is above the body line at D (about 1.93 mm), but its row reads its own entry chip (bound
-2.35 mm) and is inside.</p>
+row is the truth and its own bound is on the hover. The claim judges the planned body mark at
+the proposal and the stated body mark at the stated cut. Example of a row that exceeds: on idx 1
+the stated body mark (5.5 mm wide, 10 mm deep) is above the body 100 % line (about 2.10 mm at
+that width), and its stated row reads "depth 387 % over force cap". Example of another cut: on
+idx 1 the helix mark (D, 2.0 mm) is above the body line at D (about 1.93 mm), but its row reads
+its own entry chip (bound 2.35 mm) and is inside. A claim that judges no case fails as NOT
+TESTED.</p>
 <p class="claim" data-claim="5a"><b>5a.</b> In every column the force-budget edge is never
 above the body 100 % line by more than one cell. Where the edge is under the body line, another
-declared cut sets it, and the mark of that cut shows it.</p>
+declared cut sets it, and the mark of that cut shows it. The claim judges no column of two ops:
+on idx 0 the force-budget edge is above the chart top in every column, and on idx 6 every column
+is on the flute top (a geometric cap).</p>
 <p class="claim" data-claim="5b"><b>5b.</b> In every column where the body cut sets the edge
 (core names the cut of each column), the edge is the body 100 % line within one cell. A column
 on a geometric cap (the flute top, the depth floor) is outside this claim.</p>
@@ -195,7 +204,10 @@ function draw() {
   });
   op.edges.forEach(e => {
     if (e.kind !== "rigidity") return;
-    const pts = e.points.map(p => `${xs(Math.min(p[0], op.diameter))},${ys(clip(p[1]))}`).join(" ");
+    // A part of the edge above the chart top is not drawn (the GUI chart
+    // draws no edge past its view); it is not held on the frame.
+    const pts = e.points.filter(p => p[1] <= op.top + 1e-9)
+      .map(p => `${xs(Math.min(p[0], op.diameter))},${ys(p[1])}`).join(" ");
     s += `<polyline points="${pts}" fill="none" stroke="${css("--ink")}" stroke-width="2"/>`;
   });
   const marks = op[at];

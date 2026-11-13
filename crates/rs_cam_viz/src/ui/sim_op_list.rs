@@ -1154,7 +1154,10 @@ fn toolpath_status_flags(
                 flags.push(ToolpathStatusFlag::new(
                     format!("⚠ {short}"),
                     detail,
-                    crate::ui::components::role_of_tone(row.tone()).text(),
+                    crate::ui::components::tone_color(
+                        row.tone(),
+                        crate::ui::components::ToneSurface::Row,
+                    ),
                     0,
                 ));
             } else if row.is_vacuous() {

@@ -436,18 +436,20 @@ fn surfaces(state: &AppState) -> Vec<Surface> {
     // must return that one line (Pocket 41, 3D Rough 38, 3D Finish 29).
     // P29-10 10g (lead ruling R8): HEAD read Pocket 41, 3D Rough 38, 3D
     // Finish 30 (no face row on these fixtures: no stated row exceeds).
-    // "Max RPM" hung from the top end of its wall `LABEL_GAP` (3 pt) below
-    // the end, so its text started at y 377.5 against the "Max feed" row
-    // (367 to 380): 0.5 pt short of the 3-pixel merge, a text line of its
-    // own on every tab. A chip that hangs from a steep end now drops
-    // `END_HANG` (2 pt, `chart/labels.rs`): it clears the meeting line and
-    // its text (y 376.5) shares the "Max feed" row. Measured after: Pocket
-    // 40, 3D Rough 37, 3D Finish 29. Each cap is the measure, with no
-    // margin.
+    // "Max RPM" hangs from the top end of its wall `LABEL_GAP` (3 pt) below
+    // the end, so its text starts at y 377.5 against the "Max feed" row
+    // (367 to 380): 0.5 pt short of the 3-pixel merge rule of
+    // `visible_lines`, so the counter reads it as a text line of its own.
+    // 10g added an `END_HANG` of 2 pt to move the text 1 pt up into that
+    // row. The review of 10g (section 17, item 3) removed it: the value was
+    // fitted to this counter and moved no visible pixel, so it was not a
+    // layout rule. The caps are the counts without it: Pocket 41, 3D Rough
+    // 38, 3D Finish 30. The extra line is a count of the merge rule, not a
+    // line the operator reads.
     let caps: [(&str, [usize; 4]); 3] = [
-        ("Pocket", [10, 40, 17, 22]),
-        ("3D Rough", [7, 37, 15, 15]),
-        ("3D Finish", [9, 29, 16, 14]),
+        ("Pocket", [10, 41, 17, 22]),
+        ("3D Rough", [7, 38, 15, 15]),
+        ("3D Finish", [9, 30, 16, 14]),
     ];
     for (name, tab_caps) in caps {
         let id = configs
@@ -582,6 +584,126 @@ fn the_inspector_text_is_bounded_ic1() {
         total_rows > 100,
         "the renders painted only {total_rows} rows"
     );
+    assert!(failures.is_empty(), "{}", failures.join("\n"));
+}
+
+/// P29-10 review item 4: the IC1 fixture above paints no face line (no
+/// stated row exceeds), so no cap covered the face line of 10f. This
+/// fixture is the 3D Rough in a hardwood (a material with a force line)
+/// with a stated cut of 10 x 5 mm on the 6 mm 2F end mill: a stated row
+/// exceeds, and the Suggest card paints its face line.
+fn face_line_fixture() -> (AppState, ToolpathId) {
+    let mut tool = ToolConfig::test_default(ToolId::from_raw(TOOL), ToolType::EndMill);
+    tool.diameter = 6.0;
+    tool.set_flute_count(rs_cam_core::compute::tool_config::ToolFact::Stated(2));
+    let stock = StockConfig {
+        z: Some(18.0),
+        auto_from_model: false,
+        material: rs_cam_core::material::Material::SolidWood {
+            species: rs_cam_core::material::WoodSpecies::GenericHardwood,
+        },
+        ..StockConfig::default()
+    };
+    let mut op = OperationConfig::Adaptive3d(Default::default());
+    rs_cam_core::compute::fixture_values::fill_unset_keep_floor(&mut op);
+    if let OperationConfig::Adaptive3d(c) = &mut op {
+        c.depth_per_pass = Some(10.0);
+        c.stepover = Some(5.0);
+    }
+    let mut builder = ProjectSessionBuilder::new()
+        .tool(tool)
+        .model(mesh_model(MODEL_3D))
+        .stock(stock);
+    builder
+        .add_toolpath(0, toolpath("Deep Rough", MODEL_3D, op))
+        .expect("add the face line toolpath");
+    let mut state = AppState::new();
+    state.replace_session(builder.build());
+    let id = state.session().toolpath_configs()[0].id;
+    state.gui.toolpath_rt.insert(id, ToolpathRuntime::new(true));
+    (state, id)
+}
+
+/// P29-10 review item 4: the face line of the Suggest card (10f) is bounded.
+/// On the Passes tab of an op whose stated cut exceeds, at 340 points and
+/// in the 240-point rail: the face line paints (the worst stated row by the
+/// core rank, its role glyph first), on ONE row, inside its clip, within
+/// the face limit, and the tab stays inside its line cap (the measure, no
+/// margin). The 240-point render reads only the layout rules, as the
+/// surfaces of `the_inspector_text_is_bounded_ic1` do.
+#[test]
+fn the_face_line_is_bounded_ic1() {
+    use rs_cam_core::limits::Subject;
+    let (mut state, id) = face_line_fixture();
+    let envelope = state
+        .session()
+        .limit_rows(0, None)
+        .expect("the toolpath exists")
+        .envelope()
+        .expect("the op has a tool")
+        .expect("the session envelope builds");
+    let face = envelope
+        .iter()
+        .filter(|row| matches!(row.subject(), Subject::Stated) && row.tone().exceeds())
+        .min_by(|a, b| a.rank_cmp(b))
+        .map(|row| row.face().to_owned())
+        .expect("non-vacuity: a stated row exceeds, so the card paints a face line");
+    let passes = ToolpathTab::Passes;
+    let mut failures = Vec::new();
+    // The cap is the measure with no margin (W6 rule): 39 lines at 340
+    // points, the face line "stated point · depth 67 % over vendor depth
+    // cap" among them (P29-10 review, 2026-11-14).
+    for (width, cap) in [(PANEL_WIDTH, 39_usize), (RAIL_WIDTH, usize::MAX)] {
+        let frame = surface(&mut state, Selection::Toolpath(id), Some(passes), width);
+        let lines = visible_lines(&frame.painted);
+        eprintln!("== Deep Rough / Passes @{width}: {lines} visible lines");
+        let painted: Vec<&Painted> = frame
+            .painted
+            .iter()
+            .filter(|p| {
+                let text = p
+                    .text
+                    .strip_suffix(tokens::GLYPH_DETAIL)
+                    .map_or(p.text.as_str(), str::trim_end);
+                [tokens::GLYPH_DANGER, tokens::GLYPH_CAUTION]
+                    .iter()
+                    .any(|glyph| text.strip_prefix(glyph).map(str::trim_start) == Some(&face))
+            })
+            .collect();
+        if painted.len() != 1 {
+            failures.push(format!(
+                "@{width}: the face line {face:?} paints {} times, not once",
+                painted.len()
+            ));
+        }
+        for p in painted {
+            eprintln!(
+                "   face line [{}] {:.0}-{:.0} {}",
+                p.rows, p.span.0, p.span.1, p.text
+            );
+            if p.rows != 1 {
+                failures.push(format!("@{width}: the face line wraps to {} rows", p.rows));
+            }
+            if p.overflow > 0.5 {
+                failures.push(format!(
+                    "@{width}: the face line paints {:.1} points past its clip",
+                    p.overflow
+                ));
+            }
+            if p.text.chars().count() > FACE_LIMIT {
+                failures.push(format!("@{width}: the face line is over the face limit"));
+            }
+        }
+        if frame.excess_width > 0.5 {
+            failures.push(format!(
+                "@{width}: the content is {:.1} points wider than the panel",
+                frame.excess_width
+            ));
+        }
+        if lines > cap {
+            failures.push(format!("@{width}: {lines} visible text rows, cap {cap}"));
+        }
+    }
     assert!(failures.is_empty(), "{}", failures.join("\n"));
 }
 

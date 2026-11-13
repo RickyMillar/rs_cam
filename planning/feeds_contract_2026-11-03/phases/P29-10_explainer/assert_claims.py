@@ -4,7 +4,10 @@ with the lead rulings of section 16).
 
 The script reads only the files in data/ next to it and the page
 index.html (for claim 8). It prints each claim with PASS or FAIL and the
-numbers behind it, and exits non-zero when a claim is false.
+numbers behind it, and exits non-zero when a claim is false. A claim with
+zero cases prints NOT TESTED and also makes the script exit non-zero (the
+P29-10 review, section 17 item 1): a claim that judged nothing proves
+nothing.
 
 data/:
   mcp_safe_envelope_operator_<idx>.json  MCP get_safe_envelope replies
@@ -13,6 +16,11 @@ data/:
   field_<project>.json                    the force planes (core door,
                                           written by the instrument
                                           p29_10_explainer_field_instrument)
+                                          at the depth top of the GUI chart
+  gui_deepest_sample.json                 the deepest simulated sample of
+                                          each op (GUI cut force card); the
+                                          instrument reads it through
+                                          RS_CAM_P29_10_DEEPEST_SAMPLE
 """
 
 import bisect
@@ -30,9 +38,14 @@ REL = 1e-9
 results = []
 
 
-def claim(cid, text, ok, detail):
+def claim(cid, text, ok, detail, cases):
+    """Record one claim. `cases` is the number of cases the claim judged;
+    zero cases is NOT TESTED, which fails like a false claim."""
+    tested = cases > 0
+    ok = ok and tested
     results.append((cid, text, ok, detail))
-    print(f"[{'PASS' if ok else 'FAIL'}] claim {cid}: {text}")
+    word = "PASS" if ok else ("FAIL" if tested else "NOT TESTED")
+    print(f"[{word}] claim {cid}: {text} ({cases} cases)")
     for line in detail:
         print(f"         {line}")
 
@@ -125,9 +138,10 @@ def main():
 
     # Claim 1: one planned row per declared cut and planned limit; one
     # group row per gate and group.
-    detail, ok = [], True
+    detail, ok, n1 = [], True, 0
     for idx, env in envs.items():
         rows = planned(env["limit_rows"])
+        n1 += len(rows)
         pairs = [(r["subject"]["cut"], r["check"]["limit"]) for r in rows]
         if len(pairs) != len(set(pairs)):
             ok = False
@@ -158,9 +172,10 @@ def main():
                 ok = False
                 detail.append(f"{tp['toolpath_name']}: gate {g} groups {groups}")
         n_tp += 1
+        n1 += len(keys)
     detail.append(f"{n_tp} toolpaths of the load report: each gate has one row per cut group")
     claim("1", "One planned row per declared cut and planned limit; one group row per gate "
-          "and cut group.", ok, detail)
+          "and cut group.", ok, detail, n1)
 
     # Claim 2: every margin is the side rule of its judged value and its
     # bound (section 6 claim 3). The judged value is the value, except on
@@ -210,7 +225,8 @@ def main():
                       f"feed {sorted(feeds)} mm/min")
     detail.append(f"{n} rows with a value, a bound and a margin; {n - n_entry} on the plain side "
                   f"rule, {n_entry} entry chip rows at the end of their stored-feed interval")
-    claim("2", "Every margin is the side rule of its judged value and its bound.", ok, detail[:14])
+    claim("2", "Every margin is the side rule of its judged value and its bound.", ok, detail[:14],
+          n)
 
     # Claim 3: each planned mark sits at the plane point of its rows.
     detail, ok, n = [], True, 0
@@ -224,23 +240,38 @@ def main():
                 detail.append(f"idx {idx}: {cut}: row {at} mark {marks.get(cut)}")
             n += at is not None
     detail.append(f"{n} planned rows with a plane point, each at the mark of its cut")
-    claim("3", "Each planned mark sits at the (ae, ap) of its rows.", ok, detail)
+    claim("3", "Each planned mark sits at the (ae, ap) of its rows.", ok, detail, n)
 
     # Claim 4 (ruling R3): a mark takes its tone from its row. For the body
     # cut the force-budget row exceeds exactly when the mark is above the
-    # body 100 % contour, within one cell.
+    # body 100 % contour, within one cell. Two kinds of body mark: the
+    # planned body mark at the proposal (its planned force-budget row) and
+    # the STATED body mark at the stated point (its stated force-budget
+    # row; review item 1: the stated mark of idx 1 is 387 % over the force
+    # cap, a row that exceeds). The claim needs a row that exceeds and a row
+    # that does not, each decided by the side of the line (not by the
+    # one-cell tolerance); with no such row it is NOT TESTED.
     detail, ok, n, tol = [], True, 0, 0
+    side_exceeds = side_within = 0
     for idx, env in envs.items():
         op = fields[idx]
         if not op.get("plane"):
             continue
         field = Field(op)
+        cases = []
         for r in planned(env["limit_rows"]):
             if r["subject"]["cut"] != "body" or r["check"]["limit"] != "force_budget":
                 continue
-            at = r["subject"]["at"]
-            if at is None or r["check"]["bound"] is None:
+            if r["subject"]["at"] is None or r["check"]["bound"] is None:
                 continue
+            cases.append(("planned", r["subject"]["at"], r))
+        stated_marks = {m["cut"]: m["at"] for m in env["plane_marks"]["stated"]["marks"]}
+        for r in env["limit_rows"]:
+            if (r["subject"]["kind"] != "stated" or r["check"]["limit"] != "force_budget"
+                    or r["check"]["bound"] is None or "body" not in stated_marks):
+                continue
+            cases.append(("stated", stated_marks["body"], r))
+        for kind, at, r in cases:
             d = field.depth_at_budget(at["ae_mm"])
             exceeds = r["check"]["state"]["state"] == "exceeds"
             if d is None:
@@ -254,10 +285,13 @@ def main():
                 tol += 1
             elif above != exceeds:
                 ok = False
+            else:
+                side_exceeds += exceeds
+                side_within += not exceeds
             detail.append(
-                f"idx {idx}: body mark ap {at['ap_mm']:.3f} at ae {at['ae_mm']:.3f}; "
+                f"idx {idx}: {kind} body mark ap {at['ap_mm']:.3f} at ae {at['ae_mm']:.3f}; "
                 f"contour {'above the chart' if d is None else f'{d:.3f}'}; "
-                f"row {r['check']['state']['state']}; cell {field.cell:.3f}"
+                f"row {r['face']!r} {r['check']['state']['state']}; cell {field.cell:.3f}"
                 + ("; within one cell" if near else ""))
     # The page example: the helix of idx 1 sits above the body contour at
     # D and its row (its own chip) is inside its own bound.
@@ -275,26 +309,27 @@ def main():
     else:
         detail.append(f"idx 1 helix: mark ap {ex[0]:.3f} above the body contour {ex[1]:.3f} at D; "
                       f"row bound {ex[2]:.3f} (its own chip), state {ex[3]}: the row is the truth")
-    detail.append(f"{n} body marks: {tol} decided by the one-cell tolerance, {n - tol} by the "
-                  "side of the line; no body force-budget row of these ops exceeds")
-    if n == 0:
-        ok = False
+    detail.append(f"{n} body marks: {tol} decided by the one-cell tolerance; by the side of the "
+                  f"line {side_exceeds} rows that exceed (mark above) and {side_within} rows "
+                  f"within (mark under)")
     claim("4", "A mark takes its tone from its row; a body mark above the 100 % contour "
-          "(beyond one cell) is a row that exceeds.", ok, detail)
+          "(beyond one cell) is a row that exceeds.", ok, detail,
+          n if side_exceeds and side_within else 0)
 
     # Claims 5a and 5b (ruling R2).
     d5a, ok5a, d5b, ok5b = [], True, [], True
-    caps = n5b = 0
+    caps = n5b = n5a = 0
     for idx, env in envs.items():
         op = fields[idx]
         cols = env["force_budget_columns"]
         if not cols or not op.get("plane"):
             continue
         field = Field(op)
-        n_cols = n_above = 0
+        n_cols = n_above = n_caps = 0
         for col in cols:
             if col["sets"] != "force_budget":
                 caps += 1
+                n_caps += 1
                 continue
             ae, ap = col["ae_mm"], col["ap_mm"]
             if ae > field.aes[-1] + 1e-9 or ap is None:
@@ -316,14 +351,19 @@ def main():
                 if abs(ap - d) > field.cell:
                     ok5b = False
                     d5b.append(f"idx {idx}: ae {ae:.3f}: edge {ap:.3f}, contour {d:.3f}")
+        n5a += n_cols
         d5a.append(f"idx {idx}: {n_cols} columns judged, {n_above} above the chart top (cell "
-                   f"{field.cell:.3f} mm, top {field.top:.3f} mm)")
+                   f"{field.cell:.3f} mm, top {field.top:.3f} mm)"
+                   + ("" if n_cols else
+                      " NOT TESTED on this op: every column is on a geometric cap"
+                      if n_caps == len(cols) else
+                      " NOT TESTED on this op: no force-budget column is under the chart top"))
     d5a.append(f"{caps} columns on a geometric cap (flute top or depth floor) are outside 5b")
     claim("5a", "In every column the force-budget edge is never above the body 100 % contour "
-          "by more than one cell.", ok5a, d5a)
+          "by more than one cell.", ok5a, d5a, n5a)
     d5b.append(f"{n5b} columns where the body cut sets the edge")
     claim("5b", "Where the body cut sets the edge, the edge is the body 100 % contour within "
-          "one cell.", ok5b and n5b > 0, d5b)
+          "one cell.", ok5b, d5b, n5b)
 
     # Claim 6: WorstCase and LowerBound hold on their rows only.
     detail, ok, nw, nl = [], True, 0, 0
@@ -345,7 +385,7 @@ def main():
     detail.append(f"{nw} ramp rows at an own depth carry worst_case; {nl} lower_bound rows, all "
                   "on the body plane of a Project Curve")
     claim("6", "WorstCase holds exactly on a ramp entry row at its own depth; LowerBound only on "
-          "the body plane of a Project Curve.", ok and nw > 0 and nl > 0, detail)
+          "the body plane of a Project Curve.", ok, detail, nw + nl if nw and nl else 0)
 
     # Claim 7: the CLI rows equal the MCP rows for the same op.
     detail, ok = [], True
@@ -358,7 +398,7 @@ def main():
                 detail.append(f"idx {idx}: {key} differs")
         detail.append(f"idx {idx}: {len(env['limit_rows'])} rows, marks, columns and the "
                       "outside cut equal")
-    claim("7", "The CLI rows equal the MCP rows for the same op.", ok, detail)
+    claim("7", "The CLI rows equal the MCP rows for the same op.", ok, detail, len(envs))
 
     # Claim 9: a drill gate row states its population in holes.
     detail, ok, n = [], True, 0
@@ -373,7 +413,7 @@ def main():
                 ok = False
                 detail.append(f"{tp['toolpath_name']}: {r['face']}: {pop} / {r['detail'][:80]}")
     detail.append(f"{n} drill gate rows with a population, each 'N of M holes' in its detail")
-    claim("9", "A drill gate row states the unit of its population: holes.", ok and n > 0, detail)
+    claim("9", "A drill gate row states the unit of its population: holes.", ok, detail, n)
 
     # Claim 10: own depth in the detail exactly when the point holds one.
     detail, ok, n = [], True, 0
@@ -388,7 +428,7 @@ def main():
                 detail.append(f"idx {idx}: {r['face']}: point own depth {own}, detail {says}")
     detail.append(f"{n} planned rows at an own depth; each detail names it, and no other does")
     claim("10", "A planned row names an own depth exactly when its plane point holds one.",
-          ok and n > 0, detail)
+          ok, detail, n)
 
     # Claim 8: every claim the page writes has its assert number beside it.
     detail, ok = [], True
@@ -402,7 +442,8 @@ def main():
         ok = False
     detail.append(f"{len(tags)} claim paragraphs on the page; asserted ids {sorted(ids | {'8'})}; "
                   f"missing on the page {missing}; on the page with no assert {unknown}")
-    claim("8", "Every claim the page writes has an assert number beside it.", ok, detail)
+    claim("8", "Every claim the page writes has an assert number beside it.", ok, detail,
+          len(tags))
 
     bad = [cid for cid, _, good, _ in results if not good]
     print(f"\n{len(results) - len(bad)} of {len(results)} claims PASS" +

@@ -691,7 +691,7 @@ pub fn stated_marks(
         .iter()
         .map(|m| {
             let color = if marks.describes_rows() {
-                envelope::mark_color(env.rows(), m.cut)
+                envelope::mark_tone_color(env.rows(), m.cut)
             } else {
                 PLANNED_CUT_COLOR
             };

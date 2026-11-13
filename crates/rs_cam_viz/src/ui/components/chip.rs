@@ -56,6 +56,37 @@ pub fn role_of_tone(tone: rs_cam_core::limits::Tone) -> Role {
     }
 }
 
+/// The kind of surface that paints a core row tone (P29-10 review item 4).
+#[derive(Clone, Copy, PartialEq, Eq, Debug)]
+pub enum ToneSurface {
+    /// A limit row of the inspector, a card or a list: the colour of
+    /// [`role_of_tone`].
+    Row,
+    /// A planned-cut mark on a plot. A plot has no danger colour (ruling Q6
+    /// of P17), so a mark is `CAUTION` when its tone exceeds (either tone),
+    /// else `TEXT_MUTED`.
+    PlotMark,
+}
+
+/// **THE colour of a core row tone on a surface** (P29-10 review item 4).
+/// Every surface that colours a [`rs_cam_core::limits::Tone`] reads this
+/// function; a row surface also reads [`role_of_tone`] for its glyph and
+/// tint. No other viz function maps a tone to a colour
+/// (`no_surface_matches_a_limit_p29_10`).
+#[must_use]
+pub fn tone_color(tone: rs_cam_core::limits::Tone, surface: ToneSurface) -> egui::Color32 {
+    match surface {
+        ToneSurface::Row => role_of_tone(tone).text(),
+        ToneSurface::PlotMark => {
+            if tone.exceeds() {
+                tokens::CAUTION
+            } else {
+                tokens::TEXT_MUTED
+            }
+        }
+    }
+}
+
 impl Role {
     /// The role's text colour.
     #[must_use]
