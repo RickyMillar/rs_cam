@@ -654,7 +654,7 @@ pub struct ModulationContext<'a> {
     /// with no floor.
     pub chipload_band: Option<ChiploadBand>,
     /// Feeds contract P11b2: whether the op thins its chip radially (the
-    /// one rule, [`RadialThinning::of`] on the op's feeds style). The band
+    /// one rule, the body cut's `CutFacts::thins_chip`). The band
     /// holds the PEAK chip, so on a thinning op the chipload cap, the floor
     /// and the pin arms are `band x lift x rpm x Z`, with the lift
     /// ([`RadialThinning::lift`]) at the move's modelled engagement. A

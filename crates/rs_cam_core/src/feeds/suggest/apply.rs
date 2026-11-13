@@ -1547,12 +1547,26 @@ pub fn apply_drill_defaults(
 ///
 /// A non-positive or non-finite depth counts as not known.
 pub(crate) fn peck_for_hole(op_type: OperationType, peck: f64, drill_depth: Option<f64>) -> f64 {
+    peck_in_range(
+        OperationConfig::param_range_for_type(op_type, "peck_depth").map(|r| r.inclusive_bounds()),
+        peck,
+        drill_depth,
+    )
+}
+
+/// The rule of [`peck_for_hole`] with the schema range of the op's
+/// `peck_depth` given (P29-11 L-1: the drill cut of `cuts()` carries its
+/// range, `compute::catalog::DrillHole`). `None`: the op has no range.
+pub(crate) fn peck_in_range(
+    range: Option<std::ops::RangeInclusive<f64>>,
+    peck: f64,
+    drill_depth: Option<f64>,
+) -> f64 {
     let depth = drill_depth.filter(|d| d.is_finite() && *d > 0.0);
     let capped = depth.map_or(peck, |d| peck.min(d * 0.75));
-    let Some(range) = OperationConfig::param_range_for_type(op_type, "peck_depth") else {
+    let Some(bounds) = range else {
         return capped;
     };
-    let bounds = range.inclusive_bounds();
     let in_range = capped.max(*bounds.start()).min(*bounds.end());
     match depth {
         Some(d) if *bounds.start() > d => d,

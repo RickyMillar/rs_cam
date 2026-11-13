@@ -478,6 +478,57 @@ pub struct CutList {
     cuts: [Option<DeclaredCut>; MAX_DECLARED_CUTS],
     /// The kind of the first cut that the full list could not hold.
     dropped: Option<CutKind>,
+    /// P29-11 L-1 (S5): the hole of the drill cycle, `Some` exactly when
+    /// the list declares [`CutKind::Drill`].
+    drill_hole: Option<DrillHole>,
+}
+
+/// P29-11 L-1 (S5): the hole of a drill cycle, a fact of the drill cut. The
+/// envelope's peck rule reads it (`feeds::envelope`, card row 29), not the
+/// op variant.
+#[derive(Debug, Clone, Copy, PartialEq)]
+pub struct DrillHole {
+    /// The bounds of the schema range of the op's `peck_depth` (the start
+    /// and the end of `ParamRange::inclusive_bounds`), or `None` when the
+    /// op has none.
+    peck_range: Option<(f64, f64)>,
+    /// The depth of the hole.
+    depth: HoleDepth,
+}
+
+/// The depth of a drill hole.
+#[derive(Debug, Clone, Copy, PartialEq)]
+enum HoleDepth {
+    /// The depth below the top that the floor states (`None`: not known).
+    BelowTop(Option<f64>),
+    /// Through the stock and into the spoilboard by `penetration_mm`.
+    ThroughStock {
+        /// The depth into the spoilboard (mm).
+        penetration_mm: f64,
+    },
+}
+
+impl DrillHole {
+    /// The depth of the hole (mm) on a stock of thickness `stock_z`.
+    /// `None` when it is not known.
+    #[must_use]
+    pub fn depth_mm(&self, stock_z: Option<f64>) -> Option<f64> {
+        match self.depth {
+            HoleDepth::BelowTop(depth) => depth,
+            HoleDepth::ThroughStock { penetration_mm } => stock_z.map(|z| z + penetration_mm),
+        }
+    }
+
+    /// The peck rule of the hole: `peck` under the hole and inside the
+    /// schema range (`feeds::suggest::peck_for_hole`).
+    #[must_use]
+    pub fn peck_rule_mm(&self, peck: f64, stock_z: Option<f64>) -> f64 {
+        crate::feeds::suggest::peck_in_range(
+            self.peck_range.map(|(lo, hi)| lo..=hi),
+            peck,
+            self.depth_mm(stock_z),
+        )
+    }
 }
 
 /// The list holds [`MAX_DECLARED_CUTS`] cuts and has no free place.
@@ -488,6 +539,7 @@ impl CutList {
     const EMPTY: Self = Self {
         cuts: [None; MAX_DECLARED_CUTS],
         dropped: None,
+        drill_hole: None,
     };
 
     /// Adds `cut` in the first free place, or `Err(CutListFull)` when the
@@ -500,6 +552,13 @@ impl CutList {
             .ok_or(CutListFull)?;
         *free = Some(cut);
         Ok(())
+    }
+
+    /// P29-11 L-1 (S5): the hole of the drill cycle, or `None` when the
+    /// list declares no drill cycle.
+    #[must_use]
+    pub const fn drill_hole(&self) -> Option<DrillHole> {
+        self.drill_hole
     }
 
     /// The kind of the first cut that the list could not hold, or `None`
@@ -577,6 +636,141 @@ impl CutList {
             // Not reached: `cuts()` declares the body of every op first.
             None => CutFacts::DRILL_CYCLE,
         }
+    }
+}
+
+impl super::OperationType {
+    /// P29-5 (ruling R3): the depth limit of the op's body cut, with no
+    /// number. THE one filler of `limits::CutFacts::depth_rule`: it reads
+    /// only the registry row (the family, the pass role and the material
+    /// sides of the radial rule), so a reader with the op kind and no
+    /// config reads the same limit as the cut list.
+    /// `RigidityProfile::depth_cap_of` adds the machine's numbers. P29-11
+    /// L-1 (S4) moved the rule here from `machine/mod.rs`: a cut fact is
+    /// declared in this file.
+    #[must_use]
+    pub fn body_depth_limit(self) -> crate::limits::DepthLimit {
+        let spec = self.spec();
+        depth_limit_of(
+            spec.feeds_family,
+            spec.feeds_pass_role,
+            self.registry_entry()
+                .capabilities
+                .cut_rule
+                .radial
+                .body_sides(),
+        )
+    }
+}
+
+/// Feeds contract P11b2, decision L2: the radial chip-thinning rule of the
+/// op's cuts, from its feeds style. A drill cycle has no radial cut; a
+/// finish pass holds the band chip as its advance; every other cut thins.
+/// P29-11 L-1 (S6) moved the rule here from `feeds::geometry`: a cut fact
+/// is declared in this file, and a reader takes `CutFacts::thins_chip`.
+const fn thins_chip_of(family: FeedsOperationFamily, role: PassRole) -> RadialThinning {
+    // EXEMPT(P28-18, F-ThinsChip)
+    match (family, role) {
+        (FeedsOperationFamily::Drill, _) => RadialThinning::DrillCycle,
+        (
+            FeedsOperationFamily::Adaptive
+            | FeedsOperationFamily::Pocket
+            | FeedsOperationFamily::Contour
+            | FeedsOperationFamily::Parallel
+            | FeedsOperationFamily::Scallop
+            | FeedsOperationFamily::Trace
+            | FeedsOperationFamily::Face,
+            PassRole::Finish,
+        ) => RadialThinning::FinishPass,
+        (
+            FeedsOperationFamily::Adaptive
+            | FeedsOperationFamily::Pocket
+            | FeedsOperationFamily::Contour
+            | FeedsOperationFamily::Parallel
+            | FeedsOperationFamily::Scallop
+            | FeedsOperationFamily::Trace
+            | FeedsOperationFamily::Face,
+            PassRole::Roughing | PassRole::SemiFinish,
+        ) => RadialThinning::Applied,
+    }
+}
+
+/// **The depth limit of one body cut, with no number.** S3 (2026-09-18),
+/// P13c (O1), P29-3, P29-5.
+///
+/// | Family / role / sides | Limit |
+/// |---|---|
+/// | `Drill` | none: a drill cycle is Z-only |
+/// | any other, `Roughing` | the force budget |
+/// | any other, `SemiFinish` or `Finish`, `Both` | the force budget |
+/// | any other, `SemiFinish` or `Finish`, `One` | none (R2) |
+///
+/// Feeds matrix R2 (2026-09-23): no vendor publishes an axial finishing cap
+/// for wood; the deflection gate is the limit of a one-sided finish pass.
+/// Ruling R3 (2026-11-11, "slot is a slot!"): a slot or a groove has
+/// material on both sides, so it reads the force budget under every pass
+/// role. P29-4 (ruling R1): the Adaptive family has no arm of its own.
+const fn depth_limit_of(
+    family: FeedsOperationFamily,
+    pass_role: PassRole,
+    sides: crate::limits::BodySides,
+) -> crate::limits::DepthLimit {
+    use crate::limits::{BodySides, DepthLimit, NoDepthLimit};
+    match (family, pass_role, sides) {
+        // EXEMPT(P28-04)
+        (FeedsOperationFamily::Drill, _, _) => DepthLimit::NoLimit(NoDepthLimit::DrillCycle),
+        (_, PassRole::Roughing, _) => DepthLimit::ForceBudget,
+        // R3: a slot is a slot under every op.
+        (_, PassRole::SemiFinish | PassRole::Finish, BodySides::Both) => DepthLimit::ForceBudget,
+        // EXEMPT(P28-02, S-NoBound)
+        (_, PassRole::SemiFinish | PassRole::Finish, BodySides::One) => {
+            DepthLimit::NoLimit(NoDepthLimit::FinishPass)
+        }
+    }
+}
+
+impl OperationConfig {
+    /// P29-11 L-1 (S5): the hole of a drill op: the schema range of its
+    /// peck and the depth of its hole (a Drill: the floor below the top; a
+    /// pin drill: through the stock into the spoilboard). Only the drill
+    /// arm of [`Self::cuts`] calls it.
+    fn drill_hole(&self) -> DrillHole {
+        let peck_range =
+            OperationConfig::param_range_for_type(self.op_type(), "peck_depth").map(|r| {
+                let bounds = r.inclusive_bounds();
+                (*bounds.start(), *bounds.end())
+            });
+        let depth = match self {
+            OperationConfig::Drill(cfg) => HoleDepth::BelowTop(cfg.floor.depth_below_top()),
+            OperationConfig::AlignmentPinDrill(cfg) => HoleDepth::ThroughStock {
+                penetration_mm: cfg.spoilboard_penetration,
+            },
+            // Not reached: only the drill arm of `cuts()` asks.
+            OperationConfig::Face(_)
+            | OperationConfig::Pocket(_)
+            | OperationConfig::Profile(_)
+            | OperationConfig::Adaptive(_)
+            | OperationConfig::VCarve(_)
+            | OperationConfig::Inlay(_)
+            | OperationConfig::InlayPlug(_)
+            | OperationConfig::Zigzag(_)
+            | OperationConfig::Trace(_)
+            | OperationConfig::Bore(_)
+            | OperationConfig::Chamfer(_)
+            | OperationConfig::DropCutter(_)
+            | OperationConfig::Adaptive3d(_)
+            | OperationConfig::Waterline(_)
+            | OperationConfig::Pencil(_)
+            | OperationConfig::Scallop(_)
+            | OperationConfig::UnifiedFinish(_)
+            | OperationConfig::SteepShallow(_)
+            | OperationConfig::RampFinish(_)
+            | OperationConfig::SpiralFinish(_)
+            | OperationConfig::RadialFinish(_)
+            | OperationConfig::HorizontalFinish(_)
+            | OperationConfig::ProjectCurve(_) => HoleDepth::BelowTop(None),
+        };
+        DrillHole { peck_range, depth }
     }
 }
 
@@ -660,6 +854,7 @@ impl OperationConfig {
             // same facts (`CutFacts::DRILL_CYCLE`).
             OperationConfig::Drill(_) | OperationConfig::AlignmentPinDrill(_) => {
                 declare.facts = CutFacts::DRILL_CYCLE;
+                declare.list.drill_hole = Some(self.drill_hole());
                 self.declare_side_cuts(&mut declare, FirstSlot::OfSpec);
                 // P29-9 (ruling Q4): the drill cycle has no side-cut depth.
                 declare.cut(
@@ -1055,8 +1250,7 @@ impl OperationConfig {
     fn label_facts(&self) -> CutFacts {
         let (family, role) = self.feeds_style();
         CutFacts {
-            // EXEMPT(F-ThinsChip)
-            thins_chip: RadialThinning::of(family, role),
+            thins_chip: thins_chip_of(family, role),
             // EXEMPT(F-OffsetRing)
             offset_ring: family == FeedsOperationFamily::Pocket
                 && role == PassRole::Roughing

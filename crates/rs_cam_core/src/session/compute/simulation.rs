@@ -145,7 +145,7 @@ impl ProjectSession {
                     let metrics_not_applicable = entry_metrics_not_applicable(
                         result.is_drill_op(),
                         &result.annotated().toolpath,
-                        tc.operation.op_type(),
+                        &tc.operation,
                     );
                     entries.push(SimToolpathEntry {
                         head: crate::compute::simulate::entry_head_fit(

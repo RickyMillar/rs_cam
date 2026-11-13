@@ -304,25 +304,25 @@ pub fn entry_tool_fields(
 ///
 /// **One predicate, two builders.** Three signals answer it, in falling
 /// order of authority: the §6.E first-class drill op, a `MoveIntent::Drilling`
-/// move, and the operation kind. The GUI builder tested the operation kind
-/// alone until 2026-09-18. The three agreed for every shipped generator —
-/// only `ops/drill.rs` emits the intent, and it emits it on the two drilling
-/// op kinds — so the divergence was structural, not live.
+/// move, and the declared drill cycle of the op (P29-11 L-1, S7: the cut
+/// list of `OperationConfig::cuts` declares `CutKind::Drill` exactly on the
+/// two drilling op kinds). The GUI builder tested the operation kind alone
+/// until 2026-09-18. The three agreed for every shipped generator — only
+/// `ops/drill.rs` emits the intent, and it emits it on the two drilling op
+/// kinds — so the divergence was structural, not live.
 pub fn entry_metrics_not_applicable(
     has_drill_op: bool,
     toolpath: &Toolpath,
-    op_type: crate::compute::catalog::OperationType,
+    operation: &crate::compute::catalog::OperationConfig,
 ) -> bool {
     has_drill_op
         || toolpath
             .moves
             .iter()
             .any(|m| matches!(m.intent, crate::toolpath::MoveIntent::Drilling))
-        || matches!(
-            op_type,
-            crate::compute::catalog::OperationType::Drill
-                | crate::compute::catalog::OperationType::AlignmentPinDrill
-        )
+        || operation
+            .cuts(&crate::feeds::entry_rule::ConfiguredEntry::registry_default(operation))
+            .declares(crate::limits::CutKind::Drill)
 }
 
 /// Fewest moves a toolpath needs before it can remove material.

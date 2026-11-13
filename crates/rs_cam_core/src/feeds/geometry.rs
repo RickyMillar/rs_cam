@@ -43,6 +43,10 @@ pub fn peak_chip_thinning_lift(ae_mm: f64, d_eng_mm: f64) -> f64 {
 /// its advance (Garr's finish row keeps a low chip on purpose). A drill cycle
 /// has no radial cut. Every other cut thins, and its peak chip is the
 /// advance over [`peak_chip_thinning_lift`].
+///
+/// The rule of each cut is a cut fact (`limits::CutFacts::thins_chip`), filled
+/// only in `compute/catalog/cuts.rs` (P29-11 L-1, S6). A reader takes the
+/// fact of its cut, never the op's family or role.
 #[derive(Debug, Clone, Copy, PartialEq, Eq)]
 pub enum RadialThinning {
     /// The cut thins: the peak chip is `fz / peak_chip_thinning_lift`.
@@ -54,19 +58,6 @@ pub enum RadialThinning {
 }
 
 impl RadialThinning {
-    /// The rule of an operation's feeds style (family and pass role).
-    #[must_use]
-    pub fn of(family: crate::feeds::OperationFamily, role: crate::feeds::PassRole) -> Self {
-        // EXEMPT(P28-18, F-ThinsChip)
-        if family == crate::feeds::OperationFamily::Drill {
-            Self::DrillCycle
-        } else if role == crate::feeds::PassRole::Finish {
-            Self::FinishPass
-        } else {
-            Self::Applied
-        }
-    }
-
     /// The applied lift at the radial width `ae_mm` on the engaged
     /// diameter `d_eng_mm`: [`peak_chip_thinning_lift`] when the cut thins,
     /// else 1.

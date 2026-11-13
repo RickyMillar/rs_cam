@@ -27,10 +27,12 @@
 //!   `DeclaredFeed::of_kind`. The cuts stand in the tie order: the body,
 //!   the planner cap, the first slot (or the slot ring).
 //! - Claim 2: the facts of every declared cut equal the four label
-//!   functions, written out here: `RadialThinning::of(family, role)`, the
+//!   functions, written out here: the thinning rule of decision L2, the
 //!   Pocket roughing stepover test, the leave (P29-7 7d: the radial
 //!   stock-to-leave field only), and the depth rule (the family, the role
-//!   and, P29-5, the material sides of the radial rule).
+//!   and, P29-5, the material sides of the radial rule). P29-11: an op
+//!   declares a drill cycle (`CutKind::Drill`) exactly when its feeds
+//!   family is the drill family.
 //! - Claim 3: the entry kinds of the list equal
 //!   `EntryContract::record_kinds()` of the op's row, in order. P29-8 8d:
 //!   under each dressup entry style (and the 3D Rough config) the
@@ -369,8 +371,15 @@ fn old_facts(op: &OperationConfig) -> CutFacts {
         Some(mm) if mm.is_finite() && mm > 0.0 => Leave::Mm(mm),
         Some(_) | None => Leave::None,
     };
+    // Decision L2, written out: the product filler (`thins_chip_of` in
+    // `compute/catalog/cuts.rs`, P29-11 L-1) is not the oracle.
+    let thins_chip = match (family, role) {
+        (OperationFamily::Drill, _) => RadialThinning::DrillCycle,
+        (_, PassRole::Finish) => RadialThinning::FinishPass,
+        (_, PassRole::Roughing | PassRole::SemiFinish) => RadialThinning::Applied,
+    };
     CutFacts {
-        thins_chip: RadialThinning::of(family, role),
+        thins_chip,
         offset_ring: family == OperationFamily::Pocket
             && role == PassRole::Roughing
             && matches!(op.cut_spec().radial, Radial::Width(_)),
@@ -386,6 +395,15 @@ fn claim_2_the_facts_equal_the_label_functions() {
         let want = old_facts(&case.op);
         let list = case.op.cuts(&ConfiguredEntry::registry_default(&case.op));
         assert_eq!(list.body_facts(), want, "{}: the body facts", case.name);
+        // P29-11 L-1 (S7) and L-2 (S1): an op declares a drill cycle
+        // exactly when its feeds family is the drill family, so a reader of
+        // the declared drill cycle reads what the family test read.
+        assert_eq!(
+            list.declares(CutKind::Drill),
+            case.op.feeds_style().0 == OperationFamily::Drill,
+            "{}: the drill cycle is declared exactly on a drill-family op",
+            case.name
+        );
         for cut in list.iter() {
             assert_eq!(
                 cut.facts, want,

@@ -87,10 +87,8 @@ pub(crate) fn current_values_for_operation(
         stepover: operation.stepover(),
         flute_count: tool.flute_count_planning(),
         scallop_height: operation.scallop_height(),
-        supports_scallop_override: matches!(
-            operation.op_type(),
-            rs_cam_core::compute::catalog::OperationType::DropCutter
-        ),
+        // P29-11 L-1 (S8): a registry capability, not a test of the op type.
+        supports_scallop_override: operation.capabilities().supports_scallop_override,
     }
 }
 

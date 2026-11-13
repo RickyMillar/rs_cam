@@ -97,6 +97,10 @@ pub struct Capabilities<P = EntryProbe> {
     /// measured "none" for the dropped-band and clipped-band lines,
     /// instead of "does not apply". Unified Finish.
     pub plans_bands: bool,
+    /// The op takes a scallop height in the place of its stepover, so the
+    /// Suggest card offers the scallop override (P29-11 L-1, S8: it was a
+    /// test of the op type on the card). Drop Cutter.
+    pub supports_scallop_override: bool,
     /// The op descends by a ramp (C2). The narration then states that a
     /// missing ramp reach clamp is "not measured" for this run. Ramp
     /// Finish.
@@ -323,6 +327,7 @@ impl<P> Capabilities<P> {
             rest_use: self.rest_use,
             territory_xy: self.territory_xy,
             plans_bands: self.plans_bands,
+            supports_scallop_override: self.supports_scallop_override,
             ramp_descent: self.ramp_descent,
             adaptive_woc: self.adaptive_woc,
             flat_floor_clearing: self.flat_floor_clearing,

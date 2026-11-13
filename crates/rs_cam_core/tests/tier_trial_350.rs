@@ -1320,7 +1320,7 @@ fn collect_entries(session: &ProjectSession) -> Vec<EntryParts> {
                 metrics_not_applicable: entry_metrics_not_applicable(
                     result.is_drill_op(),
                     &result.annotated().toolpath,
-                    tc.operation.op_type(),
+                    &tc.operation,
                 ),
                 drill_op: result.drill_op().cloned(),
                 operation_config_hash: hash_operation_config(&tc.operation),

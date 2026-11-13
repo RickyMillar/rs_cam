@@ -204,13 +204,13 @@ pub fn cut_efficiency(
 
     // P11b (L1, L2): the band holds the PEAK chip. The lift is 1 at or above
     // half the diameter and on a finish pass.
-    let (family, role) = operation.feeds_style();
-    // P23a: the width of Suggest's lift (`CutList::full_feed_width`).
+    // P23a: the width of Suggest's lift (`CutList::full_feed_width`). P29-11
+    // L-1 (S6): the rule is the body cut's fact (`CutFacts::thins_chip`).
     // EXEMPT(U-efficiency)
-    let lift = crate::feeds::geometry::RadialThinning::of(family, role).lift(
-        operation
-            .cuts(&crate::feeds::entry_rule::ConfiguredEntry::registry_default(operation))
-            .full_feed_width(radial_width_mm, diameter_mm),
+    let cuts =
+        operation.cuts(&crate::feeds::entry_rule::ConfiguredEntry::registry_default(operation));
+    let lift = cuts.body_facts().thins_chip.lift(
+        cuts.full_feed_width(radial_width_mm, diameter_mm),
         diameter_mm,
     );
     let held_chip_mm = advance_per_tooth_mm / lift;

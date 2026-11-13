@@ -257,49 +257,6 @@ pub struct DepthCapRule {
 }
 
 impl RigidityProfile {
-    /// **The depth limit of one body cut, with no number.** S3
-    /// (2026-09-18), P13c (O1), P29-3, P29-5.
-    ///
-    /// | Family / role / sides | Limit |
-    /// |---|---|
-    /// | `Drill` | none: a drill cycle is Z-only |
-    /// | any other, `Roughing` | the force budget |
-    /// | any other, `SemiFinish` or `Finish`, `Both` | the force budget |
-    /// | any other, `SemiFinish` or `Finish`, `One` | none (R2) |
-    ///
-    /// Feeds matrix R2 (2026-09-23): no vendor publishes an axial
-    /// finishing cap for wood; the deflection gate is the limit of a
-    /// one-sided finish pass. Ruling R3 (2026-11-11, "slot is a slot!"):
-    /// a slot or a groove has material on both sides, so it reads the
-    /// force budget under every pass role. P29-4 (ruling R1): the Adaptive
-    /// family has no arm of its own.
-    ///
-    /// `OperationType::body_depth_limit` is the one caller: it reads the
-    /// three inputs from the registry row. [`Self::depth_cap_of`] adds the
-    /// numbers.
-    #[must_use]
-    pub const fn depth_limit(
-        family: crate::feeds::OperationFamily,
-        pass_role: crate::feeds::PassRole,
-        sides: crate::limits::BodySides,
-    ) -> crate::limits::DepthLimit {
-        use crate::feeds::{OperationFamily, PassRole};
-        use crate::limits::{BodySides, DepthLimit, NoDepthLimit};
-        match (family, pass_role, sides) {
-            // EXEMPT(P28-04)
-            (OperationFamily::Drill, _, _) => DepthLimit::NoLimit(NoDepthLimit::DrillCycle),
-            (_, PassRole::Roughing, _) => DepthLimit::ForceBudget,
-            // R3: a slot is a slot under every op.
-            (_, PassRole::SemiFinish | PassRole::Finish, BodySides::Both) => {
-                DepthLimit::ForceBudget
-            }
-            // EXEMPT(P28-02, S-NoBound)
-            (_, PassRole::SemiFinish | PassRole::Finish, BodySides::One) => {
-                DepthLimit::NoLimit(NoDepthLimit::FinishPass)
-            }
-        }
-    }
-
     /// P29-3: the rule of the axial depth cap for the depth limit of a cut
     /// (`limits::CutFacts::depth_rule`), with this machine's numbers.
     /// `None` when the cut has no depth limit.

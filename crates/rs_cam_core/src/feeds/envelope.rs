@@ -2051,7 +2051,10 @@ impl SafeEnvelope {
                 .filter(|v| v.is_finite() && *v > 0.0)
                 .filter(|_| base.matched_lut_row.is_some() && plan.axes.ap_free() && !plan.peck),
         };
-        let peck_rule = plan.peck.then(|| drill_peck_rule(&input)).flatten();
+        let peck_rule = plan
+            .peck
+            .then(|| drill_peck_rule(&input, &env.inputs.cuts))
+            .flatten();
         // P16 (review D5, D7): the envelope proposes no depth that it cannot
         // model. A surface-offset op has no depth before the simulation; a
         // material with no force line has no limit that models the depth
@@ -4061,52 +4064,19 @@ impl SafeEnvelope {
 const DRILL_PECK_LAW: &str = "half the per-peck maximum of the material (repo rule, ruling B5)";
 
 /// The drill peck rule of a drill op: the peck that the Suggest drill
-/// defaults give (card row 29). `None` for an op with no peck.
-fn drill_peck_rule(input: &EnvelopeInput<'_>) -> Option<f64> {
+/// defaults give (card row 29). `None` for an op with no drill cycle.
+/// P29-11 L-1 (S5): the hole is a fact of the drill cut
+/// (`CutList::drill_hole`), not the op variant.
+fn drill_peck_rule(input: &EnvelopeInput<'_>, cuts: &DeclaredCuts) -> Option<f64> {
     let d = input.tool.diameter;
     if !d.is_finite() || d <= 0.0 {
         return None;
     }
     let peck = input.material.drill_default_peck_depth_mm(d);
-    match input.operation {
-        OperationConfig::Drill(cfg) => Some(crate::feeds::suggest::peck_for_hole(
-            crate::compute::catalog::OperationType::Drill,
-            peck,
-            cfg.floor.depth_below_top(),
-        )),
-        OperationConfig::AlignmentPinDrill(cfg) => Some(crate::feeds::suggest::peck_for_hole(
-            crate::compute::catalog::OperationType::AlignmentPinDrill,
-            peck,
-            input
-                .context
-                .stock()
-                .and_then(|s| s.stock_z)
-                .map(|z| z + cfg.spoilboard_penetration),
-        )),
-        OperationConfig::Face(_)
-        | OperationConfig::Pocket(_)
-        | OperationConfig::Profile(_)
-        | OperationConfig::Adaptive(_)
-        | OperationConfig::VCarve(_)
-        | OperationConfig::Inlay(_)
-        | OperationConfig::InlayPlug(_)
-        | OperationConfig::Zigzag(_)
-        | OperationConfig::Trace(_)
-        | OperationConfig::Bore(_)
-        | OperationConfig::Chamfer(_)
-        | OperationConfig::DropCutter(_)
-        | OperationConfig::Adaptive3d(_)
-        | OperationConfig::Waterline(_)
-        | OperationConfig::Pencil(_)
-        | OperationConfig::Scallop(_)
-        | OperationConfig::UnifiedFinish(_)
-        | OperationConfig::SteepShallow(_)
-        | OperationConfig::RampFinish(_)
-        | OperationConfig::SpiralFinish(_)
-        | OperationConfig::RadialFinish(_)
-        | OperationConfig::HorizontalFinish(_)
-        | OperationConfig::ProjectCurve(_) => None,
-    }
+    let stock_z = input.context.stock().and_then(|s| s.stock_z);
+    cuts.list()
+        .drill_hole()
+        .map(|hole| hole.peck_rule_mm(peck, stock_z))
 }
 
 /// `ENVELOPE_GRID_N` evenly spaced samples of a span.

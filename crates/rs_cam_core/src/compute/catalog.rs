@@ -32,7 +32,7 @@ pub use cut_spec::{
 
 pub use cuts::{
     CutContext, CutList, CutListFull, DeclaredCut, DeclaredDepth, DeclaredFeed, DeclaredWidth,
-    MAX_DECLARED_CUTS, MayOccur, OwnDepth, OwnDepthRule, Presence, TipDepth, ToolDepth,
+    DrillHole, MAX_DECLARED_CUTS, MayOccur, OwnDepth, OwnDepthRule, Presence, TipDepth, ToolDepth,
 };
 
 pub(crate) use entry_contract::entry_records;
@@ -783,26 +783,6 @@ impl OperationType {
                 .with_ramp_fold_lap_cap(self.ramp_fold_lap_cap()),
             ..row
         }
-    }
-
-    /// P29-5 (ruling R3): the depth limit of the op's body cut, with no
-    /// number. THE one filler of `limits::CutFacts::depth_rule`: it reads
-    /// only the registry row (the family, the pass role and the material
-    /// sides of the radial rule), so a reader with the op kind and no
-    /// config (the gates) reads the same limit as the cut list.
-    /// `RigidityProfile::depth_cap_of` adds the machine's numbers.
-    #[must_use]
-    pub fn body_depth_limit(self) -> crate::limits::DepthLimit {
-        let spec = self.spec();
-        crate::machine::RigidityProfile::depth_limit(
-            spec.feeds_family,
-            spec.feeds_pass_role,
-            self.registry_entry()
-                .capabilities
-                .cut_rule
-                .radial
-                .body_sides(),
-        )
     }
 
     /// R-A (SAFETY): what the op kind does with the part outline of a

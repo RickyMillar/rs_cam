@@ -18,7 +18,7 @@ mod invariants;
 
 #[cfg(any(test, feature = "test-support"))]
 pub use apply::apply_speeds_to_op;
-pub(crate) use apply::peck_for_hole;
+pub(crate) use apply::peck_in_range;
 pub use apply::{
     ApplyContext, Complete, Completeness, ExploredSpeeds, FeedsPreview, FieldApplyPreview,
     FieldApplyPreviews, OperationApplyInput, Partial, PickedGeometry, Recommendation, apply,

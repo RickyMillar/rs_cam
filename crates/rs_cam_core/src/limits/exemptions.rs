@@ -104,7 +104,7 @@ pub static EXEMPTIONS: [Exemption; 37] = [
         limit: &[LimitId::ForceBudget],
         who: Who::Facts("no depth limit, finish pass: wall and surface finishes"),
         class: R2,
-        where_: &["src/machine/mod.rs", "src/tool_load/depth.rs"],
+        where_: &["src/compute/catalog/cuts.rs", "src/tool_load/depth.rs"],
         closes_in: "stays, as a ruling",
     },
     Exemption {
@@ -113,7 +113,7 @@ pub static EXEMPTIONS: [Exemption; 37] = [
         limit: &[LimitId::ForceBudget],
         who: Who::Facts("no depth limit, drill cycle"),
         class: ExemptionClass::Physical(Geometry::NoRadialEngagement),
-        where_: &["src/machine/mod.rs", "src/limits/scope.rs"],
+        where_: &["src/compute/catalog/cuts.rs", "src/limits/scope.rs"],
         closes_in: "-",
     },
     Exemption {
@@ -228,7 +228,10 @@ pub static EXEMPTIONS: [Exemption; 37] = [
             date: "2026-11-05",
             text: "yes, as planned",
         },
-        where_: &["src/feeds/geometry.rs", "src/feeds/calculator/feed.rs"],
+        where_: &[
+            "src/compute/catalog/cuts.rs",
+            "src/feeds/calculator/feed.rs",
+        ],
         closes_in: "stays, as a ruling",
     },
     Exemption {
@@ -410,10 +413,10 @@ pub static EXEMPTIONS: [Exemption; 37] = [
         who: Who::Reader("the depth row of a finish pass (NoNumberReason::NoBound) = P28-02"),
         class: R2,
         where_: &[
+            "src/compute/catalog/cuts.rs",
             "src/feeds/envelope.rs",
             "src/limits/project.rs",
             "src/limits/row.rs",
-            "src/machine/mod.rs",
         ],
         closes_in: "stays, as P28-02",
     },
@@ -490,7 +493,7 @@ pub static EXEMPTIONS: [Exemption; 37] = [
         limit: &[LimitId::ChipMax],
         who: Who::Facts("thins_chip is set from the family and the role"),
         class: NR,
-        where_: &["src/compute/catalog/cuts.rs", "src/feeds/geometry.rs"],
+        where_: &["src/compute/catalog/cuts.rs"],
         closes_in: "later (no geometry rule for a finish pass; P28-18 is a ruling)",
     },
     Exemption {

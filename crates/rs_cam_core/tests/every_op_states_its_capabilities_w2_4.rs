@@ -957,6 +957,31 @@ fn every_op_keeps_its_face_top_rule_ux1b() {
     }
 }
 
+/// P29-11 L-1 (S8): the `supports_scallop_override` column. The Suggest card
+/// offered the scallop override on a test of the op type (Drop Cutter only);
+/// the row states it now, and the answer did not move. No config overrides it.
+#[test]
+fn the_scallop_override_is_drop_cutter_only_p29_11() {
+    let mut offered = 0;
+    for &op in OperationType::ALL {
+        let want = op == OperationType::DropCutter;
+        assert_eq!(
+            op.capabilities().supports_scallop_override,
+            want,
+            "{op:?} (kind)"
+        );
+        assert_eq!(
+            OperationConfig::new_default(op)
+                .capabilities()
+                .supports_scallop_override,
+            want,
+            "{op:?} (config)"
+        );
+        offered += usize::from(want);
+    }
+    assert_eq!(offered, 1, "one op offers the scallop override");
+}
+
 /// P1: every `Capabilities` field has a frozen column in one of the six
 /// tables, or a named test of its own. The destructure has no `..`, so a
 /// new field does not compile here until this list (and a table) states it.
@@ -977,6 +1002,7 @@ fn every_field_has_a_frozen_column() {
         rest_use: _, // frozen()
         territory_xy: _, // frozen()
         plans_bands: _, // frozen_c2()
+        supports_scallop_override: _, // the_scallop_override_is_drop_cutter_only_p29_11
         ramp_descent: _, // frozen_c2()
         adaptive_woc: _, // frozen_c2()
         flat_floor_clearing: _, // frozen_c2()

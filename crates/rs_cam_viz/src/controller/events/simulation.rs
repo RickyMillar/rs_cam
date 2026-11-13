@@ -246,7 +246,7 @@ impl<B: ComputeBackend> AppController<B> {
                 let metrics_not_applicable = entry_metrics_not_applicable(
                     result.is_drill_op(),
                     &result.annotated().toolpath,
-                    tc.operation.op_type(),
+                    &tc.operation,
                 );
                 // F029: the core builder refuses a tool outside its domain,
                 // so this one builds no request either (parity).

@@ -248,6 +248,7 @@ fn the_gui_builder_reads_every_drill_signal_cmp19() {
     let tc = &controller.state.session().toolpath_configs()[0];
     let id = tc.id;
     let op_type = tc.operation.op_type();
+    let operation = tc.operation.clone();
     assert!(
         !matches!(
             op_type,
@@ -339,7 +340,7 @@ fn the_gui_builder_reads_every_drill_signal_cmp19() {
     // Case 3 — the first-class drill op, stated against the shared
     // predicate because a `DrillOp` literal carries fourteen fields.
     assert!(
-        entry_metrics_not_applicable(true, &Toolpath::new(), op_type),
+        entry_metrics_not_applicable(true, &Toolpath::new(), &operation),
         "case 3: a first-class drill op sets the flag on its own"
     );
 }
