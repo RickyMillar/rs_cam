@@ -2680,7 +2680,7 @@ mod tests {
         ToolLoadReport {
             per_toolpath: vec![ToolpathLoadVerdict {
                 toolpath_id: ToolpathId::from_raw(4),
-                groups: crate::tool_load::verdict::GroupVerdicts::headline_only(
+                groups: crate::tool_load::verdict::GroupVerdicts::headline_only_for_tests(
                     crate::limits::CutGroup::Body,
                 ),
                 chipload,

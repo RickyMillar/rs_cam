@@ -146,6 +146,11 @@ pub struct DedupKey {
     pub semantic_item_id: Option<u64>,
     /// `(floor(x/B), floor(y/B), floor(z/B))`, `B = max(4 x diameter, 10 mm)`.
     pub bucket: [i64; 3],
+    /// P29-10 (10c): the cut group of a load finding (`Diagnostic::group`):
+    /// a headline finding (`None`) and a group finding of one id are two
+    /// entries.
+    #[serde(default, skip_serializing_if = "Option::is_none")]
+    pub group: Option<crate::limits::CutGroup>,
 }
 
 /// What justified a finding — kept from the **worst** contributing instance,
@@ -557,45 +562,7 @@ impl SimulationTriage {
         // on. Abstentions are NOT actions — they belong to the
         // measurability strip and would otherwise read as findings about
         // the toolpath, which is exactly the confusion the ruling removes.
-        for d in inputs.diagnostics {
-            if d.id.as_str() == ids::PROJECT_MEASURABILITY_ABSTAINED {
-                continue;
-            }
-            if matches!(d.category, Category::Safety)
-                && (d.id.as_str() == ids::PROJECT_RAPID_COLLISION
-                    || d.id.as_str() == ids::PROJECT_HOLDER_COLLISION
-                    || d.id.as_str() == ids::PROJECT_OBSTACLE_COLLISION)
-            {
-                // Already represented, per-event, in `safety`.
-                continue;
-            }
-            let toolpath_id = match d.scope {
-                Scope::Toolpath { id } => Some(id),
-                Scope::Project | Scope::Setup { .. } | Scope::Tool { .. } => None,
-            };
-            // P22-0c-3 (one finding, every surface): a contact of the one
-            // contact kernel (the core, the flute top) is physical damage
-            // to the tool if run: class A, one per toolpath, its text and
-            // frame from the project verdict.
-            let class = if is_contact_finding(d.id.as_str()) {
-                TriageClass::Safety
-            } else {
-                TriageClass::Action
-            };
-            found.push(Finding {
-                class,
-                dedup_key: DedupKey {
-                    id: d.id.clone(),
-                    toolpath_id,
-                    region: None,
-                    semantic_item_id: None,
-                    bucket: [0, 0, 0],
-                },
-                diagnostic: d.clone(),
-                occurrences: 1,
-                worst: WorstEvidence::default(),
-            });
-        }
+        found.extend(inputs.diagnostics.iter().filter_map(action_finding));
 
         // R-12 (census §6.4) — the actionable half of "Rivers B4".
         // G-ENTRYLOAD — the same pass's ENTRY motion, graded against its own
@@ -700,6 +667,7 @@ impl SimulationTriage {
                     region,
                     semantic_item_id: h.semantic_item_id,
                     bucket: spatial_bucket(h.representative_position, bucket_mm),
+                    group: None,
                 },
                 diagnostic: Diagnostic {
                     id: DiagnosticId::from(ids::PROJECT_AIR_CUT_HIGH),
@@ -725,6 +693,7 @@ impl SimulationTriage {
                     }),
                     fix: None,
                     supersedes: vec![],
+                    group: None,
                     suppressed_diagnostics: vec![],
                 },
                 occurrences: 1,
@@ -801,6 +770,7 @@ fn rest_slower_than_fresh_finding(
             region: None,
             semantic_item_id: None,
             bucket: [0, 0, 0],
+            group: None,
         },
         diagnostic: Diagnostic {
             id: DiagnosticId::from(ids::PROJECT_REST_SLOWER_THAN_FRESH),
@@ -820,6 +790,7 @@ fn rest_slower_than_fresh_finding(
             evidence: None,
             fix: None,
             supersedes: vec![],
+            group: None,
             suppressed_diagnostics: vec![],
         },
         occurrences: 1,
@@ -1090,6 +1061,7 @@ fn standing_material_finding(
             region: None,
             semantic_item_id: None,
             bucket: [0, 0, 0],
+            group: None,
         },
         diagnostic: Diagnostic {
             id: DiagnosticId::from(ids::PROJECT_CROSSES_STANDING_MATERIAL),
@@ -1115,6 +1087,7 @@ fn standing_material_finding(
             }),
             fix: None,
             supersedes: vec![],
+            group: None,
             suppressed_diagnostics: vec![],
         },
         occurrences: over,
@@ -1227,6 +1200,7 @@ pub(crate) fn rough_coverage_finding(
             region: None,
             semantic_item_id: None,
             bucket: [0, 0, 0],
+            group: None,
         },
         diagnostic: Diagnostic {
             id: DiagnosticId::from(ids::PROJECT_ROUGH_LEAVES_ISLANDS),
@@ -1248,6 +1222,7 @@ pub(crate) fn rough_coverage_finding(
             }),
             fix: None,
             supersedes: vec![],
+            group: None,
             suppressed_diagnostics: vec![],
         },
         occurrences: count,
@@ -1506,6 +1481,7 @@ fn entry_load_finding(trace: &SimulationCutTrace, toolpath_id: ToolpathId) -> Op
             region: None,
             semantic_item_id: None,
             bucket: [0, 0, 0],
+            group: None,
         },
         diagnostic: Diagnostic {
             id: DiagnosticId::from(ids::PROJECT_ENTRY_LOAD),
@@ -1543,6 +1519,7 @@ fn entry_load_finding(trace: &SimulationCutTrace, toolpath_id: ToolpathId) -> Op
             }),
             fix: None,
             supersedes: vec![],
+            group: None,
             suppressed_diagnostics: vec![],
         },
         occurrences: obs.over_threshold_samples,
@@ -1802,6 +1779,7 @@ fn link_cut_finding(
             region: None,
             semantic_item_id: None,
             bucket: [0, 0, 0],
+            group: None,
         },
         diagnostic: Diagnostic {
             id: DiagnosticId::from(ids::PROJECT_LINK_CUTS_STOCK),
@@ -1836,6 +1814,7 @@ fn link_cut_finding(
             }),
             fix: None,
             supersedes: vec![],
+            group: None,
             suppressed_diagnostics: vec![],
         },
         occurrences: obs.over_bar_samples,
@@ -1904,6 +1883,7 @@ pub fn plunge_class_finding(util: &ToolpathKinematicUtilization) -> Option<Findi
             region: None,
             semantic_item_id: None,
             bucket: [0, 0, 0],
+            group: None,
         },
         diagnostic: Diagnostic {
             id: DiagnosticId::from(ids::PROJECT_PLUNGE_CLASS_LOAD),
@@ -1938,6 +1918,7 @@ pub fn plunge_class_finding(util: &ToolpathKinematicUtilization) -> Option<Findi
             }),
             fix: None,
             supersedes: vec![],
+            group: None,
             suppressed_diagnostics: vec![],
         },
         occurrences: util.plunge.over_1x.max(1),
@@ -2018,6 +1999,7 @@ fn collision_finding(
             // collisions at the same point in the same bucket keep distinct
             // keys, so no future merge pass can silently fuse them.
             bucket: [ordinal as i64, i64::MIN, i64::MIN],
+            group: None,
         },
         diagnostic: Diagnostic {
             id: DiagnosticId::from(id),
@@ -2037,6 +2019,7 @@ fn collision_finding(
             }),
             fix: None,
             supersedes: vec![],
+            group: None,
             suppressed_diagnostics: vec![],
         },
         occurrences: 1,
@@ -2062,6 +2045,51 @@ fn spatial_bucket(position: [f64; 3], edge_mm: f64) -> [i64; 3] {
         (position[1] / e).floor() as i64,
         (position[2] / e).floor() as i64,
     ]
+}
+
+/// Class B: the finding of one diagnostic the rest of the system acts on,
+/// or `None` for an abstention or a collision that class A holds. The key
+/// carries the cut group (P29-10 10c): a headline finding and a group
+/// finding of one id are two entries.
+fn action_finding(d: &Diagnostic) -> Option<Finding> {
+    if d.id.as_str() == ids::PROJECT_MEASURABILITY_ABSTAINED {
+        return None;
+    }
+    if matches!(d.category, Category::Safety)
+        && (d.id.as_str() == ids::PROJECT_RAPID_COLLISION
+            || d.id.as_str() == ids::PROJECT_HOLDER_COLLISION
+            || d.id.as_str() == ids::PROJECT_OBSTACLE_COLLISION)
+    {
+        // Already represented, per-event, in `safety`.
+        return None;
+    }
+    let toolpath_id = match d.scope {
+        Scope::Toolpath { id } => Some(id),
+        Scope::Project | Scope::Setup { .. } | Scope::Tool { .. } => None,
+    };
+    // P22-0c-3 (one finding, every surface): a contact of the one
+    // contact kernel (the core, the flute top) is physical damage
+    // to the tool if run: class A, one per toolpath, its text and
+    // frame from the project verdict.
+    let class = if is_contact_finding(d.id.as_str()) {
+        TriageClass::Safety
+    } else {
+        TriageClass::Action
+    };
+    Some(Finding {
+        class,
+        dedup_key: DedupKey {
+            id: d.id.clone(),
+            toolpath_id,
+            region: None,
+            semantic_item_id: None,
+            bucket: [0, 0, 0],
+            group: d.group,
+        },
+        diagnostic: d.clone(),
+        occurrences: 1,
+        worst: WorstEvidence::default(),
+    })
 }
 
 /// Merge findings sharing a [`DedupKey`], keeping the worst evidence.
@@ -2277,6 +2305,7 @@ mod tests {
             evidence: None,
             fix: None,
             supersedes: vec![],
+            group: None,
             suppressed_diagnostics: vec![],
         };
 
@@ -2339,6 +2368,7 @@ mod tests {
             evidence: None,
             fix: None,
             supersedes: vec![],
+            group: None,
             suppressed_diagnostics: vec![],
         };
         let m = MeasurabilityReport::default();
@@ -2422,6 +2452,7 @@ mod tests {
                 region: None,
                 semantic_item_id: None,
                 bucket: [0, 0, 0],
+                group: None,
             },
             diagnostic: Diagnostic {
                 id: DiagnosticId::from(ids::PROJECT_AIR_CUT_HIGH),
@@ -2439,6 +2470,7 @@ mod tests {
                 evidence: None,
                 fix: None,
                 supersedes: vec![],
+                group: None,
                 suppressed_diagnostics: vec![],
             },
             occurrences: 1,
@@ -2470,6 +2502,7 @@ mod tests {
                         region: None,
                         semantic_item_id: Some(i),
                         bucket: [i as i64, 0, 0],
+                        group: None,
                     },
                     diagnostic: Diagnostic {
                         id: DiagnosticId::from(ids::PROJECT_AIR_CUT_HIGH),
@@ -2487,6 +2520,7 @@ mod tests {
                         evidence: None,
                         fix: None,
                         supersedes: vec![],
+                        group: None,
                         suppressed_diagnostics: vec![],
                     },
                     occurrences: 1,
@@ -2725,6 +2759,7 @@ mod tests {
             evidence: None,
             fix: None,
             supersedes: vec![],
+            group: None,
             suppressed_diagnostics: vec![],
         };
         let m = MeasurabilityReport::default();
@@ -3072,5 +3107,44 @@ mod tests {
                 .iter()
                 .any(|f| f.diagnostic.id.as_str() == ids::PROJECT_ROUGH_LEAVES_ISLANDS)
         );
+    }
+
+    /// P29-10 (10c): a headline load finding and a group finding of one id
+    /// on one toolpath are two triage entries; two findings of one group
+    /// still merge.
+    #[test]
+    fn a_headline_and_a_group_finding_are_two_entries_p29_10() {
+        let finding = |group: Option<crate::limits::CutGroup>| Diagnostic {
+            id: DiagnosticId::from(ids::LOAD_POWER_EXCEEDS),
+            scope: Scope::Toolpath {
+                id: ToolpathId::from_raw(1),
+            },
+            category: Category::ToolLoad,
+            severity: Severity::Caution,
+            confidence: Confidence::Static,
+            state: DiagnosticState::Current,
+            source: Source::Simulation,
+            face: crate::diagnostics::presentation::face(ids::LOAD_POWER_EXCEEDS),
+            anchor: crate::diagnostics::presentation::anchor(ids::LOAD_POWER_EXCEEDS),
+            message: "power".to_owned(),
+            evidence: None,
+            fix: None,
+            supersedes: vec![],
+            group,
+            suppressed_diagnostics: vec![],
+        };
+        let entry = Some(crate::limits::CutGroup::Entry);
+        let two: Vec<Finding> = [finding(None), finding(entry)]
+            .iter()
+            .filter_map(action_finding)
+            .collect();
+        assert_eq!(dedup(two).len(), 2, "the headline and the entry group");
+        let one: Vec<Finding> = [finding(entry), finding(entry)]
+            .iter()
+            .filter_map(action_finding)
+            .collect();
+        let merged = dedup(one);
+        assert_eq!(merged.len(), 1, "one group merges");
+        assert_eq!(merged.first().map(|f| f.occurrences), Some(2));
     }
 }

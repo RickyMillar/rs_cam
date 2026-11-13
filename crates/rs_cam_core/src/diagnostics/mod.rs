@@ -293,4 +293,10 @@ pub struct Diagnostic {
     /// when this diagnostic was not the one doing the superseding.
     #[serde(default, skip_serializing_if = "Vec::is_empty")]
     pub suppressed_diagnostics: Vec<DiagnosticId>,
+    /// P29-10 (10c): the cut group of a load finding of a group that is not
+    /// the headline (`from_tool_load::group_diagnostics`); `None` for every
+    /// other finding. The triage keys on it (`DedupKey::group`), so a
+    /// headline finding and a group finding of one id stay two entries.
+    #[serde(default, skip_serializing_if = "Option::is_none")]
+    pub group: Option<crate::limits::CutGroup>,
 }

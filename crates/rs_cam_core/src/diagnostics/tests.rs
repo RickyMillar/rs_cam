@@ -35,6 +35,7 @@ fn make_diag(
         evidence: None,
         fix: None,
         supersedes: supersedes.into_iter().map(DiagnosticId::from).collect(),
+        group: None,
         suppressed_diagnostics: vec![],
     }
 }
@@ -401,7 +402,7 @@ fn tool_load_adapter_drops_milling_na_on_drill_with_drill_gates() {
 
     let verdict = ToolpathLoadVerdict {
         toolpath_id: ToolpathId::from_raw(0),
-        groups: crate::tool_load::verdict::GroupVerdicts::headline_only(
+        groups: crate::tool_load::verdict::GroupVerdicts::headline_only_for_tests(
             crate::limits::CutGroup::Body,
         ),
         chipload: ChiploadVerdict::Unmodeled {
@@ -491,7 +492,7 @@ fn tool_load_adapter_emits_chipload_exceeds_with_evidence() {
     };
     let verdict = ToolpathLoadVerdict {
         toolpath_id: ToolpathId::from_raw(12),
-        groups: crate::tool_load::verdict::GroupVerdicts::headline_only(
+        groups: crate::tool_load::verdict::GroupVerdicts::headline_only_for_tests(
             crate::limits::CutGroup::Body,
         ),
         chipload: ChiploadVerdict::Exceeds {
@@ -543,7 +544,7 @@ fn tool_load_adapter_marks_stale_simulation_as_stale_evidence_state() {
 
     let verdict = ToolpathLoadVerdict {
         toolpath_id: ToolpathId::from_raw(4),
-        groups: crate::tool_load::verdict::GroupVerdicts::headline_only(
+        groups: crate::tool_load::verdict::GroupVerdicts::headline_only_for_tests(
             crate::limits::CutGroup::Body,
         ),
         chipload: ChiploadVerdict::Unmodeled {
@@ -588,7 +589,7 @@ fn tool_load_adapter_marks_sim_required_as_needs_simulation_state() {
 
     let verdict = ToolpathLoadVerdict {
         toolpath_id: ToolpathId::from_raw(7),
-        groups: crate::tool_load::verdict::GroupVerdicts::headline_only(
+        groups: crate::tool_load::verdict::GroupVerdicts::headline_only_for_tests(
             crate::limits::CutGroup::Body,
         ),
         chipload: ChiploadVerdict::Unmodeled {

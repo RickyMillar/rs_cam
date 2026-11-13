@@ -73,5 +73,7 @@ run the server; the live server, GUI dispatch and session ownership are in
 - P29-10 (10b): `envelope.notes` is `[{kind, face, text}]` (core `EnvelopeNote`, a closed list:
   `no_depth`, `move_budget_not_met`, `computed_width`, `force_budget_floor`, `move_budget_conflict`);
   the may-occur sentence left the notes (break). Feature token `envelope_note_kinds`.
+- P29-10 (10c): `summary.exceeds_breakdown[].group` and a diagnostic's `group` (a group
+  load finding; absent for every other finding). Feature token `load_finding_group`. Additions only.
 - Verify with `cargo test -p rs_cam_mcp -q`; when a wire type changes, also run
   the relevant `rs_cam_viz` MCP integration tests.

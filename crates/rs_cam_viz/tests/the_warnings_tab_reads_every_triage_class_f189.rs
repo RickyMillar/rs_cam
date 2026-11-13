@@ -26,6 +26,7 @@ fn finding(class: TriageClass, id: &str, message: &str) -> Finding {
             region: None,
             semantic_item_id: None,
             bucket: [0, 0, 0],
+            group: None,
         },
         diagnostic: Diagnostic {
             id: DiagnosticId::from(id),
@@ -43,6 +44,7 @@ fn finding(class: TriageClass, id: &str, message: &str) -> Finding {
             evidence: None,
             fix: None,
             supersedes: vec![],
+            group: None,
             suppressed_diagnostics: vec![],
         },
         occurrences: 1,

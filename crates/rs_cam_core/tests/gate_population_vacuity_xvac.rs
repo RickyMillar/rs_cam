@@ -176,7 +176,7 @@ fn verdict_for(t: &SimulationCutTrace) -> ToolpathLoadVerdict {
     let (power, deflection, depth) = verdicts(t);
     ToolpathLoadVerdict {
         toolpath_id: TP,
-        groups: rs_cam_core::tool_load::verdict::GroupVerdicts::headline_only(
+        groups: rs_cam_core::tool_load::verdict::GroupVerdicts::headline_only_for_tests(
             rs_cam_core::limits::CutGroup::Body,
         ),
         chipload: rs_cam_core::tool_load::verdict::ChiploadVerdict::Unmodeled {
@@ -542,7 +542,7 @@ fn the_drill_criteria_and_diagnostics_carry_the_hole_population() {
 
     let v = ToolpathLoadVerdict {
         toolpath_id: TP,
-        groups: rs_cam_core::tool_load::verdict::GroupVerdicts::headline_only(
+        groups: rs_cam_core::tool_load::verdict::GroupVerdicts::headline_only_for_tests(
             rs_cam_core::limits::CutGroup::Body,
         ),
         chipload: rs_cam_core::tool_load::verdict::ChiploadVerdict::Unmodeled {

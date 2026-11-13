@@ -38,6 +38,7 @@ fn stale_default_to_diagnostic(d: &StaleDefault) -> Diagnostic {
             new_value: d.new_value,
         }),
         supersedes: vec![],
+        group: None,
         suppressed_diagnostics: vec![],
     }
 }

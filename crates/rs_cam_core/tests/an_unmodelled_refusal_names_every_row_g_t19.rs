@@ -134,7 +134,7 @@ fn depth_unmodeled() -> DepthVerdict {
 fn milling_verdict(chipload: ChiploadVerdict, depth: DepthVerdict) -> ToolpathLoadVerdict {
     ToolpathLoadVerdict {
         toolpath_id: TP,
-        groups: rs_cam_core::tool_load::verdict::GroupVerdicts::headline_only(
+        groups: rs_cam_core::tool_load::verdict::GroupVerdicts::headline_only_for_tests(
             rs_cam_core::limits::CutGroup::Body,
         ),
         chipload,
@@ -204,7 +204,7 @@ fn drill_verdict() -> ToolpathLoadVerdict {
         || UnmodeledReason::NotApplicableForOp("drill cycle — no continuous engagement".to_owned());
     ToolpathLoadVerdict {
         toolpath_id: TP,
-        groups: rs_cam_core::tool_load::verdict::GroupVerdicts::headline_only(
+        groups: rs_cam_core::tool_load::verdict::GroupVerdicts::headline_only_for_tests(
             rs_cam_core::limits::CutGroup::Body,
         ),
         chipload: ChiploadVerdict::Unmodeled {

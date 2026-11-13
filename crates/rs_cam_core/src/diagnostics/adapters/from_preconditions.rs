@@ -147,6 +147,7 @@ pub fn diagnostics_from_preconditions(
                     evidence: None,
                     fix: None,
                     supersedes: vec![],
+                    group: None,
                     suppressed_diagnostics: vec![],
                 });
             }
@@ -210,6 +211,7 @@ fn no_tool(scope: &Scope, ctx: &PreconditionContext) -> Option<Diagnostic> {
         evidence: None,
         fix: None,
         supersedes: vec![],
+        group: None,
         suppressed_diagnostics: vec![],
     })
 }
@@ -284,6 +286,7 @@ fn not_set(scope: &Scope, op: &OperationConfig, ctx: &PreconditionContext) -> Op
         evidence: None,
         fix: None,
         supersedes: vec![],
+        group: None,
         suppressed_diagnostics: vec![],
     })
 }
@@ -308,6 +311,7 @@ fn buried_face(scope: &Scope, ctx: &PreconditionContext) -> Option<Diagnostic> {
         evidence: None,
         fix: None,
         supersedes: vec![],
+        group: None,
         suppressed_diagnostics: vec![],
     })
 }
@@ -334,6 +338,7 @@ fn selection_refused(scope: &Scope, ctx: &PreconditionContext) -> Option<Diagnos
         evidence: None,
         fix: None,
         supersedes: vec![],
+        group: None,
         suppressed_diagnostics: vec![],
     })
 }
@@ -357,6 +362,7 @@ fn selection_empty(scope: &Scope) -> Diagnostic {
         evidence: None,
         fix: None,
         supersedes: vec![],
+        group: None,
         suppressed_diagnostics: vec![],
     }
 }
@@ -383,6 +389,7 @@ fn drill_checks(scope: &Scope, ctx: &PreconditionContext) -> Vec<Diagnostic> {
             evidence: None,
             fix: None,
             supersedes: vec![],
+            group: None,
             suppressed_diagnostics: vec![],
         });
     }
@@ -412,6 +419,7 @@ fn project_curve_checks(scope: &Scope, ctx: &PreconditionContext) -> Vec<Diagnos
             evidence: None,
             fix: None,
             supersedes: vec![],
+            group: None,
             suppressed_diagnostics: vec![],
         });
     }
@@ -436,6 +444,7 @@ fn project_curve_checks(scope: &Scope, ctx: &PreconditionContext) -> Vec<Diagnos
             evidence: None,
             fix: None,
             supersedes: vec![],
+            group: None,
             suppressed_diagnostics: vec![],
         });
     }

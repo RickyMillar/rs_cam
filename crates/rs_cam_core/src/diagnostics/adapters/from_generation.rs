@@ -101,6 +101,7 @@ fn feasibility(toolpath_id: ToolpathId, stats: &ToolpathStats) -> Vec<Diagnostic
                 evidence: None,
                 fix: None,
                 supersedes: vec![],
+                group: None,
                 suppressed_diagnostics: vec![],
             }
         })
@@ -131,6 +132,7 @@ fn non_centre_cutting_plunge(toolpath_id: ToolpathId, stats: &ToolpathStats) -> 
         evidence: None,
         fix: None,
         supersedes: vec![],
+        group: None,
         suppressed_diagnostics: vec![],
     }]
 }
@@ -159,6 +161,7 @@ fn buried_face(toolpath_id: ToolpathId, stats: &ToolpathStats) -> Vec<Diagnostic
         evidence: None,
         fix: None,
         supersedes: vec![],
+        group: None,
         suppressed_diagnostics: vec![],
     }]
 }
@@ -196,6 +199,7 @@ fn cuts_into_model(toolpath_id: ToolpathId, stats: &ToolpathStats) -> Vec<Diagno
         }),
         fix: None,
         supersedes: vec![],
+        group: None,
         suppressed_diagnostics: vec![],
     }]
 }
@@ -241,6 +245,7 @@ fn rest_levels_fallback(toolpath_id: ToolpathId, stats: &ToolpathStats) -> Vec<D
         evidence: None,
         fix: None,
         supersedes: vec![],
+        group: None,
         suppressed_diagnostics: vec![],
     }]
 }
@@ -297,6 +302,7 @@ fn region_cap_truncated(toolpath_id: ToolpathId, stats: &ToolpathStats) -> Vec<D
         evidence: None,
         fix: None,
         supersedes: vec![],
+        group: None,
         suppressed_diagnostics: vec![],
     }]
 }
@@ -336,6 +342,7 @@ fn inert_claims_dial(toolpath_id: ToolpathId, stats: &ToolpathStats) -> Vec<Diag
         evidence: None,
         fix: None,
         supersedes: vec![],
+        group: None,
         suppressed_diagnostics: vec![],
     }]
 }
@@ -370,6 +377,7 @@ fn boundary_clip_dropped(toolpath_id: ToolpathId, stats: &ToolpathStats) -> Vec<
         evidence: None,
         fix: None,
         supersedes: vec![],
+        group: None,
         suppressed_diagnostics: vec![],
     }]
 }
@@ -405,6 +413,7 @@ fn waterline_ladder(toolpath_id: ToolpathId, stats: &ToolpathStats) -> Vec<Diagn
         evidence: None,
         fix: None,
         supersedes: vec![],
+        group: None,
         suppressed_diagnostics: vec![],
     };
     if f.floored() {
@@ -473,6 +482,7 @@ fn offset_library_failures(toolpath_id: ToolpathId, stats: &ToolpathStats) -> Ve
         evidence: None,
         fix: None,
         supersedes: vec![],
+        group: None,
         suppressed_diagnostics: vec![],
     }]
 }
@@ -513,6 +523,7 @@ fn zero_removal(toolpath_id: ToolpathId, stats: &ToolpathStats) -> Vec<Diagnosti
         evidence: None,
         fix: None,
         supersedes: vec![],
+        group: None,
         suppressed_diagnostics: vec![],
     }]
 }
@@ -539,6 +550,7 @@ fn buried_curve(toolpath_id: ToolpathId, stats: &ToolpathStats) -> Vec<Diagnosti
         evidence: None,
         fix: None,
         supersedes: vec![],
+        group: None,
         suppressed_diagnostics: vec![],
     }]
 }
@@ -566,6 +578,7 @@ fn selection_note(toolpath_id: ToolpathId, stats: &ToolpathStats) -> Vec<Diagnos
         evidence: None,
         fix: None,
         supersedes: vec![],
+        group: None,
         suppressed_diagnostics: vec![],
     }]
 }
@@ -592,6 +605,7 @@ fn tab_placement(toolpath_id: ToolpathId, stats: &ToolpathStats) -> Vec<Diagnost
         evidence: None,
         fix: None,
         supersedes: vec![],
+        group: None,
         suppressed_diagnostics: vec![],
     }]
 }
@@ -674,6 +688,7 @@ fn claims_reference(toolpath_id: ToolpathId, stats: &ToolpathStats) -> Vec<Diagn
         evidence: None,
         fix: None,
         supersedes: vec![],
+        group: None,
         suppressed_diagnostics: vec![],
     }]
 }
@@ -746,6 +761,7 @@ fn ramp_reach_clamp(toolpath_id: ToolpathId, stats: &ToolpathStats) -> Vec<Diagn
         evidence: None,
         fix: None,
         supersedes: vec![],
+        group: None,
         suppressed_diagnostics: vec![],
     }]
 }
@@ -825,6 +841,7 @@ fn derived_stepover(toolpath_id: ToolpathId, stats: &ToolpathStats) -> Vec<Diagn
             evidence: None,
             fix: None,
             supersedes: vec![],
+            group: None,
             suppressed_diagnostics: vec![],
         })
         .collect()
@@ -885,6 +902,7 @@ fn truncated_core(toolpath_id: ToolpathId, stats: &ToolpathStats) -> Vec<Diagnos
         evidence: None,
         fix: None,
         supersedes: vec![],
+        group: None,
         suppressed_diagnostics: vec![],
     }]
 }
@@ -958,6 +976,7 @@ fn clipped_band(toolpath_id: ToolpathId, stats: &ToolpathStats) -> Vec<Diagnosti
         evidence: None,
         fix: None,
         supersedes: vec![],
+        group: None,
         suppressed_diagnostics: vec![],
     }]
 }
@@ -1011,6 +1030,7 @@ fn unmachined_band(toolpath_id: ToolpathId, stats: &ToolpathStats) -> Vec<Diagno
         evidence: None,
         fix: None,
         supersedes: vec![],
+        group: None,
         suppressed_diagnostics: vec![],
     }]
 }
@@ -1040,6 +1060,7 @@ fn tip_float(toolpath_id: ToolpathId, stats: &ToolpathStats) -> Vec<Diagnostic> 
         evidence: None,
         fix: None,
         supersedes: vec![],
+        group: None,
         suppressed_diagnostics: vec![],
     }]
 }
@@ -1066,6 +1087,7 @@ pub fn sim_outside_envelope(toolpath_id: ToolpathId, text: String) -> Diagnostic
         // Lead decision (iii), 2026-11-05: the measured placement stands for
         // the pre-simulation placement of the stated cut (as the flute pair).
         supersedes: vec![DiagnosticId::from(ids::PROJECT_OUTSIDE_ENVELOPE)],
+        group: None,
         suppressed_diagnostics: vec![],
     }
 }
@@ -1104,6 +1126,7 @@ pub fn flute_reach_measured(
         evidence: None,
         fix: None,
         supersedes: vec![DiagnosticId::from(ids::TOOL_REACH_PAST_FLUTE)],
+        group: None,
         suppressed_diagnostics: vec![],
     }
 }
@@ -1149,6 +1172,7 @@ pub fn core_contact_measured(
         evidence: None,
         fix: None,
         supersedes: vec![DiagnosticId::from(ids::SAFETY_NON_CENTRE_CUTTING_PLUNGE)],
+        group: None,
         suppressed_diagnostics: vec![],
     }
 }

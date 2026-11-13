@@ -4052,6 +4052,11 @@ pub fn build_info() -> serde_json::Value {
             // `[{kind, face, text}]` (a closed list of kinds); the
             // may-occur sentence left the notes for the row caveat.
             "envelope_note_kinds",
+            // Feeds contract P29-10 (10c): `get_tool_load_report`
+            // `summary.exceeds_breakdown[].group` and a load diagnostic's
+            // `group` name the cut group of a finding that is not the
+            // headline; such a finding is its own triage entry.
+            "load_finding_group",
         ],
     })
 }

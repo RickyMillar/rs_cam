@@ -73,6 +73,7 @@ pub fn verdict_to_diagnostic(v: &Verdict) -> Diagnostic {
         evidence,
         fix: None,
         supersedes: vec![],
+        group: None,
         suppressed_diagnostics: vec![],
     }
 }

@@ -1126,6 +1126,7 @@ fn a_field_finding_dots_the_tab_of_its_field_w2b() {
         evidence: None,
         fix: None,
         supersedes: Vec::new(),
+        group: None,
         suppressed_diagnostics: Vec::new(),
     };
     let (session, _) = one_pocket_session();

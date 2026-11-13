@@ -79,6 +79,7 @@ pub fn diagnostics_from_model_refs(
             evidence: None,
             fix: None,
             supersedes: vec![],
+            group: None,
             suppressed_diagnostics: vec![],
         });
     }

@@ -108,7 +108,7 @@ fn metric(observed: f64, source: ChipBoundsSource) -> ChiploadMetric {
 fn verdict_with(chipload: ChiploadVerdict) -> ToolpathLoadVerdict {
     ToolpathLoadVerdict {
         toolpath_id: ToolpathId::from_raw(8),
-        groups: rs_cam_core::tool_load::verdict::GroupVerdicts::headline_only(
+        groups: rs_cam_core::tool_load::verdict::GroupVerdicts::headline_only_for_tests(
             rs_cam_core::limits::CutGroup::Body,
         ),
         chipload,

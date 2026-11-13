@@ -87,7 +87,7 @@ const TP: ToolpathId = ToolpathId::from_raw(15);
 fn abstaining_verdict(reason: UnmodeledReason) -> ToolpathLoadVerdict {
     ToolpathLoadVerdict {
         toolpath_id: TP,
-        groups: rs_cam_core::tool_load::verdict::GroupVerdicts::headline_only(
+        groups: rs_cam_core::tool_load::verdict::GroupVerdicts::headline_only_for_tests(
             rs_cam_core::limits::CutGroup::Body,
         ),
         chipload: ChiploadVerdict::Unmodeled { reason },
@@ -128,6 +128,7 @@ fn breakage_caution() -> Diagnostic {
         evidence: None,
         fix: None,
         supersedes: vec![],
+        group: None,
         suppressed_diagnostics: vec![],
     }
 }
@@ -220,6 +221,7 @@ fn a_modelled_within_still_supersedes_the_heuristic() {
         evidence: None,
         fix: None,
         supersedes: vec![DiagnosticId::from(ids::FEEDS_FEED_VS_LUT_HIGH)],
+        group: None,
         suppressed_diagnostics: vec![],
     };
     rows.push(within);

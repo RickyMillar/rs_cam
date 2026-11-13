@@ -3106,7 +3106,7 @@ mod tests {
         };
         let verdict = ToolpathLoadVerdict {
             toolpath_id: rs_cam_core::ToolpathId::from_raw(0),
-            groups: rs_cam_core::tool_load::verdict::GroupVerdicts::headline_only(
+            groups: rs_cam_core::tool_load::verdict::GroupVerdicts::headline_only_for_tests(
                 rs_cam_core::limits::CutGroup::Body,
             ),
             chipload: ChiploadVerdict::Unmodeled { reason: na() },

@@ -142,7 +142,7 @@ fn milling_verdict() -> ToolpathLoadVerdict {
     };
     ToolpathLoadVerdict {
         toolpath_id: TP,
-        groups: rs_cam_core::tool_load::verdict::GroupVerdicts::headline_only(
+        groups: rs_cam_core::tool_load::verdict::GroupVerdicts::headline_only_for_tests(
             rs_cam_core::limits::CutGroup::Body,
         ),
         chipload: rs_cam_core::tool_load::chipload::evaluate(&ctx, &env),
@@ -188,7 +188,7 @@ fn drill_verdict() -> ToolpathLoadVerdict {
     let gates = rs_cam_core::tool_load::drill_gates::evaluate(&d, &summary);
     ToolpathLoadVerdict {
         toolpath_id: TP,
-        groups: rs_cam_core::tool_load::verdict::GroupVerdicts::headline_only(
+        groups: rs_cam_core::tool_load::verdict::GroupVerdicts::headline_only_for_tests(
             rs_cam_core::limits::CutGroup::Body,
         ),
         chipload: ChiploadVerdict::Unmodeled {

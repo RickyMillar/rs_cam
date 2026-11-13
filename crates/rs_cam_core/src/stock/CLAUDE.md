@@ -7,7 +7,7 @@ The entry point for an operator answer: `stock::sim_triage::SimulationTriage`.
 
 - `mod.rs`, `dexel.rs` — the facade and the core tri-dexel data types (`LatticeWindow`: a grid window, G-RESTLEVELS).
 - `simulation_cut.rs` + `simulation_cut/` — the cut trace, assembly, reports.
-- `sim_triage.rs` — "what should I act on?"; `sim_measurability.rs` — can it be measured?
+- `sim_triage.rs` — "what should I act on?" (P29-10: `DedupKey::group`, a group load finding is its own entry); `sim_measurability.rs` — can it be measured?
 - `collision.rs` — three-state `HolderCollisionCheck`, the result types (`CollisionEvent::segment` is a `tool::body::ZoneKind`); the mesh holder check `check_collisions*` (P22-0c-5: `MountedBody` zones through `ZoneProbe::on_mesh` and `zone_top_at` on `ModelMesh`: whole disc, no probe for a zone no wider than the envelope); `RapidClearanceCheck` = the rapid arm only. `contact.rs` (P22-0c-3) — THE contact kernel `zone_contact` / `zone_top_at` (a body contact zone vs a `ContactSolid`: the dexel stock, `ModelMesh`): `StockContactCheck` (`Core` with `MoveSweep`; `FluteTop`, P22-0c-4 `Shank`/`Holder`/`Shoe` by `SHIPPED_RULE` = pre-move, `DiscSweep` = in-move, ruling Q2; a zone above the flutes no wider than the envelope is shadowed; rapids test the zones above the flutes), `WalkChecks::mounted` (rapid + contact), `drill_flute_overreach`; `radial_profile.rs` — the LUT.
   `stock_mesh.rs`, `dexel_mesh.rs`, `dexel_mesh_mc.rs` — mesh extraction; colours: `export/`.
 - `material_slot.rs` — S1 slots; `cut_as.rs` — S6 `CutAs`; `standing_islands.rs` — THE walk of material above a target and its islands (union audit, 3D Rough coverage).

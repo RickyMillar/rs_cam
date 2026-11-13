@@ -576,6 +576,7 @@ mod tests {
             evidence: None,
             fix: None,
             supersedes: vec![],
+            group: None,
             suppressed_diagnostics: vec![],
         }
     }

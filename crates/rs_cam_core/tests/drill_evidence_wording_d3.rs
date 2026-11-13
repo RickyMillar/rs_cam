@@ -74,7 +74,7 @@ fn gates(d: &DrillOp) -> DrillGatesVerdict {
 fn verdict_with(drill: DrillGatesVerdict) -> ToolpathLoadVerdict {
     ToolpathLoadVerdict {
         toolpath_id: ToolpathId::from_raw(0),
-        groups: rs_cam_core::tool_load::verdict::GroupVerdicts::headline_only(
+        groups: rs_cam_core::tool_load::verdict::GroupVerdicts::headline_only_for_tests(
             rs_cam_core::limits::CutGroup::Body,
         ),
         chipload: ChiploadVerdict::Unmodeled {

@@ -285,7 +285,7 @@ fn the_shipped_gate_still_warns_on_a_deflection_exceedance() {
     let report = ToolLoadReport {
         per_toolpath: vec![ToolpathLoadVerdict {
             toolpath_id: TP,
-            groups: rs_cam_core::tool_load::verdict::GroupVerdicts::headline_only(
+            groups: rs_cam_core::tool_load::verdict::GroupVerdicts::headline_only_for_tests(
                 rs_cam_core::limits::CutGroup::Body,
             ),
             chipload: ChiploadVerdict::Unmodeled {

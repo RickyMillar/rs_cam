@@ -399,12 +399,14 @@ pub struct GroupVerdicts {
 }
 
 impl GroupVerdicts {
-    /// The record of a verdict with no group but the headline group (a
-    /// verdict that a test or a door builds by hand): the headline group's
-    /// cells are [`GroupCell::Headline`], every other cell
-    /// [`GroupCell::NoSamples`].
+    /// TEST DOOR (P29-10 10c): the record of a verdict with no group but the
+    /// headline group, for a verdict that a test builds by hand. The
+    /// headline group's cells are [`GroupCell::Headline`], every other cell
+    /// [`GroupCell::NoSamples`]. No product door can call it: it exists only
+    /// under `test` or the `test-support` feature.
+    #[cfg(any(test, feature = "test-support"))]
     #[must_use]
-    pub fn headline_only(headline: CutGroup) -> Self {
+    pub fn headline_only_for_tests(headline: CutGroup) -> Self {
         fn cells<V>(headline: CutGroup) -> ByGroup<GroupCell<V>> {
             ByGroup::from_fn(|g| {
                 if g == headline {
@@ -892,6 +894,8 @@ pub struct ExceedsEntry {
     /// `"low"` / `"high"` for chipload; `None` for power / deflection.
     #[serde(default, skip_serializing_if = "Option::is_none")]
     pub side: Option<String>,
+    /// P29-10 (10c): the cut group of the row (`CriterionStatus::group`).
+    pub group: Option<CutGroup>,
 }
 
 impl ToolLoadReport {
@@ -972,12 +976,17 @@ impl ToolLoadReport {
             // task 5) — a gate included in `criteria()` automatically
             // appears in the breakdown; order stays chipload, power,
             // deflection.
-            for ec in v.exceeded_criteria() {
+            // P29-10 (10c): each entry names its cut group.
+            for status in v.criteria() {
+                let Some(ec) = status.exceeded else {
+                    continue;
+                };
                 exceeds_breakdown.push(ExceedsEntry {
                     toolpath_id: v.toolpath_id,
                     toolpath_name: name.clone(),
                     gate: ec.label.to_owned(),
                     side: ec.side_label().map(str::to_owned),
+                    group: status.group,
                 });
             }
         }
@@ -2674,7 +2683,7 @@ mod tests {
     fn modeled_count_ignores_unmodeled() {
         let v = ToolpathLoadVerdict {
             toolpath_id: ToolpathId::from_raw(0),
-            groups: crate::tool_load::verdict::GroupVerdicts::headline_only(
+            groups: crate::tool_load::verdict::GroupVerdicts::headline_only_for_tests(
                 crate::limits::CutGroup::Body,
             ),
             chipload: ChiploadVerdict::Within {
@@ -2733,7 +2742,7 @@ mod tests {
         let r = ToolLoadReport {
             per_toolpath: vec![ToolpathLoadVerdict {
                 toolpath_id: ToolpathId::from_raw(0),
-                groups: crate::tool_load::verdict::GroupVerdicts::headline_only(
+                groups: crate::tool_load::verdict::GroupVerdicts::headline_only_for_tests(
                     crate::limits::CutGroup::Body,
                 ),
                 chipload: ChiploadVerdict::Within {
@@ -2788,7 +2797,7 @@ mod tests {
             per_toolpath: vec![
                 ToolpathLoadVerdict {
                     toolpath_id: ToolpathId::from_raw(0),
-                    groups: crate::tool_load::verdict::GroupVerdicts::headline_only(
+                    groups: crate::tool_load::verdict::GroupVerdicts::headline_only_for_tests(
                         crate::limits::CutGroup::Body,
                     ),
                     chipload: ChiploadVerdict::Within {
@@ -2831,7 +2840,7 @@ mod tests {
                 },
                 ToolpathLoadVerdict {
                     toolpath_id: ToolpathId::from_raw(1),
-                    groups: crate::tool_load::verdict::GroupVerdicts::headline_only(
+                    groups: crate::tool_load::verdict::GroupVerdicts::headline_only_for_tests(
                         crate::limits::CutGroup::Body,
                     ),
                     chipload: ChiploadVerdict::Within {
@@ -2895,7 +2904,7 @@ mod tests {
         let na = || UnmodeledReason::NotApplicableForOp("drill cycle".to_owned());
         let drill_verdict = |plunge: DrillGateOutcome| ToolpathLoadVerdict {
             toolpath_id: ToolpathId::from_raw(0),
-            groups: crate::tool_load::verdict::GroupVerdicts::headline_only(
+            groups: crate::tool_load::verdict::GroupVerdicts::headline_only_for_tests(
                 crate::limits::CutGroup::Body,
             ),
             chipload: ChiploadVerdict::Unmodeled { reason: na() },
@@ -2995,7 +3004,7 @@ mod tests {
                 // Drill cycle — every gate N/A.
                 ToolpathLoadVerdict {
                     toolpath_id: ToolpathId::from_raw(0),
-                    groups: crate::tool_load::verdict::GroupVerdicts::headline_only(
+                    groups: crate::tool_load::verdict::GroupVerdicts::headline_only_for_tests(
                         crate::limits::CutGroup::Body,
                     ),
                     chipload: ChiploadVerdict::Unmodeled {
@@ -3022,7 +3031,7 @@ mod tests {
                 // Operator action: run the sim.
                 ToolpathLoadVerdict {
                     toolpath_id: ToolpathId::from_raw(1),
-                    groups: crate::tool_load::verdict::GroupVerdicts::headline_only(
+                    groups: crate::tool_load::verdict::GroupVerdicts::headline_only_for_tests(
                         crate::limits::CutGroup::Body,
                     ),
                     chipload: ChiploadVerdict::Unmodeled {
@@ -3050,7 +3059,7 @@ mod tests {
                 // `fully_unmodeled` (not `not_applicable`).
                 ToolpathLoadVerdict {
                     toolpath_id: ToolpathId::from_raw(2),
-                    groups: crate::tool_load::verdict::GroupVerdicts::headline_only(
+                    groups: crate::tool_load::verdict::GroupVerdicts::headline_only_for_tests(
                         crate::limits::CutGroup::Body,
                     ),
                     chipload: ChiploadVerdict::Unmodeled {
@@ -3098,7 +3107,7 @@ mod tests {
         let r = ToolLoadReport {
             per_toolpath: vec![ToolpathLoadVerdict {
                 toolpath_id: ToolpathId::from_raw(42),
-                groups: crate::tool_load::verdict::GroupVerdicts::headline_only(
+                groups: crate::tool_load::verdict::GroupVerdicts::headline_only_for_tests(
                     crate::limits::CutGroup::Body,
                 ),
                 chipload: ChiploadVerdict::Exceeds {
@@ -3382,7 +3391,7 @@ mod tests {
         let r = ToolLoadReport {
             per_toolpath: vec![ToolpathLoadVerdict {
                 toolpath_id: ToolpathId::from_raw(7),
-                groups: crate::tool_load::verdict::GroupVerdicts::headline_only(
+                groups: crate::tool_load::verdict::GroupVerdicts::headline_only_for_tests(
                     crate::limits::CutGroup::Body,
                 ),
                 chipload: ChiploadVerdict::Exceeds {
@@ -3462,7 +3471,7 @@ mod tests {
         let r = ToolLoadReport {
             per_toolpath: vec![ToolpathLoadVerdict {
                 toolpath_id: ToolpathId::from_raw(0),
-                groups: crate::tool_load::verdict::GroupVerdicts::headline_only(
+                groups: crate::tool_load::verdict::GroupVerdicts::headline_only_for_tests(
                     crate::limits::CutGroup::Body,
                 ),
                 chipload: ChiploadVerdict::Exceeds {
@@ -3546,7 +3555,7 @@ mod tests {
     fn gating_tier_derives_from_criteria() {
         let v = ToolpathLoadVerdict {
             toolpath_id: ToolpathId::from_raw(7),
-            groups: crate::tool_load::verdict::GroupVerdicts::headline_only(
+            groups: crate::tool_load::verdict::GroupVerdicts::headline_only_for_tests(
                 crate::limits::CutGroup::Body,
             ),
             chipload: ChiploadVerdict::Exceeds {
@@ -3614,7 +3623,7 @@ mod tests {
         );
         ToolpathLoadVerdict {
             toolpath_id: ToolpathId::from_raw(id),
-            groups: crate::tool_load::verdict::GroupVerdicts::headline_only(
+            groups: crate::tool_load::verdict::GroupVerdicts::headline_only_for_tests(
                 crate::limits::CutGroup::Body,
             ),
             chipload: ChiploadVerdict::Unmodeled {
@@ -3642,7 +3651,7 @@ mod tests {
     fn vd_all_sim_required(id: usize) -> ToolpathLoadVerdict {
         ToolpathLoadVerdict {
             toolpath_id: ToolpathId::from_raw(id),
-            groups: crate::tool_load::verdict::GroupVerdicts::headline_only(
+            groups: crate::tool_load::verdict::GroupVerdicts::headline_only_for_tests(
                 crate::limits::CutGroup::Body,
             ),
             chipload: ChiploadVerdict::Unmodeled {
@@ -3714,7 +3723,7 @@ mod tests {
         let r = ToolLoadReport {
             per_toolpath: vec![ToolpathLoadVerdict {
                 toolpath_id: ToolpathId::from_raw(42),
-                groups: crate::tool_load::verdict::GroupVerdicts::headline_only(
+                groups: crate::tool_load::verdict::GroupVerdicts::headline_only_for_tests(
                     crate::limits::CutGroup::Body,
                 ),
                 chipload: ChiploadVerdict::Within {
@@ -3777,7 +3786,7 @@ mod tests {
         let r = ToolLoadReport {
             per_toolpath: vec![ToolpathLoadVerdict {
                 toolpath_id: ToolpathId::from_raw(0),
-                groups: crate::tool_load::verdict::GroupVerdicts::headline_only(
+                groups: crate::tool_load::verdict::GroupVerdicts::headline_only_for_tests(
                     crate::limits::CutGroup::Body,
                 ),
                 chipload: ChiploadVerdict::Exceeds {

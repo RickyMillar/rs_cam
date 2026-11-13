@@ -538,7 +538,7 @@ fn a_refused_cell_has_no_band_anywhere_g1() {
 fn a_refused_cell_is_not_reported_within_g1() {
     let verdict = ToolpathLoadVerdict {
         toolpath_id: ToolpathId::from_raw(3),
-        groups: rs_cam_core::tool_load::verdict::GroupVerdicts::headline_only(
+        groups: rs_cam_core::tool_load::verdict::GroupVerdicts::headline_only_for_tests(
             rs_cam_core::limits::CutGroup::Body,
         ),
         chipload: ChiploadVerdict::Unmodeled {

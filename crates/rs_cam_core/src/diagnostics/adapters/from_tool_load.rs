@@ -146,6 +146,7 @@ fn group_diagnostics(verdict: &ToolpathLoadVerdict) -> Vec<Diagnostic> {
             );
             // The face is what the list draws: it names the group too.
             d.face = format!("{} group: {}", group.label(), d.face);
+            d.group = Some(group);
             out.push(d);
         }
     }
@@ -190,6 +191,7 @@ fn material_split_to_diagnostics(
             evidence: None,
             fix: None,
             supersedes: Vec::new(),
+            group: None,
             suppressed_diagnostics: vec![],
         });
     }
@@ -342,6 +344,7 @@ fn commanded_above_band_to_diagnostic(
         // Deliberately supersedes nothing: this is a commanded-vs-authored
         // report and must not silence a sim-backed gate.
         supersedes: vec![],
+        group: None,
         suppressed_diagnostics: vec![],
     })
 }
@@ -436,6 +439,7 @@ fn chipload_to_diagnostic(
                 }),
                 fix: None,
                 supersedes: chipload_supersedes(),
+                group: None,
                 suppressed_diagnostics: vec![],
             })
         }
@@ -497,6 +501,7 @@ fn chipload_to_diagnostic(
                 }),
                 fix: None,
                 supersedes: chipload_supersedes(),
+                group: None,
                 suppressed_diagnostics: vec![],
             })
         }
@@ -594,6 +599,7 @@ fn power_to_diagnostic(tp_id: ToolpathId, v: &PowerVerdict) -> Option<Diagnostic
             }),
             fix: None,
             supersedes: vec![],
+            group: None,
             suppressed_diagnostics: vec![],
         }),
         PowerVerdict::Exceeds {
@@ -633,6 +639,7 @@ fn power_to_diagnostic(tp_id: ToolpathId, v: &PowerVerdict) -> Option<Diagnostic
             }),
             fix: None,
             supersedes: vec![],
+            group: None,
             suppressed_diagnostics: vec![],
         }),
         PowerVerdict::Unmodeled { reason } => {
@@ -682,6 +689,7 @@ fn deflection_to_diagnostic(tp_id: ToolpathId, v: &DeflectionVerdict) -> Option<
             }),
             fix: None,
             supersedes: deflection_supersedes(),
+            group: None,
             suppressed_diagnostics: vec![],
         }),
         DeflectionVerdict::Exceeds {
@@ -720,6 +728,7 @@ fn deflection_to_diagnostic(tp_id: ToolpathId, v: &DeflectionVerdict) -> Option<
             }),
             fix: None,
             supersedes: deflection_supersedes(),
+            group: None,
             suppressed_diagnostics: vec![],
         }),
         DeflectionVerdict::Unmodeled { reason } => unmodeled_to_diagnostic(
@@ -781,6 +790,7 @@ fn depth_to_diagnostic(tp_id: ToolpathId, v: &DepthVerdict) -> Option<Diagnostic
         }),
         fix: None,
         supersedes: vec![],
+        group: None,
         suppressed_diagnostics: vec![],
     };
     match v {
@@ -1036,6 +1046,7 @@ fn drill_gate_to_diagnostic(
             }),
             fix: None,
             supersedes: vec![],
+            group: None,
             suppressed_diagnostics: vec![],
         },
         DrillGateOutcome::Exceeds {
@@ -1078,6 +1089,7 @@ fn drill_gate_to_diagnostic(
             }),
             fix: None,
             supersedes: vec![],
+            group: None,
             suppressed_diagnostics: vec![],
         },
     }
@@ -1180,6 +1192,7 @@ fn unmodeled_to_diagnostic(
         evidence: None,
         fix: None,
         supersedes: supersedes_fn(),
+        group: None,
         suppressed_diagnostics: vec![],
     })
 }

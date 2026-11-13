@@ -193,6 +193,7 @@ pub fn diagnostics_from_tool_name(tool: &ToolConfig) -> Vec<Diagnostic> {
         evidence: None,
         fix: None,
         supersedes: vec![],
+        group: None,
         suppressed_diagnostics: vec![],
     }]
 }
@@ -223,6 +224,7 @@ pub fn diagnostics_from_tool_stickout(tool: &ToolConfig) -> Vec<Diagnostic> {
         evidence: None,
         fix: None,
         supersedes: vec![],
+        group: None,
         suppressed_diagnostics: vec![],
     }]
 }
@@ -257,6 +259,7 @@ fn tool_op_compat_checks(
             evidence: None,
             fix: None,
             supersedes: vec![],
+            group: None,
             suppressed_diagnostics: vec![],
         });
     }
@@ -299,6 +302,7 @@ fn tool_op_compat_checks(
             evidence: None,
             fix: None,
             supersedes: vec![],
+            group: None,
             suppressed_diagnostics: vec![],
         });
     }
@@ -328,6 +332,7 @@ fn tool_op_compat_checks(
             evidence: None,
             fix: None,
             supersedes: vec![],
+            group: None,
             suppressed_diagnostics: vec![],
         });
     }
@@ -396,6 +401,7 @@ fn stepover_checks(
             }),
             fix: None,
             supersedes: vec![],
+            group: None,
             suppressed_diagnostics: vec![],
         });
         return out;
@@ -429,6 +435,7 @@ fn stepover_checks(
             evidence: None,
             fix: None,
             supersedes: vec![],
+            group: None,
             suppressed_diagnostics: vec![],
         });
     }
@@ -448,6 +455,7 @@ fn stepover_checks(
             evidence: None,
             fix: None,
             supersedes: vec![],
+            group: None,
             suppressed_diagnostics: vec![],
         });
     }
@@ -473,6 +481,7 @@ fn stepover_checks(
             evidence: None,
             fix: None,
             supersedes: vec![],
+            group: None,
             suppressed_diagnostics: vec![],
         });
     }
@@ -510,6 +519,7 @@ fn stepover_checks(
                         evidence: None,
                         fix: None,
                         supersedes: vec![],
+                        group: None,
                         suppressed_diagnostics: vec![],
                     });
                 }
@@ -553,6 +563,7 @@ fn depth_checks(scope: &Scope, op: &OperationConfig, tool: &ToolConfig) -> Vec<D
             }),
             fix: None,
             supersedes: vec![],
+            group: None,
             suppressed_diagnostics: vec![],
         });
     }
@@ -593,6 +604,7 @@ fn depth_checks(scope: &Scope, op: &OperationConfig, tool: &ToolConfig) -> Vec<D
             }),
             fix: None,
             supersedes: vec![],
+            group: None,
             suppressed_diagnostics: vec![],
         });
     }
@@ -626,6 +638,7 @@ fn feed_checks(scope: &Scope, feed: Option<f64>, plunge: Option<f64>) -> Vec<Dia
             evidence: None,
             fix: None,
             supersedes: vec![],
+            group: None,
             suppressed_diagnostics: vec![],
         });
     }
@@ -808,6 +821,7 @@ fn height_order_findings(
                 evidence: None,
                 fix: None,
                 supersedes: vec![],
+                group: None,
                 suppressed_diagnostics: vec![],
             }
         })
@@ -856,6 +870,7 @@ fn heights_checks(scope: &Scope, op: &OperationConfig, h: &ResolvedHeights) -> V
             }),
             fix: None,
             supersedes: vec![],
+            group: None,
             suppressed_diagnostics: vec![],
         });
     }

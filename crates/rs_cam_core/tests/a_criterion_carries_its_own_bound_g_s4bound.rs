@@ -159,7 +159,7 @@ fn milling_verdict() -> ToolpathLoadVerdict {
     };
     ToolpathLoadVerdict {
         toolpath_id: TP,
-        groups: rs_cam_core::tool_load::verdict::GroupVerdicts::headline_only(
+        groups: rs_cam_core::tool_load::verdict::GroupVerdicts::headline_only_for_tests(
             rs_cam_core::limits::CutGroup::Body,
         ),
         chipload: rs_cam_core::tool_load::chipload::evaluate(&ctx, &env),
@@ -205,7 +205,7 @@ fn drill_verdict() -> ToolpathLoadVerdict {
         || UnmodeledReason::NotApplicableForOp("drill cycle — no continuous engagement".to_owned());
     ToolpathLoadVerdict {
         toolpath_id: TP,
-        groups: rs_cam_core::tool_load::verdict::GroupVerdicts::headline_only(
+        groups: rs_cam_core::tool_load::verdict::GroupVerdicts::headline_only_for_tests(
             rs_cam_core::limits::CutGroup::Body,
         ),
         chipload: ChiploadVerdict::Unmodeled { reason: na() },

@@ -66,6 +66,7 @@ fn diagnostic_outside_envelope(tp_id: ToolpathId, w: &SuggestWarning) -> Option<
         evidence: None,
         fix: None,
         supersedes: vec![],
+        group: None,
         suppressed_diagnostics: vec![],
     })
 }
@@ -90,6 +91,7 @@ fn feeds_warning_to_diagnostic(tp_id: ToolpathId, w: &FeedsWarning) -> Diagnosti
             evidence: None,
             fix: None,
             supersedes: vec![],
+            group: None,
             suppressed_diagnostics: vec![],
         },
         FeedsWarning::PowerLimited {
@@ -111,6 +113,7 @@ fn feeds_warning_to_diagnostic(tp_id: ToolpathId, w: &FeedsWarning) -> Diagnosti
             evidence: None,
             fix: None,
             supersedes: vec![],
+            group: None,
             suppressed_diagnostics: vec![],
         },
         FeedsWarning::PowerLadderReducedCut {
@@ -177,6 +180,7 @@ fn feeds_warning_to_diagnostic(tp_id: ToolpathId, w: &FeedsWarning) -> Diagnosti
                 evidence: None,
                 fix: None,
                 supersedes: vec![],
+                group: None,
                 suppressed_diagnostics: vec![],
             }
         }
@@ -199,6 +203,7 @@ fn feeds_warning_to_diagnostic(tp_id: ToolpathId, w: &FeedsWarning) -> Diagnosti
             evidence: None,
             fix: None,
             supersedes: vec![],
+            group: None,
             suppressed_diagnostics: vec![],
         },
         FeedsWarning::ShankTooLarge { shank_mm, max_mm } => Diagnostic {
@@ -218,6 +223,7 @@ fn feeds_warning_to_diagnostic(tp_id: ToolpathId, w: &FeedsWarning) -> Diagnosti
             evidence: None,
             fix: None,
             supersedes: vec![],
+            group: None,
             suppressed_diagnostics: vec![],
         },
         FeedsWarning::DocExceedsFlute {
@@ -249,6 +255,7 @@ fn feeds_warning_to_diagnostic(tp_id: ToolpathId, w: &FeedsWarning) -> Diagnosti
             evidence: None,
             fix: None,
             supersedes: vec![],
+            group: None,
             suppressed_diagnostics: vec![],
         },
         FeedsWarning::CuttingCapUnstated { travel_rate_mm_min } => Diagnostic {
@@ -269,6 +276,7 @@ fn feeds_warning_to_diagnostic(tp_id: ToolpathId, w: &FeedsWarning) -> Diagnosti
             evidence: None,
             fix: None,
             supersedes: vec![],
+            group: None,
             suppressed_diagnostics: vec![],
         },
         FeedsWarning::ScallopInvalid {
@@ -291,6 +299,7 @@ fn feeds_warning_to_diagnostic(tp_id: ToolpathId, w: &FeedsWarning) -> Diagnosti
             evidence: None,
             fix: None,
             supersedes: vec![],
+            group: None,
             suppressed_diagnostics: vec![],
         },
         // Ruling R4 WP2a (2026-09-23): the engine warns and does not raise
@@ -319,6 +328,7 @@ fn feeds_warning_to_diagnostic(tp_id: ToolpathId, w: &FeedsWarning) -> Diagnosti
             evidence: None,
             fix: None,
             supersedes: vec![],
+            group: None,
             suppressed_diagnostics: vec![],
         },
         // Ruling R4 Q10 (2026-09-24). Info: the RPM came down so the
@@ -363,6 +373,7 @@ fn feeds_warning_to_diagnostic(tp_id: ToolpathId, w: &FeedsWarning) -> Diagnosti
             evidence: None,
             fix: None,
             supersedes: vec![],
+            group: None,
             suppressed_diagnostics: vec![],
         },
         // Ruling R4 WP1 (2026-09-23). Info. Since ruling R4 Q7 (2026-09-24)
@@ -392,6 +403,7 @@ fn feeds_warning_to_diagnostic(tp_id: ToolpathId, w: &FeedsWarning) -> Diagnosti
             evidence: None,
             fix: None,
             supersedes: vec![],
+            group: None,
             suppressed_diagnostics: vec![],
         },
         FeedsWarning::DrillFeedClampedToEnvelope {
@@ -419,6 +431,7 @@ fn feeds_warning_to_diagnostic(tp_id: ToolpathId, w: &FeedsWarning) -> Diagnosti
             evidence: None,
             fix: None,
             supersedes: vec![],
+            group: None,
             suppressed_diagnostics: vec![],
         },
         // P20b. Info: the machine runs at its Z axis rate anyway; the card
@@ -450,6 +463,7 @@ fn feeds_warning_to_diagnostic(tp_id: ToolpathId, w: &FeedsWarning) -> Diagnosti
             evidence: None,
             fix: None,
             supersedes: vec![],
+            group: None,
             suppressed_diagnostics: vec![],
         },
         // Checkpoint K (a4). A Caution, unlike (a3)'s Info: the operator
@@ -482,6 +496,7 @@ fn feeds_warning_to_diagnostic(tp_id: ToolpathId, w: &FeedsWarning) -> Diagnosti
             evidence: None,
             fix: None,
             supersedes: vec![],
+            group: None,
             suppressed_diagnostics: vec![],
         },
         // P13 item 4 (law B): a Caution, like (a4). The chip has no printed
@@ -508,6 +523,7 @@ fn feeds_warning_to_diagnostic(tp_id: ToolpathId, w: &FeedsWarning) -> Diagnosti
             evidence: None,
             fix: None,
             supersedes: vec![],
+            group: None,
             suppressed_diagnostics: vec![],
         },
         // Checkpoint K (a3). Informational, not a Caution: nothing is
@@ -557,6 +573,7 @@ fn feeds_warning_to_diagnostic(tp_id: ToolpathId, w: &FeedsWarning) -> Diagnosti
             evidence: None,
             fix: None,
             supersedes: vec![],
+            group: None,
             suppressed_diagnostics: vec![],
         },
     }
@@ -696,6 +713,7 @@ fn ratio_hint(
         }),
         fix: None,
         supersedes: vec![],
+        group: None,
         suppressed_diagnostics: vec![],
     }
 }
