@@ -515,3 +515,30 @@ The change:
   not in this step; it still calls `depth_cap_of` on the body facts.
 
 Measured: the four project dumps and the fixture dump are byte-equal to HEAD (`cmp`).
+
+### 11.2 Commit 11-2: a scope cell shows its own row (prediction)
+
+Written before the code, from the "before" dump. The rule: a planned or stated row of the
+envelope whose scope cell is `NotJudged` (`limits::scope`) takes the class of its own
+`EXEMPTIONS` row. A `Physical(geometry)` row gives `NotApplicable(geometry)`; a row that needs a
+ruling (or is ruled) keeps `NoNumber(NotJudgedHere)`. The exemption field names the row in both
+cases, as it does at HEAD.
+
+Predicted, for each modulation pass (`off` and `runs`) and in the profile line of the dump:
+
+| File | `NoNumber(NotJudgedHere)` to `NotApplicable(NoRadialEngagement)` (P28-20) | P28-10 rows, no change |
+|---|---|---|
+| operator | 24: toolpaths 3 and 4, each `planned` and `stated_cut`, each `body` and `drill cycle`, each chip max, chip min, rubbing floor | 8 (power, the same toolpaths and cuts) |
+| wanaka21 | 24: the same 24 cells (toolpaths 3 and 4) | 6 |
+| rivmap100, rivmap100_live | 0 | 0 |
+
+The 8 P28-10 rows of the operator file already name `P28-10` at HEAD (the exemption field reads
+the scope row since P29-10), so they do not change: `P28-10` needs a ruling, and invariant 3
+keeps such a cell a `NoNumber`. A moved row changes its `state`, its `tone`, its `face`, its
+`detail` and its place in `in_default_view`; the value, the bound and the exemption stay.
+
+Not in this commit: the gate rows of the drill group (`GroupCell::NotJudged`, `rows_of_verdict`):
+16 operator toolpaths each show chip max (P28-20), deflection (P28-17) and force budget (P28-04)
+as `NoNumber(NotJudgedHere)`, all three `Physical(NoRadialEngagement)`; 48 rows. The same rule
+would move them; the lead decides (section 11.5). The fixture dump does not change (it holds no
+envelope rows).
