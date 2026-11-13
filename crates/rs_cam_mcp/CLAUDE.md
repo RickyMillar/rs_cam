@@ -75,5 +75,9 @@ run the server; the live server, GUI dispatch and session ownership are in
   the may-occur sentence left the notes (break). Feature token `envelope_note_kinds`.
 - P29-10 (10c): `summary.exceeds_breakdown[].group` and a diagnostic's `group` (a group
   load finding; absent for every other finding). Feature token `load_finding_group`. Additions only.
+- P29-10 (10d): the three P29-2 `checks` keys are deleted (break, no alias):
+  `get_tool_load_report` `limit_rows` (`[{toolpath_id, toolpath_name, rows}]`, every gate and cut
+  group), `get_suggest_rationale` `limit_rows` (the RPM rows), and `get_safe_envelope` reads only
+  `envelope.limit_rows`. One door, `ProjectSession::limit_rows`. Feature token `limit_rows_every_reply`.
 - Verify with `cargo test -p rs_cam_mcp -q`; when a wire type changes, also run
   the relevant `rs_cam_viz` MCP integration tests.

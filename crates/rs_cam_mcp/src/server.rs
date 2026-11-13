@@ -4029,17 +4029,17 @@ pub fn build_info() -> serde_json::Value {
             // judges every declared cut. `get_safe_envelope` gives
             // `envelope.binding_cut` (the cut that sets the binding limit at
             // the proposal), `binding_cut` on each `boundary` row, and
-            // `envelope.cut_checks` (one check per declared cut and limit at
-            // the proposal, with `may_occur_row` for a cut the plan may not
-            // cut).
+            // one check per declared cut and limit at the proposal (since
+            // P29-10 the planned rows of `envelope.limit_rows`, with the
+            // caveat `may_occur` for a cut the plan may not cut).
             "envelope_declared_cuts",
             // Feeds contract P29-8 8d: an entry is a declared cut. A ramp or
-            // a helix row of `envelope.cut_checks` carries `own_depth`
-            // ({mm, rule}: the depth per pass of a ramp, worst case; one
-            // pitch of a helix) and holds that depth as its value, a value
-            // check against the cut's root, never a ceiling. An entry row
-            // whose entry rule gives no feed names why in
-            // `entry_no_number`.
+            // a helix row holds its own depth as its value (the depth per
+            // pass of a ramp, worst case; one pitch of a helix), a value
+            // check against the cut's root, never a ceiling; an entry row
+            // whose entry rule gives no feed names why. Since P29-10 the row
+            // is in `envelope.limit_rows` (`subject.own_depth_mm`, the caveat
+            // `worst_case`, the clauses in `detail`).
             "envelope_entry_value_checks",
             // Feeds contract P29-10: every limit record is one row
             // (`limits::CheckRow`: subject, check, caveats, exemption, tone,
@@ -4057,6 +4057,12 @@ pub fn build_info() -> serde_json::Value {
             // `group` name the cut group of a finding that is not the
             // headline; such a finding is its own triage entry.
             "load_finding_group",
+            // Feeds contract P29-10 (10d): every limit record of every reply
+            // is a row of `ProjectSession::limit_rows`:
+            // `get_tool_load_report` `limit_rows` (per toolpath, every gate
+            // and cut group) and `get_suggest_rationale` `limit_rows` (the
+            // RPM rows). The three P29-2 `checks` keys are deleted.
+            "limit_rows_every_reply",
         ],
     })
 }

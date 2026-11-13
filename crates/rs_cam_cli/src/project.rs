@@ -230,6 +230,10 @@ struct ToolpathSummaryEntry {
     /// JSON of MCP `get_toolpath_lineage`. With no result it is the stored
     /// lineage (P13b); `null` when the toolpath has no tool.
     lineage: Option<serde_json::Value>,
+    /// P29-10 (10d): the verdict rows of the toolpath from the one door
+    /// (`ProjectSession::limit_rows`), the rows of MCP
+    /// `get_tool_load_report` `limit_rows`: one row per gate and cut group.
+    limit_rows: Vec<rs_cam_core::limits::CheckRow>,
 }
 
 /// One operation that never generated because an upstream simulated stock was
@@ -1175,6 +1179,18 @@ pub fn run_project_command(
                         )
                     })
                     .map(|l| l.to_json()),
+                limit_rows: session
+                    .find_toolpath_config_by_id(d.toolpath_id)
+                    .and_then(|(index, _)| {
+                        session.limit_rows(
+                            index,
+                            session
+                                .simulation_result()
+                                .and_then(|sim| sim.cut_trace.as_ref()),
+                        )
+                    })
+                    .map(|rows| rows.verdict())
+                    .unwrap_or_default(),
             }
         })
         .collect();

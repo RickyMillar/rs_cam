@@ -178,6 +178,17 @@ fn record_json(
         "run_state".into(),
         json!(rs_cam_core::session::toolpath_run_state(session, tc.id, false).map(|s| s.label())),
     );
+    // P29-10 (10d): the RPM rows of the one door, the `limit_rows` of MCP
+    // `get_suggest_rationale` (the envelope rows are in
+    // `profile.envelope.limit_rows`).
+    record.insert(
+        "limit_rows".into(),
+        session
+            .limit_rows(index, None)
+            .map_or(Value::Array(Vec::new()), |rows| {
+                serde_json::to_value(rows.rpm()).unwrap_or(Value::Null)
+            }),
+    );
     record.insert(
         "lineage".into(),
         session
@@ -362,6 +373,31 @@ mod tests {
         let configs = session.toolpath_configs();
         let index = configs.len() - 1;
         record_json(session, index, &configs[index])
+    }
+
+    /// P29-10 (10d): the record prints the rows of the one door
+    /// (`ProjectSession::limit_rows`), as MCP does: the RPM rows at
+    /// `limit_rows`, the envelope rows at `profile.envelope.limit_rows`.
+    #[test]
+    fn the_suggest_record_prints_the_session_rows_p29_10() {
+        let session = session_with(OperationType::Pocket);
+        let index = session.toolpath_configs().len() - 1;
+        let record = last_record(&session);
+        let door = session.limit_rows(index, None).expect("the toolpath");
+        assert_eq!(
+            record["limit_rows"],
+            serde_json::to_value(door.rpm()).expect("the rows serialise")
+        );
+        let envelope = door
+            .envelope()
+            .expect("a tool")
+            .expect("the envelope builds");
+        assert!(!envelope.is_empty(), "non-vacuity: envelope rows");
+        assert_eq!(
+            record["profile"]["envelope"]["limit_rows"],
+            serde_json::to_value(&envelope).expect("the rows serialise")
+        );
+        assert!(record["profile"]["envelope"].get("cut_checks").is_none());
     }
 
     /// Feeds contract P13b (surface parity): the record prints the stored

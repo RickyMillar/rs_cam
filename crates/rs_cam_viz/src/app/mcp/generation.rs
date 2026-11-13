@@ -293,14 +293,9 @@ impl RsCamApp {
                     "toolpath_name": tc.name,
                     "basis": basis,
                     "rationale": serde_json::to_value(&rationale).unwrap_or_default(),
-                    // P29-2b: the RPM limits as `Check` records, beside
+                    // P29-10: the RPM rows of the one door, beside
                     // `basis.rpm.limits`.
-                    "checks": rpm_checks_json(
-                        profile
-                            .feeds
-                            .as_ref()
-                            .and_then(|feeds| feeds.rpm_choice.as_ref()),
-                    ),
+                    "limit_rows": rpm_limit_rows_json(state.session(), index),
                 }))
             }
             Err(e) => json_str(serde_json::json!({
@@ -403,9 +398,12 @@ impl RsCamApp {
             "summary": summary_value,
             "load_report": load_value,
             "per_depth_pass": per_depth_pass,
-            // P29-2b: each gate row as a `Check` record, beside
+            // P29-10: the verdict rows of the one door, beside
             // `load_report`.
-            "checks": load_report_checks_json(&report),
+            "limit_rows": load_report_limit_rows_json(
+                state.session(),
+                state.simulation.cut_trace_arc(),
+            ),
         }))
     }
 
@@ -1122,10 +1120,9 @@ impl RsCamApp {
                 json_str(serde_json::json!({
                     "toolpath_id": tc.id,
                     "toolpath_name": tc.name,
+                    // P29-10: `envelope.limit_rows` holds the planned rows
+                    // and the stated rows (the one row type).
                     "envelope": value,
-                    // P29-2b: the stated point against each limit as
-                    // `Check` records, beside `envelope.operator`.
-                    "checks": envelope_checks_json(&envelope),
                 }))
             }
         }
@@ -1214,68 +1211,44 @@ impl RsCamApp {
     }
 }
 
-/// P29-2b: the gate rows of `report` as `rs_cam_core::limits::Check`
-/// records: one entry per toolpath, `{ toolpath_id, checks }`, the checks in
-/// the order of `ToolpathLoadVerdict::criteria`. The reply key `checks` of
-/// `get_tool_load_report`; `load_report` beside it keeps the old shape.
-pub(super) fn load_report_checks_json(
-    report: &rs_cam_core::tool_load::ToolLoadReport,
+/// P29-10: the verdict rows of every toolpath from the one door
+/// (`ProjectSession::limit_rows`): `[{ toolpath_id, toolpath_name, rows }]`,
+/// one entry per toolpath that the load report holds. The reply key
+/// `limit_rows` of `get_tool_load_report`.
+pub(super) fn load_report_limit_rows_json(
+    session: &rs_cam_core::session::ProjectSession,
+    trace: Option<&std::sync::Arc<rs_cam_core::stock::simulation_cut::SimulationCutTrace>>,
 ) -> serde_json::Value {
     serde_json::Value::Array(
-        report
-            .per_toolpath
+        session
+            .toolpath_configs()
             .iter()
-            .map(|verdict| {
-                // P29-6 6d: each check names its cut group (a group other
-                // than the headline reaches `criteria()` only when it
-                // exceeds a bound, ruling Q5).
-                let checks: Vec<serde_json::Value> = verdict
-                    .criteria()
-                    .iter()
-                    .map(|status| {
-                        let mut value =
-                            serde_json::to_value(rs_cam_core::limits::of_criterion(status))
-                                .unwrap_or_default();
-                        if let Some(map) = value.as_object_mut() {
-                            map.insert(
-                                "group".to_owned(),
-                                serde_json::to_value(status.group).unwrap_or_default(),
-                            );
-                        }
-                        value
+            .enumerate()
+            .filter_map(|(index, tc)| {
+                let rows = session.limit_rows(index, trace)?.verdict();
+                (!rows.is_empty()).then(|| {
+                    serde_json::json!({
+                        "toolpath_id": tc.id,
+                        "toolpath_name": tc.name,
+                        "rows": rows,
                     })
-                    .collect();
-                serde_json::json!({
-                    "toolpath_id": verdict.toolpath_id,
-                    "checks": checks,
                 })
             })
             .collect(),
     )
 }
 
-/// P29-2b: the stated point of `envelope` against each of its limits, as
-/// `Check` records (`rs_cam_core::limits::of_envelope`). `null` when the
-/// operation states no point. The reply key `checks` of
-/// `get_safe_envelope`; `envelope.operator` beside it keeps the old shape.
-pub(super) fn envelope_checks_json(
-    envelope: &rs_cam_core::feeds::envelope::SafeEnvelope,
+/// P29-10: the RPM rows of the toolpath at `index` from the one door
+/// (`ProjectSession::limit_rows`). An empty list when Suggest made no
+/// choice (`MatchChart`). The reply key `limit_rows` of
+/// `get_suggest_rationale`.
+pub(super) fn rpm_limit_rows_json(
+    session: &rs_cam_core::session::ProjectSession,
+    index: usize,
 ) -> serde_json::Value {
-    envelope.stated.map_or(serde_json::Value::Null, |point| {
-        serde_json::to_value(rs_cam_core::limits::of_envelope(envelope, point)).unwrap_or_default()
-    })
-}
-
-/// P29-2b: the limits of an RPM choice as `Check` records
-/// (`rs_cam_core::limits::of_rpm_choice`). An empty list when Suggest made
-/// no choice (`MatchChart`). The reply key `checks` of
-/// `get_suggest_rationale`; `basis.rpm.limits` beside it keeps the old
-/// shape.
-pub(super) fn rpm_checks_json(choice: Option<&rs_cam_core::feeds::RpmChoice>) -> serde_json::Value {
-    choice.map_or_else(
-        || serde_json::Value::Array(Vec::new()),
-        |choice| {
-            serde_json::to_value(rs_cam_core::limits::of_rpm_choice(choice)).unwrap_or_default()
-        },
-    )
+    session
+        .limit_rows(index, None)
+        .map_or(serde_json::Value::Array(Vec::new()), |rows| {
+            serde_json::to_value(rows.rpm()).unwrap_or_default()
+        })
 }
