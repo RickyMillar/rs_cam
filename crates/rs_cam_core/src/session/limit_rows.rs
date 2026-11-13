@@ -6,7 +6,7 @@ use std::sync::Arc;
 
 use super::{ProjectSession, ToolpathConfig};
 use crate::feeds::FeedsError;
-use crate::limits::{CheckRow, rows_of_rpm_choice, rows_of_verdict};
+use crate::limits::{CheckRow, rows_of_rpm_choice, rows_of_verdict, rows_without_a_verdict};
 use crate::stock::simulation_cut::SimulationCutTrace;
 
 /// The limit rows of one toolpath. Each part is built when a surface asks
@@ -14,6 +14,7 @@ use crate::stock::simulation_cut::SimulationCutTrace;
 #[derive(Clone, Copy)]
 pub struct LimitRows<'a> {
     session: &'a ProjectSession,
+    index: usize,
     toolpath: &'a ToolpathConfig,
     trace: Option<&'a Arc<SimulationCutTrace>>,
 }
@@ -32,17 +33,30 @@ impl LimitRows<'_> {
 
     /// The rows of the gate verdict after the simulation
     /// (`limits::rows_of_verdict`), from the session's memo of the load
-    /// report on the trace the caller holds. Empty when the report holds
-    /// no row for the toolpath.
+    /// report on the trace the caller holds. Never empty (lead ruling 6): a
+    /// toolpath that the report leaves out (a disabled op) gets the rows of
+    /// its verdict with no trace, the no-simulation rows; a toolpath with
+    /// no load context (no tool, a tool outside its domain) gets one
+    /// `NoNumber(NoToolBody)` row per gate and cut group.
     #[must_use]
     pub fn verdict(&self) -> Vec<CheckRow> {
         let report = self.session.tool_load_report_for(self.trace);
-        report
+        if let Some(v) = report
             .per_toolpath
             .iter()
             .find(|v| v.toolpath_id == self.toolpath.id)
-            .map(rows_of_verdict)
-            .unwrap_or_default()
+        {
+            return rows_of_verdict(v);
+        }
+        match self.session.load_context_parts(self.index) {
+            Some(parts) => rows_of_verdict(&crate::tool_load::evaluate_toolpath(
+                &parts.ctx(),
+                None,
+                Some(self.session.machine()),
+                &crate::tool_load::ToleranceBands::default(),
+            )),
+            None => rows_without_a_verdict(crate::limits::NoNumberReason::NoToolBody),
+        }
     }
 
     /// The rows of the RPM choice (`limits::rows_of_rpm_choice`). Empty
@@ -78,6 +92,7 @@ impl ProjectSession {
         let toolpath = self.toolpath_config_at(index)?;
         Some(LimitRows {
             session: self,
+            index,
             toolpath,
             trace,
         })

@@ -900,6 +900,13 @@ impl StoredFeedChip {
         self.stated_mm
     }
 
+    /// The high end of the interval: the chip of the next whole feed step
+    /// (the stated chip when the feed is not a whole step).
+    #[must_use]
+    pub const fn high_mm(self) -> f64 {
+        self.high_mm
+    }
+
     /// The end of the interval that a check on `side` reads: the low end
     /// (the stated chip) for a ceiling, the high end for a floor.
     #[must_use]

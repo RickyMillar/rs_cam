@@ -102,6 +102,63 @@ impl Subject {
     }
 }
 
+/// What a row compares (lead ruling 3): the face names the quantity that
+/// the value and the bound are. A planned force-budget row and the depth
+/// gate row compare a depth with the depth where the force meets the
+/// budget, so their face says "depth" and names the force cap as the
+/// cause; only a row that compares the limit's own quantity (newtons for
+/// the force budget) shows a share of that quantity.
+#[derive(Debug, Clone, Copy, PartialEq, Eq, Serialize)]
+#[serde(rename_all = "snake_case")]
+pub enum Compared {
+    /// The limit's own quantity: power, chip, deflection, force, feed, RPM,
+    /// moves.
+    Load,
+    /// A depth against the depth where the limit binds.
+    Depth,
+    /// A width against the width where the limit binds.
+    Width,
+}
+
+impl Compared {
+    /// The compared quantity of a stated row: the axis of its edge.
+    #[must_use]
+    pub const fn of_edge(edge: &crate::feeds::envelope::Edge) -> Self {
+        use crate::feeds::envelope::Edge;
+        match edge {
+            Edge::ApCeiling { .. } | Edge::ApFloor { .. } | Edge::ApCurve { .. } => Self::Depth,
+            Edge::AeCeiling { .. } | Edge::AeFloor { .. } | Edge::AeCurve { .. } => Self::Width,
+            Edge::PerPoint | Edge::Unmodelled { .. } => Self::Load,
+        }
+    }
+
+    /// The compared quantity of a gate row: the depth gate compares the
+    /// sample depth with its cap; every other gate compares its own load.
+    #[must_use]
+    pub const fn of_criterion(kind: CriterionKind) -> Self {
+        match kind {
+            CriterionKind::DepthOfCut => Self::Depth,
+            CriterionKind::Chipload
+            | CriterionKind::Power
+            | CriterionKind::Deflection
+            | CriterionKind::GantryPush
+            | CriterionKind::DrillChipWelding
+            | CriterionKind::DrillPeckAdequacy
+            | CriterionKind::DrillPlungeFeed => Self::Load,
+        }
+    }
+
+    /// The word of the compared quantity on a face, or `None` for the
+    /// limit's own quantity (the face then names the limit).
+    const fn word(self) -> Option<&'static str> {
+        match self {
+            Self::Load => None,
+            Self::Depth => Some("depth"),
+            Self::Width => Some("width"),
+        }
+    }
+}
+
 /// `compute::catalog::Presence` seen from `limits/` (invariant 1): the
 /// exemption row of a cut that may not occur is in [`Caveat::MayOccur`].
 #[derive(Debug, Clone, Copy, PartialEq, Eq, Serialize)]
@@ -123,7 +180,10 @@ pub enum Caveat {
     WorstCase,
     /// The value is a lower bound of the cut (`BodyDepth::AtLeast`).
     LowerBound,
-    /// The chip reads a stored whole-mm/min feed (`StoredFeedChip`).
+    /// The chip reads a stored whole-mm/min feed (`StoredFeedChip`) and the
+    /// chip interval of that feed holds the bound: the rounding of the feed
+    /// can change the state (lead ruling 2). A row far from its bound has
+    /// no such caveat.
     StoredFeed,
     /// The cut may not occur (`Presence::MayOccur`), with its row.
     MayOccur {
@@ -191,7 +251,9 @@ impl Caveat {
             }
             Self::LowerBound => "the value is a lower bound of the cut".to_owned(),
             Self::StoredFeed => {
-                "the chip reads the stored whole-mm/min feed (an interval)".to_owned()
+                "the bound is inside the chip interval of the stored whole-mm/min feed: \
+                 the rounding of the feed decides the state"
+                    .to_owned()
             }
             Self::MayOccur { row } => format!("the plan may not cut it (row {row})"),
             Self::Advisory => "the bound does not gate an export".to_owned(),
@@ -256,20 +318,20 @@ impl Tone {
         }
     }
 
+    /// The tone group of [`CheckRow::rank_cmp`]: `Exceeds`, then
+    /// `ExceedsAdvisory`, then every other tone.
     const fn rank(self) -> u8 {
         match self {
             Self::Exceeds => 0,
             Self::ExceedsAdvisory => 1,
-            Self::Within => 2,
-            Self::NoNumber => 3,
-            Self::NotApplicable => 4,
+            Self::Within | Self::NoNumber | Self::NotApplicable => 2,
         }
     }
 }
 
 /// The facts of a planned row that the envelope knows and `limits/` does
 /// not (invariant 1: no `compute/` type crosses).
-#[derive(Debug, Clone, Copy, PartialEq, Default)]
+#[derive(Debug, Clone, Copy, PartialEq)]
 pub struct PlannedFacts {
     /// The exemption row of a cut that the plan may not cut.
     pub may_occur_row: Option<&'static str>,
@@ -277,12 +339,14 @@ pub struct PlannedFacts {
     pub own_depth: Option<PlannedOwnDepth>,
     /// The value is a lower bound of the cut.
     pub lower_bound: bool,
-    /// The chip reads a stored entry feed.
+    /// The chip reads a stored entry feed whose interval holds the bound.
     pub stored_feed: bool,
     /// The row reads the earlier op's leave.
     pub at_earlier_leave: bool,
     /// Why the entry rule gives the cut no feed (`EntryNoNumber::clause`).
     pub entry_no_number: Option<&'static str>,
+    /// What the row compares (lead ruling 3).
+    pub compared: Compared,
 }
 
 /// The own depth of a planned entry row.
@@ -301,6 +365,7 @@ pub struct PlannedOwnDepth {
 pub struct CheckRow {
     subject: Subject,
     check: Check,
+    compared: Compared,
     caveats: Vec<Caveat>,
     exemption: Option<&'static str>,
     tone: Tone,
@@ -314,6 +379,7 @@ impl CheckRow {
     fn new(
         subject: Subject,
         check: Check,
+        compared: Compared,
         mut caveats: Vec<Caveat>,
         extra: &[String],
         own_row: Option<&'static str>,
@@ -331,11 +397,12 @@ impl CheckRow {
         caveats.dedup();
         let exemption = own_row.or_else(|| exemption_of(&check, &caveats));
         let tone = Tone::of(&check, &caveats);
-        let face = face_of(&subject, &check, &caveats);
-        let detail = detail_of(&subject, &check, &caveats, exemption, tone, extra);
+        let face = face_of(&subject, &check, compared, &caveats);
+        let detail = detail_of(&subject, &check, compared, &caveats, exemption, tone, extra);
         Self {
             subject,
             check,
+            compared,
             caveats,
             exemption,
             tone,
@@ -354,6 +421,7 @@ impl CheckRow {
             stored_feed,
             at_earlier_leave,
             entry_no_number,
+            compared,
         } = facts;
         let mut caveats = Vec::new();
         if own_depth.is_some_and(|o| o.worst_case) {
@@ -390,6 +458,7 @@ impl CheckRow {
                 own_depth_mm: own_depth.map(|o| o.mm),
             },
             check,
+            compared,
             caveats,
             &extra,
             None,
@@ -398,8 +467,8 @@ impl CheckRow {
 
     /// The stated point against one limit (`of_envelope`).
     #[must_use]
-    pub(crate) fn stated(check: Check) -> Self {
-        Self::new(Subject::Stated, check, Vec::new(), &[], None)
+    pub(crate) fn stated(check: Check, compared: Compared) -> Self {
+        Self::new(Subject::Stated, check, compared, Vec::new(), &[], None)
     }
 
     /// The subject.
@@ -412,6 +481,12 @@ impl CheckRow {
     #[must_use]
     pub const fn check(&self) -> &Check {
         &self.check
+    }
+
+    /// What the row compares (lead ruling 3).
+    #[must_use]
+    pub const fn compared(&self) -> Compared {
+        self.compared
     }
 
     /// The caveats, in rank order.
@@ -484,26 +559,24 @@ impl CheckRow {
         self.cut().is_some()
     }
 
-    /// THE rank of two rows (ruling O6): a row that exceeds outranks every
-    /// other row; then the stated point outranks every other subject; then
-    /// a row that exceeds a gating bound outranks an advisory one; then the
-    /// lower margin (a row with no margin ranks last).
+    /// THE rank of two rows (ruling O6, lead rulings after 10d): an
+    /// `Exceeds` row before an `ExceedsAdvisory` row before every other
+    /// row; inside one tone group the stated point first (it is the cut of
+    /// today), then the lower margin (a row with no margin last). A total
+    /// preorder: two rows with equal keys rank equal.
     #[must_use]
-    pub fn worse_than(&self, other: &Self) -> bool {
-        self.rank_key() < other.rank_key()
+    pub fn rank_cmp(&self, other: &Self) -> std::cmp::Ordering {
+        let key = |r: &Self| (r.tone.rank(), r.subject.rank());
+        key(self).cmp(&key(other)).then_with(|| {
+            let m = |r: &Self| r.check.margin.unwrap_or(f64::INFINITY);
+            m(self).total_cmp(&m(other))
+        })
     }
 
-    fn rank_key(&self) -> (u8, u8, u8, f64) {
-        let exceeds = match self.tone {
-            Tone::Exceeds | Tone::ExceedsAdvisory => 0,
-            Tone::Within | Tone::NoNumber | Tone::NotApplicable => 1,
-        };
-        (
-            exceeds,
-            self.subject.rank(),
-            self.tone.rank(),
-            self.check.margin.unwrap_or(f64::INFINITY),
-        )
+    /// `true` when this row ranks before `other` ([`Self::rank_cmp`]).
+    #[must_use]
+    pub fn worse_than(&self, other: &Self) -> bool {
+        self.rank_cmp(other) == std::cmp::Ordering::Less
     }
 }
 
@@ -574,15 +647,23 @@ fn pct(share: f64) -> String {
 
 /// THE margin face of a check: a ceiling inside reads its share of the
 /// limit, outside its share over; a floor reads its share over or under.
-/// `None` with no margin.
+/// A row that compares a depth or a width names the limit as the cause of
+/// its cap ("% of force cap"). `None` with no margin.
 #[must_use]
-pub fn margin_face(check: &Check) -> Option<String> {
+pub fn margin_face(check: &Check, compared: Compared) -> Option<String> {
     let m = check.margin?;
+    let (ceiling, floor) = match compared.word() {
+        None => ("limit".to_owned(), "floor".to_owned()),
+        Some(_) => {
+            let short = check.limit.text().short;
+            (format!("{short} cap"), format!("{short} floor"))
+        }
+    };
     Some(match (check.side, m < 0.0) {
-        (BoundSide::Ceiling, false) => format!("{} % of limit", pct(1.0 - m)),
-        (BoundSide::Ceiling, true) => format!("{} % over limit", pct(m)),
-        (BoundSide::Floor, false) => format!("{} % over floor", pct(m)),
-        (BoundSide::Floor, true) => format!("{} % under floor", pct(m)),
+        (BoundSide::Ceiling, false) => format!("{} % of {ceiling}", pct(1.0 - m)),
+        (BoundSide::Ceiling, true) => format!("{} % over {ceiling}", pct(m)),
+        (BoundSide::Floor, false) => format!("{} % over {floor}", pct(m)),
+        (BoundSide::Floor, true) => format!("{} % under {floor}", pct(m)),
     })
 }
 
@@ -596,9 +677,14 @@ fn state_face(check: &Check) -> &'static str {
     }
 }
 
-fn face_of(subject: &Subject, check: &Check, caveats: &[Caveat]) -> String {
-    let short = check.limit.text().short;
-    let reading = margin_face(check).unwrap_or_else(|| state_face(check).to_owned());
+fn face_of(subject: &Subject, check: &Check, compared: Compared, caveats: &[Caveat]) -> String {
+    // Lead ruling 3: a row with a margin names what it compares (a depth
+    // row: "depth 87 % of force cap"); a row with no number names its limit
+    // and the reason ("force no limit here").
+    let (short, reading) = match margin_face(check, compared) {
+        Some(reading) => (compared.word().unwrap_or(check.limit.text().short), reading),
+        None => (check.limit.text().short, state_face(check).to_owned()),
+    };
     let core = format!("{} · {short} {reading}", subject.label());
     let with_word = caveats
         .iter()
@@ -615,17 +701,26 @@ fn face_of(subject: &Subject, check: &Check, caveats: &[Caveat]) -> String {
 fn detail_of(
     subject: &Subject,
     check: &Check,
+    compared: Compared,
     caveats: &[Caveat],
     exemption: Option<&'static str>,
     tone: Tone,
     extra: &[String],
 ) -> String {
-    let mut parts = vec![format!(
-        "{}: {} ({})",
-        subject.label(),
-        check.limit.text().noun,
-        tone.word()
-    )];
+    let mut parts = vec![match compared.word() {
+        Some(word) => format!(
+            "{}: the {word} against the {} ({})",
+            subject.label(),
+            check.limit.text().noun,
+            tone.word()
+        ),
+        None => format!(
+            "{}: {} ({})",
+            subject.label(),
+            check.limit.text().noun,
+            tone.word()
+        ),
+    }];
     match (check.value, check.bound) {
         (Some(v), Some(b)) => parts.push(format!(
             "value {} {u}, bound {} {u}",
@@ -637,7 +732,7 @@ fn detail_of(
         (None, Some(b)) => parts.push(format!("bound {} {}, no value", num(b), check.unit)),
         (None, None) => {}
     }
-    if let Some(face) = margin_face(check) {
+    if let Some(face) = margin_face(check, compared) {
         parts.push(face);
     }
     match check.state {
@@ -710,7 +805,8 @@ fn group_row(status: &CriterionStatus<'_>, subject: Subject) -> CheckRow {
         .map(|source| format!("bound from {}", source.clause()))
         .into_iter()
         .collect();
-    CheckRow::new(subject, check, caveats, &extra, None)
+    let compared = Compared::of_criterion(status.kind);
+    CheckRow::new(subject, check, compared, caveats, &extra, None)
 }
 
 /// The row of a cell with no verdict: a group with no sample, or a group
@@ -735,7 +831,14 @@ fn empty_row(
         binding: false,
         population: None,
     };
-    CheckRow::new(subject, check, Vec::new(), extra, own_row)
+    CheckRow::new(
+        subject,
+        check,
+        Compared::of_criterion(kind),
+        Vec::new(),
+        extra,
+        own_row,
+    )
 }
 
 /// The rows of one gate over every cut group: one row per group.
@@ -916,6 +1019,36 @@ pub fn rows_of_verdict(verdict: &ToolpathLoadVerdict) -> Vec<CheckRow> {
     out
 }
 
+/// The rows of a toolpath with no verdict (lead ruling 6: a toolpath never
+/// has an empty list): one `NoNumber(reason)` row per gate and cut group,
+/// the body group as the headline.
+#[must_use]
+pub fn rows_without_a_verdict(reason: NoNumberReason) -> Vec<CheckRow> {
+    let mut out = Vec::new();
+    for kind in [
+        CriterionKind::Chipload,
+        CriterionKind::Power,
+        CriterionKind::Deflection,
+        CriterionKind::DepthOfCut,
+    ] {
+        for group in CutGroup::ALL {
+            out.push(empty_row(
+                kind,
+                Subject::Group {
+                    group,
+                    headline: group == CutGroup::Body,
+                    samples: None,
+                    material: None,
+                },
+                CheckState::NoNumber(reason),
+                &[],
+                None,
+            ));
+        }
+    }
+    out
+}
+
 /// S6: the rows of each own material and of each material that no gate
 /// judged.
 fn own_material_rows(split: &MaterialSplit, headline: CutGroup, out: &mut Vec<CheckRow>) {
@@ -966,7 +1099,7 @@ fn own_material_rows(split: &MaterialSplit, headline: CutGroup, out: &mut Vec<Ch
 pub fn rows_of_rpm_choice(choice: &RpmChoice) -> Vec<CheckRow> {
     of_rpm_choice(choice)
         .into_iter()
-        .map(|check| CheckRow::new(Subject::Rpm, check, Vec::new(), &[], None))
+        .map(|check| CheckRow::new(Subject::Rpm, check, Compared::Load, Vec::new(), &[], None))
         .collect()
 }
 

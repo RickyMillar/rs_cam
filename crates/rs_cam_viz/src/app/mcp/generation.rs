@@ -1213,7 +1213,8 @@ impl RsCamApp {
 
 /// P29-10: the verdict rows of every toolpath from the one door
 /// (`ProjectSession::limit_rows`): `[{ toolpath_id, toolpath_name, rows }]`,
-/// one entry per toolpath that the load report holds. The reply key
+/// one entry per toolpath (lead ruling 6: a toolpath with no verdict gets
+/// its no-simulation rows, never an absent entry). The reply key
 /// `limit_rows` of `get_tool_load_report`.
 pub(super) fn load_report_limit_rows_json(
     session: &rs_cam_core::session::ProjectSession,
@@ -1226,13 +1227,11 @@ pub(super) fn load_report_limit_rows_json(
             .enumerate()
             .filter_map(|(index, tc)| {
                 let rows = session.limit_rows(index, trace)?.verdict();
-                (!rows.is_empty()).then(|| {
-                    serde_json::json!({
-                        "toolpath_id": tc.id,
-                        "toolpath_name": tc.name,
-                        "rows": rows,
-                    })
-                })
+                Some(serde_json::json!({
+                    "toolpath_id": tc.id,
+                    "toolpath_name": tc.name,
+                    "rows": rows,
+                }))
             })
             .collect(),
     )

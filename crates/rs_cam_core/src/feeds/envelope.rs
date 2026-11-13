@@ -1225,6 +1225,7 @@ impl PlannedRow {
                     | LimitId::VendorDepthTable
                     | LimitId::SpindlePower
             );
+        let compared = compared_of_planned(self.check.limit);
         crate::limits::CheckRow::planned(
             self.cut,
             self.check,
@@ -1239,8 +1240,26 @@ impl PlannedRow {
                 stored_feed: self.stored_feed,
                 at_earlier_leave: reads_leave,
                 entry_no_number: self.entry_no_number,
+                compared,
             },
         )
+    }
+}
+
+/// P29-10 (lead ruling 3): what a planned row of `limit` compares. A depth
+/// ceiling compares the proposal depth (or an entry's own depth) with the
+/// depth where the limit binds; the power ceiling and every value check
+/// compare the limit's own quantity. One match on the plane role, no
+/// wildcard.
+fn compared_of_planned(limit: crate::limits::LimitId) -> crate::limits::Compared {
+    use crate::limits::Compared;
+    match planned_limit_of(limit) {
+        PlaneRole::DepthCeiling(
+            CeilingEdge::ForceBudget | CeilingEdge::Deflection | CeilingEdge::VendorDepthTable,
+        ) => Compared::Depth,
+        PlaneRole::DepthCeiling(CeilingEdge::Power)
+        | PlaneRole::ValueCheck(_)
+        | PlaneRole::NotACutLimit(_) => Compared::Load,
     }
 }
 
@@ -2756,11 +2775,18 @@ impl SafeEnvelope {
             .map(|r| r.into_row(at_earlier_leave))
             .collect();
         if let Some(p) = self.stated {
-            rows.extend(
-                crate::limits::of_envelope(self, p)
-                    .into_iter()
-                    .map(crate::limits::CheckRow::stated),
-            );
+            // `of_envelope` gives one check per boundary limit, in order,
+            // then the exact move budget (a count of moves).
+            let checks = crate::limits::of_envelope(self, p);
+            rows.extend(checks.into_iter().enumerate().map(|(i, check)| {
+                let compared = self
+                    .boundary
+                    .get(i)
+                    .map_or(crate::limits::Compared::Load, |l| {
+                        crate::limits::Compared::of_edge(&l.edge)
+                    });
+                crate::limits::CheckRow::stated(check, compared)
+            }));
         }
         self.rows = rows;
     }

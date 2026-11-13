@@ -1136,3 +1136,67 @@ fn the_mcp_rows_are_the_session_rows_p29_10() {
     }
     assert!(envelope_rows > 0, "non-vacuity: envelope rows");
 }
+
+/// P29-10 (10x): the `get_tool_load_report` rows read the trace the caller
+/// passes. A small fixture (the first op of the S6 stock changes) is
+/// generated and simulated; the reply rows equal the door rows on the same
+/// trace, the gates judged samples, and the disabled rest op keeps its entry.
+#[test]
+fn the_mcp_rows_read_a_real_trace_p29_10() {
+    use rs_cam_core::session::{SimulationOptions, SimulationResolution};
+    let fixture = std::path::Path::new(env!("CARGO_MANIFEST_DIR"))
+        .join("../rs_cam_core/tests/fixtures/stock_change_cut_as_s6/project.toml");
+    let mut session =
+        rs_cam_core::session::ProjectSession::load(&fixture).expect("the fixture loads");
+    // The second op is a rest op on the first op's stock: disable it, so
+    // its entry holds its no-simulation rows (lead ruling 6).
+    let _ = session
+        .apply(rs_cam_core::session::Command::SetToolpathEnabled(
+            rs_cam_core::session::SetToolpathEnabledArgs {
+                index: 1,
+                enabled: false,
+            },
+        ))
+        .expect("disable the rest op");
+    let cancel = std::sync::atomic::AtomicBool::new(false);
+    let _ = session
+        .generate_toolpath(0, &cancel)
+        .expect("the op generates");
+    session
+        .run_simulation(
+            &SimulationOptions {
+                resolution: SimulationResolution::Fixed(0.5),
+                ..SimulationOptions::default()
+            },
+            &cancel,
+        )
+        .expect("the session simulates");
+    let trace = session
+        .simulation_result()
+        .and_then(|s| s.cut_trace.clone());
+    assert!(trace.is_some(), "non-vacuity: a trace");
+    let load = super::generation::load_report_limit_rows_json(&session, trace.as_ref());
+    let entries = load.as_array().expect("an array");
+    assert_eq!(
+        entries.len(),
+        session.toolpath_configs().len(),
+        "one entry per toolpath"
+    );
+    let mut judged = 0;
+    for (index, entry) in entries.iter().enumerate() {
+        let door = session
+            .limit_rows(index, trace.as_ref())
+            .expect("the toolpath");
+        let rows = door.verdict();
+        assert_eq!(
+            entry["rows"],
+            serde_json::to_value(&rows).expect("the rows serialise"),
+            "the load rows of toolpath {index}"
+        );
+        judged += rows
+            .iter()
+            .filter(|r| r.check().population.is_some_and(|p| p.contributing > 0))
+            .count();
+    }
+    assert!(judged > 0, "non-vacuity: rows over measured samples");
+}

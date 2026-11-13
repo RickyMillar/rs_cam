@@ -7,9 +7,10 @@
 //! own material (S6), so its rows hold an own-material row beside the stock
 //! rows. The run simulates, so the gate rows are judged.
 //!
-//! NOT MEASURED here: the value equality with MCP on one session (the MCP
-//! half, `the_mcp_rows_are_the_session_rows_p29_10`, holds the door against
-//! the reply). This file holds the shape: one row per gate and cut group.
+//! The values: the test runs the same plan in process (the first op, a
+//! simulation, the rest op, a simulation, modulation off as the CLI run) and
+//! holds each `summary.json` row list equal to the door rows on that trace
+//! (`ProjectSession::limit_rows`, the rows MCP prints).
 
 #![expect(
     clippy::unwrap_used,
@@ -34,6 +35,7 @@ fn the_summary_prints_the_limit_rows_p29_10() {
         .arg(project())
         .arg("--output-dir")
         .arg(&out)
+        .arg("--no-adaptive-feed-modulation")
         .output()
         .expect("the CLI runs");
     let stderr = String::from_utf8_lossy(&run.stderr);
@@ -64,5 +66,42 @@ fn the_summary_prints_the_limit_rows_p29_10() {
         }
     }
     assert!(own_material_rows > 0, "non-vacuity: an own-material row");
+    // The values: the same plan in process, then the door.
+    let mut session = rs_cam_core::session::ProjectSession::load(&project()).expect("loads");
+    let cancel = std::sync::atomic::AtomicBool::new(false);
+    let options = rs_cam_core::session::SimulationOptions {
+        resolution: rs_cam_core::session::SimulationResolution::Fixed(0.5),
+        adaptive_feed_modulation: false,
+        ..rs_cam_core::session::SimulationOptions::default()
+    };
+    for index in 0..session.toolpath_configs().len() {
+        let _ = session
+            .generate_toolpath(index, &cancel)
+            .expect("the op generates");
+        session
+            .run_simulation(&options, &cancel)
+            .expect("the session simulates");
+    }
+    let trace = session
+        .simulation_result()
+        .and_then(|s| s.cut_trace.clone());
+    for entry in per_toolpath {
+        let (index, _) = session
+            .toolpath_configs()
+            .iter()
+            .enumerate()
+            .find(|(_, tc)| serde_json::json!(tc.id) == entry["id"])
+            .expect("the entry names a toolpath");
+        let rows = session
+            .limit_rows(index, trace.as_ref())
+            .expect("the toolpath")
+            .verdict();
+        // Through text and back, as `summary.json` is read: the parser of
+        // this crate reads a float to the nearest value it can, so both sides
+        // take the same path.
+        let text = serde_json::to_string(&rows).expect("the rows serialise");
+        let door: serde_json::Value = serde_json::from_str(&text).expect("the rows parse");
+        assert_eq!(entry["limit_rows"], door, "the rows of toolpath {index}");
+    }
     let _ = std::fs::remove_dir_all(&out);
 }

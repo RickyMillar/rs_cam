@@ -854,3 +854,31 @@ Operator file: plane 11 ops; axial bar 5 (idx 3, 4, 10, 13, 17); radial bar 1 (i
 (idx 5, 9). No op refuses an envelope. The notes on the four files: "Width assumes: chips clear;
 tool life not modelled" (50 characters, 14 ops), the no-depth reason (73), the move-budget
 conflict (135) and the `MayOccur` first-slot sentence (224 characters, 8 ops).
+
+## 14. Lead rulings after 10a to 10d
+
+Lead, 2026-11-13, on the six questions of the 10a to 10d report (commits `8f35e40d5`, `f6702c771`,
+`2853ab8b7`, `ac23e7a4e`, `527839dfa`).
+
+1. **F6: no merge in P29-10.** The depth row stays as the gate writes it. The force reading stays
+   report-only and gives no row. The numeric question goes to P29-11 with M4. 10e shows the rows
+   as they are.
+2. **`Caveat::StoredFeed` holds only on a row whose state the rounding can change**: the
+   stored-feed chip interval of the value holds the bound. A chip row at -75 % has no such caveat
+   and takes the normal tone. Sentry claim 5 states the exact rule and tests both sides.
+3. **A face says what its row compares.** A planned force-budget row and the depth gate row compare
+   a depth in mm with a depth in mm, so their face names the depth (and may name the force budget
+   as the cause); only a row that compares newtons shows a force share. Core holds the rule
+   (`limits::Compared`); the words get their final review on the 10e screenshots.
+4. **`groups` stays on the wire** until 10e removes its last reader.
+5. **Departures accepted:** `own_depth_mm` (the plane point comes in 10g), `Caveat::MayOccur {
+   row }`, `samples: Option`, `LimitText` without unit and scale, four tokens, the door with the
+   trace, the `Basis::gates_export` rule (the export gate reads `BoundSource::gates_export`, not
+   `Basis`). `Diagnostic.group` in about 100 struct literals is accepted for now.
+6. **Every toolpath has an entry** in `get_tool_load_report` `limit_rows`. A toolpath with no
+   verdict gets its entry with the no-simulation rows (the rows the door gives with no trace),
+   never an absent entry. The CLI `project` rows follow the same rule.
+
+### For the clean-up pass
+
+- A constructor for `Diagnostic`, so that a new field does not touch about 100 struct literals.

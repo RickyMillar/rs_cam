@@ -79,5 +79,8 @@ run the server; the live server, GUI dispatch and session ownership are in
   `get_tool_load_report` `limit_rows` (`[{toolpath_id, toolpath_name, rows}]`, every gate and cut
   group), `get_suggest_rationale` `limit_rows` (the RPM rows), and `get_safe_envelope` reads only
   `envelope.limit_rows`. One door, `ProjectSession::limit_rows`. Feature token `limit_rows_every_reply`.
+- P29-10 (10x, lead rulings 2, 3, 6): a row carries `compared` (`load`, `depth`, `width`); a depth
+  row's face names the depth; `stored_feed` holds only where the rounding decides the state; every
+  toolpath has a `get_tool_load_report` `limit_rows` entry (no-simulation rows when it has no verdict).
 - Verify with `cargo test -p rs_cam_mcp -q`; when a wire type changes, also run
   the relevant `rs_cam_viz` MCP integration tests.
