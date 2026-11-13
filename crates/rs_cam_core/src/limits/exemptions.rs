@@ -307,11 +307,14 @@ pub static EXEMPTIONS: [Exemption; 37] = [
     },
     Exemption {
         id: "P28-28",
-        what: "the plunge-entry stability warning",
+        what: "the plunge-entry warnings: the stability warning and the straight-plunge note",
         limit: &[],
-        who: Who::Reader("every family but Adaptive"),
+        who: Who::Reader(
+            "every family but Adaptive (the stability warning); a roughing op with no entry \
+             (the straight-plunge note, `feeds::ramp::entry_notes`, P29-11 11-0)",
+        ),
         class: NR,
-        where_: &["src/feeds/suggest/adaptive_entry.rs"],
+        where_: &["src/feeds/suggest/adaptive_entry.rs", "src/feeds/ramp.rs"],
         closes_in: "later (a plunge deflection model)",
     },
     Exemption {
@@ -321,7 +324,7 @@ pub static EXEMPTIONS: [Exemption; 37] = [
         who: Who::Kind(&[CutKind::LeadIn, CutKind::LeadOut]),
         class: NR,
         where_: &["src/dressup/feed_modulation.rs"],
-        closes_in: "P29-6",
+        closes_in: "the modulation design step (P29-6 commit 6e was held, 8413af726)",
     },
     Exemption {
         id: "P28-30",

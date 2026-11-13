@@ -982,6 +982,7 @@ pub fn entry_notes(
     {
         Ok(entry) => entry,
         Err(RampFallback::EntryOff) => {
+            // EXEMPT(P28-28)
             if matches!(pass_role, PassRole::Roughing) {
                 notes.push(straight_plunge_note());
             }
