@@ -77,6 +77,7 @@ impl SimulationState {
                 span_aggregates: SpanAggregateCache::default(),
                 triage_cache: SimulationTriageCache::default(),
                 cut_metric_cache: CutMetricCache::default(),
+                limit_row_cache: super::LimitRowCache::default(),
                 issue_cache: IssueListCache::default(),
                 semantic_indexes: HashMap::new(),
             },
@@ -84,6 +85,7 @@ impl SimulationState {
             open_trace: None,
             trace_window: None,
             inspector_tab: SimInspectorTab::default(),
+            cut_groups_open: false,
             rough_coverage: None,
         }
     }

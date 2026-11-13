@@ -21,7 +21,7 @@ The egui application, its per-frame work and the GUI-side MCP requests. The serv
   - B1: `hover_result` picks once per frame; every hover reader reads it. F4: one `HoverTarget` by `selection_highlight::hover_target` (pick mode: a pickable face, else the pick item, else `row_hover`, else nothing; outside: `row_hover`, else the face); a click hit goes through `interaction::intent::gesture_events` (focus by `UiCommand::Select`); Escape sends `EndViewportMode`. The hover ring (`upload_hover_lines`)
     and the tab marks (`upload_tab_lines`) are their own buffers. D5: the hover ring reads `face_items` for an STL face.
   - D3: `gpu_upload/face_state.rs` writes the STEP face state words (`(ModelId, FaceGroupId)` marks) after `meshes::upload`; a hover builds no mesh. D4: `gpu_upload/model_edges.rs` builds the face edges from the `meshes::inputs` walk; `gpu_upload/wireframe.rs` the triangle edges, in the Wireframe display mode only.
-  - `set_ui_view`: `model_visibility` sends `SetModelVisibility`; `frame_items` calls `frame_selection_items`; `camera` calls `state::camera::apply_camera_request` (instant, checked first); `selection` and `get_ui_view` read `focus_summary`.
+  - `set_ui_view`: `model_visibility` sends `SetModelVisibility`; `frame_items` calls `frame_selection_items`; `camera` calls `state::camera::apply_camera_request` (instant, checked first); `sim_inspector_tab` and `sim_cut_groups` (P29-10) write `SimulationState::inspector_tab` and `cut_groups_open`; `selection` and `get_ui_view` read `focus_summary`.
 
 ## Invariants
 

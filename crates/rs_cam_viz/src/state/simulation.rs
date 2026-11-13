@@ -144,6 +144,11 @@ pub struct SimulationDebugState {
     /// section reads them on every frame; the build walks the trace once
     /// per metric.
     pub(crate) cut_metric_cache: CutMetricCache,
+    /// P29-10 10e: the limit rows of every toolpath of the load report,
+    /// keyed by the report they read ([`LoadReportStamp`]). The inspector,
+    /// the op list and Readiness read them on every frame; the build runs
+    /// once per report.
+    pub(crate) limit_row_cache: LimitRowCache,
     /// Cached sorted issue list keyed by sim/debug trace fingerprints.
     /// Avoids rebuilding + sorting the same air-cut/hotspot/collision list
     /// in multiple panels during smooth playback.
@@ -264,7 +269,67 @@ pub(crate) struct CutMetricCache {
     pub(crate) builds: u64,
 }
 
+/// P29-10 10e: the limit rows of one toolpath, from the one door
+/// (`ProjectSession::limit_rows(..).verdict()`).
+pub struct ToolpathLimitRows {
+    /// The toolpath.
+    pub toolpath_id: ToolpathId,
+    /// Its name.
+    pub name: String,
+    /// Its rows: one per gate and cut group, the gantry row, the drill
+    /// rows and the own-material rows, in core order.
+    pub rows: Vec<rs_cam_core::limits::CheckRow>,
+}
+
+/// The rows of every toolpath of one load report, in report order.
+pub type LimitRowSet = Vec<ToolpathLimitRows>;
+
+/// The memo of [`SimulationState::cached_limit_rows`]. Behind a mutex, so a
+/// surface that holds the state by `&` (Readiness) reads it too.
+#[derive(Default)]
+pub(crate) struct LimitRowCache {
+    entry: std::sync::Mutex<Option<(LoadReportStamp, Arc<LimitRowSet>)>>,
+}
+
 impl SimulationState {
+    /// P29-10 10e: the limit rows of every toolpath of the load report,
+    /// built once per report through `ProjectSession::limit_rows` (the door
+    /// MCP and the CLI read), never per frame.
+    pub fn cached_limit_rows(
+        &self,
+        session: &rs_cam_core::session::ProjectSession,
+    ) -> Arc<LimitRowSet> {
+        let report = self.cached_load_report(session);
+        let mut guard = match self.debug.limit_row_cache.entry.lock() {
+            Ok(guard) => guard,
+            // A build writes the entry only after it returns, so a poisoned
+            // entry is still whole.
+            Err(poisoned) => poisoned.into_inner(),
+        };
+        if let Some((stamp, set)) = guard.as_ref()
+            && stamp.answers(&report)
+        {
+            return Arc::clone(set);
+        }
+        let trace = self.cut_trace_arc();
+        let set: LimitRowSet = report
+            .per_toolpath
+            .iter()
+            .filter_map(|verdict| {
+                let (index, tc) = session.find_toolpath_config_by_id(verdict.toolpath_id)?;
+                let rows = session.limit_rows(index, trace)?.verdict();
+                Some(ToolpathLimitRows {
+                    toolpath_id: verdict.toolpath_id,
+                    name: tc.name.clone(),
+                    rows,
+                })
+            })
+            .collect();
+        let set = Arc::new(set);
+        *guard = Some((LoadReportStamp::of(&report), Arc::clone(&set)));
+        set
+    }
+
     /// True when the card of `metric` shows the line over time, not the
     /// histogram.
     pub fn shows_over_time(&self, metric: DistributionMetric) -> bool {
@@ -1420,6 +1485,10 @@ pub struct SimulationState {
     /// Runtime-only: the choice lasts while the app runs, and it is not
     /// saved with the project.
     pub inspector_tab: SimInspectorTab,
+    /// P29-10 10e: the "Cut groups" drawer of the Metrics tab is open.
+    /// Closed by default (operator intent: the panel stays quiet; the
+    /// detail sits in a closed drawer). Runtime-only.
+    pub cut_groups_open: bool,
     /// G-ROUGHCOV A2: the 3D Rough coverage readings of the adopted run,
     /// computed ONCE at adopt from the view's checkpoints. The session copy
     /// of a run keeps no checkpoint (W2-E), so the readings, not the stock,

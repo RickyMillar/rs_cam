@@ -8047,6 +8047,62 @@
           ],
           "description": "The non-toolpath properties panel to select. Switches to the Setup\nworkspace so the panel is visible on the right."
         },
+        "sim_cut_groups": {
+          "anyOf": [
+            {
+              "description": "The state a `set_ui_view` drawer field sets.",
+              "oneOf": [
+                {
+                  "const": "open",
+                  "description": "Open the drawer.",
+                  "type": "string"
+                },
+                {
+                  "const": "closed",
+                  "description": "Close the drawer.",
+                  "type": "string"
+                }
+              ]
+            },
+            {
+              "type": "null"
+            }
+          ],
+          "description": "P29-10 10e: open or close the \"Cut groups\" drawer of the Metrics\ntab (`open`, `closed`). The drawer is closed by default."
+        },
+        "sim_inspector_tab": {
+          "anyOf": [
+            {
+              "description": "A tab of the Simulation inspector (`set_ui_view sim_inspector_tab`).",
+              "oneOf": [
+                {
+                  "const": "metrics",
+                  "description": "The cut-metric cards and the limit rows (the default tab).",
+                  "type": "string"
+                },
+                {
+                  "const": "warnings",
+                  "description": "The findings of the run.",
+                  "type": "string"
+                },
+                {
+                  "const": "navigate",
+                  "description": "The operation and the span under the playhead.",
+                  "type": "string"
+                },
+                {
+                  "const": "project",
+                  "description": "The run as a whole.",
+                  "type": "string"
+                }
+              ]
+            },
+            {
+              "type": "null"
+            }
+          ],
+          "description": "P29-10 10e: the Simulation inspector tab to show (`metrics`,\n`warnings`, `navigate`, `project`). The reply echoes\n`sim_inspector` {tab, cut_groups}."
+        },
         "toolpath_index": {
           "description": "Toolpath index (0-based) to select. Selecting a toolpath makes its\nproperties panel visible in the Toolpaths workspace.",
           "format": "uint",

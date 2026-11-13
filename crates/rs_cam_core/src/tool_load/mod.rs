@@ -96,8 +96,8 @@ use serde::{Deserialize, Serialize};
 
 pub use context::ToolpathLoadContext;
 pub use distribution::{
-    DistributionMetric, DistributionOutcome, Histogram, MetricDistribution, NotMeasuredReason,
-    PopulationSample, metric_distribution,
+    DistributionMetric, DistributionOutcome, Histogram, MetricDistribution, MetricText,
+    NotMeasuredReason, PopulationSample, metric_distribution,
 };
 pub use metric_guide::{MetricGuide, cut_force_guide, engagement_guide};
 pub use verdict::{

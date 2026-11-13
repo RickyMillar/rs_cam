@@ -10,10 +10,9 @@ use crate::state::toolpath::ToolpathId;
 use crate::state::viewport::ViewportState;
 use crate::ui::theme;
 use crate::ui_command::{SimJumpToMoveArgs, SimJumpToOpStartArgs, UiCommand};
+use rs_cam_core::limits::CheckRow;
 use rs_cam_core::session::ProjectSession;
-use rs_cam_core::tool_load::verdict::{
-    Confidence, CriterionKind, LoadState, ToolpathLoadVerdict, UnmodeledReason,
-};
+use rs_cam_core::tool_load::verdict::ToolpathLoadVerdict;
 use rs_cam_core::trace::toolpath_spans::{Span, SpanKind};
 
 /// Left panel in simulation workspace: slim operation list with visibility and jump controls.
@@ -321,6 +320,7 @@ fn draw_toolpath_rows(
     let setup_boundaries = sim.setup_boundaries().to_vec();
     let issues = sim.issues(gui, max_feed);
     let load_report = sim.cached_load_report(session);
+    let row_set = sim.cached_limit_rows(session);
     sim.sync_debug_state(gui);
     let active_item = sim.active_semantic_item(gui);
     let active_item_id = active_item
@@ -417,7 +417,11 @@ fn draw_toolpath_rows(
                     .per_toolpath
                     .iter()
                     .find(|verdict| verdict.toolpath_id == boundary.id);
-                draw_toolpath_status_flags(ui, boundary.id, &issues, load_verdict);
+                let rows = row_set
+                    .iter()
+                    .find(|t| t.toolpath_id == boundary.id)
+                    .map(|t| t.rows.as_slice());
+                draw_toolpath_status_flags(ui, boundary.id, &issues, load_verdict, rows);
                 if viewport.show_all_toolpaths {
                     let visible = gui
                         .toolpath_rt
@@ -995,8 +999,9 @@ fn draw_toolpath_status_flags(
     toolpath_id: ToolpathId,
     issues: &[SimulationIssue],
     verdict: Option<&ToolpathLoadVerdict>,
+    rows: Option<&[CheckRow]>,
 ) {
-    let flags = toolpath_status_flags(toolpath_id, issues, verdict);
+    let flags = toolpath_status_flags(toolpath_id, issues, rows);
     ui.horizontal(|ui| {
         let Some(worst) = flags.first() else {
             ui.label(
@@ -1101,10 +1106,18 @@ fn kinematics_pill(
 
 /// Per-toolpath status flags, sorted worst-first (see
 /// [`ToolpathStatusFlag::rank`]).
+///
+/// P29-10 10e: the load flags read the core rows of the default view
+/// (`CheckRow`, `ProjectSession::limit_rows`): a row that exceeds, a row
+/// whose gate read no sample (X-VAC), and a row with no number for a reason
+/// a run or a datum can fill (`CheckRow::is_open`). A known absence (the
+/// gantry push, no bound on this cut) raises no flag. The label is the core
+/// short name (`LimitId::text`), the hover the core face and detail, the
+/// colour the one tone map (`role_of_tone`).
 fn toolpath_status_flags(
     toolpath_id: ToolpathId,
     issues: &[SimulationIssue],
-    verdict: Option<&ToolpathLoadVerdict>,
+    rows: Option<&[CheckRow]>,
 ) -> Vec<ToolpathStatusFlag> {
     let mut flags = Vec::new();
     // AirCut / LowEngagement deliberately absent: per-sample emission
@@ -1129,67 +1142,37 @@ fn toolpath_status_flags(
         }
     }
 
-    if let Some(verdict) = verdict {
-        for status in verdict.criteria() {
-            if is_drill_not_applicable(verdict, &status) {
-                continue;
-            }
-            // S1 (2026-09-18): a KNOWN absence raises no flag. This
-            // strip is a triage prompt — every flag it paints asks the
-            // operator to do something, and the `?` flag below asks
-            // them to re-run the simulation or supply tool data.
-            // Neither fills the gantry-push row: the model does not
-            // exist and no project datum creates it (register T-10).
-            // The row still ships in `criteria()`, so the per-limit
-            // rows render it as a visible absence; it just does not
-            // prompt. See `CriterionStatus::is_known_absence`.
-            if status.is_known_absence() {
-                continue;
-            }
-            // X-VAC (2026-08-14): a vacuous verdict raised no flag at
-            // all on this surface — `Within` + `Validated` is the silent
-            // case — so an op whose gates measured nothing looked
-            // cleaner than one whose gates measured an approximation.
-            // Report-tier: the flag names the emptiness, it does not
-            // change `status.state`.
-            if status.is_vacuous() {
+    if let Some(rows) = rows {
+        for row in crate::ui::sim_diagnostics::default_view_rows(rows) {
+            let short = row.check().limit.text().short;
+            let detail = format!(
+                "{}\n{}",
+                row.face(),
+                crate::ui::sim_diagnostics::row_hover(row)
+            );
+            if row.tone().exceeds() {
                 flags.push(ToolpathStatusFlag::new(
-                    format!("\u{2205} {}", criterion_short_label(status.kind)),
-                    criterion_detail(&status),
+                    format!("⚠ {short}"),
+                    detail,
+                    crate::ui::components::role_of_tone(row.tone()).text(),
+                    0,
+                ));
+            } else if row.is_vacuous() {
+                // X-VAC (2026-08-14): a gate that measured nothing is named,
+                // so an op whose gates read no sample does not look clean.
+                flags.push(ToolpathStatusFlag::new(
+                    format!("\u{2205} {short}"),
+                    detail,
                     theme::WARNING_MILD,
                     2,
                 ));
-                continue;
-            }
-            match status.state {
-                LoadState::Exceeds => flags.push(ToolpathStatusFlag::new(
-                    format!("⚠ {}", criterion_short_label(status.kind)),
-                    criterion_detail(&status),
-                    theme::ERROR,
-                    0,
-                )),
-                LoadState::Unmodeled => flags.push(ToolpathStatusFlag::new(
-                    format!("? {}", criterion_short_label(status.kind)),
-                    criterion_detail(&status),
+            } else if row.is_open() {
+                flags.push(ToolpathStatusFlag::new(
+                    format!("? {short}"),
+                    detail,
                     theme::TEXT_DIM,
                     4,
-                )),
-                // V1 (2026-09-18), extended to this strip on the
-                // orchestrator's ruling: a criterion INSIDE its bound raises
-                // no flag, whatever its confidence tier. This arm used to
-                // push the approximation mark plus the kind, in
-                // WARNING_MILD, so a row that passed every gate read as a
-                // warning - and the worst-of rollup made that mark the FACE
-                // of an otherwise clean op.
-                //
-                // Same rule and same reason as the badge: a weak input is
-                // carried by BEHAVIOUR (`BoundSource::gates_export`, through
-                // `CriterionStatus::refuses_export`), not by a mark, and the
-                // reason - WHICH input is approximate - belongs in a hover.
-                // `criterion_detail` still prints it, for every flag this
-                // strip does raise and for the Inspector's limit row beside
-                // it. See `Confidence`'s doc in `tool_load::verdict`.
-                LoadState::Within => {}
+                ));
             }
         }
     } else {
@@ -1203,17 +1186,6 @@ fn toolpath_status_flags(
 
     flags.sort_by_key(|f| f.rank);
     flags
-}
-
-fn is_drill_not_applicable(
-    verdict: &ToolpathLoadVerdict,
-    status: &rs_cam_core::tool_load::verdict::CriterionStatus<'_>,
-) -> bool {
-    verdict.drill_gates.is_some()
-        && matches!(
-            status.unmodeled_reason,
-            Some(UnmodeledReason::NotApplicableForOp(_))
-        )
 }
 
 fn issue_kind_short_label(kind: SimulationIssueKind) -> &'static str {
@@ -1261,51 +1233,6 @@ fn issue_kind_detail(
             "{} issue(s): {count}\n{examples}",
             issue_kind_short_label(kind)
         )
-    }
-}
-
-fn criterion_short_label(kind: CriterionKind) -> &'static str {
-    match kind {
-        CriterionKind::Chipload => "advance/t",
-        CriterionKind::Power => "power",
-        CriterionKind::Deflection => "defl",
-        CriterionKind::DepthOfCut => "depth",
-        CriterionKind::GantryPush => "gantry",
-        CriterionKind::DrillChipWelding => "weld",
-        CriterionKind::DrillPeckAdequacy => "peck",
-        CriterionKind::DrillPlungeFeed => "plunge",
-    }
-}
-
-fn criterion_detail(status: &rs_cam_core::tool_load::verdict::CriterionStatus<'_>) -> String {
-    let peak = status
-        .display_peak
-        .map(|peak| format!(" peak {peak:.4} {}", status.unit))
-        .unwrap_or_default();
-    let confidence = match status.confidence {
-        Some(Confidence::Validated) => "validated".to_owned(),
-        Some(Confidence::Approximate(why)) => format!("approximate: {why}"),
-        None => "no confidence tag".to_owned(),
-    };
-    // X-VAC: prepend the vacuity, because the sentence that follows
-    // ("is within bounds") is exactly the one a reader must not believe.
-    let vacuity = status.vacuity_clause();
-    if !vacuity.is_empty() {
-        return format!("{}{vacuity}.{peak}", status.kind.label());
-    }
-    match status.state {
-        LoadState::Within => format!(
-            "{} is within bounds; {confidence}.{peak}",
-            status.kind.label()
-        ),
-        LoadState::Exceeds => format!(
-            "{} exceeds its safety bound; {confidence}.{peak}",
-            status.kind.label()
-        ),
-        LoadState::Unmodeled => match status.unmodeled_reason {
-            Some(reason) => format!("{} is unmodeled: {reason:?}.", status.kind.label()),
-            None => format!("{} is unmodeled.", status.kind.label()),
-        },
     }
 }
 

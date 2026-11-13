@@ -40,6 +40,22 @@ pub enum Role {
     Unknown,
 }
 
+/// **THE map from a core row tone to a role** (P29-10, design 3.4). Core
+/// decides the tone of every limit row (`limits::Tone::of`); a surface
+/// only colours it, here and nowhere else: `Exceeds` is danger,
+/// `ExceedsAdvisory` caution, `Within` ok, and a row with no number or no
+/// meaning is unknown.
+#[must_use]
+pub fn role_of_tone(tone: rs_cam_core::limits::Tone) -> Role {
+    use rs_cam_core::limits::Tone;
+    match tone {
+        Tone::Exceeds => Role::Danger,
+        Tone::ExceedsAdvisory => Role::Caution,
+        Tone::Within => Role::Ok,
+        Tone::NoNumber | Tone::NotApplicable => Role::Unknown,
+    }
+}
+
 impl Role {
     /// The role's text colour.
     #[must_use]

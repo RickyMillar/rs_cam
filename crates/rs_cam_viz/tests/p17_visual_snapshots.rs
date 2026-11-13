@@ -686,7 +686,7 @@ fn the_sim_cards_and_chart_at_each_rail_width_p17() {
                     ui,
                     CutMetricsBody {
                         set: &cards,
-                        verdict: None,
+                        rows: &[],
                         over_time: &[],
                         playhead: None,
                         move_offset: 0,

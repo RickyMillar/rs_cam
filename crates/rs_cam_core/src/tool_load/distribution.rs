@@ -112,6 +112,79 @@ impl DistributionMetric {
             DistributionMetric::CutForce => "N",
         }
     }
+
+    /// The words and the display scale of a chart of the metric (P29-10
+    /// 10e: the one writer; the viz card, its line and the trace modal read
+    /// it). One match, no wildcard.
+    #[must_use]
+    pub fn text(self) -> MetricText {
+        match self {
+            DistributionMetric::Criterion(kind) => match kind {
+                CriterionKind::Chipload => MetricText {
+                    title: "Chipload",
+                    unit: "mm/tooth",
+                    scale: 1.0,
+                    above: "overload",
+                },
+                CriterionKind::DepthOfCut => MetricText {
+                    title: "Depth of cut",
+                    unit: "mm",
+                    scale: 1.0,
+                    above: "flex",
+                },
+                // The gate bins deflection in millimetres; a chart reads
+                // micrometres, and so do its bounds (1 mm = 1000 um).
+                CriterionKind::Deflection => MetricText {
+                    title: "Tool deflection",
+                    unit: "\u{00b5}m",
+                    scale: 1000.0,
+                    above: "chatter",
+                },
+                CriterionKind::Power => MetricText {
+                    title: "Spindle power",
+                    unit: "kW",
+                    scale: 1.0,
+                    above: "stall",
+                },
+                CriterionKind::GantryPush
+                | CriterionKind::DrillChipWelding
+                | CriterionKind::DrillPeckAdequacy
+                | CriterionKind::DrillPlungeFeed => MetricText {
+                    title: kind.label(),
+                    unit: kind.unit(),
+                    scale: 1.0,
+                    above: "over limit",
+                },
+            },
+            DistributionMetric::Engagement => MetricText {
+                title: "Engagement",
+                unit: "\u{00b0}",
+                scale: 1.0,
+                above: "over limit",
+            },
+            DistributionMetric::CutForce => MetricText {
+                title: "Cut force",
+                unit: "N",
+                scale: 1.0,
+                above: "over budget",
+            },
+        }
+    }
+}
+
+/// The words and the display scale of a metric chart
+/// ([`DistributionMetric::text`]).
+#[derive(Debug, Clone, Copy, PartialEq)]
+pub struct MetricText {
+    /// The chart title.
+    pub title: &'static str,
+    /// The display unit. It differs from [`DistributionMetric::unit`] only
+    /// for deflection.
+    pub unit: &'static str,
+    /// Display value = core value x `scale`.
+    pub scale: f64,
+    /// The one-word consequence of time above the ceiling.
+    pub above: &'static str,
 }
 
 /// One member of a gate population.

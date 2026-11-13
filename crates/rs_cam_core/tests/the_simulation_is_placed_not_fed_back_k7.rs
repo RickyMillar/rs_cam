@@ -468,7 +468,19 @@ fn the_lineage_records_the_measured_peak_and_its_limit() {
         Placement::Inside { .. } => None,
     });
     assert!(binding.is_some(), "non-vacuity: the case crosses a limit");
-    assert_eq!(measured.binding, binding, "the binding limit kind");
+    // P29-10 item 11: the worst sample is one display row; its limit is
+    // the binding limit kind.
+    let row = measured.row.as_ref().expect("the worst sample's row");
+    assert_eq!(
+        Some(row.check().limit),
+        binding.map(rs_cam_core::limits::LimitId::of_limit_kind),
+        "the binding limit kind"
+    );
+    assert_eq!(
+        row.tone(),
+        rs_cam_core::limits::Tone::Exceeds,
+        "the worst outside sample exceeds"
+    );
     let json = lineage.to_json();
     assert_eq!(
         json["measured"]["case"], "measured",

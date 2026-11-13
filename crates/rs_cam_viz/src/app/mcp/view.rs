@@ -480,6 +480,8 @@ impl RsCamApp {
         model_visibility: Option<&std::collections::BTreeMap<usize, bool>>,
         camera: Option<crate::state::camera::CameraRequest>,
         display_mode: Option<rs_cam_core::settings::DisplayMode>,
+        sim_inspector_tab: Option<rs_cam_mcp::server::SimInspectorTabParam>,
+        sim_cut_groups: Option<rs_cam_mcp::server::DrawerParam>,
     ) -> String {
         // 0. The camera request (A C5) is checked before anything applies,
         //    so a refusal changes nothing. It is checked against the focus
@@ -746,6 +748,30 @@ impl RsCamApp {
             None => crate::state::camera::camera_echo(self.controller.state()),
         };
 
+        // 8. The Simulation inspector (P29-10 10e): the tab and the "Cut
+        //    groups" drawer. The same two fields the tab strip and the
+        //    drawer header write.
+        {
+            use crate::state::simulation::SimInspectorTab;
+            use rs_cam_mcp::server::{DrawerParam, SimInspectorTabParam};
+            let sim = &mut self.controller.state_mut().simulation;
+            if let Some(tab) = sim_inspector_tab {
+                // F166: exhaustive, so a new wire tab names its panel tab.
+                sim.inspector_tab = match tab {
+                    SimInspectorTabParam::Metrics => SimInspectorTab::Metrics,
+                    SimInspectorTabParam::Warnings => SimInspectorTab::Warnings,
+                    SimInspectorTabParam::Navigate => SimInspectorTab::Navigate,
+                    SimInspectorTabParam::Project => SimInspectorTab::Project,
+                };
+            }
+            if let Some(drawer) = sim_cut_groups {
+                sim.cut_groups_open = match drawer {
+                    DrawerParam::Open => true,
+                    DrawerParam::Closed => false,
+                };
+            }
+        }
+
         // Echo the resulting view. Modal mutations route through the event
         // queue and land later this same frame, so echo the requested
         // targets plus the already-applied selection.
@@ -788,6 +814,10 @@ impl RsCamApp {
             "display_mode": display_mode_json(state.viewport.display_mode),
             "display_mode_refused": display_mode_refused,
             "camera": camera_echo_json(&echo),
+            "sim_inspector": {
+                "tab": state.simulation.inspector_tab.label().to_lowercase(),
+                "cut_groups": state.simulation.cut_groups_open,
+            },
             "note": "view changes render on the next frame; call screenshot_gui to capture",
         }))
     }

@@ -214,14 +214,10 @@ fn check_row(name: &str, row: &CheckRow) {
         );
     }
     assert_eq!(row.tone(), Tone::of(c, row.caveats()), "{name}: the tone");
-    // Claim 3b: a face with a margin names what the row compares; a face
-    // with no number names its limit.
-    let compared = if c.margin.is_some() {
-        row.compared()
-    } else {
-        Compared::Load
-    };
-    match compared {
+    // Claim 3b: a face names what the row compares (lead ruling 3), with
+    // or without a number (P29-10 10e: "depth not judged here"); a row that
+    // compares its limit's own quantity names the limit.
+    match row.compared() {
         Compared::Depth => assert!(
             row.face().contains("depth "),
             "{name}: a depth row names the depth: {}",

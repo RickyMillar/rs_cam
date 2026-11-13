@@ -190,11 +190,13 @@ fn the_inspector_draws_cut_metric_cards_from_the_gate_g_cutcards() {
         "each card carries its criterion's limit row in the status hover"
     );
     let hover_fn = function_source(&diagnostics, "fn cut_metric_status_hover(");
-    for part in ["verdict_face(", "row_caption(", "verdict_tooltip("] {
+    // P29-10 10e: the hover is the core row of the gate (`CheckRow`): its
+    // face and its detail. No number in it is typed in the card.
+    for part in ["row.face()", "row_hover("] {
         assert!(
             hover_fn.contains(part),
-            "the status hover must build the limit row from `{part}`, the \
-             part `verdict_badge` paints for Readiness (G-OWNBOUND)"
+            "the status hover must carry the gate's core row through `{part}` \
+             (G-OWNBOUND, P29-10)"
         );
     }
     assert!(
@@ -268,16 +270,16 @@ fn the_inspector_draws_cut_metric_cards_from_the_gate_g_cutcards() {
     );
     let has_card = function_source(&diagnostics, "fn has_cut_metric_card(");
     assert!(
-        !has_card.contains("DepthOfCut"),
-        "P17: the depth row has no card; it paints once in \"Other limits\""
+        has_card.contains("CUT_METRIC_ORDER"),
+        "P17: a row has a card exactly when its gate is in the card order; the \
+         depth row has none, so it paints once in \"Other limits\""
     );
-    // P17: the depth row has no card; its "Other limits" row carries the R2
-    // sentence in its hover.
-    let limit_row = function_source(&diagnostics, "fn limit_data_row_with(");
+    // P29-10 10e (site 7): a depth with no cap is the core `NoBound` row;
+    // its face and detail say so, and the row draws no invented limit.
+    let limit_row = function_source(&diagnostics, "pub(crate) fn limit_data_row(");
     assert!(
-        limit_row.contains("Depth is reported; the deflection limit decides."),
-        "a depth reading with no cap (feeds ruling R2) must say which gate \
-         decides, not draw an invented limit"
+        limit_row.contains("row.face()") && limit_row.contains("row_hover("),
+        "a limit row paints the core face and the core detail"
     );
     let caption = function_source(&diagnostics, "fn card_caption(");
     assert!(
@@ -291,9 +293,9 @@ fn the_inspector_draws_cut_metric_cards_from_the_gate_g_cutcards() {
         "a card with no bound states the absence in its status glyph"
     );
     assert!(
-        glyph.contains("distribution.state"),
-        "the status glyph takes its role from the GATE verdict, not from \
-         the in-band share"
+        glyph.contains("role_of_tone("),
+        "the status glyph takes its role from the core row tone (the one \
+         map), not from the in-band share"
     );
     assert!(
         !card_fn.contains("StatusChip") && !card_fn.contains("Card::new("),

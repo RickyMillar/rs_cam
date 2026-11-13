@@ -9,7 +9,7 @@ Independent gates over a simulated cut. Entry: `tool_load::evaluate_toolpath`.
   report-only force reading (P17); `drill_gates.rs` — chip welding, peck, plunge feed.
   `load_fraction.rs` — the one load `L`.
 - `groups.rs` (P29-6 6d) — `populations` (one walk: each removing sample in its `CutGroup`), `MetricEvaluator` (a gate: `LIMITS`, `judge` over one group's samples), `judge_by_group` (THE driver: asks `limits::scope`, builds the `ByGroup<GroupCell>` record; the headline group, `ctx.headline_group()`, is the old one row). P29-7 7c: `Gate` (every gate, `limits()`) and `gate_of(LimitId)` (one match, no wildcard; the hand list `GATE_LIMITS` is gone).
-- `locality.rs` (`judged_group`, `is_body_without_spans` for the triage), `boundary.rs`, `verdict.rs` (`GroupVerdicts`), `display.rs`, `distribution.rs` (the cards bin the headline group), `metric_guide.rs`.
+- `locality.rs` (`judged_group`, `is_body_without_spans` for the triage), `boundary.rs`, `verdict.rs` (`GroupVerdicts`; P29-10 10e: `ToolLoadReport` and `ToolpathLoadVerdict` serialise only and `groups` is not on the wire: the rows carry every cell), `display.rs`, `distribution.rs` (the cards bin the headline group; `DistributionMetric::text` = `MetricText`, the one writer of a chart title, unit and scale), `metric_guide.rs`.
 
 ## Invariants
 

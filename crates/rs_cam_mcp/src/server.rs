@@ -1108,6 +1108,43 @@ pub struct SetUiViewParam {
     /// project with no 3D model. The reply echoes `display_mode` (the mode
     /// in force) and `display_mode_refused` (the reason, or null).
     pub display_mode: Option<DisplayModeParam>,
+    /// P29-10 10e: the Simulation inspector tab to show (`metrics`,
+    /// `warnings`, `navigate`, `project`). The reply echoes
+    /// `sim_inspector` {tab, cut_groups}.
+    pub sim_inspector_tab: Option<SimInspectorTabParam>,
+    /// P29-10 10e: open or close the "Cut groups" drawer of the Metrics
+    /// tab (`open`, `closed`). The drawer is closed by default.
+    pub sim_cut_groups: Option<DrawerParam>,
+}
+
+/// A tab of the Simulation inspector (`set_ui_view sim_inspector_tab`).
+#[derive(
+    Debug, Clone, Copy, PartialEq, Eq, Deserialize, serde::Serialize, schemars::JsonSchema,
+)]
+#[serde(rename_all = "snake_case", deny_unknown_fields)]
+#[schemars(inline)]
+pub enum SimInspectorTabParam {
+    /// The cut-metric cards and the limit rows (the default tab).
+    Metrics,
+    /// The findings of the run.
+    Warnings,
+    /// The operation and the span under the playhead.
+    Navigate,
+    /// The run as a whole.
+    Project,
+}
+
+/// The state a `set_ui_view` drawer field sets.
+#[derive(
+    Debug, Clone, Copy, PartialEq, Eq, Deserialize, serde::Serialize, schemars::JsonSchema,
+)]
+#[serde(rename_all = "snake_case", deny_unknown_fields)]
+#[schemars(inline)]
+pub enum DrawerParam {
+    /// Open the drawer.
+    Open,
+    /// Close the drawer.
+    Closed,
 }
 
 /// GRBL `$$` settings dump to import onto the live machine profile.
@@ -4063,6 +4100,12 @@ pub fn build_info() -> serde_json::Value {
             // and cut group) and `get_suggest_rationale` `limit_rows` (the
             // RPM rows). The three P29-2 `checks` keys are deleted.
             "limit_rows_every_reply",
+            // Feeds contract P29-10 (10e): `set_ui_view` `sim_inspector_tab`
+            // and `sim_cut_groups` (the reply echoes `sim_inspector`); the
+            // lineage `measured.row` (one limit row, `binding` and `judged`
+            // are deleted); `load_report.per_toolpath[]` has no `groups`.
+            "sim_inspector_view",
+            "lineage_measured_row",
         ],
     })
 }

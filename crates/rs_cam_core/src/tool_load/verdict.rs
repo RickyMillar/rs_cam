@@ -295,7 +295,11 @@ pub enum Confidence {
 /// toolpath list (matches `SimulationCutSample::toolpath_id` semantics).
 ///
 /// All three gates use typed verdicts (G16 Step 7).
-#[derive(Debug, Clone, Serialize, Deserialize)]
+///
+/// P29-10 10e: serialise only. No product door reads a load report back
+/// (`P29-10_DESIGN.md` 13.5), and the gate cells leave the wire with
+/// `groups`.
+#[derive(Debug, Clone, Serialize)]
 pub struct ToolpathLoadVerdict {
     pub toolpath_id: ToolpathId,
     pub chipload: ChiploadVerdict,
@@ -379,7 +383,10 @@ pub struct ToolpathLoadVerdict {
     /// verdicts of the headline group, whose cell here is
     /// `GroupCell::Headline`. A group that `Exceeds` joins
     /// [`Self::criteria`] (ruling Q5: a `Within` group gives no
-    /// diagnostic); every cell reaches MCP through this field.
+    /// diagnostic). P29-10 10e: not on the wire. Every cell reaches MCP and
+    /// the CLI as a `limits::CheckRow` (`ProjectSession::limit_rows`), and
+    /// no reader of the wire key is left.
+    #[serde(skip)]
     pub groups: GroupVerdicts,
 }
 
@@ -813,8 +820,9 @@ impl CriterionRow {
     }
 }
 
-/// Project-level report: one verdict per toolpath.
-#[derive(Debug, Clone, Serialize, Deserialize)]
+/// Project-level report: one verdict per toolpath. Serialise only
+/// (P29-10 10e, as [`ToolpathLoadVerdict`]).
+#[derive(Debug, Clone, Serialize)]
 pub struct ToolLoadReport {
     pub per_toolpath: Vec<ToolpathLoadVerdict>,
 }
@@ -3461,9 +3469,9 @@ mod tests {
             s.contains("\"exceeds_mm\":0.2"),
             "missing deflection exceeds bound: {s}"
         );
-        // Round-trips.
-        let back: ToolLoadReport = serde_json::from_str(&s).expect("round-trip");
-        assert_eq!(back.per_toolpath.len(), 1);
+        // P29-10 10e: the gate cells are not on the wire; the limit rows
+        // (`ProjectSession::limit_rows`) carry them.
+        assert!(!s.contains("\"groups\""), "`groups` left the wire: {s}");
     }
 
     #[test]

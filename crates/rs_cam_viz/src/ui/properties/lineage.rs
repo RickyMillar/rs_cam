@@ -176,13 +176,15 @@ pub fn lineage_rows(l: &Lineage) -> Vec<LineageRow> {
     // factor, value out, basis). The rows stay short (IC1, W3g).
     rows.extend(step_rows(l));
     // K7 (feeds contract P9): what a fresh simulation measured, when the
-    // reader attached it. One row: the peak power and the crossed limit.
+    // reader attached it. One row: the peak power, then the core face of
+    // the worst outside sample (P29-10 item 11: `measured.row`, a
+    // `CheckRow`), or "inside" when no sample is outside.
     if let Some(m) = &l.measured {
         let peak = m
             .peak
             .and_then(|p| p.power_kw)
             .map_or_else(|| "no power".to_owned(), |kw| format!("{kw:.2} kW"));
-        let limit = m.binding.map_or("inside", |b| b.label());
+        let limit = m.row.as_ref().map_or("inside", |row| row.face());
         rows.push(LineageRow {
             name: "Measured".to_owned(),
             value: format!("{peak} \u{00B7} {limit}"),
@@ -192,9 +194,9 @@ pub fn lineage_rows(l: &Lineage) -> Vec<LineageRow> {
                 m.case,
                 m.outside,
                 m.placed,
-                m.judged.map_or_else(String::new, |j| format!(
-                    " Worst: {} {:.2} {} against {:.2} {}.",
-                    j.axis, j.measured, j.unit, j.limit, j.unit
+                m.row.as_ref().map_or_else(String::new, |row| format!(
+                    "\nWorst: {}",
+                    row.detail().replace("; ", "\n")
                 )),
             ),
         });

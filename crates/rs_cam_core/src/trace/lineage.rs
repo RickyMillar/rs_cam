@@ -102,10 +102,11 @@ pub struct MeasuredLineage {
     pub outside: usize,
     /// The sample of the largest power: its cut, power and placement.
     pub peak: Option<crate::compute::simulate::MeasuredPoint>,
-    /// The limit that the worst outside sample crosses, if one does.
-    pub binding: Option<crate::feeds::envelope::LimitKind>,
-    /// The value that limit judges at the worst sample, and the limit.
-    pub judged: Option<crate::feeds::envelope::JudgedValue>,
+    /// P29-10 (design item 11): the worst outside sample as one display
+    /// row (`limits::Subject::MeasuredPoint`): the value that the crossed
+    /// limit judges at the sample, against the limit there. `None` when
+    /// no sample is outside or the placement judged no value.
+    pub row: Option<crate::limits::CheckRow>,
 }
 
 impl MeasuredLineage {
@@ -116,13 +117,30 @@ impl MeasuredLineage {
             crate::feeds::envelope::Placement::Outside { binding, .. } => Some(binding),
             crate::feeds::envelope::Placement::Inside { .. } => None,
         });
+        let judged = p.worst.and_then(|w| w.judged);
+        let row = binding.zip(judged).map(|(binding, judged)| {
+            crate::limits::CheckRow::measured(
+                crate::limits::of_judged_value(
+                    crate::limits::LimitId::of_limit_kind(binding),
+                    // The sample is outside the binding edge, so the side
+                    // of its value against the limit names the edge: above
+                    // a ceiling, below a floor.
+                    if judged.measured >= judged.limit {
+                        crate::limits::BoundSide::Ceiling
+                    } else {
+                        crate::limits::BoundSide::Floor
+                    },
+                    &judged,
+                ),
+                crate::limits::Compared::of_judged_axis(judged.axis),
+            )
+        });
         Self {
             case: "measured",
             placed: p.placed,
             outside: p.outside,
             peak: p.peak,
-            binding,
-            judged: p.worst.and_then(|w| w.judged),
+            row,
         }
     }
 }

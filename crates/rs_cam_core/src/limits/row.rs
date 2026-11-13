@@ -132,6 +132,17 @@ impl Compared {
         }
     }
 
+    /// The compared quantity of a judged value of a measured point
+    /// (`JudgedValue::axis`: "depth", "width" or "power").
+    #[must_use]
+    pub fn of_judged_axis(axis: &str) -> Self {
+        match axis {
+            "depth" => Self::Depth,
+            "width" => Self::Width,
+            _ => Self::Load,
+        }
+    }
+
     /// The compared quantity of a gate row: the depth gate compares the
     /// sample depth with its cap; every other gate compares its own load.
     #[must_use]
@@ -226,8 +237,13 @@ impl Caveat {
             Self::LowerBound => Some("lower bound"),
             Self::StoredFeed => Some("stored feed"),
             Self::MayOccur { .. } => Some("may not occur"),
-            Self::Advisory => Some("advisory"),
-            Self::NoSamples | Self::SampleDepth { .. } | Self::AtEarlierLeave => None,
+            // P29-10 10e (the words judged on the screenshots): the tone
+            // states an advisory bound (`Tone::ExceedsAdvisory`, its chip
+            // word "advisory"); on a row inside its bound the word says
+            // nothing to act on. The detail keeps the clause.
+            Self::Advisory | Self::NoSamples | Self::SampleDepth { .. } | Self::AtEarlierLeave => {
+                None
+            }
         }
     }
 
@@ -307,14 +323,38 @@ impl Tone {
         }
     }
 
-    /// The tone in one word.
-    const fn word(self) -> &'static str {
+    /// The tone in words, for the detail.
+    #[must_use]
+    pub const fn word(self) -> &'static str {
         match self {
             Self::Within => "within",
             Self::Exceeds => "exceeds",
             Self::ExceedsAdvisory => "exceeds (advisory)",
             Self::NoNumber => "no number",
             Self::NotApplicable => "not applicable",
+        }
+    }
+
+    /// The tone in one short word, for a status chip. An exceeding row
+    /// whose bound does not gate an export, or that a caveat softens,
+    /// reads "advisory": the face already says "over" or "under".
+    #[must_use]
+    pub const fn chip_word(self) -> &'static str {
+        match self {
+            Self::Within => "within",
+            Self::Exceeds => "exceeds",
+            Self::ExceedsAdvisory => "advisory",
+            Self::NoNumber => "no number",
+            Self::NotApplicable => "N/A",
+        }
+    }
+
+    /// `true` for a row outside its bound (either exceed tone).
+    #[must_use]
+    pub const fn exceeds(self) -> bool {
+        match self {
+            Self::Exceeds | Self::ExceedsAdvisory => true,
+            Self::Within | Self::NoNumber | Self::NotApplicable => false,
         }
     }
 
@@ -471,6 +511,20 @@ impl CheckRow {
         Self::new(Subject::Stated, check, compared, Vec::new(), &[], None)
     }
 
+    /// The worst measured sample placed on the envelope (the lineage,
+    /// K7): its value against the limit that it crosses.
+    #[must_use]
+    pub(crate) fn measured(check: Check, compared: Compared) -> Self {
+        Self::new(
+            Subject::MeasuredPoint,
+            check,
+            compared,
+            Vec::new(),
+            &[],
+            None,
+        )
+    }
+
     /// The subject.
     #[must_use]
     pub const fn subject(&self) -> &Subject {
@@ -551,6 +605,52 @@ impl CheckRow {
             | Caveat::SampleDepth { .. }
             | Caveat::AtEarlierLeave => None,
         })
+    }
+
+    /// `true` for a gate row of the op's own cut group (the headline
+    /// fields of the verdict, an own-material row included). The default
+    /// view of the simulation surfaces shows these rows and every other
+    /// group row that exceeds (ruling Q5).
+    #[must_use]
+    pub const fn is_headline(&self) -> bool {
+        match self.subject {
+            Subject::Group { headline, .. } => headline,
+            Subject::Planned { .. } | Subject::Stated | Subject::MeasuredPoint | Subject::Rpm => {
+                false
+            }
+        }
+    }
+
+    /// `true` for a row of the default view of the simulation surfaces
+    /// (ruling Q5, design 3.7): a headline row or a row that exceeds. A
+    /// `NotApplicable` row (a milling gate on a drill cycle) is only in the
+    /// full list.
+    #[must_use]
+    pub const fn in_default_view(&self) -> bool {
+        match self.tone {
+            Tone::NotApplicable => false,
+            Tone::Exceeds | Tone::ExceedsAdvisory => true,
+            Tone::Within | Tone::NoNumber => self.is_headline(),
+        }
+    }
+
+    /// `true` when the row has no number for a reason that a run or a
+    /// datum can fill (a simulation, a vendor row, a force line, an arc).
+    /// A known absence (a limit not modelled, no bound on this cut, a cell
+    /// not judged here) is not open. A surface that prompts an action reads
+    /// it.
+    #[must_use]
+    pub const fn is_open(&self) -> bool {
+        match self.check.state {
+            CheckState::NoNumber(reason) => reason.is_open(),
+            CheckState::Within | CheckState::Exceeds | CheckState::NotApplicable(_) => false,
+        }
+    }
+
+    /// `true` for a row whose gate read no sample (X-VAC).
+    #[must_use]
+    pub fn is_vacuous(&self) -> bool {
+        self.caveats.contains(&Caveat::NoSamples)
     }
 
     /// `true` for a planned row.
@@ -678,13 +778,12 @@ fn state_face(check: &Check) -> &'static str {
 }
 
 fn face_of(subject: &Subject, check: &Check, compared: Compared, caveats: &[Caveat]) -> String {
-    // Lead ruling 3: a row with a margin names what it compares (a depth
-    // row: "depth 87 % of force cap"); a row with no number names its limit
-    // and the reason ("force no limit here").
-    let (short, reading) = match margin_face(check, compared) {
-        Some(reading) => (compared.word().unwrap_or(check.limit.text().short), reading),
-        None => (check.limit.text().short, state_face(check).to_owned()),
-    };
+    // Lead ruling 3: a row names what it compares (a depth row: "depth 87 %
+    // of force cap"); P29-10 10e: a row with no number too ("drill · depth
+    // not judged here"). A row that compares its limit's own quantity names
+    // the limit ("gantry push not modelled").
+    let short = compared.word().unwrap_or(check.limit.text().short);
+    let reading = margin_face(check, compared).unwrap_or_else(|| state_face(check).to_owned());
     let core = format!("{} · {short} {reading}", subject.label());
     let with_word = caveats
         .iter()
@@ -799,12 +898,25 @@ fn group_row(status: &CriterionStatus<'_>, subject: Subject) -> CheckRow {
     if let Some(depth) = sample_depth_of(check.limit) {
         caveats.push(Caveat::SampleDepth { depth });
     }
-    let extra: Vec<String> = status
+    // P29-10 10e: the detail carries what the old row hover said beside
+    // the check: the source of the bound, the reason of an unmodelled
+    // gate, the confidence of an approximate input and the remedy of a
+    // gate that exceeds. Text only; no field and no number moves.
+    let mut extra: Vec<String> = status
         .bound_source
         .as_ref()
         .map(|source| format!("bound from {}", source.clause()))
         .into_iter()
         .collect();
+    if let Some(reason) = status.unmodeled_reason {
+        extra.push(reason.operator_text());
+    }
+    if let Some(crate::tool_load::verdict::Confidence::Approximate(why)) = status.confidence {
+        extra.push(format!("approximate: {why}"));
+    }
+    if let Some(exceeded) = status.exceeded.as_ref() {
+        extra.push(format!("remedy: {}", exceeded.remedy));
+    }
     let compared = Compared::of_criterion(status.kind);
     CheckRow::new(subject, check, compared, caveats, &extra, None)
 }
@@ -1104,6 +1216,26 @@ pub fn rows_of_rpm_choice(choice: &RpmChoice) -> Vec<CheckRow> {
 }
 
 impl NoNumberReason {
+    /// `true` for a reason that a run or a datum can fill
+    /// ([`CheckRow::is_open`]).
+    #[must_use]
+    pub const fn is_open(self) -> bool {
+        match self {
+            Self::NoSimulation
+            | Self::StaleSimulation
+            | Self::NoArc
+            | Self::NoVendorRow
+            | Self::NoForceLine
+            | Self::NoToolBody
+            | Self::NoEarlierLeave => true,
+            Self::NoMaterialRemoved
+            | Self::NotModelled
+            | Self::OnlyALowerBound
+            | Self::NoBound
+            | Self::NotJudgedHere => false,
+        }
+    }
+
     /// The reason in short words, for the face.
     #[must_use]
     pub const fn face(self) -> &'static str {

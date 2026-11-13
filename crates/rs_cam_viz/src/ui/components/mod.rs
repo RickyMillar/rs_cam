@@ -55,7 +55,7 @@ pub mod value_row;
 
 pub use button::{Button, Variant as ButtonVariant};
 pub use card::{Card, SectionHeader, scrim};
-pub use chip::{Role, StatusChip};
+pub use chip::{Role, StatusChip, role_of_tone};
 pub use choice_row::ChoiceRow;
 pub use compare::{CompareRow, delta_tag, format_optional, mrr_row, power_bar};
 pub use data_table::{DataRow, DataTable, DataTableResponse, Details, NOT_MEASURED_TEXT, Source};

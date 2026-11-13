@@ -214,6 +214,13 @@ pub struct SetUiViewArgs {
     /// FOLLOW_UPS §1: the model look, applied after the workspace through
     /// `registry::set_display_mode` (the dock control's one write).
     pub display_mode: Option<rs_cam_core::settings::DisplayMode>,
+    /// P29-10 10e: the Simulation inspector tab and the "Cut groups"
+    /// drawer.
+    #[cfg(feature = "mcp")]
+    pub sim_inspector_tab: Option<rs_cam_mcp::server::SimInspectorTabParam>,
+    /// P29-10 10e: open or close the "Cut groups" drawer.
+    #[cfg(feature = "mcp")]
+    pub sim_cut_groups: Option<rs_cam_mcp::server::DrawerParam>,
 }
 
 /// Whether the project feeds rollup is on screen.

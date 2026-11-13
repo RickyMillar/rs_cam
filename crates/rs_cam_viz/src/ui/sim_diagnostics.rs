@@ -1,8 +1,8 @@
 use super::AppEvent;
 use super::components::histogram;
 use super::components::{
-    ChartFace, ChartFlip, CountPill, DataRow, DataTable, DistributionChart, FreshnessGate,
-    NotMeasured, Role, SectionHeader, Sparkline, TabBadge, TabStrip, TraceOpen, text,
+    ChartFace, ChartFlip, CountPill, DataRow, DataTable, Details, DistributionChart, FreshnessGate,
+    NotMeasured, Role, SectionHeader, Sparkline, TabBadge, TabStrip, TraceOpen, role_of_tone, text,
 };
 use super::readiness::{self, MissingInput, MissingInputExt};
 use super::sim_cut_chart::{self, CutChartInput};
@@ -12,21 +12,19 @@ use super::sim_debug::{
 use crate::state::freshness::simulation_freshness;
 use crate::state::runtime::GuiState;
 use crate::state::simulation::{
-    CUT_METRIC_ORDER, CutMetricCard, CutMetricSet, IssueCluster, SimInspectorTab,
+    CUT_METRIC_ORDER, CutMetricCard, CutMetricSet, IssueCluster, LimitRowSet, SimInspectorTab,
     SimulationIssueKind, SimulationState,
 };
 use crate::state::toolpath::ToolpathId;
 use crate::ui::theme;
 use crate::ui::tokens;
 use crate::ui_command::{SimJumpToMoveArgs, UiCommand};
+use rs_cam_core::limits::CheckRow;
 use rs_cam_core::session::{ProjectSession, ProjectVerdict};
 use rs_cam_core::tool_load::cut_force::{RULE_FORCE_BUDGET, RULE_NO_LIMIT};
-use rs_cam_core::tool_load::verdict::{
-    BoundSource, ChipSide, ChiploadVerdict, CriterionKind, CriterionStatus, LoadState,
-};
 use rs_cam_core::tool_load::{
-    Confidence, DistributionMetric, DistributionOutcome, MetricDistribution, NotMeasuredReason,
-    ToolLoadReport, ToolpathLoadVerdict, UnmodeledReason,
+    DistributionMetric, DistributionOutcome, MetricDistribution, NotMeasuredReason, ToolLoadReport,
+    UnmodeledReason,
 };
 use rs_cam_core::trace::toolpath_spans::{Span, SpanKind};
 
@@ -92,7 +90,7 @@ pub fn draw(
     ui.add_space(tokens::SPACE_2);
 
     match tab {
-        SimInspectorTab::Metrics => draw_metrics_tab(ui, sim, session, &load_report, events),
+        SimInspectorTab::Metrics => draw_metrics_tab(ui, sim, session, events),
         SimInspectorTab::Warnings => {
             let issues = sim.issues(gui, max_feed);
             draw_warnings_tab(ui, sim, session, &issues, &load_report, events);
@@ -162,31 +160,37 @@ pub fn warnings_badge(safety: usize, actions: usize) -> Option<TabBadge> {
 /// The Metrics tab (the default): the cut-metric charts of the operation
 /// under the playhead, then the limits they do not chart.
 ///
-/// When the operation has no chart, the tab draws its limit rows, so every
-/// row of `criteria()` stays on the page once.
+/// When the operation has no chart, the tab draws its default-view limit
+/// rows and the "Cut groups" drawer, so every row stays on the page.
 fn draw_metrics_tab(
     ui: &mut egui::Ui,
     sim: &mut SimulationState,
     session: &ProjectSession,
-    load_report: &ToolLoadReport,
     events: &mut Vec<AppEvent>,
 ) {
     let cut_metrics = cut_metrics_view(sim, session);
-    draw_cut_metrics_section(ui, sim, session, &cut_metrics, load_report, events);
+    draw_cut_metrics_section(ui, sim, session, &cut_metrics, events);
     if matches!(cut_metrics, CutMetricsView::Cards(..)) {
         return;
     }
     let Some(boundary_id) = sim.current_boundary().map(|boundary| boundary.id) else {
         return;
     };
-    if let Some(tp) = load_report
-        .per_toolpath
-        .iter()
-        .find(|tp| tp.toolpath_id == boundary_id)
-    {
-        ui.add_space(tokens::SPACE_2);
-        draw_limit_rows(ui, &limit_rows(tp));
+    let row_set = sim.cached_limit_rows(session);
+    let rows = rows_of(&row_set, boundary_id);
+    if rows.is_empty() {
+        return;
     }
+    ui.add_space(tokens::SPACE_2);
+    SectionHeader::new("Limits").show(ui);
+    DataTable::new("metrics_tab_limit_rows")
+        .rows(
+            default_view_rows(rows)
+                .into_iter()
+                .map(|row| limit_data_row(row, None)),
+        )
+        .show(ui);
+    draw_cut_groups(ui, rows, &mut sim.cut_groups_open);
 }
 
 /// What the verdict line draws: the words, the voice, and the caveat on hover.
@@ -1116,77 +1120,58 @@ const ARC_MEAN_CHIP_HOVER: &str = "Arc-mean chip thickness measured by the dexel
 const ENGAGEMENT_PROVENANCE_HOVER: &str = "Engagement = cylinder-side radial width-of-cut fraction. Reads ~10× below the \
      algorithmic target; use it to compare variants, not as an absolute under-engagement bar.";
 
-/// **One limit row on the tool-load surface.**
-///
-/// The criterion the gate produced, plus the two facts a renderer needs and
-/// [`CriterionStatus`] does not carry: whether a chipload reading sits BELOW
-/// its band rather than above it, and which toolpath the reading came from
-/// when a surface folds several toolpaths into one column.
-pub(crate) struct LimitRow<'a> {
-    pub status: CriterionStatus<'a>,
-    /// True for a chipload verdict that exceeded on the LOW side. The peak is
-    /// then under the band floor, not over the ceiling, so the row states a
-    /// burn risk instead of a percent of a bound it never passed.
-    pub burn_risk: bool,
-    /// The toolpath this reading was measured on. `None` when the surface
-    /// already names one toolpath, as the Simulation Inspector does.
-    pub source: Option<String>,
+/// The rows of the default view of one toolpath (ruling Q5, design 3.7):
+/// the rows of the op's own cut group and every other row that exceeds.
+/// A `NotApplicable` row (a milling gate on a drill cycle) is only in the
+/// "Cut groups" drawer. Core decides each row's place
+/// (`CheckRow::in_default_view`); this keeps the core order.
+pub(crate) fn default_view_rows(rows: &[CheckRow]) -> Vec<&CheckRow> {
+    rows.iter().filter(|row| row.in_default_view()).collect()
 }
 
-/// **The rows one toolpath's verdict paints, in `criteria()` order.**
-///
-/// V2 (2026-09-18). This iterates the criterion tier instead of naming three
-/// gates, so the depth-of-cut row (S3) and the gantry-push row (S1) reach the
-/// screen the day core publishes them, and a sixth gate needs no edit here.
-///
-/// A row whose reason is `NotApplicableForOp` is left out: the gate has no
-/// meaning for the operation, which is a different statement from a limit
-/// that was not measured. That is what turns a drill cycle's eight rows into
-/// its three drill rows, and it leaves a milling toolpath's five untouched.
-pub(crate) fn limit_rows(verdict: &ToolpathLoadVerdict) -> Vec<LimitRow<'_>> {
-    let burn_risk = matches!(
-        verdict.chipload,
-        ChiploadVerdict::Exceeds {
-            side: ChipSide::Low,
-            ..
-        }
-    );
-    verdict
-        .criteria()
-        .into_iter()
-        .filter(|status| {
-            !matches!(
-                status.unmodeled_reason,
-                Some(UnmodeledReason::NotApplicableForOp(_))
-            )
-        })
-        .map(|status| LimitRow {
-            burn_risk: burn_risk
-                && status.kind == CriterionKind::Chipload
-                && status.group == Some(verdict.groups.headline),
-            status,
-            source: None,
-        })
-        .collect()
+/// The rows of `toolpath_id` in the memo of the load report, or an empty
+/// slice when the report leaves it out.
+pub(crate) fn rows_of(set: &LimitRowSet, toolpath_id: ToolpathId) -> &[CheckRow] {
+    set.iter()
+        .find(|t| t.toolpath_id == toolpath_id)
+        .map_or(&[], |t| t.rows.as_slice())
 }
 
-/// **Draw the limit rows: one face and one caption each.**
+/// The hover of a row: the core detail, one clause per line.
+pub(crate) fn row_hover(row: &CheckRow) -> String {
+    row.detail().replace("; ", "\n")
+}
+
+/// **One limit row of a `DataTable`** (P29-10 10e): the core face in the
+/// name column, the source toolpath (Readiness) in the value column, the
+/// tone as the status chip and the core detail on the hover. A row with
+/// no number has no chip; its face and its hover say why (IC3). Nothing here computes a percent, a state or a word: core wrote
+/// them (`limits::CheckRow`).
+pub(crate) fn limit_data_row(row: &CheckRow, source: Option<&str>) -> DataRow {
+    let role = role_of_tone(row.tone());
+    let hover = match source {
+        Some(name) => format!("{name}\n{}", row_hover(row)),
+        None => row_hover(row),
+    };
+    let data = match source {
+        Some(name) => DataRow::value(row.face(), name).tone(tokens::TEXT_MUTED),
+        None => DataRow::record(row.face()),
+    };
+    // A row with no number carries no chip: its face already says why
+    // ("force no limit here", "gantry push not modelled"), and the face
+    // keeps the whole row width (IC3: a value not measured has no chip).
+    if role == Role::Unknown {
+        return data.hover(hover);
+    }
+    data.status(role, row.tone().chip_word()).hover(hover)
+}
+
+/// **Draw the limit rows of Readiness: one row each, with its source.**
 ///
-/// The face is `<label> <reading>` on a common 0-to-limit scale. The caption
-/// under it names the SETTING that set the bound (`BoundSource::setting`) and
-/// the population the reading was drawn from. The provenance and the bound's
-/// own digits live in the hover, where the operator's rule 2 puts them.
-///
-/// The label is [`CriterionKind::label`], the crate's own word.
-/// `SURVEY_UI.md` §4 counted the same three verdicts rendering in six
-/// vocabularies — `advance/tooth` / `advance/t` / `Chip`, `L/D` / `defl` /
-/// `deflection` — and a shared scale has to pick one. Picking core's means
-/// the GUI, the CLI and the MCP name one row one way.
-///
-/// Both the Simulation Inspector and the Readiness page call this. Readiness
-/// hands it a 560-point column and the Inspector a 240-point rail; neither
-/// gets a second renderer.
-pub(crate) fn draw_limit_rows(ui: &mut egui::Ui, rows: &[LimitRow<'_>]) {
+/// Readiness hands it a 560-point column. Each row is a core row
+/// (`limit_data_row`); the source names the toolpath the row came from
+/// when the project holds more than one.
+pub(crate) fn draw_limit_rows(ui: &mut egui::Ui, rows: &[(&CheckRow, Option<&str>)]) {
     ui.label(
         egui::RichText::new("Tool load")
             .small()
@@ -1203,314 +1188,11 @@ pub(crate) fn draw_limit_rows(ui: &mut egui::Ui, rows: &[LimitRow<'_>]) {
         return;
     }
     DataTable::new("limit_rows")
-        .rows(rows.iter().map(limit_data_row))
+        .rows(
+            rows.iter()
+                .map(|(row, source)| limit_data_row(row, *source)),
+        )
         .show(ui);
-}
-
-/// The vendor band floor a burn reading sits below, when the band publishes
-/// one.
-///
-/// `BoundSource::VendorChipBand::floor_mm_per_tooth` is an `Option` because
-/// [`rs_cam_core::tool_load::verdict::ChipBounds::min_mm_per_tooth`] is one:
-/// some LUT rows ship only an upper bound. `None` means the row states the
-/// absence; it never states a zero.
-fn burn_floor(status: &CriterionStatus<'_>) -> Option<f64> {
-    match status.bound_source.as_ref()? {
-        BoundSource::VendorChipBand {
-            floor_mm_per_tooth, ..
-        } => *floor_mm_per_tooth,
-        BoundSource::MachinePowerCurve { .. }
-        | BoundSource::DeflectionBudget
-        | BoundSource::StockToLeave { .. }
-        | BoundSource::MachineForceBudget { .. }
-        | BoundSource::DrillEnvelope => None,
-    }
-}
-
-/// Format the peak as a percentage of the bound the gate judged it against.
-/// Returns `None` when there is no bound, or the bound is not positive —
-/// the caller then paints a non-numeric badge rather than a manufactured
-/// figure.
-fn pct_of_bound(peak: f64, bound: Option<f64>) -> Option<i32> {
-    let b = bound.filter(|b| *b > 0.0)?;
-    let pct = (peak / b * 100.0).round();
-    if !pct.is_finite() {
-        return None;
-    }
-    Some(pct as i32)
-}
-
-/// The caption under a row's face: the setting that moves the bound, the
-/// population the reading was drawn from, and the toolpath it came from.
-///
-/// Every figure is formatted from the value it describes. The population's
-/// unit is [`PopulationUnit::plural`], core's own word.
-fn row_caption(row: &LimitRow<'_>) -> String {
-    caption_parts(row).join(" \u{00b7} ")
-}
-
-/// The parts of [`row_caption`], in order: the setting (or the unmodelled
-/// clause), the population, the source toolpath.
-fn caption_parts(row: &LimitRow<'_>) -> Vec<String> {
-    let status = &row.status;
-    let mut parts: Vec<String> = Vec::new();
-    match status.bound_source.as_ref() {
-        // W1 — the provenance rides in the caption the row already has, so
-        // the geometry is identical for a measured bound and an advisory one.
-        Some(source) => parts.push(source.setting().to_owned()),
-        // An unmodelled row has no setting to name. The reasons that carry
-        // their own clause state it here, in core's words; the rest state it
-        // in the hover.
-        None => match status.unmodeled_reason {
-            Some(UnmodeledReason::NotImplemented(why))
-            | Some(UnmodeledReason::NotApplicableForOp(why))
-            | Some(UnmodeledReason::CutterModeUnsupported(why)) => parts.push(why.clone()),
-            _ => {}
-        },
-    }
-    // W4 — every row states its population, so a three-sample verdict cannot
-    // read like a measured run. The vacuous case keeps its own clause, which
-    // the badge already paints.
-    if let Some(population) = status.population
-        && !population.is_vacuous()
-    {
-        parts.push(format!(
-            "{} of {} {}",
-            population.contributing,
-            population.offered,
-            population.unit.plural()
-        ));
-    }
-    if let Some(source) = &row.source {
-        parts.push(source.clone());
-    }
-    parts
-}
-
-/// The face of one limit row: its colour and its one-line text, for
-/// example `power 1%`. `verdict_badge` paints it; a cut-metric card puts it
-/// on the first line of its status hover.
-fn verdict_face(row: &LimitRow<'_>) -> (egui::Color32, String) {
-    let status = &row.status;
-    let label = status.row_label();
-    let peak = status.display_peak.unwrap_or(0.0);
-    let (color, status_text) = if status.is_vacuous() {
-        // X-VAC (2026-08-14) — a gate handed an empty population returns
-        // `Within` and used to paint theme::SUCCESS with a "0%" or "OK"
-        // badge: indistinguishable from a measured clean cut. The VERDICT is
-        // unchanged (report-tier); the badge stops claiming it measured
-        // something. See `planning/review_2026-08-08/XVAC_CENSUS.md`.
-        (theme::TEXT_DIM, "\u{2205}".to_owned())
-    } else {
-        // V1 (2026-09-18) — the colour follows `state` alone. The
-        // `Approximate` arms used to take WARNING_MILD and append a `≈`, so a
-        // row INSIDE its bound read as a warning. The operator's ruling:
-        // every limit reads as a plain 0-to-limit figure, and the confidence
-        // tier moves into the hover. The behaviour still carries the meaning
-        // — a weak bound cannot refuse an export
-        // (`BoundSource::gates_export`) — so the face does not have to.
-        match status.state {
-            LoadState::Within => match pct_of_bound(peak, status.bound) {
-                Some(pct) => (theme::SUCCESS, format!("{pct}%")),
-                None => (theme::SUCCESS, "OK".to_owned()),
-            },
-            // For a burn the peak is BELOW the floor, not above the ceiling,
-            // and `status.bound` is the ceiling the gate reports. A percent
-            // of it would read as "you are under the breakage limit", which
-            // is true and is not the finding.
-            LoadState::Exceeds if row.burn_risk => (theme::ERROR, "BURN".to_owned()),
-            LoadState::Exceeds => match pct_of_bound(peak, status.bound) {
-                Some(pct) => (theme::ERROR, format!("{pct}%")),
-                None => (theme::ERROR, "FAIL".to_owned()),
-            },
-            LoadState::Unmodeled => (theme::TEXT_DIM, "\u{2014}".to_owned()),
-        }
-    };
-    (color, format!("{label} {status_text}"))
-}
-
-/// One limit row of a `DataTable`: the face in the name column, the
-/// caption in the value column, the verdict as the status chip and the
-/// tooltip on the row.
-///
-/// The face and the caption stay two runs, in that order, so a reader of
-/// the painted text finds the caption directly after the face (G-OWNBOUND).
-/// The colour of the verdict moves from the face to the status chip.
-fn limit_data_row(row: &LimitRow<'_>) -> DataRow {
-    limit_data_row_with(row, false)
-}
-
-/// [`limit_data_row`] for the inspector's "Other limits" table (P17): the
-/// rail is narrow, so the caption keeps its first part (the setting) and
-/// the whole caption opens the hover (W4: the population is still stated).
-fn other_limit_row(row: &LimitRow<'_>) -> DataRow {
-    limit_data_row_with(row, true)
-}
-
-/// The limit row; `narrow` keeps the first caption part on the face.
-fn limit_data_row_with(row: &LimitRow<'_>, narrow: bool) -> DataRow {
-    let mut hover = verdict_tooltip(row);
-    // Feeds ruling R2: a depth the gate reports with no cap names the gate
-    // that decides, so the row draws no invented limit.
-    if row.status.kind == CriterionKind::DepthOfCut
-        && row.status.state == LoadState::Within
-        && row.status.bound.is_none()
-    {
-        hover = format!("Depth is reported; the deflection limit decides.\n{hover}");
-    }
-    let (_, face) = verdict_face(row);
-    let (role, word) = limit_status(row);
-    let parts = caption_parts(row);
-    let full = parts.join(" \u{00b7} ");
-    let caption = if narrow {
-        parts.first().cloned().unwrap_or_default()
-    } else {
-        full.clone()
-    };
-    if narrow && caption != full {
-        hover = format!("{full}\n{hover}");
-    }
-    // Round 3: a limit that is not modelled reads "N/A". The caption (for
-    // example "no machine-side thrust rating is published") and the status
-    // word go to the hover, so the row carries no chip.
-    if row.status.state == LoadState::Unmodeled && !row.status.is_vacuous() {
-        let hover = if caption.is_empty() {
-            hover
-        } else {
-            format!("{caption}\n{hover}")
-        };
-        return DataRow::not_measured(face).status(role, word).hover(hover);
-    }
-    let data = if caption.is_empty() {
-        DataRow::record(face)
-    } else {
-        DataRow::value(face, caption).tone(tokens::TEXT_MUTED)
-    };
-    data.status(role, word).hover(hover)
-}
-
-/// The status chip of a limit row: the role and the word of the gate's
-/// verdict. A bound that does not stop an export reads as a caution.
-fn limit_status(row: &LimitRow<'_>) -> (Role, &'static str) {
-    let status = &row.status;
-    if status.is_vacuous() {
-        return (Role::Unknown, "no samples");
-    }
-    match status.state {
-        LoadState::Within => (Role::Ok, "within"),
-        LoadState::Exceeds if row.burn_risk => (Role::Danger, "burn"),
-        LoadState::Exceeds => {
-            let advisory = status
-                .bound_source
-                .as_ref()
-                .is_some_and(|source| !source.gates_export());
-            if advisory {
-                (Role::Caution, "exceeds")
-            } else {
-                (Role::Danger, "exceeds")
-            }
-        }
-        LoadState::Unmodeled => (Role::Unknown, "not modelled"),
-    }
-}
-
-fn verdict_tooltip(row: &LimitRow<'_>) -> String {
-    let status = &row.status;
-    // X-VAC: the clause comes from core so GUI, CLI, MCP and the
-    // diagnostics list cannot word it differently. The join is the one
-    // `sim_op_list` uses: "Power — VACUOUS: …". The old join gave "Power
-    // reports Within but — VACUOUS: …" with a Rust `Debug` value in it
-    // (audit WRONG #4, 2026-10-02).
-    let vacuity = status.vacuity_clause();
-    if !vacuity.is_empty() {
-        return format!("{}{vacuity}.", status.row_label());
-    }
-    // For burn-risk chipload, the bound the reading sits against is the LUT
-    // FLOOR — render as "peak / floor" so the relationship reads correctly
-    // (peak < floor, not peak > cap). (Roadmap C.3)
-    let (bound_label, bound) = if row.burn_risk {
-        ("floor", burn_floor(status))
-    } else {
-        ("limit", status.bound)
-    };
-    let format_peak = |peak: f64| -> String {
-        match bound.filter(|b| *b > 0.0) {
-            Some(b) => {
-                let pct = (peak / b * 100.0).round() as i32;
-                format!("peak {peak:.4} / {bound_label} {b:.4} ({pct}%)")
-            }
-            // A burn against a band that publishes no floor. Stating the
-            // absence is the whole point: a fabricated 0.0 floor would make
-            // every reading look infinitely far above it.
-            None if row.burn_risk => {
-                format!("peak {peak:.4}; the vendor row publishes no floor")
-            }
-            None => format!("peak {peak:.4}"),
-        }
-    };
-    let peak = status.display_peak.unwrap_or(0.0);
-    let head = match status.state {
-        LoadState::Within => match status.confidence {
-            Some(Confidence::Validated) | None => {
-                format!("Within bounds ({}) — validated", format_peak(peak))
-            }
-            // V1: the reason stays here, and only here. It names WHICH input
-            // is approximate.
-            Some(Confidence::Approximate(why)) => {
-                format!("Within bounds ({}) — approximate: {why}", format_peak(peak))
-            }
-        },
-        LoadState::Exceeds => {
-            // UX dial-in A9: when the LUT row backing the verdict is
-            // extrapolated past the calibration band, the "rubbing risk"
-            // claim is advisory rather than authoritative. Prefix with
-            // an ADVISORY tag so users (and agents) don't anchor on the
-            // hard-fail framing for tools where the LUT row is
-            // significantly stretched.
-            let is_extrapolated = matches!(status.confidence, Some(Confidence::Approximate(_)));
-            // R-4 (2026-08-04): the remedy now comes from the verdict
-            // that tripped, not from a match on `kind` here. A drill
-            // remedy depends on the CYCLE — "reduce peck depth" is
-            // wrong for a `Simple` hole, "switch to a peck cycle" is
-            // wrong for an op already pecking — and the cycle is known
-            // in core and was never carried this far. The fallback is
-            // the chipload side split, which is the one distinction
-            // this site legitimately makes on its own.
-            let reason_str = status.exceeded.as_ref().map(|e| e.remedy).unwrap_or(
-                match (status.kind, row.burn_risk) {
-                    (CriterionKind::Chipload, true) => {
-                        "achieved advance/tooth below the vendor band minimum — \
-                         rubbing/burning risk. At low advance per tooth the tool edge \
-                         rubs instead of cutting; friction generates heat that glazes \
-                         and burns the wood. Increase feed rate or reduce RPM."
-                    }
-                    _ => "load criterion exceeded",
-                },
-            );
-            let conf = match status.confidence {
-                Some(Confidence::Validated) | None => "validated".to_owned(),
-                Some(Confidence::Approximate(why)) => format!("approximate: {why}"),
-            };
-            let prefix = if is_extrapolated && status.kind == CriterionKind::Chipload {
-                "ADVISORY (extrapolated LUT row)"
-            } else {
-                "EXCEEDS"
-            };
-            format!("{prefix}: {reason_str} ({}, {conf})", format_peak(peak))
-        }
-        LoadState::Unmodeled => unmodeled_text(status.unmodeled_reason),
-    };
-    // W1 / rule 3 — the bound's own digits and the setting that moves them.
-    // `bound_clause` is core's wording, formatted from the values the source
-    // carries; no number in it is typed here.
-    let clause = status.bound_clause();
-    if clause.is_empty() {
-        return head;
-    }
-    match status.bound_source.as_ref() {
-        Some(source) => format!("{head}\n{clause}.\nThe {} sets it.", source.setting()),
-        None => format!("{head}\n{clause}."),
-    }
 }
 
 /// Core's reason for an `Unmodeled` verdict, in the words every surface of
@@ -1594,11 +1276,27 @@ fn aggregate_stats(
 // band as a zone, and a status glyph that the GATE verdict colours. The
 // in-band share never colours it (follow-up 2026-09-24, PLAN §8).
 
-/// True when the Inspector draws a cut-metric card for `kind`. Those kinds
-/// leave the text limit rows of "Now playing"; Readiness keeps the rows.
-/// P17: the depth row has no card, so it paints once in "Other limits".
-fn has_cut_metric_card(kind: CriterionKind) -> bool {
-    CUT_METRIC_ORDER.contains(&DistributionMetric::Criterion(kind))
+/// True when the Inspector draws a cut-metric card for the gate of `row`:
+/// a headline row of a carded gate paints on its card, not in "Other
+/// limits". P17: the depth row has no card, so it paints once in "Other
+/// limits".
+fn has_cut_metric_card(row: &CheckRow) -> bool {
+    row.check()
+        .limit
+        .criterion()
+        .is_some_and(|kind| CUT_METRIC_ORDER.contains(&DistributionMetric::Criterion(kind)))
+}
+
+/// The headline row of the gate that a card charts, if the card charts a
+/// gate. The stock-population row comes first in core order, before the
+/// own-material rows.
+fn card_row(metric: DistributionMetric, rows: &[CheckRow]) -> Option<&CheckRow> {
+    let kind = match metric {
+        DistributionMetric::Criterion(kind) => kind,
+        DistributionMetric::Engagement | DistributionMetric::CutForce => return None,
+    };
+    rows.iter()
+        .find(|row| row.is_headline() && row.check().limit.criterion() == Some(kind))
 }
 
 /// What a card asks the panel to do after the draw.
@@ -1610,70 +1308,6 @@ pub enum CutMetricAction {
     Open(DistributionMetric),
     /// Seek the playhead to a toolpath-local move.
     Seek { local_move: usize },
-}
-
-/// How a card names and scales its metric. The histogram, the line and the
-/// trace modal read the same spec, so they show one unit.
-pub(crate) struct CutMetricSpec {
-    pub title: &'static str,
-    /// The display unit. It differs from core's unit only for deflection.
-    pub unit: &'static str,
-    /// Display value = core value × `scale`.
-    pub scale: f64,
-    /// The one-word consequence of time above the ceiling.
-    pub above: &'static str,
-}
-
-impl CutMetricSpec {
-    pub(crate) fn of(metric: DistributionMetric) -> Self {
-        match metric {
-            DistributionMetric::Criterion(CriterionKind::Chipload) => Self {
-                title: "Chipload",
-                unit: "mm/tooth",
-                scale: 1.0,
-                above: "overload",
-            },
-            DistributionMetric::Criterion(CriterionKind::DepthOfCut) => Self {
-                title: "Depth of cut",
-                unit: "mm",
-                scale: 1.0,
-                above: "flex",
-            },
-            // Core bins deflection in millimetres; the card reads
-            // micrometres, and so do its bounds.
-            DistributionMetric::Criterion(CriterionKind::Deflection) => Self {
-                title: "Tool deflection",
-                unit: "\u{00b5}m",
-                scale: 1000.0,
-                above: "chatter",
-            },
-            DistributionMetric::Criterion(CriterionKind::Power) => Self {
-                title: "Spindle power",
-                unit: "kW",
-                scale: 1.0,
-                above: "stall",
-            },
-            DistributionMetric::Criterion(kind) => Self {
-                title: kind.label(),
-                unit: kind.unit(),
-                scale: 1.0,
-                above: "over limit",
-            },
-            // P17: no card (`CUT_METRIC_ORDER`); the variant stays in core.
-            DistributionMetric::Engagement => Self {
-                title: "Engagement",
-                unit: "\u{00b0}",
-                scale: 1.0,
-                above: "over limit",
-            },
-            DistributionMetric::CutForce => Self {
-                title: "Cut force",
-                unit: "N",
-                scale: 1.0,
-                above: "over budget",
-            },
-        }
-    }
 }
 
 /// The four guide lines of the (i) hover, in core's words (§3.2).
@@ -1714,21 +1348,20 @@ struct CutMetricsSummary {
 }
 
 impl CutMetricsSummary {
-    fn of(set: &CutMetricSet) -> Self {
-        let mut summary = Self {
-            exceeded: 0,
-            not_measured: 0,
-        };
-        for card in &set.cards {
-            match &card.outcome {
-                DistributionOutcome::Measured(d) if d.state == Some(LoadState::Exceeds) => {
-                    summary.exceeded += 1;
-                }
-                DistributionOutcome::Measured(_) => {}
-                DistributionOutcome::NotMeasured(_) => summary.not_measured += 1,
-            }
+    /// The rows of the default view that exceed (core tone), and the cards
+    /// core could not measure.
+    fn of(set: &CutMetricSet, rows: &[CheckRow]) -> Self {
+        Self {
+            exceeded: default_view_rows(rows)
+                .iter()
+                .filter(|row| row.tone().exceeds())
+                .count(),
+            not_measured: set
+                .cards
+                .iter()
+                .filter(|card| matches!(card.outcome, DistributionOutcome::NotMeasured(_)))
+                .count(),
         }
-        summary
     }
 
     /// The word at the right end of the section header.
@@ -1781,23 +1414,14 @@ fn cut_metrics_view(sim: &mut SimulationState, session: &ProjectSession) -> CutM
     CutMetricsView::Cards(toolpath_id, set)
 }
 
-/// The rank of a card: the position of its criterion in `criteria()`, so
-/// the cards and the rows keep the one order the CLI and the MCP use.
-/// P17: the force card follows the deflection card (one law) and comes
-/// before the depth row's place; engagement has no card.
-fn card_rank(metric: DistributionMetric, rows: &[LimitRow<'_>]) -> usize {
-    match metric {
-        DistributionMetric::Criterion(kind) => rows
-            .iter()
-            .position(|row| row.status.kind == kind)
-            .map_or(usize::MAX - 1, |rank| 2 * rank),
-        DistributionMetric::CutForce => rows
-            .iter()
-            .position(|row| row.status.kind == CriterionKind::Deflection)
-            .map_or(usize::MAX - 1, |rank| 2 * rank + 1),
-        // P17: no card (`CUT_METRIC_ORDER`); the variant stays in core.
-        DistributionMetric::Engagement => usize::MAX,
-    }
+/// The rank of a card: its place in `CUT_METRIC_ORDER`, the order of the
+/// gate rows (chip, power, deflection), with the force card after the
+/// deflection card (P17: one law).
+fn card_rank(metric: DistributionMetric) -> usize {
+    CUT_METRIC_ORDER
+        .iter()
+        .position(|m| *m == metric)
+        .unwrap_or(usize::MAX)
 }
 
 /// The "Cut metrics" section of the focused toolpath.
@@ -1815,10 +1439,11 @@ fn card_rank(metric: DistributionMetric, rows: &[LimitRow<'_>]) -> usize {
 /// A second button, `< >`, opens the one trace large in the trace modal
 /// (`ui/sim_trace_modal.rs`).
 ///
-/// Each card carries its criterion's limit row in the hover of its status
-/// glyph: the face `verdict_badge` paints for Readiness, the setting, the
-/// population, the bound clause and the confidence reason. The rows with
-/// no card follow the cards through `verdict_badge`.
+/// Each card carries the core row of its gate (`limits::CheckRow`) in the
+/// hover of its status glyph: the face and the detail. The rows with no
+/// card, and every row of another cut group that exceeds, follow the cards
+/// in "Other limits" (P29-10 10e, ruling Q5). Every row of every gate and
+/// cut group is in the closed "Cut groups" drawer under them.
 ///
 /// P17 (layout B): the four cards, the abstention table, one hairline,
 /// then the width x depth chart (`sim_cut_chart`) as the drill-down, then
@@ -1830,7 +1455,6 @@ fn draw_cut_metrics_section(
     sim: &mut SimulationState,
     session: &rs_cam_core::session::ProjectSession,
     view: &CutMetricsView,
-    load_report: &ToolLoadReport,
     events: &mut Vec<AppEvent>,
 ) {
     let (toolpath_id, set) = match view {
@@ -1845,21 +1469,19 @@ fn draw_cut_metrics_section(
         }
         CutMetricsView::Cards(toolpath_id, set) => (*toolpath_id, set),
     };
-    let verdict = load_report
-        .per_toolpath
-        .iter()
-        .find(|verdict| verdict.toolpath_id == toolpath_id);
-    let rows: Vec<LimitRow<'_>> = verdict.map(limit_rows).unwrap_or_default();
-    let other_rows: Vec<&LimitRow<'_>> = rows
-        .iter()
-        .filter(|row| !has_cut_metric_card(row.status.kind))
+    let row_set = sim.cached_limit_rows(session);
+    let rows = rows_of(&row_set, toolpath_id);
+    // "Other limits": the default-view rows that no card paints.
+    let other_rows: Vec<&CheckRow> = default_view_rows(rows)
+        .into_iter()
+        .filter(|row| !(row.is_headline() && has_cut_metric_card(row)))
         .collect();
 
     // Inspector clean-up round 2: the charts are the default view. The
     // section used to start closed unless a metric exceeded its limit, and
     // its open state was one id for every toolpath, so an operation within
     // its limits showed one header line and no chart.
-    let summary = CutMetricsSummary::of(set);
+    let summary = CutMetricsSummary::of(set, rows);
     SectionHeader::new("Cut metrics")
         .trailing(summary.word())
         .show(ui);
@@ -1895,7 +1517,7 @@ fn draw_cut_metrics_section(
         ui,
         CutMetricsBody {
             set,
-            verdict,
+            rows,
             over_time: &sim.cut_metric_over_time,
             playhead,
             move_offset,
@@ -1909,9 +1531,10 @@ fn draw_cut_metrics_section(
     if !other_rows.is_empty() {
         SectionHeader::new("Other limits").show(ui);
         DataTable::new("cut_metrics_other_limits")
-            .rows(other_rows.into_iter().map(other_limit_row))
+            .rows(other_rows.into_iter().map(|row| limit_data_row(row, None)))
             .show(ui);
     }
+    draw_cut_groups(ui, rows, &mut sim.cut_groups_open);
 
     for action in actions {
         match action {
@@ -1931,14 +1554,35 @@ fn draw_cut_metrics_section(
     }
 }
 
+/// **The "Cut groups · n" drawer** (P29-10 10e, design 3.7 and item 6):
+/// every row of every gate and cut group, the not-judged and no-sample
+/// cells included, with their exemption rows in the hover. Closed by
+/// default; it draws nothing while closed. `set_ui_view sim_cut_groups`
+/// opens it (`open` is `SimulationState::cut_groups_open`).
+pub fn draw_cut_groups(ui: &mut egui::Ui, rows: &[CheckRow], open: &mut bool) {
+    if rows.is_empty() {
+        return;
+    }
+    ui.add_space(tokens::SPACE_2);
+    let _ = Details::new("sim_cut_groups")
+        .label("Cut groups")
+        .count(rows.len())
+        .show_held(ui, open, |ui| {
+            DataTable::new("sim_cut_groups_rows")
+                .rows(rows.iter().map(|row| limit_data_row(row, None)))
+                .show(ui);
+        });
+}
+
 /// The inputs of the cards of one set, with no simulation state (P17):
 /// the section builds it from the state, a headless snapshot by hand.
 pub struct CutMetricsBody<'a> {
     /// The set of the focused toolpath.
     pub set: &'a CutMetricSet,
-    /// The toolpath's verdict, the source of the limit rows the status
-    /// hovers carry. `None`: no row, the cards read their histograms.
-    pub verdict: Option<&'a ToolpathLoadVerdict>,
+    /// The toolpath's limit rows (`ProjectSession::limit_rows`), the
+    /// source of the rows the status hovers carry. Empty: no row, the
+    /// cards read their histograms.
+    pub rows: &'a [CheckRow],
     /// The metrics whose card shows the line over time.
     pub over_time: &'a [DistributionMetric],
     /// The playhead as a move of this toolpath, when it is in it.
@@ -1953,16 +1597,15 @@ pub struct CutMetricsBody<'a> {
 
 /// The cards of one set, split by hairlines, then the abstention table.
 /// Measured cards first, then the cards core could not measure; inside
-/// each group the cards keep the `criteria()` order. The depth and width
-/// readings sit under the force card. Returns what the cards asked.
+/// each group the cards keep the `CUT_METRIC_ORDER` order. The depth and
+/// width readings sit under the force card. Returns what the cards asked.
 pub fn draw_cut_metric_cards(ui: &mut egui::Ui, body: CutMetricsBody<'_>) -> Vec<CutMetricAction> {
     let set = body.set;
-    let rows: Vec<LimitRow<'_>> = body.verdict.map(limit_rows).unwrap_or_default();
     let mut cards: Vec<&CutMetricCard> = set.cards.iter().collect();
     cards.sort_by_key(|card| {
         (
             matches!(card.outcome, DistributionOutcome::NotMeasured(_)),
-            card_rank(card.metric, &rows),
+            card_rank(card.metric),
         )
     });
     let mut actions: Vec<CutMetricAction> = Vec::new();
@@ -1971,10 +1614,7 @@ pub fn draw_cut_metric_cards(ui: &mut egui::Ui, body: CutMetricsBody<'_>) -> Vec
     let mut abstentions: Vec<DataRow> = Vec::new();
     let mut charts = 0_usize;
     for card in cards {
-        let row = match card.metric {
-            DistributionMetric::Criterion(kind) => rows.iter().find(|row| row.status.kind == kind),
-            DistributionMetric::Engagement | DistributionMetric::CutForce => None,
-        };
+        let row = card_row(card.metric, body.rows);
         if let DistributionOutcome::NotMeasured(reason) = &card.outcome {
             abstentions.push(abstention_row(card, reason, row, body.regenerate_first));
             continue;
@@ -2128,19 +1768,18 @@ struct CardView {
 /// The header row holds the title, the (i) guide, the status glyph, the
 /// peak, the flip button and the open button. The two buttons sit at the
 /// right end of the row, directly above the chart's right edge. The glyph's
-/// hover carries the criterion's limit row: the face, the setting, the
-/// population, the bound clause and the confidence reason
+/// hover carries the gate's core row: its face and its detail
 /// (`cut_metric_status_hover`).
 /// A metric core could not measure draws one muted line with the
 /// abstention mark and core's reason.
 fn draw_cut_metric_card(
     ui: &mut egui::Ui,
     card: &CutMetricCard,
-    row: Option<&LimitRow<'_>>,
+    row: Option<&CheckRow>,
     view: &CardView,
     actions: &mut Vec<CutMetricAction>,
 ) {
-    let spec = CutMetricSpec::of(card.metric);
+    let spec = card.metric.text();
     let hover = cut_metric_status_hover(card, row, &spec);
     ui.horizontal(|ui| {
         ui.add(
@@ -2151,7 +1790,7 @@ fn draw_cut_metric_card(
                 .on_hover_text(guide);
         }
         if let DistributionOutcome::Measured(distribution) = &card.outcome {
-            let (glyph, colour) = status_glyph(distribution);
+            let (glyph, colour) = status_glyph(distribution, row);
             ui.add(egui::Label::new(egui::RichText::new(glyph).color(colour)).truncate())
                 .on_hover_text(hover.clone());
             let peak = peak_text(distribution, row, &spec);
@@ -2210,16 +1849,15 @@ fn draw_cut_metric_card(
 /// One row of the abstention table: the metric, the abstention mark, and
 /// the status hover with core's reason after it.
 ///
-/// The hover opens with the criterion's limit row, the way a measured
-/// card's status hover does (G-OWNBOUND), so every row of `criteria()` is
-/// still painted once.
+/// The hover opens with the gate's core row, the way a measured card's
+/// status hover does (G-OWNBOUND).
 fn abstention_row(
     card: &CutMetricCard,
     reason: &NotMeasuredReason,
-    row: Option<&LimitRow<'_>>,
+    row: Option<&CheckRow>,
     regenerate_first: Option<&str>,
 ) -> DataRow {
-    let spec = CutMetricSpec::of(card.metric);
+    let spec = card.metric.text();
     let reason = match (reason, regenerate_first) {
         (NotMeasuredReason::Unmodeled(UnmodeledReason::StaleSimulation), Some(name)) => {
             format!("Unmodeled: '{name}' is not generated — regenerate it first")
@@ -2304,54 +1942,79 @@ fn capitalised(text: &str) -> String {
 
 /// The status glyph of a measured card, and its colour.
 ///
-/// The GATE verdict picks the glyph and the colour; the in-band share never
-/// does. Within reads `✓`. Exceeds reads `✕` and the out-of-band share, in
-/// `DANGER`, or in `CAUTION` when the bound is advisory. No cut time reads
-/// the abstention glyph. A metric with no bound reads "no limit".
-fn status_glyph(distribution: &MetricDistribution) -> (String, egui::Color32) {
+/// The core row picks the colour (`role_of_tone`, the one map) and the
+/// glyph; the in-band share of the histogram never does. Within reads `✓`.
+/// A row that exceeds reads `✕` and the out-of-band share. A row with no
+/// number reads "no limit" when the histogram has no bound, else the
+/// abstention glyph. The force card has no row (the force reading is
+/// report-only, `P29-10_DESIGN.md` 13.3): it reads its histogram against
+/// the budget line, in the caution colour of an advisory bound.
+fn status_glyph(
+    distribution: &MetricDistribution,
+    row: Option<&CheckRow>,
+) -> (String, egui::Color32) {
     let hist = &distribution.histogram;
-    if hist.floor.is_none() && hist.ceiling.is_none() {
-        // Two cases have no bound, and neither gets an invented one:
-        // engagement has no gate, and a gate can report a reading it does
-        // not judge (feeds ruling R2: a finishing pass that cuts on one side
-        // has no depth cap; a slot or a groove reads the force budget, R3).
-        return ("no limit".to_owned(), tokens::TEXT_MUTED);
-    }
-    let Some(share) = hist.in_band_share() else {
-        return (tokens::GLYPH_UNKNOWN.to_owned(), tokens::UNKNOWN);
-    };
-    match distribution.state {
-        Some(LoadState::Within) => (tokens::GLYPH_OK.to_owned(), tokens::OK),
-        Some(LoadState::Exceeds) => {
-            let colour = if is_advisory(distribution) {
-                tokens::CAUTION
-            } else {
-                tokens::DANGER
-            };
-            let out = (1.0 - share).max(0.0);
-            let text = if out > 0.0 {
-                format!(
-                    "{} {}",
-                    tokens::GLYPH_DANGER,
-                    histogram::format_share(out * 100.0)
-                )
-            } else {
-                tokens::GLYPH_DANGER.to_owned()
-            };
-            (text, colour)
+    let unbounded = hist.floor.is_none() && hist.ceiling.is_none();
+    let out_share = |share: f64| {
+        let out = (1.0 - share).max(0.0);
+        if out > 0.0 {
+            format!(
+                "{} {}",
+                tokens::GLYPH_DANGER,
+                histogram::format_share(out * 100.0)
+            )
+        } else {
+            tokens::GLYPH_DANGER.to_owned()
         }
-        Some(LoadState::Unmodeled) => (tokens::GLYPH_UNKNOWN.to_owned(), tokens::UNKNOWN),
-        None => (histogram::format_share(share * 100.0), tokens::TEXT_MUTED),
+    };
+    match row {
+        Some(row) => {
+            let role = role_of_tone(row.tone());
+            if row.tone().exceeds() {
+                let text = hist
+                    .in_band_share()
+                    .map_or_else(|| tokens::GLYPH_DANGER.to_owned(), out_share);
+                return (text, role.text());
+            }
+            if role == Role::Ok {
+                return (tokens::GLYPH_OK.to_owned(), role.text());
+            }
+            if unbounded {
+                // Feeds ruling R2: a reading with no bound gets no invented
+                // one; it states the absence.
+                return ("no limit".to_owned(), tokens::TEXT_MUTED);
+            }
+            (tokens::GLYPH_UNKNOWN.to_owned(), role.text())
+        }
+        None => {
+            if unbounded {
+                return ("no limit".to_owned(), tokens::TEXT_MUTED);
+            }
+            let Some(share) = hist.in_band_share() else {
+                return (tokens::GLYPH_UNKNOWN.to_owned(), tokens::UNKNOWN);
+            };
+            if hist.above_s > 0.0 || hist.below_s > 0.0 {
+                let colour = if is_advisory(distribution) {
+                    tokens::CAUTION
+                } else {
+                    tokens::DANGER
+                };
+                (out_share(share), colour)
+            } else {
+                (tokens::GLYPH_OK.to_owned(), tokens::OK)
+            }
+        }
     }
 }
 
-/// The muted peak at the right of the header row: the peak as a percent of
-/// the bound the gate judged it against, or the peak in its unit when there
-/// is no bound. Every figure comes from the criterion row or the histogram.
+/// The muted peak at the right of the header row: the core margin face of
+/// the gate row ("peak 87 % of limit"), or the peak in its unit when the
+/// row has no margin. The force card (no row) states its peak against the
+/// budget line of its histogram.
 fn peak_text(
     distribution: &MetricDistribution,
-    row: Option<&LimitRow<'_>>,
-    spec: &CutMetricSpec,
+    row: Option<&CheckRow>,
+    spec: &rs_cam_core::tool_load::MetricText,
 ) -> Option<String> {
     let unit_peak = |peak: f64| {
         format!(
@@ -2360,49 +2023,35 @@ fn peak_text(
             spec.unit
         )
     };
-    let Some(row) = row else {
-        // No criterion row (the force card; a snapshot with no verdict): the
-        // population maximum is the last histogram edge (the overflow bin's
-        // upper edge, core's layout), against the histogram's own ceiling.
-        // P17: the force card's ceiling is the budget (lead ruling 3).
-        let bound = match distribution.metric {
-            DistributionMetric::CutForce => "budget",
-            DistributionMetric::Criterion(_) | DistributionMetric::Engagement => "limit",
-        };
-        let peak = *distribution.histogram.edges.last()?;
-        return Some(match pct_of_bound(peak, distribution.histogram.ceiling) {
-            Some(pct) => format!("peak {pct} % of {bound}"),
-            None => unit_peak(peak),
-        });
-    };
-    let status = &row.status;
-    let peak = status.display_peak?;
-    if row.burn_risk {
-        return Some(match pct_of_bound(peak, burn_floor(status)) {
-            Some(pct) => format!("peak {pct} % of floor"),
-            None => unit_peak(peak),
-        });
+    match row {
+        Some(row) => Some(
+            match rs_cam_core::limits::margin_face(row.check(), row.compared()) {
+                Some(face) => format!("peak {face}"),
+                None => unit_peak(row.check().value?),
+            },
+        ),
+        None => {
+            // The population maximum is the last histogram edge (the
+            // overflow bin's upper edge, core's layout).
+            let peak = *distribution.histogram.edges.last()?;
+            Some(match distribution.histogram.ceiling.filter(|b| *b > 0.0) {
+                Some(budget) => format!(
+                    "peak {} of budget",
+                    histogram::format_share(peak / budget * 100.0)
+                ),
+                None => unit_peak(peak),
+            })
+        }
     }
-    Some(match pct_of_bound(peak, status.bound) {
-        Some(pct) => format!("peak {pct} % of limit"),
-        None => unit_peak(peak),
-    })
 }
 
-/// The hover of a card's status glyph: the criterion's limit row, in the
-/// words `verdict_badge` paints (G-OWNBOUND). No figure is typed here.
-///
-/// 1. The face (`verdict_face`), for example `power 1%`. A row with no
-///    bound states the reading and the absence instead of "OK".
-/// 2. The caption (`row_caption`): the setting, the population, the source.
-/// 3. The in-band share of cutting time.
-/// 4. The tooltip (`verdict_tooltip`): the peak against the bound, the
-///    confidence reason, and the bound clause.
-/// 5. The advisory line, when the bound does not stop an export.
+/// The hover of a card's status glyph (G-OWNBOUND): the core row of the
+/// gate (its face, then its detail), the in-band share of cutting time,
+/// and for the force card (no row) its peak against the budget.
 fn cut_metric_status_hover(
     card: &CutMetricCard,
-    row: Option<&LimitRow<'_>>,
-    spec: &CutMetricSpec,
+    row: Option<&CheckRow>,
+    spec: &rs_cam_core::tool_load::MetricText,
 ) -> String {
     let distribution = match &card.outcome {
         DistributionOutcome::Measured(distribution) => Some(distribution.as_ref()),
@@ -2412,27 +2061,7 @@ fn cut_metric_status_hover(
         distribution.is_some_and(|d| d.histogram.floor.is_none() && d.histogram.ceiling.is_none());
     let mut lines: Vec<String> = Vec::new();
     match row {
-        Some(row) => {
-            if unbounded {
-                let peak = row.status.display_peak.map_or_else(String::new, |peak| {
-                    format!(
-                        " {} {}",
-                        histogram::format_value(peak * spec.scale),
-                        spec.unit
-                    )
-                });
-                lines.push(format!(
-                    "{} peak{peak} \u{00b7} no limit",
-                    row.status.row_label()
-                ));
-            } else {
-                lines.push(verdict_face(row).1);
-            }
-            let caption = row_caption(row);
-            if !caption.is_empty() {
-                lines.push(caption);
-            }
-        }
+        Some(row) => lines.push(row.face().to_owned()),
         None => match (card.metric, distribution) {
             // P17: the force reading names its peak and its rule (one law
             // with the deflection gate; report-only).
@@ -2457,8 +2086,7 @@ fn cut_metric_status_hover(
     if let Some(distribution) = distribution {
         let hist = &distribution.histogram;
         if unbounded {
-            // The reading has no band share to state (P17: the force card
-            // with no line; the depth row says its piece in "Other limits").
+            // The reading has no band share to state.
         } else if let Some(share) = hist.in_band_share() {
             lines.push(format!(
                 "{} of cut time in band.",
@@ -2475,21 +2103,26 @@ fn cut_metric_status_hover(
                 population.offered,
                 population.unit.plural()
             ));
+            if is_advisory(distribution) {
+                lines.push(
+                    "This limit is the machine force budget. It does not stop an export."
+                        .to_owned(),
+                );
+            }
         }
     }
     if let Some(row) = row {
-        lines.push(verdict_tooltip(row));
-    }
-    if distribution.is_some_and(is_advisory) {
-        lines
-            .push("This limit is the machine force budget. It does not stop an export.".to_owned());
+        lines.push(row_hover(row));
     }
     lines.join("\n")
 }
 
 /// The caption under the chart: each out-of-band share with its one-word
 /// consequence. `None` when no cutting time is out of band.
-fn card_caption(distribution: &MetricDistribution, spec: &CutMetricSpec) -> Option<String> {
+fn card_caption(
+    distribution: &MetricDistribution,
+    spec: &rs_cam_core::tool_load::MetricText,
+) -> Option<String> {
     let hist = &distribution.histogram;
     if hist.total_s <= 0.0 {
         return None;
@@ -3059,47 +2692,26 @@ mod tests {
         );
     }
 
+    /// A card that core could not measure for want of an arc names the
+    /// re-run, not a control that does not exist (the capture checkbox is
+    /// deleted, operator ruling 2026-10-02).
     #[test]
     fn arc_engagement_unmodeled_tooltip_says_re_run() {
-        let reason = UnmodeledReason::ArcEngagementNotCaptured;
-        let status = CriterionStatus {
-            group: None,
-            kind: CriterionKind::Chipload,
-            state: LoadState::Unmodeled,
-            confidence: None,
-            unmodeled_reason: Some(&reason),
-            sample_range: None,
-            // X-VAC: an `Unmodeled` gate has no population to state, and
-            // `None` here means exactly that — not an empty one.
-            population: None,
-            display_peak: None,
-            unit: "mm/tooth",
-            // S4: an `Unmodeled` gate judged nothing, so it states no
-            // bound and no source. V2 is the step that makes the badge
-            // read these instead of the caps built above.
-            bound: None,
-            bound_source: None,
-            exceeded: None,
-        };
-        let tooltip = verdict_tooltip(&LimitRow {
-            status,
-            burn_risk: false,
-            source: None,
-        });
-        // The capture checkbox is deleted (operator ruling 2026-10-02), so
-        // the tooltip names the re-run, not a control that does not exist.
-        assert!(tooltip.contains("re-run the simulation"), "{tooltip}");
+        let text = not_measured_text(&NotMeasuredReason::Unmodeled(
+            UnmodeledReason::ArcEngagementNotCaptured,
+        ));
+        assert!(text.contains("Re-run Simulation"), "{text}");
     }
 
     /// A toolpath whose every criterion says "does not apply" — a direct
     /// `evaluate_toolpath` call leaves `drill_gates` as `None` on a drill op,
-    /// so this state is reachable. `limit_rows` drops every row, and `draw_limit_rows` must
-    /// then state the absence: a blank there reads as a clean cut, which is
-    /// defect class 3.
+    /// so this state is reachable. Its rows are all `NotApplicable`: the
+    /// default view takes none, and the Metrics tab then draws no row (a
+    /// blank Readiness list states the absence in words).
     #[test]
     fn a_verdict_with_no_applicable_limit_paints_no_row() {
         use rs_cam_core::tool_load::verdict::{
-            DeflectionVerdict, DepthVerdict, PowerVerdict, ToolpathLoadVerdict,
+            ChiploadVerdict, DeflectionVerdict, DepthVerdict, PowerVerdict, ToolpathLoadVerdict,
         };
         let na = || {
             UnmodeledReason::NotApplicableForOp("drill cycle — no continuous engagement".to_owned())
@@ -3120,10 +2732,15 @@ mod tests {
             material_split: None,
             cut_force: None,
         };
+        let rows = rs_cam_core::limits::rows_of_verdict(&verdict);
+        let headline: Vec<&CheckRow> = rows.iter().filter(|r| r.is_headline()).collect();
+        assert!(!headline.is_empty(), "non-vacuity: the headline rows exist");
         assert!(
-            limit_rows(&verdict).is_empty(),
+            default_view_rows(&rows)
+                .iter()
+                .all(|r| r.tone() != rs_cam_core::limits::Tone::NotApplicable),
             "a criterion that does not apply is not a limit that was not \
-             measured, and it must not take a row"
+             measured, and it must not take a default-view row"
         );
     }
 

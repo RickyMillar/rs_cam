@@ -27,7 +27,7 @@
 
 use super::AppEvent;
 use super::components::{Button, Sparkline, sparkline, text};
-use super::sim_diagnostics::{CutMetricSpec, is_advisory};
+use super::sim_diagnostics::is_advisory;
 use crate::state::freshness::simulation_freshness;
 use crate::state::simulation::SimulationState;
 use crate::ui::tokens;
@@ -87,7 +87,7 @@ pub fn draw(
         return;
     };
 
-    let spec = CutMetricSpec::of(metric);
+    let spec = metric.text();
     let name = sim
         .boundaries()
         .iter()

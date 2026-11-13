@@ -224,6 +224,42 @@ impl LimitId {
         }
     }
 
+    /// The gate criterion that judges the limit after the simulation, the
+    /// inverse of [`Self::of_criterion`]: `None` for a limit with no gate
+    /// row. A surface that pairs a gate's chart with its row reads it.
+    #[must_use]
+    pub const fn criterion(self) -> Option<CriterionKind> {
+        match self {
+            Self::ChipMax | Self::ChipMin => Some(CriterionKind::Chipload),
+            Self::SpindlePower => Some(CriterionKind::Power),
+            Self::ToolDeflection => Some(CriterionKind::Deflection),
+            Self::ForceBudget => Some(CriterionKind::DepthOfCut),
+            Self::GantryPush => Some(CriterionKind::GantryPush),
+            Self::DrillChipWelding => Some(CriterionKind::DrillChipWelding),
+            Self::DrillPeckAdequacy => Some(CriterionKind::DrillPeckAdequacy),
+            Self::DrillPlungeFeed => Some(CriterionKind::DrillPlungeFeed),
+            Self::RubbingFloor
+            | Self::FluteGuard
+            | Self::CuttingLength
+            | Self::VendorAxial
+            | Self::VendorDepthTable
+            | Self::CornerCoverage
+            | Self::ScallopDepth
+            | Self::ToolDiameter
+            | Self::MoveBudget
+            | Self::EngagementFloor
+            | Self::CuttingFeedCap
+            | Self::PlannerFeedCap
+            | Self::KinematicReach
+            | Self::PlungeRate
+            | Self::SpindleMaxRpm
+            | Self::ZAxisRate
+            | Self::OperatorRpmCeiling
+            | Self::ChartRpm
+            | Self::VendorRpmMax => None,
+        }
+    }
+
     /// The limit of a binding constraint of the feed modulator.
     ///
     /// One word for two limits: `BindingConstraint::FeedCap` is the

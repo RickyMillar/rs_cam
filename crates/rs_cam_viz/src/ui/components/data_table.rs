@@ -679,6 +679,30 @@ impl Details {
         self
     }
 
+    /// Draw the disclosure with its open state held by the caller
+    /// (P29-10: the "Cut groups" drawer, which `set_ui_view` can open). A
+    /// click on the header flips `open`; `add` draws the body when it is
+    /// open.
+    pub fn show_held<R>(
+        self,
+        ui: &mut egui::Ui,
+        open: &mut bool,
+        add: impl FnOnce(&mut egui::Ui) -> R,
+    ) -> egui::CollapsingResponse<R> {
+        let label = match self.count {
+            Some(n) => format!("{} \u{00B7} {n}", self.label),
+            None => self.label.to_owned(),
+        };
+        let response = egui::CollapsingHeader::new(caption(label, tokens::TEXT_MUTED))
+            .id_salt(self.id_salt)
+            .open(Some(*open))
+            .show(ui, add);
+        if response.header_response.clicked() {
+            *open = !*open;
+        }
+        response
+    }
+
     /// Draw the disclosure; `add` draws the body when it is open.
     pub fn show<R>(
         self,

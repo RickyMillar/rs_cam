@@ -82,5 +82,10 @@ run the server; the live server, GUI dispatch and session ownership are in
 - P29-10 (10x, lead rulings 2, 3, 6): a row carries `compared` (`load`, `depth`, `width`); a depth
   row's face names the depth; `stored_feed` holds only where the rounding decides the state; every
   toolpath has a `get_tool_load_report` `limit_rows` entry (no-simulation rows when it has no verdict).
+- P29-10 (10e): `SetUiViewParam` gains `sim_inspector_tab` (`SimInspectorTabParam`) and `sim_cut_groups`
+  (`DrawerParam`: `open`, `closed`), string enums so a client with an old schema still sends them; the reply
+  echoes `sim_inspector`. The lineage `measured.binding` and `measured.judged` are `measured.row` (break);
+  `load_report.per_toolpath[].groups` left the wire (break). Tokens `sim_inspector_view`, `lineage_measured_row`.
+  The snapshot was re-blessed (additions only).
 - Verify with `cargo test -p rs_cam_mcp -q`; when a wire type changes, also run
   the relevant `rs_cam_viz` MCP integration tests.
