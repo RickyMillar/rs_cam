@@ -1903,6 +1903,7 @@ fn draw_toolpath_selection(
         let mut heights_refusal = std::mem::take(&mut state.panels.heights_refusal);
         let mut containment_autocorrect = std::mem::take(&mut state.panels.containment_autocorrect);
         let mut envelope_candidates = std::mem::take(&mut state.panels.envelope_candidates);
+        let mut card_limits_open = state.panels.card_limits_open;
         let active_tab = draw_toolpath_panel(
             ui,
             &mut snapshot,
@@ -1912,6 +1913,7 @@ fn draw_toolpath_selection(
             &mut heights_refusal,
             &mut containment_autocorrect,
             &mut envelope_candidates,
+            &mut card_limits_open,
             events,
         );
 
@@ -1925,6 +1927,7 @@ fn draw_toolpath_selection(
         state.panels.heights_refusal = heights_refusal;
         state.panels.containment_autocorrect = containment_autocorrect;
         state.panels.envelope_candidates = envelope_candidates;
+        state.panels.card_limits_open = card_limits_open;
 
         // ORDER IS LOAD-BEARING. The runtime write-back runs
         // FIRST, because it copies `entry.stale_since` — the

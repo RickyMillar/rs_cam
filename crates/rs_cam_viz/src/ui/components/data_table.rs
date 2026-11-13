@@ -654,6 +654,7 @@ pub struct Details {
     id_salt: egui::Id,
     count: Option<usize>,
     label: &'static str,
+    tail: Option<String>,
 }
 
 impl Details {
@@ -663,7 +664,67 @@ impl Details {
             id_salt: egui::Id::new(id_salt),
             count: None,
             label: DETAILS_LABEL,
+            tail: None,
         }
+    }
+
+    /// A short text after the count (P29-10 10f: "2 over" on the
+    /// "Limits" drawer). `None` draws nothing.
+    pub fn tail(mut self, tail: Option<String>) -> Self {
+        self.tail = tail;
+        self
+    }
+
+    /// The header text: the label, the count and the tail.
+    fn header_text(&self) -> String {
+        let mut text = self.label.to_owned();
+        if let Some(n) = self.count {
+            text.push_str(&format!(" \u{00B7} {n}"));
+        }
+        if let Some(tail) = &self.tail {
+            text.push_str(&format!(" \u{00B7} {tail}"));
+        }
+        text
+    }
+
+    /// [`Self::show_held`] with `beside` at the right end of the header row
+    /// (P29-10 10f: the "Limits" drawer of the Suggest card and the
+    /// `Vendor data…` button share one row, so the drawer adds no line). A
+    /// click on the arrow or on the label flips `open`; `add` draws the body
+    /// under the row when it is open.
+    pub fn show_held_beside<B, R>(
+        self,
+        ui: &mut egui::Ui,
+        open: &mut bool,
+        beside: impl FnOnce(&mut egui::Ui) -> B,
+        add: impl FnOnce(&mut egui::Ui) -> R,
+    ) -> (B, Option<R>) {
+        let id = ui.make_persistent_id(self.id_salt);
+        let mut state =
+            egui::collapsing_header::CollapsingState::load_with_default_open(ui.ctx(), id, false);
+        state.set_open(*open);
+        let text = self.header_text();
+        let header = ui.horizontal(|ui| {
+            let _ = state.show_toggle_button(ui, egui::collapsing_header::paint_default_icon);
+            let label = ui.add(
+                egui::Label::new(caption(text, tokens::TEXT_MUTED))
+                    .sense(egui::Sense::click())
+                    .truncate(),
+            );
+            let beside = ui
+                .with_layout(egui::Layout::right_to_left(egui::Align::Center), beside)
+                .inner;
+            (label.clicked(), beside)
+        });
+        let (label_clicked, beside) = header.inner;
+        if label_clicked {
+            state.toggle(ui);
+        }
+        *open = state.is_open();
+        let body = state
+            .show_body_indented(&header.response, ui, add)
+            .map(|r| r.inner);
+        (beside, body)
     }
 
     /// The label: what the disclosure holds (FR-2 F28). Do not use a tab
@@ -689,10 +750,7 @@ impl Details {
         open: &mut bool,
         add: impl FnOnce(&mut egui::Ui) -> R,
     ) -> egui::CollapsingResponse<R> {
-        let label = match self.count {
-            Some(n) => format!("{} \u{00B7} {n}", self.label),
-            None => self.label.to_owned(),
-        };
+        let label = self.header_text();
         let response = egui::CollapsingHeader::new(caption(label, tokens::TEXT_MUTED))
             .id_salt(self.id_salt)
             .open(Some(*open))
@@ -709,10 +767,7 @@ impl Details {
         ui: &mut egui::Ui,
         add: impl FnOnce(&mut egui::Ui) -> R,
     ) -> egui::CollapsingResponse<R> {
-        let label = match self.count {
-            Some(n) => format!("{} \u{00B7} {n}", self.label),
-            None => self.label.to_owned(),
-        };
+        let label = self.header_text();
         egui::CollapsingHeader::new(caption(label, tokens::TEXT_MUTED))
             .id_salt(self.id_salt)
             .default_open(false)

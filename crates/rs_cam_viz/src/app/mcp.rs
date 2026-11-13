@@ -611,6 +611,7 @@ impl super::RsCamApp {
                     display_mode,
                     sim_inspector_tab,
                     sim_cut_groups,
+                    card_limits,
                 }) => {
                     let resp = self.mcp_set_ui_view(
                         ctx,
@@ -626,6 +627,7 @@ impl super::RsCamApp {
                         display_mode,
                         sim_inspector_tab,
                         sim_cut_groups,
+                        card_limits,
                     );
                     let _ = response_tx.send(McpResponse { result: Ok(resp) });
                 }

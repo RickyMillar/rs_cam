@@ -62,6 +62,9 @@ pub(super) fn draw_toolpath_panel(
     // P5b (K2b): the candidate rings of the envelope plot (`state.panels`),
     // threaded in as `heights_refusal` is.
     envelope_candidates: &mut crate::state::panels::EnvelopeCandidates,
+    // P29-10 10f: the open state of the card's "Limits" drawer
+    // (`state.panels`), threaded in as `envelope_candidates` is.
+    card_limits_open: &mut bool,
     events: &mut Vec<AppEvent>,
 ) -> ToolpathTab {
     // Disjoint borrows of the snapshot's fields. The body edits the entry
@@ -255,6 +258,7 @@ pub(super) fn draw_toolpath_panel(
                 super::linking_dressup::Fields::new(&placement.by_field),
                 suggest_slots,
                 envelope_candidates,
+                card_limits_open,
                 events,
             );
         }

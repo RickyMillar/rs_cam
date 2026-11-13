@@ -247,6 +247,20 @@ impl Caveat {
         }
     }
 
+    /// `true` for a caveat of the cut, not of the row: the own depth of a
+    /// ramp and the presence of the cut (P29-10 10f: a cut title names it).
+    const fn of_the_cut(self) -> bool {
+        match self {
+            Self::WorstCase | Self::MayOccur { .. } => true,
+            Self::LowerBound
+            | Self::StoredFeed
+            | Self::Advisory
+            | Self::NoSamples
+            | Self::SampleDepth { .. }
+            | Self::AtEarlierLeave => false,
+        }
+    }
+
     /// `true` when an `Exceeds` row under this caveat is a caution, not a
     /// danger (ruling O2: the caveat is a fact of the record).
     const fn softens(self) -> bool {
@@ -410,6 +424,11 @@ pub struct CheckRow {
     exemption: Option<&'static str>,
     tone: Tone,
     face: String,
+    /// The face without its subject and without a caveat of the cut (P29-10
+    /// 10f: a row under the title of its cut). Not on the wire: `face`
+    /// holds the whole line.
+    #[serde(skip)]
+    face_in_group: String,
     detail: String,
 }
 
@@ -435,9 +454,19 @@ impl CheckRow {
         }
         caveats.sort_by_key(|c| c.rank());
         caveats.dedup();
+        // P29-10 10f: a check never holds a NaN or an infinity (`judged`
+        // and `of_rpm_choice` give `None` in their place).
+        debug_assert!(
+            [check.value, check.bound, check.margin]
+                .iter()
+                .flatten()
+                .all(|v| v.is_finite()),
+            "a check holds finite numbers: {check:?}"
+        );
         let exemption = own_row.or_else(|| exemption_of(&check, &caveats));
         let tone = Tone::of(&check, &caveats);
         let face = face_of(&subject, &check, compared, &caveats);
+        let face_in_group = group_face_of(&subject, &check, compared, &caveats);
         let detail = detail_of(&subject, &check, compared, &caveats, exemption, tone, extra);
         Self {
             subject,
@@ -447,6 +476,7 @@ impl CheckRow {
             exemption,
             tone,
             face,
+            face_in_group,
             detail,
         }
     }
@@ -566,6 +596,51 @@ impl CheckRow {
     #[must_use]
     pub fn face(&self) -> &str {
         &self.face
+    }
+
+    /// The face without its subject (P29-10 10f): the row under a title
+    /// that names its cut or its part ("depth 387 % over force cap"). A
+    /// caveat of the cut ([`Self::cut_words`]) is in the title, not here;
+    /// a caveat of the row ("lower bound", "stored feed") stays.
+    #[must_use]
+    pub fn face_in_group(&self) -> &str {
+        &self.face_in_group
+    }
+
+    /// The face words of the caveats that belong to the cut, not to the
+    /// row: "worst case" (the own depth of a ramp) and "may not occur" (the
+    /// presence of the cut). A title that groups the rows of one cut names
+    /// them once (P29-10 10f).
+    #[must_use]
+    pub fn cut_words(&self) -> Vec<&'static str> {
+        self.caveats
+            .iter()
+            .filter(|c| c.of_the_cut())
+            .filter_map(|c| c.face_word())
+            .collect()
+    }
+
+    /// `true` when the row holds a judgement: a state `Within` or
+    /// `Exceeds`. A row with no number (`NoNumber`) or no meaning
+    /// (`NotApplicable`) is `false`; a surface may fold it (P29-10 10f).
+    #[must_use]
+    pub const fn holds_a_number(&self) -> bool {
+        match self.check.state {
+            CheckState::Within | CheckState::Exceeds => true,
+            CheckState::NoNumber(_) | CheckState::NotApplicable(_) => false,
+        }
+    }
+
+    /// The words of a row with no judgement ("not modelled", "not judged
+    /// here", "no vertical feed"), for a line that counts such rows. `None`
+    /// for a row that [`Self::holds_a_number`].
+    #[must_use]
+    pub const fn no_number_words(&self) -> Option<&'static str> {
+        match self.check.state {
+            CheckState::NoNumber(reason) => Some(reason.face()),
+            CheckState::NotApplicable(geometry) => Some(geometry.face()),
+            CheckState::Within | CheckState::Exceeds => None,
+        }
     }
 
     /// The hover: every clause of the row.
@@ -799,14 +874,50 @@ fn state_face(check: &Check) -> &'static str {
     }
 }
 
+/// The reading of a row: the limit or the compared quantity, then the
+/// margin face or the state face. P29-10 10f: an RPM limit that admits
+/// every RPM (no bound) says so in plain words.
+fn reading_of(subject: &Subject, check: &Check, compared: Compared) -> String {
+    let short = compared.word().unwrap_or(check.limit.text().short);
+    let reading = margin_face(check, compared).unwrap_or_else(|| {
+        match (subject, check.state, check.bound) {
+            (Subject::Rpm, CheckState::Within, None) => "does not limit the RPM",
+            _ => state_face(check),
+        }
+        .to_owned()
+    });
+    format!("{short} {reading}")
+}
+
+/// The face of a row under the title of its cut or part (P29-10 10f): the
+/// reading, then the first word of a caveat of the row (a caveat of the
+/// cut is in the title).
+fn group_face_of(
+    subject: &Subject,
+    check: &Check,
+    compared: Compared,
+    caveats: &[Caveat],
+) -> String {
+    let reading = reading_of(subject, check, compared);
+    let word = caveats
+        .iter()
+        .filter(|c| !c.of_the_cut())
+        .find_map(|c| c.face_word());
+    match word {
+        Some(w) if reading.chars().count() + w.chars().count() + 3 <= ROW_FACE_MAX_CHARS => {
+            format!("{reading} · {w}")
+        }
+        Some(_) | None => reading,
+    }
+}
+
 fn face_of(subject: &Subject, check: &Check, compared: Compared, caveats: &[Caveat]) -> String {
     // Lead ruling 3: a row names what it compares (a depth row: "depth 87 %
     // of force cap"); P29-10 10e: a row with no number too ("drill · depth
     // not judged here"). A row that compares its limit's own quantity names
     // the limit ("gantry push not modelled").
-    let short = compared.word().unwrap_or(check.limit.text().short);
-    let reading = margin_face(check, compared).unwrap_or_else(|| state_face(check).to_owned());
-    let core = format!("{} · {short} {reading}", subject.label());
+    let reading = reading_of(subject, check, compared);
+    let core = format!("{} · {reading}", subject.label());
     let with_word = caveats
         .iter()
         .find_map(|c| c.face_word())
@@ -815,7 +926,7 @@ fn face_of(subject: &Subject, check: &Check, compared: Compared, caveats: &[Cave
         Some(face) if face.chars().count() <= ROW_FACE_MAX_CHARS => face,
         Some(_) | None if core.chars().count() <= ROW_FACE_MAX_CHARS => core,
         // The subject is in the detail; the limit and the reading fit.
-        Some(_) | None => format!("{short} {reading}"),
+        Some(_) | None => reading,
     }
 }
 

@@ -13,6 +13,15 @@ use crate::tool_load::verdict::{
 /// The state of a value against a bound on `side`: by the margin, and
 /// [`NoNumberReason::NoBound`] when the bound gives no margin.
 fn judged(side: BoundSide, value: f64, bound: f64) -> (Option<f64>, CheckState) {
+    // P29-10 10f: a check never holds a NaN or an infinity. A value or a
+    // bound that is not finite gives no margin.
+    debug_assert!(
+        value.is_finite() && bound.is_finite(),
+        "a check judges finite numbers: value {value}, bound {bound}"
+    );
+    if !(value.is_finite() && bound.is_finite()) {
+        return (None, CheckState::NoNumber(NoNumberReason::NoBound));
+    }
     match side.margin(value, bound) {
         Some(margin) => (Some(margin), CheckState::of_margin(margin)),
         None => (None, CheckState::NoNumber(NoNumberReason::NoBound)),
@@ -190,11 +199,19 @@ pub fn of_rpm_choice(choice: &RpmChoice) -> Vec<Check> {
         .limits
         .iter()
         .map(|entry| {
-            let (margin, state) = judged(BoundSide::Ceiling, choice.rpm, entry.rpm);
+            // P29-10 10f: a limit that admits every RPM (`RpmLimitValue::rpm`
+            // infinite: the power of a constant-torque drive below its
+            // rated RPM) holds no bound and no margin. The RPM is inside it.
+            let (bound, margin, state) = if entry.rpm.is_finite() {
+                let (margin, state) = judged(BoundSide::Ceiling, choice.rpm, entry.rpm);
+                (Some(entry.rpm), margin, state)
+            } else {
+                (None, None, CheckState::Within)
+            };
             Check {
                 limit: LimitId::of_rpm_limit(entry.limit),
-                value: Some(choice.rpm),
-                bound: Some(entry.rpm),
+                value: Some(choice.rpm).filter(|v| v.is_finite()),
+                bound,
                 unit: "rpm",
                 side: BoundSide::Ceiling,
                 margin,

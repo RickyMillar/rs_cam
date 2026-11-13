@@ -956,3 +956,70 @@ fn claim_8_a_disabled_toolpath_and_a_drill_give_their_rows() {
         check_row("drill", r);
     }
 }
+
+/// The face and the numbers of one row hold no NaN and no infinity.
+fn assert_finite(name: &str, row: &CheckRow) {
+    for v in [row.check().value, row.check().bound, row.check().margin]
+        .into_iter()
+        .flatten()
+    {
+        assert!(v.is_finite(), "{name}: a check holds {v} ({})", row.face());
+    }
+    for text in [row.face(), row.face_in_group()] {
+        let lower = text.to_lowercase();
+        assert!(
+            !lower.contains("nan") && !lower.contains("inf"),
+            "{name}: the face {text:?} holds a NaN or an infinity"
+        );
+    }
+}
+
+/// Claim 10 (P29-10 10f): no row holds a NaN or an infinity. An RPM limit
+/// that admits every RPM (an infinite `RpmLimitValue::rpm`, the power of a
+/// constant-torque drive below its rated RPM: wanaka idx 16 printed "rpm ·
+/// power NaN % of limit") is `Within` with no bound and no margin, and its
+/// face says so in plain words. Every envelope row of the fixtures holds
+/// finite numbers. (The four operator files are not read here: F155; a
+/// probe over them is in the 10f report.)
+#[test]
+fn claim_10_no_row_holds_a_nan_or_an_infinity() {
+    use rs_cam_core::feeds::{RpmChoice, RpmLimit, RpmLimitValue};
+    use rs_cam_core::limits::{CheckState, rows_of_rpm_choice};
+    let choice = RpmChoice {
+        rpm: 24_000.0,
+        chart_rpm: Some(18_000.0),
+        binding: RpmLimit::SpindleMax,
+        limits: vec![
+            RpmLimitValue {
+                limit: RpmLimit::SpindleMax,
+                rpm: 24_000.0,
+            },
+            RpmLimitValue {
+                limit: RpmLimit::PowerAtRpm,
+                rpm: f64::INFINITY,
+            },
+        ],
+    };
+    let rows = rows_of_rpm_choice(&choice);
+    assert_eq!(rows.len(), 2, "one row per RPM limit");
+    for row in &rows {
+        assert_finite("rpm", row);
+    }
+    let power = rows
+        .iter()
+        .find(|r| r.check().limit == LimitId::SpindlePower)
+        .expect("the power row");
+    assert_eq!(power.check().state, CheckState::Within);
+    assert_eq!(power.check().bound, None, "an infinite limit is no bound");
+    assert_eq!(power.check().margin, None, "and no margin");
+    assert_eq!(power.face(), "rpm · power does not limit the RPM");
+
+    let mut n = 0;
+    for (name, _, env) in envelopes() {
+        for row in env.rows() {
+            assert_finite(&name, row);
+            n += 1;
+        }
+    }
+    assert!(n > 0, "non-vacuity: the fixtures give rows");
+}

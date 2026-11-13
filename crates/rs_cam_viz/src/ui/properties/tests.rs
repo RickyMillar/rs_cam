@@ -479,6 +479,7 @@ fn tab_texts(
             super::linking_dressup::Fields::default(),
             &session.suggest_slots(tc),
             &mut crate::state::panels::EnvelopeCandidates::default(),
+            &mut false,
             &mut events,
         ),
         // R2: the whole Geometry tab: the Input row, the selection, the
@@ -1654,6 +1655,7 @@ fn the_tool_picker_greys_refused_tools_r2() {
                     super::linking_dressup::Fields::default(),
                     &slots,
                     &mut crate::state::panels::EnvelopeCandidates::default(),
+                    &mut false,
                     &mut events,
                 );
             } else {
@@ -2556,6 +2558,7 @@ fn painted_fields(
                     &mut crate::state::panels::HeightsRefusal::default(),
                     &mut crate::state::panels::ContainmentAutoCorrect::default(),
                     &mut crate::state::panels::EnvelopeCandidates::default(),
+                    &mut false,
                     &mut events,
                 );
             });

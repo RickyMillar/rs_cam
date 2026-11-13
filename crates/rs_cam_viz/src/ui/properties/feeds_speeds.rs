@@ -160,6 +160,7 @@ pub(super) fn draw_feeds_recommendation(
     ui: &mut egui::Ui,
     entry: &mut ToolpathEntry,
     block: &FeedsBlock<'_>,
+    limits_open: &mut bool,
     events: &mut Vec<crate::ui::AppEvent>,
 ) {
     if let Some(e) = entry.feeds_memo.refusal().map(ToString::to_string) {
@@ -171,8 +172,22 @@ pub(super) fn draw_feeds_recommendation(
                 .color(crate::ui::tokens::DANGER)
                 .detail(e),
         );
+        ui.add_space(crate::ui::tokens::SPACE_2);
+        draw_vendor_button(ui, entry.id, events);
         return;
     }
+    // P29-10 10f: the limit rows of the card, the rows of
+    // `ProjectSession::limit_rows` that the memo holds (the envelope rows
+    // and the RPM rows). Shared, so the entry stays free to borrow.
+    let envelope = entry.feeds_memo.envelope_shared();
+    let rpm_rows = entry.feeds_memo.rpm_rows_shared();
+    let limits = envelope
+        .as_deref()
+        .map(|env| crate::ui::feeds::compare::CardLimits {
+            envelope: env.rows(),
+            rpm: &rpm_rows,
+            proposal: (env.proposal.value().ap_mm(), env.proposal.value().ae_mm),
+        });
     if let Some((preview, card)) = feeds_card(entry, block) {
         ui.add_space(crate::ui::tokens::SPACE_2);
         let op = crate::ui::feeds::shared::OpFeeds {
@@ -193,11 +208,44 @@ pub(super) fn draw_feeds_recommendation(
         crate::ui::feeds::explore::draw_recommendation_inline(
             ui,
             &op,
+            limits.as_ref(),
             |ui, events| draw_spindle_policy_row(ui, strategy, rpm_ceiling, machine, events),
             events,
         );
     }
+    // P29-10 10f (ruling O6): the closed "Limits · n" drawer and
+    // `Vendor data…` share one row, so the drawer adds no line.
+    ui.add_space(crate::ui::tokens::SPACE_2);
+    let id = entry.id;
+    match limits.as_ref().filter(|limits| !limits.is_empty()) {
+        Some(limits) => {
+            crate::ui::feeds::compare::draw_limits_drawer(ui, limits, limits_open, |ui| {
+                draw_vendor_button(ui, id, events);
+            });
+        }
+        None => draw_vendor_button(ui, id, events),
+    }
     draw_feeds_card(ui, block.load_verdict);
+}
+
+/// The vendor cutting data of the bound tool's family, in its own window
+/// (W3i). With no tool there is no family, so the Passes tab draws no
+/// feeds block and no button.
+fn draw_vendor_button(
+    ui: &mut egui::Ui,
+    toolpath_id: rs_cam_core::ToolpathId,
+    events: &mut Vec<crate::ui::AppEvent>,
+) {
+    if ui
+        .add(crate::ui::components::Button::quiet("Vendor data\u{2026}"))
+        .on_hover_text(
+            "Open the vendor cutting data table for this tool's family. The rows at \
+             this tool's diameter are in green.",
+        )
+        .clicked()
+    {
+        events.push(crate::ui::AppEvent::OpenVendorData(toolpath_id));
+    }
 }
 
 /// W1 — the operator sets the feed, the plunge and the RPM here.

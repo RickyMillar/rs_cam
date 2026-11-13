@@ -482,6 +482,7 @@ impl RsCamApp {
         display_mode: Option<rs_cam_core::settings::DisplayMode>,
         sim_inspector_tab: Option<rs_cam_mcp::server::SimInspectorTabParam>,
         sim_cut_groups: Option<rs_cam_mcp::server::DrawerParam>,
+        card_limits: Option<rs_cam_mcp::server::DrawerParam>,
     ) -> String {
         // 0. The camera request (A C5) is checked before anything applies,
         //    so a refusal changes nothing. It is checked against the focus
@@ -770,6 +771,14 @@ impl RsCamApp {
                     DrawerParam::Closed => false,
                 };
             }
+            // P29-10 10f: the "Limits" drawer of the Suggest card, the
+            // field its header writes.
+            if let Some(drawer) = card_limits {
+                self.controller.state_mut().panels.card_limits_open = match drawer {
+                    DrawerParam::Open => true,
+                    DrawerParam::Closed => false,
+                };
+            }
         }
 
         // Echo the resulting view. Modal mutations route through the event
@@ -818,6 +827,7 @@ impl RsCamApp {
                 "tab": state.simulation.inspector_tab.label().to_lowercase(),
                 "cut_groups": state.simulation.cut_groups_open,
             },
+            "card_limits": state.panels.card_limits_open,
             "note": "view changes render on the next frame; call screenshot_gui to capture",
         }))
     }

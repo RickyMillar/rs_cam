@@ -426,9 +426,17 @@ fn surfaces(state: &AppState) -> Vec<Surface> {
     // 3-pixel merge rule of `visible_lines`). Not proven which label moved:
     // no build of an older commit is allowed. Pocket Passes 40 -> 41, 3D
     // Rough 37 -> 38, 3D Finish 29 -> 30.
+    // P29-10 10f (ruling O1): the Suggest card face takes ONE limit row,
+    // the worst row by the core rank, only when a row exceeds: Pocket "ramp
+    // entry · chip min 89 % under floor · worst case", 3D Rough one row;
+    // 3D Finish has no row that exceeds. The closed "Limits · n" drawer
+    // shares its row with `Vendor data…`, so it adds no line. Pocket Passes
+    // 41 -> 42, 3D Rough 38 -> 39, 3D Finish 30. Lead ruling 4 on 10f: the
+    // line that `b6c12f1f7` added is not traced (a nomogram label); 10g
+    // must return that one line (Pocket 41, 3D Rough 38, 3D Finish 29).
     let caps: [(&str, [usize; 4]); 3] = [
-        ("Pocket", [10, 41, 17, 22]),
-        ("3D Rough", [7, 38, 15, 15]),
+        ("Pocket", [10, 42, 17, 22]),
+        ("3D Rough", [7, 39, 15, 15]),
         ("3D Finish", [9, 30, 16, 14]),
     ];
     for (name, tab_caps) in caps {

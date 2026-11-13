@@ -144,11 +144,12 @@ pub(crate) fn draw_inline(
 pub(crate) fn draw_recommendation_inline(
     ui: &mut egui::Ui,
     op: &OpFeeds<'_>,
+    limits: Option<&super::compare::CardLimits<'_>>,
     policy: impl FnOnce(&mut egui::Ui, &mut Vec<AppEvent>),
     events: &mut Vec<AppEvent>,
 ) {
     let current = super::compare::current_values_for_operation(op.operation, op.tool);
-    super::compare::draw_recommendation(ui, op, &current, policy, events);
+    super::compare::draw_recommendation(ui, op, &current, limits, policy, events);
 }
 
 // ────────────────────────────────────────────────────────────────────

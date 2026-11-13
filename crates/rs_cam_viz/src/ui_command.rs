@@ -221,6 +221,9 @@ pub struct SetUiViewArgs {
     /// P29-10 10e: open or close the "Cut groups" drawer.
     #[cfg(feature = "mcp")]
     pub sim_cut_groups: Option<rs_cam_mcp::server::DrawerParam>,
+    /// P29-10 10f: open or close the "Limits" drawer of the Suggest card.
+    #[cfg(feature = "mcp")]
+    pub card_limits: Option<rs_cam_mcp::server::DrawerParam>,
 }
 
 /// Whether the project feeds rollup is on screen.

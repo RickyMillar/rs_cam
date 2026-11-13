@@ -149,9 +149,6 @@ pub(crate) struct CurrentValues {
     /// override (currently DropCutter / 3D Finish). Gates the
     /// "Scallop height" input and the derived-stepover rendering.
     pub(crate) supports_scallop_override: bool,
-    /// Pass role of this operation — drives the finish-only chipload-min
-    /// warning (S3).
-    pub(crate) pass_role: rs_cam_core::feeds::PassRole,
 }
 
 impl CurrentValues {

@@ -971,22 +971,8 @@ fn apply_hover(env: &SafeEnvelope, scene: &EnvelopeScene, unsourced: &[String]) 
             "Apply ap {:.2} \u{00D7} ae {:.2} and its speeds.",
             c.ap_mm, c.ae_mm
         ),
-        // P29-7 7c: the hover names the limit that sets the proposal and
-        // the declared cut that sets that limit ("Rigidity DOC, slot ring").
-        None => match env.proposal_binding {
-            Some(kind) => match env.limit(kind).and_then(|l| l.binding_cut) {
-                Some(cut) => format!(
-                    "Apply the proposal and its speeds. The proposal stands on the {}, {}.",
-                    limit_name(env, kind),
-                    cut.label()
-                ),
-                None => format!(
-                    "Apply the proposal and its speeds. The proposal stands on the {}.",
-                    limit_name(env, kind)
-                ),
-            },
-            None => "Apply the proposal and its speeds.".to_owned(),
-        },
+        // P29-7 7c, P29-10 10f: the hover reads the binding planned row.
+        None => proposal_hover(env),
     };
     let outside = match scene.candidate_placement {
         Some(Placement::Outside { binding, .. }) => {
@@ -1000,6 +986,42 @@ fn apply_hover(env: &SafeEnvelope, scene: &EnvelopeScene, unsourced: &[String]) 
         format!(" Unsourced: {}.", unsourced.join(", "))
     };
     format!("{what}{outside}{rules}")
+}
+
+/// The ⚡ hover with no candidate (P29-7 7c, P29-10 10f): the hover reads
+/// the binding planned row, the row of the declared cut that sets the
+/// limit that sets the proposal ("The proposal stands on: planner cap ·
+/// depth 100 % of force cap."). Core wrote its face; the row detail is on
+/// the card's "Limits" drawer.
+#[must_use]
+pub fn proposal_hover(env: &SafeEnvelope) -> String {
+    match binding_planned_row(env) {
+        Some(row) => format!(
+            "Apply the proposal and its speeds. The proposal stands on: {}.",
+            row.face()
+        ),
+        None => match env.proposal_binding {
+            Some(kind) => format!(
+                "Apply the proposal and its speeds. The proposal stands on the {}.",
+                limit_name(env, kind)
+            ),
+            None => "Apply the proposal and its speeds.".to_owned(),
+        },
+    }
+}
+
+/// The binding planned row (P29-10 10f): the planned row of the limit that
+/// sets the proposal (`SafeEnvelope::proposal_binding`) on the declared cut
+/// that sets that limit (`Limit::binding_cut`). `None` with no binding
+/// limit, or when no planned row names that limit and cut.
+#[must_use]
+pub fn binding_planned_row(env: &SafeEnvelope) -> Option<&rs_cam_core::limits::CheckRow> {
+    let kind = env.proposal_binding?;
+    let cut = env.limit(kind)?.binding_cut?;
+    let limit = rs_cam_core::limits::LimitId::of_limit_kind(kind);
+    env.rows()
+        .iter()
+        .find(|row| row.cut() == Some(cut) && row.check().limit == limit)
 }
 
 /// The header row: the small-caps title and the ⚡ chip at the right. A

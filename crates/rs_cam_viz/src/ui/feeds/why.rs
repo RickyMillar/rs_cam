@@ -736,34 +736,6 @@ fn claim_hover(claim: &Claim, detail: &str, hardness: &HardnessBasis) -> String 
     out
 }
 
-/// S3 — chipload-min warning. For finishing operations a chipload below
-/// the vendor band minimum is the common failure mode (operator slows
-/// feed for surface quality → rubbing / burning). Surface it loudly.
-///
-/// The warning needs a PUBLISHED minimum. A max-only row or a one-point row
-/// has none, so this function draws nothing for it. Until 2026-09-23 it
-/// compared against an invented `0.7 × max` floor (G-CHARTLINES).
-pub(crate) fn chipload_min_row(current: &CurrentValues, explain: &FeedsExplain) -> Option<DataRow> {
-    if current.pass_role != rs_cam_core::feeds::PassRole::Finish {
-        return None;
-    }
-    let cl = current.chipload_mm();
-    if cl <= 0.0 {
-        return None;
-    }
-    let (lo, _hi) = vendor_band(explain)?;
-    if cl >= lo {
-        return None;
-    }
-    Some(
-        caution("⚠ Advance/tooth is below the vendor band minimum").hover(
-            "The tool rubs instead of cutting, which burns the work and the \
-             cutting edge. The feed is too slow, the RPM is too high, or both. \
-             Raise the feed or drop the RPM.",
-        ),
-    )
-}
-
 /// One warning as a headline and, where it has one, the detail behind it.
 fn warning_lines(warning: &rs_cam_core::feeds::FeedsWarning) -> (String, Option<String>) {
     use rs_cam_core::feeds::FeedsWarning;
@@ -1080,7 +1052,10 @@ pub(crate) fn warning_rows(explain: &FeedsExplain) -> Vec<Placement> {
 /// ruling of 2026-09-15); the sentry
 /// `every_stage_that_moves_a_number_is_on_the_card_g_visible` holds the
 /// list.
-fn suggest_line(warning: &SuggestWarning) -> Option<(String, bool)> {
+fn suggest_line(
+    warning: &SuggestWarning,
+    stated_outside: Option<&rs_cam_core::limits::CheckRow>,
+) -> Option<(String, bool)> {
     match warning {
         SuggestWarning::FeedRescaledToFinalGeometry {
             requested_mm_per_min,
@@ -1155,14 +1130,13 @@ fn suggest_line(warning: &SuggestWarning) -> Option<(String, bool)> {
             true,
         )),
         // K2b, K6: the operator's point is outside the safe envelope.
-        SuggestWarning::OutsideEnvelope {
-            binding, margin, ..
-        } => Some((
-            format!(
-                "Outside the safe envelope: {:.0} % past the {}",
-                -margin * 100.0,
-                binding.label()
-            ),
+        // P29-10 10f (site 25): the line reads the worst stated row that
+        // exceeds; core wrote its face (the limit and the margin).
+        SuggestWarning::OutsideEnvelope { .. } => Some((
+            match stated_outside {
+                Some(row) => format!("Outside the safe envelope: {}", row.face_in_group()),
+                None => "Outside the safe envelope".to_owned(),
+            },
             true,
         )),
     }
@@ -1175,10 +1149,13 @@ fn suggest_line(warning: &SuggestWarning) -> Option<(String, bool)> {
 /// `Details`. A Caution keeps the warning mark and the Caution tone inside
 /// `Details`. The ramp record gives one row, then
 /// one row per entry note (G10); each note's rule is on its hover.
-pub(crate) fn suggest_rows(warnings: &[SuggestWarning]) -> Vec<Placement> {
+pub(crate) fn suggest_rows(
+    warnings: &[SuggestWarning],
+    stated_outside: Option<&rs_cam_core::limits::CheckRow>,
+) -> Vec<Placement> {
     let mut out = Vec::new();
     for warning in warnings {
-        let Some((line, is_caution)) = suggest_line(warning) else {
+        let Some((line, is_caution)) = suggest_line(warning, stated_outside) else {
             continue;
         };
         // P13c (O3): the visible warning of a computed width sits on the
@@ -1231,5 +1208,70 @@ fn stage_record(line: String, is_caution: bool) -> DataRow {
         DataRow::record(format!("⚠ {line}")).tone(theme::WARNING_MILD)
     } else {
         DataRow::record(line).tone(tokens::TEXT_MUTED)
+    }
+}
+
+#[cfg(test)]
+mod tests {
+    #![expect(clippy::expect_used, reason = "test: a panic reports the failure")]
+
+    use rs_cam_core::compute::catalog::{OperationConfig, OperationType};
+    use rs_cam_core::compute::tool_config::{ToolConfig, ToolFact, ToolId, ToolType};
+    use rs_cam_core::feeds::envelope::{EnvelopeInput, LimitKind, SafeEnvelope};
+    use rs_cam_core::feeds::suggest::{NoProject, SuggestContext, SuggestWarning};
+    use rs_cam_core::limits::Subject;
+
+    /// P29-10 10f (site 25): the `OutsideEnvelope` stage line reads the
+    /// stated row: its core face without the subject, never a margin that
+    /// the viz turns into a percent.
+    #[test]
+    fn the_outside_line_reads_the_stated_row_p29_10() {
+        let mut op = rs_cam_core::compute::fixture_values::fixture_op(OperationType::Adaptive3d);
+        if let OperationConfig::Adaptive3d(c) = &mut op {
+            c.depth_per_pass = Some(10.0);
+            c.stepover = Some(5.0);
+        }
+        let mut tool = ToolConfig::test_default(ToolId::from_raw(1), ToolType::EndMill);
+        tool.diameter = 6.0;
+        tool.set_flute_count(ToolFact::Stated(2));
+        let env = SafeEnvelope::for_cut(EnvelopeInput {
+            operation: &op,
+            tool: &tool,
+            machine: &rs_cam_core::machine::MachineProfile::default(),
+            material: &rs_cam_core::material::Material::SolidWood {
+                species: rs_cam_core::material::WoodSpecies::GenericHardwood,
+            },
+            lut: rs_cam_core::feeds::embedded_vendor_lut(),
+            spindle_strategy: rs_cam_core::feeds::SpindleStrategy::MatchChart,
+            context: SuggestContext::no_project(NoProject::NONE),
+        })
+        .expect("the envelope builds");
+        let stated = env
+            .rows()
+            .iter()
+            .find(|r| matches!(r.subject(), Subject::Stated) && r.tone().exceeds())
+            .expect("a stated row exceeds at a 10 mm depth");
+        let warning = SuggestWarning::OutsideEnvelope {
+            binding: LimitKind::Rigidity,
+            margin: -0.5,
+            ap_mm: 10.0,
+            ae_mm: 5.0,
+        };
+        let (line, caution) = super::suggest_line(&warning, Some(stated)).expect("a line");
+        assert_eq!(
+            line,
+            format!("Outside the safe envelope: {}", stated.face_in_group())
+        );
+        assert!(caution, "the line is a caution");
+        assert!(
+            !line.contains("stated point"),
+            "the subject is not repeated"
+        );
+        assert!(
+            !line.contains("50 %"),
+            "no viz percent of the warning margin"
+        );
+        let (bare, _) = super::suggest_line(&warning, None).expect("a line");
+        assert_eq!(bare, "Outside the safe envelope");
     }
 }

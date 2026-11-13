@@ -30,8 +30,11 @@ use super::shared::{
 use super::why;
 use crate::state::AppState;
 use crate::ui::components::compare;
-use crate::ui::components::{DataRow, DataTable, Details, ProvKind, Role, Source};
-use crate::ui::{AppEvent, theme};
+use crate::ui::components::role_of_tone;
+use crate::ui::components::{DataRow, DataTable, Details, ProvKind, Role, SectionHeader, Source};
+use crate::ui::sim_diagnostics::{limit_data_row_with_face, row_hover};
+use crate::ui::{AppEvent, theme, tokens};
+use rs_cam_core::limits::{CheckRow, Subject};
 
 const ADVANCE_ROW_LABEL: &str = "Advance/tooth";
 
@@ -88,7 +91,6 @@ pub(crate) fn current_values_for_operation(
             operation.op_type(),
             rs_cam_core::compute::catalog::OperationType::DropCutter
         ),
-        pass_role: operation.feeds_style().1,
     }
 }
 
@@ -180,6 +182,7 @@ pub(crate) fn draw_recommendation(
     ui: &mut egui::Ui,
     op: &OpFeeds<'_>,
     current: &CurrentValues,
+    limits: Option<&CardLimits<'_>>,
     policy: impl FnOnce(&mut egui::Ui, &mut Vec<AppEvent>),
     events: &mut Vec<AppEvent>,
 ) {
@@ -212,9 +215,303 @@ pub(crate) fn draw_recommendation(
         machine,
         feed_max_rate,
         toolpath_id,
+        limits,
         policy,
         events,
     );
+}
+
+/// **The limit rows of the Suggest card** (P29-10 10f, design 3.6, rulings
+/// O1, O2 and O6, lead rulings on 10f): the rows of
+/// `ProjectSession::limit_rows` that the panel memo holds. `envelope` is
+/// `SafeEnvelope::rows` of the memo envelope (the planned rows at the
+/// proposal, then the stated rows); `rpm` is the RPM part
+/// (`FeedsMemo::rpm_rows`). Core wrote every face, detail, tone and the
+/// rank; this only sorts the rows into the two parts of the drawer, groups
+/// them by cut and picks the face row by the core rank.
+pub(crate) struct CardLimits<'a> {
+    /// `SafeEnvelope::rows`.
+    pub(crate) envelope: &'a [CheckRow],
+    /// The rows of the Suggest RPM choice.
+    pub(crate) rpm: &'a [CheckRow],
+    /// The proposal that ⚡ writes: (depth, width) in mm. The depth is
+    /// `None` when the envelope proposes no depth.
+    pub(crate) proposal: (Option<f64>, f64),
+}
+
+/// The planned rows of one declared cut, in the core order.
+struct CutRows<'a> {
+    cut: rs_cam_core::limits::CutKind,
+    rows: Vec<&'a CheckRow>,
+}
+
+impl CardLimits<'_> {
+    /// Part one, "As the op stands": the rows of the cut that the op holds
+    /// now (the stated point against each limit). Lead ruling L1: step 10i
+    /// adds the declared cuts at the stated point to this part, and the
+    /// face row reads only this part.
+    fn as_it_stands(&self) -> Vec<&CheckRow> {
+        self.envelope
+            .iter()
+            .filter(|row| matches!(row.subject(), Subject::Stated))
+            .collect()
+    }
+
+    /// Part two, "If you apply ⚡": the planned rows at the proposal,
+    /// grouped by cut in the declaration order (core writes them by limit,
+    /// then by cut; the first row of a cut fixes its place).
+    fn cuts(&self) -> Vec<CutRows<'_>> {
+        let mut out: Vec<CutRows<'_>> = Vec::new();
+        for row in self.envelope {
+            let Some(cut) = row.cut() else { continue };
+            match out.iter_mut().find(|group| group.cut == cut) {
+                Some(group) => group.rows.push(row),
+                None => out.push(CutRows {
+                    cut,
+                    rows: vec![row],
+                }),
+            }
+        }
+        out
+    }
+
+    /// Every row of part two: the planned rows, then the RPM rows.
+    fn if_applied(&self) -> impl Iterator<Item = &CheckRow> {
+        self.envelope
+            .iter()
+            .filter(|row| row.is_planned())
+            .chain(self.rpm.iter())
+    }
+
+    /// THE face row (ruling O1, lead ruling 1 on 10f): the worst row of
+    /// part one by the one core rank (`CheckRow::rank_cmp`), only when it
+    /// exceeds. A proposal row never reaches the face: the face describes
+    /// the op as it stands.
+    pub(crate) fn face_row(&self) -> Option<&CheckRow> {
+        self.as_it_stands()
+            .into_iter()
+            .filter(|row| row.tone().exceeds())
+            .min_by(|a, b| a.rank_cmp(b))
+    }
+
+    /// The stated row of the limit that places the cut of today outside
+    /// the envelope (`Check::binding`, the limit that `OutsideEnvelope`
+    /// names), else the worst stated row that exceeds by the core rank.
+    /// The `OutsideEnvelope` stage line reads it.
+    pub(crate) fn stated_outside(&self) -> Option<&CheckRow> {
+        let outside: Vec<&CheckRow> = self
+            .as_it_stands()
+            .into_iter()
+            .filter(|row| row.tone().exceeds())
+            .collect();
+        outside
+            .iter()
+            .copied()
+            .find(|row| row.check().binding)
+            .or_else(|| outside.iter().copied().min_by(|a, b| a.rank_cmp(b)))
+    }
+
+    /// The number of rows and the number that exceed, for the drawer label.
+    fn counts(&self) -> (usize, usize) {
+        self.as_it_stands()
+            .into_iter()
+            .chain(self.if_applied())
+            .fold((0, 0), |(n, over), row| {
+                (n + 1, over + usize::from(row.tone().exceeds()))
+            })
+    }
+
+    /// The number of part-two rows that exceed, for its title.
+    fn applied_over(&self) -> usize {
+        self.if_applied().filter(|row| row.tone().exceeds()).count()
+    }
+
+    /// True when the drawer has no row.
+    pub(crate) fn is_empty(&self) -> bool {
+        self.counts().0 == 0
+    }
+}
+
+/// The face row of the card (ruling O1, O2): one full-width status line,
+/// the role glyph and the core face in the colour of the core tone
+/// (`role_of_tone`, the one map), the core detail on hover. It takes no
+/// status chip, so a face of 60 characters keeps its caveat word.
+fn face_limit_row(row: &CheckRow) -> DataRow {
+    let role = role_of_tone(row.tone());
+    let text = match role.glyph() {
+        Some(glyph) => format!("{glyph} {}", row.face()),
+        None => row.face().to_owned(),
+    };
+    DataRow::note(role, text).hover(row_hover(row))
+}
+
+/// The label of the limits drawer.
+pub(crate) const LIMITS_DETAILS: &str = "Limits";
+
+/// The title of the first part of the drawer: the cut that the op holds.
+pub(crate) const AS_IT_STANDS_TITLE: &str = "As the op stands";
+
+/// The label of the closed line that folds the rows with no number.
+pub(crate) const NO_NUMBER_LABEL: &str = "no number";
+
+/// One row under its title: the core face without its subject
+/// (`CheckRow::face_in_group`), drawn as the one limit row of the viz.
+fn group_row(row: &CheckRow) -> DataRow {
+    limit_data_row_with_face(row, row.face_in_group(), None)
+}
+
+/// The words of a line that counts the rows with no number: the core
+/// words when every row says the same ("7 not modelled"), else "7 no
+/// number".
+fn no_number_tail(rows: &[&CheckRow]) -> String {
+    let mut words = rows.iter().filter_map(|row| row.no_number_words());
+    let first = words.next();
+    match first {
+        Some(w) if words.all(|other| other == w) => format!("{} {w}", rows.len()),
+        Some(_) | None => format!("{} {NO_NUMBER_LABEL}", rows.len()),
+    }
+}
+
+/// The rows of one group: the rows that hold a number, then ONE closed
+/// line "no number · n" that opens to the rows with no number. Nothing is
+/// dropped (lead ruling 2 on 10f).
+fn draw_group_rows(ui: &mut egui::Ui, id: &str, rows: &[&CheckRow]) {
+    let (numbers, none): (Vec<&CheckRow>, Vec<&CheckRow>) =
+        rows.iter().copied().partition(|row| row.holds_a_number());
+    DataTable::new((id, "numbers"))
+        .rows(numbers.iter().map(|row| group_row(row)))
+        .show(ui);
+    if !none.is_empty() {
+        let _ = Details::new((id, "no_number"))
+            .label(NO_NUMBER_LABEL)
+            .count(none.len())
+            .show(ui, |ui| {
+                DataTable::new((id, "no_number_rows"))
+                    .rows(none.iter().map(|row| group_row(row)))
+                    .show(ui);
+            });
+    }
+}
+
+/// The caveat words of a cut (`CheckRow::cut_words`: "worst case", "may
+/// not occur"), once for the cut: they go in its title, not on each row.
+fn cut_words(rows: &[&CheckRow]) -> Vec<&'static str> {
+    let mut words: Vec<&'static str> = Vec::new();
+    for word in rows.iter().flat_map(|row| row.cut_words()) {
+        if !words.contains(&word) {
+            words.push(word);
+        }
+    }
+    words
+}
+
+/// One declared cut of part two: a title (the cut and its caveat words),
+/// the rows that hold a number and one closed "no number · n" line. A cut
+/// where no row holds a number is ONE closed line ("waterline sweep · 7
+/// not modelled") that opens to its rows.
+fn draw_cut(ui: &mut egui::Ui, group: &CutRows<'_>) {
+    let mut title = group.cut.label().to_owned();
+    for word in cut_words(&group.rows) {
+        title.push_str(&format!(" \u{00B7} {word}"));
+    }
+    let id = format!("feeds_card_limits_{title}");
+    if group.rows.iter().any(|row| row.holds_a_number()) {
+        DataTable::new((&id, "title"))
+            .row(DataRow::record(title).tone(tokens::TEXT_BODY))
+            .show(ui);
+        draw_group_rows(ui, &id, &group.rows);
+    } else {
+        let tail = cut_words(&group.rows)
+            .into_iter()
+            .map(str::to_owned)
+            .chain(std::iter::once(no_number_tail(&group.rows)))
+            .collect::<Vec<_>>()
+            .join(" \u{00B7} ");
+        let _ = Details::new((&id, "all_no_number"))
+            .label(group.cut.label())
+            .tail(Some(tail))
+            .show(ui, |ui| {
+                DataTable::new((&id, "rows"))
+                    .rows(group.rows.iter().map(|row| group_row(row)))
+                    .show(ui);
+            });
+    }
+}
+
+/// **The "Limits · n" drawer of the Suggest card** (P29-10 10f, ruling O6,
+/// lead ruling 2 on 10f): closed by default, every row in two parts. Part
+/// one, "As the op stands": the stated rows. Part two, "If you apply ⚡ · k
+/// over" and the line "proposal ap × ae mm": the planned rows grouped by cut (the cut
+/// name and its caveat words as a title), then the RPM rows. Each row is
+/// the one limit row of the viz (`limit_data_row_with_face`, the core
+/// tone through `role_of_tone`, the core detail on hover) with the core
+/// face without its subject. In each group the rows with no number fold
+/// into ONE closed line. `beside` draws at the right end of the header row
+/// (`Vendor data…`), so the drawer adds no line. `open` is
+/// `PanelState::card_limits_open` (`set_ui_view card_limits`).
+pub(crate) fn draw_limits_drawer<B>(
+    ui: &mut egui::Ui,
+    limits: &CardLimits<'_>,
+    open: &mut bool,
+    beside: impl FnOnce(&mut egui::Ui) -> B,
+) -> B {
+    let (n, over) = limits.counts();
+    let tail = (over > 0).then(|| format!("{over} over"));
+    let (beside, _) = Details::new("feeds_card_limits")
+        .label(LIMITS_DETAILS)
+        .count(n)
+        .tail(tail)
+        .show_held_beside(ui, open, beside, |ui| {
+            let stands = limits.as_it_stands();
+            if !stands.is_empty() {
+                SectionHeader::new(AS_IT_STANDS_TITLE).small_caps().show(ui);
+                draw_group_rows(ui, "feeds_card_limits_stands", &stands);
+            }
+            let cuts = limits.cuts();
+            if !cuts.is_empty() || !limits.rpm.is_empty() {
+                SectionHeader::new(if_applied_title(limits.applied_over()))
+                    .small_caps()
+                    .show(ui);
+                DataTable::new("feeds_card_limits_proposal")
+                    .row(DataRow::record(proposal_line(limits.proposal)))
+                    .show(ui);
+                for group in &cuts {
+                    draw_cut(ui, group);
+                }
+                if !limits.rpm.is_empty() {
+                    let rpm: Vec<&CheckRow> = limits.rpm.iter().collect();
+                    DataTable::new("feeds_card_limits_rpm_title")
+                        .row(DataRow::record(RPM_TITLE).tone(tokens::TEXT_BODY))
+                        .show(ui);
+                    draw_group_rows(ui, "feeds_card_limits_rpm", &rpm);
+                }
+            }
+        });
+    beside
+}
+
+/// The title of the RPM rows in part two.
+const RPM_TITLE: &str = "Spindle speed";
+
+/// The title of the second part and the count of its rows that exceed.
+/// The small-caps title holds no number of the cut, so it fits the rail;
+/// the proposal is the line under it ([`proposal_line`]).
+fn if_applied_title(over: usize) -> String {
+    if over > 0 {
+        format!("If you apply \u{26A1} \u{00B7} {over} over")
+    } else {
+        "If you apply \u{26A1}".to_owned()
+    }
+}
+
+/// The line under the part-two title: the proposal that ⚡ writes. It says
+/// "proposal", so a reader does not take a planned row for the cut of
+/// today (design 3.6).
+fn proposal_line((ap, ae): (Option<f64>, f64)) -> String {
+    match ap {
+        Some(ap) => format!("proposal {ap:.2} \u{00D7} {ae:.2} mm"),
+        None => format!("proposal width {ae:.2} mm"),
+    }
 }
 
 #[expect(
@@ -234,6 +531,7 @@ pub(crate) fn draw_inspector_comparison(
     machine: &rs_cam_core::machine::MachineProfile,
     feed_max_rate: Option<f64>,
     toolpath_id: crate::state::toolpath::ToolpathId,
+    limits: Option<&CardLimits<'_>>,
     policy: impl FnOnce(&mut egui::Ui, &mut Vec<AppEvent>),
     events: &mut Vec<AppEvent>,
 ) {
@@ -372,17 +670,15 @@ pub(crate) fn draw_inspector_comparison(
         }
     }
     let (chip, chip_problem) = chip_row(efficiency.as_ref(), efficiency_note.as_deref(), advance);
-    let (power_row, power_problem) = power_row(&power);
     if chip_problem {
         face = face.row(chip);
     } else {
         details = details.row(chip);
     }
-    if power_problem {
-        face = face.row(power_row);
-    } else {
-        details = details.row(power_row);
-    }
+    // P29-10 10f (ruling O1, F1): the power row is derivation. A power
+    // that exceeds reaches the face through its limit row; no viz share
+    // makes a problem row.
+    details = details.row(power_row(&power));
     // MRR = DOC × WOC × feed, the calculator's own product (Step 5), on the
     // values Apply writes.
     details = details.row(DataRow::measured(
@@ -396,14 +692,23 @@ pub(crate) fn draw_inspector_comparison(
     for placement in why::engaged_diameter_row(current, explain)
         .into_iter()
         .chain(why::warning_rows(explain))
-        .chain(why::suggest_rows(suggest_warnings))
+        .chain(why::suggest_rows(
+            suggest_warnings,
+            limits.and_then(CardLimits::stated_outside),
+        ))
     {
         match placement {
             why::Placement::Problem(row) => face = face.row(row),
             why::Placement::Detail(row) => details = details.row(row),
         }
     }
-    face = face.row_opt(why::chipload_min_row(current, explain));
+    // P29-10 10f (ruling O1): at most ONE limit row on the face, the worst
+    // row by the core rank, and only when it exceeds. It replaces the
+    // finish-only chip floor row (F5: a role read on a display surface);
+    // the planned chip rows judge every role.
+    if let Some(row) = limits.and_then(CardLimits::face_row) {
+        face = face.row(face_limit_row(row));
+    }
 
     // W3k (operator, 2026-10-31): the two apply buttons are inside the
     // `Recommended` disclosure, beside the rows they write. A refusal that
@@ -898,7 +1203,21 @@ impl PowerReading {
 }
 
 /// The rail's power row — 0 to the machine's own limit at this spindle
-/// speed. A problem above the caution share of `compare::power_color`.
+/// speed. It is a row of `Details`, never a face row (P29-10 10f, ruling O1:
+/// the 70 % share that made it a problem row had no source).
+///
+/// # Why the bar does not read the body power row (P29-10 10f, item 5)
+///
+/// The design asked the bar to read the body `SpindlePower` planned row
+/// when the two are equal on every op. They are not. On the four files of
+/// `P29-10_DESIGN.md` 13 the available power is equal on every op, but the
+/// required power differs by more than 1e-5 kW on 30 of 38 ops (equal on
+/// 2, under 3e-6 kW apart on 6): the bar is the largest power
+/// case that the cut admits (K7: the planner cap width, the slot) at the
+/// applied cut and the steady feed; the row is the body alone at the
+/// proposal. Examples: rivmap100 live idx 1 bar 10.0 %, row 3.3 %; the
+/// drill ops bar 12.5 % (advisory, axial section), row 21 %. So the bar
+/// stays as it is.
 ///
 /// # Why the bar is back
 ///
@@ -929,7 +1248,7 @@ impl PowerReading {
 /// paints its own clause in the dim abstention style the chipload row uses.
 /// An empty bar would read as a cut with power to spare, which is the
 /// opposite of what an absent model says.
-fn power_row(power: &PowerReading) -> (DataRow, bool) {
+fn power_row(power: &PowerReading) -> DataRow {
     let hover = match (&power.figure, &power.source) {
         (Ok(figure), Some(source)) => {
             let mut hover = power_hover(figure, source);
@@ -952,39 +1271,29 @@ fn power_row(power: &PowerReading) -> (DataRow, bool) {
             // cannot draw past its end; the TEXT is not, because a cut over
             // its ceiling must read over its ceiling.
             let utilisation = figure.required_kw / figure.available_kw;
-            (
-                DataRow::bar(
-                    "Power",
-                    utilisation as f32,
-                    power_face(figure),
-                    compare::power_color(utilisation),
-                )
-                .source(Source::Setting(source.setting().to_owned()))
-                .hover(hover),
-                utilisation > POWER_CAUTION_SHARE,
+            DataRow::bar(
+                "Power",
+                utilisation as f32,
+                power_face(figure),
+                compare::power_color(utilisation),
             )
+            .source(Source::Setting(source.setting().to_owned()))
+            .hover(hover)
         }
         _ => {
             let clause = match &power.figure {
                 Err(reason) => reason.clause(),
                 Ok(_) => PowerUnmodeled::NoAvailablePower.clause(),
             };
-            (
-                DataRow::value(
-                    "Power",
-                    format!("{} {clause}", crate::ui::tokens::GLYPH_UNKNOWN),
-                )
-                .tone(theme::TEXT_DIM)
-                .hover(hover),
-                false,
+            DataRow::value(
+                "Power",
+                format!("{} {clause}", crate::ui::tokens::GLYPH_UNKNOWN),
             )
+            .tone(theme::TEXT_DIM)
+            .hover(hover)
         }
     }
 }
-
-/// The share of the power limit above which the power row is a problem: the
-/// share where `compare::power_color` leaves its pass colour.
-const POWER_CAUTION_SHARE: f64 = 0.7;
 
 /// The force-line rows (plan B6 §6), dim.
 ///

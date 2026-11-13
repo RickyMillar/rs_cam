@@ -481,6 +481,11 @@ pub struct FeedsMemo {
     /// `None` on a refused pairing. Shared, because the panel copies the
     /// memo in and back on each frame.
     envelope: Option<Arc<rs_cam_core::feeds::envelope::SafeEnvelope>>,
+    /// P29-10 10f: the rows of the Suggest RPM choice
+    /// (`limits::rows_of_rpm_choice`, the RPM part of
+    /// `ProjectSession::limit_rows`). Empty under Match chart or on a
+    /// refusal. Built once per input change, never on a frame.
+    rpm_rows: Arc<Vec<rs_cam_core::limits::CheckRow>>,
     /// The count of builds: the instrument of the F216 sentry.
     builds: u64,
 }
@@ -506,12 +511,20 @@ impl FeedsMemo {
         self.envelope = inputs.envelope().map(Arc::new);
         match inputs.build(dry_run) {
             Ok((answer, previews)) => {
+                self.rpm_rows = Arc::new(
+                    answer
+                        .rpm_choice
+                        .as_ref()
+                        .map(rs_cam_core::limits::rows_of_rpm_choice)
+                        .unwrap_or_default(),
+                );
                 *result = Some(answer);
                 self.previews = Some(previews);
                 self.refusal = None;
             }
             Err(error) => {
                 *result = None;
+                self.rpm_rows = Arc::default();
                 self.previews = None;
                 self.refusal = Some(error);
             }
@@ -556,6 +569,19 @@ impl FeedsMemo {
     /// same frame (the Passes tab).
     pub fn envelope_shared(&self) -> Option<Arc<rs_cam_core::feeds::envelope::SafeEnvelope>> {
         self.envelope.clone()
+    }
+
+    /// P29-10 10f: the rows of the Suggest RPM choice of the stored inputs
+    /// (the RPM part of `ProjectSession::limit_rows`). Empty under Match
+    /// chart or on a refusal.
+    pub fn rpm_rows(&self) -> &[rs_cam_core::limits::CheckRow] {
+        self.rpm_rows.as_slice()
+    }
+
+    /// The shared RPM rows, for a caller that also writes the entry in the
+    /// same frame (the Passes tab card).
+    pub fn rpm_rows_shared(&self) -> Arc<Vec<rs_cam_core::limits::CheckRow>> {
+        Arc::clone(&self.rpm_rows)
     }
 
     /// Why the calculator refused, when it did.

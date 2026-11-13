@@ -1115,6 +1115,10 @@ pub struct SetUiViewParam {
     /// P29-10 10e: open or close the "Cut groups" drawer of the Metrics
     /// tab (`open`, `closed`). The drawer is closed by default.
     pub sim_cut_groups: Option<DrawerParam>,
+    /// P29-10 10f: open or close the "Limits" drawer of the Suggest card on
+    /// the Passes tab (`open`, `closed`). The drawer is closed by default.
+    /// The reply echoes `card_limits` (true when open).
+    pub card_limits: Option<DrawerParam>,
 }
 
 /// A tab of the Simulation inspector (`set_ui_view sim_inspector_tab`).
@@ -4106,6 +4110,10 @@ pub fn build_info() -> serde_json::Value {
             // are deleted); `load_report.per_toolpath[]` has no `groups`.
             "sim_inspector_view",
             "lineage_measured_row",
+            // Feeds contract P29-10 (10f): `set_ui_view` `card_limits`
+            // opens the "Limits" drawer of the Suggest card (the reply
+            // echoes `card_limits`).
+            "card_limits_view",
         ],
     })
 }

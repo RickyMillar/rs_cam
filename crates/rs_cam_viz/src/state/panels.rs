@@ -210,6 +210,10 @@ pub struct PanelDrafts {
     /// each toolpath, a point that nothing has written yet. The Passes tab
     /// writes it on a click or a drag; Esc and an apply drop it.
     pub envelope_candidates: EnvelopeCandidates,
+    /// P29-10 10f: the "Limits" drawer of the Suggest card on the Passes
+    /// tab is open. Closed by default; MCP `set_ui_view card_limits` and a
+    /// click on the drawer header write it.
+    pub card_limits_open: bool,
 }
 
 /// K2b (feeds contract P5b, live link): the candidate point of the safe

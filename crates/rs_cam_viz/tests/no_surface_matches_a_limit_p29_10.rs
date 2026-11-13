@@ -334,6 +334,9 @@ fn the_tone_map_and_a_row_reader_exist_p29_10() {
         "ui/sim_diagnostics.rs",
         "ui/readiness_panel.rs",
         "ui/sim_op_list.rs",
+        // P29-10 10f: the Suggest card and its stage lines.
+        "ui/feeds/compare.rs",
+        "ui/feeds/why.rs",
     ] {
         let src = std::fs::read_to_string(src_root().join(file)).unwrap_or_default();
         let code = product_code(&src).join("\n");
@@ -346,4 +349,38 @@ fn the_tone_map_and_a_row_reader_exist_p29_10() {
         code.contains("row.face()") && code.contains("role_of_tone("),
         "the inspector paints the core face and colours the core tone"
     );
+}
+
+/// P29-10 10f: the Suggest card makes no limit judgement of its own. The
+/// assembly sites 23 and 24 of `P29-10_DESIGN.md` 2.3 are gone: the viz
+/// power share that made a problem row (`POWER_CAUTION_SHARE`, ruling O1)
+/// and the finish-only chip floor row (`chipload_min_row`, F5: a role read
+/// on a display surface). The card face reads the core rank
+/// (`CheckRow::rank_cmp`), and the `OutsideEnvelope` line (site 25) reads a
+/// stated row face, not the margin.
+#[test]
+fn the_card_judges_no_limit_of_its_own_p29_10() {
+    let read = |file: &str| {
+        let src = std::fs::read_to_string(src_root().join(file)).unwrap_or_default();
+        product_code(&src).join("\n")
+    };
+    let compare = read("ui/feeds/compare.rs");
+    let why = read("ui/feeds/why.rs");
+    assert!(
+        compare.contains("rank_cmp(") && compare.contains("limit_data_row_with_face("),
+        "non-vacuity: the card picks its face row by the core rank and paints the one limit row"
+    );
+    for (file, code) in [("ui/feeds/compare.rs", &compare), ("ui/feeds/why.rs", &why)] {
+        for banned in [
+            "POWER_CAUTION_SHARE",
+            "chipload_min_row",
+            "PassRole::Finish",
+            "-margin * 100.0",
+        ] {
+            assert!(
+                !code.contains(banned),
+                "{file} holds `{banned}`: the card judges a limit of its own; read the core row"
+            );
+        }
+    }
 }

@@ -5,7 +5,8 @@
 //! 1. the safe envelope plot or bar (`SAFE CUT`, the ⚡ chip);
 //! 2. the feed x rpm nomogram, which follows the candidate ring;
 //! 3. the start stock and the op editor (the depth and stepover rows);
-//! 4. the feed, rpm and plunge rows, then the Suggest card and `Vendor data…`;
+//! 4. the feed, rpm and plunge rows, then the Suggest card, then one row with
+//!    the closed "Limits" drawer and `Vendor data…` (P29-10 10f);
 //! 5. the rest analysis disclosure, when a demand names it.
 
 use super::geometry::regions_phrase;
@@ -39,6 +40,9 @@ pub(in crate::ui::properties) fn draw_passes_tab(
     fields: Fields<'_>,
     suggest_slots: &rs_cam_core::feeds::suggest::SuggestSlots,
     candidates: &mut crate::state::panels::EnvelopeCandidates,
+    // P29-10 10f: the open state of the card's "Limits" drawer
+    // (`state.panels.card_limits_open`), threaded in as `candidates` is.
+    limits_open: &mut bool,
     events: &mut Vec<AppEvent>,
 ) {
     let tools = inputs.tools.as_slice();
@@ -204,20 +208,9 @@ pub(in crate::ui::properties) fn draw_passes_tab(
         fields,
     );
     if let Some(block) = &block {
-        draw_feeds_recommendation(ui, entry, block, events);
-        ui.add_space(crate::ui::tokens::SPACE_2);
-        // The vendor cutting data of the bound tool's family, in its own
-        // window (W3i). With no tool there is no family, so no button.
-        if ui
-            .add(crate::ui::components::Button::quiet("Vendor data\u{2026}"))
-            .on_hover_text(
-                "Open the vendor cutting data table for this tool's family. The rows at \
-                 this tool's diameter are in green.",
-            )
-            .clicked()
-        {
-            events.push(AppEvent::OpenVendorData(entry.id));
-        }
+        // The card, then ONE row with the closed "Limits" drawer and
+        // `Vendor data…` (P29-10 10f), then the measured operating point.
+        draw_feeds_recommendation(ui, entry, block, limits_open, events);
     }
 
     // ── Rest analysis: a demand-titled disclosure ───────────────

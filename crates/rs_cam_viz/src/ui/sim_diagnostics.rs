@@ -1148,14 +1148,25 @@ pub(crate) fn row_hover(row: &CheckRow) -> String {
 /// no number has no chip; its face and its hover say why (IC3). Nothing here computes a percent, a state or a word: core wrote
 /// them (`limits::CheckRow`).
 pub(crate) fn limit_data_row(row: &CheckRow, source: Option<&str>) -> DataRow {
+    limit_data_row_with_face(row, row.face(), source)
+}
+
+/// [`limit_data_row`] with the face the caller reads from the row (P29-10
+/// 10f: `CheckRow::face_in_group` under the title of a cut). The one limit
+/// row of the viz: the tone, the chip and the hover are the same.
+pub(crate) fn limit_data_row_with_face(
+    row: &CheckRow,
+    face: &str,
+    source: Option<&str>,
+) -> DataRow {
     let role = role_of_tone(row.tone());
     let hover = match source {
         Some(name) => format!("{name}\n{}", row_hover(row)),
         None => row_hover(row),
     };
     let data = match source {
-        Some(name) => DataRow::value(row.face(), name).tone(tokens::TEXT_MUTED),
-        None => DataRow::record(row.face()),
+        Some(name) => DataRow::value(face, name).tone(tokens::TEXT_MUTED),
+        None => DataRow::record(face),
     };
     // A row with no number carries no chip: its face already says why
     // ("force no limit here", "gantry push not modelled"), and the face

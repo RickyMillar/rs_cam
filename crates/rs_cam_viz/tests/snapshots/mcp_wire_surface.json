@@ -7805,6 +7805,29 @@
             "null"
           ]
         },
+        "card_limits": {
+          "anyOf": [
+            {
+              "description": "The state a `set_ui_view` drawer field sets.",
+              "oneOf": [
+                {
+                  "const": "open",
+                  "description": "Open the drawer.",
+                  "type": "string"
+                },
+                {
+                  "const": "closed",
+                  "description": "Close the drawer.",
+                  "type": "string"
+                }
+              ]
+            },
+            {
+              "type": "null"
+            }
+          ],
+          "description": "P29-10 10f: open or close the \"Limits\" drawer of the Suggest card on\nthe Passes tab (`open`, `closed`). The drawer is closed by default.\nThe reply echoes `card_limits` (true when open)."
+        },
         "display_mode": {
           "anyOf": [
             {
