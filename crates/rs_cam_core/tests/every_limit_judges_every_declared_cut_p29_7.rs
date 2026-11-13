@@ -1187,3 +1187,37 @@ fn claim_9_the_vertical_rate_judges_every_plunge_p29_8e() {
     assert!(within > 0, "non-vacuity: a slow plunge is within");
     assert!(no_vertical > 0, "non-vacuity: a body row");
 }
+
+/// P29-10 (10b): a cut that the plan may not cut is no note. Its rows carry
+/// the caveat `MayOccur` with its row, and the row names an exemption; no
+/// envelope note names the cut.
+#[test]
+fn a_may_occur_cut_is_a_row_not_a_note_p29_10() {
+    let machine = MachineProfile::default();
+    let mut may_rows = 0;
+    for (name, op, tool) in configs(&machine) {
+        let Some(env) = envelope(&op, &tool, &machine) else {
+            continue;
+        };
+        for note in &env.notes {
+            assert!(
+                !note.text().contains("the plan may not cut it"),
+                "{name}: a may-occur note: {}",
+                note.text()
+            );
+        }
+        for row in planned(&env) {
+            let Some(id) = row.may_occur_row() else {
+                continue;
+            };
+            assert!(
+                row.caveats()
+                    .contains(&rs_cam_core::limits::Caveat::MayOccur { row: id }),
+                "{name}: the caveat"
+            );
+            assert!(row.exemption().is_some(), "{name}: the exemption row");
+            may_rows += 1;
+        }
+    }
+    assert!(may_rows > 0, "non-vacuity: no may-occur row");
+}

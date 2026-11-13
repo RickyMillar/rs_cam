@@ -102,6 +102,81 @@ pub enum NoDepthProposal {
     AfterSimulation,
 }
 
+/// P29-10 (10b): one note of the envelope. The list is closed: a new kind
+/// does not compile until [`Self::face`] and [`Self::text`] state its
+/// words. A cut that the plan may not cut is no note: its rows carry
+/// `Caveat::MayOccur` and its exemption row.
+#[derive(Debug, Clone, Copy, PartialEq)]
+pub enum EnvelopeNote {
+    /// The envelope proposes no depth, with the reason.
+    NoDepth(NoDepthProposal),
+    /// No width up to the ceiling (mm) meets the move budget.
+    MoveBudgetNotMet {
+        /// The width ceiling of the move budget (mm).
+        ceiling_mm: f64,
+    },
+    /// The assumptions of a computed width
+    /// (`force_budget::COMPUTED_WIDTH_ASSUMPTIONS`).
+    ComputedWidth,
+    /// No depth meets the force budget at some width: the minimum depth
+    /// ships there (Q6).
+    ForceBudgetFloor,
+    /// The force budget sets the depth and the move budget is not met
+    /// there (trap 2); no number moves.
+    MoveBudgetConflict,
+}
+
+impl EnvelopeNote {
+    /// The token of the kind on the wire.
+    #[must_use]
+    pub const fn kind(self) -> &'static str {
+        match self {
+            Self::NoDepth(_) => "no_depth",
+            Self::MoveBudgetNotMet { .. } => "move_budget_not_met",
+            Self::ComputedWidth => "computed_width",
+            Self::ForceBudgetFloor => "force_budget_floor",
+            Self::MoveBudgetConflict => "move_budget_conflict",
+        }
+    }
+
+    /// The short face for a narrow row (the SAFE CUT header).
+    #[must_use]
+    pub const fn face(self) -> &'static str {
+        match self {
+            Self::NoDepth(NoDepthProposal::NoForceLine) => "No depth: no force line",
+            Self::NoDepth(NoDepthProposal::AfterSimulation) => "Depth known after simulation",
+            Self::MoveBudgetNotMet { .. } => "Move budget not met",
+            Self::ComputedWidth => crate::feeds::force_budget::COMPUTED_WIDTH_ASSUMPTIONS_FACE,
+            Self::ForceBudgetFloor => crate::feeds::force_budget::FORCE_BUDGET_FLOOR_FACE,
+            Self::MoveBudgetConflict => "Move budget not met at the depth",
+        }
+    }
+
+    /// The whole text: the hover, MCP and the CLI.
+    #[must_use]
+    pub fn text(self) -> String {
+        match self {
+            Self::NoDepth(reason) => reason.clause().to_owned(),
+            Self::MoveBudgetNotMet { ceiling_mm } => move_budget_not_met_note(ceiling_mm),
+            Self::ComputedWidth => crate::feeds::force_budget::computed_width_assumptions_line(),
+            Self::ForceBudgetFloor => {
+                crate::feeds::force_budget::FORCE_BUDGET_FLOOR_NOTE.to_owned()
+            }
+            Self::MoveBudgetConflict => MOVE_BUDGET_CONFLICT.to_owned(),
+        }
+    }
+}
+
+impl Serialize for EnvelopeNote {
+    fn serialize<S: serde::Serializer>(&self, serializer: S) -> Result<S::Ok, S::Error> {
+        let mut map = serializer.serialize_map(Some(3))?;
+        map.serialize_entry("kind", self.kind())?;
+        map.serialize_entry("face", self.face())?;
+        map.serialize_entry("text", &self.text())?;
+        map.end()
+    }
+}
+
 impl NoDepthProposal {
     /// One operator-facing clause, the same on every surface.
     #[must_use]
@@ -959,8 +1034,9 @@ pub struct SafeEnvelope {
     pub proposal_limits: Vec<LimitKind>,
     /// P13c: the notes every surface prints with the proposal: the
     /// assumptions of a computed width (`force_budget::COMPUTED_WIDTH_ASSUMPTIONS`)
-    /// and the warning when no depth meets the force budget.
-    pub notes: Vec<String>,
+    /// and the warning when no depth meets the force budget. P29-10 (10b):
+    /// a closed list, [`EnvelopeNote`].
+    pub notes: Vec<EnvelopeNote>,
     /// P29-7 7c: the check of each declared cut at the proposal, for each
     /// limit that changes with the cut: the force budget, the deflection
     /// and the vendor depth table (the depth of the proposal against the
@@ -1728,22 +1804,19 @@ impl SafeEnvelope {
         env.proposal_binding = binding;
         env.proposal_limits = limits;
         if let Some(reason) = no_depth {
-            env.notes.push(reason.clause().to_owned());
+            env.notes.push(EnvelopeNote::NoDepth(reason));
         }
         env.add_exact_ceilings(&plan, ExactPhase::Proposal);
         env.read_declared_cuts();
-        env.notes.extend(env.may_occur_notes());
         env.notes.extend(runtime_notes);
         if plan.computed_width {
-            env.notes
-                .push(crate::feeds::force_budget::computed_width_assumptions_line());
+            env.notes.push(EnvelopeNote::ComputedWidth);
         }
         if env
             .limit(LimitKind::Rigidity)
             .is_some_and(|l| l.law == crate::feeds::force_budget::FORCE_BUDGET_FLOOR_LAW)
         {
-            env.notes
-                .push(crate::feeds::force_budget::FORCE_BUDGET_FLOOR_NOTE.to_owned());
+            env.notes.push(EnvelopeNote::ForceBudgetFloor);
         }
         env.stated = match (plan.axes, plan.stated_ap, plan.stated_ae) {
             (EnvelopeAxes::Plane { .. }, Some(ap), Some(ae)) => Some(CutPoint {
@@ -3118,54 +3191,11 @@ impl SafeEnvelope {
             .collect()
     }
 
-    /// P29-7 7c (lead ruling Q1): the note of each declared cut that the
-    /// plan may not cut. It is judged (a planned row) but it is no
-    /// ceiling; the note states its force-budget row at the proposal.
-    fn may_occur_notes(&self) -> Vec<String> {
-        let mut notes = Vec::new();
-        for cut in self.inputs.cuts.list().iter() {
-            let crate::compute::catalog::Presence::MayOccur(may) = cut.presence else {
-                continue;
-            };
-            // P29-8 8d: an entry is a value check, never a ceiling (lead
-            // ruling Q1), so the note "it is not a ceiling" says nothing of
-            // it. Its planned rows name its row (`U-EntryFallback`).
-            match cut.kind.group() {
-                crate::limits::CutGroup::Entry => continue,
-                crate::limits::CutGroup::Body
-                | crate::limits::CutGroup::Cleanup
-                | crate::limits::CutGroup::Link
-                | crate::limits::CutGroup::Drill => {}
-            }
-            let budget = self.planned.iter().find(|c| {
-                c.cut == cut.kind && c.check.limit == crate::limits::LimitId::ForceBudget
-            });
-            let tail = match budget.map(|c| (c.check.state, c.check.bound)) {
-                Some((crate::limits::CheckState::Exceeds, Some(b))) => {
-                    format!("at the proposal depth it is over the force budget (ceiling {b:.2} mm)")
-                }
-                Some((crate::limits::CheckState::Within, Some(b))) => {
-                    format!(
-                        "at the proposal depth it is inside the force budget (ceiling {b:.2} mm)"
-                    )
-                }
-                Some(_) | None => "the force budget gives it no ceiling here".to_owned(),
-            };
-            notes.push(format!(
-                "{} (row {}, {}): the plan may not cut it, so it is not a ceiling; {tail}",
-                cut.kind.label(),
-                may.row,
-                may.reason,
-            ));
-        }
-        notes
-    }
-
     /// P29-7 7c (trap 2): the note when the force budget sets the proposal
     /// depth and the move budget is not met at that depth. No number moves:
     /// `propose` cannot raise a capped depth (K2) and keeps a stated width
     /// (R2), so the card and the record state the conflict.
-    fn move_budget_conflict_note(&self) -> Option<String> {
+    fn move_budget_conflict_note(&self) -> Option<EnvelopeNote> {
         let p = self.proposal.get().point()?;
         if !self.proposal_limits.contains(&LimitKind::Rigidity) {
             return None;
@@ -3174,7 +3204,7 @@ impl SafeEnvelope {
             .placing_margins(p)
             .iter()
             .any(|(kind, margin, _)| *kind == LimitKind::Runtime && *margin < -1e-9);
-        unmet.then(|| MOVE_BUDGET_CONFLICT.to_owned())
+        unmet.then_some(EnvelopeNote::MoveBudgetConflict)
     }
 
     /// P13c (O4): the proposal of a roughing op is the cut with the most
@@ -4542,7 +4572,7 @@ struct MoveBudget {
 /// `place` judges each point with, so the stated point still warns.
 fn runtime_limit(
     out: &mut Vec<Limit>,
-    notes: &mut Vec<String>,
+    notes: &mut Vec<EnvelopeNote>,
     input: &EnvelopeInput<'_>,
     plan: &AxesPlan,
     d: f64,
@@ -4630,7 +4660,9 @@ fn runtime_limit(
             out.push(limit(Edge::Unmodelled {
                 reason: MOVE_BUDGET_NOT_MET,
             }));
-            notes.push(move_budget_not_met_note(ceiling));
+            notes.push(EnvelopeNote::MoveBudgetNotMet {
+                ceiling_mm: ceiling,
+            });
             return Some(judge);
         }
         // The saturated columns are the shallow ones (the count falls with
@@ -4683,7 +4715,9 @@ fn runtime_limit(
         out.push(limit(Edge::Unmodelled {
             reason: MOVE_BUDGET_NOT_MET,
         }));
-        notes.push(move_budget_not_met_note(ceiling));
+        notes.push(EnvelopeNote::MoveBudgetNotMet {
+            ceiling_mm: ceiling,
+        });
         return Some(judge);
     }
     out.push(limit(Edge::AeFloor { mm: bisect(None) }));

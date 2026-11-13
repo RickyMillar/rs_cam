@@ -225,7 +225,7 @@ fn the_envelope_proposes_no_project_curve_depth_p16() {
     assert!(
         env.notes
             .iter()
-            .any(|n| n == NoDepthProposal::AfterSimulation.clause()),
+            .any(|n| n.text() == NoDepthProposal::AfterSimulation.clause()),
         "the note: {:?}",
         env.notes
     );

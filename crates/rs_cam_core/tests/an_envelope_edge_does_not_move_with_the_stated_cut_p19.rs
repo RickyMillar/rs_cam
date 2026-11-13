@@ -594,9 +594,9 @@ fn the_stated_point_still_warns_on_the_move_budget_p19() {
         "no floor is drawn at the ceiling"
     );
     assert!(
-        env.notes
-            .iter()
-            .any(|n| n.starts_with("the move budget is not met at any width up to")),
+        env.notes.iter().any(|n| n
+            .text()
+            .starts_with("the move budget is not met at any width up to")),
         "{:?}",
         env.notes
     );
@@ -748,9 +748,9 @@ fn the_adaptive3d_move_budget_floor_is_k_over_the_depth_p19() {
         // The drawn start shows the saturated depths; no note (a note is
         // for a budget that no point of the plane meets).
         assert!(
-            !env.notes
-                .iter()
-                .any(|n| n.starts_with("the move budget is not met at any width up to")),
+            !env.notes.iter().any(|n| n
+                .text()
+                .starts_with("the move budget is not met at any width up to")),
             "{tag}: no move-budget note: {:?}",
             env.notes
         );

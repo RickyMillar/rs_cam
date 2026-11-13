@@ -618,16 +618,3 @@ pub const COMPUTED_WIDTH_ASSUMPTIONS_FACE: &str = "Assumes chips clear, no wear 
 
 /// The short face of [`FORCE_BUDGET_FLOOR_NOTE`] for a narrow GUI row.
 pub const FORCE_BUDGET_FLOOR_FACE: &str = "No depth meets the force budget";
-
-/// The short face of one envelope note (`SafeEnvelope::notes`): the face of
-/// a known note, else the note itself.
-#[must_use]
-pub fn note_face(note: &str) -> String {
-    if note == computed_width_assumptions_line() {
-        COMPUTED_WIDTH_ASSUMPTIONS_FACE.to_owned()
-    } else if note == FORCE_BUDGET_FLOOR_NOTE {
-        FORCE_BUDGET_FLOOR_FACE.to_owned()
-    } else {
-        note.to_owned()
-    }
-}

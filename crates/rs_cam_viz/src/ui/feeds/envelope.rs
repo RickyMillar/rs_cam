@@ -1006,17 +1006,17 @@ fn apply_hover(env: &SafeEnvelope, scene: &EnvelopeScene, unsourced: &[String]) 
 /// `None` colour draws the chip disabled, with `hover` as the reason.
 /// True when the chip was clicked.
 ///
-/// P13c (ruling O3): the envelope notes (the assumptions of a computed
-/// width, the force-budget floor warning; core `SafeEnvelope::notes`, the
+/// P13c (ruling O3): the envelope notes (core `SafeEnvelope::notes`, the
 /// text MCP and the CLI print) sit on this row as one caution: the short
-/// face (`force_budget::note_face`, it fits at 340 points) with the whole
-/// core text on hover, so the warning adds no row.
+/// face of the first note (`EnvelopeNote::face`, P29-10 10b; it fits at 340
+/// points) with the whole core text of every note on hover, so the warning
+/// adds no row.
 fn header(
     ui: &mut egui::Ui,
     title: &str,
     chip: Option<egui::Color32>,
     hover: &str,
-    notes: &[String],
+    notes: &[rs_cam_core::feeds::envelope::EnvelopeNote],
 ) -> bool {
     ui.add_space(tokens::SPACE_2);
     ui.horizontal(|ui| {
@@ -1038,16 +1038,19 @@ fn header(
                     let _ = ui
                         .add(
                             egui::Label::new(
-                                egui::RichText::new(format!(
-                                    "⚠ {}",
-                                    rs_cam_core::feeds::force_budget::note_face(first)
-                                ))
-                                .color(tokens::CAUTION)
-                                .size(tokens::SIZE_CAPTION),
+                                egui::RichText::new(format!("⚠ {}", first.face()))
+                                    .color(tokens::CAUTION)
+                                    .size(tokens::SIZE_CAPTION),
                             )
                             .wrap_mode(egui::TextWrapMode::Truncate),
                         )
-                        .on_hover_text(notes.join("\n"));
+                        .on_hover_text(
+                            notes
+                                .iter()
+                                .map(|n| n.text())
+                                .collect::<Vec<_>>()
+                                .join("\n"),
+                        );
                 });
             }
             response.clicked()

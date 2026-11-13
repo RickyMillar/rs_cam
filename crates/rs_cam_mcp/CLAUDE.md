@@ -70,5 +70,8 @@ run the server; the live server, GUI dispatch and session ownership are in
   `envelope.limit_rows` (one `limits::CheckRow` per record: subject, check, caveats, exemption, tone,
   face, detail; the planned rows, then the stated rows); a `Check` has no `bound_detail` (break, no
   alias). Feature token `limit_rows`. Reply keys only: the snapshot did not move.
+- P29-10 (10b): `envelope.notes` is `[{kind, face, text}]` (core `EnvelopeNote`, a closed list:
+  `no_depth`, `move_budget_not_met`, `computed_width`, `force_budget_floor`, `move_budget_conflict`);
+  the may-occur sentence left the notes (break). Feature token `envelope_note_kinds`.
 - Verify with `cargo test -p rs_cam_mcp -q`; when a wire type changes, also run
   the relevant `rs_cam_viz` MCP integration tests.

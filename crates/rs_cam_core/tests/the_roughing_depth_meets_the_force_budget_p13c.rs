@@ -259,7 +259,9 @@ fn a_tiny_budget_ships_the_minimum_depth_with_a_warning_p13c() {
     let l = env.limit(LimitKind::Rigidity).expect("a Rigidity limit");
     assert_eq!(l.law, FORCE_BUDGET_FLOOR_LAW);
     assert!(
-        env.notes.iter().any(|n| n == FORCE_BUDGET_FLOOR_NOTE),
+        env.notes
+            .iter()
+            .any(|n| n.text() == FORCE_BUDGET_FLOOR_NOTE),
         "{:?}",
         env.notes
     );

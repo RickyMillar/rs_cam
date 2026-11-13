@@ -4048,6 +4048,10 @@ pub fn build_info() -> serde_json::Value {
             // proposal, then the stated point against each limit); a
             // `Check` has no `bound_detail` (the row detail holds it).
             "limit_rows",
+            // Feeds contract P29-10 (10b): `envelope.notes` is
+            // `[{kind, face, text}]` (a closed list of kinds); the
+            // may-occur sentence left the notes for the row caveat.
+            "envelope_note_kinds",
         ],
     })
 }
