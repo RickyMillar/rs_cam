@@ -915,3 +915,59 @@ really shorter than the fold needs; this is no budget artefact.
 (a) and (b) change the G-code of every 20 degree ramp whose next cut is a fine polyline; each needs
 its own prediction run. 14.2 needs none of them: a plunge on a 0.4 mm row piece stays, and (c)
 judges it.
+
+## 15. Predictions for the fold walk fix (F6), before the code
+
+Written 2026-11-13 on the tree of e3 and d, before the code of e4. Lead ruling Q8: F6 is a defect
+of the fold walk; the fix is at its cause: `collect_following_cut` walks until it holds at least the
+larger of the walk budget and the minimum run that the gate asks for (`max(tool radius, 1.0)` and,
+for a tool that does not cut at its centre, its minimum ramp leg), so a fine polyline and one arc
+move give the same answer. No second entry pass. "Measured" is a throwaway change behind a switch
+(both states from one build), with a log of each site where the change alters the outcome; the
+files were restored from a byte copy (`cmp` equal) and the probes deleted.
+
+### 15.1 Does 8b cause it? (measured)
+
+The same `profile/fresh` arm on HEAD, at a stated angle (a throwaway override): at 3 and at 5
+degrees the ring start folds (`G2 X6.825 Y8.000 Z0.265` then the leg back, the ramp along the
+corner arc); at the 20 degree rule it is the straight plunge `G1 X9.503 Y4.864 Z-2.000 F500`. The
+walk budget is 19.08 mm at 3 degrees and 11.43 mm at 5 degrees, above the 3.175 mm minimum run; it
+is 2.747 mm at 20 degrees, under it. So 8b (the 20 degree rule of softwood, plywood and MDF) made
+the defect reach these fixtures.
+
+### 15.2 Op golden (measured): 40 rows on 5 arms beside the known 46
+
+| Arm | Rows (old -> new) |
+|---|---|
+| `pocket/each_face_flipped` | `arc_count` 24 -> 36, `cutting_length_mm` 784.178 -> 804.624, `linear_count` 135 -> 129, `move_count` 225 -> 231, `span_count` 129 -> 141, `moves_hash`, `spans_hash`, `gcode_hash` |
+| `pocket/extend_open` | `arc_count` 10 -> 14, `cutting_length_mm` 1365.236 -> 1372.906, `linear_count` 73 -> 71, `move_count` 113 -> 115, `span_count` 55 -> 59, `moves_hash`, `spans_hash`, `gcode_hash` |
+| `profile/each_face` | `arc_count` 24 -> 36, `cutting_length_mm` 615.056 -> 640.539, `linear_count` 40 -> 34, `move_count` 82 -> 88, `span_count` 61 -> 73, `moves_hash`, `spans_hash`, `gcode_hash` |
+| `profile/fresh` | `arc_count` 12 -> 18, `cutting_length_mm` 451.778 -> 465.369, `linear_count` 20 -> 17, `move_count` 41 -> 44, `span_count` 31 -> 37, `moves_hash`, `spans_hash`, `gcode_hash` |
+| `profile/rest` | `arc_count` 12 -> 18, `cutting_length_mm` 451.778 -> 465.287, `linear_count` 20 -> 17, `move_count` 41 -> 44, `span_count` 31 -> 37, `moves_hash`, `spans_hash`, `gcode_hash` |
+
+These are the arms of section 10.3 (the first estimate: 30 rows); the fix also moves `arc_count` on
+each, and `pocket/each_face_flipped` now moves its moves too (the ramp is emitted, not only a span).
+23 sites change in the golden run: every one now folds (no site still plunges), and every point of
+each new ramp is 0.0 mm from the kept cut after the descent (the log measured the distance of each
+emitted point to the polyline of the following cut). In `profile/fresh` the new entry is
+`G2 X7.001 Y6.970 Z-0.750` then `G3 X9.503 Y4.864 Z-2.000`: out along the corner arc and back.
+
+### 15.3 FM1 (measured): 1 sim cell
+
+`Profile / EndMill / 6.0000 / mdf`: `depth_peak_mm` 4.5000 -> 0.2998, `depth_cap_mm` "" -> 17.7397,
+`depth_cap_factor` "" -> 35.3224, `depth_detail` Reported -> "", `diagnostic_ids_after_sim`
+`load.depth.reported` -> `load.depth.within` (the cell section 10.4 named, with a slightly
+different peak: the ramp is the pipeline's, before arc fit). The 1000 calculator cells do not move.
+36 FM1 sites change; each folds, 0.0 mm off the kept cut.
+
+### 15.4 Wanaka operator ops and tracked fixtures (measured)
+
+- Wanaka operator idx 0, 3 to 13 and 17: identical move lists. Only the two idx 12 sites reach the
+  longer walk (runs 0.356 and 2.570 mm against a 9.0 mm minimum); they stay plunges, as ruled (the
+  kept pieces are short; the check (c) judges them). Idx 1, 2, 14, 15 (Planner) and 16 (style
+  None) run no dressup ramp (reasoned).
+- Tracked fixtures: rivmap100 Face 5, the viz `face_and_rest_rough` Face 5 and every op of
+  `testpiece_mini` (the rest Pockets after a simulation) are identical; none has a site that the
+  longer walk reaches. `test_job.toml` generates nothing at HEAD (no `spindle_rpm`).
+- Every moved ramp stays on the kept cut (0.0 mm, above). The fold walks only the cut after the
+  descent, before the boundary clip, so the clip keeps every move inside the boundary as before.
