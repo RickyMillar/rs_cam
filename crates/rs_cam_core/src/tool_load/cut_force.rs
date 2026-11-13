@@ -221,7 +221,9 @@ pub fn budget_line_on(
     ctx: &ToolpathLoadContext<'_>,
     machine: &crate::machine::MachineProfile,
 ) -> Option<f64> {
-    let DepthCapRule { budget_n } = machine.rigidity.depth_cap_of(ctx.body_facts().depth_rule)?;
+    let DepthCapRule { budget_n } = machine
+        .rigidity
+        .depth_cap_of(ctx.body_facts().depth_rule())?;
     Some(budget_n)
 }
 

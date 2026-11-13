@@ -6,8 +6,8 @@ use crate::feeds::geometry::UnliftedFeed;
 use crate::feeds::sourced::{self, Basis, PointBases};
 use crate::feeds::vertical::VerticalBinding;
 use crate::feeds::{
-    ChiploadSource, FeedsDerates, FeedsResult, FeedsWarning, FormulaBreakdown, OperationFamily,
-    RampBasis, engagement, plunge, ramp, worst_case_power,
+    ChiploadSource, FeedsDerates, FeedsResult, FeedsWarning, FormulaBreakdown, RampBasis,
+    engagement, plunge, ramp, worst_case_power,
 };
 use crate::material::FormulaConstant;
 
@@ -245,7 +245,7 @@ pub(super) fn step9c_drill(s: &mut CalcState, entry: &mut Entry) {
     // it at a larger diameter. A higher RPM (`SpindleStrategy::ConstantChip`), a
     // hardness transfer that lifts the chip, or a formula preview can bind
     // it.
-    if input.operation == OperationFamily::Drill {
+    if input.is_axial_plunge() {
         let (env_lo_per_mm, env_hi_per_mm) = input.material.drill_plunge_feed_envelope_per_mm();
         let (env_lo, env_hi) = (env_lo_per_mm * d, env_hi_per_mm * d);
         let requested = s.feed.feed;

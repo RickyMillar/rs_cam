@@ -507,6 +507,41 @@ impl ResolvedEntry {
         }
     }
 
+    /// The entry of `operation` before the simulation, on `cutter` (the
+    /// tool of diameter `tool_diameter`) in the stock `material`: a 3D Rough
+    /// reads its own entry ([`Self::of_adaptive3d`]); every other op reads
+    /// its dressups, or the registry dressups of its kind when `dressups` is
+    /// `None` ([`Self::of_dressup`]). The vertical feeds of the declared cuts
+    /// read it (`feeds::planned::VerticalFeeds`; P29-11 L-2 moved the op
+    /// dispatch here from the limit driver).
+    #[must_use]
+    pub fn of_planned_op(
+        operation: &crate::compute::catalog::OperationConfig,
+        cutter: &dyn MillingCutter,
+        tool_diameter: f64,
+        material: &Material,
+        dressups: Option<&DressupConfig>,
+    ) -> Self {
+        if let crate::compute::catalog::OperationConfig::Adaptive3d(cfg) = operation {
+            return Self::of_adaptive3d(cfg, cutter, material, operation.plunge_rate());
+        }
+        let fresh;
+        let cfg = match dressups {
+            Some(cfg) => cfg,
+            None => {
+                fresh = DressupConfig::for_op(operation.op_type());
+                &fresh
+            }
+        };
+        Self::of_dressup(
+            cfg,
+            Some(cutter),
+            tool_diameter,
+            material,
+            operation.plunge_rate(),
+        )
+    }
+
     /// The entry of a 3D Rough config on `cutter` in the stock `material`,
     /// with the op plunge rate `op_plunge_rate`.
     #[must_use]

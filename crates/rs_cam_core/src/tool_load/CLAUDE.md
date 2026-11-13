@@ -4,7 +4,7 @@ Independent gates over a simulated cut. Entry: `tool_load::evaluate_toolpath`.
 
 ## Files
 
-- `mod.rs` — the monitor and the report entry point. `context.rs` — `ToolpathLoadContext` (P29-6 6a: private fields, one constructor `of_operation`; the op fills the kind, the row key, `body_facts` and the commanded lift; the context carries the `CapTable` and lends `sample_context()`). `chipload.rs`, `power.rs`,
+- `mod.rs` — the monitor and the report entry point. `context.rs` — `ToolpathLoadContext` (P29-6 6a: private fields, one constructor `of_operation`; the op fills the opaque vendor row key (`feeds::RowKey`, P29-11 L-2; the chip row lookup opens it through `vendor_normalize::routed_row_of`), `body_facts` and the commanded lift; the context carries the `CapTable` and lends `sample_context()`). `chipload.rs`, `power.rs`,
   `deflection.rs`, `depth.rs`, `plunge_stress.rs` — the milling gates; `cut_force.rs` — the
   report-only force reading (P17; P29-10 10g: `CutPoint3::over_budget` (strict, no tolerance), `over_budget_words`, `force_plane`); `force_field.rs` (10g, moved from viz) — `ForceField` (the BODY cut's `peak_force_n` on a grid, ruling R1), `ForcePlane` (field, chip, the machine `force_budget_n`, `BudgetRole::Limit` or `NoLimitHere`, the level lines at `CONTOUR_SHARES`, traced once), `contours`; `drill_gates.rs` — chip welding, peck, plunge feed.
   `load_fraction.rs` — the one load `L`.

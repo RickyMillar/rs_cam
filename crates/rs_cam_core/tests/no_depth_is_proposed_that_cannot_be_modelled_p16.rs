@@ -125,12 +125,7 @@ fn the_project_curve_cut_states_an_offset_not_a_depth_p16() {
     );
     // P29-9 c8: the calculator reads its depth at the one depth door.
     assert_eq!(
-        rs_cam_core::feeds::planned::body_depth_of(
-            &project_curve(),
-            tool().geometry_hint(),
-            rs_cam_core::feeds::planned::PlanFacts::NONE,
-        )
-        .speeds_mm(),
+        rs_cam_core::feeds::planned::body_speeds_depth_of(&project_curve(), tool().geometry_hint()),
         None,
         "the calculator reads no depth"
     );

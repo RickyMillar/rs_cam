@@ -284,7 +284,7 @@ pub(super) fn judge(
         ..
     } = env;
     // P17, P29-7 7d: one limit for the trip and the bounds.
-    let (limit_mm, basis) = exceeds_limit(ctx.body_facts().leave_after_mm);
+    let (limit_mm, basis) = exceeds_limit(ctx.body_facts().leave_after_mm());
     let Some(trace) = sim_trace else {
         tracing::debug!(
             reason = "SimulationRequired",

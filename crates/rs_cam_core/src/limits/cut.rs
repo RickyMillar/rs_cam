@@ -415,19 +415,66 @@ pub enum DepthLimit {
 
 /// The geometry facts of a cut that stand in the place of the labels of
 /// the operation. In P29-3 each fact holds the value of today's label.
+///
+/// P29-11 L-2 (S3): the fields are private. [`CutFacts::declared`] is the one
+/// constructor, and only `compute/catalog/cuts.rs` (`OperationConfig::cuts`)
+/// calls it (the P29-last guard scans for it); [`CutFacts::DRILL_CYCLE`] is
+/// the facts of a drill cycle. A reader takes a fact through its getter, so
+/// no code outside the declaration states a fact of a cut.
 #[derive(Debug, Clone, Copy, PartialEq)]
 pub struct CutFacts {
     /// The radial chip-thinning rule of the cut.
-    pub thins_chip: RadialThinning,
+    thins_chip: RadialThinning,
     /// The corner-coverage rule of an offset ring applies.
-    pub offset_ring: bool,
+    offset_ring: bool,
     /// The radial stock that the cut leaves for a later pass.
-    pub leave_after_mm: Leave,
+    leave_after_mm: Leave,
     /// The depth limit of the cut.
-    pub depth_rule: DepthLimit,
+    depth_rule: DepthLimit,
 }
 
 impl CutFacts {
+    /// THE constructor of the facts of a declared cut (P29-11 L-2, S3). Only
+    /// `compute/catalog/cuts.rs` calls it.
+    #[must_use]
+    pub const fn declared(
+        thins_chip: RadialThinning,
+        offset_ring: bool,
+        leave_after_mm: Leave,
+        depth_limit: DepthLimit,
+    ) -> Self {
+        Self {
+            thins_chip,
+            offset_ring,
+            leave_after_mm,
+            depth_rule: depth_limit,
+        }
+    }
+
+    /// The radial chip-thinning rule of the cut.
+    #[must_use]
+    pub const fn thins_chip(&self) -> RadialThinning {
+        self.thins_chip
+    }
+
+    /// Whether the corner-coverage rule of an offset ring applies.
+    #[must_use]
+    pub const fn offset_ring(&self) -> bool {
+        self.offset_ring
+    }
+
+    /// The radial stock that the cut leaves for a later pass.
+    #[must_use]
+    pub const fn leave_after_mm(&self) -> Leave {
+        self.leave_after_mm
+    }
+
+    /// The depth limit of the cut.
+    #[must_use]
+    pub const fn depth_rule(&self) -> DepthLimit {
+        self.depth_rule
+    }
+
     /// The facts of a drill cycle, today's values: no thinning, not an
     /// offset ring, no stock-to-leave field, no depth limit. The straight
     /// plunge door of `feeds` reads it. Commit B moves the filling of

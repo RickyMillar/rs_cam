@@ -953,7 +953,7 @@ pub fn has_computed_width(operation: &OperationConfig) -> bool {
     operation
         .cuts(&crate::feeds::entry_rule::ConfiguredEntry::registry_default(operation))
         .body_facts()
-        .offset_ring
+        .offset_ring()
 }
 
 /// Run the feeds calculator for an operation and project context without

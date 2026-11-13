@@ -13,8 +13,8 @@ use super::feed::{feed_cap_basis, power_curve};
 use super::{CalcState, StepLog};
 use crate::feeds::sourced::{self, Basis};
 use crate::feeds::{
-    FeedsInput, OperationFamily, RpmChoice, RpmLimit, RpmLimitValue, SpindleScaleReason,
-    SpindleStrategy, cap_arm_demand_kw, constant_chip_gap,
+    FeedsInput, RpmChoice, RpmLimit, RpmLimitValue, SpindleScaleReason, SpindleStrategy,
+    cap_arm_demand_kw, constant_chip_gap,
 };
 use crate::machine::CuttingCeilingMmMin;
 
@@ -160,7 +160,7 @@ fn named_limits(
     // A side op does not take it; its plunge and ramp go through
     // `VerticalRateLimit::bound` at any RPM (P20b).
     // EXEMPT(M9)
-    if input.operation == OperationFamily::Drill
+    if input.is_axial_plunge()
         && let Some(z_rate) = machine.z_axis_rate_mm_min()
     {
         limits.push(RpmLimitValue {

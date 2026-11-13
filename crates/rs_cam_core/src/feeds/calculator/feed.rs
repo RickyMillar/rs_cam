@@ -4,9 +4,9 @@
 use super::{CalcState, Chip, Cut, Feed, Speed};
 use crate::feeds::sourced::{self, Basis};
 use crate::feeds::{
-    ArmPower, CapArm, CapArmReason, CapArms, FeedsInput, FeedsWarning, OperationFamily,
-    RpmFloorSource, SpindleScaleReason, ToolGeometryHint, cap_arm_demand_kw, geometry,
-    long_tool_load_share, pick_cap_arm,
+    ArmPower, CapArm, CapArmReason, CapArms, FeedsInput, FeedsWarning, RpmFloorSource,
+    SpindleScaleReason, ToolGeometryHint, cap_arm_demand_kw, geometry, long_tool_load_share,
+    pick_cap_arm,
 };
 
 /// The law of the feed: chip x RPM x Z, and the chip-thinning rule of the
@@ -102,7 +102,7 @@ pub(super) fn step5_feed(input: &FeedsInput, speed: &Speed, chip: &Chip, cut: &C
     // filled by `OperationConfig::cuts`); the family and the role are the
     // vendor row key only.
     // EXEMPT(P28-18, P28-19)
-    let thinning = input.body_facts.thins_chip;
+    let thinning = input.body_facts.thins_chip();
     // P23a: the lift is sized at the widest width that the planner holds at
     // the full feed (the pass ceiling `c D` of an adaptive plan), not at
     // the nominal stepover: the plan may cut that wide at this feed, and
@@ -234,7 +234,7 @@ pub(super) fn step7_feed_ceiling(s: &mut CalcState) {
         && machine_cut_ceiling > 0.0
         && rpm > 0.0
         // EXEMPT(P28-26)
-        && input.operation != OperationFamily::Drill
+        && !input.is_axial_plunge()
     {
         let machine_min = machine.rpm_range().0;
         let (rpm_floor, floor_source) = match s.chip.vendor_rpm_min {

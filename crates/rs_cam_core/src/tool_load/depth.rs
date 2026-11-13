@@ -164,7 +164,7 @@ pub(super) fn judge(
     // the modulator and the force card read too; the sentry
     // `every_op_declares_its_cuts_p29_3` holds it equal to the registry
     // row). P29-6 6c: the gate reads the facts, not the op kind.
-    let depth_limit = ctx.body_facts().depth_rule;
+    let depth_limit = ctx.body_facts().depth_rule();
     let span_lookup = spans.map(SpanLookup::new);
 
     // The population (P29-6 6c, 6d): every sample of the group that removes
@@ -450,7 +450,7 @@ pub(super) fn depth_number(
     }
     // EXEMPT(P28-02)
     let has_rule = machine
-        .and_then(|m| m.rigidity.depth_cap_of(ctx.body_facts().depth_rule))
+        .and_then(|m| m.rigidity.depth_cap_of(ctx.body_facts().depth_rule()))
         .is_some();
     if !has_rule {
         return Some(s.axial_engagement_mm);
@@ -522,7 +522,7 @@ fn vacuous_verdict(
     };
     match crate::feeds::force_budget::rigidity_depth_cap(
         machine,
-        ctx.body_facts().depth_rule,
+        ctx.body_facts().depth_rule(),
         tool,
         ctx.material(),
         ae_mm,

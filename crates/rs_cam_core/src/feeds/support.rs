@@ -497,10 +497,7 @@ pub fn calculator_formula_source(family: OperationFamily) -> &'static str {
 /// the calculator's own citation for the input's family.
 #[must_use]
 pub fn formula_source_for_input(input: &FeedsInput) -> Option<&'static str> {
-    match input.operation_kind {
-        Some(kind) => kind.spec().feeds_formula_source,
-        None => Some(calculator_formula_source(input.operation)),
-    }
+    input.row_key.op_type().spec().feeds_formula_source
 }
 
 /// The support arm for the cell this input describes.
@@ -619,10 +616,12 @@ pub(crate) fn support_for_lookup(input: &FeedsInput, lookup: &RecipeRowLookup) -
     // aluminium and a raw `calculate` with no operation kind refuse too.
     // `calculate` still computes the formula preview; the arm says it has
     // no basis.
-    if input.operation == OperationFamily::Drill {
+    // The vendor row key: the formula judgement reads the row's family and
+    // role.
+    let (family, role) = input.row_key.feeds_style();
+    if family == OperationFamily::Drill {
         let material = vendor_normalize::material_to_lut(input.material).0;
-        let reason = match formula_backing(tool, OperationFamily::Drill, input.pass_role, material)
-        {
+        let reason = match formula_backing(tool, OperationFamily::Drill, role, material) {
             FormulaBacking::Clueless { reason } => reason,
             // Every drill arm of the judgement is `Clueless`; this arm
             // keeps the refusal if a future arm says otherwise.
@@ -637,14 +636,11 @@ pub(crate) fn support_for_lookup(input: &FeedsInput, lookup: &RecipeRowLookup) -
             reason: Cow::Borrowed(NO_BASIS_REASON),
         };
     };
-    if input.operation_kind.is_none() {
-        return FeedsSupport::FormulaOnly { source };
-    }
     let material = vendor_normalize::material_to_lut(input.material).0;
     if !is_judged_wood(material) {
         return FeedsSupport::FormulaOnly { source };
     }
-    match formula_backing(tool, input.operation, input.pass_role, material) {
+    match formula_backing(tool, family, role, material) {
         FormulaBacking::Backed => FeedsSupport::FormulaOnly { source },
         FormulaBacking::Clueless { reason } => FeedsSupport::Refuse {
             reason: Cow::Borrowed(reason),

@@ -40,7 +40,7 @@ use super::extrapolation::{PlungeClaim, PlungeRefusal, plunge_rule};
 use super::geometry::UnliftedFeed;
 use super::provenance::ValueProvenance;
 use super::vertical::{VerticalBinding, VerticalRateLimit, ZAxisRate};
-use super::{FeedsInput, OperationFamily, ToolGeometryHint};
+use super::{FeedsInput, ToolGeometryHint};
 use crate::tool_load::plunge_stress;
 
 /// The named repo rule when no G10 claim covers the tool. The headline
@@ -427,7 +427,7 @@ pub fn plunge_basis(
     ramp: &super::ramp::RampBasis,
 ) -> PlungeBasis {
     let vertical = VerticalRateLimit::new(ramp, input.machine);
-    if input.operation == OperationFamily::Drill {
+    if input.is_axial_plunge() {
         return PlungeBasis::DrillCycle { vertical };
     }
     let tip_cap = TipCap::for_tool(input.tool_geometry, input.tool_diameter);

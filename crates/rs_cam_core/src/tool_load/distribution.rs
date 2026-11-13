@@ -849,7 +849,7 @@ fn chipload_population(
                 &trace.predicted_feeds,
                 ctx.tool(),
                 // P29-6: the gate's own rule, the body cut's thinning.
-                ctx.body_facts().thins_chip,
+                ctx.body_facts().thins_chip(),
             )
             .ok()?;
             Some(PopulationSample {

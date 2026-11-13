@@ -194,23 +194,18 @@ pub fn op_family_to_lut(family: OperationFamily) -> LutOperationFamily {
 /// surface the gate would not judge become honest no-vendor-data. The
 /// caller must surface it, never fall back to the unrouted family.
 ///
-/// When `input.operation_kind` is `None` the routing is a **no-op** and
-/// the declared family is used unchanged. That is the pre-a4 behaviour,
-/// retained for callers that genuinely have no operation identity (the
-/// `FeedsInput`-only unit fixtures); every production Suggest path goes
-/// through `FeedsInput::of_operation`, which supplies it.
+/// The input always holds the op kind (`FeedsInput::row_key`, P29-11 L-2):
+/// `FeedsInput::of_operation` is its one constructor.
 pub fn to_lookup_query(input: &FeedsInput) -> Option<LookupQuery> {
     let mut query = to_lookup_query_unrouted(input);
-    if let Some(kind) = input.operation_kind {
-        let (operation_family, pass_role) = lut_query_for(
-            kind,
-            query.tool_family,
-            query.operation_family,
-            query.pass_role,
-        )?;
-        query.operation_family = operation_family;
-        query.pass_role = pass_role;
-    }
+    let (operation_family, pass_role) = lut_query_for(
+        input.row_key.op_type(),
+        query.tool_family,
+        query.operation_family,
+        query.pass_role,
+    )?;
+    query.operation_family = operation_family;
+    query.pass_role = pass_role;
     Some(query)
 }
 
@@ -232,9 +227,29 @@ pub fn to_lookup_query_unrouted(input: &FeedsInput) -> LookupQuery {
         material_family: material_to_lut(input.material).0,
         hardness_kind: Some(material_to_lut(input.material).1),
         hardness_value: Some(material_to_lut(input.material).2),
-        operation_family: input.operation.into(),
-        pass_role: input.pass_role.into(),
+        operation_family: input.row_key.feeds_style().0.into(),
+        pass_role: input.row_key.feeds_style().1.into(),
     }
+}
+
+/// P29-11 L-2 (S2): the routed `(family, role)` of the chip row of the row
+/// key `key` on a tool of `tool_family` (the one a4 routing,
+/// [`lut_query_for`]), or `None` when the routing refuses. The chip gate
+/// reads it, so the gate opens no row key.
+#[must_use]
+pub fn routed_row_of(
+    key: super::RowKey,
+    tool_family: ToolFamily,
+) -> Option<(LutOperationFamily, LutPassRole)> {
+    let (family, role) = key.feeds_style();
+    lut_query_for(key.op_type(), tool_family, family.into(), role.into())
+}
+
+/// P29-11 L-2 (S2): the pass role of the row key as the op declares it (no
+/// a4 routing), for the report field `LutBandStage::queried_pass_role`.
+#[must_use]
+pub fn declared_lut_pass_role(key: super::RowKey) -> LutPassRole {
+    key.feeds_style().1.into()
 }
 
 /// The G6 ramp query: the tool's plunge in the drill family, for the axial

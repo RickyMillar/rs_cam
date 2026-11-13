@@ -45,7 +45,7 @@ use std::f64::consts::TAU;
 use super::extrapolation::{Claim, DrillClaim, tool_family_label};
 use super::vendor_lut::{LutOperationFamily, LutPassRole, ToolFamily};
 use super::vertical::{VerticalBinding, VerticalRateLimit, ZAxisRate};
-use super::{FeedsInput, OperationFamily, PassRole};
+use super::{FeedsInput, PassRole};
 use crate::compute::catalog::OperationConfig;
 use crate::compute::config::{DressupConfig, HelixRadius, default_entry_clearance_mm};
 use crate::compute::tool_config::ToolConfig;
@@ -414,7 +414,7 @@ pub fn ramp_basis(
     feed_row: Option<&super::vendor_lookup::LookupResult>,
 ) -> RampBasis {
     let fallback = |reason| RampBasis::NoChip { reason };
-    if input.operation == OperationFamily::Drill {
+    if input.is_axial_plunge() {
         return fallback(RampFallback::DrillCycle);
     }
     let Some(lut) = input.vendor_lut else {

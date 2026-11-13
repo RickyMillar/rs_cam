@@ -171,7 +171,7 @@ fn judge(op: OperationConfig) -> (DeflectionVerdict, Leave) {
         .load_context_parts(0)
         .expect("the fixture op has a tool and a feed");
     let ctx = parts.ctx();
-    let leave = ctx.body_facts().leave_after_mm;
+    let leave = ctx.body_facts().leave_after_mm();
     let trace = trace(ctx.toolpath_id());
     let tolerance = ToleranceBands::default();
     let env = GateEnv {

@@ -90,7 +90,6 @@ pub fn effective_feed_for_sample(
         .unwrap_or(sample.feed_rate_mm_min)
 }
 
-use crate::feeds::vendor_lut::{LutOperationFamily, LutPassRole};
 use crate::material::Material;
 use crate::tool::ToolDefinition;
 use serde::{Deserialize, Serialize};
@@ -288,9 +287,6 @@ pub fn chip_target_for_toolpath(
     }
     // F029: no chip target for a tool outside its domain.
     let tool_def = crate::compute::cutter::build_cutter(tool_cfg).ok()?;
-    let spec = operation.spec();
-    let lut_op_family: LutOperationFamily = spec.feeds_family.into();
-    let lut_pass_role: LutPassRole = spec.feeds_pass_role.into();
     // The row key depth: the peak removed layer of the body group, the
     // depth the gate keys its row with (`groups::ToolpathSamples::
     // row_key_depth_mm`). No spans and no cap table reach this door, so the
@@ -320,9 +316,7 @@ pub fn chip_target_for_toolpath(
     let matched = chip_envelope_row_for(
         &tool_def,
         material,
-        operation,
-        lut_op_family,
-        lut_pass_role,
+        crate::feeds::RowKey::of_operation(operation),
         axial_doc,
     )?;
     // P11b2 (L6): the printed band at every depth, as the gate and Suggest
@@ -372,13 +366,10 @@ pub fn chip_envelope_row(
         return None;
     }
     let tool_def = crate::compute::cutter::build_cutter(tool_cfg).ok()?;
-    let spec = operation.spec();
     chip_envelope_row_for(
         &tool_def,
         material,
-        operation,
-        spec.feeds_family.into(),
-        spec.feeds_pass_role.into(),
+        crate::feeds::RowKey::of_operation(operation),
         axial_doc_mm,
     )
 }
@@ -389,17 +380,13 @@ pub fn chip_envelope_row(
 fn chip_envelope_row_for(
     tool_def: &crate::tool::ToolDefinition,
     material: &Material,
-    operation: &crate::compute::catalog::OperationConfig,
-    lut_op_family: LutOperationFamily,
-    lut_pass_role: LutPassRole,
+    row_key: crate::feeds::RowKey,
     axial_doc_mm: f64,
 ) -> Option<crate::feeds::vendor_lookup::LookupResult> {
     chipload::matched_chip_envelope(
         tool_def,
         material,
-        operation.op_type(),
-        lut_op_family,
-        lut_pass_role,
+        row_key,
         crate::feeds::geometry::lut_key_diameter_for_cutter(tool_def, axial_doc_mm),
     )
 }

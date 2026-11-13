@@ -13,15 +13,15 @@
 //! Each states in its doc why it exists. No `with_*` sets a width, a depth,
 //! a power case, a role or a body fact: a test states those on the op.
 
-use crate::compute::catalog::{OperationConfig, OperationType};
+use crate::compute::catalog::OperationConfig;
 use crate::compute::tool_config::ToolConfig;
 use crate::limits::CutFacts;
 use crate::machine::MachineProfile;
 use crate::material::Material;
 
 use super::{
-    CutBody, OperationFamily, PassRole, SetupContext, SpindleStrategy, ToolGeometryHint, VendorLut,
-    planned, series, sourced, vendor_lut,
+    CutBody, SetupContext, SpindleStrategy, ToolGeometryHint, VendorLut, planned, series, sourced,
+    vendor_lut,
 };
 
 /// The private door of [`FeedsInput`]: only this module can name it, so
@@ -50,24 +50,15 @@ pub struct FeedsInput<'a> {
     pub(in crate::feeds) tool_series: Option<series::ToolSeries>,
     pub(in crate::feeds) material: &'a Material,
     pub(in crate::feeds) machine: &'a MachineProfile,
-    /// The vendor row key: the op's feeds family. A row key, not a scope:
-    /// Step 5 reads the thinning rule from [`Self::body_facts`].
-    pub(in crate::feeds) operation: OperationFamily,
-    /// **The operation's own kind.** Checkpoint K (a4), 2026-08-13.
-    ///
-    /// [`OperationFamily`] above is the *vendor-LUT* family the operation
-    /// declares (eight values). It cannot distinguish `Adaptive3d` from
-    /// 2D adaptive, nor `ProjectCurve` from `Trace` — and those are
-    /// exactly the two kinds
-    /// [`super::vendor_normalize::lut_query_for`] reroutes. Before a4 the
-    /// Suggest side had no way to ask, so it queried the declared family
-    /// while the gate queried the routed one.
-    ///
-    /// The constructor always writes `Some`. The `None` arms of the
-    /// readers have no product reach (P29-7 7a finding).
-    pub(in crate::feeds) operation_kind: Option<OperationType>,
-    /// The vendor row key: the op's pass role. A row key, not a scope.
-    pub(in crate::feeds) pass_role: PassRole,
+    /// **The vendor row key** (P29-11 L-2, S1): the op's feeds family, pass
+    /// role and kind, in private fields ([`super::RowKey`]). A row key, not a
+    /// scope: Step 5 reads the thinning rule from [`Self::body_facts`], and a
+    /// drill test reads the declared drill cycle ([`Self::is_axial_plunge`]).
+    /// Only a vendor module opens it (`RowKey::feeds_style`,
+    /// `RowKey::op_type`; the P29-last guard holds it). Checkpoint K (a4):
+    /// the kind lets Suggest and the gate route the row query through the
+    /// one `vendor_normalize::lut_query_for`.
+    pub(in crate::feeds) row_key: super::RowKey,
     /// The stated depth (None = auto-calculate).
     pub(in crate::feeds) axial_depth_mm: Option<f64>,
     /// The stated width (None = auto-calculate).
@@ -127,7 +118,6 @@ impl<'a> FeedsInput<'a> {
         lut: &'a VendorLut,
         spindle_strategy: SpindleStrategy,
     ) -> Self {
-        let (family, role) = operation.feeds_style();
         let (radial_hint, scallop_hint) = operation.cut_spec().calc_inputs(tool.diameter);
         let cuts = planned::DeclaredCuts::of_operation(
             operation,
@@ -151,12 +141,7 @@ impl<'a> FeedsInput<'a> {
             tool_geometry: tool.geometry_hint(),
             material,
             machine,
-            operation: family,
-            // Checkpoint K (a4): the operation's own kind, so Suggest and the
-            // gate route the LUT query through the same
-            // `vendor_normalize::lut_query_for`.
-            operation_kind: Some(operation.op_type()),
-            pass_role: role,
+            row_key: super::RowKey::of_operation(operation),
             axial_depth_mm: axial_hint,
             radial_width_mm: radial_hint,
             target_scallop_mm: scallop_hint,
@@ -254,9 +239,8 @@ impl<'a> FeedsInput<'a> {
     /// [`super::FeedsWarning::DepthJudgedAfterSimulation`].
     #[must_use]
     pub fn depth_after_simulation(&self) -> bool {
-        self.operation_kind.is_some_and(|k| {
-            k.capabilities().cut_rule.axial == crate::compute::catalog::AxialRule::SurfaceOffset
-        })
+        self.row_key.op_type().capabilities().cut_rule.axial
+            == crate::compute::catalog::AxialRule::SurfaceOffset
     }
 
     /// The force line of the power model: `None` when the material has no
@@ -269,12 +253,15 @@ impl<'a> FeedsInput<'a> {
         self.material.force_line().ok()
     }
 
-    /// P20d: `true` for a drill cycle (`OperationFamily::Drill`: Drill and
-    /// Pin Drill, `Radial::Axial`). Its power section is the axial circle
-    /// ([`super::section::EngagedSection::axial_plunge`]), and its power is
-    /// advisory: Step 6 does not act on it.
+    /// P20d: `true` for a drill cycle: the op declares
+    /// [`crate::limits::CutKind::Drill`] (P29-11 L-2, S1: the declared cut,
+    /// not the family; Drill and Pin Drill, the two ops of the drill family,
+    /// `every_op_declares_its_cuts_p29_3`). Its power section is the axial
+    /// circle ([`super::section::EngagedSection::axial_plunge`]), and its
+    /// power is advisory: Step 6 does not act on it. The drill rules of the
+    /// calculator, the ramp and the plunge read it.
     #[must_use]
     pub fn is_axial_plunge(&self) -> bool {
-        self.operation == OperationFamily::Drill
+        self.cuts.list().declares(crate::limits::CutKind::Drill)
     }
 }

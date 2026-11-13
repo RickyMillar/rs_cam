@@ -12,8 +12,7 @@
 //! build the cut of each sample ([`ToolpathLoadContext::sample_context`],
 //! `limits::Cut::of_sample`).
 
-use crate::compute::catalog::{OperationConfig, OperationType};
-use crate::feeds::vendor_lut::{LutOperationFamily, LutPassRole};
+use crate::compute::catalog::OperationConfig;
 use crate::ids::ToolpathId;
 use crate::limits::{CapTable, CutFacts, CutGroup, CutKind, SampleContext};
 use crate::machine::SteadyFeedMmMin;
@@ -32,13 +31,11 @@ pub struct ToolpathLoadContext<'a> {
     toolpath_id: ToolpathId,
     tool: &'a ToolDefinition,
     material: &'a Material,
-    /// The vendor row key: the op's feeds family. Only the chip row lookup
-    /// reads it (`chipload::matched_chip_envelope`); it is not a limit
-    /// scope.
-    row_family: LutOperationFamily,
-    /// The vendor row key: the op's pass role. Only the chip row lookup
-    /// reads it; it is not a limit scope.
-    row_pass_role: LutPassRole,
+    /// The vendor row key (P29-11 L-2, S2): the op's feeds family, pass role
+    /// and kind, opaque here ([`crate::feeds::RowKey`]). Only the chip row
+    /// lookup reads it (`chipload::matched_chip_envelope`, through
+    /// `vendor_normalize::routed_row_of`); it is not a limit scope.
+    row_key: crate::feeds::RowKey,
     /// P20e: the feed the op commands in steady cutting,
     /// `min(op feed, feed_max_rate, machine cutting ceiling)`
     /// (`MachineProfile::op_steady_feed`, the ceiling the modulator caps
@@ -46,10 +43,6 @@ pub struct ToolpathLoadContext<'a> {
     /// sample feed with it, and the commanded stage states it (the G-code F
     /// word under a cap).
     steady_feed: SteadyFeedMmMin,
-    /// The toolpath's operation kind. Only the chip row lookup reads it
-    /// (`chipload::routed_lookup_family`, through [`Self::chip_row_key`]); no
-    /// gate reads it to decide a scope (P29-6 6d).
-    operation_kind: OperationType,
     /// The group of the op's own cut: [`CutGroup::Drill`] when the op
     /// declares a drill cycle (`CutList::declares(CutKind::Drill)`), else
     /// [`CutGroup::Body`]. The headline verdict of each gate is the verdict
@@ -110,7 +103,6 @@ impl<'a> ToolpathLoadContext<'a> {
         caps: &'a CapTable,
         drill_op: Option<&'a DrillOp>,
     ) -> Self {
-        let (family, pass_role) = operation.feeds_style();
         let cuts =
             operation.cuts(&crate::feeds::entry_rule::ConfiguredEntry::registry_default(operation));
         let body_facts = cuts.body_facts();
@@ -123,10 +115,8 @@ impl<'a> ToolpathLoadContext<'a> {
             toolpath_id,
             tool,
             material,
-            row_family: crate::feeds::vendor_normalize::op_family_to_lut(family),
-            row_pass_role: pass_role.into(),
+            row_key: crate::feeds::RowKey::of_operation(operation),
             steady_feed,
-            operation_kind: operation.op_type(),
             headline_group,
             spans,
             caps,
@@ -171,17 +161,11 @@ impl<'a> ToolpathLoadContext<'a> {
         self.material
     }
 
-    /// The vendor row key of the chip gate: the op kind (the row routing of
-    /// `chipload::routed_lookup_family`), the feeds family and the pass
-    /// role. Only the chip row lookup reads it; it is a row key, not a limit
-    /// scope (P29-6 6d: the op kind has no other reader in the gates).
+    /// The vendor row key of the chip gate (P29-11 L-2: opaque). Only the
+    /// chip row lookup reads it; it is a row key, not a limit scope.
     #[must_use]
-    pub(super) fn chip_row_key(&self) -> ChipRowKey {
-        ChipRowKey {
-            operation_kind: self.operation_kind,
-            family: self.row_family,
-            pass_role: self.row_pass_role,
-        }
+    pub(super) fn chip_row_key(&self) -> crate::feeds::RowKey {
+        self.row_key
     }
 
     /// The group of the op's own cut (the headline group of each gate).
@@ -228,14 +212,6 @@ impl<'a> ToolpathLoadContext<'a> {
     }
 }
 
-/// The vendor row key of the chip gate ([`ToolpathLoadContext::chip_row_key`]).
-#[derive(Debug, Clone, Copy)]
-pub(super) struct ChipRowKey {
-    pub(super) operation_kind: OperationType,
-    pub(super) family: LutOperationFamily,
-    pub(super) pass_role: LutPassRole,
-}
-
 /// P11b2: the lift of the stated cut, by Suggest's own rule (the engaged
 /// diameter at the stated depth, `feeds::effective_diameter`). `None` when
 /// the op states no depth or no width.
@@ -248,12 +224,7 @@ fn commanded_thinning_lift(
     let diameter = stated_diameter_mm(tool);
     let (stated_ae, _) = operation.cut_spec().calc_inputs(diameter);
     // P29-9 c8: the depth is the one depth door.
-    let stated_ap = crate::feeds::planned::body_depth_of(
-        operation,
-        hint,
-        crate::feeds::planned::PlanFacts::NONE,
-    )
-    .speeds_mm();
+    let stated_ap = crate::feeds::planned::body_speeds_depth_of(operation, hint);
     stated_ap.zip(stated_ae).map(|(ap, ae)| {
         let d_eng = crate::feeds::engagement::EngagedDiameter::of_hint(
             hint,
@@ -280,7 +251,7 @@ fn commanded_thinning_lift(
                 None,
             ),
             // P29-3: the thinning rule of the op's body cut.
-            body_facts.thins_chip,
+            body_facts.thins_chip(),
         )
     })
 }

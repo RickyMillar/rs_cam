@@ -98,9 +98,7 @@
 //! detection lands in Phase 2 with the `SimulationProvenance` hash; for
 //! now any present trace is considered live.
 
-use crate::compute::catalog::OperationType;
 use crate::feeds::vendor_lookup::{LookupQuery, LookupResult, find_best_chip_envelope_row};
-use crate::feeds::vendor_lut::{LutOperationFamily, LutPassRole};
 use crate::feeds::vendor_normalize::material_to_lut;
 
 use super::locality::SpanLookup;
@@ -133,9 +131,7 @@ use super::locality::SpanLookup;
 pub(crate) fn matched_chip_envelope(
     tool: &crate::tool::ToolDefinition,
     material: &crate::material::Material,
-    operation_kind: OperationType,
-    operation_family: LutOperationFamily,
-    pass_role: LutPassRole,
+    row_key: crate::feeds::RowKey,
     lookup_diameter_mm: f64,
 ) -> Option<LookupResult> {
     if matches!(material, crate::material::Material::Custom { .. }) {
@@ -148,12 +144,8 @@ pub(crate) fn matched_chip_envelope(
     // `routed_lookup_family` that only this side called; A-6 measured
     // the cost of that asymmetry at 489 divergent rows and 378
     // one-sided refusals over 3 024 pairs.
-    let (operation_family, pass_role) = crate::feeds::vendor_normalize::lut_query_for(
-        operation_kind,
-        tool_family,
-        operation_family,
-        pass_role,
-    )?;
+    let (operation_family, row_role) =
+        crate::feeds::vendor_normalize::routed_row_of(row_key, tool_family)?;
     let (material_family, hardness_kind, hardness_value) = material_to_lut(material);
     let diameter_mm = lookup_diameter_mm;
     let query = LookupQuery {
@@ -168,7 +160,7 @@ pub(crate) fn matched_chip_envelope(
         hardness_kind: Some(hardness_kind),
         hardness_value: Some(hardness_value),
         operation_family,
-        pass_role,
+        pass_role: row_role,
     };
     find_best_chip_envelope_row(embedded_lut(), &query, &geometry_hint)
         .filter(|row| !row.size_basis.is_refused())
@@ -322,8 +314,6 @@ fn judge(
         (ctx.tool(), ctx.material(), ctx.steady_feed(), ctx.spans());
     // The vendor row key: a row lookup, not a limit scope.
     let row_key = ctx.chip_row_key();
-    let (operation_kind, operation_family, pass_role) =
-        (row_key.operation_kind, row_key.family, row_key.pass_role);
     let &super::GateEnv {
         sim_trace,
         tolerance,
@@ -372,19 +362,11 @@ fn judge(
     // is the same, so Suggest and the gate read one row.
     let lookup_key_mm =
         crate::feeds::geometry::lut_key_diameter_for_cutter(tool, lookup_axial_doc_mm);
-    let result = matched_chip_envelope(
-        tool,
-        material,
-        operation_kind,
-        operation_family,
-        pass_role,
-        lookup_key_mm,
-    );
+    let result = matched_chip_envelope(tool, material, row_key, lookup_key_mm);
     let Some(result) = result else {
         tracing::debug!(
             reason = "NoVendorData",
-            operation_family = ?operation_family,
-            pass_role = ?pass_role,
+            row_key = ?row_key,
             lookup_axial_doc_mm,
             "chipload gate refuses: no chipload-bearing LUT row matched the \
              (tool, material, op) query"
@@ -480,7 +462,7 @@ fn judge(
     // P11b2 (L1, L2), P29-6: the thinning rule of the op's body cut
     // (`OperationConfig::cuts`), not the routed row role. A drill cycle
     // never reaches this line (the short-circuit at the top).
-    let thinning = ctx.body_facts().thins_chip;
+    let thinning = ctx.body_facts().thins_chip();
     let achieved_feed_stage = {
         let predicted_feeds_present = !trace.predicted_feeds.is_empty();
         let median_ratio = if predicted_feeds_present {
@@ -650,7 +632,7 @@ fn judge(
             diameter_scale: result.chipload_diameter_scale,
             hardness_scale: result.chipload_hardness_scale,
             is_extrapolated: result.is_extrapolated,
-            queried_pass_role: pass_role,
+            queried_pass_role: crate::feeds::vendor_normalize::declared_lut_pass_role(row_key),
             row_pass_role: result.row_pass_role,
             family_transferred_from: result.family_basis.claim().map(|c| c.home.0),
             min_mm_per_tooth: min,
@@ -849,7 +831,7 @@ fn judge(
 mod tests {
     use super::*;
     use crate::compute::catalog::OperationType;
-    use crate::feeds::vendor_lut::ToolFamily;
+    use crate::feeds::vendor_lut::{LutOperationFamily, LutPassRole, ToolFamily};
     use crate::feeds::vendor_normalize::lut_query_for;
     use crate::ids::ToolpathId;
     use crate::material::Material;
@@ -1060,9 +1042,9 @@ mod tests {
         let row = matched_chip_envelope(
             &tool(),
             &maple,
-            OperationType::ProjectCurve,
-            LutOperationFamily::Trace,
-            LutPassRole::Finish,
+            crate::feeds::RowKey::of_operation(
+                &crate::compute::catalog::OperationConfig::new_default(OperationType::ProjectCurve),
+            ),
             crate::feeds::geometry::lut_key_diameter_for_cutter(&tool(), 0.5),
         )
         .expect("the routed query matches a chipload row");

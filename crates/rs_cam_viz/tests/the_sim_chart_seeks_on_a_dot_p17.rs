@@ -69,7 +69,7 @@ fn fixture() -> (SafeEnvelope, f64, f64) {
             config
                 .cuts(&rs_cam_core::feeds::entry_rule::ConfiguredEntry::registry_default(&config))
                 .body_facts()
-                .depth_rule,
+                .depth_rule(),
         )
         .expect("a Pocket has a depth-cap rule");
     let diameter = env

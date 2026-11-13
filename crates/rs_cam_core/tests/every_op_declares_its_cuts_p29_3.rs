@@ -378,14 +378,14 @@ fn old_facts(op: &OperationConfig) -> CutFacts {
         (_, PassRole::Finish) => RadialThinning::FinishPass,
         (_, PassRole::Roughing | PassRole::SemiFinish) => RadialThinning::Applied,
     };
-    CutFacts {
+    CutFacts::declared(
         thins_chip,
-        offset_ring: family == OperationFamily::Pocket
+        family == OperationFamily::Pocket
             && role == PassRole::Roughing
             && matches!(op.cut_spec().radial, Radial::Width(_)),
-        leave_after_mm: leave,
+        leave,
         depth_rule,
-    }
+    )
 }
 
 #[test]
@@ -411,10 +411,10 @@ fn claim_2_the_facts_equal_the_label_functions() {
                 case.name, cut.kind
             );
         }
-        seen.insert(format!("{:?}", want.thins_chip));
-        seen.insert(format!("ring={}", want.offset_ring));
-        seen.insert(format!("{:?}", want.depth_rule));
-        let leave = match want.leave_after_mm {
+        seen.insert(format!("{:?}", want.thins_chip()));
+        seen.insert(format!("ring={}", want.offset_ring()));
+        seen.insert(format!("{:?}", want.depth_rule()));
+        let leave = match want.leave_after_mm() {
             Leave::None => "leave:none",
             Leave::Mm(_) => "leave:mm",
         };
@@ -758,14 +758,27 @@ fn claim_5_one_depth_door_p29_9() {
                     "{}: the depth door gives the stated depth",
                     case.name
                 );
+                // P29-11 L-2 (S9): no public no-facts value; the test states
+                // the facts of no project.
                 assert_eq!(
                     rs_cam_core::feeds::planned::body_depth_of(
                         op,
                         tool.geometry_hint(),
-                        rs_cam_core::feeds::planned::PlanFacts::NONE,
+                        rs_cam_core::feeds::planned::PlanFacts {
+                            setup_z_flipped: None,
+                            earlier_leave: rs_cam_core::feeds::planned::EarlierLeave::None(
+                                rs_cam_core::feeds::planned::NoEarlierLeave::NoEarlierOp,
+                            ),
+                        },
                     ),
                     cuts.body_depth(),
                     "{}: the two doors are one",
+                    case.name
+                );
+                assert_eq!(
+                    rs_cam_core::feeds::planned::body_speeds_depth_of(op, tool.geometry_hint()),
+                    cuts.body_depth().speeds_mm(),
+                    "{}: the speeds depth door",
                     case.name
                 );
             }

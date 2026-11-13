@@ -4,7 +4,7 @@ use super::{Cut, DepthClamps};
 use crate::feeds::sourced::Basis;
 use crate::feeds::{
     FeedsInput, FeedsWarning, MIN_AE_MM, MIN_AE_MM_ROW, MIN_AP_MM, MIN_AP_MM_ROW, ToolGeometryHint,
-    default_engagement, flute_guard_of, geometry, moved_basis, operation_default_profile,
+    default_engagement, default_profile_of, flute_guard_of, geometry, moved_basis,
 };
 
 /// Step 3: the depth and the width from the operation defaults, Step 3b
@@ -13,7 +13,7 @@ use crate::feeds::{
 pub(super) fn step3_engagement(input: &FeedsInput, warnings: &mut Vec<FeedsWarning>) -> Cut {
     let d = input.tool_diameter;
     // --- Step 3: DOC/WOC from operation defaults ---
-    let profile = operation_default_profile(input.operation, input.pass_role);
+    let profile = default_profile_of(input);
     let (mut ap, mut ae, mut ap_basis, mut ae_basis) =
         default_engagement(d, &profile, input, input.machine);
 

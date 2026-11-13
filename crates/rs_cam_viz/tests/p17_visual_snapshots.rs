@@ -314,7 +314,7 @@ fn sim_set() -> CutMetricSet {
             config
                 .cuts(&rs_cam_core::feeds::entry_rule::ConfiguredEntry::registry_default(&config))
                 .body_facts()
-                .depth_rule,
+                .depth_rule(),
         )
         .map(|DepthCapRule { budget_n }| budget_n);
     let diameter = ae_ceiling(&env, LimitKind::Diameter).unwrap_or(tool_cfg.diameter);

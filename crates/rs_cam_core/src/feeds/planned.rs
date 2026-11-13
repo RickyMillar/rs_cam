@@ -287,18 +287,14 @@ pub struct PlanFacts {
 }
 
 impl PlanFacts {
-    /// No fact of the project (FM1, the add door): no setup, and no earlier
-    /// op (`None(NoEarlierOp)`).
-    pub const NONE: Self = Self {
+    /// No fact of the project: no setup, and no earlier op
+    /// (`None(NoEarlierOp)`). Private (P29-11 L-2, S9): only
+    /// [`DeclaredCuts::of_operation`] reads it; a reader of the speeds depth
+    /// with no facts calls [`body_speeds_depth_of`].
+    const NONE: Self = Self {
         setup_z_flipped: None,
         earlier_leave: EarlierLeave::None(NoEarlierLeave::NoEarlierOp),
     };
-}
-
-impl Default for PlanFacts {
-    fn default() -> Self {
-        Self::NONE
-    }
 }
 
 impl BodyDepth {
@@ -349,6 +345,20 @@ impl BodyDepth {
             | Self::None(_) => None,
         }
     }
+}
+
+/// P29-11 L-2 (S9): the depth at which the calculator sizes the speeds of
+/// the body cut of `operation` on a tool of shape `hint`
+/// ([`BodyDepth::speeds_mm`]), for a reader with no plan facts (the gate
+/// context, `operation_feeds_hints`). No plan fact moves it: every arm that a
+/// fact fills gives `None`. So the door takes no facts argument, and no
+/// product reader states "no facts".
+#[must_use]
+pub fn body_speeds_depth_of(
+    operation: &OperationConfig,
+    hint: crate::feeds::ToolGeometryHint,
+) -> Option<f64> {
+    body_depth_of(operation, hint, PlanFacts::NONE).speeds_mm()
 }
 
 /// P29-9 c8: THE depth door for a reader that holds no declared cut list
@@ -422,7 +432,7 @@ impl DeclaredCuts {
             ap,
         )
         .mm();
-        let thinning = list.body_facts().thins_chip;
+        let thinning = list.body_facts().thins_chip();
         // P29-10 10i (lead ruling 1): the lift of the unlifted feed at the
         // stated width (else D), the lift a ramp feed is written over.
         let stated_ae = operation.stepover().filter(|v| usable(*v)).unwrap_or(d_mm);
@@ -1295,28 +1305,12 @@ impl VerticalFeeds {
         entry: &ConfiguredEntry,
     ) -> Self {
         let resolved = crate::compute::build_cutter(tool).ok().map(|cutter| {
-            if let OperationConfig::Adaptive3d(cfg) = operation {
-                return crate::feeds::entry_rule::ResolvedEntry::of_adaptive3d(
-                    cfg,
-                    &cutter,
-                    material,
-                    operation.plunge_rate(),
-                );
-            }
-            let fresh;
-            let cfg = match dressups {
-                Some(cfg) => cfg,
-                None => {
-                    fresh = crate::compute::config::DressupConfig::for_op(operation.op_type());
-                    &fresh
-                }
-            };
-            crate::feeds::entry_rule::ResolvedEntry::of_dressup(
-                cfg,
-                Some(&cutter),
+            crate::feeds::entry_rule::ResolvedEntry::of_planned_op(
+                operation,
+                &cutter,
                 tool.diameter,
                 material,
-                operation.plunge_rate(),
+                dressups,
             )
         });
         let feed = |kind| entry.planned_feed_mm_min(operation, kind).ok();

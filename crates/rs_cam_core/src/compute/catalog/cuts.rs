@@ -1249,18 +1249,18 @@ impl OperationConfig {
     /// (rows `F-*` of `limits::EXEMPTIONS`).
     fn label_facts(&self) -> CutFacts {
         let (family, role) = self.feeds_style();
-        CutFacts {
-            thins_chip: thins_chip_of(family, role),
+        CutFacts::declared(
+            thins_chip_of(family, role),
             // EXEMPT(F-OffsetRing)
-            offset_ring: family == FeedsOperationFamily::Pocket
+            family == FeedsOperationFamily::Pocket
                 && role == PassRole::Roughing
                 && matches!(self.cut_spec().radial, Radial::Width(_)),
             // P29-7 7d (ruling R5): the radial leave field only.
-            leave_after_mm: match self.radial_stock_to_leave_mm() {
+            match self.radial_stock_to_leave_mm() {
                 Some(mm) if mm.is_finite() && mm > 0.0 => Leave::Mm(mm),
                 Some(_) | None => Leave::None,
             },
-            depth_rule: self.op_type().body_depth_limit(),
-        }
+            self.op_type().body_depth_limit(),
+        )
     }
 }

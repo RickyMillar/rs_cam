@@ -209,7 +209,7 @@ pub fn cut_efficiency(
     // EXEMPT(U-efficiency)
     let cuts =
         operation.cuts(&crate::feeds::entry_rule::ConfiguredEntry::registry_default(operation));
-    let lift = cuts.body_facts().thins_chip.lift(
+    let lift = cuts.body_facts().thins_chip().lift(
         cuts.full_feed_width(radial_width_mm, diameter_mm),
         diameter_mm,
     );

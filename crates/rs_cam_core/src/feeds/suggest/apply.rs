@@ -1639,12 +1639,7 @@ pub fn operation_feeds_hints(
     operation: &OperationConfig,
     tool: &ToolConfig,
 ) -> (Option<f64>, Option<f64>, Option<f64>) {
-    let depth = crate::feeds::planned::body_depth_of(
-        operation,
-        tool.geometry_hint(),
-        crate::feeds::planned::PlanFacts::NONE,
-    )
-    .speeds_mm();
+    let depth = crate::feeds::planned::body_speeds_depth_of(operation, tool.geometry_hint());
     let (width, scallop) = operation.cut_spec().calc_inputs(tool.diameter);
     (depth, width, scallop)
 }

@@ -2216,7 +2216,7 @@ fn modulate_annotated_against_trace(
     let radial_thinning = operation
         .cuts(&crate::feeds::entry_rule::ConfiguredEntry::registry_default(operation))
         .body_facts()
-        .thins_chip;
+        .thins_chip();
     let mut sample_engagements: Vec<crate::dressup::feed_modulation::MoveSampleEngagements> =
         planner_lifted
             .iter()
@@ -2290,7 +2290,7 @@ fn modulate_annotated_against_trace(
         operation
             .cuts(&crate::feeds::entry_rule::ConfiguredEntry::registry_default(operation))
             .body_facts()
-            .depth_rule,
+            .depth_rule(),
     );
     // P16 item 7: set when a material in scope has no force line; the move
     // summary then states `FORCE_BUDGET_NO_FORCE_LINE_NOTE`.

@@ -142,7 +142,7 @@ pub fn rigidity_cap_of(session: &ProjectSession, op: &OperationConfig) -> f64 {
         machine,
         op.cuts(&rs_cam_core::feeds::entry_rule::ConfiguredEntry::registry_default(op))
             .body_facts()
-            .depth_rule,
+            .depth_rule(),
         &cutter,
         material,
         ae,

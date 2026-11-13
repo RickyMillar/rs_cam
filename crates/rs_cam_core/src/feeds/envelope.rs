@@ -3251,7 +3251,7 @@ impl SafeEnvelope {
         use crate::limits::{DepthLimit, NoDepthLimit, NoNumberReason};
         match edge {
             // EXEMPT(S-NoBound)
-            CeilingEdge::ForceBudget => (self.inputs.cuts.list().body_facts().depth_rule
+            CeilingEdge::ForceBudget => (self.inputs.cuts.list().body_facts().depth_rule()
                 == DepthLimit::NoLimit(NoDepthLimit::FinishPass))
             .then_some(NoNumberReason::NoBound),
             CeilingEdge::Deflection | CeilingEdge::VendorDepthTable | CeilingEdge::Power => None,
@@ -4195,7 +4195,7 @@ fn axes_plan(
             && operation
                 .cuts(&crate::feeds::entry_rule::ConfiguredEntry::registry_default(operation))
                 .body_facts()
-                .offset_ring,
+                .offset_ring(),
     }
 }
 
@@ -4624,7 +4624,7 @@ const DEFLECTION_LAW: &str = "tip deflection <= min(radial stock to leave, 200 u
 /// (`tool_load::deflection::deflection_limit_um`).
 fn inputs_deflection_limit_um(inputs: &OwnedInputs) -> f64 {
     crate::tool_load::deflection::deflection_limit_um(
-        inputs.cuts.list().body_facts().leave_after_mm,
+        inputs.cuts.list().body_facts().leave_after_mm(),
     )
 }
 
@@ -4938,7 +4938,7 @@ fn rigidity_limit(
     use crate::feeds::force_budget as fb;
     // P29-3: the depth limit of the op's body cut (P29-5: a slot or a
     // groove reads the budget under every role, ruling R3).
-    let depth_limit = inputs.cuts.list().body_facts().depth_rule;
+    let depth_limit = inputs.cuts.list().body_facts().depth_rule();
     let rule = inputs.machine.rigidity.depth_cap_of(depth_limit)?;
     let crate::machine::DepthCapRule { budget_n } = rule;
     let basis = budget_basis(&inputs.machine);

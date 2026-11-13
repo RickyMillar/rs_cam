@@ -157,9 +157,7 @@ pub fn explain(input: &FeedsInput<'_>) -> FeedsExplain {
     // Operator ruling 2026-09-25: a `ProjectCurve` on a V-bit routes to the
     // printed Trace rows. Named here, once, for the field below. D2: the
     // row's `lut_route` says the cutter picks the rows.
-    let project_curve_vbit_routed_to_trace = input
-        .operation_kind
-        .is_some_and(|op| op.capabilities().lut_route == LutRoute::ByCutter)
+    let project_curve_vbit_routed_to_trace = input.row_key.lut_route() == LutRoute::ByCutter
         && input.tool_geometry.cutter_kind().lut_family() == ToolFamily::ChamferVbit;
     let (query, matched_row) = match (input.vendor_lut, routed_query) {
         (Some(lut), Some(query)) => {

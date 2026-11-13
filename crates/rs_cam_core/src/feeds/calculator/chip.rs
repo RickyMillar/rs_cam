@@ -102,16 +102,14 @@ pub(super) fn step2_chip_load(
         // "no data".
         let tool_family = input.tool_geometry.cutter_kind().lut_family();
         warnings.push(FeedsWarning::NoVendorRowsForRoutedOperation {
-            operation_kind: format!("{:?}", input.operation_kind),
+            operation_kind: input.row_key.routing_label(),
             tool_family: format!("{tool_family:?}"),
             missing_rows: vendor_normalize::missing_project_curve_rows(tool_family).to_owned(),
         });
     }
     if matches!(row_lookup, support::RecipeRowLookup::NoRow)
         && input.tool_geometry.cutter_kind().lut_family() == vendor_lut::ToolFamily::FlatEnd
-        && input
-            .operation_kind
-            .is_some_and(|k| k.capabilities().lut_route == LutRoute::FlatAsRoughPocket)
+        && input.row_key.lut_route() == LutRoute::FlatAsRoughPocket
     {
         // P13 item 4 (law B): the tool has no (Pocket, Roughing) row of its
         // own material. The formula chip stays, and the warning says so (D7).

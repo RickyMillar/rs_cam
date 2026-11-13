@@ -154,7 +154,7 @@ impl UnliftedFeed {
         let width = cuts.full_feed_width(ae, tool_diameter_mm);
         Some(Self::at_cut(
             feed,
-            cuts.body_facts().thins_chip,
+            cuts.body_facts().thins_chip(),
             width,
             crate::feeds::engagement::EngagedDiameter::of_hint(
                 geometry,

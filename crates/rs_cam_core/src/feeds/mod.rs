@@ -41,6 +41,7 @@ pub mod provenance;
 pub mod quantities;
 pub mod ramp;
 pub mod rationale;
+pub mod row_key;
 pub mod section;
 pub mod series;
 pub mod sourced;
@@ -74,6 +75,7 @@ pub use quantities::{
     COMMANDED_ADVANCE_PER_TOOTH, ChiploadBandClass, CommandedFeedMmMin, VendorChiploadBand,
 };
 pub use ramp::{EntryGeometry, RampBasis, RampFallback, RampFeed};
+pub use row_key::RowKey;
 pub use sourced::{Basis, PointBases, Sourced};
 pub use support::{FeedsSupport, feeds_support};
 pub use vendor_lut::VendorLut;
@@ -1714,30 +1716,29 @@ impl std::error::Error for FeedsError {}
 /// constructs `Unbacked`.
 pub fn validate_tool_for_operation(input: &FeedsInput) -> Result<(), FeedsError> {
     let actual = input.tool_geometry.cutter_kind();
-    if let Some(operation) = input.operation_kind {
-        let constraints = operation.registry_entry().tool_constraints;
-        if !constraints.allows(actual) {
-            return Err(FeedsError::WrongToolForOperation {
-                operation: Some(operation),
-                family: input.operation,
-                actual,
-                allowed: constraints.required_kinds,
-            });
-        }
+    // The vendor row key: the tool rule of the row and the scallop rows.
+    let operation = input.row_key.op_type();
+    let (family, _) = input.row_key.feeds_style();
+    let constraints = operation.registry_entry().tool_constraints;
+    if !constraints.allows(actual) {
+        return Err(FeedsError::WrongToolForOperation {
+            operation: Some(operation),
+            family,
+            actual,
+            allowed: constraints.required_kinds,
+        });
     }
-    let scallop_relevant = input.operation == OperationFamily::Scallop
-        || (input.operation == OperationFamily::Parallel && input.target_scallop_mm.is_some());
+    let scallop_relevant = family == OperationFamily::Scallop
+        || (family == OperationFamily::Parallel && input.target_scallop_mm.is_some());
     if scallop_relevant && matches!(actual, CutterKind::Flat | CutterKind::VBit) {
         return Err(FeedsError::WrongToolForOperation {
-            operation: input.operation_kind,
-            family: input.operation,
+            operation: Some(operation),
+            family,
             actual,
             allowed: &[],
         });
     }
-    if let Some(operation) = input.operation_kind
-        && let FeedsSupport::Refuse { reason } = feeds_support(input)
-    {
+    if let FeedsSupport::Refuse { reason } = feeds_support(input) {
         return Err(FeedsError::Unbacked {
             operation,
             tool_family: input.tool_geometry.cutter_kind().lut_family(),
@@ -2214,6 +2215,14 @@ struct DefaultProfile {
     ae_factor: f64,
 }
 
+/// The family default profile of the input's vendor row key
+/// ([`operation_default_profile`]). Step 3 of the calculator reads it, so
+/// the calculator opens no row key (P29-11 L-2).
+fn default_profile_of(input: &FeedsInput) -> DefaultProfile {
+    let (family, role) = input.row_key.feeds_style();
+    operation_default_profile(family, role)
+}
+
 // EXEMPT(P28-31)
 fn operation_default_profile(family: OperationFamily, role: PassRole) -> DefaultProfile {
     match (family, role) {
@@ -2664,7 +2673,7 @@ pub fn default_profile_row(
 /// on the calculator's own width and no repo check warns on it.
 #[must_use]
 pub fn default_radial_width(input: &FeedsInput, machine: &MachineProfile) -> (f64, Basis) {
-    let profile = operation_default_profile(input.operation, input.pass_role);
+    let profile = default_profile_of(input);
     let (_, ae, _, ae_basis) = default_engagement(input.tool_diameter, &profile, input, machine);
     (ae, ae_basis)
 }
@@ -2679,27 +2688,19 @@ fn default_engagement(
 ) -> (f64, f64, Basis, Basis) {
     let mut ap_factor = profile.ap_factor;
     let mut ae_factor = profile.ae_factor;
-    let mut ap_basis = Basis::Rule(profile_row(
-        input.operation,
-        input.pass_role,
-        "ap",
-        ap_factor,
-    ));
-    let mut ae_basis = Basis::Rule(profile_row(
-        input.operation,
-        input.pass_role,
-        "ae",
-        ae_factor,
-    ));
+    // The vendor row key: the family default profile of the row.
+    let (family, role) = input.row_key.feeds_style();
+    let mut ap_basis = Basis::Rule(profile_row(family, role, "ap", ap_factor));
+    let mut ae_basis = Basis::Rule(profile_row(family, role, "ae", ae_factor));
 
     // --- Adaptive-specific engagement matrix per tool geometry ---
     // From reference calcs.rs: separate entries for Flat/Ball/TaperedBall.
     // F201: that file is not in the repo; every factor below is a marked
     // unsourced constant (`ADAPTIVE_*`).
     // EXEMPT(P28-08)
-    if input.operation == OperationFamily::Adaptive {
-        let roughing = input.pass_role == PassRole::Roughing;
-        let semi = input.pass_role == PassRole::SemiFinish;
+    if family == OperationFamily::Adaptive {
+        let roughing = role == PassRole::Roughing;
+        let semi = role == PassRole::SemiFinish;
         if roughing || semi {
             let (ap_base, ae_base) = match input.tool_geometry {
                 ToolGeometryHint::Flat | ToolGeometryHint::Bull { .. } => {
@@ -2815,7 +2816,7 @@ fn default_engagement(
     }
 
     // --- Tool geometry adjustments for finishing operations ---
-    match (input.tool_geometry, input.operation, input.pass_role) {
+    match (input.tool_geometry, family, role) {
         (
             ToolGeometryHint::Ball,
             OperationFamily::Parallel | OperationFamily::Scallop,

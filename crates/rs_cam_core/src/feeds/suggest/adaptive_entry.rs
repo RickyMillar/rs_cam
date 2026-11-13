@@ -218,7 +218,7 @@ pub(super) fn unlifted_feed_at_kept_geometry(
         operation
             .cuts(&crate::feeds::entry_rule::ConfiguredEntry::registry_default(operation))
             .body_facts()
-            .thins_chip,
+            .thins_chip(),
         full_feed_width(operation, tool, ae),
         kept_engaged_diameter(tool.geometry_hint(), tool, ap),
     )
@@ -326,7 +326,7 @@ pub(super) fn rescale_feed_to_final_geometry(
     let thinning = operation
         .cuts(&crate::feeds::entry_rule::ConfiguredEntry::registry_default(operation))
         .body_facts()
-        .thins_chip;
+        .thins_chip();
     let factor_at_calculator = geometry_feed_factor(
         operation,
         tool,
