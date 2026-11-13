@@ -76,6 +76,20 @@ pub struct Exemption {
     pub closes_in: &'static str,
 }
 
+/// P29-11 11-2: the geometry reason of the row `id` when its class is
+/// [`ExemptionClass::Physical`], else `None` (a row that needs a ruling, a
+/// ruled row, or no such row). A scope cell (`limits::scope`) whose row is
+/// physical shows `CheckState::NotApplicable` with that reason; any other
+/// scope cell stays `NoNumber(NotJudgedHere)` (invariant 3).
+#[must_use]
+pub fn physical_geometry_of(id: &str) -> Option<Geometry> {
+    let row = EXEMPTIONS.iter().find(|e| e.id == id)?;
+    match row.class {
+        ExemptionClass::Physical(geometry) => Some(geometry),
+        ExemptionClass::NeedsRuling | ExemptionClass::Ruled { .. } => None,
+    }
+}
+
 /// The load caps of the feed modulator.
 const MODULATOR_CAPS: &[LimitId] = &[
     LimitId::ChipMax,

@@ -40,7 +40,7 @@ pub use cut::{
     BodySides, ByGroup, CleanupKind, Cut, CutEngagement, CutFacts, CutGroup, CutKind, CutSource,
     DepthLimit, EntryKind, FirstPassKind, Leave, NoDepthLimit, NoEngagementModel, SampleDepth,
 };
-pub use exemptions::{EXEMPTIONS, Exemption, ExemptionClass, Who};
+pub use exemptions::{EXEMPTIONS, Exemption, ExemptionClass, Who, physical_geometry_of};
 pub use project::{of_criterion, of_envelope, of_judged_value, of_rpm_choice};
 pub use row::{
     Caveat, CeilingChipSource, CheckRow, Compared, JudgedAt, Occurs, PlanePoint, PlannedFacts,

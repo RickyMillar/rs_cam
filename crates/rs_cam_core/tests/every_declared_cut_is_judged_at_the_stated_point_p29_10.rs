@@ -16,6 +16,10 @@
 //!   planned row, and no other stated cut row. Each stated cut row is a
 //!   value (`Within`, `Exceeds`) or a named `NoNumber` or `NotApplicable`;
 //!   a row the scope does not judge names its row of `EXEMPTIONS`.
+//!   P29-11 11-2: a scope cell takes the class of its row: a `Physical`
+//!   row (a drill cycle, P28-20) gives `NotApplicable` with its geometry, a
+//!   row that needs a ruling (P28-10) `NoNumber(NotJudgedHere)`; at both
+//!   points, the planned rows too.
 //! - Claim 2 (one judge, two points): when the op states the proposal (its
 //!   depth, width, feed and speed), every stated cut row equals its planned
 //!   row in value, bound and state, except the force budget of a cut that
@@ -50,6 +54,7 @@ use rs_cam_core::feeds::envelope::{EnvelopeInput, PickRequest, SafeEnvelope};
 use rs_cam_core::feeds::suggest::{NoProject, SuggestContext};
 use rs_cam_core::limits::{
     Caveat, CheckRow, CheckState, EXEMPTIONS, LimitId, NoNumberReason, Subject, Tone,
+    physical_geometry_of,
 };
 use rs_cam_core::machine::MachineProfile;
 use rs_cam_core::material::{Material, WoodSpecies};
@@ -146,6 +151,7 @@ fn claim_1_every_declared_cut_has_a_row_at_the_stated_point() {
     let mut envelopes = 0;
     let mut rows = 0;
     let mut not_judged = 0;
+    let mut physical = 0;
     for (name, op, t, dressups) in cases() {
         let Some(env) = envelope(&op, &t, dressups.as_ref()) else {
             continue;
@@ -157,6 +163,29 @@ fn claim_1_every_declared_cut_has_a_row_at_the_stated_point() {
             continue;
         }
         envelopes += 1;
+        // P29-11 11-2: a scope cell takes the class of its own row, at
+        // both points.
+        for row in planned.values().chain(stated.values()) {
+            let Some(id) = row.exemption() else {
+                continue;
+            };
+            match row.check().state {
+                CheckState::NotApplicable(g) if physical_geometry_of(id).is_some() => {
+                    physical += 1;
+                    assert_eq!(physical_geometry_of(id), Some(g), "{name}: {}", row.face());
+                }
+                CheckState::NoNumber(NoNumberReason::NotJudgedHere) => assert_eq!(
+                    physical_geometry_of(id),
+                    None,
+                    "{name}: {}: a physical scope row is not applicable",
+                    row.face()
+                ),
+                CheckState::Within
+                | CheckState::Exceeds
+                | CheckState::NoNumber(_)
+                | CheckState::NotApplicable(_) => {}
+            }
+        }
         assert_eq!(
             planned.keys().collect::<Vec<_>>(),
             stated.keys().collect::<Vec<_>>(),
@@ -185,7 +214,14 @@ fn claim_1_every_declared_cut_has_a_row_at_the_stated_point() {
         "non-vacuity: {envelopes} envelopes with a stated point"
     );
     assert!(rows > 1000, "non-vacuity: {rows} stated cut rows");
-    assert!(not_judged > 0, "non-vacuity: a scope cell (a drill cycle)");
+    assert!(
+        not_judged > 0,
+        "non-vacuity: a scope cell with a row that needs a ruling (drill power)"
+    );
+    assert!(
+        physical > 0,
+        "non-vacuity: a physical scope cell (the drill chip band)"
+    );
 }
 
 #[test]

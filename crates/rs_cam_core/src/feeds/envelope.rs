@@ -1607,8 +1607,13 @@ impl CutRow {
             PlannedCell::NotJudged(n) => Some(n.row),
             PlannedCell::Judged(_) | PlannedCell::NotACutLimit(_) => None,
         };
+        // P29-11 11-2: a scope cell whose row is physical (a drill cycle has
+        // no radial engagement, P28-20) is `NotApplicable` with that
+        // reason; a cell whose row needs a ruling (P28-10) keeps
+        // `NoNumber(NotJudgedHere)`. Both name their row.
         Self {
             scope_row,
+            geometry: scope_row.and_then(crate::limits::physical_geometry_of),
             ..Self::of(cut, presence, depth, value, bound)
         }
     }

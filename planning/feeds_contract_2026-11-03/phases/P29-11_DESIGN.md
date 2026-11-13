@@ -542,3 +542,13 @@ Not in this commit: the gate rows of the drill group (`GroupCell::NotJudged`, `r
 as `NoNumber(NotJudgedHere)`, all three `Physical(NoRadialEngagement)`; 48 rows. The same rule
 would move them; the lead decides (section 11.5). The fixture dump does not change (it holds no
 envelope rows).
+
+Measured (11-2): as predicted. operator 24 rows and `nz_wanaka_21` 24 rows in each modulation
+pass go from `NoNumber(NotJudgedHere)` to `NotApplicable(NoRadialEngagement)` (face "drill cycle ·
+chip max no side cut", tone `not_applicable`, detail "not applicable; the cut has no radial
+engagement"), exemption `P28-20` kept; the profile lines of toolpaths 3 and 4 change by the same
+words only. The 8 (operator) and 6 (`nz_wanaka_21`) `P28-10` rows do not move. rivmap100 and
+rivmap100_live: 0 rows. The fixture dump: no change. The stated-point sentry gains the claim (a
+scope cell takes the class of its row, at both points, with a non-vacuity count of each kind).
+Wire: the `state` (`not_applicable`, reason `no_radial_engagement`), `tone` and `face` of those
+rows; no key is added or removed.
