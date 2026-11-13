@@ -84,10 +84,18 @@ pub enum NoNumberReason {
     /// geometry reason. P29-3 lists it for a ruling. It is never
     /// [`CheckState::NotApplicable`].
     NoBound,
-    /// The envelope does not judge the point against this limit today: a
-    /// limit on a fixed axis, a limit judged per grid point, a drawn curve
-    /// that an exact rule replaces. A scope fact of today, listed in P29-3.
+    /// A scope cell (`limits::scope`) whose exemption row needs a ruling
+    /// (the drill power, P28-10; the gate rows of the drill group): the
+    /// limit does not judge this cut, and the row names its own row of
+    /// `EXEMPTIONS`. P29-11 11-3: the stated point on a fixed axis no
+    /// longer gives it (a value check, `SafeEnvelope::stated_value_check`).
     NotJudgedHere,
+    /// P29-11 11-3: a limit of each cut (the force budget, the deflection,
+    /// the vendor depth table, the power, the chip band, the rubbing floor)
+    /// against the stated point on a fixed axis or per point: its stated
+    /// cut rows judge it (`Subject::StatedCut`). `of_envelope` gives it;
+    /// no row on a surface shows it.
+    JudgedPerCut,
 }
 
 impl NoNumberReason {

@@ -640,3 +640,39 @@ that exceed). The 18 lines before and after:
 The other three files: no face line moves. The explainer data: the six envelope replies of
 `P29-10_explainer/data/` (operator idx 0, 1, 2, 6, 14, 15) hold stated rows of the feed cap
 (idx 0, 1, 14) and the move budget (idx 1, 2, 14, 15) that move; they need a regeneration.
+
+Measured (11-3), the dump `a113` against `pre113`:
+
+- Rows: operator 35, `nz_wanaka_21` 34, rivmap100 13, rivmap100_live 13 stated rows change, in
+  each modulation pass; no other row changes (the profile lines change by the same rows). The
+  states are as predicted on every row: operator 27 `Within`, 4 `OnlyALowerBound` (idx 9), 4
+  `NotModelled` (idx 5); each rivmap file 9 `Within`, 4 `OnlyALowerBound` (idx 3: the tool is not
+  flat); `nz_wanaka_21` as the operator file, plus 4 `NoStatedFeed` (idx 0, 1, 12, 14) and 1
+  `NotModelled` (idx 2, the move-budget curve has no width at the depth). No row `Exceeds`.
+- One value differs from the prediction: the Scallop finish (operator and `nz_wanaka_21` idx 16,
+  rivmap idx 2) reads the earlier leave 0.5 mm, not 0.2 mm. The prediction read the stated point
+  depth of the plane mark; the depth door gives the leave (the value that its stated cut rows
+  read). The states are as predicted (`Within`: 3.1 %, 2.5 %, 8.3 % of the depth caps, 1000 % of
+  the depth floor).
+- The feed cap: operator 6488, 8475, 6488, 6488, 8060 mm/min against 15000 (43 %, 56 %, 43 %,
+  43 %, 54 %); rivmap 2200 and 2400 against 10000. The width of a V-bit slot: idx 10 and 13 read
+  the cone, 3.0022 and 0.6928 mm, at 100 % of the diameter cap; idx 9 reads 0.8527 mm at the lower
+  bound 2.418 mm.
+- The face line: 44 of 44 lines of the four files do not change (the 18 operator lines of the
+  table above).
+- `S-NotJudgedHere` closed: pins `ROWS` 36, `MAX_NEEDS_RULING` 25, `ROWS_WITH_A_FILE` 36. A new
+  claim 4 of `every_declared_cut_is_judged_at_the_stated_point_p29_10` holds the value checks.
+- The explainer: `data/` regenerated for the rows that 11-3 moves (`regen_113.py` in the
+  scratchpad: each moved row of the six envelope replies and of the CLI records is replaced by its
+  row of the probe dump of the GUI run modulation, after a check that the old row equals the
+  "before" dump; a writer that formats as `serde_json` does, checked by a round trip of every
+  file). 7 rows in the replies, 35 + 3 in the CLI records; the tool-load report holds no envelope
+  row. `build_page.py` and `assert_claims.py`: 11 of 11 claims pass.
+- Wire: the stated rows of these limits carry a state, a margin and, for the feed cap, the unit
+  `mm/min`; their `exemption` is `null` (was `S-NotJudgedHere`). A new `NoNumberReason`,
+  `judged_per_cut`, that no row shows.
+- A sentry outside the list moved: `every_limit_is_a_limit_id_p29_2`
+  (`the_checks_of_a_planned_point_hold_the_placement`) held the least `Within` margin of
+  `of_envelope` equal to the placement margin. The feed cap check (0.75 on its pocket fixture) is
+  a value check of the stated feed, not a margin that places the point; the claim now reads the
+  checks whose edge is not per point.

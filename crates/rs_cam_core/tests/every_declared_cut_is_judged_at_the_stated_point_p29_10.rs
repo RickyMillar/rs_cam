@@ -35,6 +35,16 @@
 //!   its value, bound and state; an `Exceeds` row of it is a caution. With
 //!   `RunModulation::Off` no row carries it. Every stated row ranks for the
 //!   face (the 10i predicate is gone).
+//! - Claim 4 (P29-11 11-3, lead ruling L2): the stated point against a
+//!   limit that is not a limit of each cut is a value check: no row is
+//!   `NotJudgedHere`; a row that holds a state has its value and bound and
+//!   the state of its margin; a row with no number names one reason of a
+//!   closed list (`OnlyALowerBound`, `NoEarlierLeave`, `NotModelled`,
+//!   `NoStatedFeed`, `NoVendorRow`, `NoForceLine`, `NoToolBody`). Non-vacuity:
+//!   a stated row of the flute guard, the cutting length, the tool diameter
+//!   and the engagement floor holds a number (on a free or a fixed axis; the
+//!   case set does not prove a fixed-axis value check of the vendor axial
+//!   bound, the move budget or the cutting feed cap).
 //!
 //! `cargo test -p rs_cam_core -q --test every_declared_cut_is_judged_at_the_stated_point_p29_10`
 
@@ -352,4 +362,73 @@ fn claim_3_a_modulated_limit_row_is_read_before_modulation() {
         &[LimitId::ChipMax],
         "the declared list of the default run"
     );
+}
+
+#[test]
+#[expect(
+    clippy::panic,
+    reason = "test code: a panic is how a test reports a failure"
+)]
+fn claim_4_the_stated_point_is_a_value_check_p29_11() {
+    let mut numbers: BTreeMap<LimitId, usize> = BTreeMap::new();
+    let mut rows = 0;
+    for (name, op, t, dressups) in cases() {
+        let Some(env) = envelope(&op, &t, dressups.as_ref()) else {
+            continue;
+        };
+        for row in env
+            .rows()
+            .iter()
+            .filter(|r| matches!(r.subject(), Subject::Stated))
+        {
+            rows += 1;
+            let c = row.check();
+            match c.state {
+                CheckState::Within | CheckState::Exceeds => {
+                    let (Some(v), Some(b)) = (c.value, c.bound) else {
+                        panic!("{name}: {}: a state with no value or bound", row.face());
+                    };
+                    let m = c.margin.expect("a decided row holds its margin");
+                    let side_margin = c.side.margin(v, b).expect("a positive bound");
+                    if c.limit != LimitId::MoveBudget || c.unit != "moves" {
+                        assert!(
+                            (m - side_margin).abs() < 1e-9,
+                            "{name}: {}: the margin {m} is the margin of value and bound \
+                             {side_margin}",
+                            row.face()
+                        );
+                    }
+                    assert_eq!(c.state, CheckState::of_margin(m), "{name}: {}", row.face());
+                    *numbers.entry(c.limit).or_default() += 1;
+                }
+                CheckState::NoNumber(reason) => assert!(
+                    matches!(
+                        reason,
+                        NoNumberReason::OnlyALowerBound
+                            | NoNumberReason::NoEarlierLeave
+                            | NoNumberReason::NotModelled
+                            | NoNumberReason::NoStatedFeed
+                            | NoNumberReason::NoVendorRow
+                            | NoNumberReason::NoForceLine
+                            | NoNumberReason::NoToolBody
+                    ),
+                    "{name}: {}: the reason {reason:?} is not a named value reason",
+                    row.face()
+                ),
+                CheckState::NotApplicable(_) => {}
+            }
+        }
+    }
+    assert!(rows > 100, "non-vacuity: {rows} stated-point rows");
+    for limit in [
+        LimitId::FluteGuard,
+        LimitId::CuttingLength,
+        LimitId::ToolDiameter,
+        LimitId::EngagementFloor,
+    ] {
+        assert!(
+            numbers.get(&limit).copied().unwrap_or(0) > 0,
+            "non-vacuity: a stated row of {limit:?} holds a number: {numbers:?}"
+        );
+    }
 }

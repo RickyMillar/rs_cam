@@ -1040,10 +1040,12 @@ fn exemption_of(check: &Check, caveats: &[Caveat]) -> Option<&'static str> {
     let state_row = match check.state {
         // EXEMPT(S-NoBound)
         CheckState::NoNumber(NoNumberReason::NoBound) => Some("S-NoBound"),
-        // EXEMPT(S-NotJudgedHere)
-        CheckState::NoNumber(NoNumberReason::NotJudgedHere) => Some("S-NotJudgedHere"),
+        // P29-11 11-3: a not-judged scope cell names its own row (the
+        // caller passes it); no stated-point row is `NotJudgedHere` now.
         CheckState::NoNumber(
-            NoNumberReason::NoForceLine
+            NoNumberReason::NotJudgedHere
+            | NoNumberReason::JudgedPerCut
+            | NoNumberReason::NoForceLine
             | NoNumberReason::NoSimulation
             | NoNumberReason::StaleSimulation
             | NoNumberReason::NoVendorRow
@@ -1703,7 +1705,8 @@ impl NoNumberReason {
             | Self::NotModelled
             | Self::OnlyALowerBound
             | Self::NoBound
-            | Self::NotJudgedHere => false,
+            | Self::NotJudgedHere
+            | Self::JudgedPerCut => false,
         }
     }
 
@@ -1724,6 +1727,7 @@ impl NoNumberReason {
             Self::NoStatedFeed => "no stated feed",
             Self::NoBound => "no limit here",
             Self::NotJudgedHere => "not judged here",
+            Self::JudgedPerCut => "judged per cut",
         }
     }
 
@@ -1746,6 +1750,7 @@ impl NoNumberReason {
             Self::NoStatedFeed => "the op states no feed or no spindle speed",
             Self::NoBound => "the limit gives this cut no bound",
             Self::NotJudgedHere => "this limit is not judged on this cut",
+            Self::JudgedPerCut => "the rows of each declared cut judge this limit",
         }
     }
 }

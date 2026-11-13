@@ -110,7 +110,7 @@ const R2: ExemptionClass = ExemptionClass::Ruled {
 const NR: ExemptionClass = ExemptionClass::NeedsRuling;
 
 /// Every exemption from a limit today. See the module doc.
-pub static EXEMPTIONS: [Exemption; 37] = [
+pub static EXEMPTIONS: [Exemption; 36] = [
     // P28: the limit audit.
     Exemption {
         id: "P28-02",
@@ -427,7 +427,8 @@ pub static EXEMPTIONS: [Exemption; 37] = [
         where_: &["src/session/compute.rs"],
         closes_in: "later",
     },
-    // S: the two scope reasons of P29-2 (`NoNumberReason`).
+    // S: the scope reason of P29-2 (`NoNumberReason::NoBound`). P29-11
+    // 11-3 closed `S-NotJudgedHere`: the stated point is a value check.
     Exemption {
         id: "S-NoBound",
         what: "the machine force budget",
@@ -441,20 +442,6 @@ pub static EXEMPTIONS: [Exemption; 37] = [
             "src/limits/row.rs",
         ],
         closes_in: "stays, as P28-02",
-    },
-    Exemption {
-        id: "S-NotJudgedHere",
-        what: "every envelope limit",
-        limit: &[],
-        // P29-10 10h: the deflection on a fixed depth axis is a value check
-        // at the fixed depth; the stated-point arm stays (`of_envelope`).
-        who: Who::Reader(
-            "the stated point against a limit on a fixed axis, a per-point limit, \
-             the drawn move-budget curve (NoNumberReason::NotJudgedHere)",
-        ),
-        class: NR,
-        where_: &["src/limits/project.rs", "src/limits/row.rs"],
-        closes_in: "P29-10",
     },
     // U: one row for each cut that no limit reads before the simulation
     // (ruling Q3). P29-7 7b declared six of them with their feed rules and

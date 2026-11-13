@@ -437,8 +437,18 @@ fn the_checks_of_a_planned_point_hold_the_placement() {
                 inside += 1;
                 assert!(binding.is_empty(), "no binding check inside at {p:?}");
                 assert_eq!(exceeds, 0, "no check exceeds inside at {p:?}");
+                // P29-11 11-3: a per-point limit (the cutting feed cap) is a
+                // value check of the stated cut, not a margin that places
+                // the point; the least margin reads the placing checks only.
                 let least = checks
                     .iter()
+                    .enumerate()
+                    .filter(|(i, _)| {
+                        env.boundary.get(*i).is_none_or(|l| {
+                            !matches!(l.edge, rs_cam_core::feeds::envelope::Edge::PerPoint)
+                        })
+                    })
+                    .map(|(_, c)| c)
                     .filter(|c| c.state == CheckState::Within)
                     .filter_map(|c| c.margin)
                     .fold(f64::INFINITY, f64::min);

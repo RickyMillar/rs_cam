@@ -48,9 +48,9 @@ use rs_cam_core::limits::{
 };
 
 /// The rows that need a ruling. Exact: a closed row lowers it.
-const MAX_NEEDS_RULING: usize = 26;
+const MAX_NEEDS_RULING: usize = 25;
 /// Every row.
-const ROWS: usize = 37;
+const ROWS: usize = 36;
 /// The rows with a geometry reason.
 const PHYSICAL: usize = 8;
 /// The rows that quote an operator ruling.
@@ -96,7 +96,10 @@ const RULED: usize = 3;
 /// that remains: a straight plunge that ships with no judge. The check (c)
 /// of P29-8e closed it (ROWS 37, need a ruling 26): `LimitId::PlungeRate`
 /// judges every declared cut against `VerticalRateLimit::bound`.
-const ROWS_WITH_A_FILE: usize = 37;
+/// P29-11 11-3 closed the row `S-NotJudgedHere` with two files (ROWS 36,
+/// need a ruling 25): the stated point on a fixed axis or per point is a
+/// value check (`SafeEnvelope::stated_value_check`).
+const ROWS_WITH_A_FILE: usize = 36;
 
 /// The 34 rows of `phases/P28_limit_audit.md`.
 const P28_IDS: [&str; 34] = [

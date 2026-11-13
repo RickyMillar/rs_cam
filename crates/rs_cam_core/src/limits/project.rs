@@ -93,9 +93,11 @@ pub fn of_criterion(status: &CriterionStatus<'_>) -> Check {
 ///
 /// The margins, the states and the binding limit are the ones of
 /// `SafeEnvelope::placement_of(p)` (`SafeEnvelope::placing_margins`). A
-/// limit that the placement does not judge at `p` is
-/// [`NoNumberReason::NotJudgedHere`], or [`NoNumberReason::NotModelled`]
-/// for an edge the model abstains on.
+/// limit that the placement does not judge at `p` (a fixed axis, a
+/// per-point limit) is the value check of the envelope at `p`
+/// (`SafeEnvelope::stated_value_check`, P29-11 11-3; a limit of each cut
+/// gives `NoNumber(JudgedPerCut)`), or [`NoNumberReason::NotModelled`] for
+/// an edge the model abstains on.
 #[must_use]
 pub fn of_envelope(envelope: &SafeEnvelope, p: CutPoint) -> Vec<Check> {
     let placed = envelope.placing_margins(p);
@@ -117,28 +119,42 @@ pub fn of_envelope(envelope: &SafeEnvelope, p: CutPoint) -> Vec<Check> {
         };
         let reading = envelope.planned_reading(limit, p);
         let at = placed.iter().position(|(_, _, i)| *i == Some(index));
-        let (margin, state) = match (at.and_then(|k| placed.get(k)), &limit.edge) {
-            (Some((_, margin, _)), _) => (Some(*margin), CheckState::of_margin(*margin)),
-            (None, Edge::Unmodelled { .. }) => {
-                (None, CheckState::NoNumber(NoNumberReason::NotModelled))
-            }
-            // EXEMPT(S-NotJudgedHere)
-            (
-                None,
-                Edge::ApCeiling { .. }
-                | Edge::ApFloor { .. }
-                | Edge::AeCeiling { .. }
-                | Edge::AeFloor { .. }
-                | Edge::ApCurve { .. }
-                | Edge::AeCurve { .. }
-                | Edge::PerPoint,
-            ) => (None, CheckState::NoNumber(NoNumberReason::NotJudgedHere)),
-        };
+        let (value, bound, unit, margin, state) =
+            match (at.and_then(|k| placed.get(k)), &limit.edge) {
+                (Some((_, margin, _)), _) => (
+                    reading.map(|(value, _)| value),
+                    reading.map(|(_, bound)| bound),
+                    "mm",
+                    Some(*margin),
+                    CheckState::of_margin(*margin),
+                ),
+                (None, Edge::Unmodelled { .. }) => (
+                    reading.map(|(value, _)| value),
+                    reading.map(|(_, bound)| bound),
+                    "mm",
+                    None,
+                    CheckState::NoNumber(NoNumberReason::NotModelled),
+                ),
+                // P29-11 11-3: the stated cut as a value check.
+                (
+                    None,
+                    Edge::ApCeiling { .. }
+                    | Edge::ApFloor { .. }
+                    | Edge::AeCeiling { .. }
+                    | Edge::AeFloor { .. }
+                    | Edge::ApCurve { .. }
+                    | Edge::AeCurve { .. }
+                    | Edge::PerPoint,
+                ) => {
+                    let v = envelope.stated_value_check(limit, p);
+                    (v.value, v.bound, v.unit, v.margin, v.state)
+                }
+            };
         out.push(Check {
             limit: LimitId::of_limit_kind(limit.kind),
-            value: reading.map(|(value, _)| value),
-            bound: reading.map(|(_, bound)| bound),
-            unit: "mm",
+            value,
+            bound,
+            unit,
             side,
             margin,
             state,

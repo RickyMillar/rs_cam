@@ -1022,6 +1022,84 @@ pub struct EnvelopeInput<'a> {
 }
 
 /// The owned inputs that a pick off the grid needs.
+/// P29-11 11-3: the stated point against one limit where the placement
+/// does not judge it ([`SafeEnvelope::stated_value_check`]).
+#[derive(Debug, Clone, Copy, PartialEq)]
+pub(crate) struct StatedValue {
+    /// The value (the depth, the width or the feed); `None` with no number.
+    pub(crate) value: Option<f64>,
+    /// The bound at the value.
+    pub(crate) bound: Option<f64>,
+    /// The unit of the value and the bound.
+    pub(crate) unit: &'static str,
+    /// The margin, for a value that the check decides.
+    pub(crate) margin: Option<f64>,
+    /// The state.
+    pub(crate) state: crate::limits::CheckState,
+}
+
+impl StatedValue {
+    fn no_number(reason: crate::limits::NoNumberReason) -> Self {
+        Self {
+            value: None,
+            bound: None,
+            unit: "mm",
+            margin: None,
+            state: crate::limits::CheckState::NoNumber(reason),
+        }
+    }
+
+    /// A value against its bound. From a lower bound (`lower`), a ceiling
+    /// that holds or a floor that fails proves nothing.
+    fn judged(
+        value: f64,
+        bound: f64,
+        unit: &'static str,
+        side: crate::limits::BoundSide,
+        lower: bool,
+    ) -> Self {
+        use crate::limits::{BoundSide, CheckState, NoNumberReason};
+        let Some(margin) = side.margin(value, bound) else {
+            return Self {
+                value: Some(value),
+                bound: Some(bound),
+                unit,
+                margin: None,
+                state: CheckState::NoNumber(NoNumberReason::NotModelled),
+            };
+        };
+        let state = CheckState::of_margin(margin);
+        let proves_nothing = lower
+            && match (side, state) {
+                (BoundSide::Ceiling, CheckState::Within)
+                | (BoundSide::Floor, CheckState::Exceeds) => true,
+                (
+                    BoundSide::Ceiling | BoundSide::Floor,
+                    CheckState::Within
+                    | CheckState::Exceeds
+                    | CheckState::NoNumber(_)
+                    | CheckState::NotApplicable(_),
+                ) => false,
+            };
+        if proves_nothing {
+            return Self {
+                value: Some(value),
+                bound: Some(bound),
+                unit,
+                margin: None,
+                state: CheckState::NoNumber(NoNumberReason::OnlyALowerBound),
+            };
+        }
+        Self {
+            value: Some(value),
+            bound: Some(bound),
+            unit,
+            margin: Some(margin),
+            state,
+        }
+    }
+}
+
 #[derive(Clone)]
 struct OwnedInputs {
     operation: OperationConfig,
@@ -2393,6 +2471,182 @@ impl SafeEnvelope {
         let mut out = Vec::new();
         self.each_placing_margin(p, None, |m, kind, index| out.push((kind, m, index)));
         out
+    }
+
+    /// P29-11 11-3: the stated cut at `p` against the limit `l` where the
+    /// placement does not judge it (a fixed axis, a per-point limit): a
+    /// value check, as P29-10 10h made the deflection on a fixed axis. The
+    /// placement, the proposal and every drawn edge do not change.
+    ///
+    /// - A limit of each cut (a planned role): `NoNumber(JudgedPerCut)`, its
+    ///   stated cut rows judge it.
+    /// - A depth edge: the body depth by the one depth door, as the stated
+    ///   cut rows read it ([`Self::stated_body_depth`]).
+    /// - A width edge: the body width ([`Self::stated_body_width`]).
+    /// - A value from a lower-bound depth: a ceiling that holds, or a floor
+    ///   that fails, proves nothing (`NoNumber(OnlyALowerBound)`).
+    /// - The cutting feed cap: the stored op feed against the cutting
+    ///   ceiling of the op ([`Self::stated_feed_check`]).
+    #[must_use]
+    pub(crate) fn stated_value_check(&self, l: &Limit, p: CutPoint) -> StatedValue {
+        use crate::limits::NoNumberReason;
+        match planned_limit_of(crate::limits::LimitId::of_limit_kind(l.kind)) {
+            PlaneRole::DepthCeiling(_) | PlaneRole::ValueCheck(_) => {
+                return StatedValue::no_number(NoNumberReason::JudgedPerCut);
+            }
+            PlaneRole::NotACutLimit(_) => {}
+        }
+        let side = if l.edge.is_floor() {
+            crate::limits::BoundSide::Floor
+        } else {
+            crate::limits::BoundSide::Ceiling
+        };
+        let depth = self.stated_body_depth(p);
+        let (q, lower) = match l.edge {
+            Edge::ApCeiling { .. } | Edge::ApCurve { .. } | Edge::ApFloor { .. } => match depth {
+                Ok((ap_mm, lower)) => (
+                    CutPoint {
+                        ap_mm,
+                        ae_mm: p.ae_mm,
+                    },
+                    lower,
+                ),
+                Err(reason) => return StatedValue::no_number(reason),
+            },
+            Edge::AeCeiling { .. } | Edge::AeFloor { .. } | Edge::AeCurve { .. } => {
+                match self.stated_body_width(p, depth) {
+                    Ok((ae_mm, lower)) => (
+                        CutPoint {
+                            ap_mm: depth.map_or(p.ap_mm, |(ap, _)| ap),
+                            ae_mm,
+                        },
+                        lower,
+                    ),
+                    Err(reason) => return StatedValue::no_number(reason),
+                }
+            }
+            Edge::PerPoint => {
+                return match l.kind {
+                    LimitKind::FeedCap => self.stated_feed_check(),
+                    LimitKind::FluteGuard
+                    | LimitKind::CuttingLength
+                    | LimitKind::VendorAxial
+                    | LimitKind::Rigidity
+                    | LimitKind::CornerCoverage
+                    | LimitKind::Power
+                    | LimitKind::Deflection
+                    | LimitKind::ChipBand
+                    | LimitKind::RubbingFloor
+                    | LimitKind::Diameter
+                    | LimitKind::Runtime
+                    | LimitKind::EngagementFloor
+                    | LimitKind::VendorDepthTable => {
+                        StatedValue::no_number(NoNumberReason::NotModelled)
+                    }
+                };
+            }
+            Edge::Unmodelled { .. } => return StatedValue::no_number(NoNumberReason::NotModelled),
+        };
+        let Some((_, value, bound)) = self.axis_reading(l, q) else {
+            return StatedValue::no_number(NoNumberReason::NotModelled);
+        };
+        StatedValue::judged(value, bound, "mm", side, lower)
+    }
+
+    /// P29-11 11-3: the depth of the body at the stated point `p`, by the
+    /// one depth door, as `read_declared_cuts` reads it: a lower bound
+    /// (`true`) of a Project Curve, the earlier op's leave, else the stated
+    /// depth when the envelope has a depth axis.
+    fn stated_body_depth(&self, p: CutPoint) -> Result<(f64, bool), crate::limits::NoNumberReason> {
+        use crate::limits::NoNumberReason;
+        match self.inputs.cuts.body_depth() {
+            BodyDepth::AtLeast(b) => Ok((b, true)),
+            BodyDepth::EarlierLeave(leave) => Ok((leave, false)),
+            BodyDepth::NoEarlierLeave(_) => Err(NoNumberReason::NoEarlierLeave),
+            BodyDepth::Plane(_) | BodyDepth::None(_) => self
+                .proposal
+                .get()
+                .ap_mm()
+                .map(|_| (p.ap_mm, false))
+                .ok_or(NoNumberReason::NotModelled),
+        }
+    }
+
+    /// P29-11 11-3: the width of the body at the stated point `p`. A slot
+    /// cuts the engaged diameter of the tool at the body depth (the door of
+    /// the diameter edge, `EngagedDiameter::of_tool`; a flat end mill cuts
+    /// D at any depth); a stated width reads its rule; a body with no width
+    /// rule reads the width of the point. `true` when the width comes from
+    /// a lower-bound depth.
+    fn stated_body_width(
+        &self,
+        p: CutPoint,
+        depth: Result<(f64, bool), crate::limits::NoNumberReason>,
+    ) -> Result<(f64, bool), crate::limits::NoNumberReason> {
+        use crate::compute::catalog::DeclaredWidth;
+        use crate::limits::NoNumberReason;
+        let cuts = &self.inputs.cuts;
+        let Some(body) = cuts.list().iter().next() else {
+            return Ok((p.ae_mm, false));
+        };
+        match body.width {
+            DeclaredWidth::Slot => {
+                if self.inputs.tool.geometry_hint() == ToolGeometryHint::Flat {
+                    return Ok((self.inputs.tool.diameter, false));
+                }
+                let (ap, lower) = depth?;
+                let cutter = crate::compute::cutter::build_cutter(&self.inputs.tool)
+                    .map_err(|_no_cutter| NoNumberReason::NoToolBody)?;
+                Ok((
+                    crate::feeds::engagement::EngagedDiameter::of_tool(&cutter, ap).mm(),
+                    lower,
+                ))
+            }
+            DeclaredWidth::Stated(_)
+            | DeclaredWidth::PassCeiling { .. }
+            | DeclaredWidth::CapMult { .. }
+            | DeclaredWidth::Scallop(_)
+            | DeclaredWidth::None(_) => {
+                let column = BodyColumn {
+                    ae_mm: p.ae_mm,
+                    chip_mm: None,
+                    stored: None,
+                };
+                Ok((
+                    cuts.planned(body, column).width_mm.unwrap_or(p.ae_mm),
+                    false,
+                ))
+            }
+        }
+    }
+
+    /// P29-11 11-3: the stored op feed against the cutting ceiling of the op
+    /// (`MachineProfile::op_cutting_ceiling` at the input's
+    /// `feed_max_rate`, the ceiling of Step 7). No stated feed or speed:
+    /// `NoNumber(NoStatedFeed)`.
+    fn stated_feed_check(&self) -> StatedValue {
+        let Some(chip) = operator_chip(&self.inputs.operation, &self.inputs.tool) else {
+            return StatedValue::no_number(crate::limits::NoNumberReason::NoStatedFeed);
+        };
+        let input = FeedsInput::of_operation(
+            &self.inputs.operation,
+            &self.inputs.tool,
+            &self.inputs.material,
+            &self.inputs.machine,
+            self.inputs.lut,
+            self.inputs.spindle_strategy,
+        );
+        let ceiling = input
+            .machine
+            .op_cutting_ceiling(input.feed_max_rate)
+            .mm_min();
+        StatedValue::judged(
+            chip.feed_mm_min,
+            ceiling,
+            "mm/min",
+            crate::limits::BoundSide::Ceiling,
+            false,
+        )
     }
 
     /// P29-2: the value and the bound of the planned point `p` on the limit
