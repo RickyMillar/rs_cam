@@ -552,3 +552,91 @@ rivmap100_live: 0 rows. The fixture dump: no change. The stated-point sentry gai
 scope cell takes the class of its row, at both points, with a non-vacuity count of each kind).
 Wire: the `state` (`not_applicable`, reason `no_radial_engagement`), `tone` and `face` of those
 rows; no key is added or removed.
+
+### 11.3 Commit 11-3: the stated point judged as value checks (prediction)
+
+Written before the code, from the dump of the 11-2 tree (`pre113`, which adds the card face
+line to the probe). Today `of_envelope` gives `NoNumber(NotJudgedHere)` to the stated point
+against a limit on a fixed axis (a fixed axis does not place the point) and against a per-point
+limit. The rule as it will be built (`SafeEnvelope::stated_value_check`, read by `of_envelope`;
+the placement, the proposal and every drawn edge do not change):
+
+- **Depth axis** (flute guard, cutting length, vendor axial bound, the depth engagement floor):
+  the value is the body depth by the one depth door (`DeclaredCuts::body_depth`), as the stated
+  cut rows read it: a lower bound `AtLeast(b)` (a Project Curve) reads `b`; an earlier leave
+  reads the leave; `NoEarlierLeave` gives `NoNumber(NoEarlierLeave)`; a plane depth reads the
+  stated point depth when the envelope has a depth axis, else no depth: `NoNumber(NotModelled)`
+  (the reason of the deflection row of the same cut). The bound is the edge bound at that depth.
+- **Width axis** (tool diameter, the width engagement floor, the move-budget width floor): the
+  value is the body width: a slot (`DeclaredWidth::Slot`) cuts the engaged diameter of the tool at
+  the body depth (`EngagedDiameter::of_tool`, the door of the diameter edge); a stated width reads
+  it; a body with no width rule reads the stated point width. A curve with no bound at the depth
+  gives `NoNumber(NotModelled)`.
+- **Lower bound.** A value from a lower-bound depth: a ceiling that holds gives
+  `NoNumber(OnlyALowerBound)`, a ceiling under the value gives `Exceeds`; a floor at or under the
+  value gives `Within`, a floor above it `NoNumber(OnlyALowerBound)`.
+- **Per point, the cutting feed cap:** the value is the stored op feed, the bound the cutting
+  ceiling of the op (`MachineProfile::op_cutting_ceiling` at the input's `feed_max_rate`, the
+  ceiling of Step 7); no stated feed gives `NoNumber(NoStatedFeed)`.
+- A limit with a planned role (a limit of each cut: the force budget, the deflection, the vendor
+  depth table, the power, the chip band, the rubbing floor) on a fixed axis or per point gives a
+  new reason, `NoNumber(JudgedPerCut)`: its stated cut rows judge it. The stated rows never show
+  these checks (`write_rows` keeps only the limits that are not limits of each cut), so no row on
+  a surface shows the new reason.
+- After this, `of_envelope` gives no `NotJudgedHere`. The reason stays only for a scope cell whose
+  row needs a ruling (P28-10 and the gate rows of the drill group), and each names its row. So
+  `S-NotJudgedHere` closes: its row and its two markers go; pins 36 / 25 / 36.
+
+Predicted rows (the `off` and `runs` passes give the same rows; margin = share inside the bound):
+
+| File | idx | Limit (axis) | Value | Bound | State |
+|---|---|---|---|---|---|
+| operator | 0, 11, 12 | feed cap | 6488 mm/min | 15000 (the X and Y rate; no `max_cutting_feed_mm_min`) | Within (0.567) |
+| operator | 1 | feed cap | 8475 | 15000 | Within (0.435) |
+| operator | 14 | feed cap | 8060 | 15000 | Within (0.463) |
+| operator | 1, 2, 14, 15 | move budget (width floor) | 5.5, 1.5, 3.6, 1.382 | 0.2208, 1.1015, 0.1605, 0.3629 | Within |
+| operator | 3, 4 (drills) | tool diameter; engagement floor (width) | 6 | 6; 0.02 | Within (at 100 %); Within |
+| operator | 5 (Project Curve, no lower bound) | flute guard, cutting length, vendor axial, engagement floor (depth) | - | - | `NoNumber(NotModelled)` (4 rows) |
+| operator | 5 | tool diameter; engagement floor (width) | 6 (6 mm flat, slot) | 6; 0.02 | Within (100 %); Within |
+| operator | 9 (Project Curve, `AtLeast(2.418)`, V-bit) | flute guard, cutting length, vendor axial | 2.418 | 6.522, 8.152, 3.175 | `NoNumber(OnlyALowerBound)` (3 rows) |
+| operator | 9 | engagement floor (depth) | 2.418 | 0.05 | Within |
+| operator | 9 | tool diameter; engagement floor (width) | the cone at 2.418 mm (under 3.175) | 3.175; 0.02 | `NoNumber(OnlyALowerBound)`; Within |
+| operator | 10, 13 (Trace V60) | tool diameter | the cone at the depth (3.002, 0.693) | 3.002, 0.693 | Within (at 100 %: a slot cuts the cone) |
+| operator | 10, 13 | engagement floor (width) | 3.002, 0.693 | 0.02 | Within |
+| operator | 16 (Scallop, earlier leave 0.2) | flute guard, cutting length, vendor axial, engagement floor (depth) | 0.2 | 16, 20, 6, 0.05 | Within (4 rows) |
+| operator | 17 (Profile) | tool diameter; engagement floor (width) | 6 | 6; 0.02 | Within (100 %); Within |
+| rivmap100, live | 0 | feed cap | 2200 | the cutting ceiling (no axis rates: the travel rate, 10000) | Within |
+| rivmap100, live | 1 | feed cap; move budget (width) | 2400; 1.2 | 10000; 0.1018 (live 0.0251) | Within; Within |
+| rivmap100, live | 2 (Scallop, leave 0.2) | 4 depth rows | 0.2 | 16, 20, 6, 0.05 | Within |
+| rivmap100, live | 3 (Project Curve, `AtLeast(1.0)`) | flute guard, cutting length, vendor axial | 1.0 | 12, 15, 5.5 | `NoNumber(OnlyALowerBound)` |
+| rivmap100, live | 3 | engagement floor (depth) | 1.0 | 0.05 | Within |
+| rivmap100, live | 3 | tool diameter; engagement floor (width) | the slot width at 1.0 mm | 5.5; 0.02 | `NoNumber(OnlyALowerBound)` (or Within on a flat tool at D); Within |
+| `nz_wanaka_21` | 0, 1, 12, 14 | feed cap | no stated feed | - | `NoNumber(NoStatedFeed)` |
+| `nz_wanaka_21` | 2 | move budget (width) | - | no bound at the depth | `NoNumber(NotModelled)` |
+| `nz_wanaka_21` | 1, 14, 15 | move budget (width) | 3.6, 3.6, 1.382 | 0.2457, 0.1605, 0.3629 | Within |
+| `nz_wanaka_21` | 3, 4, 5, 9, 10, 13, 16, 17 | as operator idx 3, 4, 5, 9, 10, 13, 16, 17 | | | the same states |
+
+Counts, operator (35 rows): `Within` 27 (feed cap 5, move budget 4, drills 4, op 5 width 2, op 9
+depth floor and width floor 2, Trace 4, Scallop 4, Profile 2); `NoNumber(OnlyALowerBound)` 4 (op 9);
+`NoNumber(NotModelled)` 4 (op 5). No row `Exceeds`. Each rivmap file (13 rows): `Within` 9,
+`NoNumber(OnlyALowerBound)` 4 (idx 3; 3 if the idx 3 tool is flat, then `Within` 10).
+
+**The face line of the 18 operator ops: no change** (no new row exceeds; the rank reads only rows
+that exceed). The 18 lines before and after:
+
+| idx | Face line (before = predicted after) |
+|---|---|
+| 0, 3, 4, 5, 9, 10, 12, 13 | none |
+| 1 | caution: planner cap · depth 387 % over force cap |
+| 2 | caution: ramp entry · depth 100 % over force cap · worst case |
+| 6 | caution: ramp entry · chip min 76 % under floor · worst case |
+| 7, 8 | caution: body · chip max 27 % over limit · before modulation |
+| 11 | caution: ramp entry · chip min 66 % under floor · worst case |
+| 14 | caution: ramp entry · depth 78 % over force cap · worst case |
+| 15 | caution: ramp entry · depth 84 % over force cap · worst case |
+| 16 | caution: body · chip min 16 % under floor |
+| 17 | caution: plunge entry · plunge rate 17 % over limit · may not occur |
+
+The other three files: no face line moves. The explainer data: the six envelope replies of
+`P29-10_explainer/data/` (operator idx 0, 1, 2, 6, 14, 15) hold stated rows of the feed cap
+(idx 0, 1, 14) and the move budget (idx 1, 2, 14, 15) that move; they need a regeneration.
