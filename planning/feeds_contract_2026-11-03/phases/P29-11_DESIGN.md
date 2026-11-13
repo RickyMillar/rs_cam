@@ -676,3 +676,46 @@ Measured (11-3), the dump `a113` against `pre113`:
   `of_envelope` equal to the placement margin. The feed cap check (0.75 on its pocket fixture) is
   a value check of the stated feed, not a margin that places the point; the claim now reads the
   checks whose edge is not per point.
+
+### 11.4 Commit 11-5: F6-a (prediction; the code is not built in round 2a)
+
+Written from the HEAD fixture dump (`base_b`) and the FM1 sim CSV, before any code. The code of
+11-5 is not in this round (section 11.5).
+
+- **The 2D Adaptive Link row:** `NoNumber(NoBound)`, value 0.5625 mm, population 69 of 6074, to
+  `Within` with the flute length of the fixture tool as the bound (the `ToolConfig` builder
+  default, an estimated 25 mm cutting length; the depth caps of the dump, 20.5 to 21.0 mm, sit
+  under it), population 3 (the force population). Exemption `S-NoBound` goes from the row (a `Within` row has none).
+- **Populations** (depth now, predicted = the force reading now): 2D Adaptive Body 2007 to 1998,
+  Entry 366 to 366, Link 69 to 3; Pocket Body 1112 to 1112, Entry 66 to 60; Profile 791, 21, 6
+  (no change); Shelf Body 4870 to 4425, Cleanup 990 to 912, Entry 333 to 329, Link 14 to 12;
+  Pocket with dogbones: Body 1106 to 1106, Entry 66 to 60, Cleanup 24 to 24.
+- **FM1 sim cells that move** (the 4 cells with a force budget and a depth `Reported` for "no
+  root below the flute"): cell 8 (EndMill Profile softwood), 12 (BullNose Profile softwood), 14
+  (BullNose Profile mdf), 16 (EndMill Adaptive softwood): `depth_cap_mm` empty to 18.0000 (the
+  FM1 tool states a cutting length of `max(3 D, 12)` = 18 mm),
+  `depth_cap_factor` empty to 35.3224, `depth_detail` "Reported" to empty; `depth_state` stays
+  "Within"; `diagnostic_ids_after_sim` `load.depth.reported` to `load.depth.within` (and its
+  severity in `diagnostic_severities_after_sim`). `depth_peak_mm` moves only if the deepest sample
+  has no arc (not measured). A cell whose judged sample took the width share can move
+  `depth_peak_mm` and `depth_cap_mm` (possible on cells 0 to 2, 4 to 6, 9, 10, 13, 17, 18, 20 to 22,
+  28, 29; not measured). No feed, depth or proposal column moves (the depth row does not gate, and
+  the modulator reads its own caps).
+
+### 11.5 Open for the lead after round 2a
+
+- **11-5 is not built.** Its prediction is section 11.4. The code needs: the width door
+  `deflection::sample_engagement` in the depth gate (the width share goes), "no root below the
+  flute" as `Within` at the flute length, a fixture with a sample over the force budget, the F6
+  claim in a sentry, and a rewrite of the gate tests that read the width share with no arc
+  (`tool_load/depth.rs` lib tests, `the_depth_that_cut_is_a_measured_load_g_s3depth`,
+  `finish_depth_is_reported_not_capped_fm6`), then the FM1 re-bless of the cells of 11.4.
+- **11-2, the gate rows of the drill group:** the same rule would make 48 operator gate rows
+  `NotApplicable` (chip max P28-20, deflection P28-17, force budget P28-04); the P28-10 power row
+  stays. Not done: the lead's count named the 24 envelope rows only.
+- **S10, the machine door:** `RigidityProfile::force_budget_of(CutFacts)` holds the one read of
+  the depth rule in a guarded file (a class D entry). `depth_cap_of(DepthLimit)` stays for
+  `session/compute.rs` (the modulator, not guarded, not in S10).
+- **11-3, `NotModelled` for a body with no depth before the simulation** (a Project Curve with no
+  lower bound: operator and `nz_wanaka_21` idx 5): the existing reason of the deflection row of
+  the same cut, not a new reason.
