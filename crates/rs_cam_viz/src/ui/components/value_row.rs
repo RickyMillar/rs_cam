@@ -63,6 +63,7 @@ pub struct ValueRow<'a> {
     note: Option<&'a str>,
     length_units: Option<SizeUnits>,
     keep_existing: bool,
+    enabled: bool,
 }
 
 impl<'a> ValueRow<'a> {
@@ -86,7 +87,16 @@ impl<'a> ValueRow<'a> {
             note: None,
             length_units: None,
             keep_existing: false,
+            enabled: true,
         }
+    }
+
+    /// Show the value but take no edit when `enabled` is false (the tool
+    /// editor's Helix row on a straight flute). The row stays three grid
+    /// cells: only the value well is disabled, so the grid row ends here.
+    pub fn enabled(mut self, enabled: bool) -> Self {
+        self.enabled = enabled;
+        self
     }
 
     /// Do not clamp a stored value that sits outside the range; clamp only
@@ -165,13 +175,17 @@ impl<'a> ValueRow<'a> {
                     .custom_parser(move |text| size_units::parse_length_entry(text, units)),
                 None => drag.suffix(self.suffix),
             };
-            let mut resp = ui.add_sized(
-                [
-                    crate::ui::tokens::WELL_MIN_WIDTH,
-                    crate::ui::tokens::WELL_HEIGHT,
-                ],
-                drag,
-            );
+            let mut resp = ui
+                .add_enabled_ui(self.enabled, |ui| {
+                    ui.add_sized(
+                        [
+                            crate::ui::tokens::WELL_MIN_WIDTH,
+                            crate::ui::tokens::WELL_HEIGHT,
+                        ],
+                        drag,
+                    )
+                })
+                .inner;
             if let Some(tip) = self.tooltip {
                 resp = resp.on_hover_text(tip);
             }

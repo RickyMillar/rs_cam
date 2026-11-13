@@ -332,6 +332,36 @@ impl DrillGateOutcome {
         }
     }
 
+    /// The envelope `(lo, hi)` of a two-sided gate (the plunge feed), or
+    /// `None` for a one-sided gate.
+    #[must_use]
+    pub fn two_sided_envelope(&self) -> Option<(f64, f64)> {
+        match self {
+            DrillGateOutcome::Within {
+                envelope_lo: Some(lo),
+                envelope_hi: Some(hi),
+                ..
+            }
+            | DrillGateOutcome::Exceeds {
+                envelope_lo: Some(lo),
+                envelope_hi: Some(hi),
+                ..
+            } => Some((*lo, *hi)),
+            DrillGateOutcome::Within { .. } | DrillGateOutcome::Exceeds { .. } => None,
+        }
+    }
+
+    /// `true` when [`Self::bound`] is the FLOOR of a two-sided envelope:
+    /// a plunge feed inside the envelope nearer its floor, or below it
+    /// (`Elevated`). A one-sided gate's bound is a ceiling. The chip
+    /// welding `Elevated` band carries `[0.75t, t]` with `threshold = t`,
+    /// its ceiling, so it is not a floor.
+    #[must_use]
+    pub fn judges_its_floor(&self) -> bool {
+        self.two_sided_envelope()
+            .is_some_and(|(lo, hi)| self.bound() == lo && lo < hi)
+    }
+
     /// Adapt to the generic criterion summary so drill gates join
     /// `ToolpathLoadVerdict::criteria()` — and with it export gating
     /// (F1.7, 2026-06-10; pre-fix a Critical drill exceedance did not

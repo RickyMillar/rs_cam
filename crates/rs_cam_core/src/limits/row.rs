@@ -745,10 +745,17 @@ fn pct(share: f64) -> String {
     }
 }
 
-/// THE margin face of a check: a ceiling inside reads its share of the
-/// limit, outside its share over; a floor reads its share over or under.
-/// A row that compares a depth or a width names the limit as the cause of
-/// its cap ("% of force cap"). `None` with no margin.
+/// THE margin face of a check. The face follows the state (lead ruling
+/// after 10e): a ceiling inside reads its share of the limit ("87 % of
+/// limit"), outside its share over ("12 % over limit"); a floor that holds
+/// reads its share of the floor ("333 % of floor"), one that fails its
+/// share under ("40 % under floor"). A `Within` row whose value is past
+/// the bound inside the gate tolerance reads "at limit" (or "at floor"),
+/// and so does an `Exceeds` row whose margin is not negative: a `Within`
+/// face never says "over" or "under", an `Exceeds` face never says only
+/// "of". The detail holds the exact numbers. A row that compares a depth
+/// or a width names the limit as the cause of its cap ("% of force cap").
+/// `None` with no margin.
 #[must_use]
 pub fn margin_face(check: &Check, compared: Compared) -> Option<String> {
     let m = check.margin?;
@@ -759,11 +766,26 @@ pub fn margin_face(check: &Check, compared: Compared) -> Option<String> {
             (format!("{short} cap"), format!("{short} floor"))
         }
     };
-    Some(match (check.side, m < 0.0) {
-        (BoundSide::Ceiling, false) => format!("{} % of {ceiling}", pct(1.0 - m)),
-        (BoundSide::Ceiling, true) => format!("{} % over {ceiling}", pct(m)),
-        (BoundSide::Floor, false) => format!("{} % over {floor}", pct(m)),
-        (BoundSide::Floor, true) => format!("{} % under {floor}", pct(m)),
+    let past = m < 0.0;
+    let judged = match check.state {
+        CheckState::Within => Some(false),
+        CheckState::Exceeds => Some(true),
+        CheckState::NoNumber(_) | CheckState::NotApplicable(_) => None,
+    };
+    Some(match (check.side, past, judged) {
+        // The face follows the state where the state and the sign differ.
+        (BoundSide::Ceiling, true, Some(false)) | (BoundSide::Ceiling, false, Some(true)) => {
+            format!("at {ceiling}")
+        }
+        (BoundSide::Floor, true, Some(false)) | (BoundSide::Floor, false, Some(true)) => {
+            format!("at {floor}")
+        }
+        (BoundSide::Ceiling, false, Some(false) | None) => {
+            format!("{} % of {ceiling}", pct(1.0 - m))
+        }
+        (BoundSide::Ceiling, true, Some(true) | None) => format!("{} % over {ceiling}", pct(m)),
+        (BoundSide::Floor, false, Some(false) | None) => format!("{} % of {floor}", pct(1.0 + m)),
+        (BoundSide::Floor, true, Some(true) | None) => format!("{} % under {floor}", pct(m)),
     })
 }
 
@@ -893,7 +915,16 @@ const fn sample_depth_of(limit: LimitId) -> Option<SampleDepth> {
 
 /// The row of one gate row of the verdict.
 fn group_row(status: &CriterionStatus<'_>, subject: Subject) -> CheckRow {
-    let check = of_criterion(status);
+    group_row_with(status, subject, of_criterion(status), Vec::new())
+}
+
+/// [`group_row`] with the check and the extra clauses the caller built.
+fn group_row_with(
+    status: &CriterionStatus<'_>,
+    subject: Subject,
+    check: Check,
+    mut extra: Vec<String>,
+) -> CheckRow {
     let mut caveats = Vec::new();
     if let Some(depth) = sample_depth_of(check.limit) {
         caveats.push(Caveat::SampleDepth { depth });
@@ -902,12 +933,12 @@ fn group_row(status: &CriterionStatus<'_>, subject: Subject) -> CheckRow {
     // the check: the source of the bound, the reason of an unmodelled
     // gate, the confidence of an approximate input and the remedy of a
     // gate that exceeds. Text only; no field and no number moves.
-    let mut extra: Vec<String> = status
-        .bound_source
-        .as_ref()
-        .map(|source| format!("bound from {}", source.clause()))
-        .into_iter()
-        .collect();
+    extra.extend(
+        status
+            .bound_source
+            .as_ref()
+            .map(|source| format!("bound from {}", source.clause())),
+    );
     if let Some(reason) = status.unmodeled_reason {
         extra.push(reason.operator_text());
     }
@@ -1114,21 +1145,60 @@ pub fn rows_of_verdict(verdict: &ToolpathLoadVerdict) -> Vec<CheckRow> {
             (CriterionKind::DrillPeckAdequacy, &d.peck_adequacy),
             (CriterionKind::DrillPlungeFeed, &d.plunge_feed),
         ] {
-            out.push(group_row(
-                &outcome.as_criterion_status(kind, d.cycle, d.population),
-                Subject::Group {
-                    group: CutGroup::Drill,
-                    headline: h == CutGroup::Drill,
-                    samples: None,
-                    material: None,
-                },
-            ));
+            out.push(drill_row(kind, outcome, d, h));
         }
     }
     if let Some(split) = material_split.as_deref() {
         own_material_rows(split, h, &mut out);
     }
     out
+}
+
+/// The row of one drill gate. A two-sided gate (the plunge feed) reports
+/// the nearer bound of its envelope (`DrillGateOutcome::bound`); when that
+/// bound is the FLOOR of the envelope the row states it as a floor, so a
+/// feed inside the envelope near its floor reads "333 % of floor", not a
+/// share over a ceiling (P29-10 10e2). The state stays the gate's own; the
+/// detail names the whole envelope.
+fn drill_row(
+    kind: CriterionKind,
+    outcome: &crate::tool_load::drill_gates::DrillGateOutcome,
+    d: &crate::tool_load::drill_gates::DrillGatesVerdict,
+    headline: CutGroup,
+) -> CheckRow {
+    let status = outcome.as_criterion_status(kind, d.cycle, d.population);
+    let mut check = of_criterion(&status);
+    let mut extra = Vec::new();
+    // Only the plunge feed is a two-sided gate; the chip welding band
+    // `[0.75t, t]` of an `Elevated` outcome is no envelope.
+    if kind == CriterionKind::DrillPlungeFeed
+        && let Some((lo, hi)) = outcome.two_sided_envelope()
+    {
+        extra.push(format!(
+            "the envelope is {} to {} {}",
+            num(lo),
+            num(hi),
+            check.unit
+        ));
+        if outcome.judges_its_floor() {
+            check.side = BoundSide::Floor;
+            check.margin = check
+                .value
+                .zip(check.bound)
+                .and_then(|(v, b)| BoundSide::Floor.margin(v, b));
+        }
+    }
+    group_row_with(
+        &status,
+        Subject::Group {
+            group: CutGroup::Drill,
+            headline: headline == CutGroup::Drill,
+            samples: None,
+            material: None,
+        },
+        check,
+        extra,
+    )
 }
 
 /// The rows of a toolpath with no verdict (lead ruling 6: a toolpath never

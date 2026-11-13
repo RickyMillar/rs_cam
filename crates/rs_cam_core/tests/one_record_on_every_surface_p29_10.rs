@@ -44,6 +44,11 @@
 //!   not applicable.
 //! - Claim 6: every face is at most `ROW_FACE_MAX_CHARS` characters and no
 //!   face prints "0 %" for a margin that is not zero.
+//! - Claim 9 (lead ruling after 10e): a face follows its state. No row with
+//!   state `Within` holds "over" or "under" in its face (a value past the
+//!   bound inside the gate tolerance reads "at limit"); no row with an
+//!   exceed tone holds "% of" without "over" or "under". A drill plunge
+//!   feed inside its envelope near the floor states the floor as a floor.
 //!
 //! `cargo test -p rs_cam_core -q --test one_record_on_every_surface_p29_10`
 
@@ -214,6 +219,8 @@ fn check_row(name: &str, row: &CheckRow) {
         );
     }
     assert_eq!(row.tone(), Tone::of(c, row.caveats()), "{name}: the tone");
+    // Claim 9: the face follows the state.
+    face_follows_state(name, row);
     // Claim 3b: a face names what the row compares (lead ruling 3), with
     // or without a number (P29-10 10e: "depth not judged here"); a row that
     // compares its limit's own quantity names the limit.
@@ -566,6 +573,148 @@ fn claim_6_a_tiny_margin_never_prints_zero() {
     assert!(!prints_a_false_zero("chip min < 0.1 % under floor"));
     assert!(!prints_a_false_zero("force 100 % of limit"));
     assert!(!prints_a_false_zero("force 10.0 % of limit"));
+}
+
+/// Claim 9 on one row.
+fn face_follows_state(name: &str, row: &CheckRow) {
+    let face = row.face();
+    if row.check().state == CheckState::Within {
+        assert!(
+            !face.contains(" over ") && !face.contains(" under "),
+            "{name}: a row inside its bound says over or under: {face}"
+        );
+    }
+    if row.tone().exceeds() {
+        assert!(
+            !face.contains("% of") || face.contains(" over ") || face.contains(" under "),
+            "{name}: an exceeding row reads a share of its limit: {face}"
+        );
+    }
+}
+
+/// Claim 9: the margin face of a `Within` check past its bound inside the
+/// gate tolerance reads "at limit"; a floor that holds reads its share of
+/// the floor; an `Exceeds` check reads its share over.
+#[test]
+fn claim_9_a_face_follows_its_state() {
+    use rs_cam_core::limits::{BoundSide, Check, margin_face};
+    let check = |side: BoundSide, value: f64, bound: f64, state: CheckState| Check {
+        limit: LimitId::ChipMax,
+        value: Some(value),
+        bound: Some(bound),
+        unit: "mm/tooth",
+        side,
+        margin: side.margin(value, bound),
+        state,
+        basis: None,
+        binding: false,
+        population: None,
+    };
+    let face = |c: &Check| margin_face(c, Compared::Load).expect("a margin");
+    // The bulk rough of the operator file: 0.17912843029568415 against
+    // 0.17912843029568412 (a margin of -1.5e-16), `Within` by the gate.
+    let at = check(
+        BoundSide::Ceiling,
+        0.179_128_430_295_684_15,
+        0.179_128_430_295_684_12,
+        CheckState::Within,
+    );
+    assert_eq!(face(&at), "at limit");
+    let past = check(BoundSide::Ceiling, 0.2, 0.1, CheckState::Exceeds);
+    assert_eq!(face(&past), "100 % over limit");
+    let inside = check(BoundSide::Ceiling, 0.05, 0.1, CheckState::Within);
+    assert_eq!(face(&inside), "50 % of limit");
+    // The pin drill of the operator file: 1000 mm/min over 6 mm against the
+    // wood floor 50 mm/min per mm (`DRILL_PLUNGE_FLOOR_WOOD_PER_MM`).
+    let floor = check(BoundSide::Floor, 1000.0 / 6.0, 50.0, CheckState::Within);
+    assert_eq!(face(&floor), "333 % of floor");
+    let under = check(BoundSide::Floor, 30.0, 50.0, CheckState::Exceeds);
+    assert_eq!(face(&under), "40 % under floor");
+    let barely = check(BoundSide::Floor, 49.999_999, 50.0, CheckState::Within);
+    assert_eq!(face(&barely), "at floor");
+    let exceeds_inside = check(BoundSide::Ceiling, 0.1, 0.1, CheckState::Exceeds);
+    assert_eq!(face(&exceeds_inside), "at limit");
+}
+
+/// Claim 9 (lead ruling 3 of 10e2): the drill plunge-feed row reports the
+/// bound the gate judged. The gate classifies the feed per mm against the
+/// envelope `[lo, hi]` and reports the NEARER bound; inside the envelope
+/// near its floor that bound is the floor, and the row states it as a
+/// floor ("333 % of floor"), never a share over a ceiling.
+#[test]
+fn claim_9_the_drill_feed_row_states_its_floor_as_a_floor() {
+    use rs_cam_core::tool_load::UnmodeledReason;
+    use rs_cam_core::tool_load::drill_gates::{
+        DrillCycleKind, DrillGateOutcome, DrillGatesVerdict, classify_plunge_feed,
+    };
+    use rs_cam_core::tool_load::verdict::{
+        ChiploadVerdict, DeflectionVerdict, DepthVerdict, PowerVerdict, ToolpathLoadVerdict,
+    };
+    let wood = Material::SolidWood {
+        species: WoodSpecies::GenericHardwood,
+    };
+    // The pin drill of the operator file: 1000 mm/min on a 6 mm cutter.
+    let plunge = classify_plunge_feed(1000.0, 6.0, &wood);
+    let (lo, hi) = plunge.two_sided_envelope().expect("a two-sided envelope");
+    assert!(
+        matches!(plunge, DrillGateOutcome::Within { .. }) && plunge.bound() == lo && lo < hi,
+        "non-vacuity: the feed is inside the envelope, nearer its floor"
+    );
+    let na = || UnmodeledReason::NotApplicableForOp("drill cycle".to_owned());
+    let within = |observed: f64, threshold: f64| DrillGateOutcome::Within {
+        observed,
+        threshold,
+        envelope_lo: None,
+        envelope_hi: Some(threshold),
+    };
+    let verdict = ToolpathLoadVerdict {
+        toolpath_id: rs_cam_core::ToolpathId::from_raw(0),
+        groups: rs_cam_core::tool_load::verdict::GroupVerdicts::headline_only_for_tests(
+            CutGroup::Drill,
+        ),
+        chipload: ChiploadVerdict::Unmodeled { reason: na() },
+        power: PowerVerdict::Unmodeled { reason: na() },
+        deflection: DeflectionVerdict::Unmodeled { reason: na() },
+        depth: DepthVerdict::Unmodeled { reason: na() },
+        drill_gates: Some(DrillGatesVerdict {
+            chip_welding: within(0.5, 6.0),
+            peck_adequacy: within(0.3, 6.0),
+            plunge_feed: plunge,
+            worst_hole_id: None,
+            population: None,
+            cycle: DrillCycleKind::Peck,
+        }),
+        modulation_summary: None,
+        feed_explanation: None,
+        kinematic_utilization: None,
+        material_split: None,
+        cut_force: None,
+    };
+    let rows = limits::rows_of_verdict(&verdict);
+    let feed = rows
+        .iter()
+        .find(|r| r.check().limit == LimitId::DrillPlungeFeed)
+        .expect("the drill feed row");
+    assert_eq!(
+        feed.check().state,
+        CheckState::Within,
+        "the gate's own state"
+    );
+    assert_eq!(feed.check().bound, Some(lo), "the bound the gate reports");
+    assert_eq!(feed.check().side, rs_cam_core::limits::BoundSide::Floor);
+    assert!(
+        feed.face().ends_with("333 % of floor"),
+        "the face: {}",
+        feed.face()
+    );
+    assert!(
+        feed.detail().contains("the envelope is 50 to"),
+        "the detail names the envelope: {}",
+        feed.detail()
+    );
+    for row in &rows {
+        face_follows_state("drill", row);
+    }
 }
 
 /// Claim 7: `worse_than` over `rows` is a total order with the ruled keys.
