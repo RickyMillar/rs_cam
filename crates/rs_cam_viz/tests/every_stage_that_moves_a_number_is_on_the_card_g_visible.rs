@@ -717,10 +717,13 @@ fn every_stage_that_moves_a_number_is_on_the_card_g_visible() {
 }
 
 /// G6 ramp (2026-09-25): the ramp line names the arm and θ. On the
-/// `feed_ceiling_rpm` cell (Ø6 2F flat pocket, generic hardwood, the
-/// registry's roughing ramp of 3°) the RPM follows the 4000 mm/min ceiling
-/// down to 15 748. The chip term is 0.0635 x 15 748 x 2 / tan 3° = 38 162
-/// mm/min, far above the cut feed, so the cut feed sets the ramp feed.
+/// `feed_ceiling_rpm` cell (Ø6 2F flat pocket, generic hardwood) the RPM
+/// follows the 4000 mm/min ceiling down to 15 748. P29-8 8b (operator
+/// ruling O2): a new op holds the ramp angle RULE of the stock class
+/// (`RampAngle::resolve`, Easel: 5° for hardwood), no longer the registry's
+/// 3°. The chip term is 0.0635 x 15 748 x 2 / tan θ: 38 162.20 mm/min at
+/// 3° (measured), so at θ it is 38 162.20 x tan 3° / tan θ (the same law),
+/// still far above the cut feed, so the cut feed sets the ramp feed.
 #[test]
 fn the_ramp_line_names_the_arm_and_the_angle_g_visible() {
     let case = cases()
@@ -753,7 +756,18 @@ fn the_ramp_line_names_the_arm_and_the_angle_g_visible() {
         })
         .unwrap_or_else(|| panic!("the pocket must ship a sourced ramp: {suggest:?}"));
     assert_eq!(ramp.arm, RampArm::CutFeed);
-    assert!((ramp.theta_deg - 3.0).abs() < 1e-9, "{}", ramp.theta_deg);
+    // The angle is the rule of the stock class (the op states no angle).
+    let rule = rs_cam_core::feeds::entry_rule::RampAngle::resolve(
+        rs_cam_core::feeds::entry_rule::EntryAngle::Rule,
+        &case.material,
+    );
+    assert!(!rule.stated, "the fixture states no angle");
+    assert!(
+        (ramp.theta_deg - rule.deg).abs() < 1e-9,
+        "the ramp angle {} against the rule {}",
+        ramp.theta_deg,
+        rule.deg
+    );
     // Feeds contract P11b (L1): the chip-thinning lift lowers the shipped
     // RPM at the feed cap (arm L), and the chip term is the G6 axial chip
     // x the shipped RPM x Z / tan(theta): 38 162 -> 36 402.88 (measured).
@@ -761,9 +775,12 @@ fn the_ramp_line_names_the_arm_and_the_angle_g_visible() {
     // (Pocket, Roughing) width, now the corner-coverage bound 0.854 D (was
     // 0.35 D); at or above D/2 the lift is 1 and the RPM follows the
     // ceiling to 15 748 again: 36 402.88 -> 38 162.20 (measured).
+    // The measured 3° term, carried to θ by the law's 1 / tan θ.
+    let chip_term_at_theta =
+        38_162.20 * 3.0_f64.to_radians().tan() / ramp.theta_deg.to_radians().tan();
     assert!(
-        (ramp.chip_term_mm_min - 38_162.20).abs() < 1.0,
-        "{}",
+        (ramp.chip_term_mm_min - chip_term_at_theta).abs() < 1.0,
+        "{} against {chip_term_at_theta}",
         ramp.chip_term_mm_min
     );
     assert!(
@@ -777,7 +794,7 @@ fn the_ramp_line_names_the_arm_and_the_angle_g_visible() {
         .find(|t| !t.contains('\n') && t.contains(&head))
         .unwrap_or_else(|| panic!("no ramp line on the face: {texts:?}"));
     assert!(
-        line.contains("cut feed") && line.contains("3.00°"),
+        line.contains("cut feed") && line.contains(&format!("{:.2}°", rule.deg)),
         "the ramp line must name the arm and the angle: {line:?}"
     );
 }

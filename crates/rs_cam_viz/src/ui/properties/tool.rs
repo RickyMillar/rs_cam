@@ -279,14 +279,30 @@ pub(crate) fn draw_tool_fields(
         ui.end_row();
 
         // P24a: a straight flute has no helix. The row shows 0 and takes no
-        // edit; the Cut Dir combo is the control.
+        // edit; the Cut Dir combo is the control. The row is three grid
+        // cells (label, value, end of row) in THIS grid: a child `Ui` around
+        // a whole `ValueRow` (the P24a form) ended its row inside the child,
+        // so the grid row did not end and the next row ("Corner Radius:")
+        // painted on the same line, past the panel edge (IC1, 109.8 points).
         let straight = tool.cut_direction == BitCutDirection::Straight;
         let helix_range = ToolDimension::HelixDeg.ui_range(tool.diameter);
-        ui.add_enabled_ui(!straight, |ui| {
-            ValueRow::new("Helix:", &mut tool.helix_deg, " deg", 1.0, helix_range)
-                .keep_existing()
-                .show(ui);
+        let _ = crate::ui::components::prop_row::label_cell(ui, "Helix:");
+        ui.horizontal(|ui| {
+            ui.add_enabled_ui(!straight, |ui| {
+                let _ = ui.add_sized(
+                    [
+                        crate::ui::tokens::WELL_MIN_WIDTH,
+                        crate::ui::tokens::WELL_HEIGHT,
+                    ],
+                    egui::DragValue::new(&mut tool.helix_deg)
+                        .speed(1.0)
+                        .range(helix_range)
+                        .clamp_existing_to_range(false)
+                        .suffix(" deg"),
+                );
+            });
         });
+        ui.end_row();
 
         if matches!(tool.tool_type, ToolType::EndMill) {
             ValueRow::new(

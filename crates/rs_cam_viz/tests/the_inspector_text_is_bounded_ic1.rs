@@ -416,10 +416,20 @@ fn surfaces(state: &AppState) -> Vec<Surface> {
     // tick every 20 points (0, 1000, .. 4000 on the Pocket) and each limit
     // label sits ON its line at its end. Chart texts, no prose row: Pocket
     // Passes 39 -> 40, 3D Rough 38 -> 37, 3D Finish 28 -> 29.
+    // P29-10 (10x, lead task C): Passes +1 on all three, chart text. No
+    // Passes label string changed after P17b (`git log -S` on each label
+    // gives nothing). The nomogram's limit labels sit ON their lines at a
+    // y that the speeds set (P17b item 2): "Before derate", "Max RPM",
+    // "Min RPM" and "Now" each paint on a row of their own (measured
+    // bands, Pocket: y 370, 390, 425, 456), so a move of the speeds (P20b to
+    // P20e moved them) can split one label from the band of a tick (the
+    // 3-pixel merge rule of `visible_lines`). Not proven which label moved:
+    // no build of an older commit is allowed. Pocket Passes 40 -> 41, 3D
+    // Rough 37 -> 38, 3D Finish 29 -> 30.
     let caps: [(&str, [usize; 4]); 3] = [
-        ("Pocket", [10, 40, 17, 22]),
-        ("3D Rough", [7, 37, 15, 15]),
-        ("3D Finish", [9, 29, 16, 14]),
+        ("Pocket", [10, 41, 17, 22]),
+        ("3D Rough", [7, 38, 15, 15]),
+        ("3D Finish", [9, 30, 16, 14]),
     ];
     for (name, tab_caps) in caps {
         let id = configs
@@ -449,7 +459,13 @@ fn surfaces(state: &AppState) -> Vec<Surface> {
     let panels: [(&str, Selection, usize); 7] = [
         ("Stock", Selection::Stock, 16),
         ("Setup", Selection::Setup(setup), 18),
-        ("Tool", Selection::Tool(ToolId::from_raw(TOOL)), 17),
+        // P29-10 (10x): 17 -> 18. Feeds contract P6 commit C (`c7936ddd8`,
+        // K3) added the "Cuts at centre:" field row and left the cap. P24a
+        // (`910dcf6d5`) then hid the row count: its Helix row ended its grid
+        // row inside a child `Ui`, so "Corner Radius:" painted on the Helix
+        // line, 109.8 points past the panel edge. The layout is fixed in
+        // `ui/properties/tool.rs`; the panel is 18 field rows.
+        ("Tool", Selection::Tool(ToolId::from_raw(TOOL)), 18),
         ("Post", Selection::PostProcessor, 6),
         ("Machine", Selection::Machine, 19),
         ("Model 2D", Selection::Model(ModelId::from_raw(MODEL_2D)), 4),
