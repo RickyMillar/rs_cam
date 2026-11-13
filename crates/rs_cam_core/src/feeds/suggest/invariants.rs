@@ -149,6 +149,7 @@ pub(super) fn enforce_invariants_at_fixed_geometry(
     warnings.extend(pick_adaptive3d_clearing_strategy(
         operation, pass_role, context,
     ));
+    // EXEMPT(P28-28)
     warnings.extend(check_plunge_entry_stability(operation, tool, pass_role));
     // Pass 8 — the arc-fit chipload feed recalibration — was RETIRED here on
     // 2026-08-13 (Checkpoint J-1, BINDING). See the retirement note on

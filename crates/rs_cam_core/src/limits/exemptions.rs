@@ -149,7 +149,11 @@ pub static EXEMPTIONS: [Exemption; 37] = [
         limit: &[],
         who: Who::Facts("the Adaptive family: an unsourced default and a hint only"),
         class: NR,
-        where_: &["src/feeds/mod.rs", "src/compute/validate.rs"],
+        where_: &[
+            "src/feeds/mod.rs",
+            "src/compute/validate.rs",
+            "src/feeds/predict.rs",
+        ],
         closes_in: "ruling R2 of P29_FINDINGS.md section 7",
     },
     Exemption {
@@ -317,7 +321,11 @@ pub static EXEMPTIONS: [Exemption; 37] = [
              (the straight-plunge note, `feeds::ramp::entry_notes`, P29-11 11-0)",
         ),
         class: NR,
-        where_: &["src/feeds/suggest/adaptive_entry.rs", "src/feeds/ramp.rs"],
+        where_: &[
+            "src/feeds/suggest/adaptive_entry.rs",
+            "src/feeds/ramp.rs",
+            "src/feeds/suggest/invariants.rs",
+        ],
         closes_in: "later (a plunge deflection model)",
     },
     Exemption {

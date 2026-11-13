@@ -371,6 +371,7 @@ pub fn predict_peak_deflection_um(
     let radial_woc_mm = match operation.stepover() {
         Some(s) if s.is_finite() && s > 0.0 => s,
         _ => {
+            // EXEMPT(P28-08)
             if feeds_family == FeedsOperationFamily::Adaptive {
                 machine.rigidity.adaptive_woc_factor.max(0.0) * diameter_mm
             } else {
