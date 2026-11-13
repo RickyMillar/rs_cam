@@ -1080,3 +1080,27 @@ widths; at ae 0.445 mm the edge rides the flute top).
   files: the Scallop ops reach at most 75 % of the budget under the chart top. The snapshot
   `sim_chart_340_no_limit.png` of `p17_visual_snapshots` draws it.
 
+
+## 17. Lead rulings after 10g (2026-11-14)
+
+- **Claim 2 of section 8.** The words are the words of section 6 claim 3: each margin equals the
+  side rule of the JUDGED value and its bound. An entry chip row judges the end of the interval of
+  its stored feed (P29-9), so its margin is not the margin of the printed value.
+- **R9.** The Passes plot draws marks and no field, so no field is built for an envelope memo. The
+  field is built once for each load report.
+- **`mark_color`.** A plot has no danger colour (ruling Q6 of P17), so a mark is caution or muted.
+  The rule stays, but it is a second map from a tone to a colour. The clean-up pass puts it beside
+  `role_of_tone`, as one function of `Tone` and the surface kind.
+- **Open from the lead review of 10g, to close before the operator judges P29-10:**
+  1. `assert_claims.py`: a claim with zero cases prints NOT TESTED and fails. Claim 4 has no row
+     that exceeds; claim 5a judges 0 columns on idx 0. Add the stated body mark of idx 1 to claim 4.
+  2. Nobody opened the explainer page in a browser.
+  3. `END_HANG` (2 pt) is fitted to the IC1 counter and moves no visible pixel. It is not a layout
+     rule. Derive it, or restore the caps 41 / 38 / 30 with the reason.
+  4. The IC1 fixtures paint no face line, so no cap covers the face line of 10f.
+  5. The "after" screenshots come from three builds. One build of the final HEAD, one full set, and
+     an index from S1 to S10 to the files.
+- **Order.** The point-band finding (a vendor row with one printed chip value) is ruled before
+  10i, because 10i gives the stated point chip rows, and the face line of the card reads the stated
+  rows. The 10h and 10i notes predict the face line of every operator op and the Readiness rows
+  before the code.
