@@ -27,7 +27,7 @@ use crate::feeds::force_budget::BudgetDepth;
 use crate::feeds::planned::{
     BodyColumn, BodyDepth, CeilingEdge, DeclaredCuts, DeflectionPlanned, ForceBudgetPlanned,
     ForceEnv, PlaneDepth, PlaneRole, TableEnv, ValueCheck, VendorDepthTablePlanned, budget_rank,
-    judge_declared_cuts, planned_limit_of,
+    judge_declared_cuts, lowest_ceiling, planned_limit_of,
 };
 use crate::feeds::sourced::{
     Basis, ChipMm, FeedMmMin, MachineField, PlungeMmMin, Rpm, Sourced, lower_to_cap,
@@ -68,7 +68,12 @@ pub const ENVELOPE_GRID_N: usize = 8;
 /// refined vendor depth table edge; it measured 121 to 148 ms alone
 /// (115 to 120 ms before P19 with the same box) and 515 ms inside the
 /// parallel `--lib` run beside another session's viz suite (2026-11-07,
-/// operator's machine, loaded).
+/// operator's machine, loaded). P29-10: after P29-8 8d it measured 342 to
+/// 346 ms alone, because each edge solve judged the entries, which never
+/// set a ceiling; the edges now judge only the cuts that set a ceiling
+/// (`planned::lowest_ceiling`, the same values) and it measured 205 to
+/// 214 ms alone (2026-11-13, operator's machine, `P29-10_DESIGN.md`
+/// section 15).
 pub const ENVELOPE_TIME_BUDGET_MS: u128 = 300;
 
 /// The bisection steps that place a `Power` edge between two grid samples.
@@ -4487,8 +4492,7 @@ fn budget_solve(
         ae_mm: ae,
         chip_mm: Some(fz),
     };
-    judge_declared_cuts::<ForceBudgetPlanned>(&inputs.cuts, column, &env)
-        .lowest_always(budget_rank)
+    lowest_ceiling::<ForceBudgetPlanned>(&inputs.cuts, column, &env, budget_rank)
         .and_then(|(kind, answer)| answer.map(|d| (d, kind)))
 }
 
@@ -4510,8 +4514,7 @@ fn deflection_solve(
         ae_mm: ae,
         chip_mm: Some(fz),
     };
-    judge_declared_cuts::<DeflectionPlanned>(&inputs.cuts, column, &env)
-        .lowest_always(|answer| *answer)
+    lowest_ceiling::<DeflectionPlanned>(&inputs.cuts, column, &env, |answer| *answer)
         .and_then(|(kind, answer)| answer.map(|mm| (mm, kind)))
 }
 
@@ -4524,8 +4527,7 @@ fn table_solve(cuts: &DeclaredCuts, ae: f64, fz: f64, env: &TableEnv) -> ((f64, 
         ae_mm: ae,
         chip_mm: Some(fz),
     };
-    judge_declared_cuts::<VendorDepthTablePlanned>(cuts, column, env)
-        .lowest_always(|answer| answer.map(|(mm, _)| mm))
+    lowest_ceiling::<VendorDepthTablePlanned>(cuts, column, env, |answer| answer.map(|(mm, _)| mm))
         .and_then(|(kind, answer)| answer.map(|c| (c, kind)))
         .unwrap_or(((env.top_mm, false), CutKind::Body))
 }
@@ -4907,6 +4909,74 @@ mod tests {
         let p = env.proposal.get();
         assert!(p.ap_mm().expect("a pocket depth") <= stated.ap_mm + 1e-12);
         assert!(p.ae_mm <= stated.ae_mm + 1e-12);
+    }
+
+    /// P29-10 section 15: the ceiling-only driver of the edges gives the
+    /// answer of the full driver and `lowest_always`, at every width of a
+    /// sweep, for the force budget, the deflection and the vendor depth
+    /// table, on a list with entries (a ramp `Always` at its own depth, a
+    /// helix and a plunge `MayOccur`) and a slot ring.
+    #[test]
+    fn the_ceiling_driver_gives_the_lowest_always_answer_p29_10() {
+        use crate::feeds::planned::{judge_declared_cuts, lowest_ceiling};
+        let mut entries = 0;
+        for env in [pocket_envelope(), hardwood_3175_pocket()] {
+            let cuts = &env.inputs.cuts;
+            entries += cuts
+                .list()
+                .iter()
+                .filter(|c| matches!(c.kind, CutKind::Entry(_)))
+                .count();
+            let tool = crate::compute::cutter::build_cutter(&env.inputs.tool).unwrap();
+            let force = ForceEnv {
+                tool: &tool,
+                material: &env.inputs.material,
+                bound: env.inputs.machine.rigidity.force_budget_n,
+            };
+            let deflection = ForceEnv {
+                bound: inputs_deflection_limit_um(&env.inputs),
+                ..force
+            };
+            // A test input, not a claim: with the chips of the sweep the
+            // share crosses every corner of the table.
+            let table = TableEnv {
+                band_max_mm: 0.05,
+                d_mm: env.inputs.tool.diameter,
+                top_mm: 3.0 * env.inputs.tool.diameter,
+            };
+            let d = env.inputs.tool.diameter;
+            for i in 1..=40 {
+                let ae = d * f64::from(i) / 40.0;
+                for fz in [0.01, 0.03, 0.08] {
+                    let column = BodyColumn {
+                        ae_mm: ae,
+                        chip_mm: Some(fz),
+                    };
+                    let full = judge_declared_cuts::<ForceBudgetPlanned>(cuts, column, &force)
+                        .lowest_always(budget_rank);
+                    let fast =
+                        lowest_ceiling::<ForceBudgetPlanned>(cuts, column, &force, budget_rank);
+                    assert_eq!(format!("{full:?}"), format!("{fast:?}"), "force {ae} {fz}");
+                    let full = judge_declared_cuts::<DeflectionPlanned>(cuts, column, &deflection)
+                        .lowest_always(|a| *a);
+                    let fast =
+                        lowest_ceiling::<DeflectionPlanned>(cuts, column, &deflection, |a| *a);
+                    assert_eq!(
+                        format!("{full:?}"),
+                        format!("{fast:?}"),
+                        "deflection {ae} {fz}"
+                    );
+                    let full = judge_declared_cuts::<VendorDepthTablePlanned>(cuts, column, &table)
+                        .lowest_always(|a| a.map(|(mm, _)| mm));
+                    let fast =
+                        lowest_ceiling::<VendorDepthTablePlanned>(cuts, column, &table, |a| {
+                            a.map(|(mm, _)| mm)
+                        });
+                    assert_eq!(format!("{full:?}"), format!("{fast:?}"), "table {ae} {fz}");
+                }
+            }
+        }
+        assert!(entries > 0, "non-vacuity: the lists hold entries");
     }
 
     /// The 3.175 mm 2F hardwood Pocket of

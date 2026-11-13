@@ -561,7 +561,8 @@ impl DeclaredCuts {
 }
 
 /// **A limit before the simulation**: one function over one planned cut.
-/// The driver [`judge_declared_cuts`] is its only caller.
+/// The driver ([`judge_declared_cuts`], and its ceiling-only form
+/// [`lowest_ceiling`]) is its only caller.
 pub trait PlannedLimit {
     /// The limit. The driver asks [`crate::limits::scope`] for it on the
     /// group of each cut.
@@ -648,11 +649,17 @@ impl<A: Copy> ByCut<PlannedCell<A>> {
             let Some(v) = value(&answer) else {
                 continue;
             };
-            if best.is_none_or(|(b, _, _)| v < b) {
-                best = Some((v, entry.kind, answer));
-            }
+            keep_lowest(&mut best, v, entry.kind, answer);
         }
         best.map(|(_, kind, answer)| (kind, answer))
+    }
+}
+
+/// The one tie rule of the lowest ceiling: a cut replaces the best only
+/// when its value is strictly lower, so a tie keeps the first cut.
+fn keep_lowest<A>(best: &mut Option<(f64, CutKind, A)>, v: f64, kind: CutKind, answer: A) {
+    if best.as_ref().is_none_or(|(b, _, _)| v < *b) {
+        *best = Some((v, kind, answer));
     }
 }
 
@@ -663,14 +670,54 @@ pub fn judge_declared_cuts<L: PlannedLimit>(
     column: BodyColumn,
     env: &L::Env<'_>,
 ) -> ByCut<PlannedCell<L::Answer>> {
-    ByCut::from_fn(&cuts.list, |cut| {
-        let planned = cuts.planned(cut, column);
-        match crate::limits::scope(L::LIMIT, planned.group) {
-            Scope::Judged => PlannedCell::Judged(L::judge(&planned, env)),
-            Scope::NotJudged(cell) => PlannedCell::NotJudged(cell),
-            Scope::NotACutLimit(reason) => PlannedCell::NotACutLimit(reason),
+    ByCut::from_fn(&cuts.list, |cut| judge_one::<L>(cuts, cut, column, env))
+}
+
+/// The cell of `L` for one declared cut: the scope cell on the group of the
+/// cut; a judged cell calls `L`.
+fn judge_one<L: PlannedLimit>(
+    cuts: &DeclaredCuts,
+    cut: &DeclaredCut,
+    column: BodyColumn,
+    env: &L::Env<'_>,
+) -> PlannedCell<L::Answer> {
+    let planned = cuts.planned(cut, column);
+    match crate::limits::scope(L::LIMIT, planned.group) {
+        Scope::Judged => PlannedCell::Judged(L::judge(&planned, env)),
+        Scope::NotJudged(cell) => PlannedCell::NotJudged(cell),
+        Scope::NotACutLimit(reason) => PlannedCell::NotACutLimit(reason),
+    }
+}
+
+/// **The driver of an edge**: the same answer as
+/// `judge_declared_cuts::<L>(cuts, column, env).lowest_always(value)`, but
+/// it judges only the cuts that set a ceiling ([`sets_a_ceiling`]).
+/// `lowest_always` drops every other cut before it reads the answer, so
+/// their judgement is lost work. P29-10: an entry (P29-8 8d) has a width and
+/// a chip but never sets a ceiling, and its full solve at each width
+/// column of the force-budget edge cost about 40 % of the envelope time
+/// (`P29-10_DESIGN.md` section 15). The rows still read every cut through
+/// [`judge_declared_cuts`].
+pub fn lowest_ceiling<L: PlannedLimit>(
+    cuts: &DeclaredCuts,
+    column: BodyColumn,
+    env: &L::Env<'_>,
+    value: impl Fn(&L::Answer) -> Option<f64>,
+) -> Option<(CutKind, L::Answer)> {
+    let mut best: Option<(f64, CutKind, L::Answer)> = None;
+    for cut in cuts.list.iter() {
+        if !sets_a_ceiling(cut.presence, PlaneDepth::of_declared(cut.depth)) {
+            continue;
         }
-    })
+        let PlannedCell::Judged(answer) = judge_one::<L>(cuts, cut, column, env) else {
+            continue;
+        };
+        let Some(v) = value(&answer) else {
+            continue;
+        };
+        keep_lowest(&mut best, v, cut.kind, answer);
+    }
+    best.map(|(_, kind, answer)| (kind, answer))
 }
 
 /// The width and the chip of a planned side cut, when it has both. An

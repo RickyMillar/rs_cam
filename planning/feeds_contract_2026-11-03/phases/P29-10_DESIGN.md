@@ -882,3 +882,102 @@ Lead, 2026-11-13, on the six questions of the 10a to 10d report (commits `8f35e4
 ### For the clean-up pass
 
 - A constructor for `Diagnostic`, so that a new field does not touch about 100 struct literals.
+
+## 15. The envelope time budget: cause and fix
+
+The lib test `feeds::envelope::tests::the_envelope_meets_its_time_budget`
+failed alone: 342 to 346 ms (six runs, 2026-11-13, operator's machine,
+load average 2.3) against `ENVELOPE_TIME_BUDGET_MS` = 300 ms.
+
+### The cause, measured
+
+A temporary probe split one envelope of the budget fixture (a 6 mm end
+mill Pocket, operator chip 0.0278 mm). The fixture declares five cuts:
+`Body` (`Always`), `SlotRing` (`Always`), `Entry(Ramp)` (`Always`, at its
+own depth), `Entry(Helix)` (`MayOccur`, own depth) and `Entry(Plunge)`
+(`MayOccur`, axial). Only `Body` and `SlotRing` set a ceiling
+(`planned::sets_a_ceiling`).
+
+| Phase | Time | Solves x cuts | Ramp and helix judges |
+|---|---|---|---|
+| Drawn force-budget edge | 237.5 ms | 115 x 5 | 230 calls, 118.0 ms, one distinct input each |
+| Exact ceilings | 45.5 ms | 15 x 5 (force budget) | 30 calls, 15.2 ms |
+| Drawn deflection edge | 11.4 ms | 8 x 5 | 16 calls, 5.8 ms |
+| Pick deflection edge | 11.5 ms | 8 x 5 | 16 calls, 5.8 ms |
+
+In the drawn force-budget edge, `Body` took 60.7 ms (115 distinct inputs)
+and `SlotRing` 58.4 ms (104 distinct inputs).
+
+`budget_solve`, `deflection_solve` and `table_solve` called
+`judge_declared_cuts`, which judges every declared cut. Then
+`ByCut::lowest_always` drops each cut that does not set a ceiling before it
+reads the answer. So each width column solved the ramp and the helix in
+full (`force_budget::depth_at_budget`, `cutter_axial_constraints`) on the
+same width (D) and the same entry chip, and discarded the answer. That is
+about 145 ms in the probe run (356 ms with the probe). The fix removed
+about 135 ms of 344 ms, about 40 %.
+
+### The commits
+
+- `d7e6527b8` (P29-8 8d) added the cost. Before 8d an entry had no
+  engagement model: the diff removes
+  `CutKind::Entry(EntryKind::Ramp) => CutEngagement::NoModel(NoEngagementModel::Ramp)`
+  and the same line for `Helix`. So the judge of an entry returned at
+  `width_and_chip`. 8d gave each entry a width and a chip, so its judge
+  runs the full solve.
+- `eb6a4a4a7` (P29-7 7c) adds more cost. It made each edge solve over
+  every declared cut. The slot ring solve is measured: 58.4 ms in the
+  drawn force-budget edge and 4.3 ms in the exact ceilings. 7c also raised
+  `BUDGET_EDGE_SPLIT_LEVELS` from 4 to 12, which adds width columns. The
+  share of the split levels is not measured. Other commits changed the
+  envelope after P19 too, and their share is not measured. Removal of
+  these costs changes numbers, so this fix does not touch them.
+
+### The fix (no value changes)
+
+`planned::lowest_ceiling::<L>` is the ceiling-only form of the driver. It
+skips a cut where `sets_a_ceiling` is false before it judges the cut. For
+every other cut it calls the same scope and judge step (`judge_one`, which
+`judge_declared_cuts` now also calls). It uses the same tie rule
+(`keep_lowest`, which `lowest_always` now also calls). Thus it returns
+the same answer as `judge_declared_cuts::<L>(..).lowest_always(value)`.
+The three edge solves call it. The rows (`ceiling_rows`, `value_rows`)
+still read every cut through `judge_declared_cuts`.
+
+### The proof of equality
+
+- A throwaway dump serialized 95 envelopes (JSON and the full `Debug`,
+  which also holds `exact`, `pick_limits` and the solved columns). The
+  set: the budget fixture, the 3.175 mm hardwood Pocket, every
+  `OperationType` on a 6 mm end mill, a 6 mm ball and a 12 mm V-bit
+  (75 sections: 45 envelopes and 30 refusals), and all 18 toolpaths of
+  `nz_wanaka_21_operator.toml` (all 18 build an envelope; 12 draw a
+  `Rigidity` edge, 7 `ApCurve` and 5 `ApCeiling`; 3 are `Unmodelled`). The dump ran
+  twice on the unchanged tree, and the two files were byte-equal. The
+  dump after the fix was byte-equal to them.
+- A new lib test, `the_ceiling_driver_gives_the_lowest_always_answer_p29_10`,
+  compares the two drivers for the force budget, the deflection and the
+  vendor depth table. It reads both fixtures at 40 widths and 3 chips.
+  When the `sets_a_ceiling` skip is removed, the test fails.
+- FM1 is byte-equal. The op golden shows only the known 46 rows.
+
+### Timings (the budget test alone, six runs each)
+
+| Tree | ms | Load average | Free memory |
+|---|---|---|---|
+| Before | 344, 346, 342, 346, 343, 343 | 2.25 to 2.36 | 10 GiB |
+| After | 206, 213, 214, 205, 212, 208 | 3.01 | 12 GiB |
+
+Inside the parallel core `--lib` run the test still fails (757 ms, load
+average 5.6; 2805 passed, 1 failed). The trap in `feeds/CLAUDE.md` names
+this failure, but no parallel run before the fix was measured, so the
+trap is the likely cause, not a measured one.
+
+### Open for the lead
+
+- 205 to 214 ms is about 1.4 times under the budget, not the ten times
+  that the budget doc states. The rest of the cost comes from 7c (the
+  slot ring solve and the split levels). The remaining inputs are almost
+  all distinct, so a cache gives little. A further cut changes a number
+  (fewer split levels, fewer scan steps in `depth_at_budget`) or the
+  budget. Both are rulings for the lead.
