@@ -27,7 +27,7 @@ Feeds contract P29-2, P29-3, P29-6 and P29-7 (`planning/feeds_contract_2026-11-0
 - `Basis::setting` gives `"tool"` for every `Rule` and for a `Derived` basis that is not the drill envelope. It is exact only for a basis from `basis_of_bound`.
 - Commit B: `compute/catalog/cuts.rs` (`OperationConfig::cuts`) fills the facts; the depth rule of the envelope, Suggest and the modulator, the offset ring and the session thinning read them. The depth gate and the force line read `CutFacts::depth_rule` (P29-6 6c, 6d). The marker link is weak (a read with no marker is not found); P29-last replaces it with a search guard.
 - The slot ring and a capped step with no trace are inferred labels (both in the body group, so every gate judges them).
-- No old type is built from `Check` yet. The envelope writes one `Check` per declared cut and limit (`SafeEnvelope::cut_checks`, P29-7 7c; P29-8 8d: an entry row holds its own depth against the cut's root, `own_depth`, a value check), which MCP prints; no other surface reads `Check` (P29-10: every surface). The vendor depth table and the rubbing floor have no sample gate (`gate_of` gives none): only the envelope judges them.
+- No old type is built from `Check` yet. The envelope writes one `Check` per declared cut and limit (`SafeEnvelope::cut_checks`, P29-7 7c; P29-8 8d: an entry row holds its own depth against the cut's root, `own_depth`, a value check), which MCP prints; no other surface reads `Check` (P29-10: every surface). The vendor depth table, the rubbing floor and (P29-8e) the vertical rate `PlungeRate` have no sample gate (`gate_of` gives none; row `P28-27`): only the envelope judges them.
 
 ## How to add a limit
 

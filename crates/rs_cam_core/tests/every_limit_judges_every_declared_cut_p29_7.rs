@@ -41,7 +41,9 @@
 //!   the own depth as its value; a depth-ceiling row is `Exceeds` exactly
 //!   when the own depth is above the bound; no entry is the binding cut of
 //!   an edge; claims 2 and 3 skip a cut at its own depth. A plunge (the
-//!   axial circle) holds a number only for the spindle power. Non-vacuity:
+//!   axial circle) holds a number only for the spindle power and (P29-8e,
+//!   the check (c)) for the vertical rate (`LimitId::PlungeRate`, mm/min).
+//!   Non-vacuity:
 //!   a ramp and a helix row hold a force-budget number and a plunge row a
 //!   power number on a config with stated speeds.
 //! - Claim 6 (P29-9 task 1): a chip check of a stored entry feed reads the
@@ -691,19 +693,22 @@ fn claim_5_an_entry_is_a_value_check_never_a_ceiling_p29_8() {
                 row.check.state,
                 row.check.margin
             );
-            // A plunge is the axial circle: only the power has a number.
+            // A plunge is the axial circle: only the power and (P29-8e) the
+            // vertical rate have a number.
             if matches!(
                 row.cut,
                 CutKind::Entry(EntryKind::Plunge | EntryKind::PeckLadder)
             ) && matches!(row.check.state, CheckState::Within | CheckState::Exceeds)
             {
-                assert_eq!(
-                    row.check.limit,
-                    LimitId::SpindlePower,
-                    "{name}: a {} row with a number",
-                    row.cut.label()
+                assert!(
+                    matches!(row.check.limit, LimitId::SpindlePower | LimitId::PlungeRate),
+                    "{name}: a {} row with a number for {:?}",
+                    row.cut.label(),
+                    row.check.limit
                 );
-                plunge_power += 1;
+                if row.check.limit == LimitId::SpindlePower {
+                    plunge_power += 1;
+                }
             }
             let Some(own) = row.own_depth else {
                 // A ramp or a helix with no own depth has no engagement:
@@ -1071,4 +1076,84 @@ fn claim_8_a_finish_is_judged_at_the_earlier_leave_p29_9() {
 )]
 fn panic_row(limit: LimitId) -> rs_cam_core::limits::Check {
     panic!("no body row of {limit:?}")
+}
+
+/// P29-8e (c), `P29-8e_TAB_REPLUNGE.md` section 13: `LimitId::PlungeRate`
+/// judges the vertical rate of each declared cut against
+/// `VerticalRateLimit::bound` at the stated speed, as a warning row. A plunge
+/// entry over every vertical bound reads `Exceeds` with the stated plunge as
+/// its value and a bound under it; a plunge of 1 mm/min reads `Within`; a cut
+/// with no vertical feed reads `NotApplicable(NoVerticalFeed)`. The check
+/// moves no feed: the stated plunge of the config is the value.
+#[test]
+fn claim_9_the_vertical_rate_judges_every_plunge_p29_8e() {
+    use rs_cam_core::limits::{CheckState, EntryKind, Geometry};
+    let machine = MachineProfile::default();
+    let (mut exceeds, mut within, mut no_vertical) = (0, 0, 0);
+    for (name, mut op, tool) in configs(&machine) {
+        for (plunge, high) in [(1.0e6, true), (1.0, false)] {
+            op.as_params_mut().set_plunge_rate(plunge);
+            let Some(env) = envelope(&op, &tool, &machine) else {
+                continue;
+            };
+            for row in env
+                .cut_checks
+                .iter()
+                .filter(|r| r.check.limit == LimitId::PlungeRate)
+            {
+                assert_eq!(row.check.unit, "mm/min", "{name}");
+                match row.cut {
+                    CutKind::Entry(EntryKind::Plunge) => match row.check.state {
+                        CheckState::Exceeds => {
+                            assert!(high, "{name}: a 1 mm/min plunge exceeds");
+                            assert_eq!(row.check.value, Some(plunge), "{name}");
+                            assert!(
+                                row.check.bound.is_some_and(|b| b < plunge),
+                                "{name}: {:?}",
+                                row.check.bound
+                            );
+                            exceeds += 1;
+                        }
+                        CheckState::Within => {
+                            assert_eq!(row.check.value, Some(plunge), "{name}");
+                            if !high {
+                                // Q11: the true limit, not the clamped value,
+                                // with the basis of its arm.
+                                if let Some(b) = row.check.bound {
+                                    assert!(b > plunge, "{name}: the bound {b} is the limit");
+                                    assert!(row.check.basis.is_some(), "{name}: the arm's basis");
+                                }
+                                within += 1;
+                            }
+                        }
+                        CheckState::NoNumber(_) | CheckState::NotApplicable(_) => {}
+                    },
+                    CutKind::Body => {
+                        assert_eq!(
+                            row.check.state,
+                            CheckState::NotApplicable(Geometry::NoVerticalFeed),
+                            "{name}: a body cut has no vertical feed"
+                        );
+                        no_vertical += 1;
+                    }
+                    CutKind::FirstPass(_)
+                    | CutKind::SpringPass
+                    | CutKind::WallFinish
+                    | CutKind::Entry(_)
+                    | CutKind::EntryApproach
+                    | CutKind::Cleanup(_)
+                    | CutKind::CappedStep(_)
+                    | CutKind::SlotRing
+                    | CutKind::LeadIn
+                    | CutKind::LeadOut
+                    | CutKind::Link
+                    | CutKind::DressupRelief
+                    | CutKind::Drill => {}
+                }
+            }
+        }
+    }
+    assert!(exceeds > 0, "non-vacuity: a plunge over the bound exceeds");
+    assert!(within > 0, "non-vacuity: a slow plunge is within");
+    assert!(no_vertical > 0, "non-vacuity: a body row");
 }

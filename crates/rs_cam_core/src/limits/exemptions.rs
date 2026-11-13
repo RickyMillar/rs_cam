@@ -96,7 +96,7 @@ const R2: ExemptionClass = ExemptionClass::Ruled {
 const NR: ExemptionClass = ExemptionClass::NeedsRuling;
 
 /// Every exemption from a limit today. See the module doc.
-pub static EXEMPTIONS: [Exemption; 38] = [
+pub static EXEMPTIONS: [Exemption; 37] = [
     // P28: the limit audit.
     Exemption {
         id: "P28-02",
@@ -431,20 +431,10 @@ pub static EXEMPTIONS: [Exemption; 38] = [
     // straight plunges of wanaka idx 17 under the Ramp style were
     // re-entries of the obstacle clip, not tab descents; every clip
     // re-entry now goes through the op's entry rule
-    // (`compute::execute::enter_clip_reentries`). The row keeps the cause
-    // that remains (lead ruling, section 12); the commit of the check (c)
-    // closes it.
-    Exemption {
-        id: "U-TabReplunge",
-        what: "a straight plunge into stock that ships with no judge of its vertical rate",
-        limit: &[],
-        who: Who::Kind(&[CutKind::Entry(EntryKind::Plunge)]),
-        class: NR,
-        where_: &[],
-        closes_in: "the check (c) of P29-8e: the plunge entry of the style None, the re-entry of \
-                    the K1 obstacle backstop and the fallback plunge of the entry pipeline are \
-                    judged against `VerticalRateLimit::bound`",
-    },
+    // (`compute::execute::enter_clip_reentries`). The check (c) closed the
+    // row `U-TabReplunge`: every straight plunge that ships is the plunge
+    // entry cut, and `LimitId::PlungeRate` judges it against
+    // `VerticalRateLimit::bound` (`feeds::planned::VerticalRatePlanned`).
     // P29-8 8d (lead ruling Q5): the entry kinds of the contract that the
     // op does not configure.
     Exemption {

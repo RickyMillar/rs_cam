@@ -1043,6 +1043,9 @@ pub enum ValueCheck {
     ChipMin,
     /// The rubbing floor ([`RubbingFloorPlanned`]).
     RubbingFloor,
+    /// P29-8e (c): the vertical rate of a cut against the one vertical-rate
+    /// limit ([`VerticalRatePlanned`]).
+    VerticalRate,
 }
 
 impl ValueCheck {
@@ -1053,6 +1056,161 @@ impl ValueCheck {
             Self::ChipMax => ChipMaxPlanned::LIMIT,
             Self::ChipMin => ChipMinPlanned::LIMIT,
             Self::RubbingFloor => RubbingFloorPlanned::LIMIT,
+            Self::VerticalRate => VerticalRatePlanned::LIMIT,
+        }
+    }
+
+    /// The unit of the value and the bound of the check.
+    #[must_use]
+    pub const fn unit(self) -> &'static str {
+        match self {
+            Self::ChipMax | Self::ChipMin | Self::RubbingFloor => "mm",
+            Self::VerticalRate => "mm/min",
+        }
+    }
+}
+
+/// P29-8e (c): the vertical feed (mm/min) that each entry kind and the
+/// drill cut of one op ship, before the simulation: the stated feed of the
+/// entry rule (`ConfiguredEntry::planned_feed_mm_min`); for a ramp and a
+/// helix its vertical part (the feed x sin of the ramp angle; the feed x
+/// pitch / sqrt((2 pi r)^2 + pitch^2) of the helix the door emits, from
+/// `ResolvedEntry`); for a drill the op feed. `None`: no number.
+#[derive(Debug, Clone, Copy, PartialEq)]
+pub struct VerticalFeeds {
+    plunge: Option<f64>,
+    ramp: Option<f64>,
+    helix: Option<f64>,
+    peck_ladder: Option<f64>,
+    drill: Option<f64>,
+}
+
+impl VerticalFeeds {
+    /// The vertical feeds of `operation` on `tool` in `material`, with the
+    /// configured entry `entry` and the toolpath's dressups (`None`: the
+    /// registry default). A tool that does not build gives no ramp and no
+    /// helix number.
+    #[must_use]
+    pub fn of_operation(
+        operation: &OperationConfig,
+        tool: &ToolConfig,
+        material: &Material,
+        dressups: Option<&crate::compute::config::DressupConfig>,
+        entry: &ConfiguredEntry,
+    ) -> Self {
+        let resolved = crate::compute::build_cutter(tool).ok().map(|cutter| {
+            if let OperationConfig::Adaptive3d(cfg) = operation {
+                return crate::feeds::entry_rule::ResolvedEntry::of_adaptive3d(
+                    cfg,
+                    &cutter,
+                    material,
+                    operation.plunge_rate(),
+                );
+            }
+            let fresh;
+            let cfg = match dressups {
+                Some(cfg) => cfg,
+                None => {
+                    fresh = crate::compute::config::DressupConfig::for_op(operation.op_type());
+                    &fresh
+                }
+            };
+            crate::feeds::entry_rule::ResolvedEntry::of_dressup(
+                cfg,
+                Some(&cutter),
+                tool.diameter,
+                material,
+                operation.plunge_rate(),
+            )
+        });
+        let feed = |kind| entry.planned_feed_mm_min(operation, kind).ok();
+        let ramp_share = resolved.map(|r| r.ramp_angle_deg().to_radians().sin());
+        let helix_share = resolved.map(|r| {
+            let radius = r.helix_radius().emitted_mm;
+            let pitch = r.helix_pitch_mm();
+            pitch / ((2.0 * std::f64::consts::PI * radius).powi(2) + pitch * pitch).sqrt()
+        });
+        Self {
+            plunge: feed(EntryKind::Plunge),
+            ramp: feed(EntryKind::Ramp).zip(ramp_share).map(|(f, k)| f * k),
+            helix: feed(EntryKind::Helix).zip(helix_share).map(|(f, k)| f * k),
+            peck_ladder: feed(EntryKind::PeckLadder),
+            drill: operation.feed_rate(),
+        }
+    }
+}
+
+/// What the vertical-rate check reads beside the cut.
+#[derive(Clone, Copy)]
+pub struct VerticalEnv<'e> {
+    /// THE vertical-rate limit of the op (`PlungeBasis::vertical_limit`).
+    pub limit: &'e crate::feeds::vertical::VerticalRateLimit,
+    /// The stated spindle speed (rpm), or why none.
+    pub rpm: Result<f64, EntryNoNumber>,
+    /// The vertical feeds of the op.
+    pub feeds: VerticalFeeds,
+}
+
+/// The answer of the vertical-rate check for one cut.
+#[derive(Debug, Clone, Copy, PartialEq)]
+pub enum VerticalReading {
+    /// The cut has no vertical feed into stock.
+    NoVerticalFeed,
+    /// The cut has a vertical feed and the plan holds no number for it.
+    NoNumber,
+    /// The vertical feed (mm/min) and THE limit at the stated speed
+    /// (`VerticalRateLimit::limit_at`, lead ruling Q11), with its arm;
+    /// `limit` is `None` when no arm holds a rate.
+    Value {
+        /// The vertical feed (mm/min).
+        value_mm_min: f64,
+        /// The limit (mm/min) and the arm that binds.
+        limit: Option<crate::feeds::vertical::VerticalRate>,
+    },
+}
+
+/// P29-8e (c): the vertical rate of each cut against THE vertical-rate
+/// limit at the stated speed (`VerticalRateLimit::limit_at`, lead ruling
+/// Q11: the true limit, not the clamped value; a value check, never a
+/// ceiling, and no feed moves). Every straight plunge that ships is the plunge entry cut (the
+/// stated plunge of the style None; the fallback plunge, the K1 backstop
+/// re-entry and the surface-riding re-entry under a ramp or helix style),
+/// so the check judges each of them.
+pub struct VerticalRatePlanned;
+
+impl PlannedLimit for VerticalRatePlanned {
+    const LIMIT: LimitId = LimitId::PlungeRate;
+    type Env<'e> = VerticalEnv<'e>;
+    type Answer = VerticalReading;
+    fn judge(cut: &PlannedCut, env: &VerticalEnv<'_>) -> VerticalReading {
+        let feeds = env.feeds;
+        let value = match cut.kind {
+            CutKind::Entry(EntryKind::Plunge) => feeds.plunge,
+            CutKind::Entry(EntryKind::Ramp) => feeds.ramp,
+            CutKind::Entry(EntryKind::Helix) => feeds.helix,
+            CutKind::Entry(EntryKind::PeckLadder) => feeds.peck_ladder,
+            CutKind::Drill => feeds.drill,
+            // A side cut, a link and a relief move in XY; an air lead
+            // removes no stock.
+            CutKind::Body
+            | CutKind::FirstPass(_)
+            | CutKind::SpringPass
+            | CutKind::WallFinish
+            | CutKind::EntryApproach
+            | CutKind::Cleanup(_)
+            | CutKind::CappedStep(_)
+            | CutKind::SlotRing
+            | CutKind::LeadIn
+            | CutKind::LeadOut
+            | CutKind::Link
+            | CutKind::DressupRelief => return VerticalReading::NoVerticalFeed,
+        };
+        match (value, env.rpm) {
+            (Some(v), Ok(rpm)) if v.is_finite() && v > 0.0 => VerticalReading::Value {
+                value_mm_min: v,
+                limit: env.limit.limit_at(rpm),
+            },
+            (Some(_) | None, Ok(_) | Err(_)) => VerticalReading::NoNumber,
         }
     }
 }
@@ -1103,6 +1261,8 @@ pub const fn planned_limit_of(limit: LimitId) -> PlaneRole {
         LimitId::ChipMax => PlaneRole::ValueCheck(ValueCheck::ChipMax),
         LimitId::ChipMin => PlaneRole::ValueCheck(ValueCheck::ChipMin),
         LimitId::RubbingFloor => PlaneRole::ValueCheck(ValueCheck::RubbingFloor),
+        // P29-8e (c): the vertical rate of each cut.
+        LimitId::PlungeRate => PlaneRole::ValueCheck(ValueCheck::VerticalRate),
         LimitId::FluteGuard | LimitId::CuttingLength | LimitId::VendorAxial => {
             PlaneRole::NotACutLimit(PlanReason::DepthOnly)
         }
@@ -1114,7 +1274,6 @@ pub const fn planned_limit_of(limit: LimitId) -> PlaneRole {
         LimitId::CuttingFeedCap
         | LimitId::PlannerFeedCap
         | LimitId::KinematicReach
-        | LimitId::PlungeRate
         | LimitId::SpindleMaxRpm
         | LimitId::ZAxisRate
         | LimitId::OperatorRpmCeiling

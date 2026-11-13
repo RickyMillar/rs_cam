@@ -858,6 +858,9 @@ struct OwnedInputs {
     /// limit that changes with the cut reads them through the one driver
     /// (`planned::judge_declared_cuts`).
     cuts: DeclaredCuts,
+    /// P29-8e (c): the vertical feed of each entry kind and of the drill
+    /// cut, for the vertical-rate check.
+    vertical: crate::feeds::planned::VerticalFeeds,
 }
 
 impl std::fmt::Debug for OwnedInputs {
@@ -1193,6 +1196,12 @@ struct CutRow {
     /// P29-9 9b: the value is a lower bound of the cut (`BodyDepth::
     /// AtLeast`): a row inside reads `NoNumber(OnlyALowerBound)`.
     lower_bound: bool,
+    /// P29-8e (c): the cut has no number by its geometry (a cut with no
+    /// vertical feed): the row reads `NotApplicable`.
+    geometry: Option<crate::limits::Geometry>,
+    /// P29-8e (Q11): the basis of this row's own bound, when it differs by
+    /// row (the arm of the vertical-rate limit); else the check's basis.
+    own_basis: Option<Basis>,
 }
 
 impl CutRow {
@@ -1211,6 +1220,22 @@ impl CutRow {
             judged: None,
             bound,
             lower_bound: false,
+            geometry: None,
+            own_basis: None,
+        }
+    }
+
+    /// P29-8e (Q11): the row with the basis of its own bound.
+    fn with_basis(self, own_basis: Option<Basis>) -> Self {
+        Self { own_basis, ..self }
+    }
+
+    /// P29-8e (c): the row of a cut that the limit does not apply to by its
+    /// geometry.
+    fn not_applicable(self, geometry: crate::limits::Geometry) -> Self {
+        Self {
+            geometry: Some(geometry),
+            ..self
         }
     }
 
@@ -1236,42 +1261,45 @@ impl CutRow {
         basis: Option<Basis>,
     ) -> CutCheck {
         use crate::limits::{Check, CheckState, NoNumberReason};
-        let (bound, margin, state) = match self.bound {
-            Ok(Some(b)) => {
-                // P29-9 (lead ruling): the margin follows the judged value,
-                // so a row never reads `Within` with a margin below zero.
-                let margin = self.judged.or(self.value).and_then(|v| side.margin(v, b));
-                let state = margin.map_or(
-                    CheckState::NoNumber(NoNumberReason::NotModelled),
-                    CheckState::of_margin,
-                );
-                match (self.lower_bound, state) {
-                    // P29-9 9b: a lower bound inside its limit proves
-                    // nothing (the real cut is at least as deep).
-                    (true, CheckState::Within) => (
-                        Some(b),
-                        None,
-                        CheckState::NoNumber(NoNumberReason::OnlyALowerBound),
-                    ),
-                    (
-                        true | false,
-                        CheckState::Within
-                        | CheckState::Exceeds
-                        | CheckState::NoNumber(_)
-                        | CheckState::NotApplicable(_),
-                    ) => (Some(b), margin, state),
+        let (bound, margin, state) = match (self.geometry, self.bound) {
+            (Some(geometry), _) => (None, None, CheckState::NotApplicable(geometry)),
+            (None, bound) => match bound {
+                Ok(Some(b)) => {
+                    // P29-9 (lead ruling): the margin follows the judged value,
+                    // so a row never reads `Within` with a margin below zero.
+                    let margin = self.judged.or(self.value).and_then(|v| side.margin(v, b));
+                    let state = margin.map_or(
+                        CheckState::NoNumber(NoNumberReason::NotModelled),
+                        CheckState::of_margin,
+                    );
+                    match (self.lower_bound, state) {
+                        // P29-9 9b: a lower bound inside its limit proves
+                        // nothing (the real cut is at least as deep).
+                        (true, CheckState::Within) => (
+                            Some(b),
+                            None,
+                            CheckState::NoNumber(NoNumberReason::OnlyALowerBound),
+                        ),
+                        (
+                            true | false,
+                            CheckState::Within
+                            | CheckState::Exceeds
+                            | CheckState::NoNumber(_)
+                            | CheckState::NotApplicable(_),
+                        ) => (Some(b), margin, state),
+                    }
                 }
-            }
-            // No bound (no root below the flute, a table that holds every
-            // printed depth): the cut is inside; a lower bound proves
-            // nothing (9b).
-            Ok(None) if self.lower_bound => (
-                None,
-                None,
-                CheckState::NoNumber(NoNumberReason::OnlyALowerBound),
-            ),
-            Ok(None) => (None, None, CheckState::Within),
-            Err(reason) => (None, None, CheckState::NoNumber(reason)),
+                // No bound (no root below the flute, a table that holds every
+                // printed depth): the cut is inside; a lower bound proves
+                // nothing (9b).
+                Ok(None) if self.lower_bound => (
+                    None,
+                    None,
+                    CheckState::NoNumber(NoNumberReason::OnlyALowerBound),
+                ),
+                Ok(None) => (None, None, CheckState::Within),
+                Err(reason) => (None, None, CheckState::NoNumber(reason)),
+            },
         };
         CutCheck {
             cut: self.cut,
@@ -1295,7 +1323,7 @@ impl CutRow {
                 side,
                 margin,
                 state,
-                basis,
+                basis: self.own_basis.clone().or(basis),
                 bound_detail: None,
                 binding: false,
                 population: None,
@@ -1430,6 +1458,13 @@ impl SafeEnvelope {
             &entry,
             input.context.plan_facts(),
         );
+        let vertical = crate::feeds::planned::VerticalFeeds::of_operation(
+            input.operation,
+            input.tool,
+            input.material,
+            input.context.dressups(),
+            &entry,
+        );
         let inputs = OwnedInputs {
             operation: input.operation.clone(),
             tool: input.tool.clone(),
@@ -1438,6 +1473,7 @@ impl SafeEnvelope {
             lut: input.lut,
             spindle_strategy: input.spindle_strategy,
             cuts: declared,
+            vertical,
         };
         // The calculator at the op's own inputs: the family default of an
         // unstated axis, and the matched row.
@@ -2544,10 +2580,10 @@ impl SafeEnvelope {
         if let Some(sp) = speeds.as_ref() {
             for check in self.value_checks.clone() {
                 let (side, kind, rows) = self.value_rows(check, sp);
-                let basis = self.limit(kind).map(|l| l.basis.clone());
+                let basis = kind.and_then(|k| self.limit(k)).map(|l| l.basis.clone());
                 out.extend(
                     rows.iter()
-                        .map(|r| r.check(check.limit(), "mm", side, basis.clone())),
+                        .map(|r| r.check(check.limit(), check.unit(), side, basis.clone())),
                 );
             }
         }
@@ -2892,7 +2928,7 @@ impl SafeEnvelope {
         &self,
         check: ValueCheck,
         sp: &ProposalSpeeds,
-    ) -> (BoundSide, LimitKind, Vec<CutRow>) {
+    ) -> (BoundSide, Option<LimitKind>, Vec<CutRow>) {
         use crate::feeds::planned::{
             ChipEnv, ChipMaxPlanned, ChipMinPlanned, ChipReading, PlannedCell, RubbingFloorPlanned,
         };
@@ -2900,7 +2936,9 @@ impl SafeEnvelope {
             ValueCheck::ChipMax => (BoundSide::Ceiling, LimitKind::ChipBand),
             ValueCheck::ChipMin => (BoundSide::Floor, LimitKind::ChipBand),
             ValueCheck::RubbingFloor => (BoundSide::Floor, LimitKind::RubbingFloor),
+            ValueCheck::VerticalRate => return (BoundSide::Ceiling, None, self.vertical_rows(sp)),
         };
+        let kind = Some(kind);
         let r = &sp.r;
         let band = r
             .chipload_bounds
@@ -2939,6 +2977,8 @@ impl SafeEnvelope {
                     crate::feeds::rubbing_floor_at(r.chipload_bounds, r.chipload_point_mm);
                 judge_declared_cuts::<RubbingFloorPlanned>(cuts, column, &env(floor))
             }
+            // Answered before the chip band (no band needed).
+            ValueCheck::VerticalRate => return (side, None, Vec::new()),
         };
         let rows = cells
             .iter()
@@ -2956,6 +2996,53 @@ impl SafeEnvelope {
             })
             .collect();
         (side, kind, rows)
+    }
+
+    /// P29-8e (c): one row per declared cut: its vertical feed against
+    /// `VerticalRateLimit::bound` at the stated speed (a value check, no
+    /// ceiling, no feed moves); a cut with no vertical feed is
+    /// `NotApplicable(NoVerticalFeed)`.
+    fn vertical_rows(&self, sp: &ProposalSpeeds) -> Vec<CutRow> {
+        use crate::feeds::planned::{
+            PlannedCell, VerticalEnv, VerticalRatePlanned, VerticalReading,
+        };
+        let cuts = &self.inputs.cuts;
+        let column = BodyColumn {
+            ae_mm: self.proposal_point.ae_mm,
+            chip_mm: Some(sp.fz),
+        };
+        let env = VerticalEnv {
+            limit: sp.r.plunge.vertical_limit(),
+            rpm: cuts.entry_rpm(),
+            feeds: self.inputs.vertical,
+        };
+        judge_declared_cuts::<VerticalRatePlanned>(cuts, column, &env)
+            .iter()
+            .map(|e| {
+                let row = |value, bound| CutRow::of(e.kind, e.presence, e.depth, value, bound);
+                match e.value {
+                    PlannedCell::Judged(VerticalReading::Value {
+                        value_mm_min,
+                        limit: Some(limit),
+                    }) => row(Some(value_mm_min), Ok(Some(limit.mm_min())))
+                        .with_basis(env.limit.basis_of(limit.binding())),
+                    // No arm holds a rate: nothing bounds the vertical feed.
+                    PlannedCell::Judged(VerticalReading::Value {
+                        value_mm_min,
+                        limit: None,
+                    }) => row(Some(value_mm_min), Ok(None)),
+                    PlannedCell::Judged(VerticalReading::NoVerticalFeed) => {
+                        row(None, Ok(None)).not_applicable(crate::limits::Geometry::NoVerticalFeed)
+                    }
+                    PlannedCell::Judged(VerticalReading::NoNumber) => {
+                        row(None, Err(NoNumberReason::NotModelled))
+                    }
+                    PlannedCell::NotJudged(_) | PlannedCell::NotACutLimit(_) => {
+                        row(None, Err(NoNumberReason::NotJudgedHere))
+                    }
+                }
+            })
+            .collect()
     }
 
     /// P29-7 7c (lead ruling Q1): the note of each declared cut that the

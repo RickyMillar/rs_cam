@@ -107,6 +107,15 @@ pub const fn scope(limit: LimitId, group: CutGroup) -> Scope {
                 reason: DRILL_CYCLE,
             }),
         },
+        // P29-8e (c): the vertical rate of each cut; a cut with no vertical
+        // feed answers `NotApplicable(NoVerticalFeed)`.
+        LimitId::PlungeRate => match group {
+            CutGroup::Body
+            | CutGroup::Entry
+            | CutGroup::Cleanup
+            | CutGroup::Link
+            | CutGroup::Drill => Scope::Judged,
+        },
         LimitId::FluteGuard | LimitId::CuttingLength | LimitId::VendorAxial => {
             Scope::NotACutLimit(PlanReason::DepthOnly)
         }
@@ -118,7 +127,6 @@ pub const fn scope(limit: LimitId, group: CutGroup) -> Scope {
         LimitId::CuttingFeedCap
         | LimitId::PlannerFeedCap
         | LimitId::KinematicReach
-        | LimitId::PlungeRate
         | LimitId::SpindleMaxRpm
         | LimitId::ZAxisRate
         | LimitId::OperatorRpmCeiling

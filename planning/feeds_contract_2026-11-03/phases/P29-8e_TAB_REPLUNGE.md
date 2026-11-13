@@ -836,3 +836,23 @@ Every body, slot, cleanup, link and capped-step cut gives `NotApplicable(NoVerti
   assertion change in e3.
 - The MCP `get_safe_envelope` reply gains one `cut_checks` row per declared cut with the limit
   `plunge_rate` (an added row; no key changes). The viz pills read the same record.
+
+### 13.4 Result on e3 (measured), after lead ruling Q11
+
+Lead ruling Q11: a `PlungeRate` row reports the true limit at the stated speed, with no feed input
+(`VerticalRateLimit::limit_at`: the lower of the G6 axial chip x rpm x Z and the machine Z axis
+rate, and the arm that binds), with the basis of that arm and a real margin. The states do not
+change against 13.2: 45 rows `Within`, 1 `Exceeds` (idx 17), 51 rows `NotApplicable(NoVerticalFeed)`.
+
+| Op | Row | Value | Limit (arm) | Margin |
+|---|---|---|---|---|
+| 0, 12 | plunge / ramp / helix | 2162 / 337.41 / 189.93 | 2500 (Z axis rate) | 13.5 / 86.5 / 92.4 % |
+| 1, 14 | plunge / ramp / helix / peck | 2162 / 337.46 / 379.43 / 2162 | 2500 (Z axis rate) | 13.5 / 86.5 / 84.8 / 13.5 % |
+| 2, 15 | plunge / ramp / helix / peck | 2285 / 239.23 / 795.98 / 2285 | 2286 (G6 axial chip, row `amana-flat-hardwood-pocket-6000-2f-spektra`) | 0.04 / 89.5 / 65.2 / 0.04 % |
+| 3, 4 | drill | 1000 | 2500 (Z axis rate) | 60.0 % |
+| 5 | plunge | 1347 | 1347.47 (G6 axial chip) | 0.03 % |
+| 6, 7, 16 | plunge / ramp / helix | 240 / 12.56 / 61.53 | 2500 (Z axis rate) | 90.4 / 99.5 / 97.5 % |
+| 8 | plunge / ramp / helix | 240 / 65.84 / 322.54 | 2500 (Z axis rate) | 90.4 / 97.4 / 87.1 % |
+| 9, 10, 13 | plunge | 381 / 762 / 762 | 2500 (Z axis rate) | 84.8 / 69.5 / 69.5 % |
+| 11 | plunge / ramp / helix | 2162 / 113.15 / 63.69 | 2500 (Z axis rate) | 13.5 / 95.5 / 97.5 % |
+| 17 | plunge / ramp / helix | 1582 / 165.64 / 278.76 | 1347.47 (G6 axial chip) | **-17.4** / 87.7 / 79.3 % |

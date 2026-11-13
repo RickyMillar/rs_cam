@@ -220,6 +220,39 @@ impl VerticalRateLimit {
         rate
     }
 
+    /// P29-8e (lead ruling Q11): THE limit at `rpm`, with no feed input:
+    /// the lower of the G6 axial chip x rpm x Z and the machine Z axis rate,
+    /// and the arm that binds (`AxialChip` or `ZAxisRate`, never
+    /// `Candidate`). `None` when neither arm holds a finite rate above zero.
+    /// [`Self::bound`] of any candidate equals `min(candidate, limit)`.
+    #[must_use]
+    pub fn limit_at(&self, rpm: f64) -> Option<VerticalRate> {
+        let bound = self.bound(f64::INFINITY, rpm);
+        match bound.binding {
+            VerticalBinding::Candidate => None,
+            VerticalBinding::AxialChip | VerticalBinding::ZAxisRate => Some(bound),
+        }
+    }
+
+    /// The basis of an arm of the limit: the G6 claim on its side row for
+    /// `AxialChip`, the machine field for `ZAxisRate`. `None` for
+    /// `Candidate` (no limit binds) or an `AxialChip` with no G6 claim.
+    #[must_use]
+    pub fn basis_of(&self, binding: VerticalBinding) -> Option<crate::feeds::sourced::Basis> {
+        use crate::feeds::sourced::{Basis, ClaimKind, ClaimRef, MachineField, RowRef};
+        match binding {
+            VerticalBinding::Candidate => None,
+            VerticalBinding::AxialChip => self.axial.as_ref().map(|b| {
+                Basis::Claim(ClaimRef {
+                    kind: ClaimKind::DrillG6,
+                    row: RowRef(b.side_row().to_owned()),
+                    rule: "g6_axial_plunge".to_owned(),
+                })
+            }),
+            VerticalBinding::ZAxisRate => Some(Basis::Machine(MachineField::ZAxisRate)),
+        }
+    }
+
     /// The limit in words, for a detail line: the G6 bound when there is
     /// one, then the Z axis rate (or the sentence that no Z cap applies).
     #[must_use]

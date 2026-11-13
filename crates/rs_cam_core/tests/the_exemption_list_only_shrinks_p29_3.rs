@@ -48,9 +48,9 @@ use rs_cam_core::limits::{
 };
 
 /// The rows that need a ruling. Exact: a closed row lowers it.
-const MAX_NEEDS_RULING: usize = 27;
+const MAX_NEEDS_RULING: usize = 26;
 /// Every row.
-const ROWS: usize = 38;
+const ROWS: usize = 37;
 /// The rows with a geometry reason.
 const PHYSICAL: usize = 8;
 /// The rows that quote an operator ruling.
@@ -93,7 +93,9 @@ const RULED: usize = 3;
 /// `P28-11` with three files: the checks judge a Project Curve at the
 /// lower bound of its depth (`TipDepth`, `BodyDepth::AtLeast`). P29-8e
 /// rewrote the row `U-TabReplunge` (no file, needs a ruling) to the cause
-/// that remains: a straight plunge that ships with no judge.
+/// that remains: a straight plunge that ships with no judge. The check (c)
+/// of P29-8e closed it (ROWS 37, need a ruling 26): `LimitId::PlungeRate`
+/// judges every declared cut against `VerticalRateLimit::bound`.
 const ROWS_WITH_A_FILE: usize = 37;
 
 /// The 34 rows of `phases/P28_limit_audit.md`.
