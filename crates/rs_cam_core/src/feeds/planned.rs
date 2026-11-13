@@ -939,6 +939,9 @@ pub struct ChipReading {
     pub judged_mm: f64,
     /// The bound (mm).
     pub bound_mm: f64,
+    /// P29-10: the chip reads a stored entry feed (`StoredFeedChip`), so
+    /// the row carries the caveat `StoredFeed`.
+    pub stored_feed: bool,
 }
 
 fn peak_chip(cut: &PlannedCut, env: &ChipEnv, side: BoundSide) -> Option<ChipReading> {
@@ -949,6 +952,7 @@ fn peak_chip(cut: &PlannedCut, env: &ChipEnv, side: BoundSide) -> Option<ChipRea
         peak_mm: UnliftedFeed::over_lift(fz, lift).mm_min(),
         judged_mm: UnliftedFeed::over_lift(judged_fz, lift).mm_min(),
         bound_mm: env.bound_mm,
+        stored_feed: cut.stored_chip.is_some(),
     })
 }
 

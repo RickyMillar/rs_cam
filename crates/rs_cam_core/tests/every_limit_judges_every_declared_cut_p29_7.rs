@@ -27,7 +27,7 @@
 //!   `ByCut::lowest_always`. Every depth ceiling (`CeilingEdge::ALL`)
 //!   draws an edge on a config.
 //! - Claim 3: Suggest's proposal sits at or under the ceiling of every
-//!   declared cut with `Presence::Always` (`SafeEnvelope::cut_checks`:
+//!   declared cut with `Presence::Always` (`SafeEnvelope::rows`, the planned rows:
 //!   the force budget, the deflection and the vendor depth table), the
 //!   acceptance of the change list.
 //! - Claim 4: non-vacuity. A contour Pocket (EndMill 3.175 mm, hardwood)
@@ -91,11 +91,25 @@ use rs_cam_core::feeds::planned::{
 };
 use rs_cam_core::feeds::suggest::{NoProject, StockContext, SuggestContext};
 use rs_cam_core::limits::{
-    CutGroup, CutKind, DepthLimit, LimitId, NoEngagementModel, Scope, scope,
+    CheckRow, CutGroup, CutKind, DepthLimit, LimitId, NoEngagementModel, Scope, scope,
 };
 use rs_cam_core::machine::MachineProfile;
 use rs_cam_core::material::{Material, WoodSpecies};
 use rs_cam_core::tool_load::groups::{Gate, gate_of};
+
+/// P29-10: the planned rows of an envelope (`Subject::Planned`), in order.
+fn planned(env: &SafeEnvelope) -> Vec<CheckRow> {
+    env.rows()
+        .iter()
+        .filter(|r| r.is_planned())
+        .cloned()
+        .collect()
+}
+
+/// The declared cut of a planned row.
+fn cut(row: &CheckRow) -> CutKind {
+    row.cut().expect("a planned row names its cut")
+}
 
 /// The tool of the FM1 instrument (`feeds_matrix_instrument_fm1`).
 fn fm1_tool(kind: ToolType, d: f64) -> ToolConfig {
@@ -554,17 +568,17 @@ fn claim_3_the_proposal_sits_inside_every_declared_cut() {
         let (Some(ap), Some(&floor)) = (env.proposal.get().ap_mm(), env.speeds.aps.first()) else {
             continue;
         };
-        for row in &env.cut_checks {
-            if row.may_occur_row.is_some()
-                || row.own_depth.is_some()
+        for row in &planned(&env) {
+            if row.may_occur_row().is_some()
+                || row.own_depth_mm().is_some()
                 || !matches!(
-                    row.check.limit,
+                    row.check().limit,
                     LimitId::ForceBudget | LimitId::ToolDeflection | LimitId::VendorDepthTable
                 )
             {
                 continue;
             }
-            let Some(bound) = row.check.bound else {
+            let Some(bound) = row.check().bound else {
                 continue;
             };
             // A ceiling under the smallest depth (the first depth of the
@@ -573,8 +587,8 @@ fn claim_3_the_proposal_sits_inside_every_declared_cut() {
             assert!(
                 ap <= bound * (1.0 + 1e-9),
                 "{name}: the proposal {ap} mm is over the {:?} ceiling {bound} mm of the {}",
-                row.check.limit,
-                row.cut.label()
+                row.check().limit,
+                cut(row).label()
             );
             rows_checked += 1;
         }
@@ -681,79 +695,82 @@ fn claim_5_an_entry_is_a_value_check_never_a_ceiling_p29_8() {
                 l.kind
             );
         }
-        for row in &env.cut_checks {
+        for row in &planned(&env) {
             // P29-9 (lead ruling): the state and the margin agree.
             assert!(
-                row.check
+                row.check()
                     .margin
                     .map(CheckState::of_margin)
-                    .is_none_or(|s| s == row.check.state),
+                    .is_none_or(|s| s == row.check().state),
                 "{name}: the {} row: the state {:?} against the margin {:?}",
-                row.cut.label(),
-                row.check.state,
-                row.check.margin
+                cut(row).label(),
+                row.check().state,
+                row.check().margin
             );
             // A plunge is the axial circle: only the power and (P29-8e) the
             // vertical rate have a number.
             if matches!(
-                row.cut,
+                cut(row),
                 CutKind::Entry(EntryKind::Plunge | EntryKind::PeckLadder)
-            ) && matches!(row.check.state, CheckState::Within | CheckState::Exceeds)
+            ) && matches!(row.check().state, CheckState::Within | CheckState::Exceeds)
             {
                 assert!(
-                    matches!(row.check.limit, LimitId::SpindlePower | LimitId::PlungeRate),
+                    matches!(
+                        row.check().limit,
+                        LimitId::SpindlePower | LimitId::PlungeRate
+                    ),
                     "{name}: a {} row with a number for {:?}",
-                    row.cut.label(),
-                    row.check.limit
+                    cut(row).label(),
+                    row.check().limit
                 );
-                if row.check.limit == LimitId::SpindlePower {
+                if row.check().limit == LimitId::SpindlePower {
                     plunge_power += 1;
                 }
             }
-            let Some(own) = row.own_depth else {
+            let Some(own) = row.own_depth_mm() else {
                 // A ramp or a helix with no own depth has no engagement:
                 // its rows hold no number.
                 assert!(
-                    !matches!(row.cut, CutKind::Entry(EntryKind::Ramp | EntryKind::Helix))
-                        || matches!(row.check.state, CheckState::NoNumber(_))
+                    !matches!(cut(row), CutKind::Entry(EntryKind::Ramp | EntryKind::Helix))
+                        || matches!(row.check().state, CheckState::NoNumber(_))
                         || !matches!(
-                            row.check.limit,
+                            row.check().limit,
                             LimitId::ForceBudget
                                 | LimitId::ToolDeflection
                                 | LimitId::VendorDepthTable
                         ),
                     "{name}: a {} row on the body plane",
-                    row.cut.label()
+                    cut(row).label()
                 );
                 continue;
             };
             rows += 1;
             if !matches!(
-                row.check.limit,
+                row.check().limit,
                 LimitId::ForceBudget | LimitId::ToolDeflection | LimitId::VendorDepthTable
             ) {
                 continue;
             }
             assert_eq!(
-                row.check.value.map(f64::to_bits),
-                Some(own.mm.to_bits()),
+                row.check().value.map(f64::to_bits),
+                Some(own.to_bits()),
                 "{name}: the {} row holds its own depth",
-                row.cut.label()
+                cut(row).label()
             );
-            if let Some(bound) = row.check.bound {
-                let over = own.mm > bound * (1.0 + 1e-9);
+            if let Some(bound) = row.check().bound {
+                let over = own > bound * (1.0 + 1e-9);
                 assert_eq!(
-                    row.check.state == CheckState::Exceeds,
+                    row.check().state == CheckState::Exceeds,
                     over,
                     "{name}: the {} row: {} mm against {bound} mm",
-                    row.cut.label(),
-                    own.mm
+                    cut(row).label(),
+                    own
                 );
             }
-            if row.check.limit == LimitId::ForceBudget
-                && matches!(row.check.state, CheckState::Within | CheckState::Exceeds)
+            if row.check().limit == LimitId::ForceBudget
+                && matches!(row.check().state, CheckState::Within | CheckState::Exceeds)
             {
-                match row.cut {
+                match cut(row) {
                     CutKind::Entry(EntryKind::Ramp) => ramp_numbers += 1,
                     CutKind::Entry(EntryKind::Helix) => helix_numbers += 1,
                     CutKind::Entry(EntryKind::Plunge | EntryKind::PeckLadder)
@@ -796,12 +813,15 @@ fn claim_5_an_entry_is_a_value_check_never_a_ceiling_p29_8() {
     let env = envelope(&rough, &tool, &machine).expect("the 3D Rough is backed");
     let ap = env.proposal.get().ap_mm().expect("a depth");
     let ramp = env
-        .cut_checks
+        .rows()
         .iter()
-        .find(|r| r.cut == CutKind::Entry(EntryKind::Ramp) && r.check.limit == LimitId::ForceBudget)
+        .filter(|r| r.is_planned())
+        .find(|r| {
+            cut(r) == CutKind::Entry(EntryKind::Ramp) && r.check().limit == LimitId::ForceBudget
+        })
         .expect("the ramp row");
-    let root = ramp.check.bound.expect("the ramp has a root");
-    assert_eq!(ramp.check.state, CheckState::Exceeds, "the ramp at 6 mm");
+    let root = ramp.check().bound.expect("the ramp has a root");
+    assert_eq!(ramp.check().state, CheckState::Exceeds, "the ramp at 6 mm");
     assert!(
         root < ap,
         "the ramp root {root} mm is under the proposal {ap} mm: the entry sets no ceiling"
@@ -855,21 +875,21 @@ fn claim_6_a_stored_entry_feed_is_judged_over_its_write_step_p29_9() {
     let per_rev = rpm * f64::from(tool.flute_count_planning());
     let entry_rows = |op: &OperationConfig, limit: LimitId| {
         let env = envelope(op, &tool, &machine).expect("the Face is backed");
-        env.cut_checks
+        planned(&env)
             .into_iter()
             .filter(|r| {
-                r.check.limit == limit
-                    && matches!(r.cut, CutKind::Entry(EntryKind::Ramp | EntryKind::Helix))
-                    && matches!(r.check.state, CheckState::Within | CheckState::Exceeds)
+                r.check().limit == limit
+                    && matches!(cut(r), CutKind::Entry(EntryKind::Ramp | EntryKind::Helix))
+                    && matches!(r.check().state, CheckState::Within | CheckState::Exceeds)
             })
             .collect::<Vec<_>>()
     };
     let rows = entry_rows(&op, LimitId::ChipMin);
     assert!(!rows.is_empty(), "the Face has a ramp or helix ChipMin row");
     for row in &rows {
-        let bound = row.check.bound.expect("a band minimum");
-        let value = row.check.value.expect("a chip");
-        assert_eq!(row.check.side, BoundSide::Floor);
+        let bound = row.check().bound.expect("a band minimum");
+        let value = row.check().value.expect("a chip");
+        assert_eq!(row.check().side, BoundSide::Floor);
         assert_eq!(
             value.to_bits(),
             (ramp / per_rev).to_bits(),
@@ -883,16 +903,16 @@ fn claim_6_a_stored_entry_feed_is_judged_over_its_write_step_p29_9() {
             bound * per_rev
         );
         assert_eq!(
-            row.check.state,
+            row.check().state,
             CheckState::Within,
             "a stored feed one step under the band is inside"
         );
         // The margin follows the judged end (lead ruling): never below zero
         // on a row that reads `Within`.
         assert!(
-            row.check.margin.is_some_and(|m| m >= 0.0),
+            row.check().margin.is_some_and(|m| m >= 0.0),
             "the margin {:?} of a row inside",
-            row.check.margin
+            row.check().margin
         );
     }
     // A ramp feed far under the band: the whole interval is outside.
@@ -902,13 +922,13 @@ fn claim_6_a_stored_entry_feed_is_judged_over_its_write_step_p29_9() {
     let low = entry_rows(&op, LimitId::ChipMin);
     assert!(!low.is_empty());
     for row in &low {
-        assert_eq!(row.check.state, CheckState::Exceeds, "half the band feed");
+        assert_eq!(row.check().state, CheckState::Exceeds, "half the band feed");
     }
     // A ceiling reads the stated chip (the low end): a stored feed at the
     // band maximum, whose interval reaches over it, is inside.
     let max = entry_rows(&op, LimitId::ChipMax)
         .first()
-        .and_then(|r| r.check.bound)
+        .and_then(|r| r.check().bound)
         .expect("a band maximum");
     // The entry feed is the ramp feed at or below the cut feed: set both.
     let at = (max * per_rev).floor();
@@ -917,9 +937,9 @@ fn claim_6_a_stored_entry_feed_is_judged_over_its_write_step_p29_9() {
     let rows = entry_rows(&op, LimitId::ChipMax);
     assert!(!rows.is_empty());
     for row in &rows {
-        assert!(row.check.value.expect("a chip") <= max);
+        assert!(row.check().value.expect("a chip") <= max);
         assert!((at + FEED_WRITE_STEP_MM_MIN) / per_rev > max, "non-vacuity");
-        assert_eq!(row.check.state, CheckState::Within, "at the band maximum");
+        assert_eq!(row.check().state, CheckState::Within, "at the band maximum");
     }
 }
 
@@ -929,7 +949,7 @@ fn project_curve_rows(
     depth: f64,
     direction: rs_cam_core::compute::operation_configs::ProjectCurveDirection,
     flipped: Option<bool>,
-) -> Vec<rs_cam_core::feeds::envelope::CutCheck> {
+) -> Vec<CheckRow> {
     let machine = MachineProfile::default();
     let tool = fm1_tool(ToolType::EndMill, 6.0);
     let mut op = rs_cam_core::compute::fixture_values::fixture_op(OperationType::ProjectCurve);
@@ -950,9 +970,12 @@ fn project_curve_rows(
         }),
     })
     .expect("the Project Curve envelope builds")
-    .cut_checks
-    .into_iter()
-    .filter(|r| r.cut == CutKind::Body && r.check.limit == LimitId::ForceBudget)
+    .rows()
+    .iter()
+    .filter(|r| {
+        r.is_planned() && cut(r) == CutKind::Body && r.check().limit == LimitId::ForceBudget
+    })
+    .cloned()
     .collect()
 }
 
@@ -968,23 +991,27 @@ fn claim_7_a_project_curve_is_judged_at_the_lower_bound_of_its_depth_p29_9() {
     // From above, 1 mm into the material: inside the ceiling, so the
     // bound proves nothing.
     let row = one(1.0, FromAbove, None).expect("a body row at the bound");
-    assert_eq!(row.check.value, Some(1.0));
-    let ceiling = row.check.bound.expect("a force-budget ceiling");
+    assert_eq!(row.check().value, Some(1.0));
+    let ceiling = row.check().bound.expect("a force-budget ceiling");
     assert!(
         ceiling > 1.0,
         "non-vacuity: the ceiling {ceiling} is over 1 mm"
     );
     assert_eq!(
-        row.check.state,
+        row.check().state,
         CheckState::NoNumber(NoNumberReason::OnlyALowerBound)
     );
-    assert_eq!(row.check.margin, None, "no margin at a lower bound inside");
+    assert_eq!(
+        row.check().margin,
+        None,
+        "no margin at a lower bound inside"
+    );
     // Over the ceiling: the real cut is at least as deep, so it exceeds.
     let deep = (ceiling + 1.0).ceil();
     let row = one(deep, FromAbove, None).expect("a body row at the deep bound");
-    assert_eq!(row.check.value, Some(deep));
+    assert_eq!(row.check().value, Some(deep));
     assert_eq!(
-        row.check.state,
+        row.check().state,
         CheckState::Exceeds,
         "{deep} mm over {ceiling}"
     );
@@ -996,7 +1023,7 @@ fn claim_7_a_project_curve_is_judged_at_the_lower_bound_of_its_depth_p29_9() {
     // From below, the sign reads the setup.
     assert!(one(-1.0, FromBelow, None).is_none(), "no setup, no bound");
     assert_eq!(
-        one(-1.0, FromBelow, Some(false)).and_then(|r| r.check.value),
+        one(-1.0, FromBelow, Some(false)).and_then(|r| r.check().value),
         Some(1.0),
         "a setup that is not flipped judges -depth"
     );
@@ -1005,7 +1032,7 @@ fn claim_7_a_project_curve_is_judged_at_the_lower_bound_of_its_depth_p29_9() {
         "a flipped setup judges depth: -1 is outside"
     );
     assert_eq!(
-        one(1.0, FromBelow, Some(true)).and_then(|r| r.check.value),
+        one(1.0, FromBelow, Some(true)).and_then(|r| r.check().value),
         Some(1.0),
         "a flipped setup judges depth"
     );
@@ -1031,12 +1058,16 @@ fn claim_8_a_finish_is_judged_at_the_earlier_leave_p29_9() {
             }),
         })
         .expect("the Scallop envelope builds")
-        .cut_checks
+        .rows()
+        .iter()
+        .filter(|r| r.is_planned())
+        .cloned()
+        .collect::<Vec<_>>()
     };
-    let body = |rows: &[rs_cam_core::feeds::envelope::CutCheck], limit: LimitId| {
+    let body = |rows: &[CheckRow], limit: LimitId| {
         rows.iter()
-            .find(|r| r.cut == CutKind::Body && r.check.limit == limit)
-            .map(|r| r.check.clone())
+            .find(|r| cut(r) == CutKind::Body && r.check().limit == limit)
+            .map(|r| r.check().clone())
             .unwrap_or_else(|| panic_row(limit))
     };
     let with = rows(Some(0.5));
@@ -1096,32 +1127,31 @@ fn claim_9_the_vertical_rate_judges_every_plunge_p29_8e() {
             let Some(env) = envelope(&op, &tool, &machine) else {
                 continue;
             };
-            for row in env
-                .cut_checks
+            for row in planned(&env)
                 .iter()
-                .filter(|r| r.check.limit == LimitId::PlungeRate)
+                .filter(|r| r.check().limit == LimitId::PlungeRate)
             {
-                assert_eq!(row.check.unit, "mm/min", "{name}");
-                match row.cut {
-                    CutKind::Entry(EntryKind::Plunge) => match row.check.state {
+                assert_eq!(row.check().unit, "mm/min", "{name}");
+                match cut(row) {
+                    CutKind::Entry(EntryKind::Plunge) => match row.check().state {
                         CheckState::Exceeds => {
                             assert!(high, "{name}: a 1 mm/min plunge exceeds");
-                            assert_eq!(row.check.value, Some(plunge), "{name}");
+                            assert_eq!(row.check().value, Some(plunge), "{name}");
                             assert!(
-                                row.check.bound.is_some_and(|b| b < plunge),
+                                row.check().bound.is_some_and(|b| b < plunge),
                                 "{name}: {:?}",
-                                row.check.bound
+                                row.check().bound
                             );
                             exceeds += 1;
                         }
                         CheckState::Within => {
-                            assert_eq!(row.check.value, Some(plunge), "{name}");
+                            assert_eq!(row.check().value, Some(plunge), "{name}");
                             if !high {
                                 // Q11: the true limit, not the clamped value,
                                 // with the basis of its arm.
-                                if let Some(b) = row.check.bound {
+                                if let Some(b) = row.check().bound {
                                     assert!(b > plunge, "{name}: the bound {b} is the limit");
-                                    assert!(row.check.basis.is_some(), "{name}: the arm's basis");
+                                    assert!(row.check().basis.is_some(), "{name}: the arm's basis");
                                 }
                                 within += 1;
                             }
@@ -1130,7 +1160,7 @@ fn claim_9_the_vertical_rate_judges_every_plunge_p29_8e() {
                     },
                     CutKind::Body => {
                         assert_eq!(
-                            row.check.state,
+                            row.check().state,
                             CheckState::NotApplicable(Geometry::NoVerticalFeed),
                             "{name}: a body cut has no vertical feed"
                         );

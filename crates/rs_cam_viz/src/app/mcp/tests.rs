@@ -1141,7 +1141,8 @@ fn the_load_report_checks_repeat_the_criterion_rows_p29_2b() {
     assert_eq!(power["state"]["state"], "exceeds");
     assert_eq!(power["side"], "ceiling");
     assert_eq!(power["binding"], serde_json::json!(false));
-    assert_eq!(power["bound_detail"]["kind"], "machine_power_curve");
+    // P29-10: `bound_detail` is gone; the row detail holds the clause.
+    assert!(power.get("bound_detail").is_none(), "{power}");
     let chip = checks
         .iter()
         .find(|c| c["limit"] == "chip_max")

@@ -7,7 +7,7 @@
 //! setup fact (9b), the earlier op's leave (9c) and the toolpath's dressups
 //! (the configured entry, P29-8 8d). MCP and the CLI read it. The panel
 //! built its own context with the model box only, so the GUI envelope
-//! (`SafeEnvelope::cut_checks`) and the pill values differed from MCP on a
+//! (then `SafeEnvelope::cut_checks`) and the pill values differed from MCP on a
 //! from-below Project Curve, on a finish after a rough and on an op with a
 //! ramp entry.
 //!
@@ -20,10 +20,10 @@
 //! # The claim
 //!
 //! For each of the three cases, the real inspector (`properties::draw`, the
-//! feeds memo) gives the same `cut_checks` as `ProjectSession::safe_envelope`
+//! feeds memo) gives the same rows (`SafeEnvelope::rows`) as `ProjectSession::safe_envelope`
 //! and the same pill values (`FieldApplyPreviews`) as the session door.
 //! Non-vacuity: for each case, the old viz context (the model box only)
-//! gives other `cut_checks`, so the fixture exercises the fact.
+//! gives other rows, so the fixture exercises the fact.
 //!
 //! # The scan
 //!
@@ -247,10 +247,10 @@ fn the_gui_reads_the_session_suggest_door_p29_9() {
             .safe_envelope(&tc)
             .expect("the case has a tool")
             .expect("the session envelope builds");
-        assert!(!door.cut_checks.is_empty(), "{name}: non-vacuity");
+        assert!(!door.rows().is_empty(), "{name}: non-vacuity");
         assert_eq!(
-            format!("{:?}", viz.cut_checks),
-            format!("{:?}", door.cut_checks),
+            format!("{:?}", viz.rows()),
+            format!("{:?}", door.rows()),
             "{name}: the GUI envelope checks equal the session door's"
         );
         assert_eq!(
@@ -263,8 +263,8 @@ fn the_gui_reads_the_session_suggest_door_p29_9() {
         //    case exercises its plan fact.
         let old = old_viz_envelope(session, &tc);
         assert_ne!(
-            format!("{:?}", old.cut_checks),
-            format!("{:?}", door.cut_checks),
+            format!("{:?}", old.rows()),
+            format!("{:?}", door.rows()),
             "{name}: the fixture must exercise its plan fact"
         );
 

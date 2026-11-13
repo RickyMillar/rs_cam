@@ -153,7 +153,8 @@ impl CheckState {
 }
 
 /// THE record of one value against one limit (P29-2). Every surface reads
-/// this record from P29-10; in P29-2 the old records project to it.
+/// it inside a [`super::CheckRow`] (P29-10), whose detail holds the clause
+/// of the bound source.
 #[derive(Debug, Clone, PartialEq, Serialize)]
 pub struct Check {
     /// The limit.
@@ -176,12 +177,6 @@ pub struct Check {
     pub state: CheckState,
     /// Where the BOUND comes from. `None` when the old record states none.
     pub basis: Option<Basis>,
-    /// Transitional: the numbers of the gate's bound source that `Basis`
-    /// does not hold (the RPM of the power curve, the leave, the cut of the
-    /// force budget). The one writer of the
-    /// card text, `BoundSource::clause`, reads it. It goes at P29-10.
-    #[serde(skip_serializing_if = "Option::is_none")]
-    pub bound_detail: Option<BoundSource>,
     /// `true` when this limit set the value: the limit that places a point
     /// outside the envelope, the limit of the RPM choice. A gate row is
     /// never binding (each gate judges alone).
@@ -196,8 +191,8 @@ pub struct Check {
 /// result equal the methods of the source (sentry
 /// `every_limit_is_a_limit_id_p29_2`).
 ///
-/// The numbers inside the source are not in the basis; a [`Check`] keeps
-/// them in `bound_detail` until P29-10.
+/// The numbers inside the source are not in the basis; the row detail
+/// holds them (`BoundSource::clause`, P29-10).
 #[must_use]
 pub fn basis_of_bound(source: &BoundSource) -> Basis {
     match source {

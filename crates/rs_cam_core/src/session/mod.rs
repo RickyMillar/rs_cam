@@ -23,6 +23,7 @@ mod diagnostics_types;
 mod eval_context;
 pub mod generation_plan;
 mod heights;
+mod limit_rows;
 mod load_report;
 pub mod multitool;
 mod mutation;
@@ -109,6 +110,7 @@ pub use diagnostics_types::{
 };
 pub use eval_context::SetupEvalContext;
 pub use heights::{HeightOrderRefusal, ToolpathHeights, TopSource};
+pub use limit_rows::LimitRows;
 pub use load_report::LoadReportStamp;
 pub use multitool::{
     MultitoolPlanOutcome, MultitoolPlanSpec, MultitoolPreview, PreviewTierMapHandle, TierStrategy,

@@ -967,8 +967,14 @@ pub struct SafeEnvelope {
     /// ceiling of the cut), and the chip band and the rubbing floor (the
     /// planned peak chip of the cut). A cut that the plan may not cut
     /// (`Presence::MayOccur`) is judged here, never drawn as a ceiling, and
-    /// names its exemption row.
-    pub cut_checks: Vec<CutCheck>,
+    /// names its exemption row. The working list of `read_declared_cuts`;
+    /// [`Self::rows`] is the record.
+    planned: Vec<PlannedRow>,
+    /// P29-10: THE rows of the envelope: one planned row per declared cut
+    /// and planned limit (`Subject::Planned`, at the proposal), then one
+    /// stated row per limit of the boundary when `stated` is `Some`
+    /// (`Subject::Stated`, `limits::of_envelope`).
+    rows: Vec<crate::limits::CheckRow>,
     /// The operator's stated point, when every free axis is stated.
     pub stated: Option<CutPoint>,
     /// P29-7 7c: the limits that draw a depth ceiling, in the draw order,
@@ -1095,7 +1101,7 @@ impl Serialize for SafeEnvelope {
                 .and_then(|l| l.binding_cut)
                 .map(CutKind::label),
         )?;
-        map.serialize_entry("cut_checks", &self.cut_checks)?;
+        map.serialize_entry("limit_rows", &self.rows)?;
         map.serialize_entry("notes", &self.notes)?;
         map.serialize_entry("stated", &self.stated)?;
         map.serialize_entry("operator", &self.operator)?;
@@ -1103,39 +1109,63 @@ impl Serialize for SafeEnvelope {
     }
 }
 
-/// P29-7 7c: the check of one declared cut at the proposal.
-#[derive(Debug, Clone, PartialEq, Serialize)]
-pub struct CutCheck {
+/// P29-7 7c: the check of one declared cut at the proposal, before it
+/// becomes a [`crate::limits::CheckRow`] (P29-10).
+#[derive(Debug, Clone, PartialEq)]
+struct PlannedRow {
     /// The declared cut.
-    #[serde(serialize_with = "cut_label_of")]
-    pub cut: CutKind,
+    cut: CutKind,
     /// The exemption row of a cut that the plan may not cut
     /// (`Presence::MayOccur`, lead ruling Q1): its check is a warning row,
     /// never a ceiling. `None` for a cut that the plan always cuts.
-    pub may_occur_row: Option<&'static str>,
+    may_occur_row: Option<&'static str>,
     /// P29-8 8d: the own depth of a cut that is not on the body plane (an
-    /// entry) and its rule in words. The check then holds the own depth as
-    /// its value, against the cut's root (a value check, never a ceiling).
-    /// `None` for a cut on the body plane.
-    pub own_depth: Option<OwnDepthRecord>,
+    /// entry) and its rule. The check then holds the own depth as its
+    /// value, against the cut's root (a value check, never a ceiling).
+    own_depth: Option<crate::compute::catalog::OwnDepth>,
     /// P29-8 8d: why the entry rule gives the cut no feed before the
     /// simulation (`EntryNoNumber::clause`), or `None`.
-    pub entry_no_number: Option<&'static str>,
+    entry_no_number: Option<&'static str>,
+    /// P29-9 9b: the value is a lower bound of the cut.
+    lower_bound: bool,
+    /// P29-9: the chip reads a stored entry feed.
+    stored_feed: bool,
     /// The check.
-    pub check: crate::limits::Check,
+    check: crate::limits::Check,
 }
 
-/// P29-8 8d: the own depth of a checked cut, for the record.
-#[derive(Debug, Clone, Copy, PartialEq, Serialize)]
-pub struct OwnDepthRecord {
-    /// The depth (mm).
-    pub mm: f64,
-    /// The rule in words (`OwnDepthRule::clause`).
-    pub rule: &'static str,
-}
-
-fn cut_label_of<S: serde::Serializer>(cut: &CutKind, serializer: S) -> Result<S::Ok, S::Error> {
-    serializer.serialize_str(cut.label())
+impl PlannedRow {
+    /// The display row. `at_earlier_leave`: the body reads the earlier
+    /// op's leave (P29-9 9c).
+    fn into_row(self, at_earlier_leave: bool) -> crate::limits::CheckRow {
+        use crate::limits::{CheckState, LimitId};
+        let reads_leave = at_earlier_leave
+            && self.own_depth.is_none()
+            && matches!(self.check.state, CheckState::Within | CheckState::Exceeds)
+            && matches!(
+                self.check.limit,
+                LimitId::ForceBudget
+                    | LimitId::ToolDeflection
+                    | LimitId::VendorDepthTable
+                    | LimitId::SpindlePower
+            );
+        crate::limits::CheckRow::planned(
+            self.cut,
+            self.check,
+            crate::limits::PlannedFacts {
+                may_occur_row: self.may_occur_row,
+                own_depth: self.own_depth.map(|o| crate::limits::PlannedOwnDepth {
+                    mm: o.mm,
+                    rule: o.rule.clause(),
+                    worst_case: o.rule == crate::compute::catalog::OwnDepthRule::RampDepthPerPass,
+                }),
+                lower_bound: self.lower_bound,
+                stored_feed: self.stored_feed,
+                at_earlier_leave: reads_leave,
+                entry_no_number: self.entry_no_number,
+            },
+        )
+    }
 }
 
 /// P29-7 7c: THE one loop over every limit. Each limit states its role on
@@ -1202,6 +1232,8 @@ struct CutRow {
     /// P29-8e (Q11): the basis of this row's own bound, when it differs by
     /// row (the arm of the vertical-rate limit); else the check's basis.
     own_basis: Option<Basis>,
+    /// P29-10: the chip reads a stored entry feed.
+    stored_feed: bool,
 }
 
 impl CutRow {
@@ -1222,6 +1254,7 @@ impl CutRow {
             lower_bound: false,
             geometry: None,
             own_basis: None,
+            stored_feed: false,
         }
     }
 
@@ -1252,6 +1285,14 @@ impl CutRow {
         Self { judged, ..self }
     }
 
+    /// P29-10: the row whose chip reads a stored entry feed.
+    fn with_stored_feed(self, stored_feed: bool) -> Self {
+        Self {
+            stored_feed,
+            ..self
+        }
+    }
+
     /// The check record of the row.
     fn check(
         &self,
@@ -1259,7 +1300,7 @@ impl CutRow {
         unit: &'static str,
         side: crate::limits::BoundSide,
         basis: Option<Basis>,
-    ) -> CutCheck {
+    ) -> PlannedRow {
         use crate::limits::{Check, CheckState, NoNumberReason};
         let (bound, margin, state) = match (self.geometry, self.bound) {
             (Some(geometry), _) => (None, None, CheckState::NotApplicable(geometry)),
@@ -1301,7 +1342,7 @@ impl CutRow {
                 Err(reason) => (None, None, CheckState::NoNumber(reason)),
             },
         };
-        CutCheck {
+        PlannedRow {
             cut: self.cut,
             may_occur_row: match self.presence {
                 crate::compute::catalog::Presence::Always => None,
@@ -1309,12 +1350,11 @@ impl CutRow {
             },
             own_depth: match self.depth {
                 PlaneDepth::Body | PlaneDepth::Axial => None,
-                PlaneDepth::Own(own) => Some(OwnDepthRecord {
-                    mm: own.mm,
-                    rule: own.rule.clause(),
-                }),
+                PlaneDepth::Own(own) => Some(own),
             },
             entry_no_number: None,
+            lower_bound: self.lower_bound,
+            stored_feed: self.stored_feed,
             check: Check {
                 limit,
                 value: self.value,
@@ -1324,7 +1364,6 @@ impl CutRow {
                 margin,
                 state,
                 basis: self.own_basis.clone().or(basis),
-                bound_detail: None,
                 binding: false,
                 population: None,
             },
@@ -1610,7 +1649,8 @@ impl SafeEnvelope {
             proposal_binding: None,
             proposal_limits: Vec::new(),
             notes: Vec::new(),
-            cut_checks: Vec::new(),
+            planned: Vec::new(),
+            rows: Vec::new(),
             ceilings,
             value_checks,
             stated: None,
@@ -1726,6 +1766,7 @@ impl SafeEnvelope {
             ) => None,
         };
         env.operator = env.stated.map(|p| env.placement_of(p));
+        env.write_rows();
         if let Some(note) = env.move_budget_conflict_note() {
             env.notes.push(note);
         }
@@ -2630,7 +2671,32 @@ impl SafeEnvelope {
                     .map(crate::feeds::entry_rule::EntryNoNumber::clause);
             }
         }
-        self.cut_checks = out;
+        self.planned = out;
+    }
+
+    /// P29-10: THE rows of the envelope, written once when the envelope is
+    /// whole: the planned rows, then the stated point against each limit.
+    fn write_rows(&mut self) {
+        let at_earlier_leave = matches!(self.inputs.cuts.body_depth(), BodyDepth::EarlierLeave(_));
+        let mut rows: Vec<crate::limits::CheckRow> = std::mem::take(&mut self.planned)
+            .into_iter()
+            .map(|r| r.into_row(at_earlier_leave))
+            .collect();
+        if let Some(p) = self.stated {
+            rows.extend(
+                crate::limits::of_envelope(self, p)
+                    .into_iter()
+                    .map(crate::limits::CheckRow::stated),
+            );
+        }
+        self.rows = rows;
+    }
+
+    /// P29-10: THE rows of the envelope: the planned rows at the proposal,
+    /// then the stated rows ([`Self::write_rows`]).
+    #[must_use]
+    pub fn rows(&self) -> &[crate::limits::CheckRow] {
+        &self.rows
     }
 
     /// P29-9 9c: why a depth ceiling draws no edge on this envelope, when
@@ -2983,16 +3049,23 @@ impl SafeEnvelope {
         let rows = cells
             .iter()
             .map(|e| {
-                let (value, judged, bound) = match e.value {
-                    PlannedCell::<Option<ChipReading>>::Judged(Some(c)) => {
-                        (Some(c.peak_mm), Some(c.judged_mm), Ok(Some(c.bound_mm)))
+                let (value, judged, bound, stored_feed) = match e.value {
+                    PlannedCell::<Option<ChipReading>>::Judged(Some(c)) => (
+                        Some(c.peak_mm),
+                        Some(c.judged_mm),
+                        Ok(Some(c.bound_mm)),
+                        c.stored_feed,
+                    ),
+                    PlannedCell::Judged(None) => {
+                        (None, None, Err(NoNumberReason::NotModelled), false)
                     }
-                    PlannedCell::Judged(None) => (None, None, Err(NoNumberReason::NotModelled)),
                     PlannedCell::NotJudged(_) | PlannedCell::NotACutLimit(_) => {
-                        (None, None, Err(NoNumberReason::NotJudgedHere))
+                        (None, None, Err(NoNumberReason::NotJudgedHere), false)
                     }
                 };
-                CutRow::of(e.kind, e.presence, e.depth, value, bound).judged_at(judged)
+                CutRow::of(e.kind, e.presence, e.depth, value, bound)
+                    .judged_at(judged)
+                    .with_stored_feed(stored_feed)
             })
             .collect();
         (side, kind, rows)
@@ -3046,7 +3119,7 @@ impl SafeEnvelope {
     }
 
     /// P29-7 7c (lead ruling Q1): the note of each declared cut that the
-    /// plan may not cut. It is judged (a row of `cut_checks`) but it is no
+    /// plan may not cut. It is judged (a planned row) but it is no
     /// ceiling; the note states its force-budget row at the proposal.
     fn may_occur_notes(&self) -> Vec<String> {
         let mut notes = Vec::new();
@@ -3056,7 +3129,7 @@ impl SafeEnvelope {
             };
             // P29-8 8d: an entry is a value check, never a ceiling (lead
             // ruling Q1), so the note "it is not a ceiling" says nothing of
-            // it. Its rows of `cut_checks` name its row (`U-EntryFallback`).
+            // it. Its planned rows name its row (`U-EntryFallback`).
             match cut.kind.group() {
                 crate::limits::CutGroup::Entry => continue,
                 crate::limits::CutGroup::Body
@@ -3064,7 +3137,7 @@ impl SafeEnvelope {
                 | crate::limits::CutGroup::Link
                 | crate::limits::CutGroup::Drill => {}
             }
-            let budget = self.cut_checks.iter().find(|c| {
+            let budget = self.planned.iter().find(|c| {
                 c.cut == cut.kind && c.check.limit == crate::limits::LimitId::ForceBudget
             });
             let tail = match budget.map(|c| (c.check.state, c.check.bound)) {

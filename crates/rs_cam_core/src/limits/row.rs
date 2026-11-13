@@ -1,0 +1,1035 @@
+//! Feeds contract P29-10: [`CheckRow`], THE display row of a check, and the
+//! projections that build it.
+//!
+//! A row holds one [`Check`] and its subject (a declared cut, the stated
+//! point, the samples of one cut group, the RPM choice), its caveats, its
+//! exemption row, its tone and its text. Every surface reads rows. No
+//! surface computes a margin, a percent, a worst row or a state word.
+//!
+//! Only core builds a row: the constructors are `pub(crate)`. The envelope
+//! writes its planned rows and its stated rows ([`CheckRow::planned`],
+//! [`CheckRow::stated`]); [`rows_of_verdict`] and [`rows_of_rpm_choice`]
+//! project the gate verdicts and the RPM choice. Each projection is a match
+//! with no wildcard and a destructure with no `..`, so a new limit, cut
+//! group, gate, reason or caveat does not compile until it states its row.
+
+use serde::Serialize;
+
+use super::{
+    BoundSide, Check, CheckState, CutGroup, CutKind, EXEMPTIONS, Geometry, LimitId, NoNumberReason,
+    SampleDepth, of_criterion, of_rpm_choice,
+};
+use crate::feeds::RpmChoice;
+use crate::tool_load::verdict::{CriterionKind, CriterionStatus, ToolpathLoadVerdict};
+use crate::tool_load::{GroupCell, MaterialSplit, OwnMaterialVerdict};
+
+/// The longest face (characters): the face limit of every short panel
+/// text (`diagnostics::FACE_MAX_CHARS`, design rule 6, IC1).
+pub const ROW_FACE_MAX_CHARS: usize = crate::diagnostics::FACE_MAX_CHARS;
+
+/// What a row is about.
+#[derive(Debug, Clone, PartialEq, Serialize)]
+#[serde(tag = "kind", rename_all = "snake_case")]
+pub enum Subject {
+    /// A declared cut before the simulation, at the proposal (P29-7 7c).
+    /// A body, slot or cleanup row reads the proposal speeds (P29-9
+    /// ruling); an entry row reads the stored entry feed over the stored
+    /// speed (P29-8 8d). `own_depth_mm`: the depth of a cut that is not on
+    /// the body plane (an entry at its own depth), else `None`.
+    Planned {
+        /// The declared cut.
+        #[serde(serialize_with = "cut_label")]
+        cut: CutKind,
+        /// Whether the plan always cuts it.
+        occurs: Occurs,
+        /// The own depth of an entry (mm).
+        own_depth_mm: Option<f64>,
+    },
+    /// The operator's stated point against one limit of the boundary: the
+    /// cut as the op stands.
+    Stated,
+    /// The samples of one cut group after the simulation.
+    Group {
+        /// The group.
+        group: CutGroup,
+        /// `true` for the group of the op's own cut (the headline fields).
+        headline: bool,
+        /// The samples of the group that remove material. `None` for a
+        /// headline cell (the check population holds its count).
+        samples: Option<usize>,
+        /// `None` for the stock population; the material label of an S6
+        /// own-material verdict.
+        material: Option<String>,
+    },
+    /// The worst sample placed on the envelope (the lineage, K7).
+    MeasuredPoint,
+    /// The RPM choice.
+    Rpm,
+}
+
+fn cut_label<S: serde::Serializer>(cut: &CutKind, serializer: S) -> Result<S::Ok, S::Error> {
+    serializer.serialize_str(cut.label())
+}
+
+impl Subject {
+    /// The subject in words, for the face.
+    fn label(&self) -> String {
+        match self {
+            Self::Planned { cut, .. } => cut.label().to_owned(),
+            Self::Stated => "stated point".to_owned(),
+            Self::Group {
+                group,
+                material: None,
+                ..
+            } => group.label().to_owned(),
+            Self::Group {
+                group,
+                material: Some(m),
+                ..
+            } => format!("{} ({m})", group.label()),
+            Self::MeasuredPoint => "measured point".to_owned(),
+            Self::Rpm => "rpm".to_owned(),
+        }
+    }
+
+    /// The rank for [`CheckRow::worse_than`]: the stated point is the cut
+    /// of today, so it outranks every other subject (ruling O6).
+    const fn rank(&self) -> u8 {
+        match self {
+            Self::Stated => 0,
+            Self::Planned { .. } | Self::Group { .. } | Self::MeasuredPoint | Self::Rpm => 1,
+        }
+    }
+}
+
+/// `compute::catalog::Presence` seen from `limits/` (invariant 1): the
+/// exemption row of a cut that may not occur is in [`Caveat::MayOccur`].
+#[derive(Debug, Clone, Copy, PartialEq, Eq, Serialize)]
+#[serde(rename_all = "snake_case")]
+pub enum Occurs {
+    /// The plan always cuts it.
+    Always,
+    /// The plan cuts it only where a generation fact asks.
+    MayOccur,
+}
+
+/// A fact of the record that qualifies the row. The list is closed; each
+/// caveat has one clause ([`Self::clause`]).
+#[derive(Debug, Clone, Copy, PartialEq, Eq, Serialize)]
+#[serde(tag = "kind", rename_all = "snake_case")]
+pub enum Caveat {
+    /// An entry at its own depth: the depth per pass of a ramp, the worst
+    /// case (lead ruling Q1b of P29-8).
+    WorstCase,
+    /// The value is a lower bound of the cut (`BodyDepth::AtLeast`).
+    LowerBound,
+    /// The chip reads a stored whole-mm/min feed (`StoredFeedChip`).
+    StoredFeed,
+    /// The cut may not occur (`Presence::MayOccur`), with its row.
+    MayOccur {
+        /// The exemption row of the cut.
+        row: &'static str,
+    },
+    /// The bound does not gate an export (`Basis::gates_export` false).
+    Advisory,
+    /// The gate stated an empty population (X-VAC).
+    NoSamples,
+    /// M4: the sample depth that the row reads.
+    SampleDepth {
+        /// The depth.
+        depth: SampleDepth,
+    },
+    /// A finish pass judged at the earlier op's leave
+    /// (`BodyDepth::EarlierLeave`).
+    AtEarlierLeave,
+}
+
+impl Caveat {
+    /// The order of the caveats on a row.
+    const fn rank(self) -> u8 {
+        match self {
+            Self::WorstCase => 0,
+            Self::LowerBound => 1,
+            Self::StoredFeed => 2,
+            Self::MayOccur { .. } => 3,
+            Self::Advisory => 4,
+            Self::NoSamples => 5,
+            Self::SampleDepth { .. } => 6,
+            Self::AtEarlierLeave => 7,
+        }
+    }
+
+    /// The word on the face, for a caveat that the face names.
+    const fn face_word(self) -> Option<&'static str> {
+        match self {
+            Self::WorstCase => Some("worst case"),
+            Self::LowerBound => Some("lower bound"),
+            Self::StoredFeed => Some("stored feed"),
+            Self::MayOccur { .. } => Some("may not occur"),
+            Self::Advisory => Some("advisory"),
+            Self::NoSamples | Self::SampleDepth { .. } | Self::AtEarlierLeave => None,
+        }
+    }
+
+    /// `true` when an `Exceeds` row under this caveat is a caution, not a
+    /// danger (ruling O2: the caveat is a fact of the record).
+    const fn softens(self) -> bool {
+        match self {
+            Self::WorstCase | Self::LowerBound | Self::StoredFeed | Self::MayOccur { .. } => true,
+            Self::Advisory | Self::NoSamples | Self::SampleDepth { .. } | Self::AtEarlierLeave => {
+                false
+            }
+        }
+    }
+
+    /// The caveat in one clause, for the detail.
+    #[must_use]
+    pub fn clause(self) -> String {
+        match self {
+            Self::WorstCase => {
+                "worst case: the ramp is judged at its full depth per pass".to_owned()
+            }
+            Self::LowerBound => "the value is a lower bound of the cut".to_owned(),
+            Self::StoredFeed => {
+                "the chip reads the stored whole-mm/min feed (an interval)".to_owned()
+            }
+            Self::MayOccur { row } => format!("the plan may not cut it (row {row})"),
+            Self::Advisory => "the bound does not gate an export".to_owned(),
+            Self::NoSamples => "the gate read no sample".to_owned(),
+            Self::SampleDepth {
+                depth: SampleDepth::RemovedLayer,
+            } => "the sample depth read is the removed layer depth".to_owned(),
+            Self::SampleDepth {
+                depth: SampleDepth::EngagedEdge,
+            } => "the sample depth read is the engaged edge depth".to_owned(),
+            Self::AtEarlierLeave => "judged at the leave of the earlier op".to_owned(),
+        }
+    }
+}
+
+/// The tone of a row: what a surface colours it. One rule ([`Tone::of`]).
+#[derive(Debug, Clone, Copy, PartialEq, Eq, Serialize)]
+#[serde(rename_all = "snake_case")]
+pub enum Tone {
+    /// Inside the bound.
+    Within,
+    /// Outside a bound that gates an export, with no caveat that softens it.
+    Exceeds,
+    /// Outside an advisory bound, or outside under a caveat that softens it.
+    ExceedsAdvisory,
+    /// No judgement.
+    NoNumber,
+    /// The limit has no meaning on the cut.
+    NotApplicable,
+}
+
+impl Tone {
+    /// THE tone rule. `Exceeds` softens to [`Self::ExceedsAdvisory`] when
+    /// the bound does not gate an export or a caveat among `WorstCase`,
+    /// `LowerBound`, `StoredFeed`, `MayOccur` holds. No threshold: a caveat
+    /// is a fact of the record. No tone refuses (K6).
+    #[must_use]
+    pub fn of(check: &Check, caveats: &[Caveat]) -> Self {
+        match check.state {
+            CheckState::Within => Self::Within,
+            CheckState::NoNumber(_) => Self::NoNumber,
+            CheckState::NotApplicable(_) => Self::NotApplicable,
+            CheckState::Exceeds => {
+                let advisory = check.basis.as_ref().is_some_and(|b| !b.gates_export());
+                if advisory || caveats.iter().any(|c| c.softens()) {
+                    Self::ExceedsAdvisory
+                } else {
+                    Self::Exceeds
+                }
+            }
+        }
+    }
+
+    /// The tone in one word.
+    const fn word(self) -> &'static str {
+        match self {
+            Self::Within => "within",
+            Self::Exceeds => "exceeds",
+            Self::ExceedsAdvisory => "exceeds (advisory)",
+            Self::NoNumber => "no number",
+            Self::NotApplicable => "not applicable",
+        }
+    }
+
+    const fn rank(self) -> u8 {
+        match self {
+            Self::Exceeds => 0,
+            Self::ExceedsAdvisory => 1,
+            Self::Within => 2,
+            Self::NoNumber => 3,
+            Self::NotApplicable => 4,
+        }
+    }
+}
+
+/// The facts of a planned row that the envelope knows and `limits/` does
+/// not (invariant 1: no `compute/` type crosses).
+#[derive(Debug, Clone, Copy, PartialEq, Default)]
+pub struct PlannedFacts {
+    /// The exemption row of a cut that the plan may not cut.
+    pub may_occur_row: Option<&'static str>,
+    /// The own depth of an entry.
+    pub own_depth: Option<PlannedOwnDepth>,
+    /// The value is a lower bound of the cut.
+    pub lower_bound: bool,
+    /// The chip reads a stored entry feed.
+    pub stored_feed: bool,
+    /// The row reads the earlier op's leave.
+    pub at_earlier_leave: bool,
+    /// Why the entry rule gives the cut no feed (`EntryNoNumber::clause`).
+    pub entry_no_number: Option<&'static str>,
+}
+
+/// The own depth of a planned entry row.
+#[derive(Debug, Clone, Copy, PartialEq)]
+pub struct PlannedOwnDepth {
+    /// The depth (mm).
+    pub mm: f64,
+    /// The rule of the depth in words (`OwnDepthRule::clause`).
+    pub rule: &'static str,
+    /// The depth is the worst case (a ramp's depth per pass).
+    pub worst_case: bool,
+}
+
+/// THE display row (P29-10): one check and what a reader needs to show it.
+#[derive(Debug, Clone, PartialEq, Serialize)]
+pub struct CheckRow {
+    subject: Subject,
+    check: Check,
+    caveats: Vec<Caveat>,
+    exemption: Option<&'static str>,
+    tone: Tone,
+    face: String,
+    detail: String,
+}
+
+impl CheckRow {
+    /// The one builder: the tone, the exemption, the face and the detail
+    /// come from the check, the subject and the caveats.
+    fn new(
+        subject: Subject,
+        check: Check,
+        mut caveats: Vec<Caveat>,
+        extra: &[String],
+        own_row: Option<&'static str>,
+    ) -> Self {
+        if let Some(basis) = &check.basis
+            && !basis.gates_export()
+            && !caveats.contains(&Caveat::Advisory)
+        {
+            caveats.push(Caveat::Advisory);
+        }
+        if check.population.is_some_and(|p| p.is_vacuous()) {
+            caveats.push(Caveat::NoSamples);
+        }
+        caveats.sort_by_key(|c| c.rank());
+        caveats.dedup();
+        let exemption = own_row.or_else(|| exemption_of(&check, &caveats));
+        let tone = Tone::of(&check, &caveats);
+        let face = face_of(&subject, &check, &caveats);
+        let detail = detail_of(&subject, &check, &caveats, exemption, tone, extra);
+        Self {
+            subject,
+            check,
+            caveats,
+            exemption,
+            tone,
+            face,
+            detail,
+        }
+    }
+
+    /// A declared cut before the simulation (the envelope).
+    #[must_use]
+    pub(crate) fn planned(cut: CutKind, check: Check, facts: PlannedFacts) -> Self {
+        let PlannedFacts {
+            may_occur_row,
+            own_depth,
+            lower_bound,
+            stored_feed,
+            at_earlier_leave,
+            entry_no_number,
+        } = facts;
+        let mut caveats = Vec::new();
+        if own_depth.is_some_and(|o| o.worst_case) {
+            caveats.push(Caveat::WorstCase);
+        }
+        if lower_bound {
+            caveats.push(Caveat::LowerBound);
+        }
+        if stored_feed {
+            caveats.push(Caveat::StoredFeed);
+        }
+        if let Some(row) = may_occur_row {
+            caveats.push(Caveat::MayOccur { row });
+        }
+        if at_earlier_leave {
+            caveats.push(Caveat::AtEarlierLeave);
+        }
+        let mut extra = Vec::new();
+        if let Some(o) = own_depth {
+            extra.push(format!("own depth {} mm ({})", num(o.mm), o.rule));
+        }
+        if let Some(clause) = entry_no_number {
+            extra.push(format!("no entry feed: {clause}"));
+        }
+        let occurs = if may_occur_row.is_some() {
+            Occurs::MayOccur
+        } else {
+            Occurs::Always
+        };
+        Self::new(
+            Subject::Planned {
+                cut,
+                occurs,
+                own_depth_mm: own_depth.map(|o| o.mm),
+            },
+            check,
+            caveats,
+            &extra,
+            None,
+        )
+    }
+
+    /// The stated point against one limit (`of_envelope`).
+    #[must_use]
+    pub(crate) fn stated(check: Check) -> Self {
+        Self::new(Subject::Stated, check, Vec::new(), &[], None)
+    }
+
+    /// The subject.
+    #[must_use]
+    pub const fn subject(&self) -> &Subject {
+        &self.subject
+    }
+
+    /// The check.
+    #[must_use]
+    pub const fn check(&self) -> &Check {
+        &self.check
+    }
+
+    /// The caveats, in rank order.
+    #[must_use]
+    pub fn caveats(&self) -> &[Caveat] {
+        &self.caveats
+    }
+
+    /// The `EXEMPTIONS` row that holds a `NoBound`, `NotJudgedHere` or
+    /// not-judged group row, else the row of a cut that may not occur.
+    #[must_use]
+    pub const fn exemption(&self) -> Option<&'static str> {
+        self.exemption
+    }
+
+    /// The tone.
+    #[must_use]
+    pub const fn tone(&self) -> Tone {
+        self.tone
+    }
+
+    /// One line, at most [`ROW_FACE_MAX_CHARS`] characters.
+    #[must_use]
+    pub fn face(&self) -> &str {
+        &self.face
+    }
+
+    /// The hover: every clause of the row.
+    #[must_use]
+    pub fn detail(&self) -> &str {
+        &self.detail
+    }
+
+    /// The declared cut of a planned row.
+    #[must_use]
+    pub const fn cut(&self) -> Option<CutKind> {
+        match self.subject {
+            Subject::Planned { cut, .. } => Some(cut),
+            Subject::Stated | Subject::Group { .. } | Subject::MeasuredPoint | Subject::Rpm => None,
+        }
+    }
+
+    /// The own depth of a planned entry row (mm).
+    #[must_use]
+    pub const fn own_depth_mm(&self) -> Option<f64> {
+        match self.subject {
+            Subject::Planned { own_depth_mm, .. } => own_depth_mm,
+            Subject::Stated | Subject::Group { .. } | Subject::MeasuredPoint | Subject::Rpm => None,
+        }
+    }
+
+    /// The exemption row of a cut that may not occur.
+    #[must_use]
+    pub fn may_occur_row(&self) -> Option<&'static str> {
+        self.caveats.iter().find_map(|c| match c {
+            Caveat::MayOccur { row } => Some(*row),
+            Caveat::WorstCase
+            | Caveat::LowerBound
+            | Caveat::StoredFeed
+            | Caveat::Advisory
+            | Caveat::NoSamples
+            | Caveat::SampleDepth { .. }
+            | Caveat::AtEarlierLeave => None,
+        })
+    }
+
+    /// `true` for a planned row.
+    #[must_use]
+    pub const fn is_planned(&self) -> bool {
+        self.cut().is_some()
+    }
+
+    /// THE rank of two rows (ruling O6): a row that exceeds outranks every
+    /// other row; then the stated point outranks every other subject; then
+    /// a row that exceeds a gating bound outranks an advisory one; then the
+    /// lower margin (a row with no margin ranks last).
+    #[must_use]
+    pub fn worse_than(&self, other: &Self) -> bool {
+        self.rank_key() < other.rank_key()
+    }
+
+    fn rank_key(&self) -> (u8, u8, u8, f64) {
+        let exceeds = match self.tone {
+            Tone::Exceeds | Tone::ExceedsAdvisory => 0,
+            Tone::Within | Tone::NoNumber | Tone::NotApplicable => 1,
+        };
+        (
+            exceeds,
+            self.subject.rank(),
+            self.tone.rank(),
+            self.check.margin.unwrap_or(f64::INFINITY),
+        )
+    }
+}
+
+/// The exemption row of a check: the row of a scope state first, else the
+/// row of a cut that may not occur.
+fn exemption_of(check: &Check, caveats: &[Caveat]) -> Option<&'static str> {
+    let state_row = match check.state {
+        // EXEMPT(S-NoBound)
+        CheckState::NoNumber(NoNumberReason::NoBound) => Some("S-NoBound"),
+        // EXEMPT(S-NotJudgedHere)
+        CheckState::NoNumber(NoNumberReason::NotJudgedHere) => Some("S-NotJudgedHere"),
+        CheckState::NoNumber(
+            NoNumberReason::NoForceLine
+            | NoNumberReason::NoSimulation
+            | NoNumberReason::StaleSimulation
+            | NoNumberReason::NoVendorRow
+            | NoNumberReason::NoMaterialRemoved
+            | NoNumberReason::NoArc
+            | NoNumberReason::NoToolBody
+            | NoNumberReason::NotModelled
+            | NoNumberReason::OnlyALowerBound
+            | NoNumberReason::NoEarlierLeave,
+        )
+        | CheckState::Within
+        | CheckState::Exceeds
+        | CheckState::NotApplicable(_) => None,
+    };
+    state_row.or_else(|| {
+        caveats.iter().find_map(|c| match c {
+            Caveat::MayOccur { row } => Some(*row),
+            Caveat::WorstCase
+            | Caveat::LowerBound
+            | Caveat::StoredFeed
+            | Caveat::Advisory
+            | Caveat::NoSamples
+            | Caveat::SampleDepth { .. }
+            | Caveat::AtEarlierLeave => None,
+        })
+    })
+}
+
+/// A number for the detail: four decimals, trailing zeros cut.
+fn num(v: f64) -> String {
+    let s = format!("{v:.4}");
+    let s = s.trim_end_matches('0').trim_end_matches('.');
+    if s == "-0" {
+        "0".to_owned()
+    } else {
+        s.to_owned()
+    }
+}
+
+/// A percent for the face: 0 or 1 decimal (the kit units rule,
+/// `ui/components/CLAUDE.md`: "% 0-1"). A share that is not zero and
+/// prints under 0.1 % reads "< 0.1", never "0".
+fn pct(share: f64) -> String {
+    let p = (share * 100.0).abs();
+    if p == 0.0 {
+        "0".to_owned()
+    } else if p < 0.1 {
+        "< 0.1".to_owned()
+    } else if p < 10.0 {
+        format!("{p:.1}")
+    } else {
+        format!("{p:.0}")
+    }
+}
+
+/// THE margin face of a check: a ceiling inside reads its share of the
+/// limit, outside its share over; a floor reads its share over or under.
+/// `None` with no margin.
+#[must_use]
+pub fn margin_face(check: &Check) -> Option<String> {
+    let m = check.margin?;
+    Some(match (check.side, m < 0.0) {
+        (BoundSide::Ceiling, false) => format!("{} % of limit", pct(1.0 - m)),
+        (BoundSide::Ceiling, true) => format!("{} % over limit", pct(m)),
+        (BoundSide::Floor, false) => format!("{} % over floor", pct(m)),
+        (BoundSide::Floor, true) => format!("{} % under floor", pct(m)),
+    })
+}
+
+/// The state of a check in short words, when no margin speaks for it.
+fn state_face(check: &Check) -> &'static str {
+    match check.state {
+        CheckState::Within => "inside, no bound here",
+        CheckState::Exceeds => "outside",
+        CheckState::NoNumber(reason) => reason.face(),
+        CheckState::NotApplicable(geometry) => geometry.face(),
+    }
+}
+
+fn face_of(subject: &Subject, check: &Check, caveats: &[Caveat]) -> String {
+    let short = check.limit.text().short;
+    let reading = margin_face(check).unwrap_or_else(|| state_face(check).to_owned());
+    let core = format!("{} · {short} {reading}", subject.label());
+    let with_word = caveats
+        .iter()
+        .find_map(|c| c.face_word())
+        .map(|w| format!("{core} · {w}"));
+    match with_word {
+        Some(face) if face.chars().count() <= ROW_FACE_MAX_CHARS => face,
+        Some(_) | None if core.chars().count() <= ROW_FACE_MAX_CHARS => core,
+        // The subject is in the detail; the limit and the reading fit.
+        Some(_) | None => format!("{short} {reading}"),
+    }
+}
+
+fn detail_of(
+    subject: &Subject,
+    check: &Check,
+    caveats: &[Caveat],
+    exemption: Option<&'static str>,
+    tone: Tone,
+    extra: &[String],
+) -> String {
+    let mut parts = vec![format!(
+        "{}: {} ({})",
+        subject.label(),
+        check.limit.text().noun,
+        tone.word()
+    )];
+    match (check.value, check.bound) {
+        (Some(v), Some(b)) => parts.push(format!(
+            "value {} {u}, bound {} {u}",
+            num(v),
+            num(b),
+            u = check.unit
+        )),
+        (Some(v), None) => parts.push(format!("value {} {}, no bound", num(v), check.unit)),
+        (None, Some(b)) => parts.push(format!("bound {} {}, no value", num(b), check.unit)),
+        (None, None) => {}
+    }
+    if let Some(face) = margin_face(check) {
+        parts.push(face);
+    }
+    match check.state {
+        CheckState::NoNumber(reason) => parts.push(reason.clause().to_owned()),
+        CheckState::NotApplicable(geometry) => parts.push(geometry.clause().to_owned()),
+        CheckState::Within | CheckState::Exceeds => {}
+    }
+    if let Some(basis) = &check.basis {
+        parts.push(format!("the {} sets the bound", basis.setting()));
+    }
+    if check.binding {
+        parts.push("this limit binds".to_owned());
+    }
+    parts.extend(caveats.iter().map(|c| c.clause()));
+    if let Some(p) = check.population {
+        parts.push(format!("{} of {} samples", p.contributing, p.offered));
+    }
+    if let Some(row) = exemption {
+        parts.push(format!("exemption row {row}"));
+    }
+    parts.extend(extra.iter().cloned());
+    parts.join("; ")
+}
+
+/// The sample depth that a gate of `limit` reads (M4): the power and the
+/// chip read the removed layer, the deflection and the force the engaged
+/// edge (`tool_load/CLAUDE.md`).
+const fn sample_depth_of(limit: LimitId) -> Option<SampleDepth> {
+    match limit {
+        LimitId::SpindlePower | LimitId::ChipMax | LimitId::ChipMin => {
+            Some(SampleDepth::RemovedLayer)
+        }
+        LimitId::ToolDeflection | LimitId::ForceBudget => Some(SampleDepth::EngagedEdge),
+        LimitId::RubbingFloor
+        | LimitId::FluteGuard
+        | LimitId::CuttingLength
+        | LimitId::VendorAxial
+        | LimitId::VendorDepthTable
+        | LimitId::CornerCoverage
+        | LimitId::ScallopDepth
+        | LimitId::ToolDiameter
+        | LimitId::MoveBudget
+        | LimitId::EngagementFloor
+        | LimitId::CuttingFeedCap
+        | LimitId::PlannerFeedCap
+        | LimitId::KinematicReach
+        | LimitId::PlungeRate
+        | LimitId::SpindleMaxRpm
+        | LimitId::ZAxisRate
+        | LimitId::OperatorRpmCeiling
+        | LimitId::ChartRpm
+        | LimitId::VendorRpmMax
+        | LimitId::GantryPush
+        | LimitId::DrillChipWelding
+        | LimitId::DrillPeckAdequacy
+        | LimitId::DrillPlungeFeed => None,
+    }
+}
+
+/// The row of one gate row of the verdict.
+fn group_row(status: &CriterionStatus<'_>, subject: Subject) -> CheckRow {
+    let check = of_criterion(status);
+    let mut caveats = Vec::new();
+    if let Some(depth) = sample_depth_of(check.limit) {
+        caveats.push(Caveat::SampleDepth { depth });
+    }
+    let extra: Vec<String> = status
+        .bound_source
+        .as_ref()
+        .map(|source| format!("bound from {}", source.clause()))
+        .into_iter()
+        .collect();
+    CheckRow::new(subject, check, caveats, &extra, None)
+}
+
+/// The row of a cell with no verdict: a group with no sample, or a group
+/// that the scope function does not judge.
+fn empty_row(
+    kind: CriterionKind,
+    subject: Subject,
+    state: CheckState,
+    extra: &[String],
+    own_row: Option<&'static str>,
+) -> CheckRow {
+    let limit = LimitId::of_criterion(kind, crate::tool_load::verdict::ChipSide::High);
+    let check = Check {
+        limit,
+        value: None,
+        bound: None,
+        unit: kind.unit(),
+        side: BoundSide::Ceiling,
+        margin: None,
+        state,
+        basis: None,
+        binding: false,
+        population: None,
+    };
+    CheckRow::new(subject, check, Vec::new(), extra, own_row)
+}
+
+/// The rows of one gate over every cut group: one row per group.
+fn gate_rows<V>(
+    kind: CriterionKind,
+    headline: &V,
+    cells: &super::ByGroup<GroupCell<V>>,
+    headline_group: CutGroup,
+    status_of: impl Fn(&V) -> CriterionStatus<'_>,
+    out: &mut Vec<CheckRow>,
+) {
+    for group in CutGroup::ALL {
+        let row = match cells.get(group) {
+            GroupCell::Headline => group_row(
+                &status_of(headline),
+                Subject::Group {
+                    group,
+                    headline: true,
+                    samples: None,
+                    material: None,
+                },
+            ),
+            GroupCell::Judged { samples, verdict } => group_row(
+                &status_of(verdict),
+                Subject::Group {
+                    group,
+                    headline: group == headline_group,
+                    samples: Some(*samples),
+                    material: None,
+                },
+            ),
+            GroupCell::NoSamples => empty_row(
+                kind,
+                Subject::Group {
+                    group,
+                    headline: group == headline_group,
+                    samples: Some(0),
+                    material: None,
+                },
+                CheckState::NoNumber(NoNumberReason::NoMaterialRemoved),
+                &[],
+                None,
+            ),
+            GroupCell::NotJudged {
+                samples,
+                row,
+                reason,
+            } => empty_row(
+                kind,
+                Subject::Group {
+                    group,
+                    headline: group == headline_group,
+                    samples: Some(*samples),
+                    material: None,
+                },
+                CheckState::NoNumber(NoNumberReason::NotJudgedHere),
+                std::slice::from_ref(reason),
+                // The cell names its own row of `EXEMPTIONS`.
+                EXEMPTIONS
+                    .iter()
+                    .find(|e| e.id == row.as_str())
+                    .map(|e| e.id),
+            ),
+        };
+        out.push(row);
+    }
+}
+
+/// THE projection of a gate verdict (P29-10): one row per gate and cut
+/// group (every `GroupCell`, the `NotJudged` and `NoSamples` cells
+/// included), the gantry-push row of the headline group, one row per drill
+/// gate, and one row per own material and gate (S6) plus one row per
+/// material that no gate judged.
+///
+/// The destructures name every field with no `..`: a new verdict field, a
+/// new gate field of `GroupVerdicts` or a new `GroupCell` does not compile
+/// until it states its rows here.
+#[must_use]
+pub fn rows_of_verdict(verdict: &ToolpathLoadVerdict) -> Vec<CheckRow> {
+    let ToolpathLoadVerdict {
+        toolpath_id: _,
+        chipload,
+        power,
+        deflection,
+        depth,
+        drill_gates,
+        // Report-only records: no limit, so no row.
+        modulation_summary: _,
+        feed_explanation: _,
+        kinematic_utilization: _,
+        material_split,
+        // P17: the force reading is report-only. The F6 merge (one force
+        // row per group, P29-10 section 13.3) stopped on a state that
+        // differs; until the lead rules, the depth gate gives the force
+        // budget row and the reading gives none.
+        cut_force: _,
+        groups,
+    } = verdict;
+    let crate::tool_load::verdict::GroupVerdicts {
+        headline,
+        chipload: chip_cells,
+        power: power_cells,
+        deflection: deflection_cells,
+        depth: depth_cells,
+        // As `cut_force` above: report-only.
+        cut_force: _,
+    } = groups;
+    let h = *headline;
+    let mut out = Vec::new();
+    gate_rows(
+        CriterionKind::Chipload,
+        chipload,
+        chip_cells,
+        h,
+        |v| v.as_criterion_status(),
+        &mut out,
+    );
+    gate_rows(
+        CriterionKind::Power,
+        power,
+        power_cells,
+        h,
+        |v| v.as_criterion_status(),
+        &mut out,
+    );
+    gate_rows(
+        CriterionKind::Deflection,
+        deflection,
+        deflection_cells,
+        h,
+        |v| v.as_criterion_status(),
+        &mut out,
+    );
+    gate_rows(
+        CriterionKind::DepthOfCut,
+        depth,
+        depth_cells,
+        h,
+        |v| v.as_criterion_status(),
+        &mut out,
+    );
+    // The gantry push: a known absence, on the headline group only.
+    if let Some(gantry) = verdict
+        .milling_criteria()
+        .iter()
+        .find(|s| s.kind == CriterionKind::GantryPush)
+    {
+        out.push(group_row(
+            gantry,
+            Subject::Group {
+                group: h,
+                headline: true,
+                samples: None,
+                material: None,
+            },
+        ));
+    }
+    if let Some(d) = drill_gates {
+        for (kind, outcome) in [
+            (CriterionKind::DrillChipWelding, &d.chip_welding),
+            (CriterionKind::DrillPeckAdequacy, &d.peck_adequacy),
+            (CriterionKind::DrillPlungeFeed, &d.plunge_feed),
+        ] {
+            out.push(group_row(
+                &outcome.as_criterion_status(kind, d.cycle, d.population),
+                Subject::Group {
+                    group: CutGroup::Drill,
+                    headline: h == CutGroup::Drill,
+                    samples: None,
+                    material: None,
+                },
+            ));
+        }
+    }
+    if let Some(split) = material_split.as_deref() {
+        own_material_rows(split, h, &mut out);
+    }
+    out
+}
+
+/// S6: the rows of each own material and of each material that no gate
+/// judged.
+fn own_material_rows(split: &MaterialSplit, headline: CutGroup, out: &mut Vec<CheckRow>) {
+    let MaterialSplit {
+        // The stock population is the main verdict.
+        stock_samples: _,
+        own,
+        not_judged,
+    } = split;
+    for o in own {
+        let OwnMaterialVerdict {
+            material,
+            samples,
+            chipload,
+            power,
+            deflection,
+            depth,
+        } = o;
+        let subject = || Subject::Group {
+            group: headline,
+            headline: true,
+            samples: Some(*samples),
+            material: Some(material.clone()),
+        };
+        out.push(group_row(&chipload.as_criterion_status(), subject()));
+        out.push(group_row(&power.as_criterion_status(), subject()));
+        out.push(group_row(&deflection.as_criterion_status(), subject()));
+        out.push(group_row(&depth.as_criterion_status(), subject()));
+    }
+    for n in not_judged {
+        out.push(empty_row(
+            CriterionKind::Power,
+            Subject::Group {
+                group: headline,
+                headline: true,
+                samples: Some(n.samples),
+                material: Some(n.material.clone()),
+            },
+            CheckState::NoNumber(NoNumberReason::NoForceLine),
+            &[n.label()],
+            None,
+        ));
+    }
+}
+
+/// THE projection of an RPM choice: one row per named limit.
+#[must_use]
+pub fn rows_of_rpm_choice(choice: &RpmChoice) -> Vec<CheckRow> {
+    of_rpm_choice(choice)
+        .into_iter()
+        .map(|check| CheckRow::new(Subject::Rpm, check, Vec::new(), &[], None))
+        .collect()
+}
+
+impl NoNumberReason {
+    /// The reason in short words, for the face.
+    #[must_use]
+    pub const fn face(self) -> &'static str {
+        match self {
+            Self::NoForceLine => "no force line",
+            Self::NoSimulation => "no simulation",
+            Self::StaleSimulation => "stale simulation",
+            Self::NoVendorRow => "no vendor row",
+            Self::NoMaterialRemoved => "no material removed",
+            Self::NoArc => "no arc",
+            Self::NoToolBody => "no tool body",
+            Self::NotModelled => "not modelled",
+            Self::OnlyALowerBound => "inside at a lower bound",
+            Self::NoEarlierLeave => "no earlier leave",
+            Self::NoBound => "no limit here",
+            Self::NotJudgedHere => "not judged here",
+        }
+    }
+
+    /// The reason in one clause, for the detail.
+    #[must_use]
+    pub const fn clause(self) -> &'static str {
+        match self {
+            Self::NoForceLine => "the material has no force line",
+            Self::NoSimulation => "no simulation ran",
+            Self::StaleSimulation => "the simulation is stale",
+            Self::NoVendorRow => "no vendor row gives a chip band",
+            Self::NoMaterialRemoved => "no sample removes material",
+            Self::NoArc => "the trace holds no engagement arc",
+            Self::NoToolBody => "the tool has no built body",
+            Self::NotModelled => "the model does not cover the cut",
+            Self::OnlyALowerBound => {
+                "the value is a lower bound inside the limit, so the check proves nothing"
+            }
+            Self::NoEarlierLeave => "no earlier op of the setup states a leave",
+            Self::NoBound => "the limit gives this cut no bound",
+            Self::NotJudgedHere => "this limit is not judged on this cut",
+        }
+    }
+}
+
+impl Geometry {
+    /// The geometry reason in short words, for the face.
+    #[must_use]
+    pub const fn face(self) -> &'static str {
+        match self {
+            Self::NoRadialEngagement => "no side cut",
+            Self::NotAnOffsetRing => "not an offset ring",
+            Self::NoVerticalFeed => "no vertical feed",
+        }
+    }
+
+    /// The geometry reason in one clause, for the detail.
+    #[must_use]
+    pub const fn clause(self) -> &'static str {
+        match self {
+            Self::NoRadialEngagement => "the cut has no radial engagement",
+            Self::NotAnOffsetRing => "the cut is not an offset ring",
+            Self::NoVerticalFeed => "the cut has no vertical feed",
+        }
+    }
+}

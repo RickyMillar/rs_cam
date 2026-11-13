@@ -146,9 +146,8 @@ fn row_agrees(
         (Some(basis), Some(source)) => {
             assert_eq!(basis.setting(), source.setting());
             assert_eq!(basis.gates_export(), source.gates_export());
-            assert_eq!(check.bound_detail.as_ref(), Some(source));
         }
-        (None, None) => assert!(check.bound_detail.is_none()),
+        (None, None) => {}
         (basis, source) => panic!("basis {basis:?} against source {source:?}"),
     }
     // The old state and the new state agree.
@@ -576,4 +575,27 @@ fn the_limits_folder_names_no_operation_type() {
              machine, never the operation type (P29 design 4.5)"
         );
     }
+}
+
+/// P29-10: `LimitId::text` names every limit: one noun and one short word
+/// each, no two the same, and each short word fits a face.
+#[test]
+fn every_limit_has_one_name_p29_10() {
+    let mut nouns = std::collections::BTreeSet::new();
+    let mut shorts = std::collections::BTreeSet::new();
+    for limit in LimitId::ALL {
+        let text = limit.text();
+        assert!(!text.noun.is_empty() && !text.short.is_empty(), "{limit:?}");
+        assert!(
+            text.short.chars().count() <= 12,
+            "{limit:?}: {}",
+            text.short
+        );
+        assert!(nouns.insert(text.noun), "{limit:?}: the noun repeats");
+        assert!(
+            shorts.insert(text.short),
+            "{limit:?}: the short word repeats"
+        );
+    }
+    assert_eq!(nouns.len(), LimitId::ALL.len());
 }

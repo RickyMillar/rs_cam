@@ -19,8 +19,9 @@
 //!   exemption from a limit.
 //! - [`SampleContext`] (`sample.rs`, P29-3): the side tables of
 //!   `Cut::of_sample`, the cut of one simulation sample.
-//!
-//! In P29-2 the old types stay and no surface reads this folder.
+//! - [`CheckRow`] (`row.rs`, P29-10): THE display row of a check, and the
+//!   projections [`rows_of_verdict`] and [`rows_of_rpm_choice`]. Every
+//!   surface reads rows; [`LimitId::text`] is the one writer of a limit name.
 //!
 //! No signature of this folder holds an operation type, an operation
 //! family or a pass role (`P29_FINDINGS.md` section 4.5): a limit cannot
@@ -30,6 +31,7 @@ mod check;
 mod cut;
 mod exemptions;
 mod project;
+mod row;
 mod sample;
 mod scope;
 
@@ -40,6 +42,10 @@ pub use cut::{
 };
 pub use exemptions::{EXEMPTIONS, Exemption, ExemptionClass, Who};
 pub use project::{of_criterion, of_envelope, of_judged_value, of_rpm_choice};
+pub use row::{
+    Caveat, CheckRow, Occurs, PlannedFacts, PlannedOwnDepth, ROW_FACE_MAX_CHARS, Subject, Tone,
+    margin_face, rows_of_rpm_choice, rows_of_verdict,
+};
 pub use sample::{CapTable, MoveCap, SampleContext};
 pub use scope::{NotJudged, PlanReason, Scope, scope, scope_of_all};
 
@@ -114,7 +120,54 @@ pub enum LimitId {
     DrillPlungeFeed,
 }
 
+/// The words of one limit (P29-10): the one writer of a limit name on
+/// every surface.
+#[derive(Debug, Clone, Copy, PartialEq, Eq)]
+pub struct LimitText {
+    /// The limit in a few words, for the detail ("machine force budget").
+    pub noun: &'static str,
+    /// The limit in one or two words, for a face (at most 12 characters).
+    pub short: &'static str,
+}
+
 impl LimitId {
+    /// The words of the limit. One match, no wildcard: a new limit does
+    /// not compile until it states its words.
+    #[must_use]
+    pub const fn text(self) -> LimitText {
+        let (noun, short) = match self {
+            Self::SpindlePower => ("spindle power", "power"),
+            Self::ToolDeflection => ("tool deflection", "deflection"),
+            Self::ForceBudget => ("machine force budget", "force"),
+            Self::ChipMax => ("chip band maximum", "chip max"),
+            Self::ChipMin => ("chip band minimum", "chip min"),
+            Self::RubbingFloor => ("rubbing floor", "rubbing"),
+            Self::FluteGuard => ("flute guard", "flute guard"),
+            Self::CuttingLength => ("cutting length of the tool", "cut length"),
+            Self::VendorAxial => ("vendor row depth", "vendor depth"),
+            Self::VendorDepthTable => ("vendor depth table", "depth table"),
+            Self::CornerCoverage => ("corner coverage of an offset ring", "corner"),
+            Self::ScallopDepth => ("scallop depth", "scallop"),
+            Self::ToolDiameter => ("tool diameter", "diameter"),
+            Self::MoveBudget => ("move budget", "moves"),
+            Self::EngagementFloor => ("smallest depth and width", "min engage"),
+            Self::CuttingFeedCap => ("cutting feed ceiling", "feed cap"),
+            Self::PlannerFeedCap => ("planner feed cap", "planner cap"),
+            Self::KinematicReach => ("reachable feed", "reach"),
+            Self::PlungeRate => ("vertical feed rate", "plunge rate"),
+            Self::SpindleMaxRpm => ("largest spindle speed", "spindle max"),
+            Self::ZAxisRate => ("Z axis rate", "Z rate"),
+            Self::OperatorRpmCeiling => ("operator RPM ceiling", "rpm ceiling"),
+            Self::ChartRpm => ("chart RPM", "chart rpm"),
+            Self::VendorRpmMax => ("vendor RPM maximum", "vendor rpm"),
+            Self::GantryPush => ("gantry thrust", "gantry push"),
+            Self::DrillChipWelding => ("drill chip welding", "chip welding"),
+            Self::DrillPeckAdequacy => ("drill peck depth", "peck depth"),
+            Self::DrillPlungeFeed => ("drill plunge feed", "drill feed"),
+        };
+        LimitText { noun, short }
+    }
+
     /// Every member, in declaration order.
     pub const ALL: [Self; 28] = crate::all_variants!(LimitId:
         SpindlePower, ToolDeflection, ForceBudget, ChipMax, ChipMin, RubbingFloor,

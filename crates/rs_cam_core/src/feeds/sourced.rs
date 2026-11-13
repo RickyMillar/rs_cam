@@ -269,10 +269,22 @@ impl Basis {
     /// P29-2: `false` when a bound with this basis must not refuse an
     /// export: the machine rigidity values (the force budget of a machine
     /// class), as
-    /// `tool_load::verdict::BoundSource::gates_export`.
+    /// `tool_load::verdict::BoundSource::gates_export`. P29-10: a law over
+    /// such a value (the envelope force budget, `feeds::rigidity_basis`)
+    /// does not gate either, so a planned row and a gate row of one limit
+    /// take one tone.
     #[must_use]
-    pub const fn gates_export(&self) -> bool {
-        !matches!(self, Self::Machine(MachineField::Rigidity))
+    pub fn gates_export(&self) -> bool {
+        match self {
+            Self::Machine(MachineField::Rigidity) => false,
+            Self::Derived { from, .. } => from.iter().all(Self::gates_export),
+            Self::Operator { .. }
+            | Self::Printed(_)
+            | Self::Claim(_)
+            | Self::Machine(_)
+            | Self::Rule(_)
+            | Self::ToolFact(_) => true,
+        }
     }
 
     /// A value that the operator states.

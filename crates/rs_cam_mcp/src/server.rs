@@ -4041,6 +4041,13 @@ pub fn build_info() -> serde_json::Value {
             // whose entry rule gives no feed names why in
             // `entry_no_number`.
             "envelope_entry_value_checks",
+            // Feeds contract P29-10: every limit record is one row
+            // (`limits::CheckRow`: subject, check, caveats, exemption, tone,
+            // face, detail). `get_safe_envelope` gives `envelope.limit_rows`
+            // (it replaced `envelope.cut_checks`: the planned rows at the
+            // proposal, then the stated point against each limit); a
+            // `Check` has no `bound_detail` (the row detail holds it).
+            "limit_rows",
         ],
     })
 }

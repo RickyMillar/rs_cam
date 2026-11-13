@@ -369,7 +369,8 @@ pub static EXEMPTIONS: [Exemption; 37] = [
         who: Who::Reader("one sample has two depths (axial_doc_mm, axial_engagement_mm)"),
         class: NR,
         where_: &["src/feeds/engagement.rs", "src/tool_load/deflection.rs"],
-        closes_in: "P29-10 (one depth predicate, P29-6 F6)",
+        closes_in: "P29-11 (a probe: the share of samples where the two depths differ); \
+                    P29-10 states the depth of each row (Caveat::SampleDepth)",
     },
     Exemption {
         id: "M6",
@@ -408,6 +409,7 @@ pub static EXEMPTIONS: [Exemption; 37] = [
         where_: &[
             "src/feeds/envelope.rs",
             "src/limits/project.rs",
+            "src/limits/row.rs",
             "src/machine/mod.rs",
         ],
         closes_in: "stays, as P28-02",
@@ -421,7 +423,11 @@ pub static EXEMPTIONS: [Exemption; 37] = [
              (NoNumberReason::NotJudgedHere)",
         ),
         class: NR,
-        where_: &["src/feeds/envelope.rs", "src/limits/project.rs"],
+        where_: &[
+            "src/feeds/envelope.rs",
+            "src/limits/project.rs",
+            "src/limits/row.rs",
+        ],
         closes_in: "P29-10",
     },
     // U: one row for each cut that no limit reads before the simulation

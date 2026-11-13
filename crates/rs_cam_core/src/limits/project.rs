@@ -73,7 +73,6 @@ pub fn of_criterion(status: &CriterionStatus<'_>) -> Check {
         margin,
         state,
         basis: status.bound_source.as_ref().map(basis_of_bound),
-        bound_detail: status.bound_source.clone(),
         binding: false,
         population: status.population,
     }
@@ -135,7 +134,6 @@ pub fn of_envelope(envelope: &SafeEnvelope, p: CutPoint) -> Vec<Check> {
             margin,
             state,
             basis: Some(limit.basis.clone()),
-            bound_detail: None,
             binding: at.is_some() && at == binding_at,
             population: None,
         });
@@ -156,7 +154,6 @@ pub fn of_envelope(envelope: &SafeEnvelope, p: CutPoint) -> Vec<Check> {
             basis: envelope
                 .limit(LimitKind::Runtime)
                 .map(|limit| limit.basis.clone()),
-            bound_detail: None,
             binding: Some(k) == binding_at,
             population: None,
         });
@@ -178,7 +175,6 @@ pub fn of_judged_value(limit: LimitId, side: BoundSide, judged_value: &JudgedVal
         margin,
         state,
         basis: None,
-        bound_detail: None,
         binding: false,
         population: None,
     }
@@ -204,7 +200,6 @@ pub fn of_rpm_choice(choice: &RpmChoice) -> Vec<Check> {
                 margin,
                 state,
                 basis: None,
-                bound_detail: None,
                 binding: entry.limit == choice.binding,
                 population: None,
             }

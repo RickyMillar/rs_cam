@@ -66,5 +66,9 @@ run the server; the live server, GUI dispatch and session ownership are in
   `SetSpindleStrategyParam` has `rpm_ceiling` (`[job.post] spindle_rpm_ceiling`; 0 refuses, a
   value above the spindle maximum warns in the reply). Feature token `spindle_rpm_ceiling`. The
   snapshot was re-blessed.
+- Feeds contract P29-10 (2026-11-13, 10a): `get_safe_envelope` `envelope.cut_checks` is now
+  `envelope.limit_rows` (one `limits::CheckRow` per record: subject, check, caveats, exemption, tone,
+  face, detail; the planned rows, then the stated rows); a `Check` has no `bound_detail` (break, no
+  alias). Feature token `limit_rows`. Reply keys only: the snapshot did not move.
 - Verify with `cargo test -p rs_cam_mcp -q`; when a wire type changes, also run
   the relevant `rs_cam_viz` MCP integration tests.
