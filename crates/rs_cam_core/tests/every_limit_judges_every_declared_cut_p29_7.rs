@@ -84,10 +84,10 @@ use rs_cam_core::feeds::SpindleStrategy;
 use rs_cam_core::feeds::entry_rule::ConfiguredEntry;
 use rs_cam_core::feeds::envelope::{EnvelopeInput, LimitKind, SafeEnvelope};
 use rs_cam_core::feeds::planned::{
-    BodyColumn, CeilingEdge, ChipEnv, ChipMaxPlanned, ChipMinPlanned, DeclaredCuts,
-    DeflectionPlanned, ForceBudgetPlanned, ForceEnv, PlaneDepth, PlaneRole, PlannedCell,
-    PlannedLimit, PlannedNoNumber, PowerEnv, RubbingFloorPlanned, SpindlePowerPlanned, TableEnv,
-    VendorDepthTablePlanned, judge_declared_cuts, planned_limit_of,
+    BodyColumn, CeilingEdge, ChipEnv, ChipFloor, ChipFloorEnv, ChipMaxPlanned, ChipMinPlanned,
+    DeclaredCuts, DeflectionPlanned, ForceBudgetPlanned, ForceEnv, PlaneDepth, PlaneRole,
+    PlannedCell, PlannedLimit, PlannedNoNumber, PowerEnv, RubbingFloorPlanned, SpindlePowerPlanned,
+    TableEnv, VendorDepthTablePlanned, judge_declared_cuts, planned_limit_of,
 };
 use rs_cam_core::feeds::suggest::{NoProject, StockContext, SuggestContext};
 use rs_cam_core::limits::{
@@ -386,6 +386,11 @@ fn claim_1_one_cell_for_each_cut_and_the_scope_decides_it() {
             d_eng_mm: tool.diameter,
             bound_mm: 0.1,
         };
+        let floor = ChipFloorEnv {
+            thinning: cuts.thinning(),
+            d_eng_mm: tool.diameter,
+            floor: ChipFloor::PointReference { mm: 0.1 },
+        };
         let all: [(LimitId, Vec<(CutKind, State)>); 7] = [
             (
                 LimitId::ForceBudget,
@@ -409,7 +414,7 @@ fn claim_1_one_cell_for_each_cut_and_the_scope_decides_it() {
             ),
             (
                 LimitId::ChipMin,
-                cells::<ChipMinPlanned>(&cuts, column, &chip),
+                cells::<ChipMinPlanned>(&cuts, column, &floor),
             ),
             (
                 LimitId::RubbingFloor,

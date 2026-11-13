@@ -1776,21 +1776,81 @@ pub enum ChipBoundsSource {
     VendorLutMissingAe,
 }
 
+/// P29-10 PB (lead ruling on the point band): why the low side of a matched
+/// row is a reference and not a floor that gates. Each source of
+/// [`ChipBoundsSource`] that makes the low side advisory names its reason
+/// here ([`ChipBoundsSource::advisory_low_side`]).
+#[derive(Debug, Clone, Copy, PartialEq, Eq, Serialize, Deserialize)]
+#[serde(rename_all = "snake_case")]
+pub enum AdvisoryLowSide {
+    /// The row prints one chip value (A2): a point, not a band.
+    OnePrintedValue,
+    /// The row is extrapolated to the query's diameter or hardness.
+    Extrapolated,
+    /// The row prints no `ae` window (the weakest-annotated class, F3.3).
+    NoWidthWindow,
+}
+
 impl ChipBoundsSource {
+    /// **THE one classification of a matched row** (F3.3, A2; P29-10 PB):
+    /// worst first, a point (one printed value), then an extrapolated row,
+    /// then a row with no `ae` window, else a direct row. The sample gate
+    /// (`tool_load::chipload`) and the planned chip floor of the envelope
+    /// (`feeds::planned::ChipFloor`) read it, so the two sides agree on the
+    /// class of every row.
+    ///
+    /// A point is not a calibrated envelope; an extrapolation past the
+    /// size or hardness rule stretches what the row printed; a row with no
+    /// `ae` window is the weakest-annotated class of the table. All three
+    /// make the low side advisory ([`Self::advisory_low_side`]). The high
+    /// side stays hard for every source.
+    ///
+    /// The original reason of `VendorLutMissingAe` (the row skipped the
+    /// engagement-arc normalisation) no longer exists, because no row is
+    /// normalised now. Its behaviour stays: to demote a burn trip to an
+    /// advisory is the conservative direction, and no ruling promotes the
+    /// rows with no window back to a hard low side.
+    #[must_use]
+    pub fn of_row(row: &crate::feeds::vendor_lookup::LookupResult) -> Self {
+        match row.printed_chipload() {
+            crate::feeds::vendor_lookup::PrintedChipload::Point { .. } => {
+                Self::VendorLutPointPreset
+            }
+            crate::feeds::vendor_lookup::PrintedChipload::Band { .. }
+            | crate::feeds::vendor_lookup::PrintedChipload::Unpublished => {
+                if row.is_extrapolated {
+                    Self::VendorLutExtrapolated
+                } else if row.ae_min_mm.is_none() && row.ae_max_mm.is_none() {
+                    Self::VendorLutMissingAe
+                } else {
+                    Self::VendorLut
+                }
+            }
+        }
+    }
+
+    /// P29-10 PB: why the LOW (burn) side of these bounds is too weakly
+    /// provenanced to gate, or `None` for a direct row. One match, no
+    /// wildcard: a new source states here whether its low side gates.
+    #[must_use]
+    pub const fn advisory_low_side(self) -> Option<AdvisoryLowSide> {
+        match self {
+            ChipBoundsSource::VendorLut => None,
+            ChipBoundsSource::VendorLutExtrapolated => Some(AdvisoryLowSide::Extrapolated),
+            ChipBoundsSource::VendorLutPointPreset => Some(AdvisoryLowSide::OnePrintedValue),
+            ChipBoundsSource::VendorLutMissingAe => Some(AdvisoryLowSide::NoWidthWindow),
+        }
+    }
+
     /// F3.3 — true when the LOW (burn) side of these bounds is too
     /// weakly provenanced to hard-refuse on: a low-side trip downgrades
     /// to a structured burn advisory
     /// ([`ChiploadVerdict::Within::burn_advisory`]) instead of
     /// `Exceeds(Low)`. The HIGH (breakage) side stays hard for every
     /// source — over-thick chips break teeth regardless of how the
-    /// bound was derived.
+    /// bound was derived. It reads [`Self::advisory_low_side`].
     pub fn low_side_is_advisory(self) -> bool {
-        match self {
-            ChipBoundsSource::VendorLut => false,
-            ChipBoundsSource::VendorLutExtrapolated
-            | ChipBoundsSource::VendorLutPointPreset
-            | ChipBoundsSource::VendorLutMissingAe => true,
-        }
+        self.advisory_low_side().is_some()
     }
 
     /// Stable identifier for the provenance of these bounds, for use as

@@ -218,6 +218,21 @@ fn check_row(name: &str, row: &CheckRow) {
             row.face()
         );
     }
+    // Claim 11 (P29-10 PB): the advisory floor holds only on a chip-minimum
+    // row with a reading, and such a row never has the gating tone.
+    if advisory_floor(row).is_some() {
+        assert!(
+            c.limit == LimitId::ChipMin && c.value.is_some(),
+            "{name}: {}: an advisory floor off a chip-minimum reading",
+            row.face()
+        );
+        assert_ne!(
+            row.tone(),
+            Tone::Exceeds,
+            "{name}: {}: an advisory floor gates",
+            row.face()
+        );
+    }
     assert_eq!(row.tone(), Tone::of(c, row.caveats()), "{name}: the tone");
     // Claim 9: the face follows the state.
     face_follows_state(name, row);
@@ -349,6 +364,7 @@ fn claim_1_one_planned_row_per_cut_and_limit_and_the_stated_rows() {
                 caveats.insert(match c {
                     Caveat::MayOccur { .. } => "MayOccur".to_owned(),
                     Caveat::SampleDepth { .. } => "SampleDepth".to_owned(),
+                    Caveat::AdvisoryFloor { .. } => "AdvisoryFloor".to_owned(),
                     Caveat::WorstCase
                     | Caveat::LowerBound
                     | Caveat::StoredFeed
@@ -413,6 +429,7 @@ fn claim_1_one_planned_row_per_cut_and_limit_and_the_stated_rows() {
         // ramp): no fixture op here sits inside its stored-feed interval.
         "MayOccur",
         "Advisory",
+        "AdvisoryFloor",
     ] {
         assert!(
             caveats.contains(caveat),
@@ -1022,4 +1039,94 @@ fn claim_10_no_row_holds_a_nan_or_an_infinity() {
         }
     }
     assert!(n > 0, "non-vacuity: the fixtures give rows");
+}
+
+/// The reason of the advisory chip floor of a row, if it has one.
+fn advisory_floor(row: &CheckRow) -> Option<rs_cam_core::tool_load::verdict::AdvisoryLowSide> {
+    row.caveats().iter().find_map(|c| match c {
+        Caveat::AdvisoryFloor { why } => Some(*why),
+        Caveat::WorstCase
+        | Caveat::LowerBound
+        | Caveat::StoredFeed
+        | Caveat::MayOccur { .. }
+        | Caveat::Advisory
+        | Caveat::NoSamples
+        | Caveat::SampleDepth { .. }
+        | Caveat::AtEarlierLeave => None,
+    })
+}
+
+/// Claim 11 (P29-10 PB, lead ruling on the point band): ONE classification
+/// of the chip low side. The sample gate and the planned chip-minimum row
+/// read the same function (`ChipBoundsSource::of_row`): on each simulated
+/// fixture the gate's bound source and the envelope's chip-minimum rows name
+/// the same advisory reason (or none). A row that prints one value (a
+/// point) never gives a gating low-side tone; the planned row keeps the
+/// printed value as its bound. The Pocket reads a point row, the Profile a
+/// band with no width window.
+#[test]
+fn claim_11_the_gate_and_the_planned_floor_share_one_classification() {
+    use rs_cam_core::tool_load::verdict::{AdvisoryLowSide, BoundSource, ChipBoundsSource};
+    let mut point_fixture = false;
+    let mut band_fixture = false;
+    for (name, session) in [
+        ("pocket", pocket_session(false)),
+        ("profile", profile_session()),
+        ("adaptive", adaptive_session()),
+        ("shelf", shelf_session()),
+    ] {
+        let report = session.tool_load_report();
+        let verdict = report.per_toolpath.first().expect("one toolpath");
+        let status = verdict.chipload.as_criterion_status();
+        let Some(BoundSource::VendorChipBand {
+            source,
+            ceiling_mm_per_tooth,
+            ..
+        }) = status.bound_source
+        else {
+            panic!("{name}: the gate matched a vendor row");
+        };
+        let tc = session.toolpath_config_at(0).expect("the op");
+        let env = session
+            .safe_envelope(tc)
+            .expect("a tool")
+            .expect("the envelope builds");
+        let floors: Vec<&CheckRow> = env
+            .rows()
+            .iter()
+            .filter(|r| r.check().limit == LimitId::ChipMin && r.check().value.is_some())
+            .collect();
+        assert!(!floors.is_empty(), "{name}: non-vacuity: chip-minimum rows");
+        for r in &floors {
+            assert_eq!(
+                advisory_floor(r),
+                source.advisory_low_side(),
+                "{name}: {}: the gate class {source:?} and the planned row",
+                r.face()
+            );
+            assert_ne!(r.tone(), Tone::Exceeds, "{name}: {}", r.face());
+        }
+        match source {
+            ChipBoundsSource::VendorLutPointPreset => {
+                point_fixture = true;
+                for r in &floors {
+                    assert_eq!(
+                        advisory_floor(r),
+                        Some(AdvisoryLowSide::OnePrintedValue),
+                        "{name}: a point names one printed value"
+                    );
+                    let bound = r.check().bound.expect("the printed value");
+                    assert!(
+                        (bound - ceiling_mm_per_tooth).abs() <= 1e-12,
+                        "{name}: the planned row keeps the printed value {ceiling_mm_per_tooth} as its reference, not {bound}"
+                    );
+                }
+            }
+            ChipBoundsSource::VendorLut
+            | ChipBoundsSource::VendorLutExtrapolated
+            | ChipBoundsSource::VendorLutMissingAe => band_fixture = true,
+        }
+    }
+    assert!(point_fixture, "non-vacuity: a fixture with a point row");
+    assert!(band_fixture, "non-vacuity: a fixture with a band row");
 }

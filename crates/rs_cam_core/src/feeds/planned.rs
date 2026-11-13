@@ -969,9 +969,91 @@ pub struct ChipEnv {
     pub thinning: RadialThinning,
     /// The engaged diameter of the lift (mm).
     pub d_eng_mm: f64,
-    /// The bound (mm per tooth): the band maximum, the band minimum or the
-    /// rubbing floor.
+    /// The bound (mm per tooth): the band maximum (or the printed point) or
+    /// the rubbing floor. The `ChipMin` check reads [`ChipFloorEnv`].
     pub bound_mm: f64,
+}
+
+/// P29-10 PB (lead ruling on the point band): THE chip floor that the
+/// envelope hands to the planned `ChipMin` check. A typed value, never a
+/// band made from one printed value: a future limit cannot make a floor
+/// from a point without a new variant here.
+#[derive(Debug, Clone, Copy, PartialEq)]
+pub enum ChipFloor {
+    /// The minimum of a printed band (mm per tooth) and the class of its row
+    /// (`ChipBoundsSource::of_row`).
+    BandMin {
+        /// The band minimum (mm per tooth).
+        mm: f64,
+        /// The class of the row (never `VendorLutPointPreset`).
+        source: crate::tool_load::verdict::ChipBoundsSource,
+    },
+    /// The printed value of a row that prints one value (A2): a reference,
+    /// not a floor that gates.
+    PointReference {
+        /// The printed value (mm per tooth).
+        mm: f64,
+    },
+}
+
+impl ChipFloor {
+    /// The chip floor of a calculator result: the class of its matched row
+    /// by THE one classification (`ChipBoundsSource::of_row`, the gate reads
+    /// the same function), then the value the class reads (the printed
+    /// point, or the band minimum). `None` with no matched row or no value.
+    #[must_use]
+    pub fn of_result(r: &crate::feeds::FeedsResult) -> Option<Self> {
+        use crate::tool_load::verdict::ChipBoundsSource;
+        let row = r.matched_lut_row.as_ref()?;
+        let usable = |v: &f64| v.is_finite() && *v > 0.0;
+        match ChipBoundsSource::of_row(row) {
+            ChipBoundsSource::VendorLutPointPreset => r
+                .chipload_point_mm
+                .filter(usable)
+                .map(|mm| Self::PointReference { mm }),
+            source @ (ChipBoundsSource::VendorLut
+            | ChipBoundsSource::VendorLutExtrapolated
+            | ChipBoundsSource::VendorLutMissingAe) => r
+                .chipload_bounds
+                .map(|b| b.min_mm_per_tooth)
+                .filter(usable)
+                .map(|mm| Self::BandMin { mm, source }),
+        }
+    }
+
+    /// The value of the floor (mm per tooth).
+    #[must_use]
+    pub const fn mm(self) -> f64 {
+        match self {
+            Self::BandMin { mm, .. } | Self::PointReference { mm } => mm,
+        }
+    }
+
+    /// Why the floor is a reference and not a floor that gates, or `None`
+    /// for the minimum of a direct band. It reads
+    /// `ChipBoundsSource::advisory_low_side`, the rule of the gate.
+    #[must_use]
+    pub const fn advisory(self) -> Option<crate::tool_load::verdict::AdvisoryLowSide> {
+        match self {
+            Self::BandMin { source, .. } => source.advisory_low_side(),
+            Self::PointReference { .. } => {
+                crate::tool_load::verdict::ChipBoundsSource::VendorLutPointPreset
+                    .advisory_low_side()
+            }
+        }
+    }
+}
+
+/// What the `ChipMin` check reads beside the cut: the thinning rule and the
+/// engaged diameter of the lift, and the typed floor (P29-10 PB).
+#[derive(Debug, Clone, Copy)]
+pub struct ChipFloorEnv {
+    /// The thinning rule of the body.
+    pub thinning: RadialThinning,
+    /// The engaged diameter of the lift (mm).
+    pub d_eng_mm: f64,
+    /// The floor.
+    pub floor: ChipFloor,
 }
 
 /// The planned peak chip of one cut against one chip bound.
@@ -991,6 +1073,10 @@ pub struct ChipReading {
     /// holds the bound, so the rounding of the feed can change the state.
     /// Only then the row carries the caveat `StoredFeed`.
     pub stored_feed: bool,
+    /// P29-10 PB: the bound is a chip floor whose low side is advisory
+    /// (`ChipFloor::advisory`), with the reason. `None` for every other
+    /// chip bound.
+    pub advisory_floor: Option<crate::tool_load::verdict::AdvisoryLowSide>,
 }
 
 fn peak_chip(cut: &PlannedCut, env: &ChipEnv, side: BoundSide) -> Option<ChipReading> {
@@ -1006,6 +1092,7 @@ fn peak_chip(cut: &PlannedCut, env: &ChipEnv, side: BoundSide) -> Option<ChipRea
             let high = UnliftedFeed::over_lift(c.high_mm(), lift).mm_min();
             low <= env.bound_mm && env.bound_mm <= high
         }),
+        advisory_floor: None,
     })
 }
 
@@ -1027,10 +1114,18 @@ pub struct ChipMinPlanned;
 
 impl PlannedLimit for ChipMinPlanned {
     const LIMIT: LimitId = LimitId::ChipMin;
-    type Env<'e> = ChipEnv;
+    type Env<'e> = ChipFloorEnv;
     type Answer = Option<ChipReading>;
-    fn judge(cut: &PlannedCut, env: &ChipEnv) -> Option<ChipReading> {
-        peak_chip(cut, env, BoundSide::Floor)
+    fn judge(cut: &PlannedCut, env: &ChipFloorEnv) -> Option<ChipReading> {
+        let chip = ChipEnv {
+            thinning: env.thinning,
+            d_eng_mm: env.d_eng_mm,
+            bound_mm: env.floor.mm(),
+        };
+        peak_chip(cut, &chip, BoundSide::Floor).map(|reading| ChipReading {
+            advisory_floor: env.floor.advisory(),
+            ..reading
+        })
     }
 }
 

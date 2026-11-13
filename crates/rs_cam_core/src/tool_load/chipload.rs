@@ -417,43 +417,17 @@ fn judge(
             reason: UnmodeledReason::NoVendorData,
         };
     };
-    // A2 (point mode): a row that prints one value is a point
-    // (`LookupResult::printed_chipload`). A point is not a band: the
-    // bounds keep no minimum. The high side stays a hard trip at the
-    // printed point v (P11b2: no depth de-rate). A median peak chip below v
-    // gives a burn advisory only (decision Q1 (a); `ChipBounds::burn_reference_mm`). The gate
-    // never gives `Exceeds(Low)` for a point.
-    let is_point = matches!(
-        result.printed_chipload(),
-        crate::feeds::vendor_lookup::PrintedChipload::Point { .. }
-    );
+    // A2 (point mode): a row that prints one value is a point. A point is
+    // not a band: the bounds keep no minimum. The high side stays a hard
+    // trip at the printed point v (P11b2: no depth de-rate). A median peak
+    // chip below v gives a burn advisory only (decision Q1 (a);
+    // `ChipBounds::burn_reference_mm`). The gate never gives `Exceeds(Low)`
+    // for a point.
     let (min, max) = (band.min_mm_per_tooth, band.max_mm_per_tooth);
-    // F3.3 — provenance classification, worst-first. A point (one
-    // printed value, A2) is not a calibrated envelope; extrapolation past
-    // ±40 % stretches whatever the row published; a row with no `ae`
-    // window is the crate's weakest-annotated class. All three make the
-    // LOW side advisory-only (`low_side_is_advisory`); the HIGH side
-    // stays hard everywhere.
-    //
-    // `VendorLutMissingAe`'s ORIGINAL justification — "this row skipped
-    // the engagement-arc normalisation" — no longer exists, because no
-    // row is normalised any more. Its behaviour is kept unchanged
-    // deliberately: demoting a burn trip to an advisory is the
-    // conservative direction, and promoting 176 of the LUT's 252 rows
-    // back to hard `Exceeds(Low)` trips is a behaviour change with no
-    // ruling behind it. What the label now means is "the weakest-
-    // annotated row class in the LUT", which is a defensible reason to
-    // soften a burn floor and an indefensible one to keep calling it an
-    // arc problem. Re-open: Checkpoint item, owner unassigned.
-    let source = if is_point {
-        ChipBoundsSource::VendorLutPointPreset
-    } else if result.is_extrapolated {
-        ChipBoundsSource::VendorLutExtrapolated
-    } else if result.ae_min_mm.is_none() && result.ae_max_mm.is_none() {
-        ChipBoundsSource::VendorLutMissingAe
-    } else {
-        ChipBoundsSource::VendorLut
-    };
+    // F3.3, P29-10 PB: THE one classification of the row, worst first
+    // (`ChipBoundsSource::of_row`); the planned chip floor of the envelope
+    // reads the same function.
+    let source = ChipBoundsSource::of_row(&result);
     let bounds = ChipBounds {
         min_mm_per_tooth: min,
         max_mm_per_tooth: max,

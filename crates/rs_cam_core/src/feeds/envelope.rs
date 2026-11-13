@@ -1338,6 +1338,8 @@ struct PlannedRow {
     lower_bound: bool,
     /// P29-9: the chip reads a stored entry feed.
     stored_feed: bool,
+    /// P29-10 PB: the chip floor is a reference, with the reason.
+    advisory_floor: Option<crate::tool_load::verdict::AdvisoryLowSide>,
     /// The check.
     check: crate::limits::Check,
 }
@@ -1374,6 +1376,7 @@ impl PlannedRow {
                 }),
                 lower_bound: self.lower_bound,
                 stored_feed: self.stored_feed,
+                advisory_floor: self.advisory_floor,
                 at_earlier_leave: reads_leave,
                 entry_no_number: self.entry_no_number,
                 compared,
@@ -1466,6 +1469,9 @@ struct CutRow {
     own_basis: Option<Basis>,
     /// P29-10: the chip reads a stored entry feed.
     stored_feed: bool,
+    /// P29-10 PB: the chip floor of the row is a reference (its low side is
+    /// advisory), with the reason.
+    advisory_floor: Option<crate::tool_load::verdict::AdvisoryLowSide>,
 }
 
 impl CutRow {
@@ -1487,6 +1493,7 @@ impl CutRow {
             geometry: None,
             own_basis: None,
             stored_feed: false,
+            advisory_floor: None,
         }
     }
 
@@ -1521,6 +1528,17 @@ impl CutRow {
     fn with_stored_feed(self, stored_feed: bool) -> Self {
         Self {
             stored_feed,
+            ..self
+        }
+    }
+
+    /// P29-10 PB: the row whose chip floor is a reference.
+    fn with_advisory_floor(
+        self,
+        advisory_floor: Option<crate::tool_load::verdict::AdvisoryLowSide>,
+    ) -> Self {
+        Self {
+            advisory_floor,
             ..self
         }
     }
@@ -1587,6 +1605,7 @@ impl CutRow {
             entry_no_number: None,
             lower_bound: self.lower_bound,
             stored_feed: self.stored_feed,
+            advisory_floor: self.advisory_floor,
             check: Check {
                 limit,
                 value: self.value,
@@ -3325,13 +3344,19 @@ impl SafeEnvelope {
         };
         let kind = Some(kind);
         let r = &sp.r;
-        let band = r
+        // The upper edge: the band maximum, or the printed point (a point is
+        // a hard ceiling, A2). The lower edge is the typed floor
+        // (`planned::ChipFloor`, P29-10 PB): a band minimum or a reference
+        // from a point, never a band made from one value.
+        let Some(band_max) = r
             .chipload_bounds
-            .map(|b| (b.min_mm_per_tooth, b.max_mm_per_tooth))
-            .or(r.chipload_point_mm.map(|v| (v, v)));
-        let Some((band_min, band_max)) = band.filter(|_| r.matched_lut_row.is_some()) else {
+            .map(|b| b.max_mm_per_tooth)
+            .or(r.chipload_point_mm)
+            .filter(|_| r.matched_lut_row.is_some())
+        else {
             return (side, kind, Vec::new());
         };
+        let floor = crate::feeds::planned::ChipFloor::of_result(r);
         let p = self.proposal_point;
         let cuts = &self.inputs.cuts;
         let column = BodyColumn {
@@ -3355,7 +3380,15 @@ impl SafeEnvelope {
                 judge_declared_cuts::<ChipMaxPlanned>(cuts, column, &env(band_max))
             }
             ValueCheck::ChipMin => {
-                judge_declared_cuts::<ChipMinPlanned>(cuts, column, &env(band_min))
+                let Some(floor) = floor else {
+                    return (side, kind, Vec::new());
+                };
+                let env = crate::feeds::planned::ChipFloorEnv {
+                    thinning: cuts.thinning(),
+                    d_eng_mm: d_eng,
+                    floor,
+                };
+                judge_declared_cuts::<ChipMinPlanned>(cuts, column, &env)
             }
             ValueCheck::RubbingFloor => {
                 let (floor, _) =
@@ -3368,23 +3401,25 @@ impl SafeEnvelope {
         let rows = cells
             .iter()
             .map(|e| {
-                let (value, judged, bound, stored_feed) = match e.value {
+                let (value, judged, bound, stored_feed, advisory_floor) = match e.value {
                     PlannedCell::<Option<ChipReading>>::Judged(Some(c)) => (
                         Some(c.peak_mm),
                         Some(c.judged_mm),
                         Ok(Some(c.bound_mm)),
                         c.stored_feed,
+                        c.advisory_floor,
                     ),
                     PlannedCell::Judged(None) => {
-                        (None, None, Err(NoNumberReason::NotModelled), false)
+                        (None, None, Err(NoNumberReason::NotModelled), false, None)
                     }
                     PlannedCell::NotJudged(_) | PlannedCell::NotACutLimit(_) => {
-                        (None, None, Err(NoNumberReason::NotJudgedHere), false)
+                        (None, None, Err(NoNumberReason::NotJudgedHere), false, None)
                     }
                 };
                 CutRow::of(e.kind, e.presence, e.depth, value, bound)
                     .judged_at(judged)
                     .with_stored_feed(stored_feed)
+                    .with_advisory_floor(advisory_floor)
             })
             .collect();
         (side, kind, rows)

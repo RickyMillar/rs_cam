@@ -20,7 +20,9 @@ use super::{
     SampleDepth, of_criterion, of_rpm_choice,
 };
 use crate::feeds::RpmChoice;
-use crate::tool_load::verdict::{CriterionKind, CriterionStatus, ToolpathLoadVerdict};
+use crate::tool_load::verdict::{
+    AdvisoryLowSide, CriterionKind, CriterionStatus, ToolpathLoadVerdict,
+};
 use crate::tool_load::{GroupCell, MaterialSplit, OwnMaterialVerdict};
 
 /// The longest face (characters): the face limit of every short panel
@@ -213,6 +215,14 @@ pub enum Caveat {
     /// can change the state (lead ruling 2). A row far from its bound has
     /// no such caveat.
     StoredFeed,
+    /// P29-10 PB (lead ruling on the point band): the chip floor of the
+    /// row is a reference, not a floor that gates: the low side of its
+    /// vendor row is advisory by THE one classification of the gate
+    /// (`ChipBoundsSource::advisory_low_side`), for the reason named.
+    AdvisoryFloor {
+        /// Why the low side is advisory.
+        why: AdvisoryLowSide,
+    },
     /// The cut may not occur (`Presence::MayOccur`), with its row.
     MayOccur {
         /// The exemption row of the cut.
@@ -239,11 +249,12 @@ impl Caveat {
             Self::WorstCase => 0,
             Self::LowerBound => 1,
             Self::StoredFeed => 2,
-            Self::MayOccur { .. } => 3,
-            Self::Advisory => 4,
-            Self::NoSamples => 5,
-            Self::SampleDepth { .. } => 6,
-            Self::AtEarlierLeave => 7,
+            Self::AdvisoryFloor { .. } => 3,
+            Self::MayOccur { .. } => 4,
+            Self::Advisory => 5,
+            Self::NoSamples => 6,
+            Self::SampleDepth { .. } => 7,
+            Self::AtEarlierLeave => 8,
         }
     }
 
@@ -257,10 +268,14 @@ impl Caveat {
             // P29-10 10e (the words judged on the screenshots): the tone
             // states an advisory bound (`Tone::ExceedsAdvisory`, its chip
             // word "advisory"); on a row inside its bound the word says
-            // nothing to act on. The detail keeps the clause.
-            Self::Advisory | Self::NoSamples | Self::SampleDepth { .. } | Self::AtEarlierLeave => {
-                None
-            }
+            // nothing to act on. The detail keeps the clause. P29-10 PB: an
+            // advisory chip floor the same (the word clipped the drawer row
+            // at the rail width, 340 points); the detail names the reason.
+            Self::AdvisoryFloor { .. }
+            | Self::Advisory
+            | Self::NoSamples
+            | Self::SampleDepth { .. }
+            | Self::AtEarlierLeave => None,
         }
     }
 
@@ -271,6 +286,7 @@ impl Caveat {
             Self::WorstCase | Self::MayOccur { .. } => true,
             Self::LowerBound
             | Self::StoredFeed
+            | Self::AdvisoryFloor { .. }
             | Self::Advisory
             | Self::NoSamples
             | Self::SampleDepth { .. }
@@ -282,7 +298,11 @@ impl Caveat {
     /// danger (ruling O2: the caveat is a fact of the record).
     const fn softens(self) -> bool {
         match self {
-            Self::WorstCase | Self::LowerBound | Self::StoredFeed | Self::MayOccur { .. } => true,
+            Self::WorstCase
+            | Self::LowerBound
+            | Self::StoredFeed
+            | Self::AdvisoryFloor { .. }
+            | Self::MayOccur { .. } => true,
             Self::Advisory | Self::NoSamples | Self::SampleDepth { .. } | Self::AtEarlierLeave => {
                 false
             }
@@ -302,6 +322,10 @@ impl Caveat {
                  the rounding of the feed decides the state"
                     .to_owned()
             }
+            Self::AdvisoryFloor { why } => format!(
+                "the chip floor is a reference, not a floor that gates: {}",
+                advisory_floor_clause(why)
+            ),
             Self::MayOccur { row } => format!("the plan may not cut it (row {row})"),
             Self::Advisory => "the bound does not gate an export".to_owned(),
             Self::NoSamples => "the gate read no sample".to_owned(),
@@ -313,6 +337,19 @@ impl Caveat {
             } => "the sample depth read is the engaged edge depth".to_owned(),
             Self::AtEarlierLeave => "judged at the leave of the earlier op".to_owned(),
         }
+    }
+}
+
+/// The clause of an advisory chip floor, for the detail.
+const fn advisory_floor_clause(why: AdvisoryLowSide) -> &'static str {
+    match why {
+        AdvisoryLowSide::OnePrintedValue => {
+            "the vendor row prints one chip value, a point and not a band (A2)"
+        }
+        AdvisoryLowSide::Extrapolated => {
+            "the vendor row is extrapolated to this diameter or hardness"
+        }
+        AdvisoryLowSide::NoWidthWindow => "the vendor row prints no width (ae) window",
     }
 }
 
@@ -412,6 +449,8 @@ pub struct PlannedFacts {
     pub lower_bound: bool,
     /// The chip reads a stored entry feed whose interval holds the bound.
     pub stored_feed: bool,
+    /// P29-10 PB: the chip floor is a reference, with the reason.
+    pub advisory_floor: Option<AdvisoryLowSide>,
     /// The row reads the earlier op's leave.
     pub at_earlier_leave: bool,
     /// Why the entry rule gives the cut no feed (`EntryNoNumber::clause`).
@@ -508,6 +547,7 @@ impl CheckRow {
             own_depth,
             lower_bound,
             stored_feed,
+            advisory_floor,
             at_earlier_leave,
             entry_no_number,
             compared,
@@ -522,6 +562,9 @@ impl CheckRow {
         }
         if stored_feed {
             caveats.push(Caveat::StoredFeed);
+        }
+        if let Some(why) = advisory_floor {
+            caveats.push(Caveat::AdvisoryFloor { why });
         }
         if let Some(row) = may_occur_row {
             caveats.push(Caveat::MayOccur { row });
@@ -708,6 +751,7 @@ impl CheckRow {
             Caveat::WorstCase
             | Caveat::LowerBound
             | Caveat::StoredFeed
+            | Caveat::AdvisoryFloor { .. }
             | Caveat::Advisory
             | Caveat::NoSamples
             | Caveat::SampleDepth { .. }
@@ -849,6 +893,7 @@ fn exemption_of(check: &Check, caveats: &[Caveat]) -> Option<&'static str> {
             Caveat::WorstCase
             | Caveat::LowerBound
             | Caveat::StoredFeed
+            | Caveat::AdvisoryFloor { .. }
             | Caveat::Advisory
             | Caveat::NoSamples
             | Caveat::SampleDepth { .. }

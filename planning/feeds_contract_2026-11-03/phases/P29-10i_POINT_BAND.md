@@ -436,3 +436,35 @@ rows hold no `ChipMin` row today (the stated chip band row is `ChipMax`,
 Readiness tool-load rows: no change. They read the gate rows, and the gate
 keeps its verdicts (the gate builds the same `ChipBoundsSource`). FM1 and
 the op golden: no cell and no row moves (section 6).
+
+## 10. Step PB: measured beside predicted
+
+The same probe ran on the PB tree. "Measured" is the diff of the two dumps.
+
+| Quantity | Predicted | Measured |
+|---|---|---|
+| `ChipMin` rows that take the caveat (operator, nz_wanaka_21, rivmap100, live_0925) | 60, 44, 13, 13 = 130 | 60, 44, 13, 13 = 130 |
+| Tone `Exceeds` to `ExceedsAdvisory` | 10 (the table of section 9) | 10, the same rows |
+| State, value or bound changes | 0 | 0 |
+| Rows of other limits that change | 0 | 0 |
+| Faces that change | 106 | 0 (departure, below) |
+| Face line of the 18 operator ops | no change | no change |
+| Verdict rows (Readiness) | no change | no change |
+
+The face departure. The first build put the caveat word on the face and
+measured 108 face changes against the 106 predicted. The two extra rows were
+operator idx 0 and idx 12, the helix entry `ChipMin` row: with the word the
+face has 61 characters, so the face builder drops every caveat word ("may
+not occur" too). The prediction script kept the old face there; the
+prediction was wrong. Then the viz sentry
+`the_card_shows_one_planned_row_and_a_drawer_p29_10` failed: the drawer row
+"chip min 100 % of floor · one printed value" is clipped at the rail width
+(340 points). So the caveat has no face word, as `Caveat::Advisory` has
+none: an exceeding row shows the caution tone and the chip word "advisory",
+and the hover detail names the reason ("the chip floor is a reference, not
+a floor that gates: the vendor row prints one chip value, a point and not a
+band (A2)"). The measured face changes are then 0. The lead decides if the
+face must carry the word (a shorter word, or a wider layout).
+
+Caveat sets measured: `advisory_floor` alone on 84 rows; with `may_occur`
+on 24; with `stored_feed` and/or `worst_case` on the rest.
