@@ -504,22 +504,23 @@ pub const NO_BUDGET_LIMIT_BELOW_THE_FLUTE: &str = "no force-budget limit below t
 /// A cut whose depth limit is `DepthLimit::ForceBudget` (every roughing
 /// cut, and a slot or a groove under every role: P29-5, ruling R3): the
 /// force-budget depth at the width `ae_mm` and the advance per tooth
-/// `fz_mm` ([`depth_at_budget`]). The caller passes the depth limit of
-/// the body cut (`OperationType::body_depth_limit`).
+/// `fz_mm` ([`depth_at_budget`]). The caller passes the facts of the cut
+/// it judges (P29-11 S10: a sample group's facts, or a declared cut's);
+/// the machine door `RigidityProfile::force_budget_of` reads them.
 ///
 /// `None` when the cut has no depth limit (a drill, a one-sided finish
 /// pass).
 #[must_use]
 pub fn rigidity_depth_cap(
     machine: &crate::machine::MachineProfile,
-    depth_limit: crate::limits::DepthLimit,
+    facts: crate::limits::CutFacts,
     tool: &ToolDefinition,
     material: &Material,
     ae_mm: f64,
     fz_mm: f64,
 ) -> Option<RigidityCapOutcome> {
     use crate::machine::{DepthCapRule, RigidityDepthCap};
-    let DepthCapRule { budget_n } = machine.rigidity.depth_cap_of(depth_limit)?;
+    let DepthCapRule { budget_n } = machine.rigidity.force_budget_of(facts).ok()?;
     if material.force_line().is_err() {
         return Some(RigidityCapOutcome::Unmodelled(NO_FORCE_LINE));
     }

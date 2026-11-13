@@ -171,14 +171,12 @@ fn claim_2_three_slot_ops_read_one_cap_at_full_width() {
         OperationType::Profile,
         OperationType::ProjectCurve,
     ] {
-        let cap = match rigidity_depth_cap(
-            &machine,
-            kind.body_depth_limit(),
-            &cutter,
-            &material,
-            d,
-            fz,
-        ) {
+        // P29-11 S10: the producer takes the facts of the body cut.
+        let config = OperationConfig::new_default(kind);
+        let facts = config
+            .cuts(&rs_cam_core::feeds::entry_rule::ConfiguredEntry::registry_default(&config))
+            .body_facts();
+        let cap = match rigidity_depth_cap(&machine, facts, &cutter, &material, d, fz) {
             Some(RigidityCapOutcome::Cap(c)) => c.cap_mm(),
             other => panic!("{kind:?}: a slot in hardwood has a force-budget cap: {other:?}"),
         };

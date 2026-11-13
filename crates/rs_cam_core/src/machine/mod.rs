@@ -270,6 +270,28 @@ impl RigidityProfile {
             DepthLimit::NoLimit(NoDepthLimit::DrillCycle | NoDepthLimit::FinishPass) => None,
         }
     }
+
+    /// P29-11 S10: THE door from the facts of one cut to the force budget
+    /// that limits its depth. The caller names the cut: a declared cut of
+    /// the envelope, or the facts of a sample group
+    /// (`ToolpathLoadContext::group_facts`). `Err` names why the cut has
+    /// no depth limit (a drill cycle, a finish pass on one side).
+    ///
+    /// # Errors
+    ///
+    /// The [`crate::limits::NoDepthLimit`] of a cut with no depth limit.
+    pub const fn force_budget_of(
+        &self,
+        facts: crate::limits::CutFacts,
+    ) -> Result<DepthCapRule, crate::limits::NoDepthLimit> {
+        use crate::limits::DepthLimit;
+        match facts.depth_rule() {
+            DepthLimit::ForceBudget => Ok(DepthCapRule {
+                budget_n: self.force_budget_n,
+            }),
+            DepthLimit::NoLimit(why) => Err(why),
+        }
+    }
 }
 
 /// The one default rigidity set: hobby grade ([`MachineClass::Hobby`]).

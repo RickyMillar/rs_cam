@@ -209,7 +209,7 @@ impl CutKind {
 /// constructor [`Self::from_fn`] calls its closure once for each group, in
 /// one exhaustive struct literal, so a record cannot leave a group out: a
 /// new group does not compile until every record holds it.
-#[derive(Debug, Clone, PartialEq, serde::Serialize, serde::Deserialize)]
+#[derive(Debug, Clone, Copy, PartialEq, serde::Serialize, serde::Deserialize)]
 pub struct ByGroup<T> {
     body: T,
     entry: T,

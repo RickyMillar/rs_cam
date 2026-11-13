@@ -364,7 +364,7 @@ fn a_roughing_depth_still_clamps_at_the_producer_s_cap_fm6() {
 fn producer_cap(cutter: &ToolDefinition, depth_mm: f64) -> Option<RigidityCapOutcome> {
     rigidity_depth_cap(
         &machine(),
-        OperationType::Adaptive.body_depth_limit(),
+        body_facts_of(OperationType::Adaptive),
         cutter,
         &softwood(),
         0.4 * cutter.lookup_diameter_at(depth_mm),
@@ -452,7 +452,7 @@ fn the_gate_reads_the_cone_diameter_fm6() {
     let m = machine();
     let want = rigidity_depth_cap(
         &m,
-        OperationType::Adaptive.body_depth_limit(),
+        body_facts_of(OperationType::Adaptive),
         &cutter,
         &jarrah,
         engaged,
@@ -492,7 +492,7 @@ fn pocket_cap() -> f64 {
     let cutter = flat6();
     match rs_cam_core::feeds::force_budget::rigidity_depth_cap(
         &machine(),
-        OperationType::Pocket.body_depth_limit(),
+        body_facts_of(OperationType::Pocket),
         &cutter,
         &softwood(),
         3.0,
@@ -656,4 +656,13 @@ fn an_unmodeled_power_or_deflection_gate_is_not_reported_as_within_b6() {
             .any(|d| d.id.as_str() == ids::LOAD_POWER_WITHIN),
         "softwood power finding: {wood_diags:?}"
     );
+}
+
+/// The facts of the body cut of a default op of `op` (P29-11 S10: the cap
+/// producer takes the facts of a cut).
+fn body_facts_of(op: OperationType) -> rs_cam_core::limits::CutFacts {
+    let config = rs_cam_core::compute::catalog::OperationConfig::new_default(op);
+    config
+        .cuts(&rs_cam_core::feeds::entry_rule::ConfiguredEntry::registry_default(&config))
+        .body_facts()
 }

@@ -480,3 +480,38 @@ the operator in only where a change alters what they cut with.
 - **End state.** Pins 35 / 24 / 35 if 11-3 and 11-7 land (`M4` open for the operator). The table
   "what P29 leaves open, and why" of section 7 goes into `phases/P27_BRIEF.md` with the last
   commit.
+
+## 11. Round 2: predicted and measured
+
+Round 2a, written 2026-11-14 at HEAD `c4467a288`. Two throwaway probes, deleted after the round
+(copies in the session scratchpad folder `p29_11b/`): `zz_probe_rows_p29_11b` dumps every row of
+`ProjectSession::limit_rows` (envelope, RPM, verdict with no trace, the profile) for every
+toolpath of the four project files, with modulation off and on; `zz_probe_gates_p29_11b` dumps
+the verdict rows, the group record `GroupVerdicts`, the force reading and the depth and force
+cards of the five simulated kind fixtures. Each dump ran two times at HEAD and gave the same
+bytes. The "before" dumps of HEAD are the baseline of every subsection below.
+
+### 11.1 S10: the depth rule of each cut and group
+
+Prediction: byte-equal. Every declared cut holds the body's facts (`Declare::cut` copies
+`self.facts`), so the facts of a group equal the body facts on every op.
+
+The change:
+
+- `RigidityProfile::force_budget_of(CutFacts)` (`machine/mod.rs`) is the one door from the
+  facts of a cut to its force budget. `Err` names the `NoDepthLimit`. It holds the one read of
+  the depth rule that is left in a guarded file: a class D entry of the guard.
+- The envelope reads the facts of the declared cuts that set a ceiling
+  (`ceiling_force_budget`: the first such cut with a budget; with none, the reason of the
+  first; with no such cut, the body's). `rigidity_limit` and `no_edge_reason` read it.
+- `ToolpathLoadContext::group_facts(group)`: the facts of the first declared cut of the group,
+  else the body facts (a group that the op declares no cut of, for example the links of most
+  ops). The depth gate (`judge`, `vacuous_verdict`), the depth histogram (`depth_number`, the
+  headline group) and the force reading (each group its own budget line; `budget_line` is the
+  headline group's) read it.
+- `force_budget::rigidity_depth_cap` takes the facts of the cut, not a `DepthLimit`.
+- The guard: `PENDING_S10` and its pin are deleted; `depth.rs` and `cut_force.rs` have zero
+  tolerance and no hit. `session/compute.rs:2289` (the modulator's body rule) is not guarded and
+  not in this step; it still calls `depth_cap_of` on the body facts.
+
+Measured: the four project dumps and the fixture dump are byte-equal to HEAD (`cmp`).

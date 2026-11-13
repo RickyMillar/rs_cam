@@ -12,8 +12,8 @@
 //! is private). This scan holds the rest.
 //!
 //! - Claim 1: each read of a token of `op_type_scan::TOKENS` in a guarded
-//!   file of `src/` (section 5.1) has an entry of [`ALLOW`] or of
-//!   [`PENDING_S10`], and each entry has a hit. A dispatch entry (classes V,
+//!   file of `src/` (section 5.1) has an entry of [`ALLOW`], and each
+//!   entry has a hit. A dispatch entry (classes V,
 //!   W, D, G, Q, T) names a file and a function, with no count: a new op
 //!   adds one arm there, and the compiler asks for it. An X entry names the
 //!   rows of `limits::EXEMPTIONS` that hold the reads, and the exact count;
@@ -22,8 +22,9 @@
 //! - Claim 2: no entry names a file with zero tolerance (section 5.2: the
 //!   gate files of `tool_load/`, `limits/`, the limit driver and the load
 //!   model of `feeds/`, the calculator, the feed modulator, the door of the
-//!   limit rows), and such a file has no hit, except the exact counts of
-//!   [`PENDING_S10`].
+//!   limit rows), and such a file has no hit. P29-11 S10 closed the last
+//!   reads there: a gate reads the facts of its group, the envelope the
+//!   facts of its ceiling cuts, through `RigidityProfile::force_budget_of`.
 //! - Claim 3 (non-vacuity): the declaration file holds hits; a planted read
 //!   is found in a fixture string; a comment, a string, a test module, an
 //!   import and a definition are not reads; the scan reads the guarded tree.
@@ -47,10 +48,9 @@ mod source_scan;
 #[path = "common/op_type_scan.rs"]
 mod op_type_scan;
 
-use std::collections::BTreeMap;
 use std::path::{Path, PathBuf};
 
-use op_type_scan::{Allow, Class, Hit};
+use op_type_scan::{Allow, Class};
 
 /// The guarded files of core (section 5.1), relative to `src/`.
 fn guarded(rel: &str) -> bool {
@@ -150,6 +150,8 @@ const ALLOW: &[Allow] = &[
     Allow { file: "feeds/predict.rs", function: "predict_move_count", class: Class::D },
     Allow { file: "feeds/ramp.rs", function: "resolved_entry", class: Class::D },
     Allow { file: "feeds/suggest/axial_envelope.rs", function: "axial_envelope_for_operation", class: Class::D },
+    // P29-11 S10: the machine numbers of the depth limit of one cut's facts (the one door).
+    Allow { file: "machine/mod.rs", function: "force_budget_of", class: Class::D },
     Allow { file: "session/compute/diagnostics.rs", function: "air_cut_offenders_for_toolpaths", class: Class::D },
     Allow { file: "session/compute/diagnostics.rs", function: "triage_from_parts", class: Class::D },
     Allow { file: "trace/narrate.rs", function: "append_air_cut_anomaly", class: Class::D },
@@ -197,26 +199,6 @@ const ALLOW: &[Allow] = &[
 /// the same commit.
 const X_TOTAL: usize = 86;
 
-/// S10 of section 5.4: the reads of the BODY depth rule for every cut and
-/// group (`CutFacts::depth_rule` of the body, and the machine numbers of it,
-/// `depth_cap_of`). No number moves while every cut holds the body's rule,
-/// but a group must read its own rule. Not a commit of round 1: these are
-/// exact counts in files that otherwise have zero tolerance, and the pin only
-/// goes down.
-#[rustfmt::skip]
-const PENDING_S10: &[(&str, &str, usize)] = &[
-    ("feeds/envelope.rs", "no_edge_reason", 1),
-    ("feeds/envelope.rs", "rigidity_limit", 2),
-    ("feeds/force_budget.rs", "rigidity_depth_cap", 1),
-    ("tool_load/cut_force.rs", "budget_line_on", 2),
-    ("tool_load/depth.rs", "depth_number", 2),
-    ("tool_load/depth.rs", "judge", 2),
-    ("tool_load/depth.rs", "vacuous_verdict", 1),
-];
-
-/// The sum of the S10 counts. It only goes down.
-const PENDING_S10_TOTAL: usize = 11;
-
 fn src_root() -> PathBuf {
     Path::new(env!("CARGO_MANIFEST_DIR")).join("src")
 }
@@ -224,7 +206,7 @@ fn src_root() -> PathBuf {
 #[test]
 fn no_limit_reads_the_op_type_p29_last() {
     let root = src_root();
-    let mut table = op_type_scan::counts(&root, guarded);
+    let table = op_type_scan::counts(&root, guarded);
     if let Ok(out) = std::env::var("P29_GUARD_TABLE") {
         std::fs::write(out, op_type_scan::table_text(&table)).expect("write the table");
     }
@@ -233,43 +215,9 @@ fn no_limit_reads_the_op_type_p29_last() {
         "non-vacuity: the scan finds the guarded reads ({} functions)",
         table.len()
     );
-    let mut failures = pending_failures(&mut table);
-    failures.extend(op_type_scan::failures(
-        &table,
-        ALLOW,
-        zero_tolerance,
-        X_TOTAL,
-    ));
+    let mut failures = op_type_scan::failures(&table, ALLOW, zero_tolerance, X_TOTAL);
     failures.extend(x_rows_name_their_files());
     assert!(failures.is_empty(), "{}", failures.join("\n"));
-}
-
-/// The S10 reads: each entry holds its exact count (a removed read lowers
-/// it, a new read fails), the sum is [`PENDING_S10_TOTAL`], and the entries
-/// leave the table, so the zero-tolerance check sees the rest.
-fn pending_failures(table: &mut BTreeMap<(String, String), Vec<Hit>>) -> Vec<String> {
-    let mut out = Vec::new();
-    let mut total = 0;
-    for &(file, function, count) in PENDING_S10 {
-        total += count;
-        let hits = table
-            .remove(&(file.to_owned(), function.to_owned()))
-            .map_or(0, |h| h.len());
-        if hits != count {
-            out.push(format!(
-                "{file} `{function}` (S10, the body depth rule for every cut and group): {hits} \
-                 hit(s), the entry says {count}. A new read: read the depth rule of the cut or \
-                 the group, not of the body. A removed read: lower the count and the total"
-            ));
-        }
-    }
-    if total != PENDING_S10_TOTAL {
-        out.push(format!(
-            "the S10 entries hold {total} hits, the pin is {PENDING_S10_TOTAL}; the pin only \
-             goes down"
-        ));
-    }
-    out
 }
 
 /// Each X entry names rows of `limits::EXEMPTIONS`, and each row names the

@@ -271,14 +271,7 @@ fn cap_for(op: OperationType) -> RigidityDepthCap {
     let m = machine();
     let ae = DIAMETER_MM / 2.0 * (1.0 - std::f64::consts::FRAC_PI_2.cos());
     let fz = 2000.0 / (f64::from(SAMPLE_RPM) * 2.0);
-    match rigidity_depth_cap(
-        &m,
-        op.body_depth_limit(),
-        &tool(),
-        &Material::default(),
-        ae,
-        fz,
-    ) {
+    match rigidity_depth_cap(&m, body_facts_of(op), &tool(), &Material::default(), ae, fz) {
         Some(RigidityCapOutcome::Cap(c)) => c,
         other => panic!("a cut with the force budget carries an axial cap: {other:?}"),
     }
@@ -815,7 +808,7 @@ fn the_suggest_clamp_still_fires_at_the_helper_s_own_cap() {
         };
         let gate = match rigidity_depth_cap(
             &machine,
-            OperationType::Pocket.body_depth_limit(),
+            body_facts_of(OperationType::Pocket),
             &cutter,
             &material,
             w,
@@ -892,4 +885,13 @@ fn a_drill_operation_has_no_depth_per_pass_for_the_clamp_to_read() {
         None,
         "the clamp's `if let Some(current)` never binds on a drill op"
     );
+}
+
+/// The facts of the body cut of a default op of `op` (P29-11 S10: the cap
+/// producer takes the facts of a cut).
+fn body_facts_of(op: OperationType) -> rs_cam_core::limits::CutFacts {
+    let config = rs_cam_core::compute::catalog::OperationConfig::new_default(op);
+    config
+        .cuts(&rs_cam_core::feeds::entry_rule::ConfiguredEntry::registry_default(&config))
+        .body_facts()
 }

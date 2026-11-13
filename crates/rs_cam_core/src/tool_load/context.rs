@@ -14,7 +14,7 @@
 
 use crate::compute::catalog::OperationConfig;
 use crate::ids::ToolpathId;
-use crate::limits::{CapTable, CutFacts, CutGroup, CutKind, SampleContext};
+use crate::limits::{ByGroup, CapTable, CutFacts, CutGroup, CutKind, SampleContext};
 use crate::machine::SteadyFeedMmMin;
 use crate::material::Material;
 use crate::ops::drill_op::DrillOp;
@@ -59,6 +59,12 @@ pub struct ToolpathLoadContext<'a> {
     /// chip thinning rule of the chip gate and the histogram, and the leave
     /// of the deflection limit, read them.
     body_facts: CutFacts,
+    /// P29-11 S10: the facts of each sample group: the facts of the first
+    /// declared cut of the group (`CutKind::group`), else the body facts (a
+    /// group that the op declares no cut of, such as the links of most
+    /// ops). The force budget of the depth gate and the force reading read
+    /// them ([`Self::group_facts`]).
+    group_facts: ByGroup<CutFacts>,
     /// `DrillOp` payload for drill toolpaths — `Some` for
     /// `OperationType::{Drill, AlignmentPinDrill}`, `None` otherwise. Drives
     /// the `drill_gates` field on the resulting verdict.
@@ -106,6 +112,11 @@ impl<'a> ToolpathLoadContext<'a> {
         let cuts =
             operation.cuts(&crate::feeds::entry_rule::ConfiguredEntry::registry_default(operation));
         let body_facts = cuts.body_facts();
+        let group_facts = ByGroup::from_fn(|group| {
+            cuts.iter()
+                .find(|c| c.kind.group() == group)
+                .map_or(body_facts, |c| c.facts)
+        });
         let headline_group = if cuts.declares(CutKind::Drill) {
             CutKind::Drill.group()
         } else {
@@ -121,6 +132,7 @@ impl<'a> ToolpathLoadContext<'a> {
             spans,
             caps,
             body_facts,
+            group_facts,
             drill_op,
             commanded_thinning_lift: commanded_thinning_lift(operation, tool, body_facts),
         }
@@ -190,6 +202,13 @@ impl<'a> ToolpathLoadContext<'a> {
     #[must_use]
     pub fn body_facts(&self) -> CutFacts {
         self.body_facts
+    }
+
+    /// P29-11 S10: the facts of the cuts of `group` (the first declared cut
+    /// of the group, else the body facts).
+    #[must_use]
+    pub fn group_facts(&self, group: CutGroup) -> CutFacts {
+        *self.group_facts.get(group)
     }
 
     /// The drill payload, or `None`.

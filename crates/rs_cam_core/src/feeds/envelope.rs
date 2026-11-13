@@ -3248,11 +3248,13 @@ impl SafeEnvelope {
     /// - P29-10 10h: the deflection on a fixed depth axis has no scope
     ///   reason now: `ceiling_rows` judges each cut at the fixed depth.
     fn no_edge_reason(&self, edge: CeilingEdge) -> Option<crate::limits::NoNumberReason> {
-        use crate::limits::{DepthLimit, NoDepthLimit, NoNumberReason};
+        use crate::limits::{NoDepthLimit, NoNumberReason};
         match edge {
             // EXEMPT(S-NoBound)
-            CeilingEdge::ForceBudget => (self.inputs.cuts.list().body_facts().depth_rule()
-                == DepthLimit::NoLimit(NoDepthLimit::FinishPass))
+            CeilingEdge::ForceBudget => matches!(
+                ceiling_force_budget(&self.inputs),
+                Err(NoDepthLimit::FinishPass)
+            )
             .then_some(NoNumberReason::NoBound),
             CeilingEdge::Deflection | CeilingEdge::VendorDepthTable | CeilingEdge::Power => None,
         }
@@ -4911,6 +4913,34 @@ fn refine_columns<T: Copy>(
     }
 }
 
+/// P29-11 S10: the force budget of the depth ceiling of the body plane,
+/// read from the facts of the declared cuts that set a ceiling
+/// ([`crate::feeds::planned::sets_a_ceiling`]): the budget of the first
+/// such cut that has one; with none, the reason of the first such cut; with
+/// no such cut, the body cut's. Today every cut of an op holds the body's
+/// depth limit (`compute/catalog/cuts.rs`), so this is the body's rule.
+fn ceiling_force_budget(
+    inputs: &OwnedInputs,
+) -> Result<crate::machine::DepthCapRule, crate::limits::NoDepthLimit> {
+    let rigidity = &inputs.machine.rigidity;
+    let list = inputs.cuts.list();
+    let mut first_reason = None;
+    for cut in list.iter().filter(|c| {
+        crate::feeds::planned::sets_a_ceiling(c.presence, PlaneDepth::of_declared(c.depth))
+    }) {
+        match rigidity.force_budget_of(cut.facts) {
+            Ok(rule) => return Ok(rule),
+            Err(why) => {
+                first_reason.get_or_insert(why);
+            }
+        }
+    }
+    match first_reason {
+        Some(why) => Err(why),
+        None => rigidity.force_budget_of(list.body_facts()),
+    }
+}
+
 /// The `Rigidity` limit (every cut whose depth limit is the force budget:
 /// a roughing cut, and a slot or a groove under every role since P29-5).
 /// P13c (O1; the Adaptive family since P29-4): per width sample, the shallowest depth where the peak
@@ -4936,11 +4966,10 @@ fn rigidity_limit(
     operator: Option<OperatorChip>,
 ) -> Option<BudgetModel> {
     use crate::feeds::force_budget as fb;
-    // P29-3: the depth limit of the op's body cut (P29-5: a slot or a
-    // groove reads the budget under every role, ruling R3).
-    let depth_limit = inputs.cuts.list().body_facts().depth_rule();
-    let rule = inputs.machine.rigidity.depth_cap_of(depth_limit)?;
-    let crate::machine::DepthCapRule { budget_n } = rule;
+    // P29-11 S10: the force budget of the cuts that set a ceiling of the
+    // body plane (P29-5: a slot or a groove reads the budget under every
+    // role, ruling R3).
+    let crate::machine::DepthCapRule { budget_n } = ceiling_force_budget(inputs).ok()?;
     let basis = budget_basis(&inputs.machine);
     let unmodelled = |reason: &'static str| Limit {
         kind: LimitKind::Rigidity,

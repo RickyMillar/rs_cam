@@ -13,9 +13,9 @@
 //!
 //! ## The line (lead ruling 3, 2026-11-06)
 //!
-//! The force budget line exists only on an op whose
-//! `machine.rigidity.depth_cap_of(body_facts().depth_rule)` is
-//! `Some(`[`DepthCapRule`]`)`: the one rule the depth gate
+//! The force budget line of a group exists only where
+//! `machine.rigidity.force_budget_of(ctx.group_facts(group))` is
+//! `Ok(`[`DepthCapRule`]`)` (P29-11 S10): the one rule the depth gate
 //! (`super::depth`) and the P16 modulator read (every roughing cut, the
 //! Adaptive family since P29-4, and a slot or a groove under every role
 //! since P29-5). On any other op (a one-sided finish pass, a drill, no
@@ -203,13 +203,14 @@ fn points_of(
         .collect()
 }
 
-/// **The force budget line (N) of this op, or `None`** (lead ruling 3).
-/// `Some(budget_n)` only when the machine has a depth-cap rule
-/// ([`DepthCapRule`]) for the op's body cut (every roughing cut; P29-4,
-/// ruling R1, gave the Adaptive family the budget; P29-5, ruling R3, gave
-/// it to a slot or a groove under every role). `None` for a one-sided
-/// finish pass, a drill, or no machine. The depth limit is the body cut's
-/// fact (`CutFacts::depth_rule`), as `super::depth` reads it (P29-6 6d).
+/// **The force budget line (N) of the headline group, or `None`** (lead
+/// ruling 3). `Some(budget_n)` only when the machine has a depth-cap rule
+/// ([`DepthCapRule`]) for the cuts of the headline group (every roughing
+/// cut; P29-4, ruling R1, gave the Adaptive family the budget; P29-5,
+/// ruling R3, gave it to a slot or a groove under every role). `None` for
+/// a one-sided finish pass, a drill, or no machine. P29-11 S10: the depth
+/// limit is the group's fact (`ToolpathLoadContext::group_facts`), as
+/// `super::depth` reads it.
 #[must_use]
 pub fn budget_line(ctx: &ToolpathLoadContext<'_>, env: &GateEnv<'_>) -> Option<f64> {
     budget_line_on(ctx, env.machine?)
@@ -221,9 +222,20 @@ pub fn budget_line_on(
     ctx: &ToolpathLoadContext<'_>,
     machine: &crate::machine::MachineProfile,
 ) -> Option<f64> {
+    group_budget_line(ctx, machine, ctx.headline_group())
+}
+
+/// The force budget line (N) of the cuts of `group` on `machine`, or
+/// `None` when they have no depth limit (P29-11 S10).
+fn group_budget_line(
+    ctx: &ToolpathLoadContext<'_>,
+    machine: &crate::machine::MachineProfile,
+    group: crate::limits::CutGroup,
+) -> Option<f64> {
     let DepthCapRule { budget_n } = machine
         .rigidity
-        .depth_cap_of(ctx.body_facts().depth_rule())?;
+        .force_budget_of(ctx.group_facts(group))
+        .ok()?;
     Some(budget_n)
 }
 
@@ -316,7 +328,10 @@ pub(super) fn judge(
             peak_sample_index = Some(p.sample_index);
         }
     }
-    let budget_n = budget_line(ctx, env);
+    // P29-11 S10: the budget of this group's cuts.
+    let budget_n = env
+        .machine
+        .and_then(|m| group_budget_line(ctx, m, population.group));
     let rule = if budget_n.is_some() {
         RULE_FORCE_BUDGET
     } else {

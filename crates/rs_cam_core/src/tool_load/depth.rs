@@ -159,12 +159,12 @@ pub(super) fn judge(
         };
     };
 
-    // The depth limit of the body cut, read off the cut facts of the
-    // operation (`CutFacts::depth_rule`, the one filler that the envelope,
-    // the modulator and the force card read too; the sentry
-    // `every_op_declares_its_cuts_p29_3` holds it equal to the registry
-    // row). P29-6 6c: the gate reads the facts, not the op kind.
-    let depth_limit = ctx.body_facts().depth_rule();
+    // P29-11 S10: the facts of this group's cuts
+    // (`ToolpathLoadContext::group_facts`, filled from the cut list of the
+    // op; the sentry `every_op_declares_its_cuts_p29_3` holds the depth
+    // limit equal to the registry row). P29-6 6c: the gate reads the
+    // facts, not the op kind.
+    let facts = ctx.group_facts(population.group);
     let span_lookup = spans.map(SpanLookup::new);
 
     // The population (P29-6 6c, 6d): every sample of the group that removes
@@ -197,8 +197,7 @@ pub(super) fn judge(
     };
 
     // EXEMPT(P28-02)
-    let Some(crate::machine::DepthCapRule { budget_n }) =
-        machine.rigidity.depth_cap_of(depth_limit)
+    let Ok(crate::machine::DepthCapRule { budget_n }) = machine.rigidity.force_budget_of(facts)
     else {
         // Feeds matrix R2 (2026-09-23): a finishing or semi-finishing
         // pass that cuts on one side has no axial cap; a slot or a groove
@@ -268,12 +267,7 @@ pub(super) fn judge(
             continue;
         }
         match crate::feeds::force_budget::rigidity_depth_cap(
-            machine,
-            depth_limit,
-            tool,
-            material,
-            ae_mm,
-            fz_mm,
+            machine, facts, tool, material, ae_mm, fz_mm,
         ) {
             Some(crate::feeds::force_budget::RigidityCapOutcome::Cap(bound)) => {
                 let cap_mm = bound.cap_mm();
@@ -369,7 +363,7 @@ pub(super) fn judge(
                 )?,
             ))
         });
-        return vacuous_verdict(ctx, machine, first_cut, || {
+        return vacuous_verdict(ctx, machine, facts, first_cut, || {
             evidence_at(None, 0, ChiploadStatistic::PeakInRange)
         });
     };
@@ -438,7 +432,8 @@ pub(super) fn judge(
 /// gate gives the sample a number, else `None`. The histogram calls it
 /// after the gate's span filter, so it bins the gate's own population: on
 /// a cut with no depth limit every sample with a depth; on a force-budget
-/// cut the samples with a width and a chip (P29-6 6c).
+/// cut the samples with a width and a chip (P29-6 6c). The histogram bins
+/// the headline group, so the rule is that group's (P29-11 S10).
 pub(super) fn depth_number(
     s: &SimulationCutSample,
     ctx: &super::ToolpathLoadContext<'_>,
@@ -449,9 +444,11 @@ pub(super) fn depth_number(
         return None;
     }
     // EXEMPT(P28-02)
-    let has_rule = machine
-        .and_then(|m| m.rigidity.depth_cap_of(ctx.body_facts().depth_rule()))
-        .is_some();
+    let has_rule = machine.is_some_and(|m| {
+        m.rigidity
+            .force_budget_of(ctx.group_facts(ctx.headline_group()))
+            .is_ok()
+    });
     if !has_rule {
         return Some(s.axial_engagement_mm);
     }
@@ -505,6 +502,7 @@ fn sample_chip_mm(s: &SimulationCutSample, gate_feed: f64) -> Option<f64> {
 fn vacuous_verdict(
     ctx: &super::ToolpathLoadContext<'_>,
     machine: &crate::machine::MachineProfile,
+    facts: crate::limits::CutFacts,
     first_cut: Option<(f64, f64)>,
     evidence: impl Fn() -> SampleEvidence,
 ) -> DepthVerdict {
@@ -522,7 +520,7 @@ fn vacuous_verdict(
     };
     match crate::feeds::force_budget::rigidity_depth_cap(
         machine,
-        ctx.body_facts().depth_rule(),
+        facts,
         tool,
         ctx.material(),
         ae_mm,
@@ -593,6 +591,15 @@ mod tests {
 
     const TP: ToolpathId = ToolpathId::from_raw(0);
 
+    /// The facts of the body cut of a default op of `op` (P29-11 S10: the
+    /// cap producer takes the facts of a cut).
+    fn body_facts(op: OperationType) -> crate::limits::CutFacts {
+        let config = crate::compute::catalog::OperationConfig::new_default(op);
+        config
+            .cuts(&crate::feeds::entry_rule::ConfiguredEntry::registry_default(&config))
+            .body_facts()
+    }
+
     fn tool() -> ToolDefinition {
         ToolDefinition::new(
             Box::new(FlatEndmill::new(6.0, 20.0)),
@@ -650,7 +657,7 @@ mod tests {
     fn oak_cap_mm() -> f64 {
         let cut = crate::feeds::force_budget::rigidity_depth_cap(
             &MachineProfile::shapeoko_makita(),
-            OperationType::Adaptive.body_depth_limit(),
+            body_facts(OperationType::Adaptive),
             &tool(),
             &oak(),
             0.4 * 6.0,
@@ -701,7 +708,7 @@ mod tests {
         let machine = MachineProfile::shapeoko_makita();
         let want = crate::feeds::force_budget::rigidity_depth_cap(
             &machine,
-            OperationType::Pocket.body_depth_limit(),
+            body_facts(OperationType::Pocket),
             &tool(),
             &Material::default(),
             3.0,
@@ -762,7 +769,7 @@ mod tests {
     fn oak_cap_at_share_mm(share: f64) -> f64 {
         let cut = crate::feeds::force_budget::rigidity_depth_cap(
             &MachineProfile::shapeoko_makita(),
-            OperationType::Adaptive.body_depth_limit(),
+            body_facts(OperationType::Adaptive),
             &tool(),
             &oak(),
             share * 6.0,
