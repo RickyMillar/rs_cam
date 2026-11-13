@@ -222,3 +222,131 @@ No 10i code, no new sentry, no viz change, no screenshot of 10i. The viz
 part one would need the same folds as part two (`compare.rs`: group the
 stated cut rows by cut with `draw_cut`), and `envelope.rs` lines 1008, 1338
 and 1359 would filter on `CheckRow::is_planned()`.
+
+## 10. Lead rulings (2026-11-14)
+
+On the questions of section 8 (commits `6e705fb22` to `41be7ca0f` are in).
+For PB the lead accepts that the advisory-floor caveat has no face word:
+the chip and the hover carry it.
+
+1. **(a).** A feed written from another stored feed carries the interval of
+   both writes: `1 + 1/lift` write steps, derived in the doc of
+   `StoredFeedChip` from the two rounding steps, with a unit test of the
+   bound (a case at the edge inside, a case just outside). No constant.
+   idx 0 and 12 get no face line from rounding.
+2. **Not ruled yet.** One measurement first: the simulation inspector of
+   operator idx 1 reads "Chipload: peak at limit, within" while the stated
+   row predicts "chip max 21 % over". Measure, for every op where a stated
+   chip row exceeds, the stated row, the measured verdict of the last load
+   report, the stage between the stated feed and the samples, and whether
+   the two use the same chip model. Do not build Q2. Until the ruling, a
+   stated chip max row is built with its true value and state, and one
+   named, documented predicate keeps it out of the face line rank
+   (`CheckRow::ranks_for_the_face`); the drawer shows the row as it is.
+3. A drill op's body is not a milling cut. Its chip rows are out of the
+   chip scope with a named reason that points at the existing row of the
+   drill cycle (P28-20); the drill gates stay the judge. No "-56 %" line on
+   idx 3 and 4. Use `limits::scope` and the existing `DrillCycle`
+   engagement; no new exemption row if P28-20 covers it.
+4. One number on screen. Every text about the stated point reads a stated
+   row. The placement keeps its pick chip for the decision "outside or
+   not"; no surface prints a margin from the placement. List every op of
+   the four files where the placement says outside and no stated row
+   exceeds, or the reverse, and report a list that is not empty.
+5. As chosen: with no stated feed or speed, a depth ceiling row reads the
+   chip of the drawn edge and carries a core caveat that says so ("at the
+   suggested chip"); the chip rows are `NoNumber(NoStatedFeed)`. idx 1 of
+   `nz_wanaka_21.toml` keeps its depth face line.
+
+## 11. Predictions under the rulings (before the code)
+
+Baseline: HEAD `41be7ca0f`. Rule of each ruling as it will be built:
+
+- Ruling 1: the ramp and helix entry chips read the entry feed, which
+  Suggest writes from the stored cut feed over the lift of the body
+  (`UnliftedFeed`). Its interval is `[f, f + (1 + 1/lift) step)`, the lift
+  being the body lift at the full-feed width of the stated width. A plunge
+  feed keeps one write (it is not written from a stored feed).
+- Ruling 3: a declared cut whose depth is the drill cycle
+  (`DeclaredDepth::None(NoEngagementModel::DrillCycle)`, the body of a
+  Drill and of an Alignment Pin Drill) is judged in the drill group, so
+  `limits::scope` answers for it as for the drill cycle: the chip band,
+  the rubbing floor and the vendor depth table `NotJudged` row `P28-20`,
+  the power row `P28-10`, the deflection `P28-17`, the force budget
+  `P28-04`. The row carries that scope row as its exemption (today a
+  not-judged planned cell shows `S-NotJudgedHere`). No new exemption row.
+  This moves the drill body rows of part two too: the body chip rows
+  (today `Within`, 100 % of the point) and the body power row (today
+  `Within`, 21 % of the limit) become `NotJudgedHere` with their rows.
+- Ruling 4: the rationale and the diagnostic `project.outside_envelope`
+  name the limit and the cut, with no margin; the MCP `outside_envelope`
+  object and `envelope.operator` carry no margin; each surface that prints
+  a number about the stated point prints a stated row.
+- Ruling 5: as in the ruling; the caveat is `Caveat::AtSuggestedChip`.
+- Q2 open: a stated cut row of `ChipMax` does not rank for the face line
+  (`CheckRow::ranks_for_the_face`).
+
+### The face line of the 18 operator ops
+
+| idx | Today (HEAD) | After 10i (predicted) | Open on Q2 |
+|---|---|---|---|
+| 0 | none | none (the entry chip rows read the two-write interval: `Within`, "stored feed") | |
+| 1 | caution: stated point · depth 387 % over force cap | caution: first slot · depth 420 % over force cap · may not occur | yes (body +21 %, planner cap +24 % chip max, held out) |
+| 2 | caution: stated point · depth 74 % over force cap | caution: first slot · depth 120 % over force cap · may not occur | yes (planner cap +2.9 %) |
+| 3 | none | none (the body is the drill cycle: chip rows `NotJudgedHere`, P28-20) | |
+| 4 | none | none (as idx 3) | |
+| 5 | none | none | |
+| 6 | none | caution: ramp entry · chip min 76 % under floor | |
+| 7 | none | caution: ramp entry · chip min 76 % under floor | yes (body and slot ring +27 %) |
+| 8 | none | none | yes (body, slot ring, ramp, helix +27 %) |
+| 9 | none | none | |
+| 10 | none | none | |
+| 11 | none | caution: ramp entry · chip min 66 % under floor | |
+| 12 | none | none (as idx 0) | |
+| 13 | none | none | |
+| 14 | caution: stated point · depth 73 % over force cap | caution: first slot · depth 109 % over force cap · may not occur | yes (planner cap +3.4 %) |
+| 15 | caution: stated point · depth 57 % over force cap | caution: first slot · depth 106 % over force cap · may not occur | yes (planner cap +3.1 %) |
+| 16 | none | caution: helix entry · chip min 91 % under floor | |
+| 17 | none | caution: plunge entry · plunge rate 17 % over limit | |
+
+The face words are approximate (section 7); the cut, the limit and the tone
+are the prediction. Part two changes on idx 0 and 12 (the entry chip rows
+become `Within` with "stored feed") and on idx 3 and 4 (ruling 3).
+`nz_wanaka_21.toml` idx 1 keeps a depth line ("depth ... over force cap",
+caution, caveat "at the suggested chip").
+
+### Q2: the measurement
+
+| idx | Stated chip max row (predicted) | Measured chip verdict (load report of `generate_all`, `data/mcp_tool_load_report_operator.json`) | The stage between | Feed of the samples |
+|---|---|---|---|---|
+| 1 | body 0.2169 against 0.1791 (-21.1 %); planner cap 0.2219 (-23.9 %); first slot 0.2354 (-31.4 %, may occur) | `within`, peak 0.17913 at bound 0.17913, `vendor_lut_point_preset` | the adaptive feed modulation of the simulation (`constrained_max`; chip cap binds on 27.6 % of the moves) | median -23.9 % of the stated feed (8475 to about 6450 mm/min) |
+| 2 | planner cap 0.1307 against 0.127 (-2.9 %); first slot -15.5 % | `within`, peak 0.127 at 0.127 | modulation, chip cap 32.3 % | median -13.4 % |
+| 7 | body and slot ring 0.0699 against 0.0550 (-27.0 %) | `within`, peak 0.0550 at 0.0550 | modulation, chip cap 83.3 % | median -12.7 % |
+| 8 | body, slot ring, ramp, helix 0.0699 (-27.0 %) | `within`, peak 0.0550 at 0.0550 | modulation, chip cap 25 % | median +508.8 % (the modulator raises the light moves) |
+| 14 | planner cap 0.1851 against 0.1791 (-3.4 %); first slot -25.0 % | `within`, peak 0.17913 at 0.17913 | modulation, chip cap 32.2 % | median -20.0 % |
+| 15 | planner cap 0.1309 against 0.127 (-3.1 %); first slot -18.7 % | `within`, peak 0.127 at 0.127 | modulation, chip cap 36.7 % | median -15.8 % |
+
+- The stage: `SimulationOptions::adaptive_feed_modulation` (default `true`,
+  `session/mod.rs`; the GUI run of `generate_all` used it). After the
+  simulation the modulator re-times the moves (`apply_adaptive_feed_
+  modulation`, strategy `constrained_max`) and caps each move's peak chip
+  at the band times the lift of that move (P11b2); the export reads the
+  modulated stage (`feed_stage`). So the samples carry the modulated feed,
+  not the stated feed. Every simulated op of the operator file reads "peak
+  at limit" (the cap holds the peak at the bound). No per-op switch exists.
+- The chip model: the same thinning rule (`RadialThinning`, Garr, the op's
+  `thins_chip`) on both sides. The stated row reads the stated feed over
+  the stated rpm and the lift at the cut's declared width (the stated
+  width for the body, the pass-ceiling width for the planner cap, D for a
+  slot). The gate reads the achieved advance of each sample over the lift
+  at that sample's measured arc, and reports the peak. So the stated row
+  is the cut before the modulator; the gate is the cut after it.
+- Options for the lead: (a) a caveat "before modulation" that softens a
+  stated chip max row when the run modulates the chip (the session
+  option; no per-op switch exists, so it would read the project's
+  simulation option); (b) the stated row reads the feed the modulator
+  emits (needs a simulation; a planned row then reads the simulation,
+  against L2 and Q5); (c) accept the red line (the stored feed is over
+  the printed value; the G-code before a simulation runs it); (d) keep
+  the row out of the face rank for good (the predicate of today), the
+  drawer shows it.
