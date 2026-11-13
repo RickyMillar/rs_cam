@@ -457,3 +457,134 @@ rivmap100 idx 0 to 3; live idx 0, 2, 3.
   worst case", 3D Finish "body · chip min 78 % under floor"); the Passes
   caps rise by that line (41 to 42, 38 to 39, 30 to 31). This closes open
   item 4 of `P29-10_DESIGN.md` section 17.
+
+## 13. P29-10z: rulings Q2, R and T (predicted before the code)
+
+Baseline: HEAD `20fda1be1`. Method: the row probe of PB, 10h and 10i ran
+again on HEAD (dump `p29_10z/dump_head.jsonl` in the agent scratchpad); a
+script (`p29_10z/predict.py`) applies the rules below to the rows of the
+dump. The prediction is the output of that script, not of the new code.
+
+### The rules as they will be built
+
+- **Q2, the declared list.** The modulator declares the limits that it
+  caps (`dressup::feed_modulation::RunModulation::capped_limits`). The list
+  holds `ChipMax` only:
+  - `ConstrainedMax` caps each engaged move at `band max x lift x rpm x Z`
+    (step 1); a feed scale above 1 pushes past that cap, so with a scale
+    above 1 the list is empty.
+  - `BandMid` caps at `band max x rpm x Z` with no lift, which is lower.
+  - The power, deflection and force-budget arms can pin a move at the chip
+    floor when no feed holds the budget, so the code does not prove that
+    the modulated move is inside those limits. They are not in the list.
+  - `ChipMin`: a point band has no floor, and a load cap wins over the
+    floor (P20g). Not in the list.
+- **Q2, the cuts.** The modulator re-times a move unless
+  `should_skip_modulation` skips its intent (`EntryPlunge`,
+  `EntryApproach`, `Drilling`, `LeadIn`, `LeadOut`, `Retract`,
+  `ObstacleClearance`, every rapid). One match beside the modulator names
+  the intents of each cut kind. A kind re-timed: body, first slot, first
+  row, planner cap, spring pass, wall finish, ramp entry (`EntryRamp`),
+  helix entry (`EntryHelix`), the three cleanups, capped step, slot ring,
+  dogbone relief. A kind not re-timed: plunge entry, entry approach, lead
+  in, lead out, drill cycle. Not decided from the code, so no caveat (a
+  gap): the link (its moves are `Linking`, which the modulator re-times,
+  or `Retract` and `ObstacleClearance`, which it skips) and the peck
+  ladder (its plunges carry no intent of their own).
+- **Q2, the row.** A planned or stated cut row of a limit in the list, on a
+  cut kind that the modulator re-times, while the run modulates, carries
+  `Caveat::BeforeModulation`. Only a row that holds a number takes it (a
+  row with no number has no value that the modulator changes). The caveat
+  softens an `Exceeds` row to caution. It ranks first among the caveats,
+  so the face word of the row is "before modulation". The face carries the
+  word: the longest face with the word on the four files is "planner cap ·
+  chip max 2.9 % over limit · before modulation" (59 characters, operator
+  idx 2). The row under its cut title in the drawer (`face_in_group`) does
+  not carry the word (a 43-character row clipped at the rail width in PB);
+  the chip word "advisory" and the hover carry it there.
+- **Q2, the fact.** `RunModulation` (`Off`, or `Runs { strategy, feed_scale }`)
+  is a field of `EnvelopeInput` with no default, and an argument of the
+  doors `ProjectSession::safe_envelope`, `cutter_op_profile` and
+  `limit_rows`. A disabled op is not simulated, so the session door gives
+  it `Off`. The GUI and MCP read one value, the value that the GUI adopt
+  step modulates with (`ConstrainedMax`, scale 1). The CLI `project`
+  command reads its flag; the CLI `suggest` command runs no simulation and
+  states the value of `SimulationOptions::default()` (on). FM1, the rules
+  and the unit tests state `RunModulation::Off`.
+- **Q2, the predicate.** `CheckRow::ranks_for_the_face` goes; every stated
+  row ranks.
+- **R.** `rank_cmp`: the tone group, then a row of a cut that always
+  occurs before a row with the caveat "may not occur", then the subject
+  (the stated point first), then the lower margin.
+- **T.** The stated-point rows of the limits that are not limits of each
+  cut get a title in the drawer, "the stated point" (a core constant).
+
+### The face line of the 18 operator ops
+
+| idx | Op | Today (HEAD) | After Q2 and R (predicted) |
+|---|---|---|---|
+| 0 | Face | none | none |
+| 1 | 3D Rough | caution: first slot · depth 420 % over force cap · may not occur | caution: planner cap · depth 387 % over force cap |
+| 2 | 3D Rough | caution: first slot · depth 120 % over force cap · may not occur | caution: ramp entry · depth 100 % over force cap · worst case |
+| 3 | Pin drill | none | none |
+| 4 | Drill | none | none |
+| 5 | Project Curve | none | none |
+| 6 | Pocket | caution: ramp entry · chip min 76 % under floor · worst case | the same |
+| 7 | Pocket | caution: ramp entry · chip min 76 % under floor · worst case | caution: body · chip max 27 % over limit · before modulation |
+| 8 | Pocket | none | caution: body · chip max 27 % over limit · before modulation |
+| 9 | Project Curve | none | none |
+| 10 | Trace V60 | none | none |
+| 11 | Pocket | caution: ramp entry · chip min 66 % under floor · worst case | the same |
+| 12 | Face | none | none |
+| 13 | Trace V60 | none | none |
+| 14 | 3D Rough | caution: first slot · depth 109 % over force cap · may not occur | caution: ramp entry · depth 78 % over force cap · worst case |
+| 15 | 3D Rough | caution: first slot · depth 106 % over force cap · may not occur | caution: ramp entry · depth 84 % over force cap · worst case |
+| 16 | Scallop | caution: helix entry · chip min 91 % under floor · may not occur | caution: body · chip min 16 % under floor |
+| 17 | Profile | caution: plunge entry · plunge rate 17 % over limit · may not occur | the same (no row of a cut that always occurs exceeds) |
+
+The causes:
+
+- idx 1 (ruling R): the planner cap (387 %) always occurs; the first slot
+  (420 %) may not. The body row (378 %) has a lower share over.
+- idx 2, 14, 15 (ruling R): the ramp entry row always occurs and its depth
+  share over (the depth per pass, the worst case) is larger than the share
+  of the planner cap (74 %, 73 %, 57 %). The ruling does not rank a worst
+  case after a certain cut, so the ramp line takes the face. The operator
+  judges if this line reads as noise.
+- idx 7, 8 (Q2): the body chip max row (+27 %) now ranks, with the caveat.
+  On idx 7 the ramp chip min row (-76 %) has the caveat "may not occur",
+  so the body row of a cut that always occurs ranks first.
+- idx 16 (ruling R): the helix may not occur; the body chip min row
+  (-16 %, advisory floor) always occurs.
+- No face line is DANGER on the operator file: every stated chip max row
+  that exceeds is on a re-timed cut and takes the caveat.
+
+### The other files (predicted)
+
+| File | idx | Today | After |
+|---|---|---|---|
+| `nz_wanaka_21.toml` | 1 | caution: first slot · depth 340 % over force cap · may not occur | caution: planner cap · depth 266 % over force cap |
+| | 14 | caution: first slot · depth 104 % over force cap · may not occur | caution: planner cap · depth 69 % over force cap |
+| | 16 | caution: helix entry · chip min 92 % under floor · may not occur | caution: body · chip max 50 % over limit · before modulation |
+| | others | unchanged | unchanged |
+| `rivmap100.toml`, `rivmap100_live_0925.toml` | all | unchanged | unchanged |
+
+### The rows (predicted)
+
+- Rows that take the caveat: operator 56 planned and 56 stated cut rows;
+  `nz_wanaka_21` 40 and 24; each rivmap file 12 and 12 (224 in all).
+- Tone `Exceeds` to `ExceedsAdvisory`: 14 rows. Stated cut rows: operator
+  idx 1 (body, planner cap), 2, 14, 15 (planner cap), 7 and 8 (body, slot
+  ring); `nz_wanaka_21` idx 16 (body). Planned rows: rivmap100 idx 1 and
+  live idx 1 (planner cap, first slot).
+- No state, value, bound or margin moves. The readiness and verdict rows
+  do not move (no gate row carries the caveat, and no gate row has the
+  caveat "may not occur", so ruling R does not reorder them).
+- FM1 and the op golden do not move (no cutting number moves).
+
+### Open for the operator (Q2)
+
+The operator said on 2026-11-12: "simulation should run whats going to
+happen in real life. having a post-sim change seems not ideal". This
+caveat only names the split between the stated feed and the feed that the
+modulator emits. The modulation design step decides the split.
