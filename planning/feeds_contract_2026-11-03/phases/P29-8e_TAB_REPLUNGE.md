@@ -856,3 +856,62 @@ change against 13.2: 45 rows `Within`, 1 `Exceeds` (idx 17), 51 rows `NotApplica
 | 9, 10, 13 | plunge | 381 / 762 / 762 | 2500 (Z axis rate) | 84.8 / 69.5 / 69.5 % |
 | 11 | plunge / ramp / helix | 2162 / 113.15 / 63.69 | 2500 (Z axis rate) | 13.5 / 95.5 / 97.5 % |
 | 17 | plunge / ramp / helix | 1582 / 165.64 / 278.76 | 1347.47 (G6 axial chip) | **-17.4** / 87.7 / 79.3 % |
+
+## 14. Trace of F6 (no code change)
+
+Written 2026-11-13 on the tree of e3. A temporary print at the ramp branch of the shared entry pass
+(`dressup/mod.rs`) and a temporary second pass after the last dressup (the prototype's door) were
+measured on the op golden and on wanaka operator idx 12, then removed (the files were restored from
+a byte copy of the e3 tree, and the patch chain equals the tree again).
+
+### 14.1 `profile/fresh`: why the pipeline ramp falls back, and why it succeeds later (measured)
+
+The fold ramp has two lengths:
+
+- the walk budget `want = fold_walk_budget(angle) = ENTRY_CLEARANCE / tan(angle) / 2`
+  (`dressup/entry_descent.rs:114-118`, `ENTRY_CLEARANCE` 2.0 at `:183`): at the fixture's rule
+  angle of 20 degrees (generic softwood, 8b), 2.747 mm;
+- the minimum run `min_run_mm = max(tool radius, 1.0)` (`dressup/mod.rs:603`): 3.175 mm on the
+  6.35 mm fixture tool.
+
+`collect_following_cut` (`entry_descent.rs:133`) walks the moves after the descent and stops after
+the first MOVE that brings the walked length to `want` (`:175`). The gate in `emit_ramp`
+(`entry_descent.rs:750`) refuses a run under `min_run_mm`, and the refusal is the straight plunge.
+
+| Pass | Moves after the descent | Points collected | Run | Gate |
+|---|---|---|---|---|
+| the pipeline (before arc fit) | line segments of 0.498 mm (the ring's corner arc as a polyline) | 7 | 2.989 mm | 2.989 < 3.175: refused, plunge |
+| after the dressups (after `ArcFit`) | one `G2` (the corner arc), then a 24 mm line | 11 (the arc, linearised at 0.5 mm, all added before the budget check) | 4.484 mm | passes: the fold ramps |
+
+So the refusal is a budget artefact: at an angle at or above `atan(ENTRY_CLEARANCE / (2 r))` (17.5
+degrees on this tool) the walk budget is shorter than the minimum run, and a following cut made of
+short segments can never pass the gate; one long move (an arc after arc fit, or a line longer than
+the minimum) passes. The same pass gives two answers because arc fit changes the move count, not the
+cut. The pipeline refuses the ring start at Z -2, -4 and -6 (measured; more than one profile arm starts there). 8b made it
+reach these fixtures: at the old 3 degrees the budget was 19.08 mm. The finding does not depend on
+e1 to e3: on HEAD since 8b, a ramp at a 20 degree rule angle becomes a straight plunge wherever the
+tool radius is 2.75 mm or more and the cut after the descent is a fine polyline. It also explains
+the six FM1 Profile sim cells that the prototype moved (section 10.4, `m/fm1_hits.txt` in cell
+order): EndMill and BullNose in softwood, MDF and plywood (the 20 degree classes) moved; both
+hardwood cells (5 degrees: a budget of 11.4 mm against the tool radius 3.0 mm) did not.
+
+### 14.2 Wanaka idx 12: a different cause (measured)
+
+The two plunges of idx 12 (X 404.0 Y 271.0; X 401.43 Y 327.0) are refused in the pipeline and in
+the second pass alike: the kept row piece is 0.356 mm and 2.570 mm long (the next move is a rapid),
+against `min_run_mm` 9.0 (the 18 mm tool), with a walk budget of 19.08 mm at 3 degrees. The cut is
+really shorter than the fold needs; this is no budget artefact.
+
+### 14.3 Options (no fix here)
+
+- (a) Walk at least the minimum run: `collect_following_cut(.., max(want, min_run))`, so the gate
+  reads the cut, not the budget. The fold still walks out `half_len` and back.
+- (b) Gate on the budget when the walk stopped on it: refuse only a run that ends at a rapid or a
+  plunge under `min_run`.
+- (c) Order: run the entry step after `ArcFit`. It moves every entry and the K3 and lead steps that
+  read it; not advised.
+- (d) Leave it: the check (c) judges the fallback plunge (e3); the plunge stays.
+
+(a) and (b) change the G-code of every 20 degree ramp whose next cut is a fine polyline; each needs
+its own prediction run. 14.2 needs none of them: a plunge on a 0.4 mm row piece stays, and (c)
+judges it.
